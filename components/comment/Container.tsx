@@ -61,8 +61,8 @@ export const CardContainer = ({
   return (
     <div className="container mx-auto my-4 space-y-6">
       <KunHeader
-        name="Galgame 评论"
-        description="这里展示了所有的 Galgame 评论"
+        name="OtomeGame 评论"
+        description="这里展示了所有的 OtomeGame 评论"
       />
 
       {uid ? (

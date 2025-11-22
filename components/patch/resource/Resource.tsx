@@ -90,7 +90,7 @@ export const Resources = ({ id, vndbId }: Props) => {
       </div>
 
       {loading ? (
-        <KunLoading hint="正在获取 Galgame 资源数据..." />
+        <KunLoading hint="正在获取 OtomeGame 资源数据..." />
       ) : (
         <ResourceTabs
           vndbId={vndbId}

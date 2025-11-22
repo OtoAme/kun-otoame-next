@@ -26,7 +26,7 @@ export const SearchTags = ({
           <Button
             isIconOnly
             variant="light"
-            aria-label="搜索 Galgame 标签"
+            aria-label="搜索 OtomeGame 标签"
             onPress={handleSearch}
           >
             <Search />
