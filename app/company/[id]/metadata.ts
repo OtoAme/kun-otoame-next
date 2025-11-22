@@ -11,13 +11,19 @@ export const generateKunMetadataTemplate = (
     openGraph: {
       title: `所属会社为 ${company.name} 的 OtomeGame`,
       description: company.introduction,
-      type: 'website',
-      images: [company.logo]
+      type: 'article',
+      publishedTime: new Date(company.created).toISOString(),
+      modifiedTime: new Date(company.created).toISOString(),
+      tags: company.alias
     },
     twitter: {
-      card: 'summary_large_image',
+      card: 'summary',
       title: `所属会社为 ${company.name} 的 OtomeGame`,
-      description: company.introduction,
-      images: [company.logo]
+      description: company.introduction
     },
+    alternates: {
+      canonical: `${kunMoyuMoe.domain.main}/company/${company.id}`
+    },
+    keywords: [company.name, ...company.alias]
   }
+}
