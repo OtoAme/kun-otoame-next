@@ -93,7 +93,7 @@ export const VNDBInput = ({ errors }: Props) => {
         href="https://www.kungal.com/zh-cn/topic/1040"
         size="sm"
       >
-        如何通过 VNDB 检索 Galgame?
+        如何通过 VNDB 检索游戏?
       </Link>
       <div className="flex items-center text-sm">
         {data.vndbId && (

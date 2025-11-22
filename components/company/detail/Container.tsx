@@ -48,7 +48,7 @@ export const CompanyDetailContainer: FC<Props> = ({
       const { galgames } = await kunFetchGet<{
         galgames: GalgameCard[]
         total: number
-      }>('/company/galgame', {
+      }>('/company/otomegame', {
         companyId: company.id,
         page,
         limit: 24
@@ -71,7 +71,7 @@ export const CompanyDetailContainer: FC<Props> = ({
         description={company.introduction}
         headerEndContent={
           <Chip size="lg" color="primary">
-            {company.count} 个 Galgame
+            {company.count} 个 OtomeGame
           </Chip>
         }
         endContent={
@@ -165,7 +165,7 @@ export const CompanyDetailContainer: FC<Props> = ({
       )}
 
       {loading ? (
-        <KunLoading hint="正在获取 Galgame 中..." />
+        <KunLoading hint="正在获取 OtomeGame 中..." />
       ) : (
         <div>
           <div className="grid grid-cols-2 gap-2 mx-auto mb-8 sm:gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
@@ -191,7 +191,7 @@ export const CompanyDetailContainer: FC<Props> = ({
             </div>
           )}
 
-          {!total && <KunNull message="暂无 Galgame, 或您未开启网站 NSFW" />}
+          {!total && <KunNull message="暂无 OtomeGame, 或您未开启网站 NSFW" />}
         </div>
       )}
     </div>

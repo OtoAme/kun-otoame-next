@@ -10,7 +10,7 @@ export const keyLabelMap: Record<string, string> = {
   '/doc': '帮助文档',
   '/admin/comment': '评论管理',
   '/admin/creator': '创作者管理',
-  '/admin/galgame': 'Galgame 管理',
+  '/admin/otomegame': '游戏管理',
   '/admin/log': '管理日志',
   '/admin': '管理页面',
   '/admin/resource': '下载资源管理',
@@ -21,8 +21,8 @@ export const keyLabelMap: Record<string, string> = {
   '/apply/success': '申请成功',
   '/auth/forgot': '忘记密码',
   '/comment': '评论',
-  '/edit/create': '创建 Galgame',
-  '/galgame': 'Galgame',
+  '/edit/create': '创建 OtomeGame',
+  '/otomegame': 'OtomeGame',
   '/login': '登录',
   '/message/follow': '关注消息',
   '/message/notice': '通知消息',
@@ -36,7 +36,7 @@ export const keyLabelMap: Record<string, string> = {
   '/user/[id]/comment': '用户评论',
   '/user/[id]/contribute': '用户贡献',
   '/user/[id]/favorite': '用户收藏',
-  '/user/[id]/galgame': '用户 Galgame',
+  '/user/[id]/otomegame': '用户 OtomeGame',
   '/user/[id]/resource': '用户资源'
 }
 

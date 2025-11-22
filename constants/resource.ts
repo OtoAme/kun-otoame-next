@@ -7,38 +7,38 @@ export const resourceTypes = [
   {
     value: 'row',
     label: '生肉资源',
-    description: '没有中文翻译, 仅有日语或其它语言的 Galgame'
+    description: '没有中文翻译, 仅有日语或其它语言的 OtomeGame'
   },
   {
     value: 'chinese',
     label: '汉化资源',
-    description: '汉化 Galgame 下载资源, 有简体中文或繁体中文支持'
+    description: '汉化 OtomeGame 下载资源, 有简体中文或繁体中文支持'
   },
   {
     value: 'patch',
     label: '补丁资源',
-    description: '与这个 Galgame 相关的补丁资源'
+    description: '与这个 OtomeGame 相关的补丁资源'
   },
   {
     value: 'mobile',
     label: '手机游戏',
-    description: '可以在手机上运行的 Galgame 游戏'
+    description: '可以在手机上运行的 OtomeGame 游戏'
   },
   {
     value: 'emulator',
     label: '模拟器资源',
     description:
-      '可以在手机模拟器, 例如 KiriKiri, ONS, Tyranor 等模拟器中运行的 Galgame 游戏'
+      '可以在手机模拟器, 例如 KiriKiri, ONS, Tyranor 等模拟器中运行的 OtomeGame 游戏'
   },
   {
     value: 'app',
     label: '直装资源',
-    description: '可以直接在手机安装并游玩的 Galgame'
+    description: '可以直接在手机安装并游玩的 OtomeGame'
   },
   {
     value: 'tool',
     label: '游戏工具',
-    description: '辅助游玩 Galgame 的工具, 例如 KRKR 模拟器, Magpie 等'
+    description: '辅助游玩 OtomeGame 的工具, 例如 KRKR 模拟器, Magpie 等'
   },
   {
     value: 'notice',
@@ -115,7 +115,7 @@ export const storageTypes = [
   {
     value: 'touchgal',
     label: 'TouchGal 资源盘 (官方可用)',
-    description: '此选项用于官方发布 Galgame 下载资源'
+    description: '此选项用于官方发布 OtomeGame 下载资源'
   },
   {
     value: 's3',
@@ -146,6 +146,6 @@ export const ALLOWED_EXTENSIONS = ['.zip', '.rar', '.7z']
 export const SUPPORTED_RESOURCE_SECTION = ['galgame', 'patch']
 
 export const RESOURCE_SECTION_MAP: Record<string, string> = {
-  galgame: 'Galgame 资源',
-  patch: 'Galgame 补丁'
+  galgame: 'OtomeGame 资源',
+  patch: 'OtomeGame 补丁'
 }

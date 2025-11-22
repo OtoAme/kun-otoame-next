@@ -133,8 +133,8 @@ export const SearchPage = () => {
   return (
     <div className="relative w-full my-4 space-y-6">
       <KunHeader
-        name="搜索 Galgame"
-        description="输入内容并点击搜索按钮以搜索 Galgame, 搜索设置默认搜索游戏标题和别名, 支持使用 VNDB ID 搜索"
+        name="搜索 OtomeGame"
+        description="输入内容并点击搜索按钮以搜索 OtomeGame, 搜索设置默认搜索游戏标题和别名, 支持使用 VNDB ID 搜索"
         headerEndContent={<SearchOption />}
       />
 

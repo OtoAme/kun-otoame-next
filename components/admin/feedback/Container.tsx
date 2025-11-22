@@ -43,7 +43,7 @@ export const Feedback = ({ initialFeedbacks, total }: Props) => {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold">Gal 反馈管理</h1>
+      <h1 className="text-2xl font-bold">游戏反馈管理</h1>
 
       <div className="space-y-4">
         {loading ? (

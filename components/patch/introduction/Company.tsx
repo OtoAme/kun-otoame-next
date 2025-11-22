@@ -27,7 +27,7 @@ export const PatchCompany: FC<Props> = ({ patchId, initialCompanies }) => {
         {selectedCompanies.map((company) => (
           <Tooltip
             key={company.id}
-            content={`${company.count} 个 Galgame 属于此会社`}
+            content={`${company.count} 个 OtomeGame 属于此会社`}
           >
             <Link href={`/company/${company.id}`}>
               <Chip color="secondary" variant="flat">
@@ -39,7 +39,7 @@ export const PatchCompany: FC<Props> = ({ patchId, initialCompanies }) => {
         ))}
 
         {!initialCompanies.length && (
-          <Chip>{'这个 Galgame 本体暂未添加所属会社信息'}</Chip>
+          <Chip>{'这个 OtomeGame 本体暂未添加所属会社信息'}</Chip>
         )}
       </div>
 

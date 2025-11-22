@@ -21,7 +21,7 @@ export const CompanyHeader: FC<Props> = ({ setNewCompany }) => {
     <>
       <KunHeader
         name="会社列表"
-        description="这里是本站 Galgame 中包含的所有会社"
+        description="这里是本站 OtomeGame 中包含的所有会社"
         headerEndContent={
           <>
             {user.role > 2 && (

@@ -18,13 +18,13 @@ export const HomeContainer = ({ galgames, resources }: Props) => {
 
       <section className="space-y-6">
         <div className="flex items-center space-x-4">
-          <h2 className="text-lg font-bold sm:text-2xl">最新 Galgame</h2>
+          <h2 className="text-lg font-bold sm:text-2xl">最新 OtomeGame</h2>
           <Button
             variant="light"
             as={Link}
             color="primary"
             endContent={<ChevronRight className="size-4" />}
-            href="/galgame"
+            href="/otomegame"
           >
             查看更多
           </Button>

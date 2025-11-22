@@ -17,7 +17,7 @@ import {
 
 const menuItems = [
   {
-    name: '发布 Galgame',
+    name: '发布游戏',
     href: '/edit/create',
     icon: Edit
   },
@@ -37,8 +37,8 @@ const menuItems = [
     icon: Puzzle
   },
   {
-    name: 'Gal 管理',
-    href: '/admin/galgame',
+    name: '游戏管理',
+    href: '/admin/otomegame',
     icon: Gamepad2
   },
   {
@@ -47,7 +47,7 @@ const menuItems = [
     icon: MessageSquare
   },
   {
-    name: 'Gal 反馈管理',
+    name: '游戏反馈管理',
     href: '/admin/feedback',
     icon: MessageCircleQuestion
   },
@@ -85,11 +85,10 @@ export const SidebarContent = ({ pathname }: { pathname: string }) => {
             <li key={item.href}>
               <Link
                 href={item.href}
-                className={`flex items-center gap-3 rounded-medium px-4 py-2 transition-colors ${
-                  isActive
-                    ? 'bg-primary text-primary-foreground'
-                    : 'hover:bg-default-100'
-                }`}
+                className={`flex items-center gap-3 rounded-medium px-4 py-2 transition-colors ${isActive
+                  ? 'bg-primary text-primary-foreground'
+                  : 'hover:bg-default-100'
+                  }`}
               >
                 <Icon size={20} />
                 <span>{item.name}</span>

@@ -109,9 +109,9 @@ export const createBreadcrumbItem = (
 
   if (isPatchPath(pathname)) {
     const allGalgameRoute: KunBreadcrumbItem = {
-      key: 'galgame',
-      label: 'Galgame',
-      href: '/galgame'
+      key: 'otomegame',
+      label: 'OtomeGame',
+      href: '/otomegame'
     }
     return [
       allGalgameRoute,

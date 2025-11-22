@@ -51,7 +51,7 @@ export const PatchHeaderActions = ({
     if (typeof res === 'string') {
       toast.error(res)
     } else {
-      toast.success('删除 Galgame 成功')
+      toast.success('删除 OtomeGame 成功')
       router.push('/')
     }
 
@@ -138,10 +138,10 @@ export const PatchHeaderActions = ({
       <Modal isOpen={isOpen} onClose={onClose} placement="center">
         <ModalContent>
           <ModalHeader className="flex flex-col gap-1">
-            永久删除 Galgame
+            永久删除 OtomeGame
           </ModalHeader>
           <ModalBody>
-            严重警告, 删除 Galgame 将会删除这个 Galgame 下面所有的评论,
+            严重警告, 删除 OtomeGame 将会删除这个 OtomeGame 下面所有的评论,
             所有的资源链接, 所有的贡献历史记录, 您确定要删除吗
           </ModalBody>
           <ModalFooter>

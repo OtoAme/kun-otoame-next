@@ -35,7 +35,7 @@ export const CardContainer = ({ initialGalgames, initialTotal }: Props) => {
     const { galgames, total } = await kunFetchGet<{
       galgames: GalgameCard[]
       total: number
-    }>('/galgame', {
+    }>('/otomegame', {
       selectedType,
       selectedLanguage,
       selectedPlatform,
@@ -71,8 +71,8 @@ export const CardContainer = ({ initialGalgames, initialTotal }: Props) => {
   return (
     <div className="container mx-auto my-4 space-y-6">
       <KunHeader
-        name="Galgame"
-        description="这里展示了本站所有的 Galgame, 您可以点击进入以下载 Galgame 资源"
+        name="OtomeGame"
+        description="这里展示了本站所有的 OtomeGame, 您可以点击进入以下载 OtomeGame 资源"
       />
 
       <FilterBar

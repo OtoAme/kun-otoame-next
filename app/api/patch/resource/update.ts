@@ -32,7 +32,7 @@ export const updatePatchResource = async (
     }
   })
   if (!currentPatch) {
-    return '未找到该资源对应的 Galgame 信息, 请确认 Galgame 存在'
+    return '未找到该资源对应的 OtomeGame 信息, 请确认 OtomeGame 存在'
   }
 
   let newContent: string

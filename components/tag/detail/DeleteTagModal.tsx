@@ -59,7 +59,7 @@ export const DeleteTagModal = ({ tag }: Props) => {
           <ModalHeader className="flex flex-col gap-1">删除标签</ModalHeader>
           <ModalBody>
             <p>
-              您确定要删除这个标签吗, 这将会同步删除所有 Galgame 中含有的本标签,
+              您确定要删除这个标签吗, 这将会同步删除所有 OtomeGame 中含有的本标签,
               该操作不可撤销
             </p>
             <p className="pl-4 border-l-4 border-primary-500">{tag.name}</p>

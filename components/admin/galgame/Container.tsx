@@ -47,7 +47,7 @@ export const Galgame = ({ initialGalgames, initialTotal }: Props) => {
     const { galgames, total } = await kunFetchGet<{
       galgames: AdminGalgame[]
       total: number
-    }>('/admin/galgame', {
+    }>('/admin/otomegame', {
       page,
       limit: 30,
       search: debouncedQuery
@@ -73,7 +73,7 @@ export const Galgame = ({ initialGalgames, initialTotal }: Props) => {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Galgame 管理</h1>
+        <h1 className="text-2xl font-bold">游戏管理</h1>
         <Chip color="primary" variant="flat">
           正在开发中...
         </Chip>
@@ -82,17 +82,17 @@ export const Galgame = ({ initialGalgames, initialTotal }: Props) => {
       <Input
         fullWidth
         isClearable
-        placeholder="输入 Galgame 名搜索 Galgame"
+        placeholder="输入游戏名搜索游戏"
         startContent={<Search className="text-default-300" size={20} />}
         value={searchQuery}
         onValueChange={handleSearch}
       />
 
       {loading ? (
-        <KunLoading hint="正在获取 Galgame 数据..." />
+        <KunLoading hint="正在获取 OtomeGame 数据..." />
       ) : (
         <Table
-          aria-label="Galgame 管理"
+          aria-label="游戏管理"
           bottomContent={
             <div className="flex justify-center w-full">
               <KunPagination

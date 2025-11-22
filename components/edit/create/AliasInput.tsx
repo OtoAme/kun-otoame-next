@@ -54,17 +54,17 @@ export const AliasInput = ({ errors }: Props) => {
           onPress={addAlias}
           className="self-end"
           isIconOnly
-          aria-label="添加 Galgame 别名"
+          aria-label="添加 OtomeGame 别名"
         >
           <Plus size={20} />
         </Button>
       </div>
       <p className="text-sm text-default-500">
-        建议填写游戏的日语原名以便搜索, 我们强烈建议您将 Galgame 的日文原名,
+        建议填写游戏的日语原名以便搜索, 我们强烈建议您将 OtomeGame 的日文原名,
         写为 <b>第一个</b> 别名。
       </p>
       <p className="text-sm text-default-500">
-        游戏的第一个别名将会作为 SEO 信息加入 Galgame 详情页
+        游戏的第一个别名将会作为 SEO 信息加入 OtomeGame 详情页
       </p>
       <div className="flex flex-wrap gap-2 mt-2">
         {data.alias.map((alias, index) => (

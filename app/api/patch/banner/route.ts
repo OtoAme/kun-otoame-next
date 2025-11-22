@@ -35,7 +35,7 @@ export const updatePatchBanner = async (
     where: { id: patchId }
   })
   if (!patch) {
-    return '这个 Galgame 不存在'
+    return '这个 OtomeGame 不存在'
   }
 
   const res = await uploadPatchBanner(image, patchId)

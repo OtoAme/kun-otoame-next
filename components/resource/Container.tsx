@@ -55,8 +55,8 @@ export const CardContainer = ({ initialResources, initialTotal }: Props) => {
   return (
     <div className="container mx-auto my-4 space-y-6">
       <KunHeader
-        name="Galgame 补丁资源"
-        description="这里展示了所有的 Galgame 补丁资源列表"
+        name="OtomeGame 补丁资源"
+        description="这里展示了所有的 OtomeGame 补丁资源列表"
       />
 
       <FilterBar

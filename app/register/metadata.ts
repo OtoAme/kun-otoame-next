@@ -3,17 +3,17 @@ import type { Metadata } from 'next'
 
 export const kunMetadata: Metadata = {
   title: `注册 - ${kunMoyuMoe.titleShort}`,
-  description: `注册成为 ${kunMoyuMoe.titleShort} 网站用户, 无门槛下载任何 Galgame 资源。希望明天对您来说又是美好的一天！`,
+  description: `注册成为 ${kunMoyuMoe.titleShort} 网站用户, 无门槛下载任何 OtomeGame 资源。希望明天对您来说又是美好的一天！`,
   keywords: [
     '注册',
-    'Galgame 网站注册',
+    'OtomeGame 网站注册',
     '创建账户',
-    'Galgame 资源下载',
+    'OtomeGame 资源下载',
     '免费注册'
   ],
   openGraph: {
     title: `注册 - ${kunMoyuMoe.titleShort}`,
-    description: `注册成为 ${kunMoyuMoe.titleShort} 网站用户, 无门槛下载任何 Galgame 资源。希望明天对您来说又是美好的一天！`,
+    description: `注册成为 ${kunMoyuMoe.titleShort} 网站用户, 无门槛下载任何 OtomeGame 资源。希望明天对您来说又是美好的一天！`,
     url: `${kunMoyuMoe.domain.main}/register`,
     siteName: kunMoyuMoe.title,
     images: [

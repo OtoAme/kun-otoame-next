@@ -27,7 +27,7 @@ export const SearchCompanies: FC<SearchCompaniesProps> = ({
           <Button
             isIconOnly
             variant="light"
-            aria-label="搜索 Galgame 会社"
+            aria-label="搜索 OtomeGame 会社"
             onPress={handleSearch}
           >
             <Search />

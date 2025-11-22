@@ -3,7 +3,7 @@
 import { z } from 'zod'
 import { safeParseSchema } from '~/utils/actions/safeParseSchema'
 import { getCompanyById } from '~/app/api/company/route'
-import { getPatchByCompany } from '~/app/api/company/galgame/route'
+import { getPatchByCompany } from '~/app/api/company/otomegame/route'
 import {
   getCompanyByIdSchema,
   getPatchByCompanySchema

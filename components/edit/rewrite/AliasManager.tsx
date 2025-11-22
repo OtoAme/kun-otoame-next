@@ -46,7 +46,7 @@ export const AliasManager = ({
       </div>
 
       <p className="text-sm text-default-500">
-        建议填写游戏的日语原名以便搜索, 我们强烈建议您将 Galgame 的日文原名,
+        建议填写游戏的日语原名以便搜索, 我们强烈建议您将 OtomeGame 的日文原名,
         写为 <b>第一个</b> 别名。
       </p>
       <p className="text-sm text-default-500">

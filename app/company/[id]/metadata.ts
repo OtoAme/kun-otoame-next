@@ -6,24 +6,18 @@ export const generateKunMetadataTemplate = (
   company: CompanyDetail
 ): Metadata => {
   return {
-    title: `所属会社为 ${company.name} 的 Galgame`,
+    title: `所属会社为 ${company.name} 的 OtomeGame`,
     description: company.introduction,
     openGraph: {
-      title: `所属会社为 ${company.name} 的 Galgame`,
+      title: `所属会社为 ${company.name} 的 OtomeGame`,
       description: company.introduction,
-      type: 'article',
-      publishedTime: new Date(company.created).toISOString(),
-      modifiedTime: new Date(company.created).toISOString(),
-      tags: company.alias
+      type: 'website',
+      images: [company.logo]
     },
     twitter: {
-      card: 'summary',
-      title: `所属会社为 ${company.name} 的 Galgame`,
-      description: company.introduction
+      card: 'summary_large_image',
+      title: `所属会社为 ${company.name} 的 OtomeGame`,
+      description: company.introduction,
+      images: [company.logo]
     },
-    alternates: {
-      canonical: `${kunMoyuMoe.domain.main}/company/${company.id}`
-    },
-    keywords: [company.name, ...company.alias]
   }
-}

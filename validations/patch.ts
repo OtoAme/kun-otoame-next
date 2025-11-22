@@ -20,12 +20,12 @@ export const patchTagChangeSchema = z.object({
       z.coerce.number({ message: '标签 ID 必须为数字' }).min(1).max(9999999)
     )
     .min(1)
-    .max(107, { message: '一个 Galgame 最多有 107 个标签' })
+    .max(107, { message: '一个 OtomeGame 最多有 107 个标签' })
 })
 
 export const patchCompanyChangeSchema = z.object({
   patchId: z.coerce
-    .number({ message: 'Galgame ID 必须为数字' })
+    .number({ message: 'OtomeGame ID 必须为数字' })
     .min(1)
     .max(9999999),
   companyId: z
@@ -33,7 +33,7 @@ export const patchCompanyChangeSchema = z.object({
       z.coerce.number({ message: '会社 ID 必须为数字' }).min(1).max(9999999)
     )
     .min(1)
-    .max(107, { message: '一个 Galgame 最多有 107 个会社' })
+    .max(107, { message: '一个 OtomeGame 最多有 107 个会社' })
 })
 
 export const patchCommentCreateSchema = z.object({
@@ -60,7 +60,7 @@ export const patchResourceCreateSchema = z.object({
   section: z
     .string()
     .refine((type) => SUPPORTED_RESOURCE_SECTION.includes(type), {
-      message: '资源链接类型仅能为 Galgame 或补丁'
+      message: '资源链接类型仅能为 OtomeGame 或补丁'
     }),
   name: z.string().max(300, { message: '资源名称最多 300 个字符' }),
   storage: z.string().refine((type) => SUPPORTED_RESOURCE_LINK.includes(type), {

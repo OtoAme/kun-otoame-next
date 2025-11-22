@@ -3,11 +3,11 @@ import { SUPPORTED_TYPE_MAP } from '~/constants/resource'
 import type { Metadata } from 'next'
 
 export const kunMetadata: Metadata = {
-  title: `Galgame 会社分类`,
-  description: `所有的 Galgame 会社分类, ${Object.values(SUPPORTED_TYPE_MAP).toString()} 下载`,
+  title: `OtomeGame 会社分类`,
+  description: `所有的 OtomeGame 会社分类, ${Object.values(SUPPORTED_TYPE_MAP).toString()} 下载`,
   openGraph: {
-    title: `Galgame 会社分类`,
-    description: `所有的 Galgame 会社分类, ${Object.values(SUPPORTED_TYPE_MAP).toString()} 下载`,
+    title: `OtomeGame 会社分类`,
+    description: `所有的 OtomeGame 会社分类, ${Object.values(SUPPORTED_TYPE_MAP).toString()} 下载`,
     type: 'website',
     images: kunMoyuMoe.images
   },

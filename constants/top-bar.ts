@@ -6,7 +6,7 @@ export interface KunNavItem {
 export const kunNavItem: KunNavItem[] = [
   {
     name: '游戏下载',
-    href: '/galgame'
+    href: '/otomegame'
   },
   {
     name: '游戏标签',
