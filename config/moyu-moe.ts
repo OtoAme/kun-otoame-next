@@ -1,44 +1,57 @@
 import { SUPPORTED_TYPE_MAP } from '~/constants/resource'
 import type { KunSiteConfig } from './config'
 
-const KUN_SITE_NAME = 'TouchGal'
-const KUN_SITE_MENTION = '@touchgal'
-const KUN_SITE_TITLE = 'TouchGal - 一站式Galgame文化社区!'
+const KUN_SITE_NAME = 'OtoAme'
+const KUN_SITE_MENTION = '@otoame'
+const KUN_SITE_TITLE = 'OtoAme - 一站式OtomeGame文化社区!'
 const KUN_SITE_IMAGE =
   'https://cloud.touchgaloss.com/uploads/20241217174250074.avif'
 const KUN_SITE_DESCRIPTION =
-  'TouchGal 是一个一站式 Galgame 文化社区。提供Galgame 论坛、Galgame 下载等服务。承诺永久免费, 高质量。为Galgame 爱好者提供一片净土！'
-const KUN_SITE_URL = 'https://www.touchgal.us'
-const KUN_SITE_ARCHIVE = 'https://archive.touchgal.co/'
-const KUN_SITE_FORUM = 'https://bbs.touchgal.co/'
-const KUN_SITE_NAV = 'https://gal.red'
-const KUN_SITE_TELEGRAM_GROUP = 'https://s.miku.cyou/2'
-const KUN_SITE_DISCORD_GROUP = 'https://discord.gg/e4QePvPQTB'
+  'OtoAme 是一个一站式 OtomeGame 文化社区， 提供 OtomeGame 下载等服务。承诺永久免费, 高质量。为 OtomeGame 爱好者提供一片净土！'
+const KUN_SITE_URL = 'https://www.otoame.top'
+const KUN_SITE_ARCHIVE = 'https://archive.otoame.top/'
+const KUN_SITE_FORUM = 'https://bbs.otoame.top/'                // 待修改 - 论坛
+const KUN_SITE_NAV = 'https://www.otoame.top'                   // 待修改 - 导航页
+const KUN_SITE_TELEGRAM_GROUP = 'https://s.miku.cyou/2'         // 待修改
+const KUN_SITE_DISCORD_GROUP = 'https://discord.gg/e4QePvPQTB'  // 待修改
 const KUN_SITE_LIST = [
-  { name: KUN_SITE_NAME, url: 'https://www.touchgal.net' },
-  { name: KUN_SITE_NAME, url: 'https://www.touchgal.moe' },
-  { name: KUN_SITE_NAME, url: 'https://www.touchgal.one' },
-  { name: KUN_SITE_NAME, url: 'https://www.touchgal.com' },
-  { name: KUN_SITE_NAME, url: 'https://www.touchgal.org' },
-  { name: KUN_SITE_NAME, url: 'https://www.touchgal.me' },
-  { name: KUN_SITE_NAME, url: 'https://www.touchgal.co' },
-  { name: KUN_SITE_NAME, url: 'https://www.touchgal.io' }
+  { name: KUN_SITE_NAME, url: 'https://www.otoame.top' },
+  // { name: KUN_SITE_NAME, url: 'https://www.touchgal.moe' },
+  // { name: KUN_SITE_NAME, url: 'https://www.touchgal.one' },
+  // { name: KUN_SITE_NAME, url: 'https://www.touchgal.com' },
+  // { name: KUN_SITE_NAME, url: 'https://www.touchgal.org' },
+  // { name: KUN_SITE_NAME, url: 'https://www.touchgal.me' },
+  // { name: KUN_SITE_NAME, url: 'https://www.touchgal.co' },
+  // { name: KUN_SITE_NAME, url: 'https://www.touchgal.io' }
 ]
 const KUN_SITE_KEYWORDS = [
-  'TouchGAL',
-  'Gal',
-  'Galgame',
+  'OtoAme',
+  'otome',
+  'OtomeGame',
+  '乙女',
+  '乙女游戏',
+  '乙女ゲーム',
+  '乙游',
+  '日乙',
   '论坛',
   '网站',
-  'Galgame 下载',
-  'Galgame 资源',
-  'Galgame wiki',
-  'Galgame 评测',
-  'Galgame 数据分析',
-  'Galgame 新作动态',
-  'Galgame 汉化 / 国际化',
-  'Galgame 制作',
-  'Galgame 讨论',
+  '乙女游戏 下载',
+  '乙女游戏 资源',
+  '乙女游戏 wiki',
+  '乙女游戏 评测',
+  '乙女游戏 数据分析',
+  '乙女游戏 新作动态',
+  '乙女游戏 汉化 / 国际化',
+  '乙女游戏 讨论',
+  'OtomeGame 下载',
+  'OtomeGame 资源',
+  'OtomeGame wiki',
+  'OtomeGame 评测',
+  'OtomeGame 数据分析',
+  'OtomeGame 新作动态',
+  'OtomeGame 汉化 / 国际化',
+  'OtomeGame 讨论',
+  // 'OtomeGame 制作',
   '游戏交流',
   '其他交流',
   ...Object.values(SUPPORTED_TYPE_MAP)
