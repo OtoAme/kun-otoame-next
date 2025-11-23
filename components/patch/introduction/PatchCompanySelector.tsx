@@ -210,7 +210,7 @@ export const PatchCompanySelector: FC<Props> = ({
         scrollBehavior="inside"
       >
         <ModalContent>
-          <ModalHeader>更改这个 Galgame 的所属会社</ModalHeader>
+          <ModalHeader>更改这个 OtomeGame 的所属会社</ModalHeader>
           <ModalBody>
             <SearchCompanies
               query={query}
@@ -245,7 +245,7 @@ export const PatchCompanySelector: FC<Props> = ({
                                 {company.name}
                               </span>
                               <Chip size="sm" variant="flat">
-                                {company.count} 个 Galgame
+                                {company.count} 个 OtomeGame
                               </Chip>
                             </div>
                           </div>
