@@ -22,16 +22,9 @@ import {
   RESOURCE_SECTION_MAP,
   SUPPORTED_RESOURCE_SECTION
 } from '~/constants/resource'
-import { KunResourceInfo } from './kun/KunResourceInfo'
-import { KunResourceDownload } from './kun/KunResourceDownload'
 import { KunLoading } from '~/components/kun/Loading'
 import { KunNull } from '~/components/kun/Null'
-import { KUN_PATCH_WEBSITE_GET_PATCH_LIST_ENDPOINT } from '~/config/external-api'
 import type { PatchResource } from '~/types/api/patch'
-import type {
-  HikariResponse,
-  KunPatchResourceResponse
-} from '~/types/api/kun/moyu-moe'
 import Link from 'next/link'
 import { kunMoyuMoe } from '~/config/moyu-moe'
 
@@ -57,42 +50,6 @@ export const ResourceTabs = ({
   const { user } = useUserStore((state) => state)
   const [selectedSection, setSelectedSection] =
     useState<ResourceSection>('galgame')
-
-  const [kunResources, setKunResources] = useState<KunPatchResourceResponse[]>(
-    []
-  )
-  const [kunLoading, setKunLoading] = useState(false)
-  const [kunLoaded, setKunLoaded] = useState(false)
-
-  const fetchKunPatchData = async () => {
-    if (!vndbId || kunLoaded) {
-      return
-    }
-
-    try {
-      setKunLoading(true)
-      const res = await fetch(
-        `${KUN_PATCH_WEBSITE_GET_PATCH_LIST_ENDPOINT}?vndb_id=${vndbId}`
-      )
-      const response = (await res.json()) as HikariResponse
-      if (response.success && response.data) {
-        setKunResources(response.data.resource)
-      } else {
-        setKunResources([])
-      }
-    } catch (err) {
-      setKunResources([])
-    } finally {
-      setKunLoading(false)
-      setKunLoaded(true)
-    }
-  }
-
-  useEffect(() => {
-    if (selectedSection === 'patch') {
-      fetchKunPatchData()
-    }
-  }, [selectedSection])
 
   const categorizedResources = SUPPORTED_RESOURCE_SECTION.reduce(
     (acc, section) => {
@@ -194,47 +151,7 @@ export const ResourceTabs = ({
                 </Card>
               )}
 
-              {section === 'patch' && (
-                <Card>
-                  <CardHeader>
-                    <Link target="_blank" href="https://www.moyu.moe/">
-                      <User
-                        avatarProps={{
-                          src: '/moyu-moe.webp',
-                          classNames: {
-                            base: 'bg-transparent'
-                          }
-                        }}
-                        description="来自鲲 Galgame 补丁的补丁下载资源"
-                        name="鲲 Galgame 补丁"
-                      />
-                    </Link>
-                  </CardHeader>
-                  <CardBody className="space-y-3">
-                    {kunLoading ? (
-                      <KunLoading hint="正在加载鲲 Galgame 补丁..." />
-                    ) : kunResources.length > 0 ? (
-                      <>
-                        {kunResources.map((resource) => (
-                          <div
-                            key={resource.id}
-                            className="border p-3 rounded-2xl border-default-200"
-                          >
-                            <div className="space-y-2">
-                              <KunResourceInfo resource={resource} />
-                              <KunResourceDownload resource={resource} />
-                            </div>
-                          </div>
-                        ))}
-                      </>
-                    ) : (
-                      kunLoaded && (
-                        <KunNull message="本游戏在鲲 Galgame 补丁暂无对应补丁" />
-                      )
-                    )}
-                  </CardBody>
-                </Card>
-              )}
+
 
               {community.length > 0 && (
                 <Card>

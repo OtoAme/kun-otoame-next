@@ -15,15 +15,18 @@ const kunFetchRequest = async <T>(
 
     const queryString = query
       ? '?' +
-        Object.entries(query)
-          .map(([key, value]) => `${key}=${value}`)
-          .join('&')
+      Object.entries(query)
+        .map(([key, value]) => `${key}=${value}`)
+        .join('&')
       : ''
 
-    const fetchAddress =
+    const isClient = typeof window !== 'undefined'
+    const envAddress =
       process.env.NODE_ENV === 'development'
         ? process.env.NEXT_PUBLIC_KUN_PATCH_ADDRESS_DEV
         : process.env.NEXT_PUBLIC_KUN_PATCH_ADDRESS_PROD
+
+    const fetchAddress = isClient ? '' : envAddress
     const fullUrl = `${fetchAddress}/api${url}${queryString}`
 
     const fetchOptions: RequestInit = {
