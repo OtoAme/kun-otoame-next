@@ -20,7 +20,7 @@ export interface GalleryImage {
 export const GalleryInput = () => {
   const [images, setImages] = useState<GalleryImage[]>([])
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
-  const [watermark, setWatermark] = useState(false)
+  const [watermark, setWatermark] = useState(true)
 
   useEffect(() => {
     const loadData = async () => {
@@ -40,6 +40,9 @@ export const GalleryInput = () => {
       )
       if (storedWatermark !== null) {
         setWatermark(storedWatermark)
+      } else {
+        setWatermark(true)
+        await localforage.setItem('kun-patch-gallery-watermark', true)
       }
     }
     loadData()

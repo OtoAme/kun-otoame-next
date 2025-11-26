@@ -51,7 +51,7 @@ export const useRewritePatchStore = create<StoreState>()((set, get) => ({
   data: initialState,
   newImages: [],
   newBanner: null,
-  watermark: false,
+  watermark: true,
   getData: () => get().data,
   setData: (data: RewritePatchData) => set({ data }),
   setNewImages: (newImages) => set({ newImages }),
