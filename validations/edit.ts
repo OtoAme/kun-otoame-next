@@ -30,19 +30,33 @@ export const patchUpdateSchema = z.object({
     .trim()
     .min(10, { message: '游戏介绍是必填项, 最少 10 个字符' })
     .max(100007, { message: '游戏介绍最多 100007 字' }),
-  tag: z.array(
-    z
-      .string()
-      .trim()
-      .min(1, { message: '单个标签至少一个字符' })
-      .max(500, { message: '单个标签至多 500 个字符' })
+  tag: z.preprocess(
+    (val) => {
+      if (val === undefined) return []
+      if (typeof val === 'string') return [val]
+      return val
+    },
+    z.array(
+      z
+        .string()
+        .trim()
+        .min(1, { message: '单个标签至少一个字符' })
+        .max(500, { message: '单个标签至多 500 个字符' })
+    )
   ),
-  alias: z.array(
-    z
-      .string()
-      .trim()
-      .min(1, { message: '单个别名至少一个字符' })
-      .max(500, { message: '单个别名至多 500 个字符' })
+  alias: z.preprocess(
+    (val) => {
+      if (val === undefined) return []
+      if (typeof val === 'string') return [val]
+      return val
+    },
+    z.array(
+      z
+        .string()
+        .trim()
+        .min(1, { message: '单个别名至少一个字符' })
+        .max(500, { message: '单个别名至多 500 个字符' })
+    )
   ),
   contentLimit: z.string().max(10),
   released: z.string().optional(),
