@@ -1,8 +1,8 @@
 'use client'
 
 import { useState } from 'react'
-import { EyeOff } from 'lucide-react'
 import { KunImageViewer } from '~/components/kun/image-viewer/ImageViewer'
+import { NSFWMask } from '~/components/kun/NSFWMask'
 import type { PatchImage } from '~/types/api/patch'
 
 interface Props {
@@ -42,18 +42,10 @@ const GalleryItem = ({
   onOpen: () => void
 }) => {
   const [isRevealed, setIsRevealed] = useState(!image.isNSFW)
-  const [isRemoving, setIsRemoving] = useState(false)
 
   const handleClick = () => {
     if (isRevealed) {
       onOpen()
-    } else {
-      setIsRemoving(true)
-      // Use setTimeout to allow animation to complete before removing element
-      setTimeout(() => {
-        setIsRevealed(true)
-        setIsRemoving(false)
-      }, 300)
     }
   }
 
@@ -68,16 +60,10 @@ const GalleryItem = ({
         className="w-full h-full object-cover transition-transform duration-500 will-change-transform group-hover:scale-110"
         loading="lazy"
       />
-      {!isRevealed && (
-        <div
-          className={`absolute inset-0 z-10 flex flex-col items-center justify-center bg-black/60 backdrop-blur-md rounded-lg transition-all duration-300 group-hover:bg-black/40 ${isRemoving ? 'opacity-0 scale-95' : 'opacity-100 scale-100'
-            }`}
-        >
-          <EyeOff className="mb-2 size-8 text-white transition-transform duration-200 group-hover:scale-110" />
-          <span className="text-sm font-medium text-white">NSFW 内容</span>
-          <span className="text-xs text-white/80">点击查看</span>
-        </div>
-      )}
+      <NSFWMask
+        isVisible={!isRevealed}
+        onReveal={() => setIsRevealed(true)}
+      />
     </div>
   )
 }

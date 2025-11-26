@@ -73,12 +73,14 @@ export const KunAutoImageViewer = () => {
     ? images.findIndex((img) => img.src === openImage)
     : -1
 
+  const closeLightbox = () => setOpenImage(null)
+
   return (
     <Lightbox
       index={currentImageIndex}
       slides={images}
       open={currentImageIndex >= 0}
-      close={() => setOpenImage(null)}
+      close={closeLightbox}
       plugins={[Zoom, Download]}
       animation={{ fade: 300 }}
       carousel={{
@@ -102,7 +104,7 @@ export const KunAutoImageViewer = () => {
         closeOnBackdropClick: true
       }}
       on={{
-        click: () => setOpenImage(null)
+        click: closeLightbox
       }}
       styles={{ container: { backgroundColor: 'rgba(0, 0, 0, .7)' } }}
     />

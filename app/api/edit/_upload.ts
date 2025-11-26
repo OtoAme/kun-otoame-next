@@ -2,6 +2,7 @@ import sharp from 'sharp'
 
 import { uploadImageToS3 } from '~/lib/s3'
 import { checkBufferSize } from '~/app/api/utils/checkBufferSize'
+import { generateWatermarkSVG, watermarkConfig } from '~/config/watermark'
 
 export const uploadPatchBanner = async (image: ArrayBuffer, id: number) => {
   const banner = await sharp(image)
@@ -41,18 +42,11 @@ export const uploadPatchGalleryImage = async (
   })
 
   if (watermark) {
-    const svgImage = `
-    <svg width="200" height="200" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
-      <text x="50%" y="50%" text-anchor="middle" dominant-baseline="middle"
-        fill="rgba(255, 255, 255, 0.12)" font-size="24" font-family="Arial" font-weight="bold"
-        transform="rotate(-45, 100, 100)">OtoAme</text>
-    </svg>
-    `
+    const svgImage = generateWatermarkSVG()
     pipeline = pipeline.composite([
       {
         input: Buffer.from(svgImage),
-        tile: true,
-        blend: 'over'
+        ...watermarkConfig.composite
       }
     ])
   }

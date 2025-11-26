@@ -26,6 +26,7 @@ export const KunImageViewer = ({ images, children }: Props) => {
   }))
 
   const openLightbox = (index: number) => setIndex(index)
+  const closeLightbox = () => setIndex(-1)
 
   return (
     <>
@@ -34,7 +35,7 @@ export const KunImageViewer = ({ images, children }: Props) => {
         index={index}
         slides={lightboxImages}
         open={index >= 0}
-        close={() => setIndex(-1)}
+        close={closeLightbox}
         plugins={[Zoom, Download]}
         animation={{ fade: 300 }}
         carousel={{
@@ -51,7 +52,7 @@ export const KunImageViewer = ({ images, children }: Props) => {
           closeOnPullDown: false
         }}
         on={{
-          click: () => setIndex(-1)
+          click: closeLightbox
         }}
         styles={{ container: { backgroundColor: 'rgba(0, 0, 0, .7)' } }}
       />
