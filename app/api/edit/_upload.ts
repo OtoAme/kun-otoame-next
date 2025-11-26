@@ -26,8 +26,10 @@ export const uploadPatchBanner = async (image: ArrayBuffer, id: number) => {
 
   const bucketName = `patch/${id}/banner`
 
-  await uploadImageToS3(`${bucketName}/banner.avif`, banner)
-  await uploadImageToS3(`${bucketName}/banner-mini.avif`, miniBanner)
+  await Promise.all([
+    uploadImageToS3(`${bucketName}/banner.avif`, banner),
+    uploadImageToS3(`${bucketName}/banner-mini.avif`, miniBanner)
+  ])
 }
 
 export const uploadPatchGalleryImage = async (

@@ -7,6 +7,7 @@ import { handleBatchPatchTags } from './batchTag'
 import { kunMoyuMoe } from '~/config/moyu-moe'
 import { postToIndexNow } from './_postToIndexNow'
 import { ensurePatchCompaniesFromVNDB } from './fetchCompanies'
+import { pLimit } from '~/utils/pLimit'
 
 export const createGalgame = async (
   input: Omit<z.infer<typeof patchCreateSchema>, 'alias' | 'tag'> & {
@@ -66,38 +67,42 @@ export const createGalgame = async (
           watermark: boolean
         }[]
         const galleryFiles = Array.isArray(gallery) ? gallery : [gallery]
+        const limit = pLimit(2)
 
-        for (let i = 0; i < galleryFiles.length; i++) {
-          const file = galleryFiles[i] as File
-          const meta = metadata[i]
+        await Promise.all(
+          galleryFiles.map((file, i) =>
+            limit(async () => {
+              const meta = metadata[i]
 
-          const galleryRecord = await prisma.patch_game_image.create({
-            data: {
-              patch_id: newId,
-              url: '',
-              is_nsfw: meta.isNSFW
-            }
-          })
+              const galleryRecord = await prisma.patch_game_image.create({
+                data: {
+                  patch_id: newId,
+                  url: '',
+                  is_nsfw: meta.isNSFW
+                }
+              })
 
-          const arrayBuffer = await file.arrayBuffer()
-          const uploadRes = await uploadPatchGalleryImage(
-            arrayBuffer,
-            newId,
-            galleryRecord.id,
-            meta.watermark
+              const arrayBuffer = await (file as File).arrayBuffer()
+              const uploadRes = await uploadPatchGalleryImage(
+                arrayBuffer,
+                newId,
+                galleryRecord.id,
+                meta.watermark
+              )
+
+              if (typeof uploadRes === 'string') {
+                throw new Error(`Gallery upload failed: ${uploadRes}`)
+              }
+
+              const imageUrl = `${process.env.KUN_VISUAL_NOVEL_IMAGE_BED_URL}/patch/${newId}/gallery/${galleryRecord.id}.avif`
+
+              await prisma.patch_game_image.update({
+                where: { id: galleryRecord.id },
+                data: { url: imageUrl }
+              })
+            })
           )
-
-          if (typeof uploadRes === 'string') {
-            throw new Error(`Gallery upload failed: ${uploadRes}`)
-          }
-
-          const imageUrl = `${process.env.KUN_VISUAL_NOVEL_IMAGE_BED_URL}/patch/${newId}/gallery/${galleryRecord.id}.avif`
-
-          await prisma.patch_game_image.update({
-            where: { id: galleryRecord.id },
-            data: { url: imageUrl }
-          })
-        }
+        )
       }
 
       // Ensure rating_stat row exists for this patch
@@ -133,20 +138,24 @@ export const createGalgame = async (
     return res
   }
 
+  const tasks: Promise<any>[] = []
+
   if (vndbId) {
-    try {
-      await ensurePatchCompaniesFromVNDB(res.patchId, vndbId, uid)
-    } catch { }
+    tasks.push(
+      ensurePatchCompaniesFromVNDB(res.patchId, vndbId, uid).catch(() => { })
+    )
   }
 
   if (tag.length) {
-    await handleBatchPatchTags(res.patchId, tag, uid)
+    tasks.push(handleBatchPatchTags(res.patchId, tag, uid))
   }
 
   if (contentLimit === 'sfw') {
     const newPatchUrl = `${kunMoyuMoe.domain.main}/${galgameUniqueId}`
-    await postToIndexNow(newPatchUrl)
+    tasks.push(postToIndexNow(newPatchUrl))
   }
+
+  await Promise.all(tasks)
 
   return { uniqueId: galgameUniqueId }
 }

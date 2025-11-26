@@ -4,6 +4,7 @@ import { patchUpdateSchema } from '~/validations/edit'
 import { handleBatchPatchTags } from './batchTag'
 import { uploadPatchGalleryImage, uploadPatchBanner } from './_upload'
 import { purgePatchBannerCache } from '~/app/api/utils/purgeCache'
+import { pLimit } from '~/utils/pLimit'
 
 export const updateGalgame = async (
   input: z.infer<typeof patchUpdateSchema>,
@@ -90,7 +91,7 @@ export const updateGalgame = async (
       })
     }
 
-    for (const keep of metadata.keep) {
+    const updatePromises = metadata.keep.map(async (keep) => {
       const current = currentImages.find((img) => img.id === keep.id)
       if (current && current.is_nsfw !== keep.is_nsfw) {
         await prisma.patch_game_image.update({
@@ -98,43 +99,48 @@ export const updateGalgame = async (
           data: { is_nsfw: keep.is_nsfw }
         })
       }
-    }
+    })
+    await Promise.all(updatePromises)
 
     if (gallery) {
       const files = Array.isArray(gallery) ? gallery : [gallery]
+      const limit = pLimit(2)
 
-      for (let i = 0; i < files.length; i++) {
-        const file = files[i]
-        const meta = metadata.new[i]
-        if (!meta) continue
+      await Promise.all(
+        files.map((file, i) =>
+          limit(async () => {
+            const meta = metadata.new[i]
+            if (!meta) return
 
-        const galleryRecord = await prisma.patch_game_image.create({
-          data: {
-            url: '',
-            is_nsfw: meta.is_nsfw,
-            patch_id: id
-          }
-        })
+            const galleryRecord = await prisma.patch_game_image.create({
+              data: {
+                url: '',
+                is_nsfw: meta.is_nsfw,
+                patch_id: id
+              }
+            })
 
-        const buffer = await file.arrayBuffer()
-        const uploadRes = await uploadPatchGalleryImage(
-          buffer,
-          id,
-          galleryRecord.id,
-          metadata.watermark ?? false
+            const buffer = await file.arrayBuffer()
+            const uploadRes = await uploadPatchGalleryImage(
+              buffer,
+              id,
+              galleryRecord.id,
+              metadata.watermark ?? false
+            )
+
+            if (typeof uploadRes === 'string') {
+              throw new Error(`Gallery upload failed: ${uploadRes}`)
+            }
+
+            const imageUrl = `${process.env.KUN_VISUAL_NOVEL_IMAGE_BED_URL}/patch/${id}/gallery/${galleryRecord.id}.avif`
+
+            await prisma.patch_game_image.update({
+              where: { id: galleryRecord.id },
+              data: { url: imageUrl }
+            })
+          })
         )
-
-        if (typeof uploadRes === 'string') {
-          throw new Error(`Gallery upload failed: ${uploadRes}`)
-        }
-
-        const imageUrl = `${process.env.KUN_VISUAL_NOVEL_IMAGE_BED_URL}/patch/${id}/gallery/${galleryRecord.id}.avif`
-
-        await prisma.patch_game_image.update({
-          where: { id: galleryRecord.id },
-          data: { url: imageUrl }
-        })
-      }
+      )
     }
   }
 
