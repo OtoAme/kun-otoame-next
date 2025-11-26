@@ -101,6 +101,9 @@ export const KunAutoImageViewer = () => {
       controller={{
         closeOnBackdropClick: true
       }}
+      on={{
+        click: () => setOpenImage(null)
+      }}
       styles={{ container: { backgroundColor: 'rgba(0, 0, 0, .7)' } }}
     />
   )

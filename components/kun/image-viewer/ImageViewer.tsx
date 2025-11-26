@@ -50,6 +50,9 @@ export const KunImageViewer = ({ images, children }: Props) => {
           closeOnPullUp: false,
           closeOnPullDown: false
         }}
+        on={{
+          click: () => setIndex(-1)
+        }}
         styles={{ container: { backgroundColor: 'rgba(0, 0, 0, .7)' } }}
       />
     </>
