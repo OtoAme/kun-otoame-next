@@ -2,10 +2,9 @@
 
 import { useEffect, useState } from 'react'
 import Lightbox from 'yet-another-react-lightbox'
-import Zoom from 'yet-another-react-lightbox/plugins/zoom'
-import Download from 'yet-another-react-lightbox/plugins/download'
 import 'yet-another-react-lightbox/styles.css'
 import { useMounted } from '~/hooks/useMounted'
+import { lightboxConfig } from './config'
 
 export const KunAutoImageViewer = () => {
   const [openImage, setOpenImage] = useState<string | null>(null)
@@ -81,32 +80,10 @@ export const KunAutoImageViewer = () => {
       slides={images}
       open={currentImageIndex >= 0}
       close={closeLightbox}
-      plugins={[Zoom, Download]}
-      animation={{ fade: 300 }}
-      carousel={{
-        finite: true,
-        preload: 2,
-        imageProps: {
-          style: {
-            maxWidth: 'none',
-            maxHeight: 'none',
-            width: '100%',
-            height: '100%',
-            objectFit: 'contain'
-          }
-        }
-      }}
-      zoom={{
-        maxZoomPixelRatio: 3,
-        scrollToZoom: true
-      }}
-      controller={{
-        closeOnBackdropClick: true
-      }}
       on={{
         click: closeLightbox
       }}
-      styles={{ container: { backgroundColor: 'rgba(0, 0, 0, .7)' } }}
+      {...lightboxConfig}
     />
   )
 }

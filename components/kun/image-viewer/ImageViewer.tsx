@@ -2,10 +2,9 @@
 
 import { useState } from 'react'
 import Lightbox from 'yet-another-react-lightbox'
-import Zoom from 'yet-another-react-lightbox/plugins/zoom'
-import Download from 'yet-another-react-lightbox/plugins/download'
 import 'yet-another-react-lightbox/styles.css'
 import type { ReactNode } from 'react'
+import { lightboxConfig } from './config'
 
 interface Props {
   images: {
@@ -36,25 +35,10 @@ export const KunImageViewer = ({ images, children }: Props) => {
         slides={lightboxImages}
         open={index >= 0}
         close={closeLightbox}
-        plugins={[Zoom, Download]}
-        animation={{ fade: 300 }}
-        carousel={{
-          finite: true,
-          preload: 2
-        }}
-        zoom={{
-          maxZoomPixelRatio: 3,
-          scrollToZoom: false
-        }}
-        controller={{
-          closeOnBackdropClick: true,
-          closeOnPullUp: false,
-          closeOnPullDown: false
-        }}
         on={{
           click: closeLightbox
         }}
-        styles={{ container: { backgroundColor: 'rgba(0, 0, 0, .7)' } }}
+        {...lightboxConfig}
       />
     </>
   )
