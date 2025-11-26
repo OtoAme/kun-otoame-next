@@ -46,6 +46,12 @@ export interface PatchRatingSummary {
   }
 }
 
+export interface PatchImage {
+  id: number
+  url: string
+  isNSFW: boolean
+}
+
 export interface PatchIntroduction {
   vndbId: string | null
   introduction: string
@@ -53,6 +59,7 @@ export interface PatchIntroduction {
   alias: string[]
   tag: Tag[]
   company: Company[]
+  images: PatchImage[]
   resourceUpdateTime: Date | string
   created: Date | string
   updated: Date | string

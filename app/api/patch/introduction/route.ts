@@ -54,6 +54,13 @@ export const getPatchIntroduction = async (
             }
           }
         }
+      },
+      images: {
+        select: {
+          id: true,
+          url: true,
+          is_nsfw: true
+        }
       }
     }
   })
@@ -68,6 +75,11 @@ export const getPatchIntroduction = async (
     alias: patch.alias.map((a) => a.name),
     tag: patch.tag.map((tag) => tag.tag),
     company: patch.company.map((company) => company.company),
+    images: patch.images.map((img) => ({
+      id: img.id,
+      url: img.url,
+      isNSFW: img.is_nsfw
+    })),
     created: patch.created,
     updated: patch.updated,
     resourceUpdateTime: patch.resource_update_time

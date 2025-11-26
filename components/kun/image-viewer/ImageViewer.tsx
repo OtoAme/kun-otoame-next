@@ -14,7 +14,7 @@ interface Props {
     width?: number
     height?: number
   }[]
-  children: (openLightbox: () => void) => ReactNode
+  children: (openLightbox: (index: number) => void) => ReactNode
 }
 
 export const KunImageViewer = ({ images, children }: Props) => {
@@ -29,7 +29,7 @@ export const KunImageViewer = ({ images, children }: Props) => {
 
   return (
     <>
-      {children(() => openLightbox(0))}
+      {children(openLightbox)}
       <Lightbox
         index={index}
         slides={lightboxImages}
@@ -43,10 +43,12 @@ export const KunImageViewer = ({ images, children }: Props) => {
         }}
         zoom={{
           maxZoomPixelRatio: 3,
-          scrollToZoom: true
+          scrollToZoom: false
         }}
         controller={{
-          closeOnBackdropClick: true
+          closeOnBackdropClick: true,
+          closeOnPullUp: false,
+          closeOnPullDown: false
         }}
         styles={{ container: { backgroundColor: 'rgba(0, 0, 0, .7)' } }}
       />

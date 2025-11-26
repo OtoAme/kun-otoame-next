@@ -5,13 +5,15 @@ import { Button, Card, CardBody, CardHeader } from '@heroui/react'
 import { useRewritePatchStore } from '~/store/rewriteStore'
 import { KunDualEditorProvider } from '~/components/kun/milkdown/DualEditorProvider'
 import toast from 'react-hot-toast'
-import { kunFetchPut } from '~/utils/kunFetch'
+import { kunFetchPutFormData } from '~/utils/kunFetch'
 import { kunErrorHandler } from '~/utils/kunErrorHandler'
 import { patchUpdateSchema } from '~/validations/edit'
 import { useRouter } from '@bprogress/next'
 import { GameNameInput } from './GameNameInput'
 import { AliasManager } from './AliasManager'
 import { ContentLimit } from './ContentLimit'
+import { RewriteGalleryInput } from './RewriteGalleryInput'
+import { RewriteBanner } from './RewriteBanner'
 import { BatchTag } from '../components/BatchTag'
 import { ReleaseDateInput } from '../components/ReleaseDateInput'
 import { VNDBInput } from './VNDBInput'
@@ -19,7 +21,7 @@ import type { RewritePatchData } from '~/store/rewriteStore'
 
 export const RewritePatch = () => {
   const router = useRouter()
-  const { data, setData } = useRewritePatchStore()
+  const { data, setData, newImages, newBanner } = useRewritePatchStore()
   const [errors, setErrors] = useState<
     Partial<Record<keyof RewritePatchData, string>>
   >({})
@@ -54,7 +56,35 @@ export const RewritePatch = () => {
 
     setRewriting(true)
 
-    const res = kunFetchPut<KunResponse<{}>>('/edit', { ...data })
+    const formData = new FormData()
+    formData.append('id', data.id.toString())
+    formData.append('name', data.name)
+    if (data.vndbId) formData.append('vndbId', data.vndbId)
+    formData.append('introduction', data.introduction)
+    formData.append('contentLimit', data.contentLimit)
+    if (data.released) formData.append('released', data.released)
+
+    data.alias.forEach((a) => formData.append('alias', a))
+    data.tag.forEach((t) => formData.append('tag', t))
+
+    const { watermark } = useRewritePatchStore.getState()
+
+    const galleryMetadata = {
+      keep: data.images.map((img) => ({ id: img.id, is_nsfw: img.is_nsfw })),
+      new: newImages.map((img) => ({ id: img.id, is_nsfw: img.isNSFW })),
+      watermark
+    }
+    formData.append('galleryMetadata', JSON.stringify(galleryMetadata))
+
+    newImages.forEach((img) => {
+      formData.append('gallery', img.file)
+    })
+
+    if (newBanner) {
+      formData.append('banner', newBanner)
+    }
+
+    const res = await kunFetchPutFormData<KunResponse<{}>>('/edit', formData)
     kunErrorHandler(res, async () => {
       router.push(`/${data.uniqueId}`)
     })
@@ -88,6 +118,8 @@ export const RewritePatch = () => {
             error={errors.name}
           />
 
+          <RewriteBanner />
+
           <div className="space-y-2">
             <h2 className="text-xl">游戏介绍 (可选)</h2>
             {errors.introduction && (
@@ -95,6 +127,8 @@ export const RewritePatch = () => {
             )}
             <KunDualEditorProvider storeName="patchRewrite" />
           </div>
+
+          <RewriteGalleryInput />
 
           <AliasManager
             aliasList={data.alias}

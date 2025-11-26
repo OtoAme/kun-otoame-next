@@ -2,6 +2,8 @@ import { z } from 'zod'
 import { prisma } from '~/prisma/index'
 import { patchUpdateSchema } from '~/validations/edit'
 import { handleBatchPatchTags } from './batchTag'
+import { uploadPatchGalleryImage, uploadPatchBanner } from './_upload'
+import { purgePatchBannerCache } from '~/app/api/utils/purgeCache'
 
 export const updateGalgame = async (
   input: z.infer<typeof patchUpdateSchema>,
@@ -50,6 +52,91 @@ export const updateGalgame = async (
       skipDuplicates: true
     })
   })
+
+  if (input.banner) {
+    const buffer = await input.banner.arrayBuffer()
+    const res = await uploadPatchBanner(buffer, id)
+    if (typeof res === 'string') {
+      return res
+    }
+    await purgePatchBannerCache(id)
+
+    // Update the banner URL in the database to ensure it's correct
+    // and to potentially trigger any update hooks if they exist
+    const timestamp = Date.now()
+    const imageLink = `${process.env.KUN_VISUAL_NOVEL_IMAGE_BED_URL}/patch/${id}/banner/banner.avif?t=${timestamp}`
+    await prisma.patch.update({
+      where: { id },
+      data: { banner: imageLink }
+    })
+  } const { gallery, galleryMetadata } = input
+
+  if (galleryMetadata) {
+    const metadata = JSON.parse(galleryMetadata) as {
+      keep: { id: number; is_nsfw: boolean }[]
+      new: { id: string; is_nsfw: boolean }[]
+      watermark?: boolean
+    }
+
+    const currentImages = await prisma.patch_game_image.findMany({
+      where: { patch_id: id }
+    })
+    const keepIds = new Set(metadata.keep.map((k) => k.id))
+
+    const toDelete = currentImages.filter((img) => !keepIds.has(img.id))
+    if (toDelete.length > 0) {
+      await prisma.patch_game_image.deleteMany({
+        where: { id: { in: toDelete.map((img) => img.id) } }
+      })
+    }
+
+    for (const keep of metadata.keep) {
+      const current = currentImages.find((img) => img.id === keep.id)
+      if (current && current.is_nsfw !== keep.is_nsfw) {
+        await prisma.patch_game_image.update({
+          where: { id: keep.id },
+          data: { is_nsfw: keep.is_nsfw }
+        })
+      }
+    }
+
+    if (gallery) {
+      const files = Array.isArray(gallery) ? gallery : [gallery]
+
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i]
+        const meta = metadata.new[i]
+        if (!meta) continue
+
+        const galleryRecord = await prisma.patch_game_image.create({
+          data: {
+            url: '',
+            is_nsfw: meta.is_nsfw,
+            patch_id: id
+          }
+        })
+
+        const buffer = await file.arrayBuffer()
+        const uploadRes = await uploadPatchGalleryImage(
+          buffer,
+          id,
+          galleryRecord.id,
+          metadata.watermark ?? false
+        )
+
+        if (typeof uploadRes === 'string') {
+          throw new Error(`Gallery upload failed: ${uploadRes}`)
+        }
+
+        const imageUrl = `${process.env.KUN_VISUAL_NOVEL_IMAGE_BED_URL}/patch/${id}/gallery/${galleryRecord.id}.avif`
+
+        await prisma.patch_game_image.update({
+          where: { id: galleryRecord.id },
+          data: { url: imageUrl }
+        })
+      }
+    }
+  }
 
   if (input.tag.length) {
     await handleBatchPatchTags(input.id, input.tag, uid)

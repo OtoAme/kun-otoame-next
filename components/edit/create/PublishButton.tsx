@@ -11,6 +11,7 @@ import { patchCreateSchema } from '~/validations/edit'
 import { useRouter } from '@bprogress/next'
 import type { Dispatch, SetStateAction } from 'react'
 import type { CreatePatchRequestData } from '~/store/editStore'
+import type { GalleryImage } from './GalleryInput'
 
 interface Props {
   setErrors: Dispatch<
@@ -62,6 +63,23 @@ export const PublishButton = ({ setErrors }: Props) => {
     formDataToSend.append('released', data.released)
     formDataToSend.append('contentLimit', data.contentLimit)
 
+    const galleryImages =
+      await localforage.getItem<GalleryImage[]>('kun-patch-gallery')
+    const watermark = await localforage.getItem<boolean>(
+      'kun-patch-gallery-watermark'
+    )
+
+    if (galleryImages && galleryImages.length > 0) {
+      galleryImages.forEach((img) => {
+        formDataToSend.append('gallery', img.blob)
+      })
+      const metadata = galleryImages.map((img) => ({
+        isNSFW: img.isNSFW,
+        watermark: !!watermark
+      }))
+      formDataToSend.append('galleryMetadata', JSON.stringify(metadata))
+    }
+
     setCreating(true)
     toast('正在发布中 ... 这可能需要 10s 左右的时间, 这取决于您的网络环境')
 
@@ -73,6 +91,8 @@ export const PublishButton = ({ setErrors }: Props) => {
     kunErrorHandler(res, async (value) => {
       resetData()
       await localforage.removeItem('kun-patch-banner')
+      await localforage.removeItem('kun-patch-gallery')
+      await localforage.removeItem('kun-patch-gallery-watermark')
       router.push(`/${value.uniqueId}`)
     })
     toast.success('发布完成, 正在为您跳转到资源介绍页面')

@@ -8,6 +8,7 @@ import { AliasInput } from './AliasInput'
 import { BannerImage } from './BannerImage'
 import { PublishButton } from './PublishButton'
 import { PatchIntroduction } from './PatchIntroduction'
+import { GalleryInput } from './GalleryInput'
 import { ContentLimit } from './ContentLimit'
 import { BatchTag } from '../components/BatchTag'
 import { ReleaseDateInput } from '../components/ReleaseDateInput'
@@ -47,6 +48,8 @@ export const CreatePatch = () => {
           <BannerImage errors={errors.banner} />
 
           <PatchIntroduction errors={errors.banner} />
+
+          <GalleryInput />
 
           <AliasInput errors={errors.alias} />
 

@@ -32,7 +32,13 @@ export const PatchHeaderContainer = ({
       alias: patch.alias,
       tag: patch.tags,
       contentLimit: patch.contentLimit,
-      released: intro.released
+      released: intro.released,
+      images: intro.images.map((img) => ({
+        id: img.id,
+        url: img.url,
+        is_nsfw: img.isNSFW
+      })),
+      bannerUrl: patch.banner
     })
   }, [])
 

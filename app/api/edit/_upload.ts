@@ -28,3 +28,41 @@ export const uploadPatchBanner = async (image: ArrayBuffer, id: number) => {
   await uploadImageToS3(`${bucketName}/banner.avif`, banner)
   await uploadImageToS3(`${bucketName}/banner-mini.avif`, miniBanner)
 }
+
+export const uploadPatchGalleryImage = async (
+  image: ArrayBuffer,
+  patchId: number,
+  imageId: number,
+  watermark: boolean
+) => {
+  let pipeline = sharp(image).resize(1920, 1080, {
+    fit: 'inside',
+    withoutEnlargement: true
+  })
+
+  if (watermark) {
+    const svgImage = `
+    <svg width="300" height="300" viewBox="0 0 300 300" xmlns="http://www.w3.org/2000/svg">
+      <text x="50%" y="50%" text-anchor="middle" dominant-baseline="middle"
+        fill="rgba(255, 255, 255, 0.15)" font-size="40" font-family="Arial" font-weight="bold"
+        transform="rotate(-45, 150, 150)">OtoAme</text>
+    </svg>
+    `
+    pipeline = pipeline.composite([
+      {
+        input: Buffer.from(svgImage),
+        tile: true,
+        blend: 'over'
+      }
+    ])
+  }
+
+  const buffer = await pipeline.avif({ quality: 60 }).toBuffer()
+
+  if (!checkBufferSize(buffer, 1.5)) {
+    return '图片体积过大'
+  }
+
+  const bucketName = `patch/${patchId}/gallery`
+  await uploadImageToS3(`${bucketName}/${imageId}.avif`, buffer)
+}

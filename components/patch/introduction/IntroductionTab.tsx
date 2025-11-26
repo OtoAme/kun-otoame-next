@@ -16,6 +16,7 @@ import type { PatchIntroduction } from '~/types/api/patch'
 // @ts-expect-error Include a description after the "@ts-expect-error" directive
 import './_adjust.scss'
 import { PatchCompany } from './Company'
+import { Gallery } from '../gallery/Gallery'
 
 const KunPlyr = dynamic(
   () =>
@@ -96,6 +97,8 @@ export const IntroductionTab = ({ intro, patchId, uid }: Props) => {
           }}
           className="kun-prose max-w-none"
         />
+
+        <Gallery images={intro.images} />
 
         {/* <div className="mt-4">
           <h3 className="mb-4 text-xl font-medium">游戏制作商</h3>

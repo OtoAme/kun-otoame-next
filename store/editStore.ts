@@ -13,6 +13,8 @@ export interface CreatePatchData {
 
 export interface CreatePatchRequestData extends CreatePatchData {
   banner: Blob | null
+  gallery?: Blob[]
+  galleryMetadata?: string
 }
 
 interface StoreState {

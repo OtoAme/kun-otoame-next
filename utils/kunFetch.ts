@@ -96,3 +96,10 @@ export const kunFetchFormData = async <T>(
   }
   return kunFetchRequest<T>(url, 'POST', { formData })
 }
+
+export const kunFetchPutFormData = async <T>(
+  url: string,
+  formData: FormData
+): Promise<T> => {
+  return kunFetchRequest<T>(url, 'PUT', { formData })
+}

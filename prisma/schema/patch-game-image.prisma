@@ -1,0 +1,12 @@
+model patch_game_image {
+  id       Int     @id @default(autoincrement())
+  url      String  @db.VarChar(1007)
+  is_nsfw  Boolean @default(false)
+  patch_id Int
+  patch    patch   @relation(fields: [patch_id], references: [id], onDelete: Cascade)
+
+  created DateTime @default(now())
+  updated DateTime @updatedAt
+
+  @@index([patch_id])
+}

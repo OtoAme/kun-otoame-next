@@ -55,7 +55,7 @@ export const POST = async (req: NextRequest) => {
 }
 
 export const PUT = async (req: NextRequest) => {
-  const input = await kunParsePutBody(req, patchUpdateSchema)
+  const input = await kunParseFormData(req, patchUpdateSchema)
   if (typeof input === 'string') {
     return NextResponse.json(input)
   }
@@ -67,6 +67,18 @@ export const PUT = async (req: NextRequest) => {
     return NextResponse.json('本页面仅管理员可访问')
   }
 
-  const response = await updateGalgame(input, payload.uid)
+  const { alias, tag, ...rest } = input
+
+  if (alias.length > 100) {
+    return NextResponse.json('您最多使用 100 个别名')
+  }
+  if (tag.length > 100) {
+    return NextResponse.json('您最多使用 100 个标签')
+  }
+
+  const response = await updateGalgame(
+    { alias, tag, ...rest },
+    payload.uid
+  )
   return NextResponse.json(response)
 }

@@ -1,7 +1,7 @@
 import crypto from 'crypto'
 import { z } from 'zod'
 import { prisma } from '~/prisma/index'
-import { uploadPatchBanner } from './_upload'
+import { uploadPatchBanner, uploadPatchGalleryImage } from './_upload'
 import { patchCreateSchema } from '~/validations/edit'
 import { handleBatchPatchTags } from './batchTag'
 import { kunMoyuMoe } from '~/config/moyu-moe'
@@ -23,7 +23,9 @@ export const createGalgame = async (
     tag,
     introduction,
     released,
-    contentLimit
+    contentLimit,
+    gallery,
+    galleryMetadata
   } = input
 
   const bannerArrayBuffer = banner as ArrayBuffer
@@ -50,12 +52,53 @@ export const createGalgame = async (
       if (typeof uploadResult === 'string') {
         return uploadResult
       }
-      const imageLink = `${process.env.KUN_VISUAL_NOVEL_IMAGE_BED_URL}/patch/${newId}/banner/banner.avif`
+      const timestamp = Date.now()
+      const imageLink = `${process.env.KUN_VISUAL_NOVEL_IMAGE_BED_URL}/patch/${newId}/banner/banner.avif?t=${timestamp}`
 
       await prisma.patch.update({
         where: { id: newId },
         data: { banner: imageLink }
       })
+
+      if (gallery && galleryMetadata) {
+        const metadata = JSON.parse(galleryMetadata) as {
+          isNSFW: boolean
+          watermark: boolean
+        }[]
+        const galleryFiles = Array.isArray(gallery) ? gallery : [gallery]
+
+        for (let i = 0; i < galleryFiles.length; i++) {
+          const file = galleryFiles[i] as File
+          const meta = metadata[i]
+
+          const galleryRecord = await prisma.patch_game_image.create({
+            data: {
+              patch_id: newId,
+              url: '',
+              is_nsfw: meta.isNSFW
+            }
+          })
+
+          const arrayBuffer = await file.arrayBuffer()
+          const uploadRes = await uploadPatchGalleryImage(
+            arrayBuffer,
+            newId,
+            galleryRecord.id,
+            meta.watermark
+          )
+
+          if (typeof uploadRes === 'string') {
+            throw new Error(`Gallery upload failed: ${uploadRes}`)
+          }
+
+          const imageUrl = `${process.env.KUN_VISUAL_NOVEL_IMAGE_BED_URL}/patch/${newId}/gallery/${galleryRecord.id}.avif`
+
+          await prisma.patch_game_image.update({
+            where: { id: galleryRecord.id },
+            data: { url: imageUrl }
+          })
+        }
+      }
 
       // Ensure rating_stat row exists for this patch
       await prisma.patch_rating_stat.create({
@@ -93,7 +136,7 @@ export const createGalgame = async (
   if (vndbId) {
     try {
       await ensurePatchCompaniesFromVNDB(res.patchId, vndbId, uid)
-    } catch {}
+    } catch { }
   }
 
   if (tag.length) {
