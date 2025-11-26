@@ -26,11 +26,11 @@ const toCompanyCreate = (producer: VndbProducer, uid: number) => {
   const alias = uniq(aliasRaw)
   const official_website = Array.isArray(producer?.extlinks)
     ? uniq(
-        producer.extlinks
-          .map((l) => l?.url)
-          .filter(Boolean)
-          .map((u) => String(u))
-      )
+      producer.extlinks
+        .map((l) => l?.url)
+        .filter(Boolean)
+        .map((u) => String(u))
+    )
     : []
   return {
     name,
@@ -74,7 +74,7 @@ export const ensurePatchCompaniesFromVNDB = async (
     }
 
     const devs = (data?.results?.[0]?.developers ?? []).filter(
-      (d) => d && d.type === 'co'
+      (d) => d && ['co', 'ng', 'in'].includes(d.type || '')
     ) as VndbProducer[]
 
     if (!devs.length) return { ensured: 0, related: 0 }
