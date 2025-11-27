@@ -27,6 +27,7 @@ export const TYPE_MAP = {
   全部类型: 'all',
   PC游戏: 'pc',
   汉化资源: 'chinese',
+  官方中文: 'official-zh',
   PE游戏: 'mobile',
   模拟器资源: 'emulator',
   生肉资源: 'row',

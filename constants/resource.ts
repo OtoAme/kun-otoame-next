@@ -15,6 +15,11 @@ export const resourceTypes = [
     description: '汉化 OtomeGame 下载资源, 有简体中文或繁体中文支持'
   },
   {
+    value: 'official-zh',
+    label: '官方中文',
+    description: '官方发行的中文版 OtomeGame'
+  },
+  {
     value: 'patch',
     label: '补丁资源',
     description: '与这个 OtomeGame 相关的补丁资源'
@@ -55,6 +60,7 @@ export const resourceTypes = [
 export const SUPPORTED_TYPE = [
   'pc',
   'chinese',
+  'official-zh',
   'mobile',
   'emulator',
   'row',
@@ -68,6 +74,7 @@ export const SUPPORTED_TYPE_MAP: Record<string, string> = {
   all: '全部类型',
   pc: 'PC游戏',
   chinese: '汉化资源',
+  'official-zh': '官方中文',
   mobile: '手机游戏',
   emulator: '模拟器资源',
   row: '生肉资源',
