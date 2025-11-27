@@ -1,5 +1,6 @@
 import { deleteFileFromS3, uploadFileToS3 } from '~/lib/s3'
 import { getKv } from '~/lib/redis'
+import { prisma as globalPrisma } from '~/prisma/index'
 
 export const uploadPatchResource = async (patchId: number, hash: string) => {
   const filePath = await getKv(hash)
@@ -21,4 +22,35 @@ export const deletePatchResource = async (
   const fileName = content.split('/').pop()
   const s3Key = `patch/${id}/${hash}/${fileName}`
   await deleteFileFromS3(s3Key)
+}
+
+export const updatePatchAttributes = async (patchId: number, tx?: any) => {
+  const prisma = tx || globalPrisma
+  const resources = await prisma.patch_resource.findMany({
+    where: { patch_id: patchId },
+    select: {
+      type: true,
+      language: true,
+      platform: true
+    }
+  })
+
+  const types = new Set<string>()
+  const languages = new Set<string>()
+  const platforms = new Set<string>()
+
+  resources.forEach((resource: any) => {
+    resource.type.forEach((t: string) => types.add(t))
+    resource.language.forEach((l: string) => languages.add(l))
+    resource.platform.forEach((p: string) => platforms.add(p))
+  })
+
+  await prisma.patch.update({
+    where: { id: patchId },
+    data: {
+      type: Array.from(types),
+      language: Array.from(languages),
+      platform: Array.from(platforms)
+    }
+  })
 }
