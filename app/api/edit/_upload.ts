@@ -10,14 +10,14 @@ export const uploadPatchBanner = async (image: ArrayBuffer, id: number) => {
       fit: 'inside',
       withoutEnlargement: true
     })
-    .avif({ quality: 60 })
+    .avif({ quality: 60, effort: 3 })
     .toBuffer()
   const miniBanner = await sharp(image)
     .resize(460, 259, {
       fit: 'inside',
       withoutEnlargement: true
     })
-    .avif({ quality: 60 })
+    .avif({ quality: 60, effort: 3 })
     .toBuffer()
 
   if (!checkBufferSize(miniBanner, 1.007)) {
@@ -53,7 +53,7 @@ export const uploadPatchGalleryImage = async (
     ])
   }
 
-  const buffer = await pipeline.avif({ quality: 60 }).toBuffer()
+  const buffer = await pipeline.avif({ quality: 60, effort: 3 }).toBuffer()
 
   if (!checkBufferSize(buffer, 1.5)) {
     return '图片体积过大'

@@ -61,50 +61,6 @@ export const createGalgame = async (
         data: { banner: imageLink }
       })
 
-      if (gallery && galleryMetadata) {
-        const metadata = JSON.parse(galleryMetadata) as {
-          isNSFW: boolean
-          watermark: boolean
-        }[]
-        const galleryFiles = Array.isArray(gallery) ? gallery : [gallery]
-        const limit = pLimit(2)
-
-        await Promise.all(
-          galleryFiles.map((file, i) =>
-            limit(async () => {
-              const meta = metadata[i]
-
-              const galleryRecord = await prisma.patch_game_image.create({
-                data: {
-                  patch_id: newId,
-                  url: '',
-                  is_nsfw: meta.isNSFW
-                }
-              })
-
-              const arrayBuffer = await (file as File).arrayBuffer()
-              const uploadRes = await uploadPatchGalleryImage(
-                arrayBuffer,
-                newId,
-                galleryRecord.id,
-                meta.watermark
-              )
-
-              if (typeof uploadRes === 'string') {
-                throw new Error(`Gallery upload failed: ${uploadRes}`)
-              }
-
-              const imageUrl = `${process.env.KUN_VISUAL_NOVEL_IMAGE_BED_URL}/patch/${newId}/gallery/${galleryRecord.id}.avif`
-
-              await prisma.patch_game_image.update({
-                where: { id: galleryRecord.id },
-                data: { url: imageUrl }
-              })
-            })
-          )
-        )
-      }
-
       // Ensure rating_stat row exists for this patch
       await prisma.patch_rating_stat.create({
         data: { patch_id: newId }
@@ -138,24 +94,80 @@ export const createGalgame = async (
     return res
   }
 
-  const tasks: Promise<any>[] = []
-
   if (vndbId) {
-    tasks.push(
-      ensurePatchCompaniesFromVNDB(res.patchId, vndbId, uid).catch(() => { })
-    )
+    try {
+      await ensurePatchCompaniesFromVNDB(res.patchId, vndbId, uid)
+    } catch { }
   }
 
   if (tag.length) {
-    tasks.push(handleBatchPatchTags(res.patchId, tag, uid))
+    await handleBatchPatchTags(res.patchId, tag, uid)
   }
 
   if (contentLimit === 'sfw') {
     const newPatchUrl = `${kunMoyuMoe.domain.main}/${galgameUniqueId}`
-    tasks.push(postToIndexNow(newPatchUrl))
+    await postToIndexNow(newPatchUrl)
   }
 
-  await Promise.all(tasks)
+  // Background tasks for gallery upload
+  if (gallery && galleryMetadata) {
+    const metadata = JSON.parse(galleryMetadata) as {
+      isNSFW: boolean
+      watermark: boolean
+    }[]
+    const galleryFiles = Array.isArray(gallery) ? gallery : [gallery]
+    const limit = pLimit(2)
+
+    Promise.all(
+      galleryFiles.map((file, i) =>
+        limit(async () => {
+          const meta = metadata[i]
+
+          // 1. Create placeholder record
+          const galleryRecord = await prisma.patch_game_image.create({
+            data: {
+              patch_id: res.patchId,
+              url: '',
+              is_nsfw: meta.isNSFW
+            }
+          })
+
+          try {
+            const arrayBuffer = await (file as File).arrayBuffer()
+            const uploadRes = await uploadPatchGalleryImage(
+              arrayBuffer,
+              res.patchId,
+              galleryRecord.id,
+              meta.watermark
+            )
+
+            if (typeof uploadRes === 'string') {
+              console.error(`Gallery upload failed: ${uploadRes}`)
+              // Cleanup if upload fails
+              await prisma.patch_game_image.delete({
+                where: { id: galleryRecord.id }
+              })
+              return
+            }
+
+            const imageUrl = `${process.env.KUN_VISUAL_NOVEL_IMAGE_BED_URL}/patch/${res.patchId}/gallery/${galleryRecord.id}.avif`
+
+            // 2. Update record with actual URL
+            await prisma.patch_game_image.update({
+              where: { id: galleryRecord.id },
+              data: { url: imageUrl }
+            })
+          } catch (error) {
+            console.error('Gallery processing error:', error)
+            // Cleanup on error
+            await prisma.patch_game_image.delete({
+              where: { id: galleryRecord.id }
+            }).catch(() => { })
+          }
+        })
+      )
+    ).catch(console.error)
+  }
 
   return { uniqueId: galgameUniqueId }
 }
