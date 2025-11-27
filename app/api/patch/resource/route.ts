@@ -49,7 +49,7 @@ export const POST = async (req: NextRequest) => {
   }
   if (payload.role < 3) {
     if (input.storage === 'touchgal') {
-      return NextResponse.json('仅管理员可使用 TouchGal 资源盘')
+      return NextResponse.json('仅管理员可使用 OtoAme 资源盘')
     }
   }
 
