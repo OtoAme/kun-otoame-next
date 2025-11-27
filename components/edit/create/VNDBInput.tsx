@@ -1,6 +1,6 @@
 'use client'
 
-import { Button, Input, Link } from '@heroui/react'
+import { Button, Checkbox, Input, Link } from '@heroui/react'
 import { useCreatePatchStore } from '~/store/editStore'
 import toast from 'react-hot-toast'
 import { kunFetchGet } from '~/utils/kunFetch'
@@ -150,9 +150,16 @@ export const VNDBInput = ({ errors }: Props) => {
               color="secondary"
               size="sm"
               onPress={handleGetInfo}
+              isDisabled={!data.isDuplicate}
             >
               获取信息
             </Button>
+            <Checkbox
+              isSelected={data.isDuplicate}
+              onValueChange={(value) => setData({ ...data, isDuplicate: value })}
+            >
+              VNDB 编号重复
+            </Checkbox>
           </>
         )}
       </div>

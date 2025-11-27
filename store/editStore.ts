@@ -9,6 +9,7 @@ export interface CreatePatchData {
   tag: string[]
   released: string
   contentLimit: string
+  isDuplicate: boolean
 }
 
 export interface CreatePatchRequestData extends CreatePatchData {
@@ -31,7 +32,8 @@ const initialState: CreatePatchData = {
   alias: [],
   tag: [],
   released: '',
-  contentLimit: 'sfw'
+  contentLimit: 'sfw',
+  isDuplicate: false
 }
 
 export const useCreatePatchStore = create<StoreState>()(

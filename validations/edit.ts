@@ -18,7 +18,8 @@ export const patchCreateSchema = z.object({
   released: z.string(),
   contentLimit: z.string().max(10),
   gallery: z.union([z.any(), z.array(z.any())]).optional(),
-  galleryMetadata: z.string().optional()
+  galleryMetadata: z.string().optional(),
+  isDuplicate: z.string().optional()
 })
 
 export const patchUpdateSchema = z.object({

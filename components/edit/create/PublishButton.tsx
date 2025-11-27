@@ -36,7 +36,8 @@ export const PublishButton = ({ setErrors }: Props) => {
       ...data,
       banner: localeBannerBlob,
       alias: JSON.stringify(data.alias),
-      tag: JSON.stringify(data.tag)
+      tag: JSON.stringify(data.tag),
+      isDuplicate: String(data.isDuplicate)
     })
     if (!result.success) {
       const newErrors: Partial<Record<keyof CreatePatchRequestData, string>> =
@@ -62,6 +63,7 @@ export const PublishButton = ({ setErrors }: Props) => {
     formDataToSend.append('tag', JSON.stringify(data.tag))
     formDataToSend.append('released', data.released)
     formDataToSend.append('contentLimit', data.contentLimit)
+    formDataToSend.append('isDuplicate', String(data.isDuplicate))
 
     const galleryImages =
       await localforage.getItem<GalleryImage[]>('kun-patch-gallery')

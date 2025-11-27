@@ -26,8 +26,18 @@ export const createGalgame = async (
     released,
     contentLimit,
     gallery,
-    galleryMetadata
+    galleryMetadata,
+    isDuplicate
   } = input
+
+  if (vndbId && isDuplicate !== 'true') {
+    const existPatch = await prisma.patch.findFirst({
+      where: { vndb_id: vndbId }
+    })
+    if (existPatch) {
+      return '该游戏已存在, 请勿重复创建'
+    }
+  }
 
   const bannerArrayBuffer = banner as ArrayBuffer
   const galgameUniqueId = crypto.randomBytes(4).toString('hex')
