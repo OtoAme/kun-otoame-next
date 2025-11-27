@@ -62,6 +62,45 @@ export const VNDBInput = ({ errors }: Props) => {
     toast.success('获取数据成功! 已为您自动添加游戏别名')
   }
 
+  const handleGetInfo = async () => {
+    if (!data.vndbId) {
+      toast.error('VNDB ID 不可为空')
+      return
+    }
+
+    toast('正在从 VNDB 获取数据...')
+    const vndbResponse = await fetch(`https://api.vndb.org/kana/vn`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        filters: ['id', '=', data.vndbId],
+        fields: 'title, titles.lang, titles.title, aliases, released'
+      })
+    })
+
+    const vndbData: VNDBResponse = await vndbResponse.json()
+    const allTitles = vndbData.results.flatMap((vn) => {
+      const jaTitle = vn.titles.find((t) => t.lang === 'ja')?.title
+      const titlesArray = [
+        ...(jaTitle ? [jaTitle] : []),
+        vn.title,
+        ...vn.titles.filter((t) => t.lang !== 'ja').map((t) => t.title),
+        ...vn.aliases
+      ]
+      return titlesArray
+    })
+
+    setData({
+      ...data,
+      alias: [...new Set(allTitles)],
+      released: vndbData.results[0].released
+    })
+
+    toast.success('获取数据成功! 已为您自动添加游戏别名')
+  }
+
   return (
     <div className="w-full space-y-2">
       <h2 className="text-xl">VNDB ID (可选)</h2>
@@ -97,14 +136,24 @@ export const VNDBInput = ({ errors }: Props) => {
       </Link>
       <div className="flex items-center text-sm">
         {data.vndbId && (
-          <Button
-            className="mr-4"
-            color="primary"
-            size="sm"
-            onPress={handleCheckDuplicate}
-          >
-            检查重复
-          </Button>
+          <>
+            <Button
+              className="mr-4"
+              color="primary"
+              size="sm"
+              onPress={handleCheckDuplicate}
+            >
+              检查重复
+            </Button>
+            <Button
+              className="mr-4"
+              color="secondary"
+              size="sm"
+              onPress={handleGetInfo}
+            >
+              获取信息
+            </Button>
+          </>
         )}
       </div>
     </div>
