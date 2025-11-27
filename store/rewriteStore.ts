@@ -18,6 +18,7 @@ export interface RewritePatchData {
   released: string
   images: PatchGameImage[]
   bannerUrl: string
+  isDuplicate: boolean
 }
 
 interface StoreState {
@@ -44,7 +45,8 @@ const initialState: RewritePatchData = {
   contentLimit: 'sfw',
   released: '',
   images: [],
-  bannerUrl: ''
+  bannerUrl: '',
+  isDuplicate: false
 }
 
 export const useRewritePatchStore = create<StoreState>()((set, get) => ({

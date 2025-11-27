@@ -63,7 +63,8 @@ export const patchUpdateSchema = z.object({
   released: z.string().optional(),
   gallery: z.union([z.any(), z.array(z.any())]).optional(),
   galleryMetadata: z.string().optional(),
-  banner: z.any().optional()
+  banner: z.any().optional(),
+  isDuplicate: z.string().optional()
 })
 
 export const duplicateSchema = z.object({

@@ -33,6 +33,7 @@ export const PatchHeaderContainer = ({
       tag: patch.tags,
       contentLimit: patch.contentLimit,
       released: intro.released,
+      isDuplicate: patch.isDuplicate,
       images: intro.images.map((img) => ({
         id: img.id,
         url: img.url,

@@ -1,6 +1,6 @@
 'use client'
 
-import { Button, Input } from '@heroui/react'
+import { Button, Checkbox, Input } from '@heroui/react'
 import { useRewritePatchStore } from '~/store/rewriteStore'
 import toast from 'react-hot-toast'
 import type { VNDBResponse } from '../VNDB'
@@ -75,14 +75,23 @@ export const VNDBInput = ({ vndbId, setVNDBId, errors }: Props) => {
       </p>
       <div className="flex items-center text-sm">
         {data.vndbId && (
-          <Button
-            className="mr-4"
-            color="primary"
-            size="sm"
-            onPress={handleFetchVNDBData}
-          >
-            获取数据
-          </Button>
+          <>
+            <Button
+              className="mr-4"
+              color="primary"
+              size="sm"
+              onPress={handleFetchVNDBData}
+              isDisabled={!data.isDuplicate}
+            >
+              获取数据
+            </Button>
+            <Checkbox
+              isSelected={data.isDuplicate}
+              onValueChange={(value) => setData({ ...data, isDuplicate: value })}
+            >
+              VNDB 编号重复
+            </Checkbox>
+          </>
         )}
       </div>
     </div>

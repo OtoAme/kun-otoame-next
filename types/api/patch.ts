@@ -17,6 +17,7 @@ export interface Patch {
   platform: string[]
   tags: string[]
   isFavorite: boolean
+  isDuplicate: boolean
   contentLimit: string
   ratingSummary: PatchRatingSummary
   user: {

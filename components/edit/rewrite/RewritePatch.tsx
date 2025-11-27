@@ -39,7 +39,10 @@ export const RewritePatch = () => {
 
   const [rewriting, setRewriting] = useState(false)
   const handleSubmit = async () => {
-    const result = patchUpdateSchema.safeParse(data)
+    const result = patchUpdateSchema.safeParse({
+      ...data,
+      isDuplicate: String(data.isDuplicate)
+    })
     if (!result.success) {
       const newErrors: Partial<Record<keyof RewritePatchData, string>> = {}
       result.error.errors.forEach((err) => {
@@ -63,6 +66,7 @@ export const RewritePatch = () => {
     formData.append('introduction', data.introduction)
     formData.append('contentLimit', data.contentLimit)
     if (data.released) formData.append('released', data.released)
+    formData.append('isDuplicate', String(data.isDuplicate))
 
     data.alias.forEach((a) => formData.append('alias', a))
     data.tag.forEach((t) => formData.append('tag', t))

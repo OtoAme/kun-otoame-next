@@ -15,8 +15,8 @@ export const updateGalgame = async (
     return '该 ID 下未找到对应 Galgame'
   }
 
-  if (input.vndbId) {
-    const galgame = await prisma.patch.findUnique({
+  if (input.vndbId && input.isDuplicate !== 'true') {
+    const galgame = await prisma.patch.findFirst({
       where: { vndb_id: input.vndbId }
     })
     if (galgame && galgame.id !== input.id) {
