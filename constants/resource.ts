@@ -25,6 +25,11 @@ export const resourceTypes = [
     description: '与这个 OtomeGame 相关的补丁资源'
   },
   {
+    value: 'material',
+    label: '资料集',
+    description: '与游戏相关的图文资料，包括设定内容、视觉作品及各类特典'
+  },
+  {
     value: 'mobile',
     label: '手机游戏',
     description: '可以在手机上运行的 OtomeGame 游戏'
@@ -66,6 +71,7 @@ export const SUPPORTED_TYPE = [
   'row',
   'app',
   'patch',
+  'material',
   'tool',
   'notice',
   'other'
@@ -80,6 +86,7 @@ export const SUPPORTED_TYPE_MAP: Record<string, string> = {
   row: '生肉资源',
   app: '直装资源',
   patch: '补丁资源',
+  material: '资料集',
   tool: '游戏工具',
   notice: '官方通知',
   other: '其它'

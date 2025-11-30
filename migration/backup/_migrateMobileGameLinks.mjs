@@ -32,6 +32,7 @@ export const TYPE_MAP = {
   生肉资源: 'row',
   直装资源: 'app',
   补丁资源: 'patch',
+  资料集: 'material',
   游戏工具: 'tool',
   官方通知: 'notice',
   其它: 'other'
