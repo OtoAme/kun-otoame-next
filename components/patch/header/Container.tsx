@@ -29,6 +29,7 @@ export const PatchHeaderContainer = ({
       vndbId: patch.vndbId ?? '',
       name: patch.name,
       introduction: patch.introduction,
+      officialUrl: intro.officialUrl,
       alias: patch.alias,
       tag: patch.tags,
       contentLimit: patch.contentLimit,

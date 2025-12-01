@@ -9,6 +9,7 @@ export const patchCreateSchema = z.object({
     .trim()
     .min(10, { message: '游戏介绍是必填项, 最少 10 个字符' })
     .max(100007, { message: '游戏介绍最多 100007 字' }),
+  officialUrl: z.string().optional(),
   alias: z
     .string()
     .max(2333, { message: '别名字符串总长度不可超过 3000 个字符' }),
@@ -31,6 +32,7 @@ export const patchUpdateSchema = z.object({
     .trim()
     .min(10, { message: '游戏介绍是必填项, 最少 10 个字符' })
     .max(100007, { message: '游戏介绍最多 100007 字' }),
+  officialUrl: z.string().optional(),
   tag: z.preprocess(
     (val) => {
       if (val === undefined) return []

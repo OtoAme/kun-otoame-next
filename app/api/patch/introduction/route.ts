@@ -74,6 +74,7 @@ export const getPatchIntroduction = async (
   const response: PatchIntroduction = {
     vndbId: patch.vndb_id,
     introduction: await markdownToHtmlExtend(patch.introduction),
+    officialUrl: patch.official_url,
     released: patch.released,
     alias: patch.alias.map((a) => a.name),
     tag: patch.tag.map((tag) => tag.tag),

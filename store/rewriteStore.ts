@@ -12,6 +12,7 @@ export interface RewritePatchData {
   vndbId: string
   name: string
   introduction: string
+  officialUrl: string
   alias: string[]
   tag: string[]
   contentLimit: string
@@ -42,6 +43,7 @@ const initialState: RewritePatchData = {
   vndbId: '',
   name: '',
   introduction: '',
+  officialUrl: '',
   alias: [],
   tag: [],
   contentLimit: 'sfw',

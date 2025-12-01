@@ -56,6 +56,7 @@ export interface PatchImage {
 export interface PatchIntroduction {
   vndbId: string | null
   introduction: string
+  officialUrl: string
   released: string
   alias: string[]
   tag: Tag[]

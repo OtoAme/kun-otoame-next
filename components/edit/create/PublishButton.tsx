@@ -63,6 +63,7 @@ export const PublishButton = ({ setErrors }: Props) => {
     formDataToSend.append('tag', JSON.stringify(data.tag))
     formDataToSend.append('released', data.released)
     formDataToSend.append('contentLimit', data.contentLimit)
+    if (data.officialUrl) formDataToSend.append('officialUrl', data.officialUrl)
     formDataToSend.append('isDuplicate', String(data.isDuplicate))
 
     const galleryImages =

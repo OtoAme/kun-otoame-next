@@ -24,8 +24,16 @@ export const updateGalgame = async (
     }
   }
 
-  const { id, vndbId, name, alias, introduction, contentLimit, released } =
-    input
+  const {
+    id,
+    vndbId,
+    name,
+    alias,
+    introduction,
+    officialUrl,
+    contentLimit,
+    released
+  } = input
 
   await prisma.patch.update({
     where: { id },
@@ -33,6 +41,7 @@ export const updateGalgame = async (
       name,
       vndb_id: vndbId ? vndbId : null,
       introduction,
+      official_url: officialUrl || '',
       content_limit: contentLimit,
       released
     }

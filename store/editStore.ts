@@ -5,6 +5,7 @@ export interface CreatePatchData {
   name: string
   introduction: string
   vndbId: string
+  officialUrl: string
   alias: string[]
   tag: string[]
   released: string
@@ -29,6 +30,7 @@ const initialState: CreatePatchData = {
   name: '',
   introduction: '',
   vndbId: '',
+  officialUrl: '',
   alias: [],
   tag: [],
   released: '',

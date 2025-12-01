@@ -12,12 +12,12 @@ export const getPatchResource = async (
 
   const where = search
     ? {
-        content: {
-          contains: search,
-          mode: 'insensitive' as const
-        },
-        patch: nsfwEnable
-      }
+      content: {
+        contains: search,
+        mode: 'insensitive' as const
+      },
+      patch: nsfwEnable
+    }
     : { patch: nsfwEnable }
 
   const [data, total] = await Promise.all([
@@ -37,7 +37,8 @@ export const getPatchResource = async (
           select: {
             id: true,
             name: true,
-            avatar: true
+            avatar: true,
+            role: true
           }
         }
       }
@@ -71,6 +72,7 @@ export const getPatchResource = async (
       id: resource.user.id,
       name: resource.user.name,
       avatar: resource.user.avatar,
+      role: resource.user.role,
       patchCount: 0
     }
   }))

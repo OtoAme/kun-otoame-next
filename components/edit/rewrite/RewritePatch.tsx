@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { Button, Card, CardBody, CardHeader } from '@heroui/react'
+import { Button, Card, CardBody, CardHeader, Input } from '@heroui/react'
 import { useRewritePatchStore } from '~/store/rewriteStore'
 import { KunDualEditorProvider } from '~/components/kun/milkdown/DualEditorProvider'
 import toast from 'react-hot-toast'
@@ -66,6 +66,7 @@ export const RewritePatch = () => {
     formData.append('introduction', data.introduction)
     formData.append('contentLimit', data.contentLimit)
     if (data.released) formData.append('released', data.released)
+    if (data.officialUrl) formData.append('officialUrl', data.officialUrl)
     formData.append('isDuplicate', String(data.isDuplicate))
 
     data.alias.forEach((a) => formData.append('alias', a))
@@ -146,6 +147,21 @@ export const RewritePatch = () => {
             }
             errors={errors.alias}
           />
+
+          <div className="space-y-2">
+            <h2 className="text-xl">官方链接 (可选)</h2>
+            <Input
+              variant="underlined"
+              labelPlacement="outside"
+              placeholder="输入 Steam 商店链接或官方网站链接"
+              value={data.officialUrl}
+              onChange={(e) =>
+                setData({ ...data, officialUrl: e.target.value })
+              }
+              isInvalid={!!errors.officialUrl}
+              errorMessage={errors.officialUrl}
+            />
+          </div>
 
           <ReleaseDateInput
             date={data.released}

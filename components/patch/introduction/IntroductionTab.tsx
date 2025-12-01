@@ -13,10 +13,10 @@ import { KunLink } from '~/components/kun/milkdown/plugins/components/link/KunLi
 import { KunExternalLink } from '~/components/kun/external-link/ExternalLink'
 import type { PatchIntroduction } from '~/types/api/patch'
 
-// @ts-expect-error Include a description after the "@ts-expect-error" directive
 import './_adjust.scss'
 import { PatchCompany } from './Company'
 import { Gallery } from '../gallery/Gallery'
+import { PatchOfficialUrl } from './OfficialUrl'
 
 const KunPlyr = dynamic(
   () =>
@@ -105,6 +105,8 @@ export const IntroductionTab = ({ intro, patchId, uid }: Props) => {
         </div> */}
 
         {uid && <PatchTag patchId={patchId} initialTags={intro.tag} />}
+
+        <PatchOfficialUrl url={intro.officialUrl} />
 
         <PatchCompany patchId={patchId} initialCompanies={intro.company} />
 
