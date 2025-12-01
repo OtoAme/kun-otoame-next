@@ -56,8 +56,6 @@ export const CreatePatch = () => {
           <div className="space-y-2">
             <h2 className="text-xl">官方链接 (可选)</h2>
             <Input
-              variant="underlined"
-              labelPlacement="outside"
               placeholder="输入 Steam 商店链接或官方网站链接"
               value={data.officialUrl}
               onChange={(e) =>
