@@ -15,7 +15,7 @@ export const ResourceTab = ({ id, vndbId }: Props) => {
       <CardBody className="p-4">
         <div className="space-y-2 text-default-600">
           <p>
-            请注意, 本站的 Galgame 下载资源和补丁均来自互联网或用户上传,
+            请注意, 本站的 OtomeGame 下载资源和补丁均来自互联网或用户上传,
             请自行鉴别资源安全性。
           </p>
           <p>

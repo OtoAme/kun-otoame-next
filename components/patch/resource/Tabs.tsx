@@ -140,7 +140,7 @@ export const ResourceTabs = ({
                             base: 'bg-transparent'
                           }
                         }}
-                        description={`${kunMoyuMoe.titleShort} 官方提供的 Galgame 下载资源`}
+                        description={`${kunMoyuMoe.titleShort} 官方提供的 OtomeGame 下载资源`}
                         name={`${kunMoyuMoe.titleShort} 官方 (推荐下载)`}
                       />
                     </Link>
