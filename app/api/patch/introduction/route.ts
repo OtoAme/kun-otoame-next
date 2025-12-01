@@ -60,6 +60,9 @@ export const getPatchIntroduction = async (
           id: true,
           url: true,
           is_nsfw: true
+        },
+        orderBy: {
+          display_order: 'asc'
         }
       }
     }

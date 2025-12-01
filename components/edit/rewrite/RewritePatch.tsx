@@ -71,12 +71,13 @@ export const RewritePatch = () => {
     data.alias.forEach((a) => formData.append('alias', a))
     data.tag.forEach((t) => formData.append('tag', t))
 
-    const { watermark } = useRewritePatchStore.getState()
+    const { watermark, galleryOrder } = useRewritePatchStore.getState()
 
     const galleryMetadata = {
       keep: data.images.map((img) => ({ id: img.id, is_nsfw: img.is_nsfw })),
       new: newImages.map((img) => ({ id: img.id, is_nsfw: img.isNSFW })),
-      watermark
+      watermark,
+      order: galleryOrder
     }
     formData.append('galleryMetadata', JSON.stringify(galleryMetadata))
 

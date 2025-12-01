@@ -77,6 +77,7 @@ export const updateGalgame = async (
       keep: { id: number; is_nsfw: boolean }[]
       new: { id: string; is_nsfw: boolean }[]
       watermark?: boolean
+      order?: (number | string)[]
     }
 
     const currentImages = await prisma.patch_game_image.findMany({
@@ -91,12 +92,18 @@ export const updateGalgame = async (
       })
     }
 
+    const orderMap = new Map<string | number, number>()
+    if (metadata.order) {
+      metadata.order.forEach((id, index) => orderMap.set(id, index))
+    }
+
     const updatePromises = metadata.keep.map(async (keep) => {
       const current = currentImages.find((img) => img.id === keep.id)
-      if (current && current.is_nsfw !== keep.is_nsfw) {
+      const newOrder = orderMap.get(keep.id) ?? 0
+      if (current) {
         await prisma.patch_game_image.update({
           where: { id: keep.id },
-          data: { is_nsfw: keep.is_nsfw }
+          data: { is_nsfw: keep.is_nsfw, display_order: newOrder }
         })
       }
     })
@@ -112,11 +119,14 @@ export const updateGalgame = async (
             const meta = metadata.new[i]
             if (!meta) return
 
+            const newOrder = orderMap.get(meta.id) ?? 0
+
             const galleryRecord = await prisma.patch_game_image.create({
               data: {
                 url: '',
                 is_nsfw: meta.is_nsfw,
-                patch_id: id
+                patch_id: id,
+                display_order: newOrder
               }
             })
 

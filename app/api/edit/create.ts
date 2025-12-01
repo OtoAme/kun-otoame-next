@@ -138,7 +138,8 @@ export const createGalgame = async (
             data: {
               patch_id: res.patchId,
               url: '',
-              is_nsfw: meta.isNSFW
+              is_nsfw: meta.isNSFW,
+              display_order: i
             }
           })
 

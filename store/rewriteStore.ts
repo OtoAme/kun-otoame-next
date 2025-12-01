@@ -26,11 +26,13 @@ interface StoreState {
   newImages: { id: string; file: File; isNSFW: boolean }[]
   newBanner: File | null
   watermark: boolean
+  galleryOrder: (number | string)[]
   getData: () => RewritePatchData
   setData: (data: RewritePatchData) => void
   setNewImages: (images: { id: string; file: File; isNSFW: boolean }[]) => void
   setNewBanner: (file: File | null) => void
   setWatermark: (watermark: boolean) => void
+  setGalleryOrder: (order: (number | string)[]) => void
   resetData: () => void
 }
 
@@ -49,17 +51,25 @@ const initialState: RewritePatchData = {
   isDuplicate: false
 }
 
-export const useRewritePatchStore = create<StoreState>()((set, get) => ({
+export const useRewritePatchStore = create<StoreState>((set, get) => ({
   data: initialState,
   newImages: [],
   newBanner: null,
   watermark: true,
+  galleryOrder: [],
   getData: () => get().data,
-  setData: (data: RewritePatchData) => set({ data }),
+  setData: (data) => set({ data }),
   setNewImages: (newImages) => set({ newImages }),
   setNewBanner: (newBanner) => set({ newBanner }),
   setWatermark: (watermark) => set({ watermark }),
+  setGalleryOrder: (galleryOrder) => set({ galleryOrder }),
   resetData: () =>
-    set({ data: initialState, newImages: [], newBanner: null, watermark: false })
+    set({
+      data: initialState,
+      newImages: [],
+      newBanner: null,
+      watermark: true,
+      galleryOrder: []
+    })
 }))
 
