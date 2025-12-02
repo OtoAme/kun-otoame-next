@@ -72,7 +72,10 @@ export const Container = ({ initialTags, initialTotal, uid }: Props) => {
 
   return (
     <div className="flex flex-col w-full my-4 space-y-8">
-      <TagHeader setNewTag={(newTag) => setTags([newTag, ...initialTags])} />
+      <TagHeader
+        setNewTag={(newTag) => setTags([newTag, ...initialTags])}
+        onRefresh={fetchTags}
+      />
 
       {uid ? (
         <>
