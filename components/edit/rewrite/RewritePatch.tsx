@@ -183,8 +183,7 @@ export const RewritePatch = () => {
 
           <BangumiInput
             onTagsFetched={(tags) => {
-              const newTags = Array.from(new Set([...data.tag, ...tags]))
-              setData({ ...data, tag: newTags })
+              setData({ ...data, tag: tags })
             }}
           />
 
