@@ -42,7 +42,7 @@ KUN_VISUAL_NOVEL_SITE_URL = "https://www.otoame.com"
 NEXT_PUBLIC_KUN_PATCH_ADDRESS_DEV = "http://127.0.0.1:3000"
 NEXT_PUBLIC_KUN_PATCH_ADDRESS_PROD = "https://www.otoame.com"
 
-# 本地 Redis 端口和地址, 一般无需变动
+# 本地 Redis 端口和地址, 一般无需变动。连接 Redis 需要 Redis 无密码且关闭保护模式。
 REDIS_HOST = '127.0.0.1'
 REDIS_PORT = '6379'
 
