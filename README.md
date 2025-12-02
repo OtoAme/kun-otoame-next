@@ -67,14 +67,14 @@ KUN_VISUAL_NOVEL_EMAIL_PASSWORD = "otoame"
 # S3 相关配置
 KUN_VISUAL_NOVEL_S3_STORAGE_ACCESS_KEY_ID = "kkkkkkkkkkkkkkkkkkkkkkkkkkkk"
 KUN_VISUAL_NOVEL_S3_STORAGE_SECRET_ACCESS_KEY = "kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk"
-KUN_VISUAL_NOVEL_S3_STORAGE_BUCKET_NAME = "kun"
-KUN_VISUAL_NOVEL_S3_STORAGE_ENDPOINT = "https://moyu.moe"
+KUN_VISUAL_NOVEL_S3_STORAGE_BUCKET_NAME = "mio"
+KUN_VISUAL_NOVEL_S3_STORAGE_ENDPOINT = "https://example.com"
 KUN_VISUAL_NOVEL_S3_STORAGE_REGION = "us-west-001"
-NEXT_PUBLIC_KUN_VISUAL_NOVEL_S3_STORAGE_URL = "https://touchgal-patch.moyu.moe"
+NEXT_PUBLIC_KUN_VISUAL_NOVEL_S3_STORAGE_URL = "https://img-test.example.com"
 
 # 图床相关配置，要求与示例格式保持一致
-KUN_VISUAL_NOVEL_IMAGE_BED_HOST = "touchgal-image.moyu.moe"
-KUN_VISUAL_NOVEL_IMAGE_BED_URL = "https://touchgal-image.moyu.moe"
+KUN_VISUAL_NOVEL_IMAGE_BED_HOST = "img-test.example.com"
+KUN_VISUAL_NOVEL_IMAGE_BED_URL = "https://img-test.example.com"
 
 # Cloudflare 清除缓存相关配置
 # "Zone ID"在 Cloudflare 域名概览页面的右下角
@@ -150,11 +150,11 @@ Nginx 参考：[🔗安装 Nginx 环境](https://www.arnebiae.com/p/galhowto/#%E
    你也可以不使用内置脚本，手动更新：
 
    ```bash
-   git pull             # 拉取最新代码
-   pnpm install         # 如果依赖有变化
-   pnpm prisma:push     # 如果数据库结构有变化
-   pnpm build           # 重新构建 (必须!)
-   pnpm stop && pnpm start # 重启服务
+   git pull                 # 拉取最新代码
+   pnpm install             # 如果依赖有变化
+   pnpm prisma:push         # 如果数据库结构有变化
+   pnpm build               # 重新构建 (必须!)
+   pnpm stop && pnpm start  # 重启服务
    ```
 
    
