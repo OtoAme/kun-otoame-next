@@ -11,6 +11,7 @@ import { PatchIntroduction } from './PatchIntroduction'
 import { GalleryInput } from './GalleryInput'
 import { ContentLimit } from './ContentLimit'
 import { BatchTag } from '../components/BatchTag'
+import { BangumiInput } from '../components/BangumiInput'
 import { ReleaseDateInput } from '../components/ReleaseDateInput'
 import type { CreatePatchRequestData } from '~/store/editStore'
 
@@ -83,6 +84,13 @@ export const CreatePatch = () => {
               })
             }
             errors={errors.tag}
+          />
+
+          <BangumiInput
+            onTagsFetched={(tags) => {
+              const newTags = Array.from(new Set([...data.tag, ...tags]))
+              setData({ ...data, tag: newTags })
+            }}
           />
 
           <ContentLimit errors={errors.contentLimit} />

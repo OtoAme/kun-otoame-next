@@ -15,6 +15,7 @@ import { ContentLimit } from './ContentLimit'
 import { RewriteGalleryInput } from './RewriteGalleryInput'
 import { RewriteBanner } from './RewriteBanner'
 import { BatchTag } from '../components/BatchTag'
+import { BangumiInput } from '../components/BangumiInput'
 import { ReleaseDateInput } from '../components/ReleaseDateInput'
 import { VNDBInput } from './VNDBInput'
 import type { RewritePatchData } from '~/store/rewriteStore'
@@ -178,6 +179,13 @@ export const RewritePatch = () => {
               })
             }
             errors={errors.tag}
+          />
+
+          <BangumiInput
+            onTagsFetched={(tags) => {
+              const newTags = Array.from(new Set([...data.tag, ...tags]))
+              setData({ ...data, tag: newTags })
+            }}
           />
 
           <ContentLimit errors={errors.contentLimit} />
