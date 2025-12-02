@@ -76,10 +76,10 @@ const SortableItem = ({
       {...attributes}
       {...listeners}
       className={`group relative aspect-video cursor-pointer overflow-hidden rounded-lg border-2 ${img.isNSFW
-          ? 'border-danger'
-          : selected
-            ? 'border-primary'
-            : 'border-transparent'
+        ? 'border-danger'
+        : selected
+          ? 'border-primary'
+          : 'border-transparent'
         }`}
       onClick={onToggle}
     >
@@ -124,10 +124,10 @@ const ItemOverlay = ({
   return (
     <div
       className={`group relative aspect-video cursor-grabbing overflow-hidden rounded-lg border-2 ${img.isNSFW
-          ? 'border-danger'
-          : selected
-            ? 'border-primary'
-            : 'border-transparent'
+        ? 'border-danger'
+        : selected
+          ? 'border-primary'
+          : 'border-transparent'
         }`}
     >
       {/* eslint-disable-next-line @next/next/no-img-element */}

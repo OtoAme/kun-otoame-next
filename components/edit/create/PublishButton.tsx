@@ -84,13 +84,13 @@ export const PublishButton = ({ setErrors }: Props) => {
     }
 
     setCreating(true)
-    toast('正在发布中 ... 这可能需要 10s 左右的时间, 这取决于您的网络环境')
+    toast('正在发布中 ... 这可能需要几分钟的时间, 这取决于您的网络环境')
 
     const res = await kunFetchFormData<
       KunResponse<{
         uniqueId: string
       }>
-    >('/edit', formDataToSend)
+    >('/edit', formDataToSend, 180000)
     kunErrorHandler(res, async (value) => {
       resetData()
       await localforage.removeItem('kun-patch-banner')

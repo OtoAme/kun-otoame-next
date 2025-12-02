@@ -3,6 +3,7 @@ type FetchOptions = {
   query?: Record<string, string | number>
   body?: Record<string, unknown>
   formData?: FormData
+  timeout?: number
 }
 
 const kunFetchRequest = async <T>(
@@ -11,7 +12,7 @@ const kunFetchRequest = async <T>(
   options?: FetchOptions
 ): Promise<T> => {
   try {
-    const { headers = {}, query, body, formData } = options || {}
+    const { headers = {}, query, body, formData, timeout } = options || {}
 
     const queryString = query
       ? '?' +
@@ -44,15 +45,29 @@ const kunFetchRequest = async <T>(
       fetchOptions.body = JSON.stringify(body)
     }
 
-    const response = await fetch(fullUrl, fetchOptions)
+    let timeoutId: NodeJS.Timeout | number | undefined
 
-    if (!response.ok) {
-      throw new Error(`Kun Fetch error! Status: ${response.status}`)
+    if (timeout) {
+      const controller = new AbortController()
+      timeoutId = setTimeout(() => controller.abort(), timeout)
+      fetchOptions.signal = controller.signal
     }
 
-    const res = await response.json()
+    try {
+      const response = await fetch(fullUrl, fetchOptions)
 
-    return res
+      if (!response.ok) {
+        throw new Error(`Kun Fetch error! Status: ${response.status}`)
+      }
+
+      const res = await response.json()
+
+      return res
+    } finally {
+      if (timeoutId) {
+        clearTimeout(timeoutId)
+      }
+    }
   } catch (error) {
     console.error(`Kun Fetch error: ${error}`)
     throw error
@@ -89,17 +104,22 @@ export const kunFetchDelete = async <T>(
 
 export const kunFetchFormData = async <T>(
   url: string,
-  formData?: FormData
+  formData?: FormData,
+  timeout?: number
 ): Promise<T> => {
   if (!formData) {
     throw new Error('formData is required for kunFetchFormData')
   }
-  return kunFetchRequest<T>(url, 'POST', { formData })
+  return kunFetchRequest<T>(url, 'POST', { formData, timeout })
 }
 
 export const kunFetchPutFormData = async <T>(
   url: string,
-  formData: FormData
+  formData?: FormData,
+  timeout?: number
 ): Promise<T> => {
-  return kunFetchRequest<T>(url, 'PUT', { formData })
+  if (!formData) {
+    throw new Error('formData is required for kunFetchPutFormData')
+  }
+  return kunFetchRequest<T>(url, 'PUT', { formData, timeout })
 }

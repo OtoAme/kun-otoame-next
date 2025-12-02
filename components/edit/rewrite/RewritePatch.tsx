@@ -91,7 +91,7 @@ export const RewritePatch = () => {
       formData.append('banner', newBanner)
     }
 
-    const res = await kunFetchPutFormData<KunResponse<{}>>('/edit', formData)
+    const res = await kunFetchPutFormData<KunResponse<{}>>('/edit', formData, 180000)
     kunErrorHandler(res, async () => {
       router.push(`/${data.uniqueId}`)
     })
