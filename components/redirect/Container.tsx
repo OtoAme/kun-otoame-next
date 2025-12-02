@@ -20,7 +20,7 @@ export const KunRedirectContainer = () => {
 
         <div className="max-w-2xl">
           <Alert
-            description="下载如果出现问题请至公告中的常见问题文章寻找解决方法, 如果下载缓慢可以试试下方广告中的加速器"
+            description="下载如果出现问题请至公告中的常见问题文章寻找解决方法，下方广告是免费绘画资源课分享。"
             title="公告"
             color="secondary"
             variant="faded"
@@ -28,10 +28,10 @@ export const KunRedirectContainer = () => {
         </div>
 
         <div className="w-full max-w-2xl rounded-large">
-          <Link isExternal href="https://www.sailingnet.pro/">
+          <Link isExternal href="https://pan.209911.xyz/">
             <Image
               alt={kunMoyuMoe.title}
-              src="https://cloud.touchgaloss.com/2024/09/6e194add9120240905110255.webp"
+              src="/209911.jpg"
             />
           </Link>
         </div>
