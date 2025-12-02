@@ -29,6 +29,8 @@ cp .env.example .env
 
 注意检查 `.env` 文件名末尾不能存在空格。按照下方说明编辑 `.env` 的内容。
 
+连接 Redis 需要 Redis 无密码且关闭保护模式。
+
 ```env
 # 数据库 URL, 我们使用 psql，创建数据库并填写连接信息
 KUN_DATABASE_URL = "postgresql://user:password@localhost:5432/otoame?schema=public"
