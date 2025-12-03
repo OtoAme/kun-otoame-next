@@ -5,7 +5,7 @@ const KUN_SITE_NAME = 'OtoAme'
 const KUN_SITE_MENTION = '@otoame'
 const KUN_SITE_TITLE = 'OtoAme - 一站式OtomeGame文化社区!'
 const KUN_SITE_IMAGE =
-  'https://cloud.touchgaloss.com/uploads/20241217174250074.avif'
+  './public/images/otoame.jpg'
 const KUN_SITE_DESCRIPTION =
   'OtoAme 是一个一站式 OtomeGame 文化社区， 提供 OtomeGame 下载等服务。承诺永久免费, 高质量。为 OtomeGame 爱好者提供一片净土！'
 const KUN_SITE_URL = 'https://www.otoame.top'
