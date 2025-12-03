@@ -1,3 +1,5 @@
+![otoame](./public/images/otoame.jpg)
+
 # OtoAme
 
 OtoAme 是一个一站式 OtomeGame 文化社区， 提供 OtomeGame 下载等服务。承诺永久免费, 高质量。为 OtomeGame 爱好者提供一片净土！
