@@ -5,11 +5,22 @@ import { prisma } from '~/prisma/index'
 import { getPatchByTagSchema } from '~/validations/tag'
 import { GalgameCardSelectField } from '~/constants/api/select'
 import { getNSFWHeader } from '~/app/api/utils/getNSFWHeader'
+import { getKv, setKv } from '~/lib/redis'
+import { createHash } from 'crypto'
 
 export const getPatchByTag = async (
   input: z.infer<typeof getPatchByTagSchema>,
   nsfwEnable: Record<string, string | undefined>
 ) => {
+  const cacheKey = `tag_galgame_list:${createHash('md5')
+    .update(JSON.stringify({ input, nsfwEnable }))
+    .digest('hex')}`
+
+  const cachedData = await getKv(cacheKey)
+  if (cachedData) {
+    return JSON.parse(cachedData)
+  }
+
   const { tagId, page, limit } = input
   const offset = (page - 1) * limit
 
@@ -40,7 +51,10 @@ export const getPatchByTag = async (
       : 0
   }))
 
-  return { galgames, total }
+  const result = { galgames, total }
+  await setKv(cacheKey, JSON.stringify(result), 10)
+
+  return result
 }
 
 export const GET = async (req: NextRequest) => {

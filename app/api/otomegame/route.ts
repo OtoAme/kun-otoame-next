@@ -10,11 +10,22 @@ import {
 } from '~/constants/resource'
 import { GalgameCardSelectField } from '~/constants/api/select'
 import { getNSFWHeader } from '~/app/api/utils/getNSFWHeader'
+import { getKv, setKv } from '~/lib/redis'
+import { createHash } from 'crypto'
 
 export const getGalgame = async (
   input: z.infer<typeof galgameSchema>,
   nsfwEnable: Record<string, string | undefined>
 ) => {
+  const cacheKey = `galgame_list:${createHash('md5')
+    .update(JSON.stringify({ input, nsfwEnable }))
+    .digest('hex')}`
+
+  const cachedData = await getKv(cacheKey)
+  if (cachedData) {
+    return JSON.parse(cachedData)
+  }
+
   const {
     selectedType = 'all',
     selectedLanguage = 'all',
@@ -118,7 +129,10 @@ export const getGalgame = async (
       : 0
   }))
 
-  return { galgames, total }
+  const result = { galgames, total }
+  await setKv(cacheKey, JSON.stringify(result), 10)
+
+  return result
 }
 
 export const GET = async (req: NextRequest) => {
