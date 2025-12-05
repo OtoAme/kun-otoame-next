@@ -98,25 +98,25 @@ export const searchGalgame = async (
           : []),
         ...(searchOption.searchInAlias
           ? [
-              {
-                alias: {
-                  some: {
-                    name: { contains: q, mode: insensitive }
-                  }
+            {
+              alias: {
+                some: {
+                  name: { contains: q, mode: insensitive }
                 }
               }
-            ]
+            }
+          ]
           : []),
         ...(searchOption.searchInTag
           ? [
-              {
-                tag: {
-                  some: {
-                    tag: { name: { contains: q, mode: insensitive } }
-                  }
+            {
+              tag: {
+                some: {
+                  tag: { name: { contains: q, mode: insensitive } }
                 }
               }
-            ]
+            }
+          ]
           : [])
       ]
     })),

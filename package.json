@@ -20,7 +20,8 @@
     "start": "pm2 start ecosystem.config.cjs",
     "stop": "pm2 delete kun-touchgal-next",
     "deploy:install": "esno scripts/deployInstall.ts",
-    "deploy:build": "esno scripts/deployBuild.ts"
+    "deploy:build": "esno scripts/deployBuild.ts",
+    "test": "vitest run"
   },
   "author": {
     "name": "KUN1007",
@@ -185,7 +186,8 @@
     "stylelint-config-standard": "^38.0.0",
     "stylelint-order": "^7.0.0",
     "tailwindcss": "^4.1.11",
-    "typescript": "^5.8.3"
+    "typescript": "^5.8.3",
+    "vitest": "^4.0.15"
   },
   "pnpm": {
     "onlyBuiltDependencies": [

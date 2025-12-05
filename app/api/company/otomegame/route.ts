@@ -5,7 +5,7 @@ import { getPatchByCompanySchema } from '~/validations/company'
 import { kunParseGetQuery } from '~/app/api/utils/parseQuery'
 import { GalgameCardSelectField } from '~/constants/api/select'
 import { getNSFWHeader } from '~/app/api/utils/getNSFWHeader'
-import { getKv, setKv } from '~/lib/redis'
+import { getOrSet } from '~/lib/redis'
 import { createHash } from 'crypto'
 
 export const getPatchByCompany = async (
@@ -16,44 +16,42 @@ export const getPatchByCompany = async (
     .update(JSON.stringify({ input, nsfwEnable }))
     .digest('hex')}`
 
-  const cachedData = await getKv(cacheKey)
-  if (cachedData) {
-    return JSON.parse(cachedData)
-  }
+  return await getOrSet(
+    cacheKey,
+    async () => {
+      const { companyId, page, limit } = input
+      const offset = (page - 1) * limit
 
-  const { companyId, page, limit } = input
-  const offset = (page - 1) * limit
+      const [data, total] = await Promise.all([
+        prisma.patch_company_relation.findMany({
+          where: { company_id: companyId, patch: nsfwEnable },
+          select: {
+            patch: {
+              select: GalgameCardSelectField
+            }
+          },
+          orderBy: { created: 'desc' },
+          take: limit,
+          skip: offset
+        }),
+        prisma.patch_company_relation.count({
+          where: { company_id: companyId, patch: nsfwEnable }
+        })
+      ])
 
-  const [data, total] = await Promise.all([
-    prisma.patch_company_relation.findMany({
-      where: { company_id: companyId, patch: nsfwEnable },
-      select: {
-        patch: {
-          select: GalgameCardSelectField
-        }
-      },
-      orderBy: { created: 'desc' },
-      take: limit,
-      skip: offset
-    }),
-    prisma.patch_company_relation.count({
-      where: { company_id: companyId, patch: nsfwEnable }
-    })
-  ])
+      const galgames: GalgameCard[] = data.map((gal) => ({
+        ...gal.patch,
+        tags: gal.patch.tag.map((t) => t.tag.name).slice(0, 3),
+        uniqueId: gal.patch.unique_id,
+        averageRating: gal.patch.rating_stat?.avg_overall
+          ? Math.round(gal.patch.rating_stat.avg_overall * 10) / 10
+          : 0
+      }))
 
-  const galgames: GalgameCard[] = data.map((gal) => ({
-    ...gal.patch,
-    tags: gal.patch.tag.map((t) => t.tag.name).slice(0, 3),
-    uniqueId: gal.patch.unique_id,
-    averageRating: gal.patch.rating_stat?.avg_overall
-      ? Math.round(gal.patch.rating_stat.avg_overall * 10) / 10
-      : 0
-  }))
-
-  const result = { galgames, total }
-  await setKv(cacheKey, JSON.stringify(result), 10)
-
-  return result
+      return { galgames, total }
+    },
+    10
+  )
 }
 
 export const GET = async (req: NextRequest) => {
