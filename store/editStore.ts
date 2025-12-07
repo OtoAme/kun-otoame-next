@@ -42,7 +42,7 @@ export const useCreatePatchStore = create<StoreState>()(
   persist(
     (set, get) => ({
       data: initialState,
-      getData: () => get().data,
+      getData: () => (get() as StoreState).data,
       setData: (data: CreatePatchData) => set({ data }),
       resetData: () => set({ data: initialState })
     }),
@@ -50,5 +50,5 @@ export const useCreatePatchStore = create<StoreState>()(
       name: 'kun-patch-edit-store',
       storage: createJSONStorage(() => localStorage)
     }
-  )
+  ) as any
 )
