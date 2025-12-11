@@ -7,7 +7,7 @@ import { Sparkles } from 'lucide-react'
 import { KunCarousel } from '../carousel/KunCarousel'
 import { getKunPosts } from '../carousel/mdx'
 import { RandomGalgameButton } from '../carousel/RandomGalgameButton'
-import { Discord } from '~/components/kun/icons/Discord'
+import { Telegram } from '~/components/kun/icons/Telegram'
 import { KunHomeNavigationItems } from '../NavigationItems'
 import { kunMoyuMoe } from '~/config/moyu-moe'
 
@@ -40,16 +40,16 @@ export const HomeHero = () => {
                 <RandomGalgameButton color="primary" variant="solid">
                   随机一部游戏
                 </RandomGalgameButton>
-                <Tooltip showArrow content="Discord 服务器">
+                <Tooltip showArrow content="Telegram 频道">
                   <Button
                     isIconOnly
                     isExternal
                     as={Link}
-                    href={kunMoyuMoe.domain.discord_group}
+                    href={kunMoyuMoe.domain.telegram_group}
                     variant="flat"
                     color="secondary"
                   >
-                    <Discord />
+                    <Telegram />
                   </Button>
                 </Tooltip>
               </div>

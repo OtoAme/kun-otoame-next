@@ -10,10 +10,10 @@ const KUN_SITE_DESCRIPTION =
   'OtoAme 是一个一站式 OtomeGame 文化社区， 提供 OtomeGame 下载等服务。承诺永久免费, 高质量。为 OtomeGame 爱好者提供一片净土！'
 const KUN_SITE_URL = 'https://www.otoame.top'
 const KUN_SITE_ARCHIVE = 'https://archive.otoame.top/'
-const KUN_SITE_FORUM = 'https://bbs.otoame.top/'                // 待修改 - 论坛
-const KUN_SITE_NAV = 'https://www.otoame.top'                   // 待修改 - 导航页
-const KUN_SITE_TELEGRAM_GROUP = 'https://s.miku.cyou/2'         // 待修改
-const KUN_SITE_DISCORD_GROUP = 'https://discord.gg/e4QePvPQTB'  // 待修改
+const KUN_SITE_FORUM = 'https://www.otoame.top/'                // 待修改 - 论坛
+const KUN_SITE_NAV = 'https://www.otoame.com'                   // 待修改 - 导航页
+const KUN_SITE_TELEGRAM_GROUP = 'https://t.me/otoame'         // 待修改
+const KUN_SITE_DISCORD_GROUP = ''  // 待修改
 const KUN_SITE_LIST = [
   { name: KUN_SITE_NAME, url: 'https://www.otoame.top' },
   // { name: KUN_SITE_NAME, url: 'https://www.touchgal.moe' },
@@ -81,7 +81,7 @@ export const kunMoyuMoe: KunSiteConfig = {
   },
   domain: {
     main: KUN_SITE_URL,
-    imageBed: 'https://cloud.touchgaloss.com',
+    imageBed: 'https://img.otoame.top',
     storage: KUN_SITE_URL,
     kungal: KUN_SITE_URL,
     telegram_group: KUN_SITE_TELEGRAM_GROUP,
