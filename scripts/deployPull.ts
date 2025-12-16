@@ -192,7 +192,17 @@ const main = async () => {
     } catch (e) {
       // Ignore error if process doesn't exist
     }
-    execSync('pm2 start ecosystem.config.cjs', { stdio: 'inherit' })
+
+    // Detect which server script exists in the new standalone directory
+    const serverMjsPath = path.join(standaloneDir, 'server.mjs')
+    const serverJsPath = path.join(standaloneDir, 'server.js')
+    const scriptName = fs.existsSync(serverMjsPath) ? 'server.mjs' : 'server.js'
+
+    console.log(`Starting PM2 with script: ${scriptName}`)
+    execSync(
+      `pm2 start ${scriptName} --name kun-touchgal-next --cwd "${standaloneDir}" -i 3 --max-memory-restart 1G -- --port 3000 --hostname 127.0.0.1`,
+      { stdio: 'inherit', env: { ...process.env, NODE_ENV: 'production' } }
+    )
 
     console.log('Deployment successful!')
   } catch (e) {
