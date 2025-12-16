@@ -119,6 +119,10 @@ jobs:
           mkdir -p release_temp/public
           cp -r public/. release_temp/public/
 
+          # Remove "type": "module" from package.json to avoid ReferenceError: require is not defined
+          # Next.js standalone output often contains CJS code that fails if package.json forces ESM
+          sed -i '/"type": "module"/d' release_temp/package.json
+
           cd release_temp
           tar -czf ../release.tar.gz .
 
