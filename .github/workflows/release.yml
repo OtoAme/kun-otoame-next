@@ -93,21 +93,25 @@ jobs:
       - name: Prepare Release Package
         run: |
           mkdir -p release_temp
+          # Copy standalone files
           cp -r .next/standalone/* release_temp/
 
-          # Fix: Move manifests and BUILD_ID to .next if they are in root
-          # This handles cases where Next.js standalone output places them in the root
-          cd release_temp
-          mkdir -p .next
-          for file in BUILD_ID *.json trace; do
-            if [ -f "$file" ] && [ "$file" != "package.json" ]; then
-              mv "$file" .next/
-            fi
-          done
-          cd ..
+          # Ensure .next directory exists
+          mkdir -p release_temp/.next
 
+          # Explicitly copy essential build files from .next root to release_temp/.next
+          # This guarantees they exist regardless of where standalone output put them
+          cp .next/BUILD_ID release_temp/.next/
+          cp .next/*.json release_temp/.next/ || true
+
+          # Clean up package.json from .next if copied (we only need the root one)
+          rm -f release_temp/.next/package.json
+
+          # Copy static files
           mkdir -p release_temp/.next/static
           cp -r .next/static/* release_temp/.next/static/
+
+          # Copy public files
           mkdir -p release_temp/public
           cp -r public/* release_temp/public/
 
