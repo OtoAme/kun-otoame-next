@@ -119,6 +119,9 @@ jobs:
           mkdir -p release_temp/public
           cp -r public/. release_temp/public/
 
+          # Copy prisma schema for target-side generation
+          cp -r prisma release_temp/
+
           # Remove "type": "module" from package.json to avoid ReferenceError: require is not defined
           # Next.js standalone output often contains CJS code that fails if package.json forces ESM
           sed -i '/"type": "module"/d' release_temp/package.json

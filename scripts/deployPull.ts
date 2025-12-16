@@ -134,6 +134,40 @@ const main = async () => {
     console.log('Extracting release...')
     execSync(`tar -xzf ${tarPath} -C ${tempDir}`, { stdio: 'inherit' })
 
+    // Update Prisma Schema and Generate Client for Target Architecture
+    const tempPrismaDir = path.join(tempDir, 'prisma')
+    const rootPrismaDir = path.resolve(__dirname, '..', 'prisma')
+
+    if (fs.existsSync(tempPrismaDir)) {
+      console.log('Updating Prisma schema...')
+      if (fs.existsSync(rootPrismaDir)) fs.rmSync(rootPrismaDir, { recursive: true, force: true })
+      fs.renameSync(tempPrismaDir, rootPrismaDir)
+
+      console.log('Generating Prisma Client for current architecture...')
+      // This runs in the project root, using the root node_modules (which has prisma CLI)
+      // It generates the client into <root>/node_modules/@prisma/client and .prisma/client
+      execSync('pnpm prisma generate', { stdio: 'inherit' })
+
+      console.log('Injecting generated Prisma Client into standalone build...')
+      // We need to copy the freshly generated client into the standalone node_modules
+      // because the standalone app uses its own bundled node_modules
+      const rootNodeModules = path.resolve(__dirname, '..', 'node_modules')
+      const standaloneNodeModules = path.join(tempDir, 'node_modules')
+
+      const copyPackage = (pkgName: string) => {
+        const src = path.join(rootNodeModules, pkgName)
+        const dest = path.join(standaloneNodeModules, pkgName)
+        if (fs.existsSync(src)) {
+          if (fs.existsSync(dest)) fs.rmSync(dest, { recursive: true, force: true })
+          fs.mkdirSync(path.dirname(dest), { recursive: true })
+          fs.cpSync(src, dest, { recursive: true })
+        }
+      }
+
+      copyPackage('.prisma')
+      copyPackage('@prisma')
+    }
+
     console.log('Applying atomic update...')
     const nextDir = path.resolve(__dirname, '..', '.next')
     const publicDir = path.resolve(__dirname, '..', 'public')
