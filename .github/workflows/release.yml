@@ -126,6 +126,10 @@ jobs:
           # Next.js standalone output often contains CJS code that fails if package.json forces ESM
           sed -i '/"type": "module"/d' release_temp/package.json
 
+          # Rename server.js to server.mjs to explicitly treat it as ESM
+          # This avoids the "Module type not specified" warning since we removed type: module
+          mv release_temp/server.js release_temp/server.mjs
+
           cd release_temp
           tar -czf ../release.tar.gz .
 
