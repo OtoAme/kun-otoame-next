@@ -94,6 +94,18 @@ jobs:
         run: |
           mkdir -p release_temp
           cp -r .next/standalone/* release_temp/
+
+          # Fix: Move manifests and BUILD_ID to .next if they are in root
+          # This handles cases where Next.js standalone output places them in the root
+          cd release_temp
+          mkdir -p .next
+          for file in BUILD_ID *.json trace; do
+            if [ -f "$file" ] && [ "$file" != "package.json" ]; then
+              mv "$file" .next/
+            fi
+          done
+          cd ..
+
           mkdir -p release_temp/.next/static
           cp -r .next/static/* release_temp/.next/static/
           mkdir -p release_temp/public
