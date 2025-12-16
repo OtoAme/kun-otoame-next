@@ -21,6 +21,7 @@
     "stop": "pm2 delete kun-touchgal-next",
     "deploy:install": "esno scripts/deployInstall.ts",
     "deploy:build": "esno scripts/deployBuild.ts",
+    "deploy:pull": "esno scripts/deployPull.ts",
     "test": "vitest run"
   },
   "author": {

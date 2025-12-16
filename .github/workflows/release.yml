@@ -1,0 +1,64 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v3
+        with:
+          version: 9
+
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Build
+        env:
+          NEXT_PUBLIC_KUN_PATCH_ADDRESS_DEV: ${{ secrets.NEXT_PUBLIC_KUN_PATCH_ADDRESS_DEV }}
+          NEXT_PUBLIC_KUN_PATCH_ADDRESS_PROD: ${{ secrets.NEXT_PUBLIC_KUN_PATCH_ADDRESS_PROD }}
+          NEXT_PUBLIC_KUN_VISUAL_NOVEL_S3_STORAGE_URL: ${{ secrets.NEXT_PUBLIC_KUN_VISUAL_NOVEL_S3_STORAGE_URL }}
+        run: pnpm build
+
+      - name: Prepare Release Package
+        run: |
+          mkdir -p release_temp
+          cp -r .next/standalone/* release_temp/
+          mkdir -p release_temp/.next/static
+          cp -r .next/static/* release_temp/.next/static/
+          mkdir -p release_temp/public
+          cp -r public/* release_temp/public/
+
+          cd release_temp
+          tar -czf ../release.tar.gz .
+
+      - name: Generate CalVer Tag
+        id: calver
+        run: |
+          DATE=$(date +'%Y.%m.%d.%H%M')
+          echo "tag=v$DATE" >> $GITHUB_OUTPUT
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.calver.outputs.tag }}
+          name: Release ${{ steps.calver.outputs.tag }}
+          files: release.tar.gz
+          draft: false
+          prerelease: false
