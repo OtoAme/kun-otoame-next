@@ -160,7 +160,8 @@ const main = async () => {
         if (fs.existsSync(src)) {
           if (fs.existsSync(dest)) fs.rmSync(dest, { recursive: true, force: true })
           fs.mkdirSync(path.dirname(dest), { recursive: true })
-          fs.cpSync(src, dest, { recursive: true })
+          // Use dereference: true to copy the actual content of symlinks (e.g. from .pnpm store)
+          fs.cpSync(src, dest, { recursive: true, dereference: true })
         }
       }
 
@@ -170,68 +171,11 @@ const main = async () => {
 
     console.log('Applying atomic update...')
     const nextDir = path.resolve(__dirname, '..', '.next')
-    const publicDir = path.resolve(__dirname, '..', 'public')
-
-    // Standalone package structure handling
-    // The tarball contains the contents of .next/standalone + .next/static + public
-    // We need to replace the local .next with the one from tempDir/.next (if it exists inside)
-    // Wait, our tar command was `tar -czf ../release.tar.gz .` inside `release_temp`
-    // `release_temp` contained:
-    // - .next/static -> .next/static
-    // - public -> public
-    // - * (standalone contents) -> root of tarball
-
-    // So extracting to tempDir gives us the standalone structure directly.
-    // We need to move tempDir to .next/standalone?
-    // No, we want to run `node server.js` which points to `.next/standalone/server.js`.
-    // But `deploy:build` creates `.next` (full build).
-    // `deploy:pull` creates `.next` (standalone build).
-
-    // Let's look at `deploy:build` logic again.
-    // `next build` -> creates `.next`. Inside it is `standalone`.
-    // We want `deploy:pull` to result in a `.next` folder that looks like what `next build` produces,
-    // OR at least contains `standalone` so our unified `server.js` works.
-
-    // Our CI tarball structure:
-    // root/
-    //   .next/
-    //     static/
-    //   public/
-    //   server.js
-    //   package.json
-    //   ... (other standalone files)
-
-    // If we extract this to `.next/standalone`, then we have:
-    // .next/standalone/.next/static
-    // .next/standalone/public
-    // .next/standalone/server.js
-
-    // This matches exactly what `next build` produces in `.next/standalone` (except we manually added static/public).
-
-    // So, for `deploy:pull`:
-    // 1. We need to ensure `.next` exists.
-    // 2. We replace `.next/standalone` with the extracted content.
-    // 3. BUT, `deploy:build` also produces `.next/static` in the root `.next`.
-    //    If we only replace `.next/standalone`, the root `.next/static` is old or missing?
-    //    The unified `server.js` runs `.next/standalone/server.js`.
-    //    That server looks for static files relative to itself.
-    //    If we put static files inside `.next/standalone/.next/static`, it finds them.
-
-    // So, we just need to replace `.next/standalone`.
-    // However, to be safe and clean, maybe we should just replace the whole `.next` folder?
-    // If we replace the whole `.next` folder with our tarball content...
-    // Our tarball content IS the standalone folder.
-    // So if we rename `tempDir` to `.next`, then `.next/server.js` exists.
-    // But we want `.next/standalone/server.js`.
-
-    // So we should:
-    // 1. Extract tarball to `tempDir`.
-    // 2. Ensure `.next` directory exists.
-    // 3. Remove `.next/standalone`.
-    // 4. Move `tempDir` to `.next/standalone`.
-
     const standaloneDir = path.join(nextDir, 'standalone')
     if (!fs.existsSync(nextDir)) fs.mkdirSync(nextDir)
+
+    // Note: We are replacing the directory. Any running process with this CWD will be in a "deleted" state.
+    // We must ensure PM2 restarts the process from the new directory.
     if (fs.existsSync(standaloneDir)) fs.rmSync(standaloneDir, { recursive: true, force: true })
 
     fs.renameSync(tempDir, standaloneDir)
@@ -241,7 +185,14 @@ const main = async () => {
     execSync('pnpm prisma db push', { stdio: 'inherit' })
 
     console.log('Reloading application...')
-    execSync('pm2 startOrReload ecosystem.config.cjs', { stdio: 'inherit' })
+    // Use delete + start to ensure the process picks up the new CWD (fixing uv_cwd error)
+    // "startOrReload" might reuse the old process context or fail if CWD is gone
+    try {
+      execSync('pm2 delete kun-touchgal-next', { stdio: 'inherit' })
+    } catch (e) {
+      // Ignore error if process doesn't exist
+    }
+    execSync('pm2 start ecosystem.config.cjs', { stdio: 'inherit' })
 
     console.log('Deployment successful!')
   } catch (e) {
