@@ -93,8 +93,8 @@ jobs:
       - name: Prepare Release Package
         run: |
           mkdir -p release_temp
-          # Copy standalone files
-          cp -r .next/standalone/* release_temp/
+          # Copy standalone files (using /. to ensure hidden files like .next are included)
+          cp -r .next/standalone/. release_temp/
 
           # Ensure .next directory exists
           mkdir -p release_temp/.next
@@ -109,11 +109,15 @@ jobs:
 
           # Copy static files
           mkdir -p release_temp/.next/static
-          cp -r .next/static/* release_temp/.next/static/
+          cp -r .next/static/. release_temp/.next/static/
+
+          # Copy server files (required for pages-manifest.json and other server-side logic)
+          mkdir -p release_temp/.next/server
+          cp -r .next/server/. release_temp/.next/server/
 
           # Copy public files
           mkdir -p release_temp/public
-          cp -r public/* release_temp/public/
+          cp -r public/. release_temp/public/
 
           cd release_temp
           tar -czf ../release.tar.gz .
