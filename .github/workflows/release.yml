@@ -12,6 +12,30 @@ jobs:
     permissions:
       contents: write
 
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: password
+          POSTGRES_DB: touchgal
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -59,6 +83,9 @@ jobs:
           KUN_CF_CACHE_PURGE_API_TOKEN=dummy
           KUN_VISUAL_NOVEL_INDEX_NOW_KEY=dummy
           EOF
+
+      - name: Setup Database Schema
+        run: pnpm prisma db push
 
       - name: Build
         run: pnpm build
