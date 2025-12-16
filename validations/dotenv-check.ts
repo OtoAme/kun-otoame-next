@@ -10,11 +10,10 @@ const __dirname = dirname(__filename)
 
 const envPath = path.resolve(__dirname, '..', '.env')
 if (!fs.existsSync(envPath)) {
-  console.error('.env file not found in the project root.')
-  process.exit(1)
+  console.warn('⚠️  .env file not found in the project root. Relying on environment variables.')
+} else {
+  config({ path: envPath })
 }
-
-config({ path: envPath })
 
 export const envSchema = z.object({
   KUN_DATABASE_URL: z.string().url(),
@@ -61,6 +60,6 @@ export const env = envSchema.safeParse(process.env)
 if (!env.success) {
   throw new Error(
     '❌ Invalid environment variables: ' +
-      JSON.stringify(env.error.format(), null, 4)
+    JSON.stringify(env.error.format(), null, 4)
   )
 }

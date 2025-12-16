@@ -29,11 +29,38 @@ jobs:
       - name: Install dependencies
         run: pnpm install
 
+      - name: Create .env file
+        run: |
+          cat <<EOF > .env
+          KUN_DATABASE_URL=postgresql://postgres:password@localhost:5432/touchgal
+          KUN_VISUAL_NOVEL_SITE_URL=https://example.com
+          NEXT_PUBLIC_KUN_PATCH_ADDRESS_DEV=${{ secrets.NEXT_PUBLIC_KUN_PATCH_ADDRESS_DEV }}
+          NEXT_PUBLIC_KUN_PATCH_ADDRESS_PROD=${{ secrets.NEXT_PUBLIC_KUN_PATCH_ADDRESS_PROD }}
+          REDIS_HOST=localhost
+          REDIS_PORT=6379
+          JWT_ISS=touchgal
+          JWT_AUD=touchgal_admin
+          JWT_SECRET=dummy_secret
+          NODE_ENV=production
+          KUN_VISUAL_NOVEL_EMAIL_FROM=dummy
+          KUN_VISUAL_NOVEL_EMAIL_HOST=dummy
+          KUN_VISUAL_NOVEL_EMAIL_PORT=587
+          KUN_VISUAL_NOVEL_EMAIL_ACCOUNT=dummy
+          KUN_VISUAL_NOVEL_EMAIL_PASSWORD=dummy
+          KUN_VISUAL_NOVEL_S3_STORAGE_ACCESS_KEY_ID=dummy
+          KUN_VISUAL_NOVEL_S3_STORAGE_SECRET_ACCESS_KEY=dummy
+          KUN_VISUAL_NOVEL_S3_STORAGE_BUCKET_NAME=dummy
+          KUN_VISUAL_NOVEL_S3_STORAGE_ENDPOINT=https://s3.example.com
+          KUN_VISUAL_NOVEL_S3_STORAGE_REGION=us-east-1
+          NEXT_PUBLIC_KUN_VISUAL_NOVEL_S3_STORAGE_URL=${{ secrets.NEXT_PUBLIC_KUN_VISUAL_NOVEL_S3_STORAGE_URL }}
+          KUN_VISUAL_NOVEL_IMAGE_BED_HOST=example.com
+          KUN_VISUAL_NOVEL_IMAGE_BED_URL=https://example.com
+          KUN_CF_CACHE_ZONE_ID=dummy
+          KUN_CF_CACHE_PURGE_API_TOKEN=dummy
+          KUN_VISUAL_NOVEL_INDEX_NOW_KEY=dummy
+          EOF
+
       - name: Build
-        env:
-          NEXT_PUBLIC_KUN_PATCH_ADDRESS_DEV: ${{ secrets.NEXT_PUBLIC_KUN_PATCH_ADDRESS_DEV }}
-          NEXT_PUBLIC_KUN_PATCH_ADDRESS_PROD: ${{ secrets.NEXT_PUBLIC_KUN_PATCH_ADDRESS_PROD }}
-          NEXT_PUBLIC_KUN_VISUAL_NOVEL_S3_STORAGE_URL: ${{ secrets.NEXT_PUBLIC_KUN_VISUAL_NOVEL_S3_STORAGE_URL }}
         run: pnpm build
 
       - name: Prepare Release Package
