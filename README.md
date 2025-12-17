@@ -31,8 +31,6 @@ cp .env.example .env
 
 注意检查 `.env` 文件名末尾不能存在空格。按照下方说明编辑 `.env` 的内容。
 
-连接 Redis 需要 Redis 无密码且关闭保护模式。
-
 ```env
 # 数据库 URL, 我们使用 psql，创建数据库并填写连接信息
 KUN_DATABASE_URL = "postgresql://user:password@localhost:5432/otoame?schema=public"
@@ -44,7 +42,8 @@ KUN_VISUAL_NOVEL_SITE_URL = "https://www.otoame.com"
 NEXT_PUBLIC_KUN_PATCH_ADDRESS_DEV = "http://127.0.0.1:3000"
 NEXT_PUBLIC_KUN_PATCH_ADDRESS_PROD = "https://www.otoame.com"
 
-# 本地 Redis 端口和地址, 一般无需变动。连接 Redis 需要 Redis 无密码且关闭保护模式。
+# 本地 Redis 地址、端口和密码。
+# 密码可留空，但可能会给服务器带来安全风险。密码为空时可能需要关闭 Redis 的保护模式。
 REDIS_HOST = '127.0.0.1'
 REDIS_PORT = '6379'
 REDIS_PASSWORD = ''
@@ -177,7 +176,9 @@ pnpm deploy:pull
    | NEXT_PUBLIC_KUN_PATCH_ADDRESS_PROD          | 生产环境补丁地址 |
    | NEXT_PUBLIC_KUN_VISUAL_NOVEL_S3_STORAGE_URL | S3 存储桶地址    |
 
-   > **注意**：仅需配置以 `NEXT_PUBLIC_` 开头的变量，因为这些变量会在构建时被打包进前端代码中。私有变量（如数据库密码）仅需存在于服务器的 `.env` 文件中。此处配置的变量应与 `.env` 保持一致。
+   > **注意**：此处配置的变量应与服务器的 `.env` 保持一致。
+   >
+   > 仅需配置以 `NEXT_PUBLIC_` 开头的变量，因为这些变量会在构建时被打包进前端代码中。私有变量（如数据库密码）仅需存在于服务器的 `.env` 文件中。
 
 2. 登录您的生产服务器，编辑项目根目录下的 `.env` 文件，添加以下配置，以便部署脚本能找到并下载发布包：
 
@@ -186,7 +187,8 @@ pnpm deploy:pull
    GITHUB_REPO="OtoAme/kun-otoame-next"
    
    # (可选) 如果是私有仓库，需要提供 GitHub Token
-   # GITHUB_TOKEN="ghp_xxxxxxxxxxxx"
+   # 申请地址: https://github.com/settings/tokens (权限需勾选: repo)
+   # GITHUB_TOKEN="ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
    ```
 
 3. 部署完成后，您可以通过以下命令检查服务状态：
