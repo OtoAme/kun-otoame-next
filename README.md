@@ -6,7 +6,23 @@ OtoAme 是一个一站式 OtomeGame 文化社区， 提供 OtomeGame 下载等�
 
 ## 项目说明
 
-本程序 Fork 自 https://github.com/KUN1007/kun-touchgal-next ，保留了 upstream-main 分支，并在其基础上对 main 分支进行修改，具体修改内容待日后填坑。
+本程序 Fork 自 https://github.com/KUN1007/kun-touchgal-next ，保留了 upstream-main 分支，并在其基础上对 main 分支进行修改。
+
+修改内容：
+
+- 修改 `package.json` ，移除 `postinstall` 、 `prisma:push` 、 `prisma:generate` 中的 `pnpx` 以固定 prisma 版本
+- 移除了调用 Kun GalGame 补丁 API 的功能
+- 将项目可见的 `GalGame` 文本和路由替换为 `OtomeGame`，将 `Touchgal 资源盘` 更改为 `OtoAme 资源盘`
+- 为游戏条目添加 `官方中文` 的资源类型，添加 `PSP` 和 `NS` 平台选项
+- 允许发布具有重复 vndb 编号的游戏，获取 vndb company 信息添加 `ng` 和 `in`，而不仅仅获取 `co`
+- 为管理员添加`清除空标签`功能
+- 删除或更新下载资源时，更新 `patch_resource` 表的 type 字段
+- 添加游戏画廊功能，支持 NSFW 遮罩，在 `create` 和 `rewrite` 页面支持图片 NSFW 标识、水印、上传、排序等功能。支持先发布游戏，游戏画廊可在后台上传。发布游戏的超时时间延长为 180s
+- 在 `create` 和 `rewrite` 页面添加 bangumi 标签一键填写，需要在 `.env` 文件中填写 bangumi api
+- 添加 Redis 密码验证
+- 首页仅显示 SFW 内容，为 `OtomeGame`、`Tags` 等页面的查询添加 Redis 缓存，提高并发性能
+- 升级 Next.js 和 React，解决安全漏洞
+- 添加 CI/CD 构建方案，与服务器本地构建的方案共存。
 
 如果您对此改版项目有疑问，请不要去上游仓库反馈，直接在此仓库提 issues 即可。
 
