@@ -108,11 +108,11 @@ export const SUPPORTED_PLATFORM = [
   'windows',
   'android',
   'macos',
-  'ios',
-  'linux',
   'psp',
   'ps',
   'ns',
+  'ios',
+  'linux',
   'other'
 ]
 export const ALL_SUPPORTED_PLATFORM = ['all', ...SUPPORTED_PLATFORM]
@@ -121,11 +121,11 @@ export const SUPPORTED_PLATFORM_MAP: Record<string, string> = {
   windows: 'Windows',
   android: 'Android',
   macos: 'MacOS',
-  ios: 'iOS',
-  linux: 'Linux',
   psp: 'PSP',
   ps: 'PlayStation',
   ns: 'NS',
+  ios: 'iOS',
+  linux: 'Linux',
   other: '其它'
 }
 
