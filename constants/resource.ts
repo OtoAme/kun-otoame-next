@@ -20,6 +20,12 @@ export const resourceTypes = [
     description: '官方发行的中文版 OtomeGame'
   },
   {
+    value: 'emulator',
+    label: '模拟器资源',
+    description:
+      '可以在手机模拟器, 例如 KiriKiri, ONS, Tyranor 等模拟器中运行的 OtomeGame 游戏'
+  },
+  {
     value: 'patch',
     label: '补丁资源',
     description: '与这个 OtomeGame 相关的补丁资源'
@@ -33,12 +39,6 @@ export const resourceTypes = [
     value: 'mobile',
     label: '手机游戏',
     description: '可以在手机上运行的 OtomeGame 游戏'
-  },
-  {
-    value: 'emulator',
-    label: '模拟器资源',
-    description:
-      '可以在手机模拟器, 例如 KiriKiri, ONS, Tyranor 等模拟器中运行的 OtomeGame 游戏'
   },
   {
     value: 'app',
@@ -111,6 +111,7 @@ export const SUPPORTED_PLATFORM = [
   'ios',
   'linux',
   'psp',
+  'ps',
   'ns',
   'other'
 ]
@@ -123,6 +124,7 @@ export const SUPPORTED_PLATFORM_MAP: Record<string, string> = {
   ios: 'iOS',
   linux: 'Linux',
   psp: 'PSP',
+  ps: 'PlayStation',
   ns: 'NS',
   other: '其它'
 }
