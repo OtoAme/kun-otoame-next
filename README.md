@@ -13,7 +13,7 @@ OtoAme 是一个一站式 OtomeGame 文化社区， 提供 OtomeGame 下载等�
 - 修改 `package.json` ，移除 `postinstall` 、 `prisma:push` 、 `prisma:generate` 中的 `pnpx` 以固定 prisma 版本
 - 移除了调用 Kun GalGame 补丁 API 的功能
 - 将项目可见的 `GalGame` 文本和路由替换为 `OtomeGame`，将 `Touchgal 资源盘` 更改为 `OtoAme 资源盘`
-- 为游戏条目添加 `官方中文` 的资源类型，添加 `PSP` 和 `NS` 平台选项
+- 为游戏条目添加 `官方中文` 的资源类型并重新排序，添加 `PSP` 、 `NS` 和 `PlayStation` SUPPORTED_PLATFORM 选项并重新排序
 - 允许发布具有重复 vndb 编号的游戏，获取 vndb company 信息添加 `ng` 和 `in`，而不仅仅获取 `co`
 - 为管理员添加`清除空标签`功能
 - 删除或更新下载资源时，更新 `patch_resource` 表的 type 字段
