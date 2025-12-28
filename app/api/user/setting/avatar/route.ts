@@ -4,6 +4,7 @@ import { verifyHeaderCookie } from '~/middleware/_verifyHeaderCookie'
 import { prisma } from '~/prisma/index'
 import { avatarSchema } from '~/validations/user'
 import { uploadUserAvatar } from '../_upload'
+import { purgeUserAvatarCache } from '~/app/api/utils/purgeCache'
 
 export const updateUserAvatar = async (uid: number, avatar: ArrayBuffer) => {
   const user = await prisma.user.findUnique({
@@ -27,6 +28,8 @@ export const updateUserAvatar = async (uid: number, avatar: ArrayBuffer) => {
     where: { id: uid },
     data: { avatar: imageLink }
   })
+
+  await purgeUserAvatarCache(uid)
 
   return { avatar: imageLink }
 }
