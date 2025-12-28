@@ -75,8 +75,8 @@ export const captchaSchema = z.object({
   sessionId: z.string().trim().uuid({ message: '非法的 sessionId 格式' }),
   selectedIds: z
     .array(z.string().trim().uuid({ message: '非法的验证图片 ID' }))
-    .min(1, { message: '验证图片中最少有一只白毛小只可爱软萌妹子' })
-    .max(3, { message: '验证图片中最多有三只白毛小只可爱软萌妹子' })
+    .min(1, { message: '验证图片中最少有一位白毛帅哥哦' })
+    .max(3, { message: '验证图片中最多有三位白毛帅哥哦' })
 })
 
 export const verifyLogin2FASchema = z.object({

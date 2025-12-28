@@ -19,7 +19,7 @@ export const verifyKunCaptcha = async (
     selectedIds.length === correctIdsArray.length &&
     selectedIds.every((id) => correctIdsArray.includes(id))
   if (!isCorrect) {
-    return '您选择的白毛女孩子不正确, 请重试'
+    return '哎呀，认错人了哦，请再仔细看看~'
   }
 
   const randomCode = generateRandomString(10)

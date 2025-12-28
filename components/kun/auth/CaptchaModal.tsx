@@ -86,7 +86,7 @@ export const KunCaptchaModal = ({
       <ModalContent>
         <ModalHeader className="flex-col">
           <h3 className="text-lg">人机验证</h3>
-          <p className="font-medium">请选择下面所有的 白毛 女孩子</p>
+          <p className="font-medium">请选择下面所有的 白毛 男孩子</p>
         </ModalHeader>
         <ModalBody>
           {loading ? (
