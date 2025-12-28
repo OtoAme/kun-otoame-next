@@ -50,10 +50,10 @@ export const NSFWMask = ({
                 } ${className}`}
             onClick={handleClick}
         >
-            <EyeOff className="mb-2 size-8 text-white transition-transform duration-200 group-hover:scale-110" />
-            <span className="text-sm font-medium text-white">{text.title}</span>
+            <EyeOff className="mb-1 size-6 text-white transition-transform duration-200 group-hover:scale-110" />
+            <span className="text-xs font-medium text-white">{text.title}</span>
             {onReveal && text.subtitle && (
-                <span className="text-xs text-white/80">{text.subtitle}</span>
+                <span className="text-[10px] text-white/80">{text.subtitle}</span>
             )}
         </div>
     )

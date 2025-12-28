@@ -19,7 +19,7 @@ export const Gallery = ({ images }: Props) => {
         images={images.map((img) => ({ src: img.url, alt: 'Game Screenshot' }))}
       >
         {(openLightbox) => (
-          <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+          <div className="grid grid-cols-2 gap-2 md:grid-cols-4 md:gap-4">
             {images.map((img, index) => (
               <GalleryItem
                 key={img.id}
