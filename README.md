@@ -16,7 +16,7 @@ OtoAme 是一个一站式 OtomeGame 文化社区， 提供 OtomeGame 下载等�
 - 为游戏条目添加 `官方中文` 的资源类型并重新排序，添加 `PSP` 、 `NS` 和 `PlayStation` SUPPORTED_PLATFORM 选项并重新排序
 - 允许发布具有重复 vndb 编号的游戏，获取 vndb company 信息添加 `ng` 和 `in`，而不仅仅获取 `co`
 - 为管理员添加`清除空标签`功能
-- 删除或更新下载资源时，更新 `patch_resource` 表的 type 字段
+- 删除或更新下载资源时，更新 `patch_resource` 表的 type 字段，添加一键填写 `otoame` 解压码按钮
 - 添加游戏画廊功能，支持 NSFW 遮罩，在 `create` 和 `rewrite` 页面支持图片 NSFW 标识、水印、上传、排序等功能。支持先发布游戏，游戏画廊可在后台上传。发布游戏的超时时间延长为 180s
 - 用户更新头像自动刷新 Cloudflare 缓存
 - 更换 CAPTCHA 主题为女性向，保留签到提示中的 `琥珀` 等 loli 形象（因为还没找到合适的 q 版男角色）

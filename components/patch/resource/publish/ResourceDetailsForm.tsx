@@ -1,5 +1,6 @@
 import { Controller } from 'react-hook-form'
 import { Input, Textarea } from '@heroui/input'
+import { Button } from '@heroui/button'
 import { Select, SelectItem } from '@heroui/select'
 import {
   resourceTypes,
@@ -154,6 +155,16 @@ export const ResourceDetailsForm = ({
           placeholder="如果资源的解压需要解压码, 请填写解压码"
           isInvalid={!!errors.code}
           errorMessage={errors.code?.message}
+          endContent={
+            <Button
+              className="h-7 min-w-12 px-3 text-xs"
+              size="sm"
+              variant="flat"
+              onPress={() => field.onChange('otoame')}
+            >
+              otoame
+            </Button>
+          }
         />
       )}
     />
