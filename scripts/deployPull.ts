@@ -109,7 +109,7 @@ const getLatestReleaseUrl = async (repo: string): Promise<string> => {
 const main = async () => {
   try {
     console.log('Updating source code repository...')
-    execSync('git pull', { stdio: 'inherit' })
+    // execSync('git pull', { stdio: 'inherit' })
 
     envSchema.safeParse(process.env)
     const repo = process.env.GITHUB_REPO
