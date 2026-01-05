@@ -18,6 +18,7 @@ import { EditResourceDialog } from './edit/EditResourceDialog'
 import { ResourceTabs } from './Tabs'
 import { KunLoading } from '~/components/kun/Loading'
 import toast from 'react-hot-toast'
+import { SUPPORTED_RESOURCE_SECTION } from '~/constants/resource'
 import type { PatchResource } from '~/types/api/patch'
 
 interface Props {
@@ -25,9 +26,14 @@ interface Props {
   vndbId: string
 }
 
+type ResourceSection = (typeof SUPPORTED_RESOURCE_SECTION)[number]
+
 export const Resources = ({ id, vndbId }: Props) => {
   const [loading, setLoading] = useState(false)
   const [resources, setResources] = useState<PatchResource[]>([])
+  const [selectedSection, setSelectedSection] =
+    useState<ResourceSection>('galgame')
+
   useEffect(() => {
     const fetchData = async () => {
       setLoading(true)
@@ -99,6 +105,8 @@ export const Resources = ({ id, vndbId }: Props) => {
           onOpenEdit={onOpenEdit}
           onOpenDelete={onOpenDelete}
           setDeleteResourceId={setDeleteResourceId}
+          selectedSection={selectedSection}
+          setSelectedSection={setSelectedSection}
         />
       )}
 
@@ -112,6 +120,7 @@ export const Resources = ({ id, vndbId }: Props) => {
       >
         <PublishResource
           patchId={id}
+          defaultSection={selectedSection}
           onClose={onCloseCreate}
           onSuccess={(res) => {
             setResources([...resources, res])

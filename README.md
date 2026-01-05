@@ -20,7 +20,8 @@ OtoAme 是一个一站式 OtomeGame 文化社区， 提供 OtomeGame 下载等�
 - 添加游戏画廊功能，支持 NSFW 遮罩，在 `create` 和 `rewrite` 页面支持图片 NSFW 标识、水印、上传、排序等功能。支持先发布游戏，游戏画廊可在后台上传。发布游戏的超时时间延长为 180s
 - 用户更新头像自动刷新 Cloudflare 缓存
 - 更换 CAPTCHA 主题为女性向，保留签到提示中的 `琥珀` 等 loli 形象（因为还没找到合适的 q 版男角色）
-- 在 `create` 和 `rewrite` 页面添加 bangumi 标签一键填写，需要在 `.env` 文件中填写 bangumi api
+- 在 `create` 和 `rewrite` 页面添加 bangumi 标签一键填写，需要在 `.env` 文件中填写 bangumi api，修改 vndb 编号为可选字段
+- 在“资源”或“补丁”标签页之间切换并点击“添加资源”时，弹出的创建窗口将会默认选中当前所在的标签页类型。
 - 添加 Redis 密码验证
 - 首页仅显示 SFW 内容，为 `OtomeGame`、`Tags` 等页面的查询添加 Redis 缓存，提高并发性能
 - 升级 Next.js 和 React，解决安全漏洞

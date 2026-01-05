@@ -37,6 +37,8 @@ interface Props {
   onOpenEdit: () => void
   onOpenDelete: () => void
   setDeleteResourceId: (resourceId: number) => void
+  selectedSection: ResourceSection
+  setSelectedSection: (section: ResourceSection) => void
 }
 
 export const ResourceTabs = ({
@@ -45,11 +47,11 @@ export const ResourceTabs = ({
   setEditResource,
   onOpenEdit,
   onOpenDelete,
-  setDeleteResourceId
+  setDeleteResourceId,
+  selectedSection,
+  setSelectedSection
 }: Props) => {
   const { user } = useUserStore((state) => state)
-  const [selectedSection, setSelectedSection] =
-    useState<ResourceSection>('galgame')
 
   const categorizedResources = SUPPORTED_RESOURCE_SECTION.reduce(
     (acc, section) => {

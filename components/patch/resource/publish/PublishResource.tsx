@@ -30,6 +30,7 @@ export type ResourceFormData = z.infer<typeof patchResourceCreateSchema>
 
 interface CreateResourceProps {
   patchId: number
+  defaultSection?: string
   onClose: () => void
   onSuccess?: (res: PatchResource) => void
 }
@@ -43,6 +44,7 @@ const userRoleStorageMap: Record<number, string> = {
 
 export const PublishResource = ({
   patchId,
+  defaultSection,
   onClose,
   onSuccess
 }: CreateResourceProps) => {
@@ -62,7 +64,7 @@ export const PublishResource = ({
       patchId,
       storage: userRoleStorageMap[user.role],
       name: '',
-      section: user.role > 2 ? 'galgame' : 'patch',
+      section: (defaultSection as any) || (user.role > 2 ? 'galgame' : 'patch'),
       hash: '',
       content: '',
       code: '',
