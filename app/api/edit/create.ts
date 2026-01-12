@@ -65,8 +65,7 @@ export const createGalgame = async (
       if (typeof uploadResult === 'string') {
         return uploadResult
       }
-      const timestamp = Date.now()
-      const imageLink = `${process.env.KUN_VISUAL_NOVEL_IMAGE_BED_URL}/patch/${newId}/banner/banner.avif?t=${timestamp}`
+      const imageLink = `${process.env.KUN_VISUAL_NOVEL_IMAGE_BED_URL}/patch/${newId}/banner/banner.avif`
 
       await prisma.patch.update({
         where: { id: newId },

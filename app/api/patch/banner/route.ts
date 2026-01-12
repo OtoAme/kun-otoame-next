@@ -24,8 +24,7 @@ export const updatePatchBanner = async (
 
   await purgePatchBannerCache(patchId)
 
-  const timestamp = Date.now()
-  const imageLink = `${process.env.KUN_VISUAL_NOVEL_IMAGE_BED_URL}/patch/${patchId}/banner/banner.avif?t=${timestamp}`
+  const imageLink = `${process.env.KUN_VISUAL_NOVEL_IMAGE_BED_URL}/patch/${patchId}/banner/banner.avif`
   await prisma.patch.update({
     where: { id: patchId },
     data: { banner: imageLink }

@@ -73,8 +73,7 @@ export const updateGalgame = async (
 
     // Update the banner URL in the database to ensure it's correct
     // and to potentially trigger any update hooks if they exist
-    const timestamp = Date.now()
-    const imageLink = `${process.env.KUN_VISUAL_NOVEL_IMAGE_BED_URL}/patch/${id}/banner/banner.avif?t=${timestamp}`
+    const imageLink = `${process.env.KUN_VISUAL_NOVEL_IMAGE_BED_URL}/patch/${id}/banner/banner.avif`
     await prisma.patch.update({
       where: { id },
       data: { banner: imageLink }
