@@ -20,7 +20,7 @@ export const KunRedirectContainer = () => {
 
         <div className="max-w-2xl">
           <Alert
-            description="下载如果出现问题请至公告中的常见问题文章寻找解决方法，下方广告是免费绘画资源课分享。"
+            description="下载如果出现问题请至公告中的常见问题文章寻找解决方法，点击下方图片查看免费绘画资源。"
             title="公告"
             color="secondary"
             variant="faded"
@@ -31,7 +31,7 @@ export const KunRedirectContainer = () => {
           <Link isExternal href="https://pan.209911.xyz/">
             <Image
               alt={kunMoyuMoe.title}
-              src="/209911.jpg"
+              src="/images/209911.jpg"
             />
           </Link>
         </div>
