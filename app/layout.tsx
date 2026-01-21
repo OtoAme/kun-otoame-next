@@ -1,4 +1,5 @@
 import { Toaster } from 'react-hot-toast'
+import Script from 'next/script'
 import { Providers } from './providers'
 import { KunTopBar } from '~/components/kun/top-bar/TopBar'
 import { KunFooter } from '~/components/kun/Footer'
@@ -27,6 +28,10 @@ export default function RootLayout({
       )}
 
       <body>
+        <Script
+          src="https://uma.209911.xyz/script.js"
+          data-website-id="e01c3e18-52d6-4057-b1d4-1fa00c45b9ac"
+        />
         <Providers>
           <div className="relative flex flex-col items-center justify-center min-h-screen bg-radial">
             <KunTopBar />
