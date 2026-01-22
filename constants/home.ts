@@ -23,8 +23,8 @@ export const homeNavigationItems: HomeNavItem[] = [
   },
   {
     icon: MessageSquare,
-    label: '论坛',
-    href: kunMoyuMoe.domain.forum,
+    label: '发布页',
+    href: kunMoyuMoe.domain.nav,
     color: 'secondary',
     isExternal: true
   },
