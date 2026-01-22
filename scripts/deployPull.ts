@@ -187,6 +187,27 @@ const main = async () => {
     console.log('Running database migrations...')
     execSync('pnpm prisma db push', { stdio: 'inherit' })
 
+    console.log('Generating Sitemap with production data...')
+    try {
+      execSync('esno scripts/generateKunSitemap.ts', { stdio: 'inherit' })
+      const generatedSitemapPath = path.resolve(__dirname, '..', 'public', 'sitemap.xml')
+      const standalonePublicDir = path.join(standaloneDir, 'public')
+      const standaloneSitemapPath = path.join(standalonePublicDir, 'sitemap.xml')
+
+      if (fs.existsSync(generatedSitemapPath)) {
+        if (!fs.existsSync(standalonePublicDir)) {
+          fs.mkdirSync(standalonePublicDir, { recursive: true })
+        }
+        fs.copyFileSync(generatedSitemapPath, standaloneSitemapPath)
+        console.log('✅ Sitemap updated and copied to standalone build')
+      } else {
+        console.warn('⚠️ Sitemap generation script ran but file not found')
+      }
+    } catch (error) {
+      console.error('⚠️ Failed to generate sitemap:', error)
+      // Don't fail the deployment just because sitemap failed
+    }
+
     console.log('Reloading application...')
     // Use delete + start to ensure the process picks up the new CWD (fixing uv_cwd error)
     // "startOrReload" might reuse the old process context or fail if CWD is gone
