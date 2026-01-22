@@ -71,6 +71,12 @@ export const generateKunMetadata = (): Metadata => {
       languages: {
         'zh-Hans': kunMoyuMoe.domain.main
       }
+    },
+    verification: {
+      google: 'pRiYZmK5AHzz8g-ixS54J0wjK1TQdz0CeQEFgPr1GlE',
+      other: {
+        'msvalidate.01': '6A6B0A6E24CC5E7B007C43F0A38501EE'
+      }
     }
   }
 }
