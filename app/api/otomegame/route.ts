@@ -143,7 +143,7 @@ export const GET = async (req: NextRequest) => {
     !ALL_SUPPORTED_LANGUAGE.includes(input.selectedLanguage) ||
     !ALL_SUPPORTED_PLATFORM.includes(input.selectedPlatform)
   ) {
-    return NextResponse.json('请选择我们支持的 Galgame 排序类型')
+    return NextResponse.json('请选择我们支持的 OtomeGame 排序类型')
   }
 
   const nsfwEnable = getNSFWHeader(req)

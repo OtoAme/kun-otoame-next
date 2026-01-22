@@ -68,7 +68,7 @@ export const getPatchIntroduction = async (
     }
   })
   if (!patch) {
-    return '未找到对应 Galgame'
+    return '未找到对应 OtomeGame'
   }
 
   const response: PatchIntroduction = {

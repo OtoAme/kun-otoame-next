@@ -59,7 +59,7 @@ export const FeedbackButton = ({ patch }: Props) => {
       <Modal isOpen={isOpen} onClose={onClose}>
         <ModalContent>
           <ModalHeader className="flex flex-col gap-1">
-            提交 Galgame 反馈
+            提交 OtomeGame 反馈
           </ModalHeader>
           <ModalBody>
             <Textarea

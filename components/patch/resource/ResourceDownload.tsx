@@ -130,7 +130,7 @@ export const ResourceDownload = ({ resource }: Props) => {
           <Button
             color="primary"
             isIconOnly
-            aria-label={`下载 Galgame 资源`}
+            aria-label={`下载 OtomeGame 资源`}
             onPress={() => toggleLinks(resource.id)}
           >
             <Download className="size-4" />

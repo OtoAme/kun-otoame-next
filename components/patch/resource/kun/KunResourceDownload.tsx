@@ -136,7 +136,7 @@ export const KunResourceDownload = ({ resource }: Props) => {
             color="primary"
             variant="flat"
             isIconOnly
-            aria-label={`下载 Galgame 补丁资源`}
+            aria-label={`下载 OtomeGame 补丁资源`}
             onPress={() => toggleLinks(resource.id)}
           >
             <Download className="size-4" />

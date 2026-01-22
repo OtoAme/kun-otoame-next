@@ -52,7 +52,7 @@ export const UserDropdown = () => {
               </ModalHeader>
               <ModalBody>
                 <p>
-                  登出将会清除您的登录状态, 但是不会清除您的编辑草稿 (Galgame,
+                  登出将会清除您的登录状态, 但是不会清除您的编辑草稿 (OtomeGame,
                   回复等), 您可以稍后继续登录
                 </p>
               </ModalBody>

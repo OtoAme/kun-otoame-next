@@ -129,7 +129,7 @@ export const CommentDropdown = ({ comment, setComments }: Props) => {
       <Dropdown>
         <DropdownTrigger>
           <Button variant="light" isIconOnly className="text-default-400">
-            <MoreHorizontal aria-label="Galgame 评论操作" className="size-4" />
+            <MoreHorizontal aria-label="OtomeGame 评论操作" className="size-4" />
           </Button>
         </DropdownTrigger>
         <DropdownMenu

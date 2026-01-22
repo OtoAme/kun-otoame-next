@@ -12,7 +12,7 @@ export const updateGalgame = async (
 ) => {
   const patch = await prisma.patch.findUnique({ where: { id: input.id } })
   if (!patch) {
-    return '该 ID 下未找到对应 Galgame'
+    return '该 ID 下未找到对应 OtomeGame'
   }
 
   if (input.vndbId && input.isDuplicate !== 'true') {
@@ -20,7 +20,7 @@ export const updateGalgame = async (
       where: { vndb_id: input.vndbId }
     })
     if (galgame && galgame.id !== input.id) {
-      return `Galgame VNDB ID 与游戏 ID 为 ${galgame.unique_id} 的游戏重复`
+      return `OtomeGame VNDB ID 与游戏 ID 为 ${galgame.unique_id} 的游戏重复`
     }
   }
 

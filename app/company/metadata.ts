@@ -13,8 +13,8 @@ export const kunMetadata: Metadata = {
   },
   twitter: {
     card: 'summary_large_image',
-    title: `Galgame 会社分类`,
-    description: `所有的 Galgame 会社分类, ${Object.values(SUPPORTED_TYPE_MAP).toString()} 下载`
+    title: `OtomeGame 会社分类`,
+    description: `所有的 OtomeGame 会社分类, ${Object.values(SUPPORTED_TYPE_MAP).toString()} 下载`
   },
   alternates: {
     canonical: `${kunMoyuMoe.domain.main}/company`

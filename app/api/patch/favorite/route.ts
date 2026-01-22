@@ -14,7 +14,7 @@ export const togglePatchFavorite = async (
     where: { id: input.patchId }
   })
   if (!patch) {
-    return '未找到 Galgame'
+    return '未找到 OtomeGame'
   }
 
   const folder = await prisma.user_patch_favorite_folder.findUnique({
