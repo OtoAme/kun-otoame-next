@@ -30,7 +30,7 @@ export const HomeHero = () => {
 
               <div className="space-y-4">
                 <h1 className="py-1 text-3xl font-bold text-transparent xl:text-4xl bg-gradient-to-r from-primary-500 to-secondary-500 bg-clip-text">
-                  一站式 OtomeGame 文化社区！
+                  一站式乙女游戏文化社区！
                 </h1>
                 <p className="text-md text-default-600">
                   免费, 高质量的 OtomeGame 资源下载站
