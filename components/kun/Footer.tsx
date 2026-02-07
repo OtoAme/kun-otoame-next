@@ -55,6 +55,14 @@ export const KunFooter = () => {
             >
               Telegram
             </Link>
+            <Link
+              href={kunMoyuMoe.domain.qq_group}
+              className="flex items-center"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              QQ 群
+            </Link>
           </div>
         </div>
       </div>
