@@ -34,8 +34,8 @@ export const KunFriendLink = () => {
               onPress={() => window.open(friend.link, '_blank')}
               className="w-full h-full border border-default-200"
             >
-              <CardBody className="p-0 overflow-visible">
-                <div className="flex justify-center w-full pt-4">
+              <CardBody className="flex-none p-0 overflow-visible">
+                <div className="flex justify-center w-full h-28 pt-4">
                   <Image
                     alt={friend.name}
                     className="object-cover w-24 h-24 rounded-lg"
@@ -43,9 +43,11 @@ export const KunFriendLink = () => {
                   />
                 </div>
               </CardBody>
-              <CardFooter className="flex flex-col items-center pt-4 pb-6">
-                <h4 className="font-bold text-large">{friend.name}</h4>
-                <p className="mt-1 text-sm text-center text-default-500 line-clamp-4">
+              <CardFooter className="flex flex-col items-center flex-grow pt-4 pb-6">
+                <h4 className="h-12 font-bold text-center text-large line-clamp-2">
+                  {friend.name}
+                </h4>
+                <p className="flex-grow mt-1 text-sm text-center text-default-500 line-clamp-4">
                   {friend.label}
                 </p>
               </CardFooter>
