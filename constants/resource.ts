@@ -169,3 +169,56 @@ export const RESOURCE_SECTION_MAP: Record<string, string> = {
   galgame: 'OtomeGame 资源',
   patch: 'OtomeGame 补丁'
 }
+
+// 平台优先级排序 (索引越小优先级越高)
+const PLATFORM_PRIORITY: Record<string, number> = Object.fromEntries(
+  SUPPORTED_PLATFORM.map((platform, index) => [platform, index])
+)
+
+// 语言优先级排序 (索引越小优先级越高)
+const LANGUAGE_PRIORITY: Record<string, number> = Object.fromEntries(
+  SUPPORTED_LANGUAGE.map((language, index) => [language, index])
+)
+
+/**
+ * 获取资源平台数组中的最高优先级 (数值越小优先级越高)
+ */
+export const getResourcePlatformPriority = (platforms: string[]): number => {
+  if (!platforms.length) return Number.MAX_SAFE_INTEGER
+  return Math.min(
+    ...platforms.map((p) => PLATFORM_PRIORITY[p] ?? Number.MAX_SAFE_INTEGER)
+  )
+}
+
+/**
+ * 获取资源语言数组中的最高优先级 (数值越小优先级越高)
+ */
+export const getResourceLanguagePriority = (languages: string[]): number => {
+  if (!languages.length) return Number.MAX_SAFE_INTEGER
+  return Math.min(
+    ...languages.map((l) => LANGUAGE_PRIORITY[l] ?? Number.MAX_SAFE_INTEGER)
+  )
+}
+
+/**
+ * 资源排序比较函数
+ * 首先按平台优先级排序，如果相同则按语言优先级排序
+ */
+export const compareResources = <
+  T extends { platform: string[]; language: string[] }
+>(
+  a: T,
+  b: T
+): number => {
+  const platformPriorityA = getResourcePlatformPriority(a.platform)
+  const platformPriorityB = getResourcePlatformPriority(b.platform)
+
+  if (platformPriorityA !== platformPriorityB) {
+    return platformPriorityA - platformPriorityB
+  }
+
+  const languagePriorityA = getResourceLanguagePriority(a.language)
+  const languagePriorityB = getResourceLanguagePriority(b.language)
+
+  return languagePriorityA - languagePriorityB
+}

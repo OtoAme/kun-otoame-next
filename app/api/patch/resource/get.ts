@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { prisma } from '~/prisma/index'
+import { compareResources } from '~/constants/resource'
 import type { PatchResource } from '~/types/api/patch'
 
 const patchIdSchema = z.object({
@@ -63,6 +64,9 @@ export const getPatchResource = async (
       role: resource.user.role
     }
   }))
+
+  // 按平台优先级排序，相同平台则按语言优先级排序
+  resources.sort(compareResources)
 
   return resources
 }
