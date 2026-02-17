@@ -2,7 +2,8 @@ import { Chip } from '@heroui/chip'
 import {
   SUPPORTED_LANGUAGE_MAP,
   SUPPORTED_PLATFORM_MAP,
-  SUPPORTED_TYPE_MAP
+  SUPPORTED_TYPE_MAP,
+  sortResourceTypes
 } from '~/constants/resource'
 import type { Patch } from '~/types/api/patch'
 
@@ -28,7 +29,7 @@ export const Tags = ({ patch }: PatchHeaderProps) => {
         ))}
 
       {patch.type.length > 0 &&
-        patch.type.map((type) => (
+        sortResourceTypes(patch.type).map((type) => (
           <Chip key={type} color="primary" variant="solid">
             {SUPPORTED_TYPE_MAP[type]}
           </Chip>

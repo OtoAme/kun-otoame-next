@@ -1,7 +1,8 @@
 import { Chip } from '@heroui/chip'
 import {
   SUPPORTED_LANGUAGE_MAP,
-  SUPPORTED_PLATFORM_MAP
+  SUPPORTED_PLATFORM_MAP,
+  sortResourceTypes
 } from '~/constants/resource'
 import { cn } from '~/utils/cn'
 
@@ -37,7 +38,7 @@ export const KunPatchAttribute = ({
 }: Props) => {
   return (
     <div className={cn('flex flex-wrap gap-2', className)}>
-      {types.map((type) => (
+      {sortResourceTypes(types).map((type) => (
         <Chip key={type} variant="flat" color="primary" size={size}>
           {SUPPORTED_TYPE_MAP[type]}
         </Chip>

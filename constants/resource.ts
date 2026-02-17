@@ -170,6 +170,38 @@ export const RESOURCE_SECTION_MAP: Record<string, string> = {
   patch: 'OtomeGame 补丁'
 }
 
+// 资源类型显示顺序 (功能类型在前，语言类型在后)
+const TYPE_DISPLAY_ORDER = [
+  'pc',
+  'mobile',
+  'emulator',
+  'app',
+  'patch',
+  'material',
+  'tool',
+  'notice',
+  'other',
+  'chinese',
+  'official-zh',
+  'row'
+]
+
+const TYPE_DISPLAY_PRIORITY: Record<string, number> = Object.fromEntries(
+  TYPE_DISPLAY_ORDER.map((type, index) => [type, index])
+)
+
+/**
+ * 对资源类型数组按显示顺序排序
+ * 功能类型在前，语言类型在后
+ */
+export const sortResourceTypes = (types: string[]): string[] => {
+  return [...types].sort((a, b) => {
+    const priorityA = TYPE_DISPLAY_PRIORITY[a] ?? Number.MAX_SAFE_INTEGER
+    const priorityB = TYPE_DISPLAY_PRIORITY[b] ?? Number.MAX_SAFE_INTEGER
+    return priorityA - priorityB
+  })
+}
+
 // 平台优先级排序 (索引越小优先级越高)
 const PLATFORM_PRIORITY: Record<string, number> = Object.fromEntries(
   SUPPORTED_PLATFORM.map((platform, index) => [platform, index])
