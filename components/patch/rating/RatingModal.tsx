@@ -151,14 +151,21 @@ export const RatingModal = ({
           ))}
         </Select>
 
-        <Input
-          type="number"
-          label="总分 (1-10)"
-          min={1}
-          max={10}
-          value={String(overall)}
-          onValueChange={(v) => setOverall(Number(v))}
-        />
+        <div className="relative">
+          <Input
+            type="number"
+            label="总分 (1-10)"
+            min={1}
+            max={10}
+            value={String(overall)}
+            onValueChange={(v) => setOverall(Number(v))}
+          />
+          {overall === 10 && (
+            <span className="absolute text-xs -translate-y-1/2 right-10 top-[60%] select-none text-danger whitespace-nowrap">
+              请谨慎评价
+            </span>
+          )}
+        </div>
 
         <Select
           label="游玩状态"

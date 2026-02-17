@@ -12,6 +12,10 @@ export const CommentTab = ({ id }: Props) => {
         <h2 className="text-2xl font-medium">游戏评论</h2>
       </CardHeader>
       <CardBody className="p-4">
+        <div className="mb-6 text-default-600">
+          要反馈游戏资源问题，请点击上方图片右侧的“问题反馈”。在评论区反馈管理员不会收到通知。
+        </div>
+
         <Comments id={Number(id)} />
       </CardBody>
     </Card>
