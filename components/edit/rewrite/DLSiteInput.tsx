@@ -26,7 +26,7 @@ export const DLSiteInput = ({ errors }: { errors?: string }) => {
   const { data, setData } = useRewritePatchStore()
 
   const handleFetch = async () => {
-    const rawCode = data.dlsiteCode.trim()
+    const rawCode = (data.dlsiteCode ?? '').trim()
     if (!rawCode) {
       toast.error('DLSite Code 不可为空')
       return

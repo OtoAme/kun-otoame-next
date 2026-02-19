@@ -19,10 +19,10 @@ export const DuplicateCheckButton = () => {
   )
 
   const buildPayload = () => ({
-    vndbId: data.vndbId.trim().toLowerCase(),
-    vndbRelationId: data.vndbRelationId.trim().toLowerCase(),
-    dlsiteCode: data.dlsiteCode.trim().toUpperCase(),
-    title: data.name.trim()
+    vndbId: (data.vndbId ?? '').trim().toLowerCase(),
+    vndbRelationId: (data.vndbRelationId ?? '').trim().toLowerCase(),
+    dlsiteCode: (data.dlsiteCode ?? '').trim().toUpperCase(),
+    title: (data.name ?? '').trim()
   })
 
   const handleCheckDuplicate = async () => {

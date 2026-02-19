@@ -17,7 +17,7 @@ export const VNDBInput = <T extends PatchFormDataShape>({
   setData
 }: Props<T>) => {
   const handleFetchData = async () => {
-    const rawInput = data.vndbId.trim()
+    const rawInput = (data.vndbId ?? '').trim()
     if (!rawInput) {
       toast.error('VNDB ID 不可为空')
       return

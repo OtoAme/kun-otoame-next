@@ -26,7 +26,7 @@ export const VNDBRelationInput = <T extends PatchFormDataShape>({
   enableDuplicateCheck = true
 }: Props<T>) => {
   const handleFetchRelation = async () => {
-    const rawInput = data.vndbRelationId.trim()
+    const rawInput = (data.vndbRelationId ?? '').trim()
     if (!rawInput) {
       toast.error('VNDB Relation ID 不可为空')
       return
@@ -64,8 +64,8 @@ export const VNDBRelationInput = <T extends PatchFormDataShape>({
         >('/edit/duplicate', {
           vndbId,
           vndbRelationId: normalized,
-          dlsiteCode: data.dlsiteCode.trim().toUpperCase(),
-          title: data.name.trim()
+          dlsiteCode: (data.dlsiteCode ?? '').trim().toUpperCase(),
+          title: (data.name ?? '').trim()
         })
 
         if (typeof duplicateResult === 'string') {
