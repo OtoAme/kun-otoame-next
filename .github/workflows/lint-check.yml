@@ -34,11 +34,11 @@ jobs:
           node-version: '22'
           cache: 'pnpm'
 
-      - name: Install dependencies
-        run: pnpm install
-
       - name: Copy .env.example to .env
         run: cp .env.example .env
+
+      - name: Install dependencies
+        run: pnpm install
 
       - name: Generate prisma client
         run: pnpm run prisma:generate
