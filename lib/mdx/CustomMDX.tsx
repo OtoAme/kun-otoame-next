@@ -1,4 +1,5 @@
 import { MDXRemote, MDXRemoteProps } from 'next-mdx-remote/rsc'
+import remarkGfm from 'remark-gfm'
 import { KunLink } from './element/KunLink'
 import { KunTable } from './element/KunTable'
 import { KunCode } from './element/KunCode'
@@ -21,6 +22,11 @@ export const CustomMDX = (props: MDXRemoteProps) => {
     <MDXRemote
       {...props}
       components={{ ...components, ...(props.components || {}) }}
+      options={{
+        mdxOptions: {
+          remarkPlugins: [remarkGfm]
+        }
+      }}
     />
   )
 }
