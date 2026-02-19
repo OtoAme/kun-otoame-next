@@ -1,104 +1,62 @@
 'use client'
 
-import { Button, Checkbox, Input, Link } from '@heroui/react'
-import { useCreatePatchStore } from '~/store/editStore'
+import { Button, Input } from '@heroui/react'
 import toast from 'react-hot-toast'
-import { kunFetchGet } from '~/utils/kunFetch'
-import type { VNDBResponse } from '../VNDB'
+import { fetchVNDBDetails } from '~/utils/vndb'
+import type { PatchFormDataShape } from '~/components/edit/types'
 
-interface Props {
+interface Props<T extends PatchFormDataShape> {
   errors: string | undefined
+  data: T
+  setData: (data: T) => void
 }
 
-export const VNDBInput = ({ errors }: Props) => {
-  const { data, setData } = useCreatePatchStore()
-
-  const handleCheckDuplicate = async () => {
-    if (!data.vndbId) {
+export const VNDBInput = <T extends PatchFormDataShape>({
+  errors,
+  data,
+  setData
+}: Props<T>) => {
+  const handleFetchData = async () => {
+    const rawInput = data.vndbId.trim()
+    if (!rawInput) {
       toast.error('VNDB ID 不可为空')
       return
     }
 
-    const res = await kunFetchGet<KunResponse<{}>>('/edit/duplicate', {
-      vndbId: data.vndbId
-    })
-    if (typeof res === 'string') {
-      toast.error('游戏重复, 该游戏已经有人发布过了')
-      return
-    } else {
-      toast.success('检测完成, 该游戏并未重复!')
-    }
-
-    toast('正在从 VNDB 获取数据...')
-    const vndbResponse = await fetch(`https://api.vndb.org/kana/vn`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        filters: ['id', '=', data.vndbId],
-        fields: 'title, titles.lang, titles.title, aliases, released'
-      })
-    })
-
-    const vndbData: VNDBResponse = await vndbResponse.json()
-    const allTitles = vndbData.results.flatMap((vn) => {
-      const jaTitle = vn.titles.find((t) => t.lang === 'ja')?.title
-      const titlesArray = [
-        ...(jaTitle ? [jaTitle] : []),
-        vn.title,
-        ...vn.titles.filter((t) => t.lang !== 'ja').map((t) => t.title),
-        ...vn.aliases
-      ]
-      return titlesArray
-    })
-
-    setData({
-      ...data,
-      alias: [...new Set(allTitles)],
-      released: vndbData.results[0].released
-    })
-
-    toast.success('获取数据成功! 已为您自动添加游戏别名')
-  }
-
-  const handleGetInfo = async () => {
-    if (!data.vndbId) {
-      toast.error('VNDB ID 不可为空')
+    const normalizedInput = rawInput.toLowerCase()
+    if (!/^v\d+$/.test(normalizedInput)) {
+      toast.error('VNDB ID 需要以 v 开头')
       return
     }
 
-    toast('正在从 VNDB 获取数据...')
-    const vndbResponse = await fetch(`https://api.vndb.org/kana/vn`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        filters: ['id', '=', data.vndbId],
-        fields: 'title, titles.lang, titles.title, aliases, released'
+    try {
+      toast('正在从 VNDB 获取数据...')
+      const { titles, released } = await fetchVNDBDetails(normalizedInput)
+
+      setData({
+        ...data,
+        vndbId: normalizedInput,
+        alias: [...new Set(titles)],
+        released: released || data.released
       })
-    })
 
-    const vndbData: VNDBResponse = await vndbResponse.json()
-    const allTitles = vndbData.results.flatMap((vn) => {
-      const jaTitle = vn.titles.find((t) => t.lang === 'ja')?.title
-      const titlesArray = [
-        ...(jaTitle ? [jaTitle] : []),
-        vn.title,
-        ...vn.titles.filter((t) => t.lang !== 'ja').map((t) => t.title),
-        ...vn.aliases
-      ]
-      return titlesArray
-    })
-
-    setData({
-      ...data,
-      alias: [...new Set(allTitles)],
-      released: vndbData.results[0].released
-    })
-
-    toast.success('获取数据成功! 已为您自动添加游戏别名')
+      toast.success('获取数据成功! 已为您自动添加游戏别名')
+    } catch (error) {
+      console.error(error)
+      if (
+        error instanceof Error &&
+        (error.message === 'VNDB_API_ERROR' ||
+          error.message === 'VNDB_NOT_FOUND')
+      ) {
+        const message =
+          error.message === 'VNDB_NOT_FOUND'
+            ? '未找到对应的 VNDB 数据'
+            : 'VNDB API 请求失败, 请稍后重试'
+        toast.error(message)
+      } else {
+        toast.error('VNDB API 请求失败, 请稍后重试')
+      }
+    }
   }
 
   return (
@@ -113,7 +71,7 @@ export const VNDBInput = ({ errors }: Props) => {
         isInvalid={!!errors}
         errorMessage={errors}
       />
-      <p className="text-sm ">
+      <p className="text-sm">
         提示: VNDB ID 需要 VNDB 官网 (vndb.org)
         获取，当进入对应游戏的页面，游戏页面的 URL (形如
         https://vndb.org/v19658) 中的 v19658 就是 VNDB ID
@@ -125,42 +83,16 @@ export const VNDBInput = ({ errors }: Props) => {
       <p className="text-sm text-default-500">
         <b>您可以不填写 VNDB ID 发布游戏, 但是您需要自行检查游戏是否重复</b>
       </p>
-      <Link
-        isExternal
-        target="_blank"
-        underline="hover"
-        href="https://www.kungal.com/zh-cn/topic/1040"
-        size="sm"
-      >
-        如何通过 VNDB 检索游戏?
-      </Link>
       <div className="flex items-center text-sm">
         {data.vndbId && (
-          <>
-            <Button
-              className="mr-4"
-              color="primary"
-              size="sm"
-              onPress={handleCheckDuplicate}
-            >
-              检查重复
-            </Button>
-            <Button
-              className="mr-4"
-              color="secondary"
-              size="sm"
-              onPress={handleGetInfo}
-              isDisabled={!data.isDuplicate}
-            >
-              获取信息
-            </Button>
-            <Checkbox
-              isSelected={data.isDuplicate}
-              onValueChange={(value) => setData({ ...data, isDuplicate: value })}
-            >
-              VNDB 编号重复
-            </Checkbox>
-          </>
+          <Button
+            className="mr-4"
+            color="primary"
+            size="sm"
+            onPress={handleFetchData}
+          >
+            获取 VNDB 数据
+          </Button>
         )}
       </div>
     </div>

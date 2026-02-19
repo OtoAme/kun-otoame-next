@@ -73,6 +73,8 @@ export const getPatchIntroduction = async (
 
   const response: PatchIntroduction = {
     vndbId: patch.vndb_id,
+    vndbRelationId: patch.vndb_relation_id,
+    dlsiteCode: patch.dlsite_code,
     introduction: await markdownToHtmlExtend(patch.introduction),
     officialUrl: patch.official_url,
     released: patch.released,

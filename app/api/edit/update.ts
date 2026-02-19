@@ -5,6 +5,7 @@ import { handleBatchPatchTags } from './batchTag'
 import { uploadPatchGalleryImage, uploadPatchBanner } from './_upload'
 import { purgePatchBannerCache } from '~/app/api/utils/purgeCache'
 import { pLimit } from '~/utils/pLimit'
+import { ensurePatchCompanyFromDlsite } from './dlsite'
 
 export const updateGalgame = async (
   input: z.infer<typeof patchUpdateSchema>,
@@ -24,9 +25,22 @@ export const updateGalgame = async (
     }
   }
 
+  const normalizedDlsiteCode = input.dlsiteCode?.trim()
+    ? input.dlsiteCode.trim().toUpperCase()
+    : ''
+  if (normalizedDlsiteCode) {
+    const dlsitePatch = await prisma.patch.findFirst({
+      where: { dlsite_code: normalizedDlsiteCode }
+    })
+    if (dlsitePatch && dlsitePatch.id !== input.id) {
+      return `Galgame DLSite Code 与游戏 ID 为 ${dlsitePatch.unique_id} 的游戏重复`
+    }
+  }
+
   const {
     id,
     vndbId,
+    vndbRelationId,
     name,
     alias,
     introduction,
@@ -40,6 +54,8 @@ export const updateGalgame = async (
     data: {
       name,
       vndb_id: vndbId ? vndbId : null,
+      vndb_relation_id: vndbRelationId ? vndbRelationId : null,
+      dlsite_code: normalizedDlsiteCode ? normalizedDlsiteCode : null,
       introduction,
       official_url: officialUrl || '',
       content_limit: contentLimit,
@@ -164,6 +180,10 @@ export const updateGalgame = async (
 
   if (input.tag.length) {
     await handleBatchPatchTags(input.id, input.tag, uid)
+  }
+
+  if (normalizedDlsiteCode) {
+    await ensurePatchCompanyFromDlsite(id, normalizedDlsiteCode, uid)
   }
 
   return {}

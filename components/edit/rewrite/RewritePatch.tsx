@@ -17,7 +17,9 @@ import { RewriteBanner } from './RewriteBanner'
 import { BatchTag } from '../components/BatchTag'
 import { BangumiInput } from '../components/BangumiInput'
 import { ReleaseDateInput } from '../components/ReleaseDateInput'
-import { VNDBInput } from './VNDBInput'
+import { VNDBInput } from '../create/VNDBInput'
+import { VNDBRelationInput } from '../create/VNDBRelationInput'
+import { DLSiteInput } from '../create/DLSiteInput'
 import type { RewritePatchData } from '~/store/rewriteStore'
 
 export const RewritePatch = () => {
@@ -108,15 +110,17 @@ export const RewritePatch = () => {
           </div>
         </CardHeader>
         <CardBody className="mt-4 space-y-12">
-          <VNDBInput
-            vndbId={data.vndbId}
-            setVNDBId={(id) =>
-              setData({
-                ...data,
-                vndbId: id
-              })
-            }
-            errors={errors.vndbId}
+          <VNDBInput data={data} setData={setData} errors={errors.vndbId} />
+          <VNDBRelationInput
+            data={data}
+            setData={setData}
+            errors={errors.vndbRelationId}
+            enableDuplicateCheck={false}
+          />
+          <DLSiteInput
+            data={data}
+            setData={setData}
+            errors={errors.dlsiteCode}
           />
 
           <GameNameInput

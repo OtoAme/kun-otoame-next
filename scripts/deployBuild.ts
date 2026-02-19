@@ -31,7 +31,7 @@ try {
   }
 
   execSync(
-    'git pull && pnpm prisma:push && pnpm build && pm2 startOrReload ecosystem.config.cjs',
+    'git pull && pnpm i && pnpm prisma:push && pnpm build && pm2 startOrReload ecosystem.config.cjs',
     { stdio: 'inherit' }
   )
 } catch (e) {

@@ -56,3 +56,6 @@ next-env.d.ts
 refs
 migration/temp
 scripts/reset-admin-password.ts
+
+# prisma generated
+prisma/generated

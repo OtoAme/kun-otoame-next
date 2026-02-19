@@ -21,11 +21,11 @@ import { KunPagination } from '~/components/kun/Pagination'
 import type { AdminResource } from '~/types/api/admin'
 
 const columns = [
-  { name: '游戏名', id: 'name' },
+  { name: '资源', id: 'name' },
   { name: '用户', id: 'user' },
   { name: '存储', id: 'storage' },
   { name: '大小', id: 'size' },
-  { name: '时间', id: 'created' },
+  { name: '创建时间', id: 'created' },
   { name: '操作', id: 'actions' }
 ]
 
@@ -65,6 +65,7 @@ export const Resource = ({ initialResources, initialTotal }: Props) => {
       return
     }
     fetchData()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, debouncedQuery])
 
   const handleSearch = (value: string) => {
@@ -75,26 +76,26 @@ export const Resource = ({ initialResources, initialTotal }: Props) => {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">下载资源管理</h1>
+        <h1 className="text-2xl font-bold">补丁资源管理</h1>
         <Chip color="primary" variant="flat">
-          正在开发中...
+          支持按内容和哈希搜索
         </Chip>
       </div>
 
       <Input
         fullWidth
         isClearable
-        placeholder="输入补丁资源链接 (或 BLAKE3 Hash 值), 搜索补丁资源"
+        placeholder="输入资源链接（或 BLAKE3 Hash），按回车搜索"
         startContent={<Search className="text-default-300" size={20} />}
         value={searchQuery}
         onValueChange={handleSearch}
       />
 
       {loading ? (
-        <KunLoading hint="正在获取补丁资源数据..." />
+        <KunLoading hint="正在加载资源列表..." />
       ) : (
         <Table
-          aria-label="补丁管理"
+          aria-label="资源管理列表"
           bottomContent={
             <div className="flex justify-center w-full">
               <KunPagination
@@ -127,3 +128,4 @@ export const Resource = ({ initialResources, initialTotal }: Props) => {
     </div>
   )
 }
+

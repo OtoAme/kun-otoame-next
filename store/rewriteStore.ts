@@ -10,6 +10,8 @@ export interface RewritePatchData {
   id: number
   uniqueId: string
   vndbId: string
+  vndbRelationId: string
+  dlsiteCode: string
   name: string
   introduction: string
   officialUrl: string
@@ -41,6 +43,8 @@ const initialState: RewritePatchData = {
   id: 0,
   uniqueId: '',
   vndbId: '',
+  vndbRelationId: '',
+  dlsiteCode: '',
   name: '',
   introduction: '',
   officialUrl: '',

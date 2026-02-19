@@ -8,6 +8,7 @@ import { kunMoyuMoe } from '~/config/moyu-moe'
 import { postToIndexNow } from './_postToIndexNow'
 import { ensurePatchCompaniesFromVNDB } from './fetchCompanies'
 import { pLimit } from '~/utils/pLimit'
+import { ensurePatchCompanyFromDlsite } from './dlsite'
 
 export const createGalgame = async (
   input: Omit<z.infer<typeof patchCreateSchema>, 'alias' | 'tag'> & {
@@ -19,6 +20,8 @@ export const createGalgame = async (
   const {
     name,
     vndbId,
+    vndbRelationId,
+    dlsiteCode,
     alias,
     banner,
     tag,
@@ -43,6 +46,18 @@ export const createGalgame = async (
   const bannerArrayBuffer = banner as ArrayBuffer
   const galgameUniqueId = crypto.randomBytes(4).toString('hex')
 
+  const normalizedDlsiteCode = dlsiteCode?.trim()
+    ? dlsiteCode.trim().toUpperCase()
+    : ''
+  if (normalizedDlsiteCode) {
+    const dlsitePatch = await prisma.patch.findFirst({
+      where: { dlsite_code: normalizedDlsiteCode }
+    })
+    if (dlsitePatch) {
+      return `Galgame DLSite Code 与游戏 ID 为 ${dlsitePatch.unique_id} 的游戏重复`
+    }
+  }
+
   const res = await prisma.$transaction(
     async (prisma) => {
       const patch = await prisma.patch.create({
@@ -50,6 +65,8 @@ export const createGalgame = async (
           name,
           unique_id: galgameUniqueId,
           vndb_id: vndbId ? vndbId : null,
+          vndb_relation_id: vndbRelationId ? vndbRelationId : null,
+          dlsite_code: normalizedDlsiteCode ? normalizedDlsiteCode : null,
           introduction,
           official_url: officialUrl || '',
           user_id: uid,
@@ -109,6 +126,10 @@ export const createGalgame = async (
     try {
       await ensurePatchCompaniesFromVNDB(res.patchId, vndbId, uid)
     } catch { }
+  }
+
+  if (normalizedDlsiteCode) {
+    await ensurePatchCompanyFromDlsite(res.patchId, normalizedDlsiteCode, uid)
   }
 
   if (tag.length) {

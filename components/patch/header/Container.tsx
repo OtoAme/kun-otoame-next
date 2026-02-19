@@ -39,6 +39,8 @@ export const PatchHeaderContainer = ({
       id: patch.id,
       uniqueId: patch.uniqueId,
       vndbId: patch.vndbId ?? '',
+      vndbRelationId: patch.vndbRelationId ?? '',
+      dlsiteCode: patch.dlsiteCode ?? '',
       name: patch.name,
       introduction: patch.introduction,
       officialUrl: intro.officialUrl,

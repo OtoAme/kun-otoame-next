@@ -14,7 +14,7 @@ import { KunLoading } from '~/components/kun/Loading'
 import { GalgameCard } from '~/components/galgame/Card'
 import { KunNull } from '~/components/kun/Null'
 import { CompanyFormModal } from '../form/CompanyFormModal'
-import { formatDistanceToNow } from '~/utils/formatDistanceToNow'
+import { formatTimeDifference } from '~/utils/time'
 import { kunFetchGet } from '~/utils/kunFetch'
 import { SUPPORTED_LANGUAGE_MAP } from '~/constants/resource'
 import { useUserStore } from '~/store/userStore'
@@ -75,12 +75,12 @@ export const CompanyDetailContainer: FC<Props> = ({
           </Chip>
         }
         endContent={
-          <div className="flex justify-between">
+          <div className="flex justify-between mb-4">
             <KunUser
               user={company.user}
               userProps={{
                 name: company.user.name,
-                description: `创建于 ${formatDistanceToNow(company.created)}`,
+                description: `创建于 ${formatTimeDifference(company.created)}`,
                 avatarProps: {
                   src: company.user?.avatar
                 }
@@ -114,7 +114,7 @@ export const CompanyDetailContainer: FC<Props> = ({
 
       {company.alias.length > 0 && (
         <div className="mb-4">
-          <h2 className="mb-4 text-lg font-semibold">别名</h2>
+          <h2 className="mb-2 text-lg font-semibold">别名</h2>
           <div className="flex flex-wrap gap-2">
             {company.alias.map((alias, index) => (
               <Chip key={index} variant="flat" color="secondary">
@@ -127,7 +127,7 @@ export const CompanyDetailContainer: FC<Props> = ({
 
       {company.official_website.length > 0 && (
         <div className="mb-4">
-          <h2 className="mb-4 text-lg font-semibold">官网地址</h2>
+          <h2 className="mb-2 text-lg font-semibold">官网地址</h2>
           <div className="flex flex-wrap gap-2">
             {company.official_website.map((site, index) => (
               <Link showAnchorIcon isExternal href={site} key={index}>

@@ -5,6 +5,8 @@ export interface Patch {
   id: number
   uniqueId: string
   vndbId: string | null
+  vndbRelationId: string | null
+  dlsiteCode: string | null
   name: string
   banner: string
   introduction: string
@@ -55,6 +57,8 @@ export interface PatchImage {
 
 export interface PatchIntroduction {
   vndbId: string | null
+  vndbRelationId?: string | null
+  dlsiteCode?: string | null
   introduction: string
   officialUrl: string
   released: string

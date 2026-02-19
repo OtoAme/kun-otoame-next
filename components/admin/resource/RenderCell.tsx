@@ -1,9 +1,9 @@
 'use client'
 
 import { Chip } from '@heroui/react'
-import { SUPPORTED_RESOURCE_LINK_MAP } from '~/constants/resource'
-import { formatDistanceToNow } from '~/utils/formatDistanceToNow'
 import Link from 'next/link'
+import { SUPPORTED_RESOURCE_LINK_MAP } from '~/constants/resource'
+import { formatTimeDifference } from '~/utils/time'
 import { ResourceEdit } from './ResourceEdit'
 import { KunUser } from '~/components/kun/floating-card/KunUser'
 import type { AdminResource } from '~/types/api/admin'
@@ -46,7 +46,7 @@ export const RenderCell = (resource: AdminResource, columnKey: string) => {
     case 'created':
       return (
         <Chip size="sm" variant="light">
-          {formatDistanceToNow(resource.created)}
+          {formatTimeDifference(resource.created)}
         </Chip>
       )
     case 'actions':
@@ -54,8 +54,9 @@ export const RenderCell = (resource: AdminResource, columnKey: string) => {
     default:
       return (
         <Chip color="primary" variant="flat">
-          咕咕咕
+          未知
         </Chip>
       )
   }
 }
+
