@@ -153,5 +153,28 @@ export const createPatchResource = async (
     })
   }
 
+  if (userRole < 3) {
+    const admins = await prisma.user.findMany({
+      where: { role: { gte: 3 } },
+      select: { id: true }
+    })
+    const patchLink = currentPatch?.unique_id
+      ? `/${currentPatch.unique_id}`
+      : '/'
+    await Promise.all(
+      admins.map((admin) =>
+        createMessage({
+          type: 'system',
+          content: needApproval
+            ? `用户首次发布资源「${resource.name}」于「${currentPatch?.name ?? ''}」，请前往审核。`
+            : `用户发布了资源「${resource.name}」于「${currentPatch?.name ?? ''}」，请留意审查。`,
+          sender_id: uid,
+          recipient_id: admin.id,
+          link: needApproval ? '/admin/resource-apply' : patchLink
+        })
+      )
+    )
+  }
+
   return resource
 }

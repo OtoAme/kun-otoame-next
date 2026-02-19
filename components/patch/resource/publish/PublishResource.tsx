@@ -42,6 +42,13 @@ const userRoleStorageMap: Record<number, string> = {
   4: 'touchgal'
 }
 
+const getDefaultStorage = (role: number, section: string): string => {
+  if (section === 'galgame') {
+    return role > 3 ? 'touchgal' : 'user'
+  }
+  return userRoleStorageMap[role] ?? 'user'
+}
+
 export const PublishResource = ({
   patchId,
   defaultSection,
@@ -62,7 +69,7 @@ export const PublishResource = ({
     resolver: zodResolver(patchResourceCreateSchema),
     defaultValues: {
       patchId,
-      storage: userRoleStorageMap[user.role],
+      storage: getDefaultStorage(user.role, (defaultSection as any) || (user.role > 2 ? 'galgame' : 'patch')),
       name: '',
       section: (defaultSection as any) || (user.role > 2 ? 'galgame' : 'patch'),
       hash: '',
@@ -108,7 +115,9 @@ export const PublishResource = ({
     setValue('size', size)
   }
 
-  const progress = Math.min((user.dailyUploadLimit / 5120) * 100, 100)
+  const dailyUsed = user.dailyUploadLimit
+  const dailyRemaining = Math.max(5120 - dailyUsed, 0)
+  const progress = Math.min((dailyUsed / 5120) * 100, 100)
 
   return (
     <ModalContent>
@@ -117,8 +126,8 @@ export const PublishResource = ({
         <div className="text-sm font-medium text-default-500">
           {user.role > 1 ? (
             <div className="space-y-1">
-              <p>每日上传总额度为 5GB (5120MB)，上传越多可用额度越高。</p>
-              <p>{`今日剩余上传额度 ${user.dailyUploadLimit.toFixed(3)} MB`}</p>
+              <p>每日上传总额度为 5GB (5120MB)。</p>
+              <p>{`今日剩余上传额度 ${dailyRemaining.toFixed(3)} MB`}</p>
               <Progress size="sm" value={progress} aria-label="今日上传额度" />
             </div>
           ) : (
@@ -137,7 +146,7 @@ export const PublishResource = ({
             section={watch().section}
             setSection={(content) => {
               setValue('section', content)
-              setValue('storage', userRoleStorageMap[user.role])
+              setValue('storage', getDefaultStorage(user.role, content))
             }}
           />
 
