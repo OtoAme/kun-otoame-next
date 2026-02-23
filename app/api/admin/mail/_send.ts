@@ -1,5 +1,7 @@
 import crypto from 'crypto'
 import { setKv } from '~/lib/redis'
+import { createTransport } from 'nodemailer'
+import SMPTransport from 'nodemailer-smtp-transport'
 import { kunMoyuMoe } from '~/config/moyu-moe'
 import { emailTemplates } from '~/constants/email/group-templates'
 
@@ -54,34 +56,29 @@ export const sendEmailHTML = async (
     validateEmailCode
   )
 
-  const res = await fetch(
-    `${process.env.KUN_VISUAL_NOVEL_EMAIL_HOST}/api/v1/send/message`,
-    {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Server-API-Key': process.env.KUN_VISUAL_NOVEL_EMAIL_PASSWORD || '',
-        Authorization: `Bearer ${process.env.KUN_VISUAL_NOVEL_EMAIL_PASSWORD}`
+  const transporter = createTransport(
+    SMPTransport({
+      pool: {
+        pool: true
       },
-      body: JSON.stringify({
-        to: [email],
-        from: process.env.KUN_VISUAL_NOVEL_EMAIL_ACCOUNT,
-        sender: `${process.env.KUN_VISUAL_NOVEL_EMAIL_FROM}<${process.env.KUN_VISUAL_NOVEL_EMAIL_ACCOUNT}>`,
-        subject: getEmailSubject(templateId),
-        tag: templateId,
-        html_body: content,
-        plain_body: '请在支持 HTML 的邮件客户端中查看此邮件'
-      })
-    }
+      host: process.env.KUN_VISUAL_NOVEL_EMAIL_HOST,
+      port: Number(process.env.KUN_VISUAL_NOVEL_EMAIL_PORT) || 587,
+      secure: false,
+      requireTLS: true,
+      auth: {
+        user: process.env.KUN_VISUAL_NOVEL_EMAIL_ACCOUNT,
+        pass: process.env.KUN_VISUAL_NOVEL_EMAIL_PASSWORD
+      }
+    })
   )
 
-  if (!res.ok) {
-    const text = await res.text()
-    return text
+  const mailOptions = {
+    from: `${process.env.KUN_VISUAL_NOVEL_EMAIL_FROM}<${process.env.KUN_VISUAL_NOVEL_EMAIL_ACCOUNT}>`,
+    sender: process.env.KUN_VISUAL_NOVEL_EMAIL_ACCOUNT,
+    to: email,
+    subject: getEmailSubject(templateId),
+    html: content
   }
 
-  const r = await res.json()
-  if (r.status === 'error') {
-    return JSON.stringify(r)
-  }
+  await transporter.sendMail(mailOptions)
 }
