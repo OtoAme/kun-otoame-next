@@ -43,9 +43,18 @@ interface AlistListData {
   msg: string
 }
 
+export const CLOUDREVE_PAN_DOMAIN = 'pan.otoame.top'
+
+export const formatSize = (sizeInBytes: number): string => {
+  if (sizeInBytes >= 1024 ** 3) {
+    return `${Number((sizeInBytes / 1024 ** 3).toPrecision(4))} GB`
+  }
+  return `${(sizeInBytes / 1024 ** 2).toFixed(3)} MB`
+}
+
 export const fetchLinkData = async (link: string) => {
   const key = link.split('/').pop()
-  const apiUrl = `https://pan.touchgal.net/api/v3/share/info/${key}`
+  const apiUrl = `https://${CLOUDREVE_PAN_DOMAIN}/api/v3/share/info/${key}`
   try {
     const response = await fetch(apiUrl)
     if (!response.ok) {
@@ -60,7 +69,7 @@ export const fetchLinkData = async (link: string) => {
 
 export const fetchListData = async (link: string) => {
   const key = link.split('/').pop()
-  const apiUrl = `https://pan.touchgal.net/api/v3/share/list/${key}`
+  const apiUrl = `https://${CLOUDREVE_PAN_DOMAIN}/api/v3/share/list/${key}`
   try {
     const response = await fetch(apiUrl)
     if (!response.ok) {

@@ -1,3 +1,6 @@
+'use client'
+
+import { useState } from 'react'
 import { Controller } from 'react-hook-form'
 import { Input, Textarea } from '@heroui/input'
 import { Button } from '@heroui/button'
@@ -10,16 +13,64 @@ import {
   SUPPORTED_PLATFORM_MAP
 } from '~/constants/resource'
 import { ControlType, ErrorType } from '../share'
+import { CLOUDREVE_PAN_DOMAIN, formatSize } from './fetchAlistSize'
+import toast from 'react-hot-toast'
 
 interface ResourceDetailsFormProps {
   control: ControlType
   errors: ErrorType
+  content?: string
+  storage?: string
 }
 
 export const ResourceDetailsForm = ({
   control,
-  errors
-}: ResourceDetailsFormProps) => (
+  errors,
+  content,
+  storage
+}: ResourceDetailsFormProps) => {
+  const [fetchingSize, setFetchingSize] = useState(false)
+
+  const handleFetchSize = async (onChange: (value: string) => void) => {
+    if (!content) {
+      toast.error('请先填写资源链接')
+      return
+    }
+
+    const links = content.trim().split(',')
+    const cloudreveLink = links.find((link) =>
+      link.includes(`${CLOUDREVE_PAN_DOMAIN}/s/`)
+    )
+
+    if (!cloudreveLink) {
+      toast.error('未找到 OtoAme 官方盘链接')
+      return
+    }
+
+    const key = cloudreveLink.split('/').pop()
+    if (!key) {
+      toast.error('无法解析分享链接')
+      return
+    }
+
+    setFetchingSize(true)
+    try {
+      const res = await fetch(`/api/cloudreve/share-size?key=${key}`)
+      const data = await res.json()
+      if (res.ok && data.size) {
+        onChange(formatSize(data.size))
+        toast.success('获取文件大小成功')
+      } else {
+        toast.error(data.error || '获取文件大小失败')
+      }
+    } catch {
+      toast.error('获取文件大小失败')
+    } finally {
+      setFetchingSize(false)
+    }
+  }
+
+  return (
   <div className="space-y-2">
     <h3 className="text-lg font-medium">资源详情</h3>
     <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
@@ -112,6 +163,19 @@ export const ResourceDetailsForm = ({
             placeholder="请输入资源的大小, 例如 1.007MB"
             isInvalid={!!errors.size}
             errorMessage={errors.size?.message}
+            endContent={
+              storage === 'touchgal' && (
+                <Button
+                  className="h-7 min-w-12 px-3 text-xs"
+                  size="sm"
+                  variant="flat"
+                  isLoading={fetchingSize}
+                  onPress={() => handleFetchSize(field.onChange)}
+                >
+                  获取
+                </Button>
+              )
+            }
           />
         )}
       />
@@ -183,4 +247,5 @@ export const ResourceDetailsForm = ({
       )}
     />
   </div>
-)
+  )
+}

@@ -7,7 +7,7 @@ import { Chip } from '@heroui/chip'
 import { Plus, X } from 'lucide-react'
 import { ErrorType } from '../share'
 import { SUPPORTED_RESOURCE_LINK_MAP } from '~/constants/resource'
-import { fetchLinkData, fetchListData } from './fetchAlistSize'
+import { CLOUDREVE_PAN_DOMAIN, formatSize } from './fetchAlistSize'
 import toast from 'react-hot-toast'
 
 interface ResourceLinksInputProps {
@@ -30,18 +30,19 @@ export const ResourceLinksInput = ({
   const links = content.trim() ? content.trim().split(',') : ['']
 
   const checkLinkSize = async (link: string) => {
-    toast('正在尝试从 TouchGal Alist 获取文件大小')
-    const data = await fetchLinkData(link)
-    if (data && data.code === 0) {
-      let sizeInGB
-      if (data.data.source.size > 0) {
-        sizeInGB = (data.data.source.size / 1024 ** 3).toFixed(3)
-      } else {
-        const listSize = await fetchListData(data.data.key)
-        sizeInGB = listSize ? (listSize / 1024 ** 3).toFixed(3) : ''
+    const key = link.split('/').pop()
+    if (!key) return
+
+    toast('正在尝试从 OtoAme 官方盘获取文件大小')
+    try {
+      const res = await fetch(`/api/cloudreve/share-size?key=${key}`)
+      const data = await res.json()
+      if (res.ok && data.size) {
+        toast.success('获取文件大小成功')
+        setSize(formatSize(data.size))
       }
-      toast.success('获取文件大小成功')
-      setSize(`${sizeInGB} GB`)
+    } catch {
+      // silently fail for auto-fetch
     }
   }
 
@@ -49,7 +50,7 @@ export const ResourceLinksInput = ({
     if (!links.length || size) {
       return
     }
-    if (links.some((link) => link.includes('pan.touchgal.net/s/'))) {
+    if (links.some((link) => link.includes(`${CLOUDREVE_PAN_DOMAIN}/s/`))) {
       checkLinkSize(links[0])
     }
   }, [links, setSize])

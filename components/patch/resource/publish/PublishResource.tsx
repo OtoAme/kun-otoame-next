@@ -175,7 +175,12 @@ export const PublishResource = ({
             />
           )}
 
-          <ResourceDetailsForm control={control} errors={errors} />
+          <ResourceDetailsForm
+            control={control}
+            errors={errors}
+            content={watch().content}
+            storage={watch().storage}
+          />
         </form>
       </ModalBody>
 
