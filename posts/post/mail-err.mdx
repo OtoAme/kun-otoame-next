@@ -1,0 +1,23 @@
+---
+title: 【已修复】邮件发送异常问题说明
+banner: 'https://img.otoame.top/posts/2026/02/d6caf312d18a1f5b70759f516305d9f8.webp'
+description: '用户无法正常收到本站的验证码邮件。本文将说明问题原因以及解决方案。'
+date: 2026-02-23
+authorUid: 1
+authorName: 'OtoAme 运营组'
+authorAvatar: 'https://img.otoame.top/user/avatar/user_1/avatar.avif'
+authorHomepage: 'https://www.otoame.top/'
+pin: true
+---
+
+收到用户反馈，自从 2月19日 起，本站的邮件服务一直处于异常状态，导致用户无法注册。
+
+### 故障原因
+
+2月19日，我们对仓库进行了更新，合并了上游仓库提交的 50 条提交，其中有一条涉及到邮件服务更新。上游仓库把邮件发送从 nodemailer SMTP 改成了 Postal 邮件 API ，而本站配置仍为 gmail SMTP 与其不兼容，导致无法发送邮件。
+
+现已将邮件服务改回 SMTP ，邮件服务已经修复，您可以正常注册了。
+
+### 请尽量不要使用 iCloud 邮箱注册，否则我们的邮件有几率被 iCloud 屏蔽。
+
+![](https://img.otoame.top/posts/2026/02/f599b482e87368eba2ca264c956f4e32.webp)
