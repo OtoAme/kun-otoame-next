@@ -86,12 +86,26 @@ export const VNDBRelationInput = <T extends PatchFormDataShape>({
       const { titles: vnTitles, released: vnReleased } =
         await fetchVNDBDetails(vndbId)
 
+      // Relation titles should be added to existing aliases (including those
+      // previously fetched via VNDB ID), and relation release date should
+      // always override the existing date (VN API returns the oldest release).
+      const mergedAlias = [
+        ...new Set([...data.alias, ...relationTitles, ...vnTitles])
+      ]
+      // Relation date takes highest priority, then VN date as fallback
+      const mergedReleased =
+        (relationReleased && relationReleased !== 'TBA'
+          ? relationReleased
+          : null) ??
+        vnReleased ??
+        data.released
+
       setData({
         ...data,
         vndbId,
         vndbRelationId: normalized,
-        alias: [...new Set([...relationTitles, ...vnTitles])],
-        released: relationReleased || vnReleased || data.released
+        alias: mergedAlias,
+        released: mergedReleased
       })
 
       toast.success('已获取 Release 数据! 并完成 VNDB 同步')

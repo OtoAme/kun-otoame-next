@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { JSDOM } from 'jsdom'
 import { z } from 'zod'
 import { kunParsePostBody } from '~/app/api/utils/parseQuery'
 
@@ -7,19 +6,15 @@ const relationSchema = z.object({
   relationId: z.string().regex(/^r\d+$/i, 'Relation ID 格式不正确')
 })
 
-const splitCellText = (value: string | null | undefined) =>
-  value
-    ?.split('\n')
-    .map((item) => item.replace(/\s+/g, ' ').trim())
-    .filter((item) => item.length) ?? []
+interface VNDBReleaseResult {
+  id: string
+  title?: string
+  released?: string
+  vns?: { id: string; title?: string }[]
+}
 
-const findRowByLabel = (document: Document, label: string) => {
-  const rows = Array.from(document.querySelectorAll('tr'))
-  return (
-    rows.find(
-      (row) => row.querySelector('.key')?.textContent?.trim() === label
-    ) ?? null
-  )
+interface VNDBReleaseResponse {
+  results: VNDBReleaseResult[]
 }
 
 export const POST = async (req: NextRequest) => {
@@ -31,40 +26,42 @@ export const POST = async (req: NextRequest) => {
   const relationId = input.relationId.toLowerCase()
 
   try {
-    const response = await fetch(`https://vndb.org/${relationId}`)
+    const response = await fetch('https://api.vndb.org/kana/release', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        filters: ['id', '=', relationId],
+        fields: 'title, released, vns.id, vns.title'
+      })
+    })
+
     if (!response.ok) {
-      return NextResponse.json('VNDB Release 页面获取失败')
+      return NextResponse.json('VNDB Release API 请求失败')
     }
 
-    const html = await response.text()
-    const dom = new JSDOM(html)
-    const { document } = dom.window
-
-    const relationRow = findRowByLabel(document, 'Relation')
-    const relationHref =
-      relationRow?.querySelector('a[href^="/v"]')?.getAttribute('href') ?? ''
-    const relationMatch = relationHref.match(/(v\d+)/i)
-    if (!relationMatch) {
-      return NextResponse.json('未能在 Release 页面找到关联的 VN ID')
+    const data: VNDBReleaseResponse = await response.json()
+    if (!data.results?.length) {
+      return NextResponse.json('未找到对应的 VNDB Release')
     }
 
-    const titleCell = findRowByLabel(document, 'Title')?.querySelector(
-      'td:nth-of-type(2)'
-    )
-    const releaseCell = findRowByLabel(document, 'Released')?.querySelector(
-      'td:nth-of-type(2)'
-    )
+    const release = data.results[0]
+    const vndbId = release.vns?.[0]?.id?.toLowerCase()
+    if (!vndbId) {
+      return NextResponse.json('未能在 Release 数据中找到关联的 VN ID')
+    }
 
-    const titles = splitCellText(titleCell?.textContent)
-    const released = splitCellText(releaseCell?.textContent)[0] ?? ''
+    const titles: string[] = []
+    if (release.title) {
+      titles.push(release.title)
+    }
 
     return NextResponse.json({
-      vndbId: relationMatch[1].toLowerCase(),
+      vndbId,
       titles,
-      released
+      released: release.released ?? ''
     })
   } catch (error) {
     console.error(error)
-    return NextResponse.json('VNDB Release 页面获取失败')
+    return NextResponse.json('VNDB Release API 请求失败')
   }
 }
