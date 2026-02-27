@@ -33,8 +33,8 @@ export const DLSiteInput = ({ errors }: { errors?: string }) => {
     }
 
     const normalized = rawCode.toUpperCase()
-    if (!/^RJ\d+$/.test(normalized)) {
-      toast.error('DLSite Code 需要以 RJ 开头')
+    if (!/^(RJ|BJ|VJ|RT|RE)\d+$/.test(normalized)) {
+      toast.error('DLSite Code 需要以 RJ/BJ/VJ/RT/RE 开头')
       return
     }
 
@@ -82,7 +82,7 @@ export const DLSiteInput = ({ errors }: { errors?: string }) => {
       <Input
         variant="underlined"
         labelPlacement="outside"
-        placeholder="请输入 DLSite Code, 例如 RJ01405813"
+        placeholder="请输入 DLSite Code, 例如 RJ01405813, VJ012345"
         value={data.dlsiteCode}
         onChange={(e) => setData({ ...data, dlsiteCode: e.target.value })}
         isInvalid={!!errors}
