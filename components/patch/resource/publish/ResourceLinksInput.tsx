@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { Input } from '@heroui/input'
 import { Button } from '@heroui/button'
 import { Chip } from '@heroui/chip'
@@ -28,6 +28,7 @@ export const ResourceLinksInput = ({
   setSize
 }: ResourceLinksInputProps) => {
   const links = content.trim() ? content.trim().split(',') : ['']
+  const fetchedRef = useRef(false)
 
   const checkLinkSize = async (link: string) => {
     const key = link.split('/').pop()
@@ -47,13 +48,14 @@ export const ResourceLinksInput = ({
   }
 
   useEffect(() => {
-    if (!links.length || size) {
+    if (fetchedRef.current || !links.length || size) {
       return
     }
     if (links.some((link) => link.includes(`${CLOUDREVE_PAN_DOMAIN}/s/`))) {
+      fetchedRef.current = true
       checkLinkSize(links[0])
     }
-  }, [links, setSize])
+  }, [content])
 
   return (
     <div className="space-y-2">
