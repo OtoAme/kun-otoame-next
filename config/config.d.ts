@@ -4,7 +4,6 @@ export interface KunSiteDomain {
   storage: string
   kungal: string
   telegram_group: string
-  qq_group: string
   discord_group: string
   archive: string
   forum: string

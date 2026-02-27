@@ -8,7 +8,6 @@ import { KunCarousel } from '../carousel/KunCarousel'
 import { getKunPosts } from '../carousel/mdx'
 import { RandomGalgameButton } from '../carousel/RandomGalgameButton'
 import { Telegram } from '~/components/kun/icons/Telegram'
-import { QQIcon } from '~/components/kun/icons/QQ'
 import { KunHomeNavigationItems } from '../NavigationItems'
 import { kunMoyuMoe } from '~/config/moyu-moe'
 
@@ -51,19 +50,6 @@ export const HomeHero = () => {
                     color="secondary"
                   >
                     <Telegram />
-                  </Button>
-                </Tooltip>
-
-                <Tooltip showArrow content="QQ 交流群">
-                  <Button
-                    isIconOnly
-                    isExternal
-                    as={Link}
-                    href={kunMoyuMoe.domain.qq_group}
-                    variant="flat"
-                    color="secondary"
-                  >
-                    <QQIcon />
                   </Button>
                 </Tooltip>
               </div>

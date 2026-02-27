@@ -13,7 +13,6 @@ const KUN_SITE_ARCHIVE = 'https://archive.otoame.top/'
 const KUN_SITE_FORUM = 'https://www.otoame.top/'                // 待修改 - 论坛
 const KUN_SITE_NAV = 'https://www.otoa.me'                   // 待修改 - 导航页
 const KUN_SITE_TELEGRAM_GROUP = 'https://t.me/otoame'         // 待修改
-const KUN_SITE_QQ_GROUP_IMG = 'https://img.otoame.top/posts/2026/02/0c07d61ad30863586921c33a6ac1f4cb.webp'
 const KUN_SITE_DISCORD_GROUP = ''  // 待修改
 const KUN_SITE_LIST = [
   { name: KUN_SITE_NAME, url: 'https://www.otoame.top' },
@@ -86,7 +85,6 @@ export const kunMoyuMoe: KunSiteConfig = {
     storage: KUN_SITE_URL,
     kungal: KUN_SITE_URL,
     telegram_group: KUN_SITE_TELEGRAM_GROUP,
-    qq_group: KUN_SITE_QQ_GROUP_IMG,
     discord_group: KUN_SITE_DISCORD_GROUP,
     archive: KUN_SITE_ARCHIVE,
     forum: KUN_SITE_FORUM,

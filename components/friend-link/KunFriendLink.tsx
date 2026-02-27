@@ -76,16 +76,6 @@ export const KunFriendLink = () => {
               Telegram 频道
             </Link>
             的附属群组联系我们
-            <br />
-            或者是加入我们的{' '}
-            <Link
-              isExternal
-              showAnchorIcon
-              href={kunMoyuMoe.domain.qq_group}
-              rel="noopener noreferrer"
-            >
-              QQ 交流群
-            </Link>
           </p>
         </div>
       </motion.div>
