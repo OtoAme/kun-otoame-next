@@ -39,7 +39,20 @@ export const createGalgame = async (
       where: { vndb_id: vndbId }
     })
     if (existPatch) {
-      return '该游戏已存在, 请勿重复创建'
+      return '该 VNDB ID 已有游戏存在, 如需发布不同版本请先确认重复'
+    }
+  }
+
+  // vndbRelationId strict uniqueness check (cannot be bypassed)
+  if (vndbRelationId) {
+    const normalizedRelationId = vndbRelationId.trim().toLowerCase()
+    if (normalizedRelationId) {
+      const existPatch = await prisma.patch.findFirst({
+        where: { vndb_relation_id: normalizedRelationId }
+      })
+      if (existPatch) {
+        return `该 Release ID 已存在 (游戏 ID: ${existPatch.unique_id}), Release ID 不可重复`
+      }
     }
   }
 

@@ -7,8 +7,22 @@ import Link from 'next/link'
 import { useCreatePatchStore } from '~/store/editStore'
 import { kunFetchGet } from '~/utils/kunFetch'
 
+interface DuplicateItem {
+  uniqueId: string
+  name: string
+}
+
 interface DuplicateResponse {
   uniqueId: string
+  matchedFields?: string[]
+  duplicates?: DuplicateItem[]
+}
+
+const fieldLabels: Record<string, string> = {
+  vndbRelationId: 'Release ID',
+  dlsiteCode: 'DLsite Code',
+  vndbId: 'VNDB ID',
+  title: '游戏标题/别名'
 }
 
 export const DuplicateCheckButton = () => {
@@ -17,6 +31,8 @@ export const DuplicateCheckButton = () => {
   const [duplicateUniqueId, setDuplicateUniqueId] = useState<string | null>(
     null
   )
+  const [duplicateList, setDuplicateList] = useState<DuplicateItem[]>([])
+  const [matchedInfo, setMatchedInfo] = useState<string>('')
 
   const buildPayload = () => ({
     vndbId: (data.vndbId ?? '').trim().toLowerCase(),
@@ -40,6 +56,8 @@ export const DuplicateCheckButton = () => {
 
     setChecking(true)
     setDuplicateUniqueId(null)
+    setDuplicateList([])
+    setMatchedInfo('')
     try {
       const response = await kunFetchGet<KunResponse<DuplicateResponse>>(
         '/edit/duplicate',
@@ -58,7 +76,22 @@ export const DuplicateCheckButton = () => {
 
       if (response?.uniqueId) {
         setDuplicateUniqueId(response.uniqueId)
-        toast.error('发现重复记录, 点击跳转到重复的游戏')
+        const list = response.duplicates || [
+          { uniqueId: response.uniqueId, name: '' }
+        ]
+        setDuplicateList(list)
+        const fields = response.matchedFields || []
+        const labels = fields.map((f) => fieldLabels[f] || f).join(', ')
+        setMatchedInfo(labels)
+
+        const hasHardDuplicate = fields.some(
+          (f) => f === 'vndbRelationId' || f === 'dlsiteCode'
+        )
+        if (hasHardDuplicate) {
+          toast.error(`发现不可重复的字段匹配 (${labels})`)
+        } else {
+          toast.error(`发现重复记录 (匹配: ${labels}), 仅 VNDB ID 重复可确认后发布`)
+        }
       } else {
         toast.success('检查完成, 未找到重复游戏')
       }
@@ -83,16 +116,28 @@ export const DuplicateCheckButton = () => {
       </Button>
 
       {duplicateUniqueId && (
-        <Button
-          as={Link}
-          color="primary"
-          target="_blank"
-          href={`/${duplicateUniqueId}`}
-          variant="flat"
-          size="sm"
-        >
-          跳转到重复游戏
-        </Button>
+        <>
+          <div className="flex flex-wrap gap-2">
+            {duplicateList.map((item) => (
+              <Button
+                key={item.uniqueId}
+                as={Link}
+                color="primary"
+                target="_blank"
+                href={`/${item.uniqueId}`}
+                variant="flat"
+                size="sm"
+              >
+                {item.name || item.uniqueId}
+              </Button>
+            ))}
+          </div>
+          {matchedInfo && (
+            <span className="text-sm text-default-500">
+              匹配字段: {matchedInfo}
+            </span>
+          )}
+        </>
       )}
     </div>
   )

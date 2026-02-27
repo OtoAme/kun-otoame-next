@@ -1,21 +1,41 @@
 'use client'
 
-import { Button, Input } from '@heroui/react'
+import { useState } from 'react'
+import { Button, Checkbox, Input } from '@heroui/react'
 import toast from 'react-hot-toast'
 import { fetchVNDBDetails } from '~/utils/vndb'
+import { kunFetchGet } from '~/utils/kunFetch'
 import type { PatchFormDataShape } from '~/components/edit/types'
+
+interface DuplicateItem {
+  uniqueId: string
+  name: string
+}
+
+interface DuplicateResponse {
+  uniqueId: string
+  matchedFields?: string[]
+  duplicates?: DuplicateItem[]
+}
 
 interface Props<T extends PatchFormDataShape> {
   errors: string | undefined
   data: T
   setData: (data: T) => void
+  isDuplicate?: boolean
+  onDuplicateChange?: (value: boolean) => void
 }
 
 export const VNDBInput = <T extends PatchFormDataShape>({
   errors,
   data,
-  setData
+  setData,
+  isDuplicate = false,
+  onDuplicateChange
 }: Props<T>) => {
+  const [duplicateFound, setDuplicateFound] = useState(false)
+  const [duplicateList, setDuplicateList] = useState<DuplicateItem[]>([])
+
   const handleFetchData = async () => {
     const rawInput = (data.vndbId ?? '').trim()
     if (!rawInput) {
@@ -29,6 +49,35 @@ export const VNDBInput = <T extends PatchFormDataShape>({
       return
     }
 
+    // Check duplicate first
+    try {
+      const duplicateResult = await kunFetchGet<
+        KunResponse<DuplicateResponse>
+      >('/edit/duplicate', { vndbId: normalizedInput })
+
+      if (
+        typeof duplicateResult !== 'string' &&
+        duplicateResult?.uniqueId &&
+        duplicateResult.matchedFields?.includes('vndbId')
+      ) {
+        const list = duplicateResult.duplicates || [
+          { uniqueId: duplicateResult.uniqueId, name: '' }
+        ]
+        setDuplicateFound(true)
+        setDuplicateList(list)
+        toast.error(
+          `该 VNDB ID 已有 ${list.length} 个游戏存在, 如需发布不同版本请勾选确认`
+        )
+      } else {
+        setDuplicateFound(false)
+        setDuplicateList([])
+        onDuplicateChange?.(false)
+      }
+    } catch {
+      // Non-fatal, continue with fetch
+    }
+
+    // Fetch VNDB data regardless
     try {
       toast('正在从 VNDB 获取数据...')
       const { titles, released } = await fetchVNDBDetails(normalizedInput)
@@ -83,16 +132,44 @@ export const VNDBInput = <T extends PatchFormDataShape>({
       <p className="text-sm text-default-500">
         <b>您可以不填写 VNDB ID 发布游戏, 但是您需要自行检查游戏是否重复</b>
       </p>
-      <div className="flex items-center text-sm">
-        {data.vndbId && (
-          <Button
-            className="mr-4"
-            color="primary"
-            size="sm"
-            onPress={handleFetchData}
-          >
-            获取 VNDB 数据
-          </Button>
+      <div className="flex flex-col gap-2">
+        <div className="flex items-center text-sm">
+          {data.vndbId && (
+            <Button
+              className="mr-4"
+              color="primary"
+              size="sm"
+              onPress={handleFetchData}
+            >
+              获取 VNDB 数据
+            </Button>
+          )}
+        </div>
+        {duplicateFound && (
+          <div className="flex flex-col gap-2">
+            <Checkbox
+              size="sm"
+              isSelected={isDuplicate}
+              onValueChange={(value) => onDuplicateChange?.(value)}
+            >
+              <span className="text-sm text-warning-600">
+                确认 VNDB ID 重复, 发布不同版本
+              </span>
+            </Checkbox>
+            <div className="flex flex-wrap gap-2">
+              {duplicateList.map((item) => (
+                <a
+                  key={item.uniqueId}
+                  href={`/${item.uniqueId}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-sm text-primary underline"
+                >
+                  {item.name || item.uniqueId}
+                </a>
+              ))}
+            </div>
+          </div>
         )}
       </div>
     </div>

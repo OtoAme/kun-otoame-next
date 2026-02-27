@@ -110,7 +110,15 @@ export const RewritePatch = () => {
           </div>
         </CardHeader>
         <CardBody className="mt-4 space-y-12">
-          <VNDBInput data={data} setData={setData} errors={errors.vndbId} />
+          <VNDBInput
+            data={data}
+            setData={setData}
+            errors={errors.vndbId}
+            isDuplicate={data.isDuplicate}
+            onDuplicateChange={(value) =>
+              setData({ ...data, isDuplicate: value })
+            }
+          />
           <VNDBRelationInput
             data={data}
             setData={setData}

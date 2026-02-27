@@ -59,13 +59,11 @@ export const VNDBRelationInput = <T extends PatchFormDataShape>({
       } = relationResult
 
       if (enableDuplicateCheck) {
+        // Only check vndbRelationId uniqueness (strict, cannot repeat)
         const duplicateResult = await kunFetchGet<
-          KunResponse<{ uniqueId: string }>
+          KunResponse<{ uniqueId: string; matchedFields?: string[] }>
         >('/edit/duplicate', {
-          vndbId,
-          vndbRelationId: normalized,
-          dlsiteCode: (data.dlsiteCode ?? '').trim().toUpperCase(),
-          title: (data.name ?? '').trim()
+          vndbRelationId: normalized
         })
 
         if (typeof duplicateResult === 'string') {
@@ -73,9 +71,12 @@ export const VNDBRelationInput = <T extends PatchFormDataShape>({
           return
         }
 
-        if (duplicateResult?.uniqueId) {
+        if (
+          duplicateResult?.uniqueId &&
+          duplicateResult.matchedFields?.includes('vndbRelationId')
+        ) {
           toast.error(
-            `与 VN 已重复 (ID: ${duplicateResult.uniqueId}), 请勿重复提交`
+            `该 Release ID 已存在 (游戏 ID: ${duplicateResult.uniqueId}), Release ID 不可重复`
           )
           return
         }

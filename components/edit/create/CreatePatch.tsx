@@ -35,13 +35,23 @@ export const CreatePatch = () => {
             </div>
 
             <p className="mt-2">
-              游戏查重会使用 VNDB ID, VNDB Relation ID, DLsite Code
-              以及游戏标题和别名进行查重
+              游戏查重会使用 VNDB ID, Release ID, DLsite Code
+              以及游戏标题进行查重。其中 VNDB ID
+              可重复（用于发布同一游戏的不同版本），Release ID 和 DLsite Code
+              不可重复
             </p>
           </div>
         </CardHeader>
         <CardBody className="mt-4 space-y-12">
-          <VNDBInput data={data} setData={setData} errors={errors.vndbId} />
+          <VNDBInput
+            data={data}
+            setData={setData}
+            errors={errors.vndbId}
+            isDuplicate={data.isDuplicate}
+            onDuplicateChange={(value) =>
+              setData({ ...data, isDuplicate: value })
+            }
+          />
           <VNDBRelationInput
             data={data}
             setData={setData}
