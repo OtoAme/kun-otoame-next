@@ -82,7 +82,7 @@ export const ResourceApprovalButton = ({ resource }: Props) => {
         <ModalContent>
           <ModalHeader>确认同意发布</ModalHeader>
           <ModalBody>
-            确认要通过该资源的首次发布申请吗？通过后资源将对所有用户可见。
+            确认要通过该资源的发布申请吗？通过后资源将对所有用户可见。
           </ModalBody>
           <ModalFooter>
             <Button variant="light" onPress={onCloseApprove}>

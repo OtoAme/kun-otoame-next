@@ -32,6 +32,7 @@ export const createPatchResource = async (
     platform,
     content,
     storage,
+    section,
     ...resourceData
   } = input
 
@@ -49,7 +50,8 @@ export const createPatchResource = async (
   const resourceCount = await prisma.patch_resource.count({
     where: { user_id: uid }
   })
-  const needApproval = resourceCount === 0 && userRole < 3
+  const needApproval =
+    userRole === 1 || (userRole === 2 && resourceCount === 0)
 
   let res: string
   if (storage === 's3') {
@@ -62,6 +64,8 @@ export const createPatchResource = async (
     res = content
   }
 
+  const resourceTypeName = section === 'galgame' ? '游戏资源' : '补丁资源'
+
   const resource = await prisma.$transaction(async (prisma) => {
     const newResource = await prisma.patch_resource.create({
       data: {
@@ -72,6 +76,7 @@ export const createPatchResource = async (
         platform,
         content: res,
         storage,
+        section,
         status: needApproval ? 2 : 0,
         ...resourceData
       },
@@ -145,9 +150,13 @@ export const createPatchResource = async (
   })
 
   if (needApproval) {
+    const approvalMessage =
+      userRole === 1
+        ? `你的${resourceTypeName}「${currentPatch?.name ?? ''}」已提交审核，审核通过后将自动公开显示。`
+        : `你的第一个${resourceTypeName}「${currentPatch?.name ?? ''}」已提交审核，审核通过后将自动公开显示。`
     await createMessage({
       type: 'system',
-      content: `你的第一个补丁资源「${currentPatch?.name ?? ''}」已提交审核，审核通过后将自动公开显示。`,
+      content: approvalMessage,
       recipient_id: uid,
       link: currentPatch?.unique_id ? `/${currentPatch.unique_id}` : '/'
     })
@@ -166,8 +175,8 @@ export const createPatchResource = async (
         createMessage({
           type: 'system',
           content: needApproval
-            ? `用户首次发布资源「${resource.name}」于「${currentPatch?.name ?? ''}」，请前往审核。`
-            : `用户发布了资源「${resource.name}」于「${currentPatch?.name ?? ''}」，请留意审查。`,
+            ? `用户发布${resourceTypeName}「${resource.name}」于「${currentPatch?.name ?? ''}」，请前往审核。`
+            : `用户发布了${resourceTypeName}「${resource.name}」于「${currentPatch?.name ?? ''}」，请留意审查。`,
           sender_id: uid,
           recipient_id: admin.id,
           link: needApproval ? '/admin/resource-apply' : patchLink

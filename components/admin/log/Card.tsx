@@ -5,6 +5,14 @@ import { formatDate } from '~/utils/time'
 import { ADMIN_LOG_TYPE_MAP } from '~/constants/admin'
 import type { AdminLog } from '~/types/api/admin'
 
+const LOG_TYPE_COLOR_MAP: Record<
+  string,
+  'success' | 'danger' | 'primary'
+> = {
+  approve: 'success',
+  decline: 'danger'
+}
+
 interface Props {
   log: AdminLog
 }
@@ -32,7 +40,11 @@ export const LogCard = ({ log }: Props) => {
                 })}
               </span>
 
-              <Chip color="primary" variant="flat" size="sm">
+              <Chip
+                color={LOG_TYPE_COLOR_MAP[log.type] ?? 'primary'}
+                variant="flat"
+                size="sm"
+              >
                 {ADMIN_LOG_TYPE_MAP[log.type]}
               </Chip>
             </div>

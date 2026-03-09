@@ -59,9 +59,9 @@ export const ResourceApply = ({ initialResources, initialTotal }: Props) => {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">资源首次发布申请</h1>
+        <h1 className="text-2xl font-bold">资源发布申请</h1>
         <Chip color="primary" variant="flat">
-          仅展示等待审核的用户首次资源
+          仅展示等待审核的用户资源
         </Chip>
       </div>
 
