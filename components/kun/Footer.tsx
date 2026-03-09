@@ -46,7 +46,12 @@ export const KunFooter = () => {
           </div>
 
           <div className="flex space-x-8">
-            <span className="flex items-center">联系我们</span>
+            <a
+              href="mailto:contact@otoame.com"
+              className="flex items-center"
+            >
+              联系我们
+            </a>
             <Link
               href={kunMoyuMoe.domain.telegram_group}
               className="flex items-center"

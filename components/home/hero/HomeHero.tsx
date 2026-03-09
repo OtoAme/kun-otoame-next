@@ -3,7 +3,7 @@ import { Tooltip } from '@heroui/tooltip'
 import { Link } from '@heroui/link'
 import { Card, CardBody } from '@heroui/card'
 import { Chip } from '@heroui/chip'
-import { Sparkles } from 'lucide-react'
+import { Sparkles, Mail } from 'lucide-react'
 import { KunCarousel } from '../carousel/KunCarousel'
 import { getKunPosts } from '../carousel/mdx'
 import { RandomGalgameButton } from '../carousel/RandomGalgameButton'
@@ -50,6 +50,18 @@ export const HomeHero = () => {
                     color="secondary"
                   >
                     <Telegram />
+                  </Button>
+                </Tooltip>
+                <Tooltip showArrow content="联系我们">
+                  <Button
+                    isIconOnly
+                    isExternal
+                    as={Link}
+                    href="mailto:contact@otoame.com"
+                    variant="flat"
+                    color="secondary"
+                  >
+                    <Mail className="w-5 h-5" />
                   </Button>
                 </Tooltip>
               </div>
