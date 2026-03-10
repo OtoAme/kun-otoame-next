@@ -39,7 +39,7 @@ const menuItems = [
     icon: Puzzle
   },
   {
-    name: '首次资源发布申请',
+    name: '资源发布申请',
     href: '/admin/resource-apply',
     icon: FileCheck
   },
