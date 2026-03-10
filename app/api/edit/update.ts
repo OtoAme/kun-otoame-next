@@ -135,7 +135,7 @@ export const updateGalgame = async (
 
     if (gallery) {
       const files = Array.isArray(gallery) ? gallery : [gallery]
-      const limit = pLimit(2)
+      const limit = pLimit(5)
 
       await Promise.all(
         files.map((file, i) =>
@@ -154,24 +154,42 @@ export const updateGalgame = async (
               }
             })
 
-            const buffer = await file.arrayBuffer()
-            const uploadRes = await uploadPatchGalleryImage(
-              buffer,
-              id,
-              galleryRecord.id,
-              metadata.watermark ?? false
-            )
+            try {
+              const buffer = await file.arrayBuffer()
 
-            if (typeof uploadRes === 'string') {
-              throw new Error(`Gallery upload failed: ${uploadRes}`)
+              let uploadRes: string | undefined
+              for (let attempt = 0; attempt < 3; attempt++) {
+                uploadRes = await uploadPatchGalleryImage(
+                  buffer,
+                  id,
+                  galleryRecord.id,
+                  metadata.watermark ?? false
+                )
+                if (typeof uploadRes !== 'string') break
+                if (attempt < 2) {
+                  await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)))
+                }
+              }
+
+              if (typeof uploadRes === 'string') {
+                await prisma.patch_game_image
+                  .delete({ where: { id: galleryRecord.id } })
+                  .catch(() => {})
+                throw new Error(`Gallery upload failed after retries: ${uploadRes}`)
+              }
+
+              const imageUrl = `${process.env.KUN_VISUAL_NOVEL_IMAGE_BED_URL}/patch/${id}/gallery/${galleryRecord.id}.avif`
+
+              await prisma.patch_game_image.update({
+                where: { id: galleryRecord.id },
+                data: { url: imageUrl }
+              })
+            } catch (error) {
+              await prisma.patch_game_image
+                .delete({ where: { id: galleryRecord.id } })
+                .catch(() => {})
+              throw error
             }
-
-            const imageUrl = `${process.env.KUN_VISUAL_NOVEL_IMAGE_BED_URL}/patch/${id}/gallery/${galleryRecord.id}.avif`
-
-            await prisma.patch_game_image.update({
-              where: { id: galleryRecord.id },
-              data: { url: imageUrl }
-            })
           })
         )
       )

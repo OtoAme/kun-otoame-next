@@ -10,17 +10,21 @@ interface Props {
 }
 
 export const Gallery = ({ images }: Props) => {
-  if (!images || images.length === 0) return null
+  const validImages = images?.filter((img) => img.url) ?? []
+  if (validImages.length === 0) return null
 
   return (
     <div className="mt-4 space-y-4">
       <h2 className="text-xl font-bold">游戏画廊</h2>
       <KunImageViewer
-        images={images.map((img) => ({ src: img.url, alt: 'Game Screenshot' }))}
+        images={validImages.map((img) => ({
+          src: img.url,
+          alt: 'Game Screenshot'
+        }))}
       >
         {(openLightbox) => (
           <div className="grid grid-cols-2 gap-2 md:grid-cols-4 md:gap-4">
-            {images.map((img, index) => (
+            {validImages.map((img, index) => (
               <GalleryItem
                 key={img.id}
                 image={img}

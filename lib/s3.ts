@@ -11,7 +11,8 @@ export const s3 = new S3Client({
     accessKeyId: process.env.KUN_VISUAL_NOVEL_S3_STORAGE_ACCESS_KEY_ID!,
     secretAccessKey: process.env.KUN_VISUAL_NOVEL_S3_STORAGE_SECRET_ACCESS_KEY!
   },
-  requestChecksumCalculation: 'WHEN_REQUIRED'
+  requestChecksumCalculation: 'WHEN_REQUIRED',
+  maxAttempts: 3
 })
 
 export const uploadVideoToS3 = async (
