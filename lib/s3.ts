@@ -39,7 +39,7 @@ export const uploadImageToS3 = async (key: string, fileBuffer: Buffer) => {
     Bucket: process.env.KUN_VISUAL_NOVEL_S3_STORAGE_BUCKET_NAME!,
     Key: key,
     Body: fileBuffer,
-    ContentType: 'application/octet-stream'
+    ContentType: 'image/avif'
   })
   await s3.send(uploadCommand)
 }
