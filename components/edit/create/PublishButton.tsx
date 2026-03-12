@@ -29,6 +29,9 @@ export const PublishButton = ({ setErrors, className }: Props) => {
   const handleSubmit = async () => {
     const localeBannerBlob: Blob | null =
       await localforage.getItem('kun-patch-banner')
+    const localeOriginalBannerBlob: Blob | null = await localforage.getItem(
+      'kun-patch-banner-original'
+    )
     if (!localeBannerBlob) {
       toast.error('未检测到预览图片')
       return
@@ -58,6 +61,9 @@ export const PublishButton = ({ setErrors, className }: Props) => {
 
     const formDataToSend = new FormData()
     formDataToSend.append('banner', localeBannerBlob!)
+    if (localeOriginalBannerBlob) {
+      formDataToSend.append('bannerOriginal', localeOriginalBannerBlob)
+    }
     formDataToSend.append('name', data.name)
     formDataToSend.append('vndbId', data.vndbId)
     formDataToSend.append('vndbRelationId', data.vndbRelationId ?? '')
@@ -98,6 +104,7 @@ export const PublishButton = ({ setErrors, className }: Props) => {
     kunErrorHandler(res, async (value) => {
       resetData()
       await localforage.removeItem('kun-patch-banner')
+      await localforage.removeItem('kun-patch-banner-original')
       await localforage.removeItem('kun-patch-gallery')
       await localforage.removeItem('kun-patch-gallery-watermark')
       router.push(`/${value.uniqueId}`)

@@ -1,13 +1,15 @@
 'use client'
 
 import { useState } from 'react'
-import { Button, Chip, Input } from '@heroui/react'
+import { Button, Input } from '@heroui/react'
 import { Plus } from 'lucide-react'
+import { SortableAliasChips } from '../components/SortableAliasChips'
 
 interface Props {
   aliasList: string[]
   onAddAlias: (newAlias: string) => void
   onRemoveAlias: (index: number) => void
+  onReorderAlias: (nextAlias: string[]) => void
   errors?: string
 }
 
@@ -15,6 +17,7 @@ export const AliasManager = ({
   aliasList,
   onAddAlias,
   onRemoveAlias,
+  onReorderAlias,
   errors
 }: Props) => {
   const [newAlias, setNewAlias] = useState<string>('')
@@ -52,19 +55,13 @@ export const AliasManager = ({
       <p className="text-sm text-default-500">
         如果您觉得这太麻烦, 只留下游戏的日文原名也完全可以
       </p>
+      <p className="text-sm text-default-500">支持鼠标和触摸拖拽调整顺序</p>
 
-      <div className="flex flex-wrap gap-2 mt-2">
-        {aliasList.map((alias, index) => (
-          <Chip
-            key={index}
-            onClose={() => onRemoveAlias(index)}
-            variant="flat"
-            className="h-8"
-          >
-            {alias}
-          </Chip>
-        ))}
-      </div>
+      <SortableAliasChips
+        values={aliasList}
+        onReorder={onReorderAlias}
+        onRemove={onRemoveAlias}
+      />
     </div>
   )
 }

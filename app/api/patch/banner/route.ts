@@ -8,7 +8,8 @@ import { purgePatchBannerCache } from '~/app/api/utils/purgeCache'
 
 export const updatePatchBanner = async (
   image: ArrayBuffer,
-  patchId: number
+  patchId: number,
+  originalImage?: ArrayBuffer
 ) => {
   const patch = await prisma.patch.findUnique({
     where: { id: patchId }
@@ -17,7 +18,7 @@ export const updatePatchBanner = async (
     return '这个 OtomeGame 不存在'
   }
 
-  const res = await uploadPatchBanner(image, patchId)
+  const res = await uploadPatchBanner(image, patchId, originalImage)
   if (typeof res === 'string') {
     return res
   }
@@ -47,7 +48,10 @@ export const POST = async (req: NextRequest) => {
   }
 
   const image = await new Response(input.image)?.arrayBuffer()
+  const originalImage = input.imageOriginal
+    ? await new Response(input.imageOriginal)?.arrayBuffer()
+    : undefined
 
-  const response = await updatePatchBanner(image, input.patchId)
+  const response = await updatePatchBanner(image, input.patchId, originalImage)
   return NextResponse.json(response)
 }

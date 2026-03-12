@@ -1,10 +1,11 @@
 'use client'
 
 import { useState } from 'react'
-import { Button, Chip, Input } from '@heroui/react'
+import { Button, Input } from '@heroui/react'
 import { Plus } from 'lucide-react'
 import { useCreatePatchStore } from '~/store/editStore'
 import toast from 'react-hot-toast'
+import { SortableAliasChips } from '../components/SortableAliasChips'
 
 interface Props {
   errors: string | undefined
@@ -66,18 +67,12 @@ export const AliasInput = ({ errors }: Props) => {
       <p className="text-sm text-default-500">
         游戏的第一个别名将会作为 SEO 信息加入 OtomeGame 详情页
       </p>
-      <div className="flex flex-wrap gap-2 mt-2">
-        {data.alias.map((alias, index) => (
-          <Chip
-            key={index}
-            onClose={() => removeAlias(index)}
-            variant="flat"
-            className="h-8"
-          >
-            {alias}
-          </Chip>
-        ))}
-      </div>
+      <p className="text-sm text-default-500">支持鼠标和触摸拖拽调整顺序</p>
+      <SortableAliasChips
+        values={data.alias}
+        onReorder={(nextAlias) => setData({ ...data, alias: nextAlias })}
+        onRemove={removeAlias}
+      />
     </div>
   )
 }

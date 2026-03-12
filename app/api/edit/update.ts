@@ -6,6 +6,7 @@ import { uploadPatchGalleryImage, uploadPatchBanner } from './_upload'
 import { purgePatchBannerCache } from '~/app/api/utils/purgeCache'
 import { pLimit } from '~/utils/pLimit'
 import { ensurePatchCompanyFromDlsite } from './dlsite'
+import { ensurePatchCompaniesFromVNDB } from './fetchCompanies'
 
 export const updateGalgame = async (
   input: z.infer<typeof patchUpdateSchema>,
@@ -198,6 +199,12 @@ export const updateGalgame = async (
 
   if (input.tag.length) {
     await handleBatchPatchTags(input.id, input.tag, uid)
+  }
+
+  if (vndbId) {
+    try {
+      await ensurePatchCompaniesFromVNDB(id, vndbId, uid)
+    } catch {}
   }
 
   if (normalizedDlsiteCode) {

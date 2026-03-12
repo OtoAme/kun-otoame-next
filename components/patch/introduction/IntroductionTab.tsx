@@ -108,7 +108,11 @@ export const IntroductionTab = ({ intro, patchId, uid }: Props) => {
 
         <PatchOfficialUrl url={intro.officialUrl} />
 
-        <PatchCompany patchId={patchId} initialCompanies={intro.company} />
+        <PatchCompany
+          patchId={patchId}
+          initialCompanies={intro.company}
+          vndbId={intro.vndbId}
+        />
 
         <Info intro={intro} />
       </CardBody>
