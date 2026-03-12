@@ -113,6 +113,9 @@ export const SUPPORTED_PLATFORM = [
   'ps',
   'ios',
   'linux',
+  'ons',
+  'krkr',
+  'tyranor',
   'other'
 ]
 export const ALL_SUPPORTED_PLATFORM = ['all', ...SUPPORTED_PLATFORM]
@@ -126,6 +129,9 @@ export const SUPPORTED_PLATFORM_MAP: Record<string, string> = {
   ps: 'PlayStation',
   ios: 'iOS',
   linux: 'Linux',
+  ons: 'ONS',
+  krkr: 'KRKR',
+  tyranor: 'Tyranor',
   other: '其它'
 }
 
