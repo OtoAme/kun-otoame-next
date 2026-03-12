@@ -19,6 +19,9 @@ export const fetchDlsiteData = async (
   const normalized = code.trim().toUpperCase()
   const url = `${DLSITE_API}?code=${encodeURIComponent(normalized)}`
   const response = await fetch(url)
+  if (response.status === 404) {
+    throw new Error('DLSITE_PRODUCT_NOT_FOUND')
+  }
   if (!response.ok) {
     throw new Error('DLSITE_FETCH_FAILED')
   }

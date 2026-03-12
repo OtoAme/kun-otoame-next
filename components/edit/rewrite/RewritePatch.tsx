@@ -19,7 +19,7 @@ import { BangumiInput } from '../components/BangumiInput'
 import { ReleaseDateInput } from '../components/ReleaseDateInput'
 import { VNDBInput } from '../create/VNDBInput'
 import { VNDBRelationInput } from '../create/VNDBRelationInput'
-import { DLSiteInput } from '../create/DLSiteInput'
+// import { DLSiteInput } from '../create/DLSiteInput'
 import type { RewritePatchData } from '~/store/rewriteStore'
 
 export const RewritePatch = () => {
@@ -125,12 +125,6 @@ export const RewritePatch = () => {
             errors={errors.vndbRelationId}
             enableDuplicateCheck={false}
           />
-          <DLSiteInput
-            data={data}
-            setData={setData}
-            errors={errors.dlsiteCode}
-          />
-
           <GameNameInput
             name={data.name}
             onChange={(name) => setData({ ...data, name })}

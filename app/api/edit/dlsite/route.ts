@@ -4,7 +4,7 @@ import { kunParsePostBody } from '~/app/api/utils/parseQuery'
 import { fetchDlsiteData } from '../dlsite'
 
 const dlsiteSchema = z.object({
-  code: z.string().regex(/^(RJ|VJ)\d+$/i, 'DLSite Code 格式不正确')
+  code: z.string().regex(/^(RJ|VJ|BJ)\d+$/i, 'DLSite Code 格式不正确')
 })
 
 export const POST = async (req: NextRequest) => {
@@ -17,7 +17,11 @@ export const POST = async (req: NextRequest) => {
     const data = await fetchDlsiteData(input.code)
     return NextResponse.json(data)
   } catch (error) {
+    const message =
+      error instanceof Error && error.message === 'DLSITE_PRODUCT_NOT_FOUND'
+        ? '未找到该 DLSite 编号对应的作品'
+        : 'DLSite API 请求失败, 请稍后重试'
     console.error('Failed to fetch DLsite data:', error)
-    return NextResponse.json('DLSite API 请求失败, 请稍后重试')
+    return NextResponse.json(message)
   }
 }
