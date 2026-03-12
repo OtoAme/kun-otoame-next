@@ -1,7 +1,7 @@
 'use client'
 
-import { useEffect } from 'react'
-import { kunFetchPut } from '~/utils/kunFetch'
+import { useEffect, useState } from 'react'
+import { kunFetchGet, kunFetchPut } from '~/utils/kunFetch'
 import { Button } from '@heroui/react'
 import { AtSign, Bell, Globe, MessageSquare, UserPlus } from 'lucide-react'
 import { Card, CardBody } from '@heroui/card'
@@ -36,7 +36,28 @@ export const MessageNav = () => {
   )
   const isChatSection = pathname.startsWith('/message/chat')
 
+  const [hasUnreadMessages, setHasUnreadMessages] = useState(false)
+  const [hasUnreadChat, setHasUnreadChat] = useState(false)
+
   useEffect(() => {
+    const fetchUnread = async () => {
+      const res = await kunFetchGet<{
+        hasUnreadMessages: boolean
+        hasUnreadChat: boolean
+      }>('/message/unread')
+      if (res && typeof res !== 'string') {
+        setHasUnreadMessages(res.hasUnreadMessages)
+        setHasUnreadChat(res.hasUnreadChat)
+      }
+    }
+    fetchUnread()
+  }, [])
+
+  useEffect(() => {
+    if (!isNotificationSection) {
+      return
+    }
+    setHasUnreadMessages(false)
     const readAllMessage = async () => {
       const res = await kunFetchPut<KunResponse<{}>>('/message/read')
       if (typeof res === 'string') {
@@ -44,7 +65,16 @@ export const MessageNav = () => {
       }
     }
     readAllMessage()
-  }, [])
+  }, [isNotificationSection])
+
+  useEffect(() => {
+    if (isChatSection) {
+      setHasUnreadChat(false)
+    }
+  }, [pathname])
+
+  const showMessageDot = hasUnreadMessages && !isNotificationSection
+  const showChatDot = hasUnreadChat && !isChatSection
 
   return (
     <Card className="w-full lg:w-1/4">
@@ -58,7 +88,12 @@ export const MessageNav = () => {
             startContent={<Bell className="size-4 shrink-0" />}
             href="/message/notice"
           >
-            <span>消息</span>
+            <span className="relative">
+              消息
+              {showMessageDot && (
+                <span className="absolute -top-0.5 -right-2.5 size-2 rounded-full bg-danger" />
+              )}
+            </span>
           </Button>
           <Button
             color={isChatSection ? 'primary' : 'default'}
@@ -68,7 +103,12 @@ export const MessageNav = () => {
             startContent={<MessageSquare className="size-4 shrink-0" />}
             href="/message/chat"
           >
-            <span>私聊</span>
+            <span className="relative">
+              私聊
+              {showChatDot && (
+                <span className="absolute -top-0.5 -right-2.5 size-2 rounded-full bg-danger" />
+              )}
+            </span>
           </Button>
         </div>
 
