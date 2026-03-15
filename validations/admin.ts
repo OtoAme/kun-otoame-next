@@ -93,3 +93,13 @@ export const adminUpdateRedirectSchema = z.object({
 export const adminUpdateDisableRegisterSchema = z.object({
   disableRegister: z.boolean()
 })
+
+export const adminGrantMoemoepointSchema = z.object({
+  uid: z.coerce.number().min(1).max(9999999),
+  amount: z.coerce.number().int().min(1).max(100000),
+  reason: z
+    .string()
+    .trim()
+    .max(500, { message: '理由不能超过 500 个字符' })
+    .optional()
+})

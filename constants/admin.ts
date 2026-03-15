@@ -18,7 +18,8 @@ export const ADMIN_LOG_TYPE_MAP: Record<string, string> = {
   delete: '删除',
   approve: '通过',
   decline: '拒绝',
-  update: '更新'
+  update: '更新',
+  grant: '发放'
 }
 
 export const ALLOWED_VIDEO_MIME_TYPES = ['video/mp4', 'video/wmv', 'video/webm']

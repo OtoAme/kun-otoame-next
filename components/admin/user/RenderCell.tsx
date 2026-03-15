@@ -8,6 +8,7 @@ import {
 } from '~/constants/user'
 import { UserEdit } from './UserEdit'
 import { UserDelete } from './UserDelete'
+import { GrantMoemoepoint } from './GrantMoemoepoint'
 import { KunUser } from '~/components/kun/floating-card/KunUser'
 import type { AdminUser as AdminUserType } from '~/types/api/admin'
 
@@ -41,6 +42,7 @@ export const RenderCell = (user: AdminUserType, columnKey: string) => {
     case 'actions':
       return (
         <div className="flex items-center gap-2">
+          <GrantMoemoepoint user={user} />
           <UserEdit initialUser={user} />
           <UserDelete user={user} />
         </div>
