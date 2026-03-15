@@ -20,6 +20,13 @@ export const KunCarousel = ({ posts }: KunCarouselProps) => {
   const [isPageVisible, setIsPageVisible] = useState(true)
 
   useEffect(() => {
+    posts.forEach((post) => {
+      const img = new Image()
+      img.src = post.banner
+    })
+  }, [posts])
+
+  useEffect(() => {
     const handleVisibility = () => {
       const visible =
         typeof document !== 'undefined' &&
