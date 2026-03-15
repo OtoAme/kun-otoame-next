@@ -122,11 +122,11 @@ export const SearchInput = ({
   return (
     <div
       className={cn(
-        'flex gap-2 p-3 bg-default-100 rounded-large transition-all duration-200',
+        'flex items-center gap-2 p-3 bg-default-100 rounded-large transition-all duration-200',
         isFocused ? 'ring-2 ring-primary ring-offset-2' : ''
       )}
     >
-      <div className="flex flex-wrap items-center w-full gap-2">
+      <div className="flex flex-wrap items-center flex-1 min-w-0 gap-2">
         {selectedSuggestions.map((suggestion, index) => (
           <Chip
             key={index}
@@ -148,7 +148,9 @@ export const SearchInput = ({
           onKeyUp={(e) => handleKeyUp(e)}
           placeholder="输入内容, 点击按钮或回车创建关键词"
         />
+      </div>
 
+      <div className="flex items-center flex-shrink-0 gap-2">
         {isShowClearButton && (
           <Tooltip content="清除搜索内容">
             <Button
