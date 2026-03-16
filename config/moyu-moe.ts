@@ -3,7 +3,7 @@ import type { KunSiteConfig } from './config'
 
 const KUN_SITE_NAME = 'OtoAme'
 const KUN_SITE_MENTION = '@otoame'
-const KUN_SITE_TITLE = 'OtoAme - 一站式乙女游戏文化社区!'
+const KUN_SITE_TITLE = 'OtoAme - 开放式乙女游戏核心社区!'
 const KUN_SITE_IMAGE =
   './public/images/otoame.jpg'
 const KUN_SITE_DESCRIPTION =
