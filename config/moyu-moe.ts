@@ -7,7 +7,7 @@ const KUN_SITE_TITLE = 'OtoAme - 一站式乙女游戏文化社区!'
 const KUN_SITE_IMAGE =
   './public/images/otoame.jpg'
 const KUN_SITE_DESCRIPTION =
-  'OtoAme 是一个一站式乙女游戏文化社区， 提供乙女游戏下载等服务。承诺永久免费, 高质量。为乙女游戏爱好者提供一片净土！'
+  'OtoAme 是一个以乙女游戏为核心的视觉小说社区，收录乙女、BL、百合、一般向等各类作品，提供永久免费的高质量资源下载，为乙女游戏爱好者打造一片净土。'
 const KUN_SITE_URL = 'https://www.otoame.top'
 const KUN_SITE_ARCHIVE = 'https://archive.otoame.top/'
 const KUN_SITE_FORUM = 'https://www.otoame.top/'                // 待修改 - 论坛
