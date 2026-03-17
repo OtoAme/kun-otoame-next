@@ -189,9 +189,9 @@ pnpm deploy:pull
 
 **🛠️配置向导**
 
-1. GitHub 仓库配置 Secrets
+1. GitHub 仓库配置 Environment Secrets
 
-   前往您的 GitHub 仓库 -> **Settings** -> **Secrets and variables** -> **Actions**，添加以下 Secrets（用于构建时注入环境变量）：
+   前往您的 GitHub 仓库 -> **Settings** -> **Environments** -> **buildPublicEnv**（如没有请新建），添加以下 Environment Secrets（用于构建时注入环境变量）：
 
    | Secret Name                                 | 说明             |
    | ------------------------------------------- | ---------------- |
