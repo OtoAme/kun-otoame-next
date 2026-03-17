@@ -29,7 +29,7 @@ export const HomeHero = () => {
 
               <div className="space-y-4">
                 <h1 className="py-1 text-3xl font-bold text-transparent xl:text-4xl bg-gradient-to-r from-primary-500 to-secondary-500 bg-clip-text">
-                  开放式乙女游戏核心社区
+                  一站式乙女游戏文化社区
                 </h1>
                 <p className="text-md text-default-600">
                   高质量视觉小说分享站 · 永久免费 · 开源
