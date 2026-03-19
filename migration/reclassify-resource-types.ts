@@ -11,6 +11,19 @@ interface ResourceRow {
   type: string[]
   platform: string[]
   patch_id: number
+  patch: {
+    unique_id: string
+    name: string
+  }
+}
+
+const SITE_URL =
+  process.env.KUN_SITE_URL ||
+  process.env.NEXT_PUBLIC_KUN_SITE_URL ||
+  'https://www.otoame.top'
+
+const buildPatchPermalink = (uniqueId: string) => {
+  return `${SITE_URL.replace(/\/$/, '')}/${uniqueId}`
 }
 
 const isResourceSection = (value: string): value is ResourceSection => {
@@ -118,6 +131,7 @@ const recalculatePatchAttributes = async (patchIds: number[]) => {
 
 async function main() {
   const isApplyMode = process.argv.includes('--apply')
+  const allowEmptyType = process.argv.includes('--allow-empty-type')
   let remappedEmulatorToMobileCount = 0
   let remappedPsToPsvCount = 0
   let remappedPsToPs2Count = 0
@@ -129,15 +143,39 @@ async function main() {
       section: true,
       type: true,
       platform: true,
-      patch_id: true
+      patch_id: true,
+      patch: {
+        select: {
+          unique_id: true,
+          name: true
+        }
+      }
     }
   })) as ResourceRow[]
 
   const updates: Array<{
     id: number
     patchId: number
+    patchUniqueId: string
+    patchName: string
+    resourceName: string
+    permalink: string
+    section: string
+    oldType: string[]
+    oldPlatform: string[]
     type: string[]
     platform: string[]
+  }> = []
+
+  const emptyTypeUpdates: Array<{
+    id: number
+    patchId: number
+    permalink: string
+    patchName: string
+    resourceName: string
+    section: string
+    oldType: string[]
+    newPlatform: string[]
   }> = []
 
   for (const resource of resources) {
@@ -174,12 +212,34 @@ async function main() {
     const isPlatformChanged = !arraysEqual(resource.platform, nextPlatforms)
 
     if (isTypeChanged || isPlatformChanged) {
+      const permalink = buildPatchPermalink(resource.patch.unique_id)
+
       updates.push({
         id: resource.id,
         patchId: resource.patch_id,
+        patchUniqueId: resource.patch.unique_id,
+        patchName: resource.patch.name,
+        resourceName: resource.name,
+        permalink,
+        section: resource.section,
+        oldType: resource.type,
+        oldPlatform: resource.platform,
         type: nextTypes,
         platform: nextPlatforms
       })
+
+      if (nextTypes.length === 0) {
+        emptyTypeUpdates.push({
+          id: resource.id,
+          patchId: resource.patch_id,
+          permalink,
+          patchName: resource.patch.name,
+          resourceName: resource.name,
+          section: resource.section,
+          oldType: resource.type,
+          newPlatform: nextPlatforms
+        })
+      }
     }
   }
 
@@ -198,12 +258,22 @@ async function main() {
     console.log(
       `Resources remapped by rule (ps in platform + name contains PS2 => ps2): ${remappedPsToPs2Count}`
     )
+    console.log(`Resources with empty new_type after normalization: ${emptyTypeUpdates.length}`)
 
     if (updates.length > 0) {
       console.log('Preview (first 10 updates):')
       updates.slice(0, 10).forEach((item) => {
         console.log(
-          `resource_id=${item.id}, patch_id=${item.patchId}, new_type=${JSON.stringify(item.type)}, new_platform=${JSON.stringify(item.platform)}`
+          `resource_id=${item.id}, patch_id=${item.patchId}, permalink=${item.permalink}, patch_name=${JSON.stringify(item.patchName)}, resource_name=${JSON.stringify(item.resourceName)}, section=${item.section}, old_type=${JSON.stringify(item.oldType)}, new_type=${JSON.stringify(item.type)}, old_platform=${JSON.stringify(item.oldPlatform)}, new_platform=${JSON.stringify(item.platform)}`
+        )
+      })
+    }
+
+    if (emptyTypeUpdates.length > 0) {
+      console.log('Resources with empty new_type (first 50):')
+      emptyTypeUpdates.slice(0, 50).forEach((item) => {
+        console.log(
+          `resource_id=${item.id}, patch_id=${item.patchId}, permalink=${item.permalink}, patch_name=${JSON.stringify(item.patchName)}, resource_name=${JSON.stringify(item.resourceName)}, section=${item.section}, old_type=${JSON.stringify(item.oldType)}, new_type=[], new_platform=${JSON.stringify(item.newPlatform)}`
         )
       })
     }
@@ -215,6 +285,16 @@ async function main() {
   if (!updates.length) {
     console.log('No resources need migration.')
     return
+  }
+
+  if (emptyTypeUpdates.length > 0 && !allowEmptyType) {
+    console.error(
+      `Blocked apply: ${emptyTypeUpdates.length} resources would become new_type=[]. Please review dry-run output first.`
+    )
+    console.error(
+      'If you explicitly want to allow this, rerun with: pnpm migration:resource-type:apply -- --allow-empty-type'
+    )
+    process.exit(1)
   }
 
   await prisma.$transaction(
@@ -239,6 +319,7 @@ async function main() {
   console.log(
     `Resources remapped by rule (ps in platform + name contains PS2 => ps2): ${remappedPsToPs2Count}`
   )
+  console.log(`Resources with empty new_type after normalization: ${emptyTypeUpdates.length}`)
 }
 
 main()
