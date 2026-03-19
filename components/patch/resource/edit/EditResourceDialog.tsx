@@ -20,6 +20,10 @@ import { ResourceDetailsForm } from '../publish/ResourceDetailsForm'
 import { FileUploadContainer } from '../upload/FileUploadContainer'
 import { ResourceSectionSelect } from '../publish/ResourceSectionSelect'
 import type { PatchResource } from '~/types/api/patch'
+import {
+  normalizeLegacyResourceTypes,
+  type ResourceSection
+} from '~/constants/resource'
 
 type EditResourceFormData = z.infer<typeof patchResourceCreateSchema>
 
@@ -47,7 +51,10 @@ export const EditResourceDialog = ({
     formState: { errors }
   } = useForm<EditResourceFormData>({
     resolver: zodResolver(patchResourceCreateSchema),
-    defaultValues: resource
+    defaultValues: {
+      ...resource,
+      type: normalizeLegacyResourceTypes(resource.type)
+    }
   })
 
   const handleUpdateResource = async () => {
@@ -121,6 +128,7 @@ export const EditResourceDialog = ({
           <ResourceDetailsForm
             control={control}
             errors={errors}
+            section={watch().section as ResourceSection}
             content={watch().content}
             storage={watch().storage}
           />

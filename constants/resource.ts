@@ -6,49 +6,59 @@ export const resourceTypes = [
   },
   {
     value: 'row',
-    label: '生肉资源',
-    description: '没有中文翻译, 仅有日语或其它语言的 OtomeGame'
+    label: '生肉',
+    description: '没有中文翻译, 仅有日语或其它语言的游戏'
   },
   {
     value: 'chinese',
-    label: '汉化资源',
-    description: '汉化 OtomeGame 下载资源, 有简体中文或繁体中文支持'
+    label: '民汉',
+    description: '汉化版游戏或补丁, 有简体中文或繁体中文支持'
   },
   {
     value: 'official-zh',
-    label: '官方中文',
-    description: '官方发行的中文版 OtomeGame'
+    label: '官中',
+    description: '官方发行的中文版游戏'
+  },
+  {
+    value: 'machine',
+    label: '机翻',
+    description: '机器翻译版本的游戏或补丁, 可能质量较低但能提供基本的中文支持'
   },
   {
     value: 'emulator',
-    label: '模拟器资源',
+    label: '主机游戏',
     description:
-      '可以在手机模拟器, 例如 KiriKiri, ONS, Tyranor 等模拟器中运行的 OtomeGame 游戏'
+      '在主机平台游玩的游戏, 或由模拟器支持的主机平台资源'
   },
   {
     value: 'patch',
-    label: '补丁资源',
-    description: '与这个 OtomeGame 相关的补丁资源'
+    label: '补丁',
+    description: '与本游戏相关的补丁资源'
   },
   {
     value: 'material',
     label: '资料集',
-    description: '与游戏相关的图文资料，包括设定内容、视觉作品及各类特典'
+    description: '与游戏相关的资料，包括设定内容、视觉作品及各类特典'
   },
   {
     value: 'mobile',
     label: '手机游戏',
-    description: '可以在手机上运行的 OtomeGame 游戏'
-  },
-  {
-    value: 'app',
-    label: '直装资源',
-    description: '可以直接在手机安装并游玩的 OtomeGame'
+    description: '可以在手机上运行的游戏，包含原先的安卓直装资源'
   },
   {
     value: 'tool',
-    label: '游戏工具',
+    label: '工具',
     description: '辅助游玩 OtomeGame 的工具, 例如 KRKR 模拟器, Magpie 等'
+  },
+  {
+    value: 'strategy',
+    label: '攻略',
+    description: '与本游戏相关的攻略内容'
+  },
+  {
+    value: 'save',
+    label: '存档',
+    description: '与本游戏相关的存档资源'
   },
   {
     value: 'notice',
@@ -66,28 +76,84 @@ export const SUPPORTED_TYPE = [
   'pc',
   'chinese',
   'official-zh',
+  'machine',
   'mobile',
   'emulator',
   'row',
-  'app',
   'patch',
   'material',
   'tool',
+  'strategy',
+  'save',
+  // 保留历史兼容类型，供迁移与旧数据回显使用
+  'app',
   'notice',
   'other'
 ]
+
+export type ResourceSection = 'galgame' | 'patch'
+
+export const GALGAME_RESOURCE_TYPES = [
+  'pc',
+  'emulator',
+  'mobile',
+  'material',
+  'chinese',
+  'official-zh',
+  'row',
+  'machine'
+] as const
+
+export const PATCH_RESOURCE_TYPES = ['patch', 'tool', 'strategy', 'save'] as const
+
+export const RESOURCE_TYPES_BY_SECTION: Record<ResourceSection, readonly string[]> =
+{
+  galgame: GALGAME_RESOURCE_TYPES,
+  patch: PATCH_RESOURCE_TYPES
+}
+
+export const getResourceTypeOptionsBySection = (
+  section: ResourceSection
+) => {
+  const allowed = new Set(RESOURCE_TYPES_BY_SECTION[section])
+  return resourceTypes.filter((item) => allowed.has(item.value))
+}
+
+export const isResourceTypeAllowedForSection = (
+  section: ResourceSection,
+  type: string
+) => {
+  return RESOURCE_TYPES_BY_SECTION[section].includes(type)
+}
+
+export const normalizeLegacyResourceTypes = (types: string[]): string[] => {
+  return Array.from(
+    new Set(types.map((type) => (type === 'app' ? 'mobile' : type)))
+  )
+}
+
+export const normalizeTypesBySection = (
+  section: ResourceSection,
+  types: string[]
+): string[] => {
+  const normalized = normalizeLegacyResourceTypes(types)
+  return normalized.filter((type) => isResourceTypeAllowedForSection(section, type))
+}
 export const SUPPORTED_TYPE_MAP: Record<string, string> = {
   all: '全部类型',
   pc: 'PC游戏',
-  chinese: '汉化资源',
-  'official-zh': '官方中文',
+  chinese: '民汉',
+  'official-zh': '官中',
+  machine: '机翻',
   mobile: '手机游戏',
-  emulator: '模拟器资源',
-  row: '生肉资源',
-  app: '直装资源',
-  patch: '补丁资源',
+  emulator: '主机游戏',
+  row: '生肉',
+  app: '安卓直装 (旧)',
+  patch: '补丁',
   material: '资料集',
-  tool: '游戏工具',
+  tool: '工具',
+  strategy: '攻略',
+  save: '存档',
   notice: '官方通知',
   other: '其它'
 }
@@ -110,7 +176,8 @@ export const SUPPORTED_PLATFORM = [
   'macos',
   'psp',
   'ns',
-  'ps',
+  'psv',
+  'ps2',
   'ios',
   'linux',
   'ons',
@@ -126,7 +193,8 @@ export const SUPPORTED_PLATFORM_MAP: Record<string, string> = {
   macos: 'MacOS',
   psp: 'PSP',
   ns: 'NS',
-  ps: 'PlayStation',
+  psv: 'PSV',
+  ps2: 'PS2',
   ios: 'iOS',
   linux: 'Linux',
   ons: 'ONS',
@@ -169,7 +237,7 @@ export const ALLOWED_MIME_TYPES = [
 
 export const ALLOWED_EXTENSIONS = ['.zip', '.rar', '.7z']
 
-export const SUPPORTED_RESOURCE_SECTION = ['galgame', 'patch']
+export const SUPPORTED_RESOURCE_SECTION = ['galgame', 'patch'] as const
 
 export const RESOURCE_SECTION_MAP: Record<string, string> = {
   galgame: 'OtomeGame 资源',
@@ -181,14 +249,16 @@ const TYPE_DISPLAY_ORDER = [
   'pc',
   'mobile',
   'emulator',
-  'app',
   'patch',
   'material',
   'tool',
+  'strategy',
+  'save',
   'notice',
   'other',
   'chinese',
   'official-zh',
+  'machine',
   'row'
 ]
 

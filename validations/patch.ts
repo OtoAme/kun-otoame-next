@@ -5,7 +5,9 @@ import {
   SUPPORTED_LANGUAGE,
   SUPPORTED_PLATFORM,
   SUPPORTED_RESOURCE_LINK,
-  SUPPORTED_RESOURCE_SECTION
+  SUPPORTED_RESOURCE_SECTION,
+  isResourceTypeAllowedForSection,
+  type ResourceSection
 } from '~/constants/resource'
 import {
   KUN_GALGAME_RATING_RECOMMEND_CONST,
@@ -61,7 +63,7 @@ export const getPatchCommentSchema = z.object({
   limit: z.coerce.number().min(1).max(50)
 })
 
-export const patchResourceCreateSchema = z.object({
+const patchResourceSchemaBase = z.object({
   patchId: z.coerce.number().min(1).max(9999999),
   section: z
     .string()
@@ -108,11 +110,36 @@ export const patchResourceCreateSchema = z.object({
     )
 })
 
-export const patchResourceUpdateSchema = patchResourceCreateSchema.merge(
-  z.object({
-    resourceId: z.coerce.number().min(1).max(9999999)
-  })
+const validateResourceTypesBySection = (
+  data: { section: string; type: string[] },
+  ctx: z.RefinementCtx
+) => {
+  const section = data.section as ResourceSection
+  const hasInvalidType = data.type.some(
+    (type) => !isResourceTypeAllowedForSection(section, type)
+  )
+
+  if (hasInvalidType) {
+    const sectionLabel = section === 'galgame' ? 'OtomeGame 资源' : 'OtomeGame 补丁'
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['type'],
+      message: `${sectionLabel}中包含不允许的资源类型`
+    })
+  }
+}
+
+export const patchResourceCreateSchema = patchResourceSchemaBase.superRefine(
+  validateResourceTypesBySection
 )
+
+export const patchResourceUpdateSchema = patchResourceSchemaBase
+  .merge(
+    z.object({
+      resourceId: z.coerce.number().min(1).max(9999999)
+    })
+  )
+  .superRefine(validateResourceTypesBySection)
 
 export const declinePullRequestSchema = z.object({
   prId: z.coerce.number({ message: 'ID 必须为数字' }).min(1).max(9999999),

@@ -6,11 +6,12 @@ import { Input, Textarea } from '@heroui/input'
 import { Button } from '@heroui/button'
 import { Select, SelectItem } from '@heroui/select'
 import {
-  resourceTypes,
+  getResourceTypeOptionsBySection,
   SUPPORTED_LANGUAGE,
   SUPPORTED_LANGUAGE_MAP,
   SUPPORTED_PLATFORM,
-  SUPPORTED_PLATFORM_MAP
+  SUPPORTED_PLATFORM_MAP,
+  type ResourceSection
 } from '~/constants/resource'
 import { ControlType, ErrorType } from '../share'
 import { CLOUDREVE_PAN_DOMAIN, formatSize } from './fetchAlistSize'
@@ -19,6 +20,7 @@ import toast from 'react-hot-toast'
 interface ResourceDetailsFormProps {
   control: ControlType
   errors: ErrorType
+  section: ResourceSection
   content?: string
   storage?: string
 }
@@ -26,10 +28,12 @@ interface ResourceDetailsFormProps {
 export const ResourceDetailsForm = ({
   control,
   errors,
+  section,
   content,
   storage
 }: ResourceDetailsFormProps) => {
   const [fetchingSize, setFetchingSize] = useState(false)
+  const resourceTypes = getResourceTypeOptionsBySection(section)
 
   const handleFetchSize = async (onChange: (value: string) => void) => {
     if (!content) {

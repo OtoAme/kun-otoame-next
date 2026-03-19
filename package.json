@@ -22,6 +22,8 @@
     "deploy:install": "esno scripts/deployInstall.ts",
     "deploy:build": "esno scripts/deployBuild.ts",
     "deploy:pull": "git pull && esno scripts/deployPull.ts",
+    "migration:resource-type:dry": "esno migration/reclassify-resource-types.ts",
+    "migration:resource-type:apply": "esno migration/reclassify-resource-types.ts --apply",
     "test": "vitest run"
   },
   "author": {

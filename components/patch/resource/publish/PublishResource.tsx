@@ -179,6 +179,7 @@ export const PublishResource = ({
           <ResourceDetailsForm
             control={control}
             errors={errors}
+            section={watch().section}
             content={watch().content}
             storage={watch().storage}
           />
