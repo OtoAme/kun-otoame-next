@@ -25,6 +25,7 @@ describe('resource classification', () => {
 
     test('allows only matching section type', () => {
         expect(isResourceTypeAllowedForSection('galgame', 'pc')).toBe(true)
+        expect(isResourceTypeAllowedForSection('galgame', 'tool')).toBe(true)
         expect(isResourceTypeAllowedForSection('galgame', 'patch')).toBe(false)
         expect(isResourceTypeAllowedForSection('patch', 'tool')).toBe(true)
         expect(isResourceTypeAllowedForSection('patch', 'mobile')).toBe(false)

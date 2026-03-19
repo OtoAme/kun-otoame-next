@@ -39,16 +39,10 @@ const MOBILE_ENGINE_PLATFORMS = new Set(['krkr', 'ons'])
 
 const PS2_IN_NAME_REGEX = /ps2/i
 
-const STRATEGY_KEYWORDS = [
-  '攻略',
-  'guide',
-  'walkthrough',
-  '路线',
-  '图文攻略',
-  '图片攻略'
-]
+const PATCH_STRATEGY_REGEX = /攻略/
 
-const SAVE_KEYWORDS = ['存档', 'save', '全开', '完美存档', 'clear data']
+// 存档关键词: 存档 / CG档 / 全CG存档(允许 CG 前后空格) / savedata(大小写不敏感)
+const PATCH_SAVE_REGEX = /(存档|savedata|全\s*c\s*g\s*存档|c\s*g\s*档)/i
 
 const TOOL_KEYWORDS = [
   '工具',
@@ -67,8 +61,8 @@ const includesAnyKeyword = (text: string, keywords: string[]) => {
 }
 
 const inferPatchTypeFromResourceName = (name: string): string | null => {
-  if (includesAnyKeyword(name, STRATEGY_KEYWORDS)) return 'strategy'
-  if (includesAnyKeyword(name, SAVE_KEYWORDS)) return 'save'
+  if (PATCH_STRATEGY_REGEX.test(name)) return 'strategy'
+  if (PATCH_SAVE_REGEX.test(name)) return 'save'
   if (includesAnyKeyword(name, TOOL_KEYWORDS)) return 'tool'
   return null
 }
@@ -242,7 +236,11 @@ async function main() {
         platformRemappedTypes
       )
 
-      if (resource.section === 'patch' && nextTypes.length === 0) {
+      if (
+        resource.section === 'patch' &&
+        nextTypes.length === 0 &&
+        resource.type.includes('other')
+      ) {
         const inferredType = inferPatchTypeFromResourceName(resource.name)
         if (inferredType) {
           nextTypes = [inferredType]

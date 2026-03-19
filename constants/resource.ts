@@ -98,6 +98,7 @@ export const GALGAME_RESOURCE_TYPES = [
   'emulator',
   'mobile',
   'material',
+  'tool',
   'chinese',
   'official-zh',
   'row',
