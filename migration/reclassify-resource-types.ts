@@ -39,6 +39,40 @@ const MOBILE_ENGINE_PLATFORMS = new Set(['krkr', 'ons'])
 
 const PS2_IN_NAME_REGEX = /ps2/i
 
+const STRATEGY_KEYWORDS = [
+  '攻略',
+  'guide',
+  'walkthrough',
+  '路线',
+  '图文攻略',
+  '图片攻略'
+]
+
+const SAVE_KEYWORDS = ['存档', 'save', '全开', '完美存档', 'clear data']
+
+const TOOL_KEYWORDS = [
+  '工具',
+  'tool',
+  '注册表',
+  'cheat',
+  '修改器',
+  '补丁',
+  'patch',
+  '修复'
+]
+
+const includesAnyKeyword = (text: string, keywords: string[]) => {
+  const lower = text.toLowerCase()
+  return keywords.some((keyword) => lower.includes(keyword.toLowerCase()))
+}
+
+const inferPatchTypeFromResourceName = (name: string): string | null => {
+  if (includesAnyKeyword(name, STRATEGY_KEYWORDS)) return 'strategy'
+  if (includesAnyKeyword(name, SAVE_KEYWORDS)) return 'save'
+  if (includesAnyKeyword(name, TOOL_KEYWORDS)) return 'tool'
+  return null
+}
+
 const remapEmulatorToMobileByPlatform = (
   types: string[],
   platforms: string[]
@@ -135,6 +169,7 @@ async function main() {
   let remappedEmulatorToMobileCount = 0
   let remappedPsToPsvCount = 0
   let remappedPsToPs2Count = 0
+  let inferredPatchTypeCount = 0
 
   const resources = (await prisma.patch_resource.findMany({
     select: {
@@ -206,6 +241,14 @@ async function main() {
         resource.section,
         platformRemappedTypes
       )
+
+      if (resource.section === 'patch' && nextTypes.length === 0) {
+        const inferredType = inferPatchTypeFromResourceName(resource.name)
+        if (inferredType) {
+          nextTypes = [inferredType]
+          inferredPatchTypeCount += 1
+        }
+      }
     }
 
     const isTypeChanged = !arraysEqual(resource.type, nextTypes)
@@ -258,13 +301,16 @@ async function main() {
     console.log(
       `Resources remapped by rule (ps in platform + name contains PS2 => ps2): ${remappedPsToPs2Count}`
     )
+    console.log(
+      `Resources inferred by rule (patch + empty type + name keywords => strategy/save/tool): ${inferredPatchTypeCount}`
+    )
     console.log(`Resources with empty new_type after normalization: ${emptyTypeUpdates.length}`)
 
     if (updates.length > 0) {
       console.log('Preview (first 10 updates):')
       updates.slice(0, 10).forEach((item) => {
         console.log(
-          `resource_id=${item.id}, patch_id=${item.patchId}, permalink=${item.permalink}, patch_name=${JSON.stringify(item.patchName)}, resource_name=${JSON.stringify(item.resourceName)}, section=${item.section}, old_type=${JSON.stringify(item.oldType)}, new_type=${JSON.stringify(item.type)}, old_platform=${JSON.stringify(item.oldPlatform)}, new_platform=${JSON.stringify(item.platform)}`
+          `resource_id=${item.id}, patch_id=${item.patchId}, section=${item.section}, old_type=${JSON.stringify(item.oldType)}, new_type=${JSON.stringify(item.type)}, new_platform=${JSON.stringify(item.platform)}, permalink=${item.permalink}, patch_name=${JSON.stringify(item.patchName)}, resource_name=${JSON.stringify(item.resourceName)}, old_platform=${JSON.stringify(item.oldPlatform)}`
         )
       })
     }
@@ -273,7 +319,7 @@ async function main() {
       console.log('Resources with empty new_type (first 50):')
       emptyTypeUpdates.slice(0, 50).forEach((item) => {
         console.log(
-          `resource_id=${item.id}, patch_id=${item.patchId}, permalink=${item.permalink}, patch_name=${JSON.stringify(item.patchName)}, resource_name=${JSON.stringify(item.resourceName)}, section=${item.section}, old_type=${JSON.stringify(item.oldType)}, new_type=[], new_platform=${JSON.stringify(item.newPlatform)}`
+          `resource_id=${item.id}, patch_id=${item.patchId}, section=${item.section}, old_type=${JSON.stringify(item.oldType)}, new_type=[], new_platform=${JSON.stringify(item.newPlatform)}, permalink=${item.permalink}, patch_name=${JSON.stringify(item.patchName)}, resource_name=${JSON.stringify(item.resourceName)}`
         )
       })
     }
@@ -318,6 +364,9 @@ async function main() {
   )
   console.log(
     `Resources remapped by rule (ps in platform + name contains PS2 => ps2): ${remappedPsToPs2Count}`
+  )
+  console.log(
+    `Resources inferred by rule (patch + empty type + name keywords => strategy/save/tool): ${inferredPatchTypeCount}`
   )
   console.log(`Resources with empty new_type after normalization: ${emptyTypeUpdates.length}`)
 }
