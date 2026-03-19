@@ -5,6 +5,17 @@ export const resourceTypes = [
     description: '在 Windows, macOS 等电脑设备上运行的游戏'
   },
   {
+    value: 'emulator',
+    label: '主机游戏',
+    description:
+      '在主机平台游玩的游戏, 或由模拟器支持的主机平台资源'
+  },
+  {
+    value: 'mobile',
+    label: '手机游戏',
+    description: '可以在手机上运行的游戏，包含原先的安卓直装资源'
+  },
+  {
     value: 'row',
     label: '生肉',
     description: '没有中文翻译, 仅有日语或其它语言的游戏'
@@ -25,30 +36,19 @@ export const resourceTypes = [
     description: '机器翻译版本的游戏或补丁, 可能质量较低但能提供基本的中文支持'
   },
   {
-    value: 'emulator',
-    label: '主机游戏',
-    description:
-      '在主机平台游玩的游戏, 或由模拟器支持的主机平台资源'
-  },
-  {
-    value: 'patch',
-    label: '补丁',
-    description: '与本游戏相关的补丁资源'
-  },
-  {
     value: 'material',
     label: '资料集',
     description: '与游戏相关的资料，包括设定内容、视觉作品及各类特典'
   },
   {
-    value: 'mobile',
-    label: '手机游戏',
-    description: '可以在手机上运行的游戏，包含原先的安卓直装资源'
-  },
-  {
     value: 'tool',
     label: '工具',
     description: '辅助游玩 OtomeGame 的工具, 例如 KRKR 模拟器, Magpie 等'
+  },
+  {
+    value: 'patch',
+    label: '补丁',
+    description: '与本游戏相关的补丁资源'
   },
   {
     value: 'strategy',
@@ -204,6 +204,57 @@ export const SUPPORTED_PLATFORM_MAP: Record<string, string> = {
   other: '其它'
 }
 
+const GALGAME_PC_PLATFORMS = ['windows', 'macos', 'linux', 'other']
+const GALGAME_MOBILE_PLATFORMS = [
+  'android',
+  'ios',
+  'krkr',
+  'tyranor',
+  'ons',
+  'other'
+]
+const GALGAME_CONSOLE_PLATFORMS = ['psp', 'psv', 'ps2', 'ns', 'other']
+const GALGAME_MATERIAL_PLATFORMS = ['other']
+
+export const getAllowedPlatformsBySectionAndTypes = (
+  section: ResourceSection,
+  types: string[]
+): string[] => {
+  // 补丁分区维持全平台可选，避免误限制历史内容发布。
+  if (section === 'patch') {
+    return SUPPORTED_PLATFORM
+  }
+
+  if (!types.length) {
+    return ['other']
+  }
+
+  if (types.includes('tool')) {
+    return SUPPORTED_PLATFORM
+  }
+
+  const allowed = new Set<string>()
+
+  if (types.includes('pc')) {
+    GALGAME_PC_PLATFORMS.forEach((platform) => allowed.add(platform))
+  }
+  if (types.includes('mobile')) {
+    GALGAME_MOBILE_PLATFORMS.forEach((platform) => allowed.add(platform))
+  }
+  if (types.includes('emulator')) {
+    GALGAME_CONSOLE_PLATFORMS.forEach((platform) => allowed.add(platform))
+  }
+  if (types.includes('material')) {
+    GALGAME_MATERIAL_PLATFORMS.forEach((platform) => allowed.add(platform))
+  }
+
+  if (!allowed.size) {
+    return ['other']
+  }
+
+  return SUPPORTED_PLATFORM.filter((platform) => allowed.has(platform))
+}
+
 export const SUPPORTED_RESOURCE_LINK = ['touchgal', 's3', 'user']
 
 export const storageTypes = [
@@ -248,19 +299,21 @@ export const RESOURCE_SECTION_MAP: Record<string, string> = {
 // 资源类型显示顺序 (功能类型在前，语言类型在后)
 const TYPE_DISPLAY_ORDER = [
   'pc',
-  'mobile',
   'emulator',
-  'patch',
+  'mobile',
+  'chinese',
+  'official-zh',
+  'row',
+  'machine',
   'material',
-  'tool',
   'strategy',
+  'patch',
+  'tool',
   'save',
   'notice',
   'other',
-  'chinese',
-  'official-zh',
-  'machine',
-  'row'
+  // 兼容历史类型
+  'app'
 ]
 
 const TYPE_DISPLAY_PRIORITY: Record<string, number> = Object.fromEntries(

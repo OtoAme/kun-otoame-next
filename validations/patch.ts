@@ -6,6 +6,7 @@ import {
   SUPPORTED_PLATFORM,
   SUPPORTED_RESOURCE_LINK,
   SUPPORTED_RESOURCE_SECTION,
+  getAllowedPlatformsBySectionAndTypes,
   isResourceTypeAllowedForSection,
   type ResourceSection
 } from '~/constants/resource'
@@ -129,8 +130,33 @@ const validateResourceTypesBySection = (
   }
 }
 
+const validateResourcePlatformsByType = (
+  data: { section: string; type: string[]; platform: string[] },
+  ctx: z.RefinementCtx
+) => {
+  const section = data.section as ResourceSection
+  const allowedPlatforms = new Set(
+    getAllowedPlatformsBySectionAndTypes(section, data.type)
+  )
+
+  const hasInvalidPlatform = data.platform.some(
+    (platform) => !allowedPlatforms.has(platform)
+  )
+
+  if (hasInvalidPlatform) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['platform'],
+      message: '当前资源类型下包含不允许的平台'
+    })
+  }
+}
+
 export const patchResourceCreateSchema = patchResourceSchemaBase.superRefine(
-  validateResourceTypesBySection
+  (data, ctx) => {
+    validateResourceTypesBySection(data, ctx)
+    validateResourcePlatformsByType(data, ctx)
+  }
 )
 
 export const patchResourceUpdateSchema = patchResourceSchemaBase
@@ -139,7 +165,10 @@ export const patchResourceUpdateSchema = patchResourceSchemaBase
       resourceId: z.coerce.number().min(1).max(9999999)
     })
   )
-  .superRefine(validateResourceTypesBySection)
+  .superRefine((data, ctx) => {
+    validateResourceTypesBySection(data, ctx)
+    validateResourcePlatformsByType(data, ctx)
+  })
 
 export const declinePullRequestSchema = z.object({
   prId: z.coerce.number({ message: 'ID 必须为数字' }).min(1).max(9999999),

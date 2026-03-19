@@ -127,6 +127,7 @@ export const EditResourceDialog = ({
           )}
           <ResourceDetailsForm
             control={control}
+            setValue={(name, value) => setValue(name, value)}
             errors={errors}
             section={watch().section as ResourceSection}
             content={watch().content}

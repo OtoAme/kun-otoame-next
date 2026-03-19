@@ -178,6 +178,7 @@ export const PublishResource = ({
 
           <ResourceDetailsForm
             control={control}
+            setValue={(name, value) => setValue(name, value)}
             errors={errors}
             section={watch().section}
             content={watch().content}

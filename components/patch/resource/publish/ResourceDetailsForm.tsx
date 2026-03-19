@@ -1,15 +1,15 @@
 'use client'
 
 import { useState } from 'react'
-import { Controller } from 'react-hook-form'
+import { Controller, useWatch } from 'react-hook-form'
 import { Input, Textarea } from '@heroui/input'
 import { Button } from '@heroui/button'
 import { Select, SelectItem } from '@heroui/select'
 import {
   getResourceTypeOptionsBySection,
+  getAllowedPlatformsBySectionAndTypes,
   SUPPORTED_LANGUAGE,
   SUPPORTED_LANGUAGE_MAP,
-  SUPPORTED_PLATFORM,
   SUPPORTED_PLATFORM_MAP,
   type ResourceSection
 } from '~/constants/resource'
@@ -19,6 +19,7 @@ import toast from 'react-hot-toast'
 
 interface ResourceDetailsFormProps {
   control: ControlType
+  setValue: (name: 'platform', value: string[]) => void
   errors: ErrorType
   section: ResourceSection
   content?: string
@@ -27,13 +28,20 @@ interface ResourceDetailsFormProps {
 
 export const ResourceDetailsForm = ({
   control,
+  setValue,
   errors,
   section,
   content,
   storage
 }: ResourceDetailsFormProps) => {
   const [fetchingSize, setFetchingSize] = useState(false)
+  const selectedTypes = useWatch({ control, name: 'type' }) || []
+  const selectedPlatforms = useWatch({ control, name: 'platform' }) || []
   const resourceTypes = getResourceTypeOptionsBySection(section)
+  const allowedPlatforms = getAllowedPlatformsBySectionAndTypes(
+    section,
+    selectedTypes
+  )
 
   const handleFetchSize = async (onChange: (value: string) => void) => {
     if (!content) {
@@ -89,7 +97,17 @@ export const ResourceDetailsForm = ({
               selectionMode="multiple"
               selectedKeys={field.value}
               onSelectionChange={(key) => {
-                field.onChange([...key] as string[])
+                const nextTypes = [...key] as string[]
+                field.onChange(nextTypes)
+
+                const nextAllowedPlatforms = getAllowedPlatformsBySectionAndTypes(
+                  section,
+                  nextTypes
+                )
+                const filteredPlatforms = selectedPlatforms.filter((platform) =>
+                  nextAllowedPlatforms.includes(platform)
+                )
+                setValue('platform', filteredPlatforms)
               }}
               isInvalid={!!errors.type}
               errorMessage={errors.type?.message}
@@ -147,7 +165,7 @@ export const ResourceDetailsForm = ({
               isInvalid={!!errors.platform}
               errorMessage={errors.platform?.message}
             >
-              {SUPPORTED_PLATFORM.map((platform) => (
+              {allowedPlatforms.map((platform) => (
                 <SelectItem key={platform}>
                   {SUPPORTED_PLATFORM_MAP[platform]}
                 </SelectItem>
