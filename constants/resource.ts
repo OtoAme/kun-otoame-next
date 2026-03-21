@@ -61,11 +61,6 @@ export const resourceTypes = [
     description: '与本游戏相关的存档资源'
   },
   {
-    value: 'notice',
-    label: '官方通知',
-    description: '由官方发布的站点通知'
-  },
-  {
     value: 'other',
     label: '其它',
     description: '其它内容'
@@ -74,20 +69,17 @@ export const resourceTypes = [
 
 export const SUPPORTED_TYPE = [
   'pc',
+  'emulator',
+  'mobile',
   'chinese',
   'official-zh',
-  'machine',
-  'mobile',
-  'emulator',
   'row',
-  'patch',
+  'machine',
   'material',
-  'tool',
   'strategy',
+  'patch',
+  'tool',
   'save',
-  // 保留历史兼容类型，供迁移与旧数据回显使用
-  'app',
-  'notice',
   'other'
 ]
 
@@ -128,9 +120,7 @@ export const isResourceTypeAllowedForSection = (
 }
 
 export const normalizeLegacyResourceTypes = (types: string[]): string[] => {
-  return Array.from(
-    new Set(types.map((type) => (type === 'app' ? 'mobile' : type)))
-  )
+  return Array.from(new Set(types))
 }
 
 export const normalizeTypesBySection = (
@@ -143,19 +133,17 @@ export const normalizeTypesBySection = (
 export const SUPPORTED_TYPE_MAP: Record<string, string> = {
   all: '全部类型',
   pc: 'PC游戏',
+  emulator: '主机游戏',
+  mobile: '手机游戏',
   chinese: '民汉',
   'official-zh': '官中',
-  machine: '机翻',
-  mobile: '手机游戏',
-  emulator: '主机游戏',
   row: '生肉',
-  app: '安卓直装 (旧)',
-  patch: '补丁',
+  machine: '机翻',
   material: '资料集',
-  tool: '工具',
   strategy: '攻略',
+  patch: '补丁',
+  tool: '工具',
   save: '存档',
-  notice: '官方通知',
   other: '其它'
 }
 export const ALL_SUPPORTED_TYPE = ['all', ...SUPPORTED_TYPE]
@@ -296,25 +284,8 @@ export const RESOURCE_SECTION_MAP: Record<string, string> = {
   patch: 'OtomeGame 补丁'
 }
 
-// 资源类型显示顺序 (功能类型在前，语言类型在后)
-const TYPE_DISPLAY_ORDER = [
-  'pc',
-  'emulator',
-  'mobile',
-  'chinese',
-  'official-zh',
-  'row',
-  'machine',
-  'material',
-  'strategy',
-  'patch',
-  'tool',
-  'save',
-  'notice',
-  'other',
-  // 兼容历史类型
-  'app'
-]
+// 资源类型显示顺序，作为全站统一顺序来源
+const TYPE_DISPLAY_ORDER = [...SUPPORTED_TYPE]
 
 const TYPE_DISPLAY_PRIORITY: Record<string, number> = Object.fromEntries(
   TYPE_DISPLAY_ORDER.map((type, index) => [type, index])
