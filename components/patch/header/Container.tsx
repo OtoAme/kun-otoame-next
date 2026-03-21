@@ -19,19 +19,46 @@ export const PatchHeaderContainer = ({
   intro,
   uid
 }: PatchHeaderProps) => {
+  const resourceSectionTabsId = 'patch-resource-section-tabs'
   const { setData } = useRewritePatchStore()
   const [selected, setSelected] = useState('introduction')
   const tabsRef = useRef<HTMLDivElement>(null)
 
+  const scrollToResourceSectionTabs = () => {
+    const resourceSectionTabs = document.getElementById(resourceSectionTabsId)
+    if (resourceSectionTabs) {
+      resourceSectionTabs.scrollIntoView({ behavior: 'smooth' })
+      return true
+    }
+    return false
+  }
+
   const handleClickDownloadNav = () => {
     if (selected === 'resources') {
-      tabsRef.current?.scrollIntoView({ behavior: 'smooth' })
+      if (!scrollToResourceSectionTabs()) {
+        tabsRef.current?.scrollIntoView({ behavior: 'smooth' })
+      }
       return
     }
+
     setSelected('resources')
-    setTimeout(() => {
-      tabsRef.current?.scrollIntoView({ behavior: 'smooth' })
-    }, 500)
+
+    let retryTimes = 0
+    const scrollWhenReady = () => {
+      if (scrollToResourceSectionTabs()) {
+        return
+      }
+
+      retryTimes += 1
+      if (retryTimes > 12) {
+        tabsRef.current?.scrollIntoView({ behavior: 'smooth' })
+        return
+      }
+
+      setTimeout(scrollWhenReady, 50)
+    }
+
+    setTimeout(scrollWhenReady, 0)
   }
 
   useEffect(() => {
