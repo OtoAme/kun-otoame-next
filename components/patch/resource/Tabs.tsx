@@ -6,6 +6,7 @@ import {
   Card,
   CardHeader,
   CardBody,
+  Chip,
   Dropdown,
   DropdownItem,
   DropdownMenu,
@@ -52,6 +53,7 @@ export const ResourceTabs = ({
   setSelectedSection
 }: Props) => {
   const { user } = useUserStore((state) => state)
+  const RESOURCE_SECTION_TABS_ID = 'patch-resource-section-tabs'
 
   const categorizedResources = SUPPORTED_RESOURCE_SECTION.reduce(
     (acc, section) => {
@@ -115,19 +117,32 @@ export const ResourceTabs = ({
 
   return (
     <Tabs
+      id={RESOURCE_SECTION_TABS_ID}
       selectedKey={selectedSection}
       onSelectionChange={(key) => setSelectedSection(key as ResourceSection)}
-      className="mb-4"
+      className="mb-4 scroll-mt-24"
     >
       {SUPPORTED_RESOURCE_SECTION.map((section) => {
         const sectionResources = categorizedResources[section]
+        const sectionCount = sectionResources.length
         const official = sectionResources.filter((r) => r.user?.role > 2)
         const community = sectionResources.filter((r) => !(r.user?.role > 2))
 
         return (
           <Tab
             key={section}
-            title={RESOURCE_SECTION_MAP[section]}
+            title={
+              <div className="flex items-center gap-2">
+                <span>{RESOURCE_SECTION_MAP[section]}</span>
+                <Chip
+                  size="sm"
+                  variant="bordered"
+                  className="border-default-300 bg-transparent text-inherit"
+                >
+                  {sectionCount}
+                </Chip>
+              </div>
+            }
             className="w-full"
           >
             <div className="space-y-6">
