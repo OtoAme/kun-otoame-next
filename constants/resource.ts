@@ -280,8 +280,8 @@ export const ALLOWED_EXTENSIONS = ['.zip', '.rar', '.7z']
 export const SUPPORTED_RESOURCE_SECTION = ['galgame', 'patch'] as const
 
 export const RESOURCE_SECTION_MAP: Record<string, string> = {
-  galgame: 'OtomeGame 资源',
-  patch: 'OtomeGame 补丁'
+  galgame: '游戏资源',
+  patch: '工具补丁'
 }
 
 // 资源类型显示顺序，作为全站统一顺序来源
