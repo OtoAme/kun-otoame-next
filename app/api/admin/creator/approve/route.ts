@@ -5,6 +5,7 @@ import { verifyHeaderCookie } from '~/middleware/_verifyHeaderCookie'
 import { createMessage } from '~/app/api/utils/message'
 import { kunParsePutBody } from '~/app/api/utils/parseQuery'
 import { approveCreatorSchema } from '~/validations/admin'
+import { deleteKunToken } from '~/app/api/utils/jwt'
 
 export const approveCreator = async (
   input: z.infer<typeof approveCreatorSchema>,
@@ -34,6 +35,8 @@ export const approveCreator = async (
   if (!admin) {
     return '未找到该管理员'
   }
+
+  await deleteKunToken(uid)
 
   return prisma.$transaction(async (prisma) => {
     await prisma.user_message.update({

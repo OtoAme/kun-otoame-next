@@ -48,15 +48,14 @@ export const POST = async (req: NextRequest) => {
   if (!payload) {
     return NextResponse.json('用户未登录')
   }
-  if (payload.role < 3) {
-    if (input.storage === 'touchgal') {
-      return NextResponse.json('仅管理员可使用 OtoAme 资源盘')
-    }
-  }
-
   const user = await prisma.user.findUnique({ where: { id: payload.uid } })
   if (!user) {
     return NextResponse.json('未找到该用户')
+  }
+  if (user.role < 3) {
+    if (input.storage === 'touchgal') {
+      return NextResponse.json('仅管理员可使用 OtoAme 资源盘')
+    }
   }
   if (user.moemoepoint < 20) {
     return NextResponse.json('仅限萌萌点大于 20 的用户才可以发布资源')
@@ -71,7 +70,7 @@ export const POST = async (req: NextRequest) => {
     )
   }
 
-  const response = await createPatchResource(input, payload.uid, payload.role)
+  const response = await createPatchResource(input, payload.uid, user.role)
   return NextResponse.json(response)
 }
 
