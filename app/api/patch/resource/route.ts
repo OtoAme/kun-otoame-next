@@ -57,8 +57,8 @@ export const POST = async (req: NextRequest) => {
       return NextResponse.json('仅管理员可使用 OtoAme 资源盘')
     }
   }
-  if (user.moemoepoint < 20) {
-    return NextResponse.json('仅限萌萌点大于 20 的用户才可以发布资源')
+  if (user.role < 2 && user.moemoepoint < 20) {
+    return NextResponse.json('仅限萌萌点大于 20 的用户和创作者发布资源')
   }
 
   const resource = await prisma.patch_resource.findFirst({
@@ -66,7 +66,7 @@ export const POST = async (req: NextRequest) => {
   })
   if (resource) {
     return NextResponse.json(
-      '您有至少一个 Galgame 资源在待审核阶段, 请等待审核结束后再发布资源'
+      '您有至少一个 OtomeGame 资源在待审核阶段, 请等待审核结束后再发布资源'
     )
   }
 
