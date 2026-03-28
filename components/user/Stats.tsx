@@ -5,7 +5,7 @@ import type { UserInfo } from '~/types/api/user'
 export const UserStats = ({ user }: { user: UserInfo }) => {
   const stats = [
     {
-      label: '发布补丁',
+      label: '发布资源',
       value: user._count.patch_resource,
       icon: Puzzle
     },
