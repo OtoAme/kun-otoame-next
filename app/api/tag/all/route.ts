@@ -3,29 +3,41 @@ import { NextRequest, NextResponse } from 'next/server'
 import { kunParseGetQuery } from '~/app/api/utils/parseQuery'
 import { prisma } from '~/prisma/index'
 import { getTagSchema } from '~/validations/tag'
+import { getOrSet } from '~/lib/redis'
+import { createHash } from 'crypto'
 import type { Tag } from '~/types/api/tag'
 
 export const getTag = async (input: z.infer<typeof getTagSchema>) => {
-  const { page, limit } = input
-  const offset = (page - 1) * limit
+  const cacheKey = `tag_list:${createHash('md5')
+    .update(JSON.stringify(input))
+    .digest('hex')}`
 
-  const [data, total] = await Promise.all([
-    prisma.patch_tag.findMany({
-      take: limit,
-      skip: offset,
-      orderBy: { count: 'desc' }
-    }),
-    prisma.patch_tag.count()
-  ])
+  return await getOrSet(
+    cacheKey,
+    async () => {
+      const { page, limit } = input
+      const offset = (page - 1) * limit
 
-  const tags: Tag[] = data.map((tag) => ({
-    id: tag.id,
-    name: tag.name,
-    count: tag.count,
-    alias: tag.alias
-  }))
+      const [data, total] = await Promise.all([
+        prisma.patch_tag.findMany({
+          take: limit,
+          skip: offset,
+          orderBy: { count: 'desc' }
+        }),
+        prisma.patch_tag.count()
+      ])
 
-  return { tags, total }
+      const tags: Tag[] = data.map((tag) => ({
+        id: tag.id,
+        name: tag.name,
+        count: tag.count,
+        alias: tag.alias
+      }))
+
+      return { tags, total }
+    },
+    10
+  )
 }
 
 export const GET = async (req: NextRequest) => {
