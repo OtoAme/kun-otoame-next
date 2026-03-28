@@ -47,8 +47,13 @@ export const resourceTypes = [
   },
   {
     value: 'patch',
-    label: '补丁',
-    description: '与本游戏相关的补丁资源'
+    label: '翻译补丁',
+    description: '与本游戏相关的翻译补丁资源'
+  },
+  {
+    value: 'other-patch',
+    label: '其他补丁',
+    description: '与本游戏相关的其他补丁资源'
   },
   {
     value: 'strategy',
@@ -59,29 +64,10 @@ export const resourceTypes = [
     value: 'save',
     label: '存档',
     description: '与本游戏相关的存档资源'
-  },
-  {
-    value: 'other',
-    label: '其它',
-    description: '其它内容'
   }
 ]
 
-export const SUPPORTED_TYPE = [
-  'pc',
-  'emulator',
-  'mobile',
-  'chinese',
-  'official-zh',
-  'row',
-  'machine',
-  'material',
-  'strategy',
-  'patch',
-  'tool',
-  'save',
-  'other'
-]
+export const SUPPORTED_TYPE = resourceTypes.map((r) => r.value)
 
 export type ResourceSection = 'galgame' | 'patch'
 
@@ -97,7 +83,7 @@ export const GALGAME_RESOURCE_TYPES = [
   'machine'
 ] as const
 
-export const PATCH_RESOURCE_TYPES = ['patch', 'tool', 'strategy', 'save'] as const
+export const PATCH_RESOURCE_TYPES = ['patch', 'other-patch', 'tool', 'strategy', 'save'] as const
 
 export const RESOURCE_TYPES_BY_SECTION: Record<ResourceSection, readonly string[]> =
 {
@@ -132,19 +118,7 @@ export const normalizeTypesBySection = (
 }
 export const SUPPORTED_TYPE_MAP: Record<string, string> = {
   all: '全部类型',
-  pc: 'PC游戏',
-  emulator: '主机游戏',
-  mobile: '手机游戏',
-  chinese: '民汉',
-  'official-zh': '官中',
-  row: '生肉',
-  machine: '机翻',
-  material: '资料集',
-  strategy: '攻略',
-  patch: '补丁',
-  tool: '工具',
-  save: '存档',
-  other: '其它'
+  ...Object.fromEntries(resourceTypes.map((r) => [r.value, r.label]))
 }
 export const ALL_SUPPORTED_TYPE = ['all', ...SUPPORTED_TYPE]
 

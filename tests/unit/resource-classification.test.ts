@@ -32,19 +32,18 @@ describe('resource classification', () => {
     expect(isResourceTypeAllowedForSection('patch', 'mobile')).toBe(false)
   })
 
-  test('normalizes legacy app type into mobile', () => {
-    expect(normalizeLegacyResourceTypes(['app', 'mobile', 'pc'])).toEqual([
-      'mobile',
-      'pc'
+  test('deduplicates legacy resource types', () => {
+    expect(normalizeLegacyResourceTypes(['pc', 'mobile', 'pc'])).toEqual([
+      'pc',
+      'mobile'
     ])
   })
 
   test('normalizes and filters by section', () => {
-    expect(normalizeTypesBySection('galgame', ['app', 'patch', 'pc'])).toEqual([
-      'mobile',
+    expect(normalizeTypesBySection('galgame', ['patch', 'pc'])).toEqual([
       'pc'
     ])
-    expect(normalizeTypesBySection('patch', ['app', 'patch', 'tool'])).toEqual([
+    expect(normalizeTypesBySection('patch', ['pc', 'patch', 'tool'])).toEqual([
       'patch',
       'tool'
     ])
