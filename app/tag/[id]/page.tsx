@@ -8,7 +8,7 @@ import { KunNull } from '~/components/kun/Null'
 import type { SortField } from '~/components/tag/detail/_sort'
 import type { Metadata } from 'next'
 
-export const revalidate = 3
+export const revalidate = 0
 
 interface Props {
   params: Promise<{ id: string }>

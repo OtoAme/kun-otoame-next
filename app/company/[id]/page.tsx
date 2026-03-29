@@ -4,7 +4,7 @@ import { kunGetCompanyByIdActions, kunCompanyGalgameActions } from './actions'
 import { ErrorComponent } from '~/components/error/ErrorComponent'
 import type { Metadata } from 'next'
 
-export const revalidate = 5
+export const revalidate = 0
 
 interface Props {
   params: Promise<{ id: string }>
