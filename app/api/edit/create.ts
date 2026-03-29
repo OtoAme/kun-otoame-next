@@ -1,13 +1,12 @@
 import crypto from 'crypto'
 import { z } from 'zod'
 import { prisma } from '~/prisma/index'
-import { uploadPatchBanner, uploadPatchGalleryImage } from './_upload'
+import { uploadPatchBanner } from './_upload'
 import { patchCreateSchema } from '~/validations/edit'
 import { handleBatchPatchTags } from './batchTag'
 import { kunMoyuMoe } from '~/config/moyu-moe'
 import { postToIndexNow } from './_postToIndexNow'
 import { ensurePatchCompaniesFromVNDB } from './fetchCompanies'
-import { pLimit } from '~/utils/pLimit'
 import { ensurePatchCompanyFromDlsite } from './dlsite'
 
 export const createGalgame = async (
@@ -31,8 +30,6 @@ export const createGalgame = async (
     officialUrl,
     released,
     contentLimit,
-    gallery,
-    galleryMetadata,
     isDuplicate
   } = input
 
@@ -161,70 +158,5 @@ export const createGalgame = async (
     await postToIndexNow(newPatchUrl)
   }
 
-  if (gallery && galleryMetadata) {
-    const metadata = JSON.parse(galleryMetadata) as {
-      isNSFW: boolean
-      watermark: boolean
-    }[]
-    const galleryFiles = Array.isArray(gallery) ? gallery : [gallery]
-    const limit = pLimit(5)
-
-    await Promise.all(
-      galleryFiles.map((file, i) =>
-        limit(async () => {
-          const meta = metadata[i]
-          if (!meta) return
-
-          const galleryRecord = await prisma.patch_game_image.create({
-            data: {
-              patch_id: res.patchId,
-              url: '',
-              is_nsfw: meta.isNSFW,
-              display_order: i
-            }
-          })
-
-          try {
-            const arrayBuffer = await (file as File).arrayBuffer()
-
-            let uploadRes: string | undefined
-            for (let attempt = 0; attempt < 3; attempt++) {
-              uploadRes = await uploadPatchGalleryImage(
-                arrayBuffer,
-                res.patchId,
-                galleryRecord.id,
-                meta.watermark
-              )
-              if (typeof uploadRes !== 'string') break
-              if (attempt < 2) {
-                await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)))
-              }
-            }
-
-            if (typeof uploadRes === 'string') {
-              console.error(`Gallery upload failed after retries: ${uploadRes}`)
-              await prisma.patch_game_image
-                .delete({ where: { id: galleryRecord.id } })
-                .catch(() => {})
-              return
-            }
-
-            const imageUrl = `${process.env.KUN_VISUAL_NOVEL_IMAGE_BED_URL}/patch/${res.patchId}/gallery/${galleryRecord.id}.avif`
-
-            await prisma.patch_game_image.update({
-              where: { id: galleryRecord.id },
-              data: { url: imageUrl }
-            })
-          } catch (error) {
-            console.error('Gallery processing error:', error)
-            await prisma.patch_game_image
-              .delete({ where: { id: galleryRecord.id } })
-              .catch(() => {})
-          }
-        })
-      )
-    )
-  }
-
-  return { uniqueId: galgameUniqueId }
+  return { uniqueId: galgameUniqueId, patchId: res.patchId }
 }

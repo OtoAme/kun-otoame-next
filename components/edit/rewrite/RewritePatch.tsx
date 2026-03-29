@@ -5,7 +5,7 @@ import { Button, Card, CardBody, CardHeader, Input } from '@heroui/react'
 import { useRewritePatchStore } from '~/store/rewriteStore'
 import { KunDualEditorProvider } from '~/components/kun/milkdown/DualEditorProvider'
 import toast from 'react-hot-toast'
-import { kunFetchPutFormData } from '~/utils/kunFetch'
+import { kunFetchFormData, kunFetchPutFormData } from '~/utils/kunFetch'
 import { kunErrorHandler } from '~/utils/kunErrorHandler'
 import { patchUpdateSchema } from '~/validations/edit'
 import { useRouter } from '@bprogress/next'
@@ -79,25 +79,62 @@ export const RewritePatch = () => {
 
     const galleryMetadata = {
       keep: data.images.map((img) => ({ id: img.id, is_nsfw: img.is_nsfw })),
-      new: newImages.map((img) => ({ id: img.id, is_nsfw: img.isNSFW })),
-      watermark,
       order: galleryOrder
     }
     formData.append('galleryMetadata', JSON.stringify(galleryMetadata))
-
-    newImages.forEach((img) => {
-      formData.append('gallery', img.file)
-    })
 
     if (newBanner) {
       formData.append('banner', newBanner)
     }
 
-    const res = await kunFetchPutFormData<KunResponse<{}>>('/edit', formData, 180000)
-    kunErrorHandler(res, async () => {
-      router.push(`/${data.uniqueId}`)
+    const res = await kunFetchPutFormData<KunResponse<{}>>('/edit', formData, 60000)
+
+    let updateSuccess = false
+    kunErrorHandler(res, () => {
+      updateSuccess = true
     })
+
+    if (!updateSuccess) {
+      setRewriting(false)
+      return
+    }
+
+    if (newImages.length > 0) {
+      toast('正在上传游戏截图 ...')
+      let failCount = 0
+
+      for (const [index, img] of newImages.entries()) {
+        const imgFormData = new FormData()
+        imgFormData.append('patchId', data.id.toString())
+        imgFormData.append('image', img.file)
+        imgFormData.append('isNSFW', String(img.isNSFW))
+        imgFormData.append('watermark', String(watermark))
+        const order = galleryOrder.indexOf(img.id)
+        imgFormData.append('displayOrder', (order >= 0 ? order : index).toString())
+
+        try {
+          const uploadRes = await kunFetchFormData<
+            KunResponse<{ imageId: number; url: string }>
+          >('/edit/gallery', imgFormData, 60000)
+          if (typeof uploadRes === 'string') {
+            failCount++
+            console.error(`Gallery image ${index + 1} failed:`, uploadRes)
+          }
+        } catch {
+          failCount++
+          console.error(`Gallery image ${index + 1} upload error`)
+        }
+
+        toast(`正在上传图片 ${index + 1}/${newImages.length}`, { id: 'gallery-progress' })
+      }
+
+      if (failCount > 0) {
+        toast.error(`${failCount} 张图片上传失败, 您可以稍后重新上传`)
+      }
+    }
+
     toast.success('重新编辑成功, 由于缓存影响, 您的更改将在至多 30 秒后生效')
+    router.push(`/${data.uniqueId}`)
     setRewriting(false)
   }
 

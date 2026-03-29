@@ -21,6 +21,43 @@ interface Props {
   className?: string
 }
 
+const uploadGalleryImages = async (
+  patchId: number,
+  galleryImages: GalleryImage[],
+  watermark: boolean
+) => {
+  let successCount = 0
+  let failCount = 0
+
+  for (const [index, img] of galleryImages.entries()) {
+    const formData = new FormData()
+    formData.append('patchId', patchId.toString())
+    formData.append('image', img.blob)
+    formData.append('isNSFW', String(img.isNSFW))
+    formData.append('watermark', String(watermark))
+    formData.append('displayOrder', index.toString())
+
+    try {
+      const res = await kunFetchFormData<
+        KunResponse<{ imageId: number; url: string }>
+      >('/edit/gallery', formData, 60000)
+      if (typeof res === 'string') {
+        failCount++
+        console.error(`Gallery image ${index + 1} failed:`, res)
+      } else {
+        successCount++
+      }
+    } catch {
+      failCount++
+      console.error(`Gallery image ${index + 1} upload error`)
+    }
+
+    toast(`正在上传图片 ${index + 1}/${galleryImages.length}`, { id: 'gallery-progress' })
+  }
+
+  return { successCount, failCount }
+}
+
 export const PublishButton = ({ setErrors, className }: Props) => {
   const router = useRouter()
   const { data, resetData } = useCreatePatchStore()
@@ -76,6 +113,26 @@ export const PublishButton = ({ setErrors, className }: Props) => {
     if (data.officialUrl) formDataToSend.append('officialUrl', data.officialUrl)
     formDataToSend.append('isDuplicate', String(data.isDuplicate))
 
+    setCreating(true)
+    toast('正在发布中 ...')
+
+    const res = await kunFetchFormData<
+      KunResponse<{
+        uniqueId: string
+        patchId: number
+      }>
+    >('/edit', formDataToSend, 60000)
+
+    let createdValue: { uniqueId: string; patchId: number } | null = null
+    kunErrorHandler(res, (value) => {
+      createdValue = value
+    })
+
+    if (!createdValue) {
+      setCreating(false)
+      return
+    }
+
     const galleryImages =
       await localforage.getItem<GalleryImage[]>('kun-patch-gallery')
     const watermark = await localforage.getItem<boolean>(
@@ -83,33 +140,24 @@ export const PublishButton = ({ setErrors, className }: Props) => {
     )
 
     if (galleryImages && galleryImages.length > 0) {
-      galleryImages.forEach((img) => {
-        formDataToSend.append('gallery', img.blob)
-      })
-      const metadata = galleryImages.map((img) => ({
-        isNSFW: img.isNSFW,
-        watermark: !!watermark
-      }))
-      formDataToSend.append('galleryMetadata', JSON.stringify(metadata))
+      toast('正在上传游戏截图 ...')
+      const { failCount } = await uploadGalleryImages(
+        createdValue.patchId,
+        galleryImages,
+        !!watermark
+      )
+      if (failCount > 0) {
+        toast.error(`${failCount} 张图片上传失败, 您可以稍后在编辑页面重新上传`)
+      }
     }
 
-    setCreating(true)
-    toast('正在发布中 ... 这可能需要几分钟的时间, 这取决于您的网络环境')
-
-    const res = await kunFetchFormData<
-      KunResponse<{
-        uniqueId: string
-      }>
-    >('/edit', formDataToSend, 180000)
-    kunErrorHandler(res, async (value) => {
-      resetData()
-      await localforage.removeItem('kun-patch-banner')
-      await localforage.removeItem('kun-patch-banner-original')
-      await localforage.removeItem('kun-patch-gallery')
-      await localforage.removeItem('kun-patch-gallery-watermark')
-      router.push(`/${value.uniqueId}`)
-    })
+    resetData()
+    await localforage.removeItem('kun-patch-banner')
+    await localforage.removeItem('kun-patch-banner-original')
+    await localforage.removeItem('kun-patch-gallery')
+    await localforage.removeItem('kun-patch-gallery-watermark')
     toast.success('发布完成, 正在为您跳转到资源介绍页面')
+    router.push(`/${createdValue.uniqueId}`)
     setCreating(false)
   }
 

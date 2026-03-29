@@ -2,9 +2,8 @@ import { z } from 'zod'
 import { prisma } from '~/prisma/index'
 import { patchUpdateSchema } from '~/validations/edit'
 import { handleBatchPatchTags } from './batchTag'
-import { uploadPatchGalleryImage, uploadPatchBanner } from './_upload'
+import { uploadPatchBanner } from './_upload'
 import { purgePatchBannerCache } from '~/app/api/utils/purgeCache'
-import { pLimit } from '~/utils/pLimit'
 import { ensurePatchCompanyFromDlsite } from './dlsite'
 import { ensurePatchCompaniesFromVNDB } from './fetchCompanies'
 
@@ -95,13 +94,11 @@ export const updateGalgame = async (
       where: { id },
       data: { banner: imageLink }
     })
-  } const { gallery, galleryMetadata } = input
+  } const { galleryMetadata } = input
 
   if (galleryMetadata) {
     const metadata = JSON.parse(galleryMetadata) as {
       keep: { id: number; is_nsfw: boolean }[]
-      new: { id: string; is_nsfw: boolean }[]
-      watermark?: boolean
       order?: (number | string)[]
     }
 
@@ -133,68 +130,6 @@ export const updateGalgame = async (
       }
     })
     await Promise.all(updatePromises)
-
-    if (gallery) {
-      const files = Array.isArray(gallery) ? gallery : [gallery]
-      const limit = pLimit(5)
-
-      await Promise.all(
-        files.map((file, i) =>
-          limit(async () => {
-            const meta = metadata.new[i]
-            if (!meta) return
-
-            const newOrder = orderMap.get(meta.id) ?? 0
-
-            const galleryRecord = await prisma.patch_game_image.create({
-              data: {
-                url: '',
-                is_nsfw: meta.is_nsfw,
-                patch_id: id,
-                display_order: newOrder
-              }
-            })
-
-            try {
-              const buffer = await file.arrayBuffer()
-
-              let uploadRes: string | undefined
-              for (let attempt = 0; attempt < 3; attempt++) {
-                uploadRes = await uploadPatchGalleryImage(
-                  buffer,
-                  id,
-                  galleryRecord.id,
-                  metadata.watermark ?? false
-                )
-                if (typeof uploadRes !== 'string') break
-                if (attempt < 2) {
-                  await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)))
-                }
-              }
-
-              if (typeof uploadRes === 'string') {
-                await prisma.patch_game_image
-                  .delete({ where: { id: galleryRecord.id } })
-                  .catch(() => {})
-                throw new Error(`Gallery upload failed after retries: ${uploadRes}`)
-              }
-
-              const imageUrl = `${process.env.KUN_VISUAL_NOVEL_IMAGE_BED_URL}/patch/${id}/gallery/${galleryRecord.id}.avif`
-
-              await prisma.patch_game_image.update({
-                where: { id: galleryRecord.id },
-                data: { url: imageUrl }
-              })
-            } catch (error) {
-              await prisma.patch_game_image
-                .delete({ where: { id: galleryRecord.id } })
-                .catch(() => {})
-              throw error
-            }
-          })
-        )
-      )
-    }
   }
 
   if (input.tag.length) {
