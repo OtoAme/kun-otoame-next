@@ -18,7 +18,7 @@ export const RenderCell = (galgame: AdminGalgame, columnKey: string) => {
           src={
             galgame.banner
               ? galgame.banner.replace(/\.avif$/, '-mini.avif')
-              : '/touchgal.avif'
+              : '/otoame.avif'
           }
           style={{ aspectRatio: '16/9' }}
         />

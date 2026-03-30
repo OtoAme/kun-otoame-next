@@ -24,7 +24,7 @@ export const SearchCard = ({ patch }: Props) => {
               src={
                 patch.banner
                   ? patch.banner.replace(/\.avif$/, '-mini.avif')
-                  : '/touchgal.avif'
+                  : '/otoame.avif'
               }
               alt={patch.name}
               className="object-cover rounded-lg size-full"

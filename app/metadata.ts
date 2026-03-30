@@ -29,7 +29,7 @@ export const generateKunMetadata = (): Metadata => {
     keywords: kunMoyuMoe.keywords,
     authors: kunMoyuMoe.author,
     icons: {
-      apple: '/apple-touch-icon.avif',
+      apple: '/apple-otoame-icon.webp',
       icon: '/favicon.ico'
     },
     creator: kunMoyuMoe.creator.name,

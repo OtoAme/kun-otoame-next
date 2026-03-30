@@ -46,7 +46,7 @@ export const GalgameCard = ({ patch, openOnNewTab = true }: Props) => {
             src={
               patch.banner
                 ? patch.banner.replace(/\.avif$/, '-mini.avif')
-                : '/touchgal.avif'
+                : '/otoame.avif'
             }
             style={{ aspectRatio: '16/9' }}
             onLoad={() => setImageLoaded(true)}

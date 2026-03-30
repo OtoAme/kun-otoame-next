@@ -14,7 +14,7 @@ interface Props {
 export const UserResourceCard = ({ resource }: Props) => {
   const bannerImageSrc = resource.patchBanner
     ? resource.patchBanner.replace(/\.avif$/, '-mini.avif')
-    : '/touchgal.avif'
+    : '/otoame.avif'
 
   return (
     <Card

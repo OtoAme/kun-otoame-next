@@ -40,7 +40,7 @@ export const RankingList = ({ galgames, page, pageSize }: Props) => {
                     src={
                       patch.banner
                         ? patch.banner.replace(/\.avif$/, '-mini.avif')
-                        : '/touchgal.avif'
+                        : '/otoame.avif'
                     }
                     alt={patch.name}
                     fill
