@@ -5,7 +5,7 @@ import { uploadFileToS3 } from '~/lib/s3'
 import { getKv } from '~/lib/redis'
 import { createMessage } from '~/app/api/utils/message'
 import { deletePatchResourceCache } from './_helper'
-import { normalizeResourceContent } from '~/utils/resourceLink'
+import { mergeResourceCodes, normalizeResourceContent } from '~/utils/resourceLink'
 import type { PatchResource } from '~/types/api/patch'
 
 const uploadPatchResource = async (patchId: number, hash: string) => {
@@ -66,7 +66,7 @@ export const createPatchResource = async (
   } else {
     const normalizedResource = normalizeResourceContent(content)
     res = normalizedResource.content
-    code ||= normalizedResource.codes[0] ?? ''
+    code = mergeResourceCodes(code, normalizedResource.code)
   }
 
   const resourceTypeName = section === 'galgame' ? '游戏资源' : '补丁资源'

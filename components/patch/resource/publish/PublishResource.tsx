@@ -176,7 +176,11 @@ export const PublishResource = ({
               size={watch().size}
               setContent={(content) => setValue('content', content)}
               setSize={(size) => setValue('size', size)}
-              setCode={(code) => setValue('code', code)}
+              setCode={(code) => {
+                const nextCode =
+                  typeof code === 'function' ? code(watch().code) : code
+                setValue('code', nextCode)
+              }}
             />
           )}
 

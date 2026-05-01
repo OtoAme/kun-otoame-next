@@ -8,7 +8,7 @@ import { Plus, X } from 'lucide-react'
 import { ErrorType } from '../share'
 import { SUPPORTED_RESOURCE_LINK_MAP } from '~/constants/resource'
 import { CLOUDREVE_PAN_DOMAIN, formatSize } from './fetchAlistSize'
-import { parseResourceLink } from '~/utils/resourceLink'
+import { mergeResourceCodes, parseResourceLink } from '~/utils/resourceLink'
 import toast from 'react-hot-toast'
 
 interface ResourceLinksInputProps {
@@ -18,7 +18,7 @@ interface ResourceLinksInputProps {
   size: string
   setContent: (value: string) => void
   setSize: (value: string) => void
-  setCode: (value: string) => void
+  setCode: (value: string | ((currentCode: string) => string)) => void
 }
 
 export const ResourceLinksInput = ({
@@ -109,7 +109,7 @@ export const ResourceLinksInput = ({
                 newLinks[index] = url
                 setContent(newLinks.filter(Boolean).toString())
                 if (code) {
-                  setCode(code)
+                  setCode((currentCode) => mergeResourceCodes(currentCode, code))
                 }
               }}
             />

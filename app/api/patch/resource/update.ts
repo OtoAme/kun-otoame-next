@@ -7,7 +7,7 @@ import {
   uploadPatchResource,
   updatePatchAttributes
 } from './_helper'
-import { normalizeResourceContent } from '~/utils/resourceLink'
+import { mergeResourceCodes, normalizeResourceContent } from '~/utils/resourceLink'
 import type { PatchResource } from '~/types/api/patch'
 
 export const updatePatchResource = async (
@@ -46,7 +46,7 @@ export const updatePatchResource = async (
   if (resource.storage !== 's3' || resource.content === content) {
     const normalizedResource = normalizeResourceContent(content)
     newContent = normalizedResource.content
-    code ||= normalizedResource.codes[0] ?? ''
+    code = mergeResourceCodes(code, normalizedResource.code)
   } else {
     await deletePatchResource(
       resource.content,

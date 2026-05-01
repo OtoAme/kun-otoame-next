@@ -62,15 +62,6 @@ export const ResourceDownloadCard = ({ resource }: Props) => {
         </div>
       ))}
 
-      {resource.code && (
-        <div className="space-y-2">
-          <p className="text-sm">提取码</p>
-          <Snippet symbol="" className="flex overflow-auto whitespace-normal">
-            {resource.code}
-          </Snippet>
-        </div>
-      )}
-
       {resource.password && (
         <div className="space-y-2">
           <p className="text-sm">解压码</p>

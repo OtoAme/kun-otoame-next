@@ -55,9 +55,20 @@ export const parseResourceLink = (input: string): ParsedResourceLink => {
   return { url, code }
 }
 
+export const splitResourceCodes = (code: string) => {
+  return code
+    .split(/[,，\n]/)
+    .map((code) => code.trim())
+    .filter(Boolean)
+}
+
+export const mergeResourceCodes = (...codes: string[]) => {
+  return Array.from(new Set(codes.flatMap(splitResourceCodes))).join(', ')
+}
+
 export const normalizeResourceContent = (content: string) => {
   const parsedLinks = content
-    .split(',')
+    .split(/[,，\n]/)
     .map((item) => item.trim())
     .filter(Boolean)
     .map(parseResourceLink)
@@ -69,6 +80,7 @@ export const normalizeResourceContent = (content: string) => {
   return {
     links: parsedLinks.map((item) => item.url).filter(Boolean),
     codes,
+    code: mergeResourceCodes(...codes),
     content: parsedLinks
       .map((item) => item.url)
       .filter(Boolean)

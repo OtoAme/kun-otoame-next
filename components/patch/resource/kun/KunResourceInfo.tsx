@@ -1,5 +1,6 @@
 import { Snippet } from '@heroui/snippet'
 import { KunPatchAttribute } from './KunPatchAttribute'
+import { splitResourceCodes } from '~/utils/resourceLink'
 import type { KunPatchResourceResponse } from '~/types/api/kun/moyu-moe'
 
 interface Props {
@@ -7,6 +8,8 @@ interface Props {
 }
 
 export const KunResourceInfo = ({ resource }: Props) => {
+  const codes = splitResourceCodes(resource.code)
+
   return (
     <div className="space-y-2">
       <KunPatchAttribute
@@ -17,19 +20,20 @@ export const KunResourceInfo = ({ resource }: Props) => {
       />
 
       <div className="flex flex-wrap gap-2">
-        {resource.code && (
+        {codes.map((code, index) => (
           <Snippet
+            key={`${code}-${index}`}
             tooltipProps={{
-              content: '点击复制提取码'
+              content: `点击复制提取码 ${index + 1}`
             }}
             size="sm"
-            symbol="提取码"
+            symbol={`提取码${index + 1}`}
             color="primary"
             className="py-0"
           >
-            {resource.code}
+            {code}
           </Snippet>
-        )}
+        ))}
 
         {resource.password && (
           <Snippet
