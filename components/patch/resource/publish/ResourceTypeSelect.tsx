@@ -20,11 +20,8 @@ export const ResourceTypeSelect = ({ section, control, errors }: Props) => {
   const user = useUserStore((state) => state.user)
 
   const calcDisabledKeys = () => {
-    if (user.role > 3 && section === 'patch') {
+    if (user.role > 3) {
       return []
-    }
-    if (user.role > 3 && section === 'galgame') {
-      return ['s3', 'user']
     }
     if (user.role > 1 && section === 'patch') {
       return ['touchgal']
