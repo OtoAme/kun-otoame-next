@@ -1,5 +1,5 @@
 {
   "enableRedirect": true,
-  "excludedDomains": ["touchgal.top", "kungal.com"],
+  "excludedDomains": ["touchgal.ink", "kungal.com"],
   "delaySeconds": 5
 }
