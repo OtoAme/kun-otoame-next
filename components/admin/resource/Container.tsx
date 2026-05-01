@@ -58,6 +58,8 @@ const searchTypeOptions: Array<{
   { key: 'user', label: '用户名', placeholder: '输入用户名搜索...' }
 ]
 
+const pageSizeOptions = [30, 50, 100, 500]
+
 interface UserOption {
   id: number
   name: string
@@ -73,6 +75,7 @@ export const Resource = ({ initialResources, initialTotal }: Props) => {
   const [resources, setResources] = useState<AdminResource[]>(initialResources)
   const [total, setTotal] = useState(initialTotal)
   const [page, setPage] = useState(1)
+  const [limit, setLimit] = useState(30)
   const [searchType, setSearchType] = useState<ResourceSearchType>('content')
   const [selectedKeys, setSelectedKeys] = useState<Selection>(new Set())
   const [batchDeleting, setBatchDeleting] = useState(false)
@@ -139,7 +142,7 @@ export const Resource = ({ initialResources, initialTotal }: Props) => {
   const fetchData = async () => {
     setLoading(true)
     try {
-      const params: Record<string, string | number> = { page, limit: 30 }
+      const params: Record<string, string | number> = { page, limit }
       if (searchType === 'content' && debouncedContent) {
         params.search = debouncedContent
       }
@@ -167,7 +170,7 @@ export const Resource = ({ initialResources, initialTotal }: Props) => {
 
     fetchData()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isMounted, page, searchType, debouncedContent, selectedUserId])
+  }, [isMounted, page, limit, searchType, debouncedContent, selectedUserId])
 
   const selectedCount =
     selectedKeys === 'all' ? resources.length : selectedKeys.size
@@ -238,6 +241,17 @@ export const Resource = ({ initialResources, initialTotal }: Props) => {
       setSelectedUserId(null)
       setPage(1)
     }
+  }
+
+  const handlePageSizeChange = (keys: 'all' | Set<Key>) => {
+    const key = Array.from(keys)[0]
+    if (!key) {
+      return
+    }
+
+    setLimit(Number(key))
+    setPage(1)
+    setSelectedKeys(new Set<string | number>())
   }
 
   const currentPlaceholder =
@@ -325,9 +339,21 @@ export const Resource = ({ initialResources, initialTotal }: Props) => {
           selectedKeys={selectedKeys}
           onSelectionChange={setSelectedKeys}
           bottomContent={
-            <div className="flex justify-center w-full">
+            <div className="flex flex-col items-center justify-between w-full gap-3 sm:flex-row">
+              <Select
+                aria-label="每页资源数量"
+                className="w-32"
+                size="sm"
+                selectedKeys={new Set([String(limit)])}
+                onSelectionChange={handlePageSizeChange}
+              >
+                {pageSizeOptions.map((size) => (
+                  <SelectItem key={String(size)}>{`${size} 条/页`}</SelectItem>
+                ))}
+              </Select>
+
               <KunPagination
-                total={Math.ceil(total / 30)}
+                total={Math.ceil(total / limit)}
                 onPageChange={setPage}
                 isLoading={loading}
                 page={page}
