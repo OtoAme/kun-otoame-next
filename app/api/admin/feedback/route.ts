@@ -1,50 +1,8 @@
-import { z } from 'zod'
 import { NextRequest, NextResponse } from 'next/server'
 import { kunParseGetQuery } from '~/app/api/utils/parseQuery'
-import { prisma } from '~/prisma/index'
 import { adminPaginationSchema } from '~/validations/admin'
 import { verifyHeaderCookie } from '~/middleware/_verifyHeaderCookie'
-import type { Message } from '~/types/api/message'
-
-export const getFeedback = async (
-  input: z.infer<typeof adminPaginationSchema>
-) => {
-  const { page, limit } = input
-  const offset = (page - 1) * limit
-
-  const [data, total] = await Promise.all([
-    prisma.user_message.findMany({
-      where: { type: 'feedback', sender_id: { not: null } },
-      include: {
-        sender: {
-          select: {
-            id: true,
-            name: true,
-            avatar: true
-          }
-        }
-      },
-      orderBy: { created: 'desc' },
-      skip: offset,
-      take: limit
-    }),
-    prisma.user_message.count({
-      where: { type: 'feedback', sender_id: { not: null } }
-    })
-  ])
-
-  const feedbacks: Message[] = data.map((msg) => ({
-    id: msg.id,
-    type: msg.type,
-    content: msg.content,
-    status: msg.status,
-    link: msg.link,
-    created: msg.created,
-    sender: msg.sender
-  }))
-
-  return { feedbacks, total }
-}
+import { getFeedback } from './service'
 
 export const GET = async (req: NextRequest) => {
   const input = kunParseGetQuery(req, adminPaginationSchema)
