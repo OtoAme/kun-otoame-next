@@ -225,8 +225,8 @@ export const ResourceDetailsForm = ({
             {...field}
             label="提取码"
             placeholder="如果资源的获取需要密码, 请填写密码"
-            isInvalid={!!errors.password}
-            errorMessage={errors.password?.message}
+            isInvalid={!!errors.code}
+            errorMessage={errors.code?.message}
           />
         )}
       />
@@ -239,8 +239,8 @@ export const ResourceDetailsForm = ({
             {...field}
             label="解压码"
             placeholder="如果资源的解压需要解压码, 请填写解压码"
-            isInvalid={!!errors.code}
-            errorMessage={errors.code?.message}
+            isInvalid={!!errors.password}
+            errorMessage={errors.password?.message}
             endContent={
               <Button
                 className="h-7 min-w-12 px-3 text-xs"

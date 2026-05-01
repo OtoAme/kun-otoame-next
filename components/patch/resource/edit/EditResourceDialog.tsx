@@ -126,6 +126,7 @@ export const EditResourceDialog = ({
               size={watch().size}
               setContent={(content) => setValue('content', content)}
               setSize={(size) => setValue('size', size)}
+              setCode={(code) => setValue('code', code)}
             />
           )}
           <ResourceDetailsForm
