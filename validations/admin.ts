@@ -9,6 +9,10 @@ export const adminPaginationSchema = z.object({
     .optional()
 })
 
+export const adminResourcePaginationSchema = adminPaginationSchema.extend({
+  userId: z.coerce.number().min(1).max(9999999).optional()
+})
+
 export const adminUserSearchTypeSchema = z.enum(['name', 'email', 'id'])
 
 export const adminUserPaginationSchema = adminPaginationSchema.extend({
