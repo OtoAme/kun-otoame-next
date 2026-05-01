@@ -1,29 +1,6 @@
-import { z } from 'zod'
 import { NextRequest, NextResponse } from 'next/server'
 import { kunParseGetQuery } from '~/app/api/utils/parseQuery'
-import { prisma } from '~/prisma/index'
-
-const commentIdSchema = z.object({
-  commentId: z.coerce
-    .number({ message: '评论 ID 必须为数字' })
-    .min(1)
-    .max(9999999)
-})
-
-export const getCommentMarkdown = async (
-  input: z.infer<typeof commentIdSchema>
-) => {
-  const { commentId } = input
-
-  const comment = await prisma.patch_comment.findUnique({
-    where: { id: commentId },
-    select: {
-      content: true
-    }
-  })
-
-  return { content: comment?.content ?? '' }
-}
+import { commentIdSchema, getCommentMarkdown } from './service'
 
 export const GET = async (req: NextRequest) => {
   const input = kunParseGetQuery(req, commentIdSchema)
