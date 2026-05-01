@@ -10,9 +10,13 @@ import { ensurePatchCompaniesFromVNDB } from './fetchCompanies'
 import { ensurePatchCompanyFromDlsite } from './dlsite'
 
 export const createGalgame = async (
-  input: Omit<z.infer<typeof patchCreateSchema>, 'alias' | 'tag'> & {
+  input: Omit<
+    z.infer<typeof patchCreateSchema>,
+    'alias' | 'tag' | 'banner' | 'bannerOriginal'
+  > & {
     alias: string[]
     tag: string[]
+    banner: ArrayBuffer
     bannerOriginal?: ArrayBuffer
   },
   uid: number
@@ -55,8 +59,6 @@ export const createGalgame = async (
     }
   }
 
-  const bannerArrayBuffer = banner as ArrayBuffer
-  const bannerOriginalArrayBuffer = bannerOriginal as ArrayBuffer | undefined
   const galgameUniqueId = crypto.randomBytes(4).toString('hex')
 
   const normalizedDlsiteCode = dlsiteCode?.trim()
@@ -91,11 +93,7 @@ export const createGalgame = async (
 
       const newId = patch.id
 
-      const uploadResult = await uploadPatchBanner(
-        bannerArrayBuffer,
-        newId,
-        bannerOriginalArrayBuffer
-      )
+      const uploadResult = await uploadPatchBanner(banner, newId, bannerOriginal)
       if (typeof uploadResult === 'string') {
         return uploadResult
       }
