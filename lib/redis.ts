@@ -29,6 +29,26 @@ export const delKv = async (key: string) => {
   await redis.del(keyString)
 }
 
+export const delKvPattern = async (pattern: string) => {
+  const keyPattern = `${KUN_PATCH_REDIS_PREFIX}:${pattern}`
+  let cursor = '0'
+
+  do {
+    const [nextCursor, keys] = await redis.scan(
+      cursor,
+      'MATCH',
+      keyPattern,
+      'COUNT',
+      100
+    )
+    cursor = nextCursor
+
+    if (keys.length) {
+      await redis.del(...keys)
+    }
+  } while (cursor !== '0')
+}
+
 export const acquireKvLock = async (key: string, ttlSeconds = 10) => {
   const keyString = `${KUN_PATCH_REDIS_PREFIX}:${key}`
   const token = randomUUID()

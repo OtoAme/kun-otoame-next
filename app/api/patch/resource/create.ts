@@ -4,6 +4,7 @@ import { patchResourceCreateSchema } from '~/validations/patch'
 import { uploadFileToS3 } from '~/lib/s3'
 import { getKv } from '~/lib/redis'
 import { createMessage } from '~/app/api/utils/message'
+import { deletePatchResourceCache } from './_helper'
 import { normalizeResourceContent } from '~/utils/resourceLink'
 import type { PatchResource } from '~/types/api/patch'
 
@@ -70,89 +71,95 @@ export const createPatchResource = async (
 
   const resourceTypeName = section === 'galgame' ? '游戏资源' : '补丁资源'
 
-  const resource = await prisma.$transaction(async (prisma) => {
-    const newResource = await prisma.patch_resource.create({
-      data: {
-        patch_id: patchId,
-        user_id: uid,
-        type,
-        language,
-        platform,
-        content: res,
-        storage,
-        section,
-        status: needApproval ? 2 : 0,
-        ...resourceData,
-        code
-      },
-      include: {
-        user: {
-          include: {
-            _count: {
-              select: { patch_resource: true }
+  const { resource, shouldClearCache } = await prisma.$transaction(
+    async (prisma) => {
+      const newResource = await prisma.patch_resource.create({
+        data: {
+          patch_id: patchId,
+          user_id: uid,
+          type,
+          language,
+          platform,
+          content: res,
+          storage,
+          section,
+          status: needApproval ? 2 : 0,
+          ...resourceData,
+          code
+        },
+        include: {
+          user: {
+            include: {
+              _count: {
+                select: { patch_resource: true }
+              }
             }
           }
         }
-      }
-    })
-
-    await prisma.user.update({
-      where: { id: uid },
-      data: { moemoepoint: { increment: 3 } }
-    })
-
-    if (currentPatch) {
-      const updatedTypes = [...new Set(currentPatch.type.concat(type))]
-      const updatedLanguages = [
-        ...new Set(currentPatch.language.concat(language))
-      ]
-      const updatedPlatforms = [
-        ...new Set(currentPatch.platform.concat(platform))
-      ]
-
-      await prisma.patch.update({
-        where: { id: patchId },
-        data: {
-          resource_update_time: new Date(),
-          type: { set: updatedTypes },
-          language: { set: updatedLanguages },
-          platform: { set: updatedPlatforms }
-        }
       })
-    }
 
-    const resource: PatchResource = {
-      id: newResource.id,
-      name: newResource.name,
-      section: newResource.section,
-      uniqueId: currentPatch?.unique_id ?? '',
-      storage: newResource.storage,
-      size: newResource.size,
-      type: newResource.type,
-      language: newResource.language,
-      note: newResource.note,
-      hash: newResource.hash,
-      content: newResource.content,
-      code: newResource.code,
-      password: newResource.password,
-      platform: newResource.platform,
-      likeCount: 0,
-      isLike: false,
-      status: newResource.status,
-      userId: newResource.user_id,
-      patchId: newResource.patch_id,
-      created: String(newResource.created),
-      user: {
-        id: newResource.user.id,
-        name: newResource.user.name,
-        avatar: newResource.user.avatar,
-        patchCount: newResource.user._count.patch_resource,
-        role: newResource.user.role
+      await prisma.user.update({
+        where: { id: uid },
+        data: { moemoepoint: { increment: 3 } }
+      })
+
+      if (currentPatch) {
+        const updatedTypes = [...new Set(currentPatch.type.concat(type))]
+        const updatedLanguages = [
+          ...new Set(currentPatch.language.concat(language))
+        ]
+        const updatedPlatforms = [
+          ...new Set(currentPatch.platform.concat(platform))
+        ]
+
+        await prisma.patch.update({
+          where: { id: patchId },
+          data: {
+            resource_update_time: new Date(),
+            type: { set: updatedTypes },
+            language: { set: updatedLanguages },
+            platform: { set: updatedPlatforms }
+          }
+        })
       }
-    }
 
-    return resource
-  })
+      const resource: PatchResource = {
+        id: newResource.id,
+        name: newResource.name,
+        section: newResource.section,
+        uniqueId: currentPatch?.unique_id ?? '',
+        storage: newResource.storage,
+        size: newResource.size,
+        type: newResource.type,
+        language: newResource.language,
+        note: newResource.note,
+        hash: newResource.hash,
+        content: newResource.content,
+        code: newResource.code,
+        password: newResource.password,
+        platform: newResource.platform,
+        likeCount: 0,
+        isLike: false,
+        status: newResource.status,
+        userId: newResource.user_id,
+        patchId: newResource.patch_id,
+        created: String(newResource.created),
+        user: {
+          id: newResource.user.id,
+          name: newResource.user.name,
+          avatar: newResource.user.avatar,
+          patchCount: newResource.user._count.patch_resource,
+          role: newResource.user.role
+        }
+      }
+
+      return { resource, shouldClearCache: Boolean(currentPatch && !needApproval) }
+    }
+  )
+
+  if (shouldClearCache && currentPatch) {
+    await deletePatchResourceCache(currentPatch.unique_id)
+  }
 
   if (needApproval) {
     const approvalMessage =

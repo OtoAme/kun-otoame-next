@@ -1,6 +1,10 @@
 import { z } from 'zod'
 import { deleteFileFromS3 } from '~/lib/s3'
 import { prisma } from '~/prisma/index'
+import {
+  deletePatchResourceCache,
+  updatePatchAttributes
+} from '~/app/api/patch/resource/_helper'
 
 const resourceIdSchema = z.object({
   resourceId: z.coerce
@@ -22,7 +26,8 @@ export const deleteResource = async (
     include: {
       patch: {
         select: {
-          name: true
+          name: true,
+          unique_id: true
         }
       }
     }
@@ -37,10 +42,12 @@ export const deleteResource = async (
     await deleteFileFromS3(s3Key)
   }
 
-  return prisma.$transaction(async (prisma) => {
+  const uniqueId = await prisma.$transaction(async (prisma) => {
     await prisma.patch_resource.delete({
       where: { id: input.resourceId }
     })
+
+    const uniqueId = await updatePatchAttributes(patchResource.patch_id, prisma)
 
     await prisma.admin_log.create({
       data: {
@@ -50,6 +57,10 @@ export const deleteResource = async (
       }
     })
 
-    return {}
+    return uniqueId
   })
+
+  await deletePatchResourceCache(uniqueId)
+
+  return {}
 }

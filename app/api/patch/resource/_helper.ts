@@ -1,5 +1,5 @@
 import { deleteFileFromS3, uploadFileToS3 } from '~/lib/s3'
-import { getKv } from '~/lib/redis'
+import { delKv, delKvPattern, getKv } from '~/lib/redis'
 import { prisma as globalPrisma } from '~/prisma/index'
 
 export const uploadPatchResource = async (patchId: number, hash: string) => {
@@ -45,12 +45,26 @@ export const updatePatchAttributes = async (patchId: number, tx?: any) => {
     resource.platform.forEach((p: string) => platforms.add(p))
   })
 
-  await prisma.patch.update({
+  const patch = await prisma.patch.update({
     where: { id: patchId },
     data: {
+      resource_update_time: new Date(),
       type: Array.from(types),
       language: Array.from(languages),
       platform: Array.from(platforms)
+    },
+    select: {
+      unique_id: true
     }
   })
+
+  return patch.unique_id
+}
+
+export const deletePatchResourceCache = async (uniqueId: string) => {
+  await Promise.all([
+    delKv(`patch:${uniqueId}`),
+    delKv(`patch:introduction:${uniqueId}`),
+    delKvPattern('home_data:*')
+  ])
 }
