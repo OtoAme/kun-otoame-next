@@ -1,23 +1,33 @@
 'use client'
 
 import { Card, Link } from '@heroui/react'
+import Image from 'next/image'
 import type { HomeCarouselMetadata } from './mdx'
 
 interface Props {
-  posts: HomeCarouselMetadata[]
+  posts: readonly HomeCarouselMetadata[]
   currentSlide: number
 }
 
 export const KunMobileCard = ({ posts, currentSlide }: Props) => {
   const post = posts[currentSlide]
+  const isPriorityImage = currentSlide === 0
+
+  if (!post) {
+    return null
+  }
 
   return (
     <Card className="h-[200px] bg-transparent border-none shadow-none">
-      <div className="relative">
-        <img
+      <div className="relative h-[200px]">
+        <Image
           alt={post.title}
-          className="object-cover w-full rounded-2xl h-[200px]"
+          className="object-cover rounded-2xl"
           src={post.banner}
+          fill
+          sizes="100vw"
+          priority={isPriorityImage}
+          unoptimized
         />
 
         <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent rounded-2xl" />
