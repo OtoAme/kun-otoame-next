@@ -4,6 +4,7 @@ import { patchResourceCreateSchema } from '~/validations/patch'
 import { uploadFileToS3 } from '~/lib/s3'
 import { getKv } from '~/lib/redis'
 import { createMessage } from '~/app/api/utils/message'
+import { normalizeResourceContent } from '~/utils/resourceLink'
 import type { PatchResource } from '~/types/api/patch'
 
 const uploadPatchResource = async (patchId: number, hash: string) => {
@@ -54,6 +55,7 @@ export const createPatchResource = async (
     userRole === 1 || (userRole === 2 && resourceCount === 0)
 
   let res: string
+  let code = resourceData.code
   if (storage === 's3') {
     const result = await uploadPatchResource(patchId, resourceData.hash)
     if (typeof result === 'string') {
@@ -61,7 +63,9 @@ export const createPatchResource = async (
     }
     res = result.downloadLink
   } else {
-    res = content
+    const normalizedResource = normalizeResourceContent(content)
+    res = normalizedResource.content
+    code ||= normalizedResource.codes[0] ?? ''
   }
 
   const resourceTypeName = section === 'galgame' ? '游戏资源' : '补丁资源'
@@ -78,7 +82,8 @@ export const createPatchResource = async (
         storage,
         section,
         status: needApproval ? 2 : 0,
-        ...resourceData
+        ...resourceData,
+        code
       },
       include: {
         user: {

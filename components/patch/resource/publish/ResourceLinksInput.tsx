@@ -8,6 +8,7 @@ import { Plus, X } from 'lucide-react'
 import { ErrorType } from '../share'
 import { SUPPORTED_RESOURCE_LINK_MAP } from '~/constants/resource'
 import { CLOUDREVE_PAN_DOMAIN, formatSize } from './fetchAlistSize'
+import { parseResourceLink } from '~/utils/resourceLink'
 import toast from 'react-hot-toast'
 
 interface ResourceLinksInputProps {
@@ -18,25 +19,6 @@ interface ResourceLinksInputProps {
   setContent: (value: string) => void
   setSize: (value: string) => void
   setCode: (value: string) => void
-}
-
-const extractResourceLinkInfo = (text: string) => {
-  const pastedText = text.trim()
-  const codeMatch = pastedText.match(/(?:提取码|取码|密码)[:：\s]+([^\s,，]+)/)
-  const urlMatch = pastedText.match(/https?:\/\/[^\s,，]+/)
-  const link = urlMatch?.[0] ?? pastedText
-  let code = codeMatch?.[1]
-
-  try {
-    const url = new URL(link)
-    code ??=
-      url.searchParams.get('pwd') ??
-      url.searchParams.get('password') ??
-      url.searchParams.get('code') ??
-      undefined
-  } catch {}
-
-  return { link, code }
 }
 
 export const ResourceLinksInput = ({
@@ -116,15 +98,15 @@ export const ResourceLinksInput = ({
               }}
               onPaste={(e) => {
                 const pastedText = e.clipboardData.getData('text')
-                const { link, code } = extractResourceLinkInfo(pastedText)
+                const { url, code } = parseResourceLink(pastedText)
 
-                if (!pastedText || (link === pastedText.trim() && !code)) {
+                if (!pastedText || (url === pastedText.trim() && !code)) {
                   return
                 }
 
                 e.preventDefault()
                 const newLinks = [...links]
-                newLinks[index] = link
+                newLinks[index] = url
                 setContent(newLinks.filter(Boolean).toString())
                 if (code) {
                   setCode(code)

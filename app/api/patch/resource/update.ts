@@ -6,6 +6,7 @@ import {
   uploadPatchResource,
   updatePatchAttributes
 } from './_helper'
+import { normalizeResourceContent } from '~/utils/resourceLink'
 import type { PatchResource } from '~/types/api/patch'
 
 export const updatePatchResource = async (
@@ -40,8 +41,11 @@ export const updatePatchResource = async (
   }
 
   let newContent: string
+  let code = resourceData.code
   if (resource.storage !== 's3' || resource.content === content) {
-    newContent = content
+    const normalizedResource = normalizeResourceContent(content)
+    newContent = normalizedResource.content
+    code ||= normalizedResource.codes[0] ?? ''
   } else {
     await deletePatchResource(
       resource.content,
@@ -60,7 +64,8 @@ export const updatePatchResource = async (
       where: { id: resourceId, user_id: resourceUserUid },
       data: {
         content: newContent,
-        ...resourceData
+        ...resourceData,
+        code
       },
       include: {
         user: {
