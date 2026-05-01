@@ -1,10 +1,122 @@
 import { z } from 'zod'
+import { createHash } from 'crypto'
 import { prisma } from '~/prisma'
 import {
   createCompanySchema,
   getCompanyByIdSchema,
+  getCompanySchema,
+  getPatchByCompanySchema,
+  searchCompanySchema,
   updateCompanySchema
 } from '~/validations/company'
+import { getOrSet } from '~/lib/redis'
+import { GalgameCardSelectField } from '~/constants/api/select'
+
+export const getCompany = async (input: z.infer<typeof getCompanySchema>) => {
+  const cacheKey = `company_list:${createHash('md5')
+    .update(JSON.stringify(input))
+    .digest('hex')}`
+
+  return await getOrSet(
+    cacheKey,
+    async () => {
+      const { page, limit } = input
+      const offset = (page - 1) * limit
+
+      const [companies, total] = await Promise.all([
+        prisma.patch_company.findMany({
+          take: limit,
+          skip: offset,
+          select: {
+            id: true,
+            name: true,
+            count: true,
+            alias: true
+          },
+          orderBy: { count: 'desc' }
+        }),
+        prisma.patch_company.count()
+      ])
+
+      return { companies, total }
+    },
+    10
+  )
+}
+
+export const searchCompany = async (
+  input: z.infer<typeof searchCompanySchema>
+) => {
+  const { query } = input
+
+  const companies = await prisma.patch_company.findMany({
+    where: {
+      OR: query.map((q) => ({
+        OR: [
+          { name: { contains: q, mode: 'insensitive' } },
+          { alias: { has: q } },
+          { parent_brand: { has: q } }
+        ]
+      }))
+    },
+    select: {
+      id: true,
+      name: true,
+      count: true,
+      alias: true
+    },
+    orderBy: { count: 'desc' },
+    take: 100
+  })
+
+  return companies.flat()
+}
+
+export const getPatchByCompany = async (
+  input: z.infer<typeof getPatchByCompanySchema>,
+  nsfwEnable: Record<string, string | undefined>
+) => {
+  const cacheKey = `company_galgame_list:${createHash('md5')
+    .update(JSON.stringify({ input, nsfwEnable }))
+    .digest('hex')}`
+
+  return await getOrSet(
+    cacheKey,
+    async () => {
+      const { companyId, page, limit } = input
+      const offset = (page - 1) * limit
+
+      const [data, total] = await Promise.all([
+        prisma.patch_company_relation.findMany({
+          where: { company_id: companyId, patch: nsfwEnable },
+          select: {
+            patch: {
+              select: GalgameCardSelectField
+            }
+          },
+          orderBy: { created: 'desc' },
+          take: limit,
+          skip: offset
+        }),
+        prisma.patch_company_relation.count({
+          where: { company_id: companyId, patch: nsfwEnable }
+        })
+      ])
+
+      const galgames: GalgameCard[] = data.map((gal) => ({
+        ...gal.patch,
+        tags: gal.patch.tag.map((t) => t.tag.name).slice(0, 3),
+        uniqueId: gal.patch.unique_id,
+        averageRating: gal.patch.rating_stat?.avg_overall
+          ? Math.round(gal.patch.rating_stat.avg_overall * 10) / 10
+          : 0
+      }))
+
+      return { galgames, total }
+    },
+    10
+  )
+}
 
 export const getCompanyById = async (
   input: z.infer<typeof getCompanyByIdSchema>
