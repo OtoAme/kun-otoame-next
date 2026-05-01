@@ -18,7 +18,8 @@ export const updateUserAvatar = async (uid: number, avatar: ArrayBuffer) => {
     return res
   }
 
-  const imageLink = `${process.env.KUN_VISUAL_NOVEL_IMAGE_BED_URL}/user/avatar/user_${uid}/avatar-mini.avif`
+  const avatarVersion = Date.now().toString(36)
+  const imageLink = `${process.env.KUN_VISUAL_NOVEL_IMAGE_BED_URL}/user/avatar/user_${uid}/avatar-mini.avif?v=${avatarVersion}`
 
   await prisma.user.update({
     where: { id: uid },
