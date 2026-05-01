@@ -54,6 +54,7 @@ export const ResourceDownloadCard = ({ resource }: Props) => {
           <KunExternalLink
             onPress={handleClickDownload}
             underline="always"
+            className="break-all"
             link={link}
           >
             {link}
