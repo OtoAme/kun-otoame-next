@@ -25,12 +25,13 @@ import { FileUploadContainer } from '../upload/FileUploadContainer'
 import { kunErrorHandler } from '~/utils/kunErrorHandler'
 import { useUserStore } from '~/store/userStore'
 import type { PatchResource } from '~/types/api/patch'
+import type { ResourceSection } from '~/constants/resource'
 
 export type ResourceFormData = z.infer<typeof patchResourceCreateSchema>
 
 interface CreateResourceProps {
   patchId: number
-  defaultSection?: string
+  defaultSection?: ResourceSection
   onClose: () => void
   onSuccess?: (res: PatchResource) => void
 }
@@ -42,7 +43,7 @@ const userRoleStorageMap: Record<number, string> = {
   4: 'touchgal'
 }
 
-const getDefaultStorage = (role: number, section: string): string => {
+const getDefaultStorage = (role: number, section: ResourceSection): string => {
   if (section === 'galgame') {
     return role > 3 ? 'touchgal' : 'user'
   }
@@ -59,6 +60,8 @@ export const PublishResource = ({
   const [uploadingResource, setUploadingResource] = useState(false)
   const user = useUserStore((state) => state.user)
 
+  const section = defaultSection ?? (user.role > 2 ? 'galgame' : 'patch')
+
   const {
     control,
     reset,
@@ -69,9 +72,9 @@ export const PublishResource = ({
     resolver: zodResolver(patchResourceCreateSchema),
     defaultValues: {
       patchId,
-      storage: getDefaultStorage(user.role, (defaultSection as any) || (user.role > 2 ? 'galgame' : 'patch')),
+      storage: getDefaultStorage(user.role, section),
       name: '',
-      section: (defaultSection as any) || (user.role > 2 ? 'galgame' : 'patch'),
+      section,
       hash: '',
       content: '',
       code: '',

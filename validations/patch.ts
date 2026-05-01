@@ -66,11 +66,9 @@ export const getPatchCommentSchema = z.object({
 
 const patchResourceSchemaBase = z.object({
   patchId: z.coerce.number().min(1).max(9999999),
-  section: z
-    .string()
-    .refine((type) => SUPPORTED_RESOURCE_SECTION.includes(type), {
-      message: '资源链接类型仅能为 OtomeGame 或补丁'
-    }),
+  section: z.enum(SUPPORTED_RESOURCE_SECTION, {
+    message: '资源链接类型仅能为 OtomeGame 或补丁'
+  }),
   name: z.string().max(300, { message: '资源名称最多 300 个字符' }),
   storage: z.string().refine((type) => SUPPORTED_RESOURCE_LINK.includes(type), {
     message: '非法的资源链接类型'

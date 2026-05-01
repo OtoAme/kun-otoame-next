@@ -123,12 +123,8 @@ export const PublishButton = ({ setErrors, className }: Props) => {
       }>
     >('/edit', formDataToSend, 60000)
 
-    let createdValue: { uniqueId: string; patchId: number } | null = null
-    kunErrorHandler(res, (value) => {
-      createdValue = value
-    })
-
-    if (!createdValue) {
+    if (typeof res === 'string') {
+      kunErrorHandler(res, () => {})
       setCreating(false)
       return
     }
@@ -142,7 +138,7 @@ export const PublishButton = ({ setErrors, className }: Props) => {
     if (galleryImages && galleryImages.length > 0) {
       toast('正在上传游戏截图 ...')
       const { failCount } = await uploadGalleryImages(
-        createdValue.patchId,
+        res.patchId,
         galleryImages,
         !!watermark
       )
@@ -157,7 +153,7 @@ export const PublishButton = ({ setErrors, className }: Props) => {
     await localforage.removeItem('kun-patch-gallery')
     await localforage.removeItem('kun-patch-gallery-watermark')
     toast.success('发布完成, 正在为您跳转到资源介绍页面')
-    router.push(`/${createdValue.uniqueId}`)
+    router.push(`/${res.uniqueId}`)
     setCreating(false)
   }
 

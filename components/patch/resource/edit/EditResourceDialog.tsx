@@ -43,6 +43,8 @@ export const EditResourceDialog = ({
   const [editing, setEditing] = useState(false)
   const [uploadingResource, setUploadingResource] = useState(false)
 
+  const section = resource.section as ResourceSection
+
   const {
     control,
     reset,
@@ -53,6 +55,7 @@ export const EditResourceDialog = ({
     resolver: zodResolver(patchResourceCreateSchema),
     defaultValues: {
       ...resource,
+      section,
       type: normalizeLegacyResourceTypes(resource.type)
     }
   })
