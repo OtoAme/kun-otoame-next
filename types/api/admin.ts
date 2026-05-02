@@ -105,10 +105,19 @@ export interface AdminReportRatingSummary {
 
 export type AdminFeedback = Message
 
-export interface AdminReport extends Message {
-  reportedUserId?: number
-  reportedCommentId?: number
-  reportedUser: KunUser | null
+export interface AdminReport {
+  id: number
+  targetType: AdminReportTargetType
+  status: number
+  reason: string
+  handlerReply: string
+  patch: AdminReportPatchSummary
+  comment: AdminReportCommentSummary | null
+  rating: AdminReportRatingSummary | null
+  sender: KunUser
+  reportedUser: KunUser
+  created: Date | string
+  handledAt: Date | string | null
 }
 
 export interface AdminLog {

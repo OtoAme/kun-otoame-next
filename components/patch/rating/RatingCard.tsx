@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { Card, CardBody, CardHeader } from '@heroui/card'
-import { Button, Chip, Tooltip, Divider } from '@heroui/react'
+import { Button, Chip, Tooltip, Divider, Textarea } from '@heroui/react'
 import {
   Modal,
   ModalBody,
@@ -11,13 +11,13 @@ import {
   ModalHeader,
   useDisclosure
 } from '@heroui/modal'
-import { Eye, EyeOff, Pencil, Star, Trash2 } from 'lucide-react'
+import { Eye, EyeOff, Pencil, Star, Trash2, TriangleAlert } from 'lucide-react'
 import { KunUser } from '~/components/kun/floating-card/KunUser'
 import { formatTimeDifference } from '~/utils/time'
 import { RatingLikeButton } from './RatingLike'
 import { useUserStore } from '~/store/userStore'
 import toast from 'react-hot-toast'
-import { kunFetchDelete } from '~/utils/kunFetch'
+import { kunFetchDelete, kunFetchPost } from '~/utils/kunFetch'
 import { RatingModal } from './RatingModal'
 import {
   KUN_GALGAME_RATING_RECOMMEND_MAP,
@@ -70,6 +70,37 @@ export const RatingCard = ({
   )
 
   const canEdit = user.uid === rating.user.id || user.role >= 3
+
+  const {
+    isOpen: isOpenReport,
+    onOpen: onOpenReport,
+    onClose: onCloseReport
+  } = useDisclosure()
+  const [reportValue, setReportValue] = useState('')
+  const [reporting, setReporting] = useState(false)
+  const handleSubmitReport = async () => {
+    if (!reportValue.trim()) {
+      toast.error('请填写举报原因')
+      return
+    }
+
+    setReporting(true)
+    const res = await kunFetchPost<KunResponse<{}>>('/patch/rating/report', {
+      ratingId: rating.id,
+      patchId,
+      content: reportValue.trim()
+    })
+    setReporting(false)
+
+    if (typeof res === 'string') {
+      toast.error(res)
+      return
+    }
+
+    setReportValue('')
+    onCloseReport()
+    toast.success('提交举报成功')
+  }
 
   const {
     isOpen: isOpenDelete,
@@ -170,32 +201,47 @@ export const RatingCard = ({
         <div className="flex items-center justify-between">
           <RatingLikeButton rating={rating} />
 
-          {canEdit && (
-            <div className="flex gap-1">
-              <Tooltip content="编辑">
+          <div className="flex gap-1">
+            {user.uid > 0 && user.uid !== rating.user.id && (
+              <Tooltip content="举报">
                 <Button
                   variant="light"
                   isIconOnly
                   size="sm"
-                  onPress={onOpen}
+                  onPress={onOpenReport}
                   className="text-default-500"
                 >
-                  <Pencil className="size-4" />
+                  <TriangleAlert className="size-4" />
                 </Button>
               </Tooltip>
-              <Tooltip content="删除">
-                <Button
-                  variant="light"
-                  isIconOnly
-                  size="sm"
-                  onPress={onOpenDelete}
-                  className="text-danger"
-                >
-                  <Trash2 className="size-4" />
-                </Button>
-              </Tooltip>
-            </div>
-          )}
+            )}
+            {canEdit && (
+              <>
+                <Tooltip content="编辑">
+                  <Button
+                    variant="light"
+                    isIconOnly
+                    size="sm"
+                    onPress={onOpen}
+                    className="text-default-500"
+                  >
+                    <Pencil className="size-4" />
+                  </Button>
+                </Tooltip>
+                <Tooltip content="删除">
+                  <Button
+                    variant="light"
+                    isIconOnly
+                    size="sm"
+                    onPress={onOpenDelete}
+                    className="text-danger"
+                  >
+                    <Trash2 className="size-4" />
+                  </Button>
+                </Tooltip>
+              </>
+            )}
+          </div>
         </div>
       </CardBody>
 
@@ -212,6 +258,34 @@ export const RatingCard = ({
           onSuccess={onRatingUpdated}
           initial={rating}
         />
+      </Modal>
+
+      <Modal isOpen={isOpenReport} onClose={onCloseReport} placement="center">
+        <ModalContent>
+          <ModalHeader className="flex flex-col gap-1">举报评价</ModalHeader>
+          <ModalBody>
+            <Textarea
+              label={`举报 ${rating.shortSummary.slice(0, 20) || `总分 ${rating.overall}/10`}`}
+              isRequired
+              placeholder="请填写举报原因"
+              value={reportValue}
+              onValueChange={setReportValue}
+            />
+          </ModalBody>
+          <ModalFooter>
+            <Button variant="light" onPress={onCloseReport}>
+              取消
+            </Button>
+            <Button
+              color="primary"
+              onPress={handleSubmitReport}
+              isDisabled={reporting}
+              isLoading={reporting}
+            >
+              提交
+            </Button>
+          </ModalFooter>
+        </ModalContent>
       </Modal>
 
       <Modal isOpen={isOpenDelete} onClose={onCloseDelete} placement="center">

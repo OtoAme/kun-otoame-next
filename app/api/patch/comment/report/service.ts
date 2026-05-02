@@ -1,6 +1,5 @@
 import { z } from 'zod'
 import { createPatchCommentReportSchema } from '~/validations/patch'
-import { createMessage } from '~/app/api/utils/message'
 import { prisma } from '~/prisma'
 
 export const createReport = async (
@@ -8,44 +7,45 @@ export const createReport = async (
   uid: number
 ) => {
   const comment = await prisma.patch_comment.findUnique({
-    where: { id: input.commentId }
+    where: { id: input.commentId },
+    select: {
+      id: true,
+      user_id: true,
+      patch_id: true
+    }
   })
-  const patch = await prisma.patch.findUnique({
-    where: { id: input.patchId }
-  })
-  const user = await prisma.user.findUnique({
-    where: { id: uid }
-  })
-
-  const metadataLines: string[] = []
-  if (comment?.id) {
-    metadataLines.push(`举报评论ID: ${comment.id}`)
+  if (!comment) {
+    return '评论不存在'
   }
-  if (comment?.user_id) {
-    metadataLines.push(`被举报用户ID: ${comment.user_id}`)
+  if (comment.patch_id !== input.patchId) {
+    return '评论不属于当前游戏'
   }
-  const metadata = metadataLines.length ? `\n${metadataLines.join('\n')}` : ''
-  const STATIC_CONTENT = `用户: ${user?.name} 举报了游戏 ${patch?.name} 下的评论\n\n评论内容: ${comment?.content.slice(0, 200)}${metadata}\n\n举报原因: ${input.content}`
-  const reportLink = (() => {
-    if (!patch?.unique_id) {
-      return ''
-    }
-    const params = new URLSearchParams()
-    if (comment?.id) {
-      params.set('commentId', String(comment.id))
-    }
-    if (comment?.user_id) {
-      params.set('reportedUid', String(comment.user_id))
-    }
-    const query = params.toString()
-    return query ? `/${patch.unique_id}?${query}` : `/${patch.unique_id}`
-  })()
+  if (comment.user_id === uid) {
+    return '不能举报自己的评论'
+  }
 
-  await createMessage({
-    type: 'report',
-    content: STATIC_CONTENT,
-    sender_id: uid,
-    link: reportLink
+  const existingReport = await prisma.patch_report.findFirst({
+    where: {
+      target_type: 'comment',
+      comment_id: comment.id,
+      sender_id: uid,
+      status: 0
+    },
+    select: { id: true }
+  })
+  if (existingReport) {
+    return '您已经举报过该评论，请等待管理员处理'
+  }
+
+  await prisma.patch_report.create({
+    data: {
+      target_type: 'comment',
+      reason: input.content,
+      sender_id: uid,
+      reported_user_id: comment.user_id,
+      patch_id: comment.patch_id,
+      comment_id: comment.id
+    }
   })
 
   return {}

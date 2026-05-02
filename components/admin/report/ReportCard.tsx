@@ -33,13 +33,15 @@ export const ReportCard = ({ report, onHandled }: Props) => {
   const [actionType, setActionType] = useState<'delete' | 'reject'>('delete')
   const [updating, setUpdating] = useState(false)
   const { isOpen, onOpen, onClose } = useDisclosure()
-  const displayedUid = report.reportedUser?.id ?? report.reportedUserId ?? 0
-  const displayedName = report.reportedUser?.name
-    ? report.reportedUser.name
-    : report.reportedUserId
-      ? `用户 #${report.reportedUserId}`
-      : '未知被举报用户'
-  const displayedAvatar = report.reportedUser?.avatar ?? ''
+  const displayedUid = report.reportedUser.id
+  const displayedName = report.reportedUser.name
+  const displayedAvatar = report.reportedUser.avatar
+  const targetPreview =
+    report.targetType === 'rating'
+      ? report.rating
+        ? `${report.rating.shortSummary || `总分 ${report.rating.overall}/10`}`
+        : '评价已被删除'
+      : report.comment?.content || '评论已被删除'
 
   const openActionModal = (action: 'delete' | 'reject') => {
     setActionType(action)
@@ -50,9 +52,8 @@ export const ReportCard = ({ report, onHandled }: Props) => {
   const handleUpdateReport = async () => {
     setUpdating(true)
     const res = await kunFetchPost<KunResponse<{}>>('/admin/report/handle', {
-      messageId: report.id,
+      reportId: report.id,
       action: actionType,
-      commentId: report.reportedCommentId,
       content: handleContent.trim()
     })
     if (typeof res === 'string') {
@@ -96,7 +97,7 @@ export const ReportCard = ({ report, onHandled }: Props) => {
               <div>
                 <div className="flex items-center gap-2">
                   <Chip size="sm" variant="flat">
-                    被举报人
+                    {report.targetType === 'rating' ? '被举报评价用户' : '被举报评论用户'}
                   </Chip>
                   <h2 className="font-semibold">{displayedName}</h2>
                   <span className="text-small text-default-500">
@@ -106,7 +107,12 @@ export const ReportCard = ({ report, onHandled }: Props) => {
                     })}
                   </span>
                 </div>
-                <p className="mt-1 whitespace-pre-wrap">{report.content}</p>
+                <div className="mt-2 space-y-2">
+                  <p className="whitespace-pre-wrap">举报原因: {report.reason}</p>
+                  <p className="text-small text-default-500 whitespace-pre-wrap">
+                    被举报内容: {targetPreview}
+                  </p>
+                </div>
 
                 <div className="flex items-center gap-4 mt-2">
                   <Chip color={statusColor} variant="flat">

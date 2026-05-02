@@ -7,16 +7,25 @@ import { KunLoading } from '~/components/kun/Loading'
 import { useMounted } from '~/hooks/useMounted'
 import { ReportCard } from './ReportCard'
 import { KunPagination } from '~/components/kun/Pagination'
-import type { AdminReport } from '~/types/api/admin'
+import type { AdminReport, AdminReportTargetType } from '~/types/api/admin'
 
 type ReportTab = 'pending' | 'handled'
 
 interface Props {
   initialReports: AdminReport[]
   total: number
+  title?: string
+  targetType?: AdminReportTargetType
+  limit?: number
 }
 
-export const Report = ({ initialReports, total }: Props) => {
+export const Report = ({
+  initialReports,
+  total,
+  title = '评论举报管理',
+  targetType = 'comment',
+  limit = 30
+}: Props) => {
   const [reports, setReports] = useState<AdminReport[]>(initialReports)
   const [activeTab, setActiveTab] = useState<ReportTab>('pending')
   const [totalCount, setTotalCount] = useState(total)
@@ -32,8 +41,9 @@ export const Report = ({ initialReports, total }: Props) => {
       total: number
     }>('/admin/report', {
       page: targetPage,
-      limit: 30,
-      tab: targetTab
+      limit,
+      tab: targetTab,
+      targetType
     })
 
     setLoading(false)
@@ -50,7 +60,7 @@ export const Report = ({ initialReports, total }: Props) => {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold">评论举报管理</h1>
+      <h1 className="text-2xl font-bold">{title}</h1>
       <Tabs
         selectedKey={activeTab}
         onSelectionChange={(key) => {
@@ -88,7 +98,7 @@ export const Report = ({ initialReports, total }: Props) => {
 
       <div className="flex justify-center">
         <KunPagination
-          total={Math.max(1, Math.ceil(totalCount / 30))}
+          total={Math.max(1, Math.ceil(totalCount / limit))}
           page={page}
           onPageChange={setPage}
           isLoading={loading}

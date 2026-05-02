@@ -14,7 +14,7 @@ export default async function Kun() {
     page: 1,
     limit: 30,
     tab: 'pending',
-    targetType: 'comment'
+    targetType: 'rating'
   })
   if (typeof response === 'string') {
     return <ErrorComponent error={response} />
@@ -22,7 +22,12 @@ export default async function Kun() {
 
   return (
     <Suspense>
-      <Report initialReports={response.reports} total={response.total} />
+      <Report
+        initialReports={response.reports}
+        total={response.total}
+        title="评价举报管理"
+        targetType="rating"
+      />
     </Suspense>
   )
 }

@@ -11,6 +11,7 @@ import {
   Mail,
   MessageCircleQuestion,
   MessageSquare,
+  OctagonAlert,
   Puzzle,
   Settings,
   Star,
@@ -68,6 +69,11 @@ const menuItems = [
     name: '评论举报管理',
     href: '/admin/report',
     icon: TriangleAlert
+  },
+  {
+    name: '评价举报管理',
+    href: '/admin/rating-report',
+    icon: OctagonAlert
   },
   {
     name: '管理日志',

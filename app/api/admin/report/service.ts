@@ -1,26 +1,93 @@
 import { z } from 'zod'
 import { prisma } from '~/prisma/index'
-import { sliceUntilDelimiterFromEnd } from '~/app/api/utils/sliceUntilDelimiterFromEnd'
+import { recomputePatchRatingStat } from '~/app/api/patch/rating/stat'
 import {
   adminHandleReportSchema,
   adminReportPaginationSchema
 } from '~/validations/admin'
 import type { AdminReport } from '~/types/api/admin'
-import { findRelatedReportIds, resolveReportMeta } from './_meta'
+
+const buildReportNotice = (report: AdminReport, action: 'delete' | 'reject') => {
+  const defaultReply = action === 'reject' ? '已驳回' : '已处理'
+  const reportResult = action === 'reject' ? '您的举报已驳回!' : '您的举报已处理!'
+  const reportReplyLabel =
+    action === 'reject' ? '举报驳回回复' : '举报处理回复'
+  const handleResult = report.handlerReply || defaultReply
+  const targetLabel = report.targetType === 'rating' ? '评价' : '评论'
+
+  return `${reportResult}\n\n举报类型: ${targetLabel}\n举报原因: ${report.reason.slice(0, 200)}\n${reportReplyLabel}: ${handleResult}`
+}
+
+const serializeReport = (report: {
+  id: number
+  target_type: string
+  status: number
+  reason: string
+  handler_reply: string
+  created: Date
+  handled_at: Date | null
+  sender: KunUser
+  reported_user: KunUser
+  patch: {
+    id: number
+    unique_id: string
+    name: string
+  }
+  comment: {
+    id: number
+    content: string
+  } | null
+  rating: {
+    id: number
+    short_summary: string
+    overall: number
+    recommend: string
+    play_status: string
+  } | null
+}): AdminReport => ({
+  id: report.id,
+  targetType: report.target_type === 'rating' ? 'rating' : 'comment',
+  status: report.status,
+  reason: report.reason,
+  handlerReply: report.handler_reply,
+  created: report.created,
+  handledAt: report.handled_at,
+  sender: report.sender,
+  reportedUser: report.reported_user,
+  patch: {
+    id: report.patch.id,
+    uniqueId: report.patch.unique_id,
+    name: report.patch.name
+  },
+  comment: report.comment
+    ? {
+        id: report.comment.id,
+        content: report.comment.content
+      }
+    : null,
+  rating: report.rating
+    ? {
+        id: report.rating.id,
+        shortSummary: report.rating.short_summary,
+        overall: report.rating.overall,
+        recommend: report.rating.recommend,
+        playStatus: report.rating.play_status
+      }
+    : null
+})
 
 export const getReport = async (
   input: z.infer<typeof adminReportPaginationSchema>
 ) => {
-  const { page, limit, tab } = input
+  const { page, limit, tab, targetType } = input
   const offset = (page - 1) * limit
   const where = {
-    type: 'report',
-    sender_id: { not: null },
+    target_type: targetType,
     ...(tab === 'pending' ? { status: 0 } : { status: { in: [2, 3] } })
   }
 
   const [data, total] = await Promise.all([
-    prisma.user_message.findMany({
+    prisma.patch_report.findMany({
       where,
       include: {
         sender: {
@@ -29,148 +96,163 @@ export const getReport = async (
             name: true,
             avatar: true
           }
+        },
+        reported_user: {
+          select: {
+            id: true,
+            name: true,
+            avatar: true
+          }
+        },
+        patch: {
+          select: {
+            id: true,
+            unique_id: true,
+            name: true
+          }
+        },
+        comment: {
+          select: {
+            id: true,
+            content: true
+          }
+        },
+        rating: {
+          select: {
+            id: true,
+            short_summary: true,
+            overall: true,
+            recommend: true,
+            play_status: true
+          }
         }
       },
       orderBy: { created: 'desc' },
       skip: offset,
       take: limit
     }),
-    prisma.user_message.count({ where })
+    prisma.patch_report.count({ where })
   ])
 
-  const reportsWithMeta = await Promise.all(
-    data.map(async (msg) => ({
-      msg,
-      meta: await resolveReportMeta(msg.content, msg.link)
-    }))
-  )
-
-  const reportedUserIds = [
-    ...new Set(
-      reportsWithMeta
-        .map(({ meta }) => meta.reportedUserId)
-        .filter((id): id is number => !!id)
-    )
-  ]
-  const reportedUsers = reportedUserIds.length
-    ? await prisma.user.findMany({
-        where: { id: { in: reportedUserIds } },
-        select: {
-          id: true,
-          name: true,
-          avatar: true
-        }
-      })
-    : []
-  const reportedUserMap = new Map(
-    reportedUsers.map((user) => [
-      user.id,
-      { id: user.id, name: user.name, avatar: user.avatar }
-    ])
-  )
-
-  const reports: AdminReport[] = reportsWithMeta.map(({ msg, meta }) => ({
-    id: msg.id,
-    type: msg.type,
-    content: msg.content,
-    status: msg.status,
-    link: msg.link,
-    created: msg.created,
-    sender: msg.sender,
-    reportedCommentId: meta.reportedCommentId,
-    reportedUserId: meta.reportedUserId,
-    reportedUser: meta.reportedUserId
-      ? reportedUserMap.get(meta.reportedUserId) ?? null
-      : null
-  }))
+  const reports: AdminReport[] = data.map(serializeReport)
 
   return { reports, total }
 }
 
 export const handleReport = async (
-  input: z.infer<typeof adminHandleReportSchema>
+  input: z.infer<typeof adminHandleReportSchema>,
+  handlerId: number
 ) => {
-  const message = await prisma.user_message.findUnique({
-    where: { id: input.messageId }
+  const report = await prisma.patch_report.findUnique({
+    where: { id: input.reportId },
+    include: {
+      sender: {
+        select: {
+          id: true,
+          name: true,
+          avatar: true
+        }
+      },
+      reported_user: {
+        select: {
+          id: true,
+          name: true,
+          avatar: true
+        }
+      },
+      patch: {
+        select: {
+          id: true,
+          unique_id: true,
+          name: true
+        }
+      },
+      comment: {
+        select: {
+          id: true,
+          content: true
+        }
+      },
+      rating: {
+        select: {
+          id: true,
+          short_summary: true,
+          overall: true,
+          recommend: true,
+          play_status: true
+        }
+      }
+    }
   })
-  if (!message) {
+  if (!report) {
     return '该举报不存在'
   }
-  if (message.status !== 0) {
+  if (report.status !== 0) {
     return '该举报已被处理'
   }
 
-  const targetCommentId = input.commentId
-    ? input.commentId
-    : (await resolveReportMeta(message.content, message.link)).reportedCommentId
-
-  const relatedReportIds =
-    input.action === 'delete' && targetCommentId
-      ? await findRelatedReportIds(targetCommentId, input.messageId)
-      : []
-
-  const SLICED_CONTENT = sliceUntilDelimiterFromEnd(message.content).slice(
-    0,
-    200
-  )
-  const defaultReply = input.action === 'reject' ? '已驳回' : '已处理'
-  const handleResult = input.content ? input.content : defaultReply
+  const serializedReport = serializeReport(report)
+  const handleResult = input.content || (input.action === 'reject' ? '已驳回' : '已处理')
   const reportStatus = input.action === 'reject' ? 3 : 2
-  const reportResult =
-    input.action === 'reject' ? '您的举报已驳回!' : '您的举报已处理!'
-  const reportReplyLabel =
-    input.action === 'reject' ? '举报驳回回复' : '举报处理回复'
-  const reportContent = `${reportResult}\n\n举报原因: ${SLICED_CONTENT}\n${reportReplyLabel}: ${handleResult}`
+  const relatedTargetWhere =
+    report.target_type === 'rating'
+      ? { target_type: 'rating', rating_id: report.rating_id, status: 0 }
+      : { target_type: 'comment', comment_id: report.comment_id, status: 0 }
 
-  return prisma.$transaction(async (prisma) => {
-    const messageIdsToHandle = [
-      ...new Set([input.messageId, ...relatedReportIds])
-    ]
-    if (input.action === 'delete' && targetCommentId) {
-      await prisma.patch_comment.deleteMany({
-        where: { id: targetCommentId }
-      })
-    }
-
-    const affectedReports = await prisma.user_message.findMany({
-      where: {
-        id: {
-          in: messageIdsToHandle
-        }
-      },
+  await prisma.$transaction(async (prisma) => {
+    const affectedReports = await prisma.patch_report.findMany({
+      where: relatedTargetWhere,
       select: {
+        id: true,
         sender_id: true
       }
     })
+    const affectedReportIds = affectedReports.map((item) => item.id)
 
-    await prisma.user_message.updateMany({
-      where: {
-        id: {
-          in: messageIdsToHandle
-        }
-      },
-      // status: 0 - unread, 1 - read, 2 - approve, 3 - decline
-      data: { status: { set: reportStatus } }
+    await prisma.patch_report.updateMany({
+      where: { id: { in: affectedReportIds } },
+      data: {
+        status: reportStatus,
+        handler_id: handlerId,
+        handler_reply: handleResult,
+        handled_at: new Date()
+      }
     })
 
+    if (input.action === 'delete') {
+      if (report.target_type === 'rating' && report.rating_id) {
+        await prisma.patch_rating.deleteMany({
+          where: { id: report.rating_id }
+        })
+      }
+      if (report.target_type === 'comment' && report.comment_id) {
+        await prisma.patch_comment.deleteMany({
+          where: { id: report.comment_id }
+        })
+      }
+    }
+
     const recipientIds = [
-      ...new Set(
-        affectedReports
-          .map((report) => report.sender_id)
-          .filter((id): id is number => !!id)
-      )
+      ...new Set(affectedReports.map((affectedReport) => affectedReport.sender_id))
     ]
     if (recipientIds.length) {
       await prisma.user_message.createMany({
         data: recipientIds.map((recipientId) => ({
           type: 'report',
-          content: reportContent,
+          content: buildReportNotice(
+            { ...serializedReport, handlerReply: handleResult },
+            input.action
+          ),
           recipient_id: recipientId,
-          link: '/'
+          link: `/${report.patch.unique_id}`
         }))
       })
     }
-
-    return {}
   })
+
+  if (input.action === 'delete' && report.target_type === 'rating') {
+    await recomputePatchRatingStat(report.patch_id)
+  }
+
+  return {}
 }
