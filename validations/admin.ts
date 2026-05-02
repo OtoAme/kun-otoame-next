@@ -24,8 +24,12 @@ export const adminGalgamePaginationSchema = adminPaginationSchema.extend({
   limit: z.coerce.number().min(1).max(500)
 })
 
+export const adminCommentSearchTypeSchema = z.enum(['content', 'user'])
+
 export const adminCommentPaginationSchema = adminPaginationSchema.extend({
-  limit: z.coerce.number().min(1).max(500)
+  limit: z.coerce.number().min(1).max(500),
+  searchType: adminCommentSearchTypeSchema.default('content'),
+  userId: z.coerce.number().min(1).max(9999999).optional()
 })
 
 export const adminReportTargetTypeSchema = z.enum(['comment', 'rating'])

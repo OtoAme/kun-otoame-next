@@ -7,17 +7,26 @@ import type { AdminComment } from '~/types/api/admin'
 export const getComment = async (
   input: z.infer<typeof adminCommentPaginationSchema>
 ) => {
-  const { page, limit, search } = input
+  const { page, limit, search, searchType, userId } = input
   const offset = (page - 1) * limit
+  const normalizedSearch = search?.trim()
 
-  const where = search
-    ? {
-        content: {
-          contains: search,
-          mode: 'insensitive' as const
-        }
+  const where = (() => {
+    if (searchType === 'user' && userId) {
+      return { user_id: userId }
+    }
+
+    if (!normalizedSearch) {
+      return {}
+    }
+
+    return {
+      content: {
+        contains: normalizedSearch,
+        mode: 'insensitive' as const
       }
-    : {}
+    }
+  })()
 
   const [data, total] = await Promise.all([
     prisma.patch_comment.findMany({
