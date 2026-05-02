@@ -5,12 +5,18 @@ import {
   updateCompanySchema
 } from '~/validations/company'
 import {
+  kunParseDeleteQuery,
   kunParseGetQuery,
   kunParsePostBody,
   kunParsePutBody
 } from '../utils/parseQuery'
 import { verifyHeaderCookie } from '~/middleware/_verifyHeaderCookie'
-import { createCompany, getCompanyById, rewriteCompany } from './service'
+import {
+  createCompany,
+  deleteCompany,
+  getCompanyById,
+  rewriteCompany
+} from './service'
 
 export const GET = async (req: NextRequest) => {
   const input = kunParseGetQuery(req, getCompanyByIdSchema)
@@ -55,5 +61,23 @@ export const POST = async (req: NextRequest) => {
   }
 
   const response = await createCompany(input, payload.uid)
+  return NextResponse.json(response)
+}
+
+export const DELETE = async (req: NextRequest) => {
+  const input = kunParseDeleteQuery(req, getCompanyByIdSchema)
+  if (typeof input === 'string') {
+    return NextResponse.json(input)
+  }
+
+  const payload = await verifyHeaderCookie(req)
+  if (!payload) {
+    return NextResponse.json('用户未登录')
+  }
+  if (payload.role < 3) {
+    return NextResponse.json('本页面仅管理员可访问')
+  }
+
+  const response = await deleteCompany(input)
   return NextResponse.json(response)
 }

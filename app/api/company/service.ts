@@ -158,6 +158,20 @@ export const getCompanyById = async (
   return company
 }
 
+export const deleteCompany = async (
+  input: z.infer<typeof getCompanyByIdSchema>
+) => {
+  try {
+    await prisma.patch_company.delete({
+      where: { id: input.companyId }
+    })
+  } catch {
+    return '未找到对应的会社'
+  }
+
+  return {}
+}
+
 export const rewriteCompany = async (
   input: z.infer<typeof updateCompanySchema>
 ) => {
