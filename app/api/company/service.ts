@@ -90,32 +90,103 @@ export const getPatchByCompany = async (
   return await getOrSet(
     cacheKey,
     async () => {
-      const { companyId, page, limit } = input
+      const {
+        companyId,
+        page,
+        limit,
+        selectedType,
+        selectedLanguage,
+        selectedPlatform,
+        sortField,
+        sortOrder,
+        yearString,
+        monthString,
+        minRatingCount
+      } = input
+      const years = JSON.parse(yearString) as string[]
+      const months = JSON.parse(monthString) as string[]
       const offset = (page - 1) * limit
 
+      let dateFilter = {}
+      if (!years.includes('all')) {
+        const dateConditions = []
+
+        if (years.includes('future')) {
+          dateConditions.push({ released: 'future' })
+        }
+
+        if (years.includes('unknown')) {
+          dateConditions.push({ released: 'unknown' })
+        }
+
+        const concreteYears = years.filter(
+          (year) => year !== 'future' && year !== 'unknown'
+        )
+        if (concreteYears.length > 0) {
+          if (!months.includes('all')) {
+            const yearMonthConditions = concreteYears.flatMap((year) =>
+              months.map((month) => ({
+                released: {
+                  startsWith: `${year}-${month}`
+                }
+              }))
+            )
+            dateConditions.push(...yearMonthConditions)
+          } else {
+            const yearConditions = concreteYears.map((year) => ({
+              released: {
+                startsWith: year
+              }
+            }))
+            dateConditions.push(...yearConditions)
+          }
+        }
+
+        if (dateConditions.length > 0) {
+          dateFilter = { OR: dateConditions }
+        }
+      }
+
+      const where = {
+        company: {
+          some: { company_id: companyId }
+        },
+        ...(selectedType !== 'all' && { type: { has: selectedType } }),
+        ...(selectedLanguage !== 'all' && { language: { has: selectedLanguage } }),
+        ...(selectedPlatform !== 'all' && { platform: { has: selectedPlatform } }),
+        ...(sortField === 'rating' && {
+          rating_stat: { count: { gte: minRatingCount } }
+        }),
+        ...dateFilter,
+        ...nsfwEnable
+      }
+
+      const orderBy =
+        sortField === 'favorite'
+          ? { favorite_folder: { _count: sortOrder } }
+          : sortField === 'rating'
+            ? { rating_stat: { avg_overall: sortOrder } }
+            : { [sortField]: sortOrder }
+
       const [data, total] = await Promise.all([
-        prisma.patch_company_relation.findMany({
-          where: { company_id: companyId, patch: nsfwEnable },
-          select: {
-            patch: {
-              select: GalgameCardSelectField
-            }
-          },
-          orderBy: { created: 'desc' },
+        prisma.patch.findMany({
+          where,
+          select: GalgameCardSelectField,
+          orderBy,
           take: limit,
           skip: offset
         }),
-        prisma.patch_company_relation.count({
-          where: { company_id: companyId, patch: nsfwEnable }
+        prisma.patch.count({
+          where
         })
       ])
 
       const galgames: GalgameCard[] = data.map((gal) => ({
-        ...gal.patch,
-        tags: gal.patch.tag.map((t) => t.tag.name).slice(0, 3),
-        uniqueId: gal.patch.unique_id,
-        averageRating: gal.patch.rating_stat?.avg_overall
-          ? Math.round(gal.patch.rating_stat.avg_overall * 10) / 10
+        ...gal,
+        tags: gal.tag.map((t) => t.tag.name).slice(0, 3),
+        uniqueId: gal.unique_id,
+        averageRating: gal.rating_stat?.avg_overall
+          ? Math.round(gal.rating_stat.avg_overall * 10) / 10
           : 0
       }))
 

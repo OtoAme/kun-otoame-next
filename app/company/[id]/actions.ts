@@ -23,7 +23,7 @@ export const kunGetCompanyByIdActions = async (
 }
 
 export const kunCompanyGalgameActions = async (
-  params: z.infer<typeof getPatchByCompanySchema>
+  params: z.input<typeof getPatchByCompanySchema>
 ) => {
   const input = safeParseSchema(getPatchByCompanySchema, params)
   if (typeof input === 'string') {
