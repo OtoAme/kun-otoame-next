@@ -2,14 +2,14 @@
 
 import { z } from 'zod'
 import { safeParseSchema } from '~/utils/actions/safeParseSchema'
-import { adminReportPaginationSchema } from '~/validations/admin'
-import { getReport } from '~/app/api/admin/report/service'
+import { getRating } from '~/app/api/admin/rating/get'
+import { adminRatingPaginationSchema } from '~/validations/admin'
 import { verifyHeaderCookie } from '~/utils/actions/verifyHeaderCookie'
 
 export const kunGetActions = async (
-  params: z.input<typeof adminReportPaginationSchema>
+  params: z.infer<typeof adminRatingPaginationSchema>
 ) => {
-  const input = safeParseSchema(adminReportPaginationSchema, params)
+  const input = safeParseSchema(adminRatingPaginationSchema, params)
   if (typeof input === 'string') {
     return input
   }
@@ -21,6 +21,6 @@ export const kunGetActions = async (
     return '本页面仅管理员可访问'
   }
 
-  const response = await getReport(input)
+  const response = await getRating(input)
   return response
 }
