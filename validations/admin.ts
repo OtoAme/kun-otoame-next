@@ -108,3 +108,7 @@ export const adminGrantMoemoepointSchema = z.object({
     .max(500, { message: '理由不能超过 500 个字符' })
     .optional()
 })
+
+export const adminDisableUser2FASchema = z.object({
+  uid: z.coerce.number({ message: '用户 ID 必须为数字' }).min(1).max(9999999)
+})
