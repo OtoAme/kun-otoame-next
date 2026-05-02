@@ -1,10 +1,10 @@
 import { z } from 'zod'
 import { prisma } from '~/prisma/index'
-import { adminPaginationSchema } from '~/validations/admin'
+import { adminGalgamePaginationSchema } from '~/validations/admin'
 import type { AdminGalgame } from '~/types/api/admin'
 
 export const getGalgame = async (
-  input: z.infer<typeof adminPaginationSchema>,
+  input: z.infer<typeof adminGalgamePaginationSchema>,
   nsfwEnable: Record<string, string | undefined>
 ) => {
   const { page, limit, search } = input

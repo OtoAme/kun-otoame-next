@@ -2,15 +2,15 @@
 
 import { z } from 'zod'
 import { safeParseSchema } from '~/utils/actions/safeParseSchema'
-import { adminPaginationSchema } from '~/validations/admin'
+import { adminGalgamePaginationSchema } from '~/validations/admin'
 import { getGalgame } from '~/app/api/admin/otomegame/service'
 import { getNSFWHeader } from '~/utils/actions/getNSFWHeader'
 import { verifyHeaderCookie } from '~/utils/actions/verifyHeaderCookie'
 
 export const kunGetActions = async (
-  params: z.infer<typeof adminPaginationSchema>
+  params: z.input<typeof adminGalgamePaginationSchema>
 ) => {
-  const input = safeParseSchema(adminPaginationSchema, params)
+  const input = safeParseSchema(adminGalgamePaginationSchema, params)
   if (typeof input === 'string') {
     return input
   }
