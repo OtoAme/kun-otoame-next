@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useTransition, useEffect } from 'react'
+import { useRef, useState, useTransition, useEffect } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { useRouter } from '@bprogress/next'
 import { Button, Chip } from '@heroui/react'
 import { useDisclosure } from '@heroui/modal'
@@ -28,27 +29,74 @@ interface Props {
   initialCompany: CompanyDetail
   initialPatches: GalgameCard[]
   total: number
+  initialPage: number
+  initialSelectedType: string
+  initialSelectedLanguage: string
+  initialSelectedPlatform: string
+  initialSortField: SortField
+  initialSortOrder: SortOrder
+  initialSelectedYears: string[]
+  initialSelectedMonths: string[]
+  initialMinRatingCount: number
+}
+
+const isDefaultFilterArray = (value: string[]) =>
+  value.length === 1 && value[0] === 'all'
+
+const isSameFilterArray = (a: string[], b: string[]) =>
+  a.length === b.length && a.every((value, index) => value === b[index])
+
+const parseFilterArray = (value: string | null): string[] => {
+  if (!value) {
+    return ['all']
+  }
+
+  try {
+    const parsed = JSON.parse(value)
+    return Array.isArray(parsed) && parsed.length > 0
+      ? parsed.filter((item): item is string => typeof item === 'string')
+      : ['all']
+  } catch {
+    return ['all']
+  }
 }
 
 export const CompanyDetailContainer: FC<Props> = ({
   initialCompany,
   initialPatches,
-  total
+  total,
+  initialPage,
+  initialSelectedType,
+  initialSelectedLanguage,
+  initialSelectedPlatform,
+  initialSortField,
+  initialSortOrder,
+  initialSelectedYears,
+  initialSelectedMonths,
+  initialMinRatingCount
 }) => {
   const { isOpen, onOpen, onClose } = useDisclosure()
 
   const isMounted = useMounted()
   const user = useUserStore((state) => state.user)
   const router = useRouter()
-  const [page, setPage] = useState(1)
-  const [selectedType, setSelectedType] = useState<string>('all')
-  const [selectedLanguage, setSelectedLanguage] = useState<string>('all')
-  const [selectedPlatform, setSelectedPlatform] = useState<string>('all')
-  const [sortField, setSortField] = useState<SortField>('resource_update_time')
-  const [sortOrder, setSortOrder] = useState<SortOrder>('desc')
-  const [selectedYears, setSelectedYears] = useState<string[]>(['all'])
-  const [selectedMonths, setSelectedMonths] = useState<string[]>(['all'])
-  const [minRatingCount, setMinRatingCount] = useState(10)
+  const searchParams = useSearchParams()
+  const isSyncingFromUrl = useRef(false)
+  const [page, setPage] = useState(initialPage)
+  const [selectedType, setSelectedType] = useState<string>(initialSelectedType)
+  const [selectedLanguage, setSelectedLanguage] = useState<string>(
+    initialSelectedLanguage
+  )
+  const [selectedPlatform, setSelectedPlatform] = useState<string>(
+    initialSelectedPlatform
+  )
+  const [sortField, setSortField] = useState<SortField>(initialSortField)
+  const [sortOrder, setSortOrder] = useState<SortOrder>(initialSortOrder)
+  const [selectedYears, setSelectedYears] =
+    useState<string[]>(initialSelectedYears)
+  const [selectedMonths, setSelectedMonths] =
+    useState<string[]>(initialSelectedMonths)
+  const [minRatingCount, setMinRatingCount] = useState(initialMinRatingCount)
 
   const [company, setCompany] = useState(initialCompany)
   const [patches, setPatches] = useState<GalgameCard[]>(initialPatches)
@@ -58,6 +106,43 @@ export const CompanyDetailContainer: FC<Props> = ({
   const updateFilter = <T,>(setter: (value: T) => void, value: T) => {
     setPage(1)
     setter(value)
+  }
+
+  const syncUrl = () => {
+    const params = new URLSearchParams()
+
+    if (page !== 1) {
+      params.set('page', String(page))
+    }
+    if (selectedType !== 'all') {
+      params.set('selectedType', selectedType)
+    }
+    if (selectedLanguage !== 'all') {
+      params.set('selectedLanguage', selectedLanguage)
+    }
+    if (selectedPlatform !== 'all') {
+      params.set('selectedPlatform', selectedPlatform)
+    }
+    if (sortField !== 'resource_update_time') {
+      params.set('sortField', sortField)
+    }
+    if (sortOrder !== 'desc') {
+      params.set('sortOrder', sortOrder)
+    }
+    if (!isDefaultFilterArray(selectedYears)) {
+      params.set('yearString', JSON.stringify(selectedYears))
+    }
+    if (!isDefaultFilterArray(selectedMonths)) {
+      params.set('monthString', JSON.stringify(selectedMonths))
+    }
+    if (sortField === 'rating' && minRatingCount !== 10) {
+      params.set('minRatingCount', String(minRatingCount))
+    }
+
+    const queryString = params.toString()
+    if (queryString !== searchParams.toString()) {
+      router.push(queryString ? `?${queryString}` : '')
+    }
   }
 
   const fetchPatches = () => {
@@ -87,6 +172,12 @@ export const CompanyDetailContainer: FC<Props> = ({
     if (!isMounted) {
       return
     }
+
+    if (isSyncingFromUrl.current) {
+      isSyncingFromUrl.current = false
+    } else {
+      syncUrl()
+    }
     fetchPatches()
   }, [
     page,
@@ -99,6 +190,48 @@ export const CompanyDetailContainer: FC<Props> = ({
     selectedMonths,
     sortField === 'rating' ? minRatingCount : null
   ])
+
+  useEffect(() => {
+    if (!isMounted) {
+      return
+    }
+
+    const nextPage = Number(searchParams.get('page')) || 1
+    const nextSelectedType = searchParams.get('selectedType') || 'all'
+    const nextSelectedLanguage = searchParams.get('selectedLanguage') || 'all'
+    const nextSelectedPlatform = searchParams.get('selectedPlatform') || 'all'
+    const nextSortField =
+      (searchParams.get('sortField') as SortField) || 'resource_update_time'
+    const nextSortOrder = (searchParams.get('sortOrder') as SortOrder) || 'desc'
+    const nextSelectedYears = parseFilterArray(searchParams.get('yearString'))
+    const nextSelectedMonths = parseFilterArray(searchParams.get('monthString'))
+    const nextMinRatingCount = Number(searchParams.get('minRatingCount')) || 10
+    const shouldSyncFromUrl =
+      nextPage !== page ||
+      nextSelectedType !== selectedType ||
+      nextSelectedLanguage !== selectedLanguage ||
+      nextSelectedPlatform !== selectedPlatform ||
+      nextSortField !== sortField ||
+      nextSortOrder !== sortOrder ||
+      !isSameFilterArray(nextSelectedYears, selectedYears) ||
+      !isSameFilterArray(nextSelectedMonths, selectedMonths) ||
+      nextMinRatingCount !== minRatingCount
+
+    if (!shouldSyncFromUrl) {
+      return
+    }
+
+    isSyncingFromUrl.current = true
+    setPage(nextPage)
+    setSelectedType(nextSelectedType)
+    setSelectedLanguage(nextSelectedLanguage)
+    setSelectedPlatform(nextSelectedPlatform)
+    setSortField(nextSortField)
+    setSortOrder(nextSortOrder)
+    setSelectedYears(nextSelectedYears)
+    setSelectedMonths(nextSelectedMonths)
+    setMinRatingCount(nextMinRatingCount)
+  }, [searchParams])
 
   return (
     <div className="w-full my-4">
