@@ -25,9 +25,10 @@ import toast from 'react-hot-toast'
 
 interface Props {
   initialComment: AdminComment
+  onSuccess?: () => Promise<void> | void
 }
 
-export const CommentEdit = ({ initialComment }: Props) => {
+export const CommentEdit = ({ initialComment, onSuccess }: Props) => {
   const currentUser = useUserStore((state) => state.user)
 
   const {
@@ -46,7 +47,9 @@ export const CommentEdit = ({ initialComment }: Props) => {
     } else {
       onCloseDelete()
       toast.success('评论删除成功')
+      await onSuccess?.()
     }
+    setDeleting(false)
   }
 
   const {
@@ -72,6 +75,7 @@ export const CommentEdit = ({ initialComment }: Props) => {
       onCloseEdit()
       setEditContent('')
       toast.success('更新评论成功!')
+      await onSuccess?.()
     }
     setUpdating(false)
   }

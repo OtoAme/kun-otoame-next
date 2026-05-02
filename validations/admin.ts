@@ -25,12 +25,62 @@ export const adminGalgamePaginationSchema = adminPaginationSchema.extend({
 })
 
 export const adminCommentSearchTypeSchema = z.enum(['content', 'user'])
+const adminCommentDeleteLimit = 30
 
 export const adminCommentPaginationSchema = adminPaginationSchema.extend({
   limit: z.coerce.number().min(1).max(500),
   searchType: adminCommentSearchTypeSchema.default('content'),
   userId: z.coerce.number().min(1).max(9999999).optional()
 })
+
+const adminCommentIdsSchema = z
+  .string()
+  .trim()
+  .min(1, { message: '至少选择一条评论' })
+  .refine(
+    (value) =>
+      value.split(',').every((item) => {
+        const trimmed = item.trim()
+        if (!/^\d+$/.test(trimmed)) {
+          return false
+        }
+
+        const commentId = Number.parseInt(trimmed, 10)
+        return commentId >= 1 && commentId <= 9999999
+      }),
+    { message: '评论 ID 格式不正确' }
+  )
+  .transform((value) => [
+    ...new Set(
+      value
+        .split(',')
+        .map((item) => Number.parseInt(item.trim(), 10))
+        .filter((commentId) => commentId >= 1 && commentId <= 9999999)
+    )
+  ])
+  .refine((commentIds) => commentIds.length <= adminCommentDeleteLimit, {
+    message: `单次最多删除 ${adminCommentDeleteLimit} 条评论`
+  })
+
+export const adminDeleteCommentSchema = z.union([
+  z
+    .object({
+      commentId: z.coerce
+        .number({ message: '评论 ID 必须为数字' })
+        .min(1)
+        .max(9999999)
+    })
+    .transform(({ commentId }) => ({
+      commentIds: [commentId]
+    })),
+  z
+    .object({
+      commentIds: adminCommentIdsSchema
+    })
+    .transform(({ commentIds }) => ({
+      commentIds
+    }))
+])
 
 export const adminReportTargetTypeSchema = z.enum(['comment', 'rating'])
 

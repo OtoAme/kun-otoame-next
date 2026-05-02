@@ -4,19 +4,30 @@ import {
   Autocomplete,
   AutocompleteItem,
   Avatar,
+  Button,
+  Chip,
   Input,
   Select,
   SelectItem
 } from '@heroui/react'
+import {
+  Modal,
+  ModalBody,
+  ModalContent,
+  ModalFooter,
+  ModalHeader,
+  useDisclosure
+} from '@heroui/modal'
 import { Search } from 'lucide-react'
 import { useEffect, useState, type Key } from 'react'
-import { kunFetchGet } from '~/utils/kunFetch'
+import { kunFetchDelete, kunFetchGet } from '~/utils/kunFetch'
 import { KunLoading } from '~/components/kun/Loading'
 import { useMounted } from '~/hooks/useMounted'
 import { CommentCard } from './Card'
 import { useDebounce } from 'use-debounce'
 import { KunPagination } from '~/components/kun/Pagination'
 import type { AdminComment, AdminUser } from '~/types/api/admin'
+import toast from 'react-hot-toast'
 
 type AdminCommentSearchType = 'content' | 'user'
 
@@ -47,6 +58,9 @@ export const Comment = ({ initialComments, initialTotal }: Props) => {
   const [limit, setLimit] = useState(30)
   const [searchType, setSearchType] =
     useState<AdminCommentSearchType>('content')
+  const [selectedCommentIds, setSelectedCommentIds] = useState<Set<number>>(
+    new Set()
+  )
   const [contentQuery, setContentQuery] = useState('')
   const [debouncedContent] = useDebounce(contentQuery, 500)
   const [userInput, setUserInput] = useState('')
@@ -55,8 +69,14 @@ export const Comment = ({ initialComments, initialTotal }: Props) => {
   const [selectedUserId, setSelectedUserId] = useState<number | null>(null)
   const [userSearchLoading, setUserSearchLoading] = useState(false)
   const isMounted = useMounted()
+  const {
+    isOpen: isOpenDelete,
+    onOpen: onOpenDelete,
+    onClose: onCloseDelete
+  } = useDisclosure()
 
   const [loading, setLoading] = useState(false)
+  const [deleting, setDeleting] = useState(false)
 
   useEffect(() => {
     if (!debouncedUserInput.trim()) {
@@ -125,6 +145,10 @@ export const Comment = ({ initialComments, initialTotal }: Props) => {
     setLoading(false)
     setComments(comments)
     setTotal(total)
+    setSelectedCommentIds((prev) => {
+      const visibleIds = new Set(comments.map((comment) => comment.id))
+      return new Set([...prev].filter((id) => visibleIds.has(id)))
+    })
   }
 
   useEffect(() => {
@@ -166,9 +190,75 @@ export const Comment = ({ initialComments, initialTotal }: Props) => {
     }
   }
 
+  const handleCommentSelectionChange = (
+    commentId: number,
+    isSelected: boolean
+  ) => {
+    setSelectedCommentIds((prev) => {
+      const next = new Set(prev)
+      if (isSelected) {
+        next.add(commentId)
+      } else {
+        next.delete(commentId)
+      }
+      return next
+    })
+  }
+
+  const handleToggleSelectAll = () => {
+    setSelectedCommentIds((prev) => {
+      const next = new Set(prev)
+      const isAllSelected =
+        comments.length > 0 && comments.every((comment) => prev.has(comment.id))
+
+      comments.forEach((comment) => {
+        if (isAllSelected) {
+          next.delete(comment.id)
+        } else {
+          next.add(comment.id)
+        }
+      })
+
+      return next
+    })
+  }
+
+  const handleClearSelection = () => {
+    setSelectedCommentIds(new Set())
+  }
+
+  const handleBatchDelete = async () => {
+    if (!selectedCommentIds.size) {
+      return
+    }
+
+    const deleteCount = selectedCommentIds.size
+    setDeleting(true)
+    try {
+      const res = await kunFetchDelete<KunResponse<{}>>('/admin/comment', {
+        commentIds: Array.from(selectedCommentIds).join(',')
+      })
+
+      if (typeof res === 'string') {
+        toast.error(res)
+        return
+      }
+
+      onCloseDelete()
+      setSelectedCommentIds(new Set())
+      toast.success(`已删除 ${deleteCount} 条评论`)
+      await fetchData()
+    } finally {
+      setDeleting(false)
+    }
+  }
+
   const currentPlaceholder =
     searchTypeOptions.find((option) => option.key === searchType)?.placeholder ??
     ''
+  const isAllSelected =
+    comments.length > 0 &&
+    comments.every((comment) => selectedCommentIds.has(comment.id))
 
   if (!isMounted) {
     return (
@@ -183,54 +273,85 @@ export const Comment = ({ initialComments, initialTotal }: Props) => {
     <div className="space-y-6">
       <h1 className="text-2xl font-bold">评论管理</h1>
 
-      <div className="flex flex-col gap-3 sm:flex-row">
-        <Select
-          aria-label="搜索类型"
-          className="w-full sm:max-w-40"
-          selectedKeys={new Set([searchType])}
-          onSelectionChange={handleSearchTypeChange}
-        >
-          {searchTypeOptions.map((option) => (
-            <SelectItem key={option.key}>{option.label}</SelectItem>
-          ))}
-        </Select>
-
-        {searchType === 'user' ? (
-          <Autocomplete
-            fullWidth
-            isClearable
-            placeholder={currentPlaceholder}
-            startContent={<Search className="text-default-300" size={20} />}
-            inputValue={userInput}
-            isLoading={userSearchLoading}
-            items={userOptions}
-            onInputChange={handleUserInputChange}
-            onSelectionChange={handleUserSelectionChange}
+      <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+        <div className="flex flex-col gap-3 sm:flex-row xl:flex-1">
+          <Select
+            aria-label="搜索类型"
+            className="w-full sm:max-w-40"
+            selectedKeys={new Set([searchType])}
+            onSelectionChange={handleSearchTypeChange}
           >
-            {(user) => (
-              <AutocompleteItem key={user.id} textValue={user.name}>
-                <div className="flex items-center gap-2">
-                  <Avatar
-                    src={user.avatar}
-                    size="sm"
-                    showFallback
-                    name={user.name.charAt(0).toUpperCase()}
-                  />
-                  <span>{user.name}</span>
-                </div>
-              </AutocompleteItem>
-            )}
-          </Autocomplete>
-        ) : (
-          <Input
-            fullWidth
-            isClearable
-            placeholder={currentPlaceholder}
-            startContent={<Search className="text-default-300" size={20} />}
-            value={contentQuery}
-            onValueChange={handleContentSearch}
-          />
-        )}
+            {searchTypeOptions.map((option) => (
+              <SelectItem key={option.key}>{option.label}</SelectItem>
+            ))}
+          </Select>
+
+          {searchType === 'user' ? (
+            <Autocomplete
+              fullWidth
+              isClearable
+              placeholder={currentPlaceholder}
+              startContent={<Search className="text-default-300" size={20} />}
+              inputValue={userInput}
+              isLoading={userSearchLoading}
+              items={userOptions}
+              onInputChange={handleUserInputChange}
+              onSelectionChange={handleUserSelectionChange}
+            >
+              {(user) => (
+                <AutocompleteItem key={user.id} textValue={user.name}>
+                  <div className="flex items-center gap-2">
+                    <Avatar
+                      src={user.avatar}
+                      size="sm"
+                      showFallback
+                      name={user.name.charAt(0).toUpperCase()}
+                    />
+                    <span>{user.name}</span>
+                  </div>
+                </AutocompleteItem>
+              )}
+            </Autocomplete>
+          ) : (
+            <Input
+              fullWidth
+              isClearable
+              placeholder={currentPlaceholder}
+              startContent={<Search className="text-default-300" size={20} />}
+              value={contentQuery}
+              onValueChange={handleContentSearch}
+            />
+          )}
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          {selectedCommentIds.size ? (
+            <Chip color="primary" variant="flat">
+              {`已选择 ${selectedCommentIds.size} 条`}
+            </Chip>
+          ) : null}
+          <Button
+            variant="flat"
+            onPress={handleToggleSelectAll}
+            isDisabled={!comments.length || loading}
+          >
+            {isAllSelected ? '取消全选' : '全选当前页'}
+          </Button>
+          <Button
+            variant="light"
+            onPress={handleClearSelection}
+            isDisabled={!selectedCommentIds.size || loading}
+          >
+            清空选择
+          </Button>
+          <Button
+            color="danger"
+            onPress={onOpenDelete}
+            isDisabled={!selectedCommentIds.size || loading}
+          >
+            批量删除
+          </Button>
+        </div>
       </div>
 
       <div className="space-y-4">
@@ -239,7 +360,16 @@ export const Comment = ({ initialComments, initialTotal }: Props) => {
         ) : (
           <>
             {comments.map((comment) => (
-              <CommentCard key={comment.id} comment={comment} />
+              <CommentCard
+                key={comment.id}
+                comment={comment}
+                isSelected={selectedCommentIds.has(comment.id)}
+                isSelectionDisabled={deleting}
+                onSelectionChange={(isSelected) =>
+                  handleCommentSelectionChange(comment.id, isSelected)
+                }
+                onRefresh={fetchData}
+              />
             ))}
           </>
         )}
@@ -272,6 +402,33 @@ export const Comment = ({ initialComments, initialTotal }: Props) => {
           isLoading={loading}
         />
       </div>
+
+      <Modal isOpen={isOpenDelete} onClose={onCloseDelete} placement="center">
+        <ModalContent>
+          <ModalHeader className="flex flex-col gap-1">
+            批量删除评论
+          </ModalHeader>
+          <ModalBody>
+            <p>
+              您确定要删除已选择的 {selectedCommentIds.size} 条评论吗?
+              如果这些评论存在回复, 相关回复也会一并删除, 该操作不可撤销
+            </p>
+          </ModalBody>
+          <ModalFooter>
+            <Button variant="light" onPress={onCloseDelete}>
+              取消
+            </Button>
+            <Button
+              color="danger"
+              onPress={handleBatchDelete}
+              isLoading={deleting}
+              disabled={deleting}
+            >
+              删除
+            </Button>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
     </div>
   )
 }
