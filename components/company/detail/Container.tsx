@@ -12,6 +12,7 @@ import { KunHeader } from '~/components/kun/Header'
 import { KunUser } from '~/components/kun/floating-card/KunUser'
 import { KunLoading } from '~/components/kun/Loading'
 import { GalgameCard } from '~/components/galgame/Card'
+import { FilterBar } from '~/components/galgame/FilterBar'
 import { KunNull } from '~/components/kun/Null'
 import { CompanyFormModal } from '../form/CompanyFormModal'
 import { DeleteCompanyModal } from './DeleteCompanyModal'
@@ -20,6 +21,7 @@ import { kunFetchGet } from '~/utils/kunFetch'
 import { SUPPORTED_LANGUAGE_MAP } from '~/constants/resource'
 import { useUserStore } from '~/store/userStore'
 import type { CompanyDetail } from '~/types/api/company'
+import type { SortField, SortOrder } from '~/components/galgame/_sort'
 import type { FC } from 'react'
 
 interface Props {
@@ -39,22 +41,45 @@ export const CompanyDetailContainer: FC<Props> = ({
   const user = useUserStore((state) => state.user)
   const router = useRouter()
   const [page, setPage] = useState(1)
+  const [selectedType, setSelectedType] = useState<string>('all')
+  const [selectedLanguage, setSelectedLanguage] = useState<string>('all')
+  const [selectedPlatform, setSelectedPlatform] = useState<string>('all')
+  const [sortField, setSortField] = useState<SortField>('resource_update_time')
+  const [sortOrder, setSortOrder] = useState<SortOrder>('desc')
+  const [selectedYears, setSelectedYears] = useState<string[]>(['all'])
+  const [selectedMonths, setSelectedMonths] = useState<string[]>(['all'])
+  const [minRatingCount, setMinRatingCount] = useState(10)
 
   const [company, setCompany] = useState(initialCompany)
   const [patches, setPatches] = useState<GalgameCard[]>(initialPatches)
+  const [totalPatches, setTotalPatches] = useState(total)
   const [loading, startTransition] = useTransition()
+
+  const updateFilter = <T,>(setter: (value: T) => void, value: T) => {
+    setPage(1)
+    setter(value)
+  }
 
   const fetchPatches = () => {
     startTransition(async () => {
-      const { galgames } = await kunFetchGet<{
+      const { galgames, total } = await kunFetchGet<{
         galgames: GalgameCard[]
         total: number
       }>('/company/otomegame', {
         companyId: company.id,
         page,
-        limit: 24
+        limit: 24,
+        selectedType,
+        selectedLanguage,
+        selectedPlatform,
+        sortField,
+        sortOrder,
+        yearString: JSON.stringify(selectedYears),
+        monthString: JSON.stringify(selectedMonths),
+        minRatingCount: sortField === 'rating' ? minRatingCount : 0
       })
       setPatches(galgames)
+      setTotalPatches(total)
     })
   }
 
@@ -63,7 +88,17 @@ export const CompanyDetailContainer: FC<Props> = ({
       return
     }
     fetchPatches()
-  }, [page])
+  }, [
+    page,
+    sortField,
+    sortOrder,
+    selectedType,
+    selectedLanguage,
+    selectedPlatform,
+    selectedYears,
+    selectedMonths,
+    sortField === 'rating' ? minRatingCount : null
+  ])
 
   return (
     <div className="w-full my-4">
@@ -168,6 +203,27 @@ export const CompanyDetailContainer: FC<Props> = ({
         </div>
       )}
 
+      <div className="my-6">
+        <FilterBar
+          selectedType={selectedType}
+          setSelectedType={(value) => updateFilter(setSelectedType, value)}
+          sortField={sortField}
+          setSortField={(value) => updateFilter(setSortField, value)}
+          sortOrder={sortOrder}
+          setSortOrder={(value) => updateFilter(setSortOrder, value)}
+          selectedLanguage={selectedLanguage}
+          setSelectedLanguage={(value) => updateFilter(setSelectedLanguage, value)}
+          selectedPlatform={selectedPlatform}
+          setSelectedPlatform={(value) => updateFilter(setSelectedPlatform, value)}
+          selectedYears={selectedYears}
+          setSelectedYears={(value) => updateFilter(setSelectedYears, value)}
+          selectedMonths={selectedMonths}
+          setSelectedMonths={(value) => updateFilter(setSelectedMonths, value)}
+          minRatingCount={minRatingCount}
+          setMinRatingCount={(value) => updateFilter(setMinRatingCount, value)}
+        />
+      </div>
+
       {loading ? (
         <KunLoading hint="正在获取 OtomeGame 中..." />
       ) : (
@@ -178,10 +234,10 @@ export const CompanyDetailContainer: FC<Props> = ({
             ))}
           </div>
 
-          {total > 24 && (
+          {totalPatches > 24 && (
             <div className="flex justify-center">
               <Pagination
-                total={Math.ceil(total / 24)}
+                total={Math.ceil(totalPatches / 24)}
                 page={page}
                 onChange={setPage}
                 showControls
@@ -195,7 +251,7 @@ export const CompanyDetailContainer: FC<Props> = ({
             </div>
           )}
 
-          {!total && <KunNull message="暂无 OtomeGame, 或您未开启网站 NSFW" />}
+          {!totalPatches && <KunNull message="暂无 OtomeGame, 或您未开启网站 NSFW" />}
         </div>
       )}
     </div>
