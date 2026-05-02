@@ -1,11 +1,11 @@
 import { z } from 'zod'
 import { prisma } from '~/prisma/index'
-import { adminPaginationSchema } from '~/validations/admin'
+import { adminCommentPaginationSchema } from '~/validations/admin'
 import { markdownToText } from '~/utils/markdownToText'
 import type { AdminComment } from '~/types/api/admin'
 
 export const getComment = async (
-  input: z.infer<typeof adminPaginationSchema>
+  input: z.infer<typeof adminCommentPaginationSchema>
 ) => {
   const { page, limit, search } = input
   const offset = (page - 1) * limit

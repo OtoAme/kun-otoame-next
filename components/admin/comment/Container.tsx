@@ -1,6 +1,6 @@
 'use client'
 
-import { Input } from '@heroui/react'
+import { Input, Select, SelectItem } from '@heroui/react'
 import { Search } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { kunFetchGet } from '~/utils/kunFetch'
@@ -20,6 +20,7 @@ export const Comment = ({ initialComments, initialTotal }: Props) => {
   const [comments, setComments] = useState<AdminComment[]>(initialComments)
   const [total, setTotal] = useState(initialTotal)
   const [page, setPage] = useState(1)
+  const [limit, setLimit] = useState(30)
   const [searchQuery, setSearchQuery] = useState('')
   const [debouncedQuery] = useDebounce(searchQuery, 500)
   const isMounted = useMounted()
@@ -33,7 +34,7 @@ export const Comment = ({ initialComments, initialTotal }: Props) => {
       total: number
     }>('/admin/comment', {
       page,
-      limit: 30,
+      limit,
       search: debouncedQuery
     })
 
@@ -47,7 +48,7 @@ export const Comment = ({ initialComments, initialTotal }: Props) => {
       return
     }
     fetchData()
-  }, [page, debouncedQuery])
+  }, [page, limit, debouncedQuery])
 
   const handleSearch = (value: string) => {
     setSearchQuery(value)
@@ -79,9 +80,28 @@ export const Comment = ({ initialComments, initialTotal }: Props) => {
         )}
       </div>
 
-      <div className="flex justify-center">
+      <div className="flex flex-col items-center justify-center gap-4 sm:flex-row">
+        <Select
+          aria-label="每页显示数量"
+          size="sm"
+          className="w-20"
+          selectedKeys={new Set([String(limit)])}
+          onSelectionChange={(keys) => {
+            const selected = Array.from(keys)[0]
+            if (!selected) {
+              return
+            }
+            setLimit(Number(selected))
+            setPage(1)
+          }}
+        >
+          <SelectItem key="30">30</SelectItem>
+          <SelectItem key="50">50</SelectItem>
+          <SelectItem key="100">100</SelectItem>
+          <SelectItem key="500">500</SelectItem>
+        </Select>
         <KunPagination
-          total={Math.ceil(total / 30)}
+          total={Math.ceil(total / limit)}
           page={page}
           onPageChange={setPage}
           isLoading={loading}

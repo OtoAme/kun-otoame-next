@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { NextRequest, NextResponse } from 'next/server'
-import { adminPaginationSchema } from '~/validations/admin'
+import { adminCommentPaginationSchema } from '~/validations/admin'
 import {
   kunParseDeleteQuery,
   kunParseGetQuery,
@@ -20,7 +20,7 @@ const commentIdSchema = z.object({
 })
 
 export async function GET(req: NextRequest) {
-  const input = kunParseGetQuery(req, adminPaginationSchema)
+  const input = kunParseGetQuery(req, adminCommentPaginationSchema)
   if (typeof input === 'string') {
     return NextResponse.json(input)
   }
