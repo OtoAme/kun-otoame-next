@@ -51,7 +51,7 @@ export const searchCompany = async (
 
   const companies = await prisma.patch_company.findMany({
     where: {
-      OR: query.map((q) => ({
+      AND: query.map((q) => ({
         OR: [
           { name: { contains: q, mode: 'insensitive' } },
           { alias: { has: q } },
@@ -65,11 +65,18 @@ export const searchCompany = async (
       count: true,
       alias: true
     },
-    orderBy: { count: 'desc' },
     take: 100
   })
 
-  return companies.flat()
+  const fullQuery = query.join(' ').toLowerCase()
+  return companies.sort((a, b) => {
+    const nameA = a.name.toLowerCase()
+    const nameB = b.name.toLowerCase()
+    const scoreA = nameA === fullQuery ? 0 : nameA.startsWith(fullQuery) ? 1 : 2
+    const scoreB = nameB === fullQuery ? 0 : nameB.startsWith(fullQuery) ? 1 : 2
+    if (scoreA !== scoreB) return scoreA - scoreB
+    return b.count - a.count
+  })
 }
 
 export const getPatchByCompany = async (
