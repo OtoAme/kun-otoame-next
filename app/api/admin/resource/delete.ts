@@ -3,6 +3,7 @@ import { deleteFileFromS3 } from '~/lib/s3'
 import { prisma } from '~/prisma/index'
 import {
   deletePatchResourceCache,
+  sanitizeResourceForAuditLog,
   updatePatchAttributes
 } from '~/app/api/patch/resource/_helper'
 
@@ -49,11 +50,12 @@ export const deleteResource = async (
 
     const uniqueId = await updatePatchAttributes(patchResource.patch_id, prisma)
 
+    const sanitizedResource = sanitizeResourceForAuditLog(patchResource)
     await prisma.admin_log.create({
       data: {
         type: 'delete',
         user_id: uid,
-        content: `管理员 ${admin.name} 删除了一个补丁资源\n\nOtomeGame 名:\n${patchResource.patch.name}\n\n补丁资源信息:\n${JSON.stringify(patchResource)}`
+        content: `管理员 ${admin.name} 删除了一个补丁资源\n\nOtomeGame 名:\n${patchResource.patch.name}\n\n补丁资源信息:\n${JSON.stringify(sanitizedResource)}`
       }
     })
 

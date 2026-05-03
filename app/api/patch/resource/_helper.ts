@@ -24,6 +24,20 @@ export const deletePatchResource = async (
   await deleteFileFromS3(s3Key)
 }
 
+export const sanitizeResourceForAuditLog = <
+  R extends {
+    content?: string
+    code?: string
+    password?: string
+    hash?: string
+  }
+>(
+  resource: R
+): Omit<R, 'content' | 'code' | 'password' | 'hash'> => {
+  const { content, code, password, hash, ...rest } = resource
+  return rest
+}
+
 export const updatePatchAttributes = async (patchId: number, tx?: any) => {
   const prisma = tx || globalPrisma
   const resources = await prisma.patch_resource.findMany({

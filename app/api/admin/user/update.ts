@@ -25,7 +25,8 @@ export const updateUser = async (
   }
 
   const admin = await prisma.user.findUnique({
-    where: { id: adminUid }
+    where: { id: adminUid },
+    select: { id: true, name: true, role: true }
   })
   if (!admin) {
     return '未找到该管理员'
