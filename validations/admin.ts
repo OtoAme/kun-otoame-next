@@ -82,6 +82,10 @@ export const adminDeleteCommentSchema = z.union([
     }))
 ])
 
+export const adminGetFullCommentSchema = z.object({
+  commentId: z.coerce.number().min(1).max(9999999)
+})
+
 export const adminReportTargetTypeSchema = z.enum(['comment', 'rating'])
 
 export const adminReportPaginationSchema = adminPaginationSchema.extend({
