@@ -258,6 +258,10 @@ export const Resource = ({ initialResources, initialTotal }: Props) => {
     searchTypeOptions.find((option) => option.key === searchType)?.placeholder ??
     ''
 
+  if (!isMounted) {
+    return <KunLoading hint="正在加载资源列表..." />
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
