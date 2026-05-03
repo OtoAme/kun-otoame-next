@@ -82,6 +82,9 @@ JWT_SECRET = 'otoamegamewithflosover!chinorensukiazkhx'
 NODE_ENV = "development"
 HOSTNAME = "127.0.0.1"
 
+# 可选：仅在 release/deploy 构建时启用。启用后 pnpm build 会跳过 Next 内置 lint/type validation，需单独运行 pnpm typecheck。
+# KUN_DEPLOY_BUILD_SKIP_CHECKS = "true"
+
 # Bangumi Access Token，用于自动匹配游戏标签
 # 申请地址：https://next.bgm.tv/demo/access-token/create
 BANGUMI_ACCESS_TOKEN = "kkkkkkkkkkkkkkkkkkkkkkkkkkkk"
@@ -144,12 +147,17 @@ pnpm dev
 构建并启动服务
 
 ```bash
+# 先单独检查类型
+pnpm typecheck
+
 # 构建项目
 pnpm build
 
 # 启动服务
 pnpm start
 ```
+
+如果 `.env` 中设置了 `KUN_DEPLOY_BUILD_SKIP_CHECKS = "true"`，`pnpm build` 会跳过 Next.js 内置的 lint/type validation，只执行生产编译与 postbuild。当前 release/deploy 构建会使用该模式，但它不能替代 `pnpm typecheck`；发布前仍应单独运行类型检查。
 
 本地访问 `http://127.0.0.1:3000`
 
@@ -244,6 +252,7 @@ pnpm deploy:pull
    git pull                 # 拉取最新代码
    pnpm install             # 如果依赖有变化
    pnpm prisma:push         # 如果数据库结构有变化
+   pnpm typecheck           # 单独检查类型
    pnpm build               # 重新构建 (必须!)
    pnpm stop && pnpm start  # 重启服务
    ```
