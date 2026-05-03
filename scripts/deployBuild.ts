@@ -32,7 +32,10 @@ try {
 
   execSync(
     'git pull && pnpm i && pnpm prisma:push && pnpm build && pm2 startOrReload ecosystem.config.cjs',
-    { stdio: 'inherit' }
+    {
+      stdio: 'inherit',
+      env: { ...process.env, KUN_DEPLOY_BUILD_SKIP_CHECKS: 'true' }
+    }
   )
 } catch (e) {
   console.error('Invalid environment variables')

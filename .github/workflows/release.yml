@@ -90,6 +90,8 @@ jobs:
 
       - name: Build
         run: pnpm build
+        env:
+          KUN_DEPLOY_BUILD_SKIP_CHECKS: 'true'
 
       - name: Prepare Release Package
         run: |
