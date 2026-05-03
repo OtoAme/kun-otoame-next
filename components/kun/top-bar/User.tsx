@@ -8,7 +8,7 @@ import { Button } from '@heroui/button'
 import { Skeleton } from '@heroui/skeleton'
 import { useUserStore } from '~/store/userStore'
 import { useRouter } from '@bprogress/next'
-import { kunFetchGet } from '~/utils/kunFetch'
+import { kunFetchGet, kunFetchPost } from '~/utils/kunFetch'
 import { ThemeSwitcher } from './ThemeSwitcher'
 import { useMounted } from '~/hooks/useMounted'
 import { UserDropdown } from './UserDropdown'
@@ -19,7 +19,7 @@ import { RandomGalgameButton } from '~/components/home/carousel/RandomGalgameBut
 import type { UserState } from '~/store/userStore'
 export const KunTopBarUser = () => {
   const router = useRouter()
-  const { user, setUser } = useUserStore((state) => state)
+  const { user, setUser, logout } = useUserStore((state) => state)
   const [hasUnread, setHasUnread] = useState(false)
   const isMounted = useMounted()
 
@@ -35,6 +35,9 @@ export const KunTopBarUser = () => {
       const res = await kunFetchGet<KunResponse<UserState>>('/user/status')
       if (typeof res === 'string') {
         toast.error(res)
+        kunFetchPost('/user/status/logout').catch(() => {})
+        logout()
+        setHasUnread(false)
         router.push('/login')
       } else {
         setUser(user)
