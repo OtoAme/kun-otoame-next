@@ -73,6 +73,10 @@ export const Galgame = ({ initialGalgames, initialTotal }: Props) => {
     setPage(1)
   }
 
+  if (!isMounted) {
+    return <KunLoading hint="正在获取 OtomeGame 数据..." />
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
