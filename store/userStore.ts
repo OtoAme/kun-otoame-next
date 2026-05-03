@@ -50,7 +50,7 @@ export const useUserStore = create<UserStore>()(
     }),
     {
       name: 'kun-patch-user-store',
-      storage: createJSONStorage(() => localStorage)
+      storage: createJSONStorage(() => window.localStorage)
     }
   )
 )

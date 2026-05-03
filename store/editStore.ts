@@ -52,7 +52,7 @@ export const useCreatePatchStore = create<StoreState>()(
     }),
     {
       name: 'kun-patch-edit-store',
-      storage: createJSONStorage(() => localStorage)
+      storage: createJSONStorage(() => window.localStorage)
     }
   ) as any
 )
