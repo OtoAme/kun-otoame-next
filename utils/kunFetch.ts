@@ -16,9 +16,9 @@ const kunFetchRequest = async <T>(
 
     const queryString = query
       ? '?' +
-      Object.entries(query)
-        .map(([key, value]) => `${key}=${value}`)
-        .join('&')
+        new URLSearchParams(
+          Object.entries(query).map(([key, value]) => [key, String(value)])
+        ).toString()
       : ''
 
     const isClient = typeof window !== 'undefined'
