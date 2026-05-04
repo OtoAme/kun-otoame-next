@@ -8,6 +8,7 @@ import {
 } from '~/constants/api/select'
 import { galgameSchema } from '~/validations/galgame'
 import { getOrSet } from '~/lib/redis'
+import { buildGalgameOrderBy } from '~/app/api/utils/galgameQuery'
 
 export const getGalgame = async (
   input: z.infer<typeof galgameSchema>,
@@ -79,10 +80,7 @@ export const getGalgame = async (
         ...nsfwEnable
       }
 
-      const orderBy =
-        sortField === 'favorite'
-          ? { favorite_folder: { _count: sortOrder } }
-          : { [sortField]: sortOrder }
+      const orderBy = buildGalgameOrderBy(sortField, sortOrder)
 
       const [data, total] = await Promise.all([
         prisma.patch.findMany({

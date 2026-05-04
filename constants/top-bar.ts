@@ -34,6 +34,6 @@ export const kunMobileNavItem: KunNavItem[] = [
   },
   {
     name: '联系我们',
-    href: '/doc/notice/feedback'
+    href: 'mailto:contact@otoame.com'
   }
 ]

@@ -7,6 +7,7 @@ import {
 } from '~/constants/api/select'
 import { prisma } from '~/prisma/index'
 import { searchSchema, searchTagSchema } from '~/validations/search'
+import { buildGalgameDateFilter, buildGalgameOrderBy } from '~/app/api/utils/galgameQuery'
 import type { SearchSuggestionType } from '~/types/api/search'
 
 export const searchGalgame = async (
@@ -38,43 +39,7 @@ export const searchGalgame = async (
     .filter((item) => item.type === 'tag')
     .map((item) => item.name)
 
-  let dateFilter = {}
-  if (!selectedYears.includes('all')) {
-    const dateConditions = []
-
-    if (selectedYears.includes('future')) {
-      dateConditions.push({ released: 'future' })
-    }
-
-    if (selectedYears.includes('unknown')) {
-      dateConditions.push({ released: 'unknown' })
-    }
-
-    const nonFutureYears = selectedYears.filter((year) => year !== 'future')
-    if (nonFutureYears.length > 0) {
-      if (!selectedMonths.includes('all')) {
-        const yearMonthConditions = nonFutureYears.flatMap((year) =>
-          selectedMonths.map((month) => ({
-            released: {
-              startsWith: `${year}-${month}`
-            }
-          }))
-        )
-        dateConditions.push(...yearMonthConditions)
-      } else {
-        const yearConditions = nonFutureYears.map((year) => ({
-          released: {
-            startsWith: year
-          }
-        }))
-        dateConditions.push(...yearConditions)
-      }
-    }
-
-    if (dateConditions.length > 0) {
-      dateFilter = { OR: dateConditions }
-    }
-  }
+  const dateFilter = buildGalgameDateFilter(selectedYears, selectedMonths)
 
   const where = {
     ...(selectedType !== 'all' && { type: { has: selectedType } }),
@@ -83,10 +48,7 @@ export const searchGalgame = async (
     ...nsfwEnable
   }
 
-  const orderBy =
-    sortField === 'favorite'
-      ? { favorite_folder: { _count: sortOrder } }
-      : { [sortField]: sortOrder }
+  const orderBy = buildGalgameOrderBy(sortField, sortOrder)
 
   const queryCondition = [
     ...queryArray.map((q) => ({

@@ -8,6 +8,11 @@ import {
 import { prisma } from '~/prisma/index'
 import { getOrSet } from '~/lib/redis'
 import { getPatchByTagSchema, getTagSchema } from '~/validations/tag'
+import {
+  buildGalgameDateFilter,
+  buildGalgameOrderBy,
+  buildGalgameWhere
+} from '~/app/api/utils/galgameQuery'
 import type { Tag } from '~/types/api/tag'
 
 export const getTag = async (
@@ -58,28 +63,59 @@ export const getPatchByTag = async (
   return await getOrSet(
     cacheKey,
     async () => {
-      const { tagId, page, limit } = input
+      const {
+        tagId,
+        page,
+        limit,
+        selectedType,
+        selectedLanguage,
+        selectedPlatform,
+        minRatingCount,
+        sortField,
+        sortOrder
+      } = input
       const offset = (page - 1) * limit
+      const years = JSON.parse(input.yearString) as string[]
+      const months = JSON.parse(input.monthString) as string[]
+      const dateFilter = buildGalgameDateFilter(years, months)
+      const patchWhere = buildGalgameWhere({
+        selectedType,
+        selectedLanguage,
+        selectedPlatform,
+        minRatingCount,
+        visibilityWhere: nsfwEnable
+      })
 
       const [data, total] = await Promise.all([
-        prisma.patch_tag_relation.findMany({
-          where: { tag_id: tagId, patch: nsfwEnable },
-          select: {
-            patch: {
-              select: GalgameCardSelectField
+        prisma.patch.findMany({
+          where: {
+            ...dateFilter,
+            ...patchWhere,
+            tag: {
+              some: {
+                tag_id: tagId
+              }
             }
           },
-          orderBy: { patch: { [input.sortField]: 'desc' } },
+          select: GalgameCardSelectField,
+          orderBy: buildGalgameOrderBy(sortField, sortOrder),
           take: limit,
           skip: offset
         }),
-        prisma.patch_tag_relation.count({
-          where: { tag_id: tagId, patch: nsfwEnable }
+        prisma.patch.count({
+          where: {
+            ...dateFilter,
+            ...patchWhere,
+            tag: {
+              some: {
+                tag_id: tagId
+              }
+            }
+          }
         })
       ])
 
-      const patches = data.map((p) => p.patch)
-      const galgames: GalgameCard[] = patches.map((gal) => ({
+      const galgames: GalgameCard[] = data.map((gal) => ({
         ...gal,
         tags: gal.tag.map((t) => t.tag.name).slice(0, 3),
         uniqueId: gal.unique_id,
