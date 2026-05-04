@@ -6,7 +6,10 @@ import {
   declinePatchResourceSchema
 } from '~/validations/admin'
 import { deleteFileFromS3 } from '~/lib/s3'
-import { deletePatchResourceCache } from '~/app/api/patch/resource/_helper'
+import {
+  deletePatchResourceCache,
+  updatePatchAttributes
+} from '~/app/api/patch/resource/_helper'
 
 export const approvePatchResource = async (
   input: z.infer<typeof approvePatchResourceSchema>,
@@ -48,15 +51,20 @@ export const approvePatchResource = async (
       data: { status: { set: 0 } }
     })
 
+    const uniqueId = await updatePatchAttributes(resource.patch_id, prisma)
+
     const resourceTypeName =
       resource.section === 'galgame' ? '游戏资源' : '补丁资源'
 
-    await createMessage({
-      type: 'system',
-      content: `你上传的${resourceTypeName}「${resource.name || resource.patch.name}」已通过审核，感谢你的分享！`,
-      recipient_id: resource.user_id,
-      link: `/${resource.patch.unique_id}`
-    })
+    await createMessage(
+      {
+        type: 'system',
+        content: `你上传的${resourceTypeName}「${resource.name || resource.patch.name}」已通过审核，感谢你的分享！`,
+        recipient_id: resource.user_id,
+        link: `/${resource.patch.unique_id}`
+      },
+      prisma
+    )
 
     await prisma.admin_log.create({
       data: {
@@ -66,12 +74,12 @@ export const approvePatchResource = async (
       }
     })
 
-    return {}
+    return { uniqueId }
   })
 
-  await deletePatchResourceCache(resource.patch.unique_id)
+  await deletePatchResourceCache(result.uniqueId)
 
-  return result
+  return {}
 }
 
 export const declinePatchResource = async (
@@ -111,20 +119,25 @@ export const declinePatchResource = async (
     await deleteFileFromS3(s3Key)
   }
 
-  return prisma.$transaction(async (prisma) => {
+  const result = await prisma.$transaction(async (prisma) => {
     await prisma.patch_resource.delete({
       where: { id: resourceId }
     })
 
+    const uniqueId = await updatePatchAttributes(resource.patch_id, prisma)
+
     const resourceTypeName =
       resource.section === 'galgame' ? '游戏资源' : '补丁资源'
 
-    await createMessage({
-      type: 'system',
-      content: `你上传的${resourceTypeName}「${resource.name || resource.patch.name}」未通过审核，原因：${reason}`,
-      recipient_id: resource.user_id,
-      link: '/'
-    })
+    await createMessage(
+      {
+        type: 'system',
+        content: `你上传的${resourceTypeName}「${resource.name || resource.patch.name}」未通过审核，原因：${reason}`,
+        recipient_id: resource.user_id,
+        link: '/'
+      },
+      prisma
+    )
 
     await prisma.admin_log.create({
       data: {
@@ -134,6 +147,10 @@ export const declinePatchResource = async (
       }
     })
 
-    return {}
+    return { uniqueId }
   })
+
+  await deletePatchResourceCache(result.uniqueId)
+
+  return {}
 }

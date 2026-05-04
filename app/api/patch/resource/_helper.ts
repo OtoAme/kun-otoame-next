@@ -45,7 +45,7 @@ export const sanitizeResourceForAuditLog = <
 export const updatePatchAttributes = async (patchId: number, tx?: any) => {
   const prisma = tx || globalPrisma
   const resources = await prisma.patch_resource.findMany({
-    where: { patch_id: patchId },
+    where: { patch_id: patchId, status: 0 },
     select: {
       type: true,
       language: true,

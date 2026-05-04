@@ -4,8 +4,11 @@ import { patchResourceCreateSchema } from '~/validations/patch'
 import { uploadFileToS3 } from '~/lib/s3'
 import { getKv } from '~/lib/redis'
 import { createMessage } from '~/app/api/utils/message'
-import { deletePatchResourceCache } from './_helper'
-import { mergeResourceCodes, normalizeResourceContent } from '~/utils/resourceLink'
+import { deletePatchResourceCache, updatePatchAttributes } from './_helper'
+import {
+  mergeResourceCodes,
+  normalizeResourceContent
+} from '~/utils/resourceLink'
 import type { PatchResource } from '~/types/api/patch'
 
 const uploadPatchResource = async (patchId: number, hash: string) => {
@@ -41,9 +44,6 @@ export const createPatchResource = async (
   const currentPatch = await prisma.patch.findUnique({
     where: { id: patchId },
     select: {
-      type: true,
-      language: true,
-      platform: true,
       unique_id: true,
       name: true
     }
@@ -52,8 +52,7 @@ export const createPatchResource = async (
   const resourceCount = await prisma.patch_resource.count({
     where: { user_id: uid }
   })
-  const needApproval =
-    userRole === 1 || (userRole === 2 && resourceCount === 0)
+  const needApproval = userRole === 1 || (userRole === 2 && resourceCount === 0)
 
   let res: string
   let code = resourceData.code
@@ -71,7 +70,7 @@ export const createPatchResource = async (
 
   const resourceTypeName = section === 'galgame' ? '游戏资源' : '补丁资源'
 
-  const { resource, shouldClearCache } = await prisma.$transaction(
+  const { resource, uniqueIdToClear } = await prisma.$transaction(
     async (prisma) => {
       const newResource = await prisma.patch_resource.create({
         data: {
@@ -103,25 +102,10 @@ export const createPatchResource = async (
         data: { moemoepoint: { increment: 3 } }
       })
 
-      if (currentPatch) {
-        const updatedTypes = [...new Set(currentPatch.type.concat(type))]
-        const updatedLanguages = [
-          ...new Set(currentPatch.language.concat(language))
-        ]
-        const updatedPlatforms = [
-          ...new Set(currentPatch.platform.concat(platform))
-        ]
-
-        await prisma.patch.update({
-          where: { id: patchId },
-          data: {
-            resource_update_time: new Date(),
-            type: { set: updatedTypes },
-            language: { set: updatedLanguages },
-            platform: { set: updatedPlatforms }
-          }
-        })
-      }
+      const uniqueIdToClear =
+        currentPatch && !needApproval
+          ? await updatePatchAttributes(patchId, prisma)
+          : null
 
       const resource: PatchResource = {
         id: newResource.id,
@@ -154,12 +138,12 @@ export const createPatchResource = async (
         }
       }
 
-      return { resource, shouldClearCache: Boolean(currentPatch && !needApproval) }
+      return { resource, uniqueIdToClear }
     }
   )
 
-  if (shouldClearCache && currentPatch) {
-    await deletePatchResourceCache(currentPatch.unique_id)
+  if (uniqueIdToClear) {
+    await deletePatchResourceCache(uniqueIdToClear)
   }
 
   if (needApproval) {
