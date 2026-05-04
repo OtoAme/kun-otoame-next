@@ -1,5 +1,14 @@
+import { randomBytes } from 'crypto'
 import { delKv, getKv, setKv } from '~/lib/redis'
-import { generateRandomString } from '~/utils/random'
+import {
+  KUN_CAPTCHA_VERIFY_TOKEN_BYTES,
+  KUN_CAPTCHA_VERIFY_TOKEN_TTL_SECONDS,
+  kunCaptchaVerifyTokenRegex
+} from '~/constants/captcha'
+
+const generateCaptchaVerifyToken = () => {
+  return randomBytes(KUN_CAPTCHA_VERIFY_TOKEN_BYTES).toString('hex')
+}
 
 export const verifyCaptcha = async (
   sessionId: string,
@@ -22,16 +31,25 @@ export const verifyCaptcha = async (
     return '哎呀，认错人了哦，请再仔细看看~'
   }
 
-  const randomCode = generateRandomString(10)
-  await setKv(`captcha:verify:${randomCode}`, 'captcha', 60 * 60)
+  const randomCode = generateCaptchaVerifyToken()
+  await setKv(
+    `captcha:verify:${randomCode}`,
+    'captcha',
+    KUN_CAPTCHA_VERIFY_TOKEN_TTL_SECONDS
+  )
 
   return { code: randomCode }
 }
 
 export const checkCaptchaExist = async (sessionId: string) => {
-  const captcha = await getKv(`captcha:verify:${sessionId}`)
+  const captchaToken = sessionId.trim()
+  if (!kunCaptchaVerifyTokenRegex.test(captchaToken)) {
+    return
+  }
+
+  const captcha = await getKv(`captcha:verify:${captchaToken}`)
   if (captcha) {
-    await delKv(`captcha:verify:${sessionId}`)
+    await delKv(`captcha:verify:${captchaToken}`)
     return captcha
   }
 }
