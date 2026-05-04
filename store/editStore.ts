@@ -39,6 +39,10 @@ interface StoreState {
   resetData: () => void
 }
 
+type PersistedStoreState = Partial<StoreState> & {
+  data?: Partial<CreatePatchData>
+}
+
 export const createPatchEditStoreKey = 'kun-patch-edit-store'
 
 const initialState: CreatePatchData = {
@@ -76,7 +80,20 @@ export const useCreatePatchStore = create<StoreState>()(
     }),
     {
       name: 'kun-patch-edit-store',
-      storage: createJSONStorage(() => window.localStorage)
+      storage: createJSONStorage(() => window.localStorage),
+      merge: (persistedState, currentState) => {
+        const persisted = persistedState as PersistedStoreState | undefined
+        const current = currentState as StoreState
+
+        return {
+          ...current,
+          ...(persisted ?? {}),
+          data: {
+            ...initialState,
+            ...(persisted?.data ?? {})
+          }
+        }
+      }
     }
   ) as any
 )
