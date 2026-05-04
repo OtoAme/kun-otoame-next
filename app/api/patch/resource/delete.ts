@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { deleteFileFromS3 } from '~/lib/s3'
 import { prisma } from '~/prisma/index'
-import { updatePatchAttributes } from './_helper'
+import { deletePatchResourceCache, updatePatchAttributes } from './_helper'
 
 const resourceIdSchema = z.object({
   resourceId: z.coerce
@@ -33,7 +33,7 @@ export const deleteResource = async (
     await deleteFileFromS3(s3Key)
   }
 
-  return await prisma.$transaction(async (prisma) => {
+  const uniqueId = await prisma.$transaction(async (prisma) => {
     await prisma.user.update({
       where: { id: resourceUserUid },
       data: { moemoepoint: { increment: -3 } }
@@ -43,8 +43,10 @@ export const deleteResource = async (
       where: { id: input.resourceId }
     })
 
-    await updatePatchAttributes(patchResource.patch_id, prisma)
-
-    return {}
+    return await updatePatchAttributes(patchResource.patch_id, prisma)
   })
+
+  await deletePatchResourceCache(uniqueId)
+
+  return {}
 }

@@ -2,15 +2,15 @@
 
 import { z } from 'zod'
 import { safeParseSchema } from '~/utils/actions/safeParseSchema'
-import { adminPaginationSchema } from '~/validations/admin'
-import { getGalgame } from '~/app/api/admin/otomegame/route'
+import { adminGalgamePaginationSchema } from '~/validations/admin'
+import { getGalgame } from '~/app/api/admin/otomegame/service'
 import { getNSFWHeader } from '~/utils/actions/getNSFWHeader'
 import { verifyHeaderCookie } from '~/utils/actions/verifyHeaderCookie'
 
 export const kunGetActions = async (
-  params: z.infer<typeof adminPaginationSchema>
+  params: z.input<typeof adminGalgamePaginationSchema>
 ) => {
-  const input = safeParseSchema(adminPaginationSchema, params)
+  const input = safeParseSchema(adminGalgamePaginationSchema, params)
   if (typeof input === 'string') {
     return input
   }
@@ -18,8 +18,8 @@ export const kunGetActions = async (
   if (!payload) {
     return '用户登陆失效'
   }
-  if (payload.role < 3) {
-    return '本页面仅管理员可访问'
+  if (payload.role < 4) {
+    return '本页面仅超级管理员可访问'
   }
 
   const nsfwEnable = await getNSFWHeader()

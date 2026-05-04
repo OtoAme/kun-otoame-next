@@ -1,6 +1,5 @@
 import { Button } from '@heroui/button'
 import { Tooltip } from '@heroui/tooltip'
-import { Link } from '@heroui/link'
 import { Card, CardBody } from '@heroui/card'
 import { Chip } from '@heroui/chip'
 import { Sparkles, Mail } from 'lucide-react'
@@ -10,6 +9,7 @@ import { RandomGalgameButton } from '../carousel/RandomGalgameButton'
 import { Telegram } from '~/components/kun/icons/Telegram'
 import { KunHomeNavigationItems } from '../NavigationItems'
 import { kunMoyuMoe } from '~/config/moyu-moe'
+import NextLink from 'next/link'
 
 export const HomeHero = () => {
   const posts = getKunPosts()
@@ -43,8 +43,7 @@ export const HomeHero = () => {
                 <Tooltip showArrow content="Telegram 频道">
                   <Button
                     isIconOnly
-                    isExternal
-                    as={Link}
+                    as={NextLink}
                     href={kunMoyuMoe.domain.telegram_group}
                     variant="flat"
                     color="secondary"
@@ -55,8 +54,7 @@ export const HomeHero = () => {
                 <Tooltip showArrow content="联系我们">
                   <Button
                     isIconOnly
-                    isExternal
-                    as={Link}
+                    as={NextLink}
                     href="mailto:contact@otoame.com"
                     variant="flat"
                     color="secondary"

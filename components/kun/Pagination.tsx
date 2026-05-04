@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Button, Input } from '@heroui/react'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 import type { KeyboardEvent } from 'react'
@@ -10,23 +10,26 @@ interface Props {
   page: number
   onPageChange: (page: number) => void
   isLoading?: boolean
+  disableScrollToTop?: boolean
 }
 
 export const KunPagination = ({
   total,
   onPageChange,
   page,
-  isLoading = false
+  isLoading = false,
+  disableScrollToTop = false
 }: Props) => {
   const [isEditing, setIsEditing] = useState(false)
   const [inputValue, setInputValue] = useState(String(page))
+  const previousLoadingRef = useRef(isLoading)
 
   useEffect(() => {
     setInputValue(String(page))
   }, [page])
 
   useEffect(() => {
-    if (!isLoading) {
+    if (previousLoadingRef.current && !isLoading && !disableScrollToTop) {
       // Compatible FireFox Browser, because the render mechanism are difference
       setTimeout(() => {
         window.scrollTo({
@@ -35,7 +38,8 @@ export const KunPagination = ({
         })
       }, 0)
     }
-  }, [isLoading])
+    previousLoadingRef.current = isLoading
+  }, [disableScrollToTop, isLoading])
 
   const handlePageChange = (newPage: number) => {
     if (newPage >= 1 && newPage <= total) {

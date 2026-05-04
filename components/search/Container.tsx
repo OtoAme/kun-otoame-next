@@ -1,10 +1,11 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import Image from 'next/image'
+import { useEffect, useRef, useState } from 'react'
 import { KunLoading } from '~/components/kun/Loading'
 import { kunFetchPost } from '~/utils/kunFetch'
+import { errorReporter, kunErrorHandler } from '~/utils/kunErrorHandler'
 import { KunHeader } from '~/components/kun/Header'
-import { KunNull } from '~/components/kun/Null'
 import { GalgameCard } from '~/components/galgame/Card'
 import { useSearchStore } from '~/store/searchStore'
 import { SearchHistory } from './SearchHistory'
@@ -21,6 +22,8 @@ import type { SortField, SortOrder } from '~/components/galgame/_sort'
 const MAX_HISTORY_ITEMS = 10
 
 export const SearchPage = () => {
+  const inputRef = useRef<HTMLInputElement | null>(null)
+  const latestSearchRequestIdRef = useRef(0)
   const [query, setQuery] = useState('')
   const [debouncedQuery] = useDebounce(query, 500)
   const [hasSearched, setHasSearched] = useState(false)
@@ -40,6 +43,8 @@ export const SearchPage = () => {
   const [sortOrder, setSortOrder] = useState<SortOrder>('desc')
   const [selectedYears, setSelectedYears] = useState<string[]>(['all'])
   const [selectedMonths, setSelectedMonths] = useState<string[]>(['all'])
+  const [minRatingCount, setMinRatingCount] = useState(10)
+  const [debouncedMinRatingCount] = useDebounce(minRatingCount, 400)
 
   const [showHistory, setShowHistory] = useState(false)
   const searchData = useSearchStore((state) => state.data)
@@ -49,15 +54,25 @@ export const SearchPage = () => {
   const isNSFWEnabled =
     settings.kunNsfwEnable === 'nsfw' || settings.kunNsfwEnable === 'all'
 
-  const addToHistory = (searchQueries: string[]) => {
-    const validQueries = searchQueries.filter((q) => q.trim())
-    if (validQueries.length === 0) {
+  const addToHistory = (suggestions: SearchSuggestionType[]) => {
+    if (suggestions.length === 0) {
       return
     }
 
+    const entryKey = suggestions
+      .map((s) => `${s.mode}:${s.type}:${s.name}`)
+      .sort()
+      .join('|')
+
     const newHistory = [
-      ...validQueries,
-      ...searchData.searchHistory.filter((item) => !validQueries.includes(item))
+      suggestions,
+      ...searchData.searchHistory.filter((item) => {
+        const itemKey = item
+          .map((s) => `${s.mode}:${s.type}:${s.name}`)
+          .sort()
+          .join('|')
+        return itemKey !== entryKey
+      })
     ].slice(0, MAX_HISTORY_ITEMS)
 
     setSearchData({ ...searchData, searchHistory: newHistory })
@@ -68,51 +83,83 @@ export const SearchPage = () => {
       return
     }
 
+    const requestId = latestSearchRequestIdRef.current + 1
+    latestSearchRequestIdRef.current = requestId
+
     setLoading(true)
     setShowHistory(false)
     setShowSuggestions(false)
 
-    const { galgames, total } = await kunFetchPost<{
-      galgames: GalgameCard[]
-      total: number
-    }>('/search', {
-      queryString: JSON.stringify(selectedSuggestions),
-      limit: 12,
-      searchOption: {
-        searchInIntroduction: searchData.searchInIntroduction,
-        searchInAlias: searchData.searchInAlias,
-        searchInTag: searchData.searchInTag
-      },
+    try {
+      const response = await kunFetchPost<
+        | {
+            galgames: GalgameCard[]
+            total: number
+          }
+        | string
+      >('/search', {
+        queryString: JSON.stringify(selectedSuggestions),
+        limit: 12,
+        searchOption: {
+          searchInIntroduction: searchData.searchInIntroduction,
+          searchInAlias: searchData.searchInAlias,
+          searchInTag: searchData.searchInTag
+        },
 
-      page: currentPage,
-      selectedType,
-      selectedLanguage,
-      selectedPlatform,
-      sortField,
-      sortOrder,
-      selectedYears,
-      selectedMonths
-    })
+        page: currentPage,
+        selectedType,
+        selectedLanguage,
+        selectedPlatform,
+        sortField,
+        sortOrder,
+        selectedYears,
+        selectedMonths,
+        minRatingCount: sortField === 'rating' ? debouncedMinRatingCount : 0
+      })
 
-    setPatches(galgames)
-    setTotal(total)
-    setHasSearched(true)
-    setLoading(false)
+      if (requestId !== latestSearchRequestIdRef.current) {
+        return
+      }
 
-    const hasTag = selectedSuggestions.some((s) => s.type === 'tag')
-    if (!hasTag) {
-      addToHistory(
-        selectedSuggestions
-          .filter((s) => s.type === 'keyword')
-          .map((s) => s.name)
-      )
+      if (typeof response === 'string') {
+        kunErrorHandler(response, () => {})
+        setPatches([])
+        setTotal(0)
+        setHasSearched(true)
+        return
+      }
+
+      setPatches(Array.isArray(response.galgames) ? response.galgames : [])
+      setTotal(typeof response.total === 'number' ? response.total : 0)
+      setHasSearched(true)
+      addToHistory(selectedSuggestions)
+    } catch (error) {
+      if (requestId !== latestSearchRequestIdRef.current) {
+        return
+      }
+
+      setPatches([])
+      setTotal(0)
+      setHasSearched(true)
+      errorReporter(error)
+    } finally {
+      if (requestId === latestSearchRequestIdRef.current) {
+        setLoading(false)
+      }
     }
   }
+
+  useEffect(() => {
+    return () => {
+      latestSearchRequestIdRef.current += 1
+    }
+  }, [])
 
   useEffect(() => {
     if (selectedSuggestions.length) {
       handleSearch()
     } else {
+      latestSearchRequestIdRef.current += 1
       setPatches([])
       setHasSearched(false)
       setPage(1)
@@ -128,6 +175,7 @@ export const SearchPage = () => {
     sortOrder,
     selectedYears,
     selectedMonths,
+    sortField === 'rating' ? debouncedMinRatingCount : null,
     selectedSuggestions,
     searchData.searchInAlias,
     searchData.searchInIntroduction,
@@ -141,6 +189,7 @@ export const SearchPage = () => {
         headerEndContent={<SearchOption />}
         endContent={
           <div className="text-default-500">
+            <p>使用游戏标题的一部分作为关键词搜索更容易找到游戏。</p>
             <p>
               输入内容并点击搜索按钮以搜索 OtomeGame,
               搜索设置默认搜索游戏标题和别名。
@@ -164,6 +213,7 @@ export const SearchPage = () => {
 
       {showSuggestions && (
         <SearchSuggestion
+          inputRef={inputRef}
           query={debouncedQuery}
           setQuery={setQuery}
           setSelectedSuggestions={setSelectedSuggestions}
@@ -191,6 +241,8 @@ export const SearchPage = () => {
         setSelectedYears={setSelectedYears}
         selectedMonths={selectedMonths}
         setSelectedMonths={setSelectedMonths}
+        minRatingCount={minRatingCount}
+        setMinRatingCount={setMinRatingCount}
       />
 
       {loading ? (
@@ -215,13 +267,24 @@ export const SearchPage = () => {
           )}
 
           {hasSearched && patches.length === 0 && (
-            <KunNull
-              message={
-                isNSFWEnabled
-                  ? '您已启用显示 NSFW 内容, 但未找到相关内容, 请尝试使用游戏的日文原名搜索'
-                  : '未找到相关内容, 请尝试使用游戏的日文原名搜索或打开 NSFW'
-              }
-            />
+            <div className="flex flex-col items-center justify-center space-y-4 size-full">
+              <Image
+                className="rounded-2xl"
+                src="/null.webp"
+                alt="未找到相关内容"
+                width={150}
+                height={150}
+                priority
+              />
+              <div className="space-y-1 text-center">
+                <p>未找到相关内容</p>
+                <p>
+                  {isNSFWEnabled
+                    ? '请尝试使用游戏的日文原名搜索'
+                    : '请尝试使用游戏的日文原名搜索或打开 NSFW'}
+                </p>
+              </div>
+            </div>
           )}
         </div>
       )}

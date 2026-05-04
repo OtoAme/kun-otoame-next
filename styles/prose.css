@@ -11,6 +11,10 @@
   @apply m-0;
 }
 
+.kun-comment-content p {
+  white-space: pre-line;
+}
+
 /* Links */
 .kun-prose a {
   @apply text-primary-500 underline decoration-primary-200 underline-offset-2 font-medium
@@ -116,6 +120,20 @@
 
 .kun-prose img {
   @apply rounded-lg shadow-md border border-default-200;
+}
+
+.kun-comment-content img {
+  display: block;
+  width: auto;
+  height: auto;
+  max-width: min(100%, 32rem);
+  max-height: 24rem;
+  object-fit: contain;
+  margin: 0.75rem 0;
+}
+
+.kun-comment-content p {
+  white-space: pre-line;
 }
 
 .kun-prose figure {

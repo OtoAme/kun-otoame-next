@@ -9,6 +9,10 @@ export const uploadPatchBanner = async (
   id: number,
   originalImage?: ArrayBuffer
 ) => {
+  if (image.byteLength === 0 || originalImage?.byteLength === 0) {
+    return '上传文件不能为空'
+  }
+
   const banner = await sharp(image)
     .resize(1920, 1080, {
       fit: 'inside',

@@ -1,3 +1,7 @@
+export const KUN_CAPTCHA_VERIFY_TOKEN_BYTES = 16
+export const KUN_CAPTCHA_VERIFY_TOKEN_TTL_SECONDS = 60 * 60
+export const kunCaptchaVerifyTokenRegex = /^[a-f0-9]{32}$/
+
 export const kunCaptchaErrorMessageMap: Record<number, string> = {
   1: '咦？连自家的 白毛推 都认不出来了吗？',
   2: '是不是挑花眼了？醒醒呀公主殿下！',

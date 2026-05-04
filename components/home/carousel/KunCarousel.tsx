@@ -10,7 +10,7 @@ import { KunHomeNavigationItems } from '../NavigationItems'
 import type { HomeCarouselMetadata } from './mdx'
 
 interface KunCarouselProps {
-  posts: HomeCarouselMetadata[]
+  posts: readonly HomeCarouselMetadata[]
 }
 
 export const KunCarousel = ({ posts }: KunCarouselProps) => {
@@ -18,13 +18,6 @@ export const KunCarousel = ({ posts }: KunCarouselProps) => {
   const [isHovered, setIsHovered] = useState(false)
   const [direction, setDirection] = useState(0)
   const [isPageVisible, setIsPageVisible] = useState(true)
-
-  useEffect(() => {
-    posts.forEach((post) => {
-      const img = new Image()
-      img.src = post.banner
-    })
-  }, [posts])
 
   useEffect(() => {
     const handleVisibility = () => {
@@ -65,6 +58,24 @@ export const KunCarousel = ({ posts }: KunCarouselProps) => {
     return () => clearInterval(timer)
   }, [isHovered, isPageVisible, posts.length])
 
+  useEffect(() => {
+    if (posts.length < 2) {
+      return
+    }
+
+    const preloadRestImages = () => {
+      posts.slice(1).forEach((post) => {
+        const image = new window.Image()
+        image.decoding = 'async'
+        image.fetchPriority = 'low'
+        image.src = post.banner
+      })
+    }
+
+    const timeoutId = window.setTimeout(preloadRestImages, 1500)
+    return () => window.clearTimeout(timeoutId)
+  }, [posts])
+
   const slideVariants = {
     enter: (direction: number) => ({
       x: direction > 0 ? '100%' : '-100%',
@@ -91,9 +102,43 @@ export const KunCarousel = ({ posts }: KunCarouselProps) => {
   }
 
   const paginate = (newDirection: number) => {
+    if (posts.length === 0) {
+      return
+    }
+
     setDirection(newDirection)
     setCurrentSlide(
       (prev) => (prev + newDirection + posts.length) % posts.length
+    )
+  }
+
+  if (posts.length === 0) {
+    return (
+      <div className="relative h-[300px] overflow-hidden group touch-pan-y flex items-end">
+        <div className="absolute inset-0 hidden sm:flex items-center justify-center rounded-2xl border border-default-200 bg-default-50/60 text-default-500">
+          暂无可展示的置顶文章
+        </div>
+
+        <div className="z-10 w-full py-3 space-y-3 sm:hidden">
+          <div className="flex items-center justify-center rounded-2xl border border-default-200 bg-default-50/60 px-4 py-6 text-sm text-default-500">
+            暂无可展示的置顶文章
+          </div>
+
+          <RandomGalgameButton
+            className="shadow-md"
+            color="primary"
+            variant="flat"
+            size="sm"
+            fullWidth
+          >
+            随机一部游戏
+          </RandomGalgameButton>
+
+          <div className="grid grid-cols-3 gap-3 sm:hidden sm:gap-6">
+            <KunHomeNavigationItems buttonSize="sm" />
+          </div>
+        </div>
+      </div>
     )
   }
 
@@ -108,7 +153,7 @@ export const KunCarousel = ({ posts }: KunCarouselProps) => {
           key={currentSlide}
           custom={direction}
           variants={slideVariants}
-          initial="enter"
+          initial={direction === 0 ? false : 'enter'}
           animate="center"
           exit="exit"
           transition={{
@@ -155,6 +200,7 @@ export const KunCarousel = ({ posts }: KunCarouselProps) => {
       <button
         className="absolute left-2 top-1/2 -translate-y-1/2 bg-background/20 hover:bg-background/40 p-1.5 rounded-full backdrop-blur-sm transition-all opacity-0 group-hover:opacity-100 touch:opacity-100 z-10"
         onClick={() => paginate(-1)}
+        aria-label="上一张幻灯片"
       >
         <ChevronLeft className="w-4 h-4" />
       </button>
@@ -162,6 +208,7 @@ export const KunCarousel = ({ posts }: KunCarouselProps) => {
       <button
         className="absolute right-2 top-1/2 -translate-y-1/2 bg-background/20 hover:bg-background/40 p-1.5 rounded-full backdrop-blur-sm transition-all opacity-0 group-hover:opacity-100 touch:opacity-100 z-10"
         onClick={() => paginate(1)}
+        aria-label="下一张幻灯片"
       >
         <ChevronRight className="w-4 h-4" />
       </button>
@@ -179,6 +226,7 @@ export const KunCarousel = ({ posts }: KunCarouselProps) => {
               setDirection(index > currentSlide ? 1 : -1)
               setCurrentSlide(index)
             }}
+            aria-label={`跳转到第 ${index + 1} 张幻灯片`}
           />
         ))}
       </div>

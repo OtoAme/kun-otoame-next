@@ -3,11 +3,11 @@
 import { z } from 'zod'
 import { safeParseSchema } from '~/utils/actions/safeParseSchema'
 import { adminReportPaginationSchema } from '~/validations/admin'
-import { getReport } from '~/app/api/admin/report/route'
+import { getReport } from '~/app/api/admin/report/service'
 import { verifyHeaderCookie } from '~/utils/actions/verifyHeaderCookie'
 
 export const kunGetActions = async (
-  params: z.infer<typeof adminReportPaginationSchema>
+  params: z.input<typeof adminReportPaginationSchema>
 ) => {
   const input = safeParseSchema(adminReportPaginationSchema, params)
   if (typeof input === 'string') {
@@ -17,8 +17,8 @@ export const kunGetActions = async (
   if (!payload) {
     return '用户登陆失效'
   }
-  if (payload.role < 3) {
-    return '本页面仅管理员可访问'
+  if (payload.role < 4) {
+    return '本页面仅超级管理员可访问'
   }
 
   const response = await getReport(input)

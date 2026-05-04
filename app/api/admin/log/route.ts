@@ -1,43 +1,8 @@
-import { z } from 'zod'
 import { NextRequest, NextResponse } from 'next/server'
 import { kunParseGetQuery } from '~/app/api/utils/parseQuery'
 import { verifyHeaderCookie } from '~/middleware/_verifyHeaderCookie'
-import { prisma } from '~/prisma/index'
 import { adminPaginationSchema } from '~/validations/admin'
-import type { AdminLog } from '~/types/api/admin'
-
-export const getLog = async (input: z.infer<typeof adminPaginationSchema>) => {
-  const { page, limit } = input
-  const offset = (page - 1) * limit
-
-  const [data, total] = await Promise.all([
-    prisma.admin_log.findMany({
-      take: limit,
-      skip: offset,
-      orderBy: { created: 'desc' },
-      include: {
-        user: {
-          select: {
-            id: true,
-            name: true,
-            avatar: true
-          }
-        }
-      }
-    }),
-    prisma.admin_log.count()
-  ])
-
-  const logs: AdminLog[] = data.map((log) => ({
-    id: log.id,
-    type: log.type,
-    user: log.user,
-    content: log.content,
-    created: log.created
-  }))
-
-  return { logs, total }
-}
+import { getLog } from './service'
 
 export async function GET(req: NextRequest) {
   const input = kunParseGetQuery(req, adminPaginationSchema)
@@ -48,8 +13,8 @@ export async function GET(req: NextRequest) {
   if (!payload) {
     return NextResponse.json('用户未登录')
   }
-  if (payload.role < 3) {
-    return NextResponse.json('杂鱼~本页面仅管理员可访问')
+  if (payload.role < 4) {
+    return NextResponse.json('本页面仅超级管理员可访问')
   }
 
   const res = await getLog(input)

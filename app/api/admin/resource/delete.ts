@@ -1,6 +1,11 @@
 import { z } from 'zod'
 import { deleteFileFromS3 } from '~/lib/s3'
 import { prisma } from '~/prisma/index'
+import {
+  deletePatchResourceCache,
+  sanitizeResourceForAuditLog,
+  updatePatchAttributes
+} from '~/app/api/patch/resource/_helper'
 
 const resourceIdSchema = z.object({
   resourceId: z.coerce
@@ -22,7 +27,8 @@ export const deleteResource = async (
     include: {
       patch: {
         select: {
-          name: true
+          name: true,
+          unique_id: true
         }
       }
     }
@@ -37,19 +43,26 @@ export const deleteResource = async (
     await deleteFileFromS3(s3Key)
   }
 
-  return prisma.$transaction(async (prisma) => {
+  const uniqueId = await prisma.$transaction(async (prisma) => {
     await prisma.patch_resource.delete({
       where: { id: input.resourceId }
     })
 
+    const uniqueId = await updatePatchAttributes(patchResource.patch_id, prisma)
+
+    const sanitizedResource = sanitizeResourceForAuditLog(patchResource)
     await prisma.admin_log.create({
       data: {
         type: 'delete',
         user_id: uid,
-        content: `管理员 ${admin.name} 删除了一个补丁资源\n\nOtomeGame 名:\n${patchResource.patch.name}\n\n补丁资源信息:\n${JSON.stringify(patchResource)}`
+        content: `管理员 ${admin.name} 删除了一个补丁资源\n\nOtomeGame 名:\n${patchResource.patch.name}\n\n补丁资源信息:\n${JSON.stringify(sanitizedResource)}`
       }
     })
 
-    return {}
+    return uniqueId
   })
+
+  await deletePatchResourceCache(uniqueId)
+
+  return {}
 }

@@ -1,9 +1,6 @@
-import { exec } from 'child_process'
-import { mkdir, readdir, copyFile } from 'fs/promises'
+import { execSync } from 'child_process'
+import { mkdir, readdir, copyFile, stat } from 'fs/promises'
 import path from 'path'
-import os from 'os'
-
-const isWindows: boolean = os.platform() === 'win32'
 
 const copyDirectory = async (src: string, dest: string): Promise<void> => {
   try {
@@ -26,48 +23,55 @@ const copyDirectory = async (src: string, dest: string): Promise<void> => {
   }
 }
 
+const copyRuntimeFile = async (src: string, dest: string): Promise<void> => {
+  try {
+    await mkdir(path.dirname(dest), { recursive: true })
+    await copyFile(src, dest)
+  } catch (error) {
+    console.error(`Error copying file from ${src} to ${dest}:`, error)
+    throw error
+  }
+}
+
+const assertExists = async (targetPath: string) => {
+  await stat(targetPath)
+}
+
+const waitForAllCopies = async (copyTasks: Promise<void>[]) => {
+  const results = await Promise.allSettled(copyTasks)
+  const rejectedResult = results.find((result) => result.status === 'rejected')
+
+  if (rejectedResult?.status === 'rejected') {
+    throw rejectedResult.reason
+  }
+}
+
 const copyFiles = async () => {
-  exec('pnpm build:sitemap', async (error, stdout, stderr) => {
-    if (error) {
-      console.error('Error generating sitemap:', error)
-      process.exit(1)
-    }
-    if (stdout) console.log(stdout)
-    if (stderr) console.error(stderr)
+  try {
+    execSync('pnpm build:sitemap', { stdio: 'inherit' })
 
-    try {
-      if (isWindows) {
-        console.log('Detected Windows OS. Using fs module for copying files.')
+    await waitForAllCopies([
+      copyDirectory('public', '.next/standalone/public'),
+      copyDirectory('.next/static', '.next/standalone/.next/static'),
+      copyDirectory('server/image', '.next/standalone/server/image'),
+      copyDirectory('posts', '.next/standalone/posts'),
+      copyRuntimeFile(
+        'config/redirect.json',
+        '.next/standalone/config/redirect.json'
+      )
+    ])
 
-        await copyDirectory('public', '.next/standalone/public')
-        await copyDirectory('.next/static', '.next/standalone/.next/static')
-        console.log('Files copied successfully.')
-      } else {
-        console.log(
-          'Detected non-Windows OS. Using cp command for copying files.'
-        )
+    await assertExists('.next/standalone/public/favicon.webp')
+    await assertExists('.next/standalone/public/sooner/こじかひわ.webp')
+    await assertExists('.next/standalone/server/image/auth/white')
+    await assertExists('.next/standalone/posts')
+    await assertExists('.next/standalone/config/redirect.json')
 
-        const commands: string[] = [
-          'cp -r public .next/standalone/',
-          'cp -r .next/static .next/standalone/.next/'
-        ]
-
-        for (const command of commands) {
-          exec(command, (error, stdout, stderr) => {
-            if (error) {
-              console.error(`Error executing command "${command}":`, error)
-              process.exit(1)
-            }
-            if (stdout) console.log(stdout)
-            if (stderr) console.error(stderr)
-          })
-        }
-      }
-    } catch (fsError) {
-      console.error('Error copying files:', fsError)
-      process.exit(1)
-    }
-  })
+    console.log('Files copied successfully.')
+  } catch (error) {
+    console.error('Error during postbuild:', error)
+    process.exit(1)
+  }
 }
 
 copyFiles()

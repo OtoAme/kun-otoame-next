@@ -61,16 +61,15 @@ export const patchCommentUpdateSchema = z.object({
 export const getPatchCommentSchema = z.object({
   patchId: z.coerce.number().min(1).max(9999999),
   page: z.coerce.number().min(1).max(9999999),
-  limit: z.coerce.number().min(1).max(50)
+  limit: z.coerce.number().min(1).max(50),
+  commentId: z.coerce.number().min(1).max(9999999).optional()
 })
 
 const patchResourceSchemaBase = z.object({
   patchId: z.coerce.number().min(1).max(9999999),
-  section: z
-    .string()
-    .refine((type) => SUPPORTED_RESOURCE_SECTION.includes(type), {
-      message: '资源链接类型仅能为 OtomeGame 或补丁'
-    }),
+  section: z.enum(SUPPORTED_RESOURCE_SECTION, {
+    message: '资源链接类型仅能为 OtomeGame 或补丁'
+  }),
   name: z.string().max(300, { message: '资源名称最多 300 个字符' }),
   storage: z.string().refine((type) => SUPPORTED_RESOURCE_LINK.includes(type), {
     message: '非法的资源链接类型'
@@ -207,6 +206,21 @@ export const createPatchFeedbackSchema = z.object({
 export const createPatchCommentReportSchema = z.object({
   commentId: z.coerce
     .number({ message: '评论 ID 必须为数字' })
+    .min(1)
+    .max(9999999),
+  patchId: z.coerce
+    .number({ message: '游戏 ID 必须为数字' })
+    .min(1)
+    .max(9999999),
+  content: z
+    .string({ message: '举报原因为必填字段' })
+    .min(2, { message: '举报原因最少 2 个字符' })
+    .max(5000, { message: '举报原因最多 5000 个字符' })
+})
+
+export const createPatchRatingReportSchema = z.object({
+  ratingId: z.coerce
+    .number({ message: '评价 ID 必须为数字' })
     .min(1)
     .max(9999999),
   patchId: z.coerce

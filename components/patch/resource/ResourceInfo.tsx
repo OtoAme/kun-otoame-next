@@ -2,6 +2,7 @@
 
 import { Snippet } from '@heroui/react'
 import { KunPatchAttribute } from '~/components/kun/PatchAttribute'
+import { splitResourceCodes } from '~/utils/resourceLink'
 import type { PatchResource } from '~/types/api/patch'
 
 interface Props {
@@ -9,6 +10,8 @@ interface Props {
 }
 
 export const ResourceInfo = ({ resource }: Props) => {
+  const codes = splitResourceCodes(resource.code)
+
   return (
     <div className="space-y-2">
       <KunPatchAttribute
@@ -18,19 +21,20 @@ export const ResourceInfo = ({ resource }: Props) => {
       />
 
       <div className="flex flex-wrap gap-2">
-        {resource.code && (
+        {codes.map((code, index) => (
           <Snippet
+            key={`${code}-${index}`}
             tooltipProps={{
-              content: '点击复制提取码'
+              content: `点击复制提取码 ${index + 1}`
             }}
             size="sm"
-            symbol="提取码"
+            symbol={`提取码${index + 1}`}
             color="primary"
             className="py-0"
           >
-            {resource.code}
+            {code}
           </Snippet>
-        )}
+        ))}
 
         {resource.password && (
           <Snippet

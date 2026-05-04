@@ -2,13 +2,13 @@
 
 import { z } from 'zod'
 import { safeParseSchema } from '~/utils/actions/safeParseSchema'
-import { getCompanyById } from '~/app/api/company/route'
-import { getPatchByCompany } from '~/app/api/company/otomegame/route'
+import { getCompanyById } from '~/app/api/company/service'
+import { getPatchByCompany } from '~/app/api/company/service'
 import {
   getCompanyByIdSchema,
   getPatchByCompanySchema
 } from '~/validations/company'
-import { getNSFWHeader } from '~/utils/actions/getNSFWHeader'
+import { getPatchVisibilityWhere } from '~/utils/actions/getPatchVisibilityWhere'
 
 export const kunGetCompanyByIdActions = async (
   params: z.infer<typeof getCompanyByIdSchema>
@@ -23,15 +23,15 @@ export const kunGetCompanyByIdActions = async (
 }
 
 export const kunCompanyGalgameActions = async (
-  params: z.infer<typeof getPatchByCompanySchema>
+  params: z.input<typeof getPatchByCompanySchema>
 ) => {
   const input = safeParseSchema(getPatchByCompanySchema, params)
   if (typeof input === 'string') {
     return input
   }
 
-  const nsfwEnable = await getNSFWHeader()
+  const visibilityWhere = await getPatchVisibilityWhere()
 
-  const response = await getPatchByCompany(input, nsfwEnable)
+  const response = await getPatchByCompany(input, visibilityWhere)
   return response
 }

@@ -90,6 +90,8 @@ jobs:
 
       - name: Build
         run: pnpm build
+        env:
+          KUN_DEPLOY_BUILD_SKIP_CHECKS: 'true'
 
       - name: Prepare Release Package
         run: |
@@ -119,6 +121,14 @@ jobs:
           # Copy public files
           mkdir -p release_temp/public
           cp -r public/. release_temp/public/
+
+          # Copy runtime assets used by the standalone server
+          mkdir -p release_temp/server/image
+          cp -r server/image/. release_temp/server/image/
+          mkdir -p release_temp/posts
+          cp -r posts/. release_temp/posts/
+          mkdir -p release_temp/config
+          cp config/redirect.json release_temp/config/redirect.json
 
           # Copy prisma schema for target-side generation
           cp -r prisma release_temp/

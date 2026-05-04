@@ -6,6 +6,10 @@ import 'yet-another-react-lightbox/styles.css'
 import { useMounted } from '~/hooks/useMounted'
 import { lightboxConfig } from './config'
 
+const shouldSkipLightbox = (img: HTMLImageElement) => {
+  return Boolean(img.closest('[data-no-lightbox], .yarl__portal'))
+}
+
 export const KunAutoImageViewer = () => {
   const [openImage, setOpenImage] = useState<string | null>(null)
   const [images, setImages] = useState<
@@ -18,47 +22,79 @@ export const KunAutoImageViewer = () => {
       return
     }
 
-    const checkImageDimensions = (img: HTMLImageElement) => {
-      if (img.dataset.noLightbox !== undefined) {
+    const processedImages = new Set<HTMLImageElement>()
+
+    const handleImageClick = (event: Event) => {
+      const currentTarget = event.currentTarget
+      if (!(currentTarget instanceof HTMLImageElement)) {
         return
       }
-      if (img.width >= 200 && img.height >= 200) {
+
+      setOpenImage(currentTarget.currentSrc || currentTarget.src)
+    }
+
+    const checkImageDimensions = (img: HTMLImageElement) => {
+      if (shouldSkipLightbox(img)) {
+        return
+      }
+
+      const rect = img.getBoundingClientRect()
+      const renderedWidth = rect.width || img.width
+      const renderedHeight = rect.height || img.height
+      const width = img.naturalWidth || renderedWidth
+      const height = img.naturalHeight || renderedHeight
+      const src = img.currentSrc || img.src
+
+      if (renderedWidth >= 200 && renderedHeight >= 200) {
         setImages((prev) => {
-          const exists = prev.some((image) => image.src === img.src)
+          const exists = prev.some((image) => image.src === src)
           if (!exists) {
-            return [
-              ...prev,
-              { src: img.src, width: img.width, height: img.height }
-            ]
+            return [...prev, { src, width, height }]
           }
           return prev
         })
 
-        img.style.cursor = 'pointer'
-        img.addEventListener('click', () => setOpenImage(img.src))
+        if (!processedImages.has(img)) {
+          processedImages.add(img)
+          img.style.cursor = 'pointer'
+          img.addEventListener('click', handleImageClick)
+        }
       }
+    }
+
+    const processImage = (img: HTMLImageElement) => {
+      if (img.complete) {
+        checkImageDimensions(img)
+        return
+      }
+
+      img.addEventListener('load', () => checkImageDimensions(img), {
+        once: true
+      })
+    }
+
+    const collectImages = (node: Node) => {
+      if (node instanceof HTMLImageElement) {
+        return [node]
+      }
+
+      if (node instanceof Element) {
+        return Array.from(node.querySelectorAll('img'))
+      }
+
+      return []
     }
 
     const observer = new MutationObserver((mutations) => {
       mutations.forEach((mutation) => {
         mutation.addedNodes.forEach((node) => {
-          if (node instanceof HTMLImageElement) {
-            if (node.complete) {
-              checkImageDimensions(node)
-            } else {
-              node.onload = () => checkImageDimensions(node)
-            }
-          }
+          collectImages(node).forEach(processImage)
         })
       })
     })
 
     document.querySelectorAll('img').forEach((img) => {
-      if (img.complete) {
-        checkImageDimensions(img)
-      } else {
-        img.onload = () => checkImageDimensions(img)
-      }
+      processImage(img)
     })
 
     observer.observe(document.body, {
@@ -68,6 +104,9 @@ export const KunAutoImageViewer = () => {
 
     return () => {
       observer.disconnect()
+      processedImages.forEach((img) => {
+        img.removeEventListener('click', handleImageClick)
+      })
     }
   }, [isMounted])
 

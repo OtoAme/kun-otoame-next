@@ -3,9 +3,11 @@ import { prisma } from '~/prisma/index'
 import { patchResourceUpdateSchema } from '~/validations/patch'
 import {
   deletePatchResource,
+  deletePatchResourceCache,
   uploadPatchResource,
   updatePatchAttributes
 } from './_helper'
+import { mergeResourceCodes, normalizeResourceContent } from '~/utils/resourceLink'
 import type { PatchResource } from '~/types/api/patch'
 
 export const updatePatchResource = async (
@@ -40,8 +42,11 @@ export const updatePatchResource = async (
   }
 
   let newContent: string
+  let code = resourceData.code
   if (resource.storage !== 's3' || resource.content === content) {
-    newContent = content
+    const normalizedResource = normalizeResourceContent(content)
+    newContent = normalizedResource.content
+    code = mergeResourceCodes(code, normalizedResource.code)
   } else {
     await deletePatchResource(
       resource.content,
@@ -55,61 +60,69 @@ export const updatePatchResource = async (
     newContent = result.downloadLink
   }
 
-  return await prisma.$transaction(async (prisma) => {
-    const newResource = await prisma.patch_resource.update({
-      where: { id: resourceId, user_id: resourceUserUid },
-      data: {
-        content: newContent,
-        ...resourceData
-      },
-      include: {
-        user: {
-          include: {
-            _count: {
-              select: { patch_resource: true }
+  const { resourceResponse, uniqueId } = await prisma.$transaction(
+    async (prisma) => {
+      const newResource = await prisma.patch_resource.update({
+        where: { id: resourceId, user_id: resourceUserUid },
+        data: {
+          content: newContent,
+          ...resourceData,
+          code
+        },
+        include: {
+          user: {
+            include: {
+              _count: {
+                select: { patch_resource: true }
+              }
+            }
+          },
+          patch: {
+            select: {
+              unique_id: true
             }
           }
-        },
-        patch: {
-          select: {
-            unique_id: true
-          }
+        }
+      })
+
+      const uniqueId = await updatePatchAttributes(patchId, prisma)
+
+      const resourceResponse: PatchResource = {
+        id: newResource.id,
+        name: newResource.name,
+        section: newResource.section,
+        uniqueId: newResource.patch.unique_id,
+        storage: newResource.storage,
+        size: newResource.size,
+        type: newResource.type,
+        language: newResource.language,
+        note: newResource.note,
+        hash: newResource.hash,
+        content: newResource.content,
+        code: newResource.code,
+        password: newResource.password,
+        platform: newResource.platform,
+        download: newResource.download,
+        likeCount: 0,
+        isLike: false,
+        status: newResource.status,
+        userId: newResource.user_id,
+        patchId: newResource.patch_id,
+        created: String(newResource.created),
+        user: {
+          id: newResource.user.id,
+          name: newResource.user.name,
+          avatar: newResource.user.avatar,
+          patchCount: newResource.user._count.patch_resource,
+          role: newResource.user.role
         }
       }
-    })
 
-    await updatePatchAttributes(patchId, prisma)
-
-    const resourceResponse: PatchResource = {
-      id: newResource.id,
-      name: newResource.name,
-      section: newResource.section,
-      uniqueId: newResource.patch.unique_id,
-      storage: newResource.storage,
-      size: newResource.size,
-      type: newResource.type,
-      language: newResource.language,
-      note: newResource.note,
-      hash: newResource.hash,
-      content: newResource.content,
-      code: newResource.code,
-      password: newResource.password,
-      platform: newResource.platform,
-      likeCount: 0,
-      isLike: false,
-      status: newResource.status,
-      userId: newResource.user_id,
-      patchId: newResource.patch_id,
-      created: String(newResource.created),
-      user: {
-        id: newResource.user.id,
-        name: newResource.user.name,
-        avatar: newResource.user.avatar,
-        patchCount: newResource.user._count.patch_resource,
-        role: newResource.user.role
-      }
+      return { resourceResponse, uniqueId }
     }
+  )
 
-    return resourceResponse
-  })
+  await deletePatchResourceCache(uniqueId)
+
+  return resourceResponse
 }

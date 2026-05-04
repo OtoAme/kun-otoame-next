@@ -7,6 +7,7 @@ const redisMocks = vi.hoisted(() => {
     set: vi.fn(),
     setex: vi.fn(),
     del: vi.fn(),
+    scan: vi.fn()
   }
 })
 
@@ -21,7 +22,7 @@ vi.mock('ioredis', () => {
   }
 })
 
-import { getOrSet } from '~/lib/redis'
+import { delKvPattern, getOrSet } from '~/lib/redis'
 
 describe('getOrSet', () => {
   beforeEach(() => {
@@ -96,5 +97,48 @@ describe('getOrSet', () => {
 
     expect(result).toEqual(data)
     expect(fetcher).toHaveBeenCalled()
+  })
+})
+
+describe('delKvPattern', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('should delete matched keys across scan pages', async () => {
+    redisMocks.scan
+      .mockResolvedValueOnce(['1', ['kun:touchgal:home_data:a']])
+      .mockResolvedValueOnce([
+        '0',
+        ['kun:touchgal:home_data:b', 'kun:touchgal:home_data:c']
+      ])
+
+    await delKvPattern('home_data:*')
+
+    expect(redisMocks.scan).toHaveBeenNthCalledWith(
+      1,
+      '0',
+      'MATCH',
+      'kun:touchgal:home_data:*',
+      'COUNT',
+      100
+    )
+    expect(redisMocks.scan).toHaveBeenNthCalledWith(
+      2,
+      '1',
+      'MATCH',
+      'kun:touchgal:home_data:*',
+      'COUNT',
+      100
+    )
+    expect(redisMocks.del).toHaveBeenNthCalledWith(
+      1,
+      'kun:touchgal:home_data:a'
+    )
+    expect(redisMocks.del).toHaveBeenNthCalledWith(
+      2,
+      'kun:touchgal:home_data:b',
+      'kun:touchgal:home_data:c'
+    )
   })
 })

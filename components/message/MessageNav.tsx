@@ -8,6 +8,8 @@ import { Card, CardBody } from '@heroui/card'
 import { usePathname } from 'next/navigation'
 import Link from 'next/link'
 import toast from 'react-hot-toast'
+import { useMessageStore } from '~/store/messageStore'
+import type { MessageUnreadStatus } from '~/types/api/message'
 
 const notificationSubTypes = [
   { type: 'notice', label: '全部消息', icon: Bell, href: '/message/notice' },
@@ -38,6 +40,9 @@ export const MessageNav = () => {
 
   const [hasUnreadMessages, setHasUnreadMessages] = useState(false)
   const [hasUnreadChat, setHasUnreadChat] = useState(false)
+  const setUnreadMessageStatus = useMessageStore(
+    (state) => state.setUnreadMessageStatus
+  )
 
   useEffect(() => {
     const fetchUnread = async () => {
@@ -59,9 +64,12 @@ export const MessageNav = () => {
     }
     setHasUnreadMessages(false)
     const readAllMessage = async () => {
-      const res = await kunFetchPut<KunResponse<{}>>('/message/read')
+      const res =
+        await kunFetchPut<KunResponse<MessageUnreadStatus>>('/message/read')
       if (typeof res === 'string') {
         toast.error(res)
+      } else {
+        setUnreadMessageStatus(res)
       }
     }
     readAllMessage()

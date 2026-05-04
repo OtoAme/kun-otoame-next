@@ -11,8 +11,10 @@ import {
   Mail,
   MessageCircleQuestion,
   MessageSquare,
+  OctagonAlert,
   Puzzle,
   Settings,
+  Star,
   TriangleAlert,
   Users
 } from 'lucide-react'
@@ -54,6 +56,11 @@ const menuItems = [
     icon: MessageSquare
   },
   {
+    name: '评价管理',
+    href: '/admin/rating',
+    icon: Star
+  },
+  {
     name: '游戏反馈管理',
     href: '/admin/feedback',
     icon: MessageCircleQuestion
@@ -62,6 +69,11 @@ const menuItems = [
     name: '评论举报管理',
     href: '/admin/report',
     icon: TriangleAlert
+  },
+  {
+    name: '评价举报管理',
+    href: '/admin/rating-report',
+    icon: OctagonAlert
   },
   {
     name: '管理日志',

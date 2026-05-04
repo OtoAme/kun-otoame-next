@@ -1,4 +1,6 @@
 import { z } from 'zod'
+import { galgameSchema } from './galgame'
+import { DEFAULT_TAG_COMPANY_MIN_RATING_COUNT } from '~/utils/galgameFilter'
 
 export const createCompanySchema = z.object({
   name: z
@@ -61,7 +63,24 @@ export const getCompanyByIdSchema = z.object({
 export const getPatchByCompanySchema = z.object({
   companyId: z.coerce.number().min(1).max(9999999),
   page: z.coerce.number().min(1).max(9999999),
-  limit: z.coerce.number().min(1).max(24)
+  limit: z.coerce.number().min(1).max(24),
+  selectedType: z.string().min(1).max(107).default('all'),
+  selectedLanguage: z.string().min(1).max(107).default('all'),
+  selectedPlatform: z.string().min(1).max(107).default('all'),
+  sortField: z
+    .union([
+      z.literal('resource_update_time'),
+      z.literal('created'),
+      z.literal('view'),
+      z.literal('download'),
+      z.literal('favorite'),
+      z.literal('rating')
+    ])
+    .default('resource_update_time'),
+  sortOrder: z.union([z.literal('asc'), z.literal('desc')]).default('desc'),
+  yearString: z.string().max(1007).default(JSON.stringify(['all'])),
+  monthString: z.string().max(1007).default(JSON.stringify(['all'])),
+  minRatingCount: z.coerce.number().min(0).max(999999).default(10)
 })
 
 export const searchCompanySchema = z.object({

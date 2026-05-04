@@ -16,14 +16,24 @@ const themeIconMap: Record<string, JSX.Element> = {
   all: <CircleSlash className="size-5" />
 }
 
-export const NSFWSwitcher = () => {
+interface Props {
+  isOpen?: boolean
+  onOpenChange?: (isOpen: boolean) => void
+}
+
+export const NSFWSwitcher = ({ isOpen, onOpenChange }: Props) => {
   const settings = useSettingStore((state) => state.data)
   const setData = useSettingStore((state) => state.setData)
 
   const themeIcon = themeIconMap[settings.kunNsfwEnable] || themeIconMap['all']
 
   return (
-    <Dropdown className="min-w-0">
+    <Dropdown
+      className="min-w-0"
+      isOpen={isOpen}
+      onOpenChange={onOpenChange}
+      shouldCloseOnBlur={false}
+    >
       <DropdownTrigger>
         <div className="flex justify-between">
           <span>网站内容显示</span>
@@ -36,7 +46,10 @@ export const NSFWSwitcher = () => {
         selectedKeys={new Set([settings.kunNsfwEnable])}
         selectionMode="single"
         onSelectionChange={(key) => {
-          setData({ kunNsfwEnable: key.anchorKey ?? 'sfw' })
+          setData({
+            ...settings,
+            kunNsfwEnable: key.anchorKey ?? 'sfw'
+          })
           location.reload()
         }}
       >

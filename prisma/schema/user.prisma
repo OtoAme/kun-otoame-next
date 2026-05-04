@@ -12,7 +12,9 @@ model user {
   moemoepoint   Int      @default(0)
   bio           String   @default("") @db.VarChar(107)
 
-  enable_email_notice Boolean @default(true)
+  enable_email_notice    Boolean @default(true)
+  allow_private_message  Boolean @default(true)
+  blocked_tag_ids        Int[]   @default([])
   daily_image_count   Int     @default(0)
   daily_check_in      Int     @default(0)
   daily_upload_size   Float   @default(0)
@@ -32,6 +34,10 @@ model user {
   patch_company     patch_company[]
   patch_rating      patch_rating[]
   patch_rating_like patch_rating_like[]
+
+  patch_report_sent     patch_report[] @relation("patch_report_sender")
+  patch_report_received patch_report[] @relation("patch_report_reported_user")
+  patch_report_handled  patch_report[] @relation("patch_report_handler")
 
   following       user_follow_relation[] @relation("user_following")
   follower        user_follow_relation[] @relation("user_follower")
@@ -76,6 +82,8 @@ model user_message {
 
   created DateTime @default(now())
   updated DateTime @updatedAt
+
+  @@index([recipient_id, status, type, id])
 }
 
 model user_patch_favorite_folder {

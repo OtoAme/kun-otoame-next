@@ -1,0 +1,162 @@
+import { randomUUID } from 'crypto'
+import { PATCH_FAVORITE_CACHE_DURATION } from '~/config/cache'
+import { delKv, delKvs, getKv, getKvs, setKv } from '~/lib/redis'
+
+const PATCH_CACHE_KEY = 'patch'
+const PATCH_INTRODUCTION_CACHE_KEY = 'patch:introduction'
+const PATCH_FAVORITE_CACHE_KEY = 'patch:favorite'
+const PATCH_FAVORITE_VERSION_KEY = 'patch:favorite:version'
+const PATCH_FAVORITE_DEFAULT_VERSION = '0'
+
+export const getPatchCacheKey = (uniqueId: string) =>
+  `${PATCH_CACHE_KEY}:${uniqueId}`
+
+export const getPatchIntroductionCacheKey = (uniqueId: string) =>
+  `${PATCH_INTRODUCTION_CACHE_KEY}:${uniqueId}`
+
+const getPatchFavoriteCacheKey = (uniqueId: string, uid: number) =>
+  `${PATCH_FAVORITE_CACHE_KEY}:${uid}:${uniqueId}`
+
+const getPatchFavoriteVersionKey = (uid: number) =>
+  `${PATCH_FAVORITE_VERSION_KEY}:${uid}`
+
+const getPatchFavoriteCacheVersion = async (uid: number) => {
+  if (uid <= 0) {
+    return PATCH_FAVORITE_DEFAULT_VERSION
+  }
+
+  return (
+    (await getKv(getPatchFavoriteVersionKey(uid))) ??
+    PATCH_FAVORITE_DEFAULT_VERSION
+  )
+}
+
+const serializePatchFavoriteStatus = (version: string, isFavorite: boolean) =>
+  `${version}:${isFavorite ? '1' : '0'}`
+
+const parsePatchFavoriteStatus = (cachedStatus: string) => {
+  if (cachedStatus === '1' || cachedStatus === '0') {
+    return {
+      version: PATCH_FAVORITE_DEFAULT_VERSION,
+      isFavorite: cachedStatus === '1'
+    }
+  }
+
+  const separatorIndex = cachedStatus.lastIndexOf(':')
+  if (separatorIndex === -1) {
+    return null
+  }
+
+  const version = cachedStatus.slice(0, separatorIndex)
+  const status = cachedStatus.slice(separatorIndex + 1)
+  if (!version || (status !== '1' && status !== '0')) {
+    return null
+  }
+
+  return {
+    version,
+    isFavorite: status === '1'
+  }
+}
+
+type PatchFavoriteCacheResult = {
+  isFavorite: boolean | null
+  version: string
+}
+
+export const getCachedPatchFavoriteStatus = async (
+  uniqueId: string,
+  uid: number
+): Promise<PatchFavoriteCacheResult> => {
+  if (uid <= 0) {
+    return {
+      isFavorite: false,
+      version: PATCH_FAVORITE_DEFAULT_VERSION
+    }
+  }
+
+  const [cachedStatus, currentVersion] = await getKvs([
+    getPatchFavoriteCacheKey(uniqueId, uid),
+    getPatchFavoriteVersionKey(uid)
+  ])
+  const version = currentVersion ?? PATCH_FAVORITE_DEFAULT_VERSION
+
+  if (cachedStatus === null) {
+    return {
+      isFavorite: null,
+      version
+    }
+  }
+
+  const parsedStatus = parsePatchFavoriteStatus(cachedStatus)
+  if (!parsedStatus || parsedStatus.version !== version) {
+    return {
+      isFavorite: null,
+      version
+    }
+  }
+
+  return {
+    isFavorite: parsedStatus.isFavorite,
+    version
+  }
+}
+
+export const setCachedPatchFavoriteStatus = async (
+  uniqueId: string,
+  uid: number,
+  isFavorite: boolean,
+  version?: string
+) => {
+  if (uid <= 0) {
+    return
+  }
+
+  const cacheVersion = version ?? (await getPatchFavoriteCacheVersion(uid))
+
+  await setKv(
+    getPatchFavoriteCacheKey(uniqueId, uid),
+    serializePatchFavoriteStatus(cacheVersion, isFavorite),
+    PATCH_FAVORITE_CACHE_DURATION
+  )
+}
+
+export const invalidatePatchContentCache = async (uniqueId: string) => {
+  await Promise.all([
+    delKv(getPatchCacheKey(uniqueId)),
+    delKv(getPatchIntroductionCacheKey(uniqueId))
+  ])
+}
+
+export const invalidatePatchFavoriteCache = async (
+  uniqueId: string,
+  uid: number
+) => {
+  if (uid <= 0) {
+    return
+  }
+
+  await delKv(getPatchFavoriteCacheKey(uniqueId, uid))
+}
+
+export const invalidatePatchFavoriteCaches = async (
+  uniqueIds: string[],
+  uid: number
+) => {
+  if (uid <= 0) {
+    return
+  }
+
+  const cacheKeys = [...new Set(uniqueIds)].map((uniqueId) =>
+    getPatchFavoriteCacheKey(uniqueId, uid)
+  )
+  await delKvs(cacheKeys)
+}
+
+export const bumpPatchFavoriteCacheVersion = async (uid: number) => {
+  if (uid <= 0) {
+    return
+  }
+
+  await setKv(getPatchFavoriteVersionKey(uid), randomUUID())
+}

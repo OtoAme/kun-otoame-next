@@ -1,84 +1,151 @@
-import { useState } from 'react'
-import { Input, Button } from '@heroui/react'
-import { Search } from 'lucide-react'
-import toast from 'react-hot-toast'
+'use client'
 
-interface Props {
-  onTagsFetched: (tags: string[]) => void
+import { useEffect, useState } from 'react'
+import { Button, Input } from '@heroui/react'
+import Link from 'next/link'
+import toast from 'react-hot-toast'
+import { kunFetchGet, kunFetchPost } from '~/utils/kunFetch'
+import { FetchPreview } from '~/components/edit/components/FetchPreview'
+import type { PatchFormDataShape } from '~/components/edit/types'
+
+interface BangumiPreview {
+  name: string
+  nameCn: string
+  tags: string[]
+  developers: string[]
 }
 
-export const BangumiInput = ({ onTagsFetched }: Props) => {
-  const [input, setInput] = useState('')
-  const [loading, setLoading] = useState(false)
+interface Props<T extends PatchFormDataShape> {
+  errors?: string
+  data: T
+  setData: (data: T) => void
+  excludeId?: number
+}
+
+export const BangumiInput = <T extends PatchFormDataShape>({
+  errors,
+  data,
+  setData,
+  excludeId
+}: Props<T>) => {
+  const [preview, setPreview] = useState<BangumiPreview | null>(null)
+  const [duplicateUniqueId, setDuplicateUniqueId] = useState<string | null>(
+    null
+  )
+
+  useEffect(() => {
+    setPreview(null)
+    setDuplicateUniqueId(null)
+  }, [data.bangumiId])
 
   const handleFetch = async () => {
-    if (!input) return
-
-    let subjectId = input
-    // Try to parse URL
-    // https://bgm.tv/subject/12345
-    const match = input.match(/subject\/(\d+)/)
-    if (match) {
-      subjectId = match[1]
-    } else if (!/^\d+$/.test(input)) {
-      toast.error('请输入正确的 Bangumi ID 或链接')
+    const rawInput = data.bangumiId.trim()
+    if (!rawInput) {
+      toast.error('Bangumi ID 不可为空')
       return
     }
 
-    setLoading(true)
+    if (!/^\d+$/.test(rawInput)) {
+      toast.error('Bangumi ID 必须为纯数字')
+      return
+    }
+
+    const duplicateResult = await kunFetchGet<
+      KunResponse<{ uniqueId: string }>
+    >('/edit/duplicate', {
+      bangumiId: rawInput,
+      ...(excludeId ? { excludeId: String(excludeId) } : {})
+    })
+
+    if (typeof duplicateResult !== 'string' && duplicateResult?.uniqueId) {
+      setDuplicateUniqueId(duplicateResult.uniqueId)
+      toast.error('发现重复游戏条目, 请勿重复提交')
+      return
+    }
+    setDuplicateUniqueId(null)
+
     try {
-      const res = await fetch('/api/utils/bangumi', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          subjectId
-        })
+      toast('正在从 Bangumi 获取数据...')
+      const result = await kunFetchPost<KunResponse<BangumiPreview>>(
+        '/edit/bangumi',
+        { bangumiId: rawInput }
+      )
+
+      if (typeof result === 'string') {
+        toast.error(result)
+        return
+      }
+
+      const displayName = result.nameCn || result.name
+      if (!displayName) {
+        toast.error('未找到对应的 Bangumi 条目')
+        return
+      }
+
+      setPreview(result)
+
+      const extraAliases = [result.name, result.nameCn]
+        .map((name) => name?.trim())
+        .filter((name): name is string => !!name)
+      const alias = [...new Set([...data.alias, ...extraAliases])].filter(
+        (alias) => alias !== data.name
+      )
+
+      setData({
+        ...data,
+        alias,
+        bangumiTags: result.tags,
+        bangumiDevelopers: result.developers
       })
 
-      if (!res.ok) {
-        throw new Error('Fetch failed')
-      }
-
-      const data = await res.json()
-      if (data.tags && Array.isArray(data.tags)) {
-        const tags = data.tags
-          .map((t: any) => t.name)
-          .filter((name: string) => !name.includes('，'))
-        onTagsFetched(tags)
-        toast.success(`成功获取 ${tags.length} 个标签`)
-      } else {
-        toast.error('未找到标签信息')
-      }
-    } catch (e) {
-      toast.error('获取失败，请检查 ID 或 Token')
-    } finally {
-      setLoading(false)
+      toast.success(`确认: ${displayName}`)
+    } catch {
+      setPreview(null)
+      toast.error('Bangumi API 请求失败, 请稍后重试')
     }
   }
 
   return (
-    <div className="space-y-2">
-      <h2 className="text-xl">Bangumi 标签同步 (可选)</h2>
-      <div className="flex gap-2">
-        <Input
-          label="Bangumi 链接 / ID"
-          placeholder="输入 Bangumi 条目链接或 ID"
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          className="flex-1"
-        />
-        <Button
-          isIconOnly
-          color="primary"
-          isLoading={loading}
-          onClick={handleFetch}
-          className="h-14 w-14"
-        >
-          <Search />
-        </Button>
+    <div className="w-full space-y-2">
+      <h2 className="text-xl">Bangumi ID (可选)</h2>
+      <Input
+        variant="underlined"
+        labelPlacement="outside"
+        placeholder="请输入 Bangumi 条目 ID, 例如 172612"
+        value={data.bangumiId}
+        onChange={(event) => setData({ ...data, bangumiId: event.target.value })}
+        isInvalid={!!errors}
+        errorMessage={errors}
+      />
+      <div className="flex items-center gap-2 text-sm">
+        {data.bangumiId && (
+          <Button color="primary" size="sm" onPress={handleFetch}>
+            获取 Bangumi 数据
+          </Button>
+        )}
+        {duplicateUniqueId && (
+          <Button
+            as={Link}
+            color="primary"
+            target="_blank"
+            href={`/${duplicateUniqueId}`}
+            variant="flat"
+            size="sm"
+          >
+            跳转到重复游戏
+          </Button>
+        )}
       </div>
+      {preview && (
+        <FetchPreview
+          fields={[
+            { label: '名称', value: preview.name },
+            { label: '中文名', value: preview.nameCn },
+            { label: '标签', value: preview.tags },
+            { label: '开发商', value: preview.developers }
+          ]}
+        />
+      )}
     </div>
   )
 }

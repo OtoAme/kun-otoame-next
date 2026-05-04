@@ -1,6 +1,5 @@
 'use client'
 
-import { useEffect, useRef } from 'react'
 import { Input } from '@heroui/input'
 import { Button } from '@heroui/button'
 import { Chip } from '@heroui/chip'
@@ -8,6 +7,7 @@ import { Plus, X } from 'lucide-react'
 import { ErrorType } from '../share'
 import { SUPPORTED_RESOURCE_LINK_MAP } from '~/constants/resource'
 import { CLOUDREVE_PAN_DOMAIN, formatSize } from './fetchAlistSize'
+import { mergeResourceCodes, parseResourceLink } from '~/utils/resourceLink'
 import toast from 'react-hot-toast'
 
 interface ResourceLinksInputProps {
@@ -17,6 +17,7 @@ interface ResourceLinksInputProps {
   size: string
   setContent: (value: string) => void
   setSize: (value: string) => void
+  setCode: (value: string | ((currentCode: string) => string)) => void
 }
 
 export const ResourceLinksInput = ({
@@ -25,12 +26,16 @@ export const ResourceLinksInput = ({
   content,
   size,
   setContent,
-  setSize
+  setSize,
+  setCode
 }: ResourceLinksInputProps) => {
   const links = content.trim() ? content.trim().split(',') : ['']
-  const fetchedRef = useRef(false)
 
   const checkLinkSize = async (link: string) => {
+    if (storage !== 'touchgal' || size) {
+      return
+    }
+
     const key = link.split('/').pop()
     if (!key) return
 
@@ -42,20 +47,8 @@ export const ResourceLinksInput = ({
         toast.success('获取文件大小成功')
         setSize(formatSize(data.size))
       }
-    } catch {
-      // silently fail for auto-fetch
-    }
+    } catch {}
   }
-
-  useEffect(() => {
-    if (fetchedRef.current || !links.length || size) {
-      return
-    }
-    if (links.some((link) => link.includes(`${CLOUDREVE_PAN_DOMAIN}/s/`))) {
-      fetchedRef.current = true
-      checkLinkSize(links[0])
-    }
-  }, [content])
 
   return (
     <div className="space-y-2">
@@ -92,6 +85,27 @@ export const ResourceLinksInput = ({
                 const newLinks = [...links]
                 newLinks[index] = e.target.value
                 setContent(newLinks.filter(Boolean).toString())
+              }}
+              onBlur={() => {
+                if (link.includes(`${CLOUDREVE_PAN_DOMAIN}/s/`)) {
+                  checkLinkSize(link)
+                }
+              }}
+              onPaste={(e) => {
+                const pastedText = e.clipboardData.getData('text')
+                const { url, code } = parseResourceLink(pastedText)
+
+                if (!pastedText || (url === pastedText.trim() && !code)) {
+                  return
+                }
+
+                e.preventDefault()
+                const newLinks = [...links]
+                newLinks[index] = url
+                setContent(newLinks.filter(Boolean).toString())
+                if (code) {
+                  setCode((currentCode) => mergeResourceCodes(currentCode, code))
+                }
               }}
             />
           </div>

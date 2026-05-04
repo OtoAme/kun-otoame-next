@@ -43,6 +43,8 @@ export const EditResourceDialog = ({
   const [editing, setEditing] = useState(false)
   const [uploadingResource, setUploadingResource] = useState(false)
 
+  const section = resource.section as ResourceSection
+
   const {
     control,
     reset,
@@ -53,6 +55,7 @@ export const EditResourceDialog = ({
     resolver: zodResolver(patchResourceCreateSchema),
     defaultValues: {
       ...resource,
+      section,
       type: normalizeLegacyResourceTypes(resource.type)
     }
   })
@@ -123,6 +126,11 @@ export const EditResourceDialog = ({
               size={watch().size}
               setContent={(content) => setValue('content', content)}
               setSize={(size) => setValue('size', size)}
+              setCode={(code) => {
+                const nextCode =
+                  typeof code === 'function' ? code(watch().code) : code
+                setValue('code', nextCode)
+              }}
             />
           )}
           <ResourceDetailsForm

@@ -19,15 +19,16 @@ import {
 import { Textarea } from '@heroui/input'
 import { MoreVertical } from 'lucide-react'
 import { useUserStore } from '~/store/userStore'
-import { kunFetchDelete, kunFetchPut } from '~/utils/kunFetch'
+import { kunFetchDelete, kunFetchGet, kunFetchPut } from '~/utils/kunFetch'
 import type { AdminComment } from '~/types/api/admin'
 import toast from 'react-hot-toast'
 
 interface Props {
   initialComment: AdminComment
+  onSuccess?: () => Promise<void> | void
 }
 
-export const CommentEdit = ({ initialComment }: Props) => {
+export const CommentEdit = ({ initialComment, onSuccess }: Props) => {
   const currentUser = useUserStore((state) => state.user)
 
   const {
@@ -46,7 +47,9 @@ export const CommentEdit = ({ initialComment }: Props) => {
     } else {
       onCloseDelete()
       toast.success('评论删除成功')
+      await onSuccess?.()
     }
+    setDeleting(false)
   }
 
   const {
@@ -55,25 +58,51 @@ export const CommentEdit = ({ initialComment }: Props) => {
     onClose: onCloseEdit
   } = useDisclosure()
   const [editContent, setEditContent] = useState('')
+  const [fetchingFullComment, setFetchingFullComment] = useState(false)
   const [updating, setUpdating] = useState(false)
+  const handleOpenEdit = async () => {
+    setFetchingFullComment(true)
+    try {
+      const res = await kunFetchGet<{ content: string }>('/admin/comment/full', {
+        commentId: initialComment.id
+      })
+      if (typeof res === 'string') {
+        toast.error(res)
+        return
+      }
+
+      setEditContent(res.content)
+      onOpenEdit()
+    } finally {
+      setFetchingFullComment(false)
+    }
+  }
+
   const handleUpdateComment = async () => {
     if (!editContent.trim()) {
       toast.error('评论内容不可为空')
       return
     }
     setUpdating(true)
-    const res = await kunFetchPut<KunResponse<AdminComment>>('/admin/comment', {
-      commentId: initialComment.id,
-      content: editContent.trim()
-    })
-    if (typeof res === 'string') {
-      toast.error(res)
-    } else {
-      onCloseEdit()
-      setEditContent('')
-      toast.success('更新评论成功!')
+    try {
+      const res = await kunFetchPut<KunResponse<AdminComment>>(
+        '/admin/comment',
+        {
+          commentId: initialComment.id,
+          content: editContent.trim()
+        }
+      )
+      if (typeof res === 'string') {
+        toast.error(res)
+      } else {
+        onCloseEdit()
+        setEditContent('')
+        toast.success('更新评论成功!')
+        await onSuccess?.()
+      }
+    } finally {
+      setUpdating(false)
     }
-    setUpdating(false)
   }
 
   return (
@@ -84,19 +113,13 @@ export const CommentEdit = ({ initialComment }: Props) => {
             isIconOnly
             size="sm"
             variant="light"
-            isDisabled={currentUser.role < 3}
+            isDisabled={currentUser.role < 3 || fetchingFullComment}
           >
             <MoreVertical size={16} />
           </Button>
         </DropdownTrigger>
         <DropdownMenu>
-          <DropdownItem
-            key="edit"
-            onPress={() => {
-              setEditContent(initialComment.content)
-              onOpenEdit()
-            }}
-          >
+          <DropdownItem key="edit" onPress={handleOpenEdit}>
             编辑
           </DropdownItem>
           <DropdownItem

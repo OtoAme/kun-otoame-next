@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
+import { useSettingStore } from './settingStore'
 
 export interface UserState {
   uid: number
@@ -12,6 +13,8 @@ export interface UserState {
   dailyImageLimit: number
   dailyUploadLimit: number
   enableEmailNotice: boolean
+  allowPrivateMessage: boolean
+  blockedTagIds: number[]
 
   enableRedirect: boolean
   excludedDomains: string[]
@@ -35,22 +38,35 @@ const initialUserStore: UserState = {
   dailyImageLimit: 0,
   dailyUploadLimit: 0,
   enableEmailNotice: false,
+  allowPrivateMessage: true,
+  blockedTagIds: [],
 
   enableRedirect: true,
   excludedDomains: [],
   delaySeconds: 5
 }
 
+const syncBlockedTagCache = (blockedTagIds: number[]) => {
+  const { data, setData } = useSettingStore.getState()
+  setData({ ...data, kunBlockedTagIds: blockedTagIds })
+}
+
 export const useUserStore = create<UserStore>()(
   persist(
     (set) => ({
       user: initialUserStore,
-      setUser: (user: UserState) => set({ user }),
-      logout: () => set({ user: initialUserStore })
+      setUser: (user: UserState) => {
+        syncBlockedTagCache(user.blockedTagIds)
+        set({ user })
+      },
+      logout: () => {
+        syncBlockedTagCache([])
+        set({ user: initialUserStore })
+      }
     }),
     {
       name: 'kun-patch-user-store',
-      storage: createJSONStorage(() => localStorage)
+      storage: createJSONStorage(() => window.localStorage)
     }
   )
 )

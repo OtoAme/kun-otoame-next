@@ -3,6 +3,7 @@ import { prisma } from '~/prisma/index'
 import { patchCommentCreateSchema } from '~/validations/patch'
 import { createDedupMessage } from '~/app/api/utils/message'
 import { createMentionMessage } from '~/app/api/utils/createMentionMessage'
+import { markdownToHtml } from '~/app/api/utils/render/markdownToHtml'
 import type { PatchComment } from '~/types/api/patch'
 
 export const createPatchComment = async (
@@ -39,10 +40,10 @@ export const createPatchComment = async (
     if (parentComment!.user_id !== uid) {
       await createDedupMessage({
         type: 'comment',
-        content: `评论了您的评论! -> ${parentComment!.content.slice(0, 107)}`,
+        content: `回复了您的评论：${parentComment!.content.slice(0, 107)}`,
         sender_id: uid,
         recipient_id: parentComment!.user_id,
-        link: `/${data.patch.unique_id}`
+        link: `/${data.patch.unique_id}?tab=comments&commentId=${data.id}`
       })
     }
   }
@@ -50,6 +51,7 @@ export const createPatchComment = async (
   await createMentionMessage(
     data.patch.unique_id,
     data.patch.name,
+    data.id,
     uid,
     data.user.name,
     input.content
@@ -58,7 +60,7 @@ export const createPatchComment = async (
   const newComment: Omit<PatchComment, 'user'> = {
     id: data.id,
     uniqueId: data.patch?.unique_id ?? '',
-    content: data.content,
+    content: await markdownToHtml(data.content),
     isLike: false,
     likeCount: 0,
     parentId: data.parent_id,

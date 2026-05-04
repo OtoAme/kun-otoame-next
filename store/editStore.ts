@@ -6,7 +6,18 @@ export interface CreatePatchData {
   introduction: string
   vndbId: string
   vndbRelationId: string
+  bangumiId: string
+  steamId: string
   dlsiteCode: string
+  dlsiteCircleName: string
+  dlsiteCircleLink: string
+  vndbTags: string[]
+  vndbDevelopers: string[]
+  bangumiTags: string[]
+  bangumiDevelopers: string[]
+  steamTags: string[]
+  steamDevelopers: string[]
+  steamAliases: string[]
   officialUrl: string
   alias: string[]
   tag: string[]
@@ -28,12 +39,29 @@ interface StoreState {
   resetData: () => void
 }
 
+type PersistedStoreState = Partial<StoreState> & {
+  data?: Partial<CreatePatchData>
+}
+
+export const createPatchEditStoreKey = 'kun-patch-edit-store'
+
 const initialState: CreatePatchData = {
   name: '',
   introduction: '',
   vndbId: '',
   vndbRelationId: '',
+  bangumiId: '',
+  steamId: '',
   dlsiteCode: '',
+  dlsiteCircleName: '',
+  dlsiteCircleLink: '',
+  vndbTags: [],
+  vndbDevelopers: [],
+  bangumiTags: [],
+  bangumiDevelopers: [],
+  steamTags: [],
+  steamDevelopers: [],
+  steamAliases: [],
   officialUrl: '',
   alias: [],
   tag: [],
@@ -52,7 +80,20 @@ export const useCreatePatchStore = create<StoreState>()(
     }),
     {
       name: 'kun-patch-edit-store',
-      storage: createJSONStorage(() => localStorage)
+      storage: createJSONStorage(() => window.localStorage),
+      merge: (persistedState, currentState) => {
+        const persisted = persistedState as PersistedStoreState | undefined
+        const current = currentState as StoreState
+
+        return {
+          ...current,
+          ...(persisted ?? {}),
+          data: {
+            ...initialState,
+            ...(persisted?.data ?? {})
+          }
+        }
+      }
     }
   ) as any
 )

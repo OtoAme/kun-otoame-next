@@ -1,27 +1,37 @@
 'use client'
 
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useMemo, useState, useRef } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { useRewritePatchStore } from '~/store/rewriteStore'
 import { PatchHeaderTabs } from './Tabs'
 import { PatchHeaderInfo } from './Info'
 import { KunAutoImageViewer } from '~/components/kun/image-viewer/AutoImageViewer'
 import { KunNull } from '~/components/kun/Null'
+import { kunMoyuMoe } from '~/config/moyu-moe'
+import { getPatchPageTitle } from '~/utils/patch/getPatchPageTitle'
 import type { Patch, PatchIntroduction } from '~/types/api/patch'
 
 interface PatchHeaderProps {
   patch: Patch
   intro: PatchIntroduction
   uid?: number
+  nsfwAllowed: boolean
 }
 
 export const PatchHeaderContainer = ({
   patch,
   intro,
-  uid
+  uid,
+  nsfwAllowed
 }: PatchHeaderProps) => {
   const resourceSectionTabsId = 'patch-resource-section-tabs'
   const { setData } = useRewritePatchStore()
+  const searchParams = useSearchParams()
   const [selected, setSelected] = useState('introduction')
+  const isNsfwBlocked = useMemo(
+    () => patch.contentLimit === 'nsfw' && !nsfwAllowed,
+    [patch.contentLimit, nsfwAllowed]
+  )
   const tabsRef = useRef<HTMLDivElement>(null)
 
   const scrollToResourceSectionTabs = () => {
@@ -67,7 +77,18 @@ export const PatchHeaderContainer = ({
       uniqueId: patch.uniqueId,
       vndbId: patch.vndbId ?? '',
       vndbRelationId: patch.vndbRelationId ?? '',
+      bangumiId: patch.bangumiId ? String(patch.bangumiId) : '',
+      steamId: patch.steamId ? String(patch.steamId) : '',
       dlsiteCode: patch.dlsiteCode ?? '',
+      dlsiteCircleName: '',
+      dlsiteCircleLink: '',
+      vndbTags: [],
+      vndbDevelopers: [],
+      bangumiTags: [],
+      bangumiDevelopers: [],
+      steamTags: [],
+      steamDevelopers: [],
+      steamAliases: [],
       name: patch.name,
       introduction: patch.introduction,
       officialUrl: intro.officialUrl,
@@ -85,10 +106,27 @@ export const PatchHeaderContainer = ({
     })
   }, [])
 
+  useEffect(() => {
+    if (patch.contentLimit !== 'nsfw') {
+      return
+    }
+
+    if (isNsfwBlocked) {
+      document.title = ''
+      return
+    }
+
+    document.title = `${getPatchPageTitle(patch)} - ${kunMoyuMoe.titleShort}`
+  }, [isNsfwBlocked, patch])
+
   return (
     <div className="relative w-full mx-auto max-w-7xl">
-      {patch.contentLimit === 'nsfw' && !uid ? (
-        <KunNull message="请登录后查看 NSFW 游戏" />
+      {isNsfwBlocked ? (
+        <KunNull
+          message={
+            !uid ? '请登录后查看' : '请在右上角菜单开启 NSFW 内容显示后查看'
+          }
+        />
       ) : (
         <>
           <KunAutoImageViewer />

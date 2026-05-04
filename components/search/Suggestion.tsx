@@ -3,26 +3,32 @@
 import { useEffect, useState, useTransition } from 'react'
 import { kunFetchPost } from '~/utils/kunFetch'
 import { kunErrorHandler } from '~/utils/kunErrorHandler'
-import { Chip } from '@heroui/react'
-import { Key, Tag } from 'lucide-react'
+import { Button, Chip } from '@heroui/react'
+import { House, Key, Tag } from 'lucide-react'
 import { KunLoading } from '~/components/kun/Loading'
-import type { Dispatch, SetStateAction } from 'react'
+import type { Dispatch, RefObject, SetStateAction } from 'react'
 import type { SearchSuggestionType } from '~/types/api/search'
 
 interface Props {
+  inputRef: RefObject<HTMLInputElement | null>
   query: string
   setQuery: Dispatch<SetStateAction<string>>
   setSelectedSuggestions: Dispatch<SetStateAction<SearchSuggestionType[]>>
 }
 
 export const SearchSuggestion = ({
+  inputRef,
   query,
   setQuery,
   setSelectedSuggestions
 }: Props) => {
   const [suggestions, setSuggestions] = useState<SearchSuggestionType[]>([])
   const [isPending, startTransition] = useTransition()
-  const queryArraySplitByBlank = query.split(' ')
+  const queryArraySplitByBlank = query
+    .trim()
+    .split(/\s+/)
+    .map((item) => item.trim())
+    .filter(Boolean)
 
   const fetchSuggestions = async (searchQuery: string) => {
     if (!searchQuery.trim()) {
@@ -33,7 +39,13 @@ export const SearchSuggestion = ({
     startTransition(async () => {
       const res = await kunFetchPost<KunResponse<SearchSuggestionType[]>>(
         '/search/tag',
-        { query: searchQuery.split('|').filter((term) => term.length > 0) }
+        {
+          query: searchQuery
+            .trim()
+            .split(/\s+/)
+            .map((term) => term.trim())
+            .filter(Boolean)
+        }
       )
 
       kunErrorHandler(res, (value) => {
@@ -53,16 +65,28 @@ export const SearchSuggestion = ({
   const handleClickSuggestion = (suggestions: SearchSuggestionType[]) => {
     setQuery('')
     setSelectedSuggestions((prev) => {
-      const namesToRemove = new Set(suggestions.map((s) => s.name))
-      const filtered = prev.filter((item) => !namesToRemove.has(item.name))
+      const keysToRemove = new Set(
+        suggestions.map((s) => `${s.type}:${s.name}`)
+      )
+      const filtered = prev.filter(
+        (item) => !keysToRemove.has(`${item.type}:${item.name}`)
+      )
       return [...filtered, ...suggestions]
     })
+    inputRef.current?.focus()
   }
 
-  const handleSelectMultiQueryKeywords = () => {
+  const handleSelectMultiQueryKeywords = (
+    mode: SearchSuggestionType['mode']
+  ) => {
+    if (!queryArraySplitByBlank.length) {
+      return
+    }
+
     const suggestions: SearchSuggestionType[] = queryArraySplitByBlank.map(
       (q) => ({
         type: 'keyword',
+        mode,
         name: q
       })
     )
@@ -72,7 +96,7 @@ export const SearchSuggestion = ({
   return (
     <div className="absolute z-50 w-full p-3 space-y-2 overflow-auto border shadow-lg max-h-96 rounded-2xl bg-content1 border-default-200">
       <p className="text-default-500">
-        点击关键词按您的输入搜索, 点击标签使用多标签搜索
+        点击主区域添加包含条件，点击右侧排除按钮添加排除条件
       </p>
 
       {/* <div
@@ -95,11 +119,11 @@ export const SearchSuggestion = ({
         </div>
       </div> */}
 
-      <div
-        className="p-1 cursor-pointer hover:bg-default-100 rounded-2xl"
-        onClick={handleSelectMultiQueryKeywords}
-      >
-        <div className="flex items-center gap-2">
+      <div className="flex items-center justify-between gap-2 p-1 rounded-2xl hover:bg-default-100">
+        <div
+          className="flex flex-1 items-center gap-2 cursor-pointer"
+          onClick={() => handleSelectMultiQueryKeywords('include')}
+        >
           <Chip
             color="primary"
             variant="flat"
@@ -113,6 +137,14 @@ export const SearchSuggestion = ({
             </Chip>
           ))}
         </div>
+        <Button
+          size="sm"
+          color="danger"
+          variant="light"
+          onPress={() => handleSelectMultiQueryKeywords('exclude')}
+        >
+          排除
+        </Button>
       </div>
 
       {isPending ? (
@@ -121,10 +153,14 @@ export const SearchSuggestion = ({
         suggestions.map((suggestion, index) => (
           <div
             key={index}
-            className="p-1 cursor-pointer hover:bg-default-100 rounded-2xl"
-            onClick={() => handleClickSuggestion([suggestion])}
+            className="flex items-center justify-between gap-2 p-1 rounded-2xl hover:bg-default-100"
           >
-            <div className="flex items-center gap-2">
+            <div
+              className="flex flex-1 items-center gap-2 cursor-pointer"
+              onClick={() =>
+                handleClickSuggestion([{ ...suggestion, mode: 'include' }])
+              }
+            >
               <span>
                 {suggestion.type === 'tag' && (
                   <Chip
@@ -135,9 +171,28 @@ export const SearchSuggestion = ({
                     标签
                   </Chip>
                 )}
+                {suggestion.type === 'company' && (
+                  <Chip
+                    color="warning"
+                    variant="flat"
+                    startContent={<House className="w-4 h-4" />}
+                  >
+                    会社
+                  </Chip>
+                )}
               </span>
               <span>{suggestion.name}</span>
             </div>
+            <Button
+              size="sm"
+              color="danger"
+              variant="light"
+              onPress={() =>
+                handleClickSuggestion([{ ...suggestion, mode: 'exclude' }])
+              }
+            >
+              排除
+            </Button>
           </div>
         ))
       )}

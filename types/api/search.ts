@@ -1,4 +1,6 @@
 export interface SearchSuggestionType {
-  type: 'keyword' | 'tag'
+  type: 'keyword' | 'tag' | 'company'
+  mode: 'include' | 'exclude'
+  id?: number
   name: string
 }

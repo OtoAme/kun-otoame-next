@@ -6,6 +6,8 @@ export interface Patch {
   uniqueId: string
   vndbId: string | null
   vndbRelationId: string | null
+  bangumiId: number | null
+  steamId: number | null
   dlsiteCode: string | null
   name: string
   banner: string
@@ -58,6 +60,8 @@ export interface PatchImage {
 export interface PatchIntroduction {
   vndbId: string | null
   vndbRelationId?: string | null
+  bangumiId?: number | null
+  steamId?: number | null
   dlsiteCode?: string | null
   introduction: string
   officialUrl: string
@@ -86,17 +90,19 @@ export interface PatchResource {
   size: string
   type: string[]
   language: string[]
+  platform: string[]
   note: string
   hash: string
   content: string
   code: string
   password: string
-  platform: string[]
   likeCount: number
+  download: number
   isLike: boolean
   status: number
   userId: number
   patchId: number
+  patchName?: string
   created: string
   user: KunUser & {
     patchCount: number
@@ -125,4 +131,5 @@ export interface PatchComment {
 export interface PatchCommentResponse {
   comments: PatchComment[]
   total: number
+  currentPage: number
 }

@@ -3,6 +3,8 @@
 import {
   Chip,
   Input,
+  Select,
+  SelectItem,
   Table,
   TableBody,
   TableCell,
@@ -36,6 +38,7 @@ export const Galgame = ({ initialGalgames, initialTotal }: Props) => {
   const [galgames, setGalgames] = useState<AdminGalgame[]>(initialGalgames)
   const [total, setTotal] = useState(initialTotal)
   const [page, setPage] = useState(1)
+  const [limit, setLimit] = useState(30)
   const [searchQuery, setSearchQuery] = useState('')
   const [debouncedQuery] = useDebounce(searchQuery, 500)
   const isMounted = useMounted()
@@ -49,7 +52,7 @@ export const Galgame = ({ initialGalgames, initialTotal }: Props) => {
       total: number
     }>('/admin/otomegame', {
       page,
-      limit: 30,
+      limit,
       search: debouncedQuery
     })
 
@@ -63,11 +66,15 @@ export const Galgame = ({ initialGalgames, initialTotal }: Props) => {
       return
     }
     fetchData()
-  }, [page, debouncedQuery])
+  }, [page, limit, debouncedQuery])
 
   const handleSearch = (value: string) => {
     setSearchQuery(value)
     setPage(1)
+  }
+
+  if (!isMounted) {
+    return <KunLoading hint="正在获取 OtomeGame 数据..." />
   }
 
   return (
@@ -94,10 +101,29 @@ export const Galgame = ({ initialGalgames, initialTotal }: Props) => {
         <Table
           aria-label="游戏管理"
           bottomContent={
-            <div className="flex justify-center w-full">
+            <div className="flex flex-col items-center justify-center w-full gap-4 sm:flex-row">
+              <Select
+                className="w-32"
+                label="每页显示"
+                selectedKeys={[String(limit)]}
+                size="sm"
+                onSelectionChange={(keys) => {
+                  const selected = Array.from(keys)[0]
+                  if (!selected) {
+                    return
+                  }
+                  setLimit(Number(selected))
+                  setPage(1)
+                }}
+              >
+                <SelectItem key="30">30</SelectItem>
+                <SelectItem key="50">50</SelectItem>
+                <SelectItem key="100">100</SelectItem>
+                <SelectItem key="500">500</SelectItem>
+              </Select>
               <KunPagination
                 page={page}
-                total={Math.ceil(total / 30)}
+                total={Math.ceil(total / limit)}
                 onPageChange={setPage}
                 isLoading={loading}
               />

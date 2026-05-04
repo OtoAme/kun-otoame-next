@@ -1,6 +1,7 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { useSearchParams } from 'next/navigation'
 import {
   Button,
   Card,
@@ -52,8 +53,74 @@ export const ResourceTabs = ({
   selectedSection,
   setSelectedSection
 }: Props) => {
+  const searchParams = useSearchParams()
   const { user } = useUserStore((state) => state)
+  const [highlightedResourceId, setHighlightedResourceId] = useState<
+    number | null
+  >(null)
   const RESOURCE_SECTION_TABS_ID = 'patch-resource-section-tabs'
+
+  const targetResourceId = useMemo(() => {
+    const rawResourceId = searchParams.get('resourceId')
+    if (!rawResourceId) {
+      return null
+    }
+
+    const parsedResourceId = Number(rawResourceId)
+    return Number.isSafeInteger(parsedResourceId) && parsedResourceId > 0
+      ? parsedResourceId
+      : null
+  }, [searchParams])
+
+  const targetResourceSection = useMemo(() => {
+    const section = searchParams.get('resourceSection')
+    return SUPPORTED_RESOURCE_SECTION.includes(section as ResourceSection)
+      ? (section as ResourceSection)
+      : null
+  }, [searchParams])
+
+  useEffect(() => {
+    if (targetResourceSection) {
+      setSelectedSection(targetResourceSection)
+      return
+    }
+
+    if (!targetResourceId) {
+      return
+    }
+
+    const targetResource = resources.find(
+      (resource) => resource.id === targetResourceId
+    )
+    if (targetResource) {
+      setSelectedSection(targetResource.section as ResourceSection)
+    }
+  }, [resources, setSelectedSection, targetResourceId, targetResourceSection])
+
+  useEffect(() => {
+    if (!targetResourceId) {
+      return
+    }
+
+    const targetElement = document.getElementById(
+      `resource-${targetResourceId}`
+    )
+    if (!targetElement) {
+      setHighlightedResourceId(null)
+      return
+    }
+
+    targetElement.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    setHighlightedResourceId(targetResourceId)
+
+    const timer = window.setTimeout(() => {
+      setHighlightedResourceId((current) =>
+        current === targetResourceId ? null : current
+      )
+    }, 3000)
+
+    return () => window.clearTimeout(timer)
+  }, [resources, selectedSection, targetResourceId])
 
   const categorizedResources = SUPPORTED_RESOURCE_SECTION.reduce(
     (acc, section) => {
@@ -66,7 +133,12 @@ export const ResourceTabs = ({
   const renderResourceCard = (resource: PatchResource) => (
     <div
       key={resource.id}
-      className="border p-3 rounded-2xl border-default-200"
+      id={`resource-${resource.id}`}
+      className={
+        highlightedResourceId === resource.id
+          ? 'border p-3 rounded-2xl border-default-200 ring-2 ring-primary ring-offset-2 ring-offset-background'
+          : 'border p-3 rounded-2xl border-default-200'
+      }
     >
       <div className="space-y-2">
         <div className="flex items-start justify-between">

@@ -1,14 +1,15 @@
 'use client'
 
 import toast from 'react-hot-toast'
-import { useEffect, useState } from 'react'
+import { useEffect } from 'react'
 import { NavbarContent, NavbarItem } from '@heroui/navbar'
 import Link from 'next/link'
 import { Button } from '@heroui/button'
 import { Skeleton } from '@heroui/skeleton'
 import { useUserStore } from '~/store/userStore'
+import { useMessageStore } from '~/store/messageStore'
 import { useRouter } from '@bprogress/next'
-import { kunFetchGet } from '~/utils/kunFetch'
+import { kunFetchGet, kunFetchPost } from '~/utils/kunFetch'
 import { ThemeSwitcher } from './ThemeSwitcher'
 import { useMounted } from '~/hooks/useMounted'
 import { UserDropdown } from './UserDropdown'
@@ -16,11 +17,15 @@ import { KunSearch } from './Search'
 import { UserMessageBell } from './UserMessageBell'
 import { Tooltip } from '@heroui/tooltip'
 import { RandomGalgameButton } from '~/components/home/carousel/RandomGalgameButton'
-import type { UserState } from '~/store/userStore'
+import type { UserSession } from '~/types/api/session'
 export const KunTopBarUser = () => {
   const router = useRouter()
-  const { user, setUser } = useUserStore((state) => state)
-  const [hasUnread, setHasUnread] = useState(false)
+  const { user, setUser, logout } = useUserStore((state) => state)
+  const {
+    hasUnreadNotification,
+    hasUnreadConversation,
+    setUnreadMessageStatus
+  } = useMessageStore((state) => state)
   const isMounted = useMounted()
 
   useEffect(() => {
@@ -31,86 +36,87 @@ export const KunTopBarUser = () => {
       return
     }
 
-    const getUserStatus = async () => {
-      const res = await kunFetchGet<KunResponse<UserState>>('/user/status')
+    const getUserSession = async () => {
+      const res = await kunFetchGet<KunResponse<UserSession>>('/user/session')
       if (typeof res === 'string') {
         toast.error(res)
+        kunFetchPost('/user/status/logout').catch(() => {})
+        logout()
+        setUnreadMessageStatus({
+          hasUnreadNotification: false,
+          hasUnreadConversation: false
+        })
         router.push('/login')
       } else {
-        setUser(user)
+        setUser(res.user)
+        setUnreadMessageStatus(res.unread)
       }
     }
 
-    const getUserUnreadMessage = async () => {
-      const res = await kunFetchGet<{
-        hasUnreadMessages: boolean
-        hasUnreadChat: boolean
-      }>('/message/unread')
-      if (res && (res.hasUnreadMessages || res.hasUnreadChat)) {
-        setHasUnread(true)
-      }
-    }
-
-    getUserStatus()
-    getUserUnreadMessage()
+    getUserSession()
   }, [isMounted])
+
+  const hasUnread = hasUnreadNotification || hasUnreadConversation
 
   return (
     <NavbarContent as="div" className="items-center" justify="end">
-      {isMounted ? (
+      {!isMounted && (
         <>
-          {!user.name && (
-            <NavbarContent justify="end">
-              <NavbarItem className="hidden lg:flex">
-                <Link href="/login">登录</Link>
-              </NavbarItem>
-              <NavbarItem>
-                <Button
-                  as={Link}
-                  color="primary"
-                  href="/register"
-                  variant="flat"
-                  className="hidden lg:flex"
-                >
-                  注册
-                </Button>
-              </NavbarItem>
-              <NavbarItem className="flex lg:hidden">
-                <Button as={Link} color="primary" href="/login" variant="flat">
-                  登录
-                </Button>
-              </NavbarItem>
-            </NavbarContent>
-          )}
-
-          <KunSearch />
-
-          <Tooltip
-            disableAnimation
-            showArrow
-            closeDelay={0}
-            content="随机一部游戏"
-          >
-            <RandomGalgameButton isIconOnly variant="light" />
-          </Tooltip>
-
-          <ThemeSwitcher />
-
-          {user.name && (
-            <>
-              <UserMessageBell
-                hasUnreadMessages={hasUnread}
-                setReadMessage={() => setHasUnread(false)}
-              />
-
-              <UserDropdown />
-            </>
-          )}
+          <Skeleton className="hidden rounded-lg lg:flex">
+            <div className="w-32 h-10 rounded-lg bg-default-300" />
+          </Skeleton>
+          <Skeleton className="rounded-lg lg:hidden">
+            <div className="w-20 h-10 rounded-lg bg-default-300" />
+          </Skeleton>
         </>
-      ) : (
-        <Skeleton className="rounded-lg">
-          <div className="w-32 h-10 rounded-lg bg-default-300" />
-        </Skeleton>
+      )}
+
+      {isMounted && !user.name && (
+        <NavbarContent justify="end">
+          <NavbarItem className="hidden lg:flex">
+            <Link href="/login">登录</Link>
+          </NavbarItem>
+          <NavbarItem>
+            <Button
+              as={Link}
+              color="primary"
+              href="/register"
+              variant="flat"
+              className="hidden lg:flex"
+            >
+              注册
+            </Button>
+          </NavbarItem>
+          <NavbarItem className="flex lg:hidden">
+            <Button as={Link} color="primary" href="/login" variant="flat">
+              登录
+            </Button>
+          </NavbarItem>
+        </NavbarContent>
+      )}
+
+      <KunSearch />
+
+      <Tooltip disableAnimation showArrow closeDelay={0} content="随机一部游戏">
+        <RandomGalgameButton isIconOnly variant="light" />
+      </Tooltip>
+
+      <ThemeSwitcher />
+
+      {isMounted && user.name && (
+        <>
+          <UserMessageBell
+            hasUnreadMessages={hasUnread}
+            setReadMessage={() =>
+              setUnreadMessageStatus({
+                hasUnreadNotification: false,
+                hasUnreadConversation: false
+              })
+            }
+          />
+
+          <UserDropdown />
+        </>
       )}
     </NavbarContent>
   )

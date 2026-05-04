@@ -3,16 +3,18 @@ import { z } from 'zod'
 import { prisma } from '~/prisma/index'
 import { uploadPatchBanner } from './_upload'
 import { patchCreateSchema } from '~/validations/edit'
-import { handleBatchPatchTags } from './batchTag'
 import { kunMoyuMoe } from '~/config/moyu-moe'
 import { postToIndexNow } from './_postToIndexNow'
-import { ensurePatchCompaniesFromVNDB } from './fetchCompanies'
-import { ensurePatchCompanyFromDlsite } from './dlsite'
+import { processSubmittedExternalData } from './processExternalData'
 
 export const createGalgame = async (
-  input: Omit<z.infer<typeof patchCreateSchema>, 'alias' | 'tag'> & {
+  input: Omit<
+    z.infer<typeof patchCreateSchema>,
+    'alias' | 'tag' | 'banner' | 'bannerOriginal'
+  > & {
     alias: string[]
     tag: string[]
+    banner: ArrayBuffer
     bannerOriginal?: ArrayBuffer
   },
   uid: number
@@ -21,7 +23,18 @@ export const createGalgame = async (
     name,
     vndbId,
     vndbRelationId,
+    bangumiId,
+    steamId,
     dlsiteCode,
+    dlsiteCircleName,
+    dlsiteCircleLink,
+    vndbTags,
+    vndbDevelopers,
+    bangumiTags,
+    bangumiDevelopers,
+    steamTags,
+    steamDevelopers,
+    steamAliases,
     alias,
     banner,
     bannerOriginal,
@@ -55,8 +68,6 @@ export const createGalgame = async (
     }
   }
 
-  const bannerArrayBuffer = banner as ArrayBuffer
-  const bannerOriginalArrayBuffer = bannerOriginal as ArrayBuffer | undefined
   const galgameUniqueId = crypto.randomBytes(4).toString('hex')
 
   const normalizedDlsiteCode = dlsiteCode?.trim()
@@ -79,6 +90,8 @@ export const createGalgame = async (
           unique_id: galgameUniqueId,
           vndb_id: vndbId ? vndbId : null,
           vndb_relation_id: vndbRelationId ? vndbRelationId : null,
+          bangumi_id: bangumiId ? Number(bangumiId) : null,
+          steam_id: steamId ? Number(steamId) : null,
           dlsite_code: normalizedDlsiteCode ? normalizedDlsiteCode : null,
           introduction,
           official_url: officialUrl || '',
@@ -91,11 +104,7 @@ export const createGalgame = async (
 
       const newId = patch.id
 
-      const uploadResult = await uploadPatchBanner(
-        bannerArrayBuffer,
-        newId,
-        bannerOriginalArrayBuffer
-      )
+      const uploadResult = await uploadPatchBanner(banner, newId, bannerOriginal)
       if (typeof uploadResult === 'string') {
         return uploadResult
       }
@@ -139,19 +148,22 @@ export const createGalgame = async (
     return res
   }
 
-  if (vndbId) {
-    try {
-      await ensurePatchCompaniesFromVNDB(res.patchId, vndbId, uid)
-    } catch {}
-  }
-
-  if (normalizedDlsiteCode) {
-    await ensurePatchCompanyFromDlsite(res.patchId, normalizedDlsiteCode, uid)
-  }
-
-  if (tag.length) {
-    await handleBatchPatchTags(res.patchId, tag, uid)
-  }
+  await processSubmittedExternalData(
+    res.patchId,
+    {
+      vndbTags,
+      vndbDevelopers,
+      bangumiTags,
+      bangumiDevelopers,
+      steamTags,
+      steamDevelopers,
+      steamAliases,
+      dlsiteCircleName: dlsiteCircleName ?? '',
+      dlsiteCircleLink: dlsiteCircleLink ?? ''
+    },
+    tag,
+    uid
+  )
 
   if (contentLimit === 'sfw') {
     const newPatchUrl = `${kunMoyuMoe.domain.main}/${galgameUniqueId}`

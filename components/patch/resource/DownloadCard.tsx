@@ -54,26 +54,33 @@ export const ResourceDownloadCard = ({ resource }: Props) => {
           <KunExternalLink
             onPress={handleClickDownload}
             underline="always"
+            className="break-all"
             link={link}
           >
             {link}
           </KunExternalLink>
-
-          {resource.storage === 's3' && (
-            <>
-              <p className="text-sm">
-                BLACK3 校验码 (您可以根据此校验码校验下载文件完整性)
-              </p>
-              <Snippet
-                symbol=""
-                className="flex overflow-auto whitespace-normal"
-              >
-                {resource.hash}
-              </Snippet>
-            </>
-          )}
         </div>
       ))}
+
+      {resource.password && (
+        <div className="space-y-2">
+          <p className="text-sm">解压码</p>
+          <Snippet symbol="" className="flex overflow-auto whitespace-normal">
+            {resource.password}
+          </Snippet>
+        </div>
+      )}
+
+      {resource.storage === 's3' && (
+        <div className="space-y-2">
+          <p className="text-sm">
+            BLACK3 校验码 (您可以根据此校验码校验下载文件完整性)
+          </p>
+          <Snippet symbol="" className="flex overflow-auto whitespace-normal">
+            {resource.hash}
+          </Snippet>
+        </div>
+      )}
     </div>
   )
 }

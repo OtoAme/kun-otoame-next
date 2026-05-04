@@ -1,8 +1,9 @@
 import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
+import type { SearchSuggestionType } from '~/types/api/search'
 
 export interface CreateSearchData {
-  searchHistory: string[]
+  searchHistory: SearchSuggestionType[][]
   searchInIntroduction: boolean
   searchInAlias: boolean
   searchInTag: boolean
@@ -32,7 +33,7 @@ export const useSearchStore = create<SearchStoreState>()(
     }),
     {
       name: 'kun-patch-search-store',
-      storage: createJSONStorage(() => localStorage)
+      storage: createJSONStorage(() => window.localStorage)
     }
   )
 )

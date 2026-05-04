@@ -16,6 +16,7 @@ import { RewriteGalleryInput } from './RewriteGalleryInput'
 import { RewriteBanner } from './RewriteBanner'
 import { BatchTag } from '../components/BatchTag'
 import { BangumiInput } from '../components/BangumiInput'
+import { SteamInput } from '../components/SteamInput'
 import { ReleaseDateInput } from '../components/ReleaseDateInput'
 import { VNDBInput } from '../create/VNDBInput'
 import { VNDBRelationInput } from '../create/VNDBRelationInput'
@@ -66,6 +67,12 @@ export const RewritePatch = () => {
     formData.append('id', data.id.toString())
     formData.append('name', data.name)
     if (data.vndbId) formData.append('vndbId', data.vndbId)
+    if (data.vndbRelationId) formData.append('vndbRelationId', data.vndbRelationId)
+    if (data.bangumiId) formData.append('bangumiId', data.bangumiId)
+    if (data.steamId) formData.append('steamId', data.steamId)
+    if (data.dlsiteCode) formData.append('dlsiteCode', data.dlsiteCode)
+    formData.append('dlsiteCircleName', data.dlsiteCircleName)
+    formData.append('dlsiteCircleLink', data.dlsiteCircleLink)
     formData.append('introduction', data.introduction)
     formData.append('contentLimit', data.contentLimit)
     if (data.released) formData.append('released', data.released)
@@ -74,6 +81,19 @@ export const RewritePatch = () => {
 
     data.alias.forEach((a) => formData.append('alias', a))
     data.tag.forEach((t) => formData.append('tag', t))
+    data.vndbTags.forEach((tag) => formData.append('vndbTags', tag))
+    data.vndbDevelopers.forEach((developer) =>
+      formData.append('vndbDevelopers', developer)
+    )
+    data.bangumiTags.forEach((tag) => formData.append('bangumiTags', tag))
+    data.bangumiDevelopers.forEach((developer) =>
+      formData.append('bangumiDevelopers', developer)
+    )
+    data.steamTags.forEach((tag) => formData.append('steamTags', tag))
+    data.steamDevelopers.forEach((developer) =>
+      formData.append('steamDevelopers', developer)
+    )
+    data.steamAliases.forEach((alias) => formData.append('steamAliases', alias))
 
     const { watermark, galleryOrder } = useRewritePatchStore.getState()
 
@@ -162,6 +182,18 @@ export const RewritePatch = () => {
             errors={errors.vndbRelationId}
             enableDuplicateCheck={false}
           />
+          <BangumiInput
+            data={data}
+            setData={setData}
+            errors={errors.bangumiId}
+            excludeId={data.id}
+          />
+          <SteamInput
+            data={data}
+            setData={setData}
+            errors={errors.steamId}
+            excludeId={data.id}
+          />
           <GameNameInput
             name={data.name}
             onChange={(name) => setData({ ...data, name })}
@@ -220,7 +252,7 @@ export const RewritePatch = () => {
           />
 
           <BatchTag
-            initialTag={data.tag}
+            data={data}
             saveTag={(tag) =>
               setData({
                 ...data,
@@ -228,12 +260,6 @@ export const RewritePatch = () => {
               })
             }
             errors={errors.tag}
-          />
-
-          <BangumiInput
-            onTagsFetched={(tags) => {
-              setData({ ...data, tag: tags })
-            }}
           />
 
           <ContentLimit errors={errors.contentLimit} />

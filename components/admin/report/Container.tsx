@@ -1,26 +1,36 @@
 'use client'
 
-import { Tab, Tabs } from '@heroui/react'
+import { Select, SelectItem, Tab, Tabs } from '@heroui/react'
 import { useEffect, useState } from 'react'
 import { kunFetchGet } from '~/utils/kunFetch'
 import { KunLoading } from '~/components/kun/Loading'
 import { useMounted } from '~/hooks/useMounted'
 import { ReportCard } from './ReportCard'
 import { KunPagination } from '~/components/kun/Pagination'
-import type { AdminReport } from '~/types/api/admin'
+import type { AdminReport, AdminReportTargetType } from '~/types/api/admin'
 
 type ReportTab = 'pending' | 'handled'
 
 interface Props {
   initialReports: AdminReport[]
   total: number
+  title?: string
+  targetType?: AdminReportTargetType
+  initialLimit?: number
 }
 
-export const Report = ({ initialReports, total }: Props) => {
+export const Report = ({
+  initialReports,
+  total,
+  title = '评论举报管理',
+  targetType = 'comment',
+  initialLimit = 30
+}: Props) => {
   const [reports, setReports] = useState<AdminReport[]>(initialReports)
   const [activeTab, setActiveTab] = useState<ReportTab>('pending')
   const [totalCount, setTotalCount] = useState(total)
   const [page, setPage] = useState(1)
+  const [limit, setLimit] = useState(initialLimit)
   const isMounted = useMounted()
 
   const [loading, setLoading] = useState(false)
@@ -32,8 +42,9 @@ export const Report = ({ initialReports, total }: Props) => {
       total: number
     }>('/admin/report', {
       page: targetPage,
-      limit: 30,
-      tab: targetTab
+      limit,
+      tab: targetTab,
+      targetType
     })
 
     setLoading(false)
@@ -46,11 +57,11 @@ export const Report = ({ initialReports, total }: Props) => {
       return
     }
     fetchData(page, activeTab)
-  }, [page, activeTab, isMounted])
+  }, [page, limit, activeTab, isMounted, targetType])
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold">评论举报管理</h1>
+      <h1 className="text-2xl font-bold">{title}</h1>
       <Tabs
         selectedKey={activeTab}
         onSelectionChange={(key) => {
@@ -88,11 +99,33 @@ export const Report = ({ initialReports, total }: Props) => {
 
       <div className="flex justify-center">
         <KunPagination
-          total={Math.max(1, Math.ceil(totalCount / 30))}
+          total={Math.max(1, Math.ceil(totalCount / limit))}
           page={page}
           onPageChange={setPage}
           isLoading={loading}
         />
+      </div>
+
+      <div className="flex items-center justify-center gap-2 text-sm text-default-500">
+        <span>每页显示</span>
+        <Select
+          aria-label="每页显示数量"
+          size="sm"
+          className="w-20"
+          selectedKeys={new Set([String(limit)])}
+          onSelectionChange={(keys) => {
+            const val = Number(Array.from(keys)[0])
+            if (val && val !== limit) {
+              setLimit(val)
+              setPage(1)
+            }
+          }}
+        >
+          <SelectItem key="30">30</SelectItem>
+          <SelectItem key="50">50</SelectItem>
+          <SelectItem key="100">100</SelectItem>
+        </Select>
+        <span>条，共 {totalCount} 条</span>
       </div>
     </div>
   )

@@ -4,13 +4,14 @@ import { Radio, RadioGroup } from '@heroui/react'
 import { ErrorType } from '../share'
 import {
   RESOURCE_SECTION_MAP,
-  SUPPORTED_RESOURCE_SECTION
+  SUPPORTED_RESOURCE_SECTION,
+  type ResourceSection
 } from '~/constants/resource'
 
 interface Props {
   errors: ErrorType
-  section: string
-  setSection: (value: string) => void
+  section: ResourceSection
+  setSection: (value: ResourceSection) => void
 }
 
 export const ResourceSectionSelect = ({
@@ -23,7 +24,7 @@ export const ResourceSectionSelect = ({
       <h3 className="text-lg font-medium">请选择资源的类别</h3>
       <RadioGroup
         value={section}
-        onValueChange={setSection}
+        onValueChange={(value) => setSection(value as ResourceSection)}
         isInvalid={!!errors.section}
         errorMessage={errors.section?.message}
       >

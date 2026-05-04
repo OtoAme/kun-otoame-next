@@ -19,7 +19,7 @@ export const UserCommentCard = ({ comment }: Props) => {
         {comment.quotedUserUid && (
           <h4 className="space-x-2">
             <span className="text-default-500">回复给</span>
-            <Link href={`/user/${comment.quotedUserUid}/resource`}>
+            <Link href={`/user/${comment.quotedUserUid}/comment`}>
               {comment.quotedUsername}
             </Link>
           </h4>
@@ -46,7 +46,11 @@ export const UserCommentCard = ({ comment }: Props) => {
 
         <div className="text-sm text-default-500">
           位置{' '}
-          <Link size="sm" underline="always" href={`/${comment.patchUniqueId}`}>
+          <Link
+            size="sm"
+            underline="always"
+            href={`/${comment.patchUniqueId}?tab=comments&commentId=${comment.id}`}
+          >
             {comment.patchName}
           </Link>
         </div>

@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { prisma } from '~/prisma/index'
-import { markdownToHtml } from '~/app/api/utils/render/markdownToHtml'
+import { Prisma } from '@prisma/client'
+import { markdownToHtmlComment } from '~/app/api/utils/render/markdownToHtmlComment'
 import { getPatchCommentSchema } from '~/validations/patch'
 import type { PatchComment } from '~/types/api/patch'
 
@@ -8,7 +9,58 @@ export const getPatchComment = async (
   input: z.infer<typeof getPatchCommentSchema>,
   uid: number
 ) => {
-  const { patchId, page, limit } = input
+  const { patchId, page, limit, commentId } = input
+  type CommentLocator = {
+    id: number
+    patch_id: number
+    parent_id: number | null
+    created: Date
+  }
+
+  const findRootComment = async (targetCommentId: number) => {
+    const rows = await prisma.$queryRaw<CommentLocator[]>`
+      WITH RECURSIVE ancestors AS (
+        SELECT id, patch_id, parent_id, created
+        FROM patch_comment
+        WHERE id = ${targetCommentId} AND patch_id = ${patchId}
+        UNION ALL
+        SELECT pc.id, pc.patch_id, pc.parent_id, pc.created
+        FROM patch_comment pc
+        INNER JOIN ancestors a ON pc.id = a.parent_id
+        WHERE pc.patch_id = ${patchId}
+      )
+      SELECT id, patch_id, parent_id, created
+      FROM ancestors
+      WHERE parent_id IS NULL
+      LIMIT 1
+    `
+
+    return rows[0] ?? null
+  }
+
+  let currentPage = page
+  if (commentId) {
+    const rootComment = await findRootComment(commentId)
+    if (rootComment) {
+      const commentsBeforeTargetRoot = await prisma.patch_comment.count({
+        where: {
+          patch_id: patchId,
+          parent_id: null,
+          OR: [
+            { created: { gt: rootComment.created } },
+            {
+              AND: [
+                { created: rootComment.created },
+                { id: { gt: rootComment.id } }
+              ]
+            }
+          ]
+        }
+      })
+
+      currentPage = Math.floor(commentsBeforeTargetRoot / limit) + 1
+    }
+  }
 
   const total = await prisma.patch_comment.count({
     where: { patch_id: patchId, parent_id: null }
@@ -16,8 +68,8 @@ export const getPatchComment = async (
 
   const rootComments = await prisma.patch_comment.findMany({
     where: { patch_id: patchId, parent_id: null },
-    orderBy: { created: 'desc' },
-    skip: (page - 1) * limit,
+    orderBy: [{ created: 'desc' }, { id: 'desc' }],
+    skip: (currentPage - 1) * limit,
     take: limit,
     include: {
       user: true,
@@ -39,45 +91,70 @@ export const getPatchComment = async (
 
   const rootIds = rootComments.map((c) => c.id)
 
-  const allComments = await prisma.patch_comment.findMany({
-    where: { patch_id: patchId },
-    include: {
-      user: true,
-      patch: {
-        select: {
-          unique_id: true
+  let descendantComments: typeof rootComments = []
+  if (rootIds.length > 0) {
+    const descendantIdRows = await prisma.$queryRaw<{ id: number }[]>`
+      WITH RECURSIVE descendants AS (
+        SELECT id, parent_id
+        FROM patch_comment
+        WHERE parent_id IN (${Prisma.join(rootIds)})
+          AND patch_id = ${patchId}
+        UNION ALL
+        SELECT pc.id, pc.parent_id
+        FROM patch_comment pc
+        INNER JOIN descendants d ON pc.parent_id = d.id
+        WHERE pc.patch_id = ${patchId}
+      )
+      SELECT id FROM descendants
+    `
+    const descendantIds = descendantIdRows.map((r) => r.id)
+
+    if (descendantIds.length > 0) {
+      descendantComments = await prisma.patch_comment.findMany({
+        where: { id: { in: descendantIds } },
+        include: {
+          user: true,
+          patch: {
+            select: {
+              unique_id: true
+            }
+          },
+          like_by: {
+            where: {
+              user_id: uid
+            }
+          },
+          _count: {
+            select: { like_by: true }
+          }
         }
-      },
-      like_by: {
-        where: {
-          user_id: uid
-        }
-      },
-      _count: {
-        select: { like_by: true }
-      }
+      })
     }
-  })
-
-  const commentMap = new Map(allComments.map((c) => [c.id, c]))
-
-  const findRootId = (commentId: number): number | null => {
-    const comment = commentMap.get(commentId)
-    if (!comment) return null
-    if (comment.parent_id === null) return comment.id
-    return findRootId(comment.parent_id)
   }
 
-  const replyMap = new Map<number, typeof allComments>()
-  for (const comment of allComments) {
-    if (comment.parent_id === null) continue
+  const commentMap = new Map(
+    [...rootComments, ...descendantComments].map((c) => [c.id, c])
+  )
+  const rootIdSet = new Set(rootIds)
 
+  const findRootId = (commentId: number): number | null => {
+    let cursor = commentMap.get(commentId)
+    while (cursor && cursor.parent_id !== null) {
+      cursor = commentMap.get(cursor.parent_id)
+    }
+    return cursor ? cursor.id : null
+  }
+
+  const replyMap = new Map<number, typeof descendantComments>()
+  for (const comment of descendantComments) {
     const rootId = findRootId(comment.id)
-    if (rootId && rootIds.includes(rootId)) {
-      if (!replyMap.has(rootId)) {
-        replyMap.set(rootId, [])
+    if (rootId !== null && rootIdSet.has(rootId)) {
+      const bucket = replyMap.get(rootId)
+      if (bucket) {
+        bucket.push(comment)
+      } else {
+        replyMap.set(rootId, [comment])
       }
-      replyMap.get(rootId)!.push(comment)
     }
   }
 
@@ -98,7 +175,7 @@ export const getPatchComment = async (
             return {
               id: reply.id,
               uniqueId: reply.patch.unique_id,
-              content: await markdownToHtml(reply.content),
+              content: await markdownToHtmlComment(reply.content),
               isLike: reply.like_by.length > 0,
               likeCount: reply._count.like_by,
               parentId: comment.id,
@@ -129,7 +206,7 @@ export const getPatchComment = async (
       return {
         id: comment.id,
         uniqueId: comment.patch.unique_id,
-        content: await markdownToHtml(comment.content),
+        content: await markdownToHtmlComment(comment.content),
         isLike: comment.like_by.length > 0,
         likeCount: comment._count.like_by,
         parentId: null,
@@ -150,5 +227,5 @@ export const getPatchComment = async (
     })
   )
 
-  return { comments, total }
+  return { comments, total, currentPage }
 }

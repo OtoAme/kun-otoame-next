@@ -2,23 +2,18 @@ import { NextRequest, NextResponse } from 'next/server'
 import { kunParsePutBody } from '~/app/api/utils/parseQuery'
 import { verifyHeaderCookie } from '~/middleware/_verifyHeaderCookie'
 import { adminUpdateDisableRegisterSchema } from '~/validations/admin'
-import { delKv, getKv, setKv } from '~/lib/redis'
-import { KUN_PATCH_DISABLE_REGISTER_KEY } from '~/config/redis'
-
-export const getDisableRegisterStatus = async () => {
-  const isDisableKunPatchRegister = await getKv(KUN_PATCH_DISABLE_REGISTER_KEY)
-  return {
-    disableRegister: !!isDisableKunPatchRegister
-  }
-}
+import {
+  getDisableRegisterStatus,
+  updateDisableRegisterStatus
+} from './service'
 
 export const GET = async (req: NextRequest) => {
   const payload = await verifyHeaderCookie(req)
   if (!payload) {
     return NextResponse.json('用户未登录')
   }
-  if (payload.role < 3) {
-    return NextResponse.json('本页面仅管理员可访问')
+  if (payload.role < 4) {
+    return NextResponse.json('本页面仅超级管理员可访问')
   }
 
   const res = await getDisableRegisterStatus()
@@ -35,15 +30,10 @@ export const PUT = async (req: NextRequest) => {
   if (!payload) {
     return NextResponse.json('用户未登录')
   }
-  if (payload.role < 3) {
-    return NextResponse.json('本页面仅管理员可访问')
+  if (payload.role < 4) {
+    return NextResponse.json('本页面仅超级管理员可访问')
   }
 
-  if (input.disableRegister) {
-    await setKv(KUN_PATCH_DISABLE_REGISTER_KEY, 'true')
-  } else {
-    await delKv(KUN_PATCH_DISABLE_REGISTER_KEY)
-  }
-
-  return NextResponse.json({})
+  const response = await updateDisableRegisterStatus(input.disableRegister)
+  return NextResponse.json(response)
 }

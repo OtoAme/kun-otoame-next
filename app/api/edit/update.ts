@@ -1,11 +1,10 @@
 import { z } from 'zod'
 import { prisma } from '~/prisma/index'
 import { patchUpdateSchema } from '~/validations/edit'
-import { handleBatchPatchTags } from './batchTag'
 import { uploadPatchBanner } from './_upload'
 import { purgePatchBannerCache } from '~/app/api/utils/purgeCache'
-import { ensurePatchCompanyFromDlsite } from './dlsite'
-import { ensurePatchCompaniesFromVNDB } from './fetchCompanies'
+import { invalidatePatchContentCache } from '~/app/api/patch/cache'
+import { processSubmittedExternalData } from './processExternalData'
 
 export const updateGalgame = async (
   input: z.infer<typeof patchUpdateSchema>,
@@ -41,6 +40,17 @@ export const updateGalgame = async (
     id,
     vndbId,
     vndbRelationId,
+    bangumiId,
+    steamId,
+    dlsiteCircleName,
+    dlsiteCircleLink,
+    vndbTags,
+    vndbDevelopers,
+    bangumiTags,
+    bangumiDevelopers,
+    steamTags,
+    steamDevelopers,
+    steamAliases,
     name,
     alias,
     introduction,
@@ -55,6 +65,8 @@ export const updateGalgame = async (
       name,
       vndb_id: vndbId ? vndbId : null,
       vndb_relation_id: vndbRelationId ? vndbRelationId : null,
+      bangumi_id: bangumiId ? Number(bangumiId) : null,
+      steam_id: steamId ? Number(steamId) : null,
       dlsite_code: normalizedDlsiteCode ? normalizedDlsiteCode : null,
       introduction,
       official_url: officialUrl || '',
@@ -94,7 +106,9 @@ export const updateGalgame = async (
       where: { id },
       data: { banner: imageLink }
     })
-  } const { galleryMetadata } = input
+  }
+
+  const { galleryMetadata } = input
 
   if (galleryMetadata) {
     const metadata = JSON.parse(galleryMetadata) as {
@@ -130,21 +144,25 @@ export const updateGalgame = async (
       }
     })
     await Promise.all(updatePromises)
+    await invalidatePatchContentCache(patch.unique_id)
   }
 
-  if (input.tag.length) {
-    await handleBatchPatchTags(input.id, input.tag, uid)
-  }
-
-  if (vndbId) {
-    try {
-      await ensurePatchCompaniesFromVNDB(id, vndbId, uid)
-    } catch {}
-  }
-
-  if (normalizedDlsiteCode) {
-    await ensurePatchCompanyFromDlsite(id, normalizedDlsiteCode, uid)
-  }
+  await processSubmittedExternalData(
+    id,
+    {
+      vndbTags,
+      vndbDevelopers,
+      bangumiTags,
+      bangumiDevelopers,
+      steamTags,
+      steamDevelopers,
+      steamAliases,
+      dlsiteCircleName: dlsiteCircleName ?? '',
+      dlsiteCircleLink: dlsiteCircleLink ?? ''
+    },
+    input.tag,
+    uid
+  )
 
   return {}
 }
