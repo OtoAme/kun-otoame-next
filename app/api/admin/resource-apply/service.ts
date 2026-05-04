@@ -16,8 +16,17 @@ export const approvePatchResource = async (
   const resource = await prisma.patch_resource.findUnique({
     where: { id: resourceId },
     include: {
-      user: true,
-      patch: true
+      user: {
+        select: {
+          name: true
+        }
+      },
+      patch: {
+        select: {
+          unique_id: true,
+          name: true
+        }
+      }
     }
   })
   if (!resource) {
@@ -68,8 +77,17 @@ export const declinePatchResource = async (
   const resource = await prisma.patch_resource.findUnique({
     where: { id: resourceId },
     include: {
-      user: true,
-      patch: true
+      user: {
+        select: {
+          name: true
+        }
+      },
+      patch: {
+        select: {
+          unique_id: true,
+          name: true
+        }
+      }
     }
   })
   if (!resource) {

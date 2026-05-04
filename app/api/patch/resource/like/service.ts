@@ -18,7 +18,12 @@ export const toggleResourceLike = async (
   const resource = await prisma.patch_resource.findUnique({
     where: { id: resourceId },
     include: {
-      patch: true
+      patch: {
+        select: {
+          unique_id: true,
+          name: true
+        }
+      }
     }
   })
   if (!resource) {

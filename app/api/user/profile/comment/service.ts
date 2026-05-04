@@ -14,16 +14,33 @@ export const getUserComment = async (
     prisma.patch_comment.findMany({
       where: { user_id: uid },
       include: {
-        user: true,
-        patch: true,
+        user: {
+          select: {
+            id: true,
+            name: true,
+            avatar: true
+          }
+        },
+        patch: {
+          select: {
+            id: true,
+            unique_id: true,
+            name: true
+          }
+        },
         parent: {
-          include: {
-            user: true
+          select: {
+            user: {
+              select: {
+                id: true,
+                name: true
+              }
+            }
           }
         },
         like_by: {
-          include: {
-            user: true
+          select: {
+            id: true
           }
         }
       },

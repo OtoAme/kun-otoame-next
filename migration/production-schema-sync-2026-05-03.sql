@@ -33,6 +33,45 @@ ALTER TABLE public.patch_report
   ADD COLUMN IF NOT EXISTS created timestamp without time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
   ADD COLUMN IF NOT EXISTS updated timestamp without time zone NOT NULL DEFAULT CURRENT_TIMESTAMP;
 
+ALTER TABLE public.patch
+  ADD COLUMN IF NOT EXISTS favorite_count integer NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS resource_count integer NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS comment_count integer NOT NULL DEFAULT 0;
+
+UPDATE public.patch p
+SET
+  favorite_count = counts.favorite_count,
+  resource_count = counts.resource_count,
+  comment_count = counts.comment_count
+FROM (
+  SELECT
+    p.id,
+    COALESCE(f.favorite_count, 0) AS favorite_count,
+    COALESCE(r.resource_count, 0) AS resource_count,
+    COALESCE(c.comment_count, 0) AS comment_count
+  FROM public.patch p
+  LEFT JOIN (
+    SELECT patch_id, COUNT(*)::integer AS favorite_count
+    FROM public.user_patch_favorite_folder_relation
+    GROUP BY patch_id
+  ) f ON f.patch_id = p.id
+  LEFT JOIN (
+    SELECT patch_id, COUNT(*)::integer AS resource_count
+    FROM public.patch_resource
+    WHERE status = 0
+    GROUP BY patch_id
+  ) r ON r.patch_id = p.id
+  LEFT JOIN (
+    SELECT patch_id, COUNT(*)::integer AS comment_count
+    FROM public.patch_comment
+    GROUP BY patch_id
+  ) c ON c.patch_id = p.id
+) counts
+WHERE p.id = counts.id;
+
+CREATE INDEX IF NOT EXISTS patch_favorite_count_idx
+  ON public.patch (favorite_count);
+
 ALTER TABLE public.patch_resource
   ADD COLUMN IF NOT EXISTS storage varchar(107) NOT NULL DEFAULT 'user',
   ADD COLUMN IF NOT EXISTS section varchar(107) NOT NULL DEFAULT 'galgame',

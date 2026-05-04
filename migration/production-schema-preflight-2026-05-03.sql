@@ -17,6 +17,9 @@ WITH required_columns(table_name, column_name, expected_type, expected_nullable)
     ('patch_report', 'rating_id', 'integer', 'YES'),
     ('patch_report', 'created', 'timestamp without time zone', 'NO'),
     ('patch_report', 'updated', 'timestamp without time zone', 'NO'),
+    ('patch', 'favorite_count', 'integer', 'NO'),
+    ('patch', 'resource_count', 'integer', 'NO'),
+    ('patch', 'comment_count', 'integer', 'NO'),
     ('patch_resource', 'storage', 'character varying', 'NO'),
     ('patch_resource', 'section', 'character varying', 'NO'),
     ('patch_resource', 'name', 'character varying', 'NO'),
@@ -72,6 +75,7 @@ WITH required_indexes(table_name, index_name) AS (
     ('patch_report', 'patch_report_sender_id_idx'),
     ('patch_report', 'patch_report_reported_user_id_idx'),
     ('patch_report', 'patch_report_patch_id_idx'),
+    ('patch', 'patch_favorite_count_idx'),
     ('user_patch_resource_like_relation', 'user_patch_resource_like_relation_user_id_resource_id_key')
 ), existing_indexes AS (
   SELECT tablename AS table_name, indexname AS index_name, indexdef

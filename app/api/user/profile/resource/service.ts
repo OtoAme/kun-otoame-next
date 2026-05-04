@@ -15,7 +15,14 @@ export const getUserPatchResource = async (
     prisma.patch_resource.findMany({
       where: { user_id: uid, patch: nsfwEnable, status: 0 },
       include: {
-        patch: true
+        patch: {
+          select: {
+            id: true,
+            unique_id: true,
+            name: true,
+            banner: true
+          }
+        }
       },
       orderBy: { created: 'desc' },
       skip: offset,
