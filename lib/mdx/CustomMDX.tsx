@@ -4,6 +4,13 @@ import { KunLink } from './element/KunLink'
 import { KunTable } from './element/KunTable'
 import { KunCode } from './element/KunCode'
 import { createKunHeading } from './element/kunHeading'
+import type { ComponentPropsWithoutRef } from 'react'
+
+const NativeTable = (props: ComponentPropsWithoutRef<'table'>) => (
+  <div className="overflow-x-auto">
+    <table {...props} />
+  </div>
+)
 
 const components = {
   h1: createKunHeading(1),
@@ -14,6 +21,7 @@ const components = {
   h6: createKunHeading(6),
   a: KunLink,
   code: KunCode,
+  table: NativeTable,
   Table: KunTable
 }
 
@@ -21,12 +29,17 @@ export const CustomMDX = (props: MDXRemoteProps) => {
   return (
     <MDXRemote
       {...props}
-      components={{ ...components, ...(props.components || {}) }}
       options={{
+        ...(props.options || {}),
         mdxOptions: {
-          remarkPlugins: [remarkGfm]
+          ...(props.options?.mdxOptions || {}),
+          remarkPlugins: [
+            ...((props.options?.mdxOptions?.remarkPlugins as []) || []),
+            remarkGfm
+          ]
         }
       }}
+      components={{ ...components, ...(props.components || {}) }}
     />
   )
 }

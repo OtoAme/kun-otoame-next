@@ -6,7 +6,6 @@ import { useRouter } from '@bprogress/next'
 import { Button, Chip } from '@heroui/react'
 import { useDisclosure } from '@heroui/modal'
 import { Link } from '@heroui/link'
-import { Pagination } from '@heroui/pagination'
 import { Pencil } from 'lucide-react'
 import { useMounted } from '~/hooks/useMounted'
 import { KunHeader } from '~/components/kun/Header'
@@ -15,6 +14,7 @@ import { KunLoading } from '~/components/kun/Loading'
 import { GalgameCard } from '~/components/galgame/Card'
 import { FilterBar } from '~/components/galgame/FilterBar'
 import { KunNull } from '~/components/kun/Null'
+import { KunPagination } from '~/components/kun/Pagination'
 import { CompanyFormModal } from '../form/CompanyFormModal'
 import { DeleteCompanyModal } from './DeleteCompanyModal'
 import { formatTimeDifference } from '~/utils/time'
@@ -24,6 +24,16 @@ import { useUserStore } from '~/store/userStore'
 import type { CompanyDetail } from '~/types/api/company'
 import type { SortField, SortOrder } from '~/components/galgame/_sort'
 import type { FC } from 'react'
+import {
+  DEFAULT_GALGAME_FILTER_VALUE,
+  DEFAULT_GALGAME_SORT_FIELD,
+  DEFAULT_GALGAME_SORT_ORDER,
+  DEFAULT_TAG_COMPANY_MIN_RATING_COUNT,
+  parseGalgameFilterArray,
+  parseNonNegativeIntParam,
+  parsePositiveIntParam
+} from '~/utils/galgameFilter'
+import { errorReporter, kunErrorHandler } from '~/utils/kunErrorHandler'
 
 interface Props {
   initialCompany: CompanyDetail
@@ -234,7 +244,7 @@ export const CompanyDetailContainer: FC<Props> = ({
   }, [searchParams])
 
   return (
-    <div className="w-full my-4">
+    <div className="w-full my-4 space-y-6">
       <KunHeader
         name={company.name}
         description={company.introduction}
@@ -285,7 +295,7 @@ export const CompanyDetailContainer: FC<Props> = ({
       />
 
       {company.alias.length > 0 && (
-        <div className="mb-4">
+        <div>
           <h2 className="mb-2 text-lg font-semibold">别名</h2>
           <div className="flex flex-wrap gap-2">
             {company.alias.map((alias, index) => (
@@ -298,7 +308,7 @@ export const CompanyDetailContainer: FC<Props> = ({
       )}
 
       {company.official_website.length > 0 && (
-        <div className="mb-4">
+        <div>
           <h2 className="mb-2 text-lg font-semibold">官网地址</h2>
           <div className="flex flex-wrap gap-2">
             {company.official_website.map((site, index) => (
@@ -311,7 +321,7 @@ export const CompanyDetailContainer: FC<Props> = ({
       )}
 
       {company.primary_language.length > 0 && (
-        <div className="mb-4">
+        <div>
           <h2 className="mb-4 text-lg font-semibold">主语言</h2>
           <div className="flex flex-wrap gap-2">
             {company.primary_language.map((language, index) => (
@@ -323,8 +333,9 @@ export const CompanyDetailContainer: FC<Props> = ({
         </div>
       )}
 
+
       {company.parent_brand.length > 0 && (
-        <div className="mb-4">
+        <div>
           <h2 className="mb-4 text-lg font-semibold">父会社</h2>
           <div className="flex flex-wrap gap-2">
             {company.parent_brand.map((brand, index) => (
@@ -369,17 +380,11 @@ export const CompanyDetailContainer: FC<Props> = ({
 
           {totalPatches > 24 && (
             <div className="flex justify-center">
-              <Pagination
+              <KunPagination
                 total={Math.ceil(totalPatches / 24)}
                 page={page}
-                onChange={setPage}
-                showControls
-                size="lg"
-                radius="lg"
-                classNames={{
-                  wrapper: 'gap-2',
-                  item: 'w-10 h-10'
-                }}
+                onPageChange={setPage}
+                isLoading={loading}
               />
             </div>
           )}

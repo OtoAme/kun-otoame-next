@@ -43,3 +43,24 @@ export const sanitizeUserUrl = (
 
 export const sanitizeUserHref = (url: string) =>
   sanitizeUserUrl(url, SAFE_LINK_PROTOCOLS)
+
+export const isRedirectableUrl = (url: string) => !!sanitizeUserHref(url)
+
+export const getHttpUrlHostname = (url: string) => {
+  try {
+    const parsedUrl = new URL(url)
+    return parsedUrl.protocol === 'http:' || parsedUrl.protocol === 'https:'
+      ? parsedUrl.hostname
+      : null
+  } catch {
+    return null
+  }
+}
+
+export const isHostnameExcluded = (
+  hostname: string,
+  excludedDomains: string[]
+) =>
+  excludedDomains.some(
+    (domain) => hostname === domain || hostname.endsWith(`.${domain}`)
+  )

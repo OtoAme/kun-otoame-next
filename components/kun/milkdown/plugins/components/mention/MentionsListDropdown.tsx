@@ -99,7 +99,7 @@ export const MentionsListDropdown = () => {
       if (user?.name) {
         const link = linkSchema
           .type(ctx)
-          .create({ href: `/user/${user.id}/resource` })
+          .create({ href: `/user/${user.id}/comment` })
         const node = state.schema.text(`@${user.name} `).mark([link])
 
         if (from - offset > 0) {

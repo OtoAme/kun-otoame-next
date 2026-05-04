@@ -222,3 +222,17 @@ export const markConversationAsRead = async (
 
   return {}
 }
+
+
+export const deleteConversation = async (conversationId: number, uid: number) => {
+  const conversation = await verifyConversationAccess(conversationId, uid)
+  if (!conversation) {
+    return '会话不存在或无权访问'
+  }
+
+  await prisma.user_conversation.delete({
+    where: { id: conversationId }
+  })
+
+  return {}
+}

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { kunParseGetQuery } from '../utils/parseQuery'
 import { resourceSchema } from '~/validations/resource'
-import { getNSFWHeader } from '~/app/api/utils/getNSFWHeader'
+import { getPatchVisibilityWhere } from '~/app/api/utils/getPatchVisibilityWhere'
 import { getPatchResource } from './service'
 
 export const GET = async (req: NextRequest) => {
@@ -9,8 +9,8 @@ export const GET = async (req: NextRequest) => {
   if (typeof input === 'string') {
     return NextResponse.json(input)
   }
-  const nsfwEnable = getNSFWHeader(req)
+  const visibilityWhere = await getPatchVisibilityWhere(req)
 
-  const response = await getPatchResource(input, nsfwEnable)
+  const response = await getPatchResource(input, visibilityWhere)
   return NextResponse.json(response)
 }

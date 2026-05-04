@@ -8,6 +8,7 @@ import {
 } from '~/validations/conversation'
 import { verifyHeaderCookie } from '~/middleware/_verifyHeaderCookie'
 import {
+  deleteConversation,
   deleteMessage,
   getConversationMessages,
   sendMessage,
@@ -100,16 +101,27 @@ export const DELETE = async (
     return NextResponse.json('无效的会话 ID')
   }
 
-  const input = kunParseGetQuery(req, deletePrivateMessageSchema)
-  if (typeof input === 'string') {
-    return NextResponse.json(input)
-  }
-
   const payload = await verifyHeaderCookie(req)
   if (!payload) {
     return NextResponse.json('用户未登录')
   }
 
-  const response = await deleteMessage(conversationId, input, payload.uid)
+  const { searchParams } = new URL(req.url)
+
+  if (searchParams.has('messageId')) {
+    const input = kunParseGetQuery(req, deletePrivateMessageSchema)
+    if (typeof input === 'string') {
+      return NextResponse.json(input)
+    }
+
+    const response = await deleteMessage(conversationId, input, payload.uid)
+    return NextResponse.json(response)
+  }
+
+  if (searchParams.get('action') !== 'conversation') {
+    return NextResponse.json('无效的删除操作类型')
+  }
+
+  const response = await deleteConversation(conversationId, payload.uid)
   return NextResponse.json(response)
 }

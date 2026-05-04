@@ -4,6 +4,7 @@ model patch_comment {
   edit    String @default("")
 
   like_by user_patch_comment_like_relation[]
+  report  patch_report[]
 
   reply     patch_comment[] @relation("comment_reply")
   parent_id Int?
@@ -13,10 +14,12 @@ model patch_comment {
   patch_id  Int
   patch     patch           @relation("patch_comment", fields: [patch_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
-  report patch_report[]
-
   created DateTime @default(now())
   updated DateTime @updatedAt
+
+  @@index([patch_id, parent_id, created(sort: Desc), id(sort: Desc)])
+  @@index([parent_id])
+  @@index([user_id, created(sort: Desc)])
 }
 
 model user_patch_comment_like_relation {
@@ -31,4 +34,5 @@ model user_patch_comment_like_relation {
   updated DateTime @updatedAt
 
   @@unique([user_id, comment_id])
+  @@index([comment_id])
 }

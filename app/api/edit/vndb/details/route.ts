@@ -1,29 +1,24 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { kunParsePostBody } from '~/app/api/utils/parseQuery'
-import { VNDB_API_BASE, VNDB_API_HEADERS } from '~/constants/vndb'
+import { fetchVndbVn } from '~/lib/arnebiae/vndb'
+import { TAG_MAP } from '~/lib/tagMap'
+import type {
+  VNDBDetailResult,
+  VndbTag,
+  VndbProducer
+} from '~/lib/arnebiae/vndb'
 
 const detailsSchema = z.object({
   vndbId: z.string().regex(/^v\d+$/i, 'VNDB ID 格式不正确')
 })
 
-interface VNDBTitle {
-  lang: string
-  title: string
+interface VNDBFullResult extends VNDBDetailResult {
+  tags?: VndbTag[] | null
+  developers?: VndbProducer[] | null
 }
 
-interface VNDBResult {
-  title: string
-  titles: VNDBTitle[]
-  aliases: string[]
-  released: string
-}
-
-interface VNDBResponse {
-  results: VNDBResult[]
-}
-
-const buildAllTitles = (response: VNDBResponse) => {
+const buildAllTitles = (response: { results: VNDBFullResult[] }) => {
   return response.results.flatMap((vn) => {
     const jaTitle = vn.titles.find((t) => t.lang === 'ja')?.title
     const titlesArray = [
@@ -36,6 +31,29 @@ const buildAllTitles = (response: VNDBResponse) => {
   })
 }
 
+const buildTags = (results: VNDBFullResult[]) => {
+  const allTags = results.flatMap((vn) => vn.tags ?? [])
+  return allTags
+    .filter(
+      (t) =>
+        !t.lie &&
+        t.spoiler === 0 &&
+        (t.category === 'cont' || t.category === 'tech')
+    )
+    .map((t) => TAG_MAP[t.name] || t.name)
+    .filter((name, i, arr) => arr.indexOf(name) === i)
+}
+
+const buildDevelopers = (results: VNDBFullResult[]) => {
+  const allDevs = results.flatMap((vn) => vn.developers ?? [])
+  return allDevs
+    .filter(
+      (d) => d.name && (d.type === 'co' || d.type === 'ng' || d.type === 'in')
+    )
+    .map((d) => d.name!)
+    .filter((name, i, arr) => arr.indexOf(name) === i)
+}
+
 export const POST = async (req: NextRequest) => {
   const input = await kunParsePostBody(req, detailsSchema)
   if (typeof input === 'string') {
@@ -45,30 +63,21 @@ export const POST = async (req: NextRequest) => {
   const vndbId = input.vndbId.toLowerCase()
 
   try {
-    const vndbResponse = await fetch(`${VNDB_API_BASE}/vn`, {
-      method: 'POST',
-      headers: VNDB_API_HEADERS,
-      body: JSON.stringify({
-        filters: ['id', '=', vndbId],
-        fields: 'title, titles.lang, titles.title, aliases, released'
-      })
-    })
-
-    if (!vndbResponse.ok) {
-      return NextResponse.json('VNDB API 请求失败')
-    }
-
-    const vndbData: VNDBResponse = await vndbResponse.json()
+    const vndbData = await fetchVndbVn<VNDBFullResult>(
+      ['id', '=', vndbId],
+      'title, titles.lang, titles.title, aliases, released, tags{id,name,rating,spoiler,lie,category}, developers{id,name,original,aliases,lang,type}'
+    )
     if (!vndbData.results.length) {
       return NextResponse.json('未找到对应的 VNDB 条目')
     }
 
     const titles = buildAllTitles(vndbData)
     const released = vndbData.results[0].released
+    const tags = buildTags(vndbData.results)
+    const developers = buildDevelopers(vndbData.results)
 
-    return NextResponse.json({ titles, released })
+    return NextResponse.json({ titles, released, tags, developers })
   } catch (error) {
-    console.error(error)
     return NextResponse.json('VNDB API 请求失败')
   }
 }

@@ -17,6 +17,7 @@ export interface UserInfo {
     patch_resource: number
     patch_comment: number
     patch_favorite: number
+    patch_rating: number
     send_message: number
   }
 }
@@ -33,11 +34,11 @@ export interface UserFollow {
 
 export interface UserResource {
   id: number
+  section: string
   patchUniqueId: string
   patchId: number
   patchName: string
   patchBanner: string
-  size: string
   type: string[]
   language: string[]
   platform: string[]
@@ -63,6 +64,19 @@ export interface UserComment {
   created: string
   quotedUserUid?: number | null
   quotedUsername?: string | null
+}
+
+export interface UserRating {
+  id: number
+  patchUniqueId: string
+  patchName: string
+  recommend: string
+  overall: number
+  playStatus: string
+  shortSummary: string
+  spoilerLevel: string
+  like: number
+  created: string
 }
 
 export interface FloatingCardUser {

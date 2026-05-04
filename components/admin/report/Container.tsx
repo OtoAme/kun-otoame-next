@@ -1,6 +1,6 @@
 'use client'
 
-import { Tab, Tabs } from '@heroui/react'
+import { Select, SelectItem, Tab, Tabs } from '@heroui/react'
 import { useEffect, useState } from 'react'
 import { kunFetchGet } from '~/utils/kunFetch'
 import { KunLoading } from '~/components/kun/Loading'
@@ -16,7 +16,7 @@ interface Props {
   total: number
   title?: string
   targetType?: AdminReportTargetType
-  limit?: number
+  initialLimit?: number
 }
 
 export const Report = ({
@@ -24,12 +24,13 @@ export const Report = ({
   total,
   title = '评论举报管理',
   targetType = 'comment',
-  limit = 30
+  initialLimit = 30
 }: Props) => {
   const [reports, setReports] = useState<AdminReport[]>(initialReports)
   const [activeTab, setActiveTab] = useState<ReportTab>('pending')
   const [totalCount, setTotalCount] = useState(total)
   const [page, setPage] = useState(1)
+  const [limit, setLimit] = useState(initialLimit)
   const isMounted = useMounted()
 
   const [loading, setLoading] = useState(false)
@@ -56,7 +57,7 @@ export const Report = ({
       return
     }
     fetchData(page, activeTab)
-  }, [page, activeTab, isMounted])
+  }, [page, limit, activeTab, isMounted, targetType])
 
   return (
     <div className="space-y-6">
@@ -103,6 +104,28 @@ export const Report = ({
           onPageChange={setPage}
           isLoading={loading}
         />
+      </div>
+
+      <div className="flex items-center justify-center gap-2 text-sm text-default-500">
+        <span>每页显示</span>
+        <Select
+          aria-label="每页显示数量"
+          size="sm"
+          className="w-20"
+          selectedKeys={new Set([String(limit)])}
+          onSelectionChange={(keys) => {
+            const val = Number(Array.from(keys)[0])
+            if (val && val !== limit) {
+              setLimit(val)
+              setPage(1)
+            }
+          }}
+        >
+          <SelectItem key="30">30</SelectItem>
+          <SelectItem key="50">50</SelectItem>
+          <SelectItem key="100">100</SelectItem>
+        </Select>
+        <span>条，共 {totalCount} 条</span>
       </div>
     </div>
   )

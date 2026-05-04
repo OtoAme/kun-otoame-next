@@ -8,11 +8,14 @@ import Link from 'next/link'
 import { KunNull } from '~/components/kun/Null'
 import { ChatMessage } from './ChatMessage'
 import { ChatInput } from './ChatInput'
+import { DeleteConversationButton } from './DeleteConversationButton'
 import { KunAvatar } from '~/components/kun/floating-card/KunAvatar'
 import { kunFetchGet, kunFetchPut } from '~/utils/kunFetch'
 import { useUserStore } from '~/store/userStore'
+import { useMessageStore } from '~/store/messageStore'
 import toast from 'react-hot-toast'
 import type { PrivateMessage } from '~/types/api/conversation'
+import type { MessageUnreadStatus } from '~/types/api/message'
 
 type MessageUpdateData =
   | { action: 'delete' }
@@ -44,14 +47,19 @@ export const ChatContainer = ({
   const [hasMore, setHasMore] = useState(initialMessages.length < total)
   const [page, setPage] = useState(1)
   const [totalCount, setTotalCount] = useState(total)
-  const messagesEndRef = useRef<HTMLDivElement>(null)
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const loadMoreRef = useRef<HTMLDivElement>(null)
   const user = useUserStore((state) => state.user)
+  const setUnreadMessageStatus = useMessageStore(
+    (state) => state.setUnreadMessageStatus
+  )
   const isInitialMount = useRef(true)
 
   const scrollToBottom = useCallback(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'instant' })
+    const container = scrollContainerRef.current
+    if (container) {
+      container.scrollTop = container.scrollHeight
+    }
   }, [])
 
   const loadMoreMessages = useCallback(async () => {
@@ -142,11 +150,20 @@ export const ChatContainer = ({
   )
 
   useEffect(() => {
+    document.title = `与${otherUser.name}的私聊 - TouchGal`
+  }, [otherUser.name])
+
+  useEffect(() => {
     const markAsRead = async () => {
-      await kunFetchPut(`/message/conversation/${conversationId}/read`)
+      const response = await kunFetchPut<KunResponse<MessageUnreadStatus>>(
+        `/message/conversation/${conversationId}/read`
+      )
+      if (typeof response !== 'string') {
+        setUnreadMessageStatus(response)
+      }
     }
     markAsRead()
-  }, [conversationId])
+  }, [conversationId, setUnreadMessageStatus])
 
   useEffect(() => {
     if (isInitialMount.current) {
@@ -174,25 +191,32 @@ export const ChatContainer = ({
 
   return (
     <Card className="h-[calc(100vh-200px)] min-h-[500px]">
-      <CardHeader className="border-b border-default-200 flex items-center gap-3">
-        <Button
-          as={Link}
-          href="/message/chat"
-          variant="light"
-          isIconOnly
-          size="sm"
-        >
-          <ArrowLeft className="size-4" />
-        </Button>
-        <KunAvatar
-          uid={otherUser.id}
-          avatarProps={{
-            src: otherUser.avatar,
-            name: otherUser.name,
-            size: 'sm'
-          }}
+      <CardHeader className="border-b border-default-200 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <Button
+            as={Link}
+            href="/message/chat"
+            variant="light"
+            isIconOnly
+            size="sm"
+          >
+            <ArrowLeft className="size-4" />
+          </Button>
+          <KunAvatar
+            uid={otherUser.id}
+            avatarProps={{
+              src: otherUser.avatar,
+              name: otherUser.name,
+              size: 'sm'
+            }}
+          />
+          <span className="font-semibold">{otherUser.name}</span>
+        </div>
+
+        <DeleteConversationButton
+          conversationId={conversationId}
+          otherUserName={otherUser.name}
         />
-        <span className="font-semibold">{otherUser.name}</span>
       </CardHeader>
 
       <CardBody className="flex flex-col p-0">
@@ -220,7 +244,6 @@ export const ChatContainer = ({
                   }
                 />
               ))}
-              <div ref={messagesEndRef} />
             </>
           )}
         </div>

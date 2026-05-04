@@ -1,13 +1,17 @@
 import { z } from 'zod'
 import { createHash } from 'crypto'
 import { prisma } from '~/prisma/index'
-import { GalgameCardSelectField } from '~/constants/api/select'
+import type { Prisma } from '@prisma/client'
+import {
+  GalgameCardSelectField,
+  toGalgameCardCount
+} from '~/constants/api/select'
 import { galgameSchema } from '~/validations/galgame'
 import { getOrSet } from '~/lib/redis'
 
 export const getGalgame = async (
   input: z.infer<typeof galgameSchema>,
-  nsfwEnable: Record<string, string | undefined>
+  nsfwEnable: Prisma.patchWhereInput
 ) => {
   const cacheKey = `galgame_list:${createHash('md5')
     .update(JSON.stringify({ input, nsfwEnable }))
@@ -111,7 +115,7 @@ export const getGalgame = async (
         platform: gal.platform,
         tags: gal.tag.map((t) => t.tag.name).slice(0, 3),
         created: gal.created,
-        _count: gal._count,
+        _count: toGalgameCardCount(gal),
         averageRating: gal.rating_stat?.avg_overall
           ? Math.round(gal.rating_stat.avg_overall * 10) / 10
           : 0

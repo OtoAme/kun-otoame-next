@@ -1,8 +1,7 @@
+import type { Prisma } from '@prisma/client'
 import { prisma } from '~/prisma/index'
 
-export const getRandomUniqueId = async (
-  nsfwEnable: Record<string, string | undefined>
-) => {
+export const getRandomUniqueId = async (nsfwEnable: Prisma.patchWhereInput) => {
   const totalArticles = await prisma.patch.findMany({
     where: nsfwEnable,
     select: { unique_id: true }

@@ -18,6 +18,7 @@ export const getUserProfile = async (
           patch_resource: true,
           patch: true,
           patch_comment: true,
+          patch_rating: true,
           send_message: true
         }
       },

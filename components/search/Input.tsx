@@ -79,6 +79,7 @@ export const SearchInput = ({
     const suggestions: SearchSuggestionType[] = queryArraySplitByBlank.map(
       (q) => ({
         type: 'keyword',
+        mode: 'include',
         name: q
       })
     )

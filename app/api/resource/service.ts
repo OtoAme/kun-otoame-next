@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { createHash } from 'crypto'
+import type { Prisma } from '@prisma/client'
 import { prisma } from '~/prisma/index'
 import { resourceSchema } from '~/validations/resource'
 import { getOrSet } from '~/lib/redis'
@@ -7,7 +8,7 @@ import type { PatchResource } from '~/types/api/resource'
 
 export const getPatchResource = async (
   input: z.infer<typeof resourceSchema>,
-  nsfwEnable: Record<string, string | undefined>
+  nsfwEnable: Prisma.patchWhereInput
 ) => {
   const cacheKey = `resource_list:${createHash('md5')
     .update(JSON.stringify({ input, nsfwEnable }))

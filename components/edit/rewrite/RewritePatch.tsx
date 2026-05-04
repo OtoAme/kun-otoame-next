@@ -220,7 +220,7 @@ export const RewritePatch = () => {
           />
 
           <BatchTag
-            initialTag={data.tag}
+            data={data}
             saveTag={(tag) =>
               setData({
                 ...data,

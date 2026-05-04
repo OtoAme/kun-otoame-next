@@ -4,6 +4,8 @@ model patch {
   name                 String   @db.VarChar(1007)
   vndb_id              String?  @db.VarChar(107)
   vndb_relation_id     String?  @db.VarChar(107)
+  bangumi_id           Int?     @unique
+  steam_id             Int?     @unique
   dlsite_code          String?  @unique @db.VarChar(107)
   banner               String   @default("") @db.VarChar(1007)
   introduction         String   @default("") @db.VarChar(100007)
@@ -18,6 +20,10 @@ model patch {
   language             String[]
   engine               String[]
   platform             String[]
+
+  favorite_count Int @default(0)
+  resource_count Int @default(0)
+  comment_count  Int @default(0)
 
   user_id Int
   user    user @relation("user_patch", fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
@@ -39,6 +45,14 @@ model patch {
   updated DateTime @updatedAt
 
   @@unique([vndb_id, vndb_relation_id])
+  @@index([created])
+  @@index([resource_update_time])
+  @@index([content_limit])
+  @@index([released(ops: raw("text_pattern_ops"))])
+  @@index([favorite_count])
+  @@index([type], type: Gin)
+  @@index([language], type: Gin)
+  @@index([platform], type: Gin)
 }
 
 model patch_alias {

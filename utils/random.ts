@@ -24,10 +24,11 @@ export const randomNormalInt = (min: number, max: number) => {
 
 export const generateRandomString = (length: number) => {
   const charset = '023456789abcdefghjkmnopqrstuvwxyz'
+  const array = new Uint8Array(length)
+  globalThis.crypto.getRandomValues(array)
   let code = ''
   for (let i = 0; i < length; i++) {
-    const randomIndex = Math.floor(Math.random() * charset.length)
-    code += charset[randomIndex]
+    code += charset[array[i] % charset.length]
   }
   return code.toUpperCase()
 }

@@ -6,7 +6,18 @@ export interface CreatePatchData {
   introduction: string
   vndbId: string
   vndbRelationId: string
+  bangumiId: string
+  steamId: string
   dlsiteCode: string
+  dlsiteCircleName: string
+  dlsiteCircleLink: string
+  vndbTags: string[]
+  vndbDevelopers: string[]
+  bangumiTags: string[]
+  bangumiDevelopers: string[]
+  steamTags: string[]
+  steamDevelopers: string[]
+  steamAliases: string[]
   officialUrl: string
   alias: string[]
   tag: string[]
@@ -28,12 +39,25 @@ interface StoreState {
   resetData: () => void
 }
 
+export const createPatchEditStoreKey = 'kun-patch-edit-store'
+
 const initialState: CreatePatchData = {
   name: '',
   introduction: '',
   vndbId: '',
   vndbRelationId: '',
+  bangumiId: '',
+  steamId: '',
   dlsiteCode: '',
+  dlsiteCircleName: '',
+  dlsiteCircleLink: '',
+  vndbTags: [],
+  vndbDevelopers: [],
+  bangumiTags: [],
+  bangumiDevelopers: [],
+  steamTags: [],
+  steamDevelopers: [],
+  steamAliases: [],
   officialUrl: '',
   alias: [],
   tag: [],

@@ -80,6 +80,8 @@ export const login = async (
     dailyImageLimit: user.daily_image_count,
     dailyUploadLimit: user.daily_upload_size,
     enableEmailNotice: user.enable_email_notice,
+    allowPrivateMessage: user.allow_private_message,
+    blockedTagIds: user.blocked_tag_ids,
     ...redirectConfig
   }
 

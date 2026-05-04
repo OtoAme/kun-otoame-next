@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { kunParsePostBody } from '~/app/api/utils/parseQuery'
 import { searchSchema } from '~/validations/search'
-import { getNSFWHeader } from '~/app/api/utils/getNSFWHeader'
+import { getPatchVisibilityWhere } from '~/app/api/utils/getPatchVisibilityWhere'
 import { searchGalgame } from './service'
 
 export const POST = async (req: NextRequest) => {
@@ -9,8 +9,8 @@ export const POST = async (req: NextRequest) => {
   if (typeof input === 'string') {
     return NextResponse.json(input)
   }
-  const nsfwEnable = getNSFWHeader(req)
+  const visibilityWhere = await getPatchVisibilityWhere(req)
 
-  const response = await searchGalgame(input, nsfwEnable)
+  const response = await searchGalgame(input, visibilityWhere)
   return NextResponse.json(response)
 }

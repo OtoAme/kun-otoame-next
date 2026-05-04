@@ -9,7 +9,10 @@ export async function GET(req: NextRequest) {
     return NextResponse.json(input)
   }
   const payload = await verifyHeaderCookie(req)
+  if (!payload?.uid) {
+    return NextResponse.json('请先登录', { status: 401 })
+  }
 
-  const user = await getUserProfile(input, payload?.uid ?? 0)
+  const user = await getUserProfile(input, payload.uid)
   return NextResponse.json(user)
 }

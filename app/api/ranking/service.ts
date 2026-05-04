@@ -1,7 +1,10 @@
 import { z } from 'zod'
 import { createHash } from 'crypto'
 import { Prisma } from '@prisma/client'
-import { GalgameCardSelectField } from '~/constants/api/select'
+import {
+  GalgameCardSelectField,
+  toGalgameCardCount
+} from '~/constants/api/select'
 import { prisma } from '~/prisma/index'
 import { getOrSet } from '~/lib/redis'
 import { rankingSchema } from '~/validations/ranking'
@@ -23,7 +26,7 @@ const RankingSelectField = {
 
 export const getRanking = async (
   input: z.infer<typeof rankingSchema>,
-  nsfwEnable: Record<string, string | undefined>
+  nsfwEnable: Prisma.patchWhereInput
 ) => {
   const cacheKey = `ranking_list:${createHash('md5')
     .update(JSON.stringify({ input, nsfwEnable }))
@@ -77,7 +80,7 @@ export const getRanking = async (
           platform: gal.platform,
           tags: gal.tag.map((t) => t.tag.name).slice(0, 3),
           created: gal.created,
-          _count: gal._count,
+          _count: toGalgameCardCount(gal),
           averageRating:
             ratingCount > 0 ? Math.round(ratingAvg * 10) / 10 : 0,
           ratingCount,

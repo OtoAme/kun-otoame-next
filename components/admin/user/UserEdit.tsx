@@ -53,16 +53,19 @@ export const UserEdit = ({ initialUser }: Props) => {
 
   const handleOpen = () => {
     setFormUser(user)
+    setPassword('')
     onOpen()
   }
 
   const handleClose = () => {
     setFormUser(user)
+    setPassword('')
     onClose()
   }
 
   const [updating, setUpdating] = useState(false)
   const [disabling2FA, setDisabling2FA] = useState(false)
+  const [password, setPassword] = useState('')
 
   const handleUpdateUserInfo = async () => {
     const requestData = {
@@ -71,6 +74,7 @@ export const UserEdit = ({ initialUser }: Props) => {
       role: formUser.role,
       status: formUser.status,
       dailyImageCount: formUser.dailyImageCount,
+      password,
       bio: formUser.bio
     }
 
@@ -79,6 +83,7 @@ export const UserEdit = ({ initialUser }: Props) => {
     kunErrorHandler(res, () => {
       setUser(formUser)
       setFormUser(formUser)
+      setPassword('')
       toast.success('更新用户信息成功')
       onClose()
     })
@@ -116,10 +121,17 @@ export const UserEdit = ({ initialUser }: Props) => {
           <ModalBody>
             <p>请注意, 您的任何更改都会导致该用户重新登录</p>
             <div className="grid grid-cols-2 gap-4">
+              <Input label="用户 ID" value={String(formUser.id)} isReadOnly />
               <Input
                 label="用户名"
                 value={formUser.name}
                 onChange={(e) => handleChange('name', e.target.value)}
+              />
+              <Input
+                label="邮箱"
+                type="email"
+                value={formUser.email}
+                onChange={(e) => handleChange('email', e.target.value)}
               />
               <Select
                 label="角色"
@@ -148,6 +160,16 @@ export const UserEdit = ({ initialUser }: Props) => {
                   handleChange('dailyImageCount', Number(e.target.value))
                 }
               />
+              <div className="col-span-2">
+                <Input
+                  label="新密码"
+                  type="password"
+                  autoComplete="new-password"
+                  description="留空则不修改该用户密码"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                />
+              </div>
               <div className="col-span-2">
                 <Textarea
                   label="签名"

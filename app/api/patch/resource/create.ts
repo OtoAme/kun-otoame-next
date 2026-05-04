@@ -138,6 +138,7 @@ export const createPatchResource = async (
         code: newResource.code,
         password: newResource.password,
         platform: newResource.platform,
+        download: newResource.download,
         likeCount: 0,
         isLike: false,
         status: newResource.status,

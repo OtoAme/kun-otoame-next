@@ -8,6 +8,6 @@ export async function GET(req: NextRequest) {
     return NextResponse.json('用户登陆失效')
   }
 
-  const status = await getStatus(payload?.uid)
+  const status = await getStatus(payload.uid)
   return NextResponse.json(status)
 }

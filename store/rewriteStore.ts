@@ -11,7 +11,18 @@ export interface RewritePatchData {
   uniqueId: string
   vndbId: string
   vndbRelationId: string
+  bangumiId: string
+  steamId: string
   dlsiteCode: string
+  dlsiteCircleName: string
+  dlsiteCircleLink: string
+  vndbTags: string[]
+  vndbDevelopers: string[]
+  bangumiTags: string[]
+  bangumiDevelopers: string[]
+  steamTags: string[]
+  steamDevelopers: string[]
+  steamAliases: string[]
   name: string
   introduction: string
   officialUrl: string
@@ -44,7 +55,18 @@ const initialState: RewritePatchData = {
   uniqueId: '',
   vndbId: '',
   vndbRelationId: '',
+  bangumiId: '',
+  steamId: '',
   dlsiteCode: '',
+  dlsiteCircleName: '',
+  dlsiteCircleLink: '',
+  vndbTags: [],
+  vndbDevelopers: [],
+  bangumiTags: [],
+  bangumiDevelopers: [],
+  steamTags: [],
+  steamDevelopers: [],
+  steamAliases: [],
   name: '',
   introduction: '',
   officialUrl: '',

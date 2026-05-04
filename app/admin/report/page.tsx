@@ -5,7 +5,7 @@ import { ErrorComponent } from '~/components/error/ErrorComponent'
 import { Suspense } from 'react'
 import type { Metadata } from 'next'
 
-export const revalidate = 3
+export const revalidate = 0
 
 export const metadata: Metadata = kunMetadata
 
@@ -22,7 +22,12 @@ export default async function Kun() {
 
   return (
     <Suspense>
-      <Report initialReports={response.reports} total={response.total} />
+      <Report
+        initialReports={response.reports}
+        total={response.total}
+        title="评论举报管理"
+        targetType="comment"
+      />
     </Suspense>
   )
 }

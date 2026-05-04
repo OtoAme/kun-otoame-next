@@ -1,11 +1,12 @@
 import { z } from 'zod'
+import type { Prisma } from '@prisma/client'
 import { prisma } from '~/prisma/index'
 import { getUserInfoSchema } from '~/validations/user'
 import type { UserResource } from '~/types/api/user'
 
 export const getUserPatchResource = async (
   input: z.infer<typeof getUserInfoSchema>,
-  nsfwEnable: Record<string, string | undefined>
+  nsfwEnable: Prisma.patchWhereInput
 ) => {
   const { uid, page, limit } = input
   const offset = (page - 1) * limit
@@ -31,6 +32,7 @@ export const getUserPatchResource = async (
     patchId: res.patch.id,
     patchName: res.patch.name,
     patchBanner: res.patch.banner,
+    section: res.section,
     size: res.size,
     type: res.type,
     language: res.language,

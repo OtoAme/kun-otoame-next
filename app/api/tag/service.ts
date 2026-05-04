@@ -1,14 +1,21 @@
 import { z } from 'zod'
 import { createHash } from 'crypto'
-import { GalgameCardSelectField } from '~/constants/api/select'
+import type { Prisma } from '@prisma/client'
+import {
+  GalgameCardSelectField,
+  toGalgameCardCount
+} from '~/constants/api/select'
 import { prisma } from '~/prisma/index'
 import { getOrSet } from '~/lib/redis'
 import { getPatchByTagSchema, getTagSchema } from '~/validations/tag'
 import type { Tag } from '~/types/api/tag'
 
-export const getTag = async (input: z.infer<typeof getTagSchema>) => {
+export const getTag = async (
+  input: z.infer<typeof getTagSchema>,
+  blockedTagIds: number[] = []
+) => {
   const cacheKey = `tag_list:${createHash('md5')
-    .update(JSON.stringify(input))
+    .update(JSON.stringify({ input, blockedTagIds }))
     .digest('hex')}`
 
   return await getOrSet(
@@ -19,11 +26,12 @@ export const getTag = async (input: z.infer<typeof getTagSchema>) => {
 
       const [data, total] = await Promise.all([
         prisma.patch_tag.findMany({
+          where: { id: { notIn: blockedTagIds } },
           take: limit,
           skip: offset,
           orderBy: { count: 'desc' }
         }),
-        prisma.patch_tag.count()
+        prisma.patch_tag.count({ where: { id: { notIn: blockedTagIds } } })
       ])
 
       const tags: Tag[] = data.map((tag) => ({
@@ -41,7 +49,7 @@ export const getTag = async (input: z.infer<typeof getTagSchema>) => {
 
 export const getPatchByTag = async (
   input: z.infer<typeof getPatchByTagSchema>,
-  nsfwEnable: Record<string, string | undefined>
+  nsfwEnable: Prisma.patchWhereInput
 ) => {
   const cacheKey = `tag_galgame_list:${createHash('md5')
     .update(JSON.stringify({ input, nsfwEnable }))
@@ -75,6 +83,7 @@ export const getPatchByTag = async (
         ...gal,
         tags: gal.tag.map((t) => t.tag.name).slice(0, 3),
         uniqueId: gal.unique_id,
+        _count: toGalgameCardCount(gal),
         averageRating: gal.rating_stat?.avg_overall
           ? Math.round(gal.rating_stat.avg_overall * 10) / 10
           : 0

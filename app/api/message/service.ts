@@ -35,6 +35,20 @@ export const readMessage = async (uid: number) => {
   return {}
 }
 
+
+
+export const clearReadMessage = async (uid: number, type: string) => {
+  await prisma.user_message.deleteMany({
+    where: {
+      recipient_id: uid,
+      type,
+      status: 1
+    }
+  })
+
+  return {}
+}
+
 export const getMessage = async (
   input: z.infer<typeof getMessageSchema>,
   uid: number

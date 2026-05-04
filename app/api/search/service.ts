@@ -1,13 +1,17 @@
 import { z } from 'zod'
 import { Prisma } from '@prisma/client'
-import { GalgameCardSelectField } from '~/constants/api/select'
+import type { Prisma as PrismaType } from '@prisma/client'
+import {
+  GalgameCardSelectField,
+  toGalgameCardCount
+} from '~/constants/api/select'
 import { prisma } from '~/prisma/index'
 import { searchSchema, searchTagSchema } from '~/validations/search'
 import type { SearchSuggestionType } from '~/types/api/search'
 
 export const searchGalgame = async (
   input: z.infer<typeof searchSchema>,
-  nsfwEnable: Record<string, string | undefined>
+  nsfwEnable: PrismaType.patchWhereInput
 ) => {
   const {
     queryString,
@@ -149,6 +153,7 @@ export const searchGalgame = async (
     ...gal,
     tags: gal.tag.map((t) => t.tag.name).slice(0, 3),
     uniqueId: gal.unique_id,
+    _count: toGalgameCardCount(gal),
     averageRating: gal.rating_stat?.avg_overall
       ? Math.round(gal.rating_stat.avg_overall * 10) / 10
       : 0

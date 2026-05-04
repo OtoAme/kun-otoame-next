@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { createHash } from 'crypto'
 import { prisma } from '~/prisma'
+import type { Prisma } from '@prisma/client'
 import {
   createCompanySchema,
   getCompanyByIdSchema,
@@ -10,7 +11,10 @@ import {
   updateCompanySchema
 } from '~/validations/company'
 import { getOrSet } from '~/lib/redis'
-import { GalgameCardSelectField } from '~/constants/api/select'
+import {
+  GalgameCardSelectField,
+  toGalgameCardCount
+} from '~/constants/api/select'
 
 export const getCompany = async (input: z.infer<typeof getCompanySchema>) => {
   const cacheKey = `company_list:${createHash('md5')
@@ -81,7 +85,7 @@ export const searchCompany = async (
 
 export const getPatchByCompany = async (
   input: z.infer<typeof getPatchByCompanySchema>,
-  nsfwEnable: Record<string, string | undefined>
+  nsfwEnable: Prisma.patchWhereInput
 ) => {
   const cacheKey = `company_galgame_list:${createHash('md5')
     .update(JSON.stringify({ input, nsfwEnable }))
@@ -185,6 +189,7 @@ export const getPatchByCompany = async (
         ...gal,
         tags: gal.tag.map((t) => t.tag.name).slice(0, 3),
         uniqueId: gal.unique_id,
+        _count: toGalgameCardCount(gal),
         averageRating: gal.rating_stat?.avg_overall
           ? Math.round(gal.rating_stat.avg_overall * 10) / 10
           : 0

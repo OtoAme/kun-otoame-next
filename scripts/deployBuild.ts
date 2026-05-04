@@ -15,6 +15,13 @@ if (!fs.existsSync(envPath)) {
   process.exit(1)
 }
 
+const runCommand = (
+  command: string,
+  env: NodeJS.ProcessEnv = process.env
+) => {
+  execSync(command, { stdio: 'inherit', env })
+}
+
 config({ path: envPath })
 
 try {

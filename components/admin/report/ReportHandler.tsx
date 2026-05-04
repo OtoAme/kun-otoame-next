@@ -12,7 +12,7 @@ import { useUserStore } from '~/store/userStore'
 import type { AdminReport } from '~/types/api/admin'
 
 interface Props {
-  initialReport: AdminReport
+  report: AdminReport
 }
 
 const buildPatchLink = (report: AdminReport) => {
@@ -37,10 +37,10 @@ const buildPatchLink = (report: AdminReport) => {
   return query ? `/${uniqueId}?${query}` : `/${uniqueId}`
 }
 
-export const ReportHandler = ({ initialReport }: Props) => {
+export const ReportHandler = ({ report }: Props) => {
   const currentUser = useUserStore((state) => state.user)
-  const patchLink = buildPatchLink(initialReport)
-  const userLink = `/user/${initialReport.reportedUser.id}`
+  const patchLink = buildPatchLink(report)
+  const userLink = `/user/${report.reportedUser.id}`
   const disabledKeys = [
     ...(patchLink ? [] : ['game']),
     ...(userLink ? [] : ['user'])

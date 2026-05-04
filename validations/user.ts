@@ -4,6 +4,7 @@ import {
   kunValidMailConfirmCodeRegex
 } from '~/utils/validate'
 import { nonEmptyFileSchema } from './file'
+import { captchaVerifyTokenSchema } from './captcha'
 
 export const avatarSchema = z.object({
   avatar: nonEmptyFileSchema
@@ -29,12 +30,18 @@ export const resetEmailSchema = z.object({
   email: z.string().email({ message: '请输入合法的邮箱格式' }),
   code: z
     .string()
-    .regex(kunValidMailConfirmCodeRegex, { message: '邮箱验证码格式无效' })
+    .regex(kunValidMailConfirmCodeRegex, { message: '邮箱验证码格式无效' }),
+  currentPassword: z.string().trim().max(1007).optional(),
+  totp: z
+    .string()
+    .trim()
+    .regex(/^$|^\d{6}$/, { message: '2FA 验证码必须为 6 位数字' })
+    .optional()
 })
 
 export const sendResetEmailVerificationCodeSchema = z.object({
   email: z.string().email({ message: '请输入合法的邮箱格式' }),
-  captcha: z.string().max(5000)
+  captcha: captchaVerifyTokenSchema
 })
 
 export const passwordSchema = z.object({
@@ -101,6 +108,15 @@ export const saveUser2FASecretSchema = z.object({
 export const enableUser2FASchema = z.object({
   token: z
     .string()
+    .trim()
     .min(6, { message: '2FA 验证码必须为 6 位数字' })
     .max(6, { message: '2FA 验证码必须为 6 位数字' })
+})
+
+export const disableUser2FASchema = enableUser2FASchema.extend({
+  isBackupCode: z.boolean().optional().default(false)
+})
+
+export const blockedTagSchema = z.object({
+  tagId: z.coerce.number().min(1).max(9999999)
 })

@@ -100,7 +100,7 @@ export const CreatePatch = () => {
           />
 
           <BatchTag
-            initialTag={data.tag}
+            data={data}
             saveTag={(tag) =>
               setData({
                 ...data,

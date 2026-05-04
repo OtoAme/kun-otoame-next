@@ -1,12 +1,14 @@
 import { createHash } from 'crypto'
+import type { Prisma } from '@prisma/client'
 import { prisma } from '~/prisma/index'
 import { HomeResource } from '~/types/api/home'
-import { GalgameCardSelectField } from '~/constants/api/select'
+import {
+  GalgameCardSelectField,
+  toGalgameCardCount
+} from '~/constants/api/select'
 import { getOrSet } from '~/lib/redis'
 
-export const getHomeData = async (
-  nsfwEnable: Record<string, string | undefined>
-) => {
+export const getHomeData = async (nsfwEnable: Prisma.patchWhereInput) => {
   const cacheKey = `home_data:${createHash('md5')
     .update(JSON.stringify(nsfwEnable))
     .digest('hex')}`
@@ -52,6 +54,7 @@ export const getHomeData = async (
         ...gal,
         tags: gal.tag.map((t) => t.tag.name).slice(0, 3),
         uniqueId: gal.unique_id,
+        _count: toGalgameCardCount(gal),
         averageRating: gal.rating_stat?.avg_overall
           ? Math.round(gal.rating_stat.avg_overall * 10) / 10
           : 0
