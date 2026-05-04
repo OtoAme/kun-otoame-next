@@ -4,7 +4,7 @@ import { ErrorComponent } from '~/components/error/ErrorComponent'
 import { kunMetadata } from './metadata'
 import type { Metadata } from 'next'
 
-export const revalidate = 0
+export const revalidate = 300
 
 export const metadata: Metadata = kunMetadata
 

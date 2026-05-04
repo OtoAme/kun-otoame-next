@@ -3,7 +3,10 @@ import { prisma } from '~/prisma/index'
 import { patchUpdateSchema } from '~/validations/edit'
 import { uploadPatchBanner } from './_upload'
 import { purgePatchBannerCache } from '~/app/api/utils/purgeCache'
-import { invalidatePatchContentCache } from '~/app/api/patch/cache'
+import {
+  invalidatePatchContentCache,
+  invalidatePatchListCaches
+} from '~/app/api/patch/cache'
 import { processSubmittedExternalData } from './processExternalData'
 
 export const updateGalgame = async (
@@ -163,6 +166,10 @@ export const updateGalgame = async (
     input.tag,
     uid
   )
+  await Promise.all([
+    invalidatePatchContentCache(patch.unique_id),
+    invalidatePatchListCaches()
+  ])
 
   return {}
 }

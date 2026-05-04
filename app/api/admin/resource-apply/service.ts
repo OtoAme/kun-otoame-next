@@ -6,6 +6,7 @@ import {
   declinePatchResourceSchema
 } from '~/validations/admin'
 import { deleteFileFromS3 } from '~/lib/s3'
+import { deletePatchResourceCache } from '~/app/api/patch/resource/_helper'
 
 export const approvePatchResource = async (
   input: z.infer<typeof approvePatchResourceSchema>,
@@ -41,13 +42,14 @@ export const approvePatchResource = async (
     return '管理员不存在'
   }
 
-  return prisma.$transaction(async (prisma) => {
+  const result = await prisma.$transaction(async (prisma) => {
     await prisma.patch_resource.update({
       where: { id: resourceId },
       data: { status: { set: 0 } }
     })
 
-    const resourceTypeName = resource.section === 'galgame' ? '游戏资源' : '补丁资源'
+    const resourceTypeName =
+      resource.section === 'galgame' ? '游戏资源' : '补丁资源'
 
     await createMessage({
       type: 'system',
@@ -66,6 +68,10 @@ export const approvePatchResource = async (
 
     return {}
   })
+
+  await deletePatchResourceCache(resource.patch.unique_id)
+
+  return result
 }
 
 export const declinePatchResource = async (
@@ -110,7 +116,8 @@ export const declinePatchResource = async (
       where: { id: resourceId }
     })
 
-    const resourceTypeName = resource.section === 'galgame' ? '游戏资源' : '补丁资源'
+    const resourceTypeName =
+      resource.section === 'galgame' ? '游戏资源' : '补丁资源'
 
     await createMessage({
       type: 'system',

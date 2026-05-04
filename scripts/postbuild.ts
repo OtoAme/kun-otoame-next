@@ -66,6 +66,7 @@ const copyFiles = async () => {
     await assertExists('.next/standalone/server/image/auth/white')
     await assertExists('.next/standalone/posts')
     await assertExists('.next/standalone/config/redirect.json')
+    await assertExists('.next/standalone/server.js')
 
     console.log('Files copied successfully.')
   } catch (error) {

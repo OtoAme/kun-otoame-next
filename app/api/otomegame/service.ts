@@ -7,6 +7,7 @@ import {
   toGalgameCardCount
 } from '~/constants/api/select'
 import { galgameSchema } from '~/validations/galgame'
+import { GALGAME_LIST_CACHE_DURATION } from '~/config/cache'
 import { getOrSet } from '~/lib/redis'
 import { buildGalgameOrderBy } from '~/app/api/utils/galgameQuery'
 
@@ -75,8 +76,12 @@ export const getGalgame = async (
 
       const where = {
         ...(selectedType !== 'all' && { type: { has: selectedType } }),
-        ...(selectedLanguage !== 'all' && { language: { has: selectedLanguage } }),
-        ...(selectedPlatform !== 'all' && { platform: { has: selectedPlatform } }),
+        ...(selectedLanguage !== 'all' && {
+          language: { has: selectedLanguage }
+        }),
+        ...(selectedPlatform !== 'all' && {
+          platform: { has: selectedPlatform }
+        }),
         ...nsfwEnable
       }
 
@@ -121,6 +126,6 @@ export const getGalgame = async (
 
       return { galgames, total }
     },
-    10
+    GALGAME_LIST_CACHE_DURATION
   )
 }

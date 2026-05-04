@@ -16,7 +16,7 @@ import {
   parsePositiveIntParam
 } from '~/utils/galgameFilter'
 
-export const revalidate = 0
+export const revalidate = 600
 
 interface Props {
   params: Promise<{ id: string }>

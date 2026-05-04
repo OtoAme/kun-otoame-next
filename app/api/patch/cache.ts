@@ -1,6 +1,6 @@
 import { randomUUID } from 'crypto'
 import { PATCH_FAVORITE_CACHE_DURATION } from '~/config/cache'
-import { delKv, delKvs, getKv, getKvs, setKv } from '~/lib/redis'
+import { delKv, delKvPattern, delKvs, getKv, getKvs, setKv } from '~/lib/redis'
 
 const PATCH_CACHE_KEY = 'patch'
 const PATCH_INTRODUCTION_CACHE_KEY = 'patch:introduction'
@@ -125,6 +125,35 @@ export const invalidatePatchContentCache = async (uniqueId: string) => {
   await Promise.all([
     delKv(getPatchCacheKey(uniqueId)),
     delKv(getPatchIntroductionCacheKey(uniqueId))
+  ])
+}
+
+export const invalidatePatchListCaches = async () => {
+  await Promise.all([
+    delKvPattern('home_data:*'),
+    delKvPattern('galgame_list:*'),
+    delKvPattern('ranking_list:*'),
+    delKvPattern('resource_list:*'),
+    delKvPattern('tag_galgame_list:*'),
+    delKvPattern('company_galgame_list:*')
+  ])
+}
+
+export const invalidateCompanyCaches = async (companyId?: number) => {
+  await Promise.all([
+    delKvPattern('company_list:*'),
+    delKvPattern('company_galgame_list:*'),
+    companyId
+      ? delKv(`company_detail:${companyId}`)
+      : delKvPattern('company_detail:*')
+  ])
+}
+
+export const invalidateTagCaches = async () => {
+  await Promise.all([
+    delKvPattern('tag_list:*'),
+    delKvPattern('tag_galgame_list:*'),
+    delKvPattern('galgame_list:*')
   ])
 }
 

@@ -7,6 +7,7 @@ import {
 } from '~/constants/api/select'
 import { prisma } from '~/prisma/index'
 import { getOrSet } from '~/lib/redis'
+import { RANKING_LIST_CACHE_DURATION } from '~/config/cache'
 import { rankingSchema } from '~/validations/ranking'
 import type { RankingSortField, RankingCard } from '~/types/api/ranking'
 
@@ -81,8 +82,7 @@ export const getRanking = async (
           tags: gal.tag.map((t) => t.tag.name).slice(0, 3),
           created: gal.created,
           _count: toGalgameCardCount(gal),
-          averageRating:
-            ratingCount > 0 ? Math.round(ratingAvg * 10) / 10 : 0,
+          averageRating: ratingCount > 0 ? Math.round(ratingAvg * 10) / 10 : 0,
           ratingCount,
           positiveRecommendCount: positive
         }
@@ -92,7 +92,7 @@ export const getRanking = async (
 
       return { galgames, total: cappedTotal }
     },
-    10
+    RANKING_LIST_CACHE_DURATION
   )
 }
 

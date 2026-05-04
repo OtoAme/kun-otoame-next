@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { prisma } from '~/prisma/index'
 import { updateTagSchema } from '~/validations/tag'
+import { invalidateTagCaches } from '~/app/api/patch/cache'
 import type { TagDetail } from '~/types/api/tag'
 
 export const updateTag = async (input: z.infer<typeof updateTagSchema>) => {
@@ -32,6 +33,8 @@ export const updateTag = async (input: z.infer<typeof updateTagSchema>) => {
       }
     }
   })
+
+  await invalidateTagCaches()
 
   return newTag
 }

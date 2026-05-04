@@ -6,6 +6,7 @@ import { patchCreateSchema } from '~/validations/edit'
 import { kunMoyuMoe } from '~/config/moyu-moe'
 import { postToIndexNow } from './_postToIndexNow'
 import { processSubmittedExternalData } from './processExternalData'
+import { invalidatePatchListCaches } from '~/app/api/patch/cache'
 
 export const createGalgame = async (
   input: Omit<
@@ -104,7 +105,11 @@ export const createGalgame = async (
 
       const newId = patch.id
 
-      const uploadResult = await uploadPatchBanner(banner, newId, bannerOriginal)
+      const uploadResult = await uploadPatchBanner(
+        banner,
+        newId,
+        bannerOriginal
+      )
       if (typeof uploadResult === 'string') {
         return uploadResult
       }
@@ -164,6 +169,7 @@ export const createGalgame = async (
     tag,
     uid
   )
+  await invalidatePatchListCaches()
 
   if (contentLimit === 'sfw') {
     const newPatchUrl = `${kunMoyuMoe.domain.main}/${galgameUniqueId}`

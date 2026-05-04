@@ -7,7 +7,8 @@ const redisMocks = vi.hoisted(() => {
     set: vi.fn(),
     setex: vi.fn(),
     del: vi.fn(),
-    scan: vi.fn()
+    scan: vi.fn(),
+    eval: vi.fn()
   }
 })
 
@@ -27,6 +28,9 @@ import { delKvPattern, getOrSet } from '~/lib/redis'
 describe('getOrSet', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    redisMocks.set.mockResolvedValue('OK')
+    redisMocks.setex.mockResolvedValue('OK')
+    redisMocks.eval.mockResolvedValue(1)
   })
 
   it('should return cached data if available', async () => {
@@ -53,7 +57,11 @@ describe('getOrSet', () => {
     expect(result).toEqual(data)
     expect(redisMocks.get).toHaveBeenCalledWith(expect.stringContaining(key))
     expect(fetcher).toHaveBeenCalled()
-    expect(redisMocks.setex).toHaveBeenCalledWith(expect.stringContaining(key), 10, JSON.stringify(data))
+    expect(redisMocks.setex).toHaveBeenCalledWith(
+      expect.stringContaining(key),
+      expect.any(Number),
+      expect.stringContaining('"__kunCacheVersion":1')
+    )
   })
 
   it('should handle concurrent requests by calling fetcher only once', async () => {
@@ -63,15 +71,17 @@ describe('getOrSet', () => {
 
     // Delayed fetcher to simulate slow DB
     const fetcher = vi.fn().mockImplementation(async () => {
-      await new Promise(resolve => setTimeout(resolve, 50))
+      await new Promise((resolve) => setTimeout(resolve, 50))
       return data
     })
 
-    const promises = Array(200).fill(null).map(() => getOrSet(key, fetcher, 10))
+    const promises = Array(200)
+      .fill(null)
+      .map(() => getOrSet(key, fetcher, 10))
     const results = await Promise.all(promises)
 
     expect(fetcher).toHaveBeenCalledTimes(1)
-    results.forEach(res => expect(res).toEqual(data))
+    results.forEach((res) => expect(res).toEqual(data))
   })
 
   it('should handle Redis get error gracefully', async () => {

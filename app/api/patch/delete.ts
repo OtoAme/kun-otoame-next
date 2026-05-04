@@ -1,6 +1,10 @@
 import { z } from 'zod'
 import { deleteFileFromS3 } from '~/lib/s3'
 import { prisma } from '~/prisma/index'
+import {
+  invalidatePatchContentCache,
+  invalidatePatchListCaches
+} from '~/app/api/patch/cache'
 
 const patchIdSchema = z.object({
   patchId: z.coerce.number().min(1).max(9999999)
@@ -20,7 +24,7 @@ export const deletePatchById = async (input: z.infer<typeof patchIdSchema>) => {
     where: { patch_id: patchId }
   })
 
-  return await prisma.$transaction(async (prisma) => {
+  const result = await prisma.$transaction(async (prisma) => {
     if (patchResources.length > 0) {
       await Promise.all(
         patchResources.map(async (resource) => {
@@ -43,4 +47,11 @@ export const deletePatchById = async (input: z.infer<typeof patchIdSchema>) => {
 
     return {}
   })
+
+  await Promise.all([
+    invalidatePatchContentCache(patch.unique_id),
+    invalidatePatchListCaches()
+  ])
+
+  return result
 }

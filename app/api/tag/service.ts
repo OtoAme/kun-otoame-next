@@ -7,6 +7,10 @@ import {
 } from '~/constants/api/select'
 import { prisma } from '~/prisma/index'
 import { getOrSet } from '~/lib/redis'
+import {
+  GALGAME_LIST_CACHE_DURATION,
+  TAG_LIST_CACHE_DURATION
+} from '~/config/cache'
 import { getPatchByTagSchema, getTagSchema } from '~/validations/tag'
 import {
   buildGalgameDateFilter,
@@ -48,7 +52,7 @@ export const getTag = async (
 
       return { tags, total }
     },
-    10
+    TAG_LIST_CACHE_DURATION
   )
 }
 
@@ -127,6 +131,6 @@ export const getPatchByTag = async (
 
       return { galgames, total }
     },
-    10
+    GALGAME_LIST_CACHE_DURATION
   )
 }

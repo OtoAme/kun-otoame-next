@@ -6,6 +6,7 @@ import {
   GalgameCardSelectField,
   toGalgameCardCount
 } from '~/constants/api/select'
+import { HOME_CACHE_DURATION } from '~/config/cache'
 import { getOrSet } from '~/lib/redis'
 
 export const getHomeData = async (nsfwEnable: Prisma.patchWhereInput) => {
@@ -87,6 +88,6 @@ export const getHomeData = async (nsfwEnable: Prisma.patchWhereInput) => {
 
       return { galgames, resources }
     },
-    10
+    HOME_CACHE_DURATION
   )
 }

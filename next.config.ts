@@ -1,4 +1,4 @@
-// import { fileURLToPath } from 'url'
+import { fileURLToPath } from 'url'
 import { env } from './validations/dotenv-check'
 import createMDX from '@next/mdx'
 import type { NextConfig } from 'next'
@@ -7,8 +7,7 @@ import type { NextConfig } from 'next'
 // import rehypeAutolinkHeadings from 'rehype-autolink-headings'
 // import rehypePrettyCode from 'rehype-pretty-code'
 
-// const __filename = fileURLToPath(import.meta.url)
-// const __dirname = path.dirname(__filename)
+const projectRoot = fileURLToPath(new URL('.', import.meta.url))
 
 const skipDeployBuildChecks =
   process.env.KUN_DEPLOY_BUILD_SKIP_CHECKS === 'true'
@@ -49,6 +48,7 @@ const nextConfig: NextConfig = {
   },
 
   output: 'standalone',
+  outputFileTracingRoot: projectRoot,
   experimental: {
     optimizePackageImports: ['@heroui/react', 'lucide-react', 'date-fns']
     // turbotrace: {

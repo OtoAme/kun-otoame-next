@@ -4,6 +4,7 @@ import type { Prisma } from '@prisma/client'
 import { prisma } from '~/prisma/index'
 import { resourceSchema } from '~/validations/resource'
 import { getOrSet } from '~/lib/redis'
+import { RESOURCE_LIST_CACHE_DURATION } from '~/config/cache'
 import type { PatchResource } from '~/types/api/resource'
 
 export const getPatchResource = async (
@@ -85,6 +86,6 @@ export const getPatchResource = async (
 
       return { resources, total }
     },
-    10
+    RESOURCE_LIST_CACHE_DURATION
   )
 }

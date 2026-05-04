@@ -5,7 +5,7 @@ import { kunGetActions } from './actions'
 import { ErrorComponent } from '~/components/error/ErrorComponent'
 import type { Metadata } from 'next'
 
-export const revalidate = 0
+export const revalidate = 180
 
 export const metadata: Metadata = kunMetadata
 

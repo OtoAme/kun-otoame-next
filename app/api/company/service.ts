@@ -12,6 +12,12 @@ import {
 } from '~/validations/company'
 import { getOrSet } from '~/lib/redis'
 import {
+  COMPANY_DETAIL_CACHE_DURATION,
+  COMPANY_LIST_CACHE_DURATION,
+  GALGAME_LIST_CACHE_DURATION
+} from '~/config/cache'
+import { invalidateCompanyCaches } from '~/app/api/patch/cache'
+import {
   GalgameCardSelectField,
   toGalgameCardCount
 } from '~/constants/api/select'
@@ -44,7 +50,7 @@ export const getCompany = async (input: z.infer<typeof getCompanySchema>) => {
 
       return { companies, total }
     },
-    10
+    COMPANY_LIST_CACHE_DURATION
   )
 }
 
@@ -156,8 +162,12 @@ export const getPatchByCompany = async (
           some: { company_id: companyId }
         },
         ...(selectedType !== 'all' && { type: { has: selectedType } }),
-        ...(selectedLanguage !== 'all' && { language: { has: selectedLanguage } }),
-        ...(selectedPlatform !== 'all' && { platform: { has: selectedPlatform } }),
+        ...(selectedLanguage !== 'all' && {
+          language: { has: selectedLanguage }
+        }),
+        ...(selectedPlatform !== 'all' && {
+          platform: { has: selectedPlatform }
+        }),
         ...(sortField === 'rating' && {
           rating_stat: { count: { gte: minRatingCount } }
         }),
@@ -197,7 +207,7 @@ export const getPatchByCompany = async (
 
       return { galgames, total }
     },
-    10
+    GALGAME_LIST_CACHE_DURATION
   )
 }
 
@@ -205,33 +215,40 @@ export const getCompanyById = async (
   input: z.infer<typeof getCompanyByIdSchema>
 ) => {
   const { companyId } = input
+  const cacheKey = `company_detail:${companyId}`
 
-  const company = await prisma.patch_company.findUnique({
-    where: { id: companyId },
-    select: {
-      id: true,
-      name: true,
-      count: true,
-      alias: true,
-      introduction: true,
-      primary_language: true,
-      official_website: true,
-      parent_brand: true,
-      created: true,
-      user: {
+  return await getOrSet(
+    cacheKey,
+    async () => {
+      const company = await prisma.patch_company.findUnique({
+        where: { id: companyId },
         select: {
           id: true,
           name: true,
-          avatar: true
+          count: true,
+          alias: true,
+          introduction: true,
+          primary_language: true,
+          official_website: true,
+          parent_brand: true,
+          created: true,
+          user: {
+            select: {
+              id: true,
+              name: true,
+              avatar: true
+            }
+          }
         }
+      })
+      if (!company) {
+        return '未找到公司'
       }
-    }
-  })
-  if (!company) {
-    return '未找到公司'
-  }
 
-  return company
+      return company
+    },
+    COMPANY_DETAIL_CACHE_DURATION
+  )
 }
 
 export const deleteCompany = async (
@@ -244,6 +261,8 @@ export const deleteCompany = async (
   } catch {
     return '未找到对应的会社'
   }
+
+  await invalidateCompanyCaches(input.companyId)
 
   return {}
 }
@@ -291,6 +310,8 @@ export const rewriteCompany = async (
     }
   })
 
+  await invalidateCompanyCaches(companyId)
+
   return newCompany
 }
 
@@ -333,6 +354,8 @@ export const createCompany = async (
       alias: true
     }
   })
+
+  await invalidateCompanyCaches()
 
   return newCompany
 }
