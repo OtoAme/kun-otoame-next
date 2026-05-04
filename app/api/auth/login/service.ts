@@ -1,15 +1,36 @@
 import { z } from 'zod'
 import { cookies } from 'next/headers'
-import { verifyPassword } from '~/app/api/utils/algorithm'
+import {
+  DUMMY_PASSWORD_HASH,
+  hashPassword,
+  needsPasswordRehash,
+  verifyPassword
+} from '~/app/api/utils/algorithm'
 import {
   generateKunStatelessToken,
   generateKunToken
 } from '~/app/api/utils/jwt'
+import { kunCookieOptions } from '~/app/api/utils/cookieOptions'
 import { loginSchema } from '~/validations/auth'
 import { prisma } from '~/prisma/index'
 import { checkKunCaptchaExist } from '~/app/api/utils/verifyKunCaptcha'
 import { getRedirectConfig } from '~/app/api/admin/setting/redirect/getRedirectConfig'
 import type { UserState } from '~/store/userStore'
+
+const upgradePasswordHash = async (
+  userId: number,
+  password: string,
+  previousPasswordHash: string
+) => {
+  try {
+    await prisma.user.updateMany({
+      where: { id: userId, password: previousPasswordHash },
+      data: { password: await hashPassword(password) }
+    })
+  } catch {
+    return
+  }
+}
 
 export const login = async (
   input: z.infer<typeof loginSchema>
@@ -29,16 +50,20 @@ export const login = async (
       ]
     }
   })
-  if (!user) {
-    return '用户未找到'
+
+  const isPasswordValid = await verifyPassword(
+    password,
+    user?.password ?? DUMMY_PASSWORD_HASH
+  )
+  if (!user || !isPasswordValid) {
+    return '用户名或密码错误'
   }
   if (user.status === 2) {
     return '该用户已被封禁, 如果您觉得有任何问题, 请联系我们'
   }
 
-  const isPasswordValid = await verifyPassword(password, user.password)
-  if (!isPasswordValid) {
-    return '用户密码错误'
+  if (needsPasswordRehash(user.password)) {
+    await upgradePasswordHash(user.id, password, user.password)
   }
 
   if (user.enable_2fa) {
@@ -47,11 +72,11 @@ export const login = async (
       10 * 60
     )
     const cookie = await cookies()
-    cookie.set('kun-galgame-patch-moe-2fa-token', tempToken, {
-      httpOnly: true,
-      sameSite: 'strict',
-      maxAge: 10 * 60 * 1000
-    })
+    cookie.set(
+      'kun-galgame-patch-moe-2fa-token',
+      tempToken,
+      kunCookieOptions(10 * 60)
+    )
     return {
       require2FA: true,
       id: user.id,
@@ -62,11 +87,11 @@ export const login = async (
 
   const token = await generateKunToken(user.id, user.name, user.role, '30d')
   const cookie = await cookies()
-  cookie.set('kun-galgame-patch-moe-token', token, {
-    httpOnly: true,
-    sameSite: 'strict',
-    maxAge: 30 * 24 * 60 * 60 * 1000
-  })
+  cookie.set(
+    'kun-galgame-patch-moe-token',
+    token,
+    kunCookieOptions(30 * 24 * 60 * 60)
+  )
 
   const redirectConfig = await getRedirectConfig()
   const responseData: UserState = {
