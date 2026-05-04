@@ -79,6 +79,13 @@ export const PublishButton = ({ setErrors, className }: Props) => {
       banner: localeBannerBlob,
       alias: JSON.stringify(data.alias),
       tag: JSON.stringify(data.tag),
+      vndbTags: JSON.stringify(data.vndbTags),
+      vndbDevelopers: JSON.stringify(data.vndbDevelopers),
+      bangumiTags: JSON.stringify(data.bangumiTags),
+      bangumiDevelopers: JSON.stringify(data.bangumiDevelopers),
+      steamTags: JSON.stringify(data.steamTags),
+      steamDevelopers: JSON.stringify(data.steamDevelopers),
+      steamAliases: JSON.stringify(data.steamAliases),
       isDuplicate: String(data.isDuplicate)
     })
     if (!result.success) {
@@ -104,7 +111,24 @@ export const PublishButton = ({ setErrors, className }: Props) => {
     formDataToSend.append('name', data.name)
     formDataToSend.append('vndbId', data.vndbId)
     formDataToSend.append('vndbRelationId', data.vndbRelationId ?? '')
+    formDataToSend.append('bangumiId', data.bangumiId)
+    formDataToSend.append('steamId', data.steamId)
     formDataToSend.append('dlsiteCode', data.dlsiteCode ?? '')
+    formDataToSend.append('dlsiteCircleName', data.dlsiteCircleName)
+    formDataToSend.append('dlsiteCircleLink', data.dlsiteCircleLink)
+    formDataToSend.append('vndbTags', JSON.stringify(data.vndbTags))
+    formDataToSend.append('vndbDevelopers', JSON.stringify(data.vndbDevelopers))
+    formDataToSend.append('bangumiTags', JSON.stringify(data.bangumiTags))
+    formDataToSend.append(
+      'bangumiDevelopers',
+      JSON.stringify(data.bangumiDevelopers)
+    )
+    formDataToSend.append('steamTags', JSON.stringify(data.steamTags))
+    formDataToSend.append(
+      'steamDevelopers',
+      JSON.stringify(data.steamDevelopers)
+    )
+    formDataToSend.append('steamAliases', JSON.stringify(data.steamAliases))
     formDataToSend.append('introduction', data.introduction)
     formDataToSend.append('alias', JSON.stringify(data.alias))
     formDataToSend.append('tag', JSON.stringify(data.tag))

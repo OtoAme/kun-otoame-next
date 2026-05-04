@@ -85,7 +85,7 @@ HOSTNAME = "127.0.0.1"
 # 可选：仅在 release/deploy 构建时启用。启用后 pnpm build 会跳过 Next 内置 lint/type validation，需单独运行 pnpm typecheck。
 # KUN_DEPLOY_BUILD_SKIP_CHECKS = "true"
 
-# Bangumi Access Token，用于自动匹配游戏标签
+# Bangumi Access Token，用于自动匹配游戏标签、开发商，并读取登录可见条目
 # 申请地址：https://next.bgm.tv/demo/access-token/create
 BANGUMI_ACCESS_TOKEN = "kkkkkkkkkkkkkkkkkkkkkkkkkkkk"
 

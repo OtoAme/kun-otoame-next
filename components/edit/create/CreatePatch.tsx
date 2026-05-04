@@ -14,6 +14,7 @@ import { ContentLimit } from './ContentLimit'
 import { DuplicateCheckButton } from './DuplicateCheckButton'
 import { BatchTag } from '../components/BatchTag'
 import { BangumiInput } from '../components/BangumiInput'
+import { SteamInput } from '../components/SteamInput'
 import { ReleaseDateInput } from '../components/ReleaseDateInput'
 import type { CreatePatchRequestData } from '~/store/editStore'
 
@@ -56,6 +57,12 @@ export const CreatePatch = () => {
             setData={setData}
             errors={errors.vndbRelationId}
           />
+          <BangumiInput
+            data={data}
+            setData={setData}
+            errors={errors.bangumiId}
+          />
+          <SteamInput data={data} setData={setData} errors={errors.steamId} />
           <div className="space-y-2">
             <h2 className="text-xl">游戏名称 (必须)</h2>
             <Input
@@ -108,12 +115,6 @@ export const CreatePatch = () => {
               })
             }
             errors={errors.tag}
-          />
-
-          <BangumiInput
-            onTagsFetched={(tags) => {
-              setData({ ...data, tag: tags })
-            }}
           />
 
           <ContentLimit errors={errors.contentLimit} />

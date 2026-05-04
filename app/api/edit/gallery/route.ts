@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '~/prisma/index'
 import { verifyHeaderCookie } from '~/middleware/_verifyHeaderCookie'
+import { invalidatePatchContentCache } from '~/app/api/patch/cache'
 import { uploadPatchGalleryImage } from '../_upload'
 
 export const POST = async (req: NextRequest) => {
@@ -67,6 +68,7 @@ export const POST = async (req: NextRequest) => {
       where: { id: galleryRecord.id },
       data: { url: imageUrl }
     })
+    await invalidatePatchContentCache(patch.unique_id)
 
     return NextResponse.json({ imageId: galleryRecord.id, url: imageUrl })
   } catch (error) {

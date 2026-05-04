@@ -1,0 +1,93 @@
+import { NextRequest, NextResponse } from 'next/server'
+import { z } from 'zod'
+import { kunParsePostBody } from '~/app/api/utils/parseQuery'
+import { BANGUMI_API_BASE, BANGUMI_HEADERS } from '~/constants/bangumi'
+import { lowQualityTags } from '~/lib/bgmDirtyTag'
+
+const bangumiSchema = z.object({
+  bangumiId: z.string().regex(/^\d+$/, 'Bangumi ID 必须为纯数字')
+})
+
+interface BangumiTag {
+  name: string
+}
+
+interface BangumiInfoboxItem {
+  key: string
+  value: string | { v: string }[]
+}
+
+interface BangumiSubject {
+  name?: string
+  name_cn?: string
+  tags?: BangumiTag[]
+  infobox?: BangumiInfoboxItem[]
+}
+
+const dirtyTagSet = new Set(lowQualityTags)
+
+const DEVELOPER_KEYS = new Set([
+  '开发',
+  '游戏开发商',
+  '开发商',
+  '发行',
+  '发行商',
+  '制作',
+  '製作'
+])
+
+const splitByJapaneseSeparator = (name: string): string[] =>
+  name
+    .split('、')
+    .map((value) => value.trim())
+    .filter(Boolean)
+
+const extractDevelopers = (infobox?: BangumiInfoboxItem[]): string[] => {
+  if (!infobox) return []
+
+  const names: string[] = []
+  for (const item of infobox) {
+    if (!DEVELOPER_KEYS.has(item.key)) continue
+
+    if (typeof item.value === 'string') {
+      names.push(...splitByJapaneseSeparator(item.value))
+    } else {
+      for (const entry of item.value) {
+        if (entry.v?.trim()) names.push(...splitByJapaneseSeparator(entry.v))
+      }
+    }
+  }
+
+  return [...new Set(names)]
+}
+
+export const POST = async (req: NextRequest) => {
+  const input = await kunParsePostBody(req, bangumiSchema)
+  if (typeof input === 'string') {
+    return NextResponse.json(input)
+  }
+
+  try {
+    const res = await fetch(
+      `${BANGUMI_API_BASE}/v0/subjects/${input.bangumiId}`,
+      { headers: BANGUMI_HEADERS }
+    )
+    if (!res.ok) {
+      return NextResponse.json('未找到对应的 Bangumi 条目')
+    }
+
+    const data = (await res.json()) as BangumiSubject
+    const tags = (data.tags ?? [])
+      .filter((tag) => !dirtyTagSet.has(tag.name))
+      .map((tag) => tag.name)
+
+    return NextResponse.json({
+      name: data.name ?? '',
+      nameCn: data.name_cn ?? '',
+      tags,
+      developers: extractDevelopers(data.infobox)
+    })
+  } catch {
+    return NextResponse.json('Bangumi API 请求失败')
+  }
+}

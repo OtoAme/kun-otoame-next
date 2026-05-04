@@ -8,11 +8,16 @@ import { kunFetchGet, kunFetchPost } from '~/utils/kunFetch'
 import { FetchPreview } from '~/components/edit/components/FetchPreview'
 import type { PatchFormDataShape } from '~/components/edit/types'
 
-interface BangumiPreview {
+interface SteamPreview {
   name: string
-  nameCn: string
+  aliases: {
+    english?: string
+    japanese?: string
+    tchinese?: string
+  }
+  releaseDate: string
   tags: string[]
-  developers: string[]
+  developers: { name: string; link: string }[]
 }
 
 interface Props<T extends PatchFormDataShape> {
@@ -22,13 +27,13 @@ interface Props<T extends PatchFormDataShape> {
   excludeId?: number
 }
 
-export const BangumiInput = <T extends PatchFormDataShape>({
+export const SteamInput = <T extends PatchFormDataShape>({
   errors,
   data,
   setData,
   excludeId
 }: Props<T>) => {
-  const [preview, setPreview] = useState<BangumiPreview | null>(null)
+  const [preview, setPreview] = useState<SteamPreview | null>(null)
   const [duplicateUniqueId, setDuplicateUniqueId] = useState<string | null>(
     null
   )
@@ -36,24 +41,24 @@ export const BangumiInput = <T extends PatchFormDataShape>({
   useEffect(() => {
     setPreview(null)
     setDuplicateUniqueId(null)
-  }, [data.bangumiId])
+  }, [data.steamId])
 
   const handleFetch = async () => {
-    const rawInput = data.bangumiId.trim()
+    const rawInput = data.steamId.trim()
     if (!rawInput) {
-      toast.error('Bangumi ID 不可为空')
+      toast.error('Steam ID 不可为空')
       return
     }
 
     if (!/^\d+$/.test(rawInput)) {
-      toast.error('Bangumi ID 必须为纯数字')
+      toast.error('Steam ID 必须为纯数字')
       return
     }
 
     const duplicateResult = await kunFetchGet<
       KunResponse<{ uniqueId: string }>
     >('/edit/duplicate', {
-      bangumiId: rawInput,
+      steamId: rawInput,
       ...(excludeId ? { excludeId: String(excludeId) } : {})
     })
 
@@ -65,10 +70,10 @@ export const BangumiInput = <T extends PatchFormDataShape>({
     setDuplicateUniqueId(null)
 
     try {
-      toast('正在从 Bangumi 获取数据...')
-      const result = await kunFetchPost<KunResponse<BangumiPreview>>(
-        '/edit/bangumi',
-        { bangumiId: rawInput }
+      toast('正在从 Steam 获取数据...')
+      const result = await kunFetchPost<KunResponse<SteamPreview>>(
+        '/edit/steam',
+        { steamId: rawInput }
       )
 
       if (typeof result === 'string') {
@@ -76,17 +81,20 @@ export const BangumiInput = <T extends PatchFormDataShape>({
         return
       }
 
-      const displayName = result.nameCn || result.name
-      if (!displayName) {
-        toast.error('未找到对应的 Bangumi 条目')
+      if (!result?.name) {
+        toast.error('未找到对应的 Steam 游戏')
         return
       }
 
       setPreview(result)
 
-      const extraAliases = [result.name, result.nameCn]
-        .map((name) => name?.trim())
-        .filter((name): name is string => !!name)
+      const extraAliases = [
+        result.aliases.japanese,
+        result.aliases.english,
+        result.aliases.tchinese
+      ]
+        .map((alias) => alias?.trim())
+        .filter((alias): alias is string => !!alias)
       const alias = [...new Set([...data.alias, ...extraAliases])].filter(
         (alias) => alias !== data.name
       )
@@ -94,33 +102,43 @@ export const BangumiInput = <T extends PatchFormDataShape>({
       setData({
         ...data,
         alias,
-        bangumiTags: result.tags,
-        bangumiDevelopers: result.developers
+        released: result.releaseDate || data.released,
+        steamTags: result.tags,
+        steamDevelopers: result.developers.map((developer) => developer.name),
+        steamAliases: extraAliases
       })
 
-      toast.success(`确认: ${displayName}`)
+      toast.success(`确认: ${result.name}`)
     } catch {
       setPreview(null)
-      toast.error('Bangumi API 请求失败, 请稍后重试')
+      toast.error('Steam API 请求失败, 请稍后重试')
     }
   }
 
+  const aliasChips = preview
+    ? [
+        preview.aliases.japanese,
+        preview.aliases.english,
+        preview.aliases.tchinese
+      ].filter((alias): alias is string => !!alias?.trim())
+    : []
+
   return (
     <div className="w-full space-y-2">
-      <h2 className="text-xl">Bangumi ID (可选)</h2>
+      <h2 className="text-xl">Steam ID (可选)</h2>
       <Input
         variant="underlined"
         labelPlacement="outside"
-        placeholder="请输入 Bangumi 条目 ID, 例如 172612"
-        value={data.bangumiId}
-        onChange={(event) => setData({ ...data, bangumiId: event.target.value })}
+        placeholder="请输入 Steam App ID, 例如 3655150"
+        value={data.steamId}
+        onChange={(event) => setData({ ...data, steamId: event.target.value })}
         isInvalid={!!errors}
         errorMessage={errors}
       />
       <div className="flex items-center gap-2 text-sm">
-        {data.bangumiId && (
+        {data.steamId && (
           <Button color="primary" size="sm" onPress={handleFetch}>
-            获取 Bangumi 数据
+            获取 Steam 数据
           </Button>
         )}
         {duplicateUniqueId && (
@@ -139,10 +157,14 @@ export const BangumiInput = <T extends PatchFormDataShape>({
       {preview && (
         <FetchPreview
           fields={[
-            { label: '名称', value: preview.name },
-            { label: '中文名', value: preview.nameCn },
+            { label: '游戏名', value: preview.name },
+            { label: '别名', value: aliasChips },
             { label: '标签', value: preview.tags },
-            { label: '开发商', value: preview.developers }
+            { label: '发售日期', value: preview.releaseDate },
+            {
+              label: '开发商',
+              value: preview.developers.map((developer) => developer.name)
+            }
           ]}
         />
       )}
