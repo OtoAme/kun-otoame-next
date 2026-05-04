@@ -1,8 +1,16 @@
 import 'dotenv/config'
+import pg from 'pg'
 import { PrismaPg } from '@prisma/adapter-pg'
 import { PrismaClient } from '@prisma/client'
 
-const adapter = new PrismaPg(process.env.KUN_DATABASE_URL!)
+const pool = new pg.Pool({
+  connectionString: process.env.KUN_DATABASE_URL,
+  max: 2,
+  idleTimeoutMillis: 10000,
+  connectionTimeoutMillis: 5000
+})
+
+const adapter = new PrismaPg(pool)
 const prisma = new PrismaClient({ adapter })
 
 const shouldApply = process.argv.includes('--apply')
@@ -128,4 +136,7 @@ run()
     console.error(error)
     process.exitCode = 1
   })
-  .finally(() => prisma.$disconnect())
+  .finally(async () => {
+    await prisma.$disconnect()
+    await pool.end().catch(() => undefined)
+  })
