@@ -1,7 +1,6 @@
 'use client'
 
-import { useRef, useState, useTransition, useEffect } from 'react'
-import { useSearchParams } from 'next/navigation'
+import { useRef, useState, useEffect } from 'react'
 import { useRouter } from '@bprogress/next'
 import { Button, Chip } from '@heroui/react'
 import { useDisclosure } from '@heroui/modal'
@@ -37,85 +36,121 @@ import { errorReporter, kunErrorHandler } from '~/utils/kunErrorHandler'
 
 interface Props {
   initialCompany: CompanyDetail
-  initialPatches: GalgameCard[]
-  total: number
-  initialPage: number
-  initialSelectedType: string
-  initialSelectedLanguage: string
-  initialSelectedPlatform: string
-  initialSortField: SortField
-  initialSortOrder: SortOrder
-  initialSelectedYears: string[]
-  initialSelectedMonths: string[]
-  initialMinRatingCount: number
 }
+
+const SORT_FIELDS = new Set<SortField>([
+  'resource_update_time',
+  'created',
+  'view',
+  'download',
+  'favorite',
+  'rating'
+])
+
+const SORT_ORDERS = new Set<SortOrder>(['asc', 'desc'])
 
 const isDefaultFilterArray = (value: string[]) =>
   value.length === 1 && value[0] === 'all'
 
-const isSameFilterArray = (a: string[], b: string[]) =>
-  a.length === b.length && a.every((value, index) => value === b[index])
-
-const parseFilterArray = (value: string | null): string[] => {
-  if (!value) {
-    return ['all']
+const parseSortField = (value: string | null): SortField => {
+  if (value && SORT_FIELDS.has(value as SortField)) {
+    return value as SortField
   }
 
-  try {
-    const parsed = JSON.parse(value)
-    return Array.isArray(parsed) && parsed.length > 0
-      ? parsed.filter((item): item is string => typeof item === 'string')
-      : ['all']
-  } catch {
-    return ['all']
+  return DEFAULT_GALGAME_SORT_FIELD
+}
+
+const parseSortOrder = (value: string | null): SortOrder => {
+  if (value && SORT_ORDERS.has(value as SortOrder)) {
+    return value as SortOrder
+  }
+
+  return DEFAULT_GALGAME_SORT_ORDER
+}
+
+const getUrlFilterState = () => {
+  const params =
+    typeof window === 'undefined'
+      ? new URLSearchParams()
+      : new URLSearchParams(window.location.search)
+
+  return {
+    page: parsePositiveIntParam(params.get('page'), 1),
+    selectedType: params.get('selectedType') || DEFAULT_GALGAME_FILTER_VALUE,
+    selectedLanguage:
+      params.get('selectedLanguage') || DEFAULT_GALGAME_FILTER_VALUE,
+    selectedPlatform:
+      params.get('selectedPlatform') || DEFAULT_GALGAME_FILTER_VALUE,
+    sortField: parseSortField(params.get('sortField')),
+    sortOrder: parseSortOrder(params.get('sortOrder')),
+    selectedYears: parseGalgameFilterArray(params.get('yearString')),
+    selectedMonths: parseGalgameFilterArray(params.get('monthString')),
+    minRatingCount: parseNonNegativeIntParam(
+      params.get('minRatingCount'),
+      DEFAULT_TAG_COMPANY_MIN_RATING_COUNT
+    )
   }
 }
 
-export const CompanyDetailContainer: FC<Props> = ({
-  initialCompany,
-  initialPatches,
-  total,
-  initialPage,
-  initialSelectedType,
-  initialSelectedLanguage,
-  initialSelectedPlatform,
-  initialSortField,
-  initialSortOrder,
-  initialSelectedYears,
-  initialSelectedMonths,
-  initialMinRatingCount
-}) => {
+export const CompanyDetailContainer: FC<Props> = ({ initialCompany }) => {
   const { isOpen, onOpen, onClose } = useDisclosure()
 
   const isMounted = useMounted()
   const user = useUserStore((state) => state.user)
   const router = useRouter()
-  const searchParams = useSearchParams()
+  const fetchRequestId = useRef(0)
   const isSyncingFromUrl = useRef(false)
-  const [page, setPage] = useState(initialPage)
-  const [selectedType, setSelectedType] = useState<string>(initialSelectedType)
+  const [isUrlReady, setIsUrlReady] = useState(false)
+  const [page, setPage] = useState(1)
+  const [selectedType, setSelectedType] = useState<string>(
+    DEFAULT_GALGAME_FILTER_VALUE
+  )
   const [selectedLanguage, setSelectedLanguage] = useState<string>(
-    initialSelectedLanguage
+    DEFAULT_GALGAME_FILTER_VALUE
   )
   const [selectedPlatform, setSelectedPlatform] = useState<string>(
-    initialSelectedPlatform
+    DEFAULT_GALGAME_FILTER_VALUE
   )
-  const [sortField, setSortField] = useState<SortField>(initialSortField)
-  const [sortOrder, setSortOrder] = useState<SortOrder>(initialSortOrder)
-  const [selectedYears, setSelectedYears] =
-    useState<string[]>(initialSelectedYears)
-  const [selectedMonths, setSelectedMonths] =
-    useState<string[]>(initialSelectedMonths)
-  const [minRatingCount, setMinRatingCount] = useState(initialMinRatingCount)
+  const [sortField, setSortField] = useState<SortField>(
+    DEFAULT_GALGAME_SORT_FIELD
+  )
+  const [sortOrder, setSortOrder] = useState<SortOrder>(
+    DEFAULT_GALGAME_SORT_ORDER
+  )
+  const [selectedYears, setSelectedYears] = useState<string[]>([
+    DEFAULT_GALGAME_FILTER_VALUE
+  ])
+  const [selectedMonths, setSelectedMonths] = useState<string[]>([
+    DEFAULT_GALGAME_FILTER_VALUE
+  ])
+  const [minRatingCount, setMinRatingCount] = useState(
+    DEFAULT_TAG_COMPANY_MIN_RATING_COUNT
+  )
 
   const [company, setCompany] = useState(initialCompany)
-  const [patches, setPatches] = useState<GalgameCard[]>(initialPatches)
-  const [totalPatches, setTotalPatches] = useState(total)
-  const [loading, startTransition] = useTransition()
+  const [patches, setPatches] = useState<GalgameCard[]>([])
+  const [totalPatches, setTotalPatches] = useState(0)
+  const [loading, setLoading] = useState(true)
 
   const updateFilter = <T,>(setter: (value: T) => void, value: T) => {
     setPage(1)
     setter(value)
+  }
+
+  const applyUrlFilterState = () => {
+    const nextState = getUrlFilterState()
+
+    isSyncingFromUrl.current = true
+    setPage(nextState.page)
+    setSelectedType(nextState.selectedType)
+    setSelectedLanguage(nextState.selectedLanguage)
+    setSelectedPlatform(nextState.selectedPlatform)
+    setSortField(nextState.sortField)
+    setSortOrder(nextState.sortOrder)
+    setSelectedYears(nextState.selectedYears)
+    setSelectedMonths(nextState.selectedMonths)
+    setMinRatingCount(nextState.minRatingCount)
+    setIsUrlReady(true)
   }
 
   const syncUrl = () => {
@@ -145,19 +180,30 @@ export const CompanyDetailContainer: FC<Props> = ({
     if (!isDefaultFilterArray(selectedMonths)) {
       params.set('monthString', JSON.stringify(selectedMonths))
     }
-    if (sortField === 'rating' && minRatingCount !== 10) {
+    if (
+      sortField === 'rating' &&
+      minRatingCount !== DEFAULT_TAG_COMPANY_MIN_RATING_COUNT
+    ) {
       params.set('minRatingCount', String(minRatingCount))
     }
 
     const queryString = params.toString()
-    if (queryString !== searchParams.toString()) {
+    const currentQueryString =
+      typeof window === 'undefined'
+        ? ''
+        : new URLSearchParams(window.location.search).toString()
+
+    if (queryString !== currentQueryString) {
       router.push(queryString ? `?${queryString}` : '')
     }
   }
 
-  const fetchPatches = () => {
-    startTransition(async () => {
-      const { galgames, total } = await kunFetchGet<{
+  const fetchPatches = async () => {
+    const requestId = ++fetchRequestId.current
+    setLoading(true)
+
+    try {
+      const response = await kunFetchGet<{
         galgames: GalgameCard[]
         total: number
       }>('/company/otomegame', {
@@ -173,13 +219,50 @@ export const CompanyDetailContainer: FC<Props> = ({
         monthString: JSON.stringify(selectedMonths),
         minRatingCount: sortField === 'rating' ? minRatingCount : 0
       })
-      setPatches(galgames)
-      setTotalPatches(total)
-    })
+
+      if (requestId !== fetchRequestId.current) {
+        return
+      }
+
+      if (typeof response === 'string') {
+        kunErrorHandler(response, () => {})
+        setPatches([])
+        setTotalPatches(0)
+        return
+      }
+
+      setPatches(response.galgames)
+      setTotalPatches(response.total)
+    } catch (error) {
+      if (requestId !== fetchRequestId.current) {
+        return
+      }
+
+      errorReporter(error)
+      setPatches([])
+      setTotalPatches(0)
+    } finally {
+      if (requestId === fetchRequestId.current) {
+        setLoading(false)
+      }
+    }
   }
 
   useEffect(() => {
     if (!isMounted) {
+      return
+    }
+
+    applyUrlFilterState()
+    window.addEventListener('popstate', applyUrlFilterState)
+
+    return () => {
+      window.removeEventListener('popstate', applyUrlFilterState)
+    }
+  }, [isMounted])
+
+  useEffect(() => {
+    if (!isMounted || !isUrlReady) {
       return
     }
 
@@ -191,6 +274,7 @@ export const CompanyDetailContainer: FC<Props> = ({
     fetchPatches()
   }, [
     isMounted,
+    isUrlReady,
     page,
     sortField,
     sortOrder,
@@ -201,48 +285,6 @@ export const CompanyDetailContainer: FC<Props> = ({
     selectedMonths,
     sortField === 'rating' ? minRatingCount : null
   ])
-
-  useEffect(() => {
-    if (!isMounted) {
-      return
-    }
-
-    const nextPage = Number(searchParams.get('page')) || 1
-    const nextSelectedType = searchParams.get('selectedType') || 'all'
-    const nextSelectedLanguage = searchParams.get('selectedLanguage') || 'all'
-    const nextSelectedPlatform = searchParams.get('selectedPlatform') || 'all'
-    const nextSortField =
-      (searchParams.get('sortField') as SortField) || 'resource_update_time'
-    const nextSortOrder = (searchParams.get('sortOrder') as SortOrder) || 'desc'
-    const nextSelectedYears = parseFilterArray(searchParams.get('yearString'))
-    const nextSelectedMonths = parseFilterArray(searchParams.get('monthString'))
-    const nextMinRatingCount = Number(searchParams.get('minRatingCount')) || 10
-    const shouldSyncFromUrl =
-      nextPage !== page ||
-      nextSelectedType !== selectedType ||
-      nextSelectedLanguage !== selectedLanguage ||
-      nextSelectedPlatform !== selectedPlatform ||
-      nextSortField !== sortField ||
-      nextSortOrder !== sortOrder ||
-      !isSameFilterArray(nextSelectedYears, selectedYears) ||
-      !isSameFilterArray(nextSelectedMonths, selectedMonths) ||
-      nextMinRatingCount !== minRatingCount
-
-    if (!shouldSyncFromUrl) {
-      return
-    }
-
-    isSyncingFromUrl.current = true
-    setPage(nextPage)
-    setSelectedType(nextSelectedType)
-    setSelectedLanguage(nextSelectedLanguage)
-    setSelectedPlatform(nextSelectedPlatform)
-    setSortField(nextSortField)
-    setSortOrder(nextSortOrder)
-    setSelectedYears(nextSelectedYears)
-    setSelectedMonths(nextSelectedMonths)
-    setMinRatingCount(nextMinRatingCount)
-  }, [searchParams])
 
   return (
     <div className="w-full my-4 space-y-6">
@@ -334,7 +376,6 @@ export const CompanyDetailContainer: FC<Props> = ({
         </div>
       )}
 
-
       {company.parent_brand.length > 0 && (
         <div>
           <h2 className="mb-4 text-lg font-semibold">父会社</h2>
@@ -357,15 +398,20 @@ export const CompanyDetailContainer: FC<Props> = ({
           sortOrder={sortOrder}
           setSortOrder={(value) => updateFilter(setSortOrder, value)}
           selectedLanguage={selectedLanguage}
-          setSelectedLanguage={(value) => updateFilter(setSelectedLanguage, value)}
+          setSelectedLanguage={(value) =>
+            updateFilter(setSelectedLanguage, value)
+          }
           selectedPlatform={selectedPlatform}
-          setSelectedPlatform={(value) => updateFilter(setSelectedPlatform, value)}
+          setSelectedPlatform={(value) =>
+            updateFilter(setSelectedPlatform, value)
+          }
           selectedYears={selectedYears}
           setSelectedYears={(value) => updateFilter(setSelectedYears, value)}
           selectedMonths={selectedMonths}
           setSelectedMonths={(value) => updateFilter(setSelectedMonths, value)}
           minRatingCount={minRatingCount}
           setMinRatingCount={(value) => updateFilter(setMinRatingCount, value)}
+          defaultMinRatingCount={DEFAULT_TAG_COMPANY_MIN_RATING_COUNT}
         />
       </div>
 
@@ -390,7 +436,9 @@ export const CompanyDetailContainer: FC<Props> = ({
             </div>
           )}
 
-          {!totalPatches && <KunNull message="暂无 OtomeGame, 或您未开启网站 NSFW" />}
+          {!totalPatches && (
+            <KunNull message="暂无 OtomeGame, 或您未开启网站 NSFW" />
+          )}
         </div>
       )}
     </div>
