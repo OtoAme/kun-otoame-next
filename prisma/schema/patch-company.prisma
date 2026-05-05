@@ -15,6 +15,10 @@ model patch_company {
 
   created DateTime @default(now())
   updated DateTime @updatedAt
+
+  @@index([count])
+  @@index([alias], type: Gin)
+  @@index([parent_brand], type: Gin)
 }
 
 model patch_company_relation {
@@ -30,4 +34,5 @@ model patch_company_relation {
 
   @@unique([patch_id, company_id])
   @@index([company_id])
+  @@index([company_id, patch_id])
 }

@@ -52,37 +52,26 @@ const parseBufferedCount = (value: string | null) => {
   return Number.isFinite(count) && count > 0 ? count : 0
 }
 
-export const getPatchViewBufferCounts = async (uniqueIds: string[]) => {
-  const uniqueIdList = [...new Set(uniqueIds)].filter(Boolean)
-  const counts = new Map<string, number>()
-  if (!uniqueIdList.length) {
-    return counts
-  }
-
-  const [bufferCounts, pendingCounts] = await Promise.all([
-    runRedisCommand(() => redis.hmget(PATCH_VIEWS_BUFFER_KEY, ...uniqueIdList)),
-    runRedisCommand(() => redis.hmget(PATCH_VIEWS_PENDING_KEY, ...uniqueIdList))
-  ])
-
-  uniqueIdList.forEach((uniqueId, index) => {
-    const count =
-      parseBufferedCount(bufferCounts[index]) +
-      parseBufferedCount(pendingCounts[index])
-
-    if (count > 0) {
-      counts.set(uniqueId, count)
-    }
-  })
-
-  return counts
-}
-
 export const setRealtimePatchDownloadStats = async (
   uniqueId: string,
   download: number
 ) => {
   await runRedisCommand(() =>
-    redis.hset(PATCH_STATS_DOWNLOAD_KEY, uniqueId, Math.max(0, download))
+    redis.eval(
+      `
+        local current = tonumber(redis.call("HGET", KEYS[1], ARGV[1]) or "0")
+        local next = tonumber(ARGV[2])
+        if next > current then
+          redis.call("HSET", KEYS[1], ARGV[1], next)
+          return next
+        end
+        return current
+      `,
+      1,
+      PATCH_STATS_DOWNLOAD_KEY,
+      uniqueId,
+      Math.max(0, download)
+    )
   )
 }
 

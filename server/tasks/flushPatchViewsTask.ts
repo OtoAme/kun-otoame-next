@@ -5,10 +5,6 @@ import {
   acknowledgePatchViewBuffer,
   checkoutPatchViewBuffer
 } from '~/app/api/patch/views/buffer'
-import {
-  invalidatePatchContentCache,
-  invalidatePatchListCaches
-} from '~/app/api/patch/cache'
 import { withTaskLock } from './withTaskLock'
 
 const FLUSH_BATCH_SIZE = 1000
@@ -50,11 +46,6 @@ const flushPatchViews = async () => {
   })
 
   await acknowledgePatchViewBuffer(buffer.key)
-
-  await Promise.all([
-    ...validEntries.map(([uniqueId]) => invalidatePatchContentCache(uniqueId)),
-    invalidatePatchListCaches()
-  ])
 }
 
 export const flushPatchViewsTask = cron.createTask('*/2 * * * *', async () => {

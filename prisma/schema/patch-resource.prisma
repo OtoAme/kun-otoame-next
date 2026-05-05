@@ -25,6 +25,11 @@ model patch_resource {
 
   created DateTime @default(now())
   updated DateTime @updatedAt
+
+  @@index([patch_id])
+  @@index([patch_id, status])
+  @@index([user_id, status])
+  @@index([section, status, created(sort: Desc)])
 }
 
 model user_patch_resource_like_relation {
@@ -39,4 +44,5 @@ model user_patch_resource_like_relation {
   updated DateTime @updatedAt
 
   @@unique([user_id, resource_id])
+  @@index([resource_id])
 }

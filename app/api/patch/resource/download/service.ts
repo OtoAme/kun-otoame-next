@@ -2,8 +2,7 @@ import { z } from 'zod'
 import { prisma } from '~/prisma/index'
 import { updatePatchResourceStatsSchema } from '~/validations/patch'
 import {
-  invalidatePatchContentCache,
-  invalidatePatchListCaches
+  invalidatePatchContentCache
 } from '~/app/api/patch/cache'
 import { setRealtimePatchDownloadStats } from '~/app/api/patch/views/buffer'
 
@@ -39,8 +38,7 @@ export const downloadStats = async (
 
   await Promise.all([
     setRealtimePatchDownloadStats(result.uniqueId, result.download),
-    invalidatePatchContentCache(result.uniqueId),
-    invalidatePatchListCaches()
+    invalidatePatchContentCache(result.uniqueId)
   ]).catch((error) => {
     console.error('Failed to invalidate patch download stats cache:', error)
   })

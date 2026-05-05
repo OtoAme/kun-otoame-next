@@ -86,7 +86,6 @@ export const getPatchResource = async (
 
       return { resources, total }
     },
-    RESOURCE_LIST_CACHE_DURATION,
-    { staleTtl: 0 }
+    RESOURCE_LIST_CACHE_DURATION
   )
 }

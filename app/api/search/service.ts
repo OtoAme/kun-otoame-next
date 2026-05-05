@@ -136,7 +136,7 @@ export const searchGalgame = async (
       where: { AND: queryCondition, ...dateFilter, ...where },
       select: GalgameCardSelectField
     }),
-    await prisma.patch.count({
+    prisma.patch.count({
       where: { AND: queryCondition, ...dateFilter, ...where }
     })
   ])

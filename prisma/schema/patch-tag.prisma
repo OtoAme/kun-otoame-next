@@ -20,6 +20,7 @@ model patch_tag {
   updated DateTime @updatedAt
 
   @@index([count])
+  @@index([alias], type: Gin)
 }
 
 model patch_tag_relation {
@@ -34,4 +35,5 @@ model patch_tag_relation {
 
   @@unique([patch_id, tag_id])
   @@index([tag_id])
+  @@index([tag_id, patch_id])
 }

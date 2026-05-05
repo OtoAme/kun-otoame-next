@@ -1,8 +1,7 @@
 import { HomeContainer } from '~/components/home/Container'
 import { kunGetActions } from './actions'
 
-export const dynamic = 'force-dynamic'
-export const revalidate = 0
+export const revalidate = 120
 
 export default async function Kun() {
   const response = await kunGetActions()

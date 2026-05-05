@@ -10,7 +10,7 @@ const REDIS_RETRY_MAX_DELAY_MS = 2000
 const CACHE_ENVELOPE_VERSION = 1
 const CACHE_STALE_TTL_MULTIPLIER = 6
 const CACHE_MIN_STALE_TTL_SECONDS = 60
-const CACHE_REFRESH_LOCK_TTL_SECONDS = 10
+const CACHE_REFRESH_LOCK_TTL_SECONDS = 30
 const CACHE_WAIT_FOR_REFRESH_TIMEOUT_MS = 800
 const CACHE_WAIT_FOR_REFRESH_INTERVAL_MS = 50
 const CACHE_TTL_JITTER_RATIO = 0.1
@@ -65,8 +65,8 @@ export const delKvs = async (keys: string[]) => {
 
   const keyStrings = keys.map((key) => `${KUN_PATCH_REDIS_PREFIX}:${key}`)
   for (let i = 0; i < keyStrings.length; i += REDIS_MULTI_KEY_BATCH_SIZE) {
-    await runRedisCommand(() =>
-      redis.del(...keyStrings.slice(i, i + REDIS_MULTI_KEY_BATCH_SIZE))
+    await deleteRedisKeys(
+      keyStrings.slice(i, i + REDIS_MULTI_KEY_BATCH_SIZE)
     )
   }
 }
@@ -113,7 +113,7 @@ export const delKvPattern = async (pattern: string) => {
     cursor = nextCursor
 
     if (keys.length) {
-      await runRedisCommand(() => redis.del(...keys))
+      await deleteRedisKeys(keys)
     }
   } while (cursor !== '0')
 }
@@ -140,6 +140,15 @@ type GetOrSetOptions = {
 }
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+
+const deleteRedisKeys = async (keys: string[]) => {
+  if ('unlink' in redis && typeof redis.unlink === 'function') {
+    await runRedisCommand(() => redis.unlink(...keys))
+    return
+  }
+
+  await runRedisCommand(() => redis.del(...keys))
+}
 
 const isCacheEnvelope = <T>(value: unknown): value is CacheEnvelope<T> => {
   if (!value || typeof value !== 'object') {
@@ -238,7 +247,7 @@ const getValueAfterPeerRefresh = async <T>(key: string, timeoutMs: number) => {
     try {
       const cached = await getCachedValue<T>(key)
       if (cached?.isFresh) {
-        return cached.value
+        return { value: cached.value }
       }
     } catch (error) {
       console.error(`[Redis] Peer refresh read error for key ${key}:`, error)
@@ -330,21 +339,47 @@ export const getOrSet = async <T>(
         }
       }
 
-      const peerRefreshedValue = await getValueAfterPeerRefresh<T>(
-        key,
-        waitForRefreshMs
-      )
-      if (peerRefreshedValue !== null) {
-        return peerRefreshedValue
+      // Cold misses must not fan out to the database. Wait for the lock holder
+      // to publish a fresh value, then retry the distributed lock if needed.
+      while (!lockToken) {
+        const peerRefreshedValue = await getValueAfterPeerRefresh<T>(
+          key,
+          waitForRefreshMs
+        )
+        if (peerRefreshedValue) {
+          return peerRefreshedValue.value
+        }
+
+        try {
+          lockToken = await acquireKvLock(lockKey, lockTtl)
+        } catch (error) {
+          console.error(`[Redis] Lock retry error for key ${key}:`, error)
+          break
+        }
       }
 
-      const data = await fetcher()
-      try {
-        await setCachedValue(key, data, ttl, staleTtl)
-      } catch (error) {
-        console.error(`[Redis] Fallback set error for key ${key}:`, error)
+      if (lockToken) {
+        try {
+          const data = await fetcher()
+          try {
+            await setCachedValue(key, data, ttl, staleTtl)
+          } catch (error) {
+            console.error(`[Redis] Set after retry error for key ${key}:`, error)
+          }
+          return data
+        } finally {
+          try {
+            await releaseKvLock(lockKey, lockToken)
+          } catch (error) {
+            console.error(`[Redis] Lock release error for key ${key}:`, error)
+          }
+        }
       }
-      return data
+
+      console.error(
+        `[Redis] Bypassing cache lock for key ${key} because Redis lock retry failed`
+      )
+      return fetcher()
     } finally {
       pendingPromises.delete(key)
     }

@@ -19,10 +19,10 @@ export const withRealtimePatchViews = async <T extends PatchStatsItem>(
     )
 
     return patches.map((patch) => {
-      const view = stats.view.get(patch.uniqueId) ?? patch.view
+      const view = Math.max(stats.view.get(patch.uniqueId) ?? 0, patch.view)
       const download =
         typeof patch.download === 'number'
-          ? (stats.download.get(patch.uniqueId) ?? patch.download)
+          ? Math.max(stats.download.get(patch.uniqueId) ?? 0, patch.download)
           : patch.download
 
       return { ...patch, view, download }

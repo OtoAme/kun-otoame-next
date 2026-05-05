@@ -93,8 +93,7 @@ export const getRanking = async (
 
       return { galgames, total: cappedTotal }
     },
-    RANKING_LIST_CACHE_DURATION,
-    { staleTtl: 0 }
+    RANKING_LIST_CACHE_DURATION
   )
 
   return {

@@ -46,6 +46,10 @@ model patch {
 
   @@unique([vndb_id, vndb_relation_id])
   @@index([created])
+  @@index([content_limit, created(sort: Desc)])
+  @@index([content_limit, download(sort: Desc)])
+  @@index([content_limit, view(sort: Desc)])
+  @@index([content_limit, resource_update_time(sort: Desc)])
   @@index([resource_update_time])
   @@index([content_limit])
   @@index([released(ops: raw("text_pattern_ops"))])
