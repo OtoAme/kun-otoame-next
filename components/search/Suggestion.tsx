@@ -49,7 +49,7 @@ export const SearchSuggestion = ({
       )
 
       kunErrorHandler(res, (value) => {
-        setSuggestions(value)
+        setSuggestions(Array.isArray(value) ? value : [])
       })
     })
   }

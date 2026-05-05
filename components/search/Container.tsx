@@ -67,6 +67,10 @@ export const SearchPage = () => {
     const newHistory = [
       suggestions,
       ...searchData.searchHistory.filter((item) => {
+        if (!Array.isArray(item)) {
+          return false
+        }
+
         const itemKey = item
           .map((s) => `${s.mode}:${s.type}:${s.name}`)
           .sort()

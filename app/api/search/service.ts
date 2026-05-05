@@ -34,7 +34,33 @@ export const searchGalgame = async (
   const offset = (page - 1) * limit
   const insensitive = Prisma.QueryMode.insensitive
 
-  const query = JSON.parse(queryString) as SearchSuggestionType[]
+  let query: SearchSuggestionType[]
+  try {
+    const parsedQuery = JSON.parse(queryString) as unknown
+    if (!Array.isArray(parsedQuery)) {
+      return '搜索条件格式错误'
+    }
+    query = parsedQuery.filter((item): item is SearchSuggestionType => {
+      if (!item || typeof item !== 'object') {
+        return false
+      }
+      const suggestion = item as Partial<SearchSuggestionType>
+      return (
+        (suggestion.type === 'keyword' ||
+          suggestion.type === 'tag' ||
+          suggestion.type === 'company') &&
+        (suggestion.mode === 'include' || suggestion.mode === 'exclude') &&
+        typeof suggestion.name === 'string' &&
+        Boolean(suggestion.name.trim())
+      )
+    })
+  } catch {
+    return '搜索条件格式错误'
+  }
+
+  if (!query.length) {
+    return '搜索条件为空'
+  }
 
   const queryArray = query
     .filter((item) => item.type === 'keyword')

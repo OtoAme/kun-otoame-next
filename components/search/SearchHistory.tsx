@@ -20,6 +20,11 @@ export const SearchHistory = ({
 }: Props) => {
   const searchData = useSearchStore((state) => state.data)
   const setSearchData = useSearchStore((state) => state.setData)
+  const searchHistory = Array.isArray(searchData.searchHistory)
+    ? searchData.searchHistory.filter((item): item is SearchSuggestionType[] =>
+        Array.isArray(item)
+      )
+    : []
 
   const handleHistoryClick = (historyItem: SearchSuggestionType[]) => {
     setShowHistory(false)
@@ -29,15 +34,13 @@ export const SearchHistory = ({
   const handleHistoryDelete = (historyIndex: number) => {
     setSearchData({
       ...searchData,
-      searchHistory: searchData.searchHistory.filter(
-        (_, index) => index !== historyIndex
-      )
+      searchHistory: searchHistory.filter((_, index) => index !== historyIndex)
     })
   }
 
   return (
     <>
-      {showHistory && searchData.searchHistory.length > 0 && (
+      {showHistory && searchHistory.length > 0 && (
         <div className="absolute z-50 w-full border shadow-lg rounded-2xl bg-content1 border-default-200">
           <div className="flex items-center justify-between p-2 border-b border-default-200">
             <span className="flex items-center gap-1 text-sm text-default-500">
@@ -57,7 +60,7 @@ export const SearchHistory = ({
           </div>
 
           <div className="overflow-y-auto max-h-60">
-            {searchData.searchHistory.map((item, index) => (
+            {searchHistory.map((item, index) => (
               <div
                 key={index}
                 className="flex items-center gap-2 p-2 cursor-pointer hover:bg-default-100 rounded-2xl"
