@@ -1,11 +1,12 @@
-import { getPatchViewBufferCounts } from './buffer'
+import { getRealtimePatchStats } from './buffer'
 
-type PatchViewItem = {
+type PatchStatsItem = {
   uniqueId: string
   view: number
+  download?: number
 }
 
-export const withRealtimePatchViews = async <T extends PatchViewItem>(
+export const withRealtimePatchViews = async <T extends PatchStatsItem>(
   patches: T[]
 ) => {
   if (!patches.length) {
@@ -13,26 +14,26 @@ export const withRealtimePatchViews = async <T extends PatchViewItem>(
   }
 
   try {
-    const counts = await getPatchViewBufferCounts(
+    const stats = await getRealtimePatchStats(
       patches.map((patch) => patch.uniqueId)
     )
-    if (counts.size === 0) {
-      return patches
-    }
 
     return patches.map((patch) => {
-      const bufferedCount = counts.get(patch.uniqueId) ?? 0
-      return bufferedCount > 0
-        ? { ...patch, view: patch.view + bufferedCount }
-        : patch
+      const view = stats.view.get(patch.uniqueId) ?? patch.view
+      const download =
+        typeof patch.download === 'number'
+          ? (stats.download.get(patch.uniqueId) ?? patch.download)
+          : patch.download
+
+      return { ...patch, view, download }
     })
   } catch (error) {
-    console.error('Failed to read realtime patch view counts:', error)
+    console.error('Failed to read realtime patch stats:', error)
     return patches
   }
 }
 
-export const withRealtimePatchView = async <T extends PatchViewItem>(
+export const withRealtimePatchView = async <T extends PatchStatsItem>(
   patch: T
 ) => {
   const [realtimePatch] = await withRealtimePatchViews([patch])

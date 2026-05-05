@@ -6,9 +6,12 @@ const logPatchViewError = (message: string, error: unknown) => {
   console.error(message, error)
 }
 
-export const updatePatchViews = async (uniqueId: string) => {
+export const updatePatchViews = async (
+  uniqueId: string,
+  currentView?: number
+) => {
   try {
-    await incrementPatchViewBuffer(uniqueId)
+    await incrementPatchViewBuffer(uniqueId, currentView)
     return
   } catch (error) {
     logPatchViewError('Failed to buffer patch view increment:', error)

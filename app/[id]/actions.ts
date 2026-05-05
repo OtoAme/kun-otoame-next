@@ -8,7 +8,8 @@ import { getPatchPageData } from '~/app/api/patch/pageData'
 import { updatePatchViews } from '~/app/api/patch/views/put'
 
 const uniqueIdSchema = z.object({
-  uniqueId: z.string().min(8).max(8)
+  uniqueId: z.string().min(8).max(8),
+  currentView: z.number().int().min(0).optional()
 })
 
 export const kunGetPatchPageDataActions = cache(
@@ -32,5 +33,5 @@ export const kunUpdatePatchViewsActions = async (
     return input
   }
 
-  await updatePatchViews(input.uniqueId)
+  await updatePatchViews(input.uniqueId, input.currentView)
 }

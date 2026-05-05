@@ -89,7 +89,8 @@ export const getHomeData = async (nsfwEnable: Prisma.patchWhereInput) => {
 
       return { galgames, resources }
     },
-    HOME_CACHE_DURATION
+    HOME_CACHE_DURATION,
+    { staleTtl: 0 }
   )
 
   return {

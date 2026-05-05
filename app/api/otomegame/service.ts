@@ -127,7 +127,8 @@ export const getGalgame = async (
 
       return { galgames, total }
     },
-    GALGAME_LIST_CACHE_DURATION
+    GALGAME_LIST_CACHE_DURATION,
+    { staleTtl: 0 }
   )
 
   return {

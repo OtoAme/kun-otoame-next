@@ -62,7 +62,10 @@ export default async function Kun({ params }: Props) {
     return <ErrorComponent error={pageData} />
   }
 
-  const viewUpdateResult = await kunUpdatePatchViewsActions({ uniqueId: id })
+  const viewUpdateResult = await kunUpdatePatchViewsActions({
+    uniqueId: id,
+    currentView: pageData.patch.view
+  })
   const patch =
     typeof viewUpdateResult === 'string'
       ? pageData.patch

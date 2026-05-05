@@ -5,6 +5,7 @@ import {
   invalidatePatchContentCache,
   invalidatePatchListCaches
 } from '~/app/api/patch/cache'
+import { setRealtimePatchDownloadStats } from '~/app/api/patch/views/buffer'
 
 export const downloadStats = async (
   input: z.infer<typeof updatePatchResourceStatsSchema>
@@ -26,10 +27,10 @@ export const downloadStats = async (
     const patch = await prisma.patch.update({
       where: { id: input.patchId },
       data: { download: { increment: 1 } },
-      select: { unique_id: true }
+      select: { unique_id: true, download: true }
     })
 
-    return { uniqueId: patch.unique_id }
+    return { uniqueId: patch.unique_id, download: patch.download }
   })
 
   if (typeof result === 'string') {
@@ -37,6 +38,7 @@ export const downloadStats = async (
   }
 
   await Promise.all([
+    setRealtimePatchDownloadStats(result.uniqueId, result.download),
     invalidatePatchContentCache(result.uniqueId),
     invalidatePatchListCaches()
   ]).catch((error) => {
