@@ -8,13 +8,14 @@ import {
 } from '~/constants/api/select'
 import { HOME_CACHE_DURATION } from '~/config/cache'
 import { getOrSet } from '~/lib/redis'
+import { withRealtimePatchViews } from '~/app/api/patch/views/realtime'
 
 export const getHomeData = async (nsfwEnable: Prisma.patchWhereInput) => {
   const cacheKey = `home_data:${createHash('md5')
     .update(JSON.stringify(nsfwEnable))
     .digest('hex')}`
 
-  return await getOrSet(
+  const result = await getOrSet(
     cacheKey,
     async () => {
       const [data, resourcesData] = await Promise.all([
@@ -90,4 +91,9 @@ export const getHomeData = async (nsfwEnable: Prisma.patchWhereInput) => {
     },
     HOME_CACHE_DURATION
   )
+
+  return {
+    ...result,
+    galgames: await withRealtimePatchViews(result.galgames)
+  }
 }

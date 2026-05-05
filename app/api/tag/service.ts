@@ -5,6 +5,7 @@ import {
   GalgameCardSelectField,
   toGalgameCardCount
 } from '~/constants/api/select'
+import { withRealtimePatchViews } from '~/app/api/patch/views/realtime'
 import { prisma } from '~/prisma/index'
 import { getOrSet } from '~/lib/redis'
 import {
@@ -64,7 +65,7 @@ export const getPatchByTag = async (
     .update(JSON.stringify({ input, nsfwEnable }))
     .digest('hex')}`
 
-  return await getOrSet(
+  const result = await getOrSet(
     cacheKey,
     async () => {
       const {
@@ -133,4 +134,9 @@ export const getPatchByTag = async (
     },
     GALGAME_LIST_CACHE_DURATION
   )
+
+  return {
+    ...result,
+    galgames: await withRealtimePatchViews(result.galgames)
+  }
 }

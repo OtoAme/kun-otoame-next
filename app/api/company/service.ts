@@ -21,6 +21,7 @@ import {
   GalgameCardSelectField,
   toGalgameCardCount
 } from '~/constants/api/select'
+import { withRealtimePatchViews } from '~/app/api/patch/views/realtime'
 
 export const getCompany = async (input: z.infer<typeof getCompanySchema>) => {
   const cacheKey = `company_list:${createHash('md5')
@@ -97,7 +98,7 @@ export const getPatchByCompany = async (
     .update(JSON.stringify({ input, nsfwEnable }))
     .digest('hex')}`
 
-  return await getOrSet(
+  const result = await getOrSet(
     cacheKey,
     async () => {
       const {
@@ -209,6 +210,11 @@ export const getPatchByCompany = async (
     },
     GALGAME_LIST_CACHE_DURATION
   )
+
+  return {
+    ...result,
+    galgames: await withRealtimePatchViews(result.galgames)
+  }
 }
 
 export const getCompanyById = async (

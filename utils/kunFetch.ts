@@ -4,6 +4,7 @@ type FetchOptions = {
   body?: Record<string, unknown>
   formData?: FormData
   timeout?: number
+  keepalive?: boolean
 }
 
 const kunFetchRequest = async <T>(
@@ -12,7 +13,14 @@ const kunFetchRequest = async <T>(
   options?: FetchOptions
 ): Promise<T> => {
   try {
-    const { headers = {}, query, body, formData, timeout } = options || {}
+    const {
+      headers = {},
+      query,
+      body,
+      formData,
+      timeout,
+      keepalive
+    } = options || {}
 
     const queryString = query
       ? '?' +
@@ -36,8 +44,10 @@ const kunFetchRequest = async <T>(
       mode: 'cors',
       headers: {
         'X-Requested-With': 'kun-fetch',
+        ...(body ? { 'Content-Type': 'application/json' } : {}),
         ...headers
-      }
+      },
+      keepalive
     }
 
     if (formData) {
@@ -91,9 +101,10 @@ export const kunFetchPost = async <T>(
 
 export const kunFetchPut = async <T>(
   url: string,
-  body?: Record<string, unknown>
+  body?: Record<string, unknown>,
+  options?: Pick<FetchOptions, 'keepalive'>
 ): Promise<T> => {
-  return kunFetchRequest<T>(url, 'PUT', { body })
+  return kunFetchRequest<T>(url, 'PUT', { body, ...options })
 }
 
 export const kunFetchDelete = async <T>(

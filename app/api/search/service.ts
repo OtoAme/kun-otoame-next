@@ -5,9 +5,13 @@ import {
   GalgameCardSelectField,
   toGalgameCardCount
 } from '~/constants/api/select'
+import { withRealtimePatchViews } from '~/app/api/patch/views/realtime'
 import { prisma } from '~/prisma/index'
 import { searchSchema, searchTagSchema } from '~/validations/search'
-import { buildGalgameDateFilter, buildGalgameOrderBy } from '~/app/api/utils/galgameQuery'
+import {
+  buildGalgameDateFilter,
+  buildGalgameOrderBy
+} from '~/app/api/utils/galgameQuery'
 import type { SearchSuggestionType } from '~/types/api/search'
 
 export const searchGalgame = async (
@@ -121,7 +125,7 @@ export const searchGalgame = async (
       : 0
   }))
 
-  return { galgames, total }
+  return { galgames: await withRealtimePatchViews(galgames), total }
 }
 
 export const searchTag = async (input: z.infer<typeof searchTagSchema>) => {

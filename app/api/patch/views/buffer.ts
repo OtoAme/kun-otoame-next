@@ -14,6 +14,40 @@ export const incrementPatchViewBuffer = async (uniqueId: string) => {
   )
 }
 
+const parseBufferedCount = (value: string | null) => {
+  if (!value) {
+    return 0
+  }
+
+  const count = Number(value)
+  return Number.isFinite(count) && count > 0 ? count : 0
+}
+
+export const getPatchViewBufferCounts = async (uniqueIds: string[]) => {
+  const uniqueIdList = [...new Set(uniqueIds)].filter(Boolean)
+  const counts = new Map<string, number>()
+  if (!uniqueIdList.length) {
+    return counts
+  }
+
+  const [bufferCounts, pendingCounts] = await Promise.all([
+    runRedisCommand(() => redis.hmget(PATCH_VIEWS_BUFFER_KEY, ...uniqueIdList)),
+    runRedisCommand(() => redis.hmget(PATCH_VIEWS_PENDING_KEY, ...uniqueIdList))
+  ])
+
+  uniqueIdList.forEach((uniqueId, index) => {
+    const count =
+      parseBufferedCount(bufferCounts[index]) +
+      parseBufferedCount(pendingCounts[index])
+
+    if (count > 0) {
+      counts.set(uniqueId, count)
+    }
+  })
+
+  return counts
+}
+
 export const checkoutPatchViewBuffer =
   async (): Promise<PatchViewBufferCheckout | null> => {
     const hasPending = await runRedisCommand(() =>

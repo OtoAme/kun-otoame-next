@@ -8,6 +8,7 @@ import {
   GalgameCardSelectField,
   toGalgameCardCount
 } from '~/constants/api/select'
+import { withRealtimePatchViews } from '~/app/api/patch/views/realtime'
 
 export const GET = async (req: NextRequest) => {
   const input = kunParseGetQuery(req, getFavoriteFolderPatchSchema)
@@ -71,5 +72,5 @@ const getPatchByFolder = async (
       : 0
   }))
 
-  return { patches, total }
+  return { patches: await withRealtimePatchViews(patches), total }
 }

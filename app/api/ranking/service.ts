@@ -9,6 +9,7 @@ import { prisma } from '~/prisma/index'
 import { getOrSet } from '~/lib/redis'
 import { RANKING_LIST_CACHE_DURATION } from '~/config/cache'
 import { rankingSchema } from '~/validations/ranking'
+import { withRealtimePatchViews } from '~/app/api/patch/views/realtime'
 import type { RankingSortField, RankingCard } from '~/types/api/ranking'
 
 const MAX_RANKING_ITEMS = 300
@@ -33,7 +34,7 @@ export const getRanking = async (
     .update(JSON.stringify({ input, nsfwEnable }))
     .digest('hex')}`
 
-  return await getOrSet(
+  const result = await getOrSet(
     cacheKey,
     async () => {
       const { sortField, sortOrder, minRatingCount, page, limit } = input
@@ -94,6 +95,11 @@ export const getRanking = async (
     },
     RANKING_LIST_CACHE_DURATION
   )
+
+  return {
+    ...result,
+    galgames: await withRealtimePatchViews(result.galgames)
+  }
 }
 
 const buildOrderBy = (

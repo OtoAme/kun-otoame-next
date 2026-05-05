@@ -9,6 +9,7 @@ import {
   withPatchFavoriteStatus
 } from './_content'
 import { getPatchPageContentByUniqueId } from './_queries'
+import { withRealtimePatchView } from './views/realtime'
 
 const uniqueIdSchema = z.object({
   uniqueId: z.string().min(8).max(8)
@@ -26,7 +27,9 @@ export const getPatchPageData = async (
 
   if (cachedPatch && cachedIntro) {
     return {
-      patch: await withPatchFavoriteStatus(uniqueId, cachedPatch, uid),
+      patch: await withRealtimePatchView(
+        await withPatchFavoriteStatus(uniqueId, cachedPatch, uid)
+      ),
       intro: cachedIntro
     }
   }
@@ -44,7 +47,9 @@ export const getPatchPageData = async (
   ])
 
   return {
-    patch: await withPatchFavoriteStatus(uniqueId, patch, uid),
+    patch: await withRealtimePatchView(
+      await withPatchFavoriteStatus(uniqueId, patch, uid)
+    ),
     intro
   }
 }

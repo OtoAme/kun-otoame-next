@@ -10,6 +10,7 @@ import { galgameSchema } from '~/validations/galgame'
 import { GALGAME_LIST_CACHE_DURATION } from '~/config/cache'
 import { getOrSet } from '~/lib/redis'
 import { buildGalgameOrderBy } from '~/app/api/utils/galgameQuery'
+import { withRealtimePatchViews } from '~/app/api/patch/views/realtime'
 
 export const getGalgame = async (
   input: z.infer<typeof galgameSchema>,
@@ -19,7 +20,7 @@ export const getGalgame = async (
     .update(JSON.stringify({ input, nsfwEnable }))
     .digest('hex')}`
 
-  return await getOrSet(
+  const result = await getOrSet(
     cacheKey,
     async () => {
       const {
@@ -128,4 +129,9 @@ export const getGalgame = async (
     },
     GALGAME_LIST_CACHE_DURATION
   )
+
+  return {
+    ...result,
+    galgames: await withRealtimePatchViews(result.galgames)
+  }
 }

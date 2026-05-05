@@ -22,10 +22,14 @@ interface Props {
 
 export const ResourceDownloadCard = ({ resource }: Props) => {
   const handleClickDownload = async () => {
-    await kunFetchPut<KunResponse<{}>>('/patch/resource/download', {
-      patchId: resource.patchId,
-      resourceId: resource.id
-    })
+    await kunFetchPut<KunResponse<{}>>(
+      '/patch/resource/download',
+      {
+        patchId: resource.patchId,
+        resourceId: resource.id
+      },
+      { keepalive: true }
+    )
   }
 
   return (
@@ -52,7 +56,7 @@ export const ResourceDownloadCard = ({ resource }: Props) => {
       {resource.content.split(',').map((link) => (
         <div key={Math.random()} className="space-y-2">
           <KunExternalLink
-            onPress={handleClickDownload}
+            onClick={handleClickDownload}
             underline="always"
             className="break-all"
             link={link}
