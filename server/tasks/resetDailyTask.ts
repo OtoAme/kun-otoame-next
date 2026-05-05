@@ -4,6 +4,7 @@ import { withTaskLock } from './withTaskLock'
 
 const RESET_DAILY_LOCK_KEY = 'cron:reset-daily:lock'
 const RESET_DAILY_LOCK_TTL_SECONDS = 60 * 60
+const DAILY_RESET_TIMEZONE = 'Asia/Shanghai'
 
 const resetDailyStats = async () => {
   await prisma.user.updateMany({
@@ -15,14 +16,18 @@ const resetDailyStats = async () => {
   })
 }
 
-export const resetDailyTask = cron.createTask('0 0 * * *', async () => {
-  await withTaskLock(
-    {
-      key: RESET_DAILY_LOCK_KEY,
-      ttlSeconds: RESET_DAILY_LOCK_TTL_SECONDS,
-      taskName: 'resetDailyTask',
-      releaseOnComplete: false
-    },
-    resetDailyStats
-  )
-})
+export const resetDailyTask = cron.createTask(
+  '0 0 * * *',
+  async () => {
+    await withTaskLock(
+      {
+        key: RESET_DAILY_LOCK_KEY,
+        ttlSeconds: RESET_DAILY_LOCK_TTL_SECONDS,
+        taskName: 'resetDailyTask',
+        releaseOnComplete: false
+      },
+      resetDailyStats
+    )
+  },
+  { timezone: DAILY_RESET_TIMEZONE }
+)

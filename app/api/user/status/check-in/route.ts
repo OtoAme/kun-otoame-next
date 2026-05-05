@@ -5,24 +5,25 @@ import { randomNormalInt } from '~/utils/random'
 
 const checkIn = async (uid: number) => {
   const user = await prisma.user.findUnique({
-    where: { id: uid }
+    where: { id: uid },
+    select: { id: true }
   })
   if (!user) {
     return '用户未找到'
   }
-  if (user.daily_check_in) {
-    return '您今天已经签到过了'
-  }
 
   const randomMoemoepoints = randomNormalInt(2, 7)
 
-  await prisma.user.update({
-    where: { id: uid },
+  const result = await prisma.user.updateMany({
+    where: { id: uid, daily_check_in: 0 },
     data: {
       moemoepoint: { increment: randomMoemoepoints },
       daily_check_in: { set: 1 }
     }
   })
+  if (result.count === 0) {
+    return '您今天已经签到过了'
+  }
 
   return { randomMoemoepoints }
 }
