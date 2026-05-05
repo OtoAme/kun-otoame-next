@@ -9,15 +9,16 @@ import { kunFetchGet, kunFetchPost } from '~/utils/kunFetch'
 import { useMounted } from '~/hooks/useMounted'
 import { KunPagination } from '~/components/kun/Pagination'
 import { KunNull } from '~/components/kun/Null'
+import { useUserStore } from '~/store/userStore'
 import type { Tag as TagType } from '~/types/api/tag'
 
 interface Props {
   initialTags: TagType[]
   initialTotal: number
-  uid?: number
 }
 
-export const Container = ({ initialTags, initialTotal, uid }: Props) => {
+export const Container = ({ initialTags, initialTotal }: Props) => {
+  const uid = useUserStore((state) => state.user.uid)
   const [tags, setTags] = useState<TagType[]>(initialTags)
   const [page, setPage] = useState(1)
   const [total, setTotal] = useState(initialTotal)
@@ -43,7 +44,7 @@ export const Container = ({ initialTags, initialTotal, uid }: Props) => {
       return
     }
     fetchTags()
-  }, [page])
+  }, [isMounted, page])
 
   const [query, setQuery] = useState('')
   const [debouncedQuery] = useDebounce(query, 500)

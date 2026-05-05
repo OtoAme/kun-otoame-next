@@ -63,6 +63,7 @@ export const CardContainer = ({ initialGalgames, initialTotal }: Props) => {
     }
     fetchPatches()
   }, [
+    isMounted,
     sortField,
     sortOrder,
     selectedType,

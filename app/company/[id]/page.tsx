@@ -1,6 +1,9 @@
 import { generateKunMetadataTemplate } from './metadata'
 import { CompanyDetailContainer } from '~/components/company/detail/Container'
-import { kunGetCompanyByIdActions, kunCompanyGalgameActions } from './actions'
+import {
+  getCompanyById,
+  getPatchByCompany
+} from '~/app/api/company/service'
 import { ErrorComponent } from '~/components/error/ErrorComponent'
 import type { SortField, SortOrder } from '~/components/galgame/_sort'
 import type { Metadata } from 'next'
@@ -52,7 +55,7 @@ export const generateMetadata = async ({
   params
 }: Props): Promise<Metadata> => {
   const { id } = await params
-  const company = await kunGetCompanyByIdActions({ companyId: Number(id) })
+  const company = await getCompanyById({ companyId: Number(id) })
   if (typeof company === 'string') {
     return {}
   }
@@ -73,24 +76,27 @@ export default async function Kun({ params, searchParams }: Props) {
   const selectedMonths = parseFilterArray(res?.monthString)
   const minRatingCount = Number(res?.minRatingCount) || 10
 
-  const company = await kunGetCompanyByIdActions({ companyId: Number(id) })
+  const company = await getCompanyById({ companyId: Number(id) })
   if (typeof company === 'string') {
     return <ErrorComponent error={company} />
   }
 
-  const response = await kunCompanyGalgameActions({
-    companyId: Number(id),
-    page,
-    limit: 24,
-    selectedType,
-    selectedLanguage,
-    selectedPlatform,
-    sortField,
-    sortOrder,
-    yearString: JSON.stringify(selectedYears),
-    monthString: JSON.stringify(selectedMonths),
-    minRatingCount: sortField === 'rating' ? minRatingCount : 0
-  })
+  const response = await getPatchByCompany(
+    {
+      companyId: Number(id),
+      page,
+      limit: 24,
+      selectedType,
+      selectedLanguage,
+      selectedPlatform,
+      sortField,
+      sortOrder,
+      yearString: JSON.stringify(selectedYears),
+      monthString: JSON.stringify(selectedMonths),
+      minRatingCount: sortField === 'rating' ? minRatingCount : 0
+    },
+    { content_limit: 'sfw' }
+  )
   if (typeof response === 'string') {
     return <ErrorComponent error={response} />
   }

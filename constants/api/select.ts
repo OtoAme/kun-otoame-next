@@ -14,23 +14,23 @@ export const GalgameCardSelectField = {
   banner: true,
   view: true,
   download: true,
+  favorite_count: true,
+  resource_count: true,
+  comment_count: true,
   type: true,
   language: true,
   platform: true,
   created: true,
-  _count: {
-    select: {
-      favorite_folder: true,
-      resource: true,
-      comment: true
-    }
-  },
   rating_stat: {
     select: {
       avg_overall: true
     }
   },
   tag: {
+    take: 3,
+    orderBy: {
+      id: 'asc' as const
+    },
     select: {
       tag: {
         select: { name: true }
@@ -46,9 +46,15 @@ type GalgameCardCountShape = {
 }
 
 interface GalgameCardCounters {
-  _count: GalgameCardCountShape
+  favorite_count: number
+  resource_count: number
+  comment_count: number
 }
 
 export const toGalgameCardCount = (
   row: GalgameCardCounters
-): GalgameCardCountShape => row._count
+): GalgameCardCountShape => ({
+  favorite_folder: row.favorite_count,
+  resource: row.resource_count,
+  comment: row.comment_count
+})

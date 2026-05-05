@@ -17,6 +17,8 @@ model patch_company {
   updated DateTime @updatedAt
 
   @@index([count])
+  @@index([count(sort: Desc), id(sort: Desc)])
+  @@index([name])
   @@index([alias], type: Gin)
   @@index([parent_brand], type: Gin)
 }

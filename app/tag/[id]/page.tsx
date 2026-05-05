@@ -83,6 +83,16 @@ export default async function Kun({ params, searchParams }: Props) {
     return <ErrorComponent error={tag} />
   }
 
+  const payload = await verifyHeaderCookie()
+  if (!payload?.uid) {
+    return (
+      <Suspense>
+        <KunBreadcrumbTitle routeKey={`/tag/${tag.id}`} title={tag.name} />
+        <KunNull message="请登录后查看标签详细信息" />
+      </Suspense>
+    )
+  }
+
   const response = await kunTagGalgameActions({
     tagId: Number(id),
     page: currentPage,
@@ -100,20 +110,14 @@ export default async function Kun({ params, searchParams }: Props) {
     return <ErrorComponent error={response} />
   }
 
-  const payload = await verifyHeaderCookie()
-
   return (
     <Suspense>
       <KunBreadcrumbTitle routeKey={`/tag/${tag.id}`} title={tag.name} />
-      {payload?.uid ? (
-        <TagDetailContainer
-          initialTag={tag}
-          initialPatches={response.galgames}
-          total={response.total}
-        />
-      ) : (
-        <KunNull message="请登录后查看标签详细信息" />
-      )}
+      <TagDetailContainer
+        initialTag={tag}
+        initialPatches={response.galgames}
+        total={response.total}
+      />
     </Suspense>
   )
 }

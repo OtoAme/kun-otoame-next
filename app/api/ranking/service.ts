@@ -119,11 +119,11 @@ const buildOrderBy = (
         { rating_stat: { rec_strong_yes: sortOrder } }
       ]
     case 'favorite':
-      return { favorite_folder: { _count: sortOrder } }
+      return { favorite_count: sortOrder }
     case 'resource':
-      return { resource: { _count: sortOrder } }
+      return { resource_count: sortOrder }
     case 'comment':
-      return { comment: { _count: sortOrder } }
+      return { comment_count: sortOrder }
     case 'download':
       return { download: sortOrder }
     case 'view':

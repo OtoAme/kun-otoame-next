@@ -22,6 +22,7 @@ import {
   toGalgameCardCount
 } from '~/constants/api/select'
 import { withRealtimePatchViews } from '~/app/api/patch/views/realtime'
+import { buildGalgameOrderBy } from '~/app/api/utils/galgameQuery'
 
 export const getCompany = async (input: z.infer<typeof getCompanySchema>) => {
   const cacheKey = `company_list:${createHash('md5')
@@ -176,12 +177,7 @@ export const getPatchByCompany = async (
         ...nsfwEnable
       }
 
-      const orderBy =
-        sortField === 'favorite'
-          ? { favorite_folder: { _count: sortOrder } }
-          : sortField === 'rating'
-            ? { rating_stat: { avg_overall: sortOrder } }
-            : { [sortField]: sortOrder }
+      const orderBy = buildGalgameOrderBy(sortField, sortOrder)
 
       const [data, total] = await Promise.all([
         prisma.patch.findMany({

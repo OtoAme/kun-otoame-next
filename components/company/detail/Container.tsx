@@ -190,6 +190,7 @@ export const CompanyDetailContainer: FC<Props> = ({
     }
     fetchPatches()
   }, [
+    isMounted,
     page,
     sortField,
     sortOrder,

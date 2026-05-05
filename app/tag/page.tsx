@@ -1,17 +1,16 @@
 import { Container } from '~/components/tag/Container'
 import { kunMetadata } from './metadata'
-import { kunGetActions } from './actions'
+import { getTag } from '~/app/api/tag/service'
 import { ErrorComponent } from '~/components/error/ErrorComponent'
 import { Suspense } from 'react'
-import { verifyHeaderCookie } from '~/utils/actions/verifyHeaderCookie'
 import type { Metadata } from 'next'
 
-export const revalidate = 0
+export const revalidate = 300
 
 export const metadata: Metadata = kunMetadata
 
 export default async function Kun() {
-  const response = await kunGetActions({
+  const response = await getTag({
     page: 1,
     limit: 100
   })
@@ -19,14 +18,11 @@ export default async function Kun() {
     return <ErrorComponent error={response} />
   }
 
-  const payload = await verifyHeaderCookie()
-
   return (
     <Suspense>
       <Container
         initialTags={response.tags}
         initialTotal={response.total}
-        uid={payload?.uid}
       />
     </Suspense>
   )

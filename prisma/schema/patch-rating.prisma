@@ -74,5 +74,7 @@ model patch_rating_stat {
   updated DateTime @updatedAt
 
   @@index([avg_overall])
+  @@index([avg_overall(sort: Desc), count, patch_id])
   @@index([count])
+  @@index([count(sort: Desc), patch_id])
 }

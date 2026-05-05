@@ -152,6 +152,7 @@ export const invalidateCompanyCaches = async (companyId?: number) => {
 export const invalidateTagCaches = async () => {
   await Promise.all([
     delKvPattern('tag_list:*'),
+    delKvPattern('tag_detail:*'),
     delKvPattern('tag_galgame_list:*'),
     delKvPattern('galgame_list:*')
   ])
