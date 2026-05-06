@@ -18,7 +18,7 @@ export const HomeContainer = ({ galgames, resources }: Props) => {
 
       <section className="space-y-6">
         <div className="flex items-center space-x-4">
-          <h2 className="text-lg font-bold sm:text-2xl">最新 OtomeGame</h2>
+          <h2 className="text-lg font-bold sm:text-2xl">最新游戏</h2>
           <Button
             variant="light"
             as={Link}
