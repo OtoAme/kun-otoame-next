@@ -6,6 +6,8 @@ import Link from 'next/link'
 import toast from 'react-hot-toast'
 import { kunFetchGet, kunFetchPost } from '~/utils/kunFetch'
 import { FetchPreview } from '~/components/edit/components/FetchPreview'
+import { normalizeSteamIdInput, parseSteamIdInput } from '~/utils/externalIds'
+import type { ClipboardEvent } from 'react'
 import type { PatchFormDataShape } from '~/components/edit/types'
 
 interface SteamPreview {
@@ -44,7 +46,7 @@ export const SteamInput = <T extends PatchFormDataShape>({
   }, [data.steamId])
 
   const handleFetch = async () => {
-    const rawInput = data.steamId.trim()
+    const rawInput = normalizeSteamIdInput(data.steamId)
     if (!rawInput) {
       toast.error('Steam ID 不可为空')
       return
@@ -115,6 +117,16 @@ export const SteamInput = <T extends PatchFormDataShape>({
     }
   }
 
+  const handlePaste = (event: ClipboardEvent<HTMLInputElement>) => {
+    const id = parseSteamIdInput(event.clipboardData.getData('text'))
+    if (!id) {
+      return
+    }
+
+    event.preventDefault()
+    setData({ ...data, steamId: id })
+  }
+
   const aliasChips = preview
     ? [
         preview.aliases.japanese,
@@ -132,6 +144,7 @@ export const SteamInput = <T extends PatchFormDataShape>({
         placeholder="请输入 Steam App ID, 例如 3655150"
         value={data.steamId}
         onChange={(event) => setData({ ...data, steamId: event.target.value })}
+        onPaste={handlePaste}
         isInvalid={!!errors}
         errorMessage={errors}
       />

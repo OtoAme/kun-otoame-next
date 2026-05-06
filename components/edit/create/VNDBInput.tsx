@@ -5,6 +5,8 @@ import { Button, Checkbox, Input } from '@heroui/react'
 import toast from 'react-hot-toast'
 import { fetchVNDBDetails } from '~/utils/vndb'
 import { kunFetchGet } from '~/utils/kunFetch'
+import { normalizeVndbIdInput, parseVndbIdInput } from '~/utils/externalIds'
+import type { ClipboardEvent } from 'react'
 import type { PatchFormDataShape } from '~/components/edit/types'
 
 interface DuplicateItem {
@@ -37,7 +39,7 @@ export const VNDBInput = <T extends PatchFormDataShape>({
   const [duplicateList, setDuplicateList] = useState<DuplicateItem[]>([])
 
   const handleFetchData = async () => {
-    const rawInput = (data.vndbId ?? '').trim()
+    const rawInput = normalizeVndbIdInput(data.vndbId ?? '')
     if (!rawInput) {
       toast.error('VNDB ID 不可为空')
       return
@@ -51,9 +53,10 @@ export const VNDBInput = <T extends PatchFormDataShape>({
 
     // Check duplicate first
     try {
-      const duplicateResult = await kunFetchGet<
-        KunResponse<DuplicateResponse>
-      >('/edit/duplicate', { vndbId: normalizedInput })
+      const duplicateResult = await kunFetchGet<KunResponse<DuplicateResponse>>(
+        '/edit/duplicate',
+        { vndbId: normalizedInput }
+      )
 
       if (
         typeof duplicateResult !== 'string' &&
@@ -108,6 +111,16 @@ export const VNDBInput = <T extends PatchFormDataShape>({
     }
   }
 
+  const handlePaste = (event: ClipboardEvent<HTMLInputElement>) => {
+    const id = parseVndbIdInput(event.clipboardData.getData('text'))
+    if (!id) {
+      return
+    }
+
+    event.preventDefault()
+    setData({ ...data, vndbId: id })
+  }
+
   return (
     <div className="w-full space-y-2">
       <h2 className="text-xl">VNDB ID (可选)</h2>
@@ -117,6 +130,7 @@ export const VNDBInput = <T extends PatchFormDataShape>({
         placeholder="请输入 VNDB ID, 例如 v19658"
         value={data.vndbId}
         onChange={(e) => setData({ ...data, vndbId: e.target.value })}
+        onPaste={handlePaste}
         isInvalid={!!errors}
         errorMessage={errors}
       />

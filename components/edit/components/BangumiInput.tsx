@@ -6,6 +6,11 @@ import Link from 'next/link'
 import toast from 'react-hot-toast'
 import { kunFetchGet, kunFetchPost } from '~/utils/kunFetch'
 import { FetchPreview } from '~/components/edit/components/FetchPreview'
+import {
+  normalizeBangumiIdInput,
+  parseBangumiIdInput
+} from '~/utils/externalIds'
+import type { ClipboardEvent } from 'react'
 import type { PatchFormDataShape } from '~/components/edit/types'
 
 interface BangumiPreview {
@@ -39,7 +44,7 @@ export const BangumiInput = <T extends PatchFormDataShape>({
   }, [data.bangumiId])
 
   const handleFetch = async () => {
-    const rawInput = data.bangumiId.trim()
+    const rawInput = normalizeBangumiIdInput(data.bangumiId)
     if (!rawInput) {
       toast.error('Bangumi ID 不可为空')
       return
@@ -105,6 +110,16 @@ export const BangumiInput = <T extends PatchFormDataShape>({
     }
   }
 
+  const handlePaste = (event: ClipboardEvent<HTMLInputElement>) => {
+    const id = parseBangumiIdInput(event.clipboardData.getData('text'))
+    if (!id) {
+      return
+    }
+
+    event.preventDefault()
+    setData({ ...data, bangumiId: id })
+  }
+
   return (
     <div className="w-full space-y-2">
       <h2 className="text-xl">Bangumi ID (可选)</h2>
@@ -113,7 +128,10 @@ export const BangumiInput = <T extends PatchFormDataShape>({
         labelPlacement="outside"
         placeholder="请输入 Bangumi 条目 ID, 例如 172612"
         value={data.bangumiId}
-        onChange={(event) => setData({ ...data, bangumiId: event.target.value })}
+        onChange={(event) =>
+          setData({ ...data, bangumiId: event.target.value })
+        }
+        onPaste={handlePaste}
         isInvalid={!!errors}
         errorMessage={errors}
       />

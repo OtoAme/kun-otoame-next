@@ -4,6 +4,11 @@ import { Button, Input } from '@heroui/react'
 import toast from 'react-hot-toast'
 import { kunFetchGet, kunFetchPost } from '~/utils/kunFetch'
 import { fetchVNDBDetails } from '~/utils/vndb'
+import {
+  normalizeVndbRelationIdInput,
+  parseVndbRelationIdInput
+} from '~/utils/externalIds'
+import type { ClipboardEvent } from 'react'
 import type { PatchFormDataShape } from '~/components/edit/types'
 
 interface RelationResponse {
@@ -26,7 +31,7 @@ export const VNDBRelationInput = <T extends PatchFormDataShape>({
   enableDuplicateCheck = true
 }: Props<T>) => {
   const handleFetchRelation = async () => {
-    const rawInput = (data.vndbRelationId ?? '').trim()
+    const rawInput = normalizeVndbRelationIdInput(data.vndbRelationId ?? '')
     if (!rawInput) {
       toast.error('VNDB Relation ID 不可为空')
       return
@@ -127,6 +132,16 @@ export const VNDBRelationInput = <T extends PatchFormDataShape>({
     }
   }
 
+  const handlePaste = (event: ClipboardEvent<HTMLInputElement>) => {
+    const id = parseVndbRelationIdInput(event.clipboardData.getData('text'))
+    if (!id) {
+      return
+    }
+
+    event.preventDefault()
+    setData({ ...data, vndbRelationId: id })
+  }
+
   return (
     <div className="w-full space-y-2">
       <h2 className="text-xl">VNDB Relation ID (可选)</h2>
@@ -136,6 +151,7 @@ export const VNDBRelationInput = <T extends PatchFormDataShape>({
         placeholder="请输入 Release ID, 例如 r5879"
         value={data.vndbRelationId}
         onChange={(e) => setData({ ...data, vndbRelationId: e.target.value })}
+        onPaste={handlePaste}
         isInvalid={!!errors}
         errorMessage={errors}
       />
