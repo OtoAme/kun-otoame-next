@@ -16,7 +16,7 @@ export const getFeedback = async (
 
   const [data, total] = await Promise.all([
     prisma.user_message.findMany({
-      where: { type: 'feedback', sender_id: { not: null } },
+      where: { type: 'feedback', sender_id: { not: null }, recipient_id: null },
       include: {
         sender: {
           select: {
@@ -31,7 +31,7 @@ export const getFeedback = async (
       take: limit
     }),
     prisma.user_message.count({
-      where: { type: 'feedback', sender_id: { not: null } }
+      where: { type: 'feedback', sender_id: { not: null }, recipient_id: null }
     })
   ])
 
