@@ -29,8 +29,11 @@ export const redis = new Redis(redisOptions)
 
 export const runRedisCommand = async <T>(command: () => Promise<T>) => command()
 
+export const getPrefixedRedisKey = (key: string) =>
+  `${KUN_PATCH_REDIS_PREFIX}:${key}`
+
 export const setKv = async (key: string, value: string, time?: number) => {
-  const keyString = `${KUN_PATCH_REDIS_PREFIX}:${key}`
+  const keyString = getPrefixedRedisKey(key)
   if (time) {
     await runRedisCommand(() => redis.setex(keyString, time, value))
   } else {
@@ -39,7 +42,7 @@ export const setKv = async (key: string, value: string, time?: number) => {
 }
 
 export const getKv = async (key: string) => {
-  const keyString = `${KUN_PATCH_REDIS_PREFIX}:${key}`
+  const keyString = getPrefixedRedisKey(key)
   const value = await runRedisCommand(() => redis.get(keyString))
   return value
 }
@@ -49,12 +52,12 @@ export const getKvs = async (keys: string[]) => {
     return []
   }
 
-  const keyStrings = keys.map((key) => `${KUN_PATCH_REDIS_PREFIX}:${key}`)
+  const keyStrings = keys.map(getPrefixedRedisKey)
   return runRedisCommand(() => redis.mget(...keyStrings))
 }
 
 export const delKv = async (key: string) => {
-  const keyString = `${KUN_PATCH_REDIS_PREFIX}:${key}`
+  const keyString = getPrefixedRedisKey(key)
   await runRedisCommand(() => redis.del(keyString))
 }
 
@@ -63,16 +66,14 @@ export const delKvs = async (keys: string[]) => {
     return
   }
 
-  const keyStrings = keys.map((key) => `${KUN_PATCH_REDIS_PREFIX}:${key}`)
+  const keyStrings = keys.map(getPrefixedRedisKey)
   for (let i = 0; i < keyStrings.length; i += REDIS_MULTI_KEY_BATCH_SIZE) {
-    await deleteRedisKeys(
-      keyStrings.slice(i, i + REDIS_MULTI_KEY_BATCH_SIZE)
-    )
+    await deleteRedisKeys(keyStrings.slice(i, i + REDIS_MULTI_KEY_BATCH_SIZE))
   }
 }
 
 export const acquireKvLock = async (key: string, ttlSeconds = 10) => {
-  const keyString = `${KUN_PATCH_REDIS_PREFIX}:${key}`
+  const keyString = getPrefixedRedisKey(key)
   const token = randomUUID()
   const result = await runRedisCommand(() =>
     redis.set(keyString, token, 'EX', ttlSeconds, 'NX')
@@ -86,7 +87,7 @@ export const acquireKvLock = async (key: string, ttlSeconds = 10) => {
 }
 
 export const releaseKvLock = async (key: string, token: string) => {
-  const keyString = `${KUN_PATCH_REDIS_PREFIX}:${key}`
+  const keyString = getPrefixedRedisKey(key)
   await runRedisCommand(() =>
     redis.eval(
       `
@@ -103,7 +104,7 @@ export const releaseKvLock = async (key: string, token: string) => {
 }
 
 export const delKvPattern = async (pattern: string) => {
-  const keyPattern = `${KUN_PATCH_REDIS_PREFIX}:${pattern}`
+  const keyPattern = getPrefixedRedisKey(pattern)
   let cursor = '0'
 
   do {
@@ -364,7 +365,10 @@ export const getOrSet = async <T>(
           try {
             await setCachedValue(key, data, ttl, staleTtl)
           } catch (error) {
-            console.error(`[Redis] Set after retry error for key ${key}:`, error)
+            console.error(
+              `[Redis] Set after retry error for key ${key}:`,
+              error
+            )
           }
           return data
         } finally {

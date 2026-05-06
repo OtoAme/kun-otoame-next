@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { prisma } from '~/prisma/index'
 import { adminUpdateUserSchema } from '~/validations/admin'
-import { deleteKunToken } from '~/app/api/utils/jwt'
+import { deleteKunToken, updateKunSessions } from '~/app/api/utils/jwt'
 import { hashPassword } from '~/app/api/utils/algorithm'
 
 export const updateUser = async (
@@ -60,10 +60,13 @@ export const updateUser = async (
     ...input,
     ...(password ? { password: '[REDACTED]' } : {})
   }
+  const shouldRevokeSessions = Boolean(password) || rest.status === 2
+  const sessionUpdate = {
+    ...(rest.name !== user.name ? { name: rest.name } : {}),
+    ...(rest.role !== user.role ? { role: rest.role } : {})
+  }
 
-  await deleteKunToken(uid)
-
-  return prisma.$transaction(async (prisma) => {
+  const response = await prisma.$transaction(async (prisma) => {
     await prisma.user.update({
       where: { id: uid },
       data: {
@@ -83,4 +86,12 @@ export const updateUser = async (
 
     return {}
   })
+
+  if (shouldRevokeSessions) {
+    await deleteKunToken(uid)
+  } else if (Object.keys(sessionUpdate).length) {
+    await updateKunSessions(uid, sessionUpdate)
+  }
+
+  return response
 }

@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { prisma } from '~/prisma/index'
 import { hashPassword } from '~/app/api/utils/algorithm'
+import { deleteKunToken } from '~/app/api/utils/jwt'
 import { sendVerificationCodeEmail } from '~/app/api/utils/sendVerificationCodeEmail'
 import { verifyVerificationCode } from '~/app/api/utils/verifyVerificationCode'
 import { getRemoteIp } from '~/app/api/utils/getRemoteIp'
@@ -74,4 +75,5 @@ export const stepTwo = async (input: z.infer<typeof stepTwoSchema>) => {
     where: { id: user.id },
     data: { password: hashedPassword }
   })
+  await deleteKunToken(user.id)
 }

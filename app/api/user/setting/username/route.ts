@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { kunParsePostBody } from '~/app/api/utils/parseQuery'
 import { verifyHeaderCookie } from '~/middleware/_verifyHeaderCookie'
+import { updateKunSessions } from '~/app/api/utils/jwt'
 import { prisma } from '~/prisma/index'
 import { usernameSchema } from '~/validations/user'
 
@@ -25,6 +26,7 @@ const updateUsername = async (username: string, uid: number) => {
     where: { id: uid },
     data: { name: username, moemoepoint: { increment: -30 } }
   })
+  await updateKunSessions(uid, { name: username })
 }
 
 export const POST = async (req: NextRequest) => {

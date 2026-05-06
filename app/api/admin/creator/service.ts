@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { prisma } from '~/prisma/index'
 import { createMessage } from '~/app/api/utils/message'
-import { deleteKunToken } from '~/app/api/utils/jwt'
+import { updateKunSessions } from '~/app/api/utils/jwt'
 import {
   adminPaginationSchema,
   approveCreatorSchema,
@@ -91,9 +91,7 @@ export const approveCreator = async (
     return '未找到该管理员'
   }
 
-  await deleteKunToken(uid)
-
-  return prisma.$transaction(async (prisma) => {
+  const response = await prisma.$transaction(async (prisma) => {
     await prisma.user_message.update({
       where: { id: messageId },
       // status: 0 - unread, 1 - read, 2 - approve, 3 - decline
@@ -122,6 +120,10 @@ export const approveCreator = async (
 
     return {}
   })
+
+  await updateKunSessions(uid, { role: 2 })
+
+  return response
 }
 
 export const declineCreator = async (
