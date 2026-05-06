@@ -27,12 +27,12 @@ const updatePassword = async (req: NextRequest) => {
 
   const hashedPassword = await hashPassword(input.newPassword)
 
+  await deleteOtherKunSessions(payload.uid, payload.jti)
+
   await prisma.user.update({
     where: { id: payload.uid },
     data: { password: hashedPassword }
   })
-
-  await deleteOtherKunSessions(payload.uid, payload.jti)
 }
 
 export const POST = async (req: NextRequest) => {

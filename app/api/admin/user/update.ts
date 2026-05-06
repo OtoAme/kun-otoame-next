@@ -61,9 +61,14 @@ export const updateUser = async (
     ...(password ? { password: '[REDACTED]' } : {})
   }
   const shouldRevokeSessions = Boolean(password) || rest.status === 2
+  const isRoleDowngrade = rest.role < user.role
   const sessionUpdate = {
     ...(rest.name !== user.name ? { name: rest.name } : {}),
     ...(rest.role !== user.role ? { role: rest.role } : {})
+  }
+
+  if (shouldRevokeSessions || isRoleDowngrade) {
+    await deleteKunToken(uid)
   }
 
   const response = await prisma.$transaction(async (prisma) => {
@@ -87,9 +92,11 @@ export const updateUser = async (
     return {}
   })
 
-  if (shouldRevokeSessions) {
-    await deleteKunToken(uid)
-  } else if (Object.keys(sessionUpdate).length) {
+  if (
+    !shouldRevokeSessions &&
+    !isRoleDowngrade &&
+    Object.keys(sessionUpdate).length
+  ) {
     await updateKunSessions(uid, sessionUpdate)
   }
 

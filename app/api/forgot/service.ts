@@ -71,9 +71,10 @@ export const stepTwo = async (input: z.infer<typeof stepTwoSchema>) => {
   }
 
   const hashedPassword = await hashPassword(input.newPassword)
+  await deleteKunToken(user.id)
+
   await prisma.user.update({
     where: { id: user.id },
     data: { password: hashedPassword }
   })
-  await deleteKunToken(user.id)
 }

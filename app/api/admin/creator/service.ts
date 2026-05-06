@@ -73,8 +73,12 @@ export const approveCreator = async (
   if (!message) {
     return '未找到该创作者请求'
   }
+  if (message.sender_id !== uid) {
+    return '创作者请求与用户不匹配'
+  }
+
   const creator = await prisma.user.findUnique({
-    where: { id: message.sender_id ?? 0 },
+    where: { id: uid },
     include: {
       _count: {
         select: {
