@@ -1,19 +1,22 @@
 import { kunMoyuMoe } from '~/config/moyu-moe'
 import type { Metadata } from 'next'
 
+const description =
+  '收录 OtomeGame / 乙女游戏资源下载与资料，涵盖 Otomate、Design Factory、Ruby Party、Rejet、Broccoli、honeybee、HuneX、Voltage、D3 Publisher 等知名乙女游戏品牌与会社。'
+
 export const kunMetadata: Metadata = {
   title: 'OtomeGame 列表',
-  description: `这是所有的 OtomeGame 列表, 包含 柚子社 Yuzu-Soft, Favorite F 社, 甜茶社 SWEET&TEA, 枕社 Makura, 方糖社 Lump of Sugar, 前翼 FrontWing, 调色板社 Palette, SMEE, 颜艺社 ASA, A 社 Alice Soft, 八月社 August, 马戏团社 CIRCUS, 戏画 GIGA, 中二社 minori, 蜂巢社 Alcot, 涡旋社 Whirlpool, 紫社 Purple software 等 OtomeGame 的资源下载`,
+  description,
   openGraph: {
     title: 'OtomeGame 列表',
-    description: `这是所有的 OtomeGame 列表, 包含 柚子社 Yuzu-Soft, Favorite F 社, 甜茶社 SWEET&TEA, 枕社 Makura, 方糖社 Lump of Sugar, 前翼 FrontWing, 调色板社 Palette, SMEE, 颜艺社 ASA, A 社 Alice Soft, 八月社 August, 马戏团社 CIRCUS, 戏画 GIGA, 中二社 minori, 蜂巢社 Alcot, 涡旋社 Whirlpool, 紫社 Purple software 等 OtomeGame 的资源下载`,
+    description,
     type: 'website',
     images: kunMoyuMoe.images
   },
   twitter: {
     card: 'summary_large_image',
     title: 'OtomeGame 列表',
-    description: `这是所有的 OtomeGame 列表, 包含 柚子社 Yuzu-Soft, Favorite F 社, 甜茶社 SWEET&TEA, 枕社 Makura, 方糖社 Lump of Sugar, 前翼 FrontWing, 调色板社 Palette, SMEE, 颜艺社 ASA, A 社 Alice Soft, 八月社 August, 马戏团社 CIRCUS, 戏画 GIGA, 中二社 minori, 蜂巢社 Alcot, 涡旋社 Whirlpool, 紫社 Purple software 等 OtomeGame 的资源下载`
+    description
   },
   alternates: {
     canonical: `${kunMoyuMoe.domain.main}/otomegame`

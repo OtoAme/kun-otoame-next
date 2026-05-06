@@ -239,7 +239,7 @@ export const createBreadcrumbItem = (
       href: '/company'
     }
     const companyName =
-      normalizedPageTitle.match(/所属会社为 (.+?) 的 Galgame/)?.[1] ??
+      normalizedPageTitle.match(/所属会社为 (.+?) 的 OtomeGame/)?.[1] ??
       normalizedPageTitle
     return [
       allCompanyRoute,
