@@ -7,12 +7,19 @@ import { useCreatePatchStore } from '~/store/editStore'
 import toast from 'react-hot-toast'
 import { kunFetchFormData } from '~/utils/kunFetch'
 import { kunErrorHandler } from '~/utils/kunErrorHandler'
+import {
+  clearCreateGalleryDraft,
+  CREATE_GALLERY_WATERMARK_KEY,
+  getCreateGalleryDraft
+} from '~/utils/createGalleryDraft'
 import { patchCreateSchema } from '~/validations/edit'
 import { useRouter } from '@bprogress/next'
 import { cn } from '~/utils/cn'
 import type { Dispatch, SetStateAction } from 'react'
 import type { CreatePatchRequestData } from '~/store/editStore'
 import type { GalleryImage } from './GalleryInput'
+
+const GALLERY_UPLOAD_TIMEOUT_MS = 120000
 
 interface Props {
   setErrors: Dispatch<
@@ -30,6 +37,10 @@ const uploadGalleryImages = async (
   let failCount = 0
 
   for (const [index, img] of galleryImages.entries()) {
+    toast(`正在上传图片 ${index + 1}/${galleryImages.length}`, {
+      id: 'gallery-progress'
+    })
+
     const formData = new FormData()
     formData.append('patchId', patchId.toString())
     formData.append('image', img.blob)
@@ -40,7 +51,7 @@ const uploadGalleryImages = async (
     try {
       const res = await kunFetchFormData<
         KunResponse<{ imageId: number; url: string }>
-      >('/edit/gallery', formData, 60000)
+      >('/edit/gallery', formData, GALLERY_UPLOAD_TIMEOUT_MS)
       if (typeof res === 'string') {
         failCount++
         console.error(`Gallery image ${index + 1} failed:`, res)
@@ -51,8 +62,6 @@ const uploadGalleryImages = async (
       failCount++
       console.error(`Gallery image ${index + 1} upload error`)
     }
-
-    toast(`正在上传图片 ${index + 1}/${galleryImages.length}`, { id: 'gallery-progress' })
   }
 
   return { successCount, failCount }
@@ -140,6 +149,11 @@ export const PublishButton = ({ setErrors, className }: Props) => {
     setCreating(true)
     toast('正在发布中 ...')
 
+    const galleryImages = await getCreateGalleryDraft()
+    const watermark = await localforage.getItem<boolean>(
+      CREATE_GALLERY_WATERMARK_KEY
+    )
+
     const res = await kunFetchFormData<
       KunResponse<{
         uniqueId: string
@@ -153,12 +167,7 @@ export const PublishButton = ({ setErrors, className }: Props) => {
       return
     }
 
-    const galleryImages =
-      await localforage.getItem<GalleryImage[]>('kun-patch-gallery')
-    const watermark = await localforage.getItem<boolean>(
-      'kun-patch-gallery-watermark'
-    )
-
+    let hasGalleryUploadFailures = false
     if (galleryImages && galleryImages.length > 0) {
       toast('正在上传游戏截图 ...')
       const { failCount } = await uploadGalleryImages(
@@ -167,16 +176,23 @@ export const PublishButton = ({ setErrors, className }: Props) => {
         !!watermark
       )
       if (failCount > 0) {
-        toast.error(`${failCount} 张图片上传失败, 您可以稍后在编辑页面重新上传`)
+        hasGalleryUploadFailures = true
+        toast.error(`${failCount} 张图片上传失败，请稍后在编辑页面重新上传`, {
+          duration: 8000
+        })
       }
     }
 
     resetData()
     await localforage.removeItem('kun-patch-banner')
     await localforage.removeItem('kun-patch-banner-original')
-    await localforage.removeItem('kun-patch-gallery')
-    await localforage.removeItem('kun-patch-gallery-watermark')
-    toast.success('发布完成, 正在为您跳转到资源介绍页面')
+    await clearCreateGalleryDraft()
+    await localforage.removeItem(CREATE_GALLERY_WATERMARK_KEY)
+    toast.success(
+      hasGalleryUploadFailures
+        ? '发布完成，但有部分截图上传失败'
+        : '发布完成, 正在为您跳转到资源介绍页面'
+    )
     router.push(`/${res.uniqueId}`)
     setCreating(false)
   }

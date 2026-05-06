@@ -23,9 +23,12 @@ import { VNDBRelationInput } from '../create/VNDBRelationInput'
 // import { DLSiteInput } from '../create/DLSiteInput'
 import type { RewritePatchData } from '~/store/rewriteStore'
 
+const GALLERY_UPLOAD_TIMEOUT_MS = 120000
+
 export const RewritePatch = () => {
   const router = useRouter()
-  const { data, setData, newImages, newBanner } = useRewritePatchStore()
+  const { data, setData, newImages, setNewImages, newBanner, setGalleryOrder } =
+    useRewritePatchStore()
   const [errors, setErrors] = useState<
     Partial<Record<keyof RewritePatchData, string>>
   >({})
@@ -67,7 +70,8 @@ export const RewritePatch = () => {
     formData.append('id', data.id.toString())
     formData.append('name', data.name)
     if (data.vndbId) formData.append('vndbId', data.vndbId)
-    if (data.vndbRelationId) formData.append('vndbRelationId', data.vndbRelationId)
+    if (data.vndbRelationId)
+      formData.append('vndbRelationId', data.vndbRelationId)
     if (data.bangumiId) formData.append('bangumiId', data.bangumiId)
     if (data.steamId) formData.append('steamId', data.steamId)
     if (data.dlsiteCode) formData.append('dlsiteCode', data.dlsiteCode)
@@ -107,7 +111,11 @@ export const RewritePatch = () => {
       formData.append('banner', newBanner)
     }
 
-    const res = await kunFetchPutFormData<KunResponse<{}>>('/edit', formData, 60000)
+    const res = await kunFetchPutFormData<KunResponse<{}>>(
+      '/edit',
+      formData,
+      60000
+    )
 
     let updateSuccess = false
     kunErrorHandler(res, () => {
@@ -122,34 +130,80 @@ export const RewritePatch = () => {
     if (newImages.length > 0) {
       toast('正在上传游戏截图 ...')
       let failCount = 0
+      const failedImages: typeof newImages = []
+      const uploadedImages: {
+        oldId: string
+        id: number
+        url: string
+        isNSFW: boolean
+      }[] = []
 
       for (const [index, img] of newImages.entries()) {
+        toast(`正在上传图片 ${index + 1}/${newImages.length}`, {
+          id: 'gallery-progress'
+        })
+
         const imgFormData = new FormData()
         imgFormData.append('patchId', data.id.toString())
         imgFormData.append('image', img.file)
         imgFormData.append('isNSFW', String(img.isNSFW))
         imgFormData.append('watermark', String(watermark))
         const order = galleryOrder.indexOf(img.id)
-        imgFormData.append('displayOrder', (order >= 0 ? order : index).toString())
+        imgFormData.append(
+          'displayOrder',
+          (order >= 0 ? order : index).toString()
+        )
 
         try {
           const uploadRes = await kunFetchFormData<
             KunResponse<{ imageId: number; url: string }>
-          >('/edit/gallery', imgFormData, 60000)
+          >('/edit/gallery', imgFormData, GALLERY_UPLOAD_TIMEOUT_MS)
           if (typeof uploadRes === 'string') {
             failCount++
+            failedImages.push(img)
             console.error(`Gallery image ${index + 1} failed:`, uploadRes)
+          } else {
+            uploadedImages.push({
+              oldId: img.id,
+              id: uploadRes.imageId,
+              url: uploadRes.url,
+              isNSFW: img.isNSFW
+            })
           }
         } catch {
           failCount++
+          failedImages.push(img)
           console.error(`Gallery image ${index + 1} upload error`)
         }
-
-        toast(`正在上传图片 ${index + 1}/${newImages.length}`, { id: 'gallery-progress' })
       }
 
       if (failCount > 0) {
-        toast.error(`${failCount} 张图片上传失败, 您可以稍后重新上传`)
+        const latest = useRewritePatchStore.getState()
+        const uploadedIdMap = new Map(
+          uploadedImages.map((img) => [img.oldId, img.id])
+        )
+        setData({
+          ...latest.data,
+          images: [
+            ...latest.data.images,
+            ...uploadedImages.map((img) => ({
+              id: img.id,
+              url: img.url,
+              is_nsfw: img.isNSFW
+            }))
+          ]
+        })
+        setNewImages(failedImages)
+        setGalleryOrder(
+          latest.galleryOrder.map((id) =>
+            typeof id === 'string' ? (uploadedIdMap.get(id) ?? id) : id
+          )
+        )
+        toast.error(`${failCount} 张图片上传失败，请重试后再离开页面`, {
+          duration: 8000
+        })
+        setRewriting(false)
+        return
       }
     }
 

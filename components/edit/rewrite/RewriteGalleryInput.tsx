@@ -26,11 +26,7 @@ import {
   rectSortingStrategy
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import type {
-  DragEndEvent,
-  DragStartEvent,
-  DropAnimation
-} from '@dnd-kit/core'
+import type { DragEndEvent, DragStartEvent, DropAnimation } from '@dnd-kit/core'
 
 interface SortableItemProps {
   id: string | number
@@ -68,12 +64,13 @@ const SortableItem = ({
       style={style}
       {...attributes}
       {...listeners}
-      className={`group relative aspect-video cursor-pointer overflow-hidden rounded-lg border-2 ${(img.type === 'old' ? img.is_nsfw : img.isNSFW)
+      className={`group relative aspect-video cursor-pointer overflow-hidden rounded-lg border-2 ${
+        (img.type === 'old' ? img.is_nsfw : img.isNSFW)
           ? 'border-danger'
           : selected
             ? 'border-primary'
             : 'border-transparent'
-        }`}
+      }`}
       onClick={onToggle}
     >
       {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -115,12 +112,13 @@ const SortableItem = ({
 const ItemOverlay = ({ img, selected }: { img: any; selected: boolean }) => {
   return (
     <div
-      className={`group relative aspect-video cursor-grabbing overflow-hidden rounded-lg border-2 ${(img.type === 'old' ? img.is_nsfw : img.isNSFW)
+      className={`group relative aspect-video cursor-grabbing overflow-hidden rounded-lg border-2 ${
+        (img.type === 'old' ? img.is_nsfw : img.isNSFW)
           ? 'border-danger'
           : selected
             ? 'border-primary'
             : 'border-transparent'
-        }`}
+      }`}
     >
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
@@ -254,9 +252,9 @@ export const RewriteGalleryInput = () => {
           isNSFW: false
         })
       }
-      setNewImages([...newImages, ...added])
+      setNewImages([...useRewritePatchStore.getState().newImages, ...added])
     },
-    [newImages, setNewImages]
+    [setNewImages]
   )
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({

@@ -9,6 +9,13 @@ import { checkImageValid } from '~/utils/resizeImage'
 import { KunImageViewer } from '~/components/kun/image-viewer/ImageViewer'
 import { cn } from '~/utils/cn'
 import {
+  CREATE_GALLERY_DRAFT_KEY,
+  CREATE_GALLERY_WATERMARK_KEY,
+  saveCreateGalleryDraft,
+  type CreateGalleryDraftImage
+} from '~/utils/createGalleryDraft'
+import toast from 'react-hot-toast'
+import {
   DndContext,
   closestCenter,
   KeyboardSensor,
@@ -26,18 +33,13 @@ import {
   rectSortingStrategy
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import type {
-  DragEndEvent,
-  DragStartEvent,
-  DropAnimation
-} from '@dnd-kit/core'
+import type { DragEndEvent, DragStartEvent, DropAnimation } from '@dnd-kit/core'
 
-export interface GalleryImage {
-  id: string
-  blob: Blob
-  url: string
-  isNSFW: boolean
-}
+export type GalleryImage = CreateGalleryDraftImage
+
+type GalleryImageUpdater =
+  | GalleryImage[]
+  | ((currentImages: GalleryImage[]) => GalleryImage[])
 
 interface SortableItemProps {
   id: string
@@ -75,12 +77,13 @@ const SortableItem = ({
       style={style}
       {...attributes}
       {...listeners}
-      className={`group relative aspect-video cursor-pointer overflow-hidden rounded-lg border-2 ${img.isNSFW
-        ? 'border-danger'
-        : selected
-          ? 'border-primary'
-          : 'border-transparent'
-        }`}
+      className={`group relative aspect-video cursor-pointer overflow-hidden rounded-lg border-2 ${
+        img.isNSFW
+          ? 'border-danger'
+          : selected
+            ? 'border-primary'
+            : 'border-transparent'
+      }`}
       onClick={onToggle}
     >
       {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -123,12 +126,13 @@ const ItemOverlay = ({
 }) => {
   return (
     <div
-      className={`group relative aspect-video cursor-grabbing overflow-hidden rounded-lg border-2 ${img.isNSFW
-        ? 'border-danger'
-        : selected
-          ? 'border-primary'
-          : 'border-transparent'
-        }`}
+      className={`group relative aspect-video cursor-grabbing overflow-hidden rounded-lg border-2 ${
+        img.isNSFW
+          ? 'border-danger'
+          : selected
+            ? 'border-primary'
+            : 'border-transparent'
+      }`}
     >
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
@@ -158,7 +162,7 @@ export const GalleryInput = () => {
   useEffect(() => {
     const loadData = async () => {
       const storedImages = await localforage.getItem<GalleryImage[]>(
-        'kun-patch-gallery'
+        CREATE_GALLERY_DRAFT_KEY
       )
       if (storedImages) {
         const withUrls = storedImages.map((img) => ({
@@ -169,28 +173,31 @@ export const GalleryInput = () => {
       }
 
       const storedWatermark = await localforage.getItem<boolean>(
-        'kun-patch-gallery-watermark'
+        CREATE_GALLERY_WATERMARK_KEY
       )
       if (storedWatermark !== null) {
         setWatermark(storedWatermark)
       } else {
         setWatermark(true)
-        await localforage.setItem('kun-patch-gallery-watermark', true)
+        await localforage.setItem(CREATE_GALLERY_WATERMARK_KEY, true)
       }
     }
     loadData()
   }, [])
 
-  const updateImages = (newImages: GalleryImage[]) => {
-    setImages(newImages)
-    const toStore = newImages.map(({ id, blob, isNSFW }) => ({
-      id,
-      blob,
-      isNSFW,
-      url: ''
-    }))
-    localforage.setItem('kun-patch-gallery', toStore)
-  }
+  const updateImages = useCallback((updater: GalleryImageUpdater) => {
+    setImages((currentImages) => {
+      const newImages =
+        typeof updater === 'function' ? updater(currentImages) : updater
+
+      saveCreateGalleryDraft(newImages).catch((error) => {
+        console.error('Failed to save gallery draft:', error)
+        toast.error('保存画廊草稿失败，请稍后重试')
+      })
+
+      return newImages
+    })
+  }, [])
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -232,7 +239,7 @@ export const GalleryInput = () => {
 
   const handleSetWatermark = async (val: boolean) => {
     setWatermark(val)
-    await localforage.setItem('kun-patch-gallery-watermark', val)
+    await localforage.setItem(CREATE_GALLERY_WATERMARK_KEY, val)
   }
 
   const onDrop = useCallback(
@@ -248,9 +255,9 @@ export const GalleryInput = () => {
           isNSFW: false
         })
       }
-      updateImages([...images, ...newImages])
+      updateImages((currentImages) => [...currentImages, ...newImages])
     },
-    [images]
+    [updateImages]
   )
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
