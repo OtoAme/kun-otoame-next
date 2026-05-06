@@ -64,7 +64,10 @@ export const SearchHistory = ({
               <div
                 key={index}
                 className="flex items-center gap-2 p-2 cursor-pointer hover:bg-default-100 rounded-2xl"
-                onMouseDown={() => handleHistoryClick(item)}
+                onMouseDown={(event) => {
+                  event.preventDefault()
+                  handleHistoryClick(item)
+                }}
               >
                 <Clock size={16} className="shrink-0 text-default-400" />
                 <div className="flex flex-wrap flex-1 gap-1">

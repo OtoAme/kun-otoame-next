@@ -207,6 +207,7 @@ export const SearchPage = () => {
       />
 
       <SearchInput
+        inputRef={inputRef}
         query={query}
         setQuery={setQuery}
         setShowSuggestions={setShowSuggestions}
@@ -216,12 +217,14 @@ export const SearchPage = () => {
       />
 
       {showSuggestions && (
-        <SearchSuggestion
-          inputRef={inputRef}
-          query={debouncedQuery}
-          setQuery={setQuery}
-          setSelectedSuggestions={setSelectedSuggestions}
-        />
+        <div onMouseDown={(event) => event.preventDefault()}>
+          <SearchSuggestion
+            inputRef={inputRef}
+            query={debouncedQuery}
+            setQuery={setQuery}
+            setSelectedSuggestions={setSelectedSuggestions}
+          />
+        </div>
       )}
 
       <SearchHistory

@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Button, Chip, Tooltip } from '@heroui/react'
 import { cn } from '~/utils/cn'
 import type { SearchSuggestionType } from '~/types/api/search'
@@ -8,11 +8,13 @@ import type {
   ChangeEvent,
   Dispatch,
   KeyboardEvent,
+  RefObject,
   SetStateAction
 } from 'react'
 import { X } from 'lucide-react'
 
 interface Props {
+  inputRef: RefObject<HTMLInputElement | null>
   query: string
   setQuery: Dispatch<SetStateAction<string>>
   setShowSuggestions: Dispatch<SetStateAction<boolean>>
@@ -22,6 +24,7 @@ interface Props {
 }
 
 export const SearchInput = ({
+  inputRef,
   query,
   setQuery,
   setShowSuggestions,
@@ -29,7 +32,6 @@ export const SearchInput = ({
   setSelectedSuggestions,
   setShowHistory
 }: Props) => {
-  const inputRef = useRef<HTMLInputElement>(null)
   const [isFocused, setIsFocused] = useState(false)
 
   useEffect(() => {
@@ -58,10 +60,8 @@ export const SearchInput = ({
 
   const handleInputBlur = () => {
     setIsFocused(false)
-    setTimeout(() => {
-      setShowHistory(false)
-      setShowSuggestions(false)
-    }, 100)
+    setShowHistory(false)
+    setShowSuggestions(false)
   }
 
   const handleRemoveChip = (nameToRemove: string) => {
