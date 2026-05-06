@@ -8,7 +8,10 @@ import {
 } from '~/validations/conversation'
 import type { PrivateMessage } from '~/types/api/conversation'
 
-const verifyConversationAccess = async (conversationId: number, uid: number) => {
+const verifyConversationAccess = async (
+  conversationId: number,
+  uid: number
+) => {
   const conversation = await prisma.user_conversation.findUnique({
     where: { id: conversationId },
     include: {
@@ -125,8 +128,11 @@ export const updateMessage = async (
 
   const { messageId, content } = input
 
-  const message = await prisma.user_private_message.findUnique({
-    where: { id: messageId }
+  const message = await prisma.user_private_message.findFirst({
+    where: {
+      id: messageId,
+      conversation_id: conversationId
+    }
   })
 
   if (!message) {
@@ -168,8 +174,11 @@ export const deleteMessage = async (
 
   const { messageId } = input
 
-  const message = await prisma.user_private_message.findUnique({
-    where: { id: messageId }
+  const message = await prisma.user_private_message.findFirst({
+    where: {
+      id: messageId,
+      conversation_id: conversationId
+    }
   })
 
   if (!message) {
@@ -223,8 +232,10 @@ export const markConversationAsRead = async (
   return {}
 }
 
-
-export const deleteConversation = async (conversationId: number, uid: number) => {
+export const deleteConversation = async (
+  conversationId: number,
+  uid: number
+) => {
   const conversation = await verifyConversationAccess(conversationId, uid)
   if (!conversation) {
     return '会话不存在或无权访问'
