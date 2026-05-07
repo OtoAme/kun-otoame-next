@@ -28,6 +28,8 @@
     "migration:patch-counters": "esno migration/ensurePatchCounters.ts",
     "maintenance:resource-attributes:dry": "esno scripts/rebuildPatchResourceAttributes.ts",
     "maintenance:resource-attributes:apply": "esno scripts/rebuildPatchResourceAttributes.ts --apply",
+    "maintenance:dirty-tags:dry": "esno scripts/cleanupDirtyTags.ts",
+    "maintenance:dirty-tags:apply": "esno scripts/cleanupDirtyTags.ts --apply",
     "test": "vitest run"
   },
   "author": {
