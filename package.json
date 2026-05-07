@@ -30,6 +30,9 @@
     "maintenance:resource-attributes:apply": "esno scripts/rebuildPatchResourceAttributes.ts --apply",
     "maintenance:dirty-tags:dry": "esno scripts/cleanupDirtyTags.ts",
     "maintenance:dirty-tags:apply": "esno scripts/cleanupDirtyTags.ts --apply",
+    "maintenance:tags:export": "esno scripts/exportTagInventory.ts",
+    "maintenance:tags:merge:dry": "esno scripts/mergeTags.ts",
+    "maintenance:tags:merge:apply": "esno scripts/mergeTags.ts --apply",
     "test": "vitest run"
   },
   "author": {
