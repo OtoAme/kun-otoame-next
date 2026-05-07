@@ -32,7 +32,11 @@ export const deleteUser = async (
   const patchResourceS3Ids = await prisma.patch_resource.findMany({
     where: {
       user_id: input.uid,
-      storage: 's3'
+      links: {
+        some: {
+          storage: 's3'
+        }
+      }
     },
     select: { id: true }
   })

@@ -81,21 +81,28 @@ export interface PatchUpdate {
   introduction: string
 }
 
+export interface PatchResourceLink {
+  id: number
+  storage: string
+  size: string
+  code: string
+  password: string
+  hash: string
+  content: string
+  sortOrder: number
+  download: number
+}
+
 export interface PatchResource {
   id: number
   name: string
   section: string
   uniqueId: string
-  storage: string
-  size: string
   type: string[]
   language: string[]
   platform: string[]
   note: string
-  hash: string
-  content: string
-  code: string
-  password: string
+  links: PatchResourceLink[]
   likeCount: number
   download: number
   isLike: boolean

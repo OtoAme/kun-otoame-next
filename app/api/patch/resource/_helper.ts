@@ -18,17 +18,20 @@ export const uploadPatchResource = async (patchId: number, hash: string) => {
   return { downloadLink }
 }
 
-export const deletePatchResource = async (
+export const deletePatchResourceLink = async (
   content: string,
-  id: number,
+  patchId: number,
   hash: string
 ) => {
   const fileName = content.split('/').pop()
-  const s3Key = `patch/${id}/${hash}/${fileName}`
+  if (!fileName) {
+    return
+  }
+  const s3Key = `patch/${patchId}/resource/${hash}/${fileName}`
   await deleteFileFromS3(s3Key)
 }
 
-export const sanitizeResourceForAuditLog = <
+export const sanitizeResourceLinksForAuditLog = <
   R extends {
     content?: string
     code?: string
@@ -36,11 +39,20 @@ export const sanitizeResourceForAuditLog = <
     hash?: string
   }
 >(
-  resource: R
-): Omit<R, 'content' | 'code' | 'password' | 'hash'> => {
-  const { content, code, password, hash, ...rest } = resource
-  return rest
+  links: R[] | undefined | null
+): Omit<R, 'content' | 'code' | 'password' | 'hash'>[] => {
+  if (!links) {
+    return []
+  }
+  return links.map(({ content, code, password, hash, ...rest }) => rest)
 }
+
+export const sanitizeResourceForAuditLog = <R extends { links?: any[] }>(
+  resource: R
+) => ({
+  ...resource,
+  links: sanitizeResourceLinksForAuditLog(resource.links)
+})
 
 export const updatePatchAttributes = async (patchId: number, tx?: any) => {
   const prisma = tx || globalPrisma

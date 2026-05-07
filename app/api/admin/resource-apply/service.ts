@@ -5,8 +5,8 @@ import {
   approvePatchResourceSchema,
   declinePatchResourceSchema
 } from '~/validations/admin'
-import { deleteFileFromS3 } from '~/lib/s3'
 import {
+  deletePatchResourceLink,
   deletePatchResourceCache,
   updatePatchAttributes
 } from '~/app/api/patch/resource/_helper'
@@ -30,6 +30,9 @@ export const approvePatchResource = async (
           unique_id: true,
           name: true
         }
+      },
+      links: {
+        orderBy: { sort_order: 'asc' }
       }
     }
   })
@@ -101,6 +104,9 @@ export const declinePatchResource = async (
           unique_id: true,
           name: true
         }
+      },
+      links: {
+        orderBy: { sort_order: 'asc' }
       }
     }
   })
@@ -113,10 +119,10 @@ export const declinePatchResource = async (
     return '管理员不存在'
   }
 
-  if (resource.storage === 's3') {
-    const fileName = resource.content.split('/').pop()
-    const s3Key = `patch/${resource.patch_id}/${resource.hash}/${fileName}`
-    await deleteFileFromS3(s3Key)
+  for (const link of resource.links) {
+    if (link.storage === 's3') {
+      await deletePatchResourceLink(link.content, resource.patch_id, link.hash)
+    }
   }
 
   const result = await prisma.$transaction(async (prisma) => {

@@ -60,37 +60,40 @@ export const AdminResourceApplyCard = ({ resource, actions }: Props) => {
             platforms={resource.platform}
             size="sm"
           />
-          <Chip size="sm" color="warning" variant="flat">
-            {resource.size}
-          </Chip>
-          <Chip size="sm" variant="flat">
-            {SUPPORTED_RESOURCE_LINK_MAP[resource.storage]}
-          </Chip>
+          {resource.links.map((link) => (
+            <Chip key={link.id} size="sm" variant="flat">
+              {SUPPORTED_RESOURCE_LINK_MAP[link.storage]} / {link.size}
+            </Chip>
+          ))}
         </div>
 
         <div className="grid gap-2 text-xs sm:text-sm text-default-600">
-          <div>
-            <span className="font-medium">下载链接：</span>
-            <span className="break-all">{resource.content}</span>
-          </div>
-          {resource.hash && (
-            <div>
-              <span className="font-medium">哈希：</span>
-              <span className="break-all">{resource.hash}</span>
+          {resource.links.map((link, index) => (
+            <div key={link.id} className="space-y-1">
+              <div>
+                <span className="font-medium">下载链接 {index + 1}：</span>
+                <span className="break-all">{link.content}</span>
+              </div>
+              {link.hash && (
+                <div>
+                  <span className="font-medium">哈希：</span>
+                  <span className="break-all">{link.hash}</span>
+                </div>
+              )}
+              {link.code && (
+                <div>
+                  <span className="font-medium">提取码：</span>
+                  <span className="break-all">{link.code}</span>
+                </div>
+              )}
+              {link.password && (
+                <div>
+                  <span className="font-medium">解压密码：</span>
+                  <span className="break-all">{link.password}</span>
+                </div>
+              )}
             </div>
-          )}
-          {resource.code && (
-            <div>
-              <span className="font-medium">提取码：</span>
-              <span className="break-all">{resource.code}</span>
-            </div>
-          )}
-          {resource.password && (
-            <div>
-              <span className="font-medium">解压密码：</span>
-              <span className="break-all">{resource.password}</span>
-            </div>
-          )}
+          ))}
         </div>
 
         <div className="flex justify-end">{actions}</div>

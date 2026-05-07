@@ -17,7 +17,6 @@ import { patchResourceCreateSchema } from '~/validations/patch'
 import { ResourceLinksInput } from '../publish/ResourceLinksInput'
 import { kunErrorHandler } from '~/utils/kunErrorHandler'
 import { ResourceDetailsForm } from '../publish/ResourceDetailsForm'
-import { FileUploadContainer } from '../upload/FileUploadContainer'
 import { ResourceSectionSelect } from '../publish/ResourceSectionSelect'
 import type { PatchResource } from '~/types/api/patch'
 import {
@@ -74,24 +73,6 @@ export const EditResourceDialog = ({
     setEditing(false)
   }
 
-  const handleUploadSuccess = (
-    storage: string,
-    hash: string,
-    content: string,
-    size: string
-  ) => {
-    setValue('storage', storage)
-    setValue('hash', hash)
-    setValue('content', content)
-    setValue('size', size)
-  }
-
-  const handleRemoveFile = () => {
-    setValue('hash', '')
-    setValue('content', '')
-    setValue('size', '')
-  }
-
   return (
     <ModalContent>
       <ModalHeader className="flex-col space-y-2">
@@ -110,36 +91,19 @@ export const EditResourceDialog = ({
             setSection={(content) => setValue('section', content)}
           />
 
-          {watch().storage === 's3' && (
-            <FileUploadContainer
-              onSuccess={handleUploadSuccess}
-              handleRemoveFile={handleRemoveFile}
-              setUploadingResource={setUploadingResource}
-            />
-          )}
-
-          {(watch().storage === 'user' || watch().content) && (
-            <ResourceLinksInput
-              errors={errors}
-              storage={watch().storage}
-              content={watch().content}
-              size={watch().size}
-              setContent={(content) => setValue('content', content)}
-              setSize={(size) => setValue('size', size)}
-              setCode={(code) => {
-                const nextCode =
-                  typeof code === 'function' ? code(watch().code) : code
-                setValue('code', nextCode)
-              }}
-            />
-          )}
+          <ResourceLinksInput
+            control={control}
+            errors={errors}
+            setValue={setValue}
+            watch={watch}
+            section={watch().section}
+            setUploadingResource={setUploadingResource}
+          />
           <ResourceDetailsForm
             control={control}
             setValue={(name, value) => setValue(name, value)}
             errors={errors}
             section={watch().section as ResourceSection}
-            content={watch().content}
-            storage={watch().storage}
           />
         </form>
       </ModalBody>

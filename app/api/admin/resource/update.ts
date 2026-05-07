@@ -15,7 +15,12 @@ export const updatePatchResource = async (
 
   const { resourceId } = input
   const resource = await prisma.patch_resource.findUnique({
-    where: { id: resourceId }
+    where: { id: resourceId },
+    include: {
+      links: {
+        orderBy: { sort_order: 'asc' }
+      }
+    }
   })
   if (!resource) {
     return '未找到该资源'

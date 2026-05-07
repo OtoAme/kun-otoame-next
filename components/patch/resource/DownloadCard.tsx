@@ -3,60 +3,30 @@
 import { Snippet } from '@heroui/snippet'
 import { Chip } from '@heroui/chip'
 import { Cloud, Database, Link as LinkIcon } from 'lucide-react'
-import { Microsoft } from '~/components/kun/icons/Microsoft'
 import { SUPPORTED_RESOURCE_LINK_MAP } from '~/constants/resource'
 import { kunFetchPut } from '~/utils/kunFetch'
 import { KunExternalLink } from '~/components/kun/external-link/ExternalLink'
-import { parseResourceLink, splitResourceCodes } from '~/utils/resourceLink'
 import type { JSX } from 'react'
-import type { PatchResource } from '~/types/api/patch'
+import type { PatchResource, PatchResourceLink } from '~/types/api/patch'
 
 const storageIcons: { [key: string]: JSX.Element } = {
+  touchgal: <Database className="size-4" />,
   s3: <Cloud className="size-4" />,
-  onedrive: <Microsoft className="size-4" />,
   user: <LinkIcon className="size-4" />
 }
 
 interface Props {
   resource: PatchResource
+  link: PatchResourceLink
 }
 
-interface CodeSnippetProps {
-  label: string
-  value: string
-}
-
-const CodeSnippet = ({ label, value }: CodeSnippetProps) => (
-  <Snippet
-    tooltipProps={{
-      content: `点击复制${label}`
-    }}
-    size="sm"
-    symbol={label}
-    color="primary"
-    className="max-w-full py-0"
-  >
-    {value}
-  </Snippet>
-)
-
-export const ResourceDownloadCard = ({ resource }: Props) => {
-  const links = resource.content
-    .split(/[,，\n]/)
-    .map((link) => link.trim())
-    .filter(Boolean)
-  const codes = splitResourceCodes(resource.code)
-  const canMatchCodesByIndex = codes.length === links.length
-
+export const ResourceDownloadCard = ({ resource, link }: Props) => {
   const handleClickDownload = async () => {
-    await kunFetchPut<KunResponse<{}>>(
-      '/patch/resource/download',
-      {
-        patchId: resource.patchId,
-        resourceId: resource.id
-      },
-      { keepalive: true }
-    )
+    await kunFetchPut<KunResponse<{}>>('/patch/resource/download', {
+      patchId: resource.patchId,
+      resourceId: resource.id,
+      linkId: link.id
+    })
   }
 
   return (
@@ -65,59 +35,68 @@ export const ResourceDownloadCard = ({ resource }: Props) => {
         <Chip
           color="secondary"
           variant="flat"
-          startContent={storageIcons[resource.storage]}
+          startContent={storageIcons[link.storage]}
         >
-          {
-            SUPPORTED_RESOURCE_LINK_MAP[
-              resource.storage as 's3' | 'onedrive' | 'user'
-            ]
-          }
+          {SUPPORTED_RESOURCE_LINK_MAP[link.storage] ?? link.storage}
         </Chip>
         <Chip variant="flat" startContent={<Database className="w-4 h-4" />}>
-          {resource.size}
+          {link.size}
         </Chip>
       </div>
 
       <p className="text-sm text-default-500">点击下面的链接以下载</p>
 
-      {links.map((link, index) => {
-        const code =
-          parseResourceLink(link).code ||
-          (canMatchCodesByIndex || links.length === 1 ? codes[index] : '')
+      <div className="space-y-2">
+        <KunExternalLink
+          className="break-all"
+          onPress={handleClickDownload}
+          underline="always"
+          link={link.content}
+        >
+          {link.content}
+        </KunExternalLink>
 
-        return (
-          <div key={`${link}-${index}`} className="space-y-2">
-            <KunExternalLink
-              onClick={handleClickDownload}
-              underline="always"
-              className="break-all"
-              link={link}
+        <div className="flex flex-wrap gap-2">
+          {link.code && (
+            <Snippet
+              tooltipProps={{
+                content: '点击复制提取码'
+              }}
+              size="sm"
+              symbol="提取码"
+              color="primary"
+              className="max-w-full py-0"
             >
-              {link}
-            </KunExternalLink>
+              {link.code}
+            </Snippet>
+          )}
 
-            {(code || resource.password) && (
-              <div className="flex flex-wrap gap-2">
-                {code && <CodeSnippet label="提取码" value={code} />}
-                {resource.password && (
-                  <CodeSnippet label="解压码" value={resource.password} />
-                )}
-              </div>
-            )}
-          </div>
-        )
-      })}
-
-      {resource.storage === 's3' && (
-        <div className="space-y-2">
-          <p className="text-sm">
-            BLACK3 校验码 (您可以根据此校验码校验下载文件完整性)
-          </p>
-          <Snippet symbol="" className="flex overflow-auto whitespace-normal">
-            {resource.hash}
-          </Snippet>
+          {link.password && (
+            <Snippet
+              tooltipProps={{
+                content: '点击复制解压码'
+              }}
+              size="sm"
+              symbol="解压码"
+              color="primary"
+              className="max-w-full py-0"
+            >
+              {link.password}
+            </Snippet>
+          )}
         </div>
-      )}
+
+        {link.storage === 's3' && link.hash && (
+          <>
+            <p className="text-sm">
+              BLACK3 校验码 (您可以根据此校验码校验下载文件完整性)
+            </p>
+            <Snippet symbol="" className="flex overflow-auto whitespace-normal">
+              {link.hash}
+            </Snippet>
+          </>
+        )}
+      </div>
     </div>
   )
 }

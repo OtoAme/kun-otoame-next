@@ -51,6 +51,10 @@ export const getPatchResource = async (
               select: {
                 like_by: true
               }
+            },
+            links: {
+              orderBy: { sort_order: 'asc' },
+              take: 1
             }
           }
         }),
@@ -59,30 +63,33 @@ export const getPatchResource = async (
         })
       ])
 
-      const resources: PatchResource[] = resourcesData.map((resource) => ({
-        id: resource.id,
-        name: resource.name,
-        section: resource.section,
-        uniqueId: resource.patch.unique_id,
-        storage: resource.storage,
-        size: resource.size,
-        type: resource.type,
-        language: resource.language,
-        note: resource.note.slice(0, 233),
-        platform: resource.platform,
-        likeCount: resource._count.like_by,
-        download: resource.download,
-        patchId: resource.patch_id,
-        patchName: resource.patch.name,
-        created: String(resource.created),
-        user: {
-          id: resource.user.id,
-          name: resource.user.name,
-          avatar: resource.user.avatar,
-          patchCount: resource.user._count.patch_resource,
-          role: resource.user.role
+      const resources: PatchResource[] = resourcesData.map((resource) => {
+        const primaryLink = resource.links[0]
+        return {
+          id: resource.id,
+          name: resource.name,
+          section: resource.section,
+          uniqueId: resource.patch.unique_id,
+          storage: primaryLink?.storage ?? '',
+          size: primaryLink?.size ?? '',
+          type: resource.type,
+          language: resource.language,
+          note: resource.note.slice(0, 233),
+          platform: resource.platform,
+          likeCount: resource._count.like_by,
+          download: resource.download,
+          patchId: resource.patch_id,
+          patchName: resource.patch.name,
+          created: String(resource.created),
+          user: {
+            id: resource.user.id,
+            name: resource.user.name,
+            avatar: resource.user.avatar,
+            patchCount: resource.user._count.patch_resource,
+            role: resource.user.role
+          }
         }
-      }))
+      })
 
       return { resources, total }
     },

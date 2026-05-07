@@ -1,10 +1,10 @@
 import { z } from 'zod'
-import { deleteFileFromS3 } from '~/lib/s3'
 import { prisma } from '~/prisma/index'
 import {
   invalidatePatchContentCache,
   invalidatePatchListCaches
 } from '~/app/api/patch/cache'
+import { deletePatchResourceLink } from '~/app/api/patch/resource/_helper'
 
 const patchIdSchema = z.object({
   patchId: z.coerce.number().min(1).max(9999999)
@@ -21,17 +21,24 @@ export const deletePatchById = async (input: z.infer<typeof patchIdSchema>) => {
   }
 
   const patchResources = await prisma.patch_resource.findMany({
-    where: { patch_id: patchId }
+    where: { patch_id: patchId },
+    include: {
+      links: true
+    }
   })
 
   const result = await prisma.$transaction(async (prisma) => {
     if (patchResources.length > 0) {
       await Promise.all(
         patchResources.map(async (resource) => {
-          if (resource.storage === 's3') {
-            const fileName = resource.content.split('/').pop()
-            const s3Key = `patch/${resource.patch_id}/${resource.hash}/${fileName}`
-            await deleteFileFromS3(s3Key)
+          for (const link of resource.links) {
+            if (link.storage === 's3') {
+              await deletePatchResourceLink(
+                link.content,
+                resource.patch_id,
+                link.hash
+              )
+            }
           }
 
           await prisma.patch_resource.delete({

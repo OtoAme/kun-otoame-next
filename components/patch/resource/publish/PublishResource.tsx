@@ -1,7 +1,7 @@
 'use client'
 
 import { z } from 'zod'
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { Button } from '@heroui/button'
@@ -16,12 +16,13 @@ import {
 import toast from 'react-hot-toast'
 import { kunFetchPost } from '~/utils/kunFetch'
 import { patchResourceCreateSchema } from '~/validations/patch'
-import { ResourceLinksInput } from './ResourceLinksInput'
+import {
+  createEmptyResourceLink,
+  ResourceLinksInput
+} from './ResourceLinksInput'
 import { ResourceDetailsForm } from './ResourceDetailsForm'
-import { ResourceTypeSelect } from './ResourceTypeSelect'
 import { ResourceSectionSelect } from './ResourceSectionSelect'
 import { Upload } from 'lucide-react'
-import { FileUploadContainer } from '../upload/FileUploadContainer'
 import { kunErrorHandler } from '~/utils/kunErrorHandler'
 import { useUserStore } from '~/store/userStore'
 import type { PatchResource } from '~/types/api/patch'
@@ -36,20 +37,6 @@ interface CreateResourceProps {
   onSuccess?: (res: PatchResource) => void
 }
 
-const userRoleStorageMap: Record<number, string> = {
-  1: 'user',
-  2: 's3',
-  3: 'touchgal',
-  4: 'touchgal'
-}
-
-const getDefaultStorage = (role: number, section: ResourceSection): string => {
-  if (section === 'galgame') {
-    return role > 3 ? 'touchgal' : 'user'
-  }
-  return userRoleStorageMap[role] ?? 'user'
-}
-
 export const PublishResource = ({
   patchId,
   defaultSection,
@@ -57,6 +44,7 @@ export const PublishResource = ({
   onSuccess
 }: CreateResourceProps) => {
   const [creating, setCreating] = useState(false)
+  const creatingRef = useRef(false)
   const [uploadingResource, setUploadingResource] = useState(false)
   const user = useUserStore((state) => state.user)
 
@@ -72,50 +60,42 @@ export const PublishResource = ({
     resolver: zodResolver(patchResourceCreateSchema),
     defaultValues: {
       patchId,
-      storage: getDefaultStorage(user.role, section),
       name: '',
       section,
-      hash: '',
-      content: '',
-      code: '',
       type: [],
       language: [],
       platform: [],
-      size: '',
-      password: '',
-      note: ''
+      note: '',
+      links: [createEmptyResourceLink(section, user.role)]
     }
   })
 
   const handleRewriteResource = async () => {
-    setCreating(true)
-    const res = await kunFetchPost<KunResponse<PatchResource>>(
-      '/patch/resource',
-      watch()
-    )
-    setCreating(false)
-    kunErrorHandler(res, (value) => {
-      reset()
-      if (value.status === 2) {
-        toast.success('资源已提交审核，通过后将自动显示')
-        onClose()
-      } else {
-        onSuccess?.(value)
-        toast.success('发布成功')
-      }
-    })
-  }
+    if (creatingRef.current || uploadingResource) {
+      return
+    }
 
-  const handleUploadSuccess = (
-    storage: string,
-    hash: string,
-    content: string,
-    size: string
-  ) => {
-    setValue('storage', storage)
-    setValue('hash', hash)
-    setValue('content', content)
-    setValue('size', size)
+    creatingRef.current = true
+    setCreating(true)
+    try {
+      const res = await kunFetchPost<KunResponse<PatchResource>>(
+        '/patch/resource',
+        watch()
+      )
+      kunErrorHandler(res, (value) => {
+        reset()
+        if (value.status === 2) {
+          toast.success('资源已提交审核，通过后将自动显示')
+          onClose()
+        } else {
+          onSuccess?.(value)
+          toast.success('发布成功')
+        }
+      })
+    } finally {
+      creatingRef.current = false
+      setCreating(false)
+    }
   }
 
   const dailyUsed = user.dailyUploadLimit
@@ -150,47 +130,24 @@ export const PublishResource = ({
             section={watch().section}
             setSection={(content) => {
               setValue('section', content)
-              setValue('storage', getDefaultStorage(user.role, content))
+              setValue('links', [createEmptyResourceLink(content, user.role)])
             }}
           />
 
-          <ResourceTypeSelect
-            section={watch().section}
+          <ResourceLinksInput
             control={control}
             errors={errors}
+            setValue={setValue}
+            watch={watch}
+            section={watch().section}
+            setUploadingResource={setUploadingResource}
           />
-
-          {watch().storage === 's3' && (
-            <FileUploadContainer
-              onSuccess={handleUploadSuccess}
-              handleRemoveFile={() => reset()}
-              setUploadingResource={setUploadingResource}
-            />
-          )}
-
-          {(watch().storage !== 's3' || watch().content) && (
-            <ResourceLinksInput
-              errors={errors}
-              storage={watch().storage}
-              content={watch().content}
-              size={watch().size}
-              setContent={(content) => setValue('content', content)}
-              setSize={(size) => setValue('size', size)}
-              setCode={(code) => {
-                const nextCode =
-                  typeof code === 'function' ? code(watch().code) : code
-                setValue('code', nextCode)
-              }}
-            />
-          )}
 
           <ResourceDetailsForm
             control={control}
             setValue={(name, value) => setValue(name, value)}
             errors={errors}
             section={watch().section}
-            content={watch().content}
-            storage={watch().storage}
           />
         </form>
       </ModalBody>

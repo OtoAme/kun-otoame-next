@@ -22,6 +22,10 @@ export const getUserPatchResource = async (
             name: true,
             banner: true
           }
+        },
+        links: {
+          orderBy: { sort_order: 'asc' },
+          take: 1
         }
       },
       orderBy: { created: 'desc' },
@@ -33,19 +37,22 @@ export const getUserPatchResource = async (
     })
   ])
 
-  const resources: UserResource[] = data.map((res) => ({
-    id: res.id,
-    patchUniqueId: res.patch.unique_id,
-    patchId: res.patch.id,
-    patchName: res.patch.name,
-    patchBanner: res.patch.banner,
-    section: res.section,
-    size: res.size,
-    type: res.type,
-    language: res.language,
-    platform: res.platform,
-    created: String(res.created)
-  }))
+  const resources: UserResource[] = data.map((res) => {
+    const primaryLink = res.links[0]
+    return {
+      id: res.id,
+      patchUniqueId: res.patch.unique_id,
+      patchId: res.patch.id,
+      patchName: res.patch.name,
+      patchBanner: res.patch.banner,
+      section: res.section,
+      size: primaryLink?.size ?? '',
+      type: res.type,
+      language: res.language,
+      platform: res.platform,
+      created: String(res.created)
+    }
+  })
 
   return { resources, total }
 }

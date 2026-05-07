@@ -86,7 +86,7 @@ jobs:
           EOF
 
       - name: Setup Database Schema
-        run: pnpm prisma db push
+        run: pnpm prisma:push
 
       - name: Build
         run: pnpm build

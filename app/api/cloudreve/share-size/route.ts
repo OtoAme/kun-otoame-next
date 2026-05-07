@@ -3,13 +3,14 @@ import { CLOUDREVE_PAN_DOMAIN } from '~/components/patch/resource/publish/fetchA
 
 export const GET = async (req: NextRequest) => {
   const key = req.nextUrl.searchParams.get('key')
-  if (!key || !/^[a-zA-Z0-9]+$/.test(key)) {
+  if (!key || !/^[a-zA-Z0-9_-]+$/.test(key)) {
     return NextResponse.json({ error: '无效的分享 key' }, { status: 400 })
   }
 
   try {
     const infoRes = await fetch(
-      `https://${CLOUDREVE_PAN_DOMAIN}/api/v3/share/info/${key}`
+      `https://${CLOUDREVE_PAN_DOMAIN}/api/v3/share/info/${key}`,
+      { cache: 'no-store' }
     )
     if (!infoRes.ok) {
       return NextResponse.json(
@@ -26,12 +27,13 @@ export const GET = async (req: NextRequest) => {
       )
     }
 
-    if (infoData.data.source.size > 0) {
+    if (infoData.data?.source?.size > 0) {
       return NextResponse.json({ size: infoData.data.source.size })
     }
 
     const listRes = await fetch(
-      `https://${CLOUDREVE_PAN_DOMAIN}/api/v3/share/list/${infoData.data.key}`
+      `https://${CLOUDREVE_PAN_DOMAIN}/api/v3/share/list/${infoData.data?.key ?? key}`,
+      { cache: 'no-store' }
     )
     if (!listRes.ok) {
       return NextResponse.json(

@@ -19,7 +19,11 @@ if (!fs.existsSync(envPath)) {
 
 config({ path: envPath })
 
-const downloadFile = (url: string, dest: string, headers: Record<string, string> = {}): Promise<void> => {
+const downloadFile = (
+  url: string,
+  dest: string,
+  headers: Record<string, string> = {}
+): Promise<void> => {
   return new Promise((resolve, reject) => {
     const file = fs.createWriteStream(dest)
     const urlObj = new URL(url)
@@ -69,40 +73,45 @@ const getLatestReleaseUrl = async (repo: string): Promise<string> => {
       path: `/repos/${repo}/releases/latest`,
       headers
     }
-    https.get(options, (res) => {
-      let data = ''
-      res.on('data', (chunk) => (data += chunk))
-      res.on('end', () => {
-        if (res.statusCode !== 200) {
-          reject(new Error(`GitHub API returned ${res.statusCode}: ${data}`))
-          return
-        }
-        try {
-          const release = JSON.parse(data)
-          const asset = release.assets.find((a: any) => a.name === 'release.tar.gz')
-          if (!asset) reject(new Error('No release.tar.gz found in latest release'))
+    https
+      .get(options, (res) => {
+        let data = ''
+        res.on('data', (chunk) => (data += chunk))
+        res.on('end', () => {
+          if (res.statusCode !== 200) {
+            reject(new Error(`GitHub API returned ${res.statusCode}: ${data}`))
+            return
+          }
+          try {
+            const release = JSON.parse(data)
+            const asset = release.assets.find(
+              (a: any) => a.name === 'release.tar.gz'
+            )
+            if (!asset)
+              reject(new Error('No release.tar.gz found in latest release'))
 
-          // If the asset url is different (e.g. for private repos it might be an api url),
-          // we might need to handle it.
-          // For private repos, browser_download_url is usually a redirect to S3/etc.
-          // But if we use the API to get the asset, we might need to use 'Accept: application/octet-stream'
-          // However, browser_download_url usually works with a token?
-          // Actually for private repos, browser_download_url requires authentication if accessed directly?
-          // Or maybe we should use the asset.url with 'Accept: application/octet-stream'.
+            // If the asset url is different (e.g. for private repos it might be an api url),
+            // we might need to handle it.
+            // For private repos, browser_download_url is usually a redirect to S3/etc.
+            // But if we use the API to get the asset, we might need to use 'Accept: application/octet-stream'
+            // However, browser_download_url usually works with a token?
+            // Actually for private repos, browser_download_url requires authentication if accessed directly?
+            // Or maybe we should use the asset.url with 'Accept: application/octet-stream'.
 
-          // Let's stick to browser_download_url for now. If it's private, the redirect might need the token?
-          // Usually browser_download_url is a public link (S3 signed url) if you are authenticated to get the JSON?
-          // No, for private repos, browser_download_url redirects to a signed URL.
-          // But to get the redirect, you need the token if you hit the API endpoint?
-          // Wait, browser_download_url IS the link.
-          // If I curl browser_download_url with token, it redirects.
+            // Let's stick to browser_download_url for now. If it's private, the redirect might need the token?
+            // Usually browser_download_url is a public link (S3 signed url) if you are authenticated to get the JSON?
+            // No, for private repos, browser_download_url redirects to a signed URL.
+            // But to get the redirect, you need the token if you hit the API endpoint?
+            // Wait, browser_download_url IS the link.
+            // If I curl browser_download_url with token, it redirects.
 
-          resolve(asset.browser_download_url)
-        } catch (e) {
-          reject(e)
-        }
+            resolve(asset.browser_download_url)
+          } catch (e) {
+            reject(e)
+          }
+        })
       })
-    }).on('error', reject)
+      .on('error', reject)
   })
 }
 
@@ -125,7 +134,8 @@ const main = async () => {
     const tempDir = path.resolve(__dirname, '..', '.next_temp')
     const tarPath = path.resolve(__dirname, '..', 'release.tar.gz')
 
-    if (fs.existsSync(tempDir)) fs.rmSync(tempDir, { recursive: true, force: true })
+    if (fs.existsSync(tempDir))
+      fs.rmSync(tempDir, { recursive: true, force: true })
     fs.mkdirSync(tempDir)
 
     const headers: Record<string, string> = {}
@@ -143,7 +153,8 @@ const main = async () => {
 
     if (fs.existsSync(tempPrismaDir)) {
       console.log('Updating Prisma schema...')
-      if (fs.existsSync(rootPrismaDir)) fs.rmSync(rootPrismaDir, { recursive: true, force: true })
+      if (fs.existsSync(rootPrismaDir))
+        fs.rmSync(rootPrismaDir, { recursive: true, force: true })
       fs.renameSync(tempPrismaDir, rootPrismaDir)
 
       console.log('Generating Prisma Client for current architecture...')
@@ -161,7 +172,8 @@ const main = async () => {
         const src = path.join(rootNodeModules, pkgName)
         const dest = path.join(standaloneNodeModules, pkgName)
         if (fs.existsSync(src)) {
-          if (fs.existsSync(dest)) fs.rmSync(dest, { recursive: true, force: true })
+          if (fs.existsSync(dest))
+            fs.rmSync(dest, { recursive: true, force: true })
           fs.mkdirSync(path.dirname(dest), { recursive: true })
           // Use dereference: true to copy the actual content of symlinks (e.g. from .pnpm store)
           fs.cpSync(src, dest, { recursive: true, dereference: true })
@@ -179,20 +191,29 @@ const main = async () => {
 
     // Note: We are replacing the directory. Any running process with this CWD will be in a "deleted" state.
     // We must ensure PM2 restarts the process from the new directory.
-    if (fs.existsSync(standaloneDir)) fs.rmSync(standaloneDir, { recursive: true, force: true })
+    if (fs.existsSync(standaloneDir))
+      fs.rmSync(standaloneDir, { recursive: true, force: true })
 
     fs.renameSync(tempDir, standaloneDir)
     fs.unlinkSync(tarPath)
 
     console.log('Running database migrations...')
-    execSync('pnpm prisma db push', { stdio: 'inherit' })
+    execSync('pnpm prisma:push', { stdio: 'inherit' })
 
     console.log('Generating Sitemap with production data...')
     try {
       execSync('esno scripts/generateKunSitemap.ts', { stdio: 'inherit' })
-      const generatedSitemapPath = path.resolve(__dirname, '..', 'public', 'sitemap.xml')
+      const generatedSitemapPath = path.resolve(
+        __dirname,
+        '..',
+        'public',
+        'sitemap.xml'
+      )
       const standalonePublicDir = path.join(standaloneDir, 'public')
-      const standaloneSitemapPath = path.join(standalonePublicDir, 'sitemap.xml')
+      const standaloneSitemapPath = path.join(
+        standalonePublicDir,
+        'sitemap.xml'
+      )
 
       if (fs.existsSync(generatedSitemapPath)) {
         if (!fs.existsSync(standalonePublicDir)) {

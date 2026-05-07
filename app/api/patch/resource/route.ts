@@ -29,6 +29,27 @@ const resourceIdSchema = z.object({
     .max(9999999)
 })
 
+const validateResourceLinkStorage = (
+  input: z.infer<typeof patchResourceCreateSchema>,
+  role: number
+) => {
+  if (role < 3 && input.links.some((link) => link.storage === 'touchgal')) {
+    return '仅管理员可使用 OtoAme 资源盘'
+  }
+  if (role < 2 && input.links.some((link) => link.storage === 's3')) {
+    return '仅创作者和管理员可使用对象存储'
+  }
+  if (
+    role < 3 &&
+    input.section === 'galgame' &&
+    input.links.some((link) => link.storage === 's3')
+  ) {
+    return '仅管理员可为游戏资源使用对象存储'
+  }
+
+  return null
+}
+
 export const GET = async (req: NextRequest) => {
   const input = kunParseGetQuery(req, patchIdSchema)
   if (typeof input === 'string') {
@@ -53,10 +74,9 @@ export const POST = async (req: NextRequest) => {
   if (!user) {
     return NextResponse.json('未找到该用户')
   }
-  if (user.role < 3) {
-    if (input.storage === 'touchgal') {
-      return NextResponse.json('仅管理员可使用 OtoAme 资源盘')
-    }
+  const storageError = validateResourceLinkStorage(input, user.role)
+  if (storageError) {
+    return NextResponse.json(storageError)
   }
   if (user.role < 2 && user.moemoepoint < 20) {
     return NextResponse.json('仅限萌萌点大于 20 的用户和创作者发布资源')
@@ -109,6 +129,11 @@ export const PUT = async (req: NextRequest) => {
   const payload = await verifyHeaderCookie(req)
   if (!payload) {
     return NextResponse.json('用户未登录')
+  }
+
+  const storageError = validateResourceLinkStorage(input, payload.role)
+  if (storageError) {
+    return NextResponse.json(storageError)
   }
 
   const response = await updatePatchResource(input, payload.uid, payload.role)

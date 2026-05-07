@@ -1,7 +1,7 @@
 import { z } from 'zod'
-import { deleteFileFromS3 } from '~/lib/s3'
 import { prisma } from '~/prisma/index'
 import {
+  deletePatchResourceLink,
   deletePatchResourceCache,
   sanitizeResourceForAuditLog,
   updatePatchAttributes
@@ -30,6 +30,9 @@ export const deleteResource = async (
           name: true,
           unique_id: true
         }
+      },
+      links: {
+        orderBy: { sort_order: 'asc' }
       }
     }
   })
@@ -37,10 +40,14 @@ export const deleteResource = async (
     return '未找到对应的资源'
   }
 
-  if (patchResource.storage === 's3') {
-    const fileName = patchResource.content.split('/').pop()
-    const s3Key = `patch/${patchResource.patch_id}/${patchResource.hash}/${fileName}`
-    await deleteFileFromS3(s3Key)
+  for (const link of patchResource.links) {
+    if (link.storage === 's3') {
+      await deletePatchResourceLink(
+        link.content,
+        patchResource.patch_id,
+        link.hash
+      )
+    }
   }
 
   const uniqueId = await prisma.$transaction(async (prisma) => {

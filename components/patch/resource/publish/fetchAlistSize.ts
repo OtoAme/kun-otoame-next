@@ -45,6 +45,27 @@ interface AlistListData {
 
 export const CLOUDREVE_PAN_DOMAIN = 'pan.otoame.top'
 
+export const extractCloudreveShareKey = (link: string) => {
+  const trimmed = link.trim()
+  if (!trimmed) {
+    return ''
+  }
+
+  try {
+    const url = new URL(trimmed)
+    if (url.hostname !== CLOUDREVE_PAN_DOMAIN) {
+      return ''
+    }
+
+    const paths = (url.hash.startsWith('#/') ? url.hash.slice(1) : url.pathname)
+      .split('/')
+      .filter(Boolean)
+    return paths.at(-1) ?? ''
+  } catch {
+    return ''
+  }
+}
+
 export const formatSize = (sizeInBytes: number): string => {
   if (sizeInBytes >= 1024 ** 3) {
     return `${Number((sizeInBytes / 1024 ** 3).toPrecision(4))} GB`
@@ -52,8 +73,32 @@ export const formatSize = (sizeInBytes: number): string => {
   return `${(sizeInBytes / 1024 ** 2).toFixed(3)} MB`
 }
 
+export const fetchCloudreveShareSize = async (link: string) => {
+  const key = extractCloudreveShareKey(link)
+  if (!key) {
+    return null
+  }
+
+  try {
+    const response = await fetch(
+      `/api/cloudreve/share-size?key=${encodeURIComponent(key)}`
+    )
+    if (!response.ok) {
+      return null
+    }
+
+    const data: { size?: number } = await response.json()
+    return typeof data.size === 'number' && data.size > 0 ? data.size : null
+  } catch {
+    return null
+  }
+}
+
 export const fetchLinkData = async (link: string) => {
-  const key = link.split('/').pop()
+  const key = extractCloudreveShareKey(link)
+  if (!key) {
+    return null
+  }
   const apiUrl = `https://${CLOUDREVE_PAN_DOMAIN}/api/v3/share/info/${key}`
   try {
     const response = await fetch(apiUrl)
@@ -68,7 +113,7 @@ export const fetchLinkData = async (link: string) => {
 }
 
 export const fetchListData = async (link: string) => {
-  const key = link.split('/').pop()
+  const key = extractCloudreveShareKey(link) || link
   const apiUrl = `https://${CLOUDREVE_PAN_DOMAIN}/api/v3/share/list/${key}`
   try {
     const response = await fetch(apiUrl)

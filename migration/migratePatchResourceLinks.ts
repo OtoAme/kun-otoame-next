@@ -24,27 +24,40 @@ interface LegacyPatchResourceRow {
   content: string | null
 }
 
+const tableExists = async (client: PoolClient, tableName: string) => {
+  const result = await client.query(
+    `
+      SELECT 1
+      FROM information_schema.tables
+      WHERE table_schema = 'public' AND table_name = $1
+    `,
+    [tableName]
+  )
+
+  return (result.rowCount ?? 0) > 0
+}
+
 const ensurePatchResourceLinkTable = async (client: PoolClient) => {
   await client.query(`
-    CREATE TABLE IF NOT EXISTS patch_resource_link (
-      id SERIAL PRIMARY KEY,
-      storage VARCHAR(107) NOT NULL,
-      size VARCHAR(107) NOT NULL DEFAULT '',
-      code VARCHAR(1007) NOT NULL DEFAULT '',
-      password VARCHAR(1007) NOT NULL DEFAULT '',
-      hash TEXT NOT NULL DEFAULT '',
-      content TEXT NOT NULL DEFAULT '',
-      sort_order INTEGER NOT NULL DEFAULT 0,
-      download INTEGER NOT NULL DEFAULT 0,
-      resource_id INTEGER NOT NULL REFERENCES patch_resource(id) ON DELETE CASCADE ON UPDATE NO ACTION,
-      created TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      updated TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+    CREATE TABLE IF NOT EXISTS "patch_resource_link" (
+      "id" SERIAL PRIMARY KEY,
+      "storage" VARCHAR(107) NOT NULL,
+      "size" VARCHAR(107) NOT NULL DEFAULT '',
+      "code" VARCHAR(1007) NOT NULL DEFAULT '',
+      "password" VARCHAR(1007) NOT NULL DEFAULT '',
+      "hash" TEXT NOT NULL DEFAULT '',
+      "content" TEXT NOT NULL DEFAULT '',
+      "sort_order" INTEGER NOT NULL DEFAULT 0,
+      "download" INTEGER NOT NULL DEFAULT 0,
+      "resource_id" INTEGER NOT NULL REFERENCES "patch_resource"("id") ON DELETE CASCADE ON UPDATE NO ACTION,
+      "created" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "updated" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
     )
   `)
 
   await client.query(`
     CREATE INDEX IF NOT EXISTS patch_resource_link_resource_id_sort_order_idx
-    ON patch_resource_link (resource_id, sort_order)
+    ON "patch_resource_link" ("resource_id", "sort_order")
   `)
 }
 
@@ -67,18 +80,20 @@ const getExistingLegacyColumns = async (client: PoolClient) => {
   )
 }
 
-const parseLegacyContents = (content: string | null) => {
+const splitLegacyList = (content: string | null) => {
   const links = (content ?? '')
-    .split(',')
+    .split(/[,，\n]/)
     .map((item) => item.trim())
     .filter(Boolean)
 
   return links.length ? links : ['']
 }
 
+const parseLegacyContents = (content: string | null) => splitLegacyList(content)
+
 const dropLegacyColumns = async (client: PoolClient) => {
   for (const column of LEGACY_COLUMNS) {
-    await client.query(`ALTER TABLE patch_resource DROP COLUMN ${column}`)
+    await client.query(`ALTER TABLE "patch_resource" DROP COLUMN "${column}"`)
   }
 }
 
@@ -92,6 +107,12 @@ async function migratePatchResourceLinks() {
   const client = await pool.connect()
 
   try {
+    const hasPatchResourceTable = await tableExists(client, 'patch_resource')
+    if (!hasPatchResourceTable) {
+      console.log('patch_resource 表尚不存在，本次无需迁移。')
+      return
+    }
+
     await client.query('BEGIN')
     await ensurePatchResourceLinkTable(client)
 
@@ -113,7 +134,7 @@ async function migratePatchResourceLinks() {
 
     const resources = await client.query<LegacyPatchResourceRow>(`
       SELECT id, download, storage, size, code, password, hash, content
-      FROM patch_resource
+      FROM "patch_resource"
       ORDER BY id ASC
     `)
 
@@ -144,30 +165,40 @@ async function migratePatchResourceLinks() {
       }
 
       for (const [index, content] of contents.entries()) {
+        const codes = splitLegacyList(resource.code)
+        const code =
+          contents.length > 1 && codes.length === contents.length
+            ? codes[index]
+            : index === 0
+              ? (resource.code ?? '')
+              : ''
+
         await client.query(
           `
-            INSERT INTO patch_resource_link (
-              storage,
-              size,
-              code,
-              password,
-              hash,
-              content,
-              sort_order,
-              download,
-              resource_id
+            INSERT INTO "patch_resource_link" (
+              "storage",
+              "size",
+              "code",
+              "password",
+              "hash",
+              "content",
+              "sort_order",
+              "download",
+              "resource_id",
+              "created",
+              "updated"
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
           `,
           [
             resource.storage ?? '',
             resource.size ?? '',
-            resource.code ?? '',
+            code,
             resource.password ?? '',
             resource.hash ?? '',
             content,
             index,
-            0,
+            index === 0 ? resource.download : 0,
             resource.id
           ]
         )
