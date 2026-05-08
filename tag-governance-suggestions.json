@@ -90,11 +90,11 @@
     },
     {
       "targetTagId": 603,
-      "targetName": "Idea Factory",
+      "targetName": "IdeaFactory",
       "sourceTagIds": [467, 1027],
       "sourceNames": ["IDEA_FACTORY", "アイディアファクトリー"],
-      "aliases": ["IdeaFactory", "IDEA_FACTORY", "アイディアファクトリー"],
-      "reason": "大小写、下划线和日文写法不同，均指 Idea Factory。"
+      "aliases": ["Idea Factory", "IDEA_FACTORY", "アイディアファクトリー"],
+      "reason": "空格、下划线和日文写法不同，均指 IdeaFactory。"
     },
     {
       "targetTagId": 626,

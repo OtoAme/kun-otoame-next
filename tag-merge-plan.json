@@ -255,7 +255,7 @@
     },
     {
       "targetTagId": 603,
-      "targetName": "Idea Factory",
+      "targetName": "IdeaFactory",
       "sourceTagIds": [
         467,
         1027
@@ -265,7 +265,7 @@
         "アイディアファクトリー"
       ],
       "aliases": [
-        "IdeaFactory",
+        "Idea Factory",
         "IDEA_FACTORY",
         "アイディアファクトリー"
       ]
