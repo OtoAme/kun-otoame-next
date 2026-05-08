@@ -13,10 +13,12 @@ const getArgValue = (name: string) => {
 type MergeTagsPlan = {
   merges?: Array<{
     targetTagId: number
+    targetName?: string
     sourceTagIds: number[]
+    sourceNames?: string[]
     aliases?: string[]
   }>
-  deletes?: number[]
+  deletes?: Array<number | { tagId: number; name?: string }>
 }
 
 const normalizeAliases = (aliases: string[]) => [
@@ -71,6 +73,9 @@ const getBlockedTagUserUpdates = async (
 }
 
 const mergeTags = async (plan: Required<MergeTagsPlan>['merges'][number]) => {
+  const expectedSourceNamesById = new Map(
+    plan.sourceTagIds.map((tagId, index) => [tagId, plan.sourceNames?.[index]])
+  )
   const sourceTagIds = [...new Set(plan.sourceTagIds)].filter(
     (tagId) => tagId !== plan.targetTagId
   )
@@ -94,14 +99,33 @@ const mergeTags = async (plan: Required<MergeTagsPlan>['merges'][number]) => {
   if (!targetTag) {
     throw new Error(`Target tag #${plan.targetTagId} not found`)
   }
+  if (plan.targetName && targetTag.name !== plan.targetName) {
+    throw new Error(
+      `Target tag #${plan.targetTagId} name mismatch: expected ${plan.targetName}, got ${targetTag.name}`
+    )
+  }
+
+  const mismatchedSourceTags = sourceTags.filter((tag) => {
+    const expectedName = expectedSourceNamesById.get(tag.id)
+    return expectedName && tag.name !== expectedName
+  })
+  if (mismatchedSourceTags.length > 0) {
+    throw new Error(
+      `Source tag name mismatch: ${mismatchedSourceTags
+        .map((tag) => `#${tag.id} expected ${expectedSourceNamesById.get(tag.id)}, got ${tag.name}`)
+        .join('; ')}`
+    )
+  }
+
+  const existingSourceTagIds = sourceTags.map((tag) => tag.id)
   if (sourceTags.length !== sourceTagIds.length) {
-    const foundSourceIds = new Set(sourceTags.map((tag) => tag.id))
+    const foundSourceIds = new Set(existingSourceTagIds)
     const missingSourceIds = sourceTagIds.filter((tagId) => !foundSourceIds.has(tagId))
-    throw new Error(`Source tags not found: ${missingSourceIds.join(', ')}`)
+    console.warn(`  skip missing source tags: ${missingSourceIds.join(', ')}`)
   }
 
   const sourceRelations = await prisma.patch_tag_relation.findMany({
-    where: { tag_id: { in: sourceTagIds } },
+    where: { tag_id: { in: existingSourceTagIds } },
     select: { patch_id: true, tag_id: true }
   })
   const affectedPatches = [...new Set(sourceRelations.map((relation) => relation.patch_id))]
@@ -128,7 +152,10 @@ const mergeTags = async (plan: Required<MergeTagsPlan>['merges'][number]) => {
     return
   }
 
-  const userUpdates = await getBlockedTagUserUpdates(sourceTagIds, plan.targetTagId)
+  const userUpdates = await getBlockedTagUserUpdates(
+    existingSourceTagIds,
+    plan.targetTagId
+  )
 
   await prisma.$transaction(async (tx) => {
     if (sourceRelations.length) {
@@ -142,11 +169,11 @@ const mergeTags = async (plan: Required<MergeTagsPlan>['merges'][number]) => {
     }
 
     await tx.patch_tag_relation.deleteMany({
-      where: { tag_id: { in: sourceTagIds } }
+      where: { tag_id: { in: existingSourceTagIds } }
     })
 
     await tx.patch_tag.deleteMany({
-      where: { id: { in: sourceTagIds } }
+      where: { id: { in: existingSourceTagIds } }
     })
 
     const actualCount = await tx.patch_tag_relation.count({
@@ -170,11 +197,21 @@ const mergeTags = async (plan: Required<MergeTagsPlan>['merges'][number]) => {
   })
 }
 
-const deleteTags = async (tagIds: number[]) => {
-  const uniqueTagIds = [...new Set(tagIds)]
+const getDeleteTagId = (deleteTag: NonNullable<MergeTagsPlan['deletes']>[number]) =>
+  typeof deleteTag === 'number' ? deleteTag : deleteTag.tagId
+
+const getDeleteTagName = (deleteTag: NonNullable<MergeTagsPlan['deletes']>[number]) =>
+  typeof deleteTag === 'number' ? undefined : deleteTag.name
+
+const deleteTags = async (deleteTags: NonNullable<MergeTagsPlan['deletes']>) => {
+  const uniqueTagIds = [...new Set(deleteTags.map(getDeleteTagId))]
   if (!uniqueTagIds.length) {
     return
   }
+
+  const expectedTagNamesById = new Map(
+    deleteTags.map((deleteTag) => [getDeleteTagId(deleteTag), getDeleteTagName(deleteTag)])
+  )
 
   const tags = await prisma.patch_tag.findMany({
     where: { id: { in: uniqueTagIds } },
@@ -185,6 +222,24 @@ const deleteTags = async (tagIds: number[]) => {
       _count: { select: { patch_relation: true } }
     }
   })
+
+  if (tags.length !== uniqueTagIds.length) {
+    const foundTagIds = new Set(tags.map((tag) => tag.id))
+    const missingTagIds = uniqueTagIds.filter((tagId) => !foundTagIds.has(tagId))
+    console.warn(`skip missing delete tags: ${missingTagIds.join(', ')}`)
+  }
+
+  const mismatchedTags = tags.filter((tag) => {
+    const expectedName = expectedTagNamesById.get(tag.id)
+    return expectedName && tag.name !== expectedName
+  })
+  if (mismatchedTags.length > 0) {
+    throw new Error(
+      `Delete tag name mismatch: ${mismatchedTags
+        .map((tag) => `#${tag.id} expected ${expectedTagNamesById.get(tag.id)}, got ${tag.name}`)
+        .join('; ')}`
+    )
+  }
 
   console.log(`${shouldApply ? 'Applying' : 'Dry run'} delete ${tags.length} tags`)
   for (const tag of tags) {
