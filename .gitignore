@@ -8,7 +8,7 @@
 
 # testing
 /coverage
-tag-*.json
+# tag-*.json
 
 # next.js
 /.next/

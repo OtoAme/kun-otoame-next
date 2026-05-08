@@ -1,0 +1,2010 @@
+{
+  "merges": [
+    {
+      "targetTagId": 7,
+      "targetName": "乙女向",
+      "sourceTagIds": [
+        74,
+        67,
+        69,
+        170,
+        73,
+        99,
+        477
+      ],
+      "sourceNames": [
+        "乙女",
+        "乙女ゲーム",
+        "乙女游戏",
+        "乙女ゲー",
+        "【乙女向】",
+        "乙游",
+        "乙女向け"
+      ],
+      "aliases": [
+        "乙女",
+        "乙女ゲーム",
+        "乙女游戏",
+        "乙女ゲー",
+        "乙游",
+        "乙女向け"
+      ]
+    },
+    {
+      "targetTagId": 6,
+      "targetName": "R18",
+      "sourceTagIds": [
+        85,
+        30,
+        89,
+        179,
+        525,
+        733,
+        1290,
+        1302,
+        296,
+        181,
+        1163
+      ],
+      "sourceNames": [
+        "R-18",
+        "18X",
+        "R18乙女",
+        "日乙R18",
+        "乙女(R)",
+        "乙女向R18",
+        "乙女R18",
+        "乙女ゲー(R)",
+        "|Otome:18|",
+        "黄油",
+        "エロゲー"
+      ],
+      "aliases": [
+        "R-18",
+        "18X",
+        "18+",
+        "R18乙女",
+        "日乙R18",
+        "乙女(R)",
+        "乙女向R18",
+        "乙女R18",
+        "乙女ゲー(R)",
+        "|Otome:18|",
+        "黄油",
+        "エロゲー"
+      ]
+    },
+    {
+      "targetTagId": 70,
+      "targetName": "全年龄",
+      "sourceTagIds": [
+        734,
+        1437,
+        1472
+      ],
+      "sourceNames": [
+        "全龄向",
+        "全年龄向",
+        "非18禁"
+      ],
+      "aliases": [
+        "全龄向",
+        "全年龄向",
+        "非18禁"
+      ]
+    },
+    {
+      "targetTagId": 182,
+      "targetName": "R15",
+      "sourceTagIds": [
+        1319
+      ],
+      "sourceNames": [
+        "15禁"
+      ],
+      "aliases": [
+        "15禁"
+      ]
+    },
+    {
+      "targetTagId": 9,
+      "targetName": "同人",
+      "sourceTagIds": [
+        118,
+        819,
+        126,
+        167
+      ],
+      "sourceNames": [
+        "同人游戏",
+        "同人ゲーム",
+        "同人GAME",
+        "同人ゲー"
+      ],
+      "aliases": [
+        "同人游戏",
+        "同人ゲーム",
+        "同人GAME",
+        "同人ゲー"
+      ]
+    },
+    {
+      "targetTagId": 188,
+      "targetName": "BL",
+      "sourceTagIds": [
+        192,
+        193,
+        245,
+        590,
+        429,
+        200,
+        202,
+        998,
+        258,
+        1038,
+        195,
+        1632,
+        208,
+        711
+      ],
+      "sourceNames": [
+        "BL-Game",
+        "BLゲーム",
+        "BLG",
+        "BL游戏",
+        "耽美BL",
+        "耽美",
+        "耽美向",
+        "耽美系",
+        "腐向け",
+        "YAOI",
+        "蔷薇向",
+        "薔薇向",
+        "薔薇",
+        "蔷薇"
+      ],
+      "aliases": [
+        "BL-Game",
+        "BLゲーム",
+        "BLG",
+        "BL游戏",
+        "耽美",
+        "耽美向",
+        "耽美系",
+        "腐向け",
+        "YAOI",
+        "蔷薇向",
+        "薔薇向",
+        "薔薇",
+        "蔷薇"
+      ]
+    },
+    {
+      "targetTagId": 337,
+      "targetName": "百合",
+      "sourceTagIds": [
+        1473
+      ],
+      "sourceNames": [
+        "GL"
+      ],
+      "aliases": [
+        "GL",
+        "Yuri",
+        "百合向"
+      ]
+    },
+    {
+      "targetTagId": 100,
+      "targetName": "Galgame",
+      "sourceTagIds": [
+        124
+      ],
+      "sourceNames": [
+        "GAL"
+      ],
+      "aliases": [
+        "GAL"
+      ]
+    },
+    {
+      "targetTagId": 5,
+      "targetName": "ADV",
+      "sourceTagIds": [
+        495,
+        1410
+      ],
+      "sourceNames": [
+        "文字ADV",
+        "文字冒險"
+      ],
+      "aliases": [
+        "文字ADV",
+        "文字冒險"
+      ]
+    },
+    {
+      "targetTagId": 24,
+      "targetName": "视觉小说",
+      "sourceTagIds": [
+        139
+      ],
+      "sourceNames": [
+        "VN"
+      ],
+      "aliases": [
+        "VN",
+        "Visual Novel"
+      ]
+    },
+    {
+      "targetTagId": 53,
+      "targetName": "Otomate",
+      "sourceTagIds": [
+        54,
+        68
+      ],
+      "sourceNames": [
+        "オトメイト",
+        "呕吐妹"
+      ],
+      "aliases": [
+        "オトメイト",
+        "呕吐妹"
+      ]
+    },
+    {
+      "targetTagId": 603,
+      "targetName": "Idea Factory",
+      "sourceTagIds": [
+        467,
+        1027
+      ],
+      "sourceNames": [
+        "IDEA_FACTORY",
+        "アイディアファクトリー"
+      ],
+      "aliases": [
+        "IdeaFactory",
+        "IDEA_FACTORY",
+        "アイディアファクトリー"
+      ]
+    },
+    {
+      "targetTagId": 626,
+      "targetName": "D3 Publisher",
+      "sourceTagIds": [
+        1178,
+        834
+      ],
+      "sourceNames": [
+        "D3Publisher",
+        "ディースリー・パブリッシャー"
+      ],
+      "aliases": [
+        "d3p",
+        "D3Publisher",
+        "ディースリー・パブリッシャー"
+      ]
+    },
+    {
+      "targetTagId": 309,
+      "targetName": "Quinrose",
+      "sourceTagIds": [
+        379,
+        377
+      ],
+      "sourceNames": [
+        "QR",
+        "QR社"
+      ],
+      "aliases": [
+        "QR",
+        "QR社"
+      ]
+    },
+    {
+      "targetTagId": 77,
+      "targetName": "Rejet",
+      "sourceTagIds": [
+        872
+      ],
+      "sourceNames": [
+        "Reject"
+      ],
+      "aliases": [
+        "Reject"
+      ]
+    },
+    {
+      "targetTagId": 210,
+      "targetName": "Nitro+CHiRAL",
+      "sourceTagIds": [
+        620
+      ],
+      "sourceNames": [
+        "N+C"
+      ],
+      "aliases": [
+        "N+C"
+      ]
+    },
+    {
+      "targetTagId": 1188,
+      "targetName": "Broccoli",
+      "sourceTagIds": [
+        1133,
+        1315
+      ],
+      "sourceNames": [
+        "ブロッコリー",
+        "西兰花"
+      ],
+      "aliases": [
+        "ブロッコリー",
+        "西兰花"
+      ]
+    },
+    {
+      "targetTagId": 800,
+      "targetName": "花梨エンターテイメント",
+      "sourceTagIds": [
+        1280,
+        1351
+      ],
+      "sourceNames": [
+        "花梨",
+        "Karin"
+      ],
+      "aliases": [
+        "花梨",
+        "Karin"
+      ]
+    },
+    {
+      "targetTagId": 300,
+      "targetName": "SugarBeans",
+      "sourceTagIds": [
+        298,
+        436
+      ],
+      "sourceNames": [
+        "sugar-beans",
+        "シュガービーンズ"
+      ],
+      "aliases": [
+        "sugar-beans",
+        "シュガービーンズ"
+      ]
+    },
+    {
+      "targetTagId": 81,
+      "targetName": "OperettaDue",
+      "sourceTagIds": [
+        1254
+      ],
+      "sourceNames": [
+        "Operetta_Due"
+      ],
+      "aliases": [
+        "Operetta_Due"
+      ]
+    },
+    {
+      "targetTagId": 1432,
+      "targetName": "07th-expansion",
+      "sourceTagIds": [
+        1421,
+        1431,
+        1462
+      ],
+      "sourceNames": [
+        "07th_Expansion",
+        "07thExpansion",
+        "07th"
+      ],
+      "aliases": [
+        "07th_Expansion",
+        "07thExpansion",
+        "07th"
+      ]
+    },
+    {
+      "targetTagId": 1475,
+      "targetName": "InnocentGrey",
+      "sourceTagIds": [
+        1479
+      ],
+      "sourceNames": [
+        "Innocent_Grey"
+      ],
+      "aliases": [
+        "Innocent_Grey"
+      ]
+    },
+    {
+      "targetTagId": 1548,
+      "targetName": "Vanillaware",
+      "sourceTagIds": [
+        1553,
+        1547
+      ],
+      "sourceNames": [
+        "ヴァニラウェア",
+        "香草社"
+      ],
+      "aliases": [
+        "ヴァニラウェア",
+        "香草社"
+      ]
+    },
+    {
+      "targetTagId": 1551,
+      "targetName": "ATLUS",
+      "sourceTagIds": [
+        1564
+      ],
+      "sourceNames": [
+        "アトラス"
+      ],
+      "aliases": [
+        "アトラス"
+      ]
+    },
+    {
+      "targetTagId": 1575,
+      "targetName": "日本一",
+      "sourceTagIds": [
+        1583
+      ],
+      "sourceNames": [
+        "日本一ソフトウェア"
+      ],
+      "aliases": [
+        "日本一ソフトウェア"
+      ]
+    },
+    {
+      "targetTagId": 1021,
+      "targetName": "dramatic+create",
+      "sourceTagIds": [
+        801
+      ],
+      "sourceNames": [
+        "dramaticcreate"
+      ],
+      "aliases": [
+        "dramaticcreate"
+      ]
+    },
+    {
+      "targetTagId": 669,
+      "targetName": "Hunex",
+      "sourceTagIds": [
+        675
+      ],
+      "sourceNames": [
+        "ヒューネックス株式会社"
+      ],
+      "aliases": [
+        "ヒューネックス株式会社"
+      ]
+    },
+    {
+      "targetTagId": 1087,
+      "targetName": "RedEntertainment",
+      "sourceTagIds": [
+        1183,
+        1089
+      ],
+      "sourceNames": [
+        "Red",
+        "レッド・エンタテインメント"
+      ],
+      "aliases": [
+        "Red",
+        "レッド・エンタテインメント"
+      ]
+    },
+    {
+      "targetTagId": 1110,
+      "targetName": "Liar-soft",
+      "sourceTagIds": [
+        1112
+      ],
+      "sourceNames": [
+        "嘘屋"
+      ],
+      "aliases": [
+        "嘘屋",
+        "骗子社"
+      ]
+    },
+    {
+      "targetTagId": 763,
+      "targetName": "KOEI",
+      "sourceTagIds": [
+        772,
+        595,
+        849,
+        1505,
+        1506
+      ],
+      "sourceNames": [
+        "光荣",
+        "暗荣",
+        "コーエーテクモゲームス",
+        "Koeitecmo",
+        "KT"
+      ],
+      "aliases": [
+        "光荣",
+        "暗荣",
+        "コーエーテクモゲームス",
+        "Koei Tecmo",
+        "KT"
+      ]
+    },
+    {
+      "targetTagId": 789,
+      "targetName": "ルビーパーティー",
+      "sourceTagIds": [
+        1501,
+        1507
+      ],
+      "sourceNames": [
+        "Ruby_Party",
+        "RubyParty"
+      ],
+      "aliases": [
+        "Ruby_Party",
+        "RubyParty",
+        "Ruby Party"
+      ]
+    },
+    {
+      "targetTagId": 538,
+      "targetName": "Starry☆Sky",
+      "sourceTagIds": [
+        548,
+        537,
+        547,
+        550
+      ],
+      "sourceNames": [
+        "StarrySky",
+        "星座彼氏シリーズStarry☆Sky",
+        "星座彼氏シリーズStarrySky",
+        "星座彼氏シリーズ"
+      ],
+      "aliases": [
+        "StarrySky",
+        "星座彼氏シリーズStarry☆Sky",
+        "星座彼氏シリーズStarrySky",
+        "星座彼氏シリーズ"
+      ]
+    },
+    {
+      "targetTagId": 459,
+      "targetName": "薄樱鬼",
+      "sourceTagIds": [
+        466
+      ],
+      "sourceNames": [
+        "薄桜鬼"
+      ],
+      "aliases": [
+        "薄桜鬼"
+      ]
+    },
+    {
+      "targetTagId": 766,
+      "targetName": "金色琴弦",
+      "sourceTagIds": [
+        764,
+        773,
+        785
+      ],
+      "sourceNames": [
+        "金色のコルダ",
+        "金弦",
+        "金弦系列"
+      ],
+      "aliases": [
+        "金色のコルダ",
+        "金弦",
+        "金弦系列"
+      ]
+    },
+    {
+      "targetTagId": 917,
+      "targetName": "遥远时空中",
+      "sourceTagIds": [
+        908,
+        907,
+        911,
+        931
+      ],
+      "sourceNames": [
+        "遙かなる時空の中で",
+        "遥久",
+        "遥远时空",
+        "遥久系列"
+      ],
+      "aliases": [
+        "遙かなる時空の中で",
+        "遥久",
+        "遥远时空",
+        "遥久系列"
+      ]
+    },
+    {
+      "targetTagId": 596,
+      "targetName": "緋色の欠片",
+      "sourceTagIds": [
+        609,
+        605,
+        597
+      ],
+      "sourceNames": [
+        "绯色的欠片",
+        "绯欠",
+        "绯色の欠片"
+      ],
+      "aliases": [
+        "绯色的欠片",
+        "绯欠",
+        "绯色の欠片"
+      ]
+    },
+    {
+      "targetTagId": 416,
+      "targetName": "爱丽丝系列",
+      "sourceTagIds": [
+        373,
+        382,
+        375
+      ],
+      "sourceNames": [
+        "Alice系列",
+        "アリス系",
+        "アリス系列"
+      ],
+      "aliases": [
+        "Alice系列",
+        "アリス系",
+        "アリス系列"
+      ]
+    },
+    {
+      "targetTagId": 1422,
+      "targetName": "海猫鸣泣之时",
+      "sourceTagIds": [
+        1419,
+        1467
+      ],
+      "sourceNames": [
+        "海猫",
+        "うみねこのなく頃に"
+      ],
+      "aliases": [
+        "海猫",
+        "うみねこのなく頃に"
+      ]
+    },
+    {
+      "targetTagId": 1571,
+      "targetName": "流行之神",
+      "sourceTagIds": [
+        1574
+      ],
+      "sourceNames": [
+        "流行り神"
+      ],
+      "aliases": [
+        "流行り神"
+      ]
+    },
+    {
+      "targetTagId": 681,
+      "targetName": "圣灵家族",
+      "sourceTagIds": [
+        679,
+        682
+      ],
+      "sourceNames": [
+        "アルカナ・ファミリア",
+        "アルカナファミリア"
+      ],
+      "aliases": [
+        "アルカナ・ファミリア",
+        "アルカナファミリア"
+      ]
+    },
+    {
+      "targetTagId": 1328,
+      "targetName": "下天之华",
+      "sourceTagIds": [
+        1327
+      ],
+      "sourceNames": [
+        "下天之華"
+      ],
+      "aliases": [
+        "下天之華"
+      ]
+    },
+    {
+      "targetTagId": 1311,
+      "targetName": "神々の悪戯",
+      "sourceTagIds": [
+        1312,
+        1313
+      ],
+      "sourceNames": [
+        "众神的调戏",
+        "神の悪戯"
+      ],
+      "aliases": [
+        "众神的调戏",
+        "神の悪戯"
+      ]
+    },
+    {
+      "targetTagId": 1631,
+      "targetName": "luckydog1",
+      "sourceTagIds": [
+        1633
+      ],
+      "sourceNames": [
+        "幸运狗"
+      ],
+      "aliases": [
+        "幸运狗",
+        "Lucky Dog 1"
+      ]
+    },
+    {
+      "targetTagId": 25,
+      "targetName": "平川大辅",
+      "sourceTagIds": [
+        130
+      ],
+      "sourceNames": [
+        "平川大輔"
+      ],
+      "aliases": [
+        "平川大輔"
+      ]
+    },
+    {
+      "targetTagId": 324,
+      "targetName": "浪川大輔",
+      "sourceTagIds": [
+        263
+      ],
+      "sourceNames": [
+        "浪川大辅"
+      ],
+      "aliases": [
+        "浪川大辅"
+      ]
+    },
+    {
+      "targetTagId": 509,
+      "targetName": "岡本信彦",
+      "sourceTagIds": [
+        683,
+        684
+      ],
+      "sourceNames": [
+        "冈本信彦",
+        "岡本信彥"
+      ],
+      "aliases": [
+        "冈本信彦",
+        "岡本信彥"
+      ]
+    },
+    {
+      "targetTagId": 321,
+      "targetName": "游佐浩二",
+      "sourceTagIds": [
+        482
+      ],
+      "sourceNames": [
+        "遊佐浩二"
+      ],
+      "aliases": [
+        "遊佐浩二"
+      ]
+    },
+    {
+      "targetTagId": 295,
+      "targetName": "杉田智和",
+      "sourceTagIds": [
+        552
+      ],
+      "sourceNames": [
+        "杉田智和；"
+      ],
+      "aliases": [
+        "杉田智和；"
+      ]
+    },
+    {
+      "targetTagId": 62,
+      "targetName": "日野聡",
+      "sourceTagIds": [
+        59
+      ],
+      "sourceNames": [
+        "日野聪"
+      ],
+      "aliases": [
+        "日野聪"
+      ]
+    },
+    {
+      "targetTagId": 360,
+      "targetName": "鳥海浩輔",
+      "sourceTagIds": [
+        107
+      ],
+      "sourceNames": [
+        "鸟海浩辅"
+      ],
+      "aliases": [
+        "鸟海浩辅"
+      ]
+    },
+    {
+      "targetTagId": 652,
+      "targetName": "梶裕貴",
+      "sourceTagIds": [
+        240
+      ],
+      "sourceNames": [
+        "梶裕贵"
+      ],
+      "aliases": [
+        "梶裕贵"
+      ]
+    },
+    {
+      "targetTagId": 64,
+      "targetName": "柿原徹也",
+      "sourceTagIds": [
+        58
+      ],
+      "sourceNames": [
+        "柿原彻也"
+      ],
+      "aliases": [
+        "柿原彻也"
+      ]
+    },
+    {
+      "targetTagId": 326,
+      "targetName": "櫻井孝宏",
+      "sourceTagIds": [
+        323
+      ],
+      "sourceNames": [
+        "樱井孝宏"
+      ],
+      "aliases": [
+        "樱井孝宏"
+      ]
+    },
+    {
+      "targetTagId": 431,
+      "targetName": "寺島拓篤",
+      "sourceTagIds": [
+        454
+      ],
+      "sourceNames": [
+        "寺岛拓笃"
+      ],
+      "aliases": [
+        "寺岛拓笃"
+      ]
+    },
+    {
+      "targetTagId": 392,
+      "targetName": "鈴村健一",
+      "sourceTagIds": [
+        265
+      ],
+      "sourceNames": [
+        "铃村健一"
+      ],
+      "aliases": [
+        "铃村健一"
+      ]
+    },
+    {
+      "targetTagId": 361,
+      "targetName": "鈴木達央",
+      "sourceTagIds": [
+        235
+      ],
+      "sourceNames": [
+        "铃木达央"
+      ],
+      "aliases": [
+        "铃木达央"
+      ]
+    },
+    {
+      "targetTagId": 539,
+      "targetName": "緑川光",
+      "sourceTagIds": [
+        234
+      ],
+      "sourceNames": [
+        "绿川光"
+      ],
+      "aliases": [
+        "绿川光"
+      ]
+    },
+    {
+      "targetTagId": 419,
+      "targetName": "福山潤",
+      "sourceTagIds": [
+        378
+      ],
+      "sourceNames": [
+        "福山润"
+      ],
+      "aliases": [
+        "福山润"
+      ]
+    },
+    {
+      "targetTagId": 358,
+      "targetName": "岸尾だいすけ",
+      "sourceTagIds": [
+        238,
+        1370
+      ],
+      "sourceNames": [
+        "岸尾大辅",
+        "岸尾大輔"
+      ],
+      "aliases": [
+        "岸尾大辅",
+        "岸尾大輔"
+      ]
+    },
+    {
+      "targetTagId": 432,
+      "targetName": "小野大輔",
+      "sourceTagIds": [
+        305
+      ],
+      "sourceNames": [
+        "小野大辅"
+      ],
+      "aliases": [
+        "小野大辅"
+      ]
+    },
+    {
+      "targetTagId": 144,
+      "targetName": "羽多野涉",
+      "sourceTagIds": [
+        147
+      ],
+      "sourceNames": [
+        "羽多野渉"
+      ],
+      "aliases": [
+        "羽多野渉"
+      ]
+    },
+    {
+      "targetTagId": 224,
+      "targetName": "小野友樹",
+      "sourceTagIds": [
+        223
+      ],
+      "sourceNames": [
+        "小野友树"
+      ],
+      "aliases": [
+        "小野友树"
+      ]
+    },
+    {
+      "targetTagId": 562,
+      "targetName": "保志総一朗",
+      "sourceTagIds": [
+        225,
+        231
+      ],
+      "sourceNames": [
+        "保志总一朗",
+        "保志总一郎"
+      ],
+      "aliases": [
+        "保志总一朗",
+        "保志总一郎"
+      ]
+    },
+    {
+      "targetTagId": 242,
+      "targetName": "成田剑",
+      "sourceTagIds": [
+        484
+      ],
+      "sourceNames": [
+        "成田剣"
+      ],
+      "aliases": [
+        "成田剣"
+      ]
+    },
+    {
+      "targetTagId": 663,
+      "targetName": "内田雄馬",
+      "sourceTagIds": [
+        1030
+      ],
+      "sourceNames": [
+        "内田雄马"
+      ],
+      "aliases": [
+        "内田雄马"
+      ]
+    },
+    {
+      "targetTagId": 80,
+      "targetName": "花江夏樹",
+      "sourceTagIds": [
+        1365
+      ],
+      "sourceNames": [
+        "花江夏树"
+      ],
+      "aliases": [
+        "花江夏树"
+      ]
+    },
+    {
+      "targetTagId": 395,
+      "targetName": "松風雅也",
+      "sourceTagIds": [
+        398
+      ],
+      "sourceNames": [
+        "松风雅也"
+      ],
+      "aliases": [
+        "松风雅也"
+      ]
+    },
+    {
+      "targetTagId": 142,
+      "targetName": "増田俊樹",
+      "sourceTagIds": [
+        131,
+        141
+      ],
+      "sourceNames": [
+        "增田俊树",
+        "増田俊树"
+      ],
+      "aliases": [
+        "增田俊树",
+        "増田俊树"
+      ]
+    },
+    {
+      "targetTagId": 237,
+      "targetName": "宫田幸季",
+      "sourceTagIds": [
+        921
+      ],
+      "sourceNames": [
+        "宮田幸季"
+      ],
+      "aliases": [
+        "宮田幸季"
+      ]
+    },
+    {
+      "targetTagId": 502,
+      "targetName": "宮野真守",
+      "sourceTagIds": [
+        778
+      ],
+      "sourceNames": [
+        "宫野真守"
+      ],
+      "aliases": [
+        "宫野真守"
+      ]
+    },
+    {
+      "targetTagId": 86,
+      "targetName": "铃木千寻",
+      "sourceTagIds": [
+        607
+      ],
+      "sourceNames": [
+        "鈴木千尋"
+      ],
+      "aliases": [
+        "鈴木千尋"
+      ]
+    },
+    {
+      "targetTagId": 134,
+      "targetName": "苍井翔太",
+      "sourceTagIds": [
+        393
+      ],
+      "sourceNames": [
+        "蒼井翔太"
+      ],
+      "aliases": [
+        "蒼井翔太"
+      ]
+    },
+    {
+      "targetTagId": 1330,
+      "targetName": "島崎信長",
+      "sourceTagIds": [
+        1031,
+        1375
+      ],
+      "sourceNames": [
+        "岛崎信长",
+        "島﨑信長"
+      ],
+      "aliases": [
+        "岛崎信长",
+        "島﨑信長"
+      ]
+    },
+    {
+      "targetTagId": 920,
+      "targetName": "関智一",
+      "sourceTagIds": [
+        924
+      ],
+      "sourceNames": [
+        "关智一"
+      ],
+      "aliases": [
+        "关智一"
+      ]
+    },
+    {
+      "targetTagId": 60,
+      "targetName": "谷山纪章",
+      "sourceTagIds": [
+        716
+      ],
+      "sourceNames": [
+        "谷山紀章"
+      ],
+      "aliases": [
+        "谷山紀章"
+      ]
+    },
+    {
+      "targetTagId": 109,
+      "targetName": "松岡禎丞",
+      "sourceTagIds": [
+        114
+      ],
+      "sourceNames": [
+        "松冈祯丞"
+      ],
+      "aliases": [
+        "松冈祯丞"
+      ]
+    },
+    {
+      "targetTagId": 327,
+      "targetName": "諏訪部順一",
+      "sourceTagIds": [
+        322
+      ],
+      "sourceNames": [
+        "诹访部顺一"
+      ],
+      "aliases": [
+        "诹访部顺一"
+      ]
+    },
+    {
+      "targetTagId": 418,
+      "targetName": "杉山紀彰",
+      "sourceTagIds": [
+        383
+      ],
+      "sourceNames": [
+        "杉山纪彰"
+      ],
+      "aliases": [
+        "杉山纪彰"
+      ]
+    },
+    {
+      "targetTagId": 461,
+      "targetName": "三木真一郎",
+      "sourceTagIds": [
+        504
+      ],
+      "sourceNames": [
+        "三木眞一郎"
+      ],
+      "aliases": [
+        "三木眞一郎"
+      ]
+    },
+    {
+      "targetTagId": 105,
+      "targetName": "細谷佳正",
+      "sourceTagIds": [
+        869
+      ],
+      "sourceNames": [
+        "细谷佳正"
+      ],
+      "aliases": [
+        "细谷佳正"
+      ]
+    },
+    {
+      "targetTagId": 401,
+      "targetName": "野島健児",
+      "sourceTagIds": [
+        974
+      ],
+      "sourceNames": [
+        "野岛健儿"
+      ],
+      "aliases": [
+        "野岛健儿"
+      ]
+    },
+    {
+      "targetTagId": 820,
+      "targetName": "高橋広樹",
+      "sourceTagIds": [
+        821
+      ],
+      "sourceNames": [
+        "高桥广树"
+      ],
+      "aliases": [
+        "高桥广树"
+      ]
+    },
+    {
+      "targetTagId": 707,
+      "targetName": "山口胜平",
+      "sourceTagIds": [
+        402
+      ],
+      "sourceNames": [
+        "山口勝平"
+      ],
+      "aliases": [
+        "山口勝平"
+      ]
+    },
+    {
+      "targetTagId": 407,
+      "targetName": "高桥直纯",
+      "sourceTagIds": [
+        926
+      ],
+      "sourceNames": [
+        "高橋直純"
+      ],
+      "aliases": [
+        "高橋直純"
+      ]
+    },
+    {
+      "targetTagId": 113,
+      "targetName": "青梅竹马",
+      "sourceTagIds": [
+        148,
+        140
+      ],
+      "sourceNames": [
+        "幼驯染",
+        "幼なじみ"
+      ],
+      "aliases": [
+        "幼驯染",
+        "幼なじみ"
+      ]
+    },
+    {
+      "targetTagId": 11,
+      "targetName": "致郁",
+      "sourceTagIds": [
+        110,
+        721,
+        1362
+      ],
+      "sourceNames": [
+        "至郁",
+        "郁",
+        "郁系"
+      ],
+      "aliases": [
+        "至郁",
+        "郁",
+        "郁系"
+      ]
+    },
+    {
+      "targetTagId": 368,
+      "targetName": "黑童话",
+      "sourceTagIds": [
+        1348
+      ],
+      "sourceNames": [
+        "黑暗童话"
+      ],
+      "aliases": [
+        "黑暗童话"
+      ]
+    },
+    {
+      "targetTagId": 641,
+      "targetName": "恐怖",
+      "sourceTagIds": [
+        172
+      ],
+      "sourceNames": [
+        "Horror"
+      ],
+      "aliases": [
+        "Horror"
+      ]
+    },
+    {
+      "targetTagId": 871,
+      "targetName": "暗黑系",
+      "sourceTagIds": [
+        28,
+        279,
+        1355
+      ],
+      "sourceNames": [
+        "黑暗向",
+        "暗黑",
+        "黑暗"
+      ],
+      "aliases": [
+        "黑暗向",
+        "暗黑",
+        "黑暗"
+      ]
+    },
+    {
+      "targetTagId": 1660,
+      "targetName": "血腥",
+      "sourceTagIds": [
+        1641
+      ],
+      "sourceNames": [
+        "グロある"
+      ],
+      "aliases": [
+        "グロある",
+        "Guro"
+      ]
+    },
+    {
+      "targetTagId": 329,
+      "targetName": "养成",
+      "sourceTagIds": [
+        855,
+        745,
+        1171
+      ],
+      "sourceNames": [
+        "育成",
+        "模拟养成",
+        "恋爱养成"
+      ],
+      "aliases": [
+        "育成",
+        "模拟养成",
+        "恋爱养成"
+      ]
+    },
+    {
+      "targetTagId": 500,
+      "targetName": "恋爱",
+      "sourceTagIds": [
+        835
+      ],
+      "sourceNames": [
+        "恋愛"
+      ],
+      "aliases": [
+        "恋愛"
+      ]
+    },
+    {
+      "targetTagId": 34,
+      "targetName": "和风",
+      "sourceTagIds": [
+        1416
+      ],
+      "sourceNames": [
+        "和風"
+      ],
+      "aliases": [
+        "和風"
+      ]
+    },
+    {
+      "targetTagId": 162,
+      "targetName": "电子书",
+      "sourceTagIds": [
+        1426
+      ],
+      "sourceNames": [
+        "電子書"
+      ],
+      "aliases": [
+        "電子書"
+      ]
+    },
+    {
+      "targetTagId": 75,
+      "targetName": "Switch",
+      "sourceTagIds": [
+        1190
+      ],
+      "sourceNames": [
+        "Nintendo_Switch"
+      ],
+      "aliases": [
+        "Nintendo_Switch",
+        "Nintendo Switch"
+      ]
+    },
+    {
+      "targetTagId": 330,
+      "targetName": "独立游戏",
+      "sourceTagIds": [
+        339,
+        813,
+        1318
+      ],
+      "sourceNames": [
+        "独立",
+        "Indie.Game",
+        "indie"
+      ],
+      "aliases": [
+        "独立",
+        "Indie.Game",
+        "indie"
+      ]
+    },
+    {
+      "targetTagId": 165,
+      "targetName": "国产",
+      "sourceTagIds": [
+        634,
+        642,
+        1496,
+        749,
+        863,
+        1014
+      ],
+      "sourceNames": [
+        "国产Galgame",
+        "国gal",
+        "国g",
+        "国产游戏",
+        "国内自制",
+        "国乙"
+      ],
+      "aliases": [
+        "国产Galgame",
+        "国gal",
+        "国g",
+        "国产游戏",
+        "国内自制",
+        "国乙",
+        "国产乙女游戏"
+      ]
+    },
+    {
+      "targetTagId": 290,
+      "targetName": "女性主角",
+      "sourceTagIds": [
+        1123
+      ],
+      "sourceNames": [
+        "女性主人公"
+      ],
+      "aliases": [
+        "女性主人公"
+      ]
+    },
+    {
+      "targetTagId": 72,
+      "targetName": "逆后宫",
+      "sourceTagIds": [
+        229
+      ],
+      "sourceNames": [
+        "男后宫"
+      ],
+      "aliases": [
+        "男后宫"
+      ]
+    },
+    {
+      "targetTagId": 122,
+      "targetName": "免费",
+      "sourceTagIds": [
+        120
+      ],
+      "sourceNames": [
+        "免费游戏"
+      ],
+      "aliases": [
+        "免费游戏"
+      ]
+    },
+    {
+      "targetTagId": 988,
+      "targetName": "科幻",
+      "sourceTagIds": [
+        1449
+      ],
+      "sourceNames": [
+        "SF"
+      ],
+      "aliases": [
+        "SF",
+        "Science Fiction"
+      ]
+    },
+    {
+      "targetTagId": 1441,
+      "targetName": "賽博朋克",
+      "sourceTagIds": [
+        1443
+      ],
+      "sourceNames": [
+        "赛伯朋克"
+      ],
+      "aliases": [
+        "赛伯朋克",
+        "赛博朋克"
+      ]
+    },
+    {
+      "targetTagId": 190,
+      "targetName": "监禁",
+      "sourceTagIds": [
+        1299
+      ],
+      "sourceNames": [
+        "囚禁"
+      ],
+      "aliases": [
+        "囚禁"
+      ]
+    },
+    {
+      "targetTagId": 1353,
+      "targetName": "选项有时限",
+      "sourceTagIds": [
+        1359
+      ],
+      "sourceNames": [
+        "选项时限"
+      ],
+      "aliases": [
+        "选项时限"
+      ]
+    },
+    {
+      "targetTagId": 1343,
+      "targetName": "催泪",
+      "sourceTagIds": [
+        1597
+      ],
+      "sourceNames": [
+        "泣きゲー"
+      ],
+      "aliases": [
+        "泣きゲー",
+        "Nakige"
+      ]
+    },
+    {
+      "targetTagId": 818,
+      "targetName": "治愈",
+      "sourceTagIds": [
+        616
+      ],
+      "sourceNames": [
+        "治愈系"
+      ],
+      "aliases": [
+        "治愈系"
+      ]
+    },
+    {
+      "targetTagId": 43,
+      "targetName": "搞笑",
+      "sourceTagIds": [
+        400
+      ],
+      "sourceNames": [
+        "搞笑向"
+      ],
+      "aliases": [
+        "搞笑向"
+      ]
+    },
+    {
+      "targetTagId": 332,
+      "targetName": "高难度",
+      "sourceTagIds": [
+        769
+      ],
+      "sourceNames": [
+        "难度较高"
+      ],
+      "aliases": [
+        "难度较高"
+      ]
+    }
+  ],
+  "deletes": [
+    {
+      "tagId": 230,
+      "name": "読"
+    },
+    {
+      "tagId": 236,
+      "name": "私心推薦"
+    },
+    {
+      "tagId": 293,
+      "name": "好好笑"
+    },
+    {
+      "tagId": 310,
+      "name": "！！！"
+    },
+    {
+      "tagId": 363,
+      "name": "未确定"
+    },
+    {
+      "tagId": 364,
+      "name": "狗尾续貂"
+    },
+    {
+      "tagId": 385,
+      "name": "bug"
+    },
+    {
+      "tagId": 387,
+      "name": "看过动画"
+    },
+    {
+      "tagId": 411,
+      "name": "bangumi.tv"
+    },
+    {
+      "tagId": 412,
+      "name": "subject"
+    },
+    {
+      "tagId": 413,
+      "name": "http:"
+    },
+    {
+      "tagId": 426,
+      "name": "谁打的乙女向tag别逗了23333"
+    },
+    {
+      "tagId": 462,
+      "name": "总司嘤嘤嘤"
+    },
+    {
+      "tagId": 470,
+      "name": "无限坑"
+    },
+    {
+      "tagId": 492,
+      "name": "只推风间千景"
+    },
+    {
+      "tagId": 506,
+      "name": "2025玩的"
+    },
+    {
+      "tagId": 553,
+      "name": "制作更精良了"
+    },
+    {
+      "tagId": 610,
+      "name": "没玩完"
+    },
+    {
+      "tagId": 623,
+      "name": "长"
+    },
+    {
+      "tagId": 639,
+      "name": "Steam3070"
+    },
+    {
+      "tagId": 644,
+      "name": "坑作"
+    },
+    {
+      "tagId": 651,
+      "name": "緑川光　梶裕貴　鳥海浩輔　小西克幸　近藤隆"
+    },
+    {
+      "tagId": 653,
+      "name": "緑川光梶裕貴鳥海浩輔小西克幸近藤隆"
+    },
+    {
+      "tagId": 659,
+      "name": "好累感觉不会再爱"
+    },
+    {
+      "tagId": 660,
+      "name": "剧情已死"
+    },
+    {
+      "tagId": 666,
+      "name": "已购入"
+    },
+    {
+      "tagId": 702,
+      "name": "屎"
+    },
+    {
+      "tagId": 722,
+      "name": "25.3.30-25.4.10"
+    },
+    {
+      "tagId": 738,
+      "name": "……"
+    },
+    {
+      "tagId": 739,
+      "name": "等我"
+    },
+    {
+      "tagId": 752,
+      "name": "剧情赞"
+    },
+    {
+      "tagId": 791,
+      "name": "选角和我有仇（手动拜拜"
+    },
+    {
+      "tagId": 815,
+      "name": "暂时没找到资源"
+    },
+    {
+      "tagId": 833,
+      "name": "已买"
+    },
+    {
+      "tagId": 850,
+      "name": "系统太繁杂"
+    },
+    {
+      "tagId": 851,
+      "name": "良心作"
+    },
+    {
+      "tagId": 892,
+      "name": "已入实体"
+    },
+    {
+      "tagId": 925,
+      "name": "乙女游戏中的战斗机"
+    },
+    {
+      "tagId": 950,
+      "name": "骗钱作"
+    },
+    {
+      "tagId": 981,
+      "name": "神作没有之一"
+    },
+    {
+      "tagId": 1131,
+      "name": "画风美爆"
+    },
+    {
+      "tagId": 1136,
+      "name": "女主可爱"
+    },
+    {
+      "tagId": 1170,
+      "name": "預購清單"
+    },
+    {
+      "tagId": 1177,
+      "name": "."
+    },
+    {
+      "tagId": 1210,
+      "name": "据说集齐6个兄弟就可以召唤朱莉"
+    },
+    {
+      "tagId": 1239,
+      "name": "被CG和剧情雷到"
+    },
+    {
+      "tagId": 1274,
+      "name": "INC."
+    },
+    {
+      "tagId": 1298,
+      "name": "BUG逆天"
+    },
+    {
+      "tagId": 1304,
+      "name": "雷作"
+    },
+    {
+      "tagId": 1344,
+      "name": "过誉"
+    },
+    {
+      "tagId": 1373,
+      "name": "已有"
+    },
+    {
+      "tagId": 1384,
+      "name": "心愿单"
+    },
+    {
+      "tagId": 1459,
+      "name": "重复版本"
+    },
+    {
+      "tagId": 1530,
+      "name": "向"
+    },
+    {
+      "tagId": 1576,
+      "name": "■1"
+    },
+    {
+      "tagId": 1581,
+      "name": "纯推理还是等假期玩"
+    },
+    {
+      "tagId": 1592,
+      "name": "标签:待改"
+    },
+    {
+      "tagId": 1600,
+      "name": "priority"
+    },
+    {
+      "tagId": 1629,
+      "name": "超神作"
+    },
+    {
+      "tagId": 1253,
+      "name": "OprettaDue"
+    },
+    {
+      "tagId": 554,
+      "name": "星座彼事"
+    },
+    {
+      "tagId": 97,
+      "name": "有官中"
+    },
+    {
+      "tagId": 14,
+      "name": "官方中文"
+    },
+    {
+      "tagId": 115,
+      "name": "有中文版"
+    },
+    {
+      "tagId": 112,
+      "name": "中文"
+    },
+    {
+      "tagId": 494,
+      "name": "繁中"
+    },
+    {
+      "tagId": 1563,
+      "name": "繁体中文版"
+    },
+    {
+      "tagId": 491,
+      "name": "日文"
+    },
+    {
+      "tagId": 302,
+      "name": "英文"
+    },
+    {
+      "tagId": 137,
+      "name": "有官英"
+    },
+    {
+      "tagId": 301,
+      "name": "英文视觉小说"
+    },
+    {
+      "tagId": 1024,
+      "name": "BL(R)"
+    },
+    {
+      "tagId": 1598,
+      "name": "同人BL"
+    },
+    {
+      "tagId": 875,
+      "name": "同人日乙R18"
+    },
+    {
+      "tagId": 386,
+      "name": "甜饼"
+    },
+    {
+      "tagId": 555,
+      "name": "甜蜜"
+    },
+    {
+      "tagId": 1198,
+      "name": "超甜"
+    },
+    {
+      "tagId": 1205,
+      "name": "SLG&SIM"
+    },
+    {
+      "tagId": 638,
+      "name": "中国"
+    },
+    {
+      "tagId": 635,
+      "name": "中国大陆"
+    },
+    {
+      "tagId": 861,
+      "name": "中文乙女"
+    },
+    {
+      "tagId": 1478,
+      "name": "推理悬疑"
+    },
+    {
+      "tagId": 1601,
+      "name": "日文白学"
+    }
+  ]
+}
