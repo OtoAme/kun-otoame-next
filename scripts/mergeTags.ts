@@ -25,6 +25,11 @@ const normalizeAliases = (aliases: string[]) => [
   ...new Set(aliases.map((alias) => alias.trim()).filter(Boolean))
 ]
 
+type PlanValidationResult = {
+  errors: string[]
+  warnings: string[]
+}
+
 const readPlan = async (): Promise<MergeTagsPlan> => {
   const planPath = getArgValue('--plan')
   if (!planPath) {
@@ -33,6 +38,83 @@ const readPlan = async (): Promise<MergeTagsPlan> => {
 
   const content = await readFile(planPath, 'utf8')
   return JSON.parse(content) as MergeTagsPlan
+}
+
+const getDeleteTagId = (deleteTag: NonNullable<MergeTagsPlan['deletes']>[number]) =>
+  typeof deleteTag === 'number' ? deleteTag : deleteTag.tagId
+
+const getDeleteTagName = (deleteTag: NonNullable<MergeTagsPlan['deletes']>[number]) =>
+  typeof deleteTag === 'number' ? undefined : deleteTag.name
+
+const validatePlan = async (
+  merges: Required<MergeTagsPlan>['merges'],
+  deletes: NonNullable<MergeTagsPlan['deletes']>
+): Promise<PlanValidationResult> => {
+  const errors: string[] = []
+  const warnings: string[] = []
+  const tagIds = new Set<number>()
+
+  for (const merge of merges) {
+    tagIds.add(merge.targetTagId)
+    for (const tagId of merge.sourceTagIds) {
+      tagIds.add(tagId)
+    }
+  }
+  for (const deleteTag of deletes) {
+    tagIds.add(getDeleteTagId(deleteTag))
+  }
+
+  if (!tagIds.size) {
+    return { errors, warnings }
+  }
+
+  const tags = await prisma.patch_tag.findMany({
+    where: { id: { in: [...tagIds] } },
+    select: { id: true, name: true }
+  })
+  const tagsById = new Map(tags.map((tag) => [tag.id, tag]))
+
+  for (const merge of merges) {
+    const targetTag = tagsById.get(merge.targetTagId)
+    if (!targetTag) {
+      errors.push(`Target tag #${merge.targetTagId} not found`)
+    } else if (merge.targetName && targetTag.name !== merge.targetName) {
+      errors.push(
+        `Target tag #${merge.targetTagId} name mismatch: expected ${merge.targetName}, got ${targetTag.name}`
+      )
+    }
+
+    for (const [index, tagId] of merge.sourceTagIds.entries()) {
+      if (tagId === merge.targetTagId) {
+        continue
+      }
+
+      const sourceTag = tagsById.get(tagId)
+      const expectedName = merge.sourceNames?.[index]
+      if (!sourceTag) {
+        warnings.push(`skip missing source tag #${tagId}`)
+      } else if (expectedName && sourceTag.name !== expectedName) {
+        errors.push(
+          `Source tag #${tagId} name mismatch: expected ${expectedName}, got ${sourceTag.name}`
+        )
+      }
+    }
+  }
+
+  for (const deleteTag of deletes) {
+    const tagId = getDeleteTagId(deleteTag)
+    const expectedName = getDeleteTagName(deleteTag)
+    const tag = tagsById.get(tagId)
+    if (!tag) {
+      warnings.push(`skip missing delete tag #${tagId}`)
+    } else if (expectedName && tag.name !== expectedName) {
+      errors.push(
+        `Delete tag #${tagId} name mismatch: expected ${expectedName}, got ${tag.name}`
+      )
+    }
+  }
+
+  return { errors, warnings }
 }
 
 const getBlockedTagUserUpdates = async (
@@ -197,12 +279,6 @@ const mergeTags = async (plan: Required<MergeTagsPlan>['merges'][number]) => {
   })
 }
 
-const getDeleteTagId = (deleteTag: NonNullable<MergeTagsPlan['deletes']>[number]) =>
-  typeof deleteTag === 'number' ? deleteTag : deleteTag.tagId
-
-const getDeleteTagName = (deleteTag: NonNullable<MergeTagsPlan['deletes']>[number]) =>
-  typeof deleteTag === 'number' ? undefined : deleteTag.name
-
 const deleteTags = async (deleteTags: NonNullable<MergeTagsPlan['deletes']>) => {
   const uniqueTagIds = [...new Set(deleteTags.map(getDeleteTagId))]
   if (!uniqueTagIds.length) {
@@ -300,6 +376,21 @@ const run = async () => {
   console.log(
     `${shouldApply ? 'Applying' : 'Dry run'} tag merge plan with ${merges.length} merges and ${deletes.length} deletes.`
   )
+
+  const validation = await validatePlan(merges, deletes)
+  for (const warning of validation.warnings) {
+    console.warn(`  ${warning}`)
+  }
+  if (validation.errors.length > 0) {
+    console.error(
+      `Tag merge plan validation failed with ${validation.errors.length} errors:`
+    )
+    for (const error of validation.errors) {
+      console.error(`  - ${error}`)
+    }
+    process.exitCode = 1
+    return
+  }
 
   for (const merge of merges) {
     await mergeTags(merge)
