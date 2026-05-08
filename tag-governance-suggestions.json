@@ -98,11 +98,11 @@
     },
     {
       "targetTagId": 626,
-      "targetName": "D3 Publisher",
+      "targetName": "d3p",
       "sourceTagIds": [1178, 834],
       "sourceNames": ["D3Publisher", "ディースリー・パブリッシャー"],
-      "aliases": ["d3p", "D3Publisher", "ディースリー・パブリッシャー"],
-      "reason": "均指 D3 Publisher / d3p。"
+      "aliases": ["D3 Publisher", "D3Publisher", "ディースリー・パブリッシャー"],
+      "reason": "均指 D3 Publisher / d3p；生产环境主标签名为 d3p。"
     },
     {
       "targetTagId": 309,

@@ -272,7 +272,7 @@
     },
     {
       "targetTagId": 626,
-      "targetName": "D3 Publisher",
+      "targetName": "d3p",
       "sourceTagIds": [
         1178,
         834
@@ -282,7 +282,7 @@
         "ディースリー・パブリッシャー"
       ],
       "aliases": [
-        "d3p",
+        "D3 Publisher",
         "D3Publisher",
         "ディースリー・パブリッシャー"
       ]
