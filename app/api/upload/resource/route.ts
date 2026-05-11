@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { setKv } from '~/lib/redis'
 import { calculateFileStreamHash } from '../resourceUtils'
 import { verifyHeaderCookie } from '~/middleware/_verifyHeaderCookie'
+import { verifyKunCsrf } from '~/middleware/_csrf'
 import { ALLOWED_EXTENSIONS } from '~/constants/resource'
 import { sanitizeFileName } from '~/utils/sanitizeFileName'
 import { prisma } from '~/prisma'
@@ -76,6 +77,11 @@ const checkRequestValid = async (req: NextRequest) => {
 }
 
 export async function POST(req: NextRequest) {
+  const csrfError = verifyKunCsrf(req)
+  if (csrfError) {
+    return NextResponse.json(csrfError, { status: 403 })
+  }
+
   const validData = await checkRequestValid(req)
   if (typeof validData === 'string') {
     return NextResponse.json(validData)

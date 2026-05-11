@@ -9,7 +9,9 @@ export const config = {
     '/user/:path*',
     '/comment/:path*',
     '/edit/:path*',
-    '/api/:path*'
+    // 排除上传路由, 避免 Next.js 缓冲大体积 body (默认 10MB)
+    // 上传路由在 handler 内部调用 verifyKunCsrf 自行校验
+    '/api/((?!upload/).*)'
   ]
 }
 
