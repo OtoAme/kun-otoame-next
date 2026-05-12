@@ -45,11 +45,11 @@ const checkRequestValid = async (req: NextRequest) => {
   if (!user) {
     return '用户未找到'
   }
-  if (user.moemoepoint < 20) {
-    return '仅限萌萌点大于 20 的用户才可以发布资源'
-  }
   if (user.role < 2) {
     return '您的权限不足, 创作者或者管理员才可以上传文件到对象存储'
+  }
+  if (user.role < 3 && user.moemoepoint < 20) {
+    return '仅限萌萌点大于 20 的用户才可以发布资源'
   }
   if (user.role === 2) {
     const res = await checkKunCaptchaExist(String(captcha))
