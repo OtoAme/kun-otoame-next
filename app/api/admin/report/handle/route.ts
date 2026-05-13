@@ -33,10 +33,6 @@ const handleReport = async (
   const targetId =
     targetType === 'comment' ? report.comment_id : report.rating_id
 
-  if (input.action === 'delete' && !targetId) {
-    return '被举报内容已不存在'
-  }
-
   const defaultReply = input.action === 'reject' ? '已驳回' : '已处理'
   const handlerReply = input.content ? input.content : defaultReply
   const nextStatus = input.action === 'reject' ? 3 : 2
@@ -58,7 +54,7 @@ const handleReport = async (
       }
 
   const ratingPatchId =
-    input.action === 'delete' && targetType === 'rating'
+    input.action === 'delete' && targetType === 'rating' && targetId
       ? report.patch_id
       : undefined
 
