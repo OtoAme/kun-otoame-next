@@ -2,8 +2,12 @@
 
 import { useEffect, useState } from 'react'
 import localforage from 'localforage'
+import toast from 'react-hot-toast'
 import { dataURItoBlob } from '~/utils/dataURItoBlob'
+import { compressDataURLToWebp } from '~/utils/resizeImage'
 import { KunImageCropper } from '~/components/kun/cropper/KunImageCropper'
+
+const MAX_ORIGINAL_BANNER_SIZE = 4 * 1024 * 1024
 
 interface Props {
   errors: string | undefined
@@ -35,8 +39,15 @@ export const BannerImage = ({ errors }: Props) => {
   }
 
   const onOriginalImageComplete = async (originalImage: string) => {
-    const imageBlob = dataURItoBlob(originalImage)
-    await localforage.setItem('kun-patch-banner-original', imageBlob)
+    try {
+      const imageBlob = await compressDataURLToWebp(originalImage, {
+        maxSizeBytes: MAX_ORIGINAL_BANNER_SIZE
+      })
+      await localforage.setItem('kun-patch-banner-original', imageBlob)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '原图处理失败')
+      await localforage.removeItem('kun-patch-banner-original')
+    }
   }
 
   return (
