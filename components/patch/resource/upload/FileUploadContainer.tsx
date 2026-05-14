@@ -54,6 +54,7 @@ export const FileUploadContainer = ({
       '/api/upload/resource',
       formData,
       {
+        headers: { 'X-Requested-With': 'kun-fetch' },
         onUploadProgress: (progressEvent) => {
           const progress = Math.round(
             (progressEvent.loaded * 100) / (progressEvent.total || 0)
