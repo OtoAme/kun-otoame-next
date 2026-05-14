@@ -1,5 +1,4 @@
 import { createReadStream } from 'fs'
-import { dirname } from 'path'
 import { S3Client } from '@aws-sdk/client-s3'
 import { readFile, rm } from 'fs/promises'
 import { DeleteObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3'
@@ -53,9 +52,10 @@ export const uploadFileToS3 = async (key: string, filePath: string) => {
     ContentType: 'application/octet-stream'
   })
   await s3.send(uploadCommand)
+}
 
-  const folderPath = dirname(filePath)
-  await rm(folderPath, { recursive: true, force: true })
+export const cleanupLocalUpload = async (localDir: string) => {
+  await rm(localDir, { recursive: true, force: true })
 }
 
 export const deleteFileFromS3 = async (key: string) => {

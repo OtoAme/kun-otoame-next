@@ -119,11 +119,13 @@ export const declinePatchResource = async (
     return '管理员不存在'
   }
 
-  for (const link of resource.links) {
-    if (link.storage === 's3') {
-      await deletePatchResourceLink(link.content, resource.patch_id, link.hash)
-    }
-  }
+  const s3Contents = Array.from(
+    new Set(
+      resource.links
+        .filter((link) => link.storage === 's3')
+        .map((link) => link.content)
+    )
+  )
 
   const result = await prisma.$transaction(async (prisma) => {
     await prisma.patch_resource.delete({
@@ -157,6 +159,18 @@ export const declinePatchResource = async (
   })
 
   await deletePatchResourceCache(result.uniqueId)
+
+  for (const content of s3Contents) {
+    try {
+      await deletePatchResourceLink(content)
+    } catch (error) {
+      console.error('[Upload] Failed to delete S3 object after decline', {
+        content,
+        resourceId,
+        error
+      })
+    }
+  }
 
   return {}
 }

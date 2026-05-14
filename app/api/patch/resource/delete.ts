@@ -33,15 +33,13 @@ export const deleteResource = async (
     return '您没有权限删除该资源'
   }
 
-  for (const link of patchResource.links) {
-    if (link.storage === 's3') {
-      await deletePatchResourceLink(
-        link.content,
-        patchResource.patch_id,
-        link.hash
-      )
-    }
-  }
+  const s3Contents = Array.from(
+    new Set(
+      patchResource.links
+        .filter((link) => link.storage === 's3')
+        .map((link) => link.content)
+    )
+  )
 
   const uniqueId = await prisma.$transaction(async (prisma) => {
     await prisma.user.update({
@@ -57,6 +55,18 @@ export const deleteResource = async (
   })
 
   await deletePatchResourceCache(uniqueId)
+
+  for (const content of s3Contents) {
+    try {
+      await deletePatchResourceLink(content)
+    } catch (error) {
+      console.error('[Upload] Failed to delete S3 object after resource delete', {
+        content,
+        resourceId: input.resourceId,
+        error
+      })
+    }
+  }
 
   return {}
 }

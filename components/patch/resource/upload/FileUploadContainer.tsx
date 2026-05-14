@@ -14,8 +14,8 @@ import type { FileStatus } from '../share'
 interface Props {
   onSuccess: (
     storage: string,
+    uploadId: string,
     hash: string,
-    content: string,
     size: string
   ) => void
   handleRemoveFile: () => void
@@ -67,18 +67,16 @@ export const FileUploadContainer = ({
     if (typeof res.data === 'string') {
       setFileData(null)
       handleRemoveFile()
+      setUploadingResource(false)
       toast.error(res.data)
       return
     }
 
-    const { filetype, fileHash, fileSize } = res.data
-    setFileData((prev) => (prev ? { ...prev, hash: fileHash, filetype } : null))
-    onSuccess(
-      filetype,
-      fileHash,
-      `${process.env.NEXT_PUBLIC_KUN_VISUAL_NOVEL_S3_STORAGE_URL}/${fileHash}`,
-      fileSize
+    const { filetype, uploadId, fileHash, fileSize } = res.data
+    setFileData((prev) =>
+      prev ? { ...prev, uploadId, hash: fileHash, filetype } : null
     )
+    onSuccess(filetype, uploadId, fileHash, fileSize)
 
     setUploadingResource(false)
   }

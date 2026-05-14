@@ -77,12 +77,16 @@ describe('resource classification', () => {
       patchId: 1,
       section: 'galgame',
       name: 'psv test',
-      storage: 'user',
-      hash: '',
-      content: 'https://example.com',
-      size: '1MB',
-      code: '',
-      password: '',
+      links: [
+        {
+          storage: 'user',
+          hash: '',
+          content: 'https://example.com',
+          size: '1MB',
+          code: '',
+          password: ''
+        }
+      ],
       note: '',
       type: ['emulator'],
       language: ['zh-Hans'],

@@ -2,6 +2,7 @@ import { SUPPORTED_RESOURCE_LINK } from '~/constants/resource'
 
 export interface KunUploadFileResponse {
   filetype: (typeof SUPPORTED_RESOURCE_LINK)[number]
+  uploadId: string
   fileHash: string
   fileSize: string
 }

@@ -73,6 +73,7 @@ const patchResourceLinkSchema = z
       .refine((type) => SUPPORTED_RESOURCE_LINK.includes(type), {
         message: '非法的资源链接类型'
       }),
+    uploadId: z.string().uuid().optional(),
     hash: z.string().max(107),
     content: z
       .string()
@@ -88,13 +89,6 @@ const patchResourceLinkSchema = z
   })
   .superRefine((link, ctx) => {
     if (link.storage === 's3') {
-      if (!link.hash.trim()) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: '请先上传资源文件',
-          path: ['hash']
-        })
-      }
       return
     }
 
@@ -185,10 +179,49 @@ const validateResourcePlatformsByType = (
   }
 }
 
+const validateResourceCreateLinks = (
+  data: { links: z.infer<typeof patchResourceLinkSchema>[] },
+  ctx: z.RefinementCtx
+) => {
+  data.links.forEach((link, index) => {
+    if (link.storage === 's3' && !link.uploadId) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: '请先上传资源文件',
+        path: ['links', index, 'uploadId']
+      })
+    }
+  })
+}
+
+const validateResourceUpdateLinks = (
+  data: { links: z.infer<typeof patchResourceLinkSchema>[] },
+  ctx: z.RefinementCtx
+) => {
+  data.links.forEach((link, index) => {
+    if (link.storage === 's3' && !link.id && !link.uploadId) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: '请先上传资源文件',
+        path: ['links', index, 'uploadId']
+      })
+    }
+  })
+}
+
 export const patchResourceCreateSchema = patchResourceSchemaBase.superRefine(
   (data, ctx) => {
     validateResourceTypesBySection(data, ctx)
     validateResourcePlatformsByType(data, ctx)
+    validateResourceCreateLinks(data, ctx)
+  }
+)
+
+export const patchResourceEditFormSchema = patchResourceSchemaBase.superRefine(
+  (data, ctx) => {
+    validateResourceTypesBySection(data, ctx)
+    validateResourcePlatformsByType(data, ctx)
+    validateResourceUpdateLinks(data, ctx)
   }
 )
 
@@ -201,6 +234,7 @@ export const patchResourceUpdateSchema = patchResourceSchemaBase
   .superRefine((data, ctx) => {
     validateResourceTypesBySection(data, ctx)
     validateResourcePlatformsByType(data, ctx)
+    validateResourceUpdateLinks(data, ctx)
   })
 
 export const declinePullRequestSchema = z.object({

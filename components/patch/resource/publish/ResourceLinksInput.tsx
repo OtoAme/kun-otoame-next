@@ -165,6 +165,12 @@ export const ResourceLinksInput = ({
                         setValue(`links.${index}.hash`, '', {
                           shouldValidate: true
                         })
+                        setValue(`links.${index}.uploadId`, undefined, {
+                          shouldValidate: true
+                        })
+                        setValue(`links.${index}.content`, '', {
+                          shouldValidate: true
+                        })
                       } else {
                         setValue(`links.${index}.content`, '', {
                           shouldValidate: true
@@ -191,14 +197,17 @@ export const ResourceLinksInput = ({
 
               {currentStorage === 's3' && (
                 <FileUploadContainer
-                  onSuccess={(storage, hash, content, size) => {
+                  onSuccess={(storage, uploadId, hash, size) => {
                     setValue(`links.${index}.storage`, storage, {
+                      shouldValidate: true
+                    })
+                    setValue(`links.${index}.uploadId`, uploadId, {
                       shouldValidate: true
                     })
                     setValue(`links.${index}.hash`, hash, {
                       shouldValidate: true
                     })
-                    setValue(`links.${index}.content`, content, {
+                    setValue(`links.${index}.content`, '', {
                       shouldValidate: true
                     })
                     setValue(`links.${index}.size`, size, {
@@ -206,6 +215,9 @@ export const ResourceLinksInput = ({
                     })
                   }}
                   handleRemoveFile={() => {
+                    setValue(`links.${index}.uploadId`, undefined, {
+                      shouldValidate: true
+                    })
                     setValue(`links.${index}.hash`, '', {
                       shouldValidate: true
                     })
@@ -231,7 +243,7 @@ export const ResourceLinksInput = ({
                       label="资源链接"
                       placeholder={
                         currentStorage === 's3'
-                          ? '上传文件后自动生成链接'
+                          ? '提交后由系统生成链接'
                           : `请输入${SUPPORTED_RESOURCE_LINK_MAP[currentStorage]}`
                       }
                       isReadOnly={currentStorage === 's3'}

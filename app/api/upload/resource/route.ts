@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { setKv } from '~/lib/redis'
+import { randomUUID } from 'crypto'
+import { setUploadMetadata } from '~/lib/redis'
 import { calculateFileStreamHash } from '../resourceUtils'
 import { verifyHeaderCookie } from '~/middleware/_verifyHeaderCookie'
 import { ALLOWED_EXTENSIONS } from '~/constants/resource'
@@ -40,6 +41,11 @@ const checkRequestValid = async (req: NextRequest) => {
     return '文件大小超过限制, 最大为 100 MB'
   }
 
+  const fileName = sanitizeFileName(file.name)
+  if (!fileName) {
+    return '文件名不合法，请重命名后重新上传'
+  }
+
   const user = await prisma.user.findUnique({ where: { id: payload.uid } })
   if (!user) {
     return '用户未找到'
@@ -53,9 +59,6 @@ const checkRequestValid = async (req: NextRequest) => {
       return '人机验证无效, 请完成人机验证'
     }
   }
-  if (user.daily_upload_size >= 5120) {
-    return '您今日的上传大小已达到 5GB 限额'
-  }
   const resource = await prisma.patch_resource.findFirst({
     where: { user_id: payload.uid, status: 2 }
   })
@@ -63,13 +66,19 @@ const checkRequestValid = async (req: NextRequest) => {
     return '您有至少一个 OtomeGame 资源在待审核阶段, 请等待审核结束后再发布资源'
   }
 
-  const fileSizeInGB = Number(fileSizeInMB.toFixed(3))
-  await prisma.user.update({
-    where: { id: payload.uid },
-    data: { daily_upload_size: { increment: fileSizeInGB } }
+  const uploadSizeInMB = Number(fileSizeInMB.toFixed(3))
+  const quotaResult = await prisma.user.updateMany({
+    where: {
+      id: payload.uid,
+      daily_upload_size: { lte: 5120 - uploadSizeInMB }
+    },
+    data: { daily_upload_size: { increment: uploadSizeInMB } }
   })
+  if (quotaResult.count === 0) {
+    return '您今日的上传大小已达到 5GB 限额'
+  }
 
-  return { buffer, file, fileSizeInMB }
+  return { buffer, fileName, fileSizeInMB, uid: payload.uid }
 }
 
 export async function POST(req: NextRequest) {
@@ -78,16 +87,31 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(validData)
   }
 
-  const { buffer, file, fileSizeInMB } = validData
+  const { buffer, fileName, fileSizeInMB, uid } = validData
 
-  const fileName = sanitizeFileName(file.name)
-  const res = await calculateFileStreamHash(buffer, 'uploads', fileName)
+  const uploadId = randomUUID()
+  const res = await calculateFileStreamHash(buffer, 'uploads', uploadId, fileName)
+  const fileSize = `${fileSizeInMB.toFixed(3)} MB`
 
-  await setKv(res.fileHash, res.finalFilePath, 24 * 60 * 60)
+  await setUploadMetadata(
+    uploadId,
+    {
+      userId: uid,
+      hash: res.fileHash,
+      path: res.finalFilePath,
+      localDir: res.uploadDir,
+      sizeBytes: buffer.length,
+      size: fileSize,
+      filename: fileName,
+      createdAt: new Date().toISOString()
+    },
+    24 * 60 * 60
+  )
 
   return NextResponse.json({
     filetype: 's3',
+    uploadId,
     fileHash: res.fileHash,
-    fileSize: `${fileSizeInMB.toFixed(3)} MB`
+    fileSize
   })
 }

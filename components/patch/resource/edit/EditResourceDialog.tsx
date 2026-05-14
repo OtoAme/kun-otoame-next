@@ -13,7 +13,7 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import toast from 'react-hot-toast'
 import { kunFetchPut } from '~/utils/kunFetch'
-import { patchResourceCreateSchema } from '~/validations/patch'
+import { patchResourceEditFormSchema } from '~/validations/patch'
 import { ResourceLinksInput } from '../publish/ResourceLinksInput'
 import { kunErrorHandler } from '~/utils/kunErrorHandler'
 import { ResourceDetailsForm } from '../publish/ResourceDetailsForm'
@@ -24,7 +24,7 @@ import {
   type ResourceSection
 } from '~/constants/resource'
 
-type EditResourceFormData = z.infer<typeof patchResourceCreateSchema>
+type EditResourceFormData = z.infer<typeof patchResourceEditFormSchema>
 
 interface EditResourceDialogProps {
   resource: PatchResource
@@ -51,7 +51,7 @@ export const EditResourceDialog = ({
     watch,
     formState: { errors }
   } = useForm<EditResourceFormData>({
-    resolver: zodResolver(patchResourceCreateSchema),
+    resolver: zodResolver(patchResourceEditFormSchema),
     defaultValues: {
       ...resource,
       section,

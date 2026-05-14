@@ -103,6 +103,132 @@ export const releaseKvLock = async (key: string, token: string) => {
   )
 }
 
+export type UploadMetadata = {
+  userId: number
+  hash: string
+  path: string
+  localDir: string
+  sizeBytes: number
+  size: string
+  filename: string
+  createdAt: string
+}
+
+type UploadConsumeResult =
+  | { ok: true; data: UploadMetadata; token: string }
+  | { ok: false; code: string }
+
+type UploadConsumeScriptResult =
+  | { ok: true; data: UploadMetadata }
+  | { ok: false; code: string }
+
+type UploadFinalizeResult = { ok: true } | { ok: false; code: string }
+
+const UPLOAD_CONSUME_LOCK_TTL_SECONDS = 15 * 60
+
+const getUploadMetadataKey = (uploadId: string) => `upload:${uploadId}`
+const getUploadConsumeLockKey = (uploadId: string) =>
+  `upload:consume:${uploadId}`
+
+const parseRedisJson = <T>(value: unknown): T => {
+  if (typeof value !== 'string') {
+    throw new Error('Invalid Redis JSON response')
+  }
+  return JSON.parse(value) as T
+}
+
+export const setUploadMetadata = async (
+  uploadId: string,
+  metadata: UploadMetadata,
+  ttlSeconds: number
+) => {
+  await setKv(
+    getUploadMetadataKey(uploadId),
+    JSON.stringify(metadata),
+    ttlSeconds
+  )
+}
+
+export const consumeUpload = async (
+  uploadId: string,
+  userId: number,
+  lockTtlSeconds = UPLOAD_CONSUME_LOCK_TTL_SECONDS
+): Promise<UploadConsumeResult> => {
+  const metadataKey = getPrefixedRedisKey(getUploadMetadataKey(uploadId))
+  const lockKey = getPrefixedRedisKey(getUploadConsumeLockKey(uploadId))
+  const token = randomUUID()
+
+  const result = await runRedisCommand(() =>
+    redis.eval(
+      `
+        local meta = redis.call("GET", KEYS[1])
+        if not meta then
+          return cjson.encode({ ok = false, code = "UPLOAD_NOT_FOUND" })
+        end
+
+        local parsed = cjson.decode(meta)
+        if tostring(parsed.userId) ~= ARGV[1] then
+          return cjson.encode({ ok = false, code = "OWNER_MISMATCH" })
+        end
+
+        local locked = redis.call("SET", KEYS[2], ARGV[2], "NX", "EX", ARGV[3])
+        if not locked then
+          return cjson.encode({ ok = false, code = "ALREADY_CONSUMING" })
+        end
+
+        return cjson.encode({ ok = true, data = parsed })
+      `,
+      2,
+      metadataKey,
+      lockKey,
+      String(userId),
+      token,
+      String(lockTtlSeconds)
+    )
+  )
+
+  const parsed = parseRedisJson<UploadConsumeScriptResult>(result)
+  if (!parsed.ok) {
+    return parsed
+  }
+
+  return { ...parsed, token }
+}
+
+export const finalizeUpload = async (
+  uploadId: string,
+  token: string
+): Promise<UploadFinalizeResult> => {
+  const metadataKey = getPrefixedRedisKey(getUploadMetadataKey(uploadId))
+  const lockKey = getPrefixedRedisKey(getUploadConsumeLockKey(uploadId))
+
+  const result = await runRedisCommand(() =>
+    redis.eval(
+      `
+        if redis.call("GET", KEYS[1]) == ARGV[1] then
+          redis.call("DEL", KEYS[1], KEYS[2])
+          return cjson.encode({ ok = true })
+        end
+
+        return cjson.encode({ ok = false, code = "TOKEN_MISMATCH" })
+      `,
+      2,
+      lockKey,
+      metadataKey,
+      token
+    )
+  )
+
+  return parseRedisJson<UploadFinalizeResult>(result)
+}
+
+export const releaseUploadConsumeLock = async (
+  uploadId: string,
+  token: string
+) => {
+  await releaseKvLock(getUploadConsumeLockKey(uploadId), token)
+}
+
 export const delKvPattern = async (pattern: string) => {
   const keyPattern = getPrefixedRedisKey(pattern)
   let cursor = '0'

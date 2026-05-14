@@ -3,6 +3,7 @@ import type { UseFormSetValue, UseFormWatch } from 'react-hook-form'
 import type { ResourceSection } from '~/constants/resource'
 
 interface Fields {
+  resourceId?: number
   type: string[]
   name: string
   section: ResourceSection
@@ -10,6 +11,7 @@ interface Fields {
   links: {
     id?: number
     storage: string
+    uploadId?: string
     hash: string
     content: string
     size: string
@@ -26,6 +28,7 @@ export interface FileStatus {
   progress: number
   error?: string
   hash?: string
+  uploadId?: string
   filetype?: string
 }
 

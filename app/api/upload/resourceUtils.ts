@@ -1,5 +1,5 @@
 import path from 'path'
-import { createReadStream, createWriteStream } from 'fs'
+import { createReadStream } from 'fs'
 import { mkdir, writeFile } from 'fs/promises'
 import { blake3 } from '@noble/hashes/blake3'
 import { bytesToHex } from '@noble/hashes/utils'
@@ -24,38 +24,18 @@ export const generateFileHash = async (filePath: string): Promise<string> => {
 export const calculateFileStreamHash = async (
   fileBuffer: Buffer,
   fileDir: string,
+  uploadId: string,
   filename: string
 ) => {
-  await mkdir(fileDir, { recursive: true })
-
-  const tempFilePath = path.posix.join(fileDir, 'temp')
+  const uploadDir = path.posix.join(fileDir, uploadId)
+  await mkdir(uploadDir, { recursive: true })
   const hashInstance = blake3.create({})
 
-  const writeStream = createWriteStream(tempFilePath)
+  hashInstance.update(fileBuffer)
+  const fileHash = bytesToHex(hashInstance.digest())
+  const finalFilePath = path.posix.join(uploadDir, filename)
 
-  try {
-    await new Promise<void>((resolve, reject) => {
-      writeStream.on('error', reject)
-      writeStream.on('finish', resolve)
+  await writeFile(finalFilePath, fileBuffer)
 
-      writeStream.write(fileBuffer, (error) => {
-        if (error) {
-          reject(error)
-        } else {
-          hashInstance.update(fileBuffer)
-          writeStream.end()
-        }
-      })
-    })
-
-    const fileHash = bytesToHex(hashInstance.digest())
-    await mkdir(`${fileDir}/${fileHash}`, { recursive: true })
-    const finalFilePath = path.posix.join(fileDir, `${fileHash}/${filename}`)
-
-    await writeFile(finalFilePath, fileBuffer)
-
-    return { fileHash, finalFilePath }
-  } finally {
-    writeStream.destroy()
-  }
+  return { fileHash, finalFilePath, uploadDir }
 }

@@ -1,34 +1,167 @@
-import { deleteFileFromS3, uploadFileToS3 } from '~/lib/s3'
-import { getKv } from '~/lib/redis'
+import {
+  cleanupLocalUpload,
+  deleteFileFromS3,
+  uploadFileToS3
+} from '~/lib/s3'
+import {
+  consumeUpload,
+  finalizeUpload,
+  releaseUploadConsumeLock
+} from '~/lib/redis'
 import {
   invalidatePatchContentCache,
   invalidatePatchListCaches
 } from '~/app/api/patch/cache'
 import { prisma as globalPrisma } from '~/prisma/index'
 
-export const uploadPatchResource = async (patchId: number, hash: string) => {
-  const filePath = await getKv(hash)
-  if (!filePath) {
+export type UploadedPatchResource = {
+  uploadId: string
+  consumeToken: string
+  s3Key: string
+  downloadLink: string
+  localDir: string
+  hash: string
+  size: string
+}
+
+const getS3PublicUrlPrefix = () =>
+  `${process.env.NEXT_PUBLIC_KUN_VISUAL_NOVEL_S3_STORAGE_URL!}/`
+
+export const extractS3Key = (content: string) => {
+  const prefix = getS3PublicUrlPrefix()
+  if (!content.startsWith(prefix)) {
+    return null
+  }
+
+  return content.slice(prefix.length)
+}
+
+export const uploadPatchResource = async (
+  patchId: number,
+  uploadId: string,
+  userId: number
+): Promise<UploadedPatchResource | string> => {
+  const consumed = await consumeUpload(uploadId, userId)
+  if (!consumed.ok) {
+    if (consumed.code === 'ALREADY_CONSUMING') {
+      return '资源正在提交中，请稍后重试'
+    }
+    if (consumed.code === 'OWNER_MISMATCH') {
+      return '上传资源不属于当前用户'
+    }
     return '本地临时文件存储未找到, 请重新上传文件'
   }
-  const fileName = filePath.split('/').pop()
-  const s3Key = `patch/${patchId}/resource/${hash}/${fileName}`
-  await uploadFileToS3(s3Key, filePath)
-  const downloadLink = `${process.env.NEXT_PUBLIC_KUN_VISUAL_NOVEL_S3_STORAGE_URL!}/${s3Key}`
-  return { downloadLink }
+
+  const metadata = consumed.data
+  const s3Key = `patch/${patchId}/resource/${metadata.hash}/${metadata.filename}`
+  try {
+    await uploadFileToS3(s3Key, metadata.path)
+  } catch (error) {
+    await releaseUploadConsumeLock(uploadId, consumed.token)
+    throw error
+  }
+  const downloadLink = `${getS3PublicUrlPrefix()}${s3Key}`
+
+  return {
+    uploadId,
+    consumeToken: consumed.token,
+    s3Key,
+    downloadLink,
+    localDir: metadata.localDir,
+    hash: metadata.hash,
+    size: metadata.size
+  }
 }
 
 export const deletePatchResourceLink = async (
   content: string,
-  patchId: number,
-  hash: string
+  excludeLinkIds: number[] = []
 ) => {
-  const fileName = content.split('/').pop()
-  if (!fileName) {
+  const referencedCount = await globalPrisma.patch_resource_link.count({
+    where: {
+      content,
+      ...(excludeLinkIds.length ? { id: { notIn: excludeLinkIds } } : {})
+    }
+  })
+  if (referencedCount > 0) {
     return
   }
-  const s3Key = `patch/${patchId}/resource/${hash}/${fileName}`
+
+  const s3Key = extractS3Key(content)
+  if (!s3Key) {
+    console.error('[Upload] Refused to delete S3 object with invalid URL', {
+      content
+    })
+    return
+  }
+
   await deleteFileFromS3(s3Key)
+}
+
+export const compensateUploadedResources = async (
+  resources: UploadedPatchResource[]
+) => {
+  await Promise.allSettled(
+    resources.map((resource) => deleteFileFromS3(resource.s3Key))
+  )
+}
+
+export const releaseUploadedResourceLocks = async (
+  resources: UploadedPatchResource[]
+) => {
+  await Promise.allSettled(
+    resources.map((resource) =>
+      releaseUploadConsumeLock(resource.uploadId, resource.consumeToken)
+    )
+  )
+}
+
+export const finalizeUploadedResources = async (
+  resources: UploadedPatchResource[],
+  context: { userId: number; patchId: number; resourceId?: number }
+) => {
+  const results = await Promise.allSettled(
+    resources.map((resource) =>
+      finalizeUpload(resource.uploadId, resource.consumeToken)
+    )
+  )
+
+  for (const [index, result] of results.entries()) {
+    const resource = resources[index]
+    if (result.status === 'rejected') {
+      console.error(
+        '[CRITICAL] Upload finalize failed - manual cleanup may be needed',
+        { ...context, ...resource, error: result.reason }
+      )
+      continue
+    }
+
+    if (!result.value.ok) {
+      console.error(
+        '[CRITICAL] Upload finalize failed - manual cleanup may be needed',
+        { ...context, ...resource, error: result.value.code }
+      )
+    }
+  }
+}
+
+export const cleanupUploadedResourceDirs = async (
+  resources: UploadedPatchResource[],
+  context: { userId: number; patchId: number; resourceId?: number }
+) => {
+  const results = await Promise.allSettled(
+    resources.map((resource) => cleanupLocalUpload(resource.localDir))
+  )
+
+  for (const [index, result] of results.entries()) {
+    if (result.status === 'rejected') {
+      console.error('[Upload] Local cleanup failed, cron will handle', {
+        ...context,
+        ...resources[index],
+        error: result.reason
+      })
+    }
+  }
 }
 
 export const sanitizeResourceLinksForAuditLog = <

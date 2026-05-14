@@ -26,21 +26,15 @@ export const deletePatchById = async (input: z.infer<typeof patchIdSchema>) => {
       links: true
     }
   })
+  const s3Links = patchResources.flatMap((resource) =>
+    resource.links.filter((link) => link.storage === 's3')
+  )
+  const s3Contents = Array.from(new Set(s3Links.map((link) => link.content)))
 
   const result = await prisma.$transaction(async (prisma) => {
     if (patchResources.length > 0) {
       await Promise.all(
         patchResources.map(async (resource) => {
-          for (const link of resource.links) {
-            if (link.storage === 's3') {
-              await deletePatchResourceLink(
-                link.content,
-                resource.patch_id,
-                link.hash
-              )
-            }
-          }
-
           await prisma.patch_resource.delete({
             where: { id: resource.id }
           })
@@ -54,6 +48,18 @@ export const deletePatchById = async (input: z.infer<typeof patchIdSchema>) => {
 
     return {}
   })
+
+  for (const content of s3Contents) {
+    try {
+      await deletePatchResourceLink(content)
+    } catch (error) {
+      console.error('[Upload] Failed to delete S3 object after patch delete', {
+        content,
+        patchId,
+        error
+      })
+    }
+  }
 
   await Promise.all([
     invalidatePatchContentCache(patch.unique_id),
