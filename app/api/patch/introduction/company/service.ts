@@ -1,5 +1,10 @@
 import { z } from 'zod'
 import { prisma } from '~/prisma'
+import { invalidateCompanyCaches } from '~/app/api/patch/cache'
+import {
+  addPatchCompanyRelations,
+  removePatchCompanyRelations
+} from '~/app/api/edit/companyRelationHelper'
 import { patchCompanyChangeSchema } from '~/validations/patch'
 
 export const handlePatchCompanyAction = (type: 'add' | 'delete') => {
@@ -7,26 +12,16 @@ export const handlePatchCompanyAction = (type: 'add' | 'delete') => {
   return async (input: z.infer<typeof patchCompanyChangeSchema>) => {
     const { patchId, companyId } = input
 
-    return await prisma.$transaction(async (prisma) => {
-      if (isAdd) {
-        await prisma.patch_company_relation.createMany({
-          data: companyId.map((id) => ({
-            patch_id: patchId,
-            company_id: id
-          }))
-        })
-      } else {
-        await prisma.patch_company_relation.deleteMany({
-          where: { patch_id: patchId, company_id: { in: companyId } }
-        })
-      }
-
-      await prisma.patch_company.updateMany({
-        where: { id: { in: companyId } },
-        data: { count: { increment: isAdd ? 1 : -1 } }
-      })
-
-      return {}
+    const changedIds = await prisma.$transaction(async (tx) => {
+      return isAdd
+        ? await addPatchCompanyRelations(tx, patchId, companyId)
+        : await removePatchCompanyRelations(tx, patchId, companyId)
     })
+
+    if (changedIds.length) {
+      await invalidateCompanyCaches()
+    }
+
+    return {}
   }
 }

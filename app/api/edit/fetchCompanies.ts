@@ -1,6 +1,8 @@
 import { prisma } from '~/prisma/index'
+import { invalidateCompanyCaches } from '~/app/api/patch/cache'
 import { fetchVndbVn } from '~/lib/arnebiae/vndb'
 import type { VndbProducer } from '~/lib/arnebiae/vndb'
+import { addPatchCompanyRelations } from './companyRelationHelper'
 
 const uniq = <T>(arr: T[]) => Array.from(new Set(arr))
 
@@ -14,11 +16,11 @@ const toCompanyCreate = (producer: VndbProducer, uid: number) => {
   const alias = uniq(aliasRaw)
   const official_website = Array.isArray(producer?.extlinks)
     ? uniq(
-      producer.extlinks
-        .map((l) => l?.url)
-        .filter(Boolean)
-        .map((u) => String(u))
-    )
+        producer.extlinks
+          .map((l) => l?.url)
+          .filter(Boolean)
+          .map((u) => String(u))
+      )
     : []
   return {
     name,
@@ -69,61 +71,57 @@ export const ensurePatchCompaniesFromVNDB = async (
     const companyNames = Array.from(companiesByName.keys())
     if (!companyNames.length) return { ensured: 0, related: 0 }
 
-    const existing = await prisma.patch_company.findMany({
-      where: { name: { in: companyNames } },
-      select: { id: true, name: true }
-    })
-    const existingNames = new Set(existing.map((e) => e.name))
-
-    const toCreate = companyNames
-      .filter((n) => !existingNames.has(n))
-      .map((n) => companiesByName.get(n)!)
-
-    if (toCreate.length) {
-      await prisma.patch_company.createMany({ data: toCreate })
-    }
-
-    const allCompanies = await prisma.patch_company.findMany({
-      where: { name: { in: companyNames } },
-      select: { id: true, name: true }
-    })
-    const nameToId = new Map(allCompanies.map((c) => [c.name, c.id]))
-    const companyIds = allCompanies.map((c) => c.id)
-
-    if (companyIds.length) {
-      const existingRelations = await prisma.patch_company_relation.findMany({
-        where: {
-          patch_id: patchId,
-          company_id: { in: companyIds }
-        },
-        select: { company_id: true }
-      })
-      const existingCompanyIds = new Set(
-        existingRelations.map((r) => r.company_id)
-      )
-
-      const newCompanyIds = companyIds.filter(
-        (cid) => !existingCompanyIds.has(cid)
-      )
-
-      await prisma.patch_company_relation.createMany({
-        data: companyNames
-          .map((n) => nameToId.get(n))
-          .filter((cid): cid is number => typeof cid === 'number')
-          .map((cid) => ({ patch_id: patchId, company_id: cid })),
-        skipDuplicates: true
-      })
-
-      if (newCompanyIds.length) {
-        await prisma.patch_company.updateMany({
-          where: { id: { in: newCompanyIds } },
-          data: { count: { increment: 1 } }
+    const result = await prisma.$transaction(
+      async (tx) => {
+        const existing = await tx.patch_company.findMany({
+          where: { name: { in: companyNames } },
+          select: { name: true }
         })
-      }
+        const existingNames = new Set(existing.map((e) => e.name))
+
+        const toCreate = companyNames
+          .filter((n) => !existingNames.has(n))
+          .map((n) => companiesByName.get(n)!)
+
+        if (toCreate.length) {
+          await tx.patch_company.createMany({
+            data: toCreate,
+            skipDuplicates: true
+          })
+        }
+
+        const allCompanies = await tx.patch_company.findMany({
+          where: { name: { in: companyNames } },
+          select: { id: true }
+        })
+        const companyIds = allCompanies.map((c) => c.id)
+        const insertedIds = await addPatchCompanyRelations(
+          tx,
+          patchId,
+          companyIds
+        )
+
+        return {
+          ensured: toCreate.length,
+          related: companyIds.length,
+          insertedIds
+        }
+      },
+      { timeout: 60000 }
+    )
+
+    if (result.insertedIds.length) {
+      await invalidateCompanyCaches()
     }
 
-    return { ensured: toCreate.length, related: companyIds.length }
-  } catch {
+    return { ensured: result.ensured, related: result.related }
+  } catch (error) {
+    console.error('Failed to ensure VNDB company relations', {
+      patchId,
+      source: 'vndb_company_relation',
+      vndbId: id,
+      error
+    })
     return { ensured: 0, related: 0 }
   }
 }

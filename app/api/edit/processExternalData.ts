@@ -1,5 +1,8 @@
+import { Prisma } from '@prisma/client'
 import { prisma } from '~/prisma/index'
+import { invalidateCompanyCaches } from '~/app/api/patch/cache'
 import { handleBatchPatchTags } from './batchTag'
+import { addPatchCompanyRelations } from './companyRelationHelper'
 
 interface SubmittedExternalData {
   vndbTags: string[]
@@ -65,109 +68,85 @@ const ensureTagsWithSource = async (
   }
 }
 
-const ensureCompanies = async (
-  patchId: number,
-  names: string[],
-  uid: number
-) => {
-  const validNames = names.filter(Boolean)
-  if (!validNames.length) return
-
-  const existing = await prisma.patch_company.findMany({
-    where: { name: { in: validNames } },
-    select: { id: true, name: true }
-  })
-  const existingNameSet = new Set(existing.map((company) => company.name))
-
-  const toCreate = validNames.filter((name) => !existingNameSet.has(name))
-  if (toCreate.length) {
-    await prisma.patch_company.createMany({
-      data: toCreate.map((name) => ({
-        name,
-        introduction: '',
-        count: 0,
-        primary_language: [],
-        official_website: [],
-        parent_brand: [],
-        alias: [],
-        user_id: uid
-      })),
-      skipDuplicates: true
-    })
-  }
-
-  const allCompanies = await prisma.patch_company.findMany({
-    where: { name: { in: validNames } },
-    select: { id: true }
-  })
-  const companyIds = allCompanies.map((company) => company.id)
-
-  if (!companyIds.length) return
-
-  const existingRelations = await prisma.patch_company_relation.findMany({
-    where: { patch_id: patchId, company_id: { in: companyIds } },
-    select: { company_id: true }
-  })
-  const existingRelationIds = new Set(
-    existingRelations.map((relation) => relation.company_id)
-  )
-  const newCompanyIds = companyIds.filter((id) => !existingRelationIds.has(id))
-
-  if (newCompanyIds.length) {
-    await prisma.patch_company_relation.createMany({
-      data: newCompanyIds.map((companyId) => ({
-        patch_id: patchId,
-        company_id: companyId
-      })),
-      skipDuplicates: true
-    })
-    await prisma.patch_company.updateMany({
-      where: { id: { in: newCompanyIds } },
-      data: { count: { increment: 1 } }
-    })
-  }
-}
-
-const ensureSingleCompany = async (
-  patchId: number,
+const toCompanyCreate = (
   name: string,
-  link: string,
+  uid: number,
+  officialWebsite: string[] = []
+): Prisma.patch_companyCreateManyInput => ({
+  name,
+  introduction: '',
+  count: 0,
+  primary_language: [],
+  official_website: officialWebsite,
+  parent_brand: [],
+  alias: [],
+  user_id: uid
+})
+
+const collectSubmittedCompanyNames = (data: SubmittedExternalData) => [
+  ...data.vndbDevelopers,
+  ...data.bangumiDevelopers,
+  ...data.steamDevelopers,
+  data.dlsiteCircleName
+]
+
+const ensureSubmittedCompanies = async (
+  patchId: number,
+  data: SubmittedExternalData,
   uid: number
 ) => {
-  if (!name.trim()) return
+  const companiesByName = new Map<string, Prisma.patch_companyCreateManyInput>()
 
-  let company = await prisma.patch_company.findFirst({
-    where: { name: name.trim() }
-  })
+  for (const rawName of [
+    ...data.vndbDevelopers,
+    ...data.bangumiDevelopers,
+    ...data.steamDevelopers
+  ]) {
+    const name = rawName.trim()
+    if (!name || companiesByName.has(name)) continue
+    companiesByName.set(name, toCompanyCreate(name, uid))
+  }
 
-  if (!company) {
-    company = await prisma.patch_company.create({
-      data: {
-        name: name.trim(),
-        introduction: '',
-        count: 0,
-        primary_language: [],
-        official_website: link.trim() ? [link.trim()] : [],
-        parent_brand: [],
-        alias: [],
-        user_id: uid
+  const dlsiteName = data.dlsiteCircleName.trim()
+  if (dlsiteName) {
+    const dlsiteLink = data.dlsiteCircleLink.trim()
+    companiesByName.set(
+      dlsiteName,
+      toCompanyCreate(dlsiteName, uid, dlsiteLink ? [dlsiteLink] : [])
+    )
+  }
+
+  const companyNames = Array.from(companiesByName.keys())
+  if (!companyNames.length) return []
+
+  return await prisma.$transaction(
+    async (tx) => {
+      const existing = await tx.patch_company.findMany({
+        where: { name: { in: companyNames } },
+        select: { name: true }
+      })
+      const existingNames = new Set(existing.map((company) => company.name))
+      const toCreate = companyNames
+        .filter((name) => !existingNames.has(name))
+        .map((name) => companiesByName.get(name)!)
+
+      if (toCreate.length) {
+        await tx.patch_company.createMany({
+          data: toCreate,
+          skipDuplicates: true
+        })
       }
-    })
-  }
 
-  const existingRelation = await prisma.patch_company_relation.findFirst({
-    where: { patch_id: patchId, company_id: company.id }
-  })
+      const allCompanies = await tx.patch_company.findMany({
+        where: { name: { in: companyNames } },
+        select: { id: true }
+      })
+      const companyIds = allCompanies.map((company) => company.id)
 
-  if (!existingRelation) {
-    await prisma.patch_company_relation.create({
-      data: { patch_id: patchId, company_id: company.id }
-    })
-    await prisma.patch_company.update({
-      where: { id: company.id },
-      data: { count: { increment: 1 } }
-    })
-  }
+      return await addPatchCompanyRelations(tx, patchId, companyIds)
+    },
+    { timeout: 60000 }
+  )
 }
 
 const ensureAliases = async (patchId: number, aliases: string[]) => {
@@ -208,25 +187,26 @@ export const processSubmittedExternalData = async (
       ensureTagsWithSource(patchId, data.steamTags, 'steam', uid)
   ].filter(Boolean)
 
-  const companyTasks = [
-    data.vndbDevelopers.length &&
-      ensureCompanies(patchId, data.vndbDevelopers, uid),
-    data.bangumiDevelopers.length &&
-      ensureCompanies(patchId, data.bangumiDevelopers, uid),
-    data.steamDevelopers.length &&
-      ensureCompanies(patchId, data.steamDevelopers, uid),
-    data.dlsiteCircleName &&
-      ensureSingleCompany(
+  const companyTask = ensureSubmittedCompanies(patchId, data, uid)
+    .then(async (insertedIds) => {
+      if (insertedIds.length) {
+        await invalidateCompanyCaches()
+      }
+      return insertedIds
+    })
+    .catch((error) => {
+      console.error('Failed to process external company relations', {
         patchId,
-        data.dlsiteCircleName,
-        data.dlsiteCircleLink,
-        uid
-      )
-  ].filter(Boolean)
+        source: 'company_relation',
+        names: collectSubmittedCompanyNames(data).filter(Boolean),
+        error
+      })
+      throw error
+    })
 
   const aliasTasks = [
     data.steamAliases.length && ensureAliases(patchId, data.steamAliases)
   ].filter(Boolean)
 
-  await Promise.allSettled([...tagTasks, ...companyTasks, ...aliasTasks])
+  await Promise.allSettled([...tagTasks, companyTask, ...aliasTasks])
 }

@@ -1,4 +1,6 @@
 import { prisma } from '~/prisma/index'
+import { invalidateCompanyCaches } from '~/app/api/patch/cache'
+import { addPatchCompanyRelations } from './companyRelationHelper'
 
 const DLSITE_API = 'https://dlapi.arnebiae.com/api/dlsite'
 
@@ -51,47 +53,43 @@ export const ensurePatchCompanyFromDlsite = async (
 
     if (!circleName) return
 
-    let company = await prisma.patch_company.findFirst({
-      where: { name: circleName }
-    })
+    const insertedIds = await prisma.$transaction(
+      async (tx) => {
+        let company = await tx.patch_company.findFirst({
+          where: { name: circleName }
+        })
 
-    if (!company) {
-      company = await prisma.patch_company.create({
-        data: {
-          name: circleName,
-          introduction: '',
-          count: 0,
-          primary_language: [],
-          official_website: circleLink ? [circleLink] : [],
-          parent_brand: [],
-          alias: [],
-          user_id: uid
+        if (!company) {
+          company = await tx.patch_company.create({
+            data: {
+              name: circleName,
+              introduction: '',
+              count: 0,
+              primary_language: [],
+              official_website: circleLink ? [circleLink] : [],
+              parent_brand: [],
+              alias: [],
+              user_id: uid
+            }
+          })
         }
-      })
+
+        return await addPatchCompanyRelations(tx, patchId, [company.id])
+      },
+      { timeout: 60000 }
+    )
+
+    if (insertedIds.length) {
+      await invalidateCompanyCaches()
     }
-
-    if (!company) return
-
-    const existingRelation = await prisma.patch_company_relation.findFirst({
-      where: { patch_id: patchId, company_id: company.id }
+  } catch (error) {
+    console.error('Failed to ensure DLSite company relation', {
+      patchId,
+      source: 'dlsite_company_relation',
+      dlsiteCode: code,
+      circleName: prefetchedCircleName,
+      error
     })
-
-    if (!existingRelation) {
-      await prisma.patch_company_relation.create({
-        data: {
-          patch_id: patchId,
-          company_id: company.id
-        }
-      })
-
-      await prisma.patch_company.update({
-        where: { id: company.id },
-        data: {
-          count: { increment: 1 }
-        }
-      })
-    }
-  } catch {
     // 忽略同步失败，避免阻塞主流程
   }
 }
