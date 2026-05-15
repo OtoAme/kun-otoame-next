@@ -60,12 +60,11 @@
     "@prisma/adapter-pg": "^7.8.0",
     "@prisma/client": "^7.8.0",
     "@tailwindcss/postcss": "^4.1.11",
-
     "@types/mdx": "^2.0.13",
     "@types/node-cron": "^3.0.11",
     "@types/nodemailer": "^6.4.17",
     "@types/nodemailer-smtp-transport": "^2.7.8",
-    "axios": "^1.15.0",
+    "axios": "^1.16.1",
     "canvas-confetti": "^1.9.3",
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",
