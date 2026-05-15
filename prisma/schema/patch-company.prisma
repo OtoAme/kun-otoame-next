@@ -1,7 +1,7 @@
 model patch_company {
   id Int @id @default(autoincrement())
 
-  name             String   @db.VarChar(107)
+  name             String   @unique @db.VarChar(107)
   introduction     String   @default("") @db.VarChar(10007)
   count            Int      @default(0)
   primary_language String[]
@@ -18,7 +18,6 @@ model patch_company {
 
   @@index([count])
   @@index([count(sort: Desc), id(sort: Desc)])
-  @@index([name])
   @@index([alias], type: Gin)
   @@index([parent_brand], type: Gin)
 }
