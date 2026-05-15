@@ -13,6 +13,7 @@ overrides:
   '@eslint/eslintrc>ajv': 6.14.0
   table>ajv: 8.18.0
   fast-uri: '>=3.1.2'
+  '@rvf/set-get': '>=7.0.2'
   jws: 3.2.3
   dompurify: '>=3.3.3'
   tar: '>=7.5.8'
@@ -3009,8 +3010,8 @@ packages:
   '@rushstack/eslint-patch@1.12.0':
     resolution: {integrity: sha512-5EwMtOqvJMMa3HbmxLlF74e+3/HhwBTMcvt3nqVJgGCozO6hzIPOBlwm8mGVNR9SN2IJpxSnlxczyDjcn7qIyw==}
 
-  '@rvf/set-get@7.0.1':
-    resolution: {integrity: sha512-GkTSn9K1GrTYoTUqlUs36k6nJnzjQaFBTTEIqUYmzBcsGsoJM8xG7EAx2WLHWAA4QzFjcwWUSHQ3vM3Fbw50Tg==}
+  '@rvf/set-get@7.0.2':
+    resolution: {integrity: sha512-MyrHwRw9/hxMncld0gpqubHJdpFP4tdGb4GDDT5I90408AzwTz1msn3ZOvMkmuVst0sa7jDuPJLaGmZV804f+w==}
 
   '@selderee/plugin-htmlparser2@0.11.0':
     resolution: {integrity: sha512-P33hHGdldxGabLFjPPpaTxVolMrzrcegejx+0GxjrIb9Zv48D8yAIA/QTDR2dFl7Uz7urX8aX6+5bCZslr+gWQ==}
@@ -11021,7 +11022,7 @@ snapshots:
 
   '@rushstack/eslint-patch@1.12.0': {}
 
-  '@rvf/set-get@7.0.1': {}
+  '@rvf/set-get@7.0.2': {}
 
   '@selderee/plugin-htmlparser2@0.11.0':
     dependencies:
@@ -15986,7 +15987,7 @@ snapshots:
 
   zod-form-data@3.0.0(zod@3.25.48):
     dependencies:
-      '@rvf/set-get': 7.0.1
+      '@rvf/set-get': 7.0.2
       zod: 3.25.48
 
   zod@3.25.48: {}
