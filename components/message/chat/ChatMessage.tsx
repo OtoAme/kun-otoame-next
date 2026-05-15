@@ -32,6 +32,7 @@ interface Props {
 }
 
 interface MessageMenuState {
+  id: number
   x: number
   y: number
   selectedText: string
@@ -59,6 +60,7 @@ export const ChatMessage = ({
   const bubbleRef = useRef<HTMLDivElement>(null)
   const contentRef = useRef<HTMLParagraphElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
+  const menuOpenIdRef = useRef(0)
   const touchStartRef = useRef<{
     x: number
     y: number
@@ -143,6 +145,7 @@ export const ChatMessage = ({
     const nextY = Math.min(Math.max(8, y), window.innerHeight - menuHeight - 8)
 
     setMenu({
+      id: ++menuOpenIdRef.current,
       x: nextX,
       y: nextY,
       selectedText: getSelectedTextInMessage()
@@ -477,6 +480,7 @@ export const ChatMessage = ({
       <AnimatePresence>
         {menu && (
           <motion.div
+            key={menu.id}
             ref={menuRef}
             className={cn(
               'fixed z-50 w-[180px] origin-top-left overflow-hidden rounded-xl border border-default-200 bg-content1/95 p-1 text-sm shadow-2xl backdrop-blur-md',
