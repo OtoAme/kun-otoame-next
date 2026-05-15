@@ -3,11 +3,11 @@ import {
   kunPasswordRegex,
   kunValidMailConfirmCodeRegex
 } from '~/utils/validate'
-import { nonEmptyFileSchema } from './file'
+import { imageFileSchema } from './file'
 import { captchaVerifyTokenSchema } from './captcha'
 
 export const avatarSchema = z.object({
-  avatar: nonEmptyFileSchema
+  avatar: imageFileSchema
 })
 
 export const bioSchema = z.object({

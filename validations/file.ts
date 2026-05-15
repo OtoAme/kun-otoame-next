@@ -12,6 +12,10 @@ export const nonEmptyFileSchema = z
   .refine((file) => file.size > 0, {
     message: '上传文件不能为空'
   })
-  .refine((file) => file.size <= MAX_IMAGE_SIZE_BYTES, {
+
+export const imageFileSchema = nonEmptyFileSchema.refine(
+  (file) => file.size <= MAX_IMAGE_SIZE_BYTES,
+  {
     message: '图片大小不能超过 10 MB'
-  })
+  }
+)

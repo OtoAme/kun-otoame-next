@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { nonEmptyFileSchema } from './file'
+import { imageFileSchema } from './file'
 
 const duplicateQueryField = (maxLength: number) =>
   z.preprocess((value) => {
@@ -71,8 +71,8 @@ const optionalRepeatedStringArray = z.preprocess((val) => {
 }, z.array(z.string()).optional().default([]))
 
 export const patchCreateSchema = z.object({
-  banner: nonEmptyFileSchema,
-  bannerOriginal: nonEmptyFileSchema.optional(),
+  banner: imageFileSchema,
+  bannerOriginal: imageFileSchema.optional(),
   name: z.string().trim().min(1, { message: '游戏名称是必填项' }),
   vndbId: optionalVndbId,
   vndbRelationId: optionalVndbRelationId,
@@ -192,7 +192,7 @@ export const duplicateSchema = z
   )
 
 export const imageSchema = z.object({
-  image: nonEmptyFileSchema
+  image: imageFileSchema
 })
 
 export const editLinkSchema = z.object({
