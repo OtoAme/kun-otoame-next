@@ -59,6 +59,15 @@ export const Report = ({
     fetchData(page, activeTab)
   }, [page, limit, activeTab, isMounted, targetType])
 
+  if (!isMounted) {
+    return (
+      <div className="space-y-6">
+        <h1 className="text-2xl font-bold">{title}</h1>
+        <KunLoading hint="正在获取举报数据..." />
+      </div>
+    )
+  }
+
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-bold">{title}</h1>

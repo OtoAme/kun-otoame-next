@@ -7,11 +7,14 @@ import {
 } from '~/validations/admin'
 import type { AdminReport } from '~/types/api/admin'
 
-const buildReportNotice = (report: AdminReport, action: 'delete' | 'reject') => {
+const buildReportNotice = (
+  report: AdminReport,
+  action: 'delete' | 'reject'
+) => {
   const defaultReply = action === 'reject' ? '已驳回' : '已处理'
-  const reportResult = action === 'reject' ? '您的举报已驳回!' : '您的举报已处理!'
-  const reportReplyLabel =
-    action === 'reject' ? '举报驳回回复' : '举报处理回复'
+  const reportResult =
+    action === 'reject' ? '您的举报已驳回!' : '您的举报已处理!'
+  const reportReplyLabel = action === 'reject' ? '举报驳回回复' : '举报处理回复'
   const handleResult = report.handlerReply || defaultReply
   const targetLabel = report.targetType === 'rating' ? '评价' : '评论'
 
@@ -192,12 +195,17 @@ export const handleReport = async (
   }
 
   const serializedReport = serializeReport(report)
-  const handleResult = input.content || (input.action === 'reject' ? '已驳回' : '已处理')
+  const handleResult =
+    input.content || (input.action === 'reject' ? '已驳回' : '已处理')
   const reportStatus = input.action === 'reject' ? 3 : 2
+  const targetId =
+    report.target_type === 'rating' ? report.rating_id : report.comment_id
   const relatedTargetWhere =
-    report.target_type === 'rating'
-      ? { target_type: 'rating', rating_id: report.rating_id, status: 0 }
-      : { target_type: 'comment', comment_id: report.comment_id, status: 0 }
+    targetId === null
+      ? { id: report.id, status: 0 }
+      : report.target_type === 'rating'
+        ? { target_type: 'rating', rating_id: targetId, status: 0 }
+        : { target_type: 'comment', comment_id: targetId, status: 0 }
 
   await prisma.$transaction(async (prisma) => {
     const affectedReports = await prisma.patch_report.findMany({
@@ -233,7 +241,9 @@ export const handleReport = async (
     }
 
     const recipientIds = [
-      ...new Set(affectedReports.map((affectedReport) => affectedReport.sender_id))
+      ...new Set(
+        affectedReports.map((affectedReport) => affectedReport.sender_id)
+      )
     ]
     if (recipientIds.length) {
       await prisma.user_message.createMany({
@@ -250,7 +260,11 @@ export const handleReport = async (
     }
   })
 
-  if (input.action === 'delete' && report.target_type === 'rating') {
+  if (
+    input.action === 'delete' &&
+    report.target_type === 'rating' &&
+    report.rating_id
+  ) {
     await recomputePatchRatingStat(report.patch_id)
   }
 
