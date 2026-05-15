@@ -9,7 +9,8 @@ export const config = {
     '/user/:path*',
     '/comment/:path*',
     '/edit/:path*',
-    '/api/:path*'
+    // 上传路由在 handler 内自行校验 CSRF，避免 middleware 缓冲大体积 body
+    '/api/((?!upload/).*)'
   ]
 }
 

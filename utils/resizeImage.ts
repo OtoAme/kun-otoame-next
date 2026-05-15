@@ -12,6 +12,72 @@ export const checkImageValid = (file: File) => {
   }
 }
 
+interface CompressDataURLOptions {
+  maxDimension?: number
+  quality?: number
+  maxSizeBytes?: number
+}
+
+export const compressDataURLToWebp = (
+  dataUrl: string,
+  options: CompressDataURLOptions = {}
+): Promise<Blob> => {
+  const { maxDimension = 3840, quality = 0.85, maxSizeBytes } = options
+
+  return new Promise((resolve, reject) => {
+    const image = new Image()
+    image.onload = () => {
+      let width = image.naturalWidth
+      let height = image.naturalHeight
+
+      if (width > maxDimension || height > maxDimension) {
+        const aspectRatio = width / height
+        if (aspectRatio > 1) {
+          width = maxDimension
+          height = Math.round(maxDimension / aspectRatio)
+        } else {
+          height = maxDimension
+          width = Math.round(maxDimension * aspectRatio)
+        }
+      }
+
+      const canvas = document.createElement('canvas')
+      canvas.width = width
+      canvas.height = height
+
+      const ctx = canvas.getContext('2d')
+      if (!ctx) {
+        reject(new Error('无法创建 canvas 上下文'))
+        return
+      }
+
+      ctx.imageSmoothingQuality = 'high'
+      ctx.drawImage(image, 0, 0, width, height)
+
+      canvas.toBlob(
+        (blob) => {
+          if (!blob) {
+            reject(new Error('压缩图片为 WebP 失败'))
+            return
+          }
+          if (maxSizeBytes && blob.size > maxSizeBytes) {
+            const limitMb = (maxSizeBytes / 1024 / 1024).toFixed(1)
+            reject(
+              new Error(`压缩后原图体积仍超过 ${limitMb} MB, 请选择更小的图片`)
+            )
+            return
+          }
+          resolve(blob)
+        },
+        'image/webp',
+        quality
+      )
+    }
+    image.onerror = () => reject(new Error('图片加载失败'))
+    image.src = dataUrl
+  })
+}
+
 export const resizeImage = (
   file: File,
   width: number,

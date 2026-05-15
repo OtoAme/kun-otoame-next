@@ -8,6 +8,9 @@ import { kunFetchFormData } from '~/utils/kunFetch'
 import { kunErrorHandler } from '~/utils/kunErrorHandler'
 import { KunImageCropper } from '~/components/kun/cropper/KunImageCropper'
 import { dataURItoBlob } from '~/utils/dataURItoBlob'
+import { compressDataURLToWebp } from '~/utils/resizeImage'
+
+const MAX_ORIGINAL_BANNER_SIZE = 4 * 1024 * 1024
 
 interface Props {
   patchId: number
@@ -61,8 +64,15 @@ export const RewritePatchBanner = ({ patchId, onClose }: Props) => {
   }
 
   const onOriginalImageComplete = async (originalImage: string) => {
-    const imageBlob = dataURItoBlob(originalImage)
-    setBannerOriginal(imageBlob)
+    try {
+      const imageBlob = await compressDataURLToWebp(originalImage, {
+        maxSizeBytes: MAX_ORIGINAL_BANNER_SIZE
+      })
+      setBannerOriginal(imageBlob)
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : '原图处理失败')
+      setBannerOriginal(null)
+    }
   }
 
   return (

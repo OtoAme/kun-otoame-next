@@ -29,6 +29,7 @@ export const FileUploadContainer = ({
 }: Props) => {
   const { isOpen, onOpen, onClose } = useDisclosure()
   const currentUserRole = useUserStore((state) => state.user.role)
+  const currentUserMoemoepoint = useUserStore((state) => state.user.moemoepoint)
   const [fileData, setFileData] = useState<FileStatus | null>(null)
 
   const handleCaptchaSuccess = async (
@@ -91,6 +92,11 @@ export const FileUploadContainer = ({
       toast.error(
         `文件大小超出限制: ${fileSizeMB.toFixed(3)} MB, 最大允许大小为 100 MB`
       )
+      return
+    }
+
+    if (currentUserRole < 3 && currentUserMoemoepoint < 20) {
+      toast.error('仅限萌萌点大于 20 的用户才可以发布资源')
       return
     }
 
