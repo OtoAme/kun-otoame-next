@@ -16,6 +16,15 @@ import {
 import type { Patch } from '~/types/api/patch'
 import { KunRating } from '~/components/kun/Rating'
 import { KunLoading } from '~/components/kun/Loading'
+import { semanticChipProps } from '~/utils/semanticColor'
+
+const recommendTokenMap = {
+  strong_no: 'recommend-strong-no',
+  no: 'recommend-no',
+  neutral: 'recommend-neutral',
+  yes: 'recommend-yes',
+  strong_yes: 'recommend-strong-yes'
+} as const
 
 const RatingDistributionChart = dynamic(
   () =>
@@ -67,7 +76,9 @@ export const PatchRatingSummaryBadge = ({ patch }: Props) => {
   return (
     <div className="flex items-center gap-3">
       <KunRating readOnly valueMax={10} value={avg} />
-      <span className="text-warning font-bold text-xl">{avg}</span>
+      <span className="text-[hsl(var(--kun-rating-star))] font-bold text-xl">
+        {avg}
+      </span>
       <span className="w-px h-4 bg-default-200" />
 
       <Popover
@@ -96,18 +107,12 @@ export const PatchRatingSummaryBadge = ({ patch }: Props) => {
 
           <div className="mt-3 flex flex-wrap gap-2">
             {KUN_GALGAME_RATING_RECOMMEND_CONST.map((k) => {
-              const color =
-                k === 'strong_no'
-                  ? 'danger'
-                  : k === 'no'
-                    ? 'warning'
-                    : k === 'neutral'
-                      ? 'default'
-                      : k === 'yes'
-                        ? 'success'
-                        : 'secondary'
               return (
-                <Chip key={k} size="sm" color={color as any} variant="flat">
+                <Chip
+                  key={k}
+                  size="sm"
+                  {...semanticChipProps(recommendTokenMap[k])}
+                >
                   {KUN_GALGAME_RATING_RECOMMEND_MAP[k]} {rec[k] ?? 0}
                 </Chip>
               )

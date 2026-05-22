@@ -30,8 +30,9 @@ export const ApplySuccess = () => {
             className="flex items-center justify-center rounded-full size-20"
           >
             <BadgeCheck
-              className="size-20 text-primary-foreground"
-              fill="#006FEE"
+              className="size-20 text-primary"
+              fill="currentColor"
+              stroke="hsl(var(--heroui-primary-foreground))"
             />
           </motion.div>
 

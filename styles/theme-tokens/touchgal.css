@@ -1,0 +1,100 @@
+:root,
+html[data-kun-theme='touchgal'] {
+  /* HSL fragments generated from @heroui/theme commonColors. */
+  --kun-brand-50: 213 92% 95%;
+  --kun-brand-100: 212 92% 90%;
+  --kun-brand-200: 212 92% 79%;
+  --kun-brand-300: 212 92% 69%;
+  --kun-brand-400: 212 92% 58%;
+  --kun-brand-500: 212 100% 47%;
+  --kun-brand-600: 212 100% 38%;
+  --kun-brand-700: 212 100% 29%;
+  --kun-brand-800: 212 100% 19%;
+  --kun-brand-900: 212 100% 10%;
+  --kun-brand-default: var(--kun-brand-500);
+  --kun-brand-foreground: 0 0% 100%;
+  --kun-accent-50: 270 62% 95%;
+  --kun-accent-100: 270 59% 89%;
+  --kun-accent-200: 270 59% 79%;
+  --kun-accent-300: 270 59% 68%;
+  --kun-accent-400: 270 59% 58%;
+  --kun-accent-500: 270 67% 47%;
+  --kun-accent-600: 270 67% 38%;
+  --kun-accent-700: 270 67% 28%;
+  --kun-accent-800: 270 67% 19%;
+  --kun-accent-900: 270 67% 9%;
+  --kun-accent-default: var(--kun-accent-500);
+  --kun-accent-foreground: 0 0% 100%;
+  --kun-focus: 212 100% 47%;
+  --kun-progress-color: var(--kun-brand-default);
+
+  --kun-color-resource-type: var(--heroui-primary);
+  --kun-color-resource-type-text: var(--heroui-primary-600);
+  --kun-color-resource-type-fg: var(--heroui-primary-foreground);
+  --kun-color-resource-language: var(--heroui-secondary);
+  --kun-color-resource-language-text: var(--heroui-secondary-600);
+  --kun-color-resource-platform: var(--heroui-success);
+  --kun-color-resource-platform-text: var(--heroui-success-700);
+  --kun-color-content-sfw: var(--heroui-success);
+  --kun-color-content-sfw-text: var(--heroui-success-700);
+  --kun-color-content-nsfw: var(--heroui-danger);
+  --kun-color-content-nsfw-text: var(--heroui-danger-600);
+  --kun-color-recommend-strong-yes: var(--heroui-secondary);
+  --kun-color-recommend-strong-yes-text: var(--heroui-secondary-600);
+  --kun-color-recommend-yes: var(--heroui-success);
+  --kun-color-recommend-yes-text: var(--heroui-success-700);
+  --kun-color-recommend-neutral: var(--heroui-default);
+  --kun-color-recommend-neutral-text: var(--heroui-default-700);
+  --kun-color-recommend-no: var(--heroui-warning);
+  --kun-color-recommend-no-text: var(--heroui-warning-600);
+  --kun-color-recommend-strong-no: var(--heroui-danger);
+  --kun-color-recommend-strong-no-text: var(--heroui-danger-600);
+  --kun-color-like: var(--heroui-danger);
+  --kun-rating-score-ss: 43 96% 56%;
+  --kun-rating-score-s: 160 84% 39%;
+  --kun-rating-score-a: 199 89% 48%;
+  --kun-rating-score-b: 27 96% 61%;
+  --kun-rating-score-c: 350 89% 60%;
+  --kun-rating-star: var(--heroui-warning);
+  --kun-rating-badge-bg: var(--heroui-warning-600);
+  --kun-rating-badge-fg: var(--heroui-background);
+
+  /* Complete CSS values: use directly as property values. */
+  --kun-card-border: none;
+  --kun-card-glow: none;
+  --kun-nav-bg: transparent;
+  --kun-nav-divider: transparent;
+  --kun-breadcrumb-bg: transparent;
+  --kun-breadcrumb-divider: transparent;
+  --kun-background-glow-rose: transparent;
+  --kun-background-glow-mint: transparent;
+  --kun-background-glow-gold: transparent;
+}
+
+html.dark[data-kun-theme='touchgal'] {
+  --kun-brand-50: 212 100% 10%;
+  --kun-brand-100: 212 100% 19%;
+  --kun-brand-200: 212 100% 29%;
+  --kun-brand-300: 212 100% 38%;
+  --kun-brand-400: 212 100% 47%;
+  --kun-brand-500: 212 92% 58%;
+  --kun-brand-600: 212 92% 69%;
+  --kun-brand-700: 212 92% 79%;
+  --kun-brand-800: 212 92% 90%;
+  --kun-brand-900: 213 92% 95%;
+  --kun-brand-default: 212 100% 47%;
+  --kun-brand-foreground: 0 0% 100%;
+  --kun-accent-50: 270 67% 9%;
+  --kun-accent-100: 270 67% 19%;
+  --kun-accent-200: 270 67% 28%;
+  --kun-accent-300: 270 67% 38%;
+  --kun-accent-400: 270 67% 47%;
+  --kun-accent-500: 270 59% 58%;
+  --kun-accent-600: 270 59% 68%;
+  --kun-accent-700: 270 59% 79%;
+  --kun-accent-800: 270 59% 89%;
+  --kun-accent-900: 270 62% 95%;
+  --kun-accent-default: 270 59% 58%;
+  --kun-accent-foreground: 0 0% 100%;
+  --kun-focus: 212 100% 47%;
+}

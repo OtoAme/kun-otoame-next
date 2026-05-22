@@ -54,8 +54,11 @@ export const ResourceLikeButton = ({ resource }: Props) => {
         className="min-w-0 px-2"
       >
         <Heart
-          fill={liked ? '#f31260' : '#00000000'}
-          className={cn('w-4 h-4', liked ? 'text-danger-500' : '')}
+          fill={liked ? 'currentColor' : 'none'}
+          className={cn(
+            'w-4 h-4',
+            liked && 'text-[hsl(var(--kun-color-like))]'
+          )}
         />
         {likeCount}
       </Button>

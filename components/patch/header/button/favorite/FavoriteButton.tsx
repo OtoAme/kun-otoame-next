@@ -39,8 +39,11 @@ export const FavoriteButton = ({ patchId, isFavorite }: Props) => {
           className="min-w-0 px-2"
         >
           <Heart
-            fill={isFavorite ? '#f31260' : 'none'}
-            className={cn('size-4', isFavorite ? 'text-danger-500' : '')}
+            fill={isFavorite ? 'currentColor' : 'none'}
+            className={cn(
+              'size-4',
+              isFavorite && 'text-[hsl(var(--kun-color-like))]'
+            )}
           />
         </Button>
       </Tooltip>

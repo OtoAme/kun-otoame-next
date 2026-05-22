@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import type { CSSProperties } from 'react'
 import { Card, CardBody, CardHeader } from '@heroui/card'
 import { Button, Chip, Tooltip, Textarea } from '@heroui/react'
 import {
@@ -20,6 +21,10 @@ import toast from 'react-hot-toast'
 import { kunFetchDelete, kunFetchPost } from '~/utils/kunFetch'
 import { RatingModal } from './RatingModal'
 import {
+  semanticChipProps,
+  type SemanticToken
+} from '~/utils/semanticColor'
+import {
   KUN_GALGAME_RATING_RECOMMEND_MAP,
   KUN_GALGAME_RATING_PLAY_STATUS_MAP,
   KUN_GALGAME_RATING_SPOILER_MAP
@@ -33,29 +38,37 @@ interface Props {
   onDeleted: (ratingId: number) => void
 }
 
-const getRecommendColor = (recommend: string) => {
+const getRecommendToken = (recommend: string): SemanticToken => {
   switch (recommend) {
     case 'strong_yes':
-      return 'success'
+      return 'recommend-strong-yes'
     case 'yes':
-      return 'primary'
+      return 'recommend-yes'
     case 'neutral':
-      return 'default'
+      return 'recommend-neutral'
     case 'no':
-      return 'warning'
+      return 'recommend-no'
     case 'strong_no':
-      return 'danger'
+      return 'recommend-strong-no'
     default:
-      return 'default'
+      return 'recommend-neutral'
   }
 }
 
-const getScoreColor = (score: number) => {
-  if (score >= 9) return 'text-amber-400'
-  if (score >= 7) return 'text-emerald-500'
-  if (score >= 5) return 'text-sky-500'
-  if (score >= 3) return 'text-orange-400'
-  return 'text-rose-500'
+const SCORE_TOKEN_STEPS = [
+  [9, '--kun-rating-score-ss'],
+  [7, '--kun-rating-score-s'],
+  [5, '--kun-rating-score-a'],
+  [3, '--kun-rating-score-b'],
+  [0, '--kun-rating-score-c']
+] as const
+
+const getScoreToken = (score: number) => {
+  for (const [threshold, token] of SCORE_TOKEN_STEPS) {
+    if (score >= threshold) return token
+  }
+
+  return '--kun-rating-score-c'
 }
 
 export const RatingCard = ({
@@ -135,8 +148,7 @@ export const RatingCard = ({
                 <span className="flex items-center gap-1.5">
                   <span>{formatTimeDifference(rating.created)}</span>
                   <Chip
-                    color={getRecommendColor(rating.recommend)}
-                    variant="flat"
+                    {...semanticChipProps(getRecommendToken(rating.recommend))}
                     size="sm"
                     className="h-5 px-1.5"
                   >
@@ -160,7 +172,12 @@ export const RatingCard = ({
           />
         </div>
         <div
-          className={`flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-default-100 dark:bg-default-50/10 ${getScoreColor(rating.overall)}`}
+          className="flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-default-100 dark:bg-default-50/10 text-[hsl(var(--kun-rating-score-current))]"
+          style={
+            {
+              '--kun-rating-score-current': `var(${getScoreToken(rating.overall)})`
+            } as CSSProperties
+          }
         >
           <Star className="size-3.5" fill="currentColor" strokeWidth={0} />
           <span className="text-lg font-bold tabular-nums leading-none">

@@ -1,3 +1,4 @@
+@import './theme-tokens/touchgal.css';
 @import './theme-tokens/otoame.css';
 
 .kun-layout-shell {
@@ -31,7 +32,7 @@
   position: relative;
 }
 
-html[data-kun-theme='otoame'] {
+html[data-kun-theme] {
   --heroui-primary-50: var(--kun-brand-50);
   --heroui-primary-100: var(--kun-brand-100);
   --heroui-primary-200: var(--kun-brand-200);
@@ -42,7 +43,7 @@ html[data-kun-theme='otoame'] {
   --heroui-primary-700: var(--kun-brand-700);
   --heroui-primary-800: var(--kun-brand-800);
   --heroui-primary-900: var(--kun-brand-900);
-  --heroui-primary: var(--kun-brand-500);
+  --heroui-primary: var(--kun-brand-default, var(--kun-brand-500));
   --heroui-primary-foreground: var(--kun-brand-foreground);
   --heroui-secondary-50: var(--kun-accent-50);
   --heroui-secondary-100: var(--kun-accent-100);
@@ -54,9 +55,18 @@ html[data-kun-theme='otoame'] {
   --heroui-secondary-700: var(--kun-accent-700);
   --heroui-secondary-800: var(--kun-accent-800);
   --heroui-secondary-900: var(--kun-accent-900);
-  --heroui-secondary: var(--kun-accent-500);
+  --heroui-secondary: var(--kun-accent-default, var(--kun-accent-500));
   --heroui-secondary-foreground: var(--kun-accent-foreground);
   --heroui-focus: var(--kun-focus);
+}
+
+html.dark[data-kun-theme] {
+  --kun-color-resource-platform-text: var(--heroui-success);
+  --kun-color-content-sfw-text: var(--heroui-success);
+  --kun-color-content-nsfw-text: var(--heroui-danger-500);
+  --kun-color-recommend-yes-text: var(--heroui-success);
+  --kun-color-recommend-no-text: var(--heroui-warning);
+  --kun-color-recommend-strong-no-text: var(--heroui-danger-500);
 }
 
 html[data-kun-theme='otoame'] .kun-theme-background {

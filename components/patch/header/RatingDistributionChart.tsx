@@ -29,8 +29,8 @@ export const RatingDistributionChart = ({ data }: Props) => {
       >
         <defs>
           <linearGradient id="ratingBar" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="hsl(var(--heroui-warning))" />
-            <stop offset="100%" stopColor="hsl(var(--heroui-warning) / 0.7)" />
+            <stop offset="0%" stopColor="hsl(var(--kun-rating-star))" />
+            <stop offset="100%" stopColor="hsl(var(--kun-rating-star) / 0.7)" />
           </linearGradient>
         </defs>
         <CartesianGrid vertical={false} strokeDasharray="3 3" />
@@ -52,7 +52,7 @@ export const RatingDistributionChart = ({ data }: Props) => {
           labelFormatter={(l) => `评分 ${l}`}
           contentStyle={{
             backgroundColor: 'hsl(var(--heroui-content1))',
-            border: '1px solid hsl(var(--heroui-border))',
+            border: '1px solid hsl(var(--heroui-divider))',
             borderRadius: '0.5rem',
             color: 'hsl(var(--heroui-foreground))',
             fontSize: '0.75rem'

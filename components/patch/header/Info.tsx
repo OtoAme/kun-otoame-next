@@ -16,6 +16,7 @@ import { EditBanner } from './EditBanner'
 import { BannerImage } from './BannerImage'
 import { PatchRatingSummaryBadge } from './RatingSummaryBadge'
 import type { Patch } from '~/types/api/patch'
+import { semanticChipProps } from '~/utils/semanticColor'
 
 interface PatchHeaderInfoProps {
   patch: Patch
@@ -43,8 +44,11 @@ export const PatchHeaderInfo = ({
               </h1>
               <Tooltip content={GALGAME_AGE_LIMIT_DETAIL[patch.contentLimit]}>
                 <Chip
-                  color={patch.contentLimit === 'sfw' ? 'success' : 'danger'}
-                  variant="flat"
+                  {...semanticChipProps(
+                    patch.contentLimit === 'sfw'
+                      ? 'content-sfw'
+                      : 'content-nsfw'
+                  )}
                 >
                   {GALGAME_AGE_LIMIT_MAP[patch.contentLimit]}
                 </Chip>

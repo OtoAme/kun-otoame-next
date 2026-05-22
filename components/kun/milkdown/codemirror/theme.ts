@@ -3,29 +3,37 @@ import { HighlightStyle, syntaxHighlighting } from '@codemirror/language'
 import { tags as t } from '@lezer/highlight'
 import type { Extension } from '@codemirror/state'
 
+const hslVar = (token: string, alpha?: number) =>
+  alpha == null ? `hsl(var(${token}))` : `hsl(var(${token}) / ${alpha})`
+
 // Enhanced color palette with NextUI tokens
 const colors = {
-  primary: 'hsl(var(--heroui-primary-500))',
-  primaryLight: 'hsl(var(--heroui-primary-400))',
-  primaryDark: 'hsl(var(--heroui-primary-600))',
-  secondary: 'hsl(var(--heroui-secondary-500))',
-  secondaryLight: 'hsl(var(--heroui-secondary-400))',
-  success: 'hsl(var(--heroui-success-500))',
-  successLight: 'hsl(var(--heroui-success-400))',
-  warning: 'hsl(var(--heroui-warning-500))',
-  warningLight: 'hsl(var(--heroui-warning-400))',
-  danger: 'hsl(var(--heroui-danger-500))',
-  dangerLight: 'hsl(var(--heroui-danger-400))',
-  foreground: 'hsl(var(--heroui-foreground-500))',
-  background: 'hsl(var(--heroui-background-100))',
-  backgroundAlpha: 'hsl(var(--heroui-background-100) / 0.7)',
-  overlay: 'hsl(var(--heroui-overlay-200))',
-  overlayLight: 'hsl(var(--heroui-overlay-100))',
-  divider: 'hsl(var(--heroui-divider))',
-  content1: 'hsl(var(--heroui-content1))',
-  content2: 'hsl(var(--heroui-content2))',
-  content3: 'hsl(var(--heroui-content3))',
-  content4: 'hsl(var(--heroui-content4))'
+  primary: hslVar('--heroui-primary-500'),
+  primaryLight: hslVar('--heroui-primary-400'),
+  primaryDark: hslVar('--heroui-primary-600'),
+  secondary: hslVar('--heroui-secondary-500'),
+  secondaryLight: hslVar('--heroui-secondary-400'),
+  success: hslVar('--heroui-success-500'),
+  successLight: hslVar('--heroui-success-400'),
+  warning: hslVar('--heroui-warning-500'),
+  warningLight: hslVar('--heroui-warning-400'),
+  danger: hslVar('--heroui-danger-500'),
+  dangerLight: hslVar('--heroui-danger-400'),
+  foreground: hslVar('--heroui-foreground'),
+  background: hslVar('--heroui-background'),
+  backgroundAlpha: hslVar('--heroui-background', 0.7),
+  overlay: hslVar('--heroui-default-200'),
+  overlayLight: hslVar('--heroui-default-100'),
+  divider: hslVar('--heroui-divider'),
+  content1: hslVar('--heroui-content1'),
+  content2: hslVar('--heroui-content2'),
+  content3: hslVar('--heroui-content3'),
+  content4: hslVar('--heroui-content4'),
+  primaryLightAlpha: hslVar('--heroui-primary-400', 0.31),
+  primaryAlpha: hslVar('--heroui-primary-500', 0.25),
+  primarySoftAlpha: hslVar('--heroui-primary-500', 0.13),
+  content1Alpha: hslVar('--heroui-content1', 0.19),
+  warningAlpha: hslVar('--heroui-warning-500', 0.19)
 }
 
 export const kunCMTheme = () => {
@@ -83,25 +91,25 @@ export const kunCMTheme = () => {
     },
 
     '.cm-searchMatch': {
-      backgroundColor: `${colors.primaryLight}50`,
+      backgroundColor: colors.primaryLightAlpha,
       outline: `1px solid ${colors.primaryLight}`,
       borderRadius: '2px'
     },
     '.cm-searchMatch.cm-searchMatch-selected': {
-      backgroundColor: `${colors.primary}40`
+      backgroundColor: colors.primaryAlpha
     },
 
     '.cm-activeLine': {
-      backgroundColor: `${colors.content1}30`,
+      backgroundColor: colors.content1Alpha,
       borderRadius: '0.375rem'
     },
     '.cm-selectionMatch': {
-      backgroundColor: `${colors.primary}20`,
+      backgroundColor: colors.primarySoftAlpha,
       borderRadius: '2px'
     },
 
     '.cm-matchingBracket, .cm-nonmatchingBracket': {
-      backgroundColor: `${colors.warning}30`,
+      backgroundColor: colors.warningAlpha,
       outline: 'none',
       borderRadius: '2px',
       padding: '0 1px',

@@ -10,6 +10,7 @@ html[data-kun-theme='otoame'] {
   --kun-brand-700: 346 61% 42%;
   --kun-brand-800: 343 54% 34%;
   --kun-brand-900: 340 48% 28%;
+  --kun-brand-default: var(--kun-brand-500);
   --kun-brand-foreground: 0 0% 100%;
   --kun-accent-50: 170 58% 96%;
   --kun-accent-100: 170 56% 90%;
@@ -21,6 +22,7 @@ html[data-kun-theme='otoame'] {
   --kun-accent-700: 176 61% 30%;
   --kun-accent-800: 177 58% 24%;
   --kun-accent-900: 178 52% 19%;
+  --kun-accent-default: var(--kun-accent-500);
   --kun-accent-foreground: 0 0% 100%;
   --kun-focus: 40 92% 58%;
   --kun-progress-color: var(--kun-brand-500);
@@ -49,6 +51,7 @@ html.dark[data-kun-theme='otoame'] {
   --kun-brand-700: 346 86% 80%;
   --kun-brand-800: 343 90% 88%;
   --kun-brand-900: 342 100% 95%;
+  --kun-brand-default: var(--kun-brand-500);
   --kun-brand-foreground: 340 48% 12%;
   --kun-accent-50: 178 42% 16%;
   --kun-accent-100: 177 46% 20%;
@@ -60,6 +63,7 @@ html.dark[data-kun-theme='otoame'] {
   --kun-accent-700: 171 72% 76%;
   --kun-accent-800: 170 76% 86%;
   --kun-accent-900: 170 80% 94%;
+  --kun-accent-default: var(--kun-accent-500);
   --kun-accent-foreground: 178 52% 11%;
   --kun-focus: 42 92% 64%;
   --kun-card-border: 1px solid hsla(42, 78%, 62%, 0.24);

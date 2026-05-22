@@ -5,6 +5,7 @@ import clsx from 'clsx'
 import { Star } from 'lucide-react'
 
 export type RatingColor =
+  | 'rating'
   | 'default'
   | 'primary'
   | 'secondary'
@@ -35,6 +36,8 @@ const sizeMap = { sm: 18, md: 22, lg: 28 } as const
 
 const colorClass = (color: RatingColor) => {
   switch (color) {
+    case 'rating':
+      return 'text-[hsl(var(--kun-rating-star))]'
     case 'primary':
       return 'text-primary'
     case 'secondary':
@@ -66,7 +69,7 @@ export const KunRating = (props: RatingProps) => {
     onChange,
     onHoverChange,
     size = 'md',
-    color = 'warning',
+    color = 'rating',
     className,
     itemClassName,
     id,
@@ -224,7 +227,7 @@ export const KunRating = (props: RatingProps) => {
                 <Star
                   className={clsx(
                     'w-full h-full absolute inset-0',
-                    'text-warning',
+                    colorCls,
                     'pointer-events-none'
                   )}
                   strokeWidth={1.75}

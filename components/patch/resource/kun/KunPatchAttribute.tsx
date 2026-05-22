@@ -5,6 +5,7 @@ import {
   sortResourceTypes
 } from '~/constants/resource'
 import { cn } from '~/utils/cn'
+import { semanticChipProps } from '~/utils/semanticColor'
 
 const SUPPORTED_TYPE_MAP: Record<string, string> = {
   all: '全部类型',
@@ -39,17 +40,21 @@ export const KunPatchAttribute = ({
   return (
     <div className={cn('flex flex-wrap gap-2', className)}>
       {sortResourceTypes(types).map((type) => (
-        <Chip key={type} variant="flat" color="primary" size={size}>
+        <Chip key={type} {...semanticChipProps('resource-type')} size={size}>
           {SUPPORTED_TYPE_MAP[type]}
         </Chip>
       ))}
       {languages.map((lang) => (
-        <Chip key={lang} variant="flat" color="secondary" size={size}>
+        <Chip key={lang} {...semanticChipProps('resource-language')} size={size}>
           {SUPPORTED_LANGUAGE_MAP[lang]}
         </Chip>
       ))}
       {platforms.map((platform) => (
-        <Chip key={platform} variant="flat" color="success" size={size}>
+        <Chip
+          key={platform}
+          {...semanticChipProps('resource-platform')}
+          size={size}
+        >
           {SUPPORTED_PLATFORM_MAP[platform]}
         </Chip>
       ))}
