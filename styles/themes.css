@@ -1,0 +1,198 @@
+@import './theme-tokens/otoame.css';
+
+.kun-layout-shell {
+  isolation: isolate;
+  overflow-x: clip;
+}
+
+.kun-theme-background {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 180ms ease;
+}
+
+.kun-top-bar {
+  transition:
+    background-color 180ms ease,
+    border-color 180ms ease,
+    box-shadow 180ms ease;
+}
+
+.kun-breadcrumb-bar {
+  transition:
+    background-color 180ms ease,
+    box-shadow 180ms ease;
+}
+
+.kun-game-card {
+  position: relative;
+}
+
+html[data-kun-theme='otoame'] {
+  --heroui-primary-50: var(--kun-brand-50);
+  --heroui-primary-100: var(--kun-brand-100);
+  --heroui-primary-200: var(--kun-brand-200);
+  --heroui-primary-300: var(--kun-brand-300);
+  --heroui-primary-400: var(--kun-brand-400);
+  --heroui-primary-500: var(--kun-brand-500);
+  --heroui-primary-600: var(--kun-brand-600);
+  --heroui-primary-700: var(--kun-brand-700);
+  --heroui-primary-800: var(--kun-brand-800);
+  --heroui-primary-900: var(--kun-brand-900);
+  --heroui-primary: var(--kun-brand-500);
+  --heroui-primary-foreground: var(--kun-brand-foreground);
+  --heroui-secondary-50: var(--kun-accent-50);
+  --heroui-secondary-100: var(--kun-accent-100);
+  --heroui-secondary-200: var(--kun-accent-200);
+  --heroui-secondary-300: var(--kun-accent-300);
+  --heroui-secondary-400: var(--kun-accent-400);
+  --heroui-secondary-500: var(--kun-accent-500);
+  --heroui-secondary-600: var(--kun-accent-600);
+  --heroui-secondary-700: var(--kun-accent-700);
+  --heroui-secondary-800: var(--kun-accent-800);
+  --heroui-secondary-900: var(--kun-accent-900);
+  --heroui-secondary: var(--kun-accent-500);
+  --heroui-secondary-foreground: var(--kun-accent-foreground);
+  --heroui-focus: var(--kun-focus);
+}
+
+html[data-kun-theme='otoame'] .kun-theme-background {
+  opacity: 1;
+  background:
+    radial-gradient(
+      circle at 12% 10%,
+      var(--kun-background-glow-rose),
+      transparent 28rem
+    ),
+    radial-gradient(
+      circle at 88% 12%,
+      var(--kun-background-glow-mint),
+      transparent 24rem
+    ),
+    radial-gradient(
+      circle at 50% 100%,
+      var(--kun-background-glow-gold),
+      transparent 30rem
+    ),
+    linear-gradient(
+      135deg,
+      hsl(345 100% 99%),
+      hsl(170 70% 98%) 54%,
+      hsl(42 100% 98%)
+    );
+}
+
+html.dark[data-kun-theme='otoame'] .kun-theme-background {
+  background:
+    radial-gradient(
+      circle at 12% 10%,
+      var(--kun-background-glow-rose),
+      transparent 28rem
+    ),
+    radial-gradient(
+      circle at 88% 12%,
+      var(--kun-background-glow-mint),
+      transparent 24rem
+    ),
+    radial-gradient(
+      circle at 50% 100%,
+      var(--kun-background-glow-gold),
+      transparent 30rem
+    ),
+    linear-gradient(
+      135deg,
+      hsl(340 34% 8%),
+      hsl(207 30% 10%) 58%,
+      hsl(174 32% 9%)
+    );
+}
+
+html[data-kun-theme='otoame'] .kun-top-bar {
+  background: var(--kun-nav-bg);
+  box-shadow:
+    inset 0 -1px var(--kun-nav-divider),
+    0 1px 0 hsla(347, 78%, 60%, 0.05);
+}
+
+html[data-kun-theme='otoame'] .kun-breadcrumb-bar {
+  background: var(--kun-breadcrumb-bg);
+  box-shadow:
+    inset 0 1px var(--kun-breadcrumb-divider),
+    inset 0 -1px var(--kun-breadcrumb-divider);
+}
+
+@media (min-width: 768px) {
+  @supports (
+    (-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))
+  ) {
+    html[data-kun-theme='otoame'] .kun-top-bar {
+      -webkit-backdrop-filter: saturate(140%) blur(14px);
+      backdrop-filter: saturate(140%) blur(14px);
+    }
+  }
+}
+
+html[data-kun-theme='otoame'] .kun-game-card {
+  overflow: hidden;
+  isolation: isolate;
+  border: var(--kun-card-border);
+  box-shadow: 0 1px 0 hsla(40, 82%, 58%, 0.08);
+}
+
+html[data-kun-theme='otoame'] .kun-game-card > * {
+  position: relative;
+  z-index: 2;
+}
+
+html[data-kun-theme='otoame'] .kun-game-card::before,
+html[data-kun-theme='otoame'] .kun-game-card::after {
+  position: absolute;
+  z-index: 1;
+  pointer-events: none;
+  content: '';
+}
+
+html[data-kun-theme='otoame'] .kun-game-card::before {
+  inset: 0;
+  border-radius: inherit;
+  box-shadow: var(--kun-card-glow);
+  opacity: 0.72;
+}
+
+html[data-kun-theme='otoame'] .kun-game-card::after {
+  top: 0;
+  right: 16px;
+  left: 16px;
+  height: 2px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    hsla(40, 82%, 58%, 0.65),
+    hsla(347, 78%, 68%, 0.45),
+    transparent
+  );
+  opacity: 0.78;
+}
+
+@media (hover: hover) and (prefers-reduced-motion: no-preference) {
+  html[data-kun-theme='otoame'] .kun-game-card,
+  html[data-kun-theme='otoame'] .kun-game-card::before {
+    transition:
+      border-color 180ms ease,
+      box-shadow 180ms ease,
+      opacity 180ms ease;
+  }
+
+  html[data-kun-theme='otoame'] .kun-game-card:hover {
+    box-shadow:
+      0 1px 0 hsla(40, 82%, 58%, 0.12),
+      0 14px 32px hsla(347, 72%, 70%, 0.18);
+  }
+
+  html[data-kun-theme='otoame'] .kun-game-card:hover::before {
+    opacity: 1;
+  }
+}

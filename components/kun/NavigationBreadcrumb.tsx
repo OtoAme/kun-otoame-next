@@ -32,7 +32,7 @@ export const KunNavigationBreadcrumb = () => {
   }
 
   return (
-    <div className="w-full my-4 bg-background/60 backdrop-blur-lg">
+    <div className="kun-breadcrumb-bar w-full my-4 bg-background/60 backdrop-blur-lg">
       <nav aria-label="Breadcrumb" className="px-3 mx-auto sm:px-6 max-w-7xl">
         <ol className="flex flex-wrap items-center gap-1 text-sm text-foreground/60">
           {items.map((item, index) => {

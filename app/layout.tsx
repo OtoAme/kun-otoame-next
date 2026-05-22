@@ -7,6 +7,8 @@ import { KunFooter } from '~/components/kun/Footer'
 import { KunNavigationBreadcrumb } from '~/components/kun/NavigationBreadcrumb'
 import { generateKunMetadata, kunViewport } from './metadata'
 import { KunBackToTop } from '~/components/kun/BackToTop'
+import { SiteThemeScript } from '~/components/kun/theme/SiteThemeScript'
+import { DEFAULT_KUN_SITE_THEME } from '~/constants/theme'
 import { kunMoyuMoe } from '~/config/moyu-moe'
 import type { Metadata, Viewport } from 'next'
 import '~/styles/index.css'
@@ -24,13 +26,20 @@ export default function RootLayout({
   prefetchDNS(kunMoyuMoe.domain.imageBed)
 
   return (
-    <html lang="zh-Hans" suppressHydrationWarning>
-      {process.env.KUN_VISUAL_NOVEL_TEST_SITE_LABEL && (
-        <head>
-          <meta name="robots" content="noindex,nofollow" />
-          <meta name="googlebot" content="noindex,nofollow" />
-        </head>
-      )}
+    <html
+      lang="zh-Hans"
+      data-kun-theme={DEFAULT_KUN_SITE_THEME}
+      suppressHydrationWarning
+    >
+      <head>
+        <SiteThemeScript />
+        {process.env.KUN_VISUAL_NOVEL_TEST_SITE_LABEL && (
+          <>
+            <meta name="robots" content="noindex,nofollow" />
+            <meta name="googlebot" content="noindex,nofollow" />
+          </>
+        )}
+      </head>
 
       <body>
         <Script
@@ -51,15 +60,21 @@ export default function RootLayout({
           `}
         </Script>
         <Providers>
-          <div className="relative flex flex-col items-center justify-center min-h-screen bg-radial">
-            <KunTopBar />
-            <KunNavigationBreadcrumb />
-            <div className="flex min-h-[calc(100dvh-256px)] w-full max-w-7xl grow px-3 sm:px-6">
-              {children}
-              <Toaster />
+          <div className="kun-layout-shell relative min-h-screen bg-radial">
+            <div
+              className="kun-theme-background pointer-events-none"
+              aria-hidden
+            />
+            <div className="relative z-10 flex min-h-screen flex-col items-center justify-center">
+              <KunTopBar />
+              <KunNavigationBreadcrumb />
+              <div className="flex min-h-[calc(100dvh-256px)] w-full max-w-7xl grow px-3 sm:px-6">
+                {children}
+                <Toaster />
+              </div>
+              <KunBackToTop />
+              <KunFooter />
             </div>
-            <KunBackToTop />
-            <KunFooter />
           </div>
         </Providers>
       </body>

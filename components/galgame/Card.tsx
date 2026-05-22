@@ -23,7 +23,7 @@ export const GalgameCard = ({ patch, openOnNewTab = true }: Props) => {
       as={Link}
       href={`/${patch.uniqueId}`}
       target={openOnNewTab ? '_blank' : '_self'}
-      className="w-full border border-default-100 dark:border-default-200"
+      className="kun-game-card w-full border border-default-100 dark:border-default-200"
     >
       <CardHeader className="p-0">
         <div className="relative w-full mx-auto overflow-hidden text-center rounded-t-lg opacity-90">
