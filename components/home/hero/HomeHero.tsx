@@ -18,26 +18,38 @@ export const HomeHero = () => {
     <div className="w-full mx-auto">
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-0 sm:gap-6 min-h-[300px]">
         <div className="flex-col justify-center hidden space-y-2 sm:flex sm:space-y-6">
-          <Card className="h-full border-none bg-gradient-to-br from-primary-500/20 via-secondary-500/20 to-success-500/20">
-            <CardBody className="flex justify-between">
+          <Card className="kun-home-hero-card h-full border-none bg-gradient-to-br from-primary-500/20 via-secondary-500/20 to-success-500/20">
+            <div aria-hidden className="kun-home-hero-flower-slot" />
+            <CardBody className="kun-home-hero-content flex justify-between">
               <div className="flex items-center gap-2">
-                <Sparkles className="w-5 h-5 text-primary-500" />
-                <Chip color="primary" variant="flat">
+                <Sparkles className="kun-home-hero-sparkle w-5 h-5 text-primary-500" />
+                <Chip
+                  color="primary"
+                  variant="flat"
+                  classNames={{
+                    base: 'kun-home-hero-welcome-chip',
+                    content: 'kun-home-hero-welcome-chip-content'
+                  }}
+                >
                   欢迎来到 OtoAme
                 </Chip>
               </div>
 
               <div className="space-y-4">
-                <h1 className="py-1 text-3xl font-bold text-transparent xl:text-4xl bg-gradient-to-r from-primary-500 to-secondary-500 bg-clip-text">
+                <h1 className="kun-home-hero-title py-1 text-3xl font-bold text-transparent xl:text-4xl bg-gradient-to-r from-primary-500 to-secondary-500 bg-clip-text">
                   一站式乙女游戏文化社区
                 </h1>
-                <p className="text-md text-default-600">
+                <p className="kun-home-hero-subtitle text-md text-default-600">
                   高质量视觉小说分享站 · 永久免费 · 开源
                 </p>
               </div>
 
               <div className="flex items-center gap-2">
-                <RandomGalgameButton color="primary" variant="solid">
+                <RandomGalgameButton
+                  color="primary"
+                  variant="solid"
+                  className="kun-home-hero-primary-button"
+                >
                   随机一部游戏
                 </RandomGalgameButton>
                 <Tooltip showArrow content="Telegram 频道">
@@ -47,6 +59,7 @@ export const HomeHero = () => {
                     href={kunMoyuMoe.domain.telegram_group}
                     variant="flat"
                     color="secondary"
+                    className="kun-home-hero-icon-button"
                   >
                     <Telegram />
                   </Button>
@@ -58,6 +71,7 @@ export const HomeHero = () => {
                     href="mailto:contact@otoame.com"
                     variant="flat"
                     color="secondary"
+                    className="kun-home-hero-icon-button"
                   >
                     <Mail className="w-5 h-5" />
                   </Button>

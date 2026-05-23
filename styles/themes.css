@@ -32,6 +32,35 @@
   position: relative;
 }
 
+.kun-home-hero-card {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+}
+
+.kun-home-hero-content {
+  position: relative;
+  z-index: 2;
+}
+
+.kun-home-hero-flower-slot {
+  position: absolute;
+  right: var(--kun-hero-flower-right, clamp(0.75rem, 3vw, 2rem));
+  bottom: var(--kun-hero-flower-bottom, 0);
+  z-index: 1;
+  width: var(--kun-hero-flower-width, clamp(9rem, 28vw, 18rem));
+  max-width: var(--kun-hero-flower-max-width, 48%);
+  aspect-ratio: var(--kun-hero-flower-aspect-ratio, 1);
+  pointer-events: none;
+  background-image: var(--kun-hero-flower-image, none);
+  background-repeat: no-repeat;
+  background-position: var(--kun-hero-flower-position, right bottom);
+  background-size: var(--kun-hero-flower-background-size, contain);
+  opacity: var(--kun-hero-flower-opacity, 0);
+  transform: var(--kun-hero-flower-transform, none);
+  transform-origin: var(--kun-hero-flower-transform-origin, right bottom);
+}
+
 html[data-kun-theme] {
   --heroui-primary-50: var(--kun-brand-50);
   --heroui-primary-100: var(--kun-brand-100);
@@ -69,57 +98,6 @@ html.dark[data-kun-theme] {
   --kun-color-recommend-strong-no-text: var(--heroui-danger-500);
 }
 
-html[data-kun-theme='otoame'] .kun-theme-background {
-  opacity: 1;
-  background:
-    radial-gradient(
-      circle at 12% 10%,
-      var(--kun-background-glow-rose),
-      transparent 28rem
-    ),
-    radial-gradient(
-      circle at 88% 12%,
-      var(--kun-background-glow-mint),
-      transparent 24rem
-    ),
-    radial-gradient(
-      circle at 50% 100%,
-      var(--kun-background-glow-gold),
-      transparent 30rem
-    ),
-    linear-gradient(
-      135deg,
-      hsl(345 100% 99%),
-      hsl(170 70% 98%) 54%,
-      hsl(42 100% 98%)
-    );
-}
-
-html.dark[data-kun-theme='otoame'] .kun-theme-background {
-  background:
-    radial-gradient(
-      circle at 12% 10%,
-      var(--kun-background-glow-rose),
-      transparent 28rem
-    ),
-    radial-gradient(
-      circle at 88% 12%,
-      var(--kun-background-glow-mint),
-      transparent 24rem
-    ),
-    radial-gradient(
-      circle at 50% 100%,
-      var(--kun-background-glow-gold),
-      transparent 30rem
-    ),
-    linear-gradient(
-      135deg,
-      hsl(340 34% 8%),
-      hsl(207 30% 10%) 58%,
-      hsl(174 32% 9%)
-    );
-}
-
 html[data-kun-theme='otoame'] .kun-top-bar {
   background: var(--kun-nav-bg);
   box-shadow:
@@ -127,11 +105,54 @@ html[data-kun-theme='otoame'] .kun-top-bar {
     0 1px 0 hsla(347, 78%, 60%, 0.05);
 }
 
-html[data-kun-theme='otoame'] .kun-breadcrumb-bar {
-  background: var(--kun-breadcrumb-bg);
-  box-shadow:
-    inset 0 1px var(--kun-breadcrumb-divider),
-    inset 0 -1px var(--kun-breadcrumb-divider);
+html[data-kun-theme='otoame'] .kun-home-hero-card {
+  background: var(--kun-hero-card-bg);
+  box-shadow: var(--kun-hero-card-shadow);
+}
+
+html[data-kun-theme='otoame'] .kun-home-hero-card,
+html[data-kun-theme='otoame'] .kun-home-hero-card * {
+  font-family: var(--kun-hero-font-family) !important;
+}
+
+html[data-kun-theme='otoame'] .kun-home-hero-title {
+  background-image: var(--kun-hero-title-gradient);
+}
+
+html[data-kun-theme='otoame'] .kun-home-hero-subtitle {
+  color: var(--kun-hero-subtitle);
+}
+
+html[data-kun-theme='otoame'] .kun-home-hero-sparkle {
+  color: var(--kun-hero-eyebrow-icon);
+}
+
+html[data-kun-theme='otoame'] .kun-home-hero-welcome-chip {
+  background: var(--kun-hero-eyebrow-bg) !important;
+}
+
+html[data-kun-theme='otoame'] .kun-home-hero-welcome-chip-content {
+  color: var(--kun-hero-eyebrow-text) !important;
+}
+
+html[data-kun-theme='otoame'] .kun-home-hero-primary-button {
+  color: var(--kun-hero-button-fg) !important;
+  background: var(--kun-hero-button-bg) !important;
+  box-shadow: var(--kun-hero-button-shadow) !important;
+}
+
+html[data-kun-theme='otoame'] .kun-home-hero-primary-button svg {
+  color: currentColor;
+}
+
+html[data-kun-theme='otoame'] .kun-home-hero-icon-button {
+  color: var(--kun-hero-icon-button-text) !important;
+  background: var(--kun-hero-icon-button-bg) !important;
+  box-shadow: var(--kun-hero-icon-button-shadow) !important;
+}
+
+html[data-kun-theme='otoame'] .kun-home-hero-icon-button svg {
+  color: currentColor;
 }
 
 @media (min-width: 768px) {

@@ -33,11 +33,119 @@ html[data-kun-theme='otoame'] {
     0 0 0 1px hsla(347, 78%, 72%, 0.14), 0 18px 42px hsla(347, 72%, 70%, 0.18);
   --kun-nav-bg: hsla(0, 0%, 100%, 0.74);
   --kun-nav-divider: hsla(40, 82%, 58%, 0.22);
-  --kun-breadcrumb-bg: hsla(0, 0%, 100%, 0.58);
-  --kun-breadcrumb-divider: hsla(347, 78%, 72%, 0.14);
-  --kun-background-glow-rose: hsla(346, 90%, 76%, 0.26);
-  --kun-background-glow-mint: hsla(174, 64%, 70%, 0.18);
-  --kun-background-glow-gold: hsla(42, 92%, 70%, 0.18);
+  /* HeroCard 字体: 系统宋体栈。跨系统不保证都有宋体, 最后回退到 serif。 */
+  --kun-hero-font-family:
+    'Songti SC', 'Noto Serif CJK SC', 'Noto Serif SC', 'Source Han Serif SC',
+    'Source Han Serif CN', 'STSong', '华文宋体', 'SimSun', '宋体', 'NSimSun',
+    'FangSong', '仿宋', serif;
+  /*
+   * HeroCard 背景: 单个大光圈, 圆心在左上外侧, 颜色从白 -> 粉 -> 紫。
+   * circle farthest-corner at X Y:
+   * - X 控制圆心水平位置, 0% 是左边缘, 100% 是右边缘, 负数在卡片左侧外。
+   * - Y 控制圆心垂直位置, 0% 是上边缘, 100% 是下边缘, 负数在卡片上方外。
+   */
+  --kun-hero-card-bg: radial-gradient(
+    circle farthest-corner at -18% -34%,
+    hsl(0 0% 100%) 0%,
+    hsl(0 0% 100%) 24%,
+    hsl(335, 86%, 99%) 60%,
+    hsl(283, 100%, 96%) 100%
+  );
+  /* HeroCard 阴影: 第一层模拟描边, 不占布局空间; 后两层轻微抬起。 */
+  --kun-hero-card-shadow:
+    inset 0 0 0 1px hsla(334, 76%, 88%, 0.56),
+    inset 0 1px 0 hsla(0, 0%, 100%, 0.9), 0 16px 46px hsla(332, 72%, 82%, 0.14);
+  /* HeroCard 标题渐变: 左紫 -> 中粉 -> 右玫红。 */
+  --kun-hero-title-gradient: linear-gradient(
+    92deg,
+    hsl(266 36% 52%) 0%,
+    hsl(300 43% 58%) 48%,
+    hsl(340 72% 62%) 100%
+  );
+  /* HeroCard 副标题颜色: 正文级灰紫。 */
+  --kun-hero-subtitle: hsl(258 12% 30%);
+  /* 欢迎 chip 背景: 很浅的粉紫雾面。 */
+  --kun-hero-eyebrow-bg: hsla(281, 78%, 97%, 0.86);
+  /* 欢迎 chip 文字: 比背景更沉, 保持可读。 */
+  --kun-hero-eyebrow-text: hsl(268 32% 52%);
+  /* 欢迎 chip 图标: 粉色强调点。 */
+  --kun-hero-eyebrow-icon: hsl(306, 75%, 83%);
+
+  /* 主按钮背景: 左粉右紫。 */
+  --kun-hero-button-bg: linear-gradient(90deg, #e85f9a 0%, #bd70d0 100%);
+  /* 主按钮文字色: 白色。 */
+  --kun-hero-button-fg: hsl(0 0% 100%);
+  /* 主按钮光晕: 用 box-shadow 模拟描边和柔光, 不影响按钮位置。 */
+  --kun-hero-button-shadow:
+    inset 0 0 0 1px hsla(0, 0%, 100%, 0.34),
+    inset 0 1px 0 hsla(0, 0%, 100%, 0.32), 0 10px 22px hsla(326, 68%, 72%, 0.24);
+  /* 图标按钮背景: 半透明白底。 */
+  --kun-hero-icon-button-bg: hsla(0, 0%, 100%, 0.72);
+  /* 图标按钮文字/图标色: 灰紫。 */
+  --kun-hero-icon-button-text: hsl(282 28% 42%);
+  /* 图标按钮光晕: 第一层是粉色细描边, 后两层是内高光和外柔影, 不影响按钮位置。 */
+  --kun-hero-icon-button-shadow:
+    inset 0 0 0 1px hsla(326, 66%, 88%, 0.72),
+    inset 0 1px 0 hsla(0, 0%, 100%, 0.82), 0 10px 22px hsla(326, 58%, 82%, 0.24);
+
+  /* 花朵素材图片: 改成 none 可隐藏, 推荐后续换成本地 public 下的 url(...)。 */
+  --kun-hero-flower-image: url(https://img.otoame.top/posts/2026/05/9b01f92ebfdaaab30f4821165fe478b2.avif);
+  /* 花朵素材透明度: 0 隐藏, 1 完全不透明。 */
+  --kun-hero-flower-opacity: 0.85;
+  /*
+   * 花朵素材右侧位置:
+   * - 以卡片右边缘为基准。
+   * - clamp(min, preferred, max) 三个参数分别是最小值、理想响应值、最大值。
+   * - 0.75rem: 最小右侧间距, 窄屏时不会小于这个值。
+   * - 3vw: 理想右侧间距, 会随视口宽度变化。
+   * - 2rem: 最大右侧间距, 宽屏时不会超过这个值。
+   * - 最终算出的值越大, 素材越向左收进卡片; 改成负值才会向右溢出。
+   */
+  --kun-hero-flower-right: 0;
+  /*
+   * 花朵素材底部位置:
+   * - 以卡片底边为基准。
+   * - 正值表示素材底边离卡片底边更远, 也就是向上移动。
+   * - 负值表示素材越过卡片底边, 也就是向下溢出。
+   */
+  --kun-hero-flower-bottom: 0;
+  /*
+   * 花朵素材槽位宽度:
+   * - 第一个值是最小宽度, 第二个值是随视口变化的理想宽度, 第三个值是最大宽度。
+   * - 调大这一项会整体放大素材显示区域。
+   */
+  --kun-hero-flower-width: clamp(10rem, 28vw, 19rem);
+  /* 花朵素材最大占卡片宽度: 防止窄屏或小卡片中过大。 */
+  --kun-hero-flower-max-width: 60%;
+  /*
+   * 花朵素材槽位比例:
+   * - 写法是 宽 / 高。
+   * - 1 等于 1 / 1 正方形, 4 / 3 是横向矩形, 3 / 4 是纵向矩形。
+   */
+  --kun-hero-flower-aspect-ratio: 1;
+  /*
+   * 花朵素材在槽位内的位置:
+   * - 第一个关键词/数值控制水平对齐: left / center / right。
+   * - 第二个关键词/数值控制垂直对齐: top / center / bottom。
+   * - 例如 right bottom 表示贴住槽位右下角。
+   */
+  --kun-hero-flower-position: right bottom;
+  /* 花朵素材填充方式: contain 保持完整, cover 填满槽位可能裁切。 */
+  --kun-hero-flower-background-size: contain;
+  /*
+   * 花朵素材微调:
+   * - translate(X, Y): X 控制水平移动, 正值向右, 负值向左; Y 控制垂直移动, 正值向下, 负值向上。
+   * - scale(N): N 控制缩放, 1 是原尺寸, 0.8 是缩小到 80%, 1.1 是放大到 110%。
+   * - 同时调位置和缩放时写在同一行, 例如 translate(1rem, -0.5rem) scale(0.9)。
+   * - 推荐顺序是先 translate 再 scale, 这样 X/Y 更接近直觉上的位移。
+   */
+  --kun-hero-flower-transform: translate(0, 0) scale(0.8);
+  /*
+   * 花朵素材变换锚点:
+   * - right bottom 表示缩放时固定右下角, 适合让素材贴住 HeroCard 右下角。
+   * - center 表示围绕中心缩放, 会在 scale 小于 1 时把右下角往里缩。
+   */
+  --kun-hero-flower-transform-origin: right bottom;
 }
 
 html.dark[data-kun-theme='otoame'] {
@@ -71,9 +179,48 @@ html.dark[data-kun-theme='otoame'] {
     0 0 0 1px hsla(347, 82%, 68%, 0.12), 0 18px 42px hsla(347, 72%, 22%, 0.24);
   --kun-nav-bg: hsla(340, 34%, 10%, 0.72);
   --kun-nav-divider: hsla(42, 82%, 62%, 0.16);
-  --kun-breadcrumb-bg: hsla(340, 34%, 10%, 0.5);
-  --kun-breadcrumb-divider: hsla(347, 72%, 62%, 0.12);
-  --kun-background-glow-rose: hsla(346, 76%, 46%, 0.18);
-  --kun-background-glow-mint: hsla(174, 56%, 46%, 0.12);
-  --kun-background-glow-gold: hsla(42, 80%, 58%, 0.12);
+  /* Dark HeroCard 背景: 同样的大光圈结构, 但改为深色底。 */
+  --kun-hero-card-bg: radial-gradient(
+    circle farthest-corner at -18% -34%,
+    hsl(340 34% 14%) 0%,
+    hsl(340 34% 14%) 24%,
+    hsl(332 42% 18%) 58%,
+    hsl(276 36% 22%) 100%
+  );
+  /* Dark HeroCard 阴影: 第一层模拟描边, 不占布局空间。 */
+  --kun-hero-card-shadow:
+    inset 0 0 0 1px hsla(334, 64%, 66%, 0.2),
+    inset 0 1px 0 hsla(340, 80%, 88%, 0.08),
+    0 20px 56px hsla(340, 52%, 8%, 0.34);
+  /* Dark HeroCard 标题渐变: 保留紫粉到玫红的方向。 */
+  --kun-hero-title-gradient: linear-gradient(
+    92deg,
+    hsl(270 56% 76%) 0%,
+    hsl(306 56% 72%) 48%,
+    hsl(346 78% 72%) 100%
+  );
+  /* Dark HeroCard 副标题颜色: 偏浅灰紫。 */
+  --kun-hero-subtitle: hsl(334 24% 82%);
+  /* Dark 欢迎 chip 背景: 深色雾面。 */
+  --kun-hero-eyebrow-bg: hsla(282, 36%, 26%, 0.64);
+  /* Dark 欢迎 chip 文字: 保持明亮。 */
+  --kun-hero-eyebrow-text: hsl(286 50% 82%);
+  /* Dark 欢迎 chip 图标: 偏亮粉色。 */
+  --kun-hero-eyebrow-icon: hsl(330 74% 72%);
+
+  /* Dark 主按钮背景: 左粉右紫, 需要更亮就提高两个 hex 的亮度。 */
+  --kun-hero-button-bg: linear-gradient(90deg, #d9508a 0%, #a960c0 100%);
+  /* Dark 主按钮光晕: 保持不占位的模拟描边和柔影。 */
+  --kun-hero-button-shadow:
+    inset 0 0 0 1px hsla(338, 86%, 84%, 0.2),
+    inset 0 1px 0 hsla(0, 0%, 100%, 0.16), 0 10px 22px hsla(334, 68%, 20%, 0.36);
+  /* Dark 图标按钮背景: 深色半透明底。 */
+  --kun-hero-icon-button-bg: hsla(331, 36%, 16%, 0.66);
+  /* Dark 图标按钮文字/图标色: 浅灰紫。 */
+  --kun-hero-icon-button-text: hsl(296 42% 82%);
+  /* Dark 图标按钮光晕: 暗粉描边 + 微弱外影。 */
+  --kun-hero-icon-button-shadow:
+    inset 0 0 0 1px hsla(326, 46%, 58%, 0.32),
+    inset 0 1px 0 hsla(340, 80%, 88%, 0.08),
+    0 10px 22px hsla(340, 52%, 8%, 0.24);
 }
