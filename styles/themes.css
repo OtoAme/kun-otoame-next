@@ -89,6 +89,21 @@ html[data-kun-theme] {
   --heroui-focus: var(--kun-focus);
 }
 
+html[data-kun-theme='otoame'] {
+  --heroui-success-50: var(--kun-success-50);
+  --heroui-success-100: var(--kun-success-100);
+  --heroui-success-200: var(--kun-success-200);
+  --heroui-success-300: var(--kun-success-300);
+  --heroui-success-400: var(--kun-success-400);
+  --heroui-success-500: var(--kun-success-500);
+  --heroui-success-600: var(--kun-success-600);
+  --heroui-success-700: var(--kun-success-700);
+  --heroui-success-800: var(--kun-success-800);
+  --heroui-success-900: var(--kun-success-900);
+  --heroui-success: var(--kun-success-default, var(--kun-success-500));
+  --heroui-success-foreground: var(--kun-success-foreground);
+}
+
 html.dark[data-kun-theme] {
   --kun-color-resource-platform-text: var(--heroui-success);
   --kun-color-content-sfw-text: var(--heroui-success);
@@ -98,11 +113,16 @@ html.dark[data-kun-theme] {
   --kun-color-recommend-strong-no-text: var(--heroui-danger-500);
 }
 
+html.dark[data-kun-theme='otoame'] {
+  --kun-color-resource-language-text: var(--kun-accent-500);
+  --kun-color-resource-platform-text: var(--kun-success-500);
+  --kun-color-company-text: var(--kun-color-resource-language-text);
+  --kun-color-content-sfw-text: var(--kun-success-500);
+}
+
 html[data-kun-theme='otoame'] .kun-top-bar {
   background: var(--kun-nav-bg);
-  box-shadow:
-    inset 0 -1px var(--kun-nav-divider),
-    0 1px 0 hsla(347, 78%, 60%, 0.05);
+  box-shadow: var(--kun-top-bar-shadow, inset 0 -1px var(--kun-nav-divider));
 }
 
 html[data-kun-theme='otoame'] .kun-top-nav-link,
@@ -118,6 +138,25 @@ html[data-kun-theme='otoame'] .kun-home-section-more-button * {
 html[data-kun-theme='otoame'] .kun-home-section-title {
   font-family: var(--kun-hero-font-family) !important;
   font-weight: var(--kun-hero-title-font-weight) !important;
+}
+
+html[data-kun-theme='otoame'] .kun-user-primary-flat {
+  color: var(--kun-user-primary-flat-text) !important;
+  background: var(--kun-user-primary-flat-bg) !important;
+  box-shadow: var(--kun-user-primary-flat-shadow) !important;
+}
+
+html[data-kun-theme='otoame'] .kun-user-primary-flat svg,
+html[data-kun-theme='otoame'] .kun-user-primary-flat * {
+  color: currentColor;
+}
+
+html[data-kun-theme='otoame'] .kun-user-primary-link {
+  color: var(--kun-user-primary-link) !important;
+}
+
+html[data-kun-theme='otoame'] .kun-user-stat-icon {
+  color: var(--kun-user-primary-icon) !important;
 }
 
 html[data-kun-theme='otoame'] .kun-home-hero-card {
@@ -310,7 +349,7 @@ html[data-kun-theme='otoame'] .kun-game-card {
   overflow: hidden;
   isolation: isolate;
   border: var(--kun-card-border);
-  box-shadow: 0 1px 0 hsla(40, 82%, 58%, 0.08);
+  box-shadow: var(--kun-card-resting-shadow);
 }
 
 html[data-kun-theme='otoame'] .kun-game-card > * {
@@ -338,13 +377,7 @@ html[data-kun-theme='otoame'] .kun-game-card::after {
   right: 16px;
   left: 16px;
   height: 2px;
-  background: linear-gradient(
-    90deg,
-    transparent,
-    hsla(40, 82%, 58%, 0.65),
-    hsla(347, 78%, 68%, 0.45),
-    transparent
-  );
+  background: var(--kun-card-top-gleam);
   opacity: 0.78;
 }
 
@@ -368,9 +401,7 @@ html[data-kun-theme='otoame'] .kun-game-card::after {
   }
 
   html[data-kun-theme='otoame'] .kun-game-card:hover {
-    box-shadow:
-      0 1px 0 hsla(40, 82%, 58%, 0.12),
-      0 14px 32px hsla(347, 72%, 70%, 0.18);
+    box-shadow: var(--kun-card-hover-shadow);
   }
 
   html[data-kun-theme='otoame'] .kun-game-card:hover::before {

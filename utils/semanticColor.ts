@@ -21,16 +21,29 @@ const semanticTokenDefs = {
   'resource-language': {
     color: 'var(--kun-color-resource-language)',
     text: 'var(--kun-color-resource-language-text)',
+    bg: 'var(--kun-color-resource-language-bg)',
+    shadow: 'var(--kun-color-resource-language-shadow)',
     bgAlpha: '0.2'
   },
   'resource-platform': {
     color: 'var(--kun-color-resource-platform)',
     text: 'var(--kun-color-resource-platform-text)',
+    bg: 'var(--kun-color-resource-platform-bg)',
+    shadow: 'var(--kun-color-resource-platform-shadow)',
+    bgAlpha: '0.2'
+  },
+  company: {
+    color: 'var(--kun-color-company)',
+    text: 'var(--kun-color-company-text)',
+    bg: 'var(--kun-color-company-bg)',
+    shadow: 'var(--kun-color-company-shadow)',
     bgAlpha: '0.2'
   },
   'content-sfw': {
     color: 'var(--kun-color-content-sfw)',
     text: 'var(--kun-color-content-sfw-text)',
+    bg: 'var(--kun-color-content-sfw-bg)',
+    shadow: 'var(--kun-color-content-sfw-shadow)',
     bgAlpha: '0.2'
   },
   'content-nsfw': {

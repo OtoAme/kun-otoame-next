@@ -10,6 +10,7 @@ import { Company } from '~/types/api/company'
 import { PatchCompanySelector } from './PatchCompanySelector'
 import { useUserStore } from '~/store/userStore'
 import { kunFetchPost } from '~/utils/kunFetch'
+import { semanticChipProps } from '~/utils/semanticColor'
 import toast from 'react-hot-toast'
 
 interface Props {
@@ -82,7 +83,7 @@ export const PatchCompany: FC<Props> = ({
             content={`${company.count} 个 OtomeGame 属于此会社`}
           >
             <Link href={`/company/${company.id}`}>
-              <Chip color="secondary" variant="flat">
+              <Chip {...semanticChipProps('company')}>
                 {company.name}
                 {` +${company.count}`}
               </Chip>

@@ -28,7 +28,12 @@ export const UserProfile = ({ user }: { user: UserInfo }) => {
             <div className="flex flex-col items-center gap-1">
               <h4 className="text-2xl font-bold">{user.name}</h4>
               <div className="mt-1 flex flex-wrap items-center justify-center gap-2">
-                <Chip color="primary" variant="flat" size="sm">
+                <Chip
+                  color="primary"
+                  variant="flat"
+                  size="sm"
+                  className="kun-user-primary-flat"
+                >
                   {USER_ROLE_MAP[user.role]}
                 </Chip>
                 {user.status === 2 && (
@@ -55,7 +60,7 @@ export const UserProfile = ({ user }: { user: UserInfo }) => {
               <LinkIcon className="size-4 text-default-400" />
               <a
                 href={`${kunMoyuMoe.domain.main}/user/${user.id}`}
-                className="text-small text-primary hover:underline"
+                className="kun-user-primary-link text-small text-primary hover:underline"
                 target="_blank"
                 rel="noopener noreferrer"
               >

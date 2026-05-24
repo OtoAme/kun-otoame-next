@@ -48,7 +48,7 @@ export const KUN_SITE_THEME_REGISTRY = {
     label: '乙女主题',
     status: 'enabled',
     availability: 'free',
-    previewColor: '#E85D8A',
+    previewColor: '#EB6FA9',
     fallback: 'touchgal',
     sort: 20
   }

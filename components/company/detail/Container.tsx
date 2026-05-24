@@ -20,6 +20,7 @@ import { formatTimeDifference } from '~/utils/time'
 import { kunFetchGet } from '~/utils/kunFetch'
 import { SUPPORTED_LANGUAGE_MAP } from '~/constants/resource'
 import { useUserStore } from '~/store/userStore'
+import { semanticChipProps } from '~/utils/semanticColor'
 import type { CompanyDetail } from '~/types/api/company'
 import type { SortField, SortOrder } from '~/components/galgame/_sort'
 import type { FC } from 'react'
@@ -342,7 +343,7 @@ export const CompanyDetailContainer: FC<Props> = ({ initialCompany }) => {
           <h2 className="mb-2 text-lg font-semibold">别名</h2>
           <div className="flex flex-wrap gap-2">
             {company.alias.map((alias, index) => (
-              <Chip key={index} variant="flat" color="secondary">
+              <Chip key={index} {...semanticChipProps('company')}>
                 {alias}
               </Chip>
             ))}
@@ -381,7 +382,7 @@ export const CompanyDetailContainer: FC<Props> = ({ initialCompany }) => {
           <h2 className="mb-4 text-lg font-semibold">父会社</h2>
           <div className="flex flex-wrap gap-2">
             {company.parent_brand.map((brand, index) => (
-              <Chip key={index} variant="flat" color="primary">
+              <Chip key={index} {...semanticChipProps('company')}>
                 {brand}
               </Chip>
             ))}

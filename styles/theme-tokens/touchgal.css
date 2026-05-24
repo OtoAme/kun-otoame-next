@@ -35,10 +35,24 @@ html[data-kun-theme='touchgal'] {
   --kun-color-resource-type-fg: var(--heroui-primary-foreground);
   --kun-color-resource-language: var(--heroui-secondary);
   --kun-color-resource-language-text: var(--heroui-secondary-600);
+  --kun-color-resource-language-bg: hsl(
+    var(--kun-color-resource-language) / 0.2
+  );
+  --kun-color-resource-language-shadow: none;
   --kun-color-resource-platform: var(--heroui-success);
   --kun-color-resource-platform-text: var(--heroui-success-700);
+  --kun-color-resource-platform-bg: hsl(
+    var(--kun-color-resource-platform) / 0.2
+  );
+  --kun-color-resource-platform-shadow: none;
+  --kun-color-company: var(--heroui-secondary);
+  --kun-color-company-text: var(--heroui-secondary-600);
+  --kun-color-company-bg: hsl(var(--kun-color-company) / 0.2);
+  --kun-color-company-shadow: none;
   --kun-color-content-sfw: var(--heroui-success);
   --kun-color-content-sfw-text: var(--heroui-success-700);
+  --kun-color-content-sfw-bg: hsl(var(--kun-color-content-sfw) / 0.2);
+  --kun-color-content-sfw-shadow: none;
   --kun-color-content-nsfw: var(--heroui-danger);
   --kun-color-content-nsfw-text: var(--heroui-danger-600);
   --kun-color-recommend-strong-yes: var(--heroui-secondary);

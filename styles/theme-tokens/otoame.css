@@ -1,51 +1,121 @@
 html[data-kun-theme='otoame'] {
-  /* HSL fragments: use inside hsl(var(--kun-*)); do not wrap these values. */
-  --kun-brand-50: 342 100% 97%;
-  --kun-brand-100: 342 96% 93%;
-  --kun-brand-200: 343 92% 86%;
-  --kun-brand-300: 344 88% 77%;
-  --kun-brand-400: 346 82% 68%;
-  --kun-brand-500: 347 78% 60%;
-  --kun-brand-600: 347 66% 51%;
-  --kun-brand-700: 346 61% 42%;
-  --kun-brand-800: 343 54% 34%;
-  --kun-brand-900: 340 48% 28%;
+  /*
+   * otoame 语义色映射:
+   * - HeroUI primary / 原主题蓝色 -> 签到粉色。
+   * - HeroUI secondary / 原主题紫色 -> 粉色。
+   * - HeroUI success / 原主题绿色 -> 淡蓝色。
+   * 下方是 HSL fragment, 用在 hsl(var(--kun-*)) 内部, 不要再包一层 hsl()。
+   */
+  --kun-brand-50: 332 100% 99%;
+  --kun-brand-100: 332 98% 96%;
+  --kun-brand-200: 332 94% 91%;
+  --kun-brand-300: 332 88% 85%;
+  --kun-brand-400: 332 82% 76%;
+  --kun-brand-500: 332 76% 68%;
+  --kun-brand-600: 332 68% 56%;
+  --kun-brand-700: 332 60% 46%;
+  --kun-brand-800: 332 52% 36%;
+  --kun-brand-900: 332 46% 27%;
   --kun-brand-default: var(--kun-brand-500);
   --kun-brand-foreground: 0 0% 100%;
-  --kun-accent-50: 170 58% 96%;
-  --kun-accent-100: 170 56% 90%;
-  --kun-accent-200: 171 54% 81%;
-  --kun-accent-300: 172 52% 69%;
-  --kun-accent-400: 173 50% 57%;
-  --kun-accent-500: 174 53% 45%;
-  --kun-accent-600: 175 58% 37%;
-  --kun-accent-700: 176 61% 30%;
-  --kun-accent-800: 177 58% 24%;
-  --kun-accent-900: 178 52% 19%;
+
+  --kun-accent-50: 322 100% 99%;
+  --kun-accent-100: 322 96% 96%;
+  --kun-accent-200: 320 88% 91%;
+  --kun-accent-300: 318 76% 84%;
+  --kun-accent-400: 318 66% 74%;
+  --kun-accent-500: 318 58% 64%;
+  --kun-accent-600: 318 52% 52%;
+  --kun-accent-700: 318 46% 42%;
+  --kun-accent-800: 318 40% 32%;
+  --kun-accent-900: 320 36% 24%;
   --kun-accent-default: var(--kun-accent-500);
   --kun-accent-foreground: 0 0% 100%;
-  --kun-focus: 40 92% 58%;
-  --kun-progress-color: var(--kun-brand-500);
+
+  --kun-success-50: 206 100% 99%;
+  --kun-success-100: 206 96% 96%;
+  --kun-success-200: 206 88% 91%;
+  --kun-success-300: 206 76% 84%;
+  --kun-success-400: 207 66% 70%;
+  --kun-success-500: 207 58% 56%;
+  --kun-success-600: 207 52% 46%;
+  --kun-success-700: 208 48% 38%;
+  --kun-success-800: 210 44% 30%;
+  --kun-success-900: 212 42% 22%;
+  --kun-success-default: var(--kun-success-500);
+  --kun-success-foreground: 0 0% 100%;
+
+  --kun-focus: var(--kun-brand-default);
+  --kun-progress-color: var(--kun-brand-default);
 
   /* 资源类型标签: 淡紫 -> 淡粉渐变底 + 紫色文字, 对齐首页 game card 的 PC游戏标签。 */
-  --kun-color-resource-type: 256 62% 65%;
-  --kun-color-resource-type-text: 256 44% 55%;
+  --kun-color-resource-type: var(--kun-brand-default);
+  --kun-color-resource-type-text: 258 52% 58%;
   --kun-color-resource-type-bg: linear-gradient(
     90deg,
     hsl(252 100% 97%) 0%,
-    hsl(325 100% 97%) 100%
+    hsl(326 100% 96%) 100%
   );
   --kun-color-resource-type-shadow:
-    inset 0 0 0 1px hsla(258, 58%, 84%, 0.5),
+    inset 0 0 0 1px hsla(258, 66%, 82%, 0.58),
     inset 0 1px 0 hsla(0, 0%, 100%, 0.5);
   --kun-color-resource-type-fg: 0 0% 100%;
+  /* 资源语言标签: 使用 HeroCard 下方“发布页”按钮的淡粉系列。 */
+  --kun-color-resource-language: var(--kun-accent-default);
+  --kun-color-resource-language-text: var(--kun-accent-600);
+  --kun-color-resource-language-bg: hsl(var(--kun-accent-50) / 0.94);
+  --kun-color-resource-language-shadow:
+    inset 0 0 0 1px hsl(var(--kun-accent-300) / 0.72),
+    inset 0 1px 0 hsla(0, 0%, 100%, 0.88);
+  /* 资源平台标签: 使用 HeroCard 下方“文档”按钮的淡蓝系列。 */
+  --kun-color-resource-platform: var(--kun-success-default);
+  --kun-color-resource-platform-text: var(--kun-success-600);
+  --kun-color-resource-platform-bg: var(--kun-hero-nav-docs-bg);
+  --kun-color-resource-platform-shadow: var(--kun-hero-nav-docs-shadow);
+  /* 会社标签: 复用首页资源语言标签的淡粉系列。 */
+  --kun-color-company: var(--kun-color-resource-language);
+  --kun-color-company-text: var(--kun-color-resource-language-text);
+  --kun-color-company-bg: var(--kun-color-resource-language-bg);
+  --kun-color-company-shadow: var(--kun-color-resource-language-shadow);
+  /* SFW 标签: 使用 HeroCard 下方“文档”按钮的淡蓝系列。 */
+  --kun-color-content-sfw: var(--kun-success-default);
+  --kun-color-content-sfw-text: var(--kun-success-600);
+  --kun-color-content-sfw-bg: var(--kun-hero-nav-docs-bg);
+  --kun-color-content-sfw-shadow: var(--kun-hero-nav-docs-shadow);
 
   /* Complete CSS values: use directly as property values. */
-  --kun-card-border: 1px solid hsla(40, 82%, 58%, 0.32);
+  --kun-card-border: 1px solid hsl(var(--kun-brand-200) / 0.5);
   --kun-card-glow:
-    0 0 0 1px hsla(347, 78%, 72%, 0.14), 0 18px 42px hsla(347, 72%, 70%, 0.18);
+    0 0 0 1px hsla(258, 66%, 82%, 0.14),
+    0 18px 42px hsl(var(--kun-brand-300) / 0.2);
+  --kun-card-resting-shadow: 0 1px 0 hsl(var(--kun-brand-200) / 0.18);
+  --kun-card-top-gleam: linear-gradient(
+    90deg,
+    transparent,
+    hsla(258, 66%, 82%, 0.58),
+    hsl(var(--kun-brand-300) / 0.5),
+    transparent
+  );
+  --kun-card-hover-shadow:
+    0 1px 0 hsl(var(--kun-brand-200) / 0.2),
+    0 14px 32px hsl(var(--kun-brand-300) / 0.2);
   --kun-nav-bg: hsla(0, 0%, 100%, 0.74);
-  --kun-nav-divider: hsla(40, 82%, 58%, 0.22);
+  --kun-nav-divider: hsl(var(--kun-brand-200) / 0.28);
+  --kun-top-bar-shadow:
+    inset 0 -1px var(--kun-nav-divider), 0 1px 0 hsl(var(--kun-brand-300) / 0.1);
+  /*
+   * 用户页 primary accent:
+   * - icon 复用更亮、更饱和的 brand-500。
+   * - link 使用更深一阶的 brand-700, 和浅底拉开层次。
+   * - flat 背景比 HeroUI 默认 primary/20 更浅, 避免大面积粉底过重。
+   */
+  --kun-user-primary-icon: hsl(var(--kun-brand-500));
+  --kun-user-primary-link: hsl(var(--kun-brand-700));
+  --kun-user-primary-flat-bg: hsl(var(--kun-brand-50) / 0.74);
+  --kun-user-primary-flat-text: hsl(var(--kun-brand-600));
+  --kun-user-primary-flat-shadow:
+    inset 0 0 0 1px hsl(var(--kun-brand-300) / 0.56),
+    inset 0 1px 0 hsla(0, 0%, 100%, 0.88);
   /* HeroCard 字体: 系统宋体栈。跨系统不保证都有宋体, 最后回退到 serif。 */
   --kun-hero-font-family:
     'Songti SC', 'Noto Serif CJK SC', 'Noto Serif SC', 'Source Han Serif SC',
@@ -97,7 +167,8 @@ html[data-kun-theme='otoame'] {
     0 1px 0 hsla(334, 76%, 88%, 0.28), 0 16px 36px hsla(332, 72%, 82%, 0.22);
   /* 移动端首页游戏卡片阴影: 使用原 PC hover 的柔粉阴影, 只在首页小屏启用。 */
   --kun-home-mobile-game-card-shadow:
-    0 1px 0 hsla(40, 82%, 58%, 0.12), 0 14px 32px hsla(347, 72%, 70%, 0.18);
+    0 1px 0 hsl(var(--kun-brand-200) / 0.18),
+    0 14px 32px hsl(var(--kun-brand-300) / 0.2);
   /* HeroCard 标题渐变: 左紫 -> 中粉 -> 右玫红。 */
   --kun-hero-title-gradient: linear-gradient(
     92deg,
@@ -134,30 +205,30 @@ html[data-kun-theme='otoame'] {
   /* HeroCard 下方按钮: 标签按钮, 淡紫底 + 紫色图标文字。 */
   --kun-hero-nav-tags-bg: hsla(260, 100%, 98%, 0.9);
   --kun-hero-nav-tags-hover-bg: hsla(260, 100%, 99%, 0.98);
-  --kun-hero-nav-tags-text: hsl(256 42% 62%);
+  --kun-hero-nav-tags-text: hsl(258 52% 58%);
   --kun-hero-nav-tags-shadow:
-    inset 0 0 0 1px hsla(258, 54%, 88%, 0.74),
+    inset 0 0 0 1px hsla(258, 66%, 84%, 0.76),
     inset 0 1px 0 hsla(0, 0%, 100%, 0.86);
   /* 首页移动端随机游戏按钮: 标签按钮的加深版, 仍保留淡紫雾面质感。 */
   --kun-home-random-bg: hsla(260, 78%, 94%, 0.94);
   --kun-home-random-hover-bg: hsla(260, 82%, 96%, 0.98);
-  --kun-home-random-text: hsl(258 46% 50%);
+  --kun-home-random-text: hsl(258 56% 48%);
   --kun-home-random-shadow:
     inset 0 0 0 1px hsla(258, 58%, 82%, 0.84),
     inset 0 1px 0 hsla(0, 0%, 100%, 0.86);
   /* HeroCard 下方按钮: 发布页按钮, 淡粉底 + 粉紫文字。 */
-  --kun-hero-nav-publish-bg: hsla(322, 100%, 98%, 0.9);
-  --kun-hero-nav-publish-hover-bg: hsla(322, 100%, 99%, 0.98);
-  --kun-hero-nav-publish-text: hsl(312 34% 62%);
+  --kun-hero-nav-publish-bg: hsl(var(--kun-accent-50) / 0.9);
+  --kun-hero-nav-publish-hover-bg: hsl(var(--kun-accent-50) / 0.98);
+  --kun-hero-nav-publish-text: hsl(var(--kun-accent-600));
   --kun-hero-nav-publish-shadow:
-    inset 0 0 0 1px hsla(326, 62%, 90%, 0.76),
+    inset 0 0 0 1px hsl(var(--kun-accent-300) / 0.66),
     inset 0 1px 0 hsla(0, 0%, 100%, 0.86);
   /* HeroCard 下方按钮: 文档按钮, 淡蓝底 + 灰蓝文字。 */
-  --kun-hero-nav-docs-bg: hsla(206, 100%, 98%, 0.92);
-  --kun-hero-nav-docs-hover-bg: hsla(206, 100%, 99%, 0.98);
-  --kun-hero-nav-docs-text: hsl(207 34% 48%);
+  --kun-hero-nav-docs-bg: hsl(var(--kun-success-50) / 0.92);
+  --kun-hero-nav-docs-hover-bg: hsl(var(--kun-success-50) / 0.98);
+  --kun-hero-nav-docs-text: hsl(var(--kun-success-600));
   --kun-hero-nav-docs-shadow:
-    inset 0 0 0 1px hsla(206, 58%, 88%, 0.78),
+    inset 0 0 0 1px hsl(var(--kun-success-300) / 0.64),
     inset 0 1px 0 hsla(0, 0%, 100%, 0.86);
 
   /* 花朵素材图片: 改成 none 可隐藏, 推荐后续换成本地 public 下的 url(...)。 */
@@ -221,47 +292,87 @@ html[data-kun-theme='otoame'] {
 }
 
 html.dark[data-kun-theme='otoame'] {
-  --kun-brand-50: 341 44% 18%;
-  --kun-brand-100: 342 48% 23%;
-  --kun-brand-200: 343 53% 29%;
-  --kun-brand-300: 344 61% 38%;
-  --kun-brand-400: 346 72% 52%;
-  --kun-brand-500: 347 82% 66%;
-  --kun-brand-600: 347 84% 73%;
-  --kun-brand-700: 346 86% 80%;
-  --kun-brand-800: 343 90% 88%;
-  --kun-brand-900: 342 100% 95%;
+  --kun-brand-50: 332 46% 16%;
+  --kun-brand-100: 332 52% 24%;
+  --kun-brand-200: 332 60% 34%;
+  --kun-brand-300: 332 68% 46%;
+  --kun-brand-400: 332 76% 62%;
+  --kun-brand-500: 332 82% 82%;
+  --kun-brand-600: 332 88% 86%;
+  --kun-brand-700: 332 92% 90%;
+  --kun-brand-800: 332 98% 95%;
+  --kun-brand-900: 332 100% 99%;
   --kun-brand-default: var(--kun-brand-500);
-  --kun-brand-foreground: 340 48% 12%;
-  --kun-accent-50: 178 42% 16%;
-  --kun-accent-100: 177 46% 20%;
-  --kun-accent-200: 176 50% 26%;
-  --kun-accent-300: 175 55% 34%;
-  --kun-accent-400: 174 60% 44%;
-  --kun-accent-500: 173 64% 56%;
-  --kun-accent-600: 172 68% 66%;
-  --kun-accent-700: 171 72% 76%;
-  --kun-accent-800: 170 76% 86%;
-  --kun-accent-900: 170 80% 94%;
+  --kun-brand-foreground: 332 46% 16%;
+
+  --kun-accent-50: 320 38% 16%;
+  --kun-accent-100: 318 44% 24%;
+  --kun-accent-200: 318 50% 34%;
+  --kun-accent-300: 318 56% 46%;
+  --kun-accent-400: 318 62% 62%;
+  --kun-accent-500: 318 70% 80%;
+  --kun-accent-600: 318 76% 84%;
+  --kun-accent-700: 320 84% 89%;
+  --kun-accent-800: 322 94% 95%;
+  --kun-accent-900: 322 100% 99%;
   --kun-accent-default: var(--kun-accent-500);
-  --kun-accent-foreground: 178 52% 11%;
-  --kun-focus: 42 92% 64%;
-  --kun-color-resource-type: 256 54% 72%;
-  --kun-color-resource-type-text: 256 58% 82%;
+  --kun-accent-foreground: 320 38% 16%;
+
+  --kun-success-50: 212 46% 14%;
+  --kun-success-100: 210 52% 22%;
+  --kun-success-200: 209 58% 32%;
+  --kun-success-300: 208 62% 44%;
+  --kun-success-400: 207 66% 58%;
+  --kun-success-500: 207 72% 80%;
+  --kun-success-600: 206 78% 84%;
+  --kun-success-700: 206 86% 89%;
+  --kun-success-800: 206 96% 95%;
+  --kun-success-900: 206 100% 99%;
+  --kun-success-default: var(--kun-success-500);
+  --kun-success-foreground: 212 46% 14%;
+
+  --kun-focus: var(--kun-brand-default);
+  --kun-color-resource-type: var(--kun-brand-default);
+  --kun-color-resource-type-text: 258 64% 84%;
   --kun-color-resource-type-bg: linear-gradient(
     90deg,
-    hsla(256, 42%, 24%, 0.82) 0%,
-    hsla(326, 32%, 18%, 0.82) 100%
+    hsla(258, 52%, 26%, 0.82) 0%,
+    hsla(332, 42%, 22%, 0.82) 100%
   );
   --kun-color-resource-type-shadow:
-    inset 0 0 0 1px hsla(264, 48%, 48%, 0.58),
+    inset 0 0 0 1px hsla(264, 56%, 56%, 0.58),
     inset 0 1px 0 hsla(0, 0%, 100%, 0.08);
   --kun-color-resource-type-fg: 256 42% 14%;
-  --kun-card-border: 1px solid hsla(42, 78%, 62%, 0.24);
+  --kun-color-resource-language-text: var(--kun-accent-500);
+  --kun-color-resource-platform-text: var(--kun-success-500);
+  --kun-color-company-text: var(--kun-color-resource-language-text);
+  --kun-color-content-sfw-text: var(--kun-success-500);
+  --kun-card-border: 1px solid hsl(var(--kun-brand-300) / 0.28);
   --kun-card-glow:
-    0 0 0 1px hsla(347, 82%, 68%, 0.12), 0 18px 42px hsla(347, 72%, 22%, 0.24);
+    0 0 0 1px hsla(260, 54%, 62%, 0.14),
+    0 18px 42px hsl(var(--kun-brand-50) / 0.24);
+  --kun-card-resting-shadow: 0 1px 0 hsl(var(--kun-brand-300) / 0.14);
+  --kun-card-top-gleam: linear-gradient(
+    90deg,
+    transparent,
+    hsla(260, 54%, 62%, 0.3),
+    hsl(var(--kun-brand-300) / 0.28),
+    transparent
+  );
+  --kun-card-hover-shadow:
+    0 1px 0 hsl(var(--kun-brand-300) / 0.16),
+    0 14px 32px hsl(var(--kun-brand-50) / 0.3);
   --kun-nav-bg: hsla(340, 34%, 10%, 0.72);
-  --kun-nav-divider: hsla(42, 82%, 62%, 0.16);
+  --kun-nav-divider: hsl(var(--kun-brand-300) / 0.18);
+  --kun-top-bar-shadow:
+    inset 0 -1px var(--kun-nav-divider), 0 1px 0 hsl(var(--kun-brand-300) / 0.1);
+  --kun-user-primary-icon: hsl(var(--kun-brand-500));
+  --kun-user-primary-link: hsl(var(--kun-brand-600));
+  --kun-user-primary-flat-bg: hsl(var(--kun-brand-50) / 0.66);
+  --kun-user-primary-flat-text: hsl(var(--kun-brand-600));
+  --kun-user-primary-flat-shadow:
+    inset 0 0 0 1px hsl(var(--kun-brand-300) / 0.32),
+    inset 0 1px 0 hsla(340, 80%, 88%, 0.08);
   /* Dark HeroCard 背景: 同样的大光圈结构, 但改为深色底。 */
   --kun-hero-card-bg: radial-gradient(
     circle farthest-corner at -18% -34%,
@@ -312,19 +423,19 @@ html.dark[data-kun-theme='otoame'] {
     0 10px 22px hsla(340, 52%, 8%, 0.24);
   --kun-hero-nav-tags-bg: hsla(260, 36%, 18%, 0.66);
   --kun-hero-nav-tags-hover-bg: hsla(260, 36%, 22%, 0.78);
-  --kun-hero-nav-tags-text: hsl(262 52% 78%);
+  --kun-hero-nav-tags-text: hsl(262 64% 82%);
   --kun-hero-nav-tags-shadow:
     inset 0 0 0 1px hsla(260, 46%, 58%, 0.28),
     inset 0 1px 0 hsla(0, 0%, 100%, 0.08);
-  --kun-hero-nav-publish-bg: hsla(322, 34%, 18%, 0.66);
-  --kun-hero-nav-publish-hover-bg: hsla(322, 34%, 22%, 0.78);
-  --kun-hero-nav-publish-text: hsl(318 54% 78%);
+  --kun-hero-nav-publish-bg: hsl(var(--kun-accent-50) / 0.66);
+  --kun-hero-nav-publish-hover-bg: hsl(var(--kun-accent-100) / 0.78);
+  --kun-hero-nav-publish-text: hsl(var(--kun-accent-500));
   --kun-hero-nav-publish-shadow:
     inset 0 0 0 1px hsla(326, 46%, 58%, 0.28),
     inset 0 1px 0 hsla(0, 0%, 100%, 0.08);
-  --kun-hero-nav-docs-bg: hsla(207, 32%, 18%, 0.66);
-  --kun-hero-nav-docs-hover-bg: hsla(207, 32%, 22%, 0.78);
-  --kun-hero-nav-docs-text: hsl(207 52% 76%);
+  --kun-hero-nav-docs-bg: hsl(var(--kun-success-50) / 0.66);
+  --kun-hero-nav-docs-hover-bg: hsl(var(--kun-success-100) / 0.78);
+  --kun-hero-nav-docs-text: hsl(var(--kun-success-500));
   --kun-hero-nav-docs-shadow:
     inset 0 0 0 1px hsla(207, 42%, 58%, 0.28),
     inset 0 1px 0 hsla(0, 0%, 100%, 0.08);

@@ -19,7 +19,7 @@ export const UserStats = ({ user }: { user: UserInfo }) => {
       {stats.map((stat) => (
         <Card key={stat.label} className="w-full">
           <CardBody className="flex flex-row items-center gap-4 p-4">
-            <stat.icon className="size-8 text-primary" />
+            <stat.icon className="kun-user-stat-icon size-8 text-primary" />
             <div>
               <p className="text-xl font-bold">{stat.value}</p>
               <p className="text-small text-default-500">{stat.label}</p>

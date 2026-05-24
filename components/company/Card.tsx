@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { Card, CardBody } from '@heroui/card'
 import { Chip } from '@heroui/chip'
+import { semanticChipProps } from '~/utils/semanticColor'
 import type { Company as CompanyType } from '~/types/api/company'
 
 interface Props {
@@ -27,7 +28,7 @@ export const CompanyCard = ({ company }: Props) => {
         {company.alias.length > 0 && (
           <div className="flex flex-wrap gap-1 mt-2">
             {company.alias.map((alias, index) => (
-              <Chip key={index} size="sm" variant="flat" color="secondary">
+              <Chip key={index} size="sm" {...semanticChipProps('company')}>
                 {alias}
               </Chip>
             ))}

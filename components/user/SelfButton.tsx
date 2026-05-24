@@ -20,6 +20,7 @@ export const SelfButton = ({ user }: Props) => {
           startContent={<Pencil className="size-4" />}
           color="primary"
           variant="flat"
+          className="kun-user-primary-flat"
           fullWidth
           onPress={() => router.push('/settings/user')}
         >
