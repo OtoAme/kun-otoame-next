@@ -61,6 +61,8 @@
 ```css
 --kun-color-resource-type
 --kun-color-resource-type-text
+--kun-color-resource-type-bg
+--kun-color-resource-type-shadow
 --kun-color-resource-type-fg
 --kun-color-resource-language
 --kun-color-resource-language-text
@@ -95,7 +97,7 @@
 --kun-rating-badge-fg
 ```
 
-Flat Chip 的文字色使用 `*-text` token，用于匹配 HeroUI 原本的 `text-{color}-600/700` 行为。新增业务 Chip token 时应同时考虑 base color、flat text color，以及 solid 场景是否需要 foreground token。
+Flat Chip 的文字色使用 `*-text` token，用于匹配 HeroUI 原本的 `text-{color}-600/700` 行为。需要渐变或其它非单色背景时，可额外提供完整 CSS 值 token（如 `--kun-color-resource-type-bg`）；需要增强边缘感时，可提供不占位的阴影/描边 token（如 `--kun-color-resource-type-shadow`）。新增业务 Chip token 时应同时考虑 base color、flat text color，以及 solid 场景是否需要 foreground token。
 
 此外，`resource-type` 在详情页头部使用 `solid` 变体，因此额外有 `--kun-color-resource-type-fg`（前景文字色，默认 `var(--heroui-primary-foreground)`）。
 
@@ -243,7 +245,7 @@ const chip = <Chip {...semanticChipProps('resource-platform')}>Windows</Chip>
 </Chip>
 ```
 
-注意：主页游戏卡片底部的蓝色补丁类型标签来自 `components/kun/PatchAttribute.tsx`，应保持 flat，和重构前的 `variant="flat" color="primary"` 对齐。
+注意：主页游戏卡片底部的资源类型标签来自 `components/kun/PatchAttribute.tsx`，应保持 flat。otoame 主题通过 `--kun-color-resource-type-bg` / `--kun-color-resource-type-text` / `--kun-color-resource-type-shadow` 将它覆盖为淡紫到淡粉渐变底、紫色文字和轻描边。
 
 以下组件**不迁移**到业务 token，继续使用 HeroUI `color` prop（因为它们跟随品牌色，不需要独立控制）：
 

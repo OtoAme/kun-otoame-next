@@ -3,6 +3,8 @@ import type { CSSProperties } from 'react'
 interface SemanticTokenDef {
   color: string
   text: string
+  bg?: string
+  shadow?: string
   bgAlpha?: string
   fg?: string
 }
@@ -11,6 +13,8 @@ const semanticTokenDefs = {
   'resource-type': {
     color: 'var(--kun-color-resource-type)',
     text: 'var(--kun-color-resource-type-text)',
+    bg: 'var(--kun-color-resource-type-bg)',
+    shadow: 'var(--kun-color-resource-type-shadow)',
     fg: 'var(--kun-color-resource-type-fg)',
     bgAlpha: '0.2'
   },
@@ -94,12 +98,18 @@ export const semanticChipProps = (
     color: 'default' as const,
     classNames: {
       base:
-        '!bg-[hsl(var(--kun-semantic-color)/var(--kun-semantic-bg-alpha))]',
+        def.bg == null
+          ? '!bg-[hsl(var(--kun-semantic-color)/var(--kun-semantic-bg-alpha))]'
+          : '',
       content: '!text-[hsl(var(--kun-semantic-color-text))]'
     },
     style: {
+      background: def.bg == null ? undefined : 'var(--kun-semantic-bg)',
+      boxShadow: def.shadow == null ? undefined : 'var(--kun-semantic-shadow)',
       '--kun-semantic-color': def.color,
       '--kun-semantic-color-text': def.text,
+      '--kun-semantic-bg': def.bg,
+      '--kun-semantic-shadow': def.shadow,
       '--kun-semantic-bg-alpha': def.bgAlpha ?? '0.2'
     } as CSSProperties
   }

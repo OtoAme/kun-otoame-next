@@ -30,6 +30,8 @@ html[data-kun-theme='touchgal'] {
 
   --kun-color-resource-type: var(--heroui-primary);
   --kun-color-resource-type-text: var(--heroui-primary-600);
+  --kun-color-resource-type-bg: hsl(var(--kun-color-resource-type) / 0.2);
+  --kun-color-resource-type-shadow: none;
   --kun-color-resource-type-fg: var(--heroui-primary-foreground);
   --kun-color-resource-language: var(--heroui-secondary);
   --kun-color-resource-language-text: var(--heroui-secondary-600);

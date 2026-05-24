@@ -27,6 +27,19 @@ html[data-kun-theme='otoame'] {
   --kun-focus: 40 92% 58%;
   --kun-progress-color: var(--kun-brand-500);
 
+  /* 资源类型标签: 淡紫 -> 淡粉渐变底 + 紫色文字, 对齐首页 game card 的 PC游戏标签。 */
+  --kun-color-resource-type: 256 62% 65%;
+  --kun-color-resource-type-text: 256 44% 55%;
+  --kun-color-resource-type-bg: linear-gradient(
+    90deg,
+    hsl(252 100% 97%) 0%,
+    hsl(325 100% 97%) 100%
+  );
+  --kun-color-resource-type-shadow:
+    inset 0 0 0 1px hsla(258, 58%, 84%, 0.5),
+    inset 0 1px 0 hsla(0, 0%, 100%, 0.5);
+  --kun-color-resource-type-fg: 0 0% 100%;
+
   /* Complete CSS values: use directly as property values. */
   --kun-card-border: 1px solid hsla(40, 82%, 58%, 0.32);
   --kun-card-glow:
@@ -233,6 +246,17 @@ html.dark[data-kun-theme='otoame'] {
   --kun-accent-default: var(--kun-accent-500);
   --kun-accent-foreground: 178 52% 11%;
   --kun-focus: 42 92% 64%;
+  --kun-color-resource-type: 256 54% 72%;
+  --kun-color-resource-type-text: 256 58% 82%;
+  --kun-color-resource-type-bg: linear-gradient(
+    90deg,
+    hsla(256, 42%, 24%, 0.82) 0%,
+    hsla(326, 32%, 18%, 0.82) 100%
+  );
+  --kun-color-resource-type-shadow:
+    inset 0 0 0 1px hsla(264, 48%, 48%, 0.58),
+    inset 0 1px 0 hsla(0, 0%, 100%, 0.08);
+  --kun-color-resource-type-fg: 256 42% 14%;
   --kun-card-border: 1px solid hsla(42, 78%, 62%, 0.24);
   --kun-card-glow:
     0 0 0 1px hsla(347, 82%, 68%, 0.12), 0 18px 42px hsla(347, 72%, 22%, 0.24);
