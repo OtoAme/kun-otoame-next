@@ -19,7 +19,7 @@ export const KunFooter = () => {
             <span>© 2026 {kunMoyuMoe.titleShort}</span>
           </Link>
 
-          <div className="flex space-x-8">
+          <div className="kun-footer-links flex space-x-8">
             <Link href="/doc" className="flex items-center">
               使用指南
             </Link>
@@ -45,7 +45,7 @@ export const KunFooter = () => {
             </Link>
           </div>
 
-          <div className="flex space-x-8">
+          <div className="kun-footer-links flex space-x-8">
             <a
               href="mailto:contact@otoame.com"
               className="flex items-center"

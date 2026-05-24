@@ -105,6 +105,21 @@ html[data-kun-theme='otoame'] .kun-top-bar {
     0 1px 0 hsla(347, 78%, 60%, 0.05);
 }
 
+html[data-kun-theme='otoame'] .kun-top-nav-link,
+html[data-kun-theme='otoame'] .kun-mobile-nav-link,
+html[data-kun-theme='otoame'] .kun-footer-links,
+html[data-kun-theme='otoame'] .kun-footer-links *,
+html[data-kun-theme='otoame'] .kun-home-section-more-button,
+html[data-kun-theme='otoame'] .kun-home-section-more-button * {
+  font-family: var(--kun-hero-font-family) !important;
+  font-weight: var(--kun-hero-control-font-weight) !important;
+}
+
+html[data-kun-theme='otoame'] .kun-home-section-title {
+  font-family: var(--kun-hero-font-family) !important;
+  font-weight: var(--kun-hero-title-font-weight) !important;
+}
+
 html[data-kun-theme='otoame'] .kun-home-hero-card {
   background: var(--kun-hero-card-bg);
   box-shadow: var(--kun-hero-card-shadow);

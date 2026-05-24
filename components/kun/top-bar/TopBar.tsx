@@ -43,7 +43,9 @@ export const KunTopBar = () => {
             <NavbarItem key={item.href} isActive={pathname === item.href}>
               <Link
                 className={
-                  pathname === item.href ? 'text-primary' : 'text-foreground'
+                  pathname === item.href
+                    ? 'kun-top-nav-link text-primary'
+                    : 'kun-top-nav-link text-foreground'
                 }
                 href={item.href}
               >

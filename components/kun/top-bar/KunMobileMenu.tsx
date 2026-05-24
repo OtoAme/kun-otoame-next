@@ -11,13 +11,7 @@ export const KunMobileMenu = () => {
     <NavbarMenu className="space-y-4">
       <NavbarMenuItem>
         <Link className="flex items-center" href="/">
-          <Image
-            src="/favicon.webp"
-            alt=""
-            width={50}
-            height={50}
-            priority
-          />
+          <Image src="/favicon.webp" alt="" width={50} height={50} priority />
           <p className="ml-4 mr-2 text-3xl font-bold">
             {kunMoyuMoe.creator.name}
           </p>
@@ -26,7 +20,10 @@ export const KunMobileMenu = () => {
 
       {kunMobileNavItem.map((item, index) => (
         <NavbarMenuItem key={index}>
-          <Link className="w-full font-semibold" href={item.href}>
+          <Link
+            className="kun-mobile-nav-link w-full font-semibold"
+            href={item.href}
+          >
             {item.name}
           </Link>
         </NavbarMenuItem>
