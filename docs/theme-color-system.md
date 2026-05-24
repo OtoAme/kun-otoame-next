@@ -73,7 +73,7 @@ HeroUI success   / 原主题绿色 -> 淡蓝色
 
 这意味着使用 HeroUI `color="primary"` 的按钮、链接、焦点色会进入与右上角“今日签到”一致的粉色色阶；使用 `color="secondary"` 的头像描边、菜单、标签等会进入粉色色阶；使用 `color="success"` 的平台、SFW、通过/确认状态会进入淡蓝色阶。不要在组件里为了 otoame 单独把 `secondary` 改成绿色或把 `success` 改成蓝色，应该优先调整 `styles/theme-tokens/otoame.css` 中的 token。
 
-首页游戏卡片的资源类型标签是一个特殊业务视觉：它仍属于“原蓝色/primary”语义，但在 otoame 中使用淡紫 -> 淡粉渐变底、紫色文字和轻描边，因此由 `--kun-color-resource-type-bg` / `--kun-color-resource-type-text` / `--kun-color-resource-type-shadow` 单独控制。资源语言、平台、SFW 和会社标签也有 `bg/shadow` 槽位，otoame 中分别对齐 HeroCard 下方按钮的淡粉和淡蓝样式。
+首页游戏卡片和详情页头部的资源类型标签是一个特殊业务视觉：它仍属于“原蓝色/primary”语义，但在 otoame 中使用淡紫 -> 淡粉渐变底、紫色文字和轻描边，因此由 `--kun-color-resource-type-bg` / `--kun-color-resource-type-text` / `--kun-color-resource-type-shadow` 单独控制。资源语言、平台、SFW 和会社标签也有 `bg/shadow` 槽位，otoame 中分别对齐 HeroCard 下方按钮的淡粉和淡蓝样式。
 
 ### Layer 2: 业务色
 
@@ -131,7 +131,7 @@ HeroUI success   / 原主题绿色 -> 淡蓝色
 
 Flat Chip 的文字色使用 `*-text` token，用于匹配 HeroUI 原本的 `text-{color}-600/700` 行为。需要渐变或其它非单色背景时，可额外提供完整 CSS 值 token（如 `--kun-color-resource-type-bg`）；需要增强边缘感时，可提供不占位的阴影/描边 token（如 `--kun-color-resource-type-shadow`）。新增业务 Chip token 时应同时考虑 base color、flat text color，以及 solid 场景是否需要 foreground token。
 
-此外，`resource-type` 在详情页头部使用 `solid` 变体，因此额外有 `--kun-color-resource-type-fg`（前景文字色，默认 `var(--heroui-primary-foreground)`）。
+`--kun-color-resource-type-fg` 只用于少数需要 solid 资源类型标签的场景。首页游戏卡片和详情页头部都使用默认 flat 变体，以保持淡紫 -> 淡粉标签样式一致。
 
 ### Dark 模式 flat Chip 文字色
 
@@ -288,15 +288,13 @@ const chip = <Chip {...semanticChipProps('resource-platform')}>Windows</Chip>
 </Chip>
 ```
 
-详情页头部的补丁类型使用 solid，以保持信息层级：
+详情页头部的补丁类型同样使用 flat，以和首页 gamecard 的类型标签保持一致：
 
 ```tsx
-<Chip {...semanticChipProps('resource-type', { variant: 'solid' })}>
-  人工翻译补丁
-</Chip>
+<Chip {...semanticChipProps('resource-type')}>人工翻译补丁</Chip>
 ```
 
-注意：主页游戏卡片底部的资源属性标签来自 `components/kun/PatchAttribute.tsx`，应保持 flat。otoame 主题通过 `--kun-color-resource-type-bg` / `--kun-color-resource-type-text` / `--kun-color-resource-type-shadow` 将类型标签覆盖为淡紫到淡粉渐变底、紫色文字和轻描边；语言标签和会社标签使用 HeroCard 下方“发布页”按钮的淡粉系列，平台标签和 SFW 标签使用“文档”按钮的淡蓝系列。
+注意：主页游戏卡片底部的资源属性标签来自 `components/kun/PatchAttribute.tsx`，详情页头部的资源属性标签来自 `components/patch/header/Tags.tsx`。两处的 `resource-type` 都应保持 flat。otoame 主题通过 `--kun-color-resource-type-bg` / `--kun-color-resource-type-text` / `--kun-color-resource-type-shadow` 将类型标签覆盖为淡紫到淡粉渐变底、紫色文字和轻描边；语言标签和会社标签使用 HeroCard 下方“发布页”按钮的淡粉系列，平台标签和 SFW 标签使用“文档”按钮的淡蓝系列。
 
 以下组件**不迁移**到业务 token，继续使用 HeroUI `color` prop（因为它们跟随品牌色，不需要独立控制）：
 

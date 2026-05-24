@@ -31,10 +31,7 @@ export const Tags = ({ patch }: PatchHeaderProps) => {
 
       {patch.type.length > 0 &&
         sortResourceTypes(patch.type).map((type) => (
-          <Chip
-            key={type}
-            {...semanticChipProps('resource-type', { variant: 'solid' })}
-          >
+          <Chip key={type} {...semanticChipProps('resource-type')}>
             {SUPPORTED_TYPE_MAP[type]}
           </Chip>
         ))}
