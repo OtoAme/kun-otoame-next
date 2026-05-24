@@ -38,8 +38,19 @@ html[data-kun-theme='otoame'] {
     'Songti SC', 'Noto Serif CJK SC', 'Noto Serif SC', 'Source Han Serif SC',
     'Source Han Serif CN', 'STSong', '华文宋体', 'SimSun', '宋体', 'NSimSun',
     'FangSong', '仿宋', serif;
+  /*
+   * 宋体栈字重微调:
+   * - text: 普通说明/作者文字, 宋体 400 偏细, 默认加到 500。
+   * - title: 标题文字, 保持更明确的粗体。
+   * - control: 按钮/chip 文字, 比正文再重一点。
+   */
+  --kun-hero-text-font-weight: 500;
+  --kun-hero-title-font-weight: 700;
+  --kun-hero-control-font-weight: 600;
   /* 首页轮播标题/作者/描述字体: 复用 otoame 的宋体气质。 */
   --kun-carousel-font-family: var(--kun-hero-font-family);
+  --kun-carousel-text-font-weight: var(--kun-hero-text-font-weight);
+  --kun-carousel-title-font-weight: var(--kun-hero-title-font-weight);
   /*
    * 首页轮播标题中英混排微调:
    * - line-height 控制标题单行高度, 数值越大上下留白越多。
@@ -68,6 +79,12 @@ html[data-kun-theme='otoame'] {
   --kun-hero-card-shadow:
     inset 0 0 0 1px hsla(334, 76%, 88%, 0.56),
     inset 0 1px 0 hsla(0, 0%, 100%, 0.9), 0 16px 46px hsla(332, 72%, 82%, 0.14);
+  /* 移动端首页 Hero/轮播卡片阴影: 复用 PC 柔粉抬起感, 只在小屏启用。 */
+  --kun-home-mobile-hero-shadow:
+    0 1px 0 hsla(334, 76%, 88%, 0.28), 0 16px 36px hsla(332, 72%, 82%, 0.22);
+  /* 移动端首页游戏卡片阴影: 使用原 PC hover 的柔粉阴影, 只在首页小屏启用。 */
+  --kun-home-mobile-game-card-shadow:
+    0 1px 0 hsla(40, 82%, 58%, 0.12), 0 14px 32px hsla(347, 72%, 70%, 0.18);
   /* HeroCard 标题渐变: 左紫 -> 中粉 -> 右玫红。 */
   --kun-hero-title-gradient: linear-gradient(
     92deg,
@@ -107,6 +124,13 @@ html[data-kun-theme='otoame'] {
   --kun-hero-nav-tags-text: hsl(256 42% 62%);
   --kun-hero-nav-tags-shadow:
     inset 0 0 0 1px hsla(258, 54%, 88%, 0.74),
+    inset 0 1px 0 hsla(0, 0%, 100%, 0.86);
+  /* 首页移动端随机游戏按钮: 标签按钮的加深版, 仍保留淡紫雾面质感。 */
+  --kun-home-random-bg: hsla(260, 78%, 94%, 0.94);
+  --kun-home-random-hover-bg: hsla(260, 82%, 96%, 0.98);
+  --kun-home-random-text: hsl(258 46% 50%);
+  --kun-home-random-shadow:
+    inset 0 0 0 1px hsla(258, 58%, 82%, 0.84),
     inset 0 1px 0 hsla(0, 0%, 100%, 0.86);
   /* HeroCard 下方按钮: 发布页按钮, 淡粉底 + 粉紫文字。 */
   --kun-hero-nav-publish-bg: hsla(322, 100%, 98%, 0.9);
@@ -227,6 +251,10 @@ html.dark[data-kun-theme='otoame'] {
     inset 0 0 0 1px hsla(334, 64%, 66%, 0.2),
     inset 0 1px 0 hsla(340, 80%, 88%, 0.08),
     0 20px 56px hsla(340, 52%, 8%, 0.34);
+  --kun-home-mobile-hero-shadow:
+    0 1px 0 hsla(334, 64%, 66%, 0.16), 0 18px 42px hsla(340, 52%, 8%, 0.36);
+  --kun-home-mobile-game-card-shadow:
+    0 1px 0 hsla(334, 64%, 66%, 0.14), 0 14px 32px hsla(340, 52%, 8%, 0.3);
   /* Dark HeroCard 标题渐变: 保留紫粉到玫红的方向。 */
   --kun-hero-title-gradient: linear-gradient(
     92deg,

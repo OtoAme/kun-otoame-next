@@ -125,7 +125,7 @@ export const KunCarousel = ({ posts }: KunCarouselProps) => {
           </div>
 
           <RandomGalgameButton
-            className="shadow-md"
+            className="kun-home-carousel-random-button shadow-md"
             color="primary"
             variant="flat"
             size="sm"
@@ -183,7 +183,7 @@ export const KunCarousel = ({ posts }: KunCarouselProps) => {
 
       <div className="z-10 w-full py-3 space-y-3 sm:hidden">
         <RandomGalgameButton
-          className="shadow-md"
+          className="kun-home-carousel-random-button shadow-md"
           color="primary"
           variant="flat"
           size="sm"

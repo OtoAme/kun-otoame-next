@@ -16,7 +16,7 @@ export const HomeContainer = ({ galgames, resources }: Props) => {
     <div className="mx-auto space-y-8 max-w-7xl">
       <HomeHero />
 
-      <section className="space-y-6">
+      <section className="kun-home-game-section space-y-6">
         <div className="flex items-center space-x-4">
           <h2 className="text-lg font-bold sm:text-2xl">最新游戏</h2>
           <Button

@@ -19,7 +19,7 @@ export const KunMobileCard = ({ posts, currentSlide }: Props) => {
   }
 
   return (
-    <Card className="h-[200px] bg-transparent border-none shadow-none">
+    <Card className="kun-home-mobile-hero-card h-[200px] bg-transparent border-none shadow-none">
       <div className="relative h-[200px]">
         <Image
           alt={post.title}

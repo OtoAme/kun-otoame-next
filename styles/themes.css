@@ -117,10 +117,12 @@ html[data-kun-theme='otoame'] .kun-home-hero-card * {
 
 html[data-kun-theme='otoame'] .kun-home-hero-title {
   background-image: var(--kun-hero-title-gradient);
+  font-weight: var(--kun-hero-title-font-weight) !important;
 }
 
 html[data-kun-theme='otoame'] .kun-home-hero-subtitle {
   color: var(--kun-hero-subtitle);
+  font-weight: var(--kun-hero-text-font-weight) !important;
 }
 
 html[data-kun-theme='otoame'] .kun-home-hero-sparkle {
@@ -133,12 +135,18 @@ html[data-kun-theme='otoame'] .kun-home-hero-welcome-chip {
 
 html[data-kun-theme='otoame'] .kun-home-hero-welcome-chip-content {
   color: var(--kun-hero-eyebrow-text) !important;
+  font-weight: var(--kun-hero-control-font-weight) !important;
 }
 
 html[data-kun-theme='otoame'] .kun-home-hero-primary-button {
   color: var(--kun-hero-button-fg) !important;
   background: var(--kun-hero-button-bg) !important;
   box-shadow: var(--kun-hero-button-shadow) !important;
+  font-weight: var(--kun-hero-control-font-weight) !important;
+}
+
+html[data-kun-theme='otoame'] .kun-home-hero-primary-button * {
+  font-weight: inherit !important;
 }
 
 html[data-kun-theme='otoame'] .kun-home-hero-primary-button svg {
@@ -149,24 +157,26 @@ html[data-kun-theme='otoame'] .kun-home-hero-icon-button {
   color: var(--kun-hero-icon-button-text) !important;
   background: var(--kun-hero-icon-button-bg) !important;
   box-shadow: var(--kun-hero-icon-button-shadow) !important;
+  font-weight: var(--kun-hero-control-font-weight) !important;
 }
 
 html[data-kun-theme='otoame'] .kun-home-hero-icon-button svg {
   color: currentColor;
 }
 
-html[data-kun-theme='otoame'] .kun-home-hero-nav-grid .kun-home-nav-button {
+html[data-kun-theme='otoame'] .kun-home-nav-button {
   font-family: var(--kun-hero-font-family) !important;
+  font-weight: var(--kun-hero-control-font-weight) !important;
   opacity: 1 !important;
   transition: background-color 160ms ease;
 }
 
-html[data-kun-theme='otoame'] .kun-home-hero-nav-grid .kun-home-nav-button * {
+html[data-kun-theme='otoame'] .kun-home-nav-button * {
   font-family: var(--kun-hero-font-family) !important;
+  font-weight: inherit !important;
 }
 
 html[data-kun-theme='otoame']
-  .kun-home-hero-nav-grid
   .kun-home-nav-button[data-kun-home-nav-color='primary'] {
   color: var(--kun-hero-nav-tags-text) !important;
   background: var(--kun-hero-nav-tags-bg) !important;
@@ -174,13 +184,11 @@ html[data-kun-theme='otoame']
 }
 
 html[data-kun-theme='otoame']
-  .kun-home-hero-nav-grid
   .kun-home-nav-button[data-kun-home-nav-color='primary']:hover {
   background: var(--kun-hero-nav-tags-hover-bg) !important;
 }
 
 html[data-kun-theme='otoame']
-  .kun-home-hero-nav-grid
   .kun-home-nav-button[data-kun-home-nav-color='secondary'] {
   color: var(--kun-hero-nav-publish-text) !important;
   background: var(--kun-hero-nav-publish-bg) !important;
@@ -188,13 +196,11 @@ html[data-kun-theme='otoame']
 }
 
 html[data-kun-theme='otoame']
-  .kun-home-hero-nav-grid
   .kun-home-nav-button[data-kun-home-nav-color='secondary']:hover {
   background: var(--kun-hero-nav-publish-hover-bg) !important;
 }
 
 html[data-kun-theme='otoame']
-  .kun-home-hero-nav-grid
   .kun-home-nav-button[data-kun-home-nav-color='success'] {
   color: var(--kun-hero-nav-docs-text) !important;
   background: var(--kun-hero-nav-docs-bg) !important;
@@ -202,12 +208,34 @@ html[data-kun-theme='otoame']
 }
 
 html[data-kun-theme='otoame']
-  .kun-home-hero-nav-grid
   .kun-home-nav-button[data-kun-home-nav-color='success']:hover {
   background: var(--kun-hero-nav-docs-hover-bg) !important;
 }
 
-html[data-kun-theme='otoame'] .kun-home-hero-nav-grid .kun-home-nav-button svg {
+html[data-kun-theme='otoame'] .kun-home-nav-button svg {
+  color: currentColor;
+}
+
+html[data-kun-theme='otoame'] .kun-home-carousel-random-button {
+  color: var(--kun-home-random-text) !important;
+  background: var(--kun-home-random-bg) !important;
+  box-shadow: var(--kun-home-random-shadow) !important;
+  font-family: var(--kun-hero-font-family) !important;
+  font-weight: var(--kun-hero-control-font-weight) !important;
+  opacity: 1 !important;
+  transition: background-color 160ms ease;
+}
+
+html[data-kun-theme='otoame'] .kun-home-carousel-random-button * {
+  font-family: var(--kun-hero-font-family) !important;
+  font-weight: inherit !important;
+}
+
+html[data-kun-theme='otoame'] .kun-home-carousel-random-button:hover {
+  background: var(--kun-home-random-hover-bg) !important;
+}
+
+html[data-kun-theme='otoame'] .kun-home-carousel-random-button svg {
   color: currentColor;
 }
 
@@ -218,11 +246,18 @@ html[data-kun-theme='otoame'] .kun-home-carousel-description {
   font-family: var(--kun-carousel-font-family) !important;
 }
 
+html[data-kun-theme='otoame'] .kun-home-carousel-author,
+html[data-kun-theme='otoame'] .kun-home-carousel-description {
+  font-weight: var(--kun-carousel-text-font-weight) !important;
+}
+
 html[data-kun-theme='otoame'] .kun-home-carousel-title {
+  font-weight: var(--kun-carousel-title-font-weight) !important;
   line-height: var(--kun-carousel-title-line-height);
 }
 
 html[data-kun-theme='otoame'] .kun-home-carousel-title h1 {
+  font-weight: inherit;
   line-height: inherit;
 }
 
@@ -296,6 +331,16 @@ html[data-kun-theme='otoame'] .kun-game-card::after {
     transparent
   );
   opacity: 0.78;
+}
+
+@media (max-width: 639px) {
+  html[data-kun-theme='otoame'] .kun-home-mobile-hero-card {
+    box-shadow: var(--kun-home-mobile-hero-shadow) !important;
+  }
+
+  html[data-kun-theme='otoame'] .kun-home-game-section .kun-game-card {
+    box-shadow: var(--kun-home-mobile-game-card-shadow) !important;
+  }
 }
 
 @media (hover: hover) and (prefers-reduced-motion: no-preference) {
