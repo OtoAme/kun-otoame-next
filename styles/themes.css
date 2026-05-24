@@ -155,6 +155,62 @@ html[data-kun-theme='otoame'] .kun-home-hero-icon-button svg {
   color: currentColor;
 }
 
+html[data-kun-theme='otoame'] .kun-home-hero-nav-grid .kun-home-nav-button {
+  font-family: var(--kun-hero-font-family) !important;
+  opacity: 1 !important;
+  transition: background-color 160ms ease;
+}
+
+html[data-kun-theme='otoame'] .kun-home-hero-nav-grid .kun-home-nav-button * {
+  font-family: var(--kun-hero-font-family) !important;
+}
+
+html[data-kun-theme='otoame']
+  .kun-home-hero-nav-grid
+  .kun-home-nav-button[data-kun-home-nav-color='primary'] {
+  color: var(--kun-hero-nav-tags-text) !important;
+  background: var(--kun-hero-nav-tags-bg) !important;
+  box-shadow: var(--kun-hero-nav-tags-shadow) !important;
+}
+
+html[data-kun-theme='otoame']
+  .kun-home-hero-nav-grid
+  .kun-home-nav-button[data-kun-home-nav-color='primary']:hover {
+  background: var(--kun-hero-nav-tags-hover-bg) !important;
+}
+
+html[data-kun-theme='otoame']
+  .kun-home-hero-nav-grid
+  .kun-home-nav-button[data-kun-home-nav-color='secondary'] {
+  color: var(--kun-hero-nav-publish-text) !important;
+  background: var(--kun-hero-nav-publish-bg) !important;
+  box-shadow: var(--kun-hero-nav-publish-shadow) !important;
+}
+
+html[data-kun-theme='otoame']
+  .kun-home-hero-nav-grid
+  .kun-home-nav-button[data-kun-home-nav-color='secondary']:hover {
+  background: var(--kun-hero-nav-publish-hover-bg) !important;
+}
+
+html[data-kun-theme='otoame']
+  .kun-home-hero-nav-grid
+  .kun-home-nav-button[data-kun-home-nav-color='success'] {
+  color: var(--kun-hero-nav-docs-text) !important;
+  background: var(--kun-hero-nav-docs-bg) !important;
+  box-shadow: var(--kun-hero-nav-docs-shadow) !important;
+}
+
+html[data-kun-theme='otoame']
+  .kun-home-hero-nav-grid
+  .kun-home-nav-button[data-kun-home-nav-color='success']:hover {
+  background: var(--kun-hero-nav-docs-hover-bg) !important;
+}
+
+html[data-kun-theme='otoame'] .kun-home-hero-nav-grid .kun-home-nav-button svg {
+  color: currentColor;
+}
+
 @media (min-width: 768px) {
   @supports (
     (-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))

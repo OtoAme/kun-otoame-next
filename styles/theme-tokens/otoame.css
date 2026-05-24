@@ -88,6 +88,28 @@ html[data-kun-theme='otoame'] {
     inset 0 0 0 1px hsla(326, 66%, 88%, 0.72),
     inset 0 1px 0 hsla(0, 0%, 100%, 0.82), 0 10px 22px hsla(326, 58%, 82%, 0.24);
 
+  /* HeroCard 下方按钮: 标签按钮, 淡紫底 + 紫色图标文字。 */
+  --kun-hero-nav-tags-bg: hsla(260, 100%, 98%, 0.9);
+  --kun-hero-nav-tags-hover-bg: hsla(260, 100%, 99%, 0.98);
+  --kun-hero-nav-tags-text: hsl(256 42% 62%);
+  --kun-hero-nav-tags-shadow:
+    inset 0 0 0 1px hsla(258, 54%, 88%, 0.74),
+    inset 0 1px 0 hsla(0, 0%, 100%, 0.86);
+  /* HeroCard 下方按钮: 发布页按钮, 淡粉底 + 粉紫文字。 */
+  --kun-hero-nav-publish-bg: hsla(322, 100%, 98%, 0.9);
+  --kun-hero-nav-publish-hover-bg: hsla(322, 100%, 99%, 0.98);
+  --kun-hero-nav-publish-text: hsl(312 34% 62%);
+  --kun-hero-nav-publish-shadow:
+    inset 0 0 0 1px hsla(326, 62%, 90%, 0.76),
+    inset 0 1px 0 hsla(0, 0%, 100%, 0.86);
+  /* HeroCard 下方按钮: 文档按钮, 淡蓝底 + 灰蓝文字。 */
+  --kun-hero-nav-docs-bg: hsla(206, 100%, 98%, 0.92);
+  --kun-hero-nav-docs-hover-bg: hsla(206, 100%, 99%, 0.98);
+  --kun-hero-nav-docs-text: hsl(207 34% 48%);
+  --kun-hero-nav-docs-shadow:
+    inset 0 0 0 1px hsla(206, 58%, 88%, 0.78),
+    inset 0 1px 0 hsla(0, 0%, 100%, 0.86);
+
   /* 花朵素材图片: 改成 none 可隐藏, 推荐后续换成本地 public 下的 url(...)。 */
   --kun-hero-flower-image: url(https://img.otoame.top/posts/2026/05/9b01f92ebfdaaab30f4821165fe478b2.avif);
   /* 花朵素材透明度: 0 隐藏, 1 完全不透明。 */
@@ -223,4 +245,22 @@ html.dark[data-kun-theme='otoame'] {
     inset 0 0 0 1px hsla(326, 46%, 58%, 0.32),
     inset 0 1px 0 hsla(340, 80%, 88%, 0.08),
     0 10px 22px hsla(340, 52%, 8%, 0.24);
+  --kun-hero-nav-tags-bg: hsla(260, 36%, 18%, 0.66);
+  --kun-hero-nav-tags-hover-bg: hsla(260, 36%, 22%, 0.78);
+  --kun-hero-nav-tags-text: hsl(262 52% 78%);
+  --kun-hero-nav-tags-shadow:
+    inset 0 0 0 1px hsla(260, 46%, 58%, 0.28),
+    inset 0 1px 0 hsla(0, 0%, 100%, 0.08);
+  --kun-hero-nav-publish-bg: hsla(322, 34%, 18%, 0.66);
+  --kun-hero-nav-publish-hover-bg: hsla(322, 34%, 22%, 0.78);
+  --kun-hero-nav-publish-text: hsl(318 54% 78%);
+  --kun-hero-nav-publish-shadow:
+    inset 0 0 0 1px hsla(326, 46%, 58%, 0.28),
+    inset 0 1px 0 hsla(0, 0%, 100%, 0.08);
+  --kun-hero-nav-docs-bg: hsla(207, 32%, 18%, 0.66);
+  --kun-hero-nav-docs-hover-bg: hsla(207, 32%, 22%, 0.78);
+  --kun-hero-nav-docs-text: hsl(207 52% 76%);
+  --kun-hero-nav-docs-shadow:
+    inset 0 0 0 1px hsla(207, 42%, 58%, 0.28),
+    inset 0 1px 0 hsla(0, 0%, 100%, 0.08);
 }

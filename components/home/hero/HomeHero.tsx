@@ -80,7 +80,7 @@ export const HomeHero = () => {
             </CardBody>
           </Card>
 
-          <div className="grid grid-cols-3 gap-3 sm:gap-6">
+          <div className="kun-home-hero-nav-grid grid grid-cols-3 gap-3 sm:gap-6">
             <KunHomeNavigationItems buttonSize="lg" />
           </div>
         </div>

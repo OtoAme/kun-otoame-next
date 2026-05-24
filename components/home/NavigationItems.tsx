@@ -16,7 +16,8 @@ export const KunHomeNavigationItems = ({ buttonSize }: Props) => {
           as={Link}
           href={item.href}
           startContent={<item.icon className="w-5 h-5" />}
-          className="w-full shadow-md opacity-70"
+          className="kun-home-nav-button w-full shadow-md opacity-70"
+          data-kun-home-nav-color={item.color}
           color={item.color}
           variant="flat"
           size={buttonSize}
