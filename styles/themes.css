@@ -118,6 +118,7 @@ html.dark[data-kun-theme='otoame'] {
   --kun-color-resource-platform-text: var(--kun-success-500);
   --kun-color-company-text: var(--kun-color-resource-language-text);
   --kun-color-content-sfw-text: var(--kun-success-500);
+  --kun-color-content-nsfw-text: var(--kun-color-resource-language-text);
 }
 
 html[data-kun-theme='otoame'] .kun-top-bar {

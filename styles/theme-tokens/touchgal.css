@@ -55,6 +55,8 @@ html[data-kun-theme='touchgal'] {
   --kun-color-content-sfw-shadow: none;
   --kun-color-content-nsfw: var(--heroui-danger);
   --kun-color-content-nsfw-text: var(--heroui-danger-600);
+  --kun-color-content-nsfw-bg: hsl(var(--kun-color-content-nsfw) / 0.2);
+  --kun-color-content-nsfw-shadow: none;
   --kun-color-recommend-strong-yes: var(--heroui-secondary);
   --kun-color-recommend-strong-yes-text: var(--heroui-secondary-600);
   --kun-color-recommend-yes: var(--heroui-success);

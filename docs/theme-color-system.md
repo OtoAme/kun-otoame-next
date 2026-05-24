@@ -104,6 +104,8 @@ HeroUI success   / 原主题绿色 -> 淡蓝色
 --kun-color-content-sfw-shadow
 --kun-color-content-nsfw
 --kun-color-content-nsfw-text
+--kun-color-content-nsfw-bg
+--kun-color-content-nsfw-shadow
 
 --kun-color-recommend-strong-yes
 --kun-color-recommend-strong-yes-text
@@ -129,7 +131,7 @@ HeroUI success   / 原主题绿色 -> 淡蓝色
 --kun-rating-badge-fg
 ```
 
-Flat Chip 的文字色使用 `*-text` token，用于匹配 HeroUI 原本的 `text-{color}-600/700` 行为。需要渐变或其它非单色背景时，可额外提供完整 CSS 值 token（如 `--kun-color-resource-type-bg`）；需要增强边缘感时，可提供不占位的阴影/描边 token（如 `--kun-color-resource-type-shadow`）。新增业务 Chip token 时应同时考虑 base color、flat text color，以及 solid 场景是否需要 foreground token。
+Flat Chip 的文字色使用 `*-text` token，用于匹配 HeroUI 原本的 `text-{color}-600/700` 行为。需要渐变或其它非单色背景时，可额外提供完整 CSS 值 token（如 `--kun-color-resource-type-bg`）；需要增强边缘感时，可提供不占位的阴影/描边 token（如 `--kun-color-resource-type-shadow`）。新增业务 Chip token 时应同时考虑 base color、flat text color，以及 solid 场景是否需要 foreground token。otoame 中 NSFW 标签复用资源语言标签的淡粉系列。
 
 `--kun-color-resource-type-fg` 只用于少数需要 solid 资源类型标签的场景。首页游戏卡片和详情页头部都使用默认 flat 变体，以保持淡紫 -> 淡粉标签样式一致。
 
@@ -294,7 +296,7 @@ const chip = <Chip {...semanticChipProps('resource-platform')}>Windows</Chip>
 <Chip {...semanticChipProps('resource-type')}>人工翻译补丁</Chip>
 ```
 
-注意：主页游戏卡片底部的资源属性标签来自 `components/kun/PatchAttribute.tsx`，详情页头部的资源属性标签来自 `components/patch/header/Tags.tsx`。两处的 `resource-type` 都应保持 flat。otoame 主题通过 `--kun-color-resource-type-bg` / `--kun-color-resource-type-text` / `--kun-color-resource-type-shadow` 将类型标签覆盖为淡紫到淡粉渐变底、紫色文字和轻描边；语言标签和会社标签使用 HeroCard 下方“发布页”按钮的淡粉系列，平台标签和 SFW 标签使用“文档”按钮的淡蓝系列。
+注意：主页游戏卡片底部的资源属性标签来自 `components/kun/PatchAttribute.tsx`，详情页头部的资源属性标签来自 `components/patch/header/Tags.tsx`。两处的 `resource-type` 都应保持 flat。otoame 主题通过 `--kun-color-resource-type-bg` / `--kun-color-resource-type-text` / `--kun-color-resource-type-shadow` 将类型标签覆盖为淡紫到淡粉渐变底、紫色文字和轻描边；语言标签、会社标签和 NSFW 标签使用 HeroCard 下方“发布页”按钮的淡粉系列，平台标签和 SFW 标签使用“文档”按钮的淡蓝系列。
 
 以下组件**不迁移**到业务 token，继续使用 HeroUI `color` prop（因为它们跟随品牌色，不需要独立控制）：
 

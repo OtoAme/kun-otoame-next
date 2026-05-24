@@ -82,6 +82,11 @@ html[data-kun-theme='otoame'] {
   --kun-color-content-sfw-text: var(--kun-success-600);
   --kun-color-content-sfw-bg: var(--kun-hero-nav-docs-bg);
   --kun-color-content-sfw-shadow: var(--kun-hero-nav-docs-shadow);
+  /* NSFW 标签: 使用资源语言标签的淡粉系列。 */
+  --kun-color-content-nsfw: var(--kun-color-resource-language);
+  --kun-color-content-nsfw-text: var(--kun-color-resource-language-text);
+  --kun-color-content-nsfw-bg: var(--kun-color-resource-language-bg);
+  --kun-color-content-nsfw-shadow: var(--kun-color-resource-language-shadow);
   --kun-rating-badge-background: linear-gradient(
     135deg,
     #ed82b5 0%,
@@ -353,6 +358,7 @@ html.dark[data-kun-theme='otoame'] {
   --kun-color-resource-platform-text: var(--kun-success-500);
   --kun-color-company-text: var(--kun-color-resource-language-text);
   --kun-color-content-sfw-text: var(--kun-success-500);
+  --kun-color-content-nsfw-text: var(--kun-color-resource-language-text);
   --kun-rating-badge-background: linear-gradient(
     135deg,
     hsl(335 76% 72% / 0.88) 0%,

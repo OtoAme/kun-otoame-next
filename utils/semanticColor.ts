@@ -49,6 +49,8 @@ const semanticTokenDefs = {
   'content-nsfw': {
     color: 'var(--kun-color-content-nsfw)',
     text: 'var(--kun-color-content-nsfw-text)',
+    bg: 'var(--kun-color-content-nsfw-bg)',
+    shadow: 'var(--kun-color-content-nsfw-shadow)',
     bgAlpha: '0.2'
   },
   'recommend-strong-yes': {
