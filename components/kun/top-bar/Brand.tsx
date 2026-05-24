@@ -15,7 +15,7 @@ export const KunTopBarBrand = () => {
           priority
           className="shrink-0"
         />
-        <p className="ml-4 mr-2 font-bold text-inherit">
+        <p className="kun-brand-wordmark ml-4 mr-2 font-bold text-inherit">
           {kunMoyuMoe.creator.name}
         </p>
       </Link>

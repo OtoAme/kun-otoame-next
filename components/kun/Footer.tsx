@@ -9,14 +9,22 @@ export const KunFooter = () => {
     <footer className="w-full mt-8 text-sm border-t border-divider">
       <div className="px-2 mx-auto sm:px-6 max-w-7xl">
         <div className="flex flex-wrap justify-center gap-4 py-6 md:justify-between">
-          <Link href="/" className="flex items-center space-x-2">
+          <Link
+            href="/"
+            className="kun-footer-brand flex items-center space-x-2"
+          >
             <Image
               src="/favicon.webp"
               alt={kunMoyuMoe.titleShort}
               width={30}
               height={30}
             />
-            <span>© 2026 {kunMoyuMoe.titleShort}</span>
+            <span>
+              © 2026{' '}
+              <span className="kun-brand-wordmark">
+                {kunMoyuMoe.titleShort}
+              </span>
+            </span>
           </Link>
 
           <div className="kun-footer-links flex space-x-8">
@@ -46,10 +54,7 @@ export const KunFooter = () => {
           </div>
 
           <div className="kun-footer-links flex space-x-8">
-            <a
-              href="mailto:contact@otoame.com"
-              className="flex items-center"
-            >
+            <a href="mailto:contact@otoame.com" className="flex items-center">
               联系我们
             </a>
             <Link

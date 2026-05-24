@@ -1,6 +1,30 @@
 @import './theme-tokens/touchgal.css';
 @import './theme-tokens/otoame.css';
 
+@font-face {
+  font-family: 'Kun OtoAme Wordmark';
+  src: url('/fonts/imperial-script-otoame.woff2') format('woff2');
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  unicode-range: U+0041, U+004F, U+0065, U+006D, U+006F, U+0074;
+}
+
+html[data-kun-theme='otoame'] .kun-brand-wordmark {
+  font-family: 'Kun OtoAme Wordmark', Georgia, serif !important;
+  font-weight: 400 !important;
+  line-height: 1;
+  letter-spacing: 0.02em;
+}
+
+html[data-kun-theme='otoame'] .kun-top-bar .kun-brand-wordmark {
+  font-size: 1.55rem;
+}
+
+html[data-kun-theme='otoame'] .kun-footer-brand .kun-brand-wordmark {
+  font-size: 1.35rem;
+}
+
 .kun-layout-shell {
   isolation: isolate;
   overflow-x: clip;
