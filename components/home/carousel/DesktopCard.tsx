@@ -33,7 +33,7 @@ export const KunDesktopCard = ({ posts, currentSlide }: Props) => {
       />
       <div className="absolute inset-0 rounded-2xl bg-gradient-to-t from-black/30 via-black/10 to-transparent" />
 
-      <Card className="absolute border-none bottom-4 left-4 right-4 bg-background/80 backdrop-blur-md">
+      <Card className="kun-home-carousel-info-card absolute border-none bottom-4 left-4 right-4 bg-background/80 backdrop-blur-md">
         <div className="p-4">
           <div className="flex items-center gap-3 mb-2">
             <img

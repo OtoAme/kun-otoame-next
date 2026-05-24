@@ -145,6 +145,15 @@ html[data-kun-theme='otoame'] {
   --kun-carousel-font-family: var(--kun-hero-font-family);
   --kun-carousel-text-font-weight: var(--kun-hero-text-font-weight);
   --kun-carousel-title-font-weight: var(--kun-hero-title-font-weight);
+  /* 首页轮播信息卡片: 在原灰白半透明底上加入一点粉紫雾面。 */
+  --kun-carousel-card-bg: linear-gradient(
+    135deg,
+    hsl(var(--kun-brand-50) / 0.9) 0%,
+    hsl(284 100% 98% / 0.86) 100%
+  );
+  --kun-carousel-card-shadow:
+    inset 0 0 0 1px hsl(var(--kun-brand-200) / 0.42),
+    inset 0 1px 0 hsla(0, 0%, 100%, 0.9), 0 18px 44px hsla(332, 72%, 82%, 0.18);
   /*
    * 首页轮播标题中英混排微调:
    * - line-height 控制标题单行高度, 数值越大上下留白越多。
@@ -391,6 +400,15 @@ html.dark[data-kun-theme='otoame'] {
   --kun-user-primary-flat-shadow:
     inset 0 0 0 1px hsl(var(--kun-brand-300) / 0.32),
     inset 0 1px 0 hsla(340, 80%, 88%, 0.08);
+  --kun-carousel-card-bg: linear-gradient(
+    135deg,
+    hsl(var(--kun-brand-50) / 0.84) 0%,
+    hsl(276 34% 20% / 0.82) 100%
+  );
+  --kun-carousel-card-shadow:
+    inset 0 0 0 1px hsl(var(--kun-brand-300) / 0.24),
+    inset 0 1px 0 hsla(340, 80%, 88%, 0.08),
+    0 18px 44px hsla(340, 52%, 8%, 0.32);
   /* Dark HeroCard 背景: 同样的大光圈结构, 但改为深色底。 */
   --kun-hero-card-bg: radial-gradient(
     circle farthest-corner at -18% -34%,

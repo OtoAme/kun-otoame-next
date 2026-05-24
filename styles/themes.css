@@ -294,6 +294,11 @@ html[data-kun-theme='otoame'] .kun-home-carousel-random-button svg {
   color: currentColor;
 }
 
+html[data-kun-theme='otoame'] .kun-home-carousel-info-card {
+  background: var(--kun-carousel-card-bg) !important;
+  box-shadow: var(--kun-carousel-card-shadow) !important;
+}
+
 html[data-kun-theme='otoame'] .kun-home-carousel-title,
 html[data-kun-theme='otoame'] .kun-home-carousel-title *,
 html[data-kun-theme='otoame'] .kun-home-carousel-author,
