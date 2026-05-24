@@ -54,7 +54,10 @@ export const GalgameCard = ({ patch, openOnNewTab = true }: Props) => {
 
           {patch.averageRating !== 0 && (
             <div className="absolute top-2 right-2 z-10">
-              <span className="flex px-2 rounded-2xl items-center text-[hsl(var(--kun-rating-badge-fg))] bg-[hsl(var(--kun-rating-badge-bg)/0.9)] gap-1">
+              <span
+                className="flex px-2 rounded-2xl items-center text-[hsl(var(--kun-rating-badge-fg))] gap-1"
+                style={{ background: 'var(--kun-rating-badge-background)' }}
+              >
                 <Star className="w-4 h-4" />
                 {patch.averageRating}
               </span>

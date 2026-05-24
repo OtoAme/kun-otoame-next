@@ -125,6 +125,7 @@ HeroUI success   / 原主题绿色 -> 淡蓝色
 --kun-rating-score-c
 --kun-rating-star
 --kun-rating-badge-bg
+--kun-rating-badge-background
 --kun-rating-badge-fg
 ```
 
@@ -350,8 +351,11 @@ strong_no  -> danger
 
 ```css
 --kun-rating-badge-bg
+--kun-rating-badge-background
 --kun-rating-badge-fg
 ```
+
+`--kun-rating-badge-bg` 保留为 HSL fragment，用于 touchgal 等纯色主题；`--kun-rating-badge-background` 是完整 CSS 背景值，允许 otoame 这类主题使用渐变。组件应直接把 `--kun-rating-badge-background` 用作 `background`，不要把渐变塞进 `hsl(var(...))`。
 
 星星和角标不要复用同一个 token；它们视觉角色不同。
 

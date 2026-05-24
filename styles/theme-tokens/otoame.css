@@ -82,6 +82,12 @@ html[data-kun-theme='otoame'] {
   --kun-color-content-sfw-text: var(--kun-success-600);
   --kun-color-content-sfw-bg: var(--kun-hero-nav-docs-bg);
   --kun-color-content-sfw-shadow: var(--kun-hero-nav-docs-shadow);
+  --kun-rating-badge-background: linear-gradient(
+    135deg,
+    #ed82b5 0%,
+    #d86bc8 100%
+  );
+  --kun-rating-badge-fg: 0 0% 100%;
 
   /* Complete CSS values: use directly as property values. */
   --kun-card-border: 1px solid hsl(var(--kun-brand-200) / 0.5);
@@ -347,6 +353,12 @@ html.dark[data-kun-theme='otoame'] {
   --kun-color-resource-platform-text: var(--kun-success-500);
   --kun-color-company-text: var(--kun-color-resource-language-text);
   --kun-color-content-sfw-text: var(--kun-success-500);
+  --kun-rating-badge-background: linear-gradient(
+    135deg,
+    hsl(335 76% 72% / 0.88) 0%,
+    hsl(306 64% 70% / 0.88) 100%
+  );
+  --kun-rating-badge-fg: 0 0% 0%;
   --kun-card-border: 1px solid hsl(var(--kun-brand-300) / 0.28);
   --kun-card-glow:
     0 0 0 1px hsla(260, 54%, 62%, 0.14),

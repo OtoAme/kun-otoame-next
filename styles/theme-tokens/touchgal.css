@@ -73,6 +73,7 @@ html[data-kun-theme='touchgal'] {
   --kun-rating-score-c: 350 89% 60%;
   --kun-rating-star: var(--heroui-warning);
   --kun-rating-badge-bg: var(--heroui-warning-600);
+  --kun-rating-badge-background: hsl(var(--kun-rating-badge-bg) / 0.9);
   --kun-rating-badge-fg: var(--heroui-background);
 
   /* Complete CSS values: use directly as property values. */
