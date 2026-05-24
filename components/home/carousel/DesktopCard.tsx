@@ -5,6 +5,7 @@ import Image from 'next/image'
 import { docDirectoryLabelMap } from '~/constants/doc'
 import { formatTimeDifference } from '~/utils/time'
 import type { HomeCarouselMetadata } from './mdx'
+import { KunCarouselTitleText } from './TitleText'
 
 interface Props {
   posts: readonly HomeCarouselMetadata[]
@@ -40,19 +41,21 @@ export const KunDesktopCard = ({ posts, currentSlide }: Props) => {
               alt={post.authorName}
               className="w-6 h-6 rounded-full"
             />
-            <span className="text-sm text-foreground/80">
+            <span className="kun-home-carousel-author text-sm text-foreground/80">
               {post.authorName}
             </span>
           </div>
           <Link
             color="foreground"
-            className="mb-2 text-2xl font-bold hover:text-primary-500 line-clamp-1"
+            className="kun-home-carousel-title mb-2 text-2xl font-bold hover:text-primary-500 line-clamp-1"
             href={post.link}
           >
-            <h1>{post.title}</h1>
+            <h1>
+              <KunCarouselTitleText title={post.title} />
+            </h1>
           </Link>
 
-          <p className="mb-2 text-sm text-foreground/80 line-clamp-1">
+          <p className="kun-home-carousel-description mb-2 text-sm text-foreground/80 line-clamp-1">
             {post.description}
           </p>
           <div className="flex flex-wrap gap-2">

@@ -3,6 +3,7 @@
 import { Card, Link } from '@heroui/react'
 import Image from 'next/image'
 import type { HomeCarouselMetadata } from './mdx'
+import { KunCarouselTitleText } from './TitleText'
 
 interface Props {
   posts: readonly HomeCarouselMetadata[]
@@ -35,13 +36,15 @@ export const KunMobileCard = ({ posts, currentSlide }: Props) => {
         <div className="absolute inset-0 flex flex-col justify-end p-4 space-y-2">
           <Link
             color="foreground"
-            className="text-lg font-bold text-white hover:text-primary-500 line-clamp-1"
+            className="kun-home-carousel-title text-lg font-bold text-white hover:text-primary-500 line-clamp-1"
             href={post.link}
           >
-            <h1>{post.title}</h1>
+            <h1>
+              <KunCarouselTitleText title={post.title} />
+            </h1>
           </Link>
 
-          <p className="mb-4 text-xs text-white/80 line-clamp-2">
+          <p className="kun-home-carousel-description mb-4 text-xs text-white/80 line-clamp-2">
             {post.description}
           </p>
         </div>

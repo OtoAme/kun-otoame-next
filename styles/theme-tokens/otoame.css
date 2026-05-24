@@ -38,6 +38,19 @@ html[data-kun-theme='otoame'] {
     'Songti SC', 'Noto Serif CJK SC', 'Noto Serif SC', 'Source Han Serif SC',
     'Source Han Serif CN', 'STSong', '华文宋体', 'SimSun', '宋体', 'NSimSun',
     'FangSong', '仿宋', serif;
+  /* 首页轮播标题/作者/描述字体: 复用 otoame 的宋体气质。 */
+  --kun-carousel-font-family: var(--kun-hero-font-family);
+  /*
+   * 首页轮播标题中英混排微调:
+   * - line-height 控制标题单行高度, 数值越大上下留白越多。
+   * - latin-offset 控制英文/数字相对中文的视觉垂直位置, 负值上移, 正值下移。
+   * - latin-font-size 控制英文/数字视觉大小, 1em 等于中文标题字号。
+   * - separator-offset 控制中间点的视觉垂直位置, 负值上移, 正值下移。
+   */
+  --kun-carousel-title-line-height: 1.25;
+  --kun-carousel-title-latin-offset: 0.1em;
+  --kun-carousel-title-latin-font-size: 1.08em;
+  --kun-carousel-title-separator-offset: 0.02em;
   /*
    * HeroCard 背景: 单个大光圈, 圆心在左上外侧, 颜色从白 -> 粉 -> 紫。
    * circle farthest-corner at X Y:

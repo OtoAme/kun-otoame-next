@@ -211,6 +211,40 @@ html[data-kun-theme='otoame'] .kun-home-hero-nav-grid .kun-home-nav-button svg {
   color: currentColor;
 }
 
+html[data-kun-theme='otoame'] .kun-home-carousel-title,
+html[data-kun-theme='otoame'] .kun-home-carousel-title *,
+html[data-kun-theme='otoame'] .kun-home-carousel-author,
+html[data-kun-theme='otoame'] .kun-home-carousel-description {
+  font-family: var(--kun-carousel-font-family) !important;
+}
+
+html[data-kun-theme='otoame'] .kun-home-carousel-title {
+  line-height: var(--kun-carousel-title-line-height);
+}
+
+html[data-kun-theme='otoame'] .kun-home-carousel-title h1 {
+  line-height: inherit;
+}
+
+html[data-kun-theme='otoame'] .kun-home-carousel-title-latin {
+  display: inline-block;
+  transform: translateY(var(--kun-carousel-title-latin-offset));
+  transform-origin: center baseline;
+  vertical-align: baseline;
+  font-size: var(--kun-carousel-title-latin-font-size);
+}
+
+html[data-kun-theme='otoame'] .kun-home-carousel-title-separator {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 0.9em;
+  margin: 0 0.12em;
+  line-height: 1;
+  transform: translateY(var(--kun-carousel-title-separator-offset));
+  vertical-align: baseline;
+}
+
 @media (min-width: 768px) {
   @supports (
     (-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))

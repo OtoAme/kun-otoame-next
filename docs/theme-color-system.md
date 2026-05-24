@@ -195,6 +195,18 @@ html.dark[data-kun-theme] {
 
 HeroCard 属于 Layer 3 组件微调，颜色 token 使用完整 CSS 值（如 `hsl(...)` / `hsla(...)` / `linear-gradient(...)`），便于 IDE 直接识别和调色；不要按 Layer 1/2 的裸 HSL fragment 格式书写。
 
+### 首页轮播图
+
+otoame 主题下，首页轮播图标题、作者名称和描述使用宋体系：
+
+```css
+--kun-carousel-font-family
+```
+
+当前默认值复用 `--kun-hero-font-family`。由于全局字体规则带 `!important`，轮播标题、作者名称和描述也在 `themes.css` 中使用 `!important` 覆盖。该规则只作用于 `.kun-home-carousel-title`、`.kun-home-carousel-author` 和 `.kun-home-carousel-description`，不会影响目录 chip、时间 chip 或其它主题。
+
+轮播标题中英混排时，英文/数字片段会包一层 `.kun-home-carousel-title-latin`，中间点会包一层 `.kun-home-carousel-title-separator`。`otoame.css` 提供四个微调 token：`--kun-carousel-title-line-height` 控制标题行高，`--kun-carousel-title-latin-offset` 控制英文/数字视觉上下位置（正值下移，负值上移），`--kun-carousel-title-latin-font-size` 控制英文/数字视觉大小，`--kun-carousel-title-separator-offset` 控制中间点的视觉上下位置。
+
 ## Chip 颜色用法
 
 HeroUI 的 `color` prop 只能接收 `primary` / `secondary` / `success` 等固定语义色，不能直接传业务 token。
