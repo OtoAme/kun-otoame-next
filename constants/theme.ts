@@ -39,7 +39,7 @@ export const KUN_SITE_THEME_COOKIE_SAME_SITE = 'Lax' as const
 export const KUN_SITE_THEME_REGISTRY = {
   touchgal: {
     id: 'touchgal',
-    label: '经典主题',
+    label: 'Classic',
     status: 'enabled',
     availability: 'free',
     previewColor: '#006FEE',
@@ -48,7 +48,7 @@ export const KUN_SITE_THEME_REGISTRY = {
   },
   otoame: {
     id: 'otoame',
-    label: '乙女主题',
+    label: 'Pink',
     status: 'enabled',
     availability: 'free',
     previewColor: '#EB6FA9',

@@ -24,7 +24,7 @@ type TestTheme =
 const testRegistry: KunSiteThemeRegistry<TestTheme> = {
   touchgal: {
     id: 'touchgal',
-    label: '经典主题',
+    label: 'Classic',
     status: 'enabled',
     availability: 'free',
     previewColor: '#006FEE',
@@ -33,7 +33,7 @@ const testRegistry: KunSiteThemeRegistry<TestTheme> = {
   },
   otoame: {
     id: 'otoame',
-    label: '乙女主题',
+    label: 'Pink',
     status: 'enabled',
     availability: 'free',
     previewColor: '#EB6FA9',
