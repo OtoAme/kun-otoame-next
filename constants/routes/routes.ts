@@ -182,7 +182,7 @@ export const createBreadcrumbItem = (
   if (isPatchPath(pathname)) {
     const allGalgameRoute: KunBreadcrumbItem = {
       key: 'otomegame',
-      label: 'OtomeGame',
+      label: '游戏下载',
       href: '/otomegame'
     }
     if (!normalizedPageTitle) {

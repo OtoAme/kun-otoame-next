@@ -78,8 +78,8 @@ export const CardContainer = ({ initialGalgames, initialTotal }: Props) => {
   return (
     <div className="container mx-auto my-4 space-y-6">
       <KunHeader
-        name="OtomeGame"
-        description="这里展示了本站所有的 OtomeGame, 您可以点击进入以下载 OtomeGame 资源"
+        name="游戏下载"
+        description="这里展示了本站所有的游戏, 您可以点击进入以下载游戏资源"
       />
 
       <FilterBar

@@ -29,8 +29,8 @@ export const keyLabelMap: Record<string, string> = {
   '/apply/success': '申请成功',
   '/auth/forgot': '忘记密码',
   '/comment': '评论',
-  '/edit/create': '创建 OtomeGame',
-  '/otomegame': 'OtomeGame',
+  '/edit/create': '创建游戏',
+  '/otomegame': '游戏下载',
   '/login': '登录',
   '/message/follow': '关注消息',
   '/message/notice': '通知消息',
@@ -45,7 +45,7 @@ export const keyLabelMap: Record<string, string> = {
   '/tag/[id]': '标签详情',
   '/user/[id]/comment': '用户评论',
   '/user/[id]/favorite': '用户收藏',
-  '/user/[id]/otomegame': '用户 OtomeGame',
+  '/user/[id]/otomegame': '用户游戏',
   '/user/[id]/resource': '用户资源',
   '/ranking': 'OtomeGame 排行'
 }
