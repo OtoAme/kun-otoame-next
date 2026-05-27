@@ -47,7 +47,12 @@ export const getPatchResourceApply = async (
             id: true,
             name: true,
             avatar: true,
-            role: true
+            role: true,
+            _count: {
+              select: {
+                patch_resource: true
+              }
+            }
           }
         },
         links: {
@@ -91,7 +96,7 @@ export const getPatchResourceApply = async (
       name: resource.user.name,
       avatar: resource.user.avatar,
       role: resource.user.role,
-      patchCount: 0
+      patchCount: resource.user._count.patch_resource
     }
   }))
 

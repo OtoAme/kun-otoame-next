@@ -15,6 +15,8 @@ interface Props {
 }
 
 export const AdminResourceApplyCard = ({ resource, actions }: Props) => {
+  const userResourceCount = Math.max(resource.user.patchCount, 1)
+
   return (
     <Card className="w-full">
       <CardBody className="space-y-3">
@@ -23,7 +25,7 @@ export const AdminResourceApplyCard = ({ resource, actions }: Props) => {
             user={resource.user}
             userProps={{
               name: resource.user.name,
-              description: `${formatTimeDifference(resource.created)} 上传了首个补丁资源`,
+              description: `${formatTimeDifference(resource.created)} 提交了第 ${userResourceCount} 个游戏/补丁资源申请`,
               avatarProps: {
                 showFallback: true,
                 src: resource.user.avatar,
