@@ -160,8 +160,17 @@ html[data-kun-theme='otoame'] .kun-home-section-more-button * {
   font-weight: var(--kun-hero-control-font-weight) !important;
 }
 
+html[data-kun-theme='otoame'] :where(h1, h2, h3, h4, h5, h6),
+html[data-kun-theme='otoame'] :where(h1, h2, h3, h4, h5, h6) * {
+  font-family: var(--kun-heading-font-family) !important;
+}
+
+html[data-kun-theme='otoame'] .kun-dense-card-title,
+html[data-kun-theme='otoame'] .kun-dense-card-title * {
+  font-family: var(--kun-dense-card-title-font-family) !important;
+}
+
 html[data-kun-theme='otoame'] .kun-home-section-title {
-  font-family: var(--kun-hero-font-family) !important;
   font-weight: var(--kun-hero-title-font-weight) !important;
 }
 
@@ -323,8 +332,6 @@ html[data-kun-theme='otoame'] .kun-home-carousel-info-card {
   box-shadow: var(--kun-carousel-card-shadow) !important;
 }
 
-html[data-kun-theme='otoame'] .kun-home-carousel-title,
-html[data-kun-theme='otoame'] .kun-home-carousel-title *,
 html[data-kun-theme='otoame'] .kun-home-carousel-author,
 html[data-kun-theme='otoame'] .kun-home-carousel-description {
   font-family: var(--kun-carousel-font-family) !important;

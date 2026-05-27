@@ -66,7 +66,7 @@ export const GalgameCard = ({ patch, openOnNewTab = true }: Props) => {
         </div>
       </CardHeader>
       <CardBody className="justify-between space-y-2">
-        <h2 className="font-semibold transition-colors text-small sm:text-lg line-clamp-2 hover:text-primary-500">
+        <h2 className="kun-dense-card-title font-semibold transition-colors text-small sm:text-lg line-clamp-2 hover:text-primary-500">
           {patch.name}
         </h2>
         <KunCardStats patch={patch} isMobile={true} />

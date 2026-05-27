@@ -141,6 +141,12 @@ html[data-kun-theme='otoame'] {
   --kun-hero-text-font-weight: 500;
   --kun-hero-title-font-weight: 700;
   --kun-hero-control-font-weight: 600;
+  /* 站内语义标题字体: 所有 h1-h6 复用宋体栈, 字号/字重仍由各组件自己控制。 */
+  --kun-heading-font-family: var(--kun-hero-font-family);
+  /* 高密度卡片标题字体: 游戏/标签/会社列表恢复默认无衬线, 降低大量浏览时的阅读疲劳。 */
+  --kun-dense-card-title-font-family:
+    -apple-system, BlinkMacSystemFont, Helvetica Neue, Helvetica, Arial,
+    PingFang SC, Hiragino Sans GB, Microsoft YaHei, sans-serif;
   /* 首页轮播标题/作者/描述字体: 复用 otoame 的宋体气质。 */
   --kun-carousel-font-family: var(--kun-hero-font-family);
   --kun-carousel-text-font-weight: var(--kun-hero-text-font-weight);

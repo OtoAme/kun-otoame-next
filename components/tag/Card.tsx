@@ -17,7 +17,7 @@ export const TagCard = ({ tag }: Props) => {
     >
       <CardBody className="gap-2">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <h2 className="text-lg font-semibold transition-colors line-clamp-2 hover:text-primary-500">
+          <h2 className="kun-dense-card-title text-lg font-semibold transition-colors line-clamp-2 hover:text-primary-500">
             {tag.name}
           </h2>
           <Chip size="sm" variant="flat">
