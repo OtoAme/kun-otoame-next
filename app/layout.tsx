@@ -1,5 +1,6 @@
 import { Toaster } from 'react-hot-toast'
 import Script from 'next/script'
+import { cookies } from 'next/headers'
 import { preconnect, prefetchDNS } from 'react-dom'
 import { Providers } from './providers'
 import { KunTopBar } from '~/components/kun/top-bar/TopBar'
@@ -8,7 +9,11 @@ import { KunNavigationBreadcrumb } from '~/components/kun/NavigationBreadcrumb'
 import { generateKunMetadata, kunViewport } from './metadata'
 import { KunBackToTop } from '~/components/kun/BackToTop'
 import { SiteThemeScript } from '~/components/kun/theme/SiteThemeScript'
-import { DEFAULT_KUN_SITE_THEME } from '~/constants/theme'
+import {
+  DEFAULT_KUN_SITE_THEME,
+  KUN_SITE_THEME_STORAGE_KEY,
+  isKunEnabledSiteTheme
+} from '~/constants/theme'
 import { kunMoyuMoe } from '~/config/moyu-moe'
 import type { Metadata, Viewport } from 'next'
 import '~/styles/index.css'
@@ -17,18 +22,24 @@ import './actions'
 export const viewport: Viewport = kunViewport
 export const metadata: Metadata = generateKunMetadata()
 
-export default function RootLayout({
+export default async function RootLayout({
   children
 }: {
   children: React.ReactNode
 }) {
+  const cookieStore = await cookies()
+  const rawSiteTheme = cookieStore.get(KUN_SITE_THEME_STORAGE_KEY)?.value
+  const hasServerTheme = isKunEnabledSiteTheme(rawSiteTheme)
+  const siteTheme = hasServerTheme ? rawSiteTheme : DEFAULT_KUN_SITE_THEME
+
   preconnect(kunMoyuMoe.domain.imageBed)
   prefetchDNS(kunMoyuMoe.domain.imageBed)
 
   return (
     <html
       lang="zh-Hans"
-      data-kun-theme={DEFAULT_KUN_SITE_THEME}
+      data-kun-theme={siteTheme}
+      data-kun-theme-source={hasServerTheme ? 'server' : undefined}
       suppressHydrationWarning
     >
       <head>

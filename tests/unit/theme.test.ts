@@ -1,8 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import {
   DEFAULT_KUN_SITE_THEME,
+  KUN_SITE_THEME_COOKIE_MAX_AGE_SECONDS,
+  isKunEnabledSiteTheme,
   isKunSiteTheme,
+  readKunSiteThemeCookie,
   resolveKunSiteTheme,
+  serializeKunSiteThemeCookie,
   type KunSiteThemeRegistry
 } from '~/constants/theme'
 
@@ -132,6 +136,18 @@ describe('isKunSiteTheme', () => {
   })
 })
 
+describe('isKunEnabledSiteTheme', () => {
+  it('accepts enabled production themes', () => {
+    expect(isKunEnabledSiteTheme('touchgal')).toBe(true)
+    expect(isKunEnabledSiteTheme('otoame')).toBe(true)
+  })
+
+  it('rejects unknown storage values', () => {
+    expect(isKunEnabledSiteTheme('unknown')).toBe(false)
+    expect(isKunEnabledSiteTheme(null)).toBe(false)
+  })
+})
+
 describe('resolveKunSiteTheme', () => {
   it('falls back to touchgal for unknown values', () => {
     expect(resolveKunSiteTheme('unknown')).toBe('touchgal')
@@ -171,5 +187,35 @@ describe('resolveKunSiteTheme', () => {
     expect(resolveTestTheme('paid', { availableThemeIds: ['paid'] })).toBe(
       'paid'
     )
+  })
+})
+
+describe('site theme cookie helpers', () => {
+  it('reads enabled site theme cookie values', () => {
+    expect(readKunSiteThemeCookie('foo=bar; kun-site-theme=otoame')).toBe(
+      'otoame'
+    )
+    expect(readKunSiteThemeCookie('kun-site-theme=touchgal')).toBe('touchgal')
+  })
+
+  it('ignores missing or invalid site theme cookie values', () => {
+    expect(readKunSiteThemeCookie(undefined)).toBeUndefined()
+    expect(readKunSiteThemeCookie('foo=bar')).toBeUndefined()
+    expect(readKunSiteThemeCookie('kun-site-theme=unknown')).toBeUndefined()
+  })
+
+  it('serializes functional site theme cookies without a domain', () => {
+    const cookie = serializeKunSiteThemeCookie('otoame', true)
+
+    expect(cookie).toContain('kun-site-theme=otoame')
+    expect(cookie).toContain('Path=/')
+    expect(cookie).toContain(`Max-Age=${KUN_SITE_THEME_COOKIE_MAX_AGE_SECONDS}`)
+    expect(cookie).toContain('SameSite=Lax')
+    expect(cookie).toContain('Secure')
+    expect(cookie).not.toContain('Domain=')
+  })
+
+  it('omits secure for non-https development contexts', () => {
+    expect(serializeKunSiteThemeCookie('touchgal')).not.toContain('Secure')
   })
 })

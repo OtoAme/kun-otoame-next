@@ -32,6 +32,9 @@ export interface ResolveKunSiteThemeOptions<
 export const DEFAULT_KUN_SITE_THEME = 'touchgal' satisfies KunSiteTheme
 export const KUN_SITE_THEME_STORAGE_KEY = 'kun-site-theme'
 export const KUN_SITE_THEME_CHANGE_EVENT = 'kun-site-theme-change'
+export const KUN_SITE_THEME_COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 365
+export const KUN_SITE_THEME_COOKIE_PATH = '/'
+export const KUN_SITE_THEME_COOKIE_SAME_SITE = 'Lax' as const
 
 export const KUN_SITE_THEME_REGISTRY = {
   touchgal: {
@@ -57,6 +60,57 @@ export const KUN_SITE_THEME_REGISTRY = {
 export const KUN_ENABLED_SITE_THEME_IDS = KUN_SITE_THEMES.filter(
   (theme) => KUN_SITE_THEME_REGISTRY[theme].status === 'enabled'
 )
+
+export const isKunEnabledSiteTheme = (
+  value: unknown
+): value is KunSiteTheme => {
+  return (
+    typeof value === 'string' &&
+    KUN_ENABLED_SITE_THEME_IDS.includes(value as KunSiteTheme)
+  )
+}
+
+export const readKunSiteThemeCookie = (
+  cookieString: string | null | undefined
+): KunSiteTheme | undefined => {
+  if (!cookieString) {
+    return undefined
+  }
+
+  const prefix = `${KUN_SITE_THEME_STORAGE_KEY}=`
+  const cookieEntry = cookieString
+    .split(';')
+    .map((part) => part.trim())
+    .find((part) => part.startsWith(prefix))
+
+  if (!cookieEntry) {
+    return undefined
+  }
+
+  const rawValue = cookieEntry.slice(prefix.length)
+
+  let decodedValue = rawValue
+  try {
+    decodedValue = decodeURIComponent(rawValue)
+  } catch (_) {}
+
+  return isKunEnabledSiteTheme(decodedValue) ? decodedValue : undefined
+}
+
+export const serializeKunSiteThemeCookie = (
+  theme: KunSiteTheme,
+  secure = false
+) => {
+  return [
+    `${KUN_SITE_THEME_STORAGE_KEY}=${encodeURIComponent(theme)}`,
+    `Path=${KUN_SITE_THEME_COOKIE_PATH}`,
+    `Max-Age=${KUN_SITE_THEME_COOKIE_MAX_AGE_SECONDS}`,
+    `SameSite=${KUN_SITE_THEME_COOKIE_SAME_SITE}`,
+    secure ? 'Secure' : undefined
+  ]
+    .filter(Boolean)
+    .join('; ')
+}
 
 export const KUN_SELECTABLE_SITE_THEMES = KUN_ENABLED_SITE_THEME_IDS.filter(
   (theme) => KUN_SITE_THEME_REGISTRY[theme].availability === 'free'
