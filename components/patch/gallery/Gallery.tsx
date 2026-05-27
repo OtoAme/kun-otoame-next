@@ -15,7 +15,7 @@ export const Gallery = ({ images }: Props) => {
 
   return (
     <div className="mt-4 space-y-4">
-      <h2 className="text-xl font-bold">游戏画廊</h2>
+      <h2 className="text-2xl font-medium">游戏画廊</h2>
       <KunImageViewer
         images={validImages.map((img) => ({
           src: img.url,

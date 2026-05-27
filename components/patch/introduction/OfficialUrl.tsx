@@ -14,7 +14,7 @@ export const PatchOfficialUrl = ({ url }: { url: string }) => {
 
   return (
     <div className="w-full mt-4 space-y-4">
-      <h2 className="text-xl font-medium">购买正版</h2>
+      <h2 className="text-2xl font-medium">购买正版</h2>
       <Card className="w-full shadow-medium">
         <CardBody className="p-3">
           <div className="flex items-center gap-2 mb-1">
