@@ -2,6 +2,11 @@ import { z } from 'zod'
 import { prisma } from '~/prisma/index'
 import { togglePatchFavoriteSchema } from '~/validations/patch'
 import { createDedupMessage } from '~/app/api/utils/message'
+import {
+  invalidatePatchContentCache,
+  invalidatePatchListCaches,
+  setCachedPatchFavoriteStatus
+} from '~/app/api/patch/cache'
 
 export const togglePatchFavorite = async (
   input: z.infer<typeof togglePatchFavoriteSchema>,
@@ -33,7 +38,7 @@ export const togglePatchFavorite = async (
     }
   })
 
-  return await prisma.$transaction(async (prisma) => {
+  const result = await prisma.$transaction(async (prisma) => {
     if (patch.user_id !== uid) {
       await createDedupMessage({
         type: 'favorite',
@@ -64,4 +69,14 @@ export const togglePatchFavorite = async (
       return { added: true }
     }
   })
+
+  await Promise.all([
+    setCachedPatchFavoriteStatus(patch.unique_id, uid, result.added),
+    invalidatePatchContentCache(patch.unique_id),
+    invalidatePatchListCaches()
+  ]).catch((error) => {
+    console.error('Failed to invalidate patch favorite stats cache:', error)
+  })
+
+  return result
 }
