@@ -92,6 +92,8 @@ pnpm typecheck
 
 `postbuild.ts` 会把 `posts` 复制进 `.next/standalone/posts`。新增运行时内容目录时，必须同步 postbuild 和 release packaging。
 
+全站 Markdown / MDX 渲染约定为“一个回车即换行”：详情简介、评论、资源备注、文档 MDX 和编辑器预览都应把单个换行渲染为 hard break。
+
 ## 编辑器
 
 主要路径：
