@@ -4,6 +4,7 @@ import remarkFrontmatter from 'remark-frontmatter'
 import remarkGfm from 'remark-gfm'
 import remarkParse from 'remark-parse'
 import remarkRehype from 'remark-rehype'
+import remarkBreaks from 'remark-breaks'
 import rehypePrism from 'rehype-prism-plus'
 import remarkDirective from 'remark-directive'
 import { unified } from 'unified'
@@ -19,6 +20,7 @@ export const markdownToHtmlExtend = async (markdown: string) => {
     .use(remarkDirective)
     .use(remarkKunVideo)
     .use(remarkKunLink)
+    .use(remarkBreaks)
     .use(remarkRehype)
     .use(remarkKunExternalLinks)
     .use(rehypeSanitize, markdownExtendSanitizeSchema)

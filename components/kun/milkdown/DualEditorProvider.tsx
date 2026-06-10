@@ -28,8 +28,14 @@ export const KunDualEditorProvider = ({ storeName }: Props) => {
 
   const getCreatePatchData = useCreatePatchStore((state) => state.getData)
   const setCreatePatchData = useCreatePatchStore((state) => state.setData)
+  const createIntroduction = useCreatePatchStore(
+    (state) => state.data.introduction
+  )
   const getRewritePatchData = useRewritePatchStore((state) => state.getData)
   const setRewritePatchData = useRewritePatchStore((state) => state.setData)
+  const rewriteIntroduction = useRewritePatchStore(
+    (state) => state.data.introduction
+  )
 
   const saveMarkdown = useCallback(
     (markdown: string) => {
@@ -55,12 +61,12 @@ export const KunDualEditorProvider = ({ storeName }: Props) => {
 
   const getMarkdown = useCallback(() => {
     if (storeName === 'patchCreate') {
-      return getCreatePatchData().introduction
+      return createIntroduction
     } else if (storeName === 'patchRewrite') {
-      return getRewritePatchData().introduction
+      return rewriteIntroduction
     }
     return ''
-  }, [getCreatePatchData, getRewritePatchData, storeName])
+  }, [createIntroduction, rewriteIntroduction, storeName])
 
   const onCodemirrorChange = useCallback(
     (getCode: () => string) => {

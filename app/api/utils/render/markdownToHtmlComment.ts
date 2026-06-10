@@ -4,6 +4,7 @@ import remarkFrontmatter from 'remark-frontmatter'
 import remarkGfm from 'remark-gfm'
 import remarkParse from 'remark-parse'
 import remarkRehype from 'remark-rehype'
+import remarkBreaks from 'remark-breaks'
 import rehypePrism from 'rehype-prism-plus'
 import remarkDirective from 'remark-directive'
 import { unified } from 'unified'
@@ -35,6 +36,7 @@ const markdownCommentProcessor = unified()
   .use(remarkParse)
   .use(remarkDirective)
   .use(remarkDropDirectives)
+  .use(remarkBreaks)
   .use(remarkRehype)
   .use(remarkKunExternalLinks)
   .use(rehypeSanitize, markdownSanitizeSchema)

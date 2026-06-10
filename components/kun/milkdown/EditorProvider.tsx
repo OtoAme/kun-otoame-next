@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 
 import { defaultValueCtx, Editor, rootCtx } from '@milkdown/core'
 import { Milkdown, useEditor } from '@milkdown/react'
@@ -18,6 +18,7 @@ import { replaceAll } from '@milkdown/utils'
 import { usePluginViewFactory } from '@prosemirror-adapter/react'
 
 import { remarkDirective } from './plugins/components/remarkDirective'
+import { remarkHardBreaks } from './plugins/components/remarkHardBreaks'
 import { KunMilkdownPluginsMenu } from './plugins/Menu'
 import {
   kunUploader,
@@ -88,6 +89,7 @@ export const EditorProvider = ({
   const refreshContentStatus = useKunMilkdownStore(
     (state) => state.data.refreshContentStatus
   )
+  const lastSyncedMarkdownRef = useRef(valueMarkdown)
 
   const pluginViewFactory = usePluginViewFactory()
 
@@ -100,6 +102,7 @@ export const EditorProvider = ({
 
         const listener = ctx.get(listenerCtx)
         listener.markdownUpdated((_, markdown) => {
+          lastSyncedMarkdownRef.current = markdown
           saveMarkdown(markdown)
         })
 
@@ -140,6 +143,7 @@ export const EditorProvider = ({
           }
         })
       })
+      .use([remarkHardBreaks].flat())
       .use(history)
       .use(commonmark)
       .use(gfm)
@@ -179,12 +183,13 @@ export const EditorProvider = ({
   )
 
   useEffect(() => {
-    if (editor.get()) {
+    if (editor.get() && valueMarkdown !== lastSyncedMarkdownRef.current) {
+      lastSyncedMarkdownRef.current = valueMarkdown
       requestAnimationFrame(() => {
         editor.get()?.action(replaceAll(valueMarkdown, true))
       })
     }
-  }, [refreshContentStatus])
+  }, [editor, editor.loading, refreshContentStatus, valueMarkdown])
 
   return (
     <div className="w-full min-h-64" onClick={(e) => e.stopPropagation()}>

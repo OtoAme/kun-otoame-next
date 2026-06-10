@@ -37,6 +37,18 @@ export const markdownToPreviewHtml = (markdown: string): string => {
   let codeContent = ''
   let codeLanguage = ''
   let inList: 'ul' | 'ol' | null = null
+  let paragraphLines: string[] = []
+
+  const flushParagraph = () => {
+    if (!paragraphLines.length) {
+      return
+    }
+
+    result.push(
+      `<p>${paragraphLines.map(renderInlineMarkdown).join('<br>')}</p>`
+    )
+    paragraphLines = []
+  }
 
   const flushList = () => {
     if (inList) {
@@ -58,6 +70,7 @@ export const markdownToPreviewHtml = (markdown: string): string => {
         inCodeBlock = false
       } else {
         flushList()
+        flushParagraph()
         inCodeBlock = true
         codeLanguage = line.slice(3).trim()
       }
@@ -71,11 +84,13 @@ export const markdownToPreviewHtml = (markdown: string): string => {
 
     if (line.trim() === '') {
       flushList()
+      flushParagraph()
       continue
     }
 
     if (/^>(\s|$)/.test(line)) {
       flushList()
+      flushParagraph()
       const quoteParagraphs: string[] = []
       let buffer: string[] = []
       const flushBuffer = () => {
@@ -105,12 +120,14 @@ export const markdownToPreviewHtml = (markdown: string): string => {
 
     if (/^---/.test(line)) {
       flushList()
+      flushParagraph()
       result.push('<hr>')
       continue
     }
 
     const ulMatch = line.match(/^(\s*)[-*] (.+)/)
     if (ulMatch) {
+      flushParagraph()
       if (inList !== 'ul') {
         flushList()
         result.push('<ul>')
@@ -122,6 +139,7 @@ export const markdownToPreviewHtml = (markdown: string): string => {
 
     const olMatch = line.match(/^(\s*)\d+\. (.+)/)
     if (olMatch) {
+      flushParagraph()
       if (inList !== 'ol') {
         flushList()
         result.push('<ol>')
@@ -134,36 +152,42 @@ export const markdownToPreviewHtml = (markdown: string): string => {
     flushList()
 
     if (/^###### (.+)/.test(line)) {
+      flushParagraph()
       const content = line.replace(/^###### /, '')
       result.push(`<h6>${renderInlineMarkdown(content)}</h6>`)
       continue
     }
 
     if (/^##### (.+)/.test(line)) {
+      flushParagraph()
       const content = line.replace(/^##### /, '')
       result.push(`<h5>${renderInlineMarkdown(content)}</h5>`)
       continue
     }
 
     if (/^#### (.+)/.test(line)) {
+      flushParagraph()
       const content = line.replace(/^#### /, '')
       result.push(`<h4>${renderInlineMarkdown(content)}</h4>`)
       continue
     }
 
     if (/^### (.+)/.test(line)) {
+      flushParagraph()
       const content = line.replace(/^### /, '')
       result.push(`<h3>${renderInlineMarkdown(content)}</h3>`)
       continue
     }
 
     if (/^## (.+)/.test(line)) {
+      flushParagraph()
       const content = line.replace(/^## /, '')
       result.push(`<h2>${renderInlineMarkdown(content)}</h2>`)
       continue
     }
 
     if (/^# (.+)/.test(line)) {
+      flushParagraph()
       const content = line.replace(/^# /, '')
       result.push(`<h1>${renderInlineMarkdown(content)}</h1>`)
       continue
@@ -179,6 +203,7 @@ export const markdownToPreviewHtml = (markdown: string): string => {
       const isHeader = nextLine && /^\|[\s\-:]+\|$/.test(nextLine)
 
       if (isHeader) {
+        flushParagraph()
         result.push(
           '<table><thead><tr>' +
             cells.map((c) => `<th>${renderInlineMarkdown(c)}</th>`).join('') +
@@ -202,12 +227,14 @@ export const markdownToPreviewHtml = (markdown: string): string => {
       result.push('</tbody></table>')
     }
 
-    result.push(`<p>${renderInlineMarkdown(line)}</p>`)
+    paragraphLines.push(line)
   }
 
   if (inCodeBlock) {
     result.push(`<pre><code>${escapeHtml(codeContent.trimEnd())}</code></pre>`)
   }
+
+  flushParagraph()
 
   if (result.length && result[result.length - 1] === '<tbody>') {
     result.push('</tbody></table>')
