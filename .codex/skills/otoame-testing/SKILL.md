@@ -1,0 +1,47 @@
+---
+name: otoame-testing
+description: Use when adding, fixing, or reviewing tests in kun-otoame-next, especially Vitest tests for APIs, Prisma services, Redis cache, resource links, uploads, themes, or utility functions.
+---
+
+# OtoAme Testing
+
+Use this skill for project-specific testing work.
+
+## Required References
+
+- Full testing guide: `docs/project/testing.md`
+- Development workflow: `docs/project/development.md`
+
+## Test Stack
+
+- Vitest config: `vitest.config.ts`
+- Test root: `tests/unit`
+- Runtime: Node environment
+- Alias: `~/*` points at repository root
+
+## Rules
+
+- For bugfixes, write a failing regression test before implementation.
+- Prefer pure function tests for `utils/*`, `constants/*`, and `validations/*`.
+- For API service tests, mock Prisma, Redis, cache helpers, and external APIs.
+- Use `vi.hoisted` for values referenced by `vi.mock` factories.
+- Do not connect to real PostgreSQL, Redis, S3, GitHub, Bangumi, VNDB, or DLSite in unit tests.
+
+## Common Commands
+
+```bash
+pnpm test
+pnpm test tests/unit/resource-link.test.ts
+pnpm test tests/unit/api/batch-tag.test.ts
+pnpm typecheck
+```
+
+## What To Assert
+
+- Return values and user-visible behavior.
+- Prisma query conditions and transaction writes.
+- Cache invalidation calls after writes.
+- Upload lock/finalize/compensation behavior.
+- Role, permission, owner mismatch, CSRF, and quota edge cases when service-level logic owns them.
+
+Avoid tests that only duplicate implementation steps without checking behavior.

@@ -37,9 +37,20 @@ OtoAme 是一个一站式乙女游戏文化社区， 提供乙女游戏下载等
 
 ## 如何运行
 
+更完整的维护者文档见：
+
+- [项目结构与运行模型](./docs/project/overview.md)
+- [模块文档导航](./docs/modules/index.md)
+- [本地开发与从零启动](./docs/project/development.md)
+- [测试策略](./docs/project/testing.md)
+- [部署手册](./docs/project/deployment.md)
+- [代码审阅清单](./docs/project/review.md)
+
+如果要参与开发，建议先按模块文档定位业务域，再修改代码。API、缓存、上传、部署和测试都有项目约定，不要只依赖本 README 的快速部署说明。
+
 ### 1.从 GitHub clone 项目并初始化项目
 
-确保本地安装有 Node.js V22, pnpm, PostgreSQL, Redis 环境，参考[🔗如何部署并运行kun-touchgal-next项目](https://www.arnebiae.com/p/galhowto/)
+确保本地安装有 Node.js 22.15+、pnpm、PostgreSQL、Redis 环境，参考[🔗如何部署并运行kun-touchgal-next项目](https://www.arnebiae.com/p/galhowto/)
 
 ```bash
 git clone https://github.com/OtoAme/kun-otoame-next.git
@@ -66,6 +77,8 @@ KUN_VISUAL_NOVEL_SITE_URL = "https://www.otoame.com"
 # 开发环境 URL
 NEXT_PUBLIC_KUN_PATCH_ADDRESS_DEV = "http://127.0.0.1:3000"
 NEXT_PUBLIC_KUN_PATCH_ADDRESS_PROD = "https://www.otoame.com"
+
+# CSRF 校验会使用上面两个地址的 host。生产域名变更时必须同步。
 
 # 本地 Redis 地址、端口和密码。
 # 密码可留空，但可能会给服务器带来安全风险。密码为空时可能需要关闭 Redis 的保护模式。
@@ -117,7 +130,7 @@ KUN_CF_CACHE_PURGE_API_TOKEN = "kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk"
 # 替换为你自己随机生成字符串，并在 public 目录下新建一个txt，文件名和内容都是该字符串
 KUN_VISUAL_NOVEL_INDEX_NOW_KEY = "a7xmyp2ob6kst9bkkdt2hnhj04rpctzd"
 
-// 禁止搜索引擎爬取测试网站，生产环境中应该删除或者注释掉该行
+# 禁止搜索引擎爬取测试网站，生产环境中应该删除或者注释掉该行
 KUN_VISUAL_NOVEL_TEST_SITE_LABEL = "noindex"
 
 # GitHub 仓库信息 (格式: 用户名/仓库名)
@@ -187,7 +200,7 @@ Nginx 参考：[🔗安装 Nginx 环境](https://www.arnebiae.com/p/galhowto/#%E
 
 只需将代码推送到 `main` 分支，CI 流水线会自动运行。
 
-GitHub Actions 会自动构建项目，并在 Releases 页面生成一个名为 v2025.xx.xx.xxxx 的新版本，包含 release.tar.gz
+GitHub Actions 会自动构建项目，并在 Releases 页面生成一个名为 `vYYYY.MM.DD.HHMM` 的新版本，包含 `release.tar.gz`。
 
 构建完毕后，需要手动在服务器端执行 
 
@@ -196,6 +209,8 @@ pnpm deploy:pull
 ```
 
 脚本会自动 `git pull` 更新项目源码，从 GitHub 下载最新的 release.tar.gz 构建产物并应用，速度取决于网络，通常仅需几秒。
+
+当前仓库还有一个 lint workflow 监听 `master` 分支；如果你的主分支是 `main`，请以 [部署手册](./docs/project/deployment.md) 中的 CI 分支说明为准，必要时同步 workflow 分支。
 
 **🛠️配置向导**
 
@@ -240,9 +255,9 @@ pnpm deploy:pull
 
 1. 每次当你对项目做了任何更改，必须重新在服务器的项目根目录运行一遍下面的命令。这会将你的更改应用到项目中，并重新构建项目。
 
-   ````
+   ```bash
    pnpm deploy:build
-   ````
+   ```
 
    
 
@@ -263,26 +278,37 @@ pnpm deploy:pull
 
 3. 构建完毕之后服务器需要将新生成的文件读取到到内存，CDN 和用户浏览器的缓存也需要刷新，网站速度会短暂变慢直到 CDN 和用户浏览器的缓存与服务器同步
 
-4. 如果构建过程出现爆内存的情况，你需要为服务器添加 swap，并且修改项目根目录 `ecosystem.config.js` 文件中的实例 `instances` 数量，建议设置为服务器 CPU 核数。
+4. 如果构建过程出现爆内存的情况，你需要为服务器添加 swap，并且修改项目根目录 `ecosystem.config.cjs` 文件中的实例 `instances` 数量，建议设置为服务器 CPU 核数。
 
    同理如果觉得网站速度还是不够，可以多开几个实例。例如 16 核服务器可建议开 16 个实例，项目会自动进行负载均衡，**但是同时项目对服务器的内存占用也会变成 700MB \* 16**
 
    ```js
    const path = require('path')
+   const fs = require('fs')
+   const dotenv = require('dotenv')
+
+   const standaloneDir = path.join(__dirname, '.next', 'standalone')
+   const scriptPath = fs.existsSync(path.join(standaloneDir, 'server.mjs'))
+     ? 'server.mjs'
+     : 'server.js'
+   const envPath = path.join(__dirname, '.env')
+   const dotenvResult = fs.existsSync(envPath) ? dotenv.config({ path: envPath }) : {}
+   const envFromFile = dotenvResult.parsed || {}
    
    module.exports = {
      apps: [
        {
          name: 'kun-touchgal-next',
          port: 3000,
-         cwd: path.join(__dirname),
+         cwd: standaloneDir,
          instances: 3,
          autorestart: true,
          watch: false,
          max_memory_restart: '1G',
-         script: './.next/standalone/server.js',
+         script: scriptPath,
          // https://nextjs.org/docs/pages/api-reference/config/next-config-js/output
          env: {
+           ...envFromFile,
            NODE_ENV: 'production',
            HOSTNAME: '127.0.0.1',
            PORT: 3000
@@ -331,7 +357,7 @@ no
 
 1. 自行修改项目代码造成的任何不良后果需要自行承担
 2. 网站的 NSFW 文章，用户主页等已经彻底阻止搜索引擎索引，这些文章将会 0 SEO 甚至反 SEO，不会对其它页面产生影响
-3. 项目的 uploads 文件夹是用户上传的临时文件，因为怕有的用户上传一半不传了或者传了不发布产生死文件。项目没过 1h 会自动扫描一遍项目中的 uploads 文件夹，删除超过 1 天的死文件
+3. 项目的 uploads 文件夹是用户上传的临时文件，因为怕有的用户上传一半不传了或者传了不发布产生死文件。项目每过 1h 会自动扫描一遍项目中的 uploads 文件夹，删除超过 1 天的死文件
 4. 项目占用服务器的内存取决于网站的访问量以及项目的实例数，理论上 300k ~ 400k 月独立 ip 数的网站，使用 pm2 部署，按照目前的配置可以流畅运行，内存占用在 700MB 左右
 5. 如果觉得网站速度还是不够，可以看本说明「关于项目的更改与构建」，多开几个实例，实例数取决于服务器的核数，pm2 会利用服务器的核数自动负载均衡
 
@@ -356,4 +382,3 @@ no
 
 - [🔗如何部署并运行kun-touchgal-next项目](https://www.arnebiae.com/p/galhowto/)
 - [🔗kun-touchgal-next](https://github.com/KUN1007/kun-touchgal-next)
-

@@ -1,0 +1,122 @@
+# Frontend, State, Theme, Content
+
+本模块覆盖组件目录、状态管理、主题系统和 MDX 内容。
+
+## 组件分层
+
+| 路径 | 说明 |
+| --- | --- |
+| `components/kun/*` | 全站共享 UI、导航、主题、编辑器、图片查看器、cropper、auth captcha。 |
+| `components/home/*` | 首页 hero、轮播、统计、卡片。 |
+| `components/patch/*` | 游戏详情页 header、introduction、resource、comment、rating、gallery。 |
+| `components/edit/*` | 创建/重写游戏表单，VNDB/Bangumi/Steam/DLSite 外部数据输入。 |
+| `components/admin/*` | 后台列表、编辑、审核、日志、邮件和设置。 |
+| `components/user/*` | 用户主页、关注、收藏、评论、评分、资源。 |
+| `components/settings/*` | 用户设置。 |
+| `components/message/*` | 消息列表和聊天会话。 |
+| `components/tag/*`, `components/company/*` | 标签和公司页面。 |
+| `components/doc/*` | 文档页导航、目录和内容布局。 |
+
+## Client/Server 边界
+
+- `app/*/page.tsx` 默认是 Server Component。
+- 需要 hooks、事件、browser API、store 的组件使用 `'use client'`。
+- API 调用在 client 组件中通常通过 `utils/kunFetch.ts`。
+- 页面级 server action 放在对应 `app/<route>/actions.ts`。
+
+## 状态管理
+
+Zustand stores 在 `store/*`：
+
+- `userStore.ts`：当前用户状态。
+- `settingStore.ts`：站点设置和 UI 设置。
+- `editStore.ts`：创建游戏状态。
+- `rewriteStore.ts`：重写游戏状态，详情页会写入当前 patch 数据。
+- `milkdownStore.ts`：编辑器状态。
+- `searchStore.ts`：搜索历史/条件。
+- `messageStore.ts`：消息相关状态。
+- `breadcrumb.ts`：面包屑状态。
+- `_cookie.ts`：cookie 辅助。
+
+Store 改动要检查使用该 store 的页面和组件，不要只改类型。
+
+## 主题与样式
+
+核心文件：
+
+- `docs/theme-color-system.md`
+- `styles/index.css`
+- `styles/tailwind.css`
+- `styles/themes.css`
+- `styles/theme-tokens/otoame.css`
+- `styles/theme-tokens/touchgal.css`
+- `constants/theme.ts`
+- `utils/semanticColor.ts`
+- `components/kun/theme/SiteThemeScript.tsx`
+- `tests/unit/theme.test.ts`
+
+修改主题 token 或 semantic color 后至少运行：
+
+```bash
+pnpm test tests/unit/theme.test.ts
+pnpm typecheck
+```
+
+## MDX 内容
+
+入口：
+
+- `posts/*`
+- `lib/mdx/getPosts.ts`
+- `lib/mdx/directoryTree.ts`
+- `lib/mdx/CustomMDX.tsx`
+- `components/doc/*`
+
+`getAllPosts` 会递归读取 `posts` 下的 `.mdx`，使用 gray-matter 读取 frontmatter，并生成：
+
+- title
+- banner
+- date
+- description
+- textCount
+- slug/path
+
+`postbuild.ts` 会把 `posts` 复制进 `.next/standalone/posts`。新增运行时内容目录时，必须同步 postbuild 和 release packaging。
+
+## 编辑器
+
+主要路径：
+
+- `components/kun/milkdown/*`
+- `components/kun/milkdown/plugins/*`
+- `components/kun/editor/MarkdownEditor.tsx`
+
+编辑器相关改动通常影响创建、重写、评论和 Markdown 预览。要检查：
+
+- 上传插件。
+- link/video/emoji/mention 插件。
+- Markdown sanitize 和 render。
+- mobile layout。
+
+## 前端开发规则
+
+- 新业务组件放在对应 domain 目录，不要把业务逻辑塞进 `components/kun`。
+- 共享组件保持通用，不依赖具体 API 响应。
+- 新图标优先用 `lucide-react` 或现有图标。
+- 用户文案保持 OtoAme 命名，避免误回退到 TouchGal/GalGame。
+- NSFW 相关 UI 必须同时检查遮罩、标题、列表过滤和详情隐藏。
+
+## 验证
+
+UI-only 改动：
+
+```bash
+pnpm typecheck
+```
+
+涉及 stores、主题、搜索、资源、编辑器：
+
+```bash
+pnpm test
+pnpm typecheck
+```
