@@ -22,7 +22,7 @@ Use this skill for API and business-service work.
 - For upload APIs, verify CSRF in the handler because middleware excludes `/api/upload/*`.
 - Never rely on frontend visibility for permissions.
 - Keep resource ownership, role, and admin checks in the API/service layer.
-- For edit external data, do not use VNDB tags; preserve Bangumi/Steam source tags; resolve tag aliases to the canonical tag before creating relations/counting; tag aliases must be globally unique across other tag names/aliases; prefer VNDB companies over Bangumi companies, use Bangumi companies only as fallback, and match companies by both name and alias.
+- For edit external data, duplicate checks in rewrite flows must exclude the current patch; do not use VNDB tags; preserve Bangumi/Steam source tags; resolve tag aliases to the canonical tag before creating relations/counting; tag aliases must be globally unique across other tag names/aliases; prefer VNDB companies over Bangumi companies, use Bangumi companies only as fallback, and match companies by both name and alias.
 
 ## Verification
 
