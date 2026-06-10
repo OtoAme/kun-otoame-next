@@ -111,6 +111,9 @@ service/helper 负责：
 
 - `app/api/tag/service.ts`
 - `app/api/company/service.ts`
+- `app/api/edit/processExternalData.ts`
+- `app/api/edit/fetchCompanies.ts`
+- `app/api/edit/companyEnsureHelper.ts`
 - `app/api/patch/cache.ts`
 
 规则：
@@ -118,7 +121,30 @@ service/helper 负责：
 - 标签列表会排除用户 blocked tag。
 - 标签/公司游戏列表使用 Redis 缓存，缓存 key 由 input + NSFW where hash 得到。
 - 公司支持 alias、parent_brand、primary_language、official_website。
+- 公司创建和重写必须把 `name` 与 `alias` 一起做冲突检查；任一值命中其他公司的 `name` 或 `alias` 都应拒绝，避免别名导致重复公司。
 - 修改公司后必须调用 `invalidateCompanyCaches`。
+
+### 编辑外部数据合并
+
+文件：
+
+- `app/api/edit/processExternalData.ts`
+- `app/api/edit/fetchCompanies.ts`
+- `app/api/edit/companyEnsureHelper.ts`
+- `components/edit/create/VNDBInput.tsx`
+- `components/edit/create/VNDBRelationInput.tsx`
+- `components/edit/components/BangumiInput.tsx`
+- `components/edit/components/SteamInput.tsx`
+- `store/editStore.ts`
+- `store/rewriteStore.ts`
+
+规则：
+
+- 创建和重写游戏时，外部标签按来源分别写入：`vndbTags`、`bangumiTags`、`steamTags` 都应保留，不要因为公司来源优先级跳过 Bangumi 标签。
+- 公司来源优先级是 VNDB > Bangumi。只要 VNDB ID 成功关联到至少一个公司，就不再使用 Bangumi developer 创建或关联公司；Bangumi developer 只作为 VNDB 无公司时的兜底。
+- Steam developer 和 DLSite circle 独立补充公司关系，不参与 VNDB/Bangumi 主来源互斥。
+- 外部公司关系必须按 `name` 和 `alias` 查找已有公司；提交名命中现有 alias 时，应关联到已有公司，而不是创建新公司。
+- 新增外部公司关系后必须调用 `invalidateCompanyCaches`；只新增标签或别名时不应误触发公司缓存失效。
 
 ### 资源发布和上传
 

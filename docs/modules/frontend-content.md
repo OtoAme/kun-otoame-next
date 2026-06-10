@@ -40,6 +40,13 @@ Zustand stores 在 `store/*`：
 
 Store 改动要检查使用该 store 的页面和组件，不要只改类型。
 
+编辑页外部数据输入：
+
+- VNDB、Bangumi、Steam、DLSite 输入会异步写入同一个创建/重写 store。
+- 多个外部来源可能连续点击或并发返回；写入 store 时必须基于当前 state 合并，只覆盖该来源负责的字段。
+- 不要用请求发起时捕获的旧 `data` 对象整体覆盖 store，否则后返回的 Bangumi/Steam 会丢掉先返回的 VNDB ID、公司、标签或别名。
+- 公司写入优先级由 API 层处理：VNDB developer 优先，Bangumi developer 兜底；前端仍要保留 Bangumi 标签等非公司字段。
+
 ## 主题与样式
 
 核心文件：

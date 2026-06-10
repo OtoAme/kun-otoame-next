@@ -21,11 +21,13 @@ Use this skill for pages, components, state, theme, and content.
 - Check NSFW behavior across list, detail, title, and mask flows.
 - Use `utils/kunFetch.ts` or preserve the CSRF header behavior for state-changing client requests.
 - Keep user-facing copy on OtoAme/OtomeGame naming unless referencing compatibility paths.
+- For edit external-data inputs, merge async source results with the latest store state and only overwrite fields owned by that source.
 - Theme changes need `tests/unit/theme.test.ts`.
 
 ## Verification
 
 ```bash
+pnpm test tests/unit/edit-store.test.ts
 pnpm test tests/unit/theme.test.ts
 pnpm typecheck
 ```

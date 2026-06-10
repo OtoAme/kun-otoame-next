@@ -32,6 +32,7 @@ tests/unit/
 - API service 逻辑：`tests/unit/api/*`。
 - JWT session：`tests/unit/jwt-session.test.ts`。
 - Redis 封装：`tests/unit/redis.test.ts`。
+- 创建/重写 store 合并：`tests/unit/edit-store.test.ts`。
 - 搜索 store：`tests/unit/search-store.test.ts`。
 - CAPTCHA：`tests/unit/captcha.test.ts`。
 - 资源链接解析和资源分类：`tests/unit/resource-link.test.ts`、`resource-classification.test.ts`。
@@ -47,6 +48,7 @@ tests/unit/
 - 资源链接、上传、下载、提取码、S3 补偿相关变更。
 - CSRF、角色、资源归属、每日上传配额、用户设置权限相关变更。
 - 主题 token、语义颜色、过滤器、排序、外部 ID 解析变更。
+- 编辑页外部数据合并规则变更，包括 VNDB/Bangumi/Steam 字段保留、公司来源优先级、alias 公司匹配和 store 函数式合并。
 - 修 bug 时要加能在修复前失败的 regression test。
 
 可以暂不新增测试但要手动验证：
@@ -102,6 +104,7 @@ vi.mock('~/prisma/index', () => ({
 - 缓存失效函数是否被调用。
 - 权限和边界条件。
 - 输入去重、normalize、alias 匹配等业务规则。
+- 外部数据合并优先级，例如 VNDB 公司优先、Bangumi 公司兜底、Bangumi 标签仍保留。
 - 用户身份、角色阈值和 owner mismatch。
 
 避免：

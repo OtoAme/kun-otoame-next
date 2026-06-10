@@ -43,5 +43,6 @@ pnpm typecheck
 - Cache invalidation calls after writes.
 - Upload lock/finalize/compensation behavior.
 - Role, permission, owner mismatch, CSRF, and quota edge cases when service-level logic owns them.
+- Edit external-data regressions: VNDB company priority, Bangumi company fallback, Bangumi tags retained, alias-aware company matching, and async store merges.
 
 Avoid tests that only duplicate implementation steps without checking behavior.

@@ -22,10 +22,14 @@ Use this skill for API and business-service work.
 - For upload APIs, verify CSRF in the handler because middleware excludes `/api/upload/*`.
 - Never rely on frontend visibility for permissions.
 - Keep resource ownership, role, and admin checks in the API/service layer.
+- For edit external data, preserve all source tags, prefer VNDB companies over Bangumi companies, use Bangumi companies only as fallback, and match companies by both name and alias.
 
 ## Verification
 
 ```bash
+pnpm test tests/unit/api/process-external-data.test.ts
+pnpm test tests/unit/api/fetch-companies.test.ts
+pnpm test tests/unit/api/company-service.test.ts
 pnpm test tests/unit/api/<target>.test.ts
 pnpm test
 pnpm typecheck

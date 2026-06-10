@@ -24,6 +24,7 @@ pnpm typecheck
 | `tests/unit/theme.test.ts` | 主题 token 和语义色。 |
 | `tests/unit/redis.test.ts` | Redis getOrSet、错误处理和缓存逻辑。 |
 | `tests/unit/jwt-session.test.ts` | Redis-backed JWT session、多设备、会话删除、legacy token 迁移。 |
+| `tests/unit/edit-store.test.ts` | 创建/重写 store 函数式合并，防止外部数据异步返回互相覆盖。 |
 | `tests/unit/resource-link.test.ts` | 资源链接和提取码解析。 |
 | `tests/unit/resource-classification.test.ts` | 资源类型/语言/平台分类。 |
 | `tests/unit/search-store.test.ts` | 搜索 store。 |
