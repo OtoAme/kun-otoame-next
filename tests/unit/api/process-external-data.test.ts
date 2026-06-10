@@ -2,6 +2,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const prismaMocks = vi.hoisted(() => {
   const tx = {
+    patch_tag: {
+      findMany: vi.fn(),
+      createMany: vi.fn(),
+      updateMany: vi.fn()
+    },
+    patch_tag_relation: {
+      findMany: vi.fn(),
+      createMany: vi.fn()
+    },
     patch_company: {
       findMany: vi.fn(),
       createMany: vi.fn(),
@@ -44,6 +53,13 @@ describe('processSubmittedExternalData company relations', () => {
     )
     prismaMocks._tx.patch_company.createMany.mockResolvedValue({ count: 3 })
     prismaMocks._tx.patch_company.updateMany.mockResolvedValue({ count: 3 })
+    prismaMocks._tx.patch_tag.findMany.mockResolvedValue([])
+    prismaMocks._tx.patch_tag.createMany.mockResolvedValue({ count: 0 })
+    prismaMocks._tx.patch_tag.updateMany.mockResolvedValue({ count: 0 })
+    prismaMocks._tx.patch_tag_relation.findMany.mockResolvedValue([])
+    prismaMocks._tx.patch_tag_relation.createMany.mockResolvedValue({
+      count: 0
+    })
     prismaMocks._tx.$queryRaw.mockResolvedValue([
       { company_id: 1 },
       { company_id: 2 },
@@ -244,7 +260,9 @@ describe('processSubmittedExternalData company relations', () => {
   it('uses submitted VNDB developers before Bangumi when fetched VNDB companies are empty', async () => {
     prismaMocks._tx.patch_company.findMany
       .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([{ id: 5, name: 'Submitted VNDB Studio', alias: [] }])
+      .mockResolvedValueOnce([
+        { id: 5, name: 'Submitted VNDB Studio', alias: [] }
+      ])
 
     await processSubmittedExternalData(
       10,
@@ -291,5 +309,62 @@ describe('processSubmittedExternalData company relations', () => {
         100
       )
     ).rejects.toThrow('db failed')
+  })
+
+  it('maps external source tag aliases to canonical tags before creating relations and incrementing count', async () => {
+    prismaMocks._tx.patch_tag.findMany
+      .mockResolvedValueOnce([{ id: 9, name: '纯爱', alias: ['純愛'] }])
+      .mockResolvedValueOnce([{ id: 9, name: '纯爱', alias: ['純愛'] }])
+
+    await processSubmittedExternalData(
+      10,
+      {
+        vndbTags: [],
+        vndbDevelopers: [],
+        bangumiTags: ['純愛'],
+        bangumiDevelopers: [],
+        steamTags: [],
+        steamDevelopers: [],
+        steamAliases: [],
+        dlsiteCircleName: '',
+        dlsiteCircleLink: ''
+      },
+      [],
+      100
+    )
+
+    expect(prismaMocks._tx.patch_tag.createMany).not.toHaveBeenCalled()
+    expect(prismaMocks._tx.patch_tag_relation.createMany).toHaveBeenCalledWith({
+      data: [{ patch_id: 10, tag_id: 9 }],
+      skipDuplicates: true
+    })
+    expect(prismaMocks._tx.patch_tag.updateMany).toHaveBeenCalledWith({
+      where: { id: { in: [9] } },
+      data: { count: { increment: 1 } }
+    })
+  })
+
+  it('ignores submitted VNDB tags even if a stale client sends them', async () => {
+    await processSubmittedExternalData(
+      10,
+      {
+        vndbTags: ['純愛'],
+        vndbDevelopers: [],
+        bangumiTags: [],
+        bangumiDevelopers: [],
+        steamTags: [],
+        steamDevelopers: [],
+        steamAliases: [],
+        dlsiteCircleName: '',
+        dlsiteCircleLink: ''
+      },
+      [],
+      100
+    )
+
+    expect(prismaMocks._tx.patch_tag.findMany).not.toHaveBeenCalled()
+    expect(prismaMocks._tx.patch_tag.createMany).not.toHaveBeenCalled()
+    expect(prismaMocks._tx.patch_tag_relation.createMany).not.toHaveBeenCalled()
+    expect(prismaMocks._tx.patch_tag.updateMany).not.toHaveBeenCalled()
   })
 })

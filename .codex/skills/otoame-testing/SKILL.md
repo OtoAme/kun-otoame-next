@@ -43,6 +43,7 @@ pnpm typecheck
 - Cache invalidation calls after writes.
 - Upload lock/finalize/compensation behavior.
 - Role, permission, owner mismatch, CSRF, and quota edge cases when service-level logic owns them.
-- Edit external-data regressions: VNDB company priority, Bangumi company fallback, Bangumi tags retained, alias-aware company matching, and async store merges.
+- Edit external-data regressions: VNDB company priority, VNDB tags ignored, Bangumi company fallback, Bangumi tags retained, alias-aware tag/company matching, tag alias uniqueness on create/update, Bangumi summary copy, duplicate checks excluding current rewrite patch, and async store merges.
+- Tag migrations should prefer pure-function tests for generated plans because production tag data is not available locally.
 
 Avoid tests that only duplicate implementation steps without checking behavior.

@@ -33,6 +33,8 @@
     "maintenance:tags:export": "esno scripts/exportTagInventory.ts",
     "maintenance:tags:merge:dry": "esno scripts/mergeTags.ts",
     "maintenance:tags:merge:apply": "esno scripts/mergeTags.ts --apply",
+    "maintenance:tags:auto-alias:dry": "esno scripts/mergeTags.ts --auto-alias",
+    "maintenance:tags:auto-alias:apply": "esno scripts/mergeTags.ts --auto-alias --apply",
     "test": "vitest run"
   },
   "author": {

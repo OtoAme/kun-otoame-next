@@ -33,18 +33,18 @@ service/helper 负责：
 
 ## 主要 API 域
 
-| 域 | 路径 | 说明 |
-| --- | --- | --- |
-| 认证 | `app/api/auth/*` | 登录、注册、2FA、验证码、邮件通知、忘记密码。 |
-| 游戏详情 | `app/api/patch/*` | 游戏详情、缓存内容、收藏、反馈、浏览量、评分、评论、资源。 |
-| 创建/编辑 | `app/api/edit/*` | 创建和重写游戏，外部数据拉取，VNDB/Bangumi/Steam/DLSite，画廊上传。 |
-| 列表/搜索 | `app/api/otomegame`, `app/api/search`, `app/api/resource`, `app/api/ranking` | 游戏列表、搜索、资源列表、排行。 |
-| 标签/公司 | `app/api/tag/*`, `app/api/company/*` | 标签列表、标签游戏、公司列表、公司游戏、公司 CRUD。 |
-| 用户 | `app/api/user/*` | 用户资料、头像、设置、关注、收藏、状态、2FA。 |
-| 消息 | `app/api/message/*` | 站内消息、未读状态、会话聊天。 |
-| 管理 | `app/api/admin/*` | 后台用户、资源、评论、评分、举报、邮件、设置、日志。 |
-| 上传 | `app/api/upload/*` | 资源文件和视频上传。 |
-| 工具 | `app/api/utils/*` | JWT、header cookie、CSRF 相关 helpers、Markdown render、Bangumi 工具、Cloudflare/IndexNow。 |
+| 域        | 路径                                                                         | 说明                                                                                        |
+| --------- | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| 认证      | `app/api/auth/*`                                                             | 登录、注册、2FA、验证码、邮件通知、忘记密码。                                               |
+| 游戏详情  | `app/api/patch/*`                                                            | 游戏详情、缓存内容、收藏、反馈、浏览量、评分、评论、资源。                                  |
+| 创建/编辑 | `app/api/edit/*`                                                             | 创建和重写游戏，外部数据拉取，VNDB/Bangumi/Steam/DLSite，画廊上传。                         |
+| 列表/搜索 | `app/api/otomegame`, `app/api/search`, `app/api/resource`, `app/api/ranking` | 游戏列表、搜索、资源列表、排行。                                                            |
+| 标签/公司 | `app/api/tag/*`, `app/api/company/*`                                         | 标签列表、标签游戏、公司列表、公司游戏、公司 CRUD。                                         |
+| 用户      | `app/api/user/*`                                                             | 用户资料、头像、设置、关注、收藏、状态、2FA。                                               |
+| 消息      | `app/api/message/*`                                                          | 站内消息、未读状态、会话聊天。                                                              |
+| 管理      | `app/api/admin/*`                                                            | 后台用户、资源、评论、评分、举报、邮件、设置、日志。                                        |
+| 上传      | `app/api/upload/*`                                                           | 资源文件和视频上传。                                                                        |
+| 工具      | `app/api/utils/*`                                                            | JWT、header cookie、CSRF 相关 helpers、Markdown render、Bangumi 工具、Cloudflare/IndexNow。 |
 
 ## 代表流程
 
@@ -140,7 +140,9 @@ service/helper 负责：
 
 规则：
 
-- 创建和重写游戏时，外部标签按来源分别写入：`vndbTags`、`bangumiTags`、`steamTags` 都应保留，不要因为公司来源优先级跳过 Bangumi 标签。
+- 创建和重写游戏时不采用 VNDB 标签；Bangumi/Steam 外部标签仍按来源写入。
+- 标签写入必须按 `name` 和 `alias` 查找已有主标签；提交名命中主标签 alias 时，只关联和计数主标签，不创建 alias 标签。
+- tag 的 alias 必须全局唯一，不能等于其它 tag 的 `name`，也不能出现在其它 tag 的 `alias` 中；创建/更新 tag 时服务端必须阻止这类冲突。
 - 公司来源优先级是 VNDB > Bangumi。只要 VNDB ID 成功关联到至少一个公司，就不再使用 Bangumi developer 创建或关联公司；Bangumi developer 只作为 VNDB 无公司时的兜底。
 - Steam developer 和 DLSite circle 独立补充公司关系，不参与 VNDB/Bangumi 主来源互斥。
 - 外部公司关系必须按 `name` 和 `alias` 查找已有公司；提交名命中现有 alias 时，应关联到已有公司，而不是创建新公司。
@@ -221,6 +223,8 @@ if (typeof input === 'string') {
 - 对缓存失效、计数器、事务边界写断言。
 - 上传和资源测试要覆盖 owner mismatch、already consuming、S3 compensation、audit log 脱敏。
 - route handler 只有在 HTTP 层行为是风险点时才单测。
+- 标签写入必须先按 `name` 和 `alias` 解析到 canonical tag；如果提交值是主标签 alias，不创建 alias 同名 tag，也不为 alias tag 计数，只移动/计数主 tag。
+- VNDB 信息只用于 ID、会社等外部数据；不要导入 VNDB tag。历史 VNDB tag 同步脚本默认禁用，避免重新写入 VNDB 标签。
 
 参考：
 

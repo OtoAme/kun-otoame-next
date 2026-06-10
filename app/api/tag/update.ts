@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { prisma } from '~/prisma/index'
 import { updateTagSchema } from '~/validations/tag'
 import { invalidateTagCaches } from '~/app/api/patch/cache'
+import { assertTagAliasAvailable } from './aliasValidation'
 import type { TagDetail } from '~/types/api/tag'
 
 export const updateTag = async (input: z.infer<typeof updateTagSchema>) => {
@@ -14,6 +15,11 @@ export const updateTag = async (input: z.infer<typeof updateTagSchema>) => {
   })
   if (existingTag && existingTag.id !== tagId) {
     return '这个标签已经存在了'
+  }
+
+  const aliasError = await assertTagAliasAvailable(alias, tagId)
+  if (aliasError) {
+    return aliasError
   }
 
   const newTag: TagDetail = await prisma.patch_tag.update({

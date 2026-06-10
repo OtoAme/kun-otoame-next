@@ -2,19 +2,13 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { kunParsePostBody } from '~/app/api/utils/parseQuery'
 import { fetchVndbVn } from '~/lib/arnebiae/vndb'
-import { TAG_MAP } from '~/lib/tagMap'
-import type {
-  VNDBDetailResult,
-  VndbTag,
-  VndbProducer
-} from '~/lib/arnebiae/vndb'
+import type { VNDBDetailResult, VndbProducer } from '~/lib/arnebiae/vndb'
 
 const detailsSchema = z.object({
   vndbId: z.string().regex(/^v\d+$/i, 'VNDB ID 格式不正确')
 })
 
 interface VNDBFullResult extends VNDBDetailResult {
-  tags?: VndbTag[] | null
   developers?: VndbProducer[] | null
 }
 
@@ -29,19 +23,6 @@ const buildAllTitles = (response: { results: VNDBFullResult[] }) => {
     ]
     return titlesArray
   })
-}
-
-const buildTags = (results: VNDBFullResult[]) => {
-  const allTags = results.flatMap((vn) => vn.tags ?? [])
-  return allTags
-    .filter(
-      (t) =>
-        !t.lie &&
-        t.spoiler === 0 &&
-        (t.category === 'cont' || t.category === 'tech')
-    )
-    .map((t) => TAG_MAP[t.name] || t.name)
-    .filter((name, i, arr) => arr.indexOf(name) === i)
 }
 
 const buildDevelopers = (results: VNDBFullResult[]) => {
@@ -65,7 +46,7 @@ export const POST = async (req: NextRequest) => {
   try {
     const vndbData = await fetchVndbVn<VNDBFullResult>(
       ['id', '=', vndbId],
-      'title, titles.lang, titles.title, aliases, released, tags{id,name,rating,spoiler,lie,category}, developers{id,name,original,aliases,lang,type}'
+      'title, titles.lang, titles.title, aliases, released, developers{id,name,original,aliases,lang,type}'
     )
     if (!vndbData.results.length) {
       return NextResponse.json('未找到对应的 VNDB 条目')
@@ -73,10 +54,9 @@ export const POST = async (req: NextRequest) => {
 
     const titles = buildAllTitles(vndbData)
     const released = vndbData.results[0].released
-    const tags = buildTags(vndbData.results)
     const developers = buildDevelopers(vndbData.results)
 
-    return NextResponse.json({ titles, released, tags, developers })
+    return NextResponse.json({ titles, released, tags: [], developers })
   } catch (error) {
     return NextResponse.json('VNDB API 请求失败')
   }

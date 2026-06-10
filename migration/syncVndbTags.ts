@@ -6,6 +6,9 @@ import { TAG_MAP } from '~/lib/tagMap'
 const BATCH_SIZE = 50
 const REQUEST_DELAY = 1500
 const SYSTEM_USER_ID = 1
+const shouldForceLegacyVndbTags = process.argv.includes(
+  '--force-legacy-vndb-tags'
+)
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
@@ -24,6 +27,17 @@ interface VndbVnResult {
 }
 
 async function syncVndbTags() {
+  if (!shouldForceLegacyVndbTags) {
+    console.error(
+      'VNDB tag sync is disabled. Current edit flow does not import VNDB tags.'
+    )
+    console.error(
+      'No data changed. Use --force-legacy-vndb-tags only for an explicit historical recovery.'
+    )
+    process.exitCode = 1
+    return
+  }
+
   console.log('Step 1: 获取有 VNDB ID 的 patch...')
 
   const patches = await prisma.patch.findMany({

@@ -10,6 +10,14 @@ const duplicateQueryField = (maxLength: number) =>
     return trimmed.length > 0 ? trimmed : undefined
   }, z.string().max(maxLength).optional())
 
+const duplicateExcludeIdField = z.preprocess((value) => {
+  if (typeof value !== 'string') {
+    return undefined
+  }
+  const trimmed = value.trim()
+  return trimmed.length > 0 ? trimmed : undefined
+}, z.string().regex(/^\d+$/, 'excludeId 格式不正确').max(10).optional())
+
 const optionalVndbId = z
   .string()
   .max(10, { message: 'VNDB ID 最多 10 个字符' })
@@ -174,7 +182,7 @@ export const duplicateSchema = z
     steamId: duplicateQueryField(10),
     dlsiteCode: duplicateQueryField(20),
     title: duplicateQueryField(1007),
-    excludeId: duplicateQueryField(10)
+    excludeId: duplicateExcludeIdField
   })
   .refine(
     (data) =>

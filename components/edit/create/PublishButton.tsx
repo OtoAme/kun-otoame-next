@@ -88,7 +88,7 @@ export const PublishButton = ({ setErrors, className }: Props) => {
       banner: localeBannerBlob,
       alias: JSON.stringify(data.alias),
       tag: JSON.stringify(data.tag),
-      vndbTags: JSON.stringify(data.vndbTags),
+      vndbTags: JSON.stringify([]),
       vndbDevelopers: JSON.stringify(data.vndbDevelopers),
       bangumiTags: JSON.stringify(data.bangumiTags),
       bangumiDevelopers: JSON.stringify(data.bangumiDevelopers),
@@ -125,7 +125,7 @@ export const PublishButton = ({ setErrors, className }: Props) => {
     formDataToSend.append('dlsiteCode', data.dlsiteCode ?? '')
     formDataToSend.append('dlsiteCircleName', data.dlsiteCircleName)
     formDataToSend.append('dlsiteCircleLink', data.dlsiteCircleLink)
-    formDataToSend.append('vndbTags', JSON.stringify(data.vndbTags))
+    formDataToSend.append('vndbTags', JSON.stringify([]))
     formDataToSend.append('vndbDevelopers', JSON.stringify(data.vndbDevelopers))
     formDataToSend.append('bangumiTags', JSON.stringify(data.bangumiTags))
     formDataToSend.append(

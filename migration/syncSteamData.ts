@@ -2,66 +2,94 @@ import 'dotenv/config'
 import { prisma } from '~/prisma/index'
 import { fetchSteamAppData } from '~/lib/arnebiae/steam'
 import { lowQualitySteamTags } from '~/lib/steamDirtyTag'
+import { normalizeStringArray } from '~/utils/normalizeStringArray'
+import {
+  buildTagLookupWhere,
+  getCanonicalTagIds,
+  hasAnyTagName,
+  mapTagNamesToIds
+} from '~/app/api/edit/tagEnsureHelper'
 import type { SteamAppData } from '~/lib/arnebiae/steam'
 
 const CONCURRENCY = 2
 const SYSTEM_USER_ID = 1
-const dirtyTagSet = new Set(lowQualitySteamTags)
+const dirtyTagSet = new Set(
+  lowQualitySteamTags.map((tag) => tag.trim()).filter(Boolean)
+)
 
 async function processTags(patchId: number, data: SteamAppData, uid: number) {
-  const filteredTags = data.tags.filter((t) => !dirtyTagSet.has(t))
+  const filteredTags = normalizeStringArray(data.tags).filter(
+    (tag) => !dirtyTagSet.has(tag)
+  )
   if (!filteredTags.length) return { ensured: 0, related: 0 }
 
-  const existingTags = await prisma.patch_tag.findMany({
-    where: { name: { in: filteredTags } },
-    select: { id: true, name: true }
-  })
-  const existingNameSet = new Set(existingTags.map((t) => t.name))
-
-  const tagsToCreate = filteredTags.filter((t) => !existingNameSet.has(t))
-
-  if (tagsToCreate.length) {
-    await prisma.patch_tag.createMany({
-      data: tagsToCreate.map((name) => ({
-        name,
-        user_id: uid,
-        source: 'steam'
-      })),
-      skipDuplicates: true
-    })
-  }
-
-  const allRelevantTags = await prisma.patch_tag.findMany({
-    where: { name: { in: filteredTags } },
-    select: { id: true }
-  })
-  const tagIds = allRelevantTags.map((t) => t.id)
-
-  if (tagIds.length) {
-    const existingRelations = await prisma.patch_tag_relation.findMany({
-      where: { patch_id: patchId, tag_id: { in: tagIds } },
-      select: { tag_id: true }
-    })
-    const existingRelationIds = new Set(existingRelations.map((r) => r.tag_id))
-    const newTagIds = tagIds.filter((id) => !existingRelationIds.has(id))
-
-    if (newTagIds.length) {
-      await prisma.patch_tag_relation.createMany({
-        data: newTagIds.map((tagId) => ({
-          patch_id: patchId,
-          tag_id: tagId
-        })),
-        skipDuplicates: true
+  return await prisma.$transaction(
+    async (tx) => {
+      const existingTags = await tx.patch_tag.findMany({
+        where: buildTagLookupWhere(filteredTags),
+        orderBy: { id: 'asc' },
+        select: { id: true, name: true, alias: true }
       })
+      const tagNameToId = mapTagNamesToIds(existingTags)
 
-      await prisma.patch_tag.updateMany({
-        where: { id: { in: newTagIds } },
-        data: { count: { increment: 1 } }
-      })
-    }
-  }
+      const tagsToCreate = filteredTags.filter(
+        (tag) => !tagNameToId.has(tag) && !hasAnyTagName(existingTags, tag)
+      )
 
-  return { ensured: tagsToCreate.length, related: tagIds.length }
+      if (tagsToCreate.length) {
+        await tx.patch_tag.createMany({
+          data: tagsToCreate.map((name) => ({
+            name,
+            user_id: uid,
+            source: 'steam'
+          })),
+          skipDuplicates: true
+        })
+      }
+
+      const newTags =
+        tagsToCreate.length > 0
+          ? await tx.patch_tag.findMany({
+              where: { name: { in: tagsToCreate } },
+              select: { id: true, name: true, alias: true }
+            })
+          : []
+      for (const [name, tagId] of mapTagNamesToIds(newTags)) {
+        tagNameToId.set(name, tagId)
+      }
+
+      const tagIds = getCanonicalTagIds(filteredTags, tagNameToId)
+
+      if (tagIds.length) {
+        const existingRelations = await tx.patch_tag_relation.findMany({
+          where: { patch_id: patchId, tag_id: { in: tagIds } },
+          select: { tag_id: true }
+        })
+        const existingRelationIds = new Set(
+          existingRelations.map((relation) => relation.tag_id)
+        )
+        const newTagIds = tagIds.filter((id) => !existingRelationIds.has(id))
+
+        if (newTagIds.length) {
+          await tx.patch_tag_relation.createMany({
+            data: newTagIds.map((tagId) => ({
+              patch_id: patchId,
+              tag_id: tagId
+            })),
+            skipDuplicates: true
+          })
+
+          await tx.patch_tag.updateMany({
+            where: { id: { in: newTagIds } },
+            data: { count: { increment: 1 } }
+          })
+        }
+      }
+
+      return { ensured: tagsToCreate.length, related: tagIds.length }
+    },
+    { timeout: 60000 }
+  )
 }
 
 async function processCompanies(

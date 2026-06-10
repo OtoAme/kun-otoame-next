@@ -85,7 +85,6 @@ export const RewritePatch = () => {
 
     data.alias.forEach((a) => formData.append('alias', a))
     data.tag.forEach((t) => formData.append('tag', t))
-    data.vndbTags.forEach((tag) => formData.append('vndbTags', tag))
     data.vndbDevelopers.forEach((developer) =>
       formData.append('vndbDevelopers', developer)
     )
@@ -226,6 +225,7 @@ export const RewritePatch = () => {
             setData={setData}
             errors={errors.vndbId}
             isDuplicate={data.isDuplicate}
+            excludeId={data.id}
             onDuplicateChange={(value) =>
               setData({ ...data, isDuplicate: value })
             }
@@ -235,6 +235,7 @@ export const RewritePatch = () => {
             setData={setData}
             errors={errors.vndbRelationId}
             enableDuplicateCheck={false}
+            excludeId={data.id}
           />
           <BangumiInput
             data={data}

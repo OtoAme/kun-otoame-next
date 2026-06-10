@@ -20,6 +20,7 @@ interface BangumiInfoboxItem {
 interface BangumiSubject {
   name?: string
   name_cn?: string
+  summary?: string
   tags?: BangumiTag[]
   infobox?: BangumiInfoboxItem[]
 }
@@ -84,6 +85,7 @@ export const POST = async (req: NextRequest) => {
     return NextResponse.json({
       name: data.name ?? '',
       nameCn: data.name_cn ?? '',
+      summary: data.summary ?? '',
       tags,
       developers: extractDevelopers(data.infobox)
     })

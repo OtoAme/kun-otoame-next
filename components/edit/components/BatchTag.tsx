@@ -13,8 +13,7 @@ interface TagEntry {
   source: string
 }
 
-const SOURCE_COLORS: Record<string, 'secondary' | 'success' | 'warning'> = {
-  VNDB: 'secondary',
+const SOURCE_COLORS: Record<string, 'success' | 'warning'> = {
   Bangumi: 'success',
   Steam: 'warning'
 }
@@ -22,9 +21,6 @@ const SOURCE_COLORS: Record<string, 'secondary' | 'success' | 'warning'> = {
 const collectExternalTags = (data: PatchFormDataShape): TagEntry[] => {
   const entries: TagEntry[] = []
 
-  for (const name of data.vndbTags) {
-    if (name.trim()) entries.push({ name: name.trim(), source: 'VNDB' })
-  }
   for (const name of data.bangumiTags) {
     if (name.trim()) entries.push({ name: name.trim(), source: 'Bangumi' })
   }

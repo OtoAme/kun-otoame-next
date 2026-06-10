@@ -25,13 +25,15 @@ interface Props<T extends PatchFormDataShape> {
   data: T
   setData: PatchFormDataSetter<T>
   enableDuplicateCheck?: boolean
+  excludeId?: number
 }
 
 export const VNDBRelationInput = <T extends PatchFormDataShape>({
   errors,
   data,
   setData,
-  enableDuplicateCheck = true
+  enableDuplicateCheck = true,
+  excludeId
 }: Props<T>) => {
   const handleFetchRelation = async () => {
     const rawInput = normalizeVndbRelationIdInput(data.vndbRelationId ?? '')
@@ -71,7 +73,8 @@ export const VNDBRelationInput = <T extends PatchFormDataShape>({
         const duplicateResult = await kunFetchGet<
           KunResponse<{ uniqueId: string; matchedFields?: string[] }>
         >('/edit/duplicate', {
-          vndbRelationId: normalized
+          vndbRelationId: normalized,
+          ...(excludeId ? { excludeId: String(excludeId) } : {})
         })
 
         if (typeof duplicateResult === 'string') {
@@ -96,8 +99,7 @@ export const VNDBRelationInput = <T extends PatchFormDataShape>({
         released: vnReleased,
         tags,
         developers
-      } =
-        await fetchVNDBDetails(vndbId)
+      } = await fetchVNDBDetails(vndbId)
 
       // Relation titles should be added to existing aliases (including those
       // previously fetched via VNDB ID), and relation release date should
@@ -119,7 +121,7 @@ export const VNDBRelationInput = <T extends PatchFormDataShape>({
             ...new Set([...current.alias, ...relationTitles, ...vnTitles])
           ],
           released: mergedReleased,
-          vndbTags: tags,
+          vndbTags: tags ?? [],
           vndbDevelopers: developers
         }
       })

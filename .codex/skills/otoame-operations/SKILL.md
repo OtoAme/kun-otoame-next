@@ -22,6 +22,7 @@ Use this skill for operational code and release plumbing.
 - Check workflow branches before assuming CI covers `main` or PRs.
 - Multi-instance scheduled tasks should use task locks.
 - Migration scripts need dry-run/preflight behavior for production data.
+- Tag alias cleanup uses `maintenance:tags:auto-alias:dry` before `maintenance:tags:auto-alias:apply`; local empty tag data does not validate production impact.
 
 ## Verification
 

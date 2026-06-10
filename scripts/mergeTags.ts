@@ -1,8 +1,15 @@
 import 'dotenv/config'
 import { readFile } from 'fs/promises'
 import { prisma } from '~/prisma/index'
+import {
+  buildAutoAliasMergePlan,
+  getMergePreview,
+  type MergePreviewTag,
+  type MergeTagsPlan
+} from './tagMergePlan'
 
 const shouldApply = process.argv.includes('--apply')
+const shouldAutoAlias = process.argv.includes('--auto-alias')
 
 const getArgValue = (name: string) => {
   const prefix = `${name}=`
@@ -10,41 +17,51 @@ const getArgValue = (name: string) => {
   return match?.slice(prefix.length)
 }
 
-type MergeTagsPlan = {
-  merges?: Array<{
-    targetTagId: number
-    targetName?: string
-    sourceTagIds: number[]
-    sourceNames?: string[]
-    aliases?: string[]
-  }>
-  deletes?: Array<number | { tagId: number; name?: string }>
-}
-
-const normalizeAliases = (aliases: string[]) => [
-  ...new Set(aliases.map((alias) => alias.trim()).filter(Boolean))
-]
-
 type PlanValidationResult = {
   errors: string[]
   warnings: string[]
 }
 
+type PatchRelationWithUniqueId = {
+  patch_id: number
+  patch?: {
+    unique_id: string
+  } | null
+}
+
+type TagById = Map<number, MergePreviewTag>
+
+const PATCH_CONTENT_CACHE_BATCH_SIZE = 100
+
+const unique = <T>(values: T[]) => [...new Set(values)]
+
+const collectAffectedUniqueIds = (relations: PatchRelationWithUniqueId[]) =>
+  unique(
+    relations
+      .map((relation) => relation.patch?.unique_id)
+      .filter((uniqueId): uniqueId is string => typeof uniqueId === 'string')
+  )
+
 const readPlan = async (): Promise<MergeTagsPlan> => {
   const planPath = getArgValue('--plan')
   if (!planPath) {
-    throw new Error('Missing --plan=path/to/merge-plan.json')
+    if (shouldAutoAlias) {
+      return {}
+    }
+    throw new Error('Missing --plan=path/to/merge-plan.json or --auto-alias')
   }
 
   const content = await readFile(planPath, 'utf8')
   return JSON.parse(content) as MergeTagsPlan
 }
 
-const getDeleteTagId = (deleteTag: NonNullable<MergeTagsPlan['deletes']>[number]) =>
-  typeof deleteTag === 'number' ? deleteTag : deleteTag.tagId
+const getDeleteTagId = (
+  deleteTag: NonNullable<MergeTagsPlan['deletes']>[number]
+) => (typeof deleteTag === 'number' ? deleteTag : deleteTag.tagId)
 
-const getDeleteTagName = (deleteTag: NonNullable<MergeTagsPlan['deletes']>[number]) =>
-  typeof deleteTag === 'number' ? undefined : deleteTag.name
+const getDeleteTagName = (
+  deleteTag: NonNullable<MergeTagsPlan['deletes']>[number]
+) => (typeof deleteTag === 'number' ? undefined : deleteTag.name)
 
 const validatePlan = async (
   merges: Required<MergeTagsPlan>['merges'],
@@ -53,11 +70,21 @@ const validatePlan = async (
   const errors: string[] = []
   const warnings: string[] = []
   const tagIds = new Set<number>()
+  const sourceOwnerById = new Map<number, number>()
+  const deleteTagIds = new Set(deletes.map(getDeleteTagId))
 
   for (const merge of merges) {
     tagIds.add(merge.targetTagId)
     for (const tagId of merge.sourceTagIds) {
       tagIds.add(tagId)
+      const currentOwner = sourceOwnerById.get(tagId)
+      if (currentOwner && currentOwner !== merge.targetTagId) {
+        errors.push(
+          `Source tag #${tagId} appears in multiple merge targets: #${currentOwner}, #${merge.targetTagId}`
+        )
+      } else {
+        sourceOwnerById.set(tagId, merge.targetTagId)
+      }
     }
   }
   for (const deleteTag of deletes) {
@@ -83,10 +110,22 @@ const validatePlan = async (
         `Target tag #${merge.targetTagId} name mismatch: expected ${merge.targetName}, got ${targetTag.name}`
       )
     }
+    if (deleteTagIds.has(merge.targetTagId)) {
+      errors.push(`Target tag #${merge.targetTagId} cannot also be deleted`)
+    }
 
     for (const [index, tagId] of merge.sourceTagIds.entries()) {
       if (tagId === merge.targetTagId) {
+        errors.push(`Source tag #${tagId} cannot equal target tag`)
         continue
+      }
+      if (deleteTagIds.has(tagId)) {
+        errors.push(`Source tag #${tagId} cannot also be deleted`)
+      }
+      if (sourceOwnerById.has(merge.targetTagId)) {
+        errors.push(
+          `Target tag #${merge.targetTagId} cannot also be a source tag`
+        )
       }
 
       const sourceTag = tagsById.get(tagId)
@@ -143,7 +182,10 @@ const getBlockedTagUserUpdates = async (
       (tagId) => !sourceTagIdSet.has(tagId)
     )
 
-    if (targetTagId && user.blocked_tag_ids.some((tagId) => sourceTagIdSet.has(tagId))) {
+    if (
+      targetTagId &&
+      user.blocked_tag_ids.some((tagId) => sourceTagIdSet.has(tagId))
+    ) {
       nextBlockedTagIds.push(targetTagId)
     }
 
@@ -154,19 +196,40 @@ const getBlockedTagUserUpdates = async (
   })
 }
 
-const mergeTags = async (plan: Required<MergeTagsPlan>['merges'][number]) => {
-  const expectedSourceNamesById = new Map(
-    plan.sourceTagIds.map((tagId, index) => [tagId, plan.sourceNames?.[index]])
+const logMergePreview = (
+  targetTag: MergePreviewTag,
+  sourceTags: MergePreviewTag[],
+  relationCount: number,
+  nextAliases: string[]
+) => {
+  console.log(
+    `${shouldApply ? 'Applying' : 'Dry run'} merge into #${targetTag.id} ${targetTag.name}`
   )
-  const sourceTagIds = [...new Set(plan.sourceTagIds)].filter(
-    (tagId) => tagId !== plan.targetTagId
+  for (const tag of sourceTags) {
+    console.log(
+      `  merge #${tag.id} ${tag.name} (count=${tag.count}, relations=${tag._count.patch_relation})`
+    )
+  }
+  console.log(`  source relations: ${relationCount}`)
+  console.log(`  next aliases: ${nextAliases.join(', ') || '(none)'}`)
+}
+
+const collectMergeTagIds = (merges: Required<MergeTagsPlan>['merges']) => [
+  ...new Set(
+    merges.flatMap((merge) => [merge.targetTagId, ...merge.sourceTagIds])
   )
-  if (!sourceTagIds.length) {
-    return
+]
+
+const loadMergeTagsById = async (
+  merges: Required<MergeTagsPlan>['merges']
+): Promise<TagById> => {
+  const tagIds = collectMergeTagIds(merges)
+  if (!tagIds.length) {
+    return new Map()
   }
 
   const tags = await prisma.patch_tag.findMany({
-    where: { id: { in: [plan.targetTagId, ...sourceTagIds] } },
+    where: { id: { in: tagIds } },
     select: {
       id: true,
       name: true,
@@ -175,8 +238,28 @@ const mergeTags = async (plan: Required<MergeTagsPlan>['merges'][number]) => {
       _count: { select: { patch_relation: true } }
     }
   })
-  const targetTag = tags.find((tag) => tag.id === plan.targetTagId)
-  const sourceTags = tags.filter((tag) => sourceTagIds.includes(tag.id))
+
+  return new Map(tags.map((tag) => [tag.id, tag]))
+}
+
+const mergeTags = async (
+  plan: Required<MergeTagsPlan>['merges'][number],
+  tagsById: TagById
+) => {
+  const expectedSourceNamesById = new Map(
+    plan.sourceTagIds.map((tagId, index) => [tagId, plan.sourceNames?.[index]])
+  )
+  const sourceTagIds = [...new Set(plan.sourceTagIds)].filter(
+    (tagId) => tagId !== plan.targetTagId
+  )
+  if (!sourceTagIds.length) {
+    return []
+  }
+
+  const targetTag = tagsById.get(plan.targetTagId)
+  const sourceTags = sourceTagIds
+    .map((tagId) => tagsById.get(tagId))
+    .filter((tag): tag is MergePreviewTag => Boolean(tag))
 
   if (!targetTag) {
     throw new Error(`Target tag #${plan.targetTagId} not found`)
@@ -194,7 +277,10 @@ const mergeTags = async (plan: Required<MergeTagsPlan>['merges'][number]) => {
   if (mismatchedSourceTags.length > 0) {
     throw new Error(
       `Source tag name mismatch: ${mismatchedSourceTags
-        .map((tag) => `#${tag.id} expected ${expectedSourceNamesById.get(tag.id)}, got ${tag.name}`)
+        .map(
+          (tag) =>
+            `#${tag.id} expected ${expectedSourceNamesById.get(tag.id)}, got ${tag.name}`
+        )
         .join('; ')}`
     )
   }
@@ -202,37 +288,37 @@ const mergeTags = async (plan: Required<MergeTagsPlan>['merges'][number]) => {
   const existingSourceTagIds = sourceTags.map((tag) => tag.id)
   if (sourceTags.length !== sourceTagIds.length) {
     const foundSourceIds = new Set(existingSourceTagIds)
-    const missingSourceIds = sourceTagIds.filter((tagId) => !foundSourceIds.has(tagId))
+    const missingSourceIds = sourceTagIds.filter(
+      (tagId) => !foundSourceIds.has(tagId)
+    )
     console.warn(`  skip missing source tags: ${missingSourceIds.join(', ')}`)
+  }
+
+  const preview = getMergePreview(targetTag, sourceTags, plan.aliases)
+  logMergePreview(
+    targetTag,
+    sourceTags,
+    preview.relationCount,
+    preview.nextAliases
+  )
+
+  if (!shouldApply) {
+    return []
   }
 
   const sourceRelations = await prisma.patch_tag_relation.findMany({
     where: { tag_id: { in: existingSourceTagIds } },
-    select: { patch_id: true, tag_id: true }
+    select: {
+      patch_id: true,
+      tag_id: true,
+      patch: {
+        select: {
+          unique_id: true
+        }
+      }
+    }
   })
-  const affectedPatches = [...new Set(sourceRelations.map((relation) => relation.patch_id))]
-  const nextAliases = normalizeAliases([
-    ...targetTag.alias,
-    ...sourceTags.map((tag) => tag.name),
-    ...sourceTags.flatMap((tag) => tag.alias),
-    ...(plan.aliases ?? [])
-  ]).filter((alias) => alias !== targetTag.name)
-
-  console.log(
-    `${shouldApply ? 'Applying' : 'Dry run'} merge into #${targetTag.id} ${targetTag.name}`
-  )
-  for (const tag of sourceTags) {
-    console.log(
-      `  merge #${tag.id} ${tag.name} (count=${tag.count}, relations=${tag._count.patch_relation})`
-    )
-  }
-  console.log(`  relations to move: ${sourceRelations.length}`)
-  console.log(`  affected patches: ${affectedPatches.length}`)
-  console.log(`  next aliases: ${nextAliases.join(', ') || '(none)'}`)
-
-  if (!shouldApply) {
-    return
-  }
+  const affectedUniqueIds = collectAffectedUniqueIds(sourceRelations)
 
   const userUpdates = await getBlockedTagUserUpdates(
     existingSourceTagIds,
@@ -265,7 +351,7 @@ const mergeTags = async (plan: Required<MergeTagsPlan>['merges'][number]) => {
     await tx.patch_tag.update({
       where: { id: plan.targetTagId },
       data: {
-        alias: nextAliases,
+        alias: preview.nextAliases,
         count: actualCount
       }
     })
@@ -277,16 +363,23 @@ const mergeTags = async (plan: Required<MergeTagsPlan>['merges'][number]) => {
       })
     }
   })
+
+  return affectedUniqueIds
 }
 
-const deleteTags = async (deleteTags: NonNullable<MergeTagsPlan['deletes']>) => {
+const deleteTags = async (
+  deleteTags: NonNullable<MergeTagsPlan['deletes']>
+) => {
   const uniqueTagIds = [...new Set(deleteTags.map(getDeleteTagId))]
   if (!uniqueTagIds.length) {
-    return
+    return []
   }
 
   const expectedTagNamesById = new Map(
-    deleteTags.map((deleteTag) => [getDeleteTagId(deleteTag), getDeleteTagName(deleteTag)])
+    deleteTags.map((deleteTag) => [
+      getDeleteTagId(deleteTag),
+      getDeleteTagName(deleteTag)
+    ])
   )
 
   const tags = await prisma.patch_tag.findMany({
@@ -301,7 +394,9 @@ const deleteTags = async (deleteTags: NonNullable<MergeTagsPlan['deletes']>) => 
 
   if (tags.length !== uniqueTagIds.length) {
     const foundTagIds = new Set(tags.map((tag) => tag.id))
-    const missingTagIds = uniqueTagIds.filter((tagId) => !foundTagIds.has(tagId))
+    const missingTagIds = uniqueTagIds.filter(
+      (tagId) => !foundTagIds.has(tagId)
+    )
     console.warn(`skip missing delete tags: ${missingTagIds.join(', ')}`)
   }
 
@@ -312,12 +407,17 @@ const deleteTags = async (deleteTags: NonNullable<MergeTagsPlan['deletes']>) => 
   if (mismatchedTags.length > 0) {
     throw new Error(
       `Delete tag name mismatch: ${mismatchedTags
-        .map((tag) => `#${tag.id} expected ${expectedTagNamesById.get(tag.id)}, got ${tag.name}`)
+        .map(
+          (tag) =>
+            `#${tag.id} expected ${expectedTagNamesById.get(tag.id)}, got ${tag.name}`
+        )
         .join('; ')}`
     )
   }
 
-  console.log(`${shouldApply ? 'Applying' : 'Dry run'} delete ${tags.length} tags`)
+  console.log(
+    `${shouldApply ? 'Applying' : 'Dry run'} delete ${tags.length} tags`
+  )
   for (const tag of tags) {
     console.log(
       `  delete #${tag.id} ${tag.name} (count=${tag.count}, relations=${tag._count.patch_relation})`
@@ -325,10 +425,22 @@ const deleteTags = async (deleteTags: NonNullable<MergeTagsPlan['deletes']>) => 
   }
 
   if (!shouldApply || !tags.length) {
-    return
+    return []
   }
 
   const existingTagIds = tags.map((tag) => tag.id)
+  const tagRelations = await prisma.patch_tag_relation.findMany({
+    where: { tag_id: { in: existingTagIds } },
+    select: {
+      patch_id: true,
+      patch: {
+        select: {
+          unique_id: true
+        }
+      }
+    }
+  })
+  const affectedUniqueIds = collectAffectedUniqueIds(tagRelations)
   const userUpdates = await getBlockedTagUserUpdates(existingTagIds)
 
   await prisma.$transaction(async (tx) => {
@@ -347,17 +459,32 @@ const deleteTags = async (deleteTags: NonNullable<MergeTagsPlan['deletes']>) => 
       })
     }
   })
+
+  return affectedUniqueIds
 }
 
-const invalidateCaches = async () => {
+const invalidateCaches = async (affectedUniqueIds: string[]) => {
   try {
-    const { invalidatePatchListCaches, invalidateTagCaches } = await import(
-      '../app/api/patch/cache'
-    )
+    const {
+      invalidatePatchContentCache,
+      invalidatePatchListCaches,
+      invalidateTagCaches
+    } = await import('../app/api/patch/cache')
     const { redis } = await import('../lib/redis')
 
     try {
       await Promise.all([invalidateTagCaches(), invalidatePatchListCaches()])
+      for (
+        let index = 0;
+        index < affectedUniqueIds.length;
+        index += PATCH_CONTENT_CACHE_BATCH_SIZE
+      ) {
+        await Promise.all(
+          affectedUniqueIds
+            .slice(index, index + PATCH_CONTENT_CACHE_BATCH_SIZE)
+            .map((uniqueId) => invalidatePatchContentCache(uniqueId))
+        )
+      }
     } finally {
       redis.disconnect()
     }
@@ -370,8 +497,20 @@ const invalidateCaches = async () => {
 
 const run = async () => {
   const plan = await readPlan()
-  const merges = plan.merges ?? []
+  let merges = plan.merges ?? []
   const deletes = plan.deletes ?? []
+
+  if (shouldAutoAlias) {
+    const tags = await prisma.patch_tag.findMany({
+      orderBy: { id: 'asc' },
+      select: { id: true, name: true, alias: true }
+    })
+    const autoPlan = buildAutoAliasMergePlan(tags)
+    for (const warning of autoPlan.warnings) {
+      console.warn(`  ${warning}`)
+    }
+    merges = [...merges, ...autoPlan.merges]
+  }
 
   console.log(
     `${shouldApply ? 'Applying' : 'Dry run'} tag merge plan with ${merges.length} merges and ${deletes.length} deletes.`
@@ -392,17 +531,26 @@ const run = async () => {
     return
   }
 
+  const affectedUniqueIdSet = new Set<string>()
+  const mergeTagsById = await loadMergeTagsById(merges)
   for (const merge of merges) {
-    await mergeTags(merge)
+    for (const uniqueId of await mergeTags(merge, mergeTagsById)) {
+      affectedUniqueIdSet.add(uniqueId)
+    }
   }
-  await deleteTags(deletes)
+  for (const uniqueId of await deleteTags(deletes)) {
+    affectedUniqueIdSet.add(uniqueId)
+  }
+  const affectedUniqueIds = [...affectedUniqueIdSet]
 
   if (!shouldApply) {
+    console.log('Affected patch content caches: skipped in dry run for speed.')
     console.log('No data changed. Re-run with --apply to execute this plan.')
     return
   }
 
-  await invalidateCaches()
+  console.log(`Affected patch content caches: ${affectedUniqueIds.length}`)
+  await invalidateCaches(affectedUniqueIds)
   console.log('Tag merge plan applied.')
 }
 

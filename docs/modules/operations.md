@@ -43,6 +43,10 @@
 
 带 `dry` 的脚本先 dry-run，确认输出后再 apply。
 
+`maintenance:tags:auto-alias:dry` 会在生产库里扫描“某个 tag 的 name 命中另一个主 tag 的 alias”的历史重复数据，并生成合并计划。dry-run 只做计划校验和关系数量预览，不加载所有受影响 patch 的 `unique_id`，避免生产数据量大时预览过慢。确认输出无误后再运行 `maintenance:tags:auto-alias:apply`；apply 会移动 patch 关系、合并 alias、修正 count、迁移用户 blocked tag，并失效 tag/list/受影响 patch 内容缓存。多主 tag 共用同一 alias 时会跳过并输出 warning，需要人工计划。
+
+手工合并仍使用 `maintenance:tags:merge:* -- --plan=path/to/merge-plan.json`。本地库没有生产 tag 数据时，不要用本地 dry-run 结果判断生产影响面，应在生产备份后对生产库 dry-run。
+
 ## Postbuild
 
 `scripts/postbuild.ts` 在 `next build` 后执行：

@@ -5,7 +5,7 @@ import { kunFetchPost } from '~/utils/kunFetch'
 interface VNDBDetailsResponse {
   titles: string[]
   released: string
-  tags: string[]
+  tags?: string[]
   developers: string[]
 }
 

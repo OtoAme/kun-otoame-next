@@ -4,18 +4,18 @@
 
 ## 组件分层
 
-| 路径 | 说明 |
-| --- | --- |
-| `components/kun/*` | 全站共享 UI、导航、主题、编辑器、图片查看器、cropper、auth captcha。 |
-| `components/home/*` | 首页 hero、轮播、统计、卡片。 |
-| `components/patch/*` | 游戏详情页 header、introduction、resource、comment、rating、gallery。 |
-| `components/edit/*` | 创建/重写游戏表单，VNDB/Bangumi/Steam/DLSite 外部数据输入。 |
-| `components/admin/*` | 后台列表、编辑、审核、日志、邮件和设置。 |
-| `components/user/*` | 用户主页、关注、收藏、评论、评分、资源。 |
-| `components/settings/*` | 用户设置。 |
-| `components/message/*` | 消息列表和聊天会话。 |
-| `components/tag/*`, `components/company/*` | 标签和公司页面。 |
-| `components/doc/*` | 文档页导航、目录和内容布局。 |
+| 路径                                       | 说明                                                                  |
+| ------------------------------------------ | --------------------------------------------------------------------- |
+| `components/kun/*`                         | 全站共享 UI、导航、主题、编辑器、图片查看器、cropper、auth captcha。  |
+| `components/home/*`                        | 首页 hero、轮播、统计、卡片。                                         |
+| `components/patch/*`                       | 游戏详情页 header、introduction、resource、comment、rating、gallery。 |
+| `components/edit/*`                        | 创建/重写游戏表单，VNDB/Bangumi/Steam/DLSite 外部数据输入。           |
+| `components/admin/*`                       | 后台列表、编辑、审核、日志、邮件和设置。                              |
+| `components/user/*`                        | 用户主页、关注、收藏、评论、评分、资源。                              |
+| `components/settings/*`                    | 用户设置。                                                            |
+| `components/message/*`                     | 消息列表和聊天会话。                                                  |
+| `components/tag/*`, `components/company/*` | 标签和公司页面。                                                      |
+| `components/doc/*`                         | 文档页导航、目录和内容布局。                                          |
 
 ## Client/Server 边界
 
@@ -45,6 +45,8 @@ Store 改动要检查使用该 store 的页面和组件，不要只改类型。
 - VNDB、Bangumi、Steam、DLSite 输入会异步写入同一个创建/重写 store。
 - 多个外部来源可能连续点击或并发返回；写入 store 时必须基于当前 state 合并，只覆盖该来源负责的字段。
 - 不要用请求发起时捕获的旧 `data` 对象整体覆盖 store，否则后返回的 Bangumi/Steam 会丢掉先返回的 VNDB ID、公司、标签或别名。
+- VNDB 获取只写入 ID、发售日、别名和 developer，不写入 VNDB 标签。
+- Bangumi 获取会保留标签、developer 和 summary；summary 只通过用户点击按钮填入简介，不自动覆盖已有简介。
 - 公司写入优先级由 API 层处理：VNDB developer 优先，Bangumi developer 兜底；前端仍要保留 Bangumi 标签等非公司字段。
 
 ## 主题与样式

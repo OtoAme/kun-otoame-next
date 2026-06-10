@@ -7,6 +7,8 @@ export const duplicate = async (input: z.infer<typeof duplicateSchema>) => {
   const vndbRelationId = input.vndbRelationId?.toLowerCase()
   const dlsiteCode = input.dlsiteCode?.toUpperCase()
   const title = input.title
+  const excludeId = input.excludeId ? Number(input.excludeId) : undefined
+  const excludeCurrentPatch = excludeId ? { id: { not: excludeId } } : {}
 
   const matchedFields: string[] = []
   const duplicates: { uniqueId: string; name: string }[] = []
@@ -22,7 +24,7 @@ export const duplicate = async (input: z.infer<typeof duplicateSchema>) => {
   // vndbRelationId: strict, cannot repeat
   if (vndbRelationId) {
     const patch = await prisma.patch.findFirst({
-      where: { vndb_relation_id: vndbRelationId },
+      where: { vndb_relation_id: vndbRelationId, ...excludeCurrentPatch },
       select: { unique_id: true, name: true }
     })
     if (patch) {
@@ -34,7 +36,7 @@ export const duplicate = async (input: z.infer<typeof duplicateSchema>) => {
   // dlsiteCode: strict, cannot repeat
   if (dlsiteCode) {
     const patch = await prisma.patch.findFirst({
-      where: { dlsite_code: dlsiteCode },
+      where: { dlsite_code: dlsiteCode, ...excludeCurrentPatch },
       select: { unique_id: true, name: true }
     })
     if (patch) {
@@ -46,7 +48,7 @@ export const duplicate = async (input: z.infer<typeof duplicateSchema>) => {
   // vndbId: soft, can repeat — return ALL matches
   if (vndbId) {
     const patches = await prisma.patch.findMany({
-      where: { vndb_id: vndbId },
+      where: { vndb_id: vndbId, ...excludeCurrentPatch },
       select: { unique_id: true, name: true },
       take: 20
     })
@@ -62,6 +64,7 @@ export const duplicate = async (input: z.infer<typeof duplicateSchema>) => {
   if (title) {
     const patch = await prisma.patch.findFirst({
       where: {
+        ...excludeCurrentPatch,
         OR: [
           { name: { equals: title, mode: 'insensitive' } },
           {

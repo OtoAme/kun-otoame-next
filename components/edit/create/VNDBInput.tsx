@@ -29,6 +29,7 @@ interface Props<T extends PatchFormDataShape> {
   setData: PatchFormDataSetter<T>
   isDuplicate?: boolean
   onDuplicateChange?: (value: boolean) => void
+  excludeId?: number
 }
 
 export const VNDBInput = <T extends PatchFormDataShape>({
@@ -36,7 +37,8 @@ export const VNDBInput = <T extends PatchFormDataShape>({
   data,
   setData,
   isDuplicate = false,
-  onDuplicateChange
+  onDuplicateChange,
+  excludeId
 }: Props<T>) => {
   const [duplicateFound, setDuplicateFound] = useState(false)
   const [duplicateList, setDuplicateList] = useState<DuplicateItem[]>([])
@@ -58,7 +60,10 @@ export const VNDBInput = <T extends PatchFormDataShape>({
     try {
       const duplicateResult = await kunFetchGet<KunResponse<DuplicateResponse>>(
         '/edit/duplicate',
-        { vndbId: normalizedInput }
+        {
+          vndbId: normalizedInput,
+          ...(excludeId ? { excludeId: String(excludeId) } : {})
+        }
       )
 
       if (
@@ -94,7 +99,7 @@ export const VNDBInput = <T extends PatchFormDataShape>({
         vndbId: normalizedInput,
         alias: [...new Set(titles)],
         released: released || current.released,
-        vndbTags: tags,
+        vndbTags: tags ?? [],
         vndbDevelopers: developers
       }))
 

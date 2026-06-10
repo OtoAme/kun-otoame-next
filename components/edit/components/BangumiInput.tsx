@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { Button, Input } from '@heroui/react'
+import { FileText } from 'lucide-react'
 import Link from 'next/link'
 import toast from 'react-hot-toast'
 import { kunFetchGet, kunFetchPost } from '~/utils/kunFetch'
@@ -19,6 +20,7 @@ import type {
 interface BangumiPreview {
   name: string
   nameCn: string
+  summary: string
   tags: string[]
   developers: string[]
 }
@@ -122,6 +124,20 @@ export const BangumiInput = <T extends PatchFormDataShape>({
     setData({ ...data, bangumiId: id })
   }
 
+  const applySummaryToIntroduction = () => {
+    const summary = preview?.summary.trim()
+    if (!summary) {
+      toast.error('Bangumi 简介为空')
+      return
+    }
+
+    setData((current) => ({
+      ...current,
+      introduction: summary
+    }))
+    toast.success('已填入游戏简介')
+  }
+
   return (
     <div className="w-full space-y-2">
       <h2 className="text-xl">Bangumi ID (可选)</h2>
@@ -155,12 +171,24 @@ export const BangumiInput = <T extends PatchFormDataShape>({
             跳转到重复游戏
           </Button>
         )}
+        {preview?.summary && (
+          <Button
+            color="secondary"
+            size="sm"
+            variant="flat"
+            startContent={<FileText size={16} />}
+            onPress={applySummaryToIntroduction}
+          >
+            填入简介
+          </Button>
+        )}
       </div>
       {preview && (
         <FetchPreview
           fields={[
             { label: '名称', value: preview.name },
             { label: '中文名', value: preview.nameCn },
+            { label: '简介', value: preview.summary },
             { label: '标签', value: preview.tags },
             { label: '开发商', value: preview.developers }
           ]}

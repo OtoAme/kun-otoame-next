@@ -7,6 +7,12 @@ import {
   uniqueTrimmed,
   type CompanyCreateInput
 } from './companyEnsureHelper'
+import {
+  buildTagLookupWhere,
+  getCanonicalTagIds,
+  hasAnyTagName,
+  mapTagNamesToIds
+} from './tagEnsureHelper'
 
 interface SubmittedExternalData {
   vndbId?: string
@@ -27,50 +33,71 @@ const ensureTagsWithSource = async (
   source: string,
   uid: number
 ) => {
-  const validTags = tagNames.filter(Boolean)
+  const validTags = uniqueTrimmed(tagNames)
   if (!validTags.length) return
 
-  const existingTags = await prisma.patch_tag.findMany({
-    where: { name: { in: validTags } },
-    select: { id: true, name: true }
-  })
-  const existingNameSet = new Set(existingTags.map((tag) => tag.name))
+  await prisma.$transaction(
+    async (tx) => {
+      const existingTags = await tx.patch_tag.findMany({
+        where: buildTagLookupWhere(validTags),
+        orderBy: { id: 'asc' },
+        select: { id: true, name: true, alias: true }
+      })
+      const tagNameToId = mapTagNamesToIds(existingTags)
 
-  const tagsToCreate = validTags.filter((name) => !existingNameSet.has(name))
-  if (tagsToCreate.length) {
-    await prisma.patch_tag.createMany({
-      data: tagsToCreate.map((name) => ({ name, user_id: uid, source })),
-      skipDuplicates: true
-    })
-  }
+      const tagsToCreate = validTags.filter(
+        (name) => !tagNameToId.has(name) && !hasAnyTagName(existingTags, name)
+      )
+      if (tagsToCreate.length) {
+        await tx.patch_tag.createMany({
+          data: tagsToCreate.map((name) => ({ name, user_id: uid, source })),
+          skipDuplicates: true
+        })
+      }
 
-  const allTags = await prisma.patch_tag.findMany({
-    where: { name: { in: validTags } },
-    select: { id: true }
-  })
-  const tagIds = allTags.map((tag) => tag.id)
+      const newTags =
+        tagsToCreate.length > 0
+          ? await tx.patch_tag.findMany({
+              where: { name: { in: tagsToCreate } },
+              select: { id: true, name: true, alias: true }
+            })
+          : []
+      for (const tag of newTags) {
+        tagNameToId.set(tag.name, tag.id)
+        for (const alias of tag.alias) {
+          tagNameToId.set(alias, tag.id)
+        }
+      }
 
-  if (!tagIds.length) return
+      const tagIds = getCanonicalTagIds(validTags, tagNameToId)
 
-  const existingRelations = await prisma.patch_tag_relation.findMany({
-    where: { patch_id: patchId, tag_id: { in: tagIds } },
-    select: { tag_id: true }
-  })
-  const existingRelationIds = new Set(
-    existingRelations.map((relation) => relation.tag_id)
+      if (!tagIds.length) return
+
+      const existingRelations = await tx.patch_tag_relation.findMany({
+        where: { patch_id: patchId, tag_id: { in: tagIds } },
+        select: { tag_id: true }
+      })
+      const existingRelationIds = new Set(
+        existingRelations.map((relation) => relation.tag_id)
+      )
+      const newTagIds = tagIds.filter((id) => !existingRelationIds.has(id))
+
+      if (newTagIds.length) {
+        await tx.patch_tag_relation.createMany({
+          data: newTagIds.map((tagId) => ({
+            patch_id: patchId,
+            tag_id: tagId
+          })),
+          skipDuplicates: true
+        })
+        await tx.patch_tag.updateMany({
+          where: { id: { in: newTagIds } },
+          data: { count: { increment: 1 } }
+        })
+      }
+    },
+    { timeout: 60000 }
   )
-  const newTagIds = tagIds.filter((id) => !existingRelationIds.has(id))
-
-  if (newTagIds.length) {
-    await prisma.patch_tag_relation.createMany({
-      data: newTagIds.map((tagId) => ({ patch_id: patchId, tag_id: tagId })),
-      skipDuplicates: true
-    })
-    await prisma.patch_tag.updateMany({
-      where: { id: { in: newTagIds } },
-      data: { count: { increment: 1 } }
-    })
-  }
 }
 
 const toCompanyCreate = (
@@ -174,8 +201,6 @@ export const processSubmittedExternalData = async (
   }
 
   const tagTasks = [
-    data.vndbTags.length &&
-      ensureTagsWithSource(patchId, data.vndbTags, 'vndb', uid),
     data.bangumiTags.length &&
       ensureTagsWithSource(patchId, data.bangumiTags, 'bangumi', uid),
     data.steamTags.length &&
@@ -184,11 +209,7 @@ export const processSubmittedExternalData = async (
 
   let primaryDevelopers = collectPrimaryDeveloperNames(data)
   if (data.vndbId?.trim()) {
-    const result = await ensurePatchCompaniesFromVNDB(
-      patchId,
-      data.vndbId,
-      uid
-    )
+    const result = await ensurePatchCompaniesFromVNDB(patchId, data.vndbId, uid)
     if (result.related > 0) {
       primaryDevelopers = []
     }

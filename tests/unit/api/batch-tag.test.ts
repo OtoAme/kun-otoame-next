@@ -21,7 +21,9 @@ const prismaMocks = vi.hoisted(() => {
     patch_tag: {
       findMany: vi.fn()
     },
-    $transaction: vi.fn((fn: (transaction: MockTransaction) => Promise<void>) => fn(tx)),
+    $transaction: vi.fn((fn: (transaction: MockTransaction) => Promise<void>) =>
+      fn(tx)
+    ),
     _tx: tx
   }
 })
@@ -40,13 +42,17 @@ import { handleBatchPatchTags } from '~/app/api/edit/batchTag'
 describe('handleBatchPatchTags', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    prismaMocks.$transaction.mockImplementation((fn: (tx: typeof prismaMocks._tx) => Promise<void>) =>
-      fn(prismaMocks._tx)
+    prismaMocks.$transaction.mockImplementation(
+      (fn: (tx: typeof prismaMocks._tx) => Promise<void>) => fn(prismaMocks._tx)
     )
     prismaMocks._tx.patch_tag.createMany.mockResolvedValue({ count: 0 })
     prismaMocks._tx.patch_tag.findMany.mockResolvedValue([])
-    prismaMocks._tx.patch_tag_relation.createMany.mockResolvedValue({ count: 0 })
-    prismaMocks._tx.patch_tag_relation.deleteMany.mockResolvedValue({ count: 0 })
+    prismaMocks._tx.patch_tag_relation.createMany.mockResolvedValue({
+      count: 0
+    })
+    prismaMocks._tx.patch_tag_relation.deleteMany.mockResolvedValue({
+      count: 0
+    })
     prismaMocks._tx.patch_tag.updateMany.mockResolvedValue({ count: 0 })
     invalidateTagCachesMock.mockResolvedValue(undefined)
   })
@@ -83,11 +89,52 @@ describe('handleBatchPatchTags', () => {
 
     await handleBatchPatchTags(10, ['純愛'], 100)
 
-    expect(prismaMocks.patch_tag.findMany).not.toHaveBeenCalled()
+    expect(prismaMocks.patch_tag.findMany).toHaveBeenCalledWith({
+      where: {
+        OR: [
+          {
+            OR: [{ name: '純愛' }, { alias: { has: '純愛' } }]
+          }
+        ]
+      },
+      orderBy: { id: 'asc' }
+    })
     expect(prismaMocks._tx.patch_tag_relation.createMany).not.toHaveBeenCalled()
     expect(prismaMocks._tx.patch_tag_relation.deleteMany).not.toHaveBeenCalled()
     expect(prismaMocks._tx.patch_tag.updateMany).not.toHaveBeenCalled()
     expect(invalidateTagCachesMock).toHaveBeenCalledOnce()
+  })
+
+  it('should migrate an existing alias-tag relation to the canonical tag relation', async () => {
+    prismaMocks.patch_tag_relation.findMany.mockResolvedValue([
+      {
+        tag_id: 2,
+        tag: { id: 2, name: '純愛', alias: [], count: 1 }
+      }
+    ])
+    prismaMocks.patch_tag.findMany.mockResolvedValue([
+      { id: 1, name: '纯爱', alias: ['純愛'], count: 3 },
+      { id: 2, name: '純愛', alias: [], count: 1 }
+    ])
+
+    await handleBatchPatchTags(10, ['純愛'], 100)
+
+    expect(prismaMocks._tx.patch_tag.createMany).not.toHaveBeenCalled()
+    expect(prismaMocks._tx.patch_tag_relation.createMany).toHaveBeenCalledWith({
+      data: [{ patch_id: 10, tag_id: 1 }],
+      skipDuplicates: true
+    })
+    expect(prismaMocks._tx.patch_tag_relation.deleteMany).toHaveBeenCalledWith({
+      where: { patch_id: 10, tag_id: { in: [2] } }
+    })
+    expect(prismaMocks._tx.patch_tag.updateMany).toHaveBeenNthCalledWith(1, {
+      where: { id: { in: [1] } },
+      data: { count: { increment: 1 } }
+    })
+    expect(prismaMocks._tx.patch_tag.updateMany).toHaveBeenNthCalledWith(2, {
+      where: { id: { in: [2] } },
+      data: { count: { decrement: 1 } }
+    })
   })
 
   it('should create missing tags and dedupe input before creating relations', async () => {
