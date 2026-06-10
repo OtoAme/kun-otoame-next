@@ -38,6 +38,7 @@
 - `maintenance:resource-attributes:*`
 - `maintenance:dirty-tags:*`
 - `maintenance:tags:*`
+- `maintenance:companies:dirty:*`
 - `migration:resource-type:*`
 - `migration:patch-counters`
 
@@ -46,6 +47,16 @@
 `maintenance:tags:auto-alias:dry` 会在生产库里扫描“某个 tag 的 name 命中另一个主 tag 的 alias”的历史重复数据，并生成合并计划。dry-run 只做计划校验和关系数量预览，不加载所有受影响 patch 的 `unique_id`，避免生产数据量大时预览过慢。确认输出无误后再运行 `maintenance:tags:auto-alias:apply`；apply 会移动 patch 关系、合并 alias、修正 count、迁移用户 blocked tag，并失效 tag/list/受影响 patch 内容缓存。多主 tag 共用同一 alias 时会跳过并输出 warning，需要人工计划。
 
 手工合并仍使用 `maintenance:tags:merge:* -- --plan=path/to/merge-plan.json`。本地库没有生产 tag 数据时，不要用本地 dry-run 结果判断生产影响面，应在生产备份后对生产库 dry-run。
+
+`maintenance:companies:dirty:dry` 会扫描公司历史脏数据：某个公司的 `name` 命中另一个公司的 `alias`、多个公司共享 alias，以及 `patch_company.count` 与实际关系数不一致。dry-run 只输出自动合并计划、warning 和 count 修复预览，不写库。确认输出后再运行 `maintenance:companies:dirty:apply`；apply 会迁移 `patch_company_relation`、合并 alias / primary_language / official_website / parent_brand、删除重复公司、重算 count，并失效 company/list/受影响 patch 内容缓存。多个候选主公司或无法确定 canonical 的共享 alias 会跳过并输出 warning，需要人工计划。
+
+生产公司清理流程：
+
+1. 先备份数据库。
+2. 在生产备份或生产库上运行 `pnpm maintenance:companies:dirty:dry`。
+3. 核对每个 `merge into` 和 warning；有歧义时先人工决定 canonical 公司，不要直接 apply。
+4. 确认 dry-run 输出后运行 `pnpm maintenance:companies:dirty:apply`。
+5. 复查公司详情页、游戏详情页和公司游戏列表缓存是否已刷新。
 
 ## Postbuild
 

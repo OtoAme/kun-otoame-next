@@ -23,10 +23,12 @@ Use this skill for operational code and release plumbing.
 - Multi-instance scheduled tasks should use task locks.
 - Migration scripts need dry-run/preflight behavior for production data.
 - Tag alias cleanup uses `maintenance:tags:auto-alias:dry` before `maintenance:tags:auto-alias:apply`; local empty tag data does not validate production impact.
+- Company cleanup uses `maintenance:companies:dirty:dry` before `maintenance:companies:dirty:apply`; ambiguous shared aliases require manual canonical decisions.
 
 ## Verification
 
 ```bash
+pnpm test tests/unit/company-merge-plan.test.ts
 pnpm test
 pnpm typecheck
 pnpm build

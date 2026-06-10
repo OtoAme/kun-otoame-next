@@ -33,6 +33,7 @@ tests/unit/
 - JWT session：`tests/unit/jwt-session.test.ts`。
 - Redis 封装：`tests/unit/redis.test.ts`。
 - 创建/重写 store 合并：`tests/unit/edit-store.test.ts`。
+- 公司脏数据合并计划：`tests/unit/company-merge-plan.test.ts`。
 - 搜索 store：`tests/unit/search-store.test.ts`。
 - CAPTCHA：`tests/unit/captcha.test.ts`。
 - 资源链接解析和资源分类：`tests/unit/resource-link.test.ts`、`resource-classification.test.ts`。
@@ -49,6 +50,7 @@ tests/unit/
 - CSRF、角色、资源归属、每日上传配额、用户设置权限相关变更。
 - 主题 token、语义颜色、过滤器、排序、外部 ID 解析变更。
 - 编辑页外部数据合并规则变更，包括 VNDB/Bangumi/Steam 字段保留、公司来源优先级、alias 公司匹配和 store 函数式合并。
+- 维护脚本的自动合并计划变更，尤其是公司/tag 的 alias 冲突、歧义跳过、关系迁移和 count 预览。
 - 修 bug 时要加能在修复前失败的 regression test。
 
 可以暂不新增测试但要手动验证：

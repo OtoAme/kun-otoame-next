@@ -114,6 +114,7 @@ service/helper 负责：
 - `app/api/edit/processExternalData.ts`
 - `app/api/edit/fetchCompanies.ts`
 - `app/api/edit/companyEnsureHelper.ts`
+- `scripts/cleanupDirtyCompanies.ts`
 - `app/api/patch/cache.ts`
 
 规则：
@@ -123,6 +124,7 @@ service/helper 负责：
 - 公司支持 alias、parent_brand、primary_language、official_website。
 - 公司创建和重写必须把 `name` 与 `alias` 一起做冲突检查；任一值命中其他公司的 `name` 或 `alias` 都应拒绝，避免别名导致重复公司。
 - 修改公司后必须调用 `invalidateCompanyCaches`。
+- 历史公司脏数据用 `pnpm maintenance:companies:dirty:dry` / `apply` 清理；不要让在线创建/编辑流程承担批量合并旧数据。
 
 ### 编辑外部数据合并
 
