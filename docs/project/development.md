@@ -166,6 +166,8 @@ pnpm dev:webpack
 5. 改上传/资源时检查 Redis upload lock、S3 补偿、finalize 和本地清理。
 6. 改 schema 后运行 `pnpm prisma:push` 或至少 `pnpm prisma:generate`，按风险选择是否需要生产 preflight SQL。
 7. 完成前运行最小相关测试，再运行 `pnpm typecheck`；涉及共享工具、缓存、schema、部署时加跑 `pnpm test`。
+8. 每个代码提交后都要检查并同步对应的 `docs/project/*`、`docs/modules/*` 和 `.codex/skills/*/SKILL.md`。重大行为、API、数据、缓存、部署、测试或工作流变更必须同步文档和 skill。
+9. 文档 / skill 同步必须作为独立提交，不能和业务代码、测试或迁移改动混在同一个 commit 中。
 
 ## 常见变更路径
 
@@ -333,6 +335,14 @@ pnpm build
 ```
 
 涉及部署脚本、Next config、postbuild、runtime assets 时，必须至少运行 `pnpm typecheck`，并在可行时运行 `pnpm build`。
+
+提交顺序：
+
+1. 先提交业务代码、测试和迁移。
+2. 再检查并更新对应文档和 skill。
+3. 最后单独提交文档 / skill 变更，提交信息使用 `docs(...)` 或 `chore(skills)` 等约定式提交。
+
+严禁把 `.codex/skills/*` 或 `docs/*` 的同步修改混入业务代码提交。
 
 ## 常见本地问题
 

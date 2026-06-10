@@ -27,6 +27,8 @@ Read the relevant project docs before editing:
 - Preserve CSRF header + origin/referer checks and API-layer permissions.
 - Keep legacy `touchgal` / `galgame` names when they are compatibility keys, cookies, types, or deployment ids.
 - For onboarding or setup questions, answer from `docs/project/development.md` instead of inventing shell steps.
+- After every code commit, check and update matching `docs/project/*`, `docs/modules/*`, and `.codex/skills/*/SKILL.md`; major behavior, API, data, cache, deployment, testing, or workflow changes must update docs and skills.
+- Keep docs/skill updates in a separate conventional commit from application code, tests, migrations, or generated artifacts.
 
 ## Project Hotspots
 
@@ -49,6 +51,8 @@ For domain-specific work, prefer the narrower skills: `otoame-api`, `otoame-data
 3. For behavior changes and bugfixes, use test-first workflow unless the user explicitly requests otherwise.
 
 ## Completion Gate
+
+After code is committed, perform the docs/skill sync as its own follow-up commit when needed.
 
 Run the smallest meaningful verification first, then broader checks by risk:
 

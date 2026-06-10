@@ -13,6 +13,7 @@ Use this skill for project-specific code review.
 - Architecture map: `docs/project/overview.md`
 - Module map: `docs/modules/index.md`
 - Testing guide: `docs/project/testing.md`
+- Quality and docs/skill rules: `docs/modules/quality.md`
 - Deployment guide when CI/build files changed: `docs/project/deployment.md`
 
 ## Review Priorities
@@ -22,8 +23,10 @@ Use this skill for project-specific code review.
 3. Cache correctness: patch/resource/tag/company/favorite invalidation.
 4. Upload safety: Redis consume locks, S3 compensation, finalize, cleanup.
 5. Deployment safety: standalone assets, server.mjs/server.js, PM2 cwd, Prisma client generation, env vars.
-6. Docs/skills: source paths, workflow facts, triggers, and module references remain consistent.
+6. Docs/skills: source paths, workflow facts, triggers, module references, and post-commit sync remain consistent.
 7. Tests: regression coverage for behavior changes.
+
+Docs/skill updates must be reviewed as a separate commit from application code, tests, migrations, or generated artifacts.
 
 ## Output Format
 
