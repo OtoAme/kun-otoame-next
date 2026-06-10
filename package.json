@@ -35,6 +35,8 @@
     "maintenance:tags:merge:apply": "esno scripts/mergeTags.ts --apply",
     "maintenance:tags:auto-alias:dry": "esno scripts/mergeTags.ts --auto-alias",
     "maintenance:tags:auto-alias:apply": "esno scripts/mergeTags.ts --auto-alias --apply",
+    "maintenance:companies:dirty:dry": "esno scripts/cleanupDirtyCompanies.ts",
+    "maintenance:companies:dirty:apply": "esno scripts/cleanupDirtyCompanies.ts --apply",
     "test": "vitest run"
   },
   "author": {
