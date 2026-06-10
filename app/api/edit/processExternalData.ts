@@ -1,10 +1,15 @@
-import { Prisma } from '@prisma/client'
 import { prisma } from '~/prisma/index'
 import { invalidateCompanyCaches } from '~/app/api/patch/cache'
 import { handleBatchPatchTags } from './batchTag'
-import { addPatchCompanyRelations } from './companyRelationHelper'
+import { ensurePatchCompaniesFromVNDB } from './fetchCompanies'
+import {
+  ensureCompanyRelationsByName,
+  uniqueTrimmed,
+  type CompanyCreateInput
+} from './companyEnsureHelper'
 
 interface SubmittedExternalData {
+  vndbId?: string
   vndbTags: string[]
   vndbDevelopers: string[]
   bangumiTags: string[]
@@ -72,7 +77,7 @@ const toCompanyCreate = (
   name: string,
   uid: number,
   officialWebsite: string[] = []
-): Prisma.patch_companyCreateManyInput => ({
+): CompanyCreateInput => ({
   name,
   introduction: '',
   count: 0,
@@ -83,9 +88,15 @@ const toCompanyCreate = (
   user_id: uid
 })
 
+const collectPrimaryDeveloperNames = (data: SubmittedExternalData) => {
+  const vndbDevelopers = uniqueTrimmed(data.vndbDevelopers)
+  if (vndbDevelopers.length) return vndbDevelopers
+
+  return uniqueTrimmed(data.bangumiDevelopers)
+}
+
 const collectSubmittedCompanyNames = (data: SubmittedExternalData) => [
-  ...data.vndbDevelopers,
-  ...data.bangumiDevelopers,
+  ...collectPrimaryDeveloperNames(data),
   ...data.steamDevelopers,
   data.dlsiteCircleName
 ]
@@ -93,17 +104,19 @@ const collectSubmittedCompanyNames = (data: SubmittedExternalData) => [
 const ensureSubmittedCompanies = async (
   patchId: number,
   data: SubmittedExternalData,
-  uid: number
+  uid: number,
+  options: { primaryDevelopers?: string[] } = {}
 ) => {
-  const companiesByName = new Map<string, Prisma.patch_companyCreateManyInput>()
+  const companiesByName = new Map<string, CompanyCreateInput>()
+  const primaryDevelopers =
+    options.primaryDevelopers ?? collectPrimaryDeveloperNames(data)
 
   for (const rawName of [
-    ...data.vndbDevelopers,
-    ...data.bangumiDevelopers,
-    ...data.steamDevelopers
+    ...primaryDevelopers,
+    ...uniqueTrimmed(data.steamDevelopers)
   ]) {
     const name = rawName.trim()
-    if (!name || companiesByName.has(name)) continue
+    if (companiesByName.has(name)) continue
     companiesByName.set(name, toCompanyCreate(name, uid))
   }
 
@@ -116,34 +129,16 @@ const ensureSubmittedCompanies = async (
     )
   }
 
-  const companyNames = Array.from(companiesByName.keys())
-  if (!companyNames.length) return []
+  if (!companiesByName.size) return []
 
   return await prisma.$transaction(
     async (tx) => {
-      const existing = await tx.patch_company.findMany({
-        where: { name: { in: companyNames } },
-        select: { name: true }
-      })
-      const existingNames = new Set(existing.map((company) => company.name))
-      const toCreate = companyNames
-        .filter((name) => !existingNames.has(name))
-        .map((name) => companiesByName.get(name)!)
-
-      if (toCreate.length) {
-        await tx.patch_company.createMany({
-          data: toCreate,
-          skipDuplicates: true
-        })
-      }
-
-      const allCompanies = await tx.patch_company.findMany({
-        where: { name: { in: companyNames } },
-        select: { id: true }
-      })
-      const companyIds = allCompanies.map((company) => company.id)
-
-      return await addPatchCompanyRelations(tx, patchId, companyIds)
+      const result = await ensureCompanyRelationsByName(
+        tx,
+        patchId,
+        companiesByName
+      )
+      return result.insertedIds
     },
     { timeout: 60000 }
   )
@@ -187,7 +182,21 @@ export const processSubmittedExternalData = async (
       ensureTagsWithSource(patchId, data.steamTags, 'steam', uid)
   ].filter(Boolean)
 
-  const companyTask = ensureSubmittedCompanies(patchId, data, uid)
+  let primaryDevelopers = collectPrimaryDeveloperNames(data)
+  if (data.vndbId?.trim()) {
+    const result = await ensurePatchCompaniesFromVNDB(
+      patchId,
+      data.vndbId,
+      uid
+    )
+    if (result.related > 0) {
+      primaryDevelopers = []
+    }
+  }
+
+  const companyTask = ensureSubmittedCompanies(patchId, data, uid, {
+    primaryDevelopers
+  })
     .then(async (insertedIds) => {
       if (insertedIds.length) {
         await invalidateCompanyCaches()
@@ -208,5 +217,6 @@ export const processSubmittedExternalData = async (
     data.steamAliases.length && ensureAliases(patchId, data.steamAliases)
   ].filter(Boolean)
 
-  await Promise.allSettled([...tagTasks, companyTask, ...aliasTasks])
+  await companyTask
+  await Promise.allSettled([...tagTasks, ...aliasTasks])
 }

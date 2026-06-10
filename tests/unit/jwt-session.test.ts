@@ -122,9 +122,11 @@ describe('JWT Redis sessions', () => {
 
   it('limits one user to five newest sessions', async () => {
     const tokens: string[] = []
+    const baseTime = Date.now() - 60_000
+
     vi.useFakeTimers()
     for (let i = 0; i < 6; i++) {
-      vi.setSystemTime(new Date(`2026-05-06T00:00:0${i}.000Z`))
+      vi.setSystemTime(new Date(baseTime + i * 1000))
       tokens.push(await generateKunToken(8, 'multi', 1, '30d'))
     }
     vi.useRealTimers()

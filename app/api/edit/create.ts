@@ -156,6 +156,7 @@ export const createGalgame = async (
   await processSubmittedExternalData(
     res.patchId,
     {
+      vndbId,
       vndbTags,
       vndbDevelopers,
       bangumiTags,

@@ -7,7 +7,10 @@ import { fetchVNDBDetails } from '~/utils/vndb'
 import { kunFetchGet } from '~/utils/kunFetch'
 import { normalizeVndbIdInput, parseVndbIdInput } from '~/utils/externalIds'
 import type { ClipboardEvent } from 'react'
-import type { PatchFormDataShape } from '~/components/edit/types'
+import type {
+  PatchFormDataSetter,
+  PatchFormDataShape
+} from '~/components/edit/types'
 
 interface DuplicateItem {
   uniqueId: string
@@ -23,7 +26,7 @@ interface DuplicateResponse {
 interface Props<T extends PatchFormDataShape> {
   errors: string | undefined
   data: T
-  setData: (data: T) => void
+  setData: PatchFormDataSetter<T>
   isDuplicate?: boolean
   onDuplicateChange?: (value: boolean) => void
 }
@@ -83,14 +86,17 @@ export const VNDBInput = <T extends PatchFormDataShape>({
     // Fetch VNDB data regardless
     try {
       toast('正在从 VNDB 获取数据...')
-      const { titles, released } = await fetchVNDBDetails(normalizedInput)
+      const { titles, released, tags, developers } =
+        await fetchVNDBDetails(normalizedInput)
 
-      setData({
-        ...data,
+      setData((current) => ({
+        ...current,
         vndbId: normalizedInput,
         alias: [...new Set(titles)],
-        released: released || data.released
-      })
+        released: released || current.released,
+        vndbTags: tags,
+        vndbDevelopers: developers
+      }))
 
       toast.success('获取数据成功! 已为您自动添加游戏别名')
     } catch (error) {

@@ -35,7 +35,9 @@ export interface CreatePatchRequestData extends CreatePatchData {
 interface StoreState {
   data: CreatePatchData
   getData: () => CreatePatchData
-  setData: (data: CreatePatchData) => void
+  setData: (
+    data: CreatePatchData | ((current: CreatePatchData) => CreatePatchData)
+  ) => void
   resetData: () => void
 }
 
@@ -45,7 +47,7 @@ type PersistedStoreState = Partial<StoreState> & {
 
 export const createPatchEditStoreKey = 'kun-patch-edit-store'
 
-const initialState: CreatePatchData = {
+export const initialCreatePatchData: CreatePatchData = {
   name: '',
   introduction: '',
   vndbId: '',
@@ -73,10 +75,15 @@ const initialState: CreatePatchData = {
 export const useCreatePatchStore = create<StoreState>()(
   persist(
     (set, get) => ({
-      data: initialState,
+      data: initialCreatePatchData,
       getData: () => (get() as StoreState).data,
-      setData: (data: CreatePatchData) => set({ data }),
-      resetData: () => set({ data: initialState })
+      setData: (
+        data: CreatePatchData | ((current: CreatePatchData) => CreatePatchData)
+      ) =>
+        set((state: StoreState) => ({
+          data: typeof data === 'function' ? data(state.data) : data
+        })),
+      resetData: () => set({ data: initialCreatePatchData })
     }),
     {
       name: 'kun-patch-edit-store',
@@ -89,7 +96,7 @@ export const useCreatePatchStore = create<StoreState>()(
           ...current,
           ...(persisted ?? {}),
           data: {
-            ...initialState,
+            ...initialCreatePatchData,
             ...(persisted?.data ?? {})
           }
         }

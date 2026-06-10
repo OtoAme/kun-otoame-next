@@ -22,3 +22,7 @@ export interface PatchFormDataShape {
   contentLimit?: string
   isDuplicate?: boolean
 }
+
+export type PatchFormDataSetter<T extends PatchFormDataShape> = (
+  data: T | ((current: T) => T)
+) => void

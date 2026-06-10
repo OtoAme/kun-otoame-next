@@ -42,7 +42,9 @@ interface StoreState {
   watermark: boolean
   galleryOrder: (number | string)[]
   getData: () => RewritePatchData
-  setData: (data: RewritePatchData) => void
+  setData: (
+    data: RewritePatchData | ((current: RewritePatchData) => RewritePatchData)
+  ) => void
   setNewImages: (images: { id: string; file: File; isNSFW: boolean }[]) => void
   setNewBanner: (file: File | null) => void
   setWatermark: (watermark: boolean) => void
@@ -86,7 +88,12 @@ export const useRewritePatchStore = create<StoreState>((set, get) => ({
   watermark: true,
   galleryOrder: [],
   getData: () => get().data,
-  setData: (data) => set({ data }),
+  setData: (
+    data: RewritePatchData | ((current: RewritePatchData) => RewritePatchData)
+  ) =>
+    set((state: StoreState) => ({
+      data: typeof data === 'function' ? data(state.data) : data
+    })),
   setNewImages: (newImages) => set({ newImages }),
   setNewBanner: (newBanner) => set({ newBanner }),
   setWatermark: (watermark) => set({ watermark }),
@@ -100,4 +107,3 @@ export const useRewritePatchStore = create<StoreState>((set, get) => ({
       galleryOrder: []
     })
 }))
-

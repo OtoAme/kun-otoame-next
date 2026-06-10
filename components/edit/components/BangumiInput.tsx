@@ -11,7 +11,10 @@ import {
   parseBangumiIdInput
 } from '~/utils/externalIds'
 import type { ClipboardEvent } from 'react'
-import type { PatchFormDataShape } from '~/components/edit/types'
+import type {
+  PatchFormDataSetter,
+  PatchFormDataShape
+} from '~/components/edit/types'
 
 interface BangumiPreview {
   name: string
@@ -23,7 +26,7 @@ interface BangumiPreview {
 interface Props<T extends PatchFormDataShape> {
   errors?: string
   data: T
-  setData: (data: T) => void
+  setData: PatchFormDataSetter<T>
   excludeId?: number
 }
 
@@ -92,16 +95,15 @@ export const BangumiInput = <T extends PatchFormDataShape>({
       const extraAliases = [result.name, result.nameCn]
         .map((name) => name?.trim())
         .filter((name): name is string => !!name)
-      const alias = [...new Set([...data.alias, ...extraAliases])].filter(
-        (alias) => alias !== data.name
-      )
-
-      setData({
-        ...data,
-        alias,
+      setData((current) => ({
+        ...current,
+        bangumiId: rawInput,
+        alias: [...new Set([...current.alias, ...extraAliases])].filter(
+          (alias) => alias !== current.name
+        ),
         bangumiTags: result.tags,
         bangumiDevelopers: result.developers
-      })
+      }))
 
       toast.success(`确认: ${displayName}`)
     } catch {

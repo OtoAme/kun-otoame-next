@@ -269,6 +269,30 @@ export const deleteCompany = async (
   return {}
 }
 
+const hasConflictingCompanyNameOrAlias = async (
+  names: string[],
+  excludeCompanyId?: number
+) => {
+  const values = [...new Set(names.map((name) => name.trim()).filter(Boolean))]
+  if (!values.length) return false
+
+  const existingCompany = await prisma.patch_company.findFirst({
+    where: {
+      AND: [
+        excludeCompanyId ? { id: { not: excludeCompanyId } } : {},
+        {
+          OR: values.map((value) => ({
+            OR: [{ name: value }, { alias: { has: value } }]
+          }))
+        }
+      ]
+    },
+    select: { id: true }
+  })
+
+  return !!existingCompany
+}
+
 export const rewriteCompany = async (
   input: z.infer<typeof updateCompanySchema>
 ) => {
@@ -282,12 +306,11 @@ export const rewriteCompany = async (
     parent_brand = []
   } = input
 
-  const existingCompany = await prisma.patch_company.findFirst({
-    where: {
-      OR: [{ name }, { alias: { has: name } }]
-    }
-  })
-  if (existingCompany && existingCompany.id !== companyId) {
+  const hasConflict = await hasConflictingCompanyNameOrAlias(
+    [name, ...alias],
+    companyId
+  )
+  if (hasConflict) {
     return '这个会社已经存在了'
   }
 
@@ -330,12 +353,8 @@ export const createCompany = async (
     parent_brand = []
   } = input
 
-  const existingCompany = await prisma.patch_company.findFirst({
-    where: {
-      OR: [{ name }, { alias: { has: name } }]
-    }
-  })
-  if (existingCompany) {
+  const hasConflict = await hasConflictingCompanyNameOrAlias([name, ...alias])
+  if (hasConflict) {
     return '这个会社已经存在了'
   }
 

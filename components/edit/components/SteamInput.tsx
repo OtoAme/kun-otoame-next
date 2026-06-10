@@ -8,7 +8,10 @@ import { kunFetchGet, kunFetchPost } from '~/utils/kunFetch'
 import { FetchPreview } from '~/components/edit/components/FetchPreview'
 import { normalizeSteamIdInput, parseSteamIdInput } from '~/utils/externalIds'
 import type { ClipboardEvent } from 'react'
-import type { PatchFormDataShape } from '~/components/edit/types'
+import type {
+  PatchFormDataSetter,
+  PatchFormDataShape
+} from '~/components/edit/types'
 
 interface SteamPreview {
   name: string
@@ -25,7 +28,7 @@ interface SteamPreview {
 interface Props<T extends PatchFormDataShape> {
   errors?: string
   data: T
-  setData: (data: T) => void
+  setData: PatchFormDataSetter<T>
   excludeId?: number
 }
 
@@ -97,18 +100,17 @@ export const SteamInput = <T extends PatchFormDataShape>({
       ]
         .map((alias) => alias?.trim())
         .filter((alias): alias is string => !!alias)
-      const alias = [...new Set([...data.alias, ...extraAliases])].filter(
-        (alias) => alias !== data.name
-      )
-
-      setData({
-        ...data,
-        alias,
-        released: result.releaseDate || data.released,
+      setData((current) => ({
+        ...current,
+        steamId: rawInput,
+        alias: [...new Set([...current.alias, ...extraAliases])].filter(
+          (alias) => alias !== current.name
+        ),
+        released: result.releaseDate || current.released,
         steamTags: result.tags,
         steamDevelopers: result.developers.map((developer) => developer.name),
         steamAliases: extraAliases
-      })
+      }))
 
       toast.success(`确认: ${result.name}`)
     } catch {

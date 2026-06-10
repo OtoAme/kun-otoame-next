@@ -153,6 +153,7 @@ export const updateGalgame = async (
   await processSubmittedExternalData(
     id,
     {
+      vndbId,
       vndbTags,
       vndbDevelopers,
       bangumiTags,

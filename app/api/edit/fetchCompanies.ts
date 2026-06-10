@@ -2,7 +2,7 @@ import { prisma } from '~/prisma/index'
 import { invalidateCompanyCaches } from '~/app/api/patch/cache'
 import { fetchVndbVn } from '~/lib/arnebiae/vndb'
 import type { VndbProducer } from '~/lib/arnebiae/vndb'
-import { addPatchCompanyRelations } from './companyRelationHelper'
+import { ensureCompanyRelationsByName } from './companyEnsureHelper'
 
 const uniq = <T>(arr: T[]) => Array.from(new Set(arr))
 
@@ -73,38 +73,16 @@ export const ensurePatchCompaniesFromVNDB = async (
 
     const result = await prisma.$transaction(
       async (tx) => {
-        const existing = await tx.patch_company.findMany({
-          where: { name: { in: companyNames } },
-          select: { name: true }
-        })
-        const existingNames = new Set(existing.map((e) => e.name))
-
-        const toCreate = companyNames
-          .filter((n) => !existingNames.has(n))
-          .map((n) => companiesByName.get(n)!)
-
-        if (toCreate.length) {
-          await tx.patch_company.createMany({
-            data: toCreate,
-            skipDuplicates: true
-          })
-        }
-
-        const allCompanies = await tx.patch_company.findMany({
-          where: { name: { in: companyNames } },
-          select: { id: true }
-        })
-        const companyIds = allCompanies.map((c) => c.id)
-        const insertedIds = await addPatchCompanyRelations(
+        const relationResult = await ensureCompanyRelationsByName(
           tx,
           patchId,
-          companyIds
+          companiesByName
         )
 
         return {
-          ensured: toCreate.length,
-          related: companyIds.length,
-          insertedIds
+          ensured: relationResult.ensured,
+          related: relationResult.related,
+          insertedIds: relationResult.insertedIds
         }
       },
       { timeout: 60000 }

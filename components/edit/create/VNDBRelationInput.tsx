@@ -9,7 +9,10 @@ import {
   parseVndbRelationIdInput
 } from '~/utils/externalIds'
 import type { ClipboardEvent } from 'react'
-import type { PatchFormDataShape } from '~/components/edit/types'
+import type {
+  PatchFormDataSetter,
+  PatchFormDataShape
+} from '~/components/edit/types'
 
 interface RelationResponse {
   vndbId: string
@@ -20,7 +23,7 @@ interface RelationResponse {
 interface Props<T extends PatchFormDataShape> {
   errors?: string
   data: T
-  setData: (data: T) => void
+  setData: PatchFormDataSetter<T>
   enableDuplicateCheck?: boolean
 }
 
@@ -88,29 +91,37 @@ export const VNDBRelationInput = <T extends PatchFormDataShape>({
       }
 
       toast('正在同步 VNDB 数据...')
-      const { titles: vnTitles, released: vnReleased } =
+      const {
+        titles: vnTitles,
+        released: vnReleased,
+        tags,
+        developers
+      } =
         await fetchVNDBDetails(vndbId)
 
       // Relation titles should be added to existing aliases (including those
       // previously fetched via VNDB ID), and relation release date should
       // always override the existing date (VN API returns the oldest release).
-      const mergedAlias = [
-        ...new Set([...data.alias, ...relationTitles, ...vnTitles])
-      ]
-      // Relation date takes highest priority, then VN date as fallback
-      const mergedReleased =
-        (relationReleased && relationReleased !== 'TBA'
-          ? relationReleased
-          : null) ??
-        vnReleased ??
-        data.released
+      setData((current) => {
+        // Relation date takes highest priority, then VN date as fallback.
+        const mergedReleased =
+          (relationReleased && relationReleased !== 'TBA'
+            ? relationReleased
+            : null) ??
+          vnReleased ??
+          current.released
 
-      setData({
-        ...data,
-        vndbId,
-        vndbRelationId: normalized,
-        alias: mergedAlias,
-        released: mergedReleased
+        return {
+          ...current,
+          vndbId,
+          vndbRelationId: normalized,
+          alias: [
+            ...new Set([...current.alias, ...relationTitles, ...vnTitles])
+          ],
+          released: mergedReleased,
+          vndbTags: tags,
+          vndbDevelopers: developers
+        }
       })
 
       toast.success('已获取 Release 数据! 并完成 VNDB 同步')
