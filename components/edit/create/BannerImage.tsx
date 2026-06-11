@@ -6,6 +6,10 @@ import toast from 'react-hot-toast'
 import { dataURItoBlob } from '~/utils/dataURItoBlob'
 import { compressDataURLToWebp } from '~/utils/resizeImage'
 import { KunImageCropper } from '~/components/kun/cropper/KunImageCropper'
+import {
+  CREATE_PATCH_BANNER_KEY,
+  CREATE_PATCH_ORIGINAL_BANNER_KEY
+} from '~/utils/createPatchDraft'
 
 const MAX_ORIGINAL_BANNER_SIZE = 4 * 1024 * 1024
 
@@ -18,8 +22,9 @@ export const BannerImage = ({ errors }: Props) => {
 
   useEffect(() => {
     const fetchData = async () => {
-      const localeBannerBlob: Blob | null =
-        await localforage.getItem('kun-patch-banner')
+      const localeBannerBlob: Blob | null = await localforage.getItem(
+        CREATE_PATCH_BANNER_KEY
+      )
       if (localeBannerBlob) {
         setInitialUrl(URL.createObjectURL(localeBannerBlob))
       }
@@ -28,14 +33,14 @@ export const BannerImage = ({ errors }: Props) => {
   }, [])
 
   const removeBanner = async () => {
-    await localforage.removeItem('kun-patch-banner')
-    await localforage.removeItem('kun-patch-banner-original')
+    await localforage.removeItem(CREATE_PATCH_BANNER_KEY)
+    await localforage.removeItem(CREATE_PATCH_ORIGINAL_BANNER_KEY)
     setInitialUrl('')
   }
 
   const onImageComplete = async (croppedImage: string) => {
     const imageBlob = dataURItoBlob(croppedImage)
-    await localforage.setItem('kun-patch-banner', imageBlob)
+    await localforage.setItem(CREATE_PATCH_BANNER_KEY, imageBlob)
   }
 
   const onOriginalImageComplete = async (originalImage: string) => {
@@ -43,10 +48,10 @@ export const BannerImage = ({ errors }: Props) => {
       const imageBlob = await compressDataURLToWebp(originalImage, {
         maxSizeBytes: MAX_ORIGINAL_BANNER_SIZE
       })
-      await localforage.setItem('kun-patch-banner-original', imageBlob)
+      await localforage.setItem(CREATE_PATCH_ORIGINAL_BANNER_KEY, imageBlob)
     } catch (error) {
       toast.error(error instanceof Error ? error.message : '原图处理失败')
-      await localforage.removeItem('kun-patch-banner-original')
+      await localforage.removeItem(CREATE_PATCH_ORIGINAL_BANNER_KEY)
     }
   }
 

@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { Card, CardBody, CardHeader, Input } from '@heroui/react'
 import { useCreatePatchStore } from '~/store/editStore'
+import { ClearCreatePatchDraftButton } from './ClearCreatePatchDraftButton'
 import { VNDBInput } from './VNDBInput'
 import { VNDBRelationInput } from './VNDBRelationInput'
 import { AliasInput } from './AliasInput'
@@ -19,10 +20,16 @@ import { ReleaseDateInput } from '../components/ReleaseDateInput'
 import type { CreatePatchRequestData } from '~/store/editStore'
 
 export const CreatePatch = () => {
-  const { data, setData } = useCreatePatchStore()
+  const { data, setData, resetData } = useCreatePatchStore()
+  const [draftResetKey, setDraftResetKey] = useState(0)
   const [errors, setErrors] = useState<
     Partial<Record<keyof CreatePatchRequestData, string>>
   >({})
+
+  const handleDraftCleared = () => {
+    setErrors({})
+    setDraftResetKey((key) => key + 1)
+  }
 
   return (
     <form className="w-full max-w-5xl py-4 mx-auto">
@@ -31,7 +38,11 @@ export const CreatePatch = () => {
           <div>
             <div className="flex items-center gap-3">
               <h1 className="text-2xl shrink-0">创建新游戏</h1>
-              <DuplicateCheckButton />
+              <DuplicateCheckButton key={draftResetKey} />
+              <ClearCreatePatchDraftButton
+                resetData={resetData}
+                onCleared={handleDraftCleared}
+              />
             </div>
 
             <p className="mt-2">
@@ -77,11 +88,11 @@ export const CreatePatch = () => {
             />
           </div>
 
-          <BannerImage errors={errors.banner} />
+          <BannerImage key={`banner-${draftResetKey}`} errors={errors.banner} />
 
           <PatchIntroduction errors={errors.banner} />
 
-          <GalleryInput />
+          <GalleryInput key={`gallery-${draftResetKey}`} />
 
           <AliasInput errors={errors.alias} />
 

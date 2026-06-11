@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { Button, Input } from '@heroui/react'
-import { FileText } from 'lucide-react'
+import { FileText, Heading1 } from 'lucide-react'
 import Link from 'next/link'
 import toast from 'react-hot-toast'
 import { kunFetchGet, kunFetchPost } from '~/utils/kunFetch'
@@ -11,6 +11,10 @@ import {
   normalizeBangumiIdInput,
   parseBangumiIdInput
 } from '~/utils/externalIds'
+import {
+  getBangumiPreferredTitle,
+  removeTitleFromAliases
+} from '~/utils/bangumiPreview'
 import type { ClipboardEvent } from 'react'
 import type {
   PatchFormDataSetter,
@@ -138,6 +142,25 @@ export const BangumiInput = <T extends PatchFormDataShape>({
     toast.success('已填入游戏简介')
   }
 
+  const applyTitleToName = () => {
+    if (!preview) {
+      return
+    }
+
+    const title = getBangumiPreferredTitle(preview)
+    if (!title) {
+      toast.error('Bangumi 标题为空')
+      return
+    }
+
+    setData((current) => ({
+      ...current,
+      name: title,
+      alias: removeTitleFromAliases(current.alias, title)
+    }))
+    toast.success('已填入游戏标题')
+  }
+
   return (
     <div className="w-full space-y-2">
       <h2 className="text-xl">Bangumi ID (可选)</h2>
@@ -180,6 +203,17 @@ export const BangumiInput = <T extends PatchFormDataShape>({
             onPress={applySummaryToIntroduction}
           >
             填入简介
+          </Button>
+        )}
+        {preview && (
+          <Button
+            color="secondary"
+            size="sm"
+            variant="flat"
+            startContent={<Heading1 size={16} />}
+            onPress={applyTitleToName}
+          >
+            插入标题
           </Button>
         )}
       </div>

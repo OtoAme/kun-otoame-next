@@ -8,10 +8,14 @@ import toast from 'react-hot-toast'
 import { kunFetchFormData } from '~/utils/kunFetch'
 import { kunErrorHandler } from '~/utils/kunErrorHandler'
 import {
-  clearCreateGalleryDraft,
   CREATE_GALLERY_WATERMARK_KEY,
   getCreateGalleryDraft
 } from '~/utils/createGalleryDraft'
+import {
+  CREATE_PATCH_BANNER_KEY,
+  CREATE_PATCH_ORIGINAL_BANNER_KEY,
+  clearCreatePatchDraftFiles
+} from '~/utils/createPatchDraft'
 import { patchCreateSchema } from '~/validations/edit'
 import { useRouter } from '@bprogress/next'
 import { cn } from '~/utils/cn'
@@ -73,10 +77,11 @@ export const PublishButton = ({ setErrors, className }: Props) => {
 
   const [creating, setCreating] = useState(false)
   const handleSubmit = async () => {
-    const localeBannerBlob: Blob | null =
-      await localforage.getItem('kun-patch-banner')
+    const localeBannerBlob: Blob | null = await localforage.getItem(
+      CREATE_PATCH_BANNER_KEY
+    )
     const localeOriginalBannerBlob: Blob | null = await localforage.getItem(
-      'kun-patch-banner-original'
+      CREATE_PATCH_ORIGINAL_BANNER_KEY
     )
     if (!localeBannerBlob) {
       toast.error('未检测到预览图片')
@@ -184,10 +189,7 @@ export const PublishButton = ({ setErrors, className }: Props) => {
     }
 
     resetData()
-    await localforage.removeItem('kun-patch-banner')
-    await localforage.removeItem('kun-patch-banner-original')
-    await clearCreateGalleryDraft()
-    await localforage.removeItem(CREATE_GALLERY_WATERMARK_KEY)
+    await clearCreatePatchDraftFiles()
     toast.success(
       hasGalleryUploadFailures
         ? '发布完成，但有部分截图上传失败'
