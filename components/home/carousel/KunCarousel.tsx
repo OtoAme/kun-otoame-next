@@ -9,6 +9,8 @@ import { RandomGalgameButton } from './RandomGalgameButton'
 import { KunHomeNavigationItems } from '../NavigationItems'
 import type { HomeCarouselMetadata } from './mdx'
 
+const AUTO_ADVANCE_INTERVAL_MS = 5000
+
 interface KunCarouselProps {
   posts: readonly HomeCarouselMetadata[]
 }
@@ -18,6 +20,7 @@ export const KunCarousel = ({ posts }: KunCarouselProps) => {
   const [isHovered, setIsHovered] = useState(false)
   const [direction, setDirection] = useState(0)
   const [isPageVisible, setIsPageVisible] = useState(true)
+  const [autoAdvanceKey, setAutoAdvanceKey] = useState(0)
 
   useEffect(() => {
     const handleVisibility = () => {
@@ -44,19 +47,19 @@ export const KunCarousel = ({ posts }: KunCarouselProps) => {
   }, [posts.length])
 
   useEffect(() => {
-    if (isHovered || !isPageVisible || posts.length === 0) {
+    if (isHovered || !isPageVisible || posts.length < 2) {
       return
     }
 
-    const timer = setInterval(() => {
+    const timer = window.setTimeout(() => {
       setDirection(1)
       setCurrentSlide((prev) =>
         posts.length > 0 ? (prev + 1) % posts.length : 0
       )
-    }, 5000)
+    }, AUTO_ADVANCE_INTERVAL_MS)
 
-    return () => clearInterval(timer)
-  }, [isHovered, isPageVisible, posts.length])
+    return () => window.clearTimeout(timer)
+  }, [autoAdvanceKey, currentSlide, isHovered, isPageVisible, posts.length])
 
   useEffect(() => {
     if (posts.length < 2) {
@@ -101,11 +104,16 @@ export const KunCarousel = ({ posts }: KunCarouselProps) => {
     return Math.abs(offset) * velocity
   }
 
+  const restartAutoAdvance = () => {
+    setAutoAdvanceKey((prev) => prev + 1)
+  }
+
   const paginate = (newDirection: number) => {
     if (posts.length === 0) {
       return
     }
 
+    restartAutoAdvance()
     setDirection(newDirection)
     setCurrentSlide(
       (prev) => (prev + newDirection + posts.length) % posts.length
@@ -165,12 +173,17 @@ export const KunCarousel = ({ posts }: KunCarouselProps) => {
           dragConstraints={{ left: 0, right: 0 }}
           dragElastic={0.7}
           onDragEnd={(_, { offset, velocity }) => {
+            restartAutoAdvance()
             const swipe = swipePower(offset.x, velocity.x)
 
             if (swipe < -swipeConfidenceThreshold) {
-              paginate(1)
+              setDirection(1)
+              setCurrentSlide((prev) => (prev + 1) % posts.length)
             } else if (swipe > swipeConfidenceThreshold) {
-              paginate(-1)
+              setDirection(-1)
+              setCurrentSlide(
+                (prev) => (prev - 1 + posts.length) % posts.length
+              )
             }
           }}
           className="absolute w-full h-full cursor-grab active:cursor-grabbing"
@@ -223,6 +236,7 @@ export const KunCarousel = ({ posts }: KunCarouselProps) => {
                 : 'bg-foreground/20 hover:bg-foreground/40'
             }`}
             onClick={() => {
+              restartAutoAdvance()
               setDirection(index > currentSlide ? 1 : -1)
               setCurrentSlide(index)
             }}
