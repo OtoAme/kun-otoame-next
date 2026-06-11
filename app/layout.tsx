@@ -1,4 +1,3 @@
-import { Toaster } from 'react-hot-toast'
 import Script from 'next/script'
 import { cookies } from 'next/headers'
 import { preconnect, prefetchDNS } from 'react-dom'
@@ -8,6 +7,7 @@ import { KunFooter } from '~/components/kun/Footer'
 import { KunNavigationBreadcrumb } from '~/components/kun/NavigationBreadcrumb'
 import { generateKunMetadata, kunViewport } from './metadata'
 import { KunBackToTop } from '~/components/kun/BackToTop'
+import { KunToaster } from '~/components/kun/Toaster'
 import { SiteThemeScript } from '~/components/kun/theme/SiteThemeScript'
 import {
   DEFAULT_KUN_SITE_THEME,
@@ -81,12 +81,12 @@ export default async function RootLayout({
               <KunNavigationBreadcrumb />
               <div className="flex min-h-[calc(100dvh-256px)] w-full max-w-7xl grow px-3 sm:px-6">
                 {children}
-                <Toaster />
               </div>
               <KunBackToTop />
               <KunFooter />
             </div>
           </div>
+          <KunToaster />
         </Providers>
       </body>
     </html>
