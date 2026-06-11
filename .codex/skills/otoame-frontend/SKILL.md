@@ -22,6 +22,8 @@ Use this skill for pages, components, state, theme, and content.
 - Use `utils/kunFetch.ts` or preserve the CSRF header behavior for state-changing client requests.
 - Keep user-facing copy on OtoAme/OtomeGame naming unless referencing compatibility paths.
 - For edit external-data inputs, merge async source results with the latest store state and only overwrite fields owned by that source.
+- Bangumi title/summary should only fill game name/introduction after an explicit user click; title fill prefers `nameCn`, then `name`.
+- Create edit-page clear actions must reset `editStore`, localforage banner/gallery drafts, and remount local draft UI state.
 - Theme changes need `tests/unit/theme.test.ts`.
 
 ## Verification
