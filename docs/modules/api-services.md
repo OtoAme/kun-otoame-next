@@ -88,6 +88,22 @@ service/helper 负责：
 5. 缓存未命中时查 Prisma，构建 `Patch` 与 `PatchIntroduction` 数据，再写缓存。
 6. 浏览量通过 Redis buffer 实时累加，列表和详情读取时用 `withRealtimePatchViews` / `getRealtimePatchStats` 叠加未落库值。
 
+### 消息和反馈
+
+文件：
+
+- `app/api/message/service.ts`
+- `app/api/message/all/service.ts`
+- `app/api/patch/feedback/service.ts`
+- `app/api/admin/feedback/service.ts`
+- `app/api/utils/message.ts`
+
+规则：
+
+- 反馈工单本身使用 `type: 'feedback'`、`recipient_id: null`，供后台反馈管理列表查询。
+- 用户提交反馈后发给管理员的提醒、管理员处理反馈后发给用户的回执都属于可筛选的系统通知，必须使用 `type: 'system'`。
+- 不要把面向单个用户的反馈通知写成 `feedback`，否则会避开系统消息筛选并淹没在全部通知中。
+
 ### 搜索和列表
 
 文件：

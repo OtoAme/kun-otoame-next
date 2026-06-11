@@ -42,6 +42,7 @@ pnpm typecheck
 - Prisma query conditions and transaction writes.
 - Cache invalidation calls after writes.
 - Upload lock/finalize/compensation behavior.
+- Message regressions: feedback work items stay `feedback`, but feedback notices sent to users/admins are `system`.
 - Role, permission, owner mismatch, CSRF, and quota edge cases when service-level logic owns them.
 - Edit external-data regressions: VNDB company priority, VNDB tags ignored, Bangumi company fallback, Bangumi tags retained, alias-aware tag/company matching, tag alias uniqueness on create/update, Bangumi summary/title copy, duplicate checks excluding current rewrite patch, create-page draft clearing, and async store merges.
 - Tag migrations should prefer pure-function tests for generated plans because production tag data is not available locally.
