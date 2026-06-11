@@ -73,7 +73,7 @@ export const handleFeedback = async (
     })
 
     await createMessage({
-      type: 'feedback',
+      type: 'system',
       content: feedbackContent,
       recipient_id: message?.sender_id ?? undefined,
       link: '/'

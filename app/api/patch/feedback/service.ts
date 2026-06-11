@@ -52,7 +52,7 @@ export const createFeedback = async (
     if (admins.length) {
       await prisma.user_message.createMany({
         data: admins.map((admin) => ({
-          type: 'feedback',
+          type: 'system',
           content: noticeContent,
           sender_id: uid,
           recipient_id: admin.id,
