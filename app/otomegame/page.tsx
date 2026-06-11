@@ -34,6 +34,7 @@ export default async function Kun() {
       <CardContainer
         initialGalgames={response.galgames}
         initialTotal={response.total}
+        initialVisibility="pending"
       />
     </Suspense>
   )

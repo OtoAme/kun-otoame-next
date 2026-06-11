@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { kunFetchGet } from '~/utils/kunFetch'
 import { GalgameCard } from './Card'
 import { FilterBar } from './FilterBar'
@@ -9,18 +9,45 @@ import { KunHeader } from '../kun/Header'
 import { KunPagination } from '../kun/Pagination'
 import type { SortField, SortOrder } from './_sort'
 import { DEFAULT_GALGAME_MIN_RATING_COUNT } from '~/utils/galgameFilter'
+import { KunLoading } from '../kun/Loading'
 
 interface Props {
   initialGalgames: GalgameCard[]
   initialTotal: number
+  initialVisibility?: 'pending' | 'show'
 }
 
-export const CardContainer = ({ initialGalgames, initialTotal }: Props) => {
-  const isMounted = useMounted()
+const getClientNsfwPreference = () => {
+  if (typeof document === 'undefined') {
+    return 'sfw'
+  }
 
-  const [galgames, setGalgames] = useState<GalgameCard[]>(initialGalgames)
-  const [total, setTotal] = useState(initialTotal)
-  const [loading, setLoading] = useState(false)
+  const cookie = document.cookie
+    .split(';')
+    .map((value) => value.trim())
+    .find((value) =>
+      value.startsWith('kun-patch-setting-store|state|data|kunNsfwEnable=')
+    )
+
+  return decodeURIComponent(cookie?.split('=').slice(1).join('=') || 'sfw')
+}
+
+export const CardContainer = ({
+  initialGalgames,
+  initialTotal,
+  initialVisibility = 'show'
+}: Props) => {
+  const isMounted = useMounted()
+  const shouldResolveInitialVisibility = initialVisibility === 'pending'
+
+  const [galgames, setGalgames] = useState<GalgameCard[]>(
+    shouldResolveInitialVisibility ? [] : initialGalgames
+  )
+  const [total, setTotal] = useState(
+    shouldResolveInitialVisibility ? 0 : initialTotal
+  )
+  const [loading, setLoading] = useState(shouldResolveInitialVisibility)
+  const hasResolvedInitialVisibilityRef = useRef(false)
   const [selectedType, setSelectedType] = useState<string>('all')
   const [selectedLanguage, setSelectedLanguage] = useState<string>('all')
   const [selectedPlatform, setSelectedPlatform] = useState<string>('all')
@@ -61,9 +88,31 @@ export const CardContainer = ({ initialGalgames, initialTotal }: Props) => {
     if (!isMounted) {
       return
     }
+
+    if (!hasResolvedInitialVisibilityRef.current) {
+      hasResolvedInitialVisibilityRef.current = true
+
+      if (shouldResolveInitialVisibility) {
+        const nsfwPreference = getClientNsfwPreference()
+
+        if (nsfwPreference === 'sfw') {
+          setGalgames(initialGalgames)
+          setTotal(initialTotal)
+          setLoading(false)
+          return
+        }
+
+        fetchPatches()
+        return
+      }
+
+      return
+    }
+
     fetchPatches()
   }, [
     isMounted,
+    shouldResolveInitialVisibility,
     sortField,
     sortOrder,
     selectedType,
@@ -101,13 +150,17 @@ export const CardContainer = ({ initialGalgames, initialTotal }: Props) => {
         setMinRatingCount={setMinRatingCount}
       />
 
-      <div className="grid grid-cols-2 gap-2 mx-auto mb-8 sm:gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-        {galgames.map((pa) => (
-          <GalgameCard key={pa.id} patch={pa} />
-        ))}
-      </div>
+      {loading ? (
+        <KunLoading hint="正在获取 OtomeGame 中..." className="min-h-64" />
+      ) : (
+        <div className="grid grid-cols-2 gap-2 mx-auto mb-8 sm:gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          {galgames.map((pa) => (
+            <GalgameCard key={pa.id} patch={pa} />
+          ))}
+        </div>
+      )}
 
-      {total > 24 && (
+      {!loading && total > 24 && (
         <div className="flex justify-center">
           <KunPagination
             total={Math.ceil(total / 24)}
