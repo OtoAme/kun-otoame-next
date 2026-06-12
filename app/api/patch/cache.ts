@@ -2,6 +2,10 @@ import { randomUUID } from 'crypto'
 import { PATCH_FAVORITE_CACHE_DURATION } from '~/config/cache'
 import { delKv, delKvPattern, delKvs, getKv, getKvs, setKv } from '~/lib/redis'
 import { invalidateAnonymousApiResponseCaches } from '~/app/api/utils/anonymousApiResponseCache'
+import {
+  purgePublicApiCache,
+  purgePublicPageCache
+} from '~/app/api/utils/purgeCloudflareCache'
 import { safeRevalidatePath } from './revalidate'
 
 const PATCH_CACHE_KEY = 'patch'
@@ -9,6 +13,10 @@ const PATCH_INTRODUCTION_CACHE_KEY = 'patch:introduction'
 const PATCH_FAVORITE_CACHE_KEY = 'patch:favorite'
 const PATCH_FAVORITE_VERSION_KEY = 'patch:favorite:version'
 const PATCH_FAVORITE_DEFAULT_VERSION = '0'
+const ANONYMOUS_PUBLIC_API_PATHS = [
+  '/api/tag/otomegame',
+  '/api/company/otomegame'
+]
 
 export const getPatchCacheKey = (uniqueId: string) =>
   `${PATCH_CACHE_KEY}:${uniqueId}`
@@ -130,6 +138,7 @@ export const invalidatePatchContentCache = async (uniqueId: string) => {
   ])
 
   safeRevalidatePath(`/${uniqueId}`, 'page')
+  await purgePublicPageCache([`/${uniqueId}`])
 }
 
 export const invalidatePatchListCaches = async () => {
@@ -145,6 +154,10 @@ export const invalidatePatchListCaches = async () => {
 
   safeRevalidatePath('/', 'page')
   safeRevalidatePath('/otomegame', 'page')
+  await Promise.all([
+    purgePublicPageCache(['/', '/otomegame']),
+    purgePublicApiCache(ANONYMOUS_PUBLIC_API_PATHS)
+  ])
 }
 
 export const invalidateCompanyCaches = async (companyId?: number) => {
@@ -161,6 +174,12 @@ export const invalidateCompanyCaches = async (companyId?: number) => {
   if (companyId) {
     safeRevalidatePath(`/company/${companyId}`, 'page')
   }
+  await Promise.all([
+    purgePublicPageCache(
+      companyId ? ['/company', `/company/${companyId}`] : ['/company']
+    ),
+    purgePublicApiCache(['/api/company/otomegame'])
+  ])
 }
 
 export const invalidateTagCaches = async (tagId?: number) => {
@@ -176,6 +195,10 @@ export const invalidateTagCaches = async (tagId?: number) => {
   if (tagId) {
     safeRevalidatePath(`/tag/${tagId}`, 'page')
   }
+  await Promise.all([
+    purgePublicPageCache(tagId ? ['/tag', `/tag/${tagId}`] : ['/tag']),
+    purgePublicApiCache(['/api/tag/otomegame'])
+  ])
 }
 
 export const invalidatePatchFavoriteCache = async (

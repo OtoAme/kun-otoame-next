@@ -7,6 +7,7 @@ import { PatchHeaderTabs } from './Tabs'
 import { PatchHeaderInfo } from './Info'
 import { KunAutoImageViewer } from '~/components/kun/image-viewer/AutoImageViewer'
 import { KunNull } from '~/components/kun/Null'
+import { PatchViewBeacon } from '~/components/patch/view/PatchViewBeacon'
 import { kunMoyuMoe } from '~/config/moyu-moe'
 import { getPatchPageTitle } from '~/utils/patch/getPatchPageTitle'
 import type { Patch, PatchIntroduction } from '~/types/api/patch'
@@ -27,10 +28,11 @@ export const PatchHeaderContainer = ({
   const resourceSectionTabsId = 'patch-resource-section-tabs'
   const { setData } = useRewritePatchStore()
   const searchParams = useSearchParams()
+  const [displayPatch, setDisplayPatch] = useState(patch)
   const [selected, setSelected] = useState('introduction')
   const isNsfwBlocked = useMemo(
-    () => patch.contentLimit === 'nsfw' && !nsfwAllowed,
-    [patch.contentLimit, nsfwAllowed]
+    () => displayPatch.contentLimit === 'nsfw' && !nsfwAllowed,
+    [displayPatch.contentLimit, nsfwAllowed]
   )
   const tabsRef = useRef<HTMLDivElement>(null)
 
@@ -73,13 +75,13 @@ export const PatchHeaderContainer = ({
 
   useEffect(() => {
     setData({
-      id: patch.id,
-      uniqueId: patch.uniqueId,
-      vndbId: patch.vndbId ?? '',
-      vndbRelationId: patch.vndbRelationId ?? '',
-      bangumiId: patch.bangumiId ? String(patch.bangumiId) : '',
-      steamId: patch.steamId ? String(patch.steamId) : '',
-      dlsiteCode: patch.dlsiteCode ?? '',
+      id: displayPatch.id,
+      uniqueId: displayPatch.uniqueId,
+      vndbId: displayPatch.vndbId ?? '',
+      vndbRelationId: displayPatch.vndbRelationId ?? '',
+      bangumiId: displayPatch.bangumiId ? String(displayPatch.bangumiId) : '',
+      steamId: displayPatch.steamId ? String(displayPatch.steamId) : '',
+      dlsiteCode: displayPatch.dlsiteCode ?? '',
       dlsiteCircleName: '',
       dlsiteCircleLink: '',
       vndbTags: [],
@@ -89,25 +91,25 @@ export const PatchHeaderContainer = ({
       steamTags: [],
       steamDevelopers: [],
       steamAliases: [],
-      name: patch.name,
-      introduction: patch.introduction,
+      name: displayPatch.name,
+      introduction: displayPatch.introduction,
       officialUrl: intro.officialUrl,
-      alias: patch.alias,
-      tag: patch.tags,
-      contentLimit: patch.contentLimit,
+      alias: displayPatch.alias,
+      tag: displayPatch.tags,
+      contentLimit: displayPatch.contentLimit,
       released: intro.released,
-      isDuplicate: patch.isDuplicate,
+      isDuplicate: displayPatch.isDuplicate,
       images: intro.images.map((img) => ({
         id: img.id,
         url: img.url,
         is_nsfw: img.isNSFW
       })),
-      bannerUrl: patch.banner
+      bannerUrl: displayPatch.banner
     })
-  }, [])
+  }, [displayPatch, intro, setData])
 
   useEffect(() => {
-    if (patch.contentLimit !== 'nsfw') {
+    if (displayPatch.contentLimit !== 'nsfw') {
       return
     }
 
@@ -116,11 +118,24 @@ export const PatchHeaderContainer = ({
       return
     }
 
-    document.title = `${getPatchPageTitle(patch)} - ${kunMoyuMoe.titleShort}`
-  }, [isNsfwBlocked, patch])
+    document.title = `${getPatchPageTitle(displayPatch)} - ${kunMoyuMoe.titleShort}`
+  }, [displayPatch, isNsfwBlocked])
+
+  const handleViewed = () => {
+    setDisplayPatch((currentPatch) => ({
+      ...currentPatch,
+      view: currentPatch.view + 1
+    }))
+  }
 
   return (
     <div className="relative w-full mx-auto max-w-7xl">
+      <PatchViewBeacon
+        uniqueId={displayPatch.uniqueId}
+        currentView={displayPatch.view}
+        onViewed={handleViewed}
+      />
+
       {isNsfwBlocked ? (
         <KunNull
           message={
@@ -132,14 +147,14 @@ export const PatchHeaderContainer = ({
           <KunAutoImageViewer />
 
           <PatchHeaderInfo
-            patch={patch}
+            patch={displayPatch}
             handleClickDownloadNav={handleClickDownloadNav}
           />
 
           <div ref={tabsRef} className="scroll-mt-24">
             <PatchHeaderTabs
-              id={patch.id}
-              vndbId={patch.vndbId || ''}
+              id={displayPatch.id}
+              vndbId={displayPatch.vndbId || ''}
               intro={intro}
               uid={uid}
               selected={selected}

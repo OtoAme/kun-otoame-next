@@ -1,6 +1,10 @@
 import { z } from 'zod'
 import { prisma } from '~/prisma/index'
 import { adminDeleteCommentSchema } from '~/validations/admin'
+import {
+  invalidatePatchContentCache,
+  invalidatePatchListCaches
+} from '~/app/api/patch/cache'
 
 const adminLogContentLimit = 10007
 const adminDeleteCommentSummaryLimit = 10
@@ -64,7 +68,12 @@ export const deleteComment = async (
       user_id: true,
       patch_id: true,
       parent_id: true,
-      content: true
+      content: true,
+      patch: {
+        select: {
+          unique_id: true
+        }
+      }
     }
   })
   if (!comments.length) {
@@ -76,7 +85,7 @@ export const deleteComment = async (
     return '未找到该管理员'
   }
 
-  return await prisma.$transaction(async (prisma) => {
+  const response = await prisma.$transaction(async (prisma) => {
     await prisma.patch_comment.deleteMany({
       where: {
         id: {
@@ -95,4 +104,14 @@ export const deleteComment = async (
 
     return {}
   })
+
+  const uniqueIds = [...new Set(comments.map((comment) => comment.patch.unique_id))]
+  await Promise.all([
+    ...uniqueIds.map((uniqueId) => invalidatePatchContentCache(uniqueId)),
+    invalidatePatchListCaches()
+  ]).catch((error) => {
+    console.error('Failed to invalidate admin comment cache:', error)
+  })
+
+  return response
 }

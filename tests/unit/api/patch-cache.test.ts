@@ -16,6 +16,13 @@ vi.mock('~/app/api/patch/revalidate', () => ({
   safeRevalidatePath: safeRevalidatePathMock
 }))
 
+const purgePublicPageCacheMock = vi.hoisted(() => vi.fn())
+const purgePublicApiCacheMock = vi.hoisted(() => vi.fn())
+vi.mock('~/app/api/utils/purgeCloudflareCache', () => ({
+  purgePublicApiCache: purgePublicApiCacheMock,
+  purgePublicPageCache: purgePublicPageCacheMock
+}))
+
 import {
   invalidateCompanyCaches,
   invalidatePatchContentCache,
@@ -32,6 +39,8 @@ describe('patch cache invalidation', () => {
     redisMocks.getKv.mockResolvedValue(null)
     redisMocks.getKvs.mockResolvedValue([])
     redisMocks.setKv.mockResolvedValue(undefined)
+    purgePublicApiCacheMock.mockResolvedValue(undefined)
+    purgePublicPageCacheMock.mockResolvedValue(undefined)
   })
 
   it('revalidates patch content route after deleting cached patch content', async () => {
@@ -42,6 +51,7 @@ describe('patch cache invalidation', () => {
       'patch:introduction:abc12345'
     )
     expect(safeRevalidatePathMock).toHaveBeenCalledWith('/abc12345', 'page')
+    expect(purgePublicPageCacheMock).toHaveBeenCalledWith(['/abc12345'])
   })
 
   it('revalidates static list pages after deleting patch list caches', async () => {
@@ -56,6 +66,11 @@ describe('patch cache invalidation', () => {
     expect(redisMocks.delKvPattern).toHaveBeenCalledWith('anonymous_api:*')
     expect(safeRevalidatePathMock).toHaveBeenCalledWith('/', 'page')
     expect(safeRevalidatePathMock).toHaveBeenCalledWith('/otomegame', 'page')
+    expect(purgePublicPageCacheMock).toHaveBeenCalledWith(['/', '/otomegame'])
+    expect(purgePublicApiCacheMock).toHaveBeenCalledWith([
+      '/api/tag/otomegame',
+      '/api/company/otomegame'
+    ])
   })
 
   it('revalidates company list and company detail paths when company id is known', async () => {
@@ -69,6 +84,29 @@ describe('patch cache invalidation', () => {
     expect(redisMocks.delKv).toHaveBeenCalledWith('company_detail:7')
     expect(safeRevalidatePathMock).toHaveBeenCalledWith('/company', 'page')
     expect(safeRevalidatePathMock).toHaveBeenCalledWith('/company/7', 'page')
+    expect(purgePublicPageCacheMock).toHaveBeenCalledWith([
+      '/company',
+      '/company/7'
+    ])
+    expect(purgePublicApiCacheMock).toHaveBeenCalledWith([
+      '/api/company/otomegame'
+    ])
+  })
+
+  it('revalidates only company list path when company id is unknown', async () => {
+    await invalidateCompanyCaches()
+
+    expect(redisMocks.delKvPattern).toHaveBeenCalledWith('company_list:*')
+    expect(redisMocks.delKvPattern).toHaveBeenCalledWith(
+      'company_galgame_list:*'
+    )
+    expect(redisMocks.delKvPattern).toHaveBeenCalledWith('anonymous_api:*')
+    expect(redisMocks.delKvPattern).toHaveBeenCalledWith('company_detail:*')
+    expect(safeRevalidatePathMock).toHaveBeenCalledWith('/company', 'page')
+    expect(purgePublicPageCacheMock).toHaveBeenCalledWith(['/company'])
+    expect(purgePublicApiCacheMock).toHaveBeenCalledWith([
+      '/api/company/otomegame'
+    ])
   })
 
   it('revalidates tag list and tag detail paths when tag id is known', async () => {
@@ -80,5 +118,24 @@ describe('patch cache invalidation', () => {
     expect(redisMocks.delKv).toHaveBeenCalledWith('tag_detail:15')
     expect(safeRevalidatePathMock).toHaveBeenCalledWith('/tag', 'page')
     expect(safeRevalidatePathMock).toHaveBeenCalledWith('/tag/15', 'page')
+    expect(purgePublicPageCacheMock).toHaveBeenCalledWith(['/tag', '/tag/15'])
+    expect(purgePublicApiCacheMock).toHaveBeenCalledWith([
+      '/api/tag/otomegame'
+    ])
+  })
+
+  it('revalidates only tag list path when tag id is unknown', async () => {
+    await invalidateTagCaches()
+
+    expect(redisMocks.delKvPattern).toHaveBeenCalledWith('tag_list:*')
+    expect(redisMocks.delKvPattern).toHaveBeenCalledWith('tag_detail:*')
+    expect(redisMocks.delKvPattern).toHaveBeenCalledWith('tag_galgame_list:*')
+    expect(redisMocks.delKvPattern).toHaveBeenCalledWith('galgame_list:*')
+    expect(redisMocks.delKvPattern).toHaveBeenCalledWith('anonymous_api:*')
+    expect(safeRevalidatePathMock).toHaveBeenCalledWith('/tag', 'page')
+    expect(purgePublicPageCacheMock).toHaveBeenCalledWith(['/tag'])
+    expect(purgePublicApiCacheMock).toHaveBeenCalledWith([
+      '/api/tag/otomegame'
+    ])
   })
 })

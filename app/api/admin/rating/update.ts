@@ -1,13 +1,21 @@
 import { z } from 'zod'
 import { prisma } from '~/prisma/index'
 import { patchRatingUpdateSchema } from '~/validations/admin'
+import { invalidatePatchContentCache } from '~/app/api/patch/cache'
 
 export const updateRating = async (
   input: z.infer<typeof patchRatingUpdateSchema>,
   uid: number
 ) => {
   const rating = await prisma.patch_rating.findUnique({
-    where: { id: input.ratingId }
+    where: { id: input.ratingId },
+    include: {
+      patch: {
+        select: {
+          unique_id: true
+        }
+      }
+    }
   })
   if (!rating) {
     return '未找到对应的评价'
@@ -17,7 +25,7 @@ export const updateRating = async (
     return '未找到该管理员'
   }
 
-  return await prisma.$transaction(async (prisma) => {
+  const response = await prisma.$transaction(async (prisma) => {
     await prisma.patch_rating.update({
       where: { id: input.ratingId },
       data: {
@@ -43,4 +51,10 @@ export const updateRating = async (
 
     return {}
   })
+
+  await invalidatePatchContentCache(rating.patch.unique_id).catch((error) => {
+    console.error('Failed to invalidate admin rating cache:', error)
+  })
+
+  return response
 }

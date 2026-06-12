@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { prisma } from '~/prisma/index'
 import { patchCommentUpdateSchema } from '~/validations/patch'
+import { invalidatePatchContentCache } from '~/app/api/patch/cache'
 
 export const updateComment = async (
   input: z.infer<typeof patchCommentUpdateSchema>,
@@ -10,7 +11,14 @@ export const updateComment = async (
   const { commentId, content } = input
 
   const comment = await prisma.patch_comment.findUnique({
-    where: { id: commentId }
+    where: { id: commentId },
+    include: {
+      patch: {
+        select: {
+          unique_id: true
+        }
+      }
+    }
   })
   if (!comment) {
     return '未找到该评论'
@@ -35,5 +43,6 @@ export const updateComment = async (
       }
     }
   })
+  await invalidatePatchContentCache(comment.patch.unique_id)
   return {}
 }

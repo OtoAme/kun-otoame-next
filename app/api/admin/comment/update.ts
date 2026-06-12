@@ -1,13 +1,21 @@
 import { z } from 'zod'
 import { prisma } from '~/prisma/index'
 import { patchCommentUpdateSchema } from '~/validations/patch'
+import { invalidatePatchContentCache } from '~/app/api/patch/cache'
 
 export const updateComment = async (
   input: z.infer<typeof patchCommentUpdateSchema>,
   uid: number
 ) => {
   const comment = await prisma.patch_comment.findUnique({
-    where: { id: input.commentId }
+    where: { id: input.commentId },
+    include: {
+      patch: {
+        select: {
+          unique_id: true
+        }
+      }
+    }
   })
   if (!comment) {
     return '未找到对应的评论'
@@ -19,7 +27,7 @@ export const updateComment = async (
 
   const { commentId, content } = input
 
-  return await prisma.$transaction(async (prisma) => {
+  const response = await prisma.$transaction(async (prisma) => {
     await prisma.patch_comment.update({
       where: { id: commentId },
       data: {
@@ -46,4 +54,10 @@ export const updateComment = async (
 
     return {}
   })
+
+  await invalidatePatchContentCache(comment.patch.unique_id).catch((error) => {
+    console.error('Failed to invalidate admin comment cache:', error)
+  })
+
+  return response
 }

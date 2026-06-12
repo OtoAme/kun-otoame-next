@@ -1,6 +1,9 @@
 import { z } from 'zod'
 import { prisma } from '~/prisma'
-import { invalidateCompanyCaches } from '~/app/api/patch/cache'
+import {
+  invalidateCompanyCaches,
+  invalidatePatchContentCache
+} from '~/app/api/patch/cache'
 import {
   addPatchCompanyRelations,
   removePatchCompanyRelations
@@ -19,7 +22,14 @@ export const handlePatchCompanyAction = (type: 'add' | 'delete') => {
     })
 
     if (changedIds.length) {
-      await invalidateCompanyCaches()
+      const patch = await prisma.patch.findUnique({
+        where: { id: patchId },
+        select: { unique_id: true }
+      })
+      await Promise.all([
+        patch ? invalidatePatchContentCache(patch.unique_id) : Promise.resolve(),
+        invalidateCompanyCaches()
+      ])
     }
 
     return {}

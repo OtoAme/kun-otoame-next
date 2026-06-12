@@ -2,6 +2,10 @@ import { z } from 'zod'
 import { prisma } from '~/prisma/index'
 import { recomputePatchRatingStat } from '~/app/api/patch/rating/stat'
 import {
+  invalidatePatchContentCache,
+  invalidatePatchListCaches
+} from '~/app/api/patch/cache'
+import {
   adminHandleReportSchema,
   adminReportPaginationSchema
 } from '~/validations/admin'
@@ -266,6 +270,15 @@ export const handleReport = async (
     report.rating_id
   ) {
     await recomputePatchRatingStat(report.patch_id)
+  }
+
+  if (input.action === 'delete') {
+    await Promise.all([
+      invalidatePatchContentCache(report.patch.unique_id),
+      invalidatePatchListCaches()
+    ]).catch((error) => {
+      console.error('Failed to invalidate admin report cache:', error)
+    })
   }
 
   return {}

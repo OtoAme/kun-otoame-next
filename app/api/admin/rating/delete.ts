@@ -2,6 +2,10 @@ import { z } from 'zod'
 import { prisma } from '~/prisma/index'
 import { adminDeleteRatingSchema } from '~/validations/admin'
 import { recomputePatchRatingStat } from '~/app/api/patch/rating/stat'
+import {
+  invalidatePatchContentCache,
+  invalidatePatchListCaches
+} from '~/app/api/patch/cache'
 
 const adminLogContentLimit = 10007
 const adminDeleteRatingSummaryLimit = 10
@@ -64,6 +68,13 @@ export const deleteRating = async (
       id: {
         in: input.ratingIds
       }
+    },
+    include: {
+      patch: {
+        select: {
+          unique_id: true
+        }
+      }
     }
   })
   if (!ratings.length) {
@@ -98,6 +109,14 @@ export const deleteRating = async (
   await Promise.all(
     patchIds.map((patchId) => recomputePatchRatingStat(patchId))
   )
+  await Promise.all([
+    ...[...new Set(ratings.map((rating) => rating.patch.unique_id))].map(
+      (uniqueId) => invalidatePatchContentCache(uniqueId)
+    ),
+    invalidatePatchListCaches()
+  ]).catch((error) => {
+    console.error('Failed to invalidate admin rating cache:', error)
+  })
 
   return {}
 }

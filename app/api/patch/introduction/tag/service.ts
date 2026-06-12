@@ -1,13 +1,36 @@
 import { z } from 'zod'
 import { prisma } from '~/prisma/index'
+import {
+  invalidatePatchContentCache,
+  invalidateTagCaches
+} from '~/app/api/patch/cache'
 import { patchTagChangeSchema } from '~/validations/patch'
+
+const getPatchUniqueId = async (patchId: number) => {
+  const patch = await prisma.patch.findUnique({
+    where: { id: patchId },
+    select: { unique_id: true }
+  })
+
+  return patch?.unique_id
+}
+
+const invalidatePatchTagRelationCaches = async (patchId: number) => {
+  const uniqueId = await getPatchUniqueId(patchId)
+  await Promise.all([
+    uniqueId ? invalidatePatchContentCache(uniqueId) : Promise.resolve(),
+    invalidateTagCaches()
+  ]).catch((error) => {
+    console.error('Failed to invalidate patch tag relation cache:', error)
+  })
+}
 
 export const handleAddPatchTag = async (
   input: z.infer<typeof patchTagChangeSchema>
 ) => {
   const { patchId, tagId } = input
 
-  return await prisma.$transaction(async (prisma) => {
+  await prisma.$transaction(async (prisma) => {
     const relationData = tagId.map((id) => ({
       patch_id: patchId,
       tag_id: id
@@ -22,6 +45,10 @@ export const handleAddPatchTag = async (
     })
     return {}
   })
+
+  await invalidatePatchTagRelationCaches(patchId)
+
+  return {}
 }
 
 export const handleRemovePatchTag = async (
@@ -29,7 +56,7 @@ export const handleRemovePatchTag = async (
 ) => {
   const { patchId, tagId } = input
 
-  return await prisma.$transaction(async (prisma) => {
+  await prisma.$transaction(async (prisma) => {
     await prisma.patch_tag_relation.deleteMany({
       where: {
         patch_id: patchId,
@@ -43,4 +70,8 @@ export const handleRemovePatchTag = async (
     })
     return {}
   })
+
+  await invalidatePatchTagRelationCaches(patchId)
+
+  return {}
 }

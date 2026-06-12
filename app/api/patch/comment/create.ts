@@ -4,6 +4,10 @@ import { patchCommentCreateSchema } from '~/validations/patch'
 import { createDedupMessage } from '~/app/api/utils/message'
 import { createMentionMessage } from '~/app/api/utils/createMentionMessage'
 import { markdownToHtml } from '~/app/api/utils/render/markdownToHtml'
+import {
+  invalidatePatchContentCache,
+  invalidatePatchListCaches
+} from '~/app/api/patch/cache'
 import type { PatchComment } from '~/types/api/patch'
 
 export const createPatchComment = async (
@@ -56,6 +60,13 @@ export const createPatchComment = async (
     data.user.name,
     input.content
   )
+
+  await Promise.all([
+    invalidatePatchContentCache(data.patch.unique_id),
+    invalidatePatchListCaches()
+  ]).catch((error) => {
+    console.error('Failed to invalidate patch comment cache:', error)
+  })
 
   const newComment: Omit<PatchComment, 'user'> = {
     id: data.id,

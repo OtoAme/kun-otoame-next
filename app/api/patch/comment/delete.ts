@@ -1,5 +1,9 @@
 import { z } from 'zod'
 import { prisma } from '~/prisma/index'
+import {
+  invalidatePatchContentCache,
+  invalidatePatchListCaches
+} from '~/app/api/patch/cache'
 
 const commentIdSchema = z.object({
   commentId: z.coerce
@@ -30,6 +34,13 @@ export const deleteComment = async (
   const comment = await prisma.patch_comment.findUnique({
     where: {
       id: input.commentId
+    },
+    include: {
+      patch: {
+        select: {
+          unique_id: true
+        }
+      }
     }
   })
   if (!comment) {
@@ -40,8 +51,17 @@ export const deleteComment = async (
     return '您没有权限删除该评论'
   }
 
-  return await prisma.$transaction(async () => {
+  const response = await prisma.$transaction(async () => {
     await deleteCommentWithReplies(input.commentId)
     return {}
   })
+
+  await Promise.all([
+    invalidatePatchContentCache(comment.patch.unique_id),
+    invalidatePatchListCaches()
+  ]).catch((error) => {
+    console.error('Failed to invalidate patch comment cache:', error)
+  })
+
+  return response
 }
