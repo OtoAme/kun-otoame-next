@@ -113,7 +113,7 @@ Cloudflare purge 约定：
 - 匿名公开 API 用 `purgePublicApiCache(paths)`，按 URL prefix 清理。prefix 不带 query string，`/api/tag/otomegame` 会覆盖 `/api/tag/otomegame?...` 的 query 变体。
 - `/api/tag/otomegame` 和 `/api/company/otomegame` 的匿名响应缓存也要配合 `invalidateAnonymousApiResponseCaches()` 清理 Redis/进程热缓存。
 
-浏览量不是普通 patch cache：详情页由 `components/patch/view/PatchViewBeacon.tsx` 在客户端调用 `POST /api/patch/views`，该接口返回 `Cache-Control: private, no-store`，底层 `app/api/patch/views/buffer.ts` 使用 Redis hash 记录 `views:buffer`、`patch:stats:view` 和 `patch:stats:download`，`server/tasks/flushPatchViewsTask.ts` 每 2 分钟把 pending buffer 批量写入 PostgreSQL。改列表、详情或排行统计时要同时检查实时叠加和落库任务。
+浏览量不是普通 patch cache：详情页由 `components/patch/view/PatchViewBeacon.tsx` 在客户端调用 `POST /api/patch/views`，该接口返回 `Cache-Control: private, no-store`，底层 `app/api/patch/views/buffer.ts` 使用 Redis hash 记录 `views:buffer`、`patch:stats:view` 和 `patch:stats:download`，`server/tasks/flushPatchViewsTask.ts` 每 2 分钟把 pending buffer 批量写入 PostgreSQL。静态首页卡片通过 `GET /api/patch/stats` no-store 接口拉取实时 view/download 并做客户端合并。改列表、详情、首页或排行统计时要同时检查实时叠加和落库任务。
 
 评论、评分、下载、收藏、详情页 tag/company 关系会影响公开卡片统计、详情内容或 tag/company 页面。对应写入成功后必须清理内容缓存和列表缓存；仅更新评论正文/简评这类不改变列表计数的操作至少要清理内容缓存。后台更新/删除、举报处理和维护接口也要遵守同一规则。
 

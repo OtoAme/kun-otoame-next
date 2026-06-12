@@ -83,6 +83,7 @@
 - OpenResty 反代层额外追加的 `Cache-Control: no-cache` 已定位为 1Panel/OpenResty 配置问题，并已从公开站点配置中移除
 - 详情页浏览量写入已从 SSR 移到 `POST /api/patch/views`，响应固定 `Cache-Control: private, no-store`
 - 详情页客户端通过 `PatchViewBeacon` 使用带 CSRF header 的 `fetch(..., { keepalive: true })` 发送浏览量写入请求
+- 首页保持 `force-static`，但游戏卡片挂载后通过 `GET /api/patch/stats` 拉取 no-store 实时统计，只更新 view/download 数字，避免静态 HTML/RSC 快照压制实时展示
 - create/rewrite/download/favorite/resource/tag/company/comment/rating、详情页 tag/company 关系调整，以及相关后台更新/删除等会影响公开列表或详情的写入会进入 Redis/ISR/Cloudflare purge 链路
 - 匿名公开 API purge 使用 Cloudflare prefix purge，prefix 不带 query string，覆盖同一路径下所有 query 变体
 - 第一阶段仍不建议缓存 `/{uniqueId}` 详情页 HTML；原因是详情页仍包含登录 cookie 推导出的收藏状态，并受 NSFW 设置影响，需要先通过 Cloudflare bypass 规则和匿名 HTML 验证
