@@ -47,13 +47,14 @@
 
 ### 4. ISR 失效机制 ✅
 
-在写入操作后同时失效 Redis 和 Next.js 缓存：
+在写入操作后同时失效 Redis、Next.js 和 Cloudflare 缓存：
 
 - `invalidateTagCaches(tagId?)`: 调用 `revalidatePath('/tag')`，已知 `tagId` 时额外刷新 `/tag/[id]`
 - `invalidateCompanyCaches()`: 调用 `revalidatePath('/company')` 和 `/company/[id]`
 - `invalidatePatchListCaches()`: 调用 `revalidatePath('/')` 和 `/otomegame`
 - `invalidatePatchContentCache()`: 调用 `revalidatePath('/[id]')`
 - ISR 失效通过 `safeRevalidatePath` 封装，维护脚本环境缺少 Next static generation store 时不会中断 Redis 失效流程
+- Cloudflare purge 通过 `purgePublicPageCache()` 和 `purgePublicApiCache()` 接入同一失效链路；缺少 `KUN_CF_CACHE_ZONE_ID` 或 `KUN_CF_CACHE_PURGE_API_TOKEN` 时安全 no-op
 
 ### 5. 匿名 API 缓存头 ✅
 
@@ -77,6 +78,15 @@
 - 当前构建静态页面数：222
 - 之前的 Prisma `P2037 Too many database connections opened` 未复现
 
+### 8. 边缘缓存安全前置改造 ✅
+
+- OpenResty 反代层额外追加的 `Cache-Control: no-cache` 已定位为 1Panel/OpenResty 配置问题，并已从公开站点配置中移除
+- 详情页浏览量写入已从 SSR 移到 `POST /api/patch/views`，响应固定 `Cache-Control: private, no-store`
+- 详情页客户端通过 `PatchViewBeacon` 使用带 CSRF header 的 `fetch(..., { keepalive: true })` 发送浏览量写入请求
+- create/rewrite/download/favorite/resource/tag/company/comment/rating、详情页 tag/company 关系调整，以及相关后台更新/删除等会影响公开列表或详情的写入会进入 Redis/ISR/Cloudflare purge 链路
+- 匿名公开 API purge 使用 Cloudflare prefix purge，prefix 不带 query string，覆盖同一路径下所有 query 变体
+- 第一阶段仍不建议缓存 `/{uniqueId}` 详情页 HTML；原因是详情页仍包含登录 cookie 推导出的收藏状态，并受 NSFW 设置影响，需要先通过 Cloudflare bypass 规则和匿名 HTML 验证
+
 ## 待实施优化措施
 
 ### 1. 数据库连接池配置
@@ -95,12 +105,13 @@
 
 ### 3. CDN 和边缘缓存配置
 
-使用 Cloudflare/Nginx 缓存匿名页面：
+使用 Cloudflare 缓存匿名页面时，第一阶段只缓存公开列表页和短 TTL 匿名 API：
 
 - 缓存路径: `/`, `/otomegame`, `/tag`, `/tag/*`, `/company`, `/company/*`
 - 匿名 API 缓存路径: `/api/tag/otomegame`, `/api/company/otomegame`
-- 缓存规则: 基于 `Cache-Control` header
+- 缓存规则: 只允许匿名 GET 进入共享缓存，API Cache key 必须包含全部 query string
 - 排除: 其它 API 路由、带鉴权 cookie、带 NSFW/屏蔽标签设置 cookie、用户相关页面
+- 暂不缓存: `/{uniqueId}` 游戏详情页 HTML，直到收藏状态和 NSFW 个性化边界完成验证
 
 ### 4. 应用服务器扩展
 
@@ -275,3 +286,4 @@ k6 run --vus 1000 --duration 30s load-test.js
 3. **个性化内容**：blocked tags、NSFW 设置等个性化内容仍需客户端请求，且不共享匿名响应缓存
 4. **构建时间**：预生成数量可通过 `KUN_STATIC_TAG_PREGEN_LIMIT` / `KUN_STATIC_COMPANY_PREGEN_LIMIT` 调整，设置为 `0` 可关闭构建期详情页预生成
 5. **缓存一致性**：Redis、匿名响应缓存和 Next.js 缓存同时失效，避免数据不一致
+6. **Cloudflare 缓存一致性**：Cloudflare Cache Rule 启用前必须保证公开写入路径会触发 purge；Cloudflare purge 失败只记录日志，不阻断业务写入

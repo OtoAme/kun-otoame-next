@@ -153,6 +153,7 @@ Zod schema 集中在 `validations/`。API 工具函数在 [app/api/utils/parseQu
 - 内容：`patch:*`、`patch:introduction:*`。
 - 列表：首页、游戏列表、排行、资源列表、标签游戏、公司游戏。
 - 收藏状态：按用户和游戏缓存，并通过 version key 批量失效。
+- 公开边缘缓存：同一失效函数会调用 `purgePublicPageCache` / `purgePublicApiCache` 清理 Cloudflare files 或 prefixes。
 
 改动写入逻辑时必须同步检查缓存失效。常见写入后调用：
 
@@ -161,6 +162,8 @@ Zod schema 集中在 `validations/`。API 工具函数在 [app/api/utils/parseQu
 - `invalidateCompanyCaches(companyId)`
 - `invalidateTagCaches()`
 - `deletePatchResourceCache(uniqueId)`
+
+匿名公开 API 的 Cloudflare prefix purge 不带 query string；`/api/tag/otomegame` 会覆盖它的 query 变体。详情页浏览量写入不在 SSR 中执行，客户端调用 `POST /api/patch/views`，响应必须保持 `private, no-store`。
 
 ### 上传和资源
 

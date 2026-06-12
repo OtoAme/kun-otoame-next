@@ -27,7 +27,7 @@
 - API 状态变更请求受 CSRF header + origin/referer host 校验；`/api/upload/*` 必须在 handler 内自行校验。
 - Prisma schema 位于 `prisma/schema`，生产 schema 变更不能直接确认 reset database。
 - Redis helper 会自动补 `kun:touchgal` 前缀；直接用 `redis` 的低层代码必须显式写完整 key 并说明原子性需求。
-- Patch/resource/tag/company/favorite 写入后要同步缓存失效。
+- Patch/resource/tag/company/favorite/comment/rating 和详情页 tag/company 关系写入后要同步缓存失效；公开页面和匿名公开 API 的 Cloudflare purge 已接入 `app/api/patch/cache.ts` 的失效 helper。
 - Next standalone 运行时资源要同时出现在 `scripts/postbuild.ts` 和 release packaging。
 - 新环境变量要同步 `validations/dotenv-check.ts`、`.env.example`、README、CI 或说明它只在可选功能中使用。
 

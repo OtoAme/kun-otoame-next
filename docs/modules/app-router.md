@@ -39,12 +39,13 @@
 - 页面数据来自 `kunGetPatchPageDataActions({ uniqueId })`。
 - 登录状态来自 `verifyHeaderCookie()`。
 - NSFW 显示状态来自 `getNSFWHeader()`。
-- `revalidate = 120`，但浏览量通过 `kunUpdatePatchViewsActions` 做实时更新补偿。
+- `revalidate = 120`，浏览量不在服务端渲染期间写入；页面 hydration 后由 `PatchViewBeacon` 调用 `POST /api/patch/views`，该接口返回 `Cache-Control: private, no-store`。
 - 如果 NSFW 被阻挡，标题和内容会隐藏。
 
 前端详情容器 `PatchHeaderContainer` 负责：
 
 - 写入 `useRewritePatchStore`，让编辑页可以复用当前游戏数据。
+- 挂载 `PatchViewBeacon`，详情页打开后发送一次浏览量写入请求，并对展示值做一次乐观更新。
 - 管理 introduction/resources/comments/ratings 等 tabs。
 - 点击“下载”时切换到资源 tab 并滚动到资源区。
 - 根据 NSFW 状态设置 document title。
