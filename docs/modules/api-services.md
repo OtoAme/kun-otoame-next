@@ -229,7 +229,7 @@ if (typeof input === 'string') {
 
 ## 安全约束
 
-- 非 upload API 由 `middleware.ts` 统一校验 CSRF。
+- 非 upload API 由 `middleware.ts` 统一校验 CSRF；只读匿名热点 `/api/tag/otomegame` 和 `/api/company/otomegame` 从 matcher 中排除以降低 GET 固定开销。
 - upload API 因大 body 跳过 middleware，必须在 handler 内调用 `verifyKunCsrf`。
 - 状态变更请求需要 `x-requested-with: kun-fetch`，并通过 `origin` / `referer` host 校验。新增 `fetch` wrapper 或第三方回调时要确认它能满足这个约束，或明确加入最小豁免。
 - 用户可见错误不要泄漏 secret、token、资源密码、S3 key。

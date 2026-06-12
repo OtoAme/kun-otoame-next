@@ -185,6 +185,13 @@ proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
 proxy_set_header X-Forwarded-Proto $scheme;
 ```
 
+匿名高频读取接口可以按响应头做共享缓存：
+
+- `/api/tag/otomegame`
+- `/api/company/otomegame`
+
+这两个接口的匿名响应会输出 `Cache-Control: public, s-maxage=30, stale-while-revalidate=300`。带登录 token、NSFW 设置、屏蔽标签设置等 cookie 的请求会输出 `private, no-store`，反向代理或 CDN 不能缓存这类个性化响应。
+
 站点公开域名要与 `.env` 中这些值一致：
 
 - `KUN_VISUAL_NOVEL_SITE_URL`
@@ -318,13 +325,13 @@ pm2 logs kun-touchgal-next
 
 ## 常见故障
 
-| 症状 | 优先检查 |
-| --- | --- |
-| PM2 报 cwd deleted 或找不到 server | 使用 `deployPull` 的 delete+start 流程，确认 `.next/standalone/server.mjs` 或 `server.js` 存在。 |
-| 图片加载失败 | `KUN_VISUAL_NOVEL_IMAGE_BED_HOST`、`KUN_VISUAL_NOVEL_IMAGE_BED_URL`、Next image `remotePatterns`。 |
-| Prisma Client 架构不匹配 | 在目标服务器重新 `pnpm prisma generate`，确认 standalone 内 `.prisma` 和 `@prisma` 已更新。 |
-| sitemap 缺失 | 跑 `pnpm build:sitemap`，确认 `scripts/postbuild.ts` 或 `deployPull` 复制到 standalone public。 |
-| build 成功但运行缺资源 | 检查 `postbuild.ts` 的 assert 路径和 release packaging 的复制列表。 |
-| 生产站被 noindex | 删除 `.env` 中 `KUN_VISUAL_NOVEL_TEST_SITE_LABEL`。 |
-| `deploy:pull` 找不到 release | 确认 GitHub latest release 有 `release.tar.gz`，`.env` 中 `GITHUB_REPO` 正确，私有仓库配置 `GITHUB_TOKEN`。 |
-| `deploy:build` 过程内存不足 | 增加 swap，或降低 `ecosystem.config.cjs` 的 `instances`。README 中按服务器核数调整实例数，但内存也会线性增长。 |
+| 症状                               | 优先检查                                                                                                       |
+| ---------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| PM2 报 cwd deleted 或找不到 server | 使用 `deployPull` 的 delete+start 流程，确认 `.next/standalone/server.mjs` 或 `server.js` 存在。               |
+| 图片加载失败                       | `KUN_VISUAL_NOVEL_IMAGE_BED_HOST`、`KUN_VISUAL_NOVEL_IMAGE_BED_URL`、Next image `remotePatterns`。             |
+| Prisma Client 架构不匹配           | 在目标服务器重新 `pnpm prisma generate`，确认 standalone 内 `.prisma` 和 `@prisma` 已更新。                    |
+| sitemap 缺失                       | 跑 `pnpm build:sitemap`，确认 `scripts/postbuild.ts` 或 `deployPull` 复制到 standalone public。                |
+| build 成功但运行缺资源             | 检查 `postbuild.ts` 的 assert 路径和 release packaging 的复制列表。                                            |
+| 生产站被 noindex                   | 删除 `.env` 中 `KUN_VISUAL_NOVEL_TEST_SITE_LABEL`。                                                            |
+| `deploy:pull` 找不到 release       | 确认 GitHub latest release 有 `release.tar.gz`，`.env` 中 `GITHUB_REPO` 正确，私有仓库配置 `GITHUB_TOKEN`。    |
+| `deploy:build` 过程内存不足        | 增加 swap，或降低 `ecosystem.config.cjs` 的 `instances`。README 中按服务器核数调整实例数，但内存也会线性增长。 |
