@@ -1,9 +1,9 @@
 import { Button } from '@heroui/button'
 import { ChevronRight } from 'lucide-react'
-import { GalgameCard } from '~/components/galgame/Card'
 import { ResourceCard } from '~/components/resource/ResourceCard'
 import Link from 'next/link'
 import { HomeHero } from './hero/HomeHero'
+import { HomeGalgameGrid } from './HomeGalgameGrid'
 import type { HomeResource } from '~/types/api/home'
 
 interface Props {
@@ -32,15 +32,7 @@ export const HomeContainer = ({ galgames, resources }: Props) => {
             查看更多
           </Button>
         </div>
-        <div className="grid grid-cols-2 gap-2 sm:gap-6 md:grid-cols-3 lg:grid-cols-4">
-          {galgames.map((galgame) => (
-            <GalgameCard
-              key={galgame.id}
-              patch={galgame}
-              openOnNewTab={false}
-            />
-          ))}
-        </div>
+        <HomeGalgameGrid galgames={galgames} />
       </section>
 
       <section className="space-y-6">
