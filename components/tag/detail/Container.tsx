@@ -40,6 +40,8 @@ interface UpdateBlockedTagResponse {
 
 interface Props {
   initialTag: TagDetail
+  initialGalgames: GalgameCard[]
+  initialTotal: number
 }
 
 const SORT_FIELDS = new Set<SortField>([
@@ -96,7 +98,11 @@ const getUrlFilterState = () => {
   }
 }
 
-export const TagDetailContainer = ({ initialTag }: Props) => {
+export const TagDetailContainer = ({
+  initialTag,
+  initialGalgames,
+  initialTotal
+}: Props) => {
   const isMounted = useMounted()
   const router = useRouter()
   const { user, setUser } = useUserStore((state) => state)
@@ -129,9 +135,9 @@ export const TagDetailContainer = ({ initialTag }: Props) => {
   const [debouncedMinRatingCount] = useDebounce(minRatingCount, 400)
 
   const [tag, setTag] = useState(initialTag)
-  const [patches, setPatches] = useState<GalgameCard[]>([])
-  const [totalCount, setTotalCount] = useState(0)
-  const [loading, setLoading] = useState(true)
+  const [patches, setPatches] = useState<GalgameCard[]>(initialGalgames)
+  const [totalCount, setTotalCount] = useState(initialTotal)
+  const [loading, setLoading] = useState(false)
   const [updatingBlockedTag, setUpdatingBlockedTag] = useState(false)
   const { isOpen, onOpen, onClose } = useDisclosure()
   const isBlocked = user.blockedTagIds.includes(tag.id)
@@ -271,7 +277,13 @@ export const TagDetailContainer = ({ initialTag }: Props) => {
       return
     }
 
-    if (!user.uid || isBlocked) {
+    if (!user.uid) {
+      fetchRequestId.current += 1
+      setLoading(false)
+      return
+    }
+
+    if (isBlocked) {
       fetchRequestId.current += 1
       setPatches([])
       setTotalCount(0)

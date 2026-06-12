@@ -50,7 +50,10 @@ const nextConfig: NextConfig = {
   output: 'standalone',
   outputFileTracingRoot: projectRoot,
   experimental: {
-    optimizePackageImports: ['@heroui/react', 'lucide-react', 'date-fns']
+    optimizePackageImports: ['@heroui/react', 'lucide-react', 'date-fns'],
+    staticGenerationMaxConcurrency: 2,
+    staticGenerationMinPagesPerWorker: 10,
+    staticGenerationRetryCount: 1
     // turbotrace: {
     //   logLevel: 'error',
     //   logDetail: false,

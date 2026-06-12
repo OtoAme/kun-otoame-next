@@ -10,8 +10,14 @@ import { HOME_CACHE_DURATION } from '~/config/cache'
 import { getOrSet } from '~/lib/redis'
 import { withRealtimePatchViews } from '~/app/api/patch/views/realtime'
 
+const HOME_GALGAME_LIMIT = 12
+const HOME_RESOURCE_LIMIT = 4
+const HOME_PAYLOAD_CACHE_VERSION = 'v2'
+
 export const getHomeData = async (nsfwEnable: Prisma.patchWhereInput) => {
-  const cacheKey = `home_data:${createHash('md5')
+  const cacheKey = `home_data:${HOME_PAYLOAD_CACHE_VERSION}:g${HOME_GALGAME_LIMIT}:r${HOME_RESOURCE_LIMIT}:${createHash(
+    'md5'
+  )
     .update(JSON.stringify(nsfwEnable))
     .digest('hex')}`
 
@@ -23,7 +29,7 @@ export const getHomeData = async (nsfwEnable: Prisma.patchWhereInput) => {
           orderBy: { created: 'desc' },
           where: nsfwEnable,
           select: GalgameCardSelectField,
-          take: 20
+          take: HOME_GALGAME_LIMIT
         }),
         prisma.patch_resource.findMany({
           orderBy: { created: 'desc' },
@@ -52,7 +58,7 @@ export const getHomeData = async (nsfwEnable: Prisma.patchWhereInput) => {
               take: 1
             }
           },
-          take: 6
+          take: HOME_RESOURCE_LIMIT
         })
       ])
 

@@ -8,6 +8,7 @@ import {
   ALL_SUPPORTED_TYPE
 } from '~/constants/resource'
 import { getPatchByCompany } from '../service'
+import { getCachedAnonymousJsonResponse } from '~/app/api/utils/anonymousApiResponseCache'
 
 export const GET = async (req: NextRequest) => {
   const input = kunParseGetQuery(req, getPatchByCompanySchema)
@@ -23,8 +24,8 @@ export const GET = async (req: NextRequest) => {
     return NextResponse.json('请选择我们支持的 OtomeGame 排序类型')
   }
 
-  const nsfwEnable = getNSFWHeader(req)
-
-  const response = await getPatchByCompany(input, nsfwEnable)
-  return NextResponse.json(response)
+  return getCachedAnonymousJsonResponse(req, 'company_otomegame', async () => {
+    const nsfwEnable = getNSFWHeader(req)
+    return getPatchByCompany(input, nsfwEnable)
+  })
 }

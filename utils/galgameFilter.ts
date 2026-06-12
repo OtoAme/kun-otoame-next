@@ -13,6 +13,35 @@ export const DEFAULT_GALGAME_MONTH_STRING = JSON.stringify(
 export const DEFAULT_GALGAME_MIN_RATING_COUNT = 10
 export const DEFAULT_TAG_COMPANY_MIN_RATING_COUNT = 0
 
+export interface TagCompanyGalgameFilterState {
+  page: number
+  selectedType: string
+  selectedLanguage: string
+  selectedPlatform: string
+  sortField: SortField
+  sortOrder: SortOrder
+  selectedYears: string[]
+  selectedMonths: string[]
+  minRatingCount: number
+}
+
+const isDefaultFilterSelection = (value: string[]) =>
+  value.length === DEFAULT_GALGAME_FILTER_SELECTION.length &&
+  value.every((item, index) => item === DEFAULT_GALGAME_FILTER_SELECTION[index])
+
+export const isDefaultTagCompanyGalgameFilterState = (
+  state: TagCompanyGalgameFilterState
+) =>
+  state.page === 1 &&
+  state.selectedType === DEFAULT_GALGAME_FILTER_VALUE &&
+  state.selectedLanguage === DEFAULT_GALGAME_FILTER_VALUE &&
+  state.selectedPlatform === DEFAULT_GALGAME_FILTER_VALUE &&
+  state.sortField === DEFAULT_GALGAME_SORT_FIELD &&
+  state.sortOrder === DEFAULT_GALGAME_SORT_ORDER &&
+  isDefaultFilterSelection(state.selectedYears) &&
+  isDefaultFilterSelection(state.selectedMonths) &&
+  state.minRatingCount === DEFAULT_TAG_COMPANY_MIN_RATING_COUNT
+
 export const getSearchParamValue = (
   value: string | string[] | null | undefined
 ) => {

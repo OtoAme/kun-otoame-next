@@ -77,7 +77,7 @@ export const deleteTag = async (tagId: number) => {
   ]
 
   await Promise.all([
-    invalidateTagCaches(),
+    invalidateTagCaches(tagId),
     invalidatePatchListCaches(),
     ...affectedUniqueIds.map((uniqueId) =>
       invalidatePatchContentCache(uniqueId)

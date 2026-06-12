@@ -2,25 +2,9 @@
 
 import { z } from 'zod'
 import { safeParseSchema } from '~/utils/actions/safeParseSchema'
-import { getCompanyById } from '~/app/api/company/service'
 import { getPatchByCompany } from '~/app/api/company/service'
-import {
-  getCompanyByIdSchema,
-  getPatchByCompanySchema
-} from '~/validations/company'
+import { getPatchByCompanySchema } from '~/validations/company'
 import { getPatchVisibilityWhere } from '~/utils/actions/getPatchVisibilityWhere'
-
-export const kunGetCompanyByIdActions = async (
-  params: z.infer<typeof getCompanyByIdSchema>
-) => {
-  const input = safeParseSchema(getCompanyByIdSchema, params)
-  if (typeof input === 'string') {
-    return input
-  }
-
-  const response = await getCompanyById(input)
-  return response
-}
 
 export const kunCompanyGalgameActions = async (
   params: z.input<typeof getPatchByCompanySchema>

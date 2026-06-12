@@ -40,7 +40,7 @@ export const updateTag = async (input: z.infer<typeof updateTagSchema>) => {
     }
   })
 
-  await invalidateTagCaches()
+  await invalidateTagCaches(tagId)
 
   return newTag
 }

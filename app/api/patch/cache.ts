@@ -1,6 +1,8 @@
 import { randomUUID } from 'crypto'
 import { PATCH_FAVORITE_CACHE_DURATION } from '~/config/cache'
 import { delKv, delKvPattern, delKvs, getKv, getKvs, setKv } from '~/lib/redis'
+import { invalidateAnonymousApiResponseCaches } from '~/app/api/utils/anonymousApiResponseCache'
+import { safeRevalidatePath } from './revalidate'
 
 const PATCH_CACHE_KEY = 'patch'
 const PATCH_INTRODUCTION_CACHE_KEY = 'patch:introduction'
@@ -126,6 +128,8 @@ export const invalidatePatchContentCache = async (uniqueId: string) => {
     delKv(getPatchCacheKey(uniqueId)),
     delKv(getPatchIntroductionCacheKey(uniqueId))
   ])
+
+  safeRevalidatePath(`/${uniqueId}`, 'page')
 }
 
 export const invalidatePatchListCaches = async () => {
@@ -135,27 +139,43 @@ export const invalidatePatchListCaches = async () => {
     delKvPattern('ranking_list:*'),
     delKvPattern('resource_list:*'),
     delKvPattern('tag_galgame_list:*'),
-    delKvPattern('company_galgame_list:*')
+    delKvPattern('company_galgame_list:*'),
+    invalidateAnonymousApiResponseCaches()
   ])
+
+  safeRevalidatePath('/', 'page')
+  safeRevalidatePath('/otomegame', 'page')
 }
 
 export const invalidateCompanyCaches = async (companyId?: number) => {
   await Promise.all([
     delKvPattern('company_list:*'),
     delKvPattern('company_galgame_list:*'),
+    invalidateAnonymousApiResponseCaches(),
     companyId
       ? delKv(`company_detail:${companyId}`)
       : delKvPattern('company_detail:*')
   ])
+
+  safeRevalidatePath('/company', 'page')
+  if (companyId) {
+    safeRevalidatePath(`/company/${companyId}`, 'page')
+  }
 }
 
-export const invalidateTagCaches = async () => {
+export const invalidateTagCaches = async (tagId?: number) => {
   await Promise.all([
     delKvPattern('tag_list:*'),
-    delKvPattern('tag_detail:*'),
+    tagId ? delKv(`tag_detail:${tagId}`) : delKvPattern('tag_detail:*'),
     delKvPattern('tag_galgame_list:*'),
-    delKvPattern('galgame_list:*')
+    delKvPattern('galgame_list:*'),
+    invalidateAnonymousApiResponseCaches()
   ])
+
+  safeRevalidatePath('/tag', 'page')
+  if (tagId) {
+    safeRevalidatePath(`/tag/${tagId}`, 'page')
+  }
 }
 
 export const invalidatePatchFavoriteCache = async (

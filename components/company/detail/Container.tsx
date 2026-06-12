@@ -29,6 +29,7 @@ import {
   DEFAULT_GALGAME_SORT_FIELD,
   DEFAULT_GALGAME_SORT_ORDER,
   DEFAULT_TAG_COMPANY_MIN_RATING_COUNT,
+  isDefaultTagCompanyGalgameFilterState,
   parseGalgameFilterArray,
   parseNonNegativeIntParam,
   parsePositiveIntParam
@@ -37,6 +38,8 @@ import { errorReporter, kunErrorHandler } from '~/utils/kunErrorHandler'
 
 interface Props {
   initialCompany: CompanyDetail
+  initialGalgames: GalgameCard[]
+  initialTotal: number
 }
 
 const SORT_FIELDS = new Set<SortField>([
@@ -51,7 +54,7 @@ const SORT_FIELDS = new Set<SortField>([
 const SORT_ORDERS = new Set<SortOrder>(['asc', 'desc'])
 
 const isDefaultFilterArray = (value: string[]) =>
-  value.length === 1 && value[0] === 'all'
+  value.length === 1 && value[0] === DEFAULT_GALGAME_FILTER_VALUE
 
 const parseSortField = (value: string | null): SortField => {
   if (value && SORT_FIELDS.has(value as SortField)) {
@@ -93,7 +96,11 @@ const getUrlFilterState = () => {
   }
 }
 
-export const CompanyDetailContainer: FC<Props> = ({ initialCompany }) => {
+export const CompanyDetailContainer: FC<Props> = ({
+  initialCompany,
+  initialGalgames,
+  initialTotal
+}) => {
   const { isOpen, onOpen, onClose } = useDisclosure()
 
   const isMounted = useMounted()
@@ -101,6 +108,7 @@ export const CompanyDetailContainer: FC<Props> = ({ initialCompany }) => {
   const router = useRouter()
   const fetchRequestId = useRef(0)
   const isSyncingFromUrl = useRef(false)
+  const hasUsedInitialPatches = useRef(false)
   const [isUrlReady, setIsUrlReady] = useState(false)
   const [page, setPage] = useState(1)
   const [selectedType, setSelectedType] = useState<string>(
@@ -129,9 +137,9 @@ export const CompanyDetailContainer: FC<Props> = ({ initialCompany }) => {
   )
 
   const [company, setCompany] = useState(initialCompany)
-  const [patches, setPatches] = useState<GalgameCard[]>([])
-  const [totalPatches, setTotalPatches] = useState(0)
-  const [loading, setLoading] = useState(true)
+  const [patches, setPatches] = useState<GalgameCard[]>(initialGalgames)
+  const [totalPatches, setTotalPatches] = useState(initialTotal)
+  const [loading, setLoading] = useState(false)
 
   const updateFilter = <T,>(setter: (value: T) => void, value: T) => {
     setPage(1)
@@ -160,19 +168,19 @@ export const CompanyDetailContainer: FC<Props> = ({ initialCompany }) => {
     if (page !== 1) {
       params.set('page', String(page))
     }
-    if (selectedType !== 'all') {
+    if (selectedType !== DEFAULT_GALGAME_FILTER_VALUE) {
       params.set('selectedType', selectedType)
     }
-    if (selectedLanguage !== 'all') {
+    if (selectedLanguage !== DEFAULT_GALGAME_FILTER_VALUE) {
       params.set('selectedLanguage', selectedLanguage)
     }
-    if (selectedPlatform !== 'all') {
+    if (selectedPlatform !== DEFAULT_GALGAME_FILTER_VALUE) {
       params.set('selectedPlatform', selectedPlatform)
     }
-    if (sortField !== 'resource_update_time') {
+    if (sortField !== DEFAULT_GALGAME_SORT_FIELD) {
       params.set('sortField', sortField)
     }
-    if (sortOrder !== 'desc') {
+    if (sortOrder !== DEFAULT_GALGAME_SORT_ORDER) {
       params.set('sortOrder', sortOrder)
     }
     if (!isDefaultFilterArray(selectedYears)) {
@@ -272,6 +280,26 @@ export const CompanyDetailContainer: FC<Props> = ({ initialCompany }) => {
     } else {
       syncUrl()
     }
+
+    if (
+      !hasUsedInitialPatches.current &&
+      isDefaultTagCompanyGalgameFilterState({
+        page,
+        selectedType,
+        selectedLanguage,
+        selectedPlatform,
+        sortField,
+        sortOrder,
+        selectedYears,
+        selectedMonths,
+        minRatingCount
+      })
+    ) {
+      hasUsedInitialPatches.current = true
+      return
+    }
+
+    hasUsedInitialPatches.current = true
     fetchPatches()
   }, [
     isMounted,

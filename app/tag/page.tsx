@@ -6,6 +6,7 @@ import { Suspense } from 'react'
 import type { Metadata } from 'next'
 
 export const revalidate = 300
+export const dynamic = 'force-static'
 
 export const metadata: Metadata = kunMetadata
 

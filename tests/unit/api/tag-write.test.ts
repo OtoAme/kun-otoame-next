@@ -106,6 +106,6 @@ describe('tag writes', () => {
         })
       })
     )
-    expect(invalidateTagCachesMock).toHaveBeenCalledOnce()
+    expect(invalidateTagCachesMock).toHaveBeenCalledWith(1)
   })
 })
