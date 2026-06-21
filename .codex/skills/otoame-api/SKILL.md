@@ -24,9 +24,6 @@ Use this skill for API and business-service work.
 - Keep resource ownership, role, and admin checks in the API/service layer.
 - Feedback work items use `type: 'feedback'` with no recipient; user/admin feedback notices must use `type: 'system'` so notification filters work.
 - For edit external data, duplicate checks in rewrite flows must exclude the current patch; do not use VNDB tags; preserve Bangumi/Steam source tags; resolve tag aliases to the canonical tag before creating relations/counting; tag aliases must be globally unique across other tag names/aliases; prefer VNDB companies over Bangumi companies, use Bangumi companies only as fallback, and match companies by both name and alias.
-- Create publish must use the staged hidden-to-visible flow: duplicate checks first, short transaction creates `PATCH_STATUS_PUBLISHING`, S3/sharp and external fetches run outside Prisma transactions, final short transaction writes required relations/reward and finally sets `PATCH_STATUS_VISIBLE`.
-- Public patch reads must include visible-only filtering (`status = PATCH_STATUS_VISIBLE`). Keep admin/editor queries unrestricted unless the API explicitly serves public data.
-- Create publish external data is strict: required tag/company/alias writes or VNDB company preparation failures must prevent visible publication and user reward, with `[EditCreate] create failed at <step>` server logs.
 
 ## Verification
 

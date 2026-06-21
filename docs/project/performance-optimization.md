@@ -88,14 +88,6 @@
 - 匿名公开 API purge 使用 Cloudflare prefix purge，prefix 不带 query string，覆盖同一路径下所有 query 变体
 - 第一阶段仍不建议缓存 `/{uniqueId}` 详情页 HTML；原因是详情页仍包含登录 cookie 推导出的收藏状态，并受 NSFW 设置影响，需要先通过 Cloudflare bypass 规则和匿名 HTML 验证
 
-### 9. 创建发布 P2028/504 修复 ✅
-
-- 生产发布条目时出现 504、`P2028` 或请求长时间无响应，应优先检查 `app/api/edit/create.ts` 的分段日志：`[EditCreate] create failed at <step>`。PM2 部署下用 `pm2 logs <process>` 查看服务端日志；浏览器 console 只能看到最终 HTTP 失败。
-- create 发布已改为 staged flow：先短事务创建 `status = PATCH_STATUS_PUBLISHING` 的隐藏 patch，再在事务外处理 sharp/S3 banner 和 VNDB 公司准备，最后短事务写 rating、alias、tag/company、用户奖励，并把 patch 改为 `PATCH_STATUS_VISIBLE`。
-- banner 上传返回已上传 S3 keys；后续步骤失败会 best-effort 删除隐藏 patch 和本次已上传 banner object。
-- IndexNow 是 bounded best-effort，响应后链路失败不阻断发布。
-- 公开列表和详情查询统一过滤 `status = PATCH_STATUS_VISIBLE`，避免发布中或失败清理前的半成品 patch 被读到。
-
 ## 待实施优化措施
 
 ### 1. 数据库连接池配置

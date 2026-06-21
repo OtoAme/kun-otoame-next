@@ -88,35 +88,6 @@ service/helper 负责：
 5. 缓存未命中时查 Prisma，构建 `Patch` 与 `PatchIntroduction` 数据，再写缓存。
 6. 浏览量通过 Redis buffer 实时累加，列表和详情读取时用 `withRealtimePatchViews` / `getRealtimePatchStats` 叠加未落库值。
 
-### 创建发布
-
-文件：
-
-- `app/api/edit/route.ts`
-- `app/api/edit/create.ts`
-- `app/api/edit/_upload.ts`
-- `app/api/edit/processExternalData.ts`
-- `app/api/edit/fetchCompanies.ts`
-- `constants/patch.ts`
-
-流程：
-
-1. 先做 VNDB、Release ID、DLSite Code 重复检查。
-2. 用短 Prisma transaction 创建 `status = PATCH_STATUS_PUBLISHING` 的隐藏 patch，`banner` 先写空字符串，不发用户奖励。
-3. 在 transaction 外运行 sharp 图片处理和 S3 banner 上传。`uploadPatchBanner` 返回 `imageLink` 和已上传的 S3 keys。
-4. 在 transaction 外准备需要访问外部网络的数据，例如 VNDB 公司信息。
-5. 用第二个短 transaction 写 rating stat、alias、标签、公司、外部关系和用户奖励，最后把 `banner` 写成 `imageLink` 并把 `status` 改为 `PATCH_STATUS_VISIBLE`。
-6. 成功后失效 tag/company/list 缓存；IndexNow 为 bounded best-effort，失败只记录日志，不阻断发布结果。
-
-规则：
-
-- create 发布路径不能在 Prisma interactive transaction 内做 sharp、S3、VNDB、Bangumi、Steam、DLSite 或 IndexNow 这类慢外部操作。
-- create 发布的外部数据语义是严格的：required tag/company/alias 写入或 VNDB 公司准备失败时，patch 不能变成 visible，也不能发用户奖励。
-- 任一步失败时，创建流程会 best-effort 删除隐藏 patch，并用已记录的 S3 keys 删除已上传 banner object。
-- 公开查询必须只读取 `status = PATCH_STATUS_VISIBLE` 的 patch；admin/editor 查询除非明确面向公众数据，不要强行套 visible-only 条件。
-- create 发布失败会用 `[EditCreate] create failed at <step>` 写入服务端 console。生产环境通过 PM2 时看 `pm2 logs <process>`，浏览器 console 只能看到前端请求失败。
-- 发布按钮不会给主 create 请求附加短客户端 timeout；`kunFetch` 的 timeout abort 有明确用户可读 reason。服务端仍应通过上述分段和补偿控制慢步骤，而不是依赖客户端 abort。
-
 ### 消息和反馈
 
 文件：
@@ -147,7 +118,6 @@ service/helper 负责：
 - 搜索条件是 JSON 字符串，元素必须是 keyword/tag/company 且 include/exclude。
 - 列表筛选支持类型、语言、平台、年份、月份、排序。
 - SFW/NSFW 过滤由调用处传入 Prisma where。
-- 公开首页、列表、搜索、排行、tag/company 游戏列表、资源列表和详情读取必须带 `status = PATCH_STATUS_VISIBLE`，避免读到发布中的隐藏 patch。
 - 卡片字段统一使用 `GalgameCardSelectField`，避免列表查询过载。
 - 列表结果会经过 `withRealtimePatchViews` 叠加实时浏览量。
 
@@ -196,7 +166,6 @@ service/helper 负责：
 - Steam developer 和 DLSite circle 独立补充公司关系，不参与 VNDB/Bangumi 主来源互斥。
 - 外部公司关系必须按 `name` 和 `alias` 查找已有公司；提交名命中现有 alias 时，应关联到已有公司，而不是创建新公司。
 - 新增外部公司关系后必须调用 `invalidateCompanyCaches`；只新增标签或别名时不应误触发公司缓存失效。
-- create 发布路径使用 `prepareSubmittedExternalDataForCreate` 和 `processSubmittedExternalDataForCreate`，外部公司准备和关系写入失败会阻断发布。rewrite/update 的历史合并路径仍保留原有降级语义，除非另行设计迁移。
 
 ### 资源发布和上传
 
