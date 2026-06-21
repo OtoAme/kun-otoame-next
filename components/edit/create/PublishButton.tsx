@@ -19,6 +19,7 @@ import {
 import { patchCreateSchema } from '~/validations/edit'
 import { useRouter } from '@bprogress/next'
 import { cn } from '~/utils/cn'
+import { CREATE_PATCH_PUBLISH_TIMEOUT_MS } from '~/constants/galgame'
 import type { Dispatch, SetStateAction } from 'react'
 import type { CreatePatchRequestData } from '~/store/editStore'
 import type { GalleryImage } from './GalleryInput'
@@ -164,7 +165,7 @@ export const PublishButton = ({ setErrors, className }: Props) => {
         uniqueId: string
         patchId: number
       }>
-    >('/edit', formDataToSend, 60000)
+    >('/edit', formDataToSend, CREATE_PATCH_PUBLISH_TIMEOUT_MS)
 
     if (typeof res === 'string') {
       kunErrorHandler(res, () => {})

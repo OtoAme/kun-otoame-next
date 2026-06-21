@@ -7,6 +7,7 @@ import { kunMoyuMoe } from '~/config/moyu-moe'
 import { postToIndexNow } from './_postToIndexNow'
 import { processSubmittedExternalData } from './processExternalData'
 import { invalidatePatchListCaches } from '~/app/api/patch/cache'
+import { CREATE_PATCH_PUBLISH_TIMEOUT_MS } from '~/constants/galgame'
 
 export const createGalgame = async (
   input: Omit<
@@ -146,7 +147,7 @@ export const createGalgame = async (
 
       return { patchId: newId }
     },
-    { timeout: 60000 }
+    { timeout: CREATE_PATCH_PUBLISH_TIMEOUT_MS }
   )
 
   if (typeof res === 'string') {
