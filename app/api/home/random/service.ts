@@ -1,10 +1,9 @@
 import type { Prisma } from '@prisma/client'
 import { prisma } from '~/prisma/index'
-import { withVisiblePatchWhere } from '~/constants/patch'
 
 export const getRandomUniqueId = async (nsfwEnable: Prisma.patchWhereInput) => {
   const totalArticles = await prisma.patch.findMany({
-    where: withVisiblePatchWhere(nsfwEnable),
+    where: nsfwEnable,
     select: { unique_id: true }
   })
   if (totalArticles.length === 0) {

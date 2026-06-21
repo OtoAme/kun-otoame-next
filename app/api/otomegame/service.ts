@@ -11,15 +11,13 @@ import { GALGAME_LIST_CACHE_DURATION } from '~/config/cache'
 import { getOrSet } from '~/lib/redis'
 import { buildGalgameOrderBy } from '~/app/api/utils/galgameQuery'
 import { withRealtimePatchViews } from '~/app/api/patch/views/realtime'
-import { withVisiblePatchWhere } from '~/constants/patch'
 
 export const getGalgame = async (
   input: z.infer<typeof galgameSchema>,
   nsfwEnable: Prisma.patchWhereInput
 ) => {
-  const visibleWhere = withVisiblePatchWhere(nsfwEnable)
   const cacheKey = `galgame_list:${createHash('md5')
-    .update(JSON.stringify({ input, nsfwEnable: visibleWhere }))
+    .update(JSON.stringify({ input, nsfwEnable }))
     .digest('hex')}`
 
   const result = await getOrSet(
@@ -85,7 +83,7 @@ export const getGalgame = async (
         ...(selectedPlatform !== 'all' && {
           platform: { has: selectedPlatform }
         }),
-        ...visibleWhere
+        ...nsfwEnable
       }
 
       const orderBy = buildGalgameOrderBy(sortField, sortOrder)

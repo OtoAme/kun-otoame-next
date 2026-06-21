@@ -9,18 +9,16 @@ import {
 import { HOME_CACHE_DURATION } from '~/config/cache'
 import { getOrSet } from '~/lib/redis'
 import { withRealtimePatchViews } from '~/app/api/patch/views/realtime'
-import { withVisiblePatchWhere } from '~/constants/patch'
 
 const HOME_GALGAME_LIMIT = 12
 const HOME_RESOURCE_LIMIT = 4
 const HOME_PAYLOAD_CACHE_VERSION = 'v2'
 
 export const getHomeData = async (nsfwEnable: Prisma.patchWhereInput) => {
-  const visibleWhere = withVisiblePatchWhere(nsfwEnable)
   const cacheKey = `home_data:${HOME_PAYLOAD_CACHE_VERSION}:g${HOME_GALGAME_LIMIT}:r${HOME_RESOURCE_LIMIT}:${createHash(
     'md5'
   )
-    .update(JSON.stringify(visibleWhere))
+    .update(JSON.stringify(nsfwEnable))
     .digest('hex')}`
 
   const result = await getOrSet(
@@ -29,13 +27,13 @@ export const getHomeData = async (nsfwEnable: Prisma.patchWhereInput) => {
       const [data, resourcesData] = await Promise.all([
         prisma.patch.findMany({
           orderBy: { created: 'desc' },
-          where: visibleWhere,
+          where: nsfwEnable,
           select: GalgameCardSelectField,
           take: HOME_GALGAME_LIMIT
         }),
         prisma.patch_resource.findMany({
           orderBy: { created: 'desc' },
-          where: { patch: visibleWhere, section: 'patch', status: 0 },
+          where: { patch: nsfwEnable, section: 'patch', status: 0 },
           include: {
             patch: {
               select: {

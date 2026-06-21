@@ -9,7 +9,6 @@ import {
   toGalgameCardCount
 } from '~/constants/api/select'
 import { withRealtimePatchViews } from '~/app/api/patch/views/realtime'
-import { PATCH_STATUS_VISIBLE } from '~/constants/patch'
 
 export const GET = async (req: NextRequest) => {
   const input = kunParseGetQuery(req, getFavoriteFolderPatchSchema)
@@ -40,17 +39,11 @@ const getPatchByFolder = async (
   const offset = (page - 1) * limit
 
   const total = await prisma.user_patch_favorite_folder_relation.count({
-    where: {
-      folder_id: input.folderId,
-      patch: { status: PATCH_STATUS_VISIBLE }
-    }
+    where: { folder_id: input.folderId }
   })
 
   const relations = await prisma.user_patch_favorite_folder_relation.findMany({
-    where: {
-      folder_id: input.folderId,
-      patch: { status: PATCH_STATUS_VISIBLE }
-    },
+    where: { folder_id: input.folderId },
     include: {
       patch: {
         select: GalgameCardSelectField

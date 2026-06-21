@@ -4,7 +4,6 @@ import { markdownToHtmlExtend } from '~/app/api/utils/render/markdownToHtmlExten
 import { getKv, setKv } from '~/lib/redis'
 import { PATCH_INTRODUCTION_CACHE_DURATION } from '~/config/cache'
 import type { PatchIntroduction } from '~/types/api/patch'
-import { PATCH_STATUS_VISIBLE } from '~/constants/patch'
 
 const CACHE_KEY = 'patch:introduction'
 
@@ -22,8 +21,8 @@ export const getPatchIntroduction = async (
 
   const { uniqueId } = input
 
-  const patch = await prisma.patch.findFirst({
-    where: { unique_id: uniqueId, status: PATCH_STATUS_VISIBLE },
+  const patch = await prisma.patch.findUnique({
+    where: { unique_id: uniqueId },
     include: {
       alias: {
         select: {

@@ -6,15 +6,13 @@ import { resourceSchema } from '~/validations/resource'
 import { getOrSet } from '~/lib/redis'
 import { RESOURCE_LIST_CACHE_DURATION } from '~/config/cache'
 import type { PatchResource } from '~/types/api/resource'
-import { withVisiblePatchWhere } from '~/constants/patch'
 
 export const getPatchResource = async (
   input: z.infer<typeof resourceSchema>,
   nsfwEnable: Prisma.patchWhereInput
 ) => {
-  const visibleWhere = withVisiblePatchWhere(nsfwEnable)
   const cacheKey = `resource_list:${createHash('md5')
-    .update(JSON.stringify({ input, nsfwEnable: visibleWhere }))
+    .update(JSON.stringify({ input, nsfwEnable }))
     .digest('hex')}`
 
   return await getOrSet(
@@ -34,7 +32,7 @@ export const getPatchResource = async (
           take: limit,
           skip: offset,
           orderBy: orderByField,
-          where: { patch: visibleWhere, section: 'patch', status: 0 },
+          where: { patch: nsfwEnable, section: 'patch', status: 0 },
           include: {
             patch: {
               select: {
@@ -61,7 +59,7 @@ export const getPatchResource = async (
           }
         }),
         prisma.patch_resource.count({
-          where: { patch: visibleWhere, section: 'patch', status: 0 }
+          where: { patch: nsfwEnable, section: 'patch', status: 0 }
         })
       ])
 

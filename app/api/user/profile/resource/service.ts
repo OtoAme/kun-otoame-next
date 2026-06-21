@@ -3,19 +3,17 @@ import type { Prisma } from '@prisma/client'
 import { prisma } from '~/prisma/index'
 import { getUserInfoSchema } from '~/validations/user'
 import type { UserResource } from '~/types/api/user'
-import { withVisiblePatchWhere } from '~/constants/patch'
 
 export const getUserPatchResource = async (
   input: z.infer<typeof getUserInfoSchema>,
   nsfwEnable: Prisma.patchWhereInput
 ) => {
-  const visibleWhere = withVisiblePatchWhere(nsfwEnable)
   const { uid, page, limit } = input
   const offset = (page - 1) * limit
 
   const [data, total] = await Promise.all([
     prisma.patch_resource.findMany({
-      where: { user_id: uid, patch: visibleWhere, status: 0 },
+      where: { user_id: uid, patch: nsfwEnable, status: 0 },
       include: {
         patch: {
           select: {
@@ -35,7 +33,7 @@ export const getUserPatchResource = async (
       take: limit
     }),
     prisma.patch_resource.count({
-      where: { user_id: uid, patch: visibleWhere, status: 0 }
+      where: { user_id: uid, patch: nsfwEnable, status: 0 }
     })
   ])
 

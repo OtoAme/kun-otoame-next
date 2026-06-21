@@ -6,8 +6,7 @@ const mocks = vi.hoisted(() => {
   const tx = {
     patch: {
       create: vi.fn(),
-      update: vi.fn(),
-      delete: vi.fn()
+      update: vi.fn()
     },
     patch_rating_stat: {
       create: vi.fn()
@@ -23,8 +22,7 @@ const mocks = vi.hoisted(() => {
   return {
     prisma: {
       patch: {
-        findFirst: vi.fn(),
-        delete: vi.fn()
+        findFirst: vi.fn()
       },
       $transaction: vi.fn((fn: (transaction: typeof tx) => Promise<unknown>) =>
         fn(tx)
@@ -32,12 +30,8 @@ const mocks = vi.hoisted(() => {
     },
     tx,
     uploadPatchBanner: vi.fn(),
-    cleanupUploadedPatchBanner: vi.fn(),
-    prepareSubmittedExternalDataForCreate: vi.fn(),
-    processSubmittedExternalDataForCreate: vi.fn(),
-    invalidateCompanyCaches: vi.fn(),
+    processSubmittedExternalData: vi.fn(),
     invalidatePatchListCaches: vi.fn(),
-    invalidateTagCaches: vi.fn(),
     postToIndexNow: vi.fn()
   }
 })
@@ -47,21 +41,15 @@ vi.mock('~/prisma/index', () => ({
 }))
 
 vi.mock('~/app/api/edit/_upload', () => ({
-  uploadPatchBanner: mocks.uploadPatchBanner,
-  cleanupUploadedPatchBanner: mocks.cleanupUploadedPatchBanner
+  uploadPatchBanner: mocks.uploadPatchBanner
 }))
 
 vi.mock('~/app/api/edit/processExternalData', () => ({
-  prepareSubmittedExternalDataForCreate:
-    mocks.prepareSubmittedExternalDataForCreate,
-  processSubmittedExternalDataForCreate:
-    mocks.processSubmittedExternalDataForCreate
+  processSubmittedExternalData: mocks.processSubmittedExternalData
 }))
 
 vi.mock('~/app/api/patch/cache', () => ({
-  invalidateCompanyCaches: mocks.invalidateCompanyCaches,
-  invalidatePatchListCaches: mocks.invalidatePatchListCaches,
-  invalidateTagCaches: mocks.invalidateTagCaches
+  invalidatePatchListCaches: mocks.invalidatePatchListCaches
 }))
 
 vi.mock('~/app/api/edit/_postToIndexNow', () => ({
@@ -116,30 +104,12 @@ describe('createGalgame', () => {
     )
     mocks.tx.patch.create.mockResolvedValue({ id: 42 })
     mocks.tx.patch.update.mockResolvedValue({})
-    mocks.tx.patch.delete.mockResolvedValue({})
-    mocks.prisma.patch.delete.mockResolvedValue({})
     mocks.tx.patch_rating_stat.create.mockResolvedValue({})
     mocks.tx.patch_alias.createMany.mockResolvedValue({ count: 1 })
     mocks.tx.user.update.mockResolvedValue({})
-    mocks.uploadPatchBanner.mockResolvedValue({
-      imageLink: 'https://img.example/patch/42/banner/banner.avif',
-      uploadedKeys: [
-        'patch/42/banner/banner.avif',
-        'patch/42/banner/banner-mini.avif'
-      ]
-    })
-    mocks.cleanupUploadedPatchBanner.mockResolvedValue(undefined)
-    mocks.prepareSubmittedExternalDataForCreate.mockResolvedValue({
-      vndbCompaniesByName: new Map(),
-      primaryDevelopers: []
-    })
-    mocks.processSubmittedExternalDataForCreate.mockResolvedValue({
-      tagCachesChanged: false,
-      companyCachesChanged: false
-    })
-    mocks.invalidateCompanyCaches.mockResolvedValue(undefined)
+    mocks.uploadPatchBanner.mockResolvedValue(undefined)
+    mocks.processSubmittedExternalData.mockResolvedValue(undefined)
     mocks.invalidatePatchListCaches.mockResolvedValue(undefined)
-    mocks.invalidateTagCaches.mockResolvedValue(undefined)
     mocks.postToIndexNow.mockResolvedValue(undefined)
   })
 
@@ -150,51 +120,12 @@ describe('createGalgame', () => {
       uniqueId: expect.stringMatching(/^[a-f0-9]{8}$/),
       patchId: 42
     })
-    expect(mocks.processSubmittedExternalDataForCreate).toHaveBeenCalledBefore(
+    expect(mocks.processSubmittedExternalData).toHaveBeenCalledBefore(
       mocks.invalidatePatchListCaches
     )
     expect(mocks.invalidatePatchListCaches).toHaveBeenCalledBefore(
       mocks.postToIndexNow
     )
-  })
-
-  it('creates a hidden patch before uploading and publishes it in a later transaction', async () => {
-    const transactionCallbacks: Array<() => Promise<unknown>> = []
-    mocks.prisma.$transaction.mockImplementation(
-      async (fn: (transaction: typeof mocks.tx) => Promise<unknown>) => {
-        transactionCallbacks.push(() => fn(mocks.tx))
-        return fn(mocks.tx)
-      }
-    )
-
-    await createGalgame(makeInput(), 100)
-
-    expect(mocks.tx.patch.create).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({
-          status: 1,
-          banner: ''
-        })
-      })
-    )
-    expect(mocks.uploadPatchBanner).not.toHaveBeenCalledBefore(
-      mocks.tx.patch.create
-    )
-    expect(mocks.tx.patch.update).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({
-          banner: 'https://img.example/patch/42/banner/banner.avif',
-          status: 0
-        })
-      })
-    )
-    expect(mocks.uploadPatchBanner).not.toHaveBeenCalledBefore(
-      mocks.tx.patch.create
-    )
-    expect(mocks.tx.patch.update).toHaveBeenCalledAfter(
-      mocks.uploadPatchBanner
-    )
-    expect(transactionCallbacks).toHaveLength(2)
   })
 
   it('logs duplicate check query failures with the exact step name', async () => {
@@ -221,7 +152,7 @@ describe('createGalgame', () => {
 
   it('logs and propagates the failed publish step before returning success', async () => {
     const error = new Error('external metadata failed')
-    mocks.processSubmittedExternalDataForCreate.mockRejectedValue(error)
+    mocks.processSubmittedExternalData.mockRejectedValue(error)
 
     await expect(createGalgame(makeInput(), 100)).rejects.toThrow(
       'external metadata failed'
@@ -252,11 +183,7 @@ describe('createGalgame', () => {
         reason: '图片体积过大'
       })
     )
-    expect(mocks.prepareSubmittedExternalDataForCreate).not.toHaveBeenCalled()
-    expect(mocks.processSubmittedExternalDataForCreate).not.toHaveBeenCalled()
-    expect(mocks.prisma.patch.delete).toHaveBeenCalledWith({
-      where: { id: 42 }
-    })
+    expect(mocks.processSubmittedExternalData).not.toHaveBeenCalled()
   })
 
   it('logs thrown transaction sub-step failures with the exact step name', async () => {
@@ -275,53 +202,9 @@ describe('createGalgame', () => {
         error
       })
     )
-    expect(mocks.prisma.patch.delete).toHaveBeenCalledWith({
-      where: { id: 42 }
-    })
-  })
-
-  it('cleans hidden patch and uploaded banner keys when the final publish transaction fails', async () => {
-    const error = new Error('database transaction failed')
-    mocks.tx.patch.update.mockRejectedValue(error)
-
-    await expect(createGalgame(makeInput(), 100)).rejects.toThrow(
-      'database transaction failed'
+    expect(console.error).not.toHaveBeenCalledWith(
+      '[EditCreate] create failed at coreTransaction',
+      expect.anything()
     )
-
-    expect(console.error).toHaveBeenCalledWith(
-      '[EditCreate] create failed at publishPatch',
-      expect.objectContaining({
-        patchId: 42,
-        uid: 100,
-        error
-      })
-    )
-    expect(mocks.cleanupUploadedPatchBanner).toHaveBeenCalledWith([
-      'patch/42/banner/banner.avif',
-      'patch/42/banner/banner-mini.avif'
-    ])
-    expect(mocks.prisma.patch.delete).toHaveBeenCalledWith({
-      where: { id: 42 }
-    })
-  })
-
-  it('cleans hidden patch and uploaded banner keys when external metadata fails', async () => {
-    const error = new Error('external metadata failed')
-    mocks.processSubmittedExternalDataForCreate.mockRejectedValue(error)
-
-    await expect(createGalgame(makeInput(), 100)).rejects.toThrow(
-      'external metadata failed'
-    )
-
-    expect(mocks.cleanupUploadedPatchBanner).toHaveBeenCalledWith([
-      'patch/42/banner/banner.avif',
-      'patch/42/banner/banner-mini.avif'
-    ])
-    expect(mocks.prisma.patch.delete).toHaveBeenCalledWith({
-      where: { id: 42 }
-    })
-    expect(mocks.tx.user.update).not.toHaveBeenCalled()
-    expect(mocks.invalidatePatchListCaches).not.toHaveBeenCalled()
-    expect(mocks.postToIndexNow).not.toHaveBeenCalled()
   })
 })

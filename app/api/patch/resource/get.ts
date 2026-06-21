@@ -2,7 +2,6 @@ import { z } from 'zod'
 import { prisma } from '~/prisma/index'
 import { compareResources } from '~/constants/resource'
 import type { PatchResource } from '~/types/api/patch'
-import { PATCH_STATUS_VISIBLE } from '~/constants/patch'
 
 const patchIdSchema = z.object({
   patchId: z.coerce.number().min(1).max(9999999)
@@ -17,8 +16,7 @@ export const getPatchResource = async (
   const data = await prisma.patch_resource.findMany({
     where: {
       patch_id: patchId,
-      status: 0,
-      patch: { status: PATCH_STATUS_VISIBLE }
+      status: 0
     },
     include: {
       patch: { select: { unique_id: true } },

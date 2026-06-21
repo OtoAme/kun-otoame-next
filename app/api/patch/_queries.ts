@@ -1,5 +1,4 @@
 import { prisma } from '~/prisma/index'
-import { PATCH_STATUS_VISIBLE } from '~/constants/patch'
 
 const patchUserSelect = {
   id: true,
@@ -126,19 +125,19 @@ const patchPageSelect = {
 } as const
 
 export const getPatchSummaryByUniqueId = async (uniqueId: string) =>
-  prisma.patch.findFirst({
-    where: { unique_id: uniqueId, status: PATCH_STATUS_VISIBLE },
+  prisma.patch.findUnique({
+    where: { unique_id: uniqueId },
     select: patchSummarySelect
   })
 
 export const getPatchIntroductionContentByUniqueId = async (uniqueId: string) =>
-  prisma.patch.findFirst({
-    where: { unique_id: uniqueId, status: PATCH_STATUS_VISIBLE },
+  prisma.patch.findUnique({
+    where: { unique_id: uniqueId },
     select: patchIntroductionSelect
   })
 
 export const getPatchPageContentByUniqueId = async (uniqueId: string) =>
-  prisma.patch.findFirst({
-    where: { unique_id: uniqueId, status: PATCH_STATUS_VISIBLE },
+  prisma.patch.findUnique({
+    where: { unique_id: uniqueId },
     select: patchPageSelect
   })

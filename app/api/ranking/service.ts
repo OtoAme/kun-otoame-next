@@ -11,7 +11,6 @@ import { RANKING_LIST_CACHE_DURATION } from '~/config/cache'
 import { rankingSchema } from '~/validations/ranking'
 import { withRealtimePatchViews } from '~/app/api/patch/views/realtime'
 import type { RankingSortField, RankingCard } from '~/types/api/ranking'
-import { withVisiblePatchWhere } from '~/constants/patch'
 
 const MAX_RANKING_ITEMS = 300
 
@@ -31,9 +30,8 @@ export const getRanking = async (
   input: z.infer<typeof rankingSchema>,
   nsfwEnable: Prisma.patchWhereInput
 ) => {
-  const visibleWhere = withVisiblePatchWhere(nsfwEnable)
   const cacheKey = `ranking_list:${createHash('md5')
-    .update(JSON.stringify({ input, nsfwEnable: visibleWhere }))
+    .update(JSON.stringify({ input, nsfwEnable }))
     .digest('hex')}`
 
   const result = await getOrSet(
@@ -44,7 +42,7 @@ export const getRanking = async (
       const offset = (page - 1) * safeLimit
 
       const where: Prisma.patchWhereInput = {
-        ...visibleWhere,
+        ...nsfwEnable,
         rating_stat: {
           count: {
             gte: minRatingCount
