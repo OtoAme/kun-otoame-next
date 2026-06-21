@@ -6,7 +6,7 @@ import localforage from 'localforage'
 import { useCreatePatchStore } from '~/store/editStore'
 import toast from 'react-hot-toast'
 import { kunFetchFormData } from '~/utils/kunFetch'
-import { kunErrorHandler } from '~/utils/kunErrorHandler'
+import { errorReporter, kunErrorHandler } from '~/utils/kunErrorHandler'
 import {
   CREATE_GALLERY_WATERMARK_KEY,
   getCreateGalleryDraft
@@ -159,44 +159,48 @@ export const PublishButton = ({ setErrors, className }: Props) => {
       CREATE_GALLERY_WATERMARK_KEY
     )
 
-    const res = await kunFetchFormData<
-      KunResponse<{
-        uniqueId: string
-        patchId: number
-      }>
-    >('/edit', formDataToSend, 60000)
+    try {
+      const res = await kunFetchFormData<
+        KunResponse<{
+          uniqueId: string
+          patchId: number
+        }>
+      >('/edit', formDataToSend)
 
-    if (typeof res === 'string') {
-      kunErrorHandler(res, () => {})
-      setCreating(false)
-      return
-    }
-
-    let hasGalleryUploadFailures = false
-    if (galleryImages && galleryImages.length > 0) {
-      toast('正在上传游戏截图 ...')
-      const { failCount } = await uploadGalleryImages(
-        res.patchId,
-        galleryImages,
-        !!watermark
-      )
-      if (failCount > 0) {
-        hasGalleryUploadFailures = true
-        toast.error(`${failCount} 张图片上传失败，请稍后在编辑页面重新上传`, {
-          duration: 8000
-        })
+      if (typeof res === 'string') {
+        kunErrorHandler(res, () => {})
+        return
       }
-    }
 
-    resetData()
-    await clearCreatePatchDraftFiles()
-    toast.success(
-      hasGalleryUploadFailures
-        ? '发布完成，但有部分截图上传失败'
-        : '发布完成, 正在为您跳转到资源介绍页面'
-    )
-    router.push(`/${res.uniqueId}`)
-    setCreating(false)
+      let hasGalleryUploadFailures = false
+      if (galleryImages && galleryImages.length > 0) {
+        toast('正在上传游戏截图 ...')
+        const { failCount } = await uploadGalleryImages(
+          res.patchId,
+          galleryImages,
+          !!watermark
+        )
+        if (failCount > 0) {
+          hasGalleryUploadFailures = true
+          toast.error(`${failCount} 张图片上传失败，请稍后在编辑页面重新上传`, {
+            duration: 8000
+          })
+        }
+      }
+
+      resetData()
+      await clearCreatePatchDraftFiles()
+      toast.success(
+        hasGalleryUploadFailures
+          ? '发布完成，但有部分截图上传失败'
+          : '发布完成, 正在为您跳转到资源介绍页面'
+      )
+      router.push(`/${res.uniqueId}`)
+    } catch (error) {
+      errorReporter(error)
+    } finally {
+      setCreating(false)
+    }
   }
 
   return (

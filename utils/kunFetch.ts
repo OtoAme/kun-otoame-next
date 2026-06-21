@@ -60,7 +60,10 @@ const kunFetchRequest = async <T>(
 
     if (timeout) {
       const controller = new AbortController()
-      timeoutId = setTimeout(() => controller.abort(), timeout)
+      timeoutId = setTimeout(
+        () => controller.abort(new Error('请求超时，请稍后重试')),
+        timeout
+      )
       fetchOptions.signal = controller.signal
     }
 

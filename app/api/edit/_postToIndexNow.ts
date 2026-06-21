@@ -7,6 +7,8 @@ interface IndexNow {
   urlList: string[]
 }
 
+const INDEX_NOW_TIMEOUT_MS = 3000
+
 export const postToIndexNow = async (url: string) => {
   const requestData: IndexNow = {
     host: kunMoyuMoe.domain.main,
@@ -15,9 +17,18 @@ export const postToIndexNow = async (url: string) => {
     urlList: [url]
   }
 
-  await fetch('https://www.bing.com/indexnow', {
-    method: 'POST',
-    headers: { 'User-Agent': kunMoyuMoe.titleShort },
-    body: JSON.stringify(requestData)
-  })
+  try {
+    const res = await fetch('https://www.bing.com/indexnow', {
+      method: 'POST',
+      headers: { 'User-Agent': kunMoyuMoe.titleShort },
+      signal: AbortSignal.timeout(INDEX_NOW_TIMEOUT_MS),
+      body: JSON.stringify(requestData)
+    })
+
+    if (!res.ok) {
+      console.error('[IndexNow] Post failed:', res.status)
+    }
+  } catch (error) {
+    console.error('[IndexNow] Post failed:', error)
+  }
 }
