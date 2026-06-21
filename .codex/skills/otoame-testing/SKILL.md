@@ -42,6 +42,9 @@ pnpm typecheck
 - Prisma query conditions and transaction writes.
 - Cache invalidation calls after writes.
 - Upload lock/finalize/compensation behavior.
+- Create publish staging: hidden `PATCH_STATUS_PUBLISHING` row before upload, no S3/sharp/network work inside `$transaction`, required external data before visible status, reward only after success, and `PATCH_STATUS_VISIBLE` as the final publish step.
+- Patch banner compensation: returned uploaded keys, cleanup on mixed S3 failure, cleanup on upload/external/final transaction failures, and no cache invalidation/IndexNow/reward when strict create external data fails.
+- Public visibility filters: home/list/search/ranking/tag/company/resource/detail public reads include `PATCH_STATUS_VISIBLE`.
 - Message regressions: feedback work items stay `feedback`, but feedback notices sent to users/admins are `system`.
 - Role, permission, owner mismatch, CSRF, and quota edge cases when service-level logic owns them.
 - Edit external-data regressions: VNDB company priority, VNDB tags ignored, Bangumi company fallback, Bangumi tags retained, alias-aware tag/company matching, tag alias uniqueness on create/update, Bangumi summary/title copy, duplicate checks excluding current rewrite patch, create-page draft clearing, and async store merges.

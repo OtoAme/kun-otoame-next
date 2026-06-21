@@ -50,6 +50,7 @@ tests/unit/
 - CSRF、角色、资源归属、每日上传配额、用户设置权限相关变更。
 - 主题 token、语义颜色、过滤器、排序、外部 ID 解析变更。
 - 编辑页外部数据合并规则变更，包括 VNDB/Bangumi/Steam 字段保留、公司来源优先级、alias 公司匹配和 store 函数式合并。
+- create 发布 staged flow、公开 visible-only 查询、publish 状态切换、S3 banner compensation、IndexNow best-effort 或发布按钮 timeout 行为变更。
 - 维护脚本的自动合并计划变更，尤其是公司/tag 的 alias 冲突、歧义跳过、关系迁移和 count 预览。
 - 修 bug 时要加能在修复前失败的 regression test。
 
@@ -141,6 +142,7 @@ prismaMocks.$transaction.mockImplementation((fn) => fn(prismaMocks._tx))
 - 计数器 increment/decrement。
 - `skipDuplicates`。
 - rollback 前的外部副作用补偿策略，尤其是上传和 S3。
+- create 发布必须断言 S3/sharp/network helper 不在 `$transaction` 内运行，隐藏 patch 先以 `status = PATCH_STATUS_PUBLISHING` 创建，所有 required external data 写入和用户奖励成功后才改为 `PATCH_STATUS_VISIBLE`。
 
 ## 上传和资源测试
 
@@ -152,6 +154,14 @@ prismaMocks.$transaction.mockImplementation((fn) => fn(prismaMocks._tx))
 - DB 写失败后的 compensation。
 - audit log 脱敏。
 - 每日上传配额和创作者 CAPTCHA / 萌萌点限制。
+
+Patch banner 和 create 发布至少覆盖：
+
+- `uploadPatchBanner` 返回 public `imageLink` 和已上传 S3 keys。
+- 混合成功/失败上传会删除已成功的 key。
+- create 发布中的上传 validation、上传 throw、external-data failure、final transaction failure 都会删除隐藏 patch；已有 uploaded keys 时同时调用 `cleanupUploadedPatchBanner`。
+- external-data failure 不应触发列表缓存失效、IndexNow 或用户奖励。
+- 公开首页/列表/搜索/排行/tag/company/resource/detail 查询都应带 `status = PATCH_STATUS_VISIBLE`。
 
 已存在基础测试：[tests/unit/resource-link.test.ts](../../tests/unit/resource-link.test.ts)。
 

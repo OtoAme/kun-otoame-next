@@ -21,6 +21,9 @@ Use this skill for persistence, cache, and upload consistency work.
 - Direct `redis` / `runRedisCommand` usage needs a reason and explicit full key prefixes.
 - After patch/resource/tag/company writes, call the matching cache invalidation helper.
 - Upload publishing must preserve role/quota checks, `consumeUpload`, S3 compensation, `finalizeUpload`, and cleanup behavior.
+- Prisma interactive transactions must stay short; do not run S3 uploads, sharp image processing, HTTP fetches, IndexNow, or VNDB/Bangumi/Steam/DLSite network calls inside transaction callbacks.
+- Patch banner upload returns `{ imageLink, uploadedKeys }`; create publish failures after upload must call `cleanupUploadedPatchBanner(uploadedKeys)` and delete the hidden patch.
+- Public patch cache/list/detail reads must exclude `PATCH_STATUS_PUBLISHING` and other non-visible states by filtering `PATCH_STATUS_VISIBLE`.
 - Production `prisma db push` reset prompts must be cancelled and replaced with a migration plan.
 
 ## Verification

@@ -117,6 +117,15 @@ Cloudflare purge 约定：
 
 评论、评分、下载、收藏、详情页 tag/company 关系会影响公开卡片统计、详情内容或 tag/company 页面。对应写入成功后必须清理内容缓存和列表缓存；仅更新评论正文/简评这类不改变列表计数的操作至少要清理内容缓存。后台更新/删除、举报处理和维护接口也要遵守同一规则。
 
+公开 patch 查询必须排除发布中的隐藏记录。通用状态常量在 `constants/patch.ts`：
+
+- `PATCH_STATUS_VISIBLE = 0`
+- `PATCH_STATUS_PUBLISHING = 1`
+- `VISIBLE_PATCH_WHERE`
+- `withVisiblePatchWhere`
+
+首页、游戏列表、搜索、排行、tag/company 游戏列表、资源列表、详情和公开收藏夹读取应带 `status = PATCH_STATUS_VISIBLE`，避免 create 发布失败或发布中时被读到半成品 patch。admin/editor 查询默认不加这个限制，除非该查询明确服务于公开页面。
+
 ## 上传与 S3
 
 入口：
@@ -167,6 +176,15 @@ Cloudflare purge 约定：
 删除资源前必须确认没有其他 `patch_resource_link` 引用同一 content。
 
 `extractS3Key` 只接受以 `NEXT_PUBLIC_KUN_VISUAL_NOVEL_S3_STORAGE_URL` 开头的 URL。删除逻辑遇到非本站 URL 会拒绝删除并记录错误，这是防止误删外部链接的保护。
+
+Patch banner 上传是 create 发布链路的一部分，必须保留补偿语义：
+
+- `uploadPatchBanner` 返回 `{ imageLink, uploadedKeys }`，调用方不能重新拼接 URL。
+- banner 上传成功后，如果后续 DB、external-data 或 final transaction 失败，调用方必须用 `cleanupUploadedPatchBanner(uploadedKeys)` 删除已上传 S3 object。
+- banner 上传内部按 key 记录成功对象；如果 `banner.avif`、`banner-mini.avif` 或 `banner-full.avif` 某一步失败，会清理本次已成功上传的 key。
+- 生产如果曾出现发布失败但 S3 已有 `patch/<id>/banner/*`，需要人工检查并清理 orphan object；本代码只补偿本次请求内已记录的 key。
+
+Prisma interactive transaction 必须保持短小。不要在 transaction callback 里执行 sharp 图片处理、S3、VNDB/Bangumi/Steam/DLSite、IndexNow、HTTP fetch 或其它不可控网络操作。create 发布使用两段短事务：先创建 `status = PATCH_STATUS_PUBLISHING` 的隐藏 patch，再在事务外完成 banner 上传和外部数据准备，最后用短事务写关系、奖励并把 patch 改为 `PATCH_STATUS_VISIBLE`。
 
 ## 资源派生属性
 
