@@ -8,39 +8,6 @@ import { postToIndexNow } from './_postToIndexNow'
 import { processSubmittedExternalData } from './processExternalData'
 import { invalidatePatchListCaches } from '~/app/api/patch/cache'
 
-const loggedCreateStepErrors = new WeakSet<object>()
-
-const isObjectLike = (value: unknown): value is object =>
-  (typeof value === 'object' && value !== null) || typeof value === 'function'
-
-const logCreateStepError = (
-  step: string,
-  error: unknown,
-  context: Record<string, unknown>
-) => {
-  console.error(`[EditCreate] create failed at ${step}`, {
-    ...context,
-    error
-  })
-
-  if (isObjectLike(error)) {
-    loggedCreateStepErrors.add(error)
-  }
-}
-
-const runCreateStep = async <T>(
-  step: string,
-  context: Record<string, unknown>,
-  task: () => Promise<T>
-) => {
-  try {
-    return await task()
-  } catch (error) {
-    logCreateStepError(step, error, context)
-    throw error
-  }
-}
-
 export const createGalgame = async (
   input: Omit<
     z.infer<typeof patchCreateSchema>,
@@ -81,14 +48,9 @@ export const createGalgame = async (
   } = input
 
   if (vndbId && isDuplicate !== 'true') {
-    const existPatch = await runCreateStep(
-      'checkVndbDuplicate',
-      { uid, name, vndbId },
-      () =>
-        prisma.patch.findFirst({
-          where: { vndb_id: vndbId }
-        })
-    )
+    const existPatch = await prisma.patch.findFirst({
+      where: { vndb_id: vndbId }
+    })
     if (existPatch) {
       return '该 VNDB ID 已有游戏存在, 如需发布不同版本请先确认重复'
     }
@@ -98,14 +60,9 @@ export const createGalgame = async (
   if (vndbRelationId) {
     const normalizedRelationId = vndbRelationId.trim().toLowerCase()
     if (normalizedRelationId) {
-      const existPatch = await runCreateStep(
-        'checkVndbRelationDuplicate',
-        { uid, name, vndbRelationId: normalizedRelationId },
-        () =>
-          prisma.patch.findFirst({
-            where: { vndb_relation_id: normalizedRelationId }
-          })
-      )
+      const existPatch = await prisma.patch.findFirst({
+        where: { vndb_relation_id: normalizedRelationId }
+      })
       if (existPatch) {
         return `该 Release ID 已存在 (游戏 ID: ${existPatch.unique_id}), Release ID 不可重复`
       }
@@ -118,176 +75,106 @@ export const createGalgame = async (
     ? dlsiteCode.trim().toUpperCase()
     : ''
   if (normalizedDlsiteCode) {
-    const dlsitePatch = await runCreateStep(
-      'checkDlsiteDuplicate',
-      { uid, name, dlsiteCode: normalizedDlsiteCode },
-      () =>
-        prisma.patch.findFirst({
-          where: { dlsite_code: normalizedDlsiteCode }
-        })
-    )
+    const dlsitePatch = await prisma.patch.findFirst({
+      where: { dlsite_code: normalizedDlsiteCode }
+    })
     if (dlsitePatch) {
       return `Galgame DLSite Code 与游戏 ID 为 ${dlsitePatch.unique_id} 的游戏重复`
     }
   }
 
-  let res: string | { patchId: number }
-  try {
-    res = await prisma.$transaction(
-      async (prisma) => {
-        const baseContext = { uid, uniqueId: galgameUniqueId, name }
-        const patch = await runCreateStep(
-          'createPatch',
-          baseContext,
-          () =>
-            prisma.patch.create({
-              data: {
-                name,
-                unique_id: galgameUniqueId,
-                vndb_id: vndbId ? vndbId : null,
-                vndb_relation_id: vndbRelationId ? vndbRelationId : null,
-                bangumi_id: bangumiId ? Number(bangumiId) : null,
-                steam_id: steamId ? Number(steamId) : null,
-                dlsite_code: normalizedDlsiteCode ? normalizedDlsiteCode : null,
-                introduction,
-                official_url: officialUrl || '',
-                user_id: uid,
-                banner: '',
-                released,
-                content_limit: contentLimit
-              }
-            })
-        )
-
-        const newId = patch.id
-        const patchContext = { ...baseContext, patchId: newId }
-
-        const uploadResult = await runCreateStep(
-          'uploadPatchBanner',
-          patchContext,
-          () => uploadPatchBanner(banner, newId, bannerOriginal)
-        )
-        if (typeof uploadResult === 'string') {
-          console.error('[EditCreate] create failed at uploadPatchBanner', {
-            uid,
-            patchId: newId,
-            uniqueId: galgameUniqueId,
-            name,
-            reason: uploadResult
-          })
-          return uploadResult
+  const res = await prisma.$transaction(
+    async (prisma) => {
+      const patch = await prisma.patch.create({
+        data: {
+          name,
+          unique_id: galgameUniqueId,
+          vndb_id: vndbId ? vndbId : null,
+          vndb_relation_id: vndbRelationId ? vndbRelationId : null,
+          bangumi_id: bangumiId ? Number(bangumiId) : null,
+          steam_id: steamId ? Number(steamId) : null,
+          dlsite_code: normalizedDlsiteCode ? normalizedDlsiteCode : null,
+          introduction,
+          official_url: officialUrl || '',
+          user_id: uid,
+          banner: '',
+          released,
+          content_limit: contentLimit
         }
-        const imageLink = `${process.env.KUN_VISUAL_NOVEL_IMAGE_BED_URL}/patch/${newId}/banner/banner.avif`
-
-        await runCreateStep('updatePatchBanner', patchContext, () =>
-          prisma.patch.update({
-            where: { id: newId },
-            data: { banner: imageLink }
-          })
-        )
-
-        // Ensure rating_stat row exists for this patch
-        await runCreateStep('createRatingStat', patchContext, () =>
-          prisma.patch_rating_stat.create({
-            data: { patch_id: newId }
-          })
-        )
-
-        if (alias.length) {
-          const aliasData = alias.map((name) => ({
-            name,
-            patch_id: newId
-          }))
-          await runCreateStep('createAliases', patchContext, () =>
-            prisma.patch_alias.createMany({
-              data: aliasData,
-              skipDuplicates: true
-            })
-          )
-        }
-
-        await runCreateStep('updateUserReward', patchContext, () =>
-          prisma.user.update({
-            where: { id: uid },
-            data: {
-              daily_image_count: { increment: 1 },
-              moemoepoint: { increment: 3 }
-            }
-          })
-        )
-
-        return { patchId: newId }
-      },
-      { timeout: 60000 }
-    )
-  } catch (error) {
-    if (!isObjectLike(error) || !loggedCreateStepErrors.has(error)) {
-      logCreateStepError('coreTransaction', error, {
-        uid,
-        uniqueId: galgameUniqueId,
-        name
       })
-    }
-    throw error
-  }
+
+      const newId = patch.id
+
+      const uploadResult = await uploadPatchBanner(
+        banner,
+        newId,
+        bannerOriginal
+      )
+      if (typeof uploadResult === 'string') {
+        return uploadResult
+      }
+      const imageLink = `${process.env.KUN_VISUAL_NOVEL_IMAGE_BED_URL}/patch/${newId}/banner/banner.avif`
+
+      await prisma.patch.update({
+        where: { id: newId },
+        data: { banner: imageLink }
+      })
+
+      // Ensure rating_stat row exists for this patch
+      await prisma.patch_rating_stat.create({
+        data: { patch_id: newId }
+      })
+
+      if (alias.length) {
+        const aliasData = alias.map((name) => ({
+          name,
+          patch_id: newId
+        }))
+        await prisma.patch_alias.createMany({
+          data: aliasData,
+          skipDuplicates: true
+        })
+      }
+
+      await prisma.user.update({
+        where: { id: uid },
+        data: {
+          daily_image_count: { increment: 1 },
+          moemoepoint: { increment: 3 }
+        }
+      })
+
+      return { patchId: newId }
+    },
+    { timeout: 60000 }
+  )
 
   if (typeof res === 'string') {
     return res
   }
 
-  try {
-    await processSubmittedExternalData(
-      res.patchId,
-      {
-        vndbId,
-        vndbTags,
-        vndbDevelopers,
-        bangumiTags,
-        bangumiDevelopers,
-        steamTags,
-        steamDevelopers,
-        steamAliases,
-        dlsiteCircleName: dlsiteCircleName ?? '',
-        dlsiteCircleLink: dlsiteCircleLink ?? ''
-      },
-      tag,
-      uid
-    )
-  } catch (error) {
-    logCreateStepError('processSubmittedExternalData', error, {
-      uid,
-      patchId: res.patchId,
-      uniqueId: galgameUniqueId,
-      name
-    })
-    throw error
-  }
-
-  try {
-    await invalidatePatchListCaches()
-  } catch (error) {
-    logCreateStepError('invalidatePatchListCaches', error, {
-      uid,
-      patchId: res.patchId,
-      uniqueId: galgameUniqueId,
-      name
-    })
-    throw error
-  }
+  await processSubmittedExternalData(
+    res.patchId,
+    {
+      vndbId,
+      vndbTags,
+      vndbDevelopers,
+      bangumiTags,
+      bangumiDevelopers,
+      steamTags,
+      steamDevelopers,
+      steamAliases,
+      dlsiteCircleName: dlsiteCircleName ?? '',
+      dlsiteCircleLink: dlsiteCircleLink ?? ''
+    },
+    tag,
+    uid
+  )
+  await invalidatePatchListCaches()
 
   if (contentLimit === 'sfw') {
-    try {
-      const newPatchUrl = `${kunMoyuMoe.domain.main}/${galgameUniqueId}`
-      await postToIndexNow(newPatchUrl)
-    } catch (error) {
-      logCreateStepError('postToIndexNow', error, {
-        uid,
-        patchId: res.patchId,
-        uniqueId: galgameUniqueId,
-        name
-      })
-      throw error
-    }
+    const newPatchUrl = `${kunMoyuMoe.domain.main}/${galgameUniqueId}`
+    await postToIndexNow(newPatchUrl)
   }
 
   return { uniqueId: galgameUniqueId, patchId: res.patchId }
