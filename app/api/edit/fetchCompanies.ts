@@ -34,6 +34,34 @@ const toCompanyCreate = (producer: VndbProducer, uid: number) => {
   }
 }
 
+export const fetchVndbCompanyCreateMap = async (
+  vndbId: string | null | undefined,
+  uid: number
+) => {
+  const id = (vndbId || '').trim()
+  const companiesByName = new Map<string, ReturnType<typeof toCompanyCreate>>()
+  if (!id) return companiesByName
+
+  const data = await fetchVndbVn<{
+    developers?: VndbProducer[] | null
+  }>(
+    ['id', '=', id],
+    'id,developers{id,name,original,aliases,lang,type,description,extlinks{url}}'
+  )
+
+  const devs = (data.results?.[0]?.developers ?? []).filter(
+    (d) => d && (d.type === 'co' || d.type === 'ng' || d.type === 'in')
+  ) as VndbProducer[]
+
+  for (const producer of devs) {
+    const name = producer?.name
+    if (!name || companiesByName.has(name)) continue
+    companiesByName.set(name, toCompanyCreate(producer, uid))
+  }
+
+  return companiesByName
+}
+
 export const ensurePatchCompaniesFromVNDB = async (
   patchId: number,
   vndbId: string | null | undefined,
@@ -43,33 +71,8 @@ export const ensurePatchCompaniesFromVNDB = async (
   if (!id) return { ensured: 0, related: 0 }
 
   try {
-    const data = await fetchVndbVn<{
-      developers?: VndbProducer[] | null
-    }>(
-      ['id', '=', id],
-      'id,developers{id,name,original,aliases,lang,type,description,extlinks{url}}'
-    )
-
-    const devs = (data.results?.[0]?.developers ?? []).filter(
-      (d) => d && (d.type === 'co' || d.type === 'ng' || d.type === 'in')
-    ) as VndbProducer[]
-
-    if (!devs.length) return { ensured: 0, related: 0 }
-
-    const companiesByName = new Map<
-      string,
-      ReturnType<typeof toCompanyCreate>
-    >()
-    for (const p of devs) {
-      const name = p?.name
-      if (!name) continue
-      if (!companiesByName.has(name)) {
-        companiesByName.set(name, toCompanyCreate(p, uid))
-      }
-    }
-
-    const companyNames = Array.from(companiesByName.keys())
-    if (!companyNames.length) return { ensured: 0, related: 0 }
+    const companiesByName = await fetchVndbCompanyCreateMap(id, uid)
+    if (!companiesByName.size) return { ensured: 0, related: 0 }
 
     const result = await prisma.$transaction(
       async (tx) => {

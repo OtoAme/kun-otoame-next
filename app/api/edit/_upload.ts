@@ -1,14 +1,44 @@
 import sharp from 'sharp'
 
-import { uploadImageToS3 } from '~/lib/s3'
+import { deleteFileFromS3, uploadImageToS3 } from '~/lib/s3'
 import { checkBufferSize } from '~/app/api/utils/checkBufferSize'
 import { generateWatermarkSVG, watermarkConfig } from '~/config/watermark'
+
+export interface PatchBannerUploadResult {
+  imageLink: string
+  uploadedKeys: string[]
+}
+
+const uploadBannerObject = async (
+  key: string,
+  buffer: Buffer,
+  uploadedKeys: string[]
+) => {
+  await uploadImageToS3(key, buffer)
+  uploadedKeys.push(key)
+}
+
+export const cleanupUploadedPatchBanner = async (uploadedKeys: string[]) => {
+  await Promise.allSettled(
+    uploadedKeys.map(async (key) => {
+      try {
+        await deleteFileFromS3(key)
+      } catch (error) {
+        console.error('[EditCreate] failed to cleanup uploaded banner', {
+          key,
+          error
+        })
+        throw error
+      }
+    })
+  )
+}
 
 export const uploadPatchBanner = async (
   image: ArrayBuffer,
   id: number,
   originalImage?: ArrayBuffer
-) => {
+): Promise<string | PatchBannerUploadResult> => {
   if (image.byteLength === 0 || originalImage?.byteLength === 0) {
     return '上传文件不能为空'
   }
@@ -33,17 +63,34 @@ export const uploadPatchBanner = async (
   }
 
   const bucketName = `patch/${id}/banner`
+  const uploadedKeys: string[] = []
 
-  await Promise.all([
-    uploadImageToS3(`${bucketName}/banner.avif`, banner),
-    uploadImageToS3(`${bucketName}/banner-mini.avif`, miniBanner)
-  ])
+  try {
+    await uploadBannerObject(`${bucketName}/banner.avif`, banner, uploadedKeys)
+    await uploadBannerObject(
+      `${bucketName}/banner-mini.avif`,
+      miniBanner,
+      uploadedKeys
+    )
 
-  if (originalImage) {
-    const fullBanner = await sharp(originalImage)
-      .avif({ quality: 60 })
-      .toBuffer()
-    await uploadImageToS3(`${bucketName}/banner-full.avif`, fullBanner)
+    if (originalImage) {
+      const fullBanner = await sharp(originalImage)
+        .avif({ quality: 60 })
+        .toBuffer()
+      await uploadBannerObject(
+        `${bucketName}/banner-full.avif`,
+        fullBanner,
+        uploadedKeys
+      )
+    }
+  } catch (error) {
+    await cleanupUploadedPatchBanner(uploadedKeys)
+    throw error
+  }
+
+  return {
+    imageLink: `${process.env.KUN_VISUAL_NOVEL_IMAGE_BED_URL}/patch/${id}/banner/banner.avif`,
+    uploadedKeys
   }
 }
 

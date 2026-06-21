@@ -5,6 +5,7 @@ import { PATCH_CACHE_DURATION } from '~/config/cache'
 import { roundOneDecimal } from '~/utils/rating/average'
 import { withRealtimePatchView } from './views/realtime'
 import type { Patch } from '~/types/api/patch'
+import { PATCH_STATUS_VISIBLE } from '~/constants/patch'
 
 const CACHE_KEY = 'patch'
 
@@ -23,8 +24,8 @@ export const getPatchById = async (
 
   const { uniqueId } = input
 
-  const patch = await prisma.patch.findUnique({
-    where: { unique_id: uniqueId },
+  const patch = await prisma.patch.findFirst({
+    where: { unique_id: uniqueId, status: PATCH_STATUS_VISIBLE },
     include: {
       user: true,
       tag: {

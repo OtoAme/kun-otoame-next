@@ -1,12 +1,30 @@
 import crypto from 'crypto'
 import { z } from 'zod'
 import { prisma } from '~/prisma/index'
-import { uploadPatchBanner } from './_upload'
+import {
+  cleanupUploadedPatchBanner,
+  uploadPatchBanner,
+  type PatchBannerUploadResult
+} from './_upload'
 import { patchCreateSchema } from '~/validations/edit'
 import { kunMoyuMoe } from '~/config/moyu-moe'
 import { postToIndexNow } from './_postToIndexNow'
-import { processSubmittedExternalData } from './processExternalData'
-import { invalidatePatchListCaches } from '~/app/api/patch/cache'
+import {
+  prepareSubmittedExternalDataForCreate,
+  processSubmittedExternalDataForCreate,
+  type PreparedSubmittedExternalData,
+  type ProcessSubmittedExternalDataResult,
+  type SubmittedExternalData
+} from './processExternalData'
+import {
+  invalidateCompanyCaches,
+  invalidatePatchListCaches,
+  invalidateTagCaches
+} from '~/app/api/patch/cache'
+import {
+  PATCH_STATUS_PUBLISHING,
+  PATCH_STATUS_VISIBLE
+} from '~/constants/patch'
 
 const loggedCreateStepErrors = new WeakSet<object>()
 
@@ -36,9 +54,56 @@ const runCreateStep = async <T>(
   try {
     return await task()
   } catch (error) {
-    logCreateStepError(step, error, context)
+    if (!isObjectLike(error) || !loggedCreateStepErrors.has(error)) {
+      logCreateStepError(step, error, context)
+    }
     throw error
   }
+}
+
+const runBestEffortCreateStep = async (
+  step: string,
+  context: Record<string, unknown>,
+  task: () => Promise<unknown>
+) => {
+  try {
+    await task()
+  } catch (error) {
+    if (!isObjectLike(error) || !loggedCreateStepErrors.has(error)) {
+      logCreateStepError(step, error, context)
+    }
+  }
+}
+
+const runCleanupCreateStep = async (
+  step: string,
+  context: Record<string, unknown>,
+  task: () => Promise<unknown>
+) => {
+  try {
+    await task()
+  } catch (error) {
+    logCreateStepError(step, error, context)
+  }
+}
+
+const cleanupFailedCreateArtifacts = async (
+  patchId: number | null,
+  uploadedKeys: string[],
+  context: Record<string, unknown>
+) => {
+  await Promise.all([
+    uploadedKeys.length
+      ? runCleanupCreateStep('cleanupUploadedPatchBanner', context, () =>
+          cleanupUploadedPatchBanner(uploadedKeys)
+        )
+      : Promise.resolve(),
+    patchId
+      ? runCleanupCreateStep('cleanupPublishingPatch', context, () =>
+          prisma.patch.delete({ where: { id: patchId } })
+        )
+      : Promise.resolve()
+  ])
 }
 
 export const createGalgame = async (
@@ -131,16 +196,35 @@ export const createGalgame = async (
     }
   }
 
-  let res: string | { patchId: number }
+  const submittedExternalData: SubmittedExternalData = {
+    vndbId,
+    vndbTags,
+    vndbDevelopers,
+    bangumiTags,
+    bangumiDevelopers,
+    steamTags,
+    steamDevelopers,
+    steamAliases,
+    dlsiteCircleName: dlsiteCircleName ?? '',
+    dlsiteCircleLink: dlsiteCircleLink ?? ''
+  }
+
+  const baseContext = { uid, uniqueId: galgameUniqueId, name }
+  let patchId: number | null = null
+  let uploadedKeys: string[] = []
+  let externalDataResult: ProcessSubmittedExternalDataResult = {
+    tagCachesChanged: false,
+    companyCachesChanged: false
+  }
+
   try {
-    res = await prisma.$transaction(
-      async (prisma) => {
-        const baseContext = { uid, uniqueId: galgameUniqueId, name }
-        const patch = await runCreateStep(
-          'createPatch',
-          baseContext,
-          () =>
-            prisma.patch.create({
+    const createdPatch = await runCreateStep(
+      'createPublishingPatch',
+      baseContext,
+      () =>
+        prisma.$transaction(
+          (tx) =>
+            tx.patch.create({
               data: {
                 name,
                 unique_id: galgameUniqueId,
@@ -153,114 +237,129 @@ export const createGalgame = async (
                 official_url: officialUrl || '',
                 user_id: uid,
                 banner: '',
+                status: PATCH_STATUS_PUBLISHING,
                 released,
                 content_limit: contentLimit
               }
-            })
+            }),
+          { timeout: 60000 }
         )
-
-        const newId = patch.id
-        const patchContext = { ...baseContext, patchId: newId }
-
-        const uploadResult = await runCreateStep(
-          'uploadPatchBanner',
-          patchContext,
-          () => uploadPatchBanner(banner, newId, bannerOriginal)
-        )
-        if (typeof uploadResult === 'string') {
-          console.error('[EditCreate] create failed at uploadPatchBanner', {
-            uid,
-            patchId: newId,
-            uniqueId: galgameUniqueId,
-            name,
-            reason: uploadResult
-          })
-          return uploadResult
-        }
-        const imageLink = `${process.env.KUN_VISUAL_NOVEL_IMAGE_BED_URL}/patch/${newId}/banner/banner.avif`
-
-        await runCreateStep('updatePatchBanner', patchContext, () =>
-          prisma.patch.update({
-            where: { id: newId },
-            data: { banner: imageLink }
-          })
-        )
-
-        // Ensure rating_stat row exists for this patch
-        await runCreateStep('createRatingStat', patchContext, () =>
-          prisma.patch_rating_stat.create({
-            data: { patch_id: newId }
-          })
-        )
-
-        if (alias.length) {
-          const aliasData = alias.map((name) => ({
-            name,
-            patch_id: newId
-          }))
-          await runCreateStep('createAliases', patchContext, () =>
-            prisma.patch_alias.createMany({
-              data: aliasData,
-              skipDuplicates: true
-            })
-          )
-        }
-
-        await runCreateStep('updateUserReward', patchContext, () =>
-          prisma.user.update({
-            where: { id: uid },
-            data: {
-              daily_image_count: { increment: 1 },
-              moemoepoint: { increment: 3 }
-            }
-          })
-        )
-
-        return { patchId: newId }
-      },
-      { timeout: 60000 }
     )
-  } catch (error) {
-    if (!isObjectLike(error) || !loggedCreateStepErrors.has(error)) {
-      logCreateStepError('coreTransaction', error, {
-        uid,
-        uniqueId: galgameUniqueId,
-        name
+    const newPatchId = createdPatch.id
+    patchId = newPatchId
+
+    const patchContext = { ...baseContext, patchId: newPatchId }
+    const bannerResult = await runCreateStep(
+      'uploadPatchBanner',
+      patchContext,
+      () => uploadPatchBanner(banner, newPatchId, bannerOriginal)
+    )
+    if (typeof bannerResult === 'string') {
+      console.error('[EditCreate] create failed at uploadPatchBanner', {
+        ...patchContext,
+        reason: bannerResult
       })
+      await cleanupFailedCreateArtifacts(patchId, uploadedKeys, patchContext)
+      return bannerResult
     }
-    throw error
-  }
+    const uploadResult: PatchBannerUploadResult = bannerResult
+    uploadedKeys = uploadResult.uploadedKeys
 
-  if (typeof res === 'string') {
-    return res
-  }
+    const preparedExternalData: PreparedSubmittedExternalData =
+      await runCreateStep(
+        'prepareSubmittedExternalData',
+        patchContext,
+        () => prepareSubmittedExternalDataForCreate(submittedExternalData, uid)
+      )
 
-  try {
-    await processSubmittedExternalData(
-      res.patchId,
-      {
-        vndbId,
-        vndbTags,
-        vndbDevelopers,
-        bangumiTags,
-        bangumiDevelopers,
-        steamTags,
-        steamDevelopers,
-        steamAliases,
-        dlsiteCircleName: dlsiteCircleName ?? '',
-        dlsiteCircleLink: dlsiteCircleLink ?? ''
-      },
-      tag,
-      uid
+    externalDataResult = await runCreateStep(
+      'finalizePublishTransaction',
+      patchContext,
+      () =>
+        prisma.$transaction(
+          async (tx) => {
+            await runCreateStep('createRatingStat', patchContext, () =>
+              tx.patch_rating_stat.create({
+                data: { patch_id: newPatchId }
+              })
+            )
+
+            if (alias.length) {
+              const aliasData = alias.map((name) => ({
+                name,
+                patch_id: newPatchId
+              }))
+              await runCreateStep('createAliases', patchContext, () =>
+                tx.patch_alias.createMany({
+                  data: aliasData,
+                  skipDuplicates: true
+                })
+              )
+            }
+
+            const processResult = await runCreateStep(
+              'processSubmittedExternalData',
+              patchContext,
+              () =>
+                processSubmittedExternalDataForCreate(
+                  tx,
+                  newPatchId,
+                  submittedExternalData,
+                  tag,
+                  uid,
+                  preparedExternalData
+                )
+            )
+
+            await runCreateStep('updateUserReward', patchContext, () =>
+              tx.user.update({
+                where: { id: uid },
+                data: {
+                  daily_image_count: { increment: 1 },
+                  moemoepoint: { increment: 3 }
+                }
+              })
+            )
+
+            await runCreateStep('publishPatch', patchContext, () =>
+              tx.patch.update({
+                where: { id: newPatchId },
+                data: {
+                  banner: uploadResult.imageLink,
+                  status: PATCH_STATUS_VISIBLE
+                }
+              })
+            )
+
+            return processResult
+          },
+          { timeout: 60000 }
+        )
     )
   } catch (error) {
-    logCreateStepError('processSubmittedExternalData', error, {
-      uid,
-      patchId: res.patchId,
-      uniqueId: galgameUniqueId,
-      name
+    await cleanupFailedCreateArtifacts(patchId, uploadedKeys, {
+      ...baseContext,
+      patchId
     })
     throw error
+  }
+
+  if (!patchId) {
+    throw new Error('Create publish completed without patch id')
+  }
+
+  const patchContext = { ...baseContext, patchId }
+
+  if (externalDataResult.tagCachesChanged) {
+    await runCreateStep('invalidateTagCaches', patchContext, () =>
+      invalidateTagCaches()
+    )
+  }
+
+  if (externalDataResult.companyCachesChanged) {
+    await runCreateStep('invalidateCompanyCaches', patchContext, () =>
+      invalidateCompanyCaches()
+    )
   }
 
   try {
@@ -268,7 +367,7 @@ export const createGalgame = async (
   } catch (error) {
     logCreateStepError('invalidatePatchListCaches', error, {
       uid,
-      patchId: res.patchId,
+      patchId,
       uniqueId: galgameUniqueId,
       name
     })
@@ -276,19 +375,11 @@ export const createGalgame = async (
   }
 
   if (contentLimit === 'sfw') {
-    try {
-      const newPatchUrl = `${kunMoyuMoe.domain.main}/${galgameUniqueId}`
-      await postToIndexNow(newPatchUrl)
-    } catch (error) {
-      logCreateStepError('postToIndexNow', error, {
-        uid,
-        patchId: res.patchId,
-        uniqueId: galgameUniqueId,
-        name
-      })
-      throw error
-    }
+    const newPatchUrl = `${kunMoyuMoe.domain.main}/${galgameUniqueId}`
+    await runBestEffortCreateStep('postToIndexNow', patchContext, () =>
+      postToIndexNow(newPatchUrl)
+    )
   }
 
-  return { uniqueId: galgameUniqueId, patchId: res.patchId }
+  return { uniqueId: galgameUniqueId, patchId }
 }

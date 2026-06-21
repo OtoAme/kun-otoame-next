@@ -19,6 +19,7 @@ import {
   buildGalgameWhere
 } from '~/app/api/utils/galgameQuery'
 import type { Tag } from '~/types/api/tag'
+import { withVisiblePatchWhere } from '~/constants/patch'
 
 export const getTag = async (
   input: z.infer<typeof getTagSchema>,
@@ -61,8 +62,9 @@ export const getPatchByTag = async (
   input: z.infer<typeof getPatchByTagSchema>,
   nsfwEnable: Prisma.patchWhereInput
 ) => {
+  const visibleWhere = withVisiblePatchWhere(nsfwEnable)
   const cacheKey = `tag_galgame_list:${createHash('md5')
-    .update(JSON.stringify({ input, nsfwEnable }))
+    .update(JSON.stringify({ input, nsfwEnable: visibleWhere }))
     .digest('hex')}`
 
   const result = await getOrSet(
@@ -88,7 +90,7 @@ export const getPatchByTag = async (
         selectedLanguage,
         selectedPlatform,
         minRatingCount,
-        visibilityWhere: nsfwEnable
+        visibilityWhere: visibleWhere
       })
 
       const [data, total] = await Promise.all([

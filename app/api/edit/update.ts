@@ -102,12 +102,9 @@ export const updateGalgame = async (
     }
     await purgePatchBannerCache(id)
 
-    // Update the banner URL in the database to ensure it's correct
-    // and to potentially trigger any update hooks if they exist
-    const imageLink = `${process.env.KUN_VISUAL_NOVEL_IMAGE_BED_URL}/patch/${id}/banner/banner.avif`
     await prisma.patch.update({
       where: { id },
-      data: { banner: imageLink }
+      data: { banner: res.imageLink }
     })
   }
 

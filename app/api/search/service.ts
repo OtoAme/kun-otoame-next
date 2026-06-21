@@ -13,11 +13,13 @@ import {
   buildGalgameOrderBy
 } from '~/app/api/utils/galgameQuery'
 import type { SearchSuggestionType } from '~/types/api/search'
+import { withVisiblePatchWhere } from '~/constants/patch'
 
 export const searchGalgame = async (
   input: z.infer<typeof searchSchema>,
   nsfwEnable: PrismaType.patchWhereInput
 ) => {
+  const visibleWhere = withVisiblePatchWhere(nsfwEnable)
   const {
     queryString,
     limit,
@@ -75,7 +77,7 @@ export const searchGalgame = async (
     ...(selectedType !== 'all' && { type: { has: selectedType } }),
     ...(selectedLanguage !== 'all' && { language: { has: selectedLanguage } }),
     ...(selectedPlatform !== 'all' && { platform: { has: selectedPlatform } }),
-    ...nsfwEnable
+    ...visibleWhere
   }
 
   const orderBy = buildGalgameOrderBy(sortField, sortOrder)
@@ -115,7 +117,7 @@ export const searchGalgame = async (
       ]
     })),
 
-    nsfwEnable,
+    visibleWhere,
 
     ...tagArray.map((q) => ({
       tag: {

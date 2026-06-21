@@ -23,6 +23,7 @@ import {
 } from '~/constants/api/select'
 import { withRealtimePatchViews } from '~/app/api/patch/views/realtime'
 import { buildGalgameOrderBy } from '~/app/api/utils/galgameQuery'
+import { withVisiblePatchWhere } from '~/constants/patch'
 
 export const getCompany = async (input: z.infer<typeof getCompanySchema>) => {
   const cacheKey = `company_list:${createHash('md5')
@@ -95,8 +96,9 @@ export const getPatchByCompany = async (
   input: z.infer<typeof getPatchByCompanySchema>,
   nsfwEnable: Prisma.patchWhereInput
 ) => {
+  const visibleWhere = withVisiblePatchWhere(nsfwEnable)
   const cacheKey = `company_galgame_list:${createHash('md5')
-    .update(JSON.stringify({ input, nsfwEnable }))
+    .update(JSON.stringify({ input, nsfwEnable: visibleWhere }))
     .digest('hex')}`
 
   const result = await getOrSet(
@@ -174,7 +176,7 @@ export const getPatchByCompany = async (
           rating_stat: { count: { gte: minRatingCount } }
         }),
         ...dateFilter,
-        ...nsfwEnable
+        ...visibleWhere
       }
 
       const orderBy = buildGalgameOrderBy(sortField, sortOrder)
