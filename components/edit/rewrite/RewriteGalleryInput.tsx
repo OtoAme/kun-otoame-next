@@ -329,6 +329,9 @@ export const RewriteGalleryInput = () => {
           </Switch>
         </div>
       </div>
+      <p className="text-sm text-default-500">
+        动态 WebP / AVIF 会保留原始动图，不添加水印。
+      </p>
 
       <div
         {...getRootProps()}

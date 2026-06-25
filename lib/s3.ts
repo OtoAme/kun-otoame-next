@@ -33,12 +33,16 @@ export const uploadVideoToS3 = async (
   await s3.send(uploadCommand)
 }
 
-export const uploadImageToS3 = async (key: string, fileBuffer: Buffer) => {
+export const uploadImageToS3 = async (
+  key: string,
+  fileBuffer: Buffer,
+  contentType = 'image/avif'
+) => {
   const uploadCommand = new PutObjectCommand({
     Bucket: process.env.KUN_VISUAL_NOVEL_S3_STORAGE_BUCKET_NAME!,
     Key: key,
     Body: fileBuffer,
-    ContentType: 'image/avif'
+    ContentType: contentType
   })
   await s3.send(uploadCommand)
 }

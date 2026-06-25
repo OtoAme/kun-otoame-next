@@ -2,7 +2,6 @@ import sharp from 'sharp'
 
 import { uploadImageToS3 } from '~/lib/s3'
 import { checkBufferSize } from '~/app/api/utils/checkBufferSize'
-import { generateWatermarkSVG, watermarkConfig } from '~/config/watermark'
 
 export const uploadPatchBanner = async (
   image: ArrayBuffer,
@@ -45,35 +44,4 @@ export const uploadPatchBanner = async (
       .toBuffer()
     await uploadImageToS3(`${bucketName}/banner-full.avif`, fullBanner)
   }
-}
-
-export const uploadPatchGalleryImage = async (
-  image: ArrayBuffer,
-  patchId: number,
-  imageId: number,
-  watermark: boolean
-) => {
-  let pipeline = sharp(image).resize(1920, 1080, {
-    fit: 'inside',
-    withoutEnlargement: true
-  })
-
-  if (watermark) {
-    const svgImage = generateWatermarkSVG()
-    pipeline = pipeline.composite([
-      {
-        input: Buffer.from(svgImage),
-        ...watermarkConfig.composite
-      }
-    ])
-  }
-
-  const buffer = await pipeline.avif({ quality: 60, effort: 3 }).toBuffer()
-
-  if (!checkBufferSize(buffer, 1.5)) {
-    return '图片体积过大'
-  }
-
-  const bucketName = `patch/${patchId}/gallery`
-  await uploadImageToS3(`${bucketName}/${imageId}.avif`, buffer)
 }

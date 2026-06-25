@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '~/prisma/index'
 import { verifyHeaderCookie } from '~/middleware/_verifyHeaderCookie'
 import { invalidatePatchContentCache } from '~/app/api/patch/cache'
-import { uploadPatchGalleryImage } from '../_upload'
+import { uploadPatchGalleryImage } from '../galleryUpload'
 
 export const POST = async (req: NextRequest) => {
   const payload = await verifyHeaderCookie(req)
@@ -41,7 +41,9 @@ export const POST = async (req: NextRequest) => {
   try {
     const arrayBuffer = await image.arrayBuffer()
 
-    let uploadRes: string | undefined
+    let uploadRes:
+      | Awaited<ReturnType<typeof uploadPatchGalleryImage>>
+      | undefined
     for (let attempt = 0; attempt < 3; attempt++) {
       uploadRes = await uploadPatchGalleryImage(
         arrayBuffer,
@@ -55,14 +57,14 @@ export const POST = async (req: NextRequest) => {
       }
     }
 
-    if (typeof uploadRes === 'string') {
+    if (!uploadRes || typeof uploadRes === 'string') {
       await prisma.patch_game_image
         .delete({ where: { id: galleryRecord.id } })
         .catch(() => {})
-      return NextResponse.json(uploadRes)
+      return NextResponse.json(uploadRes || '图片上传失败')
     }
 
-    const imageUrl = `${process.env.KUN_VISUAL_NOVEL_IMAGE_BED_URL}/patch/${patchId}/gallery/${galleryRecord.id}.avif`
+    const imageUrl = `${process.env.KUN_VISUAL_NOVEL_IMAGE_BED_URL}/patch/${patchId}/gallery/${galleryRecord.id}.${uploadRes.extension}`
 
     await prisma.patch_game_image.update({
       where: { id: galleryRecord.id },
