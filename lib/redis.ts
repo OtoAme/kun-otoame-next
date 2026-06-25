@@ -260,10 +260,12 @@ type CacheReadResult<T> = {
   isStale: boolean
 }
 
-type GetOrSetOptions = {
+type GetOrSetOptions<T = unknown> = {
   staleTtl?: number
   lockTtl?: number
   waitForRefreshMs?: number
+  shouldCacheValue?: (value: T) => boolean
+  isCachedValueValid?: (value: T) => boolean
 }
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
@@ -358,14 +360,21 @@ const refreshCache = async <T>(
   key: string,
   fetcher: () => Promise<T>,
   ttl: number,
-  staleTtl: number
+  staleTtl: number,
+  shouldCacheValue: (value: T) => boolean
 ) => {
   const data = await fetcher()
-  await setCachedValue(key, data, ttl, staleTtl)
+  if (shouldCacheValue(data)) {
+    await setCachedValue(key, data, ttl, staleTtl)
+  }
   return data
 }
 
-const getValueAfterPeerRefresh = async <T>(key: string, timeoutMs: number) => {
+const getValueAfterPeerRefresh = async <T>(
+  key: string,
+  timeoutMs: number,
+  isCachedValueValid: (value: T) => boolean
+) => {
   const startedAt = Date.now()
 
   while (Date.now() - startedAt < timeoutMs) {
@@ -373,7 +382,7 @@ const getValueAfterPeerRefresh = async <T>(key: string, timeoutMs: number) => {
 
     try {
       const cached = await getCachedValue<T>(key)
-      if (cached?.isFresh) {
+      if (cached?.isFresh && isCachedValueValid(cached.value)) {
         return { value: cached.value }
       }
     } catch (error) {
@@ -389,7 +398,7 @@ export const getOrSet = async <T>(
   key: string,
   fetcher: () => Promise<T>,
   ttl: number,
-  options: GetOrSetOptions = {}
+  options: GetOrSetOptions<T> = {}
 ): Promise<T> => {
   if (pendingPromises.has(key)) {
     return pendingPromises.get(key) as Promise<T>
@@ -400,6 +409,8 @@ export const getOrSet = async <T>(
     const lockTtl = options.lockTtl ?? CACHE_REFRESH_LOCK_TTL_SECONDS
     const waitForRefreshMs =
       options.waitForRefreshMs ?? CACHE_WAIT_FOR_REFRESH_TIMEOUT_MS
+    const shouldCacheValue = options.shouldCacheValue ?? (() => true)
+    const isCachedValueValid = options.isCachedValueValid ?? (() => true)
 
     try {
       let cached: CacheReadResult<T> | null = null
@@ -407,6 +418,10 @@ export const getOrSet = async <T>(
         cached = await getCachedValue<T>(key)
       } catch (error) {
         console.error(`[Redis] Get error for key ${key}:`, error)
+      }
+
+      if (cached && !isCachedValueValid(cached.value)) {
+        cached = null
       }
 
       if (cached?.isFresh) {
@@ -425,7 +440,7 @@ export const getOrSet = async <T>(
       if (cached?.isStale) {
         if (lockToken) {
           const refreshLockToken = lockToken
-          refreshCache(key, fetcher, ttl, staleTtl)
+          refreshCache(key, fetcher, ttl, staleTtl, shouldCacheValue)
             .catch((error) => {
               console.error(
                 `[Redis] Background refresh error for key ${key}:`,
@@ -449,7 +464,9 @@ export const getOrSet = async <T>(
         try {
           const data = await fetcher()
           try {
-            await setCachedValue(key, data, ttl, staleTtl)
+            if (shouldCacheValue(data)) {
+              await setCachedValue(key, data, ttl, staleTtl)
+            }
           } catch (error) {
             console.error(`[Redis] Set error for key ${key}:`, error)
           }
@@ -471,7 +488,8 @@ export const getOrSet = async <T>(
       while (!lockToken) {
         const peerRefreshedValue = await getValueAfterPeerRefresh<T>(
           key,
-          waitForRefreshMs
+          waitForRefreshMs,
+          isCachedValueValid
         )
         if (peerRefreshedValue) {
           return peerRefreshedValue.value
@@ -489,7 +507,9 @@ export const getOrSet = async <T>(
         try {
           const data = await fetcher()
           try {
-            await setCachedValue(key, data, ttl, staleTtl)
+            if (shouldCacheValue(data)) {
+              await setCachedValue(key, data, ttl, staleTtl)
+            }
           } catch (error) {
             console.error(
               `[Redis] Set after retry error for key ${key}:`,

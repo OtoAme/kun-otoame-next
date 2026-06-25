@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const responseCacheMock = vi.hoisted(() => vi.fn())
 const serviceMocks = vi.hoisted(() => ({
+  getHomeData: vi.fn(),
   getPatchByTag: vi.fn(),
   getPatchByCompany: vi.fn()
 }))
@@ -22,6 +23,10 @@ vi.mock('~/app/api/company/service', () => ({
   getPatchByCompany: serviceMocks.getPatchByCompany
 }))
 
+vi.mock('~/app/api/home/service', () => ({
+  getHomeData: serviceMocks.getHomeData
+}))
+
 vi.mock('~/app/api/utils/getBlockedTagIds', () => ({
   getBlockedTagIds: visibilityMocks.getBlockedTagIds
 }))
@@ -32,6 +37,7 @@ vi.mock('~/app/api/utils/getNSFWHeader', () => ({
 
 import { GET as getTagOtomegame } from '~/app/api/tag/otomegame/route'
 import { GET as getCompanyOtomegame } from '~/app/api/company/otomegame/route'
+import { GET as getHome } from '~/app/api/home/route'
 
 const validTagUrl =
   'https://example.test/api/tag/otomegame?tagId=15&page=1&limit=24&selectedType=all&selectedLanguage=all&selectedPlatform=all&sortField=resource_update_time&sortOrder=desc&yearString=%5B%22all%22%5D&monthString=%5B%22all%22%5D&minRatingCount=0'
@@ -48,8 +54,24 @@ describe('tag/company otomegame API response caching', () => {
     )
     serviceMocks.getPatchByTag.mockResolvedValue({ galgames: [], total: 0 })
     serviceMocks.getPatchByCompany.mockResolvedValue({ galgames: [], total: 0 })
+    serviceMocks.getHomeData.mockResolvedValue({ galgames: [], resources: [] })
     visibilityMocks.getBlockedTagIds.mockResolvedValue([])
     visibilityMocks.getNSFWHeader.mockReturnValue({ content_limit: 'sfw' })
+  })
+
+  it('wraps home fallback responses in the anonymous response cache', async () => {
+    const req = new Request('https://example.test/api/home')
+
+    await getHome(req as never)
+
+    expect(responseCacheMock).toHaveBeenCalledWith(
+      req,
+      'home',
+      expect.any(Function),
+      expect.objectContaining({
+        shouldCacheValue: expect.any(Function)
+      })
+    )
   })
 
   it('wraps valid tag otomegame responses in the anonymous response cache', async () => {

@@ -12,6 +12,9 @@ const ANONYMOUS_API_MEMORY_CACHE_TTL_MS =
 const ANONYMOUS_API_MEMORY_CACHE_MAX_ENTRIES = 512
 
 type JsonProducer<T> = () => Promise<T>
+type AnonymousApiResponseCacheOptions<T> = {
+  shouldCacheValue?: (value: T) => boolean
+}
 
 type MemoryCacheEntry = {
   body: string
@@ -102,8 +105,11 @@ const jsonResponse = (
 export const getCachedAnonymousJsonResponse = async <T>(
   req: Pick<Request, 'url' | 'headers'>,
   namespace: string,
-  producer: JsonProducer<T>
+  producer: JsonProducer<T>,
+  options: AnonymousApiResponseCacheOptions<T> = {}
 ) => {
+  const shouldCacheValue = options.shouldCacheValue ?? (() => true)
+
   if (isPersonalizedApiRequest(req)) {
     return jsonResponse(
       JSON.stringify(await producer()),
@@ -149,20 +155,24 @@ export const getCachedAnonymousJsonResponse = async <T>(
       }
     }
 
-    const serialized = JSON.stringify(await producer())
-    setMemoryCache(memoryCacheKey, serialized)
+    const produced = await producer()
+    const serialized = JSON.stringify(produced)
 
-    try {
-      await setKv(
-        cacheKey,
-        serialized,
-        ANONYMOUS_API_RESPONSE_CACHE_TTL_SECONDS
-      )
-    } catch (error) {
-      console.error(
-        `[Redis] Anonymous API cache set error for ${cacheKey}:`,
-        error
-      )
+    if (shouldCacheValue(produced)) {
+      setMemoryCache(memoryCacheKey, serialized)
+
+      try {
+        await setKv(
+          cacheKey,
+          serialized,
+          ANONYMOUS_API_RESPONSE_CACHE_TTL_SECONDS
+        )
+      } catch (error) {
+        console.error(
+          `[Redis] Anonymous API cache set error for ${cacheKey}:`,
+          error
+        )
+      }
     }
 
     return {

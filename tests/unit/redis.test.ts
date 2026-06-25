@@ -108,6 +108,42 @@ describe('getOrSet', () => {
     expect(result).toEqual(data)
     expect(fetcher).toHaveBeenCalled()
   })
+
+  it('should skip writing values rejected by the cache predicate', async () => {
+    const key = 'test-key-skip-cache'
+    const data = { items: [] }
+    redisMocks.get.mockResolvedValue(null)
+    const fetcher = vi.fn().mockResolvedValue(data)
+
+    const result = await getOrSet(key, fetcher, 10, {
+      shouldCacheValue: () => false
+    })
+
+    expect(result).toEqual(data)
+    expect(fetcher).toHaveBeenCalled()
+    expect(redisMocks.setex).not.toHaveBeenCalled()
+  })
+
+  it('should ignore cached values rejected by the validity predicate', async () => {
+    const key = 'test-key-invalid-cache'
+    const data = { items: ['fresh'] }
+    redisMocks.get.mockResolvedValue(JSON.stringify({ items: [] }))
+    const fetcher = vi.fn().mockResolvedValue(data)
+
+    const result = await getOrSet(key, fetcher, 10, {
+      isCachedValueValid: (value) =>
+        Array.isArray((value as { items?: unknown }).items) &&
+        (value as { items: unknown[] }).items.length > 0
+    })
+
+    expect(result).toEqual(data)
+    expect(fetcher).toHaveBeenCalled()
+    expect(redisMocks.setex).toHaveBeenCalledWith(
+      expect.stringContaining(key),
+      expect.any(Number),
+      expect.stringContaining('"fresh"')
+    )
+  })
 })
 
 describe('delKvPattern', () => {

@@ -14,6 +14,13 @@ const HOME_GALGAME_LIMIT = 12
 const HOME_RESOURCE_LIMIT = 4
 const HOME_PAYLOAD_CACHE_VERSION = 'v2'
 
+type HomeData = {
+  galgames: GalgameCard[]
+  resources: HomeResource[]
+}
+
+const hasHomeGalgames = (payload: HomeData) => payload.galgames.length > 0
+
 export const getHomeData = async (nsfwEnable: Prisma.patchWhereInput) => {
   const cacheKey = `home_data:${HOME_PAYLOAD_CACHE_VERSION}:g${HOME_GALGAME_LIMIT}:r${HOME_RESOURCE_LIMIT}:${createHash(
     'md5'
@@ -21,7 +28,7 @@ export const getHomeData = async (nsfwEnable: Prisma.patchWhereInput) => {
     .update(JSON.stringify(nsfwEnable))
     .digest('hex')}`
 
-  const result = await getOrSet(
+  const result = await getOrSet<HomeData>(
     cacheKey,
     async () => {
       const [data, resourcesData] = await Promise.all([
@@ -102,7 +109,11 @@ export const getHomeData = async (nsfwEnable: Prisma.patchWhereInput) => {
 
       return { galgames, resources }
     },
-    HOME_CACHE_DURATION
+    HOME_CACHE_DURATION,
+    {
+      shouldCacheValue: hasHomeGalgames,
+      isCachedValueValid: hasHomeGalgames
+    }
   )
 
   return {

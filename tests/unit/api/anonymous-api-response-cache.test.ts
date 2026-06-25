@@ -133,6 +133,32 @@ describe('anonymous API response cache', () => {
     expect(redisMocks.setKv).toHaveBeenCalledTimes(1)
   })
 
+  it('does not store anonymous responses rejected by the cache predicate', async () => {
+    const producer = vi.fn().mockResolvedValue({ galgames: [], resources: [] })
+    const req = request('https://example.test/api/home')
+
+    const response = await getCachedAnonymousJsonResponse(
+      req,
+      'home',
+      producer,
+      {
+        shouldCacheValue: (value) =>
+          (value as { galgames: unknown[] }).galgames.length > 0
+      }
+    )
+
+    expect(await response.text()).toBe('{"galgames":[],"resources":[]}')
+    expect(response.headers.get('x-kun-cache')).toBe('miss')
+    expect(redisMocks.setKv).not.toHaveBeenCalled()
+
+    await getCachedAnonymousJsonResponse(req, 'home', producer, {
+      shouldCacheValue: (value) =>
+        (value as { galgames: unknown[] }).galgames.length > 0
+    })
+
+    expect(producer).toHaveBeenCalledTimes(2)
+  })
+
   it('shares Redis cache across equivalent query strings with different order', async () => {
     redisMocks.getKv.mockResolvedValueOnce('{"ok":true}')
     const producer = vi.fn()

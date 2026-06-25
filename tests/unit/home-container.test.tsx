@@ -79,7 +79,7 @@ describe('HomeContainer', () => {
   let root: Root | undefined
   let dom: JSDOM | undefined
 
-  const renderHome = async () => {
+  const renderHome = async (galgames = [makeGalgame()]) => {
     dom = new JSDOM('<!doctype html><div id="root"></div>', {
       url: 'http://localhost'
     })
@@ -95,7 +95,7 @@ describe('HomeContainer', () => {
 
     root = createRoot(container!)
     await act(async () => {
-      root!.render(<HomeContainer galgames={[makeGalgame()]} resources={[]} />)
+      root!.render(<HomeContainer galgames={galgames} resources={[]} />)
     })
 
     return container!
@@ -144,5 +144,82 @@ describe('HomeContainer', () => {
     const container = await renderHome()
 
     expect(container.textContent).toContain('abc12345:10:2')
+  })
+
+  it('fetches the home payload only when the static game section is empty', async () => {
+    fetchMock.kunFetchGet.mockImplementation((url: string) => {
+      if (url === '/home') {
+        return Promise.resolve({
+          galgames: [makeGalgame()],
+          resources: []
+        })
+      }
+
+      return Promise.resolve({ stats: {} })
+    })
+
+    const container = await renderHome([])
+
+    expect(fetchMock.kunFetchGet).toHaveBeenCalledWith('/home')
+    expect(fetchMock.kunFetchGet).toHaveBeenCalledWith('/patch/stats', {
+      uniqueIds: 'abc12345'
+    })
+    expect(container.textContent).toContain('abc12345:10:2')
+  })
+
+  it('does not refetch the home payload when static games are present', async () => {
+    fetchMock.kunFetchGet.mockResolvedValue({ stats: {} })
+
+    await renderHome()
+
+    expect(fetchMock.kunFetchGet).not.toHaveBeenCalledWith('/home')
+  })
+
+  it('does not lose the empty-home fallback result under StrictMode remount', async () => {
+    let resolveHome:
+      | ((value: { galgames: GalgameCard[]; resources: [] }) => void)
+      | undefined
+
+    fetchMock.kunFetchGet.mockImplementation((url: string) => {
+      if (url === '/home') {
+        return new Promise((resolve) => {
+          resolveHome = resolve
+        })
+      }
+
+      return Promise.resolve({ stats: {} })
+    })
+
+    dom = new JSDOM('<!doctype html><div id="root"></div>', {
+      url: 'http://localhost'
+    })
+
+    vi.stubGlobal('window', dom.window)
+    vi.stubGlobal('document', dom.window.document)
+    vi.stubGlobal('React', React)
+    vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
+
+    const { HomeContainer } = await import('~/components/home/Container')
+    const container = dom.window.document.getElementById('root')
+    expect(container).not.toBeNull()
+
+    root = createRoot(container!)
+    await act(async () => {
+      root!.render(
+        <React.StrictMode>
+          <HomeContainer galgames={[]} resources={[]} />
+        </React.StrictMode>
+      )
+    })
+
+    await act(async () => {
+      resolveHome?.({ galgames: [makeGalgame()], resources: [] })
+    })
+
+    expect(fetchMock.kunFetchGet).toHaveBeenCalledWith('/home')
+    expect(
+      fetchMock.kunFetchGet.mock.calls.filter(([url]) => url === '/home')
+    ).toHaveLength(1)
+    expect(container!.textContent).toContain('abc12345:10:2')
   })
 })

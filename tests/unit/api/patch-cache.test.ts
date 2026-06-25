@@ -68,6 +68,7 @@ describe('patch cache invalidation', () => {
     expect(safeRevalidatePathMock).toHaveBeenCalledWith('/otomegame', 'page')
     expect(purgePublicPageCacheMock).toHaveBeenCalledWith(['/', '/otomegame'])
     expect(purgePublicApiCacheMock).toHaveBeenCalledWith([
+      '/api/home',
       '/api/tag/otomegame',
       '/api/company/otomegame'
     ])

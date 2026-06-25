@@ -14,6 +14,7 @@ const PATCH_FAVORITE_CACHE_KEY = 'patch:favorite'
 const PATCH_FAVORITE_VERSION_KEY = 'patch:favorite:version'
 const PATCH_FAVORITE_DEFAULT_VERSION = '0'
 const ANONYMOUS_PUBLIC_API_PATHS = [
+  '/api/home',
   '/api/tag/otomegame',
   '/api/company/otomegame'
 ]

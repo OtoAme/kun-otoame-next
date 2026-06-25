@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { GalgameCard } from '~/components/galgame/Card'
+import type { HomeResource } from '~/types/api/home'
 import { kunFetchGet } from '~/utils/kunFetch'
 
 interface PatchRealtimeStats {
@@ -39,13 +40,45 @@ const mergeRealtimeStats = (
 export const HomeGalgameGrid = ({ galgames }: Props) => {
   const [displayGalgames, setDisplayGalgames] = useState(galgames)
   const requestedKeyRef = useRef('')
+  const homeFallbackPromiseRef = useRef<Promise<GalgameCard[]> | null>(null)
   const uniqueIds = useMemo(
-    () => [...new Set(galgames.map((galgame) => galgame.uniqueId))],
-    [galgames]
+    () => [...new Set(displayGalgames.map((galgame) => galgame.uniqueId))],
+    [displayGalgames]
   )
 
   useEffect(() => {
     setDisplayGalgames(galgames)
+  }, [galgames])
+
+  useEffect(() => {
+    if (galgames.length) {
+      return
+    }
+
+    if (!homeFallbackPromiseRef.current) {
+      homeFallbackPromiseRef.current = kunFetchGet<{
+        galgames: GalgameCard[]
+        resources: HomeResource[]
+      }>('/home')
+        .then(({ galgames: fallbackGalgames }) => fallbackGalgames)
+        .catch((error) => {
+          console.error('Failed to refresh empty home game payload:', error)
+          return []
+        })
+    }
+
+    let ignore = false
+
+    homeFallbackPromiseRef.current.then((fallbackGalgames) => {
+      if (ignore || !fallbackGalgames.length) {
+        return
+      }
+      setDisplayGalgames(fallbackGalgames)
+    })
+
+    return () => {
+      ignore = true
+    }
   }, [galgames])
 
   useEffect(() => {

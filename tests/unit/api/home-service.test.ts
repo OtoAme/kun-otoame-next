@@ -1,8 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
-  getOrSet: vi.fn(async (_key: string, producer: () => Promise<unknown>) =>
-    producer()
+  getOrSet: vi.fn(
+    async (
+      _key: string,
+      producer: () => Promise<unknown>,
+      _ttl: number,
+      _options?: unknown
+    ) => producer()
   ),
   prisma: {
     patch: {
@@ -56,7 +61,42 @@ describe('getHomeData', () => {
     expect(mocks.getOrSet).toHaveBeenCalledWith(
       expect.stringMatching(/^home_data:v2:g12:r4:/),
       expect.any(Function),
-      expect.any(Number)
+      expect.any(Number),
+      expect.any(Object)
     )
+  })
+
+  it('does not consider an empty game list cacheable for home data', async () => {
+    await getHomeData({ content_limit: 'sfw' })
+
+    const options = mocks.getOrSet.mock.calls[0][3] as {
+      shouldCacheValue: (value: {
+        galgames: GalgameCard[]
+        resources: unknown[]
+      }) => boolean
+      isCachedValueValid: (value: {
+        galgames: GalgameCard[]
+        resources: unknown[]
+      }) => boolean
+    }
+
+    expect(
+      options.shouldCacheValue({
+        galgames: [],
+        resources: [{ id: 1 }]
+      })
+    ).toBe(false)
+    expect(
+      options.isCachedValueValid({
+        galgames: [],
+        resources: []
+      })
+    ).toBe(false)
+    expect(
+      options.shouldCacheValue({
+        galgames: [{} as GalgameCard],
+        resources: []
+      })
+    ).toBe(true)
   })
 })
