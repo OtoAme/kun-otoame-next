@@ -58,14 +58,7 @@ cd kun-otoame-next
 pnpm install
 ```
 
-`pnpm install` 后建议验证当前机器能否生成 Gallery 动态 AVIF 缩略图。该命令只读写本地 fixture，不连接数据库或 S3：
-
-```bash
-node -e "console.log(require('ffmpeg-static'))"
-pnpm exec esno scripts/verifyGalleryAnimatedAvifThumbnail.ts ./public/images/animated-sample.avif ./public/images/tmp/animated-sample-thumb.avif
-```
-
-成功时会输出 `Wrote ... bytes to ./public/images/tmp/animated-sample-thumb.avif`。如果失败，动态 AVIF 原图仍可上传，但不会生成缩略图；优先检查 `pnpm install` 是否允许运行 `ffmpeg-static` 的 install script。
+这里是本地开发初始化。生产环境建议直接按下方「生产环境安装顺序」执行，不要只跑到 `pnpm install` 就部署。
 
 ### 2.配置环境变量
 
@@ -106,6 +99,10 @@ HOSTNAME = "127.0.0.1"
 
 # 可选：仅在 release/deploy 构建时启用。启用后 pnpm build 会跳过 Next 内置 lint/type validation，需单独运行 pnpm typecheck。
 # KUN_DEPLOY_BUILD_SKIP_CHECKS = "true"
+
+# 可选：指定 Gallery 动态 AVIF 缩略图使用的 FFmpeg 可执行文件。默认会依次尝试 standalone/.ffmpeg、ffmpeg-static 和系统 ffmpeg。
+# 仅在自备 FFmpeg 时填写，建议使用生产服务器上的绝对路径；修改后需要重启服务。
+# KUN_GALLERY_FFMPEG_PATH = "/usr/local/bin/ffmpeg"
 
 # Bangumi Access Token，用于自动匹配游戏标签、开发商，并读取登录可见条目
 # 申请地址：https://next.bgm.tv/demo/access-token/create
@@ -204,6 +201,36 @@ Nginx 参考：[🔗安装 Nginx 环境](https://www.arnebiae.com/p/galhowto/#%E
 3. 重新进入网站刷新页面，应该已经可以在用户 1 的主页看到用户 1 变为了超级管理员
 
 ## 关于项目的更改与构建
+
+### 生产环境安装顺序
+
+首次部署建议按下面顺序执行：
+
+```bash
+git clone https://github.com/OtoAme/kun-otoame-next.git
+cd kun-otoame-next
+cp .env.example .env
+# 编辑 .env，填好 PostgreSQL、Redis、生产域名、S3、邮件等配置
+pnpm deploy:install
+# 可选：仅 Linux x64 / arm64 且必须输出 animated AVIF 缩略图时运行
+pnpm gallery:ffmpeg:install
+pnpm typecheck
+pnpm build
+pnpm start
+```
+
+顺序上的关键点：
+
+1. 先写好 `.env`，再同步数据库和构建。生产环境要把 `NODE_ENV` 改成 `production`，并删除或注释 `KUN_VISUAL_NOVEL_TEST_SITE_LABEL`。
+2. `pnpm deploy:install` 会执行依赖安装、`pnpm prisma:push` 和 `uploads` 初始化，但不会启动 PM2。
+3. `pnpm gallery:ffmpeg:install` 是可选增强，不放进默认安装流程。需要它时应在 `pnpm deploy:install` 后、`pnpm build` 前执行，这样 `postbuild` 才能把 `.ffmpeg/ffmpeg` 复制进 standalone。
+4. 轻量部署可以跳过 `pnpm gallery:ffmpeg:install`，默认依赖 `ffmpeg-static` 和系统 `ffmpeg` fallback；animated AVIF 缩略图不可用时，原图仍会上传，只是 `thumbnailUrl` 回退为 `null`。
+5. 构建成功后再配置反向代理到 `http://127.0.0.1:3000`，最后注册第一个用户并把 UID 1 的 `role` 设置为 `4`。
+
+后续更新有两条路径：
+
+- 使用 GitHub Release artifact：服务器第一次必须已经跑过 `pnpm deploy:install`。更新时执行 `pnpm deploy:pull`；如果服务器安装过 `node_modules/.ffmpeg/ffmpeg`，脚本会一起注入 standalone。
+- 使用服务器本地构建：执行 `pnpm deploy:build`。如果你依赖可选 BtbN FFmpeg，且服务器依赖目录被清理过，先重新运行 `pnpm gallery:ffmpeg:install`，再构建。
 
 ### CI/CD 方案
 
@@ -332,9 +359,25 @@ pnpm deploy:pull
 
 ### Gallery 动态 AVIF 缩略图生产检查
 
-Gallery 上传动态 AVIF 时，原图会原样上传，缩略图由服务端 `ffmpeg-static` 生成；如果 bundled ffmpeg 不可用，会回退到系统 `ffmpeg`，两者都不可用时仍保留原图，但 `thumbnailUrl` 会是 `null`。
+Gallery 上传动态 AVIF 时，原图会原样上传，缩略图由服务端 FFmpeg 生成；如果没有可用的 animated AVIF encoder，上传仍会保留原图，但 `thumbnailUrl` 会是 `null`。
 
-生产环境建议使用项目依赖里的 bundled ffmpeg：
+运行时按下面顺序查找 FFmpeg：
+
+1. `KUN_GALLERY_FFMPEG_PATH` 指向的可执行文件。
+2. standalone 内的 `.ffmpeg/ffmpeg`。
+3. 项目根目录 `node_modules/.ffmpeg/ffmpeg`。
+4. 项目依赖里的 `ffmpeg-static`。
+5. 系统 `ffmpeg`。
+
+`.env` 里的 `KUN_GALLERY_FFMPEG_PATH` 是可选覆盖项，适合你已经在生产机安装了自备 FFmpeg，或者想固定使用某个经过验证的 BtbN / 自编译 binary。建议填写绝对路径，例如：
+
+```env
+KUN_GALLERY_FFMPEG_PATH = "/opt/ffmpeg/bin/ffmpeg"
+```
+
+该路径必须存在于实际运行 PM2/Node 服务的生产服务器上，并且运行用户有执行权限。修改 `.env` 后需要重启服务；如果使用 `pnpm gallery:ffmpeg:install`，通常不需要再设置这个变量，因为脚本安装的 `node_modules/.ffmpeg/ffmpeg` 会被自动发现。
+
+默认部署只依赖 `ffmpeg-static`，这样安装体积较小，也不会在 `pnpm install` 时额外下载 100MB 以上的 BtbN 构建：
 
 - 保持 `ffmpeg-static` 在 `dependencies` 中。
 - 保持 `package.json` 的 `pnpm.onlyBuiltDependencies` 包含 `ffmpeg-static`，允许 pnpm 运行 install script 下载当前平台二进制。
@@ -342,13 +385,17 @@ Gallery 上传动态 AVIF 时，原图会原样上传，缩略图由服务端 `f
 - 如果使用 `pnpm deploy:pull` 的 GitHub Release artifact，部署脚本会从目标服务器的 `node_modules` 注入当前机器架构的 `ffmpeg-static`。因此目标服务器也必须先跑过 `pnpm install` / `pnpm deploy:install`，不能只解压 release 包。
 - 如果使用 `pnpm deploy:build`，依赖会在服务器本机安装，通常会自动得到匹配 Linux x64 / arm64 等平台的 bundled binary。
 
-### Linux 平台动画 AVIF 缩略图适配
+### 可选 Linux 动态 AVIF 增强
 
-`ffmpeg-static` 的 Linux x64 二进制（johnvansickle.com 7.0.2）内置的 libaom-av1 不支持动画 AVIF 编码，直接使用会导致缩略图降级为静图首帧。
+`ffmpeg-static` 的部分 Linux 二进制内置 FFmpeg 可以解码 AVIF，但不能稳定输出 animated AVIF；这时缩略图会自动降级为静图首帧或 `null`。
 
-`pnpm install` 时会通过 `scripts/ensureFfmpegLinux.ts` 自动下载 BtbN 的 ffmpeg 静态构建到 `node_modules/.ffmpeg/ffmpeg`（仅 Linux，幂等操作）。`galleryAnimatedAvifThumbnail.ts` 的 `getBundledFfmpegPath()` 在 Linux 上优先返回该路径，该二进制也会被 `postbuild.ts` 注入 standalone 产物。
+如果你的生产环境必须生成 animated AVIF 缩略图，可以在 Linux x64 / arm64 服务器上显式安装 BtbN 的 FFmpeg 静态构建：
 
-如果 BtbN binary 也不可用，代码会回退到系统 `ffmpeg`，再不可用则 `thumbnailUrl = null`。
+```bash
+pnpm gallery:ffmpeg:install
+```
+
+脚本会把二进制放到 `node_modules/.ffmpeg/ffmpeg`。`postbuild.ts` 会把它复制到 `.next/standalone/.ffmpeg/ffmpeg`，运行时优先使用这个路径；如果该二进制不可用，会继续回退到 `ffmpeg-static` 和系统 `ffmpeg`。
 
 部署后用内置动态 AVIF fixture 在服务器上验证：
 
@@ -357,10 +404,10 @@ node -e "console.log(require('ffmpeg-static'))"
 pnpm exec esno scripts/verifyGalleryAnimatedAvifThumbnail.ts ./public/images/animated-sample.avif ./public/images/tmp/animated-sample-thumb.avif
 ```
 
-在 Linux 服务器上，验证前可先确认 BtbN binary 已安装：
+如果启用了 BtbN binary，可先确认它已安装：
 
 ```bash
-ls -la node_modules/.ffmpeg/ffmpeg && echo 'Animated AVIF ffmpeg ready' || echo 'Not installed'
+ls -la node_modules/.ffmpeg/ffmpeg .next/standalone/.ffmpeg/ffmpeg
 ```
 
 成功时会输出 `Wrote ... bytes to ./public/images/tmp/animated-sample-thumb.avif`。实际上传时 PM2 日志中应出现 `Animated AVIF thumbnail generated: ... bytes`；如果没有缩略图，查看 `Animated AVIF thumbnail generation failed for all commands:` 后面的失败原因。
@@ -374,7 +421,7 @@ sudo apt-get install -y ffmpeg
 ffmpeg -hide_banner -encoders | grep -i libaom-av1
 ```
 
-系统 `ffmpeg` 只是兜底；优先路径仍然是项目依赖 `ffmpeg-static`。
+系统 `ffmpeg` 只是兜底；轻量部署优先依赖 `ffmpeg-static`，强 animated AVIF 输出再启用 BtbN 或自备 encoder。
 
 ## 严重警告
 
@@ -430,6 +477,7 @@ no
 | **生产停止**      | `pnpm stop`                                            | 项目停止运行                                       |
 | **CI/CD 更新**    | `pnpm deploy:pull`                                     | 服务器端拉取 GitHub Actions 构建产物，自动应用更新 |
 | **本地一键更新**  | `pnpm deploy:build`                                    | 服务器端本地构建自动更新                           |
+| **可选 FFmpeg**   | `pnpm gallery:ffmpeg:install`                          | Linux x64 / arm64 动态 AVIF 缩略图增强             |
 | **查看状态**      | `pm2 status`                                           | 查看 PM2 进程状态                                  |
 | **查看日志**      | `pm2 logs kun-touchgal-next`                           | 查看实时日志                                       |
 

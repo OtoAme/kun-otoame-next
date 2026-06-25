@@ -28,6 +28,7 @@
 - `pnpm deploy:install`
 - `pnpm deploy:build`
 - `pnpm deploy:pull`
+- `pnpm gallery:ffmpeg:install`
 - `pnpm start`
 - `pnpm stop`
 
@@ -44,7 +45,8 @@
 
 ### 验证脚本
 
-- `pnpm exec esno scripts/verifyGalleryAnimatedAvifThumbnail.ts <animated.avif> [output.avif]`：验证当前机器的 bundled `ffmpeg-static` 或系统 `ffmpeg/libaom-av1` 能否生成 animated AVIF gallery 缩略图；只读写本地文件，不访问数据库或 S3。生产运行前应在目标服务器执行，建议使用 `pnpm exec esno scripts/verifyGalleryAnimatedAvifThumbnail.ts ./public/images/animated-sample.avif ./public/images/tmp/animated-sample-thumb.avif`，确认输出 `Wrote ... bytes`。
+- `pnpm gallery:ffmpeg:install`：可选安装 Linux x64/arm64 BtbN FFmpeg 到 `node_modules/.ffmpeg/ffmpeg`，用于强 animated AVIF gallery 缩略图；普通安装不自动运行，保持部署较轻。自备 FFmpeg 时也可以改用 `.env` 的 `KUN_GALLERY_FFMPEG_PATH` 指向绝对路径，修改后需要重启 PM2。
+- `pnpm exec esno scripts/verifyGalleryAnimatedAvifThumbnail.ts <animated.avif> [output.avif]`：验证当前机器的 `KUN_GALLERY_FFMPEG_PATH`、standalone `.ffmpeg/ffmpeg`、`ffmpeg-static` 或系统 `ffmpeg/libaom-av1` 能否生成 animated AVIF gallery 缩略图；只读写本地文件，不访问数据库或 S3。生产运行前应在目标服务器执行，建议使用 `pnpm exec esno scripts/verifyGalleryAnimatedAvifThumbnail.ts ./public/images/animated-sample.avif ./public/images/tmp/animated-sample-thumb.avif`，确认输出 `Wrote ... bytes`。
 
 带 `dry` 的脚本先 dry-run，确认输出后再 apply。
 
@@ -110,6 +112,8 @@ release packaging 还会删除包内 `package.json` 的 `"type": "module"`，并
 - 在目标服务器重新 `pnpm prisma generate`。
 - 注入 `.prisma` 和 `@prisma` 到 standalone node_modules。
 - 注入目标服务器 `node_modules/ffmpeg-static` 到 standalone node_modules，避免 release artifact 中 bundled ffmpeg 的平台架构和生产服务器不一致。
+- 如果目标服务器存在可选 `node_modules/.ffmpeg/ffmpeg`，同步注入 standalone `.ffmpeg/ffmpeg`。
+- 如果 `.env` 设置了 `KUN_GALLERY_FFMPEG_PATH`，运行时会优先使用该绝对路径；deploy artifact 不会复制这个外部路径，目标服务器必须自行保留该可执行文件。
 - 原子替换 `.next/standalone`。
 - 运行 `pnpm prisma:push`。
 - 生成 sitemap 并复制到 standalone public。

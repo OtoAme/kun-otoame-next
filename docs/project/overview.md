@@ -206,6 +206,7 @@ Zod schema 集中在 `validations/`。API 工具函数在 [app/api/utils/parseQu
 | Cloudflare cache purge | `KUN_CF_CACHE_ZONE_ID`、`KUN_CF_CACHE_PURGE_API_TOKEN`                                                 |
 | IndexNow               | `KUN_VISUAL_NOVEL_INDEX_NOW_KEY`                                                                       |
 | Bangumi                | `BANGUMI_ACCESS_TOKEN`                                                                                 |
+| FFmpeg                 | 可选 `KUN_GALLERY_FFMPEG_PATH`，Gallery 动态 AVIF 缩略图默认还会尝试 standalone/local BtbN、`ffmpeg-static` 和系统 `ffmpeg` |
 | GitHub release deploy  | `GITHUB_REPO`、可选 `GITHUB_TOKEN`                                                                     |
 
 ## 维护原则

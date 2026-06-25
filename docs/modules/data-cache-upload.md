@@ -161,15 +161,15 @@ Gallery 图片上传走 `app/api/edit/gallery/route.ts` 和 `app/api/edit/galler
 - 静态 JPG/PNG/WebP/AVIF 会 resize 到 1920x1080 内，按水印开关 composite OtoAme 水印，再输出为 AVIF，单张输出上限 1.5MB；同时生成小尺寸 AVIF 缩略图。
 - 动态 WebP 和动态 AVIF 优先保留动画，原样上传到 S3，不 resize、不重新编码、不添加水印，URL 后缀分别保持 `.webp` / `.avif`；动态 WebP 会尝试生成 animated WebP 缩略图。缩略图处理参考 PicList / picgo-plugin-compress 的保守策略使用 WebP quality 75、高 effort；但 gallery 的目标是降低预览解码尺寸，不能仅因缩略图字节数不小于原图就取消缩略图。Sharp 处理 animated WebP 时，`resize` 参数必须按单帧目标尺寸传入；帧数只用于限制单帧高度，避免内部纵向堆叠总高度超过 WebP 单边维度上限。缩略图生成或上传失败时不阻断原图，`thumbnail_url` 写 `null`。
 - 动态原图上限 8MB；超过限制返回用户可见错误，不创建可见 gallery URL。
-- 动态 AVIF 通过 ISO BMFF `avis` brand 在调用 Sharp 前短路处理，因为 Sharp AVIF 输出不支持 image sequence，不能把动态 AVIF 送入静态 AVIF 转码路径；V2 使用独立 `ffmpeg` adapter 尝试生成真实 animated AVIF 缩略图，动态缩略图失败时再尝试真实首帧 AVIF 缩略图。adapter 优先使用 `ffmpeg-static` bundled binary，失败后回退到系统 `ffmpeg`。没有可用 encoder、编码超时、生成体积超过 512KB 或上传失败时不阻断原图，`thumbnail_url` 写 `null`，不生成占位图。
+- 动态 AVIF 通过 ISO BMFF `avis` brand 在调用 Sharp 前短路处理，因为 Sharp AVIF 输出不支持 image sequence，不能把动态 AVIF 送入静态 AVIF 转码路径；V2 使用独立 `ffmpeg` adapter 尝试生成真实 animated AVIF 缩略图，动态缩略图失败时再尝试真实首帧 AVIF 缩略图。adapter 依次尝试 `KUN_GALLERY_FFMPEG_PATH`、standalone `.ffmpeg/ffmpeg`、根目录 `node_modules/.ffmpeg/ffmpeg`、`ffmpeg-static` 和系统 `ffmpeg`。没有可用 encoder、编码超时、生成体积超过 512KB 或上传失败时不阻断原图，`thumbnail_url` 写 `null`，不生成占位图。
 - gallery 写入成功后要更新 `patch_game_image.url` 和 nullable `thumbnail_url` 并调用 `invalidatePatchContentCache(uniqueId)`；S3 上传或 DB 更新失败后删除已创建的 `patch_game_image` 记录，并补偿删除已真实上传的原图和缩略图 object。
 - gallery 图片删除必须在删除 DB 记录的同时清理 S3 对象：
   - rewrite 提交时通过 `galleryMetadata.keep` 对比当前图片列表，被移除的图片在 `patch_game_image.deleteMany` 前收集 URL，DB 删除后用 `extractS3Key` + `deleteFileFromS3` 清理原图和缩略图（若 `thumbnail_url` 非 null），S3 清理失败只记日志不阻断 rewrite。
   - 整条目删除时先查询 `patch_game_image` 列表，在 Prisma cascade 删除 DB 记录后遍历清理 S3 files。
   - 通过 `DELETE /api/edit/gallery?imageId=xxx` 单张删除 gallery 图片时，删除 DB 记录后清理 S3 文件再失效缓存。
   - 所有路径的 S3 清理都为 best-effort：失败记 error 日志但不抛异常。`extractS3Key` 复用 `app/api/patch/resource/_helper.ts` 的实现。
-- animated AVIF 缩略图 adapter 使用临时目录处理用户输入，`ffmpeg` 子进程有超时限制，并且输出体积必须在缩略图上限内；`ffmpeg-static` 的 install script 必须允许运行，否则 bundled binary 可能不存在。`ffmpeg-static` 下载的是安装机器当前平台的 binary，`deploy:pull` 需要把目标服务器 `node_modules/ffmpeg-static` 注入 standalone，避免 release artifact 构建机和生产机架构不一致。部署环境的 bundled 和系统 `ffmpeg/libaom-av1` 都不可用时会自动回退为无缩略图。引入其他 libavif / Node binding 方案前仍要先评估部署成本、CPU 成本、失败补偿和安全边界。
-- `ffmpeg-static` 的 Linux x64 binary（johnvansickle.com 7.0.2）不支持动画 AVIF 编码，`createAnimatedAvifThumbnail` 会自动降级到静图首帧。`pnpm install` 时会通过 `scripts/ensureFfmpegLinux.ts` 自动下载 BtbN 的 ffmpeg 静态构建到 `node_modules/.ffmpeg/ffmpeg`（Linux only）。`getBundledFfmpegPath()` 在 Linux 上优先返回该路径，`postbuild.ts` 会将其注入 standalone 产物。BtbN binary 也不可用时回退到系统 `ffmpeg`。
+- animated AVIF 缩略图 adapter 使用临时目录处理用户输入，`ffmpeg` 子进程有超时限制，并且输出体积必须在缩略图上限内；`ffmpeg-static` 的 install script 必须允许运行，否则 bundled binary 可能不存在。`ffmpeg-static` 下载的是安装机器当前平台的 binary，`deploy:pull` 需要把目标服务器 `node_modules/ffmpeg-static` 注入 standalone，避免 release artifact 构建机和生产机架构不一致。部署环境没有可用 animated AVIF encoder 时会自动回退为无缩略图或静图首帧。引入其他 libavif / Node binding 方案前仍要先评估部署成本、CPU 成本、失败补偿和安全边界。
+- 部分 `ffmpeg-static` Linux binary 可以解码 AVIF 但不能稳定输出 animated AVIF。需要强 animated AVIF 缩略图时，在 Linux x64/arm64 服务器显式运行 `pnpm gallery:ffmpeg:install` 下载 BtbN 静态构建到 `node_modules/.ffmpeg/ffmpeg`，或用 `KUN_GALLERY_FFMPEG_PATH` 指向自备 FFmpeg 的绝对路径。`KUN_GALLERY_FFMPEG_PATH` 优先级最高，修改 `.env` 后需要重启服务；`postbuild.ts` 会把 `node_modules/.ffmpeg/ffmpeg` 复制到 standalone 的 `.ffmpeg/ffmpeg`；普通安装不自动下载该大文件，保持默认部署较轻。
 - 本地或部署前可用 `pnpm exec esno scripts/verifyGalleryAnimatedAvifThumbnail.ts <animated.avif> [output.avif]` 验证 animated AVIF 缩略图 encoder；该脚本只读写本地文件，不连接 S3 或数据库。生产上线前应在目标服务器执行，成功输出 `Wrote ... bytes`。
 
 ## S3

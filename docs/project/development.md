@@ -83,6 +83,7 @@ REDIS_PASSWORD=''
 | `REDIS_HOST`、`REDIS_PORT`、`REDIS_PASSWORD` | Redis 连接信息。 |
 | `JWT_ISS`、`JWT_AUD`、`JWT_SECRET` | 登录 token 配置。本地也建议改掉默认 secret。 |
 | `NODE_ENV` | 本地为 `development`。 |
+| `KUN_GALLERY_FFMPEG_PATH` | 可选。只在需要固定使用自备 FFmpeg 处理 Gallery 动态 AVIF 缩略图时填写绝对路径；默认会尝试项目内置 fallback。 |
 | `BANGUMI_ACCESS_TOKEN` | Bangumi 标签/开发商匹配需要；不使用相关功能时可保留占位值，但调用外部接口会失败。 |
 | `KUN_VISUAL_NOVEL_EMAIL_*` | 邮件发送相关；注册验证码/邮件通知需要真实配置。 |
 | `KUN_VISUAL_NOVEL_S3_*`、`NEXT_PUBLIC_KUN_VISUAL_NOVEL_S3_STORAGE_URL` | 上传资源和图片访问需要真实配置。 |
@@ -92,7 +93,7 @@ REDIS_PASSWORD=''
 | `KUN_VISUAL_NOVEL_TEST_SITE_LABEL` | 测试站 noindex 标记；生产必须删除或注释。 |
 | `GITHUB_REPO`、`GITHUB_TOKEN` | 只影响 `deploy:pull`。 |
 
-`validations/dotenv-check.ts` 只校验构建/运行强依赖。`REDIS_PASSWORD`、`BANGUMI_ACCESS_TOKEN`、`GITHUB_REPO`、`GITHUB_TOKEN` 等变量由具体使用点读取；如果你启用相关功能，仍要在 `.env` 中补齐。
+`validations/dotenv-check.ts` 只校验构建/运行强依赖。`REDIS_PASSWORD`、`KUN_GALLERY_FFMPEG_PATH`、`BANGUMI_ACCESS_TOKEN`、`GITHUB_REPO`、`GITHUB_TOKEN` 等变量由具体使用点读取；如果你启用相关功能，仍要在 `.env` 中补齐。
 
 ### 4. 初始化数据库 schema
 
