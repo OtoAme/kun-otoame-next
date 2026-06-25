@@ -49,6 +49,7 @@ const patchCompanyDetailSelect = {
 const patchImageSelect = {
   id: true,
   url: true,
+  thumbnail_url: true,
   is_nsfw: true
 } as const
 

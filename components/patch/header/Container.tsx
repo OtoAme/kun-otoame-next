@@ -102,6 +102,7 @@ export const PatchHeaderContainer = ({
       images: intro.images.map((img) => ({
         id: img.id,
         url: img.url,
+        thumbnail_url: img.thumbnailUrl,
         is_nsfw: img.isNSFW
       })),
       bannerUrl: displayPatch.banner

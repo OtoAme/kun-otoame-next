@@ -1,6 +1,7 @@
 model patch_game_image {
   id       Int     @id @default(autoincrement())
   url      String  @db.VarChar(1007)
+  thumbnail_url String? @db.VarChar(1007)
   is_nsfw  Boolean @default(false)
   display_order Int @default(0)
   patch_id Int

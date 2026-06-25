@@ -13,10 +13,11 @@ interface Props {
     width?: number
     height?: number
   }[]
+  preload?: number
   children: (openLightbox: (index: number) => void) => ReactNode
 }
 
-export const KunImageViewer = ({ images, children }: Props) => {
+export const KunImageViewer = ({ images, preload, children }: Props) => {
   const [index, setIndex] = useState(-1)
   const lightboxImages = images.map(({ src, width, height }) => ({
     src,
@@ -39,6 +40,10 @@ export const KunImageViewer = ({ images, children }: Props) => {
           click: closeLightbox
         }}
         {...lightboxConfig}
+        carousel={{
+          ...lightboxConfig.carousel,
+          preload: preload ?? lightboxConfig.carousel?.preload
+        }}
       />
     </>
   )

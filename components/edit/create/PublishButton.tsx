@@ -55,7 +55,11 @@ const uploadGalleryImages = async (
 
     try {
       const res = await kunFetchFormData<
-        KunResponse<{ imageId: number; url: string }>
+        KunResponse<{
+          imageId: number
+          url: string
+          thumbnailUrl: string | null
+        }>
       >('/edit/gallery', formData, GALLERY_UPLOAD_TIMEOUT_MS)
       if (typeof res === 'string') {
         failCount++

@@ -9,6 +9,10 @@ import { useRewritePatchStore } from '~/store/rewriteStore'
 import { KunImageViewer } from '~/components/kun/image-viewer/ImageViewer'
 import { cn } from '~/utils/cn'
 import {
+  getGalleryOriginalSrc,
+  getGalleryPreviewSrc
+} from '~/utils/galleryPreview'
+import {
   DndContext,
   closestCenter,
   KeyboardSensor,
@@ -27,11 +31,33 @@ import {
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import type { DragEndEvent, DragStartEvent, DropAnimation } from '@dnd-kit/core'
+import type { PatchGameImage } from '~/store/rewriteStore'
+
+type RewriteGalleryItem =
+  | (PatchGameImage & { type: 'old' })
+  | { id: string; file: File; isNSFW: boolean; type: 'new' }
+
+const getRewriteGalleryPreviewSrc = (
+  img: RewriteGalleryItem,
+  localPreviewUrls: Map<string, string>
+) =>
+  img.type === 'old'
+    ? getGalleryPreviewSrc(img)
+    : (localPreviewUrls.get(img.id) ?? '')
+
+const getRewriteGalleryOriginalSrc = (
+  img: RewriteGalleryItem,
+  localPreviewUrls: Map<string, string>
+) =>
+  img.type === 'old'
+    ? getGalleryOriginalSrc(img)
+    : (localPreviewUrls.get(img.id) ?? '')
 
 interface SortableItemProps {
   id: string | number
   img: any
   selected: boolean
+  previewSrc: string
   onToggle: () => void
   onOpenLightbox: () => void
 }
@@ -40,6 +66,7 @@ const SortableItem = ({
   id,
   img,
   selected,
+  previewSrc,
   onToggle,
   onOpenLightbox
 }: SortableItemProps) => {
@@ -75,7 +102,7 @@ const SortableItem = ({
     >
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
-        src={img.type === 'old' ? img.url : URL.createObjectURL(img.file)}
+        src={previewSrc}
         alt="gallery"
         className="h-full w-full object-cover"
         draggable={false}
@@ -109,7 +136,15 @@ const SortableItem = ({
   )
 }
 
-const ItemOverlay = ({ img, selected }: { img: any; selected: boolean }) => {
+const ItemOverlay = ({
+  img,
+  selected,
+  previewSrc
+}: {
+  img: any
+  selected: boolean
+  previewSrc: string
+}) => {
   return (
     <div
       className={`group relative aspect-video cursor-grabbing overflow-hidden rounded-lg border-2 ${
@@ -122,7 +157,7 @@ const ItemOverlay = ({ img, selected }: { img: any; selected: boolean }) => {
     >
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
-        src={img.type === 'old' ? img.url : URL.createObjectURL(img.file)}
+        src={previewSrc}
         alt="gallery"
         className="h-full w-full object-cover"
         draggable={false}
@@ -162,22 +197,27 @@ export const RewriteGalleryInput = () => {
   const [activeId, setActiveId] = useState<string | number | null>(null)
 
   const items = useMemo(() => {
-    const oldMap = new Map(
+    const oldMap = new Map<number, RewriteGalleryItem>(
       data.images.map((img) => [img.id, { ...img, type: 'old' }])
     )
-    const newMap = new Map(
+    const newMap = new Map<string, RewriteGalleryItem>(
       newImages.map((img) => [img.id, { ...img, type: 'new' }])
     )
 
-    const orderedItems: any[] = []
+    const orderedItems: RewriteGalleryItem[] = []
     const seenIds = new Set()
 
     for (const id of galleryOrder) {
-      if (oldMap.has(id as number)) {
-        orderedItems.push(oldMap.get(id as number))
+      const oldItem = oldMap.get(id as number)
+      if (oldItem) {
+        orderedItems.push(oldItem)
         seenIds.add(id)
-      } else if (newMap.has(id as string)) {
-        orderedItems.push(newMap.get(id as string))
+        continue
+      }
+
+      const newItem = newMap.get(id as string)
+      if (newItem) {
+        orderedItems.push(newItem)
         seenIds.add(id)
       }
     }
@@ -202,6 +242,20 @@ export const RewriteGalleryInput = () => {
       setGalleryOrder(currentIds)
     }
   }, [items, galleryOrder, setGalleryOrder])
+
+  const localPreviewUrls = useMemo(() => {
+    const urls = new Map<string, string>()
+    newImages.forEach((img) => {
+      urls.set(img.id, URL.createObjectURL(img.file))
+    })
+    return urls
+  }, [newImages])
+
+  useEffect(() => {
+    return () => {
+      localPreviewUrls.forEach((url) => URL.revokeObjectURL(url))
+    }
+  }, [localPreviewUrls])
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -311,7 +365,7 @@ export const RewriteGalleryInput = () => {
   const hasSelection = selectedExistingIds.size > 0 || selectedNewIds.size > 0
 
   const allImages = items.map((img) => ({
-    src: img.type === 'old' ? img.url : URL.createObjectURL(img.file),
+    src: getRewriteGalleryOriginalSrc(img, localPreviewUrls),
     alt: 'gallery'
   }))
 
@@ -402,6 +456,10 @@ export const RewriteGalleryInput = () => {
                         key={img.id}
                         id={img.id}
                         img={img}
+                        previewSrc={getRewriteGalleryPreviewSrc(
+                          img,
+                          localPreviewUrls
+                        )}
                         selected={
                           img.type === 'old'
                             ? selectedExistingIds.has(img.id)
@@ -423,6 +481,10 @@ export const RewriteGalleryInput = () => {
               {activeItem ? (
                 <ItemOverlay
                   img={activeItem}
+                  previewSrc={getRewriteGalleryPreviewSrc(
+                    activeItem,
+                    localPreviewUrls
+                  )}
                   selected={
                     activeItem.type === 'old'
                       ? selectedExistingIds.has(activeItem.id)

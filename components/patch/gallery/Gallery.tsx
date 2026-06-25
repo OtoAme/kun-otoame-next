@@ -1,9 +1,17 @@
 'use client'
 
-import { useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { KunImageViewer } from '~/components/kun/image-viewer/ImageViewer'
 import { NSFWMask } from '~/components/kun/NSFWMask'
 import type { PatchImage } from '~/types/api/patch'
+import {
+  GalleryOriginalPrefetchQueue,
+  getPriorityGallerySlots
+} from '~/utils/galleryPrefetch'
+import {
+  getGalleryOriginalSrc,
+  getGalleryPreviewSrc
+} from '~/utils/galleryPreview'
 
 interface Props {
   images: PatchImage[]
@@ -11,14 +19,30 @@ interface Props {
 
 export const Gallery = ({ images }: Props) => {
   const validImages = images?.filter((img) => img.url) ?? []
+  const originalUrls = useMemo(
+    () => validImages.map((img) => getGalleryOriginalSrc(img)),
+    [validImages]
+  )
+  const prefetchQueue = useRef<GalleryOriginalPrefetchQueue | null>(null)
+  if (!prefetchQueue.current) {
+    prefetchQueue.current = new GalleryOriginalPrefetchQueue()
+  }
+
   if (validImages.length === 0) return null
+
+  const handleOpen = (index: number, openLightbox: (index: number) => void) => {
+    prefetchQueue.current?.prioritize(
+      getPriorityGallerySlots(originalUrls, index)
+    )
+    openLightbox(index)
+  }
 
   return (
     <div className="mt-4 space-y-4">
       <h2 className="text-2xl font-medium">游戏画廊</h2>
       <KunImageViewer
         images={validImages.map((img) => ({
-          src: img.url,
+          src: getGalleryOriginalSrc(img),
           alt: 'Game Screenshot'
         }))}
       >
@@ -28,7 +52,10 @@ export const Gallery = ({ images }: Props) => {
               <GalleryItem
                 key={img.id}
                 image={img}
-                onOpen={() => openLightbox(index)}
+                onPreviewLoad={() =>
+                  prefetchQueue.current?.enqueue(getGalleryOriginalSrc(img))
+                }
+                onOpen={() => handleOpen(index, openLightbox)}
               />
             ))}
           </div>
@@ -40,9 +67,11 @@ export const Gallery = ({ images }: Props) => {
 
 const GalleryItem = ({
   image,
+  onPreviewLoad,
   onOpen
 }: {
   image: PatchImage
+  onPreviewLoad: () => void
   onOpen: () => void
 }) => {
   const [isRevealed, setIsRevealed] = useState(!image.isNSFW)
@@ -59,10 +88,11 @@ const GalleryItem = ({
       onClick={handleClick}
     >
       <img
-        src={image.url}
+        src={getGalleryPreviewSrc(image)}
         alt="Game Screenshot"
         className="w-full h-full object-cover transition-transform duration-500 will-change-transform group-hover:scale-110"
         loading="lazy"
+        onLoad={onPreviewLoad}
       />
       <NSFWMask
         isVisible={!isRevealed}

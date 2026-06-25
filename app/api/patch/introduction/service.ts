@@ -57,6 +57,7 @@ export const getPatchIntroduction = async (
         select: {
           id: true,
           url: true,
+          thumbnail_url: true,
           is_nsfw: true
         },
         orderBy: {
@@ -82,6 +83,7 @@ export const getPatchIntroduction = async (
     images: patch.images.map((img) => ({
       id: img.id,
       url: img.url,
+      thumbnailUrl: img.thumbnail_url,
       isNSFW: img.is_nsfw
     })),
     created: patch.created,

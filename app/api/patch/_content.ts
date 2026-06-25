@@ -135,6 +135,7 @@ export const buildPatchIntroduction = async (
   images: patch.images.map((img) => ({
     id: img.id,
     url: img.url,
+    thumbnailUrl: img.thumbnail_url,
     isNSFW: img.is_nsfw
   })),
   created: patch.created,

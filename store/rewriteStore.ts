@@ -3,6 +3,7 @@ import { create } from 'zustand'
 export interface PatchGameImage {
   id: number
   url: string
+  thumbnail_url?: string | null
   is_nsfw: boolean
 }
 

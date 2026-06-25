@@ -134,6 +134,7 @@ export const RewritePatch = () => {
         oldId: string
         id: number
         url: string
+        thumbnailUrl: string | null
         isNSFW: boolean
       }[] = []
 
@@ -155,7 +156,11 @@ export const RewritePatch = () => {
 
         try {
           const uploadRes = await kunFetchFormData<
-            KunResponse<{ imageId: number; url: string }>
+            KunResponse<{
+              imageId: number
+              url: string
+              thumbnailUrl: string | null
+            }>
           >('/edit/gallery', imgFormData, GALLERY_UPLOAD_TIMEOUT_MS)
           if (typeof uploadRes === 'string') {
             failCount++
@@ -166,6 +171,7 @@ export const RewritePatch = () => {
               oldId: img.id,
               id: uploadRes.imageId,
               url: uploadRes.url,
+              thumbnailUrl: uploadRes.thumbnailUrl,
               isNSFW: img.isNSFW
             })
           }
@@ -188,6 +194,7 @@ export const RewritePatch = () => {
             ...uploadedImages.map((img) => ({
               id: img.id,
               url: img.url,
+              thumbnail_url: img.thumbnailUrl,
               is_nsfw: img.isNSFW
             }))
           ]

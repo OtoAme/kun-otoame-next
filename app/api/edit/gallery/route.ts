@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '~/prisma/index'
 import { verifyHeaderCookie } from '~/middleware/_verifyHeaderCookie'
 import { invalidatePatchContentCache } from '~/app/api/patch/cache'
+import { deleteFileFromS3 } from '~/lib/s3'
 import { uploadPatchGalleryImage } from '../galleryUpload'
 
 export const POST = async (req: NextRequest) => {
@@ -64,15 +65,37 @@ export const POST = async (req: NextRequest) => {
       return NextResponse.json(uploadRes || '图片上传失败')
     }
 
-    const imageUrl = `${process.env.KUN_VISUAL_NOVEL_IMAGE_BED_URL}/patch/${patchId}/gallery/${galleryRecord.id}.${uploadRes.extension}`
+    const galleryKey = `patch/${patchId}/gallery/${galleryRecord.id}.${uploadRes.extension}`
+    const thumbnailKey = uploadRes.thumbnailExtension
+      ? `patch/${patchId}/gallery/thumbnail/${galleryRecord.id}.${uploadRes.thumbnailExtension}`
+      : null
+    const imageUrl = `${process.env.KUN_VISUAL_NOVEL_IMAGE_BED_URL}/${galleryKey}`
+    const thumbnailUrl = thumbnailKey
+      ? `${process.env.KUN_VISUAL_NOVEL_IMAGE_BED_URL}/${thumbnailKey}`
+      : null
 
-    await prisma.patch_game_image.update({
-      where: { id: galleryRecord.id },
-      data: { url: imageUrl }
+    try {
+      await prisma.patch_game_image.update({
+        where: { id: galleryRecord.id },
+        data: { url: imageUrl, thumbnail_url: thumbnailUrl }
+      })
+    } catch (error) {
+      const deleteTasks = [deleteFileFromS3(galleryKey).catch(() => {})]
+      if (thumbnailKey) {
+        deleteTasks.push(deleteFileFromS3(thumbnailKey).catch(() => {}))
+      }
+      await Promise.all(deleteTasks)
+      throw error
+    }
+    await invalidatePatchContentCache(patch.unique_id).catch((error) => {
+      console.error('Gallery cache invalidation error:', error)
     })
-    await invalidatePatchContentCache(patch.unique_id)
 
-    return NextResponse.json({ imageId: galleryRecord.id, url: imageUrl })
+    return NextResponse.json({
+      imageId: galleryRecord.id,
+      url: imageUrl,
+      thumbnailUrl
+    })
   } catch (error) {
     console.error('Gallery upload error:', error)
     await prisma.patch_game_image

@@ -54,6 +54,7 @@ export interface PatchRatingSummary {
 export interface PatchImage {
   id: number
   url: string
+  thumbnailUrl?: string | null
   isNSFW: boolean
 }
 

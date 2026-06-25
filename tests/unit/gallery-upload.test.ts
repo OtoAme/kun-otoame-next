@@ -2,13 +2,15 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const sharpMock = vi.hoisted(() => vi.fn())
 const uploadImageToS3Mock = vi.hoisted(() => vi.fn())
+const deleteFileFromS3Mock = vi.hoisted(() => vi.fn())
 
 vi.mock('sharp', () => ({
   default: sharpMock
 }))
 
 vi.mock('~/lib/s3', () => ({
-  uploadImageToS3: uploadImageToS3Mock
+  uploadImageToS3: uploadImageToS3Mock,
+  deleteFileFromS3: deleteFileFromS3Mock
 }))
 
 import {
@@ -24,6 +26,7 @@ const createSharpPipeline = (metadata: Record<string, unknown>) => {
     resize: vi.fn().mockReturnThis(),
     composite: vi.fn().mockReturnThis(),
     avif: vi.fn().mockReturnThis(),
+    webp: vi.fn().mockReturnThis(),
     toBuffer: vi.fn().mockResolvedValue(Buffer.from('processed-image'))
   }
 
@@ -48,7 +51,8 @@ const createAnimatedAvifHeader = () => {
 
 describe('gallery upload plan', () => {
   beforeEach(() => {
-    vi.clearAllMocks()
+    vi.resetAllMocks()
+    deleteFileFromS3Mock.mockResolvedValue(undefined)
   })
 
   it('stores animated WebP originals without watermarking', () => {
@@ -112,8 +116,26 @@ describe('gallery upload plan', () => {
   })
 
   it('returns animated WebP original buffers and ignores watermarking', async () => {
-    const pipeline = createSharpPipeline({ format: 'webp', pages: 3 })
-    const original = Buffer.from('animated-webp')
+    const metadataPipeline = createSharpPipeline({
+      format: 'webp',
+      width: 720,
+      pageHeight: 480,
+      pages: 3,
+      loop: 0,
+      delay: [80, 90, 100]
+    })
+    const thumbnailPipeline = createSharpPipeline({
+      format: 'webp',
+      width: 720,
+      pageHeight: 480,
+      pages: 3,
+      loop: 0,
+      delay: [80, 90, 100]
+    })
+    const original = Buffer.from('animated-webp-original-buffer')
+
+    sharpMock.mockReturnValueOnce(metadataPipeline)
+    sharpMock.mockReturnValueOnce(thumbnailPipeline)
 
     const result = await preparePatchGalleryImage(
       toExactArrayBuffer(original),
@@ -124,14 +146,96 @@ describe('gallery upload plan', () => {
       buffer: original,
       extension: 'webp',
       contentType: 'image/webp',
+      thumbnailBuffer: Buffer.from('processed-image'),
+      thumbnailExtension: 'webp',
+      thumbnailContentType: 'image/webp',
       skipWatermark: true
     })
-    expect(pipeline.resize).not.toHaveBeenCalled()
-    expect(pipeline.composite).not.toHaveBeenCalled()
-    expect(pipeline.avif).not.toHaveBeenCalled()
+    expect(metadataPipeline.resize).not.toHaveBeenCalled()
+    expect(metadataPipeline.composite).not.toHaveBeenCalled()
+    expect(metadataPipeline.avif).not.toHaveBeenCalled()
+    expect(thumbnailPipeline.resize).toHaveBeenCalledWith({
+      width: 360,
+      height: 240,
+      fit: 'inside',
+      withoutEnlargement: true
+    })
+    expect(thumbnailPipeline.webp).toHaveBeenCalledWith({
+      quality: 75,
+      effort: 6,
+      minSize: true,
+      loop: 0,
+      delay: [80, 90, 100]
+    })
   })
 
-  it('returns animated AVIF original buffers without decoding through Sharp', async () => {
+  it('caps animated WebP thumbnail frame height by the WebP canvas dimension limit', async () => {
+    const metadataPipeline = createSharpPipeline({
+      format: 'webp',
+      width: 720,
+      pageHeight: 480,
+      pages: 100
+    })
+    const thumbnailPipeline = createSharpPipeline({
+      format: 'webp',
+      width: 720,
+      pageHeight: 480,
+      pages: 100
+    })
+    sharpMock.mockReturnValueOnce(metadataPipeline)
+    sharpMock.mockReturnValueOnce(thumbnailPipeline)
+
+    await preparePatchGalleryImage(
+      toExactArrayBuffer(Buffer.from('many-frame-webp')),
+      true
+    )
+
+    expect(thumbnailPipeline.resize).toHaveBeenCalledWith({
+      width: 360,
+      height: 163,
+      fit: 'inside',
+      withoutEnlargement: true
+    })
+  })
+
+  it('keeps animated WebP thumbnails even when the encoded thumbnail is not smaller than the original', async () => {
+    const metadataPipeline = createSharpPipeline({
+      format: 'webp',
+      width: 120,
+      pageHeight: 80,
+      pages: 2
+    })
+    const thumbnailPipeline = createSharpPipeline({
+      format: 'webp',
+      width: 120,
+      pageHeight: 80,
+      pages: 2
+    })
+    thumbnailPipeline.toBuffer.mockResolvedValue(
+      Buffer.from('larger-than-original-thumbnail')
+    )
+    sharpMock.mockReturnValueOnce(metadataPipeline)
+    sharpMock.mockReturnValueOnce(thumbnailPipeline)
+    const original = Buffer.from('small-webp')
+
+    const result = await preparePatchGalleryImage(
+      toExactArrayBuffer(original),
+      true
+    )
+
+    expect(result).toEqual({
+      buffer: original,
+      extension: 'webp',
+      contentType: 'image/webp',
+      thumbnailBuffer: Buffer.from('larger-than-original-thumbnail'),
+      thumbnailExtension: 'webp',
+      thumbnailContentType: 'image/webp',
+      skipWatermark: true
+    })
+    expect(thumbnailPipeline.webp).toHaveBeenCalled()
+  })
+
+  it('returns animated AVIF original buffers without generating a placeholder thumbnail', async () => {
     const original = createAnimatedAvifHeader()
     sharpMock.mockImplementation(() => {
       throw new Error('animated AVIF should not be decoded')
@@ -152,7 +256,13 @@ describe('gallery upload plan', () => {
   })
 
   it('transforms static images to AVIF and applies requested watermarking', async () => {
-    const pipeline = createSharpPipeline({ format: 'png', pages: 1 })
+    const metadataPipeline = createSharpPipeline({ format: 'png', pages: 1 })
+    const originalPipeline = createSharpPipeline({ format: 'png', pages: 1 })
+    const thumbnailPipeline = createSharpPipeline({ format: 'avif', pages: 1 })
+    sharpMock
+      .mockReturnValueOnce(metadataPipeline)
+      .mockReturnValueOnce(originalPipeline)
+      .mockReturnValueOnce(thumbnailPipeline)
 
     const result = await preparePatchGalleryImage(
       toExactArrayBuffer(Buffer.from('static-png')),
@@ -163,19 +273,46 @@ describe('gallery upload plan', () => {
       buffer: Buffer.from('processed-image'),
       extension: 'avif',
       contentType: 'image/avif',
+      thumbnailBuffer: Buffer.from('processed-image'),
+      thumbnailExtension: 'avif',
+      thumbnailContentType: 'image/avif',
       skipWatermark: false
     })
-    expect(pipeline.resize).toHaveBeenCalledWith(1920, 1080, {
+    expect(originalPipeline.resize).toHaveBeenCalledWith(1920, 1080, {
       fit: 'inside',
       withoutEnlargement: true
     })
-    expect(pipeline.composite).toHaveBeenCalledOnce()
-    expect(pipeline.avif).toHaveBeenCalledWith({ quality: 60, effort: 3 })
+    expect(thumbnailPipeline.resize).toHaveBeenCalledWith(360, 240, {
+      fit: 'inside',
+      withoutEnlargement: true
+    })
+    expect(originalPipeline.composite).toHaveBeenCalledOnce()
+    expect(originalPipeline.avif).toHaveBeenCalledWith({
+      quality: 60,
+      effort: 3
+    })
+    expect(thumbnailPipeline.avif).toHaveBeenCalledWith({
+      quality: 50,
+      effort: 2
+    })
   })
 
-  it('uploads animated originals with their original extension and content type', async () => {
-    createSharpPipeline({ format: 'webp', pages: 3 })
-    const original = Buffer.from('animated-webp')
+  it('uploads animated originals and thumbnails with their own extensions and content types', async () => {
+    const metadataPipeline = createSharpPipeline({
+      format: 'webp',
+      width: 720,
+      pageHeight: 480,
+      pages: 3
+    })
+    const thumbnailPipeline = createSharpPipeline({
+      format: 'webp',
+      width: 720,
+      pageHeight: 480,
+      pages: 3
+    })
+    sharpMock.mockReturnValueOnce(metadataPipeline)
+    sharpMock.mockReturnValueOnce(thumbnailPipeline)
+    const original = Buffer.from('animated-webp-original-buffer')
 
     const result = await uploadPatchGalleryImage(
       toExactArrayBuffer(original),
@@ -187,12 +324,146 @@ describe('gallery upload plan', () => {
     expect(result).toEqual({
       extension: 'webp',
       contentType: 'image/webp',
+      thumbnailExtension: 'webp',
+      thumbnailContentType: 'image/webp',
       skipWatermark: true
     })
     expect(uploadImageToS3Mock).toHaveBeenCalledWith(
       'patch/123/gallery/456.webp',
       original,
       'image/webp'
+    )
+    expect(uploadImageToS3Mock).toHaveBeenCalledWith(
+      'patch/123/gallery/thumbnail/456.webp',
+      Buffer.from('processed-image'),
+      'image/webp'
+    )
+  })
+
+  it('keeps animated WebP originals when thumbnail generation fails', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const metadataPipeline = createSharpPipeline({
+      format: 'webp',
+      width: 720,
+      pageHeight: 480,
+      pages: 3
+    })
+    const thumbnailPipeline = createSharpPipeline({
+      format: 'webp',
+      width: 720,
+      pageHeight: 480,
+      pages: 3
+    })
+    thumbnailPipeline.toBuffer.mockRejectedValue(new Error('thumbnail failed'))
+    sharpMock.mockReturnValueOnce(metadataPipeline)
+    sharpMock.mockReturnValueOnce(thumbnailPipeline)
+    const original = Buffer.from('animated-webp')
+
+    const result = await preparePatchGalleryImage(
+      toExactArrayBuffer(original),
+      true
+    )
+
+    expect(result).toEqual({
+      buffer: original,
+      extension: 'webp',
+      contentType: 'image/webp',
+      skipWatermark: true
+    })
+    expect(consoleError).toHaveBeenCalledWith(
+      'Animated WebP thumbnail generation error:',
+      expect.any(Error)
+    )
+    consoleError.mockRestore()
+  })
+
+  it('does not fail animated WebP uploads when thumbnail upload fails', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const metadataPipeline = createSharpPipeline({
+      format: 'webp',
+      width: 720,
+      pageHeight: 480,
+      pages: 3
+    })
+    const thumbnailPipeline = createSharpPipeline({
+      format: 'webp',
+      width: 720,
+      pageHeight: 480,
+      pages: 3
+    })
+    sharpMock.mockReturnValueOnce(metadataPipeline)
+    sharpMock.mockReturnValueOnce(thumbnailPipeline)
+    uploadImageToS3Mock
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(new Error('thumbnail failed'))
+
+    await expect(
+      uploadPatchGalleryImage(
+        toExactArrayBuffer(Buffer.from('animated-webp-original-buffer')),
+        123,
+        456,
+        true
+      )
+    ).resolves.toEqual({
+      extension: 'webp',
+      contentType: 'image/webp',
+      skipWatermark: true
+    })
+
+    expect(deleteFileFromS3Mock).not.toHaveBeenCalled()
+    expect(consoleError).toHaveBeenCalledWith(
+      'Animated WebP thumbnail upload error:',
+      expect.any(Error)
+    )
+    consoleError.mockRestore()
+  })
+
+  it('deletes a static original when static thumbnail upload fails', async () => {
+    const metadataPipeline = createSharpPipeline({ format: 'png', pages: 1 })
+    const originalPipeline = createSharpPipeline({ format: 'png', pages: 1 })
+    const thumbnailPipeline = createSharpPipeline({ format: 'avif', pages: 1 })
+    sharpMock
+      .mockReturnValueOnce(metadataPipeline)
+      .mockReturnValueOnce(originalPipeline)
+      .mockReturnValueOnce(thumbnailPipeline)
+    uploadImageToS3Mock
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(new Error('thumbnail upload failed'))
+
+    await expect(
+      uploadPatchGalleryImage(
+        toExactArrayBuffer(Buffer.from('static-png')),
+        123,
+        456,
+        true
+      )
+    ).rejects.toThrow('thumbnail upload failed')
+
+    expect(deleteFileFromS3Mock).toHaveBeenCalledWith(
+      'patch/123/gallery/456.avif'
+    )
+  })
+
+  it('uploads animated AVIF originals without thumbnail objects', async () => {
+    const original = createAnimatedAvifHeader()
+
+    const result = await uploadPatchGalleryImage(
+      toExactArrayBuffer(original),
+      123,
+      456,
+      true
+    )
+
+    expect(result).toEqual({
+      extension: 'avif',
+      contentType: 'image/avif',
+      skipWatermark: true
+    })
+    expect(uploadImageToS3Mock).toHaveBeenCalledTimes(1)
+    expect(uploadImageToS3Mock).toHaveBeenCalledWith(
+      'patch/123/gallery/456.avif',
+      original,
+      'image/avif'
     )
   })
 })
