@@ -22,7 +22,7 @@ Use this skill for operational code and release plumbing.
 - Check workflow branches before assuming CI covers `main` or PRs.
 - Multi-instance scheduled tasks should use task locks.
 - Migration scripts need dry-run/preflight behavior for production data.
-- `scripts/verifyGalleryAnimatedAvifThumbnail.ts` is a local-only verification script for explicit/BtbN/`ffmpeg-static`/system FFmpeg animated AVIF gallery thumbnails; it must not connect to S3 or the database. `deploy:pull` must copy target-server `node_modules/ffmpeg-static` and optional `node_modules/.ffmpeg/ffmpeg` into standalone so release artifacts do not rely on build-machine binaries.
+- `scripts/verifyGalleryAnimatedAvifThumbnail.ts` is a local-only verification script for explicit/BtbN/`ffmpeg-static`/system FFmpeg animated AVIF gallery thumbnails; it must not connect to S3 or the database, and it must check input/output frame counts so a still first-frame AVIF is not treated as animated success. `deploy:pull` must copy target-server `node_modules/ffmpeg-static` and optional `node_modules/.ffmpeg/ffmpeg` into standalone so release artifacts do not rely on build-machine binaries.
 - Tag alias cleanup uses `maintenance:tags:auto-alias:dry` before `maintenance:tags:auto-alias:apply`; local empty tag data does not validate production impact.
 - Company cleanup uses `maintenance:companies:dirty:dry` before `maintenance:companies:dirty:apply`; ambiguous shared aliases require manual canonical decisions.
 
