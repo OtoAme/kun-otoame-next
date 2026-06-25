@@ -26,13 +26,16 @@ Use this skill for project-specific testing work.
 - For API service tests, mock Prisma, Redis, cache helpers, and external APIs.
 - Use `vi.hoisted` for values referenced by `vi.mock` factories.
 - Do not connect to real PostgreSQL, Redis, S3, GitHub, Bangumi, VNDB, or DLSite in unit tests.
-- Gallery upload tests live in `tests/unit/gallery-upload.test.ts`; mock Sharp/S3 and assert static AVIF transform behavior separately from animated WebP/AVIF original-preservation behavior.
+- Gallery upload tests live in `tests/unit/gallery-upload.test.ts`; mock Sharp/S3 and assert static AVIF transform + thumbnail behavior separately from animated WebP/AVIF original-preservation behavior, animated WebP thumbnail frame-size handling, no-benefit fallback, animated AVIF no-placeholder behavior, and S3 compensation.
+- Gallery frontend helpers use `tests/unit/gallery-preview.test.ts` and `tests/unit/gallery-prefetch.test.ts` to cover thumbnail/original URL selection and slot-based prefetch priority.
 
 ## Common Commands
 
 ```bash
 pnpm test
-pnpm test tests/unit/gallery-upload.test.ts
+pnpm test tests/unit/gallery-upload.test.ts tests/unit/gallery-route.test.ts
+pnpm test tests/unit/patch-update-gallery.test.ts
+pnpm test tests/unit/gallery-prefetch.test.ts tests/unit/gallery-preview.test.ts
 pnpm test tests/unit/resource-link.test.ts
 pnpm test tests/unit/api/batch-tag.test.ts
 pnpm typecheck

@@ -62,8 +62,9 @@ Review 前先确认改动类型：
 - 上传消费是否必须经过 `consumeUpload`。
 - 上传 handler 是否保留角色、萌萌点、CAPTCHA、每日 5GB 配额和待审核资源限制。
 - Gallery 静态图是否仍输出 AVIF 并按开关加水印，动态 WebP/AVIF 是否原样保留动画且跳过水印。
-- Gallery 动态原图是否有大小上限、正确 URL 后缀和 S3 content type。
-- S3 上传成功后 DB 写失败是否补偿删除。
+- Gallery 原图是否保持 `patch/<patchId>/gallery/<imageId>.<ext>` 旧路径，缩略图是否使用 `patch/<patchId>/gallery/thumbnail/<imageId>.<thumbExt>`。
+- Gallery 动态原图和缩略图是否有大小上限、正确 URL 后缀和 S3 content type。
+- S3 原图或缩略图上传成功后，后续上传或 DB 写失败是否补偿删除。
 - 完成后是否 `finalizeUpload`，失败时是否记录足够上下文。
 - 本地临时目录清理失败是否可由 cron 后续处理。
 - 删除 S3 object 前是否确认没有其他 `patch_resource_link` 引用。
@@ -73,6 +74,8 @@ Review 前先确认改动类型：
 
 - Client component 是否只在确实需要 hook、事件或浏览器 API 时使用。
 - Server action/API 调用是否处理 loading、错误和权限失败。
+- Gallery 列表是否使用 `thumbnailUrl ?? url`，灯箱是否仍使用原图 `url`；rewrite 提交是否没有把 `thumbnailUrl` 写回原图字段。
+- Gallery 原图预取是否按当前槽位顺序而不是文件名编号提升优先级。
 - 文案是否和 OtoAme 当前命名一致，避免回退到 TouchGal/GalGame 除非路径兼容需要。
 - 移动端是否不会遮挡核心操作。
 - 新图标优先用 lucide-react 或项目已有图标系统。
