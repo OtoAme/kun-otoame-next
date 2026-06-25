@@ -51,7 +51,7 @@ const runCommand = (
   args: string[],
   timeoutMs = GALLERY_AVIF_THUMBNAIL_TIMEOUT_MS
 ) =>
-  new Promise<void>((resolve, reject) => {
+  new Promise<string>((resolve, reject) => {
     const child = spawn(command, args, {
       stdio: ['ignore', 'ignore', 'pipe']
     })
@@ -71,13 +71,35 @@ const runCommand = (
     child.on('close', (code) => {
       clearTimeout(timer)
       if (code === 0) {
-        resolve()
+        resolve(stderr)
         return
       }
 
       reject(new Error(command + ' exited with code ' + code + ': ' + stderr))
     })
   })
+
+const countShowInfoFrames = (stderr: string) => {
+  const matches = stderr.match(/(?:^|\s)n:\s*\d+/gm)
+  return matches?.length ?? 0
+}
+
+export const countAvifFrames = async (command: string, inputPath: string) => {
+  const stderr = await runCommand(command, [
+    '-hide_banner',
+    '-loglevel',
+    'info',
+    '-i',
+    inputPath,
+    '-vf',
+    'showinfo',
+    '-f',
+    'null',
+    '-'
+  ])
+
+  return countShowInfoFrames(stderr)
+}
 
 const readGeneratedThumbnail = async (outputPath: string) => {
   const buffer = await readFile(outputPath)
@@ -115,7 +137,13 @@ const tryEncodeAnimatedThumbnail = async (
     outputPath
   ])
 
-  return readGeneratedThumbnail(outputPath)
+  const thumbnail = await readGeneratedThumbnail(outputPath)
+  const frameCount = await countAvifFrames(command, outputPath)
+  if (frameCount <= 1) {
+    throw new Error('animated thumbnail has only ' + frameCount + ' frame')
+  }
+
+  return thumbnail
 }
 
 const tryEncodeStillThumbnail = async (
