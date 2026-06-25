@@ -342,11 +342,25 @@ Gallery 上传动态 AVIF 时，原图会原样上传，缩略图由服务端 `f
 - 如果使用 `pnpm deploy:pull` 的 GitHub Release artifact，部署脚本会从目标服务器的 `node_modules` 注入当前机器架构的 `ffmpeg-static`。因此目标服务器也必须先跑过 `pnpm install` / `pnpm deploy:install`，不能只解压 release 包。
 - 如果使用 `pnpm deploy:build`，依赖会在服务器本机安装，通常会自动得到匹配 Linux x64 / arm64 等平台的 bundled binary。
 
+### Linux 平台动画 AVIF 缩略图适配
+
+`ffmpeg-static` 的 Linux x64 二进制（johnvansickle.com 7.0.2）内置的 libaom-av1 不支持动画 AVIF 编码，直接使用会导致缩略图降级为静图首帧。
+
+`pnpm install` 时会通过 `scripts/ensureFfmpegLinux.ts` 自动下载 BtbN 的 ffmpeg 静态构建到 `node_modules/.ffmpeg/ffmpeg`（仅 Linux，幂等操作）。`galleryAnimatedAvifThumbnail.ts` 的 `getBundledFfmpegPath()` 在 Linux 上优先返回该路径，该二进制也会被 `postbuild.ts` 注入 standalone 产物。
+
+如果 BtbN binary 也不可用，代码会回退到系统 `ffmpeg`，再不可用则 `thumbnailUrl = null`。
+
 部署后用内置动态 AVIF fixture 在服务器上验证：
 
 ```bash
 node -e "console.log(require('ffmpeg-static'))"
 pnpm exec esno scripts/verifyGalleryAnimatedAvifThumbnail.ts ./public/images/animated-sample.avif ./public/images/tmp/animated-sample-thumb.avif
+```
+
+在 Linux 服务器上，验证前可先确认 BtbN binary 已安装：
+
+```bash
+ls -la node_modules/.ffmpeg/ffmpeg && echo 'Animated AVIF ffmpeg ready' || echo 'Not installed'
 ```
 
 成功时会输出 `Wrote ... bytes to ./public/images/tmp/animated-sample-thumb.avif`。实际上传时 PM2 日志中应出现 `Animated AVIF thumbnail generated: ... bytes`；如果没有缩略图，查看 `Animated AVIF thumbnail generation failed for all commands:` 后面的失败原因。
