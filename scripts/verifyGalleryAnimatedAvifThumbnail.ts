@@ -6,6 +6,12 @@ import {
   getGalleryFfmpegCommands
 } from '../app/api/edit/galleryAnimatedAvifThumbnail'
 
+type FrameProbe = {
+  command: string
+  error?: string
+  frameCount?: number
+}
+
 const [inputPath, outputPath = '/tmp/otoame-gallery-avif-thumbnail.avif'] =
   process.argv.slice(2)
 
@@ -16,20 +22,56 @@ if (!inputPath) {
   process.exit(1)
 }
 
+const getErrorMessage = (error: unknown) =>
+  error instanceof Error ? error.message : String(error)
+
+const probeFrameCounts = async (commands: string[], filePath: string) => {
+  const probes: FrameProbe[] = []
+
+  for (const command of commands) {
+    try {
+      probes.push({
+        command,
+        frameCount: await countAvifFrames(command, filePath)
+      })
+    } catch (error) {
+      probes.push({
+        command,
+        error: getErrorMessage(error)
+      })
+    }
+  }
+
+  return probes
+}
+
+const printFrameCounts = (label: string, probes: FrameProbe[]) => {
+  console.info(`${label} frame counts:`)
+  for (const probe of probes) {
+    console.info(
+      `- ${probe.command}: ${
+        probe.error ? `error: ${probe.error}` : `${probe.frameCount} frame(s)`
+      }`
+    )
+  }
+}
+
+const hasAnimatedFrames = (probe: FrameProbe) =>
+  probe.frameCount !== undefined && probe.frameCount > 1
+
 const input = await readFile(inputPath)
 const commands = await getGalleryFfmpegCommands()
-const inspectCommand = commands[0]
 
-if (!inspectCommand) {
+if (commands.length === 0) {
   console.error('No ffmpeg command is available.')
   process.exit(1)
 }
 
-const inputFrameCount = await countAvifFrames(inspectCommand, inputPath)
-if (inputFrameCount <= 1) {
-  console.error(
-    `Input AVIF is not decoded as animated by ${inspectCommand}: ${inputFrameCount} frame(s).`
-  )
+const inputProbes = await probeFrameCounts(commands, inputPath)
+printFrameCounts('Input AVIF', inputProbes)
+
+if (!inputProbes.some(hasAnimatedFrames)) {
+  console.error('Input AVIF is not decoded as animated by any ffmpeg command.')
   process.exit(1)
 }
 
@@ -45,14 +87,17 @@ if (!thumbnail) {
 await mkdir(path.dirname(outputPath), { recursive: true })
 await writeFile(outputPath, thumbnail)
 
-const outputFrameCount = await countAvifFrames(inspectCommand, outputPath)
-if (outputFrameCount <= 1) {
+const outputProbes = await probeFrameCounts(commands, outputPath)
+printFrameCounts('Output thumbnail', outputProbes)
+
+const animatedOutputProbe = outputProbes.find(hasAnimatedFrames)
+if (!animatedOutputProbe) {
   console.error(
-    `Generated thumbnail is not animated by ${inspectCommand}: ${outputFrameCount} frame(s), ${thumbnail.byteLength} bytes at ${outputPath}.`
+    `Generated thumbnail is not animated by any ffmpeg command: ${thumbnail.byteLength} bytes at ${outputPath}.`
   )
   process.exit(1)
 }
 
 console.log(
-  `Wrote animated AVIF thumbnail: ${thumbnail.byteLength} bytes, ${outputFrameCount} frames to ${outputPath}`
+  `Wrote animated AVIF thumbnail: ${thumbnail.byteLength} bytes, ${animatedOutputProbe.frameCount} frames to ${outputPath}`
 )
