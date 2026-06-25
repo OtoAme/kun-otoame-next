@@ -29,6 +29,25 @@
 - `utils/semanticColor.ts`
   - 提供 `semanticChipProps()`
   - 用静态 Tailwind class + CSS 变量桥接业务颜色
+- `components/kun/theme/SiteThemeScript.tsx`
+  - 在 hydration 前优先读取 `localStorage`，再用 `kun-site-theme` cookie 兜底，写入 `html[data-kun-theme]`
+- `components/kun/theme/SiteThemeRouteSync.tsx`
+  - 监听 App Router pathname 变化，客户端导航后重新应用站点主题
+- `hooks/useKunSiteTheme.ts`
+  - 主题切换控件的外部 store，同步 `localStorage`、cookie 和 `html[data-kun-theme]`
+
+## 主题持久化与生产静态页
+
+站点主题有三个状态面：`html[data-kun-theme]` 决定实际 CSS token，`localStorage` 是浏览器端权威来源，`kun-site-theme` cookie 只作为服务端首屏或 localStorage 不可用时的兜底。三者最终必须写回同一个值；如果控件读到 `localStorage` 的 `otoame`，但 `html[data-kun-theme]` 被静态 HTML 恢复成 `touchgal`，页面会显示 Classic，而选项仍显示 Pink。
+
+生产环境更容易出现这个问题，因为首页、游戏列表、tag/company 等公开页面使用 `force-static`。Next.js 的 `force-static` 会让 `cookies()` 返回空值，这些页面不能依赖服务端读取 `kun-site-theme` 来生成个性化主题 HTML。不要为了主题持久化把首页改成动态 SSR；首页仍必须保持 `force-static`。
+
+维护规则：
+
+- `SiteThemeScript` 负责硬刷新和首屏 hydration 前的主题写入，必须优先使用 `localStorage`，再用 cookie / 服务端属性兜底，避免服务重启或 stale cookie 把 Pink 覆盖回 Classic。
+- `SiteThemeRouteSync` 负责客户端导航后的修复。它跟随 `usePathname()`，当顶部导航或其它 `Link` 跳到静态页面并恢复默认根属性时，从 `localStorage` / cookie 把实际 CSS 主题拉回用户选择。
+- `ThemeSwitcher` 的选中态和实际 CSS 主题都必须从这条链路对齐；不能只修控件显示，也不能只改 token。
+- 修改主题持久化、根 layout 主题属性、`SiteThemeScript`、`SiteThemeRouteSync` 或 `useKunSiteTheme` 时，必须补充 `tests/unit/theme.test.ts`，覆盖“localStorage 为 otoame 但 cookie/静态页面为 touchgal”的硬加载和软导航场景。
 
 ## Token 分层
 

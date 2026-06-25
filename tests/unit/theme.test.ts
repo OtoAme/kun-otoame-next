@@ -1,7 +1,11 @@
-import { describe, expect, it } from 'vitest'
+import React, { act } from 'react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { JSDOM } from 'jsdom'
+import { createRoot, type Root } from 'react-dom/client'
 import {
   DEFAULT_KUN_SITE_THEME,
   KUN_SITE_THEME_COOKIE_MAX_AGE_SECONDS,
+  KUN_SITE_THEME_STORAGE_KEY,
   isKunEnabledSiteTheme,
   isKunSiteTheme,
   readKunSiteThemeCookie,
@@ -9,6 +13,16 @@ import {
   serializeKunSiteThemeCookie,
   type KunSiteThemeRegistry
 } from '~/constants/theme'
+
+globalThis.React = React
+
+const nextNavigationMock = vi.hoisted(() => ({
+  pathname: '/'
+}))
+
+vi.mock('next/navigation', () => ({
+  usePathname: () => nextNavigationMock.pathname
+}))
 
 type TestTheme =
   | 'touchgal'
@@ -133,6 +147,95 @@ describe('isKunSiteTheme', () => {
     expect(isKunSiteTheme('unknown')).toBe(false)
     expect(isKunSiteTheme(undefined)).toBe(false)
     expect(isKunSiteTheme(1007)).toBe(false)
+  })
+})
+
+describe('useKunSiteTheme DOM synchronization', () => {
+  let root: Root | undefined
+  let dom: JSDOM | undefined
+
+  afterEach(async () => {
+    await act(async () => {
+      root?.unmount()
+    })
+    root = undefined
+    dom?.window.close()
+    dom = undefined
+    vi.unstubAllGlobals()
+    vi.resetModules()
+  })
+
+  it('applies localStorage before stale cookies in the boot script', async () => {
+    dom = new JSDOM(
+      '<!doctype html><html data-kun-theme="touchgal"><body></body></html>',
+      {
+        url: 'https://www.otoame.top/',
+        runScripts: 'outside-only'
+      }
+    )
+
+    dom.window.localStorage.setItem(KUN_SITE_THEME_STORAGE_KEY, 'otoame')
+    dom.window.document.cookie = serializeKunSiteThemeCookie('touchgal', true)
+
+    const { siteThemeScript } = await import(
+      '~/components/kun/theme/SiteThemeScript'
+    )
+
+    dom.window.eval(siteThemeScript)
+
+    expect(dom.window.document.documentElement.dataset.kunTheme).toBe('otoame')
+    expect(dom.window.localStorage.getItem(KUN_SITE_THEME_STORAGE_KEY)).toBe(
+      'otoame'
+    )
+    expect(readKunSiteThemeCookie(dom.window.document.cookie)).toBe('otoame')
+  })
+
+  it('repairs the root theme after client navigation restores a static shell theme', async () => {
+    dom = new JSDOM(
+      '<!doctype html><html data-kun-theme="touchgal"><body><div id="root"></div></body></html>',
+      {
+        url: 'https://www.otoame.top/'
+      }
+    )
+
+    vi.stubGlobal('window', dom.window)
+    vi.stubGlobal('document', dom.window.document)
+    vi.stubGlobal('localStorage', dom.window.localStorage)
+    vi.stubGlobal('CustomEvent', dom.window.CustomEvent)
+    vi.stubGlobal('StorageEvent', dom.window.StorageEvent)
+    vi.stubGlobal('React', React)
+    vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
+
+    dom.window.localStorage.setItem(KUN_SITE_THEME_STORAGE_KEY, 'otoame')
+    dom.window.document.cookie = serializeKunSiteThemeCookie('touchgal', true)
+
+    const { SiteThemeRouteSync } = await import(
+      '~/components/kun/theme/SiteThemeRouteSync'
+    )
+    const container = dom.window.document.getElementById('root')
+    expect(container).not.toBeNull()
+
+    root = createRoot(container!)
+    await act(async () => {
+      root!.render(React.createElement(SiteThemeRouteSync))
+    })
+
+    expect(dom.window.document.documentElement.dataset.kunTheme).toBe('otoame')
+    expect(
+      dom.window.document.documentElement.dataset.kunThemeSource
+    ).toBe('client')
+
+    await act(async () => {
+      dom!.window.document.documentElement.dataset.kunTheme = 'touchgal'
+      nextNavigationMock.pathname = '/otomegame'
+      root!.render(React.createElement(SiteThemeRouteSync))
+    })
+
+    expect(dom.window.document.documentElement.dataset.kunTheme).toBe('otoame')
+    expect(dom.window.localStorage.getItem(KUN_SITE_THEME_STORAGE_KEY)).toBe(
+      'otoame'
+    )
+    expect(readKunSiteThemeCookie(dom.window.document.cookie)).toBe('otoame')
   })
 })
 

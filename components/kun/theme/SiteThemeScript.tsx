@@ -11,7 +11,7 @@ interface SiteThemeScriptProps {
   nonce?: string
 }
 
-const siteThemeScript = `(() => {
+export const siteThemeScript = `(() => {
   const storageKey = ${JSON.stringify(KUN_SITE_THEME_STORAGE_KEY)};
   const defaultTheme = ${JSON.stringify(DEFAULT_KUN_SITE_THEME)};
   const enabledThemes = ${JSON.stringify(KUN_ENABLED_SITE_THEME_IDS)};
@@ -37,6 +37,14 @@ const siteThemeScript = `(() => {
       return undefined;
     }
   };
+  const readStorageTheme = () => {
+    try {
+      const storedTheme = localStorage.getItem(storageKey);
+      return isEnabledTheme(storedTheme) ? storedTheme : undefined;
+    } catch (_) {
+      return undefined;
+    }
+  };
   const writeCookieTheme = (theme) => {
     try {
       const secure = location.protocol === 'https:' ? '; Secure' : '';
@@ -57,43 +65,25 @@ const siteThemeScript = `(() => {
   try {
     const root = document.documentElement;
     const serverTheme = root.dataset.kunTheme;
-
-    if (root.dataset.kunThemeSource === 'server') {
-      if (isEnabledTheme(serverTheme)) {
-        try {
-          localStorage.setItem(storageKey, serverTheme);
-        } catch (_) {}
-        writeCookieTheme(serverTheme);
-      } else {
-        root.dataset.kunTheme = defaultTheme;
-      }
-      return;
-    }
-
+    const storageTheme = readStorageTheme();
     const cookieTheme = readCookieTheme();
-    let storedTheme;
+    const nextTheme =
+      storageTheme ||
+      cookieTheme ||
+      (isEnabledTheme(serverTheme) ? serverTheme : undefined) ||
+      defaultTheme;
 
-    try {
-      const storedValue = localStorage.getItem(storageKey);
-      if (isEnabledTheme(storedValue)) {
-        storedTheme = storedValue;
-      }
-    } catch (_) {}
-
-    const nextTheme = cookieTheme || storedTheme || defaultTheme;
     root.dataset.kunTheme = nextTheme;
+    root.dataset.kunThemeSource = 'client';
 
-    const shouldPersistTheme = Boolean(cookieTheme || storedTheme);
-
-    if (shouldPersistTheme) {
+    if (storageTheme !== nextTheme) {
       try {
         localStorage.setItem(storageKey, nextTheme);
       } catch (_) {}
     }
-    if (shouldPersistTheme) {
+    if (cookieTheme !== nextTheme) {
       writeCookieTheme(nextTheme);
     }
-    root.dataset.kunThemeSource = 'client';
   } catch (_) {}
 })();`
 

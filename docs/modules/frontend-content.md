@@ -63,7 +63,16 @@ Store 改动要检查使用该 store 的页面和组件，不要只改类型。
 - `constants/theme.ts`
 - `utils/semanticColor.ts`
 - `components/kun/theme/SiteThemeScript.tsx`
+- `components/kun/theme/SiteThemeRouteSync.tsx`
+- `hooks/useKunSiteTheme.ts`
 - `tests/unit/theme.test.ts`
+
+主题持久化规则：
+
+- 实际 CSS 主题只看 `html[data-kun-theme]`，主题控件状态来自 `useKunSiteTheme`。
+- `localStorage` 是浏览器端权威来源，`kun-site-theme` cookie 只做服务端首屏或 localStorage 不可用时的兜底；脚本和 hook 都不能让 stale cookie 覆盖 localStorage。
+- `SiteThemeScript` 处理硬刷新首屏；`SiteThemeRouteSync` 处理客户端导航后的同步，并在静态页面把根主题恢复成默认值时，从 `localStorage` / `kun-site-theme` cookie 修复 `html[data-kun-theme]`。
+- 首页等公开页面保持 `force-static`，不能为了读取主题 cookie 改成动态 SSR；Next.js `force-static` 下 `cookies()` 会返回空值。
 
 修改主题 token 或 semantic color 后至少运行：
 

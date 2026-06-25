@@ -286,7 +286,16 @@ pnpm test
 - `styles/theme-tokens/*`
 - `constants/theme.ts`
 - `utils/semanticColor.ts`
+- `components/kun/theme/SiteThemeScript.tsx`
+- `components/kun/theme/SiteThemeRouteSync.tsx`
+- `hooks/useKunSiteTheme.ts`
 - `tests/unit/theme.test.ts`
+
+注意：
+
+- 首页和部分公开页面是 `force-static`，生产环境不能依赖服务端 `cookies()` 获取主题；主题 cookie 只用于可读取 cookie 的首屏兜底。
+- 实际主题以 `html[data-kun-theme]` 为准。改主题持久化时，要同时检查 `SiteThemeScript`、`SiteThemeRouteSync`、`useKunSiteTheme`、cookie 和 `localStorage` 是否会在硬加载、服务重启后首屏、以及客户端导航后重新对齐。
+- 浏览器端以 `localStorage` 为权威来源，cookie 不能覆盖更新的 `localStorage`。如果出现“选项显示 Pink 但页面显示 Classic”，优先检查 `html[data-kun-theme]` 是否被静态页面恢复成 `touchgal`，以及 soft navigation 后 `SiteThemeRouteSync` 是否运行。
 
 修改后至少运行：
 

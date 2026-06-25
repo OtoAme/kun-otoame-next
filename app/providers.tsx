@@ -4,6 +4,7 @@ import { AppProgressProvider as ProgressProvider } from '@bprogress/next'
 import { HeroUIProvider } from '@heroui/system'
 import { ThemeProvider } from 'next-themes'
 import { useRouter } from 'next/navigation'
+import { SiteThemeRouteSync } from '~/components/kun/theme/SiteThemeRouteSync'
 
 export const Providers = ({ children }: { children: React.ReactNode }) => {
   const router = useRouter()
@@ -16,7 +17,10 @@ export const Providers = ({ children }: { children: React.ReactNode }) => {
       options={{ showSpinner: false }}
     >
       <HeroUIProvider navigate={router.push}>
-        <ThemeProvider attribute="class">{children}</ThemeProvider>
+        <ThemeProvider attribute="class">
+          <SiteThemeRouteSync />
+          {children}
+        </ThemeProvider>
       </HeroUIProvider>
     </ProgressProvider>
   )

@@ -14,21 +14,51 @@ import {
 
 const getKunSiteThemeServerSnapshot = () => DEFAULT_KUN_SITE_THEME
 
+const readLocalStorageKunSiteTheme = () => {
+  try {
+    const storedTheme = window.localStorage.getItem(KUN_SITE_THEME_STORAGE_KEY)
+    return isKunEnabledSiteTheme(storedTheme) ? storedTheme : undefined
+  } catch (_) {
+    return undefined
+  }
+}
+
+const writeLocalStorageKunSiteTheme = (theme: KunSiteTheme) => {
+  try {
+    window.localStorage.setItem(KUN_SITE_THEME_STORAGE_KEY, theme)
+  } catch (_) {}
+}
+
 const getStoredKunSiteTheme = () => {
   try {
-    const cookieTheme = readKunSiteThemeCookie(document.cookie)
-    if (cookieTheme) {
-      return cookieTheme
-    }
+    return (
+      readLocalStorageKunSiteTheme() ??
+      readKunSiteThemeCookie(document.cookie) ??
+      DEFAULT_KUN_SITE_THEME
+    )
   } catch (_) {}
 
-  try {
-    return resolveKunSiteTheme(
-      window.localStorage.getItem(KUN_SITE_THEME_STORAGE_KEY)
-    )
-  } catch (_) {
-    return DEFAULT_KUN_SITE_THEME
+  return readLocalStorageKunSiteTheme() ?? DEFAULT_KUN_SITE_THEME
+}
+
+const applyKunSiteThemeToRoot = (theme: KunSiteTheme) => {
+  const root = document.documentElement
+
+  if (root.dataset.kunTheme !== theme) {
+    root.dataset.kunTheme = theme
   }
+  if (root.dataset.kunThemeSource !== 'client') {
+    root.dataset.kunThemeSource = 'client'
+  }
+}
+
+export const syncKunSiteThemeFromStorage = () => {
+  const storedTheme = getStoredKunSiteTheme()
+  applyKunSiteThemeToRoot(storedTheme)
+  writeLocalStorageKunSiteTheme(storedTheme)
+  writeKunSiteThemeCookie(storedTheme)
+
+  return storedTheme
 }
 
 const getKunSiteThemeSnapshot = () => {
@@ -65,12 +95,8 @@ export const setKunSiteTheme = (nextTheme: KunSiteTheme) => {
   }
 
   const resolvedTheme = resolveKunSiteTheme(nextTheme)
-  document.documentElement.dataset.kunTheme = resolvedTheme
-  document.documentElement.dataset.kunThemeSource = 'client'
-
-  try {
-    window.localStorage.setItem(KUN_SITE_THEME_STORAGE_KEY, resolvedTheme)
-  } catch (_) {}
+  applyKunSiteThemeToRoot(resolvedTheme)
+  writeLocalStorageKunSiteTheme(resolvedTheme)
   writeKunSiteThemeCookie(resolvedTheme)
 
   window.dispatchEvent(
@@ -98,10 +124,11 @@ const subscribeKunSiteTheme = (onStoreChange: () => void) => {
       event.newValue !== null && isKunEnabledSiteTheme(event.newValue)
         ? event.newValue
         : getStoredKunSiteTheme()
-    document.documentElement.dataset.kunTheme = nextTheme
-    document.documentElement.dataset.kunThemeSource = 'client'
+    applyKunSiteThemeToRoot(nextTheme)
     onStoreChange()
   }
+
+  syncKunSiteThemeFromStorage()
 
   window.addEventListener(KUN_SITE_THEME_CHANGE_EVENT, handleSiteThemeChange)
   window.addEventListener('storage', handleStorage)

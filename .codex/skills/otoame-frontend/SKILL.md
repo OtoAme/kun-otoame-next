@@ -25,8 +25,9 @@ Use this skill for pages, components, state, theme, and content.
 - For edit external-data inputs, merge async source results with the latest store state and only overwrite fields owned by that source.
 - Bangumi title/summary should only fill game name/introduction after an explicit user click; title fill prefers `nameCn`, then `name`.
 - Create edit-page clear actions must reset `editStore`, localforage banner/gallery drafts, and remount local draft UI state.
-- Theme changes need `tests/unit/theme.test.ts`.
+- Theme changes need `tests/unit/theme.test.ts`. For theme persistence, keep `SiteThemeScript`, `SiteThemeRouteSync`, `useKunSiteTheme`, `kun-site-theme` cookie, `localStorage`, and `html[data-kun-theme]` synchronized; browser-side `localStorage` is the source of truth, with cookie only as fallback. Cover hard-load/redeploy and client-navigation static-shell regressions where the option shows `otoame`/Pink but the root DOM falls back to `touchgal`/Classic.
 - Home page remains `force-static`: only fetch `/api/home` from the client when the static `galgames` payload is empty, and keep non-empty home payloads on the zero-extra-API path except for `/api/patch/stats`.
+- Do not make public `force-static` pages dynamic just to read the site theme cookie. Next.js `force-static` treats request cookies as empty, so client theme repair belongs in `SiteThemeScript` / `SiteThemeRouteSync` / `useKunSiteTheme`.
 
 ## Verification
 
