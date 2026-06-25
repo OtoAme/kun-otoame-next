@@ -131,6 +131,8 @@ Cloudflare purge 约定：
 - `app/api/upload/resource/route.ts`
 - `app/api/upload/resourceUtils.ts`
 - `app/api/patch/resource/_helper.ts`
+- `app/api/edit/gallery/route.ts`
+- `app/api/edit/galleryUpload.ts`
 - `lib/s3.ts`
 
 上传分两阶段：
@@ -153,6 +155,14 @@ Cloudflare purge 约定：
 - 普通创作者如果有待审核资源，不能继续发布新资源。
 - 上传 handler 会先用 `updateMany` 增加 `daily_upload_size`，避免并发绕过配额。若后续流程失败，目前不会自动回退每日配额；改这里前要先设计补偿策略。
 
+Gallery 图片上传走 `app/api/edit/gallery/route.ts` 和 `app/api/edit/galleryUpload.ts`，不使用资源上传的 Redis metadata/consume lock。规则：
+
+- 静态 JPG/PNG/WebP/AVIF 会 resize 到 1920x1080 内，按水印开关 composite OtoAme 水印，再输出为 AVIF，单张输出上限 1.5MB。
+- 动态 WebP 和动态 AVIF 优先保留动画，原样上传到 S3，不 resize、不重新编码、不添加水印，URL 后缀分别保持 `.webp` / `.avif`。
+- 动态原图上限 8MB；超过限制返回用户可见错误，不创建可见 gallery URL。
+- 动态 AVIF 通过 ISO BMFF `avis` brand 在调用 Sharp 前短路处理，因为 Sharp AVIF 输出不支持 image sequence，不能把动态 AVIF 送入静态 AVIF 转码路径。
+- gallery 写入成功后要更新 `patch_game_image.url` 并调用 `invalidatePatchContentCache(uniqueId)`；S3 上传失败后删除已创建的 `patch_game_image` 记录。
+
 ## S3
 
 `lib/s3.ts` 使用 AWS SDK v3：
@@ -170,6 +180,8 @@ Cloudflare purge 约定：
 - `uploadFileToS3`
 - `deleteFileFromS3`
 - `cleanupLocalUpload`
+
+`uploadImageToS3` 默认 content type 是 `image/avif`。如果上传原样动态 WebP 等非 AVIF 图片，调用方必须显式传入正确 content type，避免对象存储或 CDN 以错误 MIME 返回。
 
 删除资源前必须确认没有其他 `patch_resource_link` 引用同一 content。
 
@@ -200,5 +212,6 @@ Cloudflare purge 约定：
 - `tests/unit/redis.test.ts`
 - `tests/unit/resource-link.test.ts`
 - `tests/unit/resource-classification.test.ts`
+- `tests/unit/gallery-upload.test.ts`
 
 上传/S3 的真实集成测试当前没有统一 harness。修改上传流程时，必须补单元测试或记录手动验证步骤。

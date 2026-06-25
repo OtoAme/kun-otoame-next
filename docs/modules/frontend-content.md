@@ -50,6 +50,13 @@ Store 改动要检查使用该 store 的页面和组件，不要只改类型。
 - 公司写入优先级由 API 层处理：VNDB developer 优先，Bangumi developer 兜底；前端仍要保留 Bangumi 标签等非公司字段。
 - 创建游戏页的“清除信息”用于从 A 游戏草稿切换到 B 游戏草稿，必须同时 reset `editStore`、清理封面和图库 localforage 草稿，并让封面/图库组件重新读取空状态。
 
+编辑页 gallery：
+
+- 创建页 `components/edit/create/GalleryInput.tsx` 和重写页 `components/edit/rewrite/RewriteGalleryInput.tsx` 都支持 JPG/PNG/WebP/AVIF 选择、拖拽排序、批量删除和 NSFW 标记。
+- “添加水印”只影响静态图片。动态 WebP / AVIF 会保留原始动图并跳过水印，前端需要保留这条提示，避免管理员误以为动图也会被打水印。
+- 创建页 gallery 草稿存在 localforage，清除创建草稿时必须同步清理 gallery draft 和水印开关；重写页新增图片存在 `rewriteStore.newImages`，提交成功后由上传接口返回最终 URL。
+- gallery 展示使用普通 `<img>` 和 `KunImageViewer`，动态 WebP / AVIF 依赖浏览器原生播放，不需要在前端拆帧或转码。
+
 ## 主题与样式
 
 核心文件：

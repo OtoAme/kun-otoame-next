@@ -61,6 +61,8 @@ Review 前先确认改动类型：
 
 - 上传消费是否必须经过 `consumeUpload`。
 - 上传 handler 是否保留角色、萌萌点、CAPTCHA、每日 5GB 配额和待审核资源限制。
+- Gallery 静态图是否仍输出 AVIF 并按开关加水印，动态 WebP/AVIF 是否原样保留动画且跳过水印。
+- Gallery 动态原图是否有大小上限、正确 URL 后缀和 S3 content type。
 - S3 上传成功后 DB 写失败是否补偿删除。
 - 完成后是否 `finalizeUpload`，失败时是否记录足够上下文。
 - 本地临时目录清理失败是否可由 cron 后续处理。

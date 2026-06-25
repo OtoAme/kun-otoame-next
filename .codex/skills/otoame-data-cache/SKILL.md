@@ -23,6 +23,7 @@ Use this skill for persistence, cache, and upload consistency work.
 - Anonymous tag/company game-list APIs use short response caches; never cache personalized login/NSFW/blocked-tag results, and keep Redis list cache keys scoped by the full visibility where.
 - Home `home_data:*` and `/api/home` anonymous response caches must not store empty `galgames` payloads; this is a deploy/ISR empty-snapshot guard, not a generic rule for valid empty paginated lists.
 - Upload publishing must preserve role/quota checks, `consumeUpload`, S3 compensation, `finalizeUpload`, and cleanup behavior.
+- Gallery upload uses `app/api/edit/galleryUpload.ts`: static images become watermarked AVIF when requested; animated WebP/AVIF must preserve animation as originals, skip watermarking, keep correct extension/content type, and invalidate patch content cache after DB URL updates.
 - Production `prisma db push` reset prompts must be cancelled and replaced with a migration plan.
 
 ## Verification
@@ -32,5 +33,6 @@ pnpm test tests/unit/api/otomegame-route-cache.test.ts
 pnpm test tests/unit/redis.test.ts
 pnpm test tests/unit/resource-link.test.ts
 pnpm test tests/unit/resource-classification.test.ts
+pnpm test tests/unit/gallery-upload.test.ts
 pnpm typecheck
 ```
