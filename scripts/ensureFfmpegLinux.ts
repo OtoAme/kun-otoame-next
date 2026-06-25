@@ -1,10 +1,9 @@
 import { createWriteStream } from 'node:fs'
-import { chmod, mkdir, rm } from 'node:fs/promises'
+import { chmod, mkdir, rm, stat } from 'node:fs/promises'
 import { get } from 'node:https'
 import { tmpdir } from 'node:os'
-import { join, dirname } from 'node:path'
+import { join } from 'node:path'
 import { pipeline } from 'node:stream/promises'
-import { createGunzip } from 'node:zlib'
 import { execSync } from 'node:child_process'
 import { platform } from 'node:os'
 
@@ -24,7 +23,7 @@ const main = async () => {
   }
 
   try {
-    await import('fs').then((m) => m.promises.stat(FFMPEG_BIN))
+    await stat(FFMPEG_BIN)
     console.log('Animated AVIF ffmpeg already installed at %s', FFMPEG_BIN)
     process.exit(0)
   } catch {
@@ -44,35 +43,31 @@ const main = async () => {
     await new Promise<void>((resolve, reject) => {
       const file = createWriteStream(tarPath)
       get(BTBN_URL, { headers: { 'User-Agent': 'otoame-deploy' } }, (res) => {
-        if (
-          res.statusCode &&
-          res.statusCode >= 300 &&
-          res.statusCode < 400 &&
-          res.headers.location
-        ) {
-          // Follow redirect
-          get(
-            res.headers.location,
-            { headers: { 'User-Agent': 'otoame-deploy' } },
-            (redirectRes) => {
-              pipeline(redirectRes, file)
-                .then(resolve)
-                .catch(reject)
-            }
-          ).on('error', reject)
-          return
+        const follow = (r: typeof res) => {
+          if (
+            r.statusCode &&
+            r.statusCode >= 300 &&
+            r.statusCode < 400 &&
+            r.headers.location
+          ) {
+            get(
+              r.headers.location,
+              { headers: { 'User-Agent': 'otoame-deploy' } },
+              (rr) => follow(rr)
+            ).on('error', reject)
+            return
+          }
+          pipeline(r, file).then(resolve).catch(reject)
         }
-        pipeline(res, file).then(resolve).catch(reject)
+        follow(res)
       }).on('error', reject)
     })
 
     // Extract
-    execSync('tar -xJf  + tarPath +  -C  + tmpDir + ', {
-      stdio: 'pipe'
-    })
+    execSync(`tar -xJf "${tarPath}" -C "${tmpDir}"`, { stdio: 'pipe' })
 
     // Find the ffmpeg binary inside the extracted directory
-    const { readdir } = await import('node:fs/promises')
+    const { readdir, rename } = await import('node:fs/promises')
     const entries = await readdir(tmpDir)
     const rootDir = entries.find((e) => e.startsWith('ffmpeg-'))
     if (!rootDir) {
@@ -81,14 +76,10 @@ const main = async () => {
 
     const srcBin = join(tmpDir, rootDir, 'bin', 'ffmpeg')
     await mkdir(FFMPEG_DIR, { recursive: true })
-    const { rename } = await import('node:fs/promises')
     await rename(srcBin, FFMPEG_BIN)
     await chmod(FFMPEG_BIN, 0o755)
 
-    console.log(
-      'Animated AVIF ffmpeg installed to %s',
-      FFMPEG_BIN
-    )
+    console.log('Animated AVIF ffmpeg installed to %s', FFMPEG_BIN)
   } finally {
     await rm(tmpDir, { recursive: true, force: true }).catch(() => {})
   }
@@ -99,5 +90,5 @@ main().catch((err) => {
   console.error(
     'Animated AVIF thumbnails will fall back to still first-frame on this server.'
   )
-  process.exit(0) // Non-fatal: let install continue
+  process.exit(0)
 })
