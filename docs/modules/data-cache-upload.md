@@ -163,6 +163,11 @@ Gallery 图片上传走 `app/api/edit/gallery/route.ts` 和 `app/api/edit/galler
 - 动态原图上限 8MB；超过限制返回用户可见错误，不创建可见 gallery URL。
 - 动态 AVIF 通过 ISO BMFF `avis` brand 在调用 Sharp 前短路处理，因为 Sharp AVIF 输出不支持 image sequence，不能把动态 AVIF 送入静态 AVIF 转码路径；V2 使用独立 `ffmpeg` adapter 尝试生成真实 animated AVIF 缩略图，动态缩略图失败时再尝试真实首帧 AVIF 缩略图。adapter 优先使用 `ffmpeg-static` bundled binary，失败后回退到系统 `ffmpeg`。没有可用 encoder、编码超时、生成体积超过 512KB 或上传失败时不阻断原图，`thumbnail_url` 写 `null`，不生成占位图。
 - gallery 写入成功后要更新 `patch_game_image.url` 和 nullable `thumbnail_url` 并调用 `invalidatePatchContentCache(uniqueId)`；S3 上传或 DB 更新失败后删除已创建的 `patch_game_image` 记录，并补偿删除已真实上传的原图和缩略图 object。
+- gallery 图片删除必须在删除 DB 记录的同时清理 S3 对象：
+  - rewrite 提交时通过 `galleryMetadata.keep` 对比当前图片列表，被移除的图片在 `patch_game_image.deleteMany` 前收集 URL，DB 删除后用 `extractS3Key` + `deleteFileFromS3` 清理原图和缩略图（若 `thumbnail_url` 非 null），S3 清理失败只记日志不阻断 rewrite。
+  - 整条目删除时先查询 `patch_game_image` 列表，在 Prisma cascade 删除 DB 记录后遍历清理 S3 files。
+  - 通过 `DELETE /api/edit/gallery?imageId=xxx` 单张删除 gallery 图片时，删除 DB 记录后清理 S3 文件再失效缓存。
+  - 所有路径的 S3 清理都为 best-effort：失败记 error 日志但不抛异常。`extractS3Key` 复用 `app/api/patch/resource/_helper.ts` 的实现。
 - animated AVIF 缩略图 adapter 使用临时目录处理用户输入，`ffmpeg` 子进程有超时限制，并且输出体积必须在缩略图上限内；`ffmpeg-static` 的 install script 必须允许运行，否则 bundled binary 可能不存在。`ffmpeg-static` 下载的是安装机器当前平台的 binary，`deploy:pull` 需要把目标服务器 `node_modules/ffmpeg-static` 注入 standalone，避免 release artifact 构建机和生产机架构不一致。部署环境的 bundled 和系统 `ffmpeg/libaom-av1` 都不可用时会自动回退为无缩略图。引入其他 libavif / Node binding 方案前仍要先评估部署成本、CPU 成本、失败补偿和安全边界。
 - 本地或部署前可用 `pnpm exec esno scripts/verifyGalleryAnimatedAvifThumbnail.ts <animated.avif> [output.avif]` 验证 animated AVIF 缩略图 encoder；该脚本只读写本地文件，不连接 S3 或数据库。生产上线前应在目标服务器执行，成功输出 `Wrote ... bytes`。
 
