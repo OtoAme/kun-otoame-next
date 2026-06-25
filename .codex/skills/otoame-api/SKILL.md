@@ -23,7 +23,8 @@ Use this skill for API and business-service work.
 - Never rely on frontend visibility for permissions.
 - Keep resource ownership, role, and admin checks in the API/service layer.
 - Feedback work items use `type: 'feedback'` with no recipient; user/admin feedback notices must use `type: 'system'` so notification filters work.
-- `/api/tag/otomegame` and `/api/company/otomegame` are anonymous hot-path list APIs: keep anonymous responses public-cacheable, keep login/NSFW/blocked-tag cookie requests `private, no-store`, and merge NSFW plus blocked-tag visibility before calling services.
+- `/api/home`, `/api/tag/otomegame`, and `/api/company/otomegame` are anonymous hot-path read APIs: keep anonymous responses public-cacheable, keep login/NSFW/blocked-tag cookie requests `private, no-store`, and merge NSFW plus blocked-tag visibility before calling services.
+- `/api/home` is only a fallback for empty static home payloads; do not make normal home loads fetch it, and do not cache empty `galgames` responses.
 - For edit external data, duplicate checks in rewrite flows must exclude the current patch; do not use VNDB tags; preserve Bangumi/Steam source tags; resolve tag aliases to the canonical tag before creating relations/counting; tag aliases must be globally unique across other tag names/aliases; prefer VNDB companies over Bangumi companies, use Bangumi companies only as fallback, and match companies by both name and alias.
 
 ## Verification

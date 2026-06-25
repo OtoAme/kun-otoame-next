@@ -26,6 +26,7 @@ Use this skill for pages, components, state, theme, and content.
 - Bangumi title/summary should only fill game name/introduction after an explicit user click; title fill prefers `nameCn`, then `name`.
 - Create edit-page clear actions must reset `editStore`, localforage banner/gallery drafts, and remount local draft UI state.
 - Theme changes need `tests/unit/theme.test.ts`.
+- Home page remains `force-static`: only fetch `/api/home` from the client when the static `galgames` payload is empty, and keep non-empty home payloads on the zero-extra-API path except for `/api/patch/stats`.
 
 ## Verification
 

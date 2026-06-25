@@ -70,6 +70,24 @@
 - `role >= 3`：管理员。
 - `role >= 4`：超级管理员。
 
+## 首页
+
+代表路径：
+
+- `app/page.tsx`
+- `app/actions.ts`
+- `app/api/home/service.ts`
+- `app/api/home/route.ts`
+- `components/home/Container.tsx`
+- `components/home/HomeGalgameGrid.tsx`
+
+规则：
+
+- 首页是 `force-static`，正常首屏游戏和资源来自服务端静态 payload，不要为了修复部署后的空列表把首页改成动态 SSR。
+- 首页游戏 section 只在静态 payload 的 `galgames` 为空时，由客户端补拉一次 `/api/home`；静态 payload 非空时不能额外请求 `/api/home`，只保留现有 `/api/patch/stats` 实时浏览量合并。
+- `/api/home` 是部署空快照的兜底路径。匿名请求使用短响应缓存；登录、NSFW 设置或 blocked tag cookie 请求仍按个性化可见性返回 `private, no-store`。
+- 调整首页首屏数据时，要同时检查 `home_data:*` Redis payload cache、`/api/home` 匿名响应缓存、Cloudflare API purge、`/api/patch/stats` 实时叠加，避免空结果被缓存后长期覆盖静态首页。
+
 ## 用户与消息页面
 
 用户页：

@@ -21,6 +21,7 @@ Use this skill for persistence, cache, and upload consistency work.
 - Direct `redis` / `runRedisCommand` usage needs a reason and explicit full key prefixes.
 - After patch/resource/tag/company writes, call the matching cache invalidation helper.
 - Anonymous tag/company game-list APIs use short response caches; never cache personalized login/NSFW/blocked-tag results, and keep Redis list cache keys scoped by the full visibility where.
+- Home `home_data:*` and `/api/home` anonymous response caches must not store empty `galgames` payloads; this is a deploy/ISR empty-snapshot guard, not a generic rule for valid empty paginated lists.
 - Upload publishing must preserve role/quota checks, `consumeUpload`, S3 compensation, `finalizeUpload`, and cleanup behavior.
 - Production `prisma db push` reset prompts must be cancelled and replaced with a migration plan.
 

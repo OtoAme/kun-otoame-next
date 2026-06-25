@@ -125,6 +125,7 @@ service/helper 负责：
 
 文件：
 
+- `app/api/home/route.ts`
 - `app/api/tag/service.ts`
 - `app/api/company/service.ts`
 - `app/api/tag/otomegame/route.ts`
@@ -139,7 +140,8 @@ service/helper 负责：
 
 - 标签列表会排除用户 blocked tag。
 - 标签/公司游戏列表使用 Redis 缓存，缓存 key 由 input + visibility where hash 得到；visibility where 必须合并 NSFW 条件和 blocked tag 条件。
-- `/api/tag/otomegame` 和 `/api/company/otomegame` 是只读匿名热点 API。匿名请求进入匿名响应热缓存；带登录 token、NSFW 设置或 blocked tag cookie 的请求必须走 `private, no-store` 个性化路径，不能共享匿名响应缓存。
+- `/api/home`、`/api/tag/otomegame` 和 `/api/company/otomegame` 是只读匿名热点 API。匿名请求进入匿名响应热缓存；带登录 token、NSFW 设置或 blocked tag cookie 的请求必须走 `private, no-store` 个性化路径，不能共享匿名响应缓存。
+- `/api/home` 只用于首页静态空 payload 的客户端兜底；正常首页不应每次请求该 API。该接口和 `home_data:*` 都不能缓存空 `galgames` payload，避免部署后空列表长期覆盖首页。
 - 公司游戏列表 API 也必须应用 blocked tag visibility，不能只做 NSFW 过滤；否则 company 详情页个性化首屏补拉后仍可能展示用户已屏蔽标签的游戏。
 - 公司支持 alias、parent_brand、primary_language、official_website。
 - 公司创建和重写必须把 `name` 与 `alias` 一起做冲突检查；任一值命中其他公司的 `name` 或 `alias` 都应拒绝，避免别名导致重复公司。
@@ -233,7 +235,7 @@ if (typeof input === 'string') {
 
 ## 安全约束
 
-- 非 upload API 由 `middleware.ts` 统一校验 CSRF；只读匿名热点 `/api/tag/otomegame` 和 `/api/company/otomegame` 从 matcher 中排除以降低 GET 固定开销。
+- 非 upload API 由 `middleware.ts` 统一校验 CSRF；只读匿名热点 `/api/home`、`/api/tag/otomegame` 和 `/api/company/otomegame` 从 matcher 中排除以降低 GET 固定开销。
 - upload API 因大 body 跳过 middleware，必须在 handler 内调用 `verifyKunCsrf`。
 - 状态变更请求需要 `x-requested-with: kun-fetch`，并通过 `origin` / `referer` host 校验。新增 `fetch` wrapper 或第三方回调时要确认它能满足这个约束，或明确加入最小豁免。
 - 用户可见错误不要泄漏 secret、token、资源密码、S3 key。

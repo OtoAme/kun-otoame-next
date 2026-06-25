@@ -72,6 +72,7 @@ kun:touchgal
 - 只有需要 Redis hash、Lua、multi 或跨 key 原子操作时才直接用 `redis` + `runRedisCommand`，这类 key 要像 `app/api/patch/views/buffer.ts` 一样显式写完整前缀。
 - 分布式锁必须用 token release，不要直接 `del` lock key。
 - `delKvPattern` 使用 `SCAN` + 批量删除，适合明确业务前缀；不要传过宽 pattern。
+- `getOrSet` 的 `shouldCacheValue` / `isCachedValueValid` 只用于拒绝明显异常的缓存值，例如首页 `home_data:*` 的空游戏列表；正常列表分页为空不能套用这个策略。
 
 ## Patch 缓存
 
@@ -111,7 +112,13 @@ Cloudflare purge 约定：
 
 - 公开 HTML 用 `purgePublicPageCache(paths)`，按完整 URL files 清理。
 - 匿名公开 API 用 `purgePublicApiCache(paths)`，按 URL prefix 清理。prefix 不带 query string，`/api/tag/otomegame` 会覆盖 `/api/tag/otomegame?...` 的 query 变体。
-- `/api/tag/otomegame` 和 `/api/company/otomegame` 的匿名响应缓存也要配合 `invalidateAnonymousApiResponseCaches()` 清理 Redis/进程热缓存。
+- `/api/home`、`/api/tag/otomegame` 和 `/api/company/otomegame` 的匿名响应缓存也要配合 `invalidateAnonymousApiResponseCaches()` 清理 Redis/进程热缓存。
+
+首页缓存约定：
+
+- `home_data:*` 是首页静态 payload 的 Redis 缓存，正常匿名首页仍由 `app/page.tsx` 的 `force-static` payload 承载，不应每次客户端拉取。
+- 部署或 ISR 期间如果查询到空 `galgames`，不能把这个空 payload 写入 `home_data:*`；已有空缓存也应视为无效并重新走 producer。
+- `/api/home` 只作为空静态首页的客户端自愈接口。匿名响应可短缓存，但同样不能缓存空 `galgames` 响应；个性化 cookie 请求保持 `private, no-store`。
 
 浏览量不是普通 patch cache：详情页由 `components/patch/view/PatchViewBeacon.tsx` 在客户端调用 `POST /api/patch/views`，该接口返回 `Cache-Control: private, no-store`，底层 `app/api/patch/views/buffer.ts` 使用 Redis hash 记录 `views:buffer`、`patch:stats:view` 和 `patch:stats:download`，`server/tasks/flushPatchViewsTask.ts` 每 2 分钟把 pending buffer 批量写入 PostgreSQL。静态首页卡片通过 `GET /api/patch/stats` no-store 接口拉取实时 view/download 并做客户端合并。改列表、详情、首页或排行统计时要同时检查实时叠加和落库任务。
 
