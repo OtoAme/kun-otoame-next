@@ -9,6 +9,8 @@ import {
 } from '~/constants/resource'
 import { getPatchByCompany } from '../service'
 import { getCachedAnonymousJsonResponse } from '~/app/api/utils/anonymousApiResponseCache'
+import { getBlockedTagIds } from '~/app/api/utils/getBlockedTagIds'
+import { buildBlockedTagWhere } from '~/utils/blockedTag'
 
 export const GET = async (req: NextRequest) => {
   const input = kunParseGetQuery(req, getPatchByCompanySchema)
@@ -25,7 +27,12 @@ export const GET = async (req: NextRequest) => {
   }
 
   return getCachedAnonymousJsonResponse(req, 'company_otomegame', async () => {
-    const nsfwEnable = getNSFWHeader(req)
-    return getPatchByCompany(input, nsfwEnable)
+    const blockedTagIds = await getBlockedTagIds(req)
+    const visibilityWhere = {
+      ...getNSFWHeader(req),
+      ...buildBlockedTagWhere(blockedTagIds)
+    }
+
+    return getPatchByCompany(input, visibilityWhere)
   })
 }

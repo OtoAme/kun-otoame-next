@@ -1,24 +1,33 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const responseCacheMock = vi.hoisted(() => vi.fn())
+const serviceMocks = vi.hoisted(() => ({
+  getPatchByTag: vi.fn(),
+  getPatchByCompany: vi.fn()
+}))
+const visibilityMocks = vi.hoisted(() => ({
+  getBlockedTagIds: vi.fn(),
+  getNSFWHeader: vi.fn()
+}))
+
 vi.mock('~/app/api/utils/anonymousApiResponseCache', () => ({
   getCachedAnonymousJsonResponse: responseCacheMock
 }))
 
 vi.mock('~/app/api/tag/service', () => ({
-  getPatchByTag: vi.fn()
+  getPatchByTag: serviceMocks.getPatchByTag
 }))
 
 vi.mock('~/app/api/company/service', () => ({
-  getPatchByCompany: vi.fn()
+  getPatchByCompany: serviceMocks.getPatchByCompany
 }))
 
 vi.mock('~/app/api/utils/getBlockedTagIds', () => ({
-  getBlockedTagIds: vi.fn()
+  getBlockedTagIds: visibilityMocks.getBlockedTagIds
 }))
 
 vi.mock('~/app/api/utils/getNSFWHeader', () => ({
-  getNSFWHeader: vi.fn()
+  getNSFWHeader: visibilityMocks.getNSFWHeader
 }))
 
 import { GET as getTagOtomegame } from '~/app/api/tag/otomegame/route'
@@ -33,7 +42,14 @@ const validCompanyUrl =
 describe('tag/company otomegame API response caching', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    responseCacheMock.mockResolvedValue(new Response('{}'))
+    responseCacheMock.mockImplementation(
+      async (_req: Request, _namespace: string, producer: () => Promise<{}>) =>
+        Response.json(await producer())
+    )
+    serviceMocks.getPatchByTag.mockResolvedValue({ galgames: [], total: 0 })
+    serviceMocks.getPatchByCompany.mockResolvedValue({ galgames: [], total: 0 })
+    visibilityMocks.getBlockedTagIds.mockResolvedValue([])
+    visibilityMocks.getNSFWHeader.mockReturnValue({ content_limit: 'sfw' })
   })
 
   it('wraps valid tag otomegame responses in the anonymous response cache', async () => {
@@ -57,6 +73,29 @@ describe('tag/company otomegame API response caching', () => {
       req,
       'company_otomegame',
       expect.any(Function)
+    )
+  })
+
+  it('applies blocked tag visibility to personalized company list responses', async () => {
+    const req = new Request(validCompanyUrl)
+    visibilityMocks.getBlockedTagIds.mockResolvedValue([2, 1])
+
+    await getCompanyOtomegame(req as never)
+
+    expect(serviceMocks.getPatchByCompany).toHaveBeenCalledWith(
+      expect.objectContaining({ companyId: 4 }),
+      {
+        content_limit: 'sfw',
+        NOT: {
+          tag: {
+            some: {
+              tag_id: {
+                in: [1, 2]
+              }
+            }
+          }
+        }
+      }
     )
   })
 

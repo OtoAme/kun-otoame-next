@@ -1,7 +1,7 @@
 import { generateKunMetadataTemplate } from './metadata'
 import { CompanyDetailContainer } from '~/components/company/detail/Container'
 import { getCachedCompanyById } from './data'
-import { kunCompanyGalgameActions } from './actions'
+import { getPatchByCompany } from '~/app/api/company/service'
 import { ErrorComponent } from '~/components/error/ErrorComponent'
 import type { Metadata } from 'next'
 import { prisma } from '~/prisma/index'
@@ -55,19 +55,22 @@ export default async function Kun({ params }: Props) {
 
   const [company, galgamesResponse] = await Promise.all([
     getCachedCompanyById(companyId),
-    kunCompanyGalgameActions({
-      companyId,
-      page: 1,
-      limit: 24,
-      selectedType: DEFAULT_GALGAME_FILTER_VALUE,
-      selectedLanguage: DEFAULT_GALGAME_FILTER_VALUE,
-      selectedPlatform: DEFAULT_GALGAME_FILTER_VALUE,
-      sortField: DEFAULT_GALGAME_SORT_FIELD,
-      sortOrder: DEFAULT_GALGAME_SORT_ORDER,
-      yearString: DEFAULT_GALGAME_YEAR_STRING,
-      monthString: DEFAULT_GALGAME_MONTH_STRING,
-      minRatingCount: DEFAULT_TAG_COMPANY_MIN_RATING_COUNT
-    })
+    getPatchByCompany(
+      {
+        companyId,
+        page: 1,
+        limit: 24,
+        selectedType: DEFAULT_GALGAME_FILTER_VALUE,
+        selectedLanguage: DEFAULT_GALGAME_FILTER_VALUE,
+        selectedPlatform: DEFAULT_GALGAME_FILTER_VALUE,
+        sortField: DEFAULT_GALGAME_SORT_FIELD,
+        sortOrder: DEFAULT_GALGAME_SORT_ORDER,
+        yearString: DEFAULT_GALGAME_YEAR_STRING,
+        monthString: DEFAULT_GALGAME_MONTH_STRING,
+        minRatingCount: DEFAULT_TAG_COMPANY_MIN_RATING_COUNT
+      },
+      { content_limit: 'sfw' }
+    )
   ])
 
   if (typeof company === 'string') {
@@ -83,6 +86,7 @@ export default async function Kun({ params }: Props) {
       initialCompany={company}
       initialGalgames={galgamesResponse.galgames}
       initialTotal={galgamesResponse.total}
+      initialVisibility="pending"
     />
   )
 }

@@ -40,6 +40,7 @@ interface Props {
   initialCompany: CompanyDetail
   initialGalgames: GalgameCard[]
   initialTotal: number
+  initialVisibility?: 'pending' | 'show'
 }
 
 const SORT_FIELDS = new Set<SortField>([
@@ -96,14 +97,47 @@ const getUrlFilterState = () => {
   }
 }
 
+const getCookieValue = (name: string) => {
+  if (typeof document === 'undefined') {
+    return undefined
+  }
+
+  const cookie = document.cookie
+    .split(';')
+    .map((value) => value.trim())
+    .find((value) => value.startsWith(`${name}=`))
+
+  if (!cookie) {
+    return undefined
+  }
+
+  return decodeURIComponent(cookie.split('=').slice(1).join('='))
+}
+
+const shouldFetchPersonalizedInitialList = () => {
+  const nsfwPreference = getCookieValue(
+    'kun-patch-setting-store|state|data|kunNsfwEnable'
+  )
+
+  return (
+    getCookieValue('kun-galgame-patch-moe-token') !== undefined ||
+    getCookieValue('kun-patch-setting-store|state|data|kunBlockedTagIds') !==
+      undefined ||
+    nsfwPreference === 'nsfw' ||
+    nsfwPreference === 'all'
+  )
+}
+
 export const CompanyDetailContainer: FC<Props> = ({
   initialCompany,
   initialGalgames,
-  initialTotal
+  initialTotal,
+  initialVisibility = 'show'
 }) => {
   const { isOpen, onOpen, onClose } = useDisclosure()
 
   const isMounted = useMounted()
+  const shouldResolveInitialVisibility = initialVisibility === 'pending'
   const user = useUserStore((state) => state.user)
   const router = useRouter()
   const fetchRequestId = useRef(0)
@@ -137,9 +171,13 @@ export const CompanyDetailContainer: FC<Props> = ({
   )
 
   const [company, setCompany] = useState(initialCompany)
-  const [patches, setPatches] = useState<GalgameCard[]>(initialGalgames)
-  const [totalPatches, setTotalPatches] = useState(initialTotal)
-  const [loading, setLoading] = useState(false)
+  const [patches, setPatches] = useState<GalgameCard[]>(
+    shouldResolveInitialVisibility ? [] : initialGalgames
+  )
+  const [totalPatches, setTotalPatches] = useState(
+    shouldResolveInitialVisibility ? 0 : initialTotal
+  )
+  const [loading, setLoading] = useState(shouldResolveInitialVisibility)
 
   const updateFilter = <T,>(setter: (value: T) => void, value: T) => {
     setPage(1)
@@ -296,6 +334,18 @@ export const CompanyDetailContainer: FC<Props> = ({
       })
     ) {
       hasUsedInitialPatches.current = true
+
+      if (
+        shouldResolveInitialVisibility &&
+        shouldFetchPersonalizedInitialList()
+      ) {
+        fetchPatches()
+        return
+      }
+
+      setPatches(initialGalgames)
+      setTotalPatches(initialTotal)
+      setLoading(false)
       return
     }
 
@@ -312,7 +362,8 @@ export const CompanyDetailContainer: FC<Props> = ({
     selectedPlatform,
     selectedYears,
     selectedMonths,
-    sortField === 'rating' ? minRatingCount : null
+    sortField === 'rating' ? minRatingCount : null,
+    shouldResolveInitialVisibility
   ])
 
   return (
