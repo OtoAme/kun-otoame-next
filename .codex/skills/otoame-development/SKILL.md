@@ -27,6 +27,7 @@ Read the relevant project docs before editing:
 - Preserve CSRF header + origin/referer checks and API-layer permissions.
 - Keep legacy `touchgal` / `galgame` names when they are compatibility keys, cookies, types, or deployment ids.
 - For onboarding or setup questions, answer from `docs/project/development.md` instead of inventing shell steps.
+- Every commit created by Codex in this repository must use Conventional Commits: `<type>(<scope>): <subject>`. Use types such as `feat`, `fix`, `docs`, `test`, `refactor`, `perf`, `build`, `ci`, `chore`, or `revert`; if the user provides a non-conventional message, convert it to the nearest conventional form or ask when the intent is ambiguous.
 - After every code commit, check and update matching `docs/project/*`, `docs/modules/*`, and `.codex/skills/*/SKILL.md`; major behavior, API, data, cache, deployment, testing, or workflow changes must update docs and skills.
 - Keep docs/skill updates in a separate conventional commit from application code, tests, migrations, or generated artifacts.
 

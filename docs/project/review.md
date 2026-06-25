@@ -91,6 +91,7 @@ Review 前先确认改动类型：
 - `.codex/skills/*/SKILL.md` 的 frontmatter description 是否是触发条件，不是长流程摘要。
 - Skill 是否只保留入口、规则和验证命令，详细知识是否回链到 docs。
 - 新模块是否先更新现有 skill；只有出现新的独立工作流时才新增 skill。
+- Codex 创建的提交信息是否全部使用约定式提交，格式为 `<type>(<scope>): <subject>`。
 - 每个代码提交后是否检查并同步了对应文档和 skill；重大行为、API、数据、缓存、部署、测试或工作流变更必须有同步更新。
 - 文档 / skill 同步是否作为独立提交出现，没有和业务代码、测试或迁移改动混在同一个 commit 中。
 
