@@ -12,7 +12,8 @@ const GALLERY_AVIF_THUMBNAIL_MAX_BYTES = 512 * 1024
 const SYSTEM_FFMPEG_COMMAND = 'ffmpeg'
 const require = createRequire(import.meta.url)
 
-const PROJECT_ROOT = path.resolve(import.meta.dirname, '..', '..', '..')
+// import.meta.dirname is undefined during Next.js build (webpack), use process.cwd() instead
+const PROJECT_ROOT = process.cwd()
 const LINUX_FFMPEG_PATH = path.join(
   PROJECT_ROOT,
   'node_modules',
