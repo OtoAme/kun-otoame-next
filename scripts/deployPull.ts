@@ -187,6 +187,15 @@ const main = async () => {
     console.log('Injecting target-architecture ffmpeg-static into standalone build...')
     copyPackage('ffmpeg-static')
 
+    const rootGalleryFfmpeg = path.join(rootNodeModules, '.ffmpeg', 'ffmpeg')
+    if (fs.existsSync(rootGalleryFfmpeg)) {
+      console.log('Injecting optional gallery ffmpeg binary into standalone build...')
+      const standaloneGalleryFfmpeg = path.join(tempDir, '.ffmpeg', 'ffmpeg')
+      fs.mkdirSync(path.dirname(standaloneGalleryFfmpeg), { recursive: true })
+      fs.copyFileSync(rootGalleryFfmpeg, standaloneGalleryFfmpeg)
+      fs.chmodSync(standaloneGalleryFfmpeg, 0o755)
+    }
+
     console.log('Applying atomic update...')
     const nextDir = path.resolve(__dirname, '..', '.next')
     const standaloneDir = path.join(nextDir, 'standalone')

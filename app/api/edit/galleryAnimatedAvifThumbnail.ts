@@ -12,20 +12,22 @@ const GALLERY_AVIF_THUMBNAIL_MAX_BYTES = 512 * 1024
 const SYSTEM_FFMPEG_COMMAND = 'ffmpeg'
 const require = createRequire(import.meta.url)
 
-// import.meta.dirname is undefined during Next.js build (webpack), use process.cwd() instead
-const PROJECT_ROOT = process.cwd()
-const LINUX_FFMPEG_PATH = path.join(
-  PROJECT_ROOT,
-  'node_modules',
-  '.ffmpeg',
-  'ffmpeg'
-)
-
-const getBundledFfmpegPath = async () => {
-  if (process.platform === 'linux' && existsSync(LINUX_FFMPEG_PATH)) {
-    return LINUX_FFMPEG_PATH
+const getOptionalFfmpegPaths = () => {
+  const paths: string[] = []
+  const configuredPath = process.env.KUN_GALLERY_FFMPEG_PATH
+  if (configuredPath) {
+    paths.push(configuredPath)
   }
 
+  paths.push(
+    path.join(process.cwd(), '.ffmpeg', 'ffmpeg'),
+    path.join(process.cwd(), 'node_modules', '.ffmpeg', 'ffmpeg')
+  )
+
+  return paths
+}
+
+const getFfmpegStaticPath = () => {
   try {
     const ffmpegStatic = require('ffmpeg-static') as unknown
     return typeof ffmpegStatic === 'string' ? ffmpegStatic : null
@@ -35,10 +37,13 @@ const getBundledFfmpegPath = async () => {
 }
 
 export const getGalleryFfmpegCommands = async () => {
-  const bundledPath = await getBundledFfmpegPath()
-  return bundledPath
-    ? [bundledPath, SYSTEM_FFMPEG_COMMAND]
-    : [SYSTEM_FFMPEG_COMMAND]
+  const commands = [
+    ...getOptionalFfmpegPaths().filter((ffmpegPath) => existsSync(ffmpegPath)),
+    getFfmpegStaticPath(),
+    SYSTEM_FFMPEG_COMMAND
+  ].filter((command): command is string => Boolean(command))
+
+  return Array.from(new Set(commands))
 }
 
 const runCommand = (

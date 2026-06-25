@@ -5,19 +5,45 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pipeline } from 'node:stream/promises'
 import { execSync } from 'node:child_process'
-import { platform } from 'node:os'
+import { arch, platform } from 'node:os'
 
 const FFMPEG_DIR = join(process.cwd(), 'node_modules', '.ffmpeg')
 const FFMPEG_BIN = join(FFMPEG_DIR, 'ffmpeg')
 
-const BTBN_URL =
-  'https://github.com/BtbN/FFmpeg-Builds/releases/latest/download/ffmpeg-master-latest-linux64-gpl.tar.xz'
+const getBtbNAssetName = () => {
+  if (arch() === 'x64') {
+    return 'ffmpeg-master-latest-linux64-gpl.tar.xz'
+  }
+
+  if (arch() === 'arm64') {
+    return 'ffmpeg-master-latest-linuxarm64-gpl.tar.xz'
+  }
+
+  return null
+}
+
+const getBtbNUrl = () => {
+  const assetName = getBtbNAssetName()
+  return assetName
+    ? 'https://github.com/BtbN/FFmpeg-Builds/releases/latest/download/' +
+        assetName
+    : null
+}
 
 const main = async () => {
   if (platform() !== 'linux') {
     console.log(
       'Skipping animated AVIF ffmpeg setup (platform: %s, uses ffmpeg-static)',
       platform()
+    )
+    process.exit(0)
+  }
+
+  const btbNUrl = getBtbNUrl()
+  if (!btbNUrl) {
+    console.log(
+      'Skipping animated AVIF ffmpeg setup (unsupported Linux arch: %s)',
+      arch()
     )
     process.exit(0)
   }
@@ -31,7 +57,7 @@ const main = async () => {
   }
 
   console.log('Downloading animated AVIF-capable ffmpeg for Linux...')
-  console.log('Source: %s', BTBN_URL)
+  console.log('Source: %s', btbNUrl)
 
   const tmpDir = join(tmpdir(), 'otoame-ffmpeg-' + Date.now())
   const tarPath = join(tmpDir, 'ffmpeg.tar.xz')
@@ -42,7 +68,7 @@ const main = async () => {
     // Download
     await new Promise<void>((resolve, reject) => {
       const file = createWriteStream(tarPath)
-      get(BTBN_URL, { headers: { 'User-Agent': 'otoame-deploy' } }, (res) => {
+      get(btbNUrl, { headers: { 'User-Agent': 'otoame-deploy' } }, (res) => {
         const follow = (r: typeof res) => {
           if (
             r.statusCode &&
@@ -57,6 +83,12 @@ const main = async () => {
             ).on('error', reject)
             return
           }
+
+          if (r.statusCode !== 200) {
+            reject(new Error('download failed with status ' + r.statusCode))
+            return
+          }
+
           pipeline(r, file).then(resolve).catch(reject)
         }
         follow(res)

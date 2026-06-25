@@ -5,7 +5,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "postinstall": "pnpm prisma generate && esno scripts/ensureFfmpegLinux.ts",
+    "postinstall": "pnpm prisma generate",
     "dev:webpack": "next dev --hostname=127.0.0.1 --port=3000",
     "dev": "next dev --turbo --hostname=127.0.0.1 --port=3000",
     "build": "next build",
@@ -17,6 +17,7 @@
     "typecheck": "tsc --noEmit",
     "prisma:push": "pnpm migration:resource-links && pnpm prisma db push && pnpm prisma generate",
     "prisma:generate": "pnpm prisma generate",
+    "gallery:ffmpeg:install": "esno scripts/ensureFfmpegLinux.ts",
     "start": "pm2 start ecosystem.config.cjs",
     "stop": "pm2 delete kun-touchgal-next",
     "deploy:install": "esno scripts/deployInstall.ts",

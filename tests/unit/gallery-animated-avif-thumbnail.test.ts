@@ -1,10 +1,16 @@
 import { EventEmitter } from 'node:events'
+import path from 'node:path'
 import { writeFile } from 'node:fs/promises'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const spawnMock = vi.hoisted(() => vi.fn())
+const existsSyncMock = vi.hoisted(() => vi.fn())
 const ffmpegStaticMock = vi.hoisted((): { default: string | null } => ({
   default: '/bundled/ffmpeg'
+}))
+
+vi.mock('node:fs', () => ({
+  existsSync: existsSyncMock
 }))
 
 vi.mock('node:child_process', () => ({
@@ -15,7 +21,10 @@ vi.mock('node:module', () => ({
   createRequire: () => () => ffmpegStaticMock.default
 }))
 
-import { createAnimatedAvifThumbnail } from '~/app/api/edit/galleryAnimatedAvifThumbnail'
+import {
+  createAnimatedAvifThumbnail,
+  getGalleryFfmpegCommands
+} from '~/app/api/edit/galleryAnimatedAvifThumbnail'
 
 const createChildProcess = (
   args: string[],
@@ -40,6 +49,52 @@ describe('animated AVIF thumbnail adapter', () => {
   beforeEach(() => {
     vi.resetAllMocks()
     ffmpegStaticMock.default = '/bundled/ffmpeg'
+    existsSyncMock.mockReturnValue(false)
+    delete process.env.KUN_GALLERY_FFMPEG_PATH
+  })
+
+  it('prefers an explicit gallery ffmpeg path while keeping fallback commands', async () => {
+    process.env.KUN_GALLERY_FFMPEG_PATH = '/custom/ffmpeg'
+    existsSyncMock.mockImplementation((targetPath: string) => {
+      return targetPath === '/custom/ffmpeg'
+    })
+
+    await expect(getGalleryFfmpegCommands()).resolves.toEqual([
+      '/custom/ffmpeg',
+      '/bundled/ffmpeg',
+      'ffmpeg'
+    ])
+  })
+
+  it('finds the standalone packaged ffmpeg binary before ffmpeg-static', async () => {
+    const standaloneFfmpeg = path.join(process.cwd(), '.ffmpeg', 'ffmpeg')
+    existsSyncMock.mockImplementation((targetPath: string) => {
+      return targetPath === standaloneFfmpeg
+    })
+
+    await expect(getGalleryFfmpegCommands()).resolves.toEqual([
+      standaloneFfmpeg,
+      '/bundled/ffmpeg',
+      'ffmpeg'
+    ])
+  })
+
+  it('keeps ffmpeg-static fallback after the optional local binary', async () => {
+    const localFfmpeg = path.join(
+      process.cwd(),
+      'node_modules',
+      '.ffmpeg',
+      'ffmpeg'
+    )
+    existsSyncMock.mockImplementation((targetPath: string) => {
+      return targetPath === localFfmpeg
+    })
+
+    await expect(getGalleryFfmpegCommands()).resolves.toEqual([
+      localFfmpeg,
+      '/bundled/ffmpeg',
+      'ffmpeg'
+    ])
   })
 
   it('returns an animated AVIF thumbnail when ffmpeg animated encoding succeeds', async () => {
