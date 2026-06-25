@@ -170,7 +170,7 @@ Gallery 图片上传走 `app/api/edit/gallery/route.ts` 和 `app/api/edit/galler
   - 所有路径的 S3 清理都为 best-effort：失败记 error 日志但不抛异常。`extractS3Key` 复用 `app/api/patch/resource/_helper.ts` 的实现。
 - animated AVIF 缩略图 adapter 使用临时目录处理用户输入，`ffmpeg` 子进程有超时限制，并且输出体积必须在缩略图上限内；animated 输出成功后还会用 `showinfo` 确认输出帧数大于 1，避免把静态首帧误判为 animated AVIF 缩略图。`ffmpeg-static` 的 install script 必须允许运行，否则 bundled binary 可能不存在。`ffmpeg-static` 下载的是安装机器当前平台的 binary，`deploy:pull` 需要把目标服务器 `node_modules/ffmpeg-static` 注入 standalone，避免 release artifact 构建机和生产机架构不一致。部署环境没有可用 animated AVIF encoder 时会自动回退为无缩略图或静图首帧。引入其他 libavif / Node binding 方案前仍要先评估部署成本、CPU 成本、失败补偿和安全边界。
 - 部分 `ffmpeg-static` Linux binary 可以解码 AVIF 但不能稳定输出 animated AVIF。需要强 animated AVIF 缩略图时，在 Linux x64/arm64 服务器显式运行 `pnpm gallery:ffmpeg:install` 下载 BtbN 静态构建到 `node_modules/.ffmpeg/ffmpeg`，或用 `KUN_GALLERY_FFMPEG_PATH` 指向自备 FFmpeg 的绝对路径。`KUN_GALLERY_FFMPEG_PATH` 优先级最高，修改 `.env` 后需要重启服务；`postbuild.ts` 会把 `node_modules/.ffmpeg/ffmpeg` 复制到 standalone 的 `.ffmpeg/ffmpeg`；普通安装不自动下载该大文件，保持默认部署较轻。
-- 本地或部署前可用 `pnpm exec esno scripts/verifyGalleryAnimatedAvifThumbnail.ts <animated.avif> [output.avif]` 验证 animated AVIF 缩略图 encoder；该脚本只读写本地文件，不连接 S3 或数据库，并会检查输入和输出帧数。生产上线前应在目标服务器执行，成功输出 `Wrote animated AVIF thumbnail: ... frames ...`。
+- 本地或部署前可用 `pnpm exec esno scripts/verifyGalleryAnimatedAvifThumbnail.ts <animated.avif> [output.avif]` 验证 animated AVIF 缩略图 encoder；该脚本只读写本地文件，不连接 S3 或数据库，并会列出各候选 FFmpeg 对输入和输出解析到的帧数。生产上线前应在目标服务器执行，成功输出 `Wrote animated AVIF thumbnail: ... frames ...`。
 
 ## S3
 

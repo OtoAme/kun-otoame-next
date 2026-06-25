@@ -410,7 +410,7 @@ pnpm exec esno scripts/verifyGalleryAnimatedAvifThumbnail.ts ./public/images/ani
 ls -la node_modules/.ffmpeg/ffmpeg .next/standalone/.ffmpeg/ffmpeg
 ```
 
-验证脚本会检查输入样本和输出缩略图的帧数，成功时会输出 `Wrote animated AVIF thumbnail: ... bytes, ... frames to ...`。实际上传时 PM2 日志中应出现 `Animated AVIF thumbnail generated: ... bytes`；如果没有缩略图，查看 `Animated AVIF thumbnail generation failed for all commands:` 后面的失败原因。
+验证脚本会列出每个候选 FFmpeg 对输入样本和输出缩略图解析到的帧数，成功时会输出 `Wrote animated AVIF thumbnail: ... bytes, ... frames to ...`。如果所有候选都只能解析到 1 帧，说明当前服务器上的 FFmpeg 不能把该 AVIF 序列当作动图处理。实际上传时 PM2 日志中应出现 `Animated AVIF thumbnail generated: ... bytes`；如果没有缩略图，查看 `Animated AVIF thumbnail generation failed for all commands:` 后面的失败原因。
 
 可选安装系统 fallback：
 
