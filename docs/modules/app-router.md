@@ -86,6 +86,22 @@
 
 未读状态由 `app/api/message/service.ts` 查询普通消息与聊天会话未读数。会话模块在 `app/api/message/conversation/*`。
 
+## 标签和公司详情页
+
+代表路径：
+
+- `app/tag/[id]/page.tsx`
+- `app/company/[id]/page.tsx`
+- `components/tag/detail/Container.tsx`
+- `components/company/detail/Container.tsx`
+
+规则：
+
+- `/tag/[id]` 和 `/company/[id]` 都是 `force-static` 公开页面，默认可进入匿名 HTML 缓存；不要在页面渲染阶段读取登录、NSFW 或 blocked tag cookie 来生成个性化列表。
+- `/company/[id]` 可以在服务端预取默认 SFW 公司游戏列表，并传给客户端作为匿名默认筛选首屏数据。客户端默认筛选状态下，匿名用户复用这份静态列表；登录、NSFW `nsfw` / `all`、或 blocked tag cookie 存在时，首屏应通过 `/api/company/otomegame` 补拉个性化列表。
+- `/tag/[id]` 不在服务端预取游戏列表；登录用户在客户端首屏通过 `/api/tag/otomegame` 拉取列表，避免静态产物混入登录态、blocked tag 或 NSFW 结果。
+- 调整 tag/company 详情列表首屏逻辑时，要同时验证匿名默认场景不多打 API、个性化场景会补拉 API，并检查 StrictMode 下不会重复请求。
+
 ## 页面开发规则
 
 - 只有需要浏览器 API、状态、事件或 hooks 的组件才加 `'use client'`。

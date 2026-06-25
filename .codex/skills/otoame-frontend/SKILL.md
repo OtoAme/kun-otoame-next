@@ -19,6 +19,7 @@ Use this skill for pages, components, state, theme, and content.
 - Keep business-specific UI in domain folders; keep `components/kun` generic.
 - Update metadata for new pages.
 - Check NSFW behavior across list, detail, title, and mask flows.
+- For tag/company detail pages, preserve the static-cache split: company may reuse an SFW static first page only for anonymous default filters, while login/NSFW `nsfw` or `all`/blocked-tag cookies must trigger a client list fetch; tag detail should fetch its game list on client mount.
 - Use `utils/kunFetch.ts` or preserve the CSRF header behavior for state-changing client requests.
 - Keep user-facing copy on OtoAme/OtomeGame naming unless referencing compatibility paths.
 - For edit external-data inputs, merge async source results with the latest store state and only overwrite fields owned by that source.
@@ -29,6 +30,8 @@ Use this skill for pages, components, state, theme, and content.
 ## Verification
 
 ```bash
+pnpm test tests/unit/company-detail-container.test.tsx
+pnpm test tests/unit/tag-detail-container.test.tsx
 pnpm test tests/unit/edit-store.test.ts
 pnpm test tests/unit/theme.test.ts
 pnpm typecheck

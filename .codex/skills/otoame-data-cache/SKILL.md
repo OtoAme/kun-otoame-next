@@ -20,12 +20,14 @@ Use this skill for persistence, cache, and upload consistency work.
 - Use `lib/redis.ts`; helper keys are unprefixed because the helper adds `kun:touchgal`.
 - Direct `redis` / `runRedisCommand` usage needs a reason and explicit full key prefixes.
 - After patch/resource/tag/company writes, call the matching cache invalidation helper.
+- Anonymous tag/company game-list APIs use short response caches; never cache personalized login/NSFW/blocked-tag results, and keep Redis list cache keys scoped by the full visibility where.
 - Upload publishing must preserve role/quota checks, `consumeUpload`, S3 compensation, `finalizeUpload`, and cleanup behavior.
 - Production `prisma db push` reset prompts must be cancelled and replaced with a migration plan.
 
 ## Verification
 
 ```bash
+pnpm test tests/unit/api/otomegame-route-cache.test.ts
 pnpm test tests/unit/redis.test.ts
 pnpm test tests/unit/resource-link.test.ts
 pnpm test tests/unit/resource-classification.test.ts

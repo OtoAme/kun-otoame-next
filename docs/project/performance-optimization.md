@@ -34,8 +34,8 @@
 - 所有列表页启用 `force-static`
 - 首页首屏数据控制为 12 个游戏卡片 + 4 个资源卡片，避免静态 HTML/RSC payload 过大拖低吞吐
 - Tag/Company 详情页添加 `generateStaticParams`，默认预生成 Top 50
-- Company 详情页服务端预取默认游戏列表，并在客户端默认筛选状态下复用首屏数据
-- Tag 详情页只预生成标签资料，不在构建期预取游戏列表，避免登录态/屏蔽标签/NSFW 个性化数据污染静态产物
+- Company 详情页服务端只预取默认 SFW 游戏列表，并在匿名默认筛选状态下复用首屏数据；登录、NSFW `nsfw` / `all` 或 blocked tag cookie 存在时，客户端首屏通过 `/api/company/otomegame` 补拉个性化列表
+- Tag 详情页只预生成标签资料，不在构建期预取游戏列表；客户端首屏通过 `/api/tag/otomegame` 拉取登录态/屏蔽标签/NSFW 相关列表，避免个性化数据污染静态产物
 - Next 静态生成并发限制为 `staticGenerationMaxConcurrency: 2`，避免构建期打爆数据库连接
 
 ### 3. Redis 缓存 TTL 优化 ✅
@@ -67,7 +67,7 @@
 - `/api/tag/otomegame` 和 `/api/company/otomegame` 对匿名请求缓存完整 JSON 响应
 - Redis 缓存 TTL 为 30s，PM2 worker 内存热缓存 TTL 为 30s，最多 512 条
 - 查询参数会规范化排序，等价筛选条件可以共享 Redis、进程内存和 pending single-flight 缓存
-- 个性化 cookie 请求完全绕过响应缓存
+- 个性化 cookie 请求完全绕过响应缓存；tag/company 游戏列表的个性化 visibility 必须同时包含 NSFW 条件和 blocked tag 条件
 - 响应头 `X-Kun-Cache` 标记命中来源：`memory`、`redis`、`miss`、`pending` 或 `private`
 - patch/tag/company 写入失效时同步清理 `anonymous_api:*`
 - 两个只读热点 API 从 middleware matcher 中排除，避免每次 GET 进入 CSRF middleware 固定开销

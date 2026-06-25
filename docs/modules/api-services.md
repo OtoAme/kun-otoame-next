@@ -127,6 +127,8 @@ service/helper 负责：
 
 - `app/api/tag/service.ts`
 - `app/api/company/service.ts`
+- `app/api/tag/otomegame/route.ts`
+- `app/api/company/otomegame/route.ts`
 - `app/api/edit/processExternalData.ts`
 - `app/api/edit/fetchCompanies.ts`
 - `app/api/edit/companyEnsureHelper.ts`
@@ -136,7 +138,9 @@ service/helper 负责：
 规则：
 
 - 标签列表会排除用户 blocked tag。
-- 标签/公司游戏列表使用 Redis 缓存，缓存 key 由 input + NSFW where hash 得到。
+- 标签/公司游戏列表使用 Redis 缓存，缓存 key 由 input + visibility where hash 得到；visibility where 必须合并 NSFW 条件和 blocked tag 条件。
+- `/api/tag/otomegame` 和 `/api/company/otomegame` 是只读匿名热点 API。匿名请求进入匿名响应热缓存；带登录 token、NSFW 设置或 blocked tag cookie 的请求必须走 `private, no-store` 个性化路径，不能共享匿名响应缓存。
+- 公司游戏列表 API 也必须应用 blocked tag visibility，不能只做 NSFW 过滤；否则 company 详情页个性化首屏补拉后仍可能展示用户已屏蔽标签的游戏。
 - 公司支持 alias、parent_brand、primary_language、official_website。
 - 公司创建和重写必须把 `name` 与 `alias` 一起做冲突检查；任一值命中其他公司的 `name` 或 `alias` 都应拒绝，避免别名导致重复公司。
 - 修改公司后必须调用 `invalidateCompanyCaches`。
@@ -250,3 +254,4 @@ if (typeof input === 'string') {
 - `tests/unit/api/batch-tag.test.ts`
 - `tests/unit/api/grant-moemoepoint.test.ts`
 - `tests/unit/api/process-external-data.test.ts`
+- `tests/unit/api/otomegame-route-cache.test.ts`
