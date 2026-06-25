@@ -118,7 +118,7 @@ node -e "console.log(require('ffmpeg-static'))"
 pnpm exec esno scripts/verifyGalleryAnimatedAvifThumbnail.ts ./public/images/animated-sample.avif ./public/images/tmp/animated-sample-thumb.avif
 ```
 
-验证脚本会列出每个候选 FFmpeg 对输入样本和输出缩略图解析到的帧数；如果所有候选对输入或输出都只能解析到 1 帧会失败，避免把静态首帧误判为 animated AVIF 缩略图。验证成功会输出 `Wrote animated AVIF thumbnail: ... bytes, ... frames to ...`。验证失败不会影响普通上传，但 animated AVIF 会没有动态缩略图。
+验证脚本会列出每个候选 FFmpeg 对输入样本和输出缩略图解析到的帧数。部分 Linux FFmpeg 会把 AVIF 的默认 stream 解析为 1 帧 still item，但后续 video stream 才是真正动画；脚本会继续探测并显示类似 `0:2: 61 frame(s)` 的 stream 结果，避免把静态首帧误判为 animated AVIF 缩略图。验证成功会输出 `Wrote animated AVIF thumbnail: ... bytes, ... frames to ...`。验证失败不会影响普通上传，但 animated AVIF 会没有动态缩略图。
 
 线上上传后用 PM2 日志确认：
 
