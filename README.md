@@ -58,6 +58,15 @@ cd kun-otoame-next
 pnpm install
 ```
 
+`pnpm install` 后建议验证当前机器能否生成 Gallery 动态 AVIF 缩略图。该命令只读写本地 fixture，不连接数据库或 S3：
+
+```bash
+node -e "console.log(require('ffmpeg-static'))"
+pnpm exec esno scripts/verifyGalleryAnimatedAvifThumbnail.ts ./public/images/animated-sample.avif ./public/images/tmp/animated-sample-thumb.avif
+```
+
+成功时会输出 `Wrote ... bytes to ./public/images/tmp/animated-sample-thumb.avif`。如果失败，动态 AVIF 原图仍可上传，但不会生成缩略图；优先检查 `pnpm install` 是否允许运行 `ffmpeg-static` 的 install script。
+
 ### 2.配置环境变量
 
 ```bash
@@ -320,6 +329,38 @@ pnpm deploy:pull
    ```
 
    你可以把这里的 instances 数量改为对应你服务器核数的数字，比如你划出了一个 4c8g 的小鸡，可以把 instances 改为 4，6c12g 则可以把 instances 改为 6
+
+### Gallery 动态 AVIF 缩略图生产检查
+
+Gallery 上传动态 AVIF 时，原图会原样上传，缩略图由服务端 `ffmpeg-static` 生成；如果 bundled ffmpeg 不可用，会回退到系统 `ffmpeg`，两者都不可用时仍保留原图，但 `thumbnailUrl` 会是 `null`。
+
+生产环境建议使用项目依赖里的 bundled ffmpeg：
+
+- 保持 `ffmpeg-static` 在 `dependencies` 中。
+- 保持 `package.json` 的 `pnpm.onlyBuiltDependencies` 包含 `ffmpeg-static`，允许 pnpm 运行 install script 下载当前平台二进制。
+- `next.config.ts` 已配置 `serverExternalPackages: ['ffmpeg-static']`，让 Next route handler 用原生 Node require 解析二进制路径。
+- 如果使用 `pnpm deploy:pull` 的 GitHub Release artifact，部署脚本会从目标服务器的 `node_modules` 注入当前机器架构的 `ffmpeg-static`。因此目标服务器也必须先跑过 `pnpm install` / `pnpm deploy:install`，不能只解压 release 包。
+- 如果使用 `pnpm deploy:build`，依赖会在服务器本机安装，通常会自动得到匹配 Linux x64 / arm64 等平台的 bundled binary。
+
+部署后用内置动态 AVIF fixture 在服务器上验证：
+
+```bash
+node -e "console.log(require('ffmpeg-static'))"
+pnpm exec esno scripts/verifyGalleryAnimatedAvifThumbnail.ts ./public/images/animated-sample.avif ./public/images/tmp/animated-sample-thumb.avif
+```
+
+成功时会输出 `Wrote ... bytes to ./public/images/tmp/animated-sample-thumb.avif`。实际上传时 PM2 日志中应出现 `Animated AVIF thumbnail generated: ... bytes`；如果没有缩略图，查看 `Animated AVIF thumbnail generation failed for all commands:` 后面的失败原因。
+
+可选安装系统 fallback：
+
+```bash
+# Ubuntu / Debian
+sudo apt-get update
+sudo apt-get install -y ffmpeg
+ffmpeg -hide_banner -encoders | grep -i libaom-av1
+```
+
+系统 `ffmpeg` 只是兜底；优先路径仍然是项目依赖 `ffmpeg-static`。
 
 ## 严重警告
 

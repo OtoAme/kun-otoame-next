@@ -56,9 +56,9 @@ Store 改动要检查使用该 store 的页面和组件，不要只改类型。
 - “添加水印”只影响静态图片。动态 WebP / AVIF 会保留原始动图并跳过水印，前端需要保留这条提示，避免管理员误以为动图也会被打水印。
 - 创建页 gallery 草稿存在 localforage，清除创建草稿时必须同步清理 gallery draft 和水印开关；重写页新增图片存在 `rewriteStore.newImages`，提交成功后由上传接口返回最终 `url` 和 `thumbnailUrl`。
 - 详情页和重写页已有 gallery 图片使用 `thumbnailUrl ?? url` 作为列表预览，灯箱始终使用原图 `url`。rewrite 提交已有图片时只传 id、NSFW 和排序，不能把 `thumbnailUrl` 当作原图 URL 写回数据库。
-- NSFW 遮罩下仍会加载 `thumbnailUrl ?? url`；如果缩略图是 animated WebP，可以在遮罩下播放。animated AVIF v1 不生成首帧或占位缩略图，列表会回退加载原图，首帧/动态缩略图优化留到 v2。
-- gallery 原图通过低并发队列后台预取。点击第 `i` 个 gallery 槽位时，优先提升当前槽位和相邻槽位的原图缓存优先级；顺序基于当前 gallery 排序，不依赖文件名或 image id。
-- gallery 展示使用普通 `<img>` 和 `KunImageViewer`，动态 WebP / AVIF 依赖浏览器原生播放，不在前端拆帧或转码。后续若做灯箱缩略图到原图的渐进过渡，应先参考成熟 lightbox 的 custom render 方案。
+- NSFW 遮罩下仍会加载 `thumbnailUrl ?? url`；如果缩略图是 animated WebP 或 animated AVIF，可以在遮罩下播放。没有生成缩略图的 animated AVIF 会回退加载原图，不生成占位图。
+- gallery 原图通过低并发队列后台预取。默认预取使用 `Image()` + `decode()`，记录 queued/loading/loaded/failed 状态；点击第 `i` 个 gallery 槽位时，优先提升当前槽位和相邻槽位的原图缓存优先级；顺序基于当前 gallery 排序，不依赖文件名或 image id。
+- gallery 展示使用普通 `<img>` 和 `KunImageViewer`，动态 WebP / AVIF 依赖浏览器原生播放，不在前端拆帧或转码。`KunImageViewer` 可以接收 `previewSrc`，通过 `yet-another-react-lightbox` 的 custom slide 先显示缩略图，原图加载完成后淡入切换；灯箱主图和下载仍使用原图 `url`。
 
 ## 主题与样式
 

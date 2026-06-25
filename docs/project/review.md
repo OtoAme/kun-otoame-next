@@ -62,7 +62,7 @@ Review 前先确认改动类型：
 - 上传消费是否必须经过 `consumeUpload`。
 - 上传 handler 是否保留角色、萌萌点、CAPTCHA、每日 5GB 配额和待审核资源限制。
 - Gallery 静态图是否仍输出 AVIF 并按开关加水印，动态 WebP/AVIF 是否原样保留动画且跳过水印。
-- Gallery 原图是否保持 `patch/<patchId>/gallery/<imageId>.<ext>` 旧路径，缩略图是否使用 `patch/<patchId>/gallery/thumbnail/<imageId>.<thumbExt>`。
+- Gallery 原图是否保持 `patch/<patchId>/gallery/<imageId>.<ext>` 旧路径，缩略图是否使用 `patch/<patchId>/gallery/thumbnail/thumb-<imageId>.<thumbExt>`，便于在 Network 中直接识别缩略图请求。
 - Gallery 动态原图和缩略图是否有大小上限、正确 URL 后缀和 S3 content type。
 - S3 原图或缩略图上传成功后，后续上传或 DB 写失败是否补偿删除。
 - 完成后是否 `finalizeUpload`，失败时是否记录足够上下文。

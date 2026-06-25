@@ -42,6 +42,10 @@
 - `migration:resource-type:*`
 - `migration:patch-counters`
 
+### 验证脚本
+
+- `pnpm exec esno scripts/verifyGalleryAnimatedAvifThumbnail.ts <animated.avif> [output.avif]`：验证当前机器的 bundled `ffmpeg-static` 或系统 `ffmpeg/libaom-av1` 能否生成 animated AVIF gallery 缩略图；只读写本地文件，不访问数据库或 S3。生产运行前应在目标服务器执行，建议使用 `pnpm exec esno scripts/verifyGalleryAnimatedAvifThumbnail.ts ./public/images/animated-sample.avif ./public/images/tmp/animated-sample-thumb.avif`，确认输出 `Wrote ... bytes`。
+
 带 `dry` 的脚本先 dry-run，确认输出后再 apply。
 
 `maintenance:tags:auto-alias:dry` 会在生产库里扫描“某个 tag 的 name 命中另一个主 tag 的 alias”的历史重复数据，并生成合并计划。dry-run 只做计划校验和关系数量预览，不加载所有受影响 patch 的 `unique_id`，避免生产数据量大时预览过慢。确认输出无误后再运行 `maintenance:tags:auto-alias:apply`；apply 会移动 patch 关系、合并 alias、修正 count、迁移用户 blocked tag，并失效 tag/list/受影响 patch 内容缓存。多主 tag 共用同一 alias 时会跳过并输出 warning，需要人工计划。
@@ -105,6 +109,7 @@ release packaging 还会删除包内 `package.json` 的 `"type": "module"`，并
 - 用 release 内的 `prisma` 替换根目录 schema。
 - 在目标服务器重新 `pnpm prisma generate`。
 - 注入 `.prisma` 和 `@prisma` 到 standalone node_modules。
+- 注入目标服务器 `node_modules/ffmpeg-static` 到 standalone node_modules，避免 release artifact 中 bundled ffmpeg 的平台架构和生产服务器不一致。
 - 原子替换 `.next/standalone`。
 - 运行 `pnpm prisma:push`。
 - 生成 sitemap 并复制到 standalone public。
