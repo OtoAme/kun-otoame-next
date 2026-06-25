@@ -50,7 +50,7 @@ const copyFiles = async () => {
   try {
     execSync('pnpm build:sitemap', { stdio: 'inherit' })
 
-    await waitForAllCopies([
+    const copyTasks: Promise<void>[] = [
       copyDirectory('public', '.next/standalone/public'),
       copyDirectory('.next/static', '.next/standalone/.next/static'),
       copyDirectory('server/image', '.next/standalone/server/image'),
@@ -59,7 +59,22 @@ const copyFiles = async () => {
         'config/redirect.json',
         '.next/standalone/config/redirect.json'
       )
-    ])
+    ]
+
+    // Animated AVIF ffmpeg binary (Linux only — optional asset)
+    try {
+      await stat('node_modules/.ffmpeg/ffmpeg')
+      copyTasks.push(
+        copyRuntimeFile(
+          'node_modules/.ffmpeg/ffmpeg',
+          '.next/standalone/.ffmpeg/ffmpeg'
+        )
+      )
+    } catch {
+      // .ffmpeg/ffmpeg not present — non-Linux platform or not installed
+    }
+
+    await waitForAllCopies(copyTasks)
 
     await assertExists('.next/standalone/public/favicon.webp')
     await assertExists('.next/standalone/public/sooner/こじかひわ.webp')
