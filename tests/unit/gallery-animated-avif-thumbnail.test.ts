@@ -122,32 +122,34 @@ describe('animated AVIF thumbnail adapter', () => {
     const result = await createAnimatedAvifThumbnail(Buffer.from('avif'))
 
     expect(result).toEqual(Buffer.from('animated-thumbnail'))
-    expect(spawnMock).toHaveBeenCalledTimes(2)
-    expect(spawnMock.mock.calls[0][0]).toBe('/bundled/ffmpeg')
-    expect(spawnMock.mock.calls[0][1]).not.toContain('-frames:v')
+    expect(spawnMock).toHaveBeenCalledTimes(3)
+    const animatedEncodeCall = spawnMock.mock.calls.find(([, args]) =>
+      args.includes('-c:v')
+    )
+    expect(animatedEncodeCall?.[0]).toBe('/bundled/ffmpeg')
+    expect(animatedEncodeCall?.[1]).not.toContain('-frames:v')
   })
 
   it('falls back to the system ffmpeg command when bundled ffmpeg fails', async () => {
-    spawnMock
-      .mockImplementationOnce((_command: string, args: string[]) =>
-        createChildProcess(args, async () => 1)
-      )
-      .mockImplementationOnce((_command: string, args: string[]) =>
-        createChildProcess(args, async (outputPath) => {
-          await writeFile(outputPath, Buffer.from('system-thumbnail'))
-          return 0
-        })
-      )
-      .mockImplementationOnce((_command: string, args: string[]) =>
-        createChildProcess(args, async () => {
+    spawnMock.mockImplementation((command: string, args: string[]) =>
+      createChildProcess(args, async (outputPath) => {
+        if (command === '/bundled/ffmpeg') {
+          return 1
+        }
+
+        if (args.includes('showinfo')) {
           return { code: 0, stderr: 'n:   0\nn:   1\n' }
-        })
-      )
+        }
+
+        await writeFile(outputPath, Buffer.from('system-thumbnail'))
+        return 0
+      })
+    )
 
     const result = await createAnimatedAvifThumbnail(Buffer.from('avif'))
 
     expect(result).toEqual(Buffer.from('system-thumbnail'))
-    expect(spawnMock).toHaveBeenCalledTimes(3)
+    expect(spawnMock).toHaveBeenCalledTimes(4)
     expect(spawnMock.mock.calls[0][0]).toBe('/bundled/ffmpeg')
     expect(spawnMock.mock.calls[1][0]).toBe('ffmpeg')
   })
@@ -168,7 +170,7 @@ describe('animated AVIF thumbnail adapter', () => {
     const result = await createAnimatedAvifThumbnail(Buffer.from('avif'))
 
     expect(result).toEqual(Buffer.from('system-only-thumbnail'))
-    expect(spawnMock).toHaveBeenCalledTimes(2)
+    expect(spawnMock).toHaveBeenCalledTimes(3)
     expect(spawnMock.mock.calls[0][0]).toBe('ffmpeg')
   })
 
@@ -216,60 +218,114 @@ describe('animated AVIF thumbnail adapter', () => {
   })
 
   it('tries the first-frame fallback when animated output exceeds the size limit', async () => {
-    spawnMock
-      .mockImplementationOnce((_command: string, args: string[]) =>
-        createChildProcess(args, async (outputPath) => {
+    spawnMock.mockImplementation((command: string, args: string[]) =>
+      createChildProcess(args, async (outputPath) => {
+        if (args.includes('showinfo')) {
+          return { code: 0, stderr: 'n:   0\nn:   1\n' }
+        }
+
+        if (command === '/bundled/ffmpeg') {
           await writeFile(outputPath, Buffer.alloc(512 * 1024 + 1))
           return 0
-        })
-      )
-      .mockImplementationOnce((_command: string, args: string[]) =>
-        createChildProcess(args, async (outputPath) => {
-          await writeFile(outputPath, Buffer.from('system-thumbnail'))
-          return 0
-        })
-      )
-      .mockImplementationOnce((_command: string, args: string[]) =>
-        createChildProcess(args, async () => {
-          return { code: 0, stderr: 'n:   0\nn:   1\n' }
-        })
-      )
+        }
+
+        await writeFile(outputPath, Buffer.from('system-thumbnail'))
+        return 0
+      })
+    )
 
     const result = await createAnimatedAvifThumbnail(Buffer.from('avif'))
 
     expect(result).toEqual(Buffer.from('system-thumbnail'))
-    expect(spawnMock).toHaveBeenCalledTimes(3)
+    const animatedEncodeCalls = spawnMock.mock.calls.filter(([, args]) =>
+      args.includes('-c:v')
+    )
+    expect(animatedEncodeCalls[0][0]).toBe('/bundled/ffmpeg')
+    expect(animatedEncodeCalls[1][0]).toBe('ffmpeg')
   })
 
   it('tries the first-frame fallback when animated output has one frame', async () => {
-    spawnMock
-      .mockImplementationOnce((_command: string, args: string[]) =>
-        createChildProcess(args, async (outputPath) => {
-          await writeFile(outputPath, Buffer.from('single-frame-output'))
-          return 0
-        })
-      )
-      .mockImplementationOnce((_command: string, args: string[]) =>
-        createChildProcess(args, async () => {
+    spawnMock.mockImplementation((command: string, args: string[]) =>
+      createChildProcess(args, async (outputPath) => {
+        if (args.includes('showinfo')) {
           return { code: 0, stderr: 'n:   0\n' }
-        })
-      )
-      .mockImplementationOnce((_command: string, args: string[]) =>
-        createChildProcess(args, async () => 1)
-      )
-      .mockImplementationOnce((_command: string, args: string[]) =>
-        createChildProcess(args, async (outputPath) => {
+        }
+
+        if (command === 'ffmpeg') {
+          return 1
+        }
+
+        if (args.includes('-frames:v')) {
           await writeFile(outputPath, Buffer.from('first-frame-thumbnail'))
           return 0
-        })
-      )
+        }
+
+        await writeFile(outputPath, Buffer.from('single-frame-output'))
+        return 0
+      })
+    )
 
     const result = await createAnimatedAvifThumbnail(Buffer.from('avif'))
 
     expect(result).toEqual(Buffer.from('first-frame-thumbnail'))
-    expect(spawnMock).toHaveBeenCalledTimes(4)
-    expect(spawnMock.mock.calls[0][1]).not.toContain('-frames:v')
-    expect(spawnMock.mock.calls[1][1]).toContain('showinfo')
-    expect(spawnMock.mock.calls[3][1]).toContain('-frames:v')
+    const showInfoCalls = spawnMock.mock.calls.filter(([, args]) =>
+      args.includes('showinfo')
+    )
+    const firstFrameCall = spawnMock.mock.calls.find(([, args]) =>
+      args.includes('-frames:v')
+    )
+    expect(showInfoCalls.length).toBeGreaterThanOrEqual(1)
+    expect(firstFrameCall?.[1]).toContain('-frames:v')
+  })
+
+  it('maps the animated video stream when Linux ffmpeg exposes still AVIF items first', async () => {
+    const streamList = [
+      '  Stream #0:0[0x1]: Video: av1, yuv420p, 1280x960, 1 fps',
+      '  Stream #0:1[0x2]: Video: av1, gray, 1280x960, 1 fps',
+      '  Stream #0:2[0x1](und): Video: av1, yuv420p, 1280x960, 30 fps',
+      '  Stream #0:3[0x2](und): Video: av1, gray, 1280x960, 30 fps'
+    ].join('\n')
+
+    spawnMock.mockImplementation((_command: string, args: string[]) =>
+      createChildProcess(args, async (outputPath) => {
+        const mapIndex = args.includes('-map')
+          ? args[args.indexOf('-map') + 1]
+          : null
+
+        if (args.includes('showinfo')) {
+          const input = args[args.indexOf('-i') + 1]
+          const isGeneratedThumbnail = input.includes('thumbnail-animated')
+          const isAnimatedStream =
+            mapIndex === '0:2' || (isGeneratedThumbnail && mapIndex === '0:1')
+
+          return {
+            code: 0,
+            stderr: isAnimatedStream ? 'n:   0\nn:   1\n' : 'n:   0\n'
+          }
+        }
+
+        if (args.length === 3 && args.includes('-i')) {
+          return { code: 1, stderr: streamList }
+        }
+
+        if (mapIndex === '0:2') {
+          await writeFile(outputPath, Buffer.from('animated-mapped-thumbnail'))
+          return 0
+        }
+
+        await writeFile(outputPath, Buffer.from('still-thumbnail'))
+        return 0
+      })
+    )
+
+    const result = await createAnimatedAvifThumbnail(Buffer.from('avif'))
+
+    expect(result).toEqual(Buffer.from('animated-mapped-thumbnail'))
+    const animatedEncodeCalls = spawnMock.mock.calls.filter(([, args]) =>
+      args.includes('-c:v')
+    )
+    expect(animatedEncodeCalls[0][1]).toContain('-map')
+    expect(animatedEncodeCalls[0][1]).toContain('0:2')
+    expect(animatedEncodeCalls[0][1]).not.toContain('-frames:v')
   })
 })

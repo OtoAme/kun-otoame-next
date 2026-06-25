@@ -1,15 +1,15 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import {
-  countAvifFrames,
+  AvifFrameProbe,
   createAnimatedAvifThumbnail,
-  getGalleryFfmpegCommands
+  getGalleryFfmpegCommands,
+  probeAvifFrameCounts
 } from '../app/api/edit/galleryAnimatedAvifThumbnail'
 
-type FrameProbe = {
+type CommandProbe = {
   command: string
-  error?: string
-  frameCount?: number
+  probes: AvifFrameProbe[]
 }
 
 const [inputPath, outputPath = '/tmp/otoame-gallery-avif-thumbnail.avif'] =
@@ -22,42 +22,44 @@ if (!inputPath) {
   process.exit(1)
 }
 
-const getErrorMessage = (error: unknown) =>
-  error instanceof Error ? error.message : String(error)
-
 const probeFrameCounts = async (commands: string[], filePath: string) => {
-  const probes: FrameProbe[] = []
+  const probes: CommandProbe[] = []
 
   for (const command of commands) {
-    try {
-      probes.push({
-        command,
-        frameCount: await countAvifFrames(command, filePath)
-      })
-    } catch (error) {
-      probes.push({
-        command,
-        error: getErrorMessage(error)
-      })
-    }
+    probes.push({
+      command,
+      probes: await probeAvifFrameCounts(command, filePath)
+    })
   }
 
   return probes
 }
 
-const printFrameCounts = (label: string, probes: FrameProbe[]) => {
+const formatStream = (streamSpecifier: string | null) =>
+  streamSpecifier ?? 'default'
+
+const printFrameCounts = (label: string, commandProbes: CommandProbe[]) => {
   console.info(`${label} frame counts:`)
-  for (const probe of probes) {
+  for (const commandProbe of commandProbes) {
+    const summary = commandProbe.probes
+      .map((probe) => {
+        const stream = formatStream(probe.streamSpecifier)
+        return probe.error
+          ? `${stream}: error: ${probe.error}`
+          : `${stream}: ${probe.frameCount} frame(s)`
+      })
+      .join('; ')
+
     console.info(
-      `- ${probe.command}: ${
-        probe.error ? `error: ${probe.error}` : `${probe.frameCount} frame(s)`
-      }`
+      `- ${commandProbe.command}: ${summary}`
     )
   }
 }
 
-const hasAnimatedFrames = (probe: FrameProbe) =>
-  probe.frameCount !== undefined && probe.frameCount > 1
+const hasAnimatedFrames = (commandProbe: CommandProbe) =>
+  commandProbe.probes.some(
+    (probe) => probe.frameCount !== undefined && probe.frameCount > 1
+  )
 
 const input = await readFile(inputPath)
 const commands = await getGalleryFfmpegCommands()
@@ -90,7 +92,11 @@ await writeFile(outputPath, thumbnail)
 const outputProbes = await probeFrameCounts(commands, outputPath)
 printFrameCounts('Output thumbnail', outputProbes)
 
-const animatedOutputProbe = outputProbes.find(hasAnimatedFrames)
+const animatedOutputCommandProbe = outputProbes.find(hasAnimatedFrames)
+const animatedOutputProbe = animatedOutputCommandProbe?.probes.find(
+  (probe) => probe.frameCount !== undefined && probe.frameCount > 1
+)
+
 if (!animatedOutputProbe) {
   console.error(
     `Generated thumbnail is not animated by any ffmpeg command: ${thumbnail.byteLength} bytes at ${outputPath}.`

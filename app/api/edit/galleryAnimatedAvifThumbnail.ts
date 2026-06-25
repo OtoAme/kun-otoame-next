@@ -12,6 +12,12 @@ const GALLERY_AVIF_THUMBNAIL_MAX_BYTES = 512 * 1024
 const SYSTEM_FFMPEG_COMMAND = 'ffmpeg'
 const require = createRequire(import.meta.url)
 
+export type AvifFrameProbe = {
+  error?: string
+  frameCount?: number
+  streamSpecifier: string | null
+}
+
 const getOptionalFfmpegPaths = () => {
   const paths: string[] = []
   const configuredPath = process.env.KUN_GALLERY_FFMPEG_PATH
@@ -49,7 +55,8 @@ export const getGalleryFfmpegCommands = async () => {
 const runCommand = (
   command: string,
   args: string[],
-  timeoutMs = GALLERY_AVIF_THUMBNAIL_TIMEOUT_MS
+  timeoutMs = GALLERY_AVIF_THUMBNAIL_TIMEOUT_MS,
+  allowedExitCodes = [0]
 ) =>
   new Promise<string>((resolve, reject) => {
     const child = spawn(command, args, {
@@ -70,7 +77,7 @@ const runCommand = (
     })
     child.on('close', (code) => {
       clearTimeout(timer)
-      if (code === 0) {
+      if (code !== null && allowedExitCodes.includes(code)) {
         resolve(stderr)
         return
       }
@@ -84,21 +91,111 @@ const countShowInfoFrames = (stderr: string) => {
   return matches?.length ?? 0
 }
 
-export const countAvifFrames = async (command: string, inputPath: string) => {
-  const stderr = await runCommand(command, [
+const parseVideoStreamSpecifiers = (stderr: string) => {
+  const streams = stderr
+    .split(/\r?\n/)
+    .map((line) => line.match(/Stream #(\d+:\d+)(?:\[[^\]]+\])?(?:\([^)]+\))?: Video:/))
+    .filter((match): match is RegExpMatchArray => Boolean(match))
+    .map((match) => match[1])
+
+  return Array.from(new Set(streams))
+}
+
+const getAvifVideoStreamSpecifiers = async (
+  command: string,
+  inputPath: string
+) => {
+  const stderr = await runCommand(
+    command,
+    ['-hide_banner', '-i', inputPath],
+    GALLERY_AVIF_THUMBNAIL_TIMEOUT_MS,
+    [0, 1]
+  )
+
+  return parseVideoStreamSpecifiers(stderr)
+}
+
+const getErrorMessage = (error: unknown) =>
+  error instanceof Error ? error.message : String(error)
+
+export const countAvifFrames = async (
+  command: string,
+  inputPath: string,
+  streamSpecifier?: string | null
+) => {
+  const args = [
     '-hide_banner',
     '-loglevel',
     'info',
     '-i',
-    inputPath,
+    inputPath
+  ]
+
+  if (streamSpecifier) {
+    args.push('-map', streamSpecifier)
+  }
+
+  args.push(
     '-vf',
     'showinfo',
     '-f',
     'null',
     '-'
-  ])
+  )
+
+  const stderr = await runCommand(command, args)
 
   return countShowInfoFrames(stderr)
+}
+
+export const probeAvifFrameCounts = async (
+  command: string,
+  inputPath: string
+) => {
+  const probes: AvifFrameProbe[] = []
+
+  try {
+    probes.push({
+      frameCount: await countAvifFrames(command, inputPath),
+      streamSpecifier: null
+    })
+  } catch (error) {
+    probes.push({
+      error: getErrorMessage(error),
+      streamSpecifier: null
+    })
+    return probes
+  }
+
+  if (probes.some((probe) => (probe.frameCount ?? 0) > 1)) {
+    return probes
+  }
+
+  const streamSpecifiers = await getAvifVideoStreamSpecifiers(command, inputPath)
+  for (const streamSpecifier of streamSpecifiers) {
+    try {
+      probes.push({
+        frameCount: await countAvifFrames(command, inputPath, streamSpecifier),
+        streamSpecifier
+      })
+    } catch (error) {
+      probes.push({
+        error: getErrorMessage(error),
+        streamSpecifier
+      })
+    }
+  }
+
+  return probes
+}
+
+const findAnimatedAvifStream = async (command: string, inputPath: string) => {
+  const probes = await probeAvifFrameCounts(command, inputPath)
+
+  return (
+    probes.find((probe) => probe.frameCount !== undefined && probe.frameCount > 1) ??
+    null
+  )
 }
 
 const readGeneratedThumbnail = async (outputPath: string) => {
@@ -118,13 +215,25 @@ const tryEncodeAnimatedThumbnail = async (
   outputPath: string,
   scaleFilter: string
 ) => {
-  await runCommand(command, [
+  const animatedInputStream = await findAnimatedAvifStream(command, inputPath)
+  if (!animatedInputStream) {
+    throw new Error('input AVIF has no animated video stream')
+  }
+
+  const args = [
     '-hide_banner',
     '-loglevel',
     'error',
     '-y',
     '-i',
-    inputPath,
+    inputPath
+  ]
+
+  if (animatedInputStream.streamSpecifier) {
+    args.push('-map', animatedInputStream.streamSpecifier)
+  }
+
+  args.push(
     '-vf',
     scaleFilter,
     '-c:v',
@@ -135,12 +244,14 @@ const tryEncodeAnimatedThumbnail = async (
     '6',
     '-an',
     outputPath
-  ])
+  )
+
+  await runCommand(command, args)
 
   const thumbnail = await readGeneratedThumbnail(outputPath)
-  const frameCount = await countAvifFrames(command, outputPath)
-  if (frameCount <= 1) {
-    throw new Error('animated thumbnail has only ' + frameCount + ' frame')
+  const animatedOutputStream = await findAnimatedAvifStream(command, outputPath)
+  if (!animatedOutputStream) {
+    throw new Error('animated thumbnail has no animated video stream')
   }
 
   return thumbnail
