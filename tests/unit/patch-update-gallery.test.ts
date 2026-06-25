@@ -26,6 +26,7 @@ const prismaMocks = vi.hoisted(() => {
 const invalidatePatchContentCacheMock = vi.hoisted(() => vi.fn())
 const invalidatePatchListCachesMock = vi.hoisted(() => vi.fn())
 const processSubmittedExternalDataMock = vi.hoisted(() => vi.fn())
+const deleteFileFromS3Mock = vi.hoisted(() => vi.fn())
 
 vi.mock('~/prisma/index', () => ({
   prisma: prismaMocks
@@ -46,6 +47,10 @@ vi.mock('~/app/api/edit/processExternalData', () => ({
 
 vi.mock('~/app/api/edit/_upload', () => ({
   uploadPatchBanner: vi.fn()
+}))
+
+vi.mock('~/lib/s3', () => ({
+  deleteFileFromS3: deleteFileFromS3Mock
 }))
 
 import { updateGalgame } from '~/app/api/edit/update'
@@ -83,6 +88,8 @@ const createUpdateInput = () => ({
 describe('patch update gallery metadata', () => {
   beforeEach(() => {
     vi.resetAllMocks()
+    process.env.NEXT_PUBLIC_KUN_VISUAL_NOVEL_S3_STORAGE_URL =
+      'https://img.example'
     prismaMocks.patch.findUnique.mockResolvedValue({
       id: 123,
       unique_id: 'patch-unique'
@@ -105,6 +112,44 @@ describe('patch update gallery metadata', () => {
     invalidatePatchContentCacheMock.mockResolvedValue(undefined)
     invalidatePatchListCachesMock.mockResolvedValue(undefined)
     processSubmittedExternalDataMock.mockResolvedValue(undefined)
+    deleteFileFromS3Mock.mockResolvedValue(undefined)
+  })
+
+  it('deletes S3 gallery objects when images are removed during rewrite', async () => {
+    const input = createUpdateInput()
+    input.galleryMetadata = JSON.stringify({
+      keep: [],
+      order: []
+    })
+
+    prismaMocks.patch_game_image.findMany.mockResolvedValue([
+      {
+        id: 10,
+        url: 'https://img.example/patch/123/gallery/10.avif',
+        thumbnail_url:
+          'https://img.example/patch/123/gallery/thumbnail/thumb-10.avif',
+        patch_id: 123
+      },
+      {
+        id: 11,
+        url: 'https://img.example/patch/123/gallery/11.webp',
+        thumbnail_url: null,
+        patch_id: 123
+      }
+    ])
+
+    await expect(updateGalgame(input, 1)).resolves.toEqual({})
+
+    expect(deleteFileFromS3Mock).toHaveBeenCalledWith(
+      'patch/123/gallery/10.avif'
+    )
+    expect(deleteFileFromS3Mock).toHaveBeenCalledWith(
+      'patch/123/gallery/thumbnail/thumb-10.avif'
+    )
+    expect(deleteFileFromS3Mock).toHaveBeenCalledWith(
+      'patch/123/gallery/11.webp'
+    )
+    expect(deleteFileFromS3Mock).toHaveBeenCalledTimes(3)
   })
 
   it('updates existing gallery state without writing original or thumbnail URLs', async () => {

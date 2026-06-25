@@ -1,9 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '~/prisma/index'
+import { kunParseDeleteQuery } from '~/app/api/utils/parseQuery'
+import { extractS3Key } from '~/app/api/patch/resource/_helper'
+import { z } from 'zod'
 import { verifyHeaderCookie } from '~/middleware/_verifyHeaderCookie'
 import { invalidatePatchContentCache } from '~/app/api/patch/cache'
 import { deleteFileFromS3 } from '~/lib/s3'
 import { uploadPatchGalleryImage } from '../galleryUpload'
+
+const galleryImageIdSchema = z.object({
+  imageId: z.coerce.number().min(1).max(9999999)
+})
 
 export const POST = async (req: NextRequest) => {
   const payload = await verifyHeaderCookie(req)
@@ -103,4 +110,62 @@ export const POST = async (req: NextRequest) => {
       .catch(() => {})
     return NextResponse.json('图片上传失败')
   }
+}
+
+export const DELETE = async (req: NextRequest) => {
+  const payload = await verifyHeaderCookie(req)
+  if (!payload) {
+    return NextResponse.json('用户未登录')
+  }
+  if (payload.role < 3) {
+    return NextResponse.json('本页面仅管理员可访问')
+  }
+
+  const input = kunParseDeleteQuery(req, galleryImageIdSchema)
+  if (typeof input === 'string') {
+    return NextResponse.json(input)
+  }
+
+  const galleryImage = await prisma.patch_game_image.findUnique({
+    where: { id: input.imageId },
+    include: {
+      patch: {
+        select: { unique_id: true }
+      }
+    }
+  })
+  if (!galleryImage) {
+    return NextResponse.json('未找到对应图片')
+  }
+
+  const s3Keys: string[] = []
+  const key = extractS3Key(galleryImage.url)
+  if (key) s3Keys.push(key)
+  if (galleryImage.thumbnail_url) {
+    const thumbKey = extractS3Key(galleryImage.thumbnail_url)
+    if (thumbKey) s3Keys.push(thumbKey)
+  }
+
+  await prisma.patch_game_image.delete({
+    where: { id: input.imageId }
+  })
+
+  for (const key of s3Keys) {
+    try {
+      await deleteFileFromS3(key)
+    } catch (error) {
+      console.error(
+        '[Upload] Failed to delete gallery S3 object',
+        { key, imageId: input.imageId, error }
+      )
+    }
+  }
+
+  await invalidatePatchContentCache(galleryImage.patch.unique_id).catch(
+    (error) => {
+      console.error('Gallery cache invalidation error:', error)
+    }
+  )
+
+  return NextResponse.json({})
 }

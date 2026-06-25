@@ -5,6 +5,7 @@ const prismaMocks = vi.hoisted(() => ({
     findUnique: vi.fn()
   },
   patch_game_image: {
+    findUnique: vi.fn(),
     create: vi.fn(),
     update: vi.fn(),
     delete: vi.fn()
@@ -14,6 +15,7 @@ const verifyHeaderCookieMock = vi.hoisted(() => vi.fn())
 const invalidatePatchContentCacheMock = vi.hoisted(() => vi.fn())
 const uploadPatchGalleryImageMock = vi.hoisted(() => vi.fn())
 const deleteFileFromS3Mock = vi.hoisted(() => vi.fn())
+const kunParseDeleteQueryMock = vi.hoisted(() => vi.fn())
 
 vi.mock('~/prisma/index', () => ({
   prisma: prismaMocks
@@ -35,7 +37,11 @@ vi.mock('~/app/api/edit/galleryUpload', () => ({
   uploadPatchGalleryImage: uploadPatchGalleryImageMock
 }))
 
-import { POST } from '~/app/api/edit/gallery/route'
+vi.mock('~/app/api/utils/parseQuery', () => ({
+  kunParseDeleteQuery: kunParseDeleteQueryMock
+}))
+
+import { POST, DELETE } from '~/app/api/edit/gallery/route'
 
 const createGalleryRequest = () => {
   const formData = new FormData()
@@ -176,5 +182,102 @@ describe('gallery upload route', () => {
     })
     expect(prismaMocks.patch_game_image.delete).not.toHaveBeenCalled()
     expect(deleteFileFromS3Mock).not.toHaveBeenCalled()
+  })
+})
+
+describe('gallery delete route', () => {
+  beforeEach(() => {
+    vi.resetAllMocks()
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    process.env.KUN_VISUAL_NOVEL_IMAGE_BED_URL = 'https://img.example'
+    process.env.NEXT_PUBLIC_KUN_VISUAL_NOVEL_S3_STORAGE_URL =
+      'https://img.example'
+    verifyHeaderCookieMock.mockResolvedValue({ uid: 1, role: 3 })
+    kunParseDeleteQueryMock.mockReturnValue({ imageId: 456 })
+    invalidatePatchContentCacheMock.mockResolvedValue(undefined)
+    deleteFileFromS3Mock.mockResolvedValue(undefined)
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  const createDeleteRequest = () =>
+    ({
+      nextUrl: new URL('http://localhost/api/edit/gallery?imageId=456')
+    }) as any
+
+  it('deletes gallery image DB record and S3 files', async () => {
+    prismaMocks.patch_game_image.findUnique.mockResolvedValue({
+      id: 456,
+      url: 'https://img.example/patch/123/gallery/456.avif',
+      thumbnail_url:
+        'https://img.example/patch/123/gallery/thumbnail/thumb-456.avif',
+      patch_id: 123,
+      patch: { unique_id: 'patch-unique' }
+    })
+    prismaMocks.patch_game_image.delete.mockResolvedValue({})
+
+    const response = await DELETE(createDeleteRequest())
+
+    await expect(response.json()).resolves.toEqual({})
+    expect(prismaMocks.patch_game_image.delete).toHaveBeenCalledWith({
+      where: { id: 456 }
+    })
+    expect(deleteFileFromS3Mock).toHaveBeenCalledWith(
+      'patch/123/gallery/456.avif'
+    )
+    expect(deleteFileFromS3Mock).toHaveBeenCalledWith(
+      'patch/123/gallery/thumbnail/thumb-456.avif'
+    )
+    expect(invalidatePatchContentCacheMock).toHaveBeenCalledWith(
+      'patch-unique'
+    )
+  })
+
+  it('deletes only original S3 object when thumbnail_url is null', async () => {
+    prismaMocks.patch_game_image.findUnique.mockResolvedValue({
+      id: 456,
+      url: 'https://img.example/patch/123/gallery/456.webp',
+      thumbnail_url: null,
+      patch_id: 123,
+      patch: { unique_id: 'patch-unique' }
+    })
+    prismaMocks.patch_game_image.delete.mockResolvedValue({})
+
+    const response = await DELETE(createDeleteRequest())
+
+    await expect(response.json()).resolves.toEqual({})
+    expect(deleteFileFromS3Mock).toHaveBeenCalledTimes(1)
+    expect(deleteFileFromS3Mock).toHaveBeenCalledWith(
+      'patch/123/gallery/456.webp'
+    )
+  })
+
+  it('returns error when gallery image not found', async () => {
+    prismaMocks.patch_game_image.findUnique.mockResolvedValue(null)
+
+    const response = await DELETE(createDeleteRequest())
+
+    await expect(response.json()).resolves.toBe('未找到对应图片')
+    expect(prismaMocks.patch_game_image.delete).not.toHaveBeenCalled()
+    expect(deleteFileFromS3Mock).not.toHaveBeenCalled()
+  })
+
+  it('still deletes DB record when S3 delete fails', async () => {
+    prismaMocks.patch_game_image.findUnique.mockResolvedValue({
+      id: 456,
+      url: 'https://img.example/patch/123/gallery/456.avif',
+      thumbnail_url: null,
+      patch_id: 123,
+      patch: { unique_id: 'patch-unique' }
+    })
+    prismaMocks.patch_game_image.delete.mockResolvedValue({})
+    deleteFileFromS3Mock.mockRejectedValue(new Error('S3 network error'))
+
+    const response = await DELETE(createDeleteRequest())
+
+    await expect(response.json()).resolves.toEqual({})
+    expect(prismaMocks.patch_game_image.delete).toHaveBeenCalled()
   })
 })

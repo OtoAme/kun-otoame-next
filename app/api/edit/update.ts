@@ -1,5 +1,7 @@
 import { z } from 'zod'
 import { prisma } from '~/prisma/index'
+import { deleteFileFromS3 } from '~/lib/s3'
+import { extractS3Key } from '~/app/api/patch/resource/_helper'
 import { patchUpdateSchema } from '~/validations/edit'
 import { uploadPatchBanner } from './_upload'
 import { purgePatchBannerCache } from '~/app/api/utils/purgeCache'
@@ -125,10 +127,35 @@ export const updateGalgame = async (
     const keepIds = new Set(metadata.keep.map((k) => k.id))
 
     const toDelete = currentImages.filter((img) => !keepIds.has(img.id))
+
+    const deletedS3Keys = toDelete.flatMap((img) => {
+      const keys: string[] = []
+      const key = extractS3Key(img.url)
+      if (key) keys.push(key)
+      if (img.thumbnail_url) {
+        const thumbKey = extractS3Key(img.thumbnail_url)
+        if (thumbKey) keys.push(thumbKey)
+      }
+      return keys
+    })
+
     if (toDelete.length > 0) {
       await prisma.patch_game_image.deleteMany({
         where: { id: { in: toDelete.map((img) => img.id) } }
       })
+    }
+
+    if (deletedS3Keys.length > 0) {
+      await Promise.all(
+        deletedS3Keys.map((key) =>
+          deleteFileFromS3(key).catch((error) => {
+            console.error(
+              '[Upload] Failed to delete gallery S3 object after rewrite',
+              { key, error }
+            )
+          })
+        )
+      )
     }
 
     const orderMap = new Map<string | number, number>()
