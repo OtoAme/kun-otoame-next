@@ -16,6 +16,7 @@ const nextConfig: NextConfig = {
   devIndicators: false,
   pageExtensions: ['ts', 'tsx', 'js', 'jsx', 'md', 'mdx'],
   transpilePackages: ['next-mdx-remote'],
+  serverExternalPackages: ['ffmpeg-static'],
   publicRuntimeConfig: {
     NODE_ENV: env.data!.NODE_ENV
   },

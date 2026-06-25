@@ -84,14 +84,15 @@ describe('gallery upload route', () => {
     await expect(response.json()).resolves.toEqual({
       imageId: 456,
       url: 'https://img.example/patch/123/gallery/456.webp',
-      thumbnailUrl: 'https://img.example/patch/123/gallery/thumbnail/456.webp'
+      thumbnailUrl:
+        'https://img.example/patch/123/gallery/thumbnail/thumb-456.webp'
     })
     expect(prismaMocks.patch_game_image.update).toHaveBeenCalledWith({
       where: { id: 456 },
       data: {
         url: 'https://img.example/patch/123/gallery/456.webp',
         thumbnail_url:
-          'https://img.example/patch/123/gallery/thumbnail/456.webp'
+          'https://img.example/patch/123/gallery/thumbnail/thumb-456.webp'
       }
     })
     expect(invalidatePatchContentCacheMock).toHaveBeenCalledWith(
@@ -111,7 +112,7 @@ describe('gallery upload route', () => {
       'patch/123/gallery/456.webp'
     )
     expect(deleteFileFromS3Mock).toHaveBeenCalledWith(
-      'patch/123/gallery/thumbnail/456.webp'
+      'patch/123/gallery/thumbnail/thumb-456.webp'
     )
     expect(prismaMocks.patch_game_image.delete).toHaveBeenCalledWith({
       where: { id: 456 }
@@ -170,7 +171,8 @@ describe('gallery upload route', () => {
     await expect(response.json()).resolves.toEqual({
       imageId: 456,
       url: 'https://img.example/patch/123/gallery/456.webp',
-      thumbnailUrl: 'https://img.example/patch/123/gallery/thumbnail/456.webp'
+      thumbnailUrl:
+        'https://img.example/patch/123/gallery/thumbnail/thumb-456.webp'
     })
     expect(prismaMocks.patch_game_image.delete).not.toHaveBeenCalled()
     expect(deleteFileFromS3Mock).not.toHaveBeenCalled()

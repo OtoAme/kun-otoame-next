@@ -366,6 +366,7 @@ export const RewriteGalleryInput = () => {
 
   const allImages = items.map((img) => ({
     src: getRewriteGalleryOriginalSrc(img, localPreviewUrls),
+    previewSrc: getRewriteGalleryPreviewSrc(img, localPreviewUrls),
     alt: 'gallery'
   }))
 

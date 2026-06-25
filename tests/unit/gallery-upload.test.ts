@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const sharpMock = vi.hoisted(() => vi.fn())
 const uploadImageToS3Mock = vi.hoisted(() => vi.fn())
 const deleteFileFromS3Mock = vi.hoisted(() => vi.fn())
+const createAnimatedAvifThumbnailMock = vi.hoisted(() => vi.fn())
 
 vi.mock('sharp', () => ({
   default: sharpMock
@@ -11,6 +12,10 @@ vi.mock('sharp', () => ({
 vi.mock('~/lib/s3', () => ({
   uploadImageToS3: uploadImageToS3Mock,
   deleteFileFromS3: deleteFileFromS3Mock
+}))
+
+vi.mock('~/app/api/edit/galleryAnimatedAvifThumbnail', () => ({
+  createAnimatedAvifThumbnail: createAnimatedAvifThumbnailMock
 }))
 
 import {
@@ -53,6 +58,7 @@ describe('gallery upload plan', () => {
   beforeEach(() => {
     vi.resetAllMocks()
     deleteFileFromS3Mock.mockResolvedValue(undefined)
+    createAnimatedAvifThumbnailMock.mockResolvedValue(null)
   })
 
   it('stores animated WebP originals without watermarking', () => {
@@ -235,8 +241,36 @@ describe('gallery upload plan', () => {
     expect(thumbnailPipeline.webp).toHaveBeenCalled()
   })
 
-  it('returns animated AVIF original buffers without generating a placeholder thumbnail', async () => {
+  it('returns animated AVIF original buffers with a real generated thumbnail when the encoder succeeds', async () => {
     const original = createAnimatedAvifHeader()
+    const thumbnail = Buffer.from('animated-avif-thumbnail')
+    createAnimatedAvifThumbnailMock.mockResolvedValue(thumbnail)
+    sharpMock.mockImplementation(() => {
+      throw new Error('animated AVIF should not be decoded')
+    })
+
+    const result = await preparePatchGalleryImage(
+      toExactArrayBuffer(original),
+      true
+    )
+
+    expect(result).toEqual({
+      buffer: original,
+      extension: 'avif',
+      contentType: 'image/avif',
+      thumbnailBuffer: thumbnail,
+      thumbnailExtension: 'avif',
+      thumbnailContentType: 'image/avif',
+      skipWatermark: true
+    })
+    expect(createAnimatedAvifThumbnailMock).toHaveBeenCalledWith(original)
+    expect(sharpMock).not.toHaveBeenCalled()
+  })
+
+  it('keeps animated AVIF originals when thumbnail generation is unavailable', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const original = createAnimatedAvifHeader()
+    createAnimatedAvifThumbnailMock.mockRejectedValue(new Error('no encoder'))
     sharpMock.mockImplementation(() => {
       throw new Error('animated AVIF should not be decoded')
     })
@@ -252,7 +286,12 @@ describe('gallery upload plan', () => {
       contentType: 'image/avif',
       skipWatermark: true
     })
+    expect(consoleError).toHaveBeenCalledWith(
+      'Animated AVIF thumbnail generation error:',
+      expect.any(Error)
+    )
     expect(sharpMock).not.toHaveBeenCalled()
+    consoleError.mockRestore()
   })
 
   it('transforms static images to AVIF and applies requested watermarking', async () => {
@@ -334,7 +373,7 @@ describe('gallery upload plan', () => {
       'image/webp'
     )
     expect(uploadImageToS3Mock).toHaveBeenCalledWith(
-      'patch/123/gallery/thumbnail/456.webp',
+      'patch/123/gallery/thumbnail/thumb-456.webp',
       Buffer.from('processed-image'),
       'image/webp'
     )
@@ -444,8 +483,11 @@ describe('gallery upload plan', () => {
     )
   })
 
-  it('uploads animated AVIF originals without thumbnail objects', async () => {
+  it('uploads animated AVIF originals and real generated thumbnail objects', async () => {
     const original = createAnimatedAvifHeader()
+    createAnimatedAvifThumbnailMock.mockResolvedValue(
+      Buffer.from('animated-avif-thumbnail')
+    )
 
     const result = await uploadPatchGalleryImage(
       toExactArrayBuffer(original),
@@ -457,13 +499,50 @@ describe('gallery upload plan', () => {
     expect(result).toEqual({
       extension: 'avif',
       contentType: 'image/avif',
+      thumbnailExtension: 'avif',
+      thumbnailContentType: 'image/avif',
       skipWatermark: true
     })
-    expect(uploadImageToS3Mock).toHaveBeenCalledTimes(1)
+    expect(uploadImageToS3Mock).toHaveBeenCalledTimes(2)
     expect(uploadImageToS3Mock).toHaveBeenCalledWith(
       'patch/123/gallery/456.avif',
       original,
       'image/avif'
     )
+    expect(uploadImageToS3Mock).toHaveBeenCalledWith(
+      'patch/123/gallery/thumbnail/thumb-456.avif',
+      Buffer.from('animated-avif-thumbnail'),
+      'image/avif'
+    )
+  })
+
+  it('does not fail animated AVIF uploads when thumbnail upload fails', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+    createAnimatedAvifThumbnailMock.mockResolvedValue(
+      Buffer.from('animated-avif-thumbnail')
+    )
+    uploadImageToS3Mock
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(new Error('thumbnail failed'))
+
+    await expect(
+      uploadPatchGalleryImage(
+        toExactArrayBuffer(createAnimatedAvifHeader()),
+        123,
+        456,
+        true
+      )
+    ).resolves.toEqual({
+      extension: 'avif',
+      contentType: 'image/avif',
+      skipWatermark: true
+    })
+
+    expect(deleteFileFromS3Mock).not.toHaveBeenCalled()
+    expect(consoleError).toHaveBeenCalledWith(
+      'Animated AVIF thumbnail upload error:',
+      expect.any(Error)
+    )
+    consoleError.mockRestore()
   })
 })

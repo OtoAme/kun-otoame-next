@@ -67,7 +67,7 @@ export const POST = async (req: NextRequest) => {
 
     const galleryKey = `patch/${patchId}/gallery/${galleryRecord.id}.${uploadRes.extension}`
     const thumbnailKey = uploadRes.thumbnailExtension
-      ? `patch/${patchId}/gallery/thumbnail/${galleryRecord.id}.${uploadRes.thumbnailExtension}`
+      ? `patch/${patchId}/gallery/thumbnail/thumb-${galleryRecord.id}.${uploadRes.thumbnailExtension}`
       : null
     const imageUrl = `${process.env.KUN_VISUAL_NOVEL_IMAGE_BED_URL}/${galleryKey}`
     const thumbnailUrl = thumbnailKey

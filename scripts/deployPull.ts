@@ -150,6 +150,21 @@ const main = async () => {
     // Update Prisma Schema and Generate Client for Target Architecture
     const tempPrismaDir = path.join(tempDir, 'prisma')
     const rootPrismaDir = path.resolve(__dirname, '..', 'prisma')
+    const rootNodeModules = path.resolve(__dirname, '..', 'node_modules')
+    const standaloneNodeModules = path.join(tempDir, 'node_modules')
+
+    const copyPackage = (pkgName: string) => {
+      const src = path.join(rootNodeModules, pkgName)
+      const dest = path.join(standaloneNodeModules, pkgName)
+      if (fs.existsSync(src)) {
+        if (fs.existsSync(dest)) {
+          fs.rmSync(dest, { recursive: true, force: true })
+        }
+        fs.mkdirSync(path.dirname(dest), { recursive: true })
+        // Use dereference: true to copy the actual content of symlinks (e.g. from .pnpm store)
+        fs.cpSync(src, dest, { recursive: true, dereference: true })
+      }
+    }
 
     if (fs.existsSync(tempPrismaDir)) {
       console.log('Updating Prisma schema...')
@@ -163,26 +178,14 @@ const main = async () => {
       execSync('pnpm prisma generate', { stdio: 'inherit' })
 
       console.log('Injecting generated Prisma Client into standalone build...')
-      // We need to copy the freshly generated client into the standalone node_modules
-      // because the standalone app uses its own bundled node_modules
-      const rootNodeModules = path.resolve(__dirname, '..', 'node_modules')
-      const standaloneNodeModules = path.join(tempDir, 'node_modules')
-
-      const copyPackage = (pkgName: string) => {
-        const src = path.join(rootNodeModules, pkgName)
-        const dest = path.join(standaloneNodeModules, pkgName)
-        if (fs.existsSync(src)) {
-          if (fs.existsSync(dest))
-            fs.rmSync(dest, { recursive: true, force: true })
-          fs.mkdirSync(path.dirname(dest), { recursive: true })
-          // Use dereference: true to copy the actual content of symlinks (e.g. from .pnpm store)
-          fs.cpSync(src, dest, { recursive: true, dereference: true })
-        }
-      }
-
+      // The standalone app uses its own bundled node_modules, so inject the freshly
+      // generated Prisma Client from the target server.
       copyPackage('.prisma')
       copyPackage('@prisma')
     }
+
+    console.log('Injecting target-architecture ffmpeg-static into standalone build...')
+    copyPackage('ffmpeg-static')
 
     console.log('Applying atomic update...')
     const nextDir = path.resolve(__dirname, '..', '.next')

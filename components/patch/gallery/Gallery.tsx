@@ -43,6 +43,7 @@ export const Gallery = ({ images }: Props) => {
       <KunImageViewer
         images={validImages.map((img) => ({
           src: getGalleryOriginalSrc(img),
+          previewSrc: getGalleryPreviewSrc(img),
           alt: 'Game Screenshot'
         }))}
       >

@@ -1,6 +1,7 @@
 import sharp from 'sharp'
 
 import { checkBufferSize } from '~/app/api/utils/checkBufferSize'
+import { createAnimatedAvifThumbnail } from '~/app/api/edit/galleryAnimatedAvifThumbnail'
 import { generateWatermarkSVG, watermarkConfig } from '~/config/watermark'
 import { deleteFileFromS3, uploadImageToS3 } from '~/lib/s3'
 
@@ -256,12 +257,30 @@ export const preparePatchGalleryImage = async (
       return plan
     }
 
-    return {
+    const result: ProcessedGalleryImage = {
       buffer: input,
       extension: plan.extension,
       contentType: plan.contentType,
       skipWatermark: plan.skipWatermark
     }
+
+    try {
+      const thumbnailBuffer = await createAnimatedAvifThumbnail(input)
+      if (thumbnailBuffer) {
+        console.info(
+          `Animated AVIF thumbnail generated: ${thumbnailBuffer.byteLength} bytes`
+        )
+        result.thumbnailBuffer = thumbnailBuffer
+        result.thumbnailExtension = 'avif'
+        result.thumbnailContentType = 'image/avif'
+      } else {
+        console.info('Animated AVIF thumbnail unavailable')
+      }
+    } catch (error) {
+      console.error('Animated AVIF thumbnail generation error:', error)
+    }
+
+    return result
   }
 
   const metadata = await sharp(input, { pages: -1 }).metadata()
@@ -347,7 +366,7 @@ export const uploadPatchGalleryImage = async (
     result.thumbnailExtension &&
     result.thumbnailContentType
   ) {
-    const thumbnailKey = `${bucketName}/thumbnail/${imageId}.${result.thumbnailExtension}`
+    const thumbnailKey = `${bucketName}/thumbnail/thumb-${imageId}.${result.thumbnailExtension}`
     try {
       await uploadImageToS3(
         thumbnailKey,
@@ -355,8 +374,13 @@ export const uploadPatchGalleryImage = async (
         result.thumbnailContentType
       )
     } catch (error) {
-      if (result.extension === 'webp' && result.skipWatermark) {
-        console.error('Animated WebP thumbnail upload error:', error)
+      if (result.skipWatermark) {
+        console.error(
+          result.extension === 'avif'
+            ? 'Animated AVIF thumbnail upload error:'
+            : 'Animated WebP thumbnail upload error:',
+          error
+        )
         return {
           extension: result.extension,
           contentType: result.contentType,

@@ -1,5 +1,12 @@
 const DEFAULT_PREFETCH_CONCURRENCY = 2
 
+export type GalleryOriginalPrefetchStatus =
+  | 'idle'
+  | 'queued'
+  | 'loading'
+  | 'loaded'
+  | 'failed'
+
 export const getPriorityGallerySlots = (urls: string[], index: number) => {
   if (index < 0 || index >= urls.length) {
     return []
@@ -30,14 +37,23 @@ interface GalleryOriginalPrefetchQueueOptions {
 }
 
 const defaultPreload = async (url: string) => {
-  if (typeof window === 'undefined' || typeof fetch === 'undefined') {
+  if (typeof Image === 'undefined') {
     return
   }
 
-  await fetch(url, {
-    cache: 'force-cache',
-    mode: 'no-cors'
-  }).then(() => undefined)
+  const image = new Image()
+
+  if (typeof image.decode === 'function') {
+    image.src = url
+    await image.decode()
+    return
+  }
+
+  await new Promise<void>((resolve, reject) => {
+    image.onload = () => resolve()
+    image.onerror = () => reject(new Error('Image preload failed'))
+    image.src = url
+  })
 }
 
 export class GalleryOriginalPrefetchQueue {
@@ -45,6 +61,7 @@ export class GalleryOriginalPrefetchQueue {
   private readonly preload: (url: string) => Promise<void>
   private readonly queued = new Set<string>()
   private readonly started = new Set<string>()
+  private readonly status = new Map<string, GalleryOriginalPrefetchStatus>()
   private queue: string[] = []
   private active = 0
 
@@ -59,6 +76,7 @@ export class GalleryOriginalPrefetchQueue {
     }
 
     this.queued.add(url)
+    this.status.set(url, 'queued')
     this.queue.push(url)
     this.run()
   }
@@ -76,11 +94,20 @@ export class GalleryOriginalPrefetchQueue {
       }
 
       this.queued.add(url)
+      this.status.set(url, 'queued')
       nextQueue.unshift(url)
     }
 
     this.queue = nextQueue
     this.run()
+  }
+
+  getStatus(url: string | null | undefined): GalleryOriginalPrefetchStatus {
+    if (!url) {
+      return 'idle'
+    }
+
+    return this.status.get(url) ?? 'idle'
   }
 
   private run() {
@@ -92,9 +119,15 @@ export class GalleryOriginalPrefetchQueue {
 
       this.queued.delete(url)
       this.started.add(url)
+      this.status.set(url, 'loading')
       this.active += 1
       this.preload(url)
-        .catch(() => undefined)
+        .then(() => {
+          this.status.set(url, 'loaded')
+        })
+        .catch(() => {
+          this.status.set(url, 'failed')
+        })
         .finally(() => {
           this.active -= 1
           this.run()

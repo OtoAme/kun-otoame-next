@@ -5,6 +5,85 @@ import {
 } from '~/utils/galleryPrefetch'
 
 describe('gallery original prefetch', () => {
+  it('preloads originals through Image.decode and records loaded status', async () => {
+    const previousImage = globalThis.Image
+    const decoded: string[] = []
+
+    class MockImage {
+      src = ''
+      decode = vi.fn().mockImplementation(async () => {
+        decoded.push(this.src)
+      })
+    }
+
+    ;(globalThis as any).Image = MockImage
+
+    const queue = new GalleryOriginalPrefetchQueue()
+    queue.enqueue('/gallery/original.avif')
+
+    await vi.waitFor(() => {
+      expect(decoded).toEqual(['/gallery/original.avif'])
+      expect(queue.getStatus('/gallery/original.avif')).toBe('loaded')
+    })
+
+    ;(globalThis as any).Image = previousImage
+  })
+
+  it('records failed status when Image.decode rejects', async () => {
+    const previousImage = globalThis.Image
+
+    class MockImage {
+      src = ''
+      decode = vi.fn().mockRejectedValue(new Error('decode failed'))
+    }
+
+    ;(globalThis as any).Image = MockImage
+
+    const queue = new GalleryOriginalPrefetchQueue()
+    queue.enqueue('/gallery/broken.avif')
+
+    await vi.waitFor(() => {
+      expect(queue.getStatus('/gallery/broken.avif')).toBe('failed')
+    })
+
+    ;(globalThis as any).Image = previousImage
+  })
+
+  it('falls back to onload when Image.decode is unavailable', async () => {
+    const previousImage = globalThis.Image
+    const loaded: string[] = []
+
+    class MockImage {
+      onload: (() => void) | null = null
+      onerror: (() => void) | null = null
+      private value = ''
+
+      set src(url: string) {
+        this.value = url
+        setImmediate(() => {
+          loaded.push(this.value)
+          this.onload?.()
+        })
+      }
+
+      get src() {
+        return this.value
+      }
+    }
+
+    ;(globalThis as any).Image = MockImage
+
+    const queue = new GalleryOriginalPrefetchQueue()
+    queue.enqueue('/gallery/fallback.avif')
+
+    await vi.waitFor(() => {
+      expect(loaded).toEqual(['/gallery/fallback.avif'])
+      expect(queue.getStatus('/gallery/fallback.avif')).toBe('loaded')
+    })
+
+    ;(globalThis as any).Image = previousImage
+  })
+
   it('prioritizes current gallery slot and nearby slots without using filename numbering', () => {
     const urls = [
       '/gallery/100.avif',

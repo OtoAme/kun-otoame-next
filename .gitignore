@@ -48,6 +48,7 @@ next-env.d.ts
 
 # sitemap
 /public/**/*.xml
+/public/images/tmp/
 
 # static markdown
 /migration/markdown
