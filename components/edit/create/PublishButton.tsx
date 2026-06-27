@@ -20,6 +20,7 @@ import { patchCreateSchema } from '~/validations/edit'
 import { useRouter } from '@bprogress/next'
 import { cn } from '~/utils/cn'
 import { CREATE_PATCH_PUBLISH_TIMEOUT_MS } from '~/constants/galgame'
+import { applySteamOfficialUrlFallback } from '~/utils/externalIds'
 import type { Dispatch, SetStateAction } from 'react'
 import type { CreatePatchRequestData } from '~/store/editStore'
 import type { GalleryImage } from './GalleryInput'
@@ -123,6 +124,10 @@ export const PublishButton = ({ setErrors, className }: Props) => {
     }
 
     const formDataToSend = new FormData()
+    const officialUrl = applySteamOfficialUrlFallback(
+      data.officialUrl,
+      data.steamId
+    )
     formDataToSend.append('banner', localeBannerBlob!)
     if (localeOriginalBannerBlob) {
       formDataToSend.append('bannerOriginal', localeOriginalBannerBlob)
@@ -153,7 +158,7 @@ export const PublishButton = ({ setErrors, className }: Props) => {
     formDataToSend.append('tag', JSON.stringify(data.tag))
     formDataToSend.append('released', data.released)
     formDataToSend.append('contentLimit', data.contentLimit)
-    if (data.officialUrl) formDataToSend.append('officialUrl', data.officialUrl)
+    if (officialUrl) formDataToSend.append('officialUrl', officialUrl)
     formDataToSend.append('isDuplicate', String(data.isDuplicate))
 
     setCreating(true)

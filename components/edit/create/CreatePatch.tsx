@@ -17,6 +17,7 @@ import { BatchTag } from '../components/BatchTag'
 import { BangumiInput } from '../components/BangumiInput'
 import { SteamInput } from '../components/SteamInput'
 import { ReleaseDateInput } from '../components/ReleaseDateInput'
+import { applySteamOfficialUrlFallback } from '~/utils/externalIds'
 import type { CreatePatchRequestData } from '~/store/editStore'
 
 export const CreatePatch = () => {
@@ -100,7 +101,10 @@ export const CreatePatch = () => {
             <h2 className="text-xl">官方链接 (可选)</h2>
             <Input
               placeholder="输入 Steam 商店链接或官方网站链接"
-              value={data.officialUrl}
+              value={applySteamOfficialUrlFallback(
+                data.officialUrl,
+                data.steamId
+              )}
               onChange={(e) =>
                 setData({ ...data, officialUrl: e.target.value })
               }

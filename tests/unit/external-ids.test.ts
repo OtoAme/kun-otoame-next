@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
+  applySteamOfficialUrlFallback,
+  buildSteamStoreUrl,
   normalizeBangumiIdInput,
   normalizeSteamIdInput,
   normalizeVndbIdInput,
@@ -7,7 +9,8 @@ import {
   parseBangumiIdInput,
   parseSteamIdInput,
   parseVndbIdInput,
-  parseVndbRelationIdInput
+  parseVndbRelationIdInput,
+  syncSteamOfficialUrl
 } from '~/utils/externalIds'
 
 describe('external id parsing', () => {
@@ -68,5 +71,53 @@ describe('external id parsing', () => {
     expect(
       normalizeSteamIdInput('https://store.steampowered.com/sub/3655150')
     ).toBe('https://store.steampowered.com/sub/3655150')
+  })
+
+  it('builds canonical Steam store URLs from numeric Steam app IDs', () => {
+    expect(buildSteamStoreUrl('3655150')).toBe(
+      'https://store.steampowered.com/app/3655150'
+    )
+    expect(buildSteamStoreUrl(' 3655150 ')).toBe(
+      'https://store.steampowered.com/app/3655150'
+    )
+    expect(
+      buildSteamStoreUrl('https://store.steampowered.com/app/3655150')
+    ).toBe('')
+  })
+
+  it('fills a blank official URL from Steam ID while preserving manual URLs', () => {
+    expect(applySteamOfficialUrlFallback('', '3655150')).toBe(
+      'https://store.steampowered.com/app/3655150'
+    )
+    expect(applySteamOfficialUrlFallback('   ', '3655150')).toBe(
+      'https://store.steampowered.com/app/3655150'
+    )
+    expect(
+      applySteamOfficialUrlFallback('https://example.com/game', '3655150')
+    ).toBe('https://example.com/game')
+    expect(applySteamOfficialUrlFallback('', 'steam-id')).toBe('')
+  })
+
+  it('updates auto-generated Steam official URLs when Steam ID changes', () => {
+    expect(syncSteamOfficialUrl('', '', '3655150')).toBe(
+      'https://store.steampowered.com/app/3655150'
+    )
+    expect(
+      syncSteamOfficialUrl(
+        'https://store.steampowered.com/app/3655150',
+        '3655150',
+        '3655160'
+      )
+    ).toBe('https://store.steampowered.com/app/3655160')
+    expect(
+      syncSteamOfficialUrl('https://example.com/game', '3655150', '3655160')
+    ).toBe('https://example.com/game')
+    expect(
+      syncSteamOfficialUrl(
+        'https://store.steampowered.com/app/3655150',
+        '3655150',
+        ''
+      )
+    ).toBe('')
   })
 })

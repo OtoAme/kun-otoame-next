@@ -103,4 +103,42 @@ describe('createGalgame timeout', () => {
       { timeout: 120000 }
     )
   })
+
+  it('stores a Steam official URL when creating with Steam ID and blank official URL', async () => {
+    await createGalgame(
+      {
+        ...createInput,
+        steamId: '3655150',
+        officialUrl: ''
+      },
+      1
+    )
+
+    expect(prismaMocks._tx.patch.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          official_url: 'https://store.steampowered.com/app/3655150'
+        })
+      })
+    )
+  })
+
+  it('preserves a manual official URL when creating with Steam ID', async () => {
+    await createGalgame(
+      {
+        ...createInput,
+        steamId: '3655150',
+        officialUrl: 'https://example.com/game'
+      },
+      1
+    )
+
+    expect(prismaMocks._tx.patch.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          official_url: 'https://example.com/game'
+        })
+      })
+    )
+  })
 })

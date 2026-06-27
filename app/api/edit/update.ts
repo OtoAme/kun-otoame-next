@@ -10,6 +10,7 @@ import {
   invalidatePatchListCaches
 } from '~/app/api/patch/cache'
 import { processSubmittedExternalData } from './processExternalData'
+import { applySteamOfficialUrlFallback } from '~/utils/externalIds'
 
 export const updateGalgame = async (
   input: z.infer<typeof patchUpdateSchema>,
@@ -63,6 +64,10 @@ export const updateGalgame = async (
     contentLimit,
     released
   } = input
+  const normalizedOfficialUrl = applySteamOfficialUrlFallback(
+    officialUrl,
+    steamId
+  )
 
   await prisma.patch.update({
     where: { id },
@@ -74,7 +79,7 @@ export const updateGalgame = async (
       steam_id: steamId ? Number(steamId) : null,
       dlsite_code: normalizedDlsiteCode ? normalizedDlsiteCode : null,
       introduction,
-      official_url: officialUrl || '',
+      official_url: normalizedOfficialUrl,
       content_limit: contentLimit,
       released
     }

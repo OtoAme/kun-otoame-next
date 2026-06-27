@@ -177,4 +177,48 @@ describe('patch update gallery metadata', () => {
       })
     )
   })
+
+  it('stores a Steam official URL when rewriting with Steam ID and blank official URL', async () => {
+    await expect(
+      updateGalgame(
+        {
+          ...createUpdateInput(),
+          steamId: '3655150',
+          officialUrl: ''
+        },
+        1
+      )
+    ).resolves.toEqual({})
+
+    expect(prismaMocks.patch.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 123 },
+        data: expect.objectContaining({
+          official_url: 'https://store.steampowered.com/app/3655150'
+        })
+      })
+    )
+  })
+
+  it('preserves a manual official URL when rewriting with Steam ID', async () => {
+    await expect(
+      updateGalgame(
+        {
+          ...createUpdateInput(),
+          steamId: '3655150',
+          officialUrl: 'https://example.com/game'
+        },
+        1
+      )
+    ).resolves.toEqual({})
+
+    expect(prismaMocks.patch.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 123 },
+        data: expect.objectContaining({
+          official_url: 'https://example.com/game'
+        })
+      })
+    )
+  })
 })

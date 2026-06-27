@@ -20,6 +20,7 @@ import { SteamInput } from '../components/SteamInput'
 import { ReleaseDateInput } from '../components/ReleaseDateInput'
 import { VNDBInput } from '../create/VNDBInput'
 import { VNDBRelationInput } from '../create/VNDBRelationInput'
+import { applySteamOfficialUrlFallback } from '~/utils/externalIds'
 // import { DLSiteInput } from '../create/DLSiteInput'
 import type { RewritePatchData } from '~/store/rewriteStore'
 
@@ -67,6 +68,10 @@ export const RewritePatch = () => {
     setRewriting(true)
 
     const formData = new FormData()
+    const officialUrl = applySteamOfficialUrlFallback(
+      data.officialUrl,
+      data.steamId
+    )
     formData.append('id', data.id.toString())
     formData.append('name', data.name)
     if (data.vndbId) formData.append('vndbId', data.vndbId)
@@ -80,7 +85,7 @@ export const RewritePatch = () => {
     formData.append('introduction', data.introduction)
     formData.append('contentLimit', data.contentLimit)
     if (data.released) formData.append('released', data.released)
-    if (data.officialUrl) formData.append('officialUrl', data.officialUrl)
+    if (officialUrl) formData.append('officialUrl', officialUrl)
     formData.append('isDuplicate', String(data.isDuplicate))
 
     data.alias.forEach((a) => formData.append('alias', a))
@@ -296,7 +301,10 @@ export const RewritePatch = () => {
             <h2 className="text-xl">官方链接 (可选)</h2>
             <Input
               placeholder="输入 Steam 商店链接或官方网站链接"
-              value={data.officialUrl}
+              value={applySteamOfficialUrlFallback(
+                data.officialUrl,
+                data.steamId
+              )}
               onChange={(e) =>
                 setData({ ...data, officialUrl: e.target.value })
               }

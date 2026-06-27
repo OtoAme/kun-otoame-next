@@ -106,3 +106,33 @@ export const normalizeBangumiIdInput = (value: string) =>
 
 export const normalizeSteamIdInput = (value: string) =>
   parseSteamIdInput(value) || normalizeInput(value)
+
+export const buildSteamStoreUrl = (steamId: string) => {
+  const input = normalizeInput(steamId)
+  return /^\d+$/.test(input)
+    ? `https://store.steampowered.com/app/${input}`
+    : ''
+}
+
+export const applySteamOfficialUrlFallback = (
+  officialUrl: string | undefined,
+  steamId: string
+) => {
+  const normalizedOfficialUrl = normalizeInput(officialUrl ?? '')
+  return normalizedOfficialUrl || buildSteamStoreUrl(steamId)
+}
+
+export const syncSteamOfficialUrl = (
+  officialUrl: string | undefined,
+  previousSteamId: string,
+  nextSteamId: string
+) => {
+  const normalizedOfficialUrl = normalizeInput(officialUrl ?? '')
+  const previousGeneratedUrl = buildSteamStoreUrl(previousSteamId)
+
+  if (normalizedOfficialUrl && normalizedOfficialUrl !== previousGeneratedUrl) {
+    return normalizedOfficialUrl
+  }
+
+  return buildSteamStoreUrl(nextSteamId)
+}

@@ -8,6 +8,7 @@ import { postToIndexNow } from './_postToIndexNow'
 import { processSubmittedExternalData } from './processExternalData'
 import { invalidatePatchListCaches } from '~/app/api/patch/cache'
 import { CREATE_PATCH_PUBLISH_TIMEOUT_MS } from '~/constants/galgame'
+import { applySteamOfficialUrlFallback } from '~/utils/externalIds'
 
 export const createGalgame = async (
   input: Omit<
@@ -75,6 +76,10 @@ export const createGalgame = async (
   const normalizedDlsiteCode = dlsiteCode?.trim()
     ? dlsiteCode.trim().toUpperCase()
     : ''
+  const normalizedOfficialUrl = applySteamOfficialUrlFallback(
+    officialUrl,
+    steamId
+  )
   if (normalizedDlsiteCode) {
     const dlsitePatch = await prisma.patch.findFirst({
       where: { dlsite_code: normalizedDlsiteCode }
@@ -96,7 +101,7 @@ export const createGalgame = async (
           steam_id: steamId ? Number(steamId) : null,
           dlsite_code: normalizedDlsiteCode ? normalizedDlsiteCode : null,
           introduction,
-          official_url: officialUrl || '',
+          official_url: normalizedOfficialUrl,
           user_id: uid,
           banner: '',
           released,

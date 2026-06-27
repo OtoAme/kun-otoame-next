@@ -6,7 +6,12 @@ import Link from 'next/link'
 import toast from 'react-hot-toast'
 import { kunFetchGet, kunFetchPost } from '~/utils/kunFetch'
 import { FetchPreview } from '~/components/edit/components/FetchPreview'
-import { normalizeSteamIdInput, parseSteamIdInput } from '~/utils/externalIds'
+import {
+  applySteamOfficialUrlFallback,
+  normalizeSteamIdInput,
+  parseSteamIdInput,
+  syncSteamOfficialUrl
+} from '~/utils/externalIds'
 import type { ClipboardEvent } from 'react'
 import type {
   PatchFormDataSetter,
@@ -47,6 +52,18 @@ export const SteamInput = <T extends PatchFormDataShape>({
     setPreview(null)
     setDuplicateUniqueId(null)
   }, [data.steamId])
+
+  const setSteamId = (steamId: string) => {
+    setData((current) => ({
+      ...current,
+      steamId,
+      officialUrl: syncSteamOfficialUrl(
+        current.officialUrl,
+        current.steamId,
+        steamId
+      )
+    }))
+  }
 
   const handleFetch = async () => {
     const rawInput = normalizeSteamIdInput(data.steamId)
@@ -103,6 +120,10 @@ export const SteamInput = <T extends PatchFormDataShape>({
       setData((current) => ({
         ...current,
         steamId: rawInput,
+        officialUrl: applySteamOfficialUrlFallback(
+          current.officialUrl,
+          rawInput
+        ),
         alias: [...new Set([...current.alias, ...extraAliases])].filter(
           (alias) => alias !== current.name
         ),
@@ -126,7 +147,7 @@ export const SteamInput = <T extends PatchFormDataShape>({
     }
 
     event.preventDefault()
-    setData({ ...data, steamId: id })
+    setSteamId(id)
   }
 
   const aliasChips = preview
@@ -145,7 +166,7 @@ export const SteamInput = <T extends PatchFormDataShape>({
         labelPlacement="outside"
         placeholder="请输入 Steam App ID, 例如 3655150"
         value={data.steamId}
-        onChange={(event) => setData({ ...data, steamId: event.target.value })}
+        onChange={(event) => setSteamId(event.target.value)}
         onPaste={handlePaste}
         isInvalid={!!errors}
         errorMessage={errors}
