@@ -58,7 +58,7 @@ Store 改动要检查使用该 store 的页面和组件，不要只改类型。
 - 详情页和重写页已有 gallery 图片使用 `thumbnailUrl ?? url` 作为列表预览，灯箱始终使用原图 `url`。rewrite 提交已有图片时只传 id、NSFW 和排序，不能把 `thumbnailUrl` 当作原图 URL 写回数据库。
 - NSFW 遮罩下仍会加载 `thumbnailUrl ?? url`；如果缩略图是 animated WebP 或 animated AVIF，可以在遮罩下播放。没有生成缩略图的 animated AVIF 会回退加载原图，不生成占位图。
 - gallery 原图预载交给 `yet-another-react-lightbox` 的 `carousel.preload`。不要在缩略图 `onLoad` 后用自定义 `Image()` / `decode()` 队列预取原图，否则会和灯箱当前图或相邻图加载重复。
-- gallery 展示使用普通 `<img>` 和 `KunImageViewer`，动态 WebP / AVIF 依赖浏览器原生播放，不在前端拆帧或转码。`KunImageViewer` 可以接收 `previewSrc`，通过 `yet-another-react-lightbox` 的 custom slide 先显示缩略图，原图加载完成后淡入切换；灯箱主图、相邻预载和下载都使用原图 `url`。详情页 gallery 保留一张相邻 lightbox slide 来维持滑动动画并预载相邻原图。
+- gallery 展示使用普通 `<img>` 和 `KunImageViewer`，动态 WebP / AVIF 依赖浏览器原生播放，不在前端拆帧或转码。`KunImageViewer` 可以接收 `previewSrc`，通过 `yet-another-react-lightbox` 的 custom slide 先显示缩略图，原图加载完成后淡入切换；灯箱主图、相邻预载和下载都使用原图 `url`。详情页 gallery 保留前后各两张相邻 lightbox slide 来维持滑动动画并预载相邻原图。
 
 ## 主题与样式
 
