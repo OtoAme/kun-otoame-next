@@ -54,7 +54,7 @@ describe('KunImageViewer', () => {
     expect(container).not.toBeNull()
 
     root = createRoot(container!)
-    await act(async () => {
+    const rerender = async () => {
       root!.render(
         <KunImageViewer
           images={[
@@ -68,9 +68,13 @@ describe('KunImageViewer', () => {
           {() => null}
         </KunImageViewer>
       )
+    }
+
+    await act(async () => {
+      await rerender()
     })
 
-    return container!
+    return { container: container!, rerender }
   }
 
   afterEach(async () => {
@@ -85,19 +89,47 @@ describe('KunImageViewer', () => {
     vi.resetModules()
   })
 
-  it('does not render the original image for offscreen progressive slides', async () => {
+  it('renders the original image for offscreen progressive slides so lightbox preload can work', async () => {
     lightboxMock.offset = 1
 
-    const container = await renderViewer()
+    const { container } = await renderViewer()
     const srcs = Array.from(container.querySelectorAll('img')).map((img) =>
       img.getAttribute('src')
     )
 
-    expect(srcs).toEqual(['https://img.example/thumb.avif'])
+    expect(srcs).toEqual([
+      'https://img.example/thumb.avif',
+      'https://img.example/original.avif'
+    ])
   })
 
   it('renders the original image for the current progressive slide', async () => {
-    const container = await renderViewer()
+    const { container } = await renderViewer()
+    const srcs = Array.from(container.querySelectorAll('img')).map((img) =>
+      img.getAttribute('src')
+    )
+
+    expect(srcs).toContain('https://img.example/original.avif')
+  })
+
+  it('keeps the original image mounted while the current slide moves offscreen during navigation', async () => {
+    const { container, rerender } = await renderViewer()
+    const original = container.querySelector(
+      'img[src="https://img.example/original.avif"]'
+    )
+    expect(original).not.toBeNull()
+
+    await act(async () => {
+      original!.dispatchEvent(
+        new dom!.window.Event('load', { bubbles: true })
+      )
+    })
+
+    lightboxMock.offset = 1
+    await act(async () => {
+      await rerender()
+    })
+
     const srcs = Array.from(container.querySelectorAll('img')).map((img) =>
       img.getAttribute('src')
     )

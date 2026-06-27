@@ -13,17 +13,14 @@ import {
 
 interface Props {
   images: KunImageViewerImage[]
-  onView?: (index: number) => void
   preload?: number
   children: (openLightbox: (index: number) => void) => ReactNode
 }
 
 const ProgressiveImageSlide = ({
-  slide,
-  offset
+  slide
 }: {
   slide: KunImageViewerSlide
-  offset: number
 }) => {
   const [isLoaded, setIsLoaded] = useState(false)
 
@@ -41,17 +38,15 @@ const ProgressiveImageSlide = ({
           draggable={false}
         />
       )}
-      {offset === 0 && (
-        <img
-          src={slide.src}
-          alt={slide.alt}
-          className={`relative max-h-[80%] w-[80%] object-contain transition-opacity duration-200 ${
-            slide.previewSrc && !isLoaded ? 'opacity-0' : 'opacity-100'
-          }`}
-          draggable={false}
-          onLoad={() => setIsLoaded(true)}
-        />
-      )}
+      <img
+        src={slide.src}
+        alt={slide.alt}
+        className={`relative max-h-[80%] w-[80%] object-contain transition-opacity duration-200 ${
+          slide.previewSrc && !isLoaded ? 'opacity-0' : 'opacity-100'
+        }`}
+        draggable={false}
+        onLoad={() => setIsLoaded(true)}
+      />
     </div>
   )
 }
@@ -68,7 +63,6 @@ const hasPreviewSrc = (slide: unknown): slide is KunImageViewerSlide =>
 
 export const KunImageViewer = ({
   images,
-  onView,
   preload,
   children
 }: Props) => {
@@ -87,13 +81,12 @@ export const KunImageViewer = ({
         open={index >= 0}
         close={closeLightbox}
         on={{
-          click: closeLightbox,
-          view: ({ index }) => onView?.(index)
+          click: closeLightbox
         }}
         render={{
-          slide: ({ slide, offset }) => {
+          slide: ({ slide }) => {
             if (hasPreviewSrc(slide)) {
-              return <ProgressiveImageSlide slide={slide} offset={offset} />
+              return <ProgressiveImageSlide slide={slide} />
             }
 
             return undefined

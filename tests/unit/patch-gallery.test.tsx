@@ -8,16 +8,7 @@ globalThis.React = React
 
 const imageViewerMock = vi.hoisted(() => ({
   openedIndex: undefined as number | undefined,
-  props: undefined as
-    | { preload?: number; onView?: (index: number) => void }
-    | undefined
-}))
-
-const galleryPrefetchMock = vi.hoisted(() => ({
-  instances: [] as Array<{
-    enqueue: ReturnType<typeof vi.fn>
-    prioritize: ReturnType<typeof vi.fn>
-  }>
+  props: undefined as { preload?: number } | undefined
 }))
 
 vi.mock('~/components/kun/image-viewer/ImageViewer', () => ({
@@ -26,7 +17,6 @@ vi.mock('~/components/kun/image-viewer/ImageViewer', () => ({
     ...props
   }: {
     children: (openLightbox: (index: number) => void) => React.ReactNode
-    onView?: (index: number) => void
     preload?: number
   }) => {
     imageViewerMock.props = props
@@ -43,23 +33,6 @@ vi.mock('~/components/kun/image-viewer/ImageViewer', () => ({
 vi.mock('~/components/kun/NSFWMask', () => ({
   NSFWMask: () => null
 }))
-
-vi.mock('~/utils/galleryPrefetch', async (importOriginal) => {
-  const actual =
-    await importOriginal<typeof import('~/utils/galleryPrefetch')>()
-
-  return {
-    ...actual,
-    GalleryOriginalPrefetchQueue: class {
-      enqueue = vi.fn()
-      prioritize = vi.fn()
-
-      constructor() {
-        galleryPrefetchMock.instances.push(this)
-      }
-    }
-  }
-})
 
 const createImages = (count: number): PatchImage[] =>
   Array.from({ length: count }, (_, index) => {
@@ -106,22 +79,20 @@ describe('Patch gallery', () => {
     root = undefined
     dom?.window.close()
     dom = undefined
-    galleryPrefetchMock.instances = []
     imageViewerMock.openedIndex = undefined
     imageViewerMock.props = undefined
     vi.unstubAllGlobals()
     vi.resetModules()
   })
 
-  it('disables lightbox adjacent preload so original prefetch stays queue-owned', async () => {
+  it('keeps one adjacent lightbox slide so lightbox owns original preloading', async () => {
     await renderGallery(createImages(2))
 
-    expect(imageViewerMock.props?.preload).toBe(0)
+    expect(imageViewerMock.props?.preload).toBe(1)
   })
 
-  it('does not enqueue every original after thumbnail previews load', async () => {
+  it('does not wire thumbnail loads to a manual original preload queue', async () => {
     const container = await renderGallery()
-    const queue = galleryPrefetchMock.instances[0]
 
     await act(async () => {
       container.querySelectorAll('img').forEach((img) => {
@@ -129,12 +100,11 @@ describe('Patch gallery', () => {
       })
     })
 
-    expect(queue.enqueue).not.toHaveBeenCalled()
+    expect(imageViewerMock.openedIndex).toBeUndefined()
   })
 
-  it('prioritizes the selected gallery slot and nearby originals on open', async () => {
+  it('opens the selected gallery slot', async () => {
     const container = await renderGallery()
-    const queue = galleryPrefetchMock.instances[0]
     const thirdPreview = container.querySelectorAll('img')[2]
 
     await act(async () => {
@@ -143,27 +113,6 @@ describe('Patch gallery', () => {
       )
     })
 
-    expect(queue.prioritize).toHaveBeenCalledWith([
-      'https://img.example/patch/1/gallery/3.avif',
-      'https://img.example/patch/1/gallery/2.avif',
-      'https://img.example/patch/1/gallery/4.avif',
-      'https://img.example/patch/1/gallery/1.avif',
-      'https://img.example/patch/1/gallery/5.avif'
-    ])
     expect(imageViewerMock.openedIndex).toBe(2)
-  })
-
-  it('prioritizes nearby originals when the lightbox view changes', async () => {
-    await renderGallery()
-    const queue = galleryPrefetchMock.instances[0]
-
-    imageViewerMock.props?.onView?.(3)
-
-    expect(queue.prioritize).toHaveBeenCalledWith([
-      'https://img.example/patch/1/gallery/4.avif',
-      'https://img.example/patch/1/gallery/3.avif',
-      'https://img.example/patch/1/gallery/5.avif',
-      'https://img.example/patch/1/gallery/2.avif'
-    ])
   })
 })

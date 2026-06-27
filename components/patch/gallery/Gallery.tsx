@@ -1,13 +1,9 @@
 'use client'
 
-import { useMemo, useRef, useState } from 'react'
+import { useState } from 'react'
 import { KunImageViewer } from '~/components/kun/image-viewer/ImageViewer'
 import { NSFWMask } from '~/components/kun/NSFWMask'
 import type { PatchImage } from '~/types/api/patch'
-import {
-  GalleryOriginalPrefetchQueue,
-  getPriorityGallerySlots
-} from '~/utils/galleryPrefetch'
 import {
   getGalleryOriginalSrc,
   getGalleryPreviewSrc
@@ -19,25 +15,10 @@ interface Props {
 
 export const Gallery = ({ images }: Props) => {
   const validImages = images?.filter((img) => img.url) ?? []
-  const originalUrls = useMemo(
-    () => validImages.map((img) => getGalleryOriginalSrc(img)),
-    [validImages]
-  )
-  const prefetchQueue = useRef<GalleryOriginalPrefetchQueue | null>(null)
-  if (!prefetchQueue.current) {
-    prefetchQueue.current = new GalleryOriginalPrefetchQueue()
-  }
 
   if (validImages.length === 0) return null
 
-  const prioritizeNearbyOriginals = (index: number) => {
-    prefetchQueue.current?.prioritize(
-      getPriorityGallerySlots(originalUrls, index)
-    )
-  }
-
   const handleOpen = (index: number, openLightbox: (index: number) => void) => {
-    prioritizeNearbyOriginals(index)
     openLightbox(index)
   }
 
@@ -45,8 +26,7 @@ export const Gallery = ({ images }: Props) => {
     <div className="mt-4 space-y-4">
       <h2 className="text-2xl font-medium">游戏画廊</h2>
       <KunImageViewer
-        preload={0}
-        onView={prioritizeNearbyOriginals}
+        preload={1}
         images={validImages.map((img) => ({
           src: getGalleryOriginalSrc(img),
           previewSrc: getGalleryPreviewSrc(img),
