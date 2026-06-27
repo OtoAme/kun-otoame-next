@@ -27,7 +27,7 @@ Use this skill for pages, components, state, theme, and content.
 - Create edit-page clear actions must reset `editStore`, localforage banner/gallery drafts, and remount local draft UI state.
 - Create/rewrite gallery inputs must keep the watermark notice accurate: static images may be watermarked server-side, but animated WebP/AVIF are preserved as originals and skip watermarking.
 - Gallery grids should render `thumbnailUrl ?? url`, while lightboxes and rewrite persistence use original `url`. Pass `previewSrc` separately for progressive lightbox rendering; rewrite must never save `thumbnailUrl` as the original URL.
-- Gallery original prefetch should use the current low-concurrency `Image()` + `decode()` queue and follow current gallery slot order, not filename or image id ordering. Do not enqueue every original from thumbnail `onLoad`; prioritize originals only when opening a gallery slot or when the lightbox view changes. Detail gallery should disable the lightbox's adjacent preload and keep offscreen progressive slides from mounting original `<img>` elements. NSFW masks still load `thumbnailUrl ?? url`; animated AVIF without a generated thumbnail falls back to the original URL.
+- Gallery original prefetch should use `yet-another-react-lightbox`'s `carousel.preload`, not a custom `Image()` + `decode()` queue. Do not enqueue originals from thumbnail `onLoad` or lightbox `view`; that duplicates current or adjacent original requests. Detail gallery keeps one adjacent lightbox slide for the slide animation and adjacent original preload. NSFW masks still load `thumbnailUrl ?? url`; animated AVIF without a generated thumbnail falls back to the original URL.
 - Theme changes need `tests/unit/theme.test.ts`. For theme persistence, keep `SiteThemeScript`, `SiteThemeRouteSync`, `useKunSiteTheme`, `kun-site-theme` cookie, `localStorage`, and `html[data-kun-theme]` synchronized; browser-side `localStorage` is the source of truth, with cookie only as fallback. Cover hard-load/redeploy and client-navigation static-shell regressions where the option shows `otoame`/Pink but the root DOM falls back to `touchgal`/Classic.
 - Home page remains `force-static`: only fetch `/api/home` from the client when the static `galgames` payload is empty, and keep non-empty home payloads on the zero-extra-API path except for `/api/patch/stats`.
 - Do not make public `force-static` pages dynamic just to read the site theme cookie. Next.js `force-static` treats request cookies as empty, so client theme repair belongs in `SiteThemeScript` / `SiteThemeRouteSync` / `useKunSiteTheme`.
@@ -39,7 +39,7 @@ pnpm test tests/unit/company-detail-container.test.tsx
 pnpm test tests/unit/tag-detail-container.test.tsx
 pnpm test tests/unit/edit-store.test.ts
 pnpm test tests/unit/gallery-upload.test.ts
-pnpm test tests/unit/gallery-prefetch.test.ts tests/unit/gallery-preview.test.ts tests/unit/patch-gallery.test.tsx tests/unit/image-viewer.test.tsx
+pnpm test tests/unit/gallery-preview.test.ts tests/unit/patch-gallery.test.tsx tests/unit/image-viewer.test.tsx
 pnpm test tests/unit/theme.test.ts
 pnpm typecheck
 ```
