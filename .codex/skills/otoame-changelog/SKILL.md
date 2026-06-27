@@ -18,6 +18,16 @@ Use this skill to turn commit ranges or change lists into the short, user-facing
 - Use common verbs: `新增`, `支持`, `优化`, `修复`, `修正`, `重构`, `更新`, `补充`.
 - Keep project terms stable: `VNDB`, `Bangumi`, `Steam`, `DLSite`, `sitemap`, `GitHub Actions`, `tag`, `alias`.
 
+## Writing Rules
+
+- Lead with the main shipped capability, bugfix, data repair, or operational ability. Fold supporting implementation work into that main result.
+- Describe the finished behavior, not the path taken to build it. Avoid naming adapters, helper functions, files, commits, or libraries unless the audience needs to act on them.
+- Group changes by workflow or feature area. A multi-step feature should usually become one bullet unless separate parts matter to different audiences.
+- Keep deployment, compatibility, diagnostics, and preload/cache details only when they affect users, administrators, operators, or production data. Otherwise merge them into the feature summary or omit them.
+- For bugfixes, name the visible inconsistency or broken workflow and the corrected result; do not expose internal cache or service details unless they explain operator action.
+- For backfill, cleanup, repair, or migration work, mention it when it changes existing production data or gives operators a concrete maintenance tool.
+- Remove draft markers such as `+`, parenthetical uncertainty, and implementation asides during the compression pass.
+
 ## Workflow
 
 1. Inspect the range with `git log --oneline --reverse <base>..HEAD`.
