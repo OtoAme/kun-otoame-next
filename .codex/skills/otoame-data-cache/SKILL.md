@@ -20,6 +20,7 @@ Use this skill for persistence, cache, and upload consistency work.
 - Use `lib/redis.ts`; helper keys are unprefixed because the helper adds `kun:touchgal`.
 - Direct `redis` / `runRedisCommand` usage needs a reason and explicit full key prefixes.
 - After patch/resource/tag/company writes, call the matching cache invalidation helper.
+- Patch-company relation writes must also invalidate the affected patch content/introduction cache; company cache invalidation alone leaves stale game detail pages.
 - Anonymous tag/company game-list APIs use short response caches; never cache personalized login/NSFW/blocked-tag results, and keep Redis list cache keys scoped by the full visibility where.
 - Home `home_data:*` and `/api/home` anonymous response caches must not store empty `galgames` payloads; this is a deploy/ISR empty-snapshot guard, not a generic rule for valid empty paginated lists.
 - Upload publishing must preserve role/quota checks, `consumeUpload`, S3 compensation, `finalizeUpload`, and cleanup behavior.

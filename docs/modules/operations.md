@@ -54,7 +54,7 @@
 
 手工合并仍使用 `maintenance:tags:merge:* -- --plan=path/to/merge-plan.json`。本地库没有生产 tag 数据时，不要用本地 dry-run 结果判断生产影响面，应在生产备份后对生产库 dry-run。
 
-`maintenance:companies:dirty:dry` 会扫描公司历史脏数据：某个公司的 `name` 命中另一个公司的 `alias`、多个公司共享 alias，以及 `patch_company.count` 与实际关系数不一致。dry-run 只输出自动合并计划、warning 和 count 修复预览，不写库。确认输出后再运行 `maintenance:companies:dirty:apply`；apply 会迁移 `patch_company_relation`、合并 alias / primary_language / official_website / parent_brand、删除重复公司、重算 count，并失效 company/list/受影响 patch 内容缓存。多个候选主公司或无法确定 canonical 的共享 alias 会跳过并输出 warning，需要人工计划。
+`maintenance:companies:dirty:dry` 会扫描公司历史脏数据：某个公司的 `name` 命中另一个公司的 `alias`、多个公司共享 alias、没有任何游戏关系的空公司，以及 `patch_company.count` 与实际关系数不一致。dry-run 只输出自动合并计划、warning、空公司删除预览和 count 修复预览，不写库。确认输出后再运行 `maintenance:companies:dirty:apply`；apply 会迁移 `patch_company_relation`、合并 alias / primary_language / official_website / parent_brand、删除重复公司和空公司、重算 count，并失效 company/list/受影响 patch 内容缓存。多个候选主公司或无法确定 canonical 的共享 alias 会跳过并输出 warning，需要人工计划。
 
 生产公司清理流程：
 
