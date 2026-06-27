@@ -23,6 +23,7 @@ Use this skill for operational code and release plumbing.
 - Multi-instance scheduled tasks should use task locks.
 - Migration scripts need dry-run/preflight behavior for production data.
 - `scripts/verifyGalleryAnimatedAvifThumbnail.ts` is a local-only verification script for explicit/BtbN/`ffmpeg-static`/system FFmpeg animated AVIF gallery thumbnails; it must not connect to S3 or the database, and it must check input/output frame counts so a still first-frame AVIF is not treated as animated success. `deploy:pull` must copy target-server `node_modules/ffmpeg-static` and optional `node_modules/.ffmpeg/ffmpeg` into standalone so release artifacts do not rely on build-machine binaries.
+- Gallery thumbnail backfill uses `maintenance:gallery-thumbnails:dry` before `maintenance:gallery-thumbnails:apply`; apply defaults must stay low load for production servers (`--limit=50 --batch=20 --concurrency=1 --delay=1000`) and should support scoped repeated runs.
 - Tag alias cleanup uses `maintenance:tags:auto-alias:dry` before `maintenance:tags:auto-alias:apply`; local empty tag data does not validate production impact.
 - Company cleanup uses `maintenance:companies:dirty:dry` before `maintenance:companies:dirty:apply`; it merges alias duplicates, deletes zero-relation empty companies, and fixes count mismatches, while ambiguous shared aliases require manual canonical decisions.
 
@@ -30,6 +31,7 @@ Use this skill for operational code and release plumbing.
 
 ```bash
 pnpm test tests/unit/company-merge-plan.test.ts
+pnpm test tests/unit/gallery-thumbnail-backfill.test.ts
 pnpm test
 pnpm typecheck
 pnpm build

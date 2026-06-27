@@ -40,6 +40,7 @@
 - `maintenance:dirty-tags:*`
 - `maintenance:tags:*`
 - `maintenance:companies:dirty:*`
+- `maintenance:gallery-thumbnails:*`
 - `migration:resource-type:*`
 - `migration:patch-counters`
 
@@ -49,6 +50,10 @@
 - `pnpm exec esno scripts/verifyGalleryAnimatedAvifThumbnail.ts <animated.avif> [output.avif]`：验证当前机器的 `KUN_GALLERY_FFMPEG_PATH`、standalone `.ffmpeg/ffmpeg`、`ffmpeg-static` 或系统 `ffmpeg/libaom-av1` 能否生成 animated AVIF gallery 缩略图；只读写本地文件，不访问数据库或 S3。脚本会列出各候选 FFmpeg 对输入样本和输出缩略图解析到的帧数，包括 Linux FFmpeg 暴露出的非默认多帧 video stream，避免把静态首帧误判为 animated AVIF。生产运行前应在目标服务器执行，建议使用 `pnpm exec esno scripts/verifyGalleryAnimatedAvifThumbnail.ts ./public/images/animated-sample.avif ./public/images/tmp/animated-sample-thumb.avif`，确认输出 `Wrote animated AVIF thumbnail: ... frames ...`。
 
 带 `dry` 的脚本先 dry-run，确认输出后再 apply。
+
+`maintenance:gallery-thumbnails:dry` 扫描历史 gallery 中 `thumbnail_url IS NULL` 的本站原图，输出待回填数量，不下载原图、不写 S3、不写 DB。确认 dry-run 后用 `maintenance:gallery-thumbnails:apply` 分批回填真实缩略图；apply 默认 `--limit=50 --batch=20 --concurrency=1 --delay=1000`，适合生产 3c 服务器低负载执行，并会逐张打印当前处理的游戏、gallery 图片 ID、完成状态和耗时。常用生产命令是 `pnpm maintenance:gallery-thumbnails:apply -- --limit=50 --batch=20 --concurrency=1 --delay=1000`，重复执行直到 dry-run 无候选；如果 FFmpeg 性能或可用性不确定，先加 `--skip-animated-avif`。
+
+gallery thumbnails summary 字段含义：`galleryTotal` 是当前范围内 URL 非空的 gallery 图片总数；`alreadyWithThumbnail` 是已有 `thumbnail_url`、无需回填压缩的图片数；`missingThumbnail` 是仍缺 `thumbnail_url` 的图片数；`scanned` 是本次从数据库查出并检查的缺缩略图候选图片数，受 `--limit` 限制；`eligible` 是符合回填规则的图片数，dry-run 中表示 apply 会处理的数量；`updated` 是 apply 实际写入 `thumbnail_url` 的图片数，dry-run 中应为 `0`；`skipped` 是查到候选但因 URL 非本站、路径不规范、原图过大、缩略图生成不可用等原因跳过的数量；`failed` 是处理过程中出现未恢复错误的数量。`scanned=0` 且 `missingThumbnail=0` 表示当前范围没有缺 `thumbnail_url` 的 gallery 候选项，不代表数据库里没有 gallery 图片。
 
 `maintenance:tags:auto-alias:dry` 会在生产库里扫描“某个 tag 的 name 命中另一个主 tag 的 alias”的历史重复数据，并生成合并计划。dry-run 只做计划校验和关系数量预览，不加载所有受影响 patch 的 `unique_id`，避免生产数据量大时预览过慢。确认输出无误后再运行 `maintenance:tags:auto-alias:apply`；apply 会移动 patch 关系、合并 alias、修正 count、迁移用户 blocked tag，并失效 tag/list/受影响 patch 内容缓存。多主 tag 共用同一 alias 时会跳过并输出 warning，需要人工计划。
 
