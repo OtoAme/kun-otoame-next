@@ -27,7 +27,7 @@ Use this skill for project-specific testing work.
 - Use `vi.hoisted` for values referenced by `vi.mock` factories.
 - Do not connect to real PostgreSQL, Redis, S3, GitHub, Bangumi, VNDB, or DLSite in unit tests.
 - Gallery upload tests live in `tests/unit/gallery-upload.test.ts`; mock Sharp/S3 and assert static AVIF transform + thumbnail behavior separately from animated WebP/AVIF original-preservation behavior, animated WebP thumbnail frame-size handling, no-benefit fallback, animated AVIF encoder success/fallback/no-placeholder behavior, and S3 compensation.
-- Gallery frontend helpers use `tests/unit/gallery-preview.test.ts`, `tests/unit/gallery-prefetch.test.ts`, and `tests/unit/image-viewer-slides.test.ts` to cover thumbnail/original URL selection, `Image.decode()` prefetch status, slot-based prefetch priority, and progressive lightbox `previewSrc` mapping.
+- Gallery frontend tests use `tests/unit/gallery-preview.test.ts`, `tests/unit/gallery-prefetch.test.ts`, `tests/unit/image-viewer-slides.test.ts`, `tests/unit/patch-gallery.test.tsx`, and `tests/unit/image-viewer.test.tsx` to cover thumbnail/original URL selection, `Image.decode()` prefetch status, slot-based prefetch priority, no thumbnail-load original fan-out, lightbox view-driven prefetch, and progressive lightbox `previewSrc` / offscreen original behavior.
 
 ## Common Commands
 
@@ -35,7 +35,7 @@ Use this skill for project-specific testing work.
 pnpm test
 pnpm test tests/unit/gallery-upload.test.ts tests/unit/gallery-route.test.ts
 pnpm test tests/unit/patch-update-gallery.test.ts
-pnpm test tests/unit/gallery-prefetch.test.ts tests/unit/gallery-preview.test.ts
+pnpm test tests/unit/gallery-prefetch.test.ts tests/unit/gallery-preview.test.ts tests/unit/patch-gallery.test.tsx tests/unit/image-viewer.test.tsx
 pnpm test tests/unit/resource-link.test.ts
 pnpm test tests/unit/api/batch-tag.test.ts
 pnpm typecheck
