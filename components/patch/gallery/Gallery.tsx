@@ -30,10 +30,14 @@ export const Gallery = ({ images }: Props) => {
 
   if (validImages.length === 0) return null
 
-  const handleOpen = (index: number, openLightbox: (index: number) => void) => {
+  const prioritizeNearbyOriginals = (index: number) => {
     prefetchQueue.current?.prioritize(
       getPriorityGallerySlots(originalUrls, index)
     )
+  }
+
+  const handleOpen = (index: number, openLightbox: (index: number) => void) => {
+    prioritizeNearbyOriginals(index)
     openLightbox(index)
   }
 
@@ -41,6 +45,8 @@ export const Gallery = ({ images }: Props) => {
     <div className="mt-4 space-y-4">
       <h2 className="text-2xl font-medium">游戏画廊</h2>
       <KunImageViewer
+        preload={0}
+        onView={prioritizeNearbyOriginals}
         images={validImages.map((img) => ({
           src: getGalleryOriginalSrc(img),
           previewSrc: getGalleryPreviewSrc(img),
@@ -53,9 +59,6 @@ export const Gallery = ({ images }: Props) => {
               <GalleryItem
                 key={img.id}
                 image={img}
-                onPreviewLoad={() =>
-                  prefetchQueue.current?.enqueue(getGalleryOriginalSrc(img))
-                }
                 onOpen={() => handleOpen(index, openLightbox)}
               />
             ))}
@@ -68,11 +71,9 @@ export const Gallery = ({ images }: Props) => {
 
 const GalleryItem = ({
   image,
-  onPreviewLoad,
   onOpen
 }: {
   image: PatchImage
-  onPreviewLoad: () => void
   onOpen: () => void
 }) => {
   const [isRevealed, setIsRevealed] = useState(!image.isNSFW)
@@ -93,7 +94,6 @@ const GalleryItem = ({
         alt="Game Screenshot"
         className="w-full h-full object-cover transition-transform duration-500 will-change-transform group-hover:scale-110"
         loading="lazy"
-        onLoad={onPreviewLoad}
       />
       <NSFWMask
         isVisible={!isRevealed}

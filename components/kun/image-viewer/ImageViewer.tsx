@@ -13,11 +13,18 @@ import {
 
 interface Props {
   images: KunImageViewerImage[]
+  onView?: (index: number) => void
   preload?: number
   children: (openLightbox: (index: number) => void) => ReactNode
 }
 
-const ProgressiveImageSlide = ({ slide }: { slide: KunImageViewerSlide }) => {
+const ProgressiveImageSlide = ({
+  slide,
+  offset
+}: {
+  slide: KunImageViewerSlide
+  offset: number
+}) => {
   const [isLoaded, setIsLoaded] = useState(false)
 
   useEffect(() => {
@@ -34,15 +41,17 @@ const ProgressiveImageSlide = ({ slide }: { slide: KunImageViewerSlide }) => {
           draggable={false}
         />
       )}
-      <img
-        src={slide.src}
-        alt={slide.alt}
-        className={`relative max-h-[80%] w-[80%] object-contain transition-opacity duration-200 ${
-          slide.previewSrc && !isLoaded ? 'opacity-0' : 'opacity-100'
-        }`}
-        draggable={false}
-        onLoad={() => setIsLoaded(true)}
-      />
+      {offset === 0 && (
+        <img
+          src={slide.src}
+          alt={slide.alt}
+          className={`relative max-h-[80%] w-[80%] object-contain transition-opacity duration-200 ${
+            slide.previewSrc && !isLoaded ? 'opacity-0' : 'opacity-100'
+          }`}
+          draggable={false}
+          onLoad={() => setIsLoaded(true)}
+        />
+      )}
     </div>
   )
 }
@@ -57,7 +66,12 @@ const hasPreviewSrc = (slide: unknown): slide is KunImageViewerSlide =>
   'previewSrc' in slide &&
   typeof (slide as { previewSrc?: unknown }).previewSrc === 'string'
 
-export const KunImageViewer = ({ images, preload, children }: Props) => {
+export const KunImageViewer = ({
+  images,
+  onView,
+  preload,
+  children
+}: Props) => {
   const [index, setIndex] = useState(-1)
   const lightboxImages = createKunImageViewerSlides(images)
 
@@ -73,12 +87,13 @@ export const KunImageViewer = ({ images, preload, children }: Props) => {
         open={index >= 0}
         close={closeLightbox}
         on={{
-          click: closeLightbox
+          click: closeLightbox,
+          view: ({ index }) => onView?.(index)
         }}
         render={{
-          slide: ({ slide }) => {
+          slide: ({ slide, offset }) => {
             if (hasPreviewSrc(slide)) {
-              return <ProgressiveImageSlide slide={slide} />
+              return <ProgressiveImageSlide slide={slide} offset={offset} />
             }
 
             return undefined
