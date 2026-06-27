@@ -21,6 +21,7 @@ vi.mock('~/app/api/edit/galleryAnimatedAvifThumbnail', () => ({
 import {
   GALLERY_ANIMATED_MAX_SIZE_MB,
   getGalleryUploadPlan,
+  preparePatchGalleryThumbnail,
   preparePatchGalleryImage,
   uploadPatchGalleryImage
 } from '~/app/api/edit/galleryUpload'
@@ -114,7 +115,7 @@ describe('gallery upload plan', () => {
     const plan = getGalleryUploadPlan({
       format: 'webp',
       pages: 3,
-      size: (GALLERY_ANIMATED_MAX_SIZE_MB * 1024 * 1024) + 1,
+      size: GALLERY_ANIMATED_MAX_SIZE_MB * 1024 * 1024 + 1,
       watermark: false
     })
 
@@ -333,6 +334,71 @@ describe('gallery upload plan', () => {
     expect(thumbnailPipeline.avif).toHaveBeenCalledWith({
       quality: 50,
       effort: 2
+    })
+  })
+
+  it('generates static thumbnails without reprocessing or watermarking originals', async () => {
+    const metadataPipeline = createSharpPipeline({ format: 'avif', pages: 1 })
+    const thumbnailPipeline = createSharpPipeline({ format: 'avif', pages: 1 })
+    sharpMock
+      .mockReturnValueOnce(metadataPipeline)
+      .mockReturnValueOnce(thumbnailPipeline)
+
+    const result = await preparePatchGalleryThumbnail(
+      Buffer.from('stored-static-avif')
+    )
+
+    expect(result).toEqual({
+      buffer: Buffer.from('processed-image'),
+      extension: 'avif',
+      contentType: 'image/avif',
+      source: 'static'
+    })
+    expect(metadataPipeline.resize).not.toHaveBeenCalled()
+    expect(metadataPipeline.composite).not.toHaveBeenCalled()
+    expect(thumbnailPipeline.resize).toHaveBeenCalledWith(360, 240, {
+      fit: 'inside',
+      withoutEnlargement: true
+    })
+    expect(thumbnailPipeline.avif).toHaveBeenCalledWith({
+      quality: 50,
+      effort: 2
+    })
+  })
+
+  it('generates animated WebP thumbnails from stored originals', async () => {
+    const metadataPipeline = createSharpPipeline({
+      format: 'webp',
+      width: 720,
+      pageHeight: 480,
+      pages: 3,
+      loop: 0,
+      delay: [80, 90, 100]
+    })
+    const thumbnailPipeline = createSharpPipeline({
+      format: 'webp',
+      width: 720,
+      pageHeight: 480,
+      pages: 3
+    })
+    sharpMock.mockReturnValueOnce(metadataPipeline)
+    sharpMock.mockReturnValueOnce(thumbnailPipeline)
+
+    const result = await preparePatchGalleryThumbnail(
+      Buffer.from('stored-animated-webp')
+    )
+
+    expect(result).toEqual({
+      buffer: Buffer.from('processed-image'),
+      extension: 'webp',
+      contentType: 'image/webp',
+      source: 'animated-webp'
+    })
+    expect(thumbnailPipeline.resize).toHaveBeenCalledWith({
+      width: 360,
+      height: 240,
+      fit: 'inside',
+      withoutEnlargement: true
     })
   })
 

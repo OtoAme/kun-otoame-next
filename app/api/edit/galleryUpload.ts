@@ -45,13 +45,16 @@ interface ProcessedGalleryImage extends UploadedGalleryImage {
   thumbnailBuffer?: Buffer
 }
 
-const supportedStaticFormats = new Set([
-  'jpeg',
-  'jpg',
-  'png',
-  'webp',
-  'avif'
-])
+type GalleryThumbnailSource = 'static' | 'animated-webp' | 'animated-avif'
+
+export interface PreparedGalleryThumbnail {
+  buffer: Buffer
+  extension: GalleryUploadExtension
+  contentType: `image/${GalleryUploadExtension}`
+  source: GalleryThumbnailSource
+}
+
+const supportedStaticFormats = new Set(['jpeg', 'jpg', 'png', 'webp', 'avif'])
 
 const isSizeWithinLimit = (size: number, maxSizeInMegabyte: number) =>
   size <= maxSizeInMegabyte * 1024 * 1024
@@ -65,7 +68,10 @@ const hasIsoBmffBrand = (buffer: Buffer, brand: string) => {
   }
 
   const boxSize = buffer.readUInt32BE(0)
-  const brandLimit = Math.min(boxSize > 0 ? boxSize : buffer.length, buffer.length)
+  const brandLimit = Math.min(
+    boxSize > 0 ? boxSize : buffer.length,
+    buffer.length
+  )
 
   if (readIsoBmffBrand(buffer, 8) === brand) {
     return true
@@ -92,10 +98,7 @@ const isAvifFormat = (format: string | undefined, input?: Buffer) => {
   return hasIsoBmffBrand(input, 'avif') || hasIsoBmffBrand(input, 'avis')
 }
 
-const normalizeGalleryFormat = (
-  format: string | undefined,
-  input?: Buffer
-) => {
+const normalizeGalleryFormat = (format: string | undefined, input?: Buffer) => {
   if (isAvifFormat(format, input)) {
     return 'avif'
   }
@@ -203,10 +206,7 @@ const processAnimatedWebpGalleryThumbnail = async (
     1,
     Math.floor(WEBP_THUMBNAIL_MAX_DIMENSION / pages)
   )
-  const thumbnailHeight = Math.min(
-    GALLERY_THUMBNAIL_MAX_HEIGHT,
-    maxFrameHeight
-  )
+  const thumbnailHeight = Math.min(GALLERY_THUMBNAIL_MAX_HEIGHT, maxFrameHeight)
 
   const webpOptions: sharp.WebpOptions = {
     quality: WEBP_THUMBNAIL_QUALITY,
@@ -233,6 +233,72 @@ const processAnimatedWebpGalleryThumbnail = async (
     .toBuffer()
 
   return buffer
+}
+
+export const preparePatchGalleryThumbnail = async (
+  image: Buffer | ArrayBuffer,
+  options: { skipAnimatedAvif?: boolean } = {}
+): Promise<PreparedGalleryThumbnail | string> => {
+  const input = Buffer.isBuffer(image) ? image : Buffer.from(image)
+  if (input.byteLength === 0) {
+    return '上传文件不能为空'
+  }
+
+  if (isAnimatedAvifBuffer(input)) {
+    if (options.skipAnimatedAvif) {
+      return '已跳过动态 AVIF 缩略图'
+    }
+
+    const thumbnailBuffer = await createAnimatedAvifThumbnail(input)
+    if (!thumbnailBuffer) {
+      return '动态 AVIF 缩略图不可用'
+    }
+
+    return {
+      buffer: thumbnailBuffer,
+      extension: 'avif',
+      contentType: 'image/avif',
+      source: 'animated-avif'
+    }
+  }
+
+  const metadata = await sharp(input, { pages: -1 }).metadata()
+  const format = normalizeGalleryFormat(metadata.format, input)
+  const isAnimated = (metadata.pages ?? 1) > 1
+
+  if (isAnimated) {
+    if (format !== 'webp') {
+      return '暂不支持该动图格式'
+    }
+
+    try {
+      return {
+        buffer: await processAnimatedWebpGalleryThumbnail(input, metadata),
+        extension: 'webp',
+        contentType: 'image/webp',
+        source: 'animated-webp'
+      }
+    } catch (error) {
+      console.error('Animated WebP thumbnail generation error:', error)
+      return '动态 WebP 缩略图生成失败'
+    }
+  }
+
+  if (!format || !supportedStaticFormats.has(format)) {
+    return '不支持的图片格式'
+  }
+
+  const thumbnailBuffer = await processStaticGalleryThumbnail(input)
+  if (typeof thumbnailBuffer === 'string') {
+    return thumbnailBuffer
+  }
+
+  return {
+    buffer: thumbnailBuffer,
+    extension: 'avif',
+    contentType: 'image/avif',
+    source: 'static'
+  }
 }
 
 export const preparePatchGalleryImage = async (
@@ -355,11 +421,7 @@ export const uploadPatchGalleryImage = async (
   const bucketName = `patch/${patchId}/gallery`
   const originalKey = `${bucketName}/${imageId}.${result.extension}`
 
-  await uploadImageToS3(
-    originalKey,
-    result.buffer,
-    result.contentType
-  )
+  await uploadImageToS3(originalKey, result.buffer, result.contentType)
 
   if (
     result.thumbnailBuffer &&
