@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const deleteFileFromS3Mock = vi.hoisted(() => vi.fn())
 const invalidatePatchContentCacheMock = vi.hoisted(() => vi.fn())
 const invalidatePatchListCachesMock = vi.hoisted(() => vi.fn())
+const invalidateCompanyCachesMock = vi.hoisted(() => vi.fn())
 
 vi.mock('~/lib/s3', () => ({
   deleteFileFromS3: deleteFileFromS3Mock,
@@ -13,7 +14,8 @@ vi.mock('~/lib/s3', () => ({
 
 vi.mock('~/app/api/patch/cache', () => ({
   invalidatePatchContentCache: invalidatePatchContentCacheMock,
-  invalidatePatchListCaches: invalidatePatchListCachesMock
+  invalidatePatchListCaches: invalidatePatchListCachesMock,
+  invalidateCompanyCaches: invalidateCompanyCachesMock
 }))
 
 vi.mock('~/lib/redis', () => ({
@@ -25,14 +27,17 @@ vi.mock('~/lib/redis', () => ({
 const prismaMocks = vi.hoisted(() => {
   const tx = {
     patch_resource: { delete: vi.fn() },
-    patch: { delete: vi.fn() }
+    patch: { delete: vi.fn() },
+    patch_company: { updateMany: vi.fn() },
+    $executeRaw: vi.fn()
   }
 
   return {
     patch: { findUnique: vi.fn() },
     patch_resource: { findMany: vi.fn() },
     patch_game_image: { findMany: vi.fn(), deleteMany: vi.fn() },
-    $transaction: vi.fn(async (fn) => fn(tx))
+    $transaction: vi.fn(async (fn) => fn(tx)),
+    _tx: tx
   }
 })
 
@@ -47,13 +52,15 @@ describe('patch delete with gallery S3 cleanup', () => {
     process.env.NEXT_PUBLIC_KUN_VISUAL_NOVEL_S3_STORAGE_URL = 'https://img.example'
     invalidatePatchContentCacheMock.mockResolvedValue(undefined)
     invalidatePatchListCachesMock.mockResolvedValue(undefined)
+    invalidateCompanyCachesMock.mockResolvedValue(undefined)
     deleteFileFromS3Mock.mockResolvedValue(undefined)
   })
 
   it('deletes gallery S3 objects when deleting an entire patch', async () => {
     prismaMocks.patch.findUnique.mockResolvedValue({
       id: 123,
-      unique_id: 'patch-unique'
+      unique_id: 'patch-unique',
+      company: []
     })
     prismaMocks.patch_resource.findMany.mockResolvedValue([])
     prismaMocks.patch_game_image.findMany.mockResolvedValue([
@@ -82,7 +89,8 @@ describe('patch delete with gallery S3 cleanup', () => {
   it('still completes patch deletion when gallery S3 delete fails', async () => {
     prismaMocks.patch.findUnique.mockResolvedValue({
       id: 123,
-      unique_id: 'patch-unique'
+      unique_id: 'patch-unique',
+      company: []
     })
     prismaMocks.patch_resource.findMany.mockResolvedValue([])
     prismaMocks.patch_game_image.findMany.mockResolvedValue([
@@ -103,7 +111,8 @@ describe('patch delete with gallery S3 cleanup', () => {
   it('handles patch with no gallery images', async () => {
     prismaMocks.patch.findUnique.mockResolvedValue({
       id: 123,
-      unique_id: 'patch-unique'
+      unique_id: 'patch-unique',
+      company: []
     })
     prismaMocks.patch_resource.findMany.mockResolvedValue([])
     prismaMocks.patch_game_image.findMany.mockResolvedValue([])
@@ -112,5 +121,22 @@ describe('patch delete with gallery S3 cleanup', () => {
 
     expect(deleteFileFromS3Mock).not.toHaveBeenCalled()
     expect(invalidatePatchContentCacheMock).toHaveBeenCalledWith('patch-unique')
+  })
+
+  it('recalculates related company counts when deleting a patch', async () => {
+    prismaMocks.patch.findUnique.mockResolvedValue({
+      id: 123,
+      unique_id: 'patch-unique',
+      company: [{ company_id: 5 }, { company_id: 8 }]
+    })
+    prismaMocks.patch_resource.findMany.mockResolvedValue([])
+    prismaMocks.patch_game_image.findMany.mockResolvedValue([])
+
+    await expect(deletePatchById({ patchId: 123 })).resolves.toEqual({})
+
+    expect(prismaMocks._tx.$executeRaw).toHaveBeenCalledOnce()
+    expect(prismaMocks._tx.patch_company.updateMany).not.toHaveBeenCalled()
+    expect(invalidateCompanyCachesMock).toHaveBeenCalled()
+    expect(invalidatePatchListCachesMock).toHaveBeenCalled()
   })
 })

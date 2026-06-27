@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client'
 import { prisma } from '~/prisma/index'
 import {
   buildAutoAliasCompanyMergePlan,
+  getEmptyCompanyDeletionCandidates,
   getCompanyMergePreview,
   type MergeCompaniesPlan,
   type MergePreviewCompany
@@ -40,6 +41,10 @@ const collectMergeCompanyIds = (
     ])
   )
 ]
+
+const collectMergeCompanyIdSet = (
+  merges: Required<MergeCompaniesPlan>['merges']
+) => new Set(collectMergeCompanyIds(merges))
 
 const loadMergeCompaniesById = async (
   merges: Required<MergeCompaniesPlan>['merges']
@@ -269,6 +274,46 @@ const fixCompanyCounts = async () => {
   `
 }
 
+const deleteEmptyCompanies = async (
+  excludedCompanyIds: Set<number>
+): Promise<number> => {
+  const companies = await prisma.patch_company.findMany({
+    orderBy: { id: 'asc' },
+    select: {
+      id: true,
+      name: true,
+      _count: { select: { patch_relations: true } }
+    }
+  })
+  const candidates = getEmptyCompanyDeletionCandidates(
+    companies,
+    excludedCompanyIds
+  )
+
+  if (!candidates.length) {
+    console.log('No empty companies to delete.')
+    return 0
+  }
+
+  console.log(`Empty companies to delete: ${candidates.length}`)
+  for (const company of candidates) {
+    console.log(`  #${company.id} ${company.name}`)
+  }
+
+  if (!shouldApply) {
+    return 0
+  }
+
+  const result = await prisma.patch_company.deleteMany({
+    where: {
+      id: { in: candidates.map((company) => company.id) },
+      patch_relations: { none: {} }
+    }
+  })
+  console.log(`Deleted empty companies: ${result.count}`)
+  return result.count
+}
+
 const invalidateCaches = async (affectedUniqueIds: string[]) => {
   try {
     const {
@@ -318,6 +363,7 @@ const run = async () => {
   )
 
   const affectedUniqueIdSet = new Set<string>()
+  const mergeCompanyIds = collectMergeCompanyIdSet(merges)
   const companiesById = await loadMergeCompaniesById(merges)
   for (const merge of merges) {
     for (const uniqueId of await mergeCompanies(merge, companiesById)) {
@@ -325,6 +371,7 @@ const run = async () => {
     }
   }
 
+  const deletedEmptyCompanyCount = await deleteEmptyCompanies(mergeCompanyIds)
   await fixCompanyCounts()
 
   const affectedUniqueIds = [...affectedUniqueIdSet]
@@ -334,6 +381,7 @@ const run = async () => {
     return
   }
 
+  console.log(`Empty companies deleted: ${deletedEmptyCompanyCount}`)
   console.log(`Affected patch content caches: ${affectedUniqueIds.length}`)
   await invalidateCaches(affectedUniqueIds)
   console.log('Dirty company cleanup applied.')

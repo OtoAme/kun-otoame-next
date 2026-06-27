@@ -1,5 +1,8 @@
 import { prisma } from '~/prisma/index'
-import { invalidateCompanyCaches } from '~/app/api/patch/cache'
+import {
+  invalidateCompanyCaches,
+  invalidatePatchContentCache
+} from '~/app/api/patch/cache'
 import { fetchVndbVn } from '~/lib/arnebiae/vndb'
 import type { VndbProducer } from '~/lib/arnebiae/vndb'
 import { ensureCompanyRelationsByName } from './companyEnsureHelper'
@@ -89,7 +92,14 @@ export const ensurePatchCompaniesFromVNDB = async (
     )
 
     if (result.insertedIds.length) {
-      await invalidateCompanyCaches()
+      const patch = await prisma.patch.findUnique({
+        where: { id: patchId },
+        select: { unique_id: true }
+      })
+      await Promise.all([
+        invalidateCompanyCaches(),
+        patch ? invalidatePatchContentCache(patch.unique_id) : Promise.resolve()
+      ])
     }
 
     return { ensured: result.ensured, related: result.related }

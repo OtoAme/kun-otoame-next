@@ -27,6 +27,14 @@ export interface MergePreviewCompany {
   }
 }
 
+export interface EmptyCompanyCandidate {
+  id: number
+  name: string
+  _count: {
+    patch_relations: number
+  }
+}
+
 export type AutoAliasCompanyMergePlanResult = {
   merges: Required<MergeCompaniesPlan>['merges']
   warnings: string[]
@@ -228,3 +236,19 @@ export const getCompanyMergePreview = (
     nextParentBrand
   }
 }
+
+export const getEmptyCompanyDeletionCandidates = (
+  companies: EmptyCompanyCandidate[],
+  excludedCompanyIds: Set<number> = new Set()
+) =>
+  companies
+    .filter(
+      (company) =>
+        company._count.patch_relations === 0 &&
+        !excludedCompanyIds.has(company.id)
+    )
+    .map((company) => ({
+      id: company.id,
+      name: company.name,
+      relationCount: company._count.patch_relations
+    }))

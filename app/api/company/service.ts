@@ -16,7 +16,10 @@ import {
   COMPANY_LIST_CACHE_DURATION,
   GALGAME_LIST_CACHE_DURATION
 } from '~/config/cache'
-import { invalidateCompanyCaches } from '~/app/api/patch/cache'
+import {
+  invalidateCompanyCaches,
+  invalidatePatchContentCache
+} from '~/app/api/patch/cache'
 import {
   GalgameCardSelectField,
   toGalgameCardCount
@@ -256,6 +259,24 @@ export const getCompanyById = async (
 export const deleteCompany = async (
   input: z.infer<typeof getCompanyByIdSchema>
 ) => {
+  const company = await prisma.patch_company.findUnique({
+    where: { id: input.companyId },
+    select: {
+      patch_relations: {
+        select: {
+          patch: {
+            select: {
+              unique_id: true
+            }
+          }
+        }
+      }
+    }
+  })
+  if (!company) {
+    return '未找到对应的会社'
+  }
+
   try {
     await prisma.patch_company.delete({
       where: { id: input.companyId }
@@ -264,7 +285,18 @@ export const deleteCompany = async (
     return '未找到对应的会社'
   }
 
-  await invalidateCompanyCaches(input.companyId)
+  const affectedUniqueIds = [
+    ...new Set(
+      company.patch_relations.map((relation) => relation.patch.unique_id)
+    )
+  ]
+
+  await Promise.all([
+    invalidateCompanyCaches(input.companyId),
+    ...affectedUniqueIds.map((uniqueId) =>
+      invalidatePatchContentCache(uniqueId)
+    )
+  ])
 
   return {}
 }

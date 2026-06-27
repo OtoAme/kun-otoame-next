@@ -1,8 +1,10 @@
 import { z } from 'zod'
+import { Prisma } from '@prisma/client'
 import { prisma } from '~/prisma/index'
 import { deleteFileFromS3 } from '~/lib/s3'
 import { extractS3Key } from '~/app/api/patch/resource/_helper'
 import {
+  invalidateCompanyCaches,
   invalidatePatchContentCache,
   invalidatePatchListCaches
 } from '~/app/api/patch/cache'
@@ -16,11 +18,21 @@ export const deletePatchById = async (input: z.infer<typeof patchIdSchema>) => {
   const { patchId } = input
 
   const patch = await prisma.patch.findUnique({
-    where: { id: patchId }
+    where: { id: patchId },
+    include: {
+      company: {
+        select: {
+          company_id: true
+        }
+      }
+    }
   })
   if (!patch) {
     return '未找到该游戏'
   }
+  const companyIds = [
+    ...new Set(patch.company.map((relation) => relation.company_id))
+  ]
 
   const patchResources = await prisma.patch_resource.findMany({
     where: { patch_id: patchId },
@@ -62,6 +74,21 @@ export const deletePatchById = async (input: z.infer<typeof patchIdSchema>) => {
       where: { id: patchId }
     })
 
+    if (companyIds.length) {
+      await prisma.$executeRaw`
+        UPDATE "patch_company" c
+        SET "count" = s."actual_count"
+        FROM (
+          SELECT c."id", COUNT(r."id")::int AS "actual_count"
+          FROM "patch_company" c
+          LEFT JOIN "patch_company_relation" r ON r."company_id" = c."id"
+          WHERE c."id" IN (${Prisma.join(companyIds)})
+          GROUP BY c."id"
+        ) s
+        WHERE c."id" = s."id"
+      `
+    }
+
     return {}
   })
 
@@ -90,7 +117,8 @@ export const deletePatchById = async (input: z.infer<typeof patchIdSchema>) => {
 
   await Promise.all([
     invalidatePatchContentCache(patch.unique_id),
-    invalidatePatchListCaches()
+    invalidatePatchListCaches(),
+    companyIds.length ? invalidateCompanyCaches() : Promise.resolve()
   ])
 
   return result

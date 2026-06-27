@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   buildAutoAliasCompanyMergePlan,
+  getEmptyCompanyDeletionCandidates,
   getCompanyMergePreview
 } from '~/scripts/companyMergePlan'
 
@@ -84,5 +85,20 @@ describe('company merge plan', () => {
       ],
       nextParentBrand: ['Parent Brand']
     })
+  })
+
+  it('plans deletion only for empty companies outside merge plans', () => {
+    const candidates = getEmptyCompanyDeletionCandidates(
+      [
+        { id: 1, name: 'Active Studio', _count: { patch_relations: 2 } },
+        { id: 2, name: 'Empty Studio', _count: { patch_relations: 0 } },
+        { id: 3, name: 'Merge Source', _count: { patch_relations: 0 } }
+      ],
+      new Set([3])
+    )
+
+    expect(candidates).toEqual([
+      { id: 2, name: 'Empty Studio', relationCount: 0 }
+    ])
   })
 })

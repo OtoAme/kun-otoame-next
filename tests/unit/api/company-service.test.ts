@@ -2,9 +2,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const prismaMocks = vi.hoisted(() => ({
   patch_company: {
+    findUnique: vi.fn(),
     findFirst: vi.fn(),
     create: vi.fn(),
-    update: vi.fn()
+    update: vi.fn(),
+    delete: vi.fn()
   }
 }))
 
@@ -16,16 +18,24 @@ vi.mock('~/lib/redis', () => ({
   getOrSet: vi.fn()
 }))
 
-const invalidateCompanyCachesMock = vi.hoisted(() => vi.fn())
+const cacheMocks = vi.hoisted(() => ({
+  invalidateCompanyCaches: vi.fn(),
+  invalidatePatchContentCache: vi.fn()
+}))
 vi.mock('~/app/api/patch/cache', () => ({
-  invalidateCompanyCaches: invalidateCompanyCachesMock
+  invalidateCompanyCaches: cacheMocks.invalidateCompanyCaches,
+  invalidatePatchContentCache: cacheMocks.invalidatePatchContentCache
 }))
 
 vi.mock('~/app/api/patch/views/realtime', () => ({
   withRealtimePatchViews: vi.fn()
 }))
 
-import { createCompany, rewriteCompany } from '~/app/api/company/service'
+import {
+  createCompany,
+  deleteCompany,
+  rewriteCompany
+} from '~/app/api/company/service'
 
 describe('company service alias conflict checks', () => {
   beforeEach(() => {
@@ -43,7 +53,12 @@ describe('company service alias conflict checks', () => {
       count: 0,
       alias: []
     })
-    invalidateCompanyCachesMock.mockResolvedValue(undefined)
+    prismaMocks.patch_company.delete.mockResolvedValue({})
+    prismaMocks.patch_company.findUnique.mockResolvedValue({
+      patch_relations: []
+    })
+    cacheMocks.invalidateCompanyCaches.mockResolvedValue(undefined)
+    cacheMocks.invalidatePatchContentCache.mockResolvedValue(undefined)
   })
 
   it('rejects creating a company when a submitted alias matches another company alias', async () => {
@@ -88,5 +103,29 @@ describe('company service alias conflict checks', () => {
 
     expect(result).toBe('这个会社已经存在了')
     expect(prismaMocks.patch_company.update).not.toHaveBeenCalled()
+  })
+
+  it('invalidates affected patch detail caches after deleting a company', async () => {
+    prismaMocks.patch_company.findUnique.mockResolvedValue({
+      patch_relations: [
+        { patch: { unique_id: 'abc12345' } },
+        { patch: { unique_id: 'def67890' } },
+        { patch: { unique_id: 'abc12345' } }
+      ]
+    })
+
+    await expect(deleteCompany({ companyId: 7 })).resolves.toEqual({})
+
+    expect(prismaMocks.patch_company.delete).toHaveBeenCalledWith({
+      where: { id: 7 }
+    })
+    expect(cacheMocks.invalidatePatchContentCache).toHaveBeenCalledWith(
+      'abc12345'
+    )
+    expect(cacheMocks.invalidatePatchContentCache).toHaveBeenCalledWith(
+      'def67890'
+    )
+    expect(cacheMocks.invalidatePatchContentCache).toHaveBeenCalledTimes(2)
+    expect(cacheMocks.invalidateCompanyCaches).toHaveBeenCalledWith(7)
   })
 })
