@@ -85,10 +85,10 @@ describe('Patch gallery', () => {
     vi.resetModules()
   })
 
-  it('keeps one adjacent lightbox slide so lightbox owns original preloading', async () => {
+  it('preloads two adjacent lightbox slides on each side for fast gallery navigation', async () => {
     await renderGallery(createImages(2))
 
-    expect(imageViewerMock.props?.preload).toBe(1)
+    expect(imageViewerMock.props?.preload).toBe(2)
   })
 
   it('does not wire thumbnail loads to a manual original preload queue', async () => {

@@ -26,7 +26,7 @@ export const Gallery = ({ images }: Props) => {
     <div className="mt-4 space-y-4">
       <h2 className="text-2xl font-medium">游戏画廊</h2>
       <KunImageViewer
-        preload={1}
+        preload={2}
         images={validImages.map((img) => ({
           src: getGalleryOriginalSrc(img),
           previewSrc: getGalleryPreviewSrc(img),
