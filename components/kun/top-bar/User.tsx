@@ -9,7 +9,7 @@ import { Skeleton } from '@heroui/skeleton'
 import { useUserStore } from '~/store/userStore'
 import { useMessageStore } from '~/store/messageStore'
 import { useRouter } from '@bprogress/next'
-import { kunFetchGet, kunFetchPost } from '~/utils/kunFetch'
+import { kunFetchGet, kunFetchPost, kunFetchPut } from '~/utils/kunFetch'
 import { ThemeSwitcher } from './ThemeSwitcher'
 import { useMounted } from '~/hooks/useMounted'
 import { UserDropdown } from './UserDropdown'
@@ -18,6 +18,12 @@ import { UserMessageBell } from './UserMessageBell'
 import { Tooltip } from '@heroui/tooltip'
 import { RandomGalgameButton } from '~/components/home/carousel/RandomGalgameButton'
 import type { UserSession } from '~/types/api/session'
+
+const emptyUnreadStatus: UserSession['unread'] = {
+  hasUnreadNotification: false,
+  hasUnreadConversation: false
+}
+
 export const KunTopBarUser = () => {
   const router = useRouter()
   const { user, setUser, logout } = useUserStore((state) => state)
@@ -42,10 +48,7 @@ export const KunTopBarUser = () => {
         toast.error(res)
         kunFetchPost('/user/status/logout').catch(() => {})
         logout()
-        setUnreadMessageStatus({
-          hasUnreadNotification: false,
-          hasUnreadConversation: false
-        })
+        setUnreadMessageStatus(emptyUnreadStatus)
         router.push('/login')
       } else {
         setUser(res.user)
@@ -54,9 +57,21 @@ export const KunTopBarUser = () => {
     }
 
     getUserSession()
-  }, [isMounted])
+  }, [isMounted, user.uid, logout, router, setUnreadMessageStatus, setUser])
 
   const hasUnread = hasUnreadNotification || hasUnreadConversation
+
+  const markNotificationMessagesRead = async () => {
+    const res = await kunFetchPut<KunResponse<UserSession['unread']>>(
+      '/message/read'
+    )
+    if (typeof res === 'string') {
+      toast.error(res)
+      return
+    }
+
+    setUnreadMessageStatus(res)
+  }
 
   return (
     <NavbarContent as="div" className="items-center" justify="end">
@@ -107,12 +122,12 @@ export const KunTopBarUser = () => {
         <>
           <UserMessageBell
             hasUnreadMessages={hasUnread}
-            setReadMessage={() =>
-              setUnreadMessageStatus({
-                hasUnreadNotification: false,
-                hasUnreadConversation: false
-              })
-            }
+            setReadMessage={() => {
+              if (!hasUnreadNotification) {
+                return
+              }
+              return markNotificationMessagesRead()
+            }}
           />
 
           <UserDropdown />
