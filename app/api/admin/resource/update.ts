@@ -20,7 +20,31 @@ type ResourceChangeSource = {
   language: string[]
   platform: string[]
   note: string
-  links: { storage: string }[]
+  links: ResourceChangeSourceLink[]
+}
+
+type ResourceChangeSourceLink = {
+  id?: number | null
+  storage: string
+  content?: string | null
+  code?: string | null
+  password?: string | null
+  hash?: string | null
+  size?: string | null
+  sort_order?: number | null
+  sortOrder?: number | null
+}
+
+type NormalizedResourceLink = {
+  id: number | null
+  storage: string
+  content: string
+  code: string
+  password: string
+  hash: string
+  size: string
+  sortOrder: number
+  position: number
 }
 
 const formatValue = (value: string) => (value.trim() ? value : '未填写')
@@ -59,21 +83,10 @@ const formatResourceLinksSummary = (links: { storage: string }[]) => {
   return `${links.length} 个链接（${storageSummary}）`
 }
 
-const normalizeResourceLinksForCompare = (
-  links: {
-    id?: number
-    storage: string
-    content?: string
-    code?: string
-    password?: string
-    hash?: string
-    size?: string
-    sort_order?: number
-    sortOrder?: number
-    download?: number
-  }[]
-) => {
-  return links
+const normalizeResourceLinks = (
+  links: ResourceChangeSourceLink[]
+): NormalizedResourceLink[] => {
+  const sortedLinks = links
     .map((link, index) => ({
       id: link.id ?? null,
       storage: link.storage,
@@ -82,20 +95,220 @@ const normalizeResourceLinksForCompare = (
       password: link.password ?? '',
       hash: link.hash ?? '',
       size: link.size ?? '',
-      sortOrder: link.sort_order ?? link.sortOrder ?? index,
-      download: link.download ?? 0
+      sortOrder: link.sort_order ?? link.sortOrder ?? index
     }))
     .sort((a, b) => a.sortOrder - b.sortOrder || (a.id ?? 0) - (b.id ?? 0))
+
+  return sortedLinks.map((link, position) => ({ ...link, position }))
 }
 
-const hasResourceLinkChanged = (
+const hasFilledValue = (value: string) => !!value.trim()
+
+const formatFilledState = (value: string) => {
+  return hasFilledValue(value) ? '已填写' : '未填写'
+}
+
+const formatSensitiveFieldChange = (
+  label: string,
+  before: string,
+  after: string,
+  updatedText = `${label}已更新`
+) => {
+  const beforeFilled = hasFilledValue(before)
+  const afterFilled = hasFilledValue(after)
+
+  if (beforeFilled !== afterFilled) {
+    return `${label}: ${formatFilledState(before)} -> ${formatFilledState(after)}`
+  }
+
+  return updatedText
+}
+
+const formatResourceLinkState = (link: NormalizedResourceLink) => {
+  return [
+    `存储类型: ${getLinkStorageLabel(link.storage)}`,
+    `大小 (MB 或 GB): ${formatValue(link.size)}`,
+    `资源链接: ${formatFilledState(link.content)}`,
+    `提取码: ${formatFilledState(link.code)}`,
+    `解压码: ${formatFilledState(link.password)}`,
+    `Hash: ${formatFilledState(link.hash)}`
+  ].join('、')
+}
+
+const scoreResourceLinkMatch = (
+  before: NormalizedResourceLink,
+  after: NormalizedResourceLink
+) => {
+  let score = 0
+
+  if (before.storage === after.storage) {
+    score += 8
+  }
+  if (before.content && before.content === after.content) {
+    score += 8
+  }
+  if (before.hash && before.hash === after.hash) {
+    score += 5
+  }
+  if (before.size && before.size === after.size) {
+    score += 3
+  }
+  if (before.code && before.code === after.code) {
+    score += 3
+  }
+  if (before.password && before.password === after.password) {
+    score += 3
+  }
+  if (before.position === after.position) {
+    score += 2
+  }
+
+  return score
+}
+
+const pairResourceLinks = (
+  beforeLinks: NormalizedResourceLink[],
+  afterLinks: NormalizedResourceLink[]
+) => {
+  const beforeMatched = new Set<number>()
+  const afterMatched = new Set<number>()
+  const pairs: {
+    before: NormalizedResourceLink
+    after: NormalizedResourceLink
+  }[] = []
+
+  afterLinks.forEach((after, afterIndex) => {
+    if (after.id === null) {
+      return
+    }
+
+    const beforeIndex = beforeLinks.findIndex(
+      (before, index) =>
+        !beforeMatched.has(index) && before.id !== null && before.id === after.id
+    )
+    if (beforeIndex === -1) {
+      return
+    }
+
+    beforeMatched.add(beforeIndex)
+    afterMatched.add(afterIndex)
+    pairs.push({ before: beforeLinks[beforeIndex], after })
+  })
+
+  afterLinks.forEach((after, afterIndex) => {
+    if (afterMatched.has(afterIndex)) {
+      return
+    }
+
+    let bestBeforeIndex = -1
+    let bestScore = 0
+    beforeLinks.forEach((before, beforeIndex) => {
+      if (beforeMatched.has(beforeIndex)) {
+        return
+      }
+
+      const score = scoreResourceLinkMatch(before, after)
+      if (score > bestScore) {
+        bestScore = score
+        bestBeforeIndex = beforeIndex
+      }
+    })
+
+    if (bestBeforeIndex === -1 || bestScore < 4) {
+      return
+    }
+
+    beforeMatched.add(bestBeforeIndex)
+    afterMatched.add(afterIndex)
+    pairs.push({ before: beforeLinks[bestBeforeIndex], after })
+  })
+
+  return {
+    pairs: pairs.sort((a, b) => a.after.position - b.after.position),
+    removed: beforeLinks.filter((_, index) => !beforeMatched.has(index)),
+    added: afterLinks.filter((_, index) => !afterMatched.has(index))
+  }
+}
+
+const getResourceLinkFieldChanges = (
+  before: NormalizedResourceLink,
+  after: NormalizedResourceLink
+) => {
+  const changes: string[] = []
+
+  if (before.storage !== after.storage) {
+    changes.push(
+      `存储类型: ${getLinkStorageLabel(before.storage)} -> ${getLinkStorageLabel(after.storage)}`
+    )
+  }
+  if (before.content !== after.content) {
+    changes.push(
+      formatSensitiveFieldChange(
+        '资源链接',
+        before.content,
+        after.content,
+        '资源链接已更新'
+      )
+    )
+  }
+  if (before.size !== after.size) {
+    changes.push(
+      `大小 (MB 或 GB): ${formatValue(before.size)} -> ${formatValue(after.size)}`
+    )
+  }
+  if (before.code !== after.code) {
+    changes.push(formatSensitiveFieldChange('提取码', before.code, after.code))
+  }
+  if (before.password !== after.password) {
+    changes.push(
+      formatSensitiveFieldChange('解压码', before.password, after.password)
+    )
+  }
+  if (before.hash !== after.hash) {
+    changes.push(
+      formatSensitiveFieldChange('Hash', before.hash, after.hash, 'Hash 已更新')
+    )
+  }
+
+  return changes
+}
+
+const buildResourceLinkChangeSummary = (
   before: ResourceChangeSource['links'],
   after: PatchResource['links']
 ) => {
-  return (
-    JSON.stringify(normalizeResourceLinksForCompare(before)) !==
-    JSON.stringify(normalizeResourceLinksForCompare(after))
-  )
+  const changes: string[] = []
+  const beforeLinksSummary = formatResourceLinksSummary(before)
+  const afterLinksSummary = formatResourceLinksSummary(after)
+
+  if (beforeLinksSummary !== afterLinksSummary) {
+    changes.push(`- 资源链接: ${beforeLinksSummary} -> ${afterLinksSummary}`)
+  }
+
+  const beforeLinks = normalizeResourceLinks(before)
+  const afterLinks = normalizeResourceLinks(after)
+  const { pairs, removed, added } = pairResourceLinks(beforeLinks, afterLinks)
+
+  pairs.forEach(({ before, after }) => {
+    const fieldChanges = getResourceLinkFieldChanges(before, after)
+    if (fieldChanges.length) {
+      changes.push(`- 资源链接 #${after.position + 1}: ${fieldChanges.join('、')}`)
+    }
+  })
+
+  removed.forEach((link) => {
+    changes.push(
+      `- 原资源链接 #${link.position + 1}: 删除（${formatResourceLinkState(link)}）`
+    )
+  })
+
+  added.forEach((link) => {
+    changes.push(
+      `- 资源链接 #${link.position + 1}: 新增（${formatResourceLinkState(link)}）`
+    )
+  })
+
+  return changes
 }
 
 const pushFieldChange = (
@@ -151,13 +364,7 @@ const buildResourceChangeSummary = (
     formatValue(before.note),
     formatValue(after.note)
   )
-  const beforeLinksSummary = formatResourceLinksSummary(before.links)
-  const afterLinksSummary = formatResourceLinksSummary(after.links)
-  if (beforeLinksSummary !== afterLinksSummary) {
-    changes.push(`- 资源链接: ${beforeLinksSummary} -> ${afterLinksSummary}`)
-  } else if (hasResourceLinkChanged(before.links, after.links)) {
-    changes.push(`- 资源链接: 已更新（当前 ${afterLinksSummary}）`)
-  }
+  changes.push(...buildResourceLinkChangeSummary(before.links, after.links))
 
   return changes.join('\n')
 }

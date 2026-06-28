@@ -148,17 +148,30 @@ describe('admin resource update notifications', () => {
 
     expect(result).toEqual(updatedResource)
     expect(createMessageMock).toHaveBeenCalledWith(
-      {
+      expect.objectContaining({
         type: 'system',
-        content:
-          '管理员修改了你发布的游戏资源「修正后的资源」。\n\n修改内容:\n- 资源名称: 原资源 -> 修正后的资源\n- 类型: PC游戏 -> 手机游戏、民汉\n- 语言: 日本語 -> 简体中文\n- 平台: Windows -> Android\n- 备注: 原备注 -> 新备注\n- 资源链接: 2 个链接（自定义链接 (>100MB) 1 个、对象存储 (<100MB, 创作者可用) 1 个） -> 1 个链接（对象存储 (<100MB, 创作者可用) 1 个）',
         sender_id: 3,
         recipient_id: 100,
         link: '/abc12345'
-      },
+      }),
       prismaMocks
     )
     const message = createMessageMock.mock.calls[0][0].content
+    expect(message).toContain('管理员修改了你发布的游戏资源「修正后的资源」。')
+    expect(message).toContain('- 资源名称: 原资源 -> 修正后的资源')
+    expect(message).toContain('- 类型: PC游戏 -> 手机游戏、民汉')
+    expect(message).toContain('- 语言: 日本語 -> 简体中文')
+    expect(message).toContain('- 平台: Windows -> Android')
+    expect(message).toContain('- 备注: 原备注 -> 新备注')
+    expect(message).toContain(
+      '- 资源链接: 2 个链接（自定义链接 (>100MB) 1 个、对象存储 (<100MB, 创作者可用) 1 个） -> 1 个链接（对象存储 (<100MB, 创作者可用) 1 个）'
+    )
+    expect(message).toContain(
+      '- 资源链接 #1: 资源链接已更新、大小 (MB 或 GB): 2 GB -> 3 GB、提取码: 未填写 -> 已填写、解压码: 未填写 -> 已填写、Hash 已更新'
+    )
+    expect(message).toContain(
+      '- 原资源链接 #1: 删除（存储类型: 自定义链接 (>100MB)、大小 (MB 或 GB): 1 GB、资源链接: 已填写、提取码: 已填写、解压码: 已填写、Hash: 已填写）'
+    )
     expect(message).not.toContain('https://secret.example.com')
     expect(message).not.toContain('https://s3.example.com')
     expect(message).not.toContain('old-code')
@@ -208,7 +221,10 @@ describe('admin resource update notifications', () => {
     updatePatchResourceByRoleMock.mockResolvedValue({
       ...updatedResource,
       name: originalResource.name,
+      type: originalResource.type,
+      language: originalResource.language,
       note: originalResource.note,
+      platform: originalResource.platform,
       links: [
         {
           id: 30,
@@ -228,7 +244,7 @@ describe('admin resource update notifications', () => {
 
     const message = createMessageMock.mock.calls[0][0].content
     expect(message).toContain(
-      '- 资源链接: 已更新（当前 1 个链接（自定义链接 (>100MB) 1 个））'
+      '- 资源链接 #1: 资源链接已更新、提取码已更新、解压码已更新、Hash 已更新'
     )
     expect(message).not.toContain('https://secret.example.com')
     expect(message).not.toContain('old-code')
@@ -237,5 +253,51 @@ describe('admin resource update notifications', () => {
     expect(message).not.toContain('new-password')
     expect(message).not.toContain('old-hash')
     expect(message).not.toContain('new-secret-hash')
+  })
+
+  it('does not report resource link changes when only recreated link ids differ', async () => {
+    prismaMocks.patch_resource.findUnique.mockResolvedValue({
+      ...originalResource,
+      links: [
+        {
+          id: 30,
+          storage: 'user',
+          hash: 'same-hash',
+          content: 'https://secret.example.com/same-resource',
+          size: '1 GB',
+          code: 'same-code',
+          password: 'same-password',
+          download: 0,
+          sort_order: 0
+        }
+      ]
+    })
+    updatePatchResourceByRoleMock.mockResolvedValue({
+      ...updatedResource,
+      name: originalResource.name,
+      type: originalResource.type,
+      language: originalResource.language,
+      platform: originalResource.platform,
+      note: '新备注',
+      links: [
+        {
+          id: 999,
+          storage: 'user',
+          hash: 'same-hash',
+          content: 'https://secret.example.com/same-resource',
+          size: '1 GB',
+          code: 'same-code',
+          password: 'same-password',
+          sortOrder: 0,
+          download: 0
+        }
+      ]
+    })
+
+    await updatePatchResource(updateInput, 3)
+
+    const message = createMessageMock.mock.calls[0][0].content
+    expect(message).toContain('- 备注: 原备注 -> 新备注')
+    expect(message).not.toContain('资源链接')
   })
 })
