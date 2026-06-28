@@ -32,11 +32,12 @@ const handleFileInput = (file: File | undefined) => {
     return
   }
 
-  const fileSizeMB = file.size / (1024 * 1024)
-  if (fileSizeMB < 0.001) {
-    toast.error('文件过小, 您的文件小于 0.001 MB')
+  if (file.size === 0) {
+    toast.error('文件不能为空')
     return
   }
+
+  const fileSizeMB = file.size / (1024 * 1024)
   if (fileSizeMB > 100) {
     toast.error(
       `文件大小超出限制: ${fileSizeMB.toFixed(3)} MB, 最大允许大小为 100 MB`

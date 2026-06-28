@@ -35,8 +35,8 @@ const checkRequestValid = async (req: NextRequest) => {
   const buffer = Buffer.from(await file.arrayBuffer())
   const fileSizeInMB = buffer.length / (1024 * 1024)
 
-  if (fileSizeInMB < 0.001) {
-    return '文件过小, 您的文件小于 0.001 MB'
+  if (buffer.length === 0) {
+    return '文件不能为空'
   }
   if (fileSizeInMB > 100) {
     return '文件大小超过限制, 最大为 100 MB'
