@@ -103,6 +103,7 @@ service/helper 负责：
 - 反馈工单本身使用 `type: 'feedback'`、`recipient_id: null`，供后台反馈管理列表查询。
 - 用户提交反馈后发给管理员的提醒、管理员处理反馈后发给用户的回执都属于可筛选的系统通知，必须使用 `type: 'system'`。
 - 不要把面向单个用户的反馈通知写成 `feedback`，否则会避开系统消息筛选并淹没在全部通知中。
+- `/api/message/read` 只标记 `user_message` 通知为已读，然后返回 `MessageUnreadStatus`；前端顶栏和消息页要用这个返回值更新全局红点，避免把仍未读的私聊红点一并清掉。
 
 ### 搜索和列表
 

@@ -31,6 +31,8 @@ pnpm typecheck
 | `tests/unit/search-store.test.ts` | 搜索 store。 |
 | `tests/unit/captcha.test.ts` | CAPTCHA。 |
 | `tests/unit/message-card.test.tsx` | 消息正文纯文本渲染和换行保留。 |
+| `tests/unit/user-message-bell.test.tsx` | 顶栏消息铃铛调用已读接口并按服务端返回同步红点。 |
+| `tests/unit/api/message-unread.test.ts` | 消息通知/私聊未读状态查询和通知已读写入。 |
 | `tests/unit/api/admin-resource-update-message.test.ts` | 管理员后台修改他人资源时通知资源发布者。 |
 | `tests/unit/api/*` | API service 业务规则。 |
 

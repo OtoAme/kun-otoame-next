@@ -104,7 +104,7 @@
 
 通知正文按纯文本渲染，前端会保留后端消息里的换行，供系统通知展示多行变更摘要。
 
-未读状态由 `app/api/message/service.ts` 查询普通消息与聊天会话未读数。会话模块在 `app/api/message/conversation/*`。
+未读状态由 `app/api/message/service.ts` 查询普通消息与聊天会话未读数。会话模块在 `app/api/message/conversation/*`。顶栏铃铛进入通知页时必须调用 `/api/message/read`，用服务端返回的 `MessageUnreadStatus` 同步全局红点；不要只在前端把通知和私聊红点一起乐观清空。
 
 ## 标签和公司详情页
 
