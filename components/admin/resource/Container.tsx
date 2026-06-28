@@ -36,8 +36,9 @@ import type { AdminResource, AdminUser } from '~/types/api/admin'
 
 type ResourceSearchType = 'content' | 'user'
 
-const columns = [
+export const resourceColumns = [
   { name: '资源', id: 'name' },
+  { name: '类型', id: 'section' },
   { name: '用户', id: 'user' },
   { name: '存储', id: 'storage' },
   { name: '大小', id: 'size' },
@@ -150,13 +151,24 @@ export const Resource = ({ initialResources, initialTotal }: Props) => {
         params.userId = selectedUserId
       }
 
-      const { resources, total } = await kunFetchGet<{
+      const response = await kunFetchGet<{
         resources: AdminResource[]
         total: number
       }>('/admin/resource', params)
 
-      setResources(resources)
-      setTotal(total)
+      if (typeof response === 'string') {
+        toast.error(response)
+        return
+      }
+
+      const totalPage = Math.max(1, Math.ceil(response.total / limit))
+      if (page > totalPage) {
+        setPage(totalPage)
+        return
+      }
+
+      setResources(response.resources)
+      setTotal(response.total)
       setSelectedKeys(new Set<string | number>())
     } finally {
       setLoading(false)
@@ -211,6 +223,37 @@ export const Resource = ({ initialResources, initialTotal }: Props) => {
     await fetchData()
   }
 
+  const handleResourceUpdated = (updatedResource: AdminResource) => {
+    setResources((prev) =>
+      prev.map((resource) =>
+        resource.id === updatedResource.id
+          ? {
+              ...resource,
+              ...updatedResource,
+              patchName: updatedResource.patchName ?? resource.patchName
+            }
+          : resource
+      )
+    )
+  }
+
+  const handleResourceDeleted = async (resourceId: number) => {
+    setResources((prev) =>
+      prev.filter((resource) => resource.id !== resourceId)
+    )
+    setSelectedKeys((prev) => {
+      if (prev === 'all') {
+        return new Set<string | number>()
+      }
+
+      const next = new Set(prev)
+      next.delete(resourceId)
+      next.delete(String(resourceId))
+      return next
+    })
+    await fetchData()
+  }
+
   const handleSearchTypeChange = (keys: 'all' | Set<Key>) => {
     const key = Array.from(keys)[0] as ResourceSearchType | undefined
     if (!key) {
@@ -255,8 +298,8 @@ export const Resource = ({ initialResources, initialTotal }: Props) => {
   }
 
   const currentPlaceholder =
-    searchTypeOptions.find((option) => option.key === searchType)?.placeholder ??
-    ''
+    searchTypeOptions.find((option) => option.key === searchType)
+      ?.placeholder ?? ''
 
   if (!isMounted) {
     return <KunLoading hint="正在加载资源列表..." />
@@ -265,7 +308,7 @@ export const Resource = ({ initialResources, initialTotal }: Props) => {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">补丁资源管理</h1>
+        <h1 className="text-2xl font-bold">下载资源管理</h1>
         <div className="flex items-center gap-2">
           {selectedCount > 0 && (
             <Button
@@ -365,7 +408,7 @@ export const Resource = ({ initialResources, initialTotal }: Props) => {
             </div>
           }
         >
-          <TableHeader columns={columns}>
+          <TableHeader columns={resourceColumns}>
             {(column) => (
               <TableColumn key={column.id}>{column.name}</TableColumn>
             )}
@@ -375,7 +418,10 @@ export const Resource = ({ initialResources, initialTotal }: Props) => {
               <TableRow key={item.id}>
                 {(columnKey) => (
                   <TableCell>
-                    {RenderCell(item, columnKey.toString())}
+                    {RenderCell(item, columnKey.toString(), {
+                      onResourceUpdated: handleResourceUpdated,
+                      onResourceDeleted: handleResourceDeleted
+                    })}
                   </TableCell>
                 )}
               </TableRow>

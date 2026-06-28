@@ -11,6 +11,7 @@ import {
   SUPPORTED_PLATFORM_MAP,
   type ResourceSection
 } from '~/constants/resource'
+import { resourceFieldClassNames } from './formClassNames'
 import { ControlType, ErrorType } from '../share'
 
 interface ResourceDetailsFormProps {
@@ -45,6 +46,7 @@ export const ResourceDetailsForm = ({
             <Select
               isRequired
               label="类型"
+              classNames={resourceFieldClassNames}
               placeholder="请选择资源的类型"
               selectionMode="multiple"
               selectedKeys={field.value}
@@ -66,7 +68,7 @@ export const ResourceDetailsForm = ({
                 <SelectItem key={type.value} textValue={type.label}>
                   <div className="flex flex-col">
                     <span className="text">{type.label}</span>
-                    <span className="text-small text-default-500">
+                    <span className="select-none text-small text-default-500">
                       {type.description}
                     </span>
                   </div>
@@ -83,6 +85,7 @@ export const ResourceDetailsForm = ({
             <Select
               isRequired
               label="语言"
+              classNames={resourceFieldClassNames}
               placeholder="请选择语言"
               selectionMode="multiple"
               selectedKeys={field.value}
@@ -108,6 +111,7 @@ export const ResourceDetailsForm = ({
             <Select
               isRequired
               label="平台"
+              classNames={resourceFieldClassNames}
               placeholder="请选择资源的平台"
               selectionMode="multiple"
               selectedKeys={field.value}
@@ -134,6 +138,7 @@ export const ResourceDetailsForm = ({
           <Input
             {...field}
             label="资源名称"
+            classNames={resourceFieldClassNames}
             placeholder="请填写您的资源名称, 例如 DeepSeek V3 翻译补丁"
             isInvalid={!!errors.name}
             errorMessage={errors.name?.message}
@@ -148,6 +153,7 @@ export const ResourceDetailsForm = ({
           <Textarea
             {...field}
             label="备注"
+            classNames={resourceFieldClassNames}
             placeholder="您可以在此处随意添加备注, 例如资源的注意事项等"
             isInvalid={!!errors.note}
             errorMessage={errors.note?.message}

@@ -106,7 +106,7 @@ export const PublishResource = ({
     <ModalContent>
       <ModalHeader className="flex-col space-y-2">
         <h3 className="text-lg">发布资源</h3>
-        <div className="text-sm font-medium text-default-500">
+        <div className="select-none text-sm font-medium text-default-500">
           {user.role > 1 ? (
             <div className="space-y-1">
               <p>每日上传总额度为 5GB (5120MB)。</p>
@@ -169,7 +169,7 @@ export const PublishResource = ({
         </div>
 
         {creating && (
-          <p className="text-xs text-default-500">
+          <p className="select-none text-xs text-default-500">
             正在提交资源，请不要关闭此窗口，提交完成后会有提示。
           </p>
         )}

@@ -8,7 +8,7 @@ import {
   ModalFooter,
   ModalHeader
 } from '@heroui/react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import toast from 'react-hot-toast'
@@ -59,6 +59,14 @@ export const EditResourceDialog = ({
     }
   })
 
+  useEffect(() => {
+    reset({
+      ...resource,
+      section,
+      type: normalizeLegacyResourceTypes(resource.type)
+    })
+  }, [resource, reset, section])
+
   const handleUpdateResource = async () => {
     setEditing(true)
     const res = await kunFetchPut<KunResponse<PatchResource>>(
@@ -66,7 +74,6 @@ export const EditResourceDialog = ({
       { resourceId: resource.id, ...watch() }
     )
     kunErrorHandler(res, (value) => {
-      reset()
       onSuccess(value)
       toast.success('资源更新成功')
     })
@@ -77,7 +84,7 @@ export const EditResourceDialog = ({
     <ModalContent>
       <ModalHeader className="flex-col space-y-2">
         <h3 className="text-lg">更改资源链接</h3>
-        <p className="text-sm font-medium text-default-500">
+        <p className="select-none text-sm font-medium text-default-500">
           若您想要更改您的对象存储链接, 您现在可以直接上传新文件,
           系统会自动更新云端文件, 无需删除后重新发布
         </p>

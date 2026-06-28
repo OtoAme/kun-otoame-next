@@ -13,14 +13,28 @@ export const getPatchResource = async (
   const where = {
     ...(search
       ? {
-          links: {
-            some: {
-              content: {
-                contains: search,
-                mode: 'insensitive' as const
+          OR: [
+            {
+              links: {
+                some: {
+                  content: {
+                    contains: search,
+                    mode: 'insensitive' as const
+                  }
+                }
+              }
+            },
+            {
+              links: {
+                some: {
+                  hash: {
+                    contains: search,
+                    mode: 'insensitive' as const
+                  }
+                }
               }
             }
-          }
+          ]
         }
       : {}),
     ...(userId ? { user_id: userId } : {}),

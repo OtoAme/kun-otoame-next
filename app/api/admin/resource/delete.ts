@@ -56,11 +56,13 @@ export const deleteResource = async (
     const uniqueId = await updatePatchAttributes(patchResource.patch_id, prisma)
 
     const sanitizedResource = sanitizeResourceForAuditLog(patchResource)
+    const resourceTypeName =
+      patchResource.section === 'galgame' ? '游戏资源' : '补丁资源'
     await prisma.admin_log.create({
       data: {
         type: 'delete',
         user_id: uid,
-        content: `管理员 ${admin.name} 删除了一个补丁资源\n\nOtomeGame 名:\n${patchResource.patch.name}\n\n补丁资源信息:\n${JSON.stringify(sanitizedResource)}`
+        content: `管理员 ${admin.name} 删除了一个${resourceTypeName}\n\nOtomeGame 名:\n${patchResource.patch.name}\n\n${resourceTypeName}信息:\n${JSON.stringify(sanitizedResource)}`
       }
     })
 

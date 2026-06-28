@@ -19,6 +19,7 @@ import {
 import { parseResourceLink } from '~/utils/resourceLink'
 import { FileUploadContainer } from '../upload/FileUploadContainer'
 import { useUserStore } from '~/store/userStore'
+import { resourceFieldClassNames } from './formClassNames'
 import type { ControlType, ErrorType, SetValueType, WatchType } from '../share'
 
 interface ResourceLinksInputProps {
@@ -113,7 +114,7 @@ export const ResourceLinksInput = ({
       <div className="flex items-center justify-between gap-3">
         <div className="space-y-1">
           <h3 className="text-lg font-medium">资源链接</h3>
-          <p className="text-sm text-default-500">
+          <p className="select-none text-sm text-default-500">
             每条资源链接都拥有独立的存储类型、大小、提取码和解压码
           </p>
         </div>
@@ -157,6 +158,7 @@ export const ResourceLinksInput = ({
                 render={({ field }) => (
                   <Select
                     label="存储类型"
+                    classNames={resourceFieldClassNames}
                     selectedKeys={field.value ? [field.value] : []}
                     onSelectionChange={(key) => {
                       const value = Array.from(key).join('')
@@ -185,7 +187,7 @@ export const ResourceLinksInput = ({
                       <SelectItem key={type.value} textValue={type.label}>
                         <div className="flex flex-col">
                           <span className="text">{type.label}</span>
-                          <span className="text-small text-default-500">
+                          <span className="select-none text-small text-default-500">
                             {type.description}
                           </span>
                         </div>
@@ -241,6 +243,7 @@ export const ResourceLinksInput = ({
                       {...field}
                       isRequired={currentStorage !== 's3'}
                       label="资源链接"
+                      classNames={resourceFieldClassNames}
                       placeholder={
                         currentStorage === 's3'
                           ? '提交后由系统生成链接'
@@ -285,7 +288,9 @@ export const ResourceLinksInput = ({
                       {...field}
                       isRequired
                       label="大小 (MB 或 GB)"
+                      classNames={resourceFieldClassNames}
                       placeholder="请输入资源大小，例如 1.024 GB"
+                      isDisabled={currentStorage === 's3'}
                       isInvalid={!!errors.links?.[index]?.size}
                       errorMessage={errors.links?.[index]?.size?.message}
                     />
@@ -301,6 +306,7 @@ export const ResourceLinksInput = ({
                     <Input
                       {...field}
                       label="提取码"
+                      classNames={resourceFieldClassNames}
                       placeholder="如果资源需要提取码，请填写"
                       isInvalid={!!errors.links?.[index]?.code}
                       errorMessage={errors.links?.[index]?.code?.message}
@@ -315,6 +321,7 @@ export const ResourceLinksInput = ({
                     <Input
                       {...field}
                       label="解压码"
+                      classNames={resourceFieldClassNames}
                       placeholder="如果资源需要解压码，请填写"
                       isInvalid={!!errors.links?.[index]?.password}
                       errorMessage={errors.links?.[index]?.password?.message}

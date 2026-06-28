@@ -12,6 +12,7 @@ import {
   storageTypes
 } from '~/constants/resource'
 import type { PatchResource } from '~/types/api/patch'
+import type { AdminResource } from '~/types/api/admin'
 
 type ResourceChangeSource = {
   name: string
@@ -49,10 +50,7 @@ type NormalizedResourceLink = {
 
 const formatValue = (value: string) => (value.trim() ? value : '未填写')
 
-const formatList = (
-  values: string[],
-  labels: Record<string, string>
-) => {
+const formatList = (values: string[], labels: Record<string, string>) => {
   return values.length
     ? values.map((value) => labels[value] ?? value).join('、')
     : '未填写'
@@ -184,7 +182,9 @@ const pairResourceLinks = (
 
     const beforeIndex = beforeLinks.findIndex(
       (before, index) =>
-        !beforeMatched.has(index) && before.id !== null && before.id === after.id
+        !beforeMatched.has(index) &&
+        before.id !== null &&
+        before.id === after.id
     )
     if (beforeIndex === -1) {
       return
@@ -292,7 +292,9 @@ const buildResourceLinkChangeSummary = (
   pairs.forEach(({ before, after }) => {
     const fieldChanges = getResourceLinkFieldChanges(before, after)
     if (fieldChanges.length) {
-      changes.push(`- 资源链接 #${after.position + 1}: ${fieldChanges.join('、')}`)
+      changes.push(
+        `- 资源链接 #${after.position + 1}: ${fieldChanges.join('、')}`
+      )
     }
   })
 
@@ -382,6 +384,11 @@ export const updatePatchResource = async (
   const resource = await prisma.patch_resource.findUnique({
     where: { id: resourceId },
     include: {
+      patch: {
+        select: {
+          name: true
+        }
+      },
       links: {
         orderBy: { sort_order: 'asc' }
       }
@@ -395,27 +402,34 @@ export const updatePatchResource = async (
   if (typeof updatedResource === 'string') {
     return updatedResource
   }
+  const updatedAdminResource: AdminResource = {
+    ...updatedResource,
+    patchName: resource.patch.name
+  }
 
   const sanitizedResource = sanitizeResourceForAuditLog(resource)
-  const sanitizedUpdatedResource = sanitizeResourceForAuditLog(updatedResource)
+  const sanitizedUpdatedResource =
+    sanitizeResourceForAuditLog(updatedAdminResource)
+  const resourceTypeName =
+    updatedAdminResource.section === 'galgame' ? '游戏资源' : '补丁资源'
 
   return await prisma.$transaction(async (prisma) => {
     if (resource.user_id !== uid) {
-      const resourceTypeName =
-        updatedResource.section === 'galgame' ? '游戏资源' : '补丁资源'
       const changeSummary = buildResourceChangeSummary(
         resource,
-        updatedResource
+        updatedAdminResource
       )
       await createMessage(
         {
           type: 'system',
-          content: `管理员修改了你发布的${resourceTypeName}「${updatedResource.name}」。${
+          content: `管理员修改了你发布的${resourceTypeName}「${updatedAdminResource.name}」。${
             changeSummary ? `\n\n修改内容:\n${changeSummary}` : ''
           }`,
           sender_id: uid,
           recipient_id: resource.user_id,
-          link: updatedResource.uniqueId ? `/${updatedResource.uniqueId}` : '/'
+          link: updatedAdminResource.uniqueId
+            ? `/${updatedAdminResource.uniqueId}`
+            : '/'
         },
         prisma
       )
@@ -425,10 +439,10 @@ export const updatePatchResource = async (
       data: {
         type: 'update',
         user_id: uid,
-        content: `管理员 ${admin.name} 更新了一个补丁资源信息\n\n原补丁资源信息:\n${JSON.stringify(sanitizedResource)}\n\n新补丁资源信息:\n${JSON.stringify(sanitizedUpdatedResource)}`
+        content: `管理员 ${admin.name} 更新了一个${resourceTypeName}信息\n\n原${resourceTypeName}信息:\n${JSON.stringify(sanitizedResource)}\n\n新${resourceTypeName}信息:\n${JSON.stringify(sanitizedUpdatedResource)}`
       }
     })
 
-    return updatedResource
+    return updatedAdminResource
   })
 }

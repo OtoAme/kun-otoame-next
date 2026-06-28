@@ -68,6 +68,9 @@ const originalResource = {
   platform: ['windows'],
   user_id: 100,
   patch_id: 20,
+  patch: {
+    name: '列表中的游戏名'
+  },
   links: [
     {
       id: 29,
@@ -146,7 +149,12 @@ describe('admin resource update notifications', () => {
   it('notifies the resource owner when an admin updates their resource', async () => {
     const result = await updatePatchResource(updateInput, 3)
 
-    expect(result).toEqual(updatedResource)
+    expect(result).toEqual(expect.objectContaining(updatedResource))
+    expect(updatePatchResourceByRoleMock).toHaveBeenCalledWith(
+      updateInput,
+      3,
+      3
+    )
     expect(createMessageMock).toHaveBeenCalledWith(
       expect.objectContaining({
         type: 'system',
@@ -180,6 +188,37 @@ describe('admin resource update notifications', () => {
     expect(message).not.toContain('new-password')
     expect(message).not.toContain('old-hash')
     expect(message).not.toContain('new-secret-hash')
+  })
+
+  it('records the actual resource category in admin logs instead of calling every update a patch resource', async () => {
+    await updatePatchResource(updateInput, 3)
+
+    expect(prismaMocks.admin_log.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        type: 'update',
+        user_id: 3,
+        content: expect.stringContaining('更新了一个游戏资源信息')
+      })
+    })
+
+    const content = prismaMocks.admin_log.create.mock.calls[0][0].data.content
+    expect(content).toContain('原游戏资源信息:')
+    expect(content).toContain('新游戏资源信息:')
+    expect(content).not.toContain('更新了一个补丁资源信息')
+    expect(content).not.toContain('原补丁资源信息:')
+    expect(content).not.toContain('新补丁资源信息:')
+  })
+
+  it('returns admin list context with the updated resource so the table row can refresh locally', async () => {
+    const result = await updatePatchResource(updateInput, 3)
+
+    expect(result).toEqual(
+      expect.objectContaining({
+        id: updatedResource.id,
+        name: updatedResource.name,
+        patchName: '列表中的游戏名'
+      })
+    )
   })
 
   it('does not notify when an admin updates their own resource', async () => {

@@ -16,13 +16,19 @@ import { useUserStore } from '~/store/userStore'
 import { kunFetchDelete } from '~/utils/kunFetch'
 import { EditResourceDialog } from '~/components/patch/resource/edit/EditResourceDialog'
 import type { AdminResource } from '~/types/api/admin'
+import type { PatchResource } from '~/types/api/patch'
 
 interface Props {
   initialResource: AdminResource
+  onResourceUpdated?: (resource: AdminResource) => void
+  onResourceDeleted?: (resourceId: number) => void
 }
 
-// TODO: Reactivity
-export const ResourceEdit = ({ initialResource }: Props) => {
+export const ResourceEdit = ({
+  initialResource,
+  onResourceUpdated,
+  onResourceDeleted
+}: Props) => {
   const currentUser = useUserStore((state) => state.user)
 
   const {
@@ -47,10 +53,19 @@ export const ResourceEdit = ({ initialResource }: Props) => {
       toast.error(res)
     } else {
       toast.success('删除资源链接成功')
+      onResourceDeleted?.(initialResource.id)
     }
 
     setDeleting(false)
     onCloseDelete()
+  }
+
+  const handleUpdateSuccess = (resource: PatchResource) => {
+    onResourceUpdated?.({
+      ...resource,
+      patchName: resource.patchName ?? initialResource.patchName
+    })
+    onCloseEdit()
   }
 
   return (
@@ -88,7 +103,7 @@ export const ResourceEdit = ({ initialResource }: Props) => {
         <EditResourceDialog
           onClose={onCloseEdit}
           resource={initialResource}
-          onSuccess={onCloseEdit}
+          onSuccess={handleUpdateSuccess}
           type="admin"
         />
       </Modal>

@@ -49,6 +49,10 @@ export const updatePatchResource = async (
     return '您没有权限更改该资源'
   }
 
+  if (resource.patch_id !== patchId) {
+    return '资源不属于该 OtomeGame'
+  }
+
   const currentPatch = await prisma.patch.findUnique({
     where: { id: patchId },
     select: {

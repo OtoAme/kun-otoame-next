@@ -86,7 +86,7 @@ export const FileDropZone = ({ onFileUpload }: Props) => {
     >
       <div className="flex flex-col items-center justify-center gap-4">
         <Upload className="size-12 text-primary/60" />
-        <p className="text-lg font-medium text-center">
+        <p className="select-none text-center text-lg font-medium">
           {isDragging ? '拖动文件到此处' : '拖动或点击以上传文件'}
         </p>
         <label>
@@ -100,7 +100,7 @@ export const FileDropZone = ({ onFileUpload }: Props) => {
             accept="*/*"
           />
         </label>
-        <p className="text-sm text-default-500">
+        <p className="select-none text-sm text-default-500">
           我们支持 .zip .7z .rar 压缩格式, 由于不会发生资源失效,
           请您根据自身需求设置解压密码
         </p>

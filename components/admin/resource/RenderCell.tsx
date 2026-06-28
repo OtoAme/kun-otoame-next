@@ -8,16 +8,38 @@ import { ResourceEdit } from './ResourceEdit'
 import { KunUser } from '~/components/kun/floating-card/KunUser'
 import type { AdminResource } from '~/types/api/admin'
 
-export const RenderCell = (resource: AdminResource, columnKey: string) => {
+interface RenderCellOptions {
+  onResourceUpdated?: (resource: AdminResource) => void
+  onResourceDeleted?: (resourceId: number) => void
+}
+
+export const RenderCell = (
+  resource: AdminResource,
+  columnKey: string,
+  options: RenderCellOptions = {}
+) => {
+  const sectionLabel = resource.section === 'patch' ? '补丁' : '资源'
+
   switch (columnKey) {
     case 'name':
       return (
-        <Link
-          href={`/${resource.uniqueId}`}
-          className="font-medium hover:text-primary-500"
-        >
-          {resource.patchName}
-        </Link>
+        <div className="flex min-w-0 flex-col gap-1">
+          <p className="truncate text-sm font-medium text-default-900">
+            {resource.name || '未命名资源'}
+          </p>
+          <Link
+            href={`/${resource.uniqueId}`}
+            className="w-fit max-w-full truncate text-xs text-default-500 hover:text-primary-500"
+          >
+            {resource.patchName}
+          </Link>
+        </div>
+      )
+    case 'section':
+      return (
+        <Chip size="sm" variant="flat" color="secondary">
+          {sectionLabel}
+        </Chip>
       )
     case 'user':
       return (
@@ -58,7 +80,13 @@ export const RenderCell = (resource: AdminResource, columnKey: string) => {
         </Chip>
       )
     case 'actions':
-      return <ResourceEdit initialResource={resource} />
+      return (
+        <ResourceEdit
+          initialResource={resource}
+          onResourceUpdated={options.onResourceUpdated}
+          onResourceDeleted={options.onResourceDeleted}
+        />
+      )
     default:
       return (
         <Chip color="primary" variant="flat">
