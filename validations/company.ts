@@ -18,7 +18,7 @@ export const createCompanySchema = z.object({
       .string()
       .trim()
       .min(1, { message: '会社别名不可为空' })
-      .max(17, { message: '单个会社的别名最大 17 个字符' })
+      .max(107, { message: '单个会社的别名最大 107 个字符' })
   ),
   primary_language: z
     .array(
@@ -41,7 +41,7 @@ export const createCompanySchema = z.object({
       .string()
       .trim()
       .min(1, { message: '会社别名不可为空' })
-      .max(17, { message: '单个母公司最大 17 个字符' })
+      .max(107, { message: '单个母公司最大 107 个字符' })
   )
 })
 
