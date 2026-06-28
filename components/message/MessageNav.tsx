@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect } from 'react'
 import { kunFetchGet, kunFetchPut } from '~/utils/kunFetch'
 import { Button } from '@heroui/react'
 import { AtSign, Bell, Globe, MessageSquare, UserPlus } from 'lucide-react'
@@ -38,34 +38,55 @@ export const MessageNav = () => {
   )
   const isChatSection = pathname.startsWith('/message/chat')
 
-  const [hasUnreadMessages, setHasUnreadMessages] = useState(false)
-  const [hasUnreadChat, setHasUnreadChat] = useState(false)
+  const hasUnreadNotification = useMessageStore(
+    (state) => state.hasUnreadNotification
+  )
+  const hasUnreadConversation = useMessageStore(
+    (state) => state.hasUnreadConversation
+  )
+  const setHasUnreadNotification = useMessageStore(
+    (state) => state.setHasUnreadNotification
+  )
   const setUnreadMessageStatus = useMessageStore(
     (state) => state.setUnreadMessageStatus
   )
 
   useEffect(() => {
+    if (isNotificationSection) {
+      return
+    }
+
+    let ignore = false
     const fetchUnread = async () => {
       const res = await kunFetchGet<{
         hasUnreadMessages: boolean
         hasUnreadChat: boolean
       }>('/message/unread')
-      if (res && typeof res !== 'string') {
-        setHasUnreadMessages(res.hasUnreadMessages)
-        setHasUnreadChat(res.hasUnreadChat)
+      if (!ignore && res && typeof res !== 'string') {
+        setUnreadMessageStatus({
+          hasUnreadNotification: res.hasUnreadMessages,
+          hasUnreadConversation: res.hasUnreadChat
+        })
       }
     }
     fetchUnread()
-  }, [])
+    return () => {
+      ignore = true
+    }
+  }, [isNotificationSection, setUnreadMessageStatus])
 
   useEffect(() => {
     if (!isNotificationSection) {
       return
     }
-    setHasUnreadMessages(false)
+    let ignore = false
+    setHasUnreadNotification(false)
     const readAllMessage = async () => {
       const res =
         await kunFetchPut<KunResponse<MessageUnreadStatus>>('/message/read')
+      if (ignore) {
+        return
+      }
       if (typeof res === 'string') {
         toast.error(res)
       } else {
@@ -73,16 +94,17 @@ export const MessageNav = () => {
       }
     }
     readAllMessage()
-  }, [isNotificationSection])
-
-  useEffect(() => {
-    if (isChatSection) {
-      setHasUnreadChat(false)
+    return () => {
+      ignore = true
     }
-  }, [pathname])
+  }, [
+    isNotificationSection,
+    setHasUnreadNotification,
+    setUnreadMessageStatus
+  ])
 
-  const showMessageDot = hasUnreadMessages && !isNotificationSection
-  const showChatDot = hasUnreadChat && !isChatSection
+  const showMessageDot = hasUnreadNotification && !isNotificationSection
+  const showChatDot = hasUnreadConversation && !isChatSection
 
   return (
     <Card className="w-full lg:w-1/4">
