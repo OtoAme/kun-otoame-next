@@ -19,22 +19,28 @@ pnpm typecheck
 
 ## 当前测试覆盖
 
-| 文件 | 覆盖 |
-| --- | --- |
-| `tests/unit/theme.test.ts` | 主题 token 和语义色。 |
-| `tests/unit/redis.test.ts` | Redis getOrSet、错误处理和缓存逻辑。 |
-| `tests/unit/jwt-session.test.ts` | Redis-backed JWT session、多设备、会话删除、legacy token 迁移。 |
-| `tests/unit/edit-store.test.ts` | 创建/重写 store 函数式合并，防止外部数据异步返回互相覆盖。 |
-| `tests/unit/company-merge-plan.test.ts` | 公司 name/alias 脏数据自动合并计划和预览。 |
-| `tests/unit/resource-link.test.ts` | 资源链接和提取码解析。 |
-| `tests/unit/resource-classification.test.ts` | 资源类型/语言/平台分类。 |
-| `tests/unit/search-store.test.ts` | 搜索 store。 |
-| `tests/unit/captcha.test.ts` | CAPTCHA。 |
-| `tests/unit/message-card.test.tsx` | 消息正文纯文本渲染和换行保留。 |
-| `tests/unit/user-message-bell.test.tsx` | 顶栏消息铃铛调用已读接口并按服务端返回同步红点。 |
-| `tests/unit/api/message-unread.test.ts` | 消息通知/私聊未读状态查询和通知已读写入。 |
-| `tests/unit/api/admin-resource-update-message.test.ts` | 管理员后台修改他人资源时通知资源发布者。 |
-| `tests/unit/api/*` | API service 业务规则。 |
+| 文件                                                   | 覆盖                                                                                  |
+| ------------------------------------------------------ | ------------------------------------------------------------------------------------- |
+| `tests/unit/theme.test.ts`                             | 主题 token 和语义色。                                                                 |
+| `tests/unit/redis.test.ts`                             | Redis getOrSet、错误处理和缓存逻辑。                                                  |
+| `tests/unit/jwt-session.test.ts`                       | Redis-backed JWT session、多设备、会话删除、legacy token 迁移。                       |
+| `tests/unit/edit-store.test.ts`                        | 创建/重写 store 函数式合并，防止外部数据异步返回互相覆盖。                            |
+| `tests/unit/company-merge-plan.test.ts`                | 公司 name/alias 脏数据自动合并计划和预览。                                            |
+| `tests/unit/resource-link.test.ts`                     | 资源链接和提取码解析。                                                                |
+| `tests/unit/resource-classification.test.ts`           | 资源类型/语言/平台分类。                                                              |
+| `tests/unit/search-store.test.ts`                      | 搜索 store。                                                                          |
+| `tests/unit/captcha.test.ts`                           | CAPTCHA。                                                                             |
+| `tests/unit/message-card.test.tsx`                     | 消息正文纯文本渲染和换行保留。                                                        |
+| `tests/unit/user-message-bell.test.tsx`                | 顶栏消息铃铛调用已读接口并按服务端返回同步红点。                                      |
+| `tests/unit/api/message-unread.test.ts`                | 消息通知/私聊未读状态查询和通知已读写入。                                             |
+| `tests/unit/api/admin-resource-get.test.ts`            | 后台资源列表按资源链接或 BLAKE3 Hash 搜索。                                           |
+| `tests/unit/api/admin-resource-update-message.test.ts` | 管理员后台修改他人资源时通知资源发布者、保留列表上下文并区分游戏资源 / 补丁资源日志。 |
+| `tests/unit/api/patch-resource-update.test.ts`         | 资源更新前校验资源和游戏归属，避免错误派生属性和缓存刷新。                            |
+| `tests/unit/admin-resource-render-cell.test.tsx`       | 后台资源列表资源名 / 游戏名两行展示。                                                 |
+| `tests/unit/resource-links-input.test.tsx`             | 对象存储资源大小输入禁用，普通外链大小仍可编辑。                                      |
+| `tests/unit/resource-details-form.test.tsx`            | 资源详情表单 label 不可选中，同时保留输入内容可选中。                                 |
+| `tests/unit/resource-dialog-helper-text.test.tsx`      | 发布资源和更改资源链接弹窗说明小字不可选中。                                          |
+| `tests/unit/api/*`                                     | API service 业务规则。                                                                |
 
 ## TDD 规则
 
@@ -78,16 +84,16 @@ pnpm typecheck
 
 当前 skill 分工：
 
-| Skill | 触发场景 |
-| --- | --- |
-| `otoame-development` | 仓库通用开发入口和项目规则总览。 |
-| `otoame-api` | API routes、service、validation、业务权限和管理接口。 |
-| `otoame-data-cache` | Prisma、Redis、缓存失效、上传、S3、资源属性和迁移。 |
-| `otoame-frontend` | App Router、React components、stores、主题、MDX、编辑器和 NSFW UI。 |
-| `otoame-operations` | scripts、migrations、cron、postbuild、release packaging 和维护命令。 |
-| `otoame-deployment` | PM2、Next standalone、CI/CD release、env vars 和生产部署。 |
-| `otoame-testing` | Vitest 测试、mock、目标测试选择。 |
-| `otoame-review` | 代码审阅、发布风险和未验证风险报告。 |
+| Skill                | 触发场景                                                             |
+| -------------------- | -------------------------------------------------------------------- |
+| `otoame-development` | 仓库通用开发入口和项目规则总览。                                     |
+| `otoame-api`         | API routes、service、validation、业务权限和管理接口。                |
+| `otoame-data-cache`  | Prisma、Redis、缓存失效、上传、S3、资源属性和迁移。                  |
+| `otoame-frontend`    | App Router、React components、stores、主题、MDX、编辑器和 NSFW UI。  |
+| `otoame-operations`  | scripts、migrations、cron、postbuild、release packaging 和维护命令。 |
+| `otoame-deployment`  | PM2、Next standalone、CI/CD release、env vars 和生产部署。           |
+| `otoame-testing`     | Vitest 测试、mock、目标测试选择。                                    |
+| `otoame-review`      | 代码审阅、发布风险和未验证风险报告。                                 |
 
 更新 docs 后必须检查对应 skill 的 Required References 是否仍指向正确文档；更新 skill 后必须检查 docs 中的 skill 列表和触发说明。
 

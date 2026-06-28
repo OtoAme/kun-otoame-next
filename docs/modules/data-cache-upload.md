@@ -217,6 +217,8 @@ Gallery 图片上传走 `app/api/edit/gallery/route.ts` 和 `app/api/edit/galler
 
 资源增删改审核通过后要调用 `deletePatchResourceCache(uniqueId)` 或等价的内容缓存 + 列表缓存失效，避免详情页、资源列表、排行和标签/公司游戏列表读到旧属性。
 
+资源更新前必须确认资源当前 `patch_id` 等于提交的 `patchId`。这个校验要发生在 S3 上传消费、链接重建、`updatePatchAttributes` 和 `deletePatchResourceCache` 之前，避免过期后台列表或篡改请求把派生属性和缓存失效打到错误游戏上。
+
 ## 测试
 
 重点测试：
