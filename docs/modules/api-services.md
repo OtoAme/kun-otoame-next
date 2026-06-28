@@ -104,6 +104,7 @@ service/helper 负责：
 - 用户提交反馈后发给管理员的提醒、管理员处理反馈后发给用户的回执都属于可筛选的系统通知，必须使用 `type: 'system'`。
 - 不要把面向单个用户的反馈通知写成 `feedback`，否则会避开系统消息筛选并淹没在全部通知中。
 - `/api/message/read` 只标记 `user_message` 通知为已读，然后返回 `MessageUnreadStatus`；前端顶栏和消息页要用这个返回值更新全局红点，避免把仍未读的私聊红点一并清掉。
+- `/api/message/unread`、`/api/message/read` 和 `/api/message/conversation/[id]/read` 返回的是登录用户的实时个性化红点状态，必须带 `Cache-Control: private, no-store`，避免缓存旧未读结果让前端红点回跳。
 
 ### 搜索和列表
 

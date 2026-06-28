@@ -44,6 +44,12 @@ Zustand stores 在 `store/*`：
 
 Store 改动要检查使用该 store 的页面和组件，不要只改类型。
 
+消息红点：
+
+- 顶栏和消息导航都以 `messageStore` 作为通知/私聊红点的单一状态源。
+- 进入通知页时立即乐观清除通知红点，并用 `/api/message/read` 返回的 `MessageUnreadStatus` 回写 store；不能用消息导航自己的本地状态覆盖全局状态。
+- 消息导航只在非通知页拉取 `/api/message/unread`，并在路由切换时通过 effect cleanup 忽略过期返回，避免旧未读请求把已读后的红点重新点亮。
+
 编辑页外部数据输入：
 
 - VNDB、Bangumi、Steam、DLSite 输入会异步写入同一个创建/重写 store。

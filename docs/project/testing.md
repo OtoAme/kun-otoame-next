@@ -38,6 +38,7 @@ tests/unit/
 - CAPTCHA：`tests/unit/captcha.test.ts`。
 - 资源链接解析和资源分类：`tests/unit/resource-link.test.ts`、`resource-classification.test.ts`。
 - Gallery 上传链路：`gallery-upload.test.ts` / `gallery-route.test.ts` 覆盖服务端转码、缩略图、S3 补偿和 route；`gallery-upload-batch.test.ts` 覆盖前端逐张上传失败保留；`gallery-drop.test.ts` 覆盖网页图片 URL/HTML 拖拽导入；`gallery-remote-import.test.ts` 和 `gallery-remote-route.test.ts` 覆盖远程图片导入、SSRF 边界和权限。
+- 消息红点：`message-nav.test.tsx` 覆盖通知页已读、过期未读请求 cleanup、通知/私聊红点分离；`api/message-unread.test.ts` 覆盖未读状态形态与 no-store 响应头。
 - 外部 ID、主题、标签等纯逻辑。
 
 ## 何时新增测试
