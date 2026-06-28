@@ -33,6 +33,13 @@ vi.mock('~/lib/s3', () => ({
   deleteFileFromS3: deleteFileFromS3Mock
 }))
 
+vi.mock('~/app/api/patch/resource/_helper', () => ({
+  extractS3Key: (url: string) =>
+    url.startsWith('https://img.example/')
+      ? url.slice('https://img.example/'.length)
+      : null
+}))
+
 vi.mock('~/app/api/edit/galleryUpload', () => ({
   uploadPatchGalleryImage: uploadPatchGalleryImageMock
 }))

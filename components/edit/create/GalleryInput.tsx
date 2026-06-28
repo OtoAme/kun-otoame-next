@@ -8,7 +8,10 @@ import { Upload, Maximize2 } from 'lucide-react'
 import { checkImageValid } from '~/utils/resizeImage'
 import { KunImageViewer } from '~/components/kun/image-viewer/ImageViewer'
 import { cn } from '~/utils/cn'
+import { getGalleryFilesFromEvent } from '~/utils/galleryDrop'
+import { getGalleryUploadFailedOverlayClass } from '~/utils/galleryCardStyle'
 import {
+  CREATE_GALLERY_DRAFT_UPDATED_EVENT,
   CREATE_GALLERY_DRAFT_KEY,
   CREATE_GALLERY_WATERMARK_KEY,
   saveCreateGalleryDraft,
@@ -93,6 +96,9 @@ const SortableItem = ({
         className="h-full w-full object-cover"
         draggable={false}
       />
+      {img.uploadStatus === 'failed' && (
+        <div className={getGalleryUploadFailedOverlayClass()} />
+      )}
       <div className="absolute bottom-2 left-2 z-10">
         <Checkbox isSelected={selected} className="pointer-events-none" />
       </div>
@@ -111,6 +117,11 @@ const SortableItem = ({
       {img.isNSFW && (
         <div className="absolute right-1 top-1 rounded bg-danger px-1 text-xs text-white">
           NSFW
+        </div>
+      )}
+      {img.uploadStatus === 'failed' && (
+        <div className="absolute inset-x-1 bottom-1 rounded bg-danger/90 px-2 py-1 text-xs text-white">
+          {img.uploadError ?? '上传失败'}
         </div>
       )}
     </div>
@@ -141,6 +152,9 @@ const ItemOverlay = ({
         className="h-full w-full object-cover"
         draggable={false}
       />
+      {img.uploadStatus === 'failed' && (
+        <div className={getGalleryUploadFailedOverlayClass()} />
+      )}
       <div className="absolute bottom-2 left-2 z-10">
         <Checkbox isSelected={selected} className="pointer-events-none" />
       </div>
@@ -159,18 +173,24 @@ export const GalleryInput = () => {
   const [watermark, setWatermark] = useState(true)
   const [activeId, setActiveId] = useState<string | null>(null)
 
+  const loadStoredImages = useCallback(async () => {
+    const storedImages = await localforage.getItem<GalleryImage[]>(
+      CREATE_GALLERY_DRAFT_KEY
+    )
+    if (storedImages) {
+      const withUrls = storedImages.map((img) => ({
+        ...img,
+        url: URL.createObjectURL(img.blob)
+      }))
+      setImages(withUrls)
+    } else {
+      setImages([])
+    }
+  }, [])
+
   useEffect(() => {
     const loadData = async () => {
-      const storedImages = await localforage.getItem<GalleryImage[]>(
-        CREATE_GALLERY_DRAFT_KEY
-      )
-      if (storedImages) {
-        const withUrls = storedImages.map((img) => ({
-          ...img,
-          url: URL.createObjectURL(img.blob)
-        }))
-        setImages(withUrls)
-      }
+      await loadStoredImages()
 
       const storedWatermark = await localforage.getItem<boolean>(
         CREATE_GALLERY_WATERMARK_KEY
@@ -182,8 +202,23 @@ export const GalleryInput = () => {
         await localforage.setItem(CREATE_GALLERY_WATERMARK_KEY, true)
       }
     }
+
     loadData()
-  }, [])
+  }, [loadStoredImages])
+
+  useEffect(() => {
+    window.addEventListener(
+      CREATE_GALLERY_DRAFT_UPDATED_EVENT,
+      loadStoredImages
+    )
+
+    return () => {
+      window.removeEventListener(
+        CREATE_GALLERY_DRAFT_UPDATED_EVENT,
+        loadStoredImages
+      )
+    }
+  }, [loadStoredImages])
 
   const updateImages = useCallback((updater: GalleryImageUpdater) => {
     setImages((currentImages) => {
@@ -252,7 +287,9 @@ export const GalleryInput = () => {
           id,
           blob: file,
           url: URL.createObjectURL(file),
-          isNSFW: false
+          isNSFW: false,
+          uploadStatus: 'pending',
+          uploadError: undefined
         })
       }
       updateImages((currentImages) => [...currentImages, ...newImages])
@@ -262,6 +299,11 @@ export const GalleryInput = () => {
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
+    getFilesFromEvent: getGalleryFilesFromEvent,
+    onError: (error) => {
+      console.error('Gallery drop error:', error)
+      toast.error('导入拖拽图片失败，请稍后重试')
+    },
     accept: { 'image/*': [] }
   })
 

@@ -5,7 +5,7 @@ import { Button, Card, CardBody, CardHeader, Input } from '@heroui/react'
 import { useRewritePatchStore } from '~/store/rewriteStore'
 import { KunDualEditorProvider } from '~/components/kun/milkdown/DualEditorProvider'
 import toast from 'react-hot-toast'
-import { kunFetchFormData, kunFetchPutFormData } from '~/utils/kunFetch'
+import { kunFetchPutFormData } from '~/utils/kunFetch'
 import { kunErrorHandler } from '~/utils/kunErrorHandler'
 import { patchUpdateSchema } from '~/validations/edit'
 import { useRouter } from '@bprogress/next'
@@ -21,10 +21,12 @@ import { ReleaseDateInput } from '../components/ReleaseDateInput'
 import { VNDBInput } from '../create/VNDBInput'
 import { VNDBRelationInput } from '../create/VNDBRelationInput'
 import { applySteamOfficialUrlFallback } from '~/utils/externalIds'
+import { uploadGalleryItems } from '../utils/galleryUploadBatch'
 // import { DLSiteInput } from '../create/DLSiteInput'
-import type { RewritePatchData } from '~/store/rewriteStore'
-
-const GALLERY_UPLOAD_TIMEOUT_MS = 120000
+import type {
+  RewriteNewGalleryImage,
+  RewritePatchData
+} from '~/store/rewriteStore'
 
 export const RewritePatch = () => {
   const router = useRouter()
@@ -33,6 +35,9 @@ export const RewritePatch = () => {
   const [errors, setErrors] = useState<
     Partial<Record<keyof RewritePatchData, string>>
   >({})
+  const hasFailedGalleryUploads = newImages.some(
+    (img) => img.uploadStatus === 'failed'
+  )
 
   const addAlias = (newAlias: string) => {
     const alias = newAlias.trim()
@@ -46,6 +51,22 @@ export const RewritePatch = () => {
   }
 
   const [rewriting, setRewriting] = useState(false)
+
+  const updateNewImageStatus = (item: RewriteNewGalleryImage) => {
+    const latest = useRewritePatchStore.getState()
+    setNewImages(
+      latest.newImages.map((image) =>
+        image.id === item.id
+          ? {
+              ...image,
+              uploadStatus: item.uploadStatus,
+              uploadError: item.uploadError
+            }
+          : image
+      )
+    )
+  }
+
   const handleSubmit = async () => {
     const result = patchUpdateSchema.safeParse({
       ...data,
@@ -133,84 +154,53 @@ export const RewritePatch = () => {
 
     if (newImages.length > 0) {
       toast('正在上传游戏截图 ...')
-      let failCount = 0
-      const failedImages: typeof newImages = []
-      const uploadedImages: {
-        oldId: string
-        id: number
-        url: string
-        thumbnailUrl: string | null
-        isNSFW: boolean
-      }[] = []
-
-      for (const [index, img] of newImages.entries()) {
-        toast(`正在上传图片 ${index + 1}/${newImages.length}`, {
-          id: 'gallery-progress'
-        })
-
-        const imgFormData = new FormData()
-        imgFormData.append('patchId', data.id.toString())
-        imgFormData.append('image', img.file)
-        imgFormData.append('isNSFW', String(img.isNSFW))
-        imgFormData.append('watermark', String(watermark))
-        const order = galleryOrder.indexOf(img.id)
-        imgFormData.append(
-          'displayOrder',
-          (order >= 0 ? order : index).toString()
-        )
-
-        try {
-          const uploadRes = await kunFetchFormData<
-            KunResponse<{
-              imageId: number
-              url: string
-              thumbnailUrl: string | null
-            }>
-          >('/edit/gallery', imgFormData, GALLERY_UPLOAD_TIMEOUT_MS)
-          if (typeof uploadRes === 'string') {
-            failCount++
-            failedImages.push(img)
-            console.error(`Gallery image ${index + 1} failed:`, uploadRes)
-          } else {
-            uploadedImages.push({
-              oldId: img.id,
-              id: uploadRes.imageId,
-              url: uploadRes.url,
-              thumbnailUrl: uploadRes.thumbnailUrl,
-              isNSFW: img.isNSFW
+      const queueItems = [...newImages]
+      const { uploaded, failed } = await uploadGalleryItems({
+        patchId: data.id,
+        items: queueItems,
+        watermark,
+        getDisplayOrder: (img, index) => {
+          const order = galleryOrder.indexOf(img.id)
+          return order >= 0 ? order : index
+        },
+        onItemStatus: (item) => {
+          if (item.uploadStatus === 'uploading') {
+            const index = queueItems.findIndex((img) => img.id === item.id)
+            toast(`正在上传图片 ${index + 1}/${queueItems.length}`, {
+              id: 'gallery-progress'
             })
           }
-        } catch {
-          failCount++
-          failedImages.push(img)
-          console.error(`Gallery image ${index + 1} upload error`)
+          if (item.uploadStatus === 'failed') {
+            console.error(`Gallery image ${item.id} failed:`, item.uploadError)
+          }
+          updateNewImageStatus(item)
         }
-      }
+      })
 
-      if (failCount > 0) {
+      if (failed.length > 0) {
         const latest = useRewritePatchStore.getState()
         const uploadedIdMap = new Map(
-          uploadedImages.map((img) => [img.oldId, img.id])
+          uploaded.map((img) => [img.oldId, img.imageId])
         )
         setData({
           ...latest.data,
           images: [
             ...latest.data.images,
-            ...uploadedImages.map((img) => ({
-              id: img.id,
+            ...uploaded.map((img) => ({
+              id: img.imageId,
               url: img.url,
               thumbnail_url: img.thumbnailUrl,
               is_nsfw: img.isNSFW
             }))
           ]
         })
-        setNewImages(failedImages)
+        setNewImages(failed)
         setGalleryOrder(
           latest.galleryOrder.map((id) =>
             typeof id === 'string' ? (uploadedIdMap.get(id) ?? id) : id
           )
         )
-        toast.error(`${failCount} 张图片上传失败，请重试后再离开页面`, {
+        toast.error(`${failed.length} 张图片上传失败，请重试后再离开页面`, {
           duration: 8000
         })
         setRewriting(false)
@@ -341,7 +331,7 @@ export const RewritePatch = () => {
             isLoading={rewriting}
             isDisabled={rewriting}
           >
-            提交
+            {hasFailedGalleryUploads ? '重试失败截图并提交' : '提交'}
           </Button>
         </CardBody>
       </Card>

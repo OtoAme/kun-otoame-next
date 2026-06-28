@@ -53,8 +53,11 @@ Store 改动要检查使用该 store 的页面和组件，不要只改类型。
 编辑页 gallery：
 
 - 创建页 `components/edit/create/GalleryInput.tsx` 和重写页 `components/edit/rewrite/RewriteGalleryInput.tsx` 都支持 JPG/PNG/WebP/AVIF 选择、拖拽排序、批量删除和 NSFW 标记。
+- 创建页和重写页 gallery 都通过 `components/edit/utils/galleryUploadBatch.ts` 逐张上传并保留失败状态。创建页如果游戏主体已创建但截图上传失败，不能清空草稿或跳转详情页；localforage 保留整组图片和已创建 patch 目标，成功项标记为 `uploaded`，失败项标记为 `failed` 并显示错误，重试时只上传失败项。重写页把成功上传的新图并入已有图片，把失败的新图留在 `rewriteStore.newImages`，卡片显示失败原因，下一次提交只重传失败项。
+- Gallery 卡片保持原 NSFW 视觉：NSFW 使用红色边框和右上角红色角标。上传失败不要抢占边框语义，使用 `bg-danger/20` 半透明红色遮罩和底部错误条表达，遮罩必须 `pointer-events-none`。
+- 从浏览器网页直接拖拽图片到 Windows / 桌面浏览器时，`DataTransfer.files` 可能为空，浏览器只给 `text/uri-list`、`text/plain` 或 `text/html` 里的 `<img src>`，Network 面板也可能显示类型为 Other。gallery drop 必须走 `utils/galleryDrop.ts` 的 `getGalleryFilesFromEvent`，先使用本地 File，若没有 File 再把远程图片 URL 交给 `/api/edit/gallery/remote` 导入为 File。
 - “添加水印”只影响静态图片。动态 WebP / AVIF 会保留原始动图并跳过水印，前端需要保留这条提示，避免管理员误以为动图也会被打水印。
-- 创建页 gallery 草稿存在 localforage，清除创建草稿时必须同步清理 gallery draft 和水印开关；重写页新增图片存在 `rewriteStore.newImages`，提交成功后由上传接口返回最终 `url` 和 `thumbnailUrl`。
+- 创建页 gallery 草稿存在 localforage，主体已创建但 gallery 未全部上传完成时还会保存已创建 patch 目标；清除创建草稿时必须同步清理 gallery draft、已创建 patch 目标和水印开关。重写页新增图片存在 `rewriteStore.newImages`，提交成功后由上传接口返回最终 `url` 和 `thumbnailUrl`。
 - 详情页和重写页已有 gallery 图片使用 `thumbnailUrl ?? url` 作为列表预览，灯箱始终使用原图 `url`。rewrite 提交已有图片时只传 id、NSFW 和排序，不能把 `thumbnailUrl` 当作原图 URL 写回数据库。
 - NSFW 遮罩下仍会加载 `thumbnailUrl ?? url`；如果缩略图是 animated WebP 或 animated AVIF，可以在遮罩下播放。没有生成缩略图的 animated AVIF 会回退加载原图，不生成占位图。
 - gallery 原图预载交给 `yet-another-react-lightbox` 的 `carousel.preload`。不要在缩略图 `onLoad` 后用自定义 `Image()` / `decode()` 队列预取原图，否则会和灯箱当前图或相邻图加载重复。

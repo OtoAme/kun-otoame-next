@@ -158,6 +158,8 @@ Cloudflare purge 约定：
 Gallery 图片上传走 `app/api/edit/gallery/route.ts` 和 `app/api/edit/galleryUpload.ts`，不使用资源上传的 Redis metadata/consume lock。规则：
 
 - `patch_game_image.url` 保存原图 URL，旧路径保持 `patch/<patchId>/gallery/<imageId>.<ext>`；`patch_game_image.thumbnail_url` 是 nullable，只在真实生成缩略图时保存，路径为 `patch/<patchId>/gallery/thumbnail/thumb-<imageId>.<thumbExt>`，文件名显式带 `thumb-` 前缀，便于在浏览器 Network 中区分缩略图和原图。
+- 创建页和重写页的 gallery 上传使用共享批处理队列：单张失败不能吞掉已成功图片，也不能让创建页在截图失败时清空 localforage 草稿或跳转详情页。创建页在主体已创建后保留整组 gallery 草稿和已创建 patch 目标，成功项标记 `uploaded`，失败项标记 `failed`，重试只上传失败项；重写页只把成功上传的新图写入已有图片列表，并把失败新图留在前端状态供重试。
+- 浏览器网页图片拖拽不一定产生 `File`，尤其 Windows 从网页拖图时常只带 URL/HTML。远程拖拽导入走 `app/api/edit/gallery/remote/route.ts` 和 `app/api/edit/galleryRemoteImport.ts`：必须要求登录且 `role >= 3`，只允许 HTTP/HTTPS，DNS 解析结果和每次 redirect 目标都必须是公网地址，最大重定向 3 次，远程图片体积上限 8MB，并通过响应头或 magic bytes 限定为 JPG/PNG/WebP/AVIF。
 - 静态 JPG/PNG/WebP/AVIF 会 resize 到 1920x1080 内，按水印开关 composite OtoAme 水印，再输出为 AVIF，单张输出上限 1.5MB；同时生成小尺寸 AVIF 缩略图。
 - 动态 WebP 和动态 AVIF 优先保留动画，原样上传到 S3，不 resize、不重新编码、不添加水印，URL 后缀分别保持 `.webp` / `.avif`；动态 WebP 会尝试生成 animated WebP 缩略图。缩略图处理参考 PicList / picgo-plugin-compress 的保守策略使用 WebP quality 75、高 effort；但 gallery 的目标是降低预览解码尺寸，不能仅因缩略图字节数不小于原图就取消缩略图。Sharp 处理 animated WebP 时，`resize` 参数必须按单帧目标尺寸传入；帧数只用于限制单帧高度，避免内部纵向堆叠总高度超过 WebP 单边维度上限。缩略图生成或上传失败时不阻断原图，`thumbnail_url` 写 `null`。
 - 动态原图上限 8MB；超过限制返回用户可见错误，不创建可见 gallery URL。
@@ -223,5 +225,9 @@ Gallery 图片上传走 `app/api/edit/gallery/route.ts` 和 `app/api/edit/galler
 - `tests/unit/resource-link.test.ts`
 - `tests/unit/resource-classification.test.ts`
 - `tests/unit/gallery-upload.test.ts`
+- `tests/unit/gallery-upload-batch.test.ts`
+- `tests/unit/gallery-drop.test.ts`
+- `tests/unit/gallery-remote-import.test.ts`
+- `tests/unit/gallery-remote-route.test.ts`
 
 上传/S3 的真实集成测试当前没有统一 harness。修改上传流程时，必须补单元测试或记录手动验证步骤。

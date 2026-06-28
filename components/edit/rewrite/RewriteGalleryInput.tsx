@@ -8,6 +8,8 @@ import { checkImageValid } from '~/utils/resizeImage'
 import { useRewritePatchStore } from '~/store/rewriteStore'
 import { KunImageViewer } from '~/components/kun/image-viewer/ImageViewer'
 import { cn } from '~/utils/cn'
+import { getGalleryFilesFromEvent } from '~/utils/galleryDrop'
+import { getGalleryUploadFailedOverlayClass } from '~/utils/galleryCardStyle'
 import {
   getGalleryOriginalSrc,
   getGalleryPreviewSrc
@@ -31,11 +33,21 @@ import {
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import type { DragEndEvent, DragStartEvent, DropAnimation } from '@dnd-kit/core'
-import type { PatchGameImage } from '~/store/rewriteStore'
+import type {
+  PatchGameImage,
+  RewriteNewGalleryImage
+} from '~/store/rewriteStore'
 
 type RewriteGalleryItem =
   | (PatchGameImage & { type: 'old' })
-  | { id: string; file: File; isNSFW: boolean; type: 'new' }
+  | {
+      id: string
+      file: File
+      isNSFW: boolean
+      uploadStatus?: string
+      uploadError?: string
+      type: 'new'
+    }
 
 const getRewriteGalleryPreviewSrc = (
   img: RewriteGalleryItem,
@@ -107,6 +119,9 @@ const SortableItem = ({
         className="h-full w-full object-cover"
         draggable={false}
       />
+      {img.type === 'new' && img.uploadStatus === 'failed' && (
+        <div className={getGalleryUploadFailedOverlayClass()} />
+      )}
       <div className="absolute bottom-2 left-2 z-10">
         <Checkbox isSelected={selected} className="pointer-events-none" />
       </div>
@@ -124,7 +139,16 @@ const SortableItem = ({
       </div>
       {img.type === 'new' && (
         <div className="absolute left-1 top-1 rounded bg-primary px-1 text-xs text-white">
-          NEW
+          {img.uploadStatus === 'failed'
+            ? '失败'
+            : img.uploadStatus === 'uploading'
+              ? '上传中'
+              : 'NEW'}
+        </div>
+      )}
+      {img.type === 'new' && img.uploadStatus === 'failed' && (
+        <div className="absolute inset-x-1 bottom-1 rounded bg-danger/90 px-2 py-1 text-xs text-white">
+          {img.uploadError ?? '上传失败'}
         </div>
       )}
       {(img.type === 'old' ? img.is_nsfw : img.isNSFW) && (
@@ -162,12 +186,15 @@ const ItemOverlay = ({
         className="h-full w-full object-cover"
         draggable={false}
       />
+      {img.type === 'new' && img.uploadStatus === 'failed' && (
+        <div className={getGalleryUploadFailedOverlayClass()} />
+      )}
       <div className="absolute bottom-2 left-2 z-10">
         <Checkbox isSelected={selected} className="pointer-events-none" />
       </div>
       {img.type === 'new' && (
         <div className="absolute left-1 top-1 rounded bg-primary px-1 text-xs text-white">
-          NEW
+          {img.uploadStatus === 'failed' ? '失败' : 'NEW'}
         </div>
       )}
       {(img.type === 'old' ? img.is_nsfw : img.isNSFW) && (
@@ -297,13 +324,14 @@ export const RewriteGalleryInput = () => {
 
   const onDrop = useCallback(
     (acceptedFiles: File[]) => {
-      const added: { id: string; file: File; isNSFW: boolean }[] = []
+      const added: RewriteNewGalleryImage[] = []
       for (const file of acceptedFiles) {
         if (!checkImageValid(file)) continue
         added.push({
           id: crypto.randomUUID(),
           file,
-          isNSFW: false
+          isNSFW: false,
+          uploadStatus: 'pending'
         })
       }
       setNewImages([...useRewritePatchStore.getState().newImages, ...added])
@@ -313,6 +341,10 @@ export const RewriteGalleryInput = () => {
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
+    getFilesFromEvent: getGalleryFilesFromEvent,
+    onError: (error) => {
+      console.error('Gallery drop error:', error)
+    },
     accept: { 'image/*': [] }
   })
 

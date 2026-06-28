@@ -7,6 +7,20 @@ export interface PatchGameImage {
   is_nsfw: boolean
 }
 
+export type RewriteNewGalleryImageUploadStatus =
+  | 'pending'
+  | 'uploading'
+  | 'uploaded'
+  | 'failed'
+
+export interface RewriteNewGalleryImage {
+  id: string
+  file: File
+  isNSFW: boolean
+  uploadStatus?: RewriteNewGalleryImageUploadStatus
+  uploadError?: string
+}
+
 export interface RewritePatchData {
   id: number
   uniqueId: string
@@ -38,7 +52,7 @@ export interface RewritePatchData {
 
 interface StoreState {
   data: RewritePatchData
-  newImages: { id: string; file: File; isNSFW: boolean }[]
+  newImages: RewriteNewGalleryImage[]
   newBanner: File | null
   watermark: boolean
   galleryOrder: (number | string)[]
@@ -46,7 +60,7 @@ interface StoreState {
   setData: (
     data: RewritePatchData | ((current: RewritePatchData) => RewritePatchData)
   ) => void
-  setNewImages: (images: { id: string; file: File; isNSFW: boolean }[]) => void
+  setNewImages: (images: RewriteNewGalleryImage[]) => void
   setNewBanner: (file: File | null) => void
   setWatermark: (watermark: boolean) => void
   setGalleryOrder: (order: (number | string)[]) => void
