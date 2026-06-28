@@ -30,6 +30,8 @@ pnpm typecheck
 | `tests/unit/resource-classification.test.ts` | 资源类型/语言/平台分类。 |
 | `tests/unit/search-store.test.ts` | 搜索 store。 |
 | `tests/unit/captcha.test.ts` | CAPTCHA。 |
+| `tests/unit/message-card.test.tsx` | 消息正文纯文本渲染和换行保留。 |
+| `tests/unit/api/admin-resource-update-message.test.ts` | 管理员后台修改他人资源时通知资源发布者。 |
 | `tests/unit/api/*` | API service 业务规则。 |
 
 ## TDD 规则

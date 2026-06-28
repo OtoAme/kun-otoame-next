@@ -24,6 +24,10 @@
 - API 调用在 client 组件中通常通过 `utils/kunFetch.ts`。
 - 页面级 server action 放在对应 `app/<route>/actions.ts`。
 
+## 消息展示
+
+- `components/message/MessageCard.tsx` 将通知正文作为纯文本渲染，并保留换行，用于系统通知展示多行变更摘要。
+
 ## 状态管理
 
 Zustand stores 在 `store/*`：

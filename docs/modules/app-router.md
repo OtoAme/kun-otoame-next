@@ -102,6 +102,8 @@
 - `components/message/*`
 - `app/api/message/*`
 
+通知正文按纯文本渲染，前端会保留后端消息里的换行，供系统通知展示多行变更摘要。
+
 未读状态由 `app/api/message/service.ts` 查询普通消息与聊天会话未读数。会话模块在 `app/api/message/conversation/*`。
 
 ## 标签和公司详情页
