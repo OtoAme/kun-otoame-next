@@ -88,7 +88,12 @@ export const MessageCard = ({ msg }: Props) => {
 
             <span>{MESSAGE_TYPE_MAP[msg.type]}</span>
           </div>
-          <p className="text-default-600">{msg.content}</p>
+          <p
+            data-testid="message-content"
+            className="whitespace-pre-wrap break-words text-default-600"
+          >
+            {msg.content}
+          </p>
           <span className="text-sm text-default-400">
             {formatTimeDifference(msg.created)}
           </span>
