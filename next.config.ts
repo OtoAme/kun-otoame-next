@@ -14,6 +14,14 @@ const skipDeployBuildChecks =
 
 const nextConfig: NextConfig = {
   devIndicators: false,
+  logging: {
+    incomingRequests: {
+      ignore: [
+        /\/api\/message\/unread/,
+        /\/api\/message\/conversation(?:\/|$)/
+      ]
+    }
+  },
   pageExtensions: ['ts', 'tsx', 'js', 'jsx', 'md', 'mdx'],
   transpilePackages: ['next-mdx-remote'],
   serverExternalPackages: ['ffmpeg-static'],

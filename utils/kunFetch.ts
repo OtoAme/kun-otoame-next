@@ -87,9 +87,10 @@ const kunFetchRequest = async <T>(
 
 export const kunFetchGet = async <T>(
   url: string,
-  query?: Record<string, string | number>
+  query?: Record<string, string | number>,
+  options?: Pick<FetchOptions, 'timeout'>
 ): Promise<T> => {
-  return kunFetchRequest<T>(url, 'GET', { query })
+  return kunFetchRequest<T>(url, 'GET', { query, ...options })
 }
 
 export const kunFetchPost = async <T>(

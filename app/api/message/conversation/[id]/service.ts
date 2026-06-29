@@ -41,19 +41,22 @@ export const getConversationMessages = async (
     return '会话不存在或无权访问'
   }
 
-  const { page, limit } = input
+  const { page, limit, afterId } = input
   const offset = (page - 1) * limit
+  const messageWhere = afterId
+    ? { conversation_id: conversationId, id: { gt: afterId } }
+    : { conversation_id: conversationId }
 
   const [data, total] = await Promise.all([
     prisma.user_private_message.findMany({
-      where: { conversation_id: conversationId },
+      where: messageWhere,
       include: {
         sender: {
           select: { id: true, name: true, avatar: true }
         }
       },
-      orderBy: { created: 'desc' },
-      skip: offset,
+      orderBy: { created: afterId ? 'asc' : 'desc' },
+      ...(afterId ? {} : { skip: offset }),
       take: limit
     }),
     prisma.user_private_message.count({
@@ -61,7 +64,13 @@ export const getConversationMessages = async (
     })
   ])
 
-  const messages: PrivateMessage[] = data.map((msg) => ({
+  const orderedData = afterId
+    ? [...data].sort(
+        (a, b) => new Date(a.created).getTime() - new Date(b.created).getTime()
+      )
+    : data
+
+  const messages: PrivateMessage[] = orderedData.map((msg) => ({
     id: msg.id,
     content: msg.content,
     status: msg.status,

@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useMounted } from '~/hooks/useMounted'
 import { KunLoading } from '~/components/kun/Loading'
 import { KunNull } from '~/components/kun/Null'
@@ -16,6 +16,8 @@ interface Props {
   total: number
 }
 
+const CONVERSATION_LIST_POLL_INTERVAL_MS = 15_000
+
 export const ConversationList = ({ initialConversations, total }: Props) => {
   const [conversations, setConversations] =
     useState<Conversation[]>(initialConversations)
@@ -25,43 +27,104 @@ export const ConversationList = ({ initialConversations, total }: Props) => {
   const setHasUnreadConversation = useMessageStore(
     (state) => state.setHasUnreadConversation
   )
+  const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  const syncConversationUnreadStatus = (items: Conversation[]) => {
-    setHasUnreadConversation(items.some((conv) => conv.unreadCount > 0))
-  }
+  const syncConversationUnreadStatus = useCallback(
+    (items: Conversation[]) => {
+      setHasUnreadConversation(items.some((conv) => conv.unreadCount > 0))
+    },
+    [setHasUnreadConversation]
+  )
 
-  const fetchConversations = async () => {
-    setLoading(true)
+  const fetchConversations = useCallback(
+    async (options: { showLoading: boolean; silent: boolean }) => {
+      if (options.showLoading) {
+        setLoading(true)
+      }
 
-    const response = await kunFetchGet<
-      KunResponse<{
-        conversations: Conversation[]
-        total: number
-      }>
-    >('/message/conversation', {
-      page,
-      limit: 30
-    })
-    if (typeof response === 'string') {
-      toast.error(response)
-    } else {
-      setConversations(response.conversations)
-      syncConversationUnreadStatus(response.conversations)
+      try {
+        const response = await kunFetchGet<
+          KunResponse<{
+            conversations: Conversation[]
+            total: number
+          }>
+        >('/message/conversation', {
+          page,
+          limit: 30
+        })
+        if (typeof response === 'string') {
+          if (!options.silent) {
+            toast.error(response)
+          }
+        } else {
+          setConversations(response.conversations)
+          syncConversationUnreadStatus(response.conversations)
+        }
+      } catch {
+        if (!options.silent) {
+          toast.error('获取会话列表失败, 请稍后重试')
+        }
+      } finally {
+        if (options.showLoading) {
+          setLoading(false)
+        }
+      }
+    },
+    [page, syncConversationUnreadStatus]
+  )
+
+  const clearPollTimer = useCallback(() => {
+    if (!pollTimerRef.current) {
+      return
     }
 
-    setLoading(false)
-  }
+    clearTimeout(pollTimerRef.current)
+    pollTimerRef.current = null
+  }, [])
 
   useEffect(() => {
     if (!isMounted) {
       return
     }
-    fetchConversations()
-  }, [page])
+    void fetchConversations({ showLoading: true, silent: false })
+  }, [fetchConversations, isMounted])
 
   useEffect(() => {
     syncConversationUnreadStatus(initialConversations)
-  }, [initialConversations])
+  }, [initialConversations, syncConversationUnreadStatus])
+
+  useEffect(() => {
+    if (!isMounted) {
+      return
+    }
+
+    let ignore = false
+
+    const pollConversations = async () => {
+      if (document.visibilityState !== 'hidden') {
+        await fetchConversations({ showLoading: false, silent: true })
+      }
+
+      if (!ignore) {
+        clearPollTimer()
+        pollTimerRef.current = setTimeout(
+          pollConversations,
+          CONVERSATION_LIST_POLL_INTERVAL_MS
+        )
+      }
+    }
+
+    clearPollTimer()
+    pollTimerRef.current = setTimeout(
+      pollConversations,
+      CONVERSATION_LIST_POLL_INTERVAL_MS
+    )
+
+    return () => {
+      ignore = true
+      clearPollTimer()
+    }
+  }, [clearPollTimer, fetchConversations, isMounted])
 
   return (
     <div className="space-y-4">

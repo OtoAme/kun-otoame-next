@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { kunParseGetQuery, kunParsePostBody } from '~/app/api/utils/parseQuery'
+import { PERSONALIZED_API_CACHE_CONTROL } from '~/app/api/utils/cacheHeaders'
 import {
   getConversationMessagesSchema,
   sendPrivateMessageSchema,
@@ -15,6 +16,13 @@ import {
   updateMessage
 } from './service'
 
+const jsonNoStore = (body: unknown) =>
+  NextResponse.json(body, {
+    headers: {
+      'Cache-Control': PERSONALIZED_API_CACHE_CONTROL
+    }
+  })
+
 export const GET = async (
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -22,17 +30,17 @@ export const GET = async (
   const { id } = await params
   const conversationId = parseInt(id, 10)
   if (isNaN(conversationId)) {
-    return NextResponse.json('无效的会话 ID')
+    return jsonNoStore('无效的会话 ID')
   }
 
   const input = kunParseGetQuery(req, getConversationMessagesSchema)
   if (typeof input === 'string') {
-    return NextResponse.json(input)
+    return jsonNoStore(input)
   }
 
   const payload = await verifyHeaderCookie(req)
   if (!payload) {
-    return NextResponse.json('用户未登录')
+    return jsonNoStore('用户未登录')
   }
 
   const response = await getConversationMessages(
@@ -40,7 +48,7 @@ export const GET = async (
     input,
     payload.uid
   )
-  return NextResponse.json(response)
+  return jsonNoStore(response)
 }
 
 export const POST = async (

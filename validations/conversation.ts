@@ -11,7 +11,8 @@ export const getConversationsSchema = z.object({
 
 export const getConversationMessagesSchema = z.object({
   page: z.coerce.number().min(1).max(9999999),
-  limit: z.coerce.number().min(1).max(50)
+  limit: z.coerce.number().min(1).max(50),
+  afterId: z.coerce.number().min(1).max(9999999).optional()
 })
 
 export const sendPrivateMessageSchema = z.object({

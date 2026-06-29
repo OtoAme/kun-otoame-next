@@ -34,6 +34,27 @@ const sortMessagesByTime = (msgs: PrivateMessage[]) => {
   )
 }
 
+const CHAT_REALTIME_POLL_INTERVAL_MS = 5_000
+
+const getLatestMessageId = (msgs: PrivateMessage[]) =>
+  msgs.reduce((latest, msg) => Math.max(latest, msg.id), 0)
+
+const mergeMessagesById = (
+  currentMessages: PrivateMessage[],
+  newMessages: PrivateMessage[]
+) => {
+  const messageMap = new Map<number, PrivateMessage>()
+
+  for (const msg of currentMessages) {
+    messageMap.set(msg.id, msg)
+  }
+  for (const msg of newMessages) {
+    messageMap.set(msg.id, msg)
+  }
+
+  return sortMessagesByTime([...messageMap.values()])
+}
+
 export const ChatContainer = ({
   conversationId,
   initialMessages,
@@ -54,6 +75,14 @@ export const ChatContainer = ({
     (state) => state.setUnreadMessageStatus
   )
   const isInitialMount = useRef(true)
+  const messagesRef = useRef(messages)
+  const realtimePollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null
+  )
+
+  useEffect(() => {
+    messagesRef.current = messages
+  }, [messages])
 
   const scrollToBottom = useCallback(() => {
     const container = scrollContainerRef.current
@@ -164,6 +193,96 @@ export const ChatContainer = ({
     }
     markAsRead()
   }, [conversationId, setUnreadMessageStatus])
+
+  useEffect(() => {
+    let ignore = false
+
+    const clearRealtimePollTimer = () => {
+      if (!realtimePollTimerRef.current) {
+        return
+      }
+
+      clearTimeout(realtimePollTimerRef.current)
+      realtimePollTimerRef.current = null
+    }
+
+    const pollNewMessages = async () => {
+      if (document.visibilityState === 'hidden') {
+        if (!ignore) {
+          clearRealtimePollTimer()
+          realtimePollTimerRef.current = setTimeout(
+            pollNewMessages,
+            CHAT_REALTIME_POLL_INTERVAL_MS
+          )
+        }
+        return
+      }
+
+      const latestMessageId = getLatestMessageId(messagesRef.current)
+      const query: Record<string, number> = { page: 1, limit: 50 }
+      if (latestMessageId > 0) {
+        query.afterId = latestMessageId
+      }
+
+      try {
+        const response = await kunFetchGet<
+          KunResponse<{
+            messages: PrivateMessage[]
+            total: number
+            otherUser: KunUser
+          }>
+        >(`/message/conversation/${conversationId}`, query)
+
+        if (ignore || typeof response === 'string') {
+          return
+        }
+
+        const newMessages = response.messages
+        if (newMessages.length) {
+          const hasOtherUserMessage = newMessages.some(
+            (msg) => msg.sender.id !== user.uid
+          )
+
+          setMessages((prev) => mergeMessagesById(prev, newMessages))
+          setTotalCount(response.total)
+
+          if (hasOtherUserMessage) {
+            const readResponse = await kunFetchPut<
+              KunResponse<MessageUnreadStatus>
+            >(`/message/conversation/${conversationId}/read`)
+
+            if (!ignore && typeof readResponse !== 'string') {
+              setUnreadMessageStatus(readResponse)
+            }
+          }
+
+          requestAnimationFrame(() => {
+            scrollToBottom()
+          })
+        }
+      } catch {
+      } finally {
+        if (!ignore) {
+          clearRealtimePollTimer()
+          realtimePollTimerRef.current = setTimeout(
+            pollNewMessages,
+            CHAT_REALTIME_POLL_INTERVAL_MS
+          )
+        }
+      }
+    }
+
+    clearRealtimePollTimer()
+    realtimePollTimerRef.current = setTimeout(
+      pollNewMessages,
+      CHAT_REALTIME_POLL_INTERVAL_MS
+    )
+
+    return () => {
+      ignore = true
+      clearRealtimePollTimer()
+    }
+  }, [conversationId, scrollToBottom, setUnreadMessageStatus, user.uid])
 
   useEffect(() => {
     if (isInitialMount.current) {
