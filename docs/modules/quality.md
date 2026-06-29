@@ -31,8 +31,11 @@ pnpm typecheck
 | `tests/unit/search-store.test.ts`                      | 搜索 store。                                                                          |
 | `tests/unit/captcha.test.ts`                           | CAPTCHA。                                                                             |
 | `tests/unit/message-card.test.tsx`                     | 消息正文纯文本渲染和换行保留。                                                        |
-| `tests/unit/user-message-bell.test.tsx`                | 顶栏消息铃铛调用已读接口并按服务端返回同步红点。                                      |
+| `tests/unit/user-message-bell.test.tsx`                | 顶栏消息铃铛只导航到通知中心，不在通知展示前标已读。                                  |
+| `tests/unit/message-container.test.tsx`                | 通知列表首屏 hydrate 复用服务端数据，不把初见未读 chip 刷成已读。                     |
+| `tests/unit/chat-input.test.tsx`                       | 私聊输入法组合期 Enter 不发送、`Shift+Enter` 换行和发送去重。                         |
 | `tests/unit/api/message-unread.test.ts`                | 消息通知/私聊未读状态查询和通知已读写入。                                             |
+| `tests/unit/api/conversation-service.test.ts`          | 私聊会话创建权限，目标用户关闭私聊时拒绝新建会话。                                    |
 | `tests/unit/api/admin-resource-get.test.ts`            | 后台资源列表按资源链接或 BLAKE3 Hash 搜索。                                           |
 | `tests/unit/api/admin-resource-update-message.test.ts` | 管理员后台修改他人资源时通知资源发布者、保留列表上下文并区分游戏资源 / 补丁资源日志。 |
 | `tests/unit/api/patch-resource-update.test.ts`         | 资源更新前校验资源和游戏归属，避免错误派生属性和缓存刷新。                            |

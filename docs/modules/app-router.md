@@ -106,9 +106,9 @@
 
 通知正文按纯文本渲染，前端会保留后端消息里的换行，供系统通知展示多行变更摘要。
 
-未读状态由 `app/api/message/service.ts` 查询普通消息与聊天会话未读数。会话模块在 `app/api/message/conversation/*`。顶栏铃铛和消息导航进入通知页时必须调用 `/api/message/read`，用服务端返回的 `MessageUnreadStatus` 同步全局红点；不要只在前端把通知和私聊红点一起乐观清空。消息导航红点以 `messageStore` 为单一状态源，通知页不再发额外 `/api/message/unread` 覆盖刚确认的已读状态；跨路由未读请求必须在 effect cleanup 后忽略过期返回。
+未读状态由 `app/api/message/service.ts` 查询普通消息与聊天会话未读数。会话模块在 `app/api/message/conversation/*`。顶栏铃铛只负责导航到通知中心，不应在用户看到通知列表前调用 `/api/message/read`。通知页由消息导航在首屏消息已经渲染后调用 `/api/message/read`，用服务端返回的 `MessageUnreadStatus` 同步全局红点；不要只在前端把通知和私聊红点一起乐观清空。消息列表客户端首次 hydrate 时复用服务端首屏数据，不能立刻重新拉取当前页把刚看到的未读 chip 刷成已读。消息导航红点以 `messageStore` 为单一状态源，通知页不再发额外 `/api/message/unread` 覆盖刚确认的已读状态；跨路由未读请求必须在 effect cleanup 后忽略过期返回。
 
-登录后的全站未读状态由 `components/message/MessageRealtimeSync.tsx` 在 `app/providers.tsx` 中挂载同步。它只轮询 `/api/message/unread` 并写入 `messageStore`，不负责标记已读；系统通知、评论回复、@、关注等 `user_message` 新通知在任意页面到达时，表现为顶栏铃铛小红点动态亮起，不弹 toast。页面隐藏时降频，回到可见状态时立即同步一次。私聊详情页 `ChatContainer` 使用 `/api/message/conversation/[id]?afterId=<latestId>` 增量获取新消息，收到对方消息后调用 `/api/message/conversation/[id]/read` 并用返回值同步红点。会话列表页会后台刷新当前页，让最新消息、未读 chip 和私聊红点不依赖手动刷新。所有这些个性化消息接口都必须保持 `private, no-store`。
+登录后的全站未读状态由 `components/message/MessageRealtimeSync.tsx` 在 `app/providers.tsx` 中挂载同步。它只轮询 `/api/message/unread` 并写入 `messageStore`，不负责标记已读；系统通知、评论回复、@、关注等 `user_message` 新通知在任意页面到达时，表现为顶栏铃铛小红点动态亮起，不弹 toast。页面隐藏时降频，回到可见状态时立即同步一次。私聊会话卡片禁用 Next Link 预取，避免个性化聊天详情使用停留列表时预取到的旧 RSC payload。私聊详情页 `ChatContainer` 打开后立即用 `/api/message/conversation/[id]?afterId=<latestId>` 补拉一次，可见窗口约每 2 秒继续增量获取，隐藏窗口降频并在恢复可见时立即补拉；实时 `afterId` 游标只由服务端拉取到的消息推进，本地刚发送成功的消息只插入 UI，不推进游标，避免双方同时发送时略早的对方消息被永久跳过。收到对方消息后调用 `/api/message/conversation/[id]/read` 并用返回值同步红点。会话消息接口的 `afterId` 增量请求只查新增消息，不再统计整段历史总数。会话列表页会后台刷新当前页，让最新消息、未读 chip 和私聊红点不依赖手动刷新。所有这些个性化消息接口都必须保持 `private, no-store`。
 
 ## 标签和公司详情页
 
