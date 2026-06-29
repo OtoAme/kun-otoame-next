@@ -36,6 +36,7 @@ pnpm typecheck
 | `tests/unit/api/admin-resource-get.test.ts`            | 后台资源列表按资源链接或 BLAKE3 Hash 搜索。                                           |
 | `tests/unit/api/admin-resource-update-message.test.ts` | 管理员后台修改他人资源时通知资源发布者、保留列表上下文并区分游戏资源 / 补丁资源日志。 |
 | `tests/unit/api/patch-resource-update.test.ts`         | 资源更新前校验资源和游戏归属，避免错误派生属性和缓存刷新。                            |
+| `tests/unit/admin-resource-container-layout.test.tsx`  | 后台资源表资源列宽、分页脱离表格横向滚动区并居中显示。                                |
 | `tests/unit/admin-resource-render-cell.test.tsx`       | 后台资源列表资源名 / 游戏名两行展示。                                                 |
 | `tests/unit/resource-links-input.test.tsx`             | 对象存储资源大小输入禁用，普通外链大小仍可编辑。                                      |
 | `tests/unit/resource-details-form.test.tsx`            | 资源详情表单 label 不可选中，同时保留输入内容可选中。                                 |

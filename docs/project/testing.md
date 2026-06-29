@@ -36,7 +36,7 @@ tests/unit/
 - 公司脏数据合并计划：`tests/unit/company-merge-plan.test.ts`。
 - 搜索 store：`tests/unit/search-store.test.ts`。
 - CAPTCHA：`tests/unit/captcha.test.ts`。
-- 资源链接解析和资源分类：`tests/unit/resource-link.test.ts`、`resource-classification.test.ts`。
+- 资源链接解析、资源分类和后台资源表格布局：`tests/unit/resource-link.test.ts`、`resource-classification.test.ts`、`admin-resource-container-layout.test.tsx`。
 - Gallery 上传链路：`gallery-upload.test.ts` / `gallery-route.test.ts` 覆盖服务端转码、缩略图、S3 补偿和 route；`gallery-upload-batch.test.ts` 覆盖前端逐张上传失败保留；`gallery-drop.test.ts` 覆盖网页图片 URL/HTML 拖拽导入；`gallery-remote-import.test.ts` 和 `gallery-remote-route.test.ts` 覆盖远程图片导入、SSRF 边界和权限。
 - 消息红点和实时同步：`message-nav.test.tsx` 覆盖通知页已读、过期未读请求 cleanup、通知/私聊红点分离；`user-message-bell.test.tsx` 覆盖顶栏铃铛只清通知不清私聊；`message-realtime-sync.test.tsx` 覆盖全站未读轮询、任意页面新通知只点亮铃铛红点、以及可见性恢复同步；`chat-container-realtime.test.tsx` 覆盖私聊详情页 `afterId` 增量拉取、去重合并和当前会话已读同步；`conversation-list-realtime.test.tsx` 覆盖会话列表后台刷新 unread chip；`api/message-unread.test.ts` 覆盖未读状态形态与 no-store 响应头；`api/conversation-messages.test.ts` 覆盖会话消息增量查询。
 - 外部 ID、主题、标签等纯逻辑。
