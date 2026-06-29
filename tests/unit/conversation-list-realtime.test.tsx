@@ -22,13 +22,22 @@ vi.mock('next/link', () => ({
   default: ({
     children,
     href,
-    className
+    className,
+    prefetch,
+    ...props
   }: {
     children?: React.ReactNode
     href: string
     className?: string
+    prefetch?: boolean
+    [key: string]: unknown
   }) => (
-    <a href={href} className={className}>
+    <a
+      href={href}
+      className={className}
+      data-prefetch={String(prefetch)}
+      {...props}
+    >
       {children}
     </a>
   )
@@ -37,16 +46,25 @@ vi.mock('next/link', () => ({
 vi.mock('@heroui/card', () => ({
   Card: ({
     children,
+    as: Component = 'a',
     href,
-    className
+    className,
+    prefetch
   }: {
     children?: React.ReactNode
+    as?: React.ElementType
     href?: string
     className?: string
+    prefetch?: boolean
   }) => (
-    <a href={href} className={className}>
+    <Component
+      href={href}
+      className={className}
+      data-testid="conversation-link"
+      prefetch={prefetch}
+    >
       {children}
-    </a>
+    </Component>
   ),
   CardBody: ({ children, className }: { children?: React.ReactNode; className?: string }) => (
     <div className={className}>{children}</div>
@@ -100,7 +118,7 @@ describe('ConversationList realtime refresh', () => {
   let root: Root | undefined
   let dom: JSDOM | undefined
 
-  const renderList = async () => {
+  const renderList = async (hasUnreadConversation = false) => {
     dom = new JSDOM('<!doctype html><div id="root"></div>', {
       url: 'http://localhost'
     })
@@ -115,7 +133,7 @@ describe('ConversationList realtime refresh', () => {
       {
         ...useMessageStore.getState(),
         hasUnreadNotification: false,
-        hasUnreadConversation: false
+        hasUnreadConversation
       },
       true
     )
@@ -181,5 +199,30 @@ describe('ConversationList realtime refresh', () => {
       '3'
     )
     expect(useMessageStore.getState().hasUnreadConversation).toBe(true)
+  })
+
+  it('does not clear the global unread dot when the current page has no unread conversations', async () => {
+    const { useMessageStore } = await renderList(true)
+
+    fetchMock.kunFetchGet.mockResolvedValueOnce({
+      conversations: [conversation(0, 'current page read')],
+      total: 31
+    })
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(15_000)
+    })
+
+    expect(useMessageStore.getState().hasUnreadConversation).toBe(true)
+  })
+
+  it('disables Next.js prefetch for personalized chat detail links', async () => {
+    const { container } = await renderList()
+
+    expect(
+      container
+        .querySelector('[data-testid="conversation-link"]')
+        ?.getAttribute('data-prefetch')
+    ).toBe('false')
   })
 })

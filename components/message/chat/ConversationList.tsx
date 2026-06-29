@@ -31,7 +31,9 @@ export const ConversationList = ({ initialConversations, total }: Props) => {
 
   const syncConversationUnreadStatus = useCallback(
     (items: Conversation[]) => {
-      setHasUnreadConversation(items.some((conv) => conv.unreadCount > 0))
+      if (items.some((conv) => conv.unreadCount > 0)) {
+        setHasUnreadConversation(true)
+      }
     },
     [setHasUnreadConversation]
   )

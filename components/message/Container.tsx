@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useMounted } from '~/hooks/useMounted'
 import { KunLoading } from '~/components/kun/Loading'
 import { MessageCard } from './MessageCard'
@@ -27,6 +27,7 @@ export const MessageContainer = ({ initialMessages, total, type }: Props) => {
   const [clearing, setClearing] = useState(false)
   const [page, setPage] = useState(1)
   const isMounted = useMounted()
+  const hasUsedInitialPageRef = useRef(false)
 
   const fetchMessages = async (targetPage: number) => {
     try {
@@ -83,6 +84,10 @@ export const MessageContainer = ({ initialMessages, total, type }: Props) => {
 
   useEffect(() => {
     if (!isMounted) {
+      return
+    }
+    if (!hasUsedInitialPageRef.current) {
+      hasUsedInitialPageRef.current = true
       return
     }
     fetchMessages(page)

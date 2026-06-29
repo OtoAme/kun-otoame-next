@@ -47,22 +47,26 @@ export const getConversationMessages = async (
     ? { conversation_id: conversationId, id: { gt: afterId } }
     : { conversation_id: conversationId }
 
-  const [data, total] = await Promise.all([
-    prisma.user_private_message.findMany({
-      where: messageWhere,
-      include: {
-        sender: {
-          select: { id: true, name: true, avatar: true }
-        }
-      },
-      orderBy: { created: afterId ? 'asc' : 'desc' },
-      ...(afterId ? {} : { skip: offset }),
-      take: limit
-    }),
-    prisma.user_private_message.count({
-      where: { conversation_id: conversationId }
-    })
-  ])
+  const messagesQuery = prisma.user_private_message.findMany({
+    where: messageWhere,
+    include: {
+      sender: {
+        select: { id: true, name: true, avatar: true }
+      }
+    },
+    orderBy: { created: afterId ? 'asc' : 'desc' },
+    ...(afterId ? {} : { skip: offset }),
+    take: limit
+  })
+
+  const [data, total] = afterId
+    ? [await messagesQuery, undefined]
+    : await Promise.all([
+        messagesQuery,
+        prisma.user_private_message.count({
+          where: { conversation_id: conversationId }
+        })
+      ])
 
   const orderedData = afterId
     ? [...data].sort(
@@ -83,7 +87,9 @@ export const getConversationMessages = async (
   const otherUser =
     conversation.user_a_id === uid ? conversation.user_b : conversation.user_a
 
-  return { messages, total, otherUser }
+  const responseTotal = afterId ? messages.length : (total ?? 0)
+
+  return { messages, total: responseTotal, otherUser }
 }
 
 export const sendMessage = async (

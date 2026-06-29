@@ -9,7 +9,7 @@ import { Skeleton } from '@heroui/skeleton'
 import { useUserStore } from '~/store/userStore'
 import { useMessageStore } from '~/store/messageStore'
 import { useRouter } from '@bprogress/next'
-import { kunFetchGet, kunFetchPost, kunFetchPut } from '~/utils/kunFetch'
+import { kunFetchGet, kunFetchPost } from '~/utils/kunFetch'
 import { ThemeSwitcher } from './ThemeSwitcher'
 import { useMounted } from '~/hooks/useMounted'
 import { UserDropdown } from './UserDropdown'
@@ -61,18 +61,6 @@ export const KunTopBarUser = () => {
 
   const hasUnread = hasUnreadNotification || hasUnreadConversation
 
-  const markNotificationMessagesRead = async () => {
-    const res = await kunFetchPut<KunResponse<UserSession['unread']>>(
-      '/message/read'
-    )
-    if (typeof res === 'string') {
-      toast.error(res)
-      return
-    }
-
-    setUnreadMessageStatus(res)
-  }
-
   return (
     <NavbarContent as="div" className="items-center" justify="end">
       {!isMounted && (
@@ -122,12 +110,6 @@ export const KunTopBarUser = () => {
         <>
           <UserMessageBell
             hasUnreadMessages={hasUnread}
-            setReadMessage={() => {
-              if (!hasUnreadNotification) {
-                return
-              }
-              return markNotificationMessagesRead()
-            }}
           />
 
           <UserDropdown />

@@ -35,7 +35,7 @@ describe('conversation message fetching', () => {
     prismaMock.user_private_message.count.mockResolvedValue(3)
   })
 
-  it('returns only messages newer than afterId in chronological order', async () => {
+  it('returns only messages newer than afterId without counting full history', async () => {
     const newerMessages = [
       {
         id: 11,
@@ -77,8 +77,9 @@ describe('conversation message fetching', () => {
       orderBy: { created: 'asc' },
       take: 50
     })
+    expect(prismaMock.user_private_message.count).not.toHaveBeenCalled()
     expect(result).toMatchObject({
-      total: 3,
+      total: 2,
       otherUser: { id: 8, name: 'Mio', avatar: '/mio.webp' },
       messages: [
         { id: 10, content: 'new' },
@@ -105,6 +106,9 @@ describe('conversation message fetching', () => {
       orderBy: { created: 'desc' },
       skip: 30,
       take: 30
+    })
+    expect(prismaMock.user_private_message.count).toHaveBeenCalledWith({
+      where: { conversation_id: 5 }
     })
   })
 

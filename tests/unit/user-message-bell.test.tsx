@@ -205,7 +205,7 @@ describe('KunTopBarUser message bell', () => {
     fetchMock.kunFetchPut.mockReset()
   })
 
-  it('marks notification messages read through the API and preserves unread conversations', async () => {
+  it('opens the notification center without marking notifications read first', async () => {
     const { container, useMessageStore } = await renderTopBarUser()
 
     fetchMock.kunFetchPut.mockResolvedValue({
@@ -223,8 +223,8 @@ describe('KunTopBarUser message bell', () => {
     })
 
     expect(routerMock.push).toHaveBeenCalledWith('/message/notice')
-    expect(fetchMock.kunFetchPut).toHaveBeenCalledWith('/message/read')
-    expect(useMessageStore.getState().hasUnreadNotification).toBe(false)
+    expect(fetchMock.kunFetchPut).not.toHaveBeenCalled()
+    expect(useMessageStore.getState().hasUnreadNotification).toBe(true)
     expect(useMessageStore.getState().hasUnreadConversation).toBe(true)
   })
 

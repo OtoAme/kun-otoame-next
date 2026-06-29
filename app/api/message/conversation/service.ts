@@ -75,7 +75,7 @@ export const checkConversation = async (
     }),
     prisma.user.findUnique({
       where: { id: targetUserId },
-      select: { id: true, name: true }
+      select: { id: true, name: true, allow_private_message: true }
     })
   ])
 
@@ -84,6 +84,9 @@ export const checkConversation = async (
   }
   if (!targetUser) {
     return { error: '目标用户不存在' }
+  }
+  if (!targetUser.allow_private_message) {
+    return { error: '对方已关闭接收私信' }
   }
 
   const [userAId, userBId] =
@@ -139,7 +142,8 @@ export const getOrCreateConversation = async (
       select: { moemoepoint: true }
     }),
     prisma.user.findUnique({
-      where: { id: targetUserId }
+      where: { id: targetUserId },
+      select: { id: true, allow_private_message: true }
     })
   ])
 
@@ -148,6 +152,9 @@ export const getOrCreateConversation = async (
   }
   if (!targetUser) {
     return '目标用户不存在'
+  }
+  if (!targetUser.allow_private_message) {
+    return '对方已关闭接收私信'
   }
 
   const [userAId, userBId] =

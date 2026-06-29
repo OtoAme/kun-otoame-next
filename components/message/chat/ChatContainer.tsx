@@ -34,7 +34,8 @@ const sortMessagesByTime = (msgs: PrivateMessage[]) => {
   )
 }
 
-const CHAT_REALTIME_POLL_INTERVAL_MS = 5_000
+const CHAT_VISIBLE_POLL_INTERVAL_MS = 2_000
+const CHAT_HIDDEN_POLL_INTERVAL_MS = 15_000
 
 const getLatestMessageId = (msgs: PrivateMessage[]) =>
   msgs.reduce((latest, msg) => Math.max(latest, msg.id), 0)
@@ -76,6 +77,7 @@ export const ChatContainer = ({
   )
   const isInitialMount = useRef(true)
   const messagesRef = useRef(messages)
+  const realtimeCursorRef = useRef(getLatestMessageId(initialMessages))
   const realtimePollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
     null
   )
@@ -206,19 +208,20 @@ export const ChatContainer = ({
       realtimePollTimerRef.current = null
     }
 
+    const scheduleRealtimePoll = (interval: number) => {
+      clearRealtimePollTimer()
+      realtimePollTimerRef.current = setTimeout(pollNewMessages, interval)
+    }
+
     const pollNewMessages = async () => {
       if (document.visibilityState === 'hidden') {
         if (!ignore) {
-          clearRealtimePollTimer()
-          realtimePollTimerRef.current = setTimeout(
-            pollNewMessages,
-            CHAT_REALTIME_POLL_INTERVAL_MS
-          )
+          scheduleRealtimePoll(CHAT_HIDDEN_POLL_INTERVAL_MS)
         }
         return
       }
 
-      const latestMessageId = getLatestMessageId(messagesRef.current)
+      const latestMessageId = realtimeCursorRef.current
       const query: Record<string, number> = { page: 1, limit: 50 }
       if (latestMessageId > 0) {
         query.afterId = latestMessageId
@@ -239,12 +242,29 @@ export const ChatContainer = ({
 
         const newMessages = response.messages
         if (newMessages.length) {
+          realtimeCursorRef.current = Math.max(
+            realtimeCursorRef.current,
+            getLatestMessageId(newMessages)
+          )
           const hasOtherUserMessage = newMessages.some(
             (msg) => msg.sender.id !== user.uid
           )
 
-          setMessages((prev) => mergeMessagesById(prev, newMessages))
-          setTotalCount(response.total)
+          const currentMessages = messagesRef.current
+          const mergedMessages = mergeMessagesById(
+            currentMessages,
+            newMessages
+          )
+          const addedMessageCount = Math.max(
+            mergedMessages.length - currentMessages.length,
+            0
+          )
+
+          if (addedMessageCount > 0) {
+            messagesRef.current = mergedMessages
+            setMessages(mergedMessages)
+            setTotalCount((currentTotal) => currentTotal + addedMessageCount)
+          }
 
           if (hasOtherUserMessage) {
             const readResponse = await kunFetchPut<
@@ -263,23 +283,25 @@ export const ChatContainer = ({
       } catch {
       } finally {
         if (!ignore) {
-          clearRealtimePollTimer()
-          realtimePollTimerRef.current = setTimeout(
-            pollNewMessages,
-            CHAT_REALTIME_POLL_INTERVAL_MS
-          )
+          scheduleRealtimePoll(CHAT_VISIBLE_POLL_INTERVAL_MS)
         }
       }
     }
 
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        clearRealtimePollTimer()
+        void pollNewMessages()
+      }
+    }
+
+    document.addEventListener('visibilitychange', handleVisibilityChange)
     clearRealtimePollTimer()
-    realtimePollTimerRef.current = setTimeout(
-      pollNewMessages,
-      CHAT_REALTIME_POLL_INTERVAL_MS
-    )
+    void pollNewMessages()
 
     return () => {
       ignore = true
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
       clearRealtimePollTimer()
     }
   }, [conversationId, scrollToBottom, setUnreadMessageStatus, user.uid])

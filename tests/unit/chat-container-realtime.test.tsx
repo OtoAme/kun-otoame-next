@@ -11,6 +11,12 @@ const fetchMock = vi.hoisted(() => ({
   kunFetchPut: vi.fn()
 }))
 
+const chatInputMock = vi.hoisted(() => ({
+  onMessageSent: undefined as
+    | ((message: { id: number; content: string; created: string }) => void)
+    | undefined
+}))
+
 vi.mock('~/utils/kunFetch', () => ({
   kunFetchGet: fetchMock.kunFetchGet,
   kunFetchPut: fetchMock.kunFetchPut
@@ -71,7 +77,18 @@ vi.mock('~/components/kun/floating-card/KunAvatar', () => ({
 }))
 
 vi.mock('~/components/message/chat/ChatInput', () => ({
-  ChatInput: () => <div data-testid="chat-input" />
+  ChatInput: ({
+    onMessageSent
+  }: {
+    onMessageSent: (message: {
+      id: number
+      content: string
+      created: string
+    }) => void
+  }) => {
+    chatInputMock.onMessageSent = onMessageSent
+    return <div data-testid="chat-input" />
+  }
 }))
 
 vi.mock('~/components/message/chat/DeleteConversationButton', () => ({
@@ -134,13 +151,17 @@ describe('ChatContainer realtime sync', () => {
   let root: Root | undefined
   let dom: JSDOM | undefined
 
-  const renderChat = async () => {
+  const renderChat = async (visibilityState = 'visible') => {
     dom = new JSDOM('<!doctype html><div id="root"></div>', {
       url: 'http://localhost'
     })
 
     vi.stubGlobal('window', dom.window)
     vi.stubGlobal('document', dom.window.document)
+    Object.defineProperty(dom.window.document, 'visibilityState', {
+      configurable: true,
+      value: visibilityState
+    })
     vi.stubGlobal('IntersectionObserver', class {
       observe = vi.fn()
       disconnect = vi.fn()
@@ -194,13 +215,17 @@ describe('ChatContainer realtime sync', () => {
     return { container: container!, useMessageStore }
   }
 
-  const renderEmptyChat = async () => {
+  const renderEmptyChat = async (visibilityState = 'visible') => {
     dom = new JSDOM('<!doctype html><div id="root"></div>', {
       url: 'http://localhost'
     })
 
     vi.stubGlobal('window', dom.window)
     vi.stubGlobal('document', dom.window.document)
+    Object.defineProperty(dom.window.document, 'visibilityState', {
+      configurable: true,
+      value: visibilityState
+    })
     vi.stubGlobal('IntersectionObserver', class {
       observe = vi.fn()
       disconnect = vi.fn()
@@ -261,13 +286,18 @@ describe('ChatContainer realtime sync', () => {
     vi.resetModules()
     fetchMock.kunFetchGet.mockReset()
     fetchMock.kunFetchPut.mockReset()
+    chatInputMock.onMessageSent = undefined
   })
 
-  it('polls for messages newer than the latest rendered id', async () => {
+  it('polls visible chat windows every 2 seconds for newer messages', async () => {
     await renderChat()
+    await act(async () => {
+      await Promise.resolve()
+    })
+    fetchMock.kunFetchGet.mockClear()
 
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(5_000)
+      await vi.advanceTimersByTimeAsync(2_000)
     })
 
     expect(fetchMock.kunFetchGet).toHaveBeenCalledWith(
@@ -278,9 +308,13 @@ describe('ChatContainer realtime sync', () => {
 
   it('polls an empty conversation so the first incoming message appears', async () => {
     await renderEmptyChat()
+    await act(async () => {
+      await Promise.resolve()
+    })
+    fetchMock.kunFetchGet.mockClear()
 
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(5_000)
+      await vi.advanceTimersByTimeAsync(2_000)
     })
 
     expect(fetchMock.kunFetchGet).toHaveBeenCalledWith(
@@ -289,8 +323,25 @@ describe('ChatContainer realtime sync', () => {
     )
   })
 
+  it('refreshes messages immediately after opening a prefetched chat page', async () => {
+    await renderChat()
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    expect(fetchMock.kunFetchGet).toHaveBeenCalledWith(
+      '/message/conversation/5',
+      { page: 1, limit: 50, afterId: 2 }
+    )
+  })
+
   it('merges new messages without duplicates and marks other-user messages read', async () => {
     const { container, useMessageStore } = await renderChat()
+    await act(async () => {
+      await Promise.resolve()
+    })
+    fetchMock.kunFetchGet.mockClear()
     fetchMock.kunFetchGet.mockResolvedValueOnce({
       messages: [
         message(2, 'hi duplicate', {
@@ -305,7 +356,7 @@ describe('ChatContainer realtime sync', () => {
     })
 
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(5_000)
+      await vi.advanceTimersByTimeAsync(2_000)
     })
 
     expect(container.querySelectorAll('[data-message-id="2"]')).toHaveLength(1)
@@ -314,5 +365,110 @@ describe('ChatContainer realtime sync', () => {
       '/message/conversation/5/read'
     )
     expect(useMessageStore.getState().hasUnreadConversation).toBe(false)
+  })
+
+  it('keeps the realtime cursor on the last server-synced message after sending locally', async () => {
+    fetchMock.kunFetchGet
+      .mockResolvedValueOnce({
+        messages: [],
+        total: 2,
+        otherUser
+      })
+      .mockImplementation((_url: string, query?: Record<string, number>) =>
+        Promise.resolve({
+          messages:
+            query?.afterId === 2
+              ? [
+                  message(
+                    3,
+                    'other slightly earlier message',
+                    otherUser,
+                    '2026-06-29T10:03:00.000Z'
+                  )
+                ]
+              : [],
+          total: 1,
+          otherUser
+        })
+      )
+
+    const { container } = await renderChat()
+    await act(async () => {
+      await Promise.resolve()
+    })
+    fetchMock.kunFetchGet.mockClear()
+
+    await act(async () => {
+      chatInputMock.onMessageSent?.({
+        id: 4,
+        content: 'my slightly later message',
+        created: '2026-06-29T10:04:00.000Z'
+      })
+    })
+
+    expect(container.textContent).toContain('my slightly later message')
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2_000)
+    })
+
+    expect(fetchMock.kunFetchGet).toHaveBeenCalledWith(
+      '/message/conversation/5',
+      { page: 1, limit: 50, afterId: 2 }
+    )
+    expect(container.textContent).toContain('other slightly earlier message')
+  })
+
+  it('backs off polling while the chat tab is hidden', async () => {
+    await renderChat('hidden')
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    expect(fetchMock.kunFetchGet).not.toHaveBeenCalled()
+
+    Object.defineProperty(document, 'visibilityState', {
+      configurable: true,
+      value: 'visible'
+    })
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2_000)
+    })
+
+    expect(fetchMock.kunFetchGet).not.toHaveBeenCalled()
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(13_000)
+    })
+
+    expect(fetchMock.kunFetchGet).toHaveBeenCalledWith(
+      '/message/conversation/5',
+      { page: 1, limit: 50, afterId: 2 }
+    )
+  })
+
+  it('refreshes immediately when a hidden chat tab becomes visible', async () => {
+    await renderChat('hidden')
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    expect(fetchMock.kunFetchGet).not.toHaveBeenCalled()
+
+    Object.defineProperty(document, 'visibilityState', {
+      configurable: true,
+      value: 'visible'
+    })
+
+    await act(async () => {
+      document.dispatchEvent(new dom!.window.Event('visibilitychange'))
+      await Promise.resolve()
+    })
+
+    expect(fetchMock.kunFetchGet).toHaveBeenCalledWith(
+      '/message/conversation/5',
+      { page: 1, limit: 50, afterId: 2 }
+    )
   })
 })

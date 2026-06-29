@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { Button } from '@heroui/react'
 import { Textarea } from '@heroui/input'
 import { Send } from 'lucide-react'
@@ -19,8 +19,14 @@ interface Props {
 export const ChatInput = ({ conversationId, onMessageSent }: Props) => {
   const [content, setContent] = useState('')
   const [sending, setSending] = useState(false)
+  const isComposingRef = useRef(false)
+  const isSendingRef = useRef(false)
 
   const handleSend = async () => {
+    if (isSendingRef.current) {
+      return
+    }
+
     const trimmedContent = content.trim()
     if (!trimmedContent) {
       return
@@ -31,32 +37,46 @@ export const ChatInput = ({ conversationId, onMessageSent }: Props) => {
       return
     }
 
+    isSendingRef.current = true
     setSending(true)
-    const response = await kunFetchPost<
-      KunResponse<{ id: number; content: string; created: string }>
-    >(`/message/conversation/${conversationId}`, { content: trimmedContent })
+    try {
+      const response = await kunFetchPost<
+        KunResponse<{ id: number; content: string; created: string }>
+      >(`/message/conversation/${conversationId}`, { content: trimmedContent })
 
-    if (typeof response === 'string') {
-      toast.error(response)
-    } else {
-      setContent('')
-      onMessageSent(response)
+      if (typeof response === 'string') {
+        toast.error(response)
+      } else {
+        setContent('')
+        onMessageSent(response)
+      }
+    } finally {
+      isSendingRef.current = false
+      setSending(false)
     }
-    setSending(false)
   }
 
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+  const insertNewline = (target: HTMLTextAreaElement) => {
+    const start = target.selectionStart
+    const end = target.selectionEnd
+    const newContent = content.slice(0, start) + '\n' + content.slice(end)
+    setContent(newContent)
+    setTimeout(() => {
+      target.selectionStart = target.selectionEnd = start + 1
+    }, 0)
+  }
+
+  const handleKeyDown = (
+    e: React.KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>
+  ) => {
     if (e.key === 'Enter') {
-      if (e.ctrlKey) {
+      if (isComposingRef.current || e.nativeEvent.isComposing) {
+        return
+      }
+
+      if (e.shiftKey || e.ctrlKey) {
         e.preventDefault()
-        const target = e.target as HTMLTextAreaElement
-        const start = target.selectionStart
-        const end = target.selectionEnd
-        const newContent = content.slice(0, start) + '\n' + content.slice(end)
-        setContent(newContent)
-        setTimeout(() => {
-          target.selectionStart = target.selectionEnd = start + 1
-        }, 0)
+        insertNewline(e.currentTarget as HTMLTextAreaElement)
       } else {
         e.preventDefault()
         handleSend()
@@ -67,10 +87,16 @@ export const ChatInput = ({ conversationId, onMessageSent }: Props) => {
   return (
     <div className="flex gap-2 items-end">
       <Textarea
-        placeholder="输入消息... (按 Enter 发送，Ctrl+Enter 换行)"
+        placeholder="输入消息... (按 Enter 发送，Shift+Enter 换行)"
         value={content}
         onValueChange={setContent}
         onKeyDown={handleKeyDown}
+        onCompositionStart={() => {
+          isComposingRef.current = true
+        }}
+        onCompositionEnd={() => {
+          isComposingRef.current = false
+        }}
         minRows={1}
         maxRows={5}
         classNames={{

@@ -15,6 +15,7 @@ export const ConversationCard = ({ conversation }: Props) => {
       isPressable
       as={Link}
       href={`/message/chat/${conversation.id}`}
+      prefetch={false}
       className="w-full border border-default-100 dark:border-default-200"
     >
       <CardBody className="flex flex-row items-center gap-4">

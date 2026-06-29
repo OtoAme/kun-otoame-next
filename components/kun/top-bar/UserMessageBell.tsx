@@ -9,20 +9,15 @@ import { bellShakeVariants, dotVariants } from '~/motion/bell'
 
 interface AnimatedNotificationBellProps {
   hasUnreadMessages: boolean
-  setReadMessage: () => void | Promise<void>
 }
 
 export const UserMessageBell = ({
-  hasUnreadMessages,
-  setReadMessage
+  hasUnreadMessages
 }: AnimatedNotificationBellProps) => {
   const router = useRouter()
 
-  const handleClickButton = async () => {
+  const handleClickButton = () => {
     router.push('/message/notice')
-    if (hasUnreadMessages) {
-      await setReadMessage()
-    }
   }
 
   return (
