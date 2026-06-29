@@ -24,12 +24,12 @@ export const RenderCell = (
     case 'name':
       return (
         <div className="flex min-w-0 flex-col gap-1">
-          <p className="truncate text-sm font-medium text-default-900">
+          <p className="whitespace-normal break-words text-sm font-medium leading-5 text-default-900 [overflow-wrap:anywhere]">
             {resource.name || '未命名资源'}
           </p>
           <Link
             href={`/${resource.uniqueId}`}
-            className="w-fit max-w-full truncate text-xs text-default-500 hover:text-primary-500"
+            className="w-fit max-w-full whitespace-normal break-words text-xs leading-5 text-default-500 [overflow-wrap:anywhere] hover:text-primary-500"
           >
             {resource.patchName}
           </Link>

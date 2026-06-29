@@ -116,6 +116,25 @@ describe('admin resource table cell', () => {
     expect(gameLink?.className).toContain('max-w-full')
   })
 
+  it('allows long resource names and game names to wrap inside the resource column', async () => {
+    const container = await renderCell({
+      ...resource,
+      name: '这是一个特别长的资源名称用于验证后台资源列表不会把整张表格撑出宽屏视口',
+      patchName:
+        '这是一个同样很长的所属游戏名称用于验证副行也会在资源列宽内自然换行'
+    })
+
+    const resourceName = container.querySelector('p')
+    const gameLink = container.querySelector('a')
+
+    expect(resourceName?.className).toContain('whitespace-normal')
+    expect(resourceName?.className).toContain('[overflow-wrap:anywhere]')
+    expect(resourceName?.className).not.toContain('truncate')
+    expect(gameLink?.className).toContain('whitespace-normal')
+    expect(gameLink?.className).toContain('[overflow-wrap:anywhere]')
+    expect(gameLink?.className).not.toContain('truncate')
+  })
+
   it('shows the resource section label in a dedicated type cell', async () => {
     const patchContainer = await renderCell(resource, 'section')
     expect(patchContainer.textContent).toBe('补丁')
@@ -144,10 +163,26 @@ describe('admin resource table cell', () => {
       '~/components/admin/resource/Container'
     )
 
-    expect(resourceColumns.slice(0, 2)).toEqual([
+    expect(resourceColumns.slice(0, 2)).toMatchObject([
       { name: '资源', id: 'name' },
       { name: '类型', id: 'section' }
     ])
+  })
+
+  it('scopes responsive width limits to the resource column only', async () => {
+    const { resourceColumns } = await import(
+      '~/components/admin/resource/Container'
+    )
+
+    const nameColumn = resourceColumns.find((column) => column.id === 'name')
+    const otherColumns = resourceColumns.filter(
+      (column) => column.id !== 'name'
+    )
+
+    expect(nameColumn?.className).toContain('max-w-[14rem]')
+    expect(nameColumn?.className).toContain('xl:max-w-[26rem]')
+    expect(nameColumn?.className).toContain('whitespace-normal')
+    expect(otherColumns.every((column) => !('className' in column))).toBe(true)
   })
 
   it('does not duplicate the resource label inside the name cell for game resources', async () => {

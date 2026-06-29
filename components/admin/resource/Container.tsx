@@ -36,8 +36,11 @@ import type { AdminResource, AdminUser } from '~/types/api/admin'
 
 type ResourceSearchType = 'content' | 'user'
 
+const resourceColumnClassName =
+  'w-[14rem] min-w-[12rem] max-w-[14rem] whitespace-normal sm:w-[16rem] sm:max-w-[16rem] lg:w-[20rem] lg:max-w-[20rem] xl:w-[26rem] xl:max-w-[26rem]'
+
 export const resourceColumns = [
-  { name: '资源', id: 'name' },
+  { name: '资源', id: 'name', className: resourceColumnClassName },
   { name: '类型', id: 'section' },
   { name: '用户', id: 'user' },
   { name: '存储', id: 'storage' },
@@ -60,6 +63,9 @@ const searchTypeOptions: Array<{
 ]
 
 const pageSizeOptions = [30, 50, 100, 500]
+
+const getTableColumnClassName = (columnKey: string) =>
+  columnKey === 'name' ? resourceColumnClassName : undefined
 
 interface UserOption {
   id: number
@@ -380,13 +386,44 @@ export const Resource = ({ initialResources, initialTotal }: Props) => {
       {loading ? (
         <KunLoading hint="正在加载资源列表..." />
       ) : (
-        <Table
-          aria-label="资源管理列表"
-          selectionMode="multiple"
-          selectedKeys={selectedKeys}
-          onSelectionChange={setSelectedKeys}
-          bottomContent={
-            <div className="flex flex-col items-center justify-between w-full gap-3 sm:flex-row">
+        <div className="space-y-3">
+          <Table
+            aria-label="资源管理列表"
+            selectionMode="multiple"
+            selectedKeys={selectedKeys}
+            onSelectionChange={setSelectedKeys}
+            classNames={{
+              base: 'max-w-full',
+              wrapper: 'max-w-full overflow-x-auto'
+            }}
+          >
+            <TableHeader columns={resourceColumns}>
+              {(column) => (
+                <TableColumn key={column.id} className={column.className}>
+                  {column.name}
+                </TableColumn>
+              )}
+            </TableHeader>
+            <TableBody items={resources}>
+              {(item) => (
+                <TableRow key={item.id}>
+                  {(columnKey) => (
+                    <TableCell
+                      className={getTableColumnClassName(columnKey.toString())}
+                    >
+                      {RenderCell(item, columnKey.toString(), {
+                        onResourceUpdated: handleResourceUpdated,
+                        onResourceDeleted: handleResourceDeleted
+                      })}
+                    </TableCell>
+                  )}
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+
+          <div className="grid w-full grid-cols-1 items-center gap-3 sm:grid-cols-[8rem_1fr_8rem]">
+            <div className="flex justify-center sm:justify-start">
               <Select
                 aria-label="每页资源数量"
                 className="w-32"
@@ -398,7 +435,9 @@ export const Resource = ({ initialResources, initialTotal }: Props) => {
                   <SelectItem key={String(size)}>{`${size} 条/页`}</SelectItem>
                 ))}
               </Select>
+            </div>
 
+            <div className="flex justify-center sm:col-start-2">
               <KunPagination
                 total={Math.ceil(total / limit)}
                 onPageChange={setPage}
@@ -406,28 +445,10 @@ export const Resource = ({ initialResources, initialTotal }: Props) => {
                 page={page}
               />
             </div>
-          }
-        >
-          <TableHeader columns={resourceColumns}>
-            {(column) => (
-              <TableColumn key={column.id}>{column.name}</TableColumn>
-            )}
-          </TableHeader>
-          <TableBody items={resources}>
-            {(item) => (
-              <TableRow key={item.id}>
-                {(columnKey) => (
-                  <TableCell>
-                    {RenderCell(item, columnKey.toString(), {
-                      onResourceUpdated: handleResourceUpdated,
-                      onResourceDeleted: handleResourceDeleted
-                    })}
-                  </TableCell>
-                )}
-              </TableRow>
-            )}
-          </TableBody>
-        </Table>
+
+            <div aria-hidden="true" className="hidden w-32 sm:block" />
+          </div>
+        </div>
       )}
 
       <Modal isOpen={isBatchOpen} onClose={onBatchClose} placement="center">
