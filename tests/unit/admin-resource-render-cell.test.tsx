@@ -183,7 +183,7 @@ describe('admin resource table cell', () => {
     expect(nameColumn?.className).toContain('max-w-[14rem]')
     expect(nameColumn?.className).toContain('xl:max-w-[26rem]')
     expect(nameColumn?.className).toContain('whitespace-normal')
-    expect(userColumn?.className).toContain('min-w-[10rem]')
+    expect(userColumn?.className).toContain('min-w-[7rem]')
     expect(userColumn?.className).toContain('whitespace-normal')
     expect(otherColumns.every((column) => !('className' in column))).toBe(true)
   })

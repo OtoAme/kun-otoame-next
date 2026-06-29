@@ -38,7 +38,7 @@ type ResourceSearchType = 'content' | 'user'
 
 const resourceColumnClassName =
   'w-[14rem] min-w-[12rem] max-w-[14rem] whitespace-normal sm:w-[16rem] sm:max-w-[16rem] lg:w-[20rem] lg:max-w-[20rem] xl:w-[26rem] xl:max-w-[26rem]'
-const userColumnClassName = 'min-w-[10rem] whitespace-normal'
+const userColumnClassName = 'min-w-[7rem] whitespace-normal'
 
 export const resourceColumns = [
   { name: '资源', id: 'name', className: resourceColumnClassName },

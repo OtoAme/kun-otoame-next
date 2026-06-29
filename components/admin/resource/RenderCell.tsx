@@ -43,7 +43,7 @@ export const RenderCell = (
       )
     case 'user':
       return (
-        <div className="min-w-[10rem] whitespace-normal break-words [overflow-wrap:normal]">
+        <div className="min-w-[7rem] whitespace-normal break-words [overflow-wrap:normal]">
           <KunUser
             user={resource.user}
             userProps={{

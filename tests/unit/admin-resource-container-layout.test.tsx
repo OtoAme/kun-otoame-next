@@ -272,7 +272,7 @@ describe('admin resource table layout', () => {
     expect(tableRenderState.columnClasses).toContainEqual(
       expect.objectContaining({
         columnName: '用户',
-        className: expect.stringContaining('min-w-[10rem]')
+        className: expect.stringContaining('min-w-[7rem]')
       })
     )
     expect(
@@ -284,6 +284,6 @@ describe('admin resource table layout', () => {
         .every((column) => column.className === undefined)
     ).toBe(true)
     expect(tableRenderState.cellClasses[0]).toContain('xl:max-w-[26rem]')
-    expect(tableRenderState.cellClasses[2]).toContain('min-w-[10rem]')
+    expect(tableRenderState.cellClasses[2]).toContain('min-w-[7rem]')
   })
 })
