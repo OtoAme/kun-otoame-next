@@ -169,19 +169,22 @@ describe('admin resource table cell', () => {
     ])
   })
 
-  it('scopes responsive width limits to the resource column only', async () => {
+  it('scopes responsive width limits to the readable text columns only', async () => {
     const { resourceColumns } = await import(
       '~/components/admin/resource/Container'
     )
 
     const nameColumn = resourceColumns.find((column) => column.id === 'name')
+    const userColumn = resourceColumns.find((column) => column.id === 'user')
     const otherColumns = resourceColumns.filter(
-      (column) => column.id !== 'name'
+      (column) => column.id !== 'name' && column.id !== 'user'
     )
 
     expect(nameColumn?.className).toContain('max-w-[14rem]')
     expect(nameColumn?.className).toContain('xl:max-w-[26rem]')
     expect(nameColumn?.className).toContain('whitespace-normal')
+    expect(userColumn?.className).toContain('min-w-[10rem]')
+    expect(userColumn?.className).toContain('whitespace-normal')
     expect(otherColumns.every((column) => !('className' in column))).toBe(true)
   })
 

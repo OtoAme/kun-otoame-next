@@ -43,15 +43,20 @@ export const RenderCell = (
       )
     case 'user':
       return (
-        <KunUser
-          user={resource.user}
-          userProps={{
-            name: resource.user.name,
-            avatarProps: {
-              src: resource.user.avatar
-            }
-          }}
-        />
+        <div className="min-w-[10rem] whitespace-normal break-words [overflow-wrap:normal]">
+          <KunUser
+            user={resource.user}
+            userProps={{
+              name: resource.user.name,
+              classNames: {
+                name: 'whitespace-normal break-words [overflow-wrap:normal]'
+              },
+              avatarProps: {
+                src: resource.user.avatar
+              }
+            }}
+          />
+        </div>
       )
     case 'storage':
       return (

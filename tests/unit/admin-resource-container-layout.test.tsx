@@ -8,7 +8,8 @@ globalThis.React = React
 
 const tableRenderState = vi.hoisted(() => ({
   bottomContentWasProvided: false,
-  columnClasses: [] as Array<{ columnName: string; className?: string }>
+  columnClasses: [] as Array<{ columnName: string; className?: string }>,
+  cellClasses: [] as Array<string | undefined>
 }))
 
 vi.mock('~/hooks/useMounted', () => ({
@@ -88,9 +89,16 @@ vi.mock('@heroui/react', () => ({
     children: (item: AdminResource) => React.ReactNode
     items: AdminResource[]
   }) => <tbody>{items.map((item) => children(item))}</tbody>,
-  TableCell: ({ children }: { children?: React.ReactNode }) => (
-    <td>{children}</td>
-  ),
+  TableCell: ({
+    children,
+    className
+  }: {
+    children?: React.ReactNode
+    className?: string
+  }) => {
+    tableRenderState.cellClasses.push(className)
+    return <td className={className}>{children}</td>
+  },
   TableColumn: ({
     children,
     className
@@ -211,6 +219,7 @@ describe('admin resource table layout', () => {
     dom = undefined
     tableRenderState.bottomContentWasProvided = false
     tableRenderState.columnClasses = []
+    tableRenderState.cellClasses = []
     vi.unstubAllGlobals()
   })
 
@@ -251,7 +260,7 @@ describe('admin resource table layout', () => {
     expect(pagination?.parentElement?.className).toContain('sm:col-start-2')
   })
 
-  it('passes responsive width classes only to the resource column header', async () => {
+  it('passes readable width classes only to the resource and user columns', async () => {
     await renderResourceTable()
 
     expect(tableRenderState.columnClasses).toContainEqual(
@@ -260,10 +269,21 @@ describe('admin resource table layout', () => {
         className: expect.stringContaining('xl:max-w-[26rem]')
       })
     )
+    expect(tableRenderState.columnClasses).toContainEqual(
+      expect.objectContaining({
+        columnName: '用户',
+        className: expect.stringContaining('min-w-[10rem]')
+      })
+    )
     expect(
       tableRenderState.columnClasses
-        .filter((column) => column.columnName !== '资源')
+        .filter(
+          (column) =>
+            column.columnName !== '资源' && column.columnName !== '用户'
+        )
         .every((column) => column.className === undefined)
     ).toBe(true)
+    expect(tableRenderState.cellClasses[0]).toContain('xl:max-w-[26rem]')
+    expect(tableRenderState.cellClasses[2]).toContain('min-w-[10rem]')
   })
 })

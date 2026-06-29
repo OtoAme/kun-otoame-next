@@ -38,11 +38,12 @@ type ResourceSearchType = 'content' | 'user'
 
 const resourceColumnClassName =
   'w-[14rem] min-w-[12rem] max-w-[14rem] whitespace-normal sm:w-[16rem] sm:max-w-[16rem] lg:w-[20rem] lg:max-w-[20rem] xl:w-[26rem] xl:max-w-[26rem]'
+const userColumnClassName = 'min-w-[10rem] whitespace-normal'
 
 export const resourceColumns = [
   { name: '资源', id: 'name', className: resourceColumnClassName },
   { name: '类型', id: 'section' },
-  { name: '用户', id: 'user' },
+  { name: '用户', id: 'user', className: userColumnClassName },
   { name: '存储', id: 'storage' },
   { name: '大小', id: 'size' },
   { name: '创建时间', id: 'created' },
@@ -65,7 +66,11 @@ const searchTypeOptions: Array<{
 const pageSizeOptions = [30, 50, 100, 500]
 
 const getTableColumnClassName = (columnKey: string) =>
-  columnKey === 'name' ? resourceColumnClassName : undefined
+  columnKey === 'name'
+    ? resourceColumnClassName
+    : columnKey === 'user'
+      ? userColumnClassName
+      : undefined
 
 interface UserOption {
   id: number
