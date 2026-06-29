@@ -47,8 +47,11 @@ Store 改动要检查使用该 store 的页面和组件，不要只改类型。
 消息红点：
 
 - 顶栏和消息导航都以 `messageStore` 作为通知/私聊红点的单一状态源。
+- `components/message/MessageRealtimeSync.tsx` 在全站 Provider 中同步登录用户的未读状态。它只读取 `/api/message/unread`，不会标记任何消息已读；系统通知、评论回复、@、关注等新通知在任意页面只通过顶栏铃铛小红点提示，不弹 toast；可见标签页约 15 秒同步一次，隐藏标签页降频，重新可见时立即同步。
 - 进入通知页时立即乐观清除通知红点，并用 `/api/message/read` 返回的 `MessageUnreadStatus` 回写 store；不能用消息导航自己的本地状态覆盖全局状态。
 - 消息导航只在非通知页拉取 `/api/message/unread`，并在路由切换时通过 effect cleanup 忽略过期返回，避免旧未读请求把已读后的红点重新点亮。
+- 私聊详情页使用 `afterId` 增量获取当前会话的新消息，按消息 ID 去重并按时间排序。当前会话收到对方新消息后，要调用会话已读接口并用返回的 `MessageUnreadStatus` 写回全局红点。
+- 私聊会话列表会后台刷新当前页，刷新时不显示整页 loading，避免列表最新消息和未读 chip 必须靠手动刷新。
 
 编辑页外部数据输入：
 

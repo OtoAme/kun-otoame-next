@@ -108,6 +108,8 @@
 
 未读状态由 `app/api/message/service.ts` 查询普通消息与聊天会话未读数。会话模块在 `app/api/message/conversation/*`。顶栏铃铛和消息导航进入通知页时必须调用 `/api/message/read`，用服务端返回的 `MessageUnreadStatus` 同步全局红点；不要只在前端把通知和私聊红点一起乐观清空。消息导航红点以 `messageStore` 为单一状态源，通知页不再发额外 `/api/message/unread` 覆盖刚确认的已读状态；跨路由未读请求必须在 effect cleanup 后忽略过期返回。
 
+登录后的全站未读状态由 `components/message/MessageRealtimeSync.tsx` 在 `app/providers.tsx` 中挂载同步。它只轮询 `/api/message/unread` 并写入 `messageStore`，不负责标记已读；系统通知、评论回复、@、关注等 `user_message` 新通知在任意页面到达时，表现为顶栏铃铛小红点动态亮起，不弹 toast。页面隐藏时降频，回到可见状态时立即同步一次。私聊详情页 `ChatContainer` 使用 `/api/message/conversation/[id]?afterId=<latestId>` 增量获取新消息，收到对方消息后调用 `/api/message/conversation/[id]/read` 并用返回值同步红点。会话列表页会后台刷新当前页，让最新消息、未读 chip 和私聊红点不依赖手动刷新。所有这些个性化消息接口都必须保持 `private, no-store`。
+
 ## 标签和公司详情页
 
 代表路径：
