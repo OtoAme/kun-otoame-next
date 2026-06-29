@@ -6,7 +6,9 @@ import { createRoot, type Root } from 'react-dom/client'
 globalThis.React = React
 
 const lightboxMock = vi.hoisted(() => ({
-  offset: 0
+  offset: 0,
+  renderedSlide: undefined as React.ReactNode,
+  renderedSlideContainer: undefined as React.ReactNode
 }))
 
 vi.mock('yet-another-react-lightbox', () => ({
@@ -15,22 +17,42 @@ vi.mock('yet-another-react-lightbox', () => ({
     slides
   }: {
     render: {
-      slide: (props: {
+      slide?: (props: {
         slide: unknown
         offset: number
         rect: { width: number; height: number }
       }) => React.ReactNode
+      slideContainer?: (props: {
+        slide: unknown
+        children: React.ReactNode
+      }) => React.ReactNode
     }
     slides: unknown[]
-  }) => (
-    <div data-testid="lightbox">
-      {render.slide({
+  }) => {
+    const slideProps = {
+      slide: slides[0],
+      offset: lightboxMock.offset,
+      rect: { width: 800, height: 600 }
+    }
+    lightboxMock.renderedSlide = render.slide?.(slideProps)
+
+    const defaultSlide = (
+      <img
+        src={(slides[0] as { src: string }).src}
+        alt={(slides[0] as { alt?: string }).alt ?? ''}
+        data-testid="default-lightbox-image"
+      />
+    )
+    lightboxMock.renderedSlideContainer =
+      render.slideContainer?.({
         slide: slides[0],
-        offset: lightboxMock.offset,
-        rect: { width: 800, height: 600 }
-      })}
-    </div>
-  )
+        children: defaultSlide
+      }) ?? defaultSlide
+
+    return (
+      <div data-testid="lightbox">{lightboxMock.renderedSlideContainer}</div>
+    )
+  }
 }))
 
 describe('KunImageViewer', () => {
@@ -85,11 +107,20 @@ describe('KunImageViewer', () => {
     dom?.window.close()
     dom = undefined
     lightboxMock.offset = 0
+    lightboxMock.renderedSlide = undefined
+    lightboxMock.renderedSlideContainer = undefined
     vi.unstubAllGlobals()
     vi.resetModules()
   })
 
-  it('renders the original image for offscreen progressive slides so lightbox preload can work', async () => {
+  it('does not override default image slide rendering so zoom can measure the original image', async () => {
+    await renderViewer()
+
+    expect(lightboxMock.renderedSlide).toBeUndefined()
+    expect(lightboxMock.renderedSlideContainer).toBeTruthy()
+  })
+
+  it('renders the preview and default original image for offscreen progressive slides so lightbox preload can work', async () => {
     lightboxMock.offset = 1
 
     const { container } = await renderViewer()
@@ -120,9 +151,7 @@ describe('KunImageViewer', () => {
     expect(original).not.toBeNull()
 
     await act(async () => {
-      original!.dispatchEvent(
-        new dom!.window.Event('load', { bubbles: true })
-      )
+      original!.dispatchEvent(new dom!.window.Event('load', { bubbles: true }))
     })
 
     lightboxMock.offset = 1

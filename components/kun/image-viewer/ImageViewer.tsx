@@ -1,8 +1,8 @@
 'use client'
 
-import { useEffect, useState } from 'react'
 import Lightbox from 'yet-another-react-lightbox'
 import 'yet-another-react-lightbox/styles.css'
+import { useState } from 'react'
 import type { ReactNode } from 'react'
 import { lightboxConfig } from './config'
 import {
@@ -18,38 +18,23 @@ interface Props {
 }
 
 const ProgressiveImageSlide = ({
-  slide
+  slide,
+  children
 }: {
   slide: KunImageViewerSlide
-}) => {
-  const [isLoaded, setIsLoaded] = useState(false)
-
-  useEffect(() => {
-    setIsLoaded(false)
-  }, [slide.src])
-
-  return (
-    <div className="relative flex h-full w-full items-center justify-center">
-      {slide.previewSrc && !isLoaded && (
-        <img
-          src={slide.previewSrc}
-          alt={slide.alt}
-          className="absolute max-h-[80%] w-[80%] object-contain opacity-70 blur-sm"
-          draggable={false}
-        />
-      )}
-      <img
-        src={slide.src}
-        alt={slide.alt}
-        className={`relative max-h-[80%] w-[80%] object-contain transition-opacity duration-200 ${
-          slide.previewSrc && !isLoaded ? 'opacity-0' : 'opacity-100'
-        }`}
-        draggable={false}
-        onLoad={() => setIsLoaded(true)}
-      />
-    </div>
-  )
-}
+  children: ReactNode
+}) => (
+  <div className="relative flex h-full w-full items-center justify-center">
+    <img
+      src={slide.previewSrc}
+      alt=""
+      aria-hidden="true"
+      className="pointer-events-none absolute max-h-[80%] w-[80%] object-contain opacity-70 blur-sm"
+      draggable={false}
+    />
+    <div className="relative h-full w-full">{children}</div>
+  </div>
+)
 
 const hasPreviewSrc = (slide: unknown): slide is KunImageViewerSlide =>
   typeof slide === 'object' &&
@@ -61,11 +46,7 @@ const hasPreviewSrc = (slide: unknown): slide is KunImageViewerSlide =>
   'previewSrc' in slide &&
   typeof (slide as { previewSrc?: unknown }).previewSrc === 'string'
 
-export const KunImageViewer = ({
-  images,
-  preload,
-  children
-}: Props) => {
+export const KunImageViewer = ({ images, preload, children }: Props) => {
   const [index, setIndex] = useState(-1)
   const lightboxImages = createKunImageViewerSlides(images)
 
@@ -84,12 +65,16 @@ export const KunImageViewer = ({
           click: closeLightbox
         }}
         render={{
-          slide: ({ slide }) => {
+          slideContainer: ({ slide, children }) => {
             if (hasPreviewSrc(slide)) {
-              return <ProgressiveImageSlide slide={slide} />
+              return (
+                <ProgressiveImageSlide slide={slide}>
+                  {children}
+                </ProgressiveImageSlide>
+              )
             }
 
-            return undefined
+            return children
           }
         }}
         {...lightboxConfig}
