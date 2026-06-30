@@ -148,4 +148,19 @@ describe('conversation message fetching', () => {
       total: 0
     })
   })
+
+  it('rejects beforeId and afterId together', async () => {
+    const { getConversationMessagesSchema } = await import(
+      '~/validations/conversation'
+    )
+
+    expect(
+      getConversationMessagesSchema.safeParse({
+        page: 1,
+        limit: 30,
+        beforeId: 10,
+        afterId: 20
+      }).success
+    ).toBe(false)
+  })
 })

@@ -28,10 +28,28 @@ model user_private_message {
   sender_id Int
   sender    user @relation("pm_sender", fields: [sender_id], references: [id], onDelete: Cascade)
 
-  content    String    @db.VarChar(2000)
-  status     Int       @default(0)
-  is_deleted Boolean   @default(false)
-  edited_at  DateTime?
+  type Int @default(0)
+
+  content    String  @db.VarChar(2000)
+  status     Int     @default(0)
+  is_deleted Boolean @default(false)
+
+  image_url    String? @db.VarChar(1000)
+  image_width  Int?
+  image_height Int?
+  image_size   Int?
+  image_mime   String? @db.VarChar(100)
+  image_name   String? @db.VarChar(255)
+
+  reply_to_message_id Int?
+  reply_to_message    user_private_message?  @relation("private_message_reply", fields: [reply_to_message_id], references: [id], onDelete: SetNull)
+  replies             user_private_message[] @relation("private_message_reply")
+
+  reply_preview_content     String? @db.VarChar(500)
+  reply_preview_sender_name String? @db.VarChar(50)
+  reply_selected_text       String? @db.VarChar(500)
+
+  edited_at DateTime?
 
   created DateTime @default(now())
   updated DateTime @updatedAt

@@ -56,71 +56,13 @@
 - Test: `tests/unit/api/conversation-messages.test.ts`
 
 **Interfaces:**
-- Produces `PrivateMessage.type`, optional `PrivateMessage.image`, optional `PrivateMessage.replyTo`, and `ConversationMessagesResponse.hasMoreBefore`.
+- Produces `PrivateMessage.type`, optional `PrivateMessage.image`, optional `PrivateMessage.replyTo`, and `ConversationMessagesResponse.hasMoreBefore` TypeScript interfaces.
 - Produces `sendPrivateMessageSchema` accepting text, image metadata, and reply metadata.
 - Produces `getConversationMessagesSchema` accepting mutually exclusive `beforeId` and `afterId`.
 
-- [ ] **Step 1: Write the failing validation and mapping tests**
+- [ ] **Step 1: Write the failing validation test**
 
 Add tests to `tests/unit/api/conversation-messages.test.ts`:
-
-```ts
-it('returns image and reply metadata for mapped messages', async () => {
-  prismaMock.user_private_message.findMany.mockResolvedValue([
-    {
-      id: 20,
-      type: 1,
-      content: 'caption',
-      status: 1,
-      is_deleted: false,
-      edited_at: null,
-      image_url: 'https://img.example/chat.webp',
-      image_width: 800,
-      image_height: 600,
-      image_size: 12345,
-      image_mime: 'image/webp',
-      image_name: 'chat.webp',
-      reply_to_message_id: 10,
-      reply_preview_content: 'quoted text',
-      reply_preview_sender_name: 'Mio',
-      reply_selected_text: 'quoted',
-      created: new Date('2026-06-30T10:00:00.000Z'),
-      sender: { id: 1007, name: 'Saya', avatar: '/saya.webp' }
-    }
-  ])
-
-  const { getConversationMessages } = await import(
-    '~/app/api/message/conversation/[id]/service'
-  )
-  const result = await getConversationMessages(5, { page: 1, limit: 30 }, 1007)
-
-  expect(result).toMatchObject({
-    messages: [
-      {
-        id: 20,
-        type: 1,
-        content: 'caption',
-        image: {
-          url: 'https://img.example/chat.webp',
-          width: 800,
-          height: 600,
-          size: 12345,
-          mime: 'image/webp',
-          name: 'chat.webp'
-        },
-        replyTo: {
-          messageId: 10,
-          content: 'quoted text',
-          senderName: 'Mio',
-          selectedText: 'quoted'
-        }
-      }
-    ]
-  })
-})
-```
-
-Add a schema assertion in the same file:
 
 ```ts
 it('rejects beforeId and afterId together', async () => {
@@ -147,7 +89,7 @@ Run:
 pnpm test tests/unit/api/conversation-messages.test.ts
 ```
 
-Expected: FAIL because message metadata fields and `beforeId` validation do not exist.
+Expected: FAIL because `beforeId` validation does not exist.
 
 - [ ] **Step 3: Update Prisma schema**
 
@@ -288,7 +230,7 @@ Run:
 pnpm test tests/unit/api/conversation-messages.test.ts
 ```
 
-Expected: schema-related assertions still fail until Task 2 mapping is implemented; validation-only assertions pass.
+Expected: PASS.
 
 - [ ] **Step 8: Commit**
 
@@ -308,7 +250,7 @@ git commit -m "feat(message): add private message metadata schema"
 - Consumes new schema and `PrivateMessage` type from Task 1.
 - Produces `getConversationMessages(...): ConversationMessagesResponse | string` with `beforeId`, `afterId`, mapped image/reply metadata, and `hasMoreBefore`.
 
-- [ ] **Step 1: Add failing before cursor test**
+- [ ] **Step 1: Add failing before cursor and metadata mapping tests**
 
 In `tests/unit/api/conversation-messages.test.ts`, add:
 
@@ -357,6 +299,64 @@ it('loads older messages with beforeId without skip or full count', async () => 
   expect(result).toMatchObject({
     messages: [{ id: 4, content: 'older' }],
     hasMoreBefore: false
+  })
+})
+```
+
+Also add:
+
+```ts
+it('returns image and reply metadata for mapped messages', async () => {
+  prismaMock.user_private_message.findMany.mockResolvedValue([
+    {
+      id: 20,
+      type: 1,
+      content: 'caption',
+      status: 1,
+      is_deleted: false,
+      edited_at: null,
+      image_url: 'https://img.example/chat.webp',
+      image_width: 800,
+      image_height: 600,
+      image_size: 12345,
+      image_mime: 'image/webp',
+      image_name: 'chat.webp',
+      reply_to_message_id: 10,
+      reply_preview_content: 'quoted text',
+      reply_preview_sender_name: 'Mio',
+      reply_selected_text: 'quoted',
+      created: new Date('2026-06-30T10:00:00.000Z'),
+      sender: { id: 1007, name: 'Saya', avatar: '/saya.webp' }
+    }
+  ])
+
+  const { getConversationMessages } = await import(
+    '~/app/api/message/conversation/[id]/service'
+  )
+  const result = await getConversationMessages(5, { page: 1, limit: 30 }, 1007)
+
+  expect(result).toMatchObject({
+    messages: [
+      {
+        id: 20,
+        type: 1,
+        content: 'caption',
+        image: {
+          url: 'https://img.example/chat.webp',
+          width: 800,
+          height: 600,
+          size: 12345,
+          mime: 'image/webp',
+          name: 'chat.webp'
+        },
+        replyTo: {
+          messageId: 10,
+          content: 'quoted text',
+          senderName: 'Mio',
+          selectedText: 'quoted'
+        }
+      }
+    ]
   })
 })
 ```
