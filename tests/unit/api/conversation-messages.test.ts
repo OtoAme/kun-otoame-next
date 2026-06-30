@@ -112,6 +112,107 @@ describe('conversation message fetching', () => {
     })
   })
 
+  it('loads older messages with beforeId without skip or full count', async () => {
+    prismaMock.user_private_message.findMany.mockResolvedValue([
+      {
+        id: 4,
+        type: 0,
+        content: 'older',
+        status: 0,
+        is_deleted: false,
+        edited_at: null,
+        image_url: null,
+        image_width: null,
+        image_height: null,
+        image_size: null,
+        image_mime: null,
+        image_name: null,
+        reply_to_message_id: null,
+        reply_preview_content: null,
+        reply_preview_sender_name: null,
+        reply_selected_text: null,
+        created: new Date('2026-06-30T09:00:00.000Z'),
+        sender: { id: 8, name: 'Mio', avatar: '/mio.webp' }
+      }
+    ])
+
+    const { getConversationMessages } = await import(
+      '~/app/api/message/conversation/[id]/service'
+    )
+    const result = await getConversationMessages(
+      5,
+      { page: 1, limit: 30, beforeId: 9 },
+      1007
+    )
+
+    expect(prismaMock.user_private_message.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { conversation_id: 5, id: { lt: 9 } },
+        orderBy: { id: 'desc' },
+        take: 31
+      })
+    )
+    expect(prismaMock.user_private_message.count).not.toHaveBeenCalled()
+    expect(result).toMatchObject({
+      messages: [{ id: 4, content: 'older' }],
+      hasMoreBefore: false
+    })
+  })
+
+  it('returns image and reply metadata for mapped messages', async () => {
+    prismaMock.user_private_message.findMany.mockResolvedValue([
+      {
+        id: 20,
+        type: 1,
+        content: 'caption',
+        status: 1,
+        is_deleted: false,
+        edited_at: null,
+        image_url: 'https://img.example/chat.webp',
+        image_width: 800,
+        image_height: 600,
+        image_size: 12345,
+        image_mime: 'image/webp',
+        image_name: 'chat.webp',
+        reply_to_message_id: 10,
+        reply_preview_content: 'quoted text',
+        reply_preview_sender_name: 'Mio',
+        reply_selected_text: 'quoted',
+        created: new Date('2026-06-30T10:00:00.000Z'),
+        sender: { id: 1007, name: 'Saya', avatar: '/saya.webp' }
+      }
+    ])
+
+    const { getConversationMessages } = await import(
+      '~/app/api/message/conversation/[id]/service'
+    )
+    const result = await getConversationMessages(5, { page: 1, limit: 30 }, 1007)
+
+    expect(result).toMatchObject({
+      messages: [
+        {
+          id: 20,
+          type: 1,
+          content: 'caption',
+          image: {
+            url: 'https://img.example/chat.webp',
+            width: 800,
+            height: 600,
+            size: 12345,
+            mime: 'image/webp',
+            name: 'chat.webp'
+          },
+          replyTo: {
+            messageId: 10,
+            content: 'quoted text',
+            senderName: 'Mio',
+            selectedText: 'quoted'
+          }
+        }
+      ]
+    })
+  })
+
   it('returns personalized conversation messages with no-store cache headers', async () => {
     prismaMock.user_private_message.findMany.mockResolvedValue([])
 
