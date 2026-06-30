@@ -41,6 +41,7 @@ export default async function Kun({ params }: Props) {
         conversationId={id}
         initialMessages={response.messages}
         total={response.total}
+        hasMoreBefore={response.hasMoreBefore}
         otherUser={response.otherUser}
       />
     </>

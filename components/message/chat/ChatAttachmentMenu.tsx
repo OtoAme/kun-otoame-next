@@ -17,7 +17,7 @@ export const ChatAttachmentMenu = ({ isOpen, onPickImage }: Props) => {
       <button
         type="button"
         aria-label="选择图片"
-        className="flex min-h-11 items-center gap-2 rounded-lg px-3 transition-colors hover:bg-default-100 focus:bg-default-100"
+        className="flex min-h-11 min-w-28 items-center gap-2 whitespace-nowrap rounded-lg px-3 transition-colors hover:bg-default-100 focus:bg-default-100"
         onClick={onPickImage}
       >
         <ImageIcon className="size-4" />

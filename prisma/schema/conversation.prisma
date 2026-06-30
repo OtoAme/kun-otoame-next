@@ -40,6 +40,7 @@ model user_private_message {
   image_size   Int?
   image_mime   String? @db.VarChar(100)
   image_name   String? @db.VarChar(255)
+  image_group  Json?
 
   reply_to_message_id Int?
   reply_to_message    user_private_message?  @relation("private_message_reply", fields: [reply_to_message_id], references: [id], onDelete: SetNull)
@@ -48,6 +49,7 @@ model user_private_message {
   reply_preview_content     String? @db.VarChar(500)
   reply_preview_sender_name String? @db.VarChar(50)
   reply_selected_text       String? @db.VarChar(500)
+  reply_image               Json?
 
   edited_at DateTime?
 

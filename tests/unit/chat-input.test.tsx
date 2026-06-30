@@ -7,6 +7,7 @@ import type { PrivateMessage } from '~/types/api/conversation'
 globalThis.React = React
 
 const fetchMock = vi.hoisted(() => ({
+  kunFetchFormData: vi.fn(),
   kunFetchPost: vi.fn()
 }))
 
@@ -20,46 +21,71 @@ const textareaMock = vi.hoisted(() => ({
     | undefined,
   onCompositionEnd: undefined as
     | React.CompositionEventHandler<HTMLTextAreaElement>
+    | undefined,
+  onPaste: undefined as
+    | React.ClipboardEventHandler<HTMLTextAreaElement>
     | undefined
 }))
 
 vi.mock('~/utils/kunFetch', () => ({
+  kunFetchFormData: fetchMock.kunFetchFormData,
   kunFetchPost: fetchMock.kunFetchPost
 }))
 
 vi.mock('@heroui/input', () => ({
-  Textarea: ({
-    value,
-    onValueChange,
-    onKeyDown,
-    onCompositionStart,
-    onCompositionEnd,
-    placeholder
-  }: {
-    value: string
-    onValueChange?: (value: string) => void
-    onKeyDown?: React.KeyboardEventHandler<HTMLTextAreaElement>
-    onCompositionStart?: React.CompositionEventHandler<HTMLTextAreaElement>
-    onCompositionEnd?: React.CompositionEventHandler<HTMLTextAreaElement>
-    placeholder?: string
-  }) => {
+  Textarea: React.forwardRef<
+    HTMLTextAreaElement,
+    {
+      value: string
+      onValueChange?: (value: string) => void
+      onKeyDown?: React.KeyboardEventHandler<HTMLTextAreaElement>
+      onCompositionStart?: React.CompositionEventHandler<HTMLTextAreaElement>
+      onCompositionEnd?: React.CompositionEventHandler<HTMLTextAreaElement>
+      onPaste?: React.ClipboardEventHandler<HTMLTextAreaElement>
+      placeholder?: string
+    }
+  >(
+    (
+      {
+        value,
+        onValueChange,
+        onKeyDown,
+        onCompositionStart,
+        onCompositionEnd,
+        onPaste,
+        placeholder
+      },
+      ref
+    ) => {
     textareaMock.onValueChange = onValueChange
     textareaMock.onKeyDown = onKeyDown
     textareaMock.onCompositionStart = onCompositionStart
     textareaMock.onCompositionEnd = onCompositionEnd
+    textareaMock.onPaste = onPaste
 
     return (
       <textarea
         aria-label="私聊输入"
+        ref={ref}
         placeholder={placeholder}
         value={value}
         onChange={(event) => onValueChange?.(event.target.value)}
         onKeyDown={onKeyDown}
         onCompositionStart={onCompositionStart}
         onCompositionEnd={onCompositionEnd}
+        onPaste={onPaste}
       />
     )
-  }
+    }
+  )
+}))
+
+vi.mock('~/components/kun/image-viewer/ImageViewer', () => ({
+  KunImageViewer: ({
+    children
+  }: {
+    children: (openLightbox: (index: number) => void) => React.ReactNode
+  }) => <>{children(vi.fn())}</>
 }))
 
 vi.mock('@heroui/react', () => ({
@@ -95,16 +121,31 @@ vi.mock('react-hot-toast', () => ({
 describe('ChatInput keyboard handling', () => {
   let root: Root | undefined
   let dom: JSDOM | undefined
-  let onMessageSent: ReturnType<
-    typeof vi.fn<
-      (message: { id: number; content: string; created: string }) => void
-    >
-  >
+  let onMessageSent: ReturnType<typeof vi.fn<(message: PrivateMessage) => void>>
+
+  const sentMessage = (
+    id: number,
+    content: string,
+    overrides: Partial<PrivateMessage> = {}
+  ): PrivateMessage => ({
+    id,
+    type: 0,
+    content,
+    status: 0,
+    isDeleted: false,
+    image: null,
+    replyTo: null,
+    editedAt: null,
+    created: '2026-06-30T00:00:00.000Z',
+    sender: { id: 1007, name: 'Saya', avatar: '/saya.webp' },
+    ...overrides
+  })
 
   const renderChatInput = async (
     props: Partial<{
       replyTarget: PrivateMessage
       replySelectedText: string | null
+      replyImageIndex: number | null
       onCancelReply: () => void
     }> = {}
   ) => {
@@ -114,39 +155,61 @@ describe('ChatInput keyboard handling', () => {
 
     vi.stubGlobal('window', dom.window)
     vi.stubGlobal('document', dom.window.document)
+    Object.defineProperty(dom.window.HTMLElement.prototype, 'attachEvent', {
+      configurable: true,
+      value: vi.fn()
+    })
+    Object.defineProperty(dom.window.HTMLElement.prototype, 'detachEvent', {
+      configurable: true,
+      value: vi.fn()
+    })
+    Object.assign(dom.window.URL, {
+      createObjectURL: vi.fn(() => 'blob:http://localhost/chat-preview'),
+      revokeObjectURL: vi.fn()
+    })
+    vi.stubGlobal('URL', dom.window.URL)
     vi.stubGlobal('React', React)
     vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
 
-    onMessageSent = vi.fn<
-      (message: { id: number; content: string; created: string }) => void
-    >()
-    fetchMock.kunFetchPost.mockResolvedValue({
-      id: 7,
-      content: 'hello',
-      created: '2026-06-30T00:00:00.000Z'
-    })
+    onMessageSent = vi.fn<(message: PrivateMessage) => void>()
+    fetchMock.kunFetchPost.mockResolvedValue(sentMessage(7, 'hello'))
 
     const { ChatInput } = await import('~/components/message/chat/ChatInput')
     const container = dom.window.document.getElementById('root')
     expect(container).not.toBeNull()
 
     root = createRoot(container!)
-    await act(async () => {
-      root!.render(
-        <ChatInput
-          conversationId={5}
-          onMessageSent={onMessageSent}
-          {...props}
-        />
-      )
-    })
+    const renderWithProps = async (
+      nextProps: Partial<{
+        replyTarget: PrivateMessage
+        replySelectedText: string | null
+        replyImageIndex: number | null
+        onCancelReply: () => void
+      }> = props
+    ) => {
+      await act(async () => {
+        root!.render(
+          <ChatInput
+            conversationId={5}
+            onMessageSent={onMessageSent}
+            {...nextProps}
+          />
+        )
+      })
+    }
+
+    await renderWithProps()
 
     const textarea = container!.querySelector<HTMLTextAreaElement>(
       'textarea[aria-label="私聊输入"]'
     )
     expect(textarea).not.toBeNull()
 
-    return { container: container!, textarea: textarea! }
+    return {
+      container: container!,
+      textarea: textarea!,
+      rerender: renderWithProps
+    }
   }
 
   const typeContent = async (textarea: HTMLTextAreaElement, value: string) => {
@@ -191,11 +254,13 @@ describe('ChatInput keyboard handling', () => {
   }
 
   beforeEach(() => {
+    fetchMock.kunFetchFormData.mockReset()
     fetchMock.kunFetchPost.mockReset()
     textareaMock.onValueChange = undefined
     textareaMock.onKeyDown = undefined
     textareaMock.onCompositionStart = undefined
     textareaMock.onCompositionEnd = undefined
+    textareaMock.onPaste = undefined
   })
 
   afterEach(async () => {
@@ -237,7 +302,7 @@ describe('ChatInput keyboard handling', () => {
   })
 
   it('sends once when Enter is pressed repeatedly before the request settles', async () => {
-    let resolveSend!: (value: { id: number; content: string; created: string }) => void
+    let resolveSend!: (value: PrivateMessage) => void
     fetchMock.kunFetchPost.mockReturnValue(
       new Promise((resolve) => {
         resolveSend = resolve
@@ -256,11 +321,7 @@ describe('ChatInput keyboard handling', () => {
     expect(fetchMock.kunFetchPost).toHaveBeenCalledTimes(1)
 
     await act(async () => {
-      resolveSend({
-        id: 7,
-        content: 'hello',
-        created: '2026-06-30T00:00:00.000Z'
-      })
+      resolveSend(sentMessage(7, 'hello'))
       await Promise.resolve()
     })
 
@@ -281,11 +342,21 @@ describe('ChatInput keyboard handling', () => {
       sender: { id: 8, name: 'Mio', avatar: '/mio.webp' }
     }
 
-    const { textarea } = await renderChatInput({
+    const { container, textarea } = await renderChatInput({
       replyTarget,
       replySelectedText: 'orig',
       onCancelReply: vi.fn()
     })
+    expect(container.textContent).toContain('回复 Mio')
+    const replyPreview = container.querySelector(
+      '[data-testid="chat-reply-preview"]'
+    )
+    expect(replyPreview?.className).toContain('pl-3.5')
+    expect(replyPreview?.className).toContain('before:rounded-full')
+    expect(replyPreview?.className).toContain('before:top-0')
+    expect(replyPreview?.className).toContain('before:bottom-0')
+    expect(replyPreview?.className).not.toContain('border-l-3')
+    expect(container.innerHTML).not.toContain('bg-primary-50')
     await typeContent(textarea, 'reply')
     await keyDownEnter(textarea)
 
@@ -300,30 +371,123 @@ describe('ChatInput keyboard handling', () => {
     )
   })
 
-  it('sends an image-only message from the plus menu', async () => {
-    fetchMock.kunFetchPost
-      .mockResolvedValueOnce({
-        url: 'https://img.example/conversation/5/chat.webp',
+  it('focuses the input at the draft end when a reply target is set', async () => {
+    const replyTarget: PrivateMessage = {
+      id: 3,
+      type: 0,
+      content: 'original',
+      status: 0,
+      isDeleted: false,
+      image: null,
+      replyTo: null,
+      editedAt: null,
+      created: '2026-06-30T09:00:00.000Z',
+      sender: { id: 8, name: 'Mio', avatar: '/mio.webp' }
+    }
+
+    const { textarea, rerender } = await renderChatInput()
+    await typeContent(textarea, 'draft text')
+    textarea.focus()
+    textarea.setSelectionRange(0, 0)
+
+    await rerender({
+      replyTarget,
+      replySelectedText: null,
+      onCancelReply: vi.fn()
+    })
+
+    expect(dom!.window.document.activeElement).toBe(textarea)
+    expect(textarea.selectionStart).toBe('draft text'.length)
+    expect(textarea.selectionEnd).toBe('draft text'.length)
+  })
+
+  it('shows a reply image thumbnail and sends the reply image index', async () => {
+    const replyTarget: PrivateMessage = {
+      id: 3,
+      type: 1,
+      content: '',
+      status: 0,
+      isDeleted: false,
+      image: {
+        url: 'https://img.example/a.webp',
         width: 800,
         height: 600,
-        size: 5,
+        size: 1,
         mime: 'image/webp',
-        name: 'chat.webp'
+        name: 'a.webp'
+      },
+      images: [
+        {
+          url: 'https://img.example/a.webp',
+          width: 800,
+          height: 600,
+          size: 1,
+          mime: 'image/webp',
+          name: 'a.webp'
+        },
+        {
+          url: 'https://img.example/b.webp',
+          width: 900,
+          height: 600,
+          size: 1,
+          mime: 'image/webp',
+          name: 'b.webp'
+        }
+      ],
+      replyTo: null,
+      editedAt: null,
+      created: '2026-06-30T09:00:00.000Z',
+      sender: { id: 8, name: 'Mio', avatar: '/mio.webp' }
+    }
+
+    const { container, textarea } = await renderChatInput({
+      replyTarget,
+      replySelectedText: null,
+      replyImageIndex: 1,
+      onCancelReply: vi.fn()
+    })
+
+    const quoteImage = container.querySelector<HTMLImageElement>(
+      '[data-testid="chat-reply-preview"] img[alt="b.webp"]'
+    )
+    expect(quoteImage?.src).toBe('https://img.example/b.webp')
+
+    await typeContent(textarea, 'reply')
+    await keyDownEnter(textarea)
+
+    expect(fetchMock.kunFetchPost).toHaveBeenCalledWith(
+      '/message/conversation/5',
+      expect.objectContaining({
+        type: 0,
+        content: 'reply',
+        replyToMessageId: 3,
+        replyImageIndex: 1
       })
-      .mockResolvedValueOnce({
-        id: 8,
+    )
+  })
+
+  it('sends an image-only message from the plus menu', async () => {
+    fetchMock.kunFetchFormData.mockResolvedValueOnce({
+      url: 'https://img.example/conversation/5/chat.avif',
+      width: 800,
+      height: 600,
+      size: 5,
+      mime: 'image/avif',
+      name: 'chat.avif'
+    })
+    fetchMock.kunFetchPost.mockResolvedValueOnce(
+      sentMessage(8, '', {
         type: 1,
-        content: '',
         image: {
-          url: 'https://img.example/conversation/5/chat.webp',
+          url: 'https://img.example/conversation/5/chat.avif',
           width: 800,
           height: 600,
           size: 5,
-          mime: 'image/webp',
-          name: 'chat.webp'
-        },
-        created: '2026-06-30T00:00:00.000Z'
+          mime: 'image/avif',
+          name: 'chat.avif'
+        }
       })
+    )
 
     const { container } = await renderChatInput()
 
@@ -342,9 +506,8 @@ describe('ChatInput keyboard handling', () => {
     )
     expect(imageButton).not.toBeNull()
 
-    const fileInput = container.querySelector<HTMLInputElement>(
-      'input[type="file"]'
-    )
+    const fileInput =
+      container.querySelector<HTMLInputElement>('input[type="file"]')
     expect(fileInput).not.toBeNull()
     Object.defineProperty(fileInput, 'files', {
       configurable: true,
@@ -353,7 +516,9 @@ describe('ChatInput keyboard handling', () => {
 
     await act(async () => {
       imageButton?.click()
-      fileInput?.dispatchEvent(new dom!.window.Event('change', { bubbles: true }))
+      fileInput?.dispatchEvent(
+        new dom!.window.Event('change', { bubbles: true })
+      )
       await Promise.resolve()
     })
 
@@ -367,19 +532,95 @@ describe('ChatInput keyboard handling', () => {
       await Promise.resolve()
     })
 
-    expect(fetchMock.kunFetchPost).toHaveBeenNthCalledWith(
-      1,
+    expect(fetchMock.kunFetchFormData).toHaveBeenCalledWith(
       '/message/conversation/5/image',
       expect.any(FormData)
     )
-    expect(fetchMock.kunFetchPost).toHaveBeenNthCalledWith(
-      2,
+    expect(fetchMock.kunFetchPost).toHaveBeenCalledWith(
       '/message/conversation/5',
       expect.objectContaining({
         type: 1,
         image: expect.objectContaining({
-          url: 'https://img.example/conversation/5/chat.webp'
-        })
+          url: 'https://img.example/conversation/5/chat.avif'
+        }),
+        images: [
+          expect.objectContaining({
+            url: 'https://img.example/conversation/5/chat.avif'
+          })
+        ]
+      })
+    )
+  })
+
+  it('loads pasted clipboard images into the same preview and send flow', async () => {
+    fetchMock.kunFetchFormData
+      .mockResolvedValueOnce({
+        url: 'https://img.example/conversation/5/a.avif',
+        width: 800,
+        height: 600,
+        size: 5,
+        mime: 'image/avif',
+        name: 'a.avif'
+      })
+      .mockResolvedValueOnce({
+        url: 'https://img.example/conversation/5/b.avif',
+        width: 800,
+        height: 600,
+        size: 6,
+        mime: 'image/avif',
+        name: 'b.avif'
+      })
+    fetchMock.kunFetchPost.mockResolvedValueOnce(
+      sentMessage(9, '', {
+        type: 1,
+        image: {
+          url: 'https://img.example/conversation/5/a.avif',
+          width: 800,
+          height: 600,
+          size: 5,
+          mime: 'image/avif',
+          name: 'a.avif'
+        }
+      })
+    )
+
+    const { container, textarea } = await renderChatInput()
+    const files = [
+      new File(['a'], 'a.png', { type: 'image/png' }),
+      new File(['b'], 'b.jpg', { type: 'image/jpeg' })
+    ]
+
+    await act(async () => {
+      textareaMock.onPaste?.({
+        clipboardData: { files },
+        preventDefault: vi.fn()
+      } as unknown as React.ClipboardEvent<HTMLTextAreaElement>)
+      await Promise.resolve()
+    })
+
+    expect(container.textContent).toContain('2 张图片')
+    const sendButton = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="发送消息"]'
+    )
+
+    await act(async () => {
+      sendButton?.click()
+      await Promise.resolve()
+    })
+
+    expect(fetchMock.kunFetchFormData).toHaveBeenCalledTimes(2)
+    expect(fetchMock.kunFetchPost).toHaveBeenCalledWith(
+      '/message/conversation/5',
+      expect.objectContaining({
+        type: 1,
+        images: [
+          expect.objectContaining({
+            url: 'https://img.example/conversation/5/a.avif'
+          }),
+          expect.objectContaining({
+            url: 'https://img.example/conversation/5/b.avif'
+          })
+        ]
       })
     )
   })

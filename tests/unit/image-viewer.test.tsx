@@ -165,4 +165,23 @@ describe('KunImageViewer', () => {
 
     expect(srcs).toContain('https://img.example/original.avif')
   })
+
+  it('stops lightbox context menus from bubbling to the page behind it', async () => {
+    const { container } = await renderViewer()
+    const pageContextMenu = vi.fn()
+    dom!.window.document.addEventListener('contextmenu', pageContextMenu)
+
+    const guard = container.querySelector(
+      '[data-testid="lightbox-slide-guard"]'
+    )
+    expect(guard).not.toBeNull()
+
+    await act(async () => {
+      guard!.dispatchEvent(
+        new dom!.window.MouseEvent('contextmenu', { bubbles: true })
+      )
+    })
+
+    expect(pageContextMenu).not.toHaveBeenCalled()
+  })
 })

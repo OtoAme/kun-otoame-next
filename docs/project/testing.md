@@ -38,7 +38,7 @@ tests/unit/
 - CAPTCHA：`tests/unit/captcha.test.ts`。
 - 资源链接解析、资源分类和后台资源表格布局：`tests/unit/resource-link.test.ts`、`resource-classification.test.ts`、`admin-resource-container-layout.test.tsx`。
 - Gallery 上传链路：`gallery-upload.test.ts` / `gallery-route.test.ts` 覆盖服务端转码、缩略图、S3 补偿和 route；`gallery-upload-batch.test.ts` 覆盖前端逐张上传失败保留；`gallery-drop.test.ts` 覆盖网页图片 URL/HTML 拖拽导入；`gallery-remote-import.test.ts` 和 `gallery-remote-route.test.ts` 覆盖远程图片导入、SSRF 边界和权限。
-- 消息红点和实时同步：`message-nav.test.tsx` 覆盖通知页已读、过期未读请求 cleanup、通知/私聊红点分离；`message-container.test.tsx` 覆盖通知首屏 hydrate 不重拉当前页；`user-message-bell.test.tsx` 覆盖顶栏铃铛只导航、不在通知展示前标已读；`message-realtime-sync.test.tsx` 覆盖全站未读轮询、任意页面新通知只点亮铃铛红点、以及可见性恢复同步；`chat-input.test.tsx` 覆盖私聊输入法组合期 Enter 不发送、`Shift+Enter` 换行和发送去重；`chat-container-realtime.test.tsx` 覆盖私聊详情页打开后立即 `afterId` 补拉、2 秒可见轮询、隐藏降频/恢复立即补拉、去重合并和当前会话已读同步；`conversation-list-realtime.test.tsx` 覆盖会话列表后台刷新 unread chip、私聊详情链接禁用预取、以及当前页无未读时不清除全局私聊红点；`api/conversation-service.test.ts` 覆盖目标用户关闭私聊时不能新建会话；`api/message-unread.test.ts` 覆盖未读状态形态与 no-store 响应头；`api/conversation-messages.test.ts` 覆盖会话消息增量查询和 `afterId` 不统计历史总数。
+- 消息红点和实时同步：`message-nav.test.tsx` 覆盖通知页已读、过期未读请求 cleanup、通知/私聊红点分离；`message-container.test.tsx` 覆盖通知首屏 hydrate 不重拉当前页；`user-message-bell.test.tsx` 覆盖顶栏铃铛只导航、不在通知展示前标已读；`message-realtime-sync.test.tsx` 覆盖全站未读轮询、任意页面新通知只点亮铃铛红点、以及可见性恢复同步；`chat-input.test.tsx` 覆盖私聊输入法组合期 Enter 不发送、`Shift+Enter` 换行、发送去重、回复 payload、回复图片缩略图和图片菜单发送；`chat-message-menu.test.tsx` 覆盖消息气泡回复菜单、已读角标、图片渲染、图片链接复制、图片右键回复索引、编辑聚焦和回复预览点击；`chat-container-realtime.test.tsx` 覆盖私聊详情页打开后立即 `afterId` 补拉、`beforeId` 上翻历史、2 秒可见轮询、隐藏降频/恢复立即补拉、去重合并、回复预览跳转和当前会话已读同步；`conversation-list-realtime.test.tsx` 覆盖会话列表后台刷新 unread chip、私聊详情链接禁用预取、以及当前页无未读时不清除全局私聊红点；`api/conversation-service.test.ts` 覆盖目标用户关闭私聊时不能新建会话、回复预览、回复图片快照、回复归属校验和图片消息写入；`api/conversation-image-upload.test.ts` 覆盖私聊图片上传权限、类型/大小限制、Sharp metadata 和 S3 参数；`api/message-unread.test.ts` 覆盖未读状态形态与 no-store 响应头；`api/conversation-messages.test.ts` 覆盖会话消息增量查询、`beforeId` 历史游标、消息 metadata 映射和 `afterId` 不统计历史总数。
 - 外部 ID、主题、标签等纯逻辑。
 
 ## 何时新增测试
@@ -176,16 +176,16 @@ pnpm typecheck
 
 ## 发布前验证矩阵
 
-| 改动 | 最小验证 |
-| --- | --- |
-| 纯 utils | 目标测试 + `pnpm typecheck` |
-| API service | 目标 API 测试 + `pnpm typecheck` |
-| Prisma schema | `pnpm prisma:generate` 或 `pnpm prisma:push` + `pnpm typecheck` + `pnpm test` |
-| Redis/cache | 目标测试 + 相关 API 测试 + `pnpm typecheck` |
-| 上传/S3 | 目标测试 + 手动上传流程说明 + `pnpm typecheck` |
-| Auth/CSRF/role | 目标 API/service 测试 + `pnpm typecheck` |
-| Next config/postbuild/deploy | `pnpm typecheck` + 可行时 `pnpm build` |
-| UI-only | `pnpm typecheck`，复杂交互加手动验证 |
+| 改动                         | 最小验证                                                                      |
+| ---------------------------- | ----------------------------------------------------------------------------- |
+| 纯 utils                     | 目标测试 + `pnpm typecheck`                                                   |
+| API service                  | 目标 API 测试 + `pnpm typecheck`                                              |
+| Prisma schema                | `pnpm prisma:generate` 或 `pnpm prisma:push` + `pnpm typecheck` + `pnpm test` |
+| Redis/cache                  | 目标测试 + 相关 API 测试 + `pnpm typecheck`                                   |
+| 上传/S3                      | 目标测试 + 手动上传流程说明 + `pnpm typecheck`                                |
+| Auth/CSRF/role               | 目标 API/service 测试 + `pnpm typecheck`                                      |
+| Next config/postbuild/deploy | `pnpm typecheck` + 可行时 `pnpm build`                                        |
+| UI-only                      | `pnpm typecheck`，复杂交互加手动验证                                          |
 
 ## 已知缺口
 

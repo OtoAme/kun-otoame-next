@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import type { Prisma } from '@prisma/client'
 import { prisma } from '~/prisma/index'
 import {
   deletePrivateMessageSchema,
@@ -7,6 +8,7 @@ import {
   updatePrivateMessageSchema
 } from '~/validations/conversation'
 import type { PrivateMessage } from '~/types/api/conversation'
+import type { PrivateMessageImage } from '~/types/api/conversation'
 
 type PrivateMessageRecord = {
   id: number
@@ -21,48 +23,115 @@ type PrivateMessageRecord = {
   image_size?: number | null
   image_mime?: string | null
   image_name?: string | null
+  image_group?: unknown
   reply_to_message_id?: number | null
   reply_preview_content?: string | null
   reply_preview_sender_name?: string | null
   reply_selected_text?: string | null
+  reply_image?: unknown
   created: Date
   sender: KunUser
 }
 
-const mapPrivateMessage = (msg: PrivateMessageRecord): PrivateMessage => ({
-  id: msg.id,
-  type: msg.type ?? 0,
-  content: msg.content,
-  status: msg.status,
-  isDeleted: msg.is_deleted,
-  image: msg.image_url
-    ? {
-        url: msg.image_url,
-        width: msg.image_width ?? 0,
-        height: msg.image_height ?? 0,
-        size: msg.image_size ?? 0,
-        mime: msg.image_mime ?? 'image/jpeg',
-        name: msg.image_name ?? 'image'
-      }
-    : null,
-  replyTo:
-    msg.reply_to_message_id && msg.reply_preview_sender_name
-      ? {
-          messageId: msg.reply_to_message_id,
-          content: msg.reply_preview_content ?? '',
-          senderName: msg.reply_preview_sender_name,
-          selectedText: msg.reply_selected_text ?? null
-        }
-      : null,
-  editedAt: msg.edited_at,
-  created: msg.created,
-  sender: msg.sender
+type PrivateMessageImageRecord = Pick<
+  PrivateMessageRecord,
+  | 'image_url'
+  | 'image_width'
+  | 'image_height'
+  | 'image_size'
+  | 'image_mime'
+  | 'image_name'
+  | 'image_group'
+>
+
+const isPrivateMessageImage = (
+  value: unknown
+): value is PrivateMessageImage => {
+  if (!value || typeof value !== 'object') {
+    return false
+  }
+
+  const image = value as Record<string, unknown>
+  return (
+    typeof image.url === 'string' &&
+    typeof image.width === 'number' &&
+    typeof image.height === 'number' &&
+    typeof image.size === 'number' &&
+    typeof image.mime === 'string' &&
+    typeof image.name === 'string'
+  )
+}
+
+const toPrismaJsonImage = (
+  image: PrivateMessageImage
+): Prisma.InputJsonObject => ({
+  url: image.url,
+  width: image.width,
+  height: image.height,
+  size: image.size,
+  mime: image.mime,
+  name: image.name
 })
+
+const getMessageImages = (
+  msg: PrivateMessageImageRecord
+): PrivateMessageImage[] => {
+  if (Array.isArray(msg.image_group)) {
+    const images = msg.image_group.filter(isPrivateMessageImage)
+    if (images.length > 0) {
+      return images
+    }
+  }
+
+  return msg.image_url
+    ? [
+        {
+          url: msg.image_url,
+          width: msg.image_width ?? 0,
+          height: msg.image_height ?? 0,
+          size: msg.image_size ?? 0,
+          mime: msg.image_mime ?? 'image/jpeg',
+          name: msg.image_name ?? 'image'
+        }
+      ]
+    : []
+}
+
+const mapPrivateMessage = (msg: PrivateMessageRecord): PrivateMessage => {
+  const images = getMessageImages(msg)
+  const replyImage = isPrivateMessageImage(msg.reply_image)
+    ? msg.reply_image
+    : null
+
+  return {
+    id: msg.id,
+    type: msg.type ?? 0,
+    content: msg.content,
+    status: msg.status,
+    isDeleted: msg.is_deleted,
+    image: images[0] ?? null,
+    images,
+    replyTo:
+      msg.reply_to_message_id && msg.reply_preview_sender_name
+        ? {
+            messageId: msg.reply_to_message_id,
+            content: msg.reply_preview_content ?? '',
+            senderName: msg.reply_preview_sender_name,
+            selectedText: msg.reply_selected_text ?? null,
+            image: replyImage
+          }
+        : null,
+    editedAt: msg.edited_at,
+    created: msg.created,
+    sender: msg.sender
+  }
+}
 
 const buildReplyPreview = async (
   conversationId: number,
   replyToMessageId?: number,
-  replySelectedText?: string
+  replySelectedText?: string,
+  replyImageIndex?: number
 ) => {
   if (!replyToMessageId) {
     return null
@@ -82,9 +151,19 @@ const buildReplyPreview = async (
   }
 
   const selected = replySelectedText?.trim().slice(0, 500) || null
+  const replyImages = getMessageImages(replyTarget)
+  const replyImage =
+    replyImageIndex === undefined
+      ? null
+      : (replyImages[replyImageIndex] ?? null)
+
+  if (replyImageIndex !== undefined && !replyImage) {
+    return '回复的图片不存在'
+  }
+
   const targetContent = replyTarget.content.trim()
   const fallback =
-    replyTarget.type === 1 && !targetContent
+    replyImage || (replyTarget.type === 1 && !targetContent)
       ? '[图片]'
       : targetContent.slice(0, 500)
 
@@ -92,7 +171,8 @@ const buildReplyPreview = async (
     reply_to_message_id: replyTarget.id,
     reply_preview_content: selected ?? fallback,
     reply_preview_sender_name: replyTarget.sender.name,
-    reply_selected_text: selected
+    reply_selected_text: selected,
+    reply_image: replyImage ? toPrismaJsonImage(replyImage) : undefined
   }
 }
 
@@ -148,8 +228,7 @@ export const getConversationMessages = async (
 
     const messages = [...data]
       .sort(
-        (a, b) =>
-          new Date(a.created).getTime() - new Date(b.created).getTime()
+        (a, b) => new Date(a.created).getTime() - new Date(b.created).getTime()
       )
       .map(mapPrivateMessage)
     return {
@@ -219,12 +298,22 @@ export const sendMessage = async (
     return '会话不存在或无权访问'
   }
 
-  const { content = '', image, replyToMessageId, replySelectedText } = input
+  const {
+    content = '',
+    image,
+    images,
+    replyToMessageId,
+    replySelectedText,
+    replyImageIndex
+  } = input
   const type = input.type ?? 0
+  const imageList = images ?? (image ? [image] : [])
+  const firstImage = imageList[0]
   const replyPreview = await buildReplyPreview(
     conversationId,
     replyToMessageId,
-    replySelectedText
+    replySelectedText,
+    replyImageIndex
   )
 
   if (typeof replyPreview === 'string') {
@@ -239,12 +328,13 @@ export const sendMessage = async (
         sender_id: uid,
         type,
         content,
-        image_url: image?.url,
-        image_width: image?.width,
-        image_height: image?.height,
-        image_size: image?.size,
-        image_mime: image?.mime,
-        image_name: image?.name,
+        image_url: firstImage?.url,
+        image_width: firstImage?.width,
+        image_height: firstImage?.height,
+        image_size: firstImage?.size,
+        image_mime: firstImage?.mime,
+        image_name: firstImage?.name,
+        image_group: imageList.length > 0 ? imageList : undefined,
         ...(replyPreview ?? {})
       },
       include: {
@@ -265,7 +355,7 @@ export const sendMessage = async (
       }
     })
 
-    return created
+    return created as typeof created & { sender: KunUser }
   })
 
   return mapPrivateMessage({
@@ -281,10 +371,12 @@ export const sendMessage = async (
     image_size: message.image_size,
     image_mime: message.image_mime,
     image_name: message.image_name,
+    image_group: message.image_group,
     reply_to_message_id: message.reply_to_message_id,
     reply_preview_content: message.reply_preview_content,
     reply_preview_sender_name: message.reply_preview_sender_name,
     reply_selected_text: message.reply_selected_text,
+    reply_image: message.reply_image,
     created: message.created,
     sender: message.sender
   })

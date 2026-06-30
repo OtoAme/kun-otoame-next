@@ -175,6 +175,15 @@ Gallery 图片上传走 `app/api/edit/gallery/route.ts` 和 `app/api/edit/galler
 - 本地或部署前可用 `pnpm exec esno scripts/verifyGalleryAnimatedAvifThumbnail.ts <animated.avif> [output.avif]` 验证 animated AVIF 缩略图 encoder；该脚本只读写本地文件，不连接 S3 或数据库，并会列出各候选 FFmpeg 对输入和输出解析到的帧数及非默认 video stream。生产上线前应在目标服务器执行，成功输出 `Wrote animated AVIF thumbnail: ... frames ...`。
 - 历史 gallery 缩略图回填使用 `pnpm maintenance:gallery-thumbnails:dry` 和 `pnpm maintenance:gallery-thumbnails:apply`。dry-run 只扫描 `thumbnail_url IS NULL` 的本站 gallery 原图并统计，不下载原图、不写 S3、不写 DB；apply 只上传真实缩略图并回填 `thumbnail_url`，不会重传或改写原图。生产默认按低负载运行：`--limit=50 --batch=20 --concurrency=1 --delay=1000`，建议分批执行；3c 服务器或正在承载线上流量时保持 `--concurrency=1`，必要时加 `--skip-animated-avif` 跳过 FFmpeg 成本较高的动态 AVIF。常用范围参数：`--patch-id=123`、`--start-id=456`、`--limit=50`、`--max-original-mb=8`、`--verbose`。summary 中 `galleryTotal` 是当前范围 URL 非空的 gallery 图片总数，`alreadyWithThumbnail` 是已有 `thumbnail_url`、无需回填压缩的数量，`missingThumbnail` 是仍缺 `thumbnail_url` 的数量，`scanned` 是本次查出并检查的缺缩略图候选数，`eligible` 是符合回填规则的数量，`updated` 是 apply 实际写入 `thumbnail_url` 的数量，`skipped` 是候选中被规则跳过的数量，`failed` 是未恢复错误数量；`scanned=0` 且 `missingThumbnail=0` 表示当前范围没有缺 `thumbnail_url` 的 gallery 候选项，不代表没有 gallery 图片。
 
+私聊图片上传走 `app/api/message/conversation/[id]/image`，不使用资源上传的 Redis metadata/consume lock，也不写入 gallery 表。规则：
+
+- 只允许会话成员上传，handler 内必须校验登录态和 CSRF。
+- 支持 JPG/PNG/WebP/AVIF，单张入站上限 8MB；静态图片按 create gallery 的尺寸策略 resize 到 1920x1080 内并输出 AVIF，不添加水印。输出 AVIF 仍超过 1.5MB 时返回用户可见错误。
+- S3 key 使用 `conversation/<conversationId>/<uid>-<timestamp>-<uuid>.avif`，避免不同会话或用户文件名冲突。
+- `uploadImageToS3` 必须传入 `image/avif`，返回 metadata 也以最终 AVIF 的宽高、大小、MIME 和文件名为准。
+- 上传接口只返回 URL、MIME、尺寸和大小等发送消息所需 metadata；真正创建消息仍由 `/api/message/conversation/[id]` 完成。发送消息失败时当前没有自动删除已上传图片，后续如需清理孤儿对象，应设计按 `conversation/` 前缀扫描的维护脚本。
+- 回复图片时，`user_private_message.reply_image` 保存被引用图片的 metadata 快照；它来自同会话被回复消息的图片组索引校验结果，不直接信任前端传入完整图片对象。
+
 ## S3
 
 `lib/s3.ts` 使用 AWS SDK v3：

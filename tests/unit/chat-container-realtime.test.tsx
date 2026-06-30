@@ -2,7 +2,11 @@ import React, { act } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { JSDOM } from 'jsdom'
 import { createRoot, type Root } from 'react-dom/client'
-import type { PrivateMessage } from '~/types/api/conversation'
+import type {
+  PrivateMessage,
+  PrivateMessageReplyPreview
+} from '~/types/api/conversation'
+import type { ChatReplyHighlight } from '~/components/message/chat/ChatMessage'
 
 globalThis.React = React
 
@@ -12,9 +16,18 @@ const fetchMock = vi.hoisted(() => ({
 }))
 
 const chatInputMock = vi.hoisted(() => ({
-  onMessageSent: undefined as
-    | ((message: { id: number; content: string; created: string }) => void)
-    | undefined
+  onMessageSent: undefined as ((message: PrivateMessage) => void) | undefined
+}))
+
+const intersectionMock = vi.hoisted(() => ({
+  callback: undefined as IntersectionObserverCallback | undefined
+}))
+
+const imageViewerMock = vi.hoisted(() => ({
+  images: [] as Array<{ src: string; alt: string }>,
+  index: -1,
+  onClose: undefined as (() => void) | undefined,
+  onView: undefined as ((index: number) => void) | undefined
 }))
 
 vi.mock('~/utils/kunFetch', () => ({
@@ -39,15 +52,27 @@ vi.mock('next/link', () => ({
 }))
 
 vi.mock('@heroui/card', () => ({
-  Card: ({ children, className }: { children?: React.ReactNode; className?: string }) => (
-    <div className={className}>{children}</div>
-  ),
-  CardBody: ({ children, className }: { children?: React.ReactNode; className?: string }) => (
-    <div className={className}>{children}</div>
-  ),
-  CardHeader: ({ children, className }: { children?: React.ReactNode; className?: string }) => (
-    <div className={className}>{children}</div>
-  )
+  Card: ({
+    children,
+    className
+  }: {
+    children?: React.ReactNode
+    className?: string
+  }) => <div className={className}>{children}</div>,
+  CardBody: ({
+    children,
+    className
+  }: {
+    children?: React.ReactNode
+    className?: string
+  }) => <div className={className}>{children}</div>,
+  CardHeader: ({
+    children,
+    className
+  }: {
+    children?: React.ReactNode
+    className?: string
+  }) => <div className={className}>{children}</div>
 }))
 
 vi.mock('@heroui/react', () => ({
@@ -80,11 +105,7 @@ vi.mock('~/components/message/chat/ChatInput', () => ({
   ChatInput: ({
     onMessageSent
   }: {
-    onMessageSent: (message: {
-      id: number
-      content: string
-      created: string
-    }) => void
+    onMessageSent: (message: PrivateMessage) => void
   }) => {
     chatInputMock.onMessageSent = onMessageSent
     return <div data-testid="chat-input" />
@@ -96,9 +117,70 @@ vi.mock('~/components/message/chat/DeleteConversationButton', () => ({
 }))
 
 vi.mock('~/components/message/chat/ChatMessage', () => ({
-  ChatMessage: ({ message }: { message: PrivateMessage }) => (
-    <div data-message-id={message.id}>{message.content}</div>
+  ChatMessage: ({
+    message,
+    onOpenImage,
+    onReplyPreviewClick,
+    replyHighlight,
+    isReplyHighlightFading
+  }: {
+    message: PrivateMessage
+    onOpenImage?: (message: PrivateMessage, imageIndex: number) => void
+    onReplyPreviewClick?: (replyTo: PrivateMessageReplyPreview) => void
+    replyHighlight?: ChatReplyHighlight | null
+    isReplyHighlightFading?: boolean
+  }) => (
+    <div
+      id={`chat-message-${message.id}`}
+      data-message-id={message.id}
+      data-status={message.status}
+      data-highlight-kind={replyHighlight?.kind ?? ''}
+      data-highlight-fading={
+        replyHighlight ? String(Boolean(isReplyHighlightFading)) : ''
+      }
+      data-highlight-text={
+        replyHighlight?.kind === 'text' ? replyHighlight.selectedText : ''
+      }
+    >
+      {message.content}
+      {message.replyTo && (
+        <button
+          data-testid={`reply-preview-${message.id}`}
+          onClick={() => onReplyPreviewClick?.(message.replyTo!)}
+        >
+          reply preview
+        </button>
+      )}
+      {(message.images?.length || message.image) && (
+        <button
+          data-testid={`open-image-${message.id}`}
+          onClick={() => onOpenImage?.(message, 0)}
+        >
+          open image
+        </button>
+      )}
+    </div>
   )
+}))
+
+vi.mock('~/components/kun/image-viewer/ImageViewer', () => ({
+  KunControlledImageViewer: ({
+    images,
+    index,
+    onClose,
+    onView
+  }: {
+    images: Array<{ src: string; alt: string }>
+    index: number
+    onClose: () => void
+    onView: (index: number) => void
+  }) => {
+    imageViewerMock.images = images
+    imageViewerMock.index = index
+    imageViewerMock.onClose = onClose
+    imageViewerMock.onView = onView
+    return <div data-testid="chat-image-viewer" data-index={index} />
+  }
 }))
 
 vi.mock('react-hot-toast', () => ({
@@ -139,9 +221,12 @@ const message = (
   created = `2026-06-29T10:0${id}.000Z`
 ): PrivateMessage => ({
   id,
+  type: 0,
   content,
   status: 0,
   isDeleted: false,
+  image: null,
+  replyTo: null,
   editedAt: null,
   created,
   sender
@@ -151,7 +236,14 @@ describe('ChatContainer realtime sync', () => {
   let root: Root | undefined
   let dom: JSDOM | undefined
 
-  const renderChat = async (visibilityState = 'visible') => {
+  const renderChat = async (
+    visibilityState = 'visible',
+    options: {
+      total?: number
+      hasMoreBefore?: boolean
+      initialMessages?: PrivateMessage[]
+    } = {}
+  ) => {
     dom = new JSDOM('<!doctype html><div id="root"></div>', {
       url: 'http://localhost'
     })
@@ -162,14 +254,23 @@ describe('ChatContainer realtime sync', () => {
       configurable: true,
       value: visibilityState
     })
-    vi.stubGlobal('IntersectionObserver', class {
-      observe = vi.fn()
-      disconnect = vi.fn()
-    })
+    vi.stubGlobal(
+      'IntersectionObserver',
+      class {
+        constructor(callback: IntersectionObserverCallback) {
+          intersectionMock.callback = callback
+        }
+        observe = vi.fn()
+        disconnect = vi.fn()
+      }
+    )
+    let animationFrameTime = 0
     vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
-      callback(0)
-      return 1
+      animationFrameTime += 500
+      callback(animationFrameTime)
+      return animationFrameTime
     })
+    vi.stubGlobal('cancelAnimationFrame', vi.fn())
     vi.stubGlobal('React', React)
     vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
 
@@ -185,7 +286,7 @@ describe('ChatContainer realtime sync', () => {
       true
     )
 
-    const initialMessages = [
+    const initialMessages = options.initialMessages ?? [
       message(1, 'hello', otherUser, '2026-06-29T10:01:00.000Z'),
       message(2, 'hi', {
         id: currentUser.uid,
@@ -206,7 +307,8 @@ describe('ChatContainer realtime sync', () => {
         <ChatContainer
           conversationId={5}
           initialMessages={initialMessages}
-          total={2}
+          total={options.total ?? 2}
+          hasMoreBefore={options.hasMoreBefore}
           otherUser={otherUser}
         />
       )
@@ -226,14 +328,23 @@ describe('ChatContainer realtime sync', () => {
       configurable: true,
       value: visibilityState
     })
-    vi.stubGlobal('IntersectionObserver', class {
-      observe = vi.fn()
-      disconnect = vi.fn()
-    })
+    vi.stubGlobal(
+      'IntersectionObserver',
+      class {
+        constructor(callback: IntersectionObserverCallback) {
+          intersectionMock.callback = callback
+        }
+        observe = vi.fn()
+        disconnect = vi.fn()
+      }
+    )
+    let animationFrameTime = 0
     vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
-      callback(0)
-      return 1
+      animationFrameTime += 500
+      callback(animationFrameTime)
+      return animationFrameTime
     })
+    vi.stubGlobal('cancelAnimationFrame', vi.fn())
     vi.stubGlobal('React', React)
     vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
 
@@ -253,6 +364,7 @@ describe('ChatContainer realtime sync', () => {
           conversationId={5}
           initialMessages={[]}
           total={0}
+          hasMoreBefore={false}
           otherUser={otherUser}
         />
       )
@@ -266,6 +378,7 @@ describe('ChatContainer realtime sync', () => {
     fetchMock.kunFetchGet.mockResolvedValue({
       messages: [],
       total: 2,
+      hasMoreBefore: false,
       otherUser
     })
     fetchMock.kunFetchPut.mockResolvedValue({
@@ -287,6 +400,201 @@ describe('ChatContainer realtime sync', () => {
     fetchMock.kunFetchGet.mockReset()
     fetchMock.kunFetchPut.mockReset()
     chatInputMock.onMessageSent = undefined
+    intersectionMock.callback = undefined
+    imageViewerMock.images = []
+    imageViewerMock.index = -1
+    imageViewerMock.onClose = undefined
+    imageViewerMock.onView = undefined
+  })
+
+  it('loads older history with beforeId instead of page skip', async () => {
+    await renderChat('visible', { total: 3, hasMoreBefore: true })
+    await act(async () => {
+      await Promise.resolve()
+    })
+    fetchMock.kunFetchGet.mockClear()
+    fetchMock.kunFetchGet.mockResolvedValueOnce({
+      messages: [message(0, 'older', otherUser, '2026-06-29T10:00:00.000Z')],
+      total: 1,
+      hasMoreBefore: false,
+      otherUser
+    })
+
+    await act(async () => {
+      intersectionMock.callback?.(
+        [{ isIntersecting: true } as IntersectionObserverEntry],
+        {} as IntersectionObserver
+      )
+      await Promise.resolve()
+    })
+
+    expect(fetchMock.kunFetchGet).toHaveBeenCalledWith(
+      '/message/conversation/5',
+      { page: 1, limit: 30, beforeId: 1 }
+    )
+  })
+
+  it('opens a conversation-wide image lightbox from a single image message', async () => {
+    const initialMessages: PrivateMessage[] = [
+      {
+        ...message(1, '', otherUser, '2026-06-29T10:01:00.000Z'),
+        type: 1,
+        images: [
+          {
+            url: 'https://img.example/a.avif',
+            width: 800,
+            height: 600,
+            size: 1,
+            mime: 'image/avif',
+            name: 'a.avif'
+          },
+          {
+            url: 'https://img.example/b.avif',
+            width: 800,
+            height: 600,
+            size: 1,
+            mime: 'image/avif',
+            name: 'b.avif'
+          }
+        ],
+        image: {
+          url: 'https://img.example/a.avif',
+          width: 800,
+          height: 600,
+          size: 1,
+          mime: 'image/avif',
+          name: 'a.avif'
+        }
+      },
+      {
+        ...message(2, '', {
+          id: currentUser.uid,
+          name: currentUser.name,
+          avatar: currentUser.avatar
+        }),
+        type: 1,
+        image: {
+          url: 'https://img.example/c.avif',
+          width: 600,
+          height: 900,
+          size: 1,
+          mime: 'image/avif',
+          name: 'c.avif'
+        }
+      }
+    ]
+
+    const { container } = await renderChat('visible', {
+      total: 2,
+      initialMessages
+    })
+
+    expect(imageViewerMock.images.map((image) => image.src)).toEqual([
+      'https://img.example/a.avif',
+      'https://img.example/b.avif',
+      'https://img.example/c.avif'
+    ])
+
+    await act(async () => {
+      container
+        .querySelector<HTMLButtonElement>('[data-testid="open-image-2"]')
+        ?.click()
+      await Promise.resolve()
+    })
+
+    expect(imageViewerMock.index).toBe(2)
+  })
+
+  it('scrolls to the referenced message and highlights the replied text when a reply preview is clicked', async () => {
+    const scrollIntoView = vi.fn()
+    const initialMessages: PrivateMessage[] = [
+      message(1, 'hello original world', otherUser, '2026-06-29T10:01:00.000Z'),
+      {
+        ...message(2, 'reply', {
+          id: currentUser.uid,
+          name: currentUser.name,
+          avatar: currentUser.avatar
+        }),
+        replyTo: {
+          messageId: 1,
+          content: 'hello original world',
+          senderName: 'Mio',
+          selectedText: 'original'
+        }
+      }
+    ]
+    const { container } = await renderChat('visible', {
+      total: 2,
+      initialMessages
+    })
+    Object.defineProperty(dom!.window.HTMLElement.prototype, 'scrollIntoView', {
+      configurable: true,
+      value: scrollIntoView
+    })
+
+    await act(async () => {
+      container
+        .querySelector<HTMLButtonElement>('[data-testid="reply-preview-2"]')
+        ?.click()
+      await Promise.resolve()
+    })
+
+    expect(scrollIntoView).not.toHaveBeenCalled()
+    expect(
+      container
+        .querySelector('[data-message-id="1"]')
+        ?.getAttribute('data-highlight-kind')
+    ).toBe('')
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(499)
+    })
+
+    expect(
+      container
+        .querySelector('[data-message-id="1"]')
+        ?.getAttribute('data-highlight-kind')
+    ).toBe('')
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1)
+    })
+
+    expect(
+      container
+        .querySelector('[data-message-id="1"]')
+        ?.getAttribute('data-highlight-kind')
+    ).toBe('text')
+    expect(
+      container
+        .querySelector('[data-message-id="1"]')
+        ?.getAttribute('data-highlight-text')
+    ).toBe('original')
+    expect(
+      container
+        .querySelector('[data-message-id="1"]')
+        ?.getAttribute('data-highlight-fading')
+    ).toBe('false')
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1200)
+    })
+
+    expect(
+      container
+        .querySelector('[data-message-id="1"]')
+        ?.getAttribute('data-highlight-fading')
+    ).toBe('true')
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(260)
+    })
+
+    expect(
+      container
+        .querySelector('[data-message-id="1"]')
+        ?.getAttribute('data-highlight-kind')
+    ).toBe('')
   })
 
   it('polls visible chat windows every 2 seconds for newer messages', async () => {
@@ -367,6 +675,52 @@ describe('ChatContainer realtime sync', () => {
     expect(useMessageStore.getState().hasUnreadConversation).toBe(false)
   })
 
+  it('refreshes own message read status even when no newer messages arrive', async () => {
+    const { container } = await renderChat()
+    await act(async () => {
+      await Promise.resolve()
+    })
+    fetchMock.kunFetchGet.mockClear()
+    fetchMock.kunFetchGet
+      .mockResolvedValueOnce({
+        messages: [],
+        total: 0,
+        hasMoreBefore: false,
+        otherUser
+      })
+      .mockResolvedValueOnce({
+        messages: [
+          message(
+            2,
+            'hi',
+            {
+              id: currentUser.uid,
+              name: currentUser.name,
+              avatar: currentUser.avatar
+            },
+            '2026-06-29T10:02:00.000Z'
+          )
+        ].map((msg) => ({ ...msg, status: 1 })),
+        total: 1,
+        hasMoreBefore: false,
+        otherUser
+      })
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2_000)
+    })
+
+    expect(fetchMock.kunFetchGet).toHaveBeenCalledWith(
+      '/message/conversation/5',
+      { page: 1, limit: 50, beforeId: 3 }
+    )
+    expect(
+      container
+        .querySelector('[data-message-id="2"]')
+        ?.getAttribute('data-status')
+    ).toBe('1')
+  })
+
   it('keeps the realtime cursor on the last server-synced message after sending locally', async () => {
     fetchMock.kunFetchGet
       .mockResolvedValueOnce({
@@ -388,6 +742,7 @@ describe('ChatContainer realtime sync', () => {
                 ]
               : [],
           total: 1,
+          hasMoreBefore: false,
           otherUser
         })
       )
@@ -401,8 +756,19 @@ describe('ChatContainer realtime sync', () => {
     await act(async () => {
       chatInputMock.onMessageSent?.({
         id: 4,
+        type: 0,
         content: 'my slightly later message',
-        created: '2026-06-29T10:04:00.000Z'
+        status: 0,
+        isDeleted: false,
+        image: null,
+        replyTo: null,
+        editedAt: null,
+        created: '2026-06-29T10:04:00.000Z',
+        sender: {
+          id: currentUser.uid,
+          name: currentUser.name,
+          avatar: currentUser.avatar
+        }
       })
     })
 

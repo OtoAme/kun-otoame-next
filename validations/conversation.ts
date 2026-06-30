@@ -15,7 +15,11 @@ const privateMessageImageSchema = z.object({
   url: z.string().url().max(1000),
   width: z.coerce.number().int().min(1).max(20000),
   height: z.coerce.number().int().min(1).max(20000),
-  size: z.coerce.number().int().min(1).max(8 * 1024 * 1024),
+  size: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(8 * 1024 * 1024),
   mime: z.enum(['image/jpeg', 'image/png', 'image/webp', 'image/avif']),
   name: z.string().trim().min(1).max(255)
 })
@@ -40,11 +44,14 @@ export const sendPrivateMessageSchema = z
       .max(2000, { message: '消息内容最多 2000 个字符' })
       .optional(),
     image: privateMessageImageSchema.optional(),
+    images: z.array(privateMessageImageSchema).min(1).max(9).optional(),
     replyToMessageId: z.coerce.number().min(1).max(9999999).optional(),
-    replySelectedText: z.string().trim().max(500).optional()
+    replySelectedText: z.string().trim().max(500).optional(),
+    replyImageIndex: z.coerce.number().int().min(0).max(8).optional()
   })
   .superRefine((input, ctx) => {
     const content = input.content?.trim() ?? ''
+    const imageCount = input.images?.length ?? (input.image ? 1 : 0)
 
     if (input.type === 0 && !content) {
       ctx.addIssue({
@@ -54,11 +61,11 @@ export const sendPrivateMessageSchema = z
       })
     }
 
-    if (input.type === 1 && !input.image) {
+    if (input.type === 1 && imageCount === 0) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         message: '请先选择图片',
-        path: ['image']
+        path: ['images']
       })
     }
   })

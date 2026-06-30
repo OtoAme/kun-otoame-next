@@ -60,7 +60,7 @@
 - Produces `sendPrivateMessageSchema` accepting text, image metadata, and reply metadata.
 - Produces `getConversationMessagesSchema` accepting mutually exclusive `beforeId` and `afterId`.
 
-- [ ] **Step 1: Write the failing validation test**
+- [x] **Step 1: Write the failing validation test**
 
 Add tests to `tests/unit/api/conversation-messages.test.ts`:
 
@@ -81,7 +81,7 @@ it('rejects beforeId and afterId together', async () => {
 })
 ```
 
-- [ ] **Step 2: Run RED**
+- [x] **Step 2: Run RED**
 
 Run:
 
@@ -91,7 +91,7 @@ pnpm test tests/unit/api/conversation-messages.test.ts
 
 Expected: FAIL because `beforeId` validation does not exist.
 
-- [ ] **Step 3: Update Prisma schema**
+- [x] **Step 3: Update Prisma schema**
 
 In `prisma/schema/conversation.prisma`, extend `user_private_message`:
 
@@ -114,7 +114,7 @@ In `prisma/schema/conversation.prisma`, extend `user_private_message`:
   reply_selected_text       String? @db.VarChar(500)
 ```
 
-- [ ] **Step 4: Update validations**
+- [x] **Step 4: Update validations**
 
 In `validations/conversation.ts`, add:
 
@@ -171,7 +171,7 @@ export const sendPrivateMessageSchema = z
   })
 ```
 
-- [ ] **Step 5: Update API types**
+- [x] **Step 5: Update API types**
 
 In `types/api/conversation.ts`, add:
 
@@ -212,7 +212,7 @@ export interface ConversationMessagesResponse {
 }
 ```
 
-- [ ] **Step 6: Run Prisma generate**
+- [x] **Step 6: Run Prisma generate**
 
 Run:
 
@@ -222,7 +222,7 @@ pnpm prisma:generate
 
 Expected: Prisma Client generation succeeds.
 
-- [ ] **Step 7: Run GREEN**
+- [x] **Step 7: Run GREEN**
 
 Run:
 
@@ -232,7 +232,7 @@ pnpm test tests/unit/api/conversation-messages.test.ts
 
 Expected: PASS.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add prisma/schema/conversation.prisma validations/conversation.ts types/api/conversation.ts tests/unit/api/conversation-messages.test.ts
@@ -250,7 +250,7 @@ git commit -m "feat(message): add private message metadata schema"
 - Consumes new schema and `PrivateMessage` type from Task 1.
 - Produces `getConversationMessages(...): ConversationMessagesResponse | string` with `beforeId`, `afterId`, mapped image/reply metadata, and `hasMoreBefore`.
 
-- [ ] **Step 1: Add failing before cursor and metadata mapping tests**
+- [x] **Step 1: Add failing before cursor and metadata mapping tests**
 
 In `tests/unit/api/conversation-messages.test.ts`, add:
 
@@ -361,7 +361,7 @@ it('returns image and reply metadata for mapped messages', async () => {
 })
 ```
 
-- [ ] **Step 2: Run RED**
+- [x] **Step 2: Run RED**
 
 Run:
 
@@ -371,7 +371,7 @@ pnpm test tests/unit/api/conversation-messages.test.ts
 
 Expected: FAIL because `beforeId` is not implemented and mapping lacks new fields.
 
-- [ ] **Step 3: Add mapping helpers**
+- [x] **Step 3: Add mapping helpers**
 
 In `app/api/message/conversation/[id]/service.ts`, add local helpers:
 
@@ -407,7 +407,7 @@ const mapPrivateMessage = (msg: any): PrivateMessage => ({
 })
 ```
 
-- [ ] **Step 4: Implement cursor branches**
+- [x] **Step 4: Implement cursor branches**
 
 In `getConversationMessages`, implement:
 
@@ -446,11 +446,11 @@ if (beforeId) {
 
 For initial fetch, keep `skip` compatibility but map new fields and return `hasMoreBefore: data.length < total`.
 
-- [ ] **Step 5: Keep no-store GET**
+- [x] **Step 5: Keep no-store GET**
 
 Confirm `app/api/message/conversation/[id]/route.ts` GET returns through the existing `jsonNoStore` helper for every branch.
 
-- [ ] **Step 6: Run GREEN**
+- [x] **Step 6: Run GREEN**
 
 Run:
 
@@ -460,7 +460,7 @@ pnpm test tests/unit/api/conversation-messages.test.ts
 
 Expected: PASS.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add app/api/message/conversation/[id]/service.ts app/api/message/conversation/[id]/route.ts tests/unit/api/conversation-messages.test.ts
@@ -478,7 +478,7 @@ git commit -m "perf(message): load chat history with cursors"
 - Consumes `sendPrivateMessageSchema` from Task 1.
 - Produces `sendMessage(conversationId, input, uid)` that supports text, image, reply previews, and transactional unread update.
 
-- [ ] **Step 1: Write failing send tests**
+- [x] **Step 1: Write failing send tests**
 
 Extend `tests/unit/api/conversation-service.test.ts` mock with:
 
@@ -570,7 +570,7 @@ it('sends a text reply with server-generated preview and unread increment', asyn
 
 Add tests for rejecting a reply target in another conversation or deleted target, and sending image metadata with `type: 1`.
 
-- [ ] **Step 2: Run RED**
+- [x] **Step 2: Run RED**
 
 Run:
 
@@ -580,7 +580,7 @@ pnpm test tests/unit/api/conversation-service.test.ts
 
 Expected: FAIL because `sendMessage` does not support reply/image metadata or transactions.
 
-- [ ] **Step 3: Implement reply preview helper**
+- [x] **Step 3: Implement reply preview helper**
 
 In `app/api/message/conversation/[id]/service.ts`, add:
 
@@ -615,7 +615,7 @@ const buildReplyPreview = async (
 }
 ```
 
-- [ ] **Step 4: Make send transactional**
+- [x] **Step 4: Make send transactional**
 
 In `sendMessage`, build `messageData`, then:
 
@@ -645,7 +645,7 @@ return mapPrivateMessage(created)
 
 For image messages, write `image_url`, `image_width`, `image_height`, `image_size`, `image_mime`, and `image_name` from validated input.
 
-- [ ] **Step 5: Update conversation list summary**
+- [x] **Step 5: Update conversation list summary**
 
 In `app/api/message/conversation/service.ts`, include last message `type` and summarize:
 
@@ -657,7 +657,7 @@ const summarizeLastMessage = (message?: { type?: number; content: string }) => {
 }
 ```
 
-- [ ] **Step 6: Run GREEN**
+- [x] **Step 6: Run GREEN**
 
 Run:
 
@@ -667,7 +667,7 @@ pnpm test tests/unit/api/conversation-service.test.ts tests/unit/api/conversatio
 
 Expected: PASS.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add app/api/message/conversation/[id]/service.ts app/api/message/conversation/service.ts tests/unit/api/conversation-service.test.ts
@@ -686,7 +686,7 @@ git commit -m "feat(message): send replies and image messages"
 - Produces `uploadConversationImage(conversationId, file, uid): PrivateMessageImage | string`.
 - The route accepts `FormData` with `image`.
 
-- [ ] **Step 1: Write failing upload service tests**
+- [x] **Step 1: Write failing upload service tests**
 
 Create `tests/unit/api/conversation-image-upload.test.ts` with mocked Prisma and S3 helper:
 
@@ -746,7 +746,7 @@ describe('conversation image upload service', () => {
 })
 ```
 
-- [ ] **Step 2: Run RED**
+- [x] **Step 2: Run RED**
 
 Run:
 
@@ -756,7 +756,7 @@ pnpm test tests/unit/api/conversation-image-upload.test.ts
 
 Expected: FAIL because the upload service does not exist.
 
-- [ ] **Step 3: Implement upload service**
+- [x] **Step 3: Implement upload service**
 
 Create `app/api/message/conversation/[id]/image/service.ts`:
 
@@ -814,7 +814,7 @@ export const uploadConversationImage = async (
 }
 ```
 
-- [ ] **Step 4: Implement upload route**
+- [x] **Step 4: Implement upload route**
 
 Create `app/api/message/conversation/[id]/image/route.ts`:
 
@@ -853,7 +853,7 @@ export const POST = async (
 }
 ```
 
-- [ ] **Step 5: Run GREEN**
+- [x] **Step 5: Run GREEN**
 
 Run:
 
@@ -863,7 +863,7 @@ pnpm test tests/unit/api/conversation-image-upload.test.ts
 
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add app/api/message/conversation/[id]/image tests/unit/api/conversation-image-upload.test.ts
@@ -883,7 +883,7 @@ git commit -m "feat(message): upload private chat images"
 - Consumes `replyTarget: PrivateMessage | null`.
 - Produces `onCancelReply()`, `onMessageSent(message: PrivateMessage)`, image upload and send payload.
 
-- [ ] **Step 1: Write failing composer tests**
+- [x] **Step 1: Write failing composer tests**
 
 Extend `tests/unit/chat-input.test.tsx` to mock `kunFetchPost` for upload and send. Add:
 
@@ -920,7 +920,7 @@ it('sends reply metadata with the message payload', async () => {
 
 Add tests for image-only send and empty text with no image staying disabled.
 
-- [ ] **Step 2: Run RED**
+- [x] **Step 2: Run RED**
 
 Run:
 
@@ -930,7 +930,7 @@ pnpm test tests/unit/chat-input.test.tsx
 
 Expected: FAIL because `ChatInput` has no reply/image props.
 
-- [ ] **Step 3: Create attachment menu**
+- [x] **Step 3: Create attachment menu**
 
 Create `components/message/chat/ChatAttachmentMenu.tsx`:
 
@@ -962,7 +962,7 @@ export const ChatAttachmentMenu = ({ isOpen, onPickImage }: Props) => {
 }
 ```
 
-- [ ] **Step 4: Create reply preview component**
+- [x] **Step 4: Create reply preview component**
 
 Create `components/message/chat/ChatReplyPreview.tsx`:
 
@@ -993,7 +993,7 @@ export const ChatReplyPreview = ({ senderName, content, onCancel }: Props) => (
 )
 ```
 
-- [ ] **Step 5: Update composer**
+- [x] **Step 5: Update composer**
 
 In `ChatInput.tsx`, add props for reply state, file picker, upload call to `/message/conversation/${conversationId}/image`, image preview, and send payload:
 
@@ -1009,7 +1009,7 @@ const payload = {
 
 Keep the existing IME and duplicate-send lock logic.
 
-- [ ] **Step 6: Wire container reply state**
+- [x] **Step 6: Wire container reply state**
 
 In `ChatContainer.tsx`, keep:
 
@@ -1022,7 +1022,7 @@ const [replyDraft, setReplyDraft] = useState<{
 
 Pass `replyDraft` to `ChatInput`, clear it after successful send, and pass `onReply` to `ChatMessage`.
 
-- [ ] **Step 7: Run GREEN**
+- [x] **Step 7: Run GREEN**
 
 Run:
 
@@ -1032,7 +1032,7 @@ pnpm test tests/unit/chat-input.test.tsx
 
 Expected: PASS.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add components/message/chat/ChatInput.tsx components/message/chat/ChatAttachmentMenu.tsx components/message/chat/ChatReplyPreview.tsx components/message/chat/ChatContainer.tsx tests/unit/chat-input.test.tsx
@@ -1049,7 +1049,7 @@ git commit -m "feat(message): add chat composer attachments and replies"
 - Consumes `PrivateMessage.image`, `PrivateMessage.replyTo`, `isOwn`, and `onReply(message, selectedText)`.
 - Produces menu actions `回复` and `回复选中文本`, image rendering, and own-message read badge.
 
-- [ ] **Step 1: Write failing row/menu tests**
+- [x] **Step 1: Write failing row/menu tests**
 
 Create `tests/unit/chat-message-menu.test.tsx` with JSDOM mocks and assert:
 
@@ -1072,7 +1072,7 @@ it('renders a read indicator for own read messages', async () => {
 })
 ```
 
-- [ ] **Step 2: Run RED**
+- [x] **Step 2: Run RED**
 
 Run:
 
@@ -1082,7 +1082,7 @@ pnpm test tests/unit/chat-message-menu.test.tsx
 
 Expected: FAIL because reply actions and read labels do not exist.
 
-- [ ] **Step 3: Add message UI**
+- [x] **Step 3: Add message UI**
 
 In `ChatMessage.tsx`:
 
@@ -1093,7 +1093,7 @@ In `ChatMessage.tsx`:
 - Render own-message status with `Check` for unread and `CheckCheck` for read.
 - Keep copy/edit/delete behavior intact.
 
-- [ ] **Step 4: Run GREEN**
+- [x] **Step 4: Run GREEN**
 
 Run:
 
@@ -1103,7 +1103,7 @@ pnpm test tests/unit/chat-message-menu.test.tsx tests/unit/chat-input.test.tsx
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add components/message/chat/ChatMessage.tsx tests/unit/chat-message-menu.test.tsx
@@ -1121,7 +1121,7 @@ git commit -m "feat(message): add reply menu and read indicators"
 - Consumes `ConversationMessagesResponse.hasMoreBefore`.
 - Produces older-history requests using `beforeId`, not `page`.
 
-- [ ] **Step 1: Write failing container tests**
+- [x] **Step 1: Write failing container tests**
 
 In `tests/unit/chat-container-realtime.test.tsx`, add:
 
@@ -1146,7 +1146,7 @@ it('loads older history with beforeId instead of page skip', async () => {
 
 Update existing mocked responses to include `hasMoreBefore`.
 
-- [ ] **Step 2: Run RED**
+- [x] **Step 2: Run RED**
 
 Run:
 
@@ -1156,7 +1156,7 @@ pnpm test tests/unit/chat-container-realtime.test.tsx
 
 Expected: FAIL because older history still uses `page`.
 
-- [ ] **Step 3: Implement before cursor**
+- [x] **Step 3: Implement before cursor**
 
 In `ChatContainer.tsx`:
 
@@ -1167,11 +1167,11 @@ In `ChatContainer.tsx`:
 - Preserve scroll-height anchoring after prepending.
 - When new fetched messages include existing messages with changed `status`, merge by id so read indicators update.
 
-- [ ] **Step 4: Update initial page props**
+- [x] **Step 4: Update initial page props**
 
 In `app/message/chat/[conversationId]/page.tsx`, continue calling `{ page: 1, limit: 30 }` for first load and pass `response.hasMoreBefore`.
 
-- [ ] **Step 5: Run GREEN**
+- [x] **Step 5: Run GREEN**
 
 Run:
 
@@ -1202,7 +1202,7 @@ git commit -m "perf(message): use cursor history in chat UI"
 - Consumes final behavior from Tasks 1-7.
 - Produces updated maintainer docs.
 
-- [ ] **Step 1: Update docs**
+- [x] **Step 1: Update docs**
 
 Document:
 
@@ -1213,7 +1213,7 @@ Document:
 - `beforeId`/`afterId` cursor rules and no-store headers.
 - New test files and commands.
 
-- [ ] **Step 2: Run targeted tests**
+- [x] **Step 2: Run targeted tests**
 
 Run:
 
@@ -1224,7 +1224,7 @@ pnpm test tests/unit/chat-input.test.tsx tests/unit/chat-container-realtime.test
 
 Expected: PASS.
 
-- [ ] **Step 3: Run broader message tests**
+- [x] **Step 3: Run broader message tests**
 
 Run:
 
@@ -1234,7 +1234,7 @@ pnpm test tests/unit/message-nav.test.tsx tests/unit/user-message-bell.test.tsx 
 
 Expected: PASS.
 
-- [ ] **Step 4: Run typecheck**
+- [x] **Step 4: Run typecheck**
 
 Run:
 

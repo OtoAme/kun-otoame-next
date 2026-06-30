@@ -3,13 +3,24 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const prismaMock = vi.hoisted(() => ({
   user_conversation: {
     findUnique: vi.fn(),
+    update: vi.fn(),
     findMany: vi.fn(),
     count: vi.fn()
   },
   user_private_message: {
     findMany: vi.fn(),
-    count: vi.fn()
-  }
+    count: vi.fn(),
+    create: vi.fn()
+  },
+  _tx: {
+    user_private_message: {
+      create: vi.fn()
+    },
+    user_conversation: {
+      update: vi.fn()
+    }
+  },
+  $transaction: vi.fn()
 }))
 
 vi.mock('~/prisma/index', () => ({
@@ -33,6 +44,7 @@ describe('conversation message fetching', () => {
       user_b: { id: 8, name: 'Mio', avatar: '/mio.webp' }
     })
     prismaMock.user_private_message.count.mockResolvedValue(3)
+    prismaMock.$transaction.mockImplementation(async (fn) => fn(prismaMock._tx))
   })
 
   it('returns only messages newer than afterId without counting full history', async () => {
@@ -178,6 +190,14 @@ describe('conversation message fetching', () => {
         reply_preview_content: 'quoted text',
         reply_preview_sender_name: 'Mio',
         reply_selected_text: 'quoted',
+        reply_image: {
+          url: 'https://img.example/quoted.webp',
+          width: 240,
+          height: 180,
+          size: 123,
+          mime: 'image/webp',
+          name: 'quoted.webp'
+        },
         created: new Date('2026-06-30T10:00:00.000Z'),
         sender: { id: 1007, name: 'Saya', avatar: '/saya.webp' }
       }
@@ -186,7 +206,11 @@ describe('conversation message fetching', () => {
     const { getConversationMessages } = await import(
       '~/app/api/message/conversation/[id]/service'
     )
-    const result = await getConversationMessages(5, { page: 1, limit: 30 }, 1007)
+    const result = await getConversationMessages(
+      5,
+      { page: 1, limit: 30 },
+      1007
+    )
 
     expect(result).toMatchObject({
       messages: [
@@ -206,7 +230,15 @@ describe('conversation message fetching', () => {
             messageId: 10,
             content: 'quoted text',
             senderName: 'Mio',
-            selectedText: 'quoted'
+            selectedText: 'quoted',
+            image: {
+              url: 'https://img.example/quoted.webp',
+              width: 240,
+              height: 180,
+              size: 123,
+              mime: 'image/webp',
+              name: 'quoted.webp'
+            }
           }
         }
       ]
@@ -229,6 +261,45 @@ describe('conversation message fetching', () => {
       messages: [],
       total: 3,
       otherUser: { id: 8, name: 'Mio', avatar: '/mio.webp' }
+    })
+  })
+
+  it('returns no-store cache headers when sending private messages', async () => {
+    prismaMock._tx.user_private_message.create.mockResolvedValue({
+      id: 30,
+      type: 0,
+      content: 'hello',
+      status: 0,
+      is_deleted: false,
+      edited_at: null,
+      image_url: null,
+      image_width: null,
+      image_height: null,
+      image_size: null,
+      image_mime: null,
+      image_name: null,
+      reply_to_message_id: null,
+      reply_preview_content: null,
+      reply_preview_sender_name: null,
+      reply_selected_text: null,
+      created: new Date('2026-06-30T10:00:00.000Z'),
+      sender: { id: 1007, name: 'Saya', avatar: '/saya.webp' }
+    })
+
+    const { POST } = await import('~/app/api/message/conversation/[id]/route')
+    const response = await POST(
+      new Request('https://www.otoame.top/api/message/conversation/5', {
+        method: 'POST',
+        body: JSON.stringify({ type: 0, content: 'hello' }),
+        headers: { 'Content-Type': 'application/json' }
+      }) as never,
+      { params: Promise.resolve({ id: '5' }) }
+    )
+
+    expect(response.headers.get('cache-control')).toBe('private, no-store')
+    expect(await response.json()).toMatchObject({
+      id: 30,
+      content: 'hello'
     })
   })
 
@@ -261,6 +332,29 @@ describe('conversation message fetching', () => {
         limit: 30,
         beforeId: 10,
         afterId: 20
+      }).success
+    ).toBe(false)
+  })
+
+  it('accepts bounded reply image indexes in send payloads', async () => {
+    const { sendPrivateMessageSchema } = await import(
+      '~/validations/conversation'
+    )
+
+    expect(
+      sendPrivateMessageSchema.safeParse({
+        type: 0,
+        content: 'reply',
+        replyToMessageId: 3,
+        replyImageIndex: 8
+      }).success
+    ).toBe(true)
+    expect(
+      sendPrivateMessageSchema.safeParse({
+        type: 0,
+        content: 'reply',
+        replyToMessageId: 3,
+        replyImageIndex: 9
       }).success
     ).toBe(false)
   })

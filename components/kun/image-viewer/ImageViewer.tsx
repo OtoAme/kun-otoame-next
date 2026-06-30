@@ -17,6 +17,14 @@ interface Props {
   children: (openLightbox: (index: number) => void) => ReactNode
 }
 
+interface ControlledProps {
+  images: KunImageViewerImage[]
+  index: number
+  preload?: number
+  onClose: () => void
+  onView?: (index: number) => void
+}
+
 const ProgressiveImageSlide = ({
   slide,
   children
@@ -36,6 +44,22 @@ const ProgressiveImageSlide = ({
   </div>
 )
 
+const LightboxSlideInteractionGuard = ({
+  children
+}: {
+  children: ReactNode
+}) => (
+  <div
+    data-testid="lightbox-slide-guard"
+    className="h-full w-full"
+    onContextMenu={(event) => {
+      event.stopPropagation()
+    }}
+  >
+    {children}
+  </div>
+)
+
 const hasPreviewSrc = (slide: unknown): slide is KunImageViewerSlide =>
   typeof slide === 'object' &&
   slide !== null &&
@@ -48,7 +72,6 @@ const hasPreviewSrc = (slide: unknown): slide is KunImageViewerSlide =>
 
 export const KunImageViewer = ({ images, preload, children }: Props) => {
   const [index, setIndex] = useState(-1)
-  const lightboxImages = createKunImageViewerSlides(images)
 
   const openLightbox = (index: number) => setIndex(index)
   const closeLightbox = () => setIndex(-1)
@@ -56,33 +79,60 @@ export const KunImageViewer = ({ images, preload, children }: Props) => {
   return (
     <>
       {children(openLightbox)}
-      <Lightbox
+      <KunControlledImageViewer
+        images={images}
         index={index}
-        slides={lightboxImages}
-        open={index >= 0}
-        close={closeLightbox}
-        on={{
-          click: closeLightbox
-        }}
-        render={{
-          slideContainer: ({ slide, children }) => {
-            if (hasPreviewSrc(slide)) {
-              return (
+        preload={preload}
+        onClose={closeLightbox}
+        onView={setIndex}
+      />
+    </>
+  )
+}
+
+export const KunControlledImageViewer = ({
+  images,
+  index,
+  preload,
+  onClose,
+  onView
+}: ControlledProps) => {
+  const lightboxImages = createKunImageViewerSlides(images)
+
+  return (
+    <Lightbox
+      index={index}
+      slides={lightboxImages}
+      open={index >= 0}
+      close={onClose}
+      on={{
+        click: onClose,
+        view: ({ index: currentIndex }) => onView?.(currentIndex)
+      }}
+      render={{
+        slideContainer: ({ slide, children }) => {
+          if (hasPreviewSrc(slide)) {
+            return (
+              <LightboxSlideInteractionGuard>
                 <ProgressiveImageSlide slide={slide}>
                   {children}
                 </ProgressiveImageSlide>
-              )
-            }
-
-            return children
+              </LightboxSlideInteractionGuard>
+            )
           }
-        }}
-        {...lightboxConfig}
-        carousel={{
-          ...lightboxConfig.carousel,
-          preload: preload ?? lightboxConfig.carousel?.preload
-        }}
-      />
-    </>
+
+          return (
+            <LightboxSlideInteractionGuard>
+              {children}
+            </LightboxSlideInteractionGuard>
+          )
+        }
+      }}
+      {...lightboxConfig}
+      carousel={{
+        ...lightboxConfig.carousel,
+        preload: preload ?? lightboxConfig.carousel?.preload
+      }}
+    />
   )
 }

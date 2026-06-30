@@ -6,6 +6,21 @@ import {
 } from '~/validations/conversation'
 import type { Conversation } from '~/types/api/conversation'
 
+const summarizeConversationLastMessage = (
+  message?: { type: number; content: string; image_url: string | null }
+) => {
+  if (!message) {
+    return ''
+  }
+
+  const content = message.content.trim()
+  if (content) {
+    return content
+  }
+
+  return message.type === 1 || message.image_url ? '[图片]' : ''
+}
+
 export const getConversations = async (
   input: z.infer<typeof getConversationsSchema>,
   uid: number
@@ -28,7 +43,7 @@ export const getConversations = async (
         messages: {
           orderBy: { created: 'desc' },
           take: 1,
-          select: { content: true }
+          select: { type: true, content: true, image_url: true }
         }
       },
       orderBy: { last_message_time: 'desc' },
@@ -45,7 +60,7 @@ export const getConversations = async (
   const conversations: Conversation[] = data.map((conv) => ({
     id: conv.id,
     otherUser: conv.user_a_id === uid ? conv.user_b : conv.user_a,
-    lastMessage: conv.messages[0]?.content || '',
+    lastMessage: summarizeConversationLastMessage(conv.messages[0]),
     lastMessageTime: conv.last_message_time,
     unreadCount:
       conv.user_a_id === uid ? conv.user_a_unread_count : conv.user_b_unread_count

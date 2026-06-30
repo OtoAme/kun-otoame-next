@@ -20,6 +20,7 @@ export interface PrivateMessageReplyPreview {
   content: string
   senderName: string
   selectedText: string | null
+  image?: PrivateMessageImage | null
 }
 
 export interface PrivateMessage {
@@ -29,6 +30,7 @@ export interface PrivateMessage {
   status: number
   isDeleted: boolean
   image: PrivateMessageImage | null
+  images?: PrivateMessageImage[]
   replyTo: PrivateMessageReplyPreview | null
   editedAt: string | Date | null
   created: string | Date

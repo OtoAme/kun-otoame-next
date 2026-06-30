@@ -106,6 +106,9 @@ service/helper 负责：
 - `/api/message/read` 只标记 `user_message` 通知为已读，然后返回 `MessageUnreadStatus`；前端顶栏和消息页要用这个返回值更新全局红点，避免把仍未读的私聊红点一并清掉。
 - `/api/message/unread`、`/api/message/read` 和 `/api/message/conversation/[id]/read` 返回的是登录用户的实时个性化红点状态，必须带 `Cache-Control: private, no-store`，避免缓存旧未读结果让前端红点回跳。
 - 发起新私聊时，`checkConversation` 和 `getOrCreateConversation` 都必须在 API/service 层检查目标用户的 `allow_private_message`；前端隐藏按钮只能改善体验，不能替代权限判断。
+- 会话消息列表支持首屏、`beforeId` 历史游标和 `afterId` 增量游标。`afterId` 请求只返回新增消息且不统计历史总数；`beforeId` 请求按当前最早消息 ID 查询更早记录，并返回 `hasMoreBefore`。前端上翻历史时必须使用 `beforeId`，避免大对话用 `skip` 越翻越慢。
+- 私聊发送支持 `type: 0` 文本和 `type: 1` 图片。文本消息需要非空 `content`；图片消息必须带图片 metadata，可选补充说明文本。多图消息通过 `images` 数组保存完整图片组，同时 `image` / `image_url` 保留第一张用于旧数据兼容和会话摘要。回复消息通过 `replyToMessageId` 指向同会话、未删除的消息，并在发送时固化 `replyTo` 预览，包括原消息发送者、消息类型、文本摘要和图片缩略信息，避免原消息后续编辑影响回复上下文。前端右键某张图片回复时会提交 `replyImageIndex`，服务端必须校验该索引属于被回复消息的图片组，并把对应图片 metadata 固化到 `reply_image`。
+- `/api/message/conversation/[id]/image` 是私聊图片上传接口，只允许会话成员上传 JPG/PNG/WebP/AVIF，单张入站上限 8MB。该接口在 handler 内校验 CSRF、登录态和会话成员身份，用 Sharp 将静态图 resize 到 1920x1080 内并输出 AVIF，不加水印；返回发送消息所需的最终 AVIF metadata。接口必须保持 `private, no-store`。
 
 ### 搜索和列表
 
