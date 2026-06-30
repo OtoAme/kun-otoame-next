@@ -69,6 +69,10 @@ export const ChatContainer = ({
   const [hasMore, setHasMore] = useState(initialMessages.length < total)
   const [page, setPage] = useState(1)
   const [totalCount, setTotalCount] = useState(total)
+  const [replyDraft, setReplyDraft] = useState<{
+    message: PrivateMessage
+    selectedText: string | null
+  } | null>(null)
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const loadMoreRef = useRef<HTMLDivElement>(null)
   const user = useUserStore((state) => state.user)
@@ -136,15 +140,18 @@ export const ChatContainer = ({
   }, [loading, hasMore, page, conversationId])
 
   const handleMessageSent = useCallback(
-    (newMessage: { id: number; content: string; created: string }) => {
+    (newMessage: PrivateMessage) => {
       const message: PrivateMessage = {
         id: newMessage.id,
+        type: newMessage.type ?? 0,
         content: newMessage.content,
-        status: 0,
-        isDeleted: false,
-        editedAt: null,
+        status: newMessage.status ?? 0,
+        isDeleted: newMessage.isDeleted ?? false,
+        image: newMessage.image ?? null,
+        replyTo: newMessage.replyTo ?? null,
+        editedAt: newMessage.editedAt ?? null,
         created: newMessage.created,
-        sender: {
+        sender: newMessage.sender ?? {
           id: user.uid,
           name: user.name,
           avatar: user.avatar
@@ -392,6 +399,9 @@ export const ChatContainer = ({
         <div className="border-t border-default-200 p-4">
           <ChatInput
             conversationId={conversationId}
+            replyTarget={replyDraft?.message}
+            replySelectedText={replyDraft?.selectedText ?? null}
+            onCancelReply={() => setReplyDraft(null)}
             onMessageSent={handleMessageSent}
           />
         </div>

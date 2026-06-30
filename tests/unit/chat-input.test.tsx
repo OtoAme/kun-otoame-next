@@ -2,6 +2,7 @@ import React, { act } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { JSDOM } from 'jsdom'
 import { createRoot, type Root } from 'react-dom/client'
+import type { PrivateMessage } from '~/types/api/conversation'
 
 globalThis.React = React
 
@@ -66,14 +67,20 @@ vi.mock('@heroui/react', () => ({
     children,
     isDisabled,
     isLoading,
+    'aria-label': ariaLabel,
     onPress
   }: {
     children?: React.ReactNode
     isDisabled?: boolean
     isLoading?: boolean
+    'aria-label'?: string
     onPress?: () => void
   }) => (
-    <button disabled={isDisabled || isLoading} onClick={onPress}>
+    <button
+      aria-label={ariaLabel}
+      disabled={isDisabled || isLoading}
+      onClick={onPress}
+    >
       {children}
     </button>
   )
@@ -94,7 +101,13 @@ describe('ChatInput keyboard handling', () => {
     >
   >
 
-  const renderChatInput = async () => {
+  const renderChatInput = async (
+    props: Partial<{
+      replyTarget: PrivateMessage
+      replySelectedText: string | null
+      onCancelReply: () => void
+    }> = {}
+  ) => {
     dom = new JSDOM('<!doctype html><div id="root"></div>', {
       url: 'http://localhost'
     })
@@ -120,7 +133,11 @@ describe('ChatInput keyboard handling', () => {
     root = createRoot(container!)
     await act(async () => {
       root!.render(
-        <ChatInput conversationId={5} onMessageSent={onMessageSent} />
+        <ChatInput
+          conversationId={5}
+          onMessageSent={onMessageSent}
+          {...props}
+        />
       )
     })
 
@@ -248,5 +265,122 @@ describe('ChatInput keyboard handling', () => {
     })
 
     expect(onMessageSent).toHaveBeenCalledTimes(1)
+  })
+
+  it('sends reply metadata with the message payload', async () => {
+    const replyTarget: PrivateMessage = {
+      id: 3,
+      type: 0,
+      content: 'original',
+      status: 0,
+      isDeleted: false,
+      image: null,
+      replyTo: null,
+      editedAt: null,
+      created: '2026-06-30T09:00:00.000Z',
+      sender: { id: 8, name: 'Mio', avatar: '/mio.webp' }
+    }
+
+    const { textarea } = await renderChatInput({
+      replyTarget,
+      replySelectedText: 'orig',
+      onCancelReply: vi.fn()
+    })
+    await typeContent(textarea, 'reply')
+    await keyDownEnter(textarea)
+
+    expect(fetchMock.kunFetchPost).toHaveBeenCalledWith(
+      '/message/conversation/5',
+      expect.objectContaining({
+        type: 0,
+        content: 'reply',
+        replyToMessageId: 3,
+        replySelectedText: 'orig'
+      })
+    )
+  })
+
+  it('sends an image-only message from the plus menu', async () => {
+    fetchMock.kunFetchPost
+      .mockResolvedValueOnce({
+        url: 'https://img.example/conversation/5/chat.webp',
+        width: 800,
+        height: 600,
+        size: 5,
+        mime: 'image/webp',
+        name: 'chat.webp'
+      })
+      .mockResolvedValueOnce({
+        id: 8,
+        type: 1,
+        content: '',
+        image: {
+          url: 'https://img.example/conversation/5/chat.webp',
+          width: 800,
+          height: 600,
+          size: 5,
+          mime: 'image/webp',
+          name: 'chat.webp'
+        },
+        created: '2026-06-30T00:00:00.000Z'
+      })
+
+    const { container } = await renderChatInput()
+
+    const plusButton = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="添加附件"]'
+    )
+    expect(plusButton).not.toBeNull()
+
+    await act(async () => {
+      plusButton?.click()
+      await Promise.resolve()
+    })
+
+    const imageButton = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="选择图片"]'
+    )
+    expect(imageButton).not.toBeNull()
+
+    const fileInput = container.querySelector<HTMLInputElement>(
+      'input[type="file"]'
+    )
+    expect(fileInput).not.toBeNull()
+    Object.defineProperty(fileInput, 'files', {
+      configurable: true,
+      value: [new File(['image'], 'chat.webp', { type: 'image/webp' })]
+    })
+
+    await act(async () => {
+      imageButton?.click()
+      fileInput?.dispatchEvent(new dom!.window.Event('change', { bubbles: true }))
+      await Promise.resolve()
+    })
+
+    const sendButton = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="发送消息"]'
+    )
+    expect(sendButton).not.toBeNull()
+
+    await act(async () => {
+      sendButton?.click()
+      await Promise.resolve()
+    })
+
+    expect(fetchMock.kunFetchPost).toHaveBeenNthCalledWith(
+      1,
+      '/message/conversation/5/image',
+      expect.any(FormData)
+    )
+    expect(fetchMock.kunFetchPost).toHaveBeenNthCalledWith(
+      2,
+      '/message/conversation/5',
+      expect.objectContaining({
+        type: 1,
+        image: expect.objectContaining({
+          url: 'https://img.example/conversation/5/chat.webp'
+        })
+      })
+    )
   })
 })
