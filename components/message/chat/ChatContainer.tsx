@@ -387,6 +387,9 @@ export const ChatContainer = ({
                   message={msg}
                   isOwn={msg.sender.id === user.uid}
                   conversationId={conversationId}
+                  onReply={(message, selectedText) =>
+                    setReplyDraft({ message, selectedText })
+                  }
                   onMessageUpdated={(data) =>
                     handleMessageUpdated(msg.id, data)
                   }

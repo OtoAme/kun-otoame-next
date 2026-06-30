@@ -15,7 +15,15 @@ import {
   useDisclosure
 } from '@heroui/modal'
 import { Textarea } from '@heroui/input'
-import { Copy, Pencil, Trash2 } from 'lucide-react'
+import {
+  Check,
+  CheckCheck,
+  Copy,
+  Pencil,
+  Reply,
+  TextQuote,
+  Trash2
+} from 'lucide-react'
 import { kunFetchPut, kunFetchDelete } from '~/utils/kunFetch'
 import toast from 'react-hot-toast'
 import type { PrivateMessage } from '~/types/api/conversation'
@@ -28,6 +36,7 @@ interface Props {
   message: PrivateMessage
   isOwn: boolean
   conversationId: number
+  onReply?: (message: PrivateMessage, selectedText: string | null) => void
   onMessageUpdated: (data: MessageUpdateData) => void
 }
 
@@ -50,6 +59,7 @@ export const ChatMessage = ({
   message,
   isOwn,
   conversationId,
+  onReply,
   onMessageUpdated
 }: Props) => {
   const [menu, setMenu] = useState<MessageMenuState | null>(null)
@@ -139,7 +149,7 @@ export const ChatMessage = ({
 
     setIsMenuReady(false)
 
-    const itemCount = isOwn ? 3 : 1
+    const itemCount = isOwn ? 5 : 3
     const menuHeight = itemCount * MENU_ITEM_HEIGHT + 8
     const nextX = Math.min(Math.max(8, x), window.innerWidth - MENU_WIDTH - 8)
     const nextY = Math.min(Math.max(8, y), window.innerHeight - menuHeight - 8)
@@ -295,6 +305,15 @@ export const ChatMessage = ({
     onOpen()
   }
 
+  const handleReply = (selectedText: string | null) => {
+    if (!menu || !isMenuReady) {
+      return
+    }
+
+    closeMessageMenu()
+    onReply?.(message, selectedText)
+  }
+
   const handleAvatarPointerDownCapture = (
     e: React.PointerEvent<HTMLDivElement>
   ) => {
@@ -397,6 +416,42 @@ export const ChatMessage = ({
     )
   }
 
+  const renderReplyPreview = () => {
+    if (!message.replyTo) {
+      return null
+    }
+
+    return (
+      <div className="mb-2 rounded-lg border-l-3 border-current/50 bg-black/5 px-3 py-2 text-xs dark:bg-white/10">
+        <div className="font-medium">{message.replyTo.senderName}</div>
+        <div className="line-clamp-2 opacity-80">
+          {message.replyTo.selectedText || message.replyTo.content || '[图片]'}
+        </div>
+      </div>
+    )
+  }
+
+  const renderMessageBody = () => (
+    <>
+      {renderReplyPreview()}
+      {message.image && (
+        <img
+          src={message.image.url}
+          alt={message.image.name || message.content || '聊天图片'}
+          loading="lazy"
+          className="mb-2 max-h-80 w-full max-w-full rounded-xl object-contain"
+        />
+      )}
+      {message.content && (
+        <p ref={contentRef} className="whitespace-pre-wrap break-words text-sm">
+          {message.content}
+        </p>
+      )}
+    </>
+  )
+
+  const readLabel = message.status === 1 ? '已读' : '未读'
+
   return (
     <>
       <div
@@ -423,6 +478,7 @@ export const ChatMessage = ({
         {isOwn ? (
           <motion.div
             ref={bubbleRef}
+            data-testid="chat-message-bubble"
             className={cn(
               'max-w-[70%] select-text rounded-2xl bg-primary-500 px-4 py-2 text-white',
               menu && 'shadow-lg ring-2 ring-primary-200/70'
@@ -436,20 +492,28 @@ export const ChatMessage = ({
             onPointerDown={handlePointerDown}
             onPointerUp={handlePointerUp}
           >
-            <p
-              ref={contentRef}
-              className="whitespace-pre-wrap break-words text-sm"
-            >
-              {message.content}
-            </p>
+            {renderMessageBody()}
             <div className="mt-1 flex select-none items-center gap-2 text-xs text-primary-100">
               <span>{formatTimeDifference(message.created)}</span>
               {message.editedAt && <span>(已编辑)</span>}
+              <span
+                className="inline-flex items-center gap-1"
+                aria-label={readLabel}
+                title={readLabel}
+              >
+                {message.status === 1 ? (
+                  <CheckCheck className="size-3" />
+                ) : (
+                  <Check className="size-3" />
+                )}
+                {readLabel}
+              </span>
             </div>
           </motion.div>
         ) : (
           <motion.div
             ref={bubbleRef}
+            data-testid="chat-message-bubble"
             className={cn(
               'max-w-[70%] select-text rounded-2xl bg-default-100 px-4 py-2 dark:bg-default-200',
               menu && 'shadow-lg ring-2 ring-default-300/70'
@@ -463,12 +527,7 @@ export const ChatMessage = ({
             onPointerDown={handlePointerDown}
             onPointerUp={handlePointerUp}
           >
-            <p
-              ref={contentRef}
-              className="whitespace-pre-wrap break-words text-sm"
-            >
-              {message.content}
-            </p>
+            {renderMessageBody()}
             <div className="mt-1 flex select-none items-center gap-2 text-xs text-default-400">
               <span>{formatTimeDifference(message.created)}</span>
               {message.editedAt && <span>(已编辑)</span>}
@@ -506,6 +565,40 @@ export const ChatMessage = ({
               animate={{ opacity: 1, x: 0 }}
               transition={{ delay: 0.03 }}
               onMouseDown={(e) => e.preventDefault()}
+              onClick={() => handleReply(null)}
+            >
+              <Reply className="size-4" />
+              回复
+            </motion.button>
+
+            {menu.selectedText && (
+              <motion.button
+                className="flex h-10 w-full items-center gap-2 rounded-lg px-3 text-left outline-none transition-colors hover:bg-default-100 focus:bg-default-100"
+                role="menuitem"
+                type="button"
+                disabled={!isMenuReady}
+                aria-disabled={!isMenuReady}
+                initial={{ opacity: 0, x: -6 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: 0.045 }}
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => handleReply(menu.selectedText)}
+              >
+                <TextQuote className="size-4" />
+                回复选中文本
+              </motion.button>
+            )}
+
+            <motion.button
+              className="flex h-10 w-full items-center gap-2 rounded-lg px-3 text-left outline-none transition-colors hover:bg-default-100 focus:bg-default-100"
+              role="menuitem"
+              type="button"
+              disabled={!isMenuReady}
+              aria-disabled={!isMenuReady}
+              initial={{ opacity: 0, x: -6 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ delay: 0.06 }}
+              onMouseDown={(e) => e.preventDefault()}
               onClick={handleCopy}
             >
               <Copy className="size-4" />
@@ -522,7 +615,7 @@ export const ChatMessage = ({
                   aria-disabled={!isMenuReady}
                   initial={{ opacity: 0, x: -6 }}
                   animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: 0.06 }}
+                  transition={{ delay: 0.09 }}
                   onMouseDown={(e) => e.preventDefault()}
                   onClick={openEditModal}
                 >
@@ -538,7 +631,7 @@ export const ChatMessage = ({
                   aria-disabled={!isMenuReady}
                   initial={{ opacity: 0, x: -6 }}
                   animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: 0.09 }}
+                  transition={{ delay: 0.12 }}
                   onMouseDown={(e) => e.preventDefault()}
                   onClick={handleDelete}
                 >
