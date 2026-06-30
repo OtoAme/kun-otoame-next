@@ -59,6 +59,43 @@ const mapPrivateMessage = (msg: PrivateMessageRecord): PrivateMessage => ({
   sender: msg.sender
 })
 
+const buildReplyPreview = async (
+  conversationId: number,
+  replyToMessageId?: number,
+  replySelectedText?: string
+) => {
+  if (!replyToMessageId) {
+    return null
+  }
+
+  const replyTarget = await prisma.user_private_message.findFirst({
+    where: { id: replyToMessageId, conversation_id: conversationId },
+    include: { sender: { select: { name: true } } }
+  })
+
+  if (!replyTarget) {
+    return '回复的消息不存在'
+  }
+
+  if (replyTarget.is_deleted) {
+    return '无法回复已删除的消息'
+  }
+
+  const selected = replySelectedText?.trim().slice(0, 500) || null
+  const targetContent = replyTarget.content.trim()
+  const fallback =
+    replyTarget.type === 1 && !targetContent
+      ? '[图片]'
+      : targetContent.slice(0, 500)
+
+  return {
+    reply_to_message_id: replyTarget.id,
+    reply_preview_content: selected ?? fallback,
+    reply_preview_sender_name: replyTarget.sender.name,
+    reply_selected_text: selected
+  }
+}
+
 const verifyConversationAccess = async (
   conversationId: number,
   uid: number
@@ -182,33 +219,75 @@ export const sendMessage = async (
     return '会话不存在或无权访问'
   }
 
-  const { content } = input
+  const { content = '', image, replyToMessageId, replySelectedText } = input
+  const type = input.type ?? 0
+  const replyPreview = await buildReplyPreview(
+    conversationId,
+    replyToMessageId,
+    replySelectedText
+  )
 
-  const message = await prisma.user_private_message.create({
-    data: {
-      conversation_id: conversationId,
-      sender_id: uid,
-      content
-    }
-  })
+  if (typeof replyPreview === 'string') {
+    return replyPreview
+  }
 
   const isUserA = conversation.user_a_id === uid
-  await prisma.user_conversation.update({
-    where: { id: conversationId },
-    data: {
-      last_message_id: message.id,
-      last_message_time: message.created,
-      ...(isUserA
-        ? { user_b_unread_count: { increment: 1 } }
-        : { user_a_unread_count: { increment: 1 } })
-    }
+  const message = await prisma.$transaction(async (tx) => {
+    const created = await tx.user_private_message.create({
+      data: {
+        conversation_id: conversationId,
+        sender_id: uid,
+        type,
+        content,
+        image_url: image?.url,
+        image_width: image?.width,
+        image_height: image?.height,
+        image_size: image?.size,
+        image_mime: image?.mime,
+        image_name: image?.name,
+        ...(replyPreview ?? {})
+      },
+      include: {
+        sender: {
+          select: { id: true, name: true, avatar: true }
+        }
+      }
+    })
+
+    await tx.user_conversation.update({
+      where: { id: conversationId },
+      data: {
+        last_message_id: created.id,
+        last_message_time: created.created,
+        ...(isUserA
+          ? { user_b_unread_count: { increment: 1 } }
+          : { user_a_unread_count: { increment: 1 } })
+      }
+    })
+
+    return created
   })
 
-  return {
+  return mapPrivateMessage({
     id: message.id,
+    type: message.type,
     content: message.content,
-    created: message.created
-  }
+    status: message.status,
+    is_deleted: message.is_deleted,
+    edited_at: message.edited_at,
+    image_url: message.image_url,
+    image_width: message.image_width,
+    image_height: message.image_height,
+    image_size: message.image_size,
+    image_mime: message.image_mime,
+    image_name: message.image_name,
+    reply_to_message_id: message.reply_to_message_id,
+    reply_preview_content: message.reply_preview_content,
+    reply_preview_sender_name: message.reply_preview_sender_name,
+    reply_selected_text: message.reply_selected_text,
+    created: message.created,
+    sender: message.sender
+  })
 }
 
 export const updateMessage = async (
