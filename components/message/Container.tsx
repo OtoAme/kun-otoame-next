@@ -9,7 +9,15 @@ import { KunNull } from '~/components/kun/Null'
 import { MESSAGE_TYPE } from '~/constants/message'
 import toast from 'react-hot-toast'
 import { KunPagination } from '~/components/kun/Pagination'
-import { Button } from '@heroui/react'
+import {
+  Button,
+  Modal,
+  ModalBody,
+  ModalContent,
+  ModalFooter,
+  ModalHeader,
+  useDisclosure
+} from '@heroui/react'
 import { Trash2 } from 'lucide-react'
 import type { Message } from '~/types/api/message'
 
@@ -28,8 +36,13 @@ export const MessageContainer = ({ initialMessages, total, type }: Props) => {
   const [page, setPage] = useState(1)
   const isMounted = useMounted()
   const hasUsedInitialPageRef = useRef(false)
+  const requestIdRef = useRef(0)
+  const { isOpen, onOpen, onClose, onOpenChange } = useDisclosure()
 
   const fetchMessages = async (targetPage: number) => {
+    const requestId = requestIdRef.current + 1
+    requestIdRef.current = requestId
+
     try {
       setLoading(true)
 
@@ -43,6 +56,11 @@ export const MessageContainer = ({ initialMessages, total, type }: Props) => {
         page: targetPage,
         limit: 30
       })
+
+      if (requestId !== requestIdRef.current) {
+        return
+      }
+
       if (typeof response === 'string') {
         toast.error(response)
       } else {
@@ -50,9 +68,13 @@ export const MessageContainer = ({ initialMessages, total, type }: Props) => {
         setMessageTotal(response.total)
       }
     } catch {
-      toast.error('获取消息失败, 请稍后重试')
+      if (requestId === requestIdRef.current) {
+        toast.error('获取消息失败, 请稍后重试')
+      }
     } finally {
-      setLoading(false)
+      if (requestId === requestIdRef.current) {
+        setLoading(false)
+      }
     }
   }
 
@@ -69,6 +91,7 @@ export const MessageContainer = ({ initialMessages, total, type }: Props) => {
       }
 
       toast.success('已清理已读信息')
+      onClose()
 
       if (page !== 1) {
         setPage(1)
@@ -101,11 +124,36 @@ export const MessageContainer = ({ initialMessages, total, type }: Props) => {
         startContent={<Trash2 className="size-4" />}
         isDisabled={loading || clearing || !messageTotal}
         isLoading={clearing}
-        onPress={handleClearReadMessages}
+        onPress={onOpen}
         fullWidth
       >
         清理已读信息
       </Button>
+
+      <Modal isOpen={isOpen} onOpenChange={onOpenChange} placement="center">
+        <ModalContent>
+          <ModalHeader>确认清理已读信息</ModalHeader>
+          <ModalBody>
+            <p>确定要清理当前分类下的已读消息吗？</p>
+            <p className="text-sm text-default-500">
+              未读消息会被保留，清理后的已读消息不会再出现在消息列表中。
+            </p>
+          </ModalBody>
+          <ModalFooter>
+            <Button variant="light" onPress={onClose} isDisabled={clearing}>
+              取消
+            </Button>
+            <Button
+              color="danger"
+              onPress={handleClearReadMessages}
+              isLoading={clearing}
+              isDisabled={clearing}
+            >
+              确认清理
+            </Button>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
 
       {loading ? (
         <KunLoading hint="正在获取消息数据..." />

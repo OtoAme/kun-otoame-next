@@ -328,6 +328,24 @@ describe('ChatInput keyboard handling', () => {
     expect(onMessageSent).toHaveBeenCalledTimes(1)
   })
 
+  it('shows a retryable error when sending a text message throws', async () => {
+    const toast = (await import('react-hot-toast')).default
+    vi.mocked(toast.error).mockClear()
+    fetchMock.kunFetchPost.mockRejectedValueOnce(new Error('network down'))
+
+    const { textarea } = await renderChatInput()
+    await typeContent(textarea, 'hello')
+
+    await keyDownEnter(textarea)
+
+    expect(onMessageSent).not.toHaveBeenCalled()
+    expect(toast.error).toHaveBeenCalledWith('消息发送失败，请稍后重试')
+    const sendButton = dom!.window.document.querySelector<HTMLButtonElement>(
+      'button[aria-label="发送消息"]'
+    )
+    expect(sendButton?.disabled).toBe(false)
+  })
+
   it('sends reply metadata with the message payload', async () => {
     const replyTarget: PrivateMessage = {
       id: 3,
@@ -552,6 +570,94 @@ describe('ChatInput keyboard handling', () => {
     )
   })
 
+  it('clears the file input after a successful image send', async () => {
+    fetchMock.kunFetchFormData.mockResolvedValueOnce({
+      url: 'https://img.example/conversation/5/chat.avif',
+      width: 800,
+      height: 600,
+      size: 5,
+      mime: 'image/avif',
+      name: 'chat.avif'
+    })
+    fetchMock.kunFetchPost.mockResolvedValueOnce(
+      sentMessage(8, '', {
+        type: 1,
+        image: {
+          url: 'https://img.example/conversation/5/chat.avif',
+          width: 800,
+          height: 600,
+          size: 5,
+          mime: 'image/avif',
+          name: 'chat.avif'
+        }
+      })
+    )
+
+    const { container } = await renderChatInput()
+    const fileInput =
+      container.querySelector<HTMLInputElement>('input[type="file"]')
+    expect(fileInput).not.toBeNull()
+    Object.defineProperty(fileInput, 'files', {
+      configurable: true,
+      value: [new File(['image'], 'chat.webp', { type: 'image/webp' })]
+    })
+    Object.defineProperty(fileInput, 'value', {
+      configurable: true,
+      writable: true,
+      value: 'C:\\fakepath\\chat.webp'
+    })
+
+    await act(async () => {
+      fileInput?.dispatchEvent(
+        new dom!.window.Event('change', { bubbles: true })
+      )
+      await Promise.resolve()
+    })
+
+    const sendButton = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="发送消息"]'
+    )
+    await act(async () => {
+      sendButton?.click()
+      await Promise.resolve()
+    })
+
+    expect(fetchMock.kunFetchPost).toHaveBeenCalledTimes(1)
+    expect(fileInput?.value).toBe('')
+  })
+
+  it('closes the attachment menu when Escape is pressed', async () => {
+    const { container } = await renderChatInput()
+
+    const plusButton = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="添加附件"]'
+    )
+    expect(plusButton).not.toBeNull()
+
+    await act(async () => {
+      plusButton?.click()
+      await Promise.resolve()
+    })
+
+    expect(
+      container.querySelector<HTMLButtonElement>('button[aria-label="选择图片"]')
+    ).not.toBeNull()
+
+    await act(async () => {
+      document.dispatchEvent(
+        new dom!.window.KeyboardEvent('keydown', {
+          key: 'Escape',
+          bubbles: true
+        })
+      )
+      await Promise.resolve()
+    })
+
+    expect(
+      container.querySelector<HTMLButtonElement>('button[aria-label="选择图片"]')
+    ).toBeNull()
+  })
+
   it('loads pasted clipboard images into the same preview and send flow', async () => {
     fetchMock.kunFetchFormData
       .mockResolvedValueOnce({
@@ -619,6 +725,427 @@ describe('ChatInput keyboard handling', () => {
           }),
           expect.objectContaining({
             url: 'https://img.example/conversation/5/b.avif'
+          })
+        ]
+      })
+    )
+  })
+
+  it('caps rapidly appended clipboard images at nine before the next render', async () => {
+    const { container } = await renderChatInput()
+    const firstBatch = Array.from(
+      { length: 8 },
+      (_, index) =>
+        new File([`a-${index}`], `a-${index}.png`, { type: 'image/png' })
+    )
+    const secondBatch = Array.from(
+      { length: 3 },
+      (_, index) =>
+        new File([`b-${index}`], `b-${index}.png`, { type: 'image/png' })
+    )
+
+    await act(async () => {
+      textareaMock.onPaste?.({
+        clipboardData: { files: firstBatch },
+        preventDefault: vi.fn()
+      } as unknown as React.ClipboardEvent<HTMLTextAreaElement>)
+      textareaMock.onPaste?.({
+        clipboardData: { files: secondBatch },
+        preventDefault: vi.fn()
+      } as unknown as React.ClipboardEvent<HTMLTextAreaElement>)
+      await Promise.resolve()
+    })
+
+    expect(container.textContent).toContain('9 张图片')
+    expect(
+      container.querySelectorAll('button[aria-label^="查看待发送图片"]')
+    ).toHaveLength(9)
+    expect(
+      container.querySelectorAll('button[aria-label^="移除第"]')
+    ).toHaveLength(9)
+  })
+
+  it('removes one selected image from a multi-image draft before sending', async () => {
+    fetchMock.kunFetchFormData
+      .mockResolvedValueOnce({
+        url: 'https://img.example/conversation/5/a.avif',
+        width: 800,
+        height: 600,
+        size: 5,
+        mime: 'image/avif',
+        name: 'a.avif'
+      })
+      .mockResolvedValueOnce({
+        url: 'https://img.example/conversation/5/c.avif',
+        width: 700,
+        height: 700,
+        size: 7,
+        mime: 'image/avif',
+        name: 'c.avif'
+      })
+    fetchMock.kunFetchPost.mockResolvedValueOnce(
+      sentMessage(12, '', {
+        type: 1,
+        image: {
+          url: 'https://img.example/conversation/5/a.avif',
+          width: 800,
+          height: 600,
+          size: 5,
+          mime: 'image/avif',
+          name: 'a.avif'
+        }
+      })
+    )
+
+    const { container, textarea } = await renderChatInput()
+    const files = [
+      new File(['a'], 'a.png', { type: 'image/png' }),
+      new File(['b'], 'b.jpg', { type: 'image/jpeg' }),
+      new File(['c'], 'c.avif', { type: 'image/avif' })
+    ]
+
+    await act(async () => {
+      textareaMock.onPaste?.({
+        clipboardData: { files },
+        preventDefault: vi.fn()
+      } as unknown as React.ClipboardEvent<HTMLTextAreaElement>)
+      await Promise.resolve()
+    })
+
+    const removeSecondImageButton =
+      container.querySelector<HTMLButtonElement>(
+        'button[aria-label="移除第 2 张图片"]'
+      )
+    expect(removeSecondImageButton).not.toBeNull()
+
+    await act(async () => {
+      removeSecondImageButton?.click()
+      await Promise.resolve()
+    })
+
+    expect(container.textContent).toContain('2 张图片')
+
+    const sendButton = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="发送消息"]'
+    )
+    await act(async () => {
+      sendButton?.click()
+      await Promise.resolve()
+    })
+
+    expect(fetchMock.kunFetchFormData).toHaveBeenCalledTimes(2)
+    expect(fetchMock.kunFetchPost).toHaveBeenCalledWith(
+      '/message/conversation/5',
+      expect.objectContaining({
+        type: 1,
+        images: [
+          expect.objectContaining({
+            url: 'https://img.example/conversation/5/a.avif'
+          }),
+          expect.objectContaining({
+            url: 'https://img.example/conversation/5/c.avif'
+          })
+        ]
+      })
+    )
+  })
+
+  it('keeps successful image uploads when retrying a partially failed image send', async () => {
+    fetchMock.kunFetchFormData
+      .mockResolvedValueOnce({
+        url: 'https://img.example/conversation/5/a.avif',
+        width: 800,
+        height: 600,
+        size: 5,
+        mime: 'image/avif',
+        name: 'a.avif'
+      })
+      .mockResolvedValueOnce('图片上传过于频繁，请 60 秒后再试')
+
+    const { container, textarea } = await renderChatInput()
+    const files = [
+      new File(['a'], 'a.png', { type: 'image/png' }),
+      new File(['b'], 'b.jpg', { type: 'image/jpeg' })
+    ]
+
+    await act(async () => {
+      textareaMock.onPaste?.({
+        clipboardData: { files },
+        preventDefault: vi.fn()
+      } as unknown as React.ClipboardEvent<HTMLTextAreaElement>)
+      await Promise.resolve()
+    })
+
+    const sendButton = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="发送消息"]'
+    )
+
+    await act(async () => {
+      sendButton?.click()
+      await Promise.resolve()
+    })
+
+    expect(fetchMock.kunFetchFormData).toHaveBeenCalledTimes(2)
+    expect(fetchMock.kunFetchPost).not.toHaveBeenCalled()
+
+    fetchMock.kunFetchFormData.mockResolvedValueOnce({
+      url: 'https://img.example/conversation/5/b.avif',
+      width: 900,
+      height: 600,
+      size: 6,
+      mime: 'image/avif',
+      name: 'b.avif'
+    })
+    fetchMock.kunFetchPost.mockResolvedValueOnce(
+      sentMessage(10, '', {
+        type: 1,
+        image: {
+          url: 'https://img.example/conversation/5/a.avif',
+          width: 800,
+          height: 600,
+          size: 5,
+          mime: 'image/avif',
+          name: 'a.avif'
+        }
+      })
+    )
+
+    await act(async () => {
+      sendButton?.click()
+      await Promise.resolve()
+    })
+
+    expect(fetchMock.kunFetchFormData).toHaveBeenCalledTimes(3)
+    expect(fetchMock.kunFetchPost).toHaveBeenCalledWith(
+      '/message/conversation/5',
+      expect.objectContaining({
+        type: 1,
+        images: [
+          expect.objectContaining({
+            url: 'https://img.example/conversation/5/a.avif'
+          }),
+          expect.objectContaining({
+            url: 'https://img.example/conversation/5/b.avif'
+          })
+        ]
+      })
+    )
+  })
+
+  it('shows a retryable error when an image upload request throws', async () => {
+    const toast = (await import('react-hot-toast')).default
+    vi.mocked(toast.error).mockClear()
+    fetchMock.kunFetchFormData.mockRejectedValueOnce(new Error('network down'))
+
+    const { container, textarea } = await renderChatInput()
+    const files = [new File(['a'], 'a.png', { type: 'image/png' })]
+
+    await act(async () => {
+      textareaMock.onPaste?.({
+        clipboardData: { files },
+        preventDefault: vi.fn()
+      } as unknown as React.ClipboardEvent<HTMLTextAreaElement>)
+      await Promise.resolve()
+    })
+
+    const sendButton = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="发送消息"]'
+    )
+    await act(async () => {
+      sendButton?.click()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(fetchMock.kunFetchPost).not.toHaveBeenCalled()
+    expect(toast.error).toHaveBeenCalledWith('图片上传失败，请重试')
+    expect(sendButton?.disabled).toBe(false)
+  })
+
+  it('keeps successful image uploads when another upload request throws', async () => {
+    const toast = (await import('react-hot-toast')).default
+    vi.mocked(toast.error).mockClear()
+    fetchMock.kunFetchFormData
+      .mockResolvedValueOnce({
+        url: 'https://img.example/conversation/5/a.avif',
+        width: 800,
+        height: 600,
+        size: 5,
+        mime: 'image/avif',
+        name: 'a.avif'
+      })
+      .mockRejectedValueOnce(new Error('network down'))
+
+    const { container, textarea } = await renderChatInput()
+    const files = [
+      new File(['a'], 'a.png', { type: 'image/png' }),
+      new File(['b'], 'b.jpg', { type: 'image/jpeg' })
+    ]
+
+    await act(async () => {
+      textareaMock.onPaste?.({
+        clipboardData: { files },
+        preventDefault: vi.fn()
+      } as unknown as React.ClipboardEvent<HTMLTextAreaElement>)
+      await Promise.resolve()
+    })
+
+    const sendButton = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="发送消息"]'
+    )
+
+    await act(async () => {
+      sendButton?.click()
+      await Promise.resolve()
+    })
+
+    expect(fetchMock.kunFetchFormData).toHaveBeenCalledTimes(2)
+    expect(fetchMock.kunFetchPost).not.toHaveBeenCalled()
+    expect(toast.error).toHaveBeenCalledWith('图片上传失败，请重试')
+
+    fetchMock.kunFetchFormData.mockResolvedValueOnce({
+      url: 'https://img.example/conversation/5/b.avif',
+      width: 900,
+      height: 600,
+      size: 6,
+      mime: 'image/avif',
+      name: 'b.avif'
+    })
+    fetchMock.kunFetchPost.mockResolvedValueOnce(
+      sentMessage(13, '', {
+        type: 1,
+        image: {
+          url: 'https://img.example/conversation/5/a.avif',
+          width: 800,
+          height: 600,
+          size: 5,
+          mime: 'image/avif',
+          name: 'a.avif'
+        }
+      })
+    )
+
+    await act(async () => {
+      sendButton?.click()
+      await Promise.resolve()
+    })
+
+    expect(fetchMock.kunFetchFormData).toHaveBeenCalledTimes(3)
+    expect(fetchMock.kunFetchPost).toHaveBeenCalledWith(
+      '/message/conversation/5',
+      expect.objectContaining({
+        type: 1,
+        images: [
+          expect.objectContaining({
+            url: 'https://img.example/conversation/5/a.avif'
+          }),
+          expect.objectContaining({
+            url: 'https://img.example/conversation/5/b.avif'
+          })
+        ]
+      })
+    )
+  })
+
+  it('keeps successful image uploads when adding another image before retrying', async () => {
+    fetchMock.kunFetchFormData
+      .mockResolvedValueOnce({
+        url: 'https://img.example/conversation/5/a.avif',
+        width: 800,
+        height: 600,
+        size: 5,
+        mime: 'image/avif',
+        name: 'a.avif'
+      })
+      .mockResolvedValueOnce('图片上传过于频繁，请 60 秒后再试')
+
+    const { container, textarea } = await renderChatInput()
+    const initialFiles = [
+      new File(['a'], 'a.png', { type: 'image/png' }),
+      new File(['b'], 'b.jpg', { type: 'image/jpeg' })
+    ]
+
+    await act(async () => {
+      textareaMock.onPaste?.({
+        clipboardData: { files: initialFiles },
+        preventDefault: vi.fn()
+      } as unknown as React.ClipboardEvent<HTMLTextAreaElement>)
+      await Promise.resolve()
+    })
+
+    const sendButton = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="发送消息"]'
+    )
+
+    await act(async () => {
+      sendButton?.click()
+      await Promise.resolve()
+    })
+
+    expect(fetchMock.kunFetchFormData).toHaveBeenCalledTimes(2)
+    expect(fetchMock.kunFetchPost).not.toHaveBeenCalled()
+
+    const appendedFiles = [
+      new File(['c'], 'c.avif', { type: 'image/avif' })
+    ]
+    await act(async () => {
+      textareaMock.onPaste?.({
+        clipboardData: { files: appendedFiles },
+        preventDefault: vi.fn()
+      } as unknown as React.ClipboardEvent<HTMLTextAreaElement>)
+      await Promise.resolve()
+    })
+
+    fetchMock.kunFetchFormData
+      .mockResolvedValueOnce({
+        url: 'https://img.example/conversation/5/b.avif',
+        width: 900,
+        height: 600,
+        size: 6,
+        mime: 'image/avif',
+        name: 'b.avif'
+      })
+      .mockResolvedValueOnce({
+        url: 'https://img.example/conversation/5/c.avif',
+        width: 700,
+        height: 700,
+        size: 7,
+        mime: 'image/avif',
+        name: 'c.avif'
+      })
+    fetchMock.kunFetchPost.mockResolvedValueOnce(
+      sentMessage(11, '', {
+        type: 1,
+        image: {
+          url: 'https://img.example/conversation/5/a.avif',
+          width: 800,
+          height: 600,
+          size: 5,
+          mime: 'image/avif',
+          name: 'a.avif'
+        }
+      })
+    )
+
+    await act(async () => {
+      sendButton?.click()
+      await Promise.resolve()
+    })
+
+    expect(fetchMock.kunFetchFormData).toHaveBeenCalledTimes(4)
+    expect(fetchMock.kunFetchPost).toHaveBeenCalledWith(
+      '/message/conversation/5',
+      expect.objectContaining({
+        type: 1,
+        images: [
+          expect.objectContaining({
+            url: 'https://img.example/conversation/5/a.avif'
+          }),
+          expect.objectContaining({
+            url: 'https://img.example/conversation/5/b.avif'
+          }),
+          expect.objectContaining({
+            url: 'https://img.example/conversation/5/c.avif'
           })
         ]
       })

@@ -15,21 +15,45 @@ import {
   sendMessage,
   updateMessage
 } from './service'
+import {
+  createConversationRateLimitResponse,
+  getConversationRetryAfterSeconds,
+  isConversationRateLimitResponse
+} from '../response'
+import { parseConversationRouteId } from '../routeParams'
 
-const jsonNoStore = (body: unknown) =>
+const jsonNoStore = (
+  body: unknown,
+  init?: { status?: number; headers?: HeadersInit }
+) =>
   NextResponse.json(body, {
+    status: init?.status,
     headers: {
-      'Cache-Control': PERSONALIZED_API_CACHE_CONTROL
+      'Cache-Control': PERSONALIZED_API_CACHE_CONTROL,
+      ...init?.headers
     }
   })
+
+const jsonConversationResponse = (body: unknown) => {
+  if (isConversationRateLimitResponse(body)) {
+    return jsonNoStore(body.message, {
+      status: 429,
+      headers: {
+        'Retry-After': getConversationRetryAfterSeconds(body.retryAfterMs)
+      }
+    })
+  }
+
+  return jsonNoStore(body)
+}
 
 export const GET = async (
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) => {
   const { id } = await params
-  const conversationId = parseInt(id, 10)
-  if (isNaN(conversationId)) {
+  const conversationId = parseConversationRouteId(id)
+  if (conversationId === null) {
     return jsonNoStore('无效的会话 ID')
   }
 
@@ -41,6 +65,19 @@ export const GET = async (
   const payload = await verifyHeaderCookie(req)
   if (!payload) {
     return jsonNoStore('用户未登录')
+  }
+
+  const { checkConversationActionRateLimit } = await import('../rateLimit')
+  const rateLimit = await checkConversationActionRateLimit(
+    'message-read',
+    payload.uid
+  )
+  if (!rateLimit.allowed) {
+    return jsonConversationResponse({
+      kind: 'conversation-rate-limit',
+      message: rateLimit.message,
+      retryAfterMs: rateLimit.retryAfterMs
+    })
   }
 
   const response = await getConversationMessages(
@@ -56,8 +93,8 @@ export const POST = async (
   { params }: { params: Promise<{ id: string }> }
 ) => {
   const { id } = await params
-  const conversationId = parseInt(id, 10)
-  if (isNaN(conversationId)) {
+  const conversationId = parseConversationRouteId(id)
+  if (conversationId === null) {
     return jsonNoStore('无效的会话 ID')
   }
 
@@ -72,7 +109,7 @@ export const POST = async (
   }
 
   const response = await sendMessage(conversationId, input, payload.uid)
-  return jsonNoStore(response)
+  return jsonConversationResponse(response)
 }
 
 export const PUT = async (
@@ -80,8 +117,8 @@ export const PUT = async (
   { params }: { params: Promise<{ id: string }> }
 ) => {
   const { id } = await params
-  const conversationId = parseInt(id, 10)
-  if (isNaN(conversationId)) {
+  const conversationId = parseConversationRouteId(id)
+  if (conversationId === null) {
     return jsonNoStore('无效的会话 ID')
   }
 
@@ -96,7 +133,7 @@ export const PUT = async (
   }
 
   const response = await updateMessage(conversationId, input, payload.uid)
-  return jsonNoStore(response)
+  return jsonConversationResponse(response)
 }
 
 export const DELETE = async (
@@ -104,8 +141,8 @@ export const DELETE = async (
   { params }: { params: Promise<{ id: string }> }
 ) => {
   const { id } = await params
-  const conversationId = parseInt(id, 10)
-  if (isNaN(conversationId)) {
+  const conversationId = parseConversationRouteId(id)
+  if (conversationId === null) {
     return jsonNoStore('无效的会话 ID')
   }
 
@@ -123,13 +160,29 @@ export const DELETE = async (
     }
 
     const response = await deleteMessage(conversationId, input, payload.uid)
-    return jsonNoStore(response)
+    return jsonConversationResponse(response)
   }
 
   if (searchParams.get('action') !== 'conversation') {
     return jsonNoStore('无效的删除操作类型')
   }
 
-  const response = await deleteConversation(conversationId, payload.uid)
-  return jsonNoStore(response)
+  const { checkConversationActionRateLimit } = await import('../rateLimit')
+  const rateLimit = await checkConversationActionRateLimit(
+    'conversation-manage',
+    payload.uid
+  )
+  if (!rateLimit.allowed) {
+    return jsonConversationResponse(
+      createConversationRateLimitResponse(
+        rateLimit.message,
+        rateLimit.retryAfterMs
+      )
+    )
+  }
+
+  const response = await deleteConversation(conversationId, payload.uid, {
+    skipRateLimit: true
+  })
+  return jsonConversationResponse(response)
 }

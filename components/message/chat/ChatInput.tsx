@@ -7,8 +7,8 @@ import { ImageIcon, Plus, Send, X } from 'lucide-react'
 import { kunFetchFormData, kunFetchPost } from '~/utils/kunFetch'
 import toast from 'react-hot-toast'
 import { ChatAttachmentMenu } from './ChatAttachmentMenu'
-import { ChatImageGrid } from './ChatImageGrid'
 import { ChatReplyPreview } from './ChatReplyPreview'
+import { KunImageViewer } from '~/components/kun/image-viewer/ImageViewer'
 import type {
   PrivateMessage,
   PrivateMessageImage
@@ -29,6 +29,7 @@ const ALLOWED_IMAGE_TYPES = new Set([
   'image/webp',
   'image/avif'
 ])
+const MAX_IMAGES_PER_MESSAGE = 9
 
 export const ChatInput = ({
   conversationId,
@@ -41,9 +42,9 @@ export const ChatInput = ({
   const [content, setContent] = useState('')
   const [isAttachmentMenuOpen, setIsAttachmentMenuOpen] = useState(false)
   const [selectedImages, setSelectedImages] = useState<File[]>([])
-  const [uploadedImages, setUploadedImages] = useState<PrivateMessageImage[]>(
-    []
-  )
+  const [uploadedImages, setUploadedImages] = useState<
+    (PrivateMessageImage | null)[]
+  >([])
   const [previewImages, setPreviewImages] = useState<PrivateMessageImage[]>([])
   const [sending, setSending] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -81,9 +82,18 @@ export const ChatInput = ({
       }
       setIsAttachmentMenuOpen(false)
     }
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setIsAttachmentMenuOpen(false)
+      }
+    }
 
     document.addEventListener('pointerdown', closeIfOutside)
-    return () => document.removeEventListener('pointerdown', closeIfOutside)
+    document.addEventListener('keydown', closeOnEscape)
+    return () => {
+      document.removeEventListener('pointerdown', closeIfOutside)
+      document.removeEventListener('keydown', closeOnEscape)
+    }
   }, [isAttachmentMenuOpen])
 
   useEffect(() => {
@@ -100,6 +110,10 @@ export const ChatInput = ({
     textarea.focus({ preventScroll: true })
     textarea.setSelectionRange(end, end)
   }, [replyImageIndex, replySelectedText, replyTarget])
+
+  const isUploadedImage = (
+    image: PrivateMessageImage | null | undefined
+  ): image is PrivateMessageImage => Boolean(image)
 
   const handleSend = async () => {
     if (isSendingRef.current) {
@@ -123,29 +137,55 @@ export const ChatInput = ({
     isSendingRef.current = true
     setSending(true)
     try {
-      let imagePayloads = uploadedImages
-      if (selectedImages.length > 0 && imagePayloads.length === 0) {
-        const uploadResults = await Promise.all(
-          selectedImages.map(async (file) => {
-            const formData = new FormData()
-            formData.append('image', file)
-            return kunFetchFormData<KunResponse<PrivateMessageImage>>(
-              `/message/conversation/${conversationId}/image`,
-              formData
-            )
-          })
+      let imagePayloads = uploadedImages.filter(isUploadedImage)
+      if (selectedImages.length > 0) {
+        const nextUploadedImages = selectedImages.map(
+          (_, index) => uploadedImages[index] ?? null
         )
+        const pendingUploads = selectedImages
+          .map((file, index) => ({ file, index }))
+          .filter(({ index }) => !nextUploadedImages[index])
 
-        const failedUpload = uploadResults.find(
-          (result): result is string => typeof result === 'string'
-        )
-        if (failedUpload) {
-          toast.error(failedUpload)
-          return
+        if (pendingUploads.length > 0) {
+          const uploadResults = await Promise.allSettled(
+            pendingUploads.map(async ({ file, index }) => {
+              const formData = new FormData()
+              formData.append('image', file)
+              const result = await kunFetchFormData<
+                KunResponse<PrivateMessageImage>
+              >(`/message/conversation/${conversationId}/image`, formData)
+              return { index, result }
+            })
+          )
+
+          let failedUpload: string | null = null
+          for (const uploadResult of uploadResults) {
+            if (uploadResult.status === 'rejected') {
+              failedUpload ??= '图片上传失败，请重试'
+              continue
+            }
+
+            const { index, result } = uploadResult.value
+            if (typeof result === 'string') {
+              failedUpload ??= result
+            } else {
+              nextUploadedImages[index] = result
+            }
+          }
+
+          setUploadedImages(nextUploadedImages)
+
+          if (failedUpload) {
+            toast.error(failedUpload)
+            return
+          }
         }
 
-        imagePayloads = uploadResults as PrivateMessageImage[]
-        setUploadedImages(imagePayloads)
+        imagePayloads = nextUploadedImages.filter(isUploadedImage)
+        if (imagePayloads.length !== selectedImages.length) {
+          toast.error('图片上传失败，请重试')
+          return
+        }
       }
 
       const response = await kunFetchPost<KunResponse<PrivateMessage>>(
@@ -167,9 +207,14 @@ export const ChatInput = ({
         setContent('')
         setSelectedImages([])
         setUploadedImages([])
+        if (fileInputRef.current) {
+          fileInputRef.current.value = ''
+        }
         onCancelReply?.()
         onMessageSent(response)
       }
+    } catch {
+      toast.error('消息发送失败，请稍后重试')
     } finally {
       isSendingRef.current = false
       setSending(false)
@@ -183,13 +228,19 @@ export const ChatInput = ({
     }
 
     setSelectedImages((current) => {
-      const next = [...current, ...images].slice(0, 9)
-      if (current.length + images.length > 9) {
+      const remainingSlots = Math.max(
+        0,
+        MAX_IMAGES_PER_MESSAGE - current.length
+      )
+      const imagesToAppend = images.slice(0, remainingSlots)
+      if (imagesToAppend.length < images.length) {
         toast.error('一次最多发送 9 张图片')
       }
-      return next
+      if (imagesToAppend.length === 0) {
+        return current
+      }
+      return [...current, ...imagesToAppend]
     })
-    setUploadedImages([])
     setIsAttachmentMenuOpen(false)
   }
 
@@ -228,7 +279,11 @@ export const ChatInput = ({
         ? []
         : current.filter((_, itemIndex) => itemIndex !== index)
     )
-    setUploadedImages([])
+    setUploadedImages((current) =>
+      index === undefined
+        ? []
+        : current.filter((_, itemIndex) => itemIndex !== index)
+    )
     if (fileInputRef.current) {
       fileInputRef.current.value = ''
     }
@@ -237,6 +292,12 @@ export const ChatInput = ({
   const canSend = Boolean(
     content.trim() || selectedImages.length > 0 || uploadedImages.length > 0
   )
+  const previewViewerImages = previewImages.map((image) => ({
+    src: image.url,
+    alt: image.name || '待发送图片',
+    width: image.width,
+    height: image.height
+  }))
   const replyTargetImages =
     replyTarget?.images && replyTarget.images.length > 0
       ? replyTarget.images
@@ -303,11 +364,41 @@ export const ChatInput = ({
 
       {previewImages.length > 0 && (
         <div className="mb-2 rounded-2xl border border-[hsl(var(--kun-brand-100)/0.85)] bg-[hsl(var(--kun-brand-50)/0.55)] p-1.5 shadow-sm dark:border-[hsl(var(--kun-brand-400)/0.18)] dark:bg-[hsl(var(--kun-brand-500)/0.08)]">
-          <ChatImageGrid
-            images={previewImages}
-            className="max-w-sm rounded-xl"
-            imageClassName="max-h-40"
-          />
+          <KunImageViewer images={previewViewerImages} preload={2}>
+            {(openLightbox) => (
+              <div className="grid max-w-sm grid-cols-2 gap-1 overflow-hidden rounded-xl">
+                {previewImages.map((image, index) => (
+                  <div
+                    key={`${image.url}-${index}`}
+                    className="relative aspect-square min-h-0 min-w-0 overflow-hidden bg-default-100"
+                  >
+                    <button
+                      type="button"
+                      className="group block h-full w-full focus:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--kun-brand-500))]"
+                      aria-label={`查看待发送图片 ${index + 1}`}
+                      onClick={() => openLightbox(index)}
+                    >
+                      <img
+                        src={image.url}
+                        alt={image.name || '待发送图片'}
+                        className="h-full w-full object-cover transition-transform duration-200 group-hover:scale-[1.015]"
+                      />
+                    </button>
+                    <Button
+                      isIconOnly
+                      size="sm"
+                      variant="flat"
+                      aria-label={`移除第 ${index + 1} 张图片`}
+                      className="absolute right-1 top-1 z-10 min-h-7 min-w-7 bg-background/85 text-default-700 shadow-sm backdrop-blur"
+                      onPress={() => removeSelectedImage(index)}
+                    >
+                      <X className="size-3.5" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </KunImageViewer>
           <div className="mt-1.5 flex items-center justify-between gap-2 px-1 text-xs text-default-500">
             <span className="inline-flex min-w-0 items-center gap-1">
               <ImageIcon className="size-3.5 shrink-0" />
@@ -336,6 +427,8 @@ export const ChatInput = ({
             isIconOnly
             variant={isAttachmentMenuOpen ? 'flat' : 'light'}
             aria-label="添加附件"
+            aria-expanded={isAttachmentMenuOpen}
+            aria-haspopup="menu"
             onPress={() => setIsAttachmentMenuOpen((value) => !value)}
           >
             <Plus className="size-4" />

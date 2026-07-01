@@ -38,4 +38,22 @@ describe('kunFetchGet', () => {
     await requestError
     expect(signal?.aborted).toBe(true)
   })
+
+  it('returns JSON string error bodies from non-2xx responses', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify('发送过于频繁，请 31 秒后再试'), {
+        status: 429,
+        headers: { 'Content-Type': 'application/json' }
+      })
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const { kunFetchPost } = await import('~/utils/kunFetch')
+    await expect(
+      kunFetchPost<string>('/message/conversation/5', {
+        type: 0,
+        content: 'hello'
+      })
+    ).resolves.toBe('发送过于频繁，请 31 秒后再试')
+  })
 })

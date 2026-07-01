@@ -11,6 +11,8 @@ model user_conversation {
   last_message_time   DateTime @default(now())
   user_a_unread_count Int      @default(0)
   user_b_unread_count Int      @default(0)
+  user_a_hidden       Boolean  @default(false)
+  user_b_hidden       Boolean  @default(false)
 
   messages user_private_message[]
 

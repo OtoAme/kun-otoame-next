@@ -7,6 +7,19 @@ type FetchOptions = {
   keepalive?: boolean
 }
 
+const parseKunFetchResponseBody = async (response: Response) => {
+  const text = await response.text()
+  if (!text) {
+    return undefined
+  }
+
+  try {
+    return JSON.parse(text) as unknown
+  } catch {
+    return text
+  }
+}
+
 const kunFetchRequest = async <T>(
   url: string,
   method: 'GET' | 'POST' | 'PUT' | 'DELETE',
@@ -66,14 +79,17 @@ const kunFetchRequest = async <T>(
 
     try {
       const response = await fetch(fullUrl, fetchOptions)
+      const res = await parseKunFetchResponseBody(response)
 
       if (!response.ok) {
+        if (typeof res === 'string') {
+          return res as T
+        }
+
         throw new Error(`Kun Fetch error! Status: ${response.status}`)
       }
 
-      const res = await response.json()
-
-      return res
+      return res as T
     } finally {
       if (timeoutId) {
         clearTimeout(timeoutId)

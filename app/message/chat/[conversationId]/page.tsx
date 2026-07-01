@@ -1,6 +1,7 @@
 import { ChatContainer } from '~/components/message/chat/ChatContainer'
 import { ErrorComponent } from '~/components/error/ErrorComponent'
 import { KunBreadcrumbTitle } from '~/components/kun/BreadcrumbTitle'
+import { parseConversationRouteId } from '~/app/api/message/conversation/routeParams'
 import { kunGetConversationMessagesAction } from '../actions'
 import type { Metadata } from 'next'
 
@@ -16,9 +17,9 @@ interface Props {
 
 export default async function Kun({ params }: Props) {
   const { conversationId } = await params
-  const id = parseInt(conversationId, 10)
+  const id = parseConversationRouteId(conversationId)
 
-  if (isNaN(id)) {
+  if (id === null) {
     return <ErrorComponent error="无效的会话 ID" />
   }
 

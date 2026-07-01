@@ -255,4 +255,154 @@ describe('MessageNav unread badges', () => {
 
     expect(container.querySelector('.bg-danger')).toBeNull()
   })
+
+  it('does not let a stale unread response overwrite the notification read result', async () => {
+    navigationMock.pathname = '/message/chat'
+    const unreadRequest = createDeferred<{
+      hasUnreadMessages: boolean
+      hasUnreadChat: boolean
+    }>()
+    fetchMock.kunFetchGet.mockReturnValueOnce(unreadRequest.promise)
+    fetchMock.kunFetchPut.mockResolvedValueOnce({
+      hasUnreadNotification: false,
+      hasUnreadConversation: false
+    })
+
+    const { rerenderAt, useMessageStore } = await renderMessageNav({
+      hasUnreadNotification: true,
+      hasUnreadConversation: false
+    })
+
+    await rerenderAt('/message/notice')
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    expect(useMessageStore.getState()).toMatchObject({
+      hasUnreadNotification: false,
+      hasUnreadConversation: false
+    })
+
+    await act(async () => {
+      unreadRequest.resolve({
+        hasUnreadMessages: true,
+        hasUnreadChat: true
+      })
+      await unreadRequest.promise
+    })
+
+    expect(useMessageStore.getState()).toMatchObject({
+      hasUnreadNotification: false,
+      hasUnreadConversation: false
+    })
+  })
+
+  it('shows a retryable error and restores unread state when marking notifications read throws', async () => {
+    const toast = (await import('react-hot-toast')).default
+    vi.mocked(toast.error).mockClear()
+    fetchMock.kunFetchPut.mockRejectedValueOnce(new Error('network down'))
+    fetchMock.kunFetchGet.mockResolvedValueOnce({
+      hasUnreadMessages: true,
+      hasUnreadChat: true
+    })
+
+    const { rerenderAt, useMessageStore } = await renderMessageNav({
+      hasUnreadNotification: true,
+      hasUnreadConversation: false
+    })
+
+    await act(async () => {
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(fetchMock.kunFetchPut).toHaveBeenCalledWith('/message/read')
+    expect(toast.error).toHaveBeenCalledWith('标记消息已读失败，请稍后重试')
+    expect(fetchMock.kunFetchGet).toHaveBeenCalledWith('/message/unread')
+    expect(useMessageStore.getState()).toMatchObject({
+      hasUnreadNotification: true,
+      hasUnreadConversation: true
+    })
+
+    await rerenderAt('/message/chat')
+
+    expect(useMessageStore.getState()).toMatchObject({
+      hasUnreadNotification: true,
+      hasUnreadConversation: true
+    })
+  })
+
+  it('restores unread state when marking notifications read returns a business error', async () => {
+    const toast = (await import('react-hot-toast')).default
+    vi.mocked(toast.error).mockClear()
+    fetchMock.kunFetchPut.mockResolvedValueOnce('用户未登录')
+    fetchMock.kunFetchGet.mockResolvedValueOnce({
+      hasUnreadMessages: true,
+      hasUnreadChat: true
+    })
+
+    const { rerenderAt, useMessageStore } = await renderMessageNav({
+      hasUnreadNotification: true,
+      hasUnreadConversation: false
+    })
+
+    await act(async () => {
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(fetchMock.kunFetchPut).toHaveBeenCalledWith('/message/read')
+    expect(toast.error).toHaveBeenCalledWith('用户未登录')
+    expect(fetchMock.kunFetchGet).toHaveBeenCalledWith('/message/unread')
+    expect(useMessageStore.getState()).toMatchObject({
+      hasUnreadNotification: true,
+      hasUnreadConversation: true
+    })
+
+    await rerenderAt('/message/chat')
+
+    expect(useMessageStore.getState()).toMatchObject({
+      hasUnreadNotification: true,
+      hasUnreadConversation: true
+    })
+  })
+
+  it('restores the previous unread state when both notification read and recovery are rate limited', async () => {
+    const toast = (await import('react-hot-toast')).default
+    vi.mocked(toast.error).mockClear()
+    fetchMock.kunFetchPut.mockResolvedValueOnce(
+      '通知操作过于频繁, 请 30 秒后重试'
+    )
+    fetchMock.kunFetchGet.mockResolvedValueOnce(
+      '通知读取过于频繁, 请 30 秒后重试'
+    )
+
+    const { rerenderAt, useMessageStore } = await renderMessageNav({
+      hasUnreadNotification: true,
+      hasUnreadConversation: true
+    })
+
+    await act(async () => {
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(fetchMock.kunFetchPut).toHaveBeenCalledWith('/message/read')
+    expect(toast.error).toHaveBeenCalledWith(
+      '通知操作过于频繁, 请 30 秒后重试'
+    )
+    expect(fetchMock.kunFetchGet).toHaveBeenCalledWith('/message/unread')
+    expect(useMessageStore.getState()).toMatchObject({
+      hasUnreadNotification: true,
+      hasUnreadConversation: true
+    })
+
+    await rerenderAt('/message/chat')
+
+    expect(useMessageStore.getState()).toMatchObject({
+      hasUnreadNotification: true,
+      hasUnreadConversation: true
+    })
+  })
 })

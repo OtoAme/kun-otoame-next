@@ -68,12 +68,21 @@ export const sendPrivateMessageSchema = z
         path: ['images']
       })
     }
+
+    if (imageCount > 0 && input.type !== 1) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: '图片消息类型不正确',
+        path: ['type']
+      })
+    }
   })
 
 export const updatePrivateMessageSchema = z.object({
   messageId: z.coerce.number().min(1).max(9999999),
   content: z
     .string()
+    .trim()
     .min(1, { message: '消息内容不能为空' })
     .max(2000, { message: '消息内容最多 2000 个字符' })
 })

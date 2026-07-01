@@ -16,7 +16,8 @@ const fetchMock = vi.hoisted(() => ({
 }))
 
 const chatInputMock = vi.hoisted(() => ({
-  onMessageSent: undefined as ((message: PrivateMessage) => void) | undefined
+  onMessageSent: undefined as ((message: PrivateMessage) => void) | undefined,
+  replyTargetId: null as number | null
 }))
 
 const intersectionMock = vi.hoisted(() => ({
@@ -28,6 +29,21 @@ const imageViewerMock = vi.hoisted(() => ({
   index: -1,
   onClose: undefined as (() => void) | undefined,
   onView: undefined as ((index: number) => void) | undefined
+}))
+
+const chatMessageMock = vi.hoisted(() => ({
+  onMessageUpdatedById: new Map<
+    number,
+    (data: { action: 'delete' } | { action: 'edit'; content: string; editedAt: string | Date }) => void
+  >(),
+  onReplyById: new Map<
+    number,
+    (
+      message: PrivateMessage,
+      selectedText: string | null,
+      imageIndex?: number | null
+    ) => void
+  >()
 }))
 
 vi.mock('~/utils/kunFetch', () => ({
@@ -103,11 +119,14 @@ vi.mock('~/components/kun/floating-card/KunAvatar', () => ({
 
 vi.mock('~/components/message/chat/ChatInput', () => ({
   ChatInput: ({
-    onMessageSent
+    onMessageSent,
+    replyTarget
   }: {
     onMessageSent: (message: PrivateMessage) => void
+    replyTarget?: PrivateMessage
   }) => {
     chatInputMock.onMessageSent = onMessageSent
+    chatInputMock.replyTargetId = replyTarget?.id ?? null
     return <div data-testid="chat-input" />
   }
 }))
@@ -119,48 +138,73 @@ vi.mock('~/components/message/chat/DeleteConversationButton', () => ({
 vi.mock('~/components/message/chat/ChatMessage', () => ({
   ChatMessage: ({
     message,
+    onReply,
     onOpenImage,
     onReplyPreviewClick,
     replyHighlight,
-    isReplyHighlightFading
+    isReplyHighlightFading,
+    onMessageUpdated
   }: {
     message: PrivateMessage
+    onReply?: (
+      message: PrivateMessage,
+      selectedText: string | null,
+      imageIndex?: number | null
+    ) => void
     onOpenImage?: (message: PrivateMessage, imageIndex: number) => void
     onReplyPreviewClick?: (replyTo: PrivateMessageReplyPreview) => void
     replyHighlight?: ChatReplyHighlight | null
     isReplyHighlightFading?: boolean
-  }) => (
-    <div
-      id={`chat-message-${message.id}`}
-      data-message-id={message.id}
-      data-status={message.status}
-      data-highlight-kind={replyHighlight?.kind ?? ''}
-      data-highlight-fading={
-        replyHighlight ? String(Boolean(isReplyHighlightFading)) : ''
-      }
-      data-highlight-text={
-        replyHighlight?.kind === 'text' ? replyHighlight.selectedText : ''
-      }
-    >
-      {message.content}
-      {message.replyTo && (
-        <button
-          data-testid={`reply-preview-${message.id}`}
-          onClick={() => onReplyPreviewClick?.(message.replyTo!)}
-        >
-          reply preview
-        </button>
-      )}
-      {(message.images?.length || message.image) && (
-        <button
-          data-testid={`open-image-${message.id}`}
-          onClick={() => onOpenImage?.(message, 0)}
-        >
-          open image
-        </button>
-      )}
-    </div>
-  )
+    onMessageUpdated: (
+      data:
+        | { action: 'delete' }
+        | { action: 'edit'; content: string; editedAt: string | Date }
+    ) => void
+  }) => {
+    chatMessageMock.onMessageUpdatedById.set(message.id, onMessageUpdated)
+    if (onReply) {
+      chatMessageMock.onReplyById.set(message.id, onReply)
+    }
+
+    return (
+      <div
+        id={`chat-message-${message.id}`}
+        data-message-id={message.id}
+        data-status={message.status}
+        data-deleted={String(message.isDeleted)}
+        data-content={message.content}
+        data-image-count={String(
+          message.images?.length ?? (message.image ? 1 : 0)
+        )}
+        data-reply-preview={message.replyTo?.content ?? ''}
+        data-highlight-kind={replyHighlight?.kind ?? ''}
+        data-highlight-fading={
+          replyHighlight ? String(Boolean(isReplyHighlightFading)) : ''
+        }
+        data-highlight-text={
+          replyHighlight?.kind === 'text' ? replyHighlight.selectedText : ''
+        }
+      >
+        {message.content}
+        {message.replyTo && (
+          <button
+            data-testid={`reply-preview-${message.id}`}
+            onClick={() => onReplyPreviewClick?.(message.replyTo!)}
+          >
+            reply preview
+          </button>
+        )}
+        {(message.images?.length || message.image) && (
+          <button
+            data-testid={`open-image-${message.id}`}
+            onClick={() => onOpenImage?.(message, 0)}
+          >
+            open image
+          </button>
+        )}
+      </div>
+    )
+  }
 }))
 
 vi.mock('~/components/kun/image-viewer/ImageViewer', () => ({
@@ -400,11 +444,14 @@ describe('ChatContainer realtime sync', () => {
     fetchMock.kunFetchGet.mockReset()
     fetchMock.kunFetchPut.mockReset()
     chatInputMock.onMessageSent = undefined
+    chatInputMock.replyTargetId = null
     intersectionMock.callback = undefined
     imageViewerMock.images = []
     imageViewerMock.index = -1
     imageViewerMock.onClose = undefined
     imageViewerMock.onView = undefined
+    chatMessageMock.onMessageUpdatedById.clear()
+    chatMessageMock.onReplyById.clear()
   })
 
   it('loads older history with beforeId instead of page skip', async () => {
@@ -432,6 +479,78 @@ describe('ChatContainer realtime sync', () => {
       '/message/conversation/5',
       { page: 1, limit: 30, beforeId: 1 }
     )
+  })
+
+  it('recovers from older history load failures so users can retry', async () => {
+    await renderChat('visible', { total: 3, hasMoreBefore: true })
+    await act(async () => {
+      await Promise.resolve()
+    })
+    fetchMock.kunFetchGet.mockClear()
+    fetchMock.kunFetchGet.mockRejectedValueOnce(new Error('network down'))
+    const toast = (await import('react-hot-toast')).default
+
+    await act(async () => {
+      intersectionMock.callback?.(
+        [{ isIntersecting: true } as IntersectionObserverEntry],
+        {} as IntersectionObserver
+      )
+      await Promise.resolve()
+    })
+
+    expect(toast.error).toHaveBeenCalledWith('获取历史消息失败，请稍后重试')
+    expect(dom?.window.document.querySelector('.animate-spin')).toBeNull()
+  })
+
+  it('does not start overlapping older history loads for the same cursor', async () => {
+    let resolveOlderHistory:
+      | ((response: {
+          messages: PrivateMessage[]
+          total: number
+          hasMoreBefore: boolean
+          otherUser: KunUser
+        }) => void)
+      | undefined
+
+    await renderChat('visible', { total: 3, hasMoreBefore: true })
+    await act(async () => {
+      await Promise.resolve()
+    })
+    fetchMock.kunFetchGet.mockClear()
+    fetchMock.kunFetchGet.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveOlderHistory = resolve
+        })
+    )
+
+    await act(async () => {
+      intersectionMock.callback?.(
+        [{ isIntersecting: true } as IntersectionObserverEntry],
+        {} as IntersectionObserver
+      )
+      intersectionMock.callback?.(
+        [{ isIntersecting: true } as IntersectionObserverEntry],
+        {} as IntersectionObserver
+      )
+      await Promise.resolve()
+    })
+
+    expect(fetchMock.kunFetchGet).toHaveBeenCalledTimes(1)
+    expect(fetchMock.kunFetchGet).toHaveBeenCalledWith(
+      '/message/conversation/5',
+      { page: 1, limit: 30, beforeId: 1 }
+    )
+
+    await act(async () => {
+      resolveOlderHistory?.({
+        messages: [message(0, 'older', otherUser, '2026-06-29T10:00:00.000Z')],
+        total: 1,
+        hasMoreBefore: false,
+        otherUser
+      })
+      await Promise.resolve()
+    })
   })
 
   it('opens a conversation-wide image lightbox from a single image message', async () => {
@@ -631,6 +750,53 @@ describe('ChatContainer realtime sync', () => {
     )
   })
 
+  it('does not start overlapping realtime polls when visibility changes during an in-flight refresh', async () => {
+    let resolveRealtimePoll:
+      | ((response: {
+          messages: PrivateMessage[]
+          total: number
+          hasMoreBefore: boolean
+          otherUser: KunUser
+        }) => void)
+      | undefined
+
+    fetchMock.kunFetchGet.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveRealtimePoll = resolve
+        })
+    )
+
+    await renderEmptyChat('visible')
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    expect(fetchMock.kunFetchGet).toHaveBeenCalledTimes(1)
+
+    Object.defineProperty(document, 'visibilityState', {
+      configurable: true,
+      value: 'visible'
+    })
+
+    await act(async () => {
+      document.dispatchEvent(new dom!.window.Event('visibilitychange'))
+      await Promise.resolve()
+    })
+
+    expect(fetchMock.kunFetchGet).toHaveBeenCalledTimes(1)
+
+    await act(async () => {
+      resolveRealtimePoll?.({
+        messages: [],
+        total: 0,
+        hasMoreBefore: false,
+        otherUser
+      })
+      await Promise.resolve()
+    })
+  })
+
   it('refreshes messages immediately after opening a prefetched chat page', async () => {
     await renderChat()
 
@@ -642,6 +808,25 @@ describe('ChatContainer realtime sync', () => {
       '/message/conversation/5',
       { page: 1, limit: 50, afterId: 2 }
     )
+  })
+
+  it('shows a retryable error when opening-chat read sync throws', async () => {
+    fetchMock.kunFetchPut.mockRejectedValueOnce(new Error('network down'))
+    const toast = (await import('react-hot-toast')).default
+    vi.mocked(toast.error).mockClear()
+
+    const { container } = await renderChat()
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    expect(fetchMock.kunFetchPut).toHaveBeenCalledWith(
+      '/message/conversation/5/read'
+    )
+    expect(toast.error).toHaveBeenCalledWith(
+      '同步私聊已读状态失败，请稍后重试'
+    )
+    expect(container.textContent).toContain('hello')
   })
 
   it('merges new messages without duplicates and marks other-user messages read', async () => {
@@ -673,6 +858,79 @@ describe('ChatContainer realtime sync', () => {
       '/message/conversation/5/read'
     )
     expect(useMessageStore.getState().hasUnreadConversation).toBe(false)
+  })
+
+  it('shows a retryable error and keeps polling when realtime read sync throws', async () => {
+    const toast = (await import('react-hot-toast')).default
+    vi.mocked(toast.error).mockClear()
+
+    const { container } = await renderChat()
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    fetchMock.kunFetchGet.mockClear()
+    fetchMock.kunFetchPut.mockClear()
+    fetchMock.kunFetchPut.mockRejectedValueOnce(new Error('network down'))
+    fetchMock.kunFetchGet
+      .mockResolvedValueOnce({
+        messages: [
+          message(3, 'fresh message', otherUser, '2026-06-29T10:03:00.000Z')
+        ],
+        total: 3,
+        hasMoreBefore: false,
+        otherUser
+      })
+      .mockResolvedValueOnce({
+        messages: [],
+        total: 3,
+        hasMoreBefore: false,
+        otherUser
+      })
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2_000)
+    })
+
+    expect(container.textContent).toContain('fresh message')
+    expect(toast.error).toHaveBeenCalledWith(
+      '同步私聊已读状态失败，请稍后重试'
+    )
+    expect(fetchMock.kunFetchGet).toHaveBeenCalledWith(
+      '/message/conversation/5',
+      { page: 1, limit: 50, beforeId: 4 }
+    )
+  })
+
+  it('does not force-scroll to bottom when realtime messages arrive while reading history', async () => {
+    const { container } = await renderChat()
+    await act(async () => {
+      await Promise.resolve()
+    })
+    fetchMock.kunFetchGet.mockClear()
+    fetchMock.kunFetchGet.mockResolvedValueOnce({
+      messages: [
+        message(3, 'fresh message', otherUser, '2026-06-29T10:03:00.000Z')
+      ],
+      total: 3,
+      hasMoreBefore: false,
+      otherUser
+    })
+    const scrollContainer =
+      container.querySelector<HTMLDivElement>('.overflow-y-auto')
+    expect(scrollContainer).not.toBeNull()
+    Object.defineProperties(scrollContainer!, {
+      scrollHeight: { configurable: true, value: 1000 },
+      clientHeight: { configurable: true, value: 300 },
+      scrollTop: { configurable: true, writable: true, value: 120 }
+    })
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2_000)
+    })
+
+    expect(container.textContent).toContain('fresh message')
+    expect(scrollContainer!.scrollTop).toBe(120)
   })
 
   it('refreshes own message read status even when no newer messages arrive', async () => {
@@ -783,6 +1041,90 @@ describe('ChatContainer realtime sync', () => {
       { page: 1, limit: 50, afterId: 2 }
     )
     expect(container.textContent).toContain('other slightly earlier message')
+  })
+
+  it('turns locally deleted messages into tombstones without retaining stale payload', async () => {
+    const initialMessages: PrivateMessage[] = [
+      {
+        ...message(1, 'private caption', otherUser, '2026-06-29T10:01:00.000Z'),
+        type: 1,
+        image: {
+          url: 'https://img.example/private.avif',
+          width: 800,
+          height: 600,
+          size: 1,
+          mime: 'image/avif',
+          name: 'private.avif'
+        },
+        images: [
+          {
+            url: 'https://img.example/private.avif',
+            width: 800,
+            height: 600,
+            size: 1,
+            mime: 'image/avif',
+            name: 'private.avif'
+          }
+        ],
+        replyTo: {
+          messageId: 0,
+          content: 'quoted private text',
+          senderName: 'Mio',
+          selectedText: 'quoted private text'
+        }
+      }
+    ]
+
+    const { container } = await renderChat('visible', {
+      total: 1,
+      initialMessages
+    })
+
+    await act(async () => {
+      chatMessageMock.onMessageUpdatedById.get(1)?.({ action: 'delete' })
+      await Promise.resolve()
+    })
+
+    const deletedMessage = container.querySelector('[data-message-id="1"]')
+    expect(deletedMessage?.getAttribute('data-deleted')).toBe('true')
+    expect(deletedMessage?.getAttribute('data-content')).toBe('')
+    expect(deletedMessage?.getAttribute('data-image-count')).toBe('0')
+    expect(deletedMessage?.getAttribute('data-reply-preview')).toBe('')
+    expect(container.textContent).not.toContain('private caption')
+    expect(imageViewerMock.images).toEqual([])
+  })
+
+  it('clears a reply draft when the referenced message is locally deleted', async () => {
+    const { container } = await renderChat('visible', {
+      total: 2,
+      initialMessages: [
+        message(1, 'reply target', otherUser, '2026-06-29T10:01:00.000Z'),
+        message(2, 'other message', {
+          id: currentUser.uid,
+          name: currentUser.name,
+          avatar: currentUser.avatar
+        })
+      ]
+    })
+
+    await act(async () => {
+      const replyTarget = container.querySelector('[data-message-id="1"]')
+      expect(replyTarget).not.toBeNull()
+      chatMessageMock.onReplyById.get(1)?.(
+        message(1, 'reply target', otherUser, '2026-06-29T10:01:00.000Z'),
+        null
+      )
+      await Promise.resolve()
+    })
+
+    expect(chatInputMock.replyTargetId).toBe(1)
+
+    await act(async () => {
+      chatMessageMock.onMessageUpdatedById.get(1)?.({ action: 'delete' })
+      await Promise.resolve()
+    })
+
+    expect(chatInputMock.replyTargetId).toBeNull()
   })
 
   it('backs off polling while the chat tab is hidden', async () => {

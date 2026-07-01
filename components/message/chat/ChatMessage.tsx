@@ -66,6 +66,7 @@ interface MessageMenuState {
   y: number
   selectedText: string
   imageIndex?: number
+  openedByKeyboard?: boolean
 }
 
 const MENU_WIDTH = 180
@@ -90,6 +91,12 @@ export const ChatMessage = ({
   const [menu, setMenu] = useState<MessageMenuState | null>(null)
   const [isMenuReady, setIsMenuReady] = useState(false)
   const { isOpen, onOpen, onOpenChange, onClose } = useDisclosure()
+  const {
+    isOpen: isDeleteConfirmOpen,
+    onOpen: onOpenDeleteConfirm,
+    onOpenChange: onDeleteConfirmOpenChange,
+    onClose: onCloseDeleteConfirm
+  } = useDisclosure()
   const [editContent, setEditContent] = useState(message.content)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const bubbleRef = useRef<HTMLDivElement>(null)
@@ -235,7 +242,7 @@ export const ChatMessage = ({
   const openMessageMenu = (
     x: number,
     y: number,
-    options: { imageIndex?: number } = {}
+    options: { imageIndex?: number; openedByKeyboard?: boolean } = {}
   ) => {
     if (message.isDeleted) {
       return
@@ -254,8 +261,17 @@ export const ChatMessage = ({
       x: nextX,
       y: nextY,
       selectedText,
-      imageIndex: options.imageIndex
+      imageIndex: options.imageIndex,
+      openedByKeyboard: options.openedByKeyboard
     })
+  }
+
+  const openKeyboardMessageMenu = () => {
+    const rect = bubbleRef.current?.getBoundingClientRect()
+    const x = rect ? rect.left + Math.min(32, Math.max(16, rect.width / 2)) : 32
+    const y = rect ? rect.top + Math.min(40, Math.max(16, rect.height)) : 32
+
+    openMessageMenu(x, y, { openedByKeyboard: true })
   }
 
   const copyToClipboard = async (text: string, successMessage = '复制成功') => {
@@ -298,46 +314,61 @@ export const ChatMessage = ({
     }
 
     setIsSubmitting(true)
-    const response = await kunFetchPut<
-      KunResponse<{ id: number; content: string; editedAt: string }>
-    >(`/message/conversation/${conversationId}`, {
-      messageId: message.id,
-      content: editContent.trim()
-    })
-
-    if (typeof response === 'string') {
-      toast.error(response)
-    } else {
-      toast.success('消息已编辑')
-      onClose()
-      onMessageUpdated({
-        action: 'edit',
-        content: response.content,
-        editedAt: response.editedAt
+    try {
+      const response = await kunFetchPut<
+        KunResponse<{ id: number; content: string; editedAt: string }>
+      >(`/message/conversation/${conversationId}`, {
+        messageId: message.id,
+        content: editContent.trim()
       })
+
+      if (typeof response === 'string') {
+        toast.error(response)
+      } else {
+        toast.success('消息已编辑')
+        onClose()
+        onMessageUpdated({
+          action: 'edit',
+          content: response.content,
+          editedAt: response.editedAt
+        })
+      }
+    } catch {
+      toast.error('消息编辑失败，请稍后重试')
+    } finally {
+      setIsSubmitting(false)
     }
-    setIsSubmitting(false)
   }
 
   const handleDelete = async () => {
-    if (menu && !isMenuReady) {
+    setIsSubmitting(true)
+    try {
+      const response = await kunFetchDelete<KunResponse<{}>>(
+        `/message/conversation/${conversationId}`,
+        { messageId: message.id }
+      )
+
+      if (typeof response === 'string') {
+        toast.error(response)
+      } else {
+        toast.success('消息已删除')
+        onCloseDeleteConfirm()
+        onMessageUpdated({ action: 'delete' })
+      }
+    } catch {
+      toast.error('消息删除失败，请稍后重试')
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  const openDeleteConfirmModal = () => {
+    if (!isMenuReady) {
       return
     }
 
     closeMessageMenu()
-    setIsSubmitting(true)
-    const response = await kunFetchDelete<KunResponse<{}>>(
-      `/message/conversation/${conversationId}`,
-      { messageId: message.id }
-    )
-
-    if (typeof response === 'string') {
-      toast.error(response)
-    } else {
-      toast.success('消息已删除')
-      onMessageUpdated({ action: 'delete' })
-    }
-    setIsSubmitting(false)
+    onOpenDeleteConfirm()
   }
 
   const handleContextMenu = (e: React.MouseEvent) => {
@@ -360,6 +391,23 @@ export const ChatMessage = ({
     e.preventDefault()
     e.stopPropagation()
     openMessageMenu(e.clientX, e.clientY, { imageIndex })
+  }
+
+  const handleBubbleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    const shouldOpenMenu =
+      e.key === 'Enter' ||
+      e.key === ' ' ||
+      e.key === 'Spacebar' ||
+      e.key === 'ContextMenu' ||
+      (e.key === 'F10' && e.shiftKey)
+
+    if (!shouldOpenMenu) {
+      return
+    }
+
+    e.preventDefault()
+    e.stopPropagation()
+    openKeyboardMessageMenu()
   }
 
   const handlePointerDown = (e: React.PointerEvent) => {
@@ -510,20 +558,35 @@ export const ChatMessage = ({
       closeMessageMenu()
     }
 
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        closeMessageMenu()
+      }
+    }
     const closeMenu = () => closeMessageMenu()
 
     document.addEventListener('pointerdown', closeIfOutside)
-    document.addEventListener('keydown', closeMenu)
+    document.addEventListener('keydown', closeOnEscape)
     window.addEventListener('resize', closeMenu)
     window.addEventListener('scroll', closeMenu, true)
 
     return () => {
       document.removeEventListener('pointerdown', closeIfOutside)
-      document.removeEventListener('keydown', closeMenu)
+      document.removeEventListener('keydown', closeOnEscape)
       window.removeEventListener('resize', closeMenu)
       window.removeEventListener('scroll', closeMenu, true)
     }
   }, [menu])
+
+  useEffect(() => {
+    if (!menu?.openedByKeyboard || !isMenuReady) {
+      return
+    }
+
+    menuRef.current
+      ?.querySelector<HTMLButtonElement>('[role="menuitem"]:not(:disabled)')
+      ?.focus({ preventScroll: true })
+  }, [menu, isMenuReady])
 
   useEffect(() => {
     return () => {
@@ -703,6 +766,17 @@ export const ChatMessage = ({
       <StatusIcon className="size-3" />
     </span>
   ) : null
+  const bubbleMenuLabel = isOwn
+    ? '打开我的消息操作菜单'
+    : `打开 ${message.sender.name} 的消息操作菜单`
+  const bubbleInteractionProps = {
+    tabIndex: 0,
+    role: 'button',
+    'aria-label': bubbleMenuLabel,
+    'aria-haspopup': 'menu' as const,
+    'aria-expanded': Boolean(menu),
+    onKeyDown: handleBubbleKeyDown
+  }
 
   return (
     <>
@@ -733,7 +807,7 @@ export const ChatMessage = ({
             ref={bubbleRef}
             data-testid="chat-message-bubble"
             className={cn(
-              'relative select-text rounded-2xl bg-[hsl(var(--kun-brand-50)/0.96)] text-default-900 shadow-sm ring-1 ring-[hsl(var(--kun-brand-200)/0.75)] dark:bg-[hsl(var(--kun-brand-500)/0.18)] dark:text-default-50 dark:ring-[hsl(var(--kun-brand-400)/0.28)]',
+              'relative select-text rounded-2xl bg-[hsl(var(--kun-brand-50)/0.96)] text-default-900 shadow-sm ring-1 ring-[hsl(var(--kun-brand-200)/0.75)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--kun-brand-500)/0.55)] dark:bg-[hsl(var(--kun-brand-500)/0.18)] dark:text-default-50 dark:ring-[hsl(var(--kun-brand-400)/0.28)]',
               hasImages ? imageBubbleWidthClassName : bubbleWidthClassName,
               bubblePaddingClassName,
               menu &&
@@ -747,6 +821,7 @@ export const ChatMessage = ({
             onContextMenu={handleContextMenu}
             onPointerDown={handlePointerDown}
             onPointerUp={handlePointerUp}
+            {...bubbleInteractionProps}
           >
             <div className={cn(isImageOnly && 'relative')}>
               {renderMessageBody()}
@@ -773,7 +848,7 @@ export const ChatMessage = ({
             ref={bubbleRef}
             data-testid="chat-message-bubble"
             className={cn(
-              'relative select-text rounded-2xl bg-content2 text-default-900 shadow-sm ring-1 ring-default-200 dark:bg-default-100/10 dark:text-default-50 dark:ring-default-100/10',
+              'relative select-text rounded-2xl bg-content2 text-default-900 shadow-sm ring-1 ring-default-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--kun-brand-500)/0.55)] dark:bg-default-100/10 dark:text-default-50 dark:ring-default-100/10',
               hasImages ? imageBubbleWidthClassName : bubbleWidthClassName,
               bubblePaddingClassName,
               menu && 'shadow-lg ring-2 ring-default-300/70'
@@ -786,6 +861,7 @@ export const ChatMessage = ({
             onContextMenu={handleContextMenu}
             onPointerDown={handlePointerDown}
             onPointerUp={handlePointerUp}
+            {...bubbleInteractionProps}
           >
             <div className={cn(isImageOnly && 'relative')}>
               {renderMessageBody()}
@@ -924,7 +1000,7 @@ export const ChatMessage = ({
                 animate={{ opacity: 1, x: 0 }}
                 transition={{ delay: 0.12 }}
                 onMouseDown={(e) => e.preventDefault()}
-                onClick={handleDelete}
+                onClick={openDeleteConfirmModal}
               >
                 <Trash2 className="size-4" />
                 删除
@@ -958,6 +1034,39 @@ export const ChatMessage = ({
               onPress={handleEdit}
             >
               保存
+            </Button>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
+
+      <Modal
+        isOpen={isDeleteConfirmOpen}
+        onOpenChange={onDeleteConfirmOpenChange}
+        placement="center"
+      >
+        <ModalContent>
+          <ModalHeader>确认删除消息</ModalHeader>
+          <ModalBody>
+            <p>确定要删除这条消息吗？</p>
+            <p className="text-sm text-default-500">
+              删除后对话中会显示为已删除消息，原正文和图片内容不会继续展示。
+            </p>
+          </ModalBody>
+          <ModalFooter>
+            <Button
+              variant="light"
+              onPress={onCloseDeleteConfirm}
+              isDisabled={isSubmitting}
+            >
+              取消
+            </Button>
+            <Button
+              color="danger"
+              isLoading={isSubmitting}
+              isDisabled={isSubmitting}
+              onPress={handleDelete}
+            >
+              确认删除
             </Button>
           </ModalFooter>
         </ModalContent>

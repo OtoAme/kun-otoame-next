@@ -30,22 +30,25 @@ export const DeleteConversationButton = ({
 
   const handleDeleteConversation = async () => {
     setIsDeleting(true)
+    try {
+      const response = await kunFetchDelete<KunResponse<{}>>(
+        `/message/conversation/${conversationId}`,
+        { action: 'conversation' }
+      )
 
-    const response = await kunFetchDelete<KunResponse<{}>>(
-      `/message/conversation/${conversationId}`,
-      { action: 'conversation' }
-    )
+      if (typeof response === 'string') {
+        toast.error(response)
+        return
+      }
 
-    if (typeof response === 'string') {
-      toast.error(response)
+      toast.success('私聊已从列表移除')
+      onClose()
+      router.push('/message/chat')
+    } catch {
+      toast.error('移除私聊失败，请稍后重试')
+    } finally {
       setIsDeleting(false)
-      return
     }
-
-    toast.success('私聊已删除')
-    onClose()
-    router.push('/message/chat')
-    setIsDeleting(false)
   }
 
   return (
@@ -55,7 +58,7 @@ export const DeleteConversationButton = ({
         color="danger"
         size="sm"
         isIconOnly
-        aria-label="删除该私聊"
+        aria-label="移除该私聊"
         onPress={onOpen}
       >
         <Trash2 className="size-4" />
@@ -63,11 +66,11 @@ export const DeleteConversationButton = ({
 
       <Modal isOpen={isOpen} onOpenChange={onOpenChange} placement="center">
         <ModalContent>
-          <ModalHeader>删除私聊</ModalHeader>
+          <ModalHeader>移除私聊</ModalHeader>
           <ModalBody>
-            <p>确定要删除与 {otherUserName} 的私聊吗？</p>
-            <p className="text-sm text-danger">
-              删除后会同步清空该会话中的全部消息，且不可撤销。
+            <p>确定要从你的列表移除与 {otherUserName} 的私聊吗？</p>
+            <p className="text-sm text-default-500">
+              这只会隐藏你这边的会话列表记录，不会删除对方的私聊内容。再次发起或收到新消息后，会话会重新出现。
             </p>
           </ModalBody>
           <ModalFooter>
@@ -80,7 +83,7 @@ export const DeleteConversationButton = ({
               isLoading={isDeleting}
               isDisabled={isDeleting}
             >
-              删除
+              移除
             </Button>
           </ModalFooter>
         </ModalContent>

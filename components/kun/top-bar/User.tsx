@@ -52,7 +52,9 @@ export const KunTopBarUser = () => {
         router.push('/login')
       } else {
         setUser(res.user)
-        setUnreadMessageStatus(res.unread)
+        if (res.unread) {
+          setUnreadMessageStatus(res.unread)
+        }
       }
     }
 

@@ -52,6 +52,7 @@ const CHAT_REPLY_SCROLL_DURATION_MS = 420
 const CHAT_REPLY_HIGHLIGHT_DELAY_MS = 500
 const CHAT_REPLY_HIGHLIGHT_VISIBLE_MS = 1_200
 const CHAT_REPLY_HIGHLIGHT_FADE_MS = 260
+const CHAT_LIVE_EDGE_THRESHOLD_PX = 96
 
 const getLatestMessageId = (msgs: PrivateMessage[]) =>
   msgs.reduce((latest, msg) => Math.max(latest, msg.id), 0)
@@ -150,6 +151,7 @@ export const ChatContainer = ({
   const realtimePollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
     null
   )
+  const historyLoadInFlightRef = useRef(false)
   const replyHighlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
     null
   )
@@ -158,6 +160,17 @@ export const ChatContainer = ({
   useEffect(() => {
     messagesRef.current = messages
   }, [messages])
+
+  useEffect(() => {
+    if (!replyDraft) {
+      return
+    }
+
+    const replyTarget = messages.find((msg) => msg.id === replyDraft.message.id)
+    if (!replyTarget || replyTarget.isDeleted) {
+      setReplyDraft(null)
+    }
+  }, [messages, replyDraft])
 
   const conversationImages = useMemo<ChatConversationImage[]>(
     () =>
@@ -194,8 +207,19 @@ export const ChatContainer = ({
     }
   }, [])
 
+  const isNearLiveEdge = useCallback(() => {
+    const container = scrollContainerRef.current
+    if (!container) {
+      return true
+    }
+
+    const distanceFromBottom =
+      container.scrollHeight - container.clientHeight - container.scrollTop
+    return distanceFromBottom <= CHAT_LIVE_EDGE_THRESHOLD_PX
+  }, [])
+
   const loadMoreMessages = useCallback(async () => {
-    if (loading || !hasMore) return
+    if (historyLoadInFlightRef.current || loading || !hasMore) return
 
     const oldestMessageId = getOldestMessageId(messagesRef.current)
     if (!Number.isFinite(oldestMessageId)) {
@@ -203,39 +227,45 @@ export const ChatContainer = ({
       return
     }
 
+    historyLoadInFlightRef.current = true
     setLoading(true)
 
-    const response = await kunFetchGet<
-      KunResponse<ConversationMessagesResponse>
-    >(`/message/conversation/${conversationId}`, {
-      page: 1,
-      limit: 30,
-      beforeId: oldestMessageId
-    })
-
-    if (typeof response === 'string') {
-      toast.error(response)
-    } else {
-      const scrollContainer = scrollContainerRef.current
-      const previousScrollHeight = scrollContainer?.scrollHeight || 0
-
-      setMessages((prev) => {
-        const mergedMessages = mergeMessagesById(prev, response.messages)
-        messagesRef.current = mergedMessages
-        return mergedMessages
+    try {
+      const response = await kunFetchGet<
+        KunResponse<ConversationMessagesResponse>
+      >(`/message/conversation/${conversationId}`, {
+        page: 1,
+        limit: 30,
+        beforeId: oldestMessageId
       })
-      setTotalCount(response.total)
-      setHasMore(response.hasMoreBefore)
 
-      requestAnimationFrame(() => {
-        if (scrollContainer) {
-          const newScrollHeight = scrollContainer.scrollHeight
-          scrollContainer.scrollTop = newScrollHeight - previousScrollHeight
-        }
-      })
+      if (typeof response === 'string') {
+        toast.error(response)
+      } else {
+        const scrollContainer = scrollContainerRef.current
+        const previousScrollHeight = scrollContainer?.scrollHeight || 0
+
+        setMessages((prev) => {
+          const mergedMessages = mergeMessagesById(prev, response.messages)
+          messagesRef.current = mergedMessages
+          return mergedMessages
+        })
+        setTotalCount(response.total)
+        setHasMore(response.hasMoreBefore)
+
+        requestAnimationFrame(() => {
+          if (scrollContainer) {
+            const newScrollHeight = scrollContainer.scrollHeight
+            scrollContainer.scrollTop = newScrollHeight - previousScrollHeight
+          }
+        })
+      }
+    } catch {
+      toast.error('获取历史消息失败，请稍后重试')
+    } finally {
+      historyLoadInFlightRef.current = false
+      setLoading(false)
     }
-
-    setLoading(false)
   }, [loading, hasMore, conversationId])
 
   const handleMessageSent = useCallback(
@@ -271,7 +301,17 @@ export const ChatContainer = ({
       if (data.action === 'delete') {
         setMessages((prev) =>
           prev.map((msg) =>
-            msg.id === messageId ? { ...msg, isDeleted: true } : msg
+            msg.id === messageId
+              ? {
+                  ...msg,
+                  type: 0,
+                  content: '',
+                  isDeleted: true,
+                  image: null,
+                  images: [],
+                  replyTo: null
+                }
+              : msg
           )
         )
       } else {
@@ -343,7 +383,8 @@ export const ChatContainer = ({
         1
       )
       const easedProgress = 1 - Math.pow(1 - progress, 3)
-      scrollContainer.scrollTop = startScrollTop + scrollDistance * easedProgress
+      scrollContainer.scrollTop =
+        startScrollTop + scrollDistance * easedProgress
 
       if (progress < 1) {
         replyScrollAnimationRef.current = requestAnimationFrame(animateScroll)
@@ -402,19 +443,41 @@ export const ChatContainer = ({
   }, [otherUser.name])
 
   useEffect(() => {
+    let ignore = false
+
     const markAsRead = async () => {
-      const response = await kunFetchPut<KunResponse<MessageUnreadStatus>>(
-        `/message/conversation/${conversationId}/read`
-      )
-      if (typeof response !== 'string') {
+      try {
+        const response = await kunFetchPut<KunResponse<MessageUnreadStatus>>(
+          `/message/conversation/${conversationId}/read`
+        )
+
+        if (ignore) {
+          return
+        }
+
+        if (typeof response === 'string') {
+          toast.error(response)
+          return
+        }
+
         setUnreadMessageStatus(response)
+      } catch {
+        if (!ignore) {
+          toast.error('同步私聊已读状态失败，请稍后重试')
+        }
       }
     }
-    markAsRead()
+
+    void markAsRead()
+
+    return () => {
+      ignore = true
+    }
   }, [conversationId, setUnreadMessageStatus])
 
   useEffect(() => {
     let ignore = false
+    let realtimePollInFlight = false
 
     const clearRealtimePollTimer = () => {
       if (!realtimePollTimerRef.current) {
@@ -430,7 +493,16 @@ export const ChatContainer = ({
       realtimePollTimerRef.current = setTimeout(pollNewMessages, interval)
     }
 
+    const getRealtimePollInterval = () =>
+      document.visibilityState === 'hidden'
+        ? CHAT_HIDDEN_POLL_INTERVAL_MS
+        : CHAT_VISIBLE_POLL_INTERVAL_MS
+
     const pollNewMessages = async () => {
+      if (realtimePollInFlight) {
+        return
+      }
+
       if (document.visibilityState === 'hidden') {
         if (!ignore) {
           scheduleRealtimePoll(CHAT_HIDDEN_POLL_INTERVAL_MS)
@@ -438,6 +510,7 @@ export const ChatContainer = ({
         return
       }
 
+      realtimePollInFlight = true
       const latestMessageId = realtimeCursorRef.current
       const query: Record<string, number> = { page: 1, limit: 50 }
       if (latestMessageId > 0) {
@@ -455,6 +528,7 @@ export const ChatContainer = ({
 
         const newMessages = response.messages
         if (newMessages.length) {
+          const shouldScrollToLiveEdge = isNearLiveEdge()
           realtimeCursorRef.current = Math.max(
             realtimeCursorRef.current,
             getLatestMessageId(newMessages)
@@ -477,18 +551,32 @@ export const ChatContainer = ({
           }
 
           if (hasOtherUserMessage) {
-            const readResponse = await kunFetchPut<
-              KunResponse<MessageUnreadStatus>
-            >(`/message/conversation/${conversationId}/read`)
+            try {
+              const readResponse = await kunFetchPut<
+                KunResponse<MessageUnreadStatus>
+              >(`/message/conversation/${conversationId}/read`)
 
-            if (!ignore && typeof readResponse !== 'string') {
-              setUnreadMessageStatus(readResponse)
+              if (ignore) {
+                return
+              }
+
+              if (typeof readResponse === 'string') {
+                toast.error(readResponse)
+              } else {
+                setUnreadMessageStatus(readResponse)
+              }
+            } catch {
+              if (!ignore) {
+                toast.error('同步私聊已读状态失败，请稍后重试')
+              }
             }
           }
 
-          requestAnimationFrame(() => {
-            scrollToBottom()
-          })
+          if (shouldScrollToLiveEdge) {
+            requestAnimationFrame(() => {
+              scrollToBottom()
+            })
+          }
         }
 
         const currentLatestMessageId = getNextMessageId(messagesRef.current)
@@ -512,8 +600,9 @@ export const ChatContainer = ({
         }
       } catch {
       } finally {
+        realtimePollInFlight = false
         if (!ignore) {
-          scheduleRealtimePoll(CHAT_VISIBLE_POLL_INTERVAL_MS)
+          scheduleRealtimePoll(getRealtimePollInterval())
         }
       }
     }
@@ -534,7 +623,13 @@ export const ChatContainer = ({
       document.removeEventListener('visibilitychange', handleVisibilityChange)
       clearRealtimePollTimer()
     }
-  }, [conversationId, scrollToBottom, setUnreadMessageStatus, user.uid])
+  }, [
+    conversationId,
+    isNearLiveEdge,
+    scrollToBottom,
+    setUnreadMessageStatus,
+    user.uid
+  ])
 
   useEffect(() => {
     if (isInitialMount.current) {

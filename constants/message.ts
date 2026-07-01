@@ -1,4 +1,4 @@
-export const MESSAGE_TYPE = [
+export const MESSAGE_NOTIFICATION_TYPE = [
   'apply',
   'system',
   'pm',
@@ -9,7 +9,11 @@ export const MESSAGE_TYPE = [
   'pr',
   'feedback',
   'report',
-  'mention',
+  'mention'
+] as const
+
+export const MESSAGE_TYPE = [
+  ...MESSAGE_NOTIFICATION_TYPE,
   ''
 ] as const
 

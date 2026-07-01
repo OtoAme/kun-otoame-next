@@ -267,4 +267,22 @@ describe('KunTopBarUser message bell', () => {
     expect(useMessageStore.getState().hasUnreadNotification).toBe(false)
     expect(useMessageStore.getState().hasUnreadConversation).toBe(true)
   })
+
+  it('keeps the current unread store state when session does not refresh unread status', async () => {
+    fetchMock.kunFetchGet.mockResolvedValueOnce({
+      user,
+      unread: null
+    })
+
+    const { useMessageStore } = await renderTopBarUser({
+      hasUnreadNotification: true,
+      hasUnreadConversation: true
+    })
+
+    expect(fetchMock.kunFetchGet).toHaveBeenCalledWith('/user/session')
+    expect(useMessageStore.getState()).toMatchObject({
+      hasUnreadNotification: true,
+      hasUnreadConversation: true
+    })
+  })
 })

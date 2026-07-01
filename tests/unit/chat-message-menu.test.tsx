@@ -51,7 +51,8 @@ vi.mock('@heroui/react', () => ({
   Button: ({
     children,
     onPress,
-    isLoading: _isLoading,
+    isLoading,
+    isDisabled,
     isIconOnly: _isIconOnly,
     variant: _variant,
     color: _color,
@@ -59,11 +60,16 @@ vi.mock('@heroui/react', () => ({
   }: React.ButtonHTMLAttributes<HTMLButtonElement> & {
     onPress?: () => void
     isLoading?: boolean
+    isDisabled?: boolean
     isIconOnly?: boolean
     variant?: string
     color?: string
   }) => (
-    <button {...props} onClick={onPress}>
+    <button
+      {...props}
+      disabled={props.disabled || isLoading || isDisabled}
+      onClick={onPress}
+    >
       {children}
     </button>
   )
@@ -377,6 +383,31 @@ describe('ChatMessage menu and rendering', () => {
     expect(container.textContent).toContain('回复')
   })
 
+  it('opens the message menu from the focused bubble keyboard entry', async () => {
+    const { container } = await renderMessage(baseMessage)
+    const bubble = container.querySelector<HTMLElement>(
+      '[data-testid="chat-message-bubble"]'
+    )
+    expect(bubble).not.toBeNull()
+
+    expect(bubble!.tabIndex).toBe(0)
+    expect(bubble!.getAttribute('aria-haspopup')).toBe('menu')
+
+    await act(async () => {
+      bubble!.focus()
+      bubble!.dispatchEvent(
+        new dom!.window.KeyboardEvent('keydown', {
+          bubbles: true,
+          key: 'Enter'
+        })
+      )
+      await Promise.resolve()
+    })
+
+    expect(container.textContent).toContain('回复')
+    expect(bubble!.getAttribute('aria-expanded')).toBe('true')
+  })
+
   it('replies with selected text when text is selected', async () => {
     const onReply = vi.fn()
     const { container } = await renderMessage(baseMessage, { onReply })
@@ -451,6 +482,148 @@ describe('ChatMessage menu and rendering', () => {
     expect(dom!.window.document.activeElement).toBe(textarea)
     expect(textarea!.selectionStart).toBe('hello'.length)
     expect(textarea!.selectionEnd).toBe('hello'.length)
+  })
+
+  it('releases the edit submit state after a request error', async () => {
+    const { kunFetchPut } = await import('~/utils/kunFetch')
+    const toast = (await import('react-hot-toast')).default
+    let rejectEdit!: (error: Error) => void
+    const editRequest = new Promise<never>((_, reject) => {
+      rejectEdit = reject
+    })
+    vi.mocked(kunFetchPut).mockReturnValue(editRequest)
+
+    const { container } = await renderMessage(
+      {
+        ...baseMessage,
+        sender: { id: 1007, name: 'Saya', avatar: '' }
+      },
+      { isOwn: true }
+    )
+
+    await openContextMenu(container)
+    const editButton = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent === '编辑'
+    )
+    expect(editButton).toBeDefined()
+
+    await act(async () => {
+      editButton!.click()
+      await Promise.resolve()
+    })
+
+    const saveButton = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent === '保存'
+    )
+    expect(saveButton).toBeDefined()
+
+    await act(async () => {
+      saveButton!.click()
+      await Promise.resolve()
+    })
+
+    expect(saveButton!.disabled).toBe(true)
+
+    await act(async () => {
+      rejectEdit(new Error('offline'))
+      await editRequest.catch(() => undefined)
+      await Promise.resolve()
+    })
+
+    expect(toast.error).toHaveBeenCalledWith('消息编辑失败，请稍后重试')
+    expect(saveButton!.disabled).toBe(false)
+  })
+
+  it('shows a retryable error when deleting a message request fails', async () => {
+    const { kunFetchDelete } = await import('~/utils/kunFetch')
+    const toast = (await import('react-hot-toast')).default
+    let rejectDelete!: (error: Error) => void
+    const deleteRequest = new Promise<never>((_, reject) => {
+      rejectDelete = reject
+    })
+    vi.mocked(kunFetchDelete).mockReturnValue(deleteRequest)
+
+    const { container } = await renderMessage(
+      {
+        ...baseMessage,
+        sender: { id: 1007, name: 'Saya', avatar: '' }
+      },
+      { isOwn: true }
+    )
+
+    await openContextMenu(container)
+    const deleteButton = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent === '删除'
+    )
+    expect(deleteButton).toBeDefined()
+
+    await act(async () => {
+      deleteButton!.click()
+      await Promise.resolve()
+    })
+
+    const confirmButton = Array.from(
+      container.querySelectorAll('button')
+    ).find((button) => button.textContent === '确认删除')
+    expect(confirmButton).toBeDefined()
+
+    await act(async () => {
+      confirmButton!.click()
+      await Promise.resolve()
+    })
+
+    expect(confirmButton!.disabled).toBe(true)
+
+    await act(async () => {
+      rejectDelete(new Error('offline'))
+      await deleteRequest.catch(() => undefined)
+      await Promise.resolve()
+    })
+
+    expect(toast.error).toHaveBeenCalledWith('消息删除失败，请稍后重试')
+    expect(confirmButton!.disabled).toBe(false)
+  })
+
+  it('asks for confirmation before deleting an own message', async () => {
+    const { kunFetchDelete } = await import('~/utils/kunFetch')
+    vi.mocked(kunFetchDelete).mockClear()
+    vi.mocked(kunFetchDelete).mockResolvedValue({})
+
+    const { container } = await renderMessage(
+      {
+        ...baseMessage,
+        sender: { id: 1007, name: 'Saya', avatar: '' }
+      },
+      { isOwn: true }
+    )
+
+    await openContextMenu(container)
+    const deleteButton = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent === '删除'
+    )
+    expect(deleteButton).toBeDefined()
+
+    await act(async () => {
+      deleteButton!.click()
+      await Promise.resolve()
+    })
+
+    expect(kunFetchDelete).not.toHaveBeenCalled()
+    expect(container.textContent).toContain('确认删除消息')
+
+    const confirmButton = Array.from(
+      container.querySelectorAll('button')
+    ).find((button) => button.textContent === '确认删除')
+    expect(confirmButton).toBeDefined()
+
+    await act(async () => {
+      confirmButton!.click()
+      await Promise.resolve()
+    })
+
+    expect(kunFetchDelete).toHaveBeenCalledWith('/message/conversation/5', {
+      messageId: 3
+    })
   })
 
   it('renders image messages with alt text', async () => {

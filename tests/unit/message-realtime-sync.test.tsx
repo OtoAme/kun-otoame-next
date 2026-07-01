@@ -151,11 +151,58 @@ describe('MessageRealtimeSync', () => {
     })
 
     await act(async () => {
-      dom!.window.document.dispatchEvent(new dom!.window.Event('visibilitychange'))
+      dom!.window.document.dispatchEvent(
+        new dom!.window.Event('visibilitychange')
+      )
       await Promise.resolve()
     })
 
     expect(fetchMock.kunFetchGet).toHaveBeenCalledTimes(2)
+  })
+
+  it('does not start overlapping unread sync requests when visibility changes during an in-flight refresh', async () => {
+    let resolveUnreadStatus:
+      | ((response: {
+          hasUnreadMessages: boolean
+          hasUnreadChat: boolean
+        }) => void)
+      | undefined
+    fetchMock.kunFetchGet.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveUnreadStatus = resolve
+        })
+    )
+
+    await renderSync()
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    expect(fetchMock.kunFetchGet).toHaveBeenCalledTimes(1)
+
+    Object.defineProperty(dom!.window.document, 'visibilityState', {
+      configurable: true,
+      value: 'visible'
+    })
+
+    await act(async () => {
+      dom!.window.document.dispatchEvent(
+        new dom!.window.Event('visibilitychange')
+      )
+      await Promise.resolve()
+    })
+
+    expect(fetchMock.kunFetchGet).toHaveBeenCalledTimes(1)
+
+    await act(async () => {
+      resolveUnreadStatus?.({
+        hasUnreadMessages: false,
+        hasUnreadChat: false
+      })
+      await Promise.resolve()
+    })
   })
 
   it('shows the notification red dot on any page when new notifications arrive', async () => {
@@ -208,5 +255,31 @@ describe('MessageRealtimeSync', () => {
       { timeout: UNREAD_STATUS_TIMEOUT_MS }
     )
     expect(useMessageStore.getState().hasUnreadNotification).toBe(true)
+  })
+
+  it('keeps the current unread state when background unread sync is rate limited', async () => {
+    fetchMock.kunFetchGet.mockResolvedValueOnce(
+      '通知读取过于频繁, 请 30 秒后重试'
+    )
+
+    const { useMessageStore } = await renderSync()
+    useMessageStore.setState({
+      hasUnreadNotification: true,
+      hasUnreadConversation: true
+    })
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    expect(fetchMock.kunFetchGet).toHaveBeenCalledWith(
+      '/message/unread',
+      undefined,
+      { timeout: UNREAD_STATUS_TIMEOUT_MS }
+    )
+    expect(useMessageStore.getState()).toMatchObject({
+      hasUnreadNotification: true,
+      hasUnreadConversation: true
+    })
   })
 })

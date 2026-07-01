@@ -39,16 +39,6 @@ export const togglePatchFavorite = async (
   })
 
   const result = await prisma.$transaction(async (prisma) => {
-    if (patch.user_id !== uid) {
-      await createDedupMessage({
-        type: 'favorite',
-        content: patch.name,
-        sender_id: uid,
-        recipient_id: patch.user_id,
-        link: `/${patch.unique_id}`
-      })
-    }
-
     if (existing) {
       await prisma.user_patch_favorite_folder_relation.delete({
         where: {
@@ -66,6 +56,20 @@ export const togglePatchFavorite = async (
           patch_id: input.patchId
         }
       })
+
+      if (patch.user_id !== uid) {
+        await createDedupMessage(
+          {
+            type: 'favorite',
+            content: patch.name,
+            sender_id: uid,
+            recipient_id: patch.user_id,
+            link: `/${patch.unique_id}`
+          },
+          prisma
+        )
+      }
+
       return { added: true }
     }
   })

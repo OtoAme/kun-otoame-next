@@ -54,15 +54,18 @@ export const toggleCommentLike = async (
           comment_id: commentId
         }
       })
-    }
 
-    await createDedupMessage({
-      type: 'like',
-      content: `点赞了您的评论! -> ${comment.content.slice(0, 107)}`,
-      sender_id: uid,
-      recipient_id: comment.user_id,
-      link: `/${comment.patch.unique_id}`
-    })
+      await createDedupMessage(
+        {
+          type: 'like',
+          content: `点赞了您的评论! -> ${comment.content.slice(0, 107)}`,
+          sender_id: uid,
+          recipient_id: comment.user_id,
+          link: `/${comment.patch.unique_id}`
+        },
+        prisma
+      )
+    }
 
     await prisma.user.update({
       where: { id: comment.user_id },
