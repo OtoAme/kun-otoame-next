@@ -644,6 +644,13 @@ export const ChatMessage = ({
   }
 
   const isImageOnly = hasImages && !hasCaption && !message.replyTo
+  const trimmedContent = message.content.trim()
+  const isCompactTextOnly =
+    !hasImages &&
+    !message.replyTo &&
+    Boolean(trimmedContent) &&
+    !message.content.includes('\n') &&
+    trimmedContent.length <= 24
   const shouldShrinkWrapImage = hasImages && isSingleImage && !hasCaption
   const hasImageWithTextOrReply = hasImages && !isImageOnly
   const bubbleWidthClassName =
@@ -739,7 +746,12 @@ export const ChatMessage = ({
         />
       )}
       {message.content ? (
-        <p className="text-left text-sm leading-5 whitespace-pre-wrap break-words">
+        <p
+          className={cn(
+            'text-sm leading-5 whitespace-pre-wrap break-words',
+            isCompactTextOnly ? 'flex items-center text-left' : 'text-left'
+          )}
+        >
           <span
             ref={contentRef}
             data-testid="chat-message-text"
@@ -747,7 +759,7 @@ export const ChatMessage = ({
           >
             {renderMessageText()}
           </span>
-          {renderMessageMeta('inline')}
+          {renderMessageMeta(isCompactTextOnly ? 'compact-inline' : 'inline')}
         </p>
       ) : (
         !isImageOnly &&
@@ -781,7 +793,9 @@ export const ChatMessage = ({
       <StatusIcon className="size-3" />
     </span>
   ) : null
-  const renderMessageMeta = (variant: 'inline' | 'standalone' | 'overlay') => (
+  const renderMessageMeta = (
+    variant: 'inline' | 'compact-inline' | 'standalone' | 'overlay'
+  ) => (
     <span
       data-testid="chat-message-meta"
       className={cn(
@@ -792,6 +806,7 @@ export const ChatMessage = ({
             ? 'text-[hsl(var(--kun-brand-700))] dark:text-[hsl(var(--kun-brand-500))]'
             : 'text-default-400',
         variant === 'inline' && 'ml-2 align-bottom pb-px',
+        variant === 'compact-inline' && 'ml-2',
         variant === 'standalone' && 'mt-0.5'
       )}
     >
@@ -844,6 +859,7 @@ export const ChatMessage = ({
               'relative select-text rounded-2xl bg-[hsl(var(--kun-brand-50)/0.96)] text-default-900 shadow-sm ring-1 ring-[hsl(var(--kun-brand-200)/0.75)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--kun-brand-500)/0.55)] dark:bg-[hsl(var(--kun-brand-500)/0.18)] dark:text-default-50 dark:ring-[hsl(var(--kun-brand-400)/0.28)]',
               hasImages ? imageBubbleWidthClassName : bubbleWidthClassName,
               bubblePaddingClassName,
+              isCompactTextOnly && 'flex items-center',
               menu &&
                 'shadow-lg ring-2 ring-[hsl(var(--kun-brand-300)/0.8)] dark:ring-[hsl(var(--kun-brand-400)/0.42)]'
             )}
@@ -871,6 +887,7 @@ export const ChatMessage = ({
               'relative select-text rounded-2xl bg-content2 text-default-900 shadow-sm ring-1 ring-default-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--kun-brand-500)/0.55)] dark:bg-default-100/10 dark:text-default-50 dark:ring-default-100/10',
               hasImages ? imageBubbleWidthClassName : bubbleWidthClassName,
               bubblePaddingClassName,
+              isCompactTextOnly && 'flex items-center',
               menu && 'shadow-lg ring-2 ring-default-300/70'
             )}
             animate={{

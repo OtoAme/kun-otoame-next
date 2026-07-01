@@ -477,7 +477,7 @@ describe('ChatMessage menu and rendering', () => {
     expect(meta?.querySelector('[aria-label="已读"]')).not.toBeNull()
   })
 
-  it('keeps compact text message metadata inline with the text baseline', async () => {
+  it('vertically centers compact text and metadata in the bubble', async () => {
     const { container } = await renderMessage(
       {
         ...baseMessage,
@@ -489,18 +489,25 @@ describe('ChatMessage menu and rendering', () => {
     )
 
     const paragraph = container.querySelector('p')
+    const bubble = container.querySelector('[data-testid="chat-message-bubble"]')
     const meta = container.querySelector('[data-testid="chat-message-meta"]')
     const text = container.querySelector('[data-testid="chat-message-text"]')
 
+    expect(bubble?.className).toContain('flex')
+    expect(bubble?.className).toContain('items-center')
     expect(meta).not.toBeNull()
     expect(meta?.parentElement).toBe(paragraph)
     expect(text?.nextElementSibling).toBe(meta)
+    expect(paragraph?.className).toContain('flex')
+    expect(paragraph?.className).toContain('items-center')
     expect(paragraph?.className).toContain('text-left')
+    expect(paragraph?.className).not.toContain('justify-center')
     expect(paragraph?.className).not.toContain('text-center')
     expect(paragraph?.className).not.toContain('pr-16')
     expect(paragraph?.className).not.toContain('pl-16')
     expect(meta?.className).toContain('ml-2')
-    expect(meta?.className).toContain('align-bottom')
+    expect(meta?.className).not.toContain('align-bottom')
+    expect(meta?.className).not.toContain('pb-px')
     expect(meta?.className).not.toContain('absolute')
     expect(meta?.textContent).toContain('刚刚')
     expect(meta?.querySelector('[aria-label="已读"]')).not.toBeNull()

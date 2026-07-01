@@ -16,7 +16,7 @@ export const ChatAttachmentMenu = ({ isOpen, onPickImage }: Props) => {
     <div
       role="menu"
       aria-label="附件"
-      className="absolute bottom-full left-0 z-20 mb-2 rounded-xl border border-default-200 bg-content1 p-2 text-sm shadow-xl"
+      className="absolute bottom-full left-0 z-50 mb-2 rounded-xl border border-default-200 bg-content1 p-2 text-sm shadow-xl"
     >
       <button
         type="button"

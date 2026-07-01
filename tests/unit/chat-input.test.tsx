@@ -626,6 +626,42 @@ describe('ChatInput keyboard handling', () => {
     expect(fileInput?.value).toBe('')
   })
 
+  it('renders the attachment menu above selected image previews', async () => {
+    const { container } = await renderChatInput()
+    const fileInput =
+      container.querySelector<HTMLInputElement>('input[type="file"]')
+    expect(fileInput).not.toBeNull()
+    Object.defineProperty(fileInput, 'files', {
+      configurable: true,
+      value: [new File(['image'], 'chat.webp', { type: 'image/webp' })]
+    })
+
+    await act(async () => {
+      fileInput?.dispatchEvent(
+        new dom!.window.Event('change', { bubbles: true })
+      )
+      await Promise.resolve()
+    })
+
+    expect(container.textContent).toContain('chat.webp')
+
+    const plusButton = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="添加附件"]'
+    )
+    expect(plusButton).not.toBeNull()
+
+    await act(async () => {
+      plusButton?.click()
+      await Promise.resolve()
+    })
+
+    const attachmentMenu = container.querySelector<HTMLElement>(
+      '[role="menu"][aria-label="附件"]'
+    )
+    expect(attachmentMenu).not.toBeNull()
+    expect(attachmentMenu?.className).toContain('z-50')
+  })
+
   it('closes the attachment menu when Escape is pressed', async () => {
     const { container } = await renderChatInput()
 
