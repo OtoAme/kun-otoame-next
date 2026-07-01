@@ -54,7 +54,10 @@ interface Props {
     imageIndex?: number | null
   ) => void
   onOpenImage?: (message: PrivateMessage, imageIndex: number) => void
-  onReplyPreviewClick?: (replyTo: PrivateMessageReplyPreview) => void
+  onReplyPreviewClick?: (
+    replyTo: PrivateMessageReplyPreview,
+    sourceMessageId: number
+  ) => void
   replyHighlight?: ChatReplyHighlight | null
   isReplyHighlightFading?: boolean
   onMessageUpdated: (data: MessageUpdateData) => void
@@ -100,7 +103,7 @@ export const ChatMessage = ({
   const [editContent, setEditContent] = useState(message.content)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const bubbleRef = useRef<HTMLDivElement>(null)
-  const contentRef = useRef<HTMLParagraphElement>(null)
+  const contentRef = useRef<HTMLSpanElement>(null)
   const editTextareaRef = useRef<HTMLTextAreaElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
   const menuOpenIdRef = useRef(0)
@@ -161,9 +164,7 @@ export const ChatMessage = ({
       : -1
   const isBubbleHighlighted =
     activeReplyHighlight?.kind === 'bubble' ||
-    Boolean(
-      activeReplyHighlight?.kind === 'image' && highlightedImageIndex < 0
-    )
+    Boolean(activeReplyHighlight?.kind === 'image' && highlightedImageIndex < 0)
 
   const closeMessageMenu = () => {
     setIsMenuReady(false)
@@ -665,7 +666,7 @@ export const ChatMessage = ({
         image={message.replyTo.image}
         onClick={
           onReplyPreviewClick
-            ? () => onReplyPreviewClick(message.replyTo!)
+            ? () => onReplyPreviewClick(message.replyTo!, message.id)
             : undefined
         }
         className={cn(
@@ -737,10 +738,24 @@ export const ChatMessage = ({
           )}
         />
       )}
-      {message.content && (
-        <p ref={contentRef} className="whitespace-pre-wrap break-words text-sm">
-          {renderMessageText()}
+      {message.content ? (
+        <p className="text-left text-sm leading-5 whitespace-pre-wrap break-words">
+          <span
+            ref={contentRef}
+            data-testid="chat-message-text"
+            className="break-words"
+          >
+            {renderMessageText()}
+          </span>
+          {renderMessageMeta('inline')}
         </p>
+      ) : (
+        !isImageOnly &&
+        (
+          <div className="flex justify-end leading-4">
+            {renderMessageMeta('standalone')}
+          </div>
+        )
       )}
     </>
   )
@@ -766,6 +781,25 @@ export const ChatMessage = ({
       <StatusIcon className="size-3" />
     </span>
   ) : null
+  const renderMessageMeta = (variant: 'inline' | 'standalone' | 'overlay') => (
+    <span
+      data-testid="chat-message-meta"
+      className={cn(
+        'inline-flex select-none items-center gap-1 whitespace-nowrap text-[10px] leading-4',
+        variant === 'overlay'
+          ? 'pointer-events-none absolute bottom-1.5 right-1.5 z-20 rounded-full bg-black/45 px-2 py-0.5 text-white shadow-sm backdrop-blur-sm'
+          : isOwn
+            ? 'text-[hsl(var(--kun-brand-700))] dark:text-[hsl(var(--kun-brand-500))]'
+            : 'text-default-400',
+        variant === 'inline' && 'ml-2 align-bottom pb-px',
+        variant === 'standalone' && 'mt-0.5'
+      )}
+    >
+      <span>{formatTimeDifference(message.created)}</span>
+      {message.editedAt && <span>(已编辑)</span>}
+      {statusMarkup}
+    </span>
+  )
   const bubbleMenuLabel = isOwn
     ? '打开我的消息操作菜单'
     : `打开 ${message.sender.name} 的消息操作菜单`
@@ -825,21 +859,7 @@ export const ChatMessage = ({
           >
             <div className={cn(isImageOnly && 'relative')}>
               {renderMessageBody()}
-              {isImageOnly ? (
-                <div className="absolute bottom-1.5 right-1.5 inline-flex select-none items-center gap-1 rounded-full bg-black/45 px-2 py-0.5 text-[10px] leading-4 text-white shadow-sm backdrop-blur-sm">
-                  <span>{formatTimeDifference(message.created)}</span>
-                  {message.editedAt && <span>(已编辑)</span>}
-                  {statusMarkup}
-                </div>
-              ) : (
-                <div className="mt-0.5 grid select-none grid-cols-[1fr_auto] items-center gap-2 text-[10px] leading-4 text-[hsl(var(--kun-brand-700))] dark:text-[hsl(var(--kun-brand-500))]">
-                  <span className="inline-flex items-center gap-1">
-                    <span>{formatTimeDifference(message.created)}</span>
-                    {message.editedAt && <span>(已编辑)</span>}
-                  </span>
-                  {statusMarkup}
-                </div>
-              )}
+              {isImageOnly && renderMessageMeta('overlay')}
             </div>
             {bubbleHighlightMarkup}
           </motion.div>
@@ -865,17 +885,7 @@ export const ChatMessage = ({
           >
             <div className={cn(isImageOnly && 'relative')}>
               {renderMessageBody()}
-              {isImageOnly ? (
-                <div className="absolute bottom-1.5 right-1.5 inline-flex select-none items-center gap-1 rounded-full bg-black/45 px-2 py-0.5 text-[10px] leading-4 text-white shadow-sm backdrop-blur-sm">
-                  <span>{formatTimeDifference(message.created)}</span>
-                  {message.editedAt && <span>(已编辑)</span>}
-                </div>
-              ) : (
-                <div className="mt-0.5 flex select-none items-center gap-2 text-[10px] leading-4 text-default-400">
-                  <span>{formatTimeDifference(message.created)}</span>
-                  {message.editedAt && <span>(已编辑)</span>}
-                </div>
-              )}
+              {isImageOnly && renderMessageMeta('overlay')}
             </div>
             {bubbleHighlightMarkup}
           </motion.div>

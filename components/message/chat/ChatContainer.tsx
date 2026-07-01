@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import { Card, CardBody, CardHeader } from '@heroui/card'
 import { Button } from '@heroui/react'
-import { ArrowLeft, Loader2 } from 'lucide-react'
+import { ArrowLeft, ChevronDown, Loader2 } from 'lucide-react'
 import Link from 'next/link'
 import { KunNull } from '~/components/kun/Null'
 import { ChatMessage, type ChatReplyHighlight } from './ChatMessage'
@@ -14,6 +14,7 @@ import { KunControlledImageViewer } from '~/components/kun/image-viewer/ImageVie
 import { kunFetchGet, kunFetchPut } from '~/utils/kunFetch'
 import { useUserStore } from '~/store/userStore'
 import { useMessageStore } from '~/store/messageStore'
+import { cn } from '~/utils/cn'
 import toast from 'react-hot-toast'
 import type {
   ConversationMessagesResponse,
@@ -53,6 +54,16 @@ const CHAT_REPLY_HIGHLIGHT_DELAY_MS = 500
 const CHAT_REPLY_HIGHLIGHT_VISIBLE_MS = 1_200
 const CHAT_REPLY_HIGHLIGHT_FADE_MS = 260
 const CHAT_LIVE_EDGE_THRESHOLD_PX = 96
+const CHAT_SCROLL_BUTTON_FADE_MS = 180
+const CHAT_SCROLL_BUTTON_POSITION_CLASSNAME =
+  'pointer-events-none absolute bottom-28 right-8 z-20'
+
+const getMaxScrollTop = (container: HTMLElement) =>
+  Math.max(0, container.scrollHeight - container.clientHeight)
+
+const shouldReduceScrollMotion = () =>
+  typeof window !== 'undefined' &&
+  window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
 
 const getLatestMessageId = (msgs: PrivateMessage[]) =>
   msgs.reduce((latest, msg) => Math.max(latest, msg.id), 0)
@@ -138,6 +149,11 @@ export const ChatContainer = ({
   const [replyHighlight, setReplyHighlight] =
     useState<ChatReplyHighlight | null>(null)
   const [isReplyHighlightFading, setIsReplyHighlightFading] = useState(false)
+  const [showScrollButton, setShowScrollButton] = useState(false)
+  const [isScrollButtonMounted, setIsScrollButtonMounted] = useState(false)
+  const [replyJumpReturnPoint, setReplyJumpReturnPointState] = useState<
+    number | null
+  >(null)
   const [imageViewerIndex, setImageViewerIndex] = useState(-1)
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const loadMoreRef = useRef<HTMLDivElement>(null)
@@ -156,6 +172,14 @@ export const ChatContainer = ({
     null
   )
   const replyScrollAnimationRef = useRef<number | null>(null)
+  const scrollButtonUnmountTimerRef = useRef<ReturnType<
+    typeof setTimeout
+  > | null>(null)
+  const showScrollButtonRef = useRef(false)
+  const replyJumpReturnPointRef = useRef<number | null>(null)
+  const replyJumpReturnMessageIdRef = useRef<number | null>(null)
+  const preserveReplyJumpReturnPointRef = useRef(false)
+  const deferScrollButtonVisibilityRef = useRef(false)
 
   useEffect(() => {
     messagesRef.current = messages
@@ -200,13 +224,6 @@ export const ChatContainer = ({
     }
   }, [conversationImages.length, imageViewerIndex])
 
-  const scrollToBottom = useCallback(() => {
-    const container = scrollContainerRef.current
-    if (container) {
-      container.scrollTop = container.scrollHeight
-    }
-  }, [])
-
   const isNearLiveEdge = useCallback(() => {
     const container = scrollContainerRef.current
     if (!container) {
@@ -217,6 +234,142 @@ export const ChatContainer = ({
       container.scrollHeight - container.clientHeight - container.scrollTop
     return distanceFromBottom <= CHAT_LIVE_EDGE_THRESHOLD_PX
   }, [])
+
+  const setReplyJumpReturnPoint = useCallback(
+    (value: number | null, sourceMessageId: number | null = null) => {
+      replyJumpReturnPointRef.current = value
+      replyJumpReturnMessageIdRef.current =
+        value === null ? null : sourceMessageId
+      setReplyJumpReturnPointState(value)
+    },
+    []
+  )
+
+  const updateScrollButtonVisibility = useCallback(() => {
+    if (deferScrollButtonVisibilityRef.current) {
+      return
+    }
+
+    const shouldShow = !isNearLiveEdge()
+
+    if (showScrollButtonRef.current !== shouldShow) {
+      showScrollButtonRef.current = shouldShow
+      setShowScrollButton(shouldShow)
+    }
+
+    if (
+      !shouldShow &&
+      replyJumpReturnPointRef.current !== null &&
+      !preserveReplyJumpReturnPointRef.current
+    ) {
+      setReplyJumpReturnPoint(null)
+    }
+  }, [isNearLiveEdge, setReplyJumpReturnPoint])
+
+  const hideScrollButton = useCallback(() => {
+    if (!showScrollButtonRef.current) {
+      return
+    }
+
+    showScrollButtonRef.current = false
+    setShowScrollButton(false)
+  }, [])
+
+  const cancelReplyScrollAnimation = useCallback(() => {
+    if (replyScrollAnimationRef.current !== null) {
+      cancelAnimationFrame(replyScrollAnimationRef.current)
+      replyScrollAnimationRef.current = null
+    }
+    preserveReplyJumpReturnPointRef.current = false
+    deferScrollButtonVisibilityRef.current = false
+  }, [])
+
+  const scrollToPositionInFixedTime = useCallback(
+    (
+      endScrollTop: number,
+      options: { preserveReplyReturnPoint?: boolean } = {}
+    ) => {
+      const scrollContainer = scrollContainerRef.current
+      if (!scrollContainer) {
+        return
+      }
+
+      cancelReplyScrollAnimation()
+      deferScrollButtonVisibilityRef.current = true
+      const shouldPreserveReplyReturnPoint = Boolean(
+        options.preserveReplyReturnPoint &&
+          replyJumpReturnPointRef.current !== null
+      )
+      preserveReplyJumpReturnPointRef.current = shouldPreserveReplyReturnPoint
+
+      const maxScrollTop = getMaxScrollTop(scrollContainer)
+      const clampedEndScrollTop = Math.min(
+        Math.max(endScrollTop, 0),
+        maxScrollTop
+      )
+      const startScrollTop = scrollContainer.scrollTop
+      const scrollDistance = clampedEndScrollTop - startScrollTop
+
+      if (shouldReduceScrollMotion() || Math.abs(scrollDistance) < 1) {
+        scrollContainer.scrollTop = clampedEndScrollTop
+        preserveReplyJumpReturnPointRef.current = false
+        deferScrollButtonVisibilityRef.current = false
+        updateScrollButtonVisibility()
+        return
+      }
+
+      let startTime: number | null = null
+      const animateScroll = (timestamp: number) => {
+        startTime ??= timestamp
+        const progress = Math.min(
+          (timestamp - startTime) / CHAT_REPLY_SCROLL_DURATION_MS,
+          1
+        )
+        const easedProgress = 1 - Math.pow(1 - progress, 3)
+        scrollContainer.scrollTop =
+          startScrollTop + scrollDistance * easedProgress
+
+        if (progress < 1) {
+          replyScrollAnimationRef.current = requestAnimationFrame(animateScroll)
+        } else {
+          replyScrollAnimationRef.current = null
+          preserveReplyJumpReturnPointRef.current = false
+          deferScrollButtonVisibilityRef.current = false
+          updateScrollButtonVisibility()
+        }
+      }
+
+      replyScrollAnimationRef.current = requestAnimationFrame(animateScroll)
+    },
+    [cancelReplyScrollAnimation, updateScrollButtonVisibility]
+  )
+
+  const scrollToBottom = useCallback(
+    (options: { animated?: boolean } = {}) => {
+      const container = scrollContainerRef.current
+      if (!container) {
+        return
+      }
+
+      const bottomScrollTop = getMaxScrollTop(container)
+      setReplyJumpReturnPoint(null)
+
+      if (options.animated) {
+        scrollToPositionInFixedTime(bottomScrollTop)
+        return
+      }
+
+      cancelReplyScrollAnimation()
+      container.scrollTop = bottomScrollTop
+      updateScrollButtonVisibility()
+    },
+    [
+      cancelReplyScrollAnimation,
+      scrollToPositionInFixedTime,
+      setReplyJumpReturnPoint,
+      updateScrollButtonVisibility
+    ]
+  )
 
   const loadMoreMessages = useCallback(async () => {
     if (historyLoadInFlightRef.current || loading || !hasMore) return
@@ -341,91 +494,100 @@ export const ChatContainer = ({
     [conversationImages]
   )
 
-  const scrollToMessageInFixedTime = useCallback((messageId: number) => {
-    const target = document.getElementById(`chat-message-${messageId}`)
-    const scrollContainer = scrollContainerRef.current
+  const scrollToMessageInFixedTime = useCallback(
+    (messageId: number) => {
+      const target = document.getElementById(`chat-message-${messageId}`)
+      const scrollContainer = scrollContainerRef.current
 
-    if (!target || !scrollContainer) {
-      target?.scrollIntoView({ behavior: 'auto', block: 'center' })
-      return
-    }
-
-    if (replyScrollAnimationRef.current !== null) {
-      cancelAnimationFrame(replyScrollAnimationRef.current)
-      replyScrollAnimationRef.current = null
-    }
-
-    const containerRect = scrollContainer.getBoundingClientRect()
-    const targetRect = target.getBoundingClientRect()
-    const startScrollTop = scrollContainer.scrollTop
-    const maxScrollTop = Math.max(
-      0,
-      scrollContainer.scrollHeight - scrollContainer.clientHeight
-    )
-    const centeredScrollTop =
-      startScrollTop +
-      targetRect.top -
-      containerRect.top -
-      (scrollContainer.clientHeight - targetRect.height) / 2
-    const endScrollTop = Math.min(Math.max(centeredScrollTop, 0), maxScrollTop)
-    const scrollDistance = endScrollTop - startScrollTop
-
-    if (Math.abs(scrollDistance) < 1) {
-      scrollContainer.scrollTop = endScrollTop
-      return
-    }
-
-    let startTime: number | null = null
-    const animateScroll = (timestamp: number) => {
-      startTime ??= timestamp
-      const progress = Math.min(
-        (timestamp - startTime) / CHAT_REPLY_SCROLL_DURATION_MS,
-        1
-      )
-      const easedProgress = 1 - Math.pow(1 - progress, 3)
-      scrollContainer.scrollTop =
-        startScrollTop + scrollDistance * easedProgress
-
-      if (progress < 1) {
-        replyScrollAnimationRef.current = requestAnimationFrame(animateScroll)
-      } else {
-        replyScrollAnimationRef.current = null
+      if (!target || !scrollContainer) {
+        target?.scrollIntoView({ behavior: 'auto', block: 'center' })
+        return
       }
-    }
 
-    replyScrollAnimationRef.current = requestAnimationFrame(animateScroll)
+      const containerRect = scrollContainer.getBoundingClientRect()
+      const targetRect = target.getBoundingClientRect()
+      const startScrollTop = scrollContainer.scrollTop
+      const centeredScrollTop =
+        startScrollTop +
+        targetRect.top -
+        containerRect.top -
+        (scrollContainer.clientHeight - targetRect.height) / 2
+      scrollToPositionInFixedTime(centeredScrollTop, {
+        preserveReplyReturnPoint: true
+      })
+    },
+    [scrollToPositionInFixedTime]
+  )
+
+  const startReplyHighlight = useCallback((highlight: ChatReplyHighlight) => {
+    if (replyHighlightTimerRef.current) {
+      clearTimeout(replyHighlightTimerRef.current)
+      replyHighlightTimerRef.current = null
+    }
+    setReplyHighlight(null)
+    setIsReplyHighlightFading(false)
+
+    replyHighlightTimerRef.current = setTimeout(() => {
+      setReplyHighlight(highlight)
+      setIsReplyHighlightFading(false)
+      replyHighlightTimerRef.current = setTimeout(() => {
+        setIsReplyHighlightFading(true)
+        replyHighlightTimerRef.current = setTimeout(() => {
+          setReplyHighlight((current) =>
+            current?.messageId === highlight.messageId ? null : current
+          )
+          setIsReplyHighlightFading(false)
+          replyHighlightTimerRef.current = null
+        }, CHAT_REPLY_HIGHLIGHT_FADE_MS)
+      }, CHAT_REPLY_HIGHLIGHT_VISIBLE_MS)
+    }, CHAT_REPLY_HIGHLIGHT_DELAY_MS)
   }, [])
 
   const handleJumpToReply = useCallback(
-    (replyTo: PrivateMessageReplyPreview) => {
+    (replyTo: PrivateMessageReplyPreview, sourceMessageId: number) => {
       const highlight = getReplyHighlight(replyTo)
 
-      if (replyHighlightTimerRef.current) {
-        clearTimeout(replyHighlightTimerRef.current)
-        replyHighlightTimerRef.current = null
+      const target = document.getElementById(
+        `chat-message-${replyTo.messageId}`
+      )
+      const scrollContainer = scrollContainerRef.current
+      if (target && scrollContainer) {
+        setReplyJumpReturnPoint(scrollContainer.scrollTop, sourceMessageId)
+      } else {
+        setReplyJumpReturnPoint(null)
       }
-      setReplyHighlight(null)
-      setIsReplyHighlightFading(false)
 
       scrollToMessageInFixedTime(replyTo.messageId)
-
-      replyHighlightTimerRef.current = setTimeout(() => {
-        setReplyHighlight(highlight)
-        setIsReplyHighlightFading(false)
-        replyHighlightTimerRef.current = setTimeout(() => {
-          setIsReplyHighlightFading(true)
-          replyHighlightTimerRef.current = setTimeout(() => {
-            setReplyHighlight((current) =>
-              current?.messageId === highlight.messageId ? null : current
-            )
-            setIsReplyHighlightFading(false)
-            replyHighlightTimerRef.current = null
-          }, CHAT_REPLY_HIGHLIGHT_FADE_MS)
-        }, CHAT_REPLY_HIGHLIGHT_VISIBLE_MS)
-      }, CHAT_REPLY_HIGHLIGHT_DELAY_MS)
+      startReplyHighlight(highlight)
     },
-    [scrollToMessageInFixedTime]
+    [scrollToMessageInFixedTime, setReplyJumpReturnPoint, startReplyHighlight]
   )
+
+  const handleScrollButtonClick = useCallback(() => {
+    const returnPoint = replyJumpReturnPointRef.current
+    const returnMessageId = replyJumpReturnMessageIdRef.current
+
+    if (returnPoint !== null) {
+      setReplyJumpReturnPoint(null)
+      scrollToPositionInFixedTime(returnPoint)
+      if (returnMessageId !== null) {
+        startReplyHighlight({
+          messageId: returnMessageId,
+          kind: 'bubble'
+        })
+      }
+      return
+    }
+
+    hideScrollButton()
+    scrollToBottom({ animated: true })
+  }, [
+    hideScrollButton,
+    scrollToBottom,
+    scrollToPositionInFixedTime,
+    setReplyJumpReturnPoint,
+    startReplyHighlight
+  ])
 
   useEffect(() => {
     return () => {
@@ -434,6 +596,9 @@ export const ChatContainer = ({
       }
       if (replyScrollAnimationRef.current !== null) {
         cancelAnimationFrame(replyScrollAnimationRef.current)
+      }
+      if (scrollButtonUnmountTimerRef.current) {
+        clearTimeout(scrollButtonUnmountTimerRef.current)
       }
     }
   }, [])
@@ -639,6 +804,53 @@ export const ChatContainer = ({
   }, [scrollToBottom])
 
   useEffect(() => {
+    const scrollContainer = scrollContainerRef.current
+    if (!scrollContainer) {
+      return
+    }
+
+    scrollContainer.addEventListener('scroll', updateScrollButtonVisibility, {
+      passive: true
+    })
+    updateScrollButtonVisibility()
+
+    return () => {
+      scrollContainer.removeEventListener(
+        'scroll',
+        updateScrollButtonVisibility
+      )
+    }
+  }, [updateScrollButtonVisibility])
+
+  useEffect(() => {
+    if (showScrollButton) {
+      if (scrollButtonUnmountTimerRef.current) {
+        clearTimeout(scrollButtonUnmountTimerRef.current)
+        scrollButtonUnmountTimerRef.current = null
+      }
+      setIsScrollButtonMounted(true)
+      return
+    }
+
+    if (!isScrollButtonMounted) {
+      return
+    }
+
+    const timer = setTimeout(() => {
+      setIsScrollButtonMounted(false)
+      scrollButtonUnmountTimerRef.current = null
+    }, CHAT_SCROLL_BUTTON_FADE_MS)
+    scrollButtonUnmountTimerRef.current = timer
+
+    return () => {
+      clearTimeout(timer)
+      if (scrollButtonUnmountTimerRef.current === timer) {
+        scrollButtonUnmountTimerRef.current = null
+      }
+    }
+  }, [isScrollButtonMounted, showScrollButton])
+
+  useEffect(() => {
     const observer = new IntersectionObserver(
       (entries) => {
         if (entries[0].isIntersecting && hasMore && !loading) {
@@ -654,6 +866,9 @@ export const ChatContainer = ({
 
     return () => observer.disconnect()
   }, [hasMore, loading, loadMoreMessages])
+
+  const scrollButtonLabel =
+    replyJumpReturnPoint !== null ? '回到回复消息位置' : '回到底部'
 
   return (
     <>
@@ -686,7 +901,36 @@ export const ChatContainer = ({
           />
         </CardHeader>
 
-        <CardBody className="flex flex-col p-0">
+        <CardBody className="relative flex flex-col p-0">
+          {isScrollButtonMounted && (
+            <div
+              data-testid="chat-scroll-button-shell"
+              data-state={showScrollButton ? 'open' : 'closed'}
+              aria-hidden={!showScrollButton}
+              className={cn(
+                CHAT_SCROLL_BUTTON_POSITION_CLASSNAME,
+                'transition-opacity duration-[180ms] motion-reduce:transition-none',
+                showScrollButton
+                  ? 'opacity-100 ease-out'
+                  : 'pointer-events-none opacity-0 ease-out'
+              )}
+            >
+              <button
+                type="button"
+                aria-label={scrollButtonLabel}
+                title={scrollButtonLabel}
+                tabIndex={showScrollButton ? 0 : -1}
+                className={cn(
+                  'pointer-events-auto flex size-11 items-center justify-center rounded-full border border-default-200 bg-content1/95 text-default-600 shadow-lg shadow-default-900/10 outline-none backdrop-blur-md transition-[background-color,color,box-shadow] duration-200 hover:bg-content2 hover:text-foreground focus-visible:ring-2 focus-visible:ring-[hsl(var(--kun-brand-500)/0.55)] active:bg-content2 active:text-foreground dark:border-default-100/10 dark:bg-content2/95 dark:shadow-black/25',
+                  !showScrollButton && 'pointer-events-none'
+                )}
+                onClick={handleScrollButtonClick}
+              >
+                <ChevronDown className="size-6" aria-hidden="true" />
+              </button>
+            </div>
+          )}
+
           <div ref={scrollContainerRef} className="flex-1 overflow-y-auto p-4">
             {hasMore && (
               <div ref={loadMoreRef} className="flex justify-center py-2">

@@ -34,6 +34,7 @@ pnpm typecheck
 | `tests/unit/user-message-bell.test.tsx`                | 顶栏消息铃铛只导航到通知中心，不在通知展示前标已读。                                  |
 | `tests/unit/message-container.test.tsx`                | 通知列表首屏 hydrate 复用服务端数据，不把初见未读 chip 刷成已读。                     |
 | `tests/unit/chat-input.test.tsx`                       | 私聊输入法组合期 Enter 不发送、`Shift+Enter` 换行和发送去重。                         |
+| `tests/unit/chat-container-realtime.test.tsx`          | 私聊实时同步、回复预览跳转、高亮反馈、浮动回底部按钮和滚动位置保持。                  |
 | `tests/unit/api/message-unread.test.ts`                | 消息通知/私聊未读状态查询、通知已读/清理幂等和私聊已读写入。                          |
 | `tests/unit/api/notification-toggle-abuse.test.ts`     | 取消收藏、取消点赞等关系移除路径不创建误导性通知。                                    |
 | `tests/unit/api/mention-message.test.ts`               | 评论提及通知去重、跳过自己、忽略不存在用户并限制单条评论通知数量。                    |

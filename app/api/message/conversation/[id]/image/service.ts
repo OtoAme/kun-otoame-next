@@ -208,7 +208,7 @@ export const uploadConversationImage = async (
       key,
       error
     })
-    return '图片上传失败，请稍后重试'
+    return '图片上传到对象存储失败，请稍后重试'
   }
 
   const image = {
@@ -237,7 +237,7 @@ export const uploadConversationImage = async (
       uid,
       error
     })
-    return '图片上传失败，请稍后重试'
+    return '图片上传记录保存失败，请稍后重试'
   }
 
   return image

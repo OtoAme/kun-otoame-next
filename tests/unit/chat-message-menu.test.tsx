@@ -131,35 +131,35 @@ vi.mock('@heroui/input', () => ({
       },
       forwardedRef
     ) => {
-    const ref = React.useRef<HTMLTextAreaElement>(null)
-    React.useImperativeHandle(
-      forwardedRef,
-      () => ref.current as HTMLTextAreaElement
-    )
+      const ref = React.useRef<HTMLTextAreaElement>(null)
+      React.useImperativeHandle(
+        forwardedRef,
+        () => ref.current as HTMLTextAreaElement
+      )
 
-    React.useEffect(() => {
-      if (autoFocus && ref.current) {
-        Object.defineProperty(ref.current.ownerDocument, 'activeElement', {
-          configurable: true,
-          get: () => ref.current
-        })
-        onFocus?.({
-          currentTarget: ref.current,
-          target: ref.current
-        } as React.FocusEvent<HTMLTextAreaElement>)
-      }
-    }, [autoFocus, onFocus])
+      React.useEffect(() => {
+        if (autoFocus && ref.current) {
+          Object.defineProperty(ref.current.ownerDocument, 'activeElement', {
+            configurable: true,
+            get: () => ref.current
+          })
+          onFocus?.({
+            currentTarget: ref.current,
+            target: ref.current
+          } as React.FocusEvent<HTMLTextAreaElement>)
+        }
+      }, [autoFocus, onFocus])
 
-    return (
-      <textarea
-        aria-label="编辑消息内容"
-        ref={ref}
-        value={value}
-        onChange={(event) => onValueChange?.(event.target.value)}
-        onFocus={onFocus}
-        {...props}
-      />
-    )
+      return (
+        <textarea
+          aria-label="编辑消息内容"
+          ref={ref}
+          value={value}
+          onChange={(event) => onValueChange?.(event.target.value)}
+          onFocus={onFocus}
+          {...props}
+        />
+      )
     }
   )
 }))
@@ -223,7 +223,10 @@ describe('ChatMessage menu and rendering', () => {
         selectedText: string | null,
         imageIndex?: number | null
       ) => void
-      onReplyPreviewClick?: (replyTo: PrivateMessageReplyPreview) => void
+      onReplyPreviewClick?: (
+        replyTo: PrivateMessageReplyPreview,
+        sourceMessageId: number
+      ) => void
       replyHighlight?: ChatReplyHighlight | null
       isReplyHighlightFading?: boolean
     } = {}
@@ -441,6 +444,68 @@ describe('ChatMessage menu and rendering', () => {
     expect(container.querySelector('[aria-label="已读"]')).not.toBeNull()
   })
 
+  it('places long text message metadata inline at the final text line end', async () => {
+    const { container } = await renderMessage(
+      {
+        ...baseMessage,
+        content:
+          '非 upload API 先过 verifyKunCsrf，但两个只读匿名热点 /api/tag/otomegame 和 /api/company/otomegame 为降低 GET 固定开销从 matcher 中排除。',
+        status: 1,
+        sender: { id: 1007, name: 'Saya', avatar: '' }
+      },
+      { isOwn: true }
+    )
+
+    const paragraph = container.querySelector('p')
+    const meta = container.querySelector('[data-testid="chat-message-meta"]')
+    const text = container.querySelector('[data-testid="chat-message-text"]')
+
+    expect(meta).not.toBeNull()
+    expect(meta?.parentElement).toBe(paragraph)
+    expect(text?.nextElementSibling).toBe(meta)
+    expect(paragraph?.className).not.toContain('grid')
+    expect(paragraph?.className).not.toContain('items-end')
+    expect(paragraph?.className).toContain('text-left')
+    expect(paragraph?.className).toContain('whitespace-pre-wrap')
+    expect(text?.className).toContain('break-words')
+    expect(meta?.className).toContain('ml-2')
+    expect(meta?.className).toContain('align-bottom')
+    expect(meta?.className).not.toContain('self-end')
+    expect(meta?.className).not.toContain('float-right')
+    expect(meta?.className).not.toContain('mt-0.5')
+    expect(meta?.textContent).toContain('刚刚')
+    expect(meta?.querySelector('[aria-label="已读"]')).not.toBeNull()
+  })
+
+  it('keeps compact text message metadata inline with the text baseline', async () => {
+    const { container } = await renderMessage(
+      {
+        ...baseMessage,
+        content: 'ffyhb',
+        status: 1,
+        sender: { id: 1007, name: 'Saya', avatar: '' }
+      },
+      { isOwn: true }
+    )
+
+    const paragraph = container.querySelector('p')
+    const meta = container.querySelector('[data-testid="chat-message-meta"]')
+    const text = container.querySelector('[data-testid="chat-message-text"]')
+
+    expect(meta).not.toBeNull()
+    expect(meta?.parentElement).toBe(paragraph)
+    expect(text?.nextElementSibling).toBe(meta)
+    expect(paragraph?.className).toContain('text-left')
+    expect(paragraph?.className).not.toContain('text-center')
+    expect(paragraph?.className).not.toContain('pr-16')
+    expect(paragraph?.className).not.toContain('pl-16')
+    expect(meta?.className).toContain('ml-2')
+    expect(meta?.className).toContain('align-bottom')
+    expect(meta?.className).not.toContain('absolute')
+    expect(meta?.textContent).toContain('刚刚')
+    expect(meta?.querySelector('[aria-label="已读"]')).not.toBeNull()
+  })
+
   it('uses a soft themed bubble for own messages', async () => {
     const { container } = await renderMessage(
       { ...baseMessage, sender: { id: 1007, name: 'Saya', avatar: '' } },
@@ -562,9 +627,9 @@ describe('ChatMessage menu and rendering', () => {
       await Promise.resolve()
     })
 
-    const confirmButton = Array.from(
-      container.querySelectorAll('button')
-    ).find((button) => button.textContent === '确认删除')
+    const confirmButton = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent === '确认删除'
+    )
     expect(confirmButton).toBeDefined()
 
     await act(async () => {
@@ -611,9 +676,9 @@ describe('ChatMessage menu and rendering', () => {
     expect(kunFetchDelete).not.toHaveBeenCalled()
     expect(container.textContent).toContain('确认删除消息')
 
-    const confirmButton = Array.from(
-      container.querySelectorAll('button')
-    ).find((button) => button.textContent === '确认删除')
+    const confirmButton = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent === '确认删除'
+    )
     expect(confirmButton).toBeDefined()
 
     await act(async () => {
@@ -657,6 +722,81 @@ describe('ChatMessage menu and rendering', () => {
         .querySelector('button[aria-label="查看图片 1"]')
         ?.getAttribute('style')
     ).toContain('width:')
+  })
+
+  it('shows image-only message time and read indicator in a translucent bottom-right overlay', async () => {
+    const { container } = await renderMessage(
+      {
+        ...baseMessage,
+        type: 1,
+        content: '',
+        status: 1,
+        image: {
+          url: 'https://img.example/chat.webp',
+          width: 800,
+          height: 600,
+          size: 12345,
+          mime: 'image/webp',
+          name: 'chat.webp'
+        },
+        sender: { id: 1007, name: 'Saya', avatar: '' }
+      },
+      { isOwn: true }
+    )
+
+    const meta = container.querySelector('[data-testid="chat-message-meta"]')
+
+    expect(meta).not.toBeNull()
+    expect(meta?.className).toContain('absolute')
+    expect(meta?.className).toContain('bottom-1.5')
+    expect(meta?.className).toContain('right-1.5')
+    expect(meta?.className).toContain('bg-black/45')
+    expect(meta?.textContent).toContain('刚刚')
+    expect(meta?.querySelector('[aria-label="已读"]')).not.toBeNull()
+  })
+
+  it('keeps captioned image message metadata inline with the caption baseline', async () => {
+    const { container } = await renderMessage(
+      {
+        ...baseMessage,
+        type: 1,
+        content: '回复图片试试',
+        status: 1,
+        image: {
+          url: 'https://img.example/chat.webp',
+          width: 800,
+          height: 600,
+          size: 12345,
+          mime: 'image/webp',
+          name: 'chat.webp'
+        },
+        replyTo: {
+          messageId: 2,
+          senderName: 'admin',
+          content: '[图片]',
+          selectedText: null,
+          image: null
+        },
+        sender: { id: 1007, name: 'Saya', avatar: '' }
+      },
+      { isOwn: true }
+    )
+
+    const paragraph = container.querySelector('p')
+    const meta = container.querySelector('[data-testid="chat-message-meta"]')
+    const text = container.querySelector('[data-testid="chat-message-text"]')
+
+    expect(paragraph?.className).toContain('text-left')
+    expect(meta).not.toBeNull()
+    expect(meta?.parentElement).toBe(paragraph)
+    expect(text?.nextElementSibling).toBe(meta)
+    expect(paragraph?.className).not.toContain('pr-20')
+    expect(meta?.className).toContain('ml-2')
+    expect(meta?.className).toContain('align-bottom')
+    expect(meta?.className).not.toContain('absolute')
+    expect(meta?.className).not.toContain('bg-black/45')
+    expect(meta?.textContent).toContain('刚刚')
+    expect(meta?.querySelector('[aria-label="已读"]')).not.toBeNull()
   })
 
   it('opens the message menu from an image context menu and copies the image link', async () => {
@@ -1219,19 +1359,22 @@ describe('ChatMessage menu and rendering', () => {
       await Promise.resolve()
     })
 
-    expect(onReplyPreviewClick).toHaveBeenCalledWith({
-      messageId: 2,
-      senderName: 'Mio',
-      content: '[图片]',
-      selectedText: null,
-      image: {
-        url: 'https://img.example/quoted.webp',
-        width: 240,
-        height: 180,
-        size: 123,
-        mime: 'image/webp',
-        name: 'quoted.webp'
-      }
-    })
+    expect(onReplyPreviewClick).toHaveBeenCalledWith(
+      {
+        messageId: 2,
+        senderName: 'Mio',
+        content: '[图片]',
+        selectedText: null,
+        image: {
+          url: 'https://img.example/quoted.webp',
+          width: 240,
+          height: 180,
+          size: 123,
+          mime: 'image/webp',
+          name: 'quoted.webp'
+        }
+      },
+      3
+    )
   })
 })

@@ -30,6 +30,41 @@ const ALLOWED_IMAGE_TYPES = new Set([
   'image/avif'
 ])
 const MAX_IMAGES_PER_MESSAGE = 9
+const IMAGE_UPLOAD_FAILED_MESSAGE = '图片上传失败，请重试'
+
+const getImageUploadRequestErrorMessage = (reason: unknown) => {
+  const rawMessage =
+    typeof reason === 'string'
+      ? reason
+      : reason instanceof Error
+        ? reason.message
+        : typeof reason === 'object' &&
+            reason !== null &&
+            'message' in reason &&
+            typeof reason.message === 'string'
+          ? reason.message
+          : ''
+  const message = rawMessage.replace(/\s+/g, ' ').trim()
+
+  if (!message) {
+    return IMAGE_UPLOAD_FAILED_MESSAGE
+  }
+
+  const statusMatch = message.match(/^Kun Fetch error! Status: (\d+)$/i)
+  if (statusMatch) {
+    return `图片上传请求失败：服务器返回 ${statusMatch[1]}，请稍后重试`
+  }
+
+  if (/abort|timeout/i.test(message)) {
+    return '图片上传请求超时，请稍后重试'
+  }
+
+  if (/failed to fetch|load failed|networkerror/i.test(message)) {
+    return '图片上传请求失败：网络连接异常，请稍后重试'
+  }
+
+  return `图片上传失败：${message.slice(0, 120)}`
+}
 
 export const ChatInput = ({
   conversationId,
@@ -161,7 +196,9 @@ export const ChatInput = ({
           let failedUpload: string | null = null
           for (const uploadResult of uploadResults) {
             if (uploadResult.status === 'rejected') {
-              failedUpload ??= '图片上传失败，请重试'
+              failedUpload ??= getImageUploadRequestErrorMessage(
+                uploadResult.reason
+              )
               continue
             }
 
@@ -183,7 +220,7 @@ export const ChatInput = ({
 
         imagePayloads = nextUploadedImages.filter(isUploadedImage)
         if (imagePayloads.length !== selectedImages.length) {
-          toast.error('图片上传失败，请重试')
+          toast.error(IMAGE_UPLOAD_FAILED_MESSAGE)
           return
         }
       }

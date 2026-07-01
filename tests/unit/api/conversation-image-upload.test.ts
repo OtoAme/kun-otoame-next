@@ -435,7 +435,7 @@ describe('conversation image upload service', () => {
     const file = new File(['image'], 'chat.png', { type: 'image/png' })
 
     await expect(uploadConversationImage(5, file, 1007)).resolves.toBe(
-      '图片上传失败，请稍后重试'
+      '图片上传到对象存储失败，请稍后重试'
     )
     expect(
       rateLimitMock.rollbackConversationImageUploadQuota
@@ -466,7 +466,7 @@ describe('conversation image upload service', () => {
     const file = new File(['image'], 'chat.png', { type: 'image/png' })
 
     await expect(uploadConversationImage(5, file, 1007)).resolves.toBe(
-      '图片上传失败，请稍后重试'
+      '图片上传记录保存失败，请稍后重试'
     )
     expect(s3Mock.uploadImageToS3).toHaveBeenCalledWith(
       expect.stringMatching(/^conversation\/5\/.+\.avif$/),
@@ -505,7 +505,7 @@ describe('conversation image upload service', () => {
     const file = new File(['image'], 'chat.png', { type: 'image/png' })
 
     await expect(uploadConversationImage(5, file, 1007)).resolves.toBe(
-      '图片上传失败，请稍后重试'
+      '图片上传记录保存失败，请稍后重试'
     )
     expect(
       rateLimitMock.rollbackConversationImageUploadQuota

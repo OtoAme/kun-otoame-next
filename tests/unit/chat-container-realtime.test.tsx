@@ -34,7 +34,11 @@ const imageViewerMock = vi.hoisted(() => ({
 const chatMessageMock = vi.hoisted(() => ({
   onMessageUpdatedById: new Map<
     number,
-    (data: { action: 'delete' } | { action: 'edit'; content: string; editedAt: string | Date }) => void
+    (
+      data:
+        | { action: 'delete' }
+        | { action: 'edit'; content: string; editedAt: string | Date }
+    ) => void
   >(),
   onReplyById: new Map<
     number,
@@ -152,7 +156,10 @@ vi.mock('~/components/message/chat/ChatMessage', () => ({
       imageIndex?: number | null
     ) => void
     onOpenImage?: (message: PrivateMessage, imageIndex: number) => void
-    onReplyPreviewClick?: (replyTo: PrivateMessageReplyPreview) => void
+    onReplyPreviewClick?: (
+      replyTo: PrivateMessageReplyPreview,
+      sourceMessageId: number
+    ) => void
     replyHighlight?: ChatReplyHighlight | null
     isReplyHighlightFading?: boolean
     onMessageUpdated: (
@@ -189,7 +196,7 @@ vi.mock('~/components/message/chat/ChatMessage', () => ({
         {message.replyTo && (
           <button
             data-testid={`reply-preview-${message.id}`}
-            onClick={() => onReplyPreviewClick?.(message.replyTo!)}
+            onClick={() => onReplyPreviewClick?.(message.replyTo!, message.id)}
           >
             reply preview
           </button>
@@ -823,9 +830,7 @@ describe('ChatContainer realtime sync', () => {
     expect(fetchMock.kunFetchPut).toHaveBeenCalledWith(
       '/message/conversation/5/read'
     )
-    expect(toast.error).toHaveBeenCalledWith(
-      '同步私聊已读状态失败，请稍后重试'
-    )
+    expect(toast.error).toHaveBeenCalledWith('同步私聊已读状态失败，请稍后重试')
     expect(container.textContent).toContain('hello')
   })
 
@@ -893,9 +898,7 @@ describe('ChatContainer realtime sync', () => {
     })
 
     expect(container.textContent).toContain('fresh message')
-    expect(toast.error).toHaveBeenCalledWith(
-      '同步私聊已读状态失败，请稍后重试'
-    )
+    expect(toast.error).toHaveBeenCalledWith('同步私聊已读状态失败，请稍后重试')
     expect(fetchMock.kunFetchGet).toHaveBeenCalledWith(
       '/message/conversation/5',
       { page: 1, limit: 50, beforeId: 4 }
@@ -931,6 +934,429 @@ describe('ChatContainer realtime sync', () => {
 
     expect(container.textContent).toContain('fresh message')
     expect(scrollContainer!.scrollTop).toBe(120)
+  })
+
+  it('shows a floating button away from the bottom and animates back to the live edge', async () => {
+    const { container } = await renderChat()
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    const scrollContainer =
+      container.querySelector<HTMLDivElement>('.overflow-y-auto')
+    expect(scrollContainer).not.toBeNull()
+    Object.defineProperties(scrollContainer!, {
+      scrollHeight: { configurable: true, value: 1000 },
+      clientHeight: { configurable: true, value: 300 },
+      scrollTop: { configurable: true, writable: true, value: 120 }
+    })
+
+    await act(async () => {
+      scrollContainer!.dispatchEvent(new dom!.window.Event('scroll'))
+      await Promise.resolve()
+    })
+
+    const scrollButton = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="回到底部"]'
+    )
+    expect(scrollButton).not.toBeNull()
+    expect(scrollButton?.className).not.toContain('active:scale')
+    expect(scrollButton?.className).not.toContain('transform')
+
+    const originalRequestAnimationFrame = globalThis.requestAnimationFrame
+    const requestAnimationFrameSpy = vi.fn((callback: FrameRequestCallback) =>
+      originalRequestAnimationFrame(callback)
+    )
+    vi.stubGlobal('requestAnimationFrame', requestAnimationFrameSpy)
+
+    await act(async () => {
+      scrollButton!.click()
+      await Promise.resolve()
+    })
+
+    expect(requestAnimationFrameSpy).toHaveBeenCalled()
+    expect(scrollContainer!.scrollTop).toBe(700)
+    expect(
+      container
+        .querySelector('[data-testid="chat-scroll-button-shell"]')
+        ?.getAttribute('data-state')
+    ).toBe('closed')
+    expect(
+      container.querySelector('[data-testid="chat-scroll-button-shell"]')
+        ?.className
+    ).not.toContain('translate-y')
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(180)
+    })
+
+    expect(container.querySelector('button[aria-label="回到底部"]')).toBeNull()
+  })
+
+  it('keeps the scroll button mounted briefly while fading out', async () => {
+    const { container } = await renderChat()
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    const scrollContainer =
+      container.querySelector<HTMLDivElement>('.overflow-y-auto')
+    expect(scrollContainer).not.toBeNull()
+    Object.defineProperties(scrollContainer!, {
+      scrollHeight: { configurable: true, value: 1000 },
+      clientHeight: { configurable: true, value: 300 },
+      scrollTop: { configurable: true, writable: true, value: 120 }
+    })
+
+    await act(async () => {
+      scrollContainer!.dispatchEvent(new dom!.window.Event('scroll'))
+      await Promise.resolve()
+    })
+
+    expect(
+      container
+        .querySelector('[data-testid="chat-scroll-button-shell"]')
+        ?.getAttribute('data-state')
+    ).toBe('open')
+
+    await act(async () => {
+      container
+        .querySelector<HTMLButtonElement>('button[aria-label="回到底部"]')
+        ?.click()
+      await Promise.resolve()
+    })
+
+    const fadingShell = container.querySelector(
+      '[data-testid="chat-scroll-button-shell"]'
+    )
+    expect(fadingShell?.getAttribute('data-state')).toBe('closed')
+    expect(fadingShell?.className).not.toContain('translate-y')
+    expect(
+      container
+        .querySelector<HTMLButtonElement>('button[aria-label="回到底部"]')
+        ?.getAttribute('tabindex')
+    ).toBe('-1')
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(180)
+    })
+
+    expect(
+      container.querySelector('[data-testid="chat-scroll-button-shell"]')
+    ).toBeNull()
+  })
+
+  it('starts fading the scroll button immediately while the animated bottom scroll continues', async () => {
+    const { container } = await renderChat()
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    const scrollContainer =
+      container.querySelector<HTMLDivElement>('.overflow-y-auto')
+    expect(scrollContainer).not.toBeNull()
+    Object.defineProperties(scrollContainer!, {
+      scrollHeight: { configurable: true, value: 1000 },
+      clientHeight: { configurable: true, value: 300 },
+      scrollTop: { configurable: true, writable: true, value: 120 }
+    })
+
+    await act(async () => {
+      scrollContainer!.dispatchEvent(new dom!.window.Event('scroll'))
+      await Promise.resolve()
+    })
+
+    const frameCallbacks: FrameRequestCallback[] = []
+    vi.stubGlobal(
+      'requestAnimationFrame',
+      vi.fn((callback: FrameRequestCallback) => {
+        frameCallbacks.push(callback)
+        return frameCallbacks.length
+      })
+    )
+
+    await act(async () => {
+      container
+        .querySelector<HTMLButtonElement>('button[aria-label="回到底部"]')
+        ?.click()
+      await Promise.resolve()
+    })
+
+    expect(frameCallbacks).toHaveLength(1)
+    expect(
+      container
+        .querySelector('[data-testid="chat-scroll-button-shell"]')
+        ?.getAttribute('data-state')
+    ).toBe('closed')
+    expect(
+      container.querySelector('[data-testid="chat-scroll-button-shell"]')
+        ?.className
+    ).not.toContain('translate-y')
+
+    await act(async () => {
+      frameCallbacks.shift()?.(0)
+      await Promise.resolve()
+    })
+
+    expect(
+      container
+        .querySelector('[data-testid="chat-scroll-button-shell"]')
+        ?.getAttribute('data-state')
+    ).toBe('closed')
+
+    await act(async () => {
+      frameCallbacks.shift()?.(300)
+      scrollContainer!.dispatchEvent(new dom!.window.Event('scroll'))
+      await Promise.resolve()
+    })
+
+    expect(scrollContainer!.scrollTop).toBeGreaterThan(604)
+    expect(
+      container
+        .querySelector('[data-testid="chat-scroll-button-shell"]')
+        ?.getAttribute('data-state')
+    ).toBe('closed')
+
+    await act(async () => {
+      frameCallbacks.shift()?.(420)
+      await Promise.resolve()
+    })
+
+    expect(scrollContainer!.scrollTop).toBe(700)
+    expect(
+      container
+        .querySelector('[data-testid="chat-scroll-button-shell"]')
+        ?.getAttribute('data-state')
+    ).toBe('closed')
+  })
+
+  it('returns to the reply preview origin before using the floating button as a normal bottom jump', async () => {
+    const initialMessages: PrivateMessage[] = [
+      message(1, 'hello original world', otherUser, '2026-06-29T10:01:00.000Z'),
+      {
+        ...message(2, 'reply', {
+          id: currentUser.uid,
+          name: currentUser.name,
+          avatar: currentUser.avatar
+        }),
+        replyTo: {
+          messageId: 1,
+          content: 'hello original world',
+          senderName: 'Mio',
+          selectedText: 'original'
+        }
+      }
+    ]
+    const { container } = await renderChat('visible', {
+      total: 2,
+      initialMessages
+    })
+    const scrollContainer =
+      container.querySelector<HTMLDivElement>('.overflow-y-auto')
+    expect(scrollContainer).not.toBeNull()
+    Object.defineProperties(scrollContainer!, {
+      scrollHeight: { configurable: true, value: 1000 },
+      clientHeight: { configurable: true, value: 300 },
+      scrollTop: { configurable: true, writable: true, value: 500 }
+    })
+
+    await act(async () => {
+      container
+        .querySelector<HTMLButtonElement>('[data-testid="reply-preview-2"]')
+        ?.click()
+      await Promise.resolve()
+    })
+
+    const replyReturnButton = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="回到回复消息位置"]'
+    )
+    expect(replyReturnButton).not.toBeNull()
+
+    await act(async () => {
+      replyReturnButton!.click()
+      await Promise.resolve()
+    })
+
+    expect(scrollContainer!.scrollTop).toBe(500)
+    expect(
+      container.querySelector('button[aria-label="回到回复消息位置"]')
+    ).toBeNull()
+
+    const bottomButton = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="回到底部"]'
+    )
+    expect(bottomButton).not.toBeNull()
+
+    await act(async () => {
+      bottomButton!.click()
+      await Promise.resolve()
+    })
+
+    expect(scrollContainer!.scrollTop).toBe(700)
+    expect(
+      container
+        .querySelector('[data-testid="chat-scroll-button-shell"]')
+        ?.getAttribute('data-state')
+    ).toBe('closed')
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(180)
+    })
+
+    expect(container.querySelector('button[aria-label="回到底部"]')).toBeNull()
+  })
+
+  it('highlights the reply preview origin message after returning to it', async () => {
+    const initialMessages: PrivateMessage[] = [
+      message(1, 'hello original world', otherUser, '2026-06-29T10:01:00.000Z'),
+      {
+        ...message(2, 'reply', {
+          id: currentUser.uid,
+          name: currentUser.name,
+          avatar: currentUser.avatar
+        }),
+        replyTo: {
+          messageId: 1,
+          content: 'hello original world',
+          senderName: 'Mio',
+          selectedText: 'original'
+        }
+      }
+    ]
+    const { container } = await renderChat('visible', {
+      total: 2,
+      initialMessages
+    })
+    const scrollContainer =
+      container.querySelector<HTMLDivElement>('.overflow-y-auto')
+    expect(scrollContainer).not.toBeNull()
+    Object.defineProperties(scrollContainer!, {
+      scrollHeight: { configurable: true, value: 1000 },
+      clientHeight: { configurable: true, value: 300 },
+      scrollTop: { configurable: true, writable: true, value: 500 }
+    })
+
+    await act(async () => {
+      container
+        .querySelector<HTMLButtonElement>('[data-testid="reply-preview-2"]')
+        ?.click()
+      await Promise.resolve()
+    })
+
+    await act(async () => {
+      container
+        .querySelector<HTMLButtonElement>(
+          'button[aria-label="回到回复消息位置"]'
+        )
+        ?.click()
+      await Promise.resolve()
+    })
+
+    expect(
+      container
+        .querySelector('[data-message-id="2"]')
+        ?.getAttribute('data-highlight-kind')
+    ).toBe('')
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(500)
+    })
+
+    expect(
+      container
+        .querySelector('[data-message-id="2"]')
+        ?.getAttribute('data-highlight-kind')
+    ).toBe('bubble')
+    expect(
+      container
+        .querySelector('[data-message-id="2"]')
+        ?.getAttribute('data-highlight-fading')
+    ).toBe('false')
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1200)
+    })
+
+    expect(
+      container
+        .querySelector('[data-message-id="2"]')
+        ?.getAttribute('data-highlight-fading')
+    ).toBe('true')
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(260)
+    })
+
+    expect(
+      container
+        .querySelector('[data-message-id="2"]')
+        ?.getAttribute('data-highlight-kind')
+    ).toBe('')
+  })
+
+  it('keeps the reply preview return target when the origin is already near the bottom', async () => {
+    const initialMessages: PrivateMessage[] = [
+      message(1, 'hello original world', otherUser, '2026-06-29T10:01:00.000Z'),
+      {
+        ...message(2, 'reply', {
+          id: currentUser.uid,
+          name: currentUser.name,
+          avatar: currentUser.avatar
+        }),
+        replyTo: {
+          messageId: 1,
+          content: 'hello original world',
+          senderName: 'Mio',
+          selectedText: 'original'
+        }
+      }
+    ]
+    const { container } = await renderChat('visible', {
+      total: 2,
+      initialMessages
+    })
+    const scrollContainer =
+      container.querySelector<HTMLDivElement>('.overflow-y-auto')
+    expect(scrollContainer).not.toBeNull()
+    Object.defineProperties(scrollContainer!, {
+      scrollHeight: { configurable: true, value: 1000 },
+      clientHeight: { configurable: true, value: 300 },
+      scrollTop: { configurable: true, writable: true, value: 650 }
+    })
+
+    await act(async () => {
+      container
+        .querySelector<HTMLButtonElement>('[data-testid="reply-preview-2"]')
+        ?.click()
+      await Promise.resolve()
+    })
+
+    const replyReturnButton = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="回到回复消息位置"]'
+    )
+    expect(replyReturnButton).not.toBeNull()
+
+    await act(async () => {
+      replyReturnButton!.click()
+      await Promise.resolve()
+    })
+
+    expect(scrollContainer!.scrollTop).toBe(650)
+    expect(
+      container.querySelector('button[aria-label="回到回复消息位置"]')
+    ).toBeNull()
+
+    expect(
+      container
+        .querySelector('[data-testid="chat-scroll-button-shell"]')
+        ?.getAttribute('data-state')
+    ).toBe('closed')
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(180)
+    })
+
+    expect(container.querySelector('button[aria-label="回到底部"]')).toBeNull()
   })
 
   it('refreshes own message read status even when no newer messages arrive', async () => {

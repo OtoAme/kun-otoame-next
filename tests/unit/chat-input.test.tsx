@@ -57,25 +57,25 @@ vi.mock('@heroui/input', () => ({
       },
       ref
     ) => {
-    textareaMock.onValueChange = onValueChange
-    textareaMock.onKeyDown = onKeyDown
-    textareaMock.onCompositionStart = onCompositionStart
-    textareaMock.onCompositionEnd = onCompositionEnd
-    textareaMock.onPaste = onPaste
+      textareaMock.onValueChange = onValueChange
+      textareaMock.onKeyDown = onKeyDown
+      textareaMock.onCompositionStart = onCompositionStart
+      textareaMock.onCompositionEnd = onCompositionEnd
+      textareaMock.onPaste = onPaste
 
-    return (
-      <textarea
-        aria-label="私聊输入"
-        ref={ref}
-        placeholder={placeholder}
-        value={value}
-        onChange={(event) => onValueChange?.(event.target.value)}
-        onKeyDown={onKeyDown}
-        onCompositionStart={onCompositionStart}
-        onCompositionEnd={onCompositionEnd}
-        onPaste={onPaste}
-      />
-    )
+      return (
+        <textarea
+          aria-label="私聊输入"
+          ref={ref}
+          placeholder={placeholder}
+          value={value}
+          onChange={(event) => onValueChange?.(event.target.value)}
+          onKeyDown={onKeyDown}
+          onCompositionStart={onCompositionStart}
+          onCompositionEnd={onCompositionEnd}
+          onPaste={onPaste}
+        />
+      )
     }
   )
 }))
@@ -640,7 +640,9 @@ describe('ChatInput keyboard handling', () => {
     })
 
     expect(
-      container.querySelector<HTMLButtonElement>('button[aria-label="选择图片"]')
+      container.querySelector<HTMLButtonElement>(
+        'button[aria-label="选择图片"]'
+      )
     ).not.toBeNull()
 
     await act(async () => {
@@ -654,7 +656,9 @@ describe('ChatInput keyboard handling', () => {
     })
 
     expect(
-      container.querySelector<HTMLButtonElement>('button[aria-label="选择图片"]')
+      container.querySelector<HTMLButtonElement>(
+        'button[aria-label="选择图片"]'
+      )
     ).toBeNull()
   })
 
@@ -812,10 +816,9 @@ describe('ChatInput keyboard handling', () => {
       await Promise.resolve()
     })
 
-    const removeSecondImageButton =
-      container.querySelector<HTMLButtonElement>(
-        'button[aria-label="移除第 2 张图片"]'
-      )
+    const removeSecondImageButton = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="移除第 2 张图片"]'
+    )
     expect(removeSecondImageButton).not.toBeNull()
 
     await act(async () => {
@@ -935,7 +938,7 @@ describe('ChatInput keyboard handling', () => {
   it('shows a retryable error when an image upload request throws', async () => {
     const toast = (await import('react-hot-toast')).default
     vi.mocked(toast.error).mockClear()
-    fetchMock.kunFetchFormData.mockRejectedValueOnce(new Error('network down'))
+    fetchMock.kunFetchFormData.mockRejectedValueOnce(new Error('网络连接失败'))
 
     const { container, textarea } = await renderChatInput()
     const files = [new File(['a'], 'a.png', { type: 'image/png' })]
@@ -958,7 +961,7 @@ describe('ChatInput keyboard handling', () => {
     })
 
     expect(fetchMock.kunFetchPost).not.toHaveBeenCalled()
-    expect(toast.error).toHaveBeenCalledWith('图片上传失败，请重试')
+    expect(toast.error).toHaveBeenCalledWith('图片上传失败：网络连接失败')
     expect(sendButton?.disabled).toBe(false)
   })
 
@@ -974,7 +977,7 @@ describe('ChatInput keyboard handling', () => {
         mime: 'image/avif',
         name: 'a.avif'
       })
-      .mockRejectedValueOnce(new Error('network down'))
+      .mockRejectedValueOnce(new Error('网络连接失败'))
 
     const { container, textarea } = await renderChatInput()
     const files = [
@@ -1001,7 +1004,7 @@ describe('ChatInput keyboard handling', () => {
 
     expect(fetchMock.kunFetchFormData).toHaveBeenCalledTimes(2)
     expect(fetchMock.kunFetchPost).not.toHaveBeenCalled()
-    expect(toast.error).toHaveBeenCalledWith('图片上传失败，请重试')
+    expect(toast.error).toHaveBeenCalledWith('图片上传失败：网络连接失败')
 
     fetchMock.kunFetchFormData.mockResolvedValueOnce({
       url: 'https://img.example/conversation/5/b.avif',
@@ -1085,9 +1088,7 @@ describe('ChatInput keyboard handling', () => {
     expect(fetchMock.kunFetchFormData).toHaveBeenCalledTimes(2)
     expect(fetchMock.kunFetchPost).not.toHaveBeenCalled()
 
-    const appendedFiles = [
-      new File(['c'], 'c.avif', { type: 'image/avif' })
-    ]
+    const appendedFiles = [new File(['c'], 'c.avif', { type: 'image/avif' })]
     await act(async () => {
       textareaMock.onPaste?.({
         clipboardData: { files: appendedFiles },
