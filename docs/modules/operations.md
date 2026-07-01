@@ -40,6 +40,7 @@
 - `maintenance:dirty-tags:*`
 - `maintenance:tags:*`
 - `maintenance:companies:dirty:*`
+- `maintenance:conversation-images:*`
 - `maintenance:gallery-thumbnails:*`
 - `migration:resource-type:*`
 - `migration:patch-counters`
@@ -54,6 +55,10 @@
 `maintenance:gallery-thumbnails:dry` 扫描历史 gallery 中 `thumbnail_url IS NULL` 的本站原图，输出待回填数量，不下载原图、不写 S3、不写 DB。确认 dry-run 后用 `maintenance:gallery-thumbnails:apply` 分批回填真实缩略图；apply 默认 `--limit=50 --batch=20 --concurrency=1 --delay=1000`，适合生产 3c 服务器低负载执行，并会逐张打印当前处理的游戏、gallery 图片 ID、完成状态和耗时。常用生产命令是 `pnpm maintenance:gallery-thumbnails:apply -- --limit=50 --batch=20 --concurrency=1 --delay=1000`，重复执行直到 dry-run 无候选；如果 FFmpeg 性能或可用性不确定，先加 `--skip-animated-avif`。
 
 gallery thumbnails summary 字段含义：`galleryTotal` 是当前范围内 URL 非空的 gallery 图片总数；`alreadyWithThumbnail` 是已有 `thumbnail_url`、无需回填压缩的图片数；`missingThumbnail` 是仍缺 `thumbnail_url` 的图片数；`scanned` 是本次从数据库查出并检查的缺缩略图候选图片数，受 `--limit` 限制；`eligible` 是符合回填规则的图片数，dry-run 中表示 apply 会处理的数量；`updated` 是 apply 实际写入 `thumbnail_url` 的图片数，dry-run 中应为 `0`；`skipped` 是查到候选但因 URL 非本站、路径不规范、原图过大、缩略图生成不可用等原因跳过的数量；`failed` 是处理过程中出现未恢复错误的数量。`scanned=0` 且 `missingThumbnail=0` 表示当前范围没有缺 `thumbnail_url` 的 gallery 候选项，不代表数据库里没有 gallery 图片。
+
+`maintenance:conversation-images:dry` 扫描私聊上传产生的 `conversation/` S3 前缀，查找上传后未发送、且已经超过 Redis metadata TTL 安全窗口的孤儿图片。dry-run 默认 `--limit=200 --batch=50 --older-than-hours=2`，只输出 summary 和候选 key，不删除对象。确认候选无误后运行 `maintenance:conversation-images:apply`；apply 默认 `--limit=100 --batch=50 --concurrency=1 --delay=1000`，删除前会检查非删除 `user_private_message` 的 `image_url`、`image_group` 和 `reply_image` 是否仍引用该 key，引用中的对象不会删除，tombstone 行遗留字段不会阻止清理。常用生产命令是 `pnpm maintenance:conversation-images:apply -- --limit=100 --batch=50 --concurrency=1 --delay=1000`；需要缩小影响面时可加 `--conversation-id=123`，需要更保守时加大 `--older-than-hours=6`。
+
+conversation images summary 字段含义：`scanned` 是本次从 S3 列出的对象数；`eligible` 是符合 key 规范、超过时间阈值且未被消息引用的候选数；`deleted` 是 apply 实际删除的对象数；`referenced` 是仍被消息字段引用而跳过的对象数；`tooNew` 是未超过安全时间阈值的对象数；`invalidKey` 是不符合私聊图片 key 规范的对象数；`failed` 是删除失败数量。dry-run 的 `Candidates` 列表只是预览，不代表已删除。
 
 `maintenance:tags:auto-alias:dry` 会在生产库里扫描“某个 tag 的 name 命中另一个主 tag 的 alias”的历史重复数据，并生成合并计划。dry-run 只做计划校验和关系数量预览，不加载所有受影响 patch 的 `unique_id`，避免生产数据量大时预览过慢。确认输出无误后再运行 `maintenance:tags:auto-alias:apply`；apply 会移动 patch 关系、合并 alias、修正 count、迁移用户 blocked tag，并失效 tag/list/受影响 patch 内容缓存。多主 tag 共用同一 alias 时会跳过并输出 warning，需要人工计划。
 
@@ -170,6 +175,8 @@ release packaging 还会删除包内 `package.json` 的 `"type": "module"`，并
 - 先 dry-run 或 preflight。
 - 不在生产 `prisma db push` reset database。
 - 大表数据修复要分批、可重入、可观测。
+
+私聊会话隐藏字段上线时，先执行 `migration/production-conversation-hidden-preflight-2026-07-01.sql` 查看 `user_conversation.user_a_hidden` / `user_b_hidden` 是否存在且为非空 boolean；确认后执行 `migration/production-conversation-hidden-sync-2026-07-01.sql`。该同步脚本只添加缺失列、补齐空值、设置默认值和非空约束，不删除数据。
 
 严重提示：
 

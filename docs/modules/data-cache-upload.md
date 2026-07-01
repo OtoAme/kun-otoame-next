@@ -38,6 +38,8 @@ schema: 'prisma/schema'
 
 Schema 修改后至少运行 `pnpm prisma:generate`。会影响数据库结构时运行 `pnpm prisma:push`；生产库如果出现 reset database 提示必须取消，改走 preflight/sync SQL 或 dry-run 脚本。
 
+私聊会话表 `user_conversation` 使用 `user_a_hidden` / `user_b_hidden` 保存每个参与方自己的列表隐藏状态。隐藏会话不是删除历史消息；发送新消息会把双方 hidden flag 恢复为 `false`。生产同步可先运行 `migration/production-conversation-hidden-preflight-2026-07-01.sql` 检查列状态，再运行 `migration/production-conversation-hidden-sync-2026-07-01.sql` 添加缺失列并补齐默认值。
+
 ## Redis
 
 入口：
@@ -175,14 +177,34 @@ Gallery 图片上传走 `app/api/edit/gallery/route.ts` 和 `app/api/edit/galler
 - 本地或部署前可用 `pnpm exec esno scripts/verifyGalleryAnimatedAvifThumbnail.ts <animated.avif> [output.avif]` 验证 animated AVIF 缩略图 encoder；该脚本只读写本地文件，不连接 S3 或数据库，并会列出各候选 FFmpeg 对输入和输出解析到的帧数及非默认 video stream。生产上线前应在目标服务器执行，成功输出 `Wrote animated AVIF thumbnail: ... frames ...`。
 - 历史 gallery 缩略图回填使用 `pnpm maintenance:gallery-thumbnails:dry` 和 `pnpm maintenance:gallery-thumbnails:apply`。dry-run 只扫描 `thumbnail_url IS NULL` 的本站 gallery 原图并统计，不下载原图、不写 S3、不写 DB；apply 只上传真实缩略图并回填 `thumbnail_url`，不会重传或改写原图。生产默认按低负载运行：`--limit=50 --batch=20 --concurrency=1 --delay=1000`，建议分批执行；3c 服务器或正在承载线上流量时保持 `--concurrency=1`，必要时加 `--skip-animated-avif` 跳过 FFmpeg 成本较高的动态 AVIF。常用范围参数：`--patch-id=123`、`--start-id=456`、`--limit=50`、`--max-original-mb=8`、`--verbose`。summary 中 `galleryTotal` 是当前范围 URL 非空的 gallery 图片总数，`alreadyWithThumbnail` 是已有 `thumbnail_url`、无需回填压缩的数量，`missingThumbnail` 是仍缺 `thumbnail_url` 的数量，`scanned` 是本次查出并检查的缺缩略图候选数，`eligible` 是符合回填规则的数量，`updated` 是 apply 实际写入 `thumbnail_url` 的数量，`skipped` 是候选中被规则跳过的数量，`failed` 是未恢复错误数量；`scanned=0` 且 `missingThumbnail=0` 表示当前范围没有缺 `thumbnail_url` 的 gallery 候选项，不代表没有 gallery 图片。
 
-私聊图片上传走 `app/api/message/conversation/[id]/image`，不使用资源上传的 Redis metadata/consume lock，也不写入 gallery 表。规则：
+私聊图片上传走 `app/api/message/conversation/[id]/image`，不使用资源上传的 Redis metadata/consume lock，也不写入 gallery 表。它有自己的短期 Redis metadata，用来证明发送请求里的图片 URL 来自同一会话、同一用户的上传流。规则：
 
 - 只允许会话成员上传，handler 内必须校验登录态和 CSRF。
+- handler 在登录态和严格会话 ID 校验后、读取 multipart `formData()` 前先执行 `image-upload-intake` 用户级限频，避免过量上传请求消耗表单解析内存和 CPU。
 - 支持 JPG/PNG/WebP/AVIF，单张入站上限 8MB；静态图片按 create gallery 的尺寸策略 resize 到 1920x1080 内并输出 AVIF，不添加水印。输出 AVIF 仍超过 1.5MB 时返回用户可见错误。
+- Sharp 解码/压缩或处理后 metadata 读取失败时，上传服务必须返回“图片处理失败，请重新选择有效图片”，并回滚本次小时额度和已扣萌萌点，不能把坏图片或处理失败冒成 500。
 - S3 key 使用 `conversation/<conversationId>/<uid>-<timestamp>-<uuid>.avif`，避免不同会话或用户文件名冲突。
 - `uploadImageToS3` 必须传入 `image/avif`，返回 metadata 也以最终 AVIF 的宽高、大小、MIME 和文件名为准。
-- 上传接口只返回 URL、MIME、尺寸和大小等发送消息所需 metadata；真正创建消息仍由 `/api/message/conversation/[id]` 完成。发送消息失败时当前没有自动删除已上传图片，后续如需清理孤儿对象，应设计按 `conversation/` 前缀扫描的维护脚本。
+- 通过会话成员、类型和大小校验后，上传服务必须先重新检查收件人的 `allow_private_message`。如果对方已关闭接收私信，直接返回用户可见错误，不消耗真实 `image-upload` 动作限流、小时 quota、萌萌点、Sharp 转码或 S3 写入。
+- 上传接口只返回 URL、MIME、尺寸和大小等发送消息所需 metadata；同时用 `setKv` 写入 `conversation:image-upload:<conversationId>:<uid>:<urlHash>`，TTL 为 1 小时。真正创建消息仍由 `/api/message/conversation/[id]` 完成，发送服务用 Redis Lua 按会话、用户和 URL hash 原子校验每张图片 metadata 并删除登记；登记缺失或不匹配时拒绝发送并提示重新上传，避免客户端伪造任意图片 URL，也避免同一个上传凭证被重复发送成多条图片消息。若发送服务已消费 metadata 但消息 DB 事务失败，必须 best-effort 重新写回这些 metadata，保留原 1 小时 TTL，方便用户重试发送。
+- 每个用户每小时有 5 张私聊图片免费上传额度，Redis key 为 `conversation:image-upload-quota:<uid>`，使用 Lua 原子 `INCR` + `EXPIRE`。从第 6 张起每张在 Sharp/S3 之前扣 5 萌萌点，扣费使用 Prisma `updateMany` 搭配 `moemoepoint >= cost` 条件和 `decrement`，避免并发扣成负数。余额不足时回滚本次 quota 计数并拒绝上传；压缩、metadata 读取、S3 上传或 Redis metadata 登记失败时也回滚 quota 并退回已扣萌萌点。小时 quota Redis 不可用时上传 fail-closed，返回可重试错误，不继续产生图片处理或对象存储成本。
+- S3 上传成功但 Redis metadata 登记失败时，上传服务必须调用 `deleteFileFromS3` best-effort 删除刚上传的 object，再返回可重试错误。用户上传后一直未发送、或发送前 metadata 过期时，S3 对象由 `pnpm maintenance:conversation-images:dry` / `apply` 清理。该脚本扫描 `conversation/` 前缀，只处理符合 `conversation/<conversationId>/<uid>-<timestamp>-<uuid>.avif` 规范且默认超过 2 小时的对象，并在删除前检查非删除 `user_private_message` 的 `image_url`、`image_group` 和 `reply_image` 是否仍引用该 key；tombstone 行遗留的旧图片字段不阻止孤儿清理。dry-run 默认 `--limit=200`，不写 S3/DB；apply 默认 `--limit=100 --batch=50 --concurrency=1 --delay=1000`，适合生产低负载分批执行。可用 `--conversation-id=123` 缩小前缀，`--older-than-hours=N` 延长安全窗口。
+- 删除已发送的私聊图片消息时，`deleteMessage` 会先设置 `is_deleted = true`，再 best-effort 清理该消息中不再被其他未删除消息引用的 canonical `conversation/` S3 objects；如果消息已经是 tombstone，重复删除直接返回成功，不重复写 DB 或重跑 S3 cleanup。删除前会从 `KUN_VISUAL_NOVEL_IMAGE_BED_URL` 或 `NEXT_PUBLIC_KUN_VISUAL_NOVEL_S3_STORAGE_URL` 提取 key，并拒绝非本站 URL 或不符合私聊图片 key 规范的对象；引用检查或 S3 删除失败只记录错误，不回滚消息 tombstone，仍由孤儿清理脚本兜底。
 - 回复图片时，`user_private_message.reply_image` 保存被引用图片的 metadata 快照；它来自同会话被回复消息的图片组索引校验结果，不直接信任前端传入完整图片对象。
+
+消息动作限频走 `app/api/message/conversation/rateLimit.ts`，使用 Redis Lua 原子 `INCR` + `EXPIRE` 固定窗口。key 使用 `conversation:rate-limit:<action>:<uid>`，通过 `getPrefixedRedisKey` 显式加上 `kun:touchgal` 前缀后传给低层 `redis.eval`。当前 action 和阈值：
+
+- `send`：发送私聊消息 30 次/分钟。
+- `image-upload-intake`：私聊图片上传入口 30 次/分钟，在 route 读取 multipart `formData()` 之前执行，用于保护表单解析成本。
+- `image-upload`：私聊图片上传 10 次/5 分钟，在会话成员、文件类型/大小和收件人隐私校验之后执行，用于保护小时额度、Sharp 转码和 S3 写入成本。
+- `conversation-open`：私聊检查/打开 60 次/分钟，用于保护用户资料页预检、创建和恢复隐藏会话入口；route 在 DB 读取、扣点、创建或恢复可见性之前执行该检查。
+- `conversation-manage`：私聊移除/隐藏 30 次/分钟，用于保护 `user_conversation` hidden flag 和未读计数写入；HTTP route 在调用 `deleteConversation` 之前执行该检查，命中限流时不读取会话记录，service 也在会话成员校验之后、隐藏写入之前保留兜底检查。route 预检查通过后调用 service 时要跳过兜底，避免一次请求消耗两次管理额度；重复移除已隐藏且未读为 0 的会话直接 no-op。
+- `message-read`：私聊会话列表读取、私聊消息拉取、服务端首屏聊天加载和已读同步共用 180 次/分钟，用于保护会话列表后台刷新、活跃聊天轮询、历史拉取、首屏 RSC 加载和 read-sync 对应的 DB 查询/写入；route 或 server action 在读取会话和消息、或清理未读计数前执行该检查。前端正常会话列表约每 15 秒刷新一次，活跃会话约每 2 秒轮询一次并可能补一次状态查询，180 次/分钟是异常请求熔断，不是普通聊天节流。
+- `message-write`：单条私聊消息编辑/删除 60 次/分钟，用于保护编辑 DB 写入、删除 tombstone 写入，以及删除图片消息时的 S3 引用检查和 best-effort cleanup；service 在会话成员校验之后、消息行读取之前执行该检查。
+- `notification-read`：普通站内通知列表 `/api/message/all` 和未读同步 `/api/message/unread` 共用 180 次/分钟，用于保护通知列表分页、顶栏/消息导航未读轮询对应的 `user_message` 与 `user_conversation` 读取；route 在通知 DB 读取前执行该检查。
+- `notification-write`：普通站内通知标已读和清理已读 `/api/message/read` PUT/DELETE 共用 30 次/分钟，用于保护 `user_message` 状态写入和删除；route 在 `readMessage`、`clearReadMessage`、以及后续未读状态重读前执行该检查。
+
+限频命中时 service 返回结构化限流结果，由 route 转成 `429 Too Many Requests`、`Retry-After` 秒数和 `private, no-store` 响应；响应体保留用户可见字符串。动作限频 Redis 检查失败时 fail-open 并记录错误，避免 Redis 短暂故障阻断文字私聊；图片小时 quota/扣费链路 Redis 不可用时 fail-closed，避免无法计费时继续写 S3。
 
 ## S3
 

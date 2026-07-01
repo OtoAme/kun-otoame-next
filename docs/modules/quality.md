@@ -34,7 +34,9 @@ pnpm typecheck
 | `tests/unit/user-message-bell.test.tsx`                | 顶栏消息铃铛只导航到通知中心，不在通知展示前标已读。                                  |
 | `tests/unit/message-container.test.tsx`                | 通知列表首屏 hydrate 复用服务端数据，不把初见未读 chip 刷成已读。                     |
 | `tests/unit/chat-input.test.tsx`                       | 私聊输入法组合期 Enter 不发送、`Shift+Enter` 换行和发送去重。                         |
-| `tests/unit/api/message-unread.test.ts`                | 消息通知/私聊未读状态查询和通知已读写入。                                             |
+| `tests/unit/api/message-unread.test.ts`                | 消息通知/私聊未读状态查询、通知已读/清理幂等和私聊已读写入。                          |
+| `tests/unit/api/notification-toggle-abuse.test.ts`     | 取消收藏、取消点赞等关系移除路径不创建误导性通知。                                    |
+| `tests/unit/api/mention-message.test.ts`               | 评论提及通知去重、跳过自己、忽略不存在用户并限制单条评论通知数量。                    |
 | `tests/unit/api/conversation-service.test.ts`          | 私聊会话创建权限，目标用户关闭私聊时拒绝新建会话。                                    |
 | `tests/unit/api/admin-resource-get.test.ts`            | 后台资源列表按资源链接或 BLAKE3 Hash 搜索。                                           |
 | `tests/unit/api/admin-resource-update-message.test.ts` | 管理员后台修改他人资源时通知资源发布者、保留列表上下文并区分游戏资源 / 补丁资源日志。 |
