@@ -772,10 +772,10 @@ export const ChatMessage = ({
   const shouldShrinkWrapImage = hasImages && isSingleImage && !hasCaption
   const hasImageWithTextOrReply = hasImages && !isImageOnly
   const bubbleWidthClassName =
-    'max-w-[min(78vw,42rem)] md:max-w-[min(60vw,42rem)]'
+    'max-w-full md:max-w-[min(60vw,42rem)]'
   const imageBubbleWidthClassName = shouldShrinkWrapImage
-    ? 'w-fit max-w-[min(78vw,42rem)] md:max-w-[min(60vw,42rem)]'
-    : 'w-[min(78vw,32rem)] max-w-[min(78vw,42rem)] md:w-[min(60vw,32rem)] md:max-w-[min(60vw,42rem)]'
+    ? 'w-fit max-w-full md:max-w-[min(60vw,42rem)]'
+    : 'w-full max-w-full md:w-[min(60vw,32rem)] md:max-w-[min(60vw,42rem)]'
   const bubblePaddingClassName = isImageOnly ? 'p-0.5' : 'px-2.5 py-1'
 
   const renderReplyPreview = () => {
@@ -983,7 +983,7 @@ export const ChatMessage = ({
       data-testid="chat-swipe-reply-indicator"
       aria-hidden="true"
       className={cn(
-        'pointer-events-none absolute left-full top-1/2 z-40 ml-2 flex size-9 shrink-0 -translate-y-1/2 items-center justify-center rounded-full bg-[hsl(var(--kun-brand-500)/0.92)] text-white shadow-lg transition-[opacity,transform,background-color,box-shadow] duration-150',
+        'pointer-events-none absolute right-0 top-1/2 z-40 flex size-9 shrink-0 -translate-y-1/2 translate-x-[calc(100%+0.5rem)] items-center justify-center rounded-full bg-[hsl(var(--kun-brand-500)/0.92)] text-white shadow-lg transition-[opacity,transform,background-color,box-shadow] duration-150',
         swipeReplyOffset < -SWIPE_REPLY_DIRECTION_LOCK_DISTANCE
           ? 'scale-100 opacity-100'
           : 'scale-90 opacity-0',
@@ -1000,7 +1000,7 @@ export const ChatMessage = ({
       <motion.div
         id={`chat-message-${message.id}`}
         className={cn(
-          'relative mb-4 flex w-fit items-end gap-3 overflow-visible [touch-action:pan-y]',
+          'relative mb-4 flex w-fit max-w-full min-w-0 items-end gap-3 overflow-visible [touch-action:pan-y]',
           isOwn ? 'ml-auto flex-row-reverse' : 'mr-auto flex-row'
         )}
         animate={{ x: swipeReplyOffset }}
@@ -1030,7 +1030,7 @@ export const ChatMessage = ({
             ref={bubbleRef}
             data-testid="chat-message-bubble"
             className={cn(
-              'relative min-w-0 select-text rounded-2xl bg-[hsl(var(--kun-brand-50)/0.96)] text-default-900 shadow-sm ring-1 ring-[hsl(var(--kun-brand-200)/0.75)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--kun-brand-500)/0.55)] dark:bg-[hsl(var(--kun-brand-500)/0.18)] dark:text-default-50 dark:ring-[hsl(var(--kun-brand-400)/0.28)]',
+              'relative min-w-0 max-w-full select-text rounded-2xl bg-[hsl(var(--kun-brand-50)/0.96)] text-default-900 shadow-sm ring-1 ring-[hsl(var(--kun-brand-200)/0.75)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--kun-brand-500)/0.55)] dark:bg-[hsl(var(--kun-brand-500)/0.18)] dark:text-default-50 dark:ring-[hsl(var(--kun-brand-400)/0.28)]',
               hasImages ? imageBubbleWidthClassName : bubbleWidthClassName,
               bubblePaddingClassName,
               menu &&
@@ -1055,7 +1055,7 @@ export const ChatMessage = ({
             ref={bubbleRef}
             data-testid="chat-message-bubble"
             className={cn(
-              'relative min-w-0 select-text rounded-2xl bg-content2 text-default-900 shadow-sm ring-1 ring-default-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--kun-brand-500)/0.55)] dark:bg-default-100/10 dark:text-default-50 dark:ring-default-100/10',
+              'relative min-w-0 max-w-full select-text rounded-2xl bg-content2 text-default-900 shadow-sm ring-1 ring-default-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--kun-brand-500)/0.55)] dark:bg-default-100/10 dark:text-default-50 dark:ring-default-100/10',
               hasImages ? imageBubbleWidthClassName : bubbleWidthClassName,
               bubblePaddingClassName,
               menu && 'shadow-lg ring-2 ring-default-300/70'

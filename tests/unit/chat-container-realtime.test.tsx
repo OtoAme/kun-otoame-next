@@ -547,6 +547,15 @@ describe('ChatContainer realtime sync', () => {
     expect(messageScroller?.className).toContain('overflow-y-auto')
   })
 
+  it('prevents message content from creating horizontal chat scrolling', async () => {
+    const { container } = await renderChat()
+
+    const messageScroller = container.querySelector('.overflow-y-auto')
+
+    expect(messageScroller?.className).toContain('overflow-x-hidden')
+    expect(messageScroller?.className).toContain('min-w-0')
+  })
+
   it('allows the conversation page to tune only the outer chat card height', async () => {
     const { container } = await renderChat('visible', {
       className: 'h-[calc(100dvh_-_192px_-_var(--message-chat-top-reserve))]'

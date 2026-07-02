@@ -520,7 +520,7 @@ describe('ChatMessage menu and rendering', () => {
     expect(container.querySelector('[role="menu"]')).toBeNull()
   })
 
-  it('keeps the swipe reply icon outside the message bubble with row-level motion', async () => {
+  it('keeps row-level swipe motion within the mobile chat width', async () => {
     const { container } = await renderMessage(baseMessage)
 
     const messageRow = container.querySelector<HTMLElement>('#chat-message-3')
@@ -538,12 +538,17 @@ describe('ChatMessage menu and rendering', () => {
     expect(indicator?.parentElement).toBe(messageRow)
     expect(bubble?.contains(indicator)).toBe(false)
     expect(messageRow?.className).toContain('overflow-visible')
+    expect(messageRow?.className).toContain('max-w-full')
+    expect(messageRow?.className).toContain('min-w-0')
     expect(messageRow?.className).toContain('[touch-action:pan-y]')
     expect(messageRow?.className).toContain('w-fit')
+    expect(bubble?.className).toContain('max-w-full')
+    expect(bubble?.className).toContain('min-w-0')
     expect(indicator?.className).toContain('shrink-0')
     expect(indicator?.className).toContain('size-9')
-    expect(indicator?.className).toContain('left-full')
-    expect(indicator?.className).toContain('ml-2')
+    expect(indicator?.className).toContain('right-0')
+    expect(indicator?.className).toContain('translate-x-[calc(100%+0.5rem)]')
+    expect(indicator?.className).not.toContain('left-full')
   })
 
   it('keeps vertical mobile drags available for scrolling', async () => {

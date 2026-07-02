@@ -967,7 +967,10 @@ export const ChatContainer = ({
             </div>
           )}
 
-          <div ref={scrollContainerRef} className="flex-1 overflow-y-auto p-4">
+          <div
+            ref={scrollContainerRef}
+            className="min-w-0 flex-1 overflow-x-hidden overflow-y-auto p-4"
+          >
             {hasMore && (
               <div ref={loadMoreRef} className="flex justify-center py-2">
                 {loading && (
