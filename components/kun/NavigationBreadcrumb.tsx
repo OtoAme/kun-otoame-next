@@ -7,6 +7,7 @@ import {
   createBreadcrumbItem,
   getBreadcrumbTitleKey
 } from '~/constants/routes/routes'
+import { isMessageChatConversationPath } from '~/constants/routes/matcher'
 import { initialBreadcrumbItems, useBreadcrumbStore } from '~/store/breadcrumb'
 
 export const KunNavigationBreadcrumb = () => {
@@ -27,7 +28,10 @@ export const KunNavigationBreadcrumb = () => {
     '/friend-link'
   ]
 
-  if (hideBreadcrumbRoutes.includes(pathname)) {
+  if (
+    hideBreadcrumbRoutes.includes(pathname) ||
+    isMessageChatConversationPath(pathname)
+  ) {
     return null
   }
 

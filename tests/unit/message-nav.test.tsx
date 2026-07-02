@@ -100,7 +100,8 @@ describe('MessageNav unread badges', () => {
     unread = {
       hasUnreadNotification: true,
       hasUnreadConversation: false
-    }
+    },
+    className?: string
   ) => {
     dom = new JSDOM('<!doctype html><div id="root"></div>', {
       url: 'http://localhost'
@@ -126,13 +127,13 @@ describe('MessageNav unread badges', () => {
 
     root = createRoot(container!)
     await act(async () => {
-      root!.render(<MessageNav />)
+      root!.render(<MessageNav className={className} />)
     })
 
     const rerenderAt = async (pathname: string) => {
       navigationMock.pathname = pathname
       await act(async () => {
-        root!.render(<MessageNav />)
+        root!.render(<MessageNav className={className} />)
       })
     }
 
@@ -177,6 +178,27 @@ describe('MessageNav unread badges', () => {
 
     expect(fetchMock.kunFetchGet).toHaveBeenCalledWith('/message/unread')
     expect(container.querySelector('.bg-danger')).toBeNull()
+  })
+
+  it('applies caller classes to the root navigation card', async () => {
+    navigationMock.pathname = '/message/chat/12'
+    fetchMock.kunFetchGet.mockResolvedValue({
+      hasUnreadMessages: false,
+      hasUnreadChat: false
+    })
+
+    const { container } = await renderMessageNav(
+      {
+        hasUnreadNotification: false,
+        hasUnreadConversation: false
+      },
+      'max-lg:hidden'
+    )
+
+    const navCard = container.firstElementChild
+    expect(navCard?.className).toContain('w-full')
+    expect(navCard?.className).toContain('lg:w-1/4')
+    expect(navCard?.className).toContain('max-lg:hidden')
   })
 
   it('syncs unread conversations from the global unread status after notifications are read', async () => {
@@ -389,9 +411,7 @@ describe('MessageNav unread badges', () => {
     })
 
     expect(fetchMock.kunFetchPut).toHaveBeenCalledWith('/message/read')
-    expect(toast.error).toHaveBeenCalledWith(
-      '通知操作过于频繁, 请 30 秒后重试'
-    )
+    expect(toast.error).toHaveBeenCalledWith('通知操作过于频繁, 请 30 秒后重试')
     expect(fetchMock.kunFetchGet).toHaveBeenCalledWith('/message/unread')
     expect(useMessageStore.getState()).toMatchObject({
       hasUnreadNotification: true,

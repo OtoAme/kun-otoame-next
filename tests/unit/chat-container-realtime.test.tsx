@@ -293,6 +293,7 @@ describe('ChatContainer realtime sync', () => {
       total?: number
       hasMoreBefore?: boolean
       initialMessages?: PrivateMessage[]
+      className?: string
     } = {}
   ) => {
     dom = new JSDOM('<!doctype html><div id="root"></div>', {
@@ -361,6 +362,7 @@ describe('ChatContainer realtime sync', () => {
           total={options.total ?? 2}
           hasMoreBefore={options.hasMoreBefore}
           otherUser={otherUser}
+          className={options.className}
         />
       )
     })
@@ -496,6 +498,36 @@ describe('ChatContainer realtime sync', () => {
 
     expect(inputPanel?.className).toContain('relative')
     expect(inputPanel?.className).toContain('z-30')
+  })
+
+  it('preserves the existing chat card shell while messages scroll internally', async () => {
+    const { container } = await renderChat()
+
+    const chatCard = container.firstElementChild
+    const messageScroller = container.querySelector('.overflow-y-auto')
+
+    expect(chatCard?.className).toContain('h-[calc(100vh-200px)]')
+    expect(chatCard?.className).toContain('min-h-[500px]')
+    expect(chatCard?.className).not.toContain('h-full')
+    expect(messageScroller?.className).toContain('flex-1')
+    expect(messageScroller?.className).toContain('overflow-y-auto')
+  })
+
+  it('allows the conversation page to tune only the outer chat card height', async () => {
+    const { container } = await renderChat('visible', {
+      className: 'h-[calc(100dvh_-_192px_-_var(--message-chat-top-reserve))]'
+    })
+
+    const chatCard = container.firstElementChild
+    const messageScroller = container.querySelector('.overflow-y-auto')
+
+    expect(chatCard?.className).toContain(
+      'h-[calc(100dvh_-_192px_-_var(--message-chat-top-reserve))]'
+    )
+    expect(chatCard?.className).not.toContain('h-[calc(100vh-200px)]')
+    expect(chatCard?.className).toContain('min-h-[500px]')
+    expect(messageScroller?.className).toContain('flex-1')
+    expect(messageScroller?.className).toContain('overflow-y-auto')
   })
 
   it('recovers from older history load failures so users can retry', async () => {

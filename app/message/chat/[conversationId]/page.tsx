@@ -1,6 +1,5 @@
 import { ChatContainer } from '~/components/message/chat/ChatContainer'
 import { ErrorComponent } from '~/components/error/ErrorComponent'
-import { KunBreadcrumbTitle } from '~/components/kun/BreadcrumbTitle'
 import { parseConversationRouteId } from '~/app/api/message/conversation/routeParams'
 import { kunGetConversationMessagesAction } from '../actions'
 import type { Metadata } from 'next'
@@ -33,18 +32,13 @@ export default async function Kun({ params }: Props) {
   }
 
   return (
-    <>
-      <KunBreadcrumbTitle
-        routeKey={`/message/chat/${id}`}
-        title={`与${response.otherUser.name}的私聊`}
-      />
-      <ChatContainer
-        conversationId={id}
-        initialMessages={response.messages}
-        total={response.total}
-        hasMoreBefore={response.hasMoreBefore}
-        otherUser={response.otherUser}
-      />
-    </>
+    <ChatContainer
+      conversationId={id}
+      initialMessages={response.messages}
+      total={response.total}
+      hasMoreBefore={response.hasMoreBefore}
+      otherUser={response.otherUser}
+      className="h-[calc(100dvh_-_192px_-_var(--message-chat-top-reserve))]"
+    />
   )
 }

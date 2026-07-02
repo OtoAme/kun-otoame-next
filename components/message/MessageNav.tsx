@@ -9,6 +9,7 @@ import { usePathname } from 'next/navigation'
 import Link from 'next/link'
 import toast from 'react-hot-toast'
 import { useMessageStore } from '~/store/messageStore'
+import { cn } from '~/utils/cn'
 import type { MessageUnreadStatus } from '~/types/api/message'
 
 const notificationSubTypes = [
@@ -28,7 +29,7 @@ const notificationSubTypes = [
   { type: 'system', label: '系统消息', icon: Globe, href: '/message/system' }
 ]
 
-export const MessageNav = () => {
+export const MessageNav = ({ className }: { className?: string }) => {
   const pathname = usePathname()
   const pathSegments = pathname.split('/').filter(Boolean)
   const lastSegment = pathSegments[pathSegments.length - 1]
@@ -78,8 +79,7 @@ export const MessageNav = () => {
         if (!ignore && unreadStatus) {
           setUnreadMessageStatus(unreadStatus)
         }
-      } catch {
-      }
+      } catch {}
     }
     fetchUnread()
     return () => {
@@ -93,10 +93,8 @@ export const MessageNav = () => {
     }
     let ignore = false
     const previousUnreadStatus = {
-      hasUnreadNotification:
-        useMessageStore.getState().hasUnreadNotification,
-      hasUnreadConversation:
-        useMessageStore.getState().hasUnreadConversation
+      hasUnreadNotification: useMessageStore.getState().hasUnreadNotification,
+      hasUnreadConversation: useMessageStore.getState().hasUnreadConversation
     }
     const restorePreviousUnreadStatus = () => {
       if (!ignore) {
@@ -148,17 +146,13 @@ export const MessageNav = () => {
     return () => {
       ignore = true
     }
-  }, [
-    isNotificationSection,
-    setHasUnreadNotification,
-    setUnreadMessageStatus
-  ])
+  }, [isNotificationSection, setHasUnreadNotification, setUnreadMessageStatus])
 
   const showMessageDot = hasUnreadNotification && !isNotificationSection
   const showChatDot = hasUnreadConversation && !isChatSection
 
   return (
-    <Card className="w-full lg:w-1/4">
+    <Card className={cn('w-full lg:w-1/4', className)}>
       <CardBody className="flex flex-col gap-2">
         <div className="flex flex-row gap-2 lg:flex-col">
           <Button

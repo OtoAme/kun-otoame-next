@@ -39,6 +39,7 @@ interface Props {
   total: number
   hasMoreBefore?: boolean
   otherUser: KunUser
+  className?: string
 }
 
 const sortMessagesByTime = (msgs: PrivateMessage[]) => {
@@ -131,7 +132,8 @@ export const ChatContainer = ({
   initialMessages,
   total,
   hasMoreBefore,
-  otherUser
+  otherUser,
+  className
 }: Props) => {
   const [messages, setMessages] = useState<PrivateMessage[]>(
     sortMessagesByTime(initialMessages)
@@ -872,7 +874,7 @@ export const ChatContainer = ({
 
   return (
     <>
-      <Card className="h-[calc(100vh-200px)] min-h-[500px]">
+      <Card className={cn('h-[calc(100vh-200px)] min-h-[500px]', className)}>
         <CardHeader className="border-b border-default-200 flex items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <Button
