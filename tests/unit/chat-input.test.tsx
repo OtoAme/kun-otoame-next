@@ -147,6 +147,9 @@ describe('ChatInput keyboard handling', () => {
       replySelectedText: string | null
       replyImageIndex: number | null
       onCancelReply: () => void
+    }> = {},
+    options: Partial<{
+      isMobileViewport: boolean
     }> = {}
   ) => {
     dom = new JSDOM('<!doctype html><div id="root"></div>', {
@@ -167,6 +170,19 @@ describe('ChatInput keyboard handling', () => {
       createObjectURL: vi.fn(() => 'blob:http://localhost/chat-preview'),
       revokeObjectURL: vi.fn()
     })
+    if (typeof options.isMobileViewport === 'boolean') {
+      Object.defineProperty(dom.window, 'matchMedia', {
+        configurable: true,
+        value: vi.fn((query: string) => ({
+          matches: options.isMobileViewport,
+          media: query,
+          onchange: null,
+          addEventListener: vi.fn(),
+          removeEventListener: vi.fn(),
+          dispatchEvent: vi.fn()
+        }))
+      })
+    }
     vi.stubGlobal('URL', dom.window.URL)
     vi.stubGlobal('React', React)
     vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
@@ -272,6 +288,20 @@ describe('ChatInput keyboard handling', () => {
     dom = undefined
     vi.unstubAllGlobals()
     vi.resetModules()
+  })
+
+  it('uses a compact input placeholder on mobile viewports', async () => {
+    const { textarea } = await renderChatInput({}, { isMobileViewport: true })
+
+    expect(textarea.placeholder).toBe('输入消息...')
+  })
+
+  it('keeps the input placeholder on desktop viewports', async () => {
+    const { textarea } = await renderChatInput({}, { isMobileViewport: false })
+
+    expect(textarea.placeholder).toBe(
+      '输入消息... (按 Enter 发送，Shift+Enter 换行)'
+    )
   })
 
   it('does not send while an IME composition is active', async () => {

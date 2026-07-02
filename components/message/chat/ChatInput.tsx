@@ -31,6 +31,9 @@ const ALLOWED_IMAGE_TYPES = new Set([
 ])
 const MAX_IMAGES_PER_MESSAGE = 9
 const IMAGE_UPLOAD_FAILED_MESSAGE = '图片上传失败，请重试'
+const CHAT_INPUT_PLACEHOLDER = '输入消息... (按 Enter 发送，Shift+Enter 换行)'
+const MOBILE_CHAT_INPUT_PLACEHOLDER = '输入消息...'
+const MOBILE_CHAT_INPUT_MEDIA_QUERY = '(max-width: 1023px)'
 
 const getImageUploadRequestErrorMessage = (reason: unknown) => {
   const rawMessage =
@@ -90,11 +93,30 @@ export const ChatInput = ({
   >([])
   const [previewImages, setPreviewImages] = useState<PrivateMessageImage[]>([])
   const [sending, setSending] = useState(false)
+  const [isMobileViewport, setIsMobileViewport] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const attachmentMenuRef = useRef<HTMLDivElement>(null)
   const isComposingRef = useRef(false)
   const isSendingRef = useRef(false)
+
+  useEffect(() => {
+    if (typeof window.matchMedia !== 'function') {
+      return
+    }
+
+    const mediaQuery = window.matchMedia(MOBILE_CHAT_INPUT_MEDIA_QUERY)
+    const syncPlaceholderVisibility = () => {
+      setIsMobileViewport(mediaQuery.matches)
+    }
+
+    syncPlaceholderVisibility()
+    mediaQuery.addEventListener('change', syncPlaceholderVisibility)
+
+    return () => {
+      mediaQuery.removeEventListener('change', syncPlaceholderVisibility)
+    }
+  }, [])
 
   useEffect(() => {
     const previews = selectedImages.map((file) => ({
@@ -498,7 +520,11 @@ export const ChatInput = ({
         </div>
         <Textarea
           ref={textareaRef}
-          placeholder="输入消息... (按 Enter 发送，Shift+Enter 换行)"
+          placeholder={
+            isMobileViewport
+              ? MOBILE_CHAT_INPUT_PLACEHOLDER
+              : CHAT_INPUT_PLACEHOLDER
+          }
           value={content}
           onValueChange={setContent}
           onKeyDown={handleKeyDown}
