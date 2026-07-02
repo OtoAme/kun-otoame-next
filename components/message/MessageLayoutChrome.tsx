@@ -27,9 +27,6 @@ export const MessageLayoutChrome = ({
     }
 
     const html = document.documentElement
-    const body = document.body
-    const previousHtmlOverflow = html.style.overflow
-    const previousBodyOverflow = body.style.overflow
     const previousViewportHeight = html.style.getPropertyValue(
       MESSAGE_CHAT_VISUAL_VIEWPORT_HEIGHT
     )
@@ -42,8 +39,6 @@ export const MessageLayoutChrome = ({
       )
     }
 
-    html.style.overflow = 'hidden'
-    body.style.overflow = 'hidden'
     updateVisualViewportHeight()
 
     window.addEventListener('resize', updateVisualViewportHeight)
@@ -57,8 +52,6 @@ export const MessageLayoutChrome = ({
     )
 
     return () => {
-      html.style.overflow = previousHtmlOverflow
-      body.style.overflow = previousBodyOverflow
       if (previousViewportHeight) {
         html.style.setProperty(
           MESSAGE_CHAT_VISUAL_VIEWPORT_HEIGHT,
@@ -78,6 +71,18 @@ export const MessageLayoutChrome = ({
       )
     }
   }, [isConversationDetail])
+
+  useEffect(() => {
+    return () => {
+      const body = document.body
+      const html = document.documentElement
+
+      body.classList.remove('yarl__no_scroll')
+      body.classList.remove('yarl__no_scroll_padding')
+      html.classList.remove('yarl__no_scroll')
+      html.classList.remove('yarl__no_scroll_padding')
+    }
+  }, [])
 
   return (
     <div

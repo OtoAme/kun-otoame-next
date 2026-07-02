@@ -100,7 +100,7 @@ describe('message layout shell', () => {
     expect(markup).toContain('<div class="w-full lg:w-3/4">')
   })
 
-  it('locks document scrolling only while a conversation detail page is mounted', async () => {
+  it('leaves document scrolling to the root route chrome', async () => {
     dom = new JSDOM('<!doctype html><div id="root"></div>', {
       url: 'http://localhost'
     })
@@ -125,8 +125,8 @@ describe('message layout shell', () => {
       )
     })
 
-    expect(dom.window.document.documentElement.style.overflow).toBe('hidden')
-    expect(dom.window.document.body.style.overflow).toBe('hidden')
+    expect(dom.window.document.documentElement.style.overflow).toBe('')
+    expect(dom.window.document.body.style.overflow).toBe('')
 
     await act(async () => {
       root?.unmount()
