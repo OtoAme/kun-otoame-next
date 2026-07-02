@@ -426,6 +426,40 @@ describe('ChatContainer realtime sync', () => {
     return { container: container! }
   }
 
+  const getChatScrollContainer = (container: HTMLElement) => {
+    const scrollContainer =
+      container.querySelector<HTMLDivElement>('.overflow-y-auto')
+    expect(scrollContainer).not.toBeNull()
+    return scrollContainer!
+  }
+
+  const setChatScrollMetrics = (
+    scrollContainer: HTMLDivElement,
+    scrollTop: number
+  ) => {
+    Object.defineProperties(scrollContainer, {
+      scrollHeight: { configurable: true, value: 1000 },
+      clientHeight: { configurable: true, value: 300 },
+      scrollTop: { configurable: true, writable: true, value: scrollTop }
+    })
+  }
+
+  const dispatchChatScroll = async (scrollContainer: HTMLDivElement) => {
+    await act(async () => {
+      scrollContainer.dispatchEvent(new dom!.window.Event('scroll'))
+      await Promise.resolve()
+    })
+  }
+
+  const showScrollButtonByScrollingUp = async (
+    scrollContainer: HTMLDivElement
+  ) => {
+    setChatScrollMetrics(scrollContainer, 700)
+    await dispatchChatScroll(scrollContainer)
+    scrollContainer.scrollTop = 120
+    await dispatchChatScroll(scrollContainer)
+  }
+
   beforeEach(() => {
     vi.useFakeTimers()
     fetchMock.kunFetchGet.mockResolvedValue({
@@ -978,25 +1012,14 @@ describe('ChatContainer realtime sync', () => {
     expect(scrollContainer!.scrollTop).toBe(120)
   })
 
-  it('shows a floating button away from the bottom and animates back to the live edge', async () => {
+  it('shows a floating button after scrolling up away from the bottom and animates back to the live edge', async () => {
     const { container } = await renderChat()
     await act(async () => {
       await Promise.resolve()
     })
 
-    const scrollContainer =
-      container.querySelector<HTMLDivElement>('.overflow-y-auto')
-    expect(scrollContainer).not.toBeNull()
-    Object.defineProperties(scrollContainer!, {
-      scrollHeight: { configurable: true, value: 1000 },
-      clientHeight: { configurable: true, value: 300 },
-      scrollTop: { configurable: true, writable: true, value: 120 }
-    })
-
-    await act(async () => {
-      scrollContainer!.dispatchEvent(new dom!.window.Event('scroll'))
-      await Promise.resolve()
-    })
+    const scrollContainer = getChatScrollContainer(container)
+    await showScrollButtonByScrollingUp(scrollContainer)
 
     const scrollButton = container.querySelector<HTMLButtonElement>(
       'button[aria-label="回到底部"]'
@@ -1017,7 +1040,7 @@ describe('ChatContainer realtime sync', () => {
     })
 
     expect(requestAnimationFrameSpy).toHaveBeenCalled()
-    expect(scrollContainer!.scrollTop).toBe(700)
+    expect(scrollContainer.scrollTop).toBe(700)
     expect(
       container
         .querySelector('[data-testid="chat-scroll-button-shell"]')
@@ -1041,19 +1064,8 @@ describe('ChatContainer realtime sync', () => {
       await Promise.resolve()
     })
 
-    const scrollContainer =
-      container.querySelector<HTMLDivElement>('.overflow-y-auto')
-    expect(scrollContainer).not.toBeNull()
-    Object.defineProperties(scrollContainer!, {
-      scrollHeight: { configurable: true, value: 1000 },
-      clientHeight: { configurable: true, value: 300 },
-      scrollTop: { configurable: true, writable: true, value: 120 }
-    })
-
-    await act(async () => {
-      scrollContainer!.dispatchEvent(new dom!.window.Event('scroll'))
-      await Promise.resolve()
-    })
+    const scrollContainer = getChatScrollContainer(container)
+    await showScrollButtonByScrollingUp(scrollContainer)
 
     expect(
       container
@@ -1088,25 +1100,42 @@ describe('ChatContainer realtime sync', () => {
     ).toBeNull()
   })
 
+  it('hides the floating button when scrolling down toward newer messages', async () => {
+    const { container } = await renderChat()
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    const scrollContainer = getChatScrollContainer(container)
+    await showScrollButtonByScrollingUp(scrollContainer)
+
+    expect(
+      container
+        .querySelector('[data-testid="chat-scroll-button-shell"]')
+        ?.getAttribute('data-state')
+    ).toBe('open')
+
+    await act(async () => {
+      scrollContainer.scrollTop = 240
+      scrollContainer.dispatchEvent(new dom!.window.Event('scroll'))
+      await Promise.resolve()
+    })
+
+    expect(
+      container
+        .querySelector('[data-testid="chat-scroll-button-shell"]')
+        ?.getAttribute('data-state')
+    ).toBe('closed')
+  })
+
   it('starts fading the scroll button immediately while the animated bottom scroll continues', async () => {
     const { container } = await renderChat()
     await act(async () => {
       await Promise.resolve()
     })
 
-    const scrollContainer =
-      container.querySelector<HTMLDivElement>('.overflow-y-auto')
-    expect(scrollContainer).not.toBeNull()
-    Object.defineProperties(scrollContainer!, {
-      scrollHeight: { configurable: true, value: 1000 },
-      clientHeight: { configurable: true, value: 300 },
-      scrollTop: { configurable: true, writable: true, value: 120 }
-    })
-
-    await act(async () => {
-      scrollContainer!.dispatchEvent(new dom!.window.Event('scroll'))
-      await Promise.resolve()
-    })
+    const scrollContainer = getChatScrollContainer(container)
+    await showScrollButtonByScrollingUp(scrollContainer)
 
     const frameCallbacks: FrameRequestCallback[] = []
     vi.stubGlobal(
@@ -1148,11 +1177,11 @@ describe('ChatContainer realtime sync', () => {
 
     await act(async () => {
       frameCallbacks.shift()?.(300)
-      scrollContainer!.dispatchEvent(new dom!.window.Event('scroll'))
+      scrollContainer.dispatchEvent(new dom!.window.Event('scroll'))
       await Promise.resolve()
     })
 
-    expect(scrollContainer!.scrollTop).toBeGreaterThan(604)
+    expect(scrollContainer.scrollTop).toBeGreaterThan(604)
     expect(
       container
         .querySelector('[data-testid="chat-scroll-button-shell"]')
@@ -1164,7 +1193,7 @@ describe('ChatContainer realtime sync', () => {
       await Promise.resolve()
     })
 
-    expect(scrollContainer!.scrollTop).toBe(700)
+    expect(scrollContainer.scrollTop).toBe(700)
     expect(
       container
         .querySelector('[data-testid="chat-scroll-button-shell"]')

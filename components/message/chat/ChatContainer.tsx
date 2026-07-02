@@ -58,6 +58,7 @@ const CHAT_LIVE_EDGE_THRESHOLD_PX = 96
 const CHAT_SCROLL_BUTTON_FADE_MS = 180
 const CHAT_SCROLL_BUTTON_POSITION_CLASSNAME =
   'pointer-events-none absolute bottom-28 right-8 z-20'
+type ScrollButtonVisibilityMode = 'sync' | 'user-scroll' | 'programmatic-away'
 
 const getMaxScrollTop = (container: HTMLElement) =>
   Math.max(0, container.scrollHeight - container.clientHeight)
@@ -178,6 +179,7 @@ export const ChatContainer = ({
     typeof setTimeout
   > | null>(null)
   const showScrollButtonRef = useRef(false)
+  const lastScrollTopRef = useRef<number | null>(null)
   const replyJumpReturnPointRef = useRef<number | null>(null)
   const replyJumpReturnMessageIdRef = useRef<number | null>(null)
   const preserveReplyJumpReturnPointRef = useRef(false)
@@ -247,26 +249,57 @@ export const ChatContainer = ({
     []
   )
 
-  const updateScrollButtonVisibility = useCallback(() => {
-    if (deferScrollButtonVisibilityRef.current) {
-      return
-    }
+  const updateScrollButtonVisibility = useCallback(
+    (mode: ScrollButtonVisibilityMode = 'sync') => {
+      const container = scrollContainerRef.current
+      if (!container) {
+        return
+      }
 
-    const shouldShow = !isNearLiveEdge()
+      const currentScrollTop = container.scrollTop
+      const previousScrollTop = lastScrollTopRef.current
+      lastScrollTopRef.current = currentScrollTop
 
-    if (showScrollButtonRef.current !== shouldShow) {
-      showScrollButtonRef.current = shouldShow
-      setShowScrollButton(shouldShow)
-    }
+      if (deferScrollButtonVisibilityRef.current) {
+        return
+      }
 
-    if (
-      !shouldShow &&
-      replyJumpReturnPointRef.current !== null &&
-      !preserveReplyJumpReturnPointRef.current
-    ) {
-      setReplyJumpReturnPoint(null)
-    }
-  }, [isNearLiveEdge, setReplyJumpReturnPoint])
+      const nearLiveEdge = isNearLiveEdge()
+      let shouldShow = showScrollButtonRef.current
+
+      if (nearLiveEdge) {
+        shouldShow = false
+      } else if (mode === 'programmatic-away') {
+        shouldShow = true
+      } else if (mode === 'user-scroll') {
+        if (previousScrollTop === null) {
+          shouldShow = false
+        } else if (currentScrollTop < previousScrollTop) {
+          shouldShow = true
+        } else if (currentScrollTop > previousScrollTop) {
+          shouldShow = false
+        }
+      }
+
+      if (showScrollButtonRef.current !== shouldShow) {
+        showScrollButtonRef.current = shouldShow
+        setShowScrollButton(shouldShow)
+      }
+
+      if (
+        !shouldShow &&
+        replyJumpReturnPointRef.current !== null &&
+        !preserveReplyJumpReturnPointRef.current
+      ) {
+        setReplyJumpReturnPoint(null)
+      }
+    },
+    [isNearLiveEdge, setReplyJumpReturnPoint]
+  )
+
+  const handleScroll = useCallback(() => {
+    updateScrollButtonVisibility('user-scroll')
+  }, [updateScrollButtonVisibility])
 
   const hideScrollButton = useCallback(() => {
     if (!showScrollButtonRef.current) {
@@ -316,7 +349,9 @@ export const ChatContainer = ({
         scrollContainer.scrollTop = clampedEndScrollTop
         preserveReplyJumpReturnPointRef.current = false
         deferScrollButtonVisibilityRef.current = false
-        updateScrollButtonVisibility()
+        updateScrollButtonVisibility(
+          shouldPreserveReplyReturnPoint ? 'programmatic-away' : 'sync'
+        )
         return
       }
 
@@ -337,7 +372,9 @@ export const ChatContainer = ({
           replyScrollAnimationRef.current = null
           preserveReplyJumpReturnPointRef.current = false
           deferScrollButtonVisibilityRef.current = false
-          updateScrollButtonVisibility()
+          updateScrollButtonVisibility(
+            shouldPreserveReplyReturnPoint ? 'programmatic-away' : 'sync'
+          )
         }
       }
 
@@ -811,18 +848,15 @@ export const ChatContainer = ({
       return
     }
 
-    scrollContainer.addEventListener('scroll', updateScrollButtonVisibility, {
+    scrollContainer.addEventListener('scroll', handleScroll, {
       passive: true
     })
     updateScrollButtonVisibility()
 
     return () => {
-      scrollContainer.removeEventListener(
-        'scroll',
-        updateScrollButtonVisibility
-      )
+      scrollContainer.removeEventListener('scroll', handleScroll)
     }
-  }, [updateScrollButtonVisibility])
+  }, [handleScroll, updateScrollButtonVisibility])
 
   useEffect(() => {
     if (showScrollButton) {
