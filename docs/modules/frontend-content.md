@@ -7,6 +7,7 @@
 | 路径                                       | 说明                                                                  |
 | ------------------------------------------ | --------------------------------------------------------------------- |
 | `components/kun/*`                         | 全站共享 UI、导航、主题、编辑器、图片查看器、cropper、auth captcha。  |
+| `components/layout/*`                      | 全站布局壳和按路由裁剪的布局 chrome。                                 |
 | `components/home/*`                        | 首页 hero、轮播、统计、卡片。                                         |
 | `components/patch/*`                       | 游戏详情页 header、introduction、resource、comment、rating、gallery。 |
 | `components/edit/*`                        | 创建/重写游戏表单，VNDB/Bangumi/Steam/DLSite 外部数据输入。           |
@@ -28,6 +29,7 @@
 
 - `components/message/MessageCard.tsx` 将通知正文作为纯文本渲染，并保留换行，用于系统通知展示多行变更摘要。
 - 私聊会话详情页使用 `components/message/MessageLayoutChrome.tsx` 做路由级布局控制。只有 `/message/chat/[conversationId]` 会隐藏消息页标题、说明文字和全站面包屑，消息列表页继续保留原有 header、面包屑和消息导航。会话详情页会锁定 document 滚动，只允许 `ChatContainer` 内部消息列表滚动；不要为了取消整页滚动而移除或重写 `ChatContainer` 原本的卡片和内部 `overflow-y-auto` 滚动容器。该页外层通过 `--message-chat-top-reserve` 预留顶部空间，并让聊天卡片高度扣除这段预留；视觉高度微调优先调整这个 CSS 变量，再考虑基础预留值。`MessageNav` 在会话详情页大屏继续作为左侧栏显示，小屏通过 `max-lg:hidden` 隐藏，避免在聊天窗口上方占用高度；消息列表页不使用这条隐藏规则。
+- 私聊会话详情页的全站根布局由 `components/layout/RootRouteChrome.tsx` 按路由裁剪。该路由不渲染全站 footer 和 back-to-top，避免移动端输入法聚焦时浏览器把仍在 DOM 里的裁切 footer 也纳入滚动定位。移动端聊天卡片高度通过 `--message-chat-visual-viewport-height` 读取 `visualViewport.height`，输入法展开时折叠聊天区域，把可用高度留给键盘；仍然只让 `ChatContainer` 内部消息列表滚动。
 
 ## 状态管理
 
