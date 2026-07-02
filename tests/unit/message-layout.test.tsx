@@ -137,15 +137,38 @@ describe('message layout shell', () => {
     expect(dom.window.document.body.style.overflow).toBe('')
   })
 
-  it('syncs the conversation detail height with visualViewport changes', async () => {
+  it('keeps the conversation detail anchored to the visual viewport during keyboard changes', async () => {
     dom = new JSDOM('<!doctype html><div id="root"></div>', {
       url: 'http://localhost'
     })
     const win = dom.window
+    const scrollToMock = vi.fn()
+    Object.defineProperty(win, 'innerHeight', {
+      configurable: true,
+      value: 640
+    })
+    Object.defineProperty(win, 'scrollY', {
+      configurable: true,
+      value: 96
+    })
+    Object.defineProperty(win, 'scrollX', {
+      configurable: true,
+      value: 0
+    })
+    Object.defineProperty(win, 'scrollTo', {
+      configurable: true,
+      value: scrollToMock
+    })
     const visualViewport = new win.EventTarget()
     Object.defineProperty(visualViewport, 'height', {
       configurable: true,
+      writable: true,
       value: 520
+    })
+    Object.defineProperty(visualViewport, 'offsetTop', {
+      configurable: true,
+      writable: true,
+      value: 0
     })
     Object.defineProperty(win, 'visualViewport', {
       configurable: true,
@@ -177,10 +200,23 @@ describe('message layout shell', () => {
         '--message-chat-visual-viewport-height'
       )
     ).toBe('520px')
+    expect(
+      win.document.documentElement.style.getPropertyValue(
+        '--message-chat-visual-viewport-offset-top'
+      )
+    ).toBe('0px')
+    expect(scrollToMock).toHaveBeenCalledWith(0, 0)
 
+    // 模拟键盘打开：visualViewport 高度减小超过 100px
     Object.defineProperty(visualViewport, 'height', {
       configurable: true,
+      writable: true,
       value: 360
+    })
+    Object.defineProperty(visualViewport, 'offsetTop', {
+      configurable: true,
+      writable: true,
+      value: 120
     })
     await act(async () => {
       visualViewport.dispatchEvent(new win.Event('resize'))
@@ -191,6 +227,54 @@ describe('message layout shell', () => {
         '--message-chat-visual-viewport-height'
       )
     ).toBe('360px')
+    expect(
+      win.document.documentElement.style.getPropertyValue(
+        '--message-chat-visual-viewport-offset-top'
+      )
+    ).toBe('120px')
+    expect(win.document.body.style.position).toBe('')
+    expect(win.document.body.style.top).toBe('')
+
+    Object.defineProperty(visualViewport, 'offsetTop', {
+      configurable: true,
+      writable: true,
+      value: 88
+    })
+    await act(async () => {
+      visualViewport.dispatchEvent(new win.Event('scroll'))
+    })
+
+    expect(
+      win.document.documentElement.style.getPropertyValue(
+        '--message-chat-visual-viewport-offset-top'
+      )
+    ).toBe('88px')
+
+    // 模拟键盘关闭：visualViewport 高度恢复
+    Object.defineProperty(visualViewport, 'height', {
+      configurable: true,
+      writable: true,
+      value: 640
+    })
+    Object.defineProperty(visualViewport, 'offsetTop', {
+      configurable: true,
+      writable: true,
+      value: 0
+    })
+    await act(async () => {
+      visualViewport.dispatchEvent(new win.Event('resize'))
+    })
+
+    expect(
+      win.document.documentElement.style.getPropertyValue(
+        '--message-chat-visual-viewport-height'
+      )
+    ).toBe('640px')
+    expect(
+      win.document.documentElement.style.getPropertyValue(
+        '--message-chat-visual-viewport-offset-top'
+      )
+    ).toBe('0px')
 
     await act(async () => {
       root?.unmount()
@@ -200,6 +284,11 @@ describe('message layout shell', () => {
     expect(
       win.document.documentElement.style.getPropertyValue(
         '--message-chat-visual-viewport-height'
+      )
+    ).toBe('')
+    expect(
+      win.document.documentElement.style.getPropertyValue(
+        '--message-chat-visual-viewport-offset-top'
       )
     ).toBe('')
   })

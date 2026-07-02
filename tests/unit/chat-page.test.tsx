@@ -42,7 +42,7 @@ describe('/message/chat/[conversationId] page', () => {
   })
 
   it('uses OtoAme private-chat metadata for the conversation page', async () => {
-    const { metadata } = await import(
+    const { metadata, viewport } = await import(
       '~/app/message/chat/[conversationId]/page'
     )
 
@@ -61,6 +61,13 @@ describe('/message/chat/[conversationId] page', () => {
     })
     expect(metadata.alternates).toEqual({
       canonical: 'https://www.otoame.top/message/chat'
+    })
+    expect(viewport).toMatchObject({
+      width: 'device-width',
+      initialScale: 1,
+      maximumScale: 1,
+      userScalable: false,
+      interactiveWidget: 'resizes-content'
     })
   })
 
@@ -105,7 +112,7 @@ describe('/message/chat/[conversationId] page', () => {
     expect(mocks.KunBreadcrumbTitle).not.toHaveBeenCalled()
     expect(element.props.conversationId).toBe(5)
     expect(element.props.className).toBe(
-      'h-[calc(100dvh_-_192px_-_var(--message-chat-top-reserve))] max-lg:h-[calc(var(--message-chat-visual-viewport-height,100dvh)_-_96px_-_var(--message-chat-top-reserve))] max-lg:max-h-[calc(var(--message-chat-visual-viewport-height,100dvh)_-_96px_-_var(--message-chat-top-reserve))] max-lg:min-h-0 max-lg:transition-[height,max-height] max-lg:duration-150 max-lg:ease-out motion-reduce:transition-none'
+      'h-[calc(100dvh_-_192px_-_var(--message-chat-top-reserve))] max-lg:h-[calc(var(--message-chat-visual-viewport-height,100dvh)_-_96px_-_var(--message-chat-top-reserve))] max-lg:max-h-[calc(var(--message-chat-visual-viewport-height,100dvh)_-_96px_-_var(--message-chat-top-reserve))] max-lg:min-h-0 max-lg:translate-y-[var(--message-chat-visual-viewport-offset-top,0px)] max-lg:transition-[height,max-height,transform] max-lg:duration-150 max-lg:ease-out motion-reduce:transition-none'
     )
   })
 })

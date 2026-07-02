@@ -9,6 +9,8 @@ import { cn } from '~/utils/cn'
 
 const MESSAGE_CHAT_VISUAL_VIEWPORT_HEIGHT =
   '--message-chat-visual-viewport-height'
+const MESSAGE_CHAT_VISUAL_VIEWPORT_OFFSET_TOP =
+  '--message-chat-visual-viewport-offset-top'
 
 export const MessageLayoutChrome = ({
   children
@@ -30,28 +32,91 @@ export const MessageLayoutChrome = ({
     const previousViewportHeight = html.style.getPropertyValue(
       MESSAGE_CHAT_VISUAL_VIEWPORT_HEIGHT
     )
+    const previousViewportOffsetTop = html.style.getPropertyValue(
+      MESSAGE_CHAT_VISUAL_VIEWPORT_OFFSET_TOP
+    )
 
-    const updateVisualViewportHeight = () => {
-      const height = window.visualViewport?.height ?? window.innerHeight
-      html.style.setProperty(
-        MESSAGE_CHAT_VISUAL_VIEWPORT_HEIGHT,
-        `${Math.round(height)}px`
-      )
+    let scrollResetFrame: number | null = null
+    let scrollResetTimer: number | null = null
+
+    const cancelScheduledScrollReset = () => {
+      if (scrollResetFrame !== null) {
+        window.cancelAnimationFrame?.(scrollResetFrame)
+        scrollResetFrame = null
+      }
+      if (scrollResetTimer !== null) {
+        window.clearTimeout(scrollResetTimer)
+        scrollResetTimer = null
+      }
     }
 
-    updateVisualViewportHeight()
+    const resetDocumentScroll = () => {
+      if (window.scrollX !== 0 || window.scrollY !== 0) {
+        window.scrollTo(0, 0)
+      }
+    }
 
-    window.addEventListener('resize', updateVisualViewportHeight)
+    const scheduleDocumentScrollReset = () => {
+      resetDocumentScroll()
+      cancelScheduledScrollReset()
+
+      if (typeof window.requestAnimationFrame === 'function') {
+        scrollResetFrame = window.requestAnimationFrame(() => {
+          scrollResetFrame = null
+          resetDocumentScroll()
+        })
+      }
+
+      scrollResetTimer = window.setTimeout(() => {
+        scrollResetTimer = null
+        resetDocumentScroll()
+      }, 80)
+    }
+
+    const updateVisualViewportMetrics = () => {
+      const vv = window.visualViewport
+      if (!vv) {
+        const fallbackHeight = window.innerHeight
+        html.style.setProperty(
+          MESSAGE_CHAT_VISUAL_VIEWPORT_HEIGHT,
+          `${Math.round(fallbackHeight)}px`
+        )
+        html.style.setProperty(MESSAGE_CHAT_VISUAL_VIEWPORT_OFFSET_TOP, '0px')
+        scheduleDocumentScrollReset()
+        return
+      }
+
+      html.style.setProperty(
+        MESSAGE_CHAT_VISUAL_VIEWPORT_HEIGHT,
+        `${Math.round(vv.height)}px`
+      )
+      html.style.setProperty(
+        MESSAGE_CHAT_VISUAL_VIEWPORT_OFFSET_TOP,
+        `${Math.max(0, Math.round(vv.offsetTop))}px`
+      )
+      scheduleDocumentScrollReset()
+    }
+
+    const handleWindowScroll = () => scheduleDocumentScrollReset()
+
+    updateVisualViewportMetrics()
+
     window.visualViewport?.addEventListener(
       'resize',
-      updateVisualViewportHeight
+      updateVisualViewportMetrics
     )
     window.visualViewport?.addEventListener(
       'scroll',
-      updateVisualViewportHeight
+      updateVisualViewportMetrics
     )
+    window.addEventListener('resize', updateVisualViewportMetrics)
+    window.addEventListener('orientationchange', updateVisualViewportMetrics)
+    window.addEventListener('focusin', scheduleDocumentScrollReset)
+    window.addEventListener('scroll', handleWindowScroll, { passive: true })
 
     return () => {
+      cancelScheduledScrollReset()
+
       if (previousViewportHeight) {
         html.style.setProperty(
           MESSAGE_CHAT_VISUAL_VIEWPORT_HEIGHT,
@@ -60,15 +125,31 @@ export const MessageLayoutChrome = ({
       } else {
         html.style.removeProperty(MESSAGE_CHAT_VISUAL_VIEWPORT_HEIGHT)
       }
-      window.removeEventListener('resize', updateVisualViewportHeight)
+
+      if (previousViewportOffsetTop) {
+        html.style.setProperty(
+          MESSAGE_CHAT_VISUAL_VIEWPORT_OFFSET_TOP,
+          previousViewportOffsetTop
+        )
+      } else {
+        html.style.removeProperty(MESSAGE_CHAT_VISUAL_VIEWPORT_OFFSET_TOP)
+      }
+
       window.visualViewport?.removeEventListener(
         'resize',
-        updateVisualViewportHeight
+        updateVisualViewportMetrics
       )
       window.visualViewport?.removeEventListener(
         'scroll',
-        updateVisualViewportHeight
+        updateVisualViewportMetrics
       )
+      window.removeEventListener('resize', updateVisualViewportMetrics)
+      window.removeEventListener(
+        'orientationchange',
+        updateVisualViewportMetrics
+      )
+      window.removeEventListener('focusin', scheduleDocumentScrollReset)
+      window.removeEventListener('scroll', handleWindowScroll)
     }
   }, [isConversationDetail])
 
