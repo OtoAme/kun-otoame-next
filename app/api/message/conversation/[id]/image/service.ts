@@ -18,6 +18,7 @@ import {
 } from '../../response'
 
 const MAX_PRIVATE_MESSAGE_IMAGE_SIZE = 8 * 1024 * 1024
+export const PRIVATE_MESSAGE_IMAGE_SIZE_LIMIT_MESSAGE = '图片大小不能超过 8 MB'
 const MAX_PRIVATE_MESSAGE_AVIF_SIZE_MB = 1.5
 const ALLOWED_PRIVATE_MESSAGE_IMAGE_TYPES = new Set([
   'image/jpeg',
@@ -130,7 +131,7 @@ export const uploadConversationImage = async (
   }
 
   if (file.size > MAX_PRIVATE_MESSAGE_IMAGE_SIZE) {
-    return '图片大小不能超过 8 MB'
+    return PRIVATE_MESSAGE_IMAGE_SIZE_LIMIT_MESSAGE
   }
 
   const recipientError = await verifyRecipientAllowsPrivateImageUpload(

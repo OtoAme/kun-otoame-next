@@ -50,9 +50,17 @@ const getImageUploadRequestErrorMessage = (reason: unknown) => {
     return IMAGE_UPLOAD_FAILED_MESSAGE
   }
 
-  const statusMatch = message.match(/^Kun Fetch error! Status: (\d+)$/i)
+  const statusMatch = message.match(
+    /^Kun Fetch error! Status: (\d+)(?:;\s*Message:\s*(.+))?$/i
+  )
   if (statusMatch) {
-    return `图片上传请求失败：服务器返回 ${statusMatch[1]}，请稍后重试`
+    const [, status, detail] = statusMatch
+    const normalizedDetail = detail?.trim()
+    if (normalizedDetail) {
+      return `图片上传失败（错误码 ${status}）：${normalizedDetail.slice(0, 120)}`
+    }
+
+    return `图片上传请求失败：服务器返回 ${status}，请稍后重试`
   }
 
   if (/abort|timeout/i.test(message)) {
@@ -188,7 +196,12 @@ export const ChatInput = ({
               formData.append('image', file)
               const result = await kunFetchFormData<
                 KunResponse<PrivateMessageImage>
-              >(`/message/conversation/${conversationId}/image`, formData)
+              >(
+                `/message/conversation/${conversationId}/image`,
+                formData,
+                undefined,
+                { preserveErrorStatus: true }
+              )
               return { index, result }
             })
           )

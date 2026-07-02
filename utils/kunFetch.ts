@@ -5,6 +5,7 @@ type FetchOptions = {
   formData?: FormData
   timeout?: number
   keepalive?: boolean
+  preserveErrorStatus?: boolean
 }
 
 const parseKunFetchResponseBody = async (response: Response) => {
@@ -20,6 +21,39 @@ const parseKunFetchResponseBody = async (response: Response) => {
   }
 }
 
+const getKunFetchErrorBodyMessage = (body: unknown) => {
+  if (typeof body === 'string') {
+    return body.replace(/\s+/g, ' ').trim()
+  }
+
+  if (!body || typeof body !== 'object') {
+    return ''
+  }
+
+  const record = body as Record<string, unknown>
+  const candidateKeys = ['message', 'error', 'reason', 'detail']
+  for (const key of candidateKeys) {
+    const value = record[key]
+    if (typeof value === 'string') {
+      const message = value.replace(/\s+/g, ' ').trim()
+      if (message) {
+        return message
+      }
+    }
+  }
+
+  return ''
+}
+
+const createKunFetchStatusError = (status: number, body: unknown) => {
+  const bodyMessage = getKunFetchErrorBodyMessage(body)
+  return new Error(
+    bodyMessage
+      ? `Kun Fetch error! Status: ${status}; Message: ${bodyMessage}`
+      : `Kun Fetch error! Status: ${status}`
+  )
+}
+
 const kunFetchRequest = async <T>(
   url: string,
   method: 'GET' | 'POST' | 'PUT' | 'DELETE',
@@ -32,7 +66,8 @@ const kunFetchRequest = async <T>(
       body,
       formData,
       timeout,
-      keepalive
+      keepalive,
+      preserveErrorStatus
     } = options || {}
 
     const queryString = query
@@ -82,11 +117,15 @@ const kunFetchRequest = async <T>(
       const res = await parseKunFetchResponseBody(response)
 
       if (!response.ok) {
+        if (preserveErrorStatus) {
+          throw createKunFetchStatusError(response.status, res)
+        }
+
         if (typeof res === 'string') {
           return res as T
         }
 
-        throw new Error(`Kun Fetch error! Status: ${response.status}`)
+        throw createKunFetchStatusError(response.status, res)
       }
 
       return res as T
@@ -134,12 +173,13 @@ export const kunFetchDelete = async <T>(
 export const kunFetchFormData = async <T>(
   url: string,
   formData?: FormData,
-  timeout?: number
+  timeout?: number,
+  options?: Pick<FetchOptions, 'preserveErrorStatus'>
 ): Promise<T> => {
   if (!formData) {
     throw new Error('formData is required for kunFetchFormData')
   }
-  return kunFetchRequest<T>(url, 'POST', { formData, timeout })
+  return kunFetchRequest<T>(url, 'POST', { formData, timeout, ...options })
 }
 
 export const kunFetchPutFormData = async <T>(

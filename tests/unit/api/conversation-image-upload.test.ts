@@ -237,6 +237,88 @@ describe('conversation image upload service', () => {
     expect(s3Mock.uploadImageToS3).not.toHaveBeenCalled()
   })
 
+  it('returns 413 with a user-visible reason when multipart parsing rejects an oversized image', async () => {
+    const request = new Request(
+      'https://www.otoame.top/api/message/conversation/5/image',
+      { method: 'POST' }
+    )
+    const formDataSpy = vi
+      .spyOn(request, 'formData')
+      .mockRejectedValue(new Error('Request body size exceeded 10 MB limit'))
+
+    const { POST } = await import(
+      '~/app/api/message/conversation/[id]/image/route'
+    )
+    const response = await POST(request as never, {
+      params: Promise.resolve({ id: '5' })
+    })
+
+    expect(response.status).toBe(413)
+    expect(response.headers.get('cache-control')).toBe('private, no-store')
+    await expect(response.json()).resolves.toBe('图片大小不能超过 8 MB')
+    expect(formDataSpy).toHaveBeenCalledTimes(1)
+    expect(prismaMock.user_conversation.findUnique).not.toHaveBeenCalled()
+    expect(sharpMock).not.toHaveBeenCalled()
+    expect(s3Mock.uploadImageToS3).not.toHaveBeenCalled()
+  })
+
+  it('returns 413 before parsing multipart data when the request body exceeds the Next client body limit', async () => {
+    const request = new Request(
+      'https://www.otoame.top/api/message/conversation/5/image',
+      {
+        method: 'POST',
+        headers: {
+          'content-length': String(10 * 1024 * 1024 + 1)
+        }
+      }
+    )
+    const formDataSpy = vi
+      .spyOn(request, 'formData')
+      .mockRejectedValue(new Error('Failed to parse multipart body'))
+
+    const { POST } = await import(
+      '~/app/api/message/conversation/[id]/image/route'
+    )
+    const response = await POST(request as never, {
+      params: Promise.resolve({ id: '5' })
+    })
+
+    expect(response.status).toBe(413)
+    expect(response.headers.get('cache-control')).toBe('private, no-store')
+    await expect(response.json()).resolves.toBe('图片大小不能超过 8 MB')
+    expect(formDataSpy).not.toHaveBeenCalled()
+    expect(prismaMock.user_conversation.findUnique).not.toHaveBeenCalled()
+    expect(sharpMock).not.toHaveBeenCalled()
+    expect(s3Mock.uploadImageToS3).not.toHaveBeenCalled()
+  })
+
+  it('returns 413 when the parsed private chat image is over 8 MB', async () => {
+    const formData = new FormData()
+    formData.append(
+      'image',
+      new File([new Uint8Array(8 * 1024 * 1024 + 1)], 'big.png', {
+        type: 'image/png'
+      })
+    )
+
+    const { POST } = await import(
+      '~/app/api/message/conversation/[id]/image/route'
+    )
+    const response = await POST(
+      new Request('https://www.otoame.top/api/message/conversation/5/image', {
+        method: 'POST',
+        body: formData
+      }) as never,
+      { params: Promise.resolve({ id: '5' }) }
+    )
+
+    expect(response.status).toBe(413)
+    expect(response.headers.get('cache-control')).toBe('private, no-store')
+    await expect(response.json()).resolves.toBe('图片大小不能超过 8 MB')
+    expect(sharpMock).not.toHaveBeenCalled()
+    expect(s3Mock.uploadImageToS3).not.toHaveBeenCalled()
+  })
+
   it('rejects extra hourly image uploads without enough moemoepoints before processing or S3 upload', async () => {
     const quotaReservation = {
       counted: true,

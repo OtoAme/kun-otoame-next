@@ -2,7 +2,10 @@ import { NextRequest, NextResponse } from 'next/server'
 import { verifyHeaderCookie } from '~/middleware/_verifyHeaderCookie'
 import { verifyKunCsrf } from '~/middleware/_csrf'
 import { PERSONALIZED_API_CACHE_CONTROL } from '~/app/api/utils/cacheHeaders'
-import { uploadConversationImage } from './service'
+import {
+  PRIVATE_MESSAGE_IMAGE_SIZE_LIMIT_MESSAGE,
+  uploadConversationImage
+} from './service'
 import {
   createConversationRateLimitResponse,
   getConversationRetryAfterSeconds,
@@ -32,7 +35,44 @@ const jsonConversationImageResponse = (body: unknown) => {
     })
   }
 
+  if (body === PRIVATE_MESSAGE_IMAGE_SIZE_LIMIT_MESSAGE) {
+    return jsonNoStore(body, { status: 413 })
+  }
+
   return jsonNoStore(body)
+}
+
+const MIDDLEWARE_CLIENT_MAX_BODY_SIZE_BYTES = 10 * 1024 * 1024
+
+const getRequestContentLength = (req: NextRequest) => {
+  const contentLength = req.headers.get('content-length')
+  if (!contentLength) {
+    return null
+  }
+
+  const parsed = Number(contentLength)
+  return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : null
+}
+
+const isRequestBodyOverMiddlewareClientLimit = (req: NextRequest) => {
+  const contentLength = getRequestContentLength(req)
+  return (
+    contentLength !== null &&
+    contentLength > MIDDLEWARE_CLIENT_MAX_BODY_SIZE_BYTES
+  )
+}
+
+const isMultipartSizeError = (error: unknown) => {
+  const message =
+    error instanceof Error
+      ? error.message
+      : typeof error === 'string'
+        ? error
+        : ''
+
+  return /too large|exceed|exceeded|limit|maximum|payload|content-length|entity too large|body size|request body size|图片.*(过大|超过|大小)/i.test(
+    message
+  )
 }
 
 export const POST = async (
@@ -69,7 +109,26 @@ export const POST = async (
     )
   }
 
-  const formData = await req.formData()
+  if (isRequestBodyOverMiddlewareClientLimit(req)) {
+    return jsonNoStore(PRIVATE_MESSAGE_IMAGE_SIZE_LIMIT_MESSAGE, {
+      status: 413
+    })
+  }
+
+  let formData: FormData
+  try {
+    formData = await req.formData()
+  } catch (error) {
+    const isSizeError =
+      isMultipartSizeError(error) || isRequestBodyOverMiddlewareClientLimit(req)
+    return jsonNoStore(
+      isSizeError
+        ? PRIVATE_MESSAGE_IMAGE_SIZE_LIMIT_MESSAGE
+        : '图片上传请求解析失败，请稍后重试',
+      { status: isSizeError ? 413 : 400 }
+    )
+  }
+
   const image = formData.get('image')
   if (!(image instanceof File)) {
     return jsonNoStore('请上传图片')

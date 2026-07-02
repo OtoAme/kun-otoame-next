@@ -552,7 +552,9 @@ describe('ChatInput keyboard handling', () => {
 
     expect(fetchMock.kunFetchFormData).toHaveBeenCalledWith(
       '/message/conversation/5/image',
-      expect.any(FormData)
+      expect.any(FormData),
+      undefined,
+      { preserveErrorStatus: true }
     )
     expect(fetchMock.kunFetchPost).toHaveBeenCalledWith(
       '/message/conversation/5',
@@ -998,6 +1000,46 @@ describe('ChatInput keyboard handling', () => {
 
     expect(fetchMock.kunFetchPost).not.toHaveBeenCalled()
     expect(toast.error).toHaveBeenCalledWith('图片上传失败：网络连接失败')
+    expect(sendButton?.disabled).toBe(false)
+  })
+
+  it('shows the upload status code and server reason when image upload fails', async () => {
+    const toast = (await import('react-hot-toast')).default
+    vi.mocked(toast.error).mockClear()
+    fetchMock.kunFetchFormData.mockRejectedValueOnce(
+      new Error('Kun Fetch error! Status: 413; Message: 图片大小不能超过 8 MB')
+    )
+
+    const { container, textarea } = await renderChatInput()
+    const files = [new File(['a'], 'a.png', { type: 'image/png' })]
+
+    await act(async () => {
+      textareaMock.onPaste?.({
+        clipboardData: { files },
+        preventDefault: vi.fn()
+      } as unknown as React.ClipboardEvent<HTMLTextAreaElement>)
+      await Promise.resolve()
+    })
+
+    const sendButton = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="发送消息"]'
+    )
+    await act(async () => {
+      sendButton?.click()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(fetchMock.kunFetchPost).not.toHaveBeenCalled()
+    expect(fetchMock.kunFetchFormData).toHaveBeenCalledWith(
+      '/message/conversation/5/image',
+      expect.any(FormData),
+      undefined,
+      { preserveErrorStatus: true }
+    )
+    expect(toast.error).toHaveBeenCalledWith(
+      '图片上传失败（错误码 413）：图片大小不能超过 8 MB'
+    )
     expect(sendButton?.disabled).toBe(false)
   })
 
