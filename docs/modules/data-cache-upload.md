@@ -181,7 +181,7 @@ Gallery 图片上传走 `app/api/edit/gallery/route.ts` 和 `app/api/edit/galler
 
 - 只允许会话成员上传，handler 内必须校验登录态和 CSRF。
 - handler 在登录态和严格会话 ID 校验后、读取 multipart `formData()` 前先执行 `image-upload-intake` 用户级限频，避免过量上传请求消耗表单解析内存和 CPU。
-- 支持 JPG/PNG/WebP/AVIF，单张入站上限 8MB；静态图片按 create gallery 的尺寸策略 resize 到 1920x1080 内并输出 AVIF，不添加水印。输出 AVIF 仍超过 1.5MB 时返回用户可见错误。
+- 支持 JPG/PNG/WebP/AVIF，单张入站上限 8MB；超出该上限或超过 Next 默认 10MiB 客户端 body 缓冲上限时，route 必须返回 `413` 和“图片大小不能超过 8 MB”的用户可见字符串。静态图片按 create gallery 的尺寸策略 resize 到 1920x1080 内并输出 AVIF，不添加水印。输出 AVIF 仍超过 1.5MB 时返回用户可见错误。
 - Sharp 解码/压缩或处理后 metadata 读取失败时，上传服务必须返回“图片处理失败，请重新选择有效图片”，并回滚本次小时额度和已扣萌萌点，不能把坏图片或处理失败冒成 500。
 - S3 key 使用 `conversation/<conversationId>/<uid>-<timestamp>-<uuid>.avif`，避免不同会话或用户文件名冲突。
 - `uploadImageToS3` 必须传入 `image/avif`，返回 metadata 也以最终 AVIF 的宽高、大小、MIME 和文件名为准。

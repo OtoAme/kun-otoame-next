@@ -22,6 +22,7 @@ Use this skill for pages, components, state, theme, and content.
 - For tag/company detail pages, preserve the static-cache split: company may reuse an SFW static first page only for anonymous default filters, while login/NSFW `nsfw` or `all`/blocked-tag cookies must trigger a client list fetch; tag detail should fetch its game list on client mount.
 - Use `utils/kunFetch.ts` or preserve the CSRF header behavior for state-changing client requests.
 - `kunFetch` preserves JSON string business errors from non-2xx responses, such as private chat `429` rate-limit messages, so existing `typeof response === 'string'` toast branches continue to show user-visible errors.
+- Private chat image uploads should request preserved non-2xx status codes so upload toasts can show both the HTTP error code and the server-provided reason, especially 413 size errors.
 - Keep user-facing copy on OtoAme/OtomeGame naming unless referencing compatibility paths.
 - For edit external-data inputs, merge async source results with the latest store state and only overwrite fields owned by that source.
 - Bangumi title/summary should only fill game name/introduction after an explicit user click; title fill prefers `nameCn`, then `name`.
