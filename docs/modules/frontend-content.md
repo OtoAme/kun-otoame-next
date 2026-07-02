@@ -29,7 +29,7 @@
 
 - `components/message/MessageCard.tsx` 将通知正文作为纯文本渲染，并保留换行，用于系统通知展示多行变更摘要。
 - 私聊会话详情页使用 `components/message/MessageLayoutChrome.tsx` 做路由级布局控制。只有 `/message/chat/[conversationId]` 会隐藏消息页标题、说明文字和全站面包屑，消息列表页继续保留原有 header、面包屑和消息导航。该页外层通过 `--message-chat-top-reserve` 预留顶部空间，并让聊天卡片高度扣除这段预留；视觉高度微调优先调整这个 CSS 变量，再考虑基础预留值。`MessageNav` 在会话详情页大屏继续作为左侧栏显示，小屏通过 `max-lg:hidden` 隐藏，避免在聊天窗口上方占用高度；消息列表页不使用这条隐藏规则。
-- 私聊会话详情页的全站根布局由 `components/layout/RootRouteChrome.tsx` 按路由裁剪。该路由不渲染全站 footer 和 back-to-top，并负责锁定/恢复 document 滚动；离开私聊详情页时必须恢复全站滚动，并在下一帧/短延迟再次确认 `overflow-y: auto`，避免其他页面被残留的 `overflow: hidden` 影响。移动端从 HeroUI Navbar 菜单等已带滚动锁的入口跳进私聊详情时，根布局只能释放自己仍然持有的锁，不能把已经释放的外部 `overflow: hidden` 再写回。移动端聊天卡片高度通过 `--message-chat-visual-viewport-height` 读取 `visualViewport.height`，输入法展开时折叠聊天区域，把可用高度留给键盘；仍然只让 `ChatContainer` 内部消息列表滚动，不要为了取消整页滚动而移除或重写 `ChatContainer` 原本的卡片和内部 `overflow-y-auto` 滚动容器。
+- 私聊会话详情页的全站根布局由 `components/layout/RootRouteChrome.tsx` 按路由裁剪。该路由不渲染全站 footer 和 back-to-top，并负责锁定/恢复 document 滚动；离开私聊详情页时必须恢复全站滚动，并在下一帧/短延迟再次确认 `overflow-y: auto`，避免其他页面被残留的 `overflow: hidden` 影响。移动端从 HeroUI Navbar 菜单等已带滚动锁的入口跳进私聊详情时，根布局只能释放自己仍然持有的锁，不能把已经释放的外部 `overflow: hidden` 再写回。移动端聊天卡片高度通过 `--message-chat-visual-viewport-height` 读取 `visualViewport.height`，并通过 `--message-chat-visual-viewport-offset-top` 跟随 Chrome 等浏览器在输入法展开时产生的 visual viewport 偏移；详情页 viewport 使用 `interactiveWidget: 'resizes-content'` 让支持的 Chrome 优先缩 layout viewport，不支持时由 visualViewport 变量兜底。输入法展开时只折叠/平移聊天区域并把 document scroll 拉回 0，不要在这里临时给 `body` 写 `position: fixed`，否则会和 Chrome 的输入聚焦滚动叠加。仍然只让 `ChatContainer` 内部消息列表滚动，不要为了取消整页滚动而移除或重写 `ChatContainer` 原本的卡片和内部 `overflow-y-auto` 滚动容器。
 
 ## 状态管理
 
