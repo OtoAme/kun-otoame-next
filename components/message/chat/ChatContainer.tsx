@@ -333,7 +333,7 @@ export const ChatContainer = ({
       deferScrollButtonVisibilityRef.current = true
       const shouldPreserveReplyReturnPoint = Boolean(
         options.preserveReplyReturnPoint &&
-          replyJumpReturnPointRef.current !== null
+        replyJumpReturnPointRef.current !== null
       )
       preserveReplyJumpReturnPointRef.current = shouldPreserveReplyReturnPoint
 
@@ -495,14 +495,14 @@ export const ChatContainer = ({
           prev.map((msg) =>
             msg.id === messageId
               ? {
-                  ...msg,
-                  type: 0,
-                  content: '',
-                  isDeleted: true,
-                  image: null,
-                  images: [],
-                  replyTo: null
-                }
+                ...msg,
+                type: 0,
+                content: '',
+                isDeleted: true,
+                image: null,
+                images: [],
+                replyTo: null
+              }
               : msg
           )
         )
@@ -643,7 +643,7 @@ export const ChatContainer = ({
   }, [])
 
   useEffect(() => {
-    document.title = `与${otherUser.name}的私聊 - TouchGal`
+    document.title = `与${otherUser.name}的私聊 - OtoAme`
   }, [otherUser.name])
 
   useEffect(() => {
