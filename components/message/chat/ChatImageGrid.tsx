@@ -21,6 +21,22 @@ interface Props {
     index: number,
     event: ReactMouseEvent<HTMLButtonElement>
   ) => void
+  onImagePointerDown?: (
+    index: number,
+    event: ReactPointerEvent<HTMLButtonElement>
+  ) => void
+  onImagePointerMove?: (
+    index: number,
+    event: ReactPointerEvent<HTMLButtonElement>
+  ) => void
+  onImagePointerUp?: (
+    index: number,
+    event: ReactPointerEvent<HTMLButtonElement>
+  ) => void
+  onImagePointerCancel?: (
+    index: number,
+    event: ReactPointerEvent<HTMLButtonElement>
+  ) => void
   onImageOpen?: (index: number) => void
 }
 
@@ -100,6 +116,10 @@ export const ChatImageGrid = ({
   activeImageIndex,
   isActiveImageFading,
   onImageContextMenu,
+  onImagePointerDown,
+  onImagePointerMove,
+  onImagePointerUp,
+  onImagePointerCancel,
   onImageOpen
 }: Props) => {
   if (images.length === 0) {
@@ -143,8 +163,22 @@ export const ChatImageGrid = ({
               : undefined
           }
           aria-label={`查看图片 ${index + 1}`}
-          onPointerDown={stopTouchPreviewPropagation}
-          onPointerUp={stopTouchPreviewPropagation}
+          onPointerDown={(event) => {
+            onImagePointerDown?.(index, event)
+            stopTouchPreviewPropagation(event)
+          }}
+          onPointerMove={(event) => {
+            onImagePointerMove?.(index, event)
+            stopTouchPreviewPropagation(event)
+          }}
+          onPointerUp={(event) => {
+            onImagePointerUp?.(index, event)
+            stopTouchPreviewPropagation(event)
+          }}
+          onPointerCancel={(event) => {
+            onImagePointerCancel?.(index, event)
+            stopTouchPreviewPropagation(event)
+          }}
           onContextMenu={(event) => onImageContextMenu?.(index, event)}
           onClick={(event) => {
             event.stopPropagation()

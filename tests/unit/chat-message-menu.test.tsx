@@ -326,46 +326,63 @@ describe('ChatMessage menu and rendering', () => {
     })
   }
 
-  const swipeBubble = async (
+  const createTouchPointerEvent = (
+    type: 'pointerdown' | 'pointermove' | 'pointerup',
+    point: { x: number; y: number }
+  ) => {
+    const event = new dom!.window.MouseEvent(type, {
+      bubbles: true,
+      cancelable: true,
+      clientX: point.x,
+      clientY: point.y
+    })
+    Object.defineProperties(event, {
+      pointerType: { value: 'touch' },
+      isPrimary: { value: true },
+      pointerId: { value: 1 },
+      button: { value: 0 }
+    })
+
+    return event
+  }
+
+  const swipeElement = async (
     container: HTMLElement,
+    selector: string,
     points: Array<{ x: number; y: number }>
   ) => {
-    const bubble = container.querySelector(
-      '[data-testid="chat-message-bubble"]'
-    )
-    expect(bubble).not.toBeNull()
+    const target = container.querySelector(selector)
+    expect(target).not.toBeNull()
     expect(points.length).toBeGreaterThanOrEqual(2)
 
-    const createTouchPointerEvent = (
-      type: 'pointerdown' | 'pointermove' | 'pointerup',
-      point: { x: number; y: number }
-    ) => {
-      const event = new dom!.window.MouseEvent(type, {
-        bubbles: true,
-        cancelable: true,
-        clientX: point.x,
-        clientY: point.y
-      })
-      Object.defineProperties(event, {
-        pointerType: { value: 'touch' },
-        isPrimary: { value: true },
-        pointerId: { value: 1 },
-        button: { value: 0 }
-      })
-
-      return event
-    }
-
     await act(async () => {
-      bubble!.dispatchEvent(createTouchPointerEvent('pointerdown', points[0]))
+      target!.dispatchEvent(createTouchPointerEvent('pointerdown', points[0]))
       for (const point of points.slice(1, -1)) {
-        bubble!.dispatchEvent(createTouchPointerEvent('pointermove', point))
+        target!.dispatchEvent(createTouchPointerEvent('pointermove', point))
       }
-      bubble!.dispatchEvent(
+      target!.dispatchEvent(
         createTouchPointerEvent('pointerup', points[points.length - 1])
       )
       await Promise.resolve()
     })
+  }
+
+  const swipeBubble = async (
+    container: HTMLElement,
+    points: Array<{ x: number; y: number }>
+  ) => {
+    await swipeElement(container, '[data-testid="chat-message-bubble"]', points)
+  }
+
+  const swipeImage = async (
+    container: HTMLElement,
+    points: Array<{ x: number; y: number }>
+  ) => {
+    await swipeElement(
+      container,
+      'button[aria-label="查看图片 1"]',
+      points
+    )
   }
 
   const selectMessageText = (container: HTMLElement) => {
@@ -1206,6 +1223,33 @@ describe('ChatMessage menu and rendering', () => {
     })
 
     expect(container.textContent).not.toContain('回复')
+  })
+
+  it('replies directly when a mobile touch swipes an image message left', async () => {
+    const imageMessage: PrivateMessage = {
+      ...baseMessage,
+      type: 1,
+      content: '',
+      image: {
+        url: 'https://img.example/chat.webp',
+        width: 800,
+        height: 600,
+        size: 12345,
+        mime: 'image/webp',
+        name: 'chat.webp'
+      }
+    }
+    const onReply = vi.fn()
+    const { container } = await renderMessage(imageMessage, { onReply })
+
+    await swipeImage(container, [
+      { x: 160, y: 120 },
+      { x: 118, y: 121 },
+      { x: 76, y: 122 }
+    ])
+
+    expect(onReply).toHaveBeenCalledWith(imageMessage, null, 0)
+    expect(container.querySelector('[role="menu"]')).toBeNull()
   })
 
   it('uses blurred side fill for single image messages with captions', async () => {

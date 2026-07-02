@@ -118,6 +118,8 @@ export const ChatMessage = ({
     time: number
     pointerId: number
     isHorizontalSwipe: boolean
+    startedOnImage: boolean
+    startedImageIndex?: number
   } | null>(null)
   const lastPointerTypeRef = useRef<React.PointerEvent['pointerType'] | ''>('')
   const suppressAvatarClickRef = useRef(false)
@@ -422,7 +424,10 @@ export const ChatMessage = ({
     openKeyboardMessageMenu()
   }
 
-  const handlePointerDown = (e: React.PointerEvent) => {
+  const handlePointerDown = (
+    e: React.PointerEvent,
+    options: { startedOnImage?: boolean; startedImageIndex?: number } = {}
+  ) => {
     lastPointerTypeRef.current = e.pointerType
 
     if (menu && e.button !== 2) {
@@ -443,7 +448,9 @@ export const ChatMessage = ({
       y: e.clientY,
       time: Date.now(),
       pointerId: e.pointerId,
-      isHorizontalSwipe: false
+      isHorizontalSwipe: false,
+      startedOnImage: Boolean(options.startedOnImage),
+      startedImageIndex: options.startedImageIndex
     }
     resetSwipeReplyState()
   }
@@ -513,13 +520,20 @@ export const ChatMessage = ({
 
     if (shouldReplyFromSwipe) {
       e.preventDefault()
-      onReply?.(message, null)
+      if (start.startedImageIndex === undefined) {
+        onReply?.(message, null)
+      } else {
+        onReply?.(message, null, start.startedImageIndex)
+      }
       return
     }
 
     const distance = Math.hypot(e.clientX - start.x, e.clientY - start.y)
     const duration = Date.now() - start.time
     if (distance > 10 || duration > 500) {
+      return
+    }
+    if (start.startedOnImage) {
       return
     }
 
@@ -531,6 +545,37 @@ export const ChatMessage = ({
       touchStartRef.current = null
     }
     resetSwipeReplyState()
+  }
+
+  const handleImagePointerDown = (
+    imageIndex: number,
+    e: React.PointerEvent<HTMLButtonElement>
+  ) => {
+    handlePointerDown(e, {
+      startedOnImage: true,
+      startedImageIndex: imageIndex
+    })
+  }
+
+  const handleImagePointerMove = (
+    _imageIndex: number,
+    e: React.PointerEvent<HTMLButtonElement>
+  ) => {
+    handlePointerMove(e)
+  }
+
+  const handleImagePointerUp = (
+    _imageIndex: number,
+    e: React.PointerEvent<HTMLButtonElement>
+  ) => {
+    handlePointerUp(e)
+  }
+
+  const handleImagePointerCancel = (
+    _imageIndex: number,
+    e: React.PointerEvent<HTMLButtonElement>
+  ) => {
+    handlePointerCancel(e)
   }
 
   const handleCopy = async () => {
@@ -821,6 +866,10 @@ export const ChatMessage = ({
             highlightedImageIndex >= 0 && isActiveReplyHighlightFading
           }
           onImageContextMenu={handleImageContextMenu}
+          onImagePointerDown={handleImagePointerDown}
+          onImagePointerMove={handleImagePointerMove}
+          onImagePointerUp={handleImagePointerUp}
+          onImagePointerCancel={handleImagePointerCancel}
           onImageOpen={
             onOpenImage
               ? (imageIndex) => onOpenImage(message, imageIndex)
