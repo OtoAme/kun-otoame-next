@@ -336,6 +336,67 @@ describe('ChatMessage menu and rendering', () => {
     dom!.window.getSelection()?.addRange(range)
   }
 
+  const expectInlineMetaTailFlow = (container: HTMLElement) => {
+    const paragraph = container.querySelector('p')
+    const meta = container.querySelector('[data-testid="chat-message-meta"]')
+    const metaLine = container.querySelector(
+      '[data-testid="chat-message-meta-line"]'
+    )
+    const metaSpacer = container.querySelector(
+      '[data-testid="chat-message-meta-spacer"]'
+    )
+    const text = container.querySelector('[data-testid="chat-message-text"]')
+    const metaLineClasses = Array.from(metaLine?.classList ?? [])
+    const metaClasses = Array.from(meta?.classList ?? [])
+    const spacerClasses = Array.from(metaSpacer?.classList ?? [])
+
+    expect(meta).not.toBeNull()
+    expect(metaLine).not.toBeNull()
+    expect(metaSpacer).not.toBeNull()
+    expect(text?.nextElementSibling).toBe(metaLine)
+    expect(metaLine?.parentElement).toBe(paragraph)
+    expect(meta?.parentElement).toBe(metaLine)
+    expect(metaSpacer?.nextElementSibling).toBe(meta)
+    expect(paragraph?.className).not.toContain('grid')
+    expect(paragraph?.className).not.toContain('items-end')
+    expect(paragraph?.className).toContain('relative')
+    expect(paragraph?.className).toContain('text-left')
+    expect(paragraph?.className).toContain('whitespace-pre-wrap')
+    expect(text?.className).toContain('break-words')
+    expect(metaLineClasses).toContain('inline')
+    expect(metaLineClasses).toContain('align-bottom')
+    expect(metaLineClasses).not.toContain('inline-block')
+    expect(metaLineClasses).not.toContain('inline-flex')
+    expect(metaLineClasses).not.toContain('min-w-full')
+    expect(metaLineClasses).not.toContain('w-full')
+    expect(metaLineClasses).not.toContain('justify-between')
+    expect(metaLineClasses).not.toContain('grid')
+    expect(metaLine?.className).not.toContain('[text-align-last:justify]')
+    expect(spacerClasses).toContain('invisible')
+    expect(spacerClasses).toContain('inline-flex')
+    expect(spacerClasses).toContain('h-0')
+    expect(spacerClasses).toContain('overflow-hidden')
+    expect(spacerClasses).toContain('whitespace-nowrap')
+    expect(spacerClasses).toContain('align-baseline')
+    expect(spacerClasses).not.toContain('leading-4')
+    expect(spacerClasses).not.toContain('pb-px')
+    expect(spacerClasses).not.toContain('w-[3.75rem]')
+    expect(spacerClasses).not.toContain('w-[4.75rem]')
+    expect(metaSpacer?.getAttribute('aria-hidden')).toBe('true')
+    expect(metaSpacer?.textContent).toBe(meta?.textContent)
+    expect(metaClasses).toContain('absolute')
+    expect(metaClasses).toContain('bottom-0')
+    expect(metaClasses).toContain('right-0')
+    expect(metaClasses).toContain('justify-end')
+    expect(metaClasses).toContain('text-right')
+    expect(metaClasses).toContain('align-bottom')
+    expect(metaClasses).not.toContain('self-end')
+    expect(metaClasses).not.toContain('float-right')
+    expect(metaClasses).not.toContain('mt-0.5')
+    expect(meta?.textContent).toContain('刚刚')
+    expect(meta?.querySelector('[aria-label="已读"]')).not.toBeNull()
+  }
+
   beforeEach(() => {
     vi.resetModules()
     imageViewerMock.images = []
@@ -456,28 +517,32 @@ describe('ChatMessage menu and rendering', () => {
       { isOwn: true }
     )
 
-    const paragraph = container.querySelector('p')
-    const meta = container.querySelector('[data-testid="chat-message-meta"]')
-    const text = container.querySelector('[data-testid="chat-message-text"]')
-
-    expect(meta).not.toBeNull()
-    expect(meta?.parentElement).toBe(paragraph)
-    expect(text?.nextElementSibling).toBe(meta)
-    expect(paragraph?.className).not.toContain('grid')
-    expect(paragraph?.className).not.toContain('items-end')
-    expect(paragraph?.className).toContain('text-left')
-    expect(paragraph?.className).toContain('whitespace-pre-wrap')
-    expect(text?.className).toContain('break-words')
-    expect(meta?.className).toContain('ml-2')
-    expect(meta?.className).toContain('align-bottom')
-    expect(meta?.className).not.toContain('self-end')
-    expect(meta?.className).not.toContain('float-right')
-    expect(meta?.className).not.toContain('mt-0.5')
-    expect(meta?.textContent).toContain('刚刚')
-    expect(meta?.querySelector('[aria-label="已读"]')).not.toBeNull()
+    expectInlineMetaTailFlow(container)
   })
 
-  it('vertically centers compact text and metadata in the bubble', async () => {
+  it('keeps replied text message metadata in the same inline tail flow', async () => {
+    const { container } = await renderMessage(
+      {
+        ...baseMessage,
+        content:
+          '这是一条带回复预览的正文，需要让时间和已读状态继续贴在最后一行右侧。',
+        status: 1,
+        replyTo: {
+          messageId: 2,
+          senderName: 'Mio',
+          content: '原消息内容',
+          selectedText: null,
+          image: null
+        },
+        sender: { id: 1007, name: 'Saya', avatar: '' }
+      },
+      { isOwn: true }
+    )
+
+    expectInlineMetaTailFlow(container)
+  })
+
+  it('uses the Telegram tail metadata layout for compact text messages', async () => {
     const { container } = await renderMessage(
       {
         ...baseMessage,
@@ -490,27 +555,22 @@ describe('ChatMessage menu and rendering', () => {
 
     const paragraph = container.querySelector('p')
     const bubble = container.querySelector('[data-testid="chat-message-bubble"]')
-    const meta = container.querySelector('[data-testid="chat-message-meta"]')
-    const text = container.querySelector('[data-testid="chat-message-text"]')
+    const bubbleClasses = Array.from(bubble?.classList ?? [])
+    const paragraphClasses = Array.from(paragraph?.classList ?? [])
 
-    expect(bubble?.className).toContain('flex')
-    expect(bubble?.className).toContain('items-center')
-    expect(meta).not.toBeNull()
-    expect(meta?.parentElement).toBe(paragraph)
-    expect(text?.nextElementSibling).toBe(meta)
-    expect(paragraph?.className).toContain('flex')
-    expect(paragraph?.className).toContain('items-center')
-    expect(paragraph?.className).toContain('text-left')
+    expectInlineMetaTailFlow(container)
+    expect(bubbleClasses).toContain('py-1')
+    expect(bubbleClasses).not.toContain('py-1.5')
+    expect(paragraphClasses).toContain('leading-4')
+    expect(paragraphClasses).not.toContain('leading-5')
+    expect(bubble?.className).not.toContain('flex')
+    expect(bubble?.className).not.toContain('items-center')
+    expect(paragraph?.className).not.toContain('flex')
+    expect(paragraph?.className).not.toContain('items-center')
     expect(paragraph?.className).not.toContain('justify-center')
     expect(paragraph?.className).not.toContain('text-center')
     expect(paragraph?.className).not.toContain('pr-16')
     expect(paragraph?.className).not.toContain('pl-16')
-    expect(meta?.className).toContain('ml-2')
-    expect(meta?.className).not.toContain('align-bottom')
-    expect(meta?.className).not.toContain('pb-px')
-    expect(meta?.className).not.toContain('absolute')
-    expect(meta?.textContent).toContain('刚刚')
-    expect(meta?.querySelector('[aria-label="已读"]')).not.toBeNull()
   })
 
   it('uses a soft themed bubble for own messages', async () => {
@@ -789,21 +849,11 @@ describe('ChatMessage menu and rendering', () => {
       { isOwn: true }
     )
 
-    const paragraph = container.querySelector('p')
     const meta = container.querySelector('[data-testid="chat-message-meta"]')
-    const text = container.querySelector('[data-testid="chat-message-text"]')
 
-    expect(paragraph?.className).toContain('text-left')
-    expect(meta).not.toBeNull()
-    expect(meta?.parentElement).toBe(paragraph)
-    expect(text?.nextElementSibling).toBe(meta)
-    expect(paragraph?.className).not.toContain('pr-20')
-    expect(meta?.className).toContain('ml-2')
-    expect(meta?.className).toContain('align-bottom')
-    expect(meta?.className).not.toContain('absolute')
+    expectInlineMetaTailFlow(container)
+    expect(container.querySelector('p')?.className).not.toContain('pr-20')
     expect(meta?.className).not.toContain('bg-black/45')
-    expect(meta?.textContent).toContain('刚刚')
-    expect(meta?.querySelector('[aria-label="已读"]')).not.toBeNull()
   })
 
   it('opens the message menu from an image context menu and copies the image link', async () => {

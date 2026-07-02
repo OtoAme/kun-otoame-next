@@ -79,7 +79,6 @@ const bubbleTransition = {
   stiffness: 520,
   damping: 36
 }
-
 export const ChatMessage = ({
   message,
   isOwn,
@@ -159,8 +158,8 @@ export const ChatMessage = ({
   const highlightedImageIndex =
     activeReplyHighlight?.kind === 'image'
       ? messageImages.findIndex(
-          (image) => image.url === activeReplyHighlight.image.url
-        )
+        (image) => image.url === activeReplyHighlight.image.url
+      )
       : -1
   const isBubbleHighlighted =
     activeReplyHighlight?.kind === 'bubble' ||
@@ -658,7 +657,11 @@ export const ChatMessage = ({
   const imageBubbleWidthClassName = shouldShrinkWrapImage
     ? 'w-fit max-w-[min(78%,42rem)] md:max-w-[min(60%,42rem)]'
     : 'w-[min(78%,32rem)] max-w-[min(78%,42rem)] md:w-[min(60%,32rem)] md:max-w-[min(60%,42rem)]'
-  const bubblePaddingClassName = isImageOnly ? 'p-0.5' : 'px-2.5 py-1.5'
+  const bubblePaddingClassName = isImageOnly
+    ? 'p-0.5'
+    : isCompactTextOnly
+      ? 'px-2.5 py-1'
+      : 'px-2.5 py-1.5'
 
   const renderReplyPreview = () => {
     if (!message.replyTo) {
@@ -692,31 +695,45 @@ export const ChatMessage = ({
       return null
     }
 
+    return renderMessageTextRange(0, message.content.length)
+  }
+
+  const renderHighlightMark = (text: string) => (
+    <mark
+      data-testid="chat-reply-text-highlight"
+      className={cn(
+        'rounded bg-[hsl(var(--kun-brand-500)/0.34)] px-0.5 text-inherit ring-1 ring-[hsl(var(--kun-brand-500)/0.42)] transition-opacity duration-300 dark:bg-[hsl(var(--kun-brand-400)/0.40)]',
+        isActiveReplyHighlightFading ? 'opacity-0' : 'opacity-100'
+      )}
+    >
+      {text}
+    </mark>
+  )
+
+  const renderMessageTextRange = (start: number, end: number) => {
+    const text = message.content.slice(start, end)
     if (!highlightedText || !hasTextHighlight) {
-      return message.content
+      return text
     }
 
-    const before = message.content.slice(0, highlightedTextStart)
-    const after = message.content.slice(
-      highlightedTextStart + displayedHighlightedText.length
-    )
+    const highlightStart = highlightedTextStart
+    const highlightEnd = highlightedTextStart + displayedHighlightedText.length
+    const overlapStart = Math.max(start, highlightStart)
+    const overlapEnd = Math.min(end, highlightEnd)
+    if (overlapStart >= overlapEnd) {
+      return text
+    }
 
     return (
       <>
-        {before}
-        <mark
-          data-testid="chat-reply-text-highlight"
-          className={cn(
-            'rounded bg-[hsl(var(--kun-brand-500)/0.34)] px-0.5 text-inherit ring-1 ring-[hsl(var(--kun-brand-500)/0.42)] transition-opacity duration-300 dark:bg-[hsl(var(--kun-brand-400)/0.40)]',
-            isActiveReplyHighlightFading ? 'opacity-0' : 'opacity-100'
-          )}
-        >
-          {displayedHighlightedText}
-        </mark>
-        {after}
+        {message.content.slice(start, overlapStart)}
+        {renderHighlightMark(message.content.slice(overlapStart, overlapEnd))}
+        {message.content.slice(overlapEnd, end)}
       </>
     )
   }
+
+  const shouldRightAlignInlineMeta = !isImageOnly
 
   const renderMessageBody = () => (
     <>
@@ -748,8 +765,8 @@ export const ChatMessage = ({
       {message.content ? (
         <p
           className={cn(
-            'text-sm leading-5 whitespace-pre-wrap break-words',
-            isCompactTextOnly ? 'flex items-center text-left' : 'text-left'
+            'relative text-left text-sm whitespace-pre-wrap break-words',
+            isCompactTextOnly ? 'leading-4' : 'leading-5'
           )}
         >
           <span
@@ -759,7 +776,23 @@ export const ChatMessage = ({
           >
             {renderMessageText()}
           </span>
-          {renderMessageMeta(isCompactTextOnly ? 'compact-inline' : 'inline')}
+          {shouldRightAlignInlineMeta ? (
+            <span
+              data-testid="chat-message-meta-line"
+              className="inline align-bottom"
+            >
+              <span
+                data-testid="chat-message-meta-spacer"
+                aria-hidden="true"
+                className="invisible ml-2 inline-flex h-0 select-none items-center gap-1 overflow-hidden whitespace-nowrap text-[10px] align-baseline"
+              >
+                {metaContentMarkup}
+              </span>
+              {renderMessageMeta('inline-right')}
+            </span>
+          ) : (
+            renderMessageMeta('inline')
+          )}
         </p>
       ) : (
         !isImageOnly &&
@@ -793,8 +826,19 @@ export const ChatMessage = ({
       <StatusIcon className="size-3" />
     </span>
   ) : null
+  const metaContentMarkup = (
+    <>
+      <span>{formatTimeDifference(message.created)}</span>
+      {message.editedAt && <span>(已编辑)</span>}
+      {statusMarkup}
+    </>
+  )
   const renderMessageMeta = (
-    variant: 'inline' | 'compact-inline' | 'standalone' | 'overlay'
+    variant:
+      | 'inline'
+      | 'inline-right'
+      | 'standalone'
+      | 'overlay'
   ) => (
     <span
       data-testid="chat-message-meta"
@@ -806,13 +850,12 @@ export const ChatMessage = ({
             ? 'text-[hsl(var(--kun-brand-700))] dark:text-[hsl(var(--kun-brand-500))]'
             : 'text-default-400',
         variant === 'inline' && 'ml-2 align-bottom pb-px',
-        variant === 'compact-inline' && 'ml-2',
+        variant === 'inline-right' &&
+          'pointer-events-none absolute bottom-0 right-0 shrink-0 justify-end text-right align-bottom pb-px',
         variant === 'standalone' && 'mt-0.5'
       )}
     >
-      <span>{formatTimeDifference(message.created)}</span>
-      {message.editedAt && <span>(已编辑)</span>}
-      {statusMarkup}
+      {metaContentMarkup}
     </span>
   )
   const bubbleMenuLabel = isOwn
@@ -859,7 +902,6 @@ export const ChatMessage = ({
               'relative select-text rounded-2xl bg-[hsl(var(--kun-brand-50)/0.96)] text-default-900 shadow-sm ring-1 ring-[hsl(var(--kun-brand-200)/0.75)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--kun-brand-500)/0.55)] dark:bg-[hsl(var(--kun-brand-500)/0.18)] dark:text-default-50 dark:ring-[hsl(var(--kun-brand-400)/0.28)]',
               hasImages ? imageBubbleWidthClassName : bubbleWidthClassName,
               bubblePaddingClassName,
-              isCompactTextOnly && 'flex items-center',
               menu &&
                 'shadow-lg ring-2 ring-[hsl(var(--kun-brand-300)/0.8)] dark:ring-[hsl(var(--kun-brand-400)/0.42)]'
             )}
@@ -887,7 +929,6 @@ export const ChatMessage = ({
               'relative select-text rounded-2xl bg-content2 text-default-900 shadow-sm ring-1 ring-default-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--kun-brand-500)/0.55)] dark:bg-default-100/10 dark:text-default-50 dark:ring-default-100/10',
               hasImages ? imageBubbleWidthClassName : bubbleWidthClassName,
               bubblePaddingClassName,
-              isCompactTextOnly && 'flex items-center',
               menu && 'shadow-lg ring-2 ring-default-300/70'
             )}
             animate={{
