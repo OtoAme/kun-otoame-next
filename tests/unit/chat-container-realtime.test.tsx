@@ -488,6 +488,16 @@ describe('ChatContainer realtime sync', () => {
     )
   })
 
+  it('keeps the chat input panel above message image stacking layers', async () => {
+    const { container } = await renderChat()
+
+    const chatInput = container.querySelector('[data-testid="chat-input"]')
+    const inputPanel = chatInput?.parentElement
+
+    expect(inputPanel?.className).toContain('relative')
+    expect(inputPanel?.className).toContain('z-30')
+  })
+
   it('recovers from older history load failures so users can retry', async () => {
     await renderChat('visible', { total: 3, hasMoreBefore: true })
     await act(async () => {

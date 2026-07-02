@@ -974,7 +974,7 @@ export const ChatContainer = ({
           </div>
 
           <div className="px-3 pb-3 pt-2">
-            <div className="rounded-2xl border border-default-200/80 bg-content1/95 p-3 shadow-[0_-10px_30px_hsl(var(--heroui-foreground)/0.06)] backdrop-blur-md dark:border-default-100/10 dark:bg-content1/90">
+            <div className="relative z-30 rounded-2xl border border-default-200/80 bg-content1/95 p-3 shadow-[0_-10px_30px_hsl(var(--heroui-foreground)/0.06)] backdrop-blur-md dark:border-default-100/10 dark:bg-content1/90">
               <ChatInput
                 conversationId={conversationId}
                 replyTarget={replyDraft?.message}
