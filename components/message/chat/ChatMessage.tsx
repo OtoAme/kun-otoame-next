@@ -158,8 +158,8 @@ export const ChatMessage = ({
   const highlightedImageIndex =
     activeReplyHighlight?.kind === 'image'
       ? messageImages.findIndex(
-        (image) => image.url === activeReplyHighlight.image.url
-      )
+          (image) => image.url === activeReplyHighlight.image.url
+        )
       : -1
   const isBubbleHighlighted =
     activeReplyHighlight?.kind === 'bubble' ||
@@ -615,7 +615,7 @@ export const ChatMessage = ({
       <div
         id={`chat-message-${message.id}`}
         className={cn(
-          'flex items-center gap-3 mb-4',
+          'flex items-end gap-3 mb-4',
           isOwn ? 'flex-row-reverse' : 'flex-row'
         )}
       >
@@ -650,9 +650,7 @@ export const ChatMessage = ({
   const imageBubbleWidthClassName = shouldShrinkWrapImage
     ? 'w-fit max-w-[min(78%,42rem)] md:max-w-[min(60%,42rem)]'
     : 'w-[min(78%,32rem)] max-w-[min(78%,42rem)] md:w-[min(60%,32rem)] md:max-w-[min(60%,42rem)]'
-  const bubblePaddingClassName = isImageOnly
-    ? 'p-0.5'
-    : 'px-2.5 py-1'
+  const bubblePaddingClassName = isImageOnly ? 'p-0.5' : 'px-2.5 py-1'
 
   const renderReplyPreview = () => {
     if (!message.replyTo) {
@@ -754,9 +752,7 @@ export const ChatMessage = ({
         />
       )}
       {message.content ? (
-        <p
-          className="relative text-left text-sm leading-5 whitespace-pre-wrap break-words [overflow-wrap:anywhere]"
-        >
+        <p className="relative text-left text-sm leading-5 whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
           <span
             ref={contentRef}
             data-testid="chat-message-text"
@@ -783,8 +779,7 @@ export const ChatMessage = ({
           )}
         </p>
       ) : (
-        !isImageOnly &&
-        (
+        !isImageOnly && (
           <div className="flex justify-end leading-4">
             {renderMessageMeta('standalone')}
           </div>
@@ -822,11 +817,7 @@ export const ChatMessage = ({
     </>
   )
   const renderMessageMeta = (
-    variant:
-      | 'inline'
-      | 'inline-right'
-      | 'standalone'
-      | 'overlay'
+    variant: 'inline' | 'inline-right' | 'standalone' | 'overlay'
   ) => (
     <span
       data-testid="chat-message-meta"
@@ -839,7 +830,7 @@ export const ChatMessage = ({
             : 'text-default-400',
         variant === 'inline' && 'ml-2 align-bottom pb-px',
         variant === 'inline-right' &&
-        'pointer-events-none absolute bottom-0 right-0 shrink-0 justify-end text-right align-bottom pb-px',
+          'pointer-events-none absolute bottom-0 right-0 shrink-0 justify-end text-right align-bottom pb-px',
         variant === 'standalone' && 'mt-0.5'
       )}
     >
@@ -863,7 +854,7 @@ export const ChatMessage = ({
       <div
         id={`chat-message-${message.id}`}
         className={cn(
-          'flex items-center gap-3 mb-4',
+          'flex items-end gap-3 mb-4',
           isOwn ? 'flex-row-reverse' : 'flex-row'
         )}
       >
@@ -891,7 +882,7 @@ export const ChatMessage = ({
               hasImages ? imageBubbleWidthClassName : bubbleWidthClassName,
               bubblePaddingClassName,
               menu &&
-              'shadow-lg ring-2 ring-[hsl(var(--kun-brand-300)/0.8)] dark:ring-[hsl(var(--kun-brand-400)/0.42)]'
+                'shadow-lg ring-2 ring-[hsl(var(--kun-brand-300)/0.8)] dark:ring-[hsl(var(--kun-brand-400)/0.42)]'
             )}
             animate={{
               scale: menu ? 0.985 : 1,

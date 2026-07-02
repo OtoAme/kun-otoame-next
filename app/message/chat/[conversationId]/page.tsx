@@ -2,13 +2,11 @@ import { ChatContainer } from '~/components/message/chat/ChatContainer'
 import { ErrorComponent } from '~/components/error/ErrorComponent'
 import { parseConversationRouteId } from '~/app/api/message/conversation/routeParams'
 import { kunGetConversationMessagesAction } from '../actions'
-import type { Metadata } from 'next'
+import { privateChatMetadata } from '../metadata'
 
 export const revalidate = 0
 
-export const metadata: Metadata = {
-  title: '私聊'
-}
+export const metadata = privateChatMetadata
 
 interface Props {
   params: Promise<{ conversationId: string }>

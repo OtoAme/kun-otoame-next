@@ -554,7 +554,9 @@ describe('ChatMessage menu and rendering', () => {
     )
 
     const paragraph = container.querySelector('p')
-    const bubble = container.querySelector('[data-testid="chat-message-bubble"]')
+    const bubble = container.querySelector(
+      '[data-testid="chat-message-bubble"]'
+    )
     const bubbleClasses = Array.from(bubble?.classList ?? [])
     const paragraphClasses = Array.from(paragraph?.classList ?? [])
 
@@ -573,7 +575,7 @@ describe('ChatMessage menu and rendering', () => {
     expect(paragraph?.className).not.toContain('pl-16')
   })
 
-  it('centers the chat bubble against the avatar without stretching it', async () => {
+  it('bottom-aligns the avatar with the chat bubble without stretching it', async () => {
     const { container } = await renderMessage(
       {
         ...baseMessage,
@@ -589,7 +591,8 @@ describe('ChatMessage menu and rendering', () => {
 
     expect(messageRow).not.toBeNull()
     expect(rowClasses).toContain('flex')
-    expect(rowClasses).toContain('items-center')
+    expect(rowClasses).toContain('items-end')
+    expect(rowClasses).not.toContain('items-center')
   })
 
   it('wraps edited plain text messages with long continuous content', async () => {
@@ -606,7 +609,9 @@ describe('ChatMessage menu and rendering', () => {
 
     const paragraph = container.querySelector('p')
     const text = container.querySelector('[data-testid="chat-message-text"]')
-    const bubble = container.querySelector('[data-testid="chat-message-bubble"]')
+    const bubble = container.querySelector(
+      '[data-testid="chat-message-bubble"]'
+    )
     const bubbleClasses = Array.from(bubble?.classList ?? [])
     const paragraphClasses = Array.from(paragraph?.classList ?? [])
     const textClasses = Array.from(text?.classList ?? [])

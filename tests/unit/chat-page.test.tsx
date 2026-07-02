@@ -33,6 +33,29 @@ describe('/message/chat/[conversationId] page', () => {
     vi.clearAllMocks()
   })
 
+  it('uses OtoAme private-chat metadata for the conversation page', async () => {
+    const { metadata } = await import(
+      '~/app/message/chat/[conversationId]/page'
+    )
+
+    expect(metadata.title).toBe('私聊')
+    expect(metadata.description).toContain('OtoAme')
+    expect(metadata.description).not.toContain('TouchGal')
+    expect(metadata.openGraph).toMatchObject({
+      title: '私聊',
+      description: expect.stringContaining('OtoAme'),
+      type: 'website'
+    })
+    expect(metadata.twitter).toMatchObject({
+      card: 'summary_large_image',
+      title: '私聊',
+      description: expect.stringContaining('OtoAme')
+    })
+    expect(metadata.alternates).toEqual({
+      canonical: 'https://www.otoame.top/message/chat'
+    })
+  })
+
   it('rejects malformed conversation IDs before loading initial messages', async () => {
     mocks.kunGetConversationMessagesAction.mockResolvedValue({
       messages: [],
