@@ -74,6 +74,10 @@ interface MessageMenuState {
 
 const MENU_WIDTH = 180
 const MENU_ITEM_HEIGHT = 40
+const SWIPE_REPLY_DIRECTION_LOCK_DISTANCE = 10
+const SWIPE_REPLY_DIRECTION_RATIO = 1.25
+const SWIPE_REPLY_TRIGGER_DISTANCE = 56
+const SWIPE_REPLY_MAX_OFFSET = 72
 const bubbleTransition = {
   type: 'spring' as const,
   stiffness: 520,
@@ -101,6 +105,8 @@ export const ChatMessage = ({
   } = useDisclosure()
   const [editContent, setEditContent] = useState(message.content)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [swipeReplyOffset, setSwipeReplyOffset] = useState(0)
+  const [isSwipeReplyReady, setIsSwipeReplyReady] = useState(false)
   const bubbleRef = useRef<HTMLDivElement>(null)
   const contentRef = useRef<HTMLSpanElement>(null)
   const editTextareaRef = useRef<HTMLTextAreaElement>(null)
@@ -111,6 +117,7 @@ export const ChatMessage = ({
     y: number
     time: number
     pointerId: number
+    isHorizontalSwipe: boolean
   } | null>(null)
   const lastPointerTypeRef = useRef<React.PointerEvent['pointerType'] | ''>('')
   const suppressAvatarClickRef = useRef(false)
@@ -168,6 +175,11 @@ export const ChatMessage = ({
   const closeMessageMenu = () => {
     setIsMenuReady(false)
     setMenu(null)
+  }
+
+  const resetSwipeReplyState = () => {
+    setSwipeReplyOffset(0)
+    setIsSwipeReplyReady(false)
   }
 
   const clearAvatarClickSuppression = () => {
@@ -416,11 +428,13 @@ export const ChatMessage = ({
     if (menu && e.button !== 2) {
       closeMessageMenu()
       touchStartRef.current = null
+      resetSwipeReplyState()
       return
     }
 
     if (e.pointerType === 'mouse' || !e.isPrimary) {
       touchStartRef.current = null
+      resetSwipeReplyState()
       return
     }
 
@@ -428,8 +442,49 @@ export const ChatMessage = ({
       x: e.clientX,
       y: e.clientY,
       time: Date.now(),
-      pointerId: e.pointerId
+      pointerId: e.pointerId,
+      isHorizontalSwipe: false
     }
+    resetSwipeReplyState()
+  }
+
+  const handlePointerMove = (e: React.PointerEvent) => {
+    if (e.pointerType === 'mouse' || !e.isPrimary) {
+      return
+    }
+
+    const start = touchStartRef.current
+    if (!start || start.pointerId !== e.pointerId) {
+      return
+    }
+
+    const deltaX = e.clientX - start.x
+    const deltaY = e.clientY - start.y
+    const absX = Math.abs(deltaX)
+    const absY = Math.abs(deltaY)
+
+    if (
+      !start.isHorizontalSwipe &&
+      absX < SWIPE_REPLY_DIRECTION_LOCK_DISTANCE &&
+      absY < SWIPE_REPLY_DIRECTION_LOCK_DISTANCE
+    ) {
+      return
+    }
+
+    const isLeftSwipe =
+      deltaX < 0 && absX >= absY * SWIPE_REPLY_DIRECTION_RATIO
+    if (!start.isHorizontalSwipe && !isLeftSwipe) {
+      resetSwipeReplyState()
+      return
+    }
+
+    start.isHorizontalSwipe = true
+    e.preventDefault()
+    window.getSelection()?.removeAllRanges()
+
+    const nextOffset = Math.max(-SWIPE_REPLY_MAX_OFFSET, Math.min(0, deltaX))
+    setSwipeReplyOffset(nextOffset)
+    setIsSwipeReplyReady(Math.abs(nextOffset) >= SWIPE_REPLY_TRIGGER_DISTANCE)
   }
 
   const handlePointerUp = (e: React.PointerEvent) => {
@@ -440,6 +495,25 @@ export const ChatMessage = ({
     const start = touchStartRef.current
     touchStartRef.current = null
     if (!start || start.pointerId !== e.pointerId) {
+      resetSwipeReplyState()
+      return
+    }
+
+    const deltaX = e.clientX - start.x
+    const deltaY = e.clientY - start.y
+    const absX = Math.abs(deltaX)
+    const absY = Math.abs(deltaY)
+    const shouldReplyFromSwipe =
+      start.isHorizontalSwipe &&
+      deltaX < 0 &&
+      absX >= SWIPE_REPLY_TRIGGER_DISTANCE &&
+      absX >= absY * SWIPE_REPLY_DIRECTION_RATIO
+
+    resetSwipeReplyState()
+
+    if (shouldReplyFromSwipe) {
+      e.preventDefault()
+      onReply?.(message, null)
       return
     }
 
@@ -450,6 +524,13 @@ export const ChatMessage = ({
     }
 
     openMessageMenu(e.clientX, e.clientY)
+  }
+
+  const handlePointerCancel = (e: React.PointerEvent) => {
+    if (touchStartRef.current?.pointerId === e.pointerId) {
+      touchStartRef.current = null
+    }
+    resetSwipeReplyState()
   }
 
   const handleCopy = async () => {
@@ -646,10 +727,10 @@ export const ChatMessage = ({
   const shouldShrinkWrapImage = hasImages && isSingleImage && !hasCaption
   const hasImageWithTextOrReply = hasImages && !isImageOnly
   const bubbleWidthClassName =
-    'max-w-[min(78%,42rem)] md:max-w-[min(60%,42rem)]'
+    'max-w-[min(78vw,42rem)] md:max-w-[min(60vw,42rem)]'
   const imageBubbleWidthClassName = shouldShrinkWrapImage
-    ? 'w-fit max-w-[min(78%,42rem)] md:max-w-[min(60%,42rem)]'
-    : 'w-[min(78%,32rem)] max-w-[min(78%,42rem)] md:w-[min(60%,32rem)] md:max-w-[min(60%,42rem)]'
+    ? 'w-fit max-w-[min(78vw,42rem)] md:max-w-[min(60vw,42rem)]'
+    : 'w-[min(78vw,32rem)] max-w-[min(78vw,42rem)] md:w-[min(60vw,32rem)] md:max-w-[min(60vw,42rem)]'
   const bubblePaddingClassName = isImageOnly ? 'p-0.5' : 'px-2.5 py-1'
 
   const renderReplyPreview = () => {
@@ -848,15 +929,37 @@ export const ChatMessage = ({
     'aria-expanded': Boolean(menu),
     onKeyDown: handleBubbleKeyDown
   }
+  const swipeReplyIndicatorMarkup = (
+    <span
+      data-testid="chat-swipe-reply-indicator"
+      aria-hidden="true"
+      className={cn(
+        'pointer-events-none absolute left-full top-1/2 z-40 ml-2 flex size-9 shrink-0 -translate-y-1/2 items-center justify-center rounded-full bg-[hsl(var(--kun-brand-500)/0.92)] text-white shadow-lg transition-[opacity,transform,background-color,box-shadow] duration-150',
+        swipeReplyOffset < -SWIPE_REPLY_DIRECTION_LOCK_DISTANCE
+          ? 'scale-100 opacity-100'
+          : 'scale-90 opacity-0',
+        isSwipeReplyReady &&
+          'bg-[hsl(var(--kun-brand-600))] shadow-[0_0_0_3px_hsl(var(--kun-brand-500)/0.18),0_10px_24px_hsl(var(--kun-brand-600)/0.28)]'
+      )}
+    >
+      <Reply className="size-4" />
+    </span>
+  )
 
   return (
     <>
-      <div
+      <motion.div
         id={`chat-message-${message.id}`}
         className={cn(
-          'flex items-end gap-3 mb-4',
-          isOwn ? 'flex-row-reverse' : 'flex-row'
+          'relative mb-4 flex w-fit items-end gap-3 overflow-visible [touch-action:pan-y]',
+          isOwn ? 'ml-auto flex-row-reverse' : 'mr-auto flex-row'
         )}
+        animate={{ x: swipeReplyOffset }}
+        transition={bubbleTransition}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerCancel}
       >
         <div
           className="shrink-0 select-none"
@@ -890,8 +993,6 @@ export const ChatMessage = ({
             }}
             transition={bubbleTransition}
             onContextMenu={handleContextMenu}
-            onPointerDown={handlePointerDown}
-            onPointerUp={handlePointerUp}
             {...bubbleInteractionProps}
           >
             <div className={cn(isImageOnly && 'relative')}>
@@ -916,8 +1017,6 @@ export const ChatMessage = ({
             }}
             transition={bubbleTransition}
             onContextMenu={handleContextMenu}
-            onPointerDown={handlePointerDown}
-            onPointerUp={handlePointerUp}
             {...bubbleInteractionProps}
           >
             <div className={cn(isImageOnly && 'relative')}>
@@ -927,7 +1026,8 @@ export const ChatMessage = ({
             {bubbleHighlightMarkup}
           </motion.div>
         )}
-      </div>
+        {swipeReplyIndicatorMarkup}
+      </motion.div>
 
       <AnimatePresence>
         {menu && (

@@ -326,6 +326,48 @@ describe('ChatMessage menu and rendering', () => {
     })
   }
 
+  const swipeBubble = async (
+    container: HTMLElement,
+    points: Array<{ x: number; y: number }>
+  ) => {
+    const bubble = container.querySelector(
+      '[data-testid="chat-message-bubble"]'
+    )
+    expect(bubble).not.toBeNull()
+    expect(points.length).toBeGreaterThanOrEqual(2)
+
+    const createTouchPointerEvent = (
+      type: 'pointerdown' | 'pointermove' | 'pointerup',
+      point: { x: number; y: number }
+    ) => {
+      const event = new dom!.window.MouseEvent(type, {
+        bubbles: true,
+        cancelable: true,
+        clientX: point.x,
+        clientY: point.y
+      })
+      Object.defineProperties(event, {
+        pointerType: { value: 'touch' },
+        isPrimary: { value: true },
+        pointerId: { value: 1 },
+        button: { value: 0 }
+      })
+
+      return event
+    }
+
+    await act(async () => {
+      bubble!.dispatchEvent(createTouchPointerEvent('pointerdown', points[0]))
+      for (const point of points.slice(1, -1)) {
+        bubble!.dispatchEvent(createTouchPointerEvent('pointermove', point))
+      }
+      bubble!.dispatchEvent(
+        createTouchPointerEvent('pointerup', points[points.length - 1])
+      )
+      await Promise.resolve()
+    })
+  }
+
   const selectMessageText = (container: HTMLElement) => {
     const text = container.querySelector('p')
     expect(text).not.toBeNull()
@@ -445,6 +487,60 @@ describe('ChatMessage menu and rendering', () => {
     await openTouchMenu(container)
 
     expect(container.textContent).toContain('回复')
+  })
+
+  it('replies directly when a mobile touch swipes the message left', async () => {
+    const onReply = vi.fn()
+    const { container } = await renderMessage(baseMessage, { onReply })
+
+    await swipeBubble(container, [
+      { x: 160, y: 120 },
+      { x: 118, y: 121 },
+      { x: 76, y: 122 }
+    ])
+
+    expect(onReply).toHaveBeenCalledWith(baseMessage, null)
+    expect(container.querySelector('[role="menu"]')).toBeNull()
+  })
+
+  it('keeps the swipe reply icon outside the message bubble with row-level motion', async () => {
+    const { container } = await renderMessage(baseMessage)
+
+    const messageRow = container.querySelector<HTMLElement>('#chat-message-3')
+    const bubble = container.querySelector<HTMLElement>(
+      '[data-testid="chat-message-bubble"]'
+    )
+    const indicator = container.querySelector<HTMLElement>(
+      '[data-testid="chat-swipe-reply-indicator"]'
+    )
+
+    expect(messageRow).not.toBeNull()
+    expect(bubble).not.toBeNull()
+    expect(indicator).not.toBeNull()
+    expect(bubble?.parentElement).toBe(messageRow)
+    expect(indicator?.parentElement).toBe(messageRow)
+    expect(bubble?.contains(indicator)).toBe(false)
+    expect(messageRow?.className).toContain('overflow-visible')
+    expect(messageRow?.className).toContain('[touch-action:pan-y]')
+    expect(messageRow?.className).toContain('w-fit')
+    expect(indicator?.className).toContain('shrink-0')
+    expect(indicator?.className).toContain('size-9')
+    expect(indicator?.className).toContain('left-full')
+    expect(indicator?.className).toContain('ml-2')
+  })
+
+  it('keeps vertical mobile drags available for scrolling', async () => {
+    const onReply = vi.fn()
+    const { container } = await renderMessage(baseMessage, { onReply })
+
+    await swipeBubble(container, [
+      { x: 160, y: 120 },
+      { x: 156, y: 156 },
+      { x: 154, y: 196 }
+    ])
+
+    expect(onReply).not.toHaveBeenCalled()
+    expect(container.querySelector('[role="menu"]')).toBeNull()
   })
 
   it('opens the message menu from the focused bubble keyboard entry', async () => {
@@ -633,7 +729,7 @@ describe('ChatMessage menu and rendering', () => {
       '[data-testid="chat-message-bubble"]'
     )
     expect(bubble?.className).toContain('bg-[hsl(var(--kun-brand-50)/0.96)]')
-    expect(bubble?.className).toContain('md:max-w-[min(60%,42rem)]')
+    expect(bubble?.className).toContain('md:max-w-[min(60vw,42rem)]')
     expect(bubble?.className).not.toContain('bg-primary-500')
   })
 
