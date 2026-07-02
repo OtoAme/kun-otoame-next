@@ -643,13 +643,6 @@ export const ChatMessage = ({
   }
 
   const isImageOnly = hasImages && !hasCaption && !message.replyTo
-  const trimmedContent = message.content.trim()
-  const isCompactTextOnly =
-    !hasImages &&
-    !message.replyTo &&
-    Boolean(trimmedContent) &&
-    !message.content.includes('\n') &&
-    trimmedContent.length <= 24
   const shouldShrinkWrapImage = hasImages && isSingleImage && !hasCaption
   const hasImageWithTextOrReply = hasImages && !isImageOnly
   const bubbleWidthClassName =
@@ -659,9 +652,7 @@ export const ChatMessage = ({
     : 'w-[min(78%,32rem)] max-w-[min(78%,42rem)] md:w-[min(60%,32rem)] md:max-w-[min(60%,42rem)]'
   const bubblePaddingClassName = isImageOnly
     ? 'p-0.5'
-    : isCompactTextOnly
-      ? 'px-2.5 py-1'
-      : 'px-2.5 py-1.5'
+    : 'px-2.5 py-1.5'
 
   const renderReplyPreview = () => {
     if (!message.replyTo) {
@@ -764,15 +755,12 @@ export const ChatMessage = ({
       )}
       {message.content ? (
         <p
-          className={cn(
-            'relative text-left text-sm whitespace-pre-wrap break-words',
-            isCompactTextOnly ? 'leading-4' : 'leading-5'
-          )}
+          className="relative text-left text-sm leading-5 whitespace-pre-wrap break-words [overflow-wrap:anywhere]"
         >
           <span
             ref={contentRef}
             data-testid="chat-message-text"
-            className="break-words"
+            className="break-words [overflow-wrap:anywhere]"
           >
             {renderMessageText()}
           </span>
@@ -899,7 +887,7 @@ export const ChatMessage = ({
             ref={bubbleRef}
             data-testid="chat-message-bubble"
             className={cn(
-              'relative select-text rounded-2xl bg-[hsl(var(--kun-brand-50)/0.96)] text-default-900 shadow-sm ring-1 ring-[hsl(var(--kun-brand-200)/0.75)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--kun-brand-500)/0.55)] dark:bg-[hsl(var(--kun-brand-500)/0.18)] dark:text-default-50 dark:ring-[hsl(var(--kun-brand-400)/0.28)]',
+              'relative min-w-0 select-text rounded-2xl bg-[hsl(var(--kun-brand-50)/0.96)] text-default-900 shadow-sm ring-1 ring-[hsl(var(--kun-brand-200)/0.75)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--kun-brand-500)/0.55)] dark:bg-[hsl(var(--kun-brand-500)/0.18)] dark:text-default-50 dark:ring-[hsl(var(--kun-brand-400)/0.28)]',
               hasImages ? imageBubbleWidthClassName : bubbleWidthClassName,
               bubblePaddingClassName,
               menu &&
@@ -926,7 +914,7 @@ export const ChatMessage = ({
             ref={bubbleRef}
             data-testid="chat-message-bubble"
             className={cn(
-              'relative select-text rounded-2xl bg-content2 text-default-900 shadow-sm ring-1 ring-default-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--kun-brand-500)/0.55)] dark:bg-default-100/10 dark:text-default-50 dark:ring-default-100/10',
+              'relative min-w-0 select-text rounded-2xl bg-content2 text-default-900 shadow-sm ring-1 ring-default-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--kun-brand-500)/0.55)] dark:bg-default-100/10 dark:text-default-50 dark:ring-default-100/10',
               hasImages ? imageBubbleWidthClassName : bubbleWidthClassName,
               bubblePaddingClassName,
               menu && 'shadow-lg ring-2 ring-default-300/70'

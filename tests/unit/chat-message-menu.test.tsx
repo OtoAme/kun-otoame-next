@@ -542,7 +542,7 @@ describe('ChatMessage menu and rendering', () => {
     expectInlineMetaTailFlow(container)
   })
 
-  it('uses the Telegram tail metadata layout for compact text messages', async () => {
+  it('uses the regular text bubble style for short plain text messages', async () => {
     const { container } = await renderMessage(
       {
         ...baseMessage,
@@ -559,10 +559,10 @@ describe('ChatMessage menu and rendering', () => {
     const paragraphClasses = Array.from(paragraph?.classList ?? [])
 
     expectInlineMetaTailFlow(container)
-    expect(bubbleClasses).toContain('py-1')
-    expect(bubbleClasses).not.toContain('py-1.5')
-    expect(paragraphClasses).toContain('leading-4')
-    expect(paragraphClasses).not.toContain('leading-5')
+    expect(bubbleClasses).toContain('py-1.5')
+    expect(bubbleClasses).not.toContain('py-1')
+    expect(paragraphClasses).toContain('leading-5')
+    expect(paragraphClasses).not.toContain('leading-4')
     expect(bubble?.className).not.toContain('flex')
     expect(bubble?.className).not.toContain('items-center')
     expect(paragraph?.className).not.toContain('flex')
@@ -571,6 +571,32 @@ describe('ChatMessage menu and rendering', () => {
     expect(paragraph?.className).not.toContain('text-center')
     expect(paragraph?.className).not.toContain('pr-16')
     expect(paragraph?.className).not.toContain('pl-16')
+  })
+
+  it('wraps edited plain text messages with long continuous content', async () => {
+    const { container } = await renderMessage(
+      {
+        ...baseMessage,
+        content: '1534135333333333333333333嗷嗯嗷无头公案函数外',
+        editedAt: '2026-07-01T09:00:00.000Z',
+        status: 1,
+        sender: { id: 1007, name: 'Saya', avatar: '' }
+      },
+      { isOwn: true }
+    )
+
+    const paragraph = container.querySelector('p')
+    const text = container.querySelector('[data-testid="chat-message-text"]')
+    const bubble = container.querySelector('[data-testid="chat-message-bubble"]')
+    const bubbleClasses = Array.from(bubble?.classList ?? [])
+    const paragraphClasses = Array.from(paragraph?.classList ?? [])
+    const textClasses = Array.from(text?.classList ?? [])
+
+    expectInlineMetaTailFlow(container)
+    expect(container.textContent).toContain('(已编辑)')
+    expect(bubbleClasses).toContain('min-w-0')
+    expect(paragraphClasses).toContain('[overflow-wrap:anywhere]')
+    expect(textClasses).toContain('[overflow-wrap:anywhere]')
   })
 
   it('uses a soft themed bubble for own messages', async () => {
