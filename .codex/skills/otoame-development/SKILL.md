@@ -25,6 +25,7 @@ Read the relevant project docs before editing:
 - After schema changes, run `pnpm prisma:push` or at minimum `pnpm prisma:generate`.
 - After patch/resource/tag/company writes, verify the matching cache invalidation path.
 - Preserve CSRF header + origin/referer checks and API-layer permissions.
+- When running shell commands against Next App Router dynamic-segment paths such as `app/api/message/conversation/[id]/service.ts`, quote every path argument with single quotes or escape brackets in commands like `sed`, `rg`, `git add`, and `pnpm test`; zsh treats unquoted `[id]` as a glob pattern.
 - Keep legacy `touchgal` / `galgame` names when they are compatibility keys, cookies, types, or deployment ids.
 - For onboarding or setup questions, answer from `docs/project/development.md` instead of inventing shell steps.
 - Every commit created by Codex in this repository must use Conventional Commits: `<type>(<scope>): <subject>`. Use types such as `feat`, `fix`, `docs`, `test`, `refactor`, `perf`, `build`, `ci`, `chore`, or `revert`; if the user provides a non-conventional message, convert it to the nearest conventional form or ask when the intent is ambiguous.

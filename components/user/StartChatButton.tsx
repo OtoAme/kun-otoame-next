@@ -35,57 +35,68 @@ export const StartChatButton = ({ targetUserId }: Props) => {
   const { isOpen, onOpen, onClose } = useDisclosure()
   const router = useRouter()
 
+  const createOrOpenConversation = async (paymentContext?: CheckResponse) => {
+    try {
+      const response = await kunFetchPost<
+        KunResponse<{ conversationId: number; isNew: boolean }>
+      >('/message/conversation', { targetUserId })
+
+      if (typeof response === 'string') {
+        toast.error(response)
+        return
+      }
+
+      if (response.isNew && paymentContext?.needsPayment) {
+        toast.success(`已创建新会话，消耗 ${paymentContext.cost} 萌萌点`)
+      } else if (response.isNew) {
+        toast.success('已创建新会话')
+      }
+
+      router.push(`/message/chat/${response.conversationId}`)
+    } catch {
+      toast.error('发起私聊失败，请稍后重试')
+    } finally {
+      setLoading(false)
+    }
+  }
+
   const handleStartChat = async () => {
     setLoading(true)
 
-    const checkResponse = await kunFetchGet<CheckResponse>(
-      '/message/conversation/check',
-      { targetUserId }
-    )
+    try {
+      const checkResponse = await kunFetchGet<CheckResponse>(
+        '/message/conversation/check',
+        { targetUserId }
+      )
 
-    if (typeof checkResponse === 'string') {
-      toast.error(checkResponse)
+      if (typeof checkResponse === 'string') {
+        toast.error(checkResponse)
+        return
+      }
+
+      if (checkResponse.error) {
+        toast.error(checkResponse.error)
+        return
+      }
+
+      if (checkResponse.exists) {
+        await createOrOpenConversation(checkResponse)
+        return
+      }
+
+      setCheckResult(checkResponse)
+      onOpen()
+    } catch {
+      toast.error('发起私聊失败，请稍后重试')
+    } finally {
       setLoading(false)
-      return
     }
-
-    if (checkResponse.error) {
-      toast.error(checkResponse.error)
-      setLoading(false)
-      return
-    }
-
-    if (checkResponse.exists) {
-      router.push(`/message/chat/${checkResponse.conversationId}`)
-      return
-    }
-
-    setCheckResult(checkResponse)
-    setLoading(false)
-    onOpen()
   }
 
   const handleConfirmCreate = async () => {
     setLoading(true)
     onClose()
-
-    const response = await kunFetchPost<
-      KunResponse<{ conversationId: number; isNew: boolean }>
-    >('/message/conversation', { targetUserId })
-
-    if (typeof response === 'string') {
-      toast.error(response)
-      setLoading(false)
-      return
-    }
-
-    if (response.isNew && checkResult?.needsPayment) {
-      toast.success(`已创建新会话，消耗 ${checkResult.cost} 萌萌点`)
-    } else if (response.isNew) {
-      toast.success('已创建新会话')
-    }
-
-    router.push(`/message/chat/${response.conversationId}`)
+    await createOrOpenConversation(checkResult ?? undefined)
   }
 
   return (

@@ -1,13 +1,17 @@
 import { ChatContainer } from '~/components/message/chat/ChatContainer'
 import { ErrorComponent } from '~/components/error/ErrorComponent'
-import { KunBreadcrumbTitle } from '~/components/kun/BreadcrumbTitle'
+import { parseConversationRouteId } from '~/app/api/message/conversation/routeParams'
+import { kunViewport } from '~/app/metadata'
 import { kunGetConversationMessagesAction } from '../actions'
-import type { Metadata } from 'next'
+import { privateChatMetadata } from '../metadata'
+import type { Viewport } from 'next'
 
 export const revalidate = 0
 
-export const metadata: Metadata = {
-  title: '私聊'
+export const metadata = privateChatMetadata
+export const viewport: Viewport = {
+  ...kunViewport,
+  interactiveWidget: 'resizes-content'
 }
 
 interface Props {
@@ -16,9 +20,9 @@ interface Props {
 
 export default async function Kun({ params }: Props) {
   const { conversationId } = await params
-  const id = parseInt(conversationId, 10)
+  const id = parseConversationRouteId(conversationId)
 
-  if (isNaN(id)) {
+  if (id === null) {
     return <ErrorComponent error="无效的会话 ID" />
   }
 
@@ -32,17 +36,13 @@ export default async function Kun({ params }: Props) {
   }
 
   return (
-    <>
-      <KunBreadcrumbTitle
-        routeKey={`/message/chat/${id}`}
-        title={`与${response.otherUser.name}的私聊`}
-      />
-      <ChatContainer
-        conversationId={id}
-        initialMessages={response.messages}
-        total={response.total}
-        otherUser={response.otherUser}
-      />
-    </>
+    <ChatContainer
+      conversationId={id}
+      initialMessages={response.messages}
+      total={response.total}
+      hasMoreBefore={response.hasMoreBefore}
+      otherUser={response.otherUser}
+      className="h-[calc(100dvh_-_192px_-_var(--message-chat-top-reserve))] max-lg:h-[calc(var(--message-chat-visual-viewport-height,100dvh)_-_96px_-_var(--message-chat-top-reserve))] max-lg:max-h-[calc(var(--message-chat-visual-viewport-height,100dvh)_-_96px_-_var(--message-chat-top-reserve))] max-lg:min-h-0 max-lg:translate-y-[var(--message-chat-visual-viewport-offset-top,0px)] max-lg:transition-[height,max-height,transform] max-lg:duration-150 max-lg:ease-out motion-reduce:transition-none"
+    />
   )
 }

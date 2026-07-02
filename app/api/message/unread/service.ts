@@ -12,8 +12,16 @@ export const getUnreadMessageStatus = async (
     prisma.user_conversation.findFirst({
       where: {
         OR: [
-          { user_a_id: uid, user_a_unread_count: { gt: 0 } },
-          { user_b_id: uid, user_b_unread_count: { gt: 0 } }
+          {
+            user_a_id: uid,
+            user_a_hidden: false,
+            user_a_unread_count: { gt: 0 }
+          },
+          {
+            user_b_id: uid,
+            user_b_hidden: false,
+            user_b_unread_count: { gt: 0 }
+          }
         ]
       },
       select: { id: true }

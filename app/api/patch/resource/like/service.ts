@@ -60,19 +60,22 @@ export const toggleResourceLike = async (
           resource_id: resourceId
         }
       })
+
+      await createDedupMessage(
+        {
+          type: 'like',
+          content: `点赞了您在 ${resource.patch.name} 下发布的补丁资源`,
+          sender_id: uid,
+          recipient_id: resource.user_id,
+          link: `/${resource.patch.unique_id}`
+        },
+        prisma
+      )
     }
 
     await prisma.user.update({
       where: { id: resource.user_id },
       data: { moemoepoint: { increment: existingLike ? -1 : 1 } }
-    })
-
-    await createDedupMessage({
-      type: 'like',
-      content: `点赞了您在 ${resource.patch.name} 下发布的补丁资源`,
-      sender_id: uid,
-      recipient_id: resource.user_id,
-      link: `/${resource.patch.unique_id}`
     })
 
     return !existingLike

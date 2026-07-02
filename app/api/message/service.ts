@@ -13,8 +13,16 @@ export const getUnreadStatus = async (uid: number) => {
     prisma.user_conversation.findFirst({
       where: {
         OR: [
-          { user_a_id: uid, user_a_unread_count: { gt: 0 } },
-          { user_b_id: uid, user_b_unread_count: { gt: 0 } }
+          {
+            user_a_id: uid,
+            user_a_hidden: false,
+            user_a_unread_count: { gt: 0 }
+          },
+          {
+            user_b_id: uid,
+            user_b_hidden: false,
+            user_b_unread_count: { gt: 0 }
+          }
         ]
       },
       select: { id: true }
@@ -28,23 +36,44 @@ export const getUnreadStatus = async (uid: number) => {
 }
 
 export const readMessage = async (uid: number) => {
+  const unreadMessage = await prisma.user_message.findFirst({
+    where: { recipient_id: uid, status: 0 },
+    select: { id: true }
+  })
+
+  if (!unreadMessage) {
+    return {}
+  }
+
   await prisma.user_message.updateMany({
-    where: { recipient_id: uid },
+    where: { recipient_id: uid, status: 0 },
     data: { status: { set: 1 } }
   })
   return {}
 }
 
-
-
 export const clearReadMessage = async (uid: number, type: string) => {
-  await prisma.user_message.deleteMany({
-    where: {
-      recipient_id: uid,
-      type,
-      status: 1
-    }
+  const where = type
+    ? {
+        recipient_id: uid,
+        type,
+        status: 1
+      }
+    : {
+        recipient_id: uid,
+        status: 1
+      }
+
+  const readMessage = await prisma.user_message.findFirst({
+    where,
+    select: { id: true }
   })
+
+  if (!readMessage) {
+    return {}
+  }
+
+  await prisma.user_message.deleteMany({ where })
 
   return {}
 }

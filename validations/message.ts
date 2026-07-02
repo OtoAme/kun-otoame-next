@@ -1,8 +1,8 @@
 import { z } from 'zod'
-import { MESSAGE_TYPE } from '~/constants/message'
+import { MESSAGE_NOTIFICATION_TYPE, MESSAGE_TYPE } from '~/constants/message'
 
 export const createMessageSchema = z.object({
-  type: z.enum(MESSAGE_TYPE),
+  type: z.enum(MESSAGE_NOTIFICATION_TYPE),
   content: z
     .string()
     .url('请输入有效的链接格式')
@@ -18,5 +18,5 @@ export const getMessageSchema = z.object({
 })
 
 export const clearReadMessageSchema = z.object({
-  type: z.enum(MESSAGE_TYPE)
+  type: z.enum(MESSAGE_TYPE).default('')
 })

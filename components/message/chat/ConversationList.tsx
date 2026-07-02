@@ -23,11 +23,15 @@ export const ConversationList = ({ initialConversations, total }: Props) => {
     useState<Conversation[]>(initialConversations)
   const [loading, setLoading] = useState(false)
   const [page, setPage] = useState(1)
+  const [totalCount, setTotalCount] = useState(total)
   const isMounted = useMounted()
   const setHasUnreadConversation = useMessageStore(
     (state) => state.setHasUnreadConversation
   )
   const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const requestIdRef = useRef(0)
+  const loadingRef = useRef(false)
+  const hasUsedInitialPageRef = useRef(false)
 
   const syncConversationUnreadStatus = useCallback(
     (items: Conversation[]) => {
@@ -40,7 +44,15 @@ export const ConversationList = ({ initialConversations, total }: Props) => {
 
   const fetchConversations = useCallback(
     async (options: { showLoading: boolean; silent: boolean }) => {
+      if (!options.showLoading && loadingRef.current) {
+        return
+      }
+
+      const requestId = requestIdRef.current + 1
+      requestIdRef.current = requestId
+
       if (options.showLoading) {
+        loadingRef.current = true
         setLoading(true)
       }
 
@@ -54,20 +66,27 @@ export const ConversationList = ({ initialConversations, total }: Props) => {
           page,
           limit: 30
         })
+
+        if (requestId !== requestIdRef.current) {
+          return
+        }
+
         if (typeof response === 'string') {
           if (!options.silent) {
             toast.error(response)
           }
         } else {
           setConversations(response.conversations)
+          setTotalCount(response.total)
           syncConversationUnreadStatus(response.conversations)
         }
       } catch {
-        if (!options.silent) {
+        if (requestId === requestIdRef.current && !options.silent) {
           toast.error('获取会话列表失败, 请稍后重试')
         }
       } finally {
-        if (options.showLoading) {
+        if (requestId === requestIdRef.current && options.showLoading) {
+          loadingRef.current = false
           setLoading(false)
         }
       }
@@ -86,6 +105,10 @@ export const ConversationList = ({ initialConversations, total }: Props) => {
 
   useEffect(() => {
     if (!isMounted) {
+      return
+    }
+    if (!hasUsedInitialPageRef.current) {
+      hasUsedInitialPageRef.current = true
       return
     }
     void fetchConversations({ showLoading: true, silent: false })
@@ -142,10 +165,10 @@ export const ConversationList = ({ initialConversations, total }: Props) => {
         </div>
       )}
 
-      {total > 30 && (
+      {totalCount > 30 && (
         <div className="flex justify-center">
           <KunPagination
-            total={Math.ceil(total / 30)}
+            total={Math.ceil(totalCount / 30)}
             page={page}
             onPageChange={setPage}
             isLoading={loading}

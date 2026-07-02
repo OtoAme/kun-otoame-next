@@ -38,4 +38,45 @@ describe('kunFetchGet', () => {
     await requestError
     expect(signal?.aborted).toBe(true)
   })
+
+  it('returns JSON string error bodies from non-2xx responses', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify('发送过于频繁，请 31 秒后再试'), {
+        status: 429,
+        headers: { 'Content-Type': 'application/json' }
+      })
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const { kunFetchPost } = await import('~/utils/kunFetch')
+    await expect(
+      kunFetchPost<string>('/message/conversation/5', {
+        type: 0,
+        content: 'hello'
+      })
+    ).resolves.toBe('发送过于频繁，请 31 秒后再试')
+  })
+
+  it('preserves non-2xx status codes with string error bodies when requested', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify('图片大小不能超过 8 MB'), {
+        status: 413,
+        headers: { 'Content-Type': 'application/json' }
+      })
+    )
+    vi.stubGlobal('fetch', fetchMock)
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    const { kunFetchFormData } = await import('~/utils/kunFetch')
+    await expect(
+      kunFetchFormData<string>(
+        '/message/conversation/5/image',
+        new FormData(),
+        undefined,
+        { preserveErrorStatus: true }
+      )
+    ).rejects.toThrow(
+      'Kun Fetch error! Status: 413; Message: 图片大小不能超过 8 MB'
+    )
+  })
 })

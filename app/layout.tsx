@@ -3,10 +3,9 @@ import { cookies } from 'next/headers'
 import { preconnect, prefetchDNS } from 'react-dom'
 import { Providers } from './providers'
 import { KunTopBar } from '~/components/kun/top-bar/TopBar'
-import { KunFooter } from '~/components/kun/Footer'
 import { KunNavigationBreadcrumb } from '~/components/kun/NavigationBreadcrumb'
 import { generateKunMetadata, kunViewport } from './metadata'
-import { KunBackToTop } from '~/components/kun/BackToTop'
+import { KunRootRouteChrome } from '~/components/layout/RootRouteChrome'
 import { KunToaster } from '~/components/kun/Toaster'
 import { SiteThemeScript } from '~/components/kun/theme/SiteThemeScript'
 import {
@@ -79,11 +78,7 @@ export default async function RootLayout({
             <div className="relative z-10 flex min-h-screen flex-col items-center justify-center">
               <KunTopBar />
               <KunNavigationBreadcrumb />
-              <div className="flex min-h-[calc(100dvh-256px)] w-full max-w-7xl grow px-3 sm:px-6">
-                {children}
-              </div>
-              <KunBackToTop />
-              <KunFooter />
+              <KunRootRouteChrome>{children}</KunRootRouteChrome>
             </div>
           </div>
           <KunToaster />

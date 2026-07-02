@@ -66,9 +66,13 @@ vi.mock('@heroui/card', () => ({
       {children}
     </Component>
   ),
-  CardBody: ({ children, className }: { children?: React.ReactNode; className?: string }) => (
-    <div className={className}>{children}</div>
-  )
+  CardBody: ({
+    children,
+    className
+  }: {
+    children?: React.ReactNode
+    className?: string
+  }) => <div className={className}>{children}</div>
 }))
 
 vi.mock('@heroui/chip', () => ({
@@ -86,7 +90,21 @@ vi.mock('~/components/kun/Null', () => ({
 }))
 
 vi.mock('~/components/kun/Pagination', () => ({
-  KunPagination: () => <div data-testid="pagination" />
+  KunPagination: ({
+    total,
+    page,
+    onPageChange
+  }: {
+    total: number
+    page: number
+    onPageChange: (page: number) => void
+  }) => (
+    <div data-testid="pagination" data-total={total}>
+      <button data-testid="next-page" onClick={() => onPageChange(page + 1)}>
+        next
+      </button>
+    </div>
+  )
 }))
 
 vi.mock('~/components/kun/floating-card/KunAvatar', () => ({
@@ -118,7 +136,10 @@ describe('ConversationList realtime refresh', () => {
   let root: Root | undefined
   let dom: JSDOM | undefined
 
-  const renderList = async (hasUnreadConversation = false) => {
+  const renderList = async (
+    hasUnreadConversation = false,
+    options: { total?: number } = {}
+  ) => {
     dom = new JSDOM('<!doctype html><div id="root"></div>', {
       url: 'http://localhost'
     })
@@ -149,7 +170,7 @@ describe('ConversationList realtime refresh', () => {
       root!.render(
         <ConversationList
           initialConversations={[conversation(0)]}
-          total={1}
+          total={options.total ?? 1}
         />
       )
     })
@@ -178,6 +199,23 @@ describe('ConversationList realtime refresh', () => {
     fetchMock.kunFetchGet.mockReset()
   })
 
+  it('does not refetch the first conversation page during hydration', async () => {
+    fetchMock.kunFetchGet.mockResolvedValue({
+      conversations: [conversation(0, 'server payload overwritten')],
+      total: 1
+    })
+
+    const { container } = await renderList()
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    expect(fetchMock.kunFetchGet).not.toHaveBeenCalled()
+    expect(container.textContent).toContain('hello')
+    expect(container.textContent).not.toContain('server payload overwritten')
+  })
+
   it('refreshes the current conversation page and syncs unread state', async () => {
     const { container, useMessageStore } = await renderList()
 
@@ -190,14 +228,17 @@ describe('ConversationList realtime refresh', () => {
       await vi.advanceTimersByTimeAsync(15_000)
     })
 
-    expect(fetchMock.kunFetchGet).toHaveBeenCalledWith('/message/conversation', {
-      page: 1,
-      limit: 30
-    })
-    expect(container.textContent).toContain('fresh')
-    expect(container.querySelector('[data-testid="unread-chip"]')?.textContent).toBe(
-      '3'
+    expect(fetchMock.kunFetchGet).toHaveBeenCalledWith(
+      '/message/conversation',
+      {
+        page: 1,
+        limit: 30
+      }
     )
+    expect(container.textContent).toContain('fresh')
+    expect(
+      container.querySelector('[data-testid="unread-chip"]')?.textContent
+    ).toBe('3')
     expect(useMessageStore.getState().hasUnreadConversation).toBe(true)
   })
 
@@ -214,6 +255,130 @@ describe('ConversationList realtime refresh', () => {
     })
 
     expect(useMessageStore.getState().hasUnreadConversation).toBe(true)
+  })
+
+  it('updates pagination when background refresh changes the total conversation count', async () => {
+    const { container } = await renderList()
+    expect(container.querySelector('[data-testid="pagination"]')).toBeNull()
+
+    fetchMock.kunFetchGet.mockResolvedValueOnce({
+      conversations: [conversation(0, 'new page count')],
+      total: 31
+    })
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(15_000)
+    })
+
+    expect(
+      container
+        .querySelector('[data-testid="pagination"]')
+        ?.getAttribute('data-total')
+    ).toBe('2')
+  })
+
+  it('ignores stale page responses so an older request cannot overwrite the current page', async () => {
+    let resolveFirstPage:
+      | ((response: { conversations: Conversation[]; total: number }) => void)
+      | undefined
+
+    fetchMock.kunFetchGet.mockImplementation(
+      (_url: string, query?: { page?: number }) => {
+        if (query?.page === 1 && !resolveFirstPage) {
+          return new Promise((resolve) => {
+            resolveFirstPage = resolve
+          })
+        }
+
+        if (query?.page === 2) {
+          return Promise.resolve({
+            conversations: [conversation(0, 'page two')],
+            total: 61
+          })
+        }
+
+        return Promise.resolve({
+          conversations: [conversation(0, 'fallback')],
+          total: 61
+        })
+      }
+    )
+
+    const { container } = await renderList(false, { total: 61 })
+
+    await act(async () => {
+      container
+        .querySelector<HTMLButtonElement>('[data-testid="next-page"]')
+        ?.click()
+      await Promise.resolve()
+    })
+
+    expect(container.textContent).toContain('page two')
+
+    await act(async () => {
+      resolveFirstPage?.({
+        conversations: [conversation(0, 'stale page one')],
+        total: 61
+      })
+      await Promise.resolve()
+    })
+
+    expect(container.textContent).toContain('page two')
+    expect(container.textContent).not.toContain('stale page one')
+  })
+
+  it('does not let silent polling supersede an explicit page load', async () => {
+    let resolveSecondPage:
+      | ((response: { conversations: Conversation[]; total: number }) => void)
+      | undefined
+
+    fetchMock.kunFetchGet.mockImplementation(
+      (_url: string, query?: { page?: number }) => {
+        if (query?.page === 1) {
+          return Promise.resolve({
+            conversations: [conversation(0, 'page one')],
+            total: 61
+          })
+        }
+
+        return new Promise((resolve) => {
+          resolveSecondPage = resolve
+        })
+      }
+    )
+
+    const { container } = await renderList(false, { total: 61 })
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    fetchMock.kunFetchGet.mockClear()
+
+    await act(async () => {
+      container
+        .querySelector<HTMLButtonElement>('[data-testid="next-page"]')
+        ?.click()
+      await Promise.resolve()
+    })
+
+    expect(container.textContent).toContain('正在获取会话列表...')
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(15_000)
+    })
+
+    expect(fetchMock.kunFetchGet).toHaveBeenCalledTimes(1)
+
+    await act(async () => {
+      resolveSecondPage?.({
+        conversations: [conversation(0, 'page two')],
+        total: 61
+      })
+      await Promise.resolve()
+    })
+
+    expect(container.textContent).toContain('page two')
+    expect(container.textContent).not.toContain('正在获取会话列表...')
   })
 
   it('disables Next.js prefetch for personalized chat detail links', async () => {

@@ -3,5 +3,5 @@ import type { UserState } from '~/store/userStore'
 
 export interface UserSession {
   user: UserState
-  unread: MessageUnreadStatus
+  unread: MessageUnreadStatus | null
 }

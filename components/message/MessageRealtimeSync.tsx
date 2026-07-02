@@ -40,8 +40,14 @@ export const MessageRealtimeSync = () => {
     }
 
     let ignore = false
+    let unreadSyncInFlight = false
 
     const syncUnreadStatus = async () => {
+      if (unreadSyncInFlight) {
+        return
+      }
+
+      unreadSyncInFlight = true
       try {
         const res = await kunFetchGet<KunResponse<UnreadApiStatus>>(
           '/message/unread',
@@ -58,6 +64,7 @@ export const MessageRealtimeSync = () => {
         })
       } catch {
       } finally {
+        unreadSyncInFlight = false
         if (!ignore) {
           clearPollTimer()
           timerRef.current = setTimeout(

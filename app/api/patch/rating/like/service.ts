@@ -49,15 +49,18 @@ export const toggleRatingLike = async (
           user_id: uid
         }
       })
-    }
 
-    await createDedupMessage({
-      type: 'like',
-      content: `有人点赞了您的 OtomeGame 评价 -> ${rating.short_summary.slice(0, 107)}`,
-      sender_id: uid,
-      recipient_id: rating.user_id,
-      link: `/${rating.patch.unique_id}`
-    })
+      await createDedupMessage(
+        {
+          type: 'like',
+          content: `有人点赞了您的 OtomeGame 评价 -> ${rating.short_summary.slice(0, 107)}`,
+          sender_id: uid,
+          recipient_id: rating.user_id,
+          link: `/${rating.patch.unique_id}`
+        },
+        prisma
+      )
+    }
 
     await prisma.user.update({
       where: { id: rating.user_id },

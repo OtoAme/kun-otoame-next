@@ -1,4 +1,4 @@
-import { MESSAGE_TYPE } from '~/constants/message'
+import { MESSAGE_NOTIFICATION_TYPE } from '~/constants/message'
 
 export interface Message {
   id: number
@@ -11,7 +11,7 @@ export interface Message {
 }
 
 export interface CreateMessageType {
-  type: (typeof MESSAGE_TYPE)[number]
+  type: (typeof MESSAGE_NOTIFICATION_TYPE)[number]
   content: string
   link: string
   sender_id?: number

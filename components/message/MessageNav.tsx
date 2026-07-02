@@ -9,6 +9,7 @@ import { usePathname } from 'next/navigation'
 import Link from 'next/link'
 import toast from 'react-hot-toast'
 import { useMessageStore } from '~/store/messageStore'
+import { cn } from '~/utils/cn'
 import type { MessageUnreadStatus } from '~/types/api/message'
 
 const notificationSubTypes = [
@@ -28,7 +29,7 @@ const notificationSubTypes = [
   { type: 'system', label: '系统消息', icon: Globe, href: '/message/system' }
 ]
 
-export const MessageNav = () => {
+export const MessageNav = ({ className }: { className?: string }) => {
   const pathname = usePathname()
   const pathSegments = pathname.split('/').filter(Boolean)
   const lastSegment = pathSegments[pathSegments.length - 1]
@@ -51,6 +52,21 @@ export const MessageNav = () => {
     (state) => state.setUnreadMessageStatus
   )
 
+  const fetchUnreadStatus = async () => {
+    const res = await kunFetchGet<{
+      hasUnreadMessages: boolean
+      hasUnreadChat: boolean
+    }>('/message/unread')
+    if (res && typeof res !== 'string') {
+      return {
+        hasUnreadNotification: res.hasUnreadMessages,
+        hasUnreadConversation: res.hasUnreadChat
+      }
+    }
+
+    return null
+  }
+
   useEffect(() => {
     if (isNotificationSection) {
       return
@@ -58,16 +74,12 @@ export const MessageNav = () => {
 
     let ignore = false
     const fetchUnread = async () => {
-      const res = await kunFetchGet<{
-        hasUnreadMessages: boolean
-        hasUnreadChat: boolean
-      }>('/message/unread')
-      if (!ignore && res && typeof res !== 'string') {
-        setUnreadMessageStatus({
-          hasUnreadNotification: res.hasUnreadMessages,
-          hasUnreadConversation: res.hasUnreadChat
-        })
-      }
+      try {
+        const unreadStatus = await fetchUnreadStatus()
+        if (!ignore && unreadStatus) {
+          setUnreadMessageStatus(unreadStatus)
+        }
+      } catch {}
     }
     fetchUnread()
     return () => {
@@ -80,34 +92,67 @@ export const MessageNav = () => {
       return
     }
     let ignore = false
+    const previousUnreadStatus = {
+      hasUnreadNotification: useMessageStore.getState().hasUnreadNotification,
+      hasUnreadConversation: useMessageStore.getState().hasUnreadConversation
+    }
+    const restorePreviousUnreadStatus = () => {
+      if (!ignore) {
+        setUnreadMessageStatus(previousUnreadStatus)
+      }
+    }
+
     setHasUnreadNotification(false)
     const readAllMessage = async () => {
       const res =
         await kunFetchPut<KunResponse<MessageUnreadStatus>>('/message/read')
       if (ignore) {
-        return
+        return false
       }
       if (typeof res === 'string') {
         toast.error(res)
+        return false
       } else {
         setUnreadMessageStatus(res)
+        return true
       }
     }
-    readAllMessage()
+    const restoreUnreadStatus = async () => {
+      try {
+        const unreadStatus = await fetchUnreadStatus()
+        if (!ignore && unreadStatus) {
+          setUnreadMessageStatus(unreadStatus)
+        } else {
+          restorePreviousUnreadStatus()
+        }
+      } catch {
+        restorePreviousUnreadStatus()
+      }
+    }
+    const markNotificationsRead = async () => {
+      try {
+        const readSuccessfully = await readAllMessage()
+        if (!readSuccessfully) {
+          await restoreUnreadStatus()
+        }
+      } catch {
+        if (!ignore) {
+          toast.error('标记消息已读失败，请稍后重试')
+          await restoreUnreadStatus()
+        }
+      }
+    }
+    markNotificationsRead()
     return () => {
       ignore = true
     }
-  }, [
-    isNotificationSection,
-    setHasUnreadNotification,
-    setUnreadMessageStatus
-  ])
+  }, [isNotificationSection, setHasUnreadNotification, setUnreadMessageStatus])
 
   const showMessageDot = hasUnreadNotification && !isNotificationSection
   const showChatDot = hasUnreadConversation && !isChatSection
 
   return (
-    <Card className="w-full lg:w-1/4">
+    <Card className={cn('w-full lg:w-1/4', className)}>
       <CardBody className="flex flex-col gap-2">
         <div className="flex flex-row gap-2 lg:flex-col">
           <Button
