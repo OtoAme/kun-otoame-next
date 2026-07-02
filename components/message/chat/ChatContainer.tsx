@@ -57,7 +57,7 @@ const CHAT_REPLY_HIGHLIGHT_FADE_MS = 260
 const CHAT_LIVE_EDGE_THRESHOLD_PX = 96
 const CHAT_SCROLL_BUTTON_FADE_MS = 180
 const CHAT_SCROLL_BUTTON_POSITION_CLASSNAME =
-  'pointer-events-none absolute bottom-28 right-8 z-20'
+  'pointer-events-none absolute bottom-28 right-8 z-40'
 type ScrollButtonVisibilityMode = 'sync' | 'user-scroll' | 'programmatic-away'
 
 const getMaxScrollTop = (container: HTMLElement) =>

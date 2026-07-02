@@ -1058,6 +1058,22 @@ describe('ChatContainer realtime sync', () => {
     expect(container.querySelector('button[aria-label="回到底部"]')).toBeNull()
   })
 
+  it('keeps the floating scroll button above message metadata overlays', async () => {
+    const { container } = await renderChat()
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    const scrollContainer = getChatScrollContainer(container)
+    await showScrollButtonByScrollingUp(scrollContainer)
+
+    const scrollButtonShell = container.querySelector(
+      '[data-testid="chat-scroll-button-shell"]'
+    )
+    expect(scrollButtonShell?.className).toContain('z-40')
+    expect(scrollButtonShell?.className).not.toContain('z-20')
+  })
+
   it('keeps the scroll button mounted briefly while fading out', async () => {
     const { container } = await renderChat()
     await act(async () => {
