@@ -57,7 +57,7 @@ const CHAT_REPLY_HIGHLIGHT_FADE_MS = 260
 const CHAT_LIVE_EDGE_THRESHOLD_PX = 96
 const CHAT_SCROLL_BUTTON_FADE_MS = 180
 const CHAT_SCROLL_BUTTON_POSITION_CLASSNAME =
-  'pointer-events-none absolute bottom-28 right-8 z-40'
+  'pointer-events-none absolute bottom-full right-8 z-40 mb-2'
 type ScrollButtonVisibilityMode = 'sync' | 'user-scroll' | 'programmatic-away'
 
 const getMaxScrollTop = (container: HTMLElement) =>
@@ -938,35 +938,6 @@ export const ChatContainer = ({
         </CardHeader>
 
         <CardBody className="relative flex flex-col p-0">
-          {isScrollButtonMounted && (
-            <div
-              data-testid="chat-scroll-button-shell"
-              data-state={showScrollButton ? 'open' : 'closed'}
-              aria-hidden={!showScrollButton}
-              className={cn(
-                CHAT_SCROLL_BUTTON_POSITION_CLASSNAME,
-                'transition-opacity duration-[180ms] motion-reduce:transition-none',
-                showScrollButton
-                  ? 'opacity-100 ease-out'
-                  : 'pointer-events-none opacity-0 ease-out'
-              )}
-            >
-              <button
-                type="button"
-                aria-label={scrollButtonLabel}
-                title={scrollButtonLabel}
-                tabIndex={showScrollButton ? 0 : -1}
-                className={cn(
-                  'pointer-events-auto flex size-11 items-center justify-center rounded-full border border-default-200 bg-content1/95 text-default-600 shadow-lg shadow-default-900/10 outline-none backdrop-blur-md transition-[background-color,color,box-shadow] duration-200 hover:bg-content2 hover:text-foreground focus-visible:ring-2 focus-visible:ring-[hsl(var(--kun-brand-500)/0.55)] active:bg-content2 active:text-foreground dark:border-default-100/10 dark:bg-content2/95 dark:shadow-black/25',
-                  !showScrollButton && 'pointer-events-none'
-                )}
-                onClick={handleScrollButtonClick}
-              >
-                <ChevronDown className="size-6" aria-hidden="true" />
-              </button>
-            </div>
-          )}
-
           <div
             ref={scrollContainerRef}
             className="min-w-0 flex-1 overflow-x-hidden overflow-y-auto p-4"
@@ -1012,7 +983,36 @@ export const ChatContainer = ({
             )}
           </div>
 
-          <div className="px-3 pb-3 pt-2">
+          <div className="relative px-3 pb-3 pt-2">
+            {isScrollButtonMounted && (
+              <div
+                data-testid="chat-scroll-button-shell"
+                data-state={showScrollButton ? 'open' : 'closed'}
+                aria-hidden={!showScrollButton}
+                className={cn(
+                  CHAT_SCROLL_BUTTON_POSITION_CLASSNAME,
+                  'transition-opacity duration-[180ms] motion-reduce:transition-none',
+                  showScrollButton
+                    ? 'opacity-100 ease-out'
+                    : 'pointer-events-none opacity-0 ease-out'
+                )}
+              >
+                <button
+                  type="button"
+                  aria-label={scrollButtonLabel}
+                  title={scrollButtonLabel}
+                  tabIndex={showScrollButton ? 0 : -1}
+                  className={cn(
+                    'pointer-events-auto flex size-11 items-center justify-center rounded-full border border-default-200 bg-content1/95 text-default-600 shadow-lg shadow-default-900/10 outline-none backdrop-blur-md transition-[background-color,color,box-shadow] duration-200 hover:bg-content2 hover:text-foreground focus-visible:ring-2 focus-visible:ring-[hsl(var(--kun-brand-500)/0.55)] active:bg-content2 active:text-foreground dark:border-default-100/10 dark:bg-content2/95 dark:shadow-black/25',
+                    !showScrollButton && 'pointer-events-none'
+                  )}
+                  onClick={handleScrollButtonClick}
+                >
+                  <ChevronDown className="size-6" aria-hidden="true" />
+                </button>
+              </div>
+            )}
+
             <div className="relative z-30 rounded-2xl border border-default-200/80 bg-content1/95 p-3 shadow-[0_-10px_30px_hsl(var(--heroui-foreground)/0.06)] backdrop-blur-md dark:border-default-100/10 dark:bg-content1/90">
               <ChatInput
                 conversationId={conversationId}

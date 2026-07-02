@@ -124,14 +124,24 @@ vi.mock('~/components/kun/floating-card/KunAvatar', () => ({
 vi.mock('~/components/message/chat/ChatInput', () => ({
   ChatInput: ({
     onMessageSent,
-    replyTarget
+    replyTarget,
+    onCancelReply
   }: {
     onMessageSent: (message: PrivateMessage) => void
     replyTarget?: PrivateMessage
+    onCancelReply: () => void
   }) => {
     chatInputMock.onMessageSent = onMessageSent
     chatInputMock.replyTargetId = replyTarget?.id ?? null
-    return <div data-testid="chat-input" />
+    return (
+      <div data-testid="chat-input">
+        {replyTarget && (
+          <button data-testid="cancel-reply" onClick={onCancelReply}>
+            cancel reply
+          </button>
+        )}
+      </div>
+    )
   }
 }))
 
@@ -532,6 +542,64 @@ describe('ChatContainer realtime sync', () => {
 
     expect(inputPanel?.className).toContain('relative')
     expect(inputPanel?.className).toContain('z-30')
+  })
+
+  it('anchors the floating scroll button to the top edge of the input panel', async () => {
+    const { container } = await renderChat('visible', {
+      total: 2,
+      initialMessages: [
+        message(1, 'reply target', otherUser, '2026-06-29T10:01:00.000Z'),
+        message(2, 'other message', {
+          id: currentUser.uid,
+          name: currentUser.name,
+          avatar: currentUser.avatar
+        })
+      ]
+    })
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    const scrollContainer = getChatScrollContainer(container)
+    await showScrollButtonByScrollingUp(scrollContainer)
+
+    await act(async () => {
+      chatMessageMock.onReplyById.get(1)?.(
+        message(1, 'reply target', otherUser, '2026-06-29T10:01:00.000Z'),
+        null
+      )
+      await Promise.resolve()
+    })
+
+    const chatInput = container.querySelector('[data-testid="chat-input"]')
+    const inputPanel = chatInput?.parentElement
+    const inputPanelShell = inputPanel?.parentElement
+    const scrollButtonShell = container.querySelector(
+      '[data-testid="chat-scroll-button-shell"]'
+    )
+
+    expect(chatInputMock.replyTargetId).toBe(1)
+    expect(inputPanelShell?.className).toContain('relative')
+    expect(inputPanelShell?.className).toContain('px-3')
+    expect(inputPanelShell?.className).toContain('pb-3')
+    expect(scrollButtonShell?.parentElement).toBe(inputPanelShell)
+    expect(scrollButtonShell?.className).toContain('bottom-full')
+    expect(scrollButtonShell?.className).toContain('right-8')
+    expect(scrollButtonShell?.className).toContain('mb-2')
+    expect(scrollButtonShell?.className).not.toContain('bottom-28')
+
+    await act(async () => {
+      container
+        .querySelector<HTMLButtonElement>('[data-testid="cancel-reply"]')
+        ?.click()
+      await Promise.resolve()
+    })
+
+    expect(chatInputMock.replyTargetId).toBeNull()
+    expect(
+      container.querySelector('[data-testid="chat-scroll-button-shell"]')
+        ?.parentElement
+    ).toBe(inputPanelShell)
   })
 
   it('preserves the existing chat card shell while messages scroll internally', async () => {
