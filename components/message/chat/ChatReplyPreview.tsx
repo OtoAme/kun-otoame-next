@@ -52,7 +52,7 @@ export const ChatReplyPreview = ({
     </>
   )
   const previewClassName = cn(
-    "relative flex items-center gap-2 overflow-hidden rounded-lg py-1.5 pl-3.5 pr-2.5 text-left text-[13px] before:absolute before:bottom-0 before:left-0 before:top-0 before:w-1.5 before:rounded-full before:bg-[hsl(var(--kun-brand-500)/0.86)] before:content-['']",
+    "relative flex items-center gap-2 overflow-hidden rounded-md py-1.5 pl-3.5 pr-2.5 text-left text-[13px] before:absolute before:bottom-0 before:left-0 before:top-0 before:w-1 before:rounded-full before:bg-[hsl(var(--kun-brand-500)/0.86)] before:content-['']",
     onClick &&
       'w-full cursor-pointer outline-none transition-colors hover:bg-[hsl(var(--kun-brand-50)/0.55)] focus-visible:ring-2 focus-visible:ring-[hsl(var(--kun-brand-500))] dark:hover:bg-[hsl(var(--kun-brand-500)/0.1)]',
     className
