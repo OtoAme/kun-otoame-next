@@ -27,6 +27,7 @@
 ## 消息展示
 
 - `components/message/MessageCard.tsx` 将通知正文作为纯文本渲染，并保留换行，用于系统通知展示多行变更摘要。
+- 私聊会话详情页使用 `components/message/MessageLayoutChrome.tsx` 做路由级布局控制。只有 `/message/chat/[conversationId]` 会隐藏消息页标题、说明文字和全站面包屑，消息列表页继续保留原有 header、面包屑和消息导航。会话详情页会锁定 document 滚动，只允许 `ChatContainer` 内部消息列表滚动；不要为了取消整页滚动而移除或重写 `ChatContainer` 原本的卡片和内部 `overflow-y-auto` 滚动容器。该页外层通过 `--message-chat-top-reserve` 预留顶部空间，并让聊天卡片高度扣除这段预留；视觉高度微调优先调整这个 CSS 变量，再考虑基础预留值。`MessageNav` 在会话详情页大屏继续作为左侧栏显示，小屏通过 `max-lg:hidden` 隐藏，避免在聊天窗口上方占用高度；消息列表页不使用这条隐藏规则。
 
 ## 状态管理
 
