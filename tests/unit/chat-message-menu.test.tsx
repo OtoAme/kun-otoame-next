@@ -559,8 +559,8 @@ describe('ChatMessage menu and rendering', () => {
     const paragraphClasses = Array.from(paragraph?.classList ?? [])
 
     expectInlineMetaTailFlow(container)
-    expect(bubbleClasses).toContain('py-1.5')
-    expect(bubbleClasses).not.toContain('py-1')
+    expect(bubbleClasses).toContain('py-1')
+    expect(bubbleClasses).not.toContain('py-1.5')
     expect(paragraphClasses).toContain('leading-5')
     expect(paragraphClasses).not.toContain('leading-4')
     expect(bubble?.className).not.toContain('flex')
@@ -571,6 +571,25 @@ describe('ChatMessage menu and rendering', () => {
     expect(paragraph?.className).not.toContain('text-center')
     expect(paragraph?.className).not.toContain('pr-16')
     expect(paragraph?.className).not.toContain('pl-16')
+  })
+
+  it('centers the chat bubble against the avatar without stretching it', async () => {
+    const { container } = await renderMessage(
+      {
+        ...baseMessage,
+        content: '7654321',
+        status: 1,
+        sender: { id: 1007, name: 'Saya', avatar: '' }
+      },
+      { isOwn: true }
+    )
+
+    const messageRow = container.querySelector('#chat-message-3')
+    const rowClasses = Array.from(messageRow?.classList ?? [])
+
+    expect(messageRow).not.toBeNull()
+    expect(rowClasses).toContain('flex')
+    expect(rowClasses).toContain('items-center')
   })
 
   it('wraps edited plain text messages with long continuous content', async () => {

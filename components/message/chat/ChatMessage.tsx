@@ -615,7 +615,7 @@ export const ChatMessage = ({
       <div
         id={`chat-message-${message.id}`}
         className={cn(
-          'flex gap-3 mb-4',
+          'flex items-center gap-3 mb-4',
           isOwn ? 'flex-row-reverse' : 'flex-row'
         )}
       >
@@ -652,7 +652,7 @@ export const ChatMessage = ({
     : 'w-[min(78%,32rem)] max-w-[min(78%,42rem)] md:w-[min(60%,32rem)] md:max-w-[min(60%,42rem)]'
   const bubblePaddingClassName = isImageOnly
     ? 'p-0.5'
-    : 'px-2.5 py-1.5'
+    : 'px-2.5 py-1'
 
   const renderReplyPreview = () => {
     if (!message.replyTo) {
@@ -839,7 +839,7 @@ export const ChatMessage = ({
             : 'text-default-400',
         variant === 'inline' && 'ml-2 align-bottom pb-px',
         variant === 'inline-right' &&
-          'pointer-events-none absolute bottom-0 right-0 shrink-0 justify-end text-right align-bottom pb-px',
+        'pointer-events-none absolute bottom-0 right-0 shrink-0 justify-end text-right align-bottom pb-px',
         variant === 'standalone' && 'mt-0.5'
       )}
     >
@@ -863,7 +863,7 @@ export const ChatMessage = ({
       <div
         id={`chat-message-${message.id}`}
         className={cn(
-          'flex gap-3 mb-4',
+          'flex items-center gap-3 mb-4',
           isOwn ? 'flex-row-reverse' : 'flex-row'
         )}
       >
@@ -891,7 +891,7 @@ export const ChatMessage = ({
               hasImages ? imageBubbleWidthClassName : bubbleWidthClassName,
               bubblePaddingClassName,
               menu &&
-                'shadow-lg ring-2 ring-[hsl(var(--kun-brand-300)/0.8)] dark:ring-[hsl(var(--kun-brand-400)/0.42)]'
+              'shadow-lg ring-2 ring-[hsl(var(--kun-brand-300)/0.8)] dark:ring-[hsl(var(--kun-brand-400)/0.42)]'
             )}
             animate={{
               scale: menu ? 0.985 : 1,
