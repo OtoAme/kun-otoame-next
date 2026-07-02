@@ -23,8 +23,16 @@ vi.mock('~/components/kun/BreadcrumbTitle', () => ({
 }))
 
 vi.mock('~/components/message/chat/ChatContainer', () => ({
-  ChatContainer: ({ conversationId }: { conversationId: number }) => (
-    <div data-testid="chat-container">{conversationId}</div>
+  ChatContainer: ({
+    conversationId,
+    className
+  }: {
+    conversationId: number
+    className?: string
+  }) => (
+    <div className={className} data-testid="chat-container">
+      {conversationId}
+    </div>
   )
 }))
 
@@ -97,7 +105,7 @@ describe('/message/chat/[conversationId] page', () => {
     expect(mocks.KunBreadcrumbTitle).not.toHaveBeenCalled()
     expect(element.props.conversationId).toBe(5)
     expect(element.props.className).toBe(
-      'h-[calc(100dvh_-_192px_-_var(--message-chat-top-reserve))]'
+      'h-[calc(100dvh_-_192px_-_var(--message-chat-top-reserve))] max-lg:h-[calc(var(--message-chat-visual-viewport-height,100dvh)_-_96px_-_var(--message-chat-top-reserve))] max-lg:max-h-[calc(var(--message-chat-visual-viewport-height,100dvh)_-_96px_-_var(--message-chat-top-reserve))] max-lg:min-h-0 max-lg:transition-[height,max-height] max-lg:duration-150 max-lg:ease-out motion-reduce:transition-none'
     )
   })
 })

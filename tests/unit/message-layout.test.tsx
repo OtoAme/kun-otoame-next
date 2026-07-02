@@ -88,7 +88,7 @@ describe('message layout shell', () => {
     expect(markup).toContain(
       'container mx-auto min-h-[calc(100dvh-256px)] w-full overflow-visible pt-[var(--message-chat-top-reserve)]'
     )
-    expect(markup).toContain('--message-chat-top-reserve:4dvh')
+    expect(markup).toContain('--message-chat-top-reserve:3dvh')
     expect(markup).toContain(
       'flex w-full flex-col gap-6 overflow-visible lg:flex-row lg:items-start'
     )
@@ -135,5 +135,72 @@ describe('message layout shell', () => {
 
     expect(dom.window.document.documentElement.style.overflow).toBe('')
     expect(dom.window.document.body.style.overflow).toBe('')
+  })
+
+  it('syncs the conversation detail height with visualViewport changes', async () => {
+    dom = new JSDOM('<!doctype html><div id="root"></div>', {
+      url: 'http://localhost'
+    })
+    const win = dom.window
+    const visualViewport = new win.EventTarget()
+    Object.defineProperty(visualViewport, 'height', {
+      configurable: true,
+      value: 520
+    })
+    Object.defineProperty(win, 'visualViewport', {
+      configurable: true,
+      value: visualViewport
+    })
+    vi.stubGlobal('window', win)
+    vi.stubGlobal('document', win.document)
+    vi.stubGlobal('React', React)
+    vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
+    navigationMock.pathname = '/message/chat/12'
+
+    const { MessageLayoutChrome } = await import(
+      '~/components/message/MessageLayoutChrome'
+    )
+    const container = win.document.getElementById('root')
+    expect(container).not.toBeNull()
+
+    root = createRoot(container!)
+    await act(async () => {
+      root!.render(
+        <MessageLayoutChrome>
+          <main data-testid="message-content">content</main>
+        </MessageLayoutChrome>
+      )
+    })
+
+    expect(
+      win.document.documentElement.style.getPropertyValue(
+        '--message-chat-visual-viewport-height'
+      )
+    ).toBe('520px')
+
+    Object.defineProperty(visualViewport, 'height', {
+      configurable: true,
+      value: 360
+    })
+    await act(async () => {
+      visualViewport.dispatchEvent(new win.Event('resize'))
+    })
+
+    expect(
+      win.document.documentElement.style.getPropertyValue(
+        '--message-chat-visual-viewport-height'
+      )
+    ).toBe('360px')
+
+    await act(async () => {
+      root?.unmount()
+    })
+    root = undefined
+
+    expect(
+      win.document.documentElement.style.getPropertyValue(
+        '--message-chat-visual-viewport-height'
+      )
+    ).toBe('')
   })
 })

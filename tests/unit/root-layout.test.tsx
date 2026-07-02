@@ -4,10 +4,18 @@ import { describe, expect, it, vi } from 'vitest'
 
 globalThis.React = React
 
+const navigationMock = vi.hoisted(() => ({
+  pathname: '/'
+}))
+
 vi.mock('next/headers', () => ({
   cookies: vi.fn(async () => ({
     get: vi.fn(() => undefined)
   }))
+}))
+
+vi.mock('next/navigation', () => ({
+  usePathname: () => navigationMock.pathname
 }))
 
 vi.mock('next/script', () => ({
@@ -58,7 +66,23 @@ vi.mock('~/app/providers', () => ({
 vi.mock('~/app/actions', () => ({}))
 
 describe('RootLayout content band', () => {
+  it('renders the global footer on regular pages', async () => {
+    navigationMock.pathname = '/'
+
+    const { default: RootLayout } = await import('~/app/layout')
+    const element = await RootLayout({
+      children: <main data-testid="page-content">content</main>
+    })
+
+    const markup = renderToStaticMarkup(element)
+
+    expect(markup).toContain('data-testid="footer"')
+    expect(markup).toContain('data-testid="back-to-top"')
+  })
+
   it('keeps the root content band stretchable for route-specific layout control', async () => {
+    navigationMock.pathname = '/'
+
     const { default: RootLayout } = await import('~/app/layout')
     const element = await RootLayout({
       children: <main data-testid="page-content">content</main>
@@ -72,5 +96,21 @@ describe('RootLayout content band', () => {
     expect(markup).not.toContain(
       'flex min-h-[calc(100dvh-256px)] w-full max-w-7xl grow items-center px-3 sm:px-6'
     )
+  })
+
+  it('removes global footer elements from conversation detail pages', async () => {
+    navigationMock.pathname = '/message/chat/12'
+
+    const { default: RootLayout } = await import('~/app/layout')
+    const element = await RootLayout({
+      children: <main data-testid="page-content">content</main>
+    })
+
+    const markup = renderToStaticMarkup(element)
+
+    expect(markup).not.toContain('data-testid="footer"')
+    expect(markup).not.toContain('data-testid="back-to-top"')
+    expect(markup).toContain('max-lg:min-h-0')
+    expect(markup).toContain('max-lg:overflow-hidden')
   })
 })

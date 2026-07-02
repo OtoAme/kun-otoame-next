@@ -36,7 +36,7 @@ export default async function Kun({ params }: Props) {
       total={response.total}
       hasMoreBefore={response.hasMoreBefore}
       otherUser={response.otherUser}
-      className="h-[calc(100dvh_-_192px_-_var(--message-chat-top-reserve))]"
+      className="h-[calc(100dvh_-_192px_-_var(--message-chat-top-reserve))] max-lg:h-[calc(var(--message-chat-visual-viewport-height,100dvh)_-_96px_-_var(--message-chat-top-reserve))] max-lg:max-h-[calc(var(--message-chat-visual-viewport-height,100dvh)_-_96px_-_var(--message-chat-top-reserve))] max-lg:min-h-0 max-lg:transition-[height,max-height] max-lg:duration-150 max-lg:ease-out motion-reduce:transition-none"
     />
   )
 }
