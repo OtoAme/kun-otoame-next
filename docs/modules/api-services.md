@@ -226,6 +226,14 @@ service/helper 负责：
 - Access API 的成功、校验失败和未找到响应都必须返回 `Cache-Control: private, no-store`。解析失败返回 400，资源不可访问或不存在返回 404，响应体保留用户可见字符串，供前端 toast 分支展示。
 - Phase 1 不写领取记录、不扣萌萌点、不限制游客/用户/创作者次数，也不实现 72 小时复用。后续限额、流水、刷新卡和 72 小时复用都应接在 access API 上，不应把敏感字段重新放回资源列表。
 
+下载获取记录（Phase 2）：
+
+- `patch_resource_access` 记录单个 link 的获取事实，字段包括 `actor_type`、`user_id` 或 `visitor_token`、`patch_id`、`resource_id`、`link_id`、`section`、`storage`、`cost`、`expires`、`created`。Phase 2 的 `cost` 固定为 0，不扣萌萌点、不占免费额度。
+- 登录用户优先按 `user_id` 复用；未登录游客使用 HTTP-only `kun-resource-access-token` cookie。资源列表只读取已有游客 cookie，不主动创建游客身份；点击获取链接时才会为无 cookie 的游客生成 token 并写回 cookie。
+- 同一访问者 72 小时内重复获取同一 `link_id` 时，access API 复用未过期记录，不重复创建获取记录；超过 72 小时后再次获取会创建新的 0 成本记录。
+- `/api/patch/resource` 现在会根据登录用户或游客 cookie 返回 link preview 的 `obtained` 和 `obtainedExpiresAt`，但仍不能返回 `content`、`code`、`password`。因为该响应含个性化状态，GET 响应必须保持 `Cache-Control: private, no-store`。
+- `POST /api/patch/resource/download/access` 成功响应除 `link` 外，还返回 `access: { actorType, cost, reused, obtainedExpiresAt }`。这个对象只表达 72 小时复用状态，不代表已启用限额、扣费或刷新卡。
+
 ### 用户设置和资料
 
 文件：

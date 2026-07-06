@@ -29,7 +29,8 @@
 
 - 游戏详情资源下载卡片只在首屏展示存储类型、大小、下载次数和可公开校验用 hash，不直接渲染真实链接、提取码或解压码；用户点击“获取下载链接”后再调用 `/api/patch/resource/download/access` 在本地组件状态中展示完整信息。资源编辑入口需要先用 `accessResourceLinksForEdit` 水合完整链接，再打开编辑表单，不能把敏感链接重新放回资源列表数据或全局缓存。
 - `ResourceDownloadCard` 自己维护 `accessedLink`、`accessing` 和错误文案状态：未获取时显示“获取下载链接”按钮，获取中禁用按钮并显示 loading，业务字符串错误用 toast 和 `role="alert"` 行内提示展示，请求异常显示“获取下载链接失败，请稍后重试”。
-- 获取成功后，真实链接只保存在当前组件状态中；刷新页面后 Phase 1 可以要求用户重新点击获取。不要把 access API 返回值写入 patch/resource store、列表缓存或 URL 参数。
+- Phase 2 的资源列表 preview 可能带 `obtained` 和 `obtainedExpiresAt`。如果当前访问者 72 小时内已获取过该 link，按钮文案使用“查看已获取链接”，并展示“72 小时内可重复查看”的低摩擦说明；点击后仍调用 access API 复用服务端记录再展示真实链接。
+- 获取成功后，真实链接只保存在当前组件状态中；刷新页面后可通过服务端获取记录恢复“已获取”按钮状态，但真实链接仍需再次点击 access API 获取。不要把 access API 返回值写入 patch/resource store、列表缓存或 URL 参数。
 - 长链接、提取码、解压码和 hash 都要按可复制、可换行、移动端不撑破容器的方式渲染。对象存储资源的 hash 可在未获取真实链接前展示，用于文件完整性校验。
 - 资源操作菜单点击“编辑”时，`ResourceTabs` 先调用 `accessResourceLinksForEdit` 逐个获取完整链接，成功后再写入编辑弹窗状态；获取失败时 toast 并保持弹窗关闭，避免用脱敏 link 打开表单导致保存时丢失字段。
 

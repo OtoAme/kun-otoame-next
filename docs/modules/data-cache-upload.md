@@ -254,6 +254,16 @@ Gallery 图片上传走 `app/api/edit/gallery/route.ts` 和 `app/api/edit/galler
 
 历史脏数据修复使用 `pnpm maintenance:resource-attributes:dry` 预览、`pnpm maintenance:resource-attributes:apply` 应用；脚本同样只按已发布资源重算 `type`、`language` 和 `platform`。`pnpm migration:patch-counters` 安装的 `resource_count` 触发器也只计入已发布资源，并在资源审核状态变化时同步增减。
 
+## 下载获取记录
+
+`patch_resource_access` 是下载链接按需获取的审计和复用基础：
+
+- 登录用户记录 `user_id`，游客记录随机 `visitor_token`；游客 token 只通过 HTTP-only `kun-resource-access-token` cookie 保存，不在前端 JS 中读取。
+- 每条记录绑定 `patch_id`、`resource_id`、`link_id`，并冗余 `section`、`storage` 方便后续聚合查询。
+- `expires` 是 72 小时复用截止时间；列表和 access API 只查 `expires > now()` 的 active 记录。
+- `cost` 在 Phase 2 固定为 0。萌萌点流水、免费额度、刷新卡和周硬上限属于后续阶段，不能在 Phase 2 里用该表伪装扣费能力。
+- 该表写入不影响资源派生属性和公开列表统计，因此不触发 `deletePatchResourceCache`。包含 `obtained` 状态的 `/api/patch/resource` 响应必须 `private, no-store`，不能进入公开缓存。
+
 ## 测试
 
 重点测试：

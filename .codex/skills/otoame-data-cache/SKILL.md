@@ -22,6 +22,7 @@ Use this skill for persistence, cache, and upload consistency work.
 - After patch/resource/tag/company writes, call the matching cache invalidation helper.
 - Patch resource-derived attributes and card/detail resource counts must use the shared published-resource visibility rule in `utils/patchResourceAttributes.ts`; pending, banned, or deleted resources must not affect `patch.type`, `patch.language`, `patch.platform`, or visible resource counts.
 - Patch-company relation writes must also invalidate the affected patch content/introduction cache; company cache invalidation alone leaves stale game detail pages.
+- Download access records live in `patch_resource_access`; Phase 2 writes `cost = 0`, stores either `user_id` or visitor token, reuses active rows for 72 hours, and does not invalidate public patch/resource caches because `/api/patch/resource` obtained state is `private, no-store`.
 - Anonymous tag/company game-list APIs use short response caches; never cache personalized login/NSFW/blocked-tag results, and keep Redis list cache keys scoped by the full visibility where.
 - Home `home_data:*` and `/api/home` anonymous response caches must not store empty `galgames` payloads; this is a deploy/ISR empty-snapshot guard, not a generic rule for valid empty paginated lists.
 - Upload publishing must preserve role/quota checks, `consumeUpload`, S3 compensation, `finalizeUpload`, and cleanup behavior.
