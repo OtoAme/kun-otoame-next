@@ -28,6 +28,14 @@ export const getPatchResource = async (
         }
       },
       links: {
+        select: {
+          id: true,
+          storage: true,
+          size: true,
+          hash: true,
+          sort_order: true,
+          download: true
+        },
         orderBy: { sort_order: 'asc' }
       },
       _count: {
@@ -54,10 +62,7 @@ export const getPatchResource = async (
       id: link.id,
       storage: link.storage,
       size: link.size,
-      code: link.code,
-      password: link.password,
       hash: link.hash,
-      content: link.content,
       sortOrder: link.sort_order,
       download: link.download
     })),

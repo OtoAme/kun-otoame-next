@@ -86,12 +86,26 @@ export interface PatchResourceLink {
   id: number
   storage: string
   size: string
+  hash: string
+  sortOrder: number
+  download: number
+  code?: string
+  password?: string
+  content?: string
+}
+
+export interface PatchResourceAccessLink {
+  id: number
+  storage: string
+  size: string
+  content: string
   code: string
   password: string
   hash: string
-  content: string
-  sortOrder: number
-  download: number
+}
+
+export interface PatchResourceAccessResponse {
+  link: PatchResourceAccessLink
 }
 
 export interface PatchResource {

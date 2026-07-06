@@ -264,6 +264,8 @@ export const updatePatchResourceStatsSchema = z.object({
   linkId: z.coerce.number({ message: 'ID 必须为数字' }).min(1).max(9999999)
 })
 
+export const accessPatchResourceLinkSchema = updatePatchResourceStatsSchema
+
 export const createPatchFeedbackSchema = z.object({
   patchId: z.coerce.number({ message: 'ID 必须为数字' }).min(1).max(9999999),
   content: z

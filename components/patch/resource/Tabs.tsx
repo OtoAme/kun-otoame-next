@@ -24,11 +24,13 @@ import {
   RESOURCE_SECTION_MAP,
   SUPPORTED_RESOURCE_SECTION
 } from '~/constants/resource'
+import { accessResourceLinksForEdit } from './accessResourceLinksForEdit'
 import { KunLoading } from '~/components/kun/Loading'
 import { KunNull } from '~/components/kun/Null'
 import type { PatchResource } from '~/types/api/patch'
 import Link from 'next/link'
 import { kunMoyuMoe } from '~/config/moyu-moe'
+import toast from 'react-hot-toast'
 
 type ResourceSection = (typeof SUPPORTED_RESOURCE_SECTION)[number]
 
@@ -56,6 +58,9 @@ export const ResourceTabs = ({
   const searchParams = useSearchParams()
   const { user } = useUserStore((state) => state)
   const [highlightedResourceId, setHighlightedResourceId] = useState<
+    number | null
+  >(null)
+  const [editLoadingResourceId, setEditLoadingResourceId] = useState<
     number | null
   >(null)
   const RESOURCE_SECTION_TABS_ID = 'patch-resource-section-tabs'
@@ -130,6 +135,25 @@ export const ResourceTabs = ({
     {} as Record<ResourceSection, PatchResource[]>
   )
 
+  const handleOpenEditResource = async (resource: PatchResource) => {
+    setEditLoadingResourceId(resource.id)
+
+    try {
+      const hydratedResource = await accessResourceLinksForEdit(resource)
+      if (typeof hydratedResource === 'string') {
+        toast.error(hydratedResource)
+        return
+      }
+
+      setEditResource(hydratedResource)
+      onOpenEdit()
+    } catch {
+      toast.error('获取资源链接失败，请稍后重试')
+    } finally {
+      setEditLoadingResourceId(null)
+    }
+  }
+
   const renderResourceCard = (resource: PatchResource) => (
     <div
       key={resource.id}
@@ -145,7 +169,12 @@ export const ResourceTabs = ({
           <ResourceInfo resource={resource} />
           <Dropdown>
             <DropdownTrigger>
-              <Button variant="light" isIconOnly>
+              <Button
+                variant="light"
+                isIconOnly
+                isDisabled={editLoadingResourceId === resource.id}
+                isLoading={editLoadingResourceId === resource.id}
+              >
                 <MoreHorizontal aria-label="资源操作" className="size-4" />
               </Button>
             </DropdownTrigger>
@@ -160,10 +189,7 @@ export const ResourceTabs = ({
               <DropdownItem
                 key="edit"
                 startContent={<Edit className="size-4" />}
-                onPress={() => {
-                  setEditResource(resource)
-                  onOpenEdit()
-                }}
+                onPress={() => void handleOpenEditResource(resource)}
               >
                 编辑
               </DropdownItem>

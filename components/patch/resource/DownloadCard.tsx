@@ -1,13 +1,21 @@
 'use client'
 
+import { useState } from 'react'
 import { Snippet } from '@heroui/snippet'
 import { Chip } from '@heroui/chip'
+import { Button } from '@heroui/button'
 import { Cloud, Database, Link as LinkIcon } from 'lucide-react'
+import toast from 'react-hot-toast'
 import { SUPPORTED_RESOURCE_LINK_MAP } from '~/constants/resource'
-import { kunFetchPut } from '~/utils/kunFetch'
+import { kunFetchPost, kunFetchPut } from '~/utils/kunFetch'
 import { KunExternalLink } from '~/components/kun/external-link/ExternalLink'
 import type { JSX } from 'react'
-import type { PatchResource, PatchResourceLink } from '~/types/api/patch'
+import type {
+  PatchResource,
+  PatchResourceAccessLink,
+  PatchResourceAccessResponse,
+  PatchResourceLink
+} from '~/types/api/patch'
 
 const storageIcons: { [key: string]: JSX.Element } = {
   touchgal: <Database className="size-4" />,
@@ -21,6 +29,11 @@ interface Props {
 }
 
 export const ResourceDownloadCard = ({ resource, link }: Props) => {
+  const [accessedLink, setAccessedLink] =
+    useState<PatchResourceAccessLink | null>(null)
+  const [accessing, setAccessing] = useState(false)
+  const [errorMessage, setErrorMessage] = useState('')
+
   const handleClickDownload = async () => {
     await kunFetchPut<KunResponse<{}>>('/patch/resource/download', {
       patchId: resource.patchId,
@@ -28,6 +41,47 @@ export const ResourceDownloadCard = ({ resource, link }: Props) => {
       linkId: link.id
     })
   }
+
+  const handleAccessLink = async () => {
+    setAccessing(true)
+    setErrorMessage('')
+
+    try {
+      const response = await kunFetchPost<
+        PatchResourceAccessResponse | string
+      >('/patch/resource/download/access', {
+        patchId: resource.patchId,
+        resourceId: resource.id,
+        linkId: link.id
+      })
+
+      if (typeof response === 'string') {
+        setErrorMessage(response)
+        toast.error(response)
+        return
+      }
+
+      setAccessedLink(response.link)
+    } catch {
+      const message = '获取下载链接失败，请稍后重试'
+      setErrorMessage(message)
+      toast.error(message)
+    } finally {
+      setAccessing(false)
+    }
+  }
+
+  const renderHash = (hash: string) =>
+    link.storage === 's3' && hash ? (
+      <div className="space-y-1">
+        <p className="text-sm">
+          BLACK3 校验码 (您可以根据此校验码校验下载文件完整性)
+        </p>
+        <Snippet symbol="" className="flex overflow-auto whitespace-normal">
+          {hash}
+        </Snippet>
+      </div>
+    ) : null
 
   return (
     <div className="flex flex-col space-y-2">
@@ -44,59 +98,75 @@ export const ResourceDownloadCard = ({ resource, link }: Props) => {
         </Chip>
       </div>
 
-      <p className="text-sm text-default-500">点击下面的链接以下载</p>
+      {accessedLink ? (
+        <>
+          <p className="text-sm text-default-500">点击下面的链接以下载</p>
 
-      <div className="space-y-2">
-        <KunExternalLink
-          className="break-all"
-          onPress={handleClickDownload}
-          underline="always"
-          link={link.content}
-        >
-          {link.content}
-        </KunExternalLink>
-
-        <div className="flex flex-wrap gap-2">
-          {link.code && (
-            <Snippet
-              tooltipProps={{
-                content: '点击复制提取码'
-              }}
-              size="sm"
-              symbol="提取码"
-              color="primary"
-              className="max-w-full py-0"
+          <div className="space-y-2">
+            <KunExternalLink
+              className="break-all"
+              onPress={handleClickDownload}
+              underline="always"
+              link={accessedLink.content}
             >
-              {link.code}
-            </Snippet>
-          )}
+              {accessedLink.content}
+            </KunExternalLink>
 
-          {link.password && (
-            <Snippet
-              tooltipProps={{
-                content: '点击复制解压码'
-              }}
-              size="sm"
-              symbol="解压码"
-              color="primary"
-              className="max-w-full py-0"
-            >
-              {link.password}
-            </Snippet>
-          )}
-        </div>
+            <div className="flex flex-wrap gap-2">
+              {accessedLink.code && (
+                <Snippet
+                  tooltipProps={{
+                    content: '点击复制提取码'
+                  }}
+                  size="sm"
+                  symbol="提取码"
+                  color="primary"
+                  className="max-w-full py-0"
+                >
+                  {accessedLink.code}
+                </Snippet>
+              )}
 
-        {link.storage === 's3' && link.hash && (
-          <>
-            <p className="text-sm">
-              BLACK3 校验码 (您可以根据此校验码校验下载文件完整性)
+              {accessedLink.password && (
+                <Snippet
+                  tooltipProps={{
+                    content: '点击复制解压码'
+                  }}
+                  size="sm"
+                  symbol="解压码"
+                  color="primary"
+                  className="max-w-full py-0"
+                >
+                  {accessedLink.password}
+                </Snippet>
+              )}
+            </div>
+
+            {renderHash(accessedLink.hash)}
+          </div>
+        </>
+      ) : (
+        <div className="space-y-2">
+          <Button
+            color="primary"
+            variant="flat"
+            isLoading={accessing}
+            isDisabled={accessing}
+            startContent={!accessing ? <LinkIcon className="size-4" /> : null}
+            onPress={handleAccessLink}
+          >
+            获取下载链接
+          </Button>
+
+          {errorMessage && (
+            <p role="alert" className="text-sm text-danger">
+              {errorMessage}
             </p>
-            <Snippet symbol="" className="flex overflow-auto whitespace-normal">
-              {link.hash}
-            </Snippet>
-          </>
-        )}
-      </div>
+          )}
+
+          {renderHash(link.hash)}
+        </div>
+      )}
     </div>
   )
 }
