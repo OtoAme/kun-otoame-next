@@ -31,8 +31,12 @@ interface Props {
 export const ResourceDownloadCard = ({ resource, link }: Props) => {
   const [accessedLink, setAccessedLink] =
     useState<PatchResourceAccessLink | null>(null)
+  const [obtainedExpiresAt, setObtainedExpiresAt] = useState(
+    link.obtainedExpiresAt ?? ''
+  )
   const [accessing, setAccessing] = useState(false)
   const [errorMessage, setErrorMessage] = useState('')
+  const hasObtainedAccess = Boolean(link.obtained || obtainedExpiresAt)
 
   const handleClickDownload = async () => {
     await kunFetchPut<KunResponse<{}>>('/patch/resource/download', {
@@ -62,6 +66,7 @@ export const ResourceDownloadCard = ({ resource, link }: Props) => {
       }
 
       setAccessedLink(response.link)
+      setObtainedExpiresAt(response.access.obtainedExpiresAt)
     } catch {
       const message = '获取下载链接失败，请稍后重试'
       setErrorMessage(message)
@@ -82,6 +87,10 @@ export const ResourceDownloadCard = ({ resource, link }: Props) => {
         </Snippet>
       </div>
     ) : null
+
+  const accessButtonText = hasObtainedAccess
+    ? '查看已获取链接'
+    : '获取下载链接'
 
   return (
     <div className="flex flex-col space-y-2">
@@ -155,8 +164,14 @@ export const ResourceDownloadCard = ({ resource, link }: Props) => {
             startContent={!accessing ? <LinkIcon className="size-4" /> : null}
             onPress={handleAccessLink}
           >
-            获取下载链接
+            {accessButtonText}
           </Button>
+
+          {hasObtainedAccess && (
+            <p className="text-sm text-default-500">
+              72 小时内可重复查看，不会重复记录获取。
+            </p>
+          )}
 
           {errorMessage && (
             <p role="alert" className="text-sm text-danger">

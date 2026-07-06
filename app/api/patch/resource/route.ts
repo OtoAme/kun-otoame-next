@@ -17,6 +17,7 @@ import { updatePatchResource } from './update'
 import { deleteResource } from './delete'
 import { prisma } from '~/prisma/index'
 import { acquireKvLock, releaseKvLock } from '~/lib/redis'
+import { getResourceAccessVisitorToken } from './download/access/actor'
 
 const patchIdSchema = z.object({
   patchId: z.coerce.number().min(1).max(9999999)
@@ -57,8 +58,15 @@ export const GET = async (req: NextRequest) => {
   }
   const payload = await verifyHeaderCookie(req)
 
-  const response = await getPatchResource(input, payload?.uid ?? 0)
-  return NextResponse.json(response)
+  const response = await getPatchResource(input, {
+    uid: payload?.uid ?? 0,
+    visitorToken: getResourceAccessVisitorToken(req)
+  })
+  return NextResponse.json(response, {
+    headers: {
+      'Cache-Control': 'private, no-store'
+    }
+  })
 }
 
 export const POST = async (req: NextRequest) => {

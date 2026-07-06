@@ -89,6 +89,8 @@ export interface PatchResourceLink {
   hash: string
   sortOrder: number
   download: number
+  obtained?: boolean
+  obtainedExpiresAt?: string
   code?: string
   password?: string
   content?: string
@@ -106,6 +108,12 @@ export interface PatchResourceAccessLink {
 
 export interface PatchResourceAccessResponse {
   link: PatchResourceAccessLink
+  access: {
+    actorType: 'visitor' | 'user'
+    cost: number
+    reused: boolean
+    obtainedExpiresAt: string
+  }
 }
 
 export interface PatchResource {

@@ -37,6 +37,7 @@ model patch {
   rating_stat patch_rating_stat?
 
   resource patch_resource[] @relation("patch_resource")
+  resource_access patch_resource_access[] @relation("patch_resource_access")
   comment  patch_comment[]  @relation("patch_comment")
   report   patch_report[]
   images   patch_game_image[]

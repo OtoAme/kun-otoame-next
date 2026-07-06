@@ -29,6 +29,7 @@ model user {
 
   patch_comment_like    user_patch_comment_like_relation[]
   patch_resource_like   user_patch_resource_like_relation[]
+  patch_resource_access patch_resource_access[]             @relation("user_patch_resource_access")
   patch_favorite_folder user_patch_favorite_folder[]
 
   patch_company     patch_company[]

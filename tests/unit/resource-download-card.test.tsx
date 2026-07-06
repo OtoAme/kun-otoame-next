@@ -194,6 +194,12 @@ describe('ResourceDownloadCard access flow', () => {
         code: 'abcd',
         password: 'secret',
         hash: ''
+      },
+      access: {
+        actorType: 'visitor',
+        cost: 0,
+        reused: false,
+        obtainedExpiresAt: '2026-07-09T00:00:00.000Z'
       }
     })
 
@@ -217,6 +223,58 @@ describe('ResourceDownloadCard access flow', () => {
     expect(container.textContent).toContain('abcd')
     expect(container.textContent).toContain('解压码')
     expect(container.textContent).toContain('secret')
+  })
+
+  it('uses the obtained state for links that are reusable within 72 hours', async () => {
+    const obtainedLink: PatchResourceLink = {
+      ...previewLink,
+      obtained: true,
+      obtainedExpiresAt: '2026-07-09T00:00:00.000Z'
+    }
+    fetchMock.kunFetchPost.mockResolvedValueOnce({
+      link: {
+        id: 21,
+        storage: 'user',
+        size: '2 GB',
+        content: 'https://pan.example.com/share',
+        code: '',
+        password: '',
+        hash: ''
+      },
+      access: {
+        actorType: 'visitor',
+        cost: 0,
+        reused: true,
+        obtainedExpiresAt: '2026-07-09T00:00:00.000Z'
+      }
+    })
+
+    const { ResourceDownloadCard } = await import(
+      '~/components/patch/resource/DownloadCard'
+    )
+    const { container } = await renderCard()
+
+    await act(async () => {
+      root!.render(
+        <ResourceDownloadCard resource={resource} link={obtainedLink} />
+      )
+    })
+
+    expect(container.textContent).toContain('查看已获取链接')
+    expect(container.textContent).toContain('72 小时内可重复查看')
+    expect(container.textContent).not.toContain('https://pan.example.com/share')
+
+    const button = container.querySelector('button')
+    expect(button).not.toBeNull()
+    await act(async () => {
+      button!.click()
+    })
+
+    expect(fetchMock.kunFetchPost).toHaveBeenCalledWith(
+      '/patch/resource/download/access',
+      { patchId: 7, resourceId: 11, linkId: 21 }
+    )
+    expect(container.textContent).toContain('https://pan.example.com/share')
   })
 
   it('shows a user-visible error when access fails', async () => {
