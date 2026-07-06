@@ -196,9 +196,13 @@ service/helper 负责：
 文件：
 
 - `app/api/upload/resource/route.ts`
+- `app/api/patch/resource/get.ts`
 - `app/api/patch/resource/create.ts`
 - `app/api/patch/resource/update.ts`
 - `app/api/patch/resource/_helper.ts`
+- `app/api/patch/resource/download/access/route.ts`
+- `app/api/patch/resource/download/access/service.ts`
+- `validations/patch.ts`
 - `validations/resource.ts`
 
 规则：
@@ -212,6 +216,15 @@ service/helper 负责：
 - 修改资源时必须校验 `resourceId` 与提交的 `patchId` 属于同一条资源，避免过期列表或篡改请求把资源写入后却刷新错误游戏的派生属性和缓存。
 - 管理员从后台修改他人发布的资源时，必须向资源发布者发送 `type: 'system'` 的站内通知，并只列出实际变更的安全字段摘要；字段名和值要使用前端资源表单展示文案。资源链接变更要忽略重建链接记录造成的数据库 ID 变化，并给出字段级安全摘要：数量和存储类型可展示统计，`存储类型`、`大小 (MB 或 GB)` 可展示前后值，`资源链接`、`提取码`、`解压码`、`Hash` 只展示填写状态或“已更新”，不暴露原始链接内容、提取码、密码或 hash。
 - 后台资源更新和删除的管理日志要按资源 `section` 区分“游戏资源”和“补丁资源”，不能把所有资源统一写作补丁资源。后台更新接口返回值要保留 `patchName` 等列表上下文，供前端立即更新当前行。
+
+下载链接按需获取（Phase 1）：
+
+- 游戏详情资源列表 `/api/patch/resource` 只返回下载链接预览字段：`id`、`storage`、`size`、`hash`、`sortOrder`、`download`。`content`、`code` 和 `password` 不能出现在列表响应、详情页首屏 payload 或公开资源列表缓存中。
+- `hash` 继续作为公开校验字段返回，主要用于对象存储补丁资源的完整性校验；它不等同于真实下载地址或网盘提取信息。
+- 真实资源链接、提取码和解压码只能通过 `POST /api/patch/resource/download/access` 按单个 link 获取。请求体复用 `patchId`、`resourceId`、`linkId` 三元组校验，返回单个 `link`，包含 `id`、`storage`、`size`、`content`、`code`、`password`、`hash`。
+- Access API 必须同时校验 link ID、资源归属、游戏归属、资源 `status = 0`、游戏 `status = 0` 和 `getPatchVisibilityWhere(req)` 返回的可见性条件，不能只按 `linkId` 裸查。
+- Access API 的成功、校验失败和未找到响应都必须返回 `Cache-Control: private, no-store`。解析失败返回 400，资源不可访问或不存在返回 404，响应体保留用户可见字符串，供前端 toast 分支展示。
+- Phase 1 不写领取记录、不扣萌萌点、不限制游客/用户/创作者次数，也不实现 72 小时复用。后续限额、流水、刷新卡和 72 小时复用都应接在 access API 上，不应把敏感字段重新放回资源列表。
 
 ### 用户设置和资料
 

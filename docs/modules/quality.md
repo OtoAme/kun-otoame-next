@@ -27,6 +27,9 @@ pnpm typecheck
 | `tests/unit/edit-store.test.ts`                        | 创建/重写 store 函数式合并，防止外部数据异步返回互相覆盖。                            |
 | `tests/unit/company-merge-plan.test.ts`                | 公司 name/alias 脏数据自动合并计划和预览。                                            |
 | `tests/unit/resource-link.test.ts`                     | 资源链接和提取码解析。                                                                |
+| `tests/unit/api/resource-access.test.ts`               | 游戏详情资源列表链接脱敏、按需获取接口的资源归属 / 可见性校验和 no-store 响应。        |
+| `tests/unit/resource-download-card.test.tsx`           | 下载卡片点击“获取下载链接”后展示真实链接、提取码、解压码，并展示获取失败错误。        |
+| `tests/unit/resource-access-links-helper.test.ts`      | 资源编辑入口打开前按需水合完整链接，并保留排序和下载计数等预览字段。                  |
 | `tests/unit/resource-classification.test.ts`           | 资源类型/语言/平台分类。                                                              |
 | `tests/unit/search-store.test.ts`                      | 搜索 store。                                                                          |
 | `tests/unit/captcha.test.ts`                           | CAPTCHA。                                                                             |

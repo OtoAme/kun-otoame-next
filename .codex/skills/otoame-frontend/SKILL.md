@@ -24,6 +24,7 @@ Use this skill for pages, components, state, theme, and content.
 - `kunFetch` preserves JSON string business errors from non-2xx responses, such as private chat `429` rate-limit messages, so existing `typeof response === 'string'` toast branches continue to show user-visible errors.
 - Private chat image uploads should request preserved non-2xx status codes so upload toasts can show both the HTTP error code and the server-provided reason, especially 413 size errors.
 - Keep user-facing copy on OtoAme/OtomeGame naming unless referencing compatibility paths.
+- Resource download cards must show only preview fields before an explicit “获取下载链接” action; keep accessed sensitive links in local component state, and hydrate full resource links before opening edit dialogs instead of putting `content`/`code`/`password` back into list data or global caches.
 - For edit external-data inputs, merge async source results with the latest store state and only overwrite fields owned by that source.
 - Bangumi title/summary should only fill game name/introduction after an explicit user click; title fill prefers `nameCn`, then `name`.
 - Create edit-page clear actions must reset `editStore`, localforage banner/gallery drafts, and remount local draft UI state.

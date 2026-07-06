@@ -22,6 +22,7 @@ Use this skill for API and business-service work.
 - For upload APIs, verify CSRF in the handler because middleware excludes `/api/upload/*`.
 - Never rely on frontend visibility for permissions.
 - Keep resource ownership, role, and admin checks in the API/service layer.
+- Game-detail resource lists must not expose real download `content`, extraction `code`, or archive `password`; return only preview link fields from `/api/patch/resource` and fetch sensitive link fields through `POST /api/patch/resource/download/access` with patch/resource/link ownership, status, visibility checks, and `Cache-Control: private, no-store`.
 - Message notification list/create/read/unread endpoints are personalized APIs; keep `/api/message`, `/api/message/all`, `/api/message/read`, `/api/message/unread`, `/api/user/session`, and conversation read/status responses on `Cache-Control: private, no-store`.
 - `POST /api/message` is an admin notification-creation route and must require `role >= 3`; ordinary business flows should create notifications server-side with `createMessage` / `createDedupMessage`.
 - Message notification read should update only the current user's unread `user_message` rows (`status = 0`) and must not clear or rewrite private chat counters. If there is no matching unread notification, return success without running an empty `updateMany`; clearing read notifications should likewise skip `deleteMany` when no matching `status = 1` notification exists.
