@@ -945,7 +945,7 @@ export const ChatContainer = ({
         <CardBody className="relative flex flex-col p-0">
           <div
             ref={scrollContainerRef}
-            className="min-w-0 flex-1 overflow-x-hidden overflow-y-auto p-4"
+            className="@container min-w-0 flex-1 overflow-x-hidden overflow-y-auto p-4"
           >
             {hasMore && (
               <div ref={loadMoreRef} className="flex justify-center py-2">

@@ -759,7 +759,7 @@ export const ChatMessage = ({
             }}
           />
         </div>
-        <div className="max-w-[70%] select-none rounded-2xl bg-[var(--kun-chat-deleted-bg)] px-4 py-2">
+        <div className="max-w-[60cqw] select-none rounded-2xl bg-[var(--kun-chat-deleted-bg)] px-4 py-2">
           <p className="text-sm italic text-[var(--kun-chat-muted-text)]">
             {message.sender.name} 删除了一条消息
           </p>
@@ -771,11 +771,10 @@ export const ChatMessage = ({
   const isImageOnly = hasImages && !hasCaption && !message.replyTo
   const shouldShrinkWrapImage = hasImages && isSingleImage && !hasCaption
   const hasImageWithTextOrReply = hasImages && !isImageOnly
-  const bubbleWidthClassName =
-    'max-w-full md:max-w-[min(60vw,42rem)]'
+  const bubbleWidthClassName = 'max-w-[60cqw]'
   const imageBubbleWidthClassName = shouldShrinkWrapImage
-    ? 'w-fit max-w-full md:max-w-[min(60vw,42rem)]'
-    : 'w-full max-w-full md:w-[min(60vw,32rem)] md:max-w-[min(60vw,42rem)]'
+    ? 'w-fit max-w-[60cqw]'
+    : 'w-full max-w-[60cqw] md:w-[min(60cqw,32rem)]'
   const bubblePaddingClassName = isImageOnly ? 'p-0.5' : 'px-2.5 py-1'
 
   const renderReplyPreview = () => {

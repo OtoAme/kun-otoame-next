@@ -542,7 +542,8 @@ describe('ChatMessage menu and rendering', () => {
     expect(messageRow?.className).toContain('min-w-0')
     expect(messageRow?.className).toContain('[touch-action:pan-y]')
     expect(messageRow?.className).toContain('w-fit')
-    expect(bubble?.className).toContain('max-w-full')
+    expect(bubble?.className).toContain('max-w-[60cqw]')
+    expect(bubble?.className).not.toContain('md:max-w-[min(60vw,42rem)]')
     expect(bubble?.className).toContain('min-w-0')
     expect(indicator?.className).toContain('shrink-0')
     expect(indicator?.className).toContain('size-9')
@@ -757,7 +758,8 @@ describe('ChatMessage menu and rendering', () => {
     expect(bubble?.className).toContain(
       'ring-[var(--kun-chat-own-bubble-border)]'
     )
-    expect(bubble?.className).toContain('md:max-w-[min(60vw,42rem)]')
+    expect(bubble?.className).toContain('max-w-[60cqw]')
+    expect(bubble?.className).not.toContain('md:max-w-[min(60vw,42rem)]')
     expect(bubble?.className).not.toContain('bg-primary-500')
   })
 
@@ -977,6 +979,12 @@ describe('ChatMessage menu and rendering', () => {
       container.querySelector('[data-testid="chat-message-bubble"]')?.className
     ).toContain('w-fit')
     expect(
+      container.querySelector('[data-testid="chat-message-bubble"]')?.className
+    ).toContain('max-w-[60cqw]')
+    expect(
+      container.querySelector('[data-testid="chat-message-bubble"]')?.className
+    ).not.toContain('md:max-w-[min(60vw,42rem)]')
+    expect(
       container
         .querySelector('button[aria-label="查看图片 1"]')
         ?.getAttribute('style')
@@ -1042,9 +1050,16 @@ describe('ChatMessage menu and rendering', () => {
     )
 
     const meta = container.querySelector('[data-testid="chat-message-meta"]')
+    const bubble = container.querySelector(
+      '[data-testid="chat-message-bubble"]'
+    )
 
     expectInlineMetaTailFlow(container)
     expect(container.querySelector('p')?.className).not.toContain('pr-20')
+    expect(bubble?.className).toContain('max-w-[60cqw]')
+    expect(bubble?.className).toContain('md:w-[min(60cqw,32rem)]')
+    expect(bubble?.className).not.toContain('md:w-[min(60vw,32rem)]')
+    expect(bubble?.className).not.toContain('md:max-w-[min(60vw,42rem)]')
     expect(meta?.className).not.toContain('bg-black/45')
   })
 

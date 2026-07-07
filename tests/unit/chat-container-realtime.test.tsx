@@ -611,6 +611,7 @@ describe('ChatContainer realtime sync', () => {
     expect(chatCard?.className).toContain('h-[calc(100vh-200px)]')
     expect(chatCard?.className).toContain('min-h-[500px]')
     expect(chatCard?.className).not.toContain('h-full')
+    expect(messageScroller?.className).toContain('@container')
     expect(messageScroller?.className).toContain('flex-1')
     expect(messageScroller?.className).toContain('overflow-y-auto')
   })
