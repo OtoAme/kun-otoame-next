@@ -542,7 +542,8 @@ describe('ChatMessage menu and rendering', () => {
     expect(messageRow?.className).toContain('min-w-0')
     expect(messageRow?.className).toContain('[touch-action:pan-y]')
     expect(messageRow?.className).toContain('w-fit')
-    expect(bubble?.className).toContain('max-w-[60cqw]')
+    expect(bubble?.className).toContain('max-w-[70cqw]')
+    expect(bubble?.className).toContain('md:max-w-[60cqw]')
     expect(bubble?.className).not.toContain('md:max-w-[min(60vw,42rem)]')
     expect(bubble?.className).toContain('min-w-0')
     expect(indicator?.className).toContain('shrink-0')
@@ -758,7 +759,8 @@ describe('ChatMessage menu and rendering', () => {
     expect(bubble?.className).toContain(
       'ring-[var(--kun-chat-own-bubble-border)]'
     )
-    expect(bubble?.className).toContain('max-w-[60cqw]')
+    expect(bubble?.className).toContain('max-w-[70cqw]')
+    expect(bubble?.className).toContain('md:max-w-[60cqw]')
     expect(bubble?.className).not.toContain('md:max-w-[min(60vw,42rem)]')
     expect(bubble?.className).not.toContain('bg-primary-500')
   })
@@ -980,7 +982,10 @@ describe('ChatMessage menu and rendering', () => {
     ).toContain('w-fit')
     expect(
       container.querySelector('[data-testid="chat-message-bubble"]')?.className
-    ).toContain('max-w-[60cqw]')
+    ).toContain('max-w-[70cqw]')
+    expect(
+      container.querySelector('[data-testid="chat-message-bubble"]')?.className
+    ).toContain('md:max-w-[60cqw]')
     expect(
       container.querySelector('[data-testid="chat-message-bubble"]')?.className
     ).not.toContain('md:max-w-[min(60vw,42rem)]')
@@ -1056,7 +1061,8 @@ describe('ChatMessage menu and rendering', () => {
 
     expectInlineMetaTailFlow(container)
     expect(container.querySelector('p')?.className).not.toContain('pr-20')
-    expect(bubble?.className).toContain('max-w-[60cqw]')
+    expect(bubble?.className).toContain('max-w-[70cqw]')
+    expect(bubble?.className).toContain('md:max-w-[60cqw]')
     expect(bubble?.className).toContain('md:w-[min(60cqw,32rem)]')
     expect(bubble?.className).not.toContain('md:w-[min(60vw,32rem)]')
     expect(bubble?.className).not.toContain('md:max-w-[min(60vw,42rem)]')
