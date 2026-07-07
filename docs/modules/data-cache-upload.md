@@ -232,7 +232,9 @@ Gallery 图片上传走 `app/api/edit/gallery/route.ts` 和 `app/api/edit/galler
 
 ## 资源派生属性
 
-`app/api/patch/resource/_helper.ts` 的 `updatePatchAttributes` 会根据审核通过的资源重新汇总 patch 的：
+`utils/patchResourceAttributes.ts` 定义资源可见口径：只有 `patch_resource.status = 0` 的已发布资源能参与游戏卡片和详情页的资源派生信息。`app/api/patch/resource/_helper.ts` 的 `updatePatchAttributes`、`scripts/rebuildPatchResourceAttributes.ts`、`migration/reclassify-resource-types.ts` 和卡片 / 详情页 `_count.resource` 查询都应复用这个口径。
+
+`updatePatchAttributes` 会根据审核通过的资源重新汇总 patch 的：
 
 - `type`
 - `language`
@@ -250,11 +252,14 @@ Gallery 图片上传走 `app/api/edit/gallery/route.ts` 和 `app/api/edit/galler
 
 资源更新前必须确认资源当前 `patch_id` 等于提交的 `patchId`。这个校验要发生在 S3 上传消费、链接重建、`updatePatchAttributes` 和 `deletePatchResourceCache` 之前，避免过期后台列表或篡改请求把派生属性和缓存失效打到错误游戏上。
 
+历史脏数据修复使用 `pnpm maintenance:resource-attributes:dry` 预览、`pnpm maintenance:resource-attributes:apply` 应用；脚本同样只按已发布资源重算 `type`、`language` 和 `platform`。`pnpm migration:patch-counters` 安装的 `resource_count` 触发器也只计入已发布资源，并在资源审核状态变化时同步增减。
+
 ## 测试
 
 重点测试：
 
 - `tests/unit/redis.test.ts`
+- `tests/unit/patch-resource-attributes.test.ts`
 - `tests/unit/resource-link.test.ts`
 - `tests/unit/resource-classification.test.ts`
 - `tests/unit/gallery-upload.test.ts`

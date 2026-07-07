@@ -27,6 +27,7 @@ Use this skill for project-specific testing work.
 - Use `vi.hoisted` for values referenced by `vi.mock` factories.
 - Do not connect to real PostgreSQL, Redis, S3, GitHub, Bangumi, VNDB, or DLSite in unit tests.
 - Gallery upload tests live in `tests/unit/gallery-upload.test.ts`; mock Sharp/S3 and assert static AVIF transform + thumbnail behavior separately from animated WebP/AVIF original-preservation behavior, animated WebP thumbnail frame-size handling, no-benefit fallback, animated AVIF encoder success/fallback/no-placeholder behavior, and S3 compensation.
+- Patch resource-derived attribute tests live in `tests/unit/patch-resource-attributes.test.ts`; cover that `patch.type`, `patch.language`, `patch.platform`, and card/detail resource counts use only published resources (`patch_resource.status = 0`), not pending, banned, or deleted resources.
 - Private chat image tests live in `tests/unit/api/conversation-image-upload.test.ts` and `tests/unit/api/conversation-service.test.ts`; mock Sharp/S3/Redis and assert conversation ownership, type/size limits, route-level `image-upload-intake` blocking before multipart parsing, oversized files and bodies above Next's default 10MiB client buffer returning 413 user-visible size errors before Sharp/S3 work, recipient `allow_private_message` blocking image upload before real upload quota/charge/Sharp/S3 work, Redis metadata registration, successful image sends atomically consuming upload metadata so it cannot be replayed, message transaction failures restoring consumed metadata for retry, S3 compensation when registration fails, hourly free quota plus paid overage/refund behavior, image processing/S3 upload/metadata registration failures returning user-visible and distinguishable errors while rolling back quota/refunding paid overage, deleting image messages cleaning only unreferenced S3 objects, repeated deletes of already tombstoned messages not re-running S3 cleanup, and rejection of image message metadata that was not registered for the same conversation and user.
 - Message notification route tests should assert `POST /api/message` rejects ordinary users and only allows admins to create arbitrary notification rows; normal product flows should be tested through their service-level `createMessage` calls. Notification read/clear tests should cover idempotent no-op paths so repeated calls do not run empty DB writes.
 - User-triggered favorite/like notification tests should cover that adding a relation can notify, but removing an existing favorite/comment-like/rating-like/resource-like must not create or recreate a notification.
@@ -67,6 +68,7 @@ pnpm test tests/unit/gallery-upload.test.ts tests/unit/gallery-route.test.ts
 pnpm test tests/unit/patch-update-gallery.test.ts
 pnpm test tests/unit/gallery-preview.test.ts tests/unit/patch-gallery.test.tsx tests/unit/image-viewer.test.tsx
 pnpm test tests/unit/resource-link.test.ts
+pnpm test tests/unit/patch-resource-attributes.test.ts
 pnpm test tests/unit/api/batch-tag.test.ts
 pnpm typecheck
 ```

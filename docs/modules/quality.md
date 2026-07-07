@@ -31,6 +31,7 @@ pnpm typecheck
 | `tests/unit/resource-download-card.test.tsx`           | 下载卡片点击“获取下载链接”后展示真实链接、提取码、解压码，并展示获取失败错误。        |
 | `tests/unit/resource-access-links-helper.test.ts`      | 资源编辑入口打开前按需水合完整链接，并保留排序和下载计数等预览字段。                  |
 | `tests/unit/resource-classification.test.ts`           | 资源类型/语言/平台分类。                                                              |
+| `tests/unit/patch-resource-attributes.test.ts`         | 游戏资源派生标签和卡片资源数只统计已发布资源。                                        |
 | `tests/unit/search-store.test.ts`                      | 搜索 store。                                                                          |
 | `tests/unit/captcha.test.ts`                           | CAPTCHA。                                                                             |
 | `tests/unit/message-card.test.tsx`                     | 消息正文纯文本渲染和换行保留。                                                        |

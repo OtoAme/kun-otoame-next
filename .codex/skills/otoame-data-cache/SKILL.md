@@ -20,6 +20,7 @@ Use this skill for persistence, cache, and upload consistency work.
 - Use `lib/redis.ts`; helper keys are unprefixed because the helper adds `kun:touchgal`.
 - Direct `redis` / `runRedisCommand` usage needs a reason and explicit full key prefixes.
 - After patch/resource/tag/company writes, call the matching cache invalidation helper.
+- Patch resource-derived attributes and card/detail resource counts must use the shared published-resource visibility rule in `utils/patchResourceAttributes.ts`; pending, banned, or deleted resources must not affect `patch.type`, `patch.language`, `patch.platform`, or visible resource counts.
 - Patch-company relation writes must also invalidate the affected patch content/introduction cache; company cache invalidation alone leaves stale game detail pages.
 - Anonymous tag/company game-list APIs use short response caches; never cache personalized login/NSFW/blocked-tag results, and keep Redis list cache keys scoped by the full visibility where.
 - Home `home_data:*` and `/api/home` anonymous response caches must not store empty `galgames` payloads; this is a deploy/ISR empty-snapshot guard, not a generic rule for valid empty paginated lists.
@@ -44,6 +45,7 @@ Use this skill for persistence, cache, and upload consistency work.
 ```bash
 pnpm test tests/unit/api/otomegame-route-cache.test.ts
 pnpm test tests/unit/redis.test.ts
+pnpm test tests/unit/patch-resource-attributes.test.ts
 pnpm test tests/unit/resource-link.test.ts
 pnpm test tests/unit/resource-classification.test.ts
 pnpm test tests/unit/gallery-thumbnail-backfill.test.ts

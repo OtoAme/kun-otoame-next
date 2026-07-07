@@ -52,6 +52,10 @@
 
 带 `dry` 的脚本先 dry-run，确认输出后再 apply。
 
+`maintenance:resource-attributes:dry` 会按已发布资源（`patch_resource.status = 0`）重算每个游戏卡片/详情页使用的 `type`、`language` 和 `platform` 派生标签，预览历史脏数据中哪些 patch 会变化，不写 DB。确认输出后运行 `maintenance:resource-attributes:apply`，脚本会更新派生字段并失效受影响的详情和列表缓存。待审核、封禁或已删除资源不能进入这些派生标签。
+
+`migration:resource-type:*` 在迁移单条资源类型/平台后，也必须按同一已发布资源口径重算 patch 派生属性。`migration:patch-counters` 安装和回填的 `resource_count` 只统计已发布资源，并监听 `patch_resource.status` 变化；运行旧触发器的环境修复卡片资源数时，应重新执行 `pnpm migration:patch-counters`。
+
 `maintenance:gallery-thumbnails:dry` 扫描历史 gallery 中 `thumbnail_url IS NULL` 的本站原图，输出待回填数量，不下载原图、不写 S3、不写 DB。确认 dry-run 后用 `maintenance:gallery-thumbnails:apply` 分批回填真实缩略图；apply 默认 `--limit=50 --batch=20 --concurrency=1 --delay=1000`，适合生产 3c 服务器低负载执行，并会逐张打印当前处理的游戏、gallery 图片 ID、完成状态和耗时。常用生产命令是 `pnpm maintenance:gallery-thumbnails:apply -- --limit=50 --batch=20 --concurrency=1 --delay=1000`，重复执行直到 dry-run 无候选；如果 FFmpeg 性能或可用性不确定，先加 `--skip-animated-avif`。
 
 gallery thumbnails summary 字段含义：`galleryTotal` 是当前范围内 URL 非空的 gallery 图片总数；`alreadyWithThumbnail` 是已有 `thumbnail_url`、无需回填压缩的图片数；`missingThumbnail` 是仍缺 `thumbnail_url` 的图片数；`scanned` 是本次从数据库查出并检查的缺缩略图候选图片数，受 `--limit` 限制；`eligible` 是符合回填规则的图片数，dry-run 中表示 apply 会处理的数量；`updated` 是 apply 实际写入 `thumbnail_url` 的图片数，dry-run 中应为 `0`；`skipped` 是查到候选但因 URL 非本站、路径不规范、原图过大、缩略图生成不可用等原因跳过的数量；`failed` 是处理过程中出现未恢复错误的数量。`scanned=0` 且 `missingThumbnail=0` 表示当前范围没有缺 `thumbnail_url` 的 gallery 候选项，不代表数据库里没有 gallery 图片。
