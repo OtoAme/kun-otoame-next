@@ -1,3 +1,5 @@
+import { visiblePatchResourceCountSelect } from '~/utils/patchResourceAttributes'
+
 // TODO: type
 // type SelectFieldKey = Exclude<keyof GalgameCard, '_count'> & {
 //   select: {
@@ -26,7 +28,7 @@ export const GalgameCardSelectField = {
   _count: {
     select: {
       favorite_folder: true,
-      resource: true,
+      resource: visiblePatchResourceCountSelect,
       comment: true
     }
   },

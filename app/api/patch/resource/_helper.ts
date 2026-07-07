@@ -13,6 +13,11 @@ import {
   invalidatePatchListCaches
 } from '~/app/api/patch/cache'
 import { prisma as globalPrisma } from '~/prisma/index'
+import {
+  buildPatchResourceAttributes,
+  createVisiblePatchResourceWhere,
+  patchResourceAttributeSelect
+} from '~/utils/patchResourceAttributes'
 
 export type UploadedPatchResource = {
   uploadId: string
@@ -190,31 +195,19 @@ export const sanitizeResourceForAuditLog = <R extends { links?: any[] }>(
 export const updatePatchAttributes = async (patchId: number, tx?: any) => {
   const prisma = tx || globalPrisma
   const resources = await prisma.patch_resource.findMany({
-    where: { patch_id: patchId, status: 0 },
-    select: {
-      type: true,
-      language: true,
-      platform: true
-    }
+    where: createVisiblePatchResourceWhere({ patch_id: patchId }),
+    select: patchResourceAttributeSelect
   })
 
-  const types = new Set<string>()
-  const languages = new Set<string>()
-  const platforms = new Set<string>()
-
-  resources.forEach((resource: any) => {
-    resource.type.forEach((t: string) => types.add(t))
-    resource.language.forEach((l: string) => languages.add(l))
-    resource.platform.forEach((p: string) => platforms.add(p))
-  })
+  const { type, language, platform } = buildPatchResourceAttributes(resources)
 
   const patch = await prisma.patch.update({
     where: { id: patchId },
     data: {
       resource_update_time: new Date(),
-      type: Array.from(types),
-      language: Array.from(languages),
-      platform: Array.from(platforms)
+      type,
+      language,
+      platform
     },
     select: {
       unique_id: true

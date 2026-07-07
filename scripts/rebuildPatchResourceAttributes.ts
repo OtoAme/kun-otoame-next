@@ -2,6 +2,11 @@ import 'dotenv/config'
 import pg from 'pg'
 import { PrismaPg } from '@prisma/adapter-pg'
 import { PrismaClient } from '@prisma/client'
+import {
+  buildPatchResourceAttributes,
+  patchResourceAttributeSelect,
+  visiblePatchResourceWhere
+} from '../utils/patchResourceAttributes'
 
 const pool = new pg.Pool({
   connectionString: process.env.KUN_DATABASE_URL,
@@ -23,30 +28,6 @@ const sameSet = (left: string[], right: string[]) => {
   return left.every((item) => rightSet.has(item))
 }
 
-const buildAttributes = (
-  resources: {
-    type: string[]
-    language: string[]
-    platform: string[]
-  }[]
-) => {
-  const type = new Set<string>()
-  const language = new Set<string>()
-  const platform = new Set<string>()
-
-  for (const resource of resources) {
-    resource.type.forEach((item) => type.add(item))
-    resource.language.forEach((item) => language.add(item))
-    resource.platform.forEach((item) => platform.add(item))
-  }
-
-  return {
-    type: Array.from(type),
-    language: Array.from(language),
-    platform: Array.from(platform)
-  }
-}
-
 const run = async () => {
   let cursor = 0
   let scanned = 0
@@ -66,12 +47,8 @@ const run = async () => {
         language: true,
         platform: true,
         resource: {
-          where: { status: 0 },
-          select: {
-            type: true,
-            language: true,
-            platform: true
-          }
+          where: visiblePatchResourceWhere,
+          select: patchResourceAttributeSelect
         }
       }
     })
@@ -82,7 +59,7 @@ const run = async () => {
       cursor = patch.id
       scanned += 1
 
-      const next = buildAttributes(patch.resource)
+      const next = buildPatchResourceAttributes(patch.resource)
       const isChanged =
         !sameSet(patch.type, next.type) ||
         !sameSet(patch.language, next.language) ||

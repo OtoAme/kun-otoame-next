@@ -3,6 +3,11 @@ import {
   type ResourceSection
 } from '../constants/resource'
 import { prisma } from '../prisma'
+import {
+  buildPatchResourceAttributes,
+  createVisiblePatchResourceWhere,
+  patchResourceAttributeSelect
+} from '../utils/patchResourceAttributes'
 
 interface ResourceRow {
   id: number
@@ -112,42 +117,31 @@ const recalculatePatchAttributes = async (patchIds: number[]) => {
   if (!patchIds.length) return 0
 
   const resources = await prisma.patch_resource.findMany({
-    where: { patch_id: { in: patchIds } },
+    where: createVisiblePatchResourceWhere({ patch_id: { in: patchIds } }),
     select: {
       patch_id: true,
-      type: true,
-      language: true,
-      platform: true
+      ...patchResourceAttributeSelect
     }
   })
 
-  const patchAttrs = new Map<
-    number,
-    { type: Set<string>; language: Set<string>; platform: Set<string> }
-  >()
-
-  for (const res of resources) {
-    const attrs = patchAttrs.get(res.patch_id) ?? {
-      type: new Set<string>(),
-      language: new Set<string>(),
-      platform: new Set<string>()
-    }
-
-    res.type.forEach((type) => attrs.type.add(type))
-    res.language.forEach((language) => attrs.language.add(language))
-    res.platform.forEach((platform) => attrs.platform.add(platform))
-    patchAttrs.set(res.patch_id, attrs)
+  const resourcesByPatch = new Map<number, typeof resources>()
+  for (const resource of resources) {
+    const patchResources = resourcesByPatch.get(resource.patch_id) ?? []
+    patchResources.push(resource)
+    resourcesByPatch.set(resource.patch_id, patchResources)
   }
 
   await prisma.$transaction(
     patchIds.map((patchId) => {
-      const attrs = patchAttrs.get(patchId)
+      const attrs = buildPatchResourceAttributes(
+        resourcesByPatch.get(patchId) ?? []
+      )
       return prisma.patch.update({
         where: { id: patchId },
         data: {
-          type: Array.from(attrs?.type ?? []),
-          language: Array.from(attrs?.language ?? []),
-          platform: Array.from(attrs?.platform ?? []),
+          type: attrs.type,
+          language: attrs.language,
+          platform: attrs.platform,
           resource_update_time: new Date()
         }
       })

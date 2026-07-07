@@ -1,4 +1,5 @@
 import { prisma } from '~/prisma/index'
+import { visiblePatchResourceCountSelect } from '~/utils/patchResourceAttributes'
 
 const patchUserSelect = {
   id: true,
@@ -12,7 +13,7 @@ const patchAliasSelect = {
 
 const patchCountSelect = {
   favorite_folder: true,
-  resource: true,
+  resource: visiblePatchResourceCountSelect,
   comment: true
 } as const
 

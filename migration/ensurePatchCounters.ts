@@ -1,5 +1,6 @@
 import 'dotenv/config'
 import { prisma } from '~/prisma/index'
+import { PUBLISHED_PATCH_RESOURCE_STATUS } from '~/utils/patchResourceAttributes'
 
 const BACKFILL_SQL = `
 UPDATE "patch" p
@@ -16,6 +17,7 @@ LEFT JOIN (
 LEFT JOIN (
   SELECT patch_id, COUNT(*)::int AS c
   FROM "patch_resource"
+  WHERE status = ${PUBLISHED_PATCH_RESOURCE_STATUS}
   GROUP BY patch_id
 ) r ON r.patch_id = base.id
 LEFT JOIN (
@@ -58,17 +60,52 @@ FOR EACH ROW EXECUTE FUNCTION ${name}()
 `
 ]
 
+const buildResourceCounterTriggerStatements = (): string[] => [
+  `
+CREATE OR REPLACE FUNCTION patch_resource_count_trg() RETURNS trigger AS $$
+BEGIN
+  IF TG_OP = 'INSERT' THEN
+    IF NEW.status = ${PUBLISHED_PATCH_RESOURCE_STATUS} THEN
+      UPDATE "patch" SET resource_count = resource_count + 1 WHERE id = NEW.patch_id;
+    END IF;
+    RETURN NEW;
+  ELSIF TG_OP = 'DELETE' THEN
+    IF OLD.status = ${PUBLISHED_PATCH_RESOURCE_STATUS} THEN
+      UPDATE "patch" SET resource_count = GREATEST(resource_count - 1, 0) WHERE id = OLD.patch_id;
+    END IF;
+    RETURN OLD;
+  ELSIF TG_OP = 'UPDATE' AND (
+    NEW.patch_id IS DISTINCT FROM OLD.patch_id OR
+    NEW.status IS DISTINCT FROM OLD.status
+  ) THEN
+    IF OLD.status = ${PUBLISHED_PATCH_RESOURCE_STATUS} THEN
+      UPDATE "patch" SET resource_count = GREATEST(resource_count - 1, 0) WHERE id = OLD.patch_id;
+    END IF;
+    IF NEW.status = ${PUBLISHED_PATCH_RESOURCE_STATUS} THEN
+      UPDATE "patch" SET resource_count = resource_count + 1 WHERE id = NEW.patch_id;
+    END IF;
+    RETURN NEW;
+  END IF;
+  RETURN NULL;
+END;
+$$ LANGUAGE plpgsql
+`,
+  'DROP TRIGGER IF EXISTS patch_resource_count_trg ON "patch_resource"',
+  `
+CREATE TRIGGER patch_resource_count_trg
+AFTER INSERT OR DELETE OR UPDATE OF patch_id, status
+ON "patch_resource"
+FOR EACH ROW EXECUTE FUNCTION patch_resource_count_trg()
+`
+]
+
 const TRIGGER_STATEMENTS: string[] = [
   ...buildCounterTriggerStatements(
     'patch_favorite_count_trg',
     'favorite_count',
     'user_patch_favorite_folder_relation'
   ),
-  ...buildCounterTriggerStatements(
-    'patch_resource_count_trg',
-    'resource_count',
-    'patch_resource'
-  ),
+  ...buildResourceCounterTriggerStatements(),
   ...buildCounterTriggerStatements(
     'patch_comment_count_trg',
     'comment_count',
