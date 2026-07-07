@@ -167,6 +167,7 @@ pnpm typecheck
 
 - 新业务组件放在对应 domain 目录，不要把业务逻辑塞进 `components/kun`。
 - 共享组件保持通用，不依赖具体 API 响应。
+- 列表翻页默认使用 `components/kun/Pagination.tsx`。页码变化时由共享分页触发 `utils/scrollToTop.ts` 的快速回顶部动画，并尊重 `prefers-reduced-motion`；不要在页面里复制 `window.scrollTo({ behavior: 'smooth' })`，确实不应移动页面时传 `disableScrollToTop`。
 - 新图标优先用 `lucide-react` 或现有图标。
 - 用户文案保持 OtoAme 命名，避免误回退到 TouchGal/GalGame。
 - NSFW 相关 UI 必须同时检查遮罩、标题、列表过滤和详情隐藏。

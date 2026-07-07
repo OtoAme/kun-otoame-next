@@ -17,6 +17,7 @@ Use this skill for pages, components, state, theme, and content.
 
 - Use Server Components by default; add `'use client'` only for hooks, events, stores, or browser APIs.
 - Keep business-specific UI in domain folders; keep `components/kun` generic.
+- List pagination should use `components/kun/Pagination.tsx` so page changes fast-scroll back to the document top through `utils/scrollToTop.ts` and respect `prefers-reduced-motion`. Do not duplicate per-page `window.scrollTo({ behavior: 'smooth' })`; pass `disableScrollToTop` only for embedded pagination that must preserve the current scroll position.
 - Update metadata for new pages.
 - Check NSFW behavior across list, detail, title, and mask flows.
 - For tag/company detail pages, preserve the static-cache split: company may reuse an SFW static first page only for anonymous default filters, while login/NSFW `nsfw` or `all`/blocked-tag cookies must trigger a client list fetch; tag detail should fetch its game list on client mount.
