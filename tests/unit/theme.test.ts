@@ -1,4 +1,6 @@
 import React, { act } from 'react'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { JSDOM } from 'jsdom'
 import { createRoot, type Root } from 'react-dom/client'
@@ -289,6 +291,49 @@ describe('resolveKunSiteTheme', () => {
   it('allows paid themes only when the server availability list includes them', () => {
     expect(resolveTestTheme('paid', { availableThemeIds: ['paid'] })).toBe(
       'paid'
+    )
+  })
+})
+
+describe('private chat theme color tokens', () => {
+  const themesCss = readFileSync(
+    resolve(process.cwd(), 'styles/themes.css'),
+    'utf8'
+  )
+  const themeColorSystemDoc = readFileSync(
+    resolve(process.cwd(), 'docs/theme-color-system.md'),
+    'utf8'
+  )
+
+  it('defines semantic chat colors for light and dark modes', () => {
+    expect(themesCss).toMatch(
+      /html\[data-kun-theme\]\s*{[\s\S]*--kun-chat-own-bubble-bg:[\s\S]*--kun-chat-input-bg:/
+    )
+    expect(themesCss).toMatch(
+      /html\.dark\[data-kun-theme\]\s*{[\s\S]*--kun-chat-own-bubble-bg:[\s\S]*--kun-chat-input-bg:/
+    )
+    expect(themesCss).toContain('--kun-chat-own-bubble-text')
+    expect(themesCss).toContain('--kun-chat-other-bubble-text')
+    expect(themesCss).toContain('--kun-chat-muted-text')
+  })
+
+  it('uses readable dark-mode text for received chat reply previews', () => {
+    const darkChatTokens = themesCss.match(
+      /html\.dark\[data-kun-theme\]\s*{(?<body>[\s\S]*?)\n}/
+    )?.groups?.body
+
+    expect(darkChatTokens).toContain(
+      '--kun-chat-reply-text: hsl(var(--heroui-default-500));'
+    )
+    expect(darkChatTokens).not.toContain(
+      '--kun-chat-reply-text: hsl(var(--heroui-default-200));'
+    )
+  })
+
+  it('keeps chat token documentation examples valid for Tailwind scanning', () => {
+    expect(themeColorSystemDoc).not.toContain('--kun-chat-...')
+    expect(themeColorSystemDoc).not.toMatch(
+      /\b(?:bg|text|border|ring)-\[var\(--kun-chat-\.\.\.\)\]/
     )
   })
 })

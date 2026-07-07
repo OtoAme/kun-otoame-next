@@ -111,6 +111,47 @@ html[data-kun-theme] {
   --heroui-secondary: var(--kun-accent-default, var(--kun-accent-500));
   --heroui-secondary-foreground: var(--kun-accent-foreground);
   --heroui-focus: var(--kun-focus);
+
+  --kun-chat-text-primary: hsl(var(--heroui-foreground));
+  --kun-chat-text-secondary: hsl(var(--heroui-default-600));
+  --kun-chat-muted-text: hsl(var(--heroui-default-500));
+  --kun-chat-panel-bg: hsl(var(--heroui-content1) / 0.95);
+  --kun-chat-panel-border: hsl(var(--heroui-default-200) / 0.8);
+  --kun-chat-panel-shadow: 0 -10px 30px
+    hsl(var(--heroui-foreground) / 0.06);
+  --kun-chat-list-card-bg: hsl(var(--heroui-content1) / 0.96);
+  --kun-chat-list-card-hover-bg: hsl(var(--heroui-content2));
+  --kun-chat-list-card-border: hsl(var(--heroui-default-100));
+  --kun-chat-own-bubble-bg: hsl(var(--kun-brand-50) / 0.96);
+  --kun-chat-own-bubble-text: hsl(var(--kun-brand-900));
+  --kun-chat-own-bubble-border: hsl(var(--kun-brand-200) / 0.75);
+  --kun-chat-own-bubble-active-border: hsl(var(--kun-brand-300) / 0.8);
+  --kun-chat-own-meta-text: hsl(var(--kun-brand-700));
+  --kun-chat-other-bubble-bg: hsl(var(--heroui-content2));
+  --kun-chat-other-bubble-text: hsl(var(--heroui-foreground));
+  --kun-chat-other-bubble-border: hsl(var(--heroui-default-200));
+  --kun-chat-other-bubble-active-border: hsl(var(--heroui-default-300) / 0.7);
+  --kun-chat-other-meta-text: hsl(var(--heroui-default-500));
+  --kun-chat-deleted-bg: hsl(var(--heroui-default-100));
+  --kun-chat-reply-bg: hsl(var(--kun-brand-100) / 0.58);
+  --kun-chat-own-reply-bg: hsl(var(--kun-brand-100) / 0.72);
+  --kun-chat-reply-draft-bg: hsl(var(--kun-brand-50) / 0.62);
+  --kun-chat-reply-text: hsl(var(--heroui-default-700));
+  --kun-chat-own-reply-text: hsl(var(--kun-brand-900));
+  --kun-chat-reply-title: hsl(var(--kun-brand-700));
+  --kun-chat-highlight-bg: hsl(var(--kun-brand-500) / 0.34);
+  --kun-chat-highlight-border: hsl(var(--kun-brand-500) / 0.42);
+  --kun-chat-menu-bg: hsl(var(--heroui-content1) / 0.96);
+  --kun-chat-menu-text: hsl(var(--heroui-foreground));
+  --kun-chat-menu-border: hsl(var(--heroui-default-200));
+  --kun-chat-menu-item-hover-bg: hsl(var(--heroui-default-100));
+  --kun-chat-input-bg: hsl(var(--heroui-default-100));
+  --kun-chat-input-text: hsl(var(--heroui-foreground));
+  --kun-chat-placeholder-text: hsl(var(--heroui-default-500));
+  --kun-chat-image-frame-bg: hsl(var(--heroui-default-200));
+  --kun-chat-image-tile-bg: hsl(var(--heroui-default-100));
+  --kun-chat-floating-control-bg: hsl(var(--heroui-background) / 0.85);
+  --kun-chat-floating-control-text: hsl(var(--heroui-default-700));
 }
 
 html[data-kun-theme='otoame'] {
@@ -135,6 +176,46 @@ html.dark[data-kun-theme] {
   --kun-color-recommend-yes-text: var(--heroui-success);
   --kun-color-recommend-no-text: var(--heroui-warning);
   --kun-color-recommend-strong-no-text: var(--heroui-danger-500);
+
+  --kun-chat-text-primary: hsl(var(--heroui-foreground));
+  --kun-chat-text-secondary: hsl(var(--heroui-default-300));
+  --kun-chat-muted-text: hsl(var(--heroui-default-400));
+  --kun-chat-panel-bg: hsl(var(--heroui-content1) / 0.92);
+  --kun-chat-panel-border: hsl(var(--heroui-default-100) / 0.16);
+  --kun-chat-panel-shadow: 0 -10px 30px hsl(0 0% 0% / 0.28);
+  --kun-chat-list-card-bg: hsl(var(--heroui-content1) / 0.72);
+  --kun-chat-list-card-hover-bg: hsl(var(--heroui-content2) / 0.82);
+  --kun-chat-list-card-border: hsl(var(--heroui-default-100) / 0.16);
+  --kun-chat-own-bubble-bg: hsl(var(--kun-brand-50) / 0.74);
+  --kun-chat-own-bubble-text: hsl(var(--kun-brand-900));
+  --kun-chat-own-bubble-border: hsl(var(--kun-brand-300) / 0.34);
+  --kun-chat-own-bubble-active-border: hsl(var(--kun-brand-400) / 0.5);
+  --kun-chat-own-meta-text: hsl(var(--kun-brand-700));
+  --kun-chat-other-bubble-bg: hsl(var(--heroui-content2) / 0.72);
+  --kun-chat-other-bubble-text: hsl(var(--heroui-foreground));
+  --kun-chat-other-bubble-border: hsl(var(--heroui-default-100) / 0.14);
+  --kun-chat-other-bubble-active-border: hsl(var(--heroui-default-200) / 0.34);
+  --kun-chat-other-meta-text: hsl(var(--heroui-default-400));
+  --kun-chat-deleted-bg: hsl(var(--heroui-default-100) / 0.12);
+  --kun-chat-reply-bg: hsl(var(--kun-brand-50) / 0.72);
+  --kun-chat-own-reply-bg: hsl(var(--kun-brand-100) / 0.7);
+  --kun-chat-reply-draft-bg: hsl(var(--kun-brand-50) / 0.68);
+  --kun-chat-reply-text: hsl(var(--heroui-default-500));
+  --kun-chat-own-reply-text: hsl(var(--kun-brand-900));
+  --kun-chat-reply-title: hsl(var(--kun-brand-700));
+  --kun-chat-highlight-bg: hsl(var(--kun-brand-400) / 0.38);
+  --kun-chat-highlight-border: hsl(var(--kun-brand-400) / 0.5);
+  --kun-chat-menu-bg: hsl(var(--heroui-content1) / 0.92);
+  --kun-chat-menu-text: hsl(var(--heroui-foreground));
+  --kun-chat-menu-border: hsl(var(--heroui-default-100) / 0.18);
+  --kun-chat-menu-item-hover-bg: hsl(var(--heroui-default-100) / 0.12);
+  --kun-chat-input-bg: hsl(var(--heroui-default-100) / 0.12);
+  --kun-chat-input-text: hsl(var(--heroui-foreground));
+  --kun-chat-placeholder-text: hsl(var(--heroui-default-400));
+  --kun-chat-image-frame-bg: hsl(var(--heroui-default-100) / 0.14);
+  --kun-chat-image-tile-bg: hsl(var(--heroui-default-100) / 0.12);
+  --kun-chat-floating-control-bg: hsl(var(--heroui-content1) / 0.88);
+  --kun-chat-floating-control-text: hsl(var(--heroui-default-200));
 }
 
 html.dark[data-kun-theme='otoame'] {

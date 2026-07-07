@@ -908,8 +908,13 @@ export const ChatContainer = ({
 
   return (
     <>
-      <Card className={cn('h-[calc(100vh-200px)] min-h-[500px]', className)}>
-        <CardHeader className="border-b border-default-200 flex items-center justify-between gap-3">
+      <Card
+        className={cn(
+          'h-[calc(100vh-200px)] min-h-[500px] bg-[var(--kun-chat-panel-bg)] text-[var(--kun-chat-text-primary)]',
+          className
+        )}
+      >
+        <CardHeader className="flex items-center justify-between gap-3 border-b border-[var(--kun-chat-panel-border)]">
           <div className="flex items-center gap-3">
             <Button
               as={Link}
@@ -945,7 +950,7 @@ export const ChatContainer = ({
             {hasMore && (
               <div ref={loadMoreRef} className="flex justify-center py-2">
                 {loading && (
-                  <Loader2 className="size-5 animate-spin text-default-400" />
+                  <Loader2 className="size-5 animate-spin text-[var(--kun-chat-muted-text)]" />
                 )}
               </div>
             )}
@@ -1003,7 +1008,7 @@ export const ChatContainer = ({
                   title={scrollButtonLabel}
                   tabIndex={showScrollButton ? 0 : -1}
                   className={cn(
-                    'pointer-events-auto flex size-11 items-center justify-center rounded-full border border-default-200 bg-content1/95 text-default-600 shadow-lg shadow-default-900/10 outline-none backdrop-blur-md transition-[background-color,color,box-shadow] duration-200 hover:bg-content2 hover:text-foreground focus-visible:ring-2 focus-visible:ring-[hsl(var(--kun-brand-500)/0.55)] active:bg-content2 active:text-foreground dark:border-default-100/10 dark:bg-content2/95 dark:shadow-black/25',
+                    'pointer-events-auto flex size-11 items-center justify-center rounded-full border border-[var(--kun-chat-panel-border)] bg-[var(--kun-chat-menu-bg)] text-[var(--kun-chat-text-secondary)] shadow-lg shadow-default-900/10 outline-none backdrop-blur-md transition-[background-color,color,box-shadow] duration-200 hover:bg-[var(--kun-chat-menu-item-hover-bg)] hover:text-[var(--kun-chat-text-primary)] focus-visible:ring-2 focus-visible:ring-[hsl(var(--kun-brand-500)/0.55)] active:bg-[var(--kun-chat-menu-item-hover-bg)] active:text-[var(--kun-chat-text-primary)] dark:shadow-black/25',
                     !showScrollButton && 'pointer-events-none'
                   )}
                   onClick={handleScrollButtonClick}
@@ -1013,7 +1018,7 @@ export const ChatContainer = ({
               </div>
             )}
 
-            <div className="relative z-30 rounded-2xl border border-default-200/80 bg-content1/95 p-3 shadow-[0_-10px_30px_hsl(var(--heroui-foreground)/0.06)] backdrop-blur-md dark:border-default-100/10 dark:bg-content1/90">
+            <div className="relative z-30 rounded-2xl border border-[var(--kun-chat-panel-border)] bg-[var(--kun-chat-panel-bg)] p-3 shadow-[var(--kun-chat-panel-shadow)] backdrop-blur-md">
               <ChatInput
                 conversationId={conversationId}
                 replyTarget={replyDraft?.message}

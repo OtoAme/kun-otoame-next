@@ -69,7 +69,7 @@ export const DeleteConversationButton = ({
           <ModalHeader>移除私聊</ModalHeader>
           <ModalBody>
             <p>确定要从你的列表移除与 {otherUserName} 的私聊吗？</p>
-            <p className="text-sm text-default-500">
+            <p className="text-sm text-[var(--kun-chat-muted-text)]">
               这只会隐藏你这边的会话列表记录，不会删除对方的私聊内容。再次发起或收到新消息后，会话会重新出现。
             </p>
           </ModalBody>

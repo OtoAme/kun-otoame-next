@@ -403,6 +403,12 @@ describe('ChatInput keyboard handling', () => {
     expect(replyPreview?.className).toContain('before:rounded-full')
     expect(replyPreview?.className).toContain('before:top-0')
     expect(replyPreview?.className).toContain('before:bottom-0')
+    expect(replyPreview?.className).toContain(
+      'bg-[var(--kun-chat-reply-draft-bg)]'
+    )
+    expect(replyPreview?.className).toContain(
+      'text-[var(--kun-chat-reply-text)]'
+    )
     expect(replyPreview?.className).not.toContain('border-l-3')
     expect(container.innerHTML).not.toContain('bg-primary-50')
     await typeContent(textarea, 'reply')
@@ -692,6 +698,12 @@ describe('ChatInput keyboard handling', () => {
     )
     expect(attachmentMenu).not.toBeNull()
     expect(attachmentMenu?.className).toContain('z-50')
+    expect(attachmentMenu?.className).toContain(
+      'bg-[var(--kun-chat-menu-bg)]'
+    )
+    expect(attachmentMenu?.className).toContain(
+      'text-[var(--kun-chat-menu-text)]'
+    )
   })
 
   it('closes the attachment menu when Escape is pressed', async () => {

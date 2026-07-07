@@ -419,8 +419,8 @@ export const ChatInput = ({
             content={replyTarget.content}
             selectedText={replySelectedText}
             image={replyImage}
-            className="min-w-0 flex-1 rounded-md border-[hsl(var(--kun-brand-500))] bg-[hsl(var(--kun-brand-50)/0.62)] py-1 pl-3.5 pr-2 text-default-600 dark:bg-[hsl(var(--kun-brand-500)/0.1)] dark:text-default-300"
-            titleClassName="text-[hsl(var(--kun-brand-600))] dark:text-[hsl(var(--kun-brand-500))]"
+            className="min-w-0 flex-1 rounded-md border-[var(--kun-chat-own-bubble-border)] bg-[var(--kun-chat-reply-draft-bg)] py-1 pl-3.5 pr-2 text-[var(--kun-chat-reply-text)]"
+            titleClassName="text-[var(--kun-chat-reply-title)]"
           />
           <Button
             isIconOnly
@@ -435,14 +435,14 @@ export const ChatInput = ({
       )}
 
       {previewImages.length > 0 && (
-        <div className="mb-2 rounded-2xl border border-[hsl(var(--kun-brand-100)/0.85)] bg-[hsl(var(--kun-brand-50)/0.55)] p-1.5 shadow-sm dark:border-[hsl(var(--kun-brand-400)/0.18)] dark:bg-[hsl(var(--kun-brand-500)/0.08)]">
+        <div className="mb-2 rounded-2xl border border-[var(--kun-chat-own-bubble-border)] bg-[var(--kun-chat-reply-draft-bg)] p-1.5 shadow-sm">
           <KunImageViewer images={previewViewerImages} preload={2}>
             {(openLightbox) => (
               <div className="grid max-w-sm grid-cols-2 gap-1 overflow-hidden rounded-xl">
                 {previewImages.map((image, index) => (
                   <div
                     key={`${image.url}-${index}`}
-                    className="relative aspect-square min-h-0 min-w-0 overflow-hidden bg-default-100"
+                    className="relative aspect-square min-h-0 min-w-0 overflow-hidden bg-[var(--kun-chat-image-tile-bg)]"
                   >
                     <button
                       type="button"
@@ -461,7 +461,7 @@ export const ChatInput = ({
                       size="sm"
                       variant="flat"
                       aria-label={`移除第 ${index + 1} 张图片`}
-                      className="absolute right-1 top-1 z-10 min-h-7 min-w-7 bg-background/85 text-default-700 shadow-sm backdrop-blur"
+                      className="absolute right-1 top-1 z-10 min-h-7 min-w-7 bg-[var(--kun-chat-floating-control-bg)] text-[var(--kun-chat-floating-control-text)] shadow-sm backdrop-blur"
                       onPress={() => removeSelectedImage(index)}
                     >
                       <X className="size-3.5" />
@@ -471,7 +471,7 @@ export const ChatInput = ({
               </div>
             )}
           </KunImageViewer>
-          <div className="mt-1.5 flex items-center justify-between gap-2 px-1 text-xs text-default-500">
+          <div className="mt-1.5 flex items-center justify-between gap-2 px-1 text-xs text-[var(--kun-chat-muted-text)]">
             <span className="inline-flex min-w-0 items-center gap-1">
               <ImageIcon className="size-3.5 shrink-0" />
               <span className="truncate">
@@ -538,7 +538,9 @@ export const ChatInput = ({
           minRows={1}
           maxRows={5}
           classNames={{
-            inputWrapper: 'bg-default-100'
+            input:
+              'text-[var(--kun-chat-input-text)] placeholder:text-[var(--kun-chat-placeholder-text)]',
+            inputWrapper: 'bg-[var(--kun-chat-input-bg)]'
           }}
         />
         <Button

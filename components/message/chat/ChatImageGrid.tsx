@@ -142,7 +142,7 @@ export const ChatImageGrid = ({
         getGridClassName(images.length),
         images.length > 1 && 'gap-1',
         isSingleImage && !isFramedSingleImage && 'w-fit max-w-full',
-        isFramedSingleImage && 'bg-default-200 dark:bg-default-100/15',
+        isFramedSingleImage && 'bg-[var(--kun-chat-image-frame-bg)]',
         className
       )}
     >
@@ -151,7 +151,7 @@ export const ChatImageGrid = ({
           key={`${image.url}-${index}`}
           type="button"
           className={cn(
-            'group relative block min-h-0 min-w-0 overflow-hidden bg-default-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--kun-brand-500))]',
+            'group relative block min-h-0 min-w-0 overflow-hidden bg-[var(--kun-chat-image-tile-bg)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--kun-brand-500))]',
             getImageAspectClassName(images.length, image),
             isSingleImage && 'max-h-[min(80vh,60rem)] max-w-full',
             isFramedSingleImage && 'aspect-[4/3] h-full w-full bg-transparent',
@@ -206,7 +206,7 @@ export const ChatImageGrid = ({
             <span
               data-testid="chat-image-context-overlay"
               className={cn(
-                'pointer-events-none absolute inset-0 z-20 bg-[hsl(var(--kun-brand-500)/0.30)] transition-opacity duration-300',
+                'pointer-events-none absolute inset-0 z-20 bg-[var(--kun-chat-highlight-bg)] transition-opacity duration-300',
                 isActiveImageFading ? 'opacity-0' : 'opacity-100'
               )}
             />

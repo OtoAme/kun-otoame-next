@@ -390,4 +390,15 @@ describe('ConversationList realtime refresh', () => {
         ?.getAttribute('data-prefetch')
     ).toBe('false')
   })
+
+  it('uses semantic readable colors for conversation cards', async () => {
+    const { container } = await renderList()
+
+    const card = container.querySelector('[data-testid="conversation-link"]')
+    expect(card?.className).toContain('bg-[var(--kun-chat-list-card-bg)]')
+    expect(card?.className).toContain('text-[var(--kun-chat-text-primary)]')
+    expect(card?.className).toContain(
+      'border-[var(--kun-chat-list-card-border)]'
+    )
+  })
 })

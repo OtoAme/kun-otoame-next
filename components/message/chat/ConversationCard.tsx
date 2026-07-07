@@ -16,7 +16,7 @@ export const ConversationCard = ({ conversation }: Props) => {
       as={Link}
       href={`/message/chat/${conversation.id}`}
       prefetch={false}
-      className="w-full border border-default-100 dark:border-default-200"
+      className="w-full border border-[var(--kun-chat-list-card-border)] bg-[var(--kun-chat-list-card-bg)] text-[var(--kun-chat-text-primary)] transition-colors hover:bg-[var(--kun-chat-list-card-hover-bg)]"
     >
       <CardBody className="flex flex-row items-center gap-4">
         <KunAvatar
@@ -32,11 +32,11 @@ export const ConversationCard = ({ conversation }: Props) => {
             <span className="font-semibold truncate">
               {conversation.otherUser.name}
             </span>
-            <span className="text-xs text-default-400 shrink-0 ml-2">
+            <span className="ml-2 shrink-0 text-xs text-[var(--kun-chat-muted-text)]">
               {formatTimeDifference(conversation.lastMessageTime)}
             </span>
           </div>
-          <p className="text-sm text-default-600 truncate">
+          <p className="truncate text-sm text-[var(--kun-chat-text-secondary)]">
             {conversation.lastMessage || '暂无消息'}
           </p>
         </div>

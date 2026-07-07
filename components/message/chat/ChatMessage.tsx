@@ -759,8 +759,8 @@ export const ChatMessage = ({
             }}
           />
         </div>
-        <div className="max-w-[70%] select-none rounded-2xl bg-default-100 px-4 py-2 dark:bg-default-200">
-          <p className="text-sm text-default-400 italic">
+        <div className="max-w-[70%] select-none rounded-2xl bg-[var(--kun-chat-deleted-bg)] px-4 py-2">
+          <p className="text-sm italic text-[var(--kun-chat-muted-text)]">
             {message.sender.name} 删除了一条消息
           </p>
         </div>
@@ -795,12 +795,12 @@ export const ChatMessage = ({
             : undefined
         }
         className={cn(
-          'mb-1 border-[hsl(var(--kun-brand-500))] bg-[hsl(var(--kun-brand-100)/0.58)] py-1 pl-3.5 pr-2 text-[13px] text-default-700 dark:bg-[hsl(var(--kun-brand-400)/0.14)] dark:text-default-200',
+          'mb-1 border-[var(--kun-chat-own-bubble-border)] bg-[var(--kun-chat-reply-bg)] py-1 pl-3.5 pr-2 text-[13px] text-[var(--kun-chat-reply-text)]',
           isOwn
-            ? 'border-[hsl(var(--kun-brand-500))] bg-[hsl(var(--kun-brand-100)/0.72)] text-default-800 dark:bg-[hsl(var(--kun-brand-400)/0.18)] dark:text-default-100'
+            ? 'border-[var(--kun-chat-own-bubble-border)] bg-[var(--kun-chat-own-reply-bg)] text-[var(--kun-chat-own-reply-text)]'
             : ''
         )}
-        titleClassName="text-[hsl(var(--kun-brand-700))] dark:text-[hsl(var(--kun-brand-500))]"
+        titleClassName="text-[var(--kun-chat-reply-title)]"
       />
     )
   }
@@ -817,7 +817,7 @@ export const ChatMessage = ({
     <mark
       data-testid="chat-reply-text-highlight"
       className={cn(
-        'rounded bg-[hsl(var(--kun-brand-500)/0.34)] px-0.5 text-inherit ring-1 ring-[hsl(var(--kun-brand-500)/0.42)] transition-opacity duration-300 dark:bg-[hsl(var(--kun-brand-400)/0.40)]',
+        'rounded bg-[var(--kun-chat-highlight-bg)] px-0.5 text-inherit ring-1 ring-[var(--kun-chat-highlight-border)] transition-opacity duration-300',
         isActiveReplyHighlightFading ? 'opacity-0' : 'opacity-100'
       )}
     >
@@ -922,7 +922,7 @@ export const ChatMessage = ({
     <span
       data-testid="chat-reply-bubble-highlight"
       className={cn(
-        'pointer-events-none absolute inset-0 z-30 rounded-2xl bg-[hsl(var(--kun-brand-500)/0.30)] ring-2 ring-inset ring-[hsl(var(--kun-brand-500)/0.46)] transition-opacity duration-300 dark:bg-[hsl(var(--kun-brand-400)/0.34)]',
+        'pointer-events-none absolute inset-0 z-30 rounded-2xl bg-[var(--kun-chat-highlight-bg)] ring-2 ring-inset ring-[var(--kun-chat-highlight-border)] transition-opacity duration-300',
         isActiveReplyHighlightFading ? 'opacity-0' : 'opacity-100'
       )}
     />
@@ -956,8 +956,8 @@ export const ChatMessage = ({
         variant === 'overlay'
           ? 'pointer-events-none absolute bottom-1.5 right-1.5 z-20 rounded-full bg-black/45 px-2 py-0.5 text-white shadow-sm backdrop-blur-sm'
           : isOwn
-            ? 'text-[hsl(var(--kun-brand-700))] dark:text-[hsl(var(--kun-brand-500))]'
-            : 'text-default-400',
+            ? 'text-[var(--kun-chat-own-meta-text)]'
+            : 'text-[var(--kun-chat-other-meta-text)]',
         variant === 'inline' && 'ml-2 align-bottom pb-px',
         variant === 'inline-right' &&
           'pointer-events-none absolute bottom-0 right-0 shrink-0 justify-end text-right align-bottom pb-px',
@@ -1030,11 +1030,11 @@ export const ChatMessage = ({
             ref={bubbleRef}
             data-testid="chat-message-bubble"
             className={cn(
-              'relative min-w-0 max-w-full select-text rounded-2xl bg-[hsl(var(--kun-brand-50)/0.96)] text-default-900 shadow-sm ring-1 ring-[hsl(var(--kun-brand-200)/0.75)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--kun-brand-500)/0.55)] dark:bg-[hsl(var(--kun-brand-500)/0.18)] dark:text-default-50 dark:ring-[hsl(var(--kun-brand-400)/0.28)]',
+              'relative min-w-0 max-w-full select-text rounded-2xl bg-[var(--kun-chat-own-bubble-bg)] text-[var(--kun-chat-own-bubble-text)] shadow-sm ring-1 ring-[var(--kun-chat-own-bubble-border)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--kun-brand-500)/0.55)]',
               hasImages ? imageBubbleWidthClassName : bubbleWidthClassName,
               bubblePaddingClassName,
               menu &&
-                'shadow-lg ring-2 ring-[hsl(var(--kun-brand-300)/0.8)] dark:ring-[hsl(var(--kun-brand-400)/0.42)]'
+                'shadow-lg ring-2 ring-[var(--kun-chat-own-bubble-active-border)]'
             )}
             animate={{
               scale: menu ? 0.985 : 1,
@@ -1055,10 +1055,11 @@ export const ChatMessage = ({
             ref={bubbleRef}
             data-testid="chat-message-bubble"
             className={cn(
-              'relative min-w-0 max-w-full select-text rounded-2xl bg-content2 text-default-900 shadow-sm ring-1 ring-default-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--kun-brand-500)/0.55)] dark:bg-default-100/10 dark:text-default-50 dark:ring-default-100/10',
+              'relative min-w-0 max-w-full select-text rounded-2xl bg-[var(--kun-chat-other-bubble-bg)] text-[var(--kun-chat-other-bubble-text)] shadow-sm ring-1 ring-[var(--kun-chat-other-bubble-border)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--kun-brand-500)/0.55)]',
               hasImages ? imageBubbleWidthClassName : bubbleWidthClassName,
               bubblePaddingClassName,
-              menu && 'shadow-lg ring-2 ring-default-300/70'
+              menu &&
+                'shadow-lg ring-2 ring-[var(--kun-chat-other-bubble-active-border)]'
             )}
             animate={{
               scale: menu ? 0.985 : 1,
@@ -1084,7 +1085,7 @@ export const ChatMessage = ({
             key={menu.id}
             ref={menuRef}
             className={cn(
-              'fixed z-50 w-[180px] origin-top-left overflow-hidden rounded-xl border border-default-200 bg-content1/95 p-1 text-sm shadow-2xl backdrop-blur-md',
+              'fixed z-50 w-[180px] origin-top-left overflow-hidden rounded-xl border border-[var(--kun-chat-menu-border)] bg-[var(--kun-chat-menu-bg)] p-1 text-sm text-[var(--kun-chat-menu-text)] shadow-2xl backdrop-blur-md',
               !isMenuReady && 'pointer-events-none'
             )}
             role="menu"
@@ -1098,7 +1099,7 @@ export const ChatMessage = ({
             onContextMenu={(e) => e.preventDefault()}
           >
             <motion.button
-              className="flex h-10 w-full items-center gap-2 rounded-lg px-3 text-left outline-none transition-colors hover:bg-default-100 focus:bg-default-100"
+              className="flex h-10 w-full items-center gap-2 rounded-lg px-3 text-left outline-none transition-colors hover:bg-[var(--kun-chat-menu-item-hover-bg)] focus:bg-[var(--kun-chat-menu-item-hover-bg)]"
               role="menuitem"
               type="button"
               disabled={!isMenuReady}
@@ -1115,7 +1116,7 @@ export const ChatMessage = ({
 
             {menu.selectedText && (
               <motion.button
-                className="flex h-10 w-full items-center gap-2 rounded-lg px-3 text-left outline-none transition-colors hover:bg-default-100 focus:bg-default-100"
+                className="flex h-10 w-full items-center gap-2 rounded-lg px-3 text-left outline-none transition-colors hover:bg-[var(--kun-chat-menu-item-hover-bg)] focus:bg-[var(--kun-chat-menu-item-hover-bg)]"
                 role="menuitem"
                 type="button"
                 disabled={!isMenuReady}
@@ -1133,7 +1134,7 @@ export const ChatMessage = ({
 
             {hasImages && (
               <motion.button
-                className="flex h-10 w-full items-center gap-2 rounded-lg px-3 text-left outline-none transition-colors hover:bg-default-100 focus:bg-default-100"
+                className="flex h-10 w-full items-center gap-2 rounded-lg px-3 text-left outline-none transition-colors hover:bg-[var(--kun-chat-menu-item-hover-bg)] focus:bg-[var(--kun-chat-menu-item-hover-bg)]"
                 role="menuitem"
                 type="button"
                 disabled={!isMenuReady}
@@ -1151,7 +1152,7 @@ export const ChatMessage = ({
 
             {(menu.selectedText || hasCaption) && (
               <motion.button
-                className="flex h-10 w-full items-center gap-2 rounded-lg px-3 text-left outline-none transition-colors hover:bg-default-100 focus:bg-default-100"
+                className="flex h-10 w-full items-center gap-2 rounded-lg px-3 text-left outline-none transition-colors hover:bg-[var(--kun-chat-menu-item-hover-bg)] focus:bg-[var(--kun-chat-menu-item-hover-bg)]"
                 role="menuitem"
                 type="button"
                 disabled={!isMenuReady}
@@ -1169,7 +1170,7 @@ export const ChatMessage = ({
 
             {isOwn && hasCaption && (
               <motion.button
-                className="flex h-10 w-full items-center gap-2 rounded-lg px-3 text-left outline-none transition-colors hover:bg-default-100 focus:bg-default-100"
+                className="flex h-10 w-full items-center gap-2 rounded-lg px-3 text-left outline-none transition-colors hover:bg-[var(--kun-chat-menu-item-hover-bg)] focus:bg-[var(--kun-chat-menu-item-hover-bg)]"
                 role="menuitem"
                 type="button"
                 disabled={!isMenuReady}
@@ -1244,7 +1245,7 @@ export const ChatMessage = ({
           <ModalHeader>确认删除消息</ModalHeader>
           <ModalBody>
             <p>确定要删除这条消息吗？</p>
-            <p className="text-sm text-default-500">
+            <p className="text-sm text-[var(--kun-chat-muted-text)]">
               删除后对话中会显示为已删除消息，原正文和图片内容不会继续展示。
             </p>
           </ModalBody>

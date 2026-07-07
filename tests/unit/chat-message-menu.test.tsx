@@ -750,9 +750,33 @@ describe('ChatMessage menu and rendering', () => {
     const bubble = container.querySelector(
       '[data-testid="chat-message-bubble"]'
     )
-    expect(bubble?.className).toContain('bg-[hsl(var(--kun-brand-50)/0.96)]')
+    expect(bubble?.className).toContain('bg-[var(--kun-chat-own-bubble-bg)]')
+    expect(bubble?.className).toContain(
+      'text-[var(--kun-chat-own-bubble-text)]'
+    )
+    expect(bubble?.className).toContain(
+      'ring-[var(--kun-chat-own-bubble-border)]'
+    )
     expect(bubble?.className).toContain('md:max-w-[min(60vw,42rem)]')
     expect(bubble?.className).not.toContain('bg-primary-500')
+  })
+
+  it('uses semantic dark-readable colors for received message surfaces', async () => {
+    const { container } = await renderMessage(baseMessage)
+
+    const bubble = container.querySelector(
+      '[data-testid="chat-message-bubble"]'
+    )
+    const meta = container.querySelector('[data-testid="chat-message-meta"]')
+
+    expect(bubble?.className).toContain('bg-[var(--kun-chat-other-bubble-bg)]')
+    expect(bubble?.className).toContain(
+      'text-[var(--kun-chat-other-bubble-text)]'
+    )
+    expect(bubble?.className).toContain(
+      'ring-[var(--kun-chat-other-bubble-border)]'
+    )
+    expect(meta?.className).toContain('text-[var(--kun-chat-other-meta-text)]')
   })
 
   it('focuses the edit textarea when editing a text message', async () => {
@@ -1279,7 +1303,9 @@ describe('ChatMessage menu and rendering', () => {
       'img[aria-hidden="true"]'
     )
 
-    expect(imageGrid?.className).toContain('bg-default-200')
+    expect(imageGrid?.className).toContain(
+      'bg-[var(--kun-chat-image-frame-bg)]'
+    )
     expect(blurImage?.className).toContain('blur-xl')
   })
 
@@ -1479,7 +1505,7 @@ describe('ChatMessage menu and rendering', () => {
     expect(highlight).not.toBeNull()
     expect(highlight?.textContent).toBe('selected')
     expect(highlight?.className).toContain(
-      'bg-[hsl(var(--kun-brand-500)/0.34)]'
+      'bg-[var(--kun-chat-highlight-bg)]'
     )
     expect(highlight?.className).toContain('transition-opacity')
     expect(highlight?.className).toContain('opacity-0')
@@ -1524,7 +1550,7 @@ describe('ChatMessage menu and rendering', () => {
     )
     expect(highlight).not.toBeNull()
     expect(highlight?.className).toContain(
-      'bg-[hsl(var(--kun-brand-500)/0.30)]'
+      'bg-[var(--kun-chat-highlight-bg)]'
     )
     expect(highlight?.className).toContain('transition-opacity')
     expect(highlight?.className).toContain('opacity-100')
@@ -1567,7 +1593,7 @@ describe('ChatMessage menu and rendering', () => {
     )
     expect(highlight).not.toBeNull()
     expect(highlight?.className).toContain(
-      'bg-[hsl(var(--kun-brand-500)/0.30)]'
+      'bg-[var(--kun-chat-highlight-bg)]'
     )
     expect(highlight?.className).toContain('transition-opacity')
     expect(highlight?.className).toContain('opacity-0')
