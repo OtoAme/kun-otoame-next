@@ -3,6 +3,7 @@
 import { Button } from '@heroui/react'
 import { ArrowUp } from 'lucide-react'
 import { useEffect, useState } from 'react'
+import { kunScrollToTop } from '~/utils/scrollToTop'
 
 export const KunBackToTop = () => {
   const [show, setShow] = useState(false)
@@ -16,13 +17,6 @@ export const KunBackToTop = () => {
     return () => window.removeEventListener('scroll', handleScroll)
   }, [])
 
-  const scrollToTop = () => {
-    window.scrollTo({
-      top: 0,
-      behavior: 'smooth'
-    })
-  }
-
   if (!show) {
     return null
   }
@@ -32,7 +26,7 @@ export const KunBackToTop = () => {
       isIconOnly
       color="primary"
       className="fixed z-50 bottom-12 right-6"
-      onPress={scrollToTop}
+      onPress={() => kunScrollToTop()}
       aria-label="Back to top"
     >
       <ArrowUp className="w-6 h-6" />

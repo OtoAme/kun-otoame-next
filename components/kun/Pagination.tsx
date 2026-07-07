@@ -1,8 +1,9 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Button, Input } from '@heroui/react'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
+import { kunScrollToTop } from '~/utils/scrollToTop'
 import type { KeyboardEvent } from 'react'
 
 interface Props {
@@ -22,29 +23,21 @@ export const KunPagination = ({
 }: Props) => {
   const [isEditing, setIsEditing] = useState(false)
   const [inputValue, setInputValue] = useState(String(page))
-  const previousLoadingRef = useRef(isLoading)
 
   useEffect(() => {
     setInputValue(String(page))
   }, [page])
 
-  useEffect(() => {
-    if (previousLoadingRef.current && !isLoading && !disableScrollToTop) {
-      // Compatible FireFox Browser, because the render mechanism are difference
-      setTimeout(() => {
-        window.scrollTo({
-          top: 0,
-          behavior: 'smooth'
-        })
-      }, 0)
-    }
-    previousLoadingRef.current = isLoading
-  }, [disableScrollToTop, isLoading])
-
   const handlePageChange = (newPage: number) => {
     if (newPage >= 1 && newPage <= total) {
       setInputValue(String(newPage))
+      if (newPage === page) {
+        return
+      }
       onPageChange(newPage)
+      if (!disableScrollToTop) {
+        kunScrollToTop()
+      }
     }
   }
 
@@ -65,6 +58,7 @@ export const KunPagination = ({
     <div className="inline-flex items-center gap-2 p-2 rounded-2xl">
       <Button
         isIconOnly
+        aria-label="上一页"
         variant="light"
         color="primary"
         onPress={() => handlePageChange(page - 1)}
@@ -102,6 +96,7 @@ export const KunPagination = ({
 
       <Button
         isIconOnly
+        aria-label="下一页"
         variant="light"
         color="primary"
         onPress={() => handlePageChange(page + 1)}

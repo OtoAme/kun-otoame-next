@@ -16,6 +16,7 @@ import { CommentDropdown } from './CommentDropdown'
 import { CommentContent } from './CommentContent'
 import { useUserStore } from '~/store/userStore'
 import { KunNull } from '~/components/kun/Null'
+import { kunScrollToTop } from '~/utils/scrollToTop'
 import type { PatchComment, PatchCommentResponse } from '~/types/api/patch'
 
 interface Props {
@@ -135,7 +136,7 @@ export const Comments = ({ id }: Props) => {
 
   const handlePageChange = (newPage: number) => {
     setPage(newPage)
-    window.scrollTo({ top: 0, behavior: 'smooth' })
+    kunScrollToTop()
   }
 
   if (!user.uid) {
