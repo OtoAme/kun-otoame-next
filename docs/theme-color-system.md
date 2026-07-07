@@ -187,9 +187,49 @@ html.dark[data-kun-theme] {
 --kun-user-primary-flat-bg
 --kun-user-primary-flat-text
 --kun-user-primary-flat-shadow
+--kun-chat-own-bubble-bg
+--kun-chat-own-bubble-text
+--kun-chat-other-bubble-bg
+--kun-chat-other-bubble-text
+--kun-chat-muted-text
 ```
 
 只有组件确实需要主题专属视觉时才添加这一层。
+
+### 私聊颜色 token
+
+私聊前端使用 `styles/themes.css` 中的 `--kun-chat-*` 组件 token，不再在各个组件里散落 `text-default-*`、`bg-default-*` 或零散 `dark:` 颜色。默认 light 值跟随 HeroUI 的 `content/default/foreground`，dark 值单独映射为高对比文本、可见边框和深色表面；`touchgal` 与 `otoame` 两个站点主题通过各自品牌色阶继承同一套私聊语义色。
+
+核心 token 包括：
+
+```css
+--kun-chat-text-primary
+--kun-chat-text-secondary
+--kun-chat-muted-text
+--kun-chat-panel-bg
+--kun-chat-panel-border
+--kun-chat-list-card-bg
+--kun-chat-list-card-border
+--kun-chat-own-bubble-bg
+--kun-chat-own-bubble-text
+--kun-chat-own-bubble-border
+--kun-chat-other-bubble-bg
+--kun-chat-other-bubble-text
+--kun-chat-other-bubble-border
+--kun-chat-reply-bg
+--kun-chat-reply-draft-bg
+--kun-chat-reply-text
+--kun-chat-reply-title
+--kun-chat-menu-bg
+--kun-chat-menu-text
+--kun-chat-menu-item-hover-bg
+--kun-chat-input-bg
+--kun-chat-input-text
+--kun-chat-image-frame-bg
+--kun-chat-image-tile-bg
+```
+
+调整私聊深色模式时优先改这些 token，再改组件 class。组件侧应使用具体 token，例如 `bg-[var(--kun-chat-panel-bg)]`、`text-[var(--kun-chat-text-primary)]`、`border-[var(--kun-chat-panel-border)]` 或 `ring-[var(--kun-chat-own-bubble-border)]` 读取 token；不要只给某个气泡追加单独的 `dark:text-*`，否则两个站点主题很容易再次出现对比度不一致。
 
 ### 用户页 Primary Accent
 
