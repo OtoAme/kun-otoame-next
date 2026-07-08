@@ -28,13 +28,18 @@ export const ChatReplyPreview = ({
 }: Props) => {
   const previewContent = (
     <>
-      <div className="min-w-0 flex-1">
-        <div className={cn('font-semibold leading-[1.25rem]', titleClassName)}>
+      <div className="min-w-0 flex-1 overflow-hidden">
+        <div
+          className={cn(
+            'truncate font-semibold leading-[1.25rem]',
+            titleClassName
+          )}
+        >
           {actionLabel ? `${actionLabel} ${senderName}` : senderName}
         </div>
         <div
           className={cn(
-            'line-clamp-2 leading-[1.25rem] opacity-90',
+            'truncate leading-[1.25rem] opacity-90',
             contentClassName
           )}
         >
@@ -52,7 +57,7 @@ export const ChatReplyPreview = ({
     </>
   )
   const previewClassName = cn(
-    "relative flex items-center gap-2 overflow-hidden rounded-md py-1.5 pl-3.5 pr-2.5 text-left text-[13px] before:absolute before:bottom-0 before:left-0 before:top-0 before:w-1 before:rounded-full before:bg-[hsl(var(--kun-brand-500)/0.86)] before:content-['']",
+    "relative flex max-w-full min-w-0 items-center gap-2 overflow-hidden rounded-md py-1.5 pl-3.5 pr-2.5 text-left text-[13px] before:absolute before:bottom-0 before:left-0 before:top-0 before:w-1 before:rounded-full before:bg-[hsl(var(--kun-brand-500)/0.86)] before:content-['']",
     onClick &&
       'w-full cursor-pointer outline-none transition-colors hover:bg-[hsl(var(--kun-brand-50)/0.55)] focus-visible:ring-2 focus-visible:ring-[hsl(var(--kun-brand-500))] dark:hover:bg-[hsl(var(--kun-brand-500)/0.1)]',
     className

@@ -378,11 +378,7 @@ describe('ChatMessage menu and rendering', () => {
     container: HTMLElement,
     points: Array<{ x: number; y: number }>
   ) => {
-    await swipeElement(
-      container,
-      'button[aria-label="查看图片 1"]',
-      points
-    )
+    await swipeElement(container, 'button[aria-label="查看图片 1"]', points)
   }
 
   const selectMessageText = (container: HTMLElement) => {
@@ -1504,6 +1500,30 @@ describe('ChatMessage menu and rendering', () => {
     ).toContain('px-2.5')
   })
 
+  it('keeps sent reply preview content to one responsive ellipsis line', async () => {
+    const longReplyText =
+      '这是一条非常长的被回复消息内容，应该只在回复预览里显示气泡可用宽度的一行，然后随着聊天窗口和消息气泡宽度变化自动用省略号折叠。'
+    const { container } = await renderMessage({
+      ...baseMessage,
+      replyTo: {
+        messageId: 2,
+        senderName: 'Mio',
+        content: longReplyText,
+        selectedText: null
+      }
+    })
+
+    const quote = container.querySelector('[data-testid="chat-reply-preview"]')
+    const quoteContent = Array.from(quote!.querySelectorAll('div')).find(
+      (element) => element.textContent === longReplyText
+    )
+
+    expect(quote?.className).toContain('min-w-0')
+    expect(quote?.className).toContain('max-w-full')
+    expect(quoteContent?.className).toContain('truncate')
+    expect(quoteContent?.className).not.toContain('line-clamp-2')
+  })
+
   it('highlights the referenced text segment after a reply preview jump', async () => {
     const { container } = await renderMessage(
       {
@@ -1525,9 +1545,7 @@ describe('ChatMessage menu and rendering', () => {
     )
     expect(highlight).not.toBeNull()
     expect(highlight?.textContent).toBe('selected')
-    expect(highlight?.className).toContain(
-      'bg-[var(--kun-chat-highlight-bg)]'
-    )
+    expect(highlight?.className).toContain('bg-[var(--kun-chat-highlight-bg)]')
     expect(highlight?.className).toContain('transition-opacity')
     expect(highlight?.className).toContain('opacity-0')
     expect(
@@ -1570,9 +1588,7 @@ describe('ChatMessage menu and rendering', () => {
       '[data-testid="chat-reply-bubble-highlight"]'
     )
     expect(highlight).not.toBeNull()
-    expect(highlight?.className).toContain(
-      'bg-[var(--kun-chat-highlight-bg)]'
-    )
+    expect(highlight?.className).toContain('bg-[var(--kun-chat-highlight-bg)]')
     expect(highlight?.className).toContain('transition-opacity')
     expect(highlight?.className).toContain('opacity-100')
   })
@@ -1613,9 +1629,7 @@ describe('ChatMessage menu and rendering', () => {
       'button[aria-label="查看图片 1"] [data-testid="chat-image-context-overlay"]'
     )
     expect(highlight).not.toBeNull()
-    expect(highlight?.className).toContain(
-      'bg-[var(--kun-chat-highlight-bg)]'
-    )
+    expect(highlight?.className).toContain('bg-[var(--kun-chat-highlight-bg)]')
     expect(highlight?.className).toContain('transition-opacity')
     expect(highlight?.className).toContain('opacity-0')
   })
