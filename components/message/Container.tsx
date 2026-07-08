@@ -39,12 +39,17 @@ export const MessageContainer = ({ initialMessages, total, type }: Props) => {
   const requestIdRef = useRef(0)
   const { isOpen, onOpen, onClose, onOpenChange } = useDisclosure()
 
-  const fetchMessages = async (targetPage: number) => {
+  const fetchMessages = async (
+    targetPage: number,
+    options: { showLoading: boolean } = { showLoading: true }
+  ) => {
     const requestId = requestIdRef.current + 1
     requestIdRef.current = requestId
 
     try {
-      setLoading(true)
+      if (options.showLoading) {
+        setLoading(true)
+      }
 
       const response = await kunFetchGet<
         KunResponse<{
@@ -72,7 +77,7 @@ export const MessageContainer = ({ initialMessages, total, type }: Props) => {
         toast.error('获取消息失败, 请稍后重试')
       }
     } finally {
-      if (requestId === requestIdRef.current) {
+      if (requestId === requestIdRef.current && options.showLoading) {
         setLoading(false)
       }
     }
@@ -111,9 +116,10 @@ export const MessageContainer = ({ initialMessages, total, type }: Props) => {
     }
     if (!hasUsedInitialPageRef.current) {
       hasUsedInitialPageRef.current = true
+      void fetchMessages(page, { showLoading: false })
       return
     }
-    fetchMessages(page)
+    void fetchMessages(page)
   }, [isMounted, page])
 
   return (

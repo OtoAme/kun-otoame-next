@@ -4,7 +4,10 @@ import {
   createConversationSchema,
   getConversationsSchema
 } from '~/validations/conversation'
-import type { Conversation, PrivateMessageImage } from '~/types/api/conversation'
+import type {
+  Conversation,
+  PrivateMessageImage
+} from '~/types/api/conversation'
 
 const isPrivateMessageImage = (
   value: unknown
@@ -24,15 +27,13 @@ const isPrivateMessageImage = (
   )
 }
 
-const summarizeConversationLastMessage = (
-  message?: {
-    type: number
-    content: string
-    image_url: string | null
-    image_group?: unknown
-    is_deleted: boolean
-  }
-) => {
+const summarizeConversationLastMessage = (message?: {
+  type: number
+  content: string
+  image_url: string | null
+  image_group?: unknown
+  is_deleted: boolean
+}) => {
   if (!message) {
     return ''
   }
@@ -77,17 +78,6 @@ export const getConversations = async (
         },
         user_b: {
           select: { id: true, name: true, avatar: true }
-        },
-        messages: {
-          orderBy: { created: 'desc' },
-          take: 1,
-          select: {
-            type: true,
-            content: true,
-            image_url: true,
-            image_group: true,
-            is_deleted: true
-          }
         }
       },
       orderBy: { last_message_time: 'desc' },
@@ -104,13 +94,46 @@ export const getConversations = async (
     })
   ])
 
+  const lastMessageIds = Array.from(
+    new Set(
+      data
+        .map((conversation) => conversation.last_message_id)
+        .filter((id): id is number => typeof id === 'number')
+    )
+  )
+
+  const lastMessages =
+    lastMessageIds.length > 0
+      ? await prisma.user_private_message.findMany({
+          where: { id: { in: lastMessageIds } },
+          select: {
+            id: true,
+            type: true,
+            content: true,
+            image_url: true,
+            image_group: true,
+            is_deleted: true
+          }
+        })
+      : []
+
+  const lastMessageById = new Map(
+    lastMessages.map((message) => [message.id, message])
+  )
+
   const conversations: Conversation[] = data.map((conv) => ({
     id: conv.id,
     otherUser: conv.user_a_id === uid ? conv.user_b : conv.user_a,
-    lastMessage: summarizeConversationLastMessage(conv.messages[0]),
+    lastMessage: summarizeConversationLastMessage(
+      conv.last_message_id
+        ? lastMessageById.get(conv.last_message_id)
+        : undefined
+    ),
     lastMessageTime: conv.last_message_time,
     unreadCount:
-      conv.user_a_id === uid ? conv.user_a_unread_count : conv.user_b_unread_count
+      conv.user_a_id === uid
+        ? conv.user_a_unread_count
+        : conv.user_b_unread_count
   }))
 
   return { conversations, total }

@@ -227,11 +227,8 @@ describe('MessageContainer initial notification view', () => {
     fetchMock.kunFetchGet.mockReset()
   })
 
-  it('does not refetch the first notification page during hydration', async () => {
-    fetchMock.kunFetchGet.mockResolvedValue({
-      messages: [{ ...unreadMessage, status: 1 }],
-      total: 1
-    })
+  it('keeps the initial notification page visible while the background refresh is pending', async () => {
+    fetchMock.kunFetchGet.mockReturnValue(new Promise(() => {}))
 
     const { container } = await renderContainer()
 
@@ -239,9 +236,35 @@ describe('MessageContainer initial notification view', () => {
       await Promise.resolve()
     })
 
-    expect(fetchMock.kunFetchGet).not.toHaveBeenCalled()
+    expect(fetchMock.kunFetchGet).toHaveBeenCalledWith('/message/all', {
+      page: 1,
+      limit: 30
+    })
     expect(container!.textContent).toContain('新消息')
     expect(container!.textContent).not.toContain('已阅读')
+    expect(container!.textContent).not.toContain('正在获取消息数据...')
+  })
+
+  it('refreshes the first notification page in the background after hydration', async () => {
+    fetchMock.kunFetchGet.mockResolvedValue({
+      messages: [messageWithContent(2, 'fresh notification')],
+      total: 1
+    })
+
+    const { container } = await renderContainer({
+      initialMessages: [messageWithContent(1, 'cached notification')]
+    })
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    expect(fetchMock.kunFetchGet).toHaveBeenCalledWith('/message/all', {
+      page: 1,
+      limit: 30
+    })
+    expect(container.textContent).toContain('fresh notification')
+    expect(container.textContent).not.toContain('cached notification')
   })
 
   it('ignores stale page responses so an older notification request cannot overwrite the current page', async () => {
@@ -307,6 +330,10 @@ describe('MessageContainer initial notification view', () => {
   it('keeps the current notification page when a page fetch is rate limited', async () => {
     const toast = (await import('react-hot-toast')).default
     vi.mocked(toast.error).mockClear()
+    fetchMock.kunFetchGet.mockResolvedValueOnce({
+      messages: [messageWithContent(1, 'initial notification')],
+      total: 91
+    })
     fetchMock.kunFetchGet.mockResolvedValueOnce(
       '通知读取过于频繁, 请 30 秒后重试'
     )
@@ -327,15 +354,17 @@ describe('MessageContainer initial notification view', () => {
       page: 2,
       limit: 30
     })
-    expect(toast.error).toHaveBeenCalledWith(
-      '通知读取过于频繁, 请 30 秒后重试'
-    )
+    expect(toast.error).toHaveBeenCalledWith('通知读取过于频繁, 请 30 秒后重试')
     expect(container.textContent).toContain('initial notification')
   })
 
   it('keeps the list and dialog open when clearing read notifications is rate limited', async () => {
     const toast = (await import('react-hot-toast')).default
     vi.mocked(toast.error).mockClear()
+    fetchMock.kunFetchGet.mockResolvedValue({
+      messages: [messageWithContent(1, 'read notification')],
+      total: 1
+    })
     fetchMock.kunFetchDelete.mockResolvedValueOnce(
       '通知操作过于频繁, 请 30 秒后重试'
     )
@@ -344,6 +373,11 @@ describe('MessageContainer initial notification view', () => {
       initialMessages: [messageWithContent(1, 'read notification')],
       total: 1
     })
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+    fetchMock.kunFetchGet.mockClear()
 
     const clearButton = Array.from(
       container.querySelectorAll<HTMLButtonElement>('button')
@@ -366,9 +400,7 @@ describe('MessageContainer initial notification view', () => {
     expect(fetchMock.kunFetchDelete).toHaveBeenCalledWith('/message/read', {
       type: ''
     })
-    expect(toast.error).toHaveBeenCalledWith(
-      '通知操作过于频繁, 请 30 秒后重试'
-    )
+    expect(toast.error).toHaveBeenCalledWith('通知操作过于频繁, 请 30 秒后重试')
     expect(fetchMock.kunFetchGet).not.toHaveBeenCalled()
     expect(container.textContent).toContain('确认清理已读信息')
     expect(container.textContent).toContain('read notification')
@@ -377,8 +409,8 @@ describe('MessageContainer initial notification view', () => {
   it('asks for confirmation before clearing read notifications', async () => {
     fetchMock.kunFetchDelete.mockResolvedValue({})
     fetchMock.kunFetchGet.mockResolvedValue({
-      messages: [],
-      total: 0
+      messages: [messageWithContent(1, 'read notification')],
+      total: 1
     })
 
     const { container } = await renderContainer({

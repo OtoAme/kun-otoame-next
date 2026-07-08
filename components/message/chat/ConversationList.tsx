@@ -109,6 +109,7 @@ export const ConversationList = ({ initialConversations, total }: Props) => {
     }
     if (!hasUsedInitialPageRef.current) {
       hasUsedInitialPageRef.current = true
+      void fetchConversations({ showLoading: false, silent: false })
       return
     }
     void fetchConversations({ showLoading: true, silent: false })

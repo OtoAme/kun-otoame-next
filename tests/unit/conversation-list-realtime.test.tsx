@@ -199,9 +199,29 @@ describe('ConversationList realtime refresh', () => {
     fetchMock.kunFetchGet.mockReset()
   })
 
-  it('does not refetch the first conversation page during hydration', async () => {
+  it('keeps the initial conversation page visible while the background refresh is pending', async () => {
+    fetchMock.kunFetchGet.mockReturnValue(new Promise(() => {}))
+
+    const { container } = await renderList()
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    expect(fetchMock.kunFetchGet).toHaveBeenCalledWith(
+      '/message/conversation',
+      {
+        page: 1,
+        limit: 30
+      }
+    )
+    expect(container.textContent).toContain('hello')
+    expect(container.textContent).not.toContain('正在获取会话列表...')
+  })
+
+  it('refreshes the first conversation page in the background after hydration', async () => {
     fetchMock.kunFetchGet.mockResolvedValue({
-      conversations: [conversation(0, 'server payload overwritten')],
+      conversations: [conversation(0, 'fresh preview')],
       total: 1
     })
 
@@ -211,9 +231,15 @@ describe('ConversationList realtime refresh', () => {
       await Promise.resolve()
     })
 
-    expect(fetchMock.kunFetchGet).not.toHaveBeenCalled()
-    expect(container.textContent).toContain('hello')
-    expect(container.textContent).not.toContain('server payload overwritten')
+    expect(fetchMock.kunFetchGet).toHaveBeenCalledWith(
+      '/message/conversation',
+      {
+        page: 1,
+        limit: 30
+      }
+    )
+    expect(container.textContent).toContain('fresh preview')
+    expect(container.textContent).not.toContain('hello')
   })
 
   it('refreshes the current conversation page and syncs unread state', async () => {

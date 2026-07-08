@@ -16,6 +16,7 @@ const prismaMock = vi.hoisted(() => ({
   },
   user_private_message: {
     findFirst: vi.fn(),
+    findMany: vi.fn(),
     create: vi.fn(),
     update: vi.fn()
   },
@@ -955,9 +956,7 @@ describe('conversation message deletion cleanup', () => {
       '~/app/api/message/conversation/[id]/service'
     )
 
-    await expect(deleteMessage(5, { messageId: 12 }, 1007)).resolves.toEqual(
-      {}
-    )
+    await expect(deleteMessage(5, { messageId: 12 }, 1007)).resolves.toEqual({})
     expect(prismaMock.user_private_message.update).toHaveBeenCalledWith({
       where: { id: 12 },
       data: { is_deleted: true }
@@ -1008,19 +1007,27 @@ describe('conversation list summaries', () => {
     prismaMock.user_conversation.findMany.mockResolvedValue([
       {
         id: 5,
+        last_message_id: 90,
         user_a_id: 1007,
         user_b_id: 8,
         user_a: { id: 1007, name: 'Saya', avatar: '/saya.webp' },
         user_b: { id: 8, name: 'Mio', avatar: '/mio.webp' },
-        messages: [
-          { type: 1, content: '', image_url: 'https://img.example/chat.webp' }
-        ],
         last_message_time: new Date('2026-06-30T10:00:00.000Z'),
         user_a_unread_count: 0,
         user_b_unread_count: 2
       }
     ])
     prismaMock.user_conversation.count.mockResolvedValue(1)
+    prismaMock.user_private_message.findMany.mockResolvedValue([
+      {
+        id: 90,
+        type: 1,
+        content: '',
+        image_url: 'https://img.example/chat.webp',
+        image_group: null,
+        is_deleted: false
+      }
+    ])
 
     const { getConversations } = await import(
       '~/app/api/message/conversation/service'
@@ -1036,18 +1043,22 @@ describe('conversation list summaries', () => {
           ]
         },
         include: expect.objectContaining({
-          messages: expect.objectContaining({
-            select: {
-              type: true,
-              content: true,
-              image_url: true,
-              image_group: true,
-              is_deleted: true
-            }
-          })
+          user_a: expect.any(Object),
+          user_b: expect.any(Object)
         })
       })
     )
+    expect(prismaMock.user_private_message.findMany).toHaveBeenCalledWith({
+      where: { id: { in: [90] } },
+      select: {
+        id: true,
+        type: true,
+        content: true,
+        image_url: true,
+        image_group: true,
+        is_deleted: true
+      }
+    })
     expect(result.conversations[0]).toMatchObject({
       lastMessage: '[图片]',
       unreadCount: 0
@@ -1058,25 +1069,27 @@ describe('conversation list summaries', () => {
     prismaMock.user_conversation.findMany.mockResolvedValue([
       {
         id: 5,
+        last_message_id: 91,
         user_a_id: 1007,
         user_b_id: 8,
         user_a: { id: 1007, name: 'Saya', avatar: '/saya.webp' },
         user_b: { id: 8, name: 'Mio', avatar: '/mio.webp' },
-        messages: [
-          {
-            type: 1,
-            content: '',
-            image_url: null,
-            image_group: [{ url: 'not-a-complete-image' }],
-            is_deleted: false
-          }
-        ],
         last_message_time: new Date('2026-06-30T10:00:00.000Z'),
         user_a_unread_count: 0,
         user_b_unread_count: 0
       }
     ])
     prismaMock.user_conversation.count.mockResolvedValue(1)
+    prismaMock.user_private_message.findMany.mockResolvedValue([
+      {
+        id: 91,
+        type: 1,
+        content: '',
+        image_url: null,
+        image_group: [{ url: 'not-a-complete-image' }],
+        is_deleted: false
+      }
+    ])
 
     const { getConversations } = await import(
       '~/app/api/message/conversation/service'
@@ -1092,24 +1105,27 @@ describe('conversation list summaries', () => {
     prismaMock.user_conversation.findMany.mockResolvedValue([
       {
         id: 5,
+        last_message_id: 92,
         user_a_id: 1007,
         user_b_id: 8,
         user_a: { id: 1007, name: 'Saya', avatar: '/saya.webp' },
         user_b: { id: 8, name: 'Mio', avatar: '/mio.webp' },
-        messages: [
-          {
-            type: 0,
-            content: 'private text that was deleted',
-            image_url: null,
-            is_deleted: true
-          }
-        ],
         last_message_time: new Date('2026-06-30T10:00:00.000Z'),
         user_a_unread_count: 0,
         user_b_unread_count: 0
       }
     ])
     prismaMock.user_conversation.count.mockResolvedValue(1)
+    prismaMock.user_private_message.findMany.mockResolvedValue([
+      {
+        id: 92,
+        type: 0,
+        content: 'private text that was deleted',
+        image_url: null,
+        image_group: null,
+        is_deleted: true
+      }
+    ])
 
     const { getConversations } = await import(
       '~/app/api/message/conversation/service'
@@ -1119,20 +1135,55 @@ describe('conversation list summaries', () => {
     expect(prismaMock.user_conversation.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         include: expect.objectContaining({
-          messages: expect.objectContaining({
-            select: {
-              type: true,
-              content: true,
-              image_url: true,
-              image_group: true,
-              is_deleted: true
-            }
-          })
+          user_a: expect.any(Object),
+          user_b: expect.any(Object)
         })
       })
     )
     expect(result.conversations[0]).toMatchObject({
       lastMessage: '消息已删除'
+    })
+  })
+
+  it('uses the conversation last_message_id as the summary source', async () => {
+    prismaMock.user_conversation.findMany.mockResolvedValue([
+      {
+        id: 5,
+        last_message_id: 101,
+        user_a_id: 1007,
+        user_b_id: 8,
+        user_a: { id: 1007, name: 'Saya', avatar: '/saya.webp' },
+        user_b: { id: 8, name: 'Mio', avatar: '/mio.webp' },
+        last_message_time: new Date('2026-06-30T10:00:00.000Z'),
+        user_a_unread_count: 1,
+        user_b_unread_count: 0
+      }
+    ])
+    prismaMock.user_conversation.count.mockResolvedValue(1)
+    prismaMock.user_private_message.findMany.mockResolvedValue([
+      {
+        id: 101,
+        type: 0,
+        content: 'newest preview from pointer',
+        image_url: null,
+        image_group: null,
+        is_deleted: false
+      }
+    ])
+
+    const { getConversations } = await import(
+      '~/app/api/message/conversation/service'
+    )
+    const result = await getConversations({ page: 1, limit: 30 }, 8)
+
+    expect(prismaMock.user_private_message.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: { in: [101] } }
+      })
+    )
+    expect(result.conversations[0]).toMatchObject({
+      lastMessage: 'newest preview from pointer',
+      unreadCount: 0
     })
   })
 })
