@@ -27,7 +27,7 @@ pnpm typecheck
 | `tests/unit/edit-store.test.ts`                        | 创建/重写 store 函数式合并，防止外部数据异步返回互相覆盖。                            |
 | `tests/unit/company-merge-plan.test.ts`                | 公司 name/alias 脏数据自动合并计划和预览。                                            |
 | `tests/unit/resource-link.test.ts`                     | 资源链接和提取码解析。                                                                |
-| `tests/unit/api/resource-access.test.ts`               | 游戏详情资源列表链接脱敏、按需获取接口的资源归属 / 可见性校验和 no-store 响应。        |
+| `tests/unit/api/resource-access.test.ts`               | 游戏详情资源列表链接脱敏、按需获取接口的资源归属 / 可见性校验和 no-store 响应。       |
 | `tests/unit/resource-download-card.test.tsx`           | 下载卡片点击“获取下载链接”后展示真实链接、提取码、解压码，并展示获取失败错误。        |
 | `tests/unit/resource-access-links-helper.test.ts`      | 资源编辑入口打开前按需水合完整链接，并保留排序和下载计数等预览字段。                  |
 | `tests/unit/resource-classification.test.ts`           | 资源类型/语言/平台分类。                                                              |
@@ -36,13 +36,13 @@ pnpm typecheck
 | `tests/unit/captcha.test.ts`                           | CAPTCHA。                                                                             |
 | `tests/unit/message-card.test.tsx`                     | 消息正文纯文本渲染和换行保留。                                                        |
 | `tests/unit/user-message-bell.test.tsx`                | 顶栏消息铃铛只导航到通知中心，不在通知展示前标已读。                                  |
-| `tests/unit/message-container.test.tsx`                | 通知列表首屏 hydrate 复用服务端数据，不把初见未读 chip 刷成已读。                     |
+| `tests/unit/message-container.test.tsx`                | 通知列表首屏 hydrate 保留服务端数据，同时后台刷新当前页并防止旧分页响应覆盖新页。     |
 | `tests/unit/chat-input.test.tsx`                       | 私聊输入法组合期 Enter 不发送、`Shift+Enter` 换行和发送去重。                         |
 | `tests/unit/chat-container-realtime.test.tsx`          | 私聊实时同步、回复预览跳转、高亮反馈、浮动回底部按钮和滚动位置保持。                  |
 | `tests/unit/api/message-unread.test.ts`                | 消息通知/私聊未读状态查询、通知已读/清理幂等和私聊已读写入。                          |
 | `tests/unit/api/notification-toggle-abuse.test.ts`     | 取消收藏、取消点赞等关系移除路径不创建误导性通知。                                    |
 | `tests/unit/api/mention-message.test.ts`               | 评论提及通知去重、跳过自己、忽略不存在用户并限制单条评论通知数量。                    |
-| `tests/unit/api/conversation-service.test.ts`          | 私聊会话创建权限，目标用户关闭私聊时拒绝新建会话。                                    |
+| `tests/unit/api/conversation-service.test.ts`          | 私聊会话权限、创建竞态、图片消息、删除清理和基于 `last_message_id` 的列表摘要。       |
 | `tests/unit/api/admin-resource-get.test.ts`            | 后台资源列表按资源链接或 BLAKE3 Hash 搜索。                                           |
 | `tests/unit/api/admin-resource-update-message.test.ts` | 管理员后台修改他人资源时通知资源发布者、保留列表上下文并区分游戏资源 / 补丁资源日志。 |
 | `tests/unit/api/patch-resource-update.test.ts`         | 资源更新前校验资源和游戏归属，避免错误派生属性和缓存刷新。                            |
