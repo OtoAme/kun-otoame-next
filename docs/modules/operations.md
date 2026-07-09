@@ -52,6 +52,8 @@
 
 带 `dry` 的脚本先 dry-run，确认输出后再 apply。
 
+Steam ID 软查重上线时，先备份数据库，再运行 `migration/production-steam-id-soft-duplicate-preflight-2026-07-09.sql` 查看生产库里旧唯一约束/索引和重复 Steam ID 预览；确认后运行 `migration/production-steam-id-soft-duplicate-sync-2026-07-09.sql`。该 sync 使用 `CREATE INDEX CONCURRENTLY`，不要包在显式事务中执行；它会移除旧 `steam_id` 唯一约束/索引并创建普通 `patch_steam_id_idx`。
+
 `maintenance:resource-attributes:dry` 会按已发布资源（`patch_resource.status = 0`）重算每个游戏卡片/详情页使用的 `type`、`language` 和 `platform` 派生标签，预览历史脏数据中哪些 patch 会变化，不写 DB。确认输出后运行 `maintenance:resource-attributes:apply`，脚本会更新派生字段并失效受影响的详情和列表缓存。待审核、封禁或已删除资源不能进入这些派生标签。
 
 `migration:resource-type:*` 在迁移单条资源类型/平台后，也必须按同一已发布资源口径重算 patch 派生属性。`migration:patch-counters` 安装和回填的 `resource_count` 只统计已发布资源，并监听 `patch_resource.status` 变化；运行旧触发器的环境修复卡片资源数时，应重新执行 `pnpm migration:patch-counters`。

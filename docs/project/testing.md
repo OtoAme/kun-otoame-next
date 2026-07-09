@@ -43,6 +43,7 @@ tests/unit/
 - 私聊浮动回底部按钮：`chat-container-realtime.test.tsx` 覆盖离开底部时显示按钮、普通回到底部短滚动动画、点击普通回底部时立即原地渐隐、按钮渐隐卸载，以及回复预览跳转后先回到跳转前位置并高亮原消息再恢复普通回底部。
 - 私聊附件菜单：`chat-input.test.tsx` 覆盖附件加号菜单在已有待发送图片预览时仍高于图片预览和移除按钮。
 - 外部 ID、主题、标签等纯逻辑。
+- 编辑外部 ID 查重：`api/duplicate.test.ts`、`api/create-galgame-timeout.test.ts`、`patch-update-gallery.test.ts` 和 `steam-input.test.tsx` 覆盖 Steam ID 软重复可继续创建/重写/拉取 Steam 数据，以及 Bangumi ID 硬唯一和 Prisma `P2002` 竞态提示。
 
 ## 何时新增测试
 
@@ -55,7 +56,7 @@ tests/unit/
 - Gallery create/rewrite 上传失败保留、重试、网页拖拽远程导入和 `/api/edit/gallery/remote` 安全边界相关变更。
 - CSRF、角色、资源归属、每日上传配额、用户设置权限相关变更。
 - 主题 token、语义颜色、过滤器、排序、外部 ID 解析变更。
-- 编辑页外部数据合并规则变更，包括 VNDB/Bangumi/Steam 字段保留、公司来源优先级、alias 公司匹配和 store 函数式合并。
+- 编辑页外部数据合并规则变更，包括 VNDB/Bangumi/Steam 字段保留、Steam ID 软重复提示但不阻塞、公司来源优先级、alias 公司匹配和 store 函数式合并。
 - 维护脚本的自动合并计划变更，尤其是公司/tag 的 alias 冲突、歧义跳过、关系迁移和 count 预览。
 - 修 bug 时要加能在修复前失败的 regression test。
 
@@ -112,7 +113,7 @@ vi.mock('~/prisma/index', () => ({
 - 缓存失效函数是否被调用。
 - 权限和边界条件。
 - 输入去重、normalize、alias 匹配等业务规则。
-- 外部数据合并优先级，例如 VNDB 公司优先、Bangumi 公司兜底、Bangumi 标签仍保留。
+- 外部数据合并优先级，例如 VNDB 公司优先、Bangumi 公司兜底、Bangumi 标签仍保留、Steam ID 软重复和 Bangumi ID 硬唯一。
 - 用户身份、角色阈值和 owner mismatch。
 
 避免：

@@ -184,6 +184,7 @@ service/helper 负责：
 
 - 创建和重写游戏时不采用 VNDB 标签；Bangumi/Steam 外部标签仍按来源写入。
 - 创建/重写页重新获取 VNDB、DLSite 或标题信息时，重复检查必须支持 `excludeId` 并排除当前 patch；rewrite 自己已有的外部 ID 不应被当作重复游戏。
+- Steam ID 只做软查重：同一个 Steam App ID 可能是合集或二合一商店页，`/api/edit/duplicate` 和前端 Steam 输入应提示已有条目，但不能阻止创建、重写或继续拉取 Steam 数据。Bangumi ID、Release ID 和 DLsite Code 仍是硬唯一；服务端创建/重写需要预查，并在 Prisma `P2002` 竞态时返回用户可见的重复提示。
 - 标签写入必须按 `name` 和 `alias` 查找已有主标签；提交名命中主标签 alias 时，只关联和计数主标签，不创建 alias 标签。
 - tag 的 alias 必须全局唯一，不能等于其它 tag 的 `name`，也不能出现在其它 tag 的 `alias` 中；创建/更新 tag 时服务端必须阻止这类冲突。
 - 公司来源优先级是 VNDB > Bangumi。只要 VNDB ID 成功关联到至少一个公司，就不再使用 Bangumi developer 创建或关联公司；Bangumi developer 只作为 VNDB 无公司时的兜底。
