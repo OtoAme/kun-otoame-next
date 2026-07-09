@@ -141,4 +141,79 @@ describe('createGalgame timeout', () => {
       })
     )
   })
+
+  it('allows creating with a duplicate Steam ID', async () => {
+    prismaMocks.patch.findFirst.mockImplementation(
+      (args: { where: unknown }) => {
+        const where = args.where as { steam_id?: number }
+        if (where.steam_id === 3655150) {
+          return Promise.resolve({ unique_id: 'steam123' })
+        }
+        return Promise.resolve(null)
+      }
+    )
+
+    await expect(
+      createGalgame(
+        {
+          ...createInput,
+          steamId: '3655150'
+        },
+        1
+      )
+    ).resolves.toEqual({ uniqueId: expect.any(String), patchId: 649 })
+
+    expect(prismaMocks.$transaction).toHaveBeenCalled()
+    expect(prismaMocks._tx.patch.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          steam_id: 3655150
+        })
+      })
+    )
+  })
+
+  it('returns a user-visible error before creating with a duplicate Bangumi ID', async () => {
+    prismaMocks.patch.findFirst.mockImplementation(
+      (args: { where: unknown }) => {
+        const where = args.where as { bangumi_id?: number }
+        if (where.bangumi_id === 172612) {
+          return Promise.resolve({ unique_id: 'bangumi1' })
+        }
+        return Promise.resolve(null)
+      }
+    )
+
+    await expect(
+      createGalgame(
+        {
+          ...createInput,
+          bangumiId: '172612'
+        },
+        1
+      )
+    ).resolves.toBe('Bangumi ID 与游戏 ID 为 bangumi1 的游戏重复')
+
+    expect(prismaMocks.$transaction).not.toHaveBeenCalled()
+  })
+
+  it('turns a Bangumi unique constraint race into a user-visible error', async () => {
+    prismaMocks.patch.findFirst
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ unique_id: 'bangumi1' })
+    prismaMocks.$transaction.mockRejectedValue({
+      code: 'P2002',
+      meta: { target: ['bangumi_id'] }
+    })
+
+    await expect(
+      createGalgame(
+        {
+          ...createInput,
+          bangumiId: '172612'
+        },
+        1
+      )
+    ).resolves.toBe('Bangumi ID 与游戏 ID 为 bangumi1 的游戏重复')
+  })
 })

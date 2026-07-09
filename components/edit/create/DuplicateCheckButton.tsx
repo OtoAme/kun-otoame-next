@@ -21,6 +21,8 @@ interface DuplicateResponse {
 const fieldLabels: Record<string, string> = {
   vndbRelationId: 'Release ID',
   dlsiteCode: 'DLsite Code',
+  bangumiId: 'Bangumi ID',
+  steamId: 'Steam ID',
   vndbId: 'VNDB ID',
   title: '游戏标题/别名'
 }
@@ -37,6 +39,8 @@ export const DuplicateCheckButton = () => {
   const buildPayload = () => ({
     vndbId: (data.vndbId ?? '').trim().toLowerCase(),
     vndbRelationId: (data.vndbRelationId ?? '').trim().toLowerCase(),
+    bangumiId: (data.bangumiId ?? '').trim(),
+    steamId: (data.steamId ?? '').trim(),
     dlsiteCode: (data.dlsiteCode ?? '').trim().toUpperCase(),
     title: (data.name ?? '').trim()
   })
@@ -47,6 +51,8 @@ export const DuplicateCheckButton = () => {
     if (
       !payload.vndbId &&
       !payload.vndbRelationId &&
+      !payload.bangumiId &&
+      !payload.steamId &&
       !payload.dlsiteCode &&
       !payload.title
     ) {
@@ -64,6 +70,8 @@ export const DuplicateCheckButton = () => {
         {
           vndbId: payload.vndbId,
           vndbRelationId: payload.vndbRelationId,
+          bangumiId: payload.bangumiId,
+          steamId: payload.steamId,
           dlsiteCode: payload.dlsiteCode,
           title: payload.title
         }
@@ -85,12 +93,13 @@ export const DuplicateCheckButton = () => {
         setMatchedInfo(labels)
 
         const hasHardDuplicate = fields.some(
-          (f) => f === 'vndbRelationId' || f === 'dlsiteCode'
+          (f) =>
+            f === 'vndbRelationId' || f === 'dlsiteCode' || f === 'bangumiId'
         )
         if (hasHardDuplicate) {
           toast.error(`发现不可重复的字段匹配 (${labels})`)
         } else {
-          toast.error(`发现重复记录 (匹配: ${labels}), 仅 VNDB ID 重复可确认后发布`)
+          toast.error(`发现重复记录 (匹配: ${labels}), 请确认后再发布`)
         }
       } else {
         toast.success('检查完成, 未找到重复游戏')

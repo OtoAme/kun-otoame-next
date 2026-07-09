@@ -1,10 +1,13 @@
 import { z } from 'zod'
 import { prisma } from '~/prisma/index'
 import { duplicateSchema } from '~/validations/edit'
+import { findPatchByExternalId } from '../uniqueExternalIds'
 
 export const duplicate = async (input: z.infer<typeof duplicateSchema>) => {
   const vndbId = input.vndbId?.toLowerCase()
   const vndbRelationId = input.vndbRelationId?.toLowerCase()
+  const bangumiId = input.bangumiId
+  const steamId = input.steamId
   const dlsiteCode = input.dlsiteCode?.toUpperCase()
   const title = input.title
   const excludeId = input.excludeId ? Number(input.excludeId) : undefined
@@ -43,6 +46,23 @@ export const duplicate = async (input: z.infer<typeof duplicateSchema>) => {
       matchedFields.push('dlsiteCode')
       addResult(patch.unique_id, patch.name)
     }
+  }
+
+  // bangumiId remains hard-unique; steamId is a soft duplicate hint.
+  const bangumiPatch = await findPatchByExternalId(
+    'bangumiId',
+    bangumiId,
+    excludeId
+  )
+  if (bangumiPatch) {
+    matchedFields.push('bangumiId')
+    addResult(bangumiPatch.unique_id, bangumiPatch.name ?? '')
+  }
+
+  const steamPatch = await findPatchByExternalId('steamId', steamId, excludeId)
+  if (steamPatch) {
+    matchedFields.push('steamId')
+    addResult(steamPatch.unique_id, steamPatch.name ?? '')
   }
 
   // vndbId: soft, can repeat — return ALL matches

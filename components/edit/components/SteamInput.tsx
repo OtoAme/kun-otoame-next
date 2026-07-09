@@ -86,10 +86,10 @@ export const SteamInput = <T extends PatchFormDataShape>({
 
     if (typeof duplicateResult !== 'string' && duplicateResult?.uniqueId) {
       setDuplicateUniqueId(duplicateResult.uniqueId)
-      toast.error('发现重复游戏条目, 请勿重复提交')
-      return
+      toast.error('发现相同 Steam ID 的已有游戏，请确认是否为合集或共用商店页')
+    } else {
+      setDuplicateUniqueId(null)
     }
-    setDuplicateUniqueId(null)
 
     try {
       toast('正在从 Steam 获取数据...')

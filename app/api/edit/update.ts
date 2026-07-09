@@ -11,6 +11,11 @@ import {
 } from '~/app/api/patch/cache'
 import { processSubmittedExternalData } from './processExternalData'
 import { applySteamOfficialUrlFallback } from '~/utils/externalIds'
+import {
+  findFirstUniqueExternalIdDuplicate,
+  formatUniqueExternalIdDuplicateMessage,
+  resolveUniqueExternalIdConstraintMessage
+} from './uniqueExternalIds'
 
 export const updateGalgame = async (
   input: z.infer<typeof patchUpdateSchema>,
@@ -69,21 +74,47 @@ export const updateGalgame = async (
     steamId
   )
 
-  await prisma.patch.update({
-    where: { id },
-    data: {
-      name,
-      vndb_id: vndbId ? vndbId : null,
-      vndb_relation_id: vndbRelationId ? vndbRelationId : null,
-      bangumi_id: bangumiId ? Number(bangumiId) : null,
-      steam_id: steamId ? Number(steamId) : null,
-      dlsite_code: normalizedDlsiteCode ? normalizedDlsiteCode : null,
-      introduction,
-      official_url: normalizedOfficialUrl,
-      content_limit: contentLimit,
-      released
+  const uniqueExternalIdDuplicate = await findFirstUniqueExternalIdDuplicate(
+    { bangumiId },
+    id
+  )
+  if (uniqueExternalIdDuplicate) {
+    return formatUniqueExternalIdDuplicateMessage(
+      uniqueExternalIdDuplicate.field,
+      uniqueExternalIdDuplicate.patch.unique_id
+    )
+  }
+
+  try {
+    await prisma.patch.update({
+      where: { id },
+      data: {
+        name,
+        vndb_id: vndbId ? vndbId : null,
+        vndb_relation_id: vndbRelationId ? vndbRelationId : null,
+        bangumi_id: bangumiId ? Number(bangumiId) : null,
+        steam_id: steamId ? Number(steamId) : null,
+        dlsite_code: normalizedDlsiteCode ? normalizedDlsiteCode : null,
+        introduction,
+        official_url: normalizedOfficialUrl,
+        content_limit: contentLimit,
+        released
+      }
+    })
+  } catch (error) {
+    const uniqueExternalIdMessage =
+      await resolveUniqueExternalIdConstraintMessage(
+        error,
+        {
+          bangumiId
+        },
+        id
+      )
+    if (uniqueExternalIdMessage) {
+      return uniqueExternalIdMessage
     }
-  })
+    throw error
+  }
 
   await prisma.$transaction(async (prisma) => {
     await prisma.patch_alias.deleteMany({

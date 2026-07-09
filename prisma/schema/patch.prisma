@@ -5,7 +5,7 @@ model patch {
   vndb_id              String?  @db.VarChar(107)
   vndb_relation_id     String?  @db.VarChar(107)
   bangumi_id           Int?     @unique
-  steam_id             Int?     @unique
+  steam_id             Int?
   dlsite_code          String?  @unique @db.VarChar(107)
   banner               String   @default("") @db.VarChar(1007)
   introduction         String   @default("") @db.VarChar(100007)
@@ -55,6 +55,7 @@ model patch {
   @@index([content_limit, resource_update_time(sort: Desc)])
   @@index([resource_update_time])
   @@index([content_limit])
+  @@index([steam_id])
   @@index([released(ops: raw("text_pattern_ops"))])
   @@index([favorite_count])
   @@index([type], type: Gin)

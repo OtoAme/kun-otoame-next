@@ -9,6 +9,11 @@ import { processSubmittedExternalData } from './processExternalData'
 import { invalidatePatchListCaches } from '~/app/api/patch/cache'
 import { CREATE_PATCH_PUBLISH_TIMEOUT_MS } from '~/constants/galgame'
 import { applySteamOfficialUrlFallback } from '~/utils/externalIds'
+import {
+  findFirstUniqueExternalIdDuplicate,
+  formatUniqueExternalIdDuplicateMessage,
+  resolveUniqueExternalIdConstraintMessage
+} from './uniqueExternalIds'
 
 export const createGalgame = async (
   input: Omit<
@@ -80,6 +85,17 @@ export const createGalgame = async (
     officialUrl,
     steamId
   )
+
+  const uniqueExternalIdDuplicate = await findFirstUniqueExternalIdDuplicate({
+    bangumiId
+  })
+  if (uniqueExternalIdDuplicate) {
+    return formatUniqueExternalIdDuplicateMessage(
+      uniqueExternalIdDuplicate.field,
+      uniqueExternalIdDuplicate.patch.unique_id
+    )
+  }
+
   if (normalizedDlsiteCode) {
     const dlsitePatch = await prisma.patch.findFirst({
       where: { dlsite_code: normalizedDlsiteCode }
@@ -89,71 +105,83 @@ export const createGalgame = async (
     }
   }
 
-  const res = await prisma.$transaction(
-    async (prisma) => {
-      const patch = await prisma.patch.create({
-        data: {
-          name,
-          unique_id: galgameUniqueId,
-          vndb_id: vndbId ? vndbId : null,
-          vndb_relation_id: vndbRelationId ? vndbRelationId : null,
-          bangumi_id: bangumiId ? Number(bangumiId) : null,
-          steam_id: steamId ? Number(steamId) : null,
-          dlsite_code: normalizedDlsiteCode ? normalizedDlsiteCode : null,
-          introduction,
-          official_url: normalizedOfficialUrl,
-          user_id: uid,
-          banner: '',
-          released,
-          content_limit: contentLimit
-        }
-      })
-
-      const newId = patch.id
-
-      const uploadResult = await uploadPatchBanner(
-        banner,
-        newId,
-        bannerOriginal
-      )
-      if (typeof uploadResult === 'string') {
-        return uploadResult
-      }
-      const imageLink = `${process.env.KUN_VISUAL_NOVEL_IMAGE_BED_URL}/patch/${newId}/banner/banner.avif`
-
-      await prisma.patch.update({
-        where: { id: newId },
-        data: { banner: imageLink }
-      })
-
-      // Ensure rating_stat row exists for this patch
-      await prisma.patch_rating_stat.create({
-        data: { patch_id: newId }
-      })
-
-      if (alias.length) {
-        const aliasData = alias.map((name) => ({
-          name,
-          patch_id: newId
-        }))
-        await prisma.patch_alias.createMany({
-          data: aliasData,
-          skipDuplicates: true
+  let res: string | { patchId: number }
+  try {
+    res = await prisma.$transaction(
+      async (prisma) => {
+        const patch = await prisma.patch.create({
+          data: {
+            name,
+            unique_id: galgameUniqueId,
+            vndb_id: vndbId ? vndbId : null,
+            vndb_relation_id: vndbRelationId ? vndbRelationId : null,
+            bangumi_id: bangumiId ? Number(bangumiId) : null,
+            steam_id: steamId ? Number(steamId) : null,
+            dlsite_code: normalizedDlsiteCode ? normalizedDlsiteCode : null,
+            introduction,
+            official_url: normalizedOfficialUrl,
+            user_id: uid,
+            banner: '',
+            released,
+            content_limit: contentLimit
+          }
         })
-      }
 
-      await prisma.user.update({
-        where: { id: uid },
-        data: {
-          daily_image_count: { increment: 1 },
-          moemoepoint: { increment: 3 }
+        const newId = patch.id
+
+        const uploadResult = await uploadPatchBanner(
+          banner,
+          newId,
+          bannerOriginal
+        )
+        if (typeof uploadResult === 'string') {
+          return uploadResult
         }
-      })
+        const imageLink = `${process.env.KUN_VISUAL_NOVEL_IMAGE_BED_URL}/patch/${newId}/banner/banner.avif`
 
-      return { patchId: newId }
-    },
-    { timeout: CREATE_PATCH_PUBLISH_TIMEOUT_MS }
-  )
+        await prisma.patch.update({
+          where: { id: newId },
+          data: { banner: imageLink }
+        })
+
+        // Ensure rating_stat row exists for this patch
+        await prisma.patch_rating_stat.create({
+          data: { patch_id: newId }
+        })
+
+        if (alias.length) {
+          const aliasData = alias.map((name) => ({
+            name,
+            patch_id: newId
+          }))
+          await prisma.patch_alias.createMany({
+            data: aliasData,
+            skipDuplicates: true
+          })
+        }
+
+        await prisma.user.update({
+          where: { id: uid },
+          data: {
+            daily_image_count: { increment: 1 },
+            moemoepoint: { increment: 3 }
+          }
+        })
+
+        return { patchId: newId }
+      },
+      { timeout: CREATE_PATCH_PUBLISH_TIMEOUT_MS }
+    )
+  } catch (error) {
+    const uniqueExternalIdMessage =
+      await resolveUniqueExternalIdConstraintMessage(error, {
+        bangumiId
+      })
+    if (uniqueExternalIdMessage) {
+      return uniqueExternalIdMessage
+    }
+    throw error
+  }
 
   if (typeof res === 'string') {
     return res

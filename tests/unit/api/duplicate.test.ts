@@ -35,4 +35,46 @@ describe('edit duplicate service', () => {
       take: 20
     })
   })
+
+  it('checks Steam ID duplicates', async () => {
+    prismaMocks.patch.findFirst.mockResolvedValue({
+      unique_id: 'steam123',
+      name: 'Steam Duplicate'
+    })
+
+    const result = await duplicate({
+      steamId: '3655150'
+    })
+
+    expect(result).toEqual({
+      uniqueId: 'steam123',
+      matchedFields: ['steamId'],
+      duplicates: [{ uniqueId: 'steam123', name: 'Steam Duplicate' }]
+    })
+    expect(prismaMocks.patch.findFirst).toHaveBeenCalledWith({
+      where: { steam_id: 3655150 },
+      select: { unique_id: true, name: true }
+    })
+  })
+
+  it('checks Bangumi ID duplicates', async () => {
+    prismaMocks.patch.findFirst.mockResolvedValue({
+      unique_id: 'bangumi1',
+      name: 'Bangumi Duplicate'
+    })
+
+    const result = await duplicate({
+      bangumiId: '172612'
+    })
+
+    expect(result).toEqual({
+      uniqueId: 'bangumi1',
+      matchedFields: ['bangumiId'],
+      duplicates: [{ uniqueId: 'bangumi1', name: 'Bangumi Duplicate' }]
+    })
+    expect(prismaMocks.patch.findFirst).toHaveBeenCalledWith({
+      where: { bangumi_id: 172612 },
+      select: { unique_id: true, name: true }
+    })
+  })
 })
