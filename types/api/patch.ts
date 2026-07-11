@@ -132,6 +132,11 @@ export interface PatchResourceAccessResponse {
   quota?: ResourceAccessQuota
 }
 
+export interface PatchResourceAccessRestoreResponse {
+  links: PatchResourceAccessLink[]
+  obtainedExpiresAt: string | null
+}
+
 export interface PatchResource {
   id: number
   name: string

@@ -1,15 +1,20 @@
 'use client'
 
 import DOMPurify from 'isomorphic-dompurify'
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Button } from '@heroui/react'
 import { KunUser } from '~/components/kun/floating-card/KunUser'
 import { ChevronDown, ChevronUp, Download } from 'lucide-react'
 import { formatTimeDifference } from '~/utils/time'
+import { kunFetchPost } from '~/utils/kunFetch'
 import { ResourceLikeButton } from './ResourceLike'
 import { ResourceDownloadCard } from './DownloadCard'
 import { markdownToHtml } from './kun/markdownToHtml'
-import type { PatchResource } from '~/types/api/patch'
+import type {
+  PatchResource,
+  PatchResourceAccessLink,
+  PatchResourceAccessRestoreResponse
+} from '~/types/api/patch'
 
 interface Props {
   resource: PatchResource
@@ -18,7 +23,28 @@ interface Props {
 const COLLAPSED_HEIGHT_PX = 96
 
 export const ResourceDownload = ({ resource }: Props) => {
-  const [showLinks, setShowLinks] = useState<Record<number, boolean>>({})
+  const [showLinks, setShowLinks] = useState<Record<number, boolean>>(() =>
+    resource.links.some((link) => link.revealed) ? { [resource.id]: true } : {}
+  )
+  const revealedLinkIds = useMemo(
+    () =>
+      [
+        ...new Set(
+          resource.links.filter((link) => link.revealed).map((link) => link.id)
+        )
+      ].sort((left, right) => left - right),
+    [resource.links]
+  )
+  const restoreKey = `${resource.patchId}:${resource.id}:${revealedLinkIds.join(',')}`
+  const restoreRequestRef = useRef<{
+    key: string
+    promise: Promise<PatchResourceAccessRestoreResponse | string>
+  } | null>(null)
+  const [restoredLinks, setRestoredLinks] = useState(
+    new Map<number, PatchResourceAccessLink>()
+  )
+  const [restoredExpiresAt, setRestoredExpiresAt] = useState('')
+  const [restoreError, setRestoreError] = useState('')
 
   const [note, setNote] = useState('')
   const [isNoteExpanded, setIsNoteExpanded] = useState(false)
@@ -41,6 +67,69 @@ export const ResourceDownload = ({ resource }: Props) => {
   useEffect(() => {
     getResourceNoteHtml()
   }, [])
+
+  useEffect(() => {
+    if (revealedLinkIds.length === 0) {
+      restoreRequestRef.current = null
+      setRestoredLinks(new Map())
+      setRestoredExpiresAt('')
+      setRestoreError('')
+      return
+    }
+
+    setShowLinks((current) => ({ ...current, [resource.id]: true }))
+    if (restoreRequestRef.current?.key !== restoreKey) {
+      setRestoredLinks(new Map())
+      setRestoredExpiresAt('')
+      setRestoreError('')
+      restoreRequestRef.current = {
+        key: restoreKey,
+        promise: kunFetchPost<PatchResourceAccessRestoreResponse | string>(
+          '/patch/resource/download/access/restore',
+          {
+            patchId: resource.patchId,
+            resourceId: resource.id,
+            linkIds: revealedLinkIds
+          }
+        )
+      }
+    }
+
+    let stale = false
+    const request = restoreRequestRef.current
+    void request.promise
+      .then((response) => {
+        if (stale || restoreRequestRef.current?.key !== restoreKey) return
+        if (typeof response === 'string') {
+          setRestoredLinks(new Map())
+          setRestoredExpiresAt('')
+          setRestoreError('已获取链接恢复失败，可点击单条链接重试')
+          return
+        }
+
+        const requestedIds = new Set(revealedLinkIds)
+        setRestoredLinks(
+          new Map(
+            response.links
+              .filter((link) => requestedIds.has(link.id))
+              .map((link) => [link.id, link])
+          )
+        )
+        setRestoredExpiresAt(response.obtainedExpiresAt ?? '')
+        setRestoreError('')
+      })
+      .catch(() => {
+        if (!stale && restoreRequestRef.current?.key === restoreKey) {
+          setRestoredLinks(new Map())
+          setRestoredExpiresAt('')
+          setRestoreError('已获取链接恢复失败，可点击单条链接重试')
+        }
+      })
+
+    return () => {
+      stale = true
+    }
+  }, [restoreKey, resource.id, resource.patchId, revealedLinkIds])
 
   useLayoutEffect(() => {
     const element = noteContentRef.current
@@ -140,13 +229,28 @@ export const ResourceDownload = ({ resource }: Props) => {
 
       {showLinks[resource.id] && (
         <div className="space-y-3">
-          {resource.links.map((link) => (
-            <ResourceDownloadCard
-              key={link.id}
-              resource={resource}
-              link={link}
-            />
-          ))}
+          {restoreError && (
+            <p role="alert" className="text-sm text-danger">
+              {restoreError}
+            </p>
+          )}
+
+          {resource.links.map((link) => {
+            const restoredLink = restoredLinks.get(link.id)
+            return (
+              <ResourceDownloadCard
+                key={link.id}
+                resource={resource}
+                link={link}
+                {...(restoredLink
+                  ? {
+                      restoredLink,
+                      restoredObtainedExpiresAt: restoredExpiresAt
+                    }
+                  : {})}
+              />
+            )
+          })}
         </div>
       )}
     </div>

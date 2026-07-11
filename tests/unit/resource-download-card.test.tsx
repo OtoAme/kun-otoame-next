@@ -3,7 +3,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { JSDOM } from 'jsdom'
 import { createRoot, type Root } from 'react-dom/client'
 import toast from 'react-hot-toast'
-import type { PatchResource, PatchResourceLink } from '~/types/api/patch'
+import type {
+  PatchResource,
+  PatchResourceAccessLink,
+  PatchResourceLink
+} from '~/types/api/patch'
 
 globalThis.React = React
 
@@ -142,7 +146,17 @@ describe('ResourceDownloadCard access flow', () => {
   let root: Root | undefined
   let dom: JSDOM | undefined
 
-  const renderCard = async () => {
+  const renderCard = async ({
+    resourceValue = resource,
+    link = previewLink,
+    restoredLink,
+    restoredObtainedExpiresAt
+  }: {
+    resourceValue?: PatchResource
+    link?: PatchResourceLink
+    restoredLink?: PatchResourceAccessLink
+    restoredObtainedExpiresAt?: string
+  } = {}) => {
     dom = new JSDOM('<!doctype html><div id="root"></div>', {
       url: 'http://localhost'
     })
@@ -160,7 +174,12 @@ describe('ResourceDownloadCard access flow', () => {
     root = createRoot(container!)
     await act(async () => {
       root!.render(
-        <ResourceDownloadCard resource={resource} link={previewLink} />
+        <ResourceDownloadCard
+          resource={resourceValue}
+          link={link}
+          restoredLink={restoredLink}
+          restoredObtainedExpiresAt={restoredObtainedExpiresAt}
+        />
       )
     })
 
@@ -196,9 +215,9 @@ describe('ResourceDownloadCard access flow', () => {
         hash: ''
       },
       access: {
+        kind: 'resource_granted',
         actorType: 'visitor',
         cost: 0,
-        reused: false,
         obtainedExpiresAt: '2026-07-09T00:00:00.000Z'
       }
     })
@@ -225,11 +244,12 @@ describe('ResourceDownloadCard access flow', () => {
     expect(container.textContent).toContain('secret')
   })
 
-  it('uses the obtained state for links that are reusable within 72 hours', async () => {
+  it('uses the revealed state for links reusable within the resource grant', async () => {
     const obtainedLink: PatchResourceLink = {
       ...previewLink,
       obtained: true,
-      obtainedExpiresAt: '2026-07-09T00:00:00.000Z'
+      obtainedExpiresAt: '2026-07-09T00:00:00.000Z',
+      revealed: true
     }
     fetchMock.kunFetchPost.mockResolvedValueOnce({
       link: {
@@ -242,9 +262,9 @@ describe('ResourceDownloadCard access flow', () => {
         hash: ''
       },
       access: {
+        kind: 'reused',
         actorType: 'visitor',
         cost: 0,
-        reused: true,
         obtainedExpiresAt: '2026-07-09T00:00:00.000Z'
       }
     })
@@ -261,7 +281,8 @@ describe('ResourceDownloadCard access flow', () => {
     })
 
     expect(container.textContent).toContain('查看已获取链接')
-    expect(container.textContent).toContain('72 小时内可重复查看')
+    expect(container.textContent).toContain('授权有效期内')
+    expect(container.textContent).not.toContain('72 小时')
     expect(container.textContent).not.toContain('https://pan.example.com/share')
 
     const button = container.querySelector('button')
@@ -290,5 +311,120 @@ describe('ResourceDownloadCard access flow', () => {
 
     expect(toast.error).toHaveBeenCalledWith('该资源不可访问')
     expect(container.textContent).toContain('该资源不可访问')
+  })
+
+  it('keeps the obtain action for an unrevealed mirror in an active resource grant', async () => {
+    const obtainedButUnrevealed: PatchResourceLink = {
+      ...previewLink,
+      obtained: true,
+      obtainedExpiresAt: '2026-07-11T00:00:00.000Z',
+      revealed: false
+    }
+
+    const { container } = await renderCard({
+      link: obtainedButUnrevealed
+    })
+
+    expect(container.textContent).toContain('获取下载链接')
+    expect(container.textContent).not.toContain('查看已获取链接')
+    expect(container.textContent).toContain('授权有效期内')
+    expect(container.textContent).not.toContain('72 小时')
+  })
+
+  it('keeps a single-link retry action when a revealed mirror was not restored', async () => {
+    const revealedLink: PatchResourceLink = {
+      ...previewLink,
+      obtained: true,
+      obtainedExpiresAt: '2026-07-11T00:00:00.000Z',
+      revealed: true
+    }
+
+    const { container } = await renderCard({ link: revealedLink })
+
+    expect(container.textContent).toContain('查看已获取链接')
+    expect(container.textContent).not.toContain(
+      'https://pan.example.com/restored'
+    )
+  })
+
+  it('hydrates a matching restored mirror without another manual request', async () => {
+    const restoredLink: PatchResourceAccessLink = {
+      id: 21,
+      storage: 'user',
+      size: '2 GB',
+      content: 'https://pan.example.com/restored',
+      code: 'restore-code',
+      password: 'restore-password',
+      hash: ''
+    }
+
+    const { container } = await renderCard({
+      link: { ...previewLink, obtained: true, revealed: true },
+      restoredLink,
+      restoredObtainedExpiresAt: '2026-07-11T00:00:00.000Z'
+    })
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(container.textContent).toContain(restoredLink.content)
+    expect(container.textContent).toContain('restore-code')
+    expect(fetchMock.kunFetchPost).not.toHaveBeenCalled()
+  })
+
+  it('ignores a restored mirror with a different link ID', async () => {
+    const mismatchedLink: PatchResourceAccessLink = {
+      id: 22,
+      storage: 'user',
+      size: '3 GB',
+      content: 'https://pan.example.com/wrong-link',
+      code: 'wrong-code',
+      password: 'wrong-password',
+      hash: ''
+    }
+
+    const { container } = await renderCard({
+      link: { ...previewLink, obtained: true, revealed: true },
+      restoredLink: mismatchedLink,
+      restoredObtainedExpiresAt: '2026-07-11T00:00:00.000Z'
+    })
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(container.textContent).not.toContain(mismatchedLink.content)
+    expect(container.textContent).toContain('查看已获取链接')
+  })
+
+  it('clears restore-derived sensitive fields when a new restore omits the mirror', async () => {
+    const restoredLink: PatchResourceAccessLink = {
+      id: 21,
+      storage: 'user',
+      size: '2 GB',
+      content: 'https://pan.example.com/stale-restored-link',
+      code: 'stale-code',
+      password: 'stale-password',
+      hash: ''
+    }
+    const revealedLink = { ...previewLink, obtained: true, revealed: true }
+    const { container } = await renderCard({
+      link: revealedLink,
+      restoredLink,
+      restoredObtainedExpiresAt: '2026-07-11T00:00:00.000Z'
+    })
+    expect(container.textContent).toContain(restoredLink.content)
+
+    const { ResourceDownloadCard } = await import(
+      '~/components/patch/resource/DownloadCard'
+    )
+    await act(async () => {
+      root!.render(
+        <ResourceDownloadCard resource={resource} link={revealedLink} />
+      )
+    })
+
+    expect(container.textContent).not.toContain(restoredLink.content)
+    expect(container.textContent).not.toContain('stale-code')
+    expect(container.textContent).toContain('查看已获取链接')
   })
 })

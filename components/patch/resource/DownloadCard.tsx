@@ -26,17 +26,30 @@ const storageIcons: { [key: string]: JSX.Element } = {
 interface Props {
   resource: PatchResource
   link: PatchResourceLink
+  restoredLink?: PatchResourceAccessLink
+  restoredObtainedExpiresAt?: string
 }
 
-export const ResourceDownloadCard = ({ resource, link }: Props) => {
-  const [accessedLink, setAccessedLink] =
+export const ResourceDownloadCard = ({
+  resource,
+  link,
+  restoredLink,
+  restoredObtainedExpiresAt
+}: Props) => {
+  const [manuallyAccessedLink, setManuallyAccessedLink] =
     useState<PatchResourceAccessLink | null>(null)
-  const [obtainedExpiresAt, setObtainedExpiresAt] = useState(
-    link.obtainedExpiresAt ?? ''
-  )
+  const [manualObtainedExpiresAt, setManualObtainedExpiresAt] = useState('')
   const [accessing, setAccessing] = useState(false)
   const [errorMessage, setErrorMessage] = useState('')
-  const hasObtainedAccess = Boolean(link.obtained || obtainedExpiresAt)
+  const restoredAccessedLink =
+    restoredLink?.id === link.id ? restoredLink : null
+  const accessedLink = manuallyAccessedLink ?? restoredAccessedLink
+  const obtainedExpiresAt =
+    manualObtainedExpiresAt ||
+    (restoredAccessedLink ? (restoredObtainedExpiresAt ?? '') : '') ||
+    link.obtainedExpiresAt ||
+    ''
+  const hasActiveGrant = Boolean(link.obtained || obtainedExpiresAt)
 
   const handleClickDownload = async () => {
     await kunFetchPut<KunResponse<{}>>('/patch/resource/download', {
@@ -51,13 +64,14 @@ export const ResourceDownloadCard = ({ resource, link }: Props) => {
     setErrorMessage('')
 
     try {
-      const response = await kunFetchPost<
-        PatchResourceAccessResponse | string
-      >('/patch/resource/download/access', {
-        patchId: resource.patchId,
-        resourceId: resource.id,
-        linkId: link.id
-      })
+      const response = await kunFetchPost<PatchResourceAccessResponse | string>(
+        '/patch/resource/download/access',
+        {
+          patchId: resource.patchId,
+          resourceId: resource.id,
+          linkId: link.id
+        }
+      )
 
       if (typeof response === 'string') {
         setErrorMessage(response)
@@ -65,8 +79,8 @@ export const ResourceDownloadCard = ({ resource, link }: Props) => {
         return
       }
 
-      setAccessedLink(response.link)
-      setObtainedExpiresAt(response.access.obtainedExpiresAt)
+      setManuallyAccessedLink(response.link)
+      setManualObtainedExpiresAt(response.access.obtainedExpiresAt)
     } catch {
       const message = '获取下载链接失败，请稍后重试'
       setErrorMessage(message)
@@ -88,9 +102,8 @@ export const ResourceDownloadCard = ({ resource, link }: Props) => {
       </div>
     ) : null
 
-  const accessButtonText = hasObtainedAccess
-    ? '查看已获取链接'
-    : '获取下载链接'
+  const accessButtonText =
+    link.revealed === true ? '查看已获取链接' : '获取下载链接'
 
   return (
     <div className="flex flex-col space-y-2">
@@ -167,9 +180,9 @@ export const ResourceDownloadCard = ({ resource, link }: Props) => {
             {accessButtonText}
           </Button>
 
-          {hasObtainedAccess && (
+          {hasActiveGrant && (
             <p className="text-sm text-default-500">
-              72 小时内可重复查看，不会重复记录获取。
+              授权有效期内可继续获取资源镜像。
             </p>
           )}
 
