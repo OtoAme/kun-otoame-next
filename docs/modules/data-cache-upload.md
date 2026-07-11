@@ -260,6 +260,7 @@ Gallery 图片上传走 `app/api/edit/gallery/route.ts` 和 `app/api/edit/galler
 
 - `patch_resource_access_grant` 只包含 `actor_key`、`resource_id` 和 `expires`，复合主键保证同一 actor/resource 只有一条 grant。新授权从首次获取起固定有效 24 小时；同一授权期内点开其它镜像、重复查看或自动恢复都不延长 `expires`。
 - `patch_resource_access` 保留 actor、资源、镜像、section、storage、cost、expires 和 created 等审计信息；`access_kind` 是唯一新增的事件分类字段。新资源授权写 `resource_grant`，有效授权内首次点开另一镜像写 `link_reveal`，重复查看不新增 event。
+- Grant 写事务使用 PostgreSQL Serializable，最多尝试 3 次。Prisma `P2002` / `P2034` 和 adapter 直接暴露的 `DriverAdapterError` `TransactionWriteConflict` / SQLSTATE `40001` 都从完整事务起点重试；前两次冲突后分别在事务外等待 50 ms、100 ms。不要把等待放进事务 callback，也不要把其他 driver/连接错误误判成序列化冲突。
 - 游客游戏资源的日/周产品额度只统计 `access_kind = 'resource_grant'`。登录用户和补丁资源不进入该产品额度；共享 IP 不承担产品额度。
 - 刷新后的恢复同时只读 grant 和 event，只返回当前 actor 已点过且授权仍有效的镜像。不要为恢复写 event，也不要新增持久化的 `revealed` 字段或 ID 数组；资源列表里的 `revealed` 是从 event 查询派生的 preview 状态。
 - Grant/event 读写不改变资源派生属性和公开列表统计，因此不触发 `deletePatchResourceCache`。包含 `obtained` / `revealed` 的 `/api/patch/resource` 和含真实凭据的 access/restore 响应必须 `private, no-store`。

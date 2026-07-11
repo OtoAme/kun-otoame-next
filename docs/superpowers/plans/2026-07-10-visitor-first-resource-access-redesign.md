@@ -737,6 +737,7 @@ export const getResourceAccessViewerWhere = (
 
 ~~~ts
 import { Prisma } from '@prisma/client'
+import { setTimeout as wait } from 'node:timers/promises'
 import { prisma } from '~/prisma/index'
 import {
   getResourceAccessPolicy,
@@ -750,6 +751,7 @@ import {
 import type { ResourceAccessActor } from './actor'
 
 const RESOURCE_ACCESS_GRANT_RETRY_COUNT = 3
+const RESOURCE_ACCESS_GRANT_RETRY_BASE_DELAY_MS = 50
 
 type GrantInput = {
   actor: ResourceAccessActor
@@ -870,8 +872,14 @@ const checkVisitorResourceQuota = async (
 }
 
 const isRetryableGrantConflict = (error: unknown) =>
-  error instanceof Prisma.PrismaClientKnownRequestError &&
-  (error.code === 'P2002' || error.code === 'P2034')
+  (error instanceof Prisma.PrismaClientKnownRequestError &&
+    (error.code === 'P2002' || error.code === 'P2034')) ||
+  (error instanceof Error &&
+    error.name === 'DriverAdapterError' &&
+    typeof error.cause === 'object' &&
+    error.cause !== null &&
+    (error.cause as { kind?: unknown }).kind === 'TransactionWriteConflict' &&
+    (error.cause as { originalCode?: unknown }).originalCode === '40001')
 
 export class ResourceAccessGrantBusyError extends Error {}
 
@@ -964,6 +972,7 @@ export const resolveResourceAccessGrant = async (input: GrantInput) => {
       if (attempt === RESOURCE_ACCESS_GRANT_RETRY_COUNT - 1) {
         throw new ResourceAccessGrantBusyError()
       }
+      await wait(RESOURCE_ACCESS_GRANT_RETRY_BASE_DELAY_MS * 2 ** attempt)
     }
   }
 
@@ -983,7 +992,7 @@ grant 复合主键冲突 P2002 和序列化冲突 P2034 都从事务起点重试
 - 已有 active grant 时并发首次点开不同镜像：两个事务可各创建一条合法的 link_reveal，不互相覆盖，也不延长 expires。
 - 同一游客在日/周临界值并发获取两个不同资源：Serializable 必须使至少一个事务冲突重试；重试后重新 count，超限请求返回 limited，不能出现 daily 第 6 个或 weekly 第 21 个 resource_grant。
 
-事务内的 quota count、grant create/update 和 access event create 必须同生同灭；刷新恢复不调用该写事务。三次仍无法完成时抛出 ResourceAccessGrantBusyError。单元测试用可控 P2002/P2034 验证上述重试结果；Task 7 在开发或预发布 PostgreSQL 上发真实并发请求，验证 SSI，而不是把 mock 测试当成数据库语义证明。
+事务内的 quota count、grant create/update 和 access event create 必须同生同灭；刷新恢复不调用该写事务。Prisma Client 的 P2002/P2034 与 Prisma 7 adapter 直接暴露的 `DriverAdapterError`（`TransactionWriteConflict`、PostgreSQL SQLSTATE `40001`）均从事务起点重试；前两次冲突后在事务外分别退避 50 ms、100 ms，第三次仍无法完成时抛出 ResourceAccessGrantBusyError。单元测试覆盖两种错误形态和退避顺序；Task 7 在开发或预发布 PostgreSQL 上发真实并发请求，验证 SSI，而不是把 mock 测试当成数据库语义证明。
 
 - [ ] **Step 6: 运行 grant 测试**
 

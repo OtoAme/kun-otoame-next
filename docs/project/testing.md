@@ -159,6 +159,7 @@ prismaMocks.$transaction.mockImplementation((fn) => fn(prismaMocks._tx))
 - 游客游戏资源按上海自然日 5 个、自然周 20 个资源条目测试边界；登录用户和补丁资源不受产品硬限制。日/周临界并发只能成功一个首次 grant，另一请求重试后必须返回对应 limited，不能越过第 6 个或第 21 个。
 - Access/restore 每 actor 每分钟 30 次技术限频要覆盖 429、`Retry-After`、no-store、Redis fail-open，以及首次无 cookie 游客只用 IP hash 限频；IP 不能参与产品额度。
 - 同资源同镜像并发只能新增一条 event；同资源不同镜像并发只能有一个 `resource_grant` 和一个同到期时间的 `link_reveal`。不能只用 mock `P2034` 代替预发布 PostgreSQL 竞态验收。
+- Prisma 7 `@prisma/adapter-pg` 可能把 PostgreSQL SQLSTATE `40001` 直接暴露为 `DriverAdapterError` + `TransactionWriteConflict`，而不是包装成 `P2034`。Grant 单元测试必须覆盖两种错误形态、事务外 50/100 ms 退避和第三次冲突耗尽；真实 PostgreSQL 验收仍要证明 daily 4→5、weekly 19→20 的失败方重试后返回对应 limited，而不是 503。
 - Migration backfill 要覆盖固定 cutoff/cutover、旧 event 的 `link_reveal` 分类、每 actor/resource 的 grant 完整性、canonical event 对齐和重复执行幂等；历史重复 event 只盘点，不删除或去重。
 - 上传 owner mismatch、already consuming、not found。
 - S3 URL key 提取拒绝非本站 URL。

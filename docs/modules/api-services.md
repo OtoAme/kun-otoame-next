@@ -229,6 +229,7 @@ service/helper 负责：
 - 真实资源链接、提取码和解压码只能通过 `POST /api/patch/resource/download/access` 按单个 link 获取。请求体复用 `patchId`、`resourceId`、`linkId` 三元组校验，返回单个 `link`，包含 `id`、`storage`、`size`、`content`、`code`、`password`、`hash`。
 - Access API 必须同时校验 link ID、资源归属、游戏归属、资源 `status = 0`、游戏 `status = 0` 和 `getPatchVisibilityWhere(req)` 返回的可见性条件，不能只按 `linkId` 裸查。
 - Access 和 restore API 的全部响应都必须返回 `Cache-Control: private, no-store`。解析失败返回 400，资源不可访问或不存在返回 404，产品限额和技术限频返回 429，并带 `Retry-After`；并发授权暂时无法完成或服务异常返回 503。
+- Grant 的 Serializable 事务最多尝试 3 次。除 Prisma Client 的 `P2002` / `P2034` 外，Prisma 7 `@prisma/adapter-pg` 直接暴露的 `DriverAdapterError`（`cause.kind = 'TransactionWriteConflict'` 且 PostgreSQL SQLSTATE 为 `40001`）也属于同一类可重试冲突；前两次失败后在事务外分别退避 50 ms、100 ms，再从事务起点重读 grant、event 和额度。第三次仍冲突才映射为安全的 503，其他 adapter、连接或 SQL 错误不得按冲突重试。
 - 授权单位是资源条目，不是单个镜像。首次为 actor/resource 创建或续期 24 小时授权时写入 `resource_grant` event，并且只有游客获取游戏资源条目时才计入产品额度：上海自然日最多 5 个、自然周最多 20 个。登录用户、游戏资源 owner、创作者、管理员和补丁资源当前没有产品硬限制。
 - 同一 24 小时授权期内，首次点开另一镜像写入与原授权同一 `expires` 的 `link_reveal` event；已经点过的镜像返回 `reused`。`link_reveal`、`reused` 和自动 restore 都不消耗日/周额度，也不延长授权。
 - `/api/patch/resource` 根据登录用户或已有游客 cookie 返回资源级 `obtained` / `obtainedExpiresAt` 和镜像级 `revealed`，但仍不能返回 `content`、`code`、`password`。该个性化 GET 响应必须保持 `private, no-store`。
