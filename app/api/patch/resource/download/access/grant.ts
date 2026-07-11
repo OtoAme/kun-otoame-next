@@ -1,4 +1,5 @@
 import { Prisma } from '@prisma/client'
+import { setTimeout as wait } from 'node:timers/promises'
 import { prisma } from '~/prisma/index'
 import { getResourceAccessPolicy, RESOURCE_ACCESS_GRANT_MS } from './policy'
 import { getShanghaiQuotaWindows } from './timeWindow'
@@ -6,6 +7,7 @@ import { getResourceAccessActorKey, getResourceAccessActorWhere } from './actor'
 import type { ResourceAccessActor } from './actor'
 
 const RESOURCE_ACCESS_GRANT_RETRY_COUNT = 3
+const RESOURCE_ACCESS_GRANT_RETRY_BASE_DELAY_MS = 50
 
 type GrantInput = {
   actor: ResourceAccessActor
@@ -124,8 +126,14 @@ const checkVisitorResourceQuota = async (
 }
 
 const isRetryableGrantConflict = (error: unknown) =>
-  error instanceof Prisma.PrismaClientKnownRequestError &&
-  (error.code === 'P2002' || error.code === 'P2034')
+  (error instanceof Prisma.PrismaClientKnownRequestError &&
+    (error.code === 'P2002' || error.code === 'P2034')) ||
+  (error instanceof Error &&
+    error.name === 'DriverAdapterError' &&
+    typeof error.cause === 'object' &&
+    error.cause !== null &&
+    (error.cause as { kind?: unknown }).kind === 'TransactionWriteConflict' &&
+    (error.cause as { originalCode?: unknown }).originalCode === '40001')
 
 export class ResourceAccessGrantBusyError extends Error {}
 
@@ -227,6 +235,7 @@ export const resolveResourceAccessGrant = async (input: GrantInput) => {
       if (attempt === RESOURCE_ACCESS_GRANT_RETRY_COUNT - 1) {
         throw new ResourceAccessGrantBusyError()
       }
+      await wait(RESOURCE_ACCESS_GRANT_RETRY_BASE_DELAY_MS * 2 ** attempt)
     }
   }
 

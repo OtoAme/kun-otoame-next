@@ -27,6 +27,10 @@ const redisMocks = vi.hoisted(() => ({
   eval: vi.fn()
 }))
 
+const timerMocks = vi.hoisted(() => ({
+  wait: vi.fn()
+}))
+
 vi.mock('~/prisma/index', () => ({
   prisma: prismaMocks
 }))
@@ -35,6 +39,10 @@ vi.mock('~/lib/redis', () => ({
   getPrefixedRedisKey: (key: string) => `kun:touchgal:${key}`,
   redis: redisMocks,
   runRedisCommand: <T>(command: () => Promise<T>) => command()
+}))
+
+vi.mock('node:timers/promises', () => ({
+  setTimeout: timerMocks.wait
 }))
 
 import {
@@ -84,6 +92,16 @@ const createKnownRequestError = (code: 'P2002' | 'P2034') =>
     clientVersion: Prisma.prismaVersion.client
   })
 
+const createDriverAdapterWriteConflictError = () =>
+  Object.assign(new Error('test adapter write conflict'), {
+    name: 'DriverAdapterError',
+    cause: {
+      kind: 'TransactionWriteConflict',
+      originalCode: '40001',
+      originalMessage: 'test adapter write conflict'
+    }
+  })
+
 const rejectFirstTransactionAfterCallback = (code: 'P2002' | 'P2034') => {
   let attempt = 0
   prismaMocks.$transaction.mockImplementation(
@@ -102,6 +120,7 @@ const originalJwtSecret = process.env.JWT_SECRET
 
 beforeEach(() => {
   redisMocks.eval.mockReset()
+  timerMocks.wait.mockReset().mockResolvedValue(undefined)
   prismaMocks.$transaction.mockReset()
   prismaMocks.tx.patch_resource_access_grant.findUnique.mockReset()
   prismaMocks.tx.patch_resource_access_grant.create.mockReset()
@@ -775,5 +794,42 @@ describe('resource access grant service', () => {
       ResourceAccessGrantBusyError
     )
     expect(prismaMocks.$transaction).toHaveBeenCalledTimes(3)
+  })
+
+  it('backs off between retryable transaction conflicts', async () => {
+    const result = {
+      kind: 'reused' as const,
+      expires: new Date('2026-07-11T02:00:00.000Z')
+    }
+    prismaMocks.$transaction
+      .mockRejectedValueOnce(createKnownRequestError('P2034'))
+      .mockRejectedValueOnce(createKnownRequestError('P2034'))
+      .mockResolvedValueOnce(result)
+
+    await expect(resolveResourceAccessGrant(baseInput)).resolves.toEqual(result)
+
+    expect(timerMocks.wait.mock.calls).toEqual([[50], [100]])
+    expect(prismaMocks.$transaction).toHaveBeenCalledTimes(3)
+  })
+
+  it('retries adapter-level PostgreSQL serialization conflicts', async () => {
+    const result = {
+      kind: 'limited' as const,
+      window: 'daily' as const,
+      retryAfterSeconds: 60,
+      remaining: { daily: 0, weekly: 15 },
+      resetsAt: {
+        daily: '2026-07-10T16:00:00.000Z',
+        weekly: '2026-07-12T16:00:00.000Z'
+      }
+    }
+    prismaMocks.$transaction
+      .mockRejectedValueOnce(createDriverAdapterWriteConflictError())
+      .mockResolvedValueOnce(result)
+
+    await expect(resolveResourceAccessGrant(baseInput)).resolves.toEqual(result)
+
+    expect(timerMocks.wait.mock.calls).toEqual([[50]])
+    expect(prismaMocks.$transaction).toHaveBeenCalledTimes(2)
   })
 })
