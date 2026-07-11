@@ -7,13 +7,13 @@
 \if :{?legacy_max_id}
 \else
   \echo 'missing required psql variable: legacy_max_id'
-  \quit 3
+  SELECT 1 / 0 AS resource_access_migration_aborted;
 \endif
 
 \if :{?legacy_cutover_at}
 \else
   \echo 'missing required psql variable: legacy_cutover_at'
-  \quit 3
+  SELECT 1 / 0 AS resource_access_migration_aborted;
 \endif
 
 SELECT
@@ -22,7 +22,7 @@ SELECT
 \if :legacy_cutover_has_timezone
 \else
   \echo 'legacy_cutover_at must include Z or an explicit UTC offset'
-  \quit 3
+  SELECT 1 / 0 AS resource_access_migration_aborted;
 \endif
 
 SELECT :'legacy_max_id' ~ '^(0|[1-9][0-9]*)$' AS legacy_max_id_valid
@@ -30,7 +30,7 @@ SELECT :'legacy_max_id' ~ '^(0|[1-9][0-9]*)$' AS legacy_max_id_valid
 \if :legacy_max_id_valid
 \else
   \echo 'legacy_max_id must be a non-negative integer'
-  \quit 3
+  SELECT 1 / 0 AS resource_access_migration_aborted;
 \endif
 
 -- These casts and the live cutoff check must all succeed before any DDL/DML.
@@ -47,7 +47,7 @@ FROM public.patch_resource_access
 \if :legacy_cutoff_matches
 \else
   \echo 'legacy_max_id is stale; drain old writers and capture a new cutoff'
-  \quit 3
+  SELECT 1 / 0 AS resource_access_migration_aborted;
 \endif
 
 -- A ready/valid same-name index with the wrong definition must fail before
@@ -98,13 +98,13 @@ FROM actual
 \if :index_shape_preflight_index_names_are_indexes
 \else
   \echo 'a required index name exists but is not an index'
-  \quit 3
+  SELECT 1 / 0 AS resource_access_migration_aborted;
 \endif
 
 \if :index_shape_preflight_ready_valid_index_definitions_match
 \else
   \echo 'a ready/valid required index has an incompatible definition'
-  \quit 3
+  SELECT 1 / 0 AS resource_access_migration_aborted;
 \endif
 
 -- IF NOT EXISTS may only cover absence. Any existing same-name object must
@@ -503,14 +503,14 @@ WITH canonical_legacy_event AS (
       access.resource_id,
       access.link_id,
       access.expires,
-      grant.expires AS grant_expires
+      resource_grant.expires AS grant_expires
     FROM public.patch_resource_access access
-    JOIN public.patch_resource_access_grant grant
-      ON grant.actor_key = CASE
+    JOIN public.patch_resource_access_grant resource_grant
+      ON resource_grant.actor_key = CASE
         WHEN access.actor_type = 'user' THEN 'user:' || access.user_id::text
         WHEN access.actor_type = 'visitor' THEN 'visitor:' || access.visitor_token
       END
-     AND grant.resource_id = access.resource_id
+     AND resource_grant.resource_id = access.resource_id
     WHERE access.id <= :'legacy_max_id'::bigint
       AND access.expires > (:'legacy_cutover_at'::timestamptz AT TIME ZONE 'UTC')
       AND (
@@ -564,12 +564,12 @@ LEFT JOIN pg_index index_row ON index_row.indexrelid = index_class.oid
       \if :grant_index_definition_ok
       \else
         \echo 'existing ready/valid resource_access_grant_expires_idx has an incompatible definition'
-        \quit 3
+        SELECT 1 / 0 AS resource_access_migration_aborted;
       \endif
     \endif
   \else
     \echo 'public.resource_access_grant_expires_idx exists but is not an index'
-    \quit 3
+    SELECT 1 / 0 AS resource_access_migration_aborted;
   \endif
 \endif
 
@@ -605,12 +605,12 @@ LEFT JOIN pg_index index_row ON index_row.indexrelid = index_class.oid
       \if :visitor_index_definition_ok
       \else
         \echo 'existing ready/valid resource_access_visitor_kind_created_idx has an incompatible definition'
-        \quit 3
+        SELECT 1 / 0 AS resource_access_migration_aborted;
       \endif
     \endif
   \else
     \echo 'public.resource_access_visitor_kind_created_idx exists but is not an index'
-    \quit 3
+    SELECT 1 / 0 AS resource_access_migration_aborted;
   \endif
 \endif
 
@@ -656,29 +656,29 @@ WITH eligible AS (
   GROUP BY actor_key, resource_id, link_id
 ), grant_summary AS (
   SELECT
-    COUNT(*) FILTER (WHERE grant.actor_key IS NULL) AS missing_grants,
+    COUNT(*) FILTER (WHERE resource_grant.actor_key IS NULL) AS missing_grants,
     COUNT(*) FILTER (
-      WHERE grant.actor_key IS NOT NULL
-        AND grant.expires < historical.historical_expires
+      WHERE resource_grant.actor_key IS NOT NULL
+        AND resource_grant.expires < historical.historical_expires
     ) AS short_grants
   FROM historical_grants historical
-  LEFT JOIN public.patch_resource_access_grant grant
-    ON grant.actor_key = historical.actor_key
-   AND grant.resource_id = historical.resource_id
+  LEFT JOIN public.patch_resource_access_grant resource_grant
+    ON resource_grant.actor_key = historical.actor_key
+   AND resource_grant.resource_id = historical.resource_id
 ), canonical_summary AS (
   SELECT COUNT(*) AS unaligned_events
   FROM link_groups link_group
-  LEFT JOIN public.patch_resource_access_grant grant
-    ON grant.actor_key = link_group.actor_key
-   AND grant.resource_id = link_group.resource_id
-  WHERE grant.actor_key IS NULL
+  LEFT JOIN public.patch_resource_access_grant resource_grant
+    ON resource_grant.actor_key = link_group.actor_key
+   AND resource_grant.resource_id = link_group.resource_id
+  WHERE resource_grant.actor_key IS NULL
     OR NOT EXISTS (
       SELECT 1
       FROM eligible event
       WHERE event.actor_key = link_group.actor_key
         AND event.resource_id = link_group.resource_id
         AND event.link_id = link_group.link_id
-        AND event.expires = grant.expires
+        AND event.expires = resource_grant.expires
     )
 )
 SELECT
@@ -699,17 +699,17 @@ CROSS JOIN canonical_summary
 \if :data_postflight_grants_present
 \else
   \echo 'grant postflight failed: missing grants remain'
-  \quit 3
+  SELECT 1 / 0 AS resource_access_migration_aborted;
 \endif
 \if :data_postflight_grants_long_enough
 \else
   \echo 'grant postflight failed: short grants remain'
-  \quit 3
+  SELECT 1 / 0 AS resource_access_migration_aborted;
 \endif
 \if :data_postflight_canonical_events_aligned
 \else
   \echo 'canonical event postflight failed: unaligned groups remain'
-  \quit 3
+  SELECT 1 / 0 AS resource_access_migration_aborted;
 \endif
 
 WITH expected(index_name, index_definition) AS (
@@ -745,5 +745,5 @@ FROM checked
 \if :index_postflight_indexes_ok
 \else
   \echo 'index postflight failed: definition/readiness/validity mismatch'
-  \quit 3
+  SELECT 1 / 0 AS resource_access_migration_aborted;
 \endif

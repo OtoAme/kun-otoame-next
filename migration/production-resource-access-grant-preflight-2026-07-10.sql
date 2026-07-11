@@ -13,7 +13,7 @@ SELECT to_regclass('public.patch_resource_access') IS NOT NULL AS access_table_p
 \if :access_table_present
 \else
   \echo 'missing required table: public.patch_resource_access'
-  \quit 3
+  SELECT 1 / 0 AS resource_access_migration_aborted;
 \endif
 
 -- Freeze one snapshot for every data check in this run. Supplying only one
@@ -25,7 +25,7 @@ SELECT to_regclass('public.patch_resource_access') IS NOT NULL AS access_table_p
     \if :legacy_max_id_valid
     \else
       \echo 'legacy_max_id must be a non-negative integer'
-      \quit 3
+      SELECT 1 / 0 AS resource_access_migration_aborted;
     \endif
 
     SELECT
@@ -34,7 +34,7 @@ SELECT to_regclass('public.patch_resource_access') IS NOT NULL AS access_table_p
     \if :legacy_cutover_has_timezone
     \else
       \echo 'legacy_cutover_at must include Z or an explicit UTC offset'
-      \quit 3
+      SELECT 1 / 0 AS resource_access_migration_aborted;
     \endif
 
     SELECT
@@ -43,12 +43,12 @@ SELECT to_regclass('public.patch_resource_access') IS NOT NULL AS access_table_p
     \gset
   \else
     \echo 'legacy_cutover_at is required when legacy_max_id is provided'
-    \quit 3
+    SELECT 1 / 0 AS resource_access_migration_aborted;
   \endif
 \else
   \if :{?legacy_cutover_at}
     \echo 'legacy_max_id is required when legacy_cutover_at is provided'
-    \quit 3
+    SELECT 1 / 0 AS resource_access_migration_aborted;
   \endif
 
   SELECT
@@ -459,11 +459,11 @@ LEFT JOIN grant_column_shape ON true
     SELECT
       historical.actor_key,
       historical.resource_id,
-      GREATEST(historical.historical_expires, grant.expires) AS target_expires
+      GREATEST(historical.historical_expires, resource_grant.expires) AS target_expires
     FROM historical_grants historical
-    LEFT JOIN public.patch_resource_access_grant grant
-      ON grant.actor_key = historical.actor_key
-     AND grant.resource_id = historical.resource_id
+    LEFT JOIN public.patch_resource_access_grant resource_grant
+      ON resource_grant.actor_key = historical.actor_key
+     AND resource_grant.resource_id = historical.resource_id
   ), canonical_events AS (
     SELECT DISTINCT ON (actor_key, resource_id, link_id)
       actor_key, resource_id, link_id, expires
@@ -570,10 +570,10 @@ LEFT JOIN grant_column_shape ON true
   SELECT
     'active_legacy_grant_coverage' AS check_type,
     COUNT(*) AS active_actor_resource_groups,
-    COUNT(*) FILTER (WHERE grant.actor_key IS NULL) AS missing_grant_groups,
+    COUNT(*) FILTER (WHERE resource_grant.actor_key IS NULL) AS missing_grant_groups,
     COUNT(*) FILTER (
-      WHERE grant.actor_key IS NOT NULL
-        AND grant.expires < historical.historical_expires
+      WHERE resource_grant.actor_key IS NOT NULL
+        AND resource_grant.expires < historical.historical_expires
     ) AS grant_expires_too_short_groups,
     (
       SELECT COUNT(*)
@@ -592,9 +592,9 @@ LEFT JOIN grant_column_shape ON true
         )
     ) AS canonical_event_unaligned_groups
   FROM historical_grants historical
-  LEFT JOIN public.patch_resource_access_grant grant
-    ON grant.actor_key = historical.actor_key
-   AND grant.resource_id = historical.resource_id;
+  LEFT JOIN public.patch_resource_access_grant resource_grant
+    ON resource_grant.actor_key = historical.actor_key
+   AND resource_grant.resource_id = historical.resource_id;
 \else
   \if :grant_table_present
     SELECT
