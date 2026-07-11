@@ -254,15 +254,55 @@ Gallery 图片上传走 `app/api/edit/gallery/route.ts` 和 `app/api/edit/galler
 
 历史脏数据修复使用 `pnpm maintenance:resource-attributes:dry` 预览、`pnpm maintenance:resource-attributes:apply` 应用；脚本同样只按已发布资源重算 `type`、`language` 和 `platform`。`pnpm migration:patch-counters` 安装的 `resource_count` 触发器也只计入已发布资源，并在资源审核状态变化时同步增减。
 
-## 下载获取记录
+## 下载授权与事件
 
-`patch_resource_access` 是下载链接按需获取的审计和复用基础：
+下载访问状态分成资源级 grant 和镜像级 event：
 
-- 登录用户记录 `user_id`，游客记录随机 `visitor_token`；游客 token 只通过 HTTP-only `kun-resource-access-token` cookie 保存，不在前端 JS 中读取。
-- 每条记录绑定 `patch_id`、`resource_id`、`link_id`，并冗余 `section`、`storage` 方便后续聚合查询。
-- `expires` 是 72 小时复用截止时间；列表和 access API 只查 `expires > now()` 的 active 记录。
-- `cost` 在 Phase 2 固定为 0。萌萌点流水、免费额度、刷新卡和周硬上限属于后续阶段，不能在 Phase 2 里用该表伪装扣费能力。
-- 该表写入不影响资源派生属性和公开列表统计，因此不触发 `deletePatchResourceCache`。包含 `obtained` 状态的 `/api/patch/resource` 响应必须 `private, no-store`，不能进入公开缓存。
+- `patch_resource_access_grant` 只包含 `actor_key`、`resource_id` 和 `expires`，复合主键保证同一 actor/resource 只有一条 grant。新授权从首次获取起固定有效 24 小时；同一授权期内点开其它镜像、重复查看或自动恢复都不延长 `expires`。
+- `patch_resource_access` 保留 actor、资源、镜像、section、storage、cost、expires 和 created 等审计信息；`access_kind` 是唯一新增的事件分类字段。新资源授权写 `resource_grant`，有效授权内首次点开另一镜像写 `link_reveal`，重复查看不新增 event。
+- 游客游戏资源的日/周产品额度只统计 `access_kind = 'resource_grant'`。登录用户和补丁资源不进入该产品额度；共享 IP 不承担产品额度。
+- 刷新后的恢复同时只读 grant 和 event，只返回当前 actor 已点过且授权仍有效的镜像。不要为恢复写 event，也不要新增持久化的 `revealed` 字段或 ID 数组；资源列表里的 `revealed` 是从 event 查询派生的 preview 状态。
+- Grant/event 读写不改变资源派生属性和公开列表统计，因此不触发 `deletePatchResourceCache`。包含 `obtained` / `revealed` 的 `/api/patch/resource` 和含真实凭据的 access/restore 响应必须 `private, no-store`。
+- Redis 只做每 actor 每分钟 30 次的短时技术限频，不承载日/周产品额度。清除 visitor cookie 会创建新的游客身份；只有首次无有效 cookie 的游客按 IP hash 做技术限频，不能据此给共享 IP 分配或封禁产品额度。
+
+## 上线观察与回滚
+
+下面的只读查询只聚合资源级 event 和 grant 数量，不输出真实下载凭据、visitor token、IP、IP hash、actorKey、Redis key 或资源/镜像 ID：
+
+```sql
+WITH rollout AS (
+  SELECT MIN(created) AS started_at
+  FROM patch_resource_access
+  WHERE access_kind = 'resource_grant'
+)
+SELECT
+  DATE_TRUNC('day', pra.created AT TIME ZONE 'Asia/Shanghai') AS shanghai_day,
+  pra.actor_type,
+  pra.section,
+  pra.access_kind,
+  COUNT(*) AS event_count
+FROM patch_resource_access pra
+CROSS JOIN rollout
+WHERE rollout.started_at IS NOT NULL
+  AND pra.access_kind IN ('resource_grant', 'link_reveal')
+  AND pra.created >= rollout.started_at
+  AND pra.created >= (CURRENT_TIMESTAMP AT TIME ZONE 'UTC') - INTERVAL '14 days'
+GROUP BY 1, 2, 3, 4
+ORDER BY 1 DESC, 2, 3, 4;
+
+SELECT
+  COUNT(*) FILTER (WHERE expires > (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')) AS active_grants,
+  COUNT(*) FILTER (WHERE expires <= (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')) AS expired_grants
+FROM patch_resource_access_grant;
+```
+
+`resource_grant` 与 `link_reveal` 由上面的 DB event 聚合；首条 `resource_grant` 的 `created` 作为新应用开始写事件的保守下界，避免迁移时统一标记为 `link_reveal` 的旧行污染 14 天指标。运维若记录了更准确的应用切换时间，应以该时间替换 rollout CTE。
+
+`daily_limited`、`weekly_limited`、`manual_reused`、`rate_limited` 和 `manual_failed` 由 `observability.ts` 的 `resource-access-outcome` 结构化日志聚合。自动 restore 不写 event，也不混入 `manual_reused`：restore route 对每个完成的只读请求记录 `restore_succeeded`，对映射为 503 的异常记录 `restore_failed`；日志聚合按 `operation = restore` 计算成功率 = `restore_succeeded / (restore_succeeded + restore_failed)`，技术 429 另看 `rate_limited`。这样自动恢复成功率和错误率有明确采集路径，不依赖 access event 猜测。
+
+安全日志只允许 `operation`、`outcome`、`actorType` 和可选 `section`，不得记录 `content`、`code`、`password`、`hash`、`visitorToken`、IP/IP hash、`actorKey`、Redis key、资源/镜像 ID 或完整资源名称。若部署平台已有 HTTP route status 指标，可用 restore route 的 200/429/503 交叉校验上述聚合，但 DB 中仍不得为了 restore 指标新增事件。
+
+Rollout 时要用固定 cutoff/cutover 完成 preflight、sync 和 postflight，并在切换新应用前排空旧 access writer。上线时仍有效的旧授权最长可能继续 72 小时；这是迁移兼容行为，不是新的产品规则。所有新授权统一为 24 小时。回滚旧应用后如果旧 writer 再次写入旧事件，下次上线必须建立新的固定 snapshot，不能沿用上一次 cutoff/cutover。
 
 ## 测试
 

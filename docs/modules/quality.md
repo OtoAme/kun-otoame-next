@@ -19,39 +19,44 @@ pnpm typecheck
 
 ## 当前测试覆盖
 
-| 文件                                                   | 覆盖                                                                                  |
-| ------------------------------------------------------ | ------------------------------------------------------------------------------------- |
-| `tests/unit/theme.test.ts`                             | 主题 token 和语义色。                                                                 |
-| `tests/unit/redis.test.ts`                             | Redis getOrSet、错误处理和缓存逻辑。                                                  |
-| `tests/unit/jwt-session.test.ts`                       | Redis-backed JWT session、多设备、会话删除、legacy token 迁移。                       |
-| `tests/unit/edit-store.test.ts`                        | 创建/重写 store 函数式合并，防止外部数据异步返回互相覆盖。                            |
-| `tests/unit/company-merge-plan.test.ts`                | 公司 name/alias 脏数据自动合并计划和预览。                                            |
-| `tests/unit/resource-link.test.ts`                     | 资源链接和提取码解析。                                                                |
-| `tests/unit/api/resource-access.test.ts`               | 游戏详情资源列表链接脱敏、active 获取记录标记、按需获取接口的资源归属 / 可见性校验、游客 cookie、72 小时复用和 no-store 响应。 |
-| `tests/unit/resource-download-card.test.tsx`           | 下载卡片点击“获取下载链接”后展示真实链接、提取码、解压码，已获取链接显示“查看已获取链接”，并展示获取失败错误。 |
-| `tests/unit/resource-access-links-helper.test.ts`      | 资源编辑入口打开前按需水合完整链接，并保留排序和下载计数等预览字段。                  |
-| `tests/unit/resource-classification.test.ts`           | 资源类型/语言/平台分类。                                                              |
-| `tests/unit/patch-resource-attributes.test.ts`         | 游戏资源派生标签和卡片资源数只统计已发布资源。                                        |
-| `tests/unit/search-store.test.ts`                      | 搜索 store。                                                                          |
-| `tests/unit/captcha.test.ts`                           | CAPTCHA。                                                                             |
-| `tests/unit/message-card.test.tsx`                     | 消息正文纯文本渲染和换行保留。                                                        |
-| `tests/unit/user-message-bell.test.tsx`                | 顶栏消息铃铛只导航到通知中心，不在通知展示前标已读。                                  |
-| `tests/unit/message-container.test.tsx`                | 通知列表首屏 hydrate 保留服务端数据，同时后台刷新当前页并防止旧分页响应覆盖新页。     |
-| `tests/unit/chat-input.test.tsx`                       | 私聊输入法组合期 Enter 不发送、`Shift+Enter` 换行和发送去重。                         |
-| `tests/unit/chat-container-realtime.test.tsx`          | 私聊实时同步、回复预览跳转、高亮反馈、浮动回底部按钮和滚动位置保持。                  |
-| `tests/unit/api/message-unread.test.ts`                | 消息通知/私聊未读状态查询、通知已读/清理幂等和私聊已读写入。                          |
-| `tests/unit/api/notification-toggle-abuse.test.ts`     | 取消收藏、取消点赞等关系移除路径不创建误导性通知。                                    |
-| `tests/unit/api/mention-message.test.ts`               | 评论提及通知去重、跳过自己、忽略不存在用户并限制单条评论通知数量。                    |
-| `tests/unit/api/conversation-service.test.ts`          | 私聊会话权限、创建竞态、图片消息、删除清理和基于 `last_message_id` 的列表摘要。       |
-| `tests/unit/api/admin-resource-get.test.ts`            | 后台资源列表按资源链接或 BLAKE3 Hash 搜索。                                           |
-| `tests/unit/api/admin-resource-update-message.test.ts` | 管理员后台修改他人资源时通知资源发布者、保留列表上下文并区分游戏资源 / 补丁资源日志。 |
-| `tests/unit/api/patch-resource-update.test.ts`         | 资源更新前校验资源和游戏归属，避免错误派生属性和缓存刷新。                            |
-| `tests/unit/admin-resource-container-layout.test.tsx`  | 后台资源表资源列宽、分页脱离表格横向滚动区并居中显示。                                |
-| `tests/unit/admin-resource-render-cell.test.tsx`       | 后台资源列表资源名 / 游戏名两行展示。                                                 |
-| `tests/unit/resource-links-input.test.tsx`             | 对象存储资源大小输入禁用，普通外链大小仍可编辑。                                      |
-| `tests/unit/resource-details-form.test.tsx`            | 资源详情表单 label 不可选中，同时保留输入内容可选中。                                 |
-| `tests/unit/resource-dialog-helper-text.test.tsx`      | 发布资源和更改资源链接弹窗说明小字不可选中。                                          |
-| `tests/unit/api/*`                                     | API service 业务规则。                                                                |
+| 文件                                                   | 覆盖                                                                                             |
+| ------------------------------------------------------ | ------------------------------------------------------------------------------------------------ |
+| `tests/unit/theme.test.ts`                             | 主题 token 和语义色。                                                                            |
+| `tests/unit/redis.test.ts`                             | Redis getOrSet、错误处理和缓存逻辑。                                                             |
+| `tests/unit/jwt-session.test.ts`                       | Redis-backed JWT session、多设备、会话删除、legacy token 迁移。                                  |
+| `tests/unit/edit-store.test.ts`                        | 创建/重写 store 函数式合并，防止外部数据异步返回互相覆盖。                                       |
+| `tests/unit/company-merge-plan.test.ts`                | 公司 name/alias 脏数据自动合并计划和预览。                                                       |
+| `tests/unit/resource-link.test.ts`                     | 资源链接和提取码解析。                                                                           |
+| `tests/unit/api/resource-access-policy.test.ts`        | 游客游戏资源每日/每周额度、登录用户和补丁资源免产品限额，以及 24 小时授权常量。                  |
+| `tests/unit/api/resource-access-grant.test.ts`         | 资源级 grant、`resource_grant` / `link_reveal` 分类、日/周边界、并发冲突和不延长授权。           |
+| `tests/unit/api/resource-access-rate-limit.test.ts`    | 每 actor 技术限频、首次游客 IP 边界、Redis fail-open 和脱敏错误日志。                            |
+| `tests/unit/api/resource-access.test.ts`               | Access route 的链接脱敏边界、归属/可见性、游客 cookie、授权结果、产品 429、技术限频和 no-store。 |
+| `tests/unit/api/resource-access-restore.test.ts`       | Restore 只读、只返回点过且仍有效的镜像，以及 429/503、no-store 和安全 outcome 日志。             |
+| `tests/unit/resource-download-card.test.tsx`           | 下载卡片的镜像级展示、24 小时说明、首次 grant 额度提示和组件内存敏感状态。                       |
+| `tests/unit/resource-download-restore.test.tsx`        | 按资源批量恢复、自动展开、未点镜像隐藏、请求竞态和失败后的单镜像重试入口。                       |
+| `tests/unit/resource-access-links-helper.test.ts`      | 资源编辑入口打开前按需水合完整链接，并保留排序和下载计数等预览字段。                             |
+| `tests/unit/resource-classification.test.ts`           | 资源类型/语言/平台分类。                                                                         |
+| `tests/unit/patch-resource-attributes.test.ts`         | 游戏资源派生标签和卡片资源数只统计已发布资源。                                                   |
+| `tests/unit/search-store.test.ts`                      | 搜索 store。                                                                                     |
+| `tests/unit/captcha.test.ts`                           | CAPTCHA。                                                                                        |
+| `tests/unit/message-card.test.tsx`                     | 消息正文纯文本渲染和换行保留。                                                                   |
+| `tests/unit/user-message-bell.test.tsx`                | 顶栏消息铃铛只导航到通知中心，不在通知展示前标已读。                                             |
+| `tests/unit/message-container.test.tsx`                | 通知列表首屏 hydrate 保留服务端数据，同时后台刷新当前页并防止旧分页响应覆盖新页。                |
+| `tests/unit/chat-input.test.tsx`                       | 私聊输入法组合期 Enter 不发送、`Shift+Enter` 换行和发送去重。                                    |
+| `tests/unit/chat-container-realtime.test.tsx`          | 私聊实时同步、回复预览跳转、高亮反馈、浮动回底部按钮和滚动位置保持。                             |
+| `tests/unit/api/message-unread.test.ts`                | 消息通知/私聊未读状态查询、通知已读/清理幂等和私聊已读写入。                                     |
+| `tests/unit/api/notification-toggle-abuse.test.ts`     | 取消收藏、取消点赞等关系移除路径不创建误导性通知。                                               |
+| `tests/unit/api/mention-message.test.ts`               | 评论提及通知去重、跳过自己、忽略不存在用户并限制单条评论通知数量。                               |
+| `tests/unit/api/conversation-service.test.ts`          | 私聊会话权限、创建竞态、图片消息、删除清理和基于 `last_message_id` 的列表摘要。                  |
+| `tests/unit/api/admin-resource-get.test.ts`            | 后台资源列表按资源链接或 BLAKE3 Hash 搜索。                                                      |
+| `tests/unit/api/admin-resource-update-message.test.ts` | 管理员后台修改他人资源时通知资源发布者、保留列表上下文并区分游戏资源 / 补丁资源日志。            |
+| `tests/unit/api/patch-resource-update.test.ts`         | 资源更新前校验资源和游戏归属，避免错误派生属性和缓存刷新。                                       |
+| `tests/unit/admin-resource-container-layout.test.tsx`  | 后台资源表资源列宽、分页脱离表格横向滚动区并居中显示。                                           |
+| `tests/unit/admin-resource-render-cell.test.tsx`       | 后台资源列表资源名 / 游戏名两行展示。                                                            |
+| `tests/unit/resource-links-input.test.tsx`             | 对象存储资源大小输入禁用，普通外链大小仍可编辑。                                                 |
+| `tests/unit/resource-details-form.test.tsx`            | 资源详情表单 label 不可选中，同时保留输入内容可选中。                                            |
+| `tests/unit/resource-dialog-helper-text.test.tsx`      | 发布资源和更改资源链接弹窗说明小字不可选中。                                                     |
+| `tests/unit/api/*`                                     | API service 业务规则。                                                                           |
 
 ## TDD 规则
 
