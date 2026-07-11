@@ -1379,10 +1379,7 @@ it('restores only requested mirrors with active reveal events', async () => {
         visitor_token: visitorActor.visitorToken,
         resource_id: 11,
         link_id: { in: [21, 22] },
-        expires: {
-          gt: new Date('2026-07-10T12:00:00.000Z'),
-          lte: new Date('2026-07-11T00:00:00.000Z')
-        }
+        expires: { gte: new Date('2026-07-11T00:00:00.000Z') }
       })
     })
   )
@@ -1405,7 +1402,13 @@ it('returns no-store and no links for an expired grant', async () => {
 })
 ~~~
 
-再写五项边界测试：未点过的 link 即使属于 active grant 也不返回；其他 actor 的 event 不返回；资源/游戏不可见时不返回敏感字段；200 记录 restore_succeeded；未知异常的 503 记录 restore_failed。重复历史 event 必须按 link.id 去重，输出顺序跟请求 linkIds 一致。所有日志断言都要证明不含请求 ID、visitor token、IP/IP hash、actorKey 或敏感链接。30/min restore 技术限频及“限频时不查询 grant/access”的 route 回归统一在 Task 6 先写失败测试后接入。
+再写边界测试：未点过的 link 即使属于 active grant 也不返回；短于 grant 的 legacy event 不恢复，expires 等于或晚于 grant 的 event 可恢复；其他 actor 的 event 不返回；资源/游戏不可见时不返回敏感字段。重复历史 event 必须按 link.id 去重，输出顺序跟请求 linkIds 一致。
+
+查询断言必须分别覆盖 user/visitor：grant `findUnique` 精确使用 `actor_key_resource_id: { actor_key: getResourceAccessActorKey(actor), resource_id }`；access event 精确包含 `actor_type + user_id/visitor_token`、patch_id/resource_id/requested link_id、`link.resource_id`、resource.status、resource.patch_id、patch.status 与完整 visibilityWhere，并只 select PatchResourceAccessLink 所需字段。不能只靠 mock 返回 grant/空数组证明身份或可见性。Prisma mocks 还要断言 restore 路径没有 create/update/upsert/delete/$transaction 等写调用，并且 `resolveResourceAccessGrant` 零调用。
+
+route 测试矩阵：400 在 actor 前完成解析，不调用 actor/visibility/service、不写 Cookie、不记日志并保持 no-store；200（包括空结果）给首次 visitor 写 Cookie、user 不写 visitor Cookie，且恰好一条 restore_succeeded；visibility 与 service 分别抛异常时都由 post-actor catch 映射为通用 JSON 字符串 503、Retry-After: 1、no-store、首次 visitor Cookie，并恰好记录一条 restore_failed。日志精确等于 operation/outcome/actorType/可选 section 的允许字段，不含请求 ID、visitor token、IP/IP hash、actorKey 或敏感链接。30/min restore 技术限频及“限频时不查询 grant/access”的 route 回归统一在 Task 6 先写失败测试后接入。
+
+schema/route 边界还要覆盖：空 `linkIds`、原始输入 51 项、非整数 ID 均返回 400；50 项以内的重复 ID 由 transform 去重并保留首次出现顺序。`.max(50)` 在去重 transform 前执行，因此即使 51 项全部相同也必须拒绝，不能先去重再绕过请求大小上限。
 
 - [ ] **Step 2: 运行 restore API 测试确认失败**
 
@@ -1477,11 +1480,12 @@ export const restorePatchResourceLinks = async (
       patch_id: input.patchId,
       resource_id: input.resourceId,
       link_id: { in: input.linkIds },
-      expires: { gt: now, lte: grant.expires },
+      expires: { gte: grant.expires },
       link: { resource_id: input.resourceId },
       resource: {
         status: 0,
-        patch: { status: 0, ...visibilityWhere }
+        patch_id: input.patchId,
+        patch: { id: input.patchId, status: 0, ...visibilityWhere }
       }
     },
     select: {
@@ -1510,7 +1514,7 @@ export const restorePatchResourceLinks = async (
 }
 ~~~
 
-restore route 从 ../response 导入 resourceAccessJson 和 withResourceAccessVisitorCookie，不得从 access route.ts 反向导入私有函数。它复用 actor 和 visibility 模式，但只调用只读 service：不得调用 resolveResourceAccessGrant、不得写 grant/access event、不得返回 quota。无 active grant 或没有可恢复镜像是正常 200 空结果；输入非法为 400，未知异常为通用 503。200 后记录 operation = restore、outcome = restore_succeeded；未知异常映射 503 时记录 restore_failed。Task 6 接入共享技术限频后再增加 429/rate_limited 分支。以上安全日志只含 actorType，不记录 patchId、resourceId、linkIds、visitor token、IP/IP hash、actorKey 或响应链接。
+restore route 从 ../response 导入 resourceAccessJson 和 withResourceAccessVisitorCookie，不得从 access route.ts 反向导入私有函数。输入 schema 在 actor 前解析：400 不创建 actor、不查 visibility/service、不写 Cookie/日志。actor 创建后的 try/catch 同时包住 visibility 与只读 service；不得调用 resolveResourceAccessGrant、不得写 grant/access event、不得返回 quota。无 active grant 或没有可恢复镜像是正常 200 空结果；所有 200 给首次 visitor 写 Cookie并恰好记录一次 restore_succeeded。visibility/service 未知异常统一映射通用 JSON 字符串 503、Retry-After: 1、no-store，给首次 visitor 写 Cookie并恰好记录一次 restore_failed；user 不写 visitor Cookie。Task 6 接入共享技术限频后再增加 429/rate_limited 分支。以上安全日志只含 operation、outcome、actorType 和可选 section，不记录 patchId、resourceId、linkIds、visitor token、IP/IP hash、actorKey 或响应链接。
 
 - [ ] **Step 4: 写失败的前端自动恢复测试**
 
@@ -1553,20 +1557,24 @@ it('auto-expands and restores only previously revealed mirrors', async () => {
 })
 ~~~
 
-组件测试沿用仓库现有 JSDOM/createRoot/act harness；用 act 内的受控 promise/微任务完成 effect，不引入未安装的 waitFor 或 Testing Library。
+组件测试沿用仓库现有 JSDOM/createRoot/act harness；显式 mock `@heroui/react`、DOMPurify、Markdown renderer、`KunUser` 与 `LikeButton`，并把 `DownloadCard` mock 成可观察 `restoredLink` / `restoredObtainedExpiresAt` props 的轻量组件。用 `act` 内的受控 deferred promise、root rerender、unmount 与 cleanup 验证 effect，不引入未安装的 `waitFor` 或 Testing Library。
 
-再写四项组件测试：没有 revealed link 时不自动展开、不发 restore 请求；同一资源条目即使 effect 重跑也只发一次 restore；restore 返回字符串或抛错时只显示一条资源级“已获取链接恢复失败，可点击单条链接重试”，不连续 toast，并保留每张卡片的手动获取按钮；组件输入切换或卸载后，旧 restore promise 即使较晚完成也不能覆盖新资源状态。
+再写五项父组件测试：没有 revealed link 时不自动展开、不发 restore 请求；相同 patch/resource/revealed IDs 的 effect 重跑只复用一次请求；同一资源条目的 revealed IDs 从 `[21]` 变成 `[21, 22]` 时必须发起新请求，而且旧 deferred promise 晚返回也不能覆盖新结果；restore 返回字符串或抛错时只显示一条资源级“已获取链接恢复失败，可点击单条链接重试”，不连续 toast，并保留每张卡片的手动获取按钮；组件切换到其他资源或卸载后，旧 restore promise 晚完成也不能写入状态。
+
+同步更新 `resource-download-card.test.tsx`：成功响应按 `access.kind` 而不是旧 `access.reused` 判断提示；`obtained: true, revealed: false` 仍显示“获取下载链接”；`revealed: true` 但 restore 失败或漏回当前 link ID 时显示“查看已获取链接”供单条手动重试；`restoredLink.id !== link.id` 时必须忽略；授权提示统一写“授权有效期内”或“24 小时”，不得保留 72 小时旧文案。
 
 - [ ] **Step 5: 实现父组件一次恢复与卡片注入**
 
-ResourceDownload 的 React import 增加 useMemo，并以 resource.links.some(link => link.revealed) 初始化及同步展开状态；收集 revealed linkIds 后每个资源条目只发一次 restore POST，将响应转成 Map<linkId, PatchResourceAccessLink>。用 ref 按 patchId + resourceId 缓存 promise，既避免 React effect 重跑时重复请求，也让新的 effect 可以订阅同一个 in-flight promise；每次 effect cleanup 以 stale 标记忽略旧结果：
+ResourceDownload 的 React import 增加 useMemo，并以 `resource.links.some((link) => link.revealed)` 初始化及同步展开状态。先把 revealed link IDs 去重并按数字升序规范化，再用 `patchId + resourceId + revealedLinkIds` 组成请求身份；相同身份的 effect 重跑复用同一个 in-flight promise，同一资源条目的 revealed 集合变化则必须发起新 restore POST。响应转成 `Map<linkId, PatchResourceAccessLink>`，每次 effect cleanup 以 stale 标记忽略旧结果：
 
 ~~~tsx
 const revealedLinkIds = useMemo(
-  () => resource.links.filter((link) => link.revealed).map((link) => link.id),
+  () =>
+    [...new Set(resource.links.filter((link) => link.revealed).map((link) => link.id))]
+      .sort((left, right) => left - right),
   [resource.links]
 )
-const restoreKey = `${resource.patchId}:${resource.id}`
+const restoreKey = `${resource.patchId}:${resource.id}:${revealedLinkIds.join(',')}`
 const restoreRequestRef = useRef<{
   key: string
   promise: Promise<PatchResourceAccessRestoreResponse | string>
@@ -1579,6 +1587,7 @@ const [restoreError, setRestoreError] = useState('')
 
 useEffect(() => {
   if (revealedLinkIds.length === 0) {
+    restoreRequestRef.current = null
     setRestoredLinks(new Map())
     setRestoredExpiresAt('')
     setRestoreError('')
@@ -1640,13 +1649,19 @@ useEffect(() => {
 }, [restoreKey, resource.id, resource.patchId, revealedLinkIds])
 ~~~
 
-资源级 restoreError 在卡片列表上方只渲染一次，不调用 toast。仅向 id 命中的 DownloadCard 传 restoredLink={restoredLinks.get(link.id)} 和 restoredObtainedExpiresAt={restoredExpiresAt}；未点过或响应未返回的卡片不注入敏感字段，继续保留单条“获取下载链接”按钮。DownloadCard 新增 restoredLink?: PatchResourceAccessLink 与 restoredObtainedExpiresAt?: string，并在 restoredLink?.id === link.id 时通过 effect 同步 accessedLink 和 obtainedExpiresAt。用户手动点开新镜像仍走单链接 access API，成功后保持该链接可见；link_revealed/reused 响应不显示新的额度提示。
+资源级 `restoreError` 在卡片列表上方只渲染一次，不调用 toast。仅向 ID 命中的 `DownloadCard` 传 `restoredLink={restoredLinks.get(link.id)}` 和 `restoredObtainedExpiresAt={restoredExpiresAt}`；响应未返回的卡片不注入敏感字段，仍保留单条手动按钮。`DownloadCard` 新增 `restoredLink?: PatchResourceAccessLink` 与 `restoredObtainedExpiresAt?: string`，并且只在 `restoredLink?.id === link.id` 时通过 effect 同步 `accessedLink` 和 `obtainedExpiresAt`。
+
+Task 4 的 `obtained` 是资源条目级 active grant 状态，不是镜像展示状态；`DownloadCard` 不得只凭 `link.obtained` 改按钮文案。ID 匹配的 `accessedLink`（来自本次手动成功或 restore 注入）存在时直接显示链接；尚无敏感链接但 `link.revealed === true` 时显示“查看已获取链接”，供自动恢复失败后的单条手动重试；`link.revealed !== true` 时显示“获取下载链接”，即使资源级 `obtained === true`。`obtained` 只控制 grant/24 小时说明。用户手动点开新镜像仍走单链接 access API，成功后保持该链接可见；`link_revealed` / `reused` 响应不显示新的额度提示。
 
 - [ ] **Step 6: 运行 restore API 与组件测试**
 
 Run: pnpm test tests/unit/api/resource-access-restore.test.ts tests/unit/resource-download-restore.test.tsx tests/unit/resource-download-card.test.tsx
 
-Expected: PASS；刷新恢复每个资源条目只有一项只读请求，不新增 grant/event，不返回未点过镜像，失败不连续 toast，陈旧响应不覆盖新输入，真实链接仍不在初始 resource payload。
+Run: pnpm test
+
+Run: pnpm typecheck
+
+Expected: PASS；每个稳定的 patch/resource/revealed-ID 请求身份最多一项只读请求，revealed 集合变化后的新身份也只发一次；不新增 grant/event，不返回未点过镜像，失败不连续 toast，陈旧响应不覆盖新输入，真实链接仍不在初始 resource payload；全量 Vitest 与 typecheck 同时通过。
 
 - [ ] **Step 7: 提交自动恢复功能**
 
