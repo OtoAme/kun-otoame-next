@@ -7,7 +7,6 @@ import type { Prisma } from '@prisma/client'
 import type { NextRequest } from 'next/server'
 
 export const RESOURCE_ACCESS_VISITOR_COOKIE = 'kun-resource-access-token'
-export const RESOURCE_ACCESS_REUSE_MS = 72 * 60 * 60 * 1000
 const RESOURCE_ACCESS_VISITOR_COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 180
 
 export type ResourceAccessActor =

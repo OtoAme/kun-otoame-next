@@ -1,23 +1,17 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { kunParsePostBody } from '~/app/api/utils/parseQuery'
 import { getPatchVisibilityWhere } from '~/app/api/utils/getPatchVisibilityWhere'
 import { accessPatchResourceLinkSchema } from '~/validations/patch'
-import { accessPatchResourceLink } from './service'
-import { verifyHeaderCookie } from '~/middleware/_verifyHeaderCookie'
 import {
-  getResourceAccessActor,
-  setResourceAccessVisitorCookie
-} from './actor'
+  accessPatchResourceLink,
+  isResourceAccessServiceError
+} from './service'
+import { verifyHeaderCookie } from '~/middleware/_verifyHeaderCookie'
+import { getResourceAccessActor } from './actor'
+import { resourceAccessJson, withResourceAccessVisitorCookie } from './response'
+import { logResourceAccessOutcome } from './observability'
 
-const RESOURCE_ACCESS_CACHE_CONTROL = 'private, no-store'
-
-const resourceAccessJson = (body: unknown, status = 200) =>
-  NextResponse.json(body, {
-    status,
-    headers: {
-      'Cache-Control': RESOURCE_ACCESS_CACHE_CONTROL
-    }
-  })
+const RESOURCE_ACCESS_BUSY_MESSAGE = '获取下载链接繁忙，请稍后再试'
 
 export const POST = async (req: NextRequest) => {
   const input = await kunParsePostBody(req, accessPatchResourceLinkSchema)
@@ -27,16 +21,46 @@ export const POST = async (req: NextRequest) => {
 
   const payload = await verifyHeaderCookie(req)
   const actor = getResourceAccessActor(req, payload?.uid ?? 0)
-  const visibilityWhere = await getPatchVisibilityWhere(req)
-  const response = await accessPatchResourceLink(input, visibilityWhere, actor)
-  if (typeof response === 'string') {
-    return resourceAccessJson(response, 404)
-  }
 
-  const jsonResponse = resourceAccessJson(response)
-  if (actor.actorType === 'visitor' && actor.shouldSetVisitorCookie) {
-    setResourceAccessVisitorCookie(jsonResponse, actor.visitorToken)
-  }
+  try {
+    const visibilityWhere = await getPatchVisibilityWhere(req)
+    const result = await accessPatchResourceLink(input, visibilityWhere, actor)
 
-  return jsonResponse
+    if (isResourceAccessServiceError(result)) {
+      if (result.status === 503) {
+        logResourceAccessOutcome({
+          operation: 'access',
+          outcome: 'manual_failed',
+          actorType: actor.actorType
+        })
+      }
+
+      const retryAfterSeconds =
+        result.status === 503
+          ? (result.retryAfterSeconds ?? 1)
+          : result.retryAfterSeconds
+      const response = resourceAccessJson(
+        result.message,
+        result.status,
+        retryAfterSeconds
+          ? { 'Retry-After': String(retryAfterSeconds) }
+          : undefined
+      )
+      return withResourceAccessVisitorCookie(response, actor)
+    }
+
+    return withResourceAccessVisitorCookie(resourceAccessJson(result), actor)
+  } catch {
+    logResourceAccessOutcome({
+      operation: 'access',
+      outcome: 'manual_failed',
+      actorType: actor.actorType
+    })
+    return withResourceAccessVisitorCookie(
+      resourceAccessJson(RESOURCE_ACCESS_BUSY_MESSAGE, 503, {
+        'Retry-After': '1'
+      }),
+      actor
+    )
+  }
 }
