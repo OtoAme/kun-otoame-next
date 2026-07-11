@@ -135,11 +135,27 @@ WITH expected AS (
     'NO'::text AS is_nullable,
     '''link_reveal''::character varying'::text AS column_default
 ), actual AS (
-  SELECT data_type, character_maximum_length, is_nullable, column_default
-  FROM information_schema.columns
-  WHERE table_schema = 'public'
-    AND table_name = 'patch_resource_access'
-    AND column_name = 'access_kind'
+  SELECT
+    column_info.data_type,
+    column_info.character_maximum_length,
+    column_info.is_nullable,
+    column_info.column_default,
+    attribute.attgenerated,
+    attribute.attidentity
+  FROM information_schema.columns column_info
+  JOIN pg_namespace namespace
+    ON namespace.nspname = column_info.table_schema
+  JOIN pg_class table_class
+    ON table_class.relnamespace = namespace.oid
+   AND table_class.relname = column_info.table_name
+  JOIN pg_attribute attribute
+    ON attribute.attrelid = table_class.oid
+   AND attribute.attname = column_info.column_name
+   AND attribute.attnum > 0
+   AND NOT attribute.attisdropped
+  WHERE column_info.table_schema = 'public'
+    AND column_info.table_name = 'patch_resource_access'
+    AND column_info.column_name = 'access_kind'
 )
 SELECT
   'access_kind_column_shape' AS check_type,
@@ -149,6 +165,7 @@ SELECT
     WHEN actual.character_maximum_length <> expected.character_maximum_length THEN 'length_mismatch'
     WHEN actual.is_nullable <> expected.is_nullable THEN 'nullability_mismatch'
     WHEN actual.column_default IS DISTINCT FROM expected.column_default THEN 'default_mismatch'
+    WHEN actual.attgenerated <> '' OR actual.attidentity <> '' THEN 'generated_or_identity_mismatch'
     ELSE 'ok'
   END AS status,
   expected.data_type AS expected_type,
@@ -158,7 +175,9 @@ SELECT
   expected.is_nullable AS expected_nullable,
   actual.is_nullable AS actual_nullable,
   expected.column_default AS expected_default,
-  actual.column_default AS actual_default
+  actual.column_default AS actual_default,
+  actual.attgenerated AS actual_generated,
+  actual.attidentity AS actual_identity
 FROM expected
 LEFT JOIN actual ON true;
 
@@ -364,12 +383,53 @@ SELECT
 FROM actual
 ORDER BY index_name;
 
-SELECT to_regclass('public.patch_resource_access_grant') IS NOT NULL AS grant_table_present
+WITH grant_relation AS (
+  SELECT table_class.oid, table_class.relkind
+  FROM pg_class table_class
+  WHERE table_class.relnamespace = 'public'::regnamespace
+    AND table_class.relname = 'patch_resource_access_grant'
+), grant_column_shape AS (
+  SELECT
+    grant_relation.oid,
+    grant_relation.relkind,
+    COUNT(attribute.attnum) FILTER (
+      WHERE attribute.attnum > 0 AND NOT attribute.attisdropped
+    ) AS column_count,
+    COUNT(attribute.attnum) FILTER (
+      WHERE attribute.attnum > 0
+        AND NOT attribute.attisdropped
+        AND attribute.attnotnull
+        AND attribute.attgenerated = ''
+        AND attribute.attidentity = ''
+        AND attribute_default.oid IS NULL
+        AND (
+          (attribute.attname = 'actor_key' AND format_type(attribute.atttypid, attribute.atttypmod) = 'character varying(80)')
+          OR (attribute.attname = 'resource_id' AND format_type(attribute.atttypid, attribute.atttypmod) = 'integer')
+          OR (attribute.attname = 'expires' AND format_type(attribute.atttypid, attribute.atttypmod) = 'timestamp(3) without time zone')
+        )
+    ) AS matching_column_count
+  FROM grant_relation
+  LEFT JOIN pg_attribute attribute ON attribute.attrelid = grant_relation.oid
+  LEFT JOIN pg_attrdef attribute_default
+    ON attribute_default.adrelid = attribute.attrelid
+   AND attribute_default.adnum = attribute.attnum
+  GROUP BY grant_relation.oid, grant_relation.relkind
+)
+SELECT
+  COALESCE(grant_column_shape.oid IS NOT NULL, false) AS grant_table_present,
+  COALESCE(
+    grant_column_shape.relkind = 'r'
+      AND grant_column_shape.column_count = 3
+      AND grant_column_shape.matching_column_count = 3,
+    false
+  ) AS grant_data_queries_safe
+FROM (SELECT 1) seed
+LEFT JOIN grant_column_shape ON true
 \gset
 
 -- Estimate the canonical link events that sync will extend. When a grant table
 -- already exists, preserve a longer existing grant exactly as sync does.
-\if :grant_table_present
+\if :grant_data_queries_safe
   WITH eligible AS (
     SELECT
       access.id,
@@ -422,7 +482,15 @@ SELECT to_regclass('public.patch_resource_access_grant') IS NOT NULL AS grant_ta
   FROM canonical_events canonical
   JOIN target_grants target USING (actor_key, resource_id);
 \else
-  WITH eligible AS (
+  \if :grant_table_present
+    SELECT
+      'canonical_event_normalization_estimate' AS check_type,
+      'grant_schema_mismatch' AS status,
+      0::bigint AS active_actor_resource_link_groups,
+      0::bigint AS canonical_events_to_normalize,
+      INTERVAL '0 seconds' AS maximum_extension;
+  \else
+    WITH eligible AS (
     SELECT
       access.id,
       CASE
@@ -462,12 +530,13 @@ SELECT to_regclass('public.patch_resource_access_grant') IS NOT NULL AS grant_ta
         FILTER (WHERE canonical.expires < target.target_expires),
       INTERVAL '0 seconds'
     ) AS maximum_extension
-  FROM canonical_events canonical
-  JOIN target_grants target USING (actor_key, resource_id);
+    FROM canonical_events canonical
+    JOIN target_grants target USING (actor_key, resource_id);
+  \endif
 \endif
 
 -- Postflight coverage is meaningful only after the grant table exists.
-\if :grant_table_present
+\if :grant_data_queries_safe
   WITH eligible AS (
     SELECT
       access.id,
@@ -527,11 +596,21 @@ SELECT to_regclass('public.patch_resource_access_grant') IS NOT NULL AS grant_ta
     ON grant.actor_key = historical.actor_key
    AND grant.resource_id = historical.resource_id;
 \else
-  SELECT
-    'active_legacy_grant_coverage' AS check_type,
-    'missing_grant_table' AS status,
-    NULL::bigint AS active_actor_resource_groups,
-    NULL::bigint AS missing_grant_groups,
-    NULL::bigint AS grant_expires_too_short_groups,
-    NULL::bigint AS canonical_event_unaligned_groups;
+  \if :grant_table_present
+    SELECT
+      'active_legacy_grant_coverage' AS check_type,
+      'grant_schema_mismatch' AS status,
+      0::bigint AS active_actor_resource_groups,
+      0::bigint AS missing_grant_groups,
+      0::bigint AS grant_expires_too_short_groups,
+      0::bigint AS canonical_event_unaligned_groups;
+  \else
+    SELECT
+      'active_legacy_grant_coverage' AS check_type,
+      'missing_grant_table' AS status,
+      NULL::bigint AS active_actor_resource_groups,
+      NULL::bigint AS missing_grant_groups,
+      NULL::bigint AS grant_expires_too_short_groups,
+      NULL::bigint AS canonical_event_unaligned_groups;
+  \endif
 \endif

@@ -50,6 +50,63 @@ FROM public.patch_resource_access
   \quit 3
 \endif
 
+-- A ready/valid same-name index with the wrong definition must fail before
+-- schema or backfill writes. Missing or invalid/not-ready indexes are allowed
+-- through here and are handled by top-level concurrent statements later.
+WITH expected(index_name, index_definition) AS (
+  VALUES
+    (
+      'resource_access_grant_expires_idx',
+      'CREATE INDEX resource_access_grant_expires_idx ON public.patch_resource_access_grant USING btree (expires)'
+    ),
+    (
+      'resource_access_visitor_kind_created_idx',
+      'CREATE INDEX resource_access_visitor_kind_created_idx ON public.patch_resource_access USING btree (actor_type, visitor_token, section, access_kind, created DESC)'
+    )
+), actual AS (
+  SELECT
+    expected.*,
+    index_class.oid,
+    index_class.relkind,
+    index_row.indisready,
+    index_row.indisvalid,
+    index_row.indislive,
+    CASE
+      WHEN index_class.relkind IN ('i', 'I') THEN pg_get_indexdef(index_class.oid)
+      ELSE NULL
+    END AS actual_definition
+  FROM expected
+  LEFT JOIN pg_class index_class
+    ON index_class.relnamespace = 'public'::regnamespace
+   AND index_class.relname = expected.index_name
+  LEFT JOIN pg_index index_row ON index_row.indexrelid = index_class.oid
+)
+SELECT
+  COUNT(*) FILTER (
+    WHERE oid IS NOT NULL AND relkind NOT IN ('i', 'I')
+  ) = 0 AS index_names_are_indexes,
+  COUNT(*) FILTER (
+    WHERE relkind IN ('i', 'I')
+      AND indisready
+      AND indisvalid
+      AND indislive
+      AND actual_definition IS DISTINCT FROM index_definition
+  ) = 0 AS ready_valid_index_definitions_match
+FROM actual
+\gset index_shape_preflight_
+
+\if :index_shape_preflight_index_names_are_indexes
+\else
+  \echo 'a required index name exists but is not an index'
+  \quit 3
+\endif
+
+\if :index_shape_preflight_ready_valid_index_definitions_match
+\else
+  \echo 'a ready/valid required index has an incompatible definition'
+  \quit 3
+\endif
+
 -- IF NOT EXISTS may only cover absence. Any existing same-name object must
 -- already have the exact target shape or this sync fails before changing data.
 DO $shape_preflight$
@@ -62,6 +119,8 @@ DECLARE
   access_kind_type text;
   access_kind_not_null boolean;
   access_kind_default text;
+  access_kind_generated "char";
+  access_kind_identity "char";
   grant_column_count integer;
   grant_matching_column_count integer;
   primary_key_count integer;
@@ -93,8 +152,15 @@ BEGIN
     SELECT
       format_type(attribute.atttypid, attribute.atttypmod),
       attribute.attnotnull,
-      pg_get_expr(attribute_default.adbin, attribute_default.adrelid)
-    INTO access_kind_type, access_kind_not_null, access_kind_default
+      pg_get_expr(attribute_default.adbin, attribute_default.adrelid),
+      attribute.attgenerated,
+      attribute.attidentity
+    INTO
+      access_kind_type,
+      access_kind_not_null,
+      access_kind_default,
+      access_kind_generated,
+      access_kind_identity
     FROM pg_attribute attribute
     LEFT JOIN pg_attrdef attribute_default
       ON attribute_default.adrelid = attribute.attrelid
@@ -106,12 +172,16 @@ BEGIN
 
     IF access_kind_type <> 'character varying(20)'
       OR NOT access_kind_not_null
-      OR access_kind_default IS DISTINCT FROM '''link_reveal''::character varying' THEN
+      OR access_kind_default IS DISTINCT FROM '''link_reveal''::character varying'
+      OR access_kind_generated <> ''
+      OR access_kind_identity <> '' THEN
       RAISE EXCEPTION
-        'Existing patch_resource_access.access_kind has incompatible shape: type=%, not_null=%, default=%',
+        'Existing patch_resource_access.access_kind has incompatible shape: type=%, not_null=%, default=%, generated=%, identity=%',
         access_kind_type,
         access_kind_not_null,
-        access_kind_default;
+        access_kind_default,
+        access_kind_generated,
+        access_kind_identity;
     END IF;
   ELSIF access_kind_count <> 0 THEN
     RAISE EXCEPTION 'Unexpected duplicate access_kind catalog entries';
@@ -276,6 +346,8 @@ BEGIN
     AND NOT attribute.attisdropped
     AND format_type(attribute.atttypid, attribute.atttypmod) = 'character varying(20)'
     AND attribute.attnotnull
+    AND attribute.attgenerated = ''
+    AND attribute.attidentity = ''
     AND pg_get_expr(attribute_default.adbin, attribute_default.adrelid) = '''link_reveal''::character varying';
 
   IF mismatch_count <> 1 THEN
@@ -664,7 +736,9 @@ WITH expected(index_name, index_definition) AS (
    AND index_class.relname = expected.index_name
   LEFT JOIN pg_index index_row ON index_row.indexrelid = index_class.oid
 )
-SELECT COALESCE(BOOL_AND(is_ok), false) AS indexes_ok
+SELECT
+  COUNT(*) = 2
+    AND COALESCE(BOOL_AND(COALESCE(is_ok, false)), false) AS indexes_ok
 FROM checked
 \gset index_postflight_
 
