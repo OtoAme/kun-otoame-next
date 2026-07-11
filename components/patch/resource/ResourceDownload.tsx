@@ -22,6 +22,13 @@ interface Props {
 
 const COLLAPSED_HEIGHT_PX = 96
 
+type RestoreState = {
+  key: string
+  links: Map<number, PatchResourceAccessLink>
+  expiresAt: string
+  error: string
+}
+
 export const ResourceDownload = ({ resource }: Props) => {
   const [showLinks, setShowLinks] = useState<Record<number, boolean>>(() =>
     resource.links.some((link) => link.revealed) ? { [resource.id]: true } : {}
@@ -40,11 +47,14 @@ export const ResourceDownload = ({ resource }: Props) => {
     key: string
     promise: Promise<PatchResourceAccessRestoreResponse | string>
   } | null>(null)
-  const [restoredLinks, setRestoredLinks] = useState(
-    new Map<number, PatchResourceAccessLink>()
-  )
-  const [restoredExpiresAt, setRestoredExpiresAt] = useState('')
-  const [restoreError, setRestoreError] = useState('')
+  const [restoreState, setRestoreState] = useState<RestoreState>({
+    key: '',
+    links: new Map(),
+    expiresAt: '',
+    error: ''
+  })
+  const currentRestoreState =
+    restoreState.key === restoreKey ? restoreState : null
 
   const [note, setNote] = useState('')
   const [isNoteExpanded, setIsNoteExpanded] = useState(false)
@@ -71,17 +81,23 @@ export const ResourceDownload = ({ resource }: Props) => {
   useEffect(() => {
     if (revealedLinkIds.length === 0) {
       restoreRequestRef.current = null
-      setRestoredLinks(new Map())
-      setRestoredExpiresAt('')
-      setRestoreError('')
+      setRestoreState({
+        key: restoreKey,
+        links: new Map(),
+        expiresAt: '',
+        error: ''
+      })
       return
     }
 
     setShowLinks((current) => ({ ...current, [resource.id]: true }))
     if (restoreRequestRef.current?.key !== restoreKey) {
-      setRestoredLinks(new Map())
-      setRestoredExpiresAt('')
-      setRestoreError('')
+      setRestoreState({
+        key: restoreKey,
+        links: new Map(),
+        expiresAt: '',
+        error: ''
+      })
       restoreRequestRef.current = {
         key: restoreKey,
         promise: kunFetchPost<PatchResourceAccessRestoreResponse | string>(
@@ -101,28 +117,35 @@ export const ResourceDownload = ({ resource }: Props) => {
       .then((response) => {
         if (stale || restoreRequestRef.current?.key !== restoreKey) return
         if (typeof response === 'string') {
-          setRestoredLinks(new Map())
-          setRestoredExpiresAt('')
-          setRestoreError('已获取链接恢复失败，可点击单条链接重试')
+          setRestoreState({
+            key: restoreKey,
+            links: new Map(),
+            expiresAt: '',
+            error: '已获取链接恢复失败，可点击单条链接重试'
+          })
           return
         }
 
         const requestedIds = new Set(revealedLinkIds)
-        setRestoredLinks(
-          new Map(
+        setRestoreState({
+          key: restoreKey,
+          links: new Map(
             response.links
               .filter((link) => requestedIds.has(link.id))
               .map((link) => [link.id, link])
-          )
-        )
-        setRestoredExpiresAt(response.obtainedExpiresAt ?? '')
-        setRestoreError('')
+          ),
+          expiresAt: response.obtainedExpiresAt ?? '',
+          error: ''
+        })
       })
       .catch(() => {
         if (!stale && restoreRequestRef.current?.key === restoreKey) {
-          setRestoredLinks(new Map())
-          setRestoredExpiresAt('')
-          setRestoreError('已获取链接恢复失败，可点击单条链接重试')
+          setRestoreState({
+            key: restoreKey,
+            links: new Map(),
+            expiresAt: '',
+            error: '已获取链接恢复失败，可点击单条链接重试'
+          })
         }
       })
 
@@ -229,14 +252,14 @@ export const ResourceDownload = ({ resource }: Props) => {
 
       {showLinks[resource.id] && (
         <div className="space-y-3">
-          {restoreError && (
+          {currentRestoreState?.error && (
             <p role="alert" className="text-sm text-danger">
-              {restoreError}
+              {currentRestoreState.error}
             </p>
           )}
 
           {resource.links.map((link) => {
-            const restoredLink = restoredLinks.get(link.id)
+            const restoredLink = currentRestoreState?.links.get(link.id)
             return (
               <ResourceDownloadCard
                 key={link.id}
@@ -245,7 +268,8 @@ export const ResourceDownload = ({ resource }: Props) => {
                 {...(restoredLink
                   ? {
                       restoredLink,
-                      restoredObtainedExpiresAt: restoredExpiresAt
+                      restoredObtainedExpiresAt:
+                        currentRestoreState?.expiresAt ?? ''
                     }
                   : {})}
               />

@@ -427,4 +427,58 @@ describe('ResourceDownloadCard access flow', () => {
     expect(container.textContent).not.toContain('stale-code')
     expect(container.textContent).toContain('查看已获取链接')
   })
+
+  it('keeps a manual access result after a restore prop is later removed', async () => {
+    const manualLink: PatchResourceAccessLink = {
+      id: 21,
+      storage: 'user',
+      size: '2 GB',
+      content: 'https://pan.example.com/manual-link',
+      code: 'manual-code',
+      password: 'manual-password',
+      hash: ''
+    }
+    const restoredLink: PatchResourceAccessLink = {
+      ...manualLink,
+      content: 'https://pan.example.com/restore-shadow'
+    }
+    const revealedLink = { ...previewLink, obtained: true, revealed: true }
+    fetchMock.kunFetchPost.mockResolvedValueOnce({
+      link: manualLink,
+      access: {
+        kind: 'reused',
+        actorType: 'visitor',
+        cost: 0,
+        obtainedExpiresAt: '2026-07-11T00:00:00.000Z'
+      }
+    })
+    const { container } = await renderCard({ link: revealedLink })
+    await act(async () => {
+      container.querySelector('button')!.click()
+    })
+    expect(container.textContent).toContain(manualLink.content)
+
+    const { ResourceDownloadCard } = await import(
+      '~/components/patch/resource/DownloadCard'
+    )
+    await act(async () => {
+      root!.render(
+        <ResourceDownloadCard
+          resource={resource}
+          link={revealedLink}
+          restoredLink={restoredLink}
+          restoredObtainedExpiresAt="2026-07-11T00:00:00.000Z"
+        />
+      )
+    })
+    await act(async () => {
+      root!.render(
+        <ResourceDownloadCard resource={resource} link={revealedLink} />
+      )
+    })
+
+    expect(container.textContent).toContain(manualLink.content)
+    expect(container.textContent).toContain('manual-code')
+    expect(container.textContent).not.toContain(restoredLink.content)
+  })
 })

@@ -14,6 +14,10 @@ const fetchMock = vi.hoisted(() => ({
   kunFetchPost: vi.fn()
 }))
 
+const downloadCardMock = vi.hoisted(() => ({
+  render: vi.fn()
+}))
+
 vi.mock('~/utils/kunFetch', () => ({
   kunFetchPost: fetchMock.kunFetchPost
 }))
@@ -61,19 +65,26 @@ vi.mock('~/components/patch/resource/DownloadCard', () => ({
     link: PatchResourceLink
     restoredLink?: PatchResourceAccessLink
     restoredObtainedExpiresAt?: string
-  }) => (
-    <div data-testid={`download-card-${link.id}`}>
-      <button type="button">
-        {link.revealed ? '查看已获取链接' : '获取下载链接'}
-      </button>
-      {restoredLink ? (
-        <span>
-          restored:{restoredLink.content}:expires:
-          {restoredObtainedExpiresAt ?? ''}
-        </span>
-      ) : null}
-    </div>
-  )
+  }) => {
+    downloadCardMock.render({
+      link,
+      restoredLink,
+      restoredObtainedExpiresAt
+    })
+    return (
+      <div data-testid={`download-card-${link.id}`}>
+        <button type="button">
+          {link.revealed ? '查看已获取链接' : '获取下载链接'}
+        </button>
+        {restoredLink ? (
+          <span>
+            restored:{restoredLink.content}:expires:
+            {restoredObtainedExpiresAt ?? ''}
+          </span>
+        ) : null}
+      </div>
+    )
+  }
 }))
 
 const link21: PatchResourceLink = {
@@ -185,13 +196,30 @@ describe('ResourceDownload revealed mirror restore', () => {
     const container = dom.window.document.getElementById('root')
     expect(container).not.toBeNull()
     root = createRoot(container!)
+    const Harness = ({
+      currentResource,
+      onLayout
+    }: {
+      currentResource: PatchResource
+      onLayout?: () => void
+    }) => {
+      React.useLayoutEffect(() => {
+        onLayout?.()
+      }, [currentResource, onLayout])
+      return <Component resource={currentResource} />
+    }
     await act(async () => {
-      root!.render(<Component resource={initialResource} />)
+      root!.render(<Harness currentResource={initialResource} />)
     })
 
-    const rerender = async (nextResource: PatchResource) => {
+    const rerender = async (
+      nextResource: PatchResource,
+      onLayout?: () => void
+    ) => {
       await act(async () => {
-        root!.render(<Component resource={nextResource} />)
+        root!.render(
+          <Harness currentResource={nextResource} onLayout={onLayout} />
+        )
       })
     }
 
@@ -200,6 +228,7 @@ describe('ResourceDownload revealed mirror restore', () => {
 
   beforeEach(() => {
     fetchMock.kunFetchPost.mockReset()
+    downloadCardMock.render.mockReset()
   })
 
   afterEach(async () => {
@@ -324,6 +353,84 @@ describe('ResourceDownload revealed mirror restore', () => {
     })
     await flushEffects()
     expect(container.textContent).toContain(sensitiveLink22.content)
+    expect(container.textContent).not.toContain(sensitiveLink21.content)
+  })
+
+  it('never passes old restore output during the render before passive cleanup', async () => {
+    fetchMock.kunFetchPost.mockResolvedValueOnce({
+      links: [sensitiveLink21],
+      obtainedExpiresAt: '2026-07-11T00:00:00.000Z'
+    })
+    const { container, rerender } = await renderResourceDownload(
+      withLinks([{ ...link21, obtained: true, revealed: true }])
+    )
+    await flushEffects()
+    expect(container.textContent).toContain(sensitiveLink21.content)
+
+    downloadCardMock.render.mockClear()
+    await rerender(withLinks([{ ...link21, obtained: true, revealed: false }]))
+
+    const nextIdentityRenders = downloadCardMock.render.mock.calls.map(
+      ([props]) =>
+        props as {
+          link: PatchResourceLink
+          restoredLink?: PatchResourceAccessLink
+        }
+    )
+    expect(nextIdentityRenders.length).toBeGreaterThan(0)
+    expect(
+      nextIdentityRenders.some(
+        ({ link, restoredLink }) =>
+          link.revealed === false &&
+          restoredLink?.content === sensitiveLink21.content
+      )
+    ).toBe(false)
+    expect(container.textContent).not.toContain(sensitiveLink21.content)
+  })
+
+  it('hides an old promise result completed in layout before passive cleanup', async () => {
+    type RestoreResponse = {
+      links: PatchResourceAccessLink[]
+      obtainedExpiresAt: string | null
+    }
+    let completeOldRequest: ((response: RestoreResponse) => void) | undefined
+    const request = {
+      then: (onFulfilled: (response: RestoreResponse) => void) => {
+        completeOldRequest = onFulfilled
+        return { catch: vi.fn() }
+      }
+    }
+    fetchMock.kunFetchPost.mockReturnValueOnce(request)
+    const { container, rerender } = await renderResourceDownload(
+      withLinks([{ ...link21, obtained: true, revealed: true }])
+    )
+    expect(completeOldRequest).toBeTypeOf('function')
+
+    downloadCardMock.render.mockClear()
+    await rerender(
+      withLinks([{ ...link21, obtained: true, revealed: false }]),
+      () => {
+        completeOldRequest?.({
+          links: [sensitiveLink21],
+          obtainedExpiresAt: '2026-07-11T00:00:00.000Z'
+        })
+      }
+    )
+
+    const nextIdentityRenders = downloadCardMock.render.mock.calls.map(
+      ([props]) =>
+        props as {
+          link: PatchResourceLink
+          restoredLink?: PatchResourceAccessLink
+        }
+    )
+    expect(
+      nextIdentityRenders.some(
+        ({ link, restoredLink }) =>
+          link.revealed === false &&
+          restoredLink?.content === sensitiveLink21.content
+      )
+    ).toBe(false)
     expect(container.textContent).not.toContain(sensitiveLink21.content)
   })
 
