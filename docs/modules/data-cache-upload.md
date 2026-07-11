@@ -276,7 +276,10 @@ WITH rollout AS (
   WHERE access_kind = 'resource_grant'
 )
 SELECT
-  DATE_TRUNC('day', pra.created AT TIME ZONE 'Asia/Shanghai') AS shanghai_day,
+  DATE_TRUNC(
+    'day',
+    (pra.created AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Shanghai'
+  ) AS shanghai_day,
   pra.actor_type,
   pra.section,
   pra.access_kind,
