@@ -224,26 +224,45 @@ git commit -m "refactor(resource): define visitor-first access policy"
 - [ ] **Step 1: 写 production preflight SQL**
 
 ~~~sql
+SELECT current_setting('TimeZone') AS session_timezone;
+
+WITH classified_access AS (
+  SELECT
+    *,
+    CASE
+      WHEN actor_type = 'visitor'
+        AND user_id IS NULL
+        AND visitor_token ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
+        THEN 'valid_visitor'
+      WHEN actor_type = 'user'
+        AND user_id IS NOT NULL
+        AND visitor_token = ''
+        THEN 'valid_user'
+      WHEN actor_type = 'user'
+        AND user_id IS NULL
+        AND visitor_token = ''
+        THEN 'deleted_user'
+      ELSE 'invalid'
+    END AS identity_state
+  FROM public.patch_resource_access
+)
 SELECT
+  COUNT(*) FILTER (WHERE identity_state = 'invalid' AND actor_type = 'visitor') AS invalid_visitor_rows,
+  COUNT(*) FILTER (WHERE identity_state = 'invalid' AND actor_type = 'user') AS invalid_user_rows,
+  COUNT(*) FILTER (WHERE actor_type IS NULL OR actor_type NOT IN ('visitor', 'user')) AS invalid_actor_type_rows,
+  COUNT(*) FILTER (WHERE identity_state = 'deleted_user') AS deleted_user_rows,
   COUNT(*) FILTER (
-    WHERE actor_type = 'visitor'
-      AND (visitor_token = '' OR user_id IS NOT NULL)
-  ) AS invalid_visitor_rows,
-  COUNT(*) FILTER (
-    WHERE actor_type = 'user'
-      AND (user_id IS NULL OR visitor_token <> '')
-  ) AS invalid_user_rows,
-  COUNT(*) FILTER (
-    WHERE actor_type NOT IN ('visitor', 'user')
-  ) AS invalid_actor_type_rows,
-  COUNT(*) FILTER (WHERE expires > NOW()) AS active_legacy_rows
-FROM patch_resource_access;
+    WHERE identity_state IN ('valid_visitor', 'valid_user')
+      AND expires > (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')
+  ) AS active_legacy_rows,
+  COALESCE(MAX(id), 0) AS legacy_max_id_candidate
+FROM classified_access;
 
 SELECT
   COUNT(*) AS invalid_relation_rows
-FROM patch_resource_access pra
-LEFT JOIN patch_resource_link link ON link.id = pra.link_id
-LEFT JOIN patch_resource resource ON resource.id = pra.resource_id
+FROM public.patch_resource_access pra
+LEFT JOIN public.patch_resource_link link ON link.id = pra.link_id
+LEFT JOIN public.patch_resource resource ON resource.id = pra.resource_id
 WHERE link.id IS NULL
    OR resource.id IS NULL
    OR link.resource_id <> pra.resource_id
@@ -253,14 +272,15 @@ WITH duplicate_event_groups AS (
   SELECT
     actor_type,
     CASE
-      WHEN user_id IS NOT NULL THEN 'user:' || user_id::text
-      ELSE 'visitor:' || visitor_token
+      WHEN actor_type = 'user' AND user_id IS NOT NULL THEN 'user:' || user_id::text
+      WHEN actor_type = 'visitor' THEN 'visitor:' || visitor_token
+      ELSE 'deleted-user-row:' || id::text
     END AS actor_identity,
     resource_id,
     link_id,
     expires,
     COUNT(*) AS row_count
-  FROM patch_resource_access
+  FROM public.patch_resource_access
   GROUP BY 1, 2, 3, 4, 5
   HAVING COUNT(*) > 1
 )
@@ -270,7 +290,9 @@ SELECT
 FROM duplicate_event_groups;
 ~~~
 
-Expected: invalid_visitor_rows = 0、invalid_user_rows = 0、invalid_actor_type_rows = 0、invalid_relation_rows = 0；否则停止上线并先修复数据。historical_duplicate_event_groups 只做现状盘点：历史行统一归类为 link_reveal，不进入新额度，restore 也按 link.id 去重，因此本轮不删除或改写这些审计行。
+preflight 必须同时盘点 schema 形态：`access_kind` 的类型、长度、nullability/default；grant 表三个字段的类型与 nullability；`actor_key + resource_id` 主键；resource FK 的 `ON DELETE CASCADE / ON UPDATE NO ACTION`；两个索引的完整定义及 `indisready / indisvalid`。grant 表存在时，还要按合法身份聚合 active legacy access，统计缺失 grant 或 grant expires 短于历史最大 expires 的组数。
+
+Expected: invalid_visitor_rows = 0、invalid_user_rows = 0、invalid_actor_type_rows = 0、invalid_relation_rows = 0；否则停止上线并先修复数据。`deleted_user_rows` 是 `user_id ON DELETE SET NULL` 产生的合法审计 tombstone，只盘点、不回填，也绝不能折叠成 `visitor:` 身份。首次运行允许新 schema 对象显示 missing；sync 后再次运行时所有 schema 检查必须为 ok、索引必须 ready/valid、backfill 缺失或过短组数必须为 0。historical_duplicate_event_groups 只做现状盘点：历史行统一归类为 link_reveal，不进入新额度，restore 也按 link.id 去重，因此本轮不删除或改写这些审计行。记录 `session_timezone`；所有 active 窗口比较显式使用 UTC timestamp-without-time-zone 表达式，不依赖数据库会话时区。
 
 - [ ] **Step 2: 扩展 Prisma schema**
 
@@ -299,15 +321,43 @@ model patch_resource_access {
 
 只在 patch_resource 模型增加 grants relation。actor_type、visitor_token、user_id、patch_id 和 section 均不复制到 grant 表：身份由 actor_key 表达，资源归属可由 resource_id 关联得到，额度审计继续以 patch_resource_access 为事实源。首轮保留既有 link-level access 索引，保证旧应用可回滚；新游客 count 只增加一条含 access_kind 的 visitor 复合索引。当前不限制登录用户，因此不预建 user quota 索引；未来若设计用户限额，再随独立方案评估。新索引在 Prisma 中显式 map 到与生产 SQL 相同的短名称，避免开发库 prisma:push 与生产 sync 产生两套索引。
 
-- [ ] **Step 3: 编写可重入 sync SQL 与 backfill**
+- [ ] **Step 3: 编写带固定 legacy cutoff 的可重入 sync SQL 与 backfill**
 
 ~~~sql
-ALTER TABLE patch_resource_access
+-- 必须通过 psql -v legacy_max_id=<排空旧 writer 后记录的最大 id> 执行；
+-- sync 文件在变量缺失时立即失败，不能自行使用运行时 MAX(id)。
+
+\if :{?legacy_max_id}
+\else
+  \echo 'missing required psql variable: legacy_max_id'
+  \quit 3
+\endif
+
+SELECT :'legacy_max_id' ~ '^(0|[1-9][0-9]*)$' AS legacy_max_id_valid \gset
+\if :legacy_max_id_valid
+\else
+  \echo 'legacy_max_id must be a non-negative integer'
+  \quit 3
+\endif
+
+-- 在任何 DDL/DML 前强制完成 bigint cast；溢出会因 ON_ERROR_STOP 立即退出。
+SELECT :'legacy_max_id'::bigint AS validated_legacy_max_id;
+
+SELECT
+  COALESCE(MAX(id), 0) = :'legacy_max_id'::bigint AS legacy_cutoff_matches
+FROM public.patch_resource_access \gset
+\if :legacy_cutoff_matches
+\else
+  \echo 'legacy_max_id is stale; drain old writers and capture a new cutoff'
+  \quit 3
+\endif
+
+ALTER TABLE public.patch_resource_access
   ADD COLUMN IF NOT EXISTS access_kind VARCHAR(20) NOT NULL DEFAULT 'link_reveal';
 
-CREATE TABLE IF NOT EXISTS patch_resource_access_grant (
+CREATE TABLE IF NOT EXISTS public.patch_resource_access_grant (
   actor_key VARCHAR(80) NOT NULL,
-  resource_id INTEGER NOT NULL REFERENCES patch_resource(id) ON DELETE CASCADE,
+  resource_id INTEGER NOT NULL REFERENCES public.patch_resource(id) ON DELETE CASCADE ON UPDATE NO ACTION,
   expires TIMESTAMP(3) NOT NULL,
   PRIMARY KEY (actor_key, resource_id)
 );
@@ -315,45 +365,52 @@ CREATE TABLE IF NOT EXISTS patch_resource_access_grant (
 WITH active_access AS (
   SELECT DISTINCT ON (
     CASE
-      WHEN user_id IS NOT NULL THEN 'user:' || user_id::text
-      ELSE 'visitor:' || visitor_token
+      WHEN actor_type = 'user' THEN 'user:' || user_id::text
+      WHEN actor_type = 'visitor' THEN 'visitor:' || visitor_token
     END,
     resource_id
   )
     CASE
-      WHEN user_id IS NOT NULL THEN 'user:' || user_id::text
-      ELSE 'visitor:' || visitor_token
+      WHEN actor_type = 'user' THEN 'user:' || user_id::text
+      WHEN actor_type = 'visitor' THEN 'visitor:' || visitor_token
     END AS actor_key,
     resource_id,
     expires
-  FROM patch_resource_access
-  WHERE expires > NOW()
+  FROM public.patch_resource_access
+  WHERE id <= :'legacy_max_id'::bigint
+    AND expires > (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')
+    AND (
+      (actor_type = 'user' AND user_id IS NOT NULL AND visitor_token = '')
+      OR (
+        actor_type = 'visitor'
+        AND user_id IS NULL
+        AND visitor_token ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
+      )
+    )
   ORDER BY
     CASE
-      WHEN user_id IS NOT NULL THEN 'user:' || user_id::text
-      ELSE 'visitor:' || visitor_token
+      WHEN actor_type = 'user' THEN 'user:' || user_id::text
+      WHEN actor_type = 'visitor' THEN 'visitor:' || visitor_token
     END,
     resource_id,
     expires DESC,
     id DESC
 )
-INSERT INTO patch_resource_access_grant (
+INSERT INTO public.patch_resource_access_grant (
   actor_key, resource_id, expires
 )
 SELECT actor_key, resource_id, expires
 FROM active_access
 ON CONFLICT (actor_key, resource_id)
 DO UPDATE SET
-  expires = GREATEST(
-    patch_resource_access_grant.expires,
-    EXCLUDED.expires
-  );
+  expires = EXCLUDED.expires
+WHERE patch_resource_access_grant.expires < EXCLUDED.expires;
 
 CREATE INDEX CONCURRENTLY IF NOT EXISTS resource_access_grant_expires_idx
-  ON patch_resource_access_grant (expires);
+  ON public.patch_resource_access_grant (expires);
 
 CREATE INDEX CONCURRENTLY IF NOT EXISTS resource_access_visitor_kind_created_idx
-  ON patch_resource_access (
+  ON public.patch_resource_access (
     actor_type,
     visitor_token,
     section,
@@ -362,7 +419,9 @@ CREATE INDEX CONCURRENTLY IF NOT EXISTS resource_access_visitor_kind_created_idx
   );
 ~~~
 
-历史 access 行通过列默认值成为 link_reveal，不需要逐行 UPDATE，也不进入新游客日/周 count。backfill 只为 expires > NOW() 的旧行创建 grant，并保留旧行原有的剩余有效期；即使长于新规则的 24 小时也不追溯缩短。索引使用单独的 CREATE INDEX CONCURRENTLY IF NOT EXISTS，sync 文件不得包在显式事务中。
+sync 在任何写入前必须校验 `legacy_max_id` 已提供、是非负整数、可转换为 bigint，并且等于排空旧 writer 后当前的 `COALESCE(MAX(id), 0)`；随后断言既有同名列、表、主键和 FK 的形态与目标一致。`IF NOT EXISTS` 不能掩盖类型、默认值或约束漂移。创建索引前应检测并清理同名的 invalid/not-ready index：条件判断和 `DROP INDEX CONCURRENTLY` 必须是 psql 控制下的顶层语句，不能放进 `DO`、函数或事务块；合法但定义不符的同名对象必须显式失败，不得静默跳过。索引使用单独的 `CREATE INDEX CONCURRENTLY IF NOT EXISTS`，sync 文件不得包在显式事务中。
+
+历史 access 行通过列默认值成为 link_reveal，不需要逐行 UPDATE，也不进入新游客日/周 count。backfill 只处理排空旧实例写入后固定的 `legacy_max_id` 以内、身份完整且仍有效的旧行；deleted-user tombstone 和非法身份不创建 grant。它保留旧行原有的剩余有效期，即使长于新规则的 24 小时也不追溯缩短。冲突更新只在现有 grant expires 更短时发生，因此使用同一 cutoff 重跑必须是零实际更新；同一次 rollout 进入新应用运行期后不得扩大 cutoff。若回滚到会继续写 72 小时旧 event 的 Phase 2 应用，下一次 rollout 必须重新排空旧 writer、重新 preflight，并建立新的最终 cutoff。sync 后运行 preflight/postflight，证明 schema、索引和 backfill 全部达到目标形态。
 
 本轮明确不增加逐链接 partial unique index。PostgreSQL Serializable 事务会为“先查询同 actor + resource + link 的 active event、再插入”建立谓词读依赖；同一授权周期内并发首次点开同一镜像时，其中一个正常事务会以序列化冲突失败并重试。grant 的 actor_key + resource_id 主键则负责首次资源授权竞态。额外 partial unique index 会要求先定义并清理历史重复组、用 Prisma 无法表达的 WHERE 索引维护开发/生产一致性，并扩大回滚面；当前收益不足以覆盖这些成本。
 
@@ -370,15 +429,15 @@ CREATE INDEX CONCURRENTLY IF NOT EXISTS resource_access_visitor_kind_created_idx
 
 - [ ] **Step 4: 生成 Prisma Client，不执行生产 push**
 
-Run: pnpm prisma:generate && pnpm typecheck
+Run: pnpm prisma:generate && pnpm exec prisma validate --schema prisma/schema && pnpm typecheck
 
-Expected: PASS。开发库允许在确认没有 reset 时执行 pnpm prisma:push；生产只使用 preflight/sync SQL。
+Expected: PASS。开发库允许在确认没有 reset 时执行 pnpm prisma:push；生产结构变更必须先执行 preflight/sync 并确认 Prisma diff 为空，不能用裸 push 代替迁移步骤。
 
 - [ ] **Step 5: 记录开发库的 migration 验证**
 
 Run: pnpm prisma:push
 
-Expected: PASS 且没有 reset 提示；若提示 reset，立即取消并检查 schema 和 sync SQL。
+Expected: PASS 且没有 reset 提示；若提示 reset，立即取消并检查 schema 和 sync SQL。在开发库执行 sync 后，再运行 `pnpm exec prisma migrate diff --exit-code --from-config-datasource --to-schema=prisma/schema`，必须退出 0，证明生产 SQL 与 Prisma schema 无漂移。生产部署脚本仍会调用 `pnpm prisma:push`，因此上线前必须先执行 sync 并确认该 diff 为空，让后续 push 成为严格 no-op；不能把“生产只运行 sync SQL”当成当前部署脚本已经具备的能力。
 
 - [ ] **Step 6: 提交 schema、migration 与生成所需源码**
 
@@ -1822,13 +1881,13 @@ CROSS JOIN rollout
 WHERE rollout.started_at IS NOT NULL
   AND pra.access_kind IN ('resource_grant', 'link_reveal')
   AND pra.created >= rollout.started_at
-  AND pra.created >= NOW() - INTERVAL '14 days'
+  AND pra.created >= (CURRENT_TIMESTAMP AT TIME ZONE 'UTC') - INTERVAL '14 days'
 GROUP BY 1, 2, 3, 4
 ORDER BY 1 DESC, 2, 3, 4;
 
 SELECT
-  COUNT(*) FILTER (WHERE expires > NOW()) AS active_grants,
-  COUNT(*) FILTER (WHERE expires <= NOW()) AS expired_grants
+  COUNT(*) FILTER (WHERE expires > (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')) AS active_grants,
+  COUNT(*) FILTER (WHERE expires <= (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')) AS expired_grants
 FROM patch_resource_access_grant;
 ~~~
 
@@ -1880,14 +1939,18 @@ Run:
 pnpm prisma:generate
 # 开发库：确认没有 reset 提示后运行
 pnpm prisma:push
+pnpm exec prisma migrate diff --exit-code --from-config-datasource --to-schema=prisma/schema
 
-# 生产：完成数据库备份、由运维确认目标连接后运行
-psql "$KUN_DATABASE_URL" -f migration/production-resource-access-grant-preflight-2026-07-10.sql
-psql "$KUN_DATABASE_URL" -f migration/production-resource-access-grant-sync-2026-07-10.sql
-psql "$KUN_DATABASE_URL" -f migration/production-resource-access-grant-preflight-2026-07-10.sql
+# 生产：完成数据库备份、由运维确认目标连接，排空旧 access writer，
+# 从 preflight 记录最终 LEGACY_MAX_ID 后运行；示例值必须替换，不能照抄。
+psql -X -v ON_ERROR_STOP=1 "$KUN_DATABASE_URL" -f migration/production-resource-access-grant-preflight-2026-07-10.sql
+psql -X -v ON_ERROR_STOP=1 -v legacy_max_id="$LEGACY_MAX_ID" "$KUN_DATABASE_URL" -f migration/production-resource-access-grant-sync-2026-07-10.sql
+psql -X -v ON_ERROR_STOP=1 -v legacy_max_id="$LEGACY_MAX_ID" "$KUN_DATABASE_URL" -f migration/production-resource-access-grant-sync-2026-07-10.sql
+psql -X -v ON_ERROR_STOP=1 "$KUN_DATABASE_URL" -f migration/production-resource-access-grant-preflight-2026-07-10.sql
+pnpm exec prisma migrate diff --exit-code --from-config-datasource --to-schema=prisma/schema
 ~~~
 
-Expected: 开发库 schema 同步无 reset；生产前检查的 visitor 身份、user 身份、actor_type 和 relation 四类异常均为 0；历史重复组只记录数量、不在本轮删除；sync SQL 可重入，第二次 preflight 仍通过。生产执行前必须先备份数据库并由运维确认目标连接串。
+Expected: 开发库 schema 同步无 reset 且 Prisma diff 退出 0；生产前检查的 visitor 身份、user 身份、actor_type 和 relation 四类异常均为 0，deleted-user tombstone 只盘点；历史重复组只记录数量、不在本轮删除。第二次相同 cutoff 的 sync 应报告零次实际 backfill 更新；最终 preflight 中列/表/PK/FK 全部为 ok，索引 ready/valid，active legacy grant 缺失或过短组数为 0，Prisma diff 退出 0。生产执行前必须先备份数据库并由运维确认目标连接串；sync 含 concurrent index，命令不得增加 `-1/--single-transaction`。
 
 - [ ] **Step 6: 手动验收**
 
@@ -1912,9 +1975,9 @@ git commit -m "docs(resource): document visitor-first access limits"
 
 ## Rollout and Rollback
 
-1. 先部署 schema 和 sync SQL，确认 active legacy access 已回填 grant，且 preflight 没有异常行。
-2. 在切换新应用前排空旧实例的 access API 写入，再执行一次可重入 sync/backfill，捕获初次回填之后产生的旧 link-level access；不得让旧/新实现长期并行写入，否则镜像复用的连续性会变得不可预测。
-3. 再部署并启用全部新应用代码；旧 link-level access events 以 link_reveal 保留，不进入新日/周额度。上线时仍有效的旧授权保留原 expires，历史记录最长可能继续 72 小时，这只是迁移兼容行为，不是新产品的第二套规则；所有新授权统一为 24 小时，产品简报只描述这条新规则。
+1. 先备份并运行只读 preflight，确认身份/关系异常为 0，记录 deleted-user tombstone、历史重复组、会话时区和 `legacy_max_id_candidate`；deleted-user tombstone 不回填、也不改写历史 event。
+2. 在切换新应用前排空旧实例的 access API 写入，再次取得最终 `LEGACY_MAX_ID`，用该固定 cutoff 执行 sync/backfill 两次并运行 postflight。第二次 backfill 必须零实际更新；列/表/PK/FK、索引 ready/valid、grant 完整性和 Prisma diff 必须全部通过。当前 deploy:pull/deploy:build 仍会执行 prisma:push，只有 diff 为空时才允许继续，让该 push 成为 no-op。
+3. 再部署并启用全部新应用代码；同一次 rollout 的固定 cutoff 在新应用运行期间不再扩大，也不得让旧/新实现长期并行写入。旧 link-level access events 以 link_reveal 保留，不进入新日/周额度。上线时仍有效的旧授权保留原 expires，历史记录最长可能继续 72 小时，这只是迁移兼容行为，不是新产品的第二套规则；所有新授权统一为 24 小时，产品简报只描述这条新规则。
 4. 上线后 14 天观察 DB 聚合的 resource_grant/link_reveal，安全 outcome 日志聚合的 manual_reused、daily_limited、weekly_limited、rate_limited、manual_failed、restore_succeeded/restore_failed，以及对应 route 的错误率；不根据 IP 做产品封禁。
-5. 若 grant/restore 服务或 migration 出现异常，回滚应用到旧版本即可；极简 grant 表和 access_kind 列保留，不会破坏旧 service 对 patch_resource_access 的读取。
+5. 若 grant/restore 服务或 migration 出现异常，回滚应用到旧版本即可；极简 grant 表和 access_kind 列保留，不会破坏旧 service 对 patch_resource_access 的读取。若旧版本恢复写入 72 小时 event，后续重新上线前必须建立新的 rollout cutoff 并再次 backfill，不能沿用上一次 cutoff。
 6. 14 天后复核：游客日/周拦截率、镜像 reused 比例、登录转化、客服投诉和 access API 错误率。只有存在明确的登录用户批量获取证据时，才另写一份用户限额设计和实施计划。
