@@ -6,7 +6,8 @@ import toast from 'react-hot-toast'
 import type {
   PatchResource,
   PatchResourceAccessLink,
-  PatchResourceLink
+  PatchResourceLink,
+  ResourceAccessQuota
 } from '~/types/api/patch'
 
 globalThis.React = React
@@ -142,17 +143,27 @@ const resource: PatchResource = {
   }
 }
 
+const lowQuota: ResourceAccessQuota = {
+  scope: 'visitor',
+  resourceKind: 'galgame',
+  remaining: { daily: 2, weekly: 17 },
+  resetsAt: {
+    daily: '2026-07-10T16:00:00.000Z',
+    weekly: '2026-07-12T16:00:00.000Z'
+  }
+}
+
 describe('ResourceDownloadCard access flow', () => {
   let root: Root | undefined
   let dom: JSDOM | undefined
 
   const renderCard = async ({
-    resourceValue = resource,
+    resource: resourceValue = resource,
     link = previewLink,
     restoredLink,
     restoredObtainedExpiresAt
   }: {
-    resourceValue?: PatchResource
+    resource?: PatchResource
     link?: PatchResourceLink
     restoredLink?: PatchResourceAccessLink
     restoredObtainedExpiresAt?: string
@@ -219,7 +230,8 @@ describe('ResourceDownloadCard access flow', () => {
         actorType: 'visitor',
         cost: 0,
         obtainedExpiresAt: '2026-07-09T00:00:00.000Z'
-      }
+      },
+      quota: lowQuota
     })
 
     const { container } = await renderCard()
@@ -242,9 +254,14 @@ describe('ResourceDownloadCard access flow', () => {
     expect(container.textContent).toContain('abcd')
     expect(container.textContent).toContain('解压码')
     expect(container.textContent).toContain('secret')
+    expect(container.textContent).toContain(
+      '24 小时内可访问该资源条目的全部镜像；点过的镜像刷新后会自动恢复。'
+    )
+    expect(container.textContent).toContain('今日游客还可获取 2 个游戏资源条目')
+    expect(container.querySelector('[role="status"]')).not.toBeNull()
   })
 
-  it('uses the revealed state for links reusable within the resource grant', async () => {
+  it('explains the 24-hour resource grant and automatic restore', async () => {
     const obtainedLink: PatchResourceLink = {
       ...previewLink,
       obtained: true,
@@ -266,7 +283,8 @@ describe('ResourceDownloadCard access flow', () => {
         actorType: 'visitor',
         cost: 0,
         obtainedExpiresAt: '2026-07-09T00:00:00.000Z'
-      }
+      },
+      quota: lowQuota
     })
 
     const { ResourceDownloadCard } = await import(
@@ -281,8 +299,9 @@ describe('ResourceDownloadCard access flow', () => {
     })
 
     expect(container.textContent).toContain('查看已获取链接')
-    expect(container.textContent).toContain('授权有效期内')
-    expect(container.textContent).not.toContain('72 小时')
+    expect(container.textContent).toContain(
+      '24 小时内可访问该资源条目的全部镜像；点过的镜像刷新后会自动恢复。'
+    )
     expect(container.textContent).not.toContain('https://pan.example.com/share')
 
     const button = container.querySelector('button')
@@ -296,6 +315,10 @@ describe('ResourceDownloadCard access flow', () => {
       { patchId: 7, resourceId: 11, linkId: 21 }
     )
     expect(container.textContent).toContain('https://pan.example.com/share')
+    expect(container.textContent).toContain(
+      '24 小时内可访问该资源条目的全部镜像；点过的镜像刷新后会自动恢复。'
+    )
+    expect(container.textContent).not.toContain('今日游客还可获取')
   })
 
   it('shows a user-visible error when access fails', async () => {
@@ -313,13 +336,31 @@ describe('ResourceDownloadCard access flow', () => {
     expect(container.textContent).toContain('该资源不可访问')
   })
 
-  it('keeps the obtain action for an unrevealed mirror in an active resource grant', async () => {
+  it('reveals an unvisited mirror without showing product quota feedback', async () => {
     const obtainedButUnrevealed: PatchResourceLink = {
       ...previewLink,
       obtained: true,
       obtainedExpiresAt: '2026-07-11T00:00:00.000Z',
       revealed: false
     }
+    fetchMock.kunFetchPost.mockResolvedValueOnce({
+      link: {
+        id: 21,
+        storage: 'user',
+        size: '2 GB',
+        content: 'https://pan.example.com/another-mirror',
+        code: '',
+        password: '',
+        hash: ''
+      },
+      access: {
+        kind: 'link_revealed',
+        actorType: 'visitor',
+        cost: 0,
+        obtainedExpiresAt: '2026-07-11T00:00:00.000Z'
+      },
+      quota: lowQuota
+    })
 
     const { container } = await renderCard({
       link: obtainedButUnrevealed
@@ -327,8 +368,18 @@ describe('ResourceDownloadCard access flow', () => {
 
     expect(container.textContent).toContain('获取下载链接')
     expect(container.textContent).not.toContain('查看已获取链接')
-    expect(container.textContent).toContain('授权有效期内')
-    expect(container.textContent).not.toContain('72 小时')
+    expect(container.textContent).toContain(
+      '24 小时内可访问该资源条目的全部镜像；点过的镜像刷新后会自动恢复。'
+    )
+
+    await act(async () => {
+      container.querySelector('button')!.click()
+    })
+
+    expect(container.textContent).toContain(
+      'https://pan.example.com/another-mirror'
+    )
+    expect(container.textContent).not.toContain('今日游客还可获取')
   })
 
   it('keeps a single-link retry action when a revealed mirror was not restored', async () => {
@@ -440,7 +491,7 @@ describe('ResourceDownloadCard access flow', () => {
     }
     const restoredLink: PatchResourceAccessLink = {
       ...manualLink,
-      content: 'https://pan.example.com/restore-shadow'
+      content: 'https://pan.example.com/restored-prop-link'
     }
     const revealedLink = { ...previewLink, obtained: true, revealed: true }
     fetchMock.kunFetchPost.mockResolvedValueOnce({

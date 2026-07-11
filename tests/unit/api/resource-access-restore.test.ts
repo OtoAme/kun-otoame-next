@@ -40,6 +40,10 @@ const restoreServiceMocks = vi.hoisted(() => ({
   restorePatchResourceLinks: vi.fn()
 }))
 
+const rateLimitMocks = vi.hoisted(() => ({
+  checkResourceAccessActionRateLimit: vi.fn()
+}))
+
 const visibilityMocks = vi.hoisted(() => ({
   getPatchVisibilityWhere: vi.fn()
 }))
@@ -50,6 +54,11 @@ vi.mock('~/prisma/index', () => ({
 
 vi.mock('~/middleware/_verifyHeaderCookie', () => ({
   verifyHeaderCookie: authMocks.verifyHeaderCookie
+}))
+
+vi.mock('~/app/api/patch/resource/download/access/rateLimit', () => ({
+  checkResourceAccessActionRateLimit:
+    rateLimitMocks.checkResourceAccessActionRateLimit
 }))
 
 vi.mock(
@@ -411,6 +420,9 @@ describe('resource access restore route', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     authMocks.verifyHeaderCookie.mockResolvedValue(null)
+    rateLimitMocks.checkResourceAccessActionRateLimit.mockResolvedValue({
+      allowed: true
+    })
     visibilityMocks.getPatchVisibilityWhere.mockResolvedValue(visibilityWhere)
   })
 
@@ -455,6 +467,51 @@ describe('resource access restore route', () => {
       logSpy.mockRestore()
     }
   )
+
+  it('rate limits restore after actor creation and before visibility or service work', async () => {
+    const logSpy = vi.spyOn(console, 'info').mockImplementation(() => undefined)
+    const { POST } = await import(
+      '~/app/api/patch/resource/download/access/restore/route'
+    )
+    rateLimitMocks.checkResourceAccessActionRateLimit.mockResolvedValueOnce({
+      allowed: false,
+      retryAfterMs: 1,
+      message: '获取下载链接过于频繁，请 1 秒后再试'
+    })
+
+    const response = await POST(jsonRequest(validInput))
+
+    expect(response.status).toBe(429)
+    expect(response.headers.get('retry-after')).toBe('1')
+    expectPrivateNoStore(response)
+    expect(response.headers.get('set-cookie')).toContain(
+      'kun-resource-access-token='
+    )
+    await expect(response.json()).resolves.toBe(
+      '获取下载链接过于频繁，请 1 秒后再试'
+    )
+    expect(
+      rateLimitMocks.checkResourceAccessActionRateLimit
+    ).toHaveBeenCalledTimes(1)
+    expect(
+      rateLimitMocks.checkResourceAccessActionRateLimit
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        actorType: 'visitor',
+        shouldSetVisitorCookie: true
+      })
+    )
+    expect(visibilityMocks.getPatchVisibilityWhere).not.toHaveBeenCalled()
+    expect(restoreServiceMocks.restorePatchResourceLinks).not.toHaveBeenCalled()
+    expectNoRestoreWrites()
+    expect(logSpy).toHaveBeenCalledTimes(1)
+    expect(logSpy).toHaveBeenCalledWith('resource-access-outcome', {
+      operation: 'restore',
+      outcome: 'rate_limited',
+      actorType: 'visitor'
+    })
+    logSpy.mockRestore()
+  })
 
   it('deduplicates at most 50 raw IDs in first-seen order before service', async () => {
     const logSpy = vi.spyOn(console, 'info').mockImplementation(() => undefined)

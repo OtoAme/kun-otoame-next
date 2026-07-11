@@ -23,8 +23,18 @@ const prismaMocks = vi.hoisted(() => {
   }
 })
 
+const redisMocks = vi.hoisted(() => ({
+  eval: vi.fn()
+}))
+
 vi.mock('~/prisma/index', () => ({
   prisma: prismaMocks
+}))
+
+vi.mock('~/lib/redis', () => ({
+  getPrefixedRedisKey: (key: string) => `kun:touchgal:${key}`,
+  redis: redisMocks,
+  runRedisCommand: <T>(command: () => Promise<T>) => command()
 }))
 
 import {
@@ -91,6 +101,7 @@ const rejectFirstTransactionAfterCallback = (code: 'P2002' | 'P2034') => {
 const originalJwtSecret = process.env.JWT_SECRET
 
 beforeEach(() => {
+  redisMocks.eval.mockReset()
   prismaMocks.$transaction.mockReset()
   prismaMocks.tx.patch_resource_access_grant.findUnique.mockReset()
   prismaMocks.tx.patch_resource_access_grant.create.mockReset()
@@ -231,6 +242,20 @@ describe('resource access actor identity helpers', () => {
 })
 
 describe('resource access grant service', () => {
+  it('does not call Redis while evaluating the product quota for a new visitor grant', async () => {
+    await resolveResourceAccessGrant({
+      actor: visitorActor,
+      patchId: 7,
+      resourceId: 11,
+      linkId: 21,
+      storage: 'user',
+      section: 'galgame',
+      now: new Date('2026-07-10T00:00:00.000Z')
+    })
+
+    expect(redisMocks.eval).not.toHaveBeenCalled()
+  })
+
   it('creates a 24-hour resource grant and consumes the last daily and weekly slots', async () => {
     const now = baseInput.now
     const expires = new Date('2026-07-11T02:00:00.000Z')

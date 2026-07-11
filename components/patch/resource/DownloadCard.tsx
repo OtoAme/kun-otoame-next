@@ -14,7 +14,8 @@ import type {
   PatchResource,
   PatchResourceAccessLink,
   PatchResourceAccessResponse,
-  PatchResourceLink
+  PatchResourceLink,
+  ResourceAccessQuota
 } from '~/types/api/patch'
 
 const storageIcons: { [key: string]: JSX.Element } = {
@@ -39,6 +40,7 @@ export const ResourceDownloadCard = ({
   const [manuallyAccessedLink, setManuallyAccessedLink] =
     useState<PatchResourceAccessLink | null>(null)
   const [manualObtainedExpiresAt, setManualObtainedExpiresAt] = useState('')
+  const [quota, setQuota] = useState<ResourceAccessQuota | null>(null)
   const [accessing, setAccessing] = useState(false)
   const [errorMessage, setErrorMessage] = useState('')
   const restoredAccessedLink =
@@ -81,6 +83,11 @@ export const ResourceDownloadCard = ({
 
       setManuallyAccessedLink(response.link)
       setManualObtainedExpiresAt(response.access.obtainedExpiresAt)
+      setQuota(
+        response.access.kind === 'resource_granted' && response.quota
+          ? response.quota
+          : null
+      )
     } catch {
       const message = '获取下载链接失败，请稍后重试'
       setErrorMessage(message)
@@ -180,12 +187,6 @@ export const ResourceDownloadCard = ({
             {accessButtonText}
           </Button>
 
-          {hasActiveGrant && (
-            <p className="text-sm text-default-500">
-              授权有效期内可继续获取资源镜像。
-            </p>
-          )}
-
           {errorMessage && (
             <p role="alert" className="text-sm text-danger">
               {errorMessage}
@@ -194,6 +195,18 @@ export const ResourceDownloadCard = ({
 
           {renderHash(link.hash)}
         </div>
+      )}
+
+      {hasActiveGrant && (
+        <p className="text-sm text-default-500">
+          24 小时内可访问该资源条目的全部镜像；点过的镜像刷新后会自动恢复。
+        </p>
+      )}
+
+      {quota && quota.remaining.daily <= 2 && (
+        <p className="text-sm text-default-500" role="status">
+          今日游客还可获取 {quota.remaining.daily} 个游戏资源条目
+        </p>
       )}
     </div>
   )

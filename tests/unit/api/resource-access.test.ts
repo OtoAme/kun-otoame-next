@@ -30,6 +30,10 @@ const grantMocks = vi.hoisted(() => ({
   resolveResourceAccessGrant: vi.fn()
 }))
 
+const rateLimitMocks = vi.hoisted(() => ({
+  checkResourceAccessActionRateLimit: vi.fn()
+}))
+
 const visibilityMocks = vi.hoisted(() => ({
   getPatchVisibilityWhere: vi.fn()
 }))
@@ -45,6 +49,11 @@ vi.mock('~/middleware/_verifyHeaderCookie', () => ({
 vi.mock('~/lib/redis', () => ({
   acquireKvLock: vi.fn(),
   releaseKvLock: vi.fn()
+}))
+
+vi.mock('~/app/api/patch/resource/download/access/rateLimit', () => ({
+  checkResourceAccessActionRateLimit:
+    rateLimitMocks.checkResourceAccessActionRateLimit
 }))
 
 vi.mock(
@@ -193,6 +202,10 @@ describe('resource download access grant API', () => {
     grantMocks.resolveResourceAccessGrant.mockResolvedValue({
       kind: 'resource_granted',
       expires: EXPIRES
+    })
+    rateLimitMocks.checkResourceAccessActionRateLimit.mockReset()
+    rateLimitMocks.checkResourceAccessActionRateLimit.mockResolvedValue({
+      allowed: true
     })
     visibilityMocks.getPatchVisibilityWhere.mockReset()
     visibilityMocks.getPatchVisibilityWhere.mockResolvedValue({
@@ -544,6 +557,51 @@ describe('resource download access grant API', () => {
     expect(authMocks.verifyHeaderCookie).not.toHaveBeenCalled()
     expect(visibilityMocks.getPatchVisibilityWhere).not.toHaveBeenCalled()
     expect(grantMocks.resolveResourceAccessGrant).not.toHaveBeenCalled()
+  })
+
+  it('rate limits access after actor creation and before visibility or service work', async () => {
+    const logSpy = vi.spyOn(console, 'info').mockImplementation(() => undefined)
+    const { POST } = await import(
+      '~/app/api/patch/resource/download/access/route'
+    )
+    rateLimitMocks.checkResourceAccessActionRateLimit.mockResolvedValueOnce({
+      allowed: false,
+      retryAfterMs: 1501,
+      message: '获取下载链接过于频繁，请 2 秒后再试'
+    })
+
+    const response = await POST(jsonRequest(validInput))
+
+    expect(response.status).toBe(429)
+    expect(response.headers.get('retry-after')).toBe('2')
+    expectPrivateNoStore(response)
+    expect(response.headers.get('set-cookie')).toContain(
+      'kun-resource-access-token='
+    )
+    await expect(response.json()).resolves.toBe(
+      '获取下载链接过于频繁，请 2 秒后再试'
+    )
+    expect(
+      rateLimitMocks.checkResourceAccessActionRateLimit
+    ).toHaveBeenCalledTimes(1)
+    expect(
+      rateLimitMocks.checkResourceAccessActionRateLimit
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        actorType: 'visitor',
+        shouldSetVisitorCookie: true
+      })
+    )
+    expect(visibilityMocks.getPatchVisibilityWhere).not.toHaveBeenCalled()
+    expect(prismaMocks.patch_resource_link.findFirst).not.toHaveBeenCalled()
+    expect(grantMocks.resolveResourceAccessGrant).not.toHaveBeenCalled()
+    expect(logSpy).toHaveBeenCalledTimes(1)
+    expect(logSpy).toHaveBeenCalledWith('resource-access-outcome', {
+      operation: 'access',
+      outcome: 'rate_limited',
+      actorType: 'visitor'
+    })
+    logSpy.mockRestore()
   })
 
   it('returns a no-store 404 with a first-visitor cookie and no grant or log', async () => {

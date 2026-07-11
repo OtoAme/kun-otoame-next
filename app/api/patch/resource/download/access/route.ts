@@ -10,6 +10,7 @@ import { verifyHeaderCookie } from '~/middleware/_verifyHeaderCookie'
 import { getResourceAccessActor } from './actor'
 import { resourceAccessJson, withResourceAccessVisitorCookie } from './response'
 import { logResourceAccessOutcome } from './observability'
+import { checkResourceAccessActionRateLimit } from './rateLimit'
 
 const RESOURCE_ACCESS_BUSY_MESSAGE = '获取下载链接繁忙，请稍后再试'
 
@@ -23,6 +24,23 @@ export const POST = async (req: NextRequest) => {
   const actor = getResourceAccessActor(req, payload?.uid ?? 0)
 
   try {
+    const rateLimit = await checkResourceAccessActionRateLimit(actor)
+    if (!rateLimit.allowed) {
+      logResourceAccessOutcome({
+        operation: 'access',
+        outcome: 'rate_limited',
+        actorType: actor.actorType
+      })
+      return withResourceAccessVisitorCookie(
+        resourceAccessJson(rateLimit.message, 429, {
+          'Retry-After': String(
+            Math.max(1, Math.ceil(rateLimit.retryAfterMs / 1000))
+          )
+        }),
+        actor
+      )
+    }
+
     const visibilityWhere = await getPatchVisibilityWhere(req)
     const result = await accessPatchResourceLink(input, visibilityWhere, actor)
 
