@@ -1,18 +1,18 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { kunParsePostBody } from '~/app/api/utils/parseQuery'
 import { getPatchVisibilityWhere } from '~/app/api/utils/getPatchVisibilityWhere'
 import { accessPatchResourceLinkSchema } from '~/validations/patch'
-import { accessPatchResourceLink } from './service'
+import {
+  accessPatchResourceLink,
+  isResourceAccessServiceError
+} from './service'
+import { verifyHeaderCookie } from '~/middleware/_verifyHeaderCookie'
+import { getResourceAccessActor } from './actor'
+import { resourceAccessJson, withResourceAccessVisitorCookie } from './response'
+import { logResourceAccessOutcome } from './observability'
+import { checkResourceAccessActionRateLimit } from './rateLimit'
 
-const RESOURCE_ACCESS_CACHE_CONTROL = 'private, no-store'
-
-const resourceAccessJson = (body: unknown, status = 200) =>
-  NextResponse.json(body, {
-    status,
-    headers: {
-      'Cache-Control': RESOURCE_ACCESS_CACHE_CONTROL
-    }
-  })
+const RESOURCE_ACCESS_BUSY_MESSAGE = '获取下载链接繁忙，请稍后再试'
 
 export const POST = async (req: NextRequest) => {
   const input = await kunParsePostBody(req, accessPatchResourceLinkSchema)
@@ -20,11 +20,65 @@ export const POST = async (req: NextRequest) => {
     return resourceAccessJson(input, 400)
   }
 
-  const visibilityWhere = await getPatchVisibilityWhere(req)
-  const response = await accessPatchResourceLink(input, visibilityWhere)
-  if (typeof response === 'string') {
-    return resourceAccessJson(response, 404)
-  }
+  const payload = await verifyHeaderCookie(req)
+  const actor = getResourceAccessActor(req, payload?.uid ?? 0)
 
-  return resourceAccessJson(response)
+  try {
+    const rateLimit = await checkResourceAccessActionRateLimit(actor)
+    if (!rateLimit.allowed) {
+      logResourceAccessOutcome({
+        operation: 'access',
+        outcome: 'rate_limited',
+        actorType: actor.actorType
+      })
+      return withResourceAccessVisitorCookie(
+        resourceAccessJson(rateLimit.message, 429, {
+          'Retry-After': String(
+            Math.max(1, Math.ceil(rateLimit.retryAfterMs / 1000))
+          )
+        }),
+        actor
+      )
+    }
+
+    const visibilityWhere = await getPatchVisibilityWhere(req)
+    const result = await accessPatchResourceLink(input, visibilityWhere, actor)
+
+    if (isResourceAccessServiceError(result)) {
+      if (result.status === 503) {
+        logResourceAccessOutcome({
+          operation: 'access',
+          outcome: 'manual_failed',
+          actorType: actor.actorType
+        })
+      }
+
+      const retryAfterSeconds =
+        result.status === 503
+          ? (result.retryAfterSeconds ?? 1)
+          : result.retryAfterSeconds
+      const response = resourceAccessJson(
+        result.message,
+        result.status,
+        retryAfterSeconds
+          ? { 'Retry-After': String(retryAfterSeconds) }
+          : undefined
+      )
+      return withResourceAccessVisitorCookie(response, actor)
+    }
+
+    return withResourceAccessVisitorCookie(resourceAccessJson(result), actor)
+  } catch {
+    logResourceAccessOutcome({
+      operation: 'access',
+      outcome: 'manual_failed',
+      actorType: actor.actorType
+    })
+    return withResourceAccessVisitorCookie(
+      resourceAccessJson(RESOURCE_ACCESS_BUSY_MESSAGE, 503, {
+        'Retry-After': '1'
+      }),
+      actor
+    )
+  }
 }

@@ -238,7 +238,7 @@ pnpm start
 
 GitHub Actions 会自动构建项目，并在 Releases 页面生成一个名为 `vYYYY.MM.DD.HHMM` 的新版本，包含 `release.tar.gz`。
 
-构建完毕后，需要手动在服务器端执行 
+构建完毕后，需要手动在服务器端执行
 
 ```bash
 pnpm deploy:pull
@@ -269,7 +269,7 @@ pnpm deploy:pull
    ```env
    # 你的 GitHub 仓库地址 (用户名/仓库名)
    GITHUB_REPO="OtoAme/kun-otoame-next"
-   
+
    # (可选) 如果是私有仓库，需要提供 GitHub Token
    # 申请地址: https://github.com/settings/tokens (权限需勾选: repo)
    # GITHUB_TOKEN="ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
@@ -280,12 +280,10 @@ pnpm deploy:pull
    ```sh
    # 查看 PM2 进程状态
    pm2 status
-   
+
    # 查看实时日志
    pm2 logs kun-touchgal-next
    ```
-
-
 
 ### 服务器本地构建
 
@@ -295,20 +293,18 @@ pnpm deploy:pull
    pnpm deploy:build
    ```
 
-   
-
-   你也可以不使用内置脚本，手动更新：
+   你也可以不使用内置脚本，手动更新。生产 schema 有变化时，必须先按本次发布说明执行并确认 review 通过的 preflight/sync SQL，再运行下面的安全校验命令：
 
    ```bash
-   git pull                 # 拉取最新代码
-   pnpm install             # 如果依赖有变化
-   pnpm prisma:push         # 如果数据库结构有变化
-   pnpm typecheck           # 单独检查类型
-   pnpm build               # 重新构建 (必须!)
-   pnpm stop && pnpm start  # 重启服务
+   git pull                   # 拉取最新代码
+   pnpm install               # 如果依赖有变化
+   pnpm prisma:deploy-safe    # 生产兼容迁移、schema 校验和 Client 生成
+   pnpm typecheck             # 单独检查类型
+   pnpm build                 # 重新构建 (必须!)
+   pnpm stop && pnpm start    # 重启服务
    ```
 
-   
+   整个 `pnpm prisma:deploy-safe` 不是纯只读命令：它先运行 `migration:resource-links`，该兼容迁移可能写入 schema/data；随后执行的只读 schema guard/diff 只接受空 diff 或经过 catalog 验证的精确例外；最后生成 Prisma Client。它不会运行 `prisma db push`，也不会应用 diff SQL。
 
 2. 构建过程一般在 1 ~ 2 分钟，这个期间网站会有部分功能不可用，正在访问网站的用户不会受到影响
 
@@ -328,9 +324,11 @@ pnpm deploy:pull
      ? 'server.mjs'
      : 'server.js'
    const envPath = path.join(__dirname, '.env')
-   const dotenvResult = fs.existsSync(envPath) ? dotenv.config({ path: envPath }) : {}
+   const dotenvResult = fs.existsSync(envPath)
+     ? dotenv.config({ path: envPath })
+     : {}
    const envFromFile = dotenvResult.parsed || {}
-   
+
    module.exports = {
      apps: [
        {
@@ -352,7 +350,6 @@ pnpm deploy:pull
        }
      ]
    }
-   
    ```
 
    你可以把这里的 instances 数量改为对应你服务器核数的数字，比如你划出了一个 4c8g 的小鸡，可以把 instances 改为 4，6c12g 则可以把 instances 改为 6
@@ -427,11 +424,11 @@ ffmpeg -hide_banner -encoders | grep -i libaom-av1
 
 ![warning](./public/images/warning.png)
 
-如果你在运行 `pnpm deploy:build` 或者运行任何其它命令的时候，看到下面的提示消息
+如果你手工运行 `pnpm prisma:push`、`pnpm prisma db push` 或其它会写 schema 的命令时看到下面的提示消息
 
 ```sh
 ⚠️ We found changes that cannot be executed:
-× To apply this change we need to reset the database, do you want to continue? All data will be lost. ... 
+× To apply this change we need to reset the database, do you want to continue? All data will be lost. ...
 no
 ```
 
@@ -439,7 +436,7 @@ no
 
 #### 千万不要按 y 或者回车，否则，数据库中的所有数据会被全部重置，不可能还原，如果没有备份将会倾家荡产，非常严重
 
-这个是使用 prisma 造成了对数据库不可逆的更改造成的，一般不会有这种情况，如果有会明确告知
+这表示手工 schema 写入可能造成不可逆更改，必须先备份数据库并准备 review 通过的迁移或补偿方案。`pnpm deploy:build` 使用 `pnpm prisma:deploy-safe`；遇到未允许的 drift 时会 fail-closed，在构建前直接失败，不会进入 `db push` 的 reset 确认流程。
 
 ## 如何配置网站的信息
 
@@ -465,21 +462,22 @@ no
 
 ## 日常维护命令
 
-| 动作              | 命令                                                   | 说明                                               |
-| :---------------- | :----------------------------------------------------- | :------------------------------------------------- |
-| **同步上游**      | `git switch upstream-main` -> `git pull upstream main` | 拉取原作者更新                                     |
-| **更新类型**      | `pnpm prisma:generate`                                 | 更新 TS 类型定义                                   |
-| **更新数据库**    | `pnpm prisma:push`                                     | 同步结构到 DB                                      |
-| **prisma studio** | `npx prisma studio`                                    | 启动 prisma studio                                 |
-| **本地运行**      | `pnpm dev`                                             | 开发模式                                           |
-| **生产构建**      | `pnpm build`                                           | 生产编译                                           |
-| **生产启动**      | `pnpm start`                                           | 项目后台运行                                       |
-| **生产停止**      | `pnpm stop`                                            | 项目停止运行                                       |
-| **CI/CD 更新**    | `pnpm deploy:pull`                                     | 服务器端拉取 GitHub Actions 构建产物，自动应用更新 |
-| **本地一键更新**  | `pnpm deploy:build`                                    | 服务器端本地构建自动更新                           |
-| **可选 FFmpeg**   | `pnpm gallery:ffmpeg:install`                          | Linux x64 / arm64 动态 AVIF 缩略图增强             |
-| **查看状态**      | `pm2 status`                                           | 查看 PM2 进程状态                                  |
-| **查看日志**      | `pm2 logs kun-touchgal-next`                           | 查看实时日志                                       |
+| 动作                            | 命令                                                   | 说明                                               |
+| :------------------------------ | :----------------------------------------------------- | :------------------------------------------------- |
+| **同步上游**                    | `git switch upstream-main` -> `git pull upstream main` | 拉取原作者更新                                     |
+| **更新类型**                    | `pnpm prisma:generate`                                 | 更新 TS 类型定义                                   |
+| **本地开发 / 首次初始化数据库** | `pnpm prisma:push`                                     | 仅用于本地、首次安装和 disposable CI 初始化        |
+| **生产 schema 校验**            | `pnpm prisma:deploy-safe`                              | reviewed preflight/sync SQL 完成后运行             |
+| **prisma studio**               | `npx prisma studio`                                    | 启动 prisma studio                                 |
+| **本地运行**                    | `pnpm dev`                                             | 开发模式                                           |
+| **生产构建**                    | `pnpm build`                                           | 生产编译                                           |
+| **生产启动**                    | `pnpm start`                                           | 项目后台运行                                       |
+| **生产停止**                    | `pnpm stop`                                            | 项目停止运行                                       |
+| **CI/CD 更新**                  | `pnpm deploy:pull`                                     | 服务器端拉取 GitHub Actions 构建产物，自动应用更新 |
+| **本地一键更新**                | `pnpm deploy:build`                                    | 服务器端本地构建自动更新                           |
+| **可选 FFmpeg**                 | `pnpm gallery:ffmpeg:install`                          | Linux x64 / arm64 动态 AVIF 缩略图增强             |
+| **查看状态**                    | `pm2 status`                                           | 查看 PM2 进程状态                                  |
+| **查看日志**                    | `pm2 logs kun-touchgal-next`                           | 查看实时日志                                       |
 
 ## 参考
 

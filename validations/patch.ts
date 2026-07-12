@@ -266,6 +266,16 @@ export const updatePatchResourceStatsSchema = z.object({
 
 export const accessPatchResourceLinkSchema = updatePatchResourceStatsSchema
 
+export const restorePatchResourceLinksSchema = z.object({
+  patchId: z.coerce.number().int().min(1).max(9_999_999),
+  resourceId: z.coerce.number().int().min(1).max(9_999_999),
+  linkIds: z
+    .array(z.coerce.number().int().min(1).max(9_999_999))
+    .min(1)
+    .max(50)
+    .transform((ids) => [...new Set(ids)])
+})
+
 export const createPatchFeedbackSchema = z.object({
   patchId: z.coerce.number({ message: 'ID 必须为数字' }).min(1).max(9999999),
   content: z

@@ -15,10 +15,7 @@ if (!fs.existsSync(envPath)) {
   process.exit(1)
 }
 
-const runCommand = (
-  command: string,
-  env: NodeJS.ProcessEnv = process.env
-) => {
+const runCommand = (command: string, env: NodeJS.ProcessEnv = process.env) => {
   execSync(command, { stdio: 'inherit', env })
 }
 
@@ -38,7 +35,7 @@ try {
   }
 
   execSync(
-    'git pull && pnpm i && pnpm prisma:push && pnpm build && pm2 startOrReload ecosystem.config.cjs',
+    'git pull && pnpm i && pnpm prisma:deploy-safe && pnpm build && pm2 startOrReload ecosystem.config.cjs',
     {
       stdio: 'inherit',
       env: { ...process.env, KUN_DEPLOY_BUILD_SKIP_CHECKS: 'true' }

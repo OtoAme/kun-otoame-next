@@ -1,17 +1,28 @@
 import { z } from 'zod'
 import { prisma } from '~/prisma/index'
 import { compareResources } from '~/constants/resource'
+import {
+  getResourceAccessViewerKey,
+  getResourceAccessViewerWhere
+} from './download/access/actor'
+import type { ResourceAccessViewer } from './download/access/actor'
 import type { PatchResource } from '~/types/api/patch'
 
 const patchIdSchema = z.object({
   patchId: z.coerce.number().min(1).max(9999999)
 })
 
+const normalizeResourceAccessViewer = (
+  viewer: number | ResourceAccessViewer
+): ResourceAccessViewer =>
+  typeof viewer === 'number' ? { uid: viewer } : viewer
+
 export const getPatchResource = async (
   input: z.infer<typeof patchIdSchema>,
-  uid: number
+  viewer: number | ResourceAccessViewer
 ) => {
   const { patchId } = input
+  const accessViewer = normalizeResourceAccessViewer(viewer)
 
   const data = await prisma.patch_resource.findMany({
     where: {
@@ -43,11 +54,47 @@ export const getPatchResource = async (
       },
       like_by: {
         where: {
-          user_id: uid
+          user_id: accessViewer.uid
         }
       }
     }
   })
+
+  const now = new Date()
+  const resourceIds = data.map((resource) => resource.id)
+  const linkIds = data.flatMap((resource) =>
+    resource.links.map((link) => link.id)
+  )
+  const actorKey = getResourceAccessViewerKey(accessViewer)
+  const actorAccessWhere = getResourceAccessViewerWhere(accessViewer)
+  const [activeGrants, revealedAccess] =
+    actorKey && actorAccessWhere
+      ? await Promise.all([
+          prisma.patch_resource_access_grant.findMany({
+            where: {
+              actor_key: actorKey,
+              resource_id: { in: resourceIds },
+              expires: { gt: now }
+            },
+            select: { resource_id: true, expires: true }
+          }),
+          prisma.patch_resource_access.findMany({
+            where: {
+              ...actorAccessWhere,
+              link_id: { in: linkIds },
+              expires: { gt: now }
+            },
+            select: { link_id: true }
+          })
+        ])
+      : [[], []]
+
+  const expiresByResourceId = new Map(
+    activeGrants.map((grant) => [grant.resource_id, grant.expires])
+  )
+  const revealedLinkIds = new Set(
+    revealedAccess.map((access) => access.link_id)
+  )
 
   const resources: PatchResource[] = data.map((resource) => ({
     id: resource.id,
@@ -58,14 +105,25 @@ export const getPatchResource = async (
     language: resource.language,
     note: resource.note,
     platform: resource.platform,
-    links: resource.links.map((link) => ({
-      id: link.id,
-      storage: link.storage,
-      size: link.size,
-      hash: link.hash,
-      sortOrder: link.sort_order,
-      download: link.download
-    })),
+    links: resource.links.map((link) => {
+      const obtainedExpires = expiresByResourceId.get(resource.id)
+
+      return {
+        id: link.id,
+        storage: link.storage,
+        size: link.size,
+        hash: link.hash,
+        sortOrder: link.sort_order,
+        download: link.download,
+        revealed: revealedLinkIds.has(link.id),
+        ...(obtainedExpires
+          ? {
+              obtained: true,
+              obtainedExpiresAt: obtainedExpires.toISOString()
+            }
+          : {})
+      }
+    }),
     download: resource.download,
     likeCount: resource._count.like_by,
     isLike: resource.like_by.length > 0,

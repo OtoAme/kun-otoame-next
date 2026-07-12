@@ -40,6 +40,9 @@ Use this skill for deployment and release work.
 - CSRF origin/referer checks depend on `NEXT_PUBLIC_KUN_PATCH_ADDRESS_DEV` and `NEXT_PUBLIC_KUN_PATCH_ADDRESS_PROD`.
 - Release packages rename `server.js` to `server.mjs`; keep PM2 and deploy scripts compatible with both.
 - Prisma schema changes need target-side client generation and a production data plan when destructive or large.
+- Production `pnpm deploy:pull` and `pnpm deploy:build` paths must use `pnpm prisma:deploy-safe`; reviewed preflight/sync SQL must already be applied to the target database.
+- Keep the production guard read-only for Prisma schema: accept only an empty diff or the exact, PostgreSQL-catalog-verified Prisma 7.8 `public.patch_released_idx` operator-class exception. Never broaden it to ignore arbitrary diff output; any other drift must abort before build or standalone replacement.
+- Never execute the false drift's proposed `DROP INDEX` / `CREATE INDEX` SQL; it recurs after the next introspection and index replacement can block writes. Development, first install, and disposable CI may continue to use `pnpm prisma:push`.
 - `pnpm deploy:pull` and `pnpm deploy:build` already run `git pull`; do not duplicate that step unless handling conflicts manually.
 - Do not use destructive git rollback commands unless explicitly requested.
 - Check workflow branches; release currently targets `main`, lint currently targets `master`.

@@ -89,6 +89,9 @@ export interface PatchResourceLink {
   hash: string
   sortOrder: number
   download: number
+  obtained?: boolean
+  obtainedExpiresAt?: string
+  revealed?: boolean
   code?: string
   password?: string
   content?: string
@@ -104,8 +107,34 @@ export interface PatchResourceAccessLink {
   hash: string
 }
 
+export type ResourceAccessQuotaWindow = 'daily' | 'weekly'
+
+export interface ResourceAccessQuota {
+  scope: 'visitor'
+  resourceKind: 'galgame'
+  remaining: Record<ResourceAccessQuotaWindow, number>
+  resetsAt: Record<ResourceAccessQuotaWindow, string>
+}
+
+export type PatchResourceAccessKind =
+  | 'resource_granted'
+  | 'link_revealed'
+  | 'reused'
+
 export interface PatchResourceAccessResponse {
   link: PatchResourceAccessLink
+  access: {
+    kind: PatchResourceAccessKind
+    actorType: 'visitor' | 'user'
+    cost: 0
+    obtainedExpiresAt: string
+  }
+  quota?: ResourceAccessQuota
+}
+
+export interface PatchResourceAccessRestoreResponse {
+  links: PatchResourceAccessLink[]
+  obtainedExpiresAt: string | null
 }
 
 export interface PatchResource {

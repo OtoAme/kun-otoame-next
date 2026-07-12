@@ -16,12 +16,18 @@ Use this skill for persistence, cache, and upload consistency work.
 ## Rules
 
 - Use `prisma/index.ts` for database access.
-- After schema changes run `pnpm prisma:push` or `pnpm prisma:generate`.
+- After local schema changes run `pnpm prisma:push` or `pnpm prisma:generate`; development, first install, and disposable CI may use `prisma:push`.
+- Production deploy paths use `pnpm prisma:deploy-safe`, and reviewed preflight/sync SQL must already be applied to the target database.
+- Keep the production guard read-only and the exception exact: accept only an empty diff or the PostgreSQL-catalog-verified Prisma 7.8 `public.patch_released_idx` operator-class false drift. Never broaden it to ignore arbitrary diff output; any other drift must abort before build or standalone replacement.
+- Never execute that false drift's proposed `DROP INDEX` / `CREATE INDEX` SQL because it recurs after introspection and index replacement can block production writes.
 - Use `lib/redis.ts`; helper keys are unprefixed because the helper adds `kun:touchgal`.
 - Direct `redis` / `runRedisCommand` usage needs a reason and explicit full key prefixes.
 - After patch/resource/tag/company writes, call the matching cache invalidation helper.
 - Patch resource-derived attributes and card/detail resource counts must use the shared published-resource visibility rule in `utils/patchResourceAttributes.ts`; pending, banned, or deleted resources must not affect `patch.type`, `patch.language`, `patch.platform`, or visible resource counts.
 - Patch-company relation writes must also invalidate the affected patch content/introduction cache; company cache invalidation alone leaves stale game detail pages.
+- Resource download grants live in `patch_resource_access_grant`, which contains only `actor_key`, `resource_id`, and `expires`. Keep one 24-hour grant per actor/resource; revealing another mirror, reusing a mirror, or restoring after refresh must not extend it.
+- `patch_resource_access` remains the mirror-level event table, and `access_kind` is the only new event-classification field: write `resource_grant` for a new resource grant and `link_reveal` for the first access to another mirror under that grant. Product quota counts only visitor game-resource `resource_grant` events. Restore is read-only; do not add a persisted `revealed` field or ID array.
+- Resource access grant/event writes do not invalidate public patch/resource caches. Personalized preview and sensitive access/restore responses stay `private, no-store`. Redis supplies only the short technical action rate limit, not daily/weekly product quota; clearing the visitor cookie creates a new visitor identity, while IP hash is restricted to the first no-cookie request's technical limiter.
 - Anonymous tag/company game-list APIs use short response caches; never cache personalized login/NSFW/blocked-tag results, and keep Redis list cache keys scoped by the full visibility where.
 - Home `home_data:*` and `/api/home` anonymous response caches must not store empty `galgames` payloads; this is a deploy/ISR empty-snapshot guard, not a generic rule for valid empty paginated lists.
 - Upload publishing must preserve role/quota checks, `consumeUpload`, S3 compensation, `finalizeUpload`, and cleanup behavior.

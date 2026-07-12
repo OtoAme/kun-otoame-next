@@ -3,7 +3,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { JSDOM } from 'jsdom'
 import { createRoot, type Root } from 'react-dom/client'
 import toast from 'react-hot-toast'
-import type { PatchResource, PatchResourceLink } from '~/types/api/patch'
+import type {
+  PatchResource,
+  PatchResourceAccessLink,
+  PatchResourceLink,
+  ResourceAccessQuota
+} from '~/types/api/patch'
 
 globalThis.React = React
 
@@ -138,11 +143,31 @@ const resource: PatchResource = {
   }
 }
 
+const lowQuota: ResourceAccessQuota = {
+  scope: 'visitor',
+  resourceKind: 'galgame',
+  remaining: { daily: 2, weekly: 17 },
+  resetsAt: {
+    daily: '2026-07-10T16:00:00.000Z',
+    weekly: '2026-07-12T16:00:00.000Z'
+  }
+}
+
 describe('ResourceDownloadCard access flow', () => {
   let root: Root | undefined
   let dom: JSDOM | undefined
 
-  const renderCard = async () => {
+  const renderCard = async ({
+    resource: resourceValue = resource,
+    link = previewLink,
+    restoredLink,
+    restoredObtainedExpiresAt
+  }: {
+    resource?: PatchResource
+    link?: PatchResourceLink
+    restoredLink?: PatchResourceAccessLink
+    restoredObtainedExpiresAt?: string
+  } = {}) => {
     dom = new JSDOM('<!doctype html><div id="root"></div>', {
       url: 'http://localhost'
     })
@@ -160,7 +185,12 @@ describe('ResourceDownloadCard access flow', () => {
     root = createRoot(container!)
     await act(async () => {
       root!.render(
-        <ResourceDownloadCard resource={resource} link={previewLink} />
+        <ResourceDownloadCard
+          resource={resourceValue}
+          link={link}
+          restoredLink={restoredLink}
+          restoredObtainedExpiresAt={restoredObtainedExpiresAt}
+        />
       )
     })
 
@@ -194,7 +224,14 @@ describe('ResourceDownloadCard access flow', () => {
         code: 'abcd',
         password: 'secret',
         hash: ''
-      }
+      },
+      access: {
+        kind: 'resource_granted',
+        actorType: 'visitor',
+        cost: 0,
+        obtainedExpiresAt: '2026-07-09T00:00:00.000Z'
+      },
+      quota: lowQuota
     })
 
     const { container } = await renderCard()
@@ -217,6 +254,71 @@ describe('ResourceDownloadCard access flow', () => {
     expect(container.textContent).toContain('abcd')
     expect(container.textContent).toContain('解压码')
     expect(container.textContent).toContain('secret')
+    expect(container.textContent).toContain(
+      '24 小时内可访问该资源条目的全部镜像；点过的镜像刷新后会自动恢复。'
+    )
+    expect(container.textContent).toContain('今日游客还可获取 2 个游戏资源条目')
+    expect(container.querySelector('[role="status"]')).not.toBeNull()
+  })
+
+  it('explains the 24-hour resource grant and automatic restore', async () => {
+    const obtainedLink: PatchResourceLink = {
+      ...previewLink,
+      obtained: true,
+      obtainedExpiresAt: '2026-07-09T00:00:00.000Z',
+      revealed: true
+    }
+    fetchMock.kunFetchPost.mockResolvedValueOnce({
+      link: {
+        id: 21,
+        storage: 'user',
+        size: '2 GB',
+        content: 'https://pan.example.com/share',
+        code: '',
+        password: '',
+        hash: ''
+      },
+      access: {
+        kind: 'reused',
+        actorType: 'visitor',
+        cost: 0,
+        obtainedExpiresAt: '2026-07-09T00:00:00.000Z'
+      },
+      quota: lowQuota
+    })
+
+    const { ResourceDownloadCard } = await import(
+      '~/components/patch/resource/DownloadCard'
+    )
+    const { container } = await renderCard()
+
+    await act(async () => {
+      root!.render(
+        <ResourceDownloadCard resource={resource} link={obtainedLink} />
+      )
+    })
+
+    expect(container.textContent).toContain('查看已获取链接')
+    expect(container.textContent).toContain(
+      '24 小时内可访问该资源条目的全部镜像；点过的镜像刷新后会自动恢复。'
+    )
+    expect(container.textContent).not.toContain('https://pan.example.com/share')
+
+    const button = container.querySelector('button')
+    expect(button).not.toBeNull()
+    await act(async () => {
+      button!.click()
+    })
+
+    expect(fetchMock.kunFetchPost).toHaveBeenCalledWith(
+      '/patch/resource/download/access',
+      { patchId: 7, resourceId: 11, linkId: 21 }
+    )
+    expect(container.textContent).toContain('https://pan.example.com/share')
+    expect(container.textContent).toContain(
+      '24 小时内可访问该资源条目的全部镜像；点过的镜像刷新后会自动恢复。'
+    )
+    expect(container.textContent).not.toContain('今日游客还可获取')
   })
 
   it('shows a user-visible error when access fails', async () => {
@@ -232,5 +334,202 @@ describe('ResourceDownloadCard access flow', () => {
 
     expect(toast.error).toHaveBeenCalledWith('该资源不可访问')
     expect(container.textContent).toContain('该资源不可访问')
+  })
+
+  it('reveals an unvisited mirror without showing product quota feedback', async () => {
+    const obtainedButUnrevealed: PatchResourceLink = {
+      ...previewLink,
+      obtained: true,
+      obtainedExpiresAt: '2026-07-11T00:00:00.000Z',
+      revealed: false
+    }
+    fetchMock.kunFetchPost.mockResolvedValueOnce({
+      link: {
+        id: 21,
+        storage: 'user',
+        size: '2 GB',
+        content: 'https://pan.example.com/another-mirror',
+        code: '',
+        password: '',
+        hash: ''
+      },
+      access: {
+        kind: 'link_revealed',
+        actorType: 'visitor',
+        cost: 0,
+        obtainedExpiresAt: '2026-07-11T00:00:00.000Z'
+      },
+      quota: lowQuota
+    })
+
+    const { container } = await renderCard({
+      link: obtainedButUnrevealed
+    })
+
+    expect(container.textContent).toContain('获取下载链接')
+    expect(container.textContent).not.toContain('查看已获取链接')
+    expect(container.textContent).toContain(
+      '24 小时内可访问该资源条目的全部镜像；点过的镜像刷新后会自动恢复。'
+    )
+
+    await act(async () => {
+      container.querySelector('button')!.click()
+    })
+
+    expect(container.textContent).toContain(
+      'https://pan.example.com/another-mirror'
+    )
+    expect(container.textContent).not.toContain('今日游客还可获取')
+  })
+
+  it('keeps a single-link retry action when a revealed mirror was not restored', async () => {
+    const revealedLink: PatchResourceLink = {
+      ...previewLink,
+      obtained: true,
+      obtainedExpiresAt: '2026-07-11T00:00:00.000Z',
+      revealed: true
+    }
+
+    const { container } = await renderCard({ link: revealedLink })
+
+    expect(container.textContent).toContain('查看已获取链接')
+    expect(container.textContent).not.toContain(
+      'https://pan.example.com/restored'
+    )
+  })
+
+  it('hydrates a matching restored mirror without another manual request', async () => {
+    const restoredLink: PatchResourceAccessLink = {
+      id: 21,
+      storage: 'user',
+      size: '2 GB',
+      content: 'https://pan.example.com/restored',
+      code: 'restore-code',
+      password: 'restore-password',
+      hash: ''
+    }
+
+    const { container } = await renderCard({
+      link: { ...previewLink, obtained: true, revealed: true },
+      restoredLink,
+      restoredObtainedExpiresAt: '2026-07-11T00:00:00.000Z'
+    })
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(container.textContent).toContain(restoredLink.content)
+    expect(container.textContent).toContain('restore-code')
+    expect(fetchMock.kunFetchPost).not.toHaveBeenCalled()
+  })
+
+  it('ignores a restored mirror with a different link ID', async () => {
+    const mismatchedLink: PatchResourceAccessLink = {
+      id: 22,
+      storage: 'user',
+      size: '3 GB',
+      content: 'https://pan.example.com/wrong-link',
+      code: 'wrong-code',
+      password: 'wrong-password',
+      hash: ''
+    }
+
+    const { container } = await renderCard({
+      link: { ...previewLink, obtained: true, revealed: true },
+      restoredLink: mismatchedLink,
+      restoredObtainedExpiresAt: '2026-07-11T00:00:00.000Z'
+    })
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(container.textContent).not.toContain(mismatchedLink.content)
+    expect(container.textContent).toContain('查看已获取链接')
+  })
+
+  it('clears restore-derived sensitive fields when a new restore omits the mirror', async () => {
+    const restoredLink: PatchResourceAccessLink = {
+      id: 21,
+      storage: 'user',
+      size: '2 GB',
+      content: 'https://pan.example.com/stale-restored-link',
+      code: 'stale-code',
+      password: 'stale-password',
+      hash: ''
+    }
+    const revealedLink = { ...previewLink, obtained: true, revealed: true }
+    const { container } = await renderCard({
+      link: revealedLink,
+      restoredLink,
+      restoredObtainedExpiresAt: '2026-07-11T00:00:00.000Z'
+    })
+    expect(container.textContent).toContain(restoredLink.content)
+
+    const { ResourceDownloadCard } = await import(
+      '~/components/patch/resource/DownloadCard'
+    )
+    await act(async () => {
+      root!.render(
+        <ResourceDownloadCard resource={resource} link={revealedLink} />
+      )
+    })
+
+    expect(container.textContent).not.toContain(restoredLink.content)
+    expect(container.textContent).not.toContain('stale-code')
+    expect(container.textContent).toContain('查看已获取链接')
+  })
+
+  it('keeps a manual access result after a restore prop is later removed', async () => {
+    const manualLink: PatchResourceAccessLink = {
+      id: 21,
+      storage: 'user',
+      size: '2 GB',
+      content: 'https://pan.example.com/manual-link',
+      code: 'manual-code',
+      password: 'manual-password',
+      hash: ''
+    }
+    const restoredLink: PatchResourceAccessLink = {
+      ...manualLink,
+      content: 'https://pan.example.com/restored-prop-link'
+    }
+    const revealedLink = { ...previewLink, obtained: true, revealed: true }
+    fetchMock.kunFetchPost.mockResolvedValueOnce({
+      link: manualLink,
+      access: {
+        kind: 'reused',
+        actorType: 'visitor',
+        cost: 0,
+        obtainedExpiresAt: '2026-07-11T00:00:00.000Z'
+      }
+    })
+    const { container } = await renderCard({ link: revealedLink })
+    await act(async () => {
+      container.querySelector('button')!.click()
+    })
+    expect(container.textContent).toContain(manualLink.content)
+
+    const { ResourceDownloadCard } = await import(
+      '~/components/patch/resource/DownloadCard'
+    )
+    await act(async () => {
+      root!.render(
+        <ResourceDownloadCard
+          resource={resource}
+          link={revealedLink}
+          restoredLink={restoredLink}
+          restoredObtainedExpiresAt="2026-07-11T00:00:00.000Z"
+        />
+      )
+    })
+    await act(async () => {
+      root!.render(
+        <ResourceDownloadCard resource={resource} link={revealedLink} />
+      )
+    })
+
+    expect(container.textContent).toContain(manualLink.content)
+    expect(container.textContent).toContain('manual-code')
+    expect(container.textContent).not.toContain(restoredLink.content)
   })
 })

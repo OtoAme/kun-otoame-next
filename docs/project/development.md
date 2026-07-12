@@ -74,24 +74,24 @@ REDIS_PASSWORD=''
 
 从 `.env.example` 复制后，最少需要确认：
 
-| 变量 | 本地开发说明 |
-| --- | --- |
-| `KUN_DATABASE_URL` | PostgreSQL 连接串。 |
-| `KUN_VISUAL_NOVEL_SITE_URL` | 站点规范 URL，本地可保留示例生产域名，涉及 sitemap/SEO 时再按环境调整。 |
-| `NEXT_PUBLIC_KUN_PATCH_ADDRESS_DEV` | 本地前端/API 地址，默认 `http://127.0.0.1:3000`。 |
-| `NEXT_PUBLIC_KUN_PATCH_ADDRESS_PROD` | 生产公开地址。 |
-| `REDIS_HOST`、`REDIS_PORT`、`REDIS_PASSWORD` | Redis 连接信息。 |
-| `JWT_ISS`、`JWT_AUD`、`JWT_SECRET` | 登录 token 配置。本地也建议改掉默认 secret。 |
-| `NODE_ENV` | 本地为 `development`。 |
-| `KUN_GALLERY_FFMPEG_PATH` | 可选。只在需要固定使用自备 FFmpeg 处理 Gallery 动态 AVIF 缩略图时填写绝对路径；默认会尝试项目内置 fallback。 |
-| `BANGUMI_ACCESS_TOKEN` | Bangumi 标签/开发商匹配需要；不使用相关功能时可保留占位值，但调用外部接口会失败。 |
-| `KUN_VISUAL_NOVEL_EMAIL_*` | 邮件发送相关；注册验证码/邮件通知需要真实配置。 |
-| `KUN_VISUAL_NOVEL_S3_*`、`NEXT_PUBLIC_KUN_VISUAL_NOVEL_S3_STORAGE_URL` | 上传资源和图片访问需要真实配置。 |
-| `KUN_VISUAL_NOVEL_IMAGE_BED_*` | Next image 远程域名和图片 URL 拼接依赖。 |
-| `KUN_CF_CACHE_*` | Cloudflare 缓存清理；本地通常不会用到。 |
-| `KUN_VISUAL_NOVEL_INDEX_NOW_KEY` | IndexNow key；生产需要在 `public` 放同名 txt。 |
-| `KUN_VISUAL_NOVEL_TEST_SITE_LABEL` | 测试站 noindex 标记；生产必须删除或注释。 |
-| `GITHUB_REPO`、`GITHUB_TOKEN` | 只影响 `deploy:pull`。 |
+| 变量                                                                   | 本地开发说明                                                                                                 |
+| ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `KUN_DATABASE_URL`                                                     | PostgreSQL 连接串。                                                                                          |
+| `KUN_VISUAL_NOVEL_SITE_URL`                                            | 站点规范 URL，本地可保留示例生产域名，涉及 sitemap/SEO 时再按环境调整。                                      |
+| `NEXT_PUBLIC_KUN_PATCH_ADDRESS_DEV`                                    | 本地前端/API 地址，默认 `http://127.0.0.1:3000`。                                                            |
+| `NEXT_PUBLIC_KUN_PATCH_ADDRESS_PROD`                                   | 生产公开地址。                                                                                               |
+| `REDIS_HOST`、`REDIS_PORT`、`REDIS_PASSWORD`                           | Redis 连接信息。                                                                                             |
+| `JWT_ISS`、`JWT_AUD`、`JWT_SECRET`                                     | 登录 token 配置。本地也建议改掉默认 secret。                                                                 |
+| `NODE_ENV`                                                             | 本地为 `development`。                                                                                       |
+| `KUN_GALLERY_FFMPEG_PATH`                                              | 可选。只在需要固定使用自备 FFmpeg 处理 Gallery 动态 AVIF 缩略图时填写绝对路径；默认会尝试项目内置 fallback。 |
+| `BANGUMI_ACCESS_TOKEN`                                                 | Bangumi 标签/开发商匹配需要；不使用相关功能时可保留占位值，但调用外部接口会失败。                            |
+| `KUN_VISUAL_NOVEL_EMAIL_*`                                             | 邮件发送相关；注册验证码/邮件通知需要真实配置。                                                              |
+| `KUN_VISUAL_NOVEL_S3_*`、`NEXT_PUBLIC_KUN_VISUAL_NOVEL_S3_STORAGE_URL` | 上传资源和图片访问需要真实配置。                                                                             |
+| `KUN_VISUAL_NOVEL_IMAGE_BED_*`                                         | Next image 远程域名和图片 URL 拼接依赖。                                                                     |
+| `KUN_CF_CACHE_*`                                                       | Cloudflare 缓存清理；本地通常不会用到。                                                                      |
+| `KUN_VISUAL_NOVEL_INDEX_NOW_KEY`                                       | IndexNow key；生产需要在 `public` 放同名 txt。                                                               |
+| `KUN_VISUAL_NOVEL_TEST_SITE_LABEL`                                     | 测试站 noindex 标记；生产必须删除或注释。                                                                    |
+| `GITHUB_REPO`、`GITHUB_TOKEN`                                          | 只影响 `deploy:pull`。                                                                                       |
 
 `validations/dotenv-check.ts` 只校验构建/运行强依赖。`REDIS_PASSWORD`、`KUN_GALLERY_FFMPEG_PATH`、`BANGUMI_ACCESS_TOKEN`、`GITHUB_REPO`、`GITHUB_TOKEN` 等变量由具体使用点读取；如果你启用相关功能，仍要在 `.env` 中补齐。
 
@@ -144,19 +144,20 @@ pnpm dev:webpack
 
 ## 常用脚本
 
-| 命令 | 用途 |
-| --- | --- |
-| `pnpm dev` | 使用 Turbopack 启动 Next dev server。 |
-| `pnpm dev:webpack` | 使用 webpack dev server，排查 Turbopack 差异时用。 |
-| `pnpm build` | 生产构建，触发 `postbuild`。 |
-| `pnpm typecheck` | TypeScript 检查。 |
-| `pnpm lint` | Next lint。注意当前依赖为 Next 15，若命令失效需迁移 lint 脚本。 |
-| `pnpm test` | 运行 Vitest 单元测试。 |
-| `pnpm prisma:push` | 跑资源链接迁移、同步 schema、重新生成 Prisma Client。 |
-| `pnpm prisma:generate` | 只生成 Prisma Client。 |
-| `pnpm build:sitemap` | 生成 sitemap。 |
-| `pnpm deploy:build` | 服务器本地构建部署。 |
-| `pnpm deploy:pull` | 拉取 GitHub latest release 产物部署。 |
+| 命令                      | 用途                                                            |
+| ------------------------- | --------------------------------------------------------------- |
+| `pnpm dev`                | 使用 Turbopack 启动 Next dev server。                           |
+| `pnpm dev:webpack`        | 使用 webpack dev server，排查 Turbopack 差异时用。              |
+| `pnpm build`              | 生产构建，触发 `postbuild`。                                    |
+| `pnpm typecheck`          | TypeScript 检查。                                               |
+| `pnpm lint`               | Next lint。注意当前依赖为 Next 15，若命令失效需迁移 lint 脚本。 |
+| `pnpm test`               | 运行 Vitest 单元测试。                                          |
+| `pnpm prisma:push`        | 跑资源链接迁移、同步 schema、重新生成 Prisma Client。           |
+| `pnpm prisma:deploy-safe` | 生产部署运行兼容迁移、只读 schema guard 和 Prisma Client 生成。 |
+| `pnpm prisma:generate`    | 只生成 Prisma Client。                                          |
+| `pnpm build:sitemap`      | 生成 sitemap。                                                  |
+| `pnpm deploy:build`       | 服务器本地构建部署。                                            |
+| `pnpm deploy:pull`        | 拉取 GitHub latest release 产物部署。                           |
 
 ## 开发工作流
 
@@ -165,7 +166,7 @@ pnpm dev:webpack
 3. 改 API 时先看 route handler 的鉴权、角色和 CSRF 是否符合现有模式。
 4. 改 DB 写入时检查事务边界、缓存失效和审计日志。
 5. 改上传/资源时检查 Redis upload lock、S3 补偿、finalize 和本地清理。
-6. 改 schema 后运行 `pnpm prisma:push` 或至少 `pnpm prisma:generate`，按风险选择是否需要生产 preflight SQL。
+6. 本地改 schema 后运行 `pnpm prisma:push` 或至少 `pnpm prisma:generate`；生产先 review 并执行 preflight/sync SQL，再由 `pnpm prisma:deploy-safe` 校验。
 7. 完成前运行最小相关测试，再运行 `pnpm typecheck`；涉及共享工具、缓存、schema、部署时加跑 `pnpm test`。
 8. Codex 创建的所有提交都必须使用约定式提交：`<type>(<scope>): <subject>`。常用类型包括 `feat`、`fix`、`docs`、`test`、`refactor`、`perf`、`build`、`ci`、`chore`、`revert`；如果用户给出的提交信息不是约定式提交，先转换成最接近的约定式格式，意图不明确时再询问。
 9. 每个代码提交后都要检查并同步对应的 `docs/project/*`、`docs/modules/*` 和 `.codex/skills/*/SKILL.md`。重大行为、API、数据、缓存、部署、测试或工作流变更必须同步文档和 skill。
@@ -253,7 +254,11 @@ pnpm typecheck
 pnpm test
 ```
 
-生产表结构变更要优先写 preflight/sync SQL 或 dry-run 脚本，参考 `migration/production-schema-preflight-2026-05-03.sql` 与 `migration/production-schema-sync-2026-05-03.sql`。
+`pnpm prisma:push` 保留给本地开发、首次安装和 disposable CI 初始化。生产表结构变更要优先写并 review preflight/sync SQL 或 dry-run 脚本，参考 `migration/production-schema-preflight-2026-05-03.sql` 与 `migration/production-schema-sync-2026-05-03.sql`；这些 SQL 必须在生产部署前执行完成，随后使用 `pnpm prisma:deploy-safe`。
+
+整个 `pnpm prisma:deploy-safe` 不是纯只读命令：它先运行既有的 `migration:resource-links`，该兼容迁移可能执行 schema/data 写入；随后运行只读 schema guard/diff；最后运行 `prisma generate`。它不运行 `prisma db push`，也不应用 Prisma 建议的 diff SQL。
+
+只读 schema guard 只接受空 diff，或经过 PostgreSQL catalog 验证的 Prisma 7.8 `public.patch_released_idx` operator-class 精确例外；任何其他 drift 都会在 build 或 standalone 替换前终止部署，不能扩大例外范围。不要执行该假漂移输出的 `DROP INDEX` / `CREATE INDEX` SQL：下一次 introspection 后它仍会出现，而且重建索引可能阻塞生产写入。
 
 ### 修改缓存行为
 
@@ -367,11 +372,11 @@ pnpm build
 
 ## 常见本地问题
 
-| 症状 | 处理 |
-| --- | --- |
-| 启动时报 `.env file not found` | 确认项目根目录存在 `.env`，文件名末尾没有空格。 |
-| `pnpm install` 后 Prisma Client 缺失 | 运行 `pnpm prisma:generate`。`postinstall` 正常会自动执行。 |
-| `pnpm prisma:push` 要 reset database | 如果不是空开发库，立刻取消并先备份/写迁移方案。 |
-| Redis 连接失败 | 确认 Redis 服务已启动，`REDIS_HOST`、`REDIS_PORT`、`REDIS_PASSWORD` 与本机一致。 |
-| 图片域名无法加载 | 确认 `KUN_VISUAL_NOVEL_IMAGE_BED_HOST` 与 `next.config.ts` 的 remote pattern 一致。 |
-| `pnpm lint` 不可用 | 当前脚本是 `next lint`；Next 15 项目可能需要迁移到 ESLint CLI。不要把 lint 通过当作发布唯一门槛。 |
+| 症状                                 | 处理                                                                                              |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------- |
+| 启动时报 `.env file not found`       | 确认项目根目录存在 `.env`，文件名末尾没有空格。                                                   |
+| `pnpm install` 后 Prisma Client 缺失 | 运行 `pnpm prisma:generate`。`postinstall` 正常会自动执行。                                       |
+| `pnpm prisma:push` 要 reset database | 如果不是空开发库，立刻取消并先备份/写迁移方案。                                                   |
+| Redis 连接失败                       | 确认 Redis 服务已启动，`REDIS_HOST`、`REDIS_PORT`、`REDIS_PASSWORD` 与本机一致。                  |
+| 图片域名无法加载                     | 确认 `KUN_VISUAL_NOVEL_IMAGE_BED_HOST` 与 `next.config.ts` 的 remote pattern 一致。               |
+| `pnpm lint` 不可用                   | 当前脚本是 `next lint`；Next 15 项目可能需要迁移到 ESLint CLI。不要把 lint 通过当作发布唯一门槛。 |

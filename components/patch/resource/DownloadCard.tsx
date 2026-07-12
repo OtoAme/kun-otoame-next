@@ -14,7 +14,8 @@ import type {
   PatchResource,
   PatchResourceAccessLink,
   PatchResourceAccessResponse,
-  PatchResourceLink
+  PatchResourceLink,
+  ResourceAccessQuota
 } from '~/types/api/patch'
 
 const storageIcons: { [key: string]: JSX.Element } = {
@@ -26,13 +27,31 @@ const storageIcons: { [key: string]: JSX.Element } = {
 interface Props {
   resource: PatchResource
   link: PatchResourceLink
+  restoredLink?: PatchResourceAccessLink
+  restoredObtainedExpiresAt?: string
 }
 
-export const ResourceDownloadCard = ({ resource, link }: Props) => {
-  const [accessedLink, setAccessedLink] =
+export const ResourceDownloadCard = ({
+  resource,
+  link,
+  restoredLink,
+  restoredObtainedExpiresAt
+}: Props) => {
+  const [manuallyAccessedLink, setManuallyAccessedLink] =
     useState<PatchResourceAccessLink | null>(null)
+  const [manualObtainedExpiresAt, setManualObtainedExpiresAt] = useState('')
+  const [quota, setQuota] = useState<ResourceAccessQuota | null>(null)
   const [accessing, setAccessing] = useState(false)
   const [errorMessage, setErrorMessage] = useState('')
+  const restoredAccessedLink =
+    restoredLink?.id === link.id ? restoredLink : null
+  const accessedLink = manuallyAccessedLink ?? restoredAccessedLink
+  const obtainedExpiresAt =
+    manualObtainedExpiresAt ||
+    (restoredAccessedLink ? (restoredObtainedExpiresAt ?? '') : '') ||
+    link.obtainedExpiresAt ||
+    ''
+  const hasActiveGrant = Boolean(link.obtained || obtainedExpiresAt)
 
   const handleClickDownload = async () => {
     await kunFetchPut<KunResponse<{}>>('/patch/resource/download', {
@@ -47,13 +66,14 @@ export const ResourceDownloadCard = ({ resource, link }: Props) => {
     setErrorMessage('')
 
     try {
-      const response = await kunFetchPost<
-        PatchResourceAccessResponse | string
-      >('/patch/resource/download/access', {
-        patchId: resource.patchId,
-        resourceId: resource.id,
-        linkId: link.id
-      })
+      const response = await kunFetchPost<PatchResourceAccessResponse | string>(
+        '/patch/resource/download/access',
+        {
+          patchId: resource.patchId,
+          resourceId: resource.id,
+          linkId: link.id
+        }
+      )
 
       if (typeof response === 'string') {
         setErrorMessage(response)
@@ -61,7 +81,13 @@ export const ResourceDownloadCard = ({ resource, link }: Props) => {
         return
       }
 
-      setAccessedLink(response.link)
+      setManuallyAccessedLink(response.link)
+      setManualObtainedExpiresAt(response.access.obtainedExpiresAt)
+      setQuota(
+        response.access.kind === 'resource_granted' && response.quota
+          ? response.quota
+          : null
+      )
     } catch {
       const message = '获取下载链接失败，请稍后重试'
       setErrorMessage(message)
@@ -82,6 +108,9 @@ export const ResourceDownloadCard = ({ resource, link }: Props) => {
         </Snippet>
       </div>
     ) : null
+
+  const accessButtonText =
+    link.revealed === true ? '查看已获取链接' : '获取下载链接'
 
   return (
     <div className="flex flex-col space-y-2">
@@ -155,7 +184,7 @@ export const ResourceDownloadCard = ({ resource, link }: Props) => {
             startContent={!accessing ? <LinkIcon className="size-4" /> : null}
             onPress={handleAccessLink}
           >
-            获取下载链接
+            {accessButtonText}
           </Button>
 
           {errorMessage && (
@@ -166,6 +195,18 @@ export const ResourceDownloadCard = ({ resource, link }: Props) => {
 
           {renderHash(link.hash)}
         </div>
+      )}
+
+      {hasActiveGrant && (
+        <p className="text-sm text-default-500">
+          24 小时内可访问该资源条目的全部镜像；点过的镜像刷新后会自动恢复。
+        </p>
+      )}
+
+      {quota && quota.remaining.daily <= 2 && (
+        <p className="text-sm text-default-500" role="status">
+          今日游客还可获取 {quota.remaining.daily} 个游戏资源条目
+        </p>
       )}
     </div>
   )

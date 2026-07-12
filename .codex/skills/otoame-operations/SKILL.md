@@ -18,6 +18,9 @@ Use this skill for operational code and release plumbing.
 - Runtime assets copied by `postbuild.ts` must also be packaged in `.github/workflows/release.yml`.
 - Release packaging also handles `.next/server`, `.next/BUILD_ID`, Prisma schema, and `server.js` to `server.mjs`.
 - `pnpm deploy:pull` and `pnpm deploy:build` already run `git pull`.
+- Production deploy paths use `pnpm prisma:deploy-safe`; reviewed preflight/sync SQL must already be applied. Development, first install, and disposable CI may continue to use `pnpm prisma:push`.
+- Keep the Prisma guard read-only and the exception exact: only an empty diff or the PostgreSQL-catalog-verified Prisma 7.8 `public.patch_released_idx` operator-class false drift is allowed. Never ignore arbitrary diff output; any other drift must abort before build or standalone replacement.
+- Never run the false drift's proposed `DROP INDEX` / `CREATE INDEX` SQL because it recurs after introspection and index replacement can block production writes.
 - Build skip flags never replace `pnpm typecheck`.
 - Check workflow branches before assuming CI covers `main` or PRs.
 - Multi-instance scheduled tasks should use task locks.
