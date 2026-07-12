@@ -175,7 +175,7 @@ pnpm deploy:pull
 - 从 GitHub latest release 下载 `release.tar.gz`。
 - 解压到 `.next_temp`。
 - 替换根目录 `prisma` schema。
-- 运行 `pnpm prisma:deploy-safe` 验证生产 schema，并在服务器架构上生成 Prisma Client。
+- 运行 `pnpm prisma:deploy-safe`：先执行可能写入 schema/data 的资源链接兼容迁移，再只读校验生产 schema，最后在服务器架构上生成 Prisma Client。
 - 把生成的 Prisma Client 注入 standalone node_modules。
 - 把目标服务器 `node_modules/ffmpeg-static` 注入 standalone node_modules，确保 animated AVIF gallery 缩略图使用目标架构的 bundled ffmpeg。
 - 如果目标服务器存在可选 `node_modules/.ffmpeg/ffmpeg`，同步注入 standalone `.ffmpeg/ffmpeg`。
@@ -326,7 +326,7 @@ workflow 改动还应检查：
 
 - 本地开发、`pnpm deploy:install` 首次安装和 disposable CI 初始化继续使用 `pnpm prisma:push`，它会实际同步 schema。
 - `pnpm deploy:pull` 和 `pnpm deploy:build` 生产部署使用 `pnpm prisma:deploy-safe`。执行部署前，review 通过的 preflight/sync SQL 必须已经在目标数据库运行完成。
-- `pnpm prisma:deploy-safe` 不执行 Prisma schema 写入，也不会应用 `migrate diff` 生成的 SQL。它只接受空 diff，或 Prisma 7.8 对 `public.patch_released_idx` 的精确 operator-class 假漂移，并且后者必须通过 PostgreSQL catalog 验证。
+- 整个 `pnpm prisma:deploy-safe` 不是纯只读命令：它先运行既有的 `migration:resource-links`，该兼容迁移可能执行 schema/data 写入；随后运行只读 schema guard/diff；最后运行 `prisma generate`。它不运行 `prisma db push`，也不会应用 `migrate diff` 生成的 SQL。只读 guard 只接受空 diff，或 Prisma 7.8 对 `public.patch_released_idx` 的精确 operator-class 假漂移，并且后者必须通过 PostgreSQL catalog 验证。
 - 任何其他 drift 都会在 build 或 standalone 替换前终止部署。不能扩大例外去忽略其他 Prisma diff 输出。
 - 不要执行假漂移提出的 `DROP INDEX "patch_released_idx"` / `CREATE INDEX "patch_released_idx" ... text_pattern_ops` SQL；下一次 introspection 后它仍会出现，而且 DROP/CREATE 索引可能阻塞生产写入。
 
@@ -366,7 +366,7 @@ Release artifact 路径：
 
 1. `git checkout` 到上一个可用 commit。
 2. `pnpm install`，如果 lockfile 有变化。
-3. 确认回滚版本兼容已同步的生产 schema，再运行 `pnpm prisma:deploy-safe`。
+3. 按风险运行 `pnpm prisma:push`。
 4. `pnpm build`。
 5. `pm2 delete kun-touchgal-next && pnpm start`。
 

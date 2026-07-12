@@ -153,7 +153,7 @@ pnpm dev:webpack
 | `pnpm lint`               | Next lint。注意当前依赖为 Next 15，若命令失效需迁移 lint 脚本。 |
 | `pnpm test`               | 运行 Vitest 单元测试。                                          |
 | `pnpm prisma:push`        | 跑资源链接迁移、同步 schema、重新生成 Prisma Client。           |
-| `pnpm prisma:deploy-safe` | 生产部署只读校验 schema，并重新生成 Prisma Client。             |
+| `pnpm prisma:deploy-safe` | 生产部署运行兼容迁移、只读 schema guard 和 Prisma Client 生成。 |
 | `pnpm prisma:generate`    | 只生成 Prisma Client。                                          |
 | `pnpm build:sitemap`      | 生成 sitemap。                                                  |
 | `pnpm deploy:build`       | 服务器本地构建部署。                                            |
@@ -256,7 +256,9 @@ pnpm test
 
 `pnpm prisma:push` 保留给本地开发、首次安装和 disposable CI 初始化。生产表结构变更要优先写并 review preflight/sync SQL 或 dry-run 脚本，参考 `migration/production-schema-preflight-2026-05-03.sql` 与 `migration/production-schema-sync-2026-05-03.sql`；这些 SQL 必须在生产部署前执行完成，随后使用 `pnpm prisma:deploy-safe`。
 
-生产 schema guard 不执行 Prisma schema 写入，也不应用 Prisma 建议的 diff SQL。它只接受空 diff，或经过 PostgreSQL catalog 验证的 Prisma 7.8 `public.patch_released_idx` operator-class 精确例外；任何其他 drift 都会在 build 或 standalone 替换前终止部署，不能扩大例外范围。不要执行该假漂移输出的 `DROP INDEX` / `CREATE INDEX` SQL：下一次 introspection 后它仍会出现，而且重建索引可能阻塞生产写入。
+整个 `pnpm prisma:deploy-safe` 不是纯只读命令：它先运行既有的 `migration:resource-links`，该兼容迁移可能执行 schema/data 写入；随后运行只读 schema guard/diff；最后运行 `prisma generate`。它不运行 `prisma db push`，也不应用 Prisma 建议的 diff SQL。
+
+只读 schema guard 只接受空 diff，或经过 PostgreSQL catalog 验证的 Prisma 7.8 `public.patch_released_idx` operator-class 精确例外；任何其他 drift 都会在 build 或 standalone 替换前终止部署，不能扩大例外范围。不要执行该假漂移输出的 `DROP INDEX` / `CREATE INDEX` SQL：下一次 introspection 后它仍会出现，而且重建索引可能阻塞生产写入。
 
 ### 修改缓存行为
 
