@@ -16,6 +16,7 @@
     "lint:fix": "next lint --fix",
     "typecheck": "tsc --noEmit",
     "prisma:push": "pnpm migration:resource-links && pnpm prisma db push && pnpm prisma generate",
+    "prisma:deploy-safe": "pnpm migration:resource-links && esno scripts/checkPrismaProductionSchema.ts && pnpm prisma generate",
     "prisma:generate": "pnpm prisma generate",
     "gallery:ffmpeg:install": "esno scripts/ensureFfmpegLinux.ts",
     "start": "pm2 start ecosystem.config.cjs",

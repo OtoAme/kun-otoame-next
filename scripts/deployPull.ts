@@ -166,30 +166,35 @@ const main = async () => {
       }
     }
 
-    if (fs.existsSync(tempPrismaDir)) {
+    const hasReleasePrismaSchema = fs.existsSync(tempPrismaDir)
+
+    if (hasReleasePrismaSchema) {
       console.log('Updating Prisma schema...')
-      if (fs.existsSync(rootPrismaDir))
+      if (fs.existsSync(rootPrismaDir)) {
         fs.rmSync(rootPrismaDir, { recursive: true, force: true })
+      }
       fs.renameSync(tempPrismaDir, rootPrismaDir)
+    }
 
-      console.log('Generating Prisma Client for current architecture...')
-      // This runs in the project root, using the root node_modules (which has prisma CLI)
-      // It generates the client into <root>/node_modules/@prisma/client and .prisma/client
-      execSync('pnpm prisma generate', { stdio: 'inherit' })
+    console.log('Verifying production database schema...')
+    execSync('pnpm prisma:deploy-safe', { stdio: 'inherit' })
 
+    if (hasReleasePrismaSchema) {
       console.log('Injecting generated Prisma Client into standalone build...')
-      // The standalone app uses its own bundled node_modules, so inject the freshly
-      // generated Prisma Client from the target server.
       copyPackage('.prisma')
       copyPackage('@prisma')
     }
 
-    console.log('Injecting target-architecture ffmpeg-static into standalone build...')
+    console.log(
+      'Injecting target-architecture ffmpeg-static into standalone build...'
+    )
     copyPackage('ffmpeg-static')
 
     const rootGalleryFfmpeg = path.join(rootNodeModules, '.ffmpeg', 'ffmpeg')
     if (fs.existsSync(rootGalleryFfmpeg)) {
-      console.log('Injecting optional gallery ffmpeg binary into standalone build...')
+      console.log(
+        'Injecting optional gallery ffmpeg binary into standalone build...'
+      )
       const standaloneGalleryFfmpeg = path.join(tempDir, '.ffmpeg', 'ffmpeg')
       fs.mkdirSync(path.dirname(standaloneGalleryFfmpeg), { recursive: true })
       fs.copyFileSync(rootGalleryFfmpeg, standaloneGalleryFfmpeg)
@@ -208,9 +213,6 @@ const main = async () => {
 
     fs.renameSync(tempDir, standaloneDir)
     fs.unlinkSync(tarPath)
-
-    console.log('Running database migrations...')
-    execSync('pnpm prisma:push', { stdio: 'inherit' })
 
     console.log('Generating Sitemap with production data...')
     try {
