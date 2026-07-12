@@ -7,6 +7,11 @@ import * as fs from 'fs'
 import * as path from 'path'
 import https from 'https'
 import { IncomingMessage } from 'http'
+import {
+  getReleaseApiPath,
+  selectReleaseAsset,
+  type GitHubRelease
+} from './deployReleaseSelection'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -61,7 +66,10 @@ const downloadFile = (
   })
 }
 
-const getLatestReleaseUrl = async (repo: string): Promise<string> => {
+const getRelease = async (
+  repo: string,
+  expectedTag?: string
+): Promise<{ downloadUrl: string; tag: string }> => {
   return new Promise((resolve, reject) => {
     const headers: Record<string, string> = { 'User-Agent': 'Node.js' }
     if (process.env.GITHUB_TOKEN) {
@@ -70,7 +78,7 @@ const getLatestReleaseUrl = async (repo: string): Promise<string> => {
 
     const options = {
       hostname: 'api.github.com',
-      path: `/repos/${repo}/releases/latest`,
+      path: getReleaseApiPath(repo, expectedTag),
       headers
     }
     https
@@ -83,29 +91,11 @@ const getLatestReleaseUrl = async (repo: string): Promise<string> => {
             return
           }
           try {
-            const release = JSON.parse(data)
-            const asset = release.assets.find(
-              (a: any) => a.name === 'release.tar.gz'
-            )
-            if (!asset)
-              reject(new Error('No release.tar.gz found in latest release'))
-
-            // If the asset url is different (e.g. for private repos it might be an api url),
-            // we might need to handle it.
-            // For private repos, browser_download_url is usually a redirect to S3/etc.
-            // But if we use the API to get the asset, we might need to use 'Accept: application/octet-stream'
-            // However, browser_download_url usually works with a token?
-            // Actually for private repos, browser_download_url requires authentication if accessed directly?
-            // Or maybe we should use the asset.url with 'Accept: application/octet-stream'.
-
-            // Let's stick to browser_download_url for now. If it's private, the redirect might need the token?
-            // Usually browser_download_url is a public link (S3 signed url) if you are authenticated to get the JSON?
-            // No, for private repos, browser_download_url redirects to a signed URL.
-            // But to get the redirect, you need the token if you hit the API endpoint?
-            // Wait, browser_download_url IS the link.
-            // If I curl browser_download_url with token, it redirects.
-
-            resolve(asset.browser_download_url)
+            const release = JSON.parse(data) as GitHubRelease
+            resolve({
+              downloadUrl: selectReleaseAsset(release, expectedTag),
+              tag: release.tag_name
+            })
           } catch (e) {
             reject(e)
           }
@@ -127,9 +117,16 @@ const main = async () => {
       process.exit(1)
     }
 
-    console.log('Fetching latest release URL...')
-    const url = await getLatestReleaseUrl(repo)
-    console.log(`Downloading from ${url}...`)
+    const expectedReleaseTag =
+      process.env.KUN_DEPLOY_RELEASE_TAG?.trim() || undefined
+    console.log(
+      expectedReleaseTag
+        ? `Fetching pinned release ${expectedReleaseTag}...`
+        : 'Fetching latest release...'
+    )
+    const release = await getRelease(repo, expectedReleaseTag)
+    console.log(`Resolved GitHub Release tag: ${release.tag}`)
+    console.log(`Downloading from ${release.downloadUrl}...`)
 
     const tempDir = path.resolve(__dirname, '..', '.next_temp')
     const tarPath = path.resolve(__dirname, '..', 'release.tar.gz')
@@ -142,7 +139,7 @@ const main = async () => {
     if (process.env.GITHUB_TOKEN) {
       headers['Authorization'] = `token ${process.env.GITHUB_TOKEN}`
     }
-    await downloadFile(url, tarPath, headers)
+    await downloadFile(release.downloadUrl, tarPath, headers)
 
     console.log('Extracting release...')
     execSync(`tar -xzf ${tarPath} -C ${tempDir}`, { stdio: 'inherit' })

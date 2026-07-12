@@ -53,6 +53,25 @@ describe('production Prisma deployment command', () => {
     expect(source).not.toContain("execSync('pnpm prisma:push'")
   })
 
+  it('resolves and validates a command-scoped release tag before replacement or PM2 start', async () => {
+    const source = await readProjectFile('scripts/deployPull.ts')
+    const tagPosition = source.indexOf('KUN_DEPLOY_RELEASE_TAG')
+    const selectionPosition = source.indexOf(
+      'selectReleaseAsset(release, expectedTag)'
+    )
+    const replacementPosition = source.indexOf(
+      "console.log('Applying atomic update...')"
+    )
+    const pm2Position = source.indexOf(
+      "console.log('Reloading application...')"
+    )
+
+    expect(tagPosition).toBeGreaterThan(-1)
+    expect(selectionPosition).toBeGreaterThan(-1)
+    expect(selectionPosition).toBeLessThan(replacementPosition)
+    expect(selectionPosition).toBeLessThan(pm2Position)
+  })
+
   it('uses the safe command for server builds but leaves disposable CI push unchanged', async () => {
     const [build, release] = await Promise.all([
       readProjectFile('scripts/deployBuild.ts'),

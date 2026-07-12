@@ -2,6 +2,8 @@
 -- This script is read-only: it reports the current steam_id column, constraints, indexes,
 -- and any duplicate Steam IDs that will be allowed after the sync script runs.
 
+\set ON_ERROR_STOP on
+
 SELECT
   'patch_table' AS check_type,
   CASE
@@ -44,11 +46,18 @@ SELECT
   'steam_id_index' AS check_type,
   idx.relname AS name,
   ix.indisunique AS is_unique,
+  ix.indisready,
+  ix.indisvalid,
+  ix.indislive,
+  access_method.amname AS access_method,
+  pg_get_expr(ix.indpred, ix.indrelid) AS predicate,
+  pg_get_expr(ix.indexprs, ix.indrelid) AS expression,
   pg_get_indexdef(ix.indexrelid) AS definition
 FROM pg_index ix
 JOIN pg_class tbl ON tbl.oid = ix.indrelid
 JOIN pg_namespace nsp ON nsp.oid = tbl.relnamespace
 JOIN pg_class idx ON idx.oid = ix.indexrelid
+JOIN pg_am access_method ON access_method.oid = idx.relam
 WHERE nsp.nspname = 'public'
   AND tbl.relname = 'patch'
   AND pg_get_indexdef(ix.indexrelid) ILIKE '%steam_id%'
