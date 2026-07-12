@@ -32,7 +32,7 @@ pnpm typecheck
 | `tests/unit/api/resource-access-rate-limit.test.ts`    | 每 actor 技术限频、首次游客 IP 边界、Redis fail-open 和脱敏错误日志。                            |
 | `tests/unit/api/resource-access.test.ts`               | Access route 的链接脱敏边界、归属/可见性、游客 cookie、授权结果、产品 429、技术限频和 no-store。 |
 | `tests/unit/api/resource-access-restore.test.ts`       | Restore 只读、只返回点过且仍有效的镜像，以及 429/503、no-store 和安全 outcome 日志。             |
-| `tests/unit/resource-download-card.test.tsx`           | 下载卡片的镜像级展示、24 小时说明、首次 grant 额度提示和组件内存敏感状态。                       |
+| `tests/unit/resource-download-card.test.tsx`           | 下载卡片的镜像级展示、不重复授权时长说明、首次 grant 额度提示和组件内存敏感状态。                |
 | `tests/unit/resource-download-restore.test.tsx`        | 按资源批量恢复、自动展开、未点镜像隐藏、请求竞态和失败后的单镜像重试入口。                       |
 | `tests/unit/resource-access-links-helper.test.ts`      | 资源编辑入口打开前按需水合完整链接，并保留排序和下载计数等预览字段。                             |
 | `tests/unit/resource-classification.test.ts`           | 资源类型/语言/平台分类。                                                                         |

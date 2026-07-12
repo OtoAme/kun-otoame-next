@@ -254,14 +254,12 @@ describe('ResourceDownloadCard access flow', () => {
     expect(container.textContent).toContain('abcd')
     expect(container.textContent).toContain('解压码')
     expect(container.textContent).toContain('secret')
-    expect(container.textContent).toContain(
-      '24 小时内可访问该资源条目的全部镜像；点过的镜像刷新后会自动恢复。'
-    )
+    expect(container.textContent).not.toContain('24 小时内无需重新获取')
     expect(container.textContent).toContain('今日游客还可获取 2 个游戏资源条目')
     expect(container.querySelector('[role="status"]')).not.toBeNull()
   })
 
-  it('explains the 24-hour resource grant and automatic restore', async () => {
+  it('keeps active grant actions without repeating the grant duration', async () => {
     const obtainedLink: PatchResourceLink = {
       ...previewLink,
       obtained: true,
@@ -299,9 +297,7 @@ describe('ResourceDownloadCard access flow', () => {
     })
 
     expect(container.textContent).toContain('查看已获取链接')
-    expect(container.textContent).toContain(
-      '24 小时内可访问该资源条目的全部镜像；点过的镜像刷新后会自动恢复。'
-    )
+    expect(container.textContent).not.toContain('24 小时内无需重新获取')
     expect(container.textContent).not.toContain('https://pan.example.com/share')
 
     const button = container.querySelector('button')
@@ -315,9 +311,7 @@ describe('ResourceDownloadCard access flow', () => {
       { patchId: 7, resourceId: 11, linkId: 21 }
     )
     expect(container.textContent).toContain('https://pan.example.com/share')
-    expect(container.textContent).toContain(
-      '24 小时内可访问该资源条目的全部镜像；点过的镜像刷新后会自动恢复。'
-    )
+    expect(container.textContent).not.toContain('24 小时内无需重新获取')
     expect(container.textContent).not.toContain('今日游客还可获取')
   })
 
@@ -368,9 +362,7 @@ describe('ResourceDownloadCard access flow', () => {
 
     expect(container.textContent).toContain('获取下载链接')
     expect(container.textContent).not.toContain('查看已获取链接')
-    expect(container.textContent).toContain(
-      '24 小时内可访问该资源条目的全部镜像；点过的镜像刷新后会自动恢复。'
-    )
+    expect(container.textContent).not.toContain('24 小时内无需重新获取')
 
     await act(async () => {
       container.querySelector('button')!.click()

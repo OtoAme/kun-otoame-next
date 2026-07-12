@@ -1570,7 +1570,7 @@ it('auto-expands and restores only previously revealed mirrors', async () => {
 
 再写五项父组件测试：没有 revealed link 时不自动展开、不发 restore 请求；相同 patch/resource/revealed IDs 的 effect 重跑只复用一次请求；同一资源条目的 revealed IDs 从 `[21]` 变成 `[21, 22]` 时必须发起新请求，而且旧 deferred promise 晚返回也不能覆盖新结果；restore 返回字符串或抛错时只显示一条资源级“已获取链接恢复失败，可点击单条链接重试”，不连续 toast，并保留每张卡片的手动获取按钮；组件切换到其他资源或卸载后，旧 restore promise 晚完成也不能写入状态。
 
-同步更新 `resource-download-card.test.tsx`：成功响应按 `access.kind` 而不是旧 `access.reused` 判断提示；`obtained: true, revealed: false` 仍显示“获取下载链接”；`revealed: true` 但 restore 失败或漏回当前 link ID 时显示“查看已获取链接”供单条手动重试；`restoredLink.id !== link.id` 时必须忽略；授权提示统一写“授权有效期内”或“24 小时”，不得保留 72 小时旧文案。
+同步更新 `resource-download-card.test.tsx`：成功响应按 `access.kind` 而不是旧 `access.reused` 判断提示；`obtained: true, revealed: false` 仍显示“获取下载链接”；`revealed: true` 但 restore 失败或漏回当前 link ID 时显示“查看已获取链接”供单条手动重试；`restoredLink.id !== link.id` 时必须忽略；卡片不得重复显示授权时长说明，并继续确保不出现 72 小时旧文案。
 
 - [ ] **Step 5: 实现父组件一次恢复与卡片注入**
 
@@ -1660,7 +1660,7 @@ useEffect(() => {
 
 资源级 `restoreError` 在卡片列表上方只渲染一次，不调用 toast。仅向 ID 命中的 `DownloadCard` 传 `restoredLink={restoredLinks.get(link.id)}` 和 `restoredObtainedExpiresAt={restoredExpiresAt}`；响应未返回的卡片不注入敏感字段，仍保留单条手动按钮。`DownloadCard` 新增 `restoredLink?: PatchResourceAccessLink` 与 `restoredObtainedExpiresAt?: string`，并且只在 `restoredLink?.id === link.id` 时通过 effect 同步 `accessedLink` 和 `obtainedExpiresAt`。
 
-Task 4 的 `obtained` 是资源条目级 active grant 状态，不是镜像展示状态；`DownloadCard` 不得只凭 `link.obtained` 改按钮文案。ID 匹配的 `accessedLink`（来自本次手动成功或 restore 注入）存在时直接显示链接；尚无敏感链接但 `link.revealed === true` 时显示“查看已获取链接”，供自动恢复失败后的单条手动重试；`link.revealed !== true` 时显示“获取下载链接”，即使资源级 `obtained === true`。`obtained` 只控制 grant/24 小时说明。用户手动点开新镜像仍走单链接 access API，成功后保持该链接可见；`link_revealed` / `reused` 响应不显示新的额度提示。
+Task 4 的 `obtained` 是资源条目级 active grant 状态，不是镜像展示状态；`DownloadCard` 不得只凭 `link.obtained` 改按钮文案。ID 匹配的 `accessedLink`（来自本次手动成功或 restore 注入）存在时直接显示链接；尚无敏感链接但 `link.revealed === true` 时显示“查看已获取链接”，供自动恢复失败后的单条手动重试；`link.revealed !== true` 时显示“获取下载链接”，即使资源级 `obtained === true`。`obtained` 只表示资源级授权状态，不能直接控制镜像按钮或敏感字段，也不再驱动逐卡片授权时长说明。用户手动点开新镜像仍走单链接 access API，成功后保持该链接可见；`link_revealed` / `reused` 响应不显示新的额度提示。
 
 - [ ] **Step 6: 运行 restore API 与组件测试**
 
@@ -1764,15 +1764,13 @@ it('does not call Redis while evaluating the product quota for a new visitor gra
   expect(redisMocks.eval).not.toHaveBeenCalled()
 })
 
-it('explains the 24-hour resource grant and automatic restore', async () => {
+it('does not repeat the grant duration on each mirror card', async () => {
   const { container } = await renderCard({
     resource,
     link: obtainedLink
   })
 
-  expect(container.textContent).toContain(
-    '24 小时内可访问该资源条目的全部镜像；点过的镜像刷新后会自动恢复。'
-  )
+  expect(container.textContent).not.toContain('24 小时内无需重新获取')
 })
 ~~~
 
@@ -1784,7 +1782,7 @@ it('explains the 24-hour resource grant and automatic restore', async () => {
 
 Run: pnpm test tests/unit/api/resource-access-rate-limit.test.ts tests/unit/api/resource-access-grant.test.ts tests/unit/api/resource-access.test.ts tests/unit/api/resource-access-restore.test.ts tests/unit/resource-download-card.test.tsx
 
-Expected: FAIL because rateLimit.ts 尚不存在、access/restore route 尚未调用技术限频，DownloadCard 仍缺少最终资源条目说明。Task 3 已完成时，grant 的“未调用 Redis”断言应已通过。
+Expected: FAIL because rateLimit.ts 尚不存在、access/restore route 尚未调用技术限频，DownloadCard 仍显示重复的授权时长说明。Task 3 已完成时，grant 的“未调用 Redis”断言应已通过。
 
 - [ ] **Step 3: 独立实现并接入技术限频**
 
@@ -1906,15 +1904,9 @@ access route 和 restore route 都在生成 actor 后、任何 visibility/DB/ser
 
 quota state 的类型固定为 ResourceAccessQuota | null，初始为 null。资源级 obtained 只表示该资源条目仍有 grant，不能直接决定某条镜像的按钮文案：accessedLink 或 restoredLink 存在时直接展示链接；link.revealed === true 但尚未恢复链接时显示“查看已获取链接”供手动重试；link.revealed !== true 的镜像即使 obtained === true 也必须显示“获取下载链接”。Phase 2 fixture 的 access.reused 布尔值全部改为 access.kind。
 
-只要当前卡片有资源级 obtained 状态（包括刚刚成功获取后写入的 obtainedExpiresAt，以及列表回显的 obtained），在 accessedLink 分支和未展开分支都显示：
+不要在每张 DownloadCard 下重复显示“24 小时内无需重新获取”的授权时长说明；24 小时用户说明集中保留在下载公告，镜像展示和刷新恢复规则由 frontend 文档维护。
 
-~~~tsx
-<p className="text-sm text-default-500">
-  24 小时内可访问该资源条目的全部镜像；点过的镜像刷新后会自动恢复。
-</p>
-~~~
-
-不要在 patch 资源、登录用户、link_revealed/reused/restore 响应或任何付费语境中显示产品额度文案。组件测试同时覆盖：游客新 resource_granted 成功后显示镜像说明和低额度提示；未点过但已授权的另一条镜像仍显示获取按钮，点击得到 link_revealed 后链接保持可见、quota 状态为 null 且不出现新额度提示；reused 同样不出现额度提示。
+不要在 patch 资源、登录用户、link_revealed/reused/restore 响应或任何付费语境中显示产品额度文案。组件测试同时覆盖：游客新 resource_granted 成功后保持链接可见、显示低额度提示且不重复显示授权时长说明；未点过但已授权的另一条镜像仍显示获取按钮，点击得到 link_revealed 后链接保持可见、quota 状态为 null 且不出现新额度提示；reused 同样不出现额度提示。
 
 - [ ] **Step 5: 运行前端和 Redis 单元测试**
 
@@ -1994,7 +1986,7 @@ resource_grant 与 link_reveal 由上面的 DB event 聚合；首条 resource_gr
 在 frontend 文档写明：资源授权 24 小时；所有镜像可访问，但只展示点过的镜像；刷新后按资源条目一次批量恢复，未点过镜像继续隐藏。
 在 quality 文档把资源下载测试覆盖更新为 policy、grant、rate-limit、access、restore、card 和 restore UI，不再把 72 小时 Phase 2 行为写成当前契约。
 在 testing 文档列出：24 小时不延长、resource_grant/link_reveal 分类、自动恢复无写入、日/周边界、技术限频、并发冲突、无敏感字段泄露和 migration backfill。
-在下载公告写明：游客每天 5 个、每周 20 个游戏资源条目；获取一个条目后 24 小时内可访问全部镜像，点过的镜像刷新后自动恢复；登录用户和补丁资源当前没有产品硬限制。
+在下载公告写明：游客每天 5 个、每周 20 个游戏资源条目；首次获取后资源条目授权有效 24 小时，同一授权期内多镜像不重复占用额度；登录用户和补丁资源当前没有产品硬限制。
 在总 FAQ 将“无需注册也可以免费无限制地下载文件”改为不与游客获取额度冲突的说明，并链接下载公告；不得暗示清 cookie 或换 IP 是重置规则的方法，可如实说明当前登录用户不受产品硬限额。
 
 - [ ] **Step 3: 运行 focused 验证**

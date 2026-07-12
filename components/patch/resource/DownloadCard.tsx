@@ -51,8 +51,6 @@ export const ResourceDownloadCard = ({
     (restoredAccessedLink ? (restoredObtainedExpiresAt ?? '') : '') ||
     link.obtainedExpiresAt ||
     ''
-  const hasActiveGrant = Boolean(link.obtained || obtainedExpiresAt)
-
   const handleClickDownload = async () => {
     await kunFetchPut<KunResponse<{}>>('/patch/resource/download', {
       patchId: resource.patchId,
@@ -195,12 +193,6 @@ export const ResourceDownloadCard = ({
 
           {renderHash(link.hash)}
         </div>
-      )}
-
-      {hasActiveGrant && (
-        <p className="text-sm text-default-500">
-          24 小时内可访问该资源条目的全部镜像；点过的镜像刷新后会自动恢复。
-        </p>
       )}
 
       {quota && quota.remaining.daily <= 2 && (

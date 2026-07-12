@@ -32,7 +32,7 @@
 - 资源授权从首次获取起固定 24 小时。授权期内可点开该资源条目的全部镜像，但按钮和敏感字段仍按镜像区分：点过的镜像使用“查看已获取链接”，未点过的镜像继续使用“获取下载链接”。`obtained` 表示资源授权有效，不能替代镜像级 `revealed`。
 - 刷新后，`ResourceDownload` 按资源条目收集所有 `revealed` 镜像 ID，只发起一次批量 restore 请求并自动展开该资源。restore 只水合点过且仍有效的镜像；未点过的镜像继续隐藏，刷新也不能创建 grant/event 或延长 24 小时授权。
 - 获取或恢复成功后，真实链接只保存在 `ResourceDownloadCard` 的组件内存状态中。不要把 access/restore 返回值写入 patch/resource store、持久化客户端状态、列表缓存或 URL 参数。
-- 游客日/周剩余额度只在新的游戏资源 `resource_granted` 响应后显示；`link_revealed`、`reused` 和 restore 都不能刷新或重复展示产品额度反馈。资源授权有效时统一显示“24 小时内可访问该资源条目的全部镜像；点过的镜像刷新后会自动恢复”。
+- 游客日/周剩余额度只在新的游戏资源 `resource_granted` 响应后显示；`link_revealed`、`reused` 和 restore 都不能刷新或重复展示产品额度反馈。`DownloadCard` 不再在每条镜像下重复显示授权时长说明；24 小时用户说明集中保留在下载公告，镜像展示与刷新恢复规则以本节前述约定为准。
 - 长链接、提取码、解压码和 hash 都要按可复制、可换行、移动端不撑破容器的方式渲染。对象存储资源的 hash 可在未获取真实链接前展示，用于文件完整性校验。
 - 资源操作菜单点击“编辑”时，`ResourceTabs` 先调用 `accessResourceLinksForEdit` 逐个获取完整链接，成功后再写入编辑弹窗状态；获取失败时 toast 并保持弹窗关闭，避免用脱敏 link 打开表单导致保存时丢失字段。
 
