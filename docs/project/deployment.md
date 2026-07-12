@@ -354,21 +354,24 @@ To apply this change we need to reset the database, do you want to continue?
 
 ## 回滚思路
 
+应用回滚和数据库回滚必须分开计划。生产回滚禁止使用 `db push` 类命令把 schema 推回旧状态，也不要假设目标旧版本包含当前的安全部署脚本。若目标版本需要回退 schema/data，先备份数据库并执行 review 通过的专用 preflight SQL，确认结果后再执行对应的 rollback/sync SQL；切换应用前还要使用目标版本的 schema 和依赖运行 `pnpm prisma generate`，生成匹配该版本的 Prisma Client。
+
 Release artifact 路径：
 
 1. 到 GitHub Releases 找到上一版 `release.tar.gz`。
 2. 临时修改 `deployPull` 下载目标或手动下载旧产物。
-3. 解压替换 `.next/standalone`。
-4. 确认 Prisma schema 是否向后兼容；如果 DB 已经做破坏性变更，先处理数据回滚。
-5. 重启 PM2。
+3. 解压到临时目录，确认目标版本 Prisma schema 的向后兼容性，并按上述专用 SQL 流程处理必要的数据库回滚。
+4. 安装目标版本依赖，运行 `pnpm prisma generate`，把生成的目标版本 Prisma Client 注入待切换的 standalone。
+5. 替换 `.next/standalone` 并重启 PM2。
 
 本地构建路径：
 
 1. `git checkout` 到上一个可用 commit。
 2. `pnpm install`，如果 lockfile 有变化。
-3. 按风险运行 `pnpm prisma:push`。
-4. `pnpm build`。
-5. `pm2 delete kun-touchgal-next && pnpm start`。
+3. 确认目标版本 Prisma schema 的向后兼容性，并按上述专用 SQL 流程处理必要的数据库回滚。
+4. 针对目标版本运行 `pnpm prisma generate`。
+5. `pnpm build`。
+6. `pm2 delete kun-touchgal-next && pnpm start`。
 
 禁止把 `git reset --hard` 当成默认回滚步骤，除非明确确认不会丢失服务器上的本地修改。
 
