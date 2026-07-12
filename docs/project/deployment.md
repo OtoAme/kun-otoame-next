@@ -322,6 +322,22 @@ workflow 改动还应检查：
 
 ## 数据库变更
 
+缺少 `public.patch_resource_access` 的生产环境必须先运行
+`migration/production-resource-access-bootstrap-preflight-2026-07-12.sql` 和对应
+bootstrap sync，再运行现有 resource-access grant preflight/sync。进入资源访问
+维护窗口前先完成加固后的 Steam ID preflight/sync/postflight；随后停止全部 PM2
+实例、dump、bootstrap、固定实际 max ID/cutover、运行两次 grant sync、postflight
+和 Prisma Guard。任一步中止都不得重启旧 Release。
+
+本次部署必须冻结并固定已审核的 Release tag：
+
+```bash
+KUN_DEPLOY_RELEASE_TAG='vYYYY.MM.DD.HHMM' pnpm deploy:pull
+```
+
+该变量为当前命令的临时环境变量，不写入长期 `.env`。tag 不匹配、Release 不存在
+或缺少 `release.tar.gz` 时，部署必须在替换 standalone 和启动 PM2 前失败。
+
 数据库命令按环境分工：
 
 - 本地开发、`pnpm deploy:install` 首次安装和 disposable CI 初始化继续使用 `pnpm prisma:push`，它会实际同步 schema。

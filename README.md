@@ -422,6 +422,19 @@ ffmpeg -hide_banner -encoders | grep -i libaom-av1
 
 ## 严重警告
 
+资源访问功能首次部署到缺少 `patch_resource_access` 的生产库时，先运行
+`migration/production-resource-access-bootstrap-preflight-2026-07-12.sql` 和对应
+sync，再用同一固定 snapshot 运行既有 grant preflight/sync 两次及 postflight。
+这组 SQL 必须手工 review、先 dump、停掉全部旧 PM2 实例后执行，不能用
+`prisma:push` 代替。高风险维护窗口用命令级变量固定已审核 Release：
+
+```bash
+KUN_DEPLOY_RELEASE_TAG='vYYYY.MM.DD.HHMM' pnpm deploy:pull
+```
+
+变量只作用于本次命令。迁移或 Guard 中止后不得重启旧 Release，也不得复用旧的
+max ID/cutover；重新 preflight 并完成迁移后只启动固定 tag 的新 Release。
+
 ![warning](./public/images/warning.png)
 
 如果你手工运行 `pnpm prisma:push`、`pnpm prisma db push` 或其它会写 schema 的命令时看到下面的提示消息

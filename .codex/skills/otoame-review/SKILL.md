@@ -26,6 +26,8 @@ Use this skill for project-specific code review.
 6. Docs/skills: source paths, workflow facts, triggers, module references, and post-commit sync remain consistent.
 7. Tests: regression coverage for behavior changes.
 
+Resource-access schema reviews must include `migration/production-resource-access-bootstrap-preflight-2026-07-12.sql`, its sync, grant interruption states, Steam invalid-index recovery, fixed snapshots, and command-scoped Release tag pinning.
+
 Docs/skill updates must be reviewed as a separate commit from application code, tests, migrations, or generated artifacts.
 
 ## Output Format

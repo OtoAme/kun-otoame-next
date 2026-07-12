@@ -4,6 +4,12 @@
 
 ## Prisma
 
+生产库缺少 `patch_resource_access` 时，必须先运行
+`migration/production-resource-access-bootstrap-preflight-2026-07-12.sql` 和对应 sync
+精确创建 Phase 2 基础表，再运行现有 grant migration；不得用生产
+`prisma:push` 代替。空表路径使用实际 `MAX(id)=0`，已有 Phase 2 或中断恢复路径
+使用停机后的实际非负 max ID 和带时区 cutover。
+
 入口：
 
 - `prisma.config.ts`

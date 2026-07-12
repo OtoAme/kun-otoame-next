@@ -44,6 +44,7 @@ Use this skill for deployment and release work.
 - Keep the production guard read-only for Prisma schema: accept only an empty diff or the exact, PostgreSQL-catalog-verified Prisma 7.8 `public.patch_released_idx` operator-class exception. Never broaden it to ignore arbitrary diff output; any other drift must abort before build or standalone replacement.
 - Never execute the false drift's proposed `DROP INDEX` / `CREATE INDEX` SQL; it recurs after the next introspection and index replacement can block writes. Development, first install, and disposable CI may continue to use `pnpm prisma:push`.
 - `pnpm deploy:pull` and `pnpm deploy:build` already run `git pull`; do not duplicate that step unless handling conflicts manually.
+- Missing `patch_resource_access` uses `migration/production-resource-access-bootstrap-preflight-2026-07-12.sql` before the grant pair; stop old PM2 instances through Guard completion and pin the reviewed artifact with command-scoped `KUN_DEPLOY_RELEASE_TAG`.
 - Do not use destructive git rollback commands unless explicitly requested.
 - Check workflow branches; release currently targets `main`, lint currently targets `master`.
 

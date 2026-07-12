@@ -41,6 +41,12 @@ Review 前先确认改动类型：
 
 ## Prisma 和数据
 
+- 缺少 `patch_resource_access` 的生产库是否先运行
+  `migration/production-resource-access-bootstrap-preflight-2026-07-12.sql` 与对应 sync，
+  再运行 grant pair；是否避免生产 `prisma:push`。
+- 是否覆盖空表和非空 Phase 2 snapshot、grant 每个中断点、PK/index 名冲突、
+  `lock_timeout` 完整回滚、Steam invalid index 修复及固定 Release tag。
+
 - 事务是否覆盖必须原子化的写入。
 - `createMany` 是否需要 `skipDuplicates`。
 - 计数器 increment/decrement 是否和关系增删一致。

@@ -173,6 +173,13 @@ release packaging 还会删除包内 `package.json` 的 `"type": "module"`，并
 
 ## 迁移策略
 
+资源访问缺表上线使用
+`migration/production-resource-access-bootstrap-preflight-2026-07-12.sql` 及对应 sync，
+然后复用现有 grant pair。Bootstrap 保持手工执行，不加入 deploy-safe。Steam ID
+sync 已支持清理并重建 invalid/not-ready/not-live 的目标索引，并在资源访问停机
+窗口前完成 postflight。维护窗口部署使用
+`KUN_DEPLOY_RELEASE_TAG='<已审核 tag>' pnpm deploy:pull` 固定目标产物。
+
 `migration/*` 包含生产辅助 SQL 和脚本，`migration/backup/*` 是历史脚本。
 
 生产变更要求：

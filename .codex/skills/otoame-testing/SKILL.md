@@ -22,6 +22,7 @@ Use this skill for project-specific testing work.
 ## Rules
 
 - For bugfixes, write a failing regression test before implementation.
+- Bootstrap migration tests must lock `migration/production-resource-access-bootstrap-preflight-2026-07-12.sql` contracts and use only disposable PostgreSQL 18 for real DDL, interruption, and lock-timeout verification.
 - Prefer pure function tests for `utils/*`, `constants/*`, and `validations/*`.
 - For API service tests, mock Prisma, Redis, cache helpers, and external APIs.
 - Use `vi.hoisted` for values referenced by `vi.mock` factories.

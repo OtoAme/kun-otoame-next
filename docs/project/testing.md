@@ -136,6 +136,11 @@ Redis 相关逻辑分两类：
 
 ## Prisma/事务测试约定
 
+资源访问 bootstrap 的静态契约测试读取
+`migration/production-resource-access-bootstrap-preflight-2026-07-12.sql` 和对应 sync；
+真实 DDL、锁超时回滚、非空 Phase 2 backfill、grant 中断恢复及 Steam invalid index
+恢复必须在独立 disposable PostgreSQL 18 验收，不能连接本地持久库或生产库。
+
 mock transaction 需要模拟真实 Prisma transaction callback：
 
 ```ts
