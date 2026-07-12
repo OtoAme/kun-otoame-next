@@ -19,9 +19,10 @@
 ### Prisma
 
 - `pnpm prisma:push`
+- `pnpm prisma:deploy-safe`
 - `pnpm prisma:generate`
 
-`prisma:push` 实际会先跑 `migration:resource-links`，再 `prisma db push` 和 `prisma generate`。
+`prisma:push` 实际会先跑 `migration:resource-links`，再 `prisma db push` 和 `prisma generate`；它保留给本地开发、`deploy:install` 首次安装和 disposable CI 初始化。生产 `deploy:pull` / `deploy:build` 使用 `prisma:deploy-safe`，只校验预先同步的 schema 并生成 Prisma Client，不执行 Prisma schema 写入。
 
 ### 部署
 
@@ -123,13 +124,12 @@ release packaging 还会删除包内 `package.json` 的 `"type": "module"`，并
 - 下载 `release.tar.gz`。
 - 解压到 `.next_temp`。
 - 用 release 内的 `prisma` 替换根目录 schema。
-- 在目标服务器重新 `pnpm prisma generate`。
+- 运行 `pnpm prisma:deploy-safe` 验证生产 schema，并在目标服务器生成 Prisma Client。
 - 注入 `.prisma` 和 `@prisma` 到 standalone node_modules。
 - 注入目标服务器 `node_modules/ffmpeg-static` 到 standalone node_modules，避免 release artifact 中 bundled ffmpeg 的平台架构和生产服务器不一致。
 - 如果目标服务器存在可选 `node_modules/.ffmpeg/ffmpeg`，同步注入 standalone `.ffmpeg/ffmpeg`。
 - 如果 `.env` 设置了 `KUN_GALLERY_FFMPEG_PATH`，运行时会优先使用该绝对路径；deploy artifact 不会复制这个外部路径，目标服务器必须自行保留该可执行文件。
 - 原子替换 `.next/standalone`。
-- 运行 `pnpm prisma:push`。
 - 生成 sitemap 并复制到 standalone public。
 - 删除旧 PM2 进程，再从新 standalone cwd 启动。
 
@@ -144,7 +144,7 @@ release packaging 还会删除包内 `package.json` 的 `"type": "module"`，并
 - 校验 `.env` 是否存在。
 - 加载并验证环境变量。
 - 如果存在 `KUN_VISUAL_NOVEL_TEST_SITE_LABEL`，输出测试站 noindex 警告。
-- 执行 `git pull && pnpm i && pnpm prisma:push && pnpm build && pm2 startOrReload ecosystem.config.cjs`。
+- 执行 `git pull && pnpm i && pnpm prisma:deploy-safe && pnpm build && pm2 startOrReload ecosystem.config.cjs`。
 - build 时注入 `KUN_DEPLOY_BUILD_SKIP_CHECKS=true`。
 
 这个路径会在服务器上完整构建，比 `deploy:pull` 消耗更多 CPU/内存，但不依赖 GitHub Release 产物。
@@ -176,9 +176,11 @@ release packaging 还会删除包内 `package.json` 的 `"type": "module"`，并
 生产变更要求：
 
 - 先备份。
-- 先 dry-run 或 preflight。
+- 在部署前先运行 review 通过的 preflight/sync SQL；大数据操作先 dry-run。
 - 不在生产 `prisma db push` reset database。
 - 大表数据修复要分批、可重入、可观测。
+
+`pnpm prisma:deploy-safe` 是生产部署命令。它不执行 Prisma schema 写入或应用 diff SQL，只接受空 diff，或经过 PostgreSQL catalog 验证的 Prisma 7.8 `public.patch_released_idx` operator-class 精确例外。任何其他 drift 都会在 build 或 standalone 替换前终止部署，不能把例外扩大到任意 diff 输出。不要执行该假漂移建议的 `DROP INDEX` / `CREATE INDEX` SQL：下一次 introspection 后它仍会出现，而且重建索引可能阻塞生产写入。本地开发、首次安装和 disposable CI 继续使用 `pnpm prisma:push`。
 
 私聊会话隐藏字段上线时，先执行 `migration/production-conversation-hidden-preflight-2026-07-01.sql` 查看 `user_conversation.user_a_hidden` / `user_b_hidden` 是否存在且为非空 boolean；确认后执行 `migration/production-conversation-hidden-sync-2026-07-01.sql`。该同步脚本只添加缺失列、补齐空值、设置默认值和非空约束，不删除数据。
 

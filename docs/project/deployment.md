@@ -175,12 +175,11 @@ pnpm deploy:pull
 - 从 GitHub latest release 下载 `release.tar.gz`。
 - 解压到 `.next_temp`。
 - 替换根目录 `prisma` schema。
-- 在服务器架构上重新 `pnpm prisma generate`。
+- 运行 `pnpm prisma:deploy-safe` 验证生产 schema，并在服务器架构上生成 Prisma Client。
 - 把生成的 Prisma Client 注入 standalone node_modules。
 - 把目标服务器 `node_modules/ffmpeg-static` 注入 standalone node_modules，确保 animated AVIF gallery 缩略图使用目标架构的 bundled ffmpeg。
 - 如果目标服务器存在可选 `node_modules/.ffmpeg/ffmpeg`，同步注入 standalone `.ffmpeg/ffmpeg`。
 - 原子替换 `.next/standalone`。
-- `pnpm prisma:push`。
 - 生成生产 sitemap 并复制进 standalone。
 - 删除旧 PM2 进程并从新 cwd 启动 3 实例。
 
@@ -203,7 +202,7 @@ pnpm deploy:build
 
 - 校验 `.env`。
 - 提醒测试站 noindex。
-- 运行 `git pull && pnpm i && pnpm prisma:push && pnpm build && pm2 startOrReload ecosystem.config.cjs`。
+- 运行 `git pull && pnpm i && pnpm prisma:deploy-safe && pnpm build && pm2 startOrReload ecosystem.config.cjs`。
 - build 时注入 `KUN_DEPLOY_BUILD_SKIP_CHECKS=true`。
 
 适用场景：
@@ -323,10 +322,18 @@ workflow 改动还应检查：
 
 ## 数据库变更
 
-当前部署脚本使用 `pnpm prisma:push`，不是 Prisma migrate deploy。生产 schema 变更应额外准备：
+数据库命令按环境分工：
+
+- 本地开发、`pnpm deploy:install` 首次安装和 disposable CI 初始化继续使用 `pnpm prisma:push`，它会实际同步 schema。
+- `pnpm deploy:pull` 和 `pnpm deploy:build` 生产部署使用 `pnpm prisma:deploy-safe`。执行部署前，review 通过的 preflight/sync SQL 必须已经在目标数据库运行完成。
+- `pnpm prisma:deploy-safe` 不执行 Prisma schema 写入，也不会应用 `migrate diff` 生成的 SQL。它只接受空 diff，或 Prisma 7.8 对 `public.patch_released_idx` 的精确 operator-class 假漂移，并且后者必须通过 PostgreSQL catalog 验证。
+- 任何其他 drift 都会在 build 或 standalone 替换前终止部署。不能扩大例外去忽略其他 Prisma diff 输出。
+- 不要执行假漂移提出的 `DROP INDEX "patch_released_idx"` / `CREATE INDEX "patch_released_idx" ... text_pattern_ops` SQL；下一次 introspection 后它仍会出现，而且 DROP/CREATE 索引可能阻塞生产写入。
+
+生产 schema 变更应准备：
 
 - preflight SQL：确认字段、索引、数据形态。
-- sync SQL 或 dry-run 脚本：大数据变更先 dry-run。
+- sync SQL 或 dry-run 脚本：同步真实 schema 变更，大数据变更先 dry-run。
 - 回滚或补偿说明。
 
 参考：
@@ -336,7 +343,7 @@ workflow 改动还应检查：
 - `migration/reclassify-resource-types.ts`
 - `scripts/rebuildPatchResourceAttributes.ts`
 
-严重警告：如果 `pnpm prisma:push` 或部署脚本出现类似下面的提示，必须取消：
+严重警告：如果手工在有数据的数据库运行 `pnpm prisma:push` 时出现类似下面的提示，必须取消：
 
 ```text
 We found changes that cannot be executed:
@@ -359,7 +366,7 @@ Release artifact 路径：
 
 1. `git checkout` 到上一个可用 commit。
 2. `pnpm install`，如果 lockfile 有变化。
-3. 按风险运行 `pnpm prisma:push`。
+3. 确认回滚版本兼容已同步的生产 schema，再运行 `pnpm prisma:deploy-safe`。
 4. `pnpm build`。
 5. `pm2 delete kun-touchgal-next && pnpm start`。
 

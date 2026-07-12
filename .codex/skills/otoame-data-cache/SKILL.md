@@ -16,7 +16,10 @@ Use this skill for persistence, cache, and upload consistency work.
 ## Rules
 
 - Use `prisma/index.ts` for database access.
-- After schema changes run `pnpm prisma:push` or `pnpm prisma:generate`.
+- After local schema changes run `pnpm prisma:push` or `pnpm prisma:generate`; development, first install, and disposable CI may use `prisma:push`.
+- Production deploy paths use `pnpm prisma:deploy-safe`, and reviewed preflight/sync SQL must already be applied to the target database.
+- Keep the production guard read-only and the exception exact: accept only an empty diff or the PostgreSQL-catalog-verified Prisma 7.8 `public.patch_released_idx` operator-class false drift. Never broaden it to ignore arbitrary diff output; any other drift must abort before build or standalone replacement.
+- Never execute that false drift's proposed `DROP INDEX` / `CREATE INDEX` SQL because it recurs after introspection and index replacement can block production writes.
 - Use `lib/redis.ts`; helper keys are unprefixed because the helper adds `kun:touchgal`.
 - Direct `redis` / `runRedisCommand` usage needs a reason and explicit full key prefixes.
 - After patch/resource/tag/company writes, call the matching cache invalidation helper.
