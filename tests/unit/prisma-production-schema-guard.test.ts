@@ -58,10 +58,16 @@ describe('isExpectedReleasedPatternIndex', () => {
   })
 
   it.each([
-    { operator_class: 'text_ops' },
+    { schema_name: 'private' },
+    { table_name: 'other_table' },
+    { index_name: 'other_idx' },
     { column_name: 'name' },
+    { access_method: 'hash' },
+    { operator_class: 'text_ops' },
     { key_attribute_count: 2 },
     { total_attribute_count: 2 },
+    { is_unique: true },
+    { is_primary: true },
     { is_valid: false },
     { is_ready: false },
     { is_live: false },
