@@ -255,7 +255,9 @@ describe('ResourceDownloadCard access flow', () => {
     expect(container.textContent).toContain('解压码')
     expect(container.textContent).toContain('secret')
     expect(container.textContent).not.toContain('24 小时内无需重新获取')
-    expect(container.textContent).toContain('今日游客还可获取 2 个游戏资源条目')
+    expect(container.textContent).toContain(
+      '您当前是游客，今日还可获取 2 个游戏资源条目'
+    )
     expect(container.querySelector('[role="status"]')).not.toBeNull()
   })
 
@@ -312,7 +314,7 @@ describe('ResourceDownloadCard access flow', () => {
     )
     expect(container.textContent).toContain('https://pan.example.com/share')
     expect(container.textContent).not.toContain('24 小时内无需重新获取')
-    expect(container.textContent).not.toContain('今日游客还可获取')
+    expect(container.textContent).not.toContain('您当前是游客，今日还可获取')
   })
 
   it('shows a user-visible error when access fails', async () => {
@@ -371,7 +373,7 @@ describe('ResourceDownloadCard access flow', () => {
     expect(container.textContent).toContain(
       'https://pan.example.com/another-mirror'
     )
-    expect(container.textContent).not.toContain('今日游客还可获取')
+    expect(container.textContent).not.toContain('您当前是游客，今日还可获取')
   })
 
   it('keeps a single-link retry action when a revealed mirror was not restored', async () => {

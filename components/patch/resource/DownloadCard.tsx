@@ -197,7 +197,7 @@ export const ResourceDownloadCard = ({
 
       {quota && quota.remaining.daily <= 2 && (
         <p className="text-sm text-default-500" role="status">
-          今日游客还可获取 {quota.remaining.daily} 个游戏资源条目
+          您当前是游客，今日还可获取 {quota.remaining.daily} 个游戏资源条目
         </p>
       )}
     </div>
