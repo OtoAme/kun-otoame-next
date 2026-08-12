@@ -148,6 +148,7 @@ pnpm dev:webpack
 | ------------------------- | --------------------------------------------------------------- |
 | `pnpm dev`                | 使用 Turbopack 启动 Next dev server。                           |
 | `pnpm dev:webpack`        | 使用 webpack dev server，排查 Turbopack 差异时用。              |
+| `pnpm dev:lan`            | 使用 Turbopack 监听 `0.0.0.0:3000`，供局域网设备调试。          |
 | `pnpm build`              | 生产构建，触发 `postbuild`。                                    |
 | `pnpm typecheck`          | TypeScript 检查。                                               |
 | `pnpm lint`               | Next lint。注意当前依赖为 Next 15，若命令失效需迁移 lint 脚本。 |

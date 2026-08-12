@@ -10,6 +10,7 @@
 
 - `pnpm dev`
 - `pnpm dev:webpack`
+- `pnpm dev:lan`
 - `pnpm build`
 - `pnpm build:sitemap`
 - `pnpm postbuild`

@@ -163,6 +163,12 @@ pnpm prisma:push
 pnpm dev
 ```
 
+如果需要使用同一局域网内的手机或其他设备访问本地开发服务，可以运行：
+
+```bash
+pnpm dev:lan
+```
+
 构建并启动服务
 
 ```bash
@@ -483,6 +489,7 @@ no
 | **生产 schema 校验**            | `pnpm prisma:deploy-safe`                              | reviewed preflight/sync SQL 完成后运行             |
 | **prisma studio**               | `npx prisma studio`                                    | 启动 prisma studio                                 |
 | **本地运行**                    | `pnpm dev`                                             | 开发模式                                           |
+| **局域网本地运行**              | `pnpm dev:lan`                                         | 监听 `0.0.0.0:3000`，供局域网设备调试              |
 | **生产构建**                    | `pnpm build`                                           | 生产编译                                           |
 | **生产启动**                    | `pnpm start`                                           | 项目后台运行                                       |
 | **生产停止**                    | `pnpm stop`                                            | 项目停止运行                                       |

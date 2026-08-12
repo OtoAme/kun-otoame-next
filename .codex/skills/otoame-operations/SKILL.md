@@ -23,6 +23,7 @@ Use this skill for operational code and release plumbing.
 - Never run the false drift's proposed `DROP INDEX` / `CREATE INDEX` SQL because it recurs after introspection and index replacement can block production writes.
 - Build skip flags never replace `pnpm typecheck`.
 - Check workflow branches before assuming CI covers `main` or PRs.
+- Keep `pnpm dev` bound to localhost for the default local workflow; document LAN-facing development variants such as `pnpm dev:lan` as opt-in debugging commands that listen on `0.0.0.0`.
 - Multi-instance scheduled tasks should use task locks.
 - Migration scripts need dry-run/preflight behavior for production data.
 - Resource-access missing-table rollout starts with `migration/production-resource-access-bootstrap-preflight-2026-07-12.sql`; keep bootstrap manual, finish hardened Steam sync first, and pin high-risk deploys with command-scoped `KUN_DEPLOY_RELEASE_TAG`.
