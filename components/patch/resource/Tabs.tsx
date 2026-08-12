@@ -31,6 +31,7 @@ import type { PatchResource } from '~/types/api/patch'
 import Link from 'next/link'
 import { kunMoyuMoe } from '~/config/moyu-moe'
 import toast from 'react-hot-toast'
+import { canManageResource } from './resourcePermissions'
 
 type ResourceSection = (typeof SUPPORTED_RESOURCE_SECTION)[number]
 
@@ -154,64 +155,68 @@ export const ResourceTabs = ({
     }
   }
 
-  const renderResourceCard = (resource: PatchResource) => (
-    <div
-      key={resource.id}
-      id={`resource-${resource.id}`}
-      className={
-        highlightedResourceId === resource.id
-          ? 'border p-3 rounded-2xl border-default-200 ring-2 ring-primary ring-offset-2 ring-offset-background'
-          : 'border p-3 rounded-2xl border-default-200'
-      }
-    >
-      <div className="space-y-2">
-        <div className="flex items-start justify-between">
-          <ResourceInfo resource={resource} />
-          <Dropdown>
-            <DropdownTrigger>
-              <Button
-                variant="light"
-                isIconOnly
-                isDisabled={editLoadingResourceId === resource.id}
-                isLoading={editLoadingResourceId === resource.id}
-              >
-                <MoreHorizontal aria-label="资源操作" className="size-4" />
-              </Button>
-            </DropdownTrigger>
-            <DropdownMenu
-              aria-label="Resource actions"
-              disabledKeys={
-                user.uid !== resource.userId && user.role < 3
-                  ? ['edit', 'delete']
-                  : []
-              }
-            >
-              <DropdownItem
-                key="edit"
-                startContent={<Edit className="size-4" />}
-                onPress={() => void handleOpenEditResource(resource)}
-              >
-                编辑
-              </DropdownItem>
-              <DropdownItem
-                key="delete"
-                className="text-danger"
-                color="danger"
-                startContent={<Trash2 className="size-4" />}
-                onPress={() => {
-                  setDeleteResourceId(resource.id)
-                  onOpenDelete()
-                }}
-              >
-                删除
-              </DropdownItem>
-            </DropdownMenu>
-          </Dropdown>
+  const renderResourceCard = (resource: PatchResource) => {
+    const canManage = canManageResource({
+      resourceUserId: resource.userId,
+      userId: user.uid,
+      userRole: user.role
+    })
+
+    return (
+      <div
+        key={resource.id}
+        id={`resource-${resource.id}`}
+        className={
+          highlightedResourceId === resource.id
+            ? 'border p-3 rounded-2xl border-default-200 ring-2 ring-primary ring-offset-2 ring-offset-background'
+            : 'border p-3 rounded-2xl border-default-200'
+        }
+      >
+        <div className="space-y-2">
+          <div className="flex items-start justify-between">
+            <ResourceInfo resource={resource} />
+            {canManage && (
+              <Dropdown>
+                <DropdownTrigger>
+                  <Button
+                    variant="light"
+                    isIconOnly
+                    isDisabled={editLoadingResourceId === resource.id}
+                    isLoading={editLoadingResourceId === resource.id}
+                    aria-label="资源操作"
+                  >
+                    <MoreHorizontal className="size-4" />
+                  </Button>
+                </DropdownTrigger>
+                <DropdownMenu aria-label="资源操作">
+                  <DropdownItem
+                    key="edit"
+                    startContent={<Edit className="size-4" />}
+                    onPress={() => void handleOpenEditResource(resource)}
+                  >
+                    编辑
+                  </DropdownItem>
+                  <DropdownItem
+                    key="delete"
+                    className="text-danger"
+                    color="danger"
+                    startContent={<Trash2 className="size-4" />}
+                    onPress={() => {
+                      setDeleteResourceId(resource.id)
+                      onOpenDelete()
+                    }}
+                  >
+                    删除
+                  </DropdownItem>
+                </DropdownMenu>
+              </Dropdown>
+            )}
+          </div>
+          <ResourceDownload resource={resource} />
         </div>
-        <ResourceDownload resource={resource} />
       </div>
-    </div>
-  )
+    )
+  }
 
   return (
     <Tabs
@@ -265,8 +270,6 @@ export const ResourceTabs = ({
                   </CardBody>
                 </Card>
               )}
-
-
 
               {community.length > 0 && (
                 <Card>
