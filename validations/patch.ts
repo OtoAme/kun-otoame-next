@@ -6,8 +6,11 @@ import {
   SUPPORTED_PLATFORM,
   SUPPORTED_RESOURCE_LINK,
   SUPPORTED_RESOURCE_SECTION,
+  hasChineseSupportType,
+  hasResourceTypeWithoutChineseSupport,
   getAllowedPlatformsBySectionAndTypes,
   isResourceTypeAllowedForSection,
+  requiresChineseSupportType,
   type ResourceSection
 } from '~/constants/resource'
 import {
@@ -179,6 +182,35 @@ const validateResourcePlatformsByType = (
   }
 }
 
+const validateChineseSupportByType = (
+  data: { section: string; type: string[] },
+  ctx: z.RefinementCtx
+) => {
+  if (
+    data.section === 'galgame' &&
+    hasResourceTypeWithoutChineseSupport(data.type) &&
+    hasChineseSupportType(data.type)
+  ) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['type'],
+      message: '资料集或工具不允许选择中文支持类型'
+    })
+  }
+
+  if (
+    data.section === 'galgame' &&
+    requiresChineseSupportType(data.type) &&
+    !hasChineseSupportType(data.type)
+  ) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['type'],
+      message: '请选择中文支持情况：官中、民汉、机翻、生肉'
+    })
+  }
+}
+
 const validateResourceCreateLinks = (
   data: { links: z.infer<typeof patchResourceLinkSchema>[] },
   ctx: z.RefinementCtx
@@ -213,6 +245,7 @@ export const patchResourceCreateSchema = patchResourceSchemaBase.superRefine(
   (data, ctx) => {
     validateResourceTypesBySection(data, ctx)
     validateResourcePlatformsByType(data, ctx)
+    validateChineseSupportByType(data, ctx)
     validateResourceCreateLinks(data, ctx)
   }
 )
@@ -221,6 +254,7 @@ export const patchResourceEditFormSchema = patchResourceSchemaBase.superRefine(
   (data, ctx) => {
     validateResourceTypesBySection(data, ctx)
     validateResourcePlatformsByType(data, ctx)
+    validateChineseSupportByType(data, ctx)
     validateResourceUpdateLinks(data, ctx)
   }
 )
@@ -234,6 +268,7 @@ export const patchResourceUpdateSchema = patchResourceSchemaBase
   .superRefine((data, ctx) => {
     validateResourceTypesBySection(data, ctx)
     validateResourcePlatformsByType(data, ctx)
+    validateChineseSupportByType(data, ctx)
     validateResourceUpdateLinks(data, ctx)
   })
 

@@ -49,6 +49,7 @@ export const EditResourceDialog = ({
     reset,
     setValue,
     watch,
+    handleSubmit,
     formState: { errors }
   } = useForm<EditResourceFormData>({
     resolver: zodResolver(patchResourceEditFormSchema),
@@ -67,11 +68,11 @@ export const EditResourceDialog = ({
     })
   }, [resource, reset, section])
 
-  const handleUpdateResource = async () => {
+  const handleUpdateResource = async (data: EditResourceFormData) => {
     setEditing(true)
     const res = await kunFetchPut<KunResponse<PatchResource>>(
       `/${type}/resource`,
-      { resourceId: resource.id, ...watch() }
+      { resourceId: resource.id, ...data }
     )
     kunErrorHandler(res, (value) => {
       onSuccess(value)
@@ -123,7 +124,9 @@ export const EditResourceDialog = ({
           color="primary"
           disabled={editing || uploadingResource}
           isLoading={editing || uploadingResource}
-          onPress={handleUpdateResource}
+          onPress={() => {
+            void handleSubmit(handleUpdateResource)()
+          }}
         >
           {editing
             ? '更新中...'

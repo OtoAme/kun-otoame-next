@@ -3,11 +3,14 @@ import {
   GALGAME_RESOURCE_TYPES,
   PATCH_RESOURCE_TYPES,
   SUPPORTED_PLATFORM,
+  hasChineseSupportType,
+  hasResourceTypeWithoutChineseSupport,
   getAllowedPlatformsBySectionAndTypes,
   getResourceTypeOptionsBySection,
   isResourceTypeAllowedForSection,
   normalizeLegacyResourceTypes,
-  normalizeTypesBySection
+  normalizeTypesBySection,
+  requiresChineseSupportType
 } from '~/constants/resource'
 import { patchResourceCreateSchema } from '~/validations/patch'
 
@@ -40,13 +43,175 @@ describe('resource classification', () => {
   })
 
   test('normalizes and filters by section', () => {
-    expect(normalizeTypesBySection('galgame', ['patch', 'pc'])).toEqual([
-      'pc'
-    ])
+    expect(normalizeTypesBySection('galgame', ['patch', 'pc'])).toEqual(['pc'])
     expect(normalizeTypesBySection('patch', ['pc', 'patch', 'tool'])).toEqual([
       'patch',
       'tool'
     ])
+  })
+
+  test('requires a Chinese support type for game resource types', () => {
+    expect(requiresChineseSupportType(['pc'])).toBe(true)
+    expect(requiresChineseSupportType(['tool'])).toBe(false)
+    expect(requiresChineseSupportType(['pc', 'material'])).toBe(false)
+    expect(hasChineseSupportType(['official-zh'])).toBe(true)
+    expect(hasChineseSupportType(['pc'])).toBe(false)
+    expect(hasResourceTypeWithoutChineseSupport(['material'])).toBe(true)
+    expect(hasResourceTypeWithoutChineseSupport(['tool'])).toBe(true)
+
+    const missingChineseSupport = patchResourceCreateSchema.safeParse({
+      patchId: 1,
+      section: 'galgame',
+      name: 'missing Chinese support',
+      links: [
+        {
+          storage: 'user',
+          hash: '',
+          content: 'https://example.com',
+          size: '1MB',
+          code: '',
+          password: ''
+        }
+      ],
+      note: '',
+      type: ['pc'],
+      language: ['ja'],
+      platform: ['windows']
+    })
+
+    expect(missingChineseSupport.success).toBe(false)
+    if (!missingChineseSupport.success) {
+      expect(missingChineseSupport.error.issues).toContainEqual(
+        expect.objectContaining({
+          path: ['type'],
+          message: '请选择中文支持情况：官中、民汉、机翻、生肉'
+        })
+      )
+    }
+
+    const validGameResource = patchResourceCreateSchema.safeParse({
+      patchId: 1,
+      section: 'galgame',
+      name: 'localized game',
+      links: [
+        {
+          storage: 'user',
+          hash: '',
+          content: 'https://example.com',
+          size: '1MB',
+          code: '',
+          password: ''
+        }
+      ],
+      note: '',
+      type: ['pc', 'official-zh'],
+      language: ['zh-Hans'],
+      platform: ['windows']
+    })
+
+    const toolResource = patchResourceCreateSchema.safeParse({
+      patchId: 1,
+      section: 'galgame',
+      name: 'tool resource',
+      links: [
+        {
+          storage: 'user',
+          hash: '',
+          content: 'https://example.com',
+          size: '1MB',
+          code: '',
+          password: ''
+        }
+      ],
+      note: '',
+      type: ['tool'],
+      language: ['other'],
+      platform: ['windows']
+    })
+
+    const materialResource = patchResourceCreateSchema.safeParse({
+      patchId: 1,
+      section: 'galgame',
+      name: 'material resource',
+      links: [
+        {
+          storage: 'user',
+          hash: '',
+          content: 'https://example.com',
+          size: '1MB',
+          code: '',
+          password: ''
+        }
+      ],
+      note: '',
+      type: ['material'],
+      language: ['other'],
+      platform: ['other']
+    })
+
+    expect(validGameResource.success).toBe(true)
+    expect(toolResource.success).toBe(true)
+    expect(materialResource.success).toBe(true)
+
+    const materialWithChineseSupport = patchResourceCreateSchema.safeParse({
+      patchId: 1,
+      section: 'galgame',
+      name: 'material with Chinese support',
+      links: [
+        {
+          storage: 'user',
+          hash: '',
+          content: 'https://example.com',
+          size: '1MB',
+          code: '',
+          password: ''
+        }
+      ],
+      note: '',
+      type: ['material', 'official-zh'],
+      language: ['zh-Hans'],
+      platform: ['other']
+    })
+
+    expect(materialWithChineseSupport.success).toBe(false)
+    if (!materialWithChineseSupport.success) {
+      expect(materialWithChineseSupport.error.issues).toContainEqual(
+        expect.objectContaining({
+          path: ['type'],
+          message: '资料集或工具不允许选择中文支持类型'
+        })
+      )
+    }
+
+    const toolWithChineseSupport = patchResourceCreateSchema.safeParse({
+      patchId: 1,
+      section: 'galgame',
+      name: 'tool with Chinese support',
+      links: [
+        {
+          storage: 'user',
+          hash: '',
+          content: 'https://example.com',
+          size: '1MB',
+          code: '',
+          password: ''
+        }
+      ],
+      note: '',
+      type: ['tool', 'machine'],
+      language: ['other'],
+      platform: ['windows']
+    })
+
+    expect(toolWithChineseSupport.success).toBe(false)
+    if (!toolWithChineseSupport.success) {
+      expect(toolWithChineseSupport.error.issues).toContainEqual(
+        expect.objectContaining({
+          path: ['type'],
+          message: '资料集或工具不允许选择中文支持类型'
+        })
+      )
+    }
   })
 
   test('schema rejects mismatched types for section', () => {
@@ -88,7 +253,7 @@ describe('resource classification', () => {
         }
       ],
       note: '',
-      type: ['emulator'],
+      type: ['emulator', 'official-zh'],
       language: ['zh-Hans'],
       platform: ['psv']
     })
@@ -101,13 +266,16 @@ describe('resource classification', () => {
       'other'
     ])
 
-    expect(
-      getAllowedPlatformsBySectionAndTypes('galgame', ['pc'])
-    ).toEqual(['windows', 'macos', 'linux', 'other'])
+    expect(getAllowedPlatformsBySectionAndTypes('galgame', ['pc'])).toEqual([
+      'windows',
+      'macos',
+      'linux',
+      'other'
+    ])
 
-    expect(
-      getAllowedPlatformsBySectionAndTypes('galgame', ['mobile'])
-    ).toEqual(['android', 'ios', 'ons', 'krkr', 'tyranor', 'other'])
+    expect(getAllowedPlatformsBySectionAndTypes('galgame', ['mobile'])).toEqual(
+      ['android', 'ios', 'ons', 'krkr', 'tyranor', 'other']
+    )
 
     expect(
       getAllowedPlatformsBySectionAndTypes('galgame', ['emulator'])
@@ -117,9 +285,9 @@ describe('resource classification', () => {
       getAllowedPlatformsBySectionAndTypes('galgame', ['material'])
     ).toEqual(['other'])
 
-    expect(
-      getAllowedPlatformsBySectionAndTypes('galgame', ['tool'])
-    ).toEqual(SUPPORTED_PLATFORM)
+    expect(getAllowedPlatformsBySectionAndTypes('galgame', ['tool'])).toEqual(
+      SUPPORTED_PLATFORM
+    )
 
     expect(
       getAllowedPlatformsBySectionAndTypes('galgame', ['pc', 'mobile'])
@@ -148,7 +316,7 @@ describe('resource classification', () => {
       code: '',
       password: '',
       note: '',
-      type: ['pc'],
+      type: ['pc', 'official-zh'],
       language: ['zh-Hans'],
       platform: ['android']
     })

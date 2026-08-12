@@ -7,13 +7,12 @@ export const resourceTypes = [
   {
     value: 'emulator',
     label: '主机游戏',
-    description:
-      '在主机平台游玩的游戏, 或由模拟器支持的主机平台资源'
+    description: '在主机平台游玩的游戏, 或由模拟器支持的主机平台资源'
   },
   {
     value: 'mobile',
     label: '手机游戏',
-    description: '可以在手机上运行的游戏，包含原先的安卓直装资源'
+    description: '可以在手机上运行的游戏，包含安卓直装和模拟器资源'
   },
   {
     value: 'row',
@@ -43,7 +42,7 @@ export const resourceTypes = [
   {
     value: 'tool',
     label: '工具',
-    description: '辅助游玩 OtomeGame 的工具, 例如 KRKR 模拟器, Magpie 等'
+    description: '辅助游玩游戏的工具, 例如 Kirikiroid2, Magpie 等'
   },
   {
     value: 'patch',
@@ -83,17 +82,62 @@ export const GALGAME_RESOURCE_TYPES = [
   'machine'
 ] as const
 
-export const PATCH_RESOURCE_TYPES = ['patch', 'other-patch', 'tool', 'strategy', 'save'] as const
+export const GAME_RESOURCE_TYPES = ['pc', 'emulator', 'mobile'] as const
 
-export const RESOURCE_TYPES_BY_SECTION: Record<ResourceSection, readonly string[]> =
-{
+export const CHINESE_SUPPORT_RESOURCE_TYPES = [
+  'official-zh',
+  'chinese',
+  'machine',
+  'row'
+] as const
+
+export const RESOURCE_TYPES_WITHOUT_CHINESE_SUPPORT = [
+  'material',
+  'tool'
+] as const
+
+export const hasResourceTypeWithoutChineseSupport = (types: string[]) => {
+  return types.some((type) =>
+    RESOURCE_TYPES_WITHOUT_CHINESE_SUPPORT.includes(
+      type as (typeof RESOURCE_TYPES_WITHOUT_CHINESE_SUPPORT)[number]
+    )
+  )
+}
+
+export const requiresChineseSupportType = (types: string[]) => {
+  return (
+    !hasResourceTypeWithoutChineseSupport(types) &&
+    types.some((type) =>
+      GAME_RESOURCE_TYPES.includes(type as (typeof GAME_RESOURCE_TYPES)[number])
+    )
+  )
+}
+
+export const hasChineseSupportType = (types: string[]) => {
+  return types.some((type) =>
+    CHINESE_SUPPORT_RESOURCE_TYPES.includes(
+      type as (typeof CHINESE_SUPPORT_RESOURCE_TYPES)[number]
+    )
+  )
+}
+
+export const PATCH_RESOURCE_TYPES = [
+  'patch',
+  'other-patch',
+  'tool',
+  'strategy',
+  'save'
+] as const
+
+export const RESOURCE_TYPES_BY_SECTION: Record<
+  ResourceSection,
+  readonly string[]
+> = {
   galgame: GALGAME_RESOURCE_TYPES,
   patch: PATCH_RESOURCE_TYPES
 }
 
-export const getResourceTypeOptionsBySection = (
-  section: ResourceSection
-) => {
+export const getResourceTypeOptionsBySection = (section: ResourceSection) => {
   const allowed = new Set(RESOURCE_TYPES_BY_SECTION[section])
   return resourceTypes.filter((item) => allowed.has(item.value))
 }
@@ -114,7 +158,9 @@ export const normalizeTypesBySection = (
   types: string[]
 ): string[] => {
   const normalized = normalizeLegacyResourceTypes(types)
-  return normalized.filter((type) => isResourceTypeAllowedForSection(section, type))
+  return normalized.filter((type) =>
+    isResourceTypeAllowedForSection(section, type)
+  )
 }
 export const SUPPORTED_TYPE_MAP: Record<string, string> = {
   all: '全部类型',

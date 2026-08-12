@@ -18,6 +18,7 @@ Use this skill for API and business-service work.
 - Keep `route.ts` thin: parse, auth, role, call service, return JSON.
 - Put Prisma transactions, cache invalidation, messages, external calls, and compensation in service/helper files.
 - Define request schemas in `validations/*`.
+- Resource create/edit/update schemas must require `official-zh`, `chinese`, `machine`, or `row` when `section = 'galgame'` includes `pc`, `emulator`, or `mobile`, unless `material` or `tool` is also selected; use the shared helpers in `constants/resource.ts` and return the user-visible message `请选择中文支持情况：官中、民汉、机翻、生肉`. A `galgame` resource containing `material` or `tool` must reject any Chinese support type with `资料集或工具不允许选择中文支持类型`.
 - State-changing APIs must satisfy CSRF header and origin/referer host checks.
 - For upload APIs, verify CSRF in the handler because middleware excludes `/api/upload/*`.
 - Never rely on frontend visibility for permissions.

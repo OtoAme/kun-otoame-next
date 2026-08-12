@@ -55,7 +55,8 @@ export const PublishResource = ({
     reset,
     setValue,
     formState: { errors },
-    watch
+    watch,
+    handleSubmit
   } = useForm<ResourceFormData>({
     resolver: zodResolver(patchResourceCreateSchema),
     defaultValues: {
@@ -70,7 +71,7 @@ export const PublishResource = ({
     }
   })
 
-  const handleRewriteResource = async () => {
+  const handleRewriteResource = async (data: ResourceFormData) => {
     if (creatingRef.current || uploadingResource) {
       return
     }
@@ -80,7 +81,7 @@ export const PublishResource = ({
     try {
       const res = await kunFetchPost<KunResponse<PatchResource>>(
         '/patch/resource',
-        watch()
+        data
       )
       kunErrorHandler(res, (value) => {
         reset()
@@ -162,7 +163,9 @@ export const PublishResource = ({
             disabled={creating || uploadingResource}
             isLoading={creating}
             endContent={<Upload className="size-4" />}
-            onPress={handleRewriteResource}
+            onPress={() => {
+              void handleSubmit(handleRewriteResource)()
+            }}
           >
             提交资源
           </Button>

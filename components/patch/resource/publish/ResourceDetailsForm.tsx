@@ -1,11 +1,17 @@
 'use client'
 
+import { useEffect } from 'react'
 import { Controller, useWatch } from 'react-hook-form'
 import { Input, Textarea } from '@heroui/input'
-import { Select, SelectItem } from '@heroui/select'
+import { Select, SelectItem, SelectSection } from '@heroui/select'
 import {
+  CHINESE_SUPPORT_RESOURCE_TYPES,
+  GAME_RESOURCE_TYPES,
   getResourceTypeOptionsBySection,
   getAllowedPlatformsBySectionAndTypes,
+  hasChineseSupportType,
+  hasResourceTypeWithoutChineseSupport,
+  requiresChineseSupportType,
   SUPPORTED_LANGUAGE,
   SUPPORTED_LANGUAGE_MAP,
   SUPPORTED_PLATFORM_MAP,
@@ -16,10 +22,23 @@ import { ControlType, ErrorType } from '../share'
 
 interface ResourceDetailsFormProps {
   control: ControlType
-  setValue: (name: 'platform', value: string[]) => void
+  setValue: (name: 'type' | 'platform', value: string[]) => void
   errors: ErrorType
   section: ResourceSection
 }
+
+const isChineseSupportType = (
+  type: string
+): type is (typeof CHINESE_SUPPORT_RESOURCE_TYPES)[number] =>
+  CHINESE_SUPPORT_RESOURCE_TYPES.includes(
+    type as (typeof CHINESE_SUPPORT_RESOURCE_TYPES)[number]
+  )
+
+const RESOURCE_TYPE_LISTBOX_MAX_HEIGHT = {
+  galgame: 360,
+  patch: 300,
+  chineseSupport: 256
+} as const
 
 export const ResourceDetailsForm = ({
   control,
@@ -29,10 +48,99 @@ export const ResourceDetailsForm = ({
 }: ResourceDetailsFormProps) => {
   const selectedTypes = useWatch({ control, name: 'type' }) || []
   const selectedPlatforms = useWatch({ control, name: 'platform' }) || []
+
+  useEffect(() => {
+    if (
+      section !== 'galgame' ||
+      !hasResourceTypeWithoutChineseSupport(selectedTypes)
+    ) {
+      return
+    }
+
+    const normalizedTypes = selectedTypes.filter(
+      (type) => !isChineseSupportType(type)
+    )
+    if (normalizedTypes.length !== selectedTypes.length) {
+      const nextAllowedPlatforms = getAllowedPlatformsBySectionAndTypes(
+        section,
+        normalizedTypes
+      )
+      const filteredPlatforms = selectedPlatforms.filter((platform) =>
+        nextAllowedPlatforms.includes(platform)
+      )
+      setValue('type', normalizedTypes)
+      if (filteredPlatforms.length !== selectedPlatforms.length) {
+        setValue('platform', filteredPlatforms)
+      }
+    }
+  }, [section, selectedPlatforms, selectedTypes, setValue])
+
   const resourceTypes = getResourceTypeOptionsBySection(section)
   const allowedPlatforms = getAllowedPlatformsBySectionAndTypes(
     section,
     selectedTypes
+  )
+  const getResourceTypeOptions = (typeValues: readonly string[]) =>
+    typeValues.flatMap((typeValue) => {
+      const option = resourceTypes.find((type) => type.value === typeValue)
+      return option ? [option] : []
+    })
+
+  const resourceTypeGroups = [
+    {
+      key: 'game-types',
+      title: '游戏类型',
+      types: GAME_RESOURCE_TYPES
+    },
+    {
+      key: 'other-types',
+      title: '其他类型',
+      types: resourceTypes
+        .map((type) => type.value)
+        .filter(
+          (type) =>
+            !GAME_RESOURCE_TYPES.includes(
+              type as (typeof GAME_RESOURCE_TYPES)[number]
+            ) && !isChineseSupportType(type)
+        )
+    }
+  ]
+  const resourceTypeGroupOptions = resourceTypeGroups
+    .map((group) => ({
+      ...group,
+      options: getResourceTypeOptions(group.types)
+    }))
+    .filter((group) => group.options.length > 0)
+  const chineseSupportOptions = getResourceTypeOptions(
+    CHINESE_SUPPORT_RESOURCE_TYPES
+  )
+
+  const updateResourceTypes = (
+    nextTypes: string[],
+    onChange: (value: string[]) => void
+  ) => {
+    const normalizedTypes = Array.from(new Set(nextTypes))
+    onChange(normalizedTypes)
+
+    const nextAllowedPlatforms = getAllowedPlatformsBySectionAndTypes(
+      section,
+      normalizedTypes
+    )
+    const filteredPlatforms = selectedPlatforms.filter((platform) =>
+      nextAllowedPlatforms.includes(platform)
+    )
+    setValue('platform', filteredPlatforms)
+  }
+
+  const renderResourceType = (type: (typeof resourceTypes)[number]) => (
+    <SelectItem key={type.value} textValue={type.label}>
+      <div className="flex flex-col">
+        <span className="text">{type.label}</span>
+        <span className="select-none text-small text-default-500">
+          {type.description}
+        </span>
+      </div>
+    </SelectItem>
   )
 
   return (
@@ -42,40 +150,125 @@ export const ResourceDetailsForm = ({
         <Controller
           name="type"
           control={control}
-          render={({ field }) => (
-            <Select
-              isRequired
-              label="类型"
-              classNames={resourceFieldClassNames}
-              placeholder="请选择资源的类型"
-              selectionMode="multiple"
-              selectedKeys={field.value}
-              onSelectionChange={(key) => {
-                const nextTypes = [...key] as string[]
-                field.onChange(nextTypes)
+          render={({ field }) => {
+            const selectedTypes = field.value || []
+            const selectedGameAndOtherTypes = selectedTypes.filter(
+              (type) => !isChineseSupportType(type)
+            )
+            const selectedChineseSupportTypes =
+              selectedTypes.filter(isChineseSupportType)
+            const chineseSupportDisabled =
+              section === 'galgame' &&
+              hasResourceTypeWithoutChineseSupport(selectedTypes)
+            const visibleChineseSupportTypes = chineseSupportDisabled
+              ? []
+              : selectedChineseSupportTypes
+            const requiresChineseSupport =
+              section === 'galgame' &&
+              !chineseSupportDisabled &&
+              requiresChineseSupportType(selectedTypes)
+            const hasChineseSupportError =
+              requiresChineseSupport &&
+              !!errors.type &&
+              !hasChineseSupportType(selectedTypes)
 
-                const nextAllowedPlatforms =
-                  getAllowedPlatformsBySectionAndTypes(section, nextTypes)
-                const filteredPlatforms = selectedPlatforms.filter((platform) =>
-                  nextAllowedPlatforms.includes(platform)
-                )
-                setValue('platform', filteredPlatforms)
-              }}
-              isInvalid={!!errors.type}
-              errorMessage={errors.type?.message}
-            >
-              {resourceTypes.map((type) => (
-                <SelectItem key={type.value} textValue={type.label}>
-                  <div className="flex flex-col">
-                    <span className="text">{type.label}</span>
-                    <span className="select-none text-small text-default-500">
-                      {type.description}
-                    </span>
+            return (
+              <>
+                <Select
+                  isRequired
+                  label="类型"
+                  classNames={resourceFieldClassNames}
+                  placeholder="请选择资源的类型"
+                  selectionMode="multiple"
+                  maxListboxHeight={
+                    section === 'galgame'
+                      ? RESOURCE_TYPE_LISTBOX_MAX_HEIGHT.galgame
+                      : RESOURCE_TYPE_LISTBOX_MAX_HEIGHT.patch
+                  }
+                  popoverProps={{
+                    placement: 'top',
+                    shouldFlip: false
+                  }}
+                  showScrollIndicators={false}
+                  selectedKeys={selectedGameAndOtherTypes}
+                  onSelectionChange={(key) => {
+                    const nextGameAndOtherTypes = [...key] as string[]
+                    updateResourceTypes(
+                      [
+                        ...nextGameAndOtherTypes,
+                        ...(hasResourceTypeWithoutChineseSupport(
+                          nextGameAndOtherTypes
+                        )
+                          ? []
+                          : selectedChineseSupportTypes)
+                      ],
+                      field.onChange
+                    )
+                  }}
+                  isInvalid={!!errors.type && !hasChineseSupportError}
+                  errorMessage={
+                    !hasChineseSupportError ? errors.type?.message : undefined
+                  }
+                >
+                  {section === 'galgame'
+                    ? resourceTypeGroupOptions.map((group) => {
+                      return (
+                        <SelectSection key={group.key} title={group.title}>
+                          {group.options.map(renderResourceType)}
+                        </SelectSection>
+                      )
+                    })
+                    : resourceTypes.map(renderResourceType)}
+                </Select>
+
+                {section === 'galgame' && (
+                  <Select
+                    isRequired={requiresChineseSupport}
+                    label="中文支持"
+                    isDisabled={chineseSupportDisabled}
+                    classNames={resourceFieldClassNames}
+                    placeholder="请选择游戏的中文支持类型"
+                    selectionMode="multiple"
+                    maxListboxHeight={
+                      RESOURCE_TYPE_LISTBOX_MAX_HEIGHT.chineseSupport
+                    }
+                    popoverProps={{
+                      placement: 'top',
+                      shouldFlip: false
+                    }}
+                    showScrollIndicators={false}
+                    selectedKeys={visibleChineseSupportTypes}
+                    onSelectionChange={(key) => {
+                      updateResourceTypes(
+                        [
+                          ...selectedGameAndOtherTypes,
+                          ...([...key] as string[])
+                        ],
+                        field.onChange
+                      )
+                    }}
+                    isInvalid={hasChineseSupportError}
+                    errorMessage={
+                      hasChineseSupportError ? errors.type?.message : undefined
+                    }
+                  >
+                    {chineseSupportOptions.map(renderResourceType)}
+                  </Select>
+                )}
+
+                {section === 'patch' && (
+                  <div
+                    data-testid="resource-type-hint"
+                    className="flex h-full items-center px-3 text-small text-foreground-500"
+                  >
+                    提示：翻译补丁包括
+                    <br></br>
+                    民汉补丁、AI 翻译补丁、机翻补丁
                   </div>
-                </SelectItem>
-              ))}
-            </Select>
-          )}
+                )}
+              </>
+            )
+          }}
         />
 
         <Controller

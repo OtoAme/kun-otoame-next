@@ -270,6 +270,8 @@ service/helper 负责：
 
 ## 输入校验
 
+资源发布、编辑和更新共用 `validations/patch.ts` 的类型校验：`galgame` 分区选择 `pc`、`emulator` 或 `mobile`，且未同时选择 `material`/`tool` 时，`type` 数组必须包含 `official-zh`、`chinese`、`machine` 或 `row` 之一，否则返回“请选择中文支持情况：官中、民汉、机翻、生肉”。选择 `material` 或 `tool` 时不需要中文支持类型，但也不允许同时提交任何中文支持类型，并返回“资料集或工具不允许选择中文支持类型”。前端资源详情表单应展示同一规则和提示，但 API 不能依赖前端显隐。
+
 所有新 API 都应优先在 `validations/<domain>.ts` 定义 schema。解析 helper 失败时返回字符串，调用处必须立即返回：
 
 ```ts
