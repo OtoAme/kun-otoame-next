@@ -24,7 +24,7 @@ Use this skill for project-specific testing work.
 - For bugfixes, write a failing regression test before implementation.
 - Bootstrap migration tests must lock `migration/production-resource-access-bootstrap-preflight-2026-07-12.sql` contracts and use only disposable PostgreSQL 18 for real DDL, interruption, and lock-timeout verification.
 - Prefer pure function tests for `utils/*`, `constants/*`, and `validations/*`.
-- Resource classification tests must cover the game-type/Chinese-support pairing rule, the exempt non-game types, rejection of Chinese support types alongside `material`/`tool`, the shared schema error messages, and the resource-details form's separate Chinese-support multi-select plus HeroUI section headings, original option descriptions, multiple-selection checkmarks, upward placement, disabled state, and disabled edge fade.
+- Resource classification tests must cover the game-type/Chinese-support pairing rule, `material`/`tool`-only exemptions, mixed game-plus-other types keeping Chinese support enabled, rejection of Chinese support types for non-game-only resources, the shared schema error messages, and the resource-details form's separate Chinese-support multi-select plus HeroUI section headings, original option descriptions, multiple-selection checkmarks, upward placement, enabled/disabled state, and edge fade.
 - For API service tests, mock Prisma, Redis, cache helpers, and external APIs.
 - Use `vi.hoisted` for values referenced by `vi.mock` factories.
 - Do not connect to real PostgreSQL, Redis, S3, GitHub, Bangumi, VNDB, or DLSite in unit tests.

@@ -302,10 +302,8 @@ describe('resource details form', () => {
       const headingClass = section.getAttribute('data-heading-class')
       expect(headingClass).toBeNull()
     }
-    expect(typeSelect?.getAttribute('data-show-scroll-indicators')).toBe(
-      'false'
-    )
-    expect(typeSelect?.getAttribute('data-max-listbox-height')).toBe('360')
+    expect(typeSelect?.getAttribute('data-show-scroll-indicators')).toBe('true')
+    expect(typeSelect?.getAttribute('data-max-listbox-height')).toBe('300')
     expect(typeSelect?.getAttribute('data-hide-selected-icon')).toBeNull()
     expect(typeSelect?.getAttribute('data-placement')).toBe('top')
     expect(typeSelect?.getAttribute('data-should-flip')).toBe('false')
@@ -353,6 +351,38 @@ describe('resource details form', () => {
     }
   )
 
+  it.each(['material', 'tool'] as const)(
+    'keeps Chinese support available when %s is combined with a game type',
+    async (resourceType) => {
+      const rendered = await renderResourceDetailsForm('galgame', [
+        resourceType,
+        'pc',
+        'official-zh'
+      ])
+      root = rendered.root
+      dom = rendered.dom
+
+      const typeSelect =
+        dom.window.document.querySelector('[aria-label="类型"]')
+      const chineseSupportSelect = dom.window.document.querySelector(
+        '[aria-label="中文支持"]'
+      )
+
+      expect(typeSelect?.getAttribute('data-selected-keys')).toBe(
+        `${resourceType},pc`
+      )
+      expect(chineseSupportSelect?.getAttribute('data-selected-keys')).toBe(
+        'official-zh'
+      )
+      expect(chineseSupportSelect?.getAttribute('data-disabled')).toBe('false')
+      expect(
+        chineseSupportSelect?.parentElement
+          ?.querySelector('span')
+          ?.getAttribute('data-required')
+      ).toBe('true')
+    }
+  )
+
   it('uses a compact patch type dropdown and shows the translation patch hint', async () => {
     const rendered = await renderResourceDetailsForm()
     root = rendered.root
@@ -368,11 +398,9 @@ describe('resource details form', () => {
     expect(typeSelect?.getAttribute('data-max-listbox-height')).toBe('300')
     expect(typeSelect?.getAttribute('data-placement')).toBe('top')
     expect(typeSelect?.getAttribute('data-should-flip')).toBe('false')
-    expect(typeSelect?.getAttribute('data-show-scroll-indicators')).toBe(
-      'false'
-    )
+    expect(typeSelect?.getAttribute('data-show-scroll-indicators')).toBe('true')
     expect(hint?.textContent).toBe(
-      '翻译补丁包括：民汉补丁、AI 翻译补丁、机翻补丁'
+      '提示：翻译补丁包括民汉补丁、AI 翻译补丁、机翻补丁'
     )
     expect(hint?.className).toContain('text-small')
     expect(hint?.className).toContain('text-foreground-500')

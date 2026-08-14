@@ -256,7 +256,7 @@ Gallery 图片上传走 `app/api/edit/gallery/route.ts` 和 `app/api/edit/galler
 - 资源发布/编辑组件
 - `tests/unit/resource-classification.test.ts`
 
-游戏资源的 `pc` / `emulator` / `mobile` 类型在未选择 `material` / `tool` 时，必须与 `official-zh` / `chinese` / `machine` / `row` 中至少一个中文支持类型同时出现；选择 `material` 或 `tool` 时不需要且不允许中文支持类型。该约束由 `constants/resource.ts` 的共享 helper 和 `validations/patch.ts` 的 create/edit/update schema 共同维护。
+游戏资源的 `pc` / `emulator` / `mobile` 类型无论是否同时选择 `material` / `tool`，都必须与 `official-zh` / `chinese` / `machine` / `row` 中至少一个中文支持类型同时出现；仅选择 `material` 或 `tool` 时不需要且不允许中文支持类型。该约束由 `constants/resource.ts` 的共享 helper 和 `validations/patch.ts` 的 create/edit/update schema 共同维护。
 
 资源增删改审核通过后要调用 `deletePatchResourceCache(uniqueId)` 或等价的内容缓存 + 列表缓存失效，避免详情页、资源列表、排行和标签/公司游戏列表读到旧属性。
 

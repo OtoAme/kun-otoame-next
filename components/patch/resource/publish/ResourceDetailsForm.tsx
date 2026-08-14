@@ -7,10 +7,10 @@ import { Select, SelectItem, SelectSection } from '@heroui/select'
 import {
   CHINESE_SUPPORT_RESOURCE_TYPES,
   GAME_RESOURCE_TYPES,
+  canSelectChineseSupportType,
   getResourceTypeOptionsBySection,
   getAllowedPlatformsBySectionAndTypes,
   hasChineseSupportType,
-  hasResourceTypeWithoutChineseSupport,
   requiresChineseSupportType,
   SUPPORTED_LANGUAGE,
   SUPPORTED_LANGUAGE_MAP,
@@ -35,7 +35,7 @@ const isChineseSupportType = (
   )
 
 const RESOURCE_TYPE_LISTBOX_MAX_HEIGHT = {
-  galgame: 360,
+  galgame: 300,
   patch: 300,
   chineseSupport: 256
 } as const
@@ -50,10 +50,7 @@ export const ResourceDetailsForm = ({
   const selectedPlatforms = useWatch({ control, name: 'platform' }) || []
 
   useEffect(() => {
-    if (
-      section !== 'galgame' ||
-      !hasResourceTypeWithoutChineseSupport(selectedTypes)
-    ) {
+    if (section !== 'galgame' || canSelectChineseSupportType(selectedTypes)) {
       return
     }
 
@@ -159,7 +156,7 @@ export const ResourceDetailsForm = ({
               selectedTypes.filter(isChineseSupportType)
             const chineseSupportDisabled =
               section === 'galgame' &&
-              hasResourceTypeWithoutChineseSupport(selectedTypes)
+              !canSelectChineseSupportType(selectedTypes)
             const visibleChineseSupportTypes = chineseSupportDisabled
               ? []
               : selectedChineseSupportTypes
@@ -189,18 +186,16 @@ export const ResourceDetailsForm = ({
                     placement: 'top',
                     shouldFlip: false
                   }}
-                  showScrollIndicators={false}
+                  showScrollIndicators
                   selectedKeys={selectedGameAndOtherTypes}
                   onSelectionChange={(key) => {
                     const nextGameAndOtherTypes = [...key] as string[]
                     updateResourceTypes(
                       [
                         ...nextGameAndOtherTypes,
-                        ...(hasResourceTypeWithoutChineseSupport(
-                          nextGameAndOtherTypes
-                        )
-                          ? []
-                          : selectedChineseSupportTypes)
+                        ...(canSelectChineseSupportType(nextGameAndOtherTypes)
+                          ? selectedChineseSupportTypes
+                          : [])
                       ],
                       field.onChange
                     )
@@ -236,7 +231,7 @@ export const ResourceDetailsForm = ({
                       placement: 'top',
                       shouldFlip: false
                     }}
-                    showScrollIndicators={false}
+                    showScrollIndicators
                     selectedKeys={visibleChineseSupportTypes}
                     onSelectionChange={(key) => {
                       updateResourceTypes(
@@ -332,7 +327,7 @@ export const ResourceDetailsForm = ({
             {...field}
             label="资源名称"
             classNames={resourceFieldClassNames}
-            placeholder="请填写您的资源名称, 例如 DeepSeek V3 翻译补丁"
+            placeholder="请填写您的资源名称, 例如 [PC-CHS]魔法少女的魔女审判"
             isInvalid={!!errors.name}
             errorMessage={errors.name?.message}
           />

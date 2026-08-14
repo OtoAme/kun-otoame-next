@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'vitest'
 import {
+  canSelectChineseSupportType,
   GALGAME_RESOURCE_TYPES,
   PATCH_RESOURCE_TYPES,
   SUPPORTED_PLATFORM,
@@ -53,7 +54,10 @@ describe('resource classification', () => {
   test('requires a Chinese support type for game resource types', () => {
     expect(requiresChineseSupportType(['pc'])).toBe(true)
     expect(requiresChineseSupportType(['tool'])).toBe(false)
-    expect(requiresChineseSupportType(['pc', 'material'])).toBe(false)
+    expect(requiresChineseSupportType(['pc', 'material'])).toBe(true)
+    expect(canSelectChineseSupportType(['material'])).toBe(false)
+    expect(canSelectChineseSupportType(['tool'])).toBe(false)
+    expect(canSelectChineseSupportType(['pc', 'material'])).toBe(true)
     expect(hasChineseSupportType(['official-zh'])).toBe(true)
     expect(hasChineseSupportType(['pc'])).toBe(false)
     expect(hasResourceTypeWithoutChineseSupport(['material'])).toBe(true)
@@ -82,6 +86,39 @@ describe('resource classification', () => {
     expect(missingChineseSupport.success).toBe(false)
     if (!missingChineseSupport.success) {
       expect(missingChineseSupport.error.issues).toContainEqual(
+        expect.objectContaining({
+          path: ['type'],
+          message: '请选择中文支持情况：官中、民汉、机翻、生肉'
+        })
+      )
+    }
+
+    const mixedGameAndMaterialWithoutChineseSupport =
+      patchResourceCreateSchema.safeParse({
+        patchId: 1,
+        section: 'galgame',
+        name: 'game and material without Chinese support',
+        links: [
+          {
+            storage: 'user',
+            hash: '',
+            content: 'https://example.com',
+            size: '1MB',
+            code: '',
+            password: ''
+          }
+        ],
+        note: '',
+        type: ['pc', 'material'],
+        language: ['zh-Hans'],
+        platform: ['windows']
+      })
+
+    expect(mixedGameAndMaterialWithoutChineseSupport.success).toBe(false)
+    if (!mixedGameAndMaterialWithoutChineseSupport.success) {
+      expect(
+        mixedGameAndMaterialWithoutChineseSupport.error.issues
+      ).toContainEqual(
         expect.objectContaining({
           path: ['type'],
           message: '请选择中文支持情况：官中、民汉、机翻、生肉'
@@ -129,6 +166,26 @@ describe('resource classification', () => {
       platform: ['windows']
     })
 
+    const mixedGameAndMaterialResource = patchResourceCreateSchema.safeParse({
+      patchId: 1,
+      section: 'galgame',
+      name: 'game and material resource',
+      links: [
+        {
+          storage: 'user',
+          hash: '',
+          content: 'https://example.com',
+          size: '1MB',
+          code: '',
+          password: ''
+        }
+      ],
+      note: '',
+      type: ['pc', 'material', 'official-zh'],
+      language: ['zh-Hans'],
+      platform: ['windows']
+    })
+
     const materialResource = patchResourceCreateSchema.safeParse({
       patchId: 1,
       section: 'galgame',
@@ -150,6 +207,7 @@ describe('resource classification', () => {
     })
 
     expect(validGameResource.success).toBe(true)
+    expect(mixedGameAndMaterialResource.success).toBe(true)
     expect(toolResource.success).toBe(true)
     expect(materialResource.success).toBe(true)
 

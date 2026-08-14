@@ -35,7 +35,7 @@ pnpm typecheck
 | `tests/unit/resource-download-card.test.tsx`           | 下载卡片的镜像级展示、不重复授权时长说明、首次 grant 额度提示和组件内存敏感状态。                                       |
 | `tests/unit/resource-download-restore.test.tsx`        | 按资源批量恢复、自动展开、未点镜像隐藏、请求竞态和失败后的单镜像重试入口。                                              |
 | `tests/unit/resource-access-links-helper.test.ts`      | 资源编辑入口打开前按需水合完整链接，并保留排序和下载计数等预览字段。                                                    |
-| `tests/unit/resource-classification.test.ts`           | 资源类型/语言/平台分类、游戏类型与中文支持类型配对及资料集/工具互斥校验。                                                    |
+| `tests/unit/resource-classification.test.ts`           | 资源类型/语言/平台分类、游戏类型与中文支持类型配对、资料集/工具单独使用豁免及混合类型校验。                             |
 | `tests/unit/patch-resource-attributes.test.ts`         | 游戏资源派生标签和卡片资源数只统计已发布资源。                                                                          |
 | `tests/unit/search-store.test.ts`                      | 搜索 store。                                                                                                            |
 | `tests/unit/captcha.test.ts`                           | CAPTCHA。                                                                                                               |

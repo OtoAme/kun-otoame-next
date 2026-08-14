@@ -36,8 +36,8 @@ tests/unit/
 - 公司脏数据合并计划：`tests/unit/company-merge-plan.test.ts`。
 - 搜索 store：`tests/unit/search-store.test.ts`。
 - CAPTCHA：`tests/unit/captcha.test.ts`。
-- 资源链接解析、资源分类、资源派生标签口径和后台资源表格布局：`tests/unit/resource-link.test.ts`、`resource-classification.test.ts`、`patch-resource-attributes.test.ts`、`admin-resource-container-layout.test.tsx`。`resource-classification.test.ts` 还覆盖游戏类型必须搭配中文支持类型、资料集/工具豁免、中文支持互斥和 schema 错误文案。
-- 资源详情表单的中文支持独立多选框、资料集/工具禁用清理、HeroUI 分组标题排版、原有选项说明与多选勾选、上拉方向和关闭边缘渐隐：`tests/unit/resource-details-form.test.tsx`。
+- 资源链接解析、资源分类、资源派生标签口径和后台资源表格布局：`tests/unit/resource-link.test.ts`、`resource-classification.test.ts`、`patch-resource-attributes.test.ts`、`admin-resource-container-layout.test.tsx`。`resource-classification.test.ts` 还覆盖游戏类型必须搭配中文支持类型、资料集/工具单独使用时的豁免、游戏类型与其他类型混选、中文支持互斥和 schema 错误文案。
+- 资源详情表单的中文支持独立多选框、资料集/工具禁用清理、HeroUI 分组标题排版、原有选项说明与多选勾选、上拉方向和边缘渐隐：`tests/unit/resource-details-form.test.tsx`。
 - 资源详情页操作权限和游客添加资源引导：`resource-permissions.test.ts`、`resource-tabs-permissions.test.tsx`、`resource-create-action.test.tsx` 覆盖资源作者/管理员权限显隐，以及游客不挂载发布表单、登录用户直接打开发布流程。
 - 下载链接按需获取：`api/resource-access-policy.test.ts`、`api/resource-access-grant.test.ts`、`api/resource-access-rate-limit.test.ts`、`api/resource-access.test.ts` 和 `api/resource-access-restore.test.ts` 覆盖 24 小时资源授权、事件分类、游客日/周额度、技术限频、access/restore 隐私响应和只读恢复；`resource-download-card.test.tsx`、`resource-download-restore.test.tsx` 覆盖镜像级展示、组件内存凭据、批量自动恢复和未点镜像隐藏；`resource-access-links-helper.test.ts` 覆盖编辑资源前按需水合完整链接。
 - Gallery 上传链路：`gallery-upload.test.ts` / `gallery-route.test.ts` 覆盖服务端转码、缩略图、S3 补偿和 route；`gallery-upload-batch.test.ts` 覆盖前端逐张上传失败保留；`gallery-drop.test.ts` 覆盖网页图片 URL/HTML 拖拽导入；`gallery-remote-import.test.ts` 和 `gallery-remote-route.test.ts` 覆盖远程图片导入、SSRF 边界和权限。

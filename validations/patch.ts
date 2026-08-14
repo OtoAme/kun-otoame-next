@@ -6,8 +6,8 @@ import {
   SUPPORTED_PLATFORM,
   SUPPORTED_RESOURCE_LINK,
   SUPPORTED_RESOURCE_SECTION,
+  canSelectChineseSupportType,
   hasChineseSupportType,
-  hasResourceTypeWithoutChineseSupport,
   getAllowedPlatformsBySectionAndTypes,
   isResourceTypeAllowedForSection,
   requiresChineseSupportType,
@@ -188,7 +188,7 @@ const validateChineseSupportByType = (
 ) => {
   if (
     data.section === 'galgame' &&
-    hasResourceTypeWithoutChineseSupport(data.type) &&
+    !canSelectChineseSupportType(data.type) &&
     hasChineseSupportType(data.type)
   ) {
     ctx.addIssue({

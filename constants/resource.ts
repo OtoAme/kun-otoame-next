@@ -91,6 +91,12 @@ export const CHINESE_SUPPORT_RESOURCE_TYPES = [
   'row'
 ] as const
 
+export const hasGameResourceType = (types: string[]) => {
+  return types.some((type) =>
+    GAME_RESOURCE_TYPES.includes(type as (typeof GAME_RESOURCE_TYPES)[number])
+  )
+}
+
 export const RESOURCE_TYPES_WITHOUT_CHINESE_SUPPORT = [
   'material',
   'tool'
@@ -104,13 +110,14 @@ export const hasResourceTypeWithoutChineseSupport = (types: string[]) => {
   )
 }
 
-export const requiresChineseSupportType = (types: string[]) => {
+export const canSelectChineseSupportType = (types: string[]) => {
   return (
-    !hasResourceTypeWithoutChineseSupport(types) &&
-    types.some((type) =>
-      GAME_RESOURCE_TYPES.includes(type as (typeof GAME_RESOURCE_TYPES)[number])
-    )
+    !hasResourceTypeWithoutChineseSupport(types) || hasGameResourceType(types)
   )
+}
+
+export const requiresChineseSupportType = (types: string[]) => {
+  return hasGameResourceType(types)
 }
 
 export const hasChineseSupportType = (types: string[]) => {
