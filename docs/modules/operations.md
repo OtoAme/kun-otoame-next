@@ -43,6 +43,7 @@
 - `maintenance:tags:*`
 - `maintenance:companies:dirty:*`
 - `maintenance:conversation-images:*`
+- `stickers:sync`：校验并同步内置 Sticker Pack 资源。默认 dry-run；加 `--apply` 后才会上传 WebP/WebM、生成动态 poster 并 upsert 数据库目录。
 - `maintenance:gallery-thumbnails:*`
 - `migration:resource-type:*`
 - `migration:patch-counters`

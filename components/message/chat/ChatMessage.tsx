@@ -6,6 +6,7 @@ import { cn } from '~/utils/cn'
 import { formatTimeDifference } from '~/utils/time'
 import { KunAvatar } from '~/components/kun/floating-card/KunAvatar'
 import { ChatImageGrid } from './ChatImageGrid'
+import { ChatSticker } from './ChatSticker'
 import { ChatReplyPreview } from './ChatReplyPreview'
 import { Button } from '@heroui/react'
 import {
@@ -133,6 +134,7 @@ export const ChatMessage = ({
   const hasImages = messageImages.length > 0
   const isSingleImage = messageImages.length === 1
   const hasCaption = Boolean(message.content.trim())
+  const isSticker = message.type === 2
   const activeReplyHighlight =
     replyHighlight?.messageId === message.id ? replyHighlight : null
   const isActiveReplyHighlightFading = Boolean(
@@ -769,13 +771,21 @@ export const ChatMessage = ({
   }
 
   const isImageOnly = hasImages && !hasCaption && !message.replyTo
+  const isStickerOnly = isSticker && !hasCaption && !message.replyTo
+  const isMediaOnly = isImageOnly || isStickerOnly
   const shouldShrinkWrapImage = hasImages && isSingleImage && !hasCaption
   const hasImageWithTextOrReply = hasImages && !isImageOnly
   const bubbleWidthClassName = 'max-w-[70cqw] md:max-w-[60cqw]'
   const imageBubbleWidthClassName = shouldShrinkWrapImage
     ? 'w-fit max-w-[70cqw] md:max-w-[60cqw]'
     : 'w-full max-w-[70cqw] md:max-w-[60cqw] md:w-[min(60cqw,32rem)]'
-  const bubblePaddingClassName = isImageOnly ? 'p-0.5' : 'px-2.5 py-1'
+  const stickerBubbleWidthClassName = 'w-fit max-w-[70cqw] md:max-w-[60cqw]'
+  const messageBubbleWidthClassName = hasImages
+    ? imageBubbleWidthClassName
+    : isSticker
+      ? stickerBubbleWidthClassName
+      : bubbleWidthClassName
+  const bubblePaddingClassName = isMediaOnly ? 'p-0.5' : 'px-2.5 py-1'
 
   const renderReplyPreview = () => {
     if (!message.replyTo) {
@@ -788,6 +798,8 @@ export const ChatMessage = ({
         content={message.replyTo.content}
         selectedText={message.replyTo.selectedText}
         image={message.replyTo.image}
+        stickerId={message.replyTo.stickerId}
+        sticker={message.replyTo.sticker}
         onClick={
           onReplyPreviewClick
             ? () => onReplyPreviewClick(message.replyTo!, message.id)
@@ -847,7 +859,7 @@ export const ChatMessage = ({
     )
   }
 
-  const shouldRightAlignInlineMeta = !isImageOnly
+  const shouldRightAlignInlineMeta = !isMediaOnly
 
   const renderMessageBody = () => (
     <>
@@ -880,6 +892,15 @@ export const ChatMessage = ({
           )}
         />
       )}
+      {isSticker && message.sticker && (
+        <ChatSticker
+          sticker={message.sticker}
+          className={cn(
+            isStickerOnly && 'rounded-[1.05rem]',
+            !isStickerOnly && 'mb-1'
+          )}
+        />
+      )}
       {message.content ? (
         <p className="relative text-left text-sm leading-5 whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
           <span
@@ -908,7 +929,7 @@ export const ChatMessage = ({
           )}
         </p>
       ) : (
-        !isImageOnly && (
+        !isMediaOnly && (
           <div className="flex justify-end leading-4">
             {renderMessageMeta('standalone')}
           </div>
@@ -1030,7 +1051,7 @@ export const ChatMessage = ({
             data-testid="chat-message-bubble"
             className={cn(
               'relative min-w-0 max-w-full select-text rounded-2xl bg-[var(--kun-chat-own-bubble-bg)] text-[var(--kun-chat-own-bubble-text)] shadow-sm ring-1 ring-[var(--kun-chat-own-bubble-border)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--kun-brand-500)/0.55)]',
-              hasImages ? imageBubbleWidthClassName : bubbleWidthClassName,
+              messageBubbleWidthClassName,
               bubblePaddingClassName,
               menu &&
                 'shadow-lg ring-2 ring-[var(--kun-chat-own-bubble-active-border)]'
@@ -1043,9 +1064,9 @@ export const ChatMessage = ({
             onContextMenu={handleContextMenu}
             {...bubbleInteractionProps}
           >
-            <div className={cn(isImageOnly && 'relative')}>
+            <div className={cn(isMediaOnly && 'relative')}>
               {renderMessageBody()}
-              {isImageOnly && renderMessageMeta('overlay')}
+              {isMediaOnly && renderMessageMeta('overlay')}
             </div>
             {bubbleHighlightMarkup}
           </motion.div>
@@ -1055,7 +1076,7 @@ export const ChatMessage = ({
             data-testid="chat-message-bubble"
             className={cn(
               'relative min-w-0 max-w-full select-text rounded-2xl bg-[var(--kun-chat-other-bubble-bg)] text-[var(--kun-chat-other-bubble-text)] shadow-sm ring-1 ring-[var(--kun-chat-other-bubble-border)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--kun-brand-500)/0.55)]',
-              hasImages ? imageBubbleWidthClassName : bubbleWidthClassName,
+              messageBubbleWidthClassName,
               bubblePaddingClassName,
               menu &&
                 'shadow-lg ring-2 ring-[var(--kun-chat-other-bubble-active-border)]'
@@ -1068,9 +1089,9 @@ export const ChatMessage = ({
             onContextMenu={handleContextMenu}
             {...bubbleInteractionProps}
           >
-            <div className={cn(isImageOnly && 'relative')}>
+            <div className={cn(isMediaOnly && 'relative')}>
               {renderMessageBody()}
-              {isImageOnly && renderMessageMeta('overlay')}
+              {isMediaOnly && renderMessageMeta('overlay')}
             </div>
             {bubbleHighlightMarkup}
           </motion.div>

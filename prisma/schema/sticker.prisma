@@ -1,0 +1,65 @@
+model sticker_pack {
+  id          Int      @id @default(autoincrement())
+  slug        String   @unique @db.VarChar(100)
+  name        String   @db.VarChar(100)
+  description String   @default("") @db.VarChar(500)
+  cover_url   String?  @db.VarChar(1000)
+  price       Int      @default(0)
+  status      Int      @default(1)
+  is_builtin  Boolean  @default(true)
+  sort_order  Int      @default(0)
+
+  stickers    sticker[]
+  ownerships user_sticker_pack[]
+
+  created DateTime @default(now())
+  updated DateTime @updatedAt
+
+  @@index([status, sort_order])
+}
+
+model sticker {
+  id         String      @id @db.VarChar(100)
+  pack_id    Int
+  pack       sticker_pack @relation(fields: [pack_id], references: [id], onDelete: Restrict)
+
+  alt        String  @default("") @db.VarChar(255)
+  asset_url  String  @db.VarChar(1000)
+  thumbnail_url String? @db.VarChar(1000)
+  storage_key String  @db.VarChar(500)
+  thumbnail_storage_key String? @db.VarChar(500)
+  mime       String  @db.VarChar(100)
+  media_type String  @db.VarChar(16)
+  width      Int
+  height     Int
+  size       Int
+  duration_ms Int?
+  frame_rate Float?
+  sort_order Int     @default(0)
+
+  messages       user_private_message[] @relation("private_message_sticker")
+  reply_messages user_private_message[] @relation("private_message_reply_sticker")
+
+  created DateTime @default(now())
+  updated DateTime @updatedAt
+
+  @@index([pack_id, sort_order])
+}
+
+model user_sticker_pack {
+  id           Int          @id @default(autoincrement())
+  user_id      Int
+  pack_id      Int
+  price_paid   Int          @default(0)
+  source       String       @default("builtin") @db.VarChar(32)
+  acquired_at  DateTime     @default(now())
+
+  user user         @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  pack sticker_pack @relation(fields: [pack_id], references: [id], onDelete: Cascade)
+
+  created DateTime @default(now())
+  updated DateTime @updatedAt
+
+  @@unique([user_id, pack_id])
+  @@index([pack_id])
+}

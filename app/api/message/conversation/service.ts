@@ -32,6 +32,7 @@ const summarizeConversationLastMessage = (message?: {
   content: string
   image_url: string | null
   image_group?: unknown
+  sticker?: { id: string } | null
   is_deleted: boolean
 }) => {
   if (!message) {
@@ -40,6 +41,10 @@ const summarizeConversationLastMessage = (message?: {
 
   if (message.is_deleted) {
     return '消息已删除'
+  }
+
+  if (message.type === 2) {
+    return message.sticker ? '[贴纸]' : '[贴纸不可用]'
   }
 
   const content = message.content.trim()
@@ -112,6 +117,7 @@ export const getConversations = async (
             content: true,
             image_url: true,
             image_group: true,
+            sticker: { select: { id: true } },
             is_deleted: true
           }
         })

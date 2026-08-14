@@ -8,6 +8,7 @@ globalThis.React = React
 
 const fetchMock = vi.hoisted(() => ({
   kunFetchFormData: vi.fn(),
+  kunFetchGet: vi.fn(),
   kunFetchPost: vi.fn()
 }))
 
@@ -29,6 +30,7 @@ const textareaMock = vi.hoisted(() => ({
 
 vi.mock('~/utils/kunFetch', () => ({
   kunFetchFormData: fetchMock.kunFetchFormData,
+  kunFetchGet: fetchMock.kunFetchGet,
   kunFetchPost: fetchMock.kunFetchPost
 }))
 
@@ -271,6 +273,7 @@ describe('ChatInput keyboard handling', () => {
 
   beforeEach(() => {
     fetchMock.kunFetchFormData.mockReset()
+    fetchMock.kunFetchGet.mockReset()
     fetchMock.kunFetchPost.mockReset()
     textareaMock.onValueChange = undefined
     textareaMock.onKeyDown = undefined
@@ -301,6 +304,98 @@ describe('ChatInput keyboard handling', () => {
 
     expect(textarea.placeholder).toBe(
       '输入消息... (按 Enter 发送，Shift+Enter 换行)'
+    )
+  })
+
+  it('loads sticker packs and sends an independent sticker message', async () => {
+    fetchMock.kunFetchGet.mockResolvedValueOnce({
+      packs: [
+        {
+          id: 4,
+          slug: 'moe',
+          name: 'Moe',
+          description: '',
+          coverUrl: 'https://cdn.example/cover.webp',
+          price: 0,
+          status: 1,
+          stickers: [
+            {
+              id: 'moe-wave',
+              packId: 4,
+              packSlug: 'moe',
+              packName: 'Moe',
+              url: 'https://cdn.example/wave.webm',
+              thumbnailUrl: 'https://cdn.example/wave.webp',
+              mime: 'video/webm',
+              mediaType: 'video',
+              width: 512,
+              height: 512,
+              size: 12000,
+              durationMs: 1200,
+              frameRate: 30,
+              alt: '挥手'
+            }
+          ]
+        }
+      ]
+    })
+    fetchMock.kunFetchPost.mockResolvedValueOnce(
+      sentMessage(8, '', {
+        type: 2,
+        stickerId: 'moe-wave',
+        sticker: {
+          id: 'moe-wave',
+          packId: 4,
+          packSlug: 'moe',
+          packName: 'Moe',
+          url: 'https://cdn.example/wave.webm',
+          thumbnailUrl: 'https://cdn.example/wave.webp',
+          mime: 'video/webm',
+          mediaType: 'video',
+          width: 512,
+          height: 512,
+          size: 12000,
+          durationMs: 1200,
+          frameRate: 30,
+          alt: '挥手'
+        }
+      })
+    )
+
+    const { container } = await renderChatInput()
+    const stickerButton = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="选择贴纸"]'
+    )
+    expect(stickerButton).not.toBeNull()
+
+    await act(async () => {
+      stickerButton!.click()
+      await Promise.resolve()
+    })
+
+    expect(fetchMock.kunFetchGet).toHaveBeenCalledWith('/message/stickers')
+    const stickerOption = container.querySelector<HTMLButtonElement>(
+      '[data-testid="sticker-option-moe-wave"]'
+    )
+    expect(stickerOption).not.toBeNull()
+
+    await act(async () => {
+      stickerOption!.click()
+      await Promise.resolve()
+    })
+
+    expect(fetchMock.kunFetchPost).toHaveBeenCalledWith(
+      '/message/conversation/5',
+      expect.objectContaining({
+        type: 2,
+        stickerId: 'moe-wave'
+      })
+    )
+    expect(
+      fetchMock.kunFetchPost.mock.calls.at(-1)?.[1]?.content
+    ).toBeUndefined()
+    expect(onMessageSent).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 2, stickerId: 'moe-wave' })
     )
   })
 

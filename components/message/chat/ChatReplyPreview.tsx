@@ -1,7 +1,10 @@
 'use client'
 
 import { cn } from '~/utils/cn'
-import type { PrivateMessageImage } from '~/types/api/conversation'
+import type {
+  PrivateMessageImage,
+  PrivateMessageSticker
+} from '~/types/api/conversation'
 
 interface Props {
   senderName: string
@@ -9,6 +12,8 @@ interface Props {
   content?: string | null
   selectedText?: string | null
   image?: PrivateMessageImage | null
+  stickerId?: string | null
+  sticker?: PrivateMessageSticker | null
   onClick?: () => void
   className?: string
   titleClassName?: string
@@ -21,6 +26,8 @@ export const ChatReplyPreview = ({
   content,
   selectedText,
   image,
+  stickerId,
+  sticker,
   onClick,
   className,
   titleClassName,
@@ -43,7 +50,9 @@ export const ChatReplyPreview = ({
             contentClassName
           )}
         >
-          {selectedText || content || '[图片]'}
+          {selectedText ||
+            content ||
+            (stickerId ? (sticker ? '[贴纸]' : '[贴纸不可用]') : '[图片]')}
         </div>
       </div>
       {image && (
@@ -52,6 +61,14 @@ export const ChatReplyPreview = ({
           alt={image.name || '引用图片'}
           loading="lazy"
           className="size-9 shrink-0 rounded-md object-cover"
+        />
+      )}
+      {!image && sticker?.thumbnailUrl && (
+        <img
+          src={sticker.thumbnailUrl}
+          alt={sticker.alt || '引用贴纸'}
+          loading="lazy"
+          className="size-9 shrink-0 rounded-md object-contain"
         />
       )}
     </>

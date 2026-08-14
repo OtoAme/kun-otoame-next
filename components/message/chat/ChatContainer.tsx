@@ -470,6 +470,8 @@ export const ChatContainer = ({
         isDeleted: newMessage.isDeleted ?? false,
         image: newMessage.image ?? null,
         images: newMessage.images ?? undefined,
+        stickerId: newMessage.stickerId ?? null,
+        sticker: newMessage.sticker ?? null,
         replyTo: newMessage.replyTo ?? null,
         editedAt: newMessage.editedAt ?? null,
         created: newMessage.created,
@@ -501,6 +503,8 @@ export const ChatContainer = ({
                 isDeleted: true,
                 image: null,
                 images: [],
+                stickerId: null,
+                sticker: null,
                 replyTo: null
               }
               : msg

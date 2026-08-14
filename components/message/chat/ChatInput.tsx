@@ -3,15 +3,19 @@
 import { useEffect, useRef, useState } from 'react'
 import { Button } from '@heroui/react'
 import { Textarea } from '@heroui/input'
-import { ImageIcon, Plus, Send, X } from 'lucide-react'
-import { kunFetchFormData, kunFetchPost } from '~/utils/kunFetch'
+import { ImageIcon, Plus, Send, Smile, X } from 'lucide-react'
+import { kunFetchFormData, kunFetchGet, kunFetchPost } from '~/utils/kunFetch'
 import toast from 'react-hot-toast'
 import { ChatAttachmentMenu } from './ChatAttachmentMenu'
 import { ChatReplyPreview } from './ChatReplyPreview'
+import { StickerPicker } from './StickerPicker'
 import { KunImageViewer } from '~/components/kun/image-viewer/ImageViewer'
 import type {
   PrivateMessage,
-  PrivateMessageImage
+  PrivateMessageImage,
+  PrivateMessageSticker,
+  StickerPack,
+  StickerPacksResponse
 } from '~/types/api/conversation'
 
 interface Props {
@@ -87,6 +91,13 @@ export const ChatInput = ({
 }: Props) => {
   const [content, setContent] = useState('')
   const [isAttachmentMenuOpen, setIsAttachmentMenuOpen] = useState(false)
+  const [isStickerPickerOpen, setIsStickerPickerOpen] = useState(false)
+  const [stickerPacks, setStickerPacks] = useState<StickerPack[]>([])
+  const [activeStickerPackId, setActiveStickerPackId] = useState<number | null>(
+    null
+  )
+  const [isStickerLoading, setIsStickerLoading] = useState(false)
+  const [stickerError, setStickerError] = useState<string | null>(null)
   const [selectedImages, setSelectedImages] = useState<File[]>([])
   const [uploadedImages, setUploadedImages] = useState<
     (PrivateMessageImage | null)[]
@@ -97,6 +108,7 @@ export const ChatInput = ({
   const fileInputRef = useRef<HTMLInputElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const attachmentMenuRef = useRef<HTMLDivElement>(null)
+  const stickerPickerRef = useRef<HTMLDivElement>(null)
   const isComposingRef = useRef(false)
   const isSendingRef = useRef(false)
 
@@ -162,6 +174,32 @@ export const ChatInput = ({
   }, [isAttachmentMenuOpen])
 
   useEffect(() => {
+    if (!isStickerPickerOpen) {
+      return
+    }
+
+    const closeIfOutside = (event: PointerEvent) => {
+      const target = event.target as Node
+      if (stickerPickerRef.current?.contains(target)) {
+        return
+      }
+      setIsStickerPickerOpen(false)
+    }
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setIsStickerPickerOpen(false)
+      }
+    }
+
+    document.addEventListener('pointerdown', closeIfOutside)
+    document.addEventListener('keydown', closeOnEscape)
+    return () => {
+      document.removeEventListener('pointerdown', closeIfOutside)
+      document.removeEventListener('keydown', closeOnEscape)
+    }
+  }, [isStickerPickerOpen])
+
+  useEffect(() => {
     if (!replyTarget) {
       return
     }
@@ -179,6 +217,73 @@ export const ChatInput = ({
   const isUploadedImage = (
     image: PrivateMessageImage | null | undefined
   ): image is PrivateMessageImage => Boolean(image)
+
+  const loadStickerPacks = async () => {
+    setIsStickerLoading(true)
+    setStickerError(null)
+    try {
+      const response =
+        await kunFetchGet<KunResponse<StickerPacksResponse>>(
+          '/message/stickers'
+        )
+      if (typeof response === 'string') {
+        setStickerError(response)
+        return
+      }
+
+      setStickerPacks(response.packs)
+      setActiveStickerPackId(
+        (current) => current ?? response.packs[0]?.id ?? null
+      )
+    } catch {
+      setStickerError('获取贴纸失败，请稍后重试')
+    } finally {
+      setIsStickerLoading(false)
+    }
+  }
+
+  const handleStickerPickerToggle = () => {
+    setIsAttachmentMenuOpen(false)
+    const next = !isStickerPickerOpen
+    setIsStickerPickerOpen(next)
+    if (next && stickerPacks.length === 0 && !isStickerLoading) {
+      void loadStickerPacks()
+    }
+  }
+
+  const handleSendSticker = async (sticker: PrivateMessageSticker) => {
+    if (isSendingRef.current) {
+      return
+    }
+
+    isSendingRef.current = true
+    setSending(true)
+    try {
+      const response = await kunFetchPost<KunResponse<PrivateMessage>>(
+        `/message/conversation/${conversationId}`,
+        {
+          type: 2,
+          stickerId: sticker.id,
+          replyToMessageId: replyTarget?.id,
+          replySelectedText: replySelectedText ?? undefined,
+          replyImageIndex: replyImageIndex ?? undefined
+        }
+      )
+
+      if (typeof response === 'string') {
+        toast.error(response)
+      } else {
+        setIsStickerPickerOpen(false)
+        onCancelReply?.()
+        onMessageSent(response)
+      }
+    } catch {
+      toast.error('贴纸发送失败，请稍后重试')
+    } finally {
+      isSendingRef.current = false
+      setSending(false)
+    }
+  }
 
   const handleSend = async () => {
     if (isSendingRef.current) {
@@ -419,6 +524,8 @@ export const ChatInput = ({
             content={replyTarget.content}
             selectedText={replySelectedText}
             image={replyImage}
+            stickerId={replyTarget.stickerId}
+            sticker={replyTarget.sticker}
             className="min-w-0 flex-1 rounded-md border-[var(--kun-chat-own-bubble-border)] bg-[var(--kun-chat-reply-draft-bg)] py-1 pl-3.5 pr-2 text-[var(--kun-chat-reply-text)]"
             titleClassName="text-[var(--kun-chat-reply-title)]"
           />
@@ -517,6 +624,29 @@ export const ChatInput = ({
             className="hidden"
             onChange={handleImageChange}
           />
+        </div>
+        <div ref={stickerPickerRef} className="relative">
+          <Button
+            isIconOnly
+            variant={isStickerPickerOpen ? 'flat' : 'light'}
+            aria-label="选择贴纸"
+            aria-expanded={isStickerPickerOpen}
+            aria-haspopup="dialog"
+            onPress={handleStickerPickerToggle}
+          >
+            <Smile className="size-4" />
+          </Button>
+          {isStickerPickerOpen && (
+            <StickerPicker
+              packs={stickerPacks}
+              activePackId={activeStickerPackId}
+              isLoading={isStickerLoading}
+              error={stickerError}
+              onSelectPack={setActiveStickerPackId}
+              onSelectSticker={handleSendSticker}
+              onRetry={() => void loadStickerPacks()}
+            />
+          )}
         </div>
         <Textarea
           ref={textareaRef}

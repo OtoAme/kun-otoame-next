@@ -104,7 +104,9 @@ describe('conversation message fetching', () => {
       include: {
         sender: {
           select: { id: true, name: true, avatar: true }
-        }
+        },
+        sticker: expect.any(Object),
+        reply_sticker: expect.any(Object)
       },
       orderBy: { created: 'asc' },
       take: 50
@@ -133,7 +135,9 @@ describe('conversation message fetching', () => {
       include: {
         sender: {
           select: { id: true, name: true, avatar: true }
-        }
+        },
+        sticker: expect.any(Object),
+        reply_sticker: expect.any(Object)
       },
       orderBy: { created: 'desc' },
       skip: 30,
@@ -320,6 +324,89 @@ describe('conversation message fetching', () => {
               mime: 'image/webp',
               name: 'quoted.webp'
             }
+          }
+        }
+      ]
+    })
+  })
+
+  it('returns sticker metadata for history and sticker reply previews', async () => {
+    const sticker = {
+      id: 'moe-wave',
+      pack_id: 4,
+      alt: '挥手',
+      asset_url: 'https://cdn.example/wave.webm',
+      thumbnail_url: 'https://cdn.example/wave.webp',
+      storage_key: 'sticker/moe/moe-wave/asset.webm',
+      thumbnail_storage_key: 'sticker/moe/moe-wave/poster.webp',
+      mime: 'video/webm',
+      media_type: 'video',
+      width: 512,
+      height: 512,
+      size: 12000,
+      duration_ms: 1200,
+      frame_rate: 30,
+      sort_order: 0,
+      pack: {
+        id: 4,
+        slug: 'moe',
+        name: 'Moe',
+        description: '',
+        cover_url: null,
+        price: 0,
+        status: 0,
+        is_builtin: true
+      }
+    }
+    prismaMock.user_private_message.findMany.mockResolvedValue([
+      {
+        id: 30,
+        type: 2,
+        content: '',
+        status: 1,
+        is_deleted: false,
+        edited_at: null,
+        image_url: null,
+        image_width: null,
+        image_height: null,
+        image_size: null,
+        image_mime: null,
+        image_name: null,
+        image_group: null,
+        sticker_id: 'moe-wave',
+        sticker,
+        reply_to_message_id: 29,
+        reply_preview_content: '[贴纸]',
+        reply_preview_sender_name: 'Mio',
+        reply_selected_text: null,
+        reply_image: null,
+        reply_sticker_id: 'moe-wave',
+        reply_sticker: sticker,
+        created: new Date('2026-06-30T10:00:00.000Z'),
+        sender: { id: 1007, name: 'Saya', avatar: '/saya.webp' }
+      }
+    ])
+
+    const { getConversationMessages } = await import(
+      '~/app/api/message/conversation/[id]/service'
+    )
+    const result = await getConversationMessages(
+      5,
+      { page: 1, limit: 30 },
+      1007
+    )
+
+    expect(result).toMatchObject({
+      messages: [
+        {
+          id: 30,
+          type: 2,
+          stickerId: 'moe-wave',
+          sticker: { mediaType: 'video', packSlug: 'moe' },
+          replyTo: {
+            stickerId: 'moe-wave',
+            content: '[贴纸]',
+            sticker: { id: 'moe-wave' }
           }
         }
       ]
@@ -927,6 +1014,30 @@ describe('conversation message fetching', () => {
         }
       }).success
     ).toBe(false)
+  })
+
+  it('requires a stickerId for type 2 and never parses text placeholders', async () => {
+    const { sendPrivateMessageSchema } = await import(
+      '~/validations/conversation'
+    )
+
+    expect(
+      sendPrivateMessageSchema.safeParse({
+        type: 2,
+        stickerId: 'moe-wave'
+      }).success
+    ).toBe(true)
+    expect(
+      sendPrivateMessageSchema.safeParse({
+        type: 2
+      }).success
+    ).toBe(false)
+    expect(
+      sendPrivateMessageSchema.safeParse({
+        type: 0,
+        content: '[sticker:moe-wave]'
+      }).success
+    ).toBe(true)
   })
 
   it('rejects whitespace-only edited private messages', async () => {

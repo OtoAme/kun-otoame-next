@@ -11,6 +11,7 @@
 | 数据、缓存与上传 | [data-cache-upload.md](./data-cache-upload.md) | `prisma/*`, `lib/redis.ts`, `lib/s3.ts`, `app/api/upload/*` |
 | 前端组件、主题与内容 | [frontend-content.md](./frontend-content.md) | `components/*`, `styles/*`, `lib/mdx/*`, `posts/*` |
 | 运维、脚本、迁移与任务 | [operations.md](./operations.md) | `scripts/*`, `migration/*`, `server/tasks/*`, `.github/workflows/*` |
+| 私聊 Sticker | [private-chat-stickers.md](./private-chat-stickers.md) | `app/api/message/stickers/*`, `components/message/chat/*`, `scripts/syncStickers.ts`, `prisma/schema/sticker.prisma` |
 | 测试、验证与审阅 | [quality.md](./quality.md) | `tests/*`, `vitest.config.ts`, `.codex/skills/*` |
 
 ## 贡献者阅读路径

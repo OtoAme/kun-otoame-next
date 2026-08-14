@@ -44,6 +44,7 @@
     "maintenance:conversation-images:apply": "esno scripts/cleanupConversationImages.ts --apply",
     "maintenance:gallery-thumbnails:dry": "esno scripts/galleryThumbnailBackfill.ts",
     "maintenance:gallery-thumbnails:apply": "esno scripts/galleryThumbnailBackfill.ts --apply",
+    "stickers:sync": "esno scripts/syncStickers.ts",
     "test": "vitest run"
   },
   "author": {

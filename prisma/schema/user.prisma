@@ -51,6 +51,7 @@ model user {
   conversation_a  user_conversation[]    @relation("conversation_user_a")
   conversation_b  user_conversation[]    @relation("conversation_user_b")
   private_message user_private_message[] @relation("pm_sender")
+  sticker_pack_ownership user_sticker_pack[]
 
   created DateTime @default(now())
   updated DateTime @updatedAt

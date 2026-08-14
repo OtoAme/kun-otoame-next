@@ -20,6 +20,12 @@ const prismaMock = vi.hoisted(() => ({
     create: vi.fn(),
     update: vi.fn()
   },
+  sticker: {
+    findUnique: vi.fn()
+  },
+  user_sticker_pack: {
+    findUnique: vi.fn()
+  },
   _tx: {
     user: {
       update: vi.fn(),
@@ -185,6 +191,93 @@ describe('conversation message sending', () => {
       })
     )
     expect(result).toMatchObject({ id: 9, replyTo: { messageId: 3 } })
+  })
+
+  it('sends an independently typed sticker message without text placeholders', async () => {
+    const sticker = {
+      id: 'moe-wave',
+      pack_id: 12,
+      alt: '挥手',
+      asset_url: 'https://cdn.example/sticker/moe-wave.webm',
+      thumbnail_url: 'https://cdn.example/sticker/moe-wave.webp',
+      storage_key: 'sticker/moe/moe-wave/asset.webm',
+      thumbnail_storage_key: 'sticker/moe/moe-wave/poster.webp',
+      mime: 'video/webm',
+      media_type: 'video',
+      width: 512,
+      height: 512,
+      size: 12000,
+      duration_ms: 1200,
+      frame_rate: 30,
+      sort_order: 0,
+      pack: {
+        id: 12,
+        slug: 'moe',
+        name: 'Moe',
+        description: '',
+        cover_url: null,
+        price: 0,
+        status: 1,
+        is_builtin: true
+      }
+    }
+    prismaMock.sticker.findUnique.mockResolvedValue(sticker)
+    prismaMock._tx.user_private_message.create.mockResolvedValue({
+      id: 19,
+      type: 2,
+      content: '',
+      status: 0,
+      is_deleted: false,
+      edited_at: null,
+      image_url: null,
+      image_width: null,
+      image_height: null,
+      image_size: null,
+      image_mime: null,
+      image_name: null,
+      image_group: null,
+      sticker_id: 'moe-wave',
+      sticker,
+      reply_to_message_id: null,
+      reply_preview_content: null,
+      reply_preview_sender_name: null,
+      reply_selected_text: null,
+      reply_image: null,
+      reply_sticker_id: null,
+      reply_sticker: null,
+      created: new Date('2026-06-30T10:02:00.000Z'),
+      sender: { id: 1007, name: 'Saya', avatar: '/saya.webp' }
+    })
+
+    const { sendMessage } = await import(
+      '~/app/api/message/conversation/[id]/service'
+    )
+    const result = await sendMessage(
+      5,
+      { type: 2, stickerId: 'moe-wave' },
+      1007
+    )
+
+    expect(prismaMock.sticker.findUnique).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: 'moe-wave' } })
+    )
+    expect(prismaMock._tx.user_private_message.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          type: 2,
+          content: '',
+          sticker_id: 'moe-wave'
+        })
+      })
+    )
+    expect(result).toMatchObject({
+      type: 2,
+      stickerId: 'moe-wave',
+      sticker: {
+        mediaType: 'video',
+        thumbnailUrl: 'https://cdn.example/sticker/moe-wave.webp'
+      }
+    })
   })
 
   it('stores the selected reply image snapshot when replying to an image', async () => {
@@ -1056,6 +1149,7 @@ describe('conversation list summaries', () => {
         content: true,
         image_url: true,
         image_group: true,
+        sticker: { select: { id: true } },
         is_deleted: true
       }
     })
@@ -1099,6 +1193,63 @@ describe('conversation list summaries', () => {
     expect(result.conversations[0]).toMatchObject({
       lastMessage: '[图片不可用]'
     })
+  })
+
+  it('summarizes available and unavailable sticker last messages separately', async () => {
+    prismaMock.user_conversation.findMany.mockResolvedValue([
+      {
+        id: 5,
+        last_message_id: 93,
+        user_a_id: 1007,
+        user_b_id: 8,
+        user_a: { id: 1007, name: 'Saya', avatar: '/saya.webp' },
+        user_b: { id: 8, name: 'Mio', avatar: '/mio.webp' },
+        last_message_time: new Date('2026-06-30T10:00:00.000Z'),
+        user_a_unread_count: 0,
+        user_b_unread_count: 0
+      },
+      {
+        id: 6,
+        last_message_id: 94,
+        user_a_id: 1007,
+        user_b_id: 9,
+        user_a: { id: 1007, name: 'Saya', avatar: '/saya.webp' },
+        user_b: { id: 9, name: 'Ame', avatar: '/ame.webp' },
+        last_message_time: new Date('2026-06-30T09:00:00.000Z'),
+        user_a_unread_count: 0,
+        user_b_unread_count: 0
+      }
+    ])
+    prismaMock.user_conversation.count.mockResolvedValue(2)
+    prismaMock.user_private_message.findMany.mockResolvedValue([
+      {
+        id: 93,
+        type: 2,
+        content: '',
+        image_url: null,
+        image_group: null,
+        sticker: { id: 'moe-wave' },
+        is_deleted: false
+      },
+      {
+        id: 94,
+        type: 2,
+        content: '',
+        image_url: null,
+        image_group: null,
+        sticker: null,
+        is_deleted: false
+      }
+    ])
+
+    const { getConversations } = await import(
+      '~/app/api/message/conversation/service'
+    )
+    const result = await getConversations({ page: 1, limit: 30 }, 1007)
+
+    expect(
+      result.conversations.map((conversation) => conversation.lastMessage)
+    ).toEqual(['[贴纸]', '[贴纸不可用]'])
   })
 
   it('does not expose deleted last message content in conversation summaries', async () => {

@@ -9,7 +9,11 @@ export const getConversationsSchema = z.object({
   limit: z.coerce.number().min(1).max(30)
 })
 
-const messageTypeSchema = z.union([z.literal(0), z.literal(1)]).default(0)
+const messageTypeSchema = z
+  .union([z.literal(0), z.literal(1), z.literal(2)])
+  .default(0)
+
+const stickerIdSchema = z.string().trim().min(1).max(100).optional()
 
 const privateMessageImageSchema = z.object({
   url: z.string().url().max(1000),
@@ -45,6 +49,7 @@ export const sendPrivateMessageSchema = z
       .optional(),
     image: privateMessageImageSchema.optional(),
     images: z.array(privateMessageImageSchema).min(1).max(9).optional(),
+    stickerId: stickerIdSchema,
     replyToMessageId: z.coerce.number().min(1).max(9999999).optional(),
     replySelectedText: z.string().trim().max(500).optional(),
     replyImageIndex: z.coerce.number().int().min(0).max(8).optional()
@@ -69,11 +74,43 @@ export const sendPrivateMessageSchema = z
       })
     }
 
+    if (input.type === 2 && !input.stickerId) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: '请选择贴纸',
+        path: ['stickerId']
+      })
+    }
+
+    if (input.type !== 2 && input.stickerId) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: '贴纸消息类型不正确',
+        path: ['type']
+      })
+    }
+
+    if (input.type === 2 && content) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: '贴纸消息不能包含文本',
+        path: ['content']
+      })
+    }
+
     if (imageCount > 0 && input.type !== 1) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         message: '图片消息类型不正确',
         path: ['type']
+      })
+    }
+
+    if (input.type === 2 && imageCount > 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: '贴纸消息不能包含图片',
+        path: ['images']
       })
     }
   })

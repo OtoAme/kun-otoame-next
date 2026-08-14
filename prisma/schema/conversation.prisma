@@ -44,6 +44,9 @@ model user_private_message {
   image_name   String? @db.VarChar(255)
   image_group  Json?
 
+  sticker_id String? @db.VarChar(100)
+  sticker    sticker? @relation("private_message_sticker", fields: [sticker_id], references: [id], onDelete: SetNull)
+
   reply_to_message_id Int?
   reply_to_message    user_private_message?  @relation("private_message_reply", fields: [reply_to_message_id], references: [id], onDelete: SetNull)
   replies             user_private_message[] @relation("private_message_reply")
@@ -52,6 +55,8 @@ model user_private_message {
   reply_preview_sender_name String? @db.VarChar(50)
   reply_selected_text       String? @db.VarChar(500)
   reply_image               Json?
+  reply_sticker_id          String? @db.VarChar(100)
+  reply_sticker             sticker? @relation("private_message_reply_sticker", fields: [reply_sticker_id], references: [id], onDelete: SetNull)
 
   edited_at DateTime?
 

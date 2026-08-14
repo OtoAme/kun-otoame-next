@@ -237,6 +237,14 @@ describe('ChatMessage menu and rendering', () => {
     vi.stubGlobal('window', dom.window)
     vi.stubGlobal('document', dom.window.document)
     vi.stubGlobal('Range', dom.window.Range)
+    Object.defineProperty(dom.window.HTMLMediaElement.prototype, 'play', {
+      configurable: true,
+      value: vi.fn().mockResolvedValue(undefined)
+    })
+    Object.defineProperty(dom.window.HTMLMediaElement.prototype, 'pause', {
+      configurable: true,
+      value: vi.fn()
+    })
     Object.defineProperty(dom.window.HTMLElement.prototype, 'attachEvent', {
       configurable: true,
       value: vi.fn()
@@ -990,6 +998,54 @@ describe('ChatMessage menu and rendering', () => {
         .querySelector('button[aria-label="查看图片 1"]')
         ?.getAttribute('style')
     ).toContain('width:')
+  })
+
+  it('renders a dynamic sticker as WebM with a static poster', async () => {
+    const { container } = await renderMessage({
+      ...baseMessage,
+      type: 2,
+      content: '',
+      stickerId: 'moe-wave',
+      sticker: {
+        id: 'moe-wave',
+        packId: 4,
+        packSlug: 'moe',
+        packName: 'Moe',
+        url: 'https://cdn.example/wave.webm',
+        thumbnailUrl: 'https://cdn.example/wave.webp',
+        mime: 'video/webm',
+        mediaType: 'video',
+        width: 512,
+        height: 512,
+        size: 12000,
+        durationMs: 1200,
+        frameRate: 30,
+        alt: '挥手'
+      }
+    })
+
+    const video = container.querySelector<HTMLVideoElement>('video')
+    expect(video?.src).toBe('https://cdn.example/wave.webm')
+    expect(video?.poster).toBe('https://cdn.example/wave.webp')
+    expect(video?.muted).toBe(true)
+    expect(video?.loop).toBe(true)
+    expect(video?.playsInline).toBe(true)
+    expect(
+      container.querySelector('[data-testid="chat-sticker"]')
+    ).not.toBeNull()
+  })
+
+  it('renders an unavailable sticker as a text fallback', async () => {
+    const { container } = await renderMessage({
+      ...baseMessage,
+      type: 2,
+      content: '[贴纸不可用]',
+      stickerId: 'missing-sticker',
+      sticker: null
+    })
+
+    expect(container.textContent).toContain('[贴纸不可用]')
+    expect(container.querySelector('video')).toBeNull()
   })
 
   it('shows image-only message time and read indicator in a translucent bottom-right overlay', async () => {

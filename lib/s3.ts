@@ -38,11 +38,21 @@ export const uploadImageToS3 = async (
   fileBuffer: Buffer,
   contentType = 'image/avif'
 ) => {
+  await uploadBufferToS3(key, fileBuffer, contentType)
+}
+
+export const uploadBufferToS3 = async (
+  key: string,
+  fileBuffer: Buffer,
+  contentType = 'application/octet-stream',
+  cacheControl?: string
+) => {
   const uploadCommand = new PutObjectCommand({
     Bucket: process.env.KUN_VISUAL_NOVEL_S3_STORAGE_BUCKET_NAME!,
     Key: key,
     Body: fileBuffer,
-    ContentType: contentType
+    ContentType: contentType,
+    ...(cacheControl ? { CacheControl: cacheControl } : {})
   })
   await s3.send(uploadCommand)
 }

@@ -15,6 +15,11 @@ import {
   restoreConversationImageUploads
 } from '../imageUploadMetadata'
 import { createConversationRateLimitResponse } from '../response'
+import {
+  getStickerForSending,
+  mapSticker,
+  type StickerRecord
+} from '../../stickers/service'
 
 type PrivateMessageRecord = {
   id: number
@@ -30,14 +35,56 @@ type PrivateMessageRecord = {
   image_mime?: string | null
   image_name?: string | null
   image_group?: unknown
+  sticker_id?: string | null
+  sticker?: StickerRecord | null
   reply_to_message_id?: number | null
   reply_preview_content?: string | null
   reply_preview_sender_name?: string | null
   reply_selected_text?: string | null
   reply_image?: unknown
+  reply_sticker_id?: string | null
+  reply_sticker?: StickerRecord | null
   created: Date
   sender: KunUser
 }
+
+const privateMessageInclude = {
+  sender: {
+    select: { id: true, name: true, avatar: true }
+  },
+  sticker: {
+    include: {
+      pack: {
+        select: {
+          id: true,
+          slug: true,
+          name: true,
+          description: true,
+          cover_url: true,
+          price: true,
+          status: true,
+          is_builtin: true
+        }
+      }
+    }
+  },
+  reply_sticker: {
+    include: {
+      pack: {
+        select: {
+          id: true,
+          slug: true,
+          name: true,
+          description: true,
+          cover_url: true,
+          price: true,
+          status: true,
+          is_builtin: true
+        }
+      }
+    }
+  }
+} as const
 
 type PrivateMessageImageRecord = Pick<
   PrivateMessageRecord,
@@ -207,6 +254,8 @@ const mapPrivateMessage = (msg: PrivateMessageRecord): PrivateMessage => {
       isDeleted: true,
       image: null,
       images: [],
+      stickerId: null,
+      sticker: null,
       replyTo: null,
       editedAt: msg.edited_at,
       created: msg.created,
@@ -217,12 +266,26 @@ const mapPrivateMessage = (msg: PrivateMessageRecord): PrivateMessage => {
   const images = getMessageImages(msg)
   const messageType = msg.type ?? 0
   const missingImagePayload = messageType === 1 && images.length === 0
-  const content = missingImagePayload
-    ? msg.content.trim() || '[图片不可用]'
-    : msg.content
+  const sticker = mapSticker(msg.sticker)
+  const missingStickerPayload = messageType === 2 && !sticker
+  const content = missingStickerPayload
+    ? '[贴纸不可用]'
+    : messageType === 2
+      ? ''
+      : missingImagePayload
+        ? msg.content.trim() || '[图片不可用]'
+        : msg.content
   const replyImage = isPrivateMessageImage(msg.reply_image)
     ? msg.reply_image
     : null
+  const replySticker = mapSticker(msg.reply_sticker)
+  const replyContent = msg.reply_selected_text?.trim()
+    ? (msg.reply_preview_content ?? msg.reply_selected_text)
+    : msg.reply_sticker_id
+      ? replySticker
+        ? '[贴纸]'
+        : '[贴纸不可用]'
+      : (msg.reply_preview_content ?? '')
 
   return {
     id: msg.id,
@@ -232,14 +295,18 @@ const mapPrivateMessage = (msg: PrivateMessageRecord): PrivateMessage => {
     isDeleted: msg.is_deleted,
     image: images[0] ?? null,
     images,
+    stickerId: msg.sticker_id ?? null,
+    sticker,
     replyTo:
       msg.reply_to_message_id && msg.reply_preview_sender_name
         ? {
             messageId: msg.reply_to_message_id,
-            content: msg.reply_preview_content ?? '',
+            content: replyContent,
             senderName: msg.reply_preview_sender_name,
             selectedText: msg.reply_selected_text ?? null,
-            image: replyImage
+            image: replyImage,
+            stickerId: msg.reply_sticker_id ?? null,
+            sticker: replySticker
           }
         : null,
     editedAt: msg.edited_at,
@@ -260,7 +327,7 @@ const buildReplyPreview = async (
 
   const replyTarget = await prisma.user_private_message.findFirst({
     where: { id: replyToMessageId, conversation_id: conversationId },
-    include: { sender: { select: { name: true } } }
+    include: privateMessageInclude
   })
 
   if (!replyTarget) {
@@ -283,17 +350,26 @@ const buildReplyPreview = async (
   }
 
   const targetContent = replyTarget.content.trim()
-  const fallback =
-    replyImage || (replyTarget.type === 1 && !targetContent)
-      ? '[图片]'
-      : targetContent.slice(0, 500)
+  const targetSticker =
+    replyTarget.type === 2 ? mapSticker(replyTarget.sticker) : null
+  const fallback = replyImage
+    ? '[图片]'
+    : replyTarget.type === 2
+      ? targetSticker
+        ? '[贴纸]'
+        : '[贴纸不可用]'
+      : replyTarget.type === 1 && !targetContent
+        ? '[图片]'
+        : targetContent.slice(0, 500)
 
   return {
     reply_to_message_id: replyTarget.id,
     reply_preview_content: selected ?? fallback,
     reply_preview_sender_name: replyTarget.sender.name,
     reply_selected_text: selected,
-    reply_image: replyImage ? toPrismaJsonImage(replyImage) : undefined
+    reply_image: replyImage ? toPrismaJsonImage(replyImage) : undefined,
+    reply_sticker_id:
+      replyTarget.type === 2 ? (replyTarget.sticker_id ?? undefined) : undefined
   }
 }
 
@@ -359,9 +435,7 @@ export const getConversationMessages = async (
     const data = await prisma.user_private_message.findMany({
       where: { conversation_id: conversationId, id: { gt: afterId } },
       include: {
-        sender: {
-          select: { id: true, name: true, avatar: true }
-        }
+        ...privateMessageInclude
       },
       orderBy: { created: 'asc' },
       take: limit
@@ -384,9 +458,7 @@ export const getConversationMessages = async (
     const data = await prisma.user_private_message.findMany({
       where: { conversation_id: conversationId, id: { lt: beforeId } },
       include: {
-        sender: {
-          select: { id: true, name: true, avatar: true }
-        }
+        ...privateMessageInclude
       },
       orderBy: { id: 'desc' },
       take: limit + 1
@@ -406,9 +478,7 @@ export const getConversationMessages = async (
     prisma.user_private_message.findMany({
       where: { conversation_id: conversationId },
       include: {
-        sender: {
-          select: { id: true, name: true, avatar: true }
-        }
+        ...privateMessageInclude
       },
       orderBy: { created: 'desc' },
       skip: offset,
@@ -471,6 +541,17 @@ export const sendMessage = async (
     )
   }
 
+  if (type === 2) {
+    if (!input.stickerId) {
+      return '请选择贴纸'
+    }
+
+    const stickerResponse = await getStickerForSending(input.stickerId, uid)
+    if (typeof stickerResponse === 'string') {
+      return stickerResponse
+    }
+  }
+
   const replyPreview = await buildReplyPreview(
     conversationId,
     replyToMessageId,
@@ -482,13 +563,15 @@ export const sendMessage = async (
     return replyPreview
   }
 
-  const imageUploadError = await consumeConversationImageUploads(
-    conversationId,
-    uid,
-    imageList
-  )
-  if (imageUploadError) {
-    return imageUploadError
+  if (imageList.length > 0) {
+    const imageUploadError = await consumeConversationImageUploads(
+      conversationId,
+      uid,
+      imageList
+    )
+    if (imageUploadError) {
+      return imageUploadError
+    }
   }
 
   const isUserA = conversation.user_a_id === uid
@@ -508,13 +591,10 @@ export const sendMessage = async (
             image_mime: firstImage?.mime,
             image_name: firstImage?.name,
             image_group: imageList.length > 0 ? imageList : undefined,
+            sticker_id: type === 2 ? input.stickerId : undefined,
             ...(replyPreview ?? {})
           },
-          include: {
-            sender: {
-              select: { id: true, name: true, avatar: true }
-            }
-          }
+          include: privateMessageInclude
         })
 
         await tx.user_conversation.update({
@@ -533,14 +613,19 @@ export const sendMessage = async (
         return created as typeof created & { sender: KunUser }
       })
     } catch (error) {
-      try {
-        await restoreConversationImageUploads(conversationId, uid, imageList)
-      } catch (restoreError) {
-        console.error('Failed to restore conversation image upload metadata', {
-          conversationId,
-          uid,
-          error: restoreError
-        })
+      if (imageList.length > 0) {
+        try {
+          await restoreConversationImageUploads(conversationId, uid, imageList)
+        } catch (restoreError) {
+          console.error(
+            'Failed to restore conversation image upload metadata',
+            {
+              conversationId,
+              uid,
+              error: restoreError
+            }
+          )
+        }
       }
 
       throw error
@@ -561,11 +646,15 @@ export const sendMessage = async (
     image_mime: message.image_mime,
     image_name: message.image_name,
     image_group: message.image_group,
+    sticker_id: message.sticker_id,
+    sticker: message.sticker,
     reply_to_message_id: message.reply_to_message_id,
     reply_preview_content: message.reply_preview_content,
     reply_preview_sender_name: message.reply_preview_sender_name,
     reply_selected_text: message.reply_selected_text,
     reply_image: message.reply_image,
+    reply_sticker_id: message.reply_sticker_id,
+    reply_sticker: message.reply_sticker,
     created: message.created,
     sender: message.sender
   })
@@ -582,10 +671,7 @@ export const updateMessage = async (
   }
 
   const { checkConversationActionRateLimit } = await import('../rateLimit')
-  const rateLimit = await checkConversationActionRateLimit(
-    'message-write',
-    uid
-  )
+  const rateLimit = await checkConversationActionRateLimit('message-write', uid)
   if (!rateLimit.allowed) {
     return createConversationRateLimitResponse(
       rateLimit.message,
@@ -614,6 +700,10 @@ export const updateMessage = async (
     return '无法编辑已删除的消息'
   }
 
+  if (message.type === 2) {
+    return '贴纸消息不能编辑'
+  }
+
   const updated = await prisma.user_private_message.update({
     where: { id: messageId },
     data: {
@@ -640,10 +730,7 @@ export const deleteMessage = async (
   }
 
   const { checkConversationActionRateLimit } = await import('../rateLimit')
-  const rateLimit = await checkConversationActionRateLimit(
-    'message-write',
-    uid
-  )
+  const rateLimit = await checkConversationActionRateLimit('message-write', uid)
   if (!rateLimit.allowed) {
     return createConversationRateLimitResponse(
       rateLimit.message,
