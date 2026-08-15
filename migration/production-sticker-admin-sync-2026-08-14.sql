@@ -23,6 +23,7 @@ WHERE status IS NULL;
 
 ALTER TABLE public.sticker
   ALTER COLUMN asset_url DROP NOT NULL,
+  ALTER COLUMN asset_url DROP DEFAULT,
   ALTER COLUMN status SET DEFAULT 1,
   ALTER COLUMN status SET NOT NULL;
 
@@ -53,7 +54,7 @@ BEGIN
   ALTER TABLE public.sticker_pack
     ADD CONSTRAINT sticker_pack_cover_sticker_id_fkey
     FOREIGN KEY (cover_sticker_id) REFERENCES public.sticker(id)
-    ON DELETE SET NULL ON UPDATE NO ACTION;
+    ON DELETE SET NULL ON UPDATE CASCADE;
 EXCEPTION
   WHEN duplicate_object THEN NULL;
 END $$;

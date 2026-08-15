@@ -83,3 +83,42 @@ LEFT JOIN existing_indexes
   ON existing_indexes.table_name = required_indexes.table_name
  AND existing_indexes.index_name = required_indexes.index_name
 ORDER BY required_indexes.table_name, required_indexes.index_name;
+
+WITH required_foreign_keys(table_name, constraint_name, expected_actions) AS (
+  VALUES
+    ('sticker', 'sticker_pack_id_fkey', 'ON DELETE RESTRICT ON UPDATE CASCADE'),
+    ('user_sticker_pack', 'user_sticker_pack_user_id_fkey', 'ON DELETE CASCADE ON UPDATE CASCADE'),
+    ('user_sticker_pack', 'user_sticker_pack_pack_id_fkey', 'ON DELETE CASCADE ON UPDATE CASCADE'),
+    ('user_private_message', 'user_private_message_sticker_id_fkey', 'ON DELETE SET NULL ON UPDATE CASCADE'),
+    ('user_private_message', 'user_private_message_reply_sticker_id_fkey', 'ON DELETE SET NULL ON UPDATE CASCADE')
+), existing_foreign_keys AS (
+  SELECT
+    table_class.relname AS table_name,
+    constraint_row.conname AS constraint_name,
+    pg_get_constraintdef(constraint_row.oid) AS definition
+  FROM pg_constraint AS constraint_row
+  JOIN pg_class AS table_class
+    ON table_class.oid = constraint_row.conrelid
+  JOIN pg_namespace AS table_namespace
+    ON table_namespace.oid = table_class.relnamespace
+  WHERE table_namespace.nspname = 'public'
+    AND constraint_row.contype = 'f'
+)
+SELECT
+  'required_foreign_key' AS check_type,
+  required_foreign_keys.table_name,
+  required_foreign_keys.constraint_name,
+  CASE
+    WHEN existing_foreign_keys.constraint_name IS NULL THEN 'missing'
+    WHEN position(
+      upper(required_foreign_keys.expected_actions)
+      IN upper(existing_foreign_keys.definition)
+    ) > 0 THEN 'ok'
+    ELSE 'definition_mismatch'
+  END AS status,
+  required_foreign_keys.expected_actions,
+  existing_foreign_keys.definition AS actual_definition
+FROM required_foreign_keys
+LEFT JOIN existing_foreign_keys
+  USING (table_name, constraint_name)
+ORDER BY required_foreign_keys.table_name, required_foreign_keys.constraint_name;

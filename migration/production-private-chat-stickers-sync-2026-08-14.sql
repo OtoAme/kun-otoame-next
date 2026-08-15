@@ -12,8 +12,8 @@ CREATE TABLE IF NOT EXISTS public.sticker_pack (
   status integer NOT NULL DEFAULT 1,
   is_builtin boolean NOT NULL DEFAULT true,
   sort_order integer NOT NULL DEFAULT 0,
-  created timestamp without time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated timestamp without time zone NOT NULL DEFAULT CURRENT_TIMESTAMP
+  created timestamp(3) without time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated timestamp(3) without time zone NOT NULL
 );
 
 ALTER TABLE public.sticker_pack
@@ -25,8 +25,11 @@ ALTER TABLE public.sticker_pack
   ADD COLUMN IF NOT EXISTS status integer NOT NULL DEFAULT 1,
   ADD COLUMN IF NOT EXISTS is_builtin boolean NOT NULL DEFAULT true,
   ADD COLUMN IF NOT EXISTS sort_order integer NOT NULL DEFAULT 0,
-  ADD COLUMN IF NOT EXISTS created timestamp without time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  ADD COLUMN IF NOT EXISTS updated timestamp without time zone NOT NULL DEFAULT CURRENT_TIMESTAMP;
+  ADD COLUMN IF NOT EXISTS created timestamp(3) without time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  ADD COLUMN IF NOT EXISTS updated timestamp(3) without time zone NOT NULL DEFAULT CURRENT_TIMESTAMP;
+
+ALTER TABLE public.sticker_pack
+  ALTER COLUMN updated DROP DEFAULT;
 
 CREATE UNIQUE INDEX IF NOT EXISTS sticker_pack_slug_key
   ON public.sticker_pack (slug);
@@ -37,26 +40,26 @@ CREATE TABLE IF NOT EXISTS public.sticker (
   id varchar(100) PRIMARY KEY,
   pack_id integer NOT NULL,
   alt varchar(255) NOT NULL DEFAULT '',
-  asset_url varchar(1000) NOT NULL,
+  asset_url varchar(1000),
   thumbnail_url varchar(1000),
   storage_key varchar(500) NOT NULL,
   thumbnail_storage_key varchar(500),
   mime varchar(100) NOT NULL,
-  media_type varchar(16) NOT NULL DEFAULT 'image',
-  width integer NOT NULL DEFAULT 0,
-  height integer NOT NULL DEFAULT 0,
-  size integer NOT NULL DEFAULT 0,
+  media_type varchar(16) NOT NULL,
+  width integer NOT NULL,
+  height integer NOT NULL,
+  size integer NOT NULL,
   duration_ms integer,
   frame_rate double precision,
   sort_order integer NOT NULL DEFAULT 0,
-  created timestamp without time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated timestamp without time zone NOT NULL DEFAULT CURRENT_TIMESTAMP
+  created timestamp(3) without time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated timestamp(3) without time zone NOT NULL
 );
 
 ALTER TABLE public.sticker
   ADD COLUMN IF NOT EXISTS pack_id integer,
   ADD COLUMN IF NOT EXISTS alt varchar(255) NOT NULL DEFAULT '',
-  ADD COLUMN IF NOT EXISTS asset_url varchar(1000) NOT NULL DEFAULT '',
+  ADD COLUMN IF NOT EXISTS asset_url varchar(1000) DEFAULT '',
   ADD COLUMN IF NOT EXISTS thumbnail_url varchar(1000),
   ADD COLUMN IF NOT EXISTS storage_key varchar(500) NOT NULL DEFAULT '',
   ADD COLUMN IF NOT EXISTS thumbnail_storage_key varchar(500),
@@ -68,15 +71,25 @@ ALTER TABLE public.sticker
   ADD COLUMN IF NOT EXISTS duration_ms integer,
   ADD COLUMN IF NOT EXISTS frame_rate double precision,
   ADD COLUMN IF NOT EXISTS sort_order integer NOT NULL DEFAULT 0,
-  ADD COLUMN IF NOT EXISTS created timestamp without time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  ADD COLUMN IF NOT EXISTS updated timestamp without time zone NOT NULL DEFAULT CURRENT_TIMESTAMP;
+  ADD COLUMN IF NOT EXISTS created timestamp(3) without time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  ADD COLUMN IF NOT EXISTS updated timestamp(3) without time zone NOT NULL DEFAULT CURRENT_TIMESTAMP;
+
+ALTER TABLE public.sticker
+  ALTER COLUMN asset_url DROP DEFAULT,
+  ALTER COLUMN storage_key DROP DEFAULT,
+  ALTER COLUMN mime DROP DEFAULT,
+  ALTER COLUMN media_type DROP DEFAULT,
+  ALTER COLUMN width DROP DEFAULT,
+  ALTER COLUMN height DROP DEFAULT,
+  ALTER COLUMN size DROP DEFAULT,
+  ALTER COLUMN updated DROP DEFAULT;
 
 DO $$
 BEGIN
   ALTER TABLE public.sticker
     ADD CONSTRAINT sticker_pack_id_fkey
     FOREIGN KEY (pack_id) REFERENCES public.sticker_pack(id)
-    ON DELETE RESTRICT ON UPDATE NO ACTION;
+    ON DELETE RESTRICT ON UPDATE CASCADE;
 EXCEPTION
   WHEN duplicate_object THEN NULL;
 END $$;
@@ -90,25 +103,28 @@ CREATE TABLE IF NOT EXISTS public.user_sticker_pack (
   pack_id integer NOT NULL,
   price_paid integer NOT NULL DEFAULT 0,
   source varchar(32) NOT NULL DEFAULT 'builtin',
-  acquired_at timestamp without time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  created timestamp without time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated timestamp without time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  acquired_at timestamp(3) without time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  created timestamp(3) without time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated timestamp(3) without time zone NOT NULL,
   CONSTRAINT user_sticker_pack_user_id_pack_id_key UNIQUE (user_id, pack_id)
 );
 
 ALTER TABLE public.user_sticker_pack
   ADD COLUMN IF NOT EXISTS price_paid integer NOT NULL DEFAULT 0,
   ADD COLUMN IF NOT EXISTS source varchar(32) NOT NULL DEFAULT 'builtin',
-  ADD COLUMN IF NOT EXISTS acquired_at timestamp without time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  ADD COLUMN IF NOT EXISTS created timestamp without time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  ADD COLUMN IF NOT EXISTS updated timestamp without time zone NOT NULL DEFAULT CURRENT_TIMESTAMP;
+  ADD COLUMN IF NOT EXISTS acquired_at timestamp(3) without time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  ADD COLUMN IF NOT EXISTS created timestamp(3) without time zone NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  ADD COLUMN IF NOT EXISTS updated timestamp(3) without time zone NOT NULL DEFAULT CURRENT_TIMESTAMP;
+
+ALTER TABLE public.user_sticker_pack
+  ALTER COLUMN updated DROP DEFAULT;
 
 DO $$
 BEGIN
   ALTER TABLE public.user_sticker_pack
     ADD CONSTRAINT user_sticker_pack_user_id_fkey
     FOREIGN KEY (user_id) REFERENCES public."user"(id)
-    ON DELETE CASCADE ON UPDATE NO ACTION;
+    ON DELETE CASCADE ON UPDATE CASCADE;
 EXCEPTION
   WHEN duplicate_object THEN NULL;
 END $$;
@@ -118,7 +134,7 @@ BEGIN
   ALTER TABLE public.user_sticker_pack
     ADD CONSTRAINT user_sticker_pack_pack_id_fkey
     FOREIGN KEY (pack_id) REFERENCES public.sticker_pack(id)
-    ON DELETE CASCADE ON UPDATE NO ACTION;
+    ON DELETE CASCADE ON UPDATE CASCADE;
 EXCEPTION
   WHEN duplicate_object THEN NULL;
 END $$;
@@ -137,7 +153,7 @@ BEGIN
   ALTER TABLE public.user_private_message
     ADD CONSTRAINT user_private_message_sticker_id_fkey
     FOREIGN KEY (sticker_id) REFERENCES public.sticker(id)
-    ON DELETE SET NULL ON UPDATE NO ACTION;
+    ON DELETE SET NULL ON UPDATE CASCADE;
 EXCEPTION
   WHEN duplicate_object THEN NULL;
 END $$;
@@ -147,7 +163,7 @@ BEGIN
   ALTER TABLE public.user_private_message
     ADD CONSTRAINT user_private_message_reply_sticker_id_fkey
     FOREIGN KEY (reply_sticker_id) REFERENCES public.sticker(id)
-    ON DELETE SET NULL ON UPDATE NO ACTION;
+    ON DELETE SET NULL ON UPDATE CASCADE;
 EXCEPTION
   WHEN duplicate_object THEN NULL;
 END $$;

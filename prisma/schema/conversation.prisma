@@ -62,4 +62,7 @@ model user_private_message {
 
   created DateTime @default(now())
   updated DateTime @updatedAt
+
+  @@index([sticker_id])
+  @@index([reply_sticker_id])
 }
