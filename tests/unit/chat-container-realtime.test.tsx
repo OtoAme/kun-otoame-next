@@ -17,7 +17,8 @@ const fetchMock = vi.hoisted(() => ({
 
 const chatInputMock = vi.hoisted(() => ({
   onMessageSent: undefined as ((message: PrivateMessage) => void) | undefined,
-  replyTargetId: null as number | null
+  replyTargetId: null as number | null,
+  stickerPickerPortalRef: null as React.RefObject<HTMLDivElement | null> | null
 }))
 
 const intersectionMock = vi.hoisted(() => ({
@@ -125,14 +126,17 @@ vi.mock('~/components/message/chat/ChatInput', () => ({
   ChatInput: ({
     onMessageSent,
     replyTarget,
-    onCancelReply
+    onCancelReply,
+    stickerPickerPortalRef
   }: {
     onMessageSent: (message: PrivateMessage) => void
     replyTarget?: PrivateMessage
     onCancelReply: () => void
+    stickerPickerPortalRef: React.RefObject<HTMLDivElement | null>
   }) => {
     chatInputMock.onMessageSent = onMessageSent
     chatInputMock.replyTargetId = replyTarget?.id ?? null
+    chatInputMock.stickerPickerPortalRef = stickerPickerPortalRef
     return (
       <div data-testid="chat-input">
         {replyTarget && (
@@ -498,6 +502,7 @@ describe('ChatContainer realtime sync', () => {
     fetchMock.kunFetchPut.mockReset()
     chatInputMock.onMessageSent = undefined
     chatInputMock.replyTargetId = null
+    chatInputMock.stickerPickerPortalRef = null
     intersectionMock.callback = undefined
     imageViewerMock.images = []
     imageViewerMock.index = -1
@@ -614,6 +619,23 @@ describe('ChatContainer realtime sync', () => {
     expect(messageScroller?.className).toContain('@container')
     expect(messageScroller?.className).toContain('flex-1')
     expect(messageScroller?.className).toContain('overflow-y-auto')
+  })
+
+  it('provides a bounded message viewport overlay for the sticker picker', async () => {
+    const { container } = await renderChat()
+
+    const portal = container.querySelector<HTMLDivElement>(
+      '[data-testid="sticker-picker-portal"]'
+    )
+
+    expect(portal).not.toBeNull()
+    expect(portal?.className).toContain('pointer-events-none')
+    expect(portal?.className).toContain('absolute')
+    expect(portal?.className).toContain('inset-0')
+    expect(portal?.className).toContain('@container')
+    expect(portal?.parentElement?.className).toContain('relative')
+    expect(portal?.parentElement?.className).toContain('flex-1')
+    expect(chatInputMock.stickerPickerPortalRef?.current).toBe(portal)
   })
 
   it('prevents message content from creating horizontal chat scrolling', async () => {

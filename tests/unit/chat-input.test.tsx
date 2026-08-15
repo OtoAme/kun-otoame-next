@@ -28,6 +28,40 @@ const textareaMock = vi.hoisted(() => ({
     | undefined
 }))
 
+const motionMock = vi.hoisted(() => ({
+  reducedMotion: false
+}))
+
+vi.mock('framer-motion', () => ({
+  AnimatePresence: ({ children }: { children?: React.ReactNode }) => (
+    <div data-testid="sticker-picker-presence">{children}</div>
+  ),
+  useIsPresent: () => true,
+  useReducedMotion: () => motionMock.reducedMotion,
+  motion: {
+    div: React.forwardRef<
+      HTMLDivElement,
+      React.HTMLAttributes<HTMLDivElement> & {
+        initial?: unknown
+        animate?: unknown
+        exit?: unknown
+        transition?: unknown
+      }
+    >(({ initial, animate, exit, transition, children, ...props }, ref) => (
+      <div
+        {...props}
+        ref={ref}
+        data-motion-initial={JSON.stringify(initial)}
+        data-motion-animate={JSON.stringify(animate)}
+        data-motion-exit={JSON.stringify(exit)}
+        data-motion-transition={JSON.stringify(transition)}
+      >
+        {children}
+      </div>
+    ))
+  }
+}))
+
 vi.mock('~/utils/kunFetch', () => ({
   kunFetchFormData: fetchMock.kunFetchFormData,
   kunFetchGet: fetchMock.kunFetchGet,
@@ -45,6 +79,11 @@ vi.mock('@heroui/input', () => ({
       onCompositionEnd?: React.CompositionEventHandler<HTMLTextAreaElement>
       onPaste?: React.ClipboardEventHandler<HTMLTextAreaElement>
       placeholder?: string
+      endContent?: React.ReactNode
+      classNames?: {
+        innerWrapper?: string
+        input?: string
+      }
     }
   >(
     (
@@ -55,7 +94,9 @@ vi.mock('@heroui/input', () => ({
         onCompositionStart,
         onCompositionEnd,
         onPaste,
-        placeholder
+        placeholder,
+        endContent,
+        classNames
       },
       ref
     ) => {
@@ -66,17 +107,24 @@ vi.mock('@heroui/input', () => ({
       textareaMock.onPaste = onPaste
 
       return (
-        <textarea
-          aria-label="私聊输入"
-          ref={ref}
-          placeholder={placeholder}
-          value={value}
-          onChange={(event) => onValueChange?.(event.target.value)}
-          onKeyDown={onKeyDown}
-          onCompositionStart={onCompositionStart}
-          onCompositionEnd={onCompositionEnd}
-          onPaste={onPaste}
-        />
+        <div
+          data-testid="textarea-inner-wrapper"
+          className={classNames?.innerWrapper}
+        >
+          <textarea
+            aria-label="私聊输入"
+            className={classNames?.input}
+            ref={ref}
+            placeholder={placeholder}
+            value={value}
+            onChange={(event) => onValueChange?.(event.target.value)}
+            onKeyDown={onKeyDown}
+            onCompositionStart={onCompositionStart}
+            onCompositionEnd={onCompositionEnd}
+            onPaste={onPaste}
+          />
+          {endContent}
+        </div>
       )
     }
   )
@@ -96,16 +144,19 @@ vi.mock('@heroui/react', () => ({
     isDisabled,
     isLoading,
     'aria-label': ariaLabel,
+    className,
     onPress
   }: {
     children?: React.ReactNode
     isDisabled?: boolean
     isLoading?: boolean
     'aria-label'?: string
+    className?: string
     onPress?: () => void
   }) => (
     <button
       aria-label={ariaLabel}
+      className={className}
       disabled={isDisabled || isLoading}
       onClick={onPress}
     >
@@ -158,6 +209,7 @@ describe('ChatInput keyboard handling', () => {
     }> = {},
     options: Partial<{
       isMobileViewport: boolean
+      withStickerPickerPortal: boolean
     }> = {}
   ) => {
     dom = new JSDOM('<!doctype html><div id="root"></div>', {
@@ -195,6 +247,13 @@ describe('ChatInput keyboard handling', () => {
     vi.stubGlobal('React', React)
     vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
 
+    const stickerPickerPortal = dom.window.document.createElement('div')
+    stickerPickerPortal.dataset.testid = 'sticker-picker-portal'
+    dom.window.document.body.append(stickerPickerPortal)
+    const stickerPickerPortalRef = {
+      current: stickerPickerPortal
+    } as React.RefObject<HTMLDivElement | null>
+
     onMessageSent = vi.fn<(message: PrivateMessage) => void>()
     fetchMock.kunFetchPost.mockResolvedValue(sentMessage(7, 'hello'))
 
@@ -216,6 +275,11 @@ describe('ChatInput keyboard handling', () => {
           <ChatInput
             conversationId={5}
             onMessageSent={onMessageSent}
+            stickerPickerPortalRef={
+              options.withStickerPickerPortal
+                ? stickerPickerPortalRef
+                : undefined
+            }
             {...nextProps}
           />
         )
@@ -232,6 +296,7 @@ describe('ChatInput keyboard handling', () => {
     return {
       container: container!,
       textarea: textarea!,
+      stickerPickerPortal,
       rerender: renderWithProps
     }
   }
@@ -286,6 +351,7 @@ describe('ChatInput keyboard handling', () => {
     textareaMock.onCompositionStart = undefined
     textareaMock.onCompositionEnd = undefined
     textareaMock.onPaste = undefined
+    motionMock.reducedMotion = false
   })
 
   afterEach(async () => {
@@ -311,6 +377,162 @@ describe('ChatInput keyboard handling', () => {
     expect(textarea.placeholder).toBe(
       '输入消息... (按 Enter 发送，Shift+Enter 换行)'
     )
+  })
+
+  it('embeds the sticker trigger at the right edge of the message input', async () => {
+    const { container, textarea } = await renderChatInput()
+    const inputInner = container.querySelector<HTMLElement>(
+      '[data-testid="textarea-inner-wrapper"]'
+    )
+    const stickerButton = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="选择贴纸"]'
+    )
+
+    expect(inputInner).not.toBeNull()
+    expect(inputInner?.contains(textarea)).toBe(true)
+    expect(inputInner?.contains(stickerButton)).toBe(true)
+    expect(inputInner?.lastElementChild?.contains(stickerButton)).toBe(true)
+    expect(stickerButton?.parentElement?.className).toContain('absolute')
+    expect(stickerButton?.parentElement?.className).toContain('bottom-1')
+    expect(stickerButton?.parentElement?.className).toContain('right-2')
+    expect(stickerButton?.parentElement?.className).not.toContain('self-end')
+    expect(stickerButton?.parentElement?.className).not.toContain(
+      'self-stretch'
+    )
+    expect(textarea.className).toContain('!pe-10')
+  })
+
+  it('keeps the mobile sticker picker in the lower half of the chat viewport', async () => {
+    fetchMock.kunFetchGet.mockResolvedValueOnce({ packs: [] })
+
+    const { container, stickerPickerPortal } = await renderChatInput(
+      {},
+      { isMobileViewport: true, withStickerPickerPortal: true }
+    )
+    const stickerButton = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="选择贴纸"]'
+    )
+    const stickerTrigger = stickerButton?.parentElement
+
+    stickerPickerPortal.getBoundingClientRect = () =>
+      ({
+        left: 0,
+        right: 1000,
+        top: 0,
+        bottom: 600,
+        width: 1000,
+        height: 600,
+        x: 0,
+        y: 0,
+        toJSON: () => ({})
+      }) as DOMRect
+    stickerTrigger!.getBoundingClientRect = () =>
+      ({
+        left: 850,
+        right: 882,
+        top: 610,
+        bottom: 642,
+        width: 32,
+        height: 32,
+        x: 850,
+        y: 610,
+        toJSON: () => ({})
+      }) as DOMRect
+
+    await act(async () => {
+      stickerButton?.click()
+      await Promise.resolve()
+    })
+
+    const picker = stickerPickerPortal.querySelector<HTMLElement>(
+      '[data-testid="sticker-picker"]'
+    )
+    expect(picker).not.toBeNull()
+    expect(container.querySelector('[data-testid="sticker-picker"]')).toBeNull()
+    expect(picker?.dataset.layout).toBe('chat-viewport')
+    expect(picker?.className).toContain('max-lg:inset-x-0')
+    expect(picker?.className).toContain('max-lg:bottom-0')
+    expect(picker?.className).toContain('max-lg:h-1/2')
+    expect(picker?.className).toContain('max-lg:w-full')
+    expect(picker?.className).toContain('max-lg:rounded-none')
+    expect(picker?.className).not.toContain('max-lg:inset-0')
+    expect(picker?.className).not.toContain('max-lg:h-full')
+    expect(picker?.className).not.toContain('calc(100vw-2rem)')
+    expect(picker?.className).toContain('lg:w-3/5')
+    expect(picker?.className).not.toContain('lg:w-[22rem]')
+    expect(picker?.className).toContain(
+      'lg:right-[var(--kun-sticker-picker-anchor-right)]'
+    )
+    expect(picker?.className).not.toContain('lg:left-4')
+    expect(
+      picker?.style.getPropertyValue('--kun-sticker-picker-anchor-right')
+    ).toBe('118px')
+  })
+
+  it('pops the sticker picker in and configures a fade-out exit', async () => {
+    fetchMock.kunFetchGet.mockResolvedValueOnce({ packs: [] })
+
+    const { container, stickerPickerPortal } = await renderChatInput(
+      {},
+      { withStickerPickerPortal: true }
+    )
+    const stickerButton = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="选择贴纸"]'
+    )
+
+    await act(async () => {
+      stickerButton?.click()
+      await Promise.resolve()
+    })
+
+    const picker = stickerPickerPortal.querySelector<HTMLElement>(
+      '[data-testid="sticker-picker"]'
+    )
+    const initial = JSON.parse(picker?.dataset.motionInitial ?? 'null')
+    const animate = JSON.parse(picker?.dataset.motionAnimate ?? 'null')
+    const exit = JSON.parse(picker?.dataset.motionExit ?? 'null')
+
+    expect(
+      container.querySelector('[data-testid="sticker-picker-presence"]')
+    ).not.toBeNull()
+    expect(initial).toEqual({ opacity: 0, y: 12, scale: 0.98 })
+    expect(animate).toEqual({ opacity: 1, y: 0, scale: 1 })
+    expect(exit).toEqual(
+      expect.objectContaining({
+        opacity: 0,
+        transition: expect.objectContaining({ duration: 0.14 })
+      })
+    )
+    expect(picker?.className).toContain('origin-bottom')
+    expect(picker?.className).toContain('lg:origin-bottom-right')
+  })
+
+  it('disables sticker picker motion when reduced motion is preferred', async () => {
+    motionMock.reducedMotion = true
+    fetchMock.kunFetchGet.mockResolvedValueOnce({ packs: [] })
+
+    const { container, stickerPickerPortal } = await renderChatInput(
+      {},
+      { withStickerPickerPortal: true }
+    )
+    const stickerButton = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="选择贴纸"]'
+    )
+
+    await act(async () => {
+      stickerButton?.click()
+      await Promise.resolve()
+    })
+
+    const picker = stickerPickerPortal.querySelector<HTMLElement>(
+      '[data-testid="sticker-picker"]'
+    )
+    const exit = JSON.parse(picker?.dataset.motionExit ?? 'null')
+    const transition = JSON.parse(picker?.dataset.motionTransition ?? 'null')
+
+    expect(picker?.dataset.motionInitial).toBe('false')
+    expect(exit.transition.duration).toBe(0)
+    expect(transition.duration).toBe(0)
   })
 
   it('loads sticker packs and sends an independent sticker message', async () => {
@@ -368,7 +590,10 @@ describe('ChatInput keyboard handling', () => {
       })
     )
 
-    const { container } = await renderChatInput()
+    const { container, stickerPickerPortal } = await renderChatInput(
+      {},
+      { withStickerPickerPortal: true }
+    )
     const stickerButton = container.querySelector<HTMLButtonElement>(
       'button[aria-label="选择贴纸"]'
     )
@@ -380,10 +605,18 @@ describe('ChatInput keyboard handling', () => {
     })
 
     expect(fetchMock.kunFetchGet).toHaveBeenCalledWith('/message/stickers')
-    const stickerOption = container.querySelector<HTMLButtonElement>(
+    const stickerOption = stickerPickerPortal.querySelector<HTMLButtonElement>(
       '[data-testid="sticker-option-moe-wave"]'
     )
     expect(stickerOption).not.toBeNull()
+    expect(stickerOption?.parentElement?.className).toContain('grid-cols-5')
+    expect(stickerOption?.parentElement?.className).not.toContain(
+      'sm:grid-cols-6'
+    )
+    expect(stickerOption?.parentElement?.className).toContain(
+      'lg:max-h-[calc(48cqw_+_1px)]'
+    )
+    expect(stickerOption?.parentElement?.className).not.toContain('lg:max-h-64')
     const stickerVideo = stickerOption?.querySelector<HTMLVideoElement>(
       '[data-testid="sticker-thumbnail-video"]'
     )
@@ -394,7 +627,7 @@ describe('ChatInput keyboard handling', () => {
       stickerOption?.querySelector('[data-testid="sticker-thumbnail-poster"]')
     ).not.toBeNull()
     expect(
-      container.querySelector('button[aria-label="切换到Moe"] video')
+      stickerPickerPortal.querySelector('button[aria-label="切换到Moe"] video')
     ).toBeNull()
 
     await act(async () => {

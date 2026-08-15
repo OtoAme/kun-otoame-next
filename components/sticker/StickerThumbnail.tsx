@@ -14,6 +14,23 @@ interface Props {
   fallback?: ReactNode
 }
 
+const resumeVideoPlayback = (video: HTMLVideoElement) => {
+  if (typeof video.play !== 'function') {
+    return
+  }
+
+  try {
+    const playResult = video.play()
+    if (playResult && typeof playResult.catch === 'function') {
+      void playResult.catch(() => {
+        // Muted inline playback can still be interrupted by the browser.
+      })
+    }
+  } catch {
+    // jsdom and older browsers may not implement media playback.
+  }
+}
+
 export const StickerThumbnail = ({
   src,
   posterSrc = null,
@@ -24,7 +41,9 @@ export const StickerThumbnail = ({
   fallback = null
 }: Props) => {
   const containerRef = useRef<HTMLSpanElement>(null)
+  const videoRef = useRef<HTMLVideoElement>(null)
   const [hasEnteredViewport, setHasEnteredViewport] = useState(false)
+  const [isPlaybackVisible, setIsPlaybackVisible] = useState(false)
   const [isReducedMotion, setIsReducedMotion] = useState(false)
   const [isVideoReady, setIsVideoReady] = useState(false)
   const [videoError, setVideoError] = useState(false)
@@ -79,6 +98,25 @@ export const StickerThumbnail = ({
     return () => observer.disconnect()
   }, [])
 
+  useEffect(() => {
+    const element = containerRef.current
+    if (!element) {
+      return
+    }
+
+    if (typeof IntersectionObserver === 'undefined') {
+      setIsPlaybackVisible(true)
+      return
+    }
+
+    const observer = new IntersectionObserver(([entry]) => {
+      setIsPlaybackVisible(Boolean(entry?.isIntersecting))
+    })
+    observer.observe(element)
+
+    return () => observer.disconnect()
+  }, [])
+
   const showVideo = Boolean(
     isVideo && src && hasEnteredViewport && !isReducedMotion && !videoError
   )
@@ -92,6 +130,20 @@ export const StickerThumbnail = ({
       setIsVideoReady(false)
     }
   }, [showVideo])
+
+  useEffect(() => {
+    const video = videoRef.current
+    if (!video || !showVideo) {
+      return
+    }
+
+    if (!isPlaybackVisible) {
+      video.pause()
+      return
+    }
+
+    resumeVideoPlayback(video)
+  }, [isPlaybackVisible, showVideo, src])
 
   return (
     <span
@@ -115,20 +167,52 @@ export const StickerThumbnail = ({
 
       {showVideo && (
         <video
+          ref={videoRef}
           src={src!}
-          autoPlay
+          autoPlay={isPlaybackVisible}
           loop
           muted
           playsInline
-          preload="metadata"
+          preload="auto"
           aria-hidden="true"
           data-testid="sticker-thumbnail-video"
           className={cn(
             'absolute inset-0 size-full bg-transparent object-contain transition-opacity',
             isVideoReady ? 'opacity-100' : 'opacity-0'
           )}
-          onLoadedData={() => setIsVideoReady(true)}
+          onLoadedData={(event) => {
+            setIsVideoReady(true)
+            if (isPlaybackVisible) {
+              resumeVideoPlayback(event.currentTarget)
+            }
+          }}
+          onCanPlay={(event) => {
+            if (isPlaybackVisible) {
+              resumeVideoPlayback(event.currentTarget)
+            }
+          }}
           onPlaying={() => setIsVideoReady(true)}
+          onPause={(event) => {
+            if (isPlaybackVisible) {
+              resumeVideoPlayback(event.currentTarget)
+            }
+          }}
+          onWaiting={(event) => {
+            if (isPlaybackVisible) {
+              resumeVideoPlayback(event.currentTarget)
+            }
+          }}
+          onStalled={(event) => {
+            if (isPlaybackVisible) {
+              resumeVideoPlayback(event.currentTarget)
+            }
+          }}
+          onEnded={(event) => {
+            event.currentTarget.currentTime = 0
+            if (isPlaybackVisible) {
+              resumeVideoPlayback(event.currentTarget)
+            }
+          }}
           onError={() => setVideoError(true)}
         />
       )}

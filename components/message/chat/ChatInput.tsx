@@ -1,8 +1,9 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type RefObject } from 'react'
 import { Button } from '@heroui/react'
 import { Textarea } from '@heroui/input'
+import { AnimatePresence } from 'framer-motion'
 import { ImageIcon, Plus, Send, Smile, X } from 'lucide-react'
 import { kunFetchFormData, kunFetchGet, kunFetchPost } from '~/utils/kunFetch'
 import toast from 'react-hot-toast'
@@ -25,6 +26,7 @@ interface Props {
   replyImageIndex?: number | null
   onCancelReply?: () => void
   onMessageSent: (message: PrivateMessage) => void
+  stickerPickerPortalRef?: RefObject<HTMLDivElement | null>
 }
 
 const ALLOWED_IMAGE_TYPES = new Set([
@@ -87,7 +89,8 @@ export const ChatInput = ({
   replySelectedText,
   replyImageIndex,
   onCancelReply,
-  onMessageSent
+  onMessageSent,
+  stickerPickerPortalRef
 }: Props) => {
   const [content, setContent] = useState('')
   const [isAttachmentMenuOpen, setIsAttachmentMenuOpen] = useState(false)
@@ -108,7 +111,8 @@ export const ChatInput = ({
   const fileInputRef = useRef<HTMLInputElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const attachmentMenuRef = useRef<HTMLDivElement>(null)
-  const stickerPickerRef = useRef<HTMLDivElement>(null)
+  const stickerPickerTriggerRef = useRef<HTMLDivElement>(null)
+  const stickerPickerPopupRef = useRef<HTMLDivElement>(null)
   const isComposingRef = useRef(false)
   const isSendingRef = useRef(false)
 
@@ -180,7 +184,10 @@ export const ChatInput = ({
 
     const closeIfOutside = (event: PointerEvent) => {
       const target = event.target as Node
-      if (stickerPickerRef.current?.contains(target)) {
+      if (
+        stickerPickerTriggerRef.current?.contains(target) ||
+        stickerPickerPopupRef.current?.contains(target)
+      ) {
         return
       }
       setIsStickerPickerOpen(false)
@@ -625,29 +632,6 @@ export const ChatInput = ({
             onChange={handleImageChange}
           />
         </div>
-        <div ref={stickerPickerRef} className="relative">
-          <Button
-            isIconOnly
-            variant={isStickerPickerOpen ? 'flat' : 'light'}
-            aria-label="选择贴纸"
-            aria-expanded={isStickerPickerOpen}
-            aria-haspopup="dialog"
-            onPress={handleStickerPickerToggle}
-          >
-            <Smile className="size-4" />
-          </Button>
-          {isStickerPickerOpen && (
-            <StickerPicker
-              packs={stickerPacks}
-              activePackId={activeStickerPackId}
-              isLoading={isStickerLoading}
-              error={stickerError}
-              onSelectPack={setActiveStickerPackId}
-              onSelectSticker={handleSendSticker}
-              onRetry={() => void loadStickerPacks()}
-            />
-          )}
-        </div>
         <Textarea
           ref={textareaRef}
           placeholder={
@@ -667,9 +651,45 @@ export const ChatInput = ({
           onPaste={handlePaste}
           minRows={1}
           maxRows={5}
+          endContent={
+            <div
+              ref={stickerPickerTriggerRef}
+              className="absolute bottom-1 right-2 z-10 size-8"
+            >
+              <Button
+                isIconOnly
+                size="sm"
+                variant={isStickerPickerOpen ? 'flat' : 'light'}
+                aria-label="选择贴纸"
+                aria-expanded={isStickerPickerOpen}
+                aria-haspopup="dialog"
+                className="size-8 min-w-8 shrink-0 text-[var(--kun-chat-muted-text)]"
+                onPress={handleStickerPickerToggle}
+              >
+                <Smile className="size-4" />
+              </Button>
+              <AnimatePresence>
+                {isStickerPickerOpen && (
+                  <StickerPicker
+                    key="private-chat-sticker-picker"
+                    ref={stickerPickerPopupRef}
+                    packs={stickerPacks}
+                    activePackId={activeStickerPackId}
+                    isLoading={isStickerLoading}
+                    error={stickerError}
+                    onSelectPack={setActiveStickerPackId}
+                    onSelectSticker={handleSendSticker}
+                    onRetry={() => void loadStickerPacks()}
+                    portalTarget={stickerPickerPortalRef?.current}
+                    anchorElement={stickerPickerTriggerRef.current}
+                  />
+                )}
+              </AnimatePresence>
+            </div>
+          }
           classNames={{
             input:
-              'text-[var(--kun-chat-input-text)] placeholder:text-[var(--kun-chat-placeholder-text)]',
+              '!pe-10 text-[var(--kun-chat-input-text)] placeholder:text-[var(--kun-chat-placeholder-text)]',
             inputWrapper: 'bg-[var(--kun-chat-input-bg)]'
           }}
         />

@@ -1057,6 +1057,55 @@ describe('ChatMessage menu and rendering', () => {
     ).not.toBeNull()
   })
 
+  it('renders an available Sticker directly without a message bubble surface', async () => {
+    const { container } = await renderMessage(
+      {
+        ...baseMessage,
+        type: 2,
+        content: '',
+        status: 1,
+        stickerId: 'moe-wave',
+        sticker: {
+          id: 'moe-wave',
+          packId: 4,
+          packSlug: 'moe',
+          packName: 'Moe',
+          url: 'https://cdn.example/wave.webm',
+          thumbnailUrl: 'https://cdn.example/wave.webp',
+          mime: 'video/webm',
+          mediaType: 'video',
+          width: 512,
+          height: 512,
+          size: 12000,
+          durationMs: 1200,
+          frameRate: 30,
+          alt: '挥手'
+        }
+      },
+      { isOwn: true }
+    )
+
+    const bubble = container.querySelector<HTMLElement>(
+      '[data-testid="chat-message-bubble"]'
+    )
+    const meta = container.querySelector<HTMLElement>(
+      '[data-testid="chat-message-meta"]'
+    )
+
+    expect(
+      container.querySelector('[data-testid="chat-sticker"]')
+    ).not.toBeNull()
+    expect(bubble?.classList.contains('p-0')).toBe(true)
+    expect(bubble?.className).not.toContain(
+      'bg-[var(--kun-chat-own-bubble-bg)]'
+    )
+    expect(bubble?.classList.contains('rounded-2xl')).toBe(false)
+    expect(bubble?.classList.contains('shadow-sm')).toBe(false)
+    expect(bubble?.classList.contains('ring-1')).toBe(false)
+    expect(meta?.className).toContain('bg-black/45')
+    expect(meta?.querySelector('[aria-label="已读"]')).not.toBeNull()
+  })
+
   it('renders an unavailable sticker as a text fallback', async () => {
     const { container } = await renderMessage({
       ...baseMessage,
@@ -1068,6 +1117,9 @@ describe('ChatMessage menu and rendering', () => {
 
     expect(container.textContent).toContain('[贴纸不可用]')
     expect(container.querySelector('video')).toBeNull()
+    expect(
+      container.querySelector('[data-testid="chat-message-bubble"]')?.className
+    ).toContain('bg-[var(--kun-chat-other-bubble-bg)]')
   })
 
   it('shows image-only message time and read indicator in a translucent bottom-right overlay', async () => {

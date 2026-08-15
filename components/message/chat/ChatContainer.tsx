@@ -159,6 +159,7 @@ export const ChatContainer = ({
   >(null)
   const [imageViewerIndex, setImageViewerIndex] = useState(-1)
   const scrollContainerRef = useRef<HTMLDivElement>(null)
+  const stickerPickerPortalRef = useRef<HTMLDivElement>(null)
   const loadMoreRef = useRef<HTMLDivElement>(null)
   const user = useUserStore((state) => state.user)
   const setUnreadMessageStatus = useMessageStore(
@@ -947,49 +948,56 @@ export const ChatContainer = ({
         </CardHeader>
 
         <CardBody className="relative flex flex-col p-0">
-          <div
-            ref={scrollContainerRef}
-            className="@container min-w-0 flex-1 overflow-x-hidden overflow-y-auto p-4"
-          >
-            {hasMore && (
-              <div ref={loadMoreRef} className="flex justify-center py-2">
-                {loading && (
-                  <Loader2 className="size-5 animate-spin text-[var(--kun-chat-muted-text)]" />
-                )}
-              </div>
-            )}
+          <div className="relative min-h-0 min-w-0 flex-1">
+            <div
+              ref={scrollContainerRef}
+              className="@container h-full min-w-0 flex-1 overflow-x-hidden overflow-y-auto p-4"
+            >
+              {hasMore && (
+                <div ref={loadMoreRef} className="flex justify-center py-2">
+                  {loading && (
+                    <Loader2 className="size-5 animate-spin text-[var(--kun-chat-muted-text)]" />
+                  )}
+                </div>
+              )}
 
-            {messages.length === 0 ? (
-              <KunNull message="暂无消息，发送第一条消息吧" />
-            ) : (
-              <>
-                {messages.map((msg) => (
-                  <ChatMessage
-                    key={msg.id}
-                    message={msg}
-                    isOwn={msg.sender.id === user.uid}
-                    conversationId={conversationId}
-                    onReply={(message, selectedText, imageIndex) =>
-                      setReplyDraft({ message, selectedText, imageIndex })
-                    }
-                    onOpenImage={handleOpenImage}
-                    onReplyPreviewClick={handleJumpToReply}
-                    replyHighlight={
-                      replyHighlight?.messageId === msg.id
-                        ? replyHighlight
-                        : null
-                    }
-                    isReplyHighlightFading={
-                      replyHighlight?.messageId === msg.id &&
-                      isReplyHighlightFading
-                    }
-                    onMessageUpdated={(data) =>
-                      handleMessageUpdated(msg.id, data)
-                    }
-                  />
-                ))}
-              </>
-            )}
+              {messages.length === 0 ? (
+                <KunNull message="暂无消息，发送第一条消息吧" />
+              ) : (
+                <>
+                  {messages.map((msg) => (
+                    <ChatMessage
+                      key={msg.id}
+                      message={msg}
+                      isOwn={msg.sender.id === user.uid}
+                      conversationId={conversationId}
+                      onReply={(message, selectedText, imageIndex) =>
+                        setReplyDraft({ message, selectedText, imageIndex })
+                      }
+                      onOpenImage={handleOpenImage}
+                      onReplyPreviewClick={handleJumpToReply}
+                      replyHighlight={
+                        replyHighlight?.messageId === msg.id
+                          ? replyHighlight
+                          : null
+                      }
+                      isReplyHighlightFading={
+                        replyHighlight?.messageId === msg.id &&
+                        isReplyHighlightFading
+                      }
+                      onMessageUpdated={(data) =>
+                        handleMessageUpdated(msg.id, data)
+                      }
+                    />
+                  ))}
+                </>
+              )}
+            </div>
+            <div
+              ref={stickerPickerPortalRef}
+              data-testid="sticker-picker-portal"
+              className="@container pointer-events-none absolute inset-0 z-40"
+            />
           </div>
 
           <div className="relative px-3 pb-3 pt-2">
@@ -1030,6 +1038,7 @@ export const ChatContainer = ({
                 replyImageIndex={replyDraft?.imageIndex ?? null}
                 onCancelReply={() => setReplyDraft(null)}
                 onMessageSent={handleMessageSent}
+                stickerPickerPortalRef={stickerPickerPortalRef}
               />
             </div>
           </div>

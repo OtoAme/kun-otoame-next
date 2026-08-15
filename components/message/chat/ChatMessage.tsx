@@ -135,6 +135,7 @@ export const ChatMessage = ({
   const isSingleImage = messageImages.length === 1
   const hasCaption = Boolean(message.content.trim())
   const isSticker = message.type === 2
+  const hasAvailableSticker = isSticker && Boolean(message.sticker)
   const activeReplyHighlight =
     replyHighlight?.messageId === message.id ? replyHighlight : null
   const isActiveReplyHighlightFading = Boolean(
@@ -771,8 +772,8 @@ export const ChatMessage = ({
   }
 
   const isImageOnly = hasImages && !hasCaption && !message.replyTo
-  const isStickerOnly = isSticker && !hasCaption && !message.replyTo
-  const isMediaOnly = isImageOnly || isStickerOnly
+  const isStickerWithoutCaption = hasAvailableSticker && !hasCaption
+  const isMediaOnly = isImageOnly || isStickerWithoutCaption
   const shouldShrinkWrapImage = hasImages && isSingleImage && !hasCaption
   const hasImageWithTextOrReply = hasImages && !isImageOnly
   const bubbleWidthClassName = 'max-w-[70cqw] md:max-w-[60cqw]'
@@ -785,7 +786,11 @@ export const ChatMessage = ({
     : isSticker
       ? stickerBubbleWidthClassName
       : bubbleWidthClassName
-  const bubblePaddingClassName = isMediaOnly ? 'p-0.5' : 'px-2.5 py-1'
+  const bubblePaddingClassName = hasAvailableSticker
+    ? 'p-0'
+    : isMediaOnly
+      ? 'p-0.5'
+      : 'px-2.5 py-1'
 
   const renderReplyPreview = () => {
     if (!message.replyTo) {
@@ -896,8 +901,8 @@ export const ChatMessage = ({
         <ChatSticker
           sticker={message.sticker}
           className={cn(
-            isStickerOnly && 'rounded-[1.05rem]',
-            !isStickerOnly && 'mb-1'
+            isStickerWithoutCaption && 'rounded-[1.05rem]',
+            !isStickerWithoutCaption && 'mb-1'
           )}
         />
       )}
@@ -1050,10 +1055,13 @@ export const ChatMessage = ({
             ref={bubbleRef}
             data-testid="chat-message-bubble"
             className={cn(
-              'relative min-w-0 max-w-full select-text rounded-2xl bg-[var(--kun-chat-own-bubble-bg)] text-[var(--kun-chat-own-bubble-text)] shadow-sm ring-1 ring-[var(--kun-chat-own-bubble-border)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--kun-brand-500)/0.55)]',
+              'relative min-w-0 max-w-full select-text focus-visible:rounded-2xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--kun-brand-500)/0.55)]',
+              !hasAvailableSticker &&
+                'rounded-2xl bg-[var(--kun-chat-own-bubble-bg)] text-[var(--kun-chat-own-bubble-text)] shadow-sm ring-1 ring-[var(--kun-chat-own-bubble-border)]',
               messageBubbleWidthClassName,
               bubblePaddingClassName,
               menu &&
+                !hasAvailableSticker &&
                 'shadow-lg ring-2 ring-[var(--kun-chat-own-bubble-active-border)]'
             )}
             animate={{
@@ -1075,10 +1083,13 @@ export const ChatMessage = ({
             ref={bubbleRef}
             data-testid="chat-message-bubble"
             className={cn(
-              'relative min-w-0 max-w-full select-text rounded-2xl bg-[var(--kun-chat-other-bubble-bg)] text-[var(--kun-chat-other-bubble-text)] shadow-sm ring-1 ring-[var(--kun-chat-other-bubble-border)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--kun-brand-500)/0.55)]',
+              'relative min-w-0 max-w-full select-text focus-visible:rounded-2xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--kun-brand-500)/0.55)]',
+              !hasAvailableSticker &&
+                'rounded-2xl bg-[var(--kun-chat-other-bubble-bg)] text-[var(--kun-chat-other-bubble-text)] shadow-sm ring-1 ring-[var(--kun-chat-other-bubble-border)]',
               messageBubbleWidthClassName,
               bubblePaddingClassName,
               menu &&
+                !hasAvailableSticker &&
                 'shadow-lg ring-2 ring-[var(--kun-chat-other-bubble-active-border)]'
             )}
             animate={{
