@@ -57,7 +57,10 @@ const rateLimitMock = vi.hoisted(() => ({
 }))
 
 const s3Mock = vi.hoisted(() => ({
-  deleteFileFromS3: vi.fn()
+  deleteFileFromS3: vi.fn(),
+  getS3PublicUrl: vi.fn((key: string | null | undefined) =>
+    key ? `https://cdn.example/${key}` : null
+  )
 }))
 
 vi.mock('~/prisma/index', () => ({

@@ -1,4 +1,5 @@
 import 'dotenv/config'
+import { createHash } from 'node:crypto'
 import { readFile, stat } from 'node:fs/promises'
 import path from 'node:path'
 import { spawn } from 'node:child_process'
@@ -6,14 +7,20 @@ import { z } from 'zod'
 import sharp from 'sharp'
 import { prisma } from '~/prisma/index'
 import { uploadBufferToS3 } from '~/lib/s3'
+import {
+  getStickerPosterKey,
+  getStickerEstimatedFrameCount,
+  getStickerWebmInputArgs,
+  hasStickerWebmAlpha,
+  STICKER_CACHE_CONTROL,
+  STICKER_MAX_ESTIMATED_FRAMES,
+  STICKER_MAX_SIDE,
+  STICKER_MAX_DURATION_MS,
+  STICKER_STATIC_MAX_BYTES,
+  STICKER_WEBM_MAX_BYTES
+} from '~/lib/stickerAssets'
 import { getGalleryFfmpegCommands } from '../app/api/edit/galleryAnimatedAvifThumbnail'
 
-const MAX_STICKER_SIDE = 512
-const MAX_STATIC_BYTES = 512 * 1024
-const MAX_VIDEO_DURATION_MS = 3_000
-const MAX_VIDEO_FPS = 30
-const MAX_VIDEO_BYTES = 256 * 1024
-const STICKER_CACHE_CONTROL = 'public, max-age=31536000, immutable'
 const manifestIdentifierSchema = z
   .string()
   .trim()
@@ -57,6 +64,7 @@ type ParsedMedia = {
   asset: Buffer
   thumbnail: Buffer | null
   extension: 'webp' | 'webm'
+  contentHash: string
 }
 
 const getArgValue = (args: string[], name: string) => {
@@ -154,34 +162,45 @@ const probeWebm = async (filePath: string, asset: Buffer) => {
       if (!/vp9/i.test(videoLine)) {
         throw new Error('dynamic sticker must use VP9')
       }
+      if (!hasStickerWebmAlpha(probe.stderr)) {
+        throw new Error('dynamic sticker must contain an alpha channel')
+      }
       if (/Stream #[^\n]*Audio:/i.test(probe.stderr)) {
         throw new Error('dynamic sticker must not contain audio')
       }
       if (!dimensions) {
         throw new Error('dynamic sticker dimensions could not be detected')
       }
-      if (!durationMs || durationMs > MAX_VIDEO_DURATION_MS) {
+      if (!durationMs || durationMs > STICKER_MAX_DURATION_MS) {
         throw new Error('dynamic sticker duration must be at most 3 seconds')
       }
-      if (!frameRate || frameRate > MAX_VIDEO_FPS) {
-        throw new Error('dynamic sticker frame rate must be at most 30 FPS')
+      const estimatedFrameCount = getStickerEstimatedFrameCount(
+        durationMs,
+        frameRate
+      )
+      if (!estimatedFrameCount) {
+        throw new Error('dynamic sticker frame rate could not be detected')
+      }
+      if (estimatedFrameCount > STICKER_MAX_ESTIMATED_FRAMES) {
+        throw new Error(
+          `dynamic sticker must not exceed ${STICKER_MAX_ESTIMATED_FRAMES} estimated frames`
+        )
       }
       if (
-        dimensions.width > MAX_STICKER_SIDE ||
-        dimensions.height > MAX_STICKER_SIDE
+        dimensions.width > STICKER_MAX_SIDE ||
+        dimensions.height > STICKER_MAX_SIDE
       ) {
         throw new Error('sticker dimensions must not exceed 512 pixels')
       }
-      if (asset.byteLength > MAX_VIDEO_BYTES) {
-        throw new Error('dynamic sticker must not exceed 256 KB')
+      if (asset.byteLength > STICKER_WEBM_MAX_BYTES) {
+        throw new Error('dynamic sticker must not exceed 300 KB')
       }
 
       const posterResult = await runCommand(command, [
         '-hide_banner',
         '-loglevel',
         'error',
-        '-i',
-        filePath,
+        ...getStickerWebmInputArgs(filePath),
         '-frames:v',
         '1',
         '-f',
@@ -205,7 +224,8 @@ const probeWebm = async (filePath: string, asset: Buffer) => {
         frameRate,
         asset,
         thumbnail,
-        extension: 'webm' as const
+        extension: 'webm' as const,
+        contentHash: createHash('sha256').update(asset).digest('hex')
       }
     } catch (error) {
       lastError = error instanceof Error ? error.message : String(error)
@@ -220,8 +240,8 @@ const parseMedia = async (filePath: string): Promise<ParsedMedia> => {
   const extension = path.extname(filePath).toLowerCase()
 
   if (extension === '.webm') {
-    if (asset.byteLength > MAX_VIDEO_BYTES) {
-      throw new Error(`${filePath}: dynamic sticker must not exceed 256 KB`)
+    if (asset.byteLength > STICKER_WEBM_MAX_BYTES) {
+      throw new Error(`${filePath}: dynamic sticker must not exceed 300 KB`)
     }
     return probeWebm(filePath, asset)
   }
@@ -237,14 +257,14 @@ const parseMedia = async (filePath: string): Promise<ParsedMedia> => {
   if (
     !metadata.width ||
     !metadata.height ||
-    metadata.width > MAX_STICKER_SIDE ||
-    metadata.height > MAX_STICKER_SIDE
+    metadata.width > STICKER_MAX_SIDE ||
+    metadata.height > STICKER_MAX_SIDE
   ) {
     throw new Error(
       `${filePath}: sticker dimensions must not exceed 512 pixels`
     )
   }
-  if (asset.byteLength > MAX_STATIC_BYTES) {
+  if (asset.byteLength > STICKER_STATIC_MAX_BYTES) {
     throw new Error(`${filePath}: static sticker must not exceed 512 KB`)
   }
   if (metadata.pages && metadata.pages > 1) {
@@ -263,16 +283,9 @@ const parseMedia = async (filePath: string): Promise<ParsedMedia> => {
     frameRate: null,
     asset,
     thumbnail: asset,
-    extension: 'webp'
+    extension: 'webp',
+    contentHash: createHash('sha256').update(asset).digest('hex')
   }
-}
-
-const getPublicUrl = (key: string) => {
-  const baseUrl = process.env.NEXT_PUBLIC_KUN_VISUAL_NOVEL_S3_STORAGE_URL
-  if (!baseUrl) {
-    throw new Error('NEXT_PUBLIC_KUN_VISUAL_NOVEL_S3_STORAGE_URL is required')
-  }
-  return `${baseUrl.replace(/\/+$/, '')}/${key}`
 }
 
 const readManifest = async (manifestPath: string) => {
@@ -318,8 +331,8 @@ const syncManifest = async (
     }
     const assetKey = `sticker/${manifest.pack.slug}/${item.id}/asset.${media.extension}`
     const thumbnailKey =
-      media.kind === 'video'
-        ? `sticker/${manifest.pack.slug}/${item.id}/poster.webp`
+      media.kind === 'video' && media.thumbnail
+        ? getStickerPosterKey(manifest.pack.slug, item.id, media.thumbnail)
         : null
     prepared.push({ item, media, assetKey, thumbnailKey })
   }
@@ -391,7 +404,8 @@ const syncManifest = async (
       slug: manifest.pack.slug,
       name: manifest.pack.name,
       description: manifest.pack.description,
-      cover_url: coverKey ? getPublicUrl(coverKey) : null,
+      cover_url: null,
+      cover_storage_key: coverKey,
       price: manifest.pack.price,
       status: manifest.pack.status,
       is_builtin: manifest.pack.isBuiltin,
@@ -400,7 +414,8 @@ const syncManifest = async (
     update: {
       name: manifest.pack.name,
       description: manifest.pack.description,
-      cover_url: coverKey ? getPublicUrl(coverKey) : null,
+      cover_url: null,
+      cover_storage_key: coverKey,
       price: manifest.pack.price,
       status: manifest.pack.status,
       is_builtin: manifest.pack.isBuiltin,
@@ -430,14 +445,14 @@ const syncManifest = async (
         id: item.id,
         pack_id: pack.id,
         alt: item.alt,
-        asset_url: getPublicUrl(assetKey),
-        thumbnail_url: thumbnailKey
-          ? getPublicUrl(thumbnailKey)
-          : getPublicUrl(assetKey),
+        asset_url: null,
+        thumbnail_url: null,
         storage_key: assetKey,
         thumbnail_storage_key: thumbnailKey,
         mime: media.mime,
         media_type: media.kind,
+        status: 1,
+        content_hash: media.contentHash,
         width: media.width,
         height: media.height,
         size: media.size,
@@ -448,14 +463,14 @@ const syncManifest = async (
       update: {
         pack_id: pack.id,
         alt: item.alt,
-        asset_url: getPublicUrl(assetKey),
-        thumbnail_url: thumbnailKey
-          ? getPublicUrl(thumbnailKey)
-          : getPublicUrl(assetKey),
+        asset_url: null,
+        thumbnail_url: null,
         storage_key: assetKey,
         thumbnail_storage_key: thumbnailKey,
         mime: media.mime,
         media_type: media.kind,
+        status: 1,
+        content_hash: media.contentHash,
         width: media.width,
         height: media.height,
         size: media.size,
@@ -463,6 +478,17 @@ const syncManifest = async (
         frame_rate: media.frameRate,
         sort_order: item.sortOrder
       }
+    })
+  }
+
+  const currentCover = await prisma.sticker_pack.findUnique({
+    where: { id: pack.id },
+    select: { cover_sticker_id: true }
+  })
+  if (!currentCover?.cover_sticker_id && prepared[0]) {
+    await prisma.sticker_pack.update({
+      where: { id: pack.id },
+      data: { cover_sticker_id: prepared[0].item.id }
     })
   }
 

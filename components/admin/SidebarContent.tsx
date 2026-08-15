@@ -15,6 +15,7 @@ import {
   Puzzle,
   Settings,
   Star,
+  Sticker,
   TriangleAlert,
   Users
 } from 'lucide-react'
@@ -49,6 +50,11 @@ const menuItems = [
     name: '游戏管理',
     href: '/admin/otomegame',
     icon: Gamepad2
+  },
+  {
+    name: 'Sticker 管理',
+    href: '/admin/stickers',
+    icon: Sticker
   },
   {
     name: '评论管理',
@@ -104,10 +110,11 @@ export const SidebarContent = ({ pathname }: { pathname: string }) => {
             <li key={item.href}>
               <Link
                 href={item.href}
-                className={`flex items-center gap-3 rounded-medium px-4 py-2 transition-colors ${isActive
-                  ? 'bg-primary text-primary-foreground'
-                  : 'hover:bg-default-100'
-                  }`}
+                className={`flex items-center gap-3 rounded-medium px-4 py-2 transition-colors ${
+                  isActive
+                    ? 'bg-primary text-primary-foreground'
+                    : 'hover:bg-default-100'
+                }`}
               >
                 <Icon size={20} />
                 <span>{item.name}</span>

@@ -1,6 +1,7 @@
 'use client'
 
 import { AppProgressProvider as ProgressProvider } from '@bprogress/next'
+import { ToastProvider } from '@heroui/react'
 import { HeroUIProvider } from '@heroui/system'
 import { ThemeProvider } from 'next-themes'
 import { useRouter } from 'next/navigation'
@@ -19,6 +20,7 @@ export const Providers = ({ children }: { children: React.ReactNode }) => {
     >
       <HeroUIProvider navigate={router.push}>
         <ThemeProvider attribute="class">
+          <ToastProvider placement="top-center" maxVisibleToasts={4} />
           <SiteThemeRouteSync />
           <MessageRealtimeSync />
           {children}

@@ -57,6 +57,20 @@ describe('kunFetchGet', () => {
     ).resolves.toBe('发送过于频繁，请 31 秒后再试')
   })
 
+  it('does not log expected browser request cancellations as errors', async () => {
+    const abortError = new DOMException(
+      'signal is aborted without reason',
+      'AbortError'
+    )
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(abortError))
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    const { kunFetchGet } = await import('~/utils/kunFetch')
+    await expect(kunFetchGet('/message/unread')).rejects.toBe(abortError)
+
+    expect(consoleError).not.toHaveBeenCalled()
+  })
+
   it('preserves non-2xx status codes with string error bodies when requested', async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(JSON.stringify('图片大小不能超过 8 MB'), {

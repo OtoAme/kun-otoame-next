@@ -16,11 +16,13 @@ export const ChatSticker = ({ sticker, className }: Props) => {
   const [isReducedMotion, setIsReducedMotion] = useState(false)
   const [mediaError, setMediaError] = useState(false)
   const [posterError, setPosterError] = useState(false)
+  const [readyVideoUrl, setReadyVideoUrl] = useState<string | null>(null)
   const isVideo = sticker.mediaType === 'video' || sticker.mime === 'video/webm'
 
   useEffect(() => {
     setMediaError(false)
     setPosterError(false)
+    setReadyVideoUrl(null)
   }, [sticker.id, sticker.url])
 
   useEffect(() => {
@@ -88,6 +90,13 @@ export const ChatSticker = ({ sticker, className }: Props) => {
 
   const showVideo = isVideo && isVisible && !isReducedMotion && !mediaError
   const poster = posterError ? null : sticker.thumbnailUrl
+  const isVideoFrameReady = showVideo && readyVideoUrl === sticker.url
+
+  useEffect(() => {
+    if (!showVideo) {
+      setReadyVideoUrl(null)
+    }
+  }, [showVideo])
 
   return (
     <div
@@ -107,8 +116,9 @@ export const ChatSticker = ({ sticker, className }: Props) => {
       }}
     >
       {isVideo ? (
-        poster ? (
+        poster && !isVideoFrameReady ? (
           <img
+            data-testid="chat-sticker-poster"
             src={poster}
             alt=""
             aria-hidden="true"
@@ -131,25 +141,29 @@ export const ChatSticker = ({ sticker, className }: Props) => {
         <video
           ref={videoRef}
           src={sticker.url}
-          poster={poster ?? undefined}
           autoPlay
           loop
           muted
           playsInline
           preload="metadata"
           aria-label={sticker.alt || sticker.packName}
-          className="absolute inset-0 h-full w-full object-contain"
+          className={cn(
+            'absolute inset-0 h-full w-full bg-transparent object-contain',
+            isVideoFrameReady ? 'opacity-100' : 'opacity-0'
+          )}
+          onLoadedData={() => setReadyVideoUrl(sticker.url)}
+          onPlaying={() => setReadyVideoUrl(sticker.url)}
           onError={() => setMediaError(true)}
         />
       )}
 
-      {mediaError && (
+      {mediaError && !poster && (
         <div className="absolute inset-0 flex items-center justify-center bg-[var(--kun-chat-image-tile-bg)] px-3 text-center text-xs text-[var(--kun-chat-muted-text)]">
           贴纸不可用
         </div>
       )}
 
-      {isVideo && !poster && !showVideo && !mediaError && (
+      {isVideo && !poster && !isVideoFrameReady && !mediaError && (
         <div className="absolute inset-0 flex items-center justify-center bg-[var(--kun-chat-image-tile-bg)] text-xs text-[var(--kun-chat-muted-text)]">
           {isReducedMotion ? '贴纸不可用' : '加载贴纸中'}
         </div>

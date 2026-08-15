@@ -1000,7 +1000,7 @@ describe('ChatMessage menu and rendering', () => {
     ).toContain('width:')
   })
 
-  it('renders a dynamic sticker as WebM with a static poster', async () => {
+  it('removes the static poster after a transparent WebM frame is ready', async () => {
     const { container } = await renderMessage({
       ...baseMessage,
       type: 2,
@@ -1026,10 +1026,26 @@ describe('ChatMessage menu and rendering', () => {
 
     const video = container.querySelector<HTMLVideoElement>('video')
     expect(video?.src).toBe('https://cdn.example/wave.webm')
-    expect(video?.poster).toBe('https://cdn.example/wave.webp')
+    expect(video?.getAttribute('poster')).toBeNull()
     expect(video?.muted).toBe(true)
     expect(video?.loop).toBe(true)
     expect(video?.playsInline).toBe(true)
+    expect(video?.className).toContain('opacity-0')
+    expect(
+      container.querySelector('[data-testid="chat-sticker-poster"]')
+    ).not.toBeNull()
+
+    await act(async () => {
+      const MediaEvent = video?.ownerDocument.defaultView?.Event
+      if (video && MediaEvent) {
+        video.dispatchEvent(new MediaEvent('loadeddata', { bubbles: true }))
+      }
+    })
+
+    expect(
+      container.querySelector('[data-testid="chat-sticker-poster"]')
+    ).toBeNull()
+    expect(video?.className).toContain('opacity-100')
     expect(
       container.querySelector('[data-testid="chat-sticker"]')
     ).not.toBeNull()

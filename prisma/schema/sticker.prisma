@@ -4,18 +4,22 @@ model sticker_pack {
   name        String   @db.VarChar(100)
   description String   @default("") @db.VarChar(500)
   cover_url   String?  @db.VarChar(1000)
+  cover_storage_key String? @db.VarChar(500)
+  cover_sticker_id String? @db.VarChar(100)
   price       Int      @default(0)
   status      Int      @default(1)
   is_builtin  Boolean  @default(true)
   sort_order  Int      @default(0)
 
   stickers    sticker[]
+  cover_sticker sticker? @relation("sticker_pack_cover", fields: [cover_sticker_id], references: [id], onDelete: SetNull)
   ownerships user_sticker_pack[]
 
   created DateTime @default(now())
   updated DateTime @updatedAt
 
   @@index([status, sort_order])
+  @@index([cover_sticker_id])
 }
 
 model sticker {
@@ -24,12 +28,14 @@ model sticker {
   pack       sticker_pack @relation(fields: [pack_id], references: [id], onDelete: Restrict)
 
   alt        String  @default("") @db.VarChar(255)
-  asset_url  String  @db.VarChar(1000)
+  asset_url  String? @db.VarChar(1000)
   thumbnail_url String? @db.VarChar(1000)
   storage_key String  @db.VarChar(500)
   thumbnail_storage_key String? @db.VarChar(500)
   mime       String  @db.VarChar(100)
   media_type String  @db.VarChar(16)
+  status     Int     @default(1)
+  content_hash String? @db.Char(64)
   width      Int
   height     Int
   size       Int
@@ -39,11 +45,15 @@ model sticker {
 
   messages       user_private_message[] @relation("private_message_sticker")
   reply_messages user_private_message[] @relation("private_message_reply_sticker")
+  cover_packs    sticker_pack[] @relation("sticker_pack_cover")
 
   created DateTime @default(now())
   updated DateTime @updatedAt
 
+  @@unique([pack_id, content_hash])
   @@index([pack_id, sort_order])
+  @@index([pack_id, status, sort_order])
+  @@index([content_hash])
 }
 
 model user_sticker_pack {

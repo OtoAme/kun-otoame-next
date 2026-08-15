@@ -1,4 +1,5 @@
 import { prisma } from '~/prisma/index'
+import { getS3PublicUrl } from '~/lib/s3'
 import type {
   PrivateMessageSticker,
   StickerPack,
@@ -13,6 +14,8 @@ type StickerPackRecord = {
   name: string
   description: string
   cover_url: string | null
+  cover_storage_key?: string | null
+  cover_sticker_id?: string | null
   price: number
   status: number
   is_builtin?: boolean
@@ -22,12 +25,14 @@ export type StickerRecord = {
   id: string
   pack_id: number
   alt: string
-  asset_url: string
+  asset_url: string | null
   thumbnail_url: string | null
   storage_key: string
   thumbnail_storage_key: string | null
   mime: string
   media_type: string
+  status?: number
+  content_hash?: string | null
   width: number
   height: number
   size: number
@@ -37,26 +42,34 @@ export type StickerRecord = {
   pack?: StickerPackRecord
 }
 
+const getStickerUrl = (
+  legacyUrl: string | null | undefined,
+  storageKey: string | null | undefined
+) => legacyUrl || getS3PublicUrl(storageKey)
+
 export const mapSticker = (
   sticker: StickerRecord | null | undefined,
   packOverride?: StickerPackRecord
 ): PrivateMessageSticker | null => {
   const pack = sticker?.pack ?? packOverride
-  if (!sticker || !pack || !sticker.asset_url) {
+  const assetUrl = getStickerUrl(sticker?.asset_url, sticker?.storage_key)
+  if (!sticker || !pack || !assetUrl) {
     return null
   }
 
   const mediaType = sticker.media_type === 'video' ? 'video' : 'image'
+  const thumbnailUrl = getStickerUrl(
+    sticker.thumbnail_url,
+    sticker.thumbnail_storage_key
+  )
 
   return {
     id: sticker.id,
     packId: sticker.pack_id,
     packSlug: pack.slug,
     packName: pack.name,
-    url: sticker.asset_url,
-    thumbnailUrl:
-      sticker.thumbnail_url ??
-      (mediaType === 'image' ? sticker.asset_url : null),
+    url: assetUrl,
+    thumbnailUrl: thumbnailUrl ?? (mediaType === 'image' ? assetUrl : null),
     mime: sticker.mime,
     mediaType,
     width: sticker.width,
@@ -69,18 +82,29 @@ export const mapSticker = (
 }
 
 const mapStickerPack = (
-  pack: StickerPackRecord & { stickers: StickerRecord[] }
+  pack: StickerPackRecord & {
+    stickers: StickerRecord[]
+    cover_sticker?: StickerRecord | null
+  }
 ): StickerPack => {
   const stickers = pack.stickers
     .map((sticker) => mapSticker(sticker, pack)!)
     .filter(Boolean)
+  const coverSticker = pack.cover_sticker
+    ? mapSticker(pack.cover_sticker, pack)
+    : null
 
   return {
     id: pack.id,
     slug: pack.slug,
     name: pack.name,
     description: pack.description,
-    coverUrl: pack.cover_url ?? stickers[0]?.thumbnailUrl ?? null,
+    coverUrl:
+      pack.cover_url ??
+      getS3PublicUrl(pack.cover_storage_key) ??
+      coverSticker?.thumbnailUrl ??
+      stickers[0]?.thumbnailUrl ??
+      null,
     price: pack.price,
     status: pack.status,
     stickers
@@ -98,6 +122,8 @@ const loadStickerById = async (stickerId: string) =>
           name: true,
           description: true,
           cover_url: true,
+          cover_storage_key: true,
+          cover_sticker_id: true,
           price: true,
           status: true,
           is_builtin: true
@@ -115,7 +141,9 @@ export const getStickerPacks = async (
       is_builtin: true
     },
     include: {
+      cover_sticker: true,
       stickers: {
+        where: { status: STICKER_PACK_ACTIVE },
         orderBy: { sort_order: 'asc' }
       }
     },
@@ -134,6 +162,14 @@ export const getStickerForSending = async (
   const sticker = await loadStickerById(stickerId)
   if (!sticker) {
     return '贴纸不存在或已不可用'
+  }
+
+  if (sticker.status !== undefined && sticker.status !== STICKER_PACK_ACTIVE) {
+    return '贴纸已禁用，暂时无法发送'
+  }
+
+  if (!sticker.asset_url && !sticker.storage_key) {
+    return '贴纸资源不可用'
   }
 
   if (sticker.pack.status !== STICKER_PACK_ACTIVE) {

@@ -13,7 +13,7 @@ interface Props {
 
 export default async function Kun({ children }: Props) {
   const payload = await verifyHeaderCookie()
-  if (!payload || payload.role < 4) {
+  if (!payload || payload.role < 3) {
     redirect('/')
   }
 

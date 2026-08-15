@@ -54,6 +54,12 @@ const createKunFetchStatusError = (status: number, body: unknown) => {
   )
 }
 
+const isKunFetchAbortError = (error: unknown) =>
+  typeof error === 'object' &&
+  error !== null &&
+  'name' in error &&
+  error.name === 'AbortError'
+
 const kunFetchRequest = async <T>(
   url: string,
   method: 'GET' | 'POST' | 'PUT' | 'DELETE',
@@ -135,7 +141,9 @@ const kunFetchRequest = async <T>(
       }
     }
   } catch (error) {
-    console.error(`Kun Fetch error: ${error}`)
+    if (!isKunFetchAbortError(error)) {
+      console.error(`Kun Fetch error: ${error}`)
+    }
     throw error
   }
 }
@@ -168,6 +176,13 @@ export const kunFetchDelete = async <T>(
   query?: Record<string, string | number>
 ): Promise<T> => {
   return kunFetchRequest<T>(url, 'DELETE', { query })
+}
+
+export const kunFetchDeleteBody = async <T>(
+  url: string,
+  body?: Record<string, unknown>
+): Promise<T> => {
+  return kunFetchRequest<T>(url, 'DELETE', { body })
 }
 
 export const kunFetchFormData = async <T>(

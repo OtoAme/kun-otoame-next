@@ -79,3 +79,16 @@ export const deleteFileFromS3 = async (key: string) => {
   })
   await s3.send(deleteCommand)
 }
+
+export const getS3PublicUrl = (key: string | null | undefined) => {
+  if (!key) {
+    return null
+  }
+
+  const baseUrl = process.env.NEXT_PUBLIC_KUN_VISUAL_NOVEL_S3_STORAGE_URL
+  if (!baseUrl) {
+    return null
+  }
+
+  return `${baseUrl.replace(/\/+$/, '')}/${key}`
+}

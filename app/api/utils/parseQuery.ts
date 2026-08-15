@@ -45,6 +45,20 @@ export const kunParsePutBody = async <T extends ZodSchema>(
   return result.data
 }
 
+export const kunParseDeleteBody = async <T extends ZodSchema>(
+  req: NextRequest,
+  schema: T
+): Promise<z.infer<T> | string> => {
+  const body = await req.json()
+
+  const result = schema.safeParse(body)
+  if (!result.success) {
+    return result.error.message
+  }
+
+  return result.data
+}
+
 export const kunParseDeleteQuery = <T extends ZodSchema>(
   req: NextRequest,
   schema: T

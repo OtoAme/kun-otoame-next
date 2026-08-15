@@ -66,7 +66,6 @@ export interface AdminResource extends PatchResource {
 
 export type AdminComment = PatchComment
 
-
 export interface AdminRating {
   id: number
   uniqueId: string
@@ -126,6 +125,53 @@ export interface AdminLog {
   user: KunUser
   content: string
   created: Date | string
+}
+
+export type AdminStickerMediaType = 'image' | 'video'
+
+export interface AdminSticker {
+  id: string
+  packId: number
+  alt: string
+  assetKey: string
+  thumbnailKey: string | null
+  assetUrl: string | null
+  thumbnailUrl: string | null
+  mime: string
+  mediaType: AdminStickerMediaType
+  status: number
+  contentHash: string | null
+  width: number
+  height: number
+  size: number
+  durationMs: number | null
+  frameRate: number | null
+  sortOrder: number
+}
+
+export interface AdminStickerPack {
+  id: number
+  slug: string
+  name: string
+  description: string
+  status: number
+  price: number
+  isBuiltin: boolean
+  coverStickerId: string | null
+  coverUrl: string | null
+  stickers: AdminSticker[]
+}
+
+export interface AdminStickerDeleteResult {
+  pack: AdminStickerPack
+  deletedCount: number
+  objectCleanupFailed: number
+}
+
+export interface AdminStickerPackDeleteResult {
+  packId: number
+  deletedStickerCount: number
+  objectCleanupFailed: number
 }
 
 export interface AdminRedirectConfig {
