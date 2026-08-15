@@ -47,7 +47,7 @@ Schema 修改后至少运行 `pnpm prisma:generate`。会影响数据库结构�
 
 私聊会话表 `user_conversation` 使用 `user_a_hidden` / `user_b_hidden` 保存每个参与方自己的列表隐藏状态。隐藏会话不是删除历史消息；发送新消息会把双方 hidden flag 恢复为 `false`。生产同步可先运行 `migration/production-conversation-hidden-preflight-2026-07-01.sql` 检查列状态，再运行 `migration/production-conversation-hidden-sync-2026-07-01.sql` 添加缺失列并补齐默认值。
 
-Sticker 目录使用 `sticker_pack`、`sticker` 和 `user_sticker_pack`。后台新导入的资源把对象存储 key 写入 `storage_key` / `thumbnail_storage_key`，不把 CDN URL 当作唯一来源；`lib/s3.ts` 在读取时根据 CDN 配置派生公开 URL。动态 WebM 的 poster 必须先上传成功，Pack 启用和 Sticker 状态变更通过事务校验有效资源与同 Pack 封面。S3 上传后 DB 事务失败时必须删除本次对象，生产 schema 按 `production-private-chat-stickers-*` 再按 `production-sticker-admin-*` preflight/sync 执行。
+Sticker 目录使用 `sticker_pack`、`sticker` 和 `user_sticker_pack`。后台新导入的资源把对象存储 key 写入 `storage_key` / `thumbnail_storage_key`，不把 CDN URL 当作唯一来源；`lib/s3.ts` 在读取时根据 CDN 配置派生公开 URL。动态 WebM 的 poster 必须先上传成功，Pack 启用和 Sticker 状态变更通过事务校验有效资源与同 Pack 封面。S3 上传后 DB 事务失败时必须删除本次对象，生产 schema 按 `production-private-chat-stickers-*` 再按 `production-sticker-admin-*` preflight/sync 执行；已经执行旧版 sync 的数据库再执行 `production-stickers-prisma-alignment-2026-08-15.sql`，然后运行 `pnpm prisma:deploy-safe`。
 
 `patch.steam_id` 是普通可空字段，不是唯一字段；它保留普通索引用于软查重和 Steam 输入提示，因为合集或二合一商店页可能让多部游戏共用同一个 Steam App ID。生产库若仍有旧唯一约束或唯一索引，先运行 `migration/production-steam-id-soft-duplicate-preflight-2026-07-09.sql` 查看当前约束/索引和重复预览，再运行 `migration/production-steam-id-soft-duplicate-sync-2026-07-09.sql` 移除唯一约束并创建普通索引。
 

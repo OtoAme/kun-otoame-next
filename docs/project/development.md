@@ -258,7 +258,7 @@ pnpm test
 
 `pnpm prisma:push` 保留给本地开发、首次安装和 disposable CI 初始化。生产表结构变更要优先写并 review preflight/sync SQL 或 dry-run 脚本，参考 `migration/production-schema-preflight-2026-05-03.sql` 与 `migration/production-schema-sync-2026-05-03.sql`；这些 SQL 必须在生产部署前执行完成，随后使用 `pnpm prisma:deploy-safe`。
 
-私聊 Sticker 管理 schema 还需要按顺序审核并执行 `production-private-chat-stickers-*` 和 `production-sticker-admin-*` 两组 preflight/sync SQL；后台导入的动态 WebM 上限为 300 KB，ZIP 导入失败必须确认对象存储补偿结果。
+私聊 Sticker 管理 schema 还需要按顺序审核并执行 `production-private-chat-stickers-*` 和 `production-sticker-admin-*` 两组 preflight/sync SQL；如果目标库已经执行过旧版 Sticker sync，再执行 `migration/production-stickers-prisma-alignment-2026-08-15.sql` 对齐 Prisma 的时间精度、默认值和外键动作。后台导入的动态 WebM 上限为 300 KB，ZIP 导入失败必须确认对象存储补偿结果。
 
 整个 `pnpm prisma:deploy-safe` 不是纯只读命令：它先运行既有的 `migration:resource-links`，该兼容迁移可能执行 schema/data 写入；随后运行只读 schema guard/diff；最后运行 `prisma generate`。它不运行 `prisma db push`，也不应用 Prisma 建议的 diff SQL。
 

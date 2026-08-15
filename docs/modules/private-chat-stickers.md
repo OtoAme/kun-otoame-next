@@ -104,8 +104,9 @@ migration/production-private-chat-stickers-preflight-2026-08-14.sql
 migration/production-private-chat-stickers-sync-2026-08-14.sql
 migration/production-sticker-admin-preflight-2026-08-14.sql
 migration/production-sticker-admin-sync-2026-08-14.sql
+migration/production-stickers-prisma-alignment-2026-08-15.sql
 ```
 
-管理扩展迁移新增 Pack 封面资源 key、Pack 内封面 Sticker 外键、Sticker `status`、SHA-256 `content_hash`，并允许 `asset_url` 为空。执行 sync 前应检查 preflight 输出中的重复 hash 和无效封面引用；不要在生产库直接运行 `prisma db push`。
+管理扩展迁移新增 Pack 封面资源 key、Pack 内封面 Sticker 外键、Sticker `status`、SHA-256 `content_hash`，并允许 `asset_url` 为空。执行 sync 前应检查 preflight 输出中的重复 hash、无效封面引用和外键定义。已经执行旧版 sync 的生产库需要在备份后执行 alignment SQL，再运行 `pnpm prisma:deploy-safe`；它只修正 Sticker schema 与 Prisma 的契约，不删除 Sticker、消息或对象，也不处理 `patch_released_idx`；不要在生产库直接运行 `prisma db push`。
 
 第一阶段只返回并允许发送 `is_builtin = true` 的 active 贴纸包，所有内置贴纸包免费可用，不实现支付流程。`price`、`status` 和 `user_sticker_pack` 用户所有权表为后续萌萌点购买与禁用策略预留；后续接入购买时再放开非内置包的目录和发送权限。

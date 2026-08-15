@@ -356,7 +356,7 @@ KUN_DEPLOY_RELEASE_TAG='vYYYY.MM.DD.HHMM' pnpm deploy:pull
 
 - `migration/production-schema-preflight-2026-05-03.sql`
 - `migration/production-schema-sync-2026-05-03.sql`
-- 私聊 Sticker 目录：先执行 `migration/production-private-chat-stickers-preflight-2026-08-14.sql`，审核后执行对应 sync；再执行 `migration/production-sticker-admin-preflight-2026-08-14.sql`，审核重复 hash 和封面引用后执行对应 sync。
+- 私聊 Sticker 目录：先执行 `migration/production-private-chat-stickers-preflight-2026-08-14.sql`，审核后执行对应 sync；再执行 `migration/production-sticker-admin-preflight-2026-08-14.sql`，审核重复 hash、封面引用和外键定义后执行对应 sync。已经执行过旧版 Sticker sync 的数据库，在备份后追加执行 `migration/production-stickers-prisma-alignment-2026-08-15.sql`，再运行 `pnpm prisma:deploy-safe`。该纠正脚本不处理 `patch_released_idx`，也不能用来替代生产 guard。
 - `migration/reclassify-resource-types.ts`
 - `scripts/rebuildPatchResourceAttributes.ts`
 
