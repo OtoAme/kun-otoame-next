@@ -15,7 +15,6 @@ import {
   DropdownItem,
   DropdownMenu,
   DropdownTrigger,
-  Image,
   Input,
   Listbox,
   ListboxItem,
@@ -24,6 +23,7 @@ import {
   ModalContent,
   ModalFooter,
   ModalHeader,
+  ScrollShadow,
   Select,
   SelectItem,
   Switch,
@@ -46,6 +46,8 @@ import {
   stickerPackNameSchema,
   stickerPackSlugSchema
 } from '~/validations/sticker'
+import { StickerThumbnail } from '~/components/sticker/StickerThumbnail'
+import { PackStatusCover } from './PackStatusCover'
 import type {
   AdminStickerDeleteResult,
   AdminStickerPack,
@@ -87,7 +89,8 @@ const replacePack = (packs: AdminStickerPack[], updated: AdminStickerPack) =>
   packs.map((pack) => (pack.id === updated.id ? updated : pack))
 
 const getStickerPreview = (sticker: AdminStickerPack['stickers'][number]) =>
-  sticker.thumbnailUrl ?? sticker.assetUrl
+  sticker.thumbnailUrl ??
+  (sticker.mediaType === 'image' ? sticker.assetUrl : null)
 
 const getPackDetails = (pack: AdminStickerPack): PackDetailsForm => ({
   name: pack.name,
@@ -149,6 +152,42 @@ const notifyError = (message: string) =>
     severity: 'danger',
     timeout: 8000
   })
+
+const notifyWarning = (title: string, description: string) =>
+  addToast({
+    title,
+    description,
+    color: 'warning',
+    severity: 'warning',
+    timeout: 8000
+  })
+
+const isValidAdminSticker = (sticker: AdminStickerPack['stickers'][number]) =>
+  sticker.status === 1 &&
+  sticker.assetKey.trim().length > 0 &&
+  sticker.width > 0 &&
+  sticker.height > 0 &&
+  sticker.size > 0 &&
+  (sticker.mediaType !== 'video' || Boolean(sticker.thumbnailKey))
+
+const getPackEnableDisabledReason = (pack: AdminStickerPack) => {
+  if (pack.status === 1) {
+    return ''
+  }
+
+  const validStickers = pack.stickers.filter(isValidAdminSticker)
+  if (!validStickers.length) {
+    return 'Pack 至少需要一张有效 Sticker 才能启用'
+  }
+  if (
+    pack.coverStickerId &&
+    !validStickers.some((sticker) => sticker.id === pack.coverStickerId)
+  ) {
+    return '请先选择 Pack 内有效的封面 Sticker'
+  }
+
+  return ''
+}
 
 export const StickerAdmin = ({ initialPacks }: Props) => {
   const initialPack = initialPacks[0] ?? null
@@ -344,9 +383,9 @@ export const StickerAdmin = ({ initialPacks }: Props) => {
 
       setPacks((current) => replacePack(current, response))
       setPackForm(getPackDetails(response))
-      notifySuccess(status === 1 ? 'Pack 已上架' : 'Pack 已下架')
+      notifySuccess(status === 1 ? 'Pack 已启用' : 'Pack 已禁用')
     } catch {
-      notifyError(`${status === 1 ? '上架' : '下架'} Pack 失败，请稍后重试`)
+      notifyError(`${status === 1 ? '启用' : '禁用'} Pack 失败，请稍后重试`)
     } finally {
       setIsTogglingPack(false)
     }
@@ -459,7 +498,6 @@ export const StickerAdmin = ({ initialPacks }: Props) => {
       )
       if (typeof response === 'string') {
         setUploadFileError(response)
-        notifyError(response)
         return
       }
 
@@ -477,7 +515,6 @@ export const StickerAdmin = ({ initialPacks }: Props) => {
     } catch {
       const message = '导入 Sticker 失败，请重新选择文件后重试'
       setUploadFileError(message)
-      notifyError(message)
     } finally {
       setIsUploading(false)
     }
@@ -588,7 +625,6 @@ export const StickerAdmin = ({ initialPacks }: Props) => {
         >('/admin/stickers/packs', { packId: deleteTarget.pack.id })
         if (typeof response === 'string') {
           setDeleteError(response)
-          notifyError(response)
           return
         }
 
@@ -607,8 +643,9 @@ export const StickerAdmin = ({ initialPacks }: Props) => {
         setDeleteTarget(null)
         onDeleteClose()
         if (response.objectCleanupFailed > 0) {
-          notifyError(
-            `Pack 已删除，${response.objectCleanupFailed} 个存储对象清理失败`
+          notifyWarning(
+            'Pack 已删除',
+            `${response.objectCleanupFailed} 个对象存储资源清理失败，请稍后检查存储状态`
           )
         } else {
           notifySuccess('Pack 已永久删除')
@@ -623,7 +660,6 @@ export const StickerAdmin = ({ initialPacks }: Props) => {
       })
       if (typeof response === 'string') {
         setDeleteError(response)
-        notifyError(response)
         return
       }
 
@@ -633,8 +669,9 @@ export const StickerAdmin = ({ initialPacks }: Props) => {
       setDeleteTarget(null)
       onDeleteClose()
       if (response.objectCleanupFailed > 0) {
-        notifyError(
-          `Sticker 已删除，${response.objectCleanupFailed} 个存储对象清理失败`
+        notifyWarning(
+          'Sticker 已删除',
+          `${response.objectCleanupFailed} 个对象存储资源清理失败，请稍后检查存储状态`
         )
       } else {
         notifySuccess(`已永久删除 ${response.deletedCount} 个 Sticker`)
@@ -642,7 +679,6 @@ export const StickerAdmin = ({ initialPacks }: Props) => {
     } catch {
       const message = '删除失败，请稍后重试'
       setDeleteError(message)
-      notifyError(message)
     } finally {
       setIsDeleting(false)
     }
@@ -650,13 +686,11 @@ export const StickerAdmin = ({ initialPacks }: Props) => {
 
   const coverOptions = [
     { id: AUTO_COVER_KEY, label: '自动选择', preview: null },
-    ...(selectedPack?.stickers
-      .filter((sticker) => sticker.status === 1)
-      .map((sticker) => ({
-        id: String(sticker.id),
-        label: sticker.alt || sticker.id,
-        preview: getStickerPreview(sticker)
-      })) ?? [])
+    ...(selectedPack?.stickers.filter(isValidAdminSticker).map((sticker) => ({
+      id: String(sticker.id),
+      label: sticker.alt || sticker.id,
+      preview: getStickerPreview(sticker)
+    })) ?? [])
   ]
 
   const uploadPackOptions = [
@@ -683,23 +717,26 @@ export const StickerAdmin = ({ initialPacks }: Props) => {
   )
   const deletePackDisabledReason = selectedPack
     ? selectedPack.status === 1
-      ? '请先下架 Pack，再永久删除'
+      ? '请先禁用 Pack，再永久删除'
       : isPackDirty
         ? '请先保存或撤销当前更改'
         : ''
     : ''
   const deleteStickerDisabledReason = selectedPack
     ? selectedPack.status === 1
-      ? '请先下架 Pack，再永久删除 Sticker'
+      ? '请先禁用 Pack，再永久删除 Sticker'
       : isPackDirty
         ? '请先保存或撤销当前更改'
         : ''
     : ''
+  const packToggleDisabledReason = selectedPack
+    ? isPackDirty
+      ? '请先保存或撤销当前更改'
+      : getPackEnableDisabledReason(selectedPack)
+    : ''
 
   const packSelectorItems = packs.map((pack) => {
-    const activeStickerCount = pack.stickers.filter(
-      (sticker) => sticker.status === 1
-    ).length
+    const activeStickerCount = pack.stickers.filter(isValidAdminSticker).length
     return {
       ...pack,
       summary: `${pack.slug} · ${activeStickerCount}/${pack.stickers.length}`
@@ -802,7 +839,11 @@ export const StickerAdmin = ({ initialPacks }: Props) => {
 
   const stickerManager = selectedPack ? (
     <div className="space-y-4">
-      <div className="flex min-h-8 flex-wrap items-center justify-between gap-2">
+      <div
+        role="toolbar"
+        aria-label="Sticker 批量操作"
+        className="sticky top-2 z-20 -mx-1 flex min-h-8 flex-wrap items-center justify-between gap-2 rounded-medium bg-content1/95 px-1 py-2 backdrop-blur-sm"
+      >
         <Checkbox
           size="sm"
           isSelected={isAllStickersSelected}
@@ -867,7 +908,6 @@ export const StickerAdmin = ({ initialPacks }: Props) => {
       {selectedPack.stickers.length ? (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5">
           {selectedPack.stickers.map((sticker) => {
-            const preview = getStickerPreview(sticker)
             const label = sticker.alt || sticker.id
             const isSelected = selectedStickerIds.has(sticker.id)
             return (
@@ -886,12 +926,14 @@ export const StickerAdmin = ({ initialPacks }: Props) => {
                 onPress={() => toggleStickerSelection(sticker.id)}
               >
                 <CardBody className="relative flex aspect-square items-center justify-center overflow-hidden bg-default-100 p-1">
-                  {preview ? (
-                    <Image
-                      removeWrapper
-                      src={preview}
+                  {sticker.assetUrl || sticker.thumbnailUrl ? (
+                    <StickerThumbnail
+                      src={sticker.assetUrl}
+                      posterSrc={sticker.thumbnailUrl}
+                      mediaType={sticker.mediaType}
+                      mime={sticker.mime}
                       alt={label}
-                      className="size-full object-contain"
+                      className="size-full"
                     />
                   ) : (
                     <Chip size="sm" color="warning" variant="flat">
@@ -919,7 +961,7 @@ export const StickerAdmin = ({ initialPacks }: Props) => {
                     variant="flat"
                     className="h-5 px-1 text-[9px]"
                   >
-                    {sticker.status === 1 ? '可用' : '禁用'}
+                    {sticker.status === 1 ? '启用' : '禁用'}
                   </Chip>
                 </CardFooter>
               </Card>
@@ -958,13 +1000,34 @@ export const StickerAdmin = ({ initialPacks }: Props) => {
       </div>
 
       {packs.length ? (
-        <div className="grid min-w-0 gap-4 lg:grid-cols-[18rem_minmax(0,1fr)]">
+        <div className="grid min-w-0 gap-4 lg:grid-cols-[6rem_minmax(0,1fr)]">
           <Select
             id="admin-sticker-pack-selector"
             className="lg:hidden"
             label="Sticker Pack"
             items={packSelectorItems}
             selectedKeys={selectedPackId ? [String(selectedPackId)] : []}
+            renderValue={(items) =>
+              items.map((item) => {
+                const pack = packSelectorItems.find(
+                  (candidate) => candidate.id === Number(item.key)
+                )
+                return pack ? (
+                  <div
+                    key={pack.id}
+                    className="flex min-w-0 items-center gap-3"
+                  >
+                    <PackStatusCover
+                      compact
+                      name={pack.name}
+                      coverUrl={pack.coverUrl}
+                      isEnabled={pack.status === 1}
+                    />
+                    <span className="truncate">{pack.name}</span>
+                  </div>
+                ) : null
+              })
+            }
             onSelectionChange={(keys) => {
               const key = getFirstSelectedKey(keys)
               if (key) {
@@ -975,13 +1038,11 @@ export const StickerAdmin = ({ initialPacks }: Props) => {
             {(pack) => (
               <SelectItem key={String(pack.id)} textValue={pack.name}>
                 <div className="flex items-center gap-3">
-                  <Avatar
-                    showFallback
-                    radius="sm"
-                    size="sm"
-                    name={pack.name.slice(0, 1)}
-                    src={pack.coverUrl ?? undefined}
-                    classNames={{ img: 'object-contain' }}
+                  <PackStatusCover
+                    compact
+                    name={pack.name}
+                    coverUrl={pack.coverUrl}
+                    isEnabled={pack.status === 1}
                   />
                   <div className="min-w-0">
                     <p className="truncate">{pack.name}</p>
@@ -994,52 +1055,66 @@ export const StickerAdmin = ({ initialPacks }: Props) => {
             )}
           </Select>
 
-          <Card className="hidden h-fit lg:block" shadow="sm">
-            <CardBody className="p-2">
-              <Listbox
-                aria-label="Sticker Pack"
-                items={packSelectorItems}
-                selectionMode="single"
-                disallowEmptySelection
-                selectedKeys={
-                  selectedPackId ? new Set([String(selectedPackId)]) : new Set()
-                }
-                onSelectionChange={(keys) => {
-                  const key = getFirstSelectedKey(keys)
-                  if (key) {
-                    requestPackSelection(Number(key))
-                  }
-                }}
+          <Card
+            as="aside"
+            aria-label="Sticker Pack 列表"
+            className="hidden h-full max-h-[calc(100dvh-2rem)] lg:sticky lg:top-4 lg:block"
+            shadow="sm"
+          >
+            <CardBody className="h-full p-2">
+              <ScrollShadow
+                hideScrollBar
+                className="h-full max-h-[calc(100dvh-3rem)]"
               >
-                {(pack) => (
-                  <ListboxItem
-                    key={String(pack.id)}
-                    textValue={pack.name}
-                    description={pack.summary}
-                    startContent={
-                      <Avatar
-                        showFallback
-                        radius="sm"
-                        size="sm"
-                        name={pack.name.slice(0, 1)}
-                        src={pack.coverUrl ?? undefined}
-                        classNames={{ img: 'object-contain' }}
-                      />
+                <Listbox
+                  aria-label="Sticker Pack"
+                  items={packSelectorItems}
+                  color="primary"
+                  variant="flat"
+                  classNames={{
+                    base: 'h-full',
+                    list: 'flex h-full min-h-full w-full flex-col items-center justify-start'
+                  }}
+                  selectionMode="single"
+                  disallowEmptySelection
+                  hideSelectedIcon
+                  selectedKeys={
+                    selectedPackId
+                      ? new Set([String(selectedPackId)])
+                      : new Set()
+                  }
+                  onSelectionChange={(keys) => {
+                    const key = getFirstSelectedKey(keys)
+                    if (key) {
+                      requestPackSelection(Number(key))
                     }
-                    endContent={
-                      <Chip
-                        size="sm"
-                        color={pack.status === 1 ? 'success' : 'default'}
-                        variant="flat"
-                      >
-                        {pack.status === 1 ? '上架' : '下架'}
-                      </Chip>
-                    }
-                  >
-                    {pack.name}
-                  </ListboxItem>
-                )}
-              </Listbox>
+                  }}
+                >
+                  {(pack) => (
+                    <ListboxItem
+                      key={String(pack.id)}
+                      textValue={pack.name}
+                      aria-label={`${pack.name}，${
+                        pack.status === 1 ? '已启用' : '已禁用'
+                      }`}
+                      classNames={{
+                        base: 'mx-auto flex h-20 shrink-0 items-center justify-center px-1.5 py-2 data-[selected=true]:bg-primary/25 data-[selected=true]:data-[hover=true]:bg-primary/30',
+                        title: 'hidden',
+                        wrapper: 'hidden'
+                      }}
+                      startContent={
+                        <Tooltip content={pack.name} placement="right">
+                          <PackStatusCover
+                            name={pack.name}
+                            coverUrl={pack.coverUrl}
+                            isEnabled={pack.status === 1}
+                          />
+                        </Tooltip>
+                      }
+                    />
+                  )}
+                </Listbox>
+              </ScrollShadow>
             </CardBody>
           </Card>
 
@@ -1079,22 +1154,20 @@ export const StickerAdmin = ({ initialPacks }: Props) => {
                     </>
                   )}
                   <Tooltip
-                    content="请先保存或撤销当前更改"
-                    isDisabled={!isPackDirty}
+                    content={packToggleDisabledReason}
+                    isDisabled={!packToggleDisabledReason}
                   >
                     <span className="inline-flex">
                       <Switch
                         size="sm"
                         color="success"
-                        aria-label={
-                          selectedPack.status === 1 ? '下架 Pack' : '上架 Pack'
-                        }
+                        aria-label="Pack 启用状态"
                         isSelected={selectedPack.status === 1}
-                        isDisabled={isTogglingPack || isPackDirty}
+                        isDisabled={
+                          isTogglingPack || Boolean(packToggleDisabledReason)
+                        }
                         onValueChange={togglePack}
-                      >
-                        {selectedPack.status === 1 ? '上架' : '下架'}
-                      </Switch>
+                      />
                     </span>
                   </Tooltip>
                 </div>
@@ -1313,11 +1386,17 @@ export const StickerAdmin = ({ initialPacks }: Props) => {
             />
 
             {files.length > 0 && (
-              <div className="flex flex-wrap gap-2" aria-label="已选文件">
+              <div
+                className="flex min-w-0 flex-wrap gap-2"
+                aria-label="已选文件"
+              >
                 {files.map((file, index) => (
                   <Chip
                     key={`${file.name}-${file.size}-${index}`}
                     variant="flat"
+                    className="max-w-full"
+                    classNames={{ content: 'truncate' }}
+                    title={`${file.name} · ${formatFileSize(file.size)}`}
                     onClose={() => removeUploadFile(index)}
                   >
                     {file.name} · {formatFileSize(file.size)}

@@ -111,7 +111,13 @@ vi.mock('@heroui/react', () => ({
     >
       {children}
     </button>
-  )
+  ),
+  Image: ({
+    removeWrapper: _removeWrapper,
+    ...props
+  }: React.ImgHTMLAttributes<HTMLImageElement> & {
+    removeWrapper?: boolean
+  }) => <img {...props} />
 }))
 
 vi.mock('react-hot-toast', () => ({
@@ -378,6 +384,18 @@ describe('ChatInput keyboard handling', () => {
       '[data-testid="sticker-option-moe-wave"]'
     )
     expect(stickerOption).not.toBeNull()
+    const stickerVideo = stickerOption?.querySelector<HTMLVideoElement>(
+      '[data-testid="sticker-thumbnail-video"]'
+    )
+    expect(stickerVideo?.src).toBe('https://cdn.example/wave.webm')
+    expect(stickerVideo?.muted).toBe(true)
+    expect(stickerVideo?.loop).toBe(true)
+    expect(
+      stickerOption?.querySelector('[data-testid="sticker-thumbnail-poster"]')
+    ).not.toBeNull()
+    expect(
+      container.querySelector('button[aria-label="切换到Moe"] video')
+    ).toBeNull()
 
     await act(async () => {
       stickerOption!.click()
@@ -793,9 +811,7 @@ describe('ChatInput keyboard handling', () => {
     )
     expect(attachmentMenu).not.toBeNull()
     expect(attachmentMenu?.className).toContain('z-50')
-    expect(attachmentMenu?.className).toContain(
-      'bg-[var(--kun-chat-menu-bg)]'
-    )
+    expect(attachmentMenu?.className).toContain('bg-[var(--kun-chat-menu-bg)]')
     expect(attachmentMenu?.className).toContain(
       'text-[var(--kun-chat-menu-text)]'
     )

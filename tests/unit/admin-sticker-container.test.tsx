@@ -144,6 +144,7 @@ vi.mock('@heroui/react', () => {
     items = [],
     label,
     onSelectionChange,
+    renderValue,
     selectedKeys = []
   }: {
     children?: React.ReactNode | ((item: any) => React.ReactElement)
@@ -151,6 +152,7 @@ vi.mock('@heroui/react', () => {
     items?: any[]
     label?: string
     onSelectionChange?: (keys: Set<string>) => void
+    renderValue?: (items: Array<{ key: React.Key }>) => React.ReactNode
     selectedKeys?: Iterable<React.Key>
   }) => {
     const renderedItems =
@@ -162,6 +164,11 @@ vi.mock('@heroui/react', () => {
     return (
       <label>
         <span>{label}</span>
+        {renderValue && selected && (
+          <span data-testid={`select-render-value-${id}`}>
+            {renderValue([{ key: selected }])}
+          </span>
+        )}
         <select
           id={id}
           aria-label={label}
@@ -193,22 +200,35 @@ vi.mock('@heroui/react', () => {
   }
 
   const ListboxItem = ({
+    'aria-label': ariaLabel,
     children,
+    classNames,
     description,
     endContent,
+    hideSelectedIcon,
+    isSelected,
     onPress,
     startContent,
     textValue
   }: {
+    'aria-label'?: string
     children?: React.ReactNode
+    classNames?: { base?: string }
     description?: React.ReactNode
     endContent?: React.ReactNode
+    hideSelectedIcon?: boolean
+    isSelected?: boolean
     onPress?: () => void
     startContent?: React.ReactNode
     textValue?: string
   }) => (
-    <button
-      type="button"
+    <div
+      role="option"
+      aria-label={ariaLabel}
+      aria-selected={isSelected}
+      className={classNames?.base}
+      tabIndex={0}
+      data-selected={isSelected ? 'true' : undefined}
       data-testid={`pack-option-${textValue}`}
       onClick={onPress}
     >
@@ -216,30 +236,53 @@ vi.mock('@heroui/react', () => {
       <span>{children}</span>
       <span>{description}</span>
       {endContent}
-    </button>
+      {isSelected && !hideSelectedIcon && (
+        <span data-testid="listbox-selected-icon">✓</span>
+      )}
+    </div>
   )
 
   const Listbox = ({
     children,
+    classNames,
+    hideSelectedIcon,
     items = [],
-    onSelectionChange
+    onSelectionChange,
+    selectedKeys = []
   }: {
     children: (item: any) => React.ReactElement
+    classNames?: { base?: string; list?: string }
+    hideSelectedIcon?: boolean
     items?: any[]
     onSelectionChange?: (keys: Set<string>) => void
-  }) => (
-    <div role="listbox">
-      {items.map((item) => {
-        const element = children(item) as React.ReactElement<{
-          onPress?: () => void
-        }>
-        return React.cloneElement(element, {
-          key: item.id,
-          onPress: () => onSelectionChange?.(new Set([String(item.id)]))
-        })
-      })}
-    </div>
-  )
+    selectedKeys?: Iterable<React.Key>
+  }) => {
+    const selected = new Set(Array.from(selectedKeys).map(String))
+
+    return (
+      <div data-testid="pack-listbox-base" className={classNames?.base}>
+        <div
+          role="listbox"
+          data-testid="pack-listbox-list"
+          className={classNames?.list}
+        >
+          {items.map((item) => {
+            const element = children(item) as React.ReactElement<{
+              hideSelectedIcon?: boolean
+              isSelected?: boolean
+              onPress?: () => void
+            }>
+            return React.cloneElement(element, {
+              key: item.id,
+              hideSelectedIcon,
+              isSelected: selected.has(String(item.id)),
+              onPress: () => onSelectionChange?.(new Set([String(item.id)]))
+            })
+          })}
+        </div>
+      </div>
+    )
+  }
 
   const Tab = ({ children }: { children?: React.ReactNode }) => <>{children}</>
   const Tabs = ({
@@ -290,22 +333,74 @@ vi.mock('@heroui/react', () => {
 
   return {
     addToast: toastMock,
-    Avatar: ({ name }: { name?: string }) => <span>{name}</span>,
+    Avatar: ({
+      className,
+      name,
+      src
+    }: {
+      className?: string
+      name?: string
+      src?: string
+    }) =>
+      src ? (
+        <img alt={name ?? ''} className={className} src={src} />
+      ) : (
+        <span>{name}</span>
+      ),
+    Badge: ({
+      children,
+      classNames,
+      color,
+      content,
+      isDot,
+      placement: _placement,
+      showOutline: _showOutline,
+      size: _size,
+      ...props
+    }: {
+      children?: React.ReactNode
+      classNames?: { badge?: string; base?: string }
+      color?: string
+      content?: React.ReactNode
+      isDot?: boolean
+      placement?: string
+      showOutline?: boolean
+      size?: string
+      [key: string]: unknown
+    }) => {
+      const rendersDot = isDot && content === ''
+      return (
+        <span {...props} className={classNames?.base} data-color={color}>
+          {children}
+          <span
+            data-testid="badge-dot"
+            data-is-dot={rendersDot ? 'true' : 'false'}
+            className={`${classNames?.badge ?? ''} ${
+              rendersDot ? 'size-3' : ''
+            }`.trim()}
+          >
+            {content}
+          </span>
+        </span>
+      )
+    },
     Button,
     Card: ({
+      as: Component = 'div',
       children,
       isDisabled,
       isPressable,
       onPress,
       ...props
     }: {
+      as?: React.ElementType
       children?: React.ReactNode
       isDisabled?: boolean
       isPressable?: boolean
       onPress?: () => void
       [key: string]: unknown
     }) => (
-      <div
+      <Component
         {...props}
         role={isPressable ? 'button' : undefined}
         aria-disabled={isDisabled}
@@ -313,7 +408,7 @@ vi.mock('@heroui/react', () => {
         onClick={onPress}
       >
         {children}
-      </div>
+      </Component>
     ),
     CardBody: ({ children }: { children?: React.ReactNode }) => (
       <div>{children}</div>
@@ -385,9 +480,12 @@ vi.mock('@heroui/react', () => {
     DropdownTrigger: ({ children }: { children?: React.ReactNode }) => (
       <>{children}</>
     ),
-    Image: ({ alt, src }: { alt?: string; src?: string }) => (
-      <img alt={alt} src={src} />
-    ),
+    Image: ({
+      removeWrapper: _removeWrapper,
+      ...props
+    }: React.ImgHTMLAttributes<HTMLImageElement> & {
+      removeWrapper?: boolean
+    }) => <img {...props} />,
     Input,
     Listbox,
     ListboxItem,
@@ -414,18 +512,30 @@ vi.mock('@heroui/react', () => {
     SelectItem: ({ children }: { children?: React.ReactNode }) => (
       <>{children}</>
     ),
-    ScrollShadow: ({ children }: { children?: React.ReactNode }) => (
-      <div>{children}</div>
+    ScrollShadow: ({
+      children,
+      className,
+      hideScrollBar: _hideScrollBar
+    }: {
+      children?: React.ReactNode
+      className?: string
+      hideScrollBar?: boolean
+    }) => (
+      <div data-testid="pack-scroll-shadow" className={className}>
+        {children}
+      </div>
     ),
     Switch: ({
       children,
       isDisabled,
+      isReadOnly,
       isSelected,
       onValueChange,
       'aria-label': ariaLabel
     }: {
       children?: React.ReactNode
       isDisabled?: boolean
+      isReadOnly?: boolean
       isSelected?: boolean
       onValueChange?: (selected: boolean) => void
       'aria-label'?: string
@@ -435,8 +545,13 @@ vi.mock('@heroui/react', () => {
         role="switch"
         aria-label={ariaLabel}
         aria-checked={isSelected}
+        aria-readonly={isReadOnly}
         disabled={isDisabled}
-        onClick={() => onValueChange?.(!isSelected)}
+        onClick={() => {
+          if (!isReadOnly) {
+            onValueChange?.(!isSelected)
+          }
+        }}
       >
         {children}
       </button>
@@ -479,11 +594,17 @@ vi.mock('@heroui/react', () => {
     Textarea,
     Tooltip: ({
       children,
-      content
+      content,
+      isDisabled
     }: {
       children?: React.ReactNode
       content?: React.ReactNode
-    }) => <span data-tooltip={String(content ?? '')}>{children}</span>,
+      isDisabled?: boolean
+    }) => (
+      <span data-tooltip={isDisabled ? undefined : String(content ?? '')}>
+        {children}
+      </span>
+    ),
     useDisclosure: () => {
       const [isOpen, setIsOpen] = React.useState(false)
       return {
@@ -623,6 +744,109 @@ describe('StickerAdmin', () => {
     expect(container.querySelector('[role="tablist"]')).not.toBeNull()
   })
 
+  it('uses selected backgrounds without checkmarks and compact status dots in the desktop Pack selector', async () => {
+    const container = await renderAdmin()
+    const packOption = container.querySelector<HTMLElement>(
+      '[data-testid="pack-option-可爱猫猫"]'
+    )
+    const disabledPackOption = container.querySelector<HTMLElement>(
+      '[data-testid="pack-option-困困熊"]'
+    )
+
+    expect(packOption).not.toBeNull()
+    expect(packOption?.textContent?.trim()).toBe('')
+    expect(packOption?.getAttribute('aria-label')).toBe('可爱猫猫，已启用')
+    expect(packOption?.getAttribute('aria-selected')).toBe('true')
+    expect(packOption?.className).toContain(
+      'data-[selected=true]:bg-primary/25'
+    )
+    expect(packOption?.className).toContain('items-center')
+    expect(packOption?.className).toContain('justify-center')
+    expect(packOption?.className).toContain('mx-auto')
+    expect(packOption?.className).toContain('h-20')
+    expect(packOption?.className).toContain('shrink-0')
+    expect(
+      packOption?.querySelector('[data-testid="listbox-selected-icon"]')
+    ).toBeNull()
+    expect(packOption?.querySelector('img')?.src).toBe(
+      'https://cdn.example.com/cat_one.webp'
+    )
+    expect(packOption?.querySelector('img')?.className).toContain('size-16')
+    expect(packOption?.querySelector('[role="switch"]')).toBeNull()
+    const enabledStatus = packOption?.querySelector(
+      '[role="status"][aria-label="可爱猫猫已启用"]'
+    )
+    const disabledStatus = disabledPackOption?.querySelector(
+      '[role="status"][aria-label="困困熊已禁用"]'
+    )
+    expect(
+      enabledStatus
+        ?.querySelector('[data-testid="badge-dot"]')
+        ?.getAttribute('data-is-dot')
+    ).toBe('true')
+    expect(
+      enabledStatus?.querySelector('[data-testid="badge-dot"]')?.className
+    ).toContain('bg-emerald-500')
+    expect(
+      disabledStatus
+        ?.querySelector('[data-testid="badge-dot"]')
+        ?.getAttribute('data-is-dot')
+    ).toBe('true')
+    expect(
+      disabledStatus?.querySelector('[data-testid="badge-dot"]')?.className
+    ).toContain('bg-red-500')
+    expect(
+      enabledStatus?.closest<HTMLElement>('[data-tooltip]')?.dataset.tooltip
+    ).toBe('可爱猫猫')
+
+    const sidebar = container.querySelector<HTMLElement>(
+      'aside[aria-label="Sticker Pack 列表"]'
+    )
+    const packList = sidebar?.querySelector<HTMLElement>(
+      '[data-testid="pack-listbox-list"]'
+    )
+    expect(sidebar?.className).toContain('lg:sticky')
+    expect(packList?.className).toContain('items-center')
+    expect(packList?.className).toContain('justify-start')
+    expect(packList?.className).not.toContain('justify-center')
+    expect(packList?.className).toContain('h-full')
+    expect(
+      sidebar?.querySelector('[data-testid="pack-scroll-shadow"]')?.className
+    ).toContain('max-h-')
+
+    expect(
+      container.querySelector(
+        '[data-testid="select-render-value-admin-sticker-pack-selector"] [role="status"][aria-label="可爱猫猫已启用"]'
+      )
+    ).not.toBeNull()
+  })
+
+  it('blocks enabling a Pack without a valid Sticker and explains why', async () => {
+    const emptyPack: AdminStickerPack = {
+      ...offlinePack,
+      id: 3,
+      slug: 'empty_pack',
+      name: '空 Pack',
+      coverStickerId: null,
+      coverUrl: null,
+      stickers: []
+    }
+    const container = await renderAdmin([emptyPack])
+    const statusSwitch = container.querySelector<HTMLButtonElement>(
+      '[role="switch"][aria-label="Pack 启用状态"]'
+    )
+
+    expect(statusSwitch?.disabled).toBe(true)
+    expect(
+      statusSwitch?.closest<HTMLElement>('[data-tooltip]')?.dataset.tooltip
+    ).toContain('至少需要一张有效 Sticker')
+
+    await act(async () => {
+      statusSwitch?.click()
+    })
+    expect(fetchMock.kunFetchPut).not.toHaveBeenCalled()
+  })
+
   it('gives server-rendered HeroUI Select controls stable ids', async () => {
     const container = await renderAdmin()
 
@@ -698,7 +922,7 @@ describe('StickerAdmin', () => {
     expect(deletePackButton?.disabled).toBe(true)
     expect(
       deletePackButton?.closest<HTMLElement>('[data-tooltip]')?.dataset.tooltip
-    ).toContain('请先下架 Pack')
+    ).toContain('请先禁用 Pack')
 
     await clickButton(container, 'Sticker 1')
     const stickerCard = container.querySelector<HTMLElement>(
@@ -717,9 +941,72 @@ describe('StickerAdmin', () => {
     expect(
       deleteStickerButton?.closest<HTMLElement>('[data-tooltip]')?.dataset
         .tooltip
-    ).toContain('请先下架 Pack')
-    expect(container.textContent).toContain('可用')
-    expect(container.querySelectorAll('[role="switch"]')).toHaveLength(1)
+    ).toContain('请先禁用 Pack')
+    expect(container.textContent).toContain('启用')
+    expect(container.textContent).not.toContain('可用')
+    expect(
+      container.querySelector('[role="toolbar"][aria-label="Sticker 批量操作"]')
+        ?.className
+    ).toContain('sticky')
+    expect(
+      container.querySelector('[role="switch"][aria-label="Pack 启用状态"]')
+        ?.textContent
+    ).toBe('')
+  })
+
+  it('plays dynamic Sticker thumbnails while keeping the Pack cover static', async () => {
+    const dynamicSticker = {
+      ...makeSticker('cat_wave', '挥手猫猫'),
+      assetKey: 'stickers/test/cat_wave.webm',
+      assetUrl: 'https://cdn.example.com/cat_wave.webm',
+      thumbnailKey: 'stickers/test/cat_wave.webp',
+      thumbnailUrl: 'https://cdn.example.com/cat_wave.webp',
+      mime: 'video/webm',
+      mediaType: 'video' as const,
+      durationMs: 1200,
+      frameRate: 30
+    }
+    const dynamicPack: AdminStickerPack = {
+      ...activePack,
+      coverStickerId: dynamicSticker.id,
+      coverUrl: dynamicSticker.thumbnailUrl,
+      stickers: [dynamicSticker]
+    }
+    const container = await renderAdmin([dynamicPack])
+
+    await clickButton(container, 'Sticker 1')
+
+    const stickerCard = container.querySelector<HTMLElement>(
+      '[role="button"][aria-label="选择 挥手猫猫"]'
+    )
+    const video = stickerCard?.querySelector<HTMLVideoElement>(
+      '[data-testid="sticker-thumbnail-video"]'
+    )
+    const packOption = container.querySelector<HTMLElement>(
+      '[data-testid="pack-option-可爱猫猫"]'
+    )
+
+    expect(video?.src).toBe('https://cdn.example.com/cat_wave.webm')
+    expect(video?.muted).toBe(true)
+    expect(video?.loop).toBe(true)
+    expect(
+      stickerCard?.querySelector('[data-testid="sticker-thumbnail-poster"]')
+    ).not.toBeNull()
+    expect(packOption?.querySelector('video')).toBeNull()
+    expect(packOption?.querySelector('img')?.src).toBe(
+      'https://cdn.example.com/cat_wave.webp'
+    )
+
+    await act(async () => {
+      video?.dispatchEvent(
+        new dom!.window.Event('loadeddata', { bubbles: true })
+      )
+    })
+
+    expect(
+      stickerCard?.querySelector('[data-testid="sticker-thumbnail-poster"]')
+    ).toBeNull()
+    expect(video?.className).toContain('opacity-100')
   })
 
   it('keeps the current Pack open after importing and shows the selected files', async () => {
@@ -798,6 +1085,32 @@ describe('StickerAdmin', () => {
     expect(container.querySelector('[role="dialog"]')).not.toBeNull()
     expect(container.textContent).toContain(
       'broken.webm: WebM 必须使用 VP9 编码'
+    )
+    expect(toastMock).not.toHaveBeenCalled()
+  })
+
+  it('uses a warning toast when deletion succeeds with incomplete object cleanup', async () => {
+    fetchMock.kunFetchDelete.mockResolvedValueOnce({
+      packId: offlinePack.id,
+      deletedStickerCount: offlinePack.stickers.length,
+      objectCleanupFailed: 1
+    })
+    const container = await renderAdmin([offlinePack])
+
+    await clickButton(container, '删除 Pack')
+    await clickButton(container, '永久删除')
+    await act(async () => {
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(toastMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: 'Pack 已删除',
+        description: '1 个对象存储资源清理失败，请稍后检查存储状态',
+        color: 'warning',
+        severity: 'warning'
+      })
     )
   })
 

@@ -229,7 +229,7 @@ const assertPackCanBeActive = async (
 ) => {
   const validSticker = await getValidCoverSticker(tx, packId, undefined)
   if (!validSticker || !hasValidSticker(validSticker)) {
-    return 'Pack 至少需要一张有效 Sticker 才能上架'
+    return 'Pack 至少需要一张有效 Sticker 才能启用'
   }
 
   const cover = await getValidCoverSticker(tx, packId, coverStickerId)
@@ -428,7 +428,7 @@ export const updateStickerStatus = async (
           [sticker.id]
         )
         if (!replacement || replacement.id === sticker.id) {
-          throw new Error('该 Sticker 是当前上架 Pack 的唯一有效封面，不能禁用')
+          throw new Error('该 Sticker 是当前启用 Pack 的唯一有效封面，不能禁用')
         }
         coverStickerId = replacement.id
       }
@@ -528,7 +528,7 @@ export const updateStickerStatuses = async (
         )
         if (!replacement) {
           throw new Error(
-            '所选 Sticker 包含当前上架 Pack 的唯一有效封面，不能禁用'
+            '所选 Sticker 包含当前启用 Pack 的唯一有效封面，不能禁用'
           )
         }
         coverStickerId = replacement.id
@@ -603,7 +603,7 @@ export const deleteStickers = async (
         const pack = stickers[0].pack
         const packId = stickers[0].pack_id
         if (pack.status === STICKER_PACK_ACTIVE) {
-          throw new Error('请先下架 Sticker Pack，再删除 Sticker')
+          throw new Error('请先禁用 Sticker Pack，再删除 Sticker')
         }
         if (
           stickers.some(
@@ -704,7 +704,7 @@ export const deleteStickerPack = async (
           throw new Error('未找到 Sticker Pack')
         }
         if (pack.status === STICKER_PACK_ACTIVE) {
-          throw new Error('请先下架 Sticker Pack，再永久删除')
+          throw new Error('请先禁用 Sticker Pack，再永久删除')
         }
         if (pack.ownerships.length > 0) {
           throw new Error('该 Sticker Pack 已存在用户所有权记录，不能永久删除')
@@ -716,7 +716,7 @@ export const deleteStickerPack = async (
           )
         ) {
           throw new Error(
-            '该 Sticker Pack 中有 Sticker 被历史消息引用，只能下架，不能删除'
+            '该 Sticker Pack 中有 Sticker 被历史消息引用，只能禁用，不能删除'
           )
         }
 

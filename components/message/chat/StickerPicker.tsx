@@ -1,6 +1,7 @@
 'use client'
 
 import { cn } from '~/utils/cn'
+import { StickerThumbnail } from '~/components/sticker/StickerThumbnail'
 import type {
   PrivateMessageSticker,
   StickerPack
@@ -85,8 +86,6 @@ export const StickerPicker = ({
       ) : activePack ? (
         <div className="grid max-h-64 grid-cols-5 gap-1 overflow-y-auto p-2 sm:grid-cols-6">
           {activePack.stickers.map((sticker) => {
-            const preview = sticker.thumbnailUrl
-
             return (
               <button
                 key={sticker.id}
@@ -96,12 +95,14 @@ export const StickerPicker = ({
                 className="flex aspect-square min-w-0 items-center justify-center rounded-xl p-1 transition-colors hover:bg-[var(--kun-chat-menu-item-hover-bg)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[hsl(var(--kun-brand-500))]"
                 onClick={() => onSelectSticker(sticker)}
               >
-                {preview ? (
-                  <img
-                    src={preview}
+                {sticker.url || sticker.thumbnailUrl ? (
+                  <StickerThumbnail
+                    src={sticker.url}
+                    posterSrc={sticker.thumbnailUrl}
+                    mediaType={sticker.mediaType}
+                    mime={sticker.mime}
                     alt={sticker.alt || sticker.packName}
-                    loading="lazy"
-                    className="h-full w-full object-contain"
+                    className="size-full"
                   />
                 ) : (
                   <span className="text-xs text-[var(--kun-chat-muted-text)]">

@@ -72,7 +72,13 @@ vi.mock('@heroui/react', () => ({
     >
       {children}
     </button>
-  )
+  ),
+  Image: ({
+    removeWrapper: _removeWrapper,
+    ...props
+  }: React.ImgHTMLAttributes<HTMLImageElement> & {
+    removeWrapper?: boolean
+  }) => <img {...props} />
 }))
 
 vi.mock('@heroui/modal', () => ({
@@ -1761,5 +1767,44 @@ describe('ChatMessage menu and rendering', () => {
       },
       3
     )
+  })
+
+  it('plays a dynamic Sticker thumbnail inside reply previews', async () => {
+    const { container } = await renderMessage({
+      ...baseMessage,
+      replyTo: {
+        messageId: 2,
+        senderName: 'Mio',
+        content: '[贴纸]',
+        selectedText: null,
+        image: null,
+        stickerId: 'moe-wave',
+        sticker: {
+          id: 'moe-wave',
+          packId: 4,
+          packSlug: 'moe',
+          packName: 'Moe',
+          url: 'https://cdn.example/wave.webm',
+          thumbnailUrl: 'https://cdn.example/wave.webp',
+          mime: 'video/webm',
+          mediaType: 'video',
+          width: 512,
+          height: 512,
+          size: 12000,
+          durationMs: 1200,
+          frameRate: 30,
+          alt: '挥手'
+        }
+      }
+    })
+
+    const quote = container.querySelector('[data-testid="chat-reply-preview"]')
+    const video = quote?.querySelector<HTMLVideoElement>(
+      '[data-testid="sticker-thumbnail-video"]'
+    )
+
+    expect(video?.src).toBe('https://cdn.example/wave.webm')
+    expect(video?.muted).toBe(true)
+    expect(video?.loop).toBe(true)
   })
 })

@@ -1,6 +1,7 @@
 'use client'
 
 import { cn } from '~/utils/cn'
+import { StickerThumbnail } from '~/components/sticker/StickerThumbnail'
 import type {
   PrivateMessageImage,
   PrivateMessageSticker
@@ -63,11 +64,13 @@ export const ChatReplyPreview = ({
           className="size-9 shrink-0 rounded-md object-cover"
         />
       )}
-      {!image && sticker?.thumbnailUrl && (
-        <img
-          src={sticker.thumbnailUrl}
+      {!image && sticker && (sticker.url || sticker.thumbnailUrl) && (
+        <StickerThumbnail
+          src={sticker.url}
+          posterSrc={sticker.thumbnailUrl}
+          mediaType={sticker.mediaType}
+          mime={sticker.mime}
           alt={sticker.alt || '引用贴纸'}
-          loading="lazy"
           className="size-9 shrink-0 rounded-md object-contain"
         />
       )}

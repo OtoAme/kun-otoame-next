@@ -97,7 +97,7 @@ describe('admin Sticker service', () => {
         },
         1007
       )
-    ).resolves.toBe('Pack 至少需要一张有效 Sticker 才能上架')
+    ).resolves.toBe('Pack 至少需要一张有效 Sticker 才能启用')
     expect(prismaMock._tx.sticker_pack.update).not.toHaveBeenCalled()
   })
 
@@ -127,7 +127,7 @@ describe('admin Sticker service', () => {
     )
     await expect(
       updateStickerStatus({ stickerId: 'cute_cats_happy', status: 0 }, 1007)
-    ).resolves.toBe('该 Sticker 是当前上架 Pack 的唯一有效封面，不能禁用')
+    ).resolves.toBe('该 Sticker 是当前启用 Pack 的唯一有效封面，不能禁用')
     expect(prismaMock._tx.sticker.update).not.toHaveBeenCalled()
   })
 

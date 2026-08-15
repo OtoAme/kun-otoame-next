@@ -121,7 +121,7 @@ describe('private chat sticker catalog', () => {
     prismaMock.sticker.findUnique.mockResolvedValue({
       id: 'offline-wave',
       pack_id: 9,
-      alt: '下架',
+      alt: '禁用',
       asset_url: 'https://cdn.example/offline-wave.webm',
       thumbnail_url: 'https://cdn.example/offline-wave.webp',
       storage_key: 'sticker/offline/offline-wave/asset.webm',
@@ -137,7 +137,7 @@ describe('private chat sticker catalog', () => {
       pack: {
         id: 9,
         slug: 'offline',
-        name: '下架包',
+        name: '禁用包',
         description: '',
         cover_url: null,
         price: 0,
@@ -150,7 +150,7 @@ describe('private chat sticker catalog', () => {
       '~/app/api/message/stickers/service'
     )
     await expect(getStickerForSending('offline-wave', 1007)).resolves.toBe(
-      '贴纸包已下架，暂时无法发送'
+      '贴纸包已禁用，暂时无法发送'
     )
   })
 

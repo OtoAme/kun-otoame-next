@@ -173,7 +173,7 @@ export const getStickerForSending = async (
   }
 
   if (sticker.pack.status !== STICKER_PACK_ACTIVE) {
-    return '贴纸包已下架，暂时无法发送'
+    return '贴纸包已禁用，暂时无法发送'
   }
 
   if (!sticker.pack.is_builtin) {
