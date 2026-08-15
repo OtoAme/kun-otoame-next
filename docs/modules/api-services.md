@@ -42,7 +42,7 @@ service/helper 负责：
 | 标签/公司 | `app/api/tag/*`, `app/api/company/*`                                         | 标签列表、标签游戏、公司列表、公司游戏、公司 CRUD。                                         |
 | 用户      | `app/api/user/*`                                                             | 用户资料、头像、设置、关注、收藏、状态、2FA。                                               |
 | 消息      | `app/api/message/*`                                                          | 站内消息、未读状态、会话聊天。                                                              |
-| 管理      | `app/api/admin/*`                                                            | 后台用户、资源、评论、评分、举报、邮件、设置、日志。                                        |
+| 管理      | `app/api/admin/*`                                                            | 后台用户、资源、评论、评分、举报、邮件、设置、日志和 Sticker Pack。                         |
 | 上传      | `app/api/upload/*`                                                           | 资源文件和视频上传。                                                                        |
 | 工具      | `app/api/utils/*`                                                            | JWT、header cookie、CSRF 相关 helpers、Markdown render、Bangumi 工具、Cloudflare/IndexNow。 |
 
@@ -117,6 +117,7 @@ service/helper 负责：
 - 私聊动态路由和服务端渲染的聊天详情页会话 ID 都必须按严格十进制正整数解析，不能用 `parseInt` 接受 `5abc` 这类部分合法字符串；非法 ID 要在鉴权和 DB 读取前直接返回或渲染 `无效的会话 ID`。
 - 私聊发送支持 `type: 0` 文本和 `type: 1` 图片。文本消息需要 trim 后非空 `content`，编辑已有消息也必须按同一规则拒绝纯空白内容；图片消息必须带由私聊上传接口产生并在 Redis 短期登记过的图片 metadata，可选补充说明文本；服务端发送前必须按会话、用户和 URL hash 原子校验并删除登记内容，不能信任客户端伪造的图片 URL，也不能让同一次上传 metadata 在 1 小时 TTL 内重复生成多条图片消息。如果 metadata 已消费但随后消息 DB 事务失败，service 必须 best-effort 恢复这批 metadata，让用户可以直接重试发送而不用重新上传。多图消息通过 `images` 数组保存完整图片组，同时 `image` / `image_url` 保留第一张用于旧数据兼容和会话摘要。回复消息通过 `replyToMessageId` 指向同会话、未删除的消息，并在发送时固化 `replyTo` 预览，包括原消息发送者、消息类型、文本摘要和图片缩略信息，避免原消息后续编辑影响回复上下文。前端右键某张图片回复时会提交 `replyImageIndex`，服务端必须校验该索引属于被回复消息的图片组，并把对应图片 metadata 固化到 `reply_image`。
 - 私聊 Sticker 使用 `type: 2` 和独立的 `stickerId`，不解析普通文本占位符。第一阶段 `GET /api/message/stickers` 只返回 `is_builtin = true` 且 active 的内置贴纸包；发送 service 必须重新校验 Sticker 所属贴纸包状态和内置阶段边界，不能信任客户端资源 URL，后续购买功能接入时再校验用户所有权。Sticker 资源使用静态 WebP 或无音频 VP9 WebM，动态资源配套 poster WebP；贴纸面板只加载 poster，历史消息中的动态资源按可见性懒加载。下架贴纸包禁止新发送但不删除目录或历史消息引用，缺失 Sticker 关系或资源时保留 `type: 2` 并降级为 `[贴纸不可用]`。会话列表摘要、实时消息、回复预览和删除 tombstone 都必须携带或清理 Sticker metadata。
+- Sticker 管理 API 位于 `app/api/admin/stickers/*`：Pack 编辑使用不可变小写 snake_case slug，创建默认下架；上架事务必须验证有效 Sticker 和同 Pack 封面。导入接口支持 WebP/WebM/ZIP，服务层执行真实类型、VP9 无音轨、300 KB WebM、ZIP 安全和重复 hash 校验，并在 S3 上传后 DB 事务失败时补偿删除对象。数据库只保存资源 key，新 URL 由 CDN 配置派生。`POST /api/admin/stickers/import` 为避免 Next middleware 默认 10 MB 请求体缓冲截断 multipart，会从 middleware matcher 中排除，但 handler 内必须自行完成 CSRF、登录态和管理员角色校验。
 - `/api/message/conversation/[id]/image` 是私聊图片上传接口，只允许会话成员上传 JPG/PNG/WebP/AVIF，单张入站上限 8MB；超出图片上限或超过 Next 默认 10MiB 客户端 body 缓冲上限的请求必须返回 `413`、`private, no-store` 和“图片大小不能超过 8 MB”的用户可见字符串，避免 multipart 被截断后冒成 400/500。该接口在 handler 内校验 CSRF 和登录态后，先执行 `image-upload-intake` 用户级限频，再读取 multipart `formData()`，避免被大量图片请求拖进解析成本；随后校验会话成员身份，用 Sharp 将静态图 resize 到 1920x1080 内并输出 AVIF，不加水印；Sharp 解码/压缩或处理后 metadata 读取失败时要回滚小时额度和已扣萌萌点，并返回“重新选择有效图片”的用户可见错误，不能冒成 500；上传 S3 后把最终 AVIF metadata 以 `conversation:image-upload:<conversationId>:<uid>:<urlHash>` 写入 Redis 1 小时，供发送消息校验；S3 上传或 Redis 登记失败时 best-effort 删除刚上传的 S3 object、回滚本次小时额度和已扣萌萌点，并返回可区分对象存储失败或上传记录保存失败的可重试错误。接口必须保持 `private, no-store`。
 - 私聊发送、私聊图片上传、私聊检查/打开、私聊移除/隐藏、私聊会话列表读取、私聊消息拉取、服务端首屏聊天加载、私聊已读同步和单条消息编辑/删除都必须做登录用户维度的 Redis 原子限频，避免跨多个会话快速群发、反复触发图片转码/S3 上传、脚本刷用户资料页上的私聊预检/恢复入口、高频拉取/同步聊天消息打 DB，或反复编辑/删除/隐藏造成写放大和删除时 S3 引用检查。当前阈值是发送消息 30 次/分钟、图片上传入口解析 30 次/分钟、实际图片上传 10 次/5 分钟、检查/打开私聊 60 次/分钟、移除/隐藏私聊共用 `conversation-manage` 30 次/分钟、会话列表读取/消息拉取/服务端首屏聊天加载/已读同步共用 `message-read` 180 次/分钟、编辑/删除消息共用 `message-write` 60 次/分钟；普通通知读取使用 `notification-read` 180 次/分钟，普通通知标已读/清理使用 `notification-write` 30 次/分钟。命中限频时 API route 返回 `429 Too Many Requests`、`Retry-After` 秒数、`Cache-Control: private, no-store`，响应体仍是带等待秒数的用户可见字符串，供现有前端 toast 分支展示；server action 返回同一用户可见字符串，由聊天页错误组件展示。检查/打开、图片上传入口解析、API 层移除/隐藏、`message-read`、`notification-read` 和 `notification-write` 限频必须在用户/会话/通知 DB 读取、multipart 解析和创建/恢复/隐藏/通知写入之前执行；`deleteConversation` service 仍保留成员校验后的 `conversation-manage` 兜底，并在隐藏写入前返回结构化限流结果，route 预检查通过后调用 service 时必须跳过兜底以避免一次请求消耗两次额度。单条消息编辑/删除限频必须在会话成员校验之后、消息行读取和删除图片 S3 cleanup 之前执行；实际 `image-upload` 限频必须保留在收件人隐私校验之后，避免对方关闭私信时消耗发送者的真实图片上传额度。限频 Redis 异常时 fail-open 并记录错误，不能因为短暂 Redis 故障中断普通文字私聊或正常读取。
 - 私聊图片上传还有用户级小时额度，用来控制长期 S3 成本：每个用户每小时前 5 张成功上传免费，第 6 张起每张在图片处理和 S3 上传前用 `user.updateMany({ where: { id, moemoepoint: { gte: 5 } }, data: { moemoepoint: { decrement: 5 } } })` 原子扣 5 萌萌点；余额不足时返回用户可见错误且不进入 Sharp/S3。压缩、处理后 metadata 读取、S3 上传或 Redis metadata 登记失败时回滚本次 quota 计数并退回已扣萌萌点；处理失败返回无效图片提示，上传/登记失败返回可重试错误。小时 quota Redis 不可用时上传直接返回可重试错误，避免在无法计费时继续制造 S3 成本。
@@ -286,8 +287,8 @@ if (typeof input === 'string') {
 
 ## 安全约束
 
-- 非 upload API 由 `middleware.ts` 统一校验 CSRF；只读匿名热点 `/api/home`、`/api/tag/otomegame` 和 `/api/company/otomegame` 从 matcher 中排除以降低 GET 固定开销。
-- upload API 因大 body 跳过 middleware，必须在 handler 内调用 `verifyKunCsrf`。
+- 一般 API 由 `middleware.ts` 统一校验 CSRF；只读匿名热点 `/api/home`、`/api/tag/otomegame` 和 `/api/company/otomegame` 从 matcher 中排除以降低 GET 固定开销。
+- `/api/upload/*` 和 `/api/admin/stickers/import` 因大 body 跳过 middleware，必须在 handler 内调用 `verifyKunCsrf`；新增大体积上传例外时还要补 matcher 回归测试，确认相邻 API 仍经过 middleware。
 - 状态变更请求需要 `x-requested-with: kun-fetch`，并通过 `origin` / `referer` host 校验。新增 `fetch` wrapper 或第三方回调时要确认它能满足这个约束，或明确加入最小豁免。
 - 用户可见错误不要泄漏 secret、token、资源密码、S3 key。
 - 权限必须在 API 层校验，不能只靠前端。

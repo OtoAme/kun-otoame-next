@@ -130,9 +130,9 @@ Zod schema 集中在 `validations/`。API 工具函数在 [app/api/utils/parseQu
 - `/user/:path*`
 - `/comment/:path*`
 - `/edit/:path*`
-- `/api/((?!upload/|tag/otomegame|company/otomegame).*)`
+- `/api/((?!home$|upload/|admin/stickers/import/?$|tag/otomegame|company/otomegame).*)`
 
-非 upload API 先过 `verifyKunCsrf`，但两个只读匿名热点 `/api/tag/otomegame` 和 `/api/company/otomegame` 为降低 GET 固定开销从 matcher 中排除。状态变更请求必须带 `x-requested-with: kun-fetch`，并且 `origin` 或 `referer` 的 host 必须匹配 `NEXT_PUBLIC_KUN_PATCH_ADDRESS_DEV` / `NEXT_PUBLIC_KUN_PATCH_ADDRESS_PROD`。上传 API 在 handler 内自行校验，避免 middleware 缓冲大 body。页面路由使用 [middleware/auth.ts](../../middleware/auth.ts) 校验 `kun-galgame-patch-moe-token`，未登录跳转 `/login`。
+一般 API 先过 `verifyKunCsrf`，但只读匿名热点 `/api/home`、`/api/tag/otomegame`、`/api/company/otomegame` 以及大体积上传路径 `/api/upload/*`、`/api/admin/stickers/import` 从 matcher 中排除。状态变更请求必须带 `x-requested-with: kun-fetch`，并且 `origin` 或 `referer` 的 host 必须匹配 `NEXT_PUBLIC_KUN_PATCH_ADDRESS_DEV` / `NEXT_PUBLIC_KUN_PATCH_ADDRESS_PROD`。被排除的上传 API 必须在 handler 内自行校验 CSRF，避免 middleware 缓冲并截断大 body。页面路由使用 [middleware/auth.ts](../../middleware/auth.ts) 校验 `kun-galgame-patch-moe-token`，未登录跳转 `/login`。
 
 常见角色约束：
 
@@ -197,17 +197,17 @@ Zod schema 集中在 `validations/`。API 工具函数在 [app/api/utils/parseQu
 
 ## 外部服务
 
-| 服务                   | 配置                                                                                                   |
-| ---------------------- | ------------------------------------------------------------------------------------------------------ |
-| PostgreSQL             | `KUN_DATABASE_URL`                                                                                     |
-| Redis                  | `REDIS_HOST`、`REDIS_PORT`、`REDIS_PASSWORD`                                                           |
-| Email                  | `KUN_VISUAL_NOVEL_EMAIL_*`                                                                             |
-| S3/image bed           | `KUN_VISUAL_NOVEL_S3_*`、`NEXT_PUBLIC_KUN_VISUAL_NOVEL_S3_STORAGE_URL`、`KUN_VISUAL_NOVEL_IMAGE_BED_*` |
-| Cloudflare cache purge | `KUN_CF_CACHE_ZONE_ID`、`KUN_CF_CACHE_PURGE_API_TOKEN`                                                 |
-| IndexNow               | `KUN_VISUAL_NOVEL_INDEX_NOW_KEY`                                                                       |
-| Bangumi                | `BANGUMI_ACCESS_TOKEN`                                                                                 |
+| 服务                   | 配置                                                                                                                        |
+| ---------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| PostgreSQL             | `KUN_DATABASE_URL`                                                                                                          |
+| Redis                  | `REDIS_HOST`、`REDIS_PORT`、`REDIS_PASSWORD`                                                                                |
+| Email                  | `KUN_VISUAL_NOVEL_EMAIL_*`                                                                                                  |
+| S3/image bed           | `KUN_VISUAL_NOVEL_S3_*`、`NEXT_PUBLIC_KUN_VISUAL_NOVEL_S3_STORAGE_URL`、`KUN_VISUAL_NOVEL_IMAGE_BED_*`                      |
+| Cloudflare cache purge | `KUN_CF_CACHE_ZONE_ID`、`KUN_CF_CACHE_PURGE_API_TOKEN`                                                                      |
+| IndexNow               | `KUN_VISUAL_NOVEL_INDEX_NOW_KEY`                                                                                            |
+| Bangumi                | `BANGUMI_ACCESS_TOKEN`                                                                                                      |
 | FFmpeg                 | 可选 `KUN_GALLERY_FFMPEG_PATH`，Gallery 动态 AVIF 缩略图默认还会尝试 standalone/local BtbN、`ffmpeg-static` 和系统 `ffmpeg` |
-| GitHub release deploy  | `GITHUB_REPO`、可选 `GITHUB_TOKEN`                                                                     |
+| GitHub release deploy  | `GITHUB_REPO`、可选 `GITHUB_TOKEN`                                                                                          |
 
 ## 维护原则
 

@@ -356,6 +356,7 @@ KUN_DEPLOY_RELEASE_TAG='vYYYY.MM.DD.HHMM' pnpm deploy:pull
 
 - `migration/production-schema-preflight-2026-05-03.sql`
 - `migration/production-schema-sync-2026-05-03.sql`
+- 私聊 Sticker 目录：先执行 `migration/production-private-chat-stickers-preflight-2026-08-14.sql`，审核后执行对应 sync；再执行 `migration/production-sticker-admin-preflight-2026-08-14.sql`，审核重复 hash 和封面引用后执行对应 sync。
 - `migration/reclassify-resource-types.ts`
 - `scripts/rebuildPatchResourceAttributes.ts`
 

@@ -43,7 +43,9 @@
 - `maintenance:tags:*`
 - `maintenance:companies:dirty:*`
 - `maintenance:conversation-images:*`
-- `stickers:sync`：校验并同步内置 Sticker Pack 资源。默认 dry-run；加 `--apply` 后才会上传 WebP/WebM、生成动态 poster 并 upsert 数据库目录。
+- `stickers:sync`：校验并同步内置 Sticker Pack 资源。默认 dry-run；加 `--apply` 后才会上传 WebP/WebM、生成动态 poster 并 upsert 数据库目录。静态 WebP 最大 512 KB，动态 WebM 必须为带透明通道、无音频的 VP9，最大 300 KB，超限直接拒绝；poster 使用内容哈希 key，避免 immutable CDN 复用旧图。
+- Sticker 管理后台位于 `/admin/stickers`，服务端导入支持单张、多文件和 ZIP；ZIP 导入会检查路径穿越、符号链接、加密条目、ZIP Bomb、重复内容和解压大小，失败时清理已上传对象。
+- 生产数据库变更按顺序执行 `migration/production-private-chat-stickers-preflight-2026-08-14.sql`、对应 sync，再执行 `migration/production-sticker-admin-preflight-2026-08-14.sql`、对应 sync。preflight 只读，sync 前必须审核重复 hash 与封面引用检查结果。
 - `maintenance:gallery-thumbnails:*`
 - `migration:resource-type:*`
 - `migration:patch-counters`

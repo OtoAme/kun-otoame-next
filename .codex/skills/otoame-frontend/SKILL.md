@@ -74,6 +74,7 @@ Use this skill for pages, components, state, theme, and content.
 - Private chat conversation-list silent polling must not supersede an active initial/page loading request; otherwise the explicit request can be ignored and leave the list stuck in loading.
 - Private chat remove-conversation request exceptions must show a retryable user-visible error and release the destructive action loading state.
 - Private chat start/open request exceptions from user profile buttons must show a retryable user-visible error and release the start-chat loading state.
+- Sticker admin UI uses only HeroUI v2 controls. Keep the Pack selector and detail editor as a responsive master-detail layout (desktop Listbox, mobile Select), give every server-rendered Select a stable page-unique `id`, keep settings save/undo visible after switching tabs, confirm before discarding dirty settings, show visual cover options, use pressable Sticker cards plus one batch-action toolbar instead of per-card status switches, keep one page scroll owner, and disable permanent delete until the Pack is offline. New Pack, import, and confirmation are separate focused modals; successful import returns to the target Pack's Sticker tab and keeps per-file failures visible.
 
 ## Verification
 
