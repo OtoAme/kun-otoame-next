@@ -169,13 +169,13 @@ pnpm dev:webpack
 5. 改上传/资源时检查 Redis upload lock、S3 补偿、finalize 和本地清理。
 6. 本地改 schema 后运行 `pnpm prisma:push` 或至少 `pnpm prisma:generate`；生产先 review 并执行 preflight/sync SQL，再由 `pnpm prisma:deploy-safe` 校验。
 7. 完成前运行最小相关测试，再运行 `pnpm typecheck`；涉及共享工具、缓存、schema、部署时加跑 `pnpm test`。
-8. Codex 创建的所有提交都必须使用约定式提交：`<type>(<scope>): <subject>`。常用类型包括 `feat`、`fix`、`docs`、`test`、`refactor`、`perf`、`build`、`ci`、`chore`、`revert`；如果用户给出的提交信息不是约定式提交，先转换成最接近的约定式格式，意图不明确时再询问。
-9. 每个代码提交后都要检查并同步对应的 `docs/project/*`、`docs/modules/*` 和 `.codex/skills/*/SKILL.md`。重大行为、API、数据、缓存、部署、测试或工作流变更必须同步文档和 skill。
+8. 本仓库的所有提交都必须使用约定式提交：`<type>(<scope>): <subject>`。常用类型包括 `feat`、`fix`、`docs`、`test`、`refactor`、`perf`、`build`、`ci`、`chore`、`revert`；如果用户给出的提交信息不是约定式提交，先转换成最接近的约定式格式，意图不明确时再询问。
+9. 每个代码提交后都要检查并同步对应的 `docs/project/*`、`docs/modules/*` 和 `skills/*/SKILL.md`。重大行为、API、数据、缓存、部署、测试或工作流变更必须同步文档和 skill。
 10. 文档 / skill 同步必须作为独立提交，不能和业务代码、测试或迁移改动混在同一个 commit 中。
 
 ## 更新日志撰写
 
-写用户侧更新日志时使用 `.codex/skills/otoame-changelog/SKILL.md` 的格式与筛选规则。
+写用户侧更新日志时使用 `skills/otoame-changelog/SKILL.md` 的格式与筛选规则。
 
 - 聚焦主要功能、用户可感知的优化、重要 bugfix、数据修复和运维能力，不逐条复述 commit。
 - 按功能区或工作流合并相关改动，优先写最终行为，避免暴露 helper、文件名、提交哈希和中间实现。
@@ -247,6 +247,7 @@ Schema 在 `prisma/schema` 拆分维护：
 - 管理：`admin.prisma`
 - 会话：`conversation.prisma`
 - 私聊 Sticker：`sticker.prisma`
+- 萌萌点账务：`moemoepoint.prisma`
 
 改动后：
 
@@ -259,6 +260,8 @@ pnpm test
 `pnpm prisma:push` 保留给本地开发、首次安装和 disposable CI 初始化。生产表结构变更要优先写并 review preflight/sync SQL 或 dry-run 脚本，参考 `migration/production-schema-preflight-2026-05-03.sql` 与 `migration/production-schema-sync-2026-05-03.sql`；这些 SQL 必须在生产部署前执行完成，随后使用 `pnpm prisma:deploy-safe`。
 
 私聊 Sticker 管理 schema 还需要按顺序审核并执行 `production-private-chat-stickers-*` 和 `production-sticker-admin-*` 两组 preflight/sync SQL；如果目标库已经执行过旧版 Sticker sync，再执行 `migration/production-stickers-prisma-alignment-2026-08-15.sql` 对齐 Prisma 的时间精度、默认值和外键动作。后台导入的动态 WebM 上限为 300 KB，ZIP 导入失败必须确认对象存储补偿结果。
+
+萌萌点账务 schema 上线前先运行只读 `production-moemoepoint-ledger-preflight-2026-08-17.sql`，审核后运行对应 sync，为既有用户补齐幂等初始余额流水；再运行 `pnpm prisma:deploy-safe`。应用版本依赖新列和新表，不能在仍有写流量时只回滚应用而保留旧版直接余额写入路径。
 
 整个 `pnpm prisma:deploy-safe` 不是纯只读命令：它先运行既有的 `migration:resource-links`，该兼容迁移可能执行 schema/data 写入；随后运行只读 schema guard/diff；最后运行 `prisma generate`。它不运行 `prisma db push`，也不应用 Prisma 建议的 diff SQL。
 
@@ -372,7 +375,7 @@ pnpm build
 2. 再检查并更新对应文档和 skill。
 3. 最后单独提交文档 / skill 变更，提交信息使用 `docs(...)` 或 `chore(skills)` 等约定式提交。
 
-严禁把 `.codex/skills/*` 或 `docs/*` 的同步修改混入业务代码提交。
+严禁把 `skills/*` 或 `docs/*` 的同步修改混入业务代码提交。
 
 ## 常见本地问题
 

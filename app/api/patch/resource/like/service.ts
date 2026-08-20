@@ -1,6 +1,11 @@
 import { z } from 'zod'
 import { prisma } from '~/prisma/index'
 import { createDedupMessage } from '~/app/api/utils/message'
+import {
+  earnMoemoepoint,
+  reverseMoemoepoint
+} from '~/app/api/moemoepoint/service'
+import { MOEMOEPOINT_REASON } from '~/constants/moemoepoint'
 
 export const resourceIdSchema = z.object({
   resourceId: z.coerce
@@ -73,10 +78,26 @@ export const toggleResourceLike = async (
       )
     }
 
-    await prisma.user.update({
-      where: { id: resource.user_id },
-      data: { moemoepoint: { increment: existingLike ? -1 : 1 } }
-    })
+    const reason = existingLike
+      ? MOEMOEPOINT_REASON.resourceUnliked
+      : MOEMOEPOINT_REASON.resourceLiked
+    // 不传 idempotencyKey, 原因同 patch/comment/like/service.ts:
+    // 自增关系 id 无法在重放间保持稳定, 真正的守卫是
+    // user_patch_resource_like_relation 的 [user_id, resource_id] 唯一约束 + patch-like 限流。
+    const change = {
+      userId: resource.user_id,
+      amount: 1,
+      reasonCode: reason.code,
+      reason: `${reason.text}：${resource.name.slice(0, 100)}`,
+      referenceType: 'patch_resource',
+      referenceId: resource.id,
+      link: `/${resource.patch.unique_id}`
+    }
+    if (existingLike) {
+      await reverseMoemoepoint(prisma, change)
+    } else {
+      await earnMoemoepoint(prisma, change)
+    }
 
     return !existingLike
   })

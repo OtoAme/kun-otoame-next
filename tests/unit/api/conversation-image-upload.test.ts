@@ -6,7 +6,8 @@ const prismaMock = vi.hoisted(() => ({
     updateMany: vi.fn(),
     update: vi.fn()
   },
-  user_conversation: { findUnique: vi.fn() }
+  user_conversation: { findUnique: vi.fn() },
+  $transaction: vi.fn()
 }))
 
 const s3Mock = vi.hoisted(() => ({
@@ -40,6 +41,18 @@ vi.mock('~/middleware/_verifyHeaderCookie', () => ({
 vi.mock('~/middleware/_csrf', () => ({
   verifyKunCsrf: verifyKunCsrfMock
 }))
+
+const moemoepointMock = vi.hoisted(() => {
+  class MoemoepointInsufficientError extends Error {}
+  class MoemoepointUserNotFoundError extends Error {}
+  return {
+    MoemoepointInsufficientError,
+    MoemoepointUserNotFoundError,
+    spendMoemoepoint: vi.fn(),
+    refundMoemoepoint: vi.fn()
+  }
+})
+vi.mock('~/app/api/moemoepoint/service', () => moemoepointMock)
 
 vi.mock('sharp', () => ({
   default: sharpMock
@@ -80,6 +93,9 @@ describe('conversation image upload service', () => {
     })
     prismaMock.user.updateMany.mockResolvedValue({ count: 1 })
     prismaMock.user.update.mockResolvedValue({})
+    prismaMock.$transaction.mockImplementation((fn) => fn({}))
+    moemoepointMock.spendMoemoepoint.mockResolvedValue({})
+    moemoepointMock.refundMoemoepoint.mockResolvedValue({})
   })
 
   it('rejects uploads when the user is not in the conversation', async () => {
@@ -329,7 +345,9 @@ describe('conversation image upload service', () => {
     rateLimitMock.consumeConversationImageUploadQuota.mockResolvedValueOnce(
       quotaReservation
     )
-    prismaMock.user.updateMany.mockResolvedValueOnce({ count: 0 })
+    moemoepointMock.spendMoemoepoint.mockRejectedValueOnce(
+      new moemoepointMock.MoemoepointInsufficientError()
+    )
 
     const { uploadConversationImage } = await import(
       '~/app/api/message/conversation/[id]/image/service'
@@ -339,10 +357,10 @@ describe('conversation image upload service', () => {
     await expect(uploadConversationImage(5, file, 1007)).resolves.toBe(
       '萌萌点不足，额外上传一张私聊图片需要 5 萌萌点'
     )
-    expect(prismaMock.user.updateMany).toHaveBeenCalledWith({
-      where: { id: 1007, moemoepoint: { gte: 5 } },
-      data: { moemoepoint: { decrement: 5 } }
-    })
+    expect(moemoepointMock.spendMoemoepoint).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ userId: 1007, amount: 5 })
+    )
     expect(
       rateLimitMock.rollbackConversationImageUploadQuota
     ).toHaveBeenCalledWith(1007, quotaReservation)
@@ -422,14 +440,14 @@ describe('conversation image upload service', () => {
         mime: 'image/avif'
       }
     )
-    expect(prismaMock.user.updateMany).toHaveBeenCalledWith({
-      where: { id: 1007, moemoepoint: { gte: 5 } },
-      data: { moemoepoint: { decrement: 5 } }
-    })
+    expect(moemoepointMock.spendMoemoepoint).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ userId: 1007, amount: 5 })
+    )
     expect(
       rateLimitMock.rollbackConversationImageUploadQuota
     ).not.toHaveBeenCalled()
-    expect(prismaMock.user.update).not.toHaveBeenCalled()
+    expect(moemoepointMock.refundMoemoepoint).not.toHaveBeenCalled()
   })
 
   it('rejects images when the compressed AVIF is still too large', async () => {
@@ -482,10 +500,10 @@ describe('conversation image upload service', () => {
     expect(
       rateLimitMock.rollbackConversationImageUploadQuota
     ).toHaveBeenCalledWith(1007, quotaReservation)
-    expect(prismaMock.user.update).toHaveBeenCalledWith({
-      where: { id: 1007 },
-      data: { moemoepoint: { increment: 5 } }
-    })
+    expect(moemoepointMock.refundMoemoepoint).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ userId: 1007, amount: 5 })
+    )
     expect(s3Mock.uploadImageToS3).not.toHaveBeenCalled()
     expect(redisMock.setKv).not.toHaveBeenCalled()
     expect(consoleError).toHaveBeenCalledWith(
@@ -522,10 +540,10 @@ describe('conversation image upload service', () => {
     expect(
       rateLimitMock.rollbackConversationImageUploadQuota
     ).toHaveBeenCalledWith(1007, quotaReservation)
-    expect(prismaMock.user.update).toHaveBeenCalledWith({
-      where: { id: 1007 },
-      data: { moemoepoint: { increment: 5 } }
-    })
+    expect(moemoepointMock.refundMoemoepoint).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ userId: 1007, amount: 5 })
+    )
     expect(redisMock.setKv).not.toHaveBeenCalled()
     expect(consoleError).toHaveBeenCalledWith(
       'Failed to upload conversation image',
@@ -592,10 +610,10 @@ describe('conversation image upload service', () => {
     expect(
       rateLimitMock.rollbackConversationImageUploadQuota
     ).toHaveBeenCalledWith(1007, quotaReservation)
-    expect(prismaMock.user.update).toHaveBeenCalledWith({
-      where: { id: 1007 },
-      data: { moemoepoint: { increment: 5 } }
-    })
+    expect(moemoepointMock.refundMoemoepoint).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ userId: 1007, amount: 5 })
+    )
     consoleError.mockRestore()
   })
 })

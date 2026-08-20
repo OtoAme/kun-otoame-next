@@ -1,5 +1,6 @@
 import { Tag } from './tag'
 import { Company } from './company'
+import type { MoemoepointBalance } from './moemoepoint'
 
 export interface Patch {
   id: number
@@ -159,6 +160,10 @@ export interface PatchResource {
     patchCount: number
     role: number
   }
+}
+
+export interface PatchResourceCreateResponse extends PatchResource {
+  moemoepointBalance: MoemoepointBalance
 }
 
 export interface PatchComment {

@@ -16,6 +16,13 @@ import {
   createConversationRateLimitResponse,
   type ConversationRateLimitResponse
 } from '../../response'
+import {
+  MoemoepointInsufficientError,
+  MoemoepointUserNotFoundError,
+  refundMoemoepoint,
+  spendMoemoepoint
+} from '~/app/api/moemoepoint/service'
+import { MOEMOEPOINT_REASON } from '~/constants/moemoepoint'
 
 const MAX_PRIVATE_MESSAGE_IMAGE_SIZE = 8 * 1024 * 1024
 export const PRIVATE_MESSAGE_IMAGE_SIZE_LIMIT_MESSAGE = '图片大小不能超过 8 MB'
@@ -67,29 +74,64 @@ const verifyRecipientAllowsPrivateImageUpload = async (
   return recipient.allow_private_message ? null : '对方已关闭接收私信'
 }
 
-const chargeImageUploadOverage = async (uid: number, cost: number) => {
+const chargeImageUploadOverage = async (
+  uid: number,
+  cost: number,
+  conversationId: number,
+  chargeId: string
+) => {
   if (cost <= 0) {
     return true
   }
 
-  const result = await prisma.user.updateMany({
-    where: { id: uid, moemoepoint: { gte: cost } },
-    data: { moemoepoint: { decrement: cost } }
-  })
-
-  return result.count > 0
+  try {
+    await prisma.$transaction((tx) =>
+      spendMoemoepoint(tx, {
+        userId: uid,
+        amount: cost,
+        reasonCode: MOEMOEPOINT_REASON.conversationImage.code,
+        reason: MOEMOEPOINT_REASON.conversationImage.text,
+        referenceType: 'user_conversation',
+        referenceId: conversationId,
+        link: `/message/chat/${conversationId}`,
+        idempotencyKey: chargeId
+      })
+    )
+    return true
+  } catch (error) {
+    if (
+      error instanceof MoemoepointInsufficientError ||
+      error instanceof MoemoepointUserNotFoundError
+    ) {
+      return false
+    }
+    throw error
+  }
 }
 
-const refundImageUploadOverage = async (uid: number, cost: number) => {
+const refundImageUploadOverage = async (
+  uid: number,
+  cost: number,
+  conversationId: number,
+  chargeId: string
+) => {
   if (cost <= 0) {
     return
   }
 
   try {
-    await prisma.user.update({
-      where: { id: uid },
-      data: { moemoepoint: { increment: cost } }
-    })
+    await prisma.$transaction((tx) =>
+      refundMoemoepoint(tx, {
+        userId: uid,
+        amount: cost,
+        reasonCode: MOEMOEPOINT_REASON.conversationImageRefund.code,
+        reason: MOEMOEPOINT_REASON.conversationImageRefund.text,
+        referenceType: 'user_conversation',
+        referenceId: conversationId,
+        link: `/message/chat/${conversationId}`,
+        idempotencyKey: `${chargeId}:refund`
+      })
+    )
   } catch (error) {
     console.error('Failed to refund conversation image upload overage', {
       uid,
@@ -101,12 +143,14 @@ const refundImageUploadOverage = async (uid: number, cost: number) => {
 
 const rollbackFailedUploadReservation = async (
   uid: number,
+  conversationId: number,
   reservation: ConversationImageUploadQuotaReservation,
-  chargedCost: number
+  chargedCost: number,
+  chargeId: string
 ) => {
   await Promise.all([
     rollbackConversationImageUploadQuota(uid, reservation),
-    refundImageUploadOverage(uid, chargedCost)
+    refundImageUploadOverage(uid, chargedCost, conversationId, chargeId)
   ])
 }
 
@@ -157,8 +201,14 @@ export const uploadConversationImage = async (
 
   const quotaCost = quotaReservation.cost
   let chargedCost = 0
+  const chargeId = `conversation-image:${conversationId}:${uid}:${randomUUID()}`
   if (quotaCost > 0) {
-    const charged = await chargeImageUploadOverage(uid, quotaCost)
+    const charged = await chargeImageUploadOverage(
+      uid,
+      quotaCost,
+      conversationId,
+      chargeId
+    )
     if (!charged) {
       await rollbackConversationImageUploadQuota(uid, quotaReservation)
       return `萌萌点不足，额外上传一张私聊图片需要 ${CONVERSATION_IMAGE_UPLOAD_OVERAGE_MOEMOEPOINT_COST} 萌萌点`
@@ -171,7 +221,13 @@ export const uploadConversationImage = async (
     const buffer = Buffer.from(await file.arrayBuffer())
     processed = await processConversationImage(buffer)
   } catch (error) {
-    await rollbackFailedUploadReservation(uid, quotaReservation, chargedCost)
+    await rollbackFailedUploadReservation(
+      uid,
+      conversationId,
+      quotaReservation,
+      chargedCost,
+      chargeId
+    )
     console.error('Failed to process conversation image upload', {
       conversationId,
       uid,
@@ -181,7 +237,13 @@ export const uploadConversationImage = async (
   }
 
   if (!checkBufferSize(processed, MAX_PRIVATE_MESSAGE_AVIF_SIZE_MB)) {
-    await rollbackFailedUploadReservation(uid, quotaReservation, chargedCost)
+    await rollbackFailedUploadReservation(
+      uid,
+      conversationId,
+      quotaReservation,
+      chargedCost,
+      chargeId
+    )
     return '图片压缩后仍超过 1.5 MB'
   }
 
@@ -189,7 +251,13 @@ export const uploadConversationImage = async (
   try {
     metadata = await sharp(processed).metadata()
   } catch (error) {
-    await rollbackFailedUploadReservation(uid, quotaReservation, chargedCost)
+    await rollbackFailedUploadReservation(
+      uid,
+      conversationId,
+      quotaReservation,
+      chargedCost,
+      chargeId
+    )
     console.error('Failed to read processed conversation image metadata', {
       conversationId,
       uid,
@@ -202,7 +270,13 @@ export const uploadConversationImage = async (
   try {
     await uploadImageToS3(key, processed, 'image/avif')
   } catch (error) {
-    await rollbackFailedUploadReservation(uid, quotaReservation, chargedCost)
+    await rollbackFailedUploadReservation(
+      uid,
+      conversationId,
+      quotaReservation,
+      chargedCost,
+      chargeId
+    )
     console.error('Failed to upload conversation image', {
       conversationId,
       uid,
@@ -232,7 +306,13 @@ export const uploadConversationImage = async (
         error: deleteError
       })
     }
-    await rollbackFailedUploadReservation(uid, quotaReservation, chargedCost)
+    await rollbackFailedUploadReservation(
+      uid,
+      conversationId,
+      quotaReservation,
+      chargedCost,
+      chargeId
+    )
     console.error('Failed to register conversation image upload', {
       conversationId,
       uid,

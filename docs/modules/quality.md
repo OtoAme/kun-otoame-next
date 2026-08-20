@@ -1,6 +1,6 @@
 # Quality, Testing, Review
 
-本模块说明测试、review 和 Codex skills 的质量门槛。
+本模块说明测试、review 和项目 skills 的质量门槛。
 
 ## 测试入口
 
@@ -80,9 +80,9 @@ pnpm typecheck
 - `.env` 与 CI secrets 同步。
 - NSFW 过滤和标题隐藏。
 
-## Codex Skill 设计
+## 项目 Skill 设计
 
-项目 skills 位于 `.codex/skills`。原则：
+项目 skills 是项目资产，不属于某个 agent 工具。唯一来源是仓库根目录 `skills/`，`.codex/skills` 和 `.claude/skills` 是指向它的软链接；只修改 `skills/` 下的文件，不要新建工具专用副本。原则：
 
 - Skill 保持精简，不复制长文档。
 - Skill frontmatter 描述触发条件，不描述完整流程。
@@ -93,7 +93,7 @@ pnpm typecheck
 
 代码提交后的同步规则：
 
-- Codex 创建的所有提交都必须使用约定式提交，格式为 `<type>(<scope>): <subject>`；用户给出非约定式提交信息时，应转换成最接近的约定式格式，意图不明确时再询问。
+- 本仓库的所有提交都必须使用约定式提交，格式为 `<type>(<scope>): <subject>`；用户给出非约定式提交信息时，应转换成最接近的约定式格式，意图不明确时再询问。
 - 每个代码提交后都要检查并更新对应 docs 和 skill；重大行为、API、数据、缓存、部署、测试或工作流变更必须同步。
 - 文档 / skill 同步必须单独提交，不能和业务代码、测试或迁移混在同一个 commit 中。
 - 若某次代码提交确实不需要文档或 skill 内容变化，需要在最终说明或 PR 说明中写明已检查且无需更新。
@@ -125,14 +125,14 @@ pnpm typecheck
 文档/skill 变更还要做：
 
 ```bash
-rg -n "T[B]D|TO[D]O|f[i]ll in|implement late[r]" docs .codex/skills README.md
+rg -n "T[B]D|TO[D]O|f[i]ll in|implement late[r]" docs skills README.md
 ```
 
 建议再做：
 
 ```bash
-find docs .codex/skills -type f -name '*.md' -print0 | xargs -0 sed -n '1,5p'
-find .codex/skills -maxdepth 2 -type f -name 'SKILL.md' -print -exec wc -w {} \;
+find docs skills -type f -name '*.md' -print0 | xargs -0 sed -n '1,5p'
+find skills -maxdepth 2 -type f -name 'SKILL.md' -print -exec wc -w {} \;
 ```
 
 如果只改文档和 skills，`pnpm test` / `pnpm typecheck` 仍是有价值的回归信号，但失败时要区分是既有代码问题、环境问题还是文档改动引入的问题。

@@ -36,6 +36,7 @@ import { showKunSooner } from '~/components/kun/Sooner'
 import { kunErrorHandler } from '~/utils/kunErrorHandler'
 import { NSFWSwitcher } from './NSFWSwitcher'
 import { useMessageStore } from '~/store/messageStore'
+import type { MoemoepointBalance } from '~/types/api/moemoepoint'
 
 const NESTED_DROPDOWN_EXIT_MS = 50
 const OPEN_OVERLAY_MENU_SELECTOR =
@@ -48,7 +49,9 @@ interface OutsidePointerContext {
 
 export const UserDropdown = () => {
   const router = useRouter()
-  const { user, setUser, logout } = useUserStore((state) => state)
+  const { user, setUser, setMoemoepointBalance, logout } = useUserStore(
+    (state) => state
+  )
   const resetSettings = useSettingStore((state) => state.resetData)
   const resetUnreadMessageStatus = useMessageStore(
     (state) => state.resetUnreadMessageStatus
@@ -261,6 +264,7 @@ export const UserDropdown = () => {
     const res = await kunFetchPost<
       KunResponse<{
         randomMoemoepoints: number
+        balance: MoemoepointBalance
       }>
     >('/user/status/check-in')
     kunErrorHandler(res, (value) => {
@@ -271,9 +275,9 @@ export const UserDropdown = () => {
       )
       setUser({
         ...user,
-        dailyCheckIn: 1,
-        moemoepoint: user.moemoepoint + value.randomMoemoepoints
+        dailyCheckIn: 1
       })
+      setMoemoepointBalance(value.balance)
     })
     setChecking(false)
   }
@@ -314,14 +318,18 @@ export const UserDropdown = () => {
             <p className="font-semibold">{user.name}</p>
           </DropdownItem>
           <DropdownItem
-            isReadOnly
             textValue="萌萌点"
             key="moemoepoint"
-            className="cursor-default data-[hover=true]:bg-background"
+            href="/moemoepoint"
             startContent={<Lollipop className="size-4" />}
-            endContent={user.moemoepoint}
+            endContent={user.moemoepointAvailable}
+            description={
+              user.moemoepointReserved > 0
+                ? `待结算 ${user.moemoepointReserved}`
+                : undefined
+            }
           >
-            萌萌点
+            可用萌萌点
           </DropdownItem>
           <DropdownItem
             key="profile"

@@ -29,7 +29,9 @@ export const FileUploadContainer = ({
 }: Props) => {
   const { isOpen, onOpen, onClose } = useDisclosure()
   const currentUserRole = useUserStore((state) => state.user.role)
-  const currentUserMoemoepoint = useUserStore((state) => state.user.moemoepoint)
+  const currentUserMoemoepoint = useUserStore(
+    (state) => state.user.moemoepointAvailable
+  )
   const [fileData, setFileData] = useState<FileStatus | null>(null)
 
   const handleCaptchaSuccess = async (

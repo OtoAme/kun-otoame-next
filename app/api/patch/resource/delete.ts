@@ -5,6 +5,8 @@ import {
   deletePatchResourceLink,
   updatePatchAttributes
 } from './_helper'
+import { reverseMoemoepoint } from '~/app/api/moemoepoint/service'
+import { MOEMOEPOINT_REASON } from '~/constants/moemoepoint'
 
 const resourceIdSchema = z.object({
   resourceId: z.coerce
@@ -41,18 +43,28 @@ export const deleteResource = async (
     )
   )
 
-  const uniqueId = await prisma.$transaction(async (prisma) => {
-    await prisma.user.update({
-      where: { id: resourceUserUid },
-      data: { moemoepoint: { increment: -3 } }
-    })
+  const { uniqueId, moemoepointBalance } = await prisma.$transaction(
+    async (prisma) => {
+      const pointChange = await reverseMoemoepoint(prisma, {
+        userId: resourceUserUid,
+        amount: 3,
+        reasonCode: MOEMOEPOINT_REASON.resourceDeleted.code,
+        reason: `${MOEMOEPOINT_REASON.resourceDeleted.text}：${patchResource.name}`,
+        referenceType: 'patch_resource',
+        referenceId: patchResource.id,
+        idempotencyKey: `resource:${patchResource.id}:delete-reversal`
+      })
 
-    await prisma.patch_resource.delete({
-      where: { id: input.resourceId }
-    })
+      await prisma.patch_resource.delete({
+        where: { id: input.resourceId }
+      })
 
-    return await updatePatchAttributes(patchResource.patch_id, prisma)
-  })
+      return {
+        uniqueId: await updatePatchAttributes(patchResource.patch_id, prisma),
+        moemoepointBalance: pointChange.balance
+      }
+    }
+  )
 
   await deletePatchResourceCache(uniqueId)
 
@@ -60,13 +72,16 @@ export const deleteResource = async (
     try {
       await deletePatchResourceLink(content)
     } catch (error) {
-      console.error('[Upload] Failed to delete S3 object after resource delete', {
-        content,
-        resourceId: input.resourceId,
-        error
-      })
+      console.error(
+        '[Upload] Failed to delete S3 object after resource delete',
+        {
+          content,
+          resourceId: input.resourceId,
+          error
+        }
+      )
     }
   }
 
-  return {}
+  return { balanceUserId: resourceUserUid, moemoepointBalance }
 }

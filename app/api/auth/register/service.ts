@@ -8,6 +8,8 @@ import { registerSchema } from '~/validations/auth'
 import { prisma } from '~/prisma/index'
 import { getRedirectConfig } from '~/app/api/admin/setting/redirect/getRedirectConfig'
 import type { UserState } from '~/store/userStore'
+import { MOEMOEPOINT_REASON } from '~/constants/moemoepoint'
+import { createMoemoepointOpeningEntry } from '~/app/api/moemoepoint/service'
 
 export const register = async (
   input: z.infer<typeof registerSchema>,
@@ -38,13 +40,23 @@ export const register = async (
 
   const hashedPassword = await hashPassword(password)
 
-  const user = await prisma.user.create({
-    data: {
-      name,
-      email,
-      password: hashedPassword,
-      ip
-    }
+  const user = await prisma.$transaction(async (tx) => {
+    const createdUser = await tx.user.create({
+      data: {
+        name,
+        email,
+        password: hashedPassword,
+        ip
+      }
+    })
+    await createMoemoepointOpeningEntry(tx, {
+      userId: createdUser.id,
+      balance: createdUser.moemoepoint,
+      reasonCode: MOEMOEPOINT_REASON.accountCreated.code,
+      reason: MOEMOEPOINT_REASON.accountCreated.text,
+      idempotencyKey: `moemoepoint:opening:${createdUser.id}`
+    })
+    return createdUser
   })
 
   const token = await generateKunToken(user.id, name, user.role, '30d')
@@ -62,6 +74,8 @@ export const register = async (
     avatar: user.avatar,
     bio: user.bio,
     moemoepoint: user.moemoepoint,
+    moemoepointReserved: user.moemoepoint_reserved,
+    moemoepointAvailable: user.moemoepoint - user.moemoepoint_reserved,
     role: user.role,
     dailyCheckIn: user.daily_check_in,
     dailyImageLimit: user.daily_image_count,

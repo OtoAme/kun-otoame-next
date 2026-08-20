@@ -139,11 +139,11 @@ describe('resource access bootstrap production migration', () => {
       'docs/modules/data-cache-upload.md',
       'docs/project/testing.md',
       'docs/project/review.md',
-      '.codex/skills/otoame-data-cache/SKILL.md',
-      '.codex/skills/otoame-operations/SKILL.md',
-      '.codex/skills/otoame-deployment/SKILL.md',
-      '.codex/skills/otoame-testing/SKILL.md',
-      '.codex/skills/otoame-review/SKILL.md'
+      'skills/otoame-data-cache/SKILL.md',
+      'skills/otoame-operations/SKILL.md',
+      'skills/otoame-deployment/SKILL.md',
+      'skills/otoame-testing/SKILL.md',
+      'skills/otoame-review/SKILL.md'
     ]
 
     for (const path of requiredBootstrapSources) {
@@ -157,7 +157,7 @@ describe('resource access bootstrap production migration', () => {
       'README.md',
       'docs/project/deployment.md',
       'docs/modules/operations.md',
-      '.codex/skills/otoame-deployment/SKILL.md'
+      'skills/otoame-deployment/SKILL.md'
     ]) {
       const source = await readProjectFile(path)
       expect(source, path).toContain('KUN_DEPLOY_RELEASE_TAG')

@@ -75,6 +75,8 @@ export const verifyLogin2FA = async (
     avatar: user.avatar,
     bio: user.bio,
     moemoepoint: user.moemoepoint,
+    moemoepointReserved: user.moemoepoint_reserved,
+    moemoepointAvailable: user.moemoepoint - user.moemoepoint_reserved,
     role: user.role,
     dailyCheckIn: user.daily_check_in,
     dailyImageLimit: user.daily_image_count,

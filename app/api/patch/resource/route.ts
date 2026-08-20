@@ -18,6 +18,7 @@ import { deleteResource } from './delete'
 import { prisma } from '~/prisma/index'
 import { acquireKvLock, releaseKvLock } from '~/lib/redis'
 import { getResourceAccessVisitorToken } from './download/access/actor'
+import { toMoemoepointBalance } from '~/utils/moemoepoint'
 
 const patchIdSchema = z.object({
   patchId: z.coerce.number().min(1).max(9999999)
@@ -86,7 +87,7 @@ export const POST = async (req: NextRequest) => {
   if (storageError) {
     return NextResponse.json(storageError)
   }
-  if (user.role < 2 && user.moemoepoint < 20) {
+  if (user.role < 2 && toMoemoepointBalance(user).available < 20) {
     return NextResponse.json('仅限萌萌点大于 20 的用户和创作者发布资源')
   }
 

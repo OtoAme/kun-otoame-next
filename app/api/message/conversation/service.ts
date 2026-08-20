@@ -8,6 +8,12 @@ import type {
   Conversation,
   PrivateMessageImage
 } from '~/types/api/conversation'
+import {
+  MoemoepointInsufficientError,
+  spendMoemoepoint
+} from '~/app/api/moemoepoint/service'
+import { MOEMOEPOINT_REASON } from '~/constants/moemoepoint'
+import { toMoemoepointBalance } from '~/utils/moemoepoint'
 
 const isPrivateMessageImage = (
   value: unknown
@@ -174,7 +180,7 @@ export const checkConversation = async (
   const [currentUser, targetUser] = await Promise.all([
     prisma.user.findUnique({
       where: { id: uid },
-      select: { moemoepoint: true }
+      select: { moemoepoint: true, moemoepoint_reserved: true }
     }),
     prisma.user.findUnique({
       where: { id: targetUserId },
@@ -207,7 +213,8 @@ export const checkConversation = async (
   }
 
   const isPrivileged = role > 2
-  const hasEnoughPoints = currentUser.moemoepoint >= MOEMOEPOINT_REQUIRED
+  const availablePoints = toMoemoepointBalance(currentUser).available
+  const hasEnoughPoints = availablePoints >= MOEMOEPOINT_REQUIRED
 
   if (!isPrivileged && !hasEnoughPoints) {
     return {
@@ -219,7 +226,7 @@ export const checkConversation = async (
     exists: false,
     needsPayment: !isPrivileged,
     cost: MOEMOEPOINT_COST,
-    currentPoints: currentUser.moemoepoint,
+    currentPoints: availablePoints,
     targetUserName: targetUser.name
   }
 }
@@ -238,7 +245,7 @@ export const getOrCreateConversation = async (
   const [currentUser, targetUser] = await Promise.all([
     prisma.user.findUnique({
       where: { id: uid },
-      select: { moemoepoint: true }
+      select: { moemoepoint: true, moemoepoint_reserved: true }
     }),
     prisma.user.findUnique({
       where: { id: targetUserId },
@@ -260,9 +267,11 @@ export const getOrCreateConversation = async (
     uid < targetUserId ? [uid, targetUserId] : [targetUserId, uid]
 
   let conversation = await findConversationByPair(userAId, userBId)
+  let moemoepointBalance: ReturnType<typeof toMoemoepointBalance> | undefined
 
   let isNew = !conversation
   const isPrivileged = role > 2
+  const availablePoints = toMoemoepointBalance(currentUser).available
 
   if (conversation) {
     const isUserA = conversation.user_a_id === uid
@@ -278,29 +287,41 @@ export const getOrCreateConversation = async (
     }
   } else {
     if (!isPrivileged) {
-      if (currentUser.moemoepoint < MOEMOEPOINT_REQUIRED) {
+      if (availablePoints < MOEMOEPOINT_REQUIRED) {
         return `萌萌点不足，发起私聊需要至少 ${MOEMOEPOINT_REQUIRED} 萌萌点`
       }
 
-      if (currentUser.moemoepoint < MOEMOEPOINT_COST) {
+      if (availablePoints < MOEMOEPOINT_COST) {
         return NEW_CONVERSATION_COST_ERROR
       }
 
       try {
-        conversation = await prisma.$transaction(async (tx) => {
-          const charged = await tx.user.updateMany({
-            where: { id: uid, moemoepoint: { gte: MOEMOEPOINT_COST } },
-            data: { moemoepoint: { decrement: MOEMOEPOINT_COST } }
-          })
-          if (charged.count === 0) {
-            return null
-          }
-
-          return tx.user_conversation.create({
+        const created = await prisma.$transaction(async (tx) => {
+          const createdConversation = await tx.user_conversation.create({
             data: { user_a_id: userAId, user_b_id: userBId }
           })
+          const pointChange = await spendMoemoepoint(tx, {
+            userId: uid,
+            amount: MOEMOEPOINT_COST,
+            requiredAvailable: MOEMOEPOINT_REQUIRED,
+            reasonCode: MOEMOEPOINT_REASON.conversationCreated.code,
+            reason: MOEMOEPOINT_REASON.conversationCreated.text,
+            referenceType: 'user_conversation',
+            referenceId: createdConversation.id,
+            link: `/message/chat/${createdConversation.id}`,
+            idempotencyKey: `conversation:${createdConversation.id}:create-charge`
+          })
+          return {
+            conversation: createdConversation,
+            balance: pointChange.balance
+          }
         })
+        conversation = created.conversation
+        moemoepointBalance = created.balance
       } catch (error) {
+        if (error instanceof MoemoepointInsufficientError) {
+          return NEW_CONVERSATION_COST_ERROR
+        }
         if (!isUniqueConstraintError(error)) {
           throw error
         }
@@ -336,5 +357,9 @@ export const getOrCreateConversation = async (
     return '会话创建失败，请稍后重试'
   }
 
-  return { conversationId: conversation.id, isNew }
+  return {
+    conversationId: conversation.id,
+    isNew,
+    ...(moemoepointBalance ? { moemoepointBalance } : {})
+  }
 }

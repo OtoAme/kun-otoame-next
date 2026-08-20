@@ -25,7 +25,10 @@ import { ResourceSectionSelect } from './ResourceSectionSelect'
 import { Upload } from 'lucide-react'
 import { kunErrorHandler } from '~/utils/kunErrorHandler'
 import { useUserStore } from '~/store/userStore'
-import type { PatchResource } from '~/types/api/patch'
+import type {
+  PatchResource,
+  PatchResourceCreateResponse
+} from '~/types/api/patch'
 import type { ResourceSection } from '~/constants/resource'
 
 export type ResourceFormData = z.infer<typeof patchResourceCreateSchema>
@@ -47,6 +50,9 @@ export const PublishResource = ({
   const creatingRef = useRef(false)
   const [uploadingResource, setUploadingResource] = useState(false)
   const user = useUserStore((state) => state.user)
+  const setMoemoepointBalance = useUserStore(
+    (state) => state.setMoemoepointBalance
+  )
 
   const section = defaultSection ?? (user.role > 2 ? 'galgame' : 'patch')
 
@@ -79,11 +85,12 @@ export const PublishResource = ({
     creatingRef.current = true
     setCreating(true)
     try {
-      const res = await kunFetchPost<KunResponse<PatchResource>>(
+      const res = await kunFetchPost<KunResponse<PatchResourceCreateResponse>>(
         '/patch/resource',
         data
       )
       kunErrorHandler(res, (value) => {
+        setMoemoepointBalance(value.moemoepointBalance)
         reset()
         if (value.status === 2) {
           toast.success('资源已提交审核，通过后将自动显示')

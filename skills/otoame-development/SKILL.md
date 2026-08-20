@@ -7,6 +7,8 @@ description: Use when changing OtoAme application code, adding routes, updating 
 
 Use this skill for project-specific development in `kun-otoame-next`.
 
+These skills are project assets, not agent-tool assets. They live in the repository-root `skills/` directory; `.codex/skills` and `.claude/skills` are symlinks to it. Edit the files under `skills/` and never fork a tool-specific copy.
+
 ## Required References
 
 Read the relevant project docs before editing:
@@ -24,12 +26,13 @@ Read the relevant project docs before editing:
 - Do not read or expose real `.env`; use `.env.example` for documentation and examples.
 - After schema changes, run `pnpm prisma:push` or at minimum `pnpm prisma:generate`.
 - After patch/resource/tag/company writes, verify the matching cache invalidation path.
+- Route every runtime moemoepoint mutation through `app/api/moemoepoint/service.ts`; keep the business write, conditional available-balance update, and ledger snapshot in one Prisma transaction.
 - Preserve CSRF header + origin/referer checks and API-layer permissions.
 - When running shell commands against Next App Router dynamic-segment paths such as `app/api/message/conversation/[id]/service.ts`, quote every path argument with single quotes or escape brackets in commands like `sed`, `rg`, `git add`, and `pnpm test`; zsh treats unquoted `[id]` as a glob pattern.
 - Keep legacy `touchgal` / `galgame` names when they are compatibility keys, cookies, types, or deployment ids.
 - For onboarding or setup questions, answer from `docs/project/development.md` instead of inventing shell steps.
-- Every commit created by Codex in this repository must use Conventional Commits: `<type>(<scope>): <subject>`. Use types such as `feat`, `fix`, `docs`, `test`, `refactor`, `perf`, `build`, `ci`, `chore`, or `revert`; if the user provides a non-conventional message, convert it to the nearest conventional form or ask when the intent is ambiguous.
-- After every code commit, check and update matching `docs/project/*`, `docs/modules/*`, and `.codex/skills/*/SKILL.md`; major behavior, API, data, cache, deployment, testing, or workflow changes must update docs and skills.
+- Every commit in this repository must use Conventional Commits: `<type>(<scope>): <subject>`. Use types such as `feat`, `fix`, `docs`, `test`, `refactor`, `perf`, `build`, `ci`, `chore`, or `revert`; if the user provides a non-conventional message, convert it to the nearest conventional form or ask when the intent is ambiguous.
+- After every code commit, check and update matching `docs/project/*`, `docs/modules/*`, and `skills/*/SKILL.md`; major behavior, API, data, cache, deployment, testing, or workflow changes must update docs and skills.
 - Keep docs/skill updates in a separate conventional commit from application code, tests, migrations, or generated artifacts.
 
 ## Project Hotspots

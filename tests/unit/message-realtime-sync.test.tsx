@@ -38,6 +38,8 @@ describe('MessageRealtimeSync', () => {
         avatar: '',
         bio: '',
         moemoepoint: 0,
+        moemoepointReserved: 0,
+        moemoepointAvailable: 0,
         role: 1,
         dailyCheckIn: 0,
         dailyImageLimit: 0,

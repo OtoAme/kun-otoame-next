@@ -17,6 +17,10 @@ export const kunNavItem: KunNavItem[] = [
     href: '/company'
   },
   {
+    name: '萌萌点',
+    href: '/moemoepoint'
+  },
+  {
     name: '帮助文档',
     href: '/doc'
   }

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { kunParsePutBody } from '~/app/api/utils/parseQuery'
 import { verifyHeaderCookie } from '~/middleware/_verifyHeaderCookie'
+import { checkConversationActionRateLimit } from '~/app/api/message/conversation/rateLimit'
 import { ratingIdSchema, toggleRatingLike } from './service'
 
 export const PUT = async (req: NextRequest) => {
@@ -11,6 +12,14 @@ export const PUT = async (req: NextRequest) => {
   const payload = await verifyHeaderCookie(req)
   if (!payload) {
     return NextResponse.json('请先登录')
+  }
+
+  const rateLimit = await checkConversationActionRateLimit(
+    'patch-like',
+    payload.uid
+  )
+  if (!rateLimit.allowed) {
+    return NextResponse.json(rateLimit.message)
   }
 
   const response = await toggleRatingLike(input, payload.uid)

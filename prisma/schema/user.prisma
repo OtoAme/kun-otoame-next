@@ -10,6 +10,7 @@ model user {
   status        Int      @default(0)
   register_time DateTime @default(now())
   moemoepoint   Int      @default(0)
+  moemoepoint_reserved Int @default(0)
   bio           String   @default("") @db.VarChar(107)
 
   enable_email_notice    Boolean @default(true)
@@ -53,8 +54,15 @@ model user {
   private_message user_private_message[] @relation("pm_sender")
   sticker_pack_ownership user_sticker_pack[]
 
+  moemoepoint_ledger_entries     user_moemoepoint_ledger[]      @relation("moemoepoint_ledger_user")
+  moemoepoint_operator_entries   user_moemoepoint_ledger[]      @relation("moemoepoint_ledger_operator")
+  moemoepoint_reservations       user_moemoepoint_reservation[] @relation("moemoepoint_reservation_user")
+  moemoepoint_settlements        user_moemoepoint_reservation[] @relation("moemoepoint_reservation_settler")
+
   created DateTime @default(now())
   updated DateTime @updatedAt
+
+  @@index([status, moemoepoint(sort: Desc), id])
 }
 
 model user_follow_relation {

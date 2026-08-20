@@ -1,0 +1,111 @@
+export const MOEMOEPOINT_REASON = {
+  accountCreated: {
+    code: 'account.created',
+    text: '账户创建初始余额'
+  },
+  migrationOpening: {
+    code: 'system.migration_opening',
+    text: '系统迁移初始余额'
+  },
+  checkIn: { code: 'check_in.reward', text: '每日签到奖励' },
+  patchCreated: { code: 'patch.create_reward', text: '发布 OtomeGame 奖励' },
+  resourceCreated: {
+    code: 'resource.create_reward',
+    text: '发布资源奖励'
+  },
+  resourceDeleted: {
+    code: 'resource.delete_reversal',
+    text: '资源删除，收回发布奖励'
+  },
+  commentLiked: {
+    code: 'comment.like_received',
+    text: '评论收到点赞'
+  },
+  commentUnliked: {
+    code: 'comment.unlike_reversal',
+    text: '评论点赞被取消'
+  },
+  ratingLiked: {
+    code: 'rating.like_received',
+    text: '评价收到点赞'
+  },
+  ratingUnliked: {
+    code: 'rating.unlike_reversal',
+    text: '评价点赞被取消'
+  },
+  resourceLiked: {
+    code: 'resource.like_received',
+    text: '资源收到点赞'
+  },
+  resourceUnliked: {
+    code: 'resource.unlike_reversal',
+    text: '资源点赞被取消'
+  },
+  usernameChanged: {
+    code: 'account.username_change',
+    text: '修改用户名'
+  },
+  conversationCreated: {
+    code: 'message.conversation_create',
+    text: '创建私聊会话'
+  },
+  conversationImage: {
+    code: 'message.image_charge',
+    text: '私聊图片超额上传'
+  },
+  conversationImageRefund: {
+    code: 'message.image_refund',
+    text: '私聊图片上传失败退款'
+  },
+  adminGrant: { code: 'admin.grant', text: '管理员发放' }
+} as const
+
+/**
+ * 规则说明页的展示数据。金额是当前实现的实际值, 改动业务时必须同步这里,
+ * 否则用户看到的规则会和真实扣费不一致。
+ *
+ * 对应实现位置:
+ * - 签到: app/api/user/status/check-in/route.ts
+ * - 发布游戏: app/api/edit/create.ts
+ * - 发布/删除资源: app/api/patch/resource/{create,delete}.ts
+ * - 点赞: app/api/patch/{comment,rating,resource}/like/service.ts
+ * - 改名: app/api/user/setting/username/route.ts
+ * - 私聊与图片: app/api/message/conversation/**
+ * - 发资源与上传门槛: app/api/patch/resource/route.ts, app/api/upload/resource/route.ts
+ */
+export const MOEMOEPOINT_EARN_RULES = [
+  { label: '每日签到', amount: '+2 ~ +7', detail: '每天一次, 数值随机' },
+  { label: '发布 OtomeGame', amount: '+3', detail: '每成功发布一个游戏条目' },
+  { label: '发布资源', amount: '+3', detail: '每成功发布一个资源' },
+  {
+    label: '内容被点赞',
+    amount: '+1',
+    detail: '评论、评价、资源被他人点赞, 对方取消点赞时收回'
+  },
+  { label: '管理员发放', amount: '+N', detail: '活动奖励或补偿' }
+] as const
+
+export const MOEMOEPOINT_SPEND_RULES = [
+  { label: '修改用户名', amount: '-30', detail: '需要 30 可用萌萌点' },
+  {
+    label: '发起新私聊',
+    amount: '-10',
+    detail: '需要至少 20 可用萌萌点才能发起, 每个新会话扣 10'
+  },
+  {
+    label: '私聊图片超额上传',
+    amount: '-5',
+    detail: '每人每小时前 5 张免费, 第 6 张起每张 5 点; 上传失败自动退款'
+  },
+  {
+    label: '资源被删除',
+    amount: '-3',
+    detail: '发布奖励被收回, 可能使余额变为负数'
+  }
+] as const
+
+export const MOEMOEPOINT_THRESHOLD_RULES = [
+  { label: '发布资源', detail: '可用萌萌点 ≥ 20, 或已是创作者' },
+  { label: '上传文件到对象存储', detail: '可用萌萌点 ≥ 20 且已是创作者' }
+] as const
+

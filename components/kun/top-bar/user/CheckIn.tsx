@@ -7,9 +7,12 @@ import { useState } from 'react'
 import { kunFetchPost } from '~/utils/kunFetch'
 import { showKunSooner } from '~/components/kun/Sooner'
 import { kunErrorHandler } from '~/utils/kunErrorHandler'
+import type { MoemoepointBalance } from '~/types/api/moemoepoint'
 
 export const UserCheckIn = () => {
-  const { user, setUser } = useUserStore((state) => state)
+  const { user, setUser, setMoemoepointBalance } = useUserStore(
+    (state) => state
+  )
 
   const [checking, setChecking] = useState(false)
   const handleCheckIn = async () => {
@@ -21,6 +24,7 @@ export const UserCheckIn = () => {
     const res = await kunFetchPost<
       KunResponse<{
         randomMoemoepoints: number
+        balance: MoemoepointBalance
       }>
     >('/user/status/check-in')
     kunErrorHandler(res, (value) => {
@@ -31,9 +35,9 @@ export const UserCheckIn = () => {
       )
       setUser({
         ...user,
-        dailyCheckIn: 1,
-        moemoepoint: user.moemoepoint + value.randomMoemoepoints
+        dailyCheckIn: 1
       })
+      setMoemoepointBalance(value.balance)
     })
     setChecking(false)
   }

@@ -74,7 +74,10 @@ export const RankingContainer = ({
 
   return (
     <div className="container mx-auto my-4 space-y-6">
-      <KunHeader name="OtomeGame 排行榜" description="按评分、收藏、资源等维度浏览 OtomeGame" />
+      <KunHeader
+        name="OtomeGame 排行榜"
+        description="按评分、收藏、资源等维度浏览 OtomeGame"
+      />
 
       <div className="flex flex-col gap-3 sm:flex-row">
         <Select

@@ -71,6 +71,15 @@ vi.mock('~/lib/redis', () => redisMock)
 vi.mock('~/lib/s3', () => s3Mock)
 vi.mock('~/app/api/message/conversation/rateLimit', () => rateLimitMock)
 
+const moemoepointMock = vi.hoisted(() => {
+  class MoemoepointInsufficientError extends Error {}
+  return {
+    MoemoepointInsufficientError,
+    spendMoemoepoint: vi.fn()
+  }
+})
+vi.mock('~/app/api/moemoepoint/service', () => moemoepointMock)
+
 describe('conversation service permissions', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -768,10 +777,31 @@ describe('conversation creation moemoepoint charging', () => {
     prismaMock.$transaction.mockImplementation(async (fn) => fn(prismaMock._tx))
     prismaMock._tx.user.update.mockResolvedValue({})
     prismaMock._tx.user_conversation.create.mockResolvedValue({ id: 5 })
+    moemoepointMock.spendMoemoepoint.mockResolvedValue({
+      balance: { total: 10, reserved: 0, available: 10 },
+      ledgerId: 1,
+      applied: true
+    })
   })
 
-  it('uses an atomic moemoepoint decrement and does not create a new conversation when the charge loses a race', async () => {
-    prismaMock._tx.user.updateMany.mockResolvedValueOnce({ count: 0 })
+  it('returns the latest balance after charging a new conversation', async () => {
+    const { getOrCreateConversation } = await import(
+      '~/app/api/message/conversation/service'
+    )
+
+    const result = await getOrCreateConversation({ targetUserId: 8 }, 1007, 1)
+
+    expect(result).toEqual({
+      conversationId: 5,
+      isNew: true,
+      moemoepointBalance: { total: 10, reserved: 0, available: 10 }
+    })
+  })
+
+  it('rolls back a new conversation when the atomic ledger charge loses a race', async () => {
+    moemoepointMock.spendMoemoepoint.mockRejectedValueOnce(
+      new moemoepointMock.MoemoepointInsufficientError()
+    )
 
     const { getOrCreateConversation } = await import(
       '~/app/api/message/conversation/service'
@@ -779,18 +809,21 @@ describe('conversation creation moemoepoint charging', () => {
     const result = await getOrCreateConversation({ targetUserId: 8 }, 1007, 1)
 
     expect(result).toBe('萌萌点不足，开启新私聊需要消耗 10 萌萌点')
-    expect(prismaMock._tx.user.updateMany).toHaveBeenCalledWith({
-      where: { id: 1007, moemoepoint: { gte: 10 } },
-      data: { moemoepoint: { decrement: 10 } }
-    })
-    expect(prismaMock._tx.user_conversation.create).not.toHaveBeenCalled()
+    expect(moemoepointMock.spendMoemoepoint).toHaveBeenCalledWith(
+      prismaMock._tx,
+      expect.objectContaining({
+        userId: 1007,
+        amount: 10,
+        requiredAvailable: 20,
+        referenceId: 5
+      })
+    )
   })
 
   it('returns the concurrently created conversation when the unique pair create races', async () => {
     const uniqueError = Object.assign(new Error('Unique constraint failed'), {
       code: 'P2002'
     })
-    prismaMock._tx.user.updateMany.mockResolvedValueOnce({ count: 1 })
     prismaMock._tx.user_conversation.create.mockRejectedValueOnce(uniqueError)
     prismaMock.user_conversation.findUnique
       .mockResolvedValueOnce(null)

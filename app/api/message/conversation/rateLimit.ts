@@ -14,6 +14,9 @@ type ConversationRateLimitAction =
   | 'notification-read'
   | 'notification-write'
   | 'conversation-manage'
+  // 点赞类动作。萌萌点账本让每次点赞/取消都写一行永久流水,
+  // 因此这里限制的不只是写放大, 还有账本膨胀和他人流水页被刷。
+  | 'patch-like'
 
 type ConversationRateLimitPolicy = {
   limit: number
@@ -88,6 +91,11 @@ const CONVERSATION_RATE_LIMIT_POLICIES: Record<
     limit: 30,
     windowSeconds: 60,
     messagePrefix: '私聊管理操作过于频繁'
+  },
+  'patch-like': {
+    limit: 60,
+    windowSeconds: 60,
+    messagePrefix: '点赞操作过于频繁'
   }
 }
 

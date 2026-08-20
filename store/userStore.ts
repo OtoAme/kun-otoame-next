@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
 import { useSettingStore } from './settingStore'
+import type { MoemoepointBalance } from '~/types/api/moemoepoint'
 
 export interface UserState {
   uid: number
@@ -8,6 +9,8 @@ export interface UserState {
   avatar: string
   bio: string
   moemoepoint: number
+  moemoepointReserved: number
+  moemoepointAvailable: number
   role: number
   dailyCheckIn: number
   dailyImageLimit: number
@@ -24,6 +27,7 @@ export interface UserState {
 export interface UserStore {
   user: UserState
   setUser: (user: UserState) => void
+  setMoemoepointBalance: (balance: MoemoepointBalance) => void
   logout: () => void
 }
 
@@ -33,6 +37,8 @@ const initialUserStore: UserState = {
   avatar: '',
   bio: '',
   moemoepoint: 0,
+  moemoepointReserved: 0,
+  moemoepointAvailable: 0,
   role: 1,
   dailyCheckIn: 1,
   dailyImageLimit: 0,
@@ -59,6 +65,16 @@ export const useUserStore = create<UserStore>()(
         syncBlockedTagCache(user.blockedTagIds)
         set({ user })
       },
+      setMoemoepointBalance: (balance: MoemoepointBalance) => {
+        set((state) => ({
+          user: {
+            ...state.user,
+            moemoepoint: balance.total,
+            moemoepointReserved: balance.reserved,
+            moemoepointAvailable: balance.available
+          }
+        }))
+      },
       logout: () => {
         syncBlockedTagCache([])
         set({ user: initialUserStore })
@@ -66,7 +82,23 @@ export const useUserStore = create<UserStore>()(
     }),
     {
       name: 'kun-patch-user-store',
-      storage: createJSONStorage(() => window.localStorage)
+      storage: createJSONStorage(() => window.localStorage),
+      merge: (persistedState, currentState) => {
+        const persisted = persistedState as Partial<UserStore>
+        return {
+          ...currentState,
+          ...persisted,
+          user: {
+            ...initialUserStore,
+            ...persisted.user,
+            moemoepointReserved: persisted.user?.moemoepointReserved ?? 0,
+            moemoepointAvailable:
+              persisted.user?.moemoepointAvailable ??
+              persisted.user?.moemoepoint ??
+              0
+          }
+        }
+      }
     }
   )
 )

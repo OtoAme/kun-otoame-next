@@ -126,6 +126,8 @@ const user = {
   avatar: '/avatar.webp',
   bio: '',
   moemoepoint: 100,
+  moemoepointReserved: 0,
+  moemoepointAvailable: 100,
   role: 3,
   dailyCheckIn: 0,
   dailyImageLimit: 0,
@@ -219,7 +221,9 @@ describe('KunTopBarUser message bell', () => {
     expect(bell).not.toBeNull()
 
     await act(async () => {
-      bell!.dispatchEvent(new dom!.window.MouseEvent('click', { bubbles: true }))
+      bell!.dispatchEvent(
+        new dom!.window.MouseEvent('click', { bubbles: true })
+      )
     })
 
     expect(routerMock.push).toHaveBeenCalledWith('/message/notice')
@@ -240,7 +244,9 @@ describe('KunTopBarUser message bell', () => {
     expect(bell).not.toBeNull()
 
     await act(async () => {
-      bell!.dispatchEvent(new dom!.window.MouseEvent('click', { bubbles: true }))
+      bell!.dispatchEvent(
+        new dom!.window.MouseEvent('click', { bubbles: true })
+      )
     })
 
     expect(routerMock.push).toHaveBeenCalledWith('/message/notice')
@@ -259,7 +265,9 @@ describe('KunTopBarUser message bell', () => {
     expect(bell).not.toBeNull()
 
     await act(async () => {
-      bell!.dispatchEvent(new dom!.window.MouseEvent('click', { bubbles: true }))
+      bell!.dispatchEvent(
+        new dom!.window.MouseEvent('click', { bubbles: true })
+      )
     })
 
     expect(routerMock.push).toHaveBeenCalledWith('/message/notice')

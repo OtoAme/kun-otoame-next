@@ -19,6 +19,7 @@ import { kunFetchPost } from '~/utils/kunFetch'
 import { kunErrorHandler } from '~/utils/kunErrorHandler'
 import { useUserStore } from '~/store/userStore'
 import type { AdminUser } from '~/types/api/admin'
+import type { MoemoepointBalance } from '~/types/api/moemoepoint'
 
 interface Props {
   user: AdminUser
@@ -26,6 +27,9 @@ interface Props {
 
 export const GrantMoemoepoint = ({ user }: Props) => {
   const currentUser = useUserStore((state) => state.user)
+  const setMoemoepointBalance = useUserStore(
+    (state) => state.setMoemoepointBalance
+  )
   const { isOpen, onOpen, onClose } = useDisclosure()
 
   const [amount, setAmount] = useState('')
@@ -40,12 +44,17 @@ export const GrantMoemoepoint = ({ user }: Props) => {
     }
 
     setGranting(true)
-    const res = await kunFetchPost<KunResponse<{}>>('/admin/user', {
+    const res = await kunFetchPost<
+      KunResponse<{ balance: MoemoepointBalance }>
+    >('/admin/user', {
       uid: user.id,
       amount: numAmount,
       reason: reason || undefined
     })
-    kunErrorHandler(res, () => {
+    kunErrorHandler(res, (value) => {
+      if (user.id === currentUser.uid) {
+        setMoemoepointBalance(value.balance)
+      }
       toast.success(`成功为 ${user.name} 发放 ${numAmount} 萌萌点`)
     })
     setGranting(false)
@@ -64,6 +73,7 @@ export const GrantMoemoepoint = ({ user }: Props) => {
           color="warning"
           onPress={onOpen}
           isDisabled={currentUser.role < 3}
+          aria-label={`为 ${user.name} 发放萌萌点`}
         >
           <Coins size={16} />
         </Button>

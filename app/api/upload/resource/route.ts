@@ -8,6 +8,7 @@ import { ALLOWED_EXTENSIONS } from '~/constants/resource'
 import { sanitizeFileName } from '~/utils/sanitizeFileName'
 import { prisma } from '~/prisma'
 import { checkKunCaptchaExist } from '~/app/api/utils/verifyKunCaptcha'
+import { toMoemoepointBalance } from '~/utils/moemoepoint'
 
 const getFileExtension = (filename: string) => {
   return filename.slice(filename.lastIndexOf('.')).toLowerCase()
@@ -54,7 +55,7 @@ const checkRequestValid = async (req: NextRequest) => {
   if (user.role < 2) {
     return '您的权限不足, 创作者或者管理员才可以上传文件到对象存储'
   }
-  if (user.role < 3 && user.moemoepoint < 20) {
+  if (user.role < 3 && toMoemoepointBalance(user).available < 20) {
     return '仅限萌萌点大于 20 的用户才可以发布资源'
   }
   if (user.daily_upload_size >= 5120) {

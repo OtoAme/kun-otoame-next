@@ -13,6 +13,7 @@ const INDEXABLE_STATIC_ROUTES = new Set([
   '/company',
   '/doc',
   '/friend-link',
+  '/moemoepoint/rules',
   '/otomegame',
   '/ranking',
   '/resource'

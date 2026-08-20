@@ -1,0 +1,60 @@
+model user_moemoepoint_ledger {
+  id Int @id @default(autoincrement())
+
+  user_id Int
+  user    user @relation("moemoepoint_ledger_user", fields: [user_id], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  kind            String @db.VarChar(32)
+  balance_delta   Int
+  reserved_delta  Int
+  balance_after   Int
+  reserved_after  Int
+  reason_code     String @db.VarChar(64)
+  reason          String @db.VarChar(500)
+  reference_type  String? @db.VarChar(64)
+  reference_id    String? @db.VarChar(191)
+  link            String @default("") @db.VarChar(1000)
+  idempotency_key String? @unique @db.VarChar(191)
+
+  reservation_id Int?
+  reservation    user_moemoepoint_reservation? @relation(fields: [reservation_id], references: [id], onDelete: SetNull, onUpdate: Cascade)
+
+  operator_id Int?
+  operator    user? @relation("moemoepoint_ledger_operator", fields: [operator_id], references: [id], onDelete: SetNull, onUpdate: Cascade)
+
+  created DateTime @default(now())
+
+  @@index([user_id, created(sort: Desc), id(sort: Desc)])
+  @@index([reservation_id])
+  @@index([operator_id])
+}
+
+model user_moemoepoint_reservation {
+  id Int @id @default(autoincrement())
+
+  user_id Int
+  user    user @relation("moemoepoint_reservation_user", fields: [user_id], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  amount          Int
+  status          String @default("pending") @db.VarChar(16)
+  reason_code     String @db.VarChar(64)
+  reason          String @db.VarChar(500)
+  reference_type  String? @db.VarChar(64)
+  reference_id    String? @db.VarChar(191)
+  link            String @default("") @db.VarChar(1000)
+  idempotency_key String @unique @db.VarChar(191)
+
+  settlement_idempotency_key String? @unique @db.VarChar(191)
+  settlement_reason          String? @db.VarChar(500)
+  settled_at                 DateTime?
+  settled_by_id              Int?
+  settled_by                 user? @relation("moemoepoint_reservation_settler", fields: [settled_by_id], references: [id], onDelete: SetNull, onUpdate: Cascade)
+
+  ledger_entries user_moemoepoint_ledger[]
+
+  created DateTime @default(now())
+  updated DateTime @updatedAt
+
+  @@index([user_id, status, created(sort: Desc)])
+  @@index([settled_by_id])
+}

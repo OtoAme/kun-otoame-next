@@ -47,6 +47,8 @@ export const keyLabelMap: Record<string, string> = {
   '/user/[id]/favorite': '用户收藏',
   '/user/[id]/otomegame': '用户游戏',
   '/user/[id]/resource': '用户资源',
+  '/moemoepoint': '我的萌萌点',
+  '/moemoepoint/rules': '萌萌点规则',
   '/ranking': 'OtomeGame 排行'
 }
 

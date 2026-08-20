@@ -5,6 +5,7 @@ import { Button } from '@heroui/react'
 import Link from 'next/link'
 import localforage from 'localforage'
 import { useCreatePatchStore } from '~/store/editStore'
+import { useUserStore } from '~/store/userStore'
 import toast from 'react-hot-toast'
 import { kunFetchFormData } from '~/utils/kunFetch'
 import { kunErrorHandler } from '~/utils/kunErrorHandler'
@@ -33,6 +34,7 @@ import {
 import type { Dispatch, SetStateAction } from 'react'
 import type { CreatePatchRequestData } from '~/store/editStore'
 import type { GalleryImage } from './GalleryInput'
+import type { MoemoepointBalance } from '~/types/api/moemoepoint'
 
 interface Props {
   setErrors: Dispatch<
@@ -44,6 +46,9 @@ interface Props {
 export const PublishButton = ({ setErrors, className }: Props) => {
   const router = useRouter()
   const { data, resetData } = useCreatePatchStore()
+  const setMoemoepointBalance = useUserStore(
+    (state) => state.setMoemoepointBalance
+  )
 
   const [creating, setCreating] = useState(false)
   const [createdPatch, setCreatedPatch] = useState<{
@@ -107,8 +112,7 @@ export const PublishButton = ({ setErrors, className }: Props) => {
           {}
         result.error.errors.forEach((err) => {
           if (err.path.length) {
-            newErrors[err.path[0] as keyof CreatePatchRequestData] =
-              err.message
+            newErrors[err.path[0] as keyof CreatePatchRequestData] = err.message
             toast.error(err.message)
           }
         })
@@ -165,7 +169,9 @@ export const PublishButton = ({ setErrors, className }: Props) => {
 
     setCreating(true)
     const isRetryingCreatedPatch = !!publishedPatch
-    toast(isRetryingCreatedPatch ? '正在重试上传游戏截图 ...' : '正在发布中 ...')
+    toast(
+      isRetryingCreatedPatch ? '正在重试上传游戏截图 ...' : '正在发布中 ...'
+    )
 
     const galleryImages = await getCreateGalleryDraft()
     const watermark = await localforage.getItem<boolean>(
@@ -177,6 +183,7 @@ export const PublishButton = ({ setErrors, className }: Props) => {
         KunResponse<{
           uniqueId: string
           patchId: number
+          moemoepointBalance: MoemoepointBalance
         }>
       >('/edit', createFormData!, CREATE_PATCH_PUBLISH_TIMEOUT_MS)
 
@@ -187,6 +194,7 @@ export const PublishButton = ({ setErrors, className }: Props) => {
       }
 
       publishedPatch = res
+      setMoemoepointBalance(res.moemoepointBalance)
       setCreatedPatch(res)
       await saveCreateGalleryCreatedPatch(res)
     }

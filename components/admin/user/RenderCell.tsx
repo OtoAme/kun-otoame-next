@@ -1,6 +1,8 @@
 'use client'
 
-import { Chip } from '@heroui/react'
+import { Button, Chip, Tooltip } from '@heroui/react'
+import Link from 'next/link'
+import { ReceiptText } from 'lucide-react'
 import {
   USER_ROLE_MAP,
   USER_STATUS_COLOR_MAP,
@@ -42,6 +44,18 @@ export const RenderCell = (user: AdminUserType, columnKey: string) => {
     case 'actions':
       return (
         <div className="flex items-center gap-2">
+          <Tooltip content="查看萌萌点流水">
+            <Button
+              as={Link}
+              href={`/admin/user/${user.id}/moemoepoint`}
+              isIconOnly
+              size="sm"
+              variant="flat"
+              aria-label={`查看 ${user.name} 的萌萌点流水`}
+            >
+              <ReceiptText className="size-4" />
+            </Button>
+          </Tooltip>
           <GrantMoemoepoint user={user} />
           <UserEdit initialUser={user} />
           <UserDelete user={user} />

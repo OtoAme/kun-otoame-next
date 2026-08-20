@@ -44,6 +44,11 @@ vi.mock('~/app/api/patch/cache', () => ({
   invalidatePatchListCaches: invalidatePatchListCachesMock
 }))
 
+const earnMoemoepointMock = vi.hoisted(() => vi.fn())
+vi.mock('~/app/api/moemoepoint/service', () => ({
+  earnMoemoepoint: earnMoemoepointMock
+}))
+
 const postToIndexNowMock = vi.hoisted(() => vi.fn())
 vi.mock('~/app/api/edit/_postToIndexNow', () => ({
   postToIndexNow: postToIndexNowMock
@@ -89,6 +94,11 @@ describe('createGalgame timeout', () => {
     prismaMocks._tx.patch.update.mockResolvedValue({})
     prismaMocks._tx.patch_rating_stat.create.mockResolvedValue({})
     prismaMocks._tx.user.update.mockResolvedValue({})
+    earnMoemoepointMock.mockResolvedValue({
+      balance: { total: 3, reserved: 0, available: 3 },
+      ledgerId: 1,
+      applied: true
+    })
     uploadPatchBannerMock.mockResolvedValue(undefined)
     processSubmittedExternalDataMock.mockResolvedValue(undefined)
     invalidatePatchListCachesMock.mockResolvedValue(undefined)
@@ -161,7 +171,11 @@ describe('createGalgame timeout', () => {
         },
         1
       )
-    ).resolves.toEqual({ uniqueId: expect.any(String), patchId: 649 })
+    ).resolves.toEqual({
+      uniqueId: expect.any(String),
+      patchId: 649,
+      moemoepointBalance: { total: 3, reserved: 0, available: 3 }
+    })
 
     expect(prismaMocks.$transaction).toHaveBeenCalled()
     expect(prismaMocks._tx.patch.create).toHaveBeenCalledWith(

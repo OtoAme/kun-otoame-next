@@ -13,6 +13,8 @@
 | `components/edit/*`                        | 创建/重写游戏表单，VNDB/Bangumi/Steam/DLSite 外部数据输入。           |
 | `components/admin/*`                       | 后台列表、编辑、审核、日志、邮件和设置。                              |
 | `components/user/*`                        | 用户主页、关注、收藏、评论、评分、资源。                              |
+| `components/ranking/*`                     | OtomeGame 排行榜。                                                    |
+| `components/moemoepoint/*`                 | 萌萌点流水与规则说明页。                                              |
 | `components/settings/*`                    | 用户设置。                                                            |
 | `components/message/*`                     | 消息列表和聊天会话。                                                  |
 | `components/tag/*`, `components/company/*` | 标签和公司页面。                                                      |
@@ -41,6 +43,17 @@
 - 长链接、提取码、解压码和 hash 都要按可复制、可换行、移动端不撑破容器的方式渲染。对象存储资源的 hash 可在未获取真实链接前展示，用于文件完整性校验。
 - 资源操作菜单点击“编辑”时，`ResourceTabs` 先调用 `accessResourceLinksForEdit` 逐个获取完整链接，成功后再写入编辑弹窗状态；获取失败时 toast 并保持弹窗关闭，避免用脱敏 link 打开表单导致保存时丢失字段。
 
+## 萌萌点
+
+- 新功能沿用 HeroUI v2 设计系统：余额摘要和规则分区用 Card，日期预设用 Tabs，自定义日期用 DateRangePicker，明细用 Table/Chip/Spinner，翻页复用 `KunPagination`。不要用原生按钮、输入框或手写表格替代这些组件。
+- 前端统一展示“总萌萌点”“可用萌萌点”“待结算萌萌点”；动作名称使用“暂扣”“返还”“确认扣除”。顶栏主值展示可用余额，并在存在待结算余额时补充说明。三者含义在 `/moemoepoint/rules` 解释。
+- **余额可以为负**（奖励被收回时真实回退）。余额卡负值用 danger 语义色，并在总额为负时给出说明；不要用 `Math.max(0, ...)` 把负值伪装成 0。
+- `userStore` 同时保存 `moemoepoint`、`moemoepointReserved` 和 `moemoepointAvailable`。登录、注册、2FA 和 session 都返回完整三态；签到、改名、发布/删除资源、创建游戏和付费新私聊等会改变当前用户余额的响应，应立即调用 `setMoemoepointBalance`，避免顶栏等待刷新。persist merge 必须兼容旧 localStorage 中只有 `moemoepoint` 的数据。
+- 流水日期以 Asia/Shanghai 显示，默认 30 天；切换 7/30 天立即请求。切到“自定义日期”时**不要继续展示上一个范围的数据**，应清空并提示“请选择日期范围后点击查询”，最多 90 天。翻页或日期请求并发时只接收最新响应，保留错误、loading 和空状态。
+- 流水 `kind` 来自数据库 String 列，渲染时必须有兜底：生产有 CHECK 约束但开发库走 `prisma db push` 没有，一个意外值会让整页白屏。
+- 窄屏（`sm` 以下）用卡片列表替代 4 列表格，否则「变动」和「变更后余额」各占 3 行会横向溢出。
+- 本人访问自己的流水时，页面返回的权威余额会同步回 `userStore`；管理员在后台查看他人流水时不能覆盖管理员自己的顶栏余额。
+
 ## 消息展示
 
 - `components/message/MessageCard.tsx` 将通知正文作为纯文本渲染，并保留换行，用于系统通知展示多行变更摘要。
@@ -55,7 +68,7 @@
 
 Zustand stores 在 `store/*`：
 
-- `userStore.ts`：当前用户状态。
+- `userStore.ts`：当前用户状态；萌萌点同时保存总额、待结算和可用余额，并通过 `setMoemoepointBalance` 原子更新三者。persist merge 必须兼容旧 localStorage 中只有 `moemoepoint` 的数据。
 - `settingStore.ts`：站点设置和 UI 设置。
 - `editStore.ts`：创建游戏状态。
 - `rewriteStore.ts`：重写游戏状态，详情页会写入当前 patch 数据。

@@ -14,6 +14,8 @@ import { MessageSquare } from 'lucide-react'
 import { kunFetchGet, kunFetchPost } from '~/utils/kunFetch'
 import { useRouter } from 'next/navigation'
 import toast from 'react-hot-toast'
+import { useUserStore } from '~/store/userStore'
+import type { MoemoepointBalance } from '~/types/api/moemoepoint'
 
 interface Props {
   targetUserId: number
@@ -34,11 +36,18 @@ export const StartChatButton = ({ targetUserId }: Props) => {
   const [checkResult, setCheckResult] = useState<CheckResponse | null>(null)
   const { isOpen, onOpen, onClose } = useDisclosure()
   const router = useRouter()
+  const setMoemoepointBalance = useUserStore(
+    (state) => state.setMoemoepointBalance
+  )
 
   const createOrOpenConversation = async (paymentContext?: CheckResponse) => {
     try {
       const response = await kunFetchPost<
-        KunResponse<{ conversationId: number; isNew: boolean }>
+        KunResponse<{
+          conversationId: number
+          isNew: boolean
+          moemoepointBalance?: MoemoepointBalance
+        }>
       >('/message/conversation', { targetUserId })
 
       if (typeof response === 'string') {
@@ -50,6 +59,10 @@ export const StartChatButton = ({ targetUserId }: Props) => {
         toast.success(`已创建新会话，消耗 ${paymentContext.cost} 萌萌点`)
       } else if (response.isNew) {
         toast.success('已创建新会话')
+      }
+
+      if (response.moemoepointBalance) {
+        setMoemoepointBalance(response.moemoepointBalance)
       }
 
       router.push(`/message/chat/${response.conversationId}`)

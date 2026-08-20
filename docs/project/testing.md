@@ -36,6 +36,7 @@ tests/unit/
 - 公司脏数据合并计划：`tests/unit/company-merge-plan.test.ts`。
 - 搜索 store：`tests/unit/search-store.test.ts`。
 - CAPTCHA：`tests/unit/captcha.test.ts`。
+- 萌萌点账务：`api/moemoepoint-service.test.ts` 覆盖可用余额条件更新、负数回退、原因超长截断（不抛错）、幂等和暂扣/返还/确认扣除；`api/moemoepoint-query.test.ts` 覆盖流水稳定排序和用户不存在时不白跑查询；`api/moemoepoint-ledger-route.test.ts` 覆盖本人/管理员权限与 no-store；`moemoepoint-ledger-action.test.ts` 覆盖 `/moemoepoint` 本人 action 与后台 action 两个入口的独立鉴权；`moemoepoint-date-range.test.ts`、`moemoepoint-migration.test.ts`、`moemoepoint-source-guard.test.ts` 分别锁定上海日期范围、生产 SQL 和禁止绕过统一 service 的源码契约。
 - 资源链接解析、资源分类、资源派生标签口径和后台资源表格布局：`tests/unit/resource-link.test.ts`、`resource-classification.test.ts`、`patch-resource-attributes.test.ts`、`admin-resource-container-layout.test.tsx`。`resource-classification.test.ts` 还覆盖游戏类型必须搭配中文支持类型、资料集/工具单独使用时的豁免、游戏类型与其他类型混选、中文支持互斥和 schema 错误文案。
 - 资源详情表单的中文支持独立多选框、资料集/工具禁用清理、HeroUI 分组标题排版、原有选项说明与多选勾选、上拉方向和边缘渐隐：`tests/unit/resource-details-form.test.tsx`。
 - 资源详情页操作权限和游客添加资源引导：`resource-permissions.test.ts`、`resource-tabs-permissions.test.tsx`、`resource-create-action.test.tsx` 覆盖资源作者/管理员权限显隐，以及游客不挂载发布表单、登录用户直接打开发布流程。
@@ -140,6 +141,8 @@ Redis 相关逻辑分两类：
 直接使用 `redis` / `runRedisCommand` 的模块要单独检查 key 前缀和原子性，例如浏览量 buffer 使用 Redis hash 和 Lua，不能简单套 `setKv` 测试模式。
 
 ## Prisma/事务测试约定
+
+萌萌点变更测试必须断言业务写入、条件余额更新和流水快照位于同一事务。消费/暂扣用“总额减待结算”的可用余额判断；奖励回退允许出现负数，这是有意的审计设计，不要改成 clamp。流水 `reason` 超长必须截断而不是抛错——否则长游戏名会让发布游戏整个事务回滚（banner 已上传 S3，留下孤儿对象）。新增任何萌萌点写入点时要更新原因代码、同步 `constants/moemoepoint.ts` 里供规则页展示的三个常量、覆盖现有业务测试，并确保 `moemoepoint-source-guard.test.ts` 仍能阻止 service 外的直接 `increment` / `decrement` / `set` / SQL 写入。
 
 资源访问 bootstrap 的静态契约测试读取
 `migration/production-resource-access-bootstrap-preflight-2026-07-12.sql` 和对应 sync；

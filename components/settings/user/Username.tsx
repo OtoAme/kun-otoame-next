@@ -17,16 +17,19 @@ import {
   useDisclosure
 } from '@heroui/modal'
 import toast from 'react-hot-toast'
+import type { MoemoepointBalance } from '~/types/api/moemoepoint'
 
 export const Username = () => {
-  const { user, setUser } = useUserStore((state) => state)
+  const { user, setUser, setMoemoepointBalance } = useUserStore(
+    (state) => state
+  )
   const [username, setUsername] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const { isOpen, onOpen, onOpenChange } = useDisclosure()
 
   const handleSave = async () => {
-    if (user.moemoepoint < 30) {
+    if (user.moemoepointAvailable < 30) {
       toast.error('更改用户名最少需要 30 萌萌点, 您的萌萌点不足')
       return
     }
@@ -39,13 +42,13 @@ export const Username = () => {
 
       setLoading(true)
 
-      const res = await kunFetchPost<KunResponse<{}>>(
-        '/user/setting/username',
-        { username }
-      )
-      kunErrorHandler(res, () => {
+      const res = await kunFetchPost<
+        KunResponse<{ balance: MoemoepointBalance }>
+      >('/user/setting/username', { username })
+      kunErrorHandler(res, (value) => {
         toast.success('更新用户名成功')
-        setUser({ ...user, name: username, moemoepoint: user.moemoepoint - 30 })
+        setUser({ ...user, name: username })
+        setMoemoepointBalance(value.balance)
         setUsername('')
       })
       setLoading(false)

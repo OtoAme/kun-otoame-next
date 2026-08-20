@@ -13,7 +13,12 @@ import {
   type UploadedPatchResource
 } from './_helper'
 import { parseResourceLink } from '~/utils/resourceLink'
-import type { PatchResource } from '~/types/api/patch'
+import type {
+  PatchResource,
+  PatchResourceCreateResponse
+} from '~/types/api/patch'
+import { earnMoemoepoint } from '~/app/api/moemoepoint/service'
+import { MOEMOEPOINT_REASON } from '~/constants/moemoepoint'
 
 type PreparedResourceLink = {
   storage: string
@@ -90,8 +95,8 @@ export const createPatchResource = async (
 
     const resourceTypeName = section === 'galgame' ? '游戏资源' : '补丁资源'
 
-    const { resource, uniqueIdToClear } = await prisma.$transaction(
-      async (prisma) => {
+    const { resource, uniqueIdToClear, moemoepointBalance } =
+      await prisma.$transaction(async (prisma) => {
         const newResource = await prisma.patch_resource.create({
           data: {
             patch_id: patchId,
@@ -120,9 +125,15 @@ export const createPatchResource = async (
           }
         })
 
-        await prisma.user.update({
-          where: { id: uid },
-          data: { moemoepoint: { increment: 3 } }
+        const pointChange = await earnMoemoepoint(prisma, {
+          userId: uid,
+          amount: 3,
+          reasonCode: MOEMOEPOINT_REASON.resourceCreated.code,
+          reason: `${MOEMOEPOINT_REASON.resourceCreated.text}：${newResource.name}`,
+          referenceType: 'patch_resource',
+          referenceId: newResource.id,
+          link: currentPatch?.unique_id ? `/${currentPatch.unique_id}` : '',
+          idempotencyKey: `resource:${newResource.id}:create-reward`
         })
 
         const uniqueIdToClear =
@@ -166,9 +177,12 @@ export const createPatchResource = async (
           }
         }
 
-        return { resource, uniqueIdToClear }
-      }
-    )
+        return {
+          resource,
+          uniqueIdToClear,
+          moemoepointBalance: pointChange.balance
+        }
+      })
     dbCommitted = true
 
     await finalizeUploadedResources(uploadedResources, {
@@ -222,7 +236,11 @@ export const createPatchResource = async (
       )
     }
 
-    return resource
+    const response: PatchResourceCreateResponse = {
+      ...resource,
+      moemoepointBalance
+    }
+    return response
   } catch (error) {
     if (!dbCommitted) {
       await compensateUploadedResources(uploadedResources)

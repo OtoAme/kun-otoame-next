@@ -12,7 +12,7 @@
 | 前端组件、主题与内容 | [frontend-content.md](./frontend-content.md) | `components/*`, `styles/*`, `lib/mdx/*`, `posts/*` |
 | 运维、脚本、迁移与任务 | [operations.md](./operations.md) | `scripts/*`, `migration/*`, `server/tasks/*`, `.github/workflows/*` |
 | 私聊 Sticker | [private-chat-stickers.md](./private-chat-stickers.md) | `app/api/message/stickers/*`, `app/api/admin/stickers/*`, `app/admin/stickers/*`, `components/admin/stickers/*`, `components/message/chat/*`, `scripts/syncStickers.ts`, `prisma/schema/sticker.prisma` |
-| 测试、验证与审阅 | [quality.md](./quality.md) | `tests/*`, `vitest.config.ts`, `.codex/skills/*` |
+| 测试、验证与审阅 | [quality.md](./quality.md) | `tests/*`, `vitest.config.ts`, `skills/*` |
 
 ## 贡献者阅读路径
 
@@ -32,9 +32,11 @@
 - Next standalone 运行时资源要同时出现在 `scripts/postbuild.ts` 和 release packaging。
 - 新环境变量要同步 `validations/dotenv-check.ts`、`.env.example`、README、CI 或说明它只在可选功能中使用。
 
-## Codex Skills
+## 项目 Skills
 
-项目本地 skills 位于 `.codex/skills`：
+项目 skills 是项目资产，不属于某个 agent 工具。唯一来源是仓库根目录 `skills/`，`.codex/skills` 和 `.claude/skills` 都是指向它的软链接，让不同 agent 工具自动发现同一份内容。只修改 `skills/` 下的文件，不要新建工具专用副本。
+
+当前 skills：
 
 - `otoame-development`：通用开发入口。
 - `otoame-api`：API、route handler、service、validation、业务规则。

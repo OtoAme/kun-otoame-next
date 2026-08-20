@@ -2,7 +2,6 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 // Mock Prisma
 const prismaMocks = vi.hoisted(() => {
-  const transactionFn = vi.fn()
   return {
     user: {
       findUnique: vi.fn(),
@@ -13,11 +12,9 @@ const prismaMocks = vi.hoisted(() => {
     },
     $transaction: vi.fn((fn: (prisma: any) => Promise<any>) => {
       return fn({
-        user: { update: transactionFn },
         admin_log: { create: vi.fn() }
       })
-    }),
-    _transactionUserUpdate: transactionFn
+    })
   }
 })
 
@@ -31,6 +28,11 @@ vi.mock('~/app/api/utils/message', () => ({
   createMessage: createMessageMock
 }))
 
+const earnMoemoepointMock = vi.hoisted(() => vi.fn())
+vi.mock('~/app/api/moemoepoint/service', () => ({
+  earnMoemoepoint: earnMoemoepointMock
+}))
+
 import { grantMoemoepoint } from '~/app/api/admin/user/grant-moemoepoint'
 import { adminGrantMoemoepointSchema } from '~/validations/admin'
 
@@ -41,10 +43,20 @@ describe('grantMoemoepoint', () => {
     prismaMocks.$transaction.mockImplementation(
       (fn: (prisma: any) => Promise<any>) => {
         return fn({
-          user: { update: prismaMocks._transactionUserUpdate },
           admin_log: { create: prismaMocks.admin_log.create }
         })
       }
+    )
+    earnMoemoepointMock.mockImplementation((_tx, input: { amount: number }) =>
+      Promise.resolve({
+        balance: {
+          total: 100 + input.amount,
+          reserved: 0,
+          available: 100 + input.amount
+        },
+        ledgerId: 1,
+        applied: true
+      })
     )
   })
 
@@ -53,23 +65,31 @@ describe('grantMoemoepoint', () => {
       .mockResolvedValueOnce({ id: 1, name: 'TestUser', moemoepoint: 100 })
       .mockResolvedValueOnce({ id: 2, name: 'AdminUser' })
 
-    const result = await grantMoemoepoint(
-      { uid: 1, amount: 50 },
-      2
-    )
+    const result = await grantMoemoepoint({ uid: 1, amount: 50 }, 2)
 
-    expect(result).toEqual({})
-    expect(prismaMocks._transactionUserUpdate).toHaveBeenCalledWith({
-      where: { id: 1 },
-      data: { moemoepoint: { increment: 50 } }
+    expect(result).toEqual({
+      balance: { total: 150, reserved: 0, available: 150 }
     })
-    expect(createMessageMock).toHaveBeenCalledWith({
-      type: 'system',
-      content: '管理员为您发放了 50 萌萌点。',
-      sender_id: 2,
-      recipient_id: 1,
-      link: '/user/1/resource'
-    })
+    expect(earnMoemoepointMock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        userId: 1,
+        amount: 50,
+        reasonCode: 'admin.grant',
+        reason: '管理员发放',
+        operatorId: 2
+      })
+    )
+    expect(createMessageMock).toHaveBeenCalledWith(
+      {
+        type: 'system',
+        content: '管理员为您发放了 50 萌萌点。',
+        sender_id: 2,
+        recipient_id: 1,
+        link: '/moemoepoint'
+      },
+      expect.anything()
+    )
     expect(prismaMocks.admin_log.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
         type: 'grant',
@@ -103,18 +123,18 @@ describe('grantMoemoepoint', () => {
       .mockResolvedValueOnce({ id: 1, name: 'TestUser', moemoepoint: 100 })
       .mockResolvedValueOnce({ id: 2, name: 'AdminUser' })
 
-    await grantMoemoepoint(
-      { uid: 1, amount: 50, reason: '活动奖励' },
-      2
-    )
+    await grantMoemoepoint({ uid: 1, amount: 50, reason: '活动奖励' }, 2)
 
-    expect(createMessageMock).toHaveBeenCalledWith({
-      type: 'system',
-      content: '管理员为您发放了 50 萌萌点。\n理由: 活动奖励',
-      sender_id: 2,
-      recipient_id: 1,
-      link: '/user/1/resource'
-    })
+    expect(createMessageMock).toHaveBeenCalledWith(
+      {
+        type: 'system',
+        content: '管理员为您发放了 50 萌萌点。\n理由: 活动奖励',
+        sender_id: 2,
+        recipient_id: 1,
+        link: '/moemoepoint'
+      },
+      expect.anything()
+    )
   })
 
   it('should not include reason in notification when not provided', async () => {
@@ -127,7 +147,8 @@ describe('grantMoemoepoint', () => {
     expect(createMessageMock).toHaveBeenCalledWith(
       expect.objectContaining({
         content: '管理员为您发放了 30 萌萌点。'
-      })
+      }),
+      expect.anything()
     )
   })
 
@@ -136,10 +157,7 @@ describe('grantMoemoepoint', () => {
       .mockResolvedValueOnce({ id: 1, name: 'TestUser', moemoepoint: 100 })
       .mockResolvedValueOnce({ id: 2, name: 'AdminUser' })
 
-    await grantMoemoepoint(
-      { uid: 1, amount: 50, reason: '活动奖励' },
-      2
-    )
+    await grantMoemoepoint({ uid: 1, amount: 50, reason: '活动奖励' }, 2)
 
     expect(prismaMocks.admin_log.create).toHaveBeenCalledWith({
       data: expect.objectContaining({

@@ -65,6 +65,12 @@ vi.mock('~/app/api/utils/message', () => ({
   createDedupMessage: createDedupMessageMock
 }))
 
+const moemoepointMock = vi.hoisted(() => ({
+  earnMoemoepoint: vi.fn(),
+  reverseMoemoepoint: vi.fn()
+}))
+vi.mock('~/app/api/moemoepoint/service', () => moemoepointMock)
+
 vi.mock('~/app/api/patch/cache', () => ({
   invalidatePatchContentCache: vi.fn(),
   invalidatePatchListCaches: vi.fn(),
@@ -75,6 +81,8 @@ describe('user-triggered notification anti-abuse', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     prismaMock.$transaction.mockImplementation((fn) => fn(prismaMock._tx))
+    moemoepointMock.earnMoemoepoint.mockResolvedValue({})
+    moemoepointMock.reverseMoemoepoint.mockResolvedValue({})
   })
 
   it('does not create a favorite notification when removing an existing favorite', async () => {

@@ -14,6 +14,8 @@ import {
   formatUniqueExternalIdDuplicateMessage,
   resolveUniqueExternalIdConstraintMessage
 } from './uniqueExternalIds'
+import { earnMoemoepoint } from '~/app/api/moemoepoint/service'
+import { MOEMOEPOINT_REASON } from '~/constants/moemoepoint'
 
 export const createGalgame = async (
   input: Omit<
@@ -105,7 +107,12 @@ export const createGalgame = async (
     }
   }
 
-  let res: string | { patchId: number }
+  let res:
+    | string
+    | {
+        patchId: number
+        balance: Awaited<ReturnType<typeof earnMoemoepoint>>['balance']
+      }
   try {
     res = await prisma.$transaction(
       async (prisma) => {
@@ -162,13 +169,20 @@ export const createGalgame = async (
 
         await prisma.user.update({
           where: { id: uid },
-          data: {
-            daily_image_count: { increment: 1 },
-            moemoepoint: { increment: 3 }
-          }
+          data: { daily_image_count: { increment: 1 } }
+        })
+        const pointChange = await earnMoemoepoint(prisma, {
+          userId: uid,
+          amount: 3,
+          reasonCode: MOEMOEPOINT_REASON.patchCreated.code,
+          reason: `${MOEMOEPOINT_REASON.patchCreated.text}：${name.slice(0, 100)}`,
+          referenceType: 'patch',
+          referenceId: newId,
+          link: `/${galgameUniqueId}`,
+          idempotencyKey: `patch:${newId}:create-reward`
         })
 
-        return { patchId: newId }
+        return { patchId: newId, balance: pointChange.balance }
       },
       { timeout: CREATE_PATCH_PUBLISH_TIMEOUT_MS }
     )
@@ -211,5 +225,9 @@ export const createGalgame = async (
     await postToIndexNow(newPatchUrl)
   }
 
-  return { uniqueId: galgameUniqueId, patchId: res.patchId }
+  return {
+    uniqueId: galgameUniqueId,
+    patchId: res.patchId,
+    moemoepointBalance: res.balance
+  }
 }

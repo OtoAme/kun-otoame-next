@@ -20,6 +20,10 @@ export const randomNormalInt = (min: number, max: number) => {
     accum += weights[i]
     if (r <= accum) return min + i
   }
+
+  // 浮点累加误差可能让 accum 略小于 r, 此时落在最后一格。
+  // 返回 max 而不是 undefined, 调用方才不需要自己兜底。
+  return max
 }
 
 export const generateRandomString = (length: number) => {
