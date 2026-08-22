@@ -355,7 +355,7 @@ describe('conversation image upload service', () => {
     const file = new File(['image'], 'chat.png', { type: 'image/png' })
 
     await expect(uploadConversationImage(5, file, 1007)).resolves.toBe(
-      '萌萌点不足，额外上传一张私聊图片需要 5 萌萌点'
+      '萌萌点不足，额外上传一张私聊图片需要 5 点可用萌萌点'
     )
     expect(moemoepointMock.spendMoemoepoint).toHaveBeenCalledWith(
       expect.anything(),

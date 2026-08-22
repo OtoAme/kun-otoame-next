@@ -60,7 +60,8 @@ export const ResourceCreateAction = ({ onOpenCreate }: Props) => {
           <ModalBody className="space-y-2">
             <p>登录后即可为这款游戏补充下载资源。</p>
             <p className="text-sm text-default-500">
-              普通用户满足萌萌点要求后可以发布资源，不需要先成为创作者；提交可能会进入审核。
+              普通用户的可用萌萌点达到 20
+              后可以发布资源，不需要先成为创作者；提交可能会进入审核。
             </p>
           </ModalBody>
           <ModalFooter>

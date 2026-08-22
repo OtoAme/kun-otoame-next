@@ -50,7 +50,7 @@ const toBalance = (row: BalanceRow): MoemoepointBalance => ({
 
 // user_moemoepoint_ledger.reason 是 VarChar(500)。原因文本经常拼接用户内容
 // (游戏名 VarChar(1007)、资源名 VarChar(300)), 长度不可控。这里截断而不是拒绝:
-// 流水是业务写入的副产品, 不能因为标题太长就让发布游戏整个事务回滚。
+// 明细是业务写入的副产品, 不能因为标题太长就让发布游戏整个事务回滚。
 const MAX_REASON_LENGTH = 500
 
 const normalizeReason = (reason: string) =>
@@ -272,7 +272,7 @@ export const createMoemoepointOpeningEntry = async (
   }
 ) => {
   assertMetadata(input)
-  // 余额为 0 时不写开户流水。新注册用户的初始余额就是 0, 写进去只会在流水页
+  // 余额为 0 时不写开户明细。新注册用户的初始余额就是 0, 写进去只会在明细页
   // 显示一行「初始余额 +0 +0 +0」的噪音。生产迁移脚本给存量用户回填的
   // opening 行余额非 0, 不受影响。
   if (input.balance === 0) {

@@ -318,14 +318,14 @@ export const UserDropdown = () => {
             <p className="font-semibold">{user.name}</p>
           </DropdownItem>
           <DropdownItem
-            textValue="萌萌点"
+            textValue="可用萌萌点"
             key="moemoepoint"
             href="/moemoepoint"
             startContent={<Lollipop className="size-4" />}
             endContent={user.moemoepointAvailable}
             description={
               user.moemoepointReserved > 0
-                ? `待结算 ${user.moemoepointReserved}`
+                ? `待结算萌萌点 ${user.moemoepointReserved}`
                 : undefined
             }
           >

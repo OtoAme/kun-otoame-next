@@ -90,7 +90,7 @@ export const MOEMOEPOINT_SPEND_RULES = [
   {
     label: '发起新私聊',
     amount: '-10',
-    detail: '需要至少 20 可用萌萌点才能发起, 每个新会话扣 10'
+    detail: '每个新会话扣 10 点, 但必须至少保留 20 点可用萌萌点才能发起'
   },
   {
     label: '私聊图片超额上传',
@@ -98,14 +98,24 @@ export const MOEMOEPOINT_SPEND_RULES = [
     detail: '每人每小时前 5 张免费, 第 6 张起每张 5 点; 上传失败自动退款'
   },
   {
-    label: '资源被删除',
+    label: '他人取消对你内容的点赞',
+    amount: '-1',
+    detail: '评论、评价或资源被取消点赞时, 对应的点赞奖励会收回'
+  },
+  {
+    label: '删除资源（收回奖励）',
     amount: '-3',
-    detail: '发布奖励被收回, 可能使余额变为负数'
+    detail: '发布资源时获得的 3 点会被收回, 可能使总额变为负数'
   }
 ] as const
 
 export const MOEMOEPOINT_THRESHOLD_RULES = [
-  { label: '发布资源', detail: '可用萌萌点 ≥ 20, 或已是创作者' },
-  { label: '上传文件到对象存储', detail: '可用萌萌点 ≥ 20 且已是创作者' }
+  {
+    label: '发布资源',
+    detail: '普通用户可用萌萌点 ≥ 20; 创作者和管理员不受此门槛限制'
+  },
+  {
+    label: '上传文件到对象存储',
+    detail: '创作者可用萌萌点 ≥ 20; 管理员不受此余额门槛限制'
+  }
 ] as const
-

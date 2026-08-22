@@ -78,7 +78,7 @@ export const UserProfile = ({ user }: { user: UserInfo }) => {
           <div className="flex flex-col gap-4">
             <div>
               <div className="flex justify-between mb-2">
-                <span className="text-small">萌萌点总额</span>
+                <span className="text-small">总萌萌点</span>
                 <span
                   className={`text-small ${
                     user.moemoepoint < 0 ? 'text-danger' : 'text-default-500'
@@ -88,12 +88,10 @@ export const UserProfile = ({ user }: { user: UserInfo }) => {
                 </span>
               </div>
               <Progress
-                aria-label="萌萌点"
+                aria-label="总萌萌点"
                 // 余额允许为负 (奖励被收回时真实回退)。进度条本身无法表达负值,
                 // 所以负余额时空条, 由上面的数字用 danger 色说明。
-                value={
-                  user.moemoepoint < 0 ? 0 : user.moemoepoint % 100
-                }
+                value={user.moemoepoint < 0 ? 0 : user.moemoepoint % 100}
                 color={user.moemoepoint < 0 ? 'danger' : 'primary'}
                 className="h-2"
               />

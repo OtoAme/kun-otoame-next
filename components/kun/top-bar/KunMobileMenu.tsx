@@ -4,9 +4,9 @@ import { NavbarMenu, NavbarMenuItem } from '@heroui/navbar'
 import Link from 'next/link'
 import Image from 'next/image'
 import { kunMoyuMoe } from '~/config/moyu-moe'
-import { kunMobileNavItem } from '~/constants/top-bar'
+import type { KunNavItem } from '~/constants/top-bar'
 
-export const KunMobileMenu = () => {
+export const KunMobileMenu = ({ items }: { items: KunNavItem[] }) => {
   return (
     <NavbarMenu className="space-y-4">
       <NavbarMenuItem>
@@ -18,8 +18,8 @@ export const KunMobileMenu = () => {
         </Link>
       </NavbarMenuItem>
 
-      {kunMobileNavItem.map((item, index) => (
-        <NavbarMenuItem key={index}>
+      {items.map((item) => (
+        <NavbarMenuItem key={item.href}>
           <Link
             className="kun-mobile-nav-link w-full font-semibold"
             href={item.href}

@@ -20,7 +20,7 @@ Snapshot of the moemoepoint ledger implementation as delivered, plus the
 rework edits. Everything under app/api/moemoepoint and the new routes was
 untracked; committing first keeps the original recoverable."
 
-echo '=== 2. 删除下线的排行榜与旧流水页 ==========================='
+echo '=== 2. 删除下线的排行榜与旧明细页 ==========================='
 # 已逐一核对：没有任何存活文件引用这六个路径。
 # 注意不要删 app/api/user/[id]/moemoepoint/ledger/ —— 新组件仍在调它。
 git rm -r --quiet \
@@ -84,13 +84,13 @@ moemoepoint ranking so /ranking returns to its upstream state."
 echo
 echo '=== 6. 手工验证清单（pnpm dev） ============================='
 cat <<'CHECKS'
-  [ ] /moemoepoint 未登录 → 友好错误；登录 → 三态余额 + 流水
+  [ ] /moemoepoint 未登录 → 友好错误；登录 → 三态余额 + 明细
   [ ] 7天/30天切换立即刷新；自定义日期显示「请选择日期范围后点击查询」空态
   [ ] /moemoepoint/rules 未登录也能看
   [ ] /ranking 与 HEAD 一致（无萌萌点 tab）；/ranking/moemoepoint 301 到 /moemoepoint
   [ ] 顶栏与移动端菜单都有「萌萌点」；面包屑正常
-  [ ] 后台用户表流水图标 → /admin/user/<id>/moemoepoint；非管理员访问被 redirect
+  [ ] 后台用户表明细图标 → /admin/user/<id>/moemoepoint；非管理员访问被 redirect
   [ ] P0 回归：400+ 字游戏名建游戏 → 成功，reason 被截断，无 500
-  [ ] 快速反复点赞 → 触发限流，不产生无限流水行
+  [ ] 快速反复点赞 → 触发限流，不产生无限明细行
   [ ] 负余额账号 → 余额卡和资料页显示负值而不是 0
 CHECKS

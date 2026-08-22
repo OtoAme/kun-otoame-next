@@ -808,7 +808,7 @@ describe('conversation creation moemoepoint charging', () => {
     )
     const result = await getOrCreateConversation({ targetUserId: 8 }, 1007, 1)
 
-    expect(result).toBe('萌萌点不足，开启新私聊需要消耗 10 萌萌点')
+    expect(result).toBe('萌萌点不足，开启新私聊需要消耗 10 点可用萌萌点')
     expect(moemoepointMock.spendMoemoepoint).toHaveBeenCalledWith(
       prismaMock._tx,
       expect.objectContaining({

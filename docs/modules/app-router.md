@@ -100,11 +100,13 @@
 - `components/user/*`
 - `app/api/user/profile/*`
 
-萌萌点中心位于 `/moemoepoint`，只展示登录用户自己的流水。它是独立顶级路由段，不挂在 `/user/[id]/` 下——那个段的语义是“某用户的**公开**主页”，把私密账务塞进去会迫使布局传权限 flag、三个入口各写一遍鉴权。`/moemoepoint` **不在 middleware matcher 里**，边缘不鉴权，登录判断在页面内做；不要把 `/moemoepoint/:path*` 加进 matcher，否则公开的 `/moemoepoint/rules` 也会被踢去 `/login`。页面服务端默认加载最近 30 天，客户端使用 HeroUI v2 Tabs、DateRangePicker、Table 和共享分页切换 7 天、30 天或最长 90 天的自定义日期；窄屏改用卡片列表，4 列表格会横向溢出。
+萌萌点中心位于 `/moemoepoint`，只展示登录用户自己的明细。它是独立顶级路由段，不挂在 `/user/[id]/` 下——那个段的语义是“某用户的**公开**主页”，把私密账务塞进去会迫使布局传权限 flag、三个入口各写一遍鉴权。`/moemoepoint` **不在 middleware matcher 里**，边缘不鉴权，登录判断在页面内做；不要把 `/moemoepoint/:path*` 加进 matcher，否则公开的 `/moemoepoint/rules` 也会被踢去 `/login`。页面服务端默认加载最近 30 天，客户端使用 HeroUI v2 Tabs、DateRangePicker、Table 和共享分页切换 7 天、30 天或最长 90 天的自定义日期；窄屏改用卡片列表，4 列表格会横向溢出。
+
+萌萌点明细不占用桌面或移动端主导航；登录用户可从头像下拉或本人个人主页“编辑信息”右侧进入。`role >= 3` 的管理员在“帮助文档”之后看到 `/admin` 入口，桌面导航与移动端侧栏保持同一顺序；本人个人主页的管理后台按钮另起一行。
 
 `/moemoepoint/rules` 是公开可索引的规则说明页，纯静态、不查库，数据来自 `constants/moemoepoint.ts` 的 `MOEMOEPOINT_EARN_RULES` / `MOEMOEPOINT_SPEND_RULES` / `MOEMOEPOINT_THRESHOLD_RULES`。**改动萌萌点金额或门槛时必须同步这三个常量**，否则用户看到的规则会和真实扣费不一致。
 
-管理员查看他人流水在后台 `/admin/user/[id]/moemoepoint`（`app/admin/` 下唯一的动态路由）。角色由 `app/admin/layout.tsx` 统一拦 `role < 3`，页面不需要再写角色判断；但同目录的 server action 是可独立调用的入口，必须自己再校验一次。
+管理员查看他人明细在后台 `/admin/user/[id]/moemoepoint`（`app/admin/` 下唯一的动态路由）。角色由 `app/admin/layout.tsx` 统一拦 `role < 3`，页面不需要再写角色判断；但同目录的 server action 是可独立调用的入口，必须自己再校验一次。
 
 消息页：
 

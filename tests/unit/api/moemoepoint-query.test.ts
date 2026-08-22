@@ -75,7 +75,7 @@ describe('moemoepoint queries', () => {
     )
   })
 
-  // 用户不存在时不应该白跑流水查询。
+  // 用户不存在时不应该白跑明细查询。
   it('checks the user before running any ledger query', async () => {
     prismaMock.user.findUnique.mockResolvedValue(null)
 

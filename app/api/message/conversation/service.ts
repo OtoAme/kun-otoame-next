@@ -153,7 +153,7 @@ export const getConversations = async (
 
 const MOEMOEPOINT_REQUIRED = 20
 const MOEMOEPOINT_COST = 10
-const NEW_CONVERSATION_COST_ERROR = `萌萌点不足，开启新私聊需要消耗 ${MOEMOEPOINT_COST} 萌萌点`
+const NEW_CONVERSATION_COST_ERROR = `萌萌点不足，开启新私聊需要消耗 ${MOEMOEPOINT_COST} 点可用萌萌点`
 
 const isUniqueConstraintError = (error: unknown) =>
   Boolean(error && typeof error === 'object' && 'code' in error) &&
@@ -218,7 +218,7 @@ export const checkConversation = async (
 
   if (!isPrivileged && !hasEnoughPoints) {
     return {
-      error: `萌萌点不足，发起私聊需要至少 ${MOEMOEPOINT_REQUIRED} 萌萌点`
+      error: `萌萌点不足，发起私聊需要至少 ${MOEMOEPOINT_REQUIRED} 可用萌萌点`
     }
   }
 
@@ -288,7 +288,7 @@ export const getOrCreateConversation = async (
   } else {
     if (!isPrivileged) {
       if (availablePoints < MOEMOEPOINT_REQUIRED) {
-        return `萌萌点不足，发起私聊需要至少 ${MOEMOEPOINT_REQUIRED} 萌萌点`
+        return `萌萌点不足，发起私聊需要至少 ${MOEMOEPOINT_REQUIRED} 可用萌萌点`
       }
 
       if (availablePoints < MOEMOEPOINT_COST) {

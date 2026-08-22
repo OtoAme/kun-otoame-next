@@ -134,7 +134,7 @@ describe('ResourceCreateAction', () => {
     expect(onOpenCreate).not.toHaveBeenCalled()
     expect(container.querySelector('[role="dialog"]')).not.toBeNull()
     expect(container.textContent).toContain(
-      '普通用户满足萌萌点要求后可以发布资源'
+      '普通用户的可用萌萌点达到 20 后可以发布资源'
     )
     expect(container.querySelector('a[href="/login"]')).not.toBeNull()
     expect(container.querySelector('a[href="/register"]')).not.toBeNull()

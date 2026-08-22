@@ -1,3 +1,5 @@
+import { canAccessAdmin } from './user'
+
 export interface KunNavItem {
   name: string
   href: string
@@ -17,17 +19,17 @@ export const kunNavItem: KunNavItem[] = [
     href: '/company'
   },
   {
-    name: '萌萌点',
-    href: '/moemoepoint'
-  },
-  {
     name: '帮助文档',
     href: '/doc'
   }
 ]
 
-export const kunMobileNavItem: KunNavItem[] = [
-  ...kunNavItem,
+const kunAdminNavItem: KunNavItem = {
+  name: '管理后台',
+  href: '/admin'
+}
+
+const kunMobileOnlyNavItem: KunNavItem[] = [
   {
     name: '评论列表',
     href: '/comment'
@@ -40,4 +42,14 @@ export const kunMobileNavItem: KunNavItem[] = [
     name: '联系我们',
     href: 'mailto:contact@otoame.com'
   }
+]
+
+export const getKunNavItems = (role: number): KunNavItem[] => [
+  ...kunNavItem,
+  ...(canAccessAdmin(role) ? [kunAdminNavItem] : [])
+]
+
+export const getKunMobileNavItems = (role: number): KunNavItem[] => [
+  ...getKunNavItems(role),
+  ...kunMobileOnlyNavItem
 ]

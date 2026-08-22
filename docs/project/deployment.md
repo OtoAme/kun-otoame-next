@@ -356,7 +356,7 @@ KUN_DEPLOY_RELEASE_TAG='vYYYY.MM.DD.HHMM' pnpm deploy:pull
 
 - `migration/production-schema-preflight-2026-05-03.sql`
 - `migration/production-schema-sync-2026-05-03.sql`
-- 萌萌点账务：先备份并执行只读 `migration/production-moemoepoint-ledger-preflight-2026-08-17.sql`，确认后执行对应 sync；sync 会在单事务中添加待结算列、流水/暂扣表和索引，并为既有用户建立幂等初始余额流水。随后运行 `pnpm prisma:deploy-safe`，通过后才能启动依赖新 schema 的版本。旧版本仍会直接改总额而不写流水，不能在有写流量时把应用单独回滚到旧版本。
+- 萌萌点账务：先备份并执行只读 `migration/production-moemoepoint-ledger-preflight-2026-08-17.sql`，确认后执行对应 sync；sync 会在单事务中添加待结算列、明细/暂扣表和索引，并为既有用户建立幂等初始余额明细。随后运行 `pnpm prisma:deploy-safe`，通过后才能启动依赖新 schema 的版本。旧版本仍会直接改总额而不写明细，不能在有写流量时把应用单独回滚到旧版本。
 - 私聊 Sticker 目录：先执行 `migration/production-private-chat-stickers-preflight-2026-08-14.sql`，审核后执行对应 sync；再执行 `migration/production-sticker-admin-preflight-2026-08-14.sql`，审核重复 hash、封面引用和外键定义后执行对应 sync。已经执行过旧版 Sticker sync 的数据库，在备份后追加执行 `migration/production-stickers-prisma-alignment-2026-08-15.sql`，再运行 `pnpm prisma:deploy-safe`。该纠正脚本不处理 `patch_released_idx`，也不能用来替代生产 guard。
 - `migration/reclassify-resource-types.ts`
 - `scripts/rebuildPatchResourceAttributes.ts`

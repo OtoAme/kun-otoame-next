@@ -44,14 +44,14 @@ export const RenderCell = (user: AdminUserType, columnKey: string) => {
     case 'actions':
       return (
         <div className="flex items-center gap-2">
-          <Tooltip content="查看萌萌点流水">
+          <Tooltip content="查看萌萌点明细">
             <Button
               as={Link}
               href={`/admin/user/${user.id}/moemoepoint`}
               isIconOnly
               size="sm"
-              variant="flat"
-              aria-label={`查看 ${user.name} 的萌萌点流水`}
+              variant="light"
+              aria-label={`查看 ${user.name} 的萌萌点明细`}
             >
               <ReceiptText className="size-4" />
             </Button>

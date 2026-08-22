@@ -211,7 +211,7 @@ export const uploadConversationImage = async (
     )
     if (!charged) {
       await rollbackConversationImageUploadQuota(uid, quotaReservation)
-      return `萌萌点不足，额外上传一张私聊图片需要 ${CONVERSATION_IMAGE_UPLOAD_OVERAGE_MOEMOEPOINT_COST} 萌萌点`
+      return `萌萌点不足，额外上传一张私聊图片需要 ${CONVERSATION_IMAGE_UPLOAD_OVERAGE_MOEMOEPOINT_COST} 点可用萌萌点`
     }
     chargedCost = quotaCost
   }

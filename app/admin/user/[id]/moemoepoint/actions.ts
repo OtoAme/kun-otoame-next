@@ -11,7 +11,7 @@ import {
 import { verifyHeaderCookie } from '~/utils/actions/verifyHeaderCookie'
 
 /**
- * 后台查看任意用户的萌萌点流水。
+ * 后台查看任意用户的萌萌点明细。
  *
  * app/admin/layout.tsx 已经拦住了 role < 3, 但 server action 是独立入口,
  * 可以被直接调用, 所以这里必须自己再校验一次。
@@ -27,10 +27,10 @@ export const getAdminMoemoepointLedgerAction = async (
 
   const payload = await verifyHeaderCookie()
   if (!payload) {
-    return '请登录后查看萌萌点流水'
+    return '请登录后查看萌萌点明细'
   }
   if (!canViewMoemoepointLedger(payload, parsedUser.id)) {
-    return '您没有权限查看该用户的萌萌点流水'
+    return '您没有权限查看该用户的萌萌点明细'
   }
 
   const input = safeParseSchema(moemoepointLedgerQuerySchema, params)

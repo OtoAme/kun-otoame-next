@@ -32,7 +32,7 @@ export const GET = async (
     return jsonNoStore('用户 ID 不合法', 400)
   }
   if (!canViewMoemoepointLedger(payload, parsedUser.data.id)) {
-    return jsonNoStore('您没有权限查看该用户的萌萌点流水', 403)
+    return jsonNoStore('您没有权限查看该用户的萌萌点明细', 403)
   }
 
   const input = kunParseGetQuery(req, moemoepointLedgerQuerySchema)

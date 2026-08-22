@@ -23,7 +23,7 @@ const nextConfig: NextConfig = {
     }
   },
   pageExtensions: ['ts', 'tsx', 'js', 'jsx', 'md', 'mdx'],
-  // 萌萌点流水从 /user/[id]/moemoepoint 迁到独立的 /moemoepoint 段,
+  // 萌萌点明细从 /user/[id]/moemoepoint 迁到独立的 /moemoepoint 段,
   // 萌萌点排行整体下线。这两个旧路径都只存在于未提交的工作区, 大概率从未上线;
   // 但服务器支持本地构建, 保留 301 以防已经有人访问过。
   async redirects() {

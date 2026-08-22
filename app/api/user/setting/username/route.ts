@@ -17,7 +17,7 @@ const updateUsername = async (username: string, uid: number) => {
     return '用户未找到'
   }
   if (toMoemoepointBalance(user).available < 30) {
-    return '更改用户名最少需要 30 萌萌点, 您的萌萌点不足'
+    return '更改用户名需要 30 可用萌萌点，您的可用萌萌点不足'
   }
 
   const normalizedName = username.toLowerCase()
@@ -45,7 +45,7 @@ const updateUsername = async (username: string, uid: number) => {
     })
   } catch (error) {
     if (error instanceof MoemoepointInsufficientError) {
-      return '更改用户名最少需要 30 萌萌点, 您的萌萌点不足'
+      return '更改用户名需要 30 可用萌萌点，您的可用萌萌点不足'
     }
     throw error
   }

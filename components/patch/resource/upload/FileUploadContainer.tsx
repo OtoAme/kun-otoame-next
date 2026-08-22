@@ -97,8 +97,13 @@ export const FileUploadContainer = ({
       return
     }
 
+    if (currentUserRole < 2) {
+      toast.error('只有创作者和管理员可以上传文件到对象存储')
+      return
+    }
+
     if (currentUserRole < 3 && currentUserMoemoepoint < 20) {
-      toast.error('仅限萌萌点大于 20 的用户才可以发布资源')
+      toast.error('创作者的可用萌萌点达到 20 后才可以上传文件到对象存储')
       return
     }
 

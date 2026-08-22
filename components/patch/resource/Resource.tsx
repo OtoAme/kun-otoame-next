@@ -167,7 +167,7 @@ export const Resources = ({ id, vndbId }: Props) => {
           <ModalBody>
             <p>
               您确定要删除这条资源链接吗,
-              这将会导致您发布资源链接获得的萌萌点被扣除, 该操作不可撤销
+              这将会导致您发布资源时获得的萌萌点奖励会被收回, 该操作不可撤销
             </p>
           </ModalBody>
           <ModalFooter>

@@ -4,6 +4,7 @@ import { kunMetadata } from './metadata'
 import { verifyHeaderCookie } from '~/utils/actions/verifyHeaderCookie'
 import { redirect } from 'next/navigation'
 import type { Metadata } from 'next'
+import { canAccessAdmin } from '~/constants/user'
 
 export const metadata: Metadata = kunMetadata
 
@@ -13,7 +14,7 @@ interface Props {
 
 export default async function Kun({ children }: Props) {
   const payload = await verifyHeaderCookie()
-  if (!payload || payload.role < 3) {
+  if (!payload || !canAccessAdmin(payload.role)) {
     redirect('/')
   }
 

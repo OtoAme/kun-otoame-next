@@ -19,7 +19,7 @@ export const keyLabelMap: Record<string, string> = {
   '/admin/resource': '下载资源管理',
   '/admin/setting': '管理系统设置',
   '/admin/user': '用户管理',
-  '/admin/user/[id]/moemoepoint': '用户萌萌点流水',
+  '/admin/user/[id]/moemoepoint': '用户萌萌点明细',
   '/admin/resource-apply': '资源首次发布申请',
   '/admin/feedback': 'Gal 反馈管理',
   '/admin/report': '评论举报管理',
@@ -48,7 +48,7 @@ export const keyLabelMap: Record<string, string> = {
   '/user/[id]/favorite': '用户收藏',
   '/user/[id]/otomegame': '用户游戏',
   '/user/[id]/resource': '用户资源',
-  '/moemoepoint': '我的萌萌点',
+  '/moemoepoint': '萌萌点明细',
   '/moemoepoint/rules': '萌萌点规则',
   '/ranking': 'OtomeGame 排行'
 }

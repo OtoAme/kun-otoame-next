@@ -30,7 +30,7 @@ export const Username = () => {
 
   const handleSave = async () => {
     if (user.moemoepointAvailable < 30) {
-      toast.error('更改用户名最少需要 30 萌萌点, 您的萌萌点不足')
+      toast.error('更改用户名需要 30 可用萌萌点，您的可用萌萌点不足')
       return
     }
 
@@ -77,7 +77,8 @@ export const Username = () => {
 
       <CardFooter className="flex-wrap">
         <p className="text-default-500">
-          用户名长度最大为 17, 可以是任意字符, 更改用户名需要消耗您 30 萌萌点
+          用户名长度最大为 17, 可以是任意字符, 更改用户名需要消耗您 30
+          可用萌萌点
         </p>
 
         <Button
@@ -97,7 +98,7 @@ export const Username = () => {
                   您确定要更改用户名吗?
                 </ModalHeader>
                 <ModalBody>
-                  <p>更改用户名需要消耗您 30 萌萌点, 该操作不可撤销</p>
+                  <p>更改用户名需要消耗您 30 可用萌萌点, 该操作不可撤销</p>
                 </ModalBody>
                 <ModalFooter>
                   <Button color="danger" variant="light" onPress={onClose}>

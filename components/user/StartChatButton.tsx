@@ -56,7 +56,7 @@ export const StartChatButton = ({ targetUserId }: Props) => {
       }
 
       if (response.isNew && paymentContext?.needsPayment) {
-        toast.success(`已创建新会话，消耗 ${paymentContext.cost} 萌萌点`)
+        toast.success(`已创建新会话，消耗 ${paymentContext.cost} 点可用萌萌点`)
       } else if (response.isNew) {
         toast.success('已创建新会话')
       }
@@ -144,11 +144,11 @@ export const StartChatButton = ({ targetUserId }: Props) => {
                     <span className="text-lg font-bold">
                       {checkResult.cost}
                     </span>{' '}
-                    萌萌点
+                    点可用萌萌点
                   </p>
                 </div>
                 <p className="text-default-500 text-sm">
-                  您当前的萌萌点：
+                  您当前的可用萌萌点：
                   <span className="font-medium">
                     {checkResult.currentPoints}
                   </span>

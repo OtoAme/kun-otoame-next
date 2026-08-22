@@ -4,7 +4,7 @@
 
 社区反馈普遍希望**普通用户能够添加游戏条目**。目前建条目权限极窄，直接放开会带来低质量投稿和刷条目风险。因此设计目标是：用**萌萌点暂扣（押金）** 约束投稿质量——投稿时冻结一笔萌萌点，审核通过则返还，驳回则罚没。
 
-Phase 1（已完成）已经交付支撑这套机制所需的账务基建：`user_moemoepoint_ledger` 流水、`user_moemoepoint_reservation` 暂扣生命周期，以及 `reserveMoemoepoint` / `releaseMoemoepoint` / `forfeitMoemoepoint` 三个原语。
+Phase 1（已完成）已经交付支撑这套机制所需的账务基建：`user_moemoepoint_ledger` 明细、`user_moemoepoint_reservation` 暂扣生命周期，以及 `reserveMoemoepoint` / `releaseMoemoepoint` / `forfeitMoemoepoint` 三个原语。
 
 > **重要**：这三个原语和 `user_moemoepoint_reservation` 表目前**零调用方**。这是**有意为之**，不是死代码，不要清理。它们等待本文档描述的投稿流程接入。
 
@@ -143,7 +143,7 @@ export const visiblePatchWhere = { status: PUBLISHED_PATCH_STATUS } as const
 
 | 函数 | 语义 |
 | --- | --- |
-| `reserveMoemoepoint` | 建 reservation + 写 `kind: 'reserve'` 流水；只增 reserved，**不动总额**；用 `requiredAvailable` 原子校验可用余额 |
+| `reserveMoemoepoint` | 建 reservation + 写 `kind: 'reserve'` 明细；只增 reserved，**不动总额**；用 `requiredAvailable` 原子校验可用余额 |
 | `releaseMoemoepoint` | 减 reserved，总额不变（审核通过 → 返还） |
 | `forfeitMoemoepoint` | 同时减 reserved 和总额（驳回 → 罚没） |
 

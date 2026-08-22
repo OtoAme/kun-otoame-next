@@ -5,6 +5,10 @@ export const USER_ROLE_MAP: Record<number, string> = {
   4: '超级管理员'
 }
 
+export const ADMIN_ROLE = 3
+
+export const canAccessAdmin = (role: number) => role >= ADMIN_ROLE
+
 export const USER_STATUS_MAP: Record<number, string> = {
   0: '正常',
   1: '限制（正在开发中）',

@@ -36,7 +36,7 @@ describe('moemoepoint ledger server actions', () => {
       mocks.verifyHeaderCookie.mockResolvedValue(null)
 
       await expect(getAdminMoemoepointLedgerAction(7, query)).resolves.toBe(
-        '请登录后查看萌萌点流水'
+        '请登录后查看萌萌点明细'
       )
       expect(mocks.getMoemoepointLedger).not.toHaveBeenCalled()
     })
@@ -46,7 +46,7 @@ describe('moemoepoint ledger server actions', () => {
       mocks.verifyHeaderCookie.mockResolvedValue({ uid: 8, role: 1 })
 
       await expect(getAdminMoemoepointLedgerAction(7, query)).resolves.toBe(
-        '您没有权限查看该用户的萌萌点流水'
+        '您没有权限查看该用户的萌萌点明细'
       )
       expect(mocks.getMoemoepointLedger).not.toHaveBeenCalled()
     })
@@ -68,12 +68,12 @@ describe('moemoepoint ledger server actions', () => {
       mocks.verifyHeaderCookie.mockResolvedValue(null)
 
       await expect(getMyMoemoepointLedgerAction(query)).resolves.toBe(
-        '请登录后查看萌萌点流水'
+        '请登录后查看萌萌点明细'
       )
       expect(mocks.getMoemoepointLedger).not.toHaveBeenCalled()
     })
 
-    // 这个 action 不接受 userId, 所以无法被用来读别人的流水。
+    // 这个 action 不接受 userId, 所以无法被用来读别人的明细。
     it('always reads the caller own ledger', async () => {
       mocks.verifyHeaderCookie.mockResolvedValue({ uid: 42, role: 1 })
 

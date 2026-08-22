@@ -90,7 +90,7 @@ export const MoemoepointRules = () => {
     <div className="container mx-auto my-4 space-y-6">
       <KunHeader
         name="萌萌点规则"
-        description="萌萌点是社区积分, 用于记录你的贡献并约束高成本操作。以下是当前生效的规则。"
+        description="萌萌点是社区积分, 用于记录你的贡献并约束高成本操作。以下说明奖励、扣除、回退和余额门槛。"
       />
 
       <Card>
@@ -100,20 +100,20 @@ export const MoemoepointRules = () => {
             <div className="flex flex-col gap-1 sm:flex-row sm:gap-2">
               <dt className="font-medium sm:w-32 sm:shrink-0">总萌萌点</dt>
               <dd className="text-default-500">
-                你累计持有的萌萌点, 包含被暂扣的部分。
+                账户记录的萌萌点总数, 包含暂时不能使用的部分。
               </dd>
             </div>
             <div className="flex flex-col gap-1 sm:flex-row sm:gap-2">
               <dt className="font-medium sm:w-32 sm:shrink-0">可用萌萌点</dt>
               <dd className="text-default-500">
                 总额减去待结算部分,
-                是实际可以消费的数量。所有门槛判断都看这个值。
+                消费和余额门槛都使用此值。
               </dd>
             </div>
             <div className="flex flex-col gap-1 sm:flex-row sm:gap-2">
               <dt className="font-medium sm:w-32 sm:shrink-0">待结算萌萌点</dt>
               <dd className="text-default-500">
-                被暂时冻结、等待返还或确认扣除的部分。暂扣不会减少总额。
+                暂时不能使用、等待返还或确认扣除的部分。
               </dd>
             </div>
           </dl>
@@ -121,7 +121,7 @@ export const MoemoepointRules = () => {
       </Card>
 
       <SectionCard
-        title="怎么获得"
+        title="萌萌点获取途径"
         icon={PlusCircle}
         iconClassName="text-success"
       >
@@ -133,12 +133,12 @@ export const MoemoepointRules = () => {
       </SectionCard>
 
       <SectionCard
-        title="怎么消费"
+        title="萌萌点扣除与回退"
         icon={MinusCircle}
         iconClassName="text-danger"
       >
         <RuleTable
-          ariaLabel="萌萌点消费途径"
+          ariaLabel="萌萌点扣除与回退"
           rows={MOEMOEPOINT_SPEND_RULES}
           amountHeader="变动"
         />
@@ -150,7 +150,7 @@ export const MoemoepointRules = () => {
         iconClassName="text-primary"
       >
         <p className="mb-3 text-sm text-default-500">
-          门槛是「要求你持有」, 不会扣除或冻结萌萌点。
+          门槛看可用萌萌点。达到门槛只代表可以进行操作, 不会扣除或冻结萌萌点。
         </p>
         <RuleTable
           ariaLabel="萌萌点余额门槛"
@@ -165,8 +165,8 @@ export const MoemoepointRules = () => {
       >
         <div className="space-y-2 text-sm text-default-500">
           <p>
-            部分操作会「暂扣」一笔萌萌点作为押金:
-            暂扣期间这笔萌萌点计入总额但不可用, 处理完成后按结果结算。
+            普通操作目前不会产生暂扣记录。如果某项活动使用押金机制,
+            暂扣期间这笔萌萌点会计入总额但不可用, 处理完成后按结果结算。
           </p>
           <ul className="ml-5 list-disc space-y-1">
             <li>
@@ -186,18 +186,18 @@ export const MoemoepointRules = () => {
         <CardBody className="space-y-2 text-sm text-default-500">
           <h2 className="text-lg font-medium text-foreground">关于负余额</h2>
           <p>
-            萌萌点余额可以为负。奖励被收回时会真实回退 —— 例如你的资源被删除,
-            或点赞你内容的人取消了点赞。这样做是为了让流水完整可追溯,
+            萌萌点总额可以为负。奖励被收回时会真实回退 —— 例如你的资源被删除,
+            或点赞你内容的人取消了点赞。这样做是为了让明细完整可追溯,
             而不是把差额悄悄抹平。
           </p>
-          <p>余额为负时, 你仍然可以通过签到等方式重新累积。</p>
+          <p>总额为负时, 你仍然可以通过签到等方式重新累积。</p>
         </CardBody>
       </Card>
 
       <p className="text-sm text-default-500">
         想查看自己的每一笔变动, 请前往{' '}
         <Link as={NextLink} href="/moemoepoint" size="sm">
-          我的萌萌点
+          萌萌点明细
         </Link>
         。
       </p>

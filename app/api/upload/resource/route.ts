@@ -56,7 +56,7 @@ const checkRequestValid = async (req: NextRequest) => {
     return '您的权限不足, 创作者或者管理员才可以上传文件到对象存储'
   }
   if (user.role < 3 && toMoemoepointBalance(user).available < 20) {
-    return '仅限萌萌点大于 20 的用户才可以发布资源'
+    return '创作者的可用萌萌点达到 20 后才可以上传文件到对象存储'
   }
   if (user.daily_upload_size >= 5120) {
     return '您今日的上传大小已达到 5GB 限额'

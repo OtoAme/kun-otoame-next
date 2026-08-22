@@ -88,7 +88,9 @@ export const POST = async (req: NextRequest) => {
     return NextResponse.json(storageError)
   }
   if (user.role < 2 && toMoemoepointBalance(user).available < 20) {
-    return NextResponse.json('仅限萌萌点大于 20 的用户和创作者发布资源')
+    return NextResponse.json(
+      '普通用户的可用萌萌点达到 20 后才可以发布资源，创作者和管理员不受此门槛限制'
+    )
   }
 
   const resource = await prisma.patch_resource.findFirst({

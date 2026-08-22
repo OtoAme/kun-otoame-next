@@ -55,9 +55,12 @@ const KIND_VIEW: Record<MoemoepointLedgerKind, KindView> = {
 }
 
 // kind 来自数据库的 String 列。生产有 CHECK 约束, 但开发库走 prisma db push
-// 没有约束; 一个意外值会让 view.label 读到 undefined 而整页白屏。
-const resolveKindView = (kind: MoemoepointLedgerKind): KindView =>
-  KIND_VIEW[kind] ?? { label: kind, color: 'default' }
+// 没有约束; 意外值统一显示为「其他变动」, 不把内部值直接展示给用户。
+const resolveKindView = (kind: string): KindView =>
+  KIND_VIEW[kind as MoemoepointLedgerKind] ?? {
+    label: '其他变动',
+    color: 'default'
+  }
 
 const formatDelta = (value: number) => (value > 0 ? `+${value}` : String(value))
 
@@ -113,9 +116,8 @@ const BalanceCard = ({
       <div className="min-w-0">
         <p className="text-sm text-default-500">{label}</p>
         <p
-          className={`text-2xl font-semibold tabular-nums ${
-            balanceValueClassName(value) ?? ''
-          }`}
+          className={`text-2xl font-semibold tabular-nums ${balanceValueClassName(value) ?? ''
+            }`}
         >
           {value}
         </p>
@@ -199,7 +201,7 @@ const RecordCard = ({ record }: { record: MoemoepointLedgerEntry }) => (
 export const MoemoepointLedgerContainer = ({
   userId,
   initialData,
-  title = '我的萌萌点',
+  title = '萌萌点明细',
   showRulesLink = true
 }: {
   userId: number
@@ -229,7 +231,7 @@ export const MoemoepointLedgerContainer = ({
   )
 
   useEffect(() => {
-    // 管理员查看他人流水时不能覆盖自己顶栏的余额。
+    // 管理员查看他人明细时不能覆盖自己顶栏的余额。
     if (currentUserId === userId) {
       setMoemoepointBalance(data.balance)
     }
@@ -267,7 +269,7 @@ export const MoemoepointLedgerContainer = ({
       setAwaitingCustomQuery(false)
     } catch {
       if (currentRequest === requestId.current) {
-        setError('萌萌点流水加载失败，请稍后重试')
+        setError('萌萌点明细加载失败，请稍后重试')
       }
     } finally {
       if (currentRequest === requestId.current) {
@@ -311,7 +313,7 @@ export const MoemoepointLedgerContainer = ({
     : data.records
   const emptyContent = awaitingCustomQuery
     ? '请选择日期范围后点击查询'
-    : '所选日期内暂无萌萌点流水'
+    : '所选日期内暂无萌萌点明细'
   const showPagination = !awaitingCustomQuery && data.pagination.totalPages > 1
 
   const changePage = (nextPage: number) => {
@@ -325,16 +327,20 @@ export const MoemoepointLedgerContainer = ({
     <div className="container mx-auto my-4 space-y-6">
       <KunHeader
         name={title}
-        description="查看每一笔萌萌点获得、消费、暂扣、返还和确认扣除记录"
+        endContent={
+          <p className="whitespace-pre-wrap text-default-500">
+            这里汇总了你在 OtoAme 全站的萌萌点收支记录。
+          </p>
+        }
         headerEndContent={
           showRulesLink ? (
-            // self-start: KunHeader 的 flex 容器没有 items-*, 默认 stretch 会把
-            // 链接拉满两行标题的高度并垂直居中, 看起来贴在描述行上。
+            // 说明文字通过 endContent 独占下一行，避免其固有宽度挤压标题行；
+            // shrink-0 + whitespace-nowrap 则确保窄屏规则链接始终保持一行。
             <Link
               as={NextLink}
               href="/moemoepoint/rules"
               size="sm"
-              className="self-start"
+              className="shrink-0 self-start whitespace-nowrap"
             >
               萌萌点规则
             </Link>
@@ -346,32 +352,35 @@ export const MoemoepointLedgerContainer = ({
         <BalanceCard
           label="总萌萌点"
           value={data.balance.total}
-          description="包含被暂扣的部分"
+          description="包含待结算的部分"
           icon={CircleDollarSign}
           color="text-primary"
         />
         <BalanceCard
           label="可用萌萌点"
           value={data.balance.available}
-          description="可消费或暂扣"
+          description="可消费的部分"
           icon={WalletCards}
           color="text-success"
         />
         <BalanceCard
           label="待结算萌萌点"
           value={data.balance.reserved}
-          description="等待返还或扣除"
+          description="暂时不能使用，等待返还或扣除"
           icon={Clock3}
           color="text-warning"
         />
       </div>
 
+      <p className="text-sm text-default-500">
+        可用萌萌点 = 总萌萌点 - 待结算萌萌点；消费和余额门槛以可用萌萌点为准。
+      </p>
+
       {data.balance.total < 0 && (
         <Card>
           <CardBody className="text-sm text-danger">
-            当前余额为负,
-            通常是发布奖励被收回导致的（例如资源被删除或点赞被取消）。
-            可以通过每日签到重新累积。
+            当前总萌萌点为负。通常是已经获得的奖励被收回（例如资源被删除或点赞被取消）。
+            这笔回退会保留在明细里，之后获得的萌萌点会从当前总额继续累积。
           </CardBody>
         </Card>
       )}
@@ -379,7 +388,7 @@ export const MoemoepointLedgerContainer = ({
       <Card>
         <CardBody className="space-y-4">
           <Tabs
-            aria-label="萌萌点流水日期范围"
+            aria-label="萌萌点明细日期范围"
             selectedKey={range}
             onSelectionChange={selectRange}
             color="primary"
@@ -393,8 +402,11 @@ export const MoemoepointLedgerContainer = ({
           {range === 'custom' && (
             <div className="space-y-2">
               <div className="flex flex-col items-stretch gap-3 sm:flex-row sm:items-end">
+                {/* HeroUI v2.8.1 没有把可见 label 转发给 React Aria；
+                    同名 aria-label 保留真实的读屏名称并消除开发环境警告。 */}
                 <DateRangePicker
                   className="max-w-xl"
+                  aria-label="日期范围"
                   label="日期范围"
                   value={customRange}
                   onChange={(value) => {
@@ -437,7 +449,7 @@ export const MoemoepointLedgerContainer = ({
 
       {loading ? (
         <div className="min-h-40">
-          <KunLoading hint="正在加载萌萌点流水" />
+          <KunLoading hint="正在加载萌萌点明细" />
         </div>
       ) : (
         <>
@@ -458,7 +470,7 @@ export const MoemoepointLedgerContainer = ({
               <TableHeader>
                 <TableColumn>时间</TableColumn>
                 <TableColumn>类型与原因</TableColumn>
-                <TableColumn>变动</TableColumn>
+                <TableColumn>本次变动</TableColumn>
                 <TableColumn>变更后余额</TableColumn>
               </TableHeader>
               <TableBody items={records} emptyContent={emptyContent}>

@@ -55,7 +55,7 @@ export const grantMoemoepoint = async (
       data: {
         type: 'grant',
         user_id: adminUid,
-        content: `管理员 ${admin.name} 为用户 ${user.name} (ID: ${uid}) 发放了 ${amount} 萌萌点\n\n原萌萌点: ${user.moemoepoint}\n发放后萌萌点: ${change.balance.total}${reason ? `\n理由: ${reason}` : ''}`
+        content: `管理员 ${admin.name} 为用户 ${user.name} (ID: ${uid}) 发放了 ${amount} 萌萌点\n\n原总萌萌点: ${user.moemoepoint}\n发放后总萌萌点: ${change.balance.total}${reason ? `\n理由: ${reason}` : ''}`
       }
     })
 

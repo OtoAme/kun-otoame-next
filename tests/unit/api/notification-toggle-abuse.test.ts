@@ -161,7 +161,7 @@ describe('user-triggered notification anti-abuse', () => {
       id: 10,
       user_id: 200,
       // service 用 include 查询, 会返回全部标量字段, 所以 name 必然存在。
-      // 之前 mock 漏了它, 流水 reason 拼接 resource.name 时才暴露出来。
+      // 之前 mock 漏了它, 明细 reason 拼接 resource.name 时才暴露出来。
       name: '测试资源',
       patch: { unique_id: 'abcd1234', name: '测试作品' }
     })

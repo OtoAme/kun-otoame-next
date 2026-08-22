@@ -261,7 +261,7 @@ pnpm test
 
 私聊 Sticker 管理 schema 还需要按顺序审核并执行 `production-private-chat-stickers-*` 和 `production-sticker-admin-*` 两组 preflight/sync SQL；如果目标库已经执行过旧版 Sticker sync，再执行 `migration/production-stickers-prisma-alignment-2026-08-15.sql` 对齐 Prisma 的时间精度、默认值和外键动作。后台导入的动态 WebM 上限为 300 KB，ZIP 导入失败必须确认对象存储补偿结果。
 
-萌萌点账务 schema 上线前先运行只读 `production-moemoepoint-ledger-preflight-2026-08-17.sql`，审核后运行对应 sync，为既有用户补齐幂等初始余额流水；再运行 `pnpm prisma:deploy-safe`。应用版本依赖新列和新表，不能在仍有写流量时只回滚应用而保留旧版直接余额写入路径。
+萌萌点账务 schema 上线前先运行只读 `production-moemoepoint-ledger-preflight-2026-08-17.sql`，审核后运行对应 sync，为既有用户补齐幂等初始余额明细；再运行 `pnpm prisma:deploy-safe`。应用版本依赖新列和新表，不能在仍有写流量时只回滚应用而保留旧版直接余额写入路径。
 
 整个 `pnpm prisma:deploy-safe` 不是纯只读命令：它先运行既有的 `migration:resource-links`，该兼容迁移可能执行 schema/data 写入；随后运行只读 schema guard/diff；最后运行 `prisma generate`。它不运行 `prisma db push`，也不应用 Prisma 建议的 diff SQL。
 

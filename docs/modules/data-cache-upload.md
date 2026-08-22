@@ -46,9 +46,9 @@ schema: 'prisma/schema'
 
 Schema 修改后至少运行 `pnpm prisma:generate`。会影响数据库结构时运行 `pnpm prisma:push`；生产库如果出现 reset database 提示必须取消，改走 preflight/sync SQL 或 dry-run 脚本。
 
-萌萌点账务使用 `user.moemoepoint_reserved`、`user_moemoepoint_ledger` 和 `user_moemoepoint_reservation`。总额保留在原 `moemoepoint` 字段；待结算不改变总额，可用余额在读取时计算为 `moemoepoint - moemoepoint_reserved`。流水和暂扣记录随账户保留，用户删除时级联删除；操作人/结算人删除时只把审计外键置空。生产先运行 `production-moemoepoint-ledger-preflight-2026-08-17.sql`，审核后运行对应 sync；sync 会为既有账户建立幂等的迁移初始余额流水，然后再运行 `pnpm prisma:deploy-safe` 校验 schema。
+萌萌点账务使用 `user.moemoepoint_reserved`、`user_moemoepoint_ledger` 和 `user_moemoepoint_reservation`。总额保留在原 `moemoepoint` 字段；待结算不改变总额，可用余额在读取时计算为 `moemoepoint - moemoepoint_reserved`。明细和暂扣记录随账户保留，用户删除时级联删除；操作人/结算人删除时只把审计外键置空。生产先运行 `production-moemoepoint-ledger-preflight-2026-08-17.sql`，审核后运行对应 sync；sync 会为既有账户建立幂等的迁移初始余额明细，然后再运行 `pnpm prisma:deploy-safe` 校验 schema。
 
-流水当前不设置 TTL，按账户生命周期完整保留。原因、关联链接和幂等键均使用有界短字段，日常记录通常远小于字段上限；上线后用 PostgreSQL 的 `pg_total_relation_size('user_moemoepoint_ledger')` 同时监控表和索引实际占用。若未来增长超出容量预算，应先把冷数据归档到只读存储并保留可查询入口，不直接截断审计流水。
+明细当前不设置 TTL，按账户生命周期完整保留。原因、关联链接和幂等键均使用有界短字段，日常记录通常远小于字段上限；上线后用 PostgreSQL 的 `pg_total_relation_size('user_moemoepoint_ledger')` 同时监控表和索引实际占用。若未来增长超出容量预算，应先把冷数据归档到只读存储并保留可查询入口，不直接截断审计明细。
 
 私聊会话表 `user_conversation` 使用 `user_a_hidden` / `user_b_hidden` 保存每个参与方自己的列表隐藏状态。隐藏会话不是删除历史消息；发送新消息会把双方 hidden flag 恢复为 `false`。生产同步可先运行 `migration/production-conversation-hidden-preflight-2026-07-01.sql` 检查列状态，再运行 `migration/production-conversation-hidden-sync-2026-07-01.sql` 添加缺失列并补齐默认值。
 
@@ -203,7 +203,7 @@ Gallery 图片上传走 `app/api/edit/gallery/route.ts` 和 `app/api/edit/galler
 - `uploadImageToS3` 必须传入 `image/avif`，返回 metadata 也以最终 AVIF 的宽高、大小、MIME 和文件名为准。
 - 通过会话成员、类型和大小校验后，上传服务必须先重新检查收件人的 `allow_private_message`。如果对方已关闭接收私信，直接返回用户可见错误，不消耗真实 `image-upload` 动作限流、小时 quota、萌萌点、Sharp 转码或 S3 写入。
 - 上传接口只返回 URL、MIME、尺寸和大小等发送消息所需 metadata；同时用 `setKv` 写入 `conversation:image-upload:<conversationId>:<uid>:<urlHash>`，TTL 为 1 小时。真正创建消息仍由 `/api/message/conversation/[id]` 完成，发送服务用 Redis Lua 按会话、用户和 URL hash 原子校验每张图片 metadata 并删除登记；登记缺失或不匹配时拒绝发送并提示重新上传，避免客户端伪造任意图片 URL，也避免同一个上传凭证被重复发送成多条图片消息。若发送服务已消费 metadata 但消息 DB 事务失败，必须 best-effort 重新写回这些 metadata，保留原 1 小时 TTL，方便用户重试发送。
-- 每个用户每小时有 5 张私聊图片免费上传额度，Redis key 为 `conversation:image-upload-quota:<uid>`，使用 Lua 原子 `INCR` + `EXPIRE`。从第 6 张起每张在 Sharp/S3 之前通过 `spendMoemoepoint` 按可用余额原子扣 5 点并写流水。余额不足时回滚本次 quota 计数并拒绝上传；压缩、metadata 读取、S3 上传或 Redis metadata 登记失败时也回滚 quota，并通过 `refundMoemoepoint` 退回已扣点数和记录退款流水。小时 quota Redis 不可用时上传 fail-closed，返回可重试错误，不继续产生图片处理或对象存储成本。
+- 每个用户每小时有 5 张私聊图片免费上传额度，Redis key 为 `conversation:image-upload-quota:<uid>`，使用 Lua 原子 `INCR` + `EXPIRE`。从第 6 张起每张在 Sharp/S3 之前通过 `spendMoemoepoint` 按可用余额原子扣 5 点并写明细。余额不足时回滚本次 quota 计数并拒绝上传；压缩、metadata 读取、S3 上传或 Redis metadata 登记失败时也回滚 quota，并通过 `refundMoemoepoint` 退回已扣点数和记录退款明细。小时 quota Redis 不可用时上传 fail-closed，返回可重试错误，不继续产生图片处理或对象存储成本。
 - S3 上传成功但 Redis metadata 登记失败时，上传服务必须调用 `deleteFileFromS3` best-effort 删除刚上传的 object，再返回“图片上传记录保存失败，请稍后重试”。用户上传后一直未发送、或发送前 metadata 过期时，S3 对象由 `pnpm maintenance:conversation-images:dry` / `apply` 清理。该脚本扫描 `conversation/` 前缀，只处理符合 `conversation/<conversationId>/<uid>-<timestamp>-<uuid>.avif` 规范且默认超过 2 小时的对象，并在删除前检查非删除 `user_private_message` 的 `image_url`、`image_group` 和 `reply_image` 是否仍引用该 key；tombstone 行遗留的旧图片字段不阻止孤儿清理。dry-run 默认 `--limit=200`，不写 S3/DB；apply 默认 `--limit=100 --batch=50 --concurrency=1 --delay=1000`，适合生产低负载分批执行。可用 `--conversation-id=123` 缩小前缀，`--older-than-hours=N` 延长安全窗口。
 - 删除已发送的私聊图片消息时，`deleteMessage` 会先设置 `is_deleted = true`，再 best-effort 清理该消息中不再被其他未删除消息引用的 canonical `conversation/` S3 objects；如果消息已经是 tombstone，重复删除直接返回成功，不重复写 DB 或重跑 S3 cleanup。删除前会从 `KUN_VISUAL_NOVEL_IMAGE_BED_URL` 或 `NEXT_PUBLIC_KUN_VISUAL_NOVEL_S3_STORAGE_URL` 提取 key，并拒绝非本站 URL 或不符合私聊图片 key 规范的对象；引用检查或 S3 删除失败只记录错误，不回滚消息 tombstone，仍由孤儿清理脚本兜底。
 - 回复图片时，`user_private_message.reply_image` 保存被引用图片的 metadata 快照；它来自同会话被回复消息的图片组索引校验结果，不直接信任前端传入完整图片对象。

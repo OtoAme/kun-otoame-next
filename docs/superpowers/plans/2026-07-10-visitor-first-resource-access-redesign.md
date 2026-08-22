@@ -25,7 +25,7 @@
 - visitor token 是 HTTP-only cookie 的主身份；IP hash 仅用于无 cookie 首次请求的 30 次/分钟 Redis 技术限频，不写入 DB、响应或日志，也不作为每日/每周产品配额。
 - 游客额度是降低正常批量获取的摩擦，而不是对恶意访客的不可绕过身份限制：主动清除 visitor cookie 会获得一个新游客身份和新额度；不得用共享 IP 的日/周硬限额来弥补这一点。若未来确有持续绕过证据，另行设计登录门槛或风险控制。
 - 成功响应仅在“游客新获取游戏资源条目”时携带 quota；新增镜像展示、重复查看、自动恢复、用户和 patch 资源均省略 quota。
-- 不新增萌萌点扣费、流水、确认弹窗、刷新卡或登录用户产品限额。
+- 不新增萌萌点扣费、明细、确认弹窗、刷新卡或登录用户产品限额。
 - 现有 patch_resource_access 历史行不得删除；迁移后默认标记为 access_kind = link_reveal。新资源授权事件使用 resource_grant，只有它进入游客日/周额度统计。
 - 生产 schema 变更必须先跑 preflight SQL；遇到 Prisma reset 提示必须取消。业务代码、测试、schema/migration 组成同一个实现变更集，不与文档和 skill 同步提交；任务中的 checkpoint commits 在合并前可按仓库约定 squash 为一个 implementation commit。
 

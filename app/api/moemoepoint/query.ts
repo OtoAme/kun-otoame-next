@@ -13,7 +13,7 @@ export const getMoemoepointLedger = async (
   input: z.infer<typeof moemoepointLedgerQuerySchema>,
   now = new Date()
 ): Promise<MoemoepointLedgerResponse | string> => {
-  // 先确认用户存在, 再跑流水查询。否则用户不存在时会白跑一次 findMany 和一次 count。
+  // 先确认用户存在, 再跑明细查询。否则用户不存在时会白跑一次 findMany 和一次 count。
   const user = await prisma.user.findUnique({
     where: { id: userId },
     select: {

@@ -20,10 +20,7 @@ import { useUserStore } from '~/store/userStore'
 import toast from 'react-hot-toast'
 import { kunFetchDelete, kunFetchPost } from '~/utils/kunFetch'
 import { RatingModal } from './RatingModal'
-import {
-  semanticChipProps,
-  type SemanticToken
-} from '~/utils/semanticColor'
+import { semanticChipProps, type SemanticToken } from '~/utils/semanticColor'
 import {
   KUN_GALGAME_RATING_RECOMMEND_MAP,
   KUN_GALGAME_RATING_PLAY_STATUS_MAP,
@@ -322,9 +319,7 @@ export const RatingCard = ({
         <ModalContent>
           <ModalHeader className="flex flex-col gap-1">删除评价</ModalHeader>
           <ModalBody>
-            <p>
-              您确定要删除这条评价吗？这将会导致您发布评价获得的萌萌点被扣除，该操作不可撤销。
-            </p>
+            <p>您确定要删除这条评价吗？删除后无法恢复。</p>
           </ModalBody>
           <ModalFooter>
             <Button variant="light" onPress={onCloseDelete}>
