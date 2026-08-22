@@ -62,6 +62,10 @@ model user {
   created DateTime @default(now())
   updated DateTime @updatedAt
 
+  // 目前没有应用查询用到它: 萌萌点总额榜已下线。保留原因有两个 ——
+  // 生产迁移 SQL 已经建好这个索引 (user_status_moemoepoint_id_idx),
+  // 删掉就得再写一份回滚迁移; 而且投稿贡献榜落地后会重新用上。
+  // moemoepoint-migration.test.ts 锁定了它, 不要顺手删。
   @@index([status, moemoepoint(sort: Desc), id])
 }
 

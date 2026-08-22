@@ -40,26 +40,28 @@ const RuleTable = ({
   rows: readonly RuleRow[]
   amountHeader?: string
 }) => (
-  <Table aria-label={ariaLabel} removeWrapper>
-    <TableHeader>
-      <TableColumn>项目</TableColumn>
-      <TableColumn>{amountHeader ?? '要求'}</TableColumn>
-      <TableColumn>说明</TableColumn>
-    </TableHeader>
-    <TableBody>
-      {rows.map((row) => (
-        <TableRow key={row.label}>
-          <TableCell className="whitespace-nowrap font-medium">
-            {row.label}
-          </TableCell>
-          <TableCell className="whitespace-nowrap tabular-nums">
-            {row.amount ?? '—'}
-          </TableCell>
-          <TableCell className="text-default-500">{row.detail}</TableCell>
-        </TableRow>
-      ))}
-    </TableBody>
-  </Table>
+  <div className="overflow-x-auto">
+    <Table aria-label={ariaLabel} removeWrapper>
+      <TableHeader>
+        <TableColumn>项目</TableColumn>
+        <TableColumn>{amountHeader ?? '要求'}</TableColumn>
+        <TableColumn>说明</TableColumn>
+      </TableHeader>
+      <TableBody>
+        {rows.map((row) => (
+          <TableRow key={row.label}>
+            <TableCell className="font-medium sm:whitespace-nowrap">
+              {row.label}
+            </TableCell>
+            <TableCell className="tabular-nums sm:whitespace-nowrap">
+              {row.amount ?? '—'}
+            </TableCell>
+            <TableCell className="text-default-500">{row.detail}</TableCell>
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
+  </div>
 )
 
 const SectionCard = ({
@@ -96,19 +98,20 @@ export const MoemoepointRules = () => {
           <h2 className="text-lg font-medium">三个数字的含义</h2>
           <dl className="space-y-2 text-sm">
             <div className="flex flex-col gap-1 sm:flex-row sm:gap-2">
-              <dt className="font-medium sm:w-32">总萌萌点</dt>
+              <dt className="font-medium sm:w-32 sm:shrink-0">总萌萌点</dt>
               <dd className="text-default-500">
                 你累计持有的萌萌点, 包含被暂扣的部分。
               </dd>
             </div>
             <div className="flex flex-col gap-1 sm:flex-row sm:gap-2">
-              <dt className="font-medium sm:w-32">可用萌萌点</dt>
+              <dt className="font-medium sm:w-32 sm:shrink-0">可用萌萌点</dt>
               <dd className="text-default-500">
-                总额减去待结算部分, 是实际可以消费的数量。所有门槛判断都看这个值。
+                总额减去待结算部分,
+                是实际可以消费的数量。所有门槛判断都看这个值。
               </dd>
             </div>
             <div className="flex flex-col gap-1 sm:flex-row sm:gap-2">
-              <dt className="font-medium sm:w-32">待结算萌萌点</dt>
+              <dt className="font-medium sm:w-32 sm:shrink-0">待结算萌萌点</dt>
               <dd className="text-default-500">
                 被暂时冻结、等待返还或确认扣除的部分。暂扣不会减少总额。
               </dd>
@@ -129,7 +132,11 @@ export const MoemoepointRules = () => {
         />
       </SectionCard>
 
-      <SectionCard title="怎么消费" icon={MinusCircle} iconClassName="text-danger">
+      <SectionCard
+        title="怎么消费"
+        icon={MinusCircle}
+        iconClassName="text-danger"
+      >
         <RuleTable
           ariaLabel="萌萌点消费途径"
           rows={MOEMOEPOINT_SPEND_RULES}
@@ -151,11 +158,15 @@ export const MoemoepointRules = () => {
         />
       </SectionCard>
 
-      <SectionCard title="暂扣与结算" icon={Clock3} iconClassName="text-warning">
+      <SectionCard
+        title="暂扣与结算"
+        icon={Clock3}
+        iconClassName="text-warning"
+      >
         <div className="space-y-2 text-sm text-default-500">
           <p>
-            部分操作会「暂扣」一笔萌萌点作为押金: 暂扣期间这笔萌萌点计入总额但不可用,
-            处理完成后按结果结算。
+            部分操作会「暂扣」一笔萌萌点作为押金:
+            暂扣期间这笔萌萌点计入总额但不可用, 处理完成后按结果结算。
           </p>
           <ul className="ml-5 list-disc space-y-1">
             <li>
@@ -175,8 +186,8 @@ export const MoemoepointRules = () => {
         <CardBody className="space-y-2 text-sm text-default-500">
           <h2 className="text-lg font-medium text-foreground">关于负余额</h2>
           <p>
-            萌萌点余额可以为负。奖励被收回时会真实回退 ——
-            例如你的资源被删除, 或点赞你内容的人取消了点赞。这样做是为了让流水完整可追溯,
+            萌萌点余额可以为负。奖励被收回时会真实回退 —— 例如你的资源被删除,
+            或点赞你内容的人取消了点赞。这样做是为了让流水完整可追溯,
             而不是把差额悄悄抹平。
           </p>
           <p>余额为负时, 你仍然可以通过签到等方式重新累积。</p>

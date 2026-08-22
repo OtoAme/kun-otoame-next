@@ -10,7 +10,6 @@ import {
   Chip,
   DateRangePicker,
   Link,
-  Spinner,
   Tab,
   Table,
   TableBody,
@@ -22,6 +21,7 @@ import {
 } from '@heroui/react'
 import { CircleDollarSign, Clock3, WalletCards } from 'lucide-react'
 import { KunHeader } from '~/components/kun/Header'
+import { KunLoading } from '~/components/kun/Loading'
 import { KunPagination } from '~/components/kun/Pagination'
 import { kunFetchGet } from '~/utils/kunFetch'
 import {
@@ -61,22 +61,36 @@ const resolveKindView = (kind: MoemoepointLedgerKind): KindView =>
 
 const formatDelta = (value: number) => (value > 0 ? `+${value}` : String(value))
 
+// 12px 小字用 -600/-500 而不是 DEFAULT 色阶: DEFAULT 是图标/深色模式的色阶,
+// 放在正文小字上对比度不足。与仓库既有做法一致 (user/rating/Card.tsx:96)。
 const deltaClassName = (value: number) =>
-  value > 0 ? 'text-success' : value < 0 ? 'text-danger' : 'text-default-500'
+  value > 0
+    ? 'text-success-600 dark:text-success-500'
+    : value < 0
+      ? 'text-danger-600 dark:text-danger-500'
+      : 'text-default-500'
 
 const balanceValueClassName = (value: number) =>
-  value < 0 ? 'text-danger' : undefined
+  value < 0 ? 'text-danger-600 dark:text-danger-500' : undefined
+
+// 提到模块级: Intl.DateTimeFormat 构造开销大, 而移动端卡片和桌面表格
+// 两棵子树始终同时挂载, 每次渲染会构造 2 × 行数 次。
+//
+// 这里刻意不用 utils/time.ts 的 formatDate: 那个函数在环境时区下格式化,
+// 有 SSR/CSR 水合不一致风险; 固定 Asia/Shanghai 也和
+// utils/moemoepointDateRange.ts 的自然日边界保持同一口径。
+const LEDGER_DATE_FORMATTER = new Intl.DateTimeFormat('zh-CN', {
+  timeZone: 'Asia/Shanghai',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+  hour12: false
+})
 
 const formatCreated = (value: string) =>
-  new Intl.DateTimeFormat('zh-CN', {
-    timeZone: 'Asia/Shanghai',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false
-  }).format(new Date(value))
+  LEDGER_DATE_FORMATTER.format(new Date(value))
 
 const BalanceCard = ({
   label,
@@ -92,11 +106,11 @@ const BalanceCard = ({
   color: string
 }) => (
   <Card>
-    <CardBody className="flex flex-row items-center gap-4 p-5">
-      <div className={`rounded-full bg-default-100 p-3 ${color}`}>
+    <CardBody className="flex flex-row items-center gap-4 p-4">
+      <div className={`shrink-0 rounded-full bg-default-100 p-3 ${color}`}>
         <Icon className="size-6" aria-hidden="true" />
       </div>
-      <div>
+      <div className="min-w-0">
         <p className="text-sm text-default-500">{label}</p>
         <p
           className={`text-2xl font-semibold tabular-nums ${
@@ -116,7 +130,8 @@ const DeltaGroup = ({ record }: { record: MoemoepointLedgerEntry }) => (
     <p className={deltaClassName(record.balanceDelta)}>
       总额 {formatDelta(record.balanceDelta)}
     </p>
-    <p className={deltaClassName(record.reservedDelta)}>
+    {/* 待结算保持中性色: 被冻结既不是收益也不是损失, 染成 success/danger 会误导 */}
+    <p className="text-default-500">
       待结算 {formatDelta(record.reservedDelta)}
     </p>
     <p className={deltaClassName(record.availableDelta)}>
@@ -127,16 +142,21 @@ const DeltaGroup = ({ record }: { record: MoemoepointLedgerEntry }) => (
 
 const BalanceSnapshot = ({ balance }: { balance: MoemoepointBalance }) => (
   <div className="space-y-1 text-xs tabular-nums text-default-500">
-    <p>总额 {balance.total}</p>
+    <p className={balanceValueClassName(balance.total)}>总额 {balance.total}</p>
     <p>待结算 {balance.reserved}</p>
-    <p>可用 {balance.available}</p>
+    <p className={balanceValueClassName(balance.available)}>
+      可用 {balance.available}
+    </p>
   </div>
 )
 
 const RecordReason = ({ record }: { record: MoemoepointLedgerEntry }) => {
   const view = resolveKindView(record.kind)
   return (
-    <div className="space-y-2">
+    // 必须是 flex-col: Chip 和 Link 的 base 都含 inline-flex, 放在 space-y-*
+    // 的普通 div 里会挤在同一行且中间没有空格 (JSX 吃掉了纯换行空白)。
+    // items-start 也必需, 否则 stretch 会和 Chip 的 max-w-fit 打架。
+    <div className="flex flex-col items-start gap-2">
       <Chip color={view.color} variant="flat" size="sm">
         {view.label}
       </Chip>
@@ -161,9 +181,16 @@ const RecordCard = ({ record }: { record: MoemoepointLedgerEntry }) => (
           {formatCreated(record.created)}
         </span>
       </div>
+      {/* 两组数字的行标签完全相同, 窄屏没有列头可依靠, 必须自带小标题 */}
       <div className="flex justify-between gap-4">
-        <DeltaGroup record={record} />
-        <BalanceSnapshot balance={record.balanceAfter} />
+        <div className="space-y-1">
+          <p className="text-tiny text-default-400">变动</p>
+          <DeltaGroup record={record} />
+        </div>
+        <div className="space-y-1 text-right">
+          <p className="text-tiny text-default-400">变更后余额</p>
+          <BalanceSnapshot balance={record.balanceAfter} />
+        </div>
       </div>
     </CardBody>
   </Card>
@@ -301,7 +328,14 @@ export const MoemoepointLedgerContainer = ({
         description="查看每一笔萌萌点获得、消费、暂扣、返还和确认扣除记录"
         headerEndContent={
           showRulesLink ? (
-            <Link as={NextLink} href="/moemoepoint/rules" size="sm">
+            // self-start: KunHeader 的 flex 容器没有 items-*, 默认 stretch 会把
+            // 链接拉满两行标题的高度并垂直居中, 看起来贴在描述行上。
+            <Link
+              as={NextLink}
+              href="/moemoepoint/rules"
+              size="sm"
+              className="self-start"
+            >
               萌萌点规则
             </Link>
           ) : undefined
@@ -319,14 +353,14 @@ export const MoemoepointLedgerContainer = ({
         <BalanceCard
           label="可用萌萌点"
           value={data.balance.available}
-          description="当前可以消费或暂扣"
+          description="可消费或暂扣"
           icon={WalletCards}
           color="text-success"
         />
         <BalanceCard
           label="待结算萌萌点"
           value={data.balance.reserved}
-          description="等待返还或确认扣除"
+          description="等待返还或扣除"
           icon={Clock3}
           color="text-warning"
         />
@@ -335,7 +369,8 @@ export const MoemoepointLedgerContainer = ({
       {data.balance.total < 0 && (
         <Card>
           <CardBody className="text-sm text-danger">
-            当前余额为负, 通常是发布奖励被收回导致的（例如资源被删除或点赞被取消）。
+            当前余额为负,
+            通常是发布奖励被收回导致的（例如资源被删除或点赞被取消）。
             可以通过每日签到重新累积。
           </CardBody>
         </Card>
@@ -356,32 +391,39 @@ export const MoemoepointLedgerContainer = ({
           </Tabs>
 
           {range === 'custom' && (
-            <div className="flex flex-col items-stretch gap-3 sm:flex-row sm:items-end">
-              <DateRangePicker
-                className="max-w-xl"
-                label="日期范围"
-                value={customRange}
-                onChange={(value) => {
-                  if (value) {
-                    setCustomRange({
-                      start: value.start as CalendarDate,
-                      end: value.end as CalendarDate
-                    })
-                    setError('')
-                  }
-                }}
-                firstDayOfWeek="mon"
-                maxValue={today('Asia/Shanghai')}
-                showMonthAndYearPickers
-                description={`单次最多查询 ${MAX_MOEMOEPOINT_CUSTOM_RANGE_DAYS} 天`}
-              />
-              <Button
-                color="primary"
-                onPress={applyCustomRange}
-                isLoading={loading}
-              >
-                查询
-              </Button>
+            <div className="space-y-2">
+              <div className="flex flex-col items-stretch gap-3 sm:flex-row sm:items-end">
+                <DateRangePicker
+                  className="max-w-xl"
+                  label="日期范围"
+                  value={customRange}
+                  onChange={(value) => {
+                    if (value) {
+                      setCustomRange({
+                        start: value.start as CalendarDate,
+                        end: value.end as CalendarDate
+                      })
+                      setError('')
+                    }
+                  }}
+                  firstDayOfWeek="mon"
+                  maxValue={today('Asia/Shanghai')}
+                  showMonthAndYearPickers
+                />
+                <Button
+                  color="primary"
+                  onPress={applyCustomRange}
+                  isLoading={loading}
+                >
+                  查询
+                </Button>
+              </div>
+              {/* 这段说明刻意不作为 DateRangePicker 的 description:
+                  它的 helperWrapper 是占据高度的 flex 兄弟, 会让同一行
+                  items-end 的「查询」按钮对齐到说明文字底部而不是输入框底部。 */}
+              <p className="text-xs text-default-500">
+                单次最多查询 {MAX_MOEMOEPOINT_CUSTOM_RANGE_DAYS} 天
+              </p>
             </div>
           )}
 
@@ -393,59 +435,58 @@ export const MoemoepointLedgerContainer = ({
         </CardBody>
       </Card>
 
-      <div className="space-y-3 sm:hidden">
-        {loading ? (
-          <div className="flex justify-center py-8">
-            <Spinner label="正在加载萌萌点流水" />
-          </div>
-        ) : records.length ? (
-          records.map((record) => (
-            <RecordCard key={record.id} record={record} />
-          ))
-        ) : (
-          <p className="py-8 text-center text-sm text-default-500">
-            {emptyContent}
-          </p>
-        )}
-      </div>
-
-      <div className="hidden sm:block">
-        <Table aria-label="萌萌点变动明细" isHeaderSticky>
-          <TableHeader>
-            <TableColumn>时间</TableColumn>
-            <TableColumn>类型与原因</TableColumn>
-            <TableColumn>变动</TableColumn>
-            <TableColumn>变更后余额</TableColumn>
-          </TableHeader>
-          <TableBody
-            items={records}
-            emptyContent={emptyContent}
-            isLoading={loading}
-            loadingContent={<Spinner label="正在加载萌萌点流水" />}
-          >
-            {(record) => (
-              <TableRow key={record.id}>
-                <TableCell>
-                  <span className="whitespace-nowrap text-sm text-default-500">
-                    {formatCreated(record.created)}
-                  </span>
-                </TableCell>
-                <TableCell>
-                  <div className="min-w-44">
-                    <RecordReason record={record} />
-                  </div>
-                </TableCell>
-                <TableCell>
-                  <DeltaGroup record={record} />
-                </TableCell>
-                <TableCell>
-                  <BalanceSnapshot balance={record.balanceAfter} />
-                </TableCell>
-              </TableRow>
+      {loading ? (
+        <div className="min-h-40">
+          <KunLoading hint="正在加载萌萌点流水" />
+        </div>
+      ) : (
+        <>
+          <div className="space-y-3 sm:hidden">
+            {records.length ? (
+              records.map((record) => (
+                <RecordCard key={record.id} record={record} />
+              ))
+            ) : (
+              <p className="py-8 text-center text-sm text-default-500">
+                {emptyContent}
+              </p>
             )}
-          </TableBody>
-        </Table>
-      </div>
+          </div>
+
+          <div className="hidden sm:block">
+            <Table aria-label="萌萌点变动明细" classNames={{ td: 'align-top' }}>
+              <TableHeader>
+                <TableColumn>时间</TableColumn>
+                <TableColumn>类型与原因</TableColumn>
+                <TableColumn>变动</TableColumn>
+                <TableColumn>变更后余额</TableColumn>
+              </TableHeader>
+              <TableBody items={records} emptyContent={emptyContent}>
+                {(record) => (
+                  <TableRow key={record.id}>
+                    <TableCell>
+                      <span className="whitespace-nowrap text-sm text-default-500">
+                        {formatCreated(record.created)}
+                      </span>
+                    </TableCell>
+                    <TableCell>
+                      <div className="min-w-44">
+                        <RecordReason record={record} />
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <DeltaGroup record={record} />
+                    </TableCell>
+                    <TableCell>
+                      <BalanceSnapshot balance={record.balanceAfter} />
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </div>
+        </>
+      )}
 
       {showPagination && (
         <div className="flex justify-center">

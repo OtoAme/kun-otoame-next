@@ -19,6 +19,7 @@ export const keyLabelMap: Record<string, string> = {
   '/admin/resource': '下载资源管理',
   '/admin/setting': '管理系统设置',
   '/admin/user': '用户管理',
+  '/admin/user/[id]/moemoepoint': '用户萌萌点流水',
   '/admin/resource-apply': '资源首次发布申请',
   '/admin/feedback': 'Gal 反馈管理',
   '/admin/report': '评论举报管理',

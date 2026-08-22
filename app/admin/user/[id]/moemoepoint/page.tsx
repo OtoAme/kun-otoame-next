@@ -34,7 +34,7 @@ export default async function AdminUserMoemoepointPage({
     <MoemoepointLedgerContainer
       userId={userId}
       initialData={response}
-      title={`${response.user.name} 的萌萌点流水`}
+      title={`「${response.user.name}」的萌萌点流水`}
       showRulesLink={false}
     />
   )

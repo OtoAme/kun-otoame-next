@@ -39,4 +39,32 @@ describe('moemoepoint source guard', () => {
       /<(button|input|select|textarea)\b/
     )
   })
+
+  it('keeps ledger loading and narrow-screen tables visually consistent', async () => {
+    const [ledger, rules, adminPage] = await Promise.all([
+      readFile('components/moemoepoint/LedgerContainer.tsx', 'utf8'),
+      readFile('components/moemoepoint/Rules.tsx', 'utf8'),
+      readFile('app/admin/user/[id]/moemoepoint/page.tsx', 'utf8')
+    ])
+
+    expect(ledger).toContain(
+      "import { KunLoading } from '~/components/kun/Loading'"
+    )
+    expect(ledger).toContain('<KunLoading hint="正在加载萌萌点流水" />')
+    expect(ledger).toMatch(
+      /loading \? \(\s*<div className="min-h-40">\s*<KunLoading hint="正在加载萌萌点流水" \/>/
+    )
+    expect(ledger).toContain("classNames={{ td: 'align-top' }}")
+    expect(ledger).not.toContain('loadingContent=')
+    expect(ledger).not.toContain('<Spinner')
+    expect(ledger).not.toContain('isHeaderSticky')
+
+    expect(rules).toContain('<div className="overflow-x-auto">')
+    expect(rules.match(/sm:shrink-0/g)).toHaveLength(3)
+    expect(rules.match(/sm:whitespace-nowrap/g)).toHaveLength(2)
+
+    expect(adminPage).toContain(
+      'title={`「${response.user.name}」的萌萌点流水`}'
+    )
+  })
 })
