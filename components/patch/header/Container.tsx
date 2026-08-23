@@ -26,7 +26,7 @@ export const PatchHeaderContainer = ({
   nsfwAllowed
 }: PatchHeaderProps) => {
   const resourceSectionTabsId = 'patch-resource-section-tabs'
-  const { setData } = useRewritePatchStore()
+  const { seedTarget } = useRewritePatchStore()
   const searchParams = useSearchParams()
   const [displayPatch, setDisplayPatch] = useState(patch)
   const [selected, setSelected] = useState('introduction')
@@ -74,7 +74,7 @@ export const PatchHeaderContainer = ({
   }
 
   useEffect(() => {
-    setData({
+    seedTarget({
       id: displayPatch.id,
       uniqueId: displayPatch.uniqueId,
       vndbId: displayPatch.vndbId ?? '',
@@ -107,7 +107,7 @@ export const PatchHeaderContainer = ({
       })),
       bannerUrl: displayPatch.banner
     })
-  }, [displayPatch, intro, setData])
+  }, [displayPatch, intro, seedTarget])
 
   useEffect(() => {
     if (displayPatch.contentLimit !== 'nsfw') {

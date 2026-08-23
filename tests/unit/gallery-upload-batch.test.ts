@@ -97,4 +97,35 @@ describe('gallery upload batch', () => {
       })
     ])
   })
+
+  it('never re-uploads an item the server already accepted', async () => {
+    const statusUpdates: string[] = []
+    const uploadOne = vi.fn().mockResolvedValue({
+      imageId: 11,
+      url: 'https://img.example/11.avif',
+      thumbnailUrl: null
+    })
+
+    const result = await uploadGalleryItems({
+      patchId: 123,
+      items: [
+        { ...createItem('already'), uploadStatus: 'uploaded' },
+        createItem('fresh')
+      ],
+      watermark: true,
+      getDisplayOrder: (_item, index) => index,
+      uploadOne,
+      onItemStatus: (item) => statusUpdates.push(item.id)
+    })
+
+    expect(uploadOne).toHaveBeenCalledTimes(1)
+    expect(uploadOne).toHaveBeenCalledWith(
+      expect.objectContaining({ displayOrder: 1 })
+    )
+    expect(statusUpdates).toEqual(['fresh', 'fresh'])
+    expect(result.uploaded).toEqual([
+      expect.objectContaining({ oldId: 'fresh' })
+    ])
+    expect(result.failed).toEqual([])
+  })
 })

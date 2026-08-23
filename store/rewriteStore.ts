@@ -54,20 +54,24 @@ interface StoreState {
   data: RewritePatchData
   newImages: RewriteNewGalleryImage[]
   newBanner: File | null
+  newBannerOriginal: File | null
   watermark: boolean
   galleryOrder: (number | string)[]
   getData: () => RewritePatchData
+  seedTarget: (data: RewritePatchData) => void
   setData: (
     data: RewritePatchData | ((current: RewritePatchData) => RewritePatchData)
   ) => void
   setNewImages: (images: RewriteNewGalleryImage[]) => void
   setNewBanner: (file: File | null) => void
+  setNewBannerOriginal: (file: File | null) => void
   setWatermark: (watermark: boolean) => void
   setGalleryOrder: (order: (number | string)[]) => void
+  clearUploadState: () => void
   resetData: () => void
 }
 
-const initialState: RewritePatchData = {
+export const initialRewritePatchData: RewritePatchData = {
   id: 0,
   uniqueId: '',
   vndbId: '',
@@ -96,29 +100,52 @@ const initialState: RewritePatchData = {
   isDuplicate: false
 }
 
-export const useRewritePatchStore = create<StoreState>((set, get) => ({
-  data: initialState,
+const emptyUploadState: Pick<
+  StoreState,
+  'newImages' | 'newBanner' | 'newBannerOriginal' | 'galleryOrder'
+> = {
   newImages: [],
   newBanner: null,
+  newBannerOriginal: null,
+  galleryOrder: []
+}
+
+export const useRewritePatchStore = create<StoreState>((set, get) => ({
+  data: initialRewritePatchData,
+  newImages: [],
+  newBanner: null,
+  newBannerOriginal: null,
   watermark: true,
   galleryOrder: [],
   getData: () => get().data,
+  // Opening the edit page always starts a fresh session: files picked in an
+  // earlier session are dropped, so a failed upload cannot follow the user into
+  // the next visit and pile up as garbage. Retrying failed screenshots is
+  // therefore only possible without leaving the edit page.
+  seedTarget: (data) => set({ data, ...emptyUploadState }),
   setData: (
     data: RewritePatchData | ((current: RewritePatchData) => RewritePatchData)
   ) =>
-    set((state: StoreState) => ({
-      data: typeof data === 'function' ? data(state.data) : data
-    })),
+    set((state: StoreState) => {
+      const nextData = typeof data === 'function' ? data(state.data) : data
+      // In-form edits keep the pending files. The id check is only a net for a
+      // seeding path that forgets seedTarget: carrying files across targets
+      // would upload the previous patch's banner and screenshots to this one.
+      if (nextData.id === state.data.id) {
+        return { data: nextData }
+      }
+      return { data: nextData, ...emptyUploadState }
+    }),
   setNewImages: (newImages) => set({ newImages }),
   setNewBanner: (newBanner) => set({ newBanner }),
+  setNewBannerOriginal: (newBannerOriginal) => set({ newBannerOriginal }),
   setWatermark: (watermark) => set({ watermark }),
   setGalleryOrder: (galleryOrder) => set({ galleryOrder }),
+  clearUploadState: () => set(emptyUploadState),
   resetData: () =>
     set({
-      data: initialState,
-      newImages: [],
-      newBanner: null,
+      data: initialRewritePatchData,
       watermark: true,
-      galleryOrder: []
+      ...emptyUploadState
     })
 }))

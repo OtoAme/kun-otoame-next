@@ -81,6 +81,10 @@ export const uploadGalleryItems = async <
   const failed: T[] = []
 
   for (const [index, item] of items.entries()) {
+    // A queue can outlive the request that uploaded it, so never send an item
+    // the server already accepted; that is how duplicate gallery rows appear.
+    if (item.uploadStatus === 'uploaded') continue
+
     item.uploadStatus = 'uploading'
     item.uploadError = undefined
     onItemStatus?.(item)
