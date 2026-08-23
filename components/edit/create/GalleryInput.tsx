@@ -6,6 +6,7 @@ import localforage from 'localforage'
 import { Button, Checkbox, Switch } from '@heroui/react'
 import { Upload, Maximize2 } from 'lucide-react'
 import { checkImageValid } from '~/utils/resizeImage'
+import { generateUUID } from '~/utils/random'
 import { KunImageViewer } from '~/components/kun/image-viewer/ImageViewer'
 import { cn } from '~/utils/cn'
 import { getGalleryFilesFromEvent } from '~/utils/galleryDrop'
@@ -282,7 +283,7 @@ export const GalleryInput = () => {
       const newImages: GalleryImage[] = []
       for (const file of acceptedFiles) {
         if (!checkImageValid(file)) continue
-        const id = crypto.randomUUID()
+        const id = generateUUID()
         newImages.push({
           id,
           blob: file,

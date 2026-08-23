@@ -5,6 +5,7 @@ import { useDropzone } from 'react-dropzone'
 import { Button, Checkbox, Switch } from '@heroui/react'
 import { Upload, Maximize2 } from 'lucide-react'
 import { checkImageValid } from '~/utils/resizeImage'
+import { generateUUID } from '~/utils/random'
 import { useRewritePatchStore } from '~/store/rewriteStore'
 import { KunImageViewer } from '~/components/kun/image-viewer/ImageViewer'
 import { cn } from '~/utils/cn'
@@ -328,7 +329,7 @@ export const RewriteGalleryInput = () => {
       for (const file of acceptedFiles) {
         if (!checkImageValid(file)) continue
         added.push({
-          id: crypto.randomUUID(),
+          id: generateUUID(),
           file,
           isNSFW: false,
           uploadStatus: 'pending'
