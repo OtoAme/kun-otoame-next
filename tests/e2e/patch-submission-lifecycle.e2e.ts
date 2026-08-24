@@ -12,7 +12,9 @@ import Redis from 'ioredis'
 import sharp from 'sharp'
 
 const BASE_URL = process.env.KUN_E2E_BASE_URL ?? 'http://127.0.0.1:3100'
-const ORIGIN = process.env.KUN_E2E_ORIGIN ?? 'http://192.168.0.199:3000'
+// CSRF compares this against the server's configured address; the throwaway
+// server is started with its own address allowed.
+const ORIGIN = process.env.KUN_E2E_ORIGIN ?? BASE_URL
 const KUN_REDIS_PREFIX = 'kun:touchgal'
 
 const requireEnv = (name: string) => {
@@ -139,6 +141,16 @@ const main = async () => {
     name: 'e2e_admin',
     role: 4
   }
+
+  // Creating and submitting fail closed past their hourly cap, so a repeated run
+  // would otherwise wall itself off. Clearing this user's own counters keeps the
+  // script repeatable without weakening the limit.
+  await redis.del(
+    ...['create', 'submit', 'asset-upload', 'read', 'autosave'].map(
+      (action) =>
+        `${KUN_REDIS_PREFIX}:patch-submission:rate-limit:${action}:${submitter.uid}`
+    )
+  )
 
   const submitterToken = await signSession(submitter)
   const reviewerToken = await signSession(reviewer)

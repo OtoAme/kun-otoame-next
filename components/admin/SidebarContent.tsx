@@ -8,6 +8,7 @@ import {
   FileCheck,
   FileClock,
   Gamepad2,
+  Inbox,
   Mail,
   MessageCircleQuestion,
   MessageSquare,
@@ -45,6 +46,11 @@ const menuItems = [
     name: '资源发布申请',
     href: '/admin/resource-apply',
     icon: FileCheck
+  },
+  {
+    name: '投稿审核',
+    href: '/admin/submission',
+    icon: Inbox
   },
   {
     name: '游戏管理',

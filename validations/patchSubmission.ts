@@ -38,21 +38,11 @@ const repeatedStrings = z
   .default([])
 
 /**
- * The draft form. Deliberately not derived from patchCreateSchema: that one
- * carries the cover file and admin-only affordances, while a submission stores
- * text now and uploads assets through their own endpoint.
+ * Fields shared by both validation levels. External ids stay format-checked even
+ * in a draft, because they are copied into searchable columns and into the
+ * duplicate checks.
  */
-export const patchSubmissionPayloadSchema = z.object({
-  name: z
-    .string()
-    .trim()
-    .min(1, { message: '游戏名称是必填项' })
-    .max(1007, { message: '游戏名称最多 1007 个字符' }),
-  introduction: z
-    .string()
-    .trim()
-    .min(10, { message: '游戏介绍是必填项, 最少 10 个字符' })
-    .max(100007, { message: '游戏介绍最多 100007 字' }),
+const payloadShape = {
   vndbId: optionalIdField('VNDB ID', /^(v\d+)?$/i).transform((value) =>
     value.toLowerCase()
   ),
@@ -82,11 +72,43 @@ export const patchSubmissionPayloadSchema = z.object({
   tag: repeatedStrings,
   released: z.string().trim().max(107).optional().default(''),
   contentLimit: z.enum(['sfw', 'nsfw']).default('sfw')
+}
+
+/**
+ * What a draft may look like while it is being written. A cloud draft starts
+ * empty and is saved on every keystroke, so requiring a complete form here would
+ * make autosave fail until the very last field is filled.
+ */
+export const patchSubmissionDraftPayloadSchema = z.object({
+  ...payloadShape,
+  name: z.string().trim().max(1007, { message: '游戏名称最多 1007 个字符' }),
+  introduction: z
+    .string()
+    .trim()
+    .max(100007, { message: '游戏介绍最多 100007 字' })
+})
+
+/**
+ * What a submission must look like to enter review. Applied to the frozen
+ * payload when the author submits, never while typing.
+ */
+export const patchSubmissionPayloadSchema = z.object({
+  ...payloadShape,
+  name: z
+    .string()
+    .trim()
+    .min(1, { message: '游戏名称是必填项' })
+    .max(1007, { message: '游戏名称最多 1007 个字符' }),
+  introduction: z
+    .string()
+    .trim()
+    .min(10, { message: '游戏介绍是必填项, 最少 10 个字符' })
+    .max(100007, { message: '游戏介绍最多 100007 字' })
 })
 
 export const patchSubmissionCreateSchema = z.object({
   requestId: requestIdSchema,
-  payload: patchSubmissionPayloadSchema,
+  payload: patchSubmissionDraftPayloadSchema,
   /** Where the external snapshot came from, kept so a reviewer can judge staleness. */
   externalSource: z.string().trim().max(64).optional().default('')
 })
@@ -95,7 +117,7 @@ export const patchSubmissionUpdateSchema = z.object({
   submissionId: submissionIdSchema,
   /** Optimistic lock: autosave from a stale device must not overwrite. */
   revision: z.coerce.number().int().min(1),
-  payload: patchSubmissionPayloadSchema,
+  payload: patchSubmissionDraftPayloadSchema,
   externalSource: z.string().trim().max(64).optional().default('')
 })
 

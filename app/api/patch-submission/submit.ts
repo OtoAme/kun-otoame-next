@@ -2,6 +2,7 @@ import { Prisma } from '@prisma/client'
 import { prisma } from '~/prisma/index'
 import { PATCH_SUBMISSION_ACTIVE_STATUSES } from '~/constants/patchSubmission'
 import { PATCH_SUBMISSION_GALLERY_MAX_COUNT } from '~/constants/patchSubmission'
+import { patchSubmissionPayloadSchema } from '~/validations/patchSubmission'
 import { PatchSubmissionError } from './quota'
 import type { PatchSubmissionPayload } from '~/types/api/patchSubmission'
 
@@ -135,6 +136,13 @@ export const submitPatchSubmission = async (
   }
 
   const payload = submission.payload as unknown as PatchSubmissionPayload
+
+  // Drafts are saved while incomplete, so completeness is checked here rather
+  // than on every autosave.
+  const complete = patchSubmissionPayloadSchema.safeParse(payload)
+  if (!complete.success) {
+    return complete.error.errors[0]?.message ?? '投稿内容不完整'
+  }
 
   const ownDuplicate = await findOwnDuplicate(userId, submissionId, payload)
   if (ownDuplicate) {
