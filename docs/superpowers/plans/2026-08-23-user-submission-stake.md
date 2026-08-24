@@ -50,11 +50,34 @@
 - **终态**（`rejected` / `published` / `violation`）：用户只能**从个人列表隐藏/归档记录**，不调用任何结算原语。表格里终态一律写「从个人列表隐藏」，不写「删除」。
 - 原因在 `app/api/moemoepoint/service.ts:370-381`：状态非 `pending` 时，只有 `status` 与 `settlement_idempotency_key` **同时**匹配才返回 `applied: false`，否则抛 `MoemoepointReservationSettledError`。所以「整条投稿共用一个结算幂等键」**解决不了**终态删除——`violation` 已是 `forfeited`，之后用同一个 key 调 release，`status` 不匹配照样抛错。唯一正确的解法是终态不再结算。
 
-## 当前状态（2026-08-24）
+## 当前状态（2026-08-25）
 
-- **Phase 1 已完成并提交**：`user_moemoepoint_ledger`、`user_moemoepoint_reservation`、`reserveMoemoepoint` / `releaseMoemoepoint` / `forfeitMoemoepoint`。**零调用方是有意的，不要当死代码清理。**
-- **Stage 1 已完成并提交**：马赛克泄露修复、上传链路硬化按主题切分提交、浏览器验证落地、请求体上限实测定位。
-- **投稿功能实现零行。** 下一步是 Stage 3 的 schema。
+**功能已实现并提交。** 逐阶段状态：
+
+| 阶段 | 状态 |
+| --- | --- |
+| Stage 0 素材契约与数值 | 已定。分支 A（素材不搬动）；每用户容量上限取 200 MB |
+| Stage 1 阻塞修复与工作区收尾 | 完成 |
+| Stage 2 端点规范 | 完成（已落到投稿端点） |
+| Stage 3 schema 与迁移 | 完成, 含 3.6 / 3.6a 前置提交 |
+| Stage 4 草稿 CRUD 与自动保存 | 完成 |
+| Stage 5 草稿素材 | 完成 |
+| Stage 6 提交/撤回/查重 | 完成 |
+| Stage 7 审核转换 | 完成（四个动作齐备） |
+| Stage 8 接口与页面 | 完成, 含 8.7 无障碍 |
+| Stage 9 限频分层 | 完成 |
+| Stage 10 运维 | 清理命令完成；容量监控见下 |
+| Stage 11 | 已移出本计划 |
+| Stage 12 文档 | 完成 |
+
+验证：`pnpm typecheck` 干净, 149 文件 / 945 项单测通过, 三套浏览器与 HTTP 端到端脚本通过（`tests/e2e/edit-upload-guards.e2e.ts`、`patch-submission-lifecycle.e2e.ts`、`submission-ui.e2e.ts`）。
+
+**尚未做的**：
+
+- 生产迁移未执行（顺序见 `docs/project/deployment.md`）。Release ID 唯一性的 preflight 必须先在生产跑, 有冲突要人工处理。
+- Stage 10.2 的全站容量监控未做（计划本身把它列为二期）。
+- 未做真实浏览器下的两套主题与移动端布局回归。
+- 未用 `role = 1` 真人账号在生产走一遍。
 
 ## 排序原则
 
