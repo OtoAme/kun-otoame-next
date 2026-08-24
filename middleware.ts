@@ -10,7 +10,7 @@ export const config = {
     '/comment/:path*',
     '/edit/:path*',
     // 大体积上传路由在 handler 内自行校验 CSRF，避免 middleware 缓冲请求体
-    '/api/((?!home$|upload/|admin/stickers/import/?$|tag/otomegame|company/otomegame).*)'
+    '/api/((?!home$|upload/|admin/stickers/import/?$|patch-submission/asset/?$|tag/otomegame|company/otomegame).*)'
   ]
 }
 

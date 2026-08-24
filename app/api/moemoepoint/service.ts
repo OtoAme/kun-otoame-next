@@ -121,7 +121,7 @@ export class MoemoepointReservationSettledError extends Error {
   }
 }
 
-const getCurrentBalance = async (tx: Tx, userId: number) => {
+export const getCurrentBalance = async (tx: Tx, userId: number) => {
   const user = await tx.user.findUnique({
     where: { id: userId },
     select: { moemoepoint: true, moemoepoint_reserved: true }
