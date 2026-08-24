@@ -59,6 +59,9 @@ model user {
   moemoepoint_reservations       user_moemoepoint_reservation[] @relation("moemoepoint_reservation_user")
   moemoepoint_settlements        user_moemoepoint_reservation[] @relation("moemoepoint_reservation_settler")
 
+  patch_submissions        patch_submission[] @relation("patch_submission_user")
+  patch_submission_reviews patch_submission[] @relation("patch_submission_reviewer")
+
   created DateTime @default(now())
   updated DateTime @updatedAt
 

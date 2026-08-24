@@ -12,6 +12,9 @@ model patch {
   official_url         String   @default("") @db.VarChar(1007)
   released             String   @default("unknown") @db.VarChar(107)
   content_limit        String   @default("") @db.VarChar(107)
+  /// Not a submission state. User submissions live in `patch_submission` and are
+  /// never written here before approval, so this stays 0 for every row; do not
+  /// repurpose it for a review workflow.
   status               Int      @default(0)
   download             Int      @default(0)
   view                 Int      @default(0)
@@ -41,6 +44,8 @@ model patch {
   comment  patch_comment[]  @relation("patch_comment")
   report   patch_report[]
   images   patch_game_image[]
+
+  submission patch_submission? @relation("patch_submission_patch")
 
   created DateTime @default(now())
   updated DateTime @updatedAt

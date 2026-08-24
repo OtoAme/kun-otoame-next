@@ -52,6 +52,8 @@ model user_moemoepoint_reservation {
 
   ledger_entries user_moemoepoint_ledger[]
 
+  patch_submission patch_submission? @relation("patch_submission_reservation")
+
   created DateTime @default(now())
   updated DateTime @updatedAt
 

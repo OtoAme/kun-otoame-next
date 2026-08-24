@@ -1,0 +1,126 @@
+/// A user submission for a new game entry. Nothing here is written to `patch`
+/// until a reviewer approves, so a pending submission is invisible to every
+/// public query by construction rather than by filtering.
+model patch_submission {
+  id Int @id @default(autoincrement())
+
+  user_id Int
+  user    user @relation("patch_submission_user", fields: [user_id], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  /// draft | pending | changes_requested | rejected | published | violation | deleted
+  status String @default("draft") @db.VarChar(32)
+
+  /// Whole submitted form, normalized. Versioned so an older draft can still be
+  /// read after the form changes.
+  payload         Json
+  payload_version Int  @default(1)
+
+  /// Where the external data came from and when it was fetched. Kept because a
+  /// reviewer has no other way to judge how stale a frozen snapshot is; the raw
+  /// upstream responses are deliberately not stored.
+  external_source     String?   @db.VarChar(64)
+  external_fetched_at DateTime?
+
+  /// Duplicated out of the payload so the review queue can search without
+  /// reading every JSON blob. The unique external ids stay non-unique here on
+  /// purpose: two users may have pending submissions for the same game, and the
+  /// conflict is settled at approval time.
+  name             String  @db.VarChar(1007)
+  vndb_id          String? @db.VarChar(107)
+  vndb_relation_id String? @db.VarChar(107)
+  bangumi_id       Int?
+  steam_id         Int?
+  dlsite_code      String? @db.VarChar(107)
+
+  /// Optimistic lock for cloud autosave across devices.
+  revision Int @default(1)
+
+  /// Deposit terms are fixed when the draft is created, so a later role change
+  /// never re-settles an existing submission.
+  role_at_creation Int
+  held_amount      Int
+
+  reservation_id Int?                          @unique
+  reservation    user_moemoepoint_reservation? @relation("patch_submission_reservation", fields: [reservation_id], references: [id], onDelete: SetNull, onUpdate: Cascade)
+
+  reviewed_by_id Int?
+  reviewed_by    user?   @relation("patch_submission_reviewer", fields: [reviewed_by_id], references: [id], onDelete: SetNull, onUpdate: Cascade)
+  review_reason  String? @db.VarChar(1007)
+  reviewed_at    DateTime?
+
+  /// Set only once the submission became a real entry.
+  patch_id Int?   @unique
+  patch    patch? @relation("patch_submission_patch", fields: [patch_id], references: [id], onDelete: SetNull, onUpdate: Cascade)
+
+  banner_key           String? @db.VarChar(1007)
+  banner_thumbnail_key String? @db.VarChar(1007)
+  banner_original_key  String? @db.VarChar(1007)
+
+  /// Terminal submissions are hidden from the author's own list instead of
+  /// deleted, because deleting them would have to call a settlement primitive a
+  /// second time.
+  hidden_by_user Boolean @default(false)
+
+  submitted_at DateTime?
+  settled_at   DateTime?
+
+  gallery patch_submission_gallery[]
+
+  created DateTime @default(now())
+  updated DateTime @updatedAt
+
+  /// Active-draft quota lookups, and the author's own list.
+  @@index([user_id, status, created(sort: Desc)])
+  /// Review queue: oldest submission first.
+  @@index([status, submitted_at])
+  /// Review queue search by external id.
+  @@index([vndb_id])
+  @@index([vndb_relation_id])
+  @@index([bangumi_id])
+  @@index([steam_id])
+  @@index([dlsite_code])
+  @@index([name])
+  @@index([reviewed_by_id])
+}
+
+/// One gallery image of a submission. `uploading` rows already occupy a slot and
+/// reserve their declared bytes, so concurrent uploads cannot walk past the
+/// per-submission limits between a count and an insert.
+model patch_submission_gallery {
+  id Int @id @default(autoincrement())
+
+  submission_id Int
+  submission    patch_submission @relation(fields: [submission_id], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  /// Stable id chosen by the client, so a retry after a timeout resolves to the
+  /// same row instead of adding a duplicate.
+  client_asset_id String @db.VarChar(64)
+
+  /// uploading | ready | failed
+  upload_status String @default("uploading") @db.VarChar(16)
+
+  /// Fingerprint of the file this row was created for. A retry carrying the same
+  /// client_asset_id but a different fingerprint is refused rather than silently
+  /// replacing the image.
+  file_fingerprint String? @db.VarChar(128)
+
+  /// Trusted only for reserving capacity while the upload is in flight; the
+  /// stored value is replaced with the real size once the object lands.
+  declared_bytes Int @default(0)
+
+  image_key     String? @db.VarChar(1007)
+  thumbnail_key String? @db.VarChar(1007)
+  is_nsfw       Boolean @default(false)
+  display_order Int     @default(0)
+
+  /// When upload_status last changed, so a crashed upload can be taken over by
+  /// the same client_asset_id instead of holding a slot forever.
+  status_changed_at DateTime @default(now())
+
+  created DateTime @default(now())
+  updated DateTime @updatedAt
+
+  @@unique([submission_id, client_asset_id])
+  @@index([submission_id, display_order])
+  @@index([submission_id, upload_status])
+}
