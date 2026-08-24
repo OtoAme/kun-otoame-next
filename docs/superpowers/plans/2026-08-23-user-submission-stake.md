@@ -50,11 +50,11 @@
 - **终态**（`rejected` / `published` / `violation`）：用户只能**从个人列表隐藏/归档记录**，不调用任何结算原语。表格里终态一律写「从个人列表隐藏」，不写「删除」。
 - 原因在 `app/api/moemoepoint/service.ts:370-381`：状态非 `pending` 时，只有 `status` 与 `settlement_idempotency_key` **同时**匹配才返回 `applied: false`，否则抛 `MoemoepointReservationSettledError`。所以「整条投稿共用一个结算幂等键」**解决不了**终态删除——`violation` 已是 `forfeited`，之后用同一个 key 调 release，`status` 不匹配照样抛错。唯一正确的解法是终态不再结算。
 
-## 当前状态（2026-08-23）
+## 当前状态（2026-08-24）
 
 - **Phase 1 已完成并提交**：`user_moemoepoint_ledger`、`user_moemoepoint_reservation`、`reserveMoemoepoint` / `releaseMoemoepoint` / `forfeitMoemoepoint`。**零调用方是有意的，不要当死代码清理。**
-- **投稿功能实现零行。**
-- **工作区有一批未提交的上传链路硬化**：24 个文件，`typecheck` 干净，145 文件 / 899 项测试全过。明细见 Stage 1.2。
+- **Stage 1 已完成并提交**：马赛克泄露修复、上传链路硬化按主题切分提交、浏览器验证落地、请求体上限实测定位。
+- **投稿功能实现零行。** 下一步是 Stage 3 的 schema。
 
 ## 排序原则
 
@@ -102,37 +102,40 @@
 
 ## Stage 1：阻塞性现存修复与工作区收尾
 
-### 1.1 马赛克打码泄露（阻塞，先于一切）
+**Stage 1 已完成（2026-08-24）。** 1.1 的四项修复、1.2 的工作区切分提交、1.3 的验证与 1.4 的定位均已落地；1.3 的四项手测已改为可重跑的浏览器验证（`tests/e2e/edit-upload-guards.e2e.ts`，5/5 通过）。
 
-- [ ] `components/kun/cropper/KunImageCropper.tsx:52-56` 的 `handleMosaicComplete` 只调 `onImageComplete`，不调 `onOriginalImageComplete`，于是旧的未打码原图继续成为 `banner-full.avif`，详情页灯箱展示用户想遮掉的内容。**这是现存内容泄露。** 修法：马赛克结果同时产出配套原图，或显式作废原图。
-- [ ] 提交处加原图守卫：`newBanner` 有值而原图为空时不得静默放过。空值有两个来源——`components/kun/cropper/KunImageCropperModal.tsx:65-67` 不 await 异步压缩造成的竞态（连续换图还会后到覆盖先到），以及 `utils/resizeImage.ts:63-69` 压缩后仍超 4 MB 时直接 reject。
-- [ ] `components/edit/rewrite/RewritePatch.tsx` 的画廊失败分支保留 `newBanner` / `newBannerOriginal`，下次「重试失败截图」会重新编码封面、重清 CDN 缓存并再跑一遍破坏性画廊对账。PUT 成功后即清封面，只留失败截图。
-- [ ] `validations/edit.ts` 的 `patchUpdateSchema` 中 `banner` 与 `bannerOriginal` 从 `z.any()` 改为 `imageFileSchema`。
+### 1.1 马赛克打码泄露（已修复）
 
-### 1.2 切分提交现有工作区
+- [x] `KunImageCropper.tsx` 的 `handleMosaicComplete` 现在把马赛克结果同时作为原图发出，未打码原图不再成为 `banner-full.avif`。
+- [x] 提交处已加原图守卫：`newBanner` 有值而原图为空时拒绝提交并提示重新裁剪。`KunImageCropperModal` 的原图回调改为 await，消除连续换图时「后到覆盖先到」的竞态；`utils/resizeImage.ts` 压缩后仍超 4 MB 时依旧 reject，但现在会被守卫拦住而非静默放过。
+- [x] `RewritePatch.tsx` 在 PUT 成功后即清封面，只留失败截图，「重试失败截图」不再重编码封面、重清 CDN 缓存、重跑破坏性画廊对账。
+- [x] `patchUpdateSchema` 的 `banner` 与 `bannerOriginal` 从 `z.any()` 改为 `imageFileSchema.optional()`。
+- [ ] **遗留（创建页对称缺口，不阻塞投稿）**：创建页同样可能出现「封面有、原图无」，此时 `uploadPatchBanner` 跳过 `banner-full.avif`，详情页灯箱取不到图。新建条目没有旧 `banner-full` 可泄，所以是质量问题而非内容泄露；守卫要加在 `components/edit/create/PublishButton.tsx`。
 
-这批改动已在工作区、`typecheck` 干净且 145 文件 / 899 项测试全过。**最实际的处理是立即按下面的分组提交掉**，不要搬到别的计划里排期——挪动不减少任何工作量，一直不提交才是真正的风险。
+### 1.2 切分提交现有工作区（已完成）
 
-`components/edit/rewrite/RewritePatch.tsx` 承载多主题，按主题分笔：
+已按主题提交。「提交异常可见」「离页保护」「封面原图 + 1.1 修复」三组通过 `RewritePatch.tsx` 共享状态互相牵连，而本环境不支持 hunk 级交互暂存（`git add -p`），因此合为一笔提交，提交信息中已说明。
 
-- [ ] **UUID**（零重叠，已人工验证）：`utils/random.ts`、`components/edit/create/GalleryInput.tsx`、`components/edit/rewrite/RewriteGalleryInput.tsx`、`tests/unit/random.test.ts`
-- [ ] **编辑会话隔离**（已人工验证）：`store/rewriteStore.ts`、`components/patch/header/Container.tsx`、`components/edit/utils/galleryUploadBatch.ts`、`tests/unit/rewrite-store.test.ts`、`tests/unit/gallery-upload-batch.test.ts`
-- [ ] **提交异常可见**：`RewritePatch.tsx`、`components/edit/create/PublishButton.tsx`
-- [ ] **图片体积校验**：`constants/galgame.ts`、`utils/resizeImage.ts`、`app/api/edit/galleryUpload.ts`、`app/api/edit/gallery/route.ts`、`tests/unit/gallery-image-valid.test.ts`
-- [ ] **离页保护**：`utils/leaveGuard.ts`、`hooks/useLeaveConfirm.ts`、`components/edit/rewrite/RewriteLeaveGuard.tsx`、`tests/unit/leave-guard.test.ts`
-- [ ] **封面原图 + 1.1 修复**：`RewriteBanner.tsx`、`RewritePatch.tsx`、`app/api/edit/update.ts`、`validations/edit.ts`、cropper 相关
-- [ ] **文档**：单独一笔
+### 1.3 验证（已从手测转为浏览器自动化）
 
-### 1.3 待人工验证
+`tests/e2e/edit-upload-guards.e2e.ts`，真实 Chrome 无头运行，5/5 通过：
 
-- [ ] 断网点提交 → 红色 toast、按钮恢复可点（创建页与重写页各一次）
-- [ ] 拖入超过 8 MB 的图 → 拖入瞬间提示，不进队列
-- [ ] 有未上传截图时点顶栏链接 → 弹确认框；F5 → 浏览器原生提示
+- [x] 断网点提交 → 错误 toast、按钮恢复可点（创建页与重写页各一次）
+- [x] 拖入超过 8 MB 的图 → 拖入瞬间提示，不进队列
+- [x] 有未上传截图时点站内链接 → 弹确认框；F5 → 浏览器原生 `beforeunload` 提示
 - [ ] 已知不覆盖：浏览器前进/后退（`popstate` 不可取消）、程序化 `router.push`
 
-### 1.4 澄清请求体上限所在层（影响 Stage 2.2）
+运行方式与两个环境前提（独立测试库、自签会话绕过人机验证）写在该文件头部注释里。两处踩过的坑值得留下：dev 模式下创建页懒加载 Codemirror chunk，必须等加载完成再断网，否则断的是 hydration 而不是提交；`beforeunload` 需要真实用户手势，合成的 drop 事件不算。
 
-- [ ] 确认 17.5 MB 图片产生 500 的实际层级。证据指向 **middleware 缓冲**而非 Route Handler：`/api/edit/gallery` 在 `middleware.ts:13` 的 matcher 覆盖范围内，而 `middleware.ts:12` 的注释写明「大体积上传路由在 handler 内自行校验 CSRF，避免 middleware 缓冲请求体」，`upload/` 与 `admin/stickers/import` 已因此被排除。Next 15.5.18 的 Route Handler `formData()` 委托给原生 `Request`，本身没有 Route Handler 级上限。结论决定新上传端点是否必须从 matcher 排除。
+### 1.4 请求体上限所在层（已实测定位，2026-08-24）
+
+**上限在 Route Handler 的 `formData()`，不在 middleware 缓冲。** 计划前一版的假设是错的。
+
+- 实测方法：带合法 CSRF 头与管理员 cookie，向 `/api/edit/gallery`（**在** `middleware.ts:13` 的 matcher 覆盖范围内）POST 递增体积的 multipart。
+- 结果：10,000,000 B 通过（进入图片校验后按内容失败），**10,485,760 B（10 MiB）起 `formData()` 抛错**。抛错后返回的是 Stage 1.1 新加的可读文案，说明请求**确实到达了 Route Handler**，middleware 没有拦下它。
+- 因此旧结论「Next 15.5.18 的 Route Handler `formData()` 没有上限」也不成立：存在 10 MiB 的实际上限。
+- 附带发现：matcher 覆盖的路由在 middleware 用 CSRF 403 拒绝前，客户端仍会把整个 body 传完（18 MB 全传）；而被排除的 `/api/admin/stickers/import` 只传约 1.3 MB 就被 handler 提前拒绝。
+- 注意 `validations/file.ts:6` 的 `MAX_IMAGE_SIZE_BYTES` 正好是 10 MiB，与失败阈值重合——贴着 schema 上限的文件会在校验之前就解析失败。真正起作用的是客户端 8 MB 上限（`constants/galgame.ts` 的 `GALLERY_IMAGE_MAX_SIZE_MB`）。
 
 ---
 
@@ -141,8 +144,8 @@
 本阶段产出的是**所有投稿端点必须遵守的规范**，不是单个功能。
 
 - [ ] **2.1 鉴权严格先于解析。** 顺序固定为：严格参数校验 → 登录 → 角色 → 所有权 → CSRF → 上传入口限频 → 可信的网关/流式 body 上限 → **最后**才 `formData()`。`imageFileSchema` 只能校验解析后的文件，**保护不了解析阶段的内存**，不能用它替代前面几步。
-- [ ] **2.2 大体积上传端点从 middleware matcher 排除**，并在 handler 内自行完成 CSRF、登录态与角色校验（照 `app/api/admin/stickers/import/route.ts` 的既有做法）。依赖 Stage 1.4 的结论。
-- [ ] **2.3 `formData()` 必须包 try/catch**，超限或截断返回用户可见字符串而非 500（照 `app/api/admin/stickers/import/route.ts:45-50`）。
+- [ ] **2.2 大体积上传端点从 middleware matcher 排除**，并在 handler 内自行完成 CSRF、登录态与角色校验（照 `app/api/admin/stickers/import/route.ts` 的既有做法）。**理由已按 Stage 1.4 的实测修正**：排除不是为了避免 500（上限在 handler 的 `formData()`，排除与否都一样），而是为了让 handler 能在读完整个 body 前就拒绝——matcher 内的路由即使被 middleware 403，客户端仍已把整个 body 传完。这是带宽与滥用成本问题，不是功能问题。
+- [ ] **2.3 `formData()` 必须包 try/catch**（**这才是防 500 的功能要求**），超限或截断返回用户可见字符串而非 500（照 `app/api/admin/stickers/import/route.ts:45-50`，以及 Stage 1.1 已落地的 `app/api/edit/gallery/route.ts`）。单个 multipart body 的硬上限是 10 MiB。
 - [ ] **2.4 上传字段一律 `imageFileSchema`**，不得出现新的 `z.any()`。
 - [ ] **2.5 复用现有图片处理规则**：格式、尺寸、压缩、动态图片、水印，含 Stage 1.2 新增的 8 MB 客户端上限（`utils/resizeImage.ts` 的 `checkImageValid`）。
 
