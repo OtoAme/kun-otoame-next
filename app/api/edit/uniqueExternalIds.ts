@@ -1,7 +1,12 @@
 import { prisma } from '~/prisma/index'
 
-export type ExternalIdField = 'bangumiId' | 'steamId'
-export type UniqueExternalIdField = 'bangumiId'
+export type ExternalIdField =
+  | 'bangumiId'
+  | 'steamId'
+  | 'vndbRelationId'
+  | 'dlsiteCode'
+/** Fields the database itself enforces, so a duplicate surfaces as P2002. */
+export type UniqueExternalIdField = 'bangumiId' | 'vndbRelationId' | 'dlsiteCode'
 
 type DuplicatePatch = {
   id?: number
@@ -11,10 +16,32 @@ type DuplicatePatch = {
 
 const fieldLabels: Record<ExternalIdField, string> = {
   bangumiId: 'Bangumi ID',
-  steamId: 'Steam ID'
+  steamId: 'Steam ID',
+  vndbRelationId: 'Release ID',
+  dlsiteCode: 'DLSite Code'
 }
 
-const parseNumericExternalId = (value?: string) => {
+/**
+ * Table driven so a new unique column only needs one entry here: the column
+ * name Prisma reports in P2002, and how the submitted value is normalized for
+ * the lookup. Missing entries used to fall through to a 500.
+ */
+const uniqueExternalIdColumns: Record<
+  UniqueExternalIdField,
+  { column: string; normalize: (value: string) => string | number | null }
+> = {
+  bangumiId: { column: 'bangumi_id', normalize: parseNumericExternalId },
+  vndbRelationId: {
+    column: 'vndb_relation_id',
+    normalize: (value) => value.trim().toLowerCase() || null
+  },
+  dlsiteCode: {
+    column: 'dlsite_code',
+    normalize: (value) => value.trim().toUpperCase() || null
+  }
+}
+
+function parseNumericExternalId(value?: string) {
   const trimmed = value?.trim()
   if (!trimmed) {
     return null
@@ -32,23 +59,30 @@ export const findPatchByExternalId = async (
   value?: string,
   excludeId?: number
 ): Promise<DuplicatePatch | null> => {
-  const numericValue = parseNumericExternalId(value)
-  if (numericValue === null) {
-    return null
-  }
-
   const select = { unique_id: true, name: true }
   const excludeCurrentPatch = excludeCurrentPatchWhere(excludeId)
 
-  if (field === 'bangumiId') {
+  if (field === 'steamId') {
+    const numericValue = parseNumericExternalId(value)
+    if (numericValue === null) {
+      return null
+    }
     return prisma.patch.findFirst({
-      where: { bangumi_id: numericValue, ...excludeCurrentPatch },
+      where: { steam_id: numericValue, ...excludeCurrentPatch },
       select
     })
   }
 
+  const normalized = uniqueExternalIdColumns[field].normalize(value ?? '')
+  if (normalized === null) {
+    return null
+  }
+
   return prisma.patch.findFirst({
-    where: { steam_id: numericValue, ...excludeCurrentPatch },
+    where: {
+      [uniqueExternalIdColumns[field].column]: normalized,
+      ...excludeCurrentPatch
+    },
     select
   })
 }
@@ -57,7 +91,9 @@ export const findFirstUniqueExternalIdDuplicate = async (
   input: Partial<Record<UniqueExternalIdField, string>>,
   excludeId?: number
 ) => {
-  for (const field of ['bangumiId'] as const) {
+  for (const field of Object.keys(
+    uniqueExternalIdColumns
+  ) as UniqueExternalIdField[]) {
     const patch = await findPatchByExternalId(field, input[field], excludeId)
     if (patch) {
       return { field, patch }
@@ -89,9 +125,15 @@ const getP2002TargetField = (error: unknown): UniqueExternalIdField | null => {
       ? [target]
       : []
 
-  if (targetFields.includes('bangumi_id')) {
-    return 'bangumiId'
+  for (const [field, { column }] of Object.entries(uniqueExternalIdColumns) as [
+    UniqueExternalIdField,
+    { column: string }
+  ][]) {
+    if (targetFields.includes(column)) {
+      return field
+    }
   }
+
   return null
 }
 

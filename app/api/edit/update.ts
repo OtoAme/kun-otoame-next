@@ -38,14 +38,6 @@ export const updateGalgame = async (
   const normalizedDlsiteCode = input.dlsiteCode?.trim()
     ? input.dlsiteCode.trim().toUpperCase()
     : ''
-  if (normalizedDlsiteCode) {
-    const dlsitePatch = await prisma.patch.findFirst({
-      where: { dlsite_code: normalizedDlsiteCode }
-    })
-    if (dlsitePatch && dlsitePatch.id !== input.id) {
-      return `Galgame DLSite Code 与游戏 ID 为 ${dlsitePatch.unique_id} 的游戏重复`
-    }
-  }
 
   const {
     id,
@@ -75,7 +67,7 @@ export const updateGalgame = async (
   )
 
   const uniqueExternalIdDuplicate = await findFirstUniqueExternalIdDuplicate(
-    { bangumiId },
+    { bangumiId, vndbRelationId, dlsiteCode: normalizedDlsiteCode },
     id
   )
   if (uniqueExternalIdDuplicate) {
@@ -106,7 +98,9 @@ export const updateGalgame = async (
       await resolveUniqueExternalIdConstraintMessage(
         error,
         {
-          bangumiId
+          bangumiId,
+          vndbRelationId,
+          dlsiteCode: normalizedDlsiteCode
         },
         id
       )

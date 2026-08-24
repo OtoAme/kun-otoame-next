@@ -25,12 +25,17 @@ const optionalVndbId = z
   .optional()
   .default('')
 
+// Stored lowercase so the database can enforce Release ID uniqueness with a
+// plain unique index: the duplicate pre-check already compared lowercased, so
+// without this `R5879` slipped past both it and the index. The regex above
+// rejects surrounding whitespace, so casing is all that is left to normalize.
 const optionalVndbRelationId = z
   .string()
   .max(10, { message: 'VNDB Relation ID 最多 10 个字符' })
   .regex(/^(r\d+)?$/i, { message: 'VNDB Relation ID 格式不正确, 例如 r5879' })
   .optional()
   .default('')
+  .transform((value) => value.toLowerCase())
 
 const optionalBangumiId = z
   .string()

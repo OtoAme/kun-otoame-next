@@ -65,19 +65,6 @@ export const createGalgame = async (
     }
   }
 
-  // vndbRelationId strict uniqueness check (cannot be bypassed)
-  if (vndbRelationId) {
-    const normalizedRelationId = vndbRelationId.trim().toLowerCase()
-    if (normalizedRelationId) {
-      const existPatch = await prisma.patch.findFirst({
-        where: { vndb_relation_id: normalizedRelationId }
-      })
-      if (existPatch) {
-        return `该 Release ID 已存在 (游戏 ID: ${existPatch.unique_id}), Release ID 不可重复`
-      }
-    }
-  }
-
   const galgameUniqueId = crypto.randomBytes(4).toString('hex')
 
   const normalizedDlsiteCode = dlsiteCode?.trim()
@@ -89,22 +76,15 @@ export const createGalgame = async (
   )
 
   const uniqueExternalIdDuplicate = await findFirstUniqueExternalIdDuplicate({
-    bangumiId
+    bangumiId,
+    vndbRelationId,
+    dlsiteCode: normalizedDlsiteCode
   })
   if (uniqueExternalIdDuplicate) {
     return formatUniqueExternalIdDuplicateMessage(
       uniqueExternalIdDuplicate.field,
       uniqueExternalIdDuplicate.patch.unique_id
     )
-  }
-
-  if (normalizedDlsiteCode) {
-    const dlsitePatch = await prisma.patch.findFirst({
-      where: { dlsite_code: normalizedDlsiteCode }
-    })
-    if (dlsitePatch) {
-      return `Galgame DLSite Code 与游戏 ID 为 ${dlsitePatch.unique_id} 的游戏重复`
-    }
   }
 
   let res:
@@ -189,7 +169,9 @@ export const createGalgame = async (
   } catch (error) {
     const uniqueExternalIdMessage =
       await resolveUniqueExternalIdConstraintMessage(error, {
-        bangumiId
+        bangumiId,
+        vndbRelationId,
+        dlsiteCode: normalizedDlsiteCode
       })
     if (uniqueExternalIdMessage) {
       return uniqueExternalIdMessage
