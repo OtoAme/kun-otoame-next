@@ -4,9 +4,10 @@ import { checkBufferSize } from '~/app/api/utils/checkBufferSize'
 import { createAnimatedAvifThumbnail } from '~/app/api/edit/galleryAnimatedAvifThumbnail'
 import { generateWatermarkSVG, watermarkConfig } from '~/config/watermark'
 import { deleteFileFromS3, uploadImageToS3 } from '~/lib/s3'
+import { GALLERY_IMAGE_MAX_SIZE_MB } from '~/constants/galgame'
 
 const GALLERY_STATIC_MAX_SIZE_MB = 1.5
-export const GALLERY_ANIMATED_MAX_SIZE_MB = 8
+export const GALLERY_ANIMATED_MAX_SIZE_MB = GALLERY_IMAGE_MAX_SIZE_MB
 const GALLERY_THUMBNAIL_MAX_SIZE_MB = 0.5
 const GALLERY_THUMBNAIL_MAX_WIDTH = 360
 const GALLERY_THUMBNAIL_MAX_HEIGHT = 240

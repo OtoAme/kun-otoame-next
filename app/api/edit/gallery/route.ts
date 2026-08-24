@@ -7,6 +7,7 @@ import { verifyHeaderCookie } from '~/middleware/_verifyHeaderCookie'
 import { invalidatePatchContentCache } from '~/app/api/patch/cache'
 import { deleteFileFromS3 } from '~/lib/s3'
 import { uploadPatchGalleryImage } from '../galleryUpload'
+import { GALLERY_IMAGE_MAX_SIZE_MB } from '~/constants/galgame'
 
 const galleryImageIdSchema = z.object({
   imageId: z.coerce.number().min(1).max(9999999)
@@ -21,7 +22,18 @@ export const POST = async (req: NextRequest) => {
     return NextResponse.json('本页面仅管理员可访问')
   }
 
-  const formData = await req.formData()
+  // An oversized or truncated multipart body makes formData() throw. Without
+  // this guard Next answers with a 500 HTML page, which reaches the client as
+  // an opaque "Status: 500" instead of something the uploader can act on.
+  let formData: FormData
+  try {
+    formData = await req.formData()
+  } catch {
+    return NextResponse.json(
+      `图片上传请求不完整, 单张图片请控制在 ${GALLERY_IMAGE_MAX_SIZE_MB} MB 以内后重试`
+    )
+  }
+
   const patchId = Number(formData.get('patchId'))
   const image = formData.get('image') as File | null
   const isNSFW = formData.get('isNSFW') === 'true'

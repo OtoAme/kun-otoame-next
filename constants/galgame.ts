@@ -5,6 +5,11 @@ export const GALGAME_AGE_LIMIT_MAP: Record<string, string> = {
 
 export const CREATE_PATCH_PUBLISH_TIMEOUT_MS = 120000
 
+// Gallery images are sent to the server uncompressed, so a single file has to
+// stay under Next's ~10 MiB request body buffer. 8 MB matches the inbound
+// single-image limit already used by animated gallery uploads and private chat.
+export const GALLERY_IMAGE_MAX_SIZE_MB = 8
+
 export const GALGAME_AGE_LIMIT_DETAIL: Record<string, string> = {
   sfw: '本文章内容安全, 无 R18 等内容, 适合在公共场所浏览',
   nsfw: '本文章可能包含 R18 等内容, 不适合在公共场所浏览'

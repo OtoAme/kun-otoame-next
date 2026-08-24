@@ -1,15 +1,23 @@
 import toast from 'react-hot-toast'
 import { dataURItoBlob } from '~/utils/dataURItoBlob'
+import { GALLERY_IMAGE_MAX_SIZE_MB } from '~/constants/galgame'
 
 const allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/avif']
 
 export const checkImageValid = (file: File) => {
-  if (allowedTypes.includes(file.type)) {
-    return true
-  } else {
+  if (!allowedTypes.includes(file.type)) {
     toast.error('我们仅支持 jpg, png, webp, avif 图片')
     return false
   }
+
+  if (file.size > GALLERY_IMAGE_MAX_SIZE_MB * 1024 * 1024) {
+    toast.error(
+      `单张图片不能超过 ${GALLERY_IMAGE_MAX_SIZE_MB} MB, 请压缩后再上传`
+    )
+    return false
+  }
+
+  return true
 }
 
 interface CompressDataURLOptions {
