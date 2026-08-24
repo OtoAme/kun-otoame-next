@@ -21,7 +21,7 @@ interface Props {
   initialAspect?: KunAspect
   description?: string
   onCropComplete?: (croppedImage: string) => void
-  onOriginalImageComplete?: (originalImage: string) => void
+  onOriginalImageComplete?: (originalImage: string) => void | Promise<void>
   onOpenMosaic: () => void
   onClose: () => void
 }
@@ -63,7 +63,10 @@ export const KunImageCropperModal = ({
         rotate
       )
       onCropComplete?.(croppedImage)
-      onOriginalImageComplete?.(imgSrc)
+      // Awaited so the consumer's async compression settles before the modal
+      // closes: otherwise switching images in quick succession lets a slower
+      // earlier compression land after a faster later one.
+      await onOriginalImageComplete?.(imgSrc)
       onClose()
     }
   }

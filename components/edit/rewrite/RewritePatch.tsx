@@ -14,6 +14,7 @@ import { AliasManager } from './AliasManager'
 import { ContentLimit } from './ContentLimit'
 import { RewriteGalleryInput } from './RewriteGalleryInput'
 import { RewriteBanner } from './RewriteBanner'
+import { RewriteLeaveGuard } from './RewriteLeaveGuard'
 import { BatchTag } from '../components/BatchTag'
 import { BangumiInput } from '../components/BangumiInput'
 import { SteamInput } from '../components/SteamInput'
@@ -30,14 +31,35 @@ import type {
 
 export const RewritePatch = () => {
   const router = useRouter()
-  const { data, setData, newImages, setNewImages, newBanner, setGalleryOrder } =
-    useRewritePatchStore()
+  const {
+    data,
+    setData,
+    newImages,
+    setNewImages,
+    newBanner,
+    setNewBanner,
+    setNewBannerOriginal,
+    setGalleryOrder,
+    clearUploadState
+  } = useRewritePatchStore()
   const [errors, setErrors] = useState<
     Partial<Record<keyof RewritePatchData, string>>
   >({})
   const hasFailedGalleryUploads = newImages.some(
     (img) => img.uploadStatus === 'failed'
   )
+  // Only files the server has not accepted yet are at risk. Leaving the page
+  // discards them, because reopening the editor starts a fresh session.
+  const pendingImageCount = newImages.filter(
+    (img) => img.uploadStatus !== 'uploaded'
+  ).length
+  const hasUnsavedUploads = pendingImageCount > 0 || !!newBanner
+  const unsavedUploadsDescription = [
+    pendingImageCount > 0 ? `${pendingImageCount} 张截图` : '',
+    newBanner ? '新封面' : ''
+  ]
+    .filter(Boolean)
+    .join('和')
 
   const addAlias = (newAlias: string) => {
     const alias = newAlias.trim()
@@ -84,6 +106,14 @@ export const RewritePatch = () => {
       return
     } else {
       setErrors({})
+    }
+
+    // banner-full.avif is only rewritten when bannerOriginal is present
+    // (app/api/edit/_upload.ts), so submitting a new banner without its original
+    // would leave the previous full-size image serving in the lightbox.
+    if (newBanner && !useRewritePatchStore.getState().newBannerOriginal) {
+      toast.error('封面原图缺失, 请重新裁剪封面后再提交')
+      return
     }
 
     setRewriting(true)
@@ -134,13 +164,24 @@ export const RewritePatch = () => {
 
     if (newBanner) {
       formData.append('banner', newBanner)
+      const { newBannerOriginal } = useRewritePatchStore.getState()
+      if (newBannerOriginal) {
+        formData.append('bannerOriginal', newBannerOriginal)
+      }
     }
 
-    const res = await kunFetchPutFormData<KunResponse<{}>>(
-      '/edit',
-      formData,
-      60000
-    )
+    // kunFetch rethrows network failures and timeouts instead of returning a
+    // string, so an unguarded await would leave the submit button loading
+    // forever with nothing shown to the user.
+    let res: KunResponse<{}>
+    try {
+      res = await kunFetchPutFormData<KunResponse<{}>>('/edit', formData, 60000)
+    } catch (error) {
+      console.error('Rewrite patch submit failed:', error)
+      toast.error('提交失败, 请检查网络后重试')
+      setRewriting(false)
+      return
+    }
 
     let updateSuccess = false
     kunErrorHandler(res, () => {
@@ -151,6 +192,12 @@ export const RewritePatch = () => {
       setRewriting(false)
       return
     }
+
+    // The banner is persisted by the PUT above. Holding on to it would make
+    // "retry failed screenshots" re-encode the cover, purge the CDN again and
+    // re-run the destructive gallery reconciliation for no reason.
+    setNewBanner(null)
+    setNewBannerOriginal(null)
 
     if (newImages.length > 0) {
       toast('正在上传游戏截图 ...')
@@ -208,6 +255,7 @@ export const RewritePatch = () => {
       }
     }
 
+    clearUploadState()
     toast.success('重新编辑成功, 由于缓存影响, 您的更改将在至多 30 秒后生效')
     router.push(`/${data.uniqueId}`)
     setRewriting(false)
@@ -215,6 +263,10 @@ export const RewritePatch = () => {
 
   return (
     <form className="flex-1 w-full p-4 mx-auto">
+      <RewriteLeaveGuard
+        enabled={hasUnsavedUploads}
+        description={`还有 ${unsavedUploadsDescription} 尚未上传成功。`}
+      />
       <Card className="w-full">
         <CardHeader className="flex gap-3">
           <div className="flex flex-col">

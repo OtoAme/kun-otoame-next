@@ -134,7 +134,10 @@ export const updateGalgame = async (
 
   if (input.banner) {
     const buffer = await input.banner.arrayBuffer()
-    const res = await uploadPatchBanner(buffer, id)
+    const originalBuffer = input.bannerOriginal
+      ? await input.bannerOriginal.arrayBuffer()
+      : undefined
+    const res = await uploadPatchBanner(buffer, id, originalBuffer)
     if (typeof res === 'string') {
       return res
     }

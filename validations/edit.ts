@@ -170,7 +170,8 @@ export const patchUpdateSchema = z.object({
   released: z.string().optional(),
   gallery: z.union([z.any(), z.array(z.any())]).optional(),
   galleryMetadata: z.string().optional(),
-  banner: z.any().optional(),
+  banner: imageFileSchema.optional(),
+  bannerOriginal: imageFileSchema.optional(),
   isDuplicate: z.string().optional()
 })
 

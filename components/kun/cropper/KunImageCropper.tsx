@@ -12,7 +12,7 @@ interface Props {
   initialImage?: string
   description?: string
   onImageComplete?: (croppedImage: string) => void
-  onOriginalImageComplete?: (originalImage: string) => void
+  onOriginalImageComplete?: (originalImage: string) => void | Promise<void>
   removeImage?: () => void
 }
 
@@ -53,6 +53,10 @@ export const KunImageCropper = ({
     setImgSrc(mosaicImage)
     setPreviewImage(mosaicImage)
     onImageComplete?.(mosaicImage)
+    // The original emitted during cropping is the un-mosaicked image, and it is
+    // what becomes banner-full.avif in the detail page lightbox. Re-emitting the
+    // mosaic result keeps the masked content from being published there.
+    onOriginalImageComplete?.(mosaicImage)
   }
 
   const handleRemoveImage = () => {

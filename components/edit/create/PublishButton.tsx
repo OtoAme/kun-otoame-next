@@ -179,13 +179,28 @@ export const PublishButton = ({ setErrors, className }: Props) => {
     )
 
     if (!publishedPatch) {
-      const res = await kunFetchFormData<
-        KunResponse<{
-          uniqueId: string
-          patchId: number
-          moemoepointBalance: MoemoepointBalance
-        }>
-      >('/edit', createFormData!, CREATE_PATCH_PUBLISH_TIMEOUT_MS)
+      type CreatePatchResponse = KunResponse<{
+        uniqueId: string
+        patchId: number
+        moemoepointBalance: MoemoepointBalance
+      }>
+
+      // kunFetch rethrows network failures and timeouts instead of returning a
+      // string, so an unguarded await would leave the submit button loading
+      // forever with nothing shown to the user.
+      let res: CreatePatchResponse
+      try {
+        res = await kunFetchFormData<CreatePatchResponse>(
+          '/edit',
+          createFormData!,
+          CREATE_PATCH_PUBLISH_TIMEOUT_MS
+        )
+      } catch (error) {
+        console.error('Create patch submit failed:', error)
+        toast.error('发布失败, 请检查网络后重试')
+        setCreating(false)
+        return
+      }
 
       if (typeof res === 'string') {
         kunErrorHandler(res, () => {})
