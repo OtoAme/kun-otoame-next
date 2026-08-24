@@ -72,10 +72,16 @@ export const MOEMOEPOINT_REASON = {
  * - 改名: app/api/user/setting/username/route.ts
  * - 私聊与图片: app/api/message/conversation/**
  * - 发资源与上传门槛: app/api/patch/resource/route.ts, app/api/upload/resource/route.ts
+ * - 投稿押金与奖励: app/api/patch-submission/**, constants/patchSubmission.ts
  */
 export const MOEMOEPOINT_EARN_RULES = [
   { label: '每日签到', amount: '+2 ~ +7', detail: '每天一次, 数值随机' },
   { label: '发布 OtomeGame', amount: '+3', detail: '每成功发布一个游戏条目' },
+  {
+    label: '投稿通过',
+    amount: '+3',
+    detail: '投稿通过审核后返还押金, 并额外奖励 3 点'
+  },
   { label: '发布资源', amount: '+3', detail: '每成功发布一个资源' },
   {
     label: '内容被点赞',
@@ -106,6 +112,18 @@ export const MOEMOEPOINT_SPEND_RULES = [
     label: '删除资源（收回奖励）',
     amount: '-3',
     detail: '发布资源时获得的 3 点会被收回, 可能使总额变为负数'
+  },
+  {
+    label: '新建投稿（押金暂扣）',
+    amount: '-10',
+    detail:
+      '普通用户每条投稿暂扣 10 点, 创作者 1 点。暂扣期间不可用, 但仍计入总额'
+  },
+  {
+    label: '投稿违规（押金扣除）',
+    amount: '-10',
+    detail:
+      '仅在被判定违规时扣除。重复条目或不予收录会全额返还, 删除草稿也会返还'
   }
 ] as const
 
@@ -117,5 +135,10 @@ export const MOEMOEPOINT_THRESHOLD_RULES = [
   {
     label: '上传文件到对象存储',
     detail: '创作者可用萌萌点 ≥ 20; 管理员不受此余额门槛限制'
+  },
+  {
+    label: '新建投稿',
+    detail:
+      '需要足够的可用萌萌点支付押金; 普通用户同时最多 5 条投稿, 创作者 10 条'
   }
 ] as const
