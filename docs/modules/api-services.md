@@ -139,7 +139,7 @@ service/helper 负责：
 - 所有运行时萌萌点增减必须通过统一 service，并和所属业务写入放在同一个 Prisma 事务。禁止在其他模块直接对 `user.moemoepoint` 使用 `increment`、`decrement`、`set` 或裸 SQL。
 - 消费和暂扣必须用条件更新校验可用余额；奖励、退款、回退和违规确认扣除**允许总额或可用余额变成负数，这是有意的审计设计**——取消点赞和删除资源必须真实回退，不能把差额悄悄抹平。数据库层只对 `moemoepoint_reserved` 加了非负 CHECK，总额没有下限。前端必须能表达负余额。
 - 暂扣只增加 reserved，不改总额；返还减少 reserved；确认扣除同时减少总额和 reserved，且每条暂扣只能整笔结算一次。
-- **`reserveMoemoepoint` / `releaseMoemoepoint` / `forfeitMoemoepoint` 和 `user_moemoepoint_reservation` 目前没有调用方，这是有意为之，不是死代码，不要清理。** 它们是投稿暂扣（押金）的基建，接入方案见 [投稿暂扣设计](../superpowers/specs/2026-08-19-moemoepoint-submission-stake-design.md)。
+- **`reserveMoemoepoint` / `releaseMoemoepoint` / `forfeitMoemoepoint` 和 `user_moemoepoint_reservation` 用于投稿押金。** 暂扣在创建草稿时冻结, 通过审核返还并奖励 3 点, 驳回返还, 违规扣除。接入点见 [投稿域](#投稿域-patch_submission)。
 - 每笔变更写入 `user_moemoepoint_ledger` 的总额/待结算 delta、变更后快照、稳定原因代码、用户可读原因、关联对象和可选幂等键。
 - `reason` 是 `VarChar(500)`，而调用方经常拼接用户内容（游戏名 `VarChar(1007)`、资源名 `VarChar(300)`）。service 内部**截断**而不是拒绝：明细是业务写入的副产品，不能因为标题太长让发布游戏整个事务回滚。调用方仍应自行 `.slice(0, 100)` 以保持明细可读。
 - 幂等键只在真正稳定时才传。点赞类切换**不传**幂等键：自增关系 id 每次点赞都是新值，取消点赞用的又是即将被删的行 id，无法在重放间保持稳定；真正的守卫是各点赞关系表的唯一约束加上 `patch-like` 限流。
@@ -292,6 +292,29 @@ service/helper 负责：
 - 发放萌萌点允许管理员 `role >= 3`。
 - 删除、更新用户时必须写审计日志或保留操作人上下文。
 - 后台更新他人资源时除写审计日志外，还要通知资源发布者并列出安全的字段级变更；字段命名跟随前端资源表单；管理员修改自己发布的资源不自通知。
+
+### 投稿域 patch_submission
+
+入口：
+
+- `app/api/patch-submission/**`（用户侧：草稿 CRUD、提交/撤回、素材、隐藏）
+- `app/api/admin/patch-submission/**`（审核队列与四个审核动作）
+- `app/api/patch-submission/publishCore.ts`（共享发布核心）
+- `constants/patchSubmission.ts`、`validations/patchSubmission.ts`、`store/patchSubmissionStore.ts`
+
+规则：
+
+- **审核通过前绝不写入 `patch`。** 草稿与待审投稿只存在 `patch_submission`，所以待审内容对所有公开查询天然不可见，不靠过滤。
+- **素材不搬动。** 草稿素材用服务端生成的不可猜 key 写到发布后继续使用的最终位置，批准是一个纯数据库短事务，没有任何对象存储操作。这不是私有存储：知道链接的人仍可访问，文案不得宣称「私有」。
+- **押金按创建时角色固定。** 金额与名额在建草稿时冻结在行上, 之后升降角色不重新结算。普通用户每条 10 点、最多 5 条；创作者 1 点、最多 10 条；发布奖励 3 点。
+- **建草稿的顺序是硬约束**（`quota.ts`）：锁用户行 → 处理创建幂等（重试直接返回既有草稿）→ 查名额与容量 → reserve → 插入。不能靠「reserve 在前」代替, 因为 `reserveMoemoepoint` 命中幂等键会早退、不取锁。
+- **结算只在进入终态那一次转换发生。** 终态记录只能隐藏, 不能再删除或二次结算——`settleMoemoepointReservation` 对已结算的暂扣用不匹配的键会抛错。删除只对活动草稿开放, release 后转 `deleted`。
+- **审核并发守卫**：每个审核动作用一次条件式 `updateMany … where { status: 'pending' }` 抢占, 两名管理员同时点批准只产生一个 `patch`。这是唯一的并发保护, 不得省略。
+- **`reject` 是独立动作**（返还, 不罚没）, 用于重复条目、超出收录范围、诚实但无法发布。缺它会让审核只剩「无限期挂着」或「不公平罚没」。
+- **发布核心三层**：提交前抓取外部数据并冻结进 payload；最终事务内纯 DB 写入 patch/alias/tag/company/gallery/结算/通知/日志；事务后只做缓存失效与 SFW IndexNow。批准链路全程不访问外网。
+- **上传端点从 middleware matcher 排除**, 在 handler 内自校 CSRF, 使其能在整个 body 传完前拒绝。所有投稿路由先鉴权再解析。
+- **限频分层**：创建/提交/上传 fail-closed；读取/自动保存 fail-open；删除返还与审核结算不设限频（详见 [限频分层](data-cache-upload.md)）。
+- 素材运维：投稿 key 偏离 `patch/<id>/...` canonical 布局；发布后素材归 `patch` 所有, 清理命令（`scripts/cleanupSubmissionAssets.ts`）永不删除线上条目仍引用的对象；下架未审素材要连带 Cloudflare purge。
 
 ## 输入校验
 

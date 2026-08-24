@@ -43,6 +43,7 @@
 - `maintenance:tags:*`
 - `maintenance:companies:dirty:*`
 - `maintenance:conversation-images:*`
+- `maintenance:submission-assets:*`
 - `stickers:sync`：校验并同步内置 Sticker Pack 资源。默认 dry-run；加 `--apply` 后才会上传 WebP/WebM、生成动态 poster 并 upsert 数据库目录。静态 WebP 最大 512 KB，动态 WebM 必须为带透明通道、无音频的 VP9，最大 300 KB，超限直接拒绝；poster 使用内容哈希 key，避免 immutable CDN 复用旧图。
 - Sticker 管理后台位于 `/admin/stickers`，服务端导入支持单张、多文件和 ZIP；ZIP 导入会检查路径穿越、符号链接、加密条目、ZIP Bomb、重复内容和解压大小，失败时清理已上传对象。
 - 生产数据库变更按顺序执行 `migration/production-private-chat-stickers-preflight-2026-08-14.sql`、对应 sync，再执行 `migration/production-sticker-admin-preflight-2026-08-14.sql`、对应 sync。preflight 只读，sync 前必须审核重复 hash、封面引用和外键定义检查结果。已经执行过旧版 Sticker sync 的数据库，还要在备份后执行 `migration/production-stickers-prisma-alignment-2026-08-15.sql`，再运行 `pnpm prisma:deploy-safe`；该纠正脚本不触碰 `patch_released_idx`。
@@ -62,6 +63,8 @@ Steam ID 软查重上线时，先备份数据库，再运行 `migration/producti
 `maintenance:resource-attributes:dry` 会按已发布资源（`patch_resource.status = 0`）重算每个游戏卡片/详情页使用的 `type`、`language` 和 `platform` 派生标签，预览历史脏数据中哪些 patch 会变化，不写 DB。确认输出后运行 `maintenance:resource-attributes:apply`，脚本会更新派生字段并失效受影响的详情和列表缓存。待审核、封禁或已删除资源不能进入这些派生标签。
 
 `migration:resource-type:*` 在迁移单条资源类型/平台后，也必须按同一已发布资源口径重算 patch 派生属性。`migration:patch-counters` 安装和回填的 `resource_count` 只统计已发布资源，并监听 `patch_resource.status` 变化；运行旧触发器的环境修复卡片资源数时，应重新执行 `pnpm migration:patch-counters`。
+
+`maintenance:submission-assets:dry` 扫描 `patch-submission/` 前缀下的对象, 列出无人引用的孤儿, 不删不清 CDN。确认后用 `maintenance:submission-assets:apply` 删除并补做 Cloudflare purge。两条不变量必须保持：**被正式条目引用的对象永不删除**（批准时素材不搬动, 投稿素材直接成为线上条目的素材, 所以隐藏或删除投稿行不能牵连它们）；**只删过了宽限期的孤儿**（默认 24 小时, 因为上传先有对象后有行）。可用 `--grace-hours` 与 `--limit` 调整。
 
 `maintenance:gallery-thumbnails:dry` 扫描历史 gallery 中 `thumbnail_url IS NULL` 的本站原图，输出待回填数量，不下载原图、不写 S3、不写 DB。确认 dry-run 后用 `maintenance:gallery-thumbnails:apply` 分批回填真实缩略图；apply 默认 `--limit=50 --batch=20 --concurrency=1 --delay=1000`，适合生产 3c 服务器低负载执行，并会逐张打印当前处理的游戏、gallery 图片 ID、完成状态和耗时。常用生产命令是 `pnpm maintenance:gallery-thumbnails:apply -- --limit=50 --batch=20 --concurrency=1 --delay=1000`，重复执行直到 dry-run 无候选；如果 FFmpeg 性能或可用性不确定，先加 `--skip-animated-avif`。
 

@@ -431,3 +431,11 @@ pm2 logs kun-touchgal-next
 | 生产站被 noindex                   | 删除 `.env` 中 `KUN_VISUAL_NOVEL_TEST_SITE_LABEL`。                                                            |
 | `deploy:pull` 找不到 release       | 确认 GitHub latest release 有 `release.tar.gz`，`.env` 中 `GITHUB_REPO` 正确，私有仓库配置 `GITHUB_TOKEN`。    |
 | `deploy:build` 过程内存不足        | 增加 swap，或降低 `ecosystem.config.cjs` 的 `instances`。README 中按服务器核数调整实例数，但内存也会线性增长。 |
+
+## 投稿域上线顺序
+
+1. 先跑 `migration/production-vndb-relation-id-unique-preflight-2026-08-24.sql`。**出现任何 `ci_duplicate_group` 行就停下人工处理**：两条游戏共用一个 Release ID 是内容决策, 不能自动合并。
+2. 无冲突后跑对应 sync。它会把 `vndb_relation_id` 归一为小写、加大小写无关唯一性所需的 CHECK, 并 `CREATE UNIQUE INDEX CONCURRENTLY`（因此必须在显式事务之外执行）。
+3. 再跑 `production-patch-submission-preflight-2026-08-24.sql` 与对应 sync, 建 `patch_submission` / `patch_submission_gallery` 与状态 CHECK。两份 sync 都可重跑。
+4. 后端上线后再开放入口（用户主页的投稿标签与后台审核入口）。
+5. 生产不跑 `prisma db push`。

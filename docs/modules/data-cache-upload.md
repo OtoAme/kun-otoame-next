@@ -222,6 +222,12 @@ Gallery 图片上传走 `app/api/edit/gallery/route.ts` 和 `app/api/edit/galler
 
 限频命中时 service 返回结构化限流结果，由 route 转成 `429 Too Many Requests`、`Retry-After` 秒数和 `private, no-store` 响应；响应体保留用户可见字符串。动作限频 Redis 检查失败时 fail-open 并记录错误，避免 Redis 短暂故障阻断文字私聊；图片小时 quota/扣费链路 Redis 不可用时 fail-closed，避免无法计费时继续写 S3。
 
+投稿域（`app/api/patch-submission/rateLimit.ts`）在这个依据上再分三层，**不要当 bug 改回统一 fail-open**：
+
+- **fail-closed**：新建草稿（20/小时）、提交（20/小时）、素材上传（30/10 分钟）。这些碰钱或产生 S3 成本，Redis 不可用时宁可拒绝。
+- **fail-open**：草稿读取（240/分钟）、自动保存（120/分钟）。纯技术限频，Redis 抖动不应打断用户编辑。
+- **不设限频**：删除返还、管理员驳回/批准/违规结算。这与 fail-open 不是一回事——fail-open 超阈值仍返回 429，而返还押金的路径连 429 都不能有，否则用户的押金会被计数器卡住。这些路径的最终防线是数据库状态机与结算幂等键。
+
 ## S3
 
 `lib/s3.ts` 使用 AWS SDK v3：
@@ -245,6 +251,16 @@ Gallery 图片上传走 `app/api/edit/gallery/route.ts` 和 `app/api/edit/galler
 删除资源前必须确认没有其他 `patch_resource_link` 引用同一 content。
 
 `extractS3Key` 只接受以 `NEXT_PUBLIC_KUN_VISUAL_NOVEL_S3_STORAGE_URL` 开头的 URL。删除逻辑遇到非本站 URL 会拒绝删除并记录错误，这是防止误删外部链接的保护。
+
+### 投稿素材的 key 布局（不同于正式条目）
+
+正式条目的素材在 `patch/<patchId>/banner/*` 与 `patch/<patchId>/gallery/*`（canonical 布局，`scripts/galleryThumbnailBackfill.ts` 与 `app/api/utils/purgeCache.ts` 依赖它按 patchId 推导 URL）。
+
+投稿素材**不遵循这个布局**：它写在 `patch-submission/<submissionId>-<随机>/...`，key 由服务端生成、不可猜测。批准时素材不搬动, 直接成为正式条目引用的对象, 所以：
+
+- 清理命令（`scripts/cleanupSubmissionAssets.ts`）必须排除任何被 `patch`、`patch_game_image` 或封面变体引用的 key, 只删过了宽限期的孤儿。宽限期是因为上传先有对象后有行。
+- `purgeCache.ts` 按 patchId 推导的三个封面 URL 对投稿 key 是空推。换封面时旧投稿 key 的 purge 由上传服务显式处理。
+- 未审素材是公开可取的, 被预览后可能进 CDN, 因此 `reject` / `violation` / 用户删除都要连带 purge 封面三变体与每张图的主图、缩略图 URL。
 
 ## 资源派生属性
 

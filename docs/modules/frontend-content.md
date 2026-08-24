@@ -215,3 +215,23 @@ pnpm typecheck
 pnpm test
 pnpm typecheck
 ```
+
+## 投稿页面
+
+入口：
+
+- `app/user/[id]/submission/page.tsx`（本人列表, 仅自己可见）
+- `app/submission/[id]/page.tsx`（编辑与预览）
+- `app/admin/submission/page.tsx`（审核队列）
+- `components/submission/**`、`store/patchSubmissionStore.ts`、`hooks/usePatchSubmissionAutosave.ts`
+
+规则：
+
+- **校验分两级。** 草稿在每次输入时保存, 所以自动保存走宽松 schema（`patchSubmissionDraftPayloadSchema`）；完整性只在提交时校验一次。若让自动保存要求完整表单, 用户填完最后一个字段之前保存会一直失败。
+- **hydrate 在 effect 里, 所以首帧必须用服务端数据兜底。** `SubmissionEditor` 在 `submissionId` 与 props 不一致时直接渲染 props 里的 payload, 否则首帧会用 store 的空初始值, 在已保存内容上闪出空表单——这个缺陷是浏览器测试重载后发现标题为空才暴露的。
+- **`patchSubmissionStore` 故意不持久化。** 草稿的真源在数据库、按 id 加载；再存一份本地副本只会在跨设备编辑后与服务端不一致。
+- **自动保存冲突不重试。** `revision` 是乐观锁, 冲突意味着另一台设备先保存了；重试会覆盖对方的内容, 正是这把锁要防的事。冲突单独成一种状态展示, 并阻止提交。
+- **提交前必须 flush 自动保存**, 否则冻结给管理员看的是过期 payload。
+- **投稿画廊卡片的选择、放大、删除各自是可聚焦控件且有可访问名称。** 不要照搬编辑页那种「整卡承担点击 + `pointer-events-none` 的 checkbox」写法：那让纯键盘用户既选不中也放不大, 而投稿面向普通用户。
+- 复用的编辑输入（`VNDBInput`、`VNDBRelationInput`、`BangumiInput`、`SteamInput`、`ReleaseDateInput`、`BatchTag`、`SortableAliasChips`）都是 prop 驱动的泛型组件, 接投稿 payload 无需改动管理员侧代码。
+- 本人列表在建草稿前就说明押金、名额与容量；余额不足时给签到与规则入口, 而不是一个看起来坏掉的按钮。终态记录提供「从列表隐藏」而非删除。
