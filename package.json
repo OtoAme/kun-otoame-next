@@ -42,6 +42,8 @@
     "maintenance:companies:dirty:apply": "esno scripts/cleanupDirtyCompanies.ts --apply",
     "maintenance:conversation-images:dry": "esno scripts/cleanupConversationImages.ts",
     "maintenance:conversation-images:apply": "esno scripts/cleanupConversationImages.ts --apply",
+    "maintenance:submission-assets:dry": "esno scripts/cleanupSubmissionAssets.ts",
+    "maintenance:submission-assets:apply": "esno scripts/cleanupSubmissionAssets.ts --apply",
     "maintenance:gallery-thumbnails:dry": "esno scripts/galleryThumbnailBackfill.ts",
     "maintenance:gallery-thumbnails:apply": "esno scripts/galleryThumbnailBackfill.ts --apply",
     "stickers:sync": "esno scripts/syncStickers.ts",
