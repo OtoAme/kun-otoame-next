@@ -7,7 +7,13 @@
 import { randomUUID } from 'crypto'
 import jwt from 'jsonwebtoken'
 import Redis from 'ioredis'
-import { chromium, type BrowserContext, type Locator, type Page } from 'playwright-core'
+import sharp from 'sharp'
+import {
+  chromium,
+  type BrowserContext,
+  type Locator,
+  type Page
+} from 'playwright-core'
 
 const BASE_URL = process.env.KUN_E2E_BASE_URL ?? 'http://127.0.0.1:3100'
 const KUN_TOKEN_COOKIE = 'kun-galgame-patch-moe-token'
@@ -56,7 +62,11 @@ const createSessionCookie = async () => {
       86400,
       JSON.stringify({ uid, jti, name, role, createdAt })
     )
-    await redis.zadd(`${KUN_REDIS_PREFIX}:access:sessions:${uid}`, createdAt, jti)
+    await redis.zadd(
+      `${KUN_REDIS_PREFIX}:access:sessions:${uid}`,
+      createdAt,
+      jti
+    )
   } finally {
     redis.disconnect()
   }
@@ -106,7 +116,9 @@ const assertTrue = (value: boolean, message: string) => {
 
 const waitVisible = async (locator: Locator, what: string) => {
   try {
-    await locator.first().waitFor({ state: 'visible', timeout: STEP_TIMEOUT_MS })
+    await locator
+      .first()
+      .waitFor({ state: 'visible', timeout: STEP_TIMEOUT_MS })
   } catch {
     throw new Error(`${what} never became visible`)
   }
@@ -162,9 +174,18 @@ const openOwnSubmissionTab = async (page: Page) => {
 
 const createDraft = async (page: Page) => {
   await openOwnSubmissionTab(page)
-  await page.locator('button', { hasText: /^新建投稿$/ }).first().click()
+  await page
+    .locator('button', { hasText: /^新建投稿$/ })
+    .first()
+    .click()
   await page.waitForURL('**/submission/*', { timeout: STEP_TIMEOUT_MS })
   await waitVisible(page.getByText('投稿游戏条目'), 'submission editor')
+}
+
+const fillIntroduction = async (page: Page, value: string) => {
+  const editor = page.locator('.cm-content[contenteditable="true"]').first()
+  await waitVisible(editor, 'submission introduction editor')
+  await editor.fill(value)
 }
 
 const cases: Case[] = [
@@ -176,7 +197,10 @@ const cases: Case[] = [
         page.getByText('新建投稿会暂扣', { exact: false }),
         'deposit explanation'
       )
-      await waitVisible(page.getByText('素材容量', { exact: false }), 'capacity')
+      await waitVisible(
+        page.getByText('素材容量', { exact: false }),
+        'capacity'
+      )
     }
   },
   {
@@ -209,16 +233,78 @@ const cases: Case[] = [
     }
   },
   {
+    name: 'the required-name error clears as soon as the author types',
+    run: async (page) => {
+      await createDraft(page)
+      await page
+        .locator('button', { hasText: /^提交审核$/ })
+        .first()
+        .click()
+
+      const title = page.getByLabel('游戏名称')
+      assertTrue(
+        (await title.getAttribute('aria-invalid')) === 'true',
+        'the empty required name was not marked invalid'
+      )
+      await title.fill('错误态已清除')
+      assertTrue(
+        (await title.getAttribute('aria-invalid')) !== 'true',
+        'the name error stayed red after typing'
+      )
+    }
+  },
+  {
+    name: 'explicit save persists the current draft before reporting success',
+    run: async (page) => {
+      await createDraft(page)
+      await page.getByLabel('游戏名称').fill('E2E 显式保存标题')
+      await page
+        .locator('button', { hasText: /^保存草稿$/ })
+        .first()
+        .click()
+      await waitVisible(page.getByText('草稿已保存到云端'), 'save confirmation')
+
+      await page.reload({ waitUntil: 'domcontentloaded' })
+      assertTrue(
+        (await page.getByLabel('游戏名称').inputValue()) === 'E2E 显式保存标题',
+        'explicitly saved title did not survive reload'
+      )
+    }
+  },
+  {
+    name: 'preview flushes and renders the latest server projection',
+    run: async (page) => {
+      await createDraft(page)
+      await page.getByLabel('游戏名称').fill('E2E 最新预览标题')
+      await fillIntroduction(
+        page,
+        '这是打开预览前刚刚输入、必须先保存的最新正文。'
+      )
+      await page
+        .locator('button', { hasText: /^预览$/ })
+        .first()
+        .click()
+
+      await waitVisible(page.getByText('预览，尚未提交'), 'preview marker')
+      await waitVisible(page.getByText('E2E 最新预览标题'), 'preview title')
+      await waitVisible(
+        page.getByText('这是打开预览前刚刚输入', { exact: false }),
+        'latest preview introduction'
+      )
+    }
+  },
+  {
     name: 'submitting without a cover is refused with a readable message',
     run: async (page) => {
       await createDraft(page)
       await page.getByLabel('游戏名称').fill('E2E 缺封面')
-      await page
-        .getByLabel('游戏介绍')
-        .fill('这是一条足够长的游戏介绍文本用于通过校验。')
+      await fillIntroduction(page, '这是一条足够长的游戏介绍文本用于通过校验。')
       await waitVisible(page.getByText('已保存到云端'), 'autosave confirmation')
 
-      await page.locator('button', { hasText: /^提交审核$/ }).first().click()
+      await page
+        .locator('button', { hasText: /^提交审核$/ })
+        .first()
+        .click()
       await waitVisible(
         page.getByText('请先上传封面图片', { exact: false }),
         'missing cover message'
@@ -239,6 +325,54 @@ const cases: Case[] = [
         'the gallery dropzone has no real file input'
       )
     }
+  },
+  {
+    name: 'failed gallery uploads survive refresh and retry with progress',
+    run: async (page) => {
+      await createDraft(page)
+      const image = await sharp({
+        create: {
+          width: 64,
+          height: 64,
+          channels: 3,
+          background: { r: 120, g: 40, b: 90 }
+        }
+      })
+        .jpeg()
+        .toBuffer()
+
+      await page.route('**/api/patch-submission/asset', async (route) => {
+        if (route.request().method() !== 'POST') {
+          await route.continue()
+          return
+        }
+        await new Promise((resolve) => setTimeout(resolve, 500))
+        await route.abort('failed')
+      })
+
+      await page.locator('input[type="file"][multiple]').setInputFiles({
+        name: 'retry.jpg',
+        mimeType: 'image/jpeg',
+        buffer: image
+      })
+      await waitVisible(page.getByText('截图上传进度'), 'upload progress')
+      await waitVisible(
+        page.locator('button[aria-label="重试上传 retry.jpg"]'),
+        'failed retry control'
+      )
+
+      await page.unroute('**/api/patch-submission/asset')
+      await page.reload({ waitUntil: 'domcontentloaded' })
+      const retry = page.locator('button[aria-label="重试上传 retry.jpg"]')
+      await waitVisible(retry, 'retry control restored after refresh')
+      await retry.click()
+      await retry.waitFor({ state: 'detached', timeout: STEP_TIMEOUT_MS })
+      await waitVisible(page.getByText('1 / 1'), 'completed-file progress')
+      assertTrue(
+        (await page.locator('img[alt^="第 "]').count()) > 0,
+        'successful retry did not replace the placeholder with a cloud card'
+      )
+    }
   }
 ]
 
@@ -257,7 +391,8 @@ const clearOwnRateLimits = async () => {
   try {
     await redis.del(
       ...['create', 'submit', 'asset-upload', 'read', 'autosave'].map(
-        (action) => `${KUN_REDIS_PREFIX}:patch-submission:rate-limit:${action}:${uid}`
+        (action) =>
+          `${KUN_REDIS_PREFIX}:patch-submission:rate-limit:${action}:${uid}`
       )
     )
   } finally {

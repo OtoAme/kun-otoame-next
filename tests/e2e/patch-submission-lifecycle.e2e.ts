@@ -10,6 +10,7 @@ import { randomUUID } from 'crypto'
 import jwt from 'jsonwebtoken'
 import Redis from 'ioredis'
 import sharp from 'sharp'
+import { chromium } from 'playwright-core'
 
 const BASE_URL = process.env.KUN_E2E_BASE_URL ?? 'http://127.0.0.1:3100'
 // CSRF compares this against the server's configured address; the throwaway
@@ -31,7 +32,11 @@ const redis = new Redis({
   password: process.env.REDIS_PASSWORD || undefined
 })
 
-const signSession = async (user: { uid: number; name: string; role: number }) => {
+const signSession = async (user: {
+  uid: number
+  name: string
+  role: number
+}) => {
   const jti = randomUUID()
   const token = jwt.sign(
     {
@@ -257,7 +262,10 @@ const main = async () => {
     '/api/patch-submission/asset',
     galleryForm()
   )
-  assert(typeof firstUpload?.galleryId === 'number', 'the screenshot was stored')
+  assert(
+    typeof firstUpload?.galleryId === 'number',
+    'the screenshot was stored'
+  )
   const secondUpload = await callForm(
     submitterToken,
     '/api/patch-submission/asset',
@@ -304,23 +312,81 @@ const main = async () => {
     'a role 1 author is refused as a reviewer'
   )
 
-  console.log('approve')
-  const approved = await call(
+  console.log('reviewer notification links to the full detail page')
+  const reviewerMessages = await call(
     reviewerToken,
-    'POST',
-    '/api/admin/patch-submission/approve',
-    { submissionId }
+    'GET',
+    '/api/message/all?page=1&limit=30'
+  )
+  const reviewMessage = reviewerMessages?.messages?.find(
+    (message: { link?: string }) =>
+      message.link === `/admin/submission/${submissionId}`
   )
   assert(
-    typeof approved?.uniqueId === 'string',
+    reviewMessage?.link === `/admin/submission/${submissionId}`,
+    'reviewer received a direct detail link'
+  )
+
+  const browser = await chromium.launch({ channel: 'chrome' })
+  try {
+    const context = await browser.newContext({
+      baseURL: BASE_URL,
+      viewport: { width: 1440, height: 900 }
+    })
+    try {
+      await context.addCookies([
+        {
+          name: 'kun-galgame-patch-moe-token',
+          value: reviewerToken,
+          url: BASE_URL,
+          httpOnly: true,
+          sameSite: 'Strict'
+        }
+      ])
+      const page = await context.newPage()
+      await page.goto(`${BASE_URL}${reviewMessage.link}`, {
+        waitUntil: 'domcontentloaded'
+      })
+      await page
+        .getByText(payload('').introduction, { exact: false })
+        .first()
+        .waitFor({ state: 'visible', timeout: 20000 })
+      assert(
+        (await page.locator('img[alt="投稿截图"]').count()) > 0,
+        'reviewer detail renders the submitted screenshot'
+      )
+
+      console.log('approve from the reviewer detail')
+      await page.getByRole('button', { name: '通过', exact: true }).click()
+      await page.getByRole('button', { name: '确认', exact: true }).click()
+      await page
+        .getByText('已发布', { exact: true })
+        .waitFor({ state: 'visible', timeout: 20000 })
+    } finally {
+      await context.close()
+    }
+  } finally {
+    await browser.close()
+  }
+
+  const afterApproval = await call(
+    submitterToken,
+    'GET',
+    '/api/patch-submission?page=1&limit=50'
+  )
+  const published = afterApproval.submissions?.find(
+    (submission: { id: number }) => submission.id === submissionId
+  )
+  assert(
+    typeof published?.patchUniqueId === 'string',
     'approval produced a real patch'
   )
   assert(
-    approved.moemoepointBalance?.reserved === baseline.reserved,
+    afterApproval.moemoepointBalance?.reserved === baseline.reserved,
     'the deposit was released'
   )
   assert(
-    approved.moemoepointBalance?.total === baseline.total + 3,
+    afterApproval.moemoepointBalance?.total === baseline.total + 3,
     'the publish reward was paid on top of the returned deposit'
   )
 
