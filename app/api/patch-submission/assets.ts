@@ -1,7 +1,7 @@
 import crypto from 'crypto'
 import { Prisma } from '@prisma/client'
 import { prisma } from '~/prisma/index'
-import { uploadImageToS3 } from '~/lib/s3'
+import { getS3PublicUrl, uploadImageToS3 } from '~/lib/s3'
 import { preparePatchGalleryImage } from '~/app/api/edit/galleryUpload'
 import { uploadPatchSubmissionBannerVariants } from './bannerUpload'
 import {
@@ -211,6 +211,8 @@ export const uploadPatchSubmissionGalleryImage = async (
           file_fingerprint: true,
           image_key: true,
           thumbnail_key: true,
+          is_nsfw: true,
+          display_order: true,
           status_changed_at: true
         }
       })
@@ -280,7 +282,19 @@ export const uploadPatchSubmissionGalleryImage = async (
   )
 
   if (reserved.alreadyReady) {
-    return { galleryId: reserved.row.id, alreadyUploaded: true }
+    return {
+      galleryId: reserved.row.id,
+      alreadyUploaded: true,
+      gallery: {
+        id: reserved.row.id,
+        clientAssetId: input.clientAssetId,
+        uploadStatus: 'ready' as const,
+        imageUrl: getS3PublicUrl(reserved.row.image_key),
+        thumbnailUrl: getS3PublicUrl(reserved.row.thumbnail_key),
+        isNSFW: reserved.row.is_nsfw,
+        displayOrder: reserved.row.display_order
+      }
+    }
   }
 
   const prepared = await preparePatchGalleryImage(input.image, input.watermark)
@@ -355,7 +369,19 @@ export const uploadPatchSubmissionGalleryImage = async (
     )
   }
 
-  return { galleryId: reserved.row.id, alreadyUploaded: false }
+  return {
+    galleryId: reserved.row.id,
+    alreadyUploaded: false,
+    gallery: {
+      id: reserved.row.id,
+      clientAssetId: input.clientAssetId,
+      uploadStatus: 'ready' as const,
+      imageUrl: getS3PublicUrl(imageKey),
+      thumbnailUrl: getS3PublicUrl(thumbnailKey),
+      isNSFW: input.isNSFW,
+      displayOrder: input.displayOrder
+    }
+  }
 }
 
 /** Frees the slot and the reserved bytes so the same id can be retried. */

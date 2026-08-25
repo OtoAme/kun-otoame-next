@@ -30,7 +30,11 @@ const prismaMocks = vi.hoisted(() => {
 vi.mock('~/prisma/index', () => ({ prisma: prismaMocks }))
 
 const uploadImageToS3Mock = vi.hoisted(() => vi.fn())
-vi.mock('~/lib/s3', () => ({ uploadImageToS3: uploadImageToS3Mock }))
+vi.mock('~/lib/s3', () => ({
+  uploadImageToS3: uploadImageToS3Mock,
+  getS3PublicUrl: (key: string | null) =>
+    key ? `https://cdn.example.test/${key}` : null
+}))
 
 const preparePatchGalleryImageMock = vi.hoisted(() => vi.fn())
 vi.mock('~/app/api/edit/galleryUpload', () => ({
@@ -148,7 +152,7 @@ describe('gallery upload finalize fence', () => {
   })
 
   it('attaches ready keys only through the status-guarded transaction', async () => {
-    await uploadPatchSubmissionGalleryImage({
+    const result = await uploadPatchSubmissionGalleryImage({
       submissionId: 1,
       userId: 2,
       clientAssetId: 'client-9',
@@ -163,7 +167,52 @@ describe('gallery upload finalize fence', () => {
       expect.any(ArrayBuffer),
       true
     )
+    expect(result.gallery).toMatchObject({
+      id: 9,
+      clientAssetId: 'client-9',
+      uploadStatus: 'ready',
+      imageUrl: expect.stringContaining('/gallery/9.avif')
+    })
     expect(enqueueSubmissionOrphanCleanupJobsMock).not.toHaveBeenCalled()
+  })
+
+  it('returns the ready gallery DTO when a refresh retry reuses its stable client id', async () => {
+    tx.$queryRaw.mockReset()
+    tx.$queryRaw.mockResolvedValue([editableRow])
+    tx.patch_submission_gallery.findUnique.mockResolvedValue({
+      id: 9,
+      upload_status: 'ready',
+      file_fingerprint: null,
+      image_key: 'patch-submission/1-secret/gallery/9.avif',
+      thumbnail_key: 'patch-submission/1-secret/gallery/thumb-9.avif',
+      is_nsfw: true,
+      display_order: 2,
+      status_changed_at: new Date()
+    })
+
+    const result = await uploadPatchSubmissionGalleryImage({
+      submissionId: 1,
+      userId: 2,
+      clientAssetId: 'client-9',
+      image: new ArrayBuffer(8),
+      isNSFW: false,
+      watermark: false,
+      displayOrder: 0
+    })
+
+    expect(result).toMatchObject({
+      galleryId: 9,
+      alreadyUploaded: true,
+      gallery: {
+        clientAssetId: 'client-9',
+        isNSFW: true,
+        displayOrder: 2,
+        imageUrl:
+          'https://cdn.example.test/patch-submission/1-secret/gallery/9.avif'
+      }
+    })
+    expect(preparePatchGalleryImageMock).not.toHaveBeenCalled()
+    expect(uploadImageToS3Mock).not.toHaveBeenCalled()
   })
 })
 

@@ -1,0 +1,57 @@
+import localforage from 'localforage'
+
+export type PatchSubmissionLocalUploadStatus =
+  | 'pending'
+  | 'uploading'
+  | 'failed'
+
+export interface PatchSubmissionLocalUpload {
+  clientAssetId: string
+  blob: Blob
+  fileName: string
+  mimeType: string
+  lastModified: number
+  displayOrder: number
+  isNSFW: boolean
+  watermark: boolean
+  status: PatchSubmissionLocalUploadStatus
+  error: string | null
+}
+
+const storage = localforage.createInstance({
+  name: 'kun-otoame',
+  storeName: 'patch_submission_gallery_uploads'
+})
+
+const keyFor = (submissionId: number) => `submission:${submissionId}`
+
+export const loadPatchSubmissionUploadDraft = async (submissionId: number) => {
+  const items =
+    (await storage.getItem<PatchSubmissionLocalUpload[]>(
+      keyFor(submissionId)
+    )) ?? []
+
+  return items.map((item) =>
+    item.status === 'uploading'
+      ? {
+          ...item,
+          status: 'failed' as const,
+          error: '页面刷新时上传尚未完成，请重试'
+        }
+      : item
+  )
+}
+
+export const savePatchSubmissionUploadDraft = async (
+  submissionId: number,
+  items: PatchSubmissionLocalUpload[]
+) => {
+  if (!items.length) {
+    await storage.removeItem(keyFor(submissionId))
+    return
+  }
+  await storage.setItem(keyFor(submissionId), items)
+}
+
+export const clearPatchSubmissionUploadDraft = (submissionId: number) =>
+  storage.removeItem(keyFor(submissionId))

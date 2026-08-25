@@ -47,7 +47,10 @@ export const SubmissionEditor = ({ submission }: Props) => {
     saveError,
     hydrate,
     submissionId,
-    setExternalProvenance
+    setExternalProvenance,
+    localAssetCount,
+    assetUploadsInFlight,
+    assetDraftLoaded
   } = usePatchSubmissionStore()
   const { queueSave, flush } = usePatchSubmissionAutosave()
   const [nameError, setNameError] = useState('')
@@ -86,6 +89,10 @@ export const SubmissionEditor = ({ submission }: Props) => {
     if (!usePatchSubmissionStore.getState().payload.name.trim()) {
       setNameError('游戏名称是必填项')
       toast.error('请填写游戏名称')
+      return
+    }
+    if (!assetDraftLoaded || localAssetCount > 0 || assetUploadsInFlight > 0) {
+      toast.error('请先完成或移除待上传的截图')
       return
     }
 
@@ -242,7 +249,15 @@ export const SubmissionEditor = ({ submission }: Props) => {
                   保存草稿
                 </Button>
                 <SubmissionPreview submissionId={submission.id} flush={flush} />
-                <Button color="primary" onPress={() => void submit()}>
+                <Button
+                  color="primary"
+                  isDisabled={
+                    !assetDraftLoaded ||
+                    localAssetCount > 0 ||
+                    assetUploadsInFlight > 0
+                  }
+                  onPress={() => void submit()}
+                >
                   提交审核
                 </Button>
               </>
