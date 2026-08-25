@@ -81,10 +81,12 @@ const GalleryItem = ({
   if (!image.imageUrl) return null
 
   return (
-    <button
-      type="button"
-      className="group relative aspect-video overflow-hidden rounded-lg bg-default-100 text-left"
-      onClick={() => revealed && onOpen()}
+    <Button
+      isIconOnly
+      variant="light"
+      aria-label="查看投稿截图"
+      className="group relative aspect-video h-auto min-w-0 overflow-hidden rounded-lg bg-default-100 p-0 text-left"
+      onPress={() => revealed && onOpen()}
     >
       <img
         src={image.thumbnailUrl ?? image.imageUrl}
@@ -93,7 +95,7 @@ const GalleryItem = ({
         loading="lazy"
       />
       <NSFWMask isVisible={!revealed} onReveal={() => setRevealed(true)} />
-    </button>
+    </Button>
   )
 }
 

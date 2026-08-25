@@ -13,7 +13,10 @@ vi.mock('~/lib/s3', () => ({
     key ? `https://cdn.example.test/${key}` : null
 }))
 
-import { getPatchSubmission } from '~/app/api/patch-submission/service'
+import {
+  getPatchSubmission,
+  getPatchSubmissionPublishPreview
+} from '~/app/api/patch-submission/service'
 import { getAdminPatchSubmission } from '~/app/api/admin/patch-submission/service'
 
 const payload = {
@@ -79,6 +82,7 @@ const adminRow = (status: string) => ({
 
 beforeEach(() => {
   vi.clearAllMocks()
+  process.env.KUN_VISUAL_NOVEL_IMAGE_BED_URL = 'https://published.example.test'
 })
 
 describe('patch submission asset visibility', () => {
@@ -120,5 +124,26 @@ describe('patch submission asset visibility', () => {
     expect(submission).toMatchObject({
       preview: { bannerUrl: null, gallery: [] }
     })
+  })
+
+  it('builds the author preview from owned ready assets without exposing keys', async () => {
+    prismaMocks.patch_submission.findFirst.mockResolvedValue(row('draft'))
+
+    const preview = await getPatchSubmissionPublishPreview(1, 2)
+
+    expect(prismaMocks.patch_submission.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: 1, user_id: 2 } })
+    )
+    expect(preview).toMatchObject({
+      bannerUrl:
+        'https://published.example.test/patch-submission/1-secret/banner/banner.avif',
+      gallery: [
+        {
+          imageUrl:
+            'https://published.example.test/patch-submission/1-secret/gallery/9.avif'
+        }
+      ]
+    })
+    expect(JSON.stringify(preview)).not.toContain('image_key')
   })
 })

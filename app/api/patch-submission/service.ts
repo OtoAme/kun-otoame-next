@@ -12,6 +12,8 @@ import {
 } from '~/constants/patchSubmission'
 import { PatchSubmissionError, sumActiveSubmissionBytes } from './quota'
 import { takeDownSubmissionAssets } from './assetCleanup'
+import { buildPatchSubmissionPublishPreview } from './publishPreview'
+import { patchSubmissionDraftPayloadSchema } from '~/validations/patchSubmission'
 import type {
   PatchSubmission,
   PatchSubmissionGalleryImage,
@@ -109,6 +111,44 @@ export const getPatchSubmission = async (
     return '投稿不存在'
   }
   return toSubmission(row)
+}
+
+/** Uses the same ownership predicate as the editor DTO, but keeps keys server-side. */
+export const getPatchSubmissionPublishPreview = async (
+  submissionId: number,
+  userId: number
+) => {
+  const row = await prisma.patch_submission.findFirst({
+    where: { id: submissionId, user_id: userId },
+    select: submissionSelect
+  })
+  if (!row) return '投稿不存在'
+
+  const payload = patchSubmissionDraftPayloadSchema.safeParse(row.payload)
+  if (!payload.success) return '投稿内容无法预览'
+
+  const cleanupOwed = PATCH_SUBMISSION_CLEANUP_STATUSES.includes(
+    row.status as (typeof PATCH_SUBMISSION_CLEANUP_STATUSES)[number]
+  )
+  return buildPatchSubmissionPublishPreview({
+    payload: payload.data,
+    bannerKey: cleanupOwed ? null : row.banner_key,
+    gallery: cleanupOwed
+      ? []
+      : row.gallery.flatMap((image) =>
+          image.upload_status === 'ready' && image.image_key
+            ? [
+                {
+                  id: image.id,
+                  key: image.image_key,
+                  thumbnailKey: image.thumbnail_key,
+                  isNSFW: image.is_nsfw,
+                  displayOrder: image.display_order
+                }
+              ]
+            : []
+        )
+  })
 }
 
 export const listOwnPatchSubmissions = async (

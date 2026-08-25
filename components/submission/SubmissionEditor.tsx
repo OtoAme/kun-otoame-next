@@ -17,6 +17,7 @@ import { usePatchSubmissionStore } from '~/store/patchSubmissionStore'
 import { usePatchSubmissionAutosave } from '~/hooks/usePatchSubmissionAutosave'
 import { SubmissionBannerInput } from './SubmissionBannerInput'
 import { SubmissionGalleryInput } from './SubmissionGalleryInput'
+import { SubmissionPreview } from './SubmissionPreview'
 import { VNDBInput } from '~/components/edit/create/VNDBInput'
 import { VNDBRelationInput } from '~/components/edit/create/VNDBRelationInput'
 import { BangumiInput } from '~/components/edit/components/BangumiInput'
@@ -85,15 +86,9 @@ export const SubmissionEditor = ({ submission }: Props) => {
 
   const submit = async () => {
     // Wait for the debounce, or the reviewer would freeze a stale payload.
-    await flush()
-
-    const state = usePatchSubmissionStore.getState()
-    if (state.saveState === 'conflict') {
-      toast.error('投稿已在其他设备上被修改, 请刷新后再提交')
-      return
-    }
-    if (state.saveState === 'error') {
-      toast.error('还有内容没有保存成功, 请稍后再提交')
+    const saved = await flush()
+    if (!saved.ok) {
+      toast.error(saved.message)
       return
     }
 
@@ -106,6 +101,15 @@ export const SubmissionEditor = ({ submission }: Props) => {
     }
     toast.success('已提交, 请等待管理员审核')
     router.refresh()
+  }
+
+  const saveDraft = async () => {
+    const result = await flush()
+    if (result.ok) {
+      toast.success('草稿已保存到云端')
+    } else {
+      toast.error(result.message)
+    }
   }
 
   const withdraw = async () => {
@@ -205,10 +209,7 @@ export const SubmissionEditor = ({ submission }: Props) => {
             setDate={(released) => update({ ...form, released })}
           />
 
-          <BatchTag
-            data={form}
-            saveTag={(tag) => update({ ...form, tag })}
-          />
+          <BatchTag data={form} saveTag={(tag) => update({ ...form, tag })} />
 
           <Textarea
             isRequired
@@ -224,9 +225,15 @@ export const SubmissionEditor = ({ submission }: Props) => {
 
           <div className="flex gap-2">
             {editable ? (
-              <Button color="primary" onPress={() => void submit()}>
-                提交审核
-              </Button>
+              <>
+                <Button variant="flat" onPress={() => void saveDraft()}>
+                  保存草稿
+                </Button>
+                <SubmissionPreview submissionId={submission.id} flush={flush} />
+                <Button color="primary" onPress={() => void submit()}>
+                  提交审核
+                </Button>
+              </>
             ) : currentStatus === 'pending' ? (
               <Button variant="bordered" onPress={() => void withdraw()}>
                 撤回投稿
