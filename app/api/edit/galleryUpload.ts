@@ -41,6 +41,12 @@ export interface UploadedGalleryImage {
   skipWatermark: boolean
 }
 
+/** What uploadPatchGalleryImage returns: the prepared image plus the keys written. */
+export interface UploadedGalleryResult extends UploadedGalleryImage {
+  originalKey: string
+  thumbnailKey: string | null
+}
+
 interface ProcessedGalleryImage extends UploadedGalleryImage {
   buffer: Buffer
   thumbnailBuffer?: Buffer
@@ -412,30 +418,40 @@ export const uploadPatchGalleryImage = async (
   image: ArrayBuffer,
   patchId: number,
   imageId: number,
-  watermark: boolean
-): Promise<UploadedGalleryImage | string> => {
+  watermark: boolean,
+  /**
+   * Base key (without extension) the objects are written under. Defaults to the
+   * canonical patch layout; a submission-origin entry passes its own
+   * `patch-submission/...` base so an edit keeps the entry's assets on one path
+   * instead of splitting across two.
+   */
+  galleryPrefix?: string
+): Promise<UploadedGalleryResult | string> => {
   const result = await preparePatchGalleryImage(image, watermark)
   if (typeof result === 'string') {
     return result
   }
 
-  const bucketName = `patch/${patchId}/gallery`
+  const bucketName = galleryPrefix ?? `patch/${patchId}/gallery`
   const originalKey = `${bucketName}/${imageId}.${result.extension}`
 
   await uploadImageToS3(originalKey, result.buffer, result.contentType)
+
+  let thumbnailKey: string | null = null
 
   if (
     result.thumbnailBuffer &&
     result.thumbnailExtension &&
     result.thumbnailContentType
   ) {
-    const thumbnailKey = `${bucketName}/thumbnail/thumb-${imageId}.${result.thumbnailExtension}`
+    const candidateThumbnailKey = `${bucketName}/thumbnail/thumb-${imageId}.${result.thumbnailExtension}`
     try {
       await uploadImageToS3(
-        thumbnailKey,
+        candidateThumbnailKey,
         result.thumbnailBuffer,
         result.thumbnailContentType
       )
+      thumbnailKey = candidateThumbnailKey
     } catch (error) {
       if (result.skipWatermark) {
         console.error(
@@ -447,7 +463,9 @@ export const uploadPatchGalleryImage = async (
         return {
           extension: result.extension,
           contentType: result.contentType,
-          skipWatermark: result.skipWatermark
+          skipWatermark: result.skipWatermark,
+          originalKey,
+          thumbnailKey: null
         }
       }
 
@@ -456,10 +474,12 @@ export const uploadPatchGalleryImage = async (
     }
   }
 
-  const uploaded: UploadedGalleryImage = {
+  const uploaded: UploadedGalleryResult = {
     extension: result.extension,
     contentType: result.contentType,
-    skipWatermark: result.skipWatermark
+    skipWatermark: result.skipWatermark,
+    originalKey,
+    thumbnailKey
   }
 
   if (result.thumbnailExtension && result.thumbnailContentType) {

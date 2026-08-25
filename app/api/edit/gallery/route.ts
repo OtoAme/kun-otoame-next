@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { randomBytes } from 'crypto'
 import { prisma } from '~/prisma/index'
 import { kunParseDeleteQuery } from '~/app/api/utils/parseQuery'
 import { extractS3Key } from '~/app/api/patch/resource/_helper'
@@ -54,6 +55,15 @@ export const POST = async (req: NextRequest) => {
     return NextResponse.json('未找到对应游戏')
   }
 
+  // An entry that came from a user submission keeps its assets under the
+  // submission's own unguessable prefix. Editing it should add to that path
+  // rather than opening a second, canonical `patch/<id>/` path for the same
+  // entry. The delete and orphan-cleanup paths already recognise these keys.
+  const linkedSubmission = await prisma.patch_submission.findUnique({
+    where: { patch_id: patchId },
+    select: { id: true }
+  })
+
   const galleryRecord = await prisma.patch_game_image.create({
     data: {
       patch_id: patchId,
@@ -62,6 +72,10 @@ export const POST = async (req: NextRequest) => {
       display_order: displayOrder
     }
   })
+
+  const galleryPrefix = linkedSubmission
+    ? `${PATCH_SUBMISSION_ASSET_PREFIX}${linkedSubmission.id}-${randomBytes(16).toString('hex')}/gallery`
+    : `patch/${patchId}/gallery`
 
   try {
     const arrayBuffer = await image.arrayBuffer()
@@ -74,7 +88,8 @@ export const POST = async (req: NextRequest) => {
         arrayBuffer,
         patchId,
         galleryRecord.id,
-        watermark
+        watermark,
+        galleryPrefix
       )
       if (typeof uploadRes !== 'string') break
       if (attempt < 2) {
@@ -89,10 +104,8 @@ export const POST = async (req: NextRequest) => {
       return NextResponse.json(uploadRes || '图片上传失败')
     }
 
-    const galleryKey = `patch/${patchId}/gallery/${galleryRecord.id}.${uploadRes.extension}`
-    const thumbnailKey = uploadRes.thumbnailExtension
-      ? `patch/${patchId}/gallery/thumbnail/thumb-${galleryRecord.id}.${uploadRes.thumbnailExtension}`
-      : null
+    const galleryKey = uploadRes.originalKey
+    const thumbnailKey = uploadRes.thumbnailKey
     const imageUrl = `${process.env.KUN_VISUAL_NOVEL_IMAGE_BED_URL}/${galleryKey}`
     const thumbnailUrl = thumbnailKey
       ? `${process.env.KUN_VISUAL_NOVEL_IMAGE_BED_URL}/${thumbnailKey}`

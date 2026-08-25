@@ -8,6 +8,9 @@ const prismaMocks = vi.hoisted(() => {
     patch: {
       findUnique: vi.fn()
     },
+    patch_submission: {
+      findUnique: vi.fn()
+    },
     patch_game_image: {
       findUnique: vi.fn(),
       create: vi.fn(),
@@ -102,8 +105,12 @@ describe('gallery upload route', () => {
       contentType: 'image/webp',
       thumbnailExtension: 'webp',
       thumbnailContentType: 'image/webp',
-      skipWatermark: true
+      skipWatermark: true,
+      originalKey: 'patch/123/gallery/456.webp',
+      thumbnailKey: 'patch/123/gallery/thumbnail/thumb-456.webp'
     })
+    // Default: an entry with no linked submission takes the canonical path.
+    prismaMocks.patch_submission.findUnique.mockResolvedValue(null)
     enqueueSubmissionOrphanCleanupJobsMock.mockImplementation(
       (_tx, keys) => Promise.resolve(keys)
     )
@@ -159,7 +166,9 @@ describe('gallery upload route', () => {
     uploadPatchGalleryImageMock.mockResolvedValue({
       extension: 'avif',
       contentType: 'image/avif',
-      skipWatermark: true
+      skipWatermark: true,
+      originalKey: 'patch/123/gallery/456.avif',
+      thumbnailKey: null
     })
 
     const response = await POST(createGalleryRequest())
@@ -182,7 +191,9 @@ describe('gallery upload route', () => {
     uploadPatchGalleryImageMock.mockResolvedValue({
       extension: 'avif',
       contentType: 'image/avif',
-      skipWatermark: true
+      skipWatermark: true,
+      originalKey: 'patch/123/gallery/456.avif',
+      thumbnailKey: null
     })
     prismaMocks.patch_game_image.update.mockRejectedValue(
       new Error('database failed')
@@ -212,6 +223,29 @@ describe('gallery upload route', () => {
     })
     expect(prismaMocks.patch_game_image.delete).not.toHaveBeenCalled()
     expect(deleteFileFromS3Mock).not.toHaveBeenCalled()
+  })
+
+  it('keeps a submission-origin entry edit on the submission asset path', async () => {
+    prismaMocks.patch_submission.findUnique.mockResolvedValue({ id: 42 })
+    uploadPatchGalleryImageMock.mockResolvedValue({
+      extension: 'webp',
+      contentType: 'image/webp',
+      thumbnailExtension: 'webp',
+      thumbnailContentType: 'image/webp',
+      skipWatermark: true,
+      originalKey: 'patch-submission/42-abc/gallery/456.webp',
+      thumbnailKey: 'patch-submission/42-abc/gallery/thumbnail/thumb-456.webp'
+    })
+
+    const response = await POST(createGalleryRequest())
+
+    // The route derives the prefix from the linked submission id, with its own
+    // random suffix, and hands it to the uploader as the fifth argument.
+    const prefixArg = uploadPatchGalleryImageMock.mock.calls[0][4]
+    expect(prefixArg).toMatch(/^patch-submission\/42-[0-9a-f]{32}\/gallery$/)
+    await expect(response.json()).resolves.toMatchObject({
+      url: 'https://img.example/patch-submission/42-abc/gallery/456.webp'
+    })
   })
 })
 

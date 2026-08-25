@@ -431,7 +431,9 @@ describe('gallery upload plan', () => {
       contentType: 'image/webp',
       thumbnailExtension: 'webp',
       thumbnailContentType: 'image/webp',
-      skipWatermark: true
+      skipWatermark: true,
+      originalKey: 'patch/123/gallery/456.webp',
+      thumbnailKey: 'patch/123/gallery/thumbnail/thumb-456.webp'
     })
     expect(uploadImageToS3Mock).toHaveBeenCalledWith(
       'patch/123/gallery/456.webp',
@@ -512,7 +514,9 @@ describe('gallery upload plan', () => {
     ).resolves.toEqual({
       extension: 'webp',
       contentType: 'image/webp',
-      skipWatermark: true
+      skipWatermark: true,
+      originalKey: 'patch/123/gallery/456.webp',
+      thumbnailKey: null
     })
 
     expect(deleteFileFromS3Mock).not.toHaveBeenCalled()
@@ -567,7 +571,9 @@ describe('gallery upload plan', () => {
       contentType: 'image/avif',
       thumbnailExtension: 'avif',
       thumbnailContentType: 'image/avif',
-      skipWatermark: true
+      skipWatermark: true,
+      originalKey: 'patch/123/gallery/456.avif',
+      thumbnailKey: 'patch/123/gallery/thumbnail/thumb-456.avif'
     })
     expect(uploadImageToS3Mock).toHaveBeenCalledTimes(2)
     expect(uploadImageToS3Mock).toHaveBeenCalledWith(
@@ -578,6 +584,34 @@ describe('gallery upload plan', () => {
     expect(uploadImageToS3Mock).toHaveBeenCalledWith(
       'patch/123/gallery/thumbnail/thumb-456.avif',
       Buffer.from('animated-avif-thumbnail'),
+      'image/avif'
+    )
+  })
+
+  it('writes under a caller-supplied prefix so a submission-origin edit stays on one path', async () => {
+    const original = createAnimatedAvifHeader()
+    createAnimatedAvifThumbnailMock.mockResolvedValue(
+      Buffer.from('animated-avif-thumbnail')
+    )
+
+    const result = await uploadPatchGalleryImage(
+      toExactArrayBuffer(original),
+      123,
+      456,
+      true,
+      'patch-submission/42-abcd/gallery'
+    )
+
+    if (typeof result === 'string') {
+      throw new Error(result)
+    }
+    expect(result.originalKey).toBe('patch-submission/42-abcd/gallery/456.avif')
+    expect(result.thumbnailKey).toBe(
+      'patch-submission/42-abcd/gallery/thumbnail/thumb-456.avif'
+    )
+    expect(uploadImageToS3Mock).toHaveBeenCalledWith(
+      'patch-submission/42-abcd/gallery/456.avif',
+      original,
       'image/avif'
     )
   })
@@ -601,7 +635,9 @@ describe('gallery upload plan', () => {
     ).resolves.toEqual({
       extension: 'avif',
       contentType: 'image/avif',
-      skipWatermark: true
+      skipWatermark: true,
+      originalKey: 'patch/123/gallery/456.avif',
+      thumbnailKey: null
     })
 
     expect(deleteFileFromS3Mock).not.toHaveBeenCalled()
