@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
 import {
   Avatar,
   Button,
@@ -18,13 +18,11 @@ import {
   Textarea
 } from '@heroui/react'
 import Link from 'next/link'
-import DOMPurify from 'isomorphic-dompurify'
 import toast from 'react-hot-toast'
 import { useRouter } from '@bprogress/next'
-import { KunImageViewer } from '~/components/kun/image-viewer/ImageViewer'
-import { NSFWMask } from '~/components/kun/NSFWMask'
 import { kunFetchPost } from '~/utils/kunFetch'
 import { PATCH_SUBMISSION_REASON_MAX_LENGTH } from '~/constants/patchSubmission'
+import { PatchSubmissionPreviewView } from '~/components/submission/PatchSubmissionPreviewView'
 import type { AdminPatchSubmissionDetail } from '~/app/api/admin/patch-submission/service'
 
 type ReviewAction = 'approve' | 'reject' | 'request-changes' | 'violate'
@@ -56,49 +54,6 @@ const STATUS_LABEL: Record<AdminPatchSubmissionDetail['status'], string> = {
 const formatDateTime = (value: string | null) =>
   value ? new Date(value).toLocaleString('zh-CN') : '—'
 
-const DetailChips = ({ values }: { values: string[] }) =>
-  values.length ? (
-    <div className="flex flex-wrap gap-2">
-      {values.map((value) => (
-        <Chip key={value} size="sm" variant="flat">
-          {value}
-        </Chip>
-      ))}
-    </div>
-  ) : (
-    <span className="text-sm text-default-400">无</span>
-  )
-
-const GalleryItem = ({
-  image,
-  onOpen
-}: {
-  image: NonNullable<AdminPatchSubmissionDetail['preview']>['gallery'][number]
-  onOpen: () => void
-}) => {
-  const [revealed, setRevealed] = useState(!image.isNSFW)
-
-  if (!image.imageUrl) return null
-
-  return (
-    <Button
-      isIconOnly
-      variant="light"
-      aria-label="查看投稿截图"
-      className="group relative aspect-video h-auto min-w-0 overflow-hidden rounded-lg bg-default-100 p-0 text-left"
-      onPress={() => revealed && onOpen()}
-    >
-      <img
-        src={image.thumbnailUrl ?? image.imageUrl}
-        alt="投稿截图"
-        className="size-full object-cover transition-transform duration-300 group-hover:scale-105"
-        loading="lazy"
-      />
-      <NSFWMask isVisible={!revealed} onReveal={() => setRevealed(true)} />
-    </Button>
-  )
-}
-
 interface Props {
   submission: AdminPatchSubmissionDetail
   reviewerId: number
@@ -118,10 +73,6 @@ export const AdminSubmissionDetail = ({
   const preview = submission.preview
   const isSelfReview = reviewerId === submission.author.id
   const canOverrideSelfReview = isSelfReview && reviewerRole >= 4
-  const sanitizedIntroduction = useMemo(
-    () => DOMPurify.sanitize(preview?.introductionHtml ?? ''),
-    [preview?.introductionHtml]
-  )
 
   const openAction = (action: ReviewAction) => {
     setPendingAction(action)
@@ -156,17 +107,6 @@ export const AdminSubmissionDetail = ({
     }
   }
 
-  const externalIds = preview
-    ? [
-        ['VNDB', preview.externalIds.vndbId],
-        ['VNDB Release', preview.externalIds.vndbRelationId],
-        ['Bangumi', preview.externalIds.bangumiId],
-        ['Steam', preview.externalIds.steamId],
-        ['DLsite', preview.externalIds.dlsiteCode]
-      ].filter((entry): entry is [string, string] => Boolean(entry[1]))
-    : []
-  const validGallery = preview?.gallery.filter((image) => image.imageUrl) ?? []
-
   return (
     <div className="mx-auto w-full max-w-6xl space-y-4 py-4">
       <div className="flex flex-wrap items-center gap-3">
@@ -180,15 +120,7 @@ export const AdminSubmissionDetail = ({
       </div>
 
       <Card>
-        <CardHeader className="flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-medium">
-              {preview?.name || submission.name}
-            </h1>
-            <p className="mt-1 text-sm text-default-500">
-              提交于 {formatDateTime(submission.submittedAt)}
-            </p>
-          </div>
+        <CardHeader className="flex flex-wrap items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <Avatar
               size="sm"
@@ -203,133 +135,15 @@ export const AdminSubmissionDetail = ({
                 {submission.author.name}
               </Link>
               <p className="text-default-500">
-                暂扣 {submission.heldAmount} 萌萌点
+                暂扣 {submission.heldAmount} 萌萌点 · 提交于{' '}
+                {formatDateTime(submission.submittedAt)}
               </p>
             </div>
           </div>
         </CardHeader>
         <Divider />
-        <CardBody className="space-y-8">
-          {!preview ? (
-            <p className="text-sm text-default-500">
-              该投稿的正文已经清除或 payload 无法读取，没有可展示的发布预览。
-            </p>
-          ) : (
-            <>
-              <section className="grid gap-5 md:grid-cols-2">
-                <div className="space-y-2">
-                  <h2 className="text-lg font-medium">外部 ID</h2>
-                  {externalIds.length ? (
-                    <div className="space-y-1 text-sm">
-                      {externalIds.map(([label, value]) => (
-                        <p key={label}>
-                          <span className="inline-block w-28 text-default-500">
-                            {label}
-                          </span>
-                          {value}
-                        </p>
-                      ))}
-                    </div>
-                  ) : (
-                    <span className="text-sm text-default-400">无</span>
-                  )}
-                </div>
-                <div className="space-y-1 text-sm">
-                  <h2 className="mb-2 text-lg font-medium">发布属性</h2>
-                  <p>
-                    <span className="inline-block w-24 text-default-500">
-                      发售日
-                    </span>
-                    {preview.released}
-                  </p>
-                  <p>
-                    <span className="inline-block w-24 text-default-500">
-                      内容分级
-                    </span>
-                    {preview.contentLimit.toUpperCase()}
-                  </p>
-                  <p>
-                    <span className="inline-block w-24 text-default-500">
-                      官网
-                    </span>
-                    {preview.officialUrl ? (
-                      <a
-                        href={preview.officialUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="break-all text-primary hover:underline"
-                      >
-                        {preview.officialUrl}
-                      </a>
-                    ) : (
-                      '无'
-                    )}
-                  </p>
-                </div>
-              </section>
-
-              <section className="space-y-2">
-                <h2 className="text-lg font-medium">别名</h2>
-                <DetailChips values={preview.aliases} />
-              </section>
-              <section className="space-y-2">
-                <h2 className="text-lg font-medium">标签</h2>
-                <DetailChips values={preview.tagNames} />
-              </section>
-              <section className="space-y-2">
-                <h2 className="text-lg font-medium">公司 / 社团</h2>
-                <DetailChips values={preview.companyNames} />
-              </section>
-
-              {preview.bannerUrl && (
-                <section className="space-y-2">
-                  <h2 className="text-lg font-medium">封面</h2>
-                  <img
-                    src={preview.bannerUrl}
-                    alt={`${preview.name} 封面`}
-                    className="max-h-[34rem] max-w-full rounded-lg object-contain"
-                  />
-                </section>
-              )}
-
-              <section className="space-y-2">
-                <h2 className="text-lg font-medium">正文</h2>
-                <div
-                  className="kun-prose max-w-none rounded-lg bg-content2 p-4"
-                  dangerouslySetInnerHTML={{ __html: sanitizedIntroduction }}
-                />
-              </section>
-
-              {validGallery.length > 0 && (
-                <section className="space-y-2">
-                  <h2 className="text-lg font-medium">截图</h2>
-                  <KunImageViewer
-                    preload={2}
-                    images={validGallery.map((image) => ({
-                      src: image.imageUrl as string,
-                      previewSrc: image.thumbnailUrl ?? undefined,
-                      alt: '投稿截图'
-                    }))}
-                  >
-                    {(openLightbox) => (
-                      <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
-                        {validGallery.map((image, index) => (
-                          <GalleryItem
-                            key={image.id ?? image.imageUrl}
-                            image={image}
-                            onOpen={() => openLightbox(index)}
-                          />
-                        ))}
-                      </div>
-                    )}
-                  </KunImageViewer>
-                </section>
-              )}
-            </>
-          )}
-
-          <Divider />
-          <section className="grid gap-2 text-sm md:grid-cols-2">
+        <CardBody className="space-y-2 text-sm">
+          <div className="grid gap-2 md:grid-cols-2">
             <p>
               <span className="text-default-500">payload 版本：</span>
               {submission.payloadVersion}
@@ -360,9 +174,24 @@ export const AdminSubmissionDetail = ({
                 {submission.reviewReason}
               </p>
             )}
-          </section>
+          </div>
         </CardBody>
       </Card>
+
+      {preview ? (
+        <PatchSubmissionPreviewView
+          preview={preview}
+          createdAt={submission.created}
+        />
+      ) : (
+        <Card>
+          <CardBody>
+            <p className="text-sm text-default-500">
+              该投稿的正文已经清除或 payload 无法读取，没有可展示的发布预览。
+            </p>
+          </CardBody>
+        </Card>
+      )}
 
       {submission.status === 'pending' && (
         <Card>
