@@ -213,9 +213,27 @@ pnpm typecheck
 | Next config/postbuild/deploy | `pnpm typecheck` + 可行时 `pnpm build`                                        |
 | UI-only                      | `pnpm typecheck`，复杂交互加手动验证                                          |
 
+## 浏览器与 HTTP 端到端脚本
+
+仓库有三套独立脚本，直接使用 `playwright-core` / HTTP 客户端，不通过 `@playwright/test` runner：
+
+- `tests/e2e/edit-upload-guards.e2e.ts`
+- `tests/e2e/patch-submission-lifecycle.e2e.ts`
+- `tests/e2e/submission-ui.e2e.ts`
+
+它们会创建、修改、审核或删除真实数据，只能对明确的 disposable `touchgal_e2e` 数据库和单独的 3100 dev server 运行。执行前必须确认 server 进程实际使用的数据库，而不是只看当前 shell `.env`；CSRF 地址需设置为 `NEXT_PUBLIC_KUN_PATCH_ADDRESS_DEV=http://127.0.0.1:3100`，并提供脚本顶部列出的测试用户/JWT/Redis 环境变量。示例：
+
+```bash
+node --env-file=.env tests/e2e/submission-ui.e2e.ts
+node --env-file=.env tests/e2e/patch-submission-lifecycle.e2e.ts
+node --env-file=.env tests/e2e/edit-upload-guards.e2e.ts
+```
+
+如果数据库名不是 `touchgal_e2e`、3100 服务未启动或测试身份缺失，停止而不是退回默认库执行。
+
 ## 已知缺口
 
-- 当前没有 Playwright/E2E 配置。
+- 端到端脚本尚未接入统一 Playwright config/runner 与 CI，需要人工准备隔离数据库、Redis session 和浏览器。
 - 多数 API route handler 没有 HTTP 层测试。
 - 真实 PostgreSQL/Redis/S3 集成测试缺少统一 harness。
 - `pnpm lint` 依赖 Next lint 命令；Next 15 项目如果命令不可用，需要迁移到 ESLint CLI 后再纳入强制验证。
