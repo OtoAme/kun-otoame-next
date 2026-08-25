@@ -19,7 +19,11 @@ describe('Cloudflare cache purge helper', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     vi.stubGlobal('fetch', fetchMock)
-    fetchMock.mockResolvedValue({ ok: true, status: 200 })
+    fetchMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ success: true })
+    })
     originalZoneId = process.env.KUN_CF_CACHE_ZONE_ID
     originalToken = process.env.KUN_CF_CACHE_PURGE_API_TOKEN
     originalImageBedUrl = process.env.KUN_VISUAL_NOVEL_IMAGE_BED_URL
@@ -89,8 +93,53 @@ describe('Cloudflare cache purge helper', () => {
       files: ['https://www.otoame.top/']
     })
 
-    expect(result).toEqual({ status: 0 })
+    expect(result).toEqual({ status: 0, success: false })
     expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('confirms a purge only when the API says so', async () => {
+    const result = await purgeCloudflareCache(['https://img.otoame.top/a.avif'])
+    expect(result).toEqual({ status: 200, success: true })
+  })
+
+  // A rejected purge comes back as 200 with success: false, so callers that keep
+  // a retry queue cannot treat a 2xx as confirmation.
+  it('does not confirm a 200 the API reported as unsuccessful', async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ success: false, errors: [{ code: 1012 }] })
+    })
+
+    const result = await purgeCloudflareCache(['https://img.otoame.top/a.avif'])
+    expect(result).toEqual({ status: 200, success: false })
+  })
+
+  it('does not confirm an HTTP failure', async () => {
+    fetchMock.mockResolvedValue({ ok: false, status: 502 })
+
+    const result = await purgeCloudflareCache(['https://img.otoame.top/a.avif'])
+    expect(result).toEqual({ status: 502, success: false })
+  })
+
+  it('does not confirm, and does not throw, when the body is unreadable', async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => {
+        throw new Error('unexpected end of JSON input')
+      }
+    })
+
+    const result = await purgeCloudflareCache(['https://img.otoame.top/a.avif'])
+    expect(result).toEqual({ status: 200, success: false })
+  })
+
+  it('does not confirm when the request itself fails', async () => {
+    fetchMock.mockRejectedValue(new Error('timed out'))
+
+    const result = await purgeCloudflareCache(['https://img.otoame.top/a.avif'])
+    expect(result).toEqual({ status: 0, success: false })
   })
 
   it('reuses the safe Cloudflare helper for banner and avatar purges', async () => {

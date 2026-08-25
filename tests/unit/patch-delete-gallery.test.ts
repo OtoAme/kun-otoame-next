@@ -4,6 +4,10 @@ const deleteFileFromS3Mock = vi.hoisted(() => vi.fn())
 const invalidatePatchContentCacheMock = vi.hoisted(() => vi.fn())
 const invalidatePatchListCachesMock = vi.hoisted(() => vi.fn())
 const invalidateCompanyCachesMock = vi.hoisted(() => vi.fn())
+const enqueueSubmissionOrphanCleanupJobsMock = vi.hoisted(() => vi.fn())
+const processSubmissionOrphanCleanupJobsBestEffortMock = vi.hoisted(() =>
+  vi.fn()
+)
 
 vi.mock('~/lib/s3', () => ({
   deleteFileFromS3: deleteFileFromS3Mock,
@@ -16,6 +20,14 @@ vi.mock('~/app/api/patch/cache', () => ({
   invalidatePatchContentCache: invalidatePatchContentCacheMock,
   invalidatePatchListCaches: invalidatePatchListCachesMock,
   invalidateCompanyCaches: invalidateCompanyCachesMock
+}))
+
+vi.mock('~/app/api/patch-submission/orphanCleanup', () => ({
+  PATCH_SUBMISSION_ASSET_PREFIX: 'patch-submission/',
+  enqueueSubmissionOrphanCleanupJobs:
+    enqueueSubmissionOrphanCleanupJobsMock,
+  processSubmissionOrphanCleanupJobsBestEffort:
+    processSubmissionOrphanCleanupJobsBestEffortMock
 }))
 
 vi.mock('~/lib/redis', () => ({
@@ -54,6 +66,10 @@ describe('patch delete with gallery S3 cleanup', () => {
     invalidatePatchListCachesMock.mockResolvedValue(undefined)
     invalidateCompanyCachesMock.mockResolvedValue(undefined)
     deleteFileFromS3Mock.mockResolvedValue(undefined)
+    enqueueSubmissionOrphanCleanupJobsMock.mockImplementation(
+      (_tx, keys) => Promise.resolve(keys)
+    )
+    processSubmissionOrphanCleanupJobsBestEffortMock.mockResolvedValue(undefined)
   })
 
   it('deletes gallery S3 objects when deleting an entire patch', async () => {
@@ -121,6 +137,49 @@ describe('patch delete with gallery S3 cleanup', () => {
 
     expect(deleteFileFromS3Mock).not.toHaveBeenCalled()
     expect(invalidatePatchContentCacheMock).toHaveBeenCalledWith('patch-unique')
+  })
+
+  it('outboxes submission banner variants and gallery keys before deleting the patch', async () => {
+    prismaMocks.patch.findUnique.mockResolvedValue({
+      id: 123,
+      unique_id: 'patch-unique',
+      banner:
+        'https://img.example/patch-submission/1-secret/banner/banner.avif',
+      company: []
+    })
+    prismaMocks.patch_resource.findMany.mockResolvedValue([])
+    prismaMocks.patch_game_image.findMany.mockResolvedValue([
+      {
+        id: 10,
+        url: 'https://img.example/patch-submission/1-secret/gallery/10.avif',
+        thumbnail_url:
+          'https://img.example/patch-submission/1-secret/gallery/thumb-10.avif'
+      }
+    ])
+
+    await expect(deletePatchById({ patchId: 123 })).resolves.toEqual({})
+
+    expect(enqueueSubmissionOrphanCleanupJobsMock).toHaveBeenCalledWith(
+      prismaMocks._tx,
+      [
+        'patch-submission/1-secret/banner/banner.avif',
+        'patch-submission/1-secret/banner/banner-mini.avif',
+        'patch-submission/1-secret/banner/banner-full.avif',
+        'patch-submission/1-secret/gallery/10.avif',
+        'patch-submission/1-secret/gallery/thumb-10.avif'
+      ],
+      'patch_delete'
+    )
+    expect(deleteFileFromS3Mock).not.toHaveBeenCalled()
+    expect(
+      processSubmissionOrphanCleanupJobsBestEffortMock
+    ).toHaveBeenCalledWith(
+      expect.arrayContaining([
+        'patch-submission/1-secret/banner/banner.avif',
+        'patch-submission/1-secret/gallery/10.avif'
+      ]),
+      'patch-delete'
+    )
   })
 
   it('recalculates related company counts when deleting a patch', async () => {

@@ -36,12 +36,9 @@ vi.mock('~/app/api/moemoepoint/service', () => ({
   earnMoemoepoint: earnMock
 }))
 
-const deleteFileFromS3Mock = vi.hoisted(() => vi.fn())
-vi.mock('~/lib/s3', () => ({ deleteFileFromS3: deleteFileFromS3Mock }))
-
-const purgeCloudflareCacheMock = vi.hoisted(() => vi.fn())
-vi.mock('~/app/api/utils/purgeCloudflareCache', () => ({
-  purgeCloudflareCache: purgeCloudflareCacheMock
+const takeDownSubmissionAssetsMock = vi.hoisted(() => vi.fn())
+vi.mock('~/app/api/patch-submission/assetCleanup', () => ({
+  takeDownSubmissionAssets: takeDownSubmissionAssetsMock
 }))
 
 import {
@@ -121,8 +118,13 @@ beforeEach(() => {
   earnMock.mockResolvedValue({
     balance: { total: 103, reserved: 0, available: 103 }
   })
-  deleteFileFromS3Mock.mockResolvedValue(undefined)
-  purgeCloudflareCacheMock.mockResolvedValue({ status: 200 })
+  takeDownSubmissionAssetsMock.mockResolvedValue({
+    status: 'done',
+    completed: true,
+    keyCount: 4,
+    deleteFailures: 0,
+    purgeConfirmed: true
+  })
 })
 
 describe('review permissions', () => {
@@ -257,15 +259,10 @@ describe('reject', () => {
     )
   })
 
-  it('purges the assets from storage and the CDN', async () => {
+  it('runs the database-scoped takedown after settlement', async () => {
     await rejectPatchSubmission(1, admin, '重复条目', false)
 
-    expect(deleteFileFromS3Mock).toHaveBeenCalledTimes(4)
-    expect(purgeCloudflareCacheMock).toHaveBeenCalledWith(
-      expect.arrayContaining([
-        expect.stringContaining('submission/1/banner.avif')
-      ])
-    )
+    expect(takeDownSubmissionAssetsMock).toHaveBeenCalledWith(1)
   })
 })
 
@@ -284,7 +281,7 @@ describe('request changes', () => {
 })
 
 describe('violation', () => {
-  it('forfeits the deposit and clears the content', async () => {
+  it('forfeits the deposit, hides the payload and preserves cleanup keys', async () => {
     await violatePatchSubmission(1, admin, '内容违规', false)
 
     expect(forfeitMock).toHaveBeenCalledWith(
@@ -295,18 +292,20 @@ describe('violation', () => {
       })
     )
     expect(releaseMock).not.toHaveBeenCalled()
-    expect(tx.patch_submission_gallery.deleteMany).toHaveBeenCalledWith({
-      where: { submission_id: 1 }
-    })
+    expect(tx.patch_submission_gallery.deleteMany).not.toHaveBeenCalled()
     expect(tx.patch_submission.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
           status: 'violation',
-          payload: {},
-          banner_key: null
+          payload: {}
         })
       })
     )
+    const data = tx.patch_submission.updateMany.mock.calls[0][0].data
+    expect(data).not.toHaveProperty('banner_key')
+    expect(data).not.toHaveProperty('banner_thumbnail_key')
+    expect(data).not.toHaveProperty('banner_original_key')
+    expect(takeDownSubmissionAssetsMock).toHaveBeenCalledWith(1)
   })
 
   it('keeps the audit trail', async () => {

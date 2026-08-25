@@ -8,13 +8,30 @@ import {
 const hoursAgo = (hours: number) =>
   new Date(Date.now() - hours * 60 * 60 * 1000)
 
+const emptyJobResult = () => ({
+  scanned: 0,
+  done: 0,
+  owed: 0,
+  cancelled: 0,
+  bookkeepingFailed: 0
+})
+
 const dependencies = (
   overrides: Partial<SubmissionAssetCleanupDependencies> = {}
 ): SubmissionAssetCleanupDependencies => ({
   listKeys: vi.fn().mockResolvedValue([]),
-  loadReferencedKeys: vi.fn().mockResolvedValue(new Set<string>()),
-  deleteObject: vi.fn().mockResolvedValue(undefined),
-  purge: vi.fn().mockResolvedValue(undefined),
+  loadServingKeys: vi.fn().mockResolvedValue(new Set<string>()),
+  loadCleanupSubmissions: vi.fn().mockResolvedValue([]),
+  loadOrphanJobKeys: vi.fn().mockResolvedValue([]),
+  takeDownSubmission: vi.fn().mockResolvedValue({
+    status: 'done',
+    completed: true,
+    keyCount: 0,
+    deleteFailures: 0,
+    purgeConfirmed: true
+  }),
+  enqueueOrphans: vi.fn().mockImplementation((keys) => Promise.resolve(keys)),
+  processOrphanJobs: vi.fn().mockResolvedValue(emptyJobResult()),
   close: vi.fn().mockResolvedValue(undefined),
   ...overrides
 })
@@ -49,14 +66,20 @@ describe('submission asset cleanup options', () => {
   })
 })
 
-describe('submission asset cleanup', () => {
-  it('never deletes an object something still references', async () => {
+describe('submission asset cleanup classification', () => {
+  it('never enqueues an object a live submission or patch still serves', async () => {
     const deps = dependencies({
       listKeys: vi.fn().mockResolvedValue([
-        { key: 'patch-submission/1-abc/banner/banner.avif', lastModified: hoursAgo(72) },
-        { key: 'patch-submission/9-zzz/gallery/1.avif', lastModified: hoursAgo(72) }
+        {
+          key: 'patch-submission/1-abc/banner/banner.avif',
+          lastModified: hoursAgo(72)
+        },
+        {
+          key: 'patch-submission/9-zzz/gallery/1.avif',
+          lastModified: hoursAgo(72)
+        }
       ]),
-      loadReferencedKeys: vi
+      loadServingKeys: vi
         .fn()
         .mockResolvedValue(
           new Set(['patch-submission/1-abc/banner/banner.avif'])
@@ -68,21 +91,50 @@ describe('submission asset cleanup', () => {
       deps
     )
 
-    expect(result.referenced).toBe(1)
-    expect(result.orphans).toEqual(['patch-submission/9-zzz/gallery/1.avif'])
-    expect(deps.deleteObject).toHaveBeenCalledTimes(1)
-    expect(deps.deleteObject).toHaveBeenCalledWith(
+    expect(result.servingReferenced).toBe(1)
+    expect(result.newOrphans).toEqual([
       'patch-submission/9-zzz/gallery/1.avif'
-    )
+    ])
+    expect(deps.enqueueOrphans).toHaveBeenCalledWith([
+      'patch-submission/9-zzz/gallery/1.avif'
+    ])
   })
 
-  it('leaves recent objects alone, because an upload has bytes before it has a row', async () => {
+  it('reports cleanup-row keys and existing jobs separately from new S3 orphans', async () => {
+    const rowKey = 'patch-submission/1-row/banner/banner.avif'
+    const jobKey = 'patch-submission/2-job/gallery/2.avif'
+    const newKey = 'patch-submission/3-new/gallery/3.avif'
     const deps = dependencies({
-      listKeys: vi
+      listKeys: vi.fn().mockResolvedValue(
+        [rowKey, jobKey, newKey].map((key) => ({
+          key,
+          lastModified: hoursAgo(72)
+        }))
+      ),
+      loadCleanupSubmissions: vi
         .fn()
-        .mockResolvedValue([
-          { key: 'patch-submission/2-abc/gallery/1.avif', lastModified: hoursAgo(1) }
-        ])
+        .mockResolvedValue([{ id: 1, keys: [rowKey] }]),
+      loadOrphanJobKeys: vi.fn().mockResolvedValue([jobKey])
+    })
+
+    const result = await runSubmissionAssetCleanup(
+      { apply: false, graceHours: 24 },
+      deps
+    )
+
+    expect(result.cleanupSubmissionIds).toEqual([1])
+    expect(result.orphanJobKeys).toEqual([jobKey])
+    expect(result.newOrphans).toEqual([newKey])
+  })
+
+  it('leaves recent objects alone because uploads have bytes before rows', async () => {
+    const deps = dependencies({
+      listKeys: vi.fn().mockResolvedValue([
+        {
+          key: 'patch-submission/2-abc/gallery/1.avif',
+          lastModified: hoursAgo(1)
+        }
+      ])
     })
 
     const result = await runSubmissionAssetCleanup(
@@ -91,17 +143,24 @@ describe('submission asset cleanup', () => {
     )
 
     expect(result.withinGrace).toBe(1)
-    expect(result.orphans).toEqual([])
-    expect(deps.deleteObject).not.toHaveBeenCalled()
+    expect(result.newOrphans).toEqual([])
+    expect(deps.enqueueOrphans).not.toHaveBeenCalled()
   })
 
-  it('reports without deleting in a dry run', async () => {
+  it('does not write jobs or run cleanup in dry-run mode', async () => {
     const deps = dependencies({
-      listKeys: vi
+      listKeys: vi.fn().mockResolvedValue([
+        {
+          key: 'patch-submission/3-abc/gallery/1.avif',
+          lastModified: hoursAgo(72)
+        }
+      ]),
+      loadCleanupSubmissions: vi
         .fn()
-        .mockResolvedValue([
-          { key: 'patch-submission/3-abc/gallery/1.avif', lastModified: hoursAgo(72) }
-        ])
+        .mockResolvedValue([{ id: 7, keys: [] }]),
+      loadOrphanJobKeys: vi
+        .fn()
+        .mockResolvedValue(['patch-submission/old/job.avif'])
     })
 
     const result = await runSubmissionAssetCleanup(
@@ -109,30 +168,74 @@ describe('submission asset cleanup', () => {
       deps
     )
 
-    expect(result.orphans).toHaveLength(1)
-    expect(result.deleted).toBe(0)
-    expect(deps.deleteObject).not.toHaveBeenCalled()
-    expect(deps.purge).not.toHaveBeenCalled()
+    expect(result.newOrphans).toHaveLength(1)
+    expect(deps.takeDownSubmission).not.toHaveBeenCalled()
+    expect(deps.processOrphanJobs).not.toHaveBeenCalled()
+    expect(deps.enqueueOrphans).not.toHaveBeenCalled()
   })
+})
 
-  it('purges the CDN for what it deleted', async () => {
-    process.env.KUN_VISUAL_NOVEL_IMAGE_BED_URL = 'https://img.example.test'
+describe('submission asset cleanup apply priority', () => {
+  it('spends the limit on cleanup rows before existing jobs or new orphans', async () => {
     const deps = dependencies({
-      listKeys: vi
+      listKeys: vi.fn().mockResolvedValue([
+        {
+          key: 'patch-submission/new/gallery/1.avif',
+          lastModified: hoursAgo(72)
+        }
+      ]),
+      loadCleanupSubmissions: vi
         .fn()
-        .mockResolvedValue([
-          { key: 'patch-submission/4-abc/gallery/1.avif', lastModified: hoursAgo(72) }
-        ])
+        .mockResolvedValue([{ id: 7, keys: [] }]),
+      loadOrphanJobKeys: vi
+        .fn()
+        .mockResolvedValue(['patch-submission/old/job.avif'])
     })
 
-    await runSubmissionAssetCleanup({ apply: true, graceHours: 24 }, deps)
+    await runSubmissionAssetCleanup(
+      { apply: true, graceHours: 24, limit: 1 },
+      deps
+    )
 
-    expect(deps.purge).toHaveBeenCalledWith([
-      'https://img.example.test/patch-submission/4-abc/gallery/1.avif'
-    ])
+    expect(deps.takeDownSubmission).toHaveBeenCalledWith(7)
+    expect(deps.processOrphanJobs).not.toHaveBeenCalled()
+    expect(deps.enqueueOrphans).not.toHaveBeenCalled()
   })
 
-  it('honours the limit', async () => {
+  it('processes persisted orphan jobs before enqueueing newly scanned orphans', async () => {
+    const existingKey = 'patch-submission/old/job.avif'
+    const newKey = 'patch-submission/new/gallery/1.avif'
+    const processOrphanJobs = vi
+      .fn()
+      .mockResolvedValueOnce({ ...emptyJobResult(), scanned: 1, done: 1 })
+      .mockResolvedValueOnce({ ...emptyJobResult(), scanned: 1, done: 1 })
+    const deps = dependencies({
+      listKeys: vi.fn().mockResolvedValue([
+        { key: newKey, lastModified: hoursAgo(72) }
+      ]),
+      loadOrphanJobKeys: vi
+        .fn()
+        .mockResolvedValueOnce([existingKey])
+        .mockResolvedValueOnce([]),
+      processOrphanJobs
+    })
+
+    await runSubmissionAssetCleanup(
+      { apply: true, graceHours: 24, limit: 2 },
+      deps
+    )
+
+    expect(processOrphanJobs).toHaveBeenNthCalledWith(1, [existingKey])
+    expect(deps.enqueueOrphans).toHaveBeenCalledWith([newKey])
+    expect(processOrphanJobs).toHaveBeenNthCalledWith(2, [newKey])
+    expect(
+      processOrphanJobs.mock.invocationCallOrder[0]
+    ).toBeLessThan(
+      vi.mocked(deps.enqueueOrphans).mock.invocationCallOrder[0]
+    )
+  })
+
+  it('honours the limit for newly discovered orphan jobs', async () => {
     const deps = dependencies({
       listKeys: vi.fn().mockResolvedValue(
         Array.from({ length: 5 }, (_, index) => ({
@@ -147,7 +250,7 @@ describe('submission asset cleanup', () => {
       deps
     )
 
-    expect(result.orphans).toHaveLength(2)
-    expect(deps.deleteObject).toHaveBeenCalledTimes(2)
+    expect(result.newOrphans).toHaveLength(2)
+    expect(deps.enqueueOrphans).toHaveBeenCalledWith(result.newOrphans)
   })
 })

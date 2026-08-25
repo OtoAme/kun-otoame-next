@@ -30,15 +30,24 @@ export type UploadedPatchResource = {
 }
 
 const getS3PublicUrlPrefix = () =>
-  `${process.env.NEXT_PUBLIC_KUN_VISUAL_NOVEL_S3_STORAGE_URL!}/`
+  `${process.env.NEXT_PUBLIC_KUN_VISUAL_NOVEL_S3_STORAGE_URL?.replace(/\/+$/, '')!}/`
 
 export const extractS3Key = (content: string) => {
-  const prefix = getS3PublicUrlPrefix()
-  if (!content.startsWith(prefix)) {
-    return null
+  const bases = [
+    process.env.NEXT_PUBLIC_KUN_VISUAL_NOVEL_S3_STORAGE_URL,
+    process.env.KUN_VISUAL_NOVEL_IMAGE_BED_URL
+  ]
+    .map((base) => base?.trim().replace(/\/+$/, ''))
+    .filter((base): base is string => Boolean(base))
+
+  for (const base of new Set(bases)) {
+    const prefix = `${base}/`
+    if (content.startsWith(prefix)) {
+      return content.slice(prefix.length)
+    }
   }
 
-  return content.slice(prefix.length)
+  return null
 }
 
 export const uploadPatchResource = async (

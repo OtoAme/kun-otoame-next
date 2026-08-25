@@ -28,14 +28,14 @@ const unique = (values: string[]) => [...new Set(values)]
 
 export const purgeCloudflareCache = async (
   payload: string[] | CloudflarePurgePayload
-) => {
+): Promise<{ status: number; success: boolean }> => {
   const config = getCloudflarePurgeConfig()
   const body = Array.isArray(payload) ? { files: payload } : payload
   if (
     !config ||
     ((body.files?.length ?? 0) === 0 && (body.prefixes?.length ?? 0) === 0)
   ) {
-    return { status: 0 }
+    return { status: 0, success: false }
   }
 
   try {
@@ -54,12 +54,28 @@ export const purgeCloudflareCache = async (
 
     if (!res.ok) {
       console.error('[Cloudflare] Purge cache failed:', res.status)
+      return { status: res.status, success: false }
     }
 
-    return { status: res.status }
+    // A 2xx is not by itself a confirmation: the v4 API wraps every response in
+    // `success`, and reports a rejected purge as 200 with `success: false`.
+    // Callers that keep a retry queue need the real answer.
+    let success = false
+    try {
+      const parsed = (await res.json()) as { success?: unknown }
+      success = parsed?.success === true
+    } catch (error) {
+      console.error('[Cloudflare] Purge cache response was unreadable:', error)
+    }
+
+    if (!success) {
+      console.error('[Cloudflare] Purge cache was not confirmed:', res.status)
+    }
+
+    return { status: res.status, success }
   } catch (error) {
     console.error('[Cloudflare] Purge cache request failed:', error)
-    return { status: 0 }
+    return { status: 0, success: false }
   }
 }
 

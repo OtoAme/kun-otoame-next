@@ -9,6 +9,11 @@ import {
   invalidatePatchListCaches
 } from '~/app/api/patch/cache'
 import { deletePatchResourceLink } from '~/app/api/patch/resource/_helper'
+import {
+  PATCH_SUBMISSION_ASSET_PREFIX,
+  enqueueSubmissionOrphanCleanupJobs,
+  processSubmissionOrphanCleanupJobsBestEffort
+} from '~/app/api/patch-submission/orphanCleanup'
 
 const patchIdSchema = z.object({
   patchId: z.coerce.number().min(1).max(9999999)
@@ -58,6 +63,24 @@ export const deletePatchById = async (input: z.infer<typeof patchIdSchema>) => {
     }
     return keys
   })
+  const bannerKey = patch.banner ? extractS3Key(patch.banner) : null
+  const submissionBannerKeys =
+    bannerKey?.startsWith(PATCH_SUBMISSION_ASSET_PREFIX)
+      ? [
+          bannerKey,
+          bannerKey.replace(/banner\.avif$/, 'banner-mini.avif'),
+          bannerKey.replace(/banner\.avif$/, 'banner-full.avif')
+        ]
+      : []
+  const submissionGalleryKeys = galleryS3Keys.filter((key) =>
+    key.startsWith(PATCH_SUBMISSION_ASSET_PREFIX)
+  )
+  const submissionAssetKeys = [
+    ...new Set([...submissionBannerKeys, ...submissionGalleryKeys])
+  ]
+  const canonicalGalleryKeys = galleryS3Keys.filter(
+    (key) => !key.startsWith(PATCH_SUBMISSION_ASSET_PREFIX)
+  )
 
   const result = await prisma.$transaction(async (prisma) => {
     if (patchResources.length > 0) {
@@ -67,6 +90,14 @@ export const deletePatchById = async (input: z.infer<typeof patchIdSchema>) => {
             where: { id: resource.id }
           })
         })
+      )
+    }
+
+    if (submissionAssetKeys.length) {
+      await enqueueSubmissionOrphanCleanupJobs(
+        prisma,
+        submissionAssetKeys,
+        'patch_delete'
       )
     }
 
@@ -92,6 +123,11 @@ export const deletePatchById = async (input: z.infer<typeof patchIdSchema>) => {
     return {}
   })
 
+  await processSubmissionOrphanCleanupJobsBestEffort(
+    submissionAssetKeys,
+    'patch-delete'
+  )
+
   for (const content of s3Contents) {
     try {
       await deletePatchResourceLink(content)
@@ -104,7 +140,7 @@ export const deletePatchById = async (input: z.infer<typeof patchIdSchema>) => {
     }
   }
 
-  for (const key of galleryS3Keys) {
+  for (const key of canonicalGalleryKeys) {
     try {
       await deleteFileFromS3(key)
     } catch (error) {

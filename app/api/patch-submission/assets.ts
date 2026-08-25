@@ -1,7 +1,7 @@
 import crypto from 'crypto'
 import { Prisma } from '@prisma/client'
 import { prisma } from '~/prisma/index'
-import { uploadImageToS3, deleteFileFromS3 } from '~/lib/s3'
+import { uploadImageToS3 } from '~/lib/s3'
 import { preparePatchGalleryImage } from '~/app/api/edit/galleryUpload'
 import { uploadPatchSubmissionBannerVariants } from './bannerUpload'
 import {
@@ -11,6 +11,11 @@ import {
   PATCH_SUBMISSION_UPLOAD_TAKEOVER_MS
 } from '~/constants/patchSubmission'
 import { PatchSubmissionError } from './quota'
+import {
+  enqueueSubmissionOrphanCleanupJobs,
+  processSubmissionOrphanCleanupJobsBestEffort,
+  type SubmissionOrphanCleanupSource
+} from './orphanCleanup'
 
 /**
  * Draft assets are written straight to the location the published entry keeps
@@ -33,16 +38,27 @@ const fingerprint = (buffer: Buffer) =>
  * check downstream depends on this lock: counting first and inserting after
  * would let concurrent uploads walk past the cap.
  */
-const lockEditableSubmission = async (
+const lockSubmission = async (
   tx: Prisma.TransactionClient,
   submissionId: number,
   userId: number
 ) => {
   const rows = await tx.$queryRaw<
-    { id: number; status: string; banner_key: string | null }[]
+    {
+      id: number
+      status: string
+      banner_key: string | null
+      banner_thumbnail_key: string | null
+      banner_original_key: string | null
+    }[]
   >(
     Prisma.sql`
-      SELECT id, status, banner_key
+      SELECT
+        id,
+        status,
+        banner_key,
+        banner_thumbnail_key,
+        banner_original_key
       FROM patch_submission
       WHERE id = ${submissionId} AND user_id = ${userId}
       FOR UPDATE
@@ -52,6 +68,15 @@ const lockEditableSubmission = async (
   if (!submission) {
     throw new PatchSubmissionError('投稿不存在')
   }
+  return submission
+}
+
+const lockEditableSubmission = async (
+  tx: Prisma.TransactionClient,
+  submissionId: number,
+  userId: number
+) => {
+  const submission = await lockSubmission(tx, submissionId, userId)
   if (
     !PATCH_SUBMISSION_EDITABLE_STATUSES.includes(
       submission.status as (typeof PATCH_SUBMISSION_EDITABLE_STATUSES)[number]
@@ -64,6 +89,36 @@ const lockEditableSubmission = async (
     )
   }
   return submission
+}
+
+const compactKeys = (keys: (string | null | undefined)[]) => [
+  ...new Set(keys.filter((key): key is string => Boolean(key)))
+]
+
+const processOrphanKeysBestEffort = async (keys: string[]) => {
+  await processSubmissionOrphanCleanupJobsBestEffort(keys, 'submission-assets')
+}
+
+const enqueueStandaloneOrphans = async (
+  keys: string[],
+  source: SubmissionOrphanCleanupSource
+) => {
+  if (!keys.length) return []
+  try {
+    const persisted = await prisma.$transaction((tx) =>
+      enqueueSubmissionOrphanCleanupJobs(tx, keys, source)
+    )
+    await processOrphanKeysBestEffort(persisted)
+    return persisted
+  } catch (error) {
+    // Do not delete without a durable purge credential. The S3 scanner can
+    // still discover these unreferenced objects after its grace period.
+    console.error('Failed to persist submission upload compensation', {
+      keyCount: keys.length,
+      error
+    })
+    return []
+  }
 }
 
 /**
@@ -234,6 +289,7 @@ export const uploadPatchSubmissionGalleryImage = async (
       ? `${prefix}/gallery/thumb-${reserved.row.id}.${prepared.thumbnailExtension}`
       : null
 
+  const uploadedKeys = compactKeys([imageKey, thumbnailKey])
   try {
     await uploadImageToS3(imageKey, prepared.buffer, prepared.contentType)
     if (thumbnailKey && prepared.thumbnailBuffer) {
@@ -245,6 +301,7 @@ export const uploadPatchSubmissionGalleryImage = async (
     }
   } catch (error) {
     await markGalleryFailed(reserved.row.id)
+    await enqueueStandaloneOrphans(uploadedKeys, 'upload_compensation')
     console.error('Failed to upload a submission gallery image', {
       galleryId: reserved.row.id,
       error
@@ -252,24 +309,51 @@ export const uploadPatchSubmissionGalleryImage = async (
     throw new PatchSubmissionError('截图上传失败, 请重试')
   }
 
-  await prisma.patch_submission_gallery.update({
-    where: { id: reserved.row.id },
-    data: {
-      upload_status: 'ready',
-      image_key: imageKey,
-      thumbnail_key: thumbnailKey,
-      declared_bytes: prepared.buffer.byteLength,
-      status_changed_at: new Date()
-    }
+  const finalized = await prisma.$transaction(async (tx) => {
+    const updated = await tx.patch_submission_gallery.updateMany({
+      where: {
+        id: reserved.row.id,
+        upload_status: 'uploading',
+        submission: {
+          user_id: input.userId,
+          status: { in: [...PATCH_SUBMISSION_EDITABLE_STATUSES] }
+        }
+      },
+      data: {
+        upload_status: 'ready',
+        image_key: imageKey,
+        thumbnail_key: thumbnailKey,
+        declared_bytes: prepared.buffer.byteLength,
+        status_changed_at: new Date()
+      }
+    })
+    if (updated.count > 0) return true
+
+    await tx.patch_submission_gallery.deleteMany({
+      where: { id: reserved.row.id, upload_status: 'uploading' }
+    })
+    await enqueueSubmissionOrphanCleanupJobs(
+      tx,
+      uploadedKeys,
+      'upload_compensation'
+    )
+    return false
   })
+
+  if (!finalized) {
+    await processOrphanKeysBestEffort(uploadedKeys)
+    throw new PatchSubmissionError(
+      '投稿状态已变化, 本次上传未保存, 请刷新后重试'
+    )
+  }
 
   return { galleryId: reserved.row.id, alreadyUploaded: false }
 }
 
 /** Frees the slot and the reserved bytes so the same id can be retried. */
 const markGalleryFailed = (galleryId: number) =>
-  prisma.patch_submission_gallery.update({
-    where: { id: galleryId },
+  prisma.patch_submission_gallery.updateMany({
+    where: { id: galleryId, upload_status: 'uploading' },
     data: {
       upload_status: 'failed',
       declared_bytes: 0,
@@ -295,23 +379,18 @@ export const deletePatchSubmissionGalleryImage = async (
       }
 
       await tx.patch_submission_gallery.delete({ where: { id: galleryId } })
-      return [image.image_key, image.thumbnail_key].filter(
-        (key): key is string => Boolean(key)
+      const keys = compactKeys([image.image_key, image.thumbnail_key])
+      await enqueueSubmissionOrphanCleanupJobs(
+        tx,
+        keys,
+        'gallery_delete'
       )
+      return keys
     },
     { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted }
   )
 
-  await Promise.all(
-    keys.map((key) =>
-      deleteFileFromS3(key).catch((error) => {
-        console.error('Failed to delete a submission gallery object', {
-          key,
-          error
-        })
-      })
-    )
-  )
+  await processOrphanKeysBestEffort(keys)
 
   return {}
 }
@@ -324,50 +403,81 @@ interface BannerUploadInput {
 }
 
 export const uploadPatchSubmissionBanner = async (input: BannerUploadInput) => {
-  const previous = await prisma.$transaction(
+  await prisma.$transaction(
     async (tx) => {
-      const submission = await lockEditableSubmission(
-        tx,
-        input.submissionId,
-        input.userId
-      )
-      return submission.banner_key
+      await lockEditableSubmission(tx, input.submissionId, input.userId)
     },
     { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted }
   )
 
   const secret = newAssetSecret()
   const prefix = buildSubmissionAssetPrefix(input.submissionId, secret)
-  const uploaded = await uploadPatchSubmissionBannerVariants({
-    prefix,
-    banner: input.banner,
-    bannerOriginal: input.bannerOriginal
-  })
+  const plannedKeys = compactKeys([
+    `${prefix}/banner/banner.avif`,
+    `${prefix}/banner/banner-mini.avif`,
+    input.bannerOriginal ? `${prefix}/banner/banner-full.avif` : null
+  ])
+  let uploaded
+  try {
+    uploaded = await uploadPatchSubmissionBannerVariants({
+      prefix,
+      banner: input.banner,
+      bannerOriginal: input.bannerOriginal
+    })
+  } catch (error) {
+    await enqueueStandaloneOrphans(plannedKeys, 'upload_compensation')
+    throw error
+  }
   if (typeof uploaded === 'string') {
     throw new PatchSubmissionError(uploaded)
   }
 
-  await prisma.patch_submission.update({
-    where: { id: input.submissionId },
-    data: {
-      banner_key: uploaded.bannerKey,
-      banner_thumbnail_key: uploaded.thumbnailKey,
-      banner_original_key: uploaded.originalKey
+  const newKeys = compactKeys([
+    uploaded.bannerKey,
+    uploaded.thumbnailKey,
+    uploaded.originalKey
+  ])
+  const finalized = await prisma.$transaction(async (tx) => {
+    const current = await lockSubmission(tx, input.submissionId, input.userId)
+    const updated = await tx.patch_submission.updateMany({
+      where: {
+        id: input.submissionId,
+        user_id: input.userId,
+        status: { in: [...PATCH_SUBMISSION_EDITABLE_STATUSES] }
+      },
+      data: {
+        banner_key: uploaded.bannerKey,
+        banner_thumbnail_key: uploaded.thumbnailKey,
+        banner_original_key: uploaded.originalKey
+      }
+    })
+
+    if (updated.count === 0) {
+      await enqueueSubmissionOrphanCleanupJobs(
+        tx,
+        newKeys,
+        'upload_compensation'
+      )
+      return { attached: false, cleanupKeys: newKeys }
     }
+
+    const staleKeys = compactKeys([
+      current.banner_key,
+      current.banner_thumbnail_key,
+      current.banner_original_key
+    ])
+    await enqueueSubmissionOrphanCleanupJobs(
+      tx,
+      staleKeys,
+      'banner_replace'
+    )
+    return { attached: true, cleanupKeys: staleKeys }
   })
 
-  // Replacing a cover leaves the previous objects behind; they are no longer
-  // referenced, so removing them here keeps the cleanup command's job small.
-  if (previous) {
-    const staleKeys = [
-      previous,
-      previous.replace(/banner\.avif$/, 'banner-mini.avif'),
-      previous.replace(/banner\.avif$/, 'banner-full.avif')
-    ]
-    await Promise.all(
-      staleKeys.map((key) =>
-        deleteFileFromS3(key).catch(() => undefined)
-      )
+  await processOrphanKeysBestEffort(finalized.cleanupKeys)
+  if (!finalized.attached) {
+    throw new PatchSubmissionError(
+      '投稿状态已变化, 本次上传未保存, 请刷新后重试'
     )
   }
 

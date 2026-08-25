@@ -1,21 +1,32 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const prismaMocks = vi.hoisted(() => ({
-  patch: {
-    findUnique: vi.fn()
-  },
-  patch_game_image: {
-    findUnique: vi.fn(),
-    create: vi.fn(),
-    update: vi.fn(),
-    delete: vi.fn()
+const prismaMocks = vi.hoisted(() => {
+  const tx = {
+    patch_game_image: { delete: vi.fn() }
   }
-}))
+  return {
+    patch: {
+      findUnique: vi.fn()
+    },
+    patch_game_image: {
+      findUnique: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+      delete: tx.patch_game_image.delete
+    },
+    $transaction: vi.fn((fn) => fn(tx)),
+    _tx: tx
+  }
+})
 const verifyHeaderCookieMock = vi.hoisted(() => vi.fn())
 const invalidatePatchContentCacheMock = vi.hoisted(() => vi.fn())
 const uploadPatchGalleryImageMock = vi.hoisted(() => vi.fn())
 const deleteFileFromS3Mock = vi.hoisted(() => vi.fn())
 const kunParseDeleteQueryMock = vi.hoisted(() => vi.fn())
+const enqueueSubmissionOrphanCleanupJobsMock = vi.hoisted(() => vi.fn())
+const processSubmissionOrphanCleanupJobsBestEffortMock = vi.hoisted(() =>
+  vi.fn()
+)
 
 vi.mock('~/prisma/index', () => ({
   prisma: prismaMocks
@@ -42,6 +53,14 @@ vi.mock('~/app/api/patch/resource/_helper', () => ({
 
 vi.mock('~/app/api/edit/galleryUpload', () => ({
   uploadPatchGalleryImage: uploadPatchGalleryImageMock
+}))
+
+vi.mock('~/app/api/patch-submission/orphanCleanup', () => ({
+  PATCH_SUBMISSION_ASSET_PREFIX: 'patch-submission/',
+  enqueueSubmissionOrphanCleanupJobs:
+    enqueueSubmissionOrphanCleanupJobsMock,
+  processSubmissionOrphanCleanupJobsBestEffort:
+    processSubmissionOrphanCleanupJobsBestEffortMock
 }))
 
 vi.mock('~/app/api/utils/parseQuery', () => ({
@@ -85,6 +104,10 @@ describe('gallery upload route', () => {
       thumbnailContentType: 'image/webp',
       skipWatermark: true
     })
+    enqueueSubmissionOrphanCleanupJobsMock.mockImplementation(
+      (_tx, keys) => Promise.resolve(keys)
+    )
+    processSubmissionOrphanCleanupJobsBestEffortMock.mockResolvedValue(undefined)
   })
 
   afterEach(() => {
@@ -203,6 +226,10 @@ describe('gallery delete route', () => {
     kunParseDeleteQueryMock.mockReturnValue({ imageId: 456 })
     invalidatePatchContentCacheMock.mockResolvedValue(undefined)
     deleteFileFromS3Mock.mockResolvedValue(undefined)
+    enqueueSubmissionOrphanCleanupJobsMock.mockImplementation(
+      (_tx, keys) => Promise.resolve(keys)
+    )
+    processSubmissionOrphanCleanupJobsBestEffortMock.mockResolvedValue(undefined)
   })
 
   afterEach(() => {
@@ -258,6 +285,39 @@ describe('gallery delete route', () => {
     expect(deleteFileFromS3Mock).toHaveBeenCalledTimes(1)
     expect(deleteFileFromS3Mock).toHaveBeenCalledWith(
       'patch/123/gallery/456.webp'
+    )
+  })
+
+  it('outboxes patch-submission objects in the same transaction as row deletion', async () => {
+    prismaMocks.patch_game_image.findUnique.mockResolvedValue({
+      id: 456,
+      url: 'https://img.example/patch-submission/1-secret/gallery/456.avif',
+      thumbnail_url:
+        'https://img.example/patch-submission/1-secret/gallery/thumb-456.avif',
+      patch_id: 123,
+      patch: { unique_id: 'patch-unique' }
+    })
+
+    const response = await DELETE(createDeleteRequest())
+
+    await expect(response.json()).resolves.toEqual({})
+    expect(enqueueSubmissionOrphanCleanupJobsMock).toHaveBeenCalledWith(
+      prismaMocks._tx,
+      [
+        'patch-submission/1-secret/gallery/456.avif',
+        'patch-submission/1-secret/gallery/thumb-456.avif'
+      ],
+      'gallery_delete'
+    )
+    expect(deleteFileFromS3Mock).not.toHaveBeenCalled()
+    expect(
+      processSubmissionOrphanCleanupJobsBestEffortMock
+    ).toHaveBeenCalledWith(
+      [
+        'patch-submission/1-secret/gallery/456.avif',
+        'patch-submission/1-secret/gallery/thumb-456.avif'
+      ],
+      'patch-gallery-delete'
     )
   })
 

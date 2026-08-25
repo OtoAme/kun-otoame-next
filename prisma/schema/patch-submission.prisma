@@ -124,3 +124,22 @@ model patch_submission_gallery {
   @@index([submission_id, display_order])
   @@index([submission_id, upload_status])
 }
+
+/// Durable retry credential for a patch-submission object whose owning row no
+/// longer has a mutable key field. Row existence means cleanup is still owed;
+/// successful S3 deletion plus confirmed CDN purge removes the row.
+model patch_submission_orphan_cleanup {
+  id Int @id @default(autoincrement())
+
+  object_key String @unique @db.VarChar(1007)
+  purge_urls Json
+  source      String @db.VarChar(32)
+
+  attempts   Int     @default(0)
+  last_error String? @db.VarChar(1007)
+
+  created DateTime @default(now())
+  updated DateTime @updatedAt
+
+  @@index([created, id])
+}

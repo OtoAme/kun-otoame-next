@@ -1,6 +1,9 @@
 import { Prisma } from '@prisma/client'
 import { prisma } from '~/prisma/index'
-import { PATCH_SUBMISSION_REVIEW_MIN_ROLE } from '~/constants/patchSubmission'
+import {
+  PATCH_SUBMISSION_CLEANUP_STATUSES,
+  PATCH_SUBMISSION_REVIEW_MIN_ROLE
+} from '~/constants/patchSubmission'
 import type { PatchSubmissionStatus } from '~/types/api/patchSubmission'
 
 export interface AdminSubmissionRow {
@@ -126,6 +129,16 @@ export const getAdminPatchSubmission = async (
 
   if (!row) {
     return '投稿不存在'
+  }
+
+  if (
+    PATCH_SUBMISSION_CLEANUP_STATUSES.includes(
+      row.status as (typeof PATCH_SUBMISSION_CLEANUP_STATUSES)[number]
+    )
+  ) {
+    // These values are a durable cleanup credential after settlement. They are
+    // deliberately unavailable to the detail renderer while cleanup retries.
+    return { ...row, banner_key: null, gallery: [] }
   }
 
   return row

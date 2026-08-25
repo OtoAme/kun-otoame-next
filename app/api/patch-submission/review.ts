@@ -6,13 +6,12 @@ import {
   earnMoemoepoint,
   releaseMoemoepoint
 } from '~/app/api/moemoepoint/service'
-import { deleteFileFromS3 } from '~/lib/s3'
-import { purgeCloudflareCache } from '~/app/api/utils/purgeCloudflareCache'
 import {
   PATCH_SUBMISSION_PUBLISH_REWARD,
   PATCH_SUBMISSION_REASON,
   PATCH_SUBMISSION_REVIEW_MIN_ROLE
 } from '~/constants/patchSubmission'
+import { takeDownSubmissionAssets } from './assetCleanup'
 import { publishSubmissionCore, runPublishSideEffects } from './publishCore'
 import { PatchSubmissionError } from './quota'
 import type { PatchSubmissionPayload } from '~/types/api/patchSubmission'
@@ -274,12 +273,12 @@ export const rejectPatchSubmission = async (
         `${overrode ? '【超级管理员自审 override】' : ''}管理员 ${reviewer.name} 驳回了投稿《${submission.name}》(投稿 ID: ${submissionId}), 押金已返还。原因: ${reason}`
       )
 
-      return { balance, assetKeys: collectAssetKeys(submission) }
+      return { balance }
     },
     { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted }
   )
 
-  await purgeSubmissionAssets(result.assetKeys)
+  await takeDownSubmissionAssets(submissionId)
 
   return { moemoepointBalance: result.balance }
 }
@@ -361,23 +360,16 @@ export const violatePatchSubmission = async (
         balance = forfeited.balance
       }
 
-      const assetKeys = collectAssetKeys(submission)
-
-      // Only the audit trail survives: submission id, author, title, held
-      // amount, reason, reviewer and time.
-      await tx.patch_submission_gallery.deleteMany({
-        where: { submission_id: submissionId }
-      })
+      // User content is erased immediately. Asset keys and gallery rows remain
+      // hidden as the durable cleanup credential until S3 deletion and CDN
+      // purge are both confirmed.
       await claimPending(tx, submissionId, {
         status: 'violation',
         reviewed_by_id: reviewer.uid,
         reviewed_at: new Date(),
         settled_at: new Date(),
         review_reason: reason,
-        payload: {} as Prisma.InputJsonValue,
-        banner_key: null,
-        banner_thumbnail_key: null,
-        banner_original_key: null
+        payload: {} as Prisma.InputJsonValue
       })
 
       await createMessage(
@@ -396,57 +388,12 @@ export const violatePatchSubmission = async (
         `${overrode ? '【超级管理员自审 override】' : ''}管理员 ${reviewer.name} 判定投稿《${submission.name}》违规 (投稿 ID: ${submissionId}), 扣除 ${submission.held_amount} 萌萌点。原因: ${reason}`
       )
 
-      return { balance, assetKeys }
+      return { balance }
     },
     { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted }
   )
 
-  await purgeSubmissionAssets(result.assetKeys)
+  await takeDownSubmissionAssets(submissionId)
 
   return { moemoepointBalance: result.balance }
-}
-
-const collectAssetKeys = (submission: {
-  banner_key: string | null
-  banner_thumbnail_key: string | null
-  banner_original_key: string | null
-  gallery: { image_key: string | null; thumbnail_key: string | null }[]
-}) =>
-  [
-    submission.banner_key,
-    submission.banner_thumbnail_key,
-    submission.banner_original_key,
-    ...submission.gallery.flatMap((image) => [
-      image.image_key,
-      image.thumbnail_key
-    ])
-  ].filter((key): key is string => Boolean(key))
-
-/**
- * Draft assets are publicly reachable, so deleting the object is not enough: an
- * address that has been previewed may sit in the CDN. Failures are left to the
- * cleanup command rather than blocking a settlement that already happened.
- */
-const purgeSubmissionAssets = async (keys: string[]) => {
-  if (!keys.length) {
-    return
-  }
-
-  await Promise.all(
-    keys.map((key) =>
-      deleteFileFromS3(key).catch((error) => {
-        console.error('Failed to delete a submission asset', { key, error })
-      })
-    )
-  )
-
-  const imageBedUrl = process.env.KUN_VISUAL_NOVEL_IMAGE_BED_URL
-  if (!imageBedUrl) {
-    return
-  }
-  try {
-    await purgeCloudflareCache(keys.map((key) => `${imageBedUrl}/${key}`))
-  } catch (error) {
-    console.error('Failed to purge submission assets from the CDN', { error })
-  }
 }

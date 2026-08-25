@@ -5,6 +5,11 @@ const prismaMocks = vi.hoisted(() => {
     patch_alias: {
       deleteMany: vi.fn(),
       createMany: vi.fn()
+    },
+    patch: { update: vi.fn() },
+    patch_game_image: {
+      deleteMany: vi.fn(),
+      update: vi.fn()
     }
   }
 
@@ -17,16 +22,23 @@ const prismaMocks = vi.hoisted(() => {
     patch_alias: tx.patch_alias,
     patch_game_image: {
       findMany: vi.fn(),
-      deleteMany: vi.fn(),
-      update: vi.fn()
+      deleteMany: tx.patch_game_image.deleteMany,
+      update: tx.patch_game_image.update
     },
-    $transaction: vi.fn((fn) => fn(tx))
+    $transaction: vi.fn((fn) => fn(tx)),
+    _tx: tx
   }
 })
 const invalidatePatchContentCacheMock = vi.hoisted(() => vi.fn())
 const invalidatePatchListCachesMock = vi.hoisted(() => vi.fn())
 const processSubmittedExternalDataMock = vi.hoisted(() => vi.fn())
 const deleteFileFromS3Mock = vi.hoisted(() => vi.fn())
+const uploadPatchBannerMock = vi.hoisted(() => vi.fn())
+const purgePatchBannerCacheMock = vi.hoisted(() => vi.fn())
+const enqueueSubmissionOrphanCleanupJobsMock = vi.hoisted(() => vi.fn())
+const processSubmissionOrphanCleanupJobsBestEffortMock = vi.hoisted(() =>
+  vi.fn()
+)
 
 vi.mock('~/prisma/index', () => ({
   prisma: prismaMocks
@@ -38,7 +50,7 @@ vi.mock('~/app/api/patch/cache', () => ({
 }))
 
 vi.mock('~/app/api/utils/purgeCache', () => ({
-  purgePatchBannerCache: vi.fn()
+  purgePatchBannerCache: purgePatchBannerCacheMock
 }))
 
 vi.mock('~/app/api/edit/processExternalData', () => ({
@@ -46,7 +58,15 @@ vi.mock('~/app/api/edit/processExternalData', () => ({
 }))
 
 vi.mock('~/app/api/edit/_upload', () => ({
-  uploadPatchBanner: vi.fn()
+  uploadPatchBanner: uploadPatchBannerMock
+}))
+
+vi.mock('~/app/api/patch-submission/orphanCleanup', () => ({
+  PATCH_SUBMISSION_ASSET_PREFIX: 'patch-submission/',
+  enqueueSubmissionOrphanCleanupJobs:
+    enqueueSubmissionOrphanCleanupJobsMock,
+  processSubmissionOrphanCleanupJobsBestEffort:
+    processSubmissionOrphanCleanupJobsBestEffortMock
 }))
 
 vi.mock('~/app/api/patch/resource/_helper', () => ({
@@ -116,10 +136,17 @@ describe('patch update gallery metadata', () => {
     ])
     prismaMocks.patch_game_image.deleteMany.mockResolvedValue({})
     prismaMocks.patch_game_image.update.mockResolvedValue({})
+    prismaMocks._tx.patch.update.mockResolvedValue({})
     invalidatePatchContentCacheMock.mockResolvedValue(undefined)
     invalidatePatchListCachesMock.mockResolvedValue(undefined)
     processSubmittedExternalDataMock.mockResolvedValue(undefined)
     deleteFileFromS3Mock.mockResolvedValue(undefined)
+    uploadPatchBannerMock.mockResolvedValue({})
+    purgePatchBannerCacheMock.mockResolvedValue(undefined)
+    enqueueSubmissionOrphanCleanupJobsMock.mockImplementation(
+      (_tx, keys) => Promise.resolve(keys)
+    )
+    processSubmissionOrphanCleanupJobsBestEffortMock.mockResolvedValue(undefined)
   })
 
   it('deletes S3 gallery objects when images are removed during rewrite', async () => {
@@ -182,6 +209,70 @@ describe('patch update gallery metadata', () => {
           thumbnail_url: expect.anything()
         })
       })
+    )
+  })
+
+  it('outboxes removed patch-submission gallery objects in the delete transaction', async () => {
+    const input = createUpdateInput()
+    input.galleryMetadata = JSON.stringify({ keep: [], order: [] })
+    prismaMocks.patch_game_image.findMany.mockResolvedValue([
+      {
+        id: 10,
+        url: 'https://img.example/patch-submission/1-secret/gallery/10.avif',
+        thumbnail_url:
+          'https://img.example/patch-submission/1-secret/gallery/thumb-10.avif',
+        patch_id: 123
+      }
+    ])
+
+    await expect(updateGalgame(input, 1)).resolves.toEqual({})
+
+    expect(enqueueSubmissionOrphanCleanupJobsMock).toHaveBeenCalledWith(
+      prismaMocks._tx,
+      [
+        'patch-submission/1-secret/gallery/10.avif',
+        'patch-submission/1-secret/gallery/thumb-10.avif'
+      ],
+      'gallery_delete'
+    )
+    expect(deleteFileFromS3Mock).not.toHaveBeenCalled()
+    expect(
+      processSubmissionOrphanCleanupJobsBestEffortMock
+    ).toHaveBeenCalledWith(
+      [
+        'patch-submission/1-secret/gallery/10.avif',
+        'patch-submission/1-secret/gallery/thumb-10.avif'
+      ],
+      'patch-rewrite-gallery'
+    )
+  })
+
+  it('outboxes the old submission banner variants when rewrite installs a canonical banner', async () => {
+    prismaMocks.patch.findUnique.mockResolvedValue({
+      id: 123,
+      unique_id: 'patch-unique',
+      banner:
+        'https://img.example/patch-submission/1-secret/banner/banner.avif'
+    })
+
+    await expect(
+      updateGalgame(
+        {
+          ...createUpdateInput(),
+          banner: new File([Buffer.from('banner')], 'banner.png')
+        },
+        1
+      )
+    ).resolves.toEqual({})
+
+    expect(enqueueSubmissionOrphanCleanupJobsMock).toHaveBeenCalledWith(
+      prismaMocks._tx,
+      [
+        'patch-submission/1-secret/banner/banner.avif',
+        'patch-submission/1-secret/banner/banner-mini.avif',
+        'patch-submission/1-secret/banner/banner-full.avif'
+      ],
+      'banner_replace'
     )
   })
 

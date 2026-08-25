@@ -16,6 +16,14 @@ import {
   formatUniqueExternalIdDuplicateMessage,
   resolveUniqueExternalIdConstraintMessage
 } from './uniqueExternalIds'
+import {
+  PATCH_SUBMISSION_ASSET_PREFIX,
+  enqueueSubmissionOrphanCleanupJobs,
+  processSubmissionOrphanCleanupJobsBestEffort
+} from '~/app/api/patch-submission/orphanCleanup'
+
+const isSubmissionAssetKey = (key: string) =>
+  key.startsWith(PATCH_SUBMISSION_ASSET_PREFIX)
 
 export const updateGalgame = async (
   input: z.infer<typeof patchUpdateSchema>,
@@ -137,13 +145,33 @@ export const updateGalgame = async (
     }
     await purgePatchBannerCache(id)
 
-    // Update the banner URL in the database to ensure it's correct
-    // and to potentially trigger any update hooks if they exist
     const imageLink = `${process.env.KUN_VISUAL_NOVEL_IMAGE_BED_URL}/patch/${id}/banner/banner.avif`
-    await prisma.patch.update({
-      where: { id },
-      data: { banner: imageLink }
+    const previousBannerKey = extractS3Key(patch.banner)
+    const submissionBannerKeys =
+      previousBannerKey && isSubmissionAssetKey(previousBannerKey)
+        ? [
+            previousBannerKey,
+            previousBannerKey.replace(/banner\.avif$/, 'banner-mini.avif'),
+            previousBannerKey.replace(/banner\.avif$/, 'banner-full.avif')
+          ]
+        : []
+    await prisma.$transaction(async (tx) => {
+      await tx.patch.update({
+        where: { id },
+        data: { banner: imageLink }
+      })
+      if (submissionBannerKeys.length) {
+        await enqueueSubmissionOrphanCleanupJobs(
+          tx,
+          submissionBannerKeys,
+          'banner_replace'
+        )
+      }
     })
+    await processSubmissionOrphanCleanupJobsBestEffort(
+      submissionBannerKeys,
+      'patch-rewrite-banner'
+    )
   }
 
   const { galleryMetadata } = input
@@ -172,15 +200,34 @@ export const updateGalgame = async (
       return keys
     })
 
+    const submissionKeys = deletedS3Keys.filter(isSubmissionAssetKey)
+    const canonicalKeys = deletedS3Keys.filter(
+      (key) => !isSubmissionAssetKey(key)
+    )
+
     if (toDelete.length > 0) {
-      await prisma.patch_game_image.deleteMany({
-        where: { id: { in: toDelete.map((img) => img.id) } }
+      await prisma.$transaction(async (tx) => {
+        await tx.patch_game_image.deleteMany({
+          where: { id: { in: toDelete.map((img) => img.id) } }
+        })
+        if (submissionKeys.length) {
+          await enqueueSubmissionOrphanCleanupJobs(
+            tx,
+            submissionKeys,
+            'gallery_delete'
+          )
+        }
       })
     }
 
-    if (deletedS3Keys.length > 0) {
+    await processSubmissionOrphanCleanupJobsBestEffort(
+      submissionKeys,
+      'patch-rewrite-gallery'
+    )
+
+    if (canonicalKeys.length > 0) {
       await Promise.all(
-        deletedS3Keys.map((key) =>
+        canonicalKeys.map((key) =>
           deleteFileFromS3(key).catch((error) => {
             console.error(
               '[Upload] Failed to delete gallery S3 object after rewrite',

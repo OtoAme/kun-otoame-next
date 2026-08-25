@@ -4,12 +4,14 @@ import { releaseMoemoepoint } from '~/app/api/moemoepoint/service'
 import { getS3PublicUrl } from '~/lib/s3'
 import {
   PATCH_SUBMISSION_ACTIVE_STATUSES,
+  PATCH_SUBMISSION_CLEANUP_STATUSES,
   PATCH_SUBMISSION_EDITABLE_STATUSES,
   PATCH_SUBMISSION_MAX_TOTAL_BYTES,
   PATCH_SUBMISSION_REASON,
   getPatchSubmissionDeposit
 } from '~/constants/patchSubmission'
 import { PatchSubmissionError, sumActiveSubmissionBytes } from './quota'
+import { takeDownSubmissionAssets } from './assetCleanup'
 import type {
   PatchSubmission,
   PatchSubmissionGalleryImage,
@@ -67,25 +69,32 @@ const toGalleryImage = (
   displayOrder: image.display_order
 })
 
-const toSubmission = (row: SubmissionRow): PatchSubmission => ({
-  id: row.id,
-  status: row.status as PatchSubmissionStatus,
-  payload: row.payload as unknown as PatchSubmissionPayload,
-  payloadVersion: row.payload_version,
-  revision: row.revision,
-  heldAmount: row.held_amount,
-  roleAtCreation: row.role_at_creation,
-  reviewReason: row.review_reason,
-  reviewedAt: row.reviewed_at?.toISOString() ?? null,
-  patchUniqueId: row.patch?.unique_id ?? null,
-  bannerUrl: getS3PublicUrl(row.banner_key),
-  externalSource: row.external_source,
-  externalFetchedAt: row.external_fetched_at?.toISOString() ?? null,
-  gallery: row.gallery.map(toGalleryImage),
-  submittedAt: row.submitted_at?.toISOString() ?? null,
-  created: row.created.toISOString(),
-  updated: row.updated.toISOString()
-})
+const toSubmission = (row: SubmissionRow): PatchSubmission => {
+  const cleanupOwed = PATCH_SUBMISSION_CLEANUP_STATUSES.includes(
+    row.status as (typeof PATCH_SUBMISSION_CLEANUP_STATUSES)[number]
+  )
+
+  return {
+    id: row.id,
+    status: row.status as PatchSubmissionStatus,
+    payload: row.payload as unknown as PatchSubmissionPayload,
+    payloadVersion: row.payload_version,
+    revision: row.revision,
+    heldAmount: row.held_amount,
+    roleAtCreation: row.role_at_creation,
+    reviewReason: row.review_reason,
+    reviewedAt: row.reviewed_at?.toISOString() ?? null,
+    patchUniqueId: row.patch?.unique_id ?? null,
+    // Cleanup-state keys are retry credentials, not user-visible content.
+    bannerUrl: cleanupOwed ? null : getS3PublicUrl(row.banner_key),
+    externalSource: row.external_source,
+    externalFetchedAt: row.external_fetched_at?.toISOString() ?? null,
+    gallery: cleanupOwed ? [] : row.gallery.map(toGalleryImage),
+    submittedAt: row.submitted_at?.toISOString() ?? null,
+    created: row.created.toISOString(),
+    updated: row.updated.toISOString()
+  }
+}
 
 /** Ownership is checked here rather than in the route, so no caller can skip it. */
 export const getPatchSubmission = async (
@@ -247,8 +256,8 @@ export const updatePatchSubmissionDraft = async (input: UpdateDraftInput) => {
 export const deletePatchSubmissionDraft = async (
   submissionId: number,
   userId: number
-) =>
-  prisma.$transaction(
+) => {
+  const result = await prisma.$transaction(
     async (tx) => {
       const rows = await tx.$queryRaw<
         { id: number; status: string; reservation_id: number | null }[]
@@ -297,6 +306,13 @@ export const deletePatchSubmissionDraft = async (
     },
     { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted }
   )
+
+  // Settlement is already committed. Cleanup reports and persists its own
+  // retry state, so an unfinished purge must not turn the successful refund
+  // into an apparent request failure.
+  await takeDownSubmissionAssets(submissionId)
+  return result
+}
 
 /** Terminal records leave the author's list without touching the deposit. */
 export const hidePatchSubmission = async (

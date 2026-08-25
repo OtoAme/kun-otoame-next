@@ -8,6 +8,11 @@ import { invalidatePatchContentCache } from '~/app/api/patch/cache'
 import { deleteFileFromS3 } from '~/lib/s3'
 import { uploadPatchGalleryImage } from '../galleryUpload'
 import { GALLERY_IMAGE_MAX_SIZE_MB } from '~/constants/galgame'
+import {
+  PATCH_SUBMISSION_ASSET_PREFIX,
+  enqueueSubmissionOrphanCleanupJobs,
+  processSubmissionOrphanCleanupJobsBestEffort
+} from '~/app/api/patch-submission/orphanCleanup'
 
 const galleryImageIdSchema = z.object({
   imageId: z.coerce.number().min(1).max(9999999)
@@ -158,11 +163,32 @@ export const DELETE = async (req: NextRequest) => {
     if (thumbKey) s3Keys.push(thumbKey)
   }
 
-  await prisma.patch_game_image.delete({
-    where: { id: input.imageId }
+  const submissionKeys = s3Keys.filter((key) =>
+    key.startsWith(PATCH_SUBMISSION_ASSET_PREFIX)
+  )
+  const canonicalKeys = s3Keys.filter(
+    (key) => !key.startsWith(PATCH_SUBMISSION_ASSET_PREFIX)
+  )
+
+  await prisma.$transaction(async (tx) => {
+    await tx.patch_game_image.delete({
+      where: { id: input.imageId }
+    })
+    if (submissionKeys.length) {
+      await enqueueSubmissionOrphanCleanupJobs(
+        tx,
+        submissionKeys,
+        'gallery_delete'
+      )
+    }
   })
 
-  for (const key of s3Keys) {
+  await processSubmissionOrphanCleanupJobsBestEffort(
+    submissionKeys,
+    'patch-gallery-delete'
+  )
+
+  for (const key of canonicalKeys) {
     try {
       await deleteFileFromS3(key)
     } catch (error) {

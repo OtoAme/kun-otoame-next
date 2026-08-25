@@ -53,6 +53,20 @@ export const PATCH_SUBMISSION_TERMINAL_STATUSES = [
   'deleted'
 ] as const satisfies readonly PatchSubmissionStatus[]
 
+/**
+ * States whose assets nobody needs any more, so they may be deleted and purged.
+ *
+ * Deliberately *not* the terminal set. `published` is terminal too, but approval
+ * hands its objects to the live entry rather than copying them, so deleting them
+ * would break a published game. The keys stay on a published row as per-asset
+ * provenance and protect nothing.
+ */
+export const PATCH_SUBMISSION_CLEANUP_STATUSES = [
+  'rejected',
+  'violation',
+  'deleted'
+] as const satisfies readonly PatchSubmissionStatus[]
+
 /** Editable by the author. */
 export const PATCH_SUBMISSION_EDITABLE_STATUSES = [
   'draft',
