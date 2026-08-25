@@ -184,10 +184,9 @@ Gallery 图片上传走 `app/api/edit/gallery/route.ts` 和 `app/api/edit/galler
 - 动态 AVIF 通过 ISO BMFF `avis` brand 在调用 Sharp 前短路处理，因为 Sharp AVIF 输出不支持 image sequence，不能把动态 AVIF 送入静态 AVIF 转码路径；V2 使用独立 `ffmpeg` adapter 尝试生成真实 animated AVIF 缩略图，动态缩略图失败时再尝试真实首帧 AVIF 缩略图。adapter 依次尝试 `KUN_GALLERY_FFMPEG_PATH`、standalone `.ffmpeg/ffmpeg`、根目录 `node_modules/.ffmpeg/ffmpeg`、`ffmpeg-static` 和系统 `ffmpeg`。没有可用 encoder、编码超时、生成体积超过 512KB 或上传失败时不阻断原图，`thumbnail_url` 写 `null`，不生成占位图。
 - gallery 写入成功后要更新 `patch_game_image.url` 和 nullable `thumbnail_url` 并调用 `invalidatePatchContentCache(uniqueId)`；S3 上传或 DB 更新失败后删除已创建的 `patch_game_image` 记录，并补偿删除已真实上传的原图和缩略图 object。
 - gallery 图片删除必须在删除 DB 记录的同时清理 S3 对象：
-  - rewrite 提交时通过 `galleryMetadata.keep` 对比当前图片列表，被移除的图片在 `patch_game_image.deleteMany` 前收集 URL，DB 删除后用 `extractS3Key` + `deleteFileFromS3` 清理原图和缩略图（若 `thumbnail_url` 非 null），S3 清理失败只记日志不阻断 rewrite。
-  - 整条目删除时先查询 `patch_game_image` 列表，在 Prisma cascade 删除 DB 记录后遍历清理 S3 files。
-  - 通过 `DELETE /api/edit/gallery?imageId=xxx` 单张删除 gallery 图片时，删除 DB 记录后清理 S3 文件再失效缓存。
-  - 所有路径的 S3 清理都为 best-effort：失败记 error 日志但不抛异常。`extractS3Key` 复用 `app/api/patch/resource/_helper.ts` 的实现。
+  - rewrite、整条目删除和 `DELETE /api/edit/gallery?imageId=xxx` 都要先从库中 URL 反解 key，再删除 DB 记录。
+  - canonical `patch/<patchId>/...` 对象仍在事务提交后 best-effort 删除；`patch-submission/...` 对象必须在同一数据库事务写入 `patch_submission_orphan_cleanup`，事务外才允许尝试 S3 删除与 CDN purge。失败保留 job，由维护命令重试。
+  - `extractS3Key` 同时接受 `KUN_VISUAL_NOVEL_IMAGE_BED_URL` 与 `NEXT_PUBLIC_KUN_VISUAL_NOVEL_S3_STORAGE_URL` 的精确 base；外部 URL 和相似 hostname 必须拒绝。
 - animated AVIF 缩略图 adapter 使用临时目录处理用户输入，`ffmpeg` 子进程有超时限制，并且输出体积必须在缩略图上限内；animated 输出成功后还会用 `showinfo` 确认输出帧数大于 1，避免把静态首帧误判为 animated AVIF 缩略图。部分 Linux FFmpeg 会把 AVIF 的默认 stream 解析为 1 帧 still item，adapter 会继续探测后续 video stream 并选择多帧 stream 编码缩略图。`ffmpeg-static` 的 install script 必须允许运行，否则 bundled binary 可能不存在。`ffmpeg-static` 下载的是安装机器当前平台的 binary，`deploy:pull` 需要把目标服务器 `node_modules/ffmpeg-static` 注入 standalone，避免 release artifact 构建机和生产机架构不一致。部署环境没有可用 animated AVIF encoder 时会自动回退为无缩略图或静图首帧。引入其他 libavif / Node binding 方案前仍要先评估部署成本、CPU 成本、失败补偿和安全边界。
 - 部分 `ffmpeg-static` Linux binary 可以解码 AVIF 但不能稳定输出 animated AVIF。需要强 animated AVIF 缩略图时，在 Linux x64/arm64 服务器显式运行 `pnpm gallery:ffmpeg:install` 下载 BtbN 静态构建到 `node_modules/.ffmpeg/ffmpeg`，或用 `KUN_GALLERY_FFMPEG_PATH` 指向自备 FFmpeg 的绝对路径。`KUN_GALLERY_FFMPEG_PATH` 优先级最高，修改 `.env` 后需要重启服务；`postbuild.ts` 会把 `node_modules/.ffmpeg/ffmpeg` 复制到 standalone 的 `.ffmpeg/ffmpeg`；普通安装不自动下载该大文件，保持默认部署较轻。
 - 本地或部署前可用 `pnpm exec esno scripts/verifyGalleryAnimatedAvifThumbnail.ts <animated.avif> [output.avif]` 验证 animated AVIF 缩略图 encoder；该脚本只读写本地文件，不连接 S3 或数据库，并会列出各候选 FFmpeg 对输入和输出解析到的帧数及非默认 video stream。生产上线前应在目标服务器执行，成功输出 `Wrote animated AVIF thumbnail: ... frames ...`。
@@ -250,7 +249,7 @@ Gallery 图片上传走 `app/api/edit/gallery/route.ts` 和 `app/api/edit/galler
 
 删除资源前必须确认没有其他 `patch_resource_link` 引用同一 content。
 
-`extractS3Key` 只接受以 `NEXT_PUBLIC_KUN_VISUAL_NOVEL_S3_STORAGE_URL` 开头的 URL。删除逻辑遇到非本站 URL 会拒绝删除并记录错误，这是防止误删外部链接的保护。
+`extractS3Key` 接受以 `KUN_VISUAL_NOVEL_IMAGE_BED_URL` 或 `NEXT_PUBLIC_KUN_VISUAL_NOVEL_S3_STORAGE_URL` 精确 base 开头的 URL。删除逻辑遇到非本站 URL 或相似 hostname 会拒绝删除并记录错误，这是防止误删外部链接的保护。
 
 ### 投稿素材的 key 布局（不同于正式条目）
 
@@ -258,9 +257,14 @@ Gallery 图片上传走 `app/api/edit/gallery/route.ts` 和 `app/api/edit/galler
 
 投稿素材**不遵循这个布局**：它写在 `patch-submission/<submissionId>-<随机>/...`，key 由服务端生成、不可猜测。批准时素材不搬动, 直接成为正式条目引用的对象, 所以：
 
-- 清理命令（`scripts/cleanupSubmissionAssets.ts`）必须排除任何被 `patch`、`patch_game_image` 或封面变体引用的 key, 只删过了宽限期的孤儿。宽限期是因为上传先有对象后有行。
-- `purgeCache.ts` 按 patchId 推导的三个封面 URL 对投稿 key 是空推。换封面时旧投稿 key 的 purge 由上传服务显式处理。
-- 未审素材是公开可取的, 被预览后可能进 CDN, 因此 `reject` / `violation` / 用户删除都要连带 purge 封面三变体与每张图的主图、缩略图 URL。
+- `draft` / `pending` / `changes_requested` 行上的 key 是活动引用；`published` 行上的 key 只作原始投稿溯源，线上保护只看 `patch` / `patch_game_image`；`rejected` / `violation` / `deleted` 行上的非空 key 是待完成的投稿行 outbox。只有后三种状态可进入 `takeDownSubmissionAssets`。
+- 投稿行 outbox 用于已知投稿的结算：先删 S3，再 purge 所有已配置公开 base，全部确认后才清空 banner key 并删除 gallery 行。部分 S3 删除失败仍要 purge 已删对象；Cloudflare 只有 HTTP 成功且响应 `success: true` 才算确认。
+- 真正无所属行的 orphan、上传补偿、正式条目换图或删图不能靠投稿行保存重试凭据。删除这些对象前必须在同一个短数据库事务 upsert `patch_submission_orphan_cleanup`，保存 object key 与当时所有 purge URL；事务外执行 S3 和 HTTP，二者都成功才删 job。配置 hostname 后续变化时，旧 purge URL 仍须保留并与新 URL 合并。
+- 每次执行 durable orphan job 都要重新计算 serving references。被活动投稿或正式 `patch` / `patch_game_image` 引用的对象要取消 job，绝不能删除；历史 CDN hostname 下但路径仍为 `/patch-submission/` 的正式 URL要 fail-safe 视为引用。
+- 清理命令（`scripts/cleanupSubmissionAssets.ts`）按“终态投稿行 outbox → 已持久 orphan jobs → 过宽限期的新 S3 orphan”处理。dry-run 不写 job；apply 发现新 orphan 时先落 job，再允许删除。
+- `patch_submission_gallery.id` 与批准后新建的 `patch_game_image.id` 没有对应关系。投稿来源 gallery key 只能从库中 URL 反解，不能按正式行 ID 推导；`scripts/galleryThumbnailBackfill.ts` 的 canonical 路径检查必须继续跳过这些对象。
+- `purgeCache.ts` 按 patchId 推导的三个封面 URL 对投稿 key 是空推。换封面时旧投稿 key 由 durable orphan outbox 清理。
+- 未审素材是公开可取的，被预览后可能进 CDN，因此 `reject` / `violation` / 用户删除必须隐藏 DTO，并连带 purge 封面三变体与每张图的主图、缩略图 URL。
 
 ## 资源派生属性
 

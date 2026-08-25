@@ -437,5 +437,7 @@ pm2 logs kun-touchgal-next
 1. 先跑 `migration/production-vndb-relation-id-unique-preflight-2026-08-24.sql`。**出现任何 `ci_duplicate_group` 行就停下人工处理**：两条游戏共用一个 Release ID 是内容决策, 不能自动合并。
 2. 无冲突后跑对应 sync。它会把 `vndb_relation_id` 归一为小写、加大小写无关唯一性所需的 CHECK, 并 `CREATE UNIQUE INDEX CONCURRENTLY`（因此必须在显式事务之外执行）。
 3. 再跑 `production-patch-submission-preflight-2026-08-24.sql` 与对应 sync, 建 `patch_submission` / `patch_submission_gallery` 与状态 CHECK。两份 sync 都可重跑。
-4. 后端上线后再开放入口（用户主页的投稿标签与后台审核入口）。
-5. 生产不跑 `prisma db push`。
+4. 跑 `production-patch-submission-orphan-cleanup-preflight-2026-08-25.sql`，审核结果后再跑对应 sync，创建 durable orphan cleanup outbox；随后执行 `pnpm prisma:deploy-safe`。应用代码依赖该表，必须先完成 schema rollout。
+5. 确认 `KUN_VISUAL_NOVEL_IMAGE_BED_URL` 与 `NEXT_PUBLIC_KUN_VISUAL_NOVEL_S3_STORAGE_URL` 中每个公开 hostname 都在 Cloudflare purge 凭据覆盖范围内。两者可以不同，但清理会对所有去重后的完整 URL purge；若某个 base 不由该 Cloudflare zone 管理，不能把失败响应当成功跳过。
+6. 后端上线后再开放入口（用户主页的投稿标签与后台审核入口）。
+7. 生产不跑 `prisma db push`。

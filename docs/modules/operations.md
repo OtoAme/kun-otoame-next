@@ -64,7 +64,9 @@ Steam ID 软查重上线时，先备份数据库，再运行 `migration/producti
 
 `migration:resource-type:*` 在迁移单条资源类型/平台后，也必须按同一已发布资源口径重算 patch 派生属性。`migration:patch-counters` 安装和回填的 `resource_count` 只统计已发布资源，并监听 `patch_resource.status` 变化；运行旧触发器的环境修复卡片资源数时，应重新执行 `pnpm migration:patch-counters`。
 
-`maintenance:submission-assets:dry` 扫描 `patch-submission/` 前缀下的对象, 列出无人引用的孤儿, 不删不清 CDN。确认后用 `maintenance:submission-assets:apply` 删除并补做 Cloudflare purge。两条不变量必须保持：**被正式条目引用的对象永不删除**（批准时素材不搬动, 投稿素材直接成为线上条目的素材, 所以隐藏或删除投稿行不能牵连它们）；**只删过了宽限期的孤儿**（默认 24 小时, 因为上传先有对象后有行）。可用 `--grace-hours` 与 `--limit` 调整。
+`maintenance:submission-assets:dry` 只读展示三类积压：终态投稿行 outbox、已经持久化的 orphan cleanup jobs、以及超过宽限期的新 S3 orphan；它不写 job、不删对象、不 purge。确认后用 `maintenance:submission-assets:apply`，处理顺序固定为“投稿行 outbox → 已有 orphan jobs → 新 orphan”。新 orphan 必须先写入 `patch_submission_orphan_cleanup`，保存 object key 和当时所有公开 URL，才允许执行 S3 删除与 Cloudflare purge；两者都确认成功后才删除 job。每次 apply 都重新检查活动投稿和正式 `patch` / `patch_game_image` 引用，被引用对象会取消 job。`published` 投稿行只保留溯源，不保护对象；真正的线上引用以正式条目行为准。新 S3 orphan 仍只处理过了默认 24 小时宽限期的对象，可用 `--grace-hours` 与 `--limit` 调整。
+
+submission assets summary 中，`cleanup submissions` 是 `rejected` / `violation` / `deleted` 行上仍有 key 的结算积压；`persisted orphan jobs` 是已具备 durable retry credential 的无所属对象；`new S3 orphans` 是本轮扫描发现、尚未持久化的候选。任一 apply 后仍非零都需要查看 `owed` / `bookkeepingFailed` 日志，不要通过手工删行来“清空”积压。
 
 `maintenance:gallery-thumbnails:dry` 扫描历史 gallery 中 `thumbnail_url IS NULL` 的本站原图，输出待回填数量，不下载原图、不写 S3、不写 DB。确认 dry-run 后用 `maintenance:gallery-thumbnails:apply` 分批回填真实缩略图；apply 默认 `--limit=50 --batch=20 --concurrency=1 --delay=1000`，适合生产 3c 服务器低负载执行，并会逐张打印当前处理的游戏、gallery 图片 ID、完成状态和耗时。常用生产命令是 `pnpm maintenance:gallery-thumbnails:apply -- --limit=50 --batch=20 --concurrency=1 --delay=1000`，重复执行直到 dry-run 无候选；如果 FFmpeg 性能或可用性不确定，先加 `--skip-animated-avif`。
 
