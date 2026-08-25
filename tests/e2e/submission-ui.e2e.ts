@@ -338,8 +338,12 @@ const cases: Case[] = [
       await createDraft(page)
       const image = await sharp({
         create: {
-          width: 64,
-          height: 64,
+          // Larger than the 200x200 watermark overlay: watermark now defaults on,
+          // and sharp refuses to composite an overlay bigger than the base image.
+          // Real screenshots are always larger than this; a sub-200px upload is
+          // the unrealistic case.
+          width: 1280,
+          height: 720,
           channels: 3,
           background: { r: 120, g: 40, b: 90 }
         }

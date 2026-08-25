@@ -18,7 +18,6 @@ import { checkImageValid } from '~/utils/resizeImage'
 import { generateUUID } from '~/utils/random'
 import { kunFetchFormData, kunFetchPatch } from '~/utils/kunFetch'
 import { KunImageViewer } from '~/components/kun/image-viewer/ImageViewer'
-import { NSFWMask } from '~/components/kun/NSFWMask'
 import { getGalleryFilesFromEvent } from '~/utils/galleryDrop'
 import { usePatchSubmissionStore } from '~/store/patchSubmissionStore'
 import { PATCH_SUBMISSION_GALLERY_MAX_COUNT } from '~/constants/patchSubmission'
@@ -54,11 +53,6 @@ const SubmissionGalleryCard = ({
   onDelete
 }: ServerCardProps) => {
   const label = `第 ${index + 1} 张截图`
-  const [revealed, setRevealed] = useState(!image.isNSFW)
-
-  useEffect(() => {
-    setRevealed(!image.isNSFW)
-  }, [image.id, image.isNSFW])
 
   return (
     <Card
@@ -77,10 +71,14 @@ const SubmissionGalleryCard = ({
               alt={label}
               className="size-full object-cover"
             />
-            <NSFWMask
-              isVisible={!revealed}
-              onReveal={() => setRevealed(true)}
-            />
+            {/* Editing view matches the create/rewrite pages: the author sees
+                their own thumbnail with a danger badge, not a reveal mask. The
+                read-only preview is where the public NSFWMask belongs. */}
+            {image.isNSFW && (
+              <div className="absolute right-1 top-1 rounded bg-danger px-1 text-xs text-white">
+                NSFW
+              </div>
+            )}
           </div>
         ) : (
           <div className="flex aspect-video w-full items-center justify-center rounded-medium bg-default-100 text-sm text-default-500">
@@ -104,7 +102,7 @@ const SubmissionGalleryCard = ({
               isIconOnly
               size="sm"
               variant="light"
-              isDisabled={!revealed || !image.imageUrl}
+              isDisabled={!image.imageUrl}
               onPress={onOpenLightbox}
               aria-label={`放大查看${label}`}
             >
@@ -207,7 +205,9 @@ export const SubmissionGalleryInput = () => {
     usePatchSubmissionStore()
   const [selected, setSelected] = useState<Set<number>>(new Set())
   const [localUploads, setLocalUploads] = useState<LocalUploadView[]>([])
-  const [watermark, setWatermark] = useState(false)
+  // Watermark defaults on, matching the create page, so screenshots are marked
+  // unless the author opts out.
+  const [watermark, setWatermark] = useState(true)
   const [updatingNSFW, setUpdatingNSFW] = useState(false)
   const [progress, setProgress] = useState<{
     total: number
