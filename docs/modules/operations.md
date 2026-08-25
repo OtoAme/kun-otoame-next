@@ -168,6 +168,7 @@ release packaging 还会删除包内 `package.json` 的 `"type": "module"`，并
 - `server/tasks/resetDailyTask.ts`
 - `server/tasks/setCleanupTask.ts`
 - `server/tasks/flushPatchViewsTask.ts`
+- `server/tasks/cleanupSubmissionAssetsTask.ts`
 - `server/tasks/syncKunPatchTypeTask.ts`
 - `server/tasks/withTaskLock.ts`
 
@@ -178,7 +179,10 @@ release packaging 还会删除包内 `package.json` 的 `"type": "module"`，并
 - 重置每日状态。
 - 清理临时上传。
 - 每 2 分钟刷新 patch 浏览量缓冲。
+- 每日 04:00（`Asia/Shanghai`）只读巡检投稿素材；8 小时 task lock 覆盖全桶扫描，并启用本进程 `noOverlap`。任务固定以 `apply: false` 调用维护引擎，只记录终态投稿行积压、已持久 orphan jobs 和新 S3 orphan，不写 outbox、不删 S3、不 purge。
 - 同步资源类型。
+
+常驻任务通过 CLI dependencies 复用扫描逻辑，但不得调用 `close()`：该方法会 `$disconnect()` 共享 Prisma client，仅 CLI 退出时使用。修改 `server/cron.ts` 或 task 文件后需要重启运行进程，新的 `createTask` 才会由 `setKUNGalgameTask()` 启动。
 
 ## 迁移策略
 
