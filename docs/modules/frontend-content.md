@@ -236,6 +236,8 @@ pnpm typecheck
 - **投稿字段顺序固定**：名称 → VNDB → VNDB Relation → Bangumi → Steam → 封面 → 双栏正文编辑器 → 画廊 → 别名 → 官网 → 发售日 → 标签 → 内容分级。名称错误只在提交校验失败后显示，继续输入立即清除；内容分级由投稿人选择，默认 SFW。
 - `KunDualEditorProvider` 是 `value` + `onChange` 受控组件，不导入 create/rewrite/submission store。三个页面各自在薄封装或调用方中绑定自己的状态，避免通用编辑器累积 store 分支。
 - 投稿画廊水印开关随每张上传请求传到服务端；动态 WebP/AVIF 仍保留原图且不加水印。批量 SFW/NSFW 通过受保护 PATCH 持久化，卡片使用真实 `NSFWMask`，遮罩揭开前不能从放大按钮绕过。
+- 投稿 gallery 待上传项用独立 localforage store 持久化 Blob、文件元数据、稳定 `clientAssetId`、顺序、水印与状态。页面刷新时把遗留 `uploading` 恢复成可重试失败态，并重新创建临时预览 URL；成功后立即删除本地记录并 `revokeObjectURL`。上传遮罩使用 Spinner，HeroUI Progress 只显示完成文件数 / 总数，不声称字节百分比。
+- 只要 localforage 草稿尚未读完、仍有待上传/失败项或上传请求在途，就禁用提交审核。服务端上传响应返回 ready gallery DTO，客户端用稳定 ID 把占位卡替换成云端卡；若超时后服务端其实已完成，同一 ID 重试会返回既有 ready 行并清理本地项。
 - **审核队列只负责检索和进入详情。** 通过、要求修改、驳回、违规四个动作全部放在详情页，避免审核员未看正文与素材就结算；详情使用 `publishPreview.ts` 的发布投影，正文注入前再经 DOMPurify，NSFW 截图使用 `NSFWMask` 且仍可开灯箱。超级管理员自审必须显式打开 override，普通管理员不能自审。
 - **投稿画廊卡片的选择、放大、删除各自是可聚焦控件且有可访问名称。** 不要照搬编辑页那种「整卡承担点击 + `pointer-events-none` 的 checkbox」写法：那让纯键盘用户既选不中也放不大, 而投稿面向普通用户。
 - 复用的编辑输入（`VNDBInput`、`VNDBRelationInput`、`BangumiInput`、`SteamInput`、`ReleaseDateInput`、`BatchTag`、`SortableAliasChips`）都是 prop 驱动的泛型组件, 接投稿 payload 无需改动管理员侧代码。

@@ -266,6 +266,7 @@ Gallery 图片上传走 `app/api/edit/gallery/route.ts` 和 `app/api/edit/galler
 - `purgeCache.ts` 按 patchId 推导的三个封面 URL 对投稿 key 是空推。换封面时旧投稿 key 由 durable orphan outbox 清理。
 - 未审素材是公开可取的，被预览后可能进 CDN，因此 `reject` / `violation` / 用户删除必须隐藏 DTO，并连带 purge 封面三变体与每张图的主图、缩略图 URL。
 - 投稿 gallery 上传把 `watermark` 传给共享 `preparePatchGalleryImage`；静态图按开关处理，动态 WebP/AVIF 沿用共享规则跳过水印。批量 NSFW 更新必须锁投稿并验证所有 gallery ID 归属，不能改写其他投稿的行。
+- 投稿 gallery 的浏览器重试凭据存于 localforage：Blob + 文件元数据 + 服务端幂等使用的稳定 `clientAssetId`。失败和刷新中断都保留；服务端 ready 后才移除。上传 API 对已经 ready 的同 ID 必须返回完整公开 gallery DTO，不能要求客户端重新生成 ID，否则会产生重复行。
 
 ## 资源派生属性
 
