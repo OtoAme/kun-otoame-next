@@ -231,8 +231,8 @@ pnpm typecheck
 - **校验分两级。** 草稿在每次输入时保存, 所以自动保存走宽松 schema（`patchSubmissionDraftPayloadSchema`）；完整性只在提交时校验一次。若让自动保存要求完整表单, 用户填完最后一个字段之前保存会一直失败。
 - **hydrate 在 effect 里, 所以首帧必须用服务端数据兜底。** `SubmissionEditor` 在 `submissionId` 与 props 不一致时直接渲染 props 里的 payload, 否则首帧会用 store 的空初始值, 在已保存内容上闪出空表单——这个缺陷是浏览器测试重载后发现标题为空才暴露的。
 - **`patchSubmissionStore` 故意不持久化。** 草稿的真源在数据库、按 id 加载；再存一份本地副本只会在跨设备编辑后与服务端不一致。
-- **自动保存冲突不重试。** `revision` 是乐观锁, 冲突意味着另一台设备先保存了；重试会覆盖对方的内容, 正是这把锁要防的事。冲突单独成一种状态展示, 并阻止提交。
-- **提交前必须 flush 自动保存**, 否则冻结给管理员看的是过期 payload。
+- **自动保存严格串行。** debounce 后的请求进入单一 promise 链，每笔请求真正开始时才读取上一笔写回的 `revision`；并发请求各拿旧 revision 会制造虚假冲突。真实冲突不重试：它意味着另一台设备先保存了，重试会覆盖对方内容。
+- **`flush()` 返回结构化结果。** 返回 `{ ok: true }` 或 `{ ok: false, reason: 'conflict' | 'error', message }`；无脏内容直接成功。显式保存、提交和打开预览都必须依赖这个返回值，失败时展示 message 并停止后续动作，不能再旁读 `saveState` 猜结果。
 - **审核队列只负责检索和进入详情。** 通过、要求修改、驳回、违规四个动作全部放在详情页，避免审核员未看正文与素材就结算；详情使用 `publishPreview.ts` 的发布投影，正文注入前再经 DOMPurify，NSFW 截图使用 `NSFWMask` 且仍可开灯箱。超级管理员自审必须显式打开 override，普通管理员不能自审。
 - **投稿画廊卡片的选择、放大、删除各自是可聚焦控件且有可访问名称。** 不要照搬编辑页那种「整卡承担点击 + `pointer-events-none` 的 checkbox」写法：那让纯键盘用户既选不中也放不大, 而投稿面向普通用户。
 - 复用的编辑输入（`VNDBInput`、`VNDBRelationInput`、`BangumiInput`、`SteamInput`、`ReleaseDateInput`、`BatchTag`、`SortableAliasChips`）都是 prop 驱动的泛型组件, 接投稿 payload 无需改动管理员侧代码。

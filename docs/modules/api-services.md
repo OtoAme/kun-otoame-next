@@ -313,6 +313,7 @@ service/helper 负责：
 - **`reject` 是独立动作**（返还, 不罚没）, 用于重复条目、超出收录范围、诚实但无法发布。缺它会让审核只剩「无限期挂着」或「不公平罚没」。
 - **发布核心三层**：提交前抓取外部数据并冻结进 payload；最终事务内纯 DB 写入 patch/alias/tag/company/gallery/结算/通知/日志；事务后只做缓存失效与 SFW IndexNow。批准链路全程不访问外网。
 - **审核展示与发布使用同一投影**：payload 中的手填、VNDB、Bangumi、Steam、DLsite 别名/标签/公司都由 `publishPreview.ts` 合并；作者预览、管理员详情与 `publishCore.ts` 不得各自复制合并规则。终态清理 key 不能进入管理员预览 DTO。
+- **作者预览先保存后读取**：`GET /api/patch-submission/[id]/preview` 在 service 层用投稿 ID + 当前用户 ID 校验所有权，返回共享发布投影并设置 `private, no-store`。前端只有在 `flush()` 成功后才请求该路由，不能用未保存的本地 payload 假装服务端预览。
 - **上传端点从 middleware matcher 排除**, 在 handler 内自校 CSRF, 使其能在整个 body 传完前拒绝。所有投稿路由先鉴权再解析。
 - **限频分层**：创建/提交/上传 fail-closed；读取/自动保存 fail-open；删除返还与审核结算不设限频（详见 [限频分层](data-cache-upload.md)）。
 - 素材运维：投稿 key 偏离 `patch/<id>/...` canonical 布局；发布后素材归 `patch` 所有, 清理命令（`scripts/cleanupSubmissionAssets.ts`）永不删除线上条目仍引用的对象；下架未审素材要连带 Cloudflare purge。
