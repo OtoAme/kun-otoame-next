@@ -265,6 +265,7 @@ Gallery 图片上传走 `app/api/edit/gallery/route.ts` 和 `app/api/edit/galler
 - `patch_submission_gallery.id` 与批准后新建的 `patch_game_image.id` 没有对应关系。投稿来源 gallery key 只能从库中 URL 反解，不能按正式行 ID 推导；`scripts/galleryThumbnailBackfill.ts` 的 canonical 路径检查必须继续跳过这些对象。
 - `purgeCache.ts` 按 patchId 推导的三个封面 URL 对投稿 key 是空推。换封面时旧投稿 key 由 durable orphan outbox 清理。
 - 未审素材是公开可取的，被预览后可能进 CDN，因此 `reject` / `violation` / 用户删除必须隐藏 DTO，并连带 purge 封面三变体与每张图的主图、缩略图 URL。
+- 投稿 gallery 上传把 `watermark` 传给共享 `preparePatchGalleryImage`；静态图按开关处理，动态 WebP/AVIF 沿用共享规则跳过水印。批量 NSFW 更新必须锁投稿并验证所有 gallery ID 归属，不能改写其他投稿的行。
 
 ## 资源派生属性
 
