@@ -12,10 +12,12 @@ import {
 } from '~/app/api/edit/tagEnsureHelper'
 import {
   ensureCompanyRelationsByName,
-  uniqueTrimmed,
   type CompanyCreateInput
 } from '~/app/api/edit/companyEnsureHelper'
-import { applySteamOfficialUrlFallback } from '~/utils/externalIds'
+import {
+  buildPatchSubmissionPublishedAssetUrl,
+  projectPatchSubmissionPayload
+} from './publishPreview'
 import type { PatchSubmissionPayload } from '~/types/api/patchSubmission'
 
 type Tx = Prisma.TransactionClient
@@ -46,37 +48,36 @@ export interface PublishCoreInput {
  * the transaction from the frozen snapshot, and only cache invalidation and
  * IndexNow are left for afterwards.
  */
-export const publishSubmissionCore = async (tx: Tx, input: PublishCoreInput) => {
+export const publishSubmissionCore = async (
+  tx: Tx,
+  input: PublishCoreInput
+) => {
   const { payload } = input
+  const projection = projectPatchSubmissionPayload(payload)
   const uniqueId = crypto.randomBytes(4).toString('hex')
 
   const patch = await tx.patch.create({
     data: {
-      name: payload.name,
+      name: projection.name,
       unique_id: uniqueId,
       vndb_id: payload.vndbId || null,
       vndb_relation_id: payload.vndbRelationId || null,
       bangumi_id: payload.bangumiId ? Number(payload.bangumiId) : null,
       steam_id: payload.steamId ? Number(payload.steamId) : null,
       dlsite_code: payload.dlsiteCode || null,
-      introduction: payload.introduction,
-      official_url: applySteamOfficialUrlFallback(
-        payload.officialUrl,
-        payload.steamId
-      ),
+      introduction: projection.introduction,
+      official_url: projection.officialUrl,
       user_id: input.authorId,
-      banner: input.bannerKey
-        ? `${process.env.KUN_VISUAL_NOVEL_IMAGE_BED_URL}/${input.bannerKey}`
-        : '',
-      released: payload.released || 'unknown',
-      content_limit: payload.contentLimit
+      banner: buildPatchSubmissionPublishedAssetUrl(input.bannerKey) ?? '',
+      released: projection.released,
+      content_limit: projection.contentLimit
     },
     select: { id: true, unique_id: true }
   })
 
   await tx.patch_rating_stat.create({ data: { patch_id: patch.id } })
 
-  const aliases = uniqueTrimmed([...payload.alias, ...payload.steamAliases])
+  const aliases = projection.aliases
   if (aliases.length) {
     await tx.patch_alias.createMany({
       data: aliases.map((name) => ({ name, patch_id: patch.id })),
@@ -84,12 +85,7 @@ export const publishSubmissionCore = async (tx: Tx, input: PublishCoreInput) => 
     })
   }
 
-  const tagNames = uniqueTrimmed([
-    ...payload.tag,
-    ...payload.vndbTags,
-    ...payload.bangumiTags,
-    ...payload.steamTags
-  ])
+  const tagNames = projection.tagNames
   if (tagNames.length) {
     const existingTags = await tx.patch_tag.findMany({
       where: buildTagLookupWhere(tagNames),
@@ -117,9 +113,9 @@ export const publishSubmissionCore = async (tx: Tx, input: PublishCoreInput) => 
       }
     }
 
-    const tagIds = [...new Set(tagNames.map((name) => nameToId.get(name)))].filter(
-      (id): id is number => typeof id === 'number'
-    )
+    const tagIds = [
+      ...new Set(tagNames.map((name) => nameToId.get(name)))
+    ].filter((id): id is number => typeof id === 'number')
     if (tagIds.length) {
       await tx.patch_tag_relation.createMany({
         data: tagIds.map((tagId) => ({ patch_id: patch.id, tag_id: tagId })),
@@ -132,12 +128,7 @@ export const publishSubmissionCore = async (tx: Tx, input: PublishCoreInput) => 
     }
   }
 
-  const companyNames = uniqueTrimmed([
-    ...payload.vndbDevelopers,
-    ...payload.bangumiDevelopers,
-    ...payload.steamDevelopers,
-    payload.dlsiteCircleName
-  ])
+  const companyNames = projection.companyNames
   if (companyNames.length) {
     const companiesByName = new Map<string, CompanyCreateInput>(
       companyNames.map((name) => [
@@ -161,9 +152,9 @@ export const publishSubmissionCore = async (tx: Tx, input: PublishCoreInput) => 
     await tx.patch_game_image.createMany({
       data: input.gallery.map((image) => ({
         patch_id: patch.id,
-        url: `${process.env.KUN_VISUAL_NOVEL_IMAGE_BED_URL}/${image.key}`,
+        url: buildPatchSubmissionPublishedAssetUrl(image.key) ?? '',
         thumbnail_url: image.thumbnailKey
-          ? `${process.env.KUN_VISUAL_NOVEL_IMAGE_BED_URL}/${image.thumbnailKey}`
+          ? buildPatchSubmissionPublishedAssetUrl(image.thumbnailKey)
           : null,
         is_nsfw: image.isNSFW,
         display_order: image.displayOrder

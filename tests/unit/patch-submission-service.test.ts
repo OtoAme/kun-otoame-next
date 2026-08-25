@@ -104,9 +104,9 @@ describe('patch submission asset visibility', () => {
       bannerUrl:
         'https://cdn.example.test/patch-submission/1-secret/banner/banner.avif'
     })
-    expect(typeof submission === 'string' ? [] : submission.gallery).toHaveLength(
-      1
-    )
+    expect(
+      typeof submission === 'string' ? [] : submission.gallery
+    ).toHaveLength(1)
   })
 
   it('does not hand cleanup outbox material to the admin detail renderer', async () => {
@@ -117,6 +117,8 @@ describe('patch submission asset visibility', () => {
     const submission = await getAdminPatchSubmission(1, 3)
 
     expect(submission).not.toBeTypeOf('string')
-    expect(submission).toMatchObject({ banner_key: null, gallery: [] })
+    expect(submission).toMatchObject({
+      preview: { bannerUrl: null, gallery: [] }
+    })
   })
 })

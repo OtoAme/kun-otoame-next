@@ -4,6 +4,11 @@ import {
   PATCH_SUBMISSION_CLEANUP_STATUSES,
   PATCH_SUBMISSION_REVIEW_MIN_ROLE
 } from '~/constants/patchSubmission'
+import { patchSubmissionDraftPayloadSchema } from '~/validations/patchSubmission'
+import {
+  buildPatchSubmissionPublishPreview,
+  type PatchSubmissionPublishPreview
+} from '~/app/api/patch-submission/publishPreview'
 import type { PatchSubmissionStatus } from '~/types/api/patchSubmission'
 
 export interface AdminSubmissionRow {
@@ -14,6 +19,24 @@ export interface AdminSubmissionRow {
   authorId: number
   submittedAt: string | null
   created: string
+}
+
+export interface AdminPatchSubmissionDetail {
+  id: number
+  status: PatchSubmissionStatus
+  name: string
+  payloadVersion: number
+  heldAmount: number
+  roleAtCreation: number
+  externalSource: string | null
+  externalFetchedAt: string | null
+  reviewReason: string | null
+  reviewedAt: string | null
+  reviewedBy: { id: number; name: string } | null
+  submittedAt: string | null
+  created: string
+  author: { id: number; name: string; avatar: string }
+  preview: PatchSubmissionPublishPreview | null
 }
 
 /**
@@ -89,7 +112,7 @@ export const listAdminPatchSubmissions = async (input: {
 export const getAdminPatchSubmission = async (
   submissionId: number,
   reviewerRole: number
-) => {
+): Promise<AdminPatchSubmissionDetail | string> => {
   if (reviewerRole < PATCH_SUBMISSION_REVIEW_MIN_ROLE) {
     return '您没有审核投稿的权限'
   }
@@ -131,15 +154,47 @@ export const getAdminPatchSubmission = async (
     return '投稿不存在'
   }
 
-  if (
-    PATCH_SUBMISSION_CLEANUP_STATUSES.includes(
-      row.status as (typeof PATCH_SUBMISSION_CLEANUP_STATUSES)[number]
-    )
-  ) {
-    // These values are a durable cleanup credential after settlement. They are
-    // deliberately unavailable to the detail renderer while cleanup retries.
-    return { ...row, banner_key: null, gallery: [] }
-  }
+  const cleanupOwed = PATCH_SUBMISSION_CLEANUP_STATUSES.includes(
+    row.status as (typeof PATCH_SUBMISSION_CLEANUP_STATUSES)[number]
+  )
+  const payload = patchSubmissionDraftPayloadSchema.safeParse(row.payload)
+  const preview = payload.success
+    ? await buildPatchSubmissionPublishPreview({
+        payload: payload.data,
+        bannerKey: cleanupOwed ? null : row.banner_key,
+        gallery: cleanupOwed
+          ? []
+          : row.gallery.flatMap((image) =>
+              image.image_key
+                ? [
+                    {
+                      id: image.id,
+                      key: image.image_key,
+                      thumbnailKey: image.thumbnail_key,
+                      isNSFW: image.is_nsfw,
+                      displayOrder: image.display_order
+                    }
+                  ]
+                : []
+            )
+      })
+    : null
 
-  return row
+  return {
+    id: row.id,
+    status: row.status as PatchSubmissionStatus,
+    name: row.name,
+    payloadVersion: row.payload_version,
+    heldAmount: row.held_amount,
+    roleAtCreation: row.role_at_creation,
+    externalSource: row.external_source,
+    externalFetchedAt: row.external_fetched_at?.toISOString() ?? null,
+    reviewReason: row.review_reason,
+    reviewedAt: row.reviewed_at?.toISOString() ?? null,
+    reviewedBy: row.reviewed_by,
+    submittedAt: row.submitted_at?.toISOString() ?? null,
+    created: row.created.toISOString(),
+    author: row.user,
+    preview
+  }
 }
