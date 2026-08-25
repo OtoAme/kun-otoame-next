@@ -30,6 +30,7 @@ Use this skill for pages, components, state, theme, and content.
 - List pagination should use `components/kun/Pagination.tsx` so page changes fast-scroll back to the document top through `utils/scrollToTop.ts` and respect `prefers-reduced-motion`. Do not duplicate per-page `window.scrollTo({ behavior: 'smooth' })`; pass `disableScrollToTop` only for embedded pagination that must preserve the current scroll position.
 - Update metadata for new pages.
 - Check NSFW behavior across list, detail, title, and mask flows.
+- Submission review actions belong only on `/admin/submission/[id]`; the queue keeps a View action. Render the shared publish projection, sanitize rendered introduction HTML with DOMPurify immediately before injection, use the real `NSFWMask` around gallery thumbnails while preserving lightbox access, and require an explicit super-admin override for self-review.
 - For tag/company detail pages, preserve the static-cache split: company may reuse an SFW static first page only for anonymous default filters, while login/NSFW `nsfw` or `all`/blocked-tag cookies must trigger a client list fetch; tag detail should fetch its game list on client mount.
 - Use `utils/kunFetch.ts` or preserve the CSRF header behavior for state-changing client requests.
 - `kunFetch` preserves JSON string business errors from non-2xx responses, such as private chat `429` rate-limit messages, so existing `typeof response === 'string'` toast branches continue to show user-visible errors.

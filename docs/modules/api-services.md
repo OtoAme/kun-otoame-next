@@ -299,7 +299,7 @@ service/helper 负责：
 
 - `app/api/patch-submission/**`（用户侧：草稿 CRUD、提交/撤回、素材、隐藏）
 - `app/api/admin/patch-submission/**`（审核队列与四个审核动作）
-- `app/api/patch-submission/publishCore.ts`（共享发布核心）
+- `app/api/patch-submission/publishPreview.ts`、`publishCore.ts`（共享发布投影与发布核心）
 - `constants/patchSubmission.ts`、`validations/patchSubmission.ts`、`store/patchSubmissionStore.ts`
 
 规则：
@@ -312,6 +312,7 @@ service/helper 负责：
 - **审核并发守卫**：每个审核动作用一次条件式 `updateMany … where { status: 'pending' }` 抢占, 两名管理员同时点批准只产生一个 `patch`。这是唯一的并发保护, 不得省略。
 - **`reject` 是独立动作**（返还, 不罚没）, 用于重复条目、超出收录范围、诚实但无法发布。缺它会让审核只剩「无限期挂着」或「不公平罚没」。
 - **发布核心三层**：提交前抓取外部数据并冻结进 payload；最终事务内纯 DB 写入 patch/alias/tag/company/gallery/结算/通知/日志；事务后只做缓存失效与 SFW IndexNow。批准链路全程不访问外网。
+- **审核展示与发布使用同一投影**：payload 中的手填、VNDB、Bangumi、Steam、DLsite 别名/标签/公司都由 `publishPreview.ts` 合并；作者预览、管理员详情与 `publishCore.ts` 不得各自复制合并规则。终态清理 key 不能进入管理员预览 DTO。
 - **上传端点从 middleware matcher 排除**, 在 handler 内自校 CSRF, 使其能在整个 body 传完前拒绝。所有投稿路由先鉴权再解析。
 - **限频分层**：创建/提交/上传 fail-closed；读取/自动保存 fail-open；删除返还与审核结算不设限频（详见 [限频分层](data-cache-upload.md)）。
 - 素材运维：投稿 key 偏离 `patch/<id>/...` canonical 布局；发布后素材归 `patch` 所有, 清理命令（`scripts/cleanupSubmissionAssets.ts`）永不删除线上条目仍引用的对象；下架未审素材要连带 Cloudflare purge。
