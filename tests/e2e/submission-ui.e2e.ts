@@ -174,10 +174,11 @@ const openOwnSubmissionTab = async (page: Page) => {
 
 const createDraft = async (page: Page) => {
   await openOwnSubmissionTab(page)
-  await page
-    .locator('button', { hasText: /^新建投稿$/ })
-    .first()
-    .click()
+  // The list content is server-rendered, so its heading can be visible before
+  // React has attached the button handler. Wait for client hydration requests
+  // to settle before exercising the control.
+  await page.waitForLoadState('networkidle')
+  await page.locator('button', { hasText: /^新建投稿$/ }).first().click()
   await page.waitForURL('**/submission/*', { timeout: STEP_TIMEOUT_MS })
   await waitVisible(page.getByText('投稿游戏条目'), 'submission editor')
 }
@@ -236,12 +237,17 @@ const cases: Case[] = [
     name: 'the required-name error clears as soon as the author types',
     run: async (page) => {
       await createDraft(page)
+      const title = page.getByLabel('游戏名称')
+      await title.fill('')
       await page
         .locator('button', { hasText: /^提交审核$/ })
         .first()
         .click()
 
-      const title = page.getByLabel('游戏名称')
+      await waitVisible(
+        page.getByText('游戏名称是必填项'),
+        'required-name error'
+      )
       assertTrue(
         (await title.getAttribute('aria-invalid')) === 'true',
         'the empty required name was not marked invalid'
@@ -346,8 +352,11 @@ const cases: Case[] = [
           await route.continue()
           return
         }
-        await new Promise((resolve) => setTimeout(resolve, 500))
-        await route.abort('failed')
+        await route.fulfill({
+          status: 503,
+          contentType: 'application/json',
+          body: JSON.stringify('模拟截图上传失败')
+        })
       })
 
       await page.locator('input[type="file"][multiple]').setInputFiles({
