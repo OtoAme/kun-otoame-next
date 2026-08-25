@@ -1,8 +1,12 @@
 import { Prisma } from '@prisma/client'
 import { prisma } from '~/prisma/index'
-import { PATCH_SUBMISSION_ACTIVE_STATUSES } from '~/constants/patchSubmission'
-import { PATCH_SUBMISSION_GALLERY_MAX_COUNT } from '~/constants/patchSubmission'
+import {
+  PATCH_SUBMISSION_ACTIVE_STATUSES,
+  PATCH_SUBMISSION_GALLERY_MAX_COUNT,
+  PATCH_SUBMISSION_REVIEW_MIN_ROLE
+} from '~/constants/patchSubmission'
 import { patchSubmissionPayloadSchema } from '~/validations/patchSubmission'
+import { createMessage } from '~/app/api/utils/message'
 import { PatchSubmissionError } from './quota'
 import type { PatchSubmissionPayload } from '~/types/api/patchSubmission'
 
@@ -106,6 +110,7 @@ export const submitPatchSubmission = async (
       status: true,
       payload: true,
       banner_key: true,
+      user: { select: { name: true } },
       gallery: { select: { upload_status: true } }
     }
   })
@@ -168,6 +173,40 @@ export const submitPatchSubmission = async (
   })
   if (submitted.count === 0) {
     return '投稿状态已变化, 请刷新后重试'
+  }
+
+  // The state transition is already committed. Notification is delivery only:
+  // one unavailable recipient or the whole message query must never make the
+  // author believe submission failed and encourage a duplicate retry.
+  try {
+    const reviewers = await prisma.user.findMany({
+      where: { role: { gte: PATCH_SUBMISSION_REVIEW_MIN_ROLE } },
+      select: { id: true }
+    })
+    const results = await Promise.allSettled(
+      reviewers.map((reviewer) =>
+        createMessage({
+          type: 'system',
+          content: `用户 ${submission.user.name} 提交了游戏条目《${complete.data.name}》，请前往审核。`,
+          sender_id: userId,
+          recipient_id: reviewer.id,
+          link: `/admin/submission/${submissionId}`
+        })
+      )
+    )
+    const failed = results.filter((result) => result.status === 'rejected')
+    if (failed.length) {
+      console.error('Failed to notify some patch submission reviewers', {
+        submissionId,
+        failed: failed.length,
+        total: reviewers.length
+      })
+    }
+  } catch (error) {
+    console.error('Failed to notify patch submission reviewers', {
+      submissionId,
+      error
+    })
   }
 
   return {}
