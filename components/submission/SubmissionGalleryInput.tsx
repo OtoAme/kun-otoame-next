@@ -1,14 +1,15 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Button, Card, CardBody, Checkbox, Chip } from '@heroui/react'
+import { Button, Card, CardBody, Checkbox, Chip, Switch } from '@heroui/react'
 import { Maximize2, Trash2, Upload } from 'lucide-react'
 import { useDropzone } from 'react-dropzone'
 import toast from 'react-hot-toast'
 import { checkImageValid } from '~/utils/resizeImage'
 import { generateUUID } from '~/utils/random'
-import { kunFetchFormData } from '~/utils/kunFetch'
+import { kunFetchFormData, kunFetchPatch } from '~/utils/kunFetch'
 import { KunImageViewer } from '~/components/kun/image-viewer/ImageViewer'
+import { NSFWMask } from '~/components/kun/NSFWMask'
 import { getGalleryFilesFromEvent } from '~/utils/galleryDrop'
 import { usePatchSubmissionStore } from '~/store/patchSubmissionStore'
 import { PATCH_SUBMISSION_GALLERY_MAX_COUNT } from '~/constants/patchSubmission'
@@ -19,6 +20,7 @@ interface CardProps {
   image: PatchSubmissionGalleryImage
   index: number
   selected: boolean
+  editable: boolean
   onToggle: () => void
   onOpenLightbox: () => void
   onDelete: () => void
@@ -35,11 +37,17 @@ const SubmissionGalleryCard = ({
   image,
   index,
   selected,
+  editable,
   onToggle,
   onOpenLightbox,
   onDelete
 }: CardProps) => {
   const label = `第 ${index + 1} 张截图`
+  const [revealed, setRevealed] = useState(!image.isNSFW)
+
+  useEffect(() => {
+    setRevealed(!image.isNSFW)
+  }, [image.id, image.isNSFW])
 
   return (
     <Card
@@ -51,12 +59,18 @@ const SubmissionGalleryCard = ({
     >
       <CardBody className="p-2 space-y-2">
         {image.thumbnailUrl || image.imageUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={image.thumbnailUrl ?? image.imageUrl ?? ''}
-            alt={label}
-            className="object-cover w-full rounded-medium aspect-video"
-          />
+          <div className="relative aspect-video overflow-hidden rounded-medium">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={image.thumbnailUrl ?? image.imageUrl ?? ''}
+              alt={label}
+              className="size-full object-cover"
+            />
+            <NSFWMask
+              isVisible={!revealed}
+              onReveal={() => setRevealed(true)}
+            />
+          </div>
         ) : (
           <div className="flex items-center justify-center w-full text-sm bg-default-100 rounded-medium aspect-video text-default-500">
             上传中
@@ -66,6 +80,7 @@ const SubmissionGalleryCard = ({
         <div className="flex items-center justify-between gap-1">
           <Checkbox
             size="sm"
+            isDisabled={!editable}
             isSelected={selected}
             onValueChange={onToggle}
             aria-label={`选择${label}`}
@@ -78,6 +93,7 @@ const SubmissionGalleryCard = ({
               isIconOnly
               size="sm"
               variant="light"
+              isDisabled={!revealed || !image.imageUrl}
               onPress={onOpenLightbox}
               aria-label={`放大查看${label}`}
             >
@@ -88,6 +104,7 @@ const SubmissionGalleryCard = ({
               size="sm"
               variant="light"
               color="danger"
+              isDisabled={!editable}
               onPress={onDelete}
               aria-label={`删除${label}`}
             >
@@ -111,6 +128,8 @@ export const SubmissionGalleryInput = () => {
     usePatchSubmissionStore()
   const [selected, setSelected] = useState<Set<number>>(new Set())
   const [uploading, setUploading] = useState(0)
+  const [watermark, setWatermark] = useState(false)
+  const [updatingNSFW, setUpdatingNSFW] = useState(false)
   const editable = status === 'draft' || status === 'changes_requested'
 
   useEffect(() => {
@@ -129,6 +148,7 @@ export const SubmissionGalleryInput = () => {
     formData.set('clientAssetId', generateUUID().replace(/-/g, ''))
     formData.set('image', file)
     formData.set('displayOrder', String(displayOrder))
+    formData.set('watermark', String(watermark))
 
     const response = await kunFetchFormData<
       string | { galleryId: number; alreadyUploaded: boolean }
@@ -199,6 +219,33 @@ export const SubmissionGalleryInput = () => {
     setGallery(gallery.filter((image) => image.id !== galleryId))
   }
 
+  const setSelectedNSFW = async (isNSFW: boolean) => {
+    const galleryIds = [...selected]
+    if (!galleryIds.length) return
+    setUpdatingNSFW(true)
+    try {
+      const response = await kunFetchPatch<string | Record<string, never>>(
+        '/patch-submission/asset',
+        { submissionId, galleryIds, isNSFW }
+      )
+      if (typeof response === 'string') {
+        toast.error(response)
+        return
+      }
+      setGallery(
+        usePatchSubmissionStore.getState().gallery.map((image) =>
+          selected.has(image.id) ? { ...image, isNSFW } : image
+        )
+      )
+      setSelected(new Set())
+    } catch (error) {
+      console.error('Failed to update submission gallery NSFW state', error)
+      toast.error('截图分级更新失败，请检查网络后重试')
+    } finally {
+      setUpdatingNSFW(false)
+    }
+  }
+
   const images = gallery
     .filter((image) => image.imageUrl)
     .map((image, index) => ({
@@ -209,13 +256,23 @@ export const SubmissionGalleryInput = () => {
 
   return (
     <div className="space-y-3">
-      <div className="flex items-baseline justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-xl">游戏截图 (可选)</h2>
-        <span className="text-sm text-default-500">
-          {readyCount} / {PATCH_SUBMISSION_GALLERY_MAX_COUNT}
-          {uploading > 0 && ` · 正在上传 ${uploading} 张`}
-        </span>
+        <div className="flex flex-wrap items-center gap-3">
+          {editable && (
+            <Switch isSelected={watermark} onValueChange={setWatermark}>
+              添加水印
+            </Switch>
+          )}
+          <span className="text-sm text-default-500">
+            {readyCount} / {PATCH_SUBMISSION_GALLERY_MAX_COUNT}
+            {uploading > 0 && ` · 正在上传 ${uploading} 张`}
+          </span>
+        </div>
       </div>
+      <p className="text-sm text-default-500">
+        动态 WebP / AVIF 会保留原始动图，不添加水印。
+      </p>
 
       {editable && (
         <div
@@ -239,32 +296,63 @@ export const SubmissionGalleryInput = () => {
       )}
 
       {gallery.length > 0 && (
-        <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-          <KunImageViewer images={images}>
-            {(openLightbox) =>
-              gallery.map((image, index) => (
-                <SubmissionGalleryCard
-                  key={image.id}
-                  image={image}
-                  index={index}
-                  selected={selected.has(image.id)}
-                  onToggle={() =>
-                    setSelected((current) => {
-                      const next = new Set(current)
-                      if (next.has(image.id)) {
-                        next.delete(image.id)
-                      } else {
-                        next.add(image.id)
+        <div className="space-y-3">
+          {editable && selected.size > 0 && (
+            <div className="flex flex-wrap gap-2">
+              <Button
+                size="sm"
+                color="danger"
+                variant="flat"
+                isLoading={updatingNSFW}
+                onPress={() => void setSelectedNSFW(true)}
+              >
+                设为 NSFW
+              </Button>
+              <Button
+                size="sm"
+                variant="flat"
+                isDisabled={updatingNSFW}
+                onPress={() => void setSelectedNSFW(false)}
+              >
+                设为 SFW
+              </Button>
+            </div>
+          )}
+          <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+            <KunImageViewer images={images}>
+              {(openLightbox) =>
+                gallery.map((image, index) => {
+                  const viewerIndex = gallery
+                    .filter((candidate) => candidate.imageUrl)
+                    .findIndex((candidate) => candidate.id === image.id)
+                  return (
+                    <SubmissionGalleryCard
+                      key={image.id}
+                      image={image}
+                      index={index}
+                      selected={selected.has(image.id)}
+                      editable={editable}
+                      onToggle={() =>
+                        setSelected((current) => {
+                          const next = new Set(current)
+                          if (next.has(image.id)) {
+                            next.delete(image.id)
+                          } else {
+                            next.add(image.id)
+                          }
+                          return next
+                        })
                       }
-                      return next
-                    })
-                  }
-                  onOpenLightbox={() => openLightbox(index)}
-                  onDelete={() => void deleteImage(image.id)}
-                />
-              ))
-            }
-          </KunImageViewer>
+                      onOpenLightbox={() =>
+                        viewerIndex >= 0 && openLightbox(viewerIndex)
+                      }
+                      onDelete={() => void deleteImage(image.id)}
+                    />
+                  )
+                })
+              }
+            </KunImageViewer>
+          </div>
         </div>
       )}
     </div>

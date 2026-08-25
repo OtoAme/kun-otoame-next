@@ -29,6 +29,7 @@ interface Props<T extends PatchFormDataShape> {
   setData: PatchFormDataSetter<T>
   isDuplicate?: boolean
   onDuplicateChange?: (value: boolean) => void
+  onExternalFetched?: (source: 'vndb') => void
   excludeId?: number
 }
 
@@ -38,7 +39,8 @@ export const VNDBInput = <T extends PatchFormDataShape>({
   setData,
   isDuplicate = false,
   onDuplicateChange,
-  excludeId
+  excludeId,
+  onExternalFetched
 }: Props<T>) => {
   const [duplicateFound, setDuplicateFound] = useState(false)
   const [duplicateList, setDuplicateList] = useState<DuplicateItem[]>([])
@@ -102,6 +104,7 @@ export const VNDBInput = <T extends PatchFormDataShape>({
         vndbTags: tags ?? [],
         vndbDevelopers: developers
       }))
+      onExternalFetched?.('vndb')
 
       toast.success('获取数据成功! 已为您自动添加游戏别名')
     } catch (error) {

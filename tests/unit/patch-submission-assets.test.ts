@@ -7,6 +7,7 @@ const prismaMocks = vi.hoisted(() => {
     patch_submission_gallery: {
       findUnique: vi.fn(),
       findFirst: vi.fn(),
+      findMany: vi.fn(),
       create: vi.fn(),
       update: vi.fn(),
       updateMany: vi.fn(),
@@ -15,8 +16,8 @@ const prismaMocks = vi.hoisted(() => {
     }
   }
   return {
-    $transaction: vi.fn(
-      (fn: (transaction: typeof tx) => Promise<unknown>) => fn(tx)
+    $transaction: vi.fn((fn: (transaction: typeof tx) => Promise<unknown>) =>
+      fn(tx)
     ),
     patch_submission_gallery: {
       update: vi.fn(),
@@ -38,8 +39,7 @@ vi.mock('~/app/api/edit/galleryUpload', () => ({
 
 const uploadPatchSubmissionBannerVariantsMock = vi.hoisted(() => vi.fn())
 vi.mock('~/app/api/patch-submission/bannerUpload', () => ({
-  uploadPatchSubmissionBannerVariants:
-    uploadPatchSubmissionBannerVariantsMock
+  uploadPatchSubmissionBannerVariants: uploadPatchSubmissionBannerVariantsMock
 }))
 
 const enqueueSubmissionOrphanCleanupJobsMock = vi.hoisted(() => vi.fn())
@@ -47,8 +47,7 @@ const processSubmissionOrphanCleanupJobsBestEffortMock = vi.hoisted(() =>
   vi.fn()
 )
 vi.mock('~/app/api/patch-submission/orphanCleanup', () => ({
-  enqueueSubmissionOrphanCleanupJobs:
-    enqueueSubmissionOrphanCleanupJobsMock,
+  enqueueSubmissionOrphanCleanupJobs: enqueueSubmissionOrphanCleanupJobsMock,
   processSubmissionOrphanCleanupJobsBestEffort:
     processSubmissionOrphanCleanupJobsBestEffortMock
 }))
@@ -56,7 +55,8 @@ vi.mock('~/app/api/patch-submission/orphanCleanup', () => ({
 import {
   deletePatchSubmissionGalleryImage,
   uploadPatchSubmissionBanner,
-  uploadPatchSubmissionGalleryImage
+  uploadPatchSubmissionGalleryImage,
+  updatePatchSubmissionGalleryNSFW
 } from '~/app/api/patch-submission/assets'
 
 const tx = prismaMocks._tx
@@ -83,7 +83,9 @@ beforeEach(() => {
   tx.$queryRaw.mockReset()
   tx.$queryRaw
     .mockResolvedValueOnce([editableRow])
-    .mockResolvedValueOnce([{ slots: 0n, submission_bytes: 0n, user_bytes: 0n }])
+    .mockResolvedValueOnce([
+      { slots: 0n, submission_bytes: 0n, user_bytes: 0n }
+    ])
   tx.patch_submission_gallery.findUnique.mockResolvedValue(null)
   tx.patch_submission_gallery.create.mockResolvedValue({ id: 9 })
   tx.patch_submission_gallery.updateMany.mockResolvedValue({ count: 1 })
@@ -97,8 +99,8 @@ beforeEach(() => {
     thumbnailKey: 'patch-submission/1-new/banner/banner-mini.avif',
     originalKey: 'patch-submission/1-new/banner/banner-full.avif'
   })
-  enqueueSubmissionOrphanCleanupJobsMock.mockImplementation(
-    (_client, keys) => Promise.resolve(keys)
+  enqueueSubmissionOrphanCleanupJobsMock.mockImplementation((_client, keys) =>
+    Promise.resolve(keys)
   )
   processSubmissionOrphanCleanupJobsBestEffortMock.mockResolvedValue(undefined)
 })
@@ -114,6 +116,7 @@ describe('gallery upload finalize fence', () => {
         clientAssetId: 'client-9',
         image: new ArrayBuffer(8),
         isNSFW: false,
+        watermark: false,
         displayOrder: 0
       })
     ).rejects.toThrow('投稿状态已变化')
@@ -139,9 +142,9 @@ describe('gallery upload finalize fence', () => {
       ]),
       'upload_compensation'
     )
-    expect(processSubmissionOrphanCleanupJobsBestEffortMock).toHaveBeenCalledAfter(
-      enqueueSubmissionOrphanCleanupJobsMock
-    )
+    expect(
+      processSubmissionOrphanCleanupJobsBestEffortMock
+    ).toHaveBeenCalledAfter(enqueueSubmissionOrphanCleanupJobsMock)
   })
 
   it('attaches ready keys only through the status-guarded transaction', async () => {
@@ -151,11 +154,72 @@ describe('gallery upload finalize fence', () => {
       clientAssetId: 'client-9',
       image: new ArrayBuffer(8),
       isNSFW: false,
+      watermark: true,
       displayOrder: 0
     })
 
     expect(tx.patch_submission_gallery.updateMany).toHaveBeenCalledTimes(1)
+    expect(preparePatchGalleryImageMock).toHaveBeenCalledWith(
+      expect.any(ArrayBuffer),
+      true
+    )
     expect(enqueueSubmissionOrphanCleanupJobsMock).not.toHaveBeenCalled()
+  })
+})
+
+describe('submission gallery NSFW updates', () => {
+  it('checks every selected id belongs to the editable submission', async () => {
+    tx.$queryRaw.mockReset()
+    tx.$queryRaw.mockResolvedValue([editableRow])
+    tx.patch_submission_gallery.findMany.mockResolvedValue([{ id: 9 }])
+
+    await expect(
+      updatePatchSubmissionGalleryNSFW({
+        submissionId: 1,
+        galleryIds: [9, 10],
+        userId: 2,
+        isNSFW: true
+      })
+    ).rejects.toThrow('所选截图不属于这条投稿')
+
+    expect(tx.patch_submission_gallery.updateMany).not.toHaveBeenCalled()
+  })
+
+  it('updates owned ids only after the editable-state lock', async () => {
+    tx.$queryRaw.mockReset()
+    tx.$queryRaw.mockResolvedValue([editableRow])
+    tx.patch_submission_gallery.findMany.mockResolvedValue([
+      { id: 9 },
+      { id: 10 }
+    ])
+
+    await updatePatchSubmissionGalleryNSFW({
+      submissionId: 1,
+      galleryIds: [9, 10],
+      userId: 2,
+      isNSFW: true
+    })
+
+    expect(tx.patch_submission_gallery.updateMany).toHaveBeenCalledWith({
+      where: { submission_id: 1, id: { in: [9, 10] } },
+      data: { is_nsfw: true }
+    })
+  })
+
+  it('rejects NSFW updates after the submission is no longer editable', async () => {
+    tx.$queryRaw.mockReset()
+    tx.$queryRaw.mockResolvedValue([{ ...editableRow, status: 'published' }])
+
+    await expect(
+      updatePatchSubmissionGalleryNSFW({
+        submissionId: 1,
+        galleryIds: [9],
+        userId: 2,
+        isNSFW: true
+      })
+    ).rejects.toThrow('当前状态的投稿无法修改素材')
+
+    expect(tx.patch_submission_gallery.findMany).not.toHaveBeenCalled()
   })
 })
 
@@ -179,9 +243,9 @@ describe('submission asset removals', () => {
       ],
       'gallery_delete'
     )
-    expect(processSubmissionOrphanCleanupJobsBestEffortMock).toHaveBeenCalledAfter(
-      enqueueSubmissionOrphanCleanupJobsMock
-    )
+    expect(
+      processSubmissionOrphanCleanupJobsBestEffortMock
+    ).toHaveBeenCalledAfter(enqueueSubmissionOrphanCleanupJobsMock)
   })
 
   it('replaces the banner and enqueues every old variant atomically', async () => {

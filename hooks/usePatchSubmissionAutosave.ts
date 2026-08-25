@@ -46,8 +46,14 @@ export const usePatchSubmissionAutosave = () => {
       payload: PatchSubmissionPayload,
       version: number
     ): Promise<PatchSubmissionSaveResult> => {
-      const { submissionId, revision, setSaveState, setRevision } =
-        usePatchSubmissionStore.getState()
+      const {
+        submissionId,
+        revision,
+        externalSource,
+        externalFetchedAt,
+        setSaveState,
+        setRevision
+      } = usePatchSubmissionStore.getState()
       if (!submissionId) {
         const result: PatchSubmissionSaveResult = {
           ok: false,
@@ -67,7 +73,8 @@ export const usePatchSubmissionAutosave = () => {
             submissionId,
             revision,
             payload,
-            externalSource: ''
+            externalSource,
+            externalFetchedAt
           }
         )
 

@@ -118,6 +118,7 @@ describe('SteamInput', () => {
     })
     const data = createData()
     const setData = vi.fn()
+    const onExternalFetched = vi.fn()
 
     dom = new JSDOM('<!doctype html><div id="root"></div>', {
       url: 'http://localhost'
@@ -135,7 +136,13 @@ describe('SteamInput', () => {
     root = createRoot(container!)
 
     await act(async () => {
-      root!.render(<SteamInput data={data} setData={setData} />)
+      root!.render(
+        <SteamInput
+          data={data}
+          setData={setData}
+          onExternalFetched={onExternalFetched}
+        />
+      )
     })
 
     await act(async () => {
@@ -153,5 +160,6 @@ describe('SteamInput', () => {
     expect(toastMock.error).toHaveBeenCalledWith(
       '发现相同 Steam ID 的已有游戏，请确认是否为合集或共用商店页'
     )
+    expect(onExternalFetched).toHaveBeenCalledWith('steam')
   })
 })

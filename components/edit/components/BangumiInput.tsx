@@ -34,13 +34,15 @@ interface Props<T extends PatchFormDataShape> {
   data: T
   setData: PatchFormDataSetter<T>
   excludeId?: number
+  onExternalFetched?: (source: 'bangumi') => void
 }
 
 export const BangumiInput = <T extends PatchFormDataShape>({
   errors,
   data,
   setData,
-  excludeId
+  excludeId,
+  onExternalFetched
 }: Props<T>) => {
   const [preview, setPreview] = useState<BangumiPreview | null>(null)
   const [duplicateUniqueId, setDuplicateUniqueId] = useState<string | null>(
@@ -110,6 +112,7 @@ export const BangumiInput = <T extends PatchFormDataShape>({
         bangumiTags: result.tags,
         bangumiDevelopers: result.developers
       }))
+      onExternalFetched?.('bangumi')
 
       toast.success(`确认: ${displayName}`)
     } catch {

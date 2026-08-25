@@ -9,7 +9,7 @@ interface Props {
 }
 
 export const PatchIntroduction = ({ errors }: Props) => {
-  const { data } = useCreatePatchStore()
+  const { data, setData } = useCreatePatchStore()
 
   return (
     <div className="space-y-2">
@@ -19,7 +19,12 @@ export const PatchIntroduction = ({ errors }: Props) => {
       </p>
       {errors && <p className="text-xs text-danger-500">{errors}</p>}
 
-      <KunDualEditorProvider storeName="patchCreate" />
+      <KunDualEditorProvider
+        value={data.introduction}
+        onChange={(introduction) =>
+          setData((current) => ({ ...current, introduction }))
+        }
+      />
 
       <p className="text-small text-default-500">
         字数: {markdownToText(data.introduction).length}

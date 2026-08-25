@@ -4,12 +4,14 @@ import { verifyKunCsrf } from '~/middleware/_csrf'
 import {
   patchSubmissionBannerUploadSchema,
   patchSubmissionGalleryDeleteSchema,
+  patchSubmissionGalleryNsfwSchema,
   patchSubmissionGalleryUploadSchema
 } from '~/validations/patchSubmission'
 import { GALLERY_IMAGE_MAX_SIZE_MB } from '~/constants/galgame'
 import { PatchSubmissionError } from '../quota'
 import {
   deletePatchSubmissionGalleryImage,
+  updatePatchSubmissionGalleryNSFW,
   uploadPatchSubmissionBanner,
   uploadPatchSubmissionGalleryImage
 } from '../assets'
@@ -96,6 +98,7 @@ export const POST = async (req: NextRequest) => {
     clientAssetId: formData.get('clientAssetId'),
     image: formData.get('image'),
     isNSFW: formData.get('isNSFW') ?? 'false',
+    watermark: formData.get('watermark') ?? 'false',
     displayOrder: formData.get('displayOrder') ?? 0
   })
   if (!parsed.success) {
@@ -109,9 +112,51 @@ export const POST = async (req: NextRequest) => {
       clientAssetId: parsed.data.clientAssetId,
       image: await parsed.data.image.arrayBuffer(),
       isNSFW: parsed.data.isNSFW === 'true',
+      watermark: parsed.data.watermark === 'true',
       displayOrder: parsed.data.displayOrder
     })
     return privateJson(result)
+  } catch (error) {
+    if (error instanceof PatchSubmissionError) {
+      return privateJson(error.message)
+    }
+    throw error
+  }
+}
+
+export const PATCH = async (req: NextRequest) => {
+  const csrfError = verifyKunCsrf(req)
+  if (csrfError) {
+    return NextResponse.json(csrfError, {
+      status: 403,
+      headers: { 'Cache-Control': 'private, no-store' }
+    })
+  }
+
+  const user = await verifyHeaderCookie(req)
+  if (!user) return privateJson('用户未登录')
+
+  let body: unknown
+  try {
+    body = await req.json()
+  } catch {
+    return privateJson('请求体不正确')
+  }
+
+  const parsed = patchSubmissionGalleryNsfwSchema.safeParse(body)
+  if (!parsed.success) {
+    return privateJson(parsed.error.errors[0]?.message ?? '参数不正确')
+  }
+
+  try {
+    return privateJson(
+      await updatePatchSubmissionGalleryNSFW({
+        submissionId: parsed.data.submissionId,
+        galleryIds: parsed.data.galleryIds,
+        userId: user.uid,
+        isNSFW: parsed.data.isNSFW
+      })
+    )
   } catch (error) {
     if (error instanceof PatchSubmissionError) {
       return privateJson(error.message)

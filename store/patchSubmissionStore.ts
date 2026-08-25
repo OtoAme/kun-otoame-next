@@ -14,9 +14,11 @@ interface StoreState {
   payload: PatchSubmissionPayload
   bannerUrl: string | null
   gallery: PatchSubmissionGalleryImage[]
+  externalSource: string
+  externalFetchedAt: string | null
   saveState: SaveState
   saveError: string
-  /** Set while a save is in flight so submitting can wait for it. */
+  /** Set while the current payload still has unsaved changes. */
   pendingSave: boolean
 
   hydrate: (submission: PatchSubmission) => void
@@ -30,6 +32,7 @@ interface StoreState {
   setSaveState: (state: SaveState, error?: string) => void
   setRevision: (revision: number) => void
   setPendingSave: (pending: boolean) => void
+  setExternalProvenance: (source: string, fetchedAt: string) => void
   reset: () => void
 }
 
@@ -64,6 +67,8 @@ const initialState = {
   payload: emptyPatchSubmissionPayload,
   bannerUrl: null,
   gallery: [] as PatchSubmissionGalleryImage[],
+  externalSource: '',
+  externalFetchedAt: null as string | null,
   saveState: 'idle' as SaveState,
   saveError: '',
   pendingSave: false
@@ -85,6 +90,8 @@ export const usePatchSubmissionStore = create<StoreState>()((set) => ({
       payload: submission.payload,
       bannerUrl: submission.bannerUrl,
       gallery: submission.gallery,
+      externalSource: submission.externalSource ?? '',
+      externalFetchedAt: submission.externalFetchedAt,
       saveState: 'idle',
       saveError: '',
       pendingSave: false
@@ -100,5 +107,7 @@ export const usePatchSubmissionStore = create<StoreState>()((set) => ({
   setSaveState: (saveState, saveError = '') => set({ saveState, saveError }),
   setRevision: (revision) => set({ revision }),
   setPendingSave: (pendingSave) => set({ pendingSave }),
+  setExternalProvenance: (externalSource, externalFetchedAt) =>
+    set({ externalSource, externalFetchedAt }),
   reset: () => set(initialState)
 }))

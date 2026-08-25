@@ -3,7 +3,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const prismaMocks = vi.hoisted(() => ({
   patch_submission: {
     findFirst: vi.fn(),
-    findUnique: vi.fn()
+    findUnique: vi.fn(),
+    updateMany: vi.fn()
   }
 }))
 vi.mock('~/prisma/index', () => ({ prisma: prismaMocks }))
@@ -15,7 +16,8 @@ vi.mock('~/lib/s3', () => ({
 
 import {
   getPatchSubmission,
-  getPatchSubmissionPublishPreview
+  getPatchSubmissionPublishPreview,
+  updatePatchSubmissionDraft
 } from '~/app/api/patch-submission/service'
 import { getAdminPatchSubmission } from '~/app/api/admin/patch-submission/service'
 
@@ -145,5 +147,32 @@ describe('patch submission asset visibility', () => {
       ]
     })
     expect(JSON.stringify(preview)).not.toContain('image_key')
+  })
+
+  it('persists the actual external fetch time instead of refreshing it on autosave', async () => {
+    const fetchedAt = '2026-08-25T06:00:00.000Z'
+    prismaMocks.patch_submission.findFirst.mockResolvedValue({
+      status: 'draft',
+      revision: 2
+    })
+    prismaMocks.patch_submission.updateMany.mockResolvedValue({ count: 1 })
+
+    await updatePatchSubmissionDraft({
+      submissionId: 1,
+      userId: 2,
+      revision: 2,
+      payload,
+      externalSource: 'bangumi',
+      externalFetchedAt: fetchedAt
+    })
+
+    expect(prismaMocks.patch_submission.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          external_source: 'bangumi',
+          external_fetched_at: new Date(fetchedAt)
+        })
+      })
+    )
   })
 })

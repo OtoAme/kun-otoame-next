@@ -35,13 +35,15 @@ interface Props<T extends PatchFormDataShape> {
   data: T
   setData: PatchFormDataSetter<T>
   excludeId?: number
+  onExternalFetched?: (source: 'steam') => void
 }
 
 export const SteamInput = <T extends PatchFormDataShape>({
   errors,
   data,
   setData,
-  excludeId
+  excludeId,
+  onExternalFetched
 }: Props<T>) => {
   const [preview, setPreview] = useState<SteamPreview | null>(null)
   const [duplicateUniqueId, setDuplicateUniqueId] = useState<string | null>(
@@ -132,6 +134,7 @@ export const SteamInput = <T extends PatchFormDataShape>({
         steamDevelopers: result.developers.map((developer) => developer.name),
         steamAliases: extraAliases
       }))
+      onExternalFetched?.('steam')
 
       toast.success(`确认: ${result.name}`)
     } catch {

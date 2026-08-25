@@ -1,30 +1,25 @@
 'use client'
 
-import { useEffect } from 'react'
-import {
-  Button,
-  Card,
-  CardBody,
-  CardHeader,
-  Chip,
-  Input,
-  Textarea
-} from '@heroui/react'
+import { useEffect, useState } from 'react'
+import { Button, Card, CardBody, CardHeader, Chip, Input } from '@heroui/react'
 import { useRouter } from '@bprogress/next'
 import toast from 'react-hot-toast'
 import { kunFetchPost } from '~/utils/kunFetch'
+import { applySteamOfficialUrlFallback } from '~/utils/externalIds'
 import { usePatchSubmissionStore } from '~/store/patchSubmissionStore'
 import { usePatchSubmissionAutosave } from '~/hooks/usePatchSubmissionAutosave'
 import { SubmissionBannerInput } from './SubmissionBannerInput'
 import { SubmissionGalleryInput } from './SubmissionGalleryInput'
 import { SubmissionPreview } from './SubmissionPreview'
+import { SubmissionAliasInput } from './SubmissionAliasInput'
+import { SubmissionContentLimit } from './SubmissionContentLimit'
+import { SubmissionIntroduction } from './SubmissionIntroduction'
 import { VNDBInput } from '~/components/edit/create/VNDBInput'
 import { VNDBRelationInput } from '~/components/edit/create/VNDBRelationInput'
 import { BangumiInput } from '~/components/edit/components/BangumiInput'
 import { SteamInput } from '~/components/edit/components/SteamInput'
 import { ReleaseDateInput } from '~/components/edit/components/ReleaseDateInput'
 import { BatchTag } from '~/components/edit/components/BatchTag'
-import { SortableAliasChips } from '~/components/edit/components/SortableAliasChips'
 import type {
   PatchSubmission,
   PatchSubmissionPayload
@@ -51,24 +46,25 @@ export const SubmissionEditor = ({ submission }: Props) => {
     saveState,
     saveError,
     hydrate,
-    submissionId
+    submissionId,
+    setExternalProvenance
   } = usePatchSubmissionStore()
   const { queueSave, flush } = usePatchSubmissionAutosave()
+  const [nameError, setNameError] = useState('')
 
   useEffect(() => {
     hydrate(submission)
+    setNameError('')
   }, [submission, hydrate])
 
   // hydrate lands in an effect, so the first paint would otherwise show the
-  // store's empty defaults and flash a blank form over saved content. Until the
-  // store matches this submission, render the server data directly.
+  // store's empty defaults and flash a blank form over saved content.
   const hydrated = submissionId === submission.id
   const form = hydrated ? payload : submission.payload
   const currentStatus = hydrated ? status : submission.status
   const editable =
     currentStatus === 'draft' || currentStatus === 'changes_requested'
 
-  /** Accepts the setter form the shared editor inputs use. */
   const update = (
     next:
       | PatchSubmissionPayload
@@ -79,13 +75,20 @@ export const SubmissionEditor = ({ submission }: Props) => {
         ? next(usePatchSubmissionStore.getState().payload)
         : next
     setPayload(resolved)
-    if (editable) {
-      queueSave(resolved)
-    }
+    if (editable) queueSave(resolved)
+  }
+
+  const markExternalFetched = (source: 'vndb' | 'bangumi' | 'steam') => {
+    setExternalProvenance(source, new Date().toISOString())
   }
 
   const submit = async () => {
-    // Wait for the debounce, or the reviewer would freeze a stale payload.
+    if (!usePatchSubmissionStore.getState().payload.name.trim()) {
+      setNameError('游戏名称是必填项')
+      toast.error('请填写游戏名称')
+      return
+    }
+
     const saved = await flush()
     if (!saved.ok) {
       toast.error(saved.message)
@@ -105,11 +108,8 @@ export const SubmissionEditor = ({ submission }: Props) => {
 
   const saveDraft = async () => {
     const result = await flush()
-    if (result.ok) {
-      toast.success('草稿已保存到云端')
-    } else {
-      toast.error(result.message)
-    }
+    if (result.ok) toast.success('草稿已保存到云端')
+    else toast.error(result.message)
   }
 
   const withdraw = async () => {
@@ -125,7 +125,7 @@ export const SubmissionEditor = ({ submission }: Props) => {
   }
 
   return (
-    <div className="w-full max-w-5xl py-4 mx-auto space-y-4">
+    <div className="mx-auto w-full max-w-5xl space-y-4 py-4">
       {currentStatus === 'changes_requested' && submission.reviewReason && (
         <Card className="border border-warning-300 bg-warning-50">
           <CardBody className="text-sm text-warning-700">
@@ -165,42 +165,60 @@ export const SubmissionEditor = ({ submission }: Props) => {
             label="游戏名称"
             value={form.name}
             isReadOnly={!editable}
-            onValueChange={(name) => update({ ...form, name })}
+            isInvalid={Boolean(nameError)}
+            errorMessage={nameError}
+            onValueChange={(name) => {
+              setNameError('')
+              update({ ...form, name })
+            }}
           />
 
-          <VNDBInput errors={undefined} data={form} setData={update} />
+          <VNDBInput
+            errors={undefined}
+            data={form}
+            setData={update}
+            onExternalFetched={markExternalFetched}
+          />
           <VNDBRelationInput errors={undefined} data={form} setData={update} />
-          <BangumiInput errors={undefined} data={form} setData={update} />
-          <SteamInput errors={undefined} data={form} setData={update} />
+          <BangumiInput
+            errors={undefined}
+            data={form}
+            setData={update}
+            onExternalFetched={markExternalFetched}
+          />
+          <SteamInput
+            errors={undefined}
+            data={form}
+            setData={update}
+            onExternalFetched={markExternalFetched}
+          />
+
+          <SubmissionBannerInput />
+
+          <SubmissionIntroduction
+            payload={form}
+            editable={editable}
+            onChange={update}
+          />
+
+          <SubmissionGalleryInput />
+
+          <SubmissionAliasInput
+            payload={form}
+            editable={editable}
+            onChange={update}
+          />
 
           <div className="space-y-2">
-            <h2 className="text-xl">游戏别名 (可选)</h2>
+            <h2 className="text-xl">官方链接 (可选)</h2>
             <Input
-              label="添加别名后按回车"
+              placeholder="输入 Steam 商店链接或官方网站链接"
+              value={applySteamOfficialUrlFallback(
+                form.officialUrl,
+                form.steamId
+              )}
               isReadOnly={!editable}
-              onKeyDown={(event) => {
-                if (event.key !== 'Enter') {
-                  return
-                }
-                event.preventDefault()
-                const target = event.currentTarget as HTMLInputElement
-                const value = target.value.trim()
-                if (!value || form.alias.includes(value)) {
-                  return
-                }
-                update({ ...form, alias: [...form.alias, value] })
-                target.value = ''
-              }}
-            />
-            <SortableAliasChips
-              values={form.alias}
-              onReorder={(alias) => update({ ...form, alias })}
-              onRemove={(index) =>
-                update({
-                  ...form,
-                  alias: form.alias.filter((_, at) => at !== index)
-                })
-              }
+              onValueChange={(officialUrl) => update({ ...form, officialUrl })}
             />
           </div>
 
@@ -211,19 +229,13 @@ export const SubmissionEditor = ({ submission }: Props) => {
 
           <BatchTag data={form} saveTag={(tag) => update({ ...form, tag })} />
 
-          <Textarea
-            isRequired
-            label="游戏介绍"
-            minRows={8}
-            value={form.introduction}
-            isReadOnly={!editable}
-            onValueChange={(introduction) => update({ ...form, introduction })}
+          <SubmissionContentLimit
+            payload={form}
+            editable={editable}
+            onChange={update}
           />
 
-          <SubmissionBannerInput />
-          <SubmissionGalleryInput />
-
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             {editable ? (
               <>
                 <Button variant="flat" onPress={() => void saveDraft()}>

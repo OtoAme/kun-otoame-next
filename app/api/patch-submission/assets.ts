@@ -137,7 +137,11 @@ const measureUsage = async (
   const staleBefore = new Date(Date.now() - PATCH_SUBMISSION_UPLOAD_TAKEOVER_MS)
 
   const rows = await tx.$queryRaw<
-    { slots: bigint; submission_bytes: bigint | null; user_bytes: bigint | null }[]
+    {
+      slots: bigint
+      submission_bytes: bigint | null
+      user_bytes: bigint | null
+    }[]
   >(
     Prisma.sql`
       SELECT
@@ -174,6 +178,7 @@ interface GalleryUploadInput {
   clientAssetId: string
   image: ArrayBuffer
   isNSFW: boolean
+  watermark: boolean
   displayOrder: number
 }
 
@@ -248,7 +253,10 @@ export const uploadPatchSubmissionGalleryImage = async (
           `截图最多 ${PATCH_SUBMISSION_GALLERY_MAX_COUNT} 张`
         )
       }
-      if (usage.userBytes + buffer.byteLength > PATCH_SUBMISSION_MAX_TOTAL_BYTES) {
+      if (
+        usage.userBytes + buffer.byteLength >
+        PATCH_SUBMISSION_MAX_TOTAL_BYTES
+      ) {
         throw new PatchSubmissionError(
           '您的投稿素材总体积已达上限, 请先删除不需要的图片'
         )
@@ -275,7 +283,7 @@ export const uploadPatchSubmissionGalleryImage = async (
     return { galleryId: reserved.row.id, alreadyUploaded: true }
   }
 
-  const prepared = await preparePatchGalleryImage(input.image, false)
+  const prepared = await preparePatchGalleryImage(input.image, input.watermark)
   if (typeof prepared === 'string') {
     await markGalleryFailed(reserved.row.id)
     throw new PatchSubmissionError(prepared)
@@ -380,11 +388,7 @@ export const deletePatchSubmissionGalleryImage = async (
 
       await tx.patch_submission_gallery.delete({ where: { id: galleryId } })
       const keys = compactKeys([image.image_key, image.thumbnail_key])
-      await enqueueSubmissionOrphanCleanupJobs(
-        tx,
-        keys,
-        'gallery_delete'
-      )
+      await enqueueSubmissionOrphanCleanupJobs(tx, keys, 'gallery_delete')
       return keys
     },
     { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted }
@@ -394,6 +398,33 @@ export const deletePatchSubmissionGalleryImage = async (
 
   return {}
 }
+
+export const updatePatchSubmissionGalleryNSFW = async (input: {
+  submissionId: number
+  galleryIds: number[]
+  userId: number
+  isNSFW: boolean
+}) =>
+  prisma.$transaction(
+    async (tx) => {
+      await lockEditableSubmission(tx, input.submissionId, input.userId)
+      const ids = [...new Set(input.galleryIds)]
+      const owned = await tx.patch_submission_gallery.findMany({
+        where: { submission_id: input.submissionId, id: { in: ids } },
+        select: { id: true }
+      })
+      if (owned.length !== ids.length) {
+        throw new PatchSubmissionError('所选截图不属于这条投稿')
+      }
+
+      await tx.patch_submission_gallery.updateMany({
+        where: { submission_id: input.submissionId, id: { in: ids } },
+        data: { is_nsfw: input.isNSFW }
+      })
+      return {}
+    },
+    { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted }
+  )
 
 interface BannerUploadInput {
   submissionId: number
@@ -466,11 +497,7 @@ export const uploadPatchSubmissionBanner = async (input: BannerUploadInput) => {
       current.banner_thumbnail_key,
       current.banner_original_key
     ])
-    await enqueueSubmissionOrphanCleanupJobs(
-      tx,
-      staleKeys,
-      'banner_replace'
-    )
+    await enqueueSubmissionOrphanCleanupJobs(tx, staleKeys, 'banner_replace')
     return { attached: true, cleanupKeys: staleKeys }
   })
 

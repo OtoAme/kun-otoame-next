@@ -316,7 +316,12 @@ export const RewritePatch = () => {
             {errors.introduction && (
               <p className="text-xs text-danger-500">{errors.introduction}</p>
             )}
-            <KunDualEditorProvider storeName="patchRewrite" />
+            <KunDualEditorProvider
+              value={data.introduction}
+              onChange={(introduction) =>
+                setData((current) => ({ ...current, introduction }))
+              }
+            />
           </div>
 
           <RewriteGalleryInput />

@@ -233,6 +233,7 @@ interface UpdateDraftInput {
   revision: number
   payload: PatchSubmissionPayload
   externalSource: string
+  externalFetchedAt: string | null
 }
 
 /**
@@ -276,7 +277,10 @@ export const updatePatchSubmissionDraft = async (input: UpdateDraftInput) => {
       steam_id: input.payload.steamId ? Number(input.payload.steamId) : null,
       dlsite_code: input.payload.dlsiteCode || null,
       external_source: input.externalSource || null,
-      external_fetched_at: input.externalSource ? new Date() : null,
+      external_fetched_at:
+        input.externalSource && input.externalFetchedAt
+          ? new Date(input.externalFetchedAt)
+          : null,
       revision: { increment: 1 }
     }
   })

@@ -3,9 +3,18 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { JSDOM } from 'jsdom'
 import { createRoot, type Root } from 'react-dom/client'
 
+const editorMocks = vi.hoisted(() => ({
+  codeMirrorChange: undefined as undefined | ((getCode: () => string) => void),
+  saveMarkdown: undefined as undefined | ((value: string) => void)
+}))
+
 vi.mock('next/dynamic', () => ({
   default: () =>
-    function MockCodemirror(props: { markdown: string }) {
+    function MockCodemirror(props: {
+      markdown: string
+      onChange: (getCode: () => string) => void
+    }) {
+      editorMocks.codeMirrorChange = props.onChange
       return <div data-testid="codemirror">{props.markdown}</div>
     }
 }))
@@ -18,9 +27,16 @@ vi.mock('@heroui/tabs', () => ({
 }))
 
 vi.mock('~/components/kun/milkdown/Editor', () => ({
-  KunEditor: ({ valueMarkdown }: { valueMarkdown: string }) => (
-    <div data-testid="milkdown-editor">{valueMarkdown}</div>
-  )
+  KunEditor: ({
+    valueMarkdown,
+    saveMarkdown
+  }: {
+    valueMarkdown: string
+    saveMarkdown: (value: string) => void
+  }) => {
+    editorMocks.saveMarkdown = saveMarkdown
+    return <div data-testid="milkdown-editor">{valueMarkdown}</div>
+  }
 }))
 
 describe('KunDualEditorProvider', () => {
@@ -28,102 +44,48 @@ describe('KunDualEditorProvider', () => {
   let dom: JSDOM | undefined
 
   afterEach(async () => {
-    await act(async () => {
-      root?.unmount()
-    })
+    await act(async () => root?.unmount())
     root = undefined
     dom?.window.close()
     dom = undefined
+    editorMocks.codeMirrorChange = undefined
+    editorMocks.saveMarkdown = undefined
     vi.unstubAllGlobals()
   })
 
-  it('rerenders create introduction preview when the store introduction changes', async () => {
+  it('renders the controlled value in both editors and reports both change paths', async () => {
     dom = new JSDOM('<!doctype html><div id="root"></div>', {
       url: 'http://localhost'
     })
-
     vi.stubGlobal('window', dom.window)
     vi.stubGlobal('document', dom.window.document)
-    vi.stubGlobal('localStorage', dom.window.localStorage)
     vi.stubGlobal('React', React)
     vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
 
     const { KunDualEditorProvider } = await import(
       '~/components/kun/milkdown/DualEditorProvider'
     )
-    const { initialCreatePatchData, useCreatePatchStore } = await import(
-      '~/store/editStore'
-    )
-
-    useCreatePatchStore.setState({
-      data: {
-        ...initialCreatePatchData,
-        introduction: '第一行'
-      }
-    })
-
-    const container = dom.window.document.getElementById('root')
-    expect(container).not.toBeNull()
-
-    root = createRoot(container!)
-    await act(async () => {
-      root!.render(<KunDualEditorProvider storeName="patchCreate" />)
-    })
-
-    expect(container!.textContent).toContain('第一行')
+    const onChange = vi.fn()
+    const container = dom.window.document.getElementById('root')!
+    root = createRoot(container)
 
     await act(async () => {
-      useCreatePatchStore.getState().setData((current) => ({
-        ...current,
-        introduction: '第一行\n第二行'
-      }))
+      root!.render(<KunDualEditorProvider value="第一行" onChange={onChange} />)
     })
-    await act(async () => {})
-
-    expect(container!.textContent).toContain('第二行')
-  })
-
-  it('rerenders rewrite introduction preview when the store introduction changes', async () => {
-    dom = new JSDOM('<!doctype html><div id="root"></div>', {
-      url: 'http://localhost'
-    })
-
-    vi.stubGlobal('window', dom.window)
-    vi.stubGlobal('document', dom.window.document)
-    vi.stubGlobal('localStorage', dom.window.localStorage)
-    vi.stubGlobal('React', React)
-    vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
-
-    const { KunDualEditorProvider } = await import(
-      '~/components/kun/milkdown/DualEditorProvider'
-    )
-    const { useRewritePatchStore } = await import('~/store/rewriteStore')
-
-    useRewritePatchStore.setState({
-      data: {
-        ...useRewritePatchStore.getState().data,
-        introduction: '旧简介'
-      }
-    })
-
-    const container = dom.window.document.getElementById('root')
-    expect(container).not.toBeNull()
-
-    root = createRoot(container!)
-    await act(async () => {
-      root!.render(<KunDualEditorProvider storeName="patchRewrite" />)
-    })
-
-    expect(container!.textContent).toContain('旧简介')
+    expect(container.textContent?.match(/第一行/g)).toHaveLength(2)
 
     await act(async () => {
-      useRewritePatchStore.getState().setData((current) => ({
-        ...current,
-        introduction: '新简介\n第二行'
-      }))
+      editorMocks.codeMirrorChange?.(() => '代码更新')
+      editorMocks.saveMarkdown?.('所见即所得更新')
     })
-    await act(async () => {})
+    expect(onChange).toHaveBeenNthCalledWith(1, '代码更新')
+    expect(onChange).toHaveBeenNthCalledWith(2, '所见即所得更新')
 
-    expect(container!.textContent).toContain('第二行')
+    await act(async () => {
+      root!.render(
+        <KunDualEditorProvider value="父组件更新" onChange={onChange} />
+      )
+    })
+    expect(container.textContent?.match(/父组件更新/g)).toHaveLength(2)
   })
 })

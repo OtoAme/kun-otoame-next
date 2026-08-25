@@ -113,13 +113,19 @@ export const patchSubmissionCreateSchema = z.object({
   externalSource: z.string().trim().max(64).optional().default('')
 })
 
-export const patchSubmissionUpdateSchema = z.object({
-  submissionId: submissionIdSchema,
-  /** Optimistic lock: autosave from a stale device must not overwrite. */
-  revision: z.coerce.number().int().min(1),
-  payload: patchSubmissionDraftPayloadSchema,
-  externalSource: z.string().trim().max(64).optional().default('')
-})
+export const patchSubmissionUpdateSchema = z
+  .object({
+    submissionId: submissionIdSchema,
+    /** Optimistic lock: autosave from a stale device must not overwrite. */
+    revision: z.coerce.number().int().min(1),
+    payload: patchSubmissionDraftPayloadSchema,
+    externalSource: z.string().trim().max(64).optional().default(''),
+    externalFetchedAt: z.string().datetime().nullable().optional().default(null)
+  })
+  .refine(
+    (input) => !input.externalSource || Boolean(input.externalFetchedAt),
+    { path: ['externalFetchedAt'], message: '外部数据抓取时间不正确' }
+  )
 
 export const patchSubmissionIdSchema = z.object({
   submissionId: submissionIdSchema
@@ -139,9 +145,13 @@ export const patchSubmissionGalleryUploadSchema = z.object({
   clientAssetId: requestIdSchema,
   image: imageFileSchema,
   isNSFW: z.enum(['true', 'false']).default('false'),
-  displayOrder: z.coerce.number().int().min(0).max(
-    PATCH_SUBMISSION_GALLERY_MAX_COUNT - 1
-  ).default(0)
+  watermark: z.enum(['true', 'false']).default('false'),
+  displayOrder: z.coerce
+    .number()
+    .int()
+    .min(0)
+    .max(PATCH_SUBMISSION_GALLERY_MAX_COUNT - 1)
+    .default(0)
 })
 
 export const patchSubmissionBannerUploadSchema = z.object({
@@ -153,6 +163,15 @@ export const patchSubmissionBannerUploadSchema = z.object({
 export const patchSubmissionGalleryDeleteSchema = z.object({
   submissionId: submissionIdSchema,
   galleryId: z.coerce.number().int().min(1).max(9999999)
+})
+
+export const patchSubmissionGalleryNsfwSchema = z.object({
+  submissionId: submissionIdSchema,
+  galleryIds: z
+    .array(z.coerce.number().int().min(1).max(9999999))
+    .min(1, { message: '请至少选择一张截图' })
+    .max(PATCH_SUBMISSION_GALLERY_MAX_COUNT),
+  isNSFW: z.boolean()
 })
 
 const reviewReasonSchema = z

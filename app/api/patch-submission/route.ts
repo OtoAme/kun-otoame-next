@@ -112,7 +112,8 @@ export const PUT = async (req: NextRequest) => {
     userId: payload.uid,
     revision: input.revision,
     payload: input.payload,
-    externalSource: input.externalSource
+    externalSource: input.externalSource,
+    externalFetchedAt: input.externalFetchedAt
   })
 
   return privateJson(result)

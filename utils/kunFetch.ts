@@ -62,7 +62,7 @@ const isKunFetchAbortError = (error: unknown) =>
 
 const kunFetchRequest = async <T>(
   url: string,
-  method: 'GET' | 'POST' | 'PUT' | 'DELETE',
+  method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE',
   options?: FetchOptions
 ): Promise<T> => {
   try {
@@ -169,6 +169,13 @@ export const kunFetchPut = async <T>(
   options?: Pick<FetchOptions, 'keepalive'>
 ): Promise<T> => {
   return kunFetchRequest<T>(url, 'PUT', { body, ...options })
+}
+
+export const kunFetchPatch = async <T>(
+  url: string,
+  body?: Record<string, unknown>
+): Promise<T> => {
+  return kunFetchRequest<T>(url, 'PATCH', { body })
 }
 
 export const kunFetchDelete = async <T>(

@@ -4,8 +4,6 @@ import { useCallback, useState } from 'react'
 import dynamic from 'next/dynamic'
 import { Tab, Tabs } from '@heroui/tabs'
 import { Code, Edit } from 'lucide-react'
-import { useCreatePatchStore } from '~/store/editStore'
-import { useRewritePatchStore } from '~/store/rewriteStore'
 import { KunEditor } from './Editor'
 import { KunLoading } from '~/components/kun/Loading'
 
@@ -18,72 +16,28 @@ const Codemirror = dynamic(
 )
 
 interface Props {
-  storeName: 'patchCreate' | 'patchRewrite'
+  value: string
+  onChange: (value: string) => void
 }
 
-export const KunDualEditorProvider = ({ storeName }: Props) => {
+export const KunDualEditorProvider = ({ value, onChange }: Props) => {
   const [cmAPI, setCmAPI] = useState({
     update: (_: string) => {}
   })
 
-  const getCreatePatchData = useCreatePatchStore((state) => state.getData)
-  const setCreatePatchData = useCreatePatchStore((state) => state.setData)
-  const createIntroduction = useCreatePatchStore(
-    (state) => state.data.introduction
-  )
-  const getRewritePatchData = useRewritePatchStore((state) => state.getData)
-  const setRewritePatchData = useRewritePatchStore((state) => state.setData)
-  const rewriteIntroduction = useRewritePatchStore(
-    (state) => state.data.introduction
-  )
-
   const saveMarkdown = useCallback(
     (markdown: string) => {
-      if (storeName === 'patchCreate') {
-        setCreatePatchData({ ...getCreatePatchData(), introduction: markdown })
-      } else if (storeName === 'patchRewrite') {
-        setRewritePatchData({
-          ...getRewritePatchData(),
-          introduction: markdown
-        })
-      }
+      onChange(markdown)
       cmAPI.update(markdown)
     },
-    [
-      cmAPI,
-      getCreatePatchData,
-      getRewritePatchData,
-      setCreatePatchData,
-      setRewritePatchData,
-      storeName
-    ]
+    [cmAPI, onChange]
   )
-
-  const getMarkdown = useCallback(() => {
-    if (storeName === 'patchCreate') {
-      return createIntroduction
-    } else if (storeName === 'patchRewrite') {
-      return rewriteIntroduction
-    }
-    return ''
-  }, [createIntroduction, rewriteIntroduction, storeName])
 
   const onCodemirrorChange = useCallback(
     (getCode: () => string) => {
-      const value = getCode()
-      if (storeName === 'patchCreate') {
-        setCreatePatchData({ ...getCreatePatchData(), introduction: value })
-      } else if (storeName === 'patchRewrite') {
-        setRewritePatchData({ ...getRewritePatchData(), introduction: value })
-      }
+      onChange(getCode())
     },
-    [
-      getCreatePatchData,
-      getRewritePatchData,
-      setCreatePatchData,
-      setRewritePatchData,
-      storeName
-    ]
+    [onChange]
   )
 
   return (
@@ -98,7 +52,7 @@ export const KunDualEditorProvider = ({ storeName }: Props) => {
         }
       >
         <Codemirror
-          markdown={getMarkdown()}
+          markdown={value}
           setCmAPI={setCmAPI}
           onChange={onCodemirrorChange}
         />
@@ -113,7 +67,7 @@ export const KunDualEditorProvider = ({ storeName }: Props) => {
           </div>
         }
       >
-        <KunEditor valueMarkdown={getMarkdown()} saveMarkdown={saveMarkdown} />
+        <KunEditor valueMarkdown={value} saveMarkdown={saveMarkdown} />
       </Tab>
     </Tabs>
   )

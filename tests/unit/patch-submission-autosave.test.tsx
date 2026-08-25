@@ -147,4 +147,20 @@ describe('usePatchSubmissionAutosave', () => {
     expect(result).toEqual({ ok: true })
     expect(kunFetchPutMock).not.toHaveBeenCalled()
   })
+
+  it('sends the actual external fetch source and timestamp without refreshing it', async () => {
+    const fetchedAt = '2026-08-25T06:00:00.000Z'
+    usePatchSubmissionStore.getState().setExternalProvenance('vndb', fetchedAt)
+    kunFetchPutMock.mockResolvedValue({ revision: 2 })
+    controls!.queueSave({ ...emptyPatchSubmissionPayload, name: 'fetched' })
+
+    await act(async () => {
+      await controls!.flush()
+    })
+
+    expect(kunFetchPutMock.mock.calls[0]?.[1]).toMatchObject({
+      externalSource: 'vndb',
+      externalFetchedAt: fetchedAt
+    })
+  })
 })
