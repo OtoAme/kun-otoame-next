@@ -11,9 +11,11 @@ import {
 
 interface Props {
   images: PatchImage[]
+  /** Forwarded so a modal host can stop dismissing while the lightbox is open. */
+  onLightboxOpenChange?: (open: boolean) => void
 }
 
-export const Gallery = ({ images }: Props) => {
+export const Gallery = ({ images, onLightboxOpenChange }: Props) => {
   const validImages = images?.filter((img) => img.url) ?? []
 
   if (validImages.length === 0) return null
@@ -27,6 +29,7 @@ export const Gallery = ({ images }: Props) => {
       <h2 className="text-2xl font-medium">游戏画廊</h2>
       <KunImageViewer
         preload={2}
+        onOpenChange={onLightboxOpenChange}
         images={validImages.map((img) => ({
           src: getGalleryOriginalSrc(img),
           previewSrc: getGalleryPreviewSrc(img),

@@ -23,6 +23,7 @@ interface Props {
 export const SubmissionPreview = ({ submissionId, flush }: Props) => {
   const [isOpen, setIsOpen] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
+  const [lightboxOpen, setLightboxOpen] = useState(false)
   const [preview, setPreview] = useState<PatchSubmissionPublishPreview | null>(
     null
   )
@@ -70,6 +71,11 @@ export const SubmissionPreview = ({ submissionId, flush }: Props) => {
         onOpenChange={setIsOpen}
         size="5xl"
         scrollBehavior="inside"
+        // While the gallery lightbox is open it portals on top of this modal;
+        // a click on its backdrop is "outside" the modal and would otherwise
+        // dismiss the preview too. Hold the modal open until the lightbox closes.
+        isDismissable={!lightboxOpen}
+        isKeyboardDismissDisabled={lightboxOpen}
       >
         <ModalContent>
           <ModalHeader className="flex flex-wrap items-center gap-2">
@@ -79,7 +85,12 @@ export const SubmissionPreview = ({ submissionId, flush }: Props) => {
             </Chip>
           </ModalHeader>
           <ModalBody className="pb-6">
-            {preview && <PatchSubmissionPreviewView preview={preview} />}
+            {preview && (
+              <PatchSubmissionPreviewView
+                preview={preview}
+                onLightboxOpenChange={setLightboxOpen}
+              />
+            )}
           </ModalBody>
         </ModalContent>
       </Modal>

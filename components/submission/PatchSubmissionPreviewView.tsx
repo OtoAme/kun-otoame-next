@@ -14,6 +14,8 @@ interface Props {
   preview: PatchSubmissionPublishPreview
   /** Draft creation time, shown in the metadata block only for display. */
   createdAt?: string
+  /** Forwarded so a modal host can stop dismissing while the lightbox is open. */
+  onLightboxOpenChange?: (open: boolean) => void
 }
 
 const toGalleryImages = (
@@ -62,7 +64,11 @@ const toIntroduction = (
  * Tags and companies are shown as read-only chips because only their names
  * exist before approval.
  */
-export const PatchSubmissionPreviewView = ({ preview, createdAt }: Props) => {
+export const PatchSubmissionPreviewView = ({
+  preview,
+  createdAt,
+  onLightboxOpenChange
+}: Props) => {
   const galleryImages = toGalleryImages(preview.gallery)
   const introduction = toIntroduction(
     preview,
@@ -72,12 +78,14 @@ export const PatchSubmissionPreviewView = ({ preview, createdAt }: Props) => {
   return (
     <div className="space-y-4">
       {preview.bannerUrl && (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={preview.bannerUrl}
-          alt={`${preview.name} 封面`}
-          className="max-h-[26rem] w-full rounded-large object-cover"
-        />
+        <div className="relative aspect-video w-full max-w-2xl overflow-hidden rounded-large bg-default-100">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={preview.bannerUrl}
+            alt={`${preview.name} 封面`}
+            className="absolute inset-0 size-full object-cover"
+          />
+        </div>
       )}
 
       <h1 className="text-2xl font-medium">{preview.name}</h1>
@@ -86,7 +94,10 @@ export const PatchSubmissionPreviewView = ({ preview, createdAt }: Props) => {
         <CardBody className="space-y-6 p-4">
           <PatchIntroductionContent html={preview.introductionHtml} />
 
-          <Gallery images={galleryImages} />
+          <Gallery
+            images={galleryImages}
+            onLightboxOpenChange={onLightboxOpenChange}
+          />
 
           <div className="mt-4 space-y-4">
             <h2 className="text-2xl font-medium">游戏标签</h2>

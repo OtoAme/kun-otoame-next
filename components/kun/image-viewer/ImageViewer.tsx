@@ -14,6 +14,13 @@ import {
 interface Props {
   images: KunImageViewerImage[]
   preload?: number
+  /**
+   * Fires when the lightbox opens or closes. A parent overlay (e.g. a modal)
+   * uses it to stop dismissing itself while the lightbox — which portals outside
+   * the parent's DOM — is on top, so a backdrop click there does not also close
+   * the parent.
+   */
+  onOpenChange?: (open: boolean) => void
   children: (openLightbox: (index: number) => void) => ReactNode
 }
 
@@ -70,11 +77,22 @@ const hasPreviewSrc = (slide: unknown): slide is KunImageViewerSlide =>
   'previewSrc' in slide &&
   typeof (slide as { previewSrc?: unknown }).previewSrc === 'string'
 
-export const KunImageViewer = ({ images, preload, children }: Props) => {
+export const KunImageViewer = ({
+  images,
+  preload,
+  onOpenChange,
+  children
+}: Props) => {
   const [index, setIndex] = useState(-1)
 
-  const openLightbox = (index: number) => setIndex(index)
-  const closeLightbox = () => setIndex(-1)
+  const openLightbox = (index: number) => {
+    setIndex(index)
+    onOpenChange?.(true)
+  }
+  const closeLightbox = () => {
+    setIndex(-1)
+    onOpenChange?.(false)
+  }
 
   return (
     <>
