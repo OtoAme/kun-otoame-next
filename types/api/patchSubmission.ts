@@ -83,6 +83,7 @@ export interface PatchSubmissionSummary {
   name: string
   heldAmount: number
   reviewReason: string | null
+  bannerUrl: string | null
   patchUniqueId: string | null
   submittedAt: string | null
   created: string

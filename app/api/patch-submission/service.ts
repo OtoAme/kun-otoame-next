@@ -158,8 +158,9 @@ export const listOwnPatchSubmissions = async (
 ): Promise<{ submissions: PatchSubmissionSummary[]; total: number }> => {
   const where: Prisma.patch_submissionWhereInput = {
     user_id: userId,
-    // A hidden terminal record stays in the database for audit, it just leaves
-    // the author's list.
+    // Deleted drafts leave the list for good. A terminal record the user chose
+    // to hide also leaves it, but stays in the database for audit.
+    status: { not: 'deleted' },
     OR: [
       { status: { in: [...PATCH_SUBMISSION_ACTIVE_STATUSES] } },
       { hidden_by_user: false }
@@ -178,6 +179,7 @@ export const listOwnPatchSubmissions = async (
         name: true,
         held_amount: true,
         review_reason: true,
+        banner_key: true,
         submitted_at: true,
         created: true,
         updated: true,
@@ -195,6 +197,7 @@ export const listOwnPatchSubmissions = async (
       name: row.name,
       heldAmount: row.held_amount,
       reviewReason: row.review_reason,
+      bannerUrl: getS3PublicUrl(row.banner_key),
       patchUniqueId: row.patch?.unique_id ?? null,
       submittedAt: row.submitted_at?.toISOString() ?? null,
       created: row.created.toISOString(),
