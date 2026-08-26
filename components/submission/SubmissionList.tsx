@@ -79,6 +79,13 @@ export const SubmissionList = ({ submissions, quota, balance }: Props) => {
   const canCreate = quota.activeCount < quota.maxActive
   const hasEnoughPoints = balance.available >= quota.depositAmount
 
+  // A published submission's outcome is a live entry, rendered above by the same
+  // game card everyone else sees. What is left here is submissions still in
+  // flight or closed without publishing.
+  const pending = submissions.filter(
+    (submission) => submission.status !== 'published'
+  )
+
   const create = async () => {
     setCreating(true)
     try {
@@ -205,12 +212,13 @@ export const SubmissionList = ({ submissions, quota, balance }: Props) => {
         </CardBody>
       </Card>
 
-      {submissions.length === 0 ? (
-        <p className="text-sm text-default-500">还没有投稿记录。</p>
+      {pending.length === 0 ? (
+        <p className="text-sm text-default-500">还没有进行中的投稿。</p>
       ) : (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {submissions.map((submission) => {
+          {pending.map((submission) => {
             const isActive = ACTIVE.includes(submission.status)
+
             return (
               <Card
                 key={submission.id}
@@ -239,7 +247,10 @@ export const SubmissionList = ({ submissions, quota, balance }: Props) => {
                   </div>
                 </CardBody>
                 <CardFooter className="flex-col items-start gap-2">
-                  <span className="line-clamp-1 font-medium" title={submission.name}>
+                  <span
+                    className="line-clamp-1 font-medium"
+                    title={submission.name}
+                  >
                     {submission.name || '未命名投稿'}
                   </span>
                   {submission.reviewReason && (
@@ -248,28 +259,15 @@ export const SubmissionList = ({ submissions, quota, balance }: Props) => {
                     </span>
                   )}
                   <div className="flex w-full flex-wrap gap-2">
-                    {submission.status === 'published' &&
-                    submission.patchUniqueId ? (
-                      <Button
-                        as={Link}
-                        href={`/${submission.patchUniqueId}`}
-                        size="sm"
-                        variant="flat"
-                        className="flex-1"
-                      >
-                        查看条目
-                      </Button>
-                    ) : (
-                      <Button
-                        as={Link}
-                        href={`/submission/${submission.id}`}
-                        size="sm"
-                        variant="flat"
-                        className="flex-1"
-                      >
-                        {isActive ? '继续编辑' : '查看'}
-                      </Button>
-                    )}
+                    <Button
+                      as={Link}
+                      href={`/submission/${submission.id}`}
+                      size="sm"
+                      variant="flat"
+                      className="flex-1"
+                    >
+                      {isActive ? '继续编辑' : '查看'}
+                    </Button>
 
                     {isActive ? (
                       submission.status === 'pending' ? null : (
