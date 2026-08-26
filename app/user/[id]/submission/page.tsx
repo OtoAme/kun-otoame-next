@@ -7,7 +7,9 @@ import {
   listOwnPatchSubmissions
 } from '~/app/api/patch-submission/service'
 import { getUserPatch } from '~/app/api/user/profile/patch/service'
+import { AdminEntryPanel } from '~/components/submission/AdminEntryPanel'
 import { SubmissionList } from '~/components/submission/SubmissionList'
+import { SubmissionQuotaPanel } from '~/components/submission/SubmissionQuotaPanel'
 import { UserPatch } from '~/components/user/patch/Container'
 import type { Metadata } from 'next'
 
@@ -19,9 +21,8 @@ export const metadata: Metadata = {
 export const dynamic = 'force-dynamic'
 
 /**
- * One tab, two audiences. The profile owner manages their submissions here —
- * drafts, review states, the deposit and quota. Everyone else sees only the
- * entries that were approved and published, as public game cards.
+ * One tab, two audiences. The profile owner manages how they publish here, while
+ * everyone else sees only the entries that were approved and published.
  */
 export default async function UserSubmissionPage({
   params
@@ -37,32 +38,52 @@ export default async function UserSubmissionPage({
     visibilityWhere
   )
 
+  const publishedSection = published.total > 0 && (
+    <section className="space-y-4">
+      {/* Published entries render as the same public game cards visitors see,
+          stats and all — not as submission rows. */}
+      <h2 className="text-xl">已发布条目</h2>
+      <UserPatch
+        galgames={published.galgames}
+        total={published.total}
+        uid={profileId}
+      />
+    </section>
+  )
+
   if (payload && payload.uid === profileId) {
-    const [list, quota, balance] = await Promise.all([
-      listOwnPatchSubmissions(profileId, 1, 50),
+    const list = await listOwnPatchSubmissions(profileId, 1, 50)
+    // A published submission is represented by its live entry below, so the
+    // management list only carries the ones still in flight or closed.
+    const inFlight = list.submissions.filter(
+      (submission) => submission.status !== 'published'
+    )
+    // Same gate as /edit/create: these users publish directly, so they get the
+    // editor instead of the deposit-backed submission flow.
+    const canPublishDirectly = payload.role >= 4
+
+    if (canPublishDirectly) {
+      return (
+        <div className="w-full py-4 mx-auto space-y-6">
+          <AdminEntryPanel />
+          {/* Someone promoted after submitting still needs to finish or delete
+              those drafts, otherwise their deposit stays reserved forever. */}
+          {inFlight.length > 0 && <SubmissionList submissions={inFlight} />}
+          {publishedSection}
+        </div>
+      )
+    }
+
+    const [quota, balance] = await Promise.all([
       getPatchSubmissionQuota(profileId, payload.role),
       getCurrentBalance(prisma, profileId)
     ])
 
     return (
       <div className="w-full py-4 mx-auto space-y-6">
-        <SubmissionList
-          submissions={list.submissions}
-          quota={quota}
-          balance={balance}
-        />
-        {published.total > 0 && (
-          <section className="space-y-4">
-            {/* Published entries render as the same public game cards visitors
-                see, stats and all — not as submission rows. */}
-            <h2 className="text-xl">已发布条目</h2>
-            <UserPatch
-              galgames={published.galgames}
-              total={published.total}
-              uid={profileId}
-            />
-          </section>
-        )}
+        <SubmissionQuotaPanel quota={quota} balance={balance} />
+        <SubmissionList submissions={inFlight} />
+        {publishedSection}
       </div>
     )
   }
