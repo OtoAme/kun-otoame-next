@@ -18,9 +18,18 @@ import type { PatchSubmissionSaveResult } from '~/hooks/usePatchSubmissionAutosa
 interface Props {
   submissionId: number
   flush: () => Promise<PatchSubmissionSaveResult>
+  /**
+   * A submitted (pending) submission is read-only and cannot be saved, so the
+   * preview skips the draft flush and just reads the server projection.
+   */
+  submitted?: boolean
 }
 
-export const SubmissionPreview = ({ submissionId, flush }: Props) => {
+export const SubmissionPreview = ({
+  submissionId,
+  flush,
+  submitted = false
+}: Props) => {
   const [isOpen, setIsOpen] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [lightboxOpen, setLightboxOpen] = useState(false)
@@ -31,12 +40,14 @@ export const SubmissionPreview = ({ submissionId, flush }: Props) => {
   const openPreview = async () => {
     setIsLoading(true)
     try {
-      // The draft must reach the server first, or the private projection would
-      // render a stale version.
-      const saved = await flush()
-      if (!saved.ok) {
-        toast.error(saved.message)
-        return
+      // An editable draft must reach the server first, or the private projection
+      // would render a stale version. A submitted one is already frozen there.
+      if (!submitted) {
+        const saved = await flush()
+        if (!saved.ok) {
+          toast.error(saved.message)
+          return
+        }
       }
 
       const response = await kunFetchGet<
@@ -81,7 +92,7 @@ export const SubmissionPreview = ({ submissionId, flush }: Props) => {
           <ModalHeader className="flex flex-wrap items-center gap-2">
             <span>{preview?.name || '投稿预览'}</span>
             <Chip color="warning" size="sm" variant="flat">
-              预览，尚未提交
+              {submitted ? '预览（审核中）' : '预览，尚未提交'}
             </Chip>
           </ModalHeader>
           <ModalBody className="pb-6">

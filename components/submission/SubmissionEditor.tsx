@@ -243,29 +243,38 @@ export const SubmissionEditor = ({ submission }: Props) => {
           />
 
           <div className="flex flex-wrap gap-2">
-            {editable ? (
-              <>
-                <Button variant="flat" onPress={() => void saveDraft()}>
-                  保存草稿
-                </Button>
-                <SubmissionPreview submissionId={submission.id} flush={flush} />
-                <Button
-                  color="primary"
-                  isDisabled={
-                    !assetDraftLoaded ||
-                    localAssetCount > 0 ||
-                    assetUploadsInFlight > 0
-                  }
-                  onPress={() => void submit()}
-                >
-                  提交审核
-                </Button>
-              </>
-            ) : currentStatus === 'pending' ? (
+            {editable && (
+              <Button variant="flat" onPress={() => void saveDraft()}>
+                保存草稿
+              </Button>
+            )}
+            {/* The preview stays available after submission, so the author can
+                re-check the pending entry and withdraw if something is wrong. */}
+            {(editable || currentStatus === 'pending') && (
+              <SubmissionPreview
+                submissionId={submission.id}
+                flush={flush}
+                submitted={!editable}
+              />
+            )}
+            {editable && (
+              <Button
+                color="primary"
+                isDisabled={
+                  !assetDraftLoaded ||
+                  localAssetCount > 0 ||
+                  assetUploadsInFlight > 0
+                }
+                onPress={() => void submit()}
+              >
+                提交审核
+              </Button>
+            )}
+            {currentStatus === 'pending' && (
               <Button variant="bordered" onPress={() => void withdraw()}>
                 撤回投稿
               </Button>
-            ) : null}
+            )}
           </div>
 
           {currentStatus === 'pending' && (
