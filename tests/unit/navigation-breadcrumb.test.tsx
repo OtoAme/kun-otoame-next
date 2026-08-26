@@ -60,3 +60,29 @@ describe('KunNavigationBreadcrumb message routes', () => {
     expect(markup).toBe('')
   })
 })
+
+describe('KunNavigationBreadcrumb submission routes', () => {
+  // A route with no label in keyLabelMap renders 主页 alone, so every submission
+  // page needs an entry there.
+  it('labels the submission editor', async () => {
+    const markup = await renderBreadcrumb('/submission/12', { id: '12' })
+
+    expect(markup).toContain('投稿游戏条目')
+  })
+
+  it('labels the review queue and its detail page', async () => {
+    expect(await renderBreadcrumb('/admin/submission')).toContain('投稿审核')
+    expect(
+      await renderBreadcrumb('/admin/submission/12', { id: '12' })
+    ).toContain('投稿详情')
+  })
+
+  it('keeps the profile owner breadcrumb on the 发布条目 tab', async () => {
+    const markup = await renderBreadcrumb('/user/7/submission', { id: '7' })
+
+    // User pages resolve to the profile crumb; without a label the whole item
+    // would be dropped and only 主页 would render.
+    expect(markup).toContain('发布条目')
+    expect(markup).toContain('主页')
+  })
+})
