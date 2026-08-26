@@ -26,7 +26,8 @@ const payload: PatchSubmissionPayload = {
   alias: [' Main alias ', 'Alt'],
   tag: ['Manual', 'Drama'],
   released: '',
-  contentLimit: 'nsfw'
+  contentLimit: 'nsfw',
+  isDuplicate: false
 }
 
 beforeEach(() => {

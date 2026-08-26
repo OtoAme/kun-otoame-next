@@ -184,6 +184,13 @@ export const SubmissionEditor = ({ submission }: Props) => {
             errors={undefined}
             data={form}
             setData={update}
+            // Pressing 获取 VNDB 数据 reveals the confirmation box when the id is
+            // already taken; without these the box rendered but could not be
+            // ticked, and submission blocks until it is.
+            isDuplicate={form.isDuplicate}
+            onDuplicateChange={(isDuplicate) =>
+              update({ ...form, isDuplicate })
+            }
             onExternalFetched={markExternalFetched}
           />
           <VNDBRelationInput errors={undefined} data={form} setData={update} />

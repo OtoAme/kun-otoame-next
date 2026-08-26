@@ -44,6 +44,8 @@ export interface PatchSubmissionPayload {
   tag: string[]
   released: string
   contentLimit: string
+  /** Author confirmed a shared VNDB ID is a different release of the same game. */
+  isDuplicate: boolean
 }
 
 export interface PatchSubmissionGalleryImage {

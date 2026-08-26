@@ -65,7 +65,8 @@ export const emptyPatchSubmissionPayload: PatchSubmissionPayload = {
   alias: [],
   tag: [],
   released: '',
-  contentLimit: 'sfw'
+  contentLimit: 'sfw',
+  isDuplicate: false
 }
 
 const initialState = {

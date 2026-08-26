@@ -37,6 +37,14 @@ export interface AdminPatchSubmissionDetail {
   created: string
   author: { id: number; name: string; avatar: string }
   preview: PatchSubmissionPublishPreview | null
+  /**
+   * Published entries already using this submission's VNDB ID. A shared id can be
+   * legitimate for a different release, so the reviewer decides — but they can
+   * only decide if they see what it collides with.
+   */
+  vndbDuplicates: { uniqueId: string; name: string }[]
+  /** Whether the author ticked the confirmation to submit despite the above. */
+  duplicateConfirmed: boolean
 }
 
 /**
@@ -182,6 +190,16 @@ export const getAdminPatchSubmission = async (
       })
     : null
 
+  const vndbId = payload.success ? payload.data.vndbId : ''
+  const vndbDuplicates = vndbId
+    ? await prisma.patch.findMany({
+        where: { vndb_id: vndbId },
+        select: { unique_id: true, name: true },
+        orderBy: { id: 'asc' },
+        take: 10
+      })
+    : []
+
   return {
     id: row.id,
     status: row.status as PatchSubmissionStatus,
@@ -197,6 +215,11 @@ export const getAdminPatchSubmission = async (
     submittedAt: row.submitted_at?.toISOString() ?? null,
     created: row.created.toISOString(),
     author: row.user,
-    preview
+    preview,
+    vndbDuplicates: vndbDuplicates.map((patch) => ({
+      uniqueId: patch.unique_id,
+      name: patch.name
+    })),
+    duplicateConfirmed: payload.success ? payload.data.isDuplicate : false
   }
 }

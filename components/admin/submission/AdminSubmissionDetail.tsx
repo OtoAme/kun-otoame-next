@@ -178,6 +178,43 @@ export const AdminSubmissionDetail = ({
         </CardBody>
       </Card>
 
+      {submission.vndbDuplicates.length > 0 && (
+        <Card className="border border-warning-200 bg-warning-50/50 dark:bg-warning-100/10">
+          <CardHeader className="flex flex-wrap items-center gap-2">
+            <h2 className="text-lg font-medium">VNDB ID 与现有条目重复</h2>
+            <Chip
+              size="sm"
+              variant="flat"
+              color={submission.duplicateConfirmed ? 'warning' : 'danger'}
+            >
+              {submission.duplicateConfirmed
+                ? '投稿者已确认是不同版本'
+                : '投稿者未确认'}
+            </Chip>
+          </CardHeader>
+          <CardBody className="space-y-2 text-sm">
+            <p className="text-default-500">
+              同一游戏的不同版本可以共用 VNDB ID,
+              请核对下列条目后判断是否重复收录。
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {submission.vndbDuplicates.map((patch) => (
+                <Button
+                  key={patch.uniqueId}
+                  as={Link}
+                  href={`/${patch.uniqueId}`}
+                  target="_blank"
+                  size="sm"
+                  variant="flat"
+                >
+                  {patch.name || patch.uniqueId}
+                </Button>
+              ))}
+            </div>
+          </CardBody>
+        </Card>
+      )}
+
       {preview ? (
         <PatchSubmissionPreviewView
           preview={preview}

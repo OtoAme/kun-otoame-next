@@ -38,7 +38,8 @@ const payload = {
   alias: [],
   tag: [],
   released: '',
-  contentLimit: 'sfw'
+  contentLimit: 'sfw',
+  isDuplicate: false
 }
 
 beforeEach(() => {
@@ -86,14 +87,57 @@ describe('patch submission reviewer notification', () => {
   })
 
   it('does not roll back a successful submission when reviewer lookup fails', async () => {
-    prismaMocks.user.findMany.mockRejectedValue(new Error('database unavailable'))
+    prismaMocks.user.findMany.mockRejectedValue(
+      new Error('database unavailable')
+    )
     vi.spyOn(console, 'error').mockImplementation(() => {})
 
     await expect(submitPatchSubmission(1, 2)).resolves.toEqual({})
 
     expect(prismaMocks.patch_submission.updateMany).toHaveBeenCalledWith(
-      expect.objectContaining({ data: expect.objectContaining({ status: 'pending' }) })
+      expect.objectContaining({
+        data: expect.objectContaining({ status: 'pending' })
+      })
     )
     expect(createMessageMock).not.toHaveBeenCalled()
+  })
+})
+
+describe('patch submission VNDB duplicate confirmation', () => {
+  const withVndbId = (isDuplicate: boolean) => {
+    prismaMocks.patch_submission.findFirst.mockResolvedValue({
+      status: 'draft',
+      payload: { ...payload, vndbId: 'v19', isDuplicate },
+      banner_key: 'patch-submission/1/banner/banner.avif',
+      gallery: [],
+      user: { name: 'Author' }
+    })
+  }
+
+  it('blocks an unconfirmed submission whose VNDB ID is already published', async () => {
+    withVndbId(false)
+    prismaMocks.patch.findFirst.mockResolvedValue({ unique_id: 'abcd1234' })
+
+    await expect(submitPatchSubmission(1, 2)).resolves.toContain('abcd1234')
+    expect(prismaMocks.patch_submission.updateMany).not.toHaveBeenCalled()
+  })
+
+  it('lets a confirmed duplicate through as a different release', async () => {
+    withVndbId(true)
+    prismaMocks.patch.findFirst.mockResolvedValue({ unique_id: 'abcd1234' })
+
+    await expect(submitPatchSubmission(1, 2)).resolves.toEqual({})
+    expect(prismaMocks.patch_submission.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ status: 'pending' })
+      })
+    )
+  })
+
+  it('does not query for duplicates when no VNDB ID was given', async () => {
+    prismaMocks.patch.findFirst.mockResolvedValue(null)
+
+    await expect(submitPatchSubmission(1, 2)).resolves.toEqual({})
+    expect(prismaMocks.patch.findFirst).not.toHaveBeenCalled()
   })
 })

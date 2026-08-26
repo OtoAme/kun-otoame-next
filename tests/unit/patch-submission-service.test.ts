@@ -42,7 +42,8 @@ const payload = {
   alias: [],
   tag: [],
   released: '',
-  contentLimit: 'sfw'
+  contentLimit: 'sfw',
+  isDuplicate: false
 }
 
 const row = (status: string) => ({

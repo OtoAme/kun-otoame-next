@@ -60,7 +60,8 @@ const payload = {
   alias: [],
   tag: [],
   released: '2026-08-24',
-  contentLimit: 'sfw'
+  contentLimit: 'sfw',
+  isDuplicate: false
 }
 
 const setupUser = (role: number) => {

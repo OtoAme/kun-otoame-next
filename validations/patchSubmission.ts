@@ -71,7 +71,13 @@ const payloadShape = {
   alias: repeatedStrings,
   tag: repeatedStrings,
   released: z.string().trim().max(107).optional().default(''),
-  contentLimit: z.enum(['sfw', 'nsfw']).default('sfw')
+  contentLimit: z.enum(['sfw', 'nsfw']).default('sfw'),
+  /**
+   * The author's acknowledgement that sharing a VNDB ID with an existing entry
+   * is intentional, because it is a different release. Drafts written before the
+   * field existed must keep parsing, so it defaults rather than being required.
+   */
+  isDuplicate: z.boolean().optional().default(false)
 }
 
 /**

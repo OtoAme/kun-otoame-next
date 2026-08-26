@@ -23,8 +23,10 @@ const findOwnDuplicate = async (
   submissionId: number,
   payload: PatchSubmissionPayload
 ) => {
-  const hardFields: { label: string; where: Prisma.patch_submissionWhereInput }[] =
-    []
+  const hardFields: {
+    label: string
+    where: Prisma.patch_submissionWhereInput
+  }[] = []
 
   if (payload.vndbRelationId) {
     hardFields.push({
@@ -96,6 +98,31 @@ const findPublishedConflict = async (payload: PatchSubmissionPayload) => {
 }
 
 /**
+ * A shared VNDB ID is not automatically a duplicate: different releases of one
+ * visual novel legitimately share it, which is why the column carries no unique
+ * constraint. So it blocks only until the author confirms, exactly like the
+ * direct-publish editor. Without this an entry whose VNDB ID is taken but whose
+ * Release ID is empty passes every hard check and lands as a second copy of the
+ * same game, because two NULL Release IDs do not collide in the composite unique
+ * index.
+ */
+const findUnconfirmedVndbDuplicate = async (
+  payload: PatchSubmissionPayload
+) => {
+  if (!payload.vndbId || payload.isDuplicate) {
+    return null
+  }
+  const patch = await prisma.patch.findFirst({
+    where: { vndb_id: payload.vndbId },
+    select: { unique_id: true }
+  })
+  if (!patch) {
+    return null
+  }
+  return `VNDB ID 与已收录的游戏 ${patch.unique_id} 重复, 如果这是同一游戏的不同版本, 请在 VNDB ID 处勾选确认重复后再提交`
+}
+
+/**
  * draft | changes_requested -> pending. The payload is already stored by
  * autosave; submitting freezes it by locking the row against further edits, so
  * what a reviewer reads is exactly what gets published.
@@ -120,7 +147,10 @@ export const submitPatchSubmission = async (
   if (submission.status === 'pending') {
     return '投稿已提交, 正在等待审核'
   }
-  if (submission.status !== 'draft' && submission.status !== 'changes_requested') {
+  if (
+    submission.status !== 'draft' &&
+    submission.status !== 'changes_requested'
+  ) {
     return '当前状态的投稿无法提交'
   }
   if (!submission.banner_key) {
@@ -156,6 +186,10 @@ export const submitPatchSubmission = async (
   const publishedConflict = await findPublishedConflict(payload)
   if (publishedConflict) {
     return publishedConflict
+  }
+  const unconfirmedVndbDuplicate = await findUnconfirmedVndbDuplicate(payload)
+  if (unconfirmedVndbDuplicate) {
+    return unconfirmedVndbDuplicate
   }
 
   const submitted = await prisma.patch_submission.updateMany({
