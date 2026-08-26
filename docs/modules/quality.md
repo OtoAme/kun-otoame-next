@@ -15,7 +15,7 @@ pnpm test
 pnpm typecheck
 ```
 
-当前没有 Playwright/E2E harness。涉及完整浏览器流程时，需要写清手动验证步骤。
+当前没有统一的 `@playwright/test` config/runner 或 CI harness，但 `tests/e2e/*.e2e.ts` 有三套直接使用 `playwright-core` / HTTP 客户端的投稿与上传脚本。它们会写真实数据，只能连接单独 3100 服务和 disposable `touchgal_e2e`；运行边界见 `docs/project/testing.md`。
 
 ## 当前测试覆盖
 
@@ -51,6 +51,7 @@ pnpm typecheck
 | `tests/unit/api/admin-resource-get.test.ts`            | 后台资源列表按资源链接或 BLAKE3 Hash 搜索。                                                                             |
 | `tests/unit/api/admin-resource-update-message.test.ts` | 管理员后台修改他人资源时通知资源发布者、保留列表上下文并区分游戏资源 / 补丁资源日志。                                   |
 | `tests/unit/api/patch-resource-update.test.ts`         | 资源更新前校验资源和游戏归属，避免错误派生属性和缓存刷新。                                                              |
+| `tests/unit/patch-submission-*.test.ts` / `.test.tsx`  | 投稿押金与状态机、共享预览、重复外部 ID、素材清理 outbox、上传重试、权限和审核发布。                                     |
 | `tests/unit/admin-resource-container-layout.test.tsx`  | 后台资源表资源列宽、分页脱离表格横向滚动区并居中显示。                                                                  |
 | `tests/unit/admin-resource-render-cell.test.tsx`       | 后台资源列表资源名 / 游戏名两行展示。                                                                                   |
 | `tests/unit/resource-links-input.test.tsx`             | 对象存储资源大小输入禁用，普通外链大小仍可编辑。                                                                        |

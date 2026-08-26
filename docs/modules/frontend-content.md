@@ -220,7 +220,7 @@ pnpm typecheck
 
 入口：
 
-- `app/user/[id]/submission/page.tsx`（本人列表, 仅自己可见）
+- `app/user/[id]/submission/page.tsx`（一个「发布条目」标签, 本人与访客两种视角）
 - `app/submission/[id]/page.tsx`（编辑与预览）
 - `app/admin/submission/page.tsx`（审核队列）
 - `app/admin/submission/[id]/page.tsx`（审核详情与四个审核动作）
@@ -232,13 +232,17 @@ pnpm typecheck
 - **hydrate 在 effect 里, 所以首帧必须用服务端数据兜底。** `SubmissionEditor` 在 `submissionId` 与 props 不一致时直接渲染 props 里的 payload, 否则首帧会用 store 的空初始值, 在已保存内容上闪出空表单——这个缺陷是浏览器测试重载后发现标题为空才暴露的。
 - **`patchSubmissionStore` 故意不持久化。** 草稿的真源在数据库、按 id 加载；再存一份本地副本只会在跨设备编辑后与服务端不一致。
 - **自动保存严格串行。** debounce 后的请求进入单一 promise 链，每笔请求真正开始时才读取上一笔写回的 `revision`；并发请求各拿旧 revision 会制造虚假冲突。真实冲突不重试：它意味着另一台设备先保存了，重试会覆盖对方内容。
-- **`flush()` 返回结构化结果。** 返回 `{ ok: true }` 或 `{ ok: false, reason: 'conflict' | 'error', message }`；无脏内容直接成功。显式保存、提交和打开预览都必须依赖这个返回值，失败时展示 message 并停止后续动作，不能再旁读 `saveState` 猜结果。
+- **`flush()` 返回结构化结果。** 返回 `{ ok: true }` 或 `{ ok: false, reason: 'conflict' | 'error', message }`；无脏内容直接成功。显式保存、提交和打开**可编辑草稿**预览都必须依赖这个返回值，失败时展示 message 并停止后续动作，不能再旁读 `saveState` 猜结果。`pending` 投稿已经冻结为服务端版本，作者仍可打开「预览（审核中）」自查，但这条只读路径不再 flush，发现问题后可撤回修改。
 - **投稿字段顺序固定**：名称 → VNDB → VNDB Relation → Bangumi → Steam → 封面 → 双栏正文编辑器 → 画廊 → 别名 → 官网 → 发售日 → 标签 → 内容分级。名称错误只在提交校验失败后显示，继续输入立即清除；内容分级由投稿人选择，默认 SFW。
+- **共享 VNDB ID 必须显式确认。** VNDB ID 可以被同一游戏的不同版本共用，所以它不是硬唯一字段；当抓取结果命中已发布条目时，投稿表单通过受控的 `isDuplicate` 复用直接发布页的确认框。未确认不能提交，确认结果随 payload 保存；审核详情同时展示命中的正式条目和投稿者是否确认，最终是否属于重复收录仍由审核员判断。
 - `KunDualEditorProvider` 是 `value` + `onChange` 受控组件，不导入 create/rewrite/submission store。三个页面各自在薄封装或调用方中绑定自己的状态，避免通用编辑器累积 store 分支。
-- 投稿画廊水印开关随每张上传请求传到服务端；动态 WebP/AVIF 仍保留原图且不加水印。批量 SFW/NSFW 通过受保护 PATCH 持久化，卡片使用真实 `NSFWMask`，遮罩揭开前不能从放大按钮绕过。
+- 投稿画廊水印默认开启，开关随每张上传请求传到服务端；动态 WebP/AVIF 仍保留原图且不加水印。编辑态沿用 create/rewrite 的 NSFW 危险色边框与右上角角标，不盖 reveal mask；只读的作者预览和审核详情才使用真实 `NSFWMask`，遮罩揭开前不能从放大按钮绕过。
 - 投稿 gallery 待上传项用独立 localforage store 持久化 Blob、文件元数据、稳定 `clientAssetId`、顺序、水印与状态。页面刷新时把遗留 `uploading` 恢复成可重试失败态，并重新创建临时预览 URL；成功后立即删除本地记录并 `revokeObjectURL`。上传遮罩使用 Spinner，HeroUI Progress 只显示完成文件数 / 总数，不声称字节百分比。
 - 只要 localforage 草稿尚未读完、仍有待上传/失败项或上传请求在途，就禁用提交审核。服务端上传响应返回 ready gallery DTO，客户端用稳定 ID 把占位卡替换成云端卡；若超时后服务端其实已完成，同一 ID 重试会返回既有 ready 行并清理本地项。
-- **审核队列只负责检索和进入详情。** 通过、要求修改、驳回、违规四个动作全部放在详情页，避免审核员未看正文与素材就结算；详情使用 `publishPreview.ts` 的发布投影，正文注入前再经 DOMPurify，NSFW 截图使用 `NSFWMask` 且仍可开灯箱。超级管理员自审必须显式打开 override，普通管理员不能自审。
+- **作者预览与审核详情共用正式条目外观。** `PatchSubmissionPreviewView` 组合正式详情页的正文 renderer、Gallery/灯箱、官网和 Info 元数据块；标签与会社在正式行创建前只显示只读 chip，不渲染评分、下载、编辑器或讨论/资源 tab。封面框固定 16:9，点击后优先在灯箱显示保存的原图，并在标题旁显示 SFW/NSFW 分级。灯箱通过 `onOpenChange` 告知外层预览 Modal，在灯箱打开期间禁止 outside press 与 Escape 同时关闭两层。
+- **审核队列只负责检索和进入详情。** 通过、要求修改、驳回、违规四个动作全部放在详情页，避免审核员未看正文与素材就结算；详情与作者预览共用 `publishPreview.ts` 投影和 `PatchSubmissionPreviewView`。超级管理员自审必须显式打开 override，普通管理员不能自审。
 - **投稿画廊卡片的选择、放大、删除各自是可聚焦控件且有可访问名称。** 不要照搬编辑页那种「整卡承担点击 + `pointer-events-none` 的 checkbox」写法：那让纯键盘用户既选不中也放不大, 而投稿面向普通用户。
 - 复用的编辑输入（`VNDBInput`、`VNDBRelationInput`、`BangumiInput`、`SteamInput`、`ReleaseDateInput`、`BatchTag`、`SortableAliasChips`）都是 prop 驱动的泛型组件, 接投稿 payload 无需改动管理员侧代码。
-- 本人列表在建草稿前就说明押金、名额与容量；余额不足时给签到与规则入口, 而不是一个看起来坏掉的按钮。终态记录提供「从列表隐藏」而非删除。
+- **个人页只有一个「发布条目」标签。** 访客（包括匿名用户）只看到该作者已发布的正式条目，并复用公开游戏卡片、NSFW 可见性与稳定的 `created desc, id desc` 分页；本人在上方管理仍在流转或已关闭的投稿，在下方看到同一批正式卡片。`published` 投稿行不再重复出现在管理列表，`deleted` 行完全排除。
+- 普通用户在建草稿前看到押金、名额与容量；余额不足时给签到与规则入口。`role >= 4` 与 `/edit/create` 使用同一直接发布权限，个人页只显示「直接创建条目」，不查询或展示投稿额度与押金；若管理员是提交后晋升，既有未结算投稿仍保留在列表供完成或删除。
+- 投稿管理列表是封面卡片网格，优先显示 mini banner 并有站点图回退。删除活动草稿必须先确认，并显示该行冻结的 `heldAmount`（不能使用当前角色额度）；终态记录提供「从列表隐藏」而非物理删除。

@@ -253,7 +253,7 @@ Gallery 图片上传走 `app/api/edit/gallery/route.ts` 和 `app/api/edit/galler
 
 ### 投稿素材的 key 布局（不同于正式条目）
 
-正式条目的素材在 `patch/<patchId>/banner/*` 与 `patch/<patchId>/gallery/*`（canonical 布局，`scripts/galleryThumbnailBackfill.ts` 与 `app/api/utils/purgeCache.ts` 依赖它按 patchId 推导 URL）。
+通过 `/edit/create` 直接创建的正式条目素材在 `patch/<patchId>/banner/*` 与 `patch/<patchId>/gallery/*`（canonical 布局，`scripts/galleryThumbnailBackfill.ts` 与 `app/api/utils/purgeCache.ts` 依赖它按 patchId 推导 URL）。
 
 投稿素材**不遵循这个布局**：它写在 `patch-submission/<submissionId>-<随机>/...`，key 由服务端生成、不可猜测。批准时素材不搬动, 直接成为正式条目引用的对象, 所以：
 
@@ -263,6 +263,7 @@ Gallery 图片上传走 `app/api/edit/gallery/route.ts` 和 `app/api/edit/galler
 - 每次执行 durable orphan job 都要重新计算 serving references。被活动投稿或正式 `patch` / `patch_game_image` 引用的对象要取消 job，绝不能删除；历史 CDN hostname 下但路径仍为 `/patch-submission/` 的正式 URL要 fail-safe 视为引用。
 - 清理命令（`scripts/cleanupSubmissionAssets.ts`）按“终态投稿行 outbox → 已持久 orphan jobs → 过宽限期的新 S3 orphan”处理。dry-run 不写 job；apply 发现新 orphan 时先落 job，再允许删除。
 - `patch_submission_gallery.id` 与批准后新建的 `patch_game_image.id` 没有对应关系。投稿来源 gallery key 只能从库中 URL 反解，不能按正式行 ID 推导；`scripts/galleryThumbnailBackfill.ts` 的 canonical 路径检查必须继续跳过这些对象。
+- 已发布条目在 rewrite 页继续添加截图时，`POST /api/edit/gallery` 先按 `patch_id` 查关联的 `patch_submission`：有关联就为每次上传生成新的 `patch-submission/<submissionId>-<随机>/gallery` 前缀，无关联才使用 canonical `patch/<patchId>/gallery`。`uploadPatchGalleryImage` 必须返回实际写入的原图/缩略图 key，route 用返回 key 组装数据库 URL，不能再按行 ID 重新推导。这样投稿来源条目的后续截图保持同一种可识别、可持久清理的路径；历史混合路径仍须按库中 URL 正确删除。
 - `purgeCache.ts` 按 patchId 推导的三个封面 URL 对投稿 key 是空推。换封面时旧投稿 key 由 durable orphan outbox 清理。
 - 未审素材是公开可取的，被预览后可能进 CDN，因此 `reject` / `violation` / 用户删除必须隐藏 DTO，并连带 purge 封面三变体与每张图的主图、缩略图 URL。
 - 投稿 gallery 上传把 `watermark` 传给共享 `preparePatchGalleryImage`；静态图按开关处理，动态 WebP/AVIF 沿用共享规则跳过水印。批量 NSFW 更新必须锁投稿并验证所有 gallery ID 归属，不能改写其他投稿的行。
