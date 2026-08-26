@@ -25,7 +25,9 @@ export const getUserPatch = async (
     prisma.patch.findMany({
       where,
       select: GalgameCardSelectField,
-      orderBy: { created: 'desc' },
+      // `created` alone is not a total order, and offset pagination over a tied
+      // sort key may repeat or skip rows between pages. The id breaks the tie.
+      orderBy: [{ created: 'desc' }, { id: 'desc' }],
       skip: offset,
       take: limit
     }),
