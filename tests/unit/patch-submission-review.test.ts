@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { Prisma } from '@prisma/client'
 
 const prismaMocks = vi.hoisted(() => {
   const tx = {
@@ -236,6 +237,35 @@ describe('approval settlement', () => {
           expect.objectContaining({ key: 'submission/1/gallery/a.avif' })
         ]
       })
+    )
+  })
+})
+
+describe('approval external-id conflict', () => {
+  const p2002 = (target: string[]) =>
+    new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
+      code: 'P2002',
+      clientVersion: 'test',
+      meta: { target }
+    })
+
+  it('turns a duplicate external id into a reviewer-facing error, not a 500', async () => {
+    publishSubmissionCoreMock.mockRejectedValue(p2002(['vndb_relation_id']))
+
+    await expect(approvePatchSubmission(1, admin, false)).rejects.toThrow(
+      PatchSubmissionError
+    )
+    await expect(approvePatchSubmission(1, admin, false)).rejects.toThrow(
+      'VNDB'
+    )
+    expect(runPublishSideEffectsMock).not.toHaveBeenCalled()
+  })
+
+  it('rethrows unexpected errors so real failures are not masked as duplicates', async () => {
+    publishSubmissionCoreMock.mockRejectedValue(new Error('boom'))
+
+    await expect(approvePatchSubmission(1, admin, false)).rejects.toThrow(
+      'boom'
     )
   })
 })

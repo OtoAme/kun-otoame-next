@@ -116,6 +116,36 @@ const claimPending = async (
   }
 }
 
+/**
+ * publishSubmissionCore inserts the patch under the same unique external-id
+ * constraints as any entry (`vndb_relation_id`, `[vndb_id, vndb_relation_id]`,
+ * `bangumi_id`, `dlsite_code`). Approving a submission whose external id already
+ * belongs to a published game raises a Prisma P2002 that would otherwise surface
+ * as a 500. Turn it into a reviewer-facing message — the transaction rolls back,
+ * so the submission stays pending and the deposit is untouched, and the reviewer
+ * can reject it as a duplicate instead.
+ */
+const duplicateExternalIdMessage = (
+  error: Prisma.PrismaClientKnownRequestError
+): string | null => {
+  if (error.code !== 'P2002') {
+    return null
+  }
+  const target = Array.isArray(error.meta?.target)
+    ? (error.meta.target as string[]).join(',')
+    : String(error.meta?.target ?? '')
+  if (target.includes('vndb_relation_id') || target.includes('vndb_id')) {
+    return '该游戏的 VNDB ID / Release ID 已存在对应条目, 无法重复发布, 请核对后驳回该投稿'
+  }
+  if (target.includes('bangumi_id')) {
+    return '该游戏的 Bangumi ID 已存在对应条目, 无法重复发布, 请核对后驳回该投稿'
+  }
+  if (target.includes('dlsite_code')) {
+    return '该游戏的 DLsite 编号已存在对应条目, 无法重复发布, 请核对后驳回该投稿'
+  }
+  return '该游戏的外部 ID 已被其他条目占用, 无法重复发布, 请核对后驳回该投稿'
+}
+
 export const approvePatchSubmission = async (
   submissionId: number,
   reviewer: Reviewer,
@@ -123,91 +153,107 @@ export const approvePatchSubmission = async (
 ) => {
   assertCanReview(reviewer)
 
-  const result = await prisma.$transaction(
-    async (tx) => {
-      const submission = await loadPendingSubmission(tx, submissionId)
-      const overrode = assertNotSelfReview(
-        reviewer,
-        submission.user_id,
-        overrideSelfReview
-      )
-      const payload = submission.payload as unknown as PatchSubmissionPayload
+  let result: {
+    uniqueId: string
+    contentLimit: string
+    balance: Awaited<ReturnType<typeof earnMoemoepoint>>['balance'] | null
+    touchedCompanies: boolean
+  }
+  try {
+    result = await prisma.$transaction(
+      async (tx) => {
+        const submission = await loadPendingSubmission(tx, submissionId)
+        const overrode = assertNotSelfReview(
+          reviewer,
+          submission.user_id,
+          overrideSelfReview
+        )
+        const payload = submission.payload as unknown as PatchSubmissionPayload
 
-      const patch = await publishSubmissionCore(tx, {
-        authorId: submission.user_id,
-        payload,
-        bannerKey: submission.banner_key,
-        gallery: submission.gallery
-          .filter((image) => image.image_key)
-          .map((image) => ({
-            key: image.image_key as string,
-            thumbnailKey: image.thumbnail_key,
-            isNSFW: image.is_nsfw,
-            displayOrder: image.display_order
-          }))
-      })
-
-      let balance = null
-      if (submission.reservation_id) {
-        const released = await releaseMoemoepoint(tx, {
-          reservationId: submission.reservation_id,
-          reasonCode: PATCH_SUBMISSION_REASON.depositReleased.code,
-          reason: `${PATCH_SUBMISSION_REASON.depositReleased.text}：投稿通过`,
-          idempotencyKey: `patch_submission:${submissionId}:release`,
-          operatorId: reviewer.uid
+        const patch = await publishSubmissionCore(tx, {
+          authorId: submission.user_id,
+          payload,
+          bannerKey: submission.banner_key,
+          gallery: submission.gallery
+            .filter((image) => image.image_key)
+            .map((image) => ({
+              key: image.image_key as string,
+              thumbnailKey: image.thumbnail_key,
+              isNSFW: image.is_nsfw,
+              displayOrder: image.display_order
+            }))
         })
-        balance = released.balance
+
+        let balance = null
+        if (submission.reservation_id) {
+          const released = await releaseMoemoepoint(tx, {
+            reservationId: submission.reservation_id,
+            reasonCode: PATCH_SUBMISSION_REASON.depositReleased.code,
+            reason: `${PATCH_SUBMISSION_REASON.depositReleased.text}：投稿通过`,
+            idempotencyKey: `patch_submission:${submissionId}:release`,
+            operatorId: reviewer.uid
+          })
+          balance = released.balance
+        }
+
+        const rewarded = await earnMoemoepoint(tx, {
+          userId: submission.user_id,
+          amount: PATCH_SUBMISSION_PUBLISH_REWARD,
+          reasonCode: PATCH_SUBMISSION_REASON.publishReward.code,
+          reason: `${PATCH_SUBMISSION_REASON.publishReward.text}：${submission.name.slice(0, 100)}`,
+          referenceType: 'patch_submission',
+          referenceId: submissionId,
+          link: `/${patch.unique_id}`,
+          idempotencyKey: `patch_submission:${submissionId}:publish-reward`
+        })
+
+        await claimPending(tx, submissionId, {
+          status: 'published',
+          patch_id: patch.id,
+          reviewed_by_id: reviewer.uid,
+          reviewed_at: new Date(),
+          settled_at: new Date(),
+          review_reason: null
+        })
+
+        await createMessage(
+          {
+            type: 'system',
+            content: `您的投稿《${submission.name}》已通过审核, 押金已返还并奖励 ${PATCH_SUBMISSION_PUBLISH_REWARD} 萌萌点`,
+            recipient_id: submission.user_id,
+            link: `/${patch.unique_id}`
+          },
+          tx
+        )
+
+        await writeAdminLog(
+          tx,
+          reviewer,
+          `${overrode ? '【超级管理员自审 override】' : ''}管理员 ${reviewer.name} 通过了投稿《${submission.name}》(投稿 ID: ${submissionId}), 生成游戏 ${patch.unique_id}`
+        )
+
+        return {
+          uniqueId: patch.unique_id,
+          contentLimit: payload.contentLimit,
+          balance: rewarded.balance ?? balance,
+          touchedCompanies:
+            payload.vndbDevelopers.length > 0 ||
+            payload.bangumiDevelopers.length > 0 ||
+            payload.steamDevelopers.length > 0 ||
+            Boolean(payload.dlsiteCircleName)
+        }
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted }
+    )
+  } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError) {
+      const message = duplicateExternalIdMessage(error)
+      if (message) {
+        throw new PatchSubmissionError(message)
       }
-
-      const rewarded = await earnMoemoepoint(tx, {
-        userId: submission.user_id,
-        amount: PATCH_SUBMISSION_PUBLISH_REWARD,
-        reasonCode: PATCH_SUBMISSION_REASON.publishReward.code,
-        reason: `${PATCH_SUBMISSION_REASON.publishReward.text}：${submission.name.slice(0, 100)}`,
-        referenceType: 'patch_submission',
-        referenceId: submissionId,
-        link: `/${patch.unique_id}`,
-        idempotencyKey: `patch_submission:${submissionId}:publish-reward`
-      })
-
-      await claimPending(tx, submissionId, {
-        status: 'published',
-        patch_id: patch.id,
-        reviewed_by_id: reviewer.uid,
-        reviewed_at: new Date(),
-        settled_at: new Date(),
-        review_reason: null
-      })
-
-      await createMessage(
-        {
-          type: 'system',
-          content: `您的投稿《${submission.name}》已通过审核, 押金已返还并奖励 ${PATCH_SUBMISSION_PUBLISH_REWARD} 萌萌点`,
-          recipient_id: submission.user_id,
-          link: `/${patch.unique_id}`
-        },
-        tx
-      )
-
-      await writeAdminLog(
-        tx,
-        reviewer,
-        `${overrode ? '【超级管理员自审 override】' : ''}管理员 ${reviewer.name} 通过了投稿《${submission.name}》(投稿 ID: ${submissionId}), 生成游戏 ${patch.unique_id}`
-      )
-
-      return {
-        uniqueId: patch.unique_id,
-        contentLimit: payload.contentLimit,
-        balance: rewarded.balance ?? balance,
-        touchedCompanies:
-          payload.vndbDevelopers.length > 0 ||
-          payload.bangumiDevelopers.length > 0 ||
-          payload.steamDevelopers.length > 0 ||
-          Boolean(payload.dlsiteCircleName)
-      }
-    },
-    { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted }
-  )
+    }
+    throw error
+  }
 
   await runPublishSideEffects(result)
 
