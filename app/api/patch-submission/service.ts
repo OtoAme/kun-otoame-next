@@ -37,6 +37,7 @@ const submissionSelect = {
   external_source: true,
   external_fetched_at: true,
   banner_key: true,
+  banner_original_key: true,
   submitted_at: true,
   created: true,
   updated: true,
@@ -133,6 +134,7 @@ export const getPatchSubmissionPublishPreview = async (
   return buildPatchSubmissionPublishPreview({
     payload: payload.data,
     bannerKey: cleanupOwed ? null : row.banner_key,
+    bannerOriginalKey: cleanupOwed ? null : row.banner_original_key,
     gallery: cleanupOwed
       ? []
       : row.gallery.flatMap((image) =>

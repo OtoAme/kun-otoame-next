@@ -132,6 +132,7 @@ export const getAdminPatchSubmission = async (
       review_reason: true,
       reviewed_at: true,
       banner_key: true,
+      banner_original_key: true,
       submitted_at: true,
       created: true,
       user: { select: { id: true, name: true, avatar: true } },
@@ -162,6 +163,7 @@ export const getAdminPatchSubmission = async (
     ? await buildPatchSubmissionPublishPreview({
         payload: payload.data,
         bannerKey: cleanupOwed ? null : row.banner_key,
+        bannerOriginalKey: cleanupOwed ? null : row.banner_original_key,
         gallery: cleanupOwed
           ? []
           : row.gallery.flatMap((image) =>

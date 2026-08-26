@@ -2,11 +2,17 @@
 
 import { Card, CardBody } from '@heroui/card'
 import { Chip } from '@heroui/chip'
+import { Tooltip } from '@heroui/tooltip'
 import { Info } from '~/components/patch/introduction/Info'
 import { PatchOfficialUrl } from '~/components/patch/introduction/OfficialUrl'
 import { PatchIntroductionContent } from '~/components/patch/introduction/PatchIntroductionContent'
 import { Gallery } from '~/components/patch/gallery/Gallery'
+import { KunImageViewer } from '~/components/kun/image-viewer/ImageViewer'
 import { semanticChipProps } from '~/utils/semanticColor'
+import {
+  GALGAME_AGE_LIMIT_DETAIL,
+  GALGAME_AGE_LIMIT_MAP
+} from '~/constants/galgame'
 import type { PatchSubmissionPublishPreview } from '~/app/api/patch-submission/publishPreview'
 import type { PatchImage, PatchIntroduction } from '~/types/api/patch'
 
@@ -74,21 +80,49 @@ export const PatchSubmissionPreviewView = ({
     preview,
     createdAt ?? new Date().toISOString()
   )
+  // Captured as a const so the narrowing survives into the render-prop closure.
+  const bannerUrl = preview.bannerUrl
+  // The box shows the cropped 16:9 banner; the lightbox opens the full original
+  // when one was kept, matching the create/edit page.
+  const bannerLightboxSrc = preview.bannerOriginalUrl ?? bannerUrl
 
   return (
     <div className="space-y-4">
-      {preview.bannerUrl && (
-        <div className="relative aspect-video w-full max-w-2xl overflow-hidden rounded-large bg-default-100">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={preview.bannerUrl}
-            alt={`${preview.name} 封面`}
-            className="absolute inset-0 size-full object-cover"
-          />
-        </div>
+      {bannerUrl && (
+        <KunImageViewer
+          images={[
+            { src: bannerLightboxSrc ?? bannerUrl, alt: `${preview.name} 封面` }
+          ]}
+          onOpenChange={onLightboxOpenChange}
+        >
+          {(openLightbox) => (
+            <div
+              className="relative aspect-video w-full max-w-2xl cursor-zoom-in overflow-hidden rounded-large bg-default-100"
+              onClick={() => openLightbox(0)}
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={bannerUrl}
+                alt={`${preview.name} 封面`}
+                className="absolute inset-0 size-full object-cover"
+              />
+            </div>
+          )}
+        </KunImageViewer>
       )}
 
-      <h1 className="text-2xl font-medium">{preview.name}</h1>
+      <div className="flex flex-wrap items-center gap-2">
+        <h1 className="text-2xl font-medium">{preview.name}</h1>
+        <Tooltip content={GALGAME_AGE_LIMIT_DETAIL[preview.contentLimit]}>
+          <Chip
+            {...semanticChipProps(
+              preview.contentLimit === 'sfw' ? 'content-sfw' : 'content-nsfw'
+            )}
+          >
+            {GALGAME_AGE_LIMIT_MAP[preview.contentLimit]}
+          </Chip>
+        </Tooltip>
+      </div>
 
       <Card className="p-1 sm:p-8">
         <CardBody className="space-y-6 p-4">

@@ -33,6 +33,7 @@ export interface PatchSubmissionPublishPreview
     dlsiteCode: string
   }
   bannerUrl: string | null
+  bannerOriginalUrl: string | null
   gallery: {
     id?: number
     imageUrl: string | null
@@ -82,6 +83,7 @@ export const buildPatchSubmissionPublishedAssetUrl = (key: string | null) => {
 export const buildPatchSubmissionPublishPreview = async (input: {
   payload: PatchSubmissionPayload
   bannerKey: string | null
+  bannerOriginalKey: string | null
   gallery: PatchSubmissionPublishAssetInput[]
 }): Promise<PatchSubmissionPublishPreview> => {
   const projection = projectPatchSubmissionPayload(input.payload)
@@ -97,6 +99,9 @@ export const buildPatchSubmissionPublishPreview = async (input: {
       dlsiteCode: input.payload.dlsiteCode
     },
     bannerUrl: buildPatchSubmissionPublishedAssetUrl(input.bannerKey),
+    bannerOriginalUrl: buildPatchSubmissionPublishedAssetUrl(
+      input.bannerOriginalKey
+    ),
     gallery: input.gallery.map((image) => ({
       ...(image.id ? { id: image.id } : {}),
       imageUrl: buildPatchSubmissionPublishedAssetUrl(image.key),

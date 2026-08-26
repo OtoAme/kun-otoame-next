@@ -44,7 +44,33 @@ vi.mock('~/components/patch/introduction/PatchIntroductionContent', () => ({
     <div data-testid="intro-html">{html}</div>
   )
 }))
+vi.mock('@heroui/tooltip', () => ({
+  Tooltip: ({ children }: { children: React.ReactNode }) => <>{children}</>
+}))
+// Record the lightbox index a click asks for and the images it was given,
+// without booting the real viewer.
+const lightboxMock = vi.hoisted(() => ({
+  opened: [] as number[],
+  images: [] as { src: string; alt: string }[]
+}))
+vi.mock('~/components/kun/image-viewer/ImageViewer', () => ({
+  KunImageViewer: ({
+    images,
+    children
+  }: {
+    images: { src: string; alt: string }[]
+    children: (open: (index: number) => void) => React.ReactNode
+  }) => {
+    lightboxMock.images = images
+    return (
+      <div data-testid="banner-viewer">
+        {children((index) => lightboxMock.opened.push(index))}
+      </div>
+    )
+  }
+}))
 
+import { GALGAME_AGE_LIMIT_MAP } from '~/constants/galgame'
 import { PatchSubmissionPreviewView } from '~/components/submission/PatchSubmissionPreviewView'
 
 const basePreview = (
@@ -67,6 +93,7 @@ const basePreview = (
     dlsiteCode: ''
   },
   bannerUrl: 'https://img.test/banner.avif',
+  bannerOriginalUrl: 'https://img.test/banner-full.avif',
   gallery: [
     {
       id: 1,
@@ -158,5 +185,36 @@ describe('PatchSubmissionPreviewView', () => {
       alias: ['カラマリ'],
       released: '2016-10-13'
     })
+  })
+
+  it('shows the age-rating badge for the preview content limit', async () => {
+    const sfw = await render(basePreview({ contentLimit: 'sfw' }))
+    expect(sfw.textContent).toContain(GALGAME_AGE_LIMIT_MAP['sfw'])
+
+    const nsfw = await render(basePreview({ contentLimit: 'nsfw' }))
+    expect(nsfw.textContent).toContain(GALGAME_AGE_LIMIT_MAP['nsfw'])
+  })
+
+  it('opens the lightbox at the banner when the banner is clicked', async () => {
+    lightboxMock.opened = []
+    const container = await render(basePreview())
+    const banner = container.querySelector(
+      '[data-testid="banner-viewer"] div'
+    ) as HTMLElement
+    expect(banner).toBeTruthy()
+    await act(async () => {
+      banner.dispatchEvent(
+        new dom.window.MouseEvent('click', { bubbles: true })
+      )
+    })
+    expect(lightboxMock.opened).toEqual([0])
+  })
+
+  it('feeds the original banner to the lightbox, cropped banner to the box', async () => {
+    await render(basePreview())
+    expect(lightboxMock.images[0].src).toBe('https://img.test/banner-full.avif')
+
+    await render(basePreview({ bannerOriginalUrl: null }))
+    expect(lightboxMock.images[0].src).toBe('https://img.test/banner.avif')
   })
 })

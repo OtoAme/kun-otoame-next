@@ -51,6 +51,7 @@ describe('patch submission publish projection', () => {
     const preview = await buildPatchSubmissionPublishPreview({
       payload,
       bannerKey: 'patch-submission/1/banner/banner.avif',
+      bannerOriginalKey: 'patch-submission/1/banner/banner-original.avif',
       gallery: [
         {
           id: 9,
@@ -66,6 +67,9 @@ describe('patch submission publish projection', () => {
     expect(preview.introductionHtml).toContain('<strong>strong</strong>')
     expect(preview.bannerUrl).toBe(
       'https://img.example.test/patch-submission/1/banner/banner.avif'
+    )
+    expect(preview.bannerOriginalUrl).toBe(
+      'https://img.example.test/patch-submission/1/banner/banner-original.avif'
     )
     expect(preview.gallery).toEqual([
       {
