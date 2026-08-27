@@ -240,7 +240,7 @@ pnpm typecheck
 - 投稿 gallery 待上传项用独立 localforage store 持久化 Blob、文件元数据、稳定 `clientAssetId`、顺序、水印与状态。页面刷新时把遗留 `uploading` 恢复成可重试失败态，并重新创建临时预览 URL；成功后立即删除本地记录并 `revokeObjectURL`。上传遮罩使用 Spinner，HeroUI Progress 只显示完成文件数 / 总数，不声称字节百分比。
 - 只要 localforage 草稿尚未读完、仍有待上传/失败项或上传请求在途，就禁用提交审核。服务端上传响应返回 ready gallery DTO，客户端用稳定 ID 把占位卡替换成云端卡；若超时后服务端其实已完成，同一 ID 重试会返回既有 ready 行并清理本地项。
 - **作者预览与审核详情共用正式条目外观。** `PatchSubmissionPreviewView` 组合正式详情页的正文 renderer、Gallery/灯箱、官网和 Info 元数据块；标签与会社在正式行创建前只显示只读 chip，不渲染评分、下载、编辑器或讨论/资源 tab。封面框固定 16:9，点击后优先在灯箱显示保存的原图，并在标题旁显示 SFW/NSFW 分级。灯箱通过 `onOpenChange` 告知外层预览 Modal，在灯箱打开期间禁止 outside press 与 Escape 同时关闭两层。
-- **审核队列只负责检索和进入详情。** 通过、要求修改、驳回、违规四个动作全部放在详情页，避免审核员未看正文与素材就结算；详情与作者预览共用 `publishPreview.ts` 投影和 `PatchSubmissionPreviewView`。超级管理员自审必须显式打开 override，普通管理员不能自审。
+- **审核队列只负责检索和进入详情。** 通过、要求修改、驳回、违规四个动作全部放在详情页，避免审核员未看正文与素材就结算；详情与作者预览共用 `publishPreview.ts` 投影和 `PatchSubmissionPreviewView`。超级管理员自审必须显式打开 override，普通管理员不能自审。详情页若收到“投稿已被撤回或处理”的状态冲突，只显示错误、关闭确认弹窗并 `router.refresh()`；其它业务错误保留当前弹窗和上下文。
 - **投稿画廊卡片的选择、放大、删除各自是可聚焦控件且有可访问名称。** 不要照搬编辑页那种「整卡承担点击 + `pointer-events-none` 的 checkbox」写法：那让纯键盘用户既选不中也放不大, 而投稿面向普通用户。
 - 复用的编辑输入（`VNDBInput`、`VNDBRelationInput`、`BangumiInput`、`SteamInput`、`ReleaseDateInput`、`BatchTag`、`SortableAliasChips`）都是 prop 驱动的泛型组件, 接投稿 payload 无需改动管理员侧代码。
 - **个人页只有一个「发布条目」标签。** 访客（包括匿名用户）只看到该作者已发布的正式条目，并复用公开游戏卡片、NSFW 可见性与稳定的 `created desc, id desc` 分页；本人在上方管理仍在流转或已关闭的投稿，在下方看到同一批正式卡片。`published` 投稿行不再重复出现在管理列表，`deleted` 行完全排除。

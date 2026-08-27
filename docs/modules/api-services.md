@@ -309,7 +309,7 @@ service/helper 负责：
 - **押金按创建时角色固定。** 金额与名额在建草稿时冻结在行上, 之后升降角色不重新结算。普通用户每条 10 点、最多 5 条；创作者 1 点、最多 10 条；发布奖励 3 点。
 - **建草稿的顺序是硬约束**（`quota.ts`）：锁用户行 → 处理创建幂等（重试直接返回既有草稿）→ 查名额与容量 → reserve → 插入。不能靠「reserve 在前」代替, 因为 `reserveMoemoepoint` 命中幂等键会早退、不取锁。
 - **结算只在进入终态那一次转换发生。** 终态记录只能隐藏, 不能再删除或二次结算——`settleMoemoepointReservation` 对已结算的暂扣用不匹配的键会抛错。删除只对活动草稿开放, release 后转 `deleted`。
-- **审核并发守卫**：每个审核动作用一次条件式 `updateMany … where { status: 'pending' }` 抢占, 两名管理员同时点批准只产生一个 `patch`。这是唯一的并发保护, 不得省略。
+- **审核并发守卫**：每个审核动作用一次条件式 `updateMany … where { status: 'pending' }` 抢占, 两名管理员同时审核或作者同时撤回时只有一个状态转换成功。过期审核统一返回 `409` 与“投稿已被撤回或处理, 请刷新后重试”；审核事务整体回滚，不得留下 `patch`、结算、通知或日志。这是最终并发保护, 不得省略。
 - **`reject` 是独立动作**（返还, 不罚没）, 用于重复条目、超出收录范围、诚实但无法发布。缺它会让审核只剩「无限期挂着」或「不公平罚没」。
 - **发布核心三层**：提交前抓取外部数据并冻结进 payload；最终事务内纯 DB 写入 patch/alias/tag/company/gallery/结算/通知/日志；事务后只做缓存失效与 SFW IndexNow。批准链路全程不访问外网。
 - **审核展示与发布使用同一投影**：payload 中的手填、VNDB、Bangumi、Steam、DLsite 别名/标签/公司都由 `publishPreview.ts` 合并；作者预览、管理员详情与 `publishCore.ts` 不得各自复制合并规则。终态清理 key 不能进入管理员预览 DTO。
@@ -317,7 +317,7 @@ service/helper 负责：
 - **重复外部 ID 分软硬两类**：Release ID、Bangumi ID、DLSite Code 在提交前既检查作者自己的活动投稿，也检查已发布条目；批准事务若仍因竞态命中 Prisma `P2002`，必须转换为指出冲突字段的审核员可见错误，事务回滚后投稿保持 `pending`、押金不结算。VNDB ID 本身允许不同版本共用：命中已发布条目时只有投稿者显式保存 `isDuplicate` 确认后才可提交，审核详情必须列出最多 10 个冲突条目及确认状态，由审核员决定是否重复收录。
 - **外部数据 provenance 记录真实抓取时刻**：VNDB、Bangumi、Steam 输入只在抓取成功后回调 source，并把当时的 ISO timestamp 一起写入投稿 store。后续 autosave 原样发送该 timestamp，服务端不得用每次保存的 `now()` 伪刷新新鲜度。
 - `PATCH /api/patch-submission/asset` 位于 middleware matcher 外，必须在 handler 内先校验 CSRF，再鉴权、校验可编辑状态以及全部 gallery ID 的投稿归属；不能只相信客户端选择集。
-- 投稿成功转为 `pending` 后，查询所有 `role >= PATCH_SUBMISSION_REVIEW_MIN_ROLE` 的管理员并用 `Promise.allSettled` 发送站内通知，link 直达 `/admin/submission/<id>`。状态转换已经提交，管理员查询失败或单个通知失败只记日志，不能把作者请求变成失败或回滚投稿。
+- 投稿成功转为 `pending` 或成功从 `pending` 撤回到 `draft` 后，查询所有 `role >= PATCH_SUBMISSION_REVIEW_MIN_ROLE` 的管理员并用 `Promise.allSettled` 发送对应站内通知，link 直达 `/admin/submission/<id>`。状态转换已经提交，管理员查询失败或单个通知失败只记日志，不能把作者请求变成失败或回滚投稿；状态栅栏失败时不得发送撤回通知。
 - **上传端点从 middleware matcher 排除**, 在 handler 内自校 CSRF, 使其能在整个 body 传完前拒绝。所有投稿路由先鉴权再解析。
 - **限频分层**：创建/提交/上传 fail-closed；读取/自动保存 fail-open；删除返还与审核结算不设限频（详见 [限频分层](data-cache-upload.md)）。
 - 素材运维：投稿 key 偏离 `patch/<id>/...` canonical 布局；发布后素材归 `patch` 所有, 清理命令（`scripts/cleanupSubmissionAssets.ts`）永不删除线上条目仍引用的对象；下架未审素材要连带 Cloudflare purge。
