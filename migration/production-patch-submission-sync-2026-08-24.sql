@@ -48,7 +48,7 @@ CREATE TABLE IF NOT EXISTS public.patch_submission (
   submitted_at        TIMESTAMP(3),
   settled_at          TIMESTAMP(3),
   created             TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated             TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+  updated             TIMESTAMP(3) NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.patch_submission_gallery (
@@ -64,8 +64,15 @@ CREATE TABLE IF NOT EXISTS public.patch_submission_gallery (
   display_order     INTEGER NOT NULL DEFAULT 0,
   status_changed_at TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
   created           TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated           TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+  updated           TIMESTAMP(3) NOT NULL
 );
+
+-- Prisma @updatedAt supplies this value on every application write and does not
+-- declare a database default. Keep reruns able to repair the original rollout.
+ALTER TABLE public.patch_submission
+  ALTER COLUMN updated DROP DEFAULT;
+ALTER TABLE public.patch_submission_gallery
+  ALTER COLUMN updated DROP DEFAULT;
 
 DO $$
 BEGIN
@@ -192,6 +199,7 @@ DECLARE
   missing_tables integer;
   missing_indexes integer;
   missing_constraints integer;
+  invalid_updated_defaults integer;
 BEGIN
   SELECT count(*)
   INTO missing_tables
@@ -227,10 +235,26 @@ BEGIN
     WHERE conname = required.constraint_name AND contype = 'c'
   );
 
-  IF missing_tables <> 0 OR missing_indexes <> 0 OR missing_constraints <> 0 THEN
+  SELECT count(*)
+  INTO invalid_updated_defaults
+  FROM (VALUES
+    ('patch_submission', 'updated'),
+    ('patch_submission_gallery', 'updated')
+  ) AS required(table_name, column_name)
+  LEFT JOIN information_schema.columns existing
+    ON existing.table_schema = 'public'
+   AND existing.table_name = required.table_name
+   AND existing.column_name = required.column_name
+  WHERE existing.column_name IS NULL OR existing.column_default IS NOT NULL;
+
+  IF missing_tables <> 0
+    OR missing_indexes <> 0
+    OR missing_constraints <> 0
+    OR invalid_updated_defaults <> 0 THEN
     RAISE EXCEPTION
-      'patch_submission postflight failed: tables=%, indexes=%, constraints=%',
-      missing_tables, missing_indexes, missing_constraints;
+      'patch_submission postflight failed: tables=%, indexes=%, constraints=%, updated_defaults=%',
+      missing_tables, missing_indexes, missing_constraints,
+      invalid_updated_defaults;
   END IF;
 END
 $postflight$;

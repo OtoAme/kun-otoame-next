@@ -36,6 +36,25 @@ describe('production patch submission migration', () => {
     expect(sync).toContain(
       'CREATE TABLE IF NOT EXISTS public.patch_submission_gallery'
     )
+    expect(sync).not.toMatch(
+      /\bupdated\s+TIMESTAMP\(3\) NOT NULL DEFAULT CURRENT_TIMESTAMP/
+    )
+    expect(sync).toMatch(
+      /ALTER TABLE public\.patch_submission\s+ALTER COLUMN updated DROP DEFAULT/
+    )
+    expect(sync).toMatch(
+      /ALTER TABLE public\.patch_submission_gallery\s+ALTER COLUMN updated DROP DEFAULT/
+    )
+    expect(sync).toContain('invalid_updated_defaults')
     expect(sync).toContain('patch_submission postflight failed')
+  })
+
+  it('reports database defaults that conflict with Prisma updatedAt', async () => {
+    const preflight = await readProjectFile(preflightPath)
+
+    expect(preflight).toContain("'updated_default' AS check_type")
+    expect(preflight).toContain("('patch_submission', 'updated')")
+    expect(preflight).toContain("('patch_submission_gallery', 'updated')")
+    expect(preflight).toContain("'unexpected_default'")
   })
 })

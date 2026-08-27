@@ -42,12 +42,16 @@ WITH required_columns(table_name, column_name, expected_type) AS (
     ('patch_submission', 'hidden_by_user', 'boolean'),
     ('patch_submission', 'submitted_at', 'timestamp without time zone'),
     ('patch_submission', 'settled_at', 'timestamp without time zone'),
+    ('patch_submission', 'created', 'timestamp without time zone'),
+    ('patch_submission', 'updated', 'timestamp without time zone'),
     ('patch_submission_gallery', 'submission_id', 'integer'),
     ('patch_submission_gallery', 'client_asset_id', 'character varying'),
     ('patch_submission_gallery', 'upload_status', 'character varying'),
     ('patch_submission_gallery', 'file_fingerprint', 'character varying'),
     ('patch_submission_gallery', 'declared_bytes', 'integer'),
-    ('patch_submission_gallery', 'status_changed_at', 'timestamp without time zone')
+    ('patch_submission_gallery', 'status_changed_at', 'timestamp without time zone'),
+    ('patch_submission_gallery', 'created', 'timestamp without time zone'),
+    ('patch_submission_gallery', 'updated', 'timestamp without time zone')
 ), existing_columns AS (
   SELECT table_name, column_name, data_type
   FROM information_schema.columns
@@ -67,6 +71,31 @@ SELECT
 FROM required_columns
 LEFT JOIN existing_columns USING (table_name, column_name)
 ORDER BY required_columns.table_name, required_columns.column_name;
+
+-- Prisma @updatedAt columns are application-managed and must not have a
+-- database default. A default here is real drift, not the known index exception.
+WITH required_updated_columns(table_name, column_name) AS (
+  VALUES
+    ('patch_submission', 'updated'),
+    ('patch_submission_gallery', 'updated')
+), existing_columns AS (
+  SELECT table_name, column_name, column_default
+  FROM information_schema.columns
+  WHERE table_schema = 'public'
+)
+SELECT
+  'updated_default' AS check_type,
+  required_updated_columns.table_name,
+  required_updated_columns.column_name,
+  existing_columns.column_default AS actual_default,
+  CASE
+    WHEN existing_columns.column_name IS NULL THEN 'missing'
+    WHEN existing_columns.column_default IS NULL THEN 'ok'
+    ELSE 'unexpected_default'
+  END AS status
+FROM required_updated_columns
+LEFT JOIN existing_columns USING (table_name, column_name)
+ORDER BY required_updated_columns.table_name;
 
 WITH required_indexes(index_name) AS (
   VALUES
