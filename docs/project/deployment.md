@@ -451,7 +451,7 @@ PM2 管理、服务器使用 GitHub Release artifact 的场景。命令应在生
 1. 开启 shell 失败保护，并进入生产项目目录：
 
    ```bash
-   set -euo pipefail
+   set -eu
    ```
 
    ```bash
@@ -490,10 +490,6 @@ PM2 管理、服务器使用 GitHub Release artifact 的场景。命令应在生
 
    ```bash
    export OTOAME_BACKUP_FILE="$OTOAME_BACKUP_DIR/otoame-before-submission-$OTOAME_ROLLOUT_ID.dump"
-   ```
-
-   ```bash
-   export OTOAME_ROLLOUT_LOG_DIR="/srv/log/otoame/$OTOAME_ROLLOUT_ID"
    ```
 
 3. 确认目标容器、当前代码和 Release。`git status --short` 有任何输出都先停下处理：
@@ -538,21 +534,21 @@ PM2 管理、服务器使用 GitHub Release artifact 的场景。命令应在生
    ```
 
    ```bash
-   mkdir -p "$OTOAME_BACKUP_DIR" "$OTOAME_ROLLOUT_LOG_DIR"
+   mkdir -p "$OTOAME_BACKUP_DIR"
    ```
 
-5. 应用仍在线时运行三份只读 preflight，并保存输出：
+5. 应用仍在线时运行三份只读 preflight：
 
    ```bash
-   docker exec -i "$OTOAME_PG_CONTAINER" psql -X -v ON_ERROR_STOP=1 -U "$OTOAME_PG_USER" -d "$OTOAME_PG_DATABASE" < migration/production-vndb-relation-id-unique-preflight-2026-08-24.sql | tee "$OTOAME_ROLLOUT_LOG_DIR/01-vndb-preflight.log"
-   ```
-
-   ```bash
-   docker exec -i "$OTOAME_PG_CONTAINER" psql -X -v ON_ERROR_STOP=1 -U "$OTOAME_PG_USER" -d "$OTOAME_PG_DATABASE" < migration/production-patch-submission-preflight-2026-08-24.sql | tee "$OTOAME_ROLLOUT_LOG_DIR/02-submission-preflight.log"
+   docker exec -i "$OTOAME_PG_CONTAINER" psql -X -v ON_ERROR_STOP=1 -U "$OTOAME_PG_USER" -d "$OTOAME_PG_DATABASE" < migration/production-vndb-relation-id-unique-preflight-2026-08-24.sql
    ```
 
    ```bash
-   docker exec -i "$OTOAME_PG_CONTAINER" psql -X -v ON_ERROR_STOP=1 -U "$OTOAME_PG_USER" -d "$OTOAME_PG_DATABASE" < migration/production-patch-submission-orphan-cleanup-preflight-2026-08-25.sql | tee "$OTOAME_ROLLOUT_LOG_DIR/03-orphan-cleanup-preflight.log"
+   docker exec -i "$OTOAME_PG_CONTAINER" psql -X -v ON_ERROR_STOP=1 -U "$OTOAME_PG_USER" -d "$OTOAME_PG_DATABASE" < migration/production-patch-submission-preflight-2026-08-24.sql
+   ```
+
+   ```bash
+   docker exec -i "$OTOAME_PG_CONTAINER" psql -X -v ON_ERROR_STOP=1 -U "$OTOAME_PG_USER" -d "$OTOAME_PG_DATABASE" < migration/production-patch-submission-orphan-cleanup-preflight-2026-08-25.sql
    ```
 
    首次上线时，投稿主表、画廊表和 orphan cleanup 表显示 `missing` 是预期结果；
@@ -585,56 +581,52 @@ PM2 管理、服务器使用 GitHub Release artifact 的场景。命令应在生
    ```
 
    ```bash
-   docker exec -i "$OTOAME_PG_CONTAINER" pg_restore --list < "$OTOAME_BACKUP_FILE" > "$OTOAME_ROLLOUT_LOG_DIR/backup-contents.txt"
-   ```
-
-   ```bash
-   test -s "$OTOAME_ROLLOUT_LOG_DIR/backup-contents.txt"
+   docker exec -i "$OTOAME_PG_CONTAINER" pg_restore --list < "$OTOAME_BACKUP_FILE" > /dev/null
    ```
 
 7. 按依赖顺序执行三份 sync。不要给 VNDB sync 外包一层显式事务，因为它使用
    `CREATE UNIQUE INDEX CONCURRENTLY`：
 
    ```bash
-   docker exec -i "$OTOAME_PG_CONTAINER" psql -X -v ON_ERROR_STOP=1 -U "$OTOAME_PG_USER" -d "$OTOAME_PG_DATABASE" < migration/production-vndb-relation-id-unique-sync-2026-08-24.sql | tee "$OTOAME_ROLLOUT_LOG_DIR/04-vndb-sync.log"
+   docker exec -i "$OTOAME_PG_CONTAINER" psql -X -v ON_ERROR_STOP=1 -U "$OTOAME_PG_USER" -d "$OTOAME_PG_DATABASE" < migration/production-vndb-relation-id-unique-sync-2026-08-24.sql
    ```
 
    ```bash
-   docker exec -i "$OTOAME_PG_CONTAINER" psql -X -v ON_ERROR_STOP=1 -U "$OTOAME_PG_USER" -d "$OTOAME_PG_DATABASE" < migration/production-patch-submission-sync-2026-08-24.sql | tee "$OTOAME_ROLLOUT_LOG_DIR/05-submission-sync.log"
+   docker exec -i "$OTOAME_PG_CONTAINER" psql -X -v ON_ERROR_STOP=1 -U "$OTOAME_PG_USER" -d "$OTOAME_PG_DATABASE" < migration/production-patch-submission-sync-2026-08-24.sql
    ```
 
    ```bash
-   docker exec -i "$OTOAME_PG_CONTAINER" psql -X -v ON_ERROR_STOP=1 -U "$OTOAME_PG_USER" -d "$OTOAME_PG_DATABASE" < migration/production-patch-submission-orphan-cleanup-sync-2026-08-25.sql | tee "$OTOAME_ROLLOUT_LOG_DIR/06-orphan-cleanup-sync.log"
+   docker exec -i "$OTOAME_PG_CONTAINER" psql -X -v ON_ERROR_STOP=1 -U "$OTOAME_PG_USER" -d "$OTOAME_PG_DATABASE" < migration/production-patch-submission-orphan-cleanup-sync-2026-08-25.sql
    ```
 
 8. 原样重跑三份 preflight 作为 postflight。此时 required table / column /
-   index / constraint 应全部正常，五类非法行计数应为 `0`，orphan cleanup 表应为
-   `present`：
+   index / constraint 应全部正常，两个 `updated_default` 应为 `ok`，五类非法行计数
+   应为 `0`，orphan cleanup 表应为 `present`：
 
    ```bash
-   docker exec -i "$OTOAME_PG_CONTAINER" psql -X -v ON_ERROR_STOP=1 -U "$OTOAME_PG_USER" -d "$OTOAME_PG_DATABASE" < migration/production-vndb-relation-id-unique-preflight-2026-08-24.sql | tee "$OTOAME_ROLLOUT_LOG_DIR/07-vndb-postflight.log"
+   docker exec -i "$OTOAME_PG_CONTAINER" psql -X -v ON_ERROR_STOP=1 -U "$OTOAME_PG_USER" -d "$OTOAME_PG_DATABASE" < migration/production-vndb-relation-id-unique-preflight-2026-08-24.sql
    ```
 
    ```bash
-   docker exec -i "$OTOAME_PG_CONTAINER" psql -X -v ON_ERROR_STOP=1 -U "$OTOAME_PG_USER" -d "$OTOAME_PG_DATABASE" < migration/production-patch-submission-preflight-2026-08-24.sql | tee "$OTOAME_ROLLOUT_LOG_DIR/08-submission-postflight.log"
+   docker exec -i "$OTOAME_PG_CONTAINER" psql -X -v ON_ERROR_STOP=1 -U "$OTOAME_PG_USER" -d "$OTOAME_PG_DATABASE" < migration/production-patch-submission-preflight-2026-08-24.sql
    ```
 
    ```bash
-   docker exec -i "$OTOAME_PG_CONTAINER" psql -X -v ON_ERROR_STOP=1 -U "$OTOAME_PG_USER" -d "$OTOAME_PG_DATABASE" < migration/production-patch-submission-orphan-cleanup-preflight-2026-08-25.sql | tee "$OTOAME_ROLLOUT_LOG_DIR/09-orphan-cleanup-postflight.log"
+   docker exec -i "$OTOAME_PG_CONTAINER" psql -X -v ON_ERROR_STOP=1 -U "$OTOAME_PG_USER" -d "$OTOAME_PG_DATABASE" < migration/production-patch-submission-orphan-cleanup-preflight-2026-08-25.sql
    ```
 
 9. 运行生产 Prisma guard。它不会用 `db push` 应用 Prisma diff；出现除已记录的
    `patch_released_idx` 精确假漂移以外的任何 drift 都必须停止：
 
    ```bash
-   pnpm prisma:deploy-safe | tee "$OTOAME_ROLLOUT_LOG_DIR/10-prisma-deploy-safe.log"
+   pnpm prisma:deploy-safe
    ```
 
 10. 用固定 tag 部署 artifact。`deploy:pull` 内部会再次运行同一 guard，只有通过后
     才替换 standalone 并启动 PM2：
 
     ```bash
-    KUN_DEPLOY_RELEASE_TAG="$OTOAME_RELEASE_TAG" pnpm deploy:pull | tee "$OTOAME_ROLLOUT_LOG_DIR/11-deploy-pull.log"
+    KUN_DEPLOY_RELEASE_TAG="$OTOAME_RELEASE_TAG" pnpm deploy:pull
     ```
 
 11. 检查进程、数据库对象和 HTTP：
@@ -660,14 +652,14 @@ PM2 管理、服务器使用 GitHub Release artifact 的场景。命令应在生
     ```
 
     ```bash
-    pnpm maintenance:submission-assets:dry | tee "$OTOAME_ROLLOUT_LOG_DIR/12-submission-assets-dry.log"
+    pnpm maintenance:submission-assets:dry
     ```
 
     最后用投稿人和审核员账号各走一次最短链路：创建草稿、上传小图、提交、打开
     审核详情并处理；同时检查 PM2、S3 和 Cloudflare purge 日志。确认无误后再开放
     站内投稿入口。
 
-从 `pm2 stop` 开始，任一命令失败都应保持应用停止，保存当前日志和备份路径，先
+从 `pm2 stop` 开始，任一命令失败都应保持应用停止，保存终端输出和备份路径，先
 判断失败发生在 sync 前、sync 中还是 artifact 切换中。不要用 `prisma db push`、
 `--force-reset` 或未经审核的 `pg_restore --clean` 尝试“对齐”；数据库恢复属于单独
 的破坏性操作，必须基于本次 dump 和已确认的恢复方案执行。

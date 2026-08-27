@@ -153,7 +153,8 @@ Redis 相关逻辑分两类：
 
 投稿域迁移的静态契约由 `tests/unit/patch-submission-migration.test.ts` 锁定：preflight
 必须保持只读，并在 `patch_submission` 或 `patch_submission_gallery` 不存在时分别跳过
-对应行检查；真实 SQL 演练同样只能使用独立 disposable PostgreSQL，不能连接持久库。
+对应行检查；sync 必须让两个 Prisma `@updatedAt` 列保持无数据库默认值并能修复旧
+默认值。真实 SQL 演练同样只能使用独立 disposable PostgreSQL，不能连接持久库。
 
 mock transaction 需要模拟真实 Prisma transaction callback：
 

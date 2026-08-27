@@ -198,8 +198,10 @@ sync 已支持清理并重建 invalid/not-ready/not-live 的目标索引，并�
 投稿域生产迁移依次使用 VNDB Release ID unique、patch submission、submission
 orphan cleanup 三组 preflight/sync。`production-patch-submission-preflight-2026-08-24.sql`
 在主表或画廊表缺失时只输出 `skipped_missing_table`，不会查询不存在的表；两张表
-分别加栅栏，以便识别只完成一半的中断部署。Docker PostgreSQL 的逐条命令、备份、
-postflight 和固定 Release tag 流程见 `docs/project/deployment.md` 的“投稿域上线顺序”。
+分别加栅栏，以便识别只完成一半的中断部署。Prisma `@updatedAt` 对应列不得有数据库
+默认值；preflight 会输出 `updated_default`，sync 可重跑地删除历史错误默认值。
+Docker PostgreSQL 的逐条命令、备份、postflight 和固定 Release tag 流程见
+`docs/project/deployment.md` 的“投稿域上线顺序”。
 
 生产变更要求：
 
