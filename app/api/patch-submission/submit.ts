@@ -10,6 +10,63 @@ import { createMessage } from '~/app/api/utils/message'
 import { PatchSubmissionError } from './quota'
 import type { PatchSubmissionPayload } from '~/types/api/patchSubmission'
 
+interface ReviewerNotificationInput {
+  event: 'submitted' | 'withdrawn'
+  submissionId: number
+  submissionName: string
+  authorId: number
+  authorName: string
+}
+
+/**
+ * Review notifications are delivery only. Submission state has already changed
+ * by the time this runs, so lookup or recipient failures are logged and never
+ * reported back as a failed submit/withdraw action.
+ */
+const notifyPatchSubmissionReviewers = async (
+  input: ReviewerNotificationInput
+) => {
+  const logSubject =
+    input.event === 'submitted'
+      ? 'patch submission reviewers'
+      : 'patch submission withdrawal reviewers'
+
+  try {
+    const reviewers = await prisma.user.findMany({
+      where: { role: { gte: PATCH_SUBMISSION_REVIEW_MIN_ROLE } },
+      select: { id: true }
+    })
+    const content =
+      input.event === 'submitted'
+        ? `用户 ${input.authorName} 提交了游戏条目《${input.submissionName}》，请前往审核。`
+        : `用户 ${input.authorName} 撤回了游戏条目《${input.submissionName}》，该投稿已返回草稿。`
+    const results = await Promise.allSettled(
+      reviewers.map((reviewer) =>
+        createMessage({
+          type: 'system',
+          content,
+          sender_id: input.authorId,
+          recipient_id: reviewer.id,
+          link: `/admin/submission/${input.submissionId}`
+        })
+      )
+    )
+    const failed = results.filter((result) => result.status === 'rejected')
+    if (failed.length) {
+      console.error(`Failed to notify some ${logSubject}`, {
+        submissionId: input.submissionId,
+        failed: failed.length,
+        total: reviewers.length
+      })
+    }
+  } catch (error) {
+    console.error(`Failed to notify ${logSubject}`, {
+      submissionId: input.submissionId,
+      error
+    })
+  }
+}
+
 /**
  * Hard duplicate checks, scoped to this author's own active drafts.
  *
@@ -209,39 +266,13 @@ export const submitPatchSubmission = async (
     return '投稿状态已变化, 请刷新后重试'
   }
 
-  // The state transition is already committed. Notification is delivery only:
-  // one unavailable recipient or the whole message query must never make the
-  // author believe submission failed and encourage a duplicate retry.
-  try {
-    const reviewers = await prisma.user.findMany({
-      where: { role: { gte: PATCH_SUBMISSION_REVIEW_MIN_ROLE } },
-      select: { id: true }
-    })
-    const results = await Promise.allSettled(
-      reviewers.map((reviewer) =>
-        createMessage({
-          type: 'system',
-          content: `用户 ${submission.user.name} 提交了游戏条目《${complete.data.name}》，请前往审核。`,
-          sender_id: userId,
-          recipient_id: reviewer.id,
-          link: `/admin/submission/${submissionId}`
-        })
-      )
-    )
-    const failed = results.filter((result) => result.status === 'rejected')
-    if (failed.length) {
-      console.error('Failed to notify some patch submission reviewers', {
-        submissionId,
-        failed: failed.length,
-        total: reviewers.length
-      })
-    }
-  } catch (error) {
-    console.error('Failed to notify patch submission reviewers', {
-      submissionId,
-      error
-    })
-  }
+  await notifyPatchSubmissionReviewers({
+    event: 'submitted',
+    submissionId,
+    submissionName: complete.data.name,
+    authorId: userId,
+    authorName: submission.user.name
+  })
 
   return {}
 }
@@ -255,21 +286,37 @@ export const withdrawPatchSubmission = async (
   submissionId: number,
   userId: number
 ) => {
+  const submission = await prisma.patch_submission.findFirst({
+    where: { id: submissionId, user_id: userId },
+    select: {
+      status: true,
+      name: true,
+      user: { select: { name: true } }
+    }
+  })
+  if (!submission) {
+    throw new PatchSubmissionError('投稿不存在')
+  }
+  if (submission.status !== 'pending') {
+    return '只有审核中的投稿可以撤回'
+  }
+
   const withdrawn = await prisma.patch_submission.updateMany({
     where: { id: submissionId, user_id: userId, status: 'pending' },
     data: { status: 'draft', submitted_at: null, revision: { increment: 1 } }
   })
 
   if (withdrawn.count === 0) {
-    const exists = await prisma.patch_submission.findFirst({
-      where: { id: submissionId, user_id: userId },
-      select: { status: true }
-    })
-    if (!exists) {
-      throw new PatchSubmissionError('投稿不存在')
-    }
-    return '只有审核中的投稿可以撤回'
+    return '投稿状态已变化, 请刷新后重试'
   }
+
+  await notifyPatchSubmissionReviewers({
+    event: 'withdrawn',
+    submissionId,
+    submissionName: submission.name,
+    authorId: userId,
+    authorName: submission.user.name
+  })
 
   return {}
 }

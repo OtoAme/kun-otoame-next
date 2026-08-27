@@ -12,8 +12,8 @@ const prismaMocks = vi.hoisted(() => {
     user_message: { create: vi.fn() }
   }
   return {
-    $transaction: vi.fn(
-      (fn: (transaction: typeof tx) => Promise<unknown>) => fn(tx)
+    $transaction: vi.fn((fn: (transaction: typeof tx) => Promise<unknown>) =>
+      fn(tx)
     ),
     _tx: tx
   }
@@ -54,6 +54,7 @@ const tx = prismaMocks._tx
 
 const admin = { uid: 9, name: 'admin', role: 3 }
 const superAdmin = { uid: 5, name: 'root', role: 4 }
+const stateChangedMessage = '投稿已被撤回或处理, 请刷新后重试'
 
 const payload = {
   name: 'Some game',
@@ -177,12 +178,12 @@ describe('approval concurrency', () => {
     )
   })
 
-  it('fails the loser when another reviewer already claimed it', async () => {
+  it('fails when another reviewer or the author already changed the state', async () => {
     tx.patch_submission.updateMany.mockResolvedValue({ count: 0 })
 
-    await expect(
-      approvePatchSubmission(1, admin, false)
-    ).rejects.toBeInstanceOf(PatchSubmissionError)
+    await expect(approvePatchSubmission(1, admin, false)).rejects.toThrow(
+      stateChangedMessage
+    )
     expect(runPublishSideEffectsMock).not.toHaveBeenCalled()
   })
 
@@ -191,9 +192,9 @@ describe('approval concurrency', () => {
       pendingSubmission({ status: 'published' })
     )
 
-    await expect(
-      approvePatchSubmission(1, admin, false)
-    ).rejects.toBeInstanceOf(PatchSubmissionError)
+    await expect(approvePatchSubmission(1, admin, false)).rejects.toThrow(
+      stateChangedMessage
+    )
   })
 })
 

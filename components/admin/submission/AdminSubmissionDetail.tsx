@@ -21,7 +21,10 @@ import Link from 'next/link'
 import toast from 'react-hot-toast'
 import { useRouter } from '@bprogress/next'
 import { kunFetchPost } from '~/utils/kunFetch'
-import { PATCH_SUBMISSION_REASON_MAX_LENGTH } from '~/constants/patchSubmission'
+import {
+  PATCH_SUBMISSION_REASON_MAX_LENGTH,
+  PATCH_SUBMISSION_REVIEW_STATE_CHANGED_MESSAGE
+} from '~/constants/patchSubmission'
 import { PatchSubmissionPreviewView } from '~/components/submission/PatchSubmissionPreviewView'
 import type { AdminPatchSubmissionDetail } from '~/app/api/admin/patch-submission/service'
 
@@ -93,6 +96,11 @@ export const AdminSubmissionDetail = ({
       )
       if (typeof response === 'string') {
         toast.error(response)
+        if (response === PATCH_SUBMISSION_REVIEW_STATE_CHANGED_MESSAGE) {
+          setPendingAction(null)
+          setReason('')
+          router.refresh()
+        }
         return
       }
       toast.success(pendingAction === 'approve' ? '已通过并发布' : '投稿已处理')

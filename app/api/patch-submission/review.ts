@@ -9,7 +9,8 @@ import {
 import {
   PATCH_SUBMISSION_PUBLISH_REWARD,
   PATCH_SUBMISSION_REASON,
-  PATCH_SUBMISSION_REVIEW_MIN_ROLE
+  PATCH_SUBMISSION_REVIEW_MIN_ROLE,
+  PATCH_SUBMISSION_REVIEW_STATE_CHANGED_MESSAGE
 } from '~/constants/patchSubmission'
 import { takeDownSubmissionAssets } from './assetCleanup'
 import { publishSubmissionCore, runPublishSideEffects } from './publishCore'
@@ -91,16 +92,18 @@ const loadPendingSubmission = async (
     throw new PatchSubmissionError('投稿不存在')
   }
   if (submission.status !== 'pending') {
-    throw new PatchSubmissionError('该投稿当前不在待审核状态')
+    throw new PatchSubmissionError(
+      PATCH_SUBMISSION_REVIEW_STATE_CHANGED_MESSAGE
+    )
   }
   return submission
 }
 
 /**
- * Claims the submission with a single conditional update. Two reviewers pressing
- * approve at the same time therefore produce one patch: the loser's update
- * matches no row. This is the only concurrency guard in the approval path and it
- * must not be removed.
+ * Claims the submission with a single conditional update. A competing reviewer
+ * or an author withdrawal can therefore win the state transition, but never
+ * publish the same submission afterwards. This is the final concurrency guard
+ * in the approval path and it must not be removed.
  */
 const claimPending = async (
   tx: Prisma.TransactionClient,
@@ -112,7 +115,9 @@ const claimPending = async (
     data
   })
   if (claimed.count === 0) {
-    throw new PatchSubmissionError('该投稿已被其他管理员处理')
+    throw new PatchSubmissionError(
+      PATCH_SUBMISSION_REVIEW_STATE_CHANGED_MESSAGE
+    )
   }
 }
 

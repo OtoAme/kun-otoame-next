@@ -15,7 +15,10 @@ vi.mock('~/app/api/utils/message', () => ({
   createMessage: createMessageMock
 }))
 
-import { submitPatchSubmission } from '~/app/api/patch-submission/submit'
+import {
+  submitPatchSubmission,
+  withdrawPatchSubmission
+} from '~/app/api/patch-submission/submit'
 
 const payload = {
   name: 'Notification game',
@@ -100,6 +103,78 @@ describe('patch submission reviewer notification', () => {
       })
     )
     expect(createMessageMock).not.toHaveBeenCalled()
+  })
+})
+
+describe('patch submission withdrawal notification', () => {
+  beforeEach(() => {
+    prismaMocks.patch_submission.findFirst.mockResolvedValue({
+      status: 'pending',
+      name: 'Notification game',
+      user: { name: 'Author' }
+    })
+  })
+
+  it('fans out only after the pending-to-draft transition succeeds', async () => {
+    await expect(withdrawPatchSubmission(1, 2)).resolves.toEqual({})
+
+    expect(prismaMocks.patch_submission.updateMany).toHaveBeenCalledBefore(
+      prismaMocks.user.findMany
+    )
+    expect(prismaMocks.user.findMany).toHaveBeenCalledWith({
+      where: { role: { gte: 3 } },
+      select: { id: true }
+    })
+    expect(createMessageMock).toHaveBeenCalledTimes(2)
+    expect(createMessageMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'system',
+        content: expect.stringContaining('撤回了游戏条目《Notification game》'),
+        sender_id: 2,
+        recipient_id: 3,
+        link: '/admin/submission/1'
+      })
+    )
+  })
+
+  it('does not notify when the guarded withdrawal loses the race', async () => {
+    prismaMocks.patch_submission.updateMany.mockResolvedValue({ count: 0 })
+
+    await expect(withdrawPatchSubmission(1, 2)).resolves.toBeTypeOf('string')
+
+    expect(prismaMocks.user.findMany).not.toHaveBeenCalled()
+    expect(createMessageMock).not.toHaveBeenCalled()
+  })
+
+  it('does not turn a successful withdrawal into a failure when notifications fail', async () => {
+    prismaMocks.user.findMany.mockRejectedValue(
+      new Error('reviewer lookup unavailable')
+    )
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    await expect(withdrawPatchSubmission(1, 2)).resolves.toEqual({})
+
+    expect(prismaMocks.patch_submission.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ status: 'draft' })
+      })
+    )
+    expect(createMessageMock).not.toHaveBeenCalled()
+  })
+
+  it('isolates one unavailable reviewer from the successful withdrawal', async () => {
+    createMessageMock
+      .mockRejectedValueOnce(new Error('recipient unavailable'))
+      .mockResolvedValueOnce({})
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    await expect(withdrawPatchSubmission(1, 2)).resolves.toEqual({})
+
+    expect(createMessageMock).toHaveBeenCalledTimes(2)
+    expect(consoleError).toHaveBeenCalledWith(
+      'Failed to notify some patch submission withdrawal reviewers',
+      expect.objectContaining({ failed: 1, total: 2 })
+    )
   })
 })
 

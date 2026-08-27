@@ -1,8 +1,10 @@
 /**
  * Walks one submission through its whole life against a running dev server:
  * a role 1 user creates a draft, uploads a cover, submits, and a reviewer
- * approves it. Verifies the deposit is frozen and returned, that a real patch
- * appears only at approval, and that the concurrency guard admits one winner.
+ * opens it for review, withdraws it from under the stale reviewer page, then
+ * resubmits and approves it. Verifies reviewer notifications, stale-action
+ * recovery, deposit settlement, and that the concurrency guard admits one
+ * winner without publishing a withdrawn submission.
  *
  * Requires the dev server to point at a throwaway database.
  */
@@ -352,9 +354,86 @@ const main = async () => {
         .first()
         .waitFor({ state: 'visible', timeout: 20000 })
       assert(
-        (await page.locator('img[alt="投稿截图"]').count()) > 0,
+        (await page.locator('img[alt="Game Screenshot"]').count()) > 0,
         'reviewer detail renders the submitted screenshot'
       )
+
+      console.log('withdraw while the reviewer detail is still open')
+      const withdrawn = await call(
+        submitterToken,
+        'POST',
+        `/api/patch-submission/${submissionId}/withdraw`
+      )
+      assert(
+        typeof withdrawn === 'object' && withdrawn !== null,
+        'the author withdrew the pending submission'
+      )
+
+      const messagesAfterWithdrawal = await call(
+        reviewerToken,
+        'GET',
+        '/api/message/all?page=1&limit=30'
+      )
+      const withdrawalMessage = messagesAfterWithdrawal?.messages?.find(
+        (message: { content?: string; link?: string }) =>
+          message.link === `/admin/submission/${submissionId}` &&
+          message.content?.includes('撤回了游戏条目')
+      )
+      assert(
+        Boolean(withdrawalMessage),
+        'reviewer received the withdrawal notification'
+      )
+
+      console.log('the stale approval is refused and refreshes the detail')
+      await page.getByRole('button', { name: '通过', exact: true }).click()
+      await page.getByRole('button', { name: '确认', exact: true }).click()
+      await page
+        .getByText('投稿已被撤回或处理, 请刷新后重试', { exact: true })
+        .waitFor({ state: 'visible', timeout: 20000 })
+      await page
+        .getByText('草稿', { exact: true })
+        .waitFor({ state: 'visible', timeout: 20000 })
+      assert(
+        (await page
+          .getByRole('button', { name: '通过', exact: true })
+          .count()) === 0,
+        'refresh removed the stale review actions'
+      )
+
+      const afterWithdrawal = await call(
+        submitterToken,
+        'GET',
+        '/api/patch-submission?page=1&limit=50'
+      )
+      const draftAgain = afterWithdrawal.submissions?.find(
+        (submission: { id: number }) => submission.id === submissionId
+      )
+      assert(
+        draftAgain?.status === 'draft' && !draftAgain?.patchUniqueId,
+        'the withdrawn submission did not create a patch'
+      )
+      assert(
+        afterWithdrawal.moemoepointBalance?.reserved === baseline.reserved + 10,
+        'withdrawal kept the deposit reserved with the draft'
+      )
+
+      console.log('resubmit after the stale review was rejected')
+      const resubmitted = await call(
+        submitterToken,
+        'POST',
+        `/api/patch-submission/${submissionId}/submit`
+      )
+      assert(
+        typeof resubmitted === 'object' && resubmitted !== null,
+        'the withdrawn draft returned to pending'
+      )
+      await page.reload({ waitUntil: 'domcontentloaded' })
+      await page
+        .getByText('待审核', { exact: true })
+        .waitFor({ state: 'visible', timeout: 20000 })
+      // The status chip is server-rendered and can appear before React has
+      // attached the review button handlers after this reload.
+      await page.waitForLoadState('networkidle')
 
       console.log('approve from the reviewer detail')
       await page.getByRole('button', { name: '通过', exact: true }).click()

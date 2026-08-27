@@ -4,6 +4,7 @@ import {
   patchSubmissionApproveSchema,
   patchSubmissionRejectSchema
 } from '~/validations/patchSubmission'
+import { PATCH_SUBMISSION_REVIEW_STATE_CHANGED_MESSAGE } from '~/constants/patchSubmission'
 import { PatchSubmissionError } from '~/app/api/patch-submission/quota'
 import {
   approvePatchSubmission,
@@ -12,8 +13,11 @@ import {
   violatePatchSubmission
 } from '~/app/api/patch-submission/review'
 
-const privateJson = (body: unknown) =>
-  NextResponse.json(body, { headers: { 'Cache-Control': 'private, no-store' } })
+const privateJson = (body: unknown, status = 200) =>
+  NextResponse.json(body, {
+    status,
+    headers: { 'Cache-Control': 'private, no-store' }
+  })
 
 /**
  * All four review actions share one handler so the permission checks, the
@@ -105,7 +109,12 @@ export const POST = async (
     )
   } catch (error) {
     if (error instanceof PatchSubmissionError) {
-      return privateJson(error.message)
+      return privateJson(
+        error.message,
+        error.message === PATCH_SUBMISSION_REVIEW_STATE_CHANGED_MESSAGE
+          ? 409
+          : 200
+      )
     }
     throw error
   }
