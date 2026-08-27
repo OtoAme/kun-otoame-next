@@ -151,6 +151,10 @@ Redis 相关逻辑分两类：
 真实 DDL、锁超时回滚、非空 Phase 2 backfill、grant 中断恢复及 Steam invalid index
 恢复必须在独立 disposable PostgreSQL 18 验收，不能连接本地持久库或生产库。
 
+投稿域迁移的静态契约由 `tests/unit/patch-submission-migration.test.ts` 锁定：preflight
+必须保持只读，并在 `patch_submission` 或 `patch_submission_gallery` 不存在时分别跳过
+对应行检查；真实 SQL 演练同样只能使用独立 disposable PostgreSQL，不能连接持久库。
+
 mock transaction 需要模拟真实 Prisma transaction callback：
 
 ```ts

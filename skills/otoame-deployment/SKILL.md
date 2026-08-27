@@ -45,6 +45,7 @@ Use this skill for deployment and release work.
 - Never execute the false drift's proposed `DROP INDEX` / `CREATE INDEX` SQL; it recurs after the next introspection and index replacement can block writes. Development, first install, and disposable CI may continue to use `pnpm prisma:push`.
 - `pnpm deploy:pull` and `pnpm deploy:build` already run `git pull`; do not duplicate that step unless handling conflicts manually.
 - Missing `patch_resource_access` uses `migration/production-resource-access-bootstrap-preflight-2026-07-12.sql` before the grant pair; stop old PM2 instances through Guard completion and pin the reviewed artifact with command-scoped `KUN_DEPLOY_RELEASE_TAG`.
+- Patch-submission rollout uses the three reviewed preflight/sync pairs in the documented order. The base preflight must remain read-only and guard `patch_submission` and `patch_submission_gallery` independently so first installs and interrupted partial installs do not query missing tables. For containerized PostgreSQL, pipe host SQL through `docker exec -i ... psql -X -v ON_ERROR_STOP=1`; take and verify a host-side custom-format dump after stopping PM2, rerun every preflight as postflight, then run `pnpm prisma:deploy-safe` and the pinned Release deployment.
 - Do not use destructive git rollback commands unless explicitly requested.
 - Check workflow branches; release currently targets `main`, lint currently targets `master`.
 
