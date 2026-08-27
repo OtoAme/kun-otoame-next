@@ -105,30 +105,52 @@ LEFT JOIN pg_constraint
  AND pg_constraint.contype = 'c'
 ORDER BY required_constraints.constraint_name;
 
+SELECT
+  to_regclass('public.patch_submission') IS NOT NULL
+    AS patch_submission_exists,
+  to_regclass('public.patch_submission_gallery') IS NOT NULL
+    AS patch_submission_gallery_exists
+\gset
+
 -- Rows the sync's CHECK constraints would reject. Non-zero means the data has to
--- be reconciled before the sync can run.
+-- be reconciled before the sync can run. A first deployment may not have either
+-- table yet, so guard each table independently for partially applied rollouts.
+\if :patch_submission_exists
 SELECT 'invalid_status_rows' AS check_type, count(*) AS row_count
-FROM patch_submission
+FROM public.patch_submission
 WHERE status NOT IN (
   'draft', 'pending', 'changes_requested',
   'rejected', 'published', 'violation', 'deleted'
 )
 UNION ALL
 SELECT 'negative_held_amount_rows', count(*)
-FROM patch_submission
+FROM public.patch_submission
 WHERE held_amount < 0
 UNION ALL
 SELECT 'non_positive_revision_rows', count(*)
-FROM patch_submission
-WHERE revision < 1
-UNION ALL
-SELECT 'invalid_gallery_status_rows', count(*)
-FROM patch_submission_gallery
+FROM public.patch_submission
+WHERE revision < 1;
+\else
+SELECT
+  'submission_data_checks' AS check_type,
+  0::bigint AS row_count,
+  'skipped_missing_table' AS status;
+\endif
+
+\if :patch_submission_gallery_exists
+SELECT 'invalid_gallery_status_rows' AS check_type, count(*) AS row_count
+FROM public.patch_submission_gallery
 WHERE upload_status NOT IN ('uploading', 'ready', 'failed')
 UNION ALL
 SELECT 'negative_declared_bytes_rows', count(*)
-FROM patch_submission_gallery
+FROM public.patch_submission_gallery
 WHERE declared_bytes < 0;
+\else
+SELECT
+  'submission_gallery_data_checks' AS check_type,
+  0::bigint AS row_count,
+  'skipped_missing_table' AS status;
+\endif
 
 -- patch.status must still be unused: submissions never write to it.
 SELECT
