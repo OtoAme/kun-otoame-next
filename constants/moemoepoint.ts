@@ -1,3 +1,5 @@
+import { PATCH_SUBMISSION_DEPOSIT } from './patchSubmission'
+
 export const MOEMOEPOINT_REASON = {
   accountCreated: {
     code: 'account.created',
@@ -115,15 +117,14 @@ export const MOEMOEPOINT_SPEND_RULES = [
   },
   {
     label: '新建投稿（押金暂扣）',
-    amount: '-10',
-    detail:
-      '普通用户每条投稿暂扣 10 点, 创作者 1 点。暂扣期间不可用, 但仍计入总额'
+    amount: `普通用户 -${PATCH_SUBMISSION_DEPOSIT.user.amount} / 创作者 -${PATCH_SUBMISSION_DEPOSIT.creator.amount}`,
+    detail: `普通用户每条投稿暂扣 ${PATCH_SUBMISSION_DEPOSIT.user.amount} 点, 创作者每条暂扣 ${PATCH_SUBMISSION_DEPOSIT.creator.amount} 点。暂扣期间不可用, 但仍计入总额`
   },
   {
     label: '投稿违规（押金扣除）',
-    amount: '-10',
+    amount: `普通用户 -${PATCH_SUBMISSION_DEPOSIT.user.amount} / 创作者 -${PATCH_SUBMISSION_DEPOSIT.creator.amount}`,
     detail:
-      '仅在被判定违规时扣除。重复条目或不予收录会全额返还, 删除草稿也会返还'
+      '被判定违规时扣除新建投稿时实际暂扣的押金。重复条目或不予收录会全额返还, 删除草稿也会返还'
   }
 ] as const
 
@@ -138,7 +139,6 @@ export const MOEMOEPOINT_THRESHOLD_RULES = [
   },
   {
     label: '新建投稿',
-    detail:
-      '需要足够的可用萌萌点支付押金; 普通用户同时最多 5 条投稿, 创作者 10 条'
+    detail: `普通用户需要至少 ${PATCH_SUBMISSION_DEPOSIT.user.amount} 点可用萌萌点, 同时最多 ${PATCH_SUBMISSION_DEPOSIT.user.maxActive} 条进行中投稿; 创作者需要至少 ${PATCH_SUBMISSION_DEPOSIT.creator.amount} 点, 同时最多 ${PATCH_SUBMISSION_DEPOSIT.creator.maxActive} 条`
   }
 ] as const

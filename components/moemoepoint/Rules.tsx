@@ -171,11 +171,12 @@ export const MoemoepointRules = () => {
           <ul className="ml-5 list-disc space-y-1">
             <li>
               <span className="font-medium text-foreground">返还</span>
-              ：处理通过, 冻结解除, 萌萌点重新可用。
+              ：投稿通过、被认定为重复或不予收录, 或主动删除草稿时, 冻结解除,
+              萌萌点重新可用。
             </li>
             <li>
               <span className="font-medium text-foreground">确认扣除</span>
-              ：处理未通过, 押金从总额中扣除。
+              ：投稿被判定违规时, 按新建投稿时实际暂扣的金额从总额中扣除。
             </li>
           </ul>
           <p>每一笔暂扣只会结算一次, 不会重复返还或重复扣除。</p>
