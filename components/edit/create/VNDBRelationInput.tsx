@@ -26,6 +26,7 @@ interface Props<T extends PatchFormDataShape> {
   setData: PatchFormDataSetter<T>
   enableDuplicateCheck?: boolean
   excludeId?: number
+  isReadOnly?: boolean
 }
 
 export const VNDBRelationInput = <T extends PatchFormDataShape>({
@@ -33,9 +34,12 @@ export const VNDBRelationInput = <T extends PatchFormDataShape>({
   data,
   setData,
   enableDuplicateCheck = true,
-  excludeId
+  excludeId,
+  isReadOnly = false
 }: Props<T>) => {
   const handleFetchRelation = async () => {
+    if (isReadOnly) return
+
     const rawInput = normalizeVndbRelationIdInput(data.vndbRelationId ?? '')
     if (!rawInput) {
       toast.error('VNDB Relation ID 不可为空')
@@ -146,6 +150,8 @@ export const VNDBRelationInput = <T extends PatchFormDataShape>({
   }
 
   const handlePaste = (event: ClipboardEvent<HTMLInputElement>) => {
+    if (isReadOnly) return
+
     const id = parseVndbRelationIdInput(event.clipboardData.getData('text'))
     if (!id) {
       return
@@ -163,8 +169,9 @@ export const VNDBRelationInput = <T extends PatchFormDataShape>({
         labelPlacement="outside"
         placeholder="请输入 Release ID, 例如 r5879"
         value={data.vndbRelationId}
+        isReadOnly={isReadOnly}
         onChange={(e) => setData({ ...data, vndbRelationId: e.target.value })}
-        onPaste={handlePaste}
+        onPaste={isReadOnly ? undefined : handlePaste}
         isInvalid={!!errors}
         errorMessage={errors}
       />
@@ -178,6 +185,7 @@ export const VNDBRelationInput = <T extends PatchFormDataShape>({
             className="mr-4"
             color="primary"
             size="sm"
+            isDisabled={isReadOnly}
             onPress={handleFetchRelation}
           >
             获取 Release 数据

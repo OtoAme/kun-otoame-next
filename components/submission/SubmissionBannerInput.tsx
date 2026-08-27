@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { Image } from '@heroui/react'
 import toast from 'react-hot-toast'
 import { dataURItoBlob } from '~/utils/dataURItoBlob'
 import { compressDataURLToWebp } from '~/utils/resizeImage'
@@ -10,11 +11,32 @@ import { usePatchSubmissionStore } from '~/store/patchSubmissionStore'
 
 const MAX_ORIGINAL_BANNER_SIZE = 4 * 1024 * 1024
 
-export const SubmissionBannerInput = () => {
+interface Props {
+  editable: boolean
+}
+
+export const SubmissionBannerInput = ({ editable }: Props) => {
   const { submissionId, bannerUrl, setBannerUrl } = usePatchSubmissionStore()
   const [cropped, setCropped] = useState<File | null>(null)
   const [original, setOriginal] = useState<File | null>(null)
   const [uploading, setUploading] = useState(false)
+
+  if (!editable) {
+    return (
+      <div className="space-y-2">
+        <h2 className="text-xl">封面图片 (必须)</h2>
+        {bannerUrl ? (
+          <Image
+            src={bannerUrl}
+            alt="投稿封面"
+            className="aspect-video w-full max-w-md object-cover"
+          />
+        ) : (
+          <p className="text-sm text-default-500">暂无可显示的封面</p>
+        )}
+      </div>
+    )
+  }
 
   const onImageComplete = (croppedImage: string) => {
     const blob = dataURItoBlob(croppedImage)

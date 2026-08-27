@@ -36,6 +36,7 @@ interface Props<T extends PatchFormDataShape> {
   setData: PatchFormDataSetter<T>
   excludeId?: number
   onExternalFetched?: (source: 'steam') => void
+  isReadOnly?: boolean
 }
 
 export const SteamInput = <T extends PatchFormDataShape>({
@@ -43,7 +44,8 @@ export const SteamInput = <T extends PatchFormDataShape>({
   data,
   setData,
   excludeId,
-  onExternalFetched
+  onExternalFetched,
+  isReadOnly = false
 }: Props<T>) => {
   const [preview, setPreview] = useState<SteamPreview | null>(null)
   const [duplicateUniqueId, setDuplicateUniqueId] = useState<string | null>(
@@ -56,6 +58,8 @@ export const SteamInput = <T extends PatchFormDataShape>({
   }, [data.steamId])
 
   const setSteamId = (steamId: string) => {
+    if (isReadOnly) return
+
     setData((current) => ({
       ...current,
       steamId,
@@ -68,6 +72,8 @@ export const SteamInput = <T extends PatchFormDataShape>({
   }
 
   const handleFetch = async () => {
+    if (isReadOnly) return
+
     const rawInput = normalizeSteamIdInput(data.steamId)
     if (!rawInput) {
       toast.error('Steam ID 不可为空')
@@ -144,6 +150,8 @@ export const SteamInput = <T extends PatchFormDataShape>({
   }
 
   const handlePaste = (event: ClipboardEvent<HTMLInputElement>) => {
+    if (isReadOnly) return
+
     const id = parseSteamIdInput(event.clipboardData.getData('text'))
     if (!id) {
       return
@@ -169,14 +177,20 @@ export const SteamInput = <T extends PatchFormDataShape>({
         labelPlacement="outside"
         placeholder="请输入 Steam App ID, 例如 3655150"
         value={data.steamId}
+        isReadOnly={isReadOnly}
         onChange={(event) => setSteamId(event.target.value)}
-        onPaste={handlePaste}
+        onPaste={isReadOnly ? undefined : handlePaste}
         isInvalid={!!errors}
         errorMessage={errors}
       />
       <div className="flex items-center gap-2 text-sm">
         {data.steamId && (
-          <Button color="primary" size="sm" onPress={handleFetch}>
+          <Button
+            color="primary"
+            size="sm"
+            isDisabled={isReadOnly}
+            onPress={handleFetch}
+          >
             获取 Steam 数据
           </Button>
         )}

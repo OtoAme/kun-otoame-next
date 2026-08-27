@@ -14,6 +14,7 @@ interface Props {
   values: string[]
   onReorder: (nextValues: string[]) => void
   onRemove: (index: number) => void
+  isReadOnly?: boolean
 }
 
 interface DragState {
@@ -43,7 +44,12 @@ const moveItem = (values: string[], fromIndex: number, toIndex: number) => {
   return nextValues
 }
 
-export const SortableAliasChips = ({ values, onReorder, onRemove }: Props) => {
+export const SortableAliasChips = ({
+  values,
+  onReorder,
+  onRemove,
+  isReadOnly = false
+}: Props) => {
   const [dragState, setDragState] = useState<DragState | null>(null)
   const dragStateRef = useRef<DragState | null>(null)
   const onReorderRef = useRef(onReorder)
@@ -169,6 +175,8 @@ export const SortableAliasChips = ({ values, onReorder, onRemove }: Props) => {
 
   const handlePointerDown =
     (alias: string) => (event: ReactPointerEvent<HTMLDivElement>) => {
+      if (isReadOnly) return
+
       if (event.pointerType === 'mouse' && event.button !== 0) {
         return
       }
@@ -205,13 +213,13 @@ export const SortableAliasChips = ({ values, onReorder, onRemove }: Props) => {
             <div
               key={alias}
               data-alias-value={alias}
-              onPointerDown={handlePointerDown(alias)}
-              className={`cursor-grab select-none touch-none active:cursor-grabbing ${
+              onPointerDown={isReadOnly ? undefined : handlePointerDown(alias)}
+              className={`${isReadOnly ? 'select-text' : 'cursor-grab select-none touch-none active:cursor-grabbing'} ${
                 isDragging ? 'opacity-0' : ''
               }`}
             >
               <Chip
-                onClose={() => onRemove(index)}
+                onClose={isReadOnly ? undefined : () => onRemove(index)}
                 variant="flat"
                 className="h-8"
               >

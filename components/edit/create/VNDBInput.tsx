@@ -31,6 +31,7 @@ interface Props<T extends PatchFormDataShape> {
   onDuplicateChange?: (value: boolean) => void
   onExternalFetched?: (source: 'vndb') => void
   excludeId?: number
+  isReadOnly?: boolean
 }
 
 export const VNDBInput = <T extends PatchFormDataShape>({
@@ -40,12 +41,15 @@ export const VNDBInput = <T extends PatchFormDataShape>({
   isDuplicate = false,
   onDuplicateChange,
   excludeId,
-  onExternalFetched
+  onExternalFetched,
+  isReadOnly = false
 }: Props<T>) => {
   const [duplicateFound, setDuplicateFound] = useState(false)
   const [duplicateList, setDuplicateList] = useState<DuplicateItem[]>([])
 
   const handleFetchData = async () => {
+    if (isReadOnly) return
+
     const rawInput = normalizeVndbIdInput(data.vndbId ?? '')
     if (!rawInput) {
       toast.error('VNDB ID 不可为空')
@@ -126,6 +130,8 @@ export const VNDBInput = <T extends PatchFormDataShape>({
   }
 
   const handlePaste = (event: ClipboardEvent<HTMLInputElement>) => {
+    if (isReadOnly) return
+
     const id = parseVndbIdInput(event.clipboardData.getData('text'))
     if (!id) {
       return
@@ -143,8 +149,9 @@ export const VNDBInput = <T extends PatchFormDataShape>({
         labelPlacement="outside"
         placeholder="请输入 VNDB ID, 例如 v19658"
         value={data.vndbId}
+        isReadOnly={isReadOnly}
         onChange={(e) => setData({ ...data, vndbId: e.target.value })}
-        onPaste={handlePaste}
+        onPaste={isReadOnly ? undefined : handlePaste}
         isInvalid={!!errors}
         errorMessage={errors}
       />
@@ -167,6 +174,7 @@ export const VNDBInput = <T extends PatchFormDataShape>({
               className="mr-4"
               color="primary"
               size="sm"
+              isDisabled={isReadOnly}
               onPress={handleFetchData}
             >
               获取 VNDB 数据
@@ -177,6 +185,7 @@ export const VNDBInput = <T extends PatchFormDataShape>({
           <div className="flex flex-col gap-2">
             <Checkbox
               size="sm"
+              isDisabled={isReadOnly}
               isSelected={isDuplicate}
               onValueChange={(value) => onDuplicateChange?.(value)}
             >

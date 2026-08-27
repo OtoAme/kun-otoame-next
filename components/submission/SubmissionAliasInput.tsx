@@ -62,6 +62,7 @@ export const SubmissionAliasInput = ({
       </p>
       <SortableAliasChips
         values={payload.alias}
+        isReadOnly={!editable}
         onReorder={(alias) => editable && onChange({ ...payload, alias })}
         onRemove={(index) =>
           editable &&

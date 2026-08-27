@@ -35,6 +35,7 @@ interface Props<T extends PatchFormDataShape> {
   setData: PatchFormDataSetter<T>
   excludeId?: number
   onExternalFetched?: (source: 'bangumi') => void
+  isReadOnly?: boolean
 }
 
 export const BangumiInput = <T extends PatchFormDataShape>({
@@ -42,7 +43,8 @@ export const BangumiInput = <T extends PatchFormDataShape>({
   data,
   setData,
   excludeId,
-  onExternalFetched
+  onExternalFetched,
+  isReadOnly = false
 }: Props<T>) => {
   const [preview, setPreview] = useState<BangumiPreview | null>(null)
   const [duplicateUniqueId, setDuplicateUniqueId] = useState<string | null>(
@@ -55,6 +57,8 @@ export const BangumiInput = <T extends PatchFormDataShape>({
   }, [data.bangumiId])
 
   const handleFetch = async () => {
+    if (isReadOnly) return
+
     const rawInput = normalizeBangumiIdInput(data.bangumiId)
     if (!rawInput) {
       toast.error('Bangumi ID 不可为空')
@@ -122,6 +126,8 @@ export const BangumiInput = <T extends PatchFormDataShape>({
   }
 
   const handlePaste = (event: ClipboardEvent<HTMLInputElement>) => {
+    if (isReadOnly) return
+
     const id = parseBangumiIdInput(event.clipboardData.getData('text'))
     if (!id) {
       return
@@ -132,6 +138,8 @@ export const BangumiInput = <T extends PatchFormDataShape>({
   }
 
   const applySummaryToIntroduction = () => {
+    if (isReadOnly) return
+
     const summary = preview?.summary.trim()
     if (!summary) {
       toast.error('Bangumi 简介为空')
@@ -146,6 +154,8 @@ export const BangumiInput = <T extends PatchFormDataShape>({
   }
 
   const applyTitleToName = () => {
+    if (isReadOnly) return
+
     if (!preview) {
       return
     }
@@ -172,16 +182,22 @@ export const BangumiInput = <T extends PatchFormDataShape>({
         labelPlacement="outside"
         placeholder="请输入 Bangumi 条目 ID, 例如 172612"
         value={data.bangumiId}
+        isReadOnly={isReadOnly}
         onChange={(event) =>
           setData({ ...data, bangumiId: event.target.value })
         }
-        onPaste={handlePaste}
+        onPaste={isReadOnly ? undefined : handlePaste}
         isInvalid={!!errors}
         errorMessage={errors}
       />
       <div className="flex items-center gap-2 text-sm">
         {data.bangumiId && (
-          <Button color="primary" size="sm" onPress={handleFetch}>
+          <Button
+            color="primary"
+            size="sm"
+            isDisabled={isReadOnly}
+            onPress={handleFetch}
+          >
             获取 Bangumi 数据
           </Button>
         )}
@@ -202,6 +218,7 @@ export const BangumiInput = <T extends PatchFormDataShape>({
             color="secondary"
             size="sm"
             variant="flat"
+            isDisabled={isReadOnly}
             startContent={<FileText size={16} />}
             onPress={applySummaryToIntroduction}
           >
@@ -213,6 +230,7 @@ export const BangumiInput = <T extends PatchFormDataShape>({
             color="secondary"
             size="sm"
             variant="flat"
+            isDisabled={isReadOnly}
             startContent={<Heading1 size={16} />}
             onPress={applyTitleToName}
           >

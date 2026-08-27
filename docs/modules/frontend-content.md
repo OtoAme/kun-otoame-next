@@ -234,6 +234,7 @@ pnpm typecheck
 - **自动保存严格串行。** debounce 后的请求进入单一 promise 链，每笔请求真正开始时才读取上一笔写回的 `revision`；并发请求各拿旧 revision 会制造虚假冲突。真实冲突不重试：它意味着另一台设备先保存了，重试会覆盖对方内容。
 - **`flush()` 返回结构化结果。** 返回 `{ ok: true }` 或 `{ ok: false, reason: 'conflict' | 'error', message }`；无脏内容直接成功。显式保存、提交和打开**可编辑草稿**预览都必须依赖这个返回值，失败时展示 message 并停止后续动作，不能再旁读 `saveState` 猜结果。`pending` 投稿已经冻结为服务端版本，作者仍可打开「预览（审核中）」自查，但这条只读路径不再 flush，发现问题后可撤回修改。
 - **投稿字段顺序固定**：名称 → VNDB → VNDB Relation → Bangumi → Steam → 封面 → 双栏正文编辑器 → 画廊 → 别名 → 官网 → 发售日 → 标签 → 内容分级。名称错误只在提交校验失败后显示，继续输入立即清除；内容分级由投稿人选择，默认 SFW。
+- **作者表单只有 `draft` 与 `changes_requested` 可编辑。** `pending`、`rejected` 等其他状态仍可查看已保存内容，但名称、外部 ID、封面、正文、画廊、别名、官网、发售日、标签与内容分级都必须只读；VNDB、Release、Bangumi、Steam 的获取与回填按钮也必须禁用。只读画廊仍允许放大查看。
 - **共享 VNDB ID 必须显式确认。** VNDB ID 可以被同一游戏的不同版本共用，所以它不是硬唯一字段；当抓取结果命中已发布条目时，投稿表单通过受控的 `isDuplicate` 复用直接发布页的确认框。未确认不能提交，确认结果随 payload 保存；审核详情同时展示命中的正式条目和投稿者是否确认，最终是否属于重复收录仍由审核员判断。
 - `KunDualEditorProvider` 是 `value` + `onChange` 受控组件，不导入 create/rewrite/submission store。三个页面各自在薄封装或调用方中绑定自己的状态，避免通用编辑器累积 store 分支。
 - 投稿画廊水印默认开启，开关随每张上传请求传到服务端；动态 WebP/AVIF 仍保留原图且不加水印。编辑态沿用 create/rewrite 的 NSFW 危险色边框与右上角角标，不盖 reveal mask；只读的作者预览和审核详情才使用真实 `NSFWMask`，遮罩揭开前不能从放大按钮绕过。

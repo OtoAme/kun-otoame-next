@@ -73,15 +73,18 @@ export const SubmissionEditor = ({ submission }: Props) => {
       | PatchSubmissionPayload
       | ((current: PatchSubmissionPayload) => PatchSubmissionPayload)
   ) => {
+    if (!editable) return
+
     const resolved =
       typeof next === 'function'
         ? next(usePatchSubmissionStore.getState().payload)
         : next
     setPayload(resolved)
-    if (editable) queueSave(resolved)
+    queueSave(resolved)
   }
 
   const markExternalFetched = (source: 'vndb' | 'bangumi' | 'steam') => {
+    if (!editable) return
     setExternalProvenance(source, new Date().toISOString())
   }
 
@@ -192,22 +195,30 @@ export const SubmissionEditor = ({ submission }: Props) => {
               update({ ...form, isDuplicate })
             }
             onExternalFetched={markExternalFetched}
+            isReadOnly={!editable}
           />
-          <VNDBRelationInput errors={undefined} data={form} setData={update} />
+          <VNDBRelationInput
+            errors={undefined}
+            data={form}
+            setData={update}
+            isReadOnly={!editable}
+          />
           <BangumiInput
             errors={undefined}
             data={form}
             setData={update}
             onExternalFetched={markExternalFetched}
+            isReadOnly={!editable}
           />
           <SteamInput
             errors={undefined}
             data={form}
             setData={update}
             onExternalFetched={markExternalFetched}
+            isReadOnly={!editable}
           />
 
-          <SubmissionBannerInput />
+          <SubmissionBannerInput editable={editable} />
 
           <SubmissionIntroduction
             payload={form}
@@ -239,9 +250,14 @@ export const SubmissionEditor = ({ submission }: Props) => {
           <ReleaseDateInput
             date={form.released}
             setDate={(released) => update({ ...form, released })}
+            isReadOnly={!editable}
           />
 
-          <BatchTag data={form} saveTag={(tag) => update({ ...form, tag })} />
+          <BatchTag
+            data={form}
+            saveTag={(tag) => update({ ...form, tag })}
+            isReadOnly={!editable}
+          />
 
           <SubmissionContentLimit
             payload={form}

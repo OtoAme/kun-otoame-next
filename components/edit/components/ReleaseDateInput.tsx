@@ -4,10 +4,18 @@ interface Props {
   date: string
   setDate: (date: string) => void
   errors?: string
+  isReadOnly?: boolean
 }
 
-export const ReleaseDateInput = ({ date, setDate, errors }: Props) => {
+export const ReleaseDateInput = ({
+  date,
+  setDate,
+  errors,
+  isReadOnly = false
+}: Props) => {
   const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (isReadOnly) return
+
     const raw = e.target.value
     const normalizedRaw = raw.replace(/[０-９]/g, (digit) =>
       String.fromCharCode(digit.charCodeAt(0) - 0xfee0)
@@ -96,6 +104,7 @@ export const ReleaseDateInput = ({ date, setDate, errors }: Props) => {
         label="发售日期"
         placeholder="请输入游戏的发售日期"
         value={date}
+        isReadOnly={isReadOnly}
         onChange={handleDateChange}
         className="max-w-xs"
         description="格式: YYYY-MM-DD (例如 2019-10-07)"

@@ -37,9 +37,15 @@ interface Props {
   data: PatchFormDataShape
   saveTag: (tag: string[]) => void
   errors?: string
+  isReadOnly?: boolean
 }
 
-export const BatchTag = ({ data, saveTag, errors }: Props) => {
+export const BatchTag = ({
+  data,
+  saveTag,
+  errors,
+  isReadOnly = false
+}: Props) => {
   const externalTags = collectExternalTags(data)
   const [manualTagInput, setManualTagInput] = useState(() =>
     normalizeStringArray(data.tag).join(',')
@@ -87,7 +93,9 @@ export const BatchTag = ({ data, saveTag, errors }: Props) => {
         <Textarea
           placeholder="批量添加标签, 每个标签需要使用英语逗号 ( , ) 分隔"
           value={manualTagInput}
+          isReadOnly={isReadOnly}
           onChange={(e) => {
+            if (isReadOnly) return
             const input = e.target.value
             setManualTagInput(input)
             saveTag(parseCommaSeparatedStringArray(input))
