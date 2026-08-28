@@ -59,13 +59,13 @@ For domain-specific work, prefer the narrower skills: `otoame-api`, `otoame-data
 
 After code is committed, perform the docs/skill sync as its own follow-up commit when needed.
 
-Run the smallest meaningful verification first, then broader checks by risk:
+Verification is tiered so its cost scales with the change, not with the size of the test suite (details: `docs/modules/quality.md`):
 
 ```bash
-pnpm test tests/unit/<target>.test.ts
-pnpm test
-pnpm typecheck
-pnpm build
+pnpm test tests/unit/<target>.test.ts   # while iterating
+pnpm test:changed && pnpm typecheck     # default commit gate (import-graph selection)
+pnpm test                               # pre-push/release, shared-infra changes, or fs-read assets (styles/*.css, migration/*.sql, prisma/schema/*)
+pnpm build                              # only when build output is affected
 ```
 
 Report any command you could not run and why.

@@ -99,41 +99,37 @@ pnpm typecheck
 - 文档 / skill 同步必须单独提交，不能和业务代码、测试或迁移混在同一个 commit 中。
 - 若某次代码提交确实不需要文档或 skill 内容变化，需要在最终说明或 PR 说明中写明已检查且无需更新。
 
-当前 skill 分工：
+Skill 分工表的唯一来源是 [`skills/README.md`](../../skills/README.md)，不在本文件和 `docs/modules/index.md` 中重复维护副本。
 
-| Skill                | 触发场景                                                             |
-| -------------------- | -------------------------------------------------------------------- |
-| `otoame-development` | 仓库通用开发入口和项目规则总览。                                     |
-| `otoame-api`         | API routes、service、validation、业务权限和管理接口。                |
-| `otoame-data-cache`  | Prisma、Redis、缓存失效、上传、S3、资源属性和迁移。                  |
-| `otoame-frontend`    | App Router、React components、stores、主题、MDX、编辑器和 NSFW UI。  |
-| `otoame-operations`  | scripts、migrations、cron、postbuild、release packaging 和维护命令。 |
-| `otoame-deployment`  | PM2、Next standalone、CI/CD release、env vars 和生产部署。           |
-| `otoame-testing`     | Vitest 测试、mock、目标测试选择。                                    |
-| `otoame-review`      | 代码审阅、发布风险和未验证风险报告。                                 |
-
-更新 docs 后必须检查对应 skill 的 Required References 是否仍指向正确文档；更新 skill 后必须检查 docs 中的 skill 列表和触发说明。
+更新 docs 后必须检查对应 skill 的 Required References 是否仍指向正确文档；更新 skill 后必须检查 `skills/README.md` 的分工表和触发说明。
 
 ## 完成前证据
 
-最低证据：
+按改动范围分层验证，让验证成本随改动大小而不是测试总量增长：
 
 ```bash
+# 1. 迭代中：只跑目标测试
+pnpm test tests/unit/<target>.test.ts
+
+# 2. 提交前默认门槛：受影响测试 + 类型检查
+pnpm test:changed && pnpm typecheck
+
+# 3. 全量：推送/发布前、共享基础设施改动、或 --changed 覆盖不到时
 pnpm test
-pnpm typecheck
+
+# 4. 构建产物受影响时（next.config、postbuild、部署脚本、依赖变更）
+pnpm build
 ```
 
-文档/skill 变更还要做：
+`pnpm test:changed`（`vitest run --changed --passWithNoTests`）按 git 未提交变更沿 import 反向图选出受影响的全部测试；提交后复核可用 `pnpm vitest run --changed HEAD~1`。共享模块（`lib/*`、`app/api/utils/*`、`validations/*`）的改动会自然扩散成大范围回归，`vitest.config.ts` 等 forceRerunTriggers 命中时自动回退全量。
+
+`--changed` 的边界：只追踪 import 图。通过文件系统读取的资产不被追踪——改 `styles/*.css`（`theme.test.ts`）、`migration/*.sql`（各 migration 契约测试）、`prisma/schema/*`（source-guard 测试）这类文件时，手动指定对应测试或直接跑全量。
+
+只改 docs/skills 时不需要跑测试（import 图选不出任何用例），但必须做：
 
 ```bash
 rg -n "T[B]D|TO[D]O|f[i]ll in|implement late[r]" docs skills README.md
+wc -w skills/*/SKILL.md
 ```
 
-建议再做：
-
-```bash
-find docs skills -type f -name '*.md' -print0 | xargs -0 sed -n '1,5p'
-find skills -maxdepth 2 -type f -name 'SKILL.md' -print -exec wc -w {} \;
-```
-
-如果只改文档和 skills，`pnpm test` / `pnpm typecheck` 仍是有价值的回归信号，但失败时要区分是既有代码问题、环境问题还是文档改动引入的问题。
+后者用于核对领域 skill 的 100-250 words 预算。

@@ -36,15 +36,6 @@
 
 项目 skills 是项目资产，不属于某个 agent 工具。唯一来源是仓库根目录 `skills/`，`.codex/skills` 和 `.claude/skills` 都是指向它的软链接，让不同 agent 工具自动发现同一份内容。只修改 `skills/` 下的文件，不要新建工具专用副本。
 
-当前 skills：
-
-- `otoame-development`：通用开发入口。
-- `otoame-api`：API、route handler、service、validation、业务规则。
-- `otoame-data-cache`：Prisma、Redis、缓存、上传、S3。
-- `otoame-frontend`：页面、组件、stores、主题、MDX。
-- `otoame-operations`：部署、脚本、迁移、任务、CI。
-- `otoame-testing`：Vitest 测试。
-- `otoame-review`：代码审阅。
-- `otoame-deployment`：部署专项。
+完整分工表见 [`skills/README.md`](../../skills/README.md)（唯一来源，不在此重复维护）。
 
 Skill 只保留触发条件、必读文档、关键规则和验证命令；具体业务细节以本目录和 `docs/project/*` 为准。

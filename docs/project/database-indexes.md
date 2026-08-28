@@ -22,7 +22,7 @@ ORDER BY tablename, indexname;
 
 ### Prisma Schema 中已定义的索引
 
-检查 `prisma/schema.prisma` 文件中的 `@@index` 和 `@@unique` 指令，这些会自动创建索引。
+检查 `prisma/schema/` 目录下各 `.prisma` 文件中的 `@@index` 和 `@@unique` 指令，这些会自动创建索引。
 
 常见已存在的索引：
 - 主键 `@id` 自动创建唯一索引
