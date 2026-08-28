@@ -78,11 +78,27 @@ vi.mock('@heroui/react', () => ({
   Divider: () => <hr />,
   Modal: ({
     children,
-    isOpen
+    isOpen,
+    isDismissable,
+    isKeyboardDismissDisabled,
+    hideCloseButton
   }: {
     children?: React.ReactNode
     isOpen?: boolean
-  }) => (isOpen ? <div data-testid="review-modal">{children}</div> : null),
+    isDismissable?: boolean
+    isKeyboardDismissDisabled?: boolean
+    hideCloseButton?: boolean
+  }) =>
+    isOpen ? (
+      <div
+        data-testid="review-modal"
+        data-dismissable={String(isDismissable)}
+        data-keyboard-dismiss-disabled={String(isKeyboardDismissDisabled)}
+        data-hide-close-button={String(hideCloseButton)}
+      >
+        {children}
+      </div>
+    ) : null,
   ModalBody: ({ children }: { children?: React.ReactNode }) => (
     <div>{children}</div>
   ),
@@ -147,7 +163,7 @@ describe('AdminSubmissionDetail stale review recovery', () => {
     vi.unstubAllGlobals()
   })
 
-  const approveAndConfirm = async () => {
+  const openApprove = async () => {
     await act(async () => {
       root.render(
         <AdminSubmissionDetail
@@ -167,6 +183,10 @@ describe('AdminSubmissionDetail stale review recovery', () => {
         new dom.window.MouseEvent('click', { bubbles: true })
       )
     })
+  }
+
+  const approveAndConfirm = async () => {
+    await openApprove()
 
     const confirm = [...dom.window.document.querySelectorAll('button')].find(
       (button) => button.textContent === '确认'
@@ -191,6 +211,47 @@ describe('AdminSubmissionDetail stale review recovery', () => {
       dom.window.document.querySelector('[data-testid="review-modal"]')
     ).toBeNull()
     expect(toastMock.success).not.toHaveBeenCalled()
+  })
+
+  it('spells out the deposit refund and the publish reward before approving', async () => {
+    await openApprove()
+
+    const hint = dom.window.document.querySelector(
+      '[data-testid="review-modal"]'
+    )?.textContent
+
+    expect(hint).toContain(`返还投稿人押金 ${submission.heldAmount} 萌萌点`)
+    expect(hint).toContain('3 萌萌点投稿奖励')
+  })
+
+  it('locks the modal down while the review request is in flight', async () => {
+    let settleReview: (response: Record<string, unknown>) => void = () => {}
+    fetchMock.mockImplementation(
+      () =>
+        new Promise<Record<string, unknown>>((resolve) => {
+          settleReview = resolve
+        })
+    )
+
+    await approveAndConfirm()
+
+    const modal = dom.window.document.querySelector(
+      '[data-testid="review-modal"]'
+    )
+    expect(modal?.getAttribute('data-dismissable')).toBe('false')
+    expect(modal?.getAttribute('data-keyboard-dismiss-disabled')).toBe('true')
+    expect(modal?.getAttribute('data-hide-close-button')).toBe('true')
+
+    const cancel = [...dom.window.document.querySelectorAll('button')].find(
+      (button) => button.textContent === '取消'
+    )
+    expect(cancel?.disabled).toBe(true)
+
+    // 让请求落地, 否则未决的 promise 会带着 working=true 漏进下一个用例。
+    await act(async () => {
+      settleReview({})
+      await Promise.resolve()
+    })
   })
 
   it('keeps the current review open for unrelated business errors', async () => {

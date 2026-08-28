@@ -42,23 +42,33 @@ export const toggleCommentLike = async (
     }
   )
 
+  // existingLike 是事务外读的, 两个同向的并发请求会读到同一个方向。count 为 0
+  // 说明另一个请求已经完成了同一次迁移: 关系行的最终状态就是本次请求的目标,
+  // 但通知与萌萌点只应记一次, 所以这里跳过全部副作用直接返回目标状态。
   return await prisma.$transaction(async (prisma) => {
     if (existingLike) {
-      await prisma.user_patch_comment_like_relation.delete({
-        where: {
-          user_id_comment_id: {
+      const { count } =
+        await prisma.user_patch_comment_like_relation.deleteMany({
+          where: {
             user_id: uid,
             comment_id: commentId
           }
-        }
-      })
+        })
+      if (!count) {
+        return false
+      }
     } else {
-      await prisma.user_patch_comment_like_relation.create({
-        data: {
-          user_id: uid,
-          comment_id: commentId
-        }
-      })
+      const { count } =
+        await prisma.user_patch_comment_like_relation.createMany({
+          data: {
+            user_id: uid,
+            comment_id: commentId
+          },
+          skipDuplicates: true
+        })
+      if (!count) {
+        return true
+      }
 
       await createDedupMessage(
         {

@@ -37,23 +37,30 @@ export const toggleRatingLike = async (
     }
   })
 
+  // count 守卫的原因同 patch/comment/like/service.ts: 同向的并发请求只应产生
+  // 一次通知与一次萌萌点变动, 落空的那次直接返回同一个目标状态。
   return await prisma.$transaction(async (prisma) => {
     if (existingLike) {
-      await prisma.patch_rating_like.delete({
+      const { count } = await prisma.patch_rating_like.deleteMany({
         where: {
-          patch_rating_id_user_id: {
-            patch_rating_id: ratingId,
-            user_id: uid
-          }
-        }
-      })
-    } else {
-      await prisma.patch_rating_like.create({
-        data: {
           patch_rating_id: ratingId,
           user_id: uid
         }
       })
+      if (!count) {
+        return false
+      }
+    } else {
+      const { count } = await prisma.patch_rating_like.createMany({
+        data: {
+          patch_rating_id: ratingId,
+          user_id: uid
+        },
+        skipDuplicates: true
+      })
+      if (!count) {
+        return true
+      }
 
       await createDedupMessage(
         {

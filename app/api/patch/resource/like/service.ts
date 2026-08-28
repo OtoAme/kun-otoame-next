@@ -48,23 +48,32 @@ export const toggleResourceLike = async (
       }
     })
 
+  // count 守卫的原因同 patch/comment/like/service.ts: 同向的并发请求只应产生
+  // 一次通知与一次萌萌点变动, 落空的那次直接返回同一个目标状态。
   return await prisma.$transaction(async (prisma) => {
     if (existingLike) {
-      await prisma.user_patch_resource_like_relation.delete({
-        where: {
-          user_id_resource_id: {
+      const { count } =
+        await prisma.user_patch_resource_like_relation.deleteMany({
+          where: {
             user_id: uid,
             resource_id: resourceId
           }
-        }
-      })
+        })
+      if (!count) {
+        return false
+      }
     } else {
-      await prisma.user_patch_resource_like_relation.create({
-        data: {
-          user_id: uid,
-          resource_id: resourceId
-        }
-      })
+      const { count } =
+        await prisma.user_patch_resource_like_relation.createMany({
+          data: {
+            user_id: uid,
+            resource_id: resourceId
+          },
+          skipDuplicates: true
+        })
+      if (!count) {
+        return true
+      }
 
       await createDedupMessage(
         {

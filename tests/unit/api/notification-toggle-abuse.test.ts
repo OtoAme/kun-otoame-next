@@ -3,23 +3,23 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const prismaMock = vi.hoisted(() => {
   const tx = {
     patch_rating_like: {
-      create: vi.fn(),
-      delete: vi.fn()
+      createMany: vi.fn(),
+      deleteMany: vi.fn()
     },
     user: {
       update: vi.fn()
     },
     user_patch_comment_like_relation: {
-      create: vi.fn(),
-      delete: vi.fn()
+      createMany: vi.fn(),
+      deleteMany: vi.fn()
     },
     user_patch_favorite_folder_relation: {
       create: vi.fn(),
       delete: vi.fn()
     },
     user_patch_resource_like_relation: {
-      create: vi.fn(),
-      delete: vi.fn()
+      createMany: vi.fn(),
+      deleteMany: vi.fn()
     }
   }
 
@@ -83,6 +83,15 @@ describe('user-triggered notification anti-abuse', () => {
     prismaMock.$transaction.mockImplementation((fn) => fn(prismaMock._tx))
     moemoepointMock.earnMoemoepoint.mockResolvedValue({})
     moemoepointMock.reverseMoemoepoint.mockResolvedValue({})
+    // 点赞关系用 createMany/deleteMany 写入, service 读返回的 count 判断本次
+    // 请求是否真的完成了迁移, 所以 mock 必须给出批量结果。
+    prismaMock._tx.patch_rating_like.deleteMany.mockResolvedValue({ count: 1 })
+    prismaMock._tx.user_patch_comment_like_relation.deleteMany.mockResolvedValue(
+      { count: 1 }
+    )
+    prismaMock._tx.user_patch_resource_like_relation.deleteMany.mockResolvedValue(
+      { count: 1 }
+    )
   })
 
   it('does not create a favorite notification when removing an existing favorite', async () => {
@@ -133,7 +142,7 @@ describe('user-triggered notification anti-abuse', () => {
 
     expect(createDedupMessageMock).not.toHaveBeenCalled()
     expect(
-      prismaMock._tx.user_patch_comment_like_relation.delete
+      prismaMock._tx.user_patch_comment_like_relation.deleteMany
     ).toHaveBeenCalled()
   })
 
@@ -153,7 +162,7 @@ describe('user-triggered notification anti-abuse', () => {
     await expect(toggleRatingLike({ ratingId: 10 }, 100)).resolves.toBe(false)
 
     expect(createDedupMessageMock).not.toHaveBeenCalled()
-    expect(prismaMock._tx.patch_rating_like.delete).toHaveBeenCalled()
+    expect(prismaMock._tx.patch_rating_like.deleteMany).toHaveBeenCalled()
   })
 
   it('does not create a resource-like notification when unliking a resource', async () => {
@@ -179,7 +188,7 @@ describe('user-triggered notification anti-abuse', () => {
 
     expect(createDedupMessageMock).not.toHaveBeenCalled()
     expect(
-      prismaMock._tx.user_patch_resource_like_relation.delete
+      prismaMock._tx.user_patch_resource_like_relation.deleteMany
     ).toHaveBeenCalled()
   })
 })

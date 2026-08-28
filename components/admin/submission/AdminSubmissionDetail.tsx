@@ -22,6 +22,7 @@ import toast from 'react-hot-toast'
 import { useRouter } from '@bprogress/next'
 import { kunFetchPost } from '~/utils/kunFetch'
 import {
+  PATCH_SUBMISSION_PUBLISH_REWARD,
   PATCH_SUBMISSION_REASON_MAX_LENGTH,
   PATCH_SUBMISSION_REVIEW_STATE_CHANGED_MESSAGE
 } from '~/constants/patchSubmission'
@@ -37,11 +38,18 @@ const ACTION_LABEL: Record<ReviewAction, string> = {
   violate: '判定违规并扣除押金'
 }
 
-const ACTION_HINT: Record<ReviewAction, string> = {
-  approve: '将按当前预览创建正式条目，并返还押金与发放投稿奖励。',
-  reject: '用于重复、超出收录范围或诚实但无法发布的投稿。押金全额返还。',
-  'request-changes': '投稿回到作者手中继续编辑，押金保持暂扣。',
-  violate: '仅用于违规内容。押金被扣除，作者可见内容与素材立即下架。'
+/**
+ * 通过的提示要报出具体数字, 所以整张表统一收成函数。押金取投稿行上冻结的
+ * heldAmount, 不按审核人当前角色重算 —— 返还的就是当初扣下的那一笔。
+ */
+const ACTION_HINT: Record<ReviewAction, (heldAmount: number) => string> = {
+  approve: (heldAmount) =>
+    heldAmount > 0
+      ? `将按当前预览创建正式条目，返还投稿人押金 ${heldAmount} 萌萌点，并发放 ${PATCH_SUBMISSION_PUBLISH_REWARD} 萌萌点投稿奖励。`
+      : `将按当前预览创建正式条目，并发放 ${PATCH_SUBMISSION_PUBLISH_REWARD} 萌萌点投稿奖励。`,
+  reject: () => '用于重复、超出收录范围或诚实但无法发布的投稿。押金全额返还。',
+  'request-changes': () => '投稿回到作者手中继续编辑，押金保持暂扣。',
+  violate: () => '仅用于违规内容。押金被扣除，作者可见内容与素材立即下架。'
 }
 
 const STATUS_LABEL: Record<AdminPatchSubmissionDetail['status'], string> = {
@@ -342,6 +350,9 @@ export const AdminSubmissionDetail = ({
 
       <Modal
         isOpen={pendingAction !== null}
+        isDismissable={!working}
+        isKeyboardDismissDisabled={working}
+        hideCloseButton={working}
         onClose={() => !working && setPendingAction(null)}
       >
         <ModalContent>
@@ -350,7 +361,9 @@ export const AdminSubmissionDetail = ({
           </ModalHeader>
           <ModalBody className="space-y-3">
             <p className="text-sm text-default-500">
-              {pendingAction ? ACTION_HINT[pendingAction] : ''}
+              {pendingAction
+                ? ACTION_HINT[pendingAction](submission.heldAmount)
+                : ''}
             </p>
             {pendingAction && pendingAction !== 'approve' && (
               <Textarea
@@ -363,14 +376,19 @@ export const AdminSubmissionDetail = ({
             )}
           </ModalBody>
           <ModalFooter>
-            <Button variant="light" onPress={() => setPendingAction(null)}>
+            <Button
+              variant="light"
+              isDisabled={working}
+              onPress={() => setPendingAction(null)}
+            >
               取消
             </Button>
             <Button
               color={pendingAction === 'violate' ? 'danger' : 'primary'}
               isLoading={working}
               isDisabled={
-                pendingAction !== 'approve' && reason.trim().length === 0
+                working ||
+                (pendingAction !== 'approve' && reason.trim().length === 0)
               }
               onPress={() => void runAction()}
             >
