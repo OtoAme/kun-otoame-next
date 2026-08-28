@@ -132,6 +132,8 @@ describe('resource access bootstrap production migration', () => {
   })
 
   it('documents the manual bootstrap, fixed release tag, and recovery gate', async () => {
+    // 瘦身后的领域 skill（data-cache/testing）只保留不变量并回链文档，
+    // bootstrap 契约的权威位置是模块/项目文档和仍内联流程的运维类 skill。
     const requiredBootstrapSources = [
       'README.md',
       'docs/project/deployment.md',
@@ -139,10 +141,8 @@ describe('resource access bootstrap production migration', () => {
       'docs/modules/data-cache-upload.md',
       'docs/project/testing.md',
       'docs/project/review.md',
-      'skills/otoame-data-cache/SKILL.md',
       'skills/otoame-operations/SKILL.md',
       'skills/otoame-deployment/SKILL.md',
-      'skills/otoame-testing/SKILL.md',
       'skills/otoame-review/SKILL.md'
     ]
 
