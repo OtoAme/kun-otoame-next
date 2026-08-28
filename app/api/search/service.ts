@@ -15,10 +15,18 @@ import {
 } from '~/app/api/utils/galgameQuery'
 import type { SearchSuggestionType } from '~/types/api/search'
 
+const PRISMA_INT_MAX = 2147483647
+
+const isValidSuggestionId = (id: number | undefined): id is number =>
+  typeof id === 'number' &&
+  Number.isInteger(id) &&
+  id >= 1 &&
+  id <= PRISMA_INT_MAX
+
 const buildTagRelationFilter = (
   tag: SearchSuggestionType
 ): PrismaType.patch_tag_relationWhereInput =>
-  typeof tag.id === 'number'
+  isValidSuggestionId(tag.id)
     ? { tag_id: tag.id }
     : {
         tag: {
@@ -29,7 +37,7 @@ const buildTagRelationFilter = (
 const buildCompanyRelationFilter = (
   company: SearchSuggestionType
 ): PrismaType.patch_company_relationWhereInput =>
-  typeof company.id === 'number'
+  isValidSuggestionId(company.id)
     ? { company_id: company.id }
     : {
         company: {

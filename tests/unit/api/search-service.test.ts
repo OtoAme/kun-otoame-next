@@ -223,6 +223,97 @@ describe('searchGalgame suggestion conditions', () => {
     expect(and).not.toContainEqual({ company: { some: { company_id: 3 } } })
   })
 
+  it('falls back to name matching when a suggestion id is not a valid integer', async () => {
+    const { and } = await runSearch([
+      { type: 'tag', mode: 'include', id: 1.5, name: '纯爱' },
+      { type: 'company', mode: 'exclude', id: 2_147_483_648, name: 'Otomate' }
+    ])
+
+    expect(and).toContainEqual({
+      tag: {
+        some: { tag: { OR: [{ name: '纯爱' }, { alias: { has: '纯爱' } }] } }
+      }
+    })
+    expect(and).not.toContainEqual({ tag: { some: { tag_id: 1.5 } } })
+    expect(and).toContainEqual({
+      company: {
+        none: {
+          company: {
+            OR: [
+              { name: 'Otomate' },
+              { alias: { has: 'Otomate' } },
+              { parent_brand: { has: 'Otomate' } }
+            ]
+          }
+        }
+      }
+    })
+    expect(and).not.toContainEqual({
+      company: { none: { company_id: 2_147_483_648 } }
+    })
+  })
+
+  it('ignores non-numeric, zero and negative suggestion ids', async () => {
+    const { and } = await runSearch([
+      {
+        type: 'tag',
+        mode: 'include',
+        id: '5',
+        name: '校园'
+      } as unknown as SearchSuggestionType,
+      { type: 'tag', mode: 'exclude', id: 0, name: '猎奇' },
+      { type: 'company', mode: 'include', id: -3, name: 'Rejet' }
+    ])
+
+    expect(and).toContainEqual({
+      tag: {
+        some: { tag: { OR: [{ name: '校园' }, { alias: { has: '校园' } }] } }
+      }
+    })
+    expect(and).toContainEqual({
+      tag: {
+        none: { tag: { OR: [{ name: '猎奇' }, { alias: { has: '猎奇' } }] } }
+      }
+    })
+    expect(and).toContainEqual({
+      company: {
+        some: {
+          company: {
+            OR: [
+              { name: 'Rejet' },
+              { alias: { has: 'Rejet' } },
+              { parent_brand: { has: 'Rejet' } }
+            ]
+          }
+        }
+      }
+    })
+    expect(JSON.stringify(and)).not.toContain('tag_id')
+    expect(JSON.stringify(and)).not.toContain('company_id')
+  })
+
+  it('falls back to name matching when an id JSON-parses to Infinity', async () => {
+    const result = await searchGalgame(
+      {
+        ...baseInput,
+        queryString:
+          '[{"type":"tag","mode":"include","id":1e999,"name":"校园"}]'
+      },
+      visibilityWhere
+    )
+
+    expect(typeof result).not.toBe('string')
+    const where = mocks.prisma.patch.findMany.mock.calls[0][0]
+      .where as Prisma.patchWhereInput
+    const and = (where.AND ?? []) as Prisma.patchWhereInput[]
+    expect(and).toContainEqual({
+      tag: {
+        some: { tag: { OR: [{ name: '校园' }, { alias: { has: '校园' } }] } }
+      }
+    })
+    expect(JSON.stringify(and)).not.toContain('tag_id')
+  })
+
   it('keeps the visibility filter in both the where object and the AND list', async () => {
     const { where, and } = await runSearch([
       { type: 'keyword', mode: 'include', name: 'moe' }
