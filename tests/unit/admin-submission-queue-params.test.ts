@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
   buildAdminSubmissionQueueUrl,
-  clampAdminSubmissionQueuePage,
-  parseAdminSubmissionSearchParams
+  parseAdminSubmissionSearchParams,
+  resolveAdminSubmissionQueuePage
 } from '~/components/admin/submission/queueParams'
 import { PATCH_SUBMISSION_STATUSES } from '~/types/api/patchSubmission'
 
@@ -88,22 +88,38 @@ describe('parseAdminSubmissionSearchParams', () => {
   })
 })
 
-describe('clampAdminSubmissionQueuePage', () => {
+describe('resolveAdminSubmissionQueuePage', () => {
   it('keeps a page that still has rows on it', () => {
-    expect(clampAdminSubmissionQueuePage(2, 51, 50)).toBe(2)
+    expect(resolveAdminSubmissionQueuePage(2, 51, 50, 1)).toBe(2)
   })
 
   it('keeps the last page when the rows fill it exactly', () => {
-    expect(clampAdminSubmissionQueuePage(2, 100, 50)).toBe(2)
+    expect(resolveAdminSubmissionQueuePage(2, 100, 50, 50)).toBe(2)
   })
 
   it('pulls a page that outran the list back to the last one with rows', () => {
-    expect(clampAdminSubmissionQueuePage(2, 50, 50)).toBe(1)
-    expect(clampAdminSubmissionQueuePage(9, 120, 50)).toBe(3)
+    expect(resolveAdminSubmissionQueuePage(2, 50, 50, 50)).toBe(1)
+    expect(resolveAdminSubmissionQueuePage(9, 120, 50, 20)).toBe(3)
   })
 
-  it('lands on the first page when the status is empty', () => {
-    expect(clampAdminSubmissionQueuePage(4, 0, 50)).toBe(1)
+  it('lands on the first page when the total says the status is empty', () => {
+    expect(resolveAdminSubmissionQueuePage(4, 0, 50, 1)).toBe(1)
+  })
+
+  it('steps back when the total still claims a page the rows no longer fill', () => {
+    expect(resolveAdminSubmissionQueuePage(2, 51, 50, 0)).toBe(1)
+  })
+
+  it('steps back to the last page the total allows when it is stale by more', () => {
+    expect(resolveAdminSubmissionQueuePage(7, 170, 50, 0)).toBe(4)
+  })
+
+  it('stays on the first page, so an empty status is not a redirect loop', () => {
+    expect(resolveAdminSubmissionQueuePage(1, 0, 50, 0)).toBe(1)
+  })
+
+  it('leaves ordinary paging through a long list alone', () => {
+    expect(resolveAdminSubmissionQueuePage(2, 120, 50, 50)).toBe(2)
   })
 })
 

@@ -1,4 +1,8 @@
 import {
+  PATCH_SUBMISSION_LIST_PAGE_MAX,
+  PATCH_SUBMISSION_LIST_QUERY_MAX_LENGTH
+} from '~/constants/patchSubmission'
+import {
   PATCH_SUBMISSION_STATUSES,
   type PatchSubmissionStatus
 } from '~/types/api/patchSubmission'
@@ -8,10 +12,6 @@ export const ADMIN_SUBMISSION_QUEUE_DEFAULT_STATUS: PatchSubmissionStatus =
   'pending'
 
 export const ADMIN_SUBMISSION_QUEUE_LIMIT = 50
-
-/** Both bounds mirror patchSubmissionAdminListSchema, the API's own reading. */
-const ADMIN_SUBMISSION_QUEUE_QUERY_MAX = 107
-const ADMIN_SUBMISSION_QUEUE_PAGE_MAX = 9999
 
 export interface AdminSubmissionQueueParams {
   query: string
@@ -41,29 +41,43 @@ export const parseAdminSubmissionSearchParams = (searchParams: {
   return {
     query: (firstValue(searchParams.query)?.trim() ?? '').slice(
       0,
-      ADMIN_SUBMISSION_QUEUE_QUERY_MAX
+      PATCH_SUBMISSION_LIST_QUERY_MAX_LENGTH
     ),
     status: status ?? ADMIN_SUBMISSION_QUEUE_DEFAULT_STATUS,
     page:
       Number.isSafeInteger(page) &&
       page >= 1 &&
-      page <= ADMIN_SUBMISSION_QUEUE_PAGE_MAX
+      page <= PATCH_SUBMISSION_LIST_PAGE_MAX
         ? page
         : 1
   }
 }
 
 /**
+ * Where the reviewer should stand once the list has answered.
+ *
  * Reviewing the last row of the last page shrinks the list under the page the
  * reviewer is standing on, and an out-of-range page reads as an empty status
- * rather than as a page that no longer exists. Snap back to the last page that
- * still holds rows; an empty status snaps to the first.
+ * rather than as a page that no longer exists. The total and the row count come
+ * from two queries that do not share a transaction, so either signal may already
+ * be stale: a total taken before a colleague reviewed the page's last row still
+ * claims the page exists. A page past the first that came back empty therefore
+ * steps back one page instead of trusting the total, which keeps every redirect
+ * strictly decreasing and so bounded by the first page. An empty first page is a
+ * status with no submissions, not a page to leave.
  */
-export const clampAdminSubmissionQueuePage = (
+export const resolveAdminSubmissionQueuePage = (
   page: number,
   total: number,
-  limit: number
-) => Math.min(page, Math.max(1, Math.ceil(total / limit)))
+  limit: number,
+  rowsOnPage: number
+) => {
+  const lastPage = Math.max(1, Math.ceil(total / limit))
+
+  return rowsOnPage === 0 && page > 1
+    ? Math.min(lastPage, page - 1)
+    : Math.min(page, lastPage)
+}
 
 /** Defaults are left out, so the plain queue URL stays the plain queue URL. */
 export const buildAdminSubmissionQueueUrl = ({

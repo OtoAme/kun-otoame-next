@@ -2,6 +2,8 @@ import { z } from 'zod'
 import { imageFileSchema } from './file'
 import {
   PATCH_SUBMISSION_GALLERY_MAX_COUNT,
+  PATCH_SUBMISSION_LIST_PAGE_MAX,
+  PATCH_SUBMISSION_LIST_QUERY_MAX_LENGTH,
   PATCH_SUBMISSION_REASON_MAX_LENGTH
 } from '~/constants/patchSubmission'
 import { PATCH_SUBMISSION_STATUSES } from '~/types/api/patchSubmission'
@@ -205,9 +207,19 @@ export const patchSubmissionRequestChangesSchema = patchSubmissionRejectSchema
 export const patchSubmissionViolateSchema = patchSubmissionRejectSchema
 
 export const patchSubmissionAdminListSchema = z.object({
-  page: z.coerce.number().int().min(1).max(9999).default(1),
+  page: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(PATCH_SUBMISSION_LIST_PAGE_MAX)
+    .default(1),
   limit: z.coerce.number().int().min(1).max(50).default(20),
   status: z.enum(PATCH_SUBMISSION_STATUSES).optional(),
   /** Matches a title, an author name or any external id. */
-  query: z.string().trim().max(107).optional().default('')
+  query: z
+    .string()
+    .trim()
+    .max(PATCH_SUBMISSION_LIST_QUERY_MAX_LENGTH)
+    .optional()
+    .default('')
 })

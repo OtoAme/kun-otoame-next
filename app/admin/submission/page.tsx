@@ -5,8 +5,8 @@ import { AdminSubmissionQueue } from '~/components/admin/submission/AdminSubmiss
 import {
   ADMIN_SUBMISSION_QUEUE_LIMIT,
   buildAdminSubmissionQueueUrl,
-  clampAdminSubmissionQueuePage,
-  parseAdminSubmissionSearchParams
+  parseAdminSubmissionSearchParams,
+  resolveAdminSubmissionQueuePage
 } from '~/components/admin/submission/queueParams'
 
 export const dynamic = 'force-dynamic'
@@ -40,15 +40,16 @@ export default async function AdminSubmissionPage({
     return <p className="text-sm text-danger">{result}</p>
   }
 
-  // 队列会在审核过程中变短, 页码落到列表外面就把人送回最后一页有内容的地方;
-  // 重定向后的页码必然在范围内, 不会再次跳转。
-  const lastPage = clampAdminSubmissionQueuePage(
+  // 队列会在审核过程中变短, 页码落到列表外面就把人送回还有内容的地方;
+  // 取回的行数和总数都可能过期, 所以每次重定向都严格往前退, 不会来回跳转。
+  const resolvedPage = resolveAdminSubmissionQueuePage(
     page,
     result.total,
-    ADMIN_SUBMISSION_QUEUE_LIMIT
+    ADMIN_SUBMISSION_QUEUE_LIMIT,
+    result.submissions.length
   )
-  if (lastPage !== page) {
-    redirect(buildAdminSubmissionQueueUrl({ query, status, page: lastPage }))
+  if (resolvedPage !== page) {
+    redirect(buildAdminSubmissionQueueUrl({ query, status, page: resolvedPage }))
   }
 
   return (

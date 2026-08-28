@@ -25,6 +25,14 @@ export const PATCH_SUBMISSION_REASON_MAX_LENGTH = 1007
 export const PATCH_SUBMISSION_GALLERY_MAX_COUNT = 20
 
 /**
+ * Bounds of the admin queue's list request. The API schema rejects anything past
+ * them and the queue URL is parsed down to them, so a link the reviewer edited
+ * by hand still describes a request the API will accept.
+ */
+export const PATCH_SUBMISSION_LIST_PAGE_MAX = 9999
+export const PATCH_SUBMISSION_LIST_QUERY_MAX_LENGTH = 107
+
+/**
  * Total bytes one user's active drafts may hold.
  *
  * A draft count alone cannot bound storage: 20 images x 8 MB x 5 drafts is
