@@ -253,7 +253,7 @@ Gallery 图片上传走 `app/api/edit/gallery/route.ts` 和 `app/api/edit/galler
 
 删除资源前必须确认没有其他 `patch_resource_link` 引用同一 content。
 
-`extractS3Key` 定义在 `app/api/patch/resource/_helper.ts`，所有需要从库中 URL 反解 S3 key 的路径（rewrite 提交、整条目删除、单图删除、私聊图片删除、维护脚本）都复用它，不要各自写解析。它只接受以 `KUN_VISUAL_NOVEL_IMAGE_BED_URL` 或 `NEXT_PUBLIC_KUN_VISUAL_NOVEL_S3_STORAGE_URL` 精确 base 开头的 URL；删除逻辑遇到非本站 URL 或相似 hostname 会拒绝删除并记录错误，这是防止误删外部链接的保护。
+`extractS3Key` 定义在 `app/api/patch/resource/_helper.ts`，patch 域四个从库中 URL 反解 S3 key 的删除路径（rewrite 提交、整条目删除、单图删除、资源链接删除）统一复用它，不要在 patch 域另写解析。它只接受以 `KUN_VISUAL_NOVEL_IMAGE_BED_URL` 或 `NEXT_PUBLIC_KUN_VISUAL_NOVEL_S3_STORAGE_URL` 精确 base 开头的 URL；删除逻辑遇到非本站 URL 或相似 hostname 会拒绝删除并记录错误，这是防止误删外部链接的保护。私聊图片删除使用专门的 `extractConversationImageS3Key`（在同样的 base 校验之外还校验 `conversation/` key 格式），Gallery 缩略图回填脚本使用自己的 `getGalleryBackfillS3Key`；这两处是有意独立的实现，不要把它们合并进 `extractS3Key`，合并会丢掉私聊更严格的 key 校验。
 
 ### 投稿素材的 key 布局（不同于正式条目）
 

@@ -21,7 +21,7 @@ Use this skill for persistence, cache, and upload consistency work.
 - Call the matching invalidation helper after every patch/resource/tag/company write, including the patch content cache for company-relation writes.
 - Pass helper keys unprefixed; direct `redis` / `runRedisCommand` needs an explicit full prefix.
 - Never delete an S3 object before its durable cleanup credential exists: `patch-submission/` deletes upsert `patch_submission_orphan_cleanup` in the same short DB transaction; `published` keys never enter cleanup.
-- Resolve keys only through `extractS3Key`: exact configured bases only, lookalike hosts rejected.
+- Patch-domain deletes resolve keys only through `extractS3Key` (exact configured bases, lookalike hosts rejected); conversation images and the gallery backfill keep their own dedicated, stricter resolvers.
 - Upload publishing keeps `consumeUpload` → S3 → `finalizeUpload` with compensation on every failure path.
 - Action rate limits fail open on Redis errors; the image hourly quota fails closed — never unmetered S3 writes.
 
