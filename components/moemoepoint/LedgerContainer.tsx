@@ -23,6 +23,7 @@ import { CircleDollarSign, Clock3, WalletCards } from 'lucide-react'
 import { KunHeader } from '~/components/kun/Header'
 import { KunLoading } from '~/components/kun/Loading'
 import { KunPagination } from '~/components/kun/Pagination'
+import { formatChinaDateTime } from '~/utils/fixedTimezoneDate'
 import { kunFetchGet } from '~/utils/kunFetch'
 import {
   getMoemoepointRangeDays,
@@ -75,25 +76,6 @@ const deltaClassName = (value: number) =>
 
 const balanceValueClassName = (value: number) =>
   value < 0 ? 'text-danger-600 dark:text-danger-500' : undefined
-
-// 提到模块级: Intl.DateTimeFormat 构造开销大, 而移动端卡片和桌面表格
-// 两棵子树始终同时挂载, 每次渲染会构造 2 × 行数 次。
-//
-// 这里刻意不用 utils/time.ts 的 formatDate: 那个函数在环境时区下格式化,
-// 有 SSR/CSR 水合不一致风险; 固定 Asia/Shanghai 也和
-// utils/moemoepointDateRange.ts 的自然日边界保持同一口径。
-const LEDGER_DATE_FORMATTER = new Intl.DateTimeFormat('zh-CN', {
-  timeZone: 'Asia/Shanghai',
-  year: 'numeric',
-  month: '2-digit',
-  day: '2-digit',
-  hour: '2-digit',
-  minute: '2-digit',
-  hour12: false
-})
-
-const formatCreated = (value: string) =>
-  LEDGER_DATE_FORMATTER.format(new Date(value))
 
 const BalanceCard = ({
   label,
@@ -180,7 +162,7 @@ const RecordCard = ({ record }: { record: MoemoepointLedgerEntry }) => (
       <div className="flex items-start justify-between gap-3">
         <RecordReason record={record} />
         <span className="whitespace-nowrap text-xs text-default-500">
-          {formatCreated(record.created)}
+          {formatChinaDateTime(record.created)}
         </span>
       </div>
       {/* 两组数字的行标签完全相同, 窄屏没有列头可依靠, 必须自带小标题 */}
@@ -478,7 +460,7 @@ export const MoemoepointLedgerContainer = ({
                   <TableRow key={record.id}>
                     <TableCell>
                       <span className="whitespace-nowrap text-sm text-default-500">
-                        {formatCreated(record.created)}
+                        {formatChinaDateTime(record.created)}
                       </span>
                     </TableCell>
                     <TableCell>

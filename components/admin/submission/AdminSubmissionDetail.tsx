@@ -20,6 +20,7 @@ import {
 import Link from 'next/link'
 import toast from 'react-hot-toast'
 import { useRouter } from '@bprogress/next'
+import { formatChinaDateTime } from '~/utils/fixedTimezoneDate'
 import { kunFetchPost } from '~/utils/kunFetch'
 import {
   PATCH_SUBMISSION_PUBLISH_REWARD,
@@ -63,7 +64,7 @@ const STATUS_LABEL: Record<AdminPatchSubmissionDetail['status'], string> = {
 }
 
 const formatDateTime = (value: string | null) =>
-  value ? new Date(value).toLocaleString('zh-CN') : '—'
+  value ? formatChinaDateTime(value) : '—'
 
 interface Props {
   submission: AdminPatchSubmissionDetail

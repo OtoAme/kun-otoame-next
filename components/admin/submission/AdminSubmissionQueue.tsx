@@ -5,6 +5,7 @@ import { Button, Card, CardBody, Chip, Input, Tab, Tabs } from '@heroui/react'
 import Link from 'next/link'
 import { useRouter } from '@bprogress/next'
 import { KunPagination } from '~/components/kun/Pagination'
+import { formatChinaDateTime } from '~/utils/fixedTimezoneDate'
 import {
   buildAdminSubmissionQueueUrl,
   type AdminSubmissionQueueParams
@@ -33,9 +34,6 @@ const STATUS_TABS: PatchSubmissionStatus[] = [
   'deleted'
 ]
 
-const formatDateTime = (value: string) =>
-  new Date(value).toLocaleString('zh-CN')
-
 /**
  * Each status has exactly one date worth a glance: when it entered the queue,
  * when it was last edited, or when it was decided.
@@ -43,13 +41,13 @@ const formatDateTime = (value: string) =>
 const timeLabel = (submission: AdminSubmissionRow) => {
   if (submission.status === 'pending') {
     return submission.submittedAt
-      ? formatDateTime(submission.submittedAt)
+      ? formatChinaDateTime(submission.submittedAt)
       : '未提交'
   }
   if (submission.status === 'draft' || !submission.reviewedAt) {
-    return `更新于 ${formatDateTime(submission.updated)}`
+    return `更新于 ${formatChinaDateTime(submission.updated)}`
   }
-  return `审核于 ${formatDateTime(submission.reviewedAt)}`
+  return `审核于 ${formatChinaDateTime(submission.reviewedAt)}`
 }
 
 interface Props {
@@ -96,20 +94,27 @@ export const AdminSubmissionQueue = ({
       </Tabs>
 
       <div className="flex flex-wrap items-center gap-2">
-        <Input
-          className="max-w-sm"
-          size="sm"
-          label="搜索标题、投稿人或外部 ID"
-          value={search}
-          onValueChange={setSearch}
-        />
-        <Button
-          size="sm"
-          variant="flat"
-          onPress={() => navigate({ query: search.trim(), page: 1 })}
+        <form
+          className="flex flex-wrap items-center gap-2"
+          onSubmit={(event) => {
+            event.preventDefault()
+            navigate({ query: search.trim(), page: 1 })
+          }}
         >
-          搜索
-        </Button>
+          <Input
+            className="max-w-sm"
+            size="sm"
+            label="搜索标题、投稿人或外部 ID"
+            value={search}
+            onValueChange={setSearch}
+            isClearable
+            // 只清输入框; 列表仍停在当前搜索结果上, 等提交才换视图。
+            onClear={() => setSearch('')}
+          />
+          <Button size="sm" variant="flat" type="submit">
+            搜索
+          </Button>
+        </form>
         <Chip size="sm" variant="flat">
           {STATUS_LABEL[status]} {total}
         </Chip>

@@ -42,16 +42,18 @@ vi.mock('@heroui/react', () => ({
   Button: ({
     children,
     href,
-    onPress
+    onPress,
+    type
   }: {
     children?: React.ReactNode
     href?: string
     onPress?: () => void
+    type?: 'button' | 'submit' | 'reset'
   }) =>
     href ? (
       <a href={href}>{children}</a>
     ) : (
-      <button type="button" onClick={onPress}>
+      <button type={type ?? 'button'} onClick={onPress}>
         {children}
       </button>
     ),
@@ -67,14 +69,18 @@ vi.mock('@heroui/react', () => ({
   Input: ({
     label,
     value,
-    onValueChange
+    onValueChange,
+    isClearable
   }: {
     label?: string
     value?: string
     onValueChange?: (value: string) => void
+    isClearable?: boolean
+    onClear?: () => void
   }) => (
     <input
       aria-label={label}
+      data-clearable={isClearable ? 'true' : 'false'}
       value={value ?? ''}
       onInput={(event) =>
         onValueChange?.((event.target as HTMLInputElement).value)
@@ -183,6 +189,18 @@ describe('AdminSubmissionQueue', () => {
     })
   }
 
+  const typeSearch = async (document: Document, value: string) => {
+    const input = document.querySelector('input')
+    await act(async () => {
+      const setValue = Object.getOwnPropertyDescriptor(
+        dom.window.HTMLInputElement.prototype,
+        'value'
+      )?.set
+      setValue?.call(input, value)
+      input?.dispatchEvent(new dom.window.Event('input', { bubbles: true }))
+    })
+  }
+
   const byText = (document: Document, selector: string, text: string) =>
     [...document.querySelectorAll(selector)].find(
       (element) => element.textContent?.trim() === text
@@ -251,16 +269,8 @@ describe('AdminSubmissionQueue', () => {
 
   it('keeps the status but resets the page when a new search is run', async () => {
     const document = await render({ status: 'rejected', query: '', page: 5 })
-    const input = document.querySelector('input')
 
-    await act(async () => {
-      const setValue = Object.getOwnPropertyDescriptor(
-        dom.window.HTMLInputElement.prototype,
-        'value'
-      )?.set
-      setValue?.call(input, '  fate  ')
-      input?.dispatchEvent(new dom.window.Event('input', { bubbles: true }))
-    })
+    await typeSearch(document, '  fate  ')
     await click(byText(document, 'button', '搜索'))
 
     const url = pushedUrl()
@@ -269,15 +279,39 @@ describe('AdminSubmissionQueue', () => {
     expect(url.searchParams.get('query')).toBe('fate')
   })
 
+  it('runs the same search when the reviewer submits the form with Enter', async () => {
+    const document = await render({ status: 'rejected', query: '', page: 5 })
+
+    await typeSearch(document, '  fate  ')
+    await act(async () => {
+      document
+        .querySelector('form')
+        ?.dispatchEvent(
+          new dom.window.Event('submit', { bubbles: true, cancelable: true })
+        )
+    })
+
+    const url = pushedUrl()
+    expect(url.searchParams.get('status')).toBe('rejected')
+    expect(url.searchParams.get('page')).toBeNull()
+    expect(url.searchParams.get('query')).toBe('fate')
+  })
+
+  it('offers a clear affordance on the search box', async () => {
+    const document = await render()
+
+    expect(
+      document.querySelector('input')?.getAttribute('data-clearable')
+    ).toBe('true')
+  })
+
   it('shows when a pending submission entered the queue', async () => {
     const document = await render({
       status: 'pending',
       submissions: [submission({ status: 'pending' })]
     })
 
-    expect(chipTexts(document)).toContain(
-      new Date('2026-08-27T00:00:00.000Z').toLocaleString('zh-CN')
-    )
+    expect(chipTexts(document)).toContain('2026/08/27 08:00')
   })
 
   it('says so when a pending row was never submitted', async () => {
@@ -295,9 +329,7 @@ describe('AdminSubmissionQueue', () => {
       submissions: [submission({ status: 'draft', submittedAt: null })]
     })
 
-    expect(chipTexts(document)).toContain(
-      `更新于 ${new Date('2026-08-26T00:00:00.000Z').toLocaleString('zh-CN')}`
-    )
+    expect(chipTexts(document)).toContain('更新于 2026/08/26 08:00')
   })
 
   it('shows when a decided submission was reviewed', async () => {
@@ -311,9 +343,7 @@ describe('AdminSubmissionQueue', () => {
       ]
     })
 
-    expect(chipTexts(document)).toContain(
-      `审核于 ${new Date('2026-08-28T00:00:00.000Z').toLocaleString('zh-CN')}`
-    )
+    expect(chipTexts(document)).toContain('审核于 2026/08/28 08:00')
   })
 
   it('falls back to the edit time for a status that carries no review date', async () => {
@@ -322,9 +352,7 @@ describe('AdminSubmissionQueue', () => {
       submissions: [submission({ status: 'changes_requested' })]
     })
 
-    expect(chipTexts(document)).toContain(
-      `更新于 ${new Date('2026-08-26T00:00:00.000Z').toLocaleString('zh-CN')}`
-    )
+    expect(chipTexts(document)).toContain('更新于 2026/08/26 08:00')
   })
 
   it('counts and names the status currently on screen', async () => {
