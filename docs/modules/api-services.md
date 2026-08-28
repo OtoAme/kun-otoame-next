@@ -158,7 +158,10 @@ service/helper 负责：
 
 规则：
 
-- 搜索条件是 JSON 字符串，元素必须是 keyword/tag/company 且 include/exclude。
+- 搜索条件是 JSON 字符串，元素必须是 keyword/tag/company 且 include/exclude；非法元素被逐项过滤，整体不是数组或解析失败返回 `搜索条件格式错误`。
+- include/exclude 语义都必须在 service 落地：exclude 关键词编译为 NOT/none 组合条件，exclude 标签/会社编译为关系 `none`；标签/会社条件带数字 `id` 时按 `tag_id` / `company_id` 精确匹配，否则按 name/alias（会社另含 parent_brand）。上游 route 的这套逻辑曾在 service 抽取 + upstream 合并时丢失过（79613f08 → 71c262a5，9516e2b4 修复），reconcile upstream 时必须把上游 route.ts 的业务改动对齐进本地 service.ts。
+- `minRatingCount` 仅在 `sortField === 'rating'` 时通过 `buildGalgameWhere` 生效，与列表/标签/公司页一致。
+- `/api/search/tag` 建议接口同时返回标签与会社建议：各自按 count 取前 50，合并后 count 降序、同分按名称排序，截断 100，返回 `{ id, type, mode: 'include', name }`。
 - 列表筛选支持类型、语言、平台、年份、月份、排序。
 - SFW/NSFW 过滤由调用处传入 Prisma where。
 - 卡片字段统一使用 `GalgameCardSelectField`，避免列表查询过载。
