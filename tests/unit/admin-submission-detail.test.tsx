@@ -35,29 +35,46 @@ vi.mock('@heroui/react', () => ({
   Avatar: ({ name }: { name?: string }) => <span>{name}</span>,
   Button: ({
     children,
+    href,
+    target,
     onPress,
     isDisabled
   }: {
     children?: React.ReactNode
+    href?: string
+    target?: string
     onPress?: () => void
     isDisabled?: boolean
-  }) => (
-    <button type="button" disabled={isDisabled} onClick={onPress}>
-      {children}
-    </button>
-  ),
-  Card: ({ children }: { children?: React.ReactNode }) => (
-    <section>{children}</section>
-  ),
+  }) =>
+    href ? (
+      <a href={href} target={target}>
+        {children}
+      </a>
+    ) : (
+      <button type="button" disabled={isDisabled} onClick={onPress}>
+        {children}
+      </button>
+    ),
+  Card: ({
+    children,
+    className
+  }: {
+    children?: React.ReactNode
+    className?: string
+  }) => <section className={className}>{children}</section>,
   CardBody: ({ children }: { children?: React.ReactNode }) => (
     <div>{children}</div>
   ),
   CardHeader: ({ children }: { children?: React.ReactNode }) => (
     <header>{children}</header>
   ),
-  Chip: ({ children }: { children?: React.ReactNode }) => (
-    <span>{children}</span>
-  ),
+  Chip: ({
+    children,
+    color
+  }: {
+    children?: React.ReactNode
+    color?: string
+  }) => <span data-color={color}>{children}</span>,
   Divider: () => <hr />,
   Modal: ({
     children,
@@ -103,7 +120,9 @@ const submission: AdminPatchSubmissionDetail = {
   author: { id: 2, name: 'Author', avatar: '' },
   preview: null,
   vndbDuplicates: [],
-  duplicateConfirmed: false
+  duplicatesTruncated: false,
+  duplicateConfirmed: false,
+  publishedPatch: null
 }
 
 describe('AdminSubmissionDetail stale review recovery', () => {
@@ -184,5 +203,96 @@ describe('AdminSubmissionDetail stale review recovery', () => {
     expect(
       dom.window.document.querySelector('[data-testid="review-modal"]')
     ).not.toBeNull()
+  })
+})
+
+describe('AdminSubmissionDetail duplicate panel', () => {
+  let dom: JSDOM
+  let root: Root
+
+  beforeEach(() => {
+    dom = new JSDOM('<!doctype html><div id="root"></div>', {
+      url: 'http://localhost/admin/submission/1'
+    })
+    vi.stubGlobal('window', dom.window)
+    vi.stubGlobal('document', dom.window.document)
+    vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
+    root = createRoot(dom.window.document.getElementById('root')!)
+  })
+
+  afterEach(async () => {
+    await act(async () => root.unmount())
+    dom.window.close()
+    vi.unstubAllGlobals()
+  })
+
+  const renderWith = async (overrides: Partial<AdminPatchSubmissionDetail>) => {
+    await act(async () => {
+      root.render(
+        <AdminSubmissionDetail
+          submission={{ ...submission, ...overrides }}
+          reviewerId={9}
+          reviewerRole={3}
+        />
+      )
+    })
+    return dom.window.document
+  }
+
+  const publishedLink = (document: Document) =>
+    [...document.querySelectorAll('a')].find((anchor) =>
+      anchor.textContent?.includes('已发布为')
+    )
+
+  it('warns about the collision while the submission is still pending', async () => {
+    const document = await renderWith({
+      status: 'pending',
+      vndbDuplicates: [{ uniqueId: 'AAA', name: 'Other entry' }]
+    })
+
+    expect(document.querySelector('.border-warning-200')).not.toBeNull()
+    expect(document.querySelector('[data-color="danger"]')).not.toBeNull()
+    expect(document.body.textContent).toContain('VNDB ID 与现有条目重复')
+  })
+
+  it('demotes the collision to history once the submission is published', async () => {
+    const document = await renderWith({
+      status: 'published',
+      vndbDuplicates: [{ uniqueId: 'AAA', name: 'Other entry' }],
+      publishedPatch: { uniqueId: 'BBB', name: 'New entry' }
+    })
+
+    expect(document.querySelector('.border-warning-200')).toBeNull()
+    expect(document.querySelector('[data-color="danger"]')).toBeNull()
+    expect(document.querySelector('[data-color="default"]')).not.toBeNull()
+    expect(document.body.textContent).toContain('共用此 VNDB ID 的其他条目')
+    expect(publishedLink(document)?.getAttribute('href')).toBe('/BBB')
+  })
+
+  it('links to the published entry even when nothing else shares the id', async () => {
+    const document = await renderWith({
+      status: 'published',
+      publishedPatch: { uniqueId: 'BBB', name: 'New entry' }
+    })
+
+    expect(document.body.textContent).not.toContain('共用此 VNDB ID 的其他条目')
+    expect(publishedLink(document)?.getAttribute('href')).toBe('/BBB')
+  })
+
+  it('renders without a dead link once the published entry was deleted', async () => {
+    const document = await renderWith({ status: 'published' })
+
+    expect(publishedLink(document)).toBeUndefined()
+    expect(document.body.textContent).toContain('投稿 #1')
+  })
+
+  it('says so when more entries share the id than the list shows', async () => {
+    const document = await renderWith({
+      status: 'published',
+      vndbDuplicates: [{ uniqueId: 'AAA', name: 'Other entry' }],
+      duplicatesTruncated: true
+    })
+
+    expect(document.body.textContent).toContain('仅列出前 10 条')
   })
 })

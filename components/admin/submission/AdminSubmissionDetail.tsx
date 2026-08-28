@@ -76,6 +76,7 @@ export const AdminSubmissionDetail = ({
   const preview = submission.preview
   const isSelfReview = reviewerId === submission.author.id
   const canOverrideSelfReview = isSelfReview && reviewerRole >= 4
+  const isPendingReview = submission.status === 'pending'
 
   const openAction = (action: ReviewAction) => {
     setPendingAction(action)
@@ -125,6 +126,18 @@ export const AdminSubmissionDetail = ({
           {STATUS_LABEL[submission.status]}
         </Chip>
         <span className="text-sm text-default-500">投稿 #{submission.id}</span>
+        {submission.publishedPatch && (
+          <Button
+            as={Link}
+            href={`/${submission.publishedPatch.uniqueId}`}
+            target="_blank"
+            size="sm"
+            variant="flat"
+            color="primary"
+          >
+            已发布为 {submission.publishedPatch.name}
+          </Button>
+        )}
       </div>
 
       <Card>
@@ -187,23 +200,44 @@ export const AdminSubmissionDetail = ({
       </Card>
 
       {submission.vndbDuplicates.length > 0 && (
-        <Card className="border border-warning-200 bg-warning-50/50 dark:bg-warning-100/10">
+        <Card
+          className={
+            isPendingReview
+              ? 'border border-warning-200 bg-warning-50/50 dark:bg-warning-100/10'
+              : undefined
+          }
+        >
           <CardHeader className="flex flex-wrap items-center gap-2">
-            <h2 className="text-lg font-medium">VNDB ID 与现有条目重复</h2>
+            <h2 className="text-lg font-medium">
+              {isPendingReview
+                ? 'VNDB ID 与现有条目重复'
+                : '共用此 VNDB ID 的其他条目'}
+            </h2>
             <Chip
               size="sm"
               variant="flat"
-              color={submission.duplicateConfirmed ? 'warning' : 'danger'}
+              color={
+                !isPendingReview
+                  ? 'default'
+                  : submission.duplicateConfirmed
+                    ? 'warning'
+                    : 'danger'
+              }
             >
               {submission.duplicateConfirmed
-                ? '投稿者已确认是不同版本'
-                : '投稿者未确认'}
+                ? isPendingReview
+                  ? '投稿者已确认是不同版本'
+                  : '投稿者当时已确认是不同版本'
+                : isPendingReview
+                  ? '投稿者未确认'
+                  : '投稿者当时未确认'}
             </Chip>
           </CardHeader>
           <CardBody className="space-y-2 text-sm">
             <p className="text-default-500">
-              同一游戏的不同版本可以共用 VNDB ID,
-              请核对下列条目后判断是否重复收录。
+              {isPendingReview
+                ? '同一游戏的不同版本可以共用 VNDB ID, 请核对下列条目后判断是否重复收录。'
+                : '以下条目与该投稿使用相同 VNDB ID, 供复查历史结论参考。'}
             </p>
             <div className="flex flex-wrap gap-2">
               {submission.vndbDuplicates.map((patch) => (
@@ -219,6 +253,9 @@ export const AdminSubmissionDetail = ({
                 </Button>
               ))}
             </div>
+            {submission.duplicatesTruncated && (
+              <p className="text-xs text-default-500">仅列出前 10 条</p>
+            )}
           </CardBody>
         </Card>
       )}
@@ -238,7 +275,7 @@ export const AdminSubmissionDetail = ({
         </Card>
       )}
 
-      {submission.status === 'pending' && (
+      {isPendingReview && (
         <Card>
           <CardHeader>
             <h2 className="text-lg font-medium">审核操作</h2>

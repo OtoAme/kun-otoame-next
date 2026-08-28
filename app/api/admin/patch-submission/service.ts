@@ -38,13 +38,21 @@ export interface AdminPatchSubmissionDetail {
   author: { id: number; name: string; avatar: string }
   preview: PatchSubmissionPublishPreview | null
   /**
-   * Published entries already using this submission's VNDB ID. A shared id can be
-   * legitimate for a different release, so the reviewer decides — but they can
-   * only decide if they see what it collides with.
+   * Published entries already using this submission's VNDB ID, never including
+   * the entry this submission itself became. A shared id can be legitimate for a
+   * different release, so the reviewer decides — but they can only decide if
+   * they see what it collides with.
    */
   vndbDuplicates: { uniqueId: string; name: string }[]
+  /** Whether more entries share the id than the list above shows. */
+  duplicatesTruncated: boolean
   /** Whether the author ticked the confirmation to submit despite the above. */
   duplicateConfirmed: boolean
+  /**
+   * The entry this submission was published as. Null once that entry is deleted,
+   * because the link is cleared rather than kept as a dangling id.
+   */
+  publishedPatch: { uniqueId: string; name: string } | null
 }
 
 /**
@@ -143,8 +151,10 @@ export const getAdminPatchSubmission = async (
       banner_original_key: true,
       submitted_at: true,
       created: true,
+      patch_id: true,
       user: { select: { id: true, name: true, avatar: true } },
       reviewed_by: { select: { id: true, name: true } },
+      patch: { select: { unique_id: true, name: true } },
       gallery: {
         where: { upload_status: 'ready' },
         orderBy: { display_order: 'asc' },
@@ -193,10 +203,16 @@ export const getAdminPatchSubmission = async (
   const vndbId = payload.success ? payload.data.vndbId : ''
   const vndbDuplicates = vndbId
     ? await prisma.patch.findMany({
-        where: { vndb_id: vndbId },
+        where: {
+          vndb_id: vndbId,
+          // The entry this submission became shares the id by construction.
+          ...(row.patch_id ? { id: { not: row.patch_id } } : {})
+        },
         select: { unique_id: true, name: true },
         orderBy: { id: 'asc' },
-        take: 10
+        // One past the display limit, because exactly 10 rows does not tell us
+        // whether an eleventh exists.
+        take: 11
       })
     : []
 
@@ -216,10 +232,14 @@ export const getAdminPatchSubmission = async (
     created: row.created.toISOString(),
     author: row.user,
     preview,
-    vndbDuplicates: vndbDuplicates.map((patch) => ({
+    vndbDuplicates: vndbDuplicates.slice(0, 10).map((patch) => ({
       uniqueId: patch.unique_id,
       name: patch.name
     })),
-    duplicateConfirmed: payload.success ? payload.data.isDuplicate : false
+    duplicatesTruncated: vndbDuplicates.length > 10,
+    duplicateConfirmed: payload.success ? payload.data.isDuplicate : false,
+    publishedPatch: row.patch
+      ? { uniqueId: row.patch.unique_id, name: row.patch.name }
+      : null
   }
 }
