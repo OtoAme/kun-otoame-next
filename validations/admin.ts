@@ -262,6 +262,7 @@ export const adminUpdateDisableRegisterSchema = z.object({
 export const adminGrantMoemoepointSchema = z.object({
   uid: z.coerce.number().min(1).max(9999999),
   amount: z.coerce.number().int().min(1).max(100000),
+  requestId: z.string().uuid(),
   reason: z
     .string()
     .trim()

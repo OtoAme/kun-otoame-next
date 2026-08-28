@@ -53,7 +53,7 @@ const toBalance = (row: BalanceRow): MoemoepointBalance => ({
 // 明细是业务写入的副产品, 不能因为标题太长就让发布游戏整个事务回滚。
 const MAX_REASON_LENGTH = 500
 
-const normalizeReason = (reason: string) =>
+export const normalizeMoemoepointReason = (reason: string) =>
   reason.trim().slice(0, MAX_REASON_LENGTH)
 
 const assertPositiveAmount = (amount: number) => {
@@ -206,7 +206,7 @@ export const applyMoemoepointChange = async (
       balance_after: row.moemoepoint,
       reserved_after: row.moemoepoint_reserved,
       reason_code: input.reasonCode.trim(),
-      reason: normalizeReason(input.reason),
+      reason: normalizeMoemoepointReason(input.reason),
       reference_type: input.referenceType,
       reference_id:
         input.referenceId === undefined ? undefined : String(input.referenceId),
@@ -288,7 +288,7 @@ export const createMoemoepointOpeningEntry = async (
       balance_after: input.balance,
       reserved_after: 0,
       reason_code: input.reasonCode,
-      reason: normalizeReason(input.reason),
+      reason: normalizeMoemoepointReason(input.reason),
       idempotency_key: input.idempotencyKey
     },
     update: {},
@@ -325,7 +325,7 @@ export const reserveMoemoepoint = async (tx: Tx, input: ReservationInput) => {
       user_id: input.userId,
       amount: input.amount,
       reason_code: input.reasonCode.trim(),
-      reason: normalizeReason(input.reason),
+      reason: normalizeMoemoepointReason(input.reason),
       reference_type: input.referenceType,
       reference_id:
         input.referenceId === undefined ? undefined : String(input.referenceId),
@@ -386,7 +386,7 @@ const settleMoemoepointReservation = async (
     data: {
       status,
       settlement_idempotency_key: input.idempotencyKey,
-      settlement_reason: normalizeReason(input.reason),
+      settlement_reason: normalizeMoemoepointReason(input.reason),
       settled_at: new Date(),
       settled_by_id: input.operatorId
     }
