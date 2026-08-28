@@ -142,7 +142,9 @@ service/helper 负责：
 - **`reserveMoemoepoint` / `releaseMoemoepoint` / `forfeitMoemoepoint` 和 `user_moemoepoint_reservation` 用于投稿押金。** 暂扣在创建草稿时冻结, 通过审核返还并奖励 3 点, 驳回返还, 违规扣除。接入点见 [投稿域](#投稿域-patch_submission)。
 - 每笔变更写入 `user_moemoepoint_ledger` 的总额/待结算 delta、变更后快照、稳定原因代码、用户可读原因、关联对象和可选幂等键。
 - `reason` 是 `VarChar(500)`，而调用方经常拼接用户内容（游戏名 `VarChar(1007)`、资源名 `VarChar(300)`）。service 内部**截断**而不是拒绝：明细是业务写入的副产品，不能因为标题太长让发布游戏整个事务回滚。调用方仍应自行 `.slice(0, 100)` 以保持明细可读。
+- **管理员发放（grant）整幂等，且 requestId 绑定原请求内容**：客户端每次打开弹窗生成 UUID requestId，幂等键为 `admin-grant:<adminUid>:<requestId>`。重放命中台账（`applied: false`）后必须按 `ledgerId` 读回原行，核对 `user_id`、`balance_delta`、`reason_code`、归一化后的 `reason`、`operator_id`、`reference_type` 全部一致才按已生效返回并跳过通知与 admin_log；任一不一致返回「该请求标识已用于另一笔发放」业务错误，不得当成功重放。并发同键只对台账 `idempotency_key` 的 P2002 整事务重跑一次，其余错误（含其他 target 的 P2002）原样抛出。API 返回 `{ balance, applied }`；admin_log 的发放前基线用事务内 `balance.total - amount` 计算，不用事务外预读。
 - 幂等键只在真正稳定时才传。点赞类切换**不传**幂等键：自增关系 id 每次点赞都是新值，取消点赞用的又是即将被删的行 id，无法在重放间保持稳定；真正的守卫是各点赞关系表的唯一约束加上 `patch-like` 限流。
+- 点赞类切换的关系写入用 `createMany({ skipDuplicates: true })` / `deleteMany` 并检查返回 `count`：count 为 0 说明另一并发请求已完成同一迁移，跳过通知与萌萌点副作用、直接返回目标状态（点赞 `true` / 取消 `false`）；只有 count 为 1 才发通知、写账本。通知或账本自身抛出的错误（含它们的 P2002）必须原样冒泡，不得当作并发成功。
 - 点赞类路由必须做 `patch-like` 限流（60 次/分钟）。萌萌点账本让每次点赞/取消都写一行永久明细，不限流会被用来撑爆账本表并刷满他人明细页。
 - 明细按账户生命周期保留，删除用户时级联删除。`GET /api/user/[id]/moemoepoint/ledger` 和相关 server action 只允许本人或 `role >= 3`，必须在各自入口重复鉴权并返回 `private, no-store`。阈值判断统一走 `app/api/moemoepoint/access.ts` 的 `canViewMoemoepointLedger`，不要在各入口各写一遍。
 - 日期口径使用 Asia/Shanghai 自然日，默认 30 天，可选 7 天或最多 90 天的自定义闭区间。明细按 `created DESC, id DESC` 稳定分页。
@@ -317,7 +319,8 @@ service/helper 负责：
 - **发布核心三层**：提交前抓取外部数据并冻结进 payload；最终事务内纯 DB 写入 patch/alias/tag/company/gallery/结算/通知/日志；事务后只做缓存失效与 SFW IndexNow。批准链路全程不访问外网。
 - **审核展示与发布使用同一投影**：payload 中的手填、VNDB、Bangumi、Steam、DLsite 别名/标签/公司都由 `publishPreview.ts` 合并；作者预览、管理员详情与 `publishCore.ts` 不得各自复制合并规则。终态清理 key 不能进入管理员预览 DTO。
 - **作者预览读取服务端冻结版本**：`GET /api/patch-submission/[id]/preview` 先按严格正整数校验路由参数，再在 service 层用投稿 ID + 当前用户 ID 校验所有权，返回共享发布投影并设置 `private, no-store`。可编辑草稿只有在 `flush()` 成功后才请求该路由，不能用未保存的本地 payload 假装服务端预览；`pending` 已不可编辑，作者自查时直接读取已冻结版本，不再发送空保存。
-- **重复外部 ID 分软硬两类**：Release ID、Bangumi ID、DLSite Code 在提交前既检查作者自己的活动投稿，也检查已发布条目；批准事务若仍因竞态命中 Prisma `P2002`，必须转换为指出冲突字段的审核员可见错误，事务回滚后投稿保持 `pending`、押金不结算。VNDB ID 本身允许不同版本共用：命中已发布条目时只有投稿者显式保存 `isDuplicate` 确认后才可提交，审核详情必须列出最多 10 个冲突条目及确认状态，由审核员决定是否重复收录。
+- **重复外部 ID 分软硬两类**：Release ID、Bangumi ID、DLSite Code 在提交前既检查作者自己的活动投稿，也检查已发布条目；批准事务若仍因竞态命中 Prisma `P2002`，必须转换为指出冲突字段的审核员可见错误，事务回滚后投稿保持 `pending`、押金不结算。VNDB ID 本身允许不同版本共用：命中已发布条目时只有投稿者显式保存 `isDuplicate` 确认后才可提交，审核详情必须列出最多 10 个冲突条目及确认状态，由审核员决定是否重复收录。重复列表必须排除本投稿自己发布的条目（按行上 `patch_id`），用多取一条（take 11）判定 `duplicatesTruncated`；DTO 另带 `publishedPatch`（正式条目被删后关联 SetNull，必须容忍 null）。
+- **审核队列按单一状态筛选**（默认 pending），排序随状态：pending 用 `submitted_at asc, id asc`（最老优先）；其余所有状态一律 `reviewed_at desc (nulls last), updated desc, id desc`——draft 无 reviewed_at 自然按最近更新，changes_requested 最近退回优先。不为非 pending 视图新增索引是已定决策（后台行数小）。
 - **外部数据 provenance 记录真实抓取时刻**：VNDB、Bangumi、Steam 输入只在抓取成功后回调 source，并把当时的 ISO timestamp 一起写入投稿 store。后续 autosave 原样发送该 timestamp，服务端不得用每次保存的 `now()` 伪刷新新鲜度。
 - `PATCH /api/patch-submission/asset` 位于 middleware matcher 外，必须在 handler 内先校验 CSRF，再鉴权、校验可编辑状态以及全部 gallery ID 的投稿归属；不能只相信客户端选择集。
 - 投稿成功转为 `pending` 或成功从 `pending` 撤回到 `draft` 后，查询所有 `role >= PATCH_SUBMISSION_REVIEW_MIN_ROLE` 的管理员并用 `Promise.allSettled` 发送对应站内通知，link 直达 `/admin/submission/<id>`。状态转换已经提交，管理员查询失败或单个通知失败只记日志，不能把作者请求变成失败或回滚投稿；状态栅栏失败时不得发送撤回通知。
