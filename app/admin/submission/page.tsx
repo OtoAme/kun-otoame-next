@@ -2,24 +2,31 @@ import { redirect } from 'next/navigation'
 import { verifyHeaderCookie } from '~/utils/actions/verifyHeaderCookie'
 import { listAdminPatchSubmissions } from '~/app/api/admin/patch-submission/service'
 import { AdminSubmissionQueue } from '~/components/admin/submission/AdminSubmissionQueue'
+import {
+  ADMIN_SUBMISSION_QUEUE_LIMIT,
+  parseAdminSubmissionSearchParams
+} from '~/components/admin/submission/queueParams'
 
 export const dynamic = 'force-dynamic'
 
 export default async function AdminSubmissionPage({
   searchParams
 }: {
-  searchParams: Promise<{ query?: string }>
+  searchParams: Promise<{ query?: string; status?: string; page?: string }>
 }) {
   const payload = await verifyHeaderCookie()
   if (!payload) {
     redirect('/')
   }
 
-  const { query } = await searchParams
+  const { query, status, page } = parseAdminSubmissionSearchParams(
+    await searchParams
+  )
   const result = await listAdminPatchSubmissions({
-    page: 1,
-    limit: 50,
-    query: query ?? '',
+    page,
+    limit: ADMIN_SUBMISSION_QUEUE_LIMIT,
+    status,
+    query,
     reviewerRole: payload.role
   })
 
@@ -33,7 +40,10 @@ export default async function AdminSubmissionPage({
       <AdminSubmissionQueue
         submissions={result.submissions}
         total={result.total}
-        query={query ?? ''}
+        query={query}
+        status={status}
+        page={page}
+        limit={ADMIN_SUBMISSION_QUEUE_LIMIT}
       />
     </div>
   )

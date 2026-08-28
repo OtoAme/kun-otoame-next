@@ -1,23 +1,100 @@
 'use client'
 
 import { useState } from 'react'
-import { Button, Card, CardBody, Chip, Input } from '@heroui/react'
+import { Button, Card, CardBody, Chip, Input, Tab, Tabs } from '@heroui/react'
 import Link from 'next/link'
 import { useRouter } from '@bprogress/next'
+import { KunPagination } from '~/components/kun/Pagination'
+import {
+  buildAdminSubmissionQueueUrl,
+  type AdminSubmissionQueueParams
+} from './queueParams'
 import type { AdminSubmissionRow } from '~/app/api/admin/patch-submission/service'
+import type { PatchSubmissionStatus } from '~/types/api/patchSubmission'
+
+const STATUS_LABEL: Record<PatchSubmissionStatus, string> = {
+  pending: '待审核',
+  draft: '草稿',
+  changes_requested: '要求修改',
+  rejected: '已驳回',
+  published: '已发布',
+  violation: '违规关闭',
+  deleted: '已删除'
+}
+
+/** The backlog leads; the rest follow the order a submission moves through. */
+const STATUS_TABS: PatchSubmissionStatus[] = [
+  'pending',
+  'draft',
+  'changes_requested',
+  'rejected',
+  'published',
+  'violation',
+  'deleted'
+]
+
+const formatDateTime = (value: string) =>
+  new Date(value).toLocaleString('zh-CN')
+
+/**
+ * Each status has exactly one date worth a glance: when it entered the queue,
+ * when it was last edited, or when it was decided.
+ */
+const timeLabel = (submission: AdminSubmissionRow) => {
+  if (submission.status === 'pending') {
+    return submission.submittedAt
+      ? formatDateTime(submission.submittedAt)
+      : '未提交'
+  }
+  if (submission.status === 'draft' || !submission.reviewedAt) {
+    return `更新于 ${formatDateTime(submission.updated)}`
+  }
+  return `审核于 ${formatDateTime(submission.reviewedAt)}`
+}
 
 interface Props {
   submissions: AdminSubmissionRow[]
   total: number
   query: string
+  status: PatchSubmissionStatus
+  page: number
+  limit: number
 }
 
-export const AdminSubmissionQueue = ({ submissions, total, query }: Props) => {
+export const AdminSubmissionQueue = ({
+  submissions,
+  total,
+  query,
+  status,
+  page,
+  limit
+}: Props) => {
   const router = useRouter()
   const [search, setSearch] = useState(query)
 
+  // 队列状态只存在于 URL 里, 刷新和分享出去的链接才落在同一个视图上。
+  const navigate = (next: Partial<AdminSubmissionQueueParams>) =>
+    router.push(buildAdminSubmissionQueueUrl({ query, status, page, ...next }))
+
   return (
     <div className="space-y-4">
+      <Tabs
+        aria-label="投稿状态"
+        selectedKey={status}
+        onSelectionChange={(key) => {
+          const nextStatus = key.toString() as PatchSubmissionStatus
+          if (nextStatus === status) {
+            return
+          }
+          // 换状态就是换一份列表, 旧页码在新列表里没有意义。
+          navigate({ status: nextStatus, page: 1 })
+        }}
+      >
+        {STATUS_TABS.map((value) => (
+          <Tab key={value} title={STATUS_LABEL[value]} />
+        ))}
+      </Tabs>
+
       <div className="flex flex-wrap items-center gap-2">
         <Input
           className="max-w-sm"
@@ -29,21 +106,19 @@ export const AdminSubmissionQueue = ({ submissions, total, query }: Props) => {
         <Button
           size="sm"
           variant="flat"
-          onPress={() =>
-            router.push(
-              `/admin/submission?query=${encodeURIComponent(search.trim())}`
-            )
-          }
+          onPress={() => navigate({ query: search.trim(), page: 1 })}
         >
           搜索
         </Button>
         <Chip size="sm" variant="flat">
-          待审核 {total}
+          {STATUS_LABEL[status]} {total}
         </Chip>
       </div>
 
       {submissions.length === 0 ? (
-        <p className="text-sm text-default-500">当前没有待审核的投稿。</p>
+        <p className="text-sm text-default-500">
+          当前没有{STATUS_LABEL[status]}的投稿。
+        </p>
       ) : (
         <div className="space-y-2">
           {submissions.map((submission) => (
@@ -59,9 +134,7 @@ export const AdminSubmissionQueue = ({ submissions, total, query }: Props) => {
                   {submission.authorName}
                 </Link>
                 <Chip size="sm" variant="flat">
-                  {submission.submittedAt
-                    ? new Date(submission.submittedAt).toLocaleString('zh-CN')
-                    : '未提交'}
+                  {timeLabel(submission)}
                 </Chip>
                 <Button
                   as={Link}
@@ -75,6 +148,16 @@ export const AdminSubmissionQueue = ({ submissions, total, query }: Props) => {
               </CardBody>
             </Card>
           ))}
+        </div>
+      )}
+
+      {total > limit && (
+        <div className="flex justify-center">
+          <KunPagination
+            total={Math.ceil(total / limit)}
+            page={page}
+            onPageChange={(nextPage) => navigate({ page: nextPage })}
+          />
         </div>
       )}
     </div>

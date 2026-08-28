@@ -2,7 +2,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const prismaMocks = vi.hoisted(() => ({
   patch_submission: {
+    count: vi.fn(),
     findFirst: vi.fn(),
+    findMany: vi.fn(),
     findUnique: vi.fn(),
     updateMany: vi.fn()
   },
@@ -22,7 +24,11 @@ import {
   getPatchSubmissionPublishPreview,
   updatePatchSubmissionDraft
 } from '~/app/api/patch-submission/service'
-import { getAdminPatchSubmission } from '~/app/api/admin/patch-submission/service'
+import {
+  getAdminPatchSubmission,
+  listAdminPatchSubmissions
+} from '~/app/api/admin/patch-submission/service'
+import type { PatchSubmissionStatus } from '~/types/api/patchSubmission'
 
 const payload = {
   name: 'Test',
@@ -181,6 +187,53 @@ describe('patch submission asset visibility', () => {
       })
     )
   })
+})
+
+describe('admin submission queue ordering', () => {
+  const listOrderBy = async (status?: PatchSubmissionStatus) => {
+    prismaMocks.patch_submission.findMany.mockResolvedValue([])
+    prismaMocks.patch_submission.count.mockResolvedValue(0)
+
+    const result = await listAdminPatchSubmissions({
+      page: 1,
+      limit: 50,
+      status,
+      query: '',
+      reviewerRole: 3
+    })
+    expect(result).not.toBeTypeOf('string')
+
+    return prismaMocks.patch_submission.findMany.mock.calls.at(-1)?.[0].orderBy
+  }
+
+  const oldestFirst = [{ submitted_at: 'asc' }, { id: 'asc' }]
+  const newestDecisionFirst = [
+    { reviewed_at: { sort: 'desc', nulls: 'last' } },
+    { updated: 'desc' },
+    { id: 'desc' }
+  ]
+
+  it('works the pending backlog oldest first', async () => {
+    expect(await listOrderBy('pending')).toEqual(oldestFirst)
+  })
+
+  it('opens on that same backlog when no status was asked for', async () => {
+    expect(await listOrderBy()).toEqual(oldestFirst)
+  })
+
+  it.each(['rejected', 'published', 'violation', 'deleted'] as const)(
+    'reads %s as history, most recently decided first',
+    async (status) => {
+      expect(await listOrderBy(status)).toEqual(newestDecisionFirst)
+    }
+  )
+
+  it.each(['draft', 'changes_requested'] as const)(
+    'falls %s back to last-edited first, because it has no review date',
+    async (status) => {
+      expect(await listOrderBy(status)).toEqual(newestDecisionFirst)
+    }
+  )
 })
 
 describe('admin submission vndb duplicates', () => {

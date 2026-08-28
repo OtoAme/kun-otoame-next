@@ -18,6 +18,8 @@ export interface AdminSubmissionRow {
   authorName: string
   authorId: number
   submittedAt: string | null
+  reviewedAt: string | null
+  updated: string
   created: string
 }
 
@@ -56,9 +58,11 @@ export interface AdminPatchSubmissionDetail {
 }
 
 /**
- * The review queue. Oldest submission first, because a queue ordered any other
- * way lets an entry sit forever. The first release shows only the title, the
- * author and the status: everything else is one click away on the detail page.
+ * The review queue, always scoped to exactly one status. Pending is a backlog,
+ * so it runs oldest first: any other order lets an entry sit forever. Every
+ * other status is a history one looks things up in, so it runs newest first.
+ * The row shows only the title, the author and one date — everything else is
+ * one click away on the detail page.
  */
 export const listAdminPatchSubmissions = async (input: {
   page: number
@@ -71,10 +75,11 @@ export const listAdminPatchSubmissions = async (input: {
     return '您没有审核投稿的权限'
   }
 
+  const status = input.status ?? 'pending'
   const search = input.query.trim()
   const numeric = Number(search)
   const where: Prisma.patch_submissionWhereInput = {
-    status: input.status ?? 'pending',
+    status,
     ...(search
       ? {
           OR: [
@@ -91,11 +96,21 @@ export const listAdminPatchSubmissions = async (input: {
       : {})
   }
 
+  const orderBy: Prisma.patch_submissionOrderByWithRelationInput[] =
+    status === 'pending'
+      ? [{ submitted_at: 'asc' }, { id: 'asc' }]
+      : // A draft was never reviewed, so it falls through to last-edited first;
+        // changes_requested surfaces what was bounced back most recently.
+        [
+          { reviewed_at: { sort: 'desc', nulls: 'last' } },
+          { updated: 'desc' },
+          { id: 'desc' }
+        ]
+
   const [rows, total] = await Promise.all([
     prisma.patch_submission.findMany({
       where,
-      // Pending work first, then the rest by recency.
-      orderBy: [{ submitted_at: 'asc' }, { created: 'asc' }],
+      orderBy,
       skip: (input.page - 1) * input.limit,
       take: input.limit,
       select: {
@@ -103,6 +118,8 @@ export const listAdminPatchSubmissions = async (input: {
         status: true,
         name: true,
         submitted_at: true,
+        reviewed_at: true,
+        updated: true,
         created: true,
         user: { select: { id: true, name: true } }
       }
@@ -119,6 +136,8 @@ export const listAdminPatchSubmissions = async (input: {
       authorId: row.user.id,
       authorName: row.user.name,
       submittedAt: row.submitted_at?.toISOString() ?? null,
+      reviewedAt: row.reviewed_at?.toISOString() ?? null,
+      updated: row.updated.toISOString(),
       created: row.created.toISOString()
     }))
   }
