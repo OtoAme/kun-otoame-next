@@ -10,9 +10,36 @@ import { prisma } from '~/prisma/index'
 import { searchSchema, searchTagSchema } from '~/validations/search'
 import {
   buildGalgameDateFilter,
-  buildGalgameOrderBy
+  buildGalgameOrderBy,
+  buildGalgameWhere
 } from '~/app/api/utils/galgameQuery'
 import type { SearchSuggestionType } from '~/types/api/search'
+
+const buildTagRelationFilter = (
+  tag: SearchSuggestionType
+): PrismaType.patch_tag_relationWhereInput =>
+  typeof tag.id === 'number'
+    ? { tag_id: tag.id }
+    : {
+        tag: {
+          OR: [{ name: tag.name }, { alias: { has: tag.name } }]
+        }
+      }
+
+const buildCompanyRelationFilter = (
+  company: SearchSuggestionType
+): PrismaType.patch_company_relationWhereInput =>
+  typeof company.id === 'number'
+    ? { company_id: company.id }
+    : {
+        company: {
+          OR: [
+            { name: company.name },
+            { alias: { has: company.name } },
+            { parent_brand: { has: company.name } }
+          ]
+        }
+      }
 
 export const searchGalgame = async (
   input: z.infer<typeof searchSchema>,
@@ -29,7 +56,8 @@ export const searchGalgame = async (
     sortField,
     sortOrder,
     selectedYears = ['all'],
-    selectedMonths = ['all']
+    selectedMonths = ['all'],
+    minRatingCount
   } = input
   const offset = (page - 1) * limit
   const insensitive = Prisma.QueryMode.insensitive
@@ -62,69 +90,138 @@ export const searchGalgame = async (
     return '搜索条件为空'
   }
 
-  const queryArray = query
-    .filter((item) => item.type === 'keyword')
-    .map((item) => item.name)
-  const tagArray = query
-    .filter((item) => item.type === 'tag')
-    .map((item) => item.name)
+  const buildKeywordCondition = (
+    keyword: string
+  ): PrismaType.patchWhereInput => ({
+    OR: [
+      { name: { contains: keyword, mode: insensitive } },
+      { vndb_id: keyword },
+      { vndb_relation_id: keyword },
+      { dlsite_code: keyword },
+      ...(searchOption.searchInIntroduction
+        ? [{ introduction: { contains: keyword, mode: insensitive } }]
+        : []),
+      ...(searchOption.searchInAlias
+        ? [
+            {
+              alias: {
+                some: {
+                  name: { contains: keyword, mode: insensitive }
+                }
+              }
+            }
+          ]
+        : []),
+      ...(searchOption.searchInTag
+        ? [
+            {
+              tag: {
+                some: {
+                  tag: { name: { contains: keyword, mode: insensitive } }
+                }
+              }
+            }
+          ]
+        : [])
+    ]
+  })
+
+  const buildKeywordExcludeCondition = (
+    keyword: string
+  ): PrismaType.patchWhereInput => ({
+    AND: [
+      {
+        NOT: {
+          name: { contains: keyword, mode: insensitive }
+        }
+      },
+      { OR: [{ vndb_id: null }, { vndb_id: { not: keyword } }] },
+      {
+        OR: [{ vndb_relation_id: null }, { vndb_relation_id: { not: keyword } }]
+      },
+      { OR: [{ dlsite_code: null }, { dlsite_code: { not: keyword } }] },
+      ...(searchOption.searchInIntroduction
+        ? [
+            {
+              NOT: {
+                introduction: { contains: keyword, mode: insensitive }
+              }
+            }
+          ]
+        : []),
+      ...(searchOption.searchInAlias
+        ? [
+            {
+              alias: {
+                none: {
+                  name: { contains: keyword, mode: insensitive }
+                }
+              }
+            }
+          ]
+        : []),
+      ...(searchOption.searchInTag
+        ? [
+            {
+              tag: {
+                none: {
+                  tag: { name: { contains: keyword, mode: insensitive } }
+                }
+              }
+            }
+          ]
+        : [])
+    ]
+  })
+
+  const includedKeywords = query
+    .filter((item) => item.type === 'keyword' && item.mode === 'include')
+    .map((item) => item.name.trim())
+    .filter(Boolean)
+  const excludedKeywords = query
+    .filter((item) => item.type === 'keyword' && item.mode === 'exclude')
+    .map((item) => item.name.trim())
+    .filter(Boolean)
+  const includedTags = query.filter(
+    (item) => item.type === 'tag' && item.mode === 'include'
+  )
+  const excludedTags = query.filter(
+    (item) => item.type === 'tag' && item.mode === 'exclude'
+  )
+  const includedCompanies = query.filter(
+    (item) => item.type === 'company' && item.mode === 'include'
+  )
+  const excludedCompanies = query.filter(
+    (item) => item.type === 'company' && item.mode === 'exclude'
+  )
 
   const dateFilter = buildGalgameDateFilter(selectedYears, selectedMonths)
-
-  const where = {
-    ...(selectedType !== 'all' && { type: { has: selectedType } }),
-    ...(selectedLanguage !== 'all' && { language: { has: selectedLanguage } }),
-    ...(selectedPlatform !== 'all' && { platform: { has: selectedPlatform } }),
-    ...nsfwEnable
-  }
-
+  const where = buildGalgameWhere({
+    selectedType,
+    selectedLanguage,
+    selectedPlatform,
+    minRatingCount: sortField === 'rating' ? minRatingCount : 0,
+    visibilityWhere: nsfwEnable
+  })
   const orderBy = buildGalgameOrderBy(sortField, sortOrder)
 
-  const queryCondition = [
-    ...queryArray.map((q) => ({
-      OR: [
-        { name: { contains: q, mode: insensitive } },
-        { vndb_id: q },
-        { vndb_relation_id: q },
-        { dlsite_code: q },
-        ...(searchOption.searchInIntroduction
-          ? [{ introduction: { contains: q, mode: insensitive } }]
-          : []),
-        ...(searchOption.searchInAlias
-          ? [
-              {
-                alias: {
-                  some: {
-                    name: { contains: q, mode: insensitive }
-                  }
-                }
-              }
-            ]
-          : []),
-        ...(searchOption.searchInTag
-          ? [
-              {
-                tag: {
-                  some: {
-                    tag: { name: { contains: q, mode: insensitive } }
-                  }
-                }
-              }
-            ]
-          : [])
-      ]
-    })),
+  const queryCondition: PrismaType.patchWhereInput[] = [
+    ...includedKeywords.map((keyword) => buildKeywordCondition(keyword)),
 
     nsfwEnable,
 
-    ...tagArray.map((q) => ({
-      tag: {
-        some: {
-          tag: {
-            OR: [{ name: q }, { alias: { has: q } }]
-          }
-        }
-      }
+    ...includedTags.map((tag) => ({
+      tag: { some: buildTagRelationFilter(tag) }
+    })),
+    ...includedCompanies.map((company) => ({
+      company: { some: buildCompanyRelationFilter(company) }
+    })),
+    ...excludedKeywords.map((keyword) => buildKeywordExcludeCondition(keyword)),
+    ...excludedTags.map((tag) => ({
+      tag: { none: buildTagRelationFilter(tag) }
+    })),
+    ...excludedCompanies.map((company) => ({
+      company: { none: buildCompanyRelationFilter(company) }
     }))
   ]
 
@@ -157,27 +254,59 @@ export const searchGalgame = async (
 export const searchTag = async (input: z.infer<typeof searchTagSchema>) => {
   const { query } = input
 
-  const data = await prisma.patch_tag.findMany({
-    where: {
-      OR: query.flatMap((q) => [
-        { name: { contains: q, mode: 'insensitive' } },
-        { alias: { has: q } }
-      ])
-    },
-    select: {
-      id: true,
-      name: true,
-      count: true,
-      alias: true
-    },
-    orderBy: { count: 'desc' },
-    take: 100
-  })
+  const [tags, companies] = await Promise.all([
+    prisma.patch_tag.findMany({
+      where: {
+        OR: query.flatMap((q) => [
+          { name: { contains: q, mode: 'insensitive' as const } },
+          { alias: { has: q } }
+        ])
+      },
+      select: {
+        id: true,
+        name: true,
+        count: true
+      },
+      orderBy: { count: 'desc' },
+      take: 50
+    }),
+    prisma.patch_company.findMany({
+      where: {
+        OR: query.flatMap((q) => [
+          { name: { contains: q, mode: 'insensitive' as const } },
+          { alias: { has: q } },
+          { parent_brand: { has: q } }
+        ])
+      },
+      select: {
+        id: true,
+        name: true,
+        count: true
+      },
+      orderBy: { count: 'desc' },
+      take: 50
+    })
+  ])
 
-  const tags = data.map((t) => ({
-    type: 'tag',
-    ...t
-  }))
+  const suggestions: SearchSuggestionType[] = [
+    ...tags.map((tag) => ({
+      id: tag.id,
+      type: 'tag' as const,
+      mode: 'include' as const,
+      name: tag.name,
+      count: tag.count
+    })),
+    ...companies.map((company) => ({
+      id: company.id,
+      type: 'company' as const,
+      mode: 'include' as const,
+      name: company.name,
+      count: company.count
+    }))
+  ]
+    .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name))
+    .slice(0, 100)
+    .map(({ id, type, mode, name }) => ({ id, type, mode, name }))
 
-  return tags
+  return suggestions
 }
