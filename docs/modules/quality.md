@@ -123,13 +123,14 @@ pnpm build
 
 `pnpm test:changed`（`vitest run --changed --passWithNoTests`）按 git 未提交变更沿 import 反向图选出受影响的全部测试；提交后复核可用 `pnpm vitest run --changed HEAD~1`。共享模块（`lib/*`、`app/api/utils/*`、`validations/*`）的改动会自然扩散成大范围回归，`vitest.config.ts` 等 forceRerunTriggers 命中时自动回退全量。
 
-`--changed` 的边界：只追踪 import 图。通过文件系统读取的资产不被追踪——改 `styles/*.css`（`theme.test.ts`）、`migration/*.sql`（各 migration 契约测试）、`prisma/schema/*`（source-guard 测试）这类文件时，手动指定对应测试或直接跑全量。
+`--changed` 的边界：只追踪 import 图。通过文件系统读取的资产不被追踪——改 `styles/*.css`（`theme.test.ts`）、`migration/*.sql`（各 migration 契约测试）、`prisma/schema/*`（source-guard 测试）、以及 README/docs/skills 里被契约测试直接读取的文件时，手动指定对应测试或直接跑全量。
 
-只改 docs/skills 时不需要跑测试（import 图选不出任何用例），但必须做：
+只改 docs/skills 时 import 图同样选不出任何用例，但不等于免测：bootstrap、sticker、deploy 命令和主题契约测试会直接读取 README、部分 `docs/project/*`、`docs/modules/*`、`docs/theme-color-system.md` 和部分 `skills/*/SKILL.md`。docs/skills-only 提交必须做：
 
 ```bash
+pnpm test:docs-contracts
 rg -n "T[B]D|TO[D]O|f[i]ll in|implement late[r]" docs skills README.md
 wc -w skills/*/SKILL.md
 ```
 
-后者用于核对领域 skill 的 100-250 words 预算。
+`test:docs-contracts` 固定列出所有通过文件系统读取文档/skill 的契约测试；新增这类测试时必须同步把文件加进该脚本。`wc -w` 用于核对领域 skill 的 100-250 words 预算；该预算适用于所有领域 skill，完整操作流程下沉到 Required References 指向的文档，skill 内只保留高风险不变量。
