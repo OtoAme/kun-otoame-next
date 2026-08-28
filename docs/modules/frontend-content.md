@@ -54,6 +54,7 @@
 - 明细 `kind` 来自数据库 String 列，渲染时必须有兜底：生产有 CHECK 约束但开发库走 `prisma db push` 没有，一个意外值会让整页白屏。
 - 窄屏（`sm` 以下）用卡片列表替代 4 列表格，否则「变动」和「变更后余额」各占 3 行会横向溢出。
 - 本人访问自己的明细时，页面返回的权威余额会同步回 `userStore`；管理员在后台查看他人明细时不能覆盖管理员自己的顶栏余额。
+- 管理员发放弹窗每次打开生成新的 requestId；请求抛异常（结果不明）时冻结请求快照并锁定输入，只允许「重试原请求」（原样重发同一 requestId 与参数）或关闭弹窗后核对账单；业务字符串错误保留表单不关弹窗；成功响应 `applied: false` 提示「此前已生效, 未重复发放」。请求飞行中锁定 backdrop/Esc/关闭钮/取消键。
 
 ## 消息展示
 
@@ -199,6 +200,7 @@ pnpm typecheck
 - 共享组件保持通用，不依赖具体 API 响应。
 - 列表翻页默认使用 `components/kun/Pagination.tsx`。页码变化时由共享分页触发 `utils/scrollToTop.ts` 的快速回顶部动画，并尊重 `prefers-reduced-motion`；不要在页面里复制 `window.scrollTo({ behavior: 'smooth' })`，确实不应移动页面时传 `disableScrollToTop`。
 - 新图标优先用 `lucide-react` 或现有图标。
+- 服务端渲染可见的时间用 `utils/fixedTimezoneDate.ts` 的 `formatChinaDateTime`（固定 Asia/Shanghai），不要用环境时区的 `toLocaleString` 或 `utils/time.ts::formatDate`——SSR 与浏览器时区不同时会水合不一致。
 - 用户文案保持 OtoAme 命名，避免误回退到 TouchGal/GalGame。
 - NSFW 相关 UI 必须同时检查遮罩、标题、列表过滤和详情隐藏。
 
@@ -241,6 +243,8 @@ pnpm typecheck
 - 投稿画廊水印默认开启，开关随每张上传请求传到服务端；动态 WebP/AVIF 仍保留原图且不加水印。编辑态还提供 HeroUI 批量 SFW / NSFW 控件，一次性改写选中卡片的分级，并沿用 create/rewrite 的 NSFW 危险色边框与右上角角标，不盖 reveal mask；只读的作者预览和审核详情才使用真实 `NSFWMask`，遮罩揭开前不能从放大按钮绕过。
 - 投稿 gallery 待上传项用独立 localforage store 持久化 Blob、文件元数据、稳定 `clientAssetId`、顺序、水印与状态。页面刷新时把遗留 `uploading` 恢复成可重试失败态，并重新创建临时预览 URL；成功后立即删除本地记录并 `revokeObjectURL`。上传遮罩使用 Spinner，HeroUI Progress 只显示完成文件数 / 总数，不声称字节百分比。
 - 只要 localforage 草稿尚未读完、仍有待上传/失败项或上传请求在途，就禁用提交审核。服务端上传响应返回 ready gallery DTO，客户端用稳定 ID 把占位卡替换成云端卡；若超时后服务端其实已完成，同一 ID 重试会返回既有 ready 行并清理本地项。
+- **审核详情的重复面板语义随投稿状态**：仅 `pending` 渲染警告卡（未确认用 danger Chip）；其余所有状态整卡中性色、Chip 一律 default（「投稿者当时未确认」不得用 danger）、标题与文案改为历史复查口吻。「已发布为」链接独立于重复面板显示在页头（没有其他重复条目也显示）；`publishedPatch` 为 null（正式条目已删除）时不渲染链接并正常降级。审核确认弹窗在请求飞行中锁定全部关闭路径（backdrop/Esc/关闭钮/取消/确认），通过提示用行上冻结的 `heldAmount` 与 `PATCH_SUBMISSION_PUBLISH_REWARD` 报出具体数字，不按审核人当前角色重算，押金为 0 时只提奖励。
+- **审核队列的 status/page/query 只存在于 URL**：`components/admin/submission/queueParams.ts` 的解析与构造成对，非法参数回退默认 pending 视图；切换状态或搜索重置回第一页，翻页保留另两个参数；行内时间标签、计数 Chip 与空态文案随状态（pending 提交时间、draft 更新时间、其余优先审核时间）；搜索区是真正的 form，Enter 与按钮同路径提交。
 - **作者预览与审核详情共用正式条目外观。** `PatchSubmissionPreviewView` 组合正式详情页的正文 renderer、Gallery/灯箱、官网和 Info 元数据块；标签与会社在正式行创建前只显示只读 chip，不渲染评分、下载、编辑器或讨论/资源 tab。封面框固定 16:9，点击后优先在灯箱显示保存的原图，并在标题旁显示 SFW/NSFW 分级。灯箱通过 `onOpenChange` 告知外层预览 Modal，在灯箱打开期间禁止 outside press 与 Escape 同时关闭两层。
 - **审核队列只负责检索和进入详情。** 通过、要求修改、驳回、违规四个动作全部放在详情页，避免审核员未看正文与素材就结算；详情与作者预览共用 `publishPreview.ts` 投影和 `PatchSubmissionPreviewView`。超级管理员自审必须显式打开 override，普通管理员不能自审。详情页若收到“投稿已被撤回或处理”的状态冲突，只显示错误、关闭确认弹窗并 `router.refresh()`；其它业务错误保留当前弹窗和上下文。
 - **投稿画廊卡片的选择、放大、删除各自是可聚焦控件且有可访问名称。** 不要照搬编辑页那种「整卡承担点击 + `pointer-events-none` 的 checkbox」写法：那让纯键盘用户既选不中也放不大, 而投稿面向普通用户。
