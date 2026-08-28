@@ -4,6 +4,8 @@ import { listAdminPatchSubmissions } from '~/app/api/admin/patch-submission/serv
 import { AdminSubmissionQueue } from '~/components/admin/submission/AdminSubmissionQueue'
 import {
   ADMIN_SUBMISSION_QUEUE_LIMIT,
+  buildAdminSubmissionQueueUrl,
+  clampAdminSubmissionQueuePage,
   parseAdminSubmissionSearchParams
 } from '~/components/admin/submission/queueParams'
 
@@ -12,7 +14,11 @@ export const dynamic = 'force-dynamic'
 export default async function AdminSubmissionPage({
   searchParams
 }: {
-  searchParams: Promise<{ query?: string; status?: string; page?: string }>
+  searchParams: Promise<{
+    query?: string | string[]
+    status?: string | string[]
+    page?: string | string[]
+  }>
 }) {
   const payload = await verifyHeaderCookie()
   if (!payload) {
@@ -32,6 +38,17 @@ export default async function AdminSubmissionPage({
 
   if (typeof result === 'string') {
     return <p className="text-sm text-danger">{result}</p>
+  }
+
+  // 队列会在审核过程中变短, 页码落到列表外面就把人送回最后一页有内容的地方;
+  // 重定向后的页码必然在范围内, 不会再次跳转。
+  const lastPage = clampAdminSubmissionQueuePage(
+    page,
+    result.total,
+    ADMIN_SUBMISSION_QUEUE_LIMIT
+  )
+  if (lastPage !== page) {
+    redirect(buildAdminSubmissionQueueUrl({ query, status, page: lastPage }))
   }
 
   return (

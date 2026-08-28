@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Button, Card, CardBody, Chip, Input, Tab, Tabs } from '@heroui/react'
 import Link from 'next/link'
 import { useRouter } from '@bprogress/next'
@@ -69,6 +69,11 @@ export const AdminSubmissionQueue = ({
 }: Props) => {
   const router = useRouter()
   const [search, setSearch] = useState(query)
+
+  // 前进后退换掉了 URL 上的搜索词, 列表已经换了一份, 输入框也得跟上。
+  useEffect(() => {
+    setSearch(query)
+  }, [query])
 
   // 队列状态只存在于 URL 里, 刷新和分享出去的链接才落在同一个视图上。
   const navigate = (next: Partial<AdminSubmissionQueueParams>) =>

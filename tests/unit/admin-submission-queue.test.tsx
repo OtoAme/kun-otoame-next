@@ -297,6 +297,13 @@ describe('AdminSubmissionQueue', () => {
     expect(url.searchParams.get('query')).toBe('fate')
   })
 
+  it('follows the URL back into the search box when the query changes', async () => {
+    await render({ query: 'fate' })
+    const document = await render({ query: 'clannad' })
+
+    expect(document.querySelector('input')?.value).toBe('clannad')
+  })
+
   it('offers a clear affordance on the search box', async () => {
     const document = await render()
 

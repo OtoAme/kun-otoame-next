@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   buildAdminSubmissionQueueUrl,
+  clampAdminSubmissionQueuePage,
   parseAdminSubmissionSearchParams
 } from '~/components/admin/submission/queueParams'
 import { PATCH_SUBMISSION_STATUSES } from '~/types/api/patchSubmission'
@@ -51,6 +52,58 @@ describe('parseAdminSubmissionSearchParams', () => {
     expect(parseAdminSubmissionSearchParams({ query: '  fate  ' }).query).toBe(
       'fate'
     )
+  })
+
+  it('cuts the query down to what the list API will accept', () => {
+    const query = 'あ'.repeat(200)
+
+    expect(parseAdminSubmissionSearchParams({ query }).query).toBe(
+      query.slice(0, 107)
+    )
+  })
+
+  it('rejects a page beyond what the list API will accept', () => {
+    expect(parseAdminSubmissionSearchParams({ page: '10000' }).page).toBe(1)
+    expect(parseAdminSubmissionSearchParams({ page: '9999' }).page).toBe(9999)
+  })
+
+  it('reads the first value when a key is repeated in the URL', () => {
+    expect(
+      parseAdminSubmissionSearchParams({
+        query: ['  fate  ', 'other'],
+        status: ['rejected', 'draft'],
+        page: ['3', '9']
+      })
+    ).toEqual({ query: 'fate', status: 'rejected', page: 3 })
+  })
+
+  it('falls back to the default view when the repeated values are unusable', () => {
+    expect(
+      parseAdminSubmissionSearchParams({
+        query: [],
+        status: ['approved', 'draft'],
+        page: ['two', '9']
+      })
+    ).toEqual({ query: '', status: 'pending', page: 1 })
+  })
+})
+
+describe('clampAdminSubmissionQueuePage', () => {
+  it('keeps a page that still has rows on it', () => {
+    expect(clampAdminSubmissionQueuePage(2, 51, 50)).toBe(2)
+  })
+
+  it('keeps the last page when the rows fill it exactly', () => {
+    expect(clampAdminSubmissionQueuePage(2, 100, 50)).toBe(2)
+  })
+
+  it('pulls a page that outran the list back to the last one with rows', () => {
+    expect(clampAdminSubmissionQueuePage(2, 50, 50)).toBe(1)
+    expect(clampAdminSubmissionQueuePage(9, 120, 50)).toBe(3)
+  })
+
+  it('lands on the first page when the status is empty', () => {
+    expect(clampAdminSubmissionQueuePage(4, 0, 50)).toBe(1)
   })
 })
 
