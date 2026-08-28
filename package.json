@@ -47,7 +47,8 @@
     "maintenance:gallery-thumbnails:dry": "esno scripts/galleryThumbnailBackfill.ts",
     "maintenance:gallery-thumbnails:apply": "esno scripts/galleryThumbnailBackfill.ts --apply",
     "stickers:sync": "esno scripts/syncStickers.ts",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:changed": "vitest run --changed --passWithNoTests"
   },
   "author": {
     "name": "KUN1007",
