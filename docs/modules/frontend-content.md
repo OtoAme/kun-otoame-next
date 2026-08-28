@@ -24,7 +24,7 @@
 
 - `app/*/page.tsx` 默认是 Server Component。
 - 需要 hooks、事件、browser API、store 的组件使用 `'use client'`。
-- API 调用在 client 组件中通常通过 `utils/kunFetch.ts`。后端若用非 2xx 返回 JSON 字符串业务错误（例如私聊限流 `429`），`kunFetch` 会把该字符串返回给调用方，让现有 `typeof response === 'string'` toast 分支继续工作。
+- API 调用在 client 组件中通常通过 `utils/kunFetch.ts`；状态变更请求必须使用它或自行保留同样的 CSRF header 行为。后端若用非 2xx 返回 JSON 字符串业务错误（例如私聊限流 `429`），`kunFetch` 会把该字符串返回给调用方，让现有 `typeof response === 'string'` toast 分支继续工作。私聊图片上传要额外保留非 2xx 状态码，让上传 toast 能同时给出 HTTP 状态码和服务端原因，尤其是 `413` 体积超限。
 - 页面级 server action 放在对应 `app/<route>/actions.ts`。
 
 ## 资源详情与下载
@@ -60,7 +60,7 @@
 - `components/message/MessageCard.tsx` 将通知正文作为纯文本渲染，并保留换行，用于系统通知展示多行变更摘要。
 - 私聊会话详情页使用 `components/message/MessageLayoutChrome.tsx` 做路由级布局控制。只有 `/message/chat/[conversationId]` 会隐藏消息页标题、说明文字和全站面包屑，消息列表页继续保留原有 header、面包屑和消息导航。该页外层通过 `--message-chat-top-reserve` 预留顶部空间，并让聊天卡片高度扣除这段预留；视觉高度微调优先调整这个 CSS 变量，再考虑基础预留值。`MessageNav` 在会话详情页大屏继续作为左侧栏显示，小屏通过 `max-lg:hidden` 隐藏，避免在聊天窗口上方占用高度；消息列表页不使用这条隐藏规则。
 - 私聊会话详情页的全站根布局由 `components/layout/RootRouteChrome.tsx` 按路由裁剪。该路由不渲染全站 footer 和 back-to-top，并负责锁定/恢复 document 滚动；离开私聊详情页时必须恢复全站滚动，并在下一帧/短延迟再次确认 `overflow-y: auto`，避免其他页面被残留的 `overflow: hidden` 影响。移动端从 HeroUI Navbar 菜单等已带滚动锁的入口跳进私聊详情时，根布局只能释放自己仍然持有的锁，不能把已经释放的外部 `overflow: hidden` 再写回。移动端聊天卡片高度通过 `--message-chat-visual-viewport-height` 读取 `visualViewport.height`，并通过 `--message-chat-visual-viewport-offset-top` 跟随 Chrome 等浏览器在输入法展开时产生的 visual viewport 偏移；详情页 viewport 使用 `interactiveWidget: 'resizes-content'` 让支持的 Chrome 优先缩 layout viewport，不支持时由 visualViewport 变量兜底。输入法展开时只折叠/平移聊天区域并把 document scroll 拉回 0，不要在这里临时给 `body` 写 `position: fixed`，否则会和 Chrome 的输入聚焦滚动叠加。仍然只让 `ChatContainer` 内部消息列表滚动，不要为了取消整页滚动而移除或重写 `ChatContainer` 原本的卡片和内部 `overflow-y-auto` 滚动容器。
-- 私聊消息气泡宽度以 `ChatContainer` 内部消息滚动区的 `@container` 为口径，不能再退回 viewport 宽度。移动端/base 使用 `max-w-[70cqw]`，`md` 及以上使用 `md:max-w-[60cqw]`；带文字或引用的图片气泡保留 `md:w-[min(60cqw,32rem)]`，单图图片仍可 `w-fit` 收缩，但同样受这组最大宽度限制。私聊回复预览只显示一行内容，使用气泡当前可用宽度做 `text-overflow: ellipsis`，不要按固定字符数截断或恢复为多行 clamp。
+- 私聊消息气泡宽度以 `ChatContainer` 内部消息滚动区的 `@container` 为口径，不能再退回 viewport 宽度。移动端/base 使用 `max-w-[70cqw]`，`md` 及以上使用 `md:max-w-[60cqw]`；带文字或引用的图片气泡保留 `md:w-[min(60cqw,32rem)]`，单图图片仍可 `w-fit` 收缩，但同样受这组最大宽度限制。私聊回复预览只显示一行内容，使用气泡当前可用宽度做 `text-overflow: ellipsis`，不要按固定字符数截断或恢复为多行 clamp。文档里引用 Tailwind 任意值 class 时必须写出完整有效的 token 名，不要在 class 字符串里放省略号占位——Tailwind 会扫描这类文档式源文本。
 - 私聊 Sticker Pack 封面始终使用静态 WebP poster。聊天选择面板、回复预览和管理网格中的非封面动态缩略图复用 `StickerThumbnail`：接近可视区域时以 `preload="auto"` 首次挂载静音循环 WebM，首帧就绪后移除 poster；首次挂载后始终保留同一个视频节点，但只有实际可见的缩略图持续解码，滚动离开时暂停、返回时从原进度恢复，避免看过的后台视频不断累积并拖慢当前播放。可见视频遇到浏览器 `pause`、`waiting`、`stalled` 或异常结束时主动续播。命中 `prefers-reduced-motion` 时仍只保留 poster，避免透明视频与静态帧叠加。
 - 资源可用的私聊 Sticker 消息按 Telegram 风格直接显示贴纸，不绘制普通消息气泡的背景、描边、阴影或内边距；时间和发送方已读状态继续使用贴纸右下角的半透明浮层，右键、键盘菜单、滑动回复和回复跳转交互仍挂在透明容器上。Sticker 记录或资源不可用时保留普通文本气泡显示降级文案，避免透明交互区域无法解释失败状态。
 - 私聊 Sticker 选择面板不要使用 `100vw` 作为移动端边界。Sticker 入口使用 HeroUI `Textarea` 的 `endContent` 嵌在输入区最右侧：触发器绝对定位到 `inputWrapper` 右下角，不参与 Textarea 高度计算，并给输入文字保留右侧空间；发送按钮仍位于输入框外。`ChatContainer` 在消息滚动区上层提供受限 Portal 宿主：移动端 Picker 固定在消息可视区域底部，保持全宽和 `50%` 高度并在内部滚动，不覆盖标题和输入栏，也不会越出聊天卡片；宽屏 Picker 在同一宿主底部显示，右边缘按 Sticker 触发器相对消息区的实际位置动态对齐，宽度使用私聊消息窗口的 `60%`。Picker 通过 Framer Motion `AnimatePresence` 保留退出节点：打开时从底部轻微上移、缩放并淡入，关闭时快速淡出；退出期间禁用指针事件，命中 `prefers-reduced-motion` 时不播放过渡。所有宽度下的 Sticker 网格统一使用 5 列；Portal 宿主同时是 inline-size container，宽屏网格用 container query 单位计算 4 行方形 Sticker 的最大高度，并继续受消息区可用高度约束。Portal 后的外部点击判断必须同时包含触发按钮和 Picker 节点。
@@ -103,6 +103,7 @@ Store 改动要检查使用该 store 的页面和组件，不要只改类型。
 - 不要用请求发起时捕获的旧 `data` 对象整体覆盖 store，否则后返回的 Bangumi/Steam 会丢掉先返回的 VNDB ID、公司、标签或别名。
 - VNDB 获取只写入 ID、发售日、别名和 developer，不写入 VNDB 标签。
 - Bangumi 获取会保留标签、developer、summary 和标题预览；summary 和标题只通过用户点击按钮填入简介或游戏名称，不自动覆盖已有内容。标题填入时中文名优先，没有中文名则使用原名。
+- Steam 查重是软提示：命中已有 Steam App ID 时展示警告和已有条目链接，但仍然继续 `/api/edit/steam` 拉取并允许提交。Bangumi ID 查重仍然是阻塞式的。
 - 公司写入优先级由 API 层处理：VNDB developer 优先，Bangumi developer 兜底；前端仍要保留 Bangumi 标签等非公司字段。
 - 创建游戏页的“清除信息”用于从 A 游戏草稿切换到 B 游戏草稿，必须同时 reset `editStore`、清理封面和图库 localforage 草稿，并让封面/图库组件重新读取空状态。
 
@@ -237,7 +238,7 @@ pnpm typecheck
 - **作者表单只有 `draft` 与 `changes_requested` 可编辑。** `pending`、`rejected` 等其他状态仍可查看已保存内容，但名称、外部 ID、封面、正文、画廊、别名、官网、发售日、标签与内容分级都必须只读；VNDB、Release、Bangumi、Steam 的获取与回填按钮也必须禁用。只读画廊仍允许放大查看。
 - **共享 VNDB ID 必须显式确认。** VNDB ID 可以被同一游戏的不同版本共用，所以它不是硬唯一字段；当抓取结果命中已发布条目时，投稿表单通过受控的 `isDuplicate` 复用直接发布页的确认框。未确认不能提交，确认结果随 payload 保存；审核详情同时展示命中的正式条目和投稿者是否确认，最终是否属于重复收录仍由审核员判断。
 - `KunDualEditorProvider` 是 `value` + `onChange` 受控组件，不导入 create/rewrite/submission store。三个页面各自在薄封装或调用方中绑定自己的状态，避免通用编辑器累积 store 分支。
-- 投稿画廊水印默认开启，开关随每张上传请求传到服务端；动态 WebP/AVIF 仍保留原图且不加水印。编辑态沿用 create/rewrite 的 NSFW 危险色边框与右上角角标，不盖 reveal mask；只读的作者预览和审核详情才使用真实 `NSFWMask`，遮罩揭开前不能从放大按钮绕过。
+- 投稿画廊水印默认开启，开关随每张上传请求传到服务端；动态 WebP/AVIF 仍保留原图且不加水印。编辑态还提供 HeroUI 批量 SFW / NSFW 控件，一次性改写选中卡片的分级，并沿用 create/rewrite 的 NSFW 危险色边框与右上角角标，不盖 reveal mask；只读的作者预览和审核详情才使用真实 `NSFWMask`，遮罩揭开前不能从放大按钮绕过。
 - 投稿 gallery 待上传项用独立 localforage store 持久化 Blob、文件元数据、稳定 `clientAssetId`、顺序、水印与状态。页面刷新时把遗留 `uploading` 恢复成可重试失败态，并重新创建临时预览 URL；成功后立即删除本地记录并 `revokeObjectURL`。上传遮罩使用 Spinner，HeroUI Progress 只显示完成文件数 / 总数，不声称字节百分比。
 - 只要 localforage 草稿尚未读完、仍有待上传/失败项或上传请求在途，就禁用提交审核。服务端上传响应返回 ready gallery DTO，客户端用稳定 ID 把占位卡替换成云端卡；若超时后服务端其实已完成，同一 ID 重试会返回既有 ready 行并清理本地项。
 - **作者预览与审核详情共用正式条目外观。** `PatchSubmissionPreviewView` 组合正式详情页的正文 renderer、Gallery/灯箱、官网和 Info 元数据块；标签与会社在正式行创建前只显示只读 chip，不渲染评分、下载、编辑器或讨论/资源 tab。封面框固定 16:9，点击后优先在灯箱显示保存的原图，并在标题旁显示 SFW/NSFW 分级。灯箱通过 `onOpenChange` 告知外层预览 Modal，在灯箱打开期间禁止 outside press 与 Escape 同时关闭两层。

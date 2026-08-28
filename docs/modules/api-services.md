@@ -218,7 +218,7 @@ service/helper 负责：
 - 公司来源优先级是 VNDB > Bangumi。只要 VNDB ID 成功关联到至少一个公司，就不再使用 Bangumi developer 创建或关联公司；Bangumi developer 只作为 VNDB 无公司时的兜底。
 - Steam developer 和 DLSite circle 独立补充公司关系，不参与 VNDB/Bangumi 主来源互斥。
 - 外部公司关系必须按 `name` 和 `alias` 查找已有公司；提交名命中现有 alias 时，应关联到已有公司，而不是创建新公司。
-- 新增外部公司关系后必须调用 `invalidateCompanyCaches`；只新增标签或别名时不应误触发公司缓存失效。
+- 新增、删除或外部拉取公司关系后必须调用 `invalidateCompanyCaches`，并按 [Patch 缓存](data-cache-upload.md) 的约定同时失效受影响 patch 的详情/简介内容缓存；只清公司缓存会让公司页刷新而游戏详情页继续展示旧公司。只新增标签或别名时不应误触发公司缓存失效。
 
 ### 资源发布和上传
 
@@ -316,7 +316,7 @@ service/helper 负责：
 - **`reject` 是独立动作**（返还, 不罚没）, 用于重复条目、超出收录范围、诚实但无法发布。缺它会让审核只剩「无限期挂着」或「不公平罚没」。
 - **发布核心三层**：提交前抓取外部数据并冻结进 payload；最终事务内纯 DB 写入 patch/alias/tag/company/gallery/结算/通知/日志；事务后只做缓存失效与 SFW IndexNow。批准链路全程不访问外网。
 - **审核展示与发布使用同一投影**：payload 中的手填、VNDB、Bangumi、Steam、DLsite 别名/标签/公司都由 `publishPreview.ts` 合并；作者预览、管理员详情与 `publishCore.ts` 不得各自复制合并规则。终态清理 key 不能进入管理员预览 DTO。
-- **作者预览读取服务端冻结版本**：`GET /api/patch-submission/[id]/preview` 在 service 层用投稿 ID + 当前用户 ID 校验所有权，返回共享发布投影并设置 `private, no-store`。可编辑草稿只有在 `flush()` 成功后才请求该路由，不能用未保存的本地 payload 假装服务端预览；`pending` 已不可编辑，作者自查时直接读取已冻结版本，不再发送空保存。
+- **作者预览读取服务端冻结版本**：`GET /api/patch-submission/[id]/preview` 先按严格正整数校验路由参数，再在 service 层用投稿 ID + 当前用户 ID 校验所有权，返回共享发布投影并设置 `private, no-store`。可编辑草稿只有在 `flush()` 成功后才请求该路由，不能用未保存的本地 payload 假装服务端预览；`pending` 已不可编辑，作者自查时直接读取已冻结版本，不再发送空保存。
 - **重复外部 ID 分软硬两类**：Release ID、Bangumi ID、DLSite Code 在提交前既检查作者自己的活动投稿，也检查已发布条目；批准事务若仍因竞态命中 Prisma `P2002`，必须转换为指出冲突字段的审核员可见错误，事务回滚后投稿保持 `pending`、押金不结算。VNDB ID 本身允许不同版本共用：命中已发布条目时只有投稿者显式保存 `isDuplicate` 确认后才可提交，审核详情必须列出最多 10 个冲突条目及确认状态，由审核员决定是否重复收录。
 - **外部数据 provenance 记录真实抓取时刻**：VNDB、Bangumi、Steam 输入只在抓取成功后回调 source，并把当时的 ISO timestamp 一起写入投稿 store。后续 autosave 原样发送该 timestamp，服务端不得用每次保存的 `now()` 伪刷新新鲜度。
 - `PATCH /api/patch-submission/asset` 位于 middleware matcher 外，必须在 handler 内先校验 CSRF，再鉴权、校验可编辑状态以及全部 gallery ID 的投稿归属；不能只相信客户端选择集。

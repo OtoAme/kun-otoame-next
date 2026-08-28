@@ -48,6 +48,8 @@ Schema 修改后至少运行 `pnpm prisma:generate`。会影响数据库结构�
 
 萌萌点账务使用 `user.moemoepoint_reserved`、`user_moemoepoint_ledger` 和 `user_moemoepoint_reservation`。总额保留在原 `moemoepoint` 字段；待结算不改变总额，可用余额在读取时计算为 `moemoepoint - moemoepoint_reserved`。明细和暂扣记录随账户保留，用户删除时级联删除；操作人/结算人删除时只把审计外键置空。生产先运行 `production-moemoepoint-ledger-preflight-2026-08-17.sql`，审核后运行对应 sync；sync 会为既有账户建立幂等的迁移初始余额明细，然后再运行 `pnpm prisma:deploy-safe` 校验 schema。
 
+数据库层只对 `moemoepoint_reserved` 施加非负 CHECK，总额 `moemoepoint` **没有下限**：取消点赞、删除资源等回退必须真实扣回，账本才是完整审计链。不要在没有产品决策的情况下补一条 `moemoepoint >= 0` 约束，也不要在 service 里 clamp 回退金额；上线用的 dated preflight 会统计既有负余额账户，负数是预期结果而不是待修数据。投稿押金实际使用 `reserveMoemoepoint` / `releaseMoemoepoint` / `forfeitMoemoepoint` 与 `user_moemoepoint_reservation`，接入点见 [投稿域](api-services.md)，不要当成未启用的预留基础设施删改。
+
 明细当前不设置 TTL，按账户生命周期完整保留。原因、关联链接和幂等键均使用有界短字段，日常记录通常远小于字段上限；上线后用 PostgreSQL 的 `pg_total_relation_size('user_moemoepoint_ledger')` 同时监控表和索引实际占用。若未来增长超出容量预算，应先把冷数据归档到只读存储并保留可查询入口，不直接截断审计明细。
 
 私聊会话表 `user_conversation` 使用 `user_a_hidden` / `user_b_hidden` 保存每个参与方自己的列表隐藏状态。隐藏会话不是删除历史消息；发送新消息会把双方 hidden flag 恢复为 `false`。生产同步可先运行 `migration/production-conversation-hidden-preflight-2026-07-01.sql` 检查列状态，再运行 `migration/production-conversation-hidden-sync-2026-07-01.sql` 添加缺失列并补齐默认值。
@@ -141,6 +143,8 @@ Cloudflare purge 约定：
 浏览量不是普通 patch cache：详情页由 `components/patch/view/PatchViewBeacon.tsx` 在客户端调用 `POST /api/patch/views`，该接口返回 `Cache-Control: private, no-store`，底层 `app/api/patch/views/buffer.ts` 使用 Redis hash 记录 `views:buffer`、`patch:stats:view` 和 `patch:stats:download`，`server/tasks/flushPatchViewsTask.ts` 每 2 分钟把 pending buffer 批量写入 PostgreSQL。静态首页卡片通过 `GET /api/patch/stats` no-store 接口拉取实时 view/download 并做客户端合并。改列表、详情、首页或排行统计时要同时检查实时叠加和落库任务。
 
 评论、评分、下载、收藏、详情页 tag/company 关系会影响公开卡片统计、详情内容或 tag/company 页面。对应写入成功后必须清理内容缓存和列表缓存；仅更新评论正文/简评这类不改变列表计数的操作至少要清理内容缓存。后台更新/删除、举报处理和维护接口也要遵守同一规则。
+
+patch-company 关系的创建、删除和外部数据拉取必须同时调用 `invalidateCompanyCaches` 和受影响 patch 的 `invalidatePatchContentCache(uniqueId)`。只失效公司/列表缓存会让公司页和游戏详情页给出互相矛盾的公司信息。
 
 ## 上传与 S3
 
@@ -249,7 +253,7 @@ Gallery 图片上传走 `app/api/edit/gallery/route.ts` 和 `app/api/edit/galler
 
 删除资源前必须确认没有其他 `patch_resource_link` 引用同一 content。
 
-`extractS3Key` 接受以 `KUN_VISUAL_NOVEL_IMAGE_BED_URL` 或 `NEXT_PUBLIC_KUN_VISUAL_NOVEL_S3_STORAGE_URL` 精确 base 开头的 URL。删除逻辑遇到非本站 URL 或相似 hostname 会拒绝删除并记录错误，这是防止误删外部链接的保护。
+`extractS3Key` 定义在 `app/api/patch/resource/_helper.ts`，所有需要从库中 URL 反解 S3 key 的路径（rewrite 提交、整条目删除、单图删除、私聊图片删除、维护脚本）都复用它，不要各自写解析。它只接受以 `KUN_VISUAL_NOVEL_IMAGE_BED_URL` 或 `NEXT_PUBLIC_KUN_VISUAL_NOVEL_S3_STORAGE_URL` 精确 base 开头的 URL；删除逻辑遇到非本站 URL 或相似 hostname 会拒绝删除并记录错误，这是防止误删外部链接的保护。
 
 ### 投稿素材的 key 布局（不同于正式条目）
 
