@@ -286,10 +286,9 @@ GitHub Actions 只需要构建期公开变量：
 
 当前 CI 分支配置：
 
-- `.github/workflows/release.yml` 监听 `main` 和手动触发。
-- `.github/workflows/lint-check.yml` 监听 `master` 的 push 和 PR。
+- `.github/workflows/release.yml` 监听 `main` 和手动触发，是仓库唯一的 workflow。
 
-这意味着推送到 `main` 会发 release，但不会触发当前 lint workflow；如果项目主分支长期是 `main`，应考虑把 lint workflow 也改到 `main`。
+CI 只负责构建发布产物，不运行 lint、类型检查或测试；发布前验证由本地按 `docs/modules/quality.md` 的分层约定执行。同步上游时若带回 `lint-check.yml`（上游主分支是 `master`，该 workflow 在本仓库永不触发，且 `next lint` 在 Next 15 已是弃用路径），保持删除。
 
 ## 发布前检查
 
@@ -316,7 +315,7 @@ pnpm test
 workflow 改动还应检查：
 
 - release workflow 是否仍监听当前主分支。
-- lint/typecheck workflow 是否覆盖 PR 和主分支。
+- 若引入检查类 workflow，覆盖 PR 和主分支，运行 `pnpm typecheck` + `pnpm test` 而不是已弃用的 `next lint`。
 - GitHub Environment `buildPublicEnv` 是否包含所有构建期 `NEXT_PUBLIC_*`。
 - release packaging 和 `scripts/postbuild.ts` 的 runtime asset 列表是否同步。
 

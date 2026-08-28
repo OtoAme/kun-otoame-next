@@ -252,7 +252,7 @@ pnpm deploy:pull
 
 脚本会自动 `git pull` 更新项目源码，从 GitHub 下载最新的 release.tar.gz 构建产物并应用，速度取决于网络，通常仅需几秒。
 
-当前仓库还有一个 lint workflow 监听 `master` 分支；如果你的主分支是 `main`，请以 [部署手册](./docs/project/deployment.md) 中的 CI 分支说明为准，必要时同步 workflow 分支。
+当前仓库的 CI 只有 release workflow（监听 `main`），不运行测试或类型检查；发布前验证方式以 [部署手册](./docs/project/deployment.md) 的 CI 分支说明为准。
 
 **🛠️配置向导**
 

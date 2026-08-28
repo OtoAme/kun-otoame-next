@@ -124,7 +124,7 @@ Next standalone 默认不会自动带上 `public` 和 `.next/static`，这是 Ne
 
 release packaging 还会删除包内 `package.json` 的 `"type": "module"`，并把 `server.js` 改名为 `server.mjs`。`ecosystem.config.cjs` 和 `deployPull.ts` 都支持优先启动 `server.mjs`，本地 standalone 则回退到 `server.js`。
 
-`.github/workflows/lint-check.yml` 当前监听 `master` 的 push/PR，而不是 `main`。如果主分支是 `main`，这个 workflow 不会在 main push 上自动跑。
+`release.yml` 是仓库唯一的 workflow，CI 不运行测试或类型检查；同步上游带回的 `lint-check.yml`（监听 `master`，在本仓库永不触发）保持删除。
 
 ## Deploy Pull
 
