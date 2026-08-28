@@ -243,25 +243,34 @@ describe('grantMoemoepoint', () => {
     })
   })
 
-  it('refuses a request id that was already used for a different amount', async () => {
-    replayWith(ledgerRow({ balance_delta: 30 }))
+  // 幂等键只认「发过钱」, 六个字段中任何一个对不上都是另一笔发放; 台账整行读不
+  // 回来时同样无从证明这是同一笔。
+  it.each([
+    { mismatch: 'the recipient', ledger: ledgerRow({ user_id: 99 }) },
+    { mismatch: 'the amount', ledger: ledgerRow({ balance_delta: 30 }) },
+    {
+      mismatch: 'the reason code',
+      ledger: ledgerRow({ reason_code: 'check_in.reward' })
+    },
+    { mismatch: 'the reason', ledger: ledgerRow({ reason: '别的理由' }) },
+    { mismatch: 'the operator', ledger: ledgerRow({ operator_id: 3 }) },
+    {
+      mismatch: 'the reference type',
+      ledger: ledgerRow({ reference_type: 'patch_submission' })
+    },
+    { mismatch: 'the whole row, which reads back as nothing', ledger: null }
+  ])(
+    'refuses a request id whose ledger disagrees on $mismatch',
+    async ({ ledger }) => {
+      replayWith(ledger)
 
-    const result = await grantMoemoepoint(grantInput(), 2)
+      const result = await grantMoemoepoint(grantInput(), 2)
 
-    expect(result).toBe(REUSED_REQUEST_ID_ERROR)
-    expect(createMessageMock).not.toHaveBeenCalled()
-    expect(prismaMocks.tx.admin_log.create).not.toHaveBeenCalled()
-  })
-
-  it('refuses a request id that was already used for a different reason', async () => {
-    replayWith(ledgerRow({ reason: '别的理由' }))
-
-    const result = await grantMoemoepoint(grantInput({ reason: '活动奖励' }), 2)
-
-    expect(result).toBe(REUSED_REQUEST_ID_ERROR)
-    expect(createMessageMock).not.toHaveBeenCalled()
-    expect(prismaMocks.tx.admin_log.create).not.toHaveBeenCalled()
-  })
+      expect(result).toBe(REUSED_REQUEST_ID_ERROR)
+      expect(createMessageMock).not.toHaveBeenCalled()
+      expect(prismaMocks.tx.admin_log.create).not.toHaveBeenCalled()
+    }
+  )
 
   it('retries the whole transaction once when two grants race on the idempotency key', async () => {
     replayWith(ledgerRow())

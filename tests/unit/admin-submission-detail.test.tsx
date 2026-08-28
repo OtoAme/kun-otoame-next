@@ -163,11 +163,13 @@ describe('AdminSubmissionDetail stale review recovery', () => {
     vi.unstubAllGlobals()
   })
 
-  const openApprove = async () => {
+  const openApprove = async (
+    overrides: Partial<AdminPatchSubmissionDetail> = {}
+  ) => {
     await act(async () => {
       root.render(
         <AdminSubmissionDetail
-          submission={submission}
+          submission={{ ...submission, ...overrides }}
           reviewerId={9}
           reviewerRole={3}
         />
@@ -221,6 +223,17 @@ describe('AdminSubmissionDetail stale review recovery', () => {
     )?.textContent
 
     expect(hint).toContain(`返还投稿人押金 ${submission.heldAmount} 萌萌点`)
+    expect(hint).toContain('3 萌萌点投稿奖励')
+  })
+
+  it('promises no refund when the submission never held a deposit', async () => {
+    await openApprove({ heldAmount: 0 })
+
+    const hint = dom.window.document.querySelector(
+      '[data-testid="review-modal"]'
+    )?.textContent
+
+    expect(hint).not.toContain('押金')
     expect(hint).toContain('3 萌萌点投稿奖励')
   })
 
