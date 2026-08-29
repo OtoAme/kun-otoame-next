@@ -1,5 +1,5 @@
 import React, { useRef, useState } from 'react'
-import ReactCrop, { type Crop } from 'react-image-crop'
+import ReactCrop, { convertToPixelCrop, type Crop } from 'react-image-crop'
 import 'react-image-crop/dist/ReactCrop.css'
 import {
   Avatar,
@@ -18,16 +18,18 @@ import { kunFetchFormData } from '~/utils/kunFetch'
 import toast from 'react-hot-toast'
 import { errorReporter, kunErrorHandler } from '~/utils/kunErrorHandler'
 
+const INITIAL_CROP: Crop = {
+  unit: '%',
+  width: 50,
+  height: 50,
+  x: 25,
+  y: 25
+}
+
 export const AvatarCrop = () => {
   const { user, setUser } = useUserStore((state) => state)
   const { isOpen, onOpen, onClose } = useDisclosure()
-  const [crop, setCrop] = useState<Crop>({
-    unit: '%',
-    width: 50,
-    height: 50,
-    x: 25,
-    y: 25
-  })
+  const [crop, setCrop] = useState<Crop>(INITIAL_CROP)
   const [image, setImage] = useState<string | null>(null)
   const [croppedImage, setCroppedImage] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
@@ -37,6 +39,7 @@ export const AvatarCrop = () => {
     if (e.target.files && e.target.files.length > 0) {
       const reader = new FileReader()
       reader.addEventListener('load', () => {
+        setCrop(INITIAL_CROP)
         setImage(reader.result as string)
         onOpen()
       })
@@ -47,26 +50,35 @@ export const AvatarCrop = () => {
   const getCroppedImg = async () => {
     if (!crop || !imageRef.current) return
 
+    // crop is kept in percentages so it survives the modal's entrance animation
+    // resizing the image, which means it has to be converted against the layout
+    // size the natural-pixel scale below is derived from.
+    const pixelCrop = convertToPixelCrop(
+      crop,
+      imageRef.current.width,
+      imageRef.current.height
+    )
+
     const canvas = document.createElement('canvas')
     const scaleX = imageRef.current.naturalWidth / imageRef.current.width
     const scaleY = imageRef.current.naturalHeight / imageRef.current.height
 
-    canvas.width = crop.width
-    canvas.height = crop.height
+    canvas.width = pixelCrop.width
+    canvas.height = pixelCrop.height
 
     const ctx = canvas.getContext('2d')
     if (!ctx) return
 
     ctx.drawImage(
       imageRef.current,
-      crop.x * scaleX,
-      crop.y * scaleY,
-      crop.width * scaleX,
-      crop.height * scaleY,
+      pixelCrop.x * scaleX,
+      pixelCrop.y * scaleY,
+      pixelCrop.width * scaleX,
+      pixelCrop.height * scaleY,
       0,
       0,
-      crop.width,
-      crop.height
+      pixelCrop.width,
+      pixelCrop.height
     )
 
     const base64Image = canvas.toDataURL('image/webp', 0.77)
@@ -129,7 +141,15 @@ export const AvatarCrop = () => {
         </div>
       </div>
 
-      <Modal isOpen={isOpen} onClose={onClose} placement="center" size="2xl">
+      <Modal
+        isOpen={isOpen}
+        onClose={onClose}
+        placement="center"
+        size="2xl"
+        isDismissable={!loading}
+        isKeyboardDismissDisabled={loading}
+        hideCloseButton={loading}
+      >
         <ModalContent>
           <ModalHeader>裁剪头像</ModalHeader>
           <ModalBody className="flex items-center justify-center">
@@ -137,7 +157,7 @@ export const AvatarCrop = () => {
               <ReactCrop
                 keepSelection={true}
                 crop={crop}
-                onChange={(c) => setCrop(c)}
+                onChange={(_, percentCrop) => setCrop(percentCrop)}
                 aspect={1}
               >
                 <img
@@ -150,14 +170,19 @@ export const AvatarCrop = () => {
             )}
           </ModalBody>
           <ModalFooter>
-            <Button color="danger" variant="light" onPress={onClose}>
+            <Button
+              color="danger"
+              variant="light"
+              onPress={onClose}
+              isDisabled={loading}
+            >
               取消
             </Button>
             <Button
               color="primary"
               onPress={getCroppedImg}
               isLoading={loading}
-              disabled={loading}
+              isDisabled={loading}
             >
               确定
             </Button>
