@@ -261,6 +261,8 @@ Gallery 图片上传走 `app/api/edit/gallery/route.ts` 和 `app/api/edit/galler
 
 投稿素材**不遵循这个布局**：它写在 `patch-submission/<submissionId>-<随机>/...`，key 由服务端生成、不可猜测。批准时素材不搬动, 直接成为正式条目引用的对象, 所以：
 
+投稿画廊是暂存上传：拖入只写浏览器本地 outbox（localforage），点击「上传」才产生服务端行与 S3 对象，因此误拖不再制造需要 orphan cleanup 回收的对象。水印开关按投稿 ID 持久化在同一 store，上传时冻结进每个 item。浏览器侧的三份记录（items、watermark、order）只能由浏览器清理：删除草稿成功后由 `SubmissionList` 统一清除，服务端无法触及。
+
 - `draft` / `pending` / `changes_requested` 行上的 key 是活动引用；`published` 行上的 key 只作原始投稿溯源，线上保护只看 `patch` / `patch_game_image`；`rejected` / `violation` / `deleted` 行上的非空 key 是待完成的投稿行 outbox。只有后三种状态可进入 `takeDownSubmissionAssets`。
 - 投稿行 outbox 用于已知投稿的结算：先删 S3，再 purge 所有已配置公开 base，全部确认后才清空 banner key 并删除 gallery 行。部分 S3 删除失败仍要 purge 已删对象；Cloudflare 只有 HTTP 成功且响应 `success: true` 才算确认。
 - 真正无所属行的 orphan、上传补偿、正式条目换图或删图不能靠投稿行保存重试凭据。删除这些对象前必须在同一个短数据库事务 upsert `patch_submission_orphan_cleanup`，保存 object key 与当时所有 purge URL；事务外执行 S3 和 HTTP，二者都成功才删 job。配置 hostname 后续变化时，旧 purge URL 仍须保留并与新 URL 合并。
