@@ -300,6 +300,13 @@ export const SubmissionEditor = ({ submission }: Props) => {
             )}
           </div>
 
+          {editable && localAssetCount > 0 && (
+            <p className="text-sm text-warning">
+              仍有 {localAssetCount} 张截图未上传,
+              请在截图区点击上传按钮或移除它们后再提交。
+            </p>
+          )}
+
           {currentStatus === 'pending' && (
             <p className="text-sm text-default-500">
               投稿正在审核中, 暂时无法编辑。撤回后押金仍由这条草稿持有,

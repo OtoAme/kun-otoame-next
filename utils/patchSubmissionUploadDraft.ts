@@ -25,6 +25,9 @@ const storage = localforage.createInstance({
 
 const keyFor = (submissionId: number) => `submission:${submissionId}`
 
+const watermarkKeyFor = (submissionId: number) =>
+  `submission:${submissionId}:watermark`
+
 export const loadPatchSubmissionUploadDraft = async (submissionId: number) => {
   const items =
     (await storage.getItem<PatchSubmissionLocalUpload[]>(
@@ -55,3 +58,27 @@ export const savePatchSubmissionUploadDraft = async (
 
 export const clearPatchSubmissionUploadDraft = (submissionId: number) =>
   storage.removeItem(keyFor(submissionId))
+
+export const loadPatchSubmissionWatermark = async (submissionId: number) => {
+  const stored = await storage.getItem<boolean>(watermarkKeyFor(submissionId))
+  return stored ?? true
+}
+
+export const savePatchSubmissionWatermark = async (
+  submissionId: number,
+  watermark: boolean
+) => {
+  await storage.setItem(watermarkKeyFor(submissionId), watermark)
+}
+
+export const clearPatchSubmissionWatermark = (submissionId: number) =>
+  storage.removeItem(watermarkKeyFor(submissionId))
+
+/** The server cannot reach browser storage, so deleting a draft clears every
+ *  per-submission key from the caller side. */
+export const clearPatchSubmissionDraftStorage = async (
+  submissionId: number
+) => {
+  await clearPatchSubmissionUploadDraft(submissionId)
+  await clearPatchSubmissionWatermark(submissionId)
+}

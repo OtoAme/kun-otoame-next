@@ -57,7 +57,7 @@ vi.mock('~/app/api/patch-submission/orphanCleanup', () => ({
 }))
 
 import {
-  deletePatchSubmissionGalleryImage,
+  deletePatchSubmissionGalleryImages,
   uploadPatchSubmissionBanner,
   uploadPatchSubmissionGalleryImage,
   updatePatchSubmissionGalleryNSFW
@@ -273,28 +273,74 @@ describe('submission gallery NSFW updates', () => {
 })
 
 describe('submission asset removals', () => {
-  it('enqueues gallery keys in the same transaction that deletes their row', async () => {
-    tx.patch_submission_gallery.findFirst.mockResolvedValue({
-      image_key: 'patch-submission/1-secret/gallery/9.avif',
-      thumbnail_key: 'patch-submission/1-secret/gallery/thumb-9.avif'
-    })
+  it('enqueues gallery keys in the same transaction that deletes their rows', async () => {
+    tx.patch_submission_gallery.findMany.mockResolvedValue([
+      {
+        image_key: 'patch-submission/1-secret/gallery/9.avif',
+        thumbnail_key: 'patch-submission/1-secret/gallery/thumb-9.avif'
+      },
+      {
+        image_key: 'patch-submission/1-secret/gallery/10.avif',
+        thumbnail_key: 'patch-submission/1-secret/gallery/thumb-10.avif'
+      }
+    ])
 
-    await deletePatchSubmissionGalleryImage(1, 9, 2)
+    await deletePatchSubmissionGalleryImages(1, [9, 10], 2)
 
-    expect(tx.patch_submission_gallery.delete).toHaveBeenCalledWith({
-      where: { id: 9 }
+    expect(tx.patch_submission_gallery.deleteMany).toHaveBeenCalledWith({
+      where: { id: { in: [9, 10] }, submission_id: 1 }
     })
     expect(enqueueSubmissionOrphanCleanupJobsMock).toHaveBeenCalledWith(
       tx,
       [
         'patch-submission/1-secret/gallery/9.avif',
-        'patch-submission/1-secret/gallery/thumb-9.avif'
+        'patch-submission/1-secret/gallery/thumb-9.avif',
+        'patch-submission/1-secret/gallery/10.avif',
+        'patch-submission/1-secret/gallery/thumb-10.avif'
       ],
       'gallery_delete'
     )
     expect(
       processSubmissionOrphanCleanupJobsBestEffortMock
     ).toHaveBeenCalledAfter(enqueueSubmissionOrphanCleanupJobsMock)
+  })
+
+  it('rejects the whole batch when one id belongs to another submission', async () => {
+    tx.patch_submission_gallery.findMany.mockResolvedValue([
+      {
+        image_key: 'patch-submission/1-secret/gallery/9.avif',
+        thumbnail_key: null
+      }
+    ])
+
+    await expect(
+      deletePatchSubmissionGalleryImages(1, [9, 10], 2)
+    ).rejects.toThrow('所选截图不属于这条投稿')
+
+    expect(tx.patch_submission_gallery.deleteMany).not.toHaveBeenCalled()
+    expect(enqueueSubmissionOrphanCleanupJobsMock).not.toHaveBeenCalled()
+    expect(
+      processSubmissionOrphanCleanupJobsBestEffortMock
+    ).not.toHaveBeenCalled()
+  })
+
+  it('deduplicates repeated ids before matching them against the submission', async () => {
+    tx.patch_submission_gallery.findMany.mockResolvedValue([
+      {
+        image_key: 'patch-submission/1-secret/gallery/9.avif',
+        thumbnail_key: null
+      }
+    ])
+
+    await deletePatchSubmissionGalleryImages(1, [9, 9], 2)
+
+    expect(tx.patch_submission_gallery.findMany).toHaveBeenCalledWith({
+      where: { id: { in: [9] }, submission_id: 1 },
+      select: { image_key: true, thumbnail_key: true }
+    })
+    expect(tx.patch_submission_gallery.deleteMany).toHaveBeenCalledWith({
+      where: { id: { in: [9] }, submission_id: 1 }
+    })
   })
 
   it('replaces the banner and enqueues every old variant atomically', async () => {

@@ -395,25 +395,30 @@ const markGalleryFailed = (galleryId: number) =>
     }
   })
 
-export const deletePatchSubmissionGalleryImage = async (
+export const deletePatchSubmissionGalleryImages = async (
   submissionId: number,
-  galleryId: number,
+  galleryIds: number[],
   userId: number
 ) => {
   const keys = await prisma.$transaction(
     async (tx) => {
       await lockEditableSubmission(tx, submissionId, userId)
 
-      const image = await tx.patch_submission_gallery.findFirst({
-        where: { id: galleryId, submission_id: submissionId },
+      const ids = [...new Set(galleryIds)]
+      const images = await tx.patch_submission_gallery.findMany({
+        where: { id: { in: ids }, submission_id: submissionId },
         select: { image_key: true, thumbnail_key: true }
       })
-      if (!image) {
-        throw new PatchSubmissionError('截图不存在')
+      if (images.length !== ids.length) {
+        throw new PatchSubmissionError('所选截图不属于这条投稿')
       }
 
-      await tx.patch_submission_gallery.delete({ where: { id: galleryId } })
-      const keys = compactKeys([image.image_key, image.thumbnail_key])
+      await tx.patch_submission_gallery.deleteMany({
+        where: { id: { in: ids }, submission_id: submissionId }
+      })
+      const keys = compactKeys(
+        images.flatMap((image) => [image.image_key, image.thumbnail_key])
+      )
       await enqueueSubmissionOrphanCleanupJobs(tx, keys, 'gallery_delete')
       return keys
     },

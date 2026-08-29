@@ -23,8 +23,11 @@ vi.mock('localforage', () => ({
 }))
 
 import {
+  clearPatchSubmissionDraftStorage,
   loadPatchSubmissionUploadDraft,
+  loadPatchSubmissionWatermark,
   savePatchSubmissionUploadDraft,
+  savePatchSubmissionWatermark,
   type PatchSubmissionLocalUpload
 } from '~/utils/patchSubmissionUploadDraft'
 
@@ -78,5 +81,39 @@ describe('patch submission upload draft', () => {
 
     expect(localforageMocks.removeItem).toHaveBeenCalledWith('submission:7')
     await expect(loadPatchSubmissionUploadDraft(7)).resolves.toEqual([])
+  })
+})
+
+describe('patch submission watermark option', () => {
+  it('defaults to on and keeps an explicit opt-out on its own key', async () => {
+    await expect(loadPatchSubmissionWatermark(7)).resolves.toBe(true)
+
+    await savePatchSubmissionWatermark(7, false)
+
+    expect(localforageMocks.setItem).toHaveBeenCalledWith(
+      'submission:7:watermark',
+      false
+    )
+    await expect(loadPatchSubmissionWatermark(7)).resolves.toBe(false)
+  })
+
+  it('is scoped per submission', async () => {
+    await savePatchSubmissionWatermark(7, false)
+
+    await expect(loadPatchSubmissionWatermark(8)).resolves.toBe(true)
+  })
+
+  it('clears the items and the watermark key together', async () => {
+    await savePatchSubmissionUploadDraft(7, [item('pending')])
+    await savePatchSubmissionWatermark(7, false)
+
+    await clearPatchSubmissionDraftStorage(7)
+
+    expect(localforageMocks.removeItem).toHaveBeenCalledWith('submission:7')
+    expect(localforageMocks.removeItem).toHaveBeenCalledWith(
+      'submission:7:watermark'
+    )
+    await expect(loadPatchSubmissionUploadDraft(7)).resolves.toEqual([])
+    await expect(loadPatchSubmissionWatermark(7)).resolves.toBe(true)
   })
 })

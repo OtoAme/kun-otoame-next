@@ -17,6 +17,7 @@ import Link from 'next/link'
 import { useRouter } from '@bprogress/next'
 import toast from 'react-hot-toast'
 import { kunFetchDelete } from '~/utils/kunFetch'
+import { clearPatchSubmissionDraftStorage } from '~/utils/patchSubmissionUploadDraft'
 import { cn } from '~/utils/cn'
 import type {
   PatchSubmissionStatus,
@@ -79,6 +80,11 @@ export const SubmissionList = ({ submissions }: Props) => {
         toast.error(response)
         return
       }
+      // The server cannot reach this browser's localforage, so the draft's
+      // pending uploads and options are only clearable from here.
+      await clearPatchSubmissionDraftStorage(pendingDelete.id).catch((error) =>
+        console.error('Failed to clear submission draft storage', error)
+      )
       toast.success('草稿已删除, 押金已返还')
       setPendingDelete(null)
       router.refresh()

@@ -170,7 +170,10 @@ export const patchSubmissionBannerUploadSchema = z.object({
 
 export const patchSubmissionGalleryDeleteSchema = z.object({
   submissionId: submissionIdSchema,
-  galleryId: z.coerce.number().int().min(1).max(9999999)
+  galleryIds: z
+    .array(z.coerce.number().int().min(1).max(9999999))
+    .min(1, { message: '请至少选择一张截图' })
+    .max(PATCH_SUBMISSION_GALLERY_MAX_COUNT)
 })
 
 export const patchSubmissionGalleryNsfwSchema = z.object({

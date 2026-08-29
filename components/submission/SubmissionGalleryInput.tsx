@@ -16,14 +16,21 @@ import { useDropzone } from 'react-dropzone'
 import toast from 'react-hot-toast'
 import { checkImageValid } from '~/utils/resizeImage'
 import { generateUUID } from '~/utils/random'
-import { kunFetchFormData, kunFetchPatch } from '~/utils/kunFetch'
+import {
+  kunFetchDeleteBody,
+  kunFetchFormData,
+  kunFetchPatch
+} from '~/utils/kunFetch'
 import { KunImageViewer } from '~/components/kun/image-viewer/ImageViewer'
 import { getGalleryFilesFromEvent } from '~/utils/galleryDrop'
+import { getGalleryUploadFailedOverlayClass } from '~/utils/galleryCardStyle'
 import { usePatchSubmissionStore } from '~/store/patchSubmissionStore'
 import { PATCH_SUBMISSION_GALLERY_MAX_COUNT } from '~/constants/patchSubmission'
 import {
   loadPatchSubmissionUploadDraft,
+  loadPatchSubmissionWatermark,
   savePatchSubmissionUploadDraft,
+  savePatchSubmissionWatermark,
   type PatchSubmissionLocalUpload
 } from '~/utils/patchSubmissionUploadDraft'
 import { cn } from '~/utils/cn'
@@ -32,6 +39,11 @@ import type { PatchSubmissionGalleryImage } from '~/types/api/patchSubmission'
 interface LocalUploadView extends PatchSubmissionLocalUpload {
   previewUrl: string
 }
+
+/** One selection set spans both cloud rows and local pending files, so every
+ *  key carries its own namespace. */
+const serverSelectionKey = (galleryId: number) => `server:${galleryId}`
+const localSelectionKey = (clientAssetId: string) => `local:${clientAssetId}`
 
 interface ServerCardProps {
   image: PatchSubmissionGalleryImage
@@ -63,28 +75,31 @@ const SubmissionGalleryCard = ({
       )}
     >
       <CardBody className="space-y-2 p-2">
-        {image.thumbnailUrl || image.imageUrl ? (
-          <div className="relative aspect-video overflow-hidden rounded-medium">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
+        <div className="relative aspect-video overflow-hidden rounded-medium">
+          {image.thumbnailUrl || image.imageUrl ? (
+            /* eslint-disable-next-line @next/next/no-img-element */
             <img
               src={image.thumbnailUrl ?? image.imageUrl ?? ''}
               alt={label}
               className="size-full object-cover"
             />
-            {/* Editing view matches the create/rewrite pages: the author sees
-                their own thumbnail with a danger badge, not a reveal mask. The
-                read-only preview is where the public NSFWMask belongs. */}
-            {image.isNSFW && (
-              <div className="absolute right-1 top-1 rounded bg-danger px-1 text-xs text-white">
-                NSFW
-              </div>
-            )}
-          </div>
-        ) : (
-          <div className="flex aspect-video w-full items-center justify-center rounded-medium bg-default-100 text-sm text-default-500">
-            {image.uploadStatus === 'failed' ? '上传失败占位' : '上传中'}
-          </div>
-        )}
+          ) : (
+            <div className="flex size-full items-center justify-center bg-default-100 text-sm text-default-500">
+              {image.uploadStatus === 'failed' ? '上传失败占位' : '上传中'}
+            </div>
+          )}
+          {image.uploadStatus === 'failed' && (
+            <div className={getGalleryUploadFailedOverlayClass()} />
+          )}
+          {/* Editing view matches the create/rewrite pages: the author sees
+              their own thumbnail with a danger badge, not a reveal mask. The
+              read-only preview is where the public NSFWMask belongs. */}
+          {image.isNSFW && (
+            <div className="absolute right-1 top-1 rounded bg-danger px-1 text-xs text-white">
+              NSFW
+            </div>
+          )}
+        </div>
 
         <div className="flex items-center justify-between gap-1">
           <Checkbox
@@ -135,17 +150,27 @@ const SubmissionGalleryCard = ({
 const LocalUploadCard = ({
   item,
   editable,
+  selected,
   batchRunning,
+  onToggle,
   onRetry,
   onRemove
 }: {
   item: LocalUploadView
   editable: boolean
+  selected: boolean
   batchRunning: boolean
+  onToggle: () => void
   onRetry: () => void
   onRemove: () => void
 }) => (
-  <Card className={item.status === 'failed' ? 'border border-danger' : ''}>
+  <Card
+    className={cn(
+      'relative',
+      selected && 'ring-2 ring-primary',
+      item.status === 'failed' && 'border border-danger'
+    )}
+  >
     <CardBody className="space-y-2 p-2">
       <div className="relative aspect-video overflow-hidden rounded-medium">
         {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -154,6 +179,9 @@ const LocalUploadCard = ({
           alt={item.fileName}
           className="size-full object-cover"
         />
+        {item.status === 'failed' && (
+          <div className={getGalleryUploadFailedOverlayClass()} />
+        )}
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-black/50 p-3 text-center text-white">
           {item.status === 'uploading' ? (
             <>
@@ -170,28 +198,44 @@ const LocalUploadCard = ({
         </div>
       </div>
 
-      <div className="flex justify-end gap-1">
-        <Button
-          isIconOnly
+      <div className="flex items-center justify-between gap-1">
+        <Checkbox
           size="sm"
-          variant="light"
-          aria-label={`重试上传 ${item.fileName}`}
-          isDisabled={!editable || batchRunning || item.status === 'uploading'}
-          onPress={onRetry}
+          isDisabled={!editable || item.status === 'uploading'}
+          isSelected={selected}
+          onValueChange={onToggle}
+          aria-label={`选择待上传图片 ${item.fileName}`}
         >
-          <RefreshCw className="size-4" />
-        </Button>
-        <Button
-          isIconOnly
-          size="sm"
-          color="danger"
-          variant="light"
-          aria-label={`移除待上传图片 ${item.fileName}`}
-          isDisabled={!editable || batchRunning || item.status === 'uploading'}
-          onPress={onRemove}
-        >
-          <Trash2 className="size-4" />
-        </Button>
+          <span className="text-tiny">选择</span>
+        </Checkbox>
+
+        <div className="flex gap-1">
+          <Button
+            isIconOnly
+            size="sm"
+            variant="light"
+            aria-label={`重试上传 ${item.fileName}`}
+            isDisabled={
+              !editable || batchRunning || item.status === 'uploading'
+            }
+            onPress={onRetry}
+          >
+            <RefreshCw className="size-4" />
+          </Button>
+          <Button
+            isIconOnly
+            size="sm"
+            color="danger"
+            variant="light"
+            aria-label={`移除待上传图片 ${item.fileName}`}
+            isDisabled={
+              !editable || batchRunning || item.status === 'uploading'
+            }
+            onPress={onRemove}
+          >
+            <Trash2 className="size-4" />
+          </Button>
+        </div>
       </div>
     </CardBody>
   </Card>
@@ -203,12 +247,13 @@ const toPersistedItems = (items: LocalUploadView[]) =>
 export const SubmissionGalleryInput = () => {
   const { submissionId, gallery, setGallery, status, setAssetDraftState } =
     usePatchSubmissionStore()
-  const [selected, setSelected] = useState<Set<number>>(new Set())
+  const [selected, setSelected] = useState<Set<string>>(new Set())
   const [localUploads, setLocalUploads] = useState<LocalUploadView[]>([])
   // Watermark defaults on, matching the create page, so screenshots are marked
   // unless the author opts out.
   const [watermark, setWatermark] = useState(true)
   const [updatingNSFW, setUpdatingNSFW] = useState(false)
+  const [deleting, setDeleting] = useState(false)
   const [progress, setProgress] = useState<{
     total: number
     completed: number
@@ -277,6 +322,16 @@ export const SubmissionGalleryInput = () => {
       }
     }
     void restore()
+
+    const restoreWatermark = async () => {
+      try {
+        const stored = await loadPatchSubmissionWatermark(submissionId)
+        if (!cancelled) setWatermark(stored)
+      } catch (error) {
+        console.error('Failed to restore submission watermark option', error)
+      }
+    }
+    void restoreWatermark()
 
     return () => {
       cancelled = true
@@ -412,16 +467,15 @@ export const SubmissionGalleryInput = () => {
       image.uploadStatus !== 'failed' && !localIds.has(image.clientAssetId)
   ).length
   const totalSlotCount = serverSlotCount + localUploads.length
+  const uploadableCount = localUploads.filter(
+    (item) => item.status === 'pending' || item.status === 'failed'
+  ).length
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     getFilesFromEvent: getGalleryFilesFromEvent,
     accept: { 'image/*': [] },
-    disabled: !editable || isBatchRunning,
+    disabled: !editable,
     onDrop: async (accepted: File[]) => {
-      if (batchRunning.current) {
-        toast.error('请等待当前截图上传完成')
-        return
-      }
       const valid = accepted.filter((file) => checkImageValid(file))
       if (!valid.length) return
       if (totalSlotCount + valid.length > PATCH_SUBMISSION_GALLERY_MAX_COUNT) {
@@ -450,14 +504,46 @@ export const SubmissionGalleryInput = () => {
       const next = [...localUploadsRef.current, ...nextItems]
       try {
         await persistLocalState(next)
-        void uploadItems(nextItems.map((item) => item.clientAssetId))
       } catch (error) {
         console.error('Failed to persist submission upload draft', error)
         for (const item of nextItems) releasePreview(item.clientAssetId)
-        toast.error('保存待上传截图失败，未开始上传')
+        toast.error('保存待上传截图失败，请重试')
       }
     }
   })
+
+  const handleSetWatermark = async (value: boolean) => {
+    setWatermark(value)
+    try {
+      await savePatchSubmissionWatermark(submissionId, value)
+    } catch (error) {
+      console.error('Failed to persist submission watermark option', error)
+    }
+  }
+
+  /** The switch is frozen into every targeted item before the first request,
+   *  so an interrupted batch retries with the value the author chose. */
+  const startUpload = async () => {
+    if (batchRunning.current) return
+    const targets = localUploadsRef.current.filter(
+      (item) => item.status === 'pending' || item.status === 'failed'
+    )
+    if (!targets.length) return
+
+    const targetIds = new Set(targets.map((item) => item.clientAssetId))
+    const frozen = localUploadsRef.current.map((item) =>
+      targetIds.has(item.clientAssetId) ? { ...item, watermark } : item
+    )
+    try {
+      await persistLocalState(frozen)
+    } catch (error) {
+      console.error('Failed to persist submission watermark snapshot', error)
+      toast.error('保存水印设置失败，未开始上传')
+      return
+    }
+
+    await uploadItems([...targetIds])
+  }
 
   const removeLocalUpload = async (clientAssetId: string) => {
     const next = localUploadsRef.current.filter(
@@ -472,29 +558,94 @@ export const SubmissionGalleryInput = () => {
     }
   }
 
-  const deleteImage = async (galleryId: number) => {
-    const response = await fetch('/api/patch-submission/asset', {
-      method: 'DELETE',
-      headers: {
-        'content-type': 'application/json',
-        'x-requested-with': 'kun-fetch'
-      },
-      body: JSON.stringify({ submissionId, galleryId })
-    })
-    const data = (await response.json()) as string | Record<string, never>
-    if (typeof data === 'string') {
-      toast.error(data)
-      return
+  const deleteImages = async (galleryIds: number[]) => {
+    try {
+      const response = await kunFetchDeleteBody<string | Record<string, never>>(
+        '/patch-submission/asset',
+        { submissionId, galleryIds }
+      )
+      if (typeof response === 'string') {
+        toast.error(response)
+        return false
+      }
+      const removed = new Set(galleryIds)
+      setGallery(
+        usePatchSubmissionStore
+          .getState()
+          .gallery.filter((image) => !removed.has(image.id))
+      )
+      return true
+    } catch (error) {
+      console.error('Failed to delete submission gallery images', error)
+      toast.error('删除截图失败，请检查网络后重试')
+      return false
     }
-    setGallery(
-      usePatchSubmissionStore
-        .getState()
-        .gallery.filter((image) => image.id !== galleryId)
+  }
+
+  const deleteImage = async (galleryId: number) => {
+    if (await deleteImages([galleryId])) {
+      setSelected((current) => {
+        const next = new Set(current)
+        next.delete(serverSelectionKey(galleryId))
+        return next
+      })
+    }
+  }
+
+  const selectedServerIds = visibleGallery
+    .filter((image) => selected.has(serverSelectionKey(image.id)))
+    .map((image) => image.id)
+  const selectedReadyServerIds = visibleGallery
+    .filter(
+      (image) =>
+        image.uploadStatus === 'ready' &&
+        selected.has(serverSelectionKey(image.id))
     )
+    .map((image) => image.id)
+  const selectedLocalIds = localUploads
+    .filter(
+      (item) =>
+        item.status !== 'uploading' &&
+        selected.has(localSelectionKey(item.clientAssetId))
+    )
+    .map((item) => item.clientAssetId)
+
+  /** The server call goes first: dropping the local Blob before the row is
+   *  gone would leave nothing to retry with. */
+  const deleteSelected = async () => {
+    if (!selectedServerIds.length && !selectedLocalIds.length) return
+    setDeleting(true)
+    try {
+      if (
+        selectedServerIds.length &&
+        !(await deleteImages(selectedServerIds))
+      ) {
+        return
+      }
+
+      if (selectedLocalIds.length) {
+        const removing = new Set(selectedLocalIds)
+        const next = localUploadsRef.current.filter(
+          (item) => !removing.has(item.clientAssetId)
+        )
+        try {
+          await persistLocalState(next)
+          for (const clientAssetId of removing) releasePreview(clientAssetId)
+        } catch (error) {
+          console.error('Failed to remove submission upload draft items', error)
+          toast.error('移除待上传截图失败，请重试')
+          return
+        }
+      }
+
+      setSelected(new Set())
+    } finally {
+      setDeleting(false)
+    }
   }
 
   const setSelectedNSFW = async (isNSFW: boolean) => {
-    const galleryIds = [...selected]
+    const galleryIds = selectedReadyServerIds
     if (!galleryIds.length) return
     setUpdatingNSFW(true)
     try {
@@ -506,11 +657,12 @@ export const SubmissionGalleryInput = () => {
         toast.error(response)
         return
       }
+      const updated = new Set(galleryIds)
       setGallery(
         usePatchSubmissionStore
           .getState()
           .gallery.map((image) =>
-            selected.has(image.id) ? { ...image, isNSFW } : image
+            updated.has(image.id) ? { ...image, isNSFW } : image
           )
       )
       setSelected(new Set())
@@ -521,6 +673,14 @@ export const SubmissionGalleryInput = () => {
       setUpdatingNSFW(false)
     }
   }
+
+  const toggleSelection = (key: string) =>
+    setSelected((current) => {
+      const next = new Set(current)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
 
   const viewerImages = visibleGallery
     .filter((image) => image.imageUrl)
@@ -536,7 +696,11 @@ export const SubmissionGalleryInput = () => {
         <h2 className="text-xl">游戏截图 (可选)</h2>
         <div className="flex flex-wrap items-center gap-3">
           {editable && (
-            <Switch isSelected={watermark} onValueChange={setWatermark}>
+            <Switch
+              isSelected={watermark}
+              isDisabled={isBatchRunning}
+              onValueChange={(value) => void handleSetWatermark(value)}
+            >
               添加水印
             </Switch>
           )}
@@ -567,11 +731,9 @@ export const SubmissionGalleryInput = () => {
           {...getRootProps()}
           className={cn(
             'cursor-pointer rounded-lg border-2 border-dashed p-4 text-center transition-colors',
-            isBatchRunning
-              ? 'cursor-not-allowed opacity-60'
-              : isDragActive
-                ? 'border-primary bg-primary/10'
-                : 'border-default-300 hover:border-primary'
+            isDragActive
+              ? 'border-primary bg-primary/10'
+              : 'border-default-300 hover:border-primary'
           )}
         >
           <input {...getInputProps()} />
@@ -585,23 +747,48 @@ export const SubmissionGalleryInput = () => {
         </div>
       )}
 
+      {editable && (uploadableCount > 0 || isBatchRunning) && (
+        <Button
+          color="primary"
+          isLoading={isBatchRunning}
+          isDisabled={uploadableCount === 0}
+          onPress={() => void startUpload()}
+        >
+          上传 {uploadableCount} 张截图
+        </Button>
+      )}
+
       {(visibleGallery.length > 0 || localUploads.length > 0) && (
         <div className="space-y-3">
-          {editable && selected.size > 0 && (
+          {editable && (
             <div className="flex flex-wrap gap-2">
               <Button
                 size="sm"
                 color="danger"
                 variant="flat"
+                isLoading={deleting}
+                isDisabled={
+                  !selectedServerIds.length && !selectedLocalIds.length
+                }
+                onPress={() => void deleteSelected()}
+              >
+                删除选中 ({selectedServerIds.length + selectedLocalIds.length})
+              </Button>
+              <Button
+                size="sm"
+                color="warning"
+                variant="flat"
                 isLoading={updatingNSFW}
+                isDisabled={!selectedReadyServerIds.length}
                 onPress={() => void setSelectedNSFW(true)}
               >
                 设为 NSFW
               </Button>
               <Button
                 size="sm"
+                color="success"
                 variant="flat"
-                isDisabled={updatingNSFW}
+                isDisabled={updatingNSFW || !selectedReadyServerIds.length}
                 onPress={() => void setSelectedNSFW(false)}
               >
                 设为 SFW
@@ -622,15 +809,10 @@ export const SubmissionGalleryInput = () => {
                         key={image.id}
                         image={image}
                         index={index}
-                        selected={selected.has(image.id)}
+                        selected={selected.has(serverSelectionKey(image.id))}
                         editable={editable}
                         onToggle={() =>
-                          setSelected((current) => {
-                            const next = new Set(current)
-                            if (next.has(image.id)) next.delete(image.id)
-                            else next.add(image.id)
-                            return next
-                          })
+                          toggleSelection(serverSelectionKey(image.id))
                         }
                         onOpenLightbox={() =>
                           viewerIndex >= 0 && openLightbox(viewerIndex)
@@ -644,7 +826,13 @@ export const SubmissionGalleryInput = () => {
                       key={item.clientAssetId}
                       item={item}
                       editable={editable}
+                      selected={selected.has(
+                        localSelectionKey(item.clientAssetId)
+                      )}
                       batchRunning={isBatchRunning}
+                      onToggle={() =>
+                        toggleSelection(localSelectionKey(item.clientAssetId))
+                      }
                       onRetry={() => void uploadItems([item.clientAssetId])}
                       onRemove={() =>
                         void removeLocalUpload(item.clientAssetId)

@@ -10,7 +10,7 @@ import {
 import { GALLERY_IMAGE_MAX_SIZE_MB } from '~/constants/galgame'
 import { PatchSubmissionError } from '../quota'
 import {
-  deletePatchSubmissionGalleryImage,
+  deletePatchSubmissionGalleryImages,
   updatePatchSubmissionGalleryNSFW,
   uploadPatchSubmissionBanner,
   uploadPatchSubmissionGalleryImage
@@ -193,9 +193,9 @@ export const DELETE = async (req: NextRequest) => {
 
   try {
     return privateJson(
-      await deletePatchSubmissionGalleryImage(
+      await deletePatchSubmissionGalleryImages(
         parsed.data.submissionId,
-        parsed.data.galleryId,
+        parsed.data.galleryIds,
         payload.uid
       )
     )

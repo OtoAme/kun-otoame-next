@@ -10,7 +10,7 @@ vi.mock('~/middleware/_verifyHeaderCookie', () => ({
 }))
 
 const serviceMocks = vi.hoisted(() => ({
-  deletePatchSubmissionGalleryImage: vi.fn(),
+  deletePatchSubmissionGalleryImages: vi.fn(),
   updatePatchSubmissionGalleryNSFW: vi.fn(),
   uploadPatchSubmissionBanner: vi.fn(),
   uploadPatchSubmissionGalleryImage: vi.fn()
@@ -21,13 +21,14 @@ vi.mock('~/app/api/patch-submission/rateLimit', () => ({
   checkPatchSubmissionRateLimit: vi.fn()
 }))
 
-import { PATCH, POST } from '~/app/api/patch-submission/asset/route'
+import { DELETE, PATCH, POST } from '~/app/api/patch-submission/asset/route'
 
 beforeEach(() => {
   vi.clearAllMocks()
   csrfMock.mockReturnValue(null)
   authMock.mockResolvedValue({ uid: 7, role: 1 })
   serviceMocks.updatePatchSubmissionGalleryNSFW.mockResolvedValue({})
+  serviceMocks.deletePatchSubmissionGalleryImages.mockResolvedValue({})
   serviceMocks.uploadPatchSubmissionGalleryImage.mockResolvedValue({
     galleryId: 9,
     alreadyUploaded: false
@@ -102,5 +103,35 @@ describe('patch submission gallery POST', () => {
         watermark: true
       })
     )
+  })
+})
+
+describe('patch submission gallery DELETE', () => {
+  const deleteRequest = (body: unknown) =>
+    new NextRequest('https://example.test/api/patch-submission/asset', {
+      method: 'DELETE',
+      body: JSON.stringify(body)
+    })
+
+  it('passes every validated id and the authenticated owner to the service', async () => {
+    const response = await DELETE(
+      deleteRequest({ submissionId: 1, galleryIds: [9, 10] })
+    )
+
+    expect(
+      serviceMocks.deletePatchSubmissionGalleryImages
+    ).toHaveBeenCalledWith(1, [9, 10], 7)
+    expect(response.headers.get('Cache-Control')).toBe('private, no-store')
+  })
+
+  it('rejects an empty selection before reaching the service', async () => {
+    const response = await DELETE(
+      deleteRequest({ submissionId: 1, galleryIds: [] })
+    )
+
+    await expect(response.json()).resolves.toBe('请至少选择一张截图')
+    expect(
+      serviceMocks.deletePatchSubmissionGalleryImages
+    ).not.toHaveBeenCalled()
   })
 })
