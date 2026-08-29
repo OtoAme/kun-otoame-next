@@ -99,12 +99,27 @@ export const savePatchSubmissionGalleryOrder = async (
 export const clearPatchSubmissionGalleryOrder = (submissionId: number) =>
   storage.removeItem(orderKeyFor(submissionId))
 
-/** The server cannot reach browser storage, so deleting a draft clears every
- *  per-submission key from the caller side. */
+/**
+ * The server cannot reach browser storage, so deleting a draft clears every
+ * per-submission key from the caller side. Every key is attempted even when one
+ * removal fails, because stopping at the first error would leave the remaining
+ * keys behind for a submission that no longer exists.
+ */
 export const clearPatchSubmissionDraftStorage = async (
   submissionId: number
 ) => {
-  await clearPatchSubmissionUploadDraft(submissionId)
-  await clearPatchSubmissionWatermark(submissionId)
-  await clearPatchSubmissionGalleryOrder(submissionId)
+  const results = await Promise.allSettled([
+    clearPatchSubmissionUploadDraft(submissionId),
+    clearPatchSubmissionWatermark(submissionId),
+    clearPatchSubmissionGalleryOrder(submissionId)
+  ])
+  const failures = results.flatMap((result) =>
+    result.status === 'rejected' ? [result.reason] : []
+  )
+  if (failures.length) {
+    console.error('Failed to clear submission draft storage', {
+      submissionId,
+      failures
+    })
+  }
 }

@@ -63,6 +63,7 @@ import {
   updatePatchSubmissionGalleryNSFW,
   updatePatchSubmissionGalleryOrder
 } from '~/app/api/patch-submission/assets'
+import { PATCH_SUBMISSION_UPLOAD_TAKEOVER_MS } from '~/constants/patchSubmission'
 
 const tx = prismaMocks._tx
 
@@ -572,7 +573,32 @@ describe('gallery upload finalize lock ordering', () => {
 })
 
 describe('submission gallery order updates', () => {
-  const readyRows = (ids: number[]) => ids.map((id) => ({ id }))
+  const readyRows = (ids: number[]) =>
+    ids.map((id) => ({
+      id,
+      upload_status: 'ready',
+      display_order: 0,
+      status_changed_at: new Date(0)
+    }))
+
+  /** A reservation whose request is still alive, holding `display_order`. */
+  const liveUploadingRow = (displayOrder: number) => ({
+    id: 99,
+    upload_status: 'uploading',
+    display_order: displayOrder,
+    status_changed_at: new Date()
+  })
+
+  /** A reservation past the takeover window: its request is gone, but the
+   *  author can still retry it into the number it holds. */
+  const staleUploadingRow = (displayOrder: number) => ({
+    id: 98,
+    upload_status: 'uploading',
+    display_order: displayOrder,
+    status_changed_at: new Date(
+      Date.now() - PATCH_SUBMISSION_UPLOAD_TAKEOVER_MS - 1000
+    )
+  })
 
   beforeEach(() => {
     tx.$queryRaw.mockReset()
@@ -593,9 +619,19 @@ describe('submission gallery order updates', () => {
       })
     ).resolves.toEqual({})
 
+    // Reservations are read in the same query, because a slot they hold is
+    // invisible to a ready-only view until the upload finalizes into it.
     expect(tx.patch_submission_gallery.findMany).toHaveBeenCalledWith({
-      where: { submission_id: 1, upload_status: 'ready' },
-      select: { id: true }
+      where: {
+        submission_id: 1,
+        upload_status: { in: ['ready', 'uploading'] }
+      },
+      select: {
+        id: true,
+        upload_status: true,
+        display_order: true,
+        status_changed_at: true
+      }
     })
     expect(tx.patch_submission_gallery.update).toHaveBeenNthCalledWith(1, {
       where: { id: 10 },
@@ -709,5 +745,83 @@ describe('submission gallery order updates', () => {
     ).rejects.toThrow('投稿正在审核中, 无法修改素材')
 
     expect(tx.patch_submission_gallery.findMany).not.toHaveBeenCalled()
+  })
+
+  it('refuses the whole save while an upload is still live', async () => {
+    tx.patch_submission_gallery.findMany.mockResolvedValue([
+      ...readyRows([9, 10]),
+      liveUploadingRow(2)
+    ])
+
+    await expect(
+      updatePatchSubmissionGalleryOrder({
+        submissionId: 1,
+        userId: 2,
+        order: [
+          { galleryId: 9, displayOrder: 0 },
+          { galleryId: 10, displayOrder: 1 }
+        ]
+      })
+    ).rejects.toThrow('有截图正在上传, 请等待上传完成后再保存排序')
+
+    expect(tx.patch_submission_gallery.update).not.toHaveBeenCalled()
+  })
+
+  it('keeps a stale reservation from blocking the save but not from holding its number', async () => {
+    tx.patch_submission_gallery.findMany.mockResolvedValue([
+      ...readyRows([9, 10]),
+      staleUploadingRow(3)
+    ])
+
+    await expect(
+      updatePatchSubmissionGalleryOrder({
+        submissionId: 1,
+        userId: 2,
+        order: [
+          { galleryId: 9, displayOrder: 0 },
+          { galleryId: 10, displayOrder: 3 }
+        ]
+      })
+    ).rejects.toThrow('位置被一张上传失败的截图占用, 请先重试或删除该截图')
+
+    expect(tx.patch_submission_gallery.update).not.toHaveBeenCalled()
+
+    await expect(
+      updatePatchSubmissionGalleryOrder({
+        submissionId: 1,
+        userId: 2,
+        order: [
+          { galleryId: 9, displayOrder: 0 },
+          { galleryId: 10, displayOrder: 1 }
+        ]
+      })
+    ).resolves.toEqual({})
+
+    expect(tx.patch_submission_gallery.update).toHaveBeenCalledTimes(2)
+  })
+
+  /**
+   * The finalize that follows a reservation writes `display_order` from the row
+   * it reserved, so the only way a save could collide with it is by landing
+   * while the reservation is live — which is the window this refuses outright.
+   */
+  it('cannot let a reserve/order/finalize interleaving produce a duplicate position', async () => {
+    // Reserve took slot 2 and its bytes are in flight.
+    tx.patch_submission_gallery.findMany.mockResolvedValue([
+      ...readyRows([9]),
+      liveUploadingRow(2)
+    ])
+
+    await expect(
+      updatePatchSubmissionGalleryOrder({
+        submissionId: 1,
+        userId: 2,
+        order: [{ galleryId: 9, displayOrder: 2 }]
+      })
+    ).rejects.toThrow('有截图正在上传')
+
+    // Nothing was written, so the finalize turning that row ready is still the
+    // only holder of position 2.
+    expect(tx.patch_submission_gallery.update).not.toHaveBeenCalled()
   })
 })

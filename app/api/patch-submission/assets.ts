@@ -395,8 +395,11 @@ export const uploadPatchSubmissionGalleryImage = async (
   }
 
   const finalized = await prisma.$transaction(async (tx) => {
-    // Same lock, same order as every other gallery write, so this finalize and
-    // a concurrent order PATCH cannot both write display_order on these rows.
+    // The same lock every other gallery write takes, which serializes this
+    // write against a concurrent order PATCH. It is not what keeps a reorder off
+    // this row's slot: the reservation above released the lock before the bytes
+    // went to S3, so the guard for that is the order action refusing to run
+    // while an upload is live and treating a stale upload's number as reserved.
     // The lock deliberately does not judge the status: a submission that became
     // non-editable while the bytes were in flight still has to reach the
     // compensation branch below rather than abort with the row locked.
@@ -552,11 +555,52 @@ export const updatePatchSubmissionGalleryOrder = async (input: {
         throw new PatchSubmissionError('截图顺序中存在重复的位置')
       }
 
-      const ready = await tx.patch_submission_gallery.findMany({
-        where: { submission_id: input.submissionId, upload_status: 'ready' },
-        select: { id: true }
+      const rows = await tx.patch_submission_gallery.findMany({
+        where: {
+          submission_id: input.submissionId,
+          upload_status: { in: ['ready', 'uploading'] }
+        },
+        select: {
+          id: true,
+          upload_status: true,
+          display_order: true,
+          status_changed_at: true
+        }
       })
-      const readyIds = new Set(ready.map((row) => row.id))
+
+      /**
+       * A reservation holds its slot while its bytes travel to S3, and it does
+       * so outside the submission lock, so from here it is only visible as an
+       * `uploading` row. Moving a ready row onto that number would leave two
+       * rows sharing it the moment the upload finalizes, so a live upload
+       * refuses the whole save rather than half of it.
+       */
+      const staleBefore = new Date(
+        Date.now() - PATCH_SUBMISSION_UPLOAD_TAKEOVER_MS
+      )
+      const uploading = rows.filter((row) => row.upload_status === 'uploading')
+      if (uploading.some((row) => row.status_changed_at > staleBefore)) {
+        throw new PatchSubmissionError(
+          '有截图正在上传, 请等待上传完成后再保存排序'
+        )
+      }
+      /**
+       * A reservation past the takeover window no longer blocks the save — its
+       * request is gone — but the author can still retry that upload, and the
+       * retry claims the number the row already holds. So the number stays
+       * reserved until the author resolves the failed upload one way or the
+       * other, which is what the message asks them to do.
+       */
+      const reserved = new Set(uploading.map((row) => row.display_order))
+      if (input.order.some((entry) => reserved.has(entry.displayOrder))) {
+        throw new PatchSubmissionError(
+          '位置被一张上传失败的截图占用, 请先重试或删除该截图'
+        )
+      }
+
+      const readyIds = new Set(
+        rows.filter((row) => row.upload_status === 'ready').map((row) => row.id)
+      )
       if (
         readyIds.size !== galleryIds.length ||
         galleryIds.some((galleryId) => !readyIds.has(galleryId))
