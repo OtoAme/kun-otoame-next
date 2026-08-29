@@ -1,7 +1,7 @@
 'use client'
 
 import { useRef, useState } from 'react'
-import ReactCrop, { type Crop, type PixelCrop } from 'react-image-crop'
+import ReactCrop, { convertToPixelCrop, type Crop } from 'react-image-crop'
 import {
   Button,
   Modal,
@@ -38,27 +38,44 @@ export const KunImageCropperModal = ({
 }: Props) => {
   const imgRef = useRef<HTMLImageElement>(null)
   const [crop, setCrop] = useState<Crop>()
-  const [completedCrop, setCompletedCrop] = useState<PixelCrop>()
   const [scale, setScale] = useState(1)
   const [rotate, setRotate] = useState(0)
-  const [aspect, setAspect] = useState<{ x: number; y: number }>(initialAspect)
+  const [imageReady, setImageReady] = useState(false)
+  const [working, setWorking] = useState(false)
+  const [renderedSrc, setRenderedSrc] = useState(imgSrc)
+  const aspect = initialAspect.x / initialAspect.y
 
-  const onImageLoad = (e: React.SyntheticEvent<HTMLImageElement>) => {
-    if (aspect) {
-      const { width, height } = e.currentTarget
-      setCrop(centerAspectCrop(width, height, aspect.x / aspect.y))
-    }
+  // The reset has to land before the replacement image's load event, which is
+  // what recomputes the crop; a passive effect can flush after that event and
+  // leave the modal with no selection at all.
+  if (renderedSrc !== imgSrc) {
+    setRenderedSrc(imgSrc)
+    setCrop(undefined)
+    setScale(1)
+    setRotate(0)
+    setImageReady(false)
   }
 
-  const handleToggleAspect = () => {
-    setAspect(aspect)
+  const onImageLoad = (e: React.SyntheticEvent<HTMLImageElement>) => {
+    const { width, height } = e.currentTarget
+    setCrop(centerAspectCrop(width, height, aspect))
+    setImageReady(true)
   }
 
   const handleCropComplete = async () => {
-    if (completedCrop && imgRef.current) {
+    if (!crop || !imgRef.current) {
+      return
+    }
+
+    setWorking(true)
+    try {
+      // Converted at confirm time so the pixels come from the same layout box
+      // createCroppedImage scales against: react-image-crop measures the crop
+      // the moment it appears, which is while the modal's entrance animation
+      // still has the image transform-scaled down.
       const croppedImage = await createCroppedImage(
         imgRef.current,
-        completedCrop,
+        convertToPixelCrop(crop, imgRef.current.width, imgRef.current.height),
         scale,
         rotate
       )
@@ -68,11 +85,21 @@ export const KunImageCropperModal = ({
       // earlier compression land after a faster later one.
       await onOriginalImageComplete?.(imgSrc)
       onClose()
+    } finally {
+      setWorking(false)
     }
   }
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} size="3xl" scrollBehavior="inside">
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      size="3xl"
+      scrollBehavior="inside"
+      isDismissable={!working}
+      isKeyboardDismissDisabled={working}
+      hideCloseButton={working}
+    >
       <ModalContent>
         <ModalHeader className="flex-col">
           <h2>裁剪图片</h2>
@@ -84,8 +111,7 @@ export const KunImageCropperModal = ({
               <ReactCrop
                 crop={crop}
                 onChange={(_, percentCrop) => setCrop(percentCrop)}
-                onComplete={(c) => setCompletedCrop(c)}
-                aspect={aspect.x / aspect.y}
+                aspect={aspect}
                 minHeight={100}
               >
                 <img
@@ -102,19 +128,27 @@ export const KunImageCropperModal = ({
             <KunCropControls
               scale={scale}
               rotate={rotate}
-              aspect={aspect}
               onScaleChange={setScale}
               onRotateChange={setRotate}
-              onAspectToggle={handleToggleAspect}
               onOpenMosaic={onOpenMosaic}
             />
           </div>
         </ModalBody>
         <ModalFooter>
-          <Button color="danger" variant="light" onPress={onClose}>
+          <Button
+            color="danger"
+            variant="light"
+            onPress={onClose}
+            isDisabled={working}
+          >
             取消
           </Button>
-          <Button color="primary" onPress={handleCropComplete}>
+          <Button
+            color="primary"
+            onPress={handleCropComplete}
+            isDisabled={!imageReady || !crop || working}
+            isLoading={working}
+          >
             裁剪图片
           </Button>
         </ModalFooter>

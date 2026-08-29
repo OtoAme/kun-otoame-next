@@ -1,4 +1,4 @@
-import { centerCrop, makeAspectCrop } from 'react-image-crop'
+import { centerCrop, makeAspectCrop, type PixelCrop } from 'react-image-crop'
 
 export const centerAspectCrop = (
   mediaWidth: number,
@@ -22,7 +22,7 @@ export const centerAspectCrop = (
 
 export const createCroppedImage = async (
   image: HTMLImageElement,
-  crop: any,
+  crop: PixelCrop,
   scale = 1,
   rotate = 0
 ) => {
@@ -36,12 +36,9 @@ export const createCroppedImage = async (
   const scaleX = image.naturalWidth / image.width
   const scaleY = image.naturalHeight / image.height
 
-  const pixelRatio = window.devicePixelRatio
+  canvas.width = Math.floor(crop.width * scaleX)
+  canvas.height = Math.floor(crop.height * scaleY)
 
-  canvas.width = Math.floor(crop.width * scaleX * pixelRatio)
-  canvas.height = Math.floor(crop.height * scaleY * pixelRatio)
-
-  ctx.scale(pixelRatio, pixelRatio)
   ctx.imageSmoothingQuality = 'high'
 
   const cropX = crop.x * scaleX
