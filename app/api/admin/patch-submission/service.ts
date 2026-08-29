@@ -176,7 +176,7 @@ export const getAdminPatchSubmission = async (
       patch: { select: { unique_id: true, name: true } },
       gallery: {
         where: { upload_status: 'ready' },
-        orderBy: { display_order: 'asc' },
+        orderBy: [{ display_order: 'asc' }, { id: 'asc' }],
         select: {
           id: true,
           image_key: true,

@@ -24,8 +24,11 @@ vi.mock('localforage', () => ({
 
 import {
   clearPatchSubmissionDraftStorage,
+  clearPatchSubmissionGalleryOrder,
+  loadPatchSubmissionGalleryOrder,
   loadPatchSubmissionUploadDraft,
   loadPatchSubmissionWatermark,
+  savePatchSubmissionGalleryOrder,
   savePatchSubmissionUploadDraft,
   savePatchSubmissionWatermark,
   type PatchSubmissionLocalUpload
@@ -103,9 +106,10 @@ describe('patch submission watermark option', () => {
     await expect(loadPatchSubmissionWatermark(8)).resolves.toBe(true)
   })
 
-  it('clears the items and the watermark key together', async () => {
+  it('clears the items, the watermark and the order key together', async () => {
     await savePatchSubmissionUploadDraft(7, [item('pending')])
     await savePatchSubmissionWatermark(7, false)
+    await savePatchSubmissionGalleryOrder(7, ['server:9'])
 
     await clearPatchSubmissionDraftStorage(7)
 
@@ -113,7 +117,54 @@ describe('patch submission watermark option', () => {
     expect(localforageMocks.removeItem).toHaveBeenCalledWith(
       'submission:7:watermark'
     )
+    expect(localforageMocks.removeItem).toHaveBeenCalledWith(
+      'submission:7:order'
+    )
     await expect(loadPatchSubmissionUploadDraft(7)).resolves.toEqual([])
     await expect(loadPatchSubmissionWatermark(7)).resolves.toBe(true)
+    await expect(loadPatchSubmissionGalleryOrder(7)).resolves.toBeNull()
+  })
+})
+
+describe('patch submission gallery order draft', () => {
+  it('keeps the sequence namespaced across both stores', async () => {
+    await savePatchSubmissionGalleryOrder(7, [
+      'server:9',
+      'local:stable-client-id',
+      'server:10'
+    ])
+
+    expect(localforageMocks.setItem).toHaveBeenCalledWith(
+      'submission:7:order',
+      ['server:9', 'local:stable-client-id', 'server:10']
+    )
+    await expect(loadPatchSubmissionGalleryOrder(7)).resolves.toEqual([
+      'server:9',
+      'local:stable-client-id',
+      'server:10'
+    ])
+  })
+
+  // The record existing is what "unsaved order" means, so no record must read
+  // back as null rather than as an empty sequence.
+  it('reads back as null until a sequence has been stored', async () => {
+    await expect(loadPatchSubmissionGalleryOrder(7)).resolves.toBeNull()
+  })
+
+  it('is scoped per submission', async () => {
+    await savePatchSubmissionGalleryOrder(7, ['server:9'])
+
+    await expect(loadPatchSubmissionGalleryOrder(8)).resolves.toBeNull()
+  })
+
+  it('drops the record once the server has accepted the sequence', async () => {
+    await savePatchSubmissionGalleryOrder(7, ['server:9'])
+
+    await clearPatchSubmissionGalleryOrder(7)
+
+    expect(localforageMocks.removeItem).toHaveBeenCalledWith(
+      'submission:7:order'
+    )
+    await expect(loadPatchSubmissionGalleryOrder(7)).resolves.toBeNull()
   })
 })

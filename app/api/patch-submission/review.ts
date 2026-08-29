@@ -78,7 +78,7 @@ const loadPendingSubmission = async (
       banner_original_key: true,
       gallery: {
         where: { upload_status: 'ready' },
-        orderBy: { display_order: 'asc' },
+        orderBy: [{ display_order: 'asc' }, { id: 'asc' }],
         select: {
           image_key: true,
           thumbnail_key: true,

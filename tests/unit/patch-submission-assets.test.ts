@@ -60,7 +60,8 @@ import {
   deletePatchSubmissionGalleryImages,
   uploadPatchSubmissionBanner,
   uploadPatchSubmissionGalleryImage,
-  updatePatchSubmissionGalleryNSFW
+  updatePatchSubmissionGalleryNSFW,
+  updatePatchSubmissionGalleryOrder
 } from '~/app/api/patch-submission/assets'
 
 const tx = prismaMocks._tx
@@ -85,12 +86,16 @@ const preparedGallery = {
 beforeEach(() => {
   vi.clearAllMocks()
   tx.$queryRaw.mockReset()
+  // Reserve lock, then the usage measurement, then the finalize lock.
   tx.$queryRaw
     .mockResolvedValueOnce([editableRow])
     .mockResolvedValueOnce([
       { slots: 0n, submission_bytes: 0n, user_bytes: 0n }
     ])
+    .mockResolvedValue([editableRow])
   tx.patch_submission_gallery.findUnique.mockResolvedValue(null)
+  tx.patch_submission_gallery.findFirst.mockResolvedValue(null)
+  tx.patch_submission_gallery.update.mockResolvedValue({ id: 9 })
   tx.patch_submission_gallery.create.mockResolvedValue({ id: 9 })
   tx.patch_submission_gallery.updateMany.mockResolvedValue({ count: 1 })
   tx.patch_submission_gallery.deleteMany.mockResolvedValue({ count: 1 })
@@ -397,5 +402,312 @@ describe('submission asset removals', () => {
       ],
       'upload_compensation'
     )
+  })
+})
+
+describe('gallery upload display order reservation', () => {
+  it('refuses a slot number another live row already holds', async () => {
+    tx.patch_submission_gallery.findFirst.mockResolvedValue({ id: 11 })
+
+    await expect(
+      uploadPatchSubmissionGalleryImage({
+        submissionId: 1,
+        userId: 2,
+        clientAssetId: 'client-9',
+        image: new ArrayBuffer(8),
+        isNSFW: false,
+        watermark: false,
+        displayOrder: 3
+      })
+    ).rejects.toThrow('截图顺序存在冲突')
+
+    expect(tx.patch_submission_gallery.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          submission_id: 1,
+          display_order: 3,
+          client_asset_id: { not: 'client-9' }
+        })
+      })
+    )
+    expect(tx.patch_submission_gallery.create).not.toHaveBeenCalled()
+    expect(preparePatchGalleryImageMock).not.toHaveBeenCalled()
+  })
+
+  it('ignores rows that belong to the retry of this very client asset id', async () => {
+    await uploadPatchSubmissionGalleryImage({
+      submissionId: 1,
+      userId: 2,
+      clientAssetId: 'client-9',
+      image: new ArrayBuffer(8),
+      isNSFW: false,
+      watermark: false,
+      displayOrder: 3
+    })
+
+    const where = tx.patch_submission_gallery.findFirst.mock.calls[0]?.[0]
+      ?.where as { client_asset_id: { not: string }; OR: unknown[] }
+    expect(where.client_asset_id).toEqual({ not: 'client-9' })
+    // Stale uploading rows never held the slot, so they cannot wedge it either.
+    expect(where.OR).toEqual([
+      { upload_status: 'ready' },
+      expect.objectContaining({ upload_status: 'uploading' })
+    ])
+    expect(tx.patch_submission_gallery.create).toHaveBeenCalled()
+  })
+
+  it('checks the slot inside the lock when an earlier attempt is taken over', async () => {
+    tx.$queryRaw.mockReset()
+    tx.$queryRaw.mockResolvedValue([editableRow])
+    tx.patch_submission_gallery.findUnique.mockResolvedValue({
+      id: 9,
+      upload_status: 'failed',
+      file_fingerprint: null,
+      image_key: null,
+      thumbnail_key: null,
+      is_nsfw: false,
+      display_order: 0,
+      status_changed_at: new Date()
+    })
+    tx.patch_submission_gallery.findFirst.mockResolvedValue({ id: 11 })
+
+    await expect(
+      uploadPatchSubmissionGalleryImage({
+        submissionId: 1,
+        userId: 2,
+        clientAssetId: 'client-9',
+        image: new ArrayBuffer(8),
+        isNSFW: false,
+        watermark: false,
+        displayOrder: 3
+      })
+    ).rejects.toThrow('截图顺序存在冲突')
+
+    expect(tx.patch_submission_gallery.update).not.toHaveBeenCalled()
+  })
+})
+
+describe('gallery upload finalize lock ordering', () => {
+  it('locks the submission row before writing the ready state', async () => {
+    await uploadPatchSubmissionGalleryImage({
+      submissionId: 1,
+      userId: 2,
+      clientAssetId: 'client-9',
+      image: new ArrayBuffer(8),
+      isNSFW: false,
+      watermark: false,
+      displayOrder: 0
+    })
+
+    // Reserve lock, usage measurement, finalize lock.
+    expect(tx.$queryRaw).toHaveBeenCalledTimes(3)
+    expect(tx.$queryRaw).toHaveBeenCalledBefore(
+      tx.patch_submission_gallery.updateMany
+    )
+  })
+
+  it('still compensates when the lock finds a submission that turned non-editable', async () => {
+    tx.$queryRaw.mockReset()
+    tx.$queryRaw
+      .mockResolvedValueOnce([editableRow])
+      .mockResolvedValueOnce([
+        { slots: 0n, submission_bytes: 0n, user_bytes: 0n }
+      ])
+      .mockResolvedValue([{ ...editableRow, status: 'pending' }])
+    tx.patch_submission_gallery.updateMany.mockResolvedValue({ count: 0 })
+
+    await expect(
+      uploadPatchSubmissionGalleryImage({
+        submissionId: 1,
+        userId: 2,
+        clientAssetId: 'client-9',
+        image: new ArrayBuffer(8),
+        isNSFW: false,
+        watermark: false,
+        displayOrder: 0
+      })
+    ).rejects.toThrow('投稿状态已变化')
+
+    expect(tx.patch_submission_gallery.deleteMany).toHaveBeenCalledWith({
+      where: { id: 9, upload_status: 'uploading' }
+    })
+    expect(enqueueSubmissionOrphanCleanupJobsMock).toHaveBeenCalledWith(
+      tx,
+      expect.arrayContaining([expect.stringContaining('/gallery/9.avif')]),
+      'upload_compensation'
+    )
+    expect(
+      processSubmissionOrphanCleanupJobsBestEffortMock
+    ).toHaveBeenCalledAfter(enqueueSubmissionOrphanCleanupJobsMock)
+  })
+
+  it('still compensates when the submission row is gone entirely', async () => {
+    tx.$queryRaw.mockReset()
+    tx.$queryRaw
+      .mockResolvedValueOnce([editableRow])
+      .mockResolvedValueOnce([
+        { slots: 0n, submission_bytes: 0n, user_bytes: 0n }
+      ])
+      .mockResolvedValue([])
+    tx.patch_submission_gallery.updateMany.mockResolvedValue({ count: 0 })
+
+    await expect(
+      uploadPatchSubmissionGalleryImage({
+        submissionId: 1,
+        userId: 2,
+        clientAssetId: 'client-9',
+        image: new ArrayBuffer(8),
+        isNSFW: false,
+        watermark: false,
+        displayOrder: 0
+      })
+    ).rejects.toThrow('投稿状态已变化')
+
+    expect(enqueueSubmissionOrphanCleanupJobsMock).toHaveBeenCalledWith(
+      tx,
+      expect.any(Array),
+      'upload_compensation'
+    )
+  })
+})
+
+describe('submission gallery order updates', () => {
+  const readyRows = (ids: number[]) => ids.map((id) => ({ id }))
+
+  beforeEach(() => {
+    tx.$queryRaw.mockReset()
+    tx.$queryRaw.mockResolvedValue([editableRow])
+  })
+
+  it('writes every row inside the editable-state lock', async () => {
+    tx.patch_submission_gallery.findMany.mockResolvedValue(readyRows([9, 10]))
+
+    await expect(
+      updatePatchSubmissionGalleryOrder({
+        submissionId: 1,
+        userId: 2,
+        order: [
+          { galleryId: 10, displayOrder: 0 },
+          { galleryId: 9, displayOrder: 2 }
+        ]
+      })
+    ).resolves.toEqual({})
+
+    expect(tx.patch_submission_gallery.findMany).toHaveBeenCalledWith({
+      where: { submission_id: 1, upload_status: 'ready' },
+      select: { id: true }
+    })
+    expect(tx.patch_submission_gallery.update).toHaveBeenNthCalledWith(1, {
+      where: { id: 10 },
+      data: { display_order: 0 }
+    })
+    // Local cards may hold the slot in between, so gaps are legal.
+    expect(tx.patch_submission_gallery.update).toHaveBeenNthCalledWith(2, {
+      where: { id: 9 },
+      data: { display_order: 2 }
+    })
+  })
+
+  it('rejects an order that does not name every ready row', async () => {
+    tx.patch_submission_gallery.findMany.mockResolvedValue(readyRows([9, 10]))
+
+    await expect(
+      updatePatchSubmissionGalleryOrder({
+        submissionId: 1,
+        userId: 2,
+        order: [{ galleryId: 9, displayOrder: 0 }]
+      })
+    ).rejects.toThrow('截图列表已变化')
+
+    expect(tx.patch_submission_gallery.update).not.toHaveBeenCalled()
+  })
+
+  it('rejects an order naming a row that is not ready', async () => {
+    tx.patch_submission_gallery.findMany.mockResolvedValue(readyRows([9]))
+
+    await expect(
+      updatePatchSubmissionGalleryOrder({
+        submissionId: 1,
+        userId: 2,
+        order: [
+          { galleryId: 9, displayOrder: 0 },
+          { galleryId: 10, displayOrder: 1 }
+        ]
+      })
+    ).rejects.toThrow('截图列表已变化')
+
+    expect(tx.patch_submission_gallery.update).not.toHaveBeenCalled()
+  })
+
+  it('rejects a repeated gallery id before touching the database', async () => {
+    await expect(
+      updatePatchSubmissionGalleryOrder({
+        submissionId: 1,
+        userId: 2,
+        order: [
+          { galleryId: 9, displayOrder: 0 },
+          { galleryId: 9, displayOrder: 1 }
+        ]
+      })
+    ).rejects.toThrow('同一张截图出现了多次')
+
+    expect(tx.patch_submission_gallery.findMany).not.toHaveBeenCalled()
+    expect(tx.patch_submission_gallery.update).not.toHaveBeenCalled()
+  })
+
+  it('rejects a repeated display order before touching the database', async () => {
+    await expect(
+      updatePatchSubmissionGalleryOrder({
+        submissionId: 1,
+        userId: 2,
+        order: [
+          { galleryId: 9, displayOrder: 1 },
+          { galleryId: 10, displayOrder: 1 }
+        ]
+      })
+    ).rejects.toThrow('存在重复的位置')
+
+    expect(tx.patch_submission_gallery.findMany).not.toHaveBeenCalled()
+    expect(tx.patch_submission_gallery.update).not.toHaveBeenCalled()
+  })
+
+  it('accepts an empty order when the submission has no ready row yet', async () => {
+    tx.patch_submission_gallery.findMany.mockResolvedValue([])
+
+    await expect(
+      updatePatchSubmissionGalleryOrder({
+        submissionId: 1,
+        userId: 2,
+        order: []
+      })
+    ).resolves.toEqual({})
+
+    expect(tx.patch_submission_gallery.update).not.toHaveBeenCalled()
+  })
+
+  it('rejects an empty order while ready rows still exist', async () => {
+    tx.patch_submission_gallery.findMany.mockResolvedValue(readyRows([9]))
+
+    await expect(
+      updatePatchSubmissionGalleryOrder({
+        submissionId: 1,
+        userId: 2,
+        order: []
+      })
+    ).rejects.toThrow('截图列表已变化')
+  })
+
+  it('refuses to reorder a submission that is no longer editable', async () => {
+    tx.$queryRaw.mockResolvedValue([{ ...editableRow, status: 'pending' }])
+
+    await expect(
+      updatePatchSubmissionGalleryOrder({
+        submissionId: 1,
+        userId: 2,
+        order: [{ galleryId: 9, displayOrder: 0 }]
+      })
+    ).rejects.toThrow('投稿正在审核中, 无法修改素材')
+
+    expect(tx.patch_submission_gallery.findMany).not.toHaveBeenCalled()
   })
 })

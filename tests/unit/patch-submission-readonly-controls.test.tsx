@@ -362,3 +362,61 @@ describe('rejected patch submission controls', () => {
     expect(fetchMocks.post).not.toHaveBeenCalled()
   })
 })
+
+const draftSubmission: PatchSubmission = {
+  ...rejectedSubmission,
+  id: 42,
+  status: 'draft',
+  reviewReason: null,
+  reviewedAt: null
+}
+
+describe('draft submission order gate', () => {
+  let dom: JSDOM
+  let root: Root
+
+  const submitButton = () =>
+    [...dom.window.document.querySelectorAll('button')].find(
+      (button) => button.textContent?.trim() === '提交审核'
+    )
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    usePatchSubmissionStore.getState().reset()
+    dom = new JSDOM('<!doctype html><div id="root"></div>', {
+      url: 'http://localhost/submission/42'
+    })
+    vi.stubGlobal('window', dom.window)
+    vi.stubGlobal('document', dom.window.document)
+    vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
+    root = createRoot(dom.window.document.getElementById('root')!)
+  })
+
+  afterEach(async () => {
+    await act(async () => root.unmount())
+    dom.window.close()
+    vi.unstubAllGlobals()
+  })
+
+  it('blocks submission while a dragged screenshot order is unsaved', async () => {
+    await act(async () => {
+      root.render(<SubmissionEditor submission={draftSubmission} />)
+      await Promise.resolve()
+    })
+    await act(async () => {
+      usePatchSubmissionStore.setState({ assetDraftLoaded: true })
+      await Promise.resolve()
+    })
+    expect(submitButton()?.disabled).toBe(false)
+
+    await act(async () => {
+      usePatchSubmissionStore.setState({ assetOrderDirty: true })
+      await Promise.resolve()
+    })
+
+    expect(submitButton()?.disabled).toBe(true)
+    expect(dom.window.document.body.textContent).toContain(
+      '截图顺序尚未保存, 请在截图区点击「保存排序」后再提交。'
+    )
+  })
+})

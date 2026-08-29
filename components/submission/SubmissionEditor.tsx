@@ -50,7 +50,8 @@ export const SubmissionEditor = ({ submission }: Props) => {
     setExternalProvenance,
     localAssetCount,
     assetUploadsInFlight,
-    assetDraftLoaded
+    assetDraftLoaded,
+    assetOrderDirty
   } = usePatchSubmissionStore()
   const { queueSave, flush } = usePatchSubmissionAutosave()
   const [nameError, setNameError] = useState('')
@@ -96,6 +97,12 @@ export const SubmissionEditor = ({ submission }: Props) => {
     }
     if (!assetDraftLoaded || localAssetCount > 0 || assetUploadsInFlight > 0) {
       toast.error('请先完成或移除待上传的截图')
+      return
+    }
+    // display_order is copied verbatim into the published gallery, so a
+    // sequence the server has not accepted must not be frozen for review.
+    if (assetOrderDirty) {
+      toast.error('截图顺序尚未保存, 请先在截图区保存排序')
       return
     }
 
@@ -286,7 +293,8 @@ export const SubmissionEditor = ({ submission }: Props) => {
                 isDisabled={
                   !assetDraftLoaded ||
                   localAssetCount > 0 ||
-                  assetUploadsInFlight > 0
+                  assetUploadsInFlight > 0 ||
+                  assetOrderDirty
                 }
                 onPress={() => void submit()}
               >
@@ -304,6 +312,12 @@ export const SubmissionEditor = ({ submission }: Props) => {
             <p className="text-sm text-warning">
               仍有 {localAssetCount} 张截图未上传,
               请在截图区点击上传按钮或移除它们后再提交。
+            </p>
+          )}
+
+          {editable && assetOrderDirty && (
+            <p className="text-sm text-warning">
+              截图顺序尚未保存, 请在截图区点击「保存排序」后再提交。
             </p>
           )}
 

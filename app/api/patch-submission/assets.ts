@@ -34,11 +34,12 @@ const fingerprint = (buffer: Buffer) =>
   crypto.createHash('sha256').update(buffer).digest('hex')
 
 /**
- * Locks the submission row, then verifies it is still editable. Every limit
- * check downstream depends on this lock: counting first and inserting after
- * would let concurrent uploads walk past the cap.
+ * Takes the row lock and reports what it found, judging nothing. Callers that
+ * only need the writes on this submission serialized — the upload finalize, for
+ * one — use this so a submission that turned unreachable still reaches their own
+ * compensation path instead of aborting with the lock held.
  */
-const lockSubmission = async (
+const lockSubmissionRow = async (
   tx: Prisma.TransactionClient,
   submissionId: number,
   userId: number
@@ -64,7 +65,20 @@ const lockSubmission = async (
       FOR UPDATE
     `
   )
-  const submission = rows[0]
+  return rows[0] ?? null
+}
+
+/**
+ * Locks the submission row, then verifies it is still editable. Every limit
+ * check downstream depends on this lock: counting first and inserting after
+ * would let concurrent uploads walk past the cap.
+ */
+const lockSubmission = async (
+  tx: Prisma.TransactionClient,
+  submissionId: number,
+  userId: number
+) => {
+  const submission = await lockSubmissionRow(tx, submissionId, userId)
   if (!submission) {
     throw new PatchSubmissionError('投稿不存在')
   }
@@ -172,6 +186,41 @@ const measureUsage = async (
   }
 }
 
+/**
+ * Two rows sharing a `display_order` leave the published gallery order up to the
+ * database, so a reservation may not take a slot number another live row already
+ * holds. Runs inside the submission lock, and the row this very upload is
+ * retrying is not a conflict with itself. Rows stuck in `uploading` past the
+ * takeover window are ignored for the same reason they do not hold a slot: a
+ * crashed request must not wedge a position forever.
+ */
+const assertDisplayOrderFree = async (
+  tx: Prisma.TransactionClient,
+  submissionId: number,
+  clientAssetId: string,
+  displayOrder: number
+) => {
+  const staleBefore = new Date(Date.now() - PATCH_SUBMISSION_UPLOAD_TAKEOVER_MS)
+  const conflict = await tx.patch_submission_gallery.findFirst({
+    where: {
+      submission_id: submissionId,
+      display_order: displayOrder,
+      client_asset_id: { not: clientAssetId },
+      OR: [
+        { upload_status: 'ready' },
+        {
+          upload_status: 'uploading',
+          status_changed_at: { gt: staleBefore }
+        }
+      ]
+    },
+    select: { id: true }
+  })
+  if (conflict) {
+    throw new PatchSubmissionError('截图顺序存在冲突, 请刷新后重新保存排序')
+  }
+}
+
 interface GalleryUploadInput {
   submissionId: number
   userId: number
@@ -234,6 +283,13 @@ export const uploadPatchSubmissionGalleryImage = async (
           throw new PatchSubmissionError('这张截图正在上传中, 请稍候')
         }
 
+        await assertDisplayOrderFree(
+          tx,
+          input.submissionId,
+          input.clientAssetId,
+          input.displayOrder
+        )
+
         const takenOver = await tx.patch_submission_gallery.update({
           where: { id: existing.id },
           data: {
@@ -263,6 +319,13 @@ export const uploadPatchSubmissionGalleryImage = async (
           '您的投稿素材总体积已达上限, 请先删除不需要的图片'
         )
       }
+
+      await assertDisplayOrderFree(
+        tx,
+        input.submissionId,
+        input.clientAssetId,
+        input.displayOrder
+      )
 
       const created = await tx.patch_submission_gallery.create({
         data: {
@@ -332,6 +395,13 @@ export const uploadPatchSubmissionGalleryImage = async (
   }
 
   const finalized = await prisma.$transaction(async (tx) => {
+    // Same lock, same order as every other gallery write, so this finalize and
+    // a concurrent order PATCH cannot both write display_order on these rows.
+    // The lock deliberately does not judge the status: a submission that became
+    // non-editable while the bytes were in flight still has to reach the
+    // compensation branch below rather than abort with the row locked.
+    await lockSubmissionRow(tx, input.submissionId, input.userId)
+
     const updated = await tx.patch_submission_gallery.updateMany({
       where: {
         id: reserved.row.id,
@@ -452,6 +522,55 @@ export const updatePatchSubmissionGalleryNSFW = async (input: {
         where: { submission_id: input.submissionId, id: { in: ids } },
         data: { is_nsfw: input.isNSFW }
       })
+      return {}
+    },
+    { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted }
+  )
+
+/**
+ * Applies one explicit "save order" press. The request must describe the whole
+ * ready set, because a partial write would silently reorder around rows the
+ * author never saw. Numbers may be sparse: a screenshot that is still a local
+ * file holds its place in the author's sequence, so the cloud rows around it
+ * keep the positions that sequence gives them.
+ */
+export const updatePatchSubmissionGalleryOrder = async (input: {
+  submissionId: number
+  userId: number
+  order: { galleryId: number; displayOrder: number }[]
+}) =>
+  prisma.$transaction(
+    async (tx) => {
+      await lockEditableSubmission(tx, input.submissionId, input.userId)
+
+      const galleryIds = input.order.map((entry) => entry.galleryId)
+      if (new Set(galleryIds).size !== galleryIds.length) {
+        throw new PatchSubmissionError('截图顺序中同一张截图出现了多次')
+      }
+      const displayOrders = input.order.map((entry) => entry.displayOrder)
+      if (new Set(displayOrders).size !== displayOrders.length) {
+        throw new PatchSubmissionError('截图顺序中存在重复的位置')
+      }
+
+      const ready = await tx.patch_submission_gallery.findMany({
+        where: { submission_id: input.submissionId, upload_status: 'ready' },
+        select: { id: true }
+      })
+      const readyIds = new Set(ready.map((row) => row.id))
+      if (
+        readyIds.size !== galleryIds.length ||
+        galleryIds.some((galleryId) => !readyIds.has(galleryId))
+      ) {
+        throw new PatchSubmissionError('截图列表已变化, 请刷新后重新排序')
+      }
+
+      for (const entry of input.order) {
+        await tx.patch_submission_gallery.update({
+          where: { id: entry.galleryId },
+          data: { display_order: entry.displayOrder }
+        })
+      }
+
       return {}
     },
     { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted }

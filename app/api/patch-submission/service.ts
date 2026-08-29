@@ -43,7 +43,9 @@ const submissionSelect = {
   updated: true,
   patch: { select: { unique_id: true } },
   gallery: {
-    orderBy: { display_order: 'asc' as const },
+    // Equal display_order values leave the row order to the database, so the
+    // stable id decides ties in every gallery read.
+    orderBy: [{ display_order: 'asc' as const }, { id: 'asc' as const }],
     select: {
       id: true,
       client_asset_id: true,

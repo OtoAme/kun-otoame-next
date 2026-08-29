@@ -349,3 +349,17 @@ describe('violation', () => {
     expect(data).not.toHaveProperty('name')
   })
 })
+
+describe('publish gallery read order', () => {
+  it('breaks ties on the stable id before the rows are copied to the entry', async () => {
+    await approvePatchSubmission(1, admin, false)
+
+    const args = tx.patch_submission.findUnique.mock.calls.at(-1)?.[0] as {
+      select: { gallery: { orderBy: unknown } }
+    }
+    expect(args.select.gallery.orderBy).toEqual([
+      { display_order: 'asc' },
+      { id: 'asc' }
+    ])
+  })
+})

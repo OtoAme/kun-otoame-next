@@ -99,6 +99,35 @@ beforeEach(() => {
   process.env.KUN_VISUAL_NOVEL_IMAGE_BED_URL = 'https://published.example.test'
 })
 
+describe('patch submission gallery read order', () => {
+  const stableOrderBy = [{ display_order: 'asc' }, { id: 'asc' }]
+
+  it('breaks ties on the stable id for the author editor', async () => {
+    prismaMocks.patch_submission.findFirst.mockResolvedValue(row('draft'))
+
+    await getPatchSubmission(1, 2)
+
+    const args = prismaMocks.patch_submission.findFirst.mock.calls.at(
+      -1
+    )?.[0] as { select: { gallery: { orderBy: unknown } } }
+    expect(args.select.gallery.orderBy).toEqual(stableOrderBy)
+  })
+
+  it('breaks ties on the stable id for the reviewer detail', async () => {
+    prismaMocks.patch_submission.findUnique.mockResolvedValue(
+      adminRow('pending')
+    )
+    prismaMocks.patch.findMany.mockResolvedValue([])
+
+    await getAdminPatchSubmission(1, 3)
+
+    const args = prismaMocks.patch_submission.findUnique.mock.calls.at(
+      -1
+    )?.[0] as { select: { gallery: { orderBy: unknown } } }
+    expect(args.select.gallery.orderBy).toEqual(stableOrderBy)
+  })
+})
+
 describe('patch submission asset visibility', () => {
   it.each(['rejected', 'violation', 'deleted'])(
     'does not expose cleanup outbox keys to the author for %s',

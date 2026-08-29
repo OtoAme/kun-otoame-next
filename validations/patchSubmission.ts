@@ -168,22 +168,53 @@ export const patchSubmissionBannerUploadSchema = z.object({
   bannerOriginal: imageFileSchema.optional()
 })
 
+const galleryIdSchema = z.coerce.number().int().min(1).max(9999999)
+
 export const patchSubmissionGalleryDeleteSchema = z.object({
   submissionId: submissionIdSchema,
   galleryIds: z
-    .array(z.coerce.number().int().min(1).max(9999999))
+    .array(galleryIdSchema)
     .min(1, { message: '请至少选择一张截图' })
     .max(PATCH_SUBMISSION_GALLERY_MAX_COUNT)
 })
 
-export const patchSubmissionGalleryNsfwSchema = z.object({
-  submissionId: submissionIdSchema,
-  galleryIds: z
-    .array(z.coerce.number().int().min(1).max(9999999))
-    .min(1, { message: '请至少选择一张截图' })
-    .max(PATCH_SUBMISSION_GALLERY_MAX_COUNT),
-  isNSFW: z.boolean()
-})
+/**
+ * Both gallery PATCH actions share one endpoint, so the action tag is what
+ * decides which payload is required. `order` accepts an empty array on purpose:
+ * a submission whose screenshots are all still local has no cloud row to move,
+ * and the client must still be able to confirm that.
+ */
+export const patchSubmissionGalleryPatchSchema = z.discriminatedUnion(
+  'action',
+  [
+    z.object({
+      action: z.literal('nsfw'),
+      submissionId: submissionIdSchema,
+      galleryIds: z
+        .array(galleryIdSchema)
+        .min(1, { message: '请至少选择一张截图' })
+        .max(PATCH_SUBMISSION_GALLERY_MAX_COUNT),
+      isNSFW: z.boolean()
+    }),
+    z.object({
+      action: z.literal('order'),
+      submissionId: submissionIdSchema,
+      order: z
+        .array(
+          z.object({
+            galleryId: galleryIdSchema,
+            displayOrder: z.coerce
+              .number()
+              .int()
+              .min(0)
+              .max(PATCH_SUBMISSION_GALLERY_MAX_COUNT - 1)
+          })
+        )
+        .max(PATCH_SUBMISSION_GALLERY_MAX_COUNT)
+    })
+  ],
+  { errorMap: () => ({ message: '截图操作类型不正确' }) }
+)
 
 const reviewReasonSchema = z
   .string()

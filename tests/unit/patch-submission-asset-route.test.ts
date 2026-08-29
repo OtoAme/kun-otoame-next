@@ -12,6 +12,7 @@ vi.mock('~/middleware/_verifyHeaderCookie', () => ({
 const serviceMocks = vi.hoisted(() => ({
   deletePatchSubmissionGalleryImages: vi.fn(),
   updatePatchSubmissionGalleryNSFW: vi.fn(),
+  updatePatchSubmissionGalleryOrder: vi.fn(),
   uploadPatchSubmissionBanner: vi.fn(),
   uploadPatchSubmissionGalleryImage: vi.fn()
 }))
@@ -28,6 +29,7 @@ beforeEach(() => {
   csrfMock.mockReturnValue(null)
   authMock.mockResolvedValue({ uid: 7, role: 1 })
   serviceMocks.updatePatchSubmissionGalleryNSFW.mockResolvedValue({})
+  serviceMocks.updatePatchSubmissionGalleryOrder.mockResolvedValue({})
   serviceMocks.deletePatchSubmissionGalleryImages.mockResolvedValue({})
   serviceMocks.uploadPatchSubmissionGalleryImage.mockResolvedValue({
     galleryId: 9,
@@ -42,6 +44,7 @@ describe('patch submission gallery PATCH', () => {
       new NextRequest('https://example.test/api/patch-submission/asset', {
         method: 'PATCH',
         body: JSON.stringify({
+          action: 'nsfw',
           submissionId: 1,
           galleryIds: [9],
           isNSFW: true
@@ -59,6 +62,7 @@ describe('patch submission gallery PATCH', () => {
       new NextRequest('https://example.test/api/patch-submission/asset', {
         method: 'PATCH',
         body: JSON.stringify({
+          action: 'nsfw',
           submissionId: 1,
           galleryIds: [9, 10],
           isNSFW: true
@@ -73,6 +77,78 @@ describe('patch submission gallery PATCH', () => {
       isNSFW: true
     })
     expect(response.headers.get('Cache-Control')).toBe('private, no-store')
+  })
+})
+
+describe('patch submission gallery order PATCH', () => {
+  const patchRequest = (body: unknown) =>
+    new NextRequest('https://example.test/api/patch-submission/asset', {
+      method: 'PATCH',
+      body: JSON.stringify(body)
+    })
+
+  it('routes the order action to the order service, never to the NSFW one', async () => {
+    await PATCH(
+      patchRequest({
+        action: 'order',
+        submissionId: 1,
+        order: [
+          { galleryId: 9, displayOrder: 0 },
+          { galleryId: 10, displayOrder: 2 }
+        ]
+      })
+    )
+
+    expect(serviceMocks.updatePatchSubmissionGalleryOrder).toHaveBeenCalledWith(
+      {
+        submissionId: 1,
+        userId: 7,
+        order: [
+          { galleryId: 9, displayOrder: 0 },
+          { galleryId: 10, displayOrder: 2 }
+        ]
+      }
+    )
+    expect(serviceMocks.updatePatchSubmissionGalleryNSFW).not.toHaveBeenCalled()
+  })
+
+  it('accepts an empty order, which is what a gallery of local files sends', async () => {
+    await PATCH(patchRequest({ action: 'order', submissionId: 1, order: [] }))
+
+    expect(serviceMocks.updatePatchSubmissionGalleryOrder).toHaveBeenCalledWith(
+      {
+        submissionId: 1,
+        userId: 7,
+        order: []
+      }
+    )
+  })
+
+  it('rejects a display order outside the gallery range', async () => {
+    const response = await PATCH(
+      patchRequest({
+        action: 'order',
+        submissionId: 1,
+        order: [{ galleryId: 9, displayOrder: 20 }]
+      })
+    )
+
+    await expect(response.json()).resolves.toEqual(expect.any(String))
+    expect(
+      serviceMocks.updatePatchSubmissionGalleryOrder
+    ).not.toHaveBeenCalled()
+  })
+
+  it('rejects a body without a known action', async () => {
+    const response = await PATCH(
+      patchRequest({ submissionId: 1, galleryIds: [9], isNSFW: true })
+    )
+
+    await expect(response.json()).resolves.toBe('截图操作类型不正确')
+    expect(serviceMocks.updatePatchSubmissionGalleryNSFW).not.toHaveBeenCalled()
+    expect(
+      serviceMocks.updatePatchSubmissionGalleryOrder
+    ).not.toHaveBeenCalled()
   })
 })
 

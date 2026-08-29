@@ -216,3 +216,49 @@ describe('patch submission VNDB duplicate confirmation', () => {
     expect(prismaMocks.patch.findFirst).not.toHaveBeenCalled()
   })
 })
+
+describe('patch submission gallery order gate', () => {
+  const galleryRow = (uploadStatus: string, displayOrder: number) => ({
+    upload_status: uploadStatus,
+    display_order: displayOrder
+  })
+
+  it('refuses to freeze a submission whose ready rows share a display order', async () => {
+    prismaMocks.patch_submission.findFirst.mockResolvedValue({
+      status: 'draft',
+      payload,
+      banner_key: 'patch-submission/1/banner/banner.avif',
+      gallery: [galleryRow('ready', 1), galleryRow('ready', 1)],
+      user: { name: 'Author' }
+    })
+
+    await expect(submitPatchSubmission(1, 2)).resolves.toBe(
+      '截图顺序存在冲突, 请返回编辑并保存排序'
+    )
+    expect(prismaMocks.patch_submission.updateMany).not.toHaveBeenCalled()
+  })
+
+  it('allows gaps, which is what a still-local screenshot leaves behind', async () => {
+    prismaMocks.patch_submission.findFirst.mockResolvedValue({
+      status: 'draft',
+      payload,
+      banner_key: 'patch-submission/1/banner/banner.avif',
+      gallery: [galleryRow('ready', 0), galleryRow('ready', 2)],
+      user: { name: 'Author' }
+    })
+
+    await expect(submitPatchSubmission(1, 2)).resolves.toEqual({})
+  })
+
+  it('ignores failed rows, which never reach the published gallery', async () => {
+    prismaMocks.patch_submission.findFirst.mockResolvedValue({
+      status: 'draft',
+      payload,
+      banner_key: 'patch-submission/1/banner/banner.avif',
+      gallery: [galleryRow('ready', 0), galleryRow('failed', 0)],
+      user: { name: 'Author' }
+    })
+
+    await expect(submitPatchSubmission(1, 2)).resolves.toEqual({})
+  })
+})

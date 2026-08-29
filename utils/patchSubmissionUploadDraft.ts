@@ -28,6 +28,8 @@ const keyFor = (submissionId: number) => `submission:${submissionId}`
 const watermarkKeyFor = (submissionId: number) =>
   `submission:${submissionId}:watermark`
 
+const orderKeyFor = (submissionId: number) => `submission:${submissionId}:order`
+
 export const loadPatchSubmissionUploadDraft = async (submissionId: number) => {
   const items =
     (await storage.getItem<PatchSubmissionLocalUpload[]>(
@@ -74,6 +76,29 @@ export const savePatchSubmissionWatermark = async (
 export const clearPatchSubmissionWatermark = (submissionId: number) =>
   storage.removeItem(watermarkKeyFor(submissionId))
 
+/**
+ * The order the author dragged into place, as one namespaced sequence spanning
+ * both stores (`server:<galleryId>` / `local:<clientAssetId>`). Cloud rows only
+ * move when the author presses 保存排序, so the record existing *is* the unsaved
+ * flag: it is written on every drag and removed only once the server has
+ * accepted the sequence.
+ */
+export const loadPatchSubmissionGalleryOrder = async (submissionId: number) => {
+  const stored = await storage.getItem<string[]>(orderKeyFor(submissionId))
+  if (!Array.isArray(stored)) return null
+  return stored.filter((key): key is string => typeof key === 'string')
+}
+
+export const savePatchSubmissionGalleryOrder = async (
+  submissionId: number,
+  sequence: string[]
+) => {
+  await storage.setItem(orderKeyFor(submissionId), sequence)
+}
+
+export const clearPatchSubmissionGalleryOrder = (submissionId: number) =>
+  storage.removeItem(orderKeyFor(submissionId))
+
 /** The server cannot reach browser storage, so deleting a draft clears every
  *  per-submission key from the caller side. */
 export const clearPatchSubmissionDraftStorage = async (
@@ -81,4 +106,5 @@ export const clearPatchSubmissionDraftStorage = async (
 ) => {
   await clearPatchSubmissionUploadDraft(submissionId)
   await clearPatchSubmissionWatermark(submissionId)
+  await clearPatchSubmissionGalleryOrder(submissionId)
 }

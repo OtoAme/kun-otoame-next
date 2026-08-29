@@ -19,6 +19,8 @@ interface StoreState {
   localAssetCount: number
   assetUploadsInFlight: number
   assetDraftLoaded: boolean
+  /** Set while a dragged gallery order has not been accepted by the server. */
+  assetOrderDirty: boolean
   saveState: SaveState
   saveError: string
   /** Set while the current payload still has unsaved changes. */
@@ -40,6 +42,7 @@ interface StoreState {
     localCount?: number
     uploadsInFlight?: number
     loaded?: boolean
+    orderDirty?: boolean
   }) => void
   reset: () => void
 }
@@ -81,6 +84,7 @@ const initialState = {
   localAssetCount: 0,
   assetUploadsInFlight: 0,
   assetDraftLoaded: false,
+  assetOrderDirty: false,
   saveState: 'idle' as SaveState,
   saveError: '',
   pendingSave: false
@@ -110,6 +114,8 @@ export const usePatchSubmissionStore = create<StoreState>()((set) => ({
         state.submissionId === submission.id ? state.assetUploadsInFlight : 0,
       assetDraftLoaded:
         state.submissionId === submission.id ? state.assetDraftLoaded : false,
+      assetOrderDirty:
+        state.submissionId === submission.id ? state.assetOrderDirty : false,
       saveState: 'idle',
       saveError: '',
       pendingSave: false
@@ -127,11 +133,12 @@ export const usePatchSubmissionStore = create<StoreState>()((set) => ({
   setPendingSave: (pendingSave) => set({ pendingSave }),
   setExternalProvenance: (externalSource, externalFetchedAt) =>
     set({ externalSource, externalFetchedAt }),
-  setAssetDraftState: ({ localCount, uploadsInFlight, loaded }) =>
+  setAssetDraftState: ({ localCount, uploadsInFlight, loaded, orderDirty }) =>
     set((state) => ({
       localAssetCount: localCount ?? state.localAssetCount,
       assetUploadsInFlight: uploadsInFlight ?? state.assetUploadsInFlight,
-      assetDraftLoaded: loaded ?? state.assetDraftLoaded
+      assetDraftLoaded: loaded ?? state.assetDraftLoaded,
+      assetOrderDirty: orderDirty ?? state.assetOrderDirty
     })),
   reset: () => set(initialState)
 }))

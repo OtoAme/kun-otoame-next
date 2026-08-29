@@ -1,5 +1,15 @@
+import { Prisma } from '@prisma/client'
 import { prisma } from '~/prisma/index'
 import { visiblePatchResourceCountSelect } from '~/utils/patchResourceAttributes'
+
+/**
+ * Equal display_order values leave the row order to the database, so the stable
+ * id decides ties in every gallery read.
+ */
+const patchImageOrderBy: Prisma.patch_game_imageOrderByWithRelationInput[] = [
+  { display_order: 'asc' },
+  { id: 'asc' }
+]
 
 const patchUserSelect = {
   id: true,
@@ -112,9 +122,7 @@ const patchIntroductionSelect = {
   },
   images: {
     select: patchImageSelect,
-    orderBy: {
-      display_order: 'asc' as const
-    }
+    orderBy: patchImageOrderBy
   }
 } as const
 

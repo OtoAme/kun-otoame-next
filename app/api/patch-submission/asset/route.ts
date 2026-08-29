@@ -4,7 +4,7 @@ import { verifyKunCsrf } from '~/middleware/_csrf'
 import {
   patchSubmissionBannerUploadSchema,
   patchSubmissionGalleryDeleteSchema,
-  patchSubmissionGalleryNsfwSchema,
+  patchSubmissionGalleryPatchSchema,
   patchSubmissionGalleryUploadSchema
 } from '~/validations/patchSubmission'
 import { GALLERY_IMAGE_MAX_SIZE_MB } from '~/constants/galgame'
@@ -12,6 +12,7 @@ import { PatchSubmissionError } from '../quota'
 import {
   deletePatchSubmissionGalleryImages,
   updatePatchSubmissionGalleryNSFW,
+  updatePatchSubmissionGalleryOrder,
   uploadPatchSubmissionBanner,
   uploadPatchSubmissionGalleryImage
 } from '../assets'
@@ -143,12 +144,22 @@ export const PATCH = async (req: NextRequest) => {
     return privateJson('请求体不正确')
   }
 
-  const parsed = patchSubmissionGalleryNsfwSchema.safeParse(body)
+  const parsed = patchSubmissionGalleryPatchSchema.safeParse(body)
   if (!parsed.success) {
     return privateJson(parsed.error.errors[0]?.message ?? '参数不正确')
   }
 
   try {
+    if (parsed.data.action === 'order') {
+      return privateJson(
+        await updatePatchSubmissionGalleryOrder({
+          submissionId: parsed.data.submissionId,
+          userId: user.uid,
+          order: parsed.data.order
+        })
+      )
+    }
+
     return privateJson(
       await updatePatchSubmissionGalleryNSFW({
         submissionId: parsed.data.submissionId,

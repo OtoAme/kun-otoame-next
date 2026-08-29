@@ -195,7 +195,7 @@ export const submitPatchSubmission = async (
       payload: true,
       banner_key: true,
       user: { select: { name: true } },
-      gallery: { select: { upload_status: true } }
+      gallery: { select: { upload_status: true, display_order: true } }
     }
   })
   if (!submission) {
@@ -222,9 +222,16 @@ export const submitPatchSubmission = async (
   }
   const readyUploads = submission.gallery.filter(
     (image) => image.upload_status === 'ready'
-  ).length
-  if (readyUploads > PATCH_SUBMISSION_GALLERY_MAX_COUNT) {
+  )
+  if (readyUploads.length > PATCH_SUBMISSION_GALLERY_MAX_COUNT) {
     return `截图最多 ${PATCH_SUBMISSION_GALLERY_MAX_COUNT} 张`
+  }
+  // Publishing copies display_order verbatim, and equal values leave the
+  // gallery order to the database. Freezing a submission with a collision would
+  // publish an order nobody chose, so it is caught before review starts.
+  const readyOrders = new Set(readyUploads.map((image) => image.display_order))
+  if (readyOrders.size !== readyUploads.length) {
+    return '截图顺序存在冲突, 请返回编辑并保存排序'
   }
 
   const payload = submission.payload as unknown as PatchSubmissionPayload
