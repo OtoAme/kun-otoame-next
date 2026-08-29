@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { Image } from '@heroui/react'
+import { Button, Image } from '@heroui/react'
 import toast from 'react-hot-toast'
 import { dataURItoBlob } from '~/utils/dataURItoBlob'
 import { compressDataURLToWebp } from '~/utils/resizeImage'
@@ -40,7 +40,7 @@ export const SubmissionBannerInput = ({ editable }: Props) => {
 
   const onImageComplete = (croppedImage: string) => {
     const blob = dataURItoBlob(croppedImage)
-    setCropped(new File([blob], 'banner.avif', { type: 'image/avif' }))
+    setCropped(new File([blob], 'banner.webp', { type: blob.type }))
   }
 
   const onOriginalImageComplete = async (originalImage: string) => {
@@ -113,14 +113,14 @@ export const SubmissionBannerInput = ({ editable }: Props) => {
         }}
       />
       {cropped && (
-        <button
-          type="button"
-          onClick={() => void upload()}
-          disabled={uploading}
-          className="px-4 py-2 text-sm font-medium text-white rounded-medium bg-primary disabled:opacity-50"
+        <Button
+          color="primary"
+          onPress={() => void upload()}
+          isLoading={uploading}
+          isDisabled={uploading}
         >
           {uploading ? '正在上传封面 ...' : '保存封面'}
-        </button>
+        </Button>
       )}
     </div>
   )

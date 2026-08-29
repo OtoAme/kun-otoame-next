@@ -29,7 +29,9 @@ export const RewriteBanner = () => {
 
     const onImageComplete = (croppedImage: string) => {
         const imageBlob = dataURItoBlob(croppedImage)
-        const file = new File([imageBlob], 'banner.avif', { type: 'image/avif' })
+        const file = new File([imageBlob], 'banner.webp', {
+            type: imageBlob.type
+        })
         setNewBanner(file)
     }
 

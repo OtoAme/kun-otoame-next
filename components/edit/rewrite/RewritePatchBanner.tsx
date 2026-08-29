@@ -44,17 +44,23 @@ export const RewritePatchBanner = ({ patchId, onClose }: Props) => {
 
     setUpdating(true)
 
-    const res = await kunFetchFormData<KunResponse<{}>>(
-      '/patch/banner',
-      formData
-    )
-    kunErrorHandler(res, () => {
-      setBanner(null)
-      setPreviewUrl('')
-    })
-    toast.success('更新图片成功')
-    setUpdating(false)
-    onClose()
+    try {
+      const res = await kunFetchFormData<KunResponse<{}>>(
+        '/patch/banner',
+        formData
+      )
+      kunErrorHandler(res, () => {
+        setBanner(null)
+        setPreviewUrl('')
+        toast.success('更新图片成功')
+        onClose()
+      })
+    } catch (error) {
+      console.error('Failed to update the patch banner', error)
+      toast.error('更新图片失败, 请检查网络后重试')
+    } finally {
+      setUpdating(false)
+    }
   }
 
   const onImageComplete = async (croppedImage: string) => {
