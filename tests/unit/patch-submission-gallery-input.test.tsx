@@ -951,7 +951,9 @@ describe('SubmissionGalleryInput concurrent draft writes', () => {
     )
 
   /** Parks the next call to a storage mock until the test releases it. */
-  const holdNext = (mock: { mockReturnValueOnce: (value: unknown) => void }) => {
+  const holdNext = (mock: {
+    mockReturnValueOnce: (value: unknown) => void
+  }) => {
     const gate = deferred<undefined>()
     mock.mockReturnValueOnce(gate.promise)
     return () => gate.resolve(undefined)
@@ -1148,6 +1150,295 @@ describe('SubmissionGalleryInput concurrent draft writes', () => {
   })
 })
 
+/**
+ * The interleavings one serial queue cannot rule out on its own: a chain that
+ * outlives the submission it belongs to, a chain that outlives the editor, and
+ * a chain that decided what to write from a grid the chain in front of it had
+ * not been written into yet. Each one binds its draft where it starts and has
+ * to keep computing from that draft to the end.
+ */
+describe('SubmissionGalleryInput draft binding', () => {
+  let root: Root
+  let dom: JSDOM
+  let unmounted = false
+  const revokeObjectURL = vi.fn()
+
+  const container = () => dom.window.document.getElementById('root')!
+
+  const findButton = (text: string) =>
+    [...container().querySelectorAll('button')].find(
+      (button) => button.textContent?.trim() === text
+    )
+
+  const flush = async () => {
+    await act(async () => {
+      for (let tick = 0; tick < 16; tick += 1) await Promise.resolve()
+    })
+  }
+
+  const press = async (element: Element | null | undefined) => {
+    await act(async () => {
+      element?.dispatchEvent(
+        new dom.window.MouseEvent('click', { bubbles: true })
+      )
+    })
+    await flush()
+  }
+
+  const imageFile = (name: string) =>
+    new File([new Uint8Array([1, 2, 3])], name, { type: 'image/jpeg' })
+
+  const render = async () => {
+    await act(async () => {
+      root.render(<SubmissionGalleryInput />)
+    })
+    await flush()
+  }
+
+  const unmount = async () => {
+    await act(async () => root.unmount())
+    unmounted = true
+  }
+
+  /** Cloud cards are labelled by position, staged files by name. */
+  const cardLabels = () =>
+    [...container().querySelectorAll('img')].map((img) =>
+      img.getAttribute('alt')
+    )
+
+  /** Parks the next call to a storage mock until the test releases it. */
+  const holdNext = (mock: {
+    mockReturnValueOnce: (value: unknown) => void
+  }) => {
+    const gate = deferred<undefined>()
+    mock.mockReturnValueOnce(gate.promise)
+    return () => gate.resolve(undefined)
+  }
+
+  const localFile = (
+    clientAssetId: string,
+    fileName: string,
+    status: 'pending' | 'failed' = 'pending'
+  ) => localItem({ clientAssetId, fileName, status, error: null })
+
+  /** Which submission each item write named, and what it put there. */
+  const savedItemIds = () =>
+    draftMocks.save.mock.calls.map((call) => [
+      call[0] as number,
+      (call[1] as { clientAssetId: string }[]).map((item) => item.clientAssetId)
+    ])
+
+  const storedItems = () =>
+    draftMocks.save.mock.calls.at(-1)?.[1] as {
+      clientAssetId: string
+      fileName: string
+    }[]
+
+  const storedSequence = () =>
+    draftMocks.saveOrder.mock.calls.at(-1)?.[1] as string[]
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    unmounted = false
+    viewerMocks.images = []
+    viewerMocks.opened = null
+    dom = new JSDOM('<!doctype html><div id="root"></div>', {
+      url: 'http://localhost'
+    })
+    let previewSeed = 0
+    Object.defineProperty(dom.window.URL, 'createObjectURL', {
+      value: vi.fn(() => `blob:preview-${(previewSeed += 1)}`),
+      configurable: true
+    })
+    Object.defineProperty(dom.window.URL, 'revokeObjectURL', {
+      value: revokeObjectURL,
+      configurable: true
+    })
+    vi.stubGlobal('window', dom.window)
+    vi.stubGlobal('document', dom.window.document)
+    vi.stubGlobal('URL', dom.window.URL)
+    vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
+
+    usePatchSubmissionStore.setState({
+      submissionId: 7,
+      status: 'draft',
+      gallery: [],
+      localAssetCount: 0,
+      assetUploadsInFlight: 0,
+      assetDraftLoaded: false,
+      assetOrderDirty: false
+    })
+    draftMocks.load.mockResolvedValue([])
+    draftMocks.save.mockResolvedValue(undefined)
+    draftMocks.loadWatermark.mockResolvedValue(true)
+    draftMocks.saveWatermark.mockResolvedValue(undefined)
+    draftMocks.loadOrder.mockResolvedValue(null)
+    draftMocks.saveOrder.mockResolvedValue(undefined)
+    draftMocks.clearOrder.mockResolvedValue(undefined)
+    root = createRoot(dom.window.document.getElementById('root')!)
+  })
+
+  afterEach(async () => {
+    if (!unmounted) await act(async () => root.unmount())
+    dom.window.close()
+    vi.unstubAllGlobals()
+  })
+
+  it('keeps a batch that outlived its submission writing only its own draft', async () => {
+    draftMocks.load.mockImplementation(async (id: number) =>
+      id === 7 ? [localFile('a', 'first.jpg')] : [localFile('b', 'second.jpg')]
+    )
+    const upload = deferred<ReturnType<typeof uploadResponse>>()
+    fetchMocks.formData.mockReturnValue(upload.promise)
+    await render()
+
+    await press(findButton('上传 1 张截图'))
+    expect(fetchMocks.formData).toHaveBeenCalledTimes(1)
+
+    // The author moves to another submission while the first one's batch is
+    // still waiting on the server.
+    await act(async () => {
+      usePatchSubmissionStore.setState({ submissionId: 8, gallery: [] })
+    })
+    await flush()
+    expect(cardLabels()).toEqual(['second.jpg'])
+
+    draftMocks.save.mockClear()
+    draftMocks.saveOrder.mockClear()
+    await act(async () => {
+      upload.resolve(uploadResponse(11, 'a'))
+      await upload.promise
+    })
+    await flush()
+
+    // Submission 7's keys, holding what submission 7's own items came to.
+    expect(savedItemIds()).toEqual([[7, []]])
+    expect(draftMocks.saveOrder).not.toHaveBeenCalled()
+    // And nothing of it reached the editor that replaced it.
+    expect(usePatchSubmissionStore.getState()).toMatchObject({
+      submissionId: 8,
+      localAssetCount: 1,
+      assetUploadsInFlight: 0,
+      gallery: []
+    })
+    expect(cardLabels()).toEqual(['second.jpg'])
+  })
+
+  it('advances the draft after unmount so the second upload is not computed from the first', async () => {
+    draftMocks.load.mockResolvedValue([
+      localFile('a', 'first.jpg'),
+      localFile('b', 'second.jpg')
+    ])
+    const first = deferred<ReturnType<typeof uploadResponse>>()
+    const second = deferred<ReturnType<typeof uploadResponse>>()
+    fetchMocks.formData
+      .mockReturnValueOnce(first.promise)
+      .mockReturnValueOnce(second.promise)
+    await render()
+
+    await press(findButton('上传 2 张截图'))
+    expect(fetchMocks.formData).toHaveBeenCalledTimes(1)
+
+    await unmount()
+    draftMocks.save.mockClear()
+
+    await act(async () => {
+      first.resolve(uploadResponse(11, 'a'))
+      await first.promise
+    })
+    await flush()
+    expect(fetchMocks.formData).toHaveBeenCalledTimes(2)
+
+    await act(async () => {
+      second.resolve(uploadResponse(12, 'b'))
+      await second.promise
+    })
+    await flush()
+
+    // The second file's writes are derived from a list the first file has
+    // already left, so it is never written back in.
+    expect(savedItemIds()).toEqual([
+      [7, ['b']],
+      [7, ['b']],
+      [7, []]
+    ])
+  })
+
+  it('folds a second drop into the sequence the first one had not written yet', async () => {
+    await render()
+
+    // The first drop's sequence write is parked, so the second drop queues
+    // behind it and must not name its own sequence from the grid it landed on.
+    const releaseFirstOrder = holdNext(draftMocks.saveOrder)
+    let firstDrop: Promise<void> | undefined
+    let secondDrop: Promise<void> | undefined
+    await act(async () => {
+      firstDrop = dropzoneMocks.onDrop.current?.([imageFile('first.jpg')])
+    })
+    await act(async () => {
+      secondDrop = dropzoneMocks.onDrop.current?.([imageFile('second.jpg')])
+    })
+    await flush()
+
+    releaseFirstOrder()
+    await act(async () => {
+      await Promise.all([firstDrop, secondDrop])
+    })
+    await flush()
+
+    expect(storedItems().map((item) => item.fileName)).toEqual([
+      'first.jpg',
+      'second.jpg'
+    ])
+    // Both drops, in the order they were dropped.
+    expect(storedSequence()).toEqual(
+      storedItems().map((item) => `local:${item.clientAssetId}`)
+    )
+    expect(cardLabels()).toEqual(['first.jpg', 'second.jpg'])
+  })
+
+  it('rejects the second of two quick drops that would together pass the cap', async () => {
+    // Nineteen slots taken, so exactly one more file fits.
+    usePatchSubmissionStore.setState({
+      gallery: Array.from({ length: 19 }, (_unused, index) => ({
+        ...readyGallery,
+        id: index + 1,
+        clientAssetId: `server-client-id-${index + 1}`,
+        imageUrl: `https://img.example.test/${index + 1}.avif`,
+        displayOrder: index
+      }))
+    })
+    await render()
+
+    const releaseFirstOrder = holdNext(draftMocks.saveOrder)
+    let firstDrop: Promise<void> | undefined
+    let secondDrop: Promise<void> | undefined
+    await act(async () => {
+      firstDrop = dropzoneMocks.onDrop.current?.([imageFile('fits.jpg')])
+    })
+    await act(async () => {
+      secondDrop = dropzoneMocks.onDrop.current?.([imageFile('over.jpg')])
+    })
+    await flush()
+
+    releaseFirstOrder()
+    await act(async () => {
+      await Promise.all([firstDrop, secondDrop])
+    })
+    await flush()
+
+    // The count is re-read inside the write, so the second drop meets the slot
+    // the first one already took rather than the empty one it was dropped onto.
+    expect(toastMocks.error).toHaveBeenCalledWith('截图最多 20 张')
+    expect(storedItems().map((item) => item.fileName)).toEqual(['fits.jpg'])
+    expect(storedSequence()).toHaveLength(20)
+    expect(usePatchSubmissionStore.getState().localAssetCount).toBe(1)
+    // A refused drop leaves nothing behind, its own preview included.
+    expect(revokeObjectURL).toHaveBeenCalledWith('blob:preview-2')
+    expect(revokeObjectURL).not.toHaveBeenCalledWith('blob:preview-1')
+  })
+})
+
 describe('SubmissionGalleryInput restore', () => {
   let root: Root
   let dom: JSDOM
@@ -1277,7 +1568,9 @@ describe('SubmissionGalleryInput restore', () => {
 
     expect(usePatchSubmissionStore.getState().assetDraftLoaded).toBe(false)
     expect(dropzoneMocks.disabled.current).toBe(true)
-    expect(toastMocks.error).toHaveBeenCalledWith('读取本地截图草稿失败, 请重试')
+    expect(toastMocks.error).toHaveBeenCalledWith(
+      '读取本地截图草稿失败, 请重试'
+    )
     expect(container().textContent).toContain('读取本地截图草稿失败')
 
     draftMocks.loadOrder.mockResolvedValue(null)
