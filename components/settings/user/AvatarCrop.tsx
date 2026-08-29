@@ -33,6 +33,11 @@ export const AvatarCrop = () => {
   const [image, setImage] = useState<string | null>(null)
   const [croppedImage, setCroppedImage] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+  // The crop is converted against the image's layout box, which is 0 until the
+  // browser has laid the image out. Confirming before that produces an empty
+  // canvas, so the button waits for the load event the same way the shared
+  // cropper does.
+  const [imageReady, setImageReady] = useState(false)
   const imageRef = useRef<HTMLImageElement | null>(null)
 
   const onSelectFile = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -40,6 +45,7 @@ export const AvatarCrop = () => {
       const reader = new FileReader()
       reader.addEventListener('load', () => {
         setCrop(INITIAL_CROP)
+        setImageReady(false)
         setImage(reader.result as string)
         onOpen()
       })
@@ -164,6 +170,7 @@ export const AvatarCrop = () => {
                   ref={imageRef}
                   src={image}
                   alt="Upload"
+                  onLoad={() => setImageReady(true)}
                   className="max-h-[60vh] w-auto"
                 />
               </ReactCrop>
@@ -182,7 +189,7 @@ export const AvatarCrop = () => {
               color="primary"
               onPress={getCroppedImg}
               isLoading={loading}
-              isDisabled={loading}
+              isDisabled={loading || !imageReady}
             >
               确定
             </Button>

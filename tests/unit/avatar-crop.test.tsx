@@ -154,7 +154,12 @@ describe('AvatarCrop percentage crop', () => {
     vi.unstubAllGlobals()
   })
 
-  const openCropper = async (layoutSize: number) => {
+  const confirmButton = () =>
+    [...dom.window.document.querySelectorAll('button')].find(
+      (item) => item.textContent === '确定'
+    )
+
+  const openCropper = async (layoutSize: number, { load = true } = {}) => {
     await act(async () => {
       root.render(<AvatarCrop />)
     })
@@ -181,12 +186,16 @@ describe('AvatarCrop percentage crop', () => {
     ] as const) {
       Object.defineProperty(image, property, { configurable: true, value })
     }
+    if (load) {
+      await act(async () => {
+        image?.dispatchEvent(new dom.window.Event('load'))
+      })
+    }
+    return image
   }
 
   const confirm = async () => {
-    const button = [...dom.window.document.querySelectorAll('button')].find(
-      (item) => item.textContent === '确定'
-    )
+    const button = confirmButton()
     expect(button).toBeDefined()
     await act(async () => {
       button?.dispatchEvent(
@@ -206,6 +215,19 @@ describe('AvatarCrop percentage crop', () => {
     expect(drawImage.mock.calls[0].slice(1)).toEqual([
       200, 200, 400, 400, 0, 0, 200, 200
     ])
+  })
+
+  it('refuses to confirm before the image has been laid out', async () => {
+    // Until the load event the layout box is 0, so the crop would convert to an
+    // empty canvas.
+    const image = await openCropper(400, { load: false })
+    expect(confirmButton()?.hasAttribute('disabled')).toBe(true)
+
+    await act(async () => {
+      image?.dispatchEvent(new dom.window.Event('load'))
+    })
+
+    expect(confirmButton()?.hasAttribute('disabled')).toBe(false)
   })
 
   it('re-derives the crop from percentages after the user drags it', async () => {
