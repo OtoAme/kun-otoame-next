@@ -193,6 +193,14 @@ service/helper 负责：
 - 公司游戏列表 API 也必须应用 blocked tag visibility，不能只做 NSFW 过滤；否则 company 详情页个性化首屏补拉后仍可能展示用户已屏蔽标签的游戏。
 - 公司支持 alias、parent_brand、primary_language、official_website。
 - 公司创建和重写必须把 `name` 与 `alias` 一起做冲突检查；任一值命中其他公司的 `name` 或 `alias` 都应拒绝，避免别名导致重复公司。
+- `patch_company.alias` 仍是展示与搜索的事实来源；`normalized_name` 与
+  `patch_company_name_identity` 是同事务维护的规范化派生投影。规范化规则固定为
+  NFKC、首尾去空白、连续空白折叠和小写转换，不剥离 `Co., Ltd.` 等后缀。人工创建/
+  编辑和新建时取得的 VNDB 别名记为 `authoritative`；历史回填、旧来源字符串和合并
+  进来的未验证别名记为 `legacy`，不得借同步过程把既有 `authoritative` 降级。
+- 会社在线新建、改名或改别名，以及仍可执行的公司维护脚本，都必须在写
+  `patch_company` 的同一事务内同步身份投影。当前阶段只做双写，会社匹配仍沿用既有
+  精确 name/alias 规则；不得提前把规范化身份表当成 resolver 使用。
 - 修改公司后必须调用 `invalidateCompanyCaches`。
 - 历史公司脏数据用 `pnpm maintenance:companies:dirty:dry` / `apply` 清理；不要让在线创建/编辑流程承担批量合并旧数据。
 

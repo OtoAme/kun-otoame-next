@@ -219,6 +219,21 @@ Docker PostgreSQL 的逐条命令、备份、postflight 和固定 Release tag �
 三份 SQL 都在一次性 PostgreSQL 18 上验证过首次安装和重复执行。生产仍禁止用
 `prisma db push` 代替这组迁移；后续身份回填和最终约束有各自独立的迁移阶段。
 
+Phase A postflight 和 `pnpm prisma:deploy-safe` 通过、且包含会社身份双写的应用版本部署
+完成后，使用 `pnpm maintenance:companies:identity:dry` 盘点身份回填。dry-run 只按 ID
+分批读取，不写数据库；它会报告需要补写的 `normalized_name`、身份行更新、创建和删除
+数量。确认结果后运行 `pnpm maintenance:companies:identity:apply`，完成后必须再次运行
+dry-run，所有变更计数都应为 0。两条命令都支持例如 `-- --batch-size 200`，批大小会被
+限制在 1–1000。
+
+回填规则固定为：会社主名身份记为 `authoritative`；首次从历史 alias 数组生成的身份只能
+记为 `legacy`，已经有依据的 `authoritative` 身份不得被回填降级；本阶段不回填外部 ID。
+同一会社内部按 kind + 规范化值去重；不同会社共享同一别名是合法现状，不得因此自动
+合并。若历史主名或别名本身、或其 NFKC 规范化结果无法放入 107 字符身份列，dry-run 会
+中止；应先人工核对并修正该会社，不能截断后继续。apply 为每家公司使用短事务，并复用
+在线写入的同一投影函数；维护进程使用独立 Prisma/pg 连接池并在退出时关闭，不影响常驻
+应用的共享客户端。
+
 生产变更要求：
 
 - 先备份。
