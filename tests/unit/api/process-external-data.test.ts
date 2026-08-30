@@ -37,9 +37,8 @@ vi.mock('~/prisma/index', () => ({
   prisma: prismaMocks
 }))
 
-const invalidateCompanyCachesMock = vi.hoisted(() => vi.fn())
 vi.mock('~/app/api/patch/cache', () => ({
-  invalidateCompanyCaches: invalidateCompanyCachesMock
+  invalidateTagCaches: vi.fn()
 }))
 
 const ensurePatchCompaniesFromVNDBMock = vi.hoisted(() => vi.fn())
@@ -94,7 +93,6 @@ describe('processSubmittedExternalData company relations', () => {
       { company_id: 2 },
       { company_id: 3 }
     ])
-    invalidateCompanyCachesMock.mockResolvedValue(undefined)
     ensurePatchCompaniesFromVNDBMock.mockResolvedValue({
       ensured: 0,
       related: 0
@@ -221,7 +219,7 @@ describe('processSubmittedExternalData company relations', () => {
         { id: 3, name: 'C', alias: [] }
       ])
 
-    await processSubmittedExternalData(
+    const result = await processSubmittedExternalData(
       10,
       {
         vndbTags: [],
@@ -246,7 +244,7 @@ describe('processSubmittedExternalData company relations', () => {
     expect(
       createCall.data.map((company: { name: string }) => company.name)
     ).toEqual(['B', 'C', 'A'])
-    expect(invalidateCompanyCachesMock).toHaveBeenCalledOnce()
+    expect(result).toEqual({ companyRelationsChanged: true })
   })
 
   it('uses Bangumi developers only when VNDB developers are empty', async () => {

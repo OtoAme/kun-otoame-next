@@ -31,6 +31,7 @@ const prismaMocks = vi.hoisted(() => {
 })
 const invalidatePatchContentCacheMock = vi.hoisted(() => vi.fn())
 const invalidatePatchListCachesMock = vi.hoisted(() => vi.fn())
+const invalidateCompanyCachesMock = vi.hoisted(() => vi.fn())
 const processSubmittedExternalDataMock = vi.hoisted(() => vi.fn())
 const deleteFileFromS3Mock = vi.hoisted(() => vi.fn())
 const uploadPatchBannerMock = vi.hoisted(() => vi.fn())
@@ -46,7 +47,8 @@ vi.mock('~/prisma/index', () => ({
 
 vi.mock('~/app/api/patch/cache', () => ({
   invalidatePatchContentCache: invalidatePatchContentCacheMock,
-  invalidatePatchListCaches: invalidatePatchListCachesMock
+  invalidatePatchListCaches: invalidatePatchListCachesMock,
+  invalidateCompanyCaches: invalidateCompanyCachesMock
 }))
 
 vi.mock('~/app/api/utils/purgeCache', () => ({
@@ -63,8 +65,7 @@ vi.mock('~/app/api/edit/_upload', () => ({
 
 vi.mock('~/app/api/patch-submission/orphanCleanup', () => ({
   PATCH_SUBMISSION_ASSET_PREFIX: 'patch-submission/',
-  enqueueSubmissionOrphanCleanupJobs:
-    enqueueSubmissionOrphanCleanupJobsMock,
+  enqueueSubmissionOrphanCleanupJobs: enqueueSubmissionOrphanCleanupJobsMock,
   processSubmissionOrphanCleanupJobsBestEffort:
     processSubmissionOrphanCleanupJobsBestEffortMock
 }))
@@ -81,6 +82,7 @@ vi.mock('~/lib/s3', () => ({
 }))
 
 import { updateGalgame } from '~/app/api/edit/update'
+import { CompanyResolutionAmbiguityError } from '~/app/api/company/identity/resolver'
 
 const createUpdateInput = () => ({
   id: 123,
@@ -119,7 +121,8 @@ describe('patch update gallery metadata', () => {
       'https://img.example'
     prismaMocks.patch.findUnique.mockResolvedValue({
       id: 123,
-      unique_id: 'patch-unique'
+      unique_id: 'patch-unique',
+      banner: 'https://img.example/patch/123/banner/banner.avif'
     })
     prismaMocks.patch.findFirst.mockResolvedValue(null)
     prismaMocks.patch.update.mockResolvedValue({})
@@ -139,14 +142,19 @@ describe('patch update gallery metadata', () => {
     prismaMocks._tx.patch.update.mockResolvedValue({})
     invalidatePatchContentCacheMock.mockResolvedValue(undefined)
     invalidatePatchListCachesMock.mockResolvedValue(undefined)
-    processSubmittedExternalDataMock.mockResolvedValue(undefined)
+    invalidateCompanyCachesMock.mockResolvedValue(undefined)
+    processSubmittedExternalDataMock.mockResolvedValue({
+      companyRelationsChanged: false
+    })
     deleteFileFromS3Mock.mockResolvedValue(undefined)
     uploadPatchBannerMock.mockResolvedValue({})
     purgePatchBannerCacheMock.mockResolvedValue(undefined)
-    enqueueSubmissionOrphanCleanupJobsMock.mockImplementation(
-      (_tx, keys) => Promise.resolve(keys)
+    enqueueSubmissionOrphanCleanupJobsMock.mockImplementation((_tx, keys) =>
+      Promise.resolve(keys)
     )
-    processSubmissionOrphanCleanupJobsBestEffortMock.mockResolvedValue(undefined)
+    processSubmissionOrphanCleanupJobsBestEffortMock.mockResolvedValue(
+      undefined
+    )
   })
 
   it('deletes S3 gallery objects when images are removed during rewrite', async () => {
@@ -172,7 +180,7 @@ describe('patch update gallery metadata', () => {
       }
     ])
 
-    await expect(updateGalgame(input, 1)).resolves.toEqual({})
+    await expect(updateGalgame(input, 1)).resolves.toEqual({ warnings: [] })
 
     expect(deleteFileFromS3Mock).toHaveBeenCalledWith(
       'patch/123/gallery/10.avif'
@@ -187,7 +195,9 @@ describe('patch update gallery metadata', () => {
   })
 
   it('updates existing gallery state without writing original or thumbnail URLs', async () => {
-    await expect(updateGalgame(createUpdateInput(), 1)).resolves.toEqual({})
+    await expect(updateGalgame(createUpdateInput(), 1)).resolves.toEqual({
+      warnings: []
+    })
 
     expect(prismaMocks.patch_game_image.update).toHaveBeenCalledWith({
       where: { id: 10 },
@@ -225,7 +235,7 @@ describe('patch update gallery metadata', () => {
       }
     ])
 
-    await expect(updateGalgame(input, 1)).resolves.toEqual({})
+    await expect(updateGalgame(input, 1)).resolves.toEqual({ warnings: [] })
 
     expect(enqueueSubmissionOrphanCleanupJobsMock).toHaveBeenCalledWith(
       prismaMocks._tx,
@@ -251,8 +261,7 @@ describe('patch update gallery metadata', () => {
     prismaMocks.patch.findUnique.mockResolvedValue({
       id: 123,
       unique_id: 'patch-unique',
-      banner:
-        'https://img.example/patch-submission/1-secret/banner/banner.avif'
+      banner: 'https://img.example/patch-submission/1-secret/banner/banner.avif'
     })
 
     await expect(
@@ -263,7 +272,7 @@ describe('patch update gallery metadata', () => {
         },
         1
       )
-    ).resolves.toEqual({})
+    ).resolves.toEqual({ warnings: [] })
 
     expect(enqueueSubmissionOrphanCleanupJobsMock).toHaveBeenCalledWith(
       prismaMocks._tx,
@@ -286,7 +295,7 @@ describe('patch update gallery metadata', () => {
         },
         1
       )
-    ).resolves.toEqual({})
+    ).resolves.toEqual({ warnings: [] })
 
     expect(prismaMocks.patch.update).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -308,7 +317,7 @@ describe('patch update gallery metadata', () => {
         },
         1
       )
-    ).resolves.toEqual({})
+    ).resolves.toEqual({ warnings: [] })
 
     expect(prismaMocks.patch.update).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -339,7 +348,7 @@ describe('patch update gallery metadata', () => {
         },
         1
       )
-    ).resolves.toEqual({})
+    ).resolves.toEqual({ warnings: [] })
 
     expect(prismaMocks.patch.update).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -393,5 +402,80 @@ describe('patch update gallery metadata', () => {
         1
       )
     ).resolves.toBe('Bangumi ID 与游戏 ID 为 bangumi1 的游戏重复')
+  })
+
+  it('returns a committed rewrite with a warning when company resolution is ambiguous', async () => {
+    processSubmittedExternalDataMock.mockRejectedValue(
+      new CompanyResolutionAmbiguityError([])
+    )
+
+    await expect(updateGalgame(createUpdateInput(), 1)).resolves.toEqual({
+      warnings: [
+        {
+          kind: 'company-ambiguity',
+          message: '游戏内容已保存，但部分会社需要管理员维护。'
+        }
+      ]
+    })
+
+    expect(prismaMocks.patch.update).toHaveBeenCalledOnce()
+    expect(invalidatePatchContentCacheMock).toHaveBeenCalledOnce()
+    expect(invalidatePatchListCachesMock).toHaveBeenCalledOnce()
+    expect(invalidateCompanyCachesMock).toHaveBeenCalledOnce()
+  })
+
+  it('returns a safe warning when rewrite enrichment fails unexpectedly', async () => {
+    processSubmittedExternalDataMock.mockRejectedValue(
+      new Error('internal database detail')
+    )
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    await expect(updateGalgame(createUpdateInput(), 1)).resolves.toEqual({
+      warnings: [
+        {
+          kind: 'external-data-error',
+          message: '游戏内容已保存，但部分外部数据未能完成处理，请稍后检查。'
+        }
+      ]
+    })
+
+    expect(console.error).toHaveBeenCalledWith(
+      'Failed to process external data after rewriting a patch',
+      expect.objectContaining({ patchId: 123, error: expect.any(Error) })
+    )
+  })
+
+  it('keeps the committed rewrite when final cache invalidation fails', async () => {
+    invalidatePatchContentCacheMock.mockRejectedValue(
+      new Error('content cache failed')
+    )
+    invalidatePatchListCachesMock.mockRejectedValue(new Error('list failed'))
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    await expect(updateGalgame(createUpdateInput(), 1)).resolves.toEqual({
+      warnings: []
+    })
+
+    expect(invalidatePatchContentCacheMock).toHaveBeenCalledOnce()
+    expect(invalidatePatchListCachesMock).toHaveBeenCalledOnce()
+  })
+
+  it('keeps the committed rewrite when banner cache purge fails', async () => {
+    purgePatchBannerCacheMock.mockRejectedValue(new Error('purge failed'))
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    await expect(
+      updateGalgame(
+        {
+          ...createUpdateInput(),
+          galleryMetadata: undefined,
+          banner: new File([Buffer.from('banner')], 'banner.png')
+        },
+        1
+      )
+    ).resolves.toEqual({ warnings: [] })
+
+    expect(invalidatePatchContentCacheMock).toHaveBeenCalledOnce()
+    expect(invalidatePatchListCachesMock).toHaveBeenCalledOnce()
   })
 })

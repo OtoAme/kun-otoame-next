@@ -6,7 +6,10 @@ import { patchCreateSchema } from '~/validations/edit'
 import { kunMoyuMoe } from '~/config/moyu-moe'
 import { postToIndexNow } from './_postToIndexNow'
 import { processSubmittedExternalData } from './processExternalData'
-import { invalidatePatchListCaches } from '~/app/api/patch/cache'
+import {
+  invalidateCompanyCaches,
+  invalidatePatchListCaches
+} from '~/app/api/patch/cache'
 import { CREATE_PATCH_PUBLISH_TIMEOUT_MS } from '~/constants/galgame'
 import { applySteamOfficialUrlFallback } from '~/utils/externalIds'
 import {
@@ -16,7 +19,8 @@ import {
 } from './uniqueExternalIds'
 import { earnMoemoepoint } from '~/app/api/moemoepoint/service'
 import { MOEMOEPOINT_REASON } from '~/constants/moemoepoint'
-import { CompanyResolutionAmbiguityError } from '~/app/api/company/identity/resolver'
+import { runEditPostCommitTask, toEditPostCommitWarning } from './postCommit'
+import type { CreatePatchResult, EditPostCommitWarning } from '~/types/api/edit'
 
 export const createGalgame = async (
   input: Omit<
@@ -184,8 +188,11 @@ export const createGalgame = async (
     return res
   }
 
+  const warnings: EditPostCommitWarning[] = []
+  let externalDataFailed = false
+  let companyRelationsChanged = false
   try {
-    await processSubmittedExternalData(
+    const externalDataResult = await processSubmittedExternalData(
       res.patchId,
       {
         vndbId,
@@ -202,20 +209,51 @@ export const createGalgame = async (
       tag,
       uid
     )
+    companyRelationsChanged = externalDataResult.companyRelationsChanged
   } catch (error) {
-    if (error instanceof CompanyResolutionAmbiguityError) return error.message
-    throw error
+    externalDataFailed = true
+    const warning = toEditPostCommitWarning(error)
+    warnings.push(warning)
+    if (warning.kind === 'external-data-error') {
+      console.error('Failed to process external data after creating a patch', {
+        patchId: res.patchId,
+        uniqueId: galgameUniqueId,
+        error
+      })
+    }
   }
-  await invalidatePatchListCaches()
+
+  await Promise.all([
+    runEditPostCommitTask(invalidatePatchListCaches, {
+      action: 'invalidate patch list caches',
+      patchId: res.patchId,
+      uniqueId: galgameUniqueId
+    }),
+    ...(companyRelationsChanged || externalDataFailed
+      ? [
+          runEditPostCommitTask(invalidateCompanyCaches, {
+            action: 'invalidate company caches',
+            patchId: res.patchId,
+            uniqueId: galgameUniqueId
+          })
+        ]
+      : [])
+  ])
 
   if (contentLimit === 'sfw') {
     const newPatchUrl = `${kunMoyuMoe.domain.main}/${galgameUniqueId}`
-    await postToIndexNow(newPatchUrl)
+    await runEditPostCommitTask(() => postToIndexNow(newPatchUrl), {
+      action: 'notify IndexNow',
+      patchId: res.patchId,
+      uniqueId: galgameUniqueId
+    })
   }
 
-  return {
+  const result: CreatePatchResult = {
     uniqueId: galgameUniqueId,
     patchId: res.patchId,
-    moemoepointBalance: res.balance
+    moemoepointBalance: res.balance,
+    warnings
   }
+  return result
 }

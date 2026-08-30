@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const prismaMocks = vi.hoisted(() => {
   const tx = {
@@ -40,8 +40,10 @@ vi.mock('~/app/api/edit/processExternalData', () => ({
 }))
 
 const invalidatePatchListCachesMock = vi.hoisted(() => vi.fn())
+const invalidateCompanyCachesMock = vi.hoisted(() => vi.fn())
 vi.mock('~/app/api/patch/cache', () => ({
-  invalidatePatchListCaches: invalidatePatchListCachesMock
+  invalidatePatchListCaches: invalidatePatchListCachesMock,
+  invalidateCompanyCaches: invalidateCompanyCachesMock
 }))
 
 const earnMoemoepointMock = vi.hoisted(() => vi.fn())
@@ -55,6 +57,7 @@ vi.mock('~/app/api/edit/_postToIndexNow', () => ({
 }))
 
 import { createGalgame } from '~/app/api/edit/create'
+import { CompanyResolutionAmbiguityError } from '~/app/api/company/identity/resolver'
 
 const createInput = {
   name: 'Large Banner Test',
@@ -100,9 +103,17 @@ describe('createGalgame timeout', () => {
       applied: true
     })
     uploadPatchBannerMock.mockResolvedValue(undefined)
-    processSubmittedExternalDataMock.mockResolvedValue(undefined)
+    processSubmittedExternalDataMock.mockResolvedValue({
+      companyRelationsChanged: false
+    })
     invalidatePatchListCachesMock.mockResolvedValue(undefined)
+    invalidateCompanyCachesMock.mockResolvedValue(undefined)
     postToIndexNowMock.mockResolvedValue(undefined)
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
   })
 
   it('allows slow banner processing by using the create publish timeout', async () => {
@@ -174,7 +185,8 @@ describe('createGalgame timeout', () => {
     ).resolves.toEqual({
       uniqueId: expect.any(String),
       patchId: 649,
-      moemoepointBalance: { total: 3, reserved: 0, available: 3 }
+      moemoepointBalance: { total: 3, reserved: 0, available: 3 },
+      warnings: []
     })
 
     expect(prismaMocks.$transaction).toHaveBeenCalled()
@@ -229,5 +241,92 @@ describe('createGalgame timeout', () => {
         1
       )
     ).resolves.toBe('Bangumi ID 与游戏 ID 为 bangumi1 的游戏重复')
+  })
+
+  it('returns the committed patch and original reward balance when company resolution is ambiguous', async () => {
+    processSubmittedExternalDataMock.mockRejectedValue(
+      new CompanyResolutionAmbiguityError([])
+    )
+
+    await expect(
+      createGalgame({ ...createInput, contentLimit: 'sfw' }, 1)
+    ).resolves.toEqual({
+      uniqueId: expect.any(String),
+      patchId: 649,
+      moemoepointBalance: { total: 3, reserved: 0, available: 3 },
+      warnings: [
+        {
+          kind: 'company-ambiguity',
+          message: '游戏内容已保存，但部分会社需要管理员维护。'
+        }
+      ]
+    })
+
+    expect(prismaMocks.$transaction).toHaveBeenCalledOnce()
+    expect(earnMoemoepointMock).toHaveBeenCalledOnce()
+    expect(invalidatePatchListCachesMock).toHaveBeenCalledOnce()
+    expect(invalidateCompanyCachesMock).toHaveBeenCalledOnce()
+    expect(postToIndexNowMock).toHaveBeenCalledOnce()
+  })
+
+  it('returns a safe warning when external enrichment fails unexpectedly', async () => {
+    processSubmittedExternalDataMock.mockRejectedValue(
+      new Error('internal database detail')
+    )
+
+    await expect(createGalgame(createInput, 1)).resolves.toEqual(
+      expect.objectContaining({
+        patchId: 649,
+        moemoepointBalance: { total: 3, reserved: 0, available: 3 },
+        warnings: [
+          {
+            kind: 'external-data-error',
+            message: '游戏内容已保存，但部分外部数据未能完成处理，请稍后检查。'
+          }
+        ]
+      })
+    )
+
+    expect(console.error).toHaveBeenCalledWith(
+      'Failed to process external data after creating a patch',
+      expect.objectContaining({ patchId: 649, error: expect.any(Error) })
+    )
+    expect(invalidatePatchListCachesMock).toHaveBeenCalledOnce()
+  })
+
+  it('keeps the committed result when cache invalidation and IndexNow fail', async () => {
+    invalidatePatchListCachesMock.mockRejectedValue(new Error('cache failed'))
+    postToIndexNowMock.mockRejectedValue(new Error('index failed'))
+
+    await expect(
+      createGalgame({ ...createInput, contentLimit: 'sfw' }, 1)
+    ).resolves.toEqual(
+      expect.objectContaining({
+        patchId: 649,
+        moemoepointBalance: { total: 3, reserved: 0, available: 3 },
+        warnings: []
+      })
+    )
+
+    expect(invalidatePatchListCachesMock).toHaveBeenCalledOnce()
+    expect(postToIndexNowMock).toHaveBeenCalledOnce()
+  })
+
+  it('does not turn company cache failure into an external-data warning', async () => {
+    processSubmittedExternalDataMock.mockResolvedValue({
+      companyRelationsChanged: true
+    })
+    invalidateCompanyCachesMock.mockRejectedValue(
+      new Error('company cache failed')
+    )
+
+    await expect(createGalgame(createInput, 1)).resolves.toEqual(
+      expect.objectContaining({
+        patchId: 649,
+        warnings: []
+      })
+    )
+
+    expect(invalidateCompanyCachesMock).toHaveBeenCalledOnce()
   })
 })

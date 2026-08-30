@@ -6,6 +6,7 @@ import { patchUpdateSchema } from '~/validations/edit'
 import { uploadPatchBanner } from './_upload'
 import { purgePatchBannerCache } from '~/app/api/utils/purgeCache'
 import {
+  invalidateCompanyCaches,
   invalidatePatchContentCache,
   invalidatePatchListCaches
 } from '~/app/api/patch/cache'
@@ -21,7 +22,11 @@ import {
   enqueueSubmissionOrphanCleanupJobs,
   processSubmissionOrphanCleanupJobsBestEffort
 } from '~/app/api/patch-submission/orphanCleanup'
-import { CompanyResolutionAmbiguityError } from '~/app/api/company/identity/resolver'
+import { runEditPostCommitTask, toEditPostCommitWarning } from './postCommit'
+import type {
+  EditPostCommitWarning,
+  RewritePatchResult
+} from '~/types/api/edit'
 
 const isSubmissionAssetKey = (key: string) =>
   key.startsWith(PATCH_SUBMISSION_ASSET_PREFIX)
@@ -144,7 +149,11 @@ export const updateGalgame = async (
     if (typeof res === 'string') {
       return res
     }
-    await purgePatchBannerCache(id)
+    await runEditPostCommitTask(() => purgePatchBannerCache(id), {
+      action: 'purge the rewritten banner cache',
+      patchId: id,
+      uniqueId: patch.unique_id
+    })
 
     const imageLink = `${process.env.KUN_VISUAL_NOVEL_IMAGE_BED_URL}/patch/${id}/banner/banner.avif`
     const previousBannerKey = extractS3Key(patch.banner)
@@ -255,11 +264,13 @@ export const updateGalgame = async (
       }
     })
     await Promise.all(updatePromises)
-    await invalidatePatchContentCache(patch.unique_id)
   }
 
+  const warnings: EditPostCommitWarning[] = []
+  let externalDataFailed = false
+  let companyRelationsChanged = false
   try {
-    await processSubmittedExternalData(
+    const externalDataResult = await processSubmittedExternalData(
       id,
       {
         vndbId,
@@ -276,14 +287,42 @@ export const updateGalgame = async (
       input.tag,
       uid
     )
+    companyRelationsChanged = externalDataResult.companyRelationsChanged
   } catch (error) {
-    if (error instanceof CompanyResolutionAmbiguityError) return error.message
-    throw error
+    externalDataFailed = true
+    const warning = toEditPostCommitWarning(error)
+    warnings.push(warning)
+    if (warning.kind === 'external-data-error') {
+      console.error('Failed to process external data after rewriting a patch', {
+        patchId: id,
+        uniqueId: patch.unique_id,
+        error
+      })
+    }
   }
+
   await Promise.all([
-    invalidatePatchContentCache(patch.unique_id),
-    invalidatePatchListCaches()
+    runEditPostCommitTask(() => invalidatePatchContentCache(patch.unique_id), {
+      action: 'invalidate patch content caches',
+      patchId: id,
+      uniqueId: patch.unique_id
+    }),
+    runEditPostCommitTask(invalidatePatchListCaches, {
+      action: 'invalidate patch list caches',
+      patchId: id,
+      uniqueId: patch.unique_id
+    }),
+    ...(companyRelationsChanged || externalDataFailed
+      ? [
+          runEditPostCommitTask(invalidateCompanyCaches, {
+            action: 'invalidate company caches',
+            patchId: id,
+            uniqueId: patch.unique_id
+          })
+        ]
+      : [])
   ])
 
-  return {}
+  const result: RewritePatchResult = { warnings }
+  return result
 }

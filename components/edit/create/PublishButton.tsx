@@ -31,10 +31,11 @@ import {
   uploadGalleryItems,
   type GalleryUploadQueueItem
 } from '../utils/galleryUploadBatch'
+import { showEditPostCommitWarnings } from '../utils/showEditPostCommitWarnings'
 import type { Dispatch, SetStateAction } from 'react'
 import type { CreatePatchRequestData } from '~/store/editStore'
 import type { GalleryImage } from './GalleryInput'
-import type { MoemoepointBalance } from '~/types/api/moemoepoint'
+import type { CreatePatchResult } from '~/types/api/edit'
 
 interface Props {
   setErrors: Dispatch<
@@ -179,11 +180,7 @@ export const PublishButton = ({ setErrors, className }: Props) => {
     )
 
     if (!publishedPatch) {
-      type CreatePatchResponse = KunResponse<{
-        uniqueId: string
-        patchId: number
-        moemoepointBalance: MoemoepointBalance
-      }>
+      type CreatePatchResponse = KunResponse<CreatePatchResult>
 
       // kunFetch rethrows network failures and timeouts instead of returning a
       // string, so an unguarded await would leave the submit button loading
@@ -209,9 +206,13 @@ export const PublishButton = ({ setErrors, className }: Props) => {
       }
 
       publishedPatch = res
+      showEditPostCommitWarnings(res.warnings)
       setMoemoepointBalance(res.moemoepointBalance)
       setCreatedPatch(res)
-      await saveCreateGalleryCreatedPatch(res)
+      await saveCreateGalleryCreatedPatch({
+        uniqueId: res.uniqueId,
+        patchId: res.patchId
+      })
     }
 
     if (galleryImages && galleryImages.length > 0) {

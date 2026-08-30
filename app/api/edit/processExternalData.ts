@@ -1,5 +1,4 @@
 import { prisma } from '~/prisma/index'
-import { invalidateCompanyCaches } from '~/app/api/patch/cache'
 import { handleBatchPatchTags } from './batchTag'
 import {
   ensurePatchCompaniesFromVNDB,
@@ -311,27 +310,24 @@ export const processSubmittedExternalData = async (
     })
   }
 
-  companyTask = companyTask
-    .then(async (insertedIds) => {
-      if (insertedIds.length) {
-        await invalidateCompanyCaches()
-      }
-      return insertedIds
+  companyTask = companyTask.catch((error) => {
+    console.error('Failed to process external company relations', {
+      patchId,
+      source: 'company_relation',
+      names: collectSubmittedCompanyNames(data).filter(Boolean),
+      error
     })
-    .catch((error) => {
-      console.error('Failed to process external company relations', {
-        patchId,
-        source: 'company_relation',
-        names: collectSubmittedCompanyNames(data).filter(Boolean),
-        error
-      })
-      throw error
-    })
+    throw error
+  })
 
   const aliasTasks = [
     data.steamAliases.length && ensureAliases(patchId, data.steamAliases)
   ].filter(Boolean)
 
-  await companyTask
+  const insertedCompanyRelationIds = await companyTask
   await Promise.allSettled([...tagTasks, ...aliasTasks])
+
+  return {
+    companyRelationsChanged: insertedCompanyRelationIds.length > 0
+  }
 }

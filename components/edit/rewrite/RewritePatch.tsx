@@ -23,11 +23,13 @@ import { VNDBInput } from '../create/VNDBInput'
 import { VNDBRelationInput } from '../create/VNDBRelationInput'
 import { applySteamOfficialUrlFallback } from '~/utils/externalIds'
 import { uploadGalleryItems } from '../utils/galleryUploadBatch'
+import { showEditPostCommitWarnings } from '../utils/showEditPostCommitWarnings'
 // import { DLSiteInput } from '../create/DLSiteInput'
 import type {
   RewriteNewGalleryImage,
   RewritePatchData
 } from '~/store/rewriteStore'
+import type { RewritePatchResult } from '~/types/api/edit'
 
 export const RewritePatch = () => {
   const router = useRouter()
@@ -173,9 +175,13 @@ export const RewritePatch = () => {
     // kunFetch rethrows network failures and timeouts instead of returning a
     // string, so an unguarded await would leave the submit button loading
     // forever with nothing shown to the user.
-    let res: KunResponse<{}>
+    let res: KunResponse<RewritePatchResult>
     try {
-      res = await kunFetchPutFormData<KunResponse<{}>>('/edit', formData, 60000)
+      res = await kunFetchPutFormData<KunResponse<RewritePatchResult>>(
+        '/edit',
+        formData,
+        60000
+      )
     } catch (error) {
       console.error('Rewrite patch submit failed:', error)
       toast.error('提交失败, 请检查网络后重试')
@@ -184,8 +190,9 @@ export const RewritePatch = () => {
     }
 
     let updateSuccess = false
-    kunErrorHandler(res, () => {
+    kunErrorHandler(res, (result) => {
       updateSuccess = true
+      showEditPostCommitWarnings(result.warnings)
     })
 
     if (!updateSuccess) {
