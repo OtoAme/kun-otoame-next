@@ -30,7 +30,7 @@ const toCompanyCreate = (producer: VndbProducer, uid: number) => {
     : []
   return {
     name,
-    introduction: alias.toString(),
+    introduction: producer.description?.trim() ?? '',
     count: 0,
     primary_language,
     official_website,

@@ -5,8 +5,7 @@ const prismaMock = vi.hoisted(() => ({
     findUnique: vi.fn()
   },
   patch_tag: {
-    deleteMany: vi.fn(),
-    updateMany: vi.fn()
+    deleteMany: vi.fn()
   },
   patch_tag_relation: {
     createMany: vi.fn(),
@@ -58,7 +57,6 @@ describe('patch relation cache invalidation', () => {
     prismaMock.$transaction.mockImplementation(async (fn) => fn(prismaMock))
     prismaMock.patch.findUnique.mockResolvedValue({ unique_id: 'abc12345' })
     prismaMock.patch_tag.deleteMany.mockResolvedValue({ count: 2 })
-    prismaMock.patch_tag.updateMany.mockResolvedValue({})
     prismaMock.patch_tag_relation.createMany.mockResolvedValue({})
     prismaMock.patch_tag_relation.deleteMany.mockResolvedValue({})
     cacheMocks.invalidatePatchContentCache.mockResolvedValue(undefined)

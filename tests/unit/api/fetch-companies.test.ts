@@ -6,8 +6,7 @@ const prismaMocks = vi.hoisted(() => {
       findMany: vi.fn(),
       findUnique: vi.fn(),
       createManyAndReturn: vi.fn(),
-      update: vi.fn(),
-      updateMany: vi.fn()
+      update: vi.fn()
     },
     patch_company_name_identity: {
       createMany: vi.fn(),
@@ -56,7 +55,6 @@ describe('ensurePatchCompaniesFromVNDB', () => {
     prismaMocks._tx.patch_company.createManyAndReturn.mockReset()
     prismaMocks._tx.patch_company.findUnique.mockReset()
     prismaMocks._tx.patch_company.update.mockReset()
-    prismaMocks._tx.patch_company.updateMany.mockReset()
     prismaMocks._tx.patch_company_name_identity.createMany.mockReset()
     prismaMocks._tx.patch_company_name_identity.deleteMany.mockReset()
     prismaMocks._tx.patch_company_name_identity.update.mockReset()
@@ -78,6 +76,7 @@ describe('ensurePatchCompaniesFromVNDB', () => {
               aliases: ['Studio Alias'],
               lang: 'ja',
               type: 'co',
+              description: 'Visual novel developer.',
               extlinks: [{ url: 'https://studio.example' }]
             }
           ]
@@ -94,7 +93,6 @@ describe('ensurePatchCompaniesFromVNDB', () => {
       name_identities: []
     })
     prismaMocks._tx.patch_company.update.mockResolvedValue({})
-    prismaMocks._tx.patch_company.updateMany.mockResolvedValue({ count: 1 })
     prismaMocks._tx.patch_company_name_identity.createMany.mockResolvedValue({
       count: 1
     })
@@ -127,10 +125,6 @@ describe('ensurePatchCompaniesFromVNDB', () => {
     expect(
       prismaMocks._tx.patch_company_name_identity.createMany
     ).not.toHaveBeenCalled()
-    expect(prismaMocks._tx.patch_company.updateMany).toHaveBeenCalledWith({
-      where: { id: { in: [7] } },
-      data: { count: { increment: 1 } }
-    })
     expect(cacheMocks.invalidateCompanyCaches).toHaveBeenCalledOnce()
   })
 
@@ -156,6 +150,18 @@ describe('ensurePatchCompaniesFromVNDB', () => {
       'abc12345'
     )
     expect(cacheMocks.invalidateCompanyCaches).toHaveBeenCalledOnce()
+    expect(
+      prismaMocks._tx.patch_company.createManyAndReturn
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: [
+          expect.objectContaining({
+            introduction: 'Visual novel developer.',
+            normalized_name: 'vndb studio'
+          })
+        ]
+      })
+    )
     expect(
       prismaMocks._tx.patch_company_name_identity.createMany
     ).toHaveBeenCalledWith({

@@ -1,8 +1,11 @@
 import { prisma } from '~/prisma/index'
-import { invalidateCompanyCaches } from '~/app/api/patch/cache'
-import { addPatchCompanyRelations } from './companyRelationHelper'
-import { normalizeCompanyValue } from '~/app/api/company/identity/normalize'
-import { syncCompanyIdentityProjection } from '~/app/api/company/identity/projection'
+import {
+  invalidateCompanyCaches,
+  invalidatePatchContentCache
+} from '~/app/api/patch/cache'
+import { applyCompanyResolution } from '~/app/api/company/identity/resolver'
+import { runWithCompanyIdentityConstraintRetry } from '~/app/api/company/identity/retry'
+import { createUnverifiedCompanyNameCandidates } from '~/app/api/company/identity/types'
 
 const DLSITE_API = 'https://dlapi.arnebiae.com/api/dlsite'
 
@@ -55,39 +58,45 @@ export const ensurePatchCompanyFromDlsite = async (
 
     if (!circleName) return
 
-    const insertedIds = await prisma.$transaction(
-      async (tx) => {
-        let company = await tx.patch_company.findFirst({
-          where: { name: circleName }
-        })
+    const sourceWebsites = (() => {
+      if (!circleLink) return []
+      try {
+        new URL(circleLink)
+        return [circleLink]
+      } catch {
+        return []
+      }
+    })()
+    const candidates = createUnverifiedCompanyNameCandidates(
+      'dlsite',
+      [circleName],
+      ['circle']
+    ).map((trusted) => ({
+      ...trusted,
+      candidate: {
+        ...trusted.candidate,
+        entityType: 'amateur_group' as const,
+        externalUrls: sourceWebsites,
+        sourceWebsites
+      }
+    }))
 
-        if (!company) {
-          company = await tx.patch_company.create({
-            data: {
-              name: circleName,
-              normalized_name: normalizeCompanyValue(circleName),
-              introduction: '',
-              count: 0,
-              primary_language: [],
-              official_website: circleLink ? [circleLink] : [],
-              parent_brand: [],
-              alias: [],
-              user_id: uid
-            }
-          })
-        }
-
-        await syncCompanyIdentityProjection(tx, {
-          companyId: company.id
-        })
-
-        return await addPatchCompanyRelations(tx, patchId, [company.id])
-      },
-      { timeout: 60000 }
+    const result = await runWithCompanyIdentityConstraintRetry(() =>
+      prisma.$transaction(
+        (tx) => applyCompanyResolution(tx, patchId, candidates, uid),
+        { timeout: 60000 }
+      )
     )
 
-    if (insertedIds.length) {
-      await invalidateCompanyCaches()
+    if (result.insertedRelationIds.length) {
+      const patch = await prisma.patch.findUnique({
+        where: { id: patchId },
+        select: { unique_id: true }
+      })
+      await Promise.all([
+        invalidateCompanyCaches(),
+        patch ? invalidatePatchContentCache(patch.unique_id) : Promise.resolve()
+      ])
     }
   } catch (error) {
     console.error('Failed to ensure DLSite company relation', {
