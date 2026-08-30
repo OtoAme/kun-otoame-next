@@ -325,7 +325,7 @@ service/helper 负责：
 - `PATCH /api/patch-submission/asset` 位于 middleware matcher 外，必须在 handler 内先校验 CSRF，再鉴权、校验可编辑状态以及全部 gallery ID 的投稿归属；不能只相信客户端选择集。payload 是 `action: 'nsfw' | 'order'` 的 discriminated union，两种载荷不得混用。`order` 动作在投稿锁内要求请求 ID 集**恰好等于**当前全部 ready 行、galleryId 与 displayOrder 各自不重复，任一不满足整体拒绝、不做部分更新；ready 行的序号允许不连续（待上传项可占中间位置），空数组仅在没有 ready 行时合法。此外：存在**未过期**的 uploading 行（takeover 窗口内）时整个 order action 拒绝——预留在锁外传输字节，排到它占的序号会在 finalize 后产生重复；**已过期** uploading 行不阻塞保存，但其序号是保留位置，ready 行不得占用，用户需先重试或删除该失败上传。
 - `DELETE /api/patch-submission/asset` 收 `galleryIds` 数组：锁投稿 → 一次查询确认全部 ID 归属该投稿（数量不等整批拒绝）→ 短事务内删除全部行并为所有 key 持久化 orphan cleanup job → 事务外才做 S3 删除与 CDN purge。
 - **画廊写入统一锁序**：delete、nsfw、order 与上传 finalize 都先取投稿行锁再写画廊行。finalize 取的是**不判状态**的行锁——投稿在字节传输期间变为不可编辑时，仍必须走「删除 uploading 行 + 写入补偿 outbox」的既有分支，不能因为不可编辑直接抛错而跳过素材补偿。
-- **display_order 唯一性靠三层保障，不加数据库唯一约束**（批量换序会产生临时冲突且需要生产迁移）：所有画廊读取按 `display_order asc, id asc`（相同序号时数据库不保证顺序）；上传预留在投稿锁内拒绝与其他 ready / 未过期 uploading 行重复的序号（同 `clientAssetId` 重试除外）；提交审核前再次确认全部 ready 行序号唯一，冲突要求作者返回编辑并保存排序。
+- **display_order 唯一性靠三层保障，不加数据库唯一约束**（批量换序会产生临时冲突且需要生产迁移）：所有画廊读取按 `display_order asc, id asc`（相同序号时数据库不保证顺序）；上传预留在投稿锁内拒绝与其他 ready / 未过期 uploading 行重复的序号（同 `clientAssetId` 重试除外）；提交审核前再次确认全部 ready 行序号唯一，冲突要求作者返回编辑并重新调整顺序。
 - 投稿成功转为 `pending` 或成功从 `pending` 撤回到 `draft` 后，查询所有 `role >= PATCH_SUBMISSION_REVIEW_MIN_ROLE` 的管理员并用 `Promise.allSettled` 发送对应站内通知，link 直达 `/admin/submission/<id>`。状态转换已经提交，管理员查询失败或单个通知失败只记日志，不能把作者请求变成失败或回滚投稿；状态栅栏失败时不得发送撤回通知。
 - **上传端点从 middleware matcher 排除**, 在 handler 内自校 CSRF, 使其能在整个 body 传完前拒绝。所有投稿路由先鉴权再解析。
 - **限频分层**：创建/提交/上传 fail-closed；读取/自动保存 fail-open；删除返还与审核结算不设限频（详见 [限频分层](data-cache-upload.md)）。
