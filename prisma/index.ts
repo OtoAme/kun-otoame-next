@@ -31,4 +31,18 @@ const statementNameGenerator = (query: { sql: string }) => {
 const adapter = new PrismaPg(pool, { statementNameGenerator })
 const prisma = new PrismaClient({ adapter })
 
-export { prisma }
+/**
+ * Close both Prisma and the externally owned PostgreSQL adapter pool.
+ *
+ * Only short-lived CLI/worker processes should call this. Long-running server
+ * code shares the singleton and must leave its lifecycle to the process.
+ */
+const disconnectPrismaAdapter = async () => {
+  try {
+    await prisma.$disconnect()
+  } finally {
+    await pool.end()
+  }
+}
+
+export { disconnectPrismaAdapter, prisma }

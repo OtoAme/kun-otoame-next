@@ -1,4 +1,4 @@
-import { prisma } from '~/prisma/index'
+import { disconnectPrismaAdapter, prisma } from '~/prisma/index'
 import {
   applyFrozenCompanyCleanup,
   dryRunFrozenCompanyCleanup,
@@ -155,6 +155,6 @@ export const finishFrozenCompanyCleanupCli = async (mode: CliMode) => {
       )
       await disconnectCompanyCleanupCacheRedis()
     }
-    await prisma.$disconnect()
+    await disconnectPrismaAdapter()
   }
 }
