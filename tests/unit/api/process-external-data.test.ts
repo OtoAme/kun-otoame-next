@@ -5,8 +5,7 @@ const prismaMocks = vi.hoisted(() => {
   const tx = {
     patch_tag: {
       findMany: vi.fn(),
-      createMany: vi.fn(),
-      updateMany: vi.fn()
+      createMany: vi.fn()
     },
     patch_tag_relation: {
       findMany: vi.fn(),
@@ -16,8 +15,7 @@ const prismaMocks = vi.hoisted(() => {
       findMany: vi.fn(),
       findUnique: vi.fn(),
       createManyAndReturn: vi.fn(),
-      update: vi.fn(),
-      updateMany: vi.fn()
+      update: vi.fn()
     },
     patch_company_name_identity: {
       createMany: vi.fn(),
@@ -78,7 +76,6 @@ describe('processSubmittedExternalData company relations', () => {
       name_identities: []
     })
     prismaMocks._tx.patch_company.update.mockResolvedValue({})
-    prismaMocks._tx.patch_company.updateMany.mockResolvedValue({ count: 3 })
     prismaMocks._tx.patch_company_name_identity.createMany.mockResolvedValue({
       count: 1
     })
@@ -88,7 +85,6 @@ describe('processSubmittedExternalData company relations', () => {
     prismaMocks._tx.patch_company_name_identity.update.mockResolvedValue({})
     prismaMocks._tx.patch_tag.findMany.mockResolvedValue([])
     prismaMocks._tx.patch_tag.createMany.mockResolvedValue({ count: 0 })
-    prismaMocks._tx.patch_tag.updateMany.mockResolvedValue({ count: 0 })
     prismaMocks._tx.patch_tag_relation.findMany.mockResolvedValue([])
     prismaMocks._tx.patch_tag_relation.createMany.mockResolvedValue({
       count: 0
@@ -216,7 +212,7 @@ describe('processSubmittedExternalData company relations', () => {
     expect(prismaMocks.$transaction).toHaveBeenCalledTimes(2)
   })
 
-  it('merges same company names from fallback and secondary sources before incrementing count', async () => {
+  it('merges same company names from fallback and secondary sources before relating them', async () => {
     prismaMocks._tx.patch_company.findMany
       .mockResolvedValueOnce([])
       .mockResolvedValueOnce([
@@ -250,10 +246,6 @@ describe('processSubmittedExternalData company relations', () => {
     expect(
       createCall.data.map((company: { name: string }) => company.name)
     ).toEqual(['B', 'C', 'A'])
-    expect(prismaMocks._tx.patch_company.updateMany).toHaveBeenCalledWith({
-      where: { id: { in: [1, 2, 3] } },
-      data: { count: { increment: 1 } }
-    })
     expect(invalidateCompanyCachesMock).toHaveBeenCalledOnce()
   })
 
@@ -320,10 +312,7 @@ describe('processSubmittedExternalData company relations', () => {
     expect(
       prismaMocks._tx.patch_company.createManyAndReturn
     ).not.toHaveBeenCalled()
-    expect(prismaMocks._tx.patch_company.updateMany).toHaveBeenCalledWith({
-      where: { id: { in: [7] } },
-      data: { count: { increment: 1 } }
-    })
+    expect(prismaMocks._tx.$queryRaw).toHaveBeenCalled()
   })
 
   it('fetches VNDB companies on submit and skips submitted developer fallback when VNDB succeeds', async () => {
@@ -462,7 +451,7 @@ describe('processSubmittedExternalData company relations', () => {
     ).rejects.toThrow('db failed')
   })
 
-  it('maps external source tag aliases to canonical tags before creating relations and incrementing count', async () => {
+  it('maps external source tag aliases to canonical tags before creating relations', async () => {
     prismaMocks._tx.patch_tag.findMany
       .mockResolvedValueOnce([{ id: 9, name: '纯爱', alias: ['純愛'] }])
       .mockResolvedValueOnce([{ id: 9, name: '纯爱', alias: ['純愛'] }])
@@ -489,10 +478,6 @@ describe('processSubmittedExternalData company relations', () => {
       data: [{ patch_id: 10, tag_id: 9 }],
       skipDuplicates: true
     })
-    expect(prismaMocks._tx.patch_tag.updateMany).toHaveBeenCalledWith({
-      where: { id: { in: [9] } },
-      data: { count: { increment: 1 } }
-    })
   })
 
   it('ignores submitted VNDB tags even if a stale client sends them', async () => {
@@ -516,6 +501,5 @@ describe('processSubmittedExternalData company relations', () => {
     expect(prismaMocks._tx.patch_tag.findMany).not.toHaveBeenCalled()
     expect(prismaMocks._tx.patch_tag.createMany).not.toHaveBeenCalled()
     expect(prismaMocks._tx.patch_tag_relation.createMany).not.toHaveBeenCalled()
-    expect(prismaMocks._tx.patch_tag.updateMany).not.toHaveBeenCalled()
   })
 })

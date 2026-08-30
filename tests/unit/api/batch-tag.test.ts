@@ -4,8 +4,7 @@ const prismaMocks = vi.hoisted(() => {
   const tx = {
     patch_tag: {
       createMany: vi.fn(),
-      findMany: vi.fn(),
-      updateMany: vi.fn()
+      findMany: vi.fn()
     },
     patch_tag_relation: {
       createMany: vi.fn(),
@@ -53,7 +52,6 @@ describe('handleBatchPatchTags', () => {
     prismaMocks._tx.patch_tag_relation.deleteMany.mockResolvedValue({
       count: 0
     })
-    prismaMocks._tx.patch_tag.updateMany.mockResolvedValue({ count: 0 })
     invalidateTagCachesMock.mockResolvedValue(undefined)
   })
 
@@ -70,10 +68,6 @@ describe('handleBatchPatchTags', () => {
     expect(prismaMocks._tx.patch_tag_relation.createMany).toHaveBeenCalledWith({
       data: [{ patch_id: 10, tag_id: 1 }],
       skipDuplicates: true
-    })
-    expect(prismaMocks._tx.patch_tag.updateMany).toHaveBeenCalledWith({
-      where: { id: { in: [1] } },
-      data: { count: { increment: 1 } }
     })
     expect(invalidateTagCachesMock).toHaveBeenCalledOnce()
   })
@@ -101,7 +95,6 @@ describe('handleBatchPatchTags', () => {
     })
     expect(prismaMocks._tx.patch_tag_relation.createMany).not.toHaveBeenCalled()
     expect(prismaMocks._tx.patch_tag_relation.deleteMany).not.toHaveBeenCalled()
-    expect(prismaMocks._tx.patch_tag.updateMany).not.toHaveBeenCalled()
     expect(invalidateTagCachesMock).toHaveBeenCalledOnce()
   })
 
@@ -127,14 +120,6 @@ describe('handleBatchPatchTags', () => {
     expect(prismaMocks._tx.patch_tag_relation.deleteMany).toHaveBeenCalledWith({
       where: { patch_id: 10, tag_id: { in: [2] } }
     })
-    expect(prismaMocks._tx.patch_tag.updateMany).toHaveBeenNthCalledWith(1, {
-      where: { id: { in: [1] } },
-      data: { count: { increment: 1 } }
-    })
-    expect(prismaMocks._tx.patch_tag.updateMany).toHaveBeenNthCalledWith(2, {
-      where: { id: { in: [2] } },
-      data: { count: { decrement: 1 } }
-    })
   })
 
   it('should create missing tags and dedupe input before creating relations', async () => {
@@ -153,10 +138,6 @@ describe('handleBatchPatchTags', () => {
     expect(prismaMocks._tx.patch_tag_relation.createMany).toHaveBeenCalledWith({
       data: [{ patch_id: 10, tag_id: 2 }],
       skipDuplicates: true
-    })
-    expect(prismaMocks._tx.patch_tag.updateMany).toHaveBeenCalledWith({
-      where: { id: { in: [2] } },
-      data: { count: { increment: 1 } }
     })
   })
 
@@ -177,10 +158,6 @@ describe('handleBatchPatchTags', () => {
 
     expect(prismaMocks._tx.patch_tag_relation.deleteMany).toHaveBeenCalledWith({
       where: { patch_id: 10, tag_id: { in: [2] } }
-    })
-    expect(prismaMocks._tx.patch_tag.updateMany).toHaveBeenCalledWith({
-      where: { id: { in: [2] } },
-      data: { count: { decrement: 1 } }
     })
   })
 })

@@ -4,6 +4,7 @@ const deleteFileFromS3Mock = vi.hoisted(() => vi.fn())
 const invalidatePatchContentCacheMock = vi.hoisted(() => vi.fn())
 const invalidatePatchListCachesMock = vi.hoisted(() => vi.fn())
 const invalidateCompanyCachesMock = vi.hoisted(() => vi.fn())
+const invalidateTagCachesMock = vi.hoisted(() => vi.fn())
 const enqueueSubmissionOrphanCleanupJobsMock = vi.hoisted(() => vi.fn())
 const processSubmissionOrphanCleanupJobsBestEffortMock = vi.hoisted(() =>
   vi.fn()
@@ -19,13 +20,13 @@ vi.mock('~/lib/s3', () => ({
 vi.mock('~/app/api/patch/cache', () => ({
   invalidatePatchContentCache: invalidatePatchContentCacheMock,
   invalidatePatchListCaches: invalidatePatchListCachesMock,
-  invalidateCompanyCaches: invalidateCompanyCachesMock
+  invalidateCompanyCaches: invalidateCompanyCachesMock,
+  invalidateTagCaches: invalidateTagCachesMock
 }))
 
 vi.mock('~/app/api/patch-submission/orphanCleanup', () => ({
   PATCH_SUBMISSION_ASSET_PREFIX: 'patch-submission/',
-  enqueueSubmissionOrphanCleanupJobs:
-    enqueueSubmissionOrphanCleanupJobsMock,
+  enqueueSubmissionOrphanCleanupJobs: enqueueSubmissionOrphanCleanupJobsMock,
   processSubmissionOrphanCleanupJobsBestEffort:
     processSubmissionOrphanCleanupJobsBestEffortMock
 }))
@@ -61,15 +62,19 @@ describe('patch delete with gallery S3 cleanup', () => {
   beforeEach(() => {
     vi.resetAllMocks()
     vi.spyOn(console, 'error').mockImplementation(() => {})
-    process.env.NEXT_PUBLIC_KUN_VISUAL_NOVEL_S3_STORAGE_URL = 'https://img.example'
+    process.env.NEXT_PUBLIC_KUN_VISUAL_NOVEL_S3_STORAGE_URL =
+      'https://img.example'
     invalidatePatchContentCacheMock.mockResolvedValue(undefined)
     invalidatePatchListCachesMock.mockResolvedValue(undefined)
     invalidateCompanyCachesMock.mockResolvedValue(undefined)
+    invalidateTagCachesMock.mockResolvedValue(undefined)
     deleteFileFromS3Mock.mockResolvedValue(undefined)
-    enqueueSubmissionOrphanCleanupJobsMock.mockImplementation(
-      (_tx, keys) => Promise.resolve(keys)
+    enqueueSubmissionOrphanCleanupJobsMock.mockImplementation((_tx, keys) =>
+      Promise.resolve(keys)
     )
-    processSubmissionOrphanCleanupJobsBestEffortMock.mockResolvedValue(undefined)
+    processSubmissionOrphanCleanupJobsBestEffortMock.mockResolvedValue(
+      undefined
+    )
   })
 
   it('deletes gallery S3 objects when deleting an entire patch', async () => {
@@ -83,7 +88,8 @@ describe('patch delete with gallery S3 cleanup', () => {
       {
         id: 10,
         url: 'https://img.example/patch/123/gallery/10.avif',
-        thumbnail_url: 'https://img.example/patch/123/gallery/thumbnail/thumb-10.avif'
+        thumbnail_url:
+          'https://img.example/patch/123/gallery/thumbnail/thumb-10.avif'
       },
       {
         id: 11,
@@ -94,9 +100,15 @@ describe('patch delete with gallery S3 cleanup', () => {
 
     await expect(deletePatchById({ patchId: 123 })).resolves.toEqual({})
 
-    expect(deleteFileFromS3Mock).toHaveBeenCalledWith('patch/123/gallery/10.avif')
-    expect(deleteFileFromS3Mock).toHaveBeenCalledWith('patch/123/gallery/thumbnail/thumb-10.avif')
-    expect(deleteFileFromS3Mock).toHaveBeenCalledWith('patch/123/gallery/11.webp')
+    expect(deleteFileFromS3Mock).toHaveBeenCalledWith(
+      'patch/123/gallery/10.avif'
+    )
+    expect(deleteFileFromS3Mock).toHaveBeenCalledWith(
+      'patch/123/gallery/thumbnail/thumb-10.avif'
+    )
+    expect(deleteFileFromS3Mock).toHaveBeenCalledWith(
+      'patch/123/gallery/11.webp'
+    )
     expect(deleteFileFromS3Mock).toHaveBeenCalledTimes(3)
     expect(invalidatePatchContentCacheMock).toHaveBeenCalledWith('patch-unique')
     expect(invalidatePatchListCachesMock).toHaveBeenCalled()
@@ -196,6 +208,7 @@ describe('patch delete with gallery S3 cleanup', () => {
     expect(prismaMocks._tx.$executeRaw).toHaveBeenCalledOnce()
     expect(prismaMocks._tx.patch_company.updateMany).not.toHaveBeenCalled()
     expect(invalidateCompanyCachesMock).toHaveBeenCalled()
+    expect(invalidateTagCachesMock).toHaveBeenCalled()
     expect(invalidatePatchListCachesMock).toHaveBeenCalled()
   })
 })

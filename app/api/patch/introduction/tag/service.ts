@@ -38,11 +38,6 @@ export const handleAddPatchTag = async (
     await prisma.patch_tag_relation.createMany({
       data: relationData
     })
-
-    await prisma.patch_tag.updateMany({
-      where: { id: { in: tagId } },
-      data: { count: { increment: 1 } }
-    })
     return {}
   })
 
@@ -62,11 +57,6 @@ export const handleRemovePatchTag = async (
         patch_id: patchId,
         tag_id: { in: tagId }
       }
-    })
-
-    await prisma.patch_tag.updateMany({
-      where: { id: { in: tagId } },
-      data: { count: { increment: -1 } }
     })
     return {}
   })

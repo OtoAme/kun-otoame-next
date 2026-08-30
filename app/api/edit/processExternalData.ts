@@ -100,10 +100,6 @@ const ensureTagsWithSource = async (
           })),
           skipDuplicates: true
         })
-        await tx.patch_tag.updateMany({
-          where: { id: { in: newTagIds } },
-          data: { count: { increment: 1 } }
-        })
       }
     },
     { timeout: 60000 }

@@ -127,10 +127,6 @@ export const publishSubmissionCore = async (
         data: tagIds.map((tagId) => ({ patch_id: patch.id, tag_id: tagId })),
         skipDuplicates: true
       })
-      await tx.patch_tag.updateMany({
-        where: { id: { in: tagIds } },
-        data: { count: { increment: 1 } }
-      })
     }
   }
 

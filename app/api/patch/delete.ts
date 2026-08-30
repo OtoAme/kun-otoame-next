@@ -6,7 +6,8 @@ import { extractS3Key } from '~/app/api/patch/resource/_helper'
 import {
   invalidateCompanyCaches,
   invalidatePatchContentCache,
-  invalidatePatchListCaches
+  invalidatePatchListCaches,
+  invalidateTagCaches
 } from '~/app/api/patch/cache'
 import { deletePatchResourceLink } from '~/app/api/patch/resource/_helper'
 import {
@@ -64,14 +65,15 @@ export const deletePatchById = async (input: z.infer<typeof patchIdSchema>) => {
     return keys
   })
   const bannerKey = patch.banner ? extractS3Key(patch.banner) : null
-  const submissionBannerKeys =
-    bannerKey?.startsWith(PATCH_SUBMISSION_ASSET_PREFIX)
-      ? [
-          bannerKey,
-          bannerKey.replace(/banner\.avif$/, 'banner-mini.avif'),
-          bannerKey.replace(/banner\.avif$/, 'banner-full.avif')
-        ]
-      : []
+  const submissionBannerKeys = bannerKey?.startsWith(
+    PATCH_SUBMISSION_ASSET_PREFIX
+  )
+    ? [
+        bannerKey,
+        bannerKey.replace(/banner\.avif$/, 'banner-mini.avif'),
+        bannerKey.replace(/banner\.avif$/, 'banner-full.avif')
+      ]
+    : []
   const submissionGalleryKeys = galleryS3Keys.filter((key) =>
     key.startsWith(PATCH_SUBMISSION_ASSET_PREFIX)
   )
@@ -154,6 +156,7 @@ export const deletePatchById = async (input: z.infer<typeof patchIdSchema>) => {
   await Promise.all([
     invalidatePatchContentCache(patch.unique_id),
     invalidatePatchListCaches(),
+    invalidateTagCaches(),
     companyIds.length ? invalidateCompanyCaches() : Promise.resolve()
   ])
 
