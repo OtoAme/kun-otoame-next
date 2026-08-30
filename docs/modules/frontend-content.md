@@ -106,6 +106,7 @@ Store 改动要检查使用该 store 的页面和组件，不要只改类型。
 - Bangumi 获取会保留标签、developer、summary 和标题预览；summary 和标题只通过用户点击按钮填入简介或游戏名称，不自动覆盖已有内容。标题填入时中文名优先，没有中文名则使用原名。
 - Steam 查重是软提示：命中已有 Steam App ID 时展示警告和已有条目链接，但仍然继续 `/api/edit/steam` 拉取并允许提交。Bangumi ID 查重仍然是阻塞式的。
 - 公司由 API 层的共享 resolver 处理；resolver 开启时 VNDB、Bangumi、Steam、DLSite 四个来源全部保留，前端不得自行做来源互斥。关闭开关时的 VNDB/Bangumi 互斥只用于上线回退兼容，不是产品规则。
+- 创建 / 重写接口成功后可能附带提交后处理 warning。前端仍按成功结果保存余额、继续 gallery 上传或结束重写，同时以警告 toast 提示“主体已保存、会社或外部数据需检查”；不得把 warning 当成失败而让用户重复提交。
 - 创建游戏页的“清除信息”用于从 A 游戏草稿切换到 B 游戏草稿，必须同时 reset `editStore`、清理封面和图库 localforage 草稿，并让封面/图库组件重新读取空状态。
 
 编辑页 gallery：

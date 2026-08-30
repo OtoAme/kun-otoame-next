@@ -242,6 +242,7 @@ service/helper 负责：
 - VNDB producer 新建会社时，`introduction` 使用 VNDB 的 `description`；不得再把 alias 数组拼成逗号串冒充简介。历史 `ensurePatchCompanyFromDlsite` 同样必须走共享 resolver 与外层唯一冲突重试，不得退回只按精确 `name` 查找；关系变化后同时失效会社缓存与该游戏内容缓存。
 - 外部公司关系必须按 `name` 和 `alias` 查找已有公司；提交名命中现有 alias 时，应关联到已有公司，而不是创建新公司。
 - 新增、删除或外部拉取公司关系后必须调用 `invalidateCompanyCaches`，并按 [Patch 缓存](data-cache-upload.md) 的约定同时失效受影响 patch 的详情/简介内容缓存；只清公司缓存会让公司页刷新而游戏详情页继续展示旧公司。只新增标签或别名时不应误触发公司缓存失效。
+- 直接创建 / 重写的游戏主体事务提交后，外部标签、会社、缓存失效和 IndexNow 都属于提交后处理。主体和创建奖励一旦提交，这些处理失败只能返回结构化 `warnings` 并记录日志，不能把整个请求改报为失败，否则会诱导用户重复创建；列表 / 内容缓存仍应逐项 best-effort 失效。投稿批准不同：公司解析在最终发布事务内，阻断歧义仍必须回滚整笔批准。
 
 ### 资源发布和上传
 

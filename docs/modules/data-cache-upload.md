@@ -130,6 +130,8 @@ kun:touchgal
 
 这些失效函数会同时清理 Redis、触发 `safeRevalidatePath`，并通过 `app/api/utils/purgeCloudflareCache.ts` 清理公开页面或公开 API 的 Cloudflare 缓存。Cloudflare 环境变量缺失时 purge helper 会安全 no-op；业务写入不能因为边缘缓存清理失败而失败。
 
+创建 / 重写主体提交后再执行的缓存失效必须逐项 best-effort：缓存或 IndexNow 故障只记日志，不能让已经提交的游戏、奖励或重写被 API 报成失败。公司 enrichment 抛错时仍额外失效公司缓存，避免部分外部写入已经落库却继续展示旧关系。
+
 Cloudflare purge 约定：
 
 - 公开 HTML 用 `purgePublicPageCache(paths)`，按完整 URL files 清理。

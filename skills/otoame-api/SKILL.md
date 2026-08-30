@@ -21,6 +21,7 @@ Use this skill for API and business-service work; per-domain rules live in the m
 - Never trust a client-supplied S3 URL or upload metadata; consume server-registered metadata atomically, exactly once.
 - All runtime moemoepoint mutations go through `app/api/moemoepoint/service.ts` in the owning business transaction; never write `moemoepoint` / `moemoepoint_reserved` directly.
 - Submission approval writes `patch` only inside the final transaction; a lost `pending` guard returns `409` and rolls back publish, settlement, notifications and logs.
+- Direct create/rewrite external enrichment runs after the core commit: return structured warnings and keep the committed success if enrichment, cache invalidation or IndexNow fails. Do not apply this downgrade to submission approval.
 - Post-transition notifications are best-effort: log failures, never roll back an already committed transition.
 - Run user-scoped rate limits after auth and before DB access, multipart parsing, Sharp/S3 work or S3 cleanup; thresholds live in `app/api/message/conversation/rateLimit.ts` and `app/api/patch-submission/rateLimit.ts`.
 - Invalidate the matching caches after every patch/resource/tag/company write.
