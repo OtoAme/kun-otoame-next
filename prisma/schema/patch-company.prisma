@@ -2,6 +2,7 @@ model patch_company {
   id Int @id @default(autoincrement())
 
   name             String   @unique @db.VarChar(107)
+  normalized_name  String?  @db.VarChar(107)
   introduction     String   @default("") @db.VarChar(10007)
   count            Int      @default(0)
   primary_language String[]
@@ -10,6 +11,8 @@ model patch_company {
   alias            String[]
 
   patch_relations patch_company_relation[]
+  external_ids    patch_company_external_id[]
+  name_identities patch_company_name_identity[]
   user_id         Int
   user            user                     @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
@@ -18,8 +21,46 @@ model patch_company {
 
   @@index([count])
   @@index([count(sort: Desc), id(sort: Desc)])
+  @@index([normalized_name])
   @@index([alias], type: Gin)
   @@index([parent_brand], type: Gin)
+}
+
+model patch_company_external_id {
+  id Int @id @default(autoincrement())
+
+  company_id  Int
+  company     patch_company @relation(fields: [company_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  source      String        @db.VarChar(32)
+  external_id String        @db.VarChar(107)
+
+  created DateTime @default(now())
+  updated DateTime @updatedAt
+
+  @@index([company_id])
+  @@index([source, external_id])
+}
+
+model patch_company_name_identity {
+  id Int @id @default(autoincrement())
+
+  company_id       Int
+  company          patch_company @relation(fields: [company_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  kind             String        @db.VarChar(16)
+  origin           String        @db.VarChar(16)
+  value            String        @db.VarChar(107)
+  normalized_value String        @db.VarChar(107)
+
+  confirmed_by_user_id Int?
+  confirmed_by         user? @relation("patch_company_identity_confirmer", fields: [confirmed_by_user_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  created DateTime @default(now())
+  updated DateTime @updatedAt
+
+  @@unique([company_id, kind, normalized_value], map: "patch_company_name_identity_company_kind_value_key")
+  @@index([company_id])
+  @@index([confirmed_by_user_id])
+  @@index([normalized_value])
 }
 
 model patch_company_relation {

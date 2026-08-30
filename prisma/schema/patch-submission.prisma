@@ -15,6 +15,10 @@ model patch_submission {
   payload         Json
   payload_version Int  @default(1)
 
+  /// Trusted company candidates fetched and stored by the submission service.
+  /// This is deliberately separate from the browser-writable payload.
+  company_candidates Json?
+
   /// Where the external data came from and when it was fetched. Kept because a
   /// reviewer has no other way to judge how stale a frozen snapshot is; the raw
   /// upstream responses are deliberately not stored.
