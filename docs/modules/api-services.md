@@ -199,8 +199,17 @@ service/helper 负责：
   编辑和新建时取得的 VNDB 别名记为 `authoritative`；历史回填、旧来源字符串和合并
   进来的未验证别名记为 `legacy`，不得借同步过程把既有 `authoritative` 降级。
 - 会社在线新建、改名或改别名，以及仍可执行的公司维护脚本，都必须在写
-  `patch_company` 的同一事务内同步身份投影。当前阶段只做双写，会社匹配仍沿用既有
-  精确 name/alias 规则；不得提前把规范化身份表当成 resolver 使用。
+  `patch_company` 的同一事务内同步身份投影。
+- 共享 resolver 位于 `app/api/company/identity/resolver.ts`，只在服务端运行时开关
+  `KUN_COMPANY_IDENTITY_RESOLVER_ENABLED=true` 时接管 `/edit`、投稿预览与投稿批准；
+  未配置或其它值一律关闭。匹配顺序固定为可信 external ID → 规范化主名 →
+  `authoritative` 规范化别名 → `legacy` 原值精确别名 → 同批候选交集 → 新建；角色不
+  参与同一性判定。开关关闭时预览与来源选择保持旧行为，但 Phase B
+  `normalized_name` / external ID 唯一冲突的外层事务重试与胜者重读兼容层始终生效。
+- PostgreSQL 唯一冲突后当前事务已 aborted；公司身份冲突只能由拥有事务的最外层入口
+  整笔重跑，最多 3 次。只识别 `patch_company.normalized_name` 与
+  `patch_company_external_id.(source, external_id)` 两个目标约束，其它 `P2002` 不得
+  吞掉或误重试。
 - 修改公司后必须调用 `invalidateCompanyCaches`。
 - 历史公司脏数据用 `pnpm maintenance:companies:dirty:dry` / `apply` 清理；不要让在线创建/编辑流程承担批量合并旧数据。
 
@@ -225,8 +234,9 @@ service/helper 负责：
 - Steam ID 只做软查重：同一个 Steam App ID 可能是合集或二合一商店页，`/api/edit/duplicate` 和前端 Steam 输入应提示已有条目，但不能阻止创建、重写或继续拉取 Steam 数据。Bangumi ID、Release ID 和 DLsite Code 仍是硬唯一；服务端创建/重写需要预查，并在 Prisma `P2002` 竞态时返回用户可见的重复提示。
 - 标签写入必须按 `name` 和 `alias` 查找已有主标签；提交名命中主标签 alias 时，只关联和计数主标签，不创建 alias 标签。
 - tag 的 alias 必须全局唯一，不能等于其它 tag 的 `name`，也不能出现在其它 tag 的 `alias` 中；创建/更新 tag 时服务端必须阻止这类冲突。
-- 公司来源优先级是 VNDB > Bangumi。只要 VNDB ID 成功关联到至少一个公司，就不再使用 Bangumi developer 创建或关联公司；Bangumi developer 只作为 VNDB 无公司时的兜底。
-- Steam developer 和 DLSite circle 独立补充公司关系，不参与 VNDB/Bangumi 主来源互斥。
+- resolver 开关关闭时暂时保留旧兼容行为：VNDB 成功关联后不再使用 Bangumi
+  developer，Steam developer 与 DLSite circle 仍独立补充。**这不是最终产品规则**；
+  开关启用后四个来源全部进入 resolver，Bangumi 独有发行商/制作方不得再被丢弃。
 - 外部公司关系必须按 `name` 和 `alias` 查找已有公司；提交名命中现有 alias 时，应关联到已有公司，而不是创建新公司。
 - 新增、删除或外部拉取公司关系后必须调用 `invalidateCompanyCaches`，并按 [Patch 缓存](data-cache-upload.md) 的约定同时失效受影响 patch 的详情/简介内容缓存；只清公司缓存会让公司页刷新而游戏详情页继续展示旧公司。只新增标签或别名时不应误触发公司缓存失效。
 

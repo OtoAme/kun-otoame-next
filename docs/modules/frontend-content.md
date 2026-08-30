@@ -247,6 +247,12 @@ pnpm typecheck
 - **审核详情的重复面板语义随投稿状态**：仅 `pending` 渲染警告卡（未确认用 danger Chip）；其余所有状态整卡中性色、Chip 一律 default（「投稿者当时未确认」不得用 danger）、标题与文案改为历史复查口吻。「已发布为」链接独立于重复面板显示在页头（没有其他重复条目也显示）；`publishedPatch` 为 null（正式条目已删除）时不渲染链接并正常降级。审核确认弹窗在请求飞行中锁定全部关闭路径（backdrop/Esc/关闭钮/取消/确认），通过提示用行上冻结的 `heldAmount` 与 `PATCH_SUBMISSION_PUBLISH_REWARD` 报出具体数字，不按审核人当前角色重算，押金为 0 时只提奖励。
 - **审核队列的 status/page/query 只存在于 URL**：`components/admin/submission/queueParams.ts` 的解析与构造成对，非法参数回退默认 pending 视图（重复键取首值，query 截断 107 字符、page 限 1..9999，与 API Schema 对齐）；切换状态或搜索重置回第一页，翻页保留另两个参数；列表缩短后超出范围的页码由服务端重定向回最后一个有内容的页；输入框用同步 effect 跟随 URL 的 query，前进/后退不留旧值；行内时间标签、计数 Chip 与空态文案随状态（pending 提交时间、draft 更新时间、其余优先审核时间）；搜索区是真正的 form，Enter 与按钮同路径提交。
 - **作者预览与审核详情共用正式条目外观。** `PatchSubmissionPreviewView` 组合正式详情页的正文 renderer、Gallery/灯箱、官网和 Info 元数据块；标签与会社在正式行创建前只显示只读 chip，不渲染评分、下载、编辑器或讨论/资源 tab。封面框固定 16:9，点击后优先在灯箱显示保存的原图，并在标题旁显示 SFW/NSFW 分级。灯箱通过 `onOpenChange` 告知外层预览 Modal，在灯箱打开期间禁止 outside press 与 Escape 同时关闭两层。
+- **会社 resolver 的预览与批准只能一起切换。** 服务端开关关闭时两类预览保持旧会社
+  名称；开关启用时，作者预览只显示解析后的 canonical 名称，并在阻断型歧义时给中性
+  提示「会社信息需管理员确认」，不得泄漏候选命中的会社 ID 或维护细节。审核详情额外
+  显示候选到既有/待新建会社的映射、失效快照、阻断型歧义和非阻断 external-ID/name
+  冲突；阻断型歧义存在时禁用「通过」，文案明确出口是会社身份维护，而不是要求投稿人
+  修改。后端批准仍会重新解析并作最终栅栏，前端禁用不是正确性边界。
 - **审核队列只负责检索和进入详情。** 通过、要求修改、驳回、违规四个动作全部放在详情页，避免审核员未看正文与素材就结算；详情与作者预览共用 `publishPreview.ts` 投影和 `PatchSubmissionPreviewView`。超级管理员自审必须显式打开 override，普通管理员不能自审。详情页若收到“投稿已被撤回或处理”的状态冲突，只显示错误、关闭确认弹窗并 `router.refresh()`；其它业务错误保留当前弹窗和上下文。
 - **投稿画廊排序随草稿流程自动同步。** ready 行与待上传项在同一个 dnd-kit 网格里排序，拖拽用独立的可聚焦、键盘可达手柄。顺序跨 localforage 与数据库两个存储、无法原子提交，所以拖动先把完整的 namespaced 序列（`server:<id>` / `local:<clientAssetId>`）写进 `submission:<id>:order` draft，刷新后按它恢复。上传截图、保存草稿、打开可编辑预览和提交审核都会先经同一个顺序 flush；同步失败就停止当前动作、保留用户排好的顺序与 draft，供下次重试。flush 进入时先排空写入队列再读 draft，否则刚拖完立刻保存会读到上一版序列，把作者已经替换掉的顺序冻结上去。并发调用共享同一次同步；请求期间若又产生了新顺序，同一次 flush 会继续同步最新 draft 后才返回成功。ready 行的序号允许不连续（待传卡可占中间位置），只要求唯一。
 - **拖拽手势本身有三个硬性要求。** ① 拖动结束时先把新序列同步渲染出来，再去等 localforage 写入：dnd-kit 在同一帧清掉全部 drag transform，等存储往返会让卡片先弹回原位、几帧后再跳进新位置，落位动画也会瞄准卡片正在离开的槽位；写入失败才回滚到拖动前的序列并提示。② 网格用 `DragOverlay` + `defaultDropAnimationSideEffects` 渲染一份跟随指针的只读副本（`aria-hidden` + `pointer-events-none`，真正的可聚焦控件只留在原卡片上），与 create/rewrite 画廊一致。③ `DndContext` 挂 `utils/dndModifiers.ts` 的本地 `restrictToParentElement`，把拖动夹在网格矩形内——外层 HeroUI Card 会裁掉 overflow，不夹取时拖出网格的部分直接被切掉，而网格外本来也没有可落下的位置。
