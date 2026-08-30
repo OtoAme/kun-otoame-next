@@ -272,6 +272,27 @@ psql -X --set ON_ERROR_STOP=on -d "$KUN_DATABASE_URL" -f migration/production-ta
 
 Docker 中的 PostgreSQL 使用既有的 `docker exec -i ... psql ... < migration/...sql` 形式逐份执行。回滚必须暂停所有标签 / 会社关系写入：先运行 rollback（它只删除这六个目标触发器与函数，并在同一事务加锁重算两类计数），再部署带手工计数的旧应用；确认 preflight 只报告对象待创建且计数无偏差后才恢复写入。不要只回滚应用，也不要在写入仍开放时只删除触发器。
 
+会社身份 Phase B 使用以下三份 SQL，把 Phase A 的可空 / 普通索引升级为 `normalized_name NOT NULL UNIQUE` 与 `(source, external_id) UNIQUE`：
+
+- `production-company-identity-constraint-preflight-2026-08-30.sql`
+- `production-company-identity-constraint-sync-2026-08-30.sql`
+- `production-company-identity-constraint-postflight-2026-08-30.sql`
+
+这一步开始连续停写窗口。先暂停创建游戏、重写游戏和投稿批准等会社关系写入，再运行身份 backfill dry-run 与公司脏数据 dry-run；在停写状态下解决全部缺失规范化主名、规范化主名碰撞和 external ID 冲突。跨会社共享 alias 是合法 warning，不要求清零。确认后依次运行：
+
+```bash
+pnpm maintenance:companies:identity:dry
+pnpm maintenance:companies:dirty:dry
+psql -X --set ON_ERROR_STOP=on -d "$KUN_DATABASE_URL" -f migration/production-company-identity-constraint-preflight-2026-08-30.sql
+psql -X --set ON_ERROR_STOP=on -d "$KUN_DATABASE_URL" -f migration/production-company-identity-constraint-sync-2026-08-30.sql
+psql -X --set ON_ERROR_STOP=on -d "$KUN_DATABASE_URL" -f migration/production-company-identity-constraint-postflight-2026-08-30.sql
+pnpm prisma:deploy-safe
+```
+
+sync 会删除 Phase A 的两个普通索引并创建 Prisma 原生可表达的两个唯一索引；不要用 `prisma db push` 代替。postflight 与 `prisma:deploy-safe` 通过后，先保持 `KUN_COMPANY_IDENTITY_RESOLVER_ENABLED=false` 部署兼容版本，再将它改为 `true` 并重启受控实例。此开关会同时切换 `/edit`、作者 / 管理员投稿预览与投稿批准，不能分开启用。
+
+恢复外部写入前，必须在 flag 已开启的实例完成三条烟雾测试：创建一条游戏、重写一条游戏、批准一条投稿；逐条核对预览 canonical 会社与正式关系一致，Bangumi 独有发行 / 制作会社没有被丢弃，并且没有唯一冲突残留。若失败，把 flag 恢复为 `false` 并重启；Phase B 兼容层可承接 flag-off 流量，此时可以恢复写入后再排查。只有兼容层也失败才需要继续停写。
+
 生产变更要求：
 
 - 先备份。

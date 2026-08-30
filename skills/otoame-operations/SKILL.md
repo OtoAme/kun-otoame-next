@@ -37,6 +37,7 @@ Use this skill for operational code and release plumbing.
 - Tag alias cleanup uses `maintenance:tags:auto-alias:dry` before `maintenance:tags:auto-alias:apply`; local empty tag data does not validate production impact.
 - Company cleanup uses `maintenance:companies:dirty:dry` before `maintenance:companies:dirty:apply`; it only auto-merges authoritative alias evidence, deletes zero-relation empty companies, and leaves ambiguous/shared/legacy evidence for manual canonical decisions. Counts belong to database triggers, not this script.
 - Tag/company counters deploy in this order: application without manual deltas (legacy absolute repairs still present) → reviewed preflight/sync/postflight SQL → application without legacy repairs. The sync owns six statement-level transition-table triggers and locks both relation tables in SHARE mode before absolute backfill. Rollback pauses relation writes, runs the reviewed rollback SQL, restores manual-counter code, and only then resumes writes.
+- Company identity Phase B starts a continuous relation-write pause: rerun identity/dirty inventories, resolve all normalized-name and external-ID blockers, run the reviewed constraint preflight/sync/postflight plus `prisma:deploy-safe`, deploy flag-off compatibility, then enable the single server-only resolver flag and smoke-test create/rewrite/submission approval before writes resume. Shared aliases are warnings, not blockers; never substitute production `prisma db push`.
 
 ## Verification
 

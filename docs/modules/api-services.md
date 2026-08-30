@@ -211,6 +211,7 @@ service/helper 负责：
   `patch_company_external_id.(source, external_id)` 两个目标约束，其它 `P2002` 不得
   吞掉或误重试。
 - `patch_tag.count` 与 `patch_company.count` 只由关系表上的 statement-level 数据库触发器维护；应用、同步脚本和清理脚本不得手工 increment / decrement 或绝对重算。关系 helper 仍返回本次实际插入 / 删除的 ID，用于判断缓存失效，不用于改 count。删除整个游戏会级联删除关系，因此必须同时失效 tag/company/list 缓存。
+- Phase B 之后 `patch_company.normalized_name` 为非空唯一列，`patch_company_external_id.(source, external_id)` 为复合唯一；跨会社 `patch_company_name_identity.normalized_value` 仍只是普通索引，合法共享 alias 由 resolver 报歧义而不是被数据库禁止。所有公司创建入口必须通过共享 helper 注入规范化主名，目标唯一冲突只允许从最外层事务重试。
 - 修改公司后必须调用 `invalidateCompanyCaches`。
 - 历史公司脏数据用 `pnpm maintenance:companies:dirty:dry` / `apply` 清理；不要让在线创建/编辑流程承担批量合并旧数据。维护脚本只把重新抓取且全局唯一的 VNDB producer 证据写成 external ID / `authoritative` alias，也只据此自动合并；`legacy` alias、名称相似、共享 alias 和多候选一律只报告，交由人工裁决。带服务端候选快照的已发布投稿会另行审计其正式会社关系与 `external-id-name-conflict`。
 

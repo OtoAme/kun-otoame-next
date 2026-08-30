@@ -46,6 +46,8 @@ schema: 'prisma/schema'
 
 Schema 修改后至少运行 `pnpm prisma:generate`。会影响数据库结构时运行 `pnpm prisma:push`；生产库如果出现 reset database 提示必须取消，改走 preflight/sync SQL 或 dry-run 脚本。
 
+会社身份的最终 schema 使用 `patch_company.normalized_name NOT NULL UNIQUE` 与 `patch_company_external_id.(source, external_id)` 复合唯一；alias 身份的 `normalized_value` 保持普通索引，因为不同会社共享同一别名是可表示的合法状态。生产必须先完成 Phase A、身份回填与历史清理，再执行 `production-company-identity-constraint-*` 三份 SQL；只有 postflight 与 `prisma:deploy-safe` 通过后才能打开 resolver flag。
+
 萌萌点账务使用 `user.moemoepoint_reserved`、`user_moemoepoint_ledger` 和 `user_moemoepoint_reservation`。总额保留在原 `moemoepoint` 字段；待结算不改变总额，可用余额在读取时计算为 `moemoepoint - moemoepoint_reserved`。明细和暂扣记录随账户保留，用户删除时级联删除；操作人/结算人删除时只把审计外键置空。生产先运行 `production-moemoepoint-ledger-preflight-2026-08-17.sql`，审核后运行对应 sync；sync 会为既有账户建立幂等的迁移初始余额明细，然后再运行 `pnpm prisma:deploy-safe` 校验 schema。
 
 数据库层只对 `moemoepoint_reserved` 施加非负 CHECK，总额 `moemoepoint` **没有下限**：取消点赞、删除资源等回退必须真实扣回，账本才是完整审计链。不要在没有产品决策的情况下补一条 `moemoepoint >= 0` 约束，也不要在 service 里 clamp 回退金额；上线用的 dated preflight 会统计既有负余额账户，负数是预期结果而不是待修数据。投稿押金实际使用 `reserveMoemoepoint` / `releaseMoemoepoint` / `forfeitMoemoepoint` 与 `user_moemoepoint_reservation`，接入点见 [投稿域](api-services.md)，不要当成未启用的预留基础设施删改。
