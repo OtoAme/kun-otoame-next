@@ -27,6 +27,7 @@ pnpm typecheck
 | `tests/unit/edit-store.test.ts`                        | 创建/重写 store 函数式合并，防止外部数据异步返回互相覆盖。                                                              |
 | `tests/unit/company-merge-plan.test.ts`                | 公司 name/alias 脏数据自动合并计划和预览。                                                                              |
 | `tests/unit/company-identity-maintenance.test.ts`      | 公司身份碰撞盘点、权威 VNDB 证据回填计划，以及只允许权威 alias 驱动自动合并。                                           |
+| `tests/unit/tag-company-count-migration.test.ts`       | 标签 / 会社计数四份生产 SQL、六个语句级触发器、锁定回填、回滚范围及禁止应用层手工计数。                                 |
 | `tests/unit/resource-link.test.ts`                     | 资源链接和提取码解析。                                                                                                  |
 | `tests/unit/api/resource-access-policy.test.ts`        | 游客游戏资源每日/每周额度、登录用户和补丁资源免产品限额，以及 24 小时授权常量。                                         |
 | `tests/unit/api/resource-access-grant.test.ts`         | 资源级 grant、`resource_grant` / `link_reveal` 分类、日/周边界、并发冲突和不延长授权。                                  |

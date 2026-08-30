@@ -19,6 +19,7 @@ Use this skill for persistence, cache, and upload consistency work.
 - That guard accepts only an empty diff or the catalog-verified `public.patch_released_idx` operator-class false drift — never widen it, never run its proposed `DROP INDEX` / `CREATE INDEX`.
 - Every balance change goes through the moemoepoint service in the owning transaction. Only `moemoepoint_reserved` has a non-negative CHECK; never clamp a reversal.
 - Call the matching invalidation helper after every patch/resource/tag/company write, including the patch content cache for company-relation writes.
+- `patch_tag.count` and `patch_company.count` are maintained only by the six statement-level relation triggers. Application and maintenance code must never increment, decrement, or absolutely repair them; relation helpers return changed IDs only for cache invalidation.
 - Pass helper keys unprefixed; direct `redis` / `runRedisCommand` needs an explicit full prefix.
 - Never delete an S3 object before its durable cleanup credential exists: `patch-submission/` deletes upsert `patch_submission_orphan_cleanup` in the same short DB transaction; `published` keys never enter cleanup.
 - Patch-domain deletes resolve keys only through `extractS3Key` (exact configured bases, lookalike hosts rejected); conversation images and the gallery backfill keep their own dedicated, stricter resolvers.

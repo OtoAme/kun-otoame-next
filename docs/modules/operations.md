@@ -80,9 +80,9 @@ conversation images summary 字段含义：`scanned` 是本次从 S3 列出的�
 
 手工合并仍使用 `maintenance:tags:merge:* -- --plan=path/to/merge-plan.json`。本地库没有生产 tag 数据时，不要用本地 dry-run 结果判断生产影响面，应在生产备份后对生产库 dry-run。
 
-`maintenance:companies:dirty:dry` 会盘点规范化主名碰撞、alias 与其它公司主名碰撞、共享 alias、外部身份冲突、缺失的 `normalized_name`、`legacy` alias 总量、空公司及 count 偏差。默认还会以公司关联作品的 VNDB ID 重新抓 producer：只有 producer 的权威主名或别名命中该公司规范化主名、且 producer ID 在全局只指向这一家公司时，才计划回填 `patch_company_external_id` 并把有依据的 alias 升为 `authoritative`。抓取失败只记 warning；只做本地盘点时可运行 `pnpm maintenance:companies:dirty:dry -- --skip-vndb`。
+`maintenance:companies:dirty:dry` 会盘点规范化主名碰撞、alias 与其它公司主名碰撞、共享 alias、外部身份冲突、缺失的 `normalized_name`、`legacy` alias 总量及空公司。默认还会以公司关联作品的 VNDB ID 重新抓 producer：只有 producer 的权威主名或别名命中该公司规范化主名、且 producer ID 在全局只指向这一家公司时，才计划回填 `patch_company_external_id` 并把有依据的 alias 升为 `authoritative`。抓取失败只记 warning；只做本地盘点时可运行 `pnpm maintenance:companies:dirty:dry -- --skip-vndb`。
 
-自动合并只接受 `authoritative` alias 指向另一家公司主名这一种证据；`legacy` alias、仅名称相似、共享权威 alias、多 producer 候选或已被其它公司占用的 producer ID 都不会自动写入。脚本还会扫描带服务端候选快照的已发布投稿，将快照损坏、阻断歧义和 `external-id-name-conflict` 与正式会社关系列入维护输出。dry-run 会模拟本轮权威证据带来的合并，但不写数据库；apply 按短事务回填证据、迁移 `patch_company_relation`、合并 alias / primary_language / official_website / parent_brand、删除重复公司和空公司、重算 count，并失效 company/list/受影响 patch 内容缓存。
+自动合并只接受 `authoritative` alias 指向另一家公司主名这一种证据；`legacy` alias、仅名称相似、共享权威 alias、多 producer 候选或已被其它公司占用的 producer ID 都不会自动写入。脚本还会扫描带服务端候选快照的已发布投稿，将快照损坏、阻断歧义和 `external-id-name-conflict` 与正式会社关系列入维护输出。dry-run 会模拟本轮权威证据带来的合并，但不写数据库；apply 按短事务回填证据、迁移 `patch_company_relation`、合并 alias / primary_language / official_website / parent_brand、删除重复公司和空公司，并失效 company/list/受影响 patch 内容缓存。`patch_company.count` 由数据库触发器随关系变化维护，脚本不得自行重算。
 
 生产公司清理流程：
 
@@ -248,6 +248,29 @@ dry-run，所有变更计数都应为 0。两条命令都支持例如 `-- --batc
 部署的目标唯一约束兼容层仍会从事务外重试并读取规范化胜者，所以无需回滚身份表或约束。
 只有兼容层本身也失败时才重新暂停会社关系写入。当前阶段只安装代码，**不要提前打开
 开关**。
+
+标签与会社的 `count` 是关系表行数的数据库派生值。生产迁移由以下四份文件组成：
+
+- `production-tag-company-count-preflight-2026-08-30.sql`
+- `production-tag-company-count-sync-2026-08-30.sql`
+- `production-tag-company-count-postflight-2026-08-30.sql`
+- `production-tag-company-count-rollback-2026-08-30.sql`
+
+上线必须保持以下顺序，不能先装触发器再部署旧应用，否则同一条关系会被应用和触发器各计一次：
+
+1. 备份数据库，运行只读 preflight，并留存两张表的偏差行数和最大偏差。偏差只报告；缺表、`count` / ID 列类型不符、目标函数或触发器无法安全替换才阻断。
+2. 部署“已删除所有 tag/company 手工增减、但仍保留旧绝对修复”的应用版本。这个短窗口可能漏计，sync 的全量回填会修正。
+3. 在低峰维护窗口运行 sync。它在同一事务内安装 INSERT / DELETE / UPDATE 六个 statement-level transition-table 触发器，对两张关系表取得 `SHARE` 锁，再绝对重算全部计数。
+4. 运行独立 postflight；六个函数、六个触发器的 catalog 定义和两张表的计数不变量必须全部通过。再次运行 sync 应显示两个 backfill 都是 `UPDATE 0`。
+5. postflight 通过后，才部署删除 `patch/delete.ts`、会社清理和标签合并脚本中旧绝对修复的后续应用版本。
+
+```bash
+psql -X --set ON_ERROR_STOP=on -d "$KUN_DATABASE_URL" -f migration/production-tag-company-count-preflight-2026-08-30.sql
+psql -X --set ON_ERROR_STOP=on -d "$KUN_DATABASE_URL" -f migration/production-tag-company-count-sync-2026-08-30.sql
+psql -X --set ON_ERROR_STOP=on -d "$KUN_DATABASE_URL" -f migration/production-tag-company-count-postflight-2026-08-30.sql
+```
+
+Docker 中的 PostgreSQL 使用既有的 `docker exec -i ... psql ... < migration/...sql` 形式逐份执行。回滚必须暂停所有标签 / 会社关系写入：先运行 rollback（它只删除这六个目标触发器与函数，并在同一事务加锁重算两类计数），再部署带手工计数的旧应用；确认 preflight 只报告对象待创建且计数无偏差后才恢复写入。不要只回滚应用，也不要在写入仍开放时只删除触发器。
 
 生产变更要求：
 

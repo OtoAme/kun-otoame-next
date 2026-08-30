@@ -34,6 +34,7 @@ tests/unit/
 - Redis 封装：`tests/unit/redis.test.ts`。
 - 创建/重写 store 合并：`tests/unit/edit-store.test.ts`。
 - 公司脏数据合并计划：`tests/unit/company-merge-plan.test.ts`；身份盘点、权威 VNDB 证据与仅权威 alias 自动合并：`tests/unit/company-identity-maintenance.test.ts`。
+- 标签 / 会社计数触发器：`tests/unit/tag-company-count-migration.test.ts` 静态锁定四份生产 SQL、六个 statement-level transition-table 触发器、SHARE 锁回填、rollback 范围和应用层无手工计数。Vitest 不执行数据库触发器，真实计数不变量由 PostgreSQL 演练与生产 postflight 负责。
 - 搜索 store：`tests/unit/search-store.test.ts`。
 - CAPTCHA：`tests/unit/captcha.test.ts`。
 - 萌萌点账务：`api/moemoepoint-service.test.ts` 覆盖可用余额条件更新、负数回退、原因超长截断（不抛错）、幂等和暂扣/返还/确认扣除；`api/moemoepoint-query.test.ts` 覆盖明细稳定排序和用户不存在时不白跑查询；`api/moemoepoint-ledger-route.test.ts` 覆盖本人/管理员权限与 no-store；`moemoepoint-ledger-action.test.ts` 覆盖 `/moemoepoint` 本人 action 与后台 action 两个入口的独立鉴权；`moemoepoint-date-range.test.ts`、`moemoepoint-migration.test.ts`、`moemoepoint-source-guard.test.ts` 分别锁定上海日期范围、生产 SQL 和禁止绕过统一 service 的源码契约。
