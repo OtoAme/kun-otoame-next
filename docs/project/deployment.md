@@ -4,11 +4,12 @@
 
 ## 部署模型
 
-项目使用 Next.js standalone output 和 PM2：
+项目使用 Next.js standalone output、不可变 release 槽与 PM2：
 
 - [next.config.ts](../../next.config.ts)：`output: 'standalone'`。
 - [scripts/postbuild.ts](../../scripts/postbuild.ts)：把 runtime assets 复制进 `.next/standalone`。
-- [ecosystem.config.cjs](../../ecosystem.config.cjs)：PM2 从 `.next/standalone` 启动 `server.mjs` 或 `server.js`，3 个实例。
+- [scripts/deploySlots.ts](../../scripts/deploySlots.ts)：把已验证 runtime 保存到 `.deploy/releases/<commit>-<tag>`，以 `.deploy/current` / `.deploy/previous` 原子切换。
+- [ecosystem.config.cjs](../../ecosystem.config.cjs)：优先从 `.deploy/current` 启动 `server.mjs` 或 `server.js`，兼容首次迁移前的 `.next/standalone`，固定 3 个实例。
 
 standalone 运行时需要这些额外资源：
 
@@ -20,7 +21,7 @@ standalone 运行时需要这些额外资源：
 - `config/redirect.json`
 - Prisma Client 和 schema
 
-Next standalone output 不会自动复制 `public` 和 `.next/static`，所以本仓库用 `scripts/postbuild.ts` 和 release packaging 显式补齐。
+Next standalone output 不会自动复制 `public` 和 `.next/static`，所以本仓库用 `scripts/postbuild.ts` 和 release packaging 显式补齐。`.next/standalone` 在受管部署后只是指向 `.deploy/current` 的兼容链接；`.deploy` 位于 `.next` 外，Next 清理构建目录不会删除当前和上一版可回滚 runtime。
 
 ## 服务器前置条件
 
@@ -146,6 +147,8 @@ ffmpeg -hide_banner -encoders | grep -i libaom-av1
 - push 到 `main`
 - 手动 `workflow_dispatch`
 
+同一 `release-main` concurrency group 不取消正在运行的构建，避免并发 push 互相覆盖 release 状态；需要 R1/R3/R4 三个中间 Release 时仍应等待上一轮完成后再推下一节点。
+
 CI 文件：[.github/workflows/release.yml](../../.github/workflows/release.yml)。
 
 流程：
@@ -156,39 +159,46 @@ CI 文件：[.github/workflows/release.yml](../../.github/workflows/release.yml)
 4. `pnpm prisma:push`。
 5. `pnpm build`，并设置 `KUN_DEPLOY_BUILD_SKIP_CHECKS=true`。
 6. 打包 `.next/standalone`、`.next/static`、`.next/server`、`.next/BUILD_ID`、`public`、`server/image`、`posts`、`config/redirect.json`、`prisma`。
-7. 生成 CalVer tag，例如 `v2026.06.09.1200`。
-8. 上传 `release.tar.gz` 到 GitHub Release。
+7. 生成不会在并发 workflow 中碰撞的 tag：秒级 CalVer + GitHub run number + 短 commit SHA。
+8. 在 artifact 写入 `release-manifest.json`，严格绑定 manifest version、tag 与本次精确 commit SHA。
+9. 上传 `release.tar.gz` 到 GitHub Release。
 
 release 打包阶段还会删除包内 `package.json` 的 `"type": "module"`，并把 `server.js` 改名为 `server.mjs`。这是为了避免 standalone 中的 CommonJS 依赖受根包 ESM 设置影响。`ecosystem.config.cjs` 和 `deployPull.ts` 会优先启动 `server.mjs`，没有时回退到 `server.js`。
 
-服务器更新：
+服务器更新最新 Release：
 
 ```bash
 pnpm deploy:pull
 ```
 
-`package.json` 中的 `deploy:pull` 已经包含 `git pull`，不要在文档或自动化里重复写两次，除非你明确要先手动处理冲突。
+`deploy:pull` 在整个操作锁内要求工作区干净，先执行 `git pull --ff-only`，再调用核心部署脚本。若 source 无法 fast-forward，命令在下载和切换 runtime 前终止。
+
+部署经过审核的固定 Release：
+
+```bash
+KUN_DEPLOY_RELEASE_TAG='<已审核 tag>' pnpm deploy:pull:pinned
+```
+
+pinned 模式只 fetch 目标 tag 到临时 ref，不执行 `git pull`、merge 或 checkout。执行前应让服务器工作区以正常 fast-forward 方式到达该 tag 的精确 commit；脚本会再次要求 `HEAD = tag commit = manifest commit`。
 
 [scripts/deployPull.ts](../../scripts/deployPull.ts) 会：
 
-- 读取 `.env`。
-- 从 GitHub latest release 下载 `release.tar.gz`。
-- 解压到 `.next_temp`。
-- 替换根目录 `prisma` schema。
-- 运行 `pnpm prisma:deploy-safe`：先执行可能写入 schema/data 的资源链接兼容迁移，再只读校验生产 schema，最后在服务器架构上生成 Prisma Client。
-- 把生成的 Prisma Client 注入 standalone node_modules。
-- 把目标服务器 `node_modules/ffmpeg-static` 注入 standalone node_modules，确保 animated AVIF gallery 缩略图使用目标架构的 bundled ffmpeg。
-- 如果目标服务器存在可选 `node_modules/.ffmpeg/ffmpeg`，同步注入 standalone `.ffmpeg/ffmpeg`。
-- 原子替换 `.next/standalone`。
-- 生成生产 sitemap 并复制进 standalone。
-- 删除旧 PM2 进程并从新 cwd 启动 3 实例。
+- 验证 `.env`、工作区、Release tag 与 artifact 的 `release-manifest.json`。
+- 对 latest 与 pinned 都先 fetch 实际 tag，再核对 `HEAD`、tag peeled commit 和 manifest commit；任一不一致即失败。
+- 下载候选到临时目录，先运行资源链接兼容迁移，再以显式 `--schema=<候选>/prisma/schema` 执行只读 Prisma guard。候选 guard 通过前不替换根 schema、生成客户端或切换 runtime。
+- 用候选 schema 在目标服务器生成 Prisma Client，并把 `.prisma`、`@prisma`、`ffmpeg-static` 和可选 `.ffmpeg/ffmpeg` 注入候选。
+- 验证 runtime 完整性、生成 sitemap，再把候选安装为 `.deploy/releases/<commit>-<tag>`。
+- 写 activation journal，把 `.deploy/previous` 指向旧 current、`.deploy/current` 指向候选，并让 `.next/standalone` 保持兼容链接。
+- 重启 PM2 后确认恰好 3 个实例均从候选 cwd/script online，再请求 loopback readiness URL；只有 2xx/3xx 才完成 journal。
+- 候选启动或 readiness 失败时自动恢复旧 current，并再次验证旧版本；两边都失败时保留聚合错误供人工处理。
 
 适用场景：
 
 - 服务器不想执行完整 Next build。
 - GitHub Release 已经成功生成 `release.tar.gz`。
 - 生产服务器有 `node_modules`，可在目标架构重新生成 Prisma Client。
-- release 包内会带 `prisma` schema，但 Prisma Client 仍在目标服务器重新生成并注入 standalone。
+- release 包内会带 `prisma` schema 与 manifest，但 Prisma Client 仍在目标服务器按候选 schema 重新生成并注入 standalone。
+- R1 / R3 等没有 manifest 的历史 artifact 不能交给当前 `deploy:pull` 或 `deploy:pull:pinned`；它们只作为已有人工快照，在明确的旧流程边界内恢复。
 
 ## 发布路径二：服务器本地构建
 
@@ -200,10 +210,10 @@ pnpm deploy:build
 
 [scripts/deployBuild.ts](../../scripts/deployBuild.ts) 会：
 
-- 校验 `.env`。
-- 提醒测试站 noindex。
-- 运行 `git pull && pnpm i && pnpm prisma:deploy-safe && pnpm build && pm2 startOrReload ecosystem.config.cjs`。
-- build 时注入 `KUN_DEPLOY_BUILD_SKIP_CHECKS=true`。
+- 取得与 Release 部署共用的 `.deploy/operation.lock`，校验工作区并 fast-forward pull。
+- 安装锁文件依赖、运行 `pnpm prisma:deploy-safe`，再以 `KUN_DEPLOY_BUILD_SKIP_CHECKS=true` 本机构建。
+- 给候选补齐 Prisma Client、schema 与 runtime assets，写入绑定当前 commit 的本地 manifest。
+- 把候选安装进 `.deploy/releases`，经同一 activation journal、PM2 3 实例与 loopback HTTP readiness 后切换；失败时恢复旧 current。
 
 适用场景：
 
@@ -211,7 +221,7 @@ pnpm deploy:build
 - 不依赖 GitHub Release。
 - 需要在服务器环境直接构建。
 
-这个脚本内部也会执行 `git pull`。如果服务器上有未提交本地修改，先处理工作区，否则 pull/build 可能失败或覆盖预期外状态。
+这个脚本内部也会执行 fast-forward pull。服务器上有未提交本地修改时会 fail-closed；先人工处理工作区，不要让部署脚本覆盖预期外状态。
 
 ## 初次部署
 
@@ -276,6 +286,8 @@ proxy_set_header X-Forwarded-Proto $scheme;
 - `KUN_VISUAL_NOVEL_TEST_SITE_LABEL` 在生产应删除或注释，否则会 noindex。
 - `NEXT_PUBLIC_*` 会进入前端 bundle，不能放私密值。
 - GitHub artifact 部署需要 `GITHUB_REPO`，私有仓库需要 `GITHUB_TOKEN`。
+- `KUN_DEPLOY_SMOKE_URL` 可覆盖激活后的 HTTP 探针，必须是 loopback `http:` URL；默认 `http://127.0.0.1:3000/`。
+- `KUN_DEPLOY_READINESS_TIMEOUT_MS` 可把 PM2 + HTTP readiness 总超时设为 5000–120000 毫秒，默认 30000。
 - CSRF origin/referer 校验依赖 `NEXT_PUBLIC_KUN_PATCH_ADDRESS_DEV` 和 `NEXT_PUBLIC_KUN_PATCH_ADDRESS_PROD`，生产域名变更时必须同步。
 
 GitHub Actions 只需要构建期公开变量：
@@ -331,11 +343,12 @@ bootstrap sync，再运行现有 resource-access grant preflight/sync。进入�
 本次部署必须冻结并固定已审核的 Release tag：
 
 ```bash
-KUN_DEPLOY_RELEASE_TAG='vYYYY.MM.DD.HHMM' pnpm deploy:pull
+KUN_DEPLOY_RELEASE_TAG='vYYYY.MM.DD.HHMMSS.<run>.<sha>' pnpm deploy:pull:pinned
 ```
 
-该变量为当前命令的临时环境变量，不写入长期 `.env`。tag 不匹配、Release 不存在
-或缺少 `release.tar.gz` 时，部署必须在替换 standalone 和启动 PM2 前失败。
+该变量为当前命令的临时环境变量，不写入长期 `.env`。tag 不匹配、Release 不存在、
+缺少 `release.tar.gz` / manifest，或 HEAD、tag commit、manifest commit 任一不一致时，
+部署必须在安装候选 release 和启动 PM2 前失败。
 
 数据库命令按环境分工：
 
@@ -369,28 +382,35 @@ To apply this change we need to reset the database, do you want to continue?
 
 生产环境不要按 `y`，也不要回车确认。先备份数据库并写明确迁移/补偿方案。
 
+### 会社身份与关系计数上线
+
+会社身份分两次 schema 发布，计数触发器位于两者之间：
+
+1. Phase A 依次执行 `production-company-identity-bootstrap-preflight-2026-08-30.sql`、sync、postflight。它增加可空 `normalized_name`、投稿可信候选快照和身份表，只建普通查询索引；postflight 后运行 `pnpm prisma:deploy-safe`，再部署依赖新结构且 resolver=false 的版本。
+2. 运行 identity backfill，完成后 dry-run 必须为零变更。历史 alias 只写为 `legacy`，不能冒充 authoritative 外部证据。
+3. 部署不再手工修改 tag/company count 的版本，再执行 `production-tag-company-count-{preflight,sync,postflight}-2026-08-30.sql`。sync 在一个事务内安装两张关系表各 INSERT/DELETE/UPDATE 的六个 statement-level transition-table 触发器，取得 `SHARE` 锁后全量修正计数。此后应用和维护脚本都不得增减或重算 `patch_tag.count` / `patch_company.count`。
+4. Phase B 停写窗口中，按 `docs/modules/operations.md` 重新生成并审核生产 frozen cleanup plan，执行 dry/apply/cache，再运行 `production-company-identity-constraint-{preflight,sync,postflight}-2026-08-30.sql`。它安装 `normalized_name` 和 `(source, external_id)` 两个最终唯一约束。
+5. 通过 R4 候选 schema guard 部署 resolver=false，随后打开同一个 server-only flag 并重启；创建、重写、投稿预览/批准烟雾测试通过后才恢复会社关系写入。
+
+Phase B 应用失败先关闭 resolver 并执行 `pnpm deploy:rollback`，验证 previous release 能否兼容 Phase B。只有 previous 兼容层也失败时才在持续停写下执行 `production-company-identity-constraint-rollback-2026-08-30.sql` 和 `production-company-identity-constraint-rollback-postflight-2026-08-30.sql`；这组 SQL 保留所有业务数据，只恢复 Phase A 索引与 nullable 形态。计数触发器的数据库回滚使用独立 `production-tag-company-count-rollback-2026-08-30.sql`，并且必须先恢复匹配的手工计数应用版本再开放关系写入。
+
 ## 回滚思路
 
-应用回滚和数据库回滚必须分开计划。生产回滚禁止使用 `db push` 类命令把 schema 推回旧状态，也不要假设目标旧版本包含当前的安全部署脚本。若目标版本需要回退 schema/data，先备份数据库并执行 review 通过的专用 preflight SQL，确认结果后再执行对应的 rollback/sync SQL；切换应用前还要使用目标版本的 schema 和依赖运行 `pnpm prisma generate`，生成匹配该版本的 Prisma Client。
+应用回滚和数据库回滚必须分开计划。当前受管部署保留不可变 `.deploy/current` 与 `.deploy/previous`，应用层离线回滚直接运行：
 
-Release artifact 路径：
+```bash
+pnpm deploy:rollback
+```
 
-1. 到 GitHub Releases 找到上一版 `release.tar.gz`。
-2. 临时修改 `deployPull` 下载目标或手动下载旧产物。
-3. 解压到临时目录，确认目标版本 Prisma schema 的向后兼容性，并按上述专用 SQL 流程处理必要的数据库回滚。
-4. 安装目标版本依赖，运行 `pnpm prisma generate`，把生成的目标版本 Prisma Client 注入待切换的 standalone。
-5. 替换 `.next/standalone` 并重启 PM2。
+命令与 deploy pull/build 共用操作锁。若 activation journal 表示上一次切换中断，它先恢复 journal 记录的旧 current；否则把 current 切到 previous。目标 runtime 会在删除 PM2 前完成静态校验，切换后还必须通过 3 个 PM2 实例与 loopback HTTP readiness。previous 不可用时会恢复并验证原 current；成功回滚后 current/previous 都固定到已验证的旧 release，避免下一次误把失败版本重新切回来。
 
-本地构建路径：
+`deploy:rollback` 不访问 GitHub、不执行 Git 命令、不运行 Prisma guard，也不改数据库。它只适用于上一版应用仍兼容当前 schema 的情况。需要回退 schema/data 时，继续保持相关写入停止，先备份并执行 review 通过的专用 rollback 与 rollback postflight；生产禁止用 `prisma db push` 推回旧结构。
 
-1. `git checkout` 到上一个可用 commit。
-2. `pnpm install`，如果 lockfile 有变化。
-3. 确认目标版本 Prisma schema 的向后兼容性，并按上述专用 SQL 流程处理必要的数据库回滚。
-4. 针对目标版本运行 `pnpm prisma generate`。
-5. `pnpm build`。
-6. `pm2 delete kun-touchgal-next && pnpm start`。
+公司身份 Phase B 的专用退路是 `production-company-identity-constraint-rollback-2026-08-30.sql` 与 `production-company-identity-constraint-rollback-postflight-2026-08-30.sql`：只移除最终全局唯一约束、恢复 Phase A 普通索引并放宽 `normalized_name` 可空，不删除公司、identity、external ID 或投稿快照数据。R4 无法启动时先关闭 resolver 并回滚到 previous 的 R3 兼容 artifact；只有兼容层也失败时才执行这组数据库 rollback。
 
-禁止把 `git reset --hard` 当成默认回滚步骤，除非明确确认不会丢失服务器上的本地修改。
+旧 R1/R3 artifact 没有当前 manifest。它们不能通过新 deploy pull 重新下载和激活，只能使用上线前保存并验证过的人工 snapshot；这个历史边界不应被包装成常规回滚。禁止把 `git reset --hard` 当默认回滚步骤。
+
+若必须恢复不在 previous 槽中的其它目标版本，先审核该目标版本与当前数据库的兼容性；需要改 schema/data 时先运行 review 通过的专用 preflight，再执行对应 rollback/sync SQL。不要假设旧版本自带当前安全脚本，应在隔离目录安装目标版本依赖，以它的 schema 显式运行 `pnpm prisma generate` 并注入目标 runtime，完成静态检查和同一 PM2/HTTP readiness 后才允许切换。
 
 ## 运行后检查
 
@@ -422,13 +442,15 @@ pm2 logs kun-touchgal-next
 
 | 症状                               | 优先检查                                                                                                       |
 | ---------------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| PM2 报 cwd deleted 或找不到 server | 使用 `deployPull` 的 delete+start 流程，确认 `.next/standalone/server.mjs` 或 `server.js` 存在。               |
+| PM2 报 cwd deleted 或找不到 server | 检查 `.deploy/current` 是否指向 `.deploy/releases` 内完整 runtime；`.next/standalone` 只应是兼容链接。         |
 | 图片加载失败                       | `KUN_VISUAL_NOVEL_IMAGE_BED_HOST`、`KUN_VISUAL_NOVEL_IMAGE_BED_URL`、Next image `remotePatterns`。             |
 | Prisma Client 架构不匹配           | 在目标服务器重新 `pnpm prisma generate`，确认 standalone 内 `.prisma` 和 `@prisma` 已更新。                    |
 | sitemap 缺失                       | 跑 `pnpm build:sitemap`，确认 `scripts/postbuild.ts` 或 `deployPull` 复制到 standalone public。                |
 | build 成功但运行缺资源             | 检查 `postbuild.ts` 的 assert 路径和 release packaging 的复制列表。                                            |
 | 生产站被 noindex                   | 删除 `.env` 中 `KUN_VISUAL_NOVEL_TEST_SITE_LABEL`。                                                            |
-| `deploy:pull` 找不到 release       | 确认 GitHub latest release 有 `release.tar.gz`，`.env` 中 `GITHUB_REPO` 正确，私有仓库配置 `GITHUB_TOKEN`。    |
+| `deploy:pull` 找不到 release       | 确认 latest/指定 tag 有 `release.tar.gz` 与 manifest，`GITHUB_REPO` 正确，私有仓库配置 `GITHUB_TOKEN`。        |
+| 部署提示 tag / commit 不一致       | 停止切换；让工作区 HEAD 精确到目标 tag commit，确认 artifact manifest 来自同一 workflow 后重试。               |
+| 部署锁或 activation journal 存在   | 不要手工删正在使用的锁；确认 owner 进程。中断 journal 交给下一次 deploy/rollback 自动恢复。                    |
 | `deploy:build` 过程内存不足        | 增加 swap，或降低 `ecosystem.config.cjs` 的 `instances`。README 中按服务器核数调整实例数，但内存也会线性增长。 |
 
 ## 投稿域上线顺序
@@ -472,7 +494,7 @@ PM2 管理、服务器使用 GitHub Release artifact 的场景。命令应在生
    ```
 
    ```bash
-   export OTOAME_RELEASE_TAG='<已审核的 Release tag，例如 v2026.08.28.1200>'
+   export OTOAME_RELEASE_TAG='<已审核的 Release tag，例如 v2026.08.28.120000.123.1a2b3c4d>'
    ```
 
    ```bash
@@ -517,9 +539,9 @@ PM2 管理、服务器使用 GitHub Release artifact 的场景。命令应在生
    test "$(git rev-parse HEAD)" = "$(git rev-list -n 1 "$OTOAME_RELEASE_TAG")"
    ```
 
-   这里提前 `git pull` 是为了取得与已审核 Release 相同版本的迁移 SQL；后面的
-   `deploy:pull` 自带的 `git pull` 应当成为无变更操作。上面的 commit 比对失败时
-   不得把当前分支的 SQL 与另一个 tag 的 artifact 混用。
+   这里提前 fast-forward 是为了取得与已审核 Release 相同版本的迁移 SQL；后面的
+   `deploy:pull:pinned` 不会执行 pull 或 checkout。上面的 commit 比对失败时不得把
+   当前分支的 SQL 与另一个 tag 的 artifact 混用。
 
 4. 安装锁文件对应依赖并验证容器内数据库连接。若容器本地连接仍要求密码，使用
    生产环境既有的 `.pgpass` / Docker secret，不要把密码写进命令或 shell 历史：
@@ -621,11 +643,12 @@ PM2 管理、服务器使用 GitHub Release artifact 的场景。命令应在生
    pnpm prisma:deploy-safe
    ```
 
-10. 用固定 tag 部署 artifact。`deploy:pull` 内部会再次运行同一 guard，只有通过后
-    才替换 standalone 并启动 PM2：
+10. 用固定 tag 部署 artifact。`deploy:pull:pinned` 会 fetch 指定 tag，校验
+    HEAD/tag/manifest，并以候选 schema 再次运行 guard；只有 readiness 通过后才完成
+    `.deploy/current` 切换：
 
     ```bash
-    KUN_DEPLOY_RELEASE_TAG="$OTOAME_RELEASE_TAG" pnpm deploy:pull
+    KUN_DEPLOY_RELEASE_TAG="$OTOAME_RELEASE_TAG" pnpm deploy:pull:pinned
     ```
 
 11. 检查进程、数据库对象和 HTTP：

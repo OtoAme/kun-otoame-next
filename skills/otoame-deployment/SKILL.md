@@ -43,15 +43,18 @@ Use this skill for deployment and release work.
 - Production `pnpm deploy:pull` and `pnpm deploy:build` paths must use `pnpm prisma:deploy-safe`; reviewed preflight/sync SQL must already be applied to the target database.
 - Keep the production guard read-only for Prisma schema: accept only an empty diff or the exact, PostgreSQL-catalog-verified Prisma 7.8 `public.patch_released_idx` operator-class exception. Never broaden it to ignore arbitrary diff output; any other drift must abort before build or standalone replacement.
 - Never execute the false drift's proposed `DROP INDEX` / `CREATE INDEX` SQL; it recurs after the next introspection and index replacement can block writes. Development, first install, and disposable CI may continue to use `pnpm prisma:push`.
-- `pnpm deploy:pull` and `pnpm deploy:build` already run `git pull`; do not duplicate that step unless handling conflicts manually.
+- `pnpm deploy:pull` uses a locked fast-forward pull; `pnpm deploy:pull:pinned` fetches only the command-scoped `KUN_DEPLOY_RELEASE_TAG` and never pulls or checks out. `pnpm deploy:build` also fast-forwards under the deployment lock.
 - Missing `patch_resource_access` uses `migration/production-resource-access-bootstrap-preflight-2026-07-12.sql` before the grant pair; stop old PM2 instances through Guard completion and pin the reviewed artifact with command-scoped `KUN_DEPLOY_RELEASE_TAG`.
 - Patch-submission rollout uses the three reviewed preflight/sync pairs in the documented order. The base preflight must remain read-only, guard `patch_submission` and `patch_submission_gallery` independently so first installs and interrupted partial installs do not query missing tables, and require no database default on Prisma `@updatedAt` columns. For containerized PostgreSQL, pipe host SQL through `docker exec -i ... psql -X -v ON_ERROR_STOP=1`; take and verify a host-side custom-format dump after stopping PM2, rerun every preflight as postflight, then run `pnpm prisma:deploy-safe` and the pinned Release deployment.
 - Do not use destructive git rollback commands unless explicitly requested.
 - `release.yml` (targets `main`) is the only workflow; CI runs no tests. Keep the upstream `lint-check.yml` deleted if a sync brings it back — it targets `master` and never fires here.
+- Artifacts contain a strict manifest. Both pull modes require `HEAD = fetched tag commit = manifest commit` before activation.
+- Guard and generate against the candidate Prisma schema before replacing root schema or runtime state; candidate failure leaves the active release intact.
+- Immutable runtimes live in `.deploy/releases`; current/previous are atomic links and `.next/standalone` is compatibility-only. Journal and operation lock fail closed.
+- Activation requires exactly three candidate PM2 instances and loopback HTTP 2xx/3xx. Failure restores and verifies the old release.
+- `pnpm deploy:rollback` recovers an interrupted activation or switches to the verified previous slot without changing Git or database. Manifest-less R1/R3 artifacts remain manual snapshots.
 
 ## Verification
-
-Prefer:
 
 ```bash
 pnpm typecheck

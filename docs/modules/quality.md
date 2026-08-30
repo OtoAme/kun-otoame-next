@@ -15,7 +15,7 @@ pnpm test
 pnpm typecheck
 ```
 
-当前没有统一的 `@playwright/test` config/runner 或 CI harness，但 `tests/e2e/*.e2e.ts` 有三套直接使用 `playwright-core` / HTTP 客户端的投稿与上传脚本。它们会写真实数据，只能连接单独 3100 服务和 disposable `touchgal_e2e`；运行边界见 `docs/project/testing.md`。
+当前没有统一的 `@playwright/test` config/runner 或 CI harness，但 `tests/e2e/*.e2e.ts` 有四套直接使用 `playwright-core` / HTTP 客户端的脚本。它们会写真实数据，只能连接单独 3100 服务和 disposable `touchgal_e2e`；会社身份脚本必须用安全 server launcher 分别跑 resolver off/on，且不触碰 S3。运行边界见 `docs/project/testing.md`。
 
 ## 当前测试覆盖
 
@@ -25,10 +25,12 @@ pnpm typecheck
 | `tests/unit/redis.test.ts`                                 | Redis getOrSet、错误处理和缓存逻辑。                                                                                    |
 | `tests/unit/jwt-session.test.ts`                           | Redis-backed JWT session、多设备、会话删除、legacy token 迁移。                                                         |
 | `tests/unit/edit-store.test.ts`                            | 创建/重写 store 函数式合并，防止外部数据异步返回互相覆盖。                                                              |
-| `tests/unit/company-merge-plan.test.ts`                    | 公司 name/alias 脏数据自动合并计划和预览。                                                                              |
-| `tests/unit/company-identity-maintenance.test.ts`          | 公司身份碰撞盘点、权威 VNDB 证据回填计划，以及只允许权威 alias 驱动自动合并。                                           |
+| `tests/unit/company-cleanup-frozen-*.test.ts`              | 冻结会社 inventory/decisions/plan、SHA、漂移零写入、事务回滚、重放、receipt 与独立缓存重试。                            |
+| `tests/unit/company-identity-maintenance.test.ts`          | 公司身份碰撞盘点和权威 VNDB 证据；合并/删除必须进入人工审核的冻结计划。                                                 |
 | `tests/unit/tag-company-count-migration.test.ts`           | 标签 / 会社计数四份生产 SQL、六个语句级触发器、锁定回填、回滚范围及禁止应用层手工计数。                                 |
-| `tests/unit/company-identity-constraint-migration.test.ts` | 公司身份 Phase B 三份生产 SQL、阻断 / 告警边界、最终唯一索引与 Prisma schema 契约。                                     |
+| `tests/unit/company-identity-constraint-migration.test.ts` | 公司身份 Phase B 上线与回滚 SQL、阻断 / 告警边界、最终唯一索引和 Phase A 恢复契约。                                     |
+| `tests/unit/deploy-*.test.ts`                              | Release manifest、候选 guard、持久 current/previous、锁/journal、PM2/HTTP readiness 和失败恢复。                        |
+| `tests/unit/e2e-*.test.ts`                                 | `_e2e` 数据库备份/reset 防护与 3100 resolver off/on 安全 launcher。                                                     |
 | `tests/unit/resource-link.test.ts`                         | 资源链接和提取码解析。                                                                                                  |
 | `tests/unit/api/resource-access-policy.test.ts`            | 游客游戏资源每日/每周额度、登录用户和补丁资源免产品限额，以及 24 小时授权常量。                                         |
 | `tests/unit/api/resource-access-grant.test.ts`             | 资源级 grant、`resource_grant` / `link_reveal` 分类、日/周边界、并发冲突和不延长授权。                                  |

@@ -22,6 +22,8 @@ Use this skill for project-specific testing work; checklists and the file map li
 - `tests/e2e/*.e2e.ts` create and settle real records. Confirm the running 3100 server actually uses disposable `touchgal_e2e`; never fall back to the default `.env` database.
 - Assert behavior — return values, Prisma conditions and transaction boundaries, cache invalidation, upload lock/finalize/compensation, permission and quota edges. Never assert only that a mock was called.
 - Money paths assert the business write, conditional balance update and ledger snapshot in one transaction, plus negative reversals and reason truncation.
+- Destructive E2E preparation requires `e2e:db:prepare --reset --backup=<absolute-new-file>`. The explicit URL must differ from `KUN_DATABASE_URL` and end exactly `_e2e`; backup verification precedes reset. Docker uses guarded `KUN_E2E_PG_CONTAINER` and additionally requires a loopback URL.
+- Company identity E2E uses the safe 3100 launcher twice: resolver off, restart, resolver on. It verifies database sentinel and actual server flag and never touches S3.
 
 ## Verification
 

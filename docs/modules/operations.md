@@ -30,6 +30,8 @@
 - `pnpm deploy:install`
 - `pnpm deploy:build`
 - `pnpm deploy:pull`
+- `pnpm deploy:pull:pinned`
+- `pnpm deploy:rollback`
 - `pnpm gallery:ffmpeg:install`
 - `pnpm start`
 - `pnpm stop`
@@ -41,7 +43,8 @@
 - `maintenance:resource-attributes:*`
 - `maintenance:dirty-tags:*`
 - `maintenance:tags:*`
-- `maintenance:companies:dirty:*`
+- `maintenance:companies:inventory` / `maintenance:companies:plan`
+- `maintenance:companies:dirty:dry` / `maintenance:companies:dirty:apply` / `maintenance:companies:dirty:cache`
 - `maintenance:conversation-images:*`
 - `maintenance:submission-assets:*`
 - `stickers:sync`：校验并同步内置 Sticker Pack 资源。默认 dry-run；加 `--apply` 后才会上传 WebP/WebM、生成动态 poster 并 upsert 数据库目录。静态 WebP 最大 512 KB，动态 WebM 必须为带透明通道、无音频的 VP9，最大 300 KB，超限直接拒绝；poster 使用内容哈希 key，避免 immutable CDN 复用旧图。
@@ -53,6 +56,9 @@
 
 ### 验证脚本
 
+- `pnpm e2e:db:prepare --reset --backup=<绝对且不存在的文件>`：只对显式 `KUN_E2E_DATABASE_URL` 的 `*_e2e` PostgreSQL 建立并验证备份后重置；`KUN_E2E_PG_CONTAINER` 启用 Docker 内 `pg_dump` / `psql`，此模式额外要求 loopback URL。
+- `pnpm e2e:company-server --resolver=off|on`：唯一的 3100 company E2E server launcher，拒绝共享 `.next` 的 3000/3100 并发 dev server。
+- `pnpm e2e:company-identity --expect-resolver=off|on`：在 server 两次重启之间分别验证两种运行时语义；只连接 `_e2e`，不走 S3 写入或删除。
 - `pnpm gallery:ffmpeg:install`：可选安装 Linux x64/arm64 BtbN FFmpeg 到 `node_modules/.ffmpeg/ffmpeg`，用于强 animated AVIF gallery 缩略图；普通安装不自动运行，保持部署较轻。自备 FFmpeg 时也可以改用 `.env` 的 `KUN_GALLERY_FFMPEG_PATH` 指向绝对路径，修改后需要重启 PM2。
 - `pnpm exec esno scripts/verifyGalleryAnimatedAvifThumbnail.ts <animated.avif> [output.avif]`：验证当前机器的 `KUN_GALLERY_FFMPEG_PATH`、standalone `.ffmpeg/ffmpeg`、`ffmpeg-static` 或系统 `ffmpeg/libaom-av1` 能否生成 animated AVIF gallery 缩略图；只读写本地文件，不访问数据库或 S3。脚本会列出各候选 FFmpeg 对输入样本和输出缩略图解析到的帧数，包括 Linux FFmpeg 暴露出的非默认多帧 video stream，避免把静态首帧误判为 animated AVIF。生产运行前应在目标服务器执行，建议使用 `pnpm exec esno scripts/verifyGalleryAnimatedAvifThumbnail.ts ./public/images/animated-sample.avif ./public/images/tmp/animated-sample-thumb.avif`，确认输出 `Wrote animated AVIF thumbnail: ... frames ...`。
 
@@ -76,22 +82,27 @@ gallery thumbnails summary 字段含义：`galleryTotal` 是当前范围内 URL 
 
 conversation images summary 字段含义：`scanned` 是本次从 S3 列出的对象数；`eligible` 是符合 key 规范、超过时间阈值且未被消息引用的候选数；`deleted` 是 apply 实际删除的对象数；`referenced` 是仍被消息字段引用而跳过的对象数；`tooNew` 是未超过安全时间阈值的对象数；`invalidKey` 是不符合私聊图片 key 规范的对象数；`failed` 是删除失败数量。dry-run 的 `Candidates` 列表只是预览，不代表已删除。
 
-`maintenance:tags:auto-alias:dry` 会在生产库里扫描“某个 tag 的 name 命中另一个主 tag 的 alias”的历史重复数据，并生成合并计划。dry-run 只做计划校验和关系数量预览，不加载所有受影响 patch 的 `unique_id`，避免生产数据量大时预览过慢。确认输出无误后再运行 `maintenance:tags:auto-alias:apply`；apply 会移动 patch 关系、合并 alias、修正 count、迁移用户 blocked tag，并失效 tag/list/受影响 patch 内容缓存。多主 tag 共用同一 alias 时会跳过并输出 warning，需要人工计划。
+`maintenance:tags:auto-alias:dry` 会在生产库里扫描“某个 tag 的 name 命中另一个主 tag 的 alias”的历史重复数据，并生成合并计划。dry-run 只做计划校验和关系数量预览，不加载所有受影响 patch 的 `unique_id`，避免生产数据量大时预览过慢。确认输出无误后再运行 `maintenance:tags:auto-alias:apply`；apply 会移动 patch 关系、合并 alias、迁移用户 blocked tag，并失效 tag/list/受影响 patch 内容缓存。`patch_tag.count` 随关系变化由数据库触发器维护，脚本不得修正。多主 tag 共用同一 alias 时会跳过并输出 warning，需要人工计划。
 
 手工合并仍使用 `maintenance:tags:merge:* -- --plan=path/to/merge-plan.json`。本地库没有生产 tag 数据时，不要用本地 dry-run 结果判断生产影响面，应在生产备份后对生产库 dry-run。
 
-`maintenance:companies:dirty:dry` 会盘点规范化主名碰撞、alias 与其它公司主名碰撞、共享 alias、外部身份冲突、缺失的 `normalized_name`、`legacy` alias 总量及空公司。默认还会以公司关联作品的 VNDB ID 重新抓 producer：只有 producer 的权威主名或别名命中该公司规范化主名、且 producer ID 在全局只指向这一家公司时，才计划回填 `patch_company_external_id` 并把有依据的 alias 升为 `authoritative`。抓取失败只记 warning；只做本地盘点时可运行 `pnpm maintenance:companies:dirty:dry -- --skip-vndb`。
+生产会社清理使用**冻结计划**，不再由 dry/apply 每次重新联网和重新规划。完整顺序是 inventory → 人工 decisions → plan → dry → apply → cache：
 
-自动合并只接受 `authoritative` alias 指向另一家公司主名这一种证据；`legacy` alias、仅名称相似、共享权威 alias、多 producer 候选或已被其它公司占用的 producer ID 都不会自动写入。脚本还会扫描带服务端候选快照的已发布投稿，将快照损坏、阻断歧义和 `external-id-name-conflict` 与正式会社关系列入维护输出。dry-run 会模拟本轮权威证据带来的合并，但不写数据库；apply 按短事务回填证据、迁移 `patch_company_relation`、合并 alias / primary_language / official_website / parent_brand、删除重复公司和空公司，并失效 company/list/受影响 patch 内容缓存。`patch_company.count` 由数据库触发器随关系变化维护，脚本不得自行重算。
+```bash
+pnpm maintenance:companies:inventory --out=/var/lib/kun-otoame/maintenance/company/<run-id>/company-inventory.json
+pnpm maintenance:companies:plan --inventory=/var/lib/kun-otoame/maintenance/company/<run-id>/company-inventory.json --decisions=/var/lib/kun-otoame/maintenance/company/<run-id>/company-decisions.json --out=/var/lib/kun-otoame/maintenance/company/<run-id>/company-cleanup-plan.json
+pnpm maintenance:companies:dirty:dry --plan=/var/lib/kun-otoame/maintenance/company/<run-id>/company-cleanup-plan.json
+pnpm maintenance:companies:dirty:apply --plan=/var/lib/kun-otoame/maintenance/company/<run-id>/company-cleanup-plan.json --confirm-sha256=<审核过的计划摘要>
+pnpm maintenance:companies:dirty:cache --plan=/var/lib/kun-otoame/maintenance/company/<run-id>/company-cleanup-plan.json
+```
 
-生产公司清理流程：
+`inventory` 只读生产数据库并写出带 SHA-256 sidecar 的 canonical JSON；人工 decisions 只能用 inventory 中的 opaque company ref 表达合并、删除、owner / introduction 保留策略与理由。**零作品关系不是删除指令**：任何公司删除都必须显式写入 decisions，并再次出现在审核过的冻结 plan 中；没有明确裁决的空公司、仅名称相近、`legacy` alias、共享 alias 或歧义证据一律保留。
 
-1. 先备份数据库。
-2. 在生产备份或生产库上运行 `pnpm maintenance:companies:dirty:dry`。
-3. 核对每条权威证据更新、`merge into` 和 warning；有歧义时先人工决定 canonical 公司，不要把 warning 当成可忽略项。
-4. 确认 dry-run 输出后运行 `pnpm maintenance:companies:dirty:apply`。apply 可重入；若中途失败，修正原因后重新运行。
-5. 再运行一次 dry-run。规范化主名碰撞、外部身份冲突等阻断项必须清零或已有明确人工裁决；共享 alias 可以作为合法 warning 保留。`legacy` alias 是否参与规范化匹配只能依据这次生产盘点另行决定，当前仍不参与。
-6. 复查公司详情页、游戏详情页和公司游戏列表缓存是否已刷新。
+`plan` 是唯一允许访问 VNDB 的阶段。它先后读取实时数据库快照 A/B，网络请求在两次读取之间；任一 normalized name、external ID、identity 或 relation digest 变化都拒绝产出计划。plan 冻结证据、动作、完整前后状态、缓存目标、工具/规范化版本和生成 commit，并写出独立 SHA sidecar。inventory、decisions、plan、sidecar、receipt、日志与数据库备份应放在仓库和所有 worktree 之外的 `0700` 持久目录，文件使用 `0600`，不得提交或跟随部署清理。
+
+`dirty:dry` 与 `dirty:apply` 不访问 VNDB、Redis 或 Cloudflare，只接受同一个严格 plan。apply 还要求 `--confirm-sha256` 精确匹配，按固定顺序锁住 company relation/company/external ID/name identity 四张表，再核对计数触发器、计数不变量和完整前置快照；任何漂移均在零写入状态失败，整份计划在一个事务里提交或整体回滚。`dirty:cache` 不再写数据库或访问 VNDB，只按 receipt 重试 Redis 与 Cloudflare。`patch_company.count` 只由数据库触发器维护，脚本不增减也不重算。
+
+apply 提交后写 receipt。若 Redis / Cloudflare 失效失败，只在数据库仍等于计划完整后置状态时重跑 `dirty:cache`，不要重新生成计划或重写数据库。合并没有自动 unmerge；恢复依赖执行前验证过的数据库备份和本次审计物。
 
 ## Postbuild
 
@@ -123,7 +134,8 @@ Next standalone 默认不会自动带上 `public` 和 `.next/static`，这是 Ne
 - 运行 `pnpm prisma:push`。
 - 运行 `pnpm build`，并设置 `KUN_DEPLOY_BUILD_SKIP_CHECKS=true`。
 - 打包 `release.tar.gz`，内容包括 standalone、`.next/static`、`.next/server`、`.next/BUILD_ID`、`public`、`server/image`、`posts`、`config/redirect.json` 和 `prisma`。
-- 创建 CalVer GitHub Release。
+- 生成包含秒、workflow run number 与短 commit SHA 的唯一 CalVer tag，并创建 GitHub Release。
+- 在 artifact 根目录写入 `release-manifest.json`，绑定 manifest version、tag 与精确 commit SHA。
 
 release packaging 还会删除包内 `package.json` 的 `"type": "module"`，并把 `server.js` 改名为 `server.mjs`。`ecosystem.config.cjs` 和 `deployPull.ts` 都支持优先启动 `server.mjs`，本地 standalone 则回退到 `server.js`。
 
@@ -131,35 +143,33 @@ release packaging 还会删除包内 `package.json` 的 `"type": "module"`，并
 
 ## Deploy Pull
 
-`scripts/deployPull.ts`：
+`pnpm deploy:pull` 是 latest 模式：部署锁内先要求工作区干净并执行 `git pull --ff-only`，再取得 GitHub latest Release。高风险维护窗口使用 pinned 模式：
 
-- 读取 `.env`。
-- 查询 GitHub latest release。
-- 下载 `release.tar.gz`。
-- 解压到 `.next_temp`。
-- 用 release 内的 `prisma` 替换根目录 schema。
-- 运行 `pnpm prisma:deploy-safe`：先执行可能写入 schema/data 的资源链接兼容迁移，再只读校验生产 schema，最后在目标服务器生成 Prisma Client。
-- 注入 `.prisma` 和 `@prisma` 到 standalone node_modules。
-- 注入目标服务器 `node_modules/ffmpeg-static` 到 standalone node_modules，避免 release artifact 中 bundled ffmpeg 的平台架构和生产服务器不一致。
-- 如果目标服务器存在可选 `node_modules/.ffmpeg/ffmpeg`，同步注入 standalone `.ffmpeg/ffmpeg`。
-- 如果 `.env` 设置了 `KUN_GALLERY_FFMPEG_PATH`，运行时会优先使用该绝对路径；deploy artifact 不会复制这个外部路径，目标服务器必须自行保留该可执行文件。
-- 原子替换 `.next/standalone`。
-- 生成 sitemap 并复制到 standalone public。
-- 删除旧 PM2 进程，再从新 standalone cwd 启动。
+```bash
+KUN_DEPLOY_RELEASE_TAG='<审核过的 tag>' pnpm deploy:pull:pinned
+```
 
-`pnpm deploy:pull` 已经包含 `git pull`。
+pinned 模式只 fetch 指定 tag 到临时 ref，不执行 pull、merge 或 checkout。两种模式都要求当前 `HEAD`、fetch 后剥离到 commit 的 tag 与 artifact manifest 三者的 commit 完全相同，并校验 manifest tag；旧版没有 manifest 的 R1/R3 artifact 只能按历史人工快照流程保留，不能交给当前 deploy pull。
+
+下载的候选先在临时目录接受 candidate Prisma guard：兼容迁移先运行，schema guard 通过显式 `--schema` 校验候选 schema，随后才为候选生成并注入目标服务器架构的 Prisma Client、`@prisma`、`ffmpeg-static` 与可选 `.ffmpeg/ffmpeg`。guard 失败不会先替换根 schema 或当前 runtime。
+
+已验证 runtime 以 `<commit>-<tag>` 保存到 `.deploy/releases/`。`.deploy/current` 和 `.deploy/previous` 是原子切换的符号链接；`.next/standalone` 只保留指向 `.deploy/current` 的兼容链接，构建清理 `.next` 不会删除可回滚 release。部署操作由 `.deploy/operation.lock` 串行化，切换前写 `.deploy/activation-journal.json`；中断后先恢复 journal 指向的旧 release。
+
+激活后必须同时满足：恰好 3 个 `kun-touchgal-next` PM2 实例 online、cwd/script 指向候选 release，以及 loopback `KUN_DEPLOY_SMOKE_URL`（默认 `http://127.0.0.1:3000/`）返回 2xx/3xx。`KUN_DEPLOY_READINESS_TIMEOUT_MS` 可设为 5000–120000 毫秒。候选未就绪时自动恢复并验证旧 release；旧 release 也无法恢复时命令以聚合错误退出。
+
+离线应用回滚使用：
+
+```bash
+pnpm deploy:rollback
+```
+
+它只恢复中断激活或切到 `.deploy/previous`，重新校验 PM2/HTTP 后才完成；不访问 GitHub、不改 Git、不运行 Prisma guard，也不改数据库。数据库 schema 回滚必须另走审核过的 rollback SQL。
 
 私有仓库需要 `GITHUB_TOKEN`。下载时脚本会处理 GitHub/S3 跳转，并且跨域跳转不会继续携带 Authorization header。
 
 ## Deploy Build
 
-`scripts/deployBuild.ts`：
-
-- 校验 `.env` 是否存在。
-- 加载并验证环境变量。
-- 如果存在 `KUN_VISUAL_NOVEL_TEST_SITE_LABEL`，输出测试站 noindex 警告。
-- 执行 `git pull && pnpm i && pnpm prisma:deploy-safe && pnpm build && pm2 startOrReload ecosystem.config.cjs`。
-- build 时注入 `KUN_DEPLOY_BUILD_SKIP_CHECKS=true`。
+`scripts/deployBuild.ts` 使用同一部署锁与 immutable slot/readiness 机制：先 fast-forward pull、安装依赖并运行 `pnpm prisma:deploy-safe`，再在服务器构建候选、补齐 Prisma/FFmpeg/runtime assets，写本地 manifest 并激活。build 时注入 `KUN_DEPLOY_BUILD_SKIP_CHECKS=true`，但发布前仍必须单独通过类型与测试门禁。
 
 这个路径会在服务器上完整构建，比 `deploy:pull` 消耗更多 CPU/内存，但不依赖 GitHub Release 产物。
 
@@ -194,7 +204,7 @@ release packaging 还会删除包内 `package.json` 的 `"type": "module"`，并
 然后复用现有 grant pair。Bootstrap 保持手工执行，不加入 deploy-safe。Steam ID
 sync 已支持清理并重建 invalid/not-ready/not-live 的目标索引，并在资源访问停机
 窗口前完成 postflight。维护窗口部署使用
-`KUN_DEPLOY_RELEASE_TAG='<已审核 tag>' pnpm deploy:pull` 固定目标产物。
+`KUN_DEPLOY_RELEASE_TAG='<已审核 tag>' pnpm deploy:pull:pinned` 固定目标产物。
 
 `migration/*` 包含生产辅助 SQL 和脚本，`migration/backup/*` 是历史脚本。
 
@@ -272,26 +282,34 @@ psql -X --set ON_ERROR_STOP=on -d "$KUN_DATABASE_URL" -f migration/production-ta
 
 Docker 中的 PostgreSQL 使用既有的 `docker exec -i ... psql ... < migration/...sql` 形式逐份执行。回滚必须暂停所有标签 / 会社关系写入：先运行 rollback（它只删除这六个目标触发器与函数，并在同一事务加锁重算两类计数），再部署带手工计数的旧应用；确认 preflight 只报告对象待创建且计数无偏差后才恢复写入。不要只回滚应用，也不要在写入仍开放时只删除触发器。
 
-会社身份 Phase B 使用以下三份 SQL，把 Phase A 的可空 / 普通索引升级为 `normalized_name NOT NULL UNIQUE` 与 `(source, external_id) UNIQUE`：
+会社身份 Phase B 把 Phase A 的可空 / 普通索引升级为 `normalized_name NOT NULL UNIQUE` 与 `(source, external_id) UNIQUE`。交付物同时包含数据库回退和回退后检查：
 
 - `production-company-identity-constraint-preflight-2026-08-30.sql`
 - `production-company-identity-constraint-sync-2026-08-30.sql`
 - `production-company-identity-constraint-postflight-2026-08-30.sql`
+- `production-company-identity-constraint-rollback-2026-08-30.sql`
+- `production-company-identity-constraint-rollback-postflight-2026-08-30.sql`
 
-这一步开始连续停写窗口。先暂停创建游戏、重写游戏和投稿批准等会社关系写入，再运行身份 backfill dry-run 与公司脏数据 dry-run；在停写状态下解决全部缺失规范化主名、规范化主名碰撞和 external ID 冲突。跨会社共享 alias 是合法 warning，不要求清零。确认后依次运行：
+这一步开始连续停写窗口。先暂停创建游戏、重写游戏和投稿批准等会社关系写入，再运行身份 backfill dry-run，并按本节前述冻结流程重新生成生产 inventory、人工 decisions 与 plan。生产计划必须在停写后的实时快照上生成和审核，不能复用本地 ID 或停写前已漂移的 plan；跨会社共享 alias 是合法 warning，不要求清零。确认后依次运行：
 
 ```bash
 pnpm maintenance:companies:identity:dry
-pnpm maintenance:companies:dirty:dry
+pnpm maintenance:companies:inventory --out=<审计目录>/company-inventory.json
+pnpm maintenance:companies:plan --inventory=<审计目录>/company-inventory.json --decisions=<审计目录>/company-decisions.json --out=<审计目录>/company-cleanup-plan.json
+pnpm maintenance:companies:dirty:dry --plan=<审计目录>/company-cleanup-plan.json
+pnpm maintenance:companies:dirty:apply --plan=<审计目录>/company-cleanup-plan.json --confirm-sha256=<审核过的计划摘要>
+pnpm maintenance:companies:dirty:cache --plan=<审计目录>/company-cleanup-plan.json
 psql -X --set ON_ERROR_STOP=on -d "$KUN_DATABASE_URL" -f migration/production-company-identity-constraint-preflight-2026-08-30.sql
 psql -X --set ON_ERROR_STOP=on -d "$KUN_DATABASE_URL" -f migration/production-company-identity-constraint-sync-2026-08-30.sql
 psql -X --set ON_ERROR_STOP=on -d "$KUN_DATABASE_URL" -f migration/production-company-identity-constraint-postflight-2026-08-30.sql
 pnpm prisma:deploy-safe
 ```
 
-sync 会删除 Phase A 的两个普通索引并创建 Prisma 原生可表达的两个唯一索引；不要用 `prisma db push` 代替。postflight 与 `prisma:deploy-safe` 通过后，先保持 `KUN_COMPANY_IDENTITY_RESOLVER_ENABLED=false` 部署兼容版本，再将它改为 `true` 并重启受控实例。此开关会同时切换 `/edit`、作者 / 管理员投稿预览与投稿批准，不能分开启用。
+sync 会删除 Phase A 的两个普通索引并创建 Prisma 原生可表达的两个唯一索引；不要用 `prisma db push` 代替。postflight 通过后，用 R4 artifact 的**候选 schema**执行 guard/Client 生成并部署，resolver 先保持 `false`，再改为 `true` 并重启受控实例。此开关会同时切换 `/edit`、作者 / 管理员投稿预览和投稿批准，不能分开启用。
 
 恢复外部写入前，必须在 flag 已开启的实例完成三条烟雾测试：创建一条游戏、重写一条游戏、批准一条投稿；逐条核对预览 canonical 会社与正式关系一致，Bangumi 独有发行 / 制作会社没有被丢弃，并且没有唯一冲突残留。若失败，把 flag 恢复为 `false` 并重启；Phase B 兼容层可承接 flag-off 流量，此时可以恢复写入后再排查。只有兼容层也失败才需要继续停写。
+
+Phase B 后应用失败时，先在 resolver=false 下运行 `pnpm deploy:rollback` 恢复 `.deploy/previous`，并做 flag-off 兼容烟雾；这一步不改数据库。只有 previous release 的兼容层也无法在 Phase B 上运行时，才继续保持停写并执行 constraint rollback SQL，随后运行 rollback postflight。rollback 只移除两个最终唯一索引、恢复 Phase A 普通索引并取消 `normalized_name NOT NULL`，不删除 company、identity、external ID 或投稿快照数据；数据库回到 Phase A 后才能启动只兼容 Phase A 的旧应用。
 
 生产变更要求：
 

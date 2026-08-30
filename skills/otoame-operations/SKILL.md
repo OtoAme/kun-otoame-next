@@ -17,7 +17,7 @@ Use this skill for operational code and release plumbing.
 
 - Runtime assets copied by `postbuild.ts` must also be packaged in `.github/workflows/release.yml`.
 - Release packaging also handles `.next/server`, `.next/BUILD_ID`, Prisma schema, and `server.js` to `server.mjs`.
-- `pnpm deploy:pull` and `pnpm deploy:build` already run `git pull`.
+- Latest deploy uses a locked fast-forward pull; pinned deploy only fetches `KUN_DEPLOY_RELEASE_TAG` and never pulls or checks out.
 - Production deploy paths use `pnpm prisma:deploy-safe`; reviewed preflight/sync SQL must already be applied. Development, first install, and disposable CI may continue to use `pnpm prisma:push`.
 - Keep the Prisma guard read-only and the exception exact: only an empty diff or the PostgreSQL-catalog-verified Prisma 7.8 `public.patch_released_idx` operator-class false drift is allowed. Never ignore arbitrary diff output; any other drift must abort before build or standalone replacement.
 - Never run the false drift's proposed `DROP INDEX` / `CREATE INDEX` SQL because it recurs after introspection and index replacement can block production writes.
@@ -35,14 +35,16 @@ Use this skill for operational code and release plumbing.
 - Submission asset maintenance uses `maintenance:submission-assets:dry` before `maintenance:submission-assets:apply`. Dry-run must remain read-only. Apply processes terminal submission-row outboxes, persisted orphan jobs, then newly discovered S3 orphans; persist each new orphan key and all current purge URLs before deletion, re-check live references at execution, and retain failed jobs for retry. Production must install the `patch_submission_orphan_cleanup` schema before deploying code that writes it.
 - `cleanupSubmissionAssetsTask` runs the same engine at 04:00 Asia/Shanghai with `apply: false`, local no-overlap, and an 8-hour multi-instance lock. Register/start it only through `server/cron.ts`; never call the dependency `close()` from the resident task because it disconnects shared Prisma.
 - Tag alias cleanup uses `maintenance:tags:auto-alias:dry` before `maintenance:tags:auto-alias:apply`; local empty tag data does not validate production impact.
-- Company cleanup uses `maintenance:companies:dirty:dry` before `maintenance:companies:dirty:apply`; it only auto-merges authoritative alias evidence, deletes zero-relation empty companies, and leaves ambiguous/shared/legacy evidence for manual canonical decisions. Counts belong to database triggers, not this script.
-- Tag/company counters deploy in this order: application without manual deltas (legacy absolute repairs still present) → reviewed preflight/sync/postflight SQL → application without legacy repairs. The sync owns six statement-level transition-table triggers and locks both relation tables in SHARE mode before absolute backfill. Rollback pauses relation writes, runs the reviewed rollback SQL, restores manual-counter code, and only then resumes writes.
-- Company identity Phase B starts a continuous relation-write pause: rerun identity/dirty inventories, resolve all normalized-name and external-ID blockers, run the reviewed constraint preflight/sync/postflight plus `prisma:deploy-safe`, deploy flag-off compatibility, then enable the single server-only resolver flag and smoke-test create/rewrite/submission approval before writes resume. Shared aliases are warnings, not blockers; never substitute production `prisma db push`.
+- Company cleanup is frozen: inventory → human decisions → plan → dry → apply → cache. Only plan may call VNDB. Apply requires the exact SHA, locks all company state, rejects drift before writes, and emits a receipt. Cache retry verifies the complete post-state. Zero relations never imply deletion; decisions and plan must explicitly name it.
+- Keep private inventory, decisions, plan, sidecar, receipt, logs, and verified backup outside repositories/worktrees.
+- Six statement-level transition-table triggers exclusively own tag/company counts. Application and maintenance code never adjusts them. Sync locks both relation tables before backfill; rollback pauses relation writes first.
+- Phase A precedes dependent code. Phase B requires a continuous write pause, fresh frozen cleanup, constraint migration/postflight, candidate guard, flag-on smoke tests, and reviewed rollback/postflight.
+- Deployment uses manifest-bound immutable slots, journal, lock, PM2/HTTP readiness, and offline previous-slot rollback. Manifest-less R1/R3 remains manual.
 
 ## Verification
 
 ```bash
-pnpm test tests/unit/company-merge-plan.test.ts
+pnpm test tests/unit/company-cleanup-frozen-planner.test.ts
 pnpm test tests/unit/gallery-thumbnail-backfill.test.ts
 pnpm test
 pnpm typecheck

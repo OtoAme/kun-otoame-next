@@ -235,14 +235,14 @@ pnpm start
 
 后续更新有两条路径：
 
-- 使用 GitHub Release artifact：服务器第一次必须已经跑过 `pnpm deploy:install`。更新时执行 `pnpm deploy:pull`；如果服务器安装过 `node_modules/.ffmpeg/ffmpeg`，脚本会一起注入 standalone。
+- 使用 GitHub Release artifact：服务器第一次必须已经跑过 `pnpm deploy:install`。更新 latest 时执行 `pnpm deploy:pull`；部署审核过的固定 tag 时设置命令级 `KUN_DEPLOY_RELEASE_TAG` 并执行 `pnpm deploy:pull:pinned`。两者都会把服务器的 Prisma/FFmpeg runtime 注入不可变 release 槽。
 - 使用服务器本地构建：执行 `pnpm deploy:build`。如果你依赖可选 BtbN FFmpeg，且服务器依赖目录被清理过，先重新运行 `pnpm gallery:ffmpeg:install`，再构建。
 
 ### CI/CD 方案
 
 只需将代码推送到 `main` 分支，CI 流水线会自动运行。
 
-GitHub Actions 会自动构建项目，并在 Releases 页面生成一个名为 `vYYYY.MM.DD.HHMM` 的新版本，包含 `release.tar.gz`。
+GitHub Actions 会自动构建项目，并在 Releases 页面生成一个带秒、run number 与短 commit SHA 的唯一版本，例如 `vYYYY.MM.DD.HHMMSS.<run>.<sha>`。`release.tar.gz` 内含 manifest，绑定该 tag 与精确 commit。
 
 构建完毕后，需要手动在服务器端执行
 
@@ -250,7 +250,19 @@ GitHub Actions 会自动构建项目，并在 Releases 页面生成一个名为 
 pnpm deploy:pull
 ```
 
-脚本会自动 `git pull` 更新项目源码，从 GitHub 下载最新的 release.tar.gz 构建产物并应用，速度取决于网络，通常仅需几秒。
+脚本在部署锁内执行 fast-forward pull，验证 `HEAD = Release tag commit = artifact manifest commit`，再下载并验证候选。候选以 `.deploy/releases/<commit>-<tag>` 保存，只有 PM2 3 个实例和 loopback HTTP 探针都通过才切换 `.deploy/current`；失败会恢复并验证 `.deploy/previous`。
+
+维护窗口部署固定 Release：
+
+```bash
+KUN_DEPLOY_RELEASE_TAG='vYYYY.MM.DD.HHMMSS.<run>.<sha>' pnpm deploy:pull:pinned
+```
+
+pinned 模式不执行 pull、merge 或 checkout。离线回滚只切换已保留的应用 release，不访问 GitHub 或数据库：
+
+```bash
+pnpm deploy:rollback
+```
 
 当前仓库的 CI 只有 release workflow（监听 `main`），不运行测试或类型检查；发布前验证方式以 [部署手册](./docs/project/deployment.md) 的 CI 分支说明为准。
 
@@ -279,6 +291,10 @@ pnpm deploy:pull
    # (可选) 如果是私有仓库，需要提供 GitHub Token
    # 申请地址: https://github.com/settings/tokens (权限需勾选: repo)
    # GITHUB_TOKEN="ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+
+   # (可选) 部署 readiness；只能使用 loopback HTTP，超时范围 5000-120000 ms
+   # KUN_DEPLOY_SMOKE_URL="http://127.0.0.1:3000/"
+   # KUN_DEPLOY_READINESS_TIMEOUT_MS="30000"
    ```
 
 3. 部署完成后，您可以通过以下命令检查服务状态：
@@ -325,7 +341,10 @@ pnpm deploy:pull
    const fs = require('fs')
    const dotenv = require('dotenv')
 
-   const standaloneDir = path.join(__dirname, '.next', 'standalone')
+   const managedCurrentDir = path.join(__dirname, '.deploy', 'current')
+   const standaloneDir = fs.existsSync(managedCurrentDir)
+     ? managedCurrentDir
+     : path.join(__dirname, '.next', 'standalone')
    const scriptPath = fs.existsSync(path.join(standaloneDir, 'server.mjs'))
      ? 'server.mjs'
      : 'server.js'
@@ -435,11 +454,12 @@ sync，再用同一固定 snapshot 运行既有 grant preflight/sync 两次及 p
 `prisma:push` 代替。高风险维护窗口用命令级变量固定已审核 Release：
 
 ```bash
-KUN_DEPLOY_RELEASE_TAG='vYYYY.MM.DD.HHMM' pnpm deploy:pull
+KUN_DEPLOY_RELEASE_TAG='vYYYY.MM.DD.HHMMSS.<run>.<sha>' pnpm deploy:pull:pinned
 ```
 
-变量只作用于本次命令。迁移或 Guard 中止后不得重启旧 Release，也不得复用旧的
-max ID/cutover；重新 preflight 并完成迁移后只启动固定 tag 的新 Release。
+变量只作用于本次命令。pinned 模式不 pull 或 checkout，并要求当前 HEAD、目标 tag
+和 artifact manifest 指向同一 commit。迁移或 Guard 中止后不得重启不兼容的旧
+Release，也不得复用旧的 max ID/cutover；重新 preflight 后只启动固定 tag 的新 Release。
 
 ![warning](./public/images/warning.png)
 
@@ -493,7 +513,9 @@ no
 | **生产构建**                    | `pnpm build`                                           | 生产编译                                           |
 | **生产启动**                    | `pnpm start`                                           | 项目后台运行                                       |
 | **生产停止**                    | `pnpm stop`                                            | 项目停止运行                                       |
-| **CI/CD 更新**                  | `pnpm deploy:pull`                                     | 服务器端拉取 GitHub Actions 构建产物，自动应用更新 |
+| **CI/CD 更新**                  | `pnpm deploy:pull`                                     | fast-forward 后部署 manifest 绑定的 latest Release |
+| **固定 Release**                | `KUN_DEPLOY_RELEASE_TAG=... pnpm deploy:pull:pinned`   | 不 pull/checkout，只部署与 HEAD 完全一致的审核 tag |
+| **离线应用回滚**                | `pnpm deploy:rollback`                                 | 恢复 previous 槽并验证 PM2/HTTP；不改 Git/数据库   |
 | **本地一键更新**                | `pnpm deploy:build`                                    | 服务器端本地构建自动更新                           |
 | **可选 FFmpeg**                 | `pnpm gallery:ffmpeg:install`                          | Linux x64 / arm64 动态 AVIF 缩略图增强             |
 | **查看状态**                    | `pm2 status`                                           | 查看 PM2 进程状态                                  |

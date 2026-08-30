@@ -33,9 +33,10 @@ tests/unit/
 - JWT session：`tests/unit/jwt-session.test.ts`。
 - Redis 封装：`tests/unit/redis.test.ts`。
 - 创建/重写 store 合并：`tests/unit/edit-store.test.ts`。
-- 公司脏数据合并计划：`tests/unit/company-merge-plan.test.ts`；身份盘点、权威 VNDB 证据与仅权威 alias 自动合并：`tests/unit/company-identity-maintenance.test.ts`。
+- 会社维护：`company-identity-maintenance.test.ts` 覆盖身份盘点；`company-cleanup-frozen-*.test.ts` 覆盖 canonical inventory/decisions/plan、SHA、冻结证据、漂移零写入、事务回滚、重放与独立 cache receipt。零关系会社不会隐式删除。
 - 标签 / 会社计数触发器：`tests/unit/tag-company-count-migration.test.ts` 静态锁定四份生产 SQL、六个 statement-level transition-table 触发器、SHARE 锁回填、rollback 范围和应用层无手工计数。Vitest 不执行数据库触发器，真实计数不变量由 PostgreSQL 演练与生产 postflight 负责。
-- 公司身份 Phase B：`tests/unit/company-identity-constraint-migration.test.ts` 锁定三份生产 SQL、阻断项 / shared alias warning、NOT NULL 与两个 Prisma 原生唯一索引，并与事务重试白名单对齐；真实约束和零漂移需在 disposable PostgreSQL 上运行 postflight 与 `prisma:deploy-safe`。
+- 公司身份 Phase B：`tests/unit/company-identity-constraint-migration.test.ts` 锁定 preflight/sync/postflight 及 rollback/rollback-postflight、阻断项 / shared alias warning、NOT NULL、两个 Prisma 原生唯一索引和 Phase A 恢复形态；真实约束、回滚和零漂移需在 disposable PostgreSQL 上演练。
+- 部署：`deploy-release-safety`、`deploy-slots`、`deploy-lock`、`deploy-activation`、`deploy-pm2-readiness`、`deploy-build-safety`、`prisma-production-schema-path` 与 `prisma-client-runtime-paths` 锁定 manifest/tag/commit 绑定、candidate guard、不可变 current/previous、journal/互斥锁、PM2/HTTP readiness、失败回退和客户端注入。
 - 搜索 store：`tests/unit/search-store.test.ts`。
 - CAPTCHA：`tests/unit/captcha.test.ts`。
 - 萌萌点账务：`api/moemoepoint-service.test.ts` 覆盖可用余额条件更新、负数回退、原因超长截断（不抛错）、幂等和暂扣/返还/确认扣除；`api/moemoepoint-query.test.ts` 覆盖明细稳定排序和用户不存在时不白跑查询；`api/moemoepoint-ledger-route.test.ts` 覆盖本人/管理员权限与 no-store；`moemoepoint-ledger-action.test.ts` 覆盖 `/moemoepoint` 本人 action 与后台 action 两个入口的独立鉴权；`moemoepoint-date-range.test.ts`、`moemoepoint-migration.test.ts`、`moemoepoint-source-guard.test.ts` 分别锁定上海日期范围、生产 SQL 和禁止绕过统一 service 的源码契约。
@@ -68,7 +69,7 @@ tests/unit/
 - CSRF、角色、资源归属、每日上传配额、用户设置权限相关变更。
 - 主题 token、语义颜色、过滤器、排序、外部 ID 解析变更。
 - 编辑页外部数据合并规则变更，包括 VNDB/Bangumi/Steam 字段保留、Steam ID 软重复提示但不阻塞、resolver 开启时四来源全部保留、alias 公司匹配和 store 函数式合并。
-- 维护脚本的自动合并计划变更，尤其是公司/tag 的 alias 冲突、歧义跳过和关系迁移；tag/company count 由数据库触发器与 postflight 验证，不再由维护脚本预览或修复。
+- 维护脚本的冻结合并计划变更，尤其是会社 inventory/decisions/plan 的审计绑定、alias 歧义、显式删除、关系迁移与缓存 receipt；tag/company count 由数据库触发器与 postflight 验证，不再由维护脚本预览或修复。
 - 修 bug 时要加能在修复前失败的 regression test。
 
 可以暂不新增测试但要手动验证：
@@ -227,11 +228,12 @@ pnpm typecheck
 
 ## 浏览器与 HTTP 端到端脚本
 
-仓库有三套独立脚本，直接使用 `playwright-core` / HTTP 客户端，不通过 `@playwright/test` runner：
+仓库有四套独立脚本，直接使用 `playwright-core` / HTTP 客户端，不通过 `@playwright/test` runner：
 
 - `tests/e2e/edit-upload-guards.e2e.ts`
 - `tests/e2e/patch-submission-lifecycle.e2e.ts`
 - `tests/e2e/submission-ui.e2e.ts`
+- `tests/e2e/company-identity.e2e.ts`
 
 它们会创建、修改、审核或删除真实数据，只能对明确的 disposable `touchgal_e2e` 数据库和单独的 3100 dev server 运行。执行前必须确认 server 进程实际使用的数据库，而不是只看当前 shell `.env`；CSRF 地址需设置为 `NEXT_PUBLIC_KUN_PATCH_ADDRESS_DEV=http://127.0.0.1:3100`，并提供脚本顶部列出的测试用户/JWT/Redis 环境变量。示例：
 
@@ -243,7 +245,35 @@ node --env-file=.env tests/e2e/edit-upload-guards.e2e.ts
 
 如果数据库名不是 `touchgal_e2e`、3100 服务未启动或测试身份缺失，停止而不是退回默认库执行。
 
-`submission-ui.e2e.ts` 覆盖名称错误清除、自动/显式保存、服务端预览、上传失败跨刷新保留和进度重试；`patch-submission-lifecycle.e2e.ts` 从建草稿走到通知链接、审核详情，并覆盖审核页打开期间作者撤回、撤回通知、过期审核刷新、重新提交与正式发布；`edit-upload-guards.e2e.ts` 覆盖 create/rewrite 上传守卫。列表页是服务端渲染的，脚本点击交互控件前必须等待客户端 hydration；模拟上传失败使用确定性的 HTTP 错误响应，不要用延迟 `route.abort()` 制造请求生命周期竞态。
+会社身份的真实数据库验证有专用准备器。它具有破坏性，因此必须显式给出与 `KUN_DATABASE_URL` 不同、数据库名**严格以 `_e2e` 结尾**的 `KUN_E2E_DATABASE_URL`，同时指定一个尚不存在的绝对备份路径：
+
+```bash
+KUN_E2E_DATABASE_URL='postgresql://<user>:<password>@127.0.0.1:5432/touchgal_e2e' pnpm e2e:db:prepare --reset --backup=/private/tmp/touchgal_e2e-before-company-e2e.dump
+```
+
+准备器先创建 `0600` custom-format dump 并用 `pg_restore --list` 验证，再 reset schema、执行最终 Prisma schema、安装并 postflight 六个 tag/company 计数触发器、检查 Phase B 约束，最后写入隔离测试身份和 sentinel。备份路径或文件经符号链接、文件已存在、目标不是 `_e2e`、或 URL 等于应用默认库时都会在 reset 前失败。
+
+如果 PostgreSQL 的 `pg_dump` / `psql` 只存在于 Docker 容器，额外传入严格容器名；Docker 模式的连接 URL 必须是 loopback：
+
+```bash
+KUN_E2E_DATABASE_URL='postgresql://<user>:<password>@127.0.0.1:5432/touchgal_e2e' KUN_E2E_PG_CONTAINER='postgres18' pnpm e2e:db:prepare --reset --backup=/private/tmp/touchgal_e2e-before-company-e2e.dump
+```
+
+同一 worktree 不能同时运行 3000 与 3100 的 Next dev，它们共享 `.next`。使用安全 launcher 先跑 resolver-off；launcher 固定 `127.0.0.1:3100`、覆盖数据库和 CSRF 地址、关闭 Cloudflare/IndexNow 副作用，并在发现 `.next/dev/lock` 或 3000/3100 已占用时拒绝启动：
+
+```bash
+KUN_E2E_DATABASE_URL='postgresql://<user>:<password>@127.0.0.1:5432/touchgal_e2e' pnpm e2e:company-server --resolver=off
+```
+
+在另一终端运行：
+
+```bash
+KUN_E2E_DATABASE_URL='postgresql://<user>:<password>@127.0.0.1:5432/touchgal_e2e' pnpm e2e:company-identity --expect-resolver=off
+```
+
+停止唯一的 3100 server，按相同步骤重启为 `--resolver=on` 并运行 `--expect-resolver=on`。测试会读取 sentinel，证明 HTTP server 和短生命周期 resolver worker 都连接显式 `_e2e` 库，并通过预览语义证明 server 实际 flag。create 场景绕过上传入口后直接调用真实 resolver 事务；整套 company identity E2E 不发出任何 S3 写入或删除请求。
+
+`submission-ui.e2e.ts` 覆盖名称错误清除、自动/显式保存、服务端预览、上传失败跨刷新保留和进度重试；`patch-submission-lifecycle.e2e.ts` 从建草稿走到通知链接、审核详情，并覆盖审核页打开期间作者撤回、撤回通知、过期审核刷新、重新提交与正式发布；`edit-upload-guards.e2e.ts` 覆盖 create/rewrite 上传守卫；`company-identity.e2e.ts` 覆盖 flag-off/flag-on 的创建、重写、投稿预览/批准、歧义和真实计数触发器。列表页是服务端渲染的，脚本点击交互控件前必须等待客户端 hydration；模拟上传失败使用确定性的 HTTP 错误响应，不要用延迟 `route.abort()` 制造请求生命周期竞态。
 
 ## 已知缺口
 

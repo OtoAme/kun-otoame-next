@@ -89,16 +89,16 @@
 把当前“每次命令重新联网、重新规划”的入口拆成四步：
 
 ```bash
-pnpm maintenance:companies:inventory -- --out=/var/lib/kun-otoame/maintenance/company/<run-id>/company-inventory.json
-pnpm maintenance:companies:plan -- --inventory=/var/lib/kun-otoame/maintenance/company/<run-id>/company-inventory.json --decisions=/var/lib/kun-otoame/maintenance/company/<run-id>/company-decisions.json --out=/var/lib/kun-otoame/maintenance/company/<run-id>/company-cleanup-plan.json
-pnpm maintenance:companies:dirty:dry -- --plan=/var/lib/kun-otoame/maintenance/company/<run-id>/company-cleanup-plan.json
-pnpm maintenance:companies:dirty:apply -- --plan=/var/lib/kun-otoame/maintenance/company/<run-id>/company-cleanup-plan.json --confirm-sha256=<审核摘要>
+pnpm maintenance:companies:inventory --out=/var/lib/kun-otoame/maintenance/company/<run-id>/company-inventory.json
+pnpm maintenance:companies:plan --inventory=/var/lib/kun-otoame/maintenance/company/<run-id>/company-inventory.json --decisions=/var/lib/kun-otoame/maintenance/company/<run-id>/company-decisions.json --out=/var/lib/kun-otoame/maintenance/company/<run-id>/company-cleanup-plan.json
+pnpm maintenance:companies:dirty:dry --plan=/var/lib/kun-otoame/maintenance/company/<run-id>/company-cleanup-plan.json
+pnpm maintenance:companies:dirty:apply --plan=/var/lib/kun-otoame/maintenance/company/<run-id>/company-cleanup-plan.json --confirm-sha256=<审核摘要>
 ```
 
 数据库提交后，缓存失败只重试缓存阶段：
 
 ```bash
-pnpm maintenance:companies:dirty:cache -- --plan=/var/lib/kun-otoame/maintenance/company/<run-id>/company-cleanup-plan.json
+pnpm maintenance:companies:dirty:cache --plan=/var/lib/kun-otoame/maintenance/company/<run-id>/company-cleanup-plan.json
 ```
 
 规则：
