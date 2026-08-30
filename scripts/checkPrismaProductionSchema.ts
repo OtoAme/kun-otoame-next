@@ -7,8 +7,16 @@ import {
   type PrismaDiffResult,
   type ReleasedPatternIndexMetadata
 } from './prismaProductionSchemaGuard'
+import {
+  buildPrismaDiffArgs,
+  resolvePrismaSchemaCliOptions
+} from './prismaProductionSchemaPath'
 
 const projectRoot = resolve(import.meta.dirname, '..')
+const { schemaPath } = resolvePrismaSchemaCliOptions({
+  args: process.argv.slice(2),
+  projectRoot
+})
 
 const INDEX_METADATA_QUERY = `
 SELECT
@@ -47,24 +55,11 @@ WHERE namespace.nspname = 'public'
 `
 
 const runDiff = async (): Promise<PrismaDiffResult> => {
-  const result = spawnSync(
-    'pnpm',
-    [
-      'exec',
-      'prisma',
-      'migrate',
-      'diff',
-      '--exit-code',
-      '--from-config-datasource',
-      '--to-schema=prisma/schema',
-      '--script'
-    ],
-    {
-      cwd: projectRoot,
-      encoding: 'utf8',
-      env: process.env
-    }
-  )
+  const result = spawnSync('pnpm', buildPrismaDiffArgs(schemaPath), {
+    cwd: projectRoot,
+    encoding: 'utf8',
+    env: process.env
+  })
 
   if (result.error) throw result.error
   return {

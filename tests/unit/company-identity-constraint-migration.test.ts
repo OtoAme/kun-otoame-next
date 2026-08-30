@@ -8,7 +8,9 @@ const prefix = 'migration/production-company-identity-constraint'
 const paths = {
   preflight: `${prefix}-preflight-2026-08-30.sql`,
   sync: `${prefix}-sync-2026-08-30.sql`,
-  postflight: `${prefix}-postflight-2026-08-30.sql`
+  postflight: `${prefix}-postflight-2026-08-30.sql`,
+  rollback: `${prefix}-rollback-2026-08-30.sql`,
+  rollbackPostflight: `${prefix}-rollback-postflight-2026-08-30.sql`
 }
 
 const stripSqlComments = (sql: string) =>
@@ -102,5 +104,52 @@ describe('production company identity Phase B constraints', () => {
     expect(postflight).toContain('index_row.indexprs IS NULL')
     expect(postflight).toContain("'shared_alias' AS check_type")
     expect(postflight).toContain("'warning' AS status")
+  })
+
+  it('rolls Phase B back to the nullable Phase A query-index contract without deleting identity data', async () => {
+    const [rollback, rollbackPostflight] = await Promise.all([
+      readProjectFile(paths.rollback),
+      readProjectFile(paths.rollbackPostflight)
+    ])
+    const executable = stripSqlComments(rollback)
+
+    expect(rollback).toContain('BEGIN;')
+    expect(rollback).toContain('COMMIT;')
+    expect(rollback).toContain('ALTER COLUMN normalized_name DROP NOT NULL')
+    expect(rollback).toContain(
+      'CREATE INDEX IF NOT EXISTS patch_company_normalized_name_idx'
+    )
+    expect(rollback).toContain(
+      'CREATE INDEX IF NOT EXISTS patch_company_external_id_source_external_id_idx'
+    )
+    expect(rollback).toContain(
+      'DROP INDEX IF EXISTS public.patch_company_normalized_name_key'
+    )
+    expect(rollback).toContain(
+      'DROP INDEX IF EXISTS public.patch_company_external_id_source_external_id_key'
+    )
+    expect(executable).not.toMatch(
+      /\b(DROP TABLE|TRUNCATE|DELETE|INSERT|UPDATE)\b/i
+    )
+
+    expect(rollbackPostflight).toContain('BEGIN TRANSACTION READ ONLY')
+    expect(rollbackPostflight).toContain("is_nullable = 'YES'")
+    expect(rollbackPostflight).toContain('Phase B unique indexes remain')
+    expect(rollbackPostflight).toContain("'company_candidates', 'jsonb'")
+    expect(rollbackPostflight).toContain(
+      'patch_company_name_identity_confirmed_by_user_id_fkey'
+    )
+    expect(rollbackPostflight).toContain(
+      'patch_company_name_identity_company_kind_value_key'
+    )
+    for (const sql of [rollback, rollbackPostflight]) {
+      expect(sql).toContain("access_method.amname = 'btree'")
+      expect(sql).toContain("operator_class.opcname = 'text_ops'")
+      expect(sql).toContain("source_operator_class.opcname = 'text_ops'")
+      expect(sql).toContain("external_operator_class.opcname = 'text_ops'")
+    }
+    expect(stripSqlComments(rollbackPostflight)).not.toMatch(
+      /\b(CREATE|ALTER|DROP|TRUNCATE|INSERT|UPDATE|DELETE)\b/i
+    )
   })
 })

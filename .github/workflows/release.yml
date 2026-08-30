@@ -6,6 +6,10 @@ on:
       - main
   workflow_dispatch:
 
+concurrency:
+  group: release-main
+  cancel-in-progress: false
+
 jobs:
   release:
     runs-on: ubuntu-latest
@@ -93,7 +97,17 @@ jobs:
         env:
           KUN_DEPLOY_BUILD_SKIP_CHECKS: 'true'
 
+      - name: Generate CalVer Tag
+        id: calver
+        run: |
+          DATE=$(date +'%Y.%m.%d.%H%M%S')
+          SHORT_SHA=${GITHUB_SHA::8}
+          echo "tag=v$DATE.${GITHUB_RUN_NUMBER}.$SHORT_SHA" >> $GITHUB_OUTPUT
+
       - name: Prepare Release Package
+        env:
+          RELEASE_TAG: ${{ steps.calver.outputs.tag }}
+          RELEASE_COMMIT_SHA: ${{ github.sha }}
         run: |
           mkdir -p release_temp
           # Copy standalone files (using /. to ensure hidden files like .next are included)
@@ -133,6 +147,9 @@ jobs:
           # Copy prisma schema for target-side generation
           cp -r prisma release_temp/
 
+          # Bind the artifact to both the GitHub Release and exact source commit.
+          node --input-type=module -e 'import fs from "node:fs"; fs.writeFileSync("release_temp/release-manifest.json", JSON.stringify({ version: 1, tag: process.env.RELEASE_TAG, commitSha: process.env.RELEASE_COMMIT_SHA }) + "\n", { mode: 0o600 })'
+
           # Remove "type": "module" from package.json to avoid ReferenceError: require is not defined
           # Next.js standalone output often contains CJS code that fails if package.json forces ESM
           sed -i '/"type": "module"/d' release_temp/package.json
@@ -143,12 +160,6 @@ jobs:
 
           cd release_temp
           tar -czf ../release.tar.gz .
-
-      - name: Generate CalVer Tag
-        id: calver
-        run: |
-          DATE=$(date +'%Y.%m.%d.%H%M')
-          echo "tag=v$DATE" >> $GITHUB_OUTPUT
 
       - name: Create Release
         uses: softprops/action-gh-release@v3

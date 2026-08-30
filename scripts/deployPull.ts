@@ -1,270 +1,446 @@
-import { execSync } from 'child_process'
 import { config } from 'dotenv'
+import {
+  cpSync,
+  createWriteStream,
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  rmSync,
+  statSync,
+  unlinkSync
+} from 'node:fs'
+import { IncomingMessage } from 'node:http'
+import https from 'node:https'
+import { dirname, join, resolve } from 'node:path'
+import { fileURLToPath, URL } from 'node:url'
 import { envSchema } from '../validations/dotenv-check'
-import { fileURLToPath, URL } from 'url'
-import { dirname } from 'path'
-import * as fs from 'fs'
-import * as path from 'path'
-import https from 'https'
-import { IncomingMessage } from 'http'
+import { activateReleaseWithReadiness } from './deployActivation'
+import { acquireDeployLock, assertInheritedDeployLock } from './deployLock'
+import {
+  restartAndVerifyProduction,
+  validateStandaloneRuntime
+} from './deployPm2'
+import {
+  assertCleanDeployWorktree,
+  readDeployCommand,
+  runDeployCommand
+} from './deployProcess'
+import {
+  getPinnedCommitRef,
+  getPinnedFetchArgs,
+  normalizeCommitSha,
+  readReleaseManifest,
+  verifyReleaseIdentity
+} from './deployReleaseSafety'
 import {
   getReleaseApiPath,
   selectReleaseAsset,
   type GitHubRelease
 } from './deployReleaseSelection'
+import {
+  adoptLegacyDeploySlot,
+  getDeploySlotPaths,
+  installCandidateRelease,
+  recoverInterruptedActivation
+} from './deploySlots'
+import {
+  backupGeneratedPrismaClient,
+  resolvePrismaClientRuntimePaths,
+  restoreGeneratedPrismaClient
+} from './prismaClientRuntimePaths'
 
-const __filename = fileURLToPath(import.meta.url)
-const __dirname = dirname(__filename)
+const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
+const envPath = resolve(projectRoot, '.env')
 
-const envPath = path.resolve(__dirname, '..', '.env')
-if (!fs.existsSync(envPath)) {
-  console.error('.env file not found in the project root.')
-  process.exit(1)
+type DeployMode = {
+  release: 'latest' | 'pinned'
+  lockHeld: boolean
 }
 
-config({ path: envPath })
+const parseMode = (args: string[]): DeployMode => {
+  const lockArguments = args.filter((argument) => argument === '--lock-held')
+  if (lockArguments.length > 1) {
+    throw new Error('The deploy pull lock marker may only be supplied once.')
+  }
+
+  const releaseArguments = args.filter((argument) => argument !== '--lock-held')
+  if (releaseArguments.length === 0) {
+    return { release: 'latest', lockHeld: lockArguments.length === 1 }
+  }
+  if (releaseArguments.length === 1 && releaseArguments[0] === '--pinned') {
+    return { release: 'pinned', lockHeld: lockArguments.length === 1 }
+  }
+  throw new Error(`Unknown deploy pull arguments: ${args.join(' ')}`)
+}
 
 const downloadFile = (
   url: string,
-  dest: string,
+  destination: string,
   headers: Record<string, string> = {}
-): Promise<void> => {
-  return new Promise((resolve, reject) => {
-    const file = fs.createWriteStream(dest)
-    const urlObj = new URL(url)
-    const options = {
-      hostname: urlObj.hostname,
-      path: urlObj.pathname + urlObj.search,
-      headers: { ...headers, 'User-Agent': 'Node.js' }
-    }
-
-    const request = https.get(options, (response: IncomingMessage) => {
-      if (response.statusCode === 302 || response.statusCode === 301) {
-        const newUrl = response.headers.location!
-        const newUrlObj = new URL(newUrl)
-        const newHeaders = { ...headers }
-        // If redirecting to a different domain (e.g. S3), do NOT pass the Authorization header
-        if (newUrlObj.hostname !== urlObj.hostname) {
-          delete newHeaders['Authorization']
+): Promise<void> =>
+  new Promise((resolveDownload, reject) => {
+    const requestUrl = new URL(url)
+    const request = https.get(
+      {
+        hostname: requestUrl.hostname,
+        path: requestUrl.pathname + requestUrl.search,
+        headers: { ...headers, 'User-Agent': 'OtoAme deployment' }
+      },
+      (response: IncomingMessage) => {
+        if (response.statusCode === 301 || response.statusCode === 302) {
+          response.resume()
+          const redirect = response.headers.location
+          if (!redirect) {
+            reject(new Error('Release download redirect has no location.'))
+            return
+          }
+          const redirectedUrl = new URL(redirect)
+          const redirectedHeaders = { ...headers }
+          if (redirectedUrl.hostname !== requestUrl.hostname) {
+            delete redirectedHeaders.Authorization
+          }
+          downloadFile(redirect, destination, redirectedHeaders)
+            .then(resolveDownload)
+            .catch(reject)
+          return
         }
-        downloadFile(newUrl, dest, newHeaders).then(resolve).catch(reject)
-        return
+        if (response.statusCode !== 200) {
+          response.resume()
+          reject(
+            new Error(`Download failed with status ${response.statusCode}`)
+          )
+          return
+        }
+
+        const file = createWriteStream(destination, {
+          flags: 'wx',
+          mode: 0o600
+        })
+        response.pipe(file)
+        file.on('finish', () => file.close(() => resolveDownload()))
+        file.on('error', reject)
       }
-      if (response.statusCode !== 200) {
-        reject(new Error(`Download failed with status ${response.statusCode}`))
-        return
-      }
-      response.pipe(file)
-      file.on('finish', () => {
-        file.close()
-        resolve()
-      })
-    })
-    request.on('error', (err) => {
-      fs.unlink(dest, () => reject(err))
-    })
+    )
+    request.on('error', reject)
   })
-}
 
 const getRelease = async (
   repo: string,
   expectedTag?: string
-): Promise<{ downloadUrl: string; tag: string }> => {
-  return new Promise((resolve, reject) => {
-    const headers: Record<string, string> = { 'User-Agent': 'Node.js' }
+): Promise<{ downloadUrl: string; tag: string }> =>
+  new Promise((resolveRelease, reject) => {
+    const headers: Record<string, string> = {
+      'User-Agent': 'OtoAme deployment'
+    }
     if (process.env.GITHUB_TOKEN) {
-      headers['Authorization'] = `token ${process.env.GITHUB_TOKEN}`
+      headers.Authorization = `token ${process.env.GITHUB_TOKEN}`
     }
 
-    const options = {
-      hostname: 'api.github.com',
-      path: getReleaseApiPath(repo, expectedTag),
-      headers
-    }
     https
-      .get(options, (res) => {
-        let data = ''
-        res.on('data', (chunk) => (data += chunk))
-        res.on('end', () => {
-          if (res.statusCode !== 200) {
-            reject(new Error(`GitHub API returned ${res.statusCode}: ${data}`))
-            return
-          }
-          try {
-            const release = JSON.parse(data) as GitHubRelease
-            resolve({
-              downloadUrl: selectReleaseAsset(release, expectedTag),
-              tag: release.tag_name
-            })
-          } catch (e) {
-            reject(e)
-          }
-        })
-      })
+      .get(
+        {
+          hostname: 'api.github.com',
+          path: getReleaseApiPath(repo, expectedTag),
+          headers
+        },
+        (response) => {
+          let data = ''
+          response.on('data', (chunk) => (data += String(chunk)))
+          response.on('end', () => {
+            if (response.statusCode !== 200) {
+              reject(
+                new Error(`GitHub API returned ${response.statusCode}: ${data}`)
+              )
+              return
+            }
+            try {
+              const release = JSON.parse(data) as GitHubRelease
+              resolveRelease({
+                downloadUrl: selectReleaseAsset(release, expectedTag),
+                tag: release.tag_name
+              })
+            } catch (error) {
+              reject(error)
+            }
+          })
+        }
+      )
       .on('error', reject)
   })
+
+const copyPackage = (
+  sourceNodeModules: string,
+  destinationNodeModules: string,
+  packageName: string
+) => {
+  const source = join(sourceNodeModules, packageName)
+  const destination = join(destinationNodeModules, packageName)
+  if (!existsSync(source) || !statSync(source).isDirectory()) {
+    throw new Error(`Required runtime package is missing: ${packageName}`)
+  }
+  rmSync(destination, { recursive: true, force: true })
+  mkdirSync(dirname(destination), { recursive: true })
+  cpSync(source, destination, { recursive: true, dereference: true })
 }
 
-const main = async () => {
-  try {
-    console.log('Updating source code repository...')
-    // execSync('git pull', { stdio: 'inherit' })
+const runCandidatePrismaGuard = (candidateRoot: string) => {
+  const schemaPath = join(candidateRoot, 'prisma', 'schema')
+  if (!existsSync(schemaPath) || !lstatSync(schemaPath).isDirectory()) {
+    throw new Error('Release artifact is missing prisma/schema.')
+  }
 
-    envSchema.safeParse(process.env)
-    const repo = process.env.GITHUB_REPO
-    if (!repo) {
-      console.error('GITHUB_REPO not set in .env')
-      process.exit(1)
+  runDeployCommand('pnpm', ['migration:resource-links'], { cwd: projectRoot })
+  runDeployCommand(
+    'pnpm',
+    [
+      'exec',
+      'esno',
+      'scripts/checkPrismaProductionSchema.ts',
+      `--schema=${schemaPath}`,
+      `--candidate-root=${candidateRoot}`
+    ],
+    { cwd: projectRoot }
+  )
+}
+
+const generateCandidatePrismaClient = (candidateRoot: string) => {
+  const schemaPath = join(candidateRoot, 'prisma', 'schema')
+  runDeployCommand(
+    'pnpm',
+    ['exec', 'prisma', 'generate', `--schema=${schemaPath}`],
+    { cwd: projectRoot }
+  )
+}
+
+const injectRuntimeDependencies = (candidateRoot: string) => {
+  const rootNodeModules = resolve(projectRoot, 'node_modules')
+  const candidateNodeModules = join(candidateRoot, 'node_modules')
+  const { generatedPackage } = resolvePrismaClientRuntimePaths(rootNodeModules)
+  rmSync(join(candidateNodeModules, '.prisma'), {
+    recursive: true,
+    force: true
+  })
+  cpSync(generatedPackage, join(candidateNodeModules, '.prisma'), {
+    recursive: true,
+    dereference: true
+  })
+  for (const packageName of ['@prisma', 'ffmpeg-static']) {
+    copyPackage(rootNodeModules, candidateNodeModules, packageName)
+  }
+  for (const required of ['.prisma', '@prisma/client', 'ffmpeg-static']) {
+    const target = join(candidateNodeModules, required)
+    if (!existsSync(target) || !lstatSync(target).isDirectory()) {
+      throw new Error(`Injected runtime package is missing: ${required}`)
     }
+  }
 
-    const expectedReleaseTag =
-      process.env.KUN_DEPLOY_RELEASE_TAG?.trim() || undefined
-    console.log(
-      expectedReleaseTag
-        ? `Fetching pinned release ${expectedReleaseTag}...`
-        : 'Fetching latest release...'
-    )
-    const release = await getRelease(repo, expectedReleaseTag)
-    console.log(`Resolved GitHub Release tag: ${release.tag}`)
-    console.log(`Downloading from ${release.downloadUrl}...`)
-
-    const tempDir = path.resolve(__dirname, '..', '.next_temp')
-    const tarPath = path.resolve(__dirname, '..', 'release.tar.gz')
-
-    if (fs.existsSync(tempDir))
-      fs.rmSync(tempDir, { recursive: true, force: true })
-    fs.mkdirSync(tempDir)
-
-    const headers: Record<string, string> = {}
-    if (process.env.GITHUB_TOKEN) {
-      headers['Authorization'] = `token ${process.env.GITHUB_TOKEN}`
-    }
-    await downloadFile(release.downloadUrl, tarPath, headers)
-
-    console.log('Extracting release...')
-    execSync(`tar -xzf ${tarPath} -C ${tempDir}`, { stdio: 'inherit' })
-
-    // Update Prisma Schema and Generate Client for Target Architecture
-    const tempPrismaDir = path.join(tempDir, 'prisma')
-    const rootPrismaDir = path.resolve(__dirname, '..', 'prisma')
-    const rootNodeModules = path.resolve(__dirname, '..', 'node_modules')
-    const standaloneNodeModules = path.join(tempDir, 'node_modules')
-
-    const copyPackage = (pkgName: string) => {
-      const src = path.join(rootNodeModules, pkgName)
-      const dest = path.join(standaloneNodeModules, pkgName)
-      if (fs.existsSync(src)) {
-        if (fs.existsSync(dest)) {
-          fs.rmSync(dest, { recursive: true, force: true })
-        }
-        fs.mkdirSync(path.dirname(dest), { recursive: true })
-        // Use dereference: true to copy the actual content of symlinks (e.g. from .pnpm store)
-        fs.cpSync(src, dest, { recursive: true, dereference: true })
-      }
-    }
-
-    const hasReleasePrismaSchema = fs.existsSync(tempPrismaDir)
-
-    if (hasReleasePrismaSchema) {
-      console.log('Updating Prisma schema...')
-      if (fs.existsSync(rootPrismaDir)) {
-        fs.rmSync(rootPrismaDir, { recursive: true, force: true })
-      }
-      fs.renameSync(tempPrismaDir, rootPrismaDir)
-    }
-
-    console.log('Verifying production database schema...')
-    execSync('pnpm prisma:deploy-safe', { stdio: 'inherit' })
-
-    if (hasReleasePrismaSchema) {
-      console.log('Injecting generated Prisma Client into standalone build...')
-      copyPackage('.prisma')
-      copyPackage('@prisma')
-    }
-
-    console.log(
-      'Injecting target-architecture ffmpeg-static into standalone build...'
-    )
-    copyPackage('ffmpeg-static')
-
-    const rootGalleryFfmpeg = path.join(rootNodeModules, '.ffmpeg', 'ffmpeg')
-    if (fs.existsSync(rootGalleryFfmpeg)) {
-      console.log(
-        'Injecting optional gallery ffmpeg binary into standalone build...'
-      )
-      const standaloneGalleryFfmpeg = path.join(tempDir, '.ffmpeg', 'ffmpeg')
-      fs.mkdirSync(path.dirname(standaloneGalleryFfmpeg), { recursive: true })
-      fs.copyFileSync(rootGalleryFfmpeg, standaloneGalleryFfmpeg)
-      fs.chmodSync(standaloneGalleryFfmpeg, 0o755)
-    }
-
-    console.log('Applying atomic update...')
-    const nextDir = path.resolve(__dirname, '..', '.next')
-    const standaloneDir = path.join(nextDir, 'standalone')
-    if (!fs.existsSync(nextDir)) fs.mkdirSync(nextDir)
-
-    // Note: We are replacing the directory. Any running process with this CWD will be in a "deleted" state.
-    // We must ensure PM2 restarts the process from the new directory.
-    if (fs.existsSync(standaloneDir))
-      fs.rmSync(standaloneDir, { recursive: true, force: true })
-
-    fs.renameSync(tempDir, standaloneDir)
-    fs.unlinkSync(tarPath)
-
-    console.log('Generating Sitemap with production data...')
-    try {
-      execSync('esno scripts/generateKunSitemap.ts', { stdio: 'inherit' })
-      const generatedSitemapPath = path.resolve(
-        __dirname,
-        '..',
-        'public',
-        'sitemap.xml'
-      )
-      const standalonePublicDir = path.join(standaloneDir, 'public')
-      const standaloneSitemapPath = path.join(
-        standalonePublicDir,
-        'sitemap.xml'
-      )
-
-      if (fs.existsSync(generatedSitemapPath)) {
-        if (!fs.existsSync(standalonePublicDir)) {
-          fs.mkdirSync(standalonePublicDir, { recursive: true })
-        }
-        fs.copyFileSync(generatedSitemapPath, standaloneSitemapPath)
-        console.log('✅ Sitemap updated and copied to standalone build')
-      } else {
-        console.warn('⚠️ Sitemap generation script ran but file not found')
-      }
-    } catch (error) {
-      console.error('⚠️ Failed to generate sitemap:', error)
-      // Don't fail the deployment just because sitemap failed
-    }
-
-    console.log('Reloading application...')
-    // Use delete + start to ensure the process picks up the new CWD (fixing uv_cwd error)
-    // "startOrReload" might reuse the old process context or fail if CWD is gone
-    try {
-      execSync('pm2 delete kun-touchgal-next', { stdio: 'inherit' })
-    } catch (e) {
-      // Ignore error if process doesn't exist
-    }
-
-    // Detect which server script exists in the new standalone directory
-    const serverMjsPath = path.join(standaloneDir, 'server.mjs')
-    const serverJsPath = path.join(standaloneDir, 'server.js')
-    const scriptName = fs.existsSync(serverMjsPath) ? 'server.mjs' : 'server.js'
-
-    console.log(`Starting PM2 with script: ${scriptName}`)
-    execSync(
-      `pm2 start ${scriptName} --name kun-touchgal-next --cwd "${standaloneDir}" -i 3 --max-memory-restart 1G -- --port 3000 --hostname 127.0.0.1`,
-      { stdio: 'inherit', env: { ...process.env, NODE_ENV: 'production' } }
-    )
-
-    console.log('Deployment successful!')
-  } catch (e) {
-    console.error('Deployment failed:', e)
-    process.exit(1)
+  const rootGalleryFfmpeg = join(rootNodeModules, '.ffmpeg', 'ffmpeg')
+  if (existsSync(rootGalleryFfmpeg)) {
+    const destination = join(candidateRoot, '.ffmpeg', 'ffmpeg')
+    mkdirSync(dirname(destination), { recursive: true })
+    cpSync(rootGalleryFfmpeg, destination)
+    runDeployCommand('chmod', ['755', destination])
   }
 }
 
-main()
+const generateCandidateSitemap = (candidateRoot: string) => {
+  try {
+    runDeployCommand(
+      'pnpm',
+      ['exec', 'esno', 'scripts/generateKunSitemap.ts'],
+      {
+        cwd: projectRoot
+      }
+    )
+    const generated = resolve(projectRoot, 'public/sitemap.xml')
+    if (existsSync(generated)) {
+      const destination = join(candidateRoot, 'public/sitemap.xml')
+      mkdirSync(dirname(destination), { recursive: true })
+      cpSync(generated, destination)
+    }
+  } catch (error) {
+    console.error('Sitemap generation failed; deployment will continue:', error)
+  }
+}
+
+const main = async () => {
+  const mode = parseMode(process.argv.slice(2))
+  if (!existsSync(envPath))
+    throw new Error('.env file not found in project root.')
+  config({ path: envPath })
+  const parsedEnv = envSchema.safeParse(process.env)
+  if (!parsedEnv.success) {
+    throw new Error('Production environment validation failed.')
+  }
+
+  const repo = process.env.GITHUB_REPO
+  if (!repo) throw new Error('GITHUB_REPO is required for release deployment.')
+
+  const slots = getDeploySlotPaths(projectRoot)
+  if (mode.lockHeld) assertInheritedDeployLock(slots.deployRoot)
+  const releaseLock = mode.lockHeld
+    ? () => undefined
+    : acquireDeployLock(slots.deployRoot)
+  try {
+    const interruptedRelease = recoverInterruptedActivation(slots)
+    if (interruptedRelease) {
+      await restartAndVerifyProduction({ standaloneDir: interruptedRelease })
+    }
+    adoptLegacyDeploySlot(slots)
+
+    assertCleanDeployWorktree(projectRoot)
+    const headCommit = normalizeCommitSha(
+      readDeployCommand('git', ['rev-parse', 'HEAD'], { cwd: projectRoot })
+    )
+    const expectedTag =
+      mode.release === 'pinned'
+        ? process.env.KUN_DEPLOY_RELEASE_TAG?.trim()
+        : undefined
+    if (mode.release === 'pinned' && !expectedTag) {
+      throw new Error('Pinned deployment requires KUN_DEPLOY_RELEASE_TAG.')
+    }
+
+    let tagCommit: string | undefined
+    if (expectedTag) {
+      runDeployCommand('git', getPinnedFetchArgs(expectedTag), {
+        cwd: projectRoot
+      })
+      tagCommit = normalizeCommitSha(
+        readDeployCommand(
+          'git',
+          ['rev-parse', getPinnedCommitRef(expectedTag)],
+          {
+            cwd: projectRoot
+          }
+        )
+      )
+      if (tagCommit !== headCommit) {
+        throw new Error(
+          `Pinned deployment HEAD mismatch: HEAD=${headCommit}, tag=${tagCommit}`
+        )
+      }
+    }
+
+    const release = await getRelease(repo, expectedTag)
+    if (!expectedTag) {
+      runDeployCommand('git', getPinnedFetchArgs(release.tag), {
+        cwd: projectRoot
+      })
+      tagCommit = normalizeCommitSha(
+        readDeployCommand(
+          'git',
+          ['rev-parse', getPinnedCommitRef(release.tag)],
+          {
+            cwd: projectRoot
+          }
+        )
+      )
+      if (tagCommit !== headCommit) {
+        throw new Error(
+          `Latest deployment HEAD mismatch: HEAD=${headCommit}, tag=${tagCommit}`
+        )
+      }
+    }
+    const nextRoot = resolve(projectRoot, '.next')
+    const candidateRoot = join(nextRoot, `deploy-candidate-${process.pid}`)
+    const archivePath = join(nextRoot, `release-${process.pid}.tar.gz`)
+    const clientBackupRoot = join(slots.deployRoot, 'transient-client-backup')
+    rmSync(candidateRoot, { recursive: true, force: true })
+    rmSync(archivePath, { force: true })
+    mkdirSync(candidateRoot, { recursive: true, mode: 0o700 })
+
+    const headers: Record<string, string> = {}
+    if (process.env.GITHUB_TOKEN) {
+      headers.Authorization = `token ${process.env.GITHUB_TOKEN}`
+    }
+
+    let deploymentSucceeded = false
+    let clientBackedUp = false
+    try {
+      backupGeneratedPrismaClient(
+        resolve(projectRoot, 'node_modules'),
+        clientBackupRoot
+      )
+      clientBackedUp = true
+      runDeployCommand('pnpm', ['install', '--frozen-lockfile'], {
+        cwd: projectRoot
+      })
+      await downloadFile(release.downloadUrl, archivePath, headers)
+      runDeployCommand('tar', ['-xzf', archivePath, '-C', candidateRoot])
+
+      const manifestPath = join(candidateRoot, 'release-manifest.json')
+      if (
+        !existsSync(manifestPath) ||
+        !lstatSync(manifestPath).isFile() ||
+        lstatSync(manifestPath).isSymbolicLink()
+      ) {
+        throw new Error(
+          'Release artifact has no regular release-manifest.json.'
+        )
+      }
+      const manifest = readReleaseManifest(manifestPath)
+      verifyReleaseIdentity({
+        expectedTag,
+        releaseTag: release.tag,
+        headCommit,
+        tagCommit,
+        manifest
+      })
+
+      runCandidatePrismaGuard(candidateRoot)
+      generateCandidatePrismaClient(candidateRoot)
+      injectRuntimeDependencies(candidateRoot)
+      generateCandidateSitemap(candidateRoot)
+      validateStandaloneRuntime(candidateRoot)
+
+      const candidateRelease = installCandidateRelease(
+        slots,
+        candidateRoot,
+        `${manifest.commitSha}-${manifest.tag}`
+      )
+      validateStandaloneRuntime(candidateRelease)
+      const installedManifest = readReleaseManifest(
+        join(candidateRelease, 'release-manifest.json')
+      )
+      verifyReleaseIdentity({
+        expectedTag,
+        releaseTag: release.tag,
+        headCommit,
+        tagCommit,
+        manifest: installedManifest
+      })
+      await activateReleaseWithReadiness({
+        paths: slots,
+        candidateRelease,
+        preflightRelease: validateStandaloneRuntime,
+        verifyReadiness: (releasePath) =>
+          restartAndVerifyProduction({ standaloneDir: releasePath })
+      })
+      deploymentSucceeded = true
+
+      unlinkSync(archivePath)
+      console.log(
+        `Deployment ${manifest.tag} (${manifest.commitSha}) activated; previous slot retained for offline rollback.`
+      )
+    } finally {
+      if (!deploymentSucceeded) {
+        rmSync(candidateRoot, { recursive: true, force: true })
+      }
+      if (!deploymentSucceeded && clientBackedUp) {
+        restoreGeneratedPrismaClient(
+          resolve(projectRoot, 'node_modules'),
+          clientBackupRoot
+        )
+      }
+      rmSync(clientBackupRoot, { recursive: true, force: true })
+      rmSync(archivePath, { force: true })
+    }
+  } finally {
+    releaseLock()
+  }
+}
+
+main().catch((error) => {
+  console.error('Deployment failed:', error)
+  process.exitCode = 1
+})

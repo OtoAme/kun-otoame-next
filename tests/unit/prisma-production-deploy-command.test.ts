@@ -39,18 +39,65 @@ describe('production Prisma deployment command', () => {
     expect(pkg.scripts['prisma:deploy-safe']).toBe(
       'pnpm migration:resource-links && esno scripts/checkPrismaProductionSchema.ts && pnpm prisma generate'
     )
+    expect(pkg.scripts['deploy:pull']).toBe(
+      'esno scripts/deployPullLauncher.ts'
+    )
+    expect(pkg.scripts['deploy:pull:pinned']).toBe(
+      'esno scripts/deployPullLauncher.ts --pinned'
+    )
+    expect(pkg.scripts['deploy:rollback']).toBe(
+      'esno scripts/deployRollback.ts'
+    )
   })
 
   it('guards deploy pull before replacing the running standalone directory', async () => {
     const source = await readProjectFile('scripts/deployPull.ts')
-    const guardPosition = source.indexOf("execSync('pnpm prisma:deploy-safe'")
-    const replacementPosition = source.indexOf(
-      "console.log('Applying atomic update...')"
+    const guardPosition = source.indexOf(
+      'runCandidatePrismaGuard(candidateRoot)'
     )
+    const replacementPosition = source.indexOf('installCandidateRelease(')
+    const generatePosition = source.indexOf(
+      'generateCandidatePrismaClient(candidateRoot)'
+    )
+    const installPosition = source.indexOf(
+      "runDeployCommand('pnpm', ['install', '--frozen-lockfile']"
+    )
+    const clientBackupPosition = source.indexOf('backupGeneratedPrismaClient(')
 
+    expect(clientBackupPosition).toBeGreaterThan(-1)
+    expect(installPosition).toBeGreaterThan(-1)
+    expect(clientBackupPosition).toBeLessThan(installPosition)
+    expect(installPosition).toBeLessThan(guardPosition)
     expect(guardPosition).toBeGreaterThan(-1)
+    expect(generatePosition).toBeGreaterThan(guardPosition)
+    expect(generatePosition).toBeLessThan(replacementPosition)
     expect(guardPosition).toBeLessThan(replacementPosition)
-    expect(source).not.toContain("execSync('pnpm prisma:push'")
+    expect(source).not.toContain('prisma:push')
+    expect(source).toContain('checkPrismaProductionSchema.ts')
+    expect(source).toContain('`--schema=${schemaPath}`')
+    expect(source).toContain('`--candidate-root=${candidateRoot}`')
+    expect(source).toContain('restoreGeneratedPrismaClient(')
+  })
+
+  it('holds the durable deployment lock across latest source pull and the updated core script', async () => {
+    const [launcher, source] = await Promise.all([
+      readProjectFile('scripts/deployPullLauncher.ts'),
+      readProjectFile('scripts/deployPull.ts')
+    ])
+    const lockPosition = launcher.indexOf('acquireDeployLock(slots.deployRoot)')
+    const adoptPosition = launcher.indexOf('adoptLegacyDeploySlot(slots)')
+    const pullPosition = launcher.indexOf("['pull', '--ff-only']")
+    const corePosition = launcher.indexOf("'scripts/deployPull.ts'")
+
+    expect(lockPosition).toBeGreaterThan(-1)
+    expect(adoptPosition).toBeGreaterThan(lockPosition)
+    expect(pullPosition).toBeGreaterThan(adoptPosition)
+    expect(corePosition).toBeGreaterThan(pullPosition)
+    expect(launcher).toContain("'--lock-held'")
+    expect(launcher).toContain('DEPLOY_LOCK_OWNER_PID_ENV')
+    expect(source).toContain('mode.lockHeld')
+    expect(source).toContain('assertInheritedDeployLock(slots.deployRoot)')
+    expect(source).toContain("release: 'pinned'")
   })
 
   it('resolves and validates a command-scoped release tag before replacement or PM2 start', async () => {
@@ -59,17 +106,63 @@ describe('production Prisma deployment command', () => {
     const selectionPosition = source.indexOf(
       'selectReleaseAsset(release, expectedTag)'
     )
-    const replacementPosition = source.indexOf(
-      "console.log('Applying atomic update...')"
-    )
-    const pm2Position = source.indexOf(
-      "console.log('Reloading application...')"
-    )
+    const replacementPosition = source.indexOf('installCandidateRelease(')
+    const identityPosition = source.indexOf('verifyReleaseIdentity({')
+    const pm2Position = source.lastIndexOf('restartAndVerifyProduction({')
 
     expect(tagPosition).toBeGreaterThan(-1)
     expect(selectionPosition).toBeGreaterThan(-1)
-    expect(selectionPosition).toBeLessThan(replacementPosition)
-    expect(selectionPosition).toBeLessThan(pm2Position)
+    expect(source).toContain('assertCleanDeployWorktree(projectRoot)')
+    expect(source).toContain("runDeployCommand('git', getPinnedFetchArgs")
+    expect(source).not.toContain("runDeployCommand('git', ['pull'")
+    expect(source).toContain('verifyReleaseIdentity({')
+    expect(source).toContain('activateReleaseWithReadiness({')
+    expect(source).toContain('restartAndVerifyProduction({')
+    expect(source).toContain('acquireDeployLock(slots.deployRoot)')
+    expect(source).toContain('getPinnedFetchArgs(release.tag)')
+    expect(source.indexOf('getPinnedFetchArgs(release.tag)')).toBeLessThan(
+      source.indexOf('await downloadFile(release.downloadUrl')
+    )
+    expect(identityPosition).toBeLessThan(replacementPosition)
+    expect(replacementPosition).toBeGreaterThan(-1)
+    expect(pm2Position).toBeGreaterThan(replacementPosition)
+  })
+
+  it('packages a versioned release manifest before creating the artifact', async () => {
+    const release = await readProjectFile('.github/workflows/release.yml')
+    const tagPosition = release.indexOf('- name: Generate CalVer Tag')
+    const packagePosition = release.indexOf('- name: Prepare Release Package')
+    const manifestPosition = release.indexOf('release-manifest.json')
+    const archivePosition = release.indexOf('tar -czf ../release.tar.gz')
+
+    expect(tagPosition).toBeGreaterThan(-1)
+    expect(tagPosition).toBeLessThan(packagePosition)
+    expect(manifestPosition).toBeGreaterThan(packagePosition)
+    expect(manifestPosition).toBeLessThan(archivePosition)
+    expect(release).toContain('commitSha: process.env.RELEASE_COMMIT_SHA')
+    expect(release).toContain('tag: process.env.RELEASE_TAG')
+    expect(release).toContain('group: release-main')
+    expect(release).toContain('cancel-in-progress: false')
+    expect(release).toContain("date +'%Y.%m.%d.%H%M%S'")
+    expect(release).toContain('${GITHUB_RUN_NUMBER}')
+    expect(release).toContain('${GITHUB_SHA::8}')
+  })
+
+  it('keeps rollback local, offline, and free of database commands', async () => {
+    const rollback = await readProjectFile('scripts/deployRollback.ts')
+
+    expect(rollback).toContain('recoverOrRollbackWithReadiness({')
+    expect(rollback).toContain('restartAndVerifyProduction({')
+    expect(rollback).toContain('acquireDeployLock(slots.deployRoot)')
+    expect(rollback).not.toMatch(/\bgit\b/)
+    expect(rollback).not.toMatch(/https|GITHUB|prisma|migration:/i)
+  })
+
+  it('keeps PM2 compatible with managed current and legacy standalone layouts', async () => {
+    const ecosystem = await readProjectFile('ecosystem.config.cjs')
+    expect(ecosystem).toContain("'.deploy', 'current'")
+    expect(ecosystem).toContain("'.next', 'standalone'")
+    expect(ecosystem).toContain('fs.existsSync(managedCurrentDir)')
   })
 
   it('uses the safe command for server builds but leaves disposable CI push unchanged', async () => {
@@ -78,8 +171,14 @@ describe('production Prisma deployment command', () => {
       readProjectFile('.github/workflows/release.yml')
     ])
 
-    expect(build).toContain('pnpm prisma:deploy-safe && pnpm build')
-    expect(build).not.toContain('pnpm prisma:push && pnpm build')
+    const guardPosition = build.indexOf(
+      "runDeployCommand('pnpm', ['prisma:deploy-safe']"
+    )
+    const buildPosition = build.indexOf("runDeployCommand('pnpm', ['build']")
+
+    expect(guardPosition).toBeGreaterThan(-1)
+    expect(buildPosition).toBeGreaterThan(guardPosition)
+    expect(build).not.toContain('prisma:push')
     expect(release).toContain('run: pnpm prisma:push')
     expect(release).not.toContain('prisma:deploy-safe')
   })
