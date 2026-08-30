@@ -231,7 +231,7 @@ export const submitPatchSubmission = async (
   // publish an order nobody chose, so it is caught before review starts.
   const readyOrders = new Set(readyUploads.map((image) => image.display_order))
   if (readyOrders.size !== readyUploads.length) {
-    return '截图顺序存在冲突, 请返回编辑并保存排序'
+    return '截图顺序存在冲突, 请返回编辑并重新调整顺序'
   }
 
   const payload = submission.payload as unknown as PatchSubmissionPayload

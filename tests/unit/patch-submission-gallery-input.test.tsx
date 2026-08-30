@@ -25,25 +25,47 @@ vi.mock('~/utils/patchSubmissionUploadDraft', () => ({
 }))
 
 /** dnd-kit needs a real pointer stack, so the drag itself is stubbed: the test
- *  drives onDragEnd directly and asserts what the component does with it. */
+ *  drives onDragStart / onDragEnd directly and asserts what the component does
+ *  with them. The overlay renders its children, so the copy that follows the
+ *  pointer can be inspected. */
 const dndMocks = vi.hoisted(() => ({
-  onDragEnd: {
+  onDragStart: {
     current: null as ((event: unknown) => void) | null
   },
+  onDragEnd: {
+    current: null as ((event: unknown) => void | Promise<void>) | null
+  },
+  onDragCancel: {
+    current: null as (() => void) | null
+  },
+  modifiers: { current: [] as unknown[] },
   sensors: [] as unknown[]
 }))
 vi.mock('@dnd-kit/core', () => ({
   DndContext: ({
     children,
-    onDragEnd
+    modifiers,
+    onDragStart,
+    onDragEnd,
+    onDragCancel
   }: {
     children: React.ReactNode
+    modifiers?: unknown[]
+    onDragStart: (event: unknown) => void
     onDragEnd: (event: unknown) => void
+    onDragCancel: () => void
   }) => {
+    dndMocks.onDragStart.current = onDragStart
     dndMocks.onDragEnd.current = onDragEnd
+    dndMocks.onDragCancel.current = onDragCancel
+    dndMocks.modifiers.current = modifiers ?? []
     return <>{children}</>
   },
+  DragOverlay: ({ children }: { children: React.ReactNode }) => (
+    <div data-testid="drag-overlay">{children}</div>
+  ),
   closestCenter: vi.fn(),
+  defaultDropAnimationSideEffects: (config: unknown) => config,
   KeyboardSensor: 'KeyboardSensor',
   PointerSensor: 'PointerSensor',
   useSensor: (sensor: unknown, options: unknown) => ({ sensor, options }),
@@ -225,7 +247,11 @@ const deferred = <T,>() => {
   return { promise, resolve }
 }
 
-import { SubmissionGalleryInput } from '~/components/submission/SubmissionGalleryInput'
+import {
+  SubmissionGalleryInput,
+  type SubmissionGalleryHandle
+} from '~/components/submission/SubmissionGalleryInput'
+import { restrictToParentElement } from '~/utils/dndModifiers'
 import { usePatchSubmissionStore } from '~/store/patchSubmissionStore'
 
 const readyGallery = {
@@ -575,9 +601,10 @@ describe('SubmissionGalleryInput staged uploads', () => {
   })
 })
 
-describe('SubmissionGalleryInput explicit order saving', () => {
+describe('SubmissionGalleryInput order synchronization', () => {
   let root: Root
   let dom: JSDOM
+  let galleryRef: React.RefObject<SubmissionGalleryHandle | null>
 
   const container = () => dom.window.document.getElementById('root')!
 
@@ -604,9 +631,17 @@ describe('SubmissionGalleryInput explicit order saving', () => {
     })
   }
 
+  const flushOrder = async () => {
+    let result: Awaited<ReturnType<SubmissionGalleryHandle['flushOrder']>>
+    await act(async () => {
+      result = await galleryRef.current!.flushOrder()
+    })
+    return result!
+  }
+
   const render = async () => {
     await act(async () => {
-      root.render(<SubmissionGalleryInput />)
+      root.render(<SubmissionGalleryInput ref={galleryRef} />)
       await Promise.resolve()
       await Promise.resolve()
     })
@@ -629,6 +664,7 @@ describe('SubmissionGalleryInput explicit order saving', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
+    galleryRef = React.createRef<SubmissionGalleryHandle>()
     dom = new JSDOM('<!doctype html><div id="root"></div>', {
       url: 'http://localhost'
     })
@@ -696,9 +732,8 @@ describe('SubmissionGalleryInput explicit order saving', () => {
     )
   })
 
-  it('persists a drag without sending it and blocks submission until it is saved', async () => {
+  it('persists a drag locally without exposing a separate save action', async () => {
     await render()
-    expect(findButton('保存排序')).toBeUndefined()
 
     await drag('server:9', 'server:10')
 
@@ -708,23 +743,21 @@ describe('SubmissionGalleryInput explicit order saving', () => {
       'server:9'
     ])
     expect(usePatchSubmissionStore.getState().assetOrderDirty).toBe(true)
-    expect(findButton('保存排序')).toBeDefined()
-    expect(container().textContent).toContain('截图顺序尚未保存')
+    expect(findButton('保存排序')).toBeUndefined()
+    expect(container().textContent).not.toContain('截图顺序尚未保存')
     expect(cardOrder()).toEqual([
       'https://img.example.test/10.avif',
       'https://img.example.test/9.avif'
     ])
   })
 
-  it('can still confirm an empty order after every screenshot is gone', async () => {
+  it('can still synchronize an empty order after every screenshot is gone', async () => {
     usePatchSubmissionStore.setState({ gallery: [] })
     draftMocks.loadOrder.mockResolvedValue(['server:9'])
     fetchMocks.patch.mockResolvedValue({})
     await render()
 
-    // Without this the stale draft would keep blocking submission with no card
-    // left to drag and no way to reach a save.
-    await press(findButton('保存排序'))
+    await flushOrder()
 
     expect(fetchMocks.patch).toHaveBeenCalledWith('/patch-submission/asset', {
       action: 'order',
@@ -735,12 +768,12 @@ describe('SubmissionGalleryInput explicit order saving', () => {
     expect(usePatchSubmissionStore.getState().assetOrderDirty).toBe(false)
   })
 
-  it('sends the whole ready set on save and only then drops the draft', async () => {
+  it('sends the whole ready set on flush and only then drops the draft', async () => {
     fetchMocks.patch.mockResolvedValue({})
     await render()
     await drag('server:9', 'server:10')
 
-    await press(findButton('保存排序'))
+    expect(await flushOrder()).toEqual({ ok: true })
 
     expect(fetchMocks.patch).toHaveBeenCalledWith('/patch-submission/asset', {
       action: 'order',
@@ -752,7 +785,6 @@ describe('SubmissionGalleryInput explicit order saving', () => {
     })
     expect(draftMocks.clearOrder).toHaveBeenCalledWith(7)
     expect(usePatchSubmissionStore.getState().assetOrderDirty).toBe(false)
-    expect(findButton('保存排序')).toBeUndefined()
     // The store has to agree with what was saved, or the next render would fall
     // back to the display orders the rows had before.
     expect(cardOrder()).toEqual([
@@ -761,27 +793,59 @@ describe('SubmissionGalleryInput explicit order saving', () => {
     ])
   })
 
-  it('keeps the draft when the author drags again while the save is in flight', async () => {
+  it('continues with a newer drag before an in-flight flush succeeds', async () => {
     const save = deferred<Record<string, never>>()
+    const newerDraft = deferred<undefined>()
     fetchMocks.patch.mockReturnValue(save.promise)
     await render()
     await drag('server:9', 'server:10')
 
-    await press(findButton('保存排序'))
-    expect(container().textContent).toContain('正在保存排序')
+    let resultPromise!: ReturnType<SubmissionGalleryHandle['flushOrder']>
+    await act(async () => {
+      resultPromise = galleryRef.current!.flushOrder()
+      await Promise.resolve()
+    })
+    expect(container().textContent).toContain('正在同步截图顺序')
 
-    await drag('server:9', 'server:10')
+    draftMocks.saveOrder.mockReturnValueOnce(newerDraft.promise)
+    let dragPromise: void | Promise<void> = undefined
+    await act(async () => {
+      dragPromise = dndMocks.onDragEnd.current?.({
+        active: { id: 'server:9' },
+        over: { id: 'server:10' }
+      })
+      await Promise.resolve()
+    })
 
     await act(async () => {
       save.resolve({})
       await save.promise
       await Promise.resolve()
-      await Promise.resolve()
+    })
+    // The newer sequence has not reached the draft context yet, so the flush
+    // waits instead of sending and then clearing the previous keys again.
+    expect(fetchMocks.patch).toHaveBeenCalledTimes(1)
+
+    await act(async () => {
+      newerDraft.resolve(undefined)
+      await dragPromise
+      expect(await resultPromise).toEqual({ ok: true })
     })
 
-    expect(draftMocks.clearOrder).not.toHaveBeenCalled()
-    expect(usePatchSubmissionStore.getState().assetOrderDirty).toBe(true)
-    expect(findButton('保存排序')).toBeDefined()
+    expect(fetchMocks.patch).toHaveBeenCalledTimes(2)
+    expect(fetchMocks.patch).toHaveBeenLastCalledWith(
+      '/patch-submission/asset',
+      {
+        action: 'order',
+        submissionId: 7,
+        order: [
+          { galleryId: 9, displayOrder: 0 },
+          { galleryId: 10, displayOrder: 1 }
+        ]
+      }
+    )
+    expect(draftMocks.clearOrder).toHaveBeenCalledWith(7)
+    expect(usePatchSubmissionStore.getState().assetOrderDirty).toBe(false)
   })
 
   it('keeps the dragged order and the draft when the server refuses', async () => {
@@ -789,18 +853,19 @@ describe('SubmissionGalleryInput explicit order saving', () => {
     await render()
     await drag('server:9', 'server:10')
 
-    await press(findButton('保存排序'))
+    expect(await flushOrder()).toEqual({
+      ok: false,
+      reason: 'error',
+      message: '截图列表已变化, 请刷新后重新排序'
+    })
 
-    expect(toastMocks.error).toHaveBeenCalledWith(
-      '截图列表已变化, 请刷新后重新排序'
-    )
+    expect(toastMocks.error).not.toHaveBeenCalled()
     expect(draftMocks.clearOrder).not.toHaveBeenCalled()
     expect(usePatchSubmissionStore.getState().assetOrderDirty).toBe(true)
     expect(cardOrder()).toEqual([
       'https://img.example.test/10.avif',
       'https://img.example.test/9.avif'
     ])
-    expect(findButton('保存排序')).toBeDefined()
   })
 
   it('restores the stored sequence on mount and stays unsaved', async () => {
@@ -813,7 +878,6 @@ describe('SubmissionGalleryInput explicit order saving', () => {
       'https://img.example.test/9.avif'
     ])
     expect(usePatchSubmissionStore.getState().assetOrderDirty).toBe(true)
-    expect(findButton('保存排序')).toBeDefined()
     expect(fetchMocks.patch).not.toHaveBeenCalled()
   })
 
@@ -855,9 +919,7 @@ describe('SubmissionGalleryInput explicit order saving', () => {
     await press(findButton('上传 1 张截图'))
 
     expect(fetchMocks.formData).not.toHaveBeenCalled()
-    expect(toastMocks.error).toHaveBeenCalledWith(
-      '截图顺序尚未保存，已取消上传'
-    )
+    expect(toastMocks.error).toHaveBeenCalledWith('当前状态的投稿无法修改素材')
     expect(usePatchSubmissionStore.getState().assetOrderDirty).toBe(true)
   })
 
@@ -898,6 +960,150 @@ describe('SubmissionGalleryInput explicit order saving', () => {
       'https://img.example.test/11.avif',
       'blob:restored-preview'
     ])
+  })
+
+  it('renders the dropped arrangement before the local write lands', async () => {
+    const write = deferred<undefined>()
+    draftMocks.saveOrder.mockReturnValueOnce(write.promise)
+    await render()
+
+    let dragPromise: void | Promise<void> = undefined
+    await act(async () => {
+      dragPromise = dndMocks.onDragEnd.current?.({
+        active: { id: 'server:9' },
+        over: { id: 'server:10' }
+      })
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    // dnd-kit drops every drag transform on the same frame the drag ends, so a
+    // sequence that only appears once localforage answers shows the cards
+    // snapping back to where they were and jumping into place afterwards.
+    expect(draftMocks.saveOrder).toHaveBeenCalledWith(7, [
+      'server:10',
+      'server:9'
+    ])
+    expect(cardOrder()).toEqual([
+      'https://img.example.test/10.avif',
+      'https://img.example.test/9.avif'
+    ])
+    expect(usePatchSubmissionStore.getState().assetOrderDirty).toBe(true)
+
+    await act(async () => {
+      write.resolve(undefined)
+      await dragPromise
+    })
+
+    expect(cardOrder()).toEqual([
+      'https://img.example.test/10.avif',
+      'https://img.example.test/9.avif'
+    ])
+  })
+
+  it('puts the cards back when the local write fails', async () => {
+    draftMocks.saveOrder.mockRejectedValueOnce(new Error('storage is gone'))
+    await render()
+
+    await drag('server:9', 'server:10')
+
+    // Showing an arrangement no store agrees with would be worse than refusing
+    // the gesture, because nothing later would correct it.
+    expect(cardOrder()).toEqual([
+      'https://img.example.test/9.avif',
+      'https://img.example.test/10.avif'
+    ])
+    expect(usePatchSubmissionStore.getState().assetOrderDirty).toBe(false)
+    expect(toastMocks.error).toHaveBeenCalledWith('记录截图顺序失败，请重试')
+  })
+
+  it('synchronizes a sequence whose local write has not landed yet', async () => {
+    const write = deferred<undefined>()
+    draftMocks.saveOrder.mockReturnValueOnce(write.promise)
+    fetchMocks.patch.mockResolvedValue({})
+    await render()
+
+    let dragPromise: void | Promise<void> = undefined
+    await act(async () => {
+      dragPromise = dndMocks.onDragEnd.current?.({
+        active: { id: 'server:9' },
+        over: { id: 'server:10' }
+      })
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    let resultPromise!: ReturnType<SubmissionGalleryHandle['flushOrder']>
+    await act(async () => {
+      resultPromise = galleryRef.current!.flushOrder()
+      await Promise.resolve()
+    })
+    // Reading the draft straight away would have found the previous sequence and
+    // frozen that instead of the one the author is looking at.
+    expect(fetchMocks.patch).not.toHaveBeenCalled()
+
+    await act(async () => {
+      write.resolve(undefined)
+      await dragPromise
+      expect(await resultPromise).toEqual({ ok: true })
+    })
+
+    expect(fetchMocks.patch).toHaveBeenCalledWith('/patch-submission/asset', {
+      action: 'order',
+      submissionId: 7,
+      order: [
+        { galleryId: 10, displayOrder: 0 },
+        { galleryId: 9, displayOrder: 1 }
+      ]
+    })
+  })
+
+  it('keeps a drag inside the grid it started in', async () => {
+    await render()
+
+    expect(dndMocks.modifiers.current).toContain(restrictToParentElement)
+  })
+
+  it('follows the pointer with a copy of the card and drops it again', async () => {
+    await render()
+
+    const overlay = () =>
+      container().querySelector('[data-testid="drag-overlay"]')!
+    expect(overlay().children).toHaveLength(0)
+
+    await act(async () => {
+      dndMocks.onDragStart.current?.({ active: { id: 'server:9' } })
+      await Promise.resolve()
+    })
+
+    const copy = overlay().firstElementChild!
+    // Hidden from assistive technology: the card it was cloned from still holds
+    // the real select / zoom / delete controls.
+    expect(copy.getAttribute('aria-hidden')).toBe('true')
+    expect(copy.querySelector('img')?.getAttribute('src')).toBe(
+      'https://img.example.test/9.avif'
+    )
+
+    await act(async () => {
+      dndMocks.onDragCancel.current?.()
+      await Promise.resolve()
+    })
+    expect(overlay().children).toHaveLength(0)
+  })
+
+  it('lets the drag handle opt out of native touch gestures', async () => {
+    await render()
+
+    const handles = [...container().querySelectorAll('button')].filter((button) =>
+      button.getAttribute('aria-label')?.startsWith('拖动排序')
+    )
+    expect(handles).toHaveLength(2)
+    for (const handle of handles) {
+      // Pointer event listeners cannot prevent the browser's own touch
+      // behaviour, so without this the first finger movement scrolls the page
+      // and cancels the pointer before a drag can start.
+      expect(handle.className).toContain('touch-none')
+    }
   })
 })
 
@@ -1161,6 +1367,7 @@ describe('SubmissionGalleryInput draft binding', () => {
   let root: Root
   let dom: JSDOM
   let unmounted = false
+  let galleryRef: React.RefObject<SubmissionGalleryHandle | null>
   const revokeObjectURL = vi.fn()
 
   const container = () => dom.window.document.getElementById('root')!
@@ -1190,9 +1397,18 @@ describe('SubmissionGalleryInput draft binding', () => {
 
   const render = async () => {
     await act(async () => {
-      root.render(<SubmissionGalleryInput />)
+      root.render(<SubmissionGalleryInput ref={galleryRef} />)
     })
     await flush()
+  }
+
+  const startOrderFlush = async () => {
+    let promise!: ReturnType<SubmissionGalleryHandle['flushOrder']>
+    await act(async () => {
+      promise = galleryRef.current!.flushOrder()
+      await Promise.resolve()
+    })
+    return { promise }
   }
 
   const unmount = async () => {
@@ -1240,6 +1456,7 @@ describe('SubmissionGalleryInput draft binding', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     unmounted = false
+    galleryRef = React.createRef<SubmissionGalleryHandle>()
     viewerMocks.images = []
     viewerMocks.opened = null
     dom = new JSDOM('<!doctype html><div id="root"></div>', {
@@ -1437,6 +1654,150 @@ describe('SubmissionGalleryInput draft binding', () => {
     expect(revokeObjectURL).toHaveBeenCalledWith('blob:preview-2')
     expect(revokeObjectURL).not.toHaveBeenCalledWith('blob:preview-1')
   })
+
+  it('keeps a queued append on the cloud gallery of the submission that received it', async () => {
+    await render()
+
+    const releaseFirstOrder = holdNext(draftMocks.saveOrder)
+    let firstDrop: Promise<void> | undefined
+    let secondDrop: Promise<void> | undefined
+    await act(async () => {
+      firstDrop = dropzoneMocks.onDrop.current?.([imageFile('first.jpg')])
+    })
+    await act(async () => {
+      secondDrop = dropzoneMocks.onDrop.current?.([imageFile('second.jpg')])
+    })
+    await flush()
+
+    // The second append belongs to submission 7 but is still waiting behind
+    // the first write when the editor switches to a nearly-full submission.
+    await act(async () => {
+      usePatchSubmissionStore.setState({
+        submissionId: 8,
+        gallery: Array.from({ length: 19 }, (_unused, index) => ({
+          ...readyGallery,
+          id: 100 + index,
+          clientAssetId: `other-submission-${index}`,
+          imageUrl: `https://img.example.test/other-${index}.avif`,
+          displayOrder: index
+        }))
+      })
+    })
+    await flush()
+
+    releaseFirstOrder()
+    await act(async () => {
+      await Promise.all([firstDrop, secondDrop])
+    })
+    await flush()
+
+    const submissionSevenItems = draftMocks.save.mock.calls
+      .filter((call) => call[0] === 7)
+      .at(-1)?.[1] as { clientAssetId: string; fileName: string }[]
+    const submissionSevenOrder = draftMocks.saveOrder.mock.calls
+      .filter((call) => call[0] === 7)
+      .at(-1)?.[1] as string[]
+
+    expect(submissionSevenItems.map((item) => item.fileName)).toEqual([
+      'first.jpg',
+      'second.jpg'
+    ])
+    expect(submissionSevenOrder).toEqual(
+      submissionSevenItems.map((item) => `local:${item.clientAssetId}`)
+    )
+    expect(submissionSevenOrder).not.toContain('server:100')
+    expect(toastMocks.error).not.toHaveBeenCalledWith('截图最多 20 张')
+  })
+
+  it('does not let an old sequence mutation make the current order save look stale', async () => {
+    draftMocks.load.mockImplementation(async (id: number) =>
+      id === 8 ? [localFile('b', 'current.jpg')] : []
+    )
+    draftMocks.loadOrder.mockImplementation(async (id: number) =>
+      id === 8 ? ['local:b'] : null
+    )
+    const currentSave = deferred<Record<string, never>>()
+    fetchMocks.patch.mockReturnValue(currentSave.promise)
+    await render()
+
+    const releaseFirstOrder = holdNext(draftMocks.saveOrder)
+    let firstDrop: Promise<void> | undefined
+    let secondDrop: Promise<void> | undefined
+    await act(async () => {
+      firstDrop = dropzoneMocks.onDrop.current?.([imageFile('first.jpg')])
+    })
+    await act(async () => {
+      secondDrop = dropzoneMocks.onDrop.current?.([imageFile('second.jpg')])
+    })
+    await flush()
+
+    await act(async () => {
+      usePatchSubmissionStore.setState({ submissionId: 8, gallery: [] })
+    })
+    await flush()
+    const { promise: currentFlush } = await startOrderFlush()
+    expect(fetchMocks.patch).toHaveBeenCalledTimes(1)
+
+    // This advances submission 7's sequence after submission 8 froze its save.
+    releaseFirstOrder()
+    await act(async () => {
+      await Promise.all([firstDrop, secondDrop])
+    })
+    await flush()
+
+    await act(async () => {
+      currentSave.resolve({})
+      await currentFlush
+    })
+    await flush()
+
+    expect(draftMocks.clearOrder).toHaveBeenCalledWith(8)
+    expect(usePatchSubmissionStore.getState().assetOrderDirty).toBe(false)
+  })
+
+  it('does not let an old save completion release the current submission save', async () => {
+    draftMocks.load.mockImplementation(async (id: number) => [
+      localFile(id === 7 ? 'a' : 'b', id === 7 ? 'old.jpg' : 'current.jpg')
+    ])
+    draftMocks.loadOrder.mockImplementation(async (id: number) => [
+      `local:${id === 7 ? 'a' : 'b'}`
+    ])
+    const oldSave = deferred<Record<string, never>>()
+    const currentSave = deferred<Record<string, never>>()
+    fetchMocks.patch
+      .mockReturnValueOnce(oldSave.promise)
+      .mockReturnValueOnce(currentSave.promise)
+      .mockResolvedValue({})
+    await render()
+
+    const { promise: oldFlush } = await startOrderFlush()
+    expect(fetchMocks.patch).toHaveBeenCalledTimes(1)
+
+    await act(async () => {
+      usePatchSubmissionStore.setState({ submissionId: 8, gallery: [] })
+    })
+    await flush()
+    const { promise: currentFlush } = await startOrderFlush()
+    expect(fetchMocks.patch).toHaveBeenCalledTimes(2)
+
+    await act(async () => {
+      oldSave.resolve({})
+      await oldFlush
+    })
+    await flush()
+
+    // The old request may finish, but submission 8 still owns an in-flight save.
+    const { promise: repeatedCurrentFlush } = await startOrderFlush()
+    expect(fetchMocks.patch).toHaveBeenCalledTimes(2)
+    expect(usePatchSubmissionStore.getState().assetOrderDirty).toBe(true)
+
+    await act(async () => {
+      currentSave.resolve({})
+      await Promise.all([currentFlush, repeatedCurrentFlush])
+    })
+    await flush()
+    expect(usePatchSubmissionStore.getState().assetOrderDirty).toBe(false)
+  })
 })
 
 describe('SubmissionGalleryInput restore', () => {
@@ -1597,7 +1958,6 @@ describe('SubmissionGalleryInput restore', () => {
     expect(container().textContent).toContain('正在读取本地截图')
     expect(dropzoneMocks.disabled.current).toBe(true)
     expect(findButton('上传 1 张截图')?.hasAttribute('disabled')).toBe(true)
-    expect(findButton('保存排序')?.hasAttribute('disabled')).toBe(true)
     // The preference is not part of the draft, so it never held the gate.
     expect(usePatchSubmissionStore.getState().assetDraftLoaded).toBe(true)
 
@@ -1608,7 +1968,6 @@ describe('SubmissionGalleryInput restore', () => {
     await flush()
 
     expect(dropzoneMocks.disabled.current).toBe(false)
-    expect(findButton('保存排序')?.hasAttribute('disabled')).toBe(false)
     expect(
       (container().querySelector('input[role="switch"]') as HTMLInputElement)
         .checked

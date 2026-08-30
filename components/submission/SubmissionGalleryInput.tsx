@@ -1,6 +1,13 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  useState
+} from 'react'
 import type { ReactNode } from 'react'
 import {
   Button,
@@ -23,9 +30,11 @@ import { useDropzone } from 'react-dropzone'
 import toast from 'react-hot-toast'
 import {
   DndContext,
+  DragOverlay,
   KeyboardSensor,
   PointerSensor,
   closestCenter,
+  defaultDropAnimationSideEffects,
   useSensor,
   useSensors
 } from '@dnd-kit/core'
@@ -37,7 +46,12 @@ import {
   useSortable
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import type { DragEndEvent } from '@dnd-kit/core'
+import type {
+  DragEndEvent,
+  DragStartEvent,
+  DropAnimation
+} from '@dnd-kit/core'
+import { restrictToParentElement } from '~/utils/dndModifiers'
 import { checkImageValid } from '~/utils/resizeImage'
 import { generateUUID } from '~/utils/random'
 import {
@@ -66,6 +80,11 @@ import {
 } from '~/utils/serialTaskQueue'
 import { cn } from '~/utils/cn'
 import type { PatchSubmissionGalleryImage } from '~/types/api/patchSubmission'
+import type { PatchSubmissionSaveResult } from '~/hooks/usePatchSubmissionAutosave'
+
+export interface SubmissionGalleryHandle {
+  flushOrder: () => Promise<PatchSubmissionSaveResult>
+}
 
 interface LocalUploadView extends PatchSubmissionLocalUpload {
   previewUrl: string
@@ -216,6 +235,17 @@ const reconcileRestoredDraft = <T extends GalleryLocalItem>(
 }
 
 /**
+ * The dragged copy animates from where the pointer let go into the slot the card
+ * landed in. The card it came from keeps the dimmed look it had during the drag
+ * until that finishes, so the two are never both solid at once.
+ */
+const galleryDropAnimation: DropAnimation = {
+  sideEffects: defaultDropAnimationSideEffects({
+    styles: { active: { opacity: '0.5' } }
+  })
+}
+
+/**
  * Dragging lives on its own handle rather than on the card. The cards carry
  * focusable select / zoom / delete controls, and letting the whole card start a
  * drag would swallow the pointer and keyboard interaction those need.
@@ -256,11 +286,17 @@ const SortableGalleryItem = ({
         ref={setActivatorNodeRef}
         aria-label={`拖动排序${label}`}
         disabled={disabled}
-        className="absolute left-3 top-3 z-20 rounded-medium bg-background/80 p-1 text-default-600 shadow-small outline-none transition-colors hover:bg-background focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-not-allowed disabled:opacity-50"
+        // `touch-none` is what makes this work on a phone at all: pointer event
+        // listeners cannot prevent the browser's native touch behaviour, so
+        // without it the first finger movement scrolls the page and cancels the
+        // pointer, and the drag never activates. Only the handle opts out, so
+        // the gallery itself still scrolls. The target is finger-sized below
+        // `sm`, where the card is half the screen wide.
+        className="absolute left-3 top-3 z-20 inline-flex size-11 touch-none select-none items-center justify-center rounded-medium bg-background/80 text-default-600 shadow-small outline-none transition-colors hover:bg-background focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-not-allowed disabled:opacity-50 sm:size-7"
         {...attributes}
         {...listeners}
       >
-        <GripVertical className="size-4" />
+        <GripVertical className="size-5 sm:size-4" />
       </button>
       {children}
     </div>
@@ -495,13 +531,26 @@ interface DraftContext {
   submissionId: number
   items: LocalUploadView[]
   orderKeys: string[] | null
+  gallery: PatchSubmissionGalleryImage[]
+  orderGeneration: number
+  synchronizingOrder: boolean
+  orderFlushPromise: Promise<PatchSubmissionSaveResult> | null
+  uploadRunning: boolean
   queue: SerialTaskQueue
 }
 
-const createDraftContext = (submissionId: number): DraftContext => ({
+const createDraftContext = (
+  submissionId: number,
+  gallery: PatchSubmissionGalleryImage[]
+): DraftContext => ({
   submissionId,
   items: [],
   orderKeys: null,
+  gallery: [...gallery],
+  orderGeneration: 0,
+  synchronizingOrder: false,
+  orderFlushPromise: null,
+  uploadRunning: false,
   queue: createSerialTaskQueue()
 })
 
@@ -527,361 +576,399 @@ const orderedDraftWrite = (
   }
 }
 
-export const SubmissionGalleryInput = () => {
-  const { submissionId, gallery, setGallery, status, setAssetDraftState } =
-    usePatchSubmissionStore()
-  const [selected, setSelected] = useState<Set<string>>(new Set())
-  const [localUploads, setLocalUploads] = useState<LocalUploadView[]>([])
-  // Watermark defaults on, matching the create page, so screenshots are marked
-  // unless the author opts out.
-  const [watermark, setWatermark] = useState(true)
-  const [updatingNSFW, setUpdatingNSFW] = useState(false)
-  const [deleting, setDeleting] = useState(false)
-  const [savingOrder, setSavingOrder] = useState(false)
-  const [orderKeys, setOrderKeys] = useState<string[] | null>(null)
-  /** Both stored keys have to be read before the gallery can be edited at all:
-   *  every edit derives a whole new sequence, and one derived from a half-read
-   *  draft would overwrite the other half. */
-  const [restoreState, setRestoreState] = useState<
-    'restoring' | 'ready' | 'failed'
-  >('restoring')
-  const [restoreAttempt, setRestoreAttempt] = useState(0)
-  const [progress, setProgress] = useState<{
-    total: number
-    completed: number
-  } | null>(null)
-  /** Bumped by every sequence change, so a save that returns late can tell
-   *  whether the sequence it froze is still the one on screen. */
-  const orderGeneration = useRef(0)
-  const savingOrderRef = useRef(false)
-  const previewUrls = useRef(new Map<string, string>())
-  /**
-   * One editor runs one upload batch and one order save at a time, whichever
-   * submission they belong to: both write display_order, and switching
-   * submissions mid-batch must not let the new one start a second batch on top
-   * of the first. These two are therefore deliberately *not* per-context, and
-   * their releases are never currency-gated — a batch that outlived its
-   * submission and could not release the gate would lock the editor for good.
-   */
-  const batchRunning = useRef(false)
-  const mounted = useRef(true)
-  /** The draft the rendered state is a view of. Replaced whenever the editor
-   *  changes submission, so everything still bound to the old one keeps its own
-   *  state and its own storage keys. */
-  const activeContext = useRef<DraftContext>(createDraftContext(submissionId))
-  const editable = status === 'draft' || status === 'changes_requested'
-  const isBatchRunning = localUploads.some(
-    (item) => item.status === 'uploading'
-  )
-  // Reordering and uploading both write display_order, so neither may start
-  // while the other is running.
-  const isBusy = isBatchRunning || savingOrder
-  const restoring = restoreState !== 'ready'
-  const galleryLocked = isBusy || restoring
+export const SubmissionGalleryInput = forwardRef<SubmissionGalleryHandle>(
+  function SubmissionGalleryInput(_props, ref) {
+    const { submissionId, gallery, setGallery, status, setAssetDraftState } =
+      usePatchSubmissionStore()
+    const [selected, setSelected] = useState<Set<string>>(new Set())
+    const [localUploads, setLocalUploads] = useState<LocalUploadView[]>([])
+    // Watermark defaults on, matching the create page, so screenshots are marked
+    // unless the author opts out.
+    const [watermark, setWatermark] = useState(true)
+    const [updatingNSFW, setUpdatingNSFW] = useState(false)
+    const [deleting, setDeleting] = useState(false)
+    const [synchronizingOrder, setSynchronizingOrder] = useState(false)
+    const [orderKeys, setOrderKeys] = useState<string[] | null>(null)
+    /** The card currently under the pointer, so the drag overlay knows what to
+     *  draw. Null whenever no drag is in progress. */
+    const [activeDragKey, setActiveDragKey] = useState<string | null>(null)
+    /** Both stored keys have to be read before the gallery can be edited at all:
+     *  every edit derives a whole new sequence, and one derived from a half-read
+     *  draft would overwrite the other half. */
+    const [restoreState, setRestoreState] = useState<
+      'restoring' | 'ready' | 'failed'
+    >('restoring')
+    const [restoreAttempt, setRestoreAttempt] = useState(0)
+    const [progress, setProgress] = useState<{
+      total: number
+      completed: number
+    } | null>(null)
+    const previewUrls = useRef(new Map<string, string>())
+    const mounted = useRef(true)
+    /** The draft the rendered state is a view of. Replaced whenever the editor
+     *  changes submission, so everything still bound to the old one keeps its own
+     *  state and its own storage keys. */
+    const activeContext = useRef<DraftContext>(
+      createDraftContext(submissionId, gallery)
+    )
+    const editable = status === 'draft' || status === 'changes_requested'
+    const isBatchRunning = localUploads.some(
+      (item) => item.status === 'uploading'
+    )
+    // Reordering and uploading both write display_order, so neither may start
+    // while the other is running.
+    const isBusy = isBatchRunning || synchronizingOrder
+    // A submission id changes before its restore effect runs. Keep that interim
+    // render locked so an event can never bind the context from the previous id.
+    const restoring =
+      restoreState !== 'ready' ||
+      activeContext.current.submissionId !== submissionId
+    const galleryLocked = isBusy || restoring
 
-  /** Whether what this context holds is what the author is looking at. Only the
-   *  view is gated on it; the context itself advances either way. */
-  const isCurrent = useCallback(
-    (ctx: DraftContext) => mounted.current && activeContext.current === ctx,
-    []
-  )
-
-  const syncLocalState = useCallback(
-    (items: LocalUploadView[], loaded = true) => {
-      setLocalUploads(items)
-      setAssetDraftState({ localCount: items.length, loaded })
-    },
-    [setAssetDraftState]
-  )
-
-  /** The draft existing is what "unsaved order" means, so the store flag and the
-   *  rendered sequence are always set together. */
-  const syncOrderKeys = useCallback(
-    (keys: string[] | null) => {
-      setOrderKeys(keys)
-      setAssetDraftState({ orderDirty: keys !== null })
-    },
-    [setAssetDraftState]
-  )
-
-  /**
-   * Every write to either draft key of one submission runs here, one at a time,
-   * and derives its next value from what the task before it left behind.
-   * Callers used to compute a whole array from the render they were triggered by
-   * and race each other to storage, so an upload finishing while the author
-   * dropped a file left whichever wrote last as the only survivor.
-   *
-   * A write naming both keys is still two storage operations, so the order is
-   * chosen so a crash in between leaves something recoverable: a new sequence
-   * goes first, because a promoted `server:` key beside a local item that is
-   * still listed is exactly what the mount reconciliation repairs, while
-   * dropping the sequence goes last, because the record existing is the unsaved
-   * flag and losing it early would hide work the author still has to confirm.
-   */
-  const persistDraft = useCallback(
-    (
-      ctx: DraftContext,
-      compute: (current: {
-        items: LocalUploadView[]
-        orderKeys: string[] | null
-      }) => DraftWrite
-    ) =>
-      ctx.queue(async () => {
-        const next = compute({ items: ctx.items, orderKeys: ctx.orderKeys })
-        const writesOrder = 'orderKeys' in next
-        const nextOrderKeys = next.orderKeys ?? null
-
-        const writeOrder = async () => {
-          if (!writesOrder) return
-          if (nextOrderKeys) {
-            await savePatchSubmissionGalleryOrder(
-              ctx.submissionId,
-              nextOrderKeys
-            )
-          } else {
-            await clearPatchSubmissionGalleryOrder(ctx.submissionId)
-          }
-        }
-        const writeItems = async () => {
-          if (!next.items) return
-          await savePatchSubmissionUploadDraft(
-            ctx.submissionId,
-            toPersistedItems(next.items)
-          )
-        }
-
-        if (writesOrder && !nextOrderKeys) {
-          await writeItems()
-          await writeOrder()
-        } else {
-          await writeOrder()
-          await writeItems()
-        }
-
-        // What was stored is what this draft now holds, whether or not anyone is
-        // still looking at it: the task behind this one reads the context, and
-        // leaving it on the value this task just replaced is how a second upload
-        // finishing after an unmount wrote the first one back into storage.
-        if (writesOrder) ctx.orderKeys = nextOrderKeys
-        if (next.items) ctx.items = next.items
-
-        if (!isCurrent(ctx)) return next
-        if (writesOrder) syncOrderKeys(nextOrderKeys)
-        if (next.items) syncLocalState(next.items)
-        return next
-      }),
-    [isCurrent, syncLocalState, syncOrderKeys]
-  )
-
-  const releasePreview = useCallback((clientAssetId: string) => {
-    const url = previewUrls.current.get(clientAssetId)
-    if (url) URL.revokeObjectURL(url)
-    previewUrls.current.delete(clientAssetId)
-  }, [])
-
-  useEffect(() => {
-    mounted.current = true
-    // The new draft, and with it a new serialization domain. Whatever is still
-    // running against the old one keeps writing the old one's keys.
-    const ctx = createDraftContext(submissionId)
-    activeContext.current = ctx
-    setSelected(new Set())
-    // Cleared before the stored state is read, so switching submissions — or
-    // retrying a failed read — can never carry the previous state into the new
-    // gallery. The progress bar goes with it: a batch left behind by the
-    // previous submission no longer reports into this one's view, so its bar
-    // would otherwise stay frozen at the count it had on the way out.
-    savingOrderRef.current = false
-    setSavingOrder(false)
-    setProgress(null)
-    for (const url of previewUrls.current.values()) {
-      URL.revokeObjectURL(url)
-    }
-    previewUrls.current.clear()
-    syncOrderKeys(null)
-    syncLocalState([], false)
-    setAssetDraftState({ uploadsInFlight: 0 })
-    setRestoreState('restoring')
-    let cancelled = false
+    /** Whether what this context holds is what the author is looking at. Only the
+     *  view is gated on it; the context itself advances either way. */
+    const isCurrent = useCallback(
+      (ctx: DraftContext) =>
+        mounted.current &&
+        activeContext.current === ctx &&
+        usePatchSubmissionStore.getState().submissionId === ctx.submissionId,
+      []
+    )
 
     /**
-     * One restore, not three races. The gallery stays locked until every stored
-     * key has landed, because `loaded` unlocking on the items alone let the
-     * submit button open while the sequence was still unknown, and a drop
-     * arriving mid-restore fought the restore's own write-back.
+     * A context owns the cloud rows used to merge its local order as well as the
+     * local records themselves. While it is active, pull in any newer server view
+     * already hydrated into Zustand; after it is replaced, its private snapshot is
+     * the only gallery an outliving task may read.
      */
-    const restore = async () => {
-      // The watermark switch is a preference rather than part of the draft's
-      // integrity, so a failed read degrades to the default instead of locking
-      // the draft. Edits still wait for it: a drop freezes the value the author
-      // is looking at into every file it stages.
-      const watermarkRead = loadPatchSubmissionWatermark(submissionId).then(
-        (stored) => {
-          if (!cancelled) setWatermark(stored)
-        },
-        (error) => {
-          console.error('Failed to restore submission watermark option', error)
-          if (cancelled) return
-          setWatermark(true)
-          toast.error('水印设置读取失败, 已恢复为默认开启, 请确认')
-        }
-      )
-
-      let restored = false
-      try {
-        const [storedItems, storedOrder] = await Promise.all([
-          loadPatchSubmissionUploadDraft(submissionId),
-          loadPatchSubmissionGalleryOrder(submissionId)
-        ])
-        if (cancelled) return
-
-        const valid = storedItems.filter((item) => item.blob instanceof Blob)
-        const storedSequence = storedOrder?.length ? storedOrder : null
-        const reconciled = reconcileRestoredDraft(
-          usePatchSubmissionStore.getState().gallery,
-          valid,
-          storedSequence
-        )
-        const views = reconciled.items.map((item) => {
-          const previewUrl = URL.createObjectURL(item.blob)
-          previewUrls.current.set(item.clientAssetId, previewUrl)
-          return { ...item, previewUrl }
-        })
-
-        // A restored sequence stays unsaved: the cloud rows still hold the order
-        // they had before the author dragged them.
-        ctx.orderKeys = reconciled.orderKeys
-        syncOrderKeys(reconciled.orderKeys)
-        await persistDraft(ctx, () =>
-          sameSequence(storedSequence, reconciled.orderKeys)
-            ? { items: views }
-            : { items: views, orderKeys: reconciled.orderKeys }
-        )
-        restored = true
-      } catch (error) {
-        console.error('Failed to restore the submission gallery draft', error)
-        if (!cancelled) toast.error('读取本地截图草稿失败, 请重试')
+    const readContextGallery = useCallback((ctx: DraftContext) => {
+      const state = usePatchSubmissionStore.getState()
+      if (
+        activeContext.current === ctx &&
+        state.submissionId === ctx.submissionId
+      ) {
+        ctx.gallery = state.gallery
       }
+      return ctx.gallery
+    }, [])
 
-      await watermarkRead
-      if (cancelled) return
-      setRestoreState(restored ? 'ready' : 'failed')
-    }
-    void restore()
+    const updateContextGallery = useCallback(
+      (
+        ctx: DraftContext,
+        update: (
+          current: PatchSubmissionGalleryImage[]
+        ) => PatchSubmissionGalleryImage[]
+      ) => {
+        const next = update(readContextGallery(ctx))
+        ctx.gallery = next
+        if (isCurrent(ctx)) setGallery(next)
+        return next
+      },
+      [isCurrent, readContextGallery, setGallery]
+    )
 
-    return () => {
-      cancelled = true
-      mounted.current = false
+    const syncLocalState = useCallback(
+      (items: LocalUploadView[], loaded = true) => {
+        setLocalUploads(items)
+        setAssetDraftState({ localCount: items.length, loaded })
+      },
+      [setAssetDraftState]
+    )
+
+    /** The draft existing means the order still needs to be synchronized at the
+     *  next meaningful action, so the store flag and rendered sequence stay in
+     *  step even though authors do not manage that state directly. */
+    const syncOrderKeys = useCallback(
+      (keys: string[] | null) => {
+        setOrderKeys(keys)
+        setAssetDraftState({ orderDirty: keys !== null })
+      },
+      [setAssetDraftState]
+    )
+
+    /**
+     * Every write to either draft key of one submission runs here, one at a time,
+     * and derives its next value from what the task before it left behind.
+     * Callers used to compute a whole array from the render they were triggered by
+     * and race each other to storage, so an upload finishing while the author
+     * dropped a file left whichever wrote last as the only survivor.
+     *
+     * A write naming both keys is still two storage operations, so the order is
+     * chosen so a crash in between leaves something recoverable: a new sequence
+     * goes first, because a promoted `server:` key beside a local item that is
+     * still listed is exactly what the mount reconciliation repairs, while
+     * dropping the sequence goes last, because the record existing marks pending
+     * synchronization and losing it early would hide work that still must land.
+     */
+    const persistDraft = useCallback(
+      (
+        ctx: DraftContext,
+        compute: (current: {
+          items: LocalUploadView[]
+          orderKeys: string[] | null
+        }) => DraftWrite
+      ) =>
+        ctx.queue(async () => {
+          const next = compute({ items: ctx.items, orderKeys: ctx.orderKeys })
+          const writesOrder = 'orderKeys' in next
+          const nextOrderKeys = next.orderKeys ?? null
+
+          const writeOrder = async () => {
+            if (!writesOrder) return
+            if (nextOrderKeys) {
+              await savePatchSubmissionGalleryOrder(
+                ctx.submissionId,
+                nextOrderKeys
+              )
+            } else {
+              await clearPatchSubmissionGalleryOrder(ctx.submissionId)
+            }
+          }
+          const writeItems = async () => {
+            if (!next.items) return
+            await savePatchSubmissionUploadDraft(
+              ctx.submissionId,
+              toPersistedItems(next.items)
+            )
+          }
+
+          if (writesOrder && !nextOrderKeys) {
+            await writeItems()
+            await writeOrder()
+          } else {
+            await writeOrder()
+            await writeItems()
+          }
+
+          // What was stored is what this draft now holds, whether or not anyone is
+          // still looking at it: the task behind this one reads the context, and
+          // leaving it on the value this task just replaced is how a second upload
+          // finishing after an unmount wrote the first one back into storage.
+          if (writesOrder) ctx.orderKeys = nextOrderKeys
+          if (next.items) ctx.items = next.items
+
+          if (!isCurrent(ctx)) return next
+          if (writesOrder) syncOrderKeys(nextOrderKeys)
+          if (next.items) syncLocalState(next.items)
+          return next
+        }),
+      [isCurrent, syncLocalState, syncOrderKeys]
+    )
+
+    const releasePreview = useCallback((clientAssetId: string) => {
+      const url = previewUrls.current.get(clientAssetId)
+      if (url) URL.revokeObjectURL(url)
+      previewUrls.current.delete(clientAssetId)
+    }, [])
+
+    useEffect(() => {
+      mounted.current = true
+      // The new draft, and with it a new serialization domain. Whatever is still
+      // running against the old one keeps writing the old one's keys.
+      const state = usePatchSubmissionStore.getState()
+      const ctx = createDraftContext(
+        submissionId,
+        state.submissionId === submissionId ? state.gallery : []
+      )
+      activeContext.current = ctx
+      setSelected(new Set())
+      // Cleared before the stored state is read, so switching submissions — or
+      // retrying a failed read — can never carry the previous state into the new
+      // gallery. The progress bar goes with it: a batch left behind by the
+      // previous submission no longer reports into this one's view, so its bar
+      // would otherwise stay frozen at the count it had on the way out.
+      setSynchronizingOrder(false)
+      setDeleting(false)
+      setUpdatingNSFW(false)
+      setActiveDragKey(null)
+      setProgress(null)
       for (const url of previewUrls.current.values()) {
         URL.revokeObjectURL(url)
       }
       previewUrls.current.clear()
-    }
-  }, [
-    persistDraft,
-    restoreAttempt,
-    setAssetDraftState,
-    submissionId,
-    syncLocalState,
-    syncOrderKeys
-  ])
+      syncOrderKeys(null)
+      syncLocalState([], false)
+      setAssetDraftState({ uploadsInFlight: 0 })
+      setRestoreState('restoring')
+      let cancelled = false
 
-  const uploadItems = useCallback(
-    async (ctx: DraftContext, clientAssetIds: string[]) => {
-      if (batchRunning.current || !clientAssetIds.length) return
-      batchRunning.current = true
-      if (isCurrent(ctx)) {
-        setProgress({ total: clientAssetIds.length, completed: 0 })
-        setAssetDraftState({ uploadsInFlight: 1 })
-      }
-
-      let completed = 0
-      for (const clientAssetId of clientAssetIds) {
-        const target = ctx.items.find(
-          (item) => item.clientAssetId === clientAssetId
-        )
-        if (!target) {
-          completed += 1
-          if (isCurrent(ctx)) {
-            setProgress({ total: clientAssetIds.length, completed })
+      /**
+       * One restore, not three races. The gallery stays locked until every stored
+       * key has landed, because `loaded` unlocking on the items alone let the
+       * submit button open while the sequence was still unknown, and a drop
+       * arriving mid-restore fought the restore's own write-back.
+       */
+      const restore = async () => {
+        // The watermark switch is a preference rather than part of the draft's
+        // integrity, so a failed read degrades to the default instead of locking
+        // the draft. Edits still wait for it: a drop freezes the value the author
+        // is looking at into every file it stages.
+        const watermarkRead = loadPatchSubmissionWatermark(submissionId).then(
+          (stored) => {
+            if (!cancelled) setWatermark(stored)
+          },
+          (error) => {
+            console.error(
+              'Failed to restore submission watermark option',
+              error
+            )
+            if (cancelled) return
+            setWatermark(true)
+            toast.error('水印设置读取失败, 已恢复为默认开启, 请确认')
           }
-          continue
+        )
+
+        let restored = false
+        try {
+          const [storedItems, storedOrder] = await Promise.all([
+            loadPatchSubmissionUploadDraft(submissionId),
+            loadPatchSubmissionGalleryOrder(submissionId)
+          ])
+          if (cancelled) return
+
+          const valid = storedItems.filter((item) => item.blob instanceof Blob)
+          const storedSequence = storedOrder?.length ? storedOrder : null
+          const reconciled = reconcileRestoredDraft(
+            readContextGallery(ctx),
+            valid,
+            storedSequence
+          )
+          const views = reconciled.items.map((item) => {
+            const previewUrl = URL.createObjectURL(item.blob)
+            previewUrls.current.set(item.clientAssetId, previewUrl)
+            return { ...item, previewUrl }
+          })
+
+          // A restored sequence stays pending: the cloud rows still hold the order
+          // they had before the author dragged them.
+          ctx.orderKeys = reconciled.orderKeys
+          syncOrderKeys(reconciled.orderKeys)
+          await persistDraft(ctx, () =>
+            sameSequence(storedSequence, reconciled.orderKeys)
+              ? { items: views }
+              : { items: views, orderKeys: reconciled.orderKeys }
+          )
+          restored = true
+        } catch (error) {
+          console.error('Failed to restore the submission gallery draft', error)
+          if (!cancelled) toast.error('读取本地截图草稿失败, 请重试')
         }
 
-        try {
-          await persistDraft(ctx, ({ items }) => ({
-            items: items.map((item) =>
-              item.clientAssetId === clientAssetId
-                ? { ...item, status: 'uploading' as const, error: null }
-                : item
-            )
-          }))
-          const formData = new FormData()
-          formData.set('submissionId', String(ctx.submissionId))
-          formData.set('clientAssetId', target.clientAssetId)
-          formData.set(
-            'image',
-            new File([target.blob], target.fileName, {
-              type: target.mimeType,
-              lastModified: target.lastModified
-            })
+        await watermarkRead
+        if (cancelled) return
+        setRestoreState(restored ? 'ready' : 'failed')
+      }
+      void restore()
+
+      return () => {
+        cancelled = true
+        mounted.current = false
+        for (const url of previewUrls.current.values()) {
+          URL.revokeObjectURL(url)
+        }
+        previewUrls.current.clear()
+      }
+    }, [
+      persistDraft,
+      readContextGallery,
+      restoreAttempt,
+      setAssetDraftState,
+      submissionId,
+      syncLocalState,
+      syncOrderKeys
+    ])
+
+    const uploadItems = useCallback(
+      async (ctx: DraftContext, clientAssetIds: string[]) => {
+        if (ctx.uploadRunning || !clientAssetIds.length) return
+        ctx.uploadRunning = true
+        if (isCurrent(ctx)) {
+          setProgress({ total: clientAssetIds.length, completed: 0 })
+          setAssetDraftState({ uploadsInFlight: 1 })
+        }
+
+        let completed = 0
+        for (const clientAssetId of clientAssetIds) {
+          const target = ctx.items.find(
+            (item) => item.clientAssetId === clientAssetId
           )
-          formData.set('displayOrder', String(target.displayOrder))
-          formData.set('isNSFW', String(target.isNSFW))
-          formData.set('watermark', String(target.watermark))
-
-          const response = await kunFetchFormData<
-            | string
-            | {
-                galleryId: number
-                alreadyUploaded: boolean
-                gallery: PatchSubmissionGalleryImage
-              }
-          >('/patch-submission/asset', formData)
-          if (typeof response === 'string') throw new Error(response)
-
-          // One queue unit, sequence first. A drop during the batch can have
-          // written a new sequence, and the row that just became ready has to
-          // take over the slot its local card held instead of falling to the end
-          // of an unknown key list. Promoting before the local item is dropped
-          // means an interrupted pair leaves the row named and the stale card
-          // behind, which the mount reconciliation resolves in the row's favour;
-          // the reverse would leave the sequence pointing at nothing.
-          try {
-            await persistDraft(ctx, ({ items, orderKeys: pending }) => {
-              const remaining = items.filter(
-                (item) => item.clientAssetId !== clientAssetId
-              )
-              if (!pending) return { items: remaining }
-              return {
-                orderKeys: dedupeKeys(
-                  pending.map((key) =>
-                    key === localSelectionKey(clientAssetId)
-                      ? serverSelectionKey(response.gallery.id)
-                      : key
-                  )
-                ),
-                items: remaining
-              }
-            })
-          } catch (persistError) {
-            console.error(
-              'Failed to persist the uploaded submission screenshot',
-              persistError
-            )
-            // The row is ready on the server, and retrying this same client
-            // asset id resolves to it, so the honest local state is a card the
-            // author can press retry on.
-            throw new Error('截图已上传, 但本地记录未能保存, 请重试')
+          if (!target) {
+            completed += 1
+            if (isCurrent(ctx)) {
+              setProgress({ total: clientAssetIds.length, completed })
+            }
+            continue
           }
-          releasePreview(clientAssetId)
 
-          if (
-            isCurrent(ctx) &&
-            usePatchSubmissionStore.getState().submissionId === ctx.submissionId
-          ) {
-            const latest = usePatchSubmissionStore.getState().gallery
-            setGallery(
+          try {
+            await persistDraft(ctx, ({ items }) => ({
+              items: items.map((item) =>
+                item.clientAssetId === clientAssetId
+                  ? { ...item, status: 'uploading' as const, error: null }
+                  : item
+              )
+            }))
+            const formData = new FormData()
+            formData.set('submissionId', String(ctx.submissionId))
+            formData.set('clientAssetId', target.clientAssetId)
+            formData.set(
+              'image',
+              new File([target.blob], target.fileName, {
+                type: target.mimeType,
+                lastModified: target.lastModified
+              })
+            )
+            formData.set('displayOrder', String(target.displayOrder))
+            formData.set('isNSFW', String(target.isNSFW))
+            formData.set('watermark', String(target.watermark))
+
+            const response = await kunFetchFormData<
+              | string
+              | {
+                  galleryId: number
+                  alreadyUploaded: boolean
+                  gallery: PatchSubmissionGalleryImage
+                }
+            >('/patch-submission/asset', formData)
+            if (typeof response === 'string') throw new Error(response)
+
+            // One queue unit, sequence first. A drop during the batch can have
+            // written a new sequence, and the row that just became ready has to
+            // take over the slot its local card held instead of falling to the end
+            // of an unknown key list. Promoting before the local item is dropped
+            // means an interrupted pair leaves the row named and the stale card
+            // behind, which the mount reconciliation resolves in the row's favour;
+            // the reverse would leave the sequence pointing at nothing.
+            try {
+              await persistDraft(ctx, ({ items, orderKeys: pending }) => {
+                const remaining = items.filter(
+                  (item) => item.clientAssetId !== clientAssetId
+                )
+                if (!pending) return { items: remaining }
+                return {
+                  orderKeys: dedupeKeys(
+                    pending.map((key) =>
+                      key === localSelectionKey(clientAssetId)
+                        ? serverSelectionKey(response.gallery.id)
+                        : key
+                    )
+                  ),
+                  items: remaining
+                }
+              })
+            } catch (persistError) {
+              console.error(
+                'Failed to persist the uploaded submission screenshot',
+                persistError
+              )
+              // The row is ready on the server, and retrying this same client
+              // asset id resolves to it, so the honest local state is a card the
+              // author can press retry on.
+              throw new Error('截图已上传, 但本地记录未能保存, 请重试')
+            }
+            releasePreview(clientAssetId)
+
+            updateContextGallery(ctx, (latest) =>
               [
                 ...latest.filter(
                   (image) =>
@@ -889,735 +976,843 @@ export const SubmissionGalleryInput = () => {
                     image.clientAssetId !== response.gallery.clientAssetId
                 ),
                 response.gallery
-              ].sort((left, right) => left.displayOrder - right.displayOrder)
-            )
-          }
-        } catch (error) {
-          const message =
-            error instanceof Error && error.message
-              ? error.message
-              : '上传失败，请重试'
-          try {
-            await persistDraft(ctx, ({ items }) => ({
-              items: items.map((item) =>
-                item.clientAssetId === clientAssetId
-                  ? { ...item, status: 'failed' as const, error: message }
-                  : item
+              ].sort(
+                (left, right) =>
+                  left.displayOrder - right.displayOrder || left.id - right.id
               )
-            }))
-          } catch (persistError) {
-            console.error('Failed to persist submission upload failure', {
-              persistError
-            })
-          }
-          toast.error(message)
-        } finally {
-          completed += 1
-          if (isCurrent(ctx)) {
-            setProgress({ total: clientAssetIds.length, completed })
+            )
+          } catch (error) {
+            const message =
+              error instanceof Error && error.message
+                ? error.message
+                : '上传失败，请重试'
+            try {
+              await persistDraft(ctx, ({ items }) => ({
+                items: items.map((item) =>
+                  item.clientAssetId === clientAssetId
+                    ? { ...item, status: 'failed' as const, error: message }
+                    : item
+                )
+              }))
+            } catch (persistError) {
+              console.error('Failed to persist submission upload failure', {
+                persistError
+              })
+            }
+            if (isCurrent(ctx)) toast.error(message)
+          } finally {
+            completed += 1
+            if (isCurrent(ctx)) {
+              setProgress({ total: clientAssetIds.length, completed })
+            }
           }
         }
+
+        ctx.uploadRunning = false
+        if (isCurrent(ctx)) setAssetDraftState({ uploadsInFlight: 0 })
+      },
+      [
+        isCurrent,
+        persistDraft,
+        releasePreview,
+        setAssetDraftState,
+        updateContextGallery
+      ]
+    )
+
+    const entries = buildOrderedEntries(gallery, localUploads, orderKeys)
+    const visibleGallery = entries.flatMap((entry) =>
+      entry.image ? [entry.image] : []
+    )
+    const localIds = new Set(localUploads.map((item) => item.clientAssetId))
+    const serverSlotCount = gallery.filter(
+      (image) =>
+        image.uploadStatus !== 'failed' && !localIds.has(image.clientAssetId)
+    ).length
+    const totalSlotCount = serverSlotCount + localUploads.length
+    const uploadableCount = localUploads.filter(
+      (item) => item.status === 'pending' || item.status === 'failed'
+    ).length
+
+    /**
+     * Records a sequence the author dragged without sending it immediately. The
+     * sequence is frozen at the drag because that sequence *is* the gesture; a
+     * later upload, draft save, preview or submit synchronizes it to the server.
+     */
+    const applyOrder = useCallback(
+      async (ctx: DraftContext, nextKeys: string[]) => {
+        ctx.orderGeneration += 1
+        try {
+          await persistDraft(ctx, ({ items }) =>
+            orderedDraftWrite(nextKeys, items, readContextGallery(ctx))
+          )
+          return true
+        } catch (error) {
+          console.error('Failed to persist submission gallery order', error)
+          return false
+        }
+      },
+      [persistDraft, readContextGallery]
+    )
+
+    /**
+     * Stages dropped files at the end of the gallery. Unlike a drag, an append
+     * names no arrangement of its own, so the count and the sequence are decided
+     * inside the write queue rather than from the grid the files were dropped
+     * onto: two drops in quick succession are two tasks, and the second has to see
+     * the slots the first one took and name its keys in the sequence it writes.
+     * Deciding either at the event would let the second drop pass a cap that no
+     * longer holds and overwrite the first drop's sequence with one that never
+     * mentioned it.
+     */
+    const appendLocalUploads = useCallback(
+      async (ctx: DraftContext, staged: LocalUploadView[]) => {
+        let rejected = false
+        try {
+          await persistDraft(ctx, ({ items, orderKeys: pending }) => {
+            const gallery = readContextGallery(ctx)
+            const localIds = new Set(items.map((item) => item.clientAssetId))
+            const occupied =
+              gallery.filter(
+                (image) =>
+                  image.uploadStatus !== 'failed' &&
+                  !localIds.has(image.clientAssetId)
+              ).length + items.length
+            // The cap is re-read here rather than at the drop, because two drops
+            // in quick succession both read the same count off the grid and both
+            // pass a cap that only one of them still fits under. A rejected append
+            // writes nothing at all, so the draft is exactly what it was.
+            if (occupied + staged.length > PATCH_SUBMISSION_GALLERY_MAX_COUNT) {
+              rejected = true
+              return {}
+            }
+
+            ctx.orderGeneration += 1
+            // The new files take the slots after everything currently in the
+            // gallery, and the cloud rows are repacked on the next synchronization.
+            // Picking their display orders any other way could collide with a row
+            // the author has already uploaded.
+            const sequence = [
+              ...buildOrderedEntries(gallery, items, pending).map(
+                (entry) => entry.key
+              ),
+              ...staged.map((item) => localSelectionKey(item.clientAssetId))
+            ]
+            return orderedDraftWrite(sequence, [...items, ...staged], gallery)
+          })
+          return rejected ? 'rejected' : 'stored'
+        } catch (error) {
+          console.error('Failed to persist the staged submission screenshots', {
+            error
+          })
+          return 'failed'
+        }
+      },
+      [persistDraft, readContextGallery]
+    )
+
+    /**
+     * Synchronizes the current order for the surrounding draft workflow.
+     * Concurrent callers share one operation. If the sequence changes while a
+     * request is in flight, the same operation continues with the newer draft
+     * before reporting success.
+     */
+    const flushGalleryOrder = useCallback(
+      (ctx: DraftContext): Promise<PatchSubmissionSaveResult> => {
+        if (ctx.orderFlushPromise) return ctx.orderFlushPromise
+
+        const operation = (async (): Promise<PatchSubmissionSaveResult> => {
+          // A drag renders its sequence at once and writes it behind the queue,
+          // so reading the draft straight away could miss the very gesture that
+          // prompted this flush and freeze the order the author already replaced.
+          // Draining first is what makes "the order when you saved" mean the
+          // order that was on screen.
+          await ctx.queue(async () => undefined)
+          if (!ctx.orderKeys) return { ok: true }
+          if (ctx.uploadRunning) {
+            return {
+              ok: false,
+              reason: 'error',
+              message: '截图正在上传，请等待完成后重试'
+            }
+          }
+
+          ctx.synchronizingOrder = true
+          if (isCurrent(ctx)) setSynchronizingOrder(true)
+          try {
+            while (ctx.orderKeys) {
+              const keys = ctx.orderKeys
+              const generation = ctx.orderGeneration
+              const frozen = buildOrderedEntries(
+                readContextGallery(ctx),
+                ctx.items,
+                keys
+              ).map((entry, index) => ({ entry, index }))
+              const order = frozen
+                .filter(({ entry }) => entry.image?.uploadStatus === 'ready')
+                .map(({ entry, index }) => ({
+                  galleryId: entry.image!.id,
+                  displayOrder: index
+                }))
+
+              const response = await kunFetchPatch<
+                string | Record<string, never>
+              >('/patch-submission/asset', {
+                action: 'order',
+                submissionId: ctx.submissionId,
+                order
+              })
+              if (typeof response === 'string') {
+                return { ok: false, reason: 'error', message: response }
+              }
+
+              const synchronized = new Map(
+                order.map((entry) => [entry.galleryId, entry.displayOrder])
+              )
+              updateContextGallery(ctx, (current) =>
+                current.map((image) =>
+                  synchronized.has(image.id)
+                    ? {
+                        ...image,
+                        displayOrder: synchronized.get(image.id) as number
+                      }
+                    : image
+                )
+              )
+
+              if (generation !== ctx.orderGeneration) {
+                // A drag advances the generation before its localforage write is
+                // queued. Wait behind that write before reading the next sequence,
+                // otherwise this loop could send the previous keys again and then
+                // clear the newer draft waiting in the queue.
+                await ctx.queue(async () => undefined)
+                continue
+              }
+
+              const positions = new Map(
+                frozen.flatMap(({ entry, index }) =>
+                  entry.item ? [[entry.item.clientAssetId, index] as const] : []
+                )
+              )
+              await persistDraft(ctx, ({ items }) => ({
+                items: items.map((item) => {
+                  const position = positions.get(item.clientAssetId)
+                  return position === undefined
+                    ? item
+                    : { ...item, displayOrder: position }
+                }),
+                orderKeys: null
+              }))
+            }
+            return { ok: true }
+          } catch (error) {
+            console.error(
+              'Failed to synchronize submission gallery order',
+              error
+            )
+            return {
+              ok: false,
+              reason: 'error',
+              message: '同步截图顺序失败，请检查网络后重试'
+            }
+          } finally {
+            ctx.synchronizingOrder = false
+            if (isCurrent(ctx)) setSynchronizingOrder(false)
+          }
+        })()
+
+        ctx.orderFlushPromise = operation
+        void operation.finally(() => {
+          if (ctx.orderFlushPromise === operation) ctx.orderFlushPromise = null
+        })
+        return operation
+      },
+      [isCurrent, persistDraft, readContextGallery, updateContextGallery]
+    )
+
+    useImperativeHandle(
+      ref,
+      () => ({
+        flushOrder: () => flushGalleryOrder(activeContext.current)
+      }),
+      [flushGalleryOrder]
+    )
+
+    const sensors = useSensors(
+      useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+      useSensor(KeyboardSensor, {
+        coordinateGetter: sortableKeyboardCoordinates
+      })
+    )
+
+    const handleDragStart = (event: DragStartEvent) => {
+      setActiveDragKey(String(event.active.id))
+    }
+
+    const handleDragEnd = async (event: DragEndEvent) => {
+      setActiveDragKey(null)
+      const { active, over } = event
+      if (!over || active.id === over.id) return
+      // A sequence dragged before the stored one has been read would be built on
+      // an unknown arrangement, and the restore's own write-back would fight it.
+      if (!editable || restoring) return
+
+      const ctx = activeContext.current
+      const keys = entries.map((entry) => entry.key)
+      const from = keys.indexOf(String(active.id))
+      const to = keys.indexOf(String(over.id))
+      if (from < 0 || to < 0) return
+
+      const previous = orderKeys
+      const next = arrayMove(keys, from, to)
+      // Rendered before the write is awaited rather than after it. dnd-kit
+      // clears every drag transform on this same frame, so waiting for the
+      // localforage round trip made the cards snap back to the old arrangement
+      // and jump into the new one a few frames later — and the drop animation
+      // aimed at the slot the card was leaving. The queued write still has the
+      // last word: its own syncOrderKeys is what folds in keys an upload
+      // promoted underneath.
+      syncOrderKeys(next)
+      if (!(await applyOrder(ctx, next)) && isCurrent(ctx)) {
+        syncOrderKeys(previous)
+        toast.error('记录截图顺序失败，请重试')
+      }
+    }
+
+    const { getRootProps, getInputProps, isDragActive } = useDropzone({
+      getFilesFromEvent: getGalleryFilesFromEvent,
+      accept: { 'image/*': [] },
+      // A drop rewrites the sequence, which is exactly what a synchronization
+      // has frozen and what the restore is still reading.
+      disabled: !editable || synchronizingOrder || restoring,
+      onDrop: async (accepted: File[]) => {
+        const valid = accepted.filter((file) => checkImageValid(file))
+        if (!valid.length) return
+
+        const ctx = activeContext.current
+        // Staged eagerly, so the previews exist by the time the write that admits
+        // them lands. Whether they fit is not decided here: the count on the grid
+        // is the one the previous drop has not been written into yet.
+        const staged = valid.map((file) => {
+          const clientAssetId = generateUUID().replace(/-/g, '')
+          const previewUrl = URL.createObjectURL(file)
+          previewUrls.current.set(clientAssetId, previewUrl)
+          return {
+            clientAssetId,
+            blob: file,
+            fileName: file.name,
+            mimeType: file.type,
+            lastModified: file.lastModified,
+            displayOrder: 0,
+            isNSFW: false,
+            watermark,
+            status: 'pending' as const,
+            error: null,
+            previewUrl
+          }
+        })
+
+        const outcome = await appendLocalUploads(ctx, staged)
+        if (outcome === 'stored') return
+
+        for (const item of staged) releasePreview(item.clientAssetId)
+        if (isCurrent(ctx)) {
+          toast.error(
+            outcome === 'rejected'
+              ? `截图最多 ${PATCH_SUBMISSION_GALLERY_MAX_COUNT} 张`
+              : '保存待上传截图失败，请重试'
+          )
+        }
+      }
+    })
+
+    const handleSetWatermark = async (value: boolean) => {
+      const ctx = activeContext.current
+      setWatermark(value)
+      try {
+        await savePatchSubmissionWatermark(ctx.submissionId, value)
+      } catch (error) {
+        console.error('Failed to persist submission watermark option', error)
+      }
+    }
+
+    /** Uploading writes display_order, so the current sequence is synchronized
+     * before the first file starts. */
+    const uploadWithSynchronizedOrder = async (
+      ctx: DraftContext,
+      clientAssetIds: string[]
+    ) => {
+      if (ctx.uploadRunning || ctx.synchronizingOrder) return
+      const synchronized = await flushGalleryOrder(ctx)
+      if (!synchronized.ok) {
+        if (isCurrent(ctx)) toast.error(synchronized.message)
+        return
+      }
+      await uploadItems(ctx, clientAssetIds)
+    }
+
+    /** The switch is frozen into every targeted item before the first request,
+     *  so an interrupted batch retries with the value the author chose. */
+    const startUpload = async () => {
+      const ctx = activeContext.current
+      if (ctx.uploadRunning || ctx.synchronizingOrder) return
+      const targets = ctx.items.filter(
+        (item) => item.status === 'pending' || item.status === 'failed'
+      )
+      if (!targets.length) return
+
+      const targetIds = new Set(targets.map((item) => item.clientAssetId))
+      try {
+        await persistDraft(ctx, ({ items }) => ({
+          items: items.map((item) =>
+            targetIds.has(item.clientAssetId) ? { ...item, watermark } : item
+          )
+        }))
+      } catch (error) {
+        console.error('Failed to persist submission watermark snapshot', error)
+        if (isCurrent(ctx)) toast.error('保存水印设置失败，未开始上传')
+        return
       }
 
-      batchRunning.current = false
-      if (isCurrent(ctx)) setAssetDraftState({ uploadsInFlight: 0 })
-    },
-    [isCurrent, persistDraft, releasePreview, setAssetDraftState, setGallery]
-  )
+      await uploadWithSynchronizedOrder(ctx, [...targetIds])
+    }
 
-  const entries = buildOrderedEntries(gallery, localUploads, orderKeys)
-  const visibleGallery = entries.flatMap((entry) =>
-    entry.image ? [entry.image] : []
-  )
-  const localIds = new Set(localUploads.map((item) => item.clientAssetId))
-  const serverSlotCount = gallery.filter(
-    (image) =>
-      image.uploadStatus !== 'failed' && !localIds.has(image.clientAssetId)
-  ).length
-  const totalSlotCount = serverSlotCount + localUploads.length
-  const uploadableCount = localUploads.filter(
-    (item) => item.status === 'pending' || item.status === 'failed'
-  ).length
-
-  /**
-   * Records a sequence the author dragged, without sending it. The cloud rows
-   * only move on an explicit save, so the draft is the sole carrier of their
-   * intent. The sequence is frozen at the drag, because that sequence *is* the
-   * gesture: it names every card the author was looking at, in the arrangement
-   * they just made.
-   */
-  const applyOrder = useCallback(
-    async (ctx: DraftContext, nextKeys: string[]) => {
-      orderGeneration.current += 1
+    const removeLocalUpload = async (clientAssetId: string) => {
+      const ctx = activeContext.current
       try {
-        await persistDraft(ctx, ({ items }) =>
-          orderedDraftWrite(
-            nextKeys,
-            items,
-            usePatchSubmissionStore.getState().gallery
-          )
+        await persistDraft(ctx, ({ items }) => ({
+          items: items.filter((item) => item.clientAssetId !== clientAssetId)
+        }))
+        releasePreview(clientAssetId)
+      } catch (error) {
+        console.error('Failed to remove submission upload draft item', error)
+        if (isCurrent(ctx)) toast.error('移除待上传截图失败，请重试')
+      }
+    }
+
+    const deleteImages = async (ctx: DraftContext, galleryIds: number[]) => {
+      try {
+        const response = await kunFetchDeleteBody<
+          string | Record<string, never>
+        >('/patch-submission/asset', {
+          submissionId: ctx.submissionId,
+          galleryIds
+        })
+        if (typeof response === 'string') {
+          if (isCurrent(ctx)) toast.error(response)
+          return false
+        }
+        const removed = new Set(galleryIds)
+        updateContextGallery(ctx, (current) =>
+          current.filter((image) => !removed.has(image.id))
         )
         return true
       } catch (error) {
-        console.error('Failed to persist submission gallery order', error)
+        console.error('Failed to delete submission gallery images', error)
+        if (isCurrent(ctx)) toast.error('删除截图失败，请检查网络后重试')
         return false
       }
-    },
-    [persistDraft]
-  )
+    }
 
-  /**
-   * Stages dropped files at the end of the gallery. Unlike a drag, an append
-   * names no arrangement of its own, so the count and the sequence are decided
-   * inside the write queue rather than from the grid the files were dropped
-   * onto: two drops in quick succession are two tasks, and the second has to see
-   * the slots the first one took and name its keys in the sequence it writes.
-   * Deciding either at the event would let the second drop pass a cap that no
-   * longer holds and overwrite the first drop's sequence with one that never
-   * mentioned it.
-   */
-  const appendLocalUploads = useCallback(
-    async (ctx: DraftContext, staged: LocalUploadView[]) => {
-      let rejected = false
-      try {
-        await persistDraft(ctx, ({ items, orderKeys: pending }) => {
-          const gallery = usePatchSubmissionStore.getState().gallery
-          const localIds = new Set(items.map((item) => item.clientAssetId))
-          const occupied =
-            gallery.filter(
-              (image) =>
-                image.uploadStatus !== 'failed' &&
-                !localIds.has(image.clientAssetId)
-            ).length + items.length
-          // The cap is re-read here rather than at the drop, because two drops
-          // in quick succession both read the same count off the grid and both
-          // pass a cap that only one of them still fits under. A rejected append
-          // writes nothing at all, so the draft is exactly what it was.
-          if (occupied + staged.length > PATCH_SUBMISSION_GALLERY_MAX_COUNT) {
-            rejected = true
-            return {}
-          }
-
-          orderGeneration.current += 1
-          // The new files take the slots after everything currently in the
-          // gallery, and the cloud rows are repacked to match on the next save.
-          // Picking their display orders any other way could collide with a row
-          // the author has already uploaded.
-          const sequence = [
-            ...buildOrderedEntries(gallery, items, pending).map(
-              (entry) => entry.key
-            ),
-            ...staged.map((item) => localSelectionKey(item.clientAssetId))
-          ]
-          return orderedDraftWrite(sequence, [...items, ...staged], gallery)
+    const deleteImage = async (galleryId: number) => {
+      const ctx = activeContext.current
+      if ((await deleteImages(ctx, [galleryId])) && isCurrent(ctx)) {
+        setSelected((current) => {
+          const next = new Set(current)
+          next.delete(serverSelectionKey(galleryId))
+          return next
         })
-        return rejected ? 'rejected' : 'stored'
-      } catch (error) {
-        console.error('Failed to persist the staged submission screenshots', {
-          error
-        })
-        return 'failed'
       }
-    },
-    [persistDraft]
-  )
+    }
 
-  /**
-   * The single writer of gallery order. It freezes the sequence and the drag
-   * generation before the request, so a save that lands after another drag
-   * updates the rows it promised and still leaves the draft in place.
-   */
-  const saveGalleryOrder = useCallback(
-    async (ctx: DraftContext) => {
-      const keys = ctx.orderKeys
-      if (!keys || savingOrderRef.current || batchRunning.current) return false
+    const selectedServerIds = visibleGallery
+      .filter((image) => selected.has(serverSelectionKey(image.id)))
+      .map((image) => image.id)
+    const selectedReadyServerIds = visibleGallery
+      .filter(
+        (image) =>
+          image.uploadStatus === 'ready' &&
+          selected.has(serverSelectionKey(image.id))
+      )
+      .map((image) => image.id)
+    const selectedLocalIds = localUploads
+      .filter(
+        (item) =>
+          item.status !== 'uploading' &&
+          selected.has(localSelectionKey(item.clientAssetId))
+      )
+      .map((item) => item.clientAssetId)
 
-      const generation = orderGeneration.current
-      const frozen = buildOrderedEntries(
-        usePatchSubmissionStore.getState().gallery,
-        ctx.items,
-        keys
-      ).map((entry, index) => ({ entry, index }))
-      const order = frozen
-        .filter(({ entry }) => entry.image?.uploadStatus === 'ready')
-        .map(({ entry, index }) => ({
-          galleryId: entry.image!.id,
-          displayOrder: index
-        }))
+    /** The server call goes first: dropping the local Blob before the row is
+     *  gone would leave nothing to retry with. */
+    const deleteSelected = async () => {
+      if (!selectedServerIds.length && !selectedLocalIds.length) return
+      const ctx = activeContext.current
+      setDeleting(true)
+      try {
+        if (
+          selectedServerIds.length &&
+          !(await deleteImages(ctx, selectedServerIds))
+        ) {
+          return
+        }
 
-      savingOrderRef.current = true
-      if (mounted.current) setSavingOrder(true)
+        if (selectedLocalIds.length) {
+          const removing = new Set(selectedLocalIds)
+          try {
+            await persistDraft(ctx, ({ items }) => ({
+              items: items.filter((item) => !removing.has(item.clientAssetId))
+            }))
+            for (const clientAssetId of removing) releasePreview(clientAssetId)
+          } catch (error) {
+            console.error(
+              'Failed to remove submission upload draft items',
+              error
+            )
+            if (isCurrent(ctx)) toast.error('移除待上传截图失败，请重试')
+            return
+          }
+        }
+
+        if (isCurrent(ctx)) setSelected(new Set())
+      } finally {
+        if (isCurrent(ctx)) setDeleting(false)
+      }
+    }
+
+    const setSelectedNSFW = async (isNSFW: boolean) => {
+      const galleryIds = selectedReadyServerIds
+      if (!galleryIds.length) return
+      const ctx = activeContext.current
+      setUpdatingNSFW(true)
       try {
         const response = await kunFetchPatch<string | Record<string, never>>(
           '/patch-submission/asset',
-          { action: 'order', submissionId: ctx.submissionId, order }
+          { action: 'nsfw', submissionId: ctx.submissionId, galleryIds, isNSFW }
         )
         if (typeof response === 'string') {
-          toast.error(response)
-          return false
-        }
-
-        const saved = new Map(
-          order.map((entry) => [entry.galleryId, entry.displayOrder])
-        )
-        setGallery(
-          usePatchSubmissionStore
-            .getState()
-            .gallery.map((image) =>
-              saved.has(image.id)
-                ? { ...image, displayOrder: saved.get(image.id) as number }
-                : image
-            )
-        )
-
-        if (generation !== orderGeneration.current) {
-          // The author kept dragging while this was in flight, so the sequence on
-          // screen is newer than the one the server just accepted.
-          return false
-        }
-
-        const positions = new Map(
-          frozen.flatMap(({ entry, index }) =>
-            entry.item ? [[entry.item.clientAssetId, index] as const] : []
-          )
-        )
-        await persistDraft(ctx, ({ items }) => ({
-          items: items.map((item) => {
-            const position = positions.get(item.clientAssetId)
-            return position === undefined
-              ? item
-              : { ...item, displayOrder: position }
-          }),
-          orderKeys: null
-        }))
-        return true
-      } catch (error) {
-        console.error('Failed to save submission gallery order', error)
-        toast.error('保存截图顺序失败，请检查网络后重试')
-        return false
-      } finally {
-        savingOrderRef.current = false
-        if (mounted.current) setSavingOrder(false)
-      }
-    },
-    [persistDraft, setGallery]
-  )
-
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
-    useSensor(KeyboardSensor, {
-      coordinateGetter: sortableKeyboardCoordinates
-    })
-  )
-
-  const handleDragEnd = async (event: DragEndEvent) => {
-    const { active, over } = event
-    if (!over || active.id === over.id) return
-    // A sequence dragged before the stored one has been read would be built on
-    // an unknown arrangement, and the restore's own write-back would fight it.
-    if (!editable || restoring) return
-
-    const ctx = activeContext.current
-    const keys = entries.map((entry) => entry.key)
-    const from = keys.indexOf(String(active.id))
-    const to = keys.indexOf(String(over.id))
-    if (from < 0 || to < 0) return
-
-    if (!(await applyOrder(ctx, arrayMove(keys, from, to)))) {
-      toast.error('保存截图顺序失败，请重试')
-    }
-  }
-
-  const { getRootProps, getInputProps, isDragActive } = useDropzone({
-    getFilesFromEvent: getGalleryFilesFromEvent,
-    accept: { 'image/*': [] },
-    // A drop rewrites the sequence, which is exactly what a save has frozen and
-    // what the restore is still reading.
-    disabled: !editable || savingOrder || restoring,
-    onDrop: async (accepted: File[]) => {
-      const valid = accepted.filter((file) => checkImageValid(file))
-      if (!valid.length) return
-
-      const ctx = activeContext.current
-      // Staged eagerly, so the previews exist by the time the write that admits
-      // them lands. Whether they fit is not decided here: the count on the grid
-      // is the one the previous drop has not been written into yet.
-      const staged = valid.map((file) => {
-        const clientAssetId = generateUUID().replace(/-/g, '')
-        const previewUrl = URL.createObjectURL(file)
-        previewUrls.current.set(clientAssetId, previewUrl)
-        return {
-          clientAssetId,
-          blob: file,
-          fileName: file.name,
-          mimeType: file.type,
-          lastModified: file.lastModified,
-          displayOrder: 0,
-          isNSFW: false,
-          watermark,
-          status: 'pending' as const,
-          error: null,
-          previewUrl
-        }
-      })
-
-      const outcome = await appendLocalUploads(ctx, staged)
-      if (outcome === 'stored') return
-
-      for (const item of staged) releasePreview(item.clientAssetId)
-      toast.error(
-        outcome === 'rejected'
-          ? `截图最多 ${PATCH_SUBMISSION_GALLERY_MAX_COUNT} 张`
-          : '保存待上传截图失败，请重试'
-      )
-    }
-  })
-
-  const handleSetWatermark = async (value: boolean) => {
-    setWatermark(value)
-    try {
-      await savePatchSubmissionWatermark(submissionId, value)
-    } catch (error) {
-      console.error('Failed to persist submission watermark option', error)
-    }
-  }
-
-  /**
-   * Uploading writes display_order, so an unsaved sequence has to reach the
-   * server first or the new row lands in a slot the author no longer wants.
-   * Anything that stops that save also stops the upload.
-   */
-  const uploadWithSavedOrder = async (
-    ctx: DraftContext,
-    clientAssetIds: string[]
-  ) => {
-    if (batchRunning.current || savingOrderRef.current) return
-    if (ctx.orderKeys && !(await saveGalleryOrder(ctx))) {
-      toast.error('截图顺序尚未保存，已取消上传')
-      return
-    }
-    await uploadItems(ctx, clientAssetIds)
-  }
-
-  /** The switch is frozen into every targeted item before the first request,
-   *  so an interrupted batch retries with the value the author chose. */
-  const startUpload = async () => {
-    if (batchRunning.current || savingOrderRef.current) return
-    const ctx = activeContext.current
-    const targets = ctx.items.filter(
-      (item) => item.status === 'pending' || item.status === 'failed'
-    )
-    if (!targets.length) return
-
-    const targetIds = new Set(targets.map((item) => item.clientAssetId))
-    try {
-      await persistDraft(ctx, ({ items }) => ({
-        items: items.map((item) =>
-          targetIds.has(item.clientAssetId) ? { ...item, watermark } : item
-        )
-      }))
-    } catch (error) {
-      console.error('Failed to persist submission watermark snapshot', error)
-      toast.error('保存水印设置失败，未开始上传')
-      return
-    }
-
-    await uploadWithSavedOrder(ctx, [...targetIds])
-  }
-
-  const removeLocalUpload = async (clientAssetId: string) => {
-    try {
-      await persistDraft(activeContext.current, ({ items }) => ({
-        items: items.filter((item) => item.clientAssetId !== clientAssetId)
-      }))
-      releasePreview(clientAssetId)
-    } catch (error) {
-      console.error('Failed to remove submission upload draft item', error)
-      toast.error('移除待上传截图失败，请重试')
-    }
-  }
-
-  const deleteImages = async (galleryIds: number[]) => {
-    try {
-      const response = await kunFetchDeleteBody<string | Record<string, never>>(
-        '/patch-submission/asset',
-        { submissionId, galleryIds }
-      )
-      if (typeof response === 'string') {
-        toast.error(response)
-        return false
-      }
-      const removed = new Set(galleryIds)
-      setGallery(
-        usePatchSubmissionStore
-          .getState()
-          .gallery.filter((image) => !removed.has(image.id))
-      )
-      return true
-    } catch (error) {
-      console.error('Failed to delete submission gallery images', error)
-      toast.error('删除截图失败，请检查网络后重试')
-      return false
-    }
-  }
-
-  const deleteImage = async (galleryId: number) => {
-    if (await deleteImages([galleryId])) {
-      setSelected((current) => {
-        const next = new Set(current)
-        next.delete(serverSelectionKey(galleryId))
-        return next
-      })
-    }
-  }
-
-  const selectedServerIds = visibleGallery
-    .filter((image) => selected.has(serverSelectionKey(image.id)))
-    .map((image) => image.id)
-  const selectedReadyServerIds = visibleGallery
-    .filter(
-      (image) =>
-        image.uploadStatus === 'ready' &&
-        selected.has(serverSelectionKey(image.id))
-    )
-    .map((image) => image.id)
-  const selectedLocalIds = localUploads
-    .filter(
-      (item) =>
-        item.status !== 'uploading' &&
-        selected.has(localSelectionKey(item.clientAssetId))
-    )
-    .map((item) => item.clientAssetId)
-
-  /** The server call goes first: dropping the local Blob before the row is
-   *  gone would leave nothing to retry with. */
-  const deleteSelected = async () => {
-    if (!selectedServerIds.length && !selectedLocalIds.length) return
-    const ctx = activeContext.current
-    setDeleting(true)
-    try {
-      if (
-        selectedServerIds.length &&
-        !(await deleteImages(selectedServerIds))
-      ) {
-        return
-      }
-
-      if (selectedLocalIds.length) {
-        const removing = new Set(selectedLocalIds)
-        try {
-          await persistDraft(ctx, ({ items }) => ({
-            items: items.filter((item) => !removing.has(item.clientAssetId))
-          }))
-          for (const clientAssetId of removing) releasePreview(clientAssetId)
-        } catch (error) {
-          console.error('Failed to remove submission upload draft items', error)
-          toast.error('移除待上传截图失败，请重试')
+          if (isCurrent(ctx)) toast.error(response)
           return
         }
-      }
-
-      setSelected(new Set())
-    } finally {
-      setDeleting(false)
-    }
-  }
-
-  const setSelectedNSFW = async (isNSFW: boolean) => {
-    const galleryIds = selectedReadyServerIds
-    if (!galleryIds.length) return
-    setUpdatingNSFW(true)
-    try {
-      const response = await kunFetchPatch<string | Record<string, never>>(
-        '/patch-submission/asset',
-        { action: 'nsfw', submissionId, galleryIds, isNSFW }
-      )
-      if (typeof response === 'string') {
-        toast.error(response)
-        return
-      }
-      const updated = new Set(galleryIds)
-      setGallery(
-        usePatchSubmissionStore
-          .getState()
-          .gallery.map((image) =>
+        const updated = new Set(galleryIds)
+        updateContextGallery(ctx, (current) =>
+          current.map((image) =>
             updated.has(image.id) ? { ...image, isNSFW } : image
           )
-      )
-      setSelected(new Set())
-    } catch (error) {
-      console.error('Failed to update submission gallery NSFW state', error)
-      toast.error('截图分级更新失败，请检查网络后重试')
-    } finally {
-      setUpdatingNSFW(false)
-    }
-  }
-
-  const toggleSelection = (key: string) =>
-    setSelected((current) => {
-      const next = new Set(current)
-      if (next.has(key)) next.delete(key)
-      else next.add(key)
-      return next
-    })
-
-  /** The lightbox follows the grid, cloud rows and staged files alike, so
-   *  stepping through it matches what the author sees on the page. */
-  const viewerCards = entries.flatMap((entry, index) => {
-    const src = entry.image ? entry.image.imageUrl : entry.item!.previewUrl
-    if (!src) return []
-    return [
-      {
-        key: entry.key,
-        src,
-        previewSrc: entry.image?.thumbnailUrl ?? undefined,
-        alt: entry.image
-          ? `第 ${index + 1} 张截图`
-          : `待上传图片 ${entry.item!.fileName}`
+        )
+        if (isCurrent(ctx)) setSelected(new Set())
+      } catch (error) {
+        console.error('Failed to update submission gallery NSFW state', error)
+        if (isCurrent(ctx)) {
+          toast.error('截图分级更新失败，请检查网络后重试')
+        }
+      } finally {
+        if (isCurrent(ctx)) setUpdatingNSFW(false)
       }
-    ]
-  })
-  const viewerImages = viewerCards.map(({ key: _key, ...image }) => image)
-  const openLightboxFor = (key: string, open: (index: number) => void) => {
-    const index = viewerCards.findIndex((card) => card.key === key)
-    if (index >= 0) open(index)
-  }
+    }
 
-  return (
-    <div className="space-y-3">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-xl">游戏截图 (可选)</h2>
-        <div className="flex flex-wrap items-center gap-3">
-          {editable && (
-            <Switch
-              isSelected={watermark}
-              isDisabled={galleryLocked}
-              onValueChange={(value) => void handleSetWatermark(value)}
-            >
-              添加水印
-            </Switch>
-          )}
-          <span className="text-sm text-default-500">
-            {totalSlotCount} / {PATCH_SUBMISSION_GALLERY_MAX_COUNT}
-          </span>
-        </div>
-      </div>
-      <p className="text-sm text-default-500">
-        动态 WebP / AVIF 会保留原始动图，不添加水印。
-      </p>
+    const toggleSelection = (key: string) =>
+      setSelected((current) => {
+        const next = new Set(current)
+        if (next.has(key)) next.delete(key)
+        else next.add(key)
+        return next
+      })
 
-      {progress && (
-        <Progress
-          aria-label="截图上传进度"
-          label="截图上传进度"
-          value={progress.completed}
-          minValue={0}
-          maxValue={progress.total}
-          valueLabel={`${progress.completed} / ${progress.total}`}
-          showValueLabel
-          color={progress.completed === progress.total ? 'success' : 'primary'}
-        />
-      )}
+    /** The lightbox follows the grid, cloud rows and staged files alike, so
+     *  stepping through it matches what the author sees on the page. */
+    const viewerCards = entries.flatMap((entry, index) => {
+      const src = entry.image ? entry.image.imageUrl : entry.item!.previewUrl
+      if (!src) return []
+      return [
+        {
+          key: entry.key,
+          src,
+          previewSrc: entry.image?.thumbnailUrl ?? undefined,
+          alt: entry.image
+            ? `第 ${index + 1} 张截图`
+            : `待上传图片 ${entry.item!.fileName}`
+        }
+      ]
+    })
+    const viewerImages = viewerCards.map(({ key: _key, ...image }) => image)
+    const openLightboxFor = (key: string, open: (index: number) => void) => {
+      const index = viewerCards.findIndex((card) => card.key === key)
+      if (index >= 0) open(index)
+    }
 
-      {isBusy && (
-        <p className="text-sm text-default-500">
-          {savingOrder ? '正在保存排序' : '正在上传截图'}
-        </p>
-      )}
+    // The grid does not reorder until the drag ends, so the index the overlay
+    // labels itself with is the one the card had when it was picked up.
+    const activeDragIndex = activeDragKey
+      ? entries.findIndex((entry) => entry.key === activeDragKey)
+      : -1
+    const activeDragEntry = activeDragIndex < 0 ? null : entries[activeDragIndex]
 
-      {restoreState === 'restoring' && (
-        <p className="text-sm text-default-500">正在读取本地截图</p>
-      )}
-
-      {/* The stored draft is the only record of what is staged and in what
-          order, so an unread one leaves nothing safe to edit against. */}
-      {restoreState === 'failed' && (
-        <div className="space-y-2">
-          <p className="text-sm text-danger">
-            读取本地截图草稿失败, 截图编辑已暂停, 请重试。
-          </p>
-          <Button
-            size="sm"
-            color="primary"
-            variant="flat"
-            onPress={() => setRestoreAttempt((attempt) => attempt + 1)}
-          >
-            重试读取
-          </Button>
-        </div>
-      )}
-
-      {editable && (
-        <div
-          {...getRootProps()}
-          className={cn(
-            'cursor-pointer rounded-lg border-2 border-dashed p-4 text-center transition-colors',
-            isDragActive
-              ? 'border-primary bg-primary/10'
-              : 'border-default-300 hover:border-primary'
-          )}
-        >
-          <input {...getInputProps()} />
-          <div className="flex flex-col items-center justify-center">
-            <Upload className="mb-2 size-8 text-default-400" />
-            <p className="mb-1">拖放图片到此处或</p>
-            <span className="inline-flex items-center rounded-medium bg-primary/10 px-4 py-2 text-sm font-medium text-primary">
-              选择文件
+    return (
+      <div className="space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h2 className="text-xl">游戏截图 (可选)</h2>
+          <div className="flex flex-wrap items-center gap-3">
+            {editable && (
+              <Switch
+                isSelected={watermark}
+                isDisabled={galleryLocked}
+                onValueChange={(value) => void handleSetWatermark(value)}
+              >
+                添加水印
+              </Switch>
+            )}
+            <span className="text-sm text-default-500">
+              {totalSlotCount} / {PATCH_SUBMISSION_GALLERY_MAX_COUNT}
             </span>
           </div>
         </div>
-      )}
+        <p className="text-sm text-default-500">
+          动态 WebP / AVIF 会保留原始动图，不添加水印。
+        </p>
 
-      {editable && (uploadableCount > 0 || isBatchRunning) && (
-        <Button
-          color="primary"
-          isLoading={isBatchRunning}
-          isDisabled={uploadableCount === 0 || savingOrder || restoring}
-          onPress={() => void startUpload()}
-        >
-          上传 {uploadableCount} 张截图
-        </Button>
-      )}
+        {progress && (
+          <Progress
+            aria-label="截图上传进度"
+            label="截图上传进度"
+            value={progress.completed}
+            minValue={0}
+            maxValue={progress.total}
+            valueLabel={`${progress.completed} / ${progress.total}`}
+            showValueLabel
+            color={
+              progress.completed === progress.total ? 'success' : 'primary'
+            }
+          />
+        )}
 
-      {/* Deliberately outside the card list: deleting every screenshot while a
-          drag is unsaved must still leave a way to confirm the empty order,
-          otherwise the draft would block submission with nothing left to move. */}
-      {editable && orderKeys && (
-        <div className="space-y-2">
-          <Button
-            size="sm"
-            color="primary"
-            variant="flat"
-            isLoading={savingOrder}
-            isDisabled={isBatchRunning || restoring}
-            onPress={() => void saveGalleryOrder(activeContext.current)}
-          >
-            保存排序
-          </Button>
-          <p className="text-sm text-warning">
-            截图顺序尚未保存, 请点击「保存排序」后再提交审核。
+        {isBusy && (
+          <p className="text-sm text-default-500">
+            {synchronizingOrder ? '正在同步截图顺序' : '正在上传截图'}
           </p>
-        </div>
-      )}
+        )}
 
-      {(visibleGallery.length > 0 || localUploads.length > 0) && (
-        <div className="space-y-3">
-          {editable && (
-            <div className="flex flex-wrap gap-2">
-              <Button
-                size="sm"
-                color="danger"
-                variant="flat"
-                isLoading={deleting}
-                isDisabled={
-                  savingOrder ||
-                  restoring ||
-                  (!selectedServerIds.length && !selectedLocalIds.length)
-                }
-                onPress={() => void deleteSelected()}
-              >
-                删除选中 ({selectedServerIds.length + selectedLocalIds.length})
-              </Button>
-              <Button
-                size="sm"
-                color="warning"
-                variant="flat"
-                isLoading={updatingNSFW}
-                isDisabled={
-                  savingOrder || restoring || !selectedReadyServerIds.length
-                }
-                onPress={() => void setSelectedNSFW(true)}
-              >
-                设为 NSFW
-              </Button>
-              <Button
-                size="sm"
-                color="success"
-                variant="flat"
-                isDisabled={
-                  savingOrder ||
-                  restoring ||
-                  updatingNSFW ||
-                  !selectedReadyServerIds.length
-                }
-                onPress={() => void setSelectedNSFW(false)}
-              >
-                设为 SFW
-              </Button>
-            </div>
-          )}
+        {restoreState === 'restoring' && (
+          <p className="text-sm text-default-500">正在读取本地截图</p>
+        )}
 
-          <DndContext
-            sensors={sensors}
-            collisionDetection={closestCenter}
-            onDragEnd={(event) => void handleDragEnd(event)}
+        {/* The stored draft is the only record of what is staged and in what
+          order, so an unread one leaves nothing safe to edit against. */}
+        {restoreState === 'failed' && (
+          <div className="space-y-2">
+            <p className="text-sm text-danger">
+              读取本地截图草稿失败, 截图编辑已暂停, 请重试。
+            </p>
+            <Button
+              size="sm"
+              color="primary"
+              variant="flat"
+              onPress={() => setRestoreAttempt((attempt) => attempt + 1)}
+            >
+              重试读取
+            </Button>
+          </div>
+        )}
+
+        {editable && (
+          <div
+            {...getRootProps()}
+            className={cn(
+              'cursor-pointer rounded-lg border-2 border-dashed p-4 text-center transition-colors',
+              isDragActive
+                ? 'border-primary bg-primary/10'
+                : 'border-default-300 hover:border-primary'
+            )}
           >
-            <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-              <KunImageViewer images={viewerImages}>
-                {(openLightbox) => (
-                  <SortableContext
-                    items={entries.map((entry) => entry.key)}
-                    strategy={rectSortingStrategy}
-                  >
-                    {entries.map((entry, index) => {
-                      const label = `第 ${index + 1} 张截图`
-                      return (
-                        <SortableGalleryItem
-                          key={entry.key}
-                          id={entry.key}
-                          label={
-                            entry.image
-                              ? label
-                              : `待上传图片 ${entry.item!.fileName}`
-                          }
-                          disabled={!editable || galleryLocked}
-                        >
-                          {entry.image ? (
-                            <SubmissionGalleryCard
-                              image={entry.image}
-                              label={label}
-                              selected={selected.has(entry.key)}
-                              editable={editable}
-                              busy={savingOrder || restoring}
-                              onToggle={() => toggleSelection(entry.key)}
-                              onOpenLightbox={() =>
-                                openLightboxFor(entry.key, openLightbox)
-                              }
-                              onDelete={() => void deleteImage(entry.image!.id)}
-                            />
-                          ) : (
-                            <LocalUploadCard
-                              item={entry.item!}
-                              editable={editable}
-                              selected={selected.has(entry.key)}
-                              busy={galleryLocked}
-                              onToggle={() => toggleSelection(entry.key)}
-                              onOpenLightbox={() =>
-                                openLightboxFor(entry.key, openLightbox)
-                              }
-                              onRetry={() =>
-                                void uploadWithSavedOrder(
-                                  activeContext.current,
-                                  [entry.item!.clientAssetId]
-                                )
-                              }
-                              onRemove={() =>
-                                void removeLocalUpload(
-                                  entry.item!.clientAssetId
-                                )
-                              }
-                            />
-                          )}
-                        </SortableGalleryItem>
-                      )
-                    })}
-                  </SortableContext>
-                )}
-              </KunImageViewer>
+            <input {...getInputProps()} />
+            <div className="flex flex-col items-center justify-center">
+              <Upload className="mb-2 size-8 text-default-400" />
+              <p className="mb-1">拖放图片到此处或</p>
+              <span className="inline-flex items-center rounded-medium bg-primary/10 px-4 py-2 text-sm font-medium text-primary">
+                选择文件
+              </span>
             </div>
-          </DndContext>
-        </div>
-      )}
-    </div>
-  )
-}
+          </div>
+        )}
+
+        {editable && (uploadableCount > 0 || isBatchRunning) && (
+          <Button
+            color="primary"
+            isLoading={isBatchRunning}
+            isDisabled={
+              uploadableCount === 0 || synchronizingOrder || restoring
+            }
+            onPress={() => void startUpload()}
+          >
+            上传 {uploadableCount} 张截图
+          </Button>
+        )}
+
+        {(visibleGallery.length > 0 || localUploads.length > 0) && (
+          <div className="space-y-3">
+            {editable && (
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  size="sm"
+                  color="danger"
+                  variant="flat"
+                  isLoading={deleting}
+                  isDisabled={
+                    synchronizingOrder ||
+                    restoring ||
+                    (!selectedServerIds.length && !selectedLocalIds.length)
+                  }
+                  onPress={() => void deleteSelected()}
+                >
+                  删除选中 ({selectedServerIds.length + selectedLocalIds.length}
+                  )
+                </Button>
+                <Button
+                  size="sm"
+                  color="warning"
+                  variant="flat"
+                  isLoading={updatingNSFW}
+                  isDisabled={
+                    synchronizingOrder ||
+                    restoring ||
+                    !selectedReadyServerIds.length
+                  }
+                  onPress={() => void setSelectedNSFW(true)}
+                >
+                  设为 NSFW
+                </Button>
+                <Button
+                  size="sm"
+                  color="success"
+                  variant="flat"
+                  isDisabled={
+                    synchronizingOrder ||
+                    restoring ||
+                    updatingNSFW ||
+                    !selectedReadyServerIds.length
+                  }
+                  onPress={() => void setSelectedNSFW(false)}
+                >
+                  设为 SFW
+                </Button>
+              </div>
+            )}
+
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              // Without a boundary the active card follows the pointer as far as
+              // it is dragged, and the HeroUI Card around this section clips its
+              // overflow — so a card dragged past the grid is simply cut off.
+              // There is nothing outside the grid to drop onto either way.
+              modifiers={[restrictToParentElement]}
+              onDragStart={handleDragStart}
+              onDragEnd={(event) => void handleDragEnd(event)}
+              onDragCancel={() => setActiveDragKey(null)}
+            >
+              <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+                <KunImageViewer images={viewerImages}>
+                  {(openLightbox) => (
+                    <SortableContext
+                      items={entries.map((entry) => entry.key)}
+                      strategy={rectSortingStrategy}
+                    >
+                      {entries.map((entry, index) => {
+                        const label = `第 ${index + 1} 张截图`
+                        return (
+                          <SortableGalleryItem
+                            key={entry.key}
+                            id={entry.key}
+                            label={
+                              entry.image
+                                ? label
+                                : `待上传图片 ${entry.item!.fileName}`
+                            }
+                            disabled={!editable || galleryLocked}
+                          >
+                            {entry.image ? (
+                              <SubmissionGalleryCard
+                                image={entry.image}
+                                label={label}
+                                selected={selected.has(entry.key)}
+                                editable={editable}
+                                busy={synchronizingOrder || restoring}
+                                onToggle={() => toggleSelection(entry.key)}
+                                onOpenLightbox={() =>
+                                  openLightboxFor(entry.key, openLightbox)
+                                }
+                                onDelete={() =>
+                                  void deleteImage(entry.image!.id)
+                                }
+                              />
+                            ) : (
+                              <LocalUploadCard
+                                item={entry.item!}
+                                editable={editable}
+                                selected={selected.has(entry.key)}
+                                busy={galleryLocked}
+                                onToggle={() => toggleSelection(entry.key)}
+                                onOpenLightbox={() =>
+                                  openLightboxFor(entry.key, openLightbox)
+                                }
+                                onRetry={() =>
+                                  void uploadWithSynchronizedOrder(
+                                    activeContext.current,
+                                    [entry.item!.clientAssetId]
+                                  )
+                                }
+                                onRemove={() =>
+                                  void removeLocalUpload(
+                                    entry.item!.clientAssetId
+                                  )
+                                }
+                              />
+                            )}
+                          </SortableGalleryItem>
+                        )
+                      })}
+                    </SortableContext>
+                  )}
+                </KunImageViewer>
+              </div>
+              {/* The copy that actually follows the pointer, and the only thing
+                  dnd-kit can animate into the dropped slot. Purely visual: the
+                  card it was cloned from keeps the focusable controls, so this
+                  one is hidden from assistive technology and takes no pointer
+                  events instead of duplicating them under the cursor. */}
+              <DragOverlay dropAnimation={galleryDropAnimation}>
+                {activeDragEntry ? (
+                  <div aria-hidden className="pointer-events-none">
+                    {activeDragEntry.image ? (
+                      <SubmissionGalleryCard
+                        image={activeDragEntry.image}
+                        label={`第 ${activeDragIndex + 1} 张截图`}
+                        selected={selected.has(activeDragEntry.key)}
+                        editable={false}
+                        busy
+                        onToggle={() => undefined}
+                        onOpenLightbox={() => undefined}
+                        onDelete={() => undefined}
+                      />
+                    ) : (
+                      <LocalUploadCard
+                        item={activeDragEntry.item!}
+                        editable={false}
+                        selected={selected.has(activeDragEntry.key)}
+                        busy
+                        onToggle={() => undefined}
+                        onOpenLightbox={() => undefined}
+                        onRetry={() => undefined}
+                        onRemove={() => undefined}
+                      />
+                    )}
+                  </div>
+                ) : null}
+              </DragOverlay>
+            </DndContext>
+          </div>
+        )}
+      </div>
+    )
+  }
+)

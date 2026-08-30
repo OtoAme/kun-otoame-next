@@ -233,7 +233,7 @@ describe('patch submission gallery order gate', () => {
     })
 
     await expect(submitPatchSubmission(1, 2)).resolves.toBe(
-      '截图顺序存在冲突, 请返回编辑并保存排序'
+      '截图顺序存在冲突, 请返回编辑并重新调整顺序'
     )
     expect(prismaMocks.patch_submission.updateMany).not.toHaveBeenCalled()
   })

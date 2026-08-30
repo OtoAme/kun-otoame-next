@@ -1,15 +1,33 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import { Button, Card, CardBody, CardHeader, Chip, Input } from '@heroui/react'
+import { useEffect, useRef, useState } from 'react'
+import {
+  Button,
+  Card,
+  CardBody,
+  CardHeader,
+  Chip,
+  Input,
+  Modal,
+  ModalBody,
+  ModalContent,
+  ModalFooter,
+  ModalHeader
+} from '@heroui/react'
 import { useRouter } from '@bprogress/next'
 import toast from 'react-hot-toast'
 import { kunFetchPost } from '~/utils/kunFetch'
 import { applySteamOfficialUrlFallback } from '~/utils/externalIds'
 import { usePatchSubmissionStore } from '~/store/patchSubmissionStore'
 import { usePatchSubmissionAutosave } from '~/hooks/usePatchSubmissionAutosave'
-import { SubmissionBannerInput } from './SubmissionBannerInput'
-import { SubmissionGalleryInput } from './SubmissionGalleryInput'
+import {
+  SubmissionBannerInput,
+  type SubmissionBannerHandle
+} from './SubmissionBannerInput'
+import {
+  SubmissionGalleryInput,
+  type SubmissionGalleryHandle
+} from './SubmissionGalleryInput'
 import { SubmissionPreview } from './SubmissionPreview'
 import { SubmissionAliasInput } from './SubmissionAliasInput'
 import { SubmissionContentLimit } from './SubmissionContentLimit'
@@ -50,15 +68,22 @@ export const SubmissionEditor = ({ submission }: Props) => {
     setExternalProvenance,
     localAssetCount,
     assetUploadsInFlight,
-    assetDraftLoaded,
-    assetOrderDirty
+    assetDraftLoaded
   } = usePatchSubmissionStore()
   const { queueSave, flush } = usePatchSubmissionAutosave()
+  const galleryRef = useRef<SubmissionGalleryHandle>(null)
+  const bannerRef = useRef<SubmissionBannerHandle>(null)
   const [nameError, setNameError] = useState('')
+  /** Which action is waiting on the unsaved-cover question, if any. */
+  const [bannerPrompt, setBannerPrompt] = useState<'draft' | 'submit' | null>(
+    null
+  )
+  const [bannerUploading, setBannerUploading] = useState(false)
 
   useEffect(() => {
     hydrate(submission)
     setNameError('')
+    setBannerPrompt(null)
   }, [submission, hydrate])
 
   // hydrate lands in an effect, so the first paint would otherwise show the
@@ -89,24 +114,14 @@ export const SubmissionEditor = ({ submission }: Props) => {
     setExternalProvenance(source, new Date().toISOString())
   }
 
-  const submit = async () => {
-    if (!usePatchSubmissionStore.getState().payload.name.trim()) {
-      setNameError('游戏名称是必填项')
-      toast.error('请填写游戏名称')
-      return
-    }
-    if (!assetDraftLoaded || localAssetCount > 0 || assetUploadsInFlight > 0) {
-      toast.error('请先完成或移除待上传的截图')
-      return
-    }
-    // display_order is copied verbatim into the published gallery, so a
-    // sequence the server has not accepted must not be frozen for review.
-    if (assetOrderDirty) {
-      toast.error('截图顺序尚未保存, 请先在截图区保存排序')
-      return
-    }
+  const flushDraft = async () => {
+    const payloadResult = await flush()
+    if (!payloadResult.ok) return payloadResult
+    return galleryRef.current?.flushOrder() ?? { ok: true as const }
+  }
 
-    const saved = await flush()
+  const runSubmit = async () => {
+    const saved = await flushDraft()
     if (!saved.ok) {
       toast.error(saved.message)
       return
@@ -123,10 +138,60 @@ export const SubmissionEditor = ({ submission }: Props) => {
     router.refresh()
   }
 
-  const saveDraft = async () => {
-    const result = await flush()
+  const submit = async () => {
+    if (!usePatchSubmissionStore.getState().payload.name.trim()) {
+      setNameError('游戏名称是必填项')
+      toast.error('请填写游戏名称')
+      return
+    }
+    if (!assetDraftLoaded || localAssetCount > 0 || assetUploadsInFlight > 0) {
+      toast.error('请先完成或移除待上传的截图')
+      return
+    }
+    if (bannerRef.current?.hasUnsavedBanner()) {
+      setBannerPrompt('submit')
+      return
+    }
+    await runSubmit()
+  }
+
+  const runSaveDraft = async () => {
+    const result = await flushDraft()
     if (result.ok) toast.success('草稿已保存到云端')
     else toast.error(result.message)
+  }
+
+  const saveDraft = async () => {
+    if (bannerRef.current?.hasUnsavedBanner()) {
+      setBannerPrompt('draft')
+      return
+    }
+    await runSaveDraft()
+  }
+
+  /**
+   * A cropped cover that was never uploaded exists only in the banner input's
+   * state: saving the draft stores everything *except* it, and the next reload
+   * has nothing to restore. So the two actions that look like "my work is safe
+   * now" stop and ask instead of walking past it. Skipping is still allowed —
+   * replacing an existing cover is a legitimate thing to abandon.
+   */
+  const continueBannerPrompt = async (uploadFirst: boolean) => {
+    const pending = bannerPrompt
+    if (!pending) return
+
+    if (uploadFirst) {
+      setBannerUploading(true)
+      const uploaded = await bannerRef.current?.upload()
+      setBannerUploading(false)
+      // The banner input has already said why; leave the dialog up so the author
+      // can retry or choose to go on without the cover.
+      if (!uploaded) return
+    }
+
+    setBannerPrompt(null)
+    if (pending === 'draft') await runSaveDraft()
+    else await runSubmit()
   }
 
   const withdraw = async () => {
@@ -225,7 +290,7 @@ export const SubmissionEditor = ({ submission }: Props) => {
             isReadOnly={!editable}
           />
 
-          <SubmissionBannerInput editable={editable} />
+          <SubmissionBannerInput ref={bannerRef} editable={editable} />
 
           <SubmissionIntroduction
             payload={form}
@@ -233,7 +298,7 @@ export const SubmissionEditor = ({ submission }: Props) => {
             onChange={update}
           />
 
-          <SubmissionGalleryInput />
+          <SubmissionGalleryInput ref={galleryRef} />
 
           <SubmissionAliasInput
             payload={form}
@@ -283,7 +348,7 @@ export const SubmissionEditor = ({ submission }: Props) => {
             {(editable || currentStatus === 'pending') && (
               <SubmissionPreview
                 submissionId={submission.id}
-                flush={flush}
+                flush={flushDraft}
                 submitted={!editable}
               />
             )}
@@ -293,8 +358,7 @@ export const SubmissionEditor = ({ submission }: Props) => {
                 isDisabled={
                   !assetDraftLoaded ||
                   localAssetCount > 0 ||
-                  assetUploadsInFlight > 0 ||
-                  assetOrderDirty
+                  assetUploadsInFlight > 0
                 }
                 onPress={() => void submit()}
               >
@@ -315,12 +379,6 @@ export const SubmissionEditor = ({ submission }: Props) => {
             </p>
           )}
 
-          {editable && assetOrderDirty && (
-            <p className="text-sm text-warning">
-              截图顺序尚未保存, 请在截图区点击「保存排序」后再提交。
-            </p>
-          )}
-
           {currentStatus === 'pending' && (
             <p className="text-sm text-default-500">
               投稿正在审核中, 暂时无法编辑。撤回后押金仍由这条草稿持有,
@@ -329,6 +387,50 @@ export const SubmissionEditor = ({ submission }: Props) => {
           )}
         </CardBody>
       </Card>
+
+      <Modal
+        isOpen={bannerPrompt !== null}
+        // The upload is the whole point of the dialog, so it may not be
+        // dismissed out from under a request that is still running.
+        isDismissable={!bannerUploading}
+        isKeyboardDismissDisabled={bannerUploading}
+        onOpenChange={(open) => {
+          if (!open && !bannerUploading) setBannerPrompt(null)
+        }}
+      >
+        <ModalContent>
+          <ModalHeader>封面还没有上传</ModalHeader>
+          <ModalBody className="text-sm text-default-600">
+            您裁剪好的封面只保存在这个页面上, 刷新或离开后会丢失。
+            {bannerPrompt === 'submit'
+              ? ' 投稿必须有封面才能通过审核, 建议先上传。'
+              : ' 建议先上传封面, 再保存草稿。'}
+          </ModalBody>
+          <ModalFooter>
+            <Button
+              variant="light"
+              isDisabled={bannerUploading}
+              onPress={() => setBannerPrompt(null)}
+            >
+              取消
+            </Button>
+            <Button
+              variant="flat"
+              isDisabled={bannerUploading}
+              onPress={() => void continueBannerPrompt(false)}
+            >
+              {bannerPrompt === 'submit' ? '直接提交' : '仅保存草稿'}
+            </Button>
+            <Button
+              color="primary"
+              isLoading={bannerUploading}
+              onPress={() => void continueBannerPrompt(true)}
+            >
+              {bannerPrompt === 'submit' ? '上传封面并提交' : '上传封面并保存'}
+            </Button>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
     </div>
   )
 }

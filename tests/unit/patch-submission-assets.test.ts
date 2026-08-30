@@ -762,7 +762,7 @@ describe('submission gallery order updates', () => {
           { galleryId: 10, displayOrder: 1 }
         ]
       })
-    ).rejects.toThrow('有截图正在上传, 请等待上传完成后再保存排序')
+    ).rejects.toThrow('有截图正在上传, 请等待上传完成后重试')
 
     expect(tx.patch_submission_gallery.update).not.toHaveBeenCalled()
   })

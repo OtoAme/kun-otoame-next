@@ -217,7 +217,7 @@ const assertDisplayOrderFree = async (
     select: { id: true }
   })
   if (conflict) {
-    throw new PatchSubmissionError('截图顺序存在冲突, 请刷新后重新保存排序')
+    throw new PatchSubmissionError('截图顺序存在冲突, 请刷新后重新调整顺序')
   }
 }
 
@@ -580,9 +580,7 @@ export const updatePatchSubmissionGalleryOrder = async (input: {
       )
       const uploading = rows.filter((row) => row.upload_status === 'uploading')
       if (uploading.some((row) => row.status_changed_at > staleBefore)) {
-        throw new PatchSubmissionError(
-          '有截图正在上传, 请等待上传完成后再保存排序'
-        )
+        throw new PatchSubmissionError('有截图正在上传, 请等待上传完成后重试')
       }
       /**
        * A reservation past the takeover window no longer blocks the save — its

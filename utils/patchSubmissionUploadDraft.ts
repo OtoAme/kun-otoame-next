@@ -78,10 +78,9 @@ export const clearPatchSubmissionWatermark = (submissionId: number) =>
 
 /**
  * The order the author dragged into place, as one namespaced sequence spanning
- * both stores (`server:<galleryId>` / `local:<clientAssetId>`). Cloud rows only
- * move when the author presses 保存排序, so the record existing *is* the unsaved
- * flag: it is written on every drag and removed only once the server has
- * accepted the sequence.
+ * both stores (`server:<galleryId>` / `local:<clientAssetId>`). The record is
+ * written on every drag and removed only once a later draft action has
+ * synchronized the sequence to the server, so its presence marks pending work.
  */
 export const loadPatchSubmissionGalleryOrder = async (submissionId: number) => {
   const stored = await storage.getItem<string[]>(orderKeyFor(submissionId))
