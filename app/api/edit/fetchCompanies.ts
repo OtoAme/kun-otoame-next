@@ -6,6 +6,9 @@ import {
 import { fetchVndbVn } from '~/lib/arnebiae/vndb'
 import type { VndbProducer } from '~/lib/arnebiae/vndb'
 import { ensureCompanyRelationsByName } from './companyEnsureHelper'
+import { createVndbCompanyCandidate } from '~/app/api/company/identity/candidates'
+import { runWithCompanyIdentityConstraintRetry } from '~/app/api/company/identity/retry'
+import type { TrustedCompanyCandidate } from '~/app/api/company/identity/types'
 
 const uniq = <T>(arr: T[]) => Array.from(new Set(arr))
 
@@ -37,6 +40,35 @@ const toCompanyCreate = (producer: VndbProducer, uid: number) => {
   }
 }
 
+const loadVndbDevelopers = async (id: string) => {
+  const data = await fetchVndbVn<{
+    developers?: VndbProducer[] | null
+  }>(
+    ['id', '=', id],
+    'id,developers{id,name,original,aliases,lang,type,description,extlinks{url}}'
+  )
+
+  return (data.results?.[0]?.developers ?? []).filter(
+    (developer) =>
+      developer &&
+      (developer.type === 'co' ||
+        developer.type === 'ng' ||
+        developer.type === 'in')
+  ) as VndbProducer[]
+}
+
+export const fetchVerifiedVndbCompanyCandidates = async (
+  vndbId: string
+): Promise<TrustedCompanyCandidate[]> => {
+  const id = vndbId.trim().toLowerCase()
+  if (!id) return []
+  const developers = await loadVndbDevelopers(id)
+  return developers.flatMap((developer) => {
+    const candidate = createVndbCompanyCandidate(developer)
+    return candidate ? [{ trust: 'verified' as const, candidate }] : []
+  })
+}
+
 export const ensurePatchCompaniesFromVNDB = async (
   patchId: number,
   vndbId: string | null | undefined,
@@ -46,16 +78,7 @@ export const ensurePatchCompaniesFromVNDB = async (
   if (!id) return { ensured: 0, related: 0 }
 
   try {
-    const data = await fetchVndbVn<{
-      developers?: VndbProducer[] | null
-    }>(
-      ['id', '=', id],
-      'id,developers{id,name,original,aliases,lang,type,description,extlinks{url}}'
-    )
-
-    const devs = (data.results?.[0]?.developers ?? []).filter(
-      (d) => d && (d.type === 'co' || d.type === 'ng' || d.type === 'in')
-    ) as VndbProducer[]
+    const devs = await loadVndbDevelopers(id)
 
     if (!devs.length) return { ensured: 0, related: 0 }
 
@@ -74,22 +97,25 @@ export const ensurePatchCompaniesFromVNDB = async (
     const companyNames = Array.from(companiesByName.keys())
     if (!companyNames.length) return { ensured: 0, related: 0 }
 
-    const result = await prisma.$transaction(
-      async (tx) => {
-        const relationResult = await ensureCompanyRelationsByName(
-          tx,
-          patchId,
-          companiesByName,
-          'authoritative'
-        )
+    const result = await runWithCompanyIdentityConstraintRetry((attempt) =>
+      prisma.$transaction(
+        async (tx) => {
+          const relationResult = await ensureCompanyRelationsByName(
+            tx,
+            patchId,
+            companiesByName,
+            'authoritative',
+            attempt > 1
+          )
 
-        return {
-          ensured: relationResult.ensured,
-          related: relationResult.related,
-          insertedIds: relationResult.insertedIds
-        }
-      },
-      { timeout: 60000 }
+          return {
+            ensured: relationResult.ensured,
+            related: relationResult.related,
+            insertedIds: relationResult.insertedIds
+          }
+        },
+        { timeout: 60000 }
+      )
     )
 
     if (result.insertedIds.length) {

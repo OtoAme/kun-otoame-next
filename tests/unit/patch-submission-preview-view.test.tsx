@@ -141,12 +141,12 @@ describe('PatchSubmissionPreviewView', () => {
   it('renders the title, introduction html and official url', async () => {
     const container = await render(basePreview())
     expect(container.querySelector('h1')?.textContent).toBe('Collar x Malice')
-    expect(container.querySelector('[data-testid="intro-html"]')?.textContent).toBe(
-      '<p>intro</p>'
-    )
-    expect(container.querySelector('[data-testid="official"]')?.textContent).toBe(
-      'https://example.test'
-    )
+    expect(
+      container.querySelector('[data-testid="intro-html"]')?.textContent
+    ).toBe('<p>intro</p>')
+    expect(
+      container.querySelector('[data-testid="official"]')?.textContent
+    ).toBe('https://example.test')
   })
 
   it('shows tag and company names as chips', async () => {
@@ -155,6 +155,14 @@ describe('PatchSubmissionPreviewView', () => {
     expect(text).toContain('悬疑')
     expect(text).toContain('乙女')
     expect(text).toContain('Idea Factory')
+  })
+
+  it('shows a neutral explanation without exposing identity details when company review is needed', async () => {
+    const container = await render(basePreview({ companyNeedsReview: true }))
+    const text = container.textContent ?? ''
+    expect(text).toContain('会社信息需管理员确认')
+    expect(text).toContain('这不表示投稿内容填写错误')
+    expect(text).not.toContain('company ID')
   })
 
   it('falls back to placeholders when there are no tags or companies', async () => {

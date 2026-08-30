@@ -160,6 +160,7 @@ export const getAdminPatchSubmission = async (
       name: true,
       payload: true,
       payload_version: true,
+      company_candidates: true,
       held_amount: true,
       role_at_creation: true,
       external_source: true,
@@ -199,6 +200,8 @@ export const getAdminPatchSubmission = async (
   const preview = payload.success
     ? await buildPatchSubmissionPublishPreview({
         payload: payload.data,
+        companyCandidateSnapshots: row.company_candidates,
+        includeDiagnostics: true,
         bannerKey: cleanupOwed ? null : row.banner_key,
         bannerOriginalKey: cleanupOwed ? null : row.banner_original_key,
         gallery: cleanupOwed

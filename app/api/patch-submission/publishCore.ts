@@ -14,11 +14,15 @@ import {
   ensureCompanyRelationsByName,
   type CompanyCreateInput
 } from '~/app/api/edit/companyEnsureHelper'
+import { applyCompanyResolution } from '~/app/api/company/identity/resolver'
+import { isCompanyIdentityResolverEnabled } from '~/app/api/company/identity/retry'
 import {
   buildPatchSubmissionPublishedAssetUrl,
   projectPatchSubmissionPayload
 } from './publishPreview'
 import type { PatchSubmissionPayload } from '~/types/api/patchSubmission'
+import type { CompanyResolutionDiagnostic } from '~/app/api/company/identity/resolver'
+import type { TrustedCompanyCandidate } from '~/app/api/company/identity/types'
 
 type Tx = Prisma.TransactionClient
 
@@ -35,6 +39,8 @@ export interface PublishCoreInput {
   payload: PatchSubmissionPayload
   bannerKey: string | null
   gallery: PublishAsset[]
+  companyCandidates?: TrustedCompanyCandidate[]
+  constraintCompatibility?: boolean
 }
 
 /**
@@ -128,8 +134,19 @@ export const publishSubmissionCore = async (
     }
   }
 
-  const companyNames = projection.companyNames
-  if (companyNames.length) {
+  let companyResolutionDiagnostics: CompanyResolutionDiagnostic[] = []
+  let touchedCompanies = false
+  if (isCompanyIdentityResolverEnabled()) {
+    const resolution = await applyCompanyResolution(
+      tx,
+      patch.id,
+      input.companyCandidates ?? [],
+      input.authorId
+    )
+    companyResolutionDiagnostics = resolution.diagnostics
+    touchedCompanies = resolution.companyIds.length > 0
+  } else if (projection.companyNames.length) {
+    const companyNames = projection.companyNames
     const companiesByName = new Map<string, CompanyCreateInput>(
       companyNames.map((name) => [
         name,
@@ -145,7 +162,14 @@ export const publishSubmissionCore = async (
         }
       ])
     )
-    await ensureCompanyRelationsByName(tx, patch.id, companiesByName)
+    await ensureCompanyRelationsByName(
+      tx,
+      patch.id,
+      companiesByName,
+      'legacy',
+      input.constraintCompatibility
+    )
+    touchedCompanies = true
   }
 
   if (input.gallery.length) {
@@ -162,7 +186,7 @@ export const publishSubmissionCore = async (
     })
   }
 
-  return patch
+  return { ...patch, companyResolutionDiagnostics, touchedCompanies }
 }
 
 /**

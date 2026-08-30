@@ -16,6 +16,7 @@ import {
 } from './uniqueExternalIds'
 import { earnMoemoepoint } from '~/app/api/moemoepoint/service'
 import { MOEMOEPOINT_REASON } from '~/constants/moemoepoint'
+import { CompanyResolutionAmbiguityError } from '~/app/api/company/identity/resolver'
 
 export const createGalgame = async (
   input: Omit<
@@ -183,23 +184,28 @@ export const createGalgame = async (
     return res
   }
 
-  await processSubmittedExternalData(
-    res.patchId,
-    {
-      vndbId,
-      vndbTags,
-      vndbDevelopers,
-      bangumiTags,
-      bangumiDevelopers,
-      steamTags,
-      steamDevelopers,
-      steamAliases,
-      dlsiteCircleName: dlsiteCircleName ?? '',
-      dlsiteCircleLink: dlsiteCircleLink ?? ''
-    },
-    tag,
-    uid
-  )
+  try {
+    await processSubmittedExternalData(
+      res.patchId,
+      {
+        vndbId,
+        vndbTags,
+        vndbDevelopers,
+        bangumiTags,
+        bangumiDevelopers,
+        steamTags,
+        steamDevelopers,
+        steamAliases,
+        dlsiteCircleName: dlsiteCircleName ?? '',
+        dlsiteCircleLink: dlsiteCircleLink ?? ''
+      },
+      tag,
+      uid
+    )
+  } catch (error) {
+    if (error instanceof CompanyResolutionAmbiguityError) return error.message
+    throw error
+  }
   await invalidatePatchListCaches()
 
   if (contentLimit === 'sfw') {

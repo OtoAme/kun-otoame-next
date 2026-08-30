@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   buildPatchSubmissionPublishPreview,
   projectPatchSubmissionPayload
@@ -32,6 +32,11 @@ const payload: PatchSubmissionPayload = {
 
 beforeEach(() => {
   process.env.KUN_VISUAL_NOVEL_IMAGE_BED_URL = 'https://img.example.test/'
+  delete process.env.KUN_COMPANY_IDENTITY_RESOLVER_ENABLED
+})
+
+afterEach(() => {
+  delete process.env.KUN_COMPANY_IDENTITY_RESOLVER_ENABLED
 })
 
 describe('patch submission publish projection', () => {
@@ -82,5 +87,67 @@ describe('patch submission publish projection', () => {
         displayOrder: 2
       }
     ])
+  })
+
+  it('switches to canonical company names without leaking diagnostics to the author', async () => {
+    process.env.KUN_COMPANY_IDENTITY_RESOLVER_ENABLED = 'true'
+    const resolutionDb = {
+      patch_company: {
+        findMany: vi
+          .fn()
+          .mockResolvedValue([
+            { id: 7, name: 'Palette', normalized_name: 'studio a' }
+          ])
+      },
+      patch_company_name_identity: {
+        findMany: vi.fn().mockResolvedValue([])
+      },
+      patch_company_external_id: {
+        findMany: vi.fn().mockResolvedValue([])
+      }
+    }
+
+    const preview = await buildPatchSubmissionPublishPreview({
+      payload: {
+        ...payload,
+        vndbDevelopers: ['ＳＴＵＤＩＯ　Ａ'],
+        bangumiDevelopers: [],
+        steamDevelopers: [],
+        dlsiteCircleName: ''
+      },
+      bannerKey: null,
+      bannerOriginalKey: null,
+      gallery: [],
+      resolutionDb: resolutionDb as never
+    })
+
+    expect(preview.companyNames).toEqual(['Palette'])
+    expect(preview).not.toHaveProperty('companyDiagnostics')
+    expect(preview.companyNeedsReview).toBe(false)
+  })
+
+  it('includes resolver details only when the administrator service asks for them', async () => {
+    process.env.KUN_COMPANY_IDENTITY_RESOLVER_ENABLED = 'true'
+    const resolutionDb = {
+      patch_company: { findMany: vi.fn().mockResolvedValue([]) },
+      patch_company_name_identity: {
+        findMany: vi.fn().mockResolvedValue([])
+      },
+      patch_company_external_id: {
+        findMany: vi.fn().mockResolvedValue([])
+      }
+    }
+
+    const preview = await buildPatchSubmissionPublishPreview({
+      payload,
+      bannerKey: null,
+      bannerOriginalKey: null,
+      gallery: [],
+      includeDiagnostics: true,
+      resolutionDb: resolutionDb as never
+    })
+
+    expect(preview.companyDiagnostics).toBeDefined()
+    expect(preview.companyDiagnostics?.wouldCreate.length).toBeGreaterThan(0)
   })
 })

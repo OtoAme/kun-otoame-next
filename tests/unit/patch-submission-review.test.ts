@@ -49,6 +49,7 @@ import {
   violatePatchSubmission
 } from '~/app/api/patch-submission/review'
 import { PatchSubmissionError } from '~/app/api/patch-submission/quota'
+import { CompanyResolutionAmbiguityError } from '~/app/api/company/identity/resolver'
 
 const tx = prismaMocks._tx
 
@@ -86,6 +87,7 @@ const pendingSubmission = (overrides: Record<string, unknown> = {}) => ({
   status: 'pending',
   name: 'Some game',
   payload,
+  company_candidates: null,
   held_amount: 10,
   reservation_id: 7,
   banner_key: 'submission/1/banner.avif',
@@ -278,6 +280,99 @@ describe('approval external-id conflict', () => {
 
     await expect(approvePatchSubmission(1, admin, false)).rejects.toThrow(
       'boom'
+    )
+  })
+
+  it('restarts the whole approval transaction after a target company identity conflict', async () => {
+    publishSubmissionCoreMock
+      .mockRejectedValueOnce(p2002(['normalized_name']))
+      .mockResolvedValueOnce({
+        id: 55,
+        unique_id: 'abcd1234',
+        companyResolutionDiagnostics: [],
+        touchedCompanies: true
+      })
+
+    await approvePatchSubmission(1, admin, false)
+
+    expect(prismaMocks.$transaction).toHaveBeenCalledTimes(2)
+    expect(publishSubmissionCoreMock).toHaveBeenCalledTimes(2)
+    expect(releaseMock).toHaveBeenCalledOnce()
+    expect(earnMock).toHaveBeenCalledOnce()
+    expect(tx.patch_submission.updateMany).toHaveBeenCalledOnce()
+  })
+
+  it('keeps an ambiguous approval pending without settling anything', async () => {
+    publishSubmissionCoreMock.mockRejectedValue(
+      new CompanyResolutionAmbiguityError([
+        {
+          candidate: {
+            source: 'steam',
+            externalId: '',
+            name: 'Shared',
+            aliases: [],
+            roles: ['developer'],
+            sourceRoles: [],
+            entityType: 'unknown',
+            externalUrls: [],
+            primaryLanguage: '',
+            sourceWebsites: []
+          },
+          matchedCompanies: [
+            { id: 1, name: 'First' },
+            { id: 2, name: 'Second' }
+          ],
+          reason: 'multiple-companies'
+        }
+      ])
+    )
+
+    await expect(approvePatchSubmission(1, admin, false)).rejects.toThrow(
+      '需先由管理员完成会社身份维护'
+    )
+    expect(releaseMock).not.toHaveBeenCalled()
+    expect(earnMock).not.toHaveBeenCalled()
+    expect(tx.patch_submission.updateMany).not.toHaveBeenCalled()
+    expect(runPublishSideEffectsMock).not.toHaveBeenCalled()
+  })
+
+  it('writes each non-blocking external-id/name conflict to the admin audit log', async () => {
+    publishSubmissionCoreMock.mockResolvedValue({
+      id: 55,
+      unique_id: 'abcd1234',
+      touchedCompanies: true,
+      companyResolutionDiagnostics: [
+        {
+          candidate: {
+            source: 'vndb',
+            externalId: 'p1',
+            name: 'Conflicting Name',
+            aliases: [],
+            roles: ['developer'],
+            sourceRoles: ['developer'],
+            entityType: 'company',
+            externalUrls: [],
+            primaryLanguage: 'ja',
+            sourceWebsites: []
+          },
+          matchedCompanies: [
+            { id: 1, name: 'Identity Winner' },
+            { id: 2, name: 'Name Winner' }
+          ],
+          reason: 'external-id-name-conflict'
+        }
+      ]
+    })
+
+    await approvePatchSubmission(1, admin, false)
+
+    expect(tx.admin_log.create).toHaveBeenCalledTimes(2)
+    expect(tx.admin_log.create).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          content: expect.stringContaining('external-id-name-conflict')
+        })
+      })
     )
   })
 })

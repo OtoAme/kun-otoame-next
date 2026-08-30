@@ -29,6 +29,7 @@ const submissionSelect = {
   status: true,
   payload: true,
   payload_version: true,
+  company_candidates: true,
   revision: true,
   held_amount: true,
   role_at_creation: true,
@@ -140,6 +141,7 @@ export const getPatchSubmissionPublishPreview = async (
   )
   return buildPatchSubmissionPublishPreview({
     payload: payload.data,
+    companyCandidateSnapshots: row.company_candidates,
     bannerKey: cleanupOwed ? null : row.banner_key,
     bannerOriginalKey: cleanupOwed ? null : row.banner_original_key,
     gallery: cleanupOwed

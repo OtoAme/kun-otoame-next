@@ -1,7 +1,8 @@
 import { z } from 'zod'
 import {
   COMPANY_IDENTITY_VALUE_MAX_LENGTH,
-  isCompanyIdentityValueWithinLimit
+  isCompanyIdentityValueWithinLimit,
+  normalizeCompanyValue
 } from './normalize'
 
 export { COMPANY_IDENTITY_VALUE_MAX_LENGTH } from './normalize'
@@ -233,7 +234,12 @@ export const createUnverifiedCompanyNameCandidates = (
   roles: CompanyRole[] = ['unknown']
 ): TrustedCompanyCandidate[] =>
   [...new Set(names.map((name) => name.trim()).filter(Boolean))]
-    .filter((name) => name.length <= COMPANY_IDENTITY_VALUE_MAX_LENGTH)
+    .filter(
+      (name) =>
+        name.length <= COMPANY_IDENTITY_VALUE_MAX_LENGTH &&
+        isCompanyIdentityValueWithinLimit(name) &&
+        Boolean(normalizeCompanyValue(name))
+    )
     .map((name) => ({
       trust: 'unverified',
       candidate: {

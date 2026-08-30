@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { Prisma } from '@prisma/client'
 
 const prismaMocks = vi.hoisted(() => {
   const patchCompany = {
@@ -52,6 +53,15 @@ import {
   deleteCompany,
   rewriteCompany
 } from '~/app/api/company/service'
+
+const input = {
+  name: 'New Studio',
+  introduction: '',
+  alias: [] as string[],
+  primary_language: ['ja'],
+  official_website: [] as string[],
+  parent_brand: [] as string[]
+}
 
 describe('company service alias conflict checks', () => {
   beforeEach(() => {
@@ -237,4 +247,29 @@ describe('company service alias conflict checks', () => {
       prismaMocks._tx.patch_company_name_identity.createMany
     ).toHaveBeenCalled()
   })
+
+  it.each([
+    ['create', () => createCompany(input, 100)],
+    [
+      'rewrite',
+      () =>
+        rewriteCompany({
+          companyId: 1,
+          ...input
+        })
+    ]
+  ])(
+    'turns a Phase B normalized-name conflict during %s into the existing user message',
+    async (_operation, run) => {
+      prismaMocks.$transaction.mockRejectedValueOnce(
+        new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
+          code: 'P2002',
+          clientVersion: 'test',
+          meta: { target: ['normalized_name'] }
+        })
+      )
+
+      await expect(run()).resolves.toBe('这个会社已经存在了')
+    }
+  )
 })

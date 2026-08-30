@@ -1,6 +1,24 @@
 import { uniqueTrimmed } from '~/app/api/edit/companyEnsureHelper'
 import { markdownToHtmlExtend } from '~/app/api/utils/render/markdownToHtmlExtend'
 import { applySteamOfficialUrlFallback } from '~/utils/externalIds'
+import { prisma } from '~/prisma/index'
+import {
+  planCompanyResolution,
+  selectCanonicalCompanyName
+} from '~/app/api/company/identity/resolver'
+import { isCompanyIdentityResolverEnabled } from '~/app/api/company/identity/retry'
+import { collectPatchSubmissionCompanyCandidates } from './companyCandidates'
+import type {
+  CompanyAmbiguity,
+  CompanyResolutionDiagnostic,
+  CompanyResolutionMatchedBy,
+  CompanyResolutionReadClient
+} from '~/app/api/company/identity/resolver'
+import type {
+  CompanyCandidate,
+  CompanyCandidateDiagnostic,
+  CompanyCandidateTrust
+} from '~/app/api/company/identity/types'
 import type { PatchSubmissionPayload } from '~/types/api/patchSubmission'
 
 export interface PatchSubmissionPublishAssetInput {
@@ -41,6 +59,31 @@ export interface PatchSubmissionPublishPreview
     isNSFW: boolean
     displayOrder: number
   }[]
+  /** Present only while the server-side resolver branch is enabled. */
+  companyNeedsReview?: boolean
+  /** Included only for the authenticated administrator detail service. */
+  companyDiagnostics?: PatchSubmissionCompanyDiagnostics
+}
+
+export interface PatchSubmissionDiagnosticCandidate {
+  trust: CompanyCandidateTrust
+  candidate: CompanyCandidate
+}
+
+export interface PatchSubmissionCompanyDiagnostics {
+  resolvedExisting: {
+    candidates: PatchSubmissionDiagnosticCandidate[]
+    companyId: number
+    name: string
+    matchedBy: CompanyResolutionMatchedBy
+  }[]
+  wouldCreate: {
+    name: string
+    candidates: PatchSubmissionDiagnosticCandidate[]
+  }[]
+  ambiguities: CompanyAmbiguity[]
+  diagnostics: CompanyResolutionDiagnostic[]
+  snapshotDiagnostics: CompanyCandidateDiagnostic[]
 }
 
 export const projectPatchSubmissionPayload = (
@@ -85,11 +128,50 @@ export const buildPatchSubmissionPublishPreview = async (input: {
   bannerKey: string | null
   bannerOriginalKey: string | null
   gallery: PatchSubmissionPublishAssetInput[]
+  companyCandidateSnapshots?: unknown
+  includeDiagnostics?: boolean
+  resolutionDb?: CompanyResolutionReadClient
 }): Promise<PatchSubmissionPublishPreview> => {
   const projection = projectPatchSubmissionPayload(input.payload)
+  const resolverEnabled = isCompanyIdentityResolverEnabled()
+  let companyNames = projection.companyNames
+  let companyNeedsReview: boolean | undefined
+  let companyDiagnostics: PatchSubmissionCompanyDiagnostics | undefined
+
+  if (resolverEnabled) {
+    const collected = collectPatchSubmissionCompanyCandidates({
+      payload: input.payload,
+      snapshots: input.companyCandidateSnapshots
+    })
+    const resolution = await planCompanyResolution(
+      input.resolutionDb ?? prisma,
+      collected.candidates
+    )
+    companyNames = uniqueTrimmed([
+      ...resolution.resolvedExisting.map((company) => company.name),
+      ...resolution.wouldCreate.map(selectCanonicalCompanyName),
+      ...resolution.ambiguities.map((ambiguity) => ambiguity.candidate.name)
+    ])
+    companyNeedsReview = resolution.ambiguities.length > 0
+    if (input.includeDiagnostics) {
+      companyDiagnostics = {
+        resolvedExisting: resolution.resolvedExisting,
+        wouldCreate: resolution.wouldCreate.map((candidates) => ({
+          name: selectCanonicalCompanyName(candidates),
+          candidates
+        })),
+        ambiguities: resolution.ambiguities,
+        diagnostics: resolution.diagnostics,
+        snapshotDiagnostics: collected.snapshotDiagnostics
+      }
+    }
+  }
 
   return {
     ...projection,
+    companyNames,
+    ...(resolverEnabled ? { companyNeedsReview } : {}),
+    ...(companyDiagnostics ? { companyDiagnostics } : {}),
     introductionHtml: await markdownToHtmlExtend(projection.introduction),
     externalIds: {
       vndbId: input.payload.vndbId,

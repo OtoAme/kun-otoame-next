@@ -66,6 +66,32 @@ const STATUS_LABEL: Record<AdminPatchSubmissionDetail['status'], string> = {
 const formatDateTime = (value: string | null) =>
   value ? formatChinaDateTime(value) : '—'
 
+const COMPANY_SOURCE_LABEL = {
+  vndb: 'VNDB',
+  bangumi: 'Bangumi',
+  steam: 'Steam',
+  dlsite: 'DLSite'
+} as const
+
+const COMPANY_MATCH_LABEL = {
+  'external-id': '外部 ID',
+  'normalized-name': '规范化主名',
+  'normalized-alias': '别名',
+  batch: '同批候选'
+} as const
+
+const candidateLabel = (candidate: {
+  source: keyof typeof COMPANY_SOURCE_LABEL
+  name: string
+  externalId: string
+}) =>
+  `${COMPANY_SOURCE_LABEL[candidate.source]}：${candidate.name}${
+    candidate.externalId ? `（${candidate.externalId}）` : ''
+  }`
+
+const matchedCompaniesLabel = (companies: { id: number; name: string }[]) =>
+  companies.map((company) => `#${company.id} ${company.name}`).join('、')
+
 interface Props {
   submission: AdminPatchSubmissionDetail
   reviewerId: number
@@ -86,6 +112,8 @@ export const AdminSubmissionDetail = ({
   const isSelfReview = reviewerId === submission.author.id
   const canOverrideSelfReview = isSelfReview && reviewerRole >= 4
   const isPendingReview = submission.status === 'pending'
+  const companyDiagnostics = preview?.companyDiagnostics
+  const hasCompanyAmbiguity = Boolean(companyDiagnostics?.ambiguities.length)
 
   const openAction = (action: ReviewAction) => {
     setPendingAction(action)
@@ -269,6 +297,134 @@ export const AdminSubmissionDetail = ({
         </Card>
       )}
 
+      {companyDiagnostics && (
+        <Card
+          className={
+            hasCompanyAmbiguity
+              ? 'border border-danger-200 bg-danger-50/40 dark:bg-danger-100/10'
+              : undefined
+          }
+        >
+          <CardHeader className="flex flex-wrap items-center gap-2">
+            <h2 className="text-lg font-medium">会社身份解析</h2>
+            {hasCompanyAmbiguity && (
+              <Chip color="danger" variant="flat" size="sm">
+                批准前需维护
+              </Chip>
+            )}
+          </CardHeader>
+          <CardBody className="space-y-4 text-sm">
+            {(companyDiagnostics.resolvedExisting.length > 0 ||
+              companyDiagnostics.wouldCreate.length > 0) && (
+              <section
+                aria-labelledby="company-resolution-result-heading"
+                className="space-y-2"
+              >
+                <h3
+                  id="company-resolution-result-heading"
+                  className="font-medium"
+                >
+                  本次发布结果
+                </h3>
+                <ul className="list-inside list-disc space-y-1 text-default-600">
+                  {companyDiagnostics.resolvedExisting.map((resolution) => (
+                    <li key={`existing-${resolution.companyId}`}>
+                      {resolution.candidates
+                        .map(({ candidate }) => candidateLabel(candidate))
+                        .join('、')}{' '}
+                      → #{resolution.companyId} {resolution.name}（
+                      {COMPANY_MATCH_LABEL[resolution.matchedBy]}）
+                    </li>
+                  ))}
+                  {companyDiagnostics.wouldCreate.map((resolution, index) => (
+                    <li key={`create-${resolution.name}-${index}`}>
+                      {resolution.candidates
+                        .map(({ candidate }) => candidateLabel(candidate))
+                        .join('、')}{' '}
+                      → 新建 {resolution.name}
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
+
+            {companyDiagnostics.ambiguities.length > 0 && (
+              <section
+                aria-labelledby="company-resolution-ambiguity-heading"
+                className="space-y-2"
+              >
+                <h3
+                  id="company-resolution-ambiguity-heading"
+                  className="font-medium text-danger"
+                >
+                  阻断型歧义：需先做会社身份维护
+                </h3>
+                <ul className="list-inside list-disc space-y-1">
+                  {companyDiagnostics.ambiguities.map((ambiguity, index) => (
+                    <li key={`ambiguity-${index}`}>
+                      {candidateLabel(ambiguity.candidate)} →{' '}
+                      {matchedCompaniesLabel(ambiguity.matchedCompanies)}
+                    </li>
+                  ))}
+                </ul>
+                <p className="text-default-600">
+                  这不是投稿人可以修改的字段。请先合并或裁决会社身份；若暂时无法处理，应驳回并返还押金，不要要求投稿人修改。
+                </p>
+              </section>
+            )}
+
+            {companyDiagnostics.diagnostics.length > 0 && (
+              <section
+                aria-labelledby="company-resolution-diagnostic-heading"
+                className="space-y-2"
+              >
+                <h3
+                  id="company-resolution-diagnostic-heading"
+                  className="font-medium text-warning"
+                >
+                  非阻断身份冲突
+                </h3>
+                <ul className="list-inside list-disc space-y-1">
+                  {companyDiagnostics.diagnostics.map((diagnostic, index) => (
+                    <li key={`diagnostic-${index}`}>
+                      {candidateLabel(diagnostic.candidate)} →{' '}
+                      {matchedCompaniesLabel(diagnostic.matchedCompanies)}
+                      ；将按外部 ID 对应会社关联，不补入冲突名称
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
+
+            {companyDiagnostics.snapshotDiagnostics.length > 0 && (
+              <section
+                aria-labelledby="company-snapshot-diagnostic-heading"
+                className="space-y-2"
+              >
+                <h3
+                  id="company-snapshot-diagnostic-heading"
+                  className="font-medium text-warning"
+                >
+                  候选快照未采用
+                </h3>
+                <ul className="list-inside list-disc space-y-1 text-default-600">
+                  {companyDiagnostics.snapshotDiagnostics.map(
+                    (diagnostic, index) => (
+                      <li key={`snapshot-${diagnostic.source}-${index}`}>
+                        {COMPANY_SOURCE_LABEL[diagnostic.source]}：
+                        {diagnostic.reason === 'lookup-id-mismatch'
+                          ? `快照 ID ${diagnostic.lookupId || '—'} 与当前 ID ${diagnostic.expectedLookupId || '—'} 不一致`
+                          : '快照格式损坏'}
+                      </li>
+                    )
+                  )}
+                </ul>
+              </section>
+            )}
+          </CardBody>
+        </Card>
+      )}
+
       {preview ? (
         <PatchSubmissionPreviewView
           preview={preview}
@@ -306,8 +462,9 @@ export const AdminSubmissionDetail = ({
                 color="success"
                 variant="flat"
                 isDisabled={
-                  isSelfReview &&
-                  (!canOverrideSelfReview || !overrideSelfReview)
+                  hasCompanyAmbiguity ||
+                  (isSelfReview &&
+                    (!canOverrideSelfReview || !overrideSelfReview))
                 }
                 onPress={() => openAction('approve')}
               >

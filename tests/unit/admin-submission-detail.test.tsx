@@ -141,6 +141,56 @@ const submission: AdminPatchSubmissionDetail = {
   publishedPatch: null
 }
 
+const previewWithCompanyAmbiguity = {
+  name: 'Withdrawn game',
+  introduction: 'raw',
+  introductionHtml: '<p>intro</p>',
+  aliases: [],
+  tagNames: [],
+  companyNames: ['Shared'],
+  officialUrl: '',
+  released: 'unknown',
+  contentLimit: 'sfw',
+  externalIds: {
+    vndbId: '',
+    vndbRelationId: '',
+    bangumiId: '',
+    steamId: '',
+    dlsiteCode: ''
+  },
+  bannerUrl: null,
+  bannerOriginalUrl: null,
+  gallery: [],
+  companyNeedsReview: true,
+  companyDiagnostics: {
+    resolvedExisting: [],
+    wouldCreate: [],
+    ambiguities: [
+      {
+        candidate: {
+          source: 'steam' as const,
+          externalId: '',
+          name: 'Shared',
+          aliases: [],
+          roles: ['developer' as const],
+          sourceRoles: [],
+          entityType: 'unknown' as const,
+          externalUrls: [],
+          primaryLanguage: '',
+          sourceWebsites: []
+        },
+        matchedCompanies: [
+          { id: 1, name: 'First' },
+          { id: 2, name: 'Second' }
+        ],
+        reason: 'multiple-companies' as const
+      }
+    ],
+    diagnostics: [],
+    snapshotDiagnostics: []
+  }
+}
+
 describe('AdminSubmissionDetail stale review recovery', () => {
   let dom: JSDOM
   let root: Root
@@ -368,5 +418,19 @@ describe('AdminSubmissionDetail duplicate panel', () => {
     })
 
     expect(document.body.textContent).toContain('仅列出前 10 条')
+  })
+
+  it('shows blocking company identities and disables approval until maintenance is done', async () => {
+    const document = await renderWith({
+      preview: previewWithCompanyAmbiguity
+    })
+
+    expect(document.body.textContent).toContain('阻断型歧义')
+    expect(document.body.textContent).toContain('#1 First、#2 Second')
+    expect(document.body.textContent).toContain('不是投稿人可以修改的字段')
+    const approve = [...document.querySelectorAll('button')].find(
+      (button) => button.textContent === '通过'
+    )
+    expect(approve?.disabled).toBe(true)
   })
 })

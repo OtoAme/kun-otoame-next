@@ -21,6 +21,7 @@ import {
   enqueueSubmissionOrphanCleanupJobs,
   processSubmissionOrphanCleanupJobsBestEffort
 } from '~/app/api/patch-submission/orphanCleanup'
+import { CompanyResolutionAmbiguityError } from '~/app/api/company/identity/resolver'
 
 const isSubmissionAssetKey = (key: string) =>
   key.startsWith(PATCH_SUBMISSION_ASSET_PREFIX)
@@ -257,23 +258,28 @@ export const updateGalgame = async (
     await invalidatePatchContentCache(patch.unique_id)
   }
 
-  await processSubmittedExternalData(
-    id,
-    {
-      vndbId,
-      vndbTags,
-      vndbDevelopers,
-      bangumiTags,
-      bangumiDevelopers,
-      steamTags,
-      steamDevelopers,
-      steamAliases,
-      dlsiteCircleName: dlsiteCircleName ?? '',
-      dlsiteCircleLink: dlsiteCircleLink ?? ''
-    },
-    input.tag,
-    uid
-  )
+  try {
+    await processSubmittedExternalData(
+      id,
+      {
+        vndbId,
+        vndbTags,
+        vndbDevelopers,
+        bangumiTags,
+        bangumiDevelopers,
+        steamTags,
+        steamDevelopers,
+        steamAliases,
+        dlsiteCircleName: dlsiteCircleName ?? '',
+        dlsiteCircleLink: dlsiteCircleLink ?? ''
+      },
+      input.tag,
+      uid
+    )
+  } catch (error) {
+    if (error instanceof CompanyResolutionAmbiguityError) return error.message
+    throw error
+  }
   await Promise.all([
     invalidatePatchContentCache(patch.unique_id),
     invalidatePatchListCaches()

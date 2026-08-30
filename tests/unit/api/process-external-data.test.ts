@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { Prisma } from '@prisma/client'
 
 const prismaMocks = vi.hoisted(() => {
   const tx = {
@@ -44,8 +45,15 @@ vi.mock('~/app/api/patch/cache', () => ({
 }))
 
 const ensurePatchCompaniesFromVNDBMock = vi.hoisted(() => vi.fn())
+const fetchVerifiedVndbCompanyCandidatesMock = vi.hoisted(() => vi.fn())
 vi.mock('~/app/api/edit/fetchCompanies', () => ({
-  ensurePatchCompaniesFromVNDB: ensurePatchCompaniesFromVNDBMock
+  ensurePatchCompaniesFromVNDB: ensurePatchCompaniesFromVNDBMock,
+  fetchVerifiedVndbCompanyCandidates: fetchVerifiedVndbCompanyCandidatesMock
+}))
+
+const applyCompanyResolutionMock = vi.hoisted(() => vi.fn())
+vi.mock('~/app/api/company/identity/resolver', () => ({
+  applyCompanyResolution: applyCompanyResolutionMock
 }))
 
 import { processSubmittedExternalData } from '~/app/api/edit/processExternalData'
@@ -95,10 +103,117 @@ describe('processSubmittedExternalData company relations', () => {
       ensured: 0,
       related: 0
     })
+    fetchVerifiedVndbCompanyCandidatesMock.mockResolvedValue([])
+    applyCompanyResolutionMock.mockResolvedValue({
+      companyIds: [],
+      created: 0,
+      insertedRelationIds: [],
+      diagnostics: []
+    })
+    delete process.env.KUN_COMPANY_IDENTITY_RESOLVER_ENABLED
   })
 
   afterEach(() => {
+    delete process.env.KUN_COMPANY_IDENTITY_RESOLVER_ENABLED
     vi.restoreAllMocks()
+  })
+
+  it('keeps all four company sources when the resolver branch is enabled', async () => {
+    process.env.KUN_COMPANY_IDENTITY_RESOLVER_ENABLED = 'true'
+    fetchVerifiedVndbCompanyCandidatesMock.mockResolvedValue([
+      {
+        trust: 'verified',
+        candidate: {
+          source: 'vndb',
+          externalId: 'p1',
+          name: 'VNDB Studio',
+          aliases: [],
+          roles: ['developer'],
+          sourceRoles: ['developer'],
+          entityType: 'company',
+          externalUrls: [],
+          primaryLanguage: 'ja',
+          sourceWebsites: []
+        }
+      }
+    ])
+    applyCompanyResolutionMock.mockResolvedValue({
+      companyIds: [1, 2, 3, 4],
+      created: 4,
+      insertedRelationIds: [1, 2, 3, 4],
+      diagnostics: []
+    })
+
+    await processSubmittedExternalData(
+      10,
+      {
+        vndbId: 'v123',
+        vndbTags: [],
+        vndbDevelopers: ['VNDB Studio'],
+        bangumiTags: [],
+        bangumiDevelopers: ['Bangumi Publisher'],
+        steamTags: [],
+        steamDevelopers: ['Steam Porter'],
+        steamAliases: [],
+        dlsiteCircleName: 'DLSite Circle',
+        dlsiteCircleLink: 'https://example.test/circle'
+      },
+      [],
+      100
+    )
+
+    const candidates = applyCompanyResolutionMock.mock.calls[0][2]
+    expect(
+      candidates.map(
+        ({ candidate }: { candidate: { name: string } }) => candidate.name
+      )
+    ).toEqual(
+      expect.arrayContaining([
+        'VNDB Studio',
+        'Bangumi Publisher',
+        'Steam Porter',
+        'DLSite Circle'
+      ])
+    )
+    expect(ensurePatchCompaniesFromVNDBMock).not.toHaveBeenCalled()
+  })
+
+  it('restarts the edit company transaction after a target identity conflict', async () => {
+    process.env.KUN_COMPANY_IDENTITY_RESOLVER_ENABLED = 'true'
+    applyCompanyResolutionMock
+      .mockRejectedValueOnce(
+        new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
+          code: 'P2002',
+          clientVersion: 'test',
+          meta: { target: ['normalized_name'] }
+        })
+      )
+      .mockResolvedValueOnce({
+        companyIds: [1],
+        created: 0,
+        insertedRelationIds: [1],
+        diagnostics: []
+      })
+
+    await processSubmittedExternalData(
+      10,
+      {
+        vndbTags: [],
+        vndbDevelopers: [],
+        bangumiTags: [],
+        bangumiDevelopers: ['Publisher'],
+        steamTags: [],
+        steamDevelopers: [],
+        steamAliases: [],
+        dlsiteCircleName: '',
+        dlsiteCircleLink: ''
+      },
+      [],
+      100
+    )
+
+    expect(applyCompanyResolutionMock).toHaveBeenCalledTimes(2)
+    expect(prismaMocks.$transaction).toHaveBeenCalledTimes(2)
   })
 
   it('merges same company names from fallback and secondary sources before incrementing count', async () => {

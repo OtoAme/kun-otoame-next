@@ -152,6 +152,22 @@ export const PatchSubmissionPreviewView = ({
 
           <div className="mt-4 space-y-4">
             <h2 className="text-2xl font-medium">所属会社</h2>
+            {preview.companyNeedsReview && (
+              <section
+                aria-labelledby="submission-company-review-heading"
+                className="space-y-1 rounded-medium border border-warning-200 bg-warning-50/50 p-3 dark:bg-warning-100/10"
+              >
+                <h3
+                  id="submission-company-review-heading"
+                  className="font-medium text-warning-700 dark:text-warning-400"
+                >
+                  会社信息需管理员确认
+                </h3>
+                <p className="text-sm text-default-600">
+                  不同来源的会社信息存在同名或别名歧义，审核员会先核对身份；这不表示投稿内容填写错误。
+                </p>
+              </section>
+            )}
             <div className="flex flex-wrap gap-2">
               {preview.companyNames.length ? (
                 preview.companyNames.map((company) => (

@@ -6,6 +6,7 @@ import { fetchVndbDetailsData } from '~/app/api/edit/vndb/details/service'
 import { fetchBangumiDetailsData } from '~/app/api/edit/bangumi/service'
 import { fetchSteamDetailsData } from '~/app/api/edit/steam/service'
 import { fetchDlsiteData } from '~/app/api/edit/dlsite'
+import { createVndbCompanyCandidate } from '~/app/api/company/identity/candidates'
 import {
   companyCandidateSnapshotSchema,
   mergeCompanyCandidateSnapshot
@@ -15,7 +16,6 @@ import type {
   CompanyCandidate,
   CompanyCandidateSnapshot,
   CompanyCandidateSource,
-  CompanyEntityType,
   CompanyRole
 } from '~/app/api/company/identity/types'
 import type {
@@ -83,33 +83,10 @@ const validSourceUrls = (values: Array<string | null | undefined>) =>
     }
   })
 
-const vndbEntityType = (type?: string | null): CompanyEntityType => {
-  if (type === 'co') return 'company'
-  if (type === 'in') return 'individual'
-  if (type === 'ng') return 'amateur_group'
-  return 'unknown'
-}
-
 const toVndbCandidates = (data: VndbDetailsResponse): CompanyCandidate[] =>
-  data.producers.map((producer) => {
-    const sourceWebsites = validSourceUrls(
-      producer.extlinks?.map((link) => link.url) ?? []
-    )
-    return {
-      source: 'vndb',
-      externalId: producer.id?.trim() ?? '',
-      name: producer.name?.trim() ?? '',
-      aliases: uniqueStrings([
-        producer.original,
-        ...(producer.aliases ?? [])
-      ]).filter((alias) => alias !== producer.name?.trim()),
-      roles: ['developer'],
-      sourceRoles: ['developer'],
-      entityType: vndbEntityType(producer.type),
-      externalUrls: sourceWebsites,
-      primaryLanguage: producer.lang?.trim() ?? '',
-      sourceWebsites
-    }
+  data.producers.flatMap((producer) => {
+    const candidate = createVndbCompanyCandidate(producer)
+    return candidate ? [candidate] : []
   })
 
 const bangumiRole = (sourceRole: string): CompanyRole => {

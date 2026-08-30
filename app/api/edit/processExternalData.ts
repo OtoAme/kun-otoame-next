@@ -1,7 +1,10 @@
 import { prisma } from '~/prisma/index'
 import { invalidateCompanyCaches } from '~/app/api/patch/cache'
 import { handleBatchPatchTags } from './batchTag'
-import { ensurePatchCompaniesFromVNDB } from './fetchCompanies'
+import {
+  ensurePatchCompaniesFromVNDB,
+  fetchVerifiedVndbCompanyCandidates
+} from './fetchCompanies'
 import {
   ensureCompanyRelationsByName,
   uniqueTrimmed,
@@ -13,6 +16,13 @@ import {
   hasAnyTagName,
   mapTagNamesToIds
 } from './tagEnsureHelper'
+import { applyCompanyResolution } from '~/app/api/company/identity/resolver'
+import {
+  isCompanyIdentityResolverEnabled,
+  runWithCompanyIdentityConstraintRetry
+} from '~/app/api/company/identity/retry'
+import { createUnverifiedCompanyNameCandidates } from '~/app/api/company/identity/types'
+import type { TrustedCompanyCandidate } from '~/app/api/company/identity/types'
 
 interface SubmittedExternalData {
   vndbId?: string
@@ -158,17 +168,94 @@ const ensureSubmittedCompanies = async (
 
   if (!companiesByName.size) return []
 
-  return await prisma.$transaction(
-    async (tx) => {
-      const result = await ensureCompanyRelationsByName(
-        tx,
-        patchId,
-        companiesByName
-      )
-      return result.insertedIds
-    },
-    { timeout: 60000 }
+  return runWithCompanyIdentityConstraintRetry((attempt) =>
+    prisma.$transaction(
+      async (tx) => {
+        const result = await ensureCompanyRelationsByName(
+          tx,
+          patchId,
+          companiesByName,
+          'legacy',
+          attempt > 1
+        )
+        return result.insertedIds
+      },
+      { timeout: 60000 }
+    )
   )
+}
+
+const validSourceWebsite = (value: string) => {
+  try {
+    new URL(value)
+    return true
+  } catch {
+    return false
+  }
+}
+
+const collectResolverCompanyCandidates = async (
+  data: SubmittedExternalData
+): Promise<TrustedCompanyCandidate[]> => {
+  let verifiedVndb: TrustedCompanyCandidate[] = []
+  if (data.vndbId?.trim()) {
+    try {
+      verifiedVndb = await fetchVerifiedVndbCompanyCandidates(data.vndbId)
+    } catch (error) {
+      console.error('Failed to fetch VNDB company candidates', {
+        source: 'vndb_company_candidates',
+        vndbId: data.vndbId,
+        error
+      })
+    }
+  }
+
+  const dlsiteCandidates = createUnverifiedCompanyNameCandidates(
+    'dlsite',
+    [data.dlsiteCircleName],
+    ['circle']
+  ).map((trusted) => {
+    const link = data.dlsiteCircleLink.trim()
+    const sourceWebsites = link && validSourceWebsite(link) ? [link] : []
+    return {
+      ...trusted,
+      candidate: {
+        ...trusted.candidate,
+        entityType: 'amateur_group' as const,
+        externalUrls: sourceWebsites,
+        sourceWebsites
+      }
+    }
+  })
+
+  return [
+    ...verifiedVndb,
+    ...createUnverifiedCompanyNameCandidates('vndb', data.vndbDevelopers, [
+      'developer'
+    ]),
+    ...createUnverifiedCompanyNameCandidates('bangumi', data.bangumiDevelopers),
+    ...createUnverifiedCompanyNameCandidates('steam', data.steamDevelopers, [
+      'developer'
+    ]),
+    ...dlsiteCandidates
+  ]
+}
+
+const ensureResolvedCompanies = async (
+  patchId: number,
+  data: SubmittedExternalData,
+  uid: number
+) => {
+  const candidates = await collectResolverCompanyCandidates(data)
+  if (!candidates.length) return []
+
+  const result = await runWithCompanyIdentityConstraintRetry(() =>
+    prisma.$transaction(
+      (tx) => applyCompanyResolution(tx, patchId, candidates, uid),
+      { timeout: 60000 }
+    )
+  )
+  return result.insertedRelationIds
 }
 
 const ensureAliases = async (patchId: number, aliases: string[]) => {
@@ -207,17 +294,28 @@ export const processSubmittedExternalData = async (
       ensureTagsWithSource(patchId, data.steamTags, 'steam', uid)
   ].filter(Boolean)
 
-  let primaryDevelopers = collectPrimaryDeveloperNames(data)
-  if (data.vndbId?.trim()) {
-    const result = await ensurePatchCompaniesFromVNDB(patchId, data.vndbId, uid)
-    if (result.related > 0) {
-      primaryDevelopers = []
+  const resolverEnabled = isCompanyIdentityResolverEnabled()
+  let companyTask: Promise<number[]>
+  if (resolverEnabled) {
+    companyTask = ensureResolvedCompanies(patchId, data, uid)
+  } else {
+    let primaryDevelopers = collectPrimaryDeveloperNames(data)
+    if (data.vndbId?.trim()) {
+      const result = await ensurePatchCompaniesFromVNDB(
+        patchId,
+        data.vndbId,
+        uid
+      )
+      if (result.related > 0) {
+        primaryDevelopers = []
+      }
     }
+    companyTask = ensureSubmittedCompanies(patchId, data, uid, {
+      primaryDevelopers
+    })
   }
 
-  const companyTask = ensureSubmittedCompanies(patchId, data, uid, {
-    primaryDevelopers
-  })
+  companyTask = companyTask
     .then(async (insertedIds) => {
       if (insertedIds.length) {
         await invalidateCompanyCaches()
