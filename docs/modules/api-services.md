@@ -239,6 +239,7 @@ service/helper 负责：
 - resolver 开关关闭时暂时保留旧兼容行为：VNDB 成功关联后不再使用 Bangumi
   developer，Steam developer 与 DLSite circle 仍独立补充。**这不是最终产品规则**；
   开关启用后四个来源全部进入 resolver，Bangumi 独有发行商/制作方不得再被丢弃。
+- VNDB producer 新建会社时，`introduction` 使用 VNDB 的 `description`；不得再把 alias 数组拼成逗号串冒充简介。历史 `ensurePatchCompanyFromDlsite` 同样必须走共享 resolver 与外层唯一冲突重试，不得退回只按精确 `name` 查找；关系变化后同时失效会社缓存与该游戏内容缓存。
 - 外部公司关系必须按 `name` 和 `alias` 查找已有公司；提交名命中现有 alias 时，应关联到已有公司，而不是创建新公司。
 - 新增、删除或外部拉取公司关系后必须调用 `invalidateCompanyCaches`，并按 [Patch 缓存](data-cache-upload.md) 的约定同时失效受影响 patch 的详情/简介内容缓存；只清公司缓存会让公司页刷新而游戏详情页继续展示旧公司。只新增标签或别名时不应误触发公司缓存失效。
 

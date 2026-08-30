@@ -67,8 +67,8 @@ tests/unit/
 - Gallery create/rewrite 上传失败保留、重试、网页拖拽远程导入和 `/api/edit/gallery/remote` 安全边界相关变更。
 - CSRF、角色、资源归属、每日上传配额、用户设置权限相关变更。
 - 主题 token、语义颜色、过滤器、排序、外部 ID 解析变更。
-- 编辑页外部数据合并规则变更，包括 VNDB/Bangumi/Steam 字段保留、Steam ID 软重复提示但不阻塞、公司来源优先级、alias 公司匹配和 store 函数式合并。
-- 维护脚本的自动合并计划变更，尤其是公司/tag 的 alias 冲突、歧义跳过、关系迁移和 count 预览。
+- 编辑页外部数据合并规则变更，包括 VNDB/Bangumi/Steam 字段保留、Steam ID 软重复提示但不阻塞、resolver 开启时四来源全部保留、alias 公司匹配和 store 函数式合并。
+- 维护脚本的自动合并计划变更，尤其是公司/tag 的 alias 冲突、歧义跳过和关系迁移；tag/company count 由数据库触发器与 postflight 验证，不再由维护脚本预览或修复。
 - 修 bug 时要加能在修复前失败的 regression test。
 
 可以暂不新增测试但要手动验证：
@@ -126,7 +126,7 @@ vi.mock('~/prisma/index', () => ({
 - 缓存失效函数是否被调用。
 - 权限和边界条件。
 - 输入去重、normalize、alias 匹配等业务规则。
-- 外部数据合并优先级，例如 VNDB 公司优先、Bangumi 公司兜底、Bangumi 标签仍保留、VNDB 标签不导入、Steam ID 软重复和 Bangumi ID 硬唯一；还要覆盖 alias 感知的标签/公司匹配、创建与更新时的 tag alias 全局唯一、Bangumi 简介/标题按点击填入、重写查重排除当前 patch、创建页清除草稿和 store 的函数式合并。
+- 外部数据合并规则，例如 resolver 开启时 VNDB/Bangumi/Steam/DLSite 会社全部保留、关闭时旧来源互斥仅作回退兼容、Bangumi 标签仍保留、VNDB 标签不导入、Steam ID 软重复和 Bangumi ID 硬唯一；还要覆盖 alias 感知的标签/公司匹配、VNDB producer description 写入简介、DLSite 会社走共享 resolver、创建与更新时的 tag alias 全局唯一、Bangumi 简介/标题按点击填入、重写查重排除当前 patch、创建页清除草稿和 store 的函数式合并。
 - 用户身份、角色阈值和 owner mismatch。
 - 消息类型回归：反馈工单保持 `type: 'feedback'`，而发给用户或管理员的反馈通知必须是 `type: 'system'`，否则会绕过系统通知筛选。
 
