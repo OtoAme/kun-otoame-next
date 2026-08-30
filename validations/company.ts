@@ -1,25 +1,26 @@
 import { z } from 'zod'
 import { galgameSchema } from './galgame'
 import { DEFAULT_TAG_COMPANY_MIN_RATING_COUNT } from '~/utils/galgameFilter'
+import { isCompanyIdentityValueWithinLimit } from '~/app/api/company/identity/normalize'
 
-export const createCompanySchema = z.object({
-  name: z
+const companyIdentityValueSchema = (emptyMessage: string) =>
+  z
     .string()
     .trim()
-    .min(1, { message: '会社名不可为空' })
-    .max(107, { message: '单个会社名最大 107 个字符' }),
+    .min(1, { message: emptyMessage })
+    .max(107, { message: '单个会社名称或别名最大 107 个字符' })
+    .refine(isCompanyIdentityValueWithinLimit, {
+      message: '会社名称或别名规范化后最大 107 个字符'
+    })
+
+export const createCompanySchema = z.object({
+  name: companyIdentityValueSchema('会社名不可为空'),
   introduction: z
     .string()
     .trim()
     .max(10007, { message: '会社的介绍最大 10007 个字符' })
     .optional(),
-  alias: z.array(
-    z
-      .string()
-      .trim()
-      .min(1, { message: '会社别名不可为空' })
-      .max(107, { message: '单个会社的别名最大 107 个字符' })
-  ),
+  alias: z.array(companyIdentityValueSchema('会社别名不可为空')),
   primary_language: z
     .array(
       z
@@ -78,8 +79,14 @@ export const getPatchByCompanySchema = z.object({
     ])
     .default('resource_update_time'),
   sortOrder: z.union([z.literal('asc'), z.literal('desc')]).default('desc'),
-  yearString: z.string().max(1007).default(JSON.stringify(['all'])),
-  monthString: z.string().max(1007).default(JSON.stringify(['all'])),
+  yearString: z
+    .string()
+    .max(1007)
+    .default(JSON.stringify(['all'])),
+  monthString: z
+    .string()
+    .max(1007)
+    .default(JSON.stringify(['all'])),
   minRatingCount: z.coerce.number().min(0).max(999999).default(10)
 })
 

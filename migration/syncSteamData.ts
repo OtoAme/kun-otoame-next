@@ -9,6 +9,8 @@ import {
   hasAnyTagName,
   mapTagNamesToIds
 } from '~/app/api/edit/tagEnsureHelper'
+import { normalizeCompanyValue } from '~/app/api/company/identity/normalize'
+import { syncCompanyIdentityProjection } from '~/app/api/company/identity/projection'
 import type { SteamAppData } from '~/lib/arnebiae/steam'
 
 const CONCURRENCY = 2
@@ -101,39 +103,46 @@ async function processCompanies(
     const devName = dev.name?.trim()
     if (!devName) continue
 
-    let company = await prisma.patch_company.findFirst({
-      where: { name: devName }
+    await prisma.$transaction(async (tx) => {
+      let company = await tx.patch_company.findFirst({
+        where: { name: devName }
+      })
+
+      if (!company) {
+        company = await tx.patch_company.create({
+          data: {
+            name: devName,
+            normalized_name: normalizeCompanyValue(devName),
+            introduction: '',
+            count: 0,
+            primary_language: [],
+            official_website: dev.link ? [dev.link] : [],
+            parent_brand: [],
+            alias: [],
+            user_id: uid
+          }
+        })
+      }
+
+      await syncCompanyIdentityProjection(tx, {
+        companyId: company.id
+      })
+
+      const existingRelation = await tx.patch_company_relation.findFirst({
+        where: { patch_id: patchId, company_id: company.id }
+      })
+
+      if (!existingRelation) {
+        await tx.patch_company_relation.create({
+          data: { patch_id: patchId, company_id: company.id }
+        })
+
+        await tx.patch_company.update({
+          where: { id: company.id },
+          data: { count: { increment: 1 } }
+        })
+      }
     })
-
-    if (!company) {
-      company = await prisma.patch_company.create({
-        data: {
-          name: devName,
-          introduction: '',
-          count: 0,
-          primary_language: [],
-          official_website: dev.link ? [dev.link] : [],
-          parent_brand: [],
-          alias: [],
-          user_id: uid
-        }
-      })
-    }
-
-    const existingRelation = await prisma.patch_company_relation.findFirst({
-      where: { patch_id: patchId, company_id: company.id }
-    })
-
-    if (!existingRelation) {
-      await prisma.patch_company_relation.create({
-        data: { patch_id: patchId, company_id: company.id }
-      })
-
-      await prisma.patch_company.update({
-        where: { id: company.id },
-        data: { count: { increment: 1 } }
-      })
-    }
   }
 }
 

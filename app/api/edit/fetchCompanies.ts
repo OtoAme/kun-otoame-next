@@ -79,7 +79,8 @@ export const ensurePatchCompaniesFromVNDB = async (
         const relationResult = await ensureCompanyRelationsByName(
           tx,
           patchId,
-          companiesByName
+          companiesByName,
+          'authoritative'
         )
 
         return {

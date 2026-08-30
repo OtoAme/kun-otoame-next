@@ -8,6 +8,8 @@ import {
   type MergeCompaniesPlan,
   type MergePreviewCompany
 } from './companyMergePlan'
+import { normalizeCompanyValue } from '~/app/api/company/identity/normalize'
+import { syncCompanyIdentityProjection } from '~/app/api/company/identity/projection'
 
 const shouldApply = process.argv.includes('--apply')
 const PATCH_CONTENT_CACHE_BATCH_SIZE = 100
@@ -22,9 +24,7 @@ type CompanyRelationWithUniqueId = {
 
 const unique = <T>(values: T[]) => [...new Set(values)]
 
-const collectAffectedUniqueIds = (
-  relations: CompanyRelationWithUniqueId[]
-) =>
+const collectAffectedUniqueIds = (relations: CompanyRelationWithUniqueId[]) =>
   unique(
     relations
       .map((relation) => relation.patch?.unique_id)
@@ -100,11 +100,15 @@ const validateMerge = (
     .filter((company): company is MergePreviewCompany => Boolean(company))
 
   if (sourceCompanies.length !== sourceCompanyIds.length) {
-    const foundCompanyIds = new Set(sourceCompanies.map((company) => company.id))
+    const foundCompanyIds = new Set(
+      sourceCompanies.map((company) => company.id)
+    )
     const missingCompanyIds = sourceCompanyIds.filter(
       (companyId) => !foundCompanyIds.has(companyId)
     )
-    console.warn(`  skip missing source companies: ${missingCompanyIds.join(', ')}`)
+    console.warn(
+      `  skip missing source companies: ${missingCompanyIds.join(', ')}`
+    )
   }
 
   const mismatchedSourceCompanies = sourceCompanies.filter((company) => {
@@ -191,8 +195,9 @@ const mergeCompanies = async (
   await prisma.$transaction(
     async (tx) => {
       if (sourceRelations.length) {
-        const values = sourceRelations.map((relation) =>
-          Prisma.sql`(${relation.patch_id}, ${plan.targetCompanyId}, NOW(), NOW())`
+        const values = sourceRelations.map(
+          (relation) =>
+            Prisma.sql`(${relation.patch_id}, ${plan.targetCompanyId}, NOW(), NOW())`
         )
 
         await tx.$executeRaw`
@@ -218,12 +223,16 @@ const mergeCompanies = async (
       await tx.patch_company.update({
         where: { id: plan.targetCompanyId },
         data: {
+          normalized_name: normalizeCompanyValue(targetCompany.name),
           alias: preview.nextAliases,
           primary_language: preview.nextPrimaryLanguage,
           official_website: preview.nextOfficialWebsite,
           parent_brand: preview.nextParentBrand,
           count: actualCount
         }
+      })
+      await syncCompanyIdentityProjection(tx, {
+        companyId: plan.targetCompanyId
       })
     },
     { timeout: 60000 }
@@ -324,7 +333,10 @@ const invalidateCaches = async (affectedUniqueIds: string[]) => {
     const { redis } = await import('../lib/redis')
 
     try {
-      await Promise.all([invalidateCompanyCaches(), invalidatePatchListCaches()])
+      await Promise.all([
+        invalidateCompanyCaches(),
+        invalidatePatchListCaches()
+      ])
       for (
         let index = 0;
         index < affectedUniqueIds.length;

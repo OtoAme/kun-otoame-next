@@ -1,6 +1,8 @@
 import { prisma } from '~/prisma/index'
 import { invalidateCompanyCaches } from '~/app/api/patch/cache'
 import { addPatchCompanyRelations } from './companyRelationHelper'
+import { normalizeCompanyValue } from '~/app/api/company/identity/normalize'
+import { syncCompanyIdentityProjection } from '~/app/api/company/identity/projection'
 
 const DLSITE_API = 'https://dlapi.arnebiae.com/api/dlsite'
 
@@ -63,6 +65,7 @@ export const ensurePatchCompanyFromDlsite = async (
           company = await tx.patch_company.create({
             data: {
               name: circleName,
+              normalized_name: normalizeCompanyValue(circleName),
               introduction: '',
               count: 0,
               primary_language: [],
@@ -73,6 +76,10 @@ export const ensurePatchCompanyFromDlsite = async (
             }
           })
         }
+
+        await syncCompanyIdentityProjection(tx, {
+          companyId: company.id
+        })
 
         return await addPatchCompanyRelations(tx, patchId, [company.id])
       },

@@ -4,8 +4,15 @@ const prismaMocks = vi.hoisted(() => {
   const tx = {
     patch_company: {
       findMany: vi.fn(),
-      createMany: vi.fn(),
+      findUnique: vi.fn(),
+      createManyAndReturn: vi.fn(),
+      update: vi.fn(),
       updateMany: vi.fn()
+    },
+    patch_company_name_identity: {
+      createMany: vi.fn(),
+      deleteMany: vi.fn(),
+      update: vi.fn()
     },
     $queryRaw: vi.fn()
   }
@@ -46,8 +53,13 @@ describe('ensurePatchCompaniesFromVNDB', () => {
     vi.clearAllMocks()
     prismaMocks.patch.findUnique.mockReset()
     prismaMocks._tx.patch_company.findMany.mockReset()
-    prismaMocks._tx.patch_company.createMany.mockReset()
+    prismaMocks._tx.patch_company.createManyAndReturn.mockReset()
+    prismaMocks._tx.patch_company.findUnique.mockReset()
+    prismaMocks._tx.patch_company.update.mockReset()
     prismaMocks._tx.patch_company.updateMany.mockReset()
+    prismaMocks._tx.patch_company_name_identity.createMany.mockReset()
+    prismaMocks._tx.patch_company_name_identity.deleteMany.mockReset()
+    prismaMocks._tx.patch_company_name_identity.update.mockReset()
     prismaMocks._tx.$queryRaw.mockReset()
     fetchVndbVnMock.mockReset()
     cacheMocks.invalidateCompanyCaches.mockReset()
@@ -72,8 +84,24 @@ describe('ensurePatchCompaniesFromVNDB', () => {
         }
       ]
     })
-    prismaMocks._tx.patch_company.createMany.mockResolvedValue({ count: 1 })
+    prismaMocks._tx.patch_company.createManyAndReturn.mockResolvedValue([
+      { id: 7 }
+    ])
+    prismaMocks._tx.patch_company.findUnique.mockResolvedValue({
+      name: 'VNDB Studio',
+      alias: [],
+      normalized_name: null,
+      name_identities: []
+    })
+    prismaMocks._tx.patch_company.update.mockResolvedValue({})
     prismaMocks._tx.patch_company.updateMany.mockResolvedValue({ count: 1 })
+    prismaMocks._tx.patch_company_name_identity.createMany.mockResolvedValue({
+      count: 1
+    })
+    prismaMocks._tx.patch_company_name_identity.deleteMany.mockResolvedValue({
+      count: 0
+    })
+    prismaMocks._tx.patch_company_name_identity.update.mockResolvedValue({})
     prismaMocks._tx.$queryRaw.mockResolvedValue([{ company_id: 7 }])
     prismaMocks.patch.findUnique.mockResolvedValue({ unique_id: 'abc12345' })
     cacheMocks.invalidateCompanyCaches.mockResolvedValue(undefined)
@@ -92,7 +120,13 @@ describe('ensurePatchCompaniesFromVNDB', () => {
     const result = await ensurePatchCompaniesFromVNDB(10, 'v123', 100)
 
     expect(result).toEqual({ ensured: 0, related: 1 })
-    expect(prismaMocks._tx.patch_company.createMany).not.toHaveBeenCalled()
+    expect(
+      prismaMocks._tx.patch_company.createManyAndReturn
+    ).not.toHaveBeenCalled()
+    expect(prismaMocks._tx.patch_company.findUnique).not.toHaveBeenCalled()
+    expect(
+      prismaMocks._tx.patch_company_name_identity.createMany
+    ).not.toHaveBeenCalled()
     expect(prismaMocks._tx.patch_company.updateMany).toHaveBeenCalledWith({
       where: { id: { in: [7] } },
       data: { count: { increment: 1 } }
@@ -104,6 +138,12 @@ describe('ensurePatchCompaniesFromVNDB', () => {
     prismaMocks._tx.patch_company.findMany
       .mockResolvedValueOnce([])
       .mockResolvedValueOnce([{ id: 7, name: 'VNDB Studio', alias: [] }])
+    prismaMocks._tx.patch_company.findUnique.mockResolvedValue({
+      name: 'VNDB Studio',
+      alias: ['Original Studio', 'Studio Alias'],
+      normalized_name: 'vndb studio',
+      name_identities: []
+    })
 
     const result = await ensurePatchCompaniesFromVNDB(10, 'v123', 100)
 
@@ -116,5 +156,22 @@ describe('ensurePatchCompaniesFromVNDB', () => {
       'abc12345'
     )
     expect(cacheMocks.invalidateCompanyCaches).toHaveBeenCalledOnce()
+    expect(
+      prismaMocks._tx.patch_company_name_identity.createMany
+    ).toHaveBeenCalledWith({
+      data: expect.arrayContaining([
+        expect.objectContaining({
+          kind: 'alias',
+          origin: 'authoritative',
+          normalized_value: 'original studio'
+        }),
+        expect.objectContaining({
+          kind: 'alias',
+          origin: 'authoritative',
+          normalized_value: 'studio alias'
+        })
+      ]),
+      skipDuplicates: true
+    })
   })
 })

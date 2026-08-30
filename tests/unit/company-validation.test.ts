@@ -18,4 +18,17 @@ describe('company validation', () => {
 
     expect(result.success).toBe(true)
   })
+
+  it('rejects names whose NFKC form cannot fit the identity columns', () => {
+    const result = createCompanySchema.safeParse({
+      name: 'ﬃ'.repeat(107),
+      introduction: '',
+      alias: [],
+      primary_language: ['ja'],
+      official_website: [],
+      parent_brand: []
+    })
+
+    expect(result.success).toBe(false)
+  })
 })

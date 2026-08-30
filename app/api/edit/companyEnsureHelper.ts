@@ -1,5 +1,8 @@
 import { Prisma } from '@prisma/client'
 import { addPatchCompanyRelations } from './companyRelationHelper'
+import { normalizeCompanyValue } from '~/app/api/company/identity/normalize'
+import { syncCompanyIdentityProjection } from '~/app/api/company/identity/projection'
+import type { CompanyIdentityOrigin } from '~/app/api/company/identity/projection'
 
 type TxClient = Prisma.TransactionClient
 
@@ -45,7 +48,8 @@ const mapSubmittedNamesToCompanyIds = (
 export const ensureCompanyRelationsByName = async (
   tx: TxClient,
   patchId: number,
-  companiesByName: Map<string, CompanyCreateInput>
+  companiesByName: Map<string, CompanyCreateInput>,
+  aliasOrigin: CompanyIdentityOrigin = 'legacy'
 ) => {
   const companyNames = Array.from(companiesByName.keys())
   if (!companyNames.length) {
@@ -68,13 +72,18 @@ export const ensureCompanyRelationsByName = async (
   const toCreate = companyNames
     .filter((name) => !existingNameSet.has(name))
     .map((name) => companiesByName.get(name)!)
+    .map((company) => ({
+      ...company,
+      normalized_name: normalizeCompanyValue(company.name)
+    }))
 
-  if (toCreate.length) {
-    await tx.patch_company.createMany({
-      data: toCreate,
-      skipDuplicates: true
-    })
-  }
+  const insertedCompanies = toCreate.length
+    ? await tx.patch_company.createManyAndReturn({
+        data: toCreate,
+        skipDuplicates: true,
+        select: { id: true }
+      })
+    : []
 
   const created =
     toCreate.length > 0
@@ -85,10 +94,16 @@ export const ensureCompanyRelationsByName = async (
       : existing
 
   const companyIds = mapSubmittedNamesToCompanyIds(companyNames, created)
+  for (const company of insertedCompanies) {
+    await syncCompanyIdentityProjection(tx, {
+      companyId: company.id,
+      aliasOrigin
+    })
+  }
   const insertedIds = await addPatchCompanyRelations(tx, patchId, companyIds)
 
   return {
-    ensured: toCreate.length,
+    ensured: insertedCompanies.length,
     related: companyIds.length || existingCompanyIds.length,
     insertedIds
   }

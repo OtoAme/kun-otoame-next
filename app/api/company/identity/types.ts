@@ -1,4 +1,10 @@
 import { z } from 'zod'
+import {
+  COMPANY_IDENTITY_VALUE_MAX_LENGTH,
+  isCompanyIdentityValueWithinLimit
+} from './normalize'
+
+export { COMPANY_IDENTITY_VALUE_MAX_LENGTH } from './normalize'
 
 export const COMPANY_CANDIDATE_SOURCES = [
   'vndb',
@@ -10,7 +16,6 @@ export const COMPANY_CANDIDATE_SOURCES = [
 export const COMPANY_CANDIDATE_MAX_PER_SOURCE = 50
 export const COMPANY_CANDIDATE_MAX_ALIASES = 50
 export const COMPANY_CANDIDATE_MAX_URLS = 50
-export const COMPANY_IDENTITY_VALUE_MAX_LENGTH = 107
 const COMPANY_SOURCE_URL_MAX_LENGTH = 1007
 
 export type CompanyCandidateSource = (typeof COMPANY_CANDIDATE_SOURCES)[number]
@@ -32,7 +37,12 @@ export const COMPANY_ENTITY_TYPES = [
 ] as const
 export type CompanyEntityType = (typeof COMPANY_ENTITY_TYPES)[number]
 
-const companyValueSchema = z.string().trim().min(1).max(107)
+const companyValueSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(COMPANY_IDENTITY_VALUE_MAX_LENGTH)
+  .refine(isCompanyIdentityValueWithinLimit)
 const sourceUrlSchema = z
   .string()
   .trim()

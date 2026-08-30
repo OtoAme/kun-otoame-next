@@ -1,14 +1,30 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const prismaMocks = vi.hoisted(() => ({
-  patch_company: {
+const prismaMocks = vi.hoisted(() => {
+  const patchCompany = {
     findUnique: vi.fn(),
     findFirst: vi.fn(),
     create: vi.fn(),
     update: vi.fn(),
     delete: vi.fn()
   }
-}))
+  const tx = {
+    $queryRaw: vi.fn(),
+    patch_company: patchCompany,
+    patch_company_name_identity: {
+      createMany: vi.fn(),
+      deleteMany: vi.fn(),
+      update: vi.fn()
+    }
+  }
+  return {
+    patch_company: patchCompany,
+    $transaction: vi.fn((callback: (transaction: typeof tx) => unknown) =>
+      callback(tx)
+    ),
+    _tx: tx
+  }
+})
 
 vi.mock('~/prisma', () => ({
   prisma: prismaMocks
@@ -55,8 +71,20 @@ describe('company service alias conflict checks', () => {
     })
     prismaMocks.patch_company.delete.mockResolvedValue({})
     prismaMocks.patch_company.findUnique.mockResolvedValue({
+      name: 'New Studio',
+      alias: [],
+      normalized_name: null,
+      name_identities: [],
       patch_relations: []
     })
+    prismaMocks._tx.patch_company_name_identity.createMany.mockResolvedValue({
+      count: 1
+    })
+    prismaMocks._tx.patch_company_name_identity.deleteMany.mockResolvedValue({
+      count: 0
+    })
+    prismaMocks._tx.patch_company_name_identity.update.mockResolvedValue({})
+    prismaMocks._tx.$queryRaw.mockResolvedValue([{ id: 1 }])
     cacheMocks.invalidateCompanyCaches.mockResolvedValue(undefined)
     cacheMocks.invalidatePatchContentCache.mockResolvedValue(undefined)
   })
@@ -127,5 +155,86 @@ describe('company service alias conflict checks', () => {
     )
     expect(cacheMocks.invalidatePatchContentCache).toHaveBeenCalledTimes(2)
     expect(cacheMocks.invalidateCompanyCaches).toHaveBeenCalledWith(7)
+  })
+
+  it('creates the company and its identity projection in one transaction', async () => {
+    prismaMocks.patch_company.findUnique.mockResolvedValue({
+      name: 'Ｎｅｗ Studio',
+      alias: ['新会社'],
+      normalized_name: 'new studio',
+      name_identities: []
+    })
+    await createCompany(
+      {
+        name: 'Ｎｅｗ Studio',
+        introduction: '',
+        alias: ['新会社'],
+        primary_language: ['ja'],
+        official_website: [],
+        parent_brand: []
+      },
+      100
+    )
+
+    expect(prismaMocks.$transaction).toHaveBeenCalledOnce()
+    expect(prismaMocks.patch_company.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ normalized_name: 'new studio' })
+      })
+    )
+    expect(
+      prismaMocks._tx.patch_company_name_identity.createMany
+    ).toHaveBeenCalledWith({
+      data: [
+        expect.objectContaining({
+          company_id: 1,
+          kind: 'name',
+          origin: 'authoritative',
+          normalized_value: 'new studio'
+        }),
+        expect.objectContaining({
+          company_id: 1,
+          kind: 'alias',
+          origin: 'authoritative',
+          normalized_value: '新会社'
+        })
+      ],
+      skipDuplicates: true
+    })
+  })
+
+  it('rewrites aliases and their identity projection in one transaction', async () => {
+    prismaMocks.patch_company.update.mockResolvedValue({
+      id: 1,
+      name: 'New Studio',
+      count: 0,
+      alias: ['Current Alias']
+    })
+    prismaMocks.patch_company.findUnique.mockResolvedValue({
+      name: 'New Studio',
+      alias: ['Current Alias'],
+      normalized_name: 'new studio',
+      name_identities: []
+    })
+
+    await rewriteCompany({
+      companyId: 1,
+      name: 'New Studio',
+      introduction: '',
+      alias: ['Current Alias'],
+      primary_language: ['ja'],
+      official_website: [],
+      parent_brand: []
+    })
+
+    expect(prismaMocks.$transaction).toHaveBeenCalledOnce()
+    expect(prismaMocks.patch_company.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ normalized_name: 'new studio' })
+      })
+    )
+    expect(
+      prismaMocks._tx.patch_company_name_identity.createMany
+    ).toHaveBeenCalled()
   })
 })

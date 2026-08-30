@@ -26,6 +26,8 @@ import {
 } from '~/constants/api/select'
 import { withRealtimePatchViews } from '~/app/api/patch/views/realtime'
 import { buildGalgameOrderBy } from '~/app/api/utils/galgameQuery'
+import { normalizeCompanyValue } from '~/app/api/company/identity/normalize'
+import { syncCompanyIdentityProjection } from '~/app/api/company/identity/projection'
 
 export const getCompany = async (input: z.infer<typeof getCompanySchema>) => {
   const cacheKey = `company_list:${createHash('md5')
@@ -346,25 +348,33 @@ export const rewriteCompany = async (
     return '这个会社已经存在了'
   }
 
-  const newCompany = await prisma.patch_company.update({
-    where: { id: companyId },
-    data: {
-      name,
-      introduction,
-      alias,
-      primary_language,
-      official_website,
-      parent_brand
-    },
-    include: {
-      user: {
-        select: {
-          id: true,
-          name: true,
-          avatar: true
+  const newCompany = await prisma.$transaction(async (tx) => {
+    const company = await tx.patch_company.update({
+      where: { id: companyId },
+      data: {
+        name,
+        normalized_name: normalizeCompanyValue(name),
+        introduction,
+        alias,
+        primary_language,
+        official_website,
+        parent_brand
+      },
+      include: {
+        user: {
+          select: {
+            id: true,
+            name: true,
+            avatar: true
+          }
         }
       }
-    }
+    })
+    await syncCompanyIdentityProjection(tx, {
+      companyId,
+      aliasOrigin: 'authoritative'
+    })
+    return company
   })
 
   await invalidateCompanyCaches(companyId)
@@ -390,22 +400,30 @@ export const createCompany = async (
     return '这个会社已经存在了'
   }
 
-  const newCompany = await prisma.patch_company.create({
-    data: {
-      user_id: uid,
-      name,
-      introduction,
-      alias,
-      primary_language,
-      official_website,
-      parent_brand
-    },
-    select: {
-      id: true,
-      name: true,
-      count: true,
-      alias: true
-    }
+  const newCompany = await prisma.$transaction(async (tx) => {
+    const company = await tx.patch_company.create({
+      data: {
+        user_id: uid,
+        name,
+        normalized_name: normalizeCompanyValue(name),
+        introduction,
+        alias,
+        primary_language,
+        official_website,
+        parent_brand
+      },
+      select: {
+        id: true,
+        name: true,
+        count: true,
+        alias: true
+      }
+    })
+    await syncCompanyIdentityProjection(tx, {
+      companyId: company.id,
+      aliasOrigin: 'authoritative'
+    })
+    return company
   })
 
   await invalidateCompanyCaches()

@@ -13,8 +13,15 @@ const prismaMocks = vi.hoisted(() => {
     },
     patch_company: {
       findMany: vi.fn(),
-      createMany: vi.fn(),
+      findUnique: vi.fn(),
+      createManyAndReturn: vi.fn(),
+      update: vi.fn(),
       updateMany: vi.fn()
+    },
+    patch_company_name_identity: {
+      createMany: vi.fn(),
+      deleteMany: vi.fn(),
+      update: vi.fn()
     },
     $queryRaw: vi.fn()
   }
@@ -51,8 +58,26 @@ describe('processSubmittedExternalData company relations', () => {
       (fn: (tx: typeof prismaMocks._tx) => Promise<unknown>) =>
         fn(prismaMocks._tx)
     )
-    prismaMocks._tx.patch_company.createMany.mockResolvedValue({ count: 3 })
+    prismaMocks._tx.patch_company.createManyAndReturn.mockResolvedValue([
+      { id: 1 },
+      { id: 2 },
+      { id: 3 }
+    ])
+    prismaMocks._tx.patch_company.findUnique.mockResolvedValue({
+      name: 'Company',
+      alias: [],
+      normalized_name: null,
+      name_identities: []
+    })
+    prismaMocks._tx.patch_company.update.mockResolvedValue({})
     prismaMocks._tx.patch_company.updateMany.mockResolvedValue({ count: 3 })
+    prismaMocks._tx.patch_company_name_identity.createMany.mockResolvedValue({
+      count: 1
+    })
+    prismaMocks._tx.patch_company_name_identity.deleteMany.mockResolvedValue({
+      count: 0
+    })
+    prismaMocks._tx.patch_company_name_identity.update.mockResolvedValue({})
     prismaMocks._tx.patch_tag.findMany.mockResolvedValue([])
     prismaMocks._tx.patch_tag.createMany.mockResolvedValue({ count: 0 })
     prismaMocks._tx.patch_tag.updateMany.mockResolvedValue({ count: 0 })
@@ -102,8 +127,11 @@ describe('processSubmittedExternalData company relations', () => {
       100
     )
 
-    expect(prismaMocks._tx.patch_company.createMany).toHaveBeenCalledOnce()
-    const createCall = prismaMocks._tx.patch_company.createMany.mock.calls[0][0]
+    expect(
+      prismaMocks._tx.patch_company.createManyAndReturn
+    ).toHaveBeenCalledOnce()
+    const createCall =
+      prismaMocks._tx.patch_company.createManyAndReturn.mock.calls[0][0]
     expect(
       createCall.data.map((company: { name: string }) => company.name)
     ).toEqual(['B', 'C', 'A'])
@@ -140,7 +168,8 @@ describe('processSubmittedExternalData company relations', () => {
       100
     )
 
-    const createCall = prismaMocks._tx.patch_company.createMany.mock.calls[0][0]
+    const createCall =
+      prismaMocks._tx.patch_company.createManyAndReturn.mock.calls[0][0]
     expect(
       createCall.data.map((company: { name: string }) => company.name)
     ).toEqual(['VNDB Studio', 'Steam Publisher', 'DLSite Circle'])
@@ -173,7 +202,9 @@ describe('processSubmittedExternalData company relations', () => {
       100
     )
 
-    expect(prismaMocks._tx.patch_company.createMany).not.toHaveBeenCalled()
+    expect(
+      prismaMocks._tx.patch_company.createManyAndReturn
+    ).not.toHaveBeenCalled()
     expect(prismaMocks._tx.patch_company.updateMany).toHaveBeenCalledWith({
       where: { id: { in: [7] } },
       data: { count: { increment: 1 } }
@@ -240,10 +271,13 @@ describe('processSubmittedExternalData company relations', () => {
       'v123',
       100
     )
-    expect(prismaMocks._tx.patch_company.createMany).toHaveBeenCalledWith({
+    expect(
+      prismaMocks._tx.patch_company.createManyAndReturn
+    ).toHaveBeenCalledWith({
       data: [
         {
           name: 'Bangumi Studio',
+          normalized_name: 'bangumi studio',
           introduction: '',
           count: 0,
           primary_language: [],
@@ -253,7 +287,8 @@ describe('processSubmittedExternalData company relations', () => {
           user_id: 100
         }
       ],
-      skipDuplicates: true
+      skipDuplicates: true,
+      select: { id: true }
     })
   })
 
@@ -282,7 +317,8 @@ describe('processSubmittedExternalData company relations', () => {
       100
     )
 
-    const createCall = prismaMocks._tx.patch_company.createMany.mock.calls[0][0]
+    const createCall =
+      prismaMocks._tx.patch_company.createManyAndReturn.mock.calls[0][0]
     expect(
       createCall.data.map((company: { name: string }) => company.name)
     ).toEqual(['Submitted VNDB Studio'])
