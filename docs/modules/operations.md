@@ -203,6 +203,22 @@ orphan cleanup 三组 preflight/sync。`production-patch-submission-preflight-20
 Docker PostgreSQL 的逐条命令、备份、postflight 和固定 Release tag 流程见
 `docs/project/deployment.md` 的“投稿域上线顺序”。
 
+会社身份解析的 Phase A 结构使用独立的三份 SQL，必须先于任何读取新列或新表的
+应用代码部署：
+
+1. `production-company-identity-bootstrap-preflight-2026-08-30.sql` 只读盘点；首次
+   上线时目标列、表和索引显示 `ready_to_create` 是预期结果，既有对象显示
+   `definition_mismatch` 会直接阻断。
+2. `production-company-identity-bootstrap-sync-2026-08-30.sql` 在单事务中增加可空
+   `normalized_name`、投稿 `company_candidates` 快照列和两张身份表。该阶段只建普通
+   全局查询索引；`normalized_name` 与 `(source, external_id)` 的最终唯一约束尚未启用。
+3. `production-company-identity-bootstrap-postflight-2026-08-30.sql` 独立核对列类型、
+   Prisma `@updatedAt` 默认值、外键动作、索引定义及 Phase A 不含最终全局唯一约束。
+4. postflight 通过后运行 `pnpm prisma:deploy-safe`，再部署依赖该结构的应用版本。
+
+三份 SQL 都在一次性 PostgreSQL 18 上验证过首次安装和重复执行。生产仍禁止用
+`prisma db push` 代替这组迁移；后续身份回填和最终约束有各自独立的迁移阶段。
+
 生产变更要求：
 
 - 先备份。

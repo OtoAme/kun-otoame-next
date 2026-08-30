@@ -264,7 +264,8 @@ model patch_company_name_identity {
   @@index([company_id])
   @@index([confirmed_by_user_id])
   @@index([normalized_value])
-  @@unique([company_id, kind, normalized_value])
+  // 默认生成名超过 PostgreSQL 63 字节限制，必须固定这个短名。
+  @@unique([company_id, kind, normalized_value], map: "patch_company_name_identity_company_kind_value_key")
 }
 ```
 
