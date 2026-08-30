@@ -362,9 +362,13 @@ const main = async () => {
         clientBackupRoot
       )
       clientBackedUp = true
-      runDeployCommand('pnpm', ['install', '--frozen-lockfile'], {
-        cwd: projectRoot
-      })
+      runDeployCommand(
+        'pnpm',
+        ['install', '--frozen-lockfile', '--ignore-scripts'],
+        {
+          cwd: projectRoot
+        }
+      )
       await downloadFile(release.downloadUrl, archivePath, headers)
       runDeployCommand('tar', ['-xzf', archivePath, '-C', candidateRoot])
 
@@ -388,6 +392,9 @@ const main = async () => {
       })
 
       runCandidatePrismaGuard(candidateRoot)
+      runDeployCommand('pnpm', ['rebuild', '--pending'], {
+        cwd: projectRoot
+      })
       generateCandidatePrismaClient(candidateRoot)
       injectRuntimeDependencies(candidateRoot)
       generateCandidateSitemap(candidateRoot)

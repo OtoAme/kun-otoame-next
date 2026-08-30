@@ -132,10 +132,13 @@ const runLockedBuild = async () => {
   assertCleanDeployWorktree(projectRoot)
   adoptLegacyDeploySlot(slots)
 
-  runDeployCommand('pnpm', ['install', '--frozen-lockfile'], {
-    cwd: projectRoot
-  })
+  runDeployCommand(
+    'pnpm',
+    ['install', '--frozen-lockfile', '--ignore-scripts'],
+    { cwd: projectRoot }
+  )
   runDeployCommand('pnpm', ['prisma:deploy-safe'], { cwd: projectRoot })
+  runDeployCommand('pnpm', ['rebuild', '--pending'], { cwd: projectRoot })
 
   // Next cleanDistDir removes .next. The durable release remains in .deploy;
   // remove only its compatibility symlink before the build starts.

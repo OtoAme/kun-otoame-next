@@ -17,7 +17,10 @@ describe('local build deployment safety', () => {
     expect(source).toContain("const lockHeldArgument = '--lock-held'")
     expect(source).toContain('assertInheritedDeployLock(slots.deployRoot)')
     expect(source).toContain('DEPLOY_LOCK_OWNER_PID_ENV')
-    expect(source).toContain("['install', '--frozen-lockfile']")
+    expect(source).toContain(
+      "['install', '--frozen-lockfile', '--ignore-scripts']"
+    )
+    expect(source).toContain("['rebuild', '--pending']")
     expect(source).not.toContain('execSync(')
   })
 

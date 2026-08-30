@@ -60,7 +60,7 @@ describe('production Prisma deployment command', () => {
       'generateCandidatePrismaClient(candidateRoot)'
     )
     const installPosition = source.indexOf(
-      "runDeployCommand('pnpm', ['install', '--frozen-lockfile']"
+      "['install', '--frozen-lockfile', '--ignore-scripts']"
     )
     const clientBackupPosition = source.indexOf('backupGeneratedPrismaClient(')
 
@@ -77,6 +77,23 @@ describe('production Prisma deployment command', () => {
     expect(source).toContain('`--schema=${schemaPath}`')
     expect(source).toContain('`--candidate-root=${candidateRoot}`')
     expect(source).toContain('restoreGeneratedPrismaClient(')
+  })
+
+  it('defers dependency lifecycle scripts and Prisma generation until after the candidate guard', async () => {
+    const source = await readProjectFile('scripts/deployPull.ts')
+    const installPosition = source.indexOf("'--ignore-scripts'")
+    const guardPosition = source.indexOf(
+      'runCandidatePrismaGuard(candidateRoot)'
+    )
+    const rebuildPosition = source.indexOf("['rebuild', '--pending']")
+    const generatePosition = source.indexOf(
+      'generateCandidatePrismaClient(candidateRoot)'
+    )
+
+    expect(installPosition).toBeGreaterThan(-1)
+    expect(guardPosition).toBeGreaterThan(installPosition)
+    expect(rebuildPosition).toBeGreaterThan(guardPosition)
+    expect(generatePosition).toBeGreaterThan(rebuildPosition)
   })
 
   it('holds the durable deployment lock across latest source pull and the updated core script', async () => {
