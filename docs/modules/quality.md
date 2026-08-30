@@ -26,6 +26,7 @@ pnpm typecheck
 | `tests/unit/jwt-session.test.ts`                       | Redis-backed JWT session、多设备、会话删除、legacy token 迁移。                                                         |
 | `tests/unit/edit-store.test.ts`                        | 创建/重写 store 函数式合并，防止外部数据异步返回互相覆盖。                                                              |
 | `tests/unit/company-merge-plan.test.ts`                | 公司 name/alias 脏数据自动合并计划和预览。                                                                              |
+| `tests/unit/company-identity-maintenance.test.ts`      | 公司身份碰撞盘点、权威 VNDB 证据回填计划，以及只允许权威 alias 驱动自动合并。                                           |
 | `tests/unit/resource-link.test.ts`                     | 资源链接和提取码解析。                                                                                                  |
 | `tests/unit/api/resource-access-policy.test.ts`        | 游客游戏资源每日/每周额度、登录用户和补丁资源免产品限额，以及 24 小时授权常量。                                         |
 | `tests/unit/api/resource-access-grant.test.ts`         | 资源级 grant、`resource_grant` / `link_reveal` 分类、日/周边界、并发冲突和不延长授权。                                  |
@@ -51,7 +52,7 @@ pnpm typecheck
 | `tests/unit/api/admin-resource-get.test.ts`            | 后台资源列表按资源链接或 BLAKE3 Hash 搜索。                                                                             |
 | `tests/unit/api/admin-resource-update-message.test.ts` | 管理员后台修改他人资源时通知资源发布者、保留列表上下文并区分游戏资源 / 补丁资源日志。                                   |
 | `tests/unit/api/patch-resource-update.test.ts`         | 资源更新前校验资源和游戏归属，避免错误派生属性和缓存刷新。                                                              |
-| `tests/unit/patch-submission-*.test.ts` / `.test.tsx`  | 投稿押金与状态机、共享预览、重复外部 ID、素材清理 outbox、上传重试、权限和审核发布。                                     |
+| `tests/unit/patch-submission-*.test.ts` / `.test.tsx`  | 投稿押金与状态机、共享预览、重复外部 ID、素材清理 outbox、上传重试、权限和审核发布。                                    |
 | `tests/unit/admin-resource-container-layout.test.tsx`  | 后台资源表资源列宽、分页脱离表格横向滚动区并居中显示。                                                                  |
 | `tests/unit/admin-resource-render-cell.test.tsx`       | 后台资源列表资源名 / 游戏名两行展示。                                                                                   |
 | `tests/unit/resource-links-input.test.tsx`             | 对象存储资源大小输入禁用，普通外链大小仍可编辑。                                                                        |

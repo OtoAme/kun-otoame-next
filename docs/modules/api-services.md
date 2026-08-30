@@ -211,7 +211,7 @@ service/helper 负责：
   `patch_company_external_id.(source, external_id)` 两个目标约束，其它 `P2002` 不得
   吞掉或误重试。
 - 修改公司后必须调用 `invalidateCompanyCaches`。
-- 历史公司脏数据用 `pnpm maintenance:companies:dirty:dry` / `apply` 清理；不要让在线创建/编辑流程承担批量合并旧数据。
+- 历史公司脏数据用 `pnpm maintenance:companies:dirty:dry` / `apply` 清理；不要让在线创建/编辑流程承担批量合并旧数据。维护脚本只把重新抓取且全局唯一的 VNDB producer 证据写成 external ID / `authoritative` alias，也只据此自动合并；`legacy` alias、名称相似、共享 alias 和多候选一律只报告，交由人工裁决。带服务端候选快照的已发布投稿会另行审计其正式会社关系与 `external-id-name-conflict`。
 
 ### 编辑外部数据合并
 
