@@ -105,7 +105,7 @@ describe('production tag/company count migration', () => {
     expect(postflight).toContain("'patch_company'")
   })
 
-  it('rolls back only the six owned triggers and functions', async () => {
+  it('rolls back only owned trigger objects and repairs both counters under one lock', async () => {
     const rollback = await readProjectFile(paths.rollback)
     const executable = stripSqlComments(rollback)
 
@@ -115,9 +115,13 @@ describe('production tag/company count migration', () => {
     }
     expect(executable.match(/DROP TRIGGER IF EXISTS/g)).toHaveLength(6)
     expect(executable.match(/DROP FUNCTION IF EXISTS/g)).toHaveLength(6)
-    expect(executable).not.toMatch(
-      /\b(DROP TABLE|TRUNCATE|DELETE|UPDATE|INSERT)\b/i
+    expect(executable).toContain(
+      'LOCK TABLE public.patch_tag_relation, public.patch_company_relation IN SHARE MODE'
     )
+    expect(
+      executable.match(/UPDATE public\.patch_(?:tag|company) parent/g)
+    ).toHaveLength(2)
+    expect(executable).not.toMatch(/\b(DROP TABLE|TRUNCATE|DELETE|INSERT)\b/i)
   })
 
   it('keeps application and TypeScript maintenance paths free of manual tag/company deltas', async () => {
