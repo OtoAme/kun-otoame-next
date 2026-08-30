@@ -8,10 +8,15 @@ interface IndexNow {
 }
 
 export const postToIndexNow = async (url: string) => {
+  const key = process.env.KUN_VISUAL_NOVEL_INDEX_NOW_KEY
+  // An empty value is the explicit disabled state used by isolated E2E. Do not
+  // send a malformed request that still reaches the public IndexNow endpoint.
+  if (!key) return
+
   const requestData: IndexNow = {
     host: kunMoyuMoe.domain.main,
-    key: process.env.KUN_VISUAL_NOVEL_INDEX_NOW_KEY || '',
-    keyLocation: `${kunMoyuMoe.domain.main}/${process.env.KUN_VISUAL_NOVEL_INDEX_NOW_KEY}.txt`,
+    key,
+    keyLocation: `${kunMoyuMoe.domain.main}/${key}.txt`,
     urlList: [url]
   }
 
