@@ -147,6 +147,35 @@ describe('authoritative VNDB evidence planning', () => {
     expect(result.actions).toEqual([])
     expect(result.warnings.at(-1)).toContain('companies #1, #2')
   })
+
+  it('converges once the external ID and authoritative projection already exist', () => {
+    const result = planAuthoritativeVndbCompanyEvidence([
+      {
+        company: company(1, 'ぱれっと', {
+          normalizedName: 'ぱれっと',
+          alias: ['Palette'],
+          externalIds: [{ source: 'vndb', externalId: 'p1' }],
+          identities: [
+            {
+              kind: 'name',
+              origin: 'authoritative',
+              value: 'ぱれっと',
+              normalizedValue: 'ぱれっと'
+            },
+            {
+              kind: 'alias',
+              origin: 'authoritative',
+              value: 'Palette',
+              normalizedValue: 'palette'
+            }
+          ]
+        }),
+        candidates: [vndbCandidate('p1', 'Palette', ['ぱれっと'])]
+      }
+    ])
+
+    expect(result).toEqual({ actions: [], warnings: [] })
+  })
 })
 
 describe('authoritative alias merge planning', () => {

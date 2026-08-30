@@ -252,6 +252,23 @@ export const planAuthoritativeVndbCompanyEvidence = (
       )
       continue
     }
+
+    const existingAuthoritativeValues = new Set(
+      company.identities
+        .filter(
+          (identity) =>
+            identity.origin === 'authoritative' &&
+            (identity.kind === 'name' || identity.kind === 'alias')
+        )
+        .map((identity) => identity.normalizedValue)
+    )
+    const alreadyHasExternalId = existingVndbIds.includes(externalId)
+    const alreadyHasAuthoritativeProjection = matched.values.every((value) =>
+      existingAuthoritativeValues.has(normalizeCompanyValue(value))
+    )
+    if (alreadyHasExternalId && alreadyHasAuthoritativeProjection) {
+      continue
+    }
     provisional.push({
       companyId: company.id,
       source: 'vndb',

@@ -1,6 +1,4 @@
 import 'dotenv/config'
 import { finishFrozenCompanyCleanupCli } from './companyCleanupFrozenCli'
 
-void finishFrozenCompanyCleanupCli(
-  process.argv.includes('--apply') ? 'apply' : 'dry'
-)
+void finishFrozenCompanyCleanupCli('plan')
