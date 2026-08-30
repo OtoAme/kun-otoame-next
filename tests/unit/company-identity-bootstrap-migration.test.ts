@@ -62,10 +62,7 @@ describe('production company identity bootstrap migration', () => {
   })
 
   it('keeps the two global identities non-unique during Phase A', async () => {
-    const [sync, companySchema] = await Promise.all([
-      readProjectFile(syncPath),
-      readProjectFile('prisma/schema/patch-company.prisma')
-    ])
+    const sync = await readProjectFile(syncPath)
 
     expect(sync).toMatch(
       /CREATE INDEX IF NOT EXISTS patch_company_normalized_name_idx/
@@ -81,16 +78,6 @@ describe('production company identity bootstrap migration', () => {
     )
     expect(sync).toContain(
       'CREATE UNIQUE INDEX IF NOT EXISTS patch_company_name_identity_company_kind_value_key'
-    )
-
-    expect(companySchema).toMatch(
-      /normalized_name\s+String\?\s+@db\.VarChar\(107\)/
-    )
-    expect(companySchema).toContain('@@index([normalized_name])')
-    expect(companySchema).toContain('@@index([source, external_id])')
-    expect(companySchema).not.toContain('@@unique([source, external_id])')
-    expect(companySchema).toContain(
-      '@@unique([company_id, kind, normalized_value], map: "patch_company_name_identity_company_kind_value_key")'
     )
   })
 

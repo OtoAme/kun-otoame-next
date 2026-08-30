@@ -6,7 +6,12 @@ import type { CompanyIdentityOrigin } from '~/app/api/company/identity/projectio
 
 type TxClient = Prisma.TransactionClient
 
-export type CompanyCreateInput = Prisma.patch_companyCreateManyInput
+export type CompanyCreateInput = Omit<
+  Prisma.patch_companyCreateManyInput,
+  'normalized_name'
+> & {
+  normalized_name?: string
+}
 
 export const uniqueTrimmed = (names: string[]) => [
   ...new Set(names.map((name) => name.trim()).filter(Boolean))

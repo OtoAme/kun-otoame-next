@@ -2,7 +2,7 @@ model patch_company {
   id Int @id @default(autoincrement())
 
   name             String   @unique @db.VarChar(107)
-  normalized_name  String?  @db.VarChar(107)
+  normalized_name  String   @unique @db.VarChar(107)
   introduction     String   @default("") @db.VarChar(10007)
   count            Int      @default(0)
   primary_language String[]
@@ -21,7 +21,6 @@ model patch_company {
 
   @@index([count])
   @@index([count(sort: Desc), id(sort: Desc)])
-  @@index([normalized_name])
   @@index([alias], type: Gin)
   @@index([parent_brand], type: Gin)
 }
@@ -38,7 +37,7 @@ model patch_company_external_id {
   updated DateTime @updatedAt
 
   @@index([company_id])
-  @@index([source, external_id])
+  @@unique([source, external_id])
 }
 
 model patch_company_name_identity {
