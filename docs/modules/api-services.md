@@ -305,6 +305,7 @@ service/helper 负责：
 - `app/api/patch-submission/**`（用户侧：草稿 CRUD、提交/撤回、素材、隐藏）
 - `app/api/admin/patch-submission/**`（审核队列与四个审核动作）
 - `app/api/patch-submission/publishPreview.ts`、`publishCore.ts`（共享发布投影与发布核心）
+- `app/api/patch-submission/externalData.ts`、`app/api/company/identity/types.ts`（服务端会社候选快照与信任边界）
 - `constants/patchSubmission.ts`、`validations/patchSubmission.ts`、`store/patchSubmissionStore.ts`
 
 规则：
@@ -316,7 +317,10 @@ service/helper 负责：
 - **结算只在进入终态那一次转换发生。** 终态记录只能隐藏, 不能再删除或二次结算——`settleMoemoepointReservation` 对已结算的暂扣用不匹配的键会抛错。删除只对活动草稿开放, release 后转 `deleted`。
 - **审核并发守卫**：每个审核动作用一次条件式 `updateMany … where { status: 'pending' }` 抢占, 两名管理员同时审核或作者同时撤回时只有一个状态转换成功。过期审核统一返回 `409` 与“投稿已被撤回或处理, 请刷新后重试”；审核事务整体回滚，不得留下 `patch`、结算、通知或日志。这是最终并发保护, 不得省略。
 - **`reject` 是独立动作**（返还, 不罚没）, 用于重复条目、超出收录范围、诚实但无法发布。缺它会让审核只剩「无限期挂着」或「不公平罚没」。
-- **发布核心三层**：提交前抓取外部数据并冻结进 payload；最终事务内纯 DB 写入 patch/alias/tag/company/gallery/结算/通知/日志；事务后只做缓存失效与 SFW IndexNow。批准链路全程不访问外网。
+- **发布核心三层**：提交前把外部表单字段冻结进 payload（会社可信候选另存服务端列）；最终事务内纯 DB 写入 patch/alias/tag/company/gallery/结算/通知/日志；事务后只做缓存失效与 SFW IndexNow。批准链路全程不访问外网。
+- **会社候选不属于客户端 payload。** 投稿页的 VNDB、Bangumi、Steam 获取按钮调用 `POST /api/patch-submission/[id]/external-data`：登录与投稿归属 / 可编辑状态校验 → fail-open 限频 → 事务外抓取 → 短事务锁投稿行、重读 `company_candidates` 并只替换当前来源槽。通用 `/api/edit/vndb/details`、`/api/edit/bangumi`、`/api/edit/steam` 仍是无副作用抓取器，不能附带投稿写入。
+- **快照信任只能在服务端读取时派生。** 每个来源槽保存 `{ lookupId, fetchedAt, candidates }`；抓到零家也写空数组，`null` 才表示从未抓取。读取时必须重新走独立 Zod schema，并把槽的 `lookupId` 与投稿当前外部 ID 比对；失配或损坏的槽整体作废并产出诊断。候选 JSON 不存 `verified` 字段，客户端字符串只能构造 `unverified` 候选，不能绑定 external ID 或新增权威别名。当前阶段仍沿用既有字符串发布路径，直到 resolver 与约束完成后由同一服务端 feature flag 同时切换预览和批准。
+- **数据库 payload 每次读取都重新解码。** 作者详情、预览、提交审核和管理员批准不能把 Prisma JSON 裸断言为 `PatchSubmissionPayload`；损坏或不完整的冻结数据必须在写入 `patch` 前返回可处理的错误。
 - **审核展示与发布使用同一投影**：payload 中的手填、VNDB、Bangumi、Steam、DLsite 别名/标签/公司都由 `publishPreview.ts` 合并；作者预览、管理员详情与 `publishCore.ts` 不得各自复制合并规则。终态清理 key 不能进入管理员预览 DTO。
 - **作者预览读取服务端冻结版本**：`GET /api/patch-submission/[id]/preview` 先按严格正整数校验路由参数，再在 service 层用投稿 ID + 当前用户 ID 校验所有权，返回共享发布投影并设置 `private, no-store`。可编辑草稿只有在 `flush()` 成功后才请求该路由，不能用未保存的本地 payload 假装服务端预览；`pending` 已不可编辑，作者自查时直接读取已冻结版本，不再发送空保存。
 - **重复外部 ID 分软硬两类**：Release ID、Bangumi ID、DLSite Code 在提交前既检查作者自己的活动投稿，也检查已发布条目；批准事务若仍因竞态命中 Prisma `P2002`，必须转换为指出冲突字段的审核员可见错误，事务回滚后投稿保持 `pending`、押金不结算。VNDB ID 本身允许不同版本共用：命中已发布条目时只有投稿者显式保存 `isDuplicate` 确认后才可提交，审核详情必须列出最多 10 个冲突条目及确认状态，由审核员决定是否重复收录。重复列表必须排除本投稿自己发布的条目（按行上 `patch_id`），用多取一条（take 11）判定 `duplicatesTruncated`；DTO 另带 `publishedPatch`（正式条目被删后关联 SetNull，必须容忍 null）。
@@ -328,7 +332,7 @@ service/helper 负责：
 - **display_order 唯一性靠三层保障，不加数据库唯一约束**（批量换序会产生临时冲突且需要生产迁移）：所有画廊读取按 `display_order asc, id asc`（相同序号时数据库不保证顺序）；上传预留在投稿锁内拒绝与其他 ready / 未过期 uploading 行重复的序号（同 `clientAssetId` 重试除外）；提交审核前再次确认全部 ready 行序号唯一，冲突要求作者返回编辑并重新调整顺序。
 - 投稿成功转为 `pending` 或成功从 `pending` 撤回到 `draft` 后，查询所有 `role >= PATCH_SUBMISSION_REVIEW_MIN_ROLE` 的管理员并用 `Promise.allSettled` 发送对应站内通知，link 直达 `/admin/submission/<id>`。状态转换已经提交，管理员查询失败或单个通知失败只记日志，不能把作者请求变成失败或回滚投稿；状态栅栏失败时不得发送撤回通知。
 - **上传端点从 middleware matcher 排除**, 在 handler 内自校 CSRF, 使其能在整个 body 传完前拒绝。所有投稿路由先鉴权再解析。
-- **限频分层**：创建/提交/上传 fail-closed；读取/自动保存 fail-open；删除返还与审核结算不设限频（详见 [限频分层](data-cache-upload.md)）。
+- **限频分层**：创建/提交/上传 fail-closed；读取/自动保存/外部数据抓取 fail-open；删除返还与审核结算不设限频（详见 [限频分层](data-cache-upload.md)）。外部抓取为每用户 30 次 / 10 分钟，必须在鉴权与归属校验之后、外部网络之前消耗。
 - 素材运维：投稿 key 偏离 `patch/<id>/...` canonical 布局；发布后素材归 `patch` 所有, 清理命令（`scripts/cleanupSubmissionAssets.ts`）永不删除线上条目仍引用的对象；下架未审素材要连带 Cloudflare purge。
 - **个人页「发布条目」是公开正式条目查询，不是投稿 DTO。** `GET /api/user/profile/patch` 按作者 `patch.user_id` 查询，应用请求者的 NSFW/屏蔽可见性并以 `created desc, id desc` 稳定分页；匿名访客也可读取。本人页面再单独加载私有投稿管理数据，`published` 行由正式游戏卡片代表，`deleted` 行不返回。`role >= 4` 直接进入 `/edit/create`，不走投稿额度或押金查询，但晋升前留下的未结算投稿仍必须可处理。
 
