@@ -9,8 +9,8 @@ import { getPrefixedRedisKey, redis, runRedisCommand } from '~/lib/redis'
  *
  * - fail-closed: creating a draft, submitting, uploading assets — these move
  *   money or create storage cost.
- * - fail-open: reading a draft and autosaving — a Redis hiccup must not
- *   interrupt someone mid-edit.
+ * - fail-open: reading, autosaving, and fetching external metadata — a Redis
+ *   hiccup must not interrupt someone mid-edit.
  * - no limit at all: deleting a draft, and every review settlement. Those are
  *   the paths that return a deposit, and a 429 there would strand it. Note this
  *   is not the same as failing open: fail-open still answers 429 once the
@@ -20,6 +20,7 @@ type PatchSubmissionRateLimitAction =
   | 'create'
   | 'submit'
   | 'asset-upload'
+  | 'external-fetch'
   | 'read'
   | 'autosave'
 
@@ -49,6 +50,12 @@ const POLICIES: Record<PatchSubmissionRateLimitAction, Policy> = {
     windowSeconds: 10 * 60,
     messagePrefix: '素材上传过于频繁',
     failClosed: true
+  },
+  'external-fetch': {
+    limit: 30,
+    windowSeconds: 10 * 60,
+    messagePrefix: '外部数据获取过于频繁',
+    failClosed: false
   },
   read: {
     limit: 240,
@@ -89,7 +96,9 @@ export const checkPatchSubmissionRateLimit = async (
   uid: number
 ): Promise<string | null> => {
   const policy = POLICIES[action]
-  const key = getPrefixedRedisKey(`patch-submission:rate-limit:${action}:${uid}`)
+  const key = getPrefixedRedisKey(
+    `patch-submission:rate-limit:${action}:${uid}`
+  )
 
   try {
     const raw = await runRedisCommand(() =>
@@ -113,7 +122,10 @@ export const checkPatchSubmissionRateLimit = async (
       return null
     }
 
-    const retrySeconds = Math.max(1, Math.ceil((parsed.retryAfterMs ?? 0) / 1000))
+    const retrySeconds = Math.max(
+      1,
+      Math.ceil((parsed.retryAfterMs ?? 0) / 1000)
+    )
     return `${policy.messagePrefix}，请 ${retrySeconds} 秒后再试`
   } catch (error) {
     console.error('Failed to check the patch submission rate limit', {
@@ -121,8 +133,6 @@ export const checkPatchSubmissionRateLimit = async (
       uid,
       error
     })
-    return policy.failClosed
-      ? '服务暂时不可用, 请稍后重试'
-      : null
+    return policy.failClosed ? '服务暂时不可用, 请稍后重试' : null
   }
 }

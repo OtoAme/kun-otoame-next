@@ -13,7 +13,7 @@ import {
 import { PatchSubmissionError, sumActiveSubmissionBytes } from './quota'
 import { takeDownSubmissionAssets } from './assetCleanup'
 import { buildPatchSubmissionPublishPreview } from './publishPreview'
-import { patchSubmissionDraftPayloadSchema } from '~/validations/patchSubmission'
+import { decodePatchSubmissionPayload } from './payloadCodec'
 import type {
   PatchSubmission,
   PatchSubmissionGalleryImage,
@@ -74,7 +74,10 @@ const toGalleryImage = (
   displayOrder: image.display_order
 })
 
-const toSubmission = (row: SubmissionRow): PatchSubmission => {
+const toSubmission = (
+  row: SubmissionRow,
+  payload: PatchSubmissionPayload
+): PatchSubmission => {
   const cleanupOwed = PATCH_SUBMISSION_CLEANUP_STATUSES.includes(
     row.status as (typeof PATCH_SUBMISSION_CLEANUP_STATUSES)[number]
   )
@@ -82,7 +85,7 @@ const toSubmission = (row: SubmissionRow): PatchSubmission => {
   return {
     id: row.id,
     status: row.status as PatchSubmissionStatus,
-    payload: row.payload as unknown as PatchSubmissionPayload,
+    payload,
     payloadVersion: row.payload_version,
     revision: row.revision,
     heldAmount: row.held_amount,
@@ -113,7 +116,9 @@ export const getPatchSubmission = async (
   if (!row) {
     return '投稿不存在'
   }
-  return toSubmission(row)
+  const payload = decodePatchSubmissionPayload(row.payload)
+  if (!payload.success) return '投稿内容已损坏, 请联系管理员处理'
+  return toSubmission(row, payload.data)
 }
 
 /** Uses the same ownership predicate as the editor DTO, but keeps keys server-side. */
@@ -127,7 +132,7 @@ export const getPatchSubmissionPublishPreview = async (
   })
   if (!row) return '投稿不存在'
 
-  const payload = patchSubmissionDraftPayloadSchema.safeParse(row.payload)
+  const payload = decodePatchSubmissionPayload(row.payload)
   if (!payload.success) return '投稿内容无法预览'
 
   const cleanupOwed = PATCH_SUBMISSION_CLEANUP_STATUSES.includes(

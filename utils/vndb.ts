@@ -1,18 +1,12 @@
 'use client'
 
 import { kunFetchPost } from '~/utils/kunFetch'
-
-interface VNDBDetailsResponse {
-  titles: string[]
-  released: string
-  tags?: string[]
-  developers: string[]
-}
+import type { VndbDetailsResponse } from '~/types/api/externalCompanyData'
 
 export const fetchVNDBDetails = async (
   vnId: string
-): Promise<VNDBDetailsResponse> => {
-  const response = await kunFetchPost<VNDBDetailsResponse | string>(
+): Promise<VndbDetailsResponse> => {
+  const response = await kunFetchPost<VndbDetailsResponse | string>(
     '/edit/vndb/details',
     { vndbId: vnId }
   )

@@ -196,6 +196,17 @@ describe('approval concurrency', () => {
       stateChangedMessage
     )
   })
+
+  it('refuses damaged database JSON before publishing', async () => {
+    tx.patch_submission.findUnique.mockResolvedValue(
+      pendingSubmission({ payload: { introduction: 'name is missing' } })
+    )
+
+    await expect(approvePatchSubmission(1, admin, false)).rejects.toThrow(
+      '投稿内容无法发布'
+    )
+    expect(publishSubmissionCoreMock).not.toHaveBeenCalled()
+  })
 })
 
 describe('approval settlement', () => {

@@ -11,6 +11,7 @@ import type {
   PatchFormDataSetter,
   PatchFormDataShape
 } from '~/components/edit/types'
+import type { VndbDetailsResponse } from '~/types/api/externalCompanyData'
 
 interface DuplicateItem {
   uniqueId: string
@@ -30,6 +31,7 @@ interface Props<T extends PatchFormDataShape> {
   isDuplicate?: boolean
   onDuplicateChange?: (value: boolean) => void
   onExternalFetched?: (source: 'vndb') => void
+  fetchDetails?: (vndbId: string) => Promise<VndbDetailsResponse | string>
   excludeId?: number
   isReadOnly?: boolean
 }
@@ -42,6 +44,7 @@ export const VNDBInput = <T extends PatchFormDataShape>({
   onDuplicateChange,
   excludeId,
   onExternalFetched,
+  fetchDetails = fetchVNDBDetails,
   isReadOnly = false
 }: Props<T>) => {
   const [duplicateFound, setDuplicateFound] = useState(false)
@@ -97,8 +100,12 @@ export const VNDBInput = <T extends PatchFormDataShape>({
     // Fetch VNDB data regardless
     try {
       toast('正在从 VNDB 获取数据...')
-      const { titles, released, tags, developers } =
-        await fetchVNDBDetails(normalizedInput)
+      const result = await fetchDetails(normalizedInput)
+      if (typeof result === 'string') {
+        toast.error(result)
+        return
+      }
+      const { titles, released, tags, developers } = result
 
       setData((current) => ({
         ...current,

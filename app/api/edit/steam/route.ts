@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { kunParsePostBody } from '~/app/api/utils/parseQuery'
-import { fetchSteamAppData } from '~/lib/arnebiae/steam'
+import { fetchSteamDetailsData } from './service'
 
 const steamSchema = z.object({
   steamId: z.string().regex(/^\d+$/, 'Steam ID 必须为纯数字')
@@ -14,14 +14,7 @@ export const POST = async (req: NextRequest) => {
   }
 
   try {
-    const data = await fetchSteamAppData(Number(input.steamId))
-    return NextResponse.json({
-      name: data.name,
-      aliases: data.aliases,
-      releaseDate: data.releaseDate,
-      tags: data.tags,
-      developers: data.developers
-    })
+    return NextResponse.json(await fetchSteamDetailsData(input.steamId))
   } catch {
     return NextResponse.json('Steam API 请求失败')
   }

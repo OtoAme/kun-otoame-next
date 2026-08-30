@@ -20,14 +20,9 @@ import type {
   PatchFormDataSetter,
   PatchFormDataShape
 } from '~/components/edit/types'
+import type { BangumiDetailsResponse } from '~/types/api/externalCompanyData'
 
-interface BangumiPreview {
-  name: string
-  nameCn: string
-  summary: string
-  tags: string[]
-  developers: string[]
-}
+type BangumiPreview = BangumiDetailsResponse
 
 interface Props<T extends PatchFormDataShape> {
   errors?: string
@@ -35,6 +30,7 @@ interface Props<T extends PatchFormDataShape> {
   setData: PatchFormDataSetter<T>
   excludeId?: number
   onExternalFetched?: (source: 'bangumi') => void
+  fetchData?: (bangumiId: string) => Promise<BangumiDetailsResponse | string>
   isReadOnly?: boolean
 }
 
@@ -44,6 +40,7 @@ export const BangumiInput = <T extends PatchFormDataShape>({
   setData,
   excludeId,
   onExternalFetched,
+  fetchData,
   isReadOnly = false
 }: Props<T>) => {
   const [preview, setPreview] = useState<BangumiPreview | null>(null)
@@ -86,10 +83,11 @@ export const BangumiInput = <T extends PatchFormDataShape>({
 
     try {
       toast('正在从 Bangumi 获取数据...')
-      const result = await kunFetchPost<KunResponse<BangumiPreview>>(
-        '/edit/bangumi',
-        { bangumiId: rawInput }
-      )
+      const result = fetchData
+        ? await fetchData(rawInput)
+        : await kunFetchPost<KunResponse<BangumiPreview>>('/edit/bangumi', {
+            bangumiId: rawInput
+          })
 
       if (typeof result === 'string') {
         toast.error(result)

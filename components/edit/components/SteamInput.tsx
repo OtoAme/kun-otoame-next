@@ -17,18 +17,9 @@ import type {
   PatchFormDataSetter,
   PatchFormDataShape
 } from '~/components/edit/types'
+import type { SteamDetailsResponse } from '~/types/api/externalCompanyData'
 
-interface SteamPreview {
-  name: string
-  aliases: {
-    english?: string
-    japanese?: string
-    tchinese?: string
-  }
-  releaseDate: string
-  tags: string[]
-  developers: { name: string; link: string }[]
-}
+type SteamPreview = SteamDetailsResponse
 
 interface Props<T extends PatchFormDataShape> {
   errors?: string
@@ -36,6 +27,7 @@ interface Props<T extends PatchFormDataShape> {
   setData: PatchFormDataSetter<T>
   excludeId?: number
   onExternalFetched?: (source: 'steam') => void
+  fetchData?: (steamId: string) => Promise<SteamDetailsResponse | string>
   isReadOnly?: boolean
 }
 
@@ -45,6 +37,7 @@ export const SteamInput = <T extends PatchFormDataShape>({
   setData,
   excludeId,
   onExternalFetched,
+  fetchData,
   isReadOnly = false
 }: Props<T>) => {
   const [preview, setPreview] = useState<SteamPreview | null>(null)
@@ -101,10 +94,11 @@ export const SteamInput = <T extends PatchFormDataShape>({
 
     try {
       toast('正在从 Steam 获取数据...')
-      const result = await kunFetchPost<KunResponse<SteamPreview>>(
-        '/edit/steam',
-        { steamId: rawInput }
-      )
+      const result = fetchData
+        ? await fetchData(rawInput)
+        : await kunFetchPost<KunResponse<SteamPreview>>('/edit/steam', {
+            steamId: rawInput
+          })
 
       if (typeof result === 'string') {
         toast.error(result)

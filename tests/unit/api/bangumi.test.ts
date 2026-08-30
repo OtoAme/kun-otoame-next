@@ -24,7 +24,11 @@ describe('Bangumi edit API', () => {
         name_cn: '中文标题',
         summary: 'Bangumi summary',
         tags: [{ name: '乙女游戏' }],
-        infobox: [{ key: '开发商', value: 'Studio' }]
+        infobox: [
+          { key: '开发商', value: 'Studio' },
+          { key: '发行', value: 'Publisher' },
+          { key: '制作', value: 'Production Committee' }
+        ]
       })
     })
 
@@ -36,7 +40,12 @@ describe('Bangumi edit API', () => {
       nameCn: '中文标题',
       summary: 'Bangumi summary',
       tags: ['乙女游戏'],
-      developers: ['Studio']
+      developers: ['Studio', 'Publisher', 'Production Committee'],
+      companyReferences: [
+        { name: 'Studio', sourceRole: '开发商' },
+        { name: 'Publisher', sourceRole: '发行' },
+        { name: 'Production Committee', sourceRole: '制作' }
+      ]
     })
   })
 })

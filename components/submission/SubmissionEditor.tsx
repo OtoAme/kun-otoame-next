@@ -42,6 +42,11 @@ import type {
   PatchSubmission,
   PatchSubmissionPayload
 } from '~/types/api/patchSubmission'
+import type {
+  BangumiDetailsResponse,
+  SteamDetailsResponse,
+  VndbDetailsResponse
+} from '~/types/api/externalCompanyData'
 
 const SAVE_LABEL: Record<string, string> = {
   idle: '',
@@ -113,6 +118,15 @@ export const SubmissionEditor = ({ submission }: Props) => {
     if (!editable) return
     setExternalProvenance(source, new Date().toISOString())
   }
+
+  const fetchSubmissionExternalData = <T,>(
+    source: 'vndb' | 'bangumi' | 'steam',
+    lookupId: string
+  ) =>
+    kunFetchPost<T | string>(
+      `/patch-submission/${submission.id}/external-data`,
+      { source, lookupId }
+    )
 
   const flushDraft = async () => {
     const payloadResult = await flush()
@@ -267,6 +281,9 @@ export const SubmissionEditor = ({ submission }: Props) => {
               update({ ...form, isDuplicate })
             }
             onExternalFetched={markExternalFetched}
+            fetchDetails={(lookupId) =>
+              fetchSubmissionExternalData<VndbDetailsResponse>('vndb', lookupId)
+            }
             isReadOnly={!editable}
           />
           <VNDBRelationInput
@@ -280,6 +297,12 @@ export const SubmissionEditor = ({ submission }: Props) => {
             data={form}
             setData={update}
             onExternalFetched={markExternalFetched}
+            fetchData={(lookupId) =>
+              fetchSubmissionExternalData<BangumiDetailsResponse>(
+                'bangumi',
+                lookupId
+              )
+            }
             isReadOnly={!editable}
           />
           <SteamInput
@@ -287,6 +310,12 @@ export const SubmissionEditor = ({ submission }: Props) => {
             data={form}
             setData={update}
             onExternalFetched={markExternalFetched}
+            fetchData={(lookupId) =>
+              fetchSubmissionExternalData<SteamDetailsResponse>(
+                'steam',
+                lookupId
+              )
+            }
             isReadOnly={!editable}
           />
 

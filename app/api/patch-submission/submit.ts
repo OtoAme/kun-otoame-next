@@ -5,9 +5,9 @@ import {
   PATCH_SUBMISSION_GALLERY_MAX_COUNT,
   PATCH_SUBMISSION_REVIEW_MIN_ROLE
 } from '~/constants/patchSubmission'
-import { patchSubmissionPayloadSchema } from '~/validations/patchSubmission'
 import { createMessage } from '~/app/api/utils/message'
 import { PatchSubmissionError } from './quota'
+import { decodePatchSubmissionPayload } from './payloadCodec'
 import type { PatchSubmissionPayload } from '~/types/api/patchSubmission'
 
 interface ReviewerNotificationInput {
@@ -234,14 +234,15 @@ export const submitPatchSubmission = async (
     return '截图顺序存在冲突, 请返回编辑并重新调整顺序'
   }
 
-  const payload = submission.payload as unknown as PatchSubmissionPayload
-
-  // Drafts are saved while incomplete, so completeness is checked here rather
-  // than on every autosave.
-  const complete = patchSubmissionPayloadSchema.safeParse(payload)
+  // Drafts are saved while incomplete, so the database JSON is decoded against
+  // the complete contract only when it enters review.
+  const complete = decodePatchSubmissionPayload(submission.payload, {
+    complete: true
+  })
   if (!complete.success) {
-    return complete.error.errors[0]?.message ?? '投稿内容不完整'
+    return complete.message
   }
+  const payload = complete.data
 
   const ownDuplicate = await findOwnDuplicate(userId, submissionId, payload)
   if (ownDuplicate) {
@@ -276,7 +277,7 @@ export const submitPatchSubmission = async (
   await notifyPatchSubmissionReviewers({
     event: 'submitted',
     submissionId,
-    submissionName: complete.data.name,
+    submissionName: payload.name,
     authorId: userId,
     authorName: submission.user.name
   })

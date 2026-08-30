@@ -262,3 +262,21 @@ describe('patch submission gallery order gate', () => {
     await expect(submitPatchSubmission(1, 2)).resolves.toEqual({})
   })
 })
+
+describe('patch submission database payload decoding', () => {
+  it('refuses damaged JSON before entering review', async () => {
+    prismaMocks.patch_submission.findFirst.mockResolvedValue({
+      status: 'draft',
+      payload: { introduction: 'name is missing' },
+      banner_key: 'patch-submission/1/banner/banner.avif',
+      gallery: [],
+      user: { name: 'Author' }
+    })
+
+    await expect(submitPatchSubmission(1, 2)).resolves.toEqual(
+      expect.any(String)
+    )
+    expect(prismaMocks.patch_submission.updateMany).not.toHaveBeenCalled()
+    expect(prismaMocks.user.findMany).not.toHaveBeenCalled()
+  })
+})

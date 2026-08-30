@@ -246,7 +246,9 @@ vi.mock('~/components/kun/cropper/KunImageCropper', () => ({
     onOriginalImageComplete?: (image: string) => void | Promise<void>
   }) => (
     <>
-      <button onClick={() => onImageComplete?.('data:image/webp;base64,Y3JvcA==')}>
+      <button
+        onClick={() => onImageComplete?.('data:image/webp;base64,Y3JvcA==')}
+      >
         选择封面
       </button>
       <button
@@ -528,6 +530,70 @@ describe('draft submission order synchronization', () => {
     expect(editorMocks.orderFlush).toHaveBeenCalledOnce()
     expect(fetchMocks.post).not.toHaveBeenCalled()
     expect(submitButton()?.disabled).toBe(false)
+  })
+
+  it('uses the authenticated submission endpoint for all external fetches', async () => {
+    fetchMocks.get.mockResolvedValue({})
+    fetchMocks.post.mockImplementation(
+      async (url: string, body?: Record<string, unknown>) => {
+        if (url !== '/patch-submission/42/external-data') return {}
+        if (body?.source === 'vndb') {
+          return {
+            titles: ['Game'],
+            released: '2026-08-30',
+            tags: [],
+            developers: ['VNDB Studio'],
+            producers: []
+          }
+        }
+        if (body?.source === 'bangumi') {
+          return {
+            name: 'Game',
+            nameCn: '',
+            summary: '',
+            tags: [],
+            developers: ['Bangumi Studio'],
+            companyReferences: []
+          }
+        }
+        return {
+          name: 'Game',
+          aliases: {},
+          releaseDate: '',
+          tags: [],
+          developers: [{ name: 'Steam Studio', link: 'https://example.test' }]
+        }
+      }
+    )
+    await act(async () => {
+      root.render(<SubmissionEditor submission={draftSubmission} />)
+      await Promise.resolve()
+    })
+
+    await press('获取 VNDB 数据')
+    await press('获取 Bangumi 数据')
+    await press('获取 Steam 数据')
+
+    expect(fetchMocks.post).toHaveBeenCalledWith(
+      '/patch-submission/42/external-data',
+      { source: 'vndb', lookupId: 'v41' }
+    )
+    expect(fetchMocks.post).toHaveBeenCalledWith(
+      '/patch-submission/42/external-data',
+      { source: 'bangumi', lookupId: '41' }
+    )
+    expect(fetchMocks.post).toHaveBeenCalledWith(
+      '/patch-submission/42/external-data',
+      { source: 'steam', lookupId: '410' }
+    )
+    expect(fetchMocks.post).not.toHaveBeenCalledWith(
+      '/edit/bangumi',
+      expect.anything()
+    )
+    expect(fetchMocks.post).not.toHaveBeenCalledWith(
+      '/edit/steam',
+      expect.anything()
+    )
   })
 })
 

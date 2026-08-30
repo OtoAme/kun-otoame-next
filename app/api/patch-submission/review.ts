@@ -15,7 +15,7 @@ import {
 import { takeDownSubmissionAssets } from './assetCleanup'
 import { publishSubmissionCore, runPublishSideEffects } from './publishCore'
 import { PatchSubmissionError } from './quota'
-import type { PatchSubmissionPayload } from '~/types/api/patchSubmission'
+import { decodePatchSubmissionPayload } from './payloadCodec'
 
 interface Reviewer {
   uid: number
@@ -173,7 +173,16 @@ export const approvePatchSubmission = async (
           submission.user_id,
           overrideSelfReview
         )
-        const payload = submission.payload as unknown as PatchSubmissionPayload
+        const decodedPayload = decodePatchSubmissionPayload(
+          submission.payload,
+          { complete: true }
+        )
+        if (!decodedPayload.success) {
+          throw new PatchSubmissionError(
+            `投稿内容无法发布：${decodedPayload.message}`
+          )
+        }
+        const payload = decodedPayload.data
 
         const patch = await publishSubmissionCore(tx, {
           authorId: submission.user_id,
