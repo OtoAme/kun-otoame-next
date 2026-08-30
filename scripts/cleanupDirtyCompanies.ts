@@ -466,10 +466,6 @@ const mergeCompanies = async (
         where: { id: { in: sourceCompanyIds } }
       })
 
-      const actualCount = await tx.patch_company_relation.count({
-        where: { company_id: plan.targetCompanyId }
-      })
-
       await tx.patch_company.update({
         where: { id: plan.targetCompanyId },
         data: {
@@ -477,8 +473,7 @@ const mergeCompanies = async (
           alias: preview.nextAliases,
           primary_language: preview.nextPrimaryLanguage,
           official_website: preview.nextOfficialWebsite,
-          parent_brand: preview.nextParentBrand,
-          count: actualCount
+          parent_brand: preview.nextParentBrand
         }
       })
       await syncCompanyIdentityProjection(tx, {
@@ -489,48 +484,6 @@ const mergeCompanies = async (
   )
 
   return affectedUniqueIds
-}
-
-const fixCompanyCounts = async () => {
-  const mismatchedCompanies = await prisma.$queryRaw<
-    { id: number; name: string; count: number; actual_count: number }[]
-  >`
-    SELECT c."id", c."name", c."count", COUNT(r."id")::int AS "actual_count"
-    FROM "patch_company" c
-    LEFT JOIN "patch_company_relation" r ON r."company_id" = c."id"
-    GROUP BY c."id"
-    HAVING c."count" <> COUNT(r."id")::int
-    ORDER BY c."id" ASC
-  `
-
-  if (!mismatchedCompanies.length) {
-    console.log('Company counts are already consistent.')
-    return
-  }
-
-  console.log(`Company count mismatches: ${mismatchedCompanies.length}`)
-  for (const company of mismatchedCompanies) {
-    console.log(
-      `  #${company.id} ${company.name}: count=${company.count}, actual=${company.actual_count}`
-    )
-  }
-
-  if (!shouldApply) {
-    return
-  }
-
-  await prisma.$executeRaw`
-    UPDATE "patch_company" c
-    SET "count" = s."actual_count"
-    FROM (
-      SELECT c."id", COUNT(r."id")::int AS "actual_count"
-      FROM "patch_company" c
-      LEFT JOIN "patch_company_relation" r ON r."company_id" = c."id"
-      GROUP BY c."id"
-    ) s
-    WHERE c."id" = s."id"
-      AND c."count" <> s."actual_count"
-  `
 }
 
 const deleteEmptyCompanies = async (
@@ -742,7 +695,6 @@ const run = async () => {
   }
 
   const deletedEmptyCompanyCount = await deleteEmptyCompanies(mergeCompanyIds)
-  await fixCompanyCounts()
   await auditPublishedSubmissionCompanyConflicts()
 
   const affectedUniqueIds = [...affectedUniqueIdSet]

@@ -344,15 +344,10 @@ const mergeTags = async (
       where: { id: { in: existingSourceTagIds } }
     })
 
-    const actualCount = await tx.patch_tag_relation.count({
-      where: { tag_id: plan.targetTagId }
-    })
-
     await tx.patch_tag.update({
       where: { id: plan.targetTagId },
       data: {
-        alias: preview.nextAliases,
-        count: actualCount
+        alias: preview.nextAliases
       }
     })
 

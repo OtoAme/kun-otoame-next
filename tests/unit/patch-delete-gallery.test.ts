@@ -40,9 +40,7 @@ vi.mock('~/lib/redis', () => ({
 const prismaMocks = vi.hoisted(() => {
   const tx = {
     patch_resource: { delete: vi.fn() },
-    patch: { delete: vi.fn() },
-    patch_company: { updateMany: vi.fn() },
-    $executeRaw: vi.fn()
+    patch: { delete: vi.fn() }
   }
 
   return {
@@ -194,7 +192,7 @@ describe('patch delete with gallery S3 cleanup', () => {
     )
   })
 
-  it('recalculates related company counts when deleting a patch', async () => {
+  it('invalidates tag and company caches when deleting a related patch', async () => {
     prismaMocks.patch.findUnique.mockResolvedValue({
       id: 123,
       unique_id: 'patch-unique',
@@ -205,8 +203,6 @@ describe('patch delete with gallery S3 cleanup', () => {
 
     await expect(deletePatchById({ patchId: 123 })).resolves.toEqual({})
 
-    expect(prismaMocks._tx.$executeRaw).toHaveBeenCalledOnce()
-    expect(prismaMocks._tx.patch_company.updateMany).not.toHaveBeenCalled()
     expect(invalidateCompanyCachesMock).toHaveBeenCalled()
     expect(invalidateTagCachesMock).toHaveBeenCalled()
     expect(invalidatePatchListCachesMock).toHaveBeenCalled()

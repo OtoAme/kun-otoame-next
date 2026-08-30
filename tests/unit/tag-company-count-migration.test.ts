@@ -130,12 +130,18 @@ describe('production tag/company count migration', () => {
     const violations: string[] = []
     const prismaDelta =
       /patch_(?:tag|company)\.(?:update|updateMany)\([\s\S]{0,500}?count\s*:\s*\{\s*(?:increment|decrement)/m
+    const prismaAbsoluteRepair =
+      /patch_(?:tag|company)\.(?:update|updateMany)\([\s\S]{0,500}?count\s*:\s*(?:actualCount|actual_count)/m
     const rawDelta =
-      /UPDATE\s+"?patch_(?:tag|company)"?[\s\S]{0,300}?SET\s+"?count"?\s*=\s*"?count"?\s*[+-]/im
+      /UPDATE\s+"?patch_(?:tag|company)"?[\s\S]{0,300}?SET\s+"?count"?\s*=/im
 
     for (const file of files) {
       const source = await readFile(file, 'utf8')
-      if (prismaDelta.test(source) || rawDelta.test(source)) {
+      if (
+        prismaDelta.test(source) ||
+        prismaAbsoluteRepair.test(source) ||
+        rawDelta.test(source)
+      ) {
         violations.push(file)
       }
     }

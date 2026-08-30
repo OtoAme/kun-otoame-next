@@ -1,5 +1,4 @@
 import { z } from 'zod'
-import { Prisma } from '@prisma/client'
 import { prisma } from '~/prisma/index'
 import { deleteFileFromS3 } from '~/lib/s3'
 import { extractS3Key } from '~/app/api/patch/resource/_helper'
@@ -106,21 +105,6 @@ export const deletePatchById = async (input: z.infer<typeof patchIdSchema>) => {
     await prisma.patch.delete({
       where: { id: patchId }
     })
-
-    if (companyIds.length) {
-      await prisma.$executeRaw`
-        UPDATE "patch_company" c
-        SET "count" = s."actual_count"
-        FROM (
-          SELECT c."id", COUNT(r."id")::int AS "actual_count"
-          FROM "patch_company" c
-          LEFT JOIN "patch_company_relation" r ON r."company_id" = c."id"
-          WHERE c."id" IN (${Prisma.join(companyIds)})
-          GROUP BY c."id"
-        ) s
-        WHERE c."id" = s."id"
-      `
-    }
 
     return {}
   })
