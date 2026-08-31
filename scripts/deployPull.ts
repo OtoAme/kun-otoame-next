@@ -212,6 +212,18 @@ const generateCandidatePrismaClient = (candidateRoot: string) => {
   )
 }
 
+const seedCandidatePrismaClientPackage = (candidateRoot: string) => {
+  const rootNodeModules = resolve(projectRoot, 'node_modules')
+  const candidateNodeModules = join(candidateRoot, 'node_modules')
+  copyPackage(rootNodeModules, candidateNodeModules, '@prisma')
+  const clientPackage = join(candidateNodeModules, '@prisma', 'client')
+  if (!existsSync(clientPackage) || !lstatSync(clientPackage).isDirectory()) {
+    throw new Error(
+      'Candidate @prisma/client package is missing before generate'
+    )
+  }
+}
+
 const injectRuntimeDependencies = (candidateRoot: string) => {
   const rootNodeModules = resolve(projectRoot, 'node_modules')
   const candidateNodeModules = join(candidateRoot, 'node_modules')
@@ -395,6 +407,7 @@ const main = async () => {
       runDeployCommand('pnpm', ['rebuild', '--pending'], {
         cwd: projectRoot
       })
+      seedCandidatePrismaClientPackage(candidateRoot)
       generateCandidatePrismaClient(candidateRoot)
       injectRuntimeDependencies(candidateRoot)
       generateCandidateSitemap(candidateRoot)

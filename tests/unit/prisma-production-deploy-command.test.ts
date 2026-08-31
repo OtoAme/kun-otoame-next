@@ -86,6 +86,9 @@ describe('production Prisma deployment command', () => {
       'runCandidatePrismaGuard(candidateRoot)'
     )
     const rebuildPosition = source.indexOf("['rebuild', '--pending']")
+    const seedPosition = source.indexOf(
+      'seedCandidatePrismaClientPackage(candidateRoot)'
+    )
     const generatePosition = source.indexOf(
       'generateCandidatePrismaClient(candidateRoot)'
     )
@@ -93,7 +96,36 @@ describe('production Prisma deployment command', () => {
     expect(installPosition).toBeGreaterThan(-1)
     expect(guardPosition).toBeGreaterThan(installPosition)
     expect(rebuildPosition).toBeGreaterThan(guardPosition)
+    expect(seedPosition).toBeGreaterThan(rebuildPosition)
+    expect(generatePosition).toBeGreaterThan(seedPosition)
     expect(generatePosition).toBeGreaterThan(rebuildPosition)
+  })
+
+  it('injects @prisma/client into the extracted candidate before generating it', async () => {
+    const source = await readProjectFile('scripts/deployPull.ts')
+    const seedDefinition = source.indexOf(
+      'const seedCandidatePrismaClientPackage ='
+    )
+    const copyPosition = source.indexOf(
+      "copyPackage(rootNodeModules, candidateNodeModules, '@prisma')",
+      seedDefinition
+    )
+    const seedCall = source.indexOf(
+      'seedCandidatePrismaClientPackage(candidateRoot)',
+      copyPosition
+    )
+    const generateCall = source.indexOf(
+      'generateCandidatePrismaClient(candidateRoot)',
+      seedCall
+    )
+
+    expect(seedDefinition).toBeGreaterThan(-1)
+    expect(copyPosition).toBeGreaterThan(seedDefinition)
+    expect(seedCall).toBeGreaterThan(copyPosition)
+    expect(generateCall).toBeGreaterThan(seedCall)
+    expect(source).toContain(
+      'Candidate @prisma/client package is missing before generate'
+    )
   })
 
   it('holds the durable deployment lock across latest source pull and the updated core script', async () => {
