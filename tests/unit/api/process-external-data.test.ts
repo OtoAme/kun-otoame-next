@@ -59,6 +59,14 @@ describe('processSubmittedExternalData company relations', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     vi.spyOn(console, 'error').mockImplementation(() => {})
+    prismaMocks._tx.patch_company.findMany.mockReset()
+    prismaMocks._tx.patch_company.findUnique.mockReset()
+    prismaMocks._tx.patch_company.createManyAndReturn.mockReset()
+    prismaMocks._tx.patch_company.update.mockReset()
+    prismaMocks._tx.patch_company_name_identity.createMany.mockReset()
+    prismaMocks._tx.patch_company_name_identity.deleteMany.mockReset()
+    prismaMocks._tx.patch_company_name_identity.update.mockReset()
+    prismaMocks._tx.$queryRaw.mockReset()
     prismaMocks.$transaction.mockImplementation(
       (fn: (tx: typeof prismaMocks._tx) => Promise<unknown>) =>
         fn(prismaMocks._tx)
@@ -95,6 +103,7 @@ describe('processSubmittedExternalData company relations', () => {
     ])
     ensurePatchCompaniesFromVNDBMock.mockResolvedValue({
       ensured: 0,
+      resolved: 0,
       related: 0
     })
     fetchVerifiedVndbCompanyCandidatesMock.mockResolvedValue([])
@@ -316,6 +325,7 @@ describe('processSubmittedExternalData company relations', () => {
   it('fetches VNDB companies on submit and skips submitted developer fallback when VNDB succeeds', async () => {
     ensurePatchCompaniesFromVNDBMock.mockResolvedValue({
       ensured: 1,
+      resolved: 1,
       related: 1
     })
 

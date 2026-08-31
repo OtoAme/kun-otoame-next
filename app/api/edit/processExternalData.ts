@@ -197,6 +197,7 @@ const collectResolverCompanyCandidates = async (
     try {
       verifiedVndb = await fetchVerifiedVndbCompanyCandidates(data.vndbId)
     } catch (error) {
+      // eslint-disable-next-line no-console
       console.error('Failed to fetch VNDB company candidates', {
         source: 'vndb_company_candidates',
         vndbId: data.vndbId,
@@ -301,7 +302,7 @@ export const processSubmittedExternalData = async (
         data.vndbId,
         uid
       )
-      if (result.related > 0) {
+      if (result.resolved > 0) {
         primaryDevelopers = []
       }
     }
@@ -311,6 +312,7 @@ export const processSubmittedExternalData = async (
   }
 
   companyTask = companyTask.catch((error) => {
+    // eslint-disable-next-line no-console
     console.error('Failed to process external company relations', {
       patchId,
       source: 'company_relation',

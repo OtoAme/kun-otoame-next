@@ -4,6 +4,8 @@ import { kunParsePostBody } from '~/app/api/utils/parseQuery'
 import { verifyHeaderCookie } from '~/middleware/_verifyHeaderCookie'
 import { prisma } from '~/prisma/index'
 import { ensurePatchCompaniesFromVNDB } from '~/app/api/edit/fetchCompanies'
+import { CompanyEnsureAmbiguityError } from '~/app/api/edit/companyEnsureHelper'
+import { CompanyResolutionAmbiguityError } from '~/app/api/company/identity/resolver'
 
 const fetchCompanySchema = z.object({
   patchId: z.coerce.number().min(1).max(9999999)
@@ -36,13 +38,24 @@ export const POST = async (req: NextRequest) => {
     return NextResponse.json('该游戏没有关联 VNDB ID')
   }
 
-  const result = await ensurePatchCompaniesFromVNDB(
-    input.patchId,
-    patch.vndb_id,
-    payload.uid
-  )
+  let result
+  try {
+    result = await ensurePatchCompaniesFromVNDB(
+      input.patchId,
+      patch.vndb_id,
+      payload.uid
+    )
+  } catch (error) {
+    if (
+      error instanceof CompanyEnsureAmbiguityError ||
+      error instanceof CompanyResolutionAmbiguityError
+    ) {
+      return NextResponse.json(error.message)
+    }
+    throw error
+  }
 
-  if (result.related === 0) {
+  if (result.resolved === 0) {
     return NextResponse.json('未能从 VNDB 获取到会社信息')
   }
 
@@ -60,7 +73,10 @@ export const POST = async (req: NextRequest) => {
   })
 
   return NextResponse.json({
-    message: `成功关联 ${result.related} 个会社`,
+    message:
+      result.related > 0
+        ? `成功新增关联 ${result.related} 个会社`
+        : '会社信息已是最新，无需新增关联',
     companies
   })
 }

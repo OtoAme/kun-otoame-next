@@ -5,6 +5,8 @@ const toastMock = vi.hoisted(() => vi.fn())
 vi.mock('react-hot-toast', () => ({ default: toastMock }))
 
 import { showEditPostCommitWarnings } from '~/components/edit/utils/showEditPostCommitWarnings'
+import { toEditPostCommitWarning } from '~/app/api/edit/postCommit'
+import { CompanyEnsureAmbiguityError } from '~/app/api/edit/companyEnsureHelper'
 
 describe('showEditPostCommitWarnings', () => {
   beforeEach(() => {
@@ -39,5 +41,26 @@ describe('showEditPostCommitWarnings', () => {
     showEditPostCommitWarnings([])
 
     expect(toastMock).not.toHaveBeenCalled()
+  })
+})
+
+describe('toEditPostCommitWarning', () => {
+  it('classifies legacy company ensure ambiguity as a company warning', () => {
+    const warning = toEditPostCommitWarning(
+      new CompanyEnsureAmbiguityError([
+        {
+          submittedNames: ['Shared Studio'],
+          matchedCompanies: [
+            { id: 1, name: 'First Studio' },
+            { id: 2, name: 'Second Studio' }
+          ]
+        }
+      ])
+    )
+
+    expect(warning).toEqual({
+      kind: 'company-ambiguity',
+      message: '游戏内容已保存，但部分会社需要管理员维护。'
+    })
   })
 })
