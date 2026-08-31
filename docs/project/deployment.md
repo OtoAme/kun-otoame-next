@@ -142,6 +142,8 @@ ffmpeg -hide_banner -encoders | grep -i libaom-av1
 
 ## 发布路径一：GitHub Release artifact
 
+> 临时状态：生产环境暂不使用 `pnpm deploy:pull` 或 `pnpm deploy:pull:pinned`。当前候选 artifact 的 Prisma Client 生成路径尚未通过真实生产布局的端到端验证；修复并完成验证前，生产更新统一使用后文的 `pnpm deploy:build`。已有 Release 仍可用于审计，不应据此直接激活 artifact。
+
 触发：
 
 - push 到 `main`
