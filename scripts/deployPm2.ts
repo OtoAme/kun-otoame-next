@@ -1,7 +1,13 @@
 import { spawnSync, type SpawnSyncOptions } from 'node:child_process'
-import { existsSync, lstatSync, realpathSync } from 'node:fs'
+import {
+  existsSync,
+  lstatSync,
+  readdirSync,
+  realpathSync,
+  statSync
+} from 'node:fs'
 import http from 'node:http'
-import { join } from 'node:path'
+import { join, relative, sep } from 'node:path'
 
 type CommandResult = {
   status: number | null
@@ -39,6 +45,40 @@ const requiredDirectories = [
 
 const requiredFiles = ['.next/BUILD_ID', 'config/redirect.json', 'package.json']
 
+const isWithin = (parent: string, child: string) => {
+  const nested = relative(parent, child)
+  return nested === '' || (!nested.startsWith(`..${sep}`) && nested !== '..')
+}
+
+const validateContainedRuntimeLinks = (standaloneDir: string) => {
+  const runtimeRoot = realpathSync(standaloneDir)
+  const pending = [standaloneDir]
+
+  while (pending.length) {
+    const directory = pending.pop()!
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      const target = join(directory, entry.name)
+      if (entry.isSymbolicLink()) {
+        let resolved: string
+        try {
+          resolved = realpathSync(target)
+        } catch {
+          throw new Error(
+            `Standalone runtime contains a broken symbolic link: ${relative(standaloneDir, target)}`
+          )
+        }
+        if (!isWithin(runtimeRoot, resolved)) {
+          throw new Error(
+            `Standalone runtime symbolic link escapes the release: ${relative(standaloneDir, target)}`
+          )
+        }
+      } else if (entry.isDirectory()) {
+        pending.push(target)
+      }
+    }
+  }
+}
+
 const runCommand = (
   command: string,
   args: string[],
@@ -73,16 +113,18 @@ export const validateStandaloneRuntime = (standaloneDir: string) => {
     throw new Error(`Standalone release is not a directory: ${standaloneDir}`)
   }
 
+  validateContainedRuntimeLinks(standaloneDir)
+
   const serverMjs = join(standaloneDir, 'server.mjs')
   const serverJs = join(standaloneDir, 'server.js')
   const serverPath = existsSync(serverMjs) ? serverMjs : serverJs
-  if (!existsSync(serverPath) || !lstatSync(serverPath).isFile()) {
+  if (!existsSync(serverPath) || !statSync(serverPath).isFile()) {
     throw new Error('Standalone release has no server.mjs or server.js.')
   }
 
   for (const relativePath of requiredDirectories) {
     const target = join(standaloneDir, relativePath)
-    if (!existsSync(target) || !lstatSync(target).isDirectory()) {
+    if (!existsSync(target) || !statSync(target).isDirectory()) {
       throw new Error(
         `Standalone runtime directory is missing: ${relativePath}`
       )
@@ -90,7 +132,7 @@ export const validateStandaloneRuntime = (standaloneDir: string) => {
   }
   for (const relativePath of requiredFiles) {
     const target = join(standaloneDir, relativePath)
-    if (!existsSync(target) || !lstatSync(target).isFile()) {
+    if (!existsSync(target) || !statSync(target).isFile()) {
       throw new Error(`Standalone runtime file is missing: ${relativePath}`)
     }
   }

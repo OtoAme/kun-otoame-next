@@ -1,4 +1,10 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -60,6 +66,43 @@ const onlineProcesses = (runtime: string) =>
   )
 
 describe('PM2 deployment readiness', () => {
+  it('accepts package links that remain inside the standalone release', () => {
+    const runtime = createRuntime()
+    const packagePath = join(runtime, 'node_modules/next')
+    const internalPackage = join(
+      runtime,
+      'node_modules/.pnpm/next@15.5.18/node_modules/next'
+    )
+    rmSync(packagePath, { recursive: true, force: true })
+    mkdirSync(internalPackage, { recursive: true })
+    symlinkSync('.pnpm/next@15.5.18/node_modules/next', packagePath, 'dir')
+
+    expect(validateStandaloneRuntime(runtime)).toBe('server.mjs')
+  })
+
+  it('rejects package links that escape the standalone release', () => {
+    const runtime = createRuntime()
+    const externalRuntime = createRuntime()
+    const packagePath = join(runtime, 'node_modules/next')
+    rmSync(packagePath, { recursive: true, force: true })
+    symlinkSync(join(externalRuntime, 'node_modules/next'), packagePath, 'dir')
+
+    expect(() => validateStandaloneRuntime(runtime)).toThrow(
+      'symbolic link escapes the release: node_modules/next'
+    )
+  })
+
+  it('rejects broken package links in the standalone release', () => {
+    const runtime = createRuntime()
+    const packagePath = join(runtime, 'node_modules/next')
+    rmSync(packagePath, { recursive: true, force: true })
+    symlinkSync('.pnpm/missing/node_modules/next', packagePath, 'dir')
+
+    expect(() => validateStandaloneRuntime(runtime)).toThrow(
+      'broken symbolic link: node_modules/next'
+    )
+  })
+
   it('preflights the complete runtime before touching PM2', async () => {
     const runtime = createRuntime()
     rmSync(join(runtime, 'node_modules/.prisma'), {
