@@ -215,6 +215,17 @@ describe('frozen company cleanup contract', () => {
     expect(() =>
       parseFrozenCompanyCleanupCliArguments('inventory', ['--out'])
     ).toThrow('Missing value')
+
+    const manualPlan = parseFrozenCompanyCleanupCliArguments('plan', [
+      '--inventory=inventory.json',
+      '--decisions=decisions.json',
+      '--out=plan.json',
+      '--manual-only'
+    ])
+    expect(manualPlan.get('manual-only')).toBe('true')
+    expect(() =>
+      parseFrozenCompanyCleanupCliArguments('plan', ['--manual-only=true'])
+    ).toThrow('--manual-only does not accept a value')
   })
 
   it('writes private artifacts atomically and refuses overwrite or symlinks', async () => {

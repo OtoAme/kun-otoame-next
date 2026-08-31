@@ -9,7 +9,7 @@ type CliMode = 'inventory' | 'plan' | 'dry' | 'apply' | 'cache'
 
 const allowedArguments: Record<CliMode, Set<string>> = {
   inventory: new Set(['out']),
-  plan: new Set(['inventory', 'decisions', 'out']),
+  plan: new Set(['inventory', 'decisions', 'out', 'manual-only']),
   dry: new Set(['plan']),
   apply: new Set([
     'apply',
@@ -20,6 +20,8 @@ const allowedArguments: Record<CliMode, Set<string>> = {
   ]),
   cache: new Set(['plan'])
 }
+
+const booleanArguments = new Set(['apply', 'manual-only'])
 
 export const parseFrozenCompanyCleanupCliArguments = (
   mode: CliMode,
@@ -37,7 +39,9 @@ export const parseFrozenCompanyCleanupCliArguments = (
     }
     if (values.has(key)) throw new Error(`Duplicate argument: --${key}`)
     if (equals !== -1) {
-      if (key === 'apply') throw new Error('--apply does not accept a value')
+      if (booleanArguments.has(key)) {
+        throw new Error(`--${key} does not accept a value`)
+      }
       const value = argument.slice(equals + 1)
       if (!value) throw new Error(`Missing value for --${key}`)
       values.set(key, value)
@@ -45,11 +49,15 @@ export const parseFrozenCompanyCleanupCliArguments = (
     }
     const next = args[index + 1]
     if (!next || next.startsWith('--')) {
-      if (key !== 'apply') throw new Error(`Missing value for --${key}`)
+      if (!booleanArguments.has(key)) {
+        throw new Error(`Missing value for --${key}`)
+      }
       values.set(key, 'true')
       continue
     }
-    if (key === 'apply') throw new Error('--apply does not accept a value')
+    if (booleanArguments.has(key)) {
+      throw new Error(`--${key} does not accept a value`)
+    }
     values.set(key, next)
     index += 1
   }
@@ -93,7 +101,8 @@ export const runFrozenCompanyCleanupCli = async (
       db: prisma,
       inventoryPath: required(values, 'inventory'),
       decisionsPath: required(values, 'decisions'),
-      outputPath: required(values, 'out')
+      outputPath: required(values, 'out'),
+      manualOnly: values.get('manual-only') === 'true'
     })
     console.log('Frozen company cleanup plan written.')
     console.log(`SHA-256: ${result.planDigest}`)

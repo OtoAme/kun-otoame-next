@@ -224,6 +224,7 @@ export const generateFrozenCompanyCleanupPlan = async (input: {
   inventoryPath: string
   decisionsPath: string
   outputPath: string
+  manualOnly?: boolean
   now?: Date
   fetchVndbCandidates?: (vndbId: string) => Promise<TrustedCompanyCandidate[]>
 }) => {
@@ -256,39 +257,48 @@ export const generateFrozenCompanyCleanupPlan = async (input: {
     throw new Error('Live database no longer matches the reviewed inventory')
   }
 
-  // This is the only network-enabled phase in the frozen cleanup workflow.
-  const fetched = await fetchVndbEvidence(
-    snapshotA,
-    input.fetchVndbCandidates ?? fetchVerifiedVndbCompanyCandidates
-  )
+  // Manual-only plans freeze explicitly reviewed decisions without enriching
+  // unrelated companies or consulting external evidence.
+  const fetched = input.manualOnly
+    ? { candidatesByVndbId: new Map(), warnings: [] }
+    : await fetchVndbEvidence(
+        snapshotA,
+        input.fetchVndbCandidates ?? fetchVerifiedVndbCompanyCandidates
+      )
 
   const snapshotB = await loadCompanyDatabaseState(input.db)
   const digestB = digestCompanyDatabaseState(snapshotB)
   if (digestA !== digestB) {
     throw new Error(
-      'Database changed while external company evidence was fetched'
+      input.manualOnly
+        ? 'Database changed while reviewed company decisions were planned'
+        : 'Database changed while external company evidence was fetched'
     )
   }
 
-  const evidencePlan = planAuthoritativeVndbCompanyEvidence(
-    snapshotA.companies.map((company) => ({
-      company: toMaintenanceCompany(company),
-      candidates: company.relations.flatMap((relation) =>
-        relation.vndbId
-          ? (fetched.candidatesByVndbId.get(relation.vndbId) ?? [])
-          : []
+  const evidencePlan = input.manualOnly
+    ? { actions: [], warnings: [] }
+    : planAuthoritativeVndbCompanyEvidence(
+        snapshotA.companies.map((company) => ({
+          company: toMaintenanceCompany(company),
+          candidates: company.relations.flatMap((relation) =>
+            relation.vndbId
+              ? (fetched.candidatesByVndbId.get(relation.vndbId) ?? [])
+              : []
+          )
+        }))
       )
-    }))
-  )
   const resolved = resolveDecisionCompanyIds(snapshotA, decisions)
   const manuallyConsumed = new Set(
     resolved.merges.flatMap((merge) => merge.sourceCompanyIds)
   )
-  const automatic = buildAutomaticMergeInputs(
-    snapshotA,
-    evidencePlan.actions,
-    manuallyConsumed
-  )
+  const automatic = input.manualOnly
+    ? { inputs: [], blockers: [], warnings: [] }
+    : buildAutomaticMergeInputs(
+        snapshotA,
+        evidencePlan.actions,
+        manuallyConsumed
+      )
   const mergeInputs = [...resolved.merges, ...automatic.inputs]
   validateActionTopology(
     mergeInputs,
@@ -364,6 +374,11 @@ export const generateFrozenCompanyCleanupPlan = async (input: {
     deleteActions: resolved.deletions,
     blockers,
     warnings: [
+      ...(input.manualOnly
+        ? [
+            'Manual-only plan: VNDB evidence and automatic merges were intentionally skipped'
+          ]
+        : []),
       ...fetched.warnings,
       ...evidencePlan.warnings,
       ...automatic.warnings

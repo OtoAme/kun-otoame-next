@@ -63,6 +63,40 @@ const state = (withVndbRelation = false): CompanyDatabaseState => ({
   ]
 })
 
+const manualMergeState = (): CompanyDatabaseState => {
+  const snapshot = state(true)
+  snapshot.companies.push({
+    id: 2,
+    ref: getCompanyRef({
+      id: 2,
+      name: 'Palette Legacy',
+      normalizedName: 'palette legacy'
+    }),
+    name: 'Palette Legacy',
+    normalizedName: 'palette legacy',
+    introduction: 'Legacy introduction',
+    count: 1,
+    primaryLanguage: ['ja'],
+    sourceWebsites: [],
+    parentBrands: [],
+    aliases: [],
+    ownerRef: getCompanyOwnerRef(42),
+    updated: '2026-08-31T00:00:00.000Z',
+    externalIds: [],
+    identities: [
+      {
+        kind: 'name',
+        origin: 'legacy',
+        value: 'Palette Legacy',
+        normalizedValue: 'palette legacy',
+        confirmedByRef: null
+      }
+    ],
+    relations: [{ patchId: 11, patchUniqueId: 'patch-11', vndbId: 'v11' }]
+  })
+  return snapshot
+}
+
 const toRows = (snapshot: CompanyDatabaseState) =>
   snapshot.companies.map((company) => ({
     id: company.id,
@@ -95,7 +129,16 @@ const toRows = (snapshot: CompanyDatabaseState) =>
     }))
   }))
 
-const prepareArtifacts = async (snapshot: CompanyDatabaseState) => {
+const prepareArtifacts = async (
+  snapshot: CompanyDatabaseState,
+  merges: Array<{
+    targetCompanyRef: string
+    sourceCompanyRefs: string[]
+    ownerFromCompanyRef: string
+    introductionFromCompanyRef: string
+    reason: string
+  }> = []
+) => {
   const directory = await mkdtemp(
     join(await realpath(tmpdir()), 'kun-company-plan-')
   )
@@ -112,7 +155,7 @@ const prepareArtifacts = async (snapshot: CompanyDatabaseState) => {
   await writeCanonicalArtifact(decisionsPath, {
     schemaVersion: COMPANY_CLEANUP_SCHEMA_VERSION,
     inventorySha256,
-    merges: [],
+    merges,
     deletions: []
   })
   return { inventoryPath, decisionsPath, outputPath }
@@ -165,5 +208,43 @@ describe('frozen company cleanup planner', () => {
       expect.stringContaining('External evidence is incomplete')
     )
     expect(result.plan.evidenceActions).toEqual([])
+  })
+
+  it('builds a reviewed manual-only plan without VNDB or automatic evidence', async () => {
+    const snapshot = manualMergeState()
+    const target = snapshot.companies[0]
+    const source = snapshot.companies[1]
+    const paths = await prepareArtifacts(snapshot, [
+      {
+        targetCompanyRef: target.ref,
+        sourceCompanyRefs: [source.ref],
+        ownerFromCompanyRef: target.ref,
+        introductionFromCompanyRef: source.ref,
+        reason: 'Reviewed production duplicate'
+      }
+    ])
+    const fetchVndbCandidates = vi.fn(() => {
+      throw new Error('manual-only planning must not access VNDB')
+    })
+
+    const result = await generateFrozenCompanyCleanupPlan({
+      db: database([snapshot, snapshot]) as never,
+      ...paths,
+      manualOnly: true,
+      fetchVndbCandidates
+    })
+
+    expect(fetchVndbCandidates).not.toHaveBeenCalled()
+    expect(result.plan.evidenceActions).toEqual([])
+    expect(result.plan.mergeActions).toHaveLength(1)
+    expect(result.plan.mergeActions[0]).toMatchObject({
+      kind: 'manual',
+      targetCompanyId: target.id,
+      sourceCompanyIds: [source.id]
+    })
+    expect(result.plan.limits.actions).toBe(1)
+    expect(result.plan.warnings).toContain(
+      'Manual-only plan: VNDB evidence and automatic merges were intentionally skipped'
+    )
   })
 })

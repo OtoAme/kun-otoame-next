@@ -90,7 +90,7 @@ conversation images summary 字段含义：`scanned` 是本次从 S3 列出的�
 
 ```bash
 pnpm maintenance:companies:inventory --out=/var/lib/kun-otoame/maintenance/company/<run-id>/company-inventory.json
-pnpm maintenance:companies:plan --inventory=/var/lib/kun-otoame/maintenance/company/<run-id>/company-inventory.json --decisions=/var/lib/kun-otoame/maintenance/company/<run-id>/company-decisions.json --out=/var/lib/kun-otoame/maintenance/company/<run-id>/company-cleanup-plan.json
+pnpm maintenance:companies:plan --manual-only --inventory=/var/lib/kun-otoame/maintenance/company/<run-id>/company-inventory.json --decisions=/var/lib/kun-otoame/maintenance/company/<run-id>/company-decisions.json --out=/var/lib/kun-otoame/maintenance/company/<run-id>/company-cleanup-plan.json
 pnpm maintenance:companies:dirty:dry --plan=/var/lib/kun-otoame/maintenance/company/<run-id>/company-cleanup-plan.json
 pnpm maintenance:companies:dirty:apply --plan=/var/lib/kun-otoame/maintenance/company/<run-id>/company-cleanup-plan.json --confirm-sha256=<审核过的计划摘要>
 pnpm maintenance:companies:dirty:cache --plan=/var/lib/kun-otoame/maintenance/company/<run-id>/company-cleanup-plan.json
@@ -98,7 +98,7 @@ pnpm maintenance:companies:dirty:cache --plan=/var/lib/kun-otoame/maintenance/co
 
 `inventory` 只读生产数据库并写出带 SHA-256 sidecar 的 canonical JSON；人工 decisions 只能用 inventory 中的 opaque company ref 表达合并、删除、owner / introduction 保留策略与理由。**零作品关系不是删除指令**：任何公司删除都必须显式写入 decisions，并再次出现在审核过的冻结 plan 中；没有明确裁决的空公司、仅名称相近、`legacy` alias、共享 alias 或歧义证据一律保留。
 
-`plan` 是唯一允许访问 VNDB 的阶段。它先后读取实时数据库快照 A/B，网络请求在两次读取之间；任一 normalized name、external ID、identity 或 relation digest 变化都拒绝产出计划。plan 冻结证据、动作、完整前后状态、缓存目标、工具/规范化版本和生成 commit，并写出独立 SHA sidecar。inventory、decisions、plan、sidecar、receipt、日志与数据库备份应放在仓库和所有 worktree 之外的 `0700` 持久目录，文件使用 `0600`，不得提交或跟随部署清理。
+生产已人工确认的少量重复会社使用 `plan --manual-only`：只消费 decisions 中明确列出的合并和删除，不访问 VNDB，也不生成 automatic merge。它仍连续读取实时数据库快照 A/B，并在任一 normalized name、external ID、identity 或 relation digest 变化时拒绝产出计划。省略 `--manual-only` 才会在两次快照之间读取 VNDB、补充 authoritative evidence 并提出 automatic merge。两种模式都会冻结动作、完整前后状态、缓存目标、工具/规范化版本和生成 commit，并写出独立 SHA sidecar。inventory、decisions、plan、sidecar、receipt、日志与数据库备份应放在仓库和所有 worktree 之外的 `0700` 持久目录，文件使用 `0600`，不得提交或跟随部署清理。
 
 `dirty:dry` 与 `dirty:apply` 不访问 VNDB、Redis 或 Cloudflare，只接受同一个严格 plan。apply 还要求 `--confirm-sha256` 精确匹配，按固定顺序锁住 company relation/company/external ID/name identity 四张表，再核对计数触发器、计数不变量和完整前置快照；任何漂移均在零写入状态失败，整份计划在一个事务里提交或整体回滚。`dirty:cache` 不再写数据库或访问 VNDB，只按 receipt 重试 Redis 与 Cloudflare。`patch_company.count` 只由数据库触发器维护，脚本不增减也不重算。
 
@@ -295,7 +295,7 @@ Docker 中的 PostgreSQL 使用既有的 `docker exec -i ... psql ... < migratio
 ```bash
 pnpm maintenance:companies:identity:dry
 pnpm maintenance:companies:inventory --out=<审计目录>/company-inventory.json
-pnpm maintenance:companies:plan --inventory=<审计目录>/company-inventory.json --decisions=<审计目录>/company-decisions.json --out=<审计目录>/company-cleanup-plan.json
+pnpm maintenance:companies:plan --manual-only --inventory=<审计目录>/company-inventory.json --decisions=<审计目录>/company-decisions.json --out=<审计目录>/company-cleanup-plan.json
 pnpm maintenance:companies:dirty:dry --plan=<审计目录>/company-cleanup-plan.json
 pnpm maintenance:companies:dirty:apply --plan=<审计目录>/company-cleanup-plan.json --confirm-sha256=<审核过的计划摘要>
 pnpm maintenance:companies:dirty:cache --plan=<审计目录>/company-cleanup-plan.json
