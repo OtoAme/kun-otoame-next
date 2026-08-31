@@ -45,6 +45,7 @@ import {
 } from './deploySlots'
 import {
   backupGeneratedPrismaClient,
+  copyPrismaClientRuntimePackage,
   resolvePrismaClientRuntimePaths,
   restoreGeneratedPrismaClient
 } from './prismaClientRuntimePaths'
@@ -215,7 +216,7 @@ const generateCandidatePrismaClient = (candidateRoot: string) => {
 const seedCandidatePrismaClientPackage = (candidateRoot: string) => {
   const rootNodeModules = resolve(projectRoot, 'node_modules')
   const candidateNodeModules = join(candidateRoot, 'node_modules')
-  copyPackage(rootNodeModules, candidateNodeModules, '@prisma')
+  copyPrismaClientRuntimePackage(rootNodeModules, candidateNodeModules)
   const clientPackage = join(candidateNodeModules, '@prisma', 'client')
   if (!existsSync(clientPackage) || !lstatSync(clientPackage).isDirectory()) {
     throw new Error(
@@ -236,9 +237,8 @@ const injectRuntimeDependencies = (candidateRoot: string) => {
     recursive: true,
     dereference: true
   })
-  for (const packageName of ['@prisma', 'ffmpeg-static']) {
-    copyPackage(rootNodeModules, candidateNodeModules, packageName)
-  }
+  copyPrismaClientRuntimePackage(rootNodeModules, candidateNodeModules)
+  copyPackage(rootNodeModules, candidateNodeModules, 'ffmpeg-static')
   for (const required of ['.prisma', '@prisma/client', 'ffmpeg-static']) {
     const target = join(candidateNodeModules, required)
     if (!existsSync(target) || !lstatSync(target).isDirectory()) {

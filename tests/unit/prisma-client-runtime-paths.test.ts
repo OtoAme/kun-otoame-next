@@ -1,6 +1,7 @@
 import {
   mkdirSync,
   mkdtempSync,
+  lstatSync,
   readFileSync,
   realpathSync,
   rmSync,
@@ -12,6 +13,7 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
   backupGeneratedPrismaClient,
+  copyPrismaClientRuntimePackage,
   resolvePrismaClientRuntimePaths,
   restoreGeneratedPrismaClient
 } from '~/scripts/prismaClientRuntimePaths'
@@ -68,5 +70,36 @@ describe('pnpm Prisma Client runtime paths', () => {
     restoreGeneratedPrismaClient(nodeModules, backupRoot)
 
     expect(readFileSync(marker, 'utf8')).toBe('known-good')
+  })
+
+  it('copies the real client package without replacing sibling traced packages', () => {
+    const root = mkdtempSync(join(tmpdir(), 'otoame-prisma-runtime-'))
+    roots.push(root)
+    const sourceNodeModules = join(root, 'source/node_modules')
+    const destinationNodeModules = join(root, 'destination/node_modules')
+    const storeNodeModules = join(root, 'store/node_modules')
+    const realClient = join(storeNodeModules, '@prisma/client')
+    mkdirSync(join(sourceNodeModules, '@prisma'), { recursive: true })
+    mkdirSync(join(storeNodeModules, '.prisma/client'), { recursive: true })
+    mkdirSync(realClient, { recursive: true })
+    writeFileSync(join(realClient, 'package.json'), '{}')
+    symlinkSync(realClient, join(sourceNodeModules, '@prisma/client'), 'dir')
+    const sibling = join(
+      destinationNodeModules,
+      '@prisma/client-runtime-utils/marker'
+    )
+    mkdirSync(join(destinationNodeModules, '@prisma/client-runtime-utils'), {
+      recursive: true
+    })
+    writeFileSync(sibling, 'keep')
+
+    const copied = copyPrismaClientRuntimePackage(
+      sourceNodeModules,
+      destinationNodeModules
+    )
+
+    expect(lstatSync(copied).isSymbolicLink()).toBe(false)
+    expect(readFileSync(join(copied, 'package.json'), 'utf8')).toBe('{}')
+    expect(readFileSync(sibling, 'utf8')).toBe('keep')
   })
 })

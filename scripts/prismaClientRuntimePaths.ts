@@ -1,6 +1,7 @@
 import {
   cpSync,
   existsSync,
+  lstatSync,
   mkdirSync,
   realpathSync,
   rmSync,
@@ -27,6 +28,21 @@ export const resolvePrismaClientRuntimePaths = (rootNodeModules: string) => {
   )
   assertDirectory(join(generatedPackage, 'client'), 'Generated Prisma Client')
   return { clientPackage, generatedPackage }
+}
+
+export const copyPrismaClientRuntimePackage = (
+  sourceNodeModules: string,
+  destinationNodeModules: string
+) => {
+  const { clientPackage } = resolvePrismaClientRuntimePaths(sourceNodeModules)
+  const destination = join(destinationNodeModules, '@prisma', 'client')
+  rmSync(destination, { recursive: true, force: true })
+  mkdirSync(dirname(destination), { recursive: true })
+  cpSync(clientPackage, destination, { recursive: true, dereference: true })
+  if (!existsSync(destination) || !lstatSync(destination).isDirectory()) {
+    throw new Error('Copied @prisma/client package is missing')
+  }
+  return destination
 }
 
 export const backupGeneratedPrismaClient = (

@@ -107,7 +107,7 @@ describe('production Prisma deployment command', () => {
       'const seedCandidatePrismaClientPackage ='
     )
     const copyPosition = source.indexOf(
-      "copyPackage(rootNodeModules, candidateNodeModules, '@prisma')",
+      'copyPrismaClientRuntimePackage(rootNodeModules, candidateNodeModules)',
       seedDefinition
     )
     const seedCall = source.indexOf(
@@ -125,6 +125,9 @@ describe('production Prisma deployment command', () => {
     expect(generateCall).toBeGreaterThan(seedCall)
     expect(source).toContain(
       'Candidate @prisma/client package is missing before generate'
+    )
+    expect(source).not.toContain(
+      "copyPackage(rootNodeModules, candidateNodeModules, '@prisma')"
     )
   })
 
