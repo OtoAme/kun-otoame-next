@@ -47,6 +47,12 @@ describe('local build deployment safety', () => {
 
     expect(source).toContain("runDeployCommand('pnpm', ['prisma:deploy-safe']")
     expect(source).not.toContain('prisma:push')
+    expect(source).toContain(
+      'copyPrismaClientRuntimePackage(rootNodeModules, candidateNodeModules)'
+    )
+    expect(source).not.toContain(
+      "copyPackage(rootNodeModules, candidateNodeModules, '@prisma')"
+    )
     expect(prepare).toBeGreaterThan(-1)
     expect(validate).toBeGreaterThan(prepare)
     expect(install).toBeGreaterThan(validate)

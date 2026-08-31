@@ -37,7 +37,10 @@ import {
   installCandidateRelease,
   recoverInterruptedActivation
 } from './deploySlots'
-import { resolvePrismaClientRuntimePaths } from './prismaClientRuntimePaths'
+import {
+  copyPrismaClientRuntimePackage,
+  resolvePrismaClientRuntimePaths
+} from './prismaClientRuntimePaths'
 
 const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const envPath = resolve(projectRoot, '.env')
@@ -71,9 +74,8 @@ const prepareLocalBuildCandidate = (candidateRoot: string) => {
     recursive: true,
     dereference: true
   })
-  for (const packageName of ['@prisma', 'ffmpeg-static']) {
-    copyPackage(rootNodeModules, candidateNodeModules, packageName)
-  }
+  copyPrismaClientRuntimePackage(rootNodeModules, candidateNodeModules)
+  copyPackage(rootNodeModules, candidateNodeModules, 'ffmpeg-static')
 
   cpSync(resolve(projectRoot, 'prisma'), join(candidateRoot, 'prisma'), {
     recursive: true,
