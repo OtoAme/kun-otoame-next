@@ -158,10 +158,10 @@
     "Yuzusoft",
     "zustand"
   ],
-  "eslint.alwaysShowStatus": true,
   "eslint.codeActionsOnSave.mode": "all",
   "eslint.enable": true,
   "eslint.format.enable": true,
+  "eslint.useFlatConfig": false,
   "editor.formatOnSave": true,
   "prettier.requireConfig": true
 }

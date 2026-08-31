@@ -430,6 +430,12 @@ importers:
       '@types/yauzl':
         specifier: ^3.4.0
         version: 3.4.0
+      '@typescript-eslint/eslint-plugin':
+        specifier: 8.38.0
+        version: 8.38.0(@typescript-eslint/parser@8.38.0(eslint@9.32.0(jiti@2.6.1))(typescript@5.8.3))(eslint@9.32.0(jiti@2.6.1))(typescript@5.8.3)
+      '@typescript-eslint/parser':
+        specifier: 8.38.0
+        version: 8.38.0(eslint@9.32.0(jiti@2.6.1))(typescript@5.8.3)
       autoprefixer:
         specifier: ^10.4.21
         version: 10.4.21(postcss@8.5.14)
