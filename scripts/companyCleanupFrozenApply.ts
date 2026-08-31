@@ -11,7 +11,8 @@ import {
   writeCanonicalArtifact,
   type CompanyCleanupPlan,
   type CompanyCleanupReceipt,
-  type CompanyDatabaseState
+  type CompanyDatabaseState,
+  type CompanyState
 } from './companyCleanupFrozenContract'
 import {
   applyActionsToCompanyDatabaseState,
@@ -94,6 +95,58 @@ const sortedUniqueStrings = (values: string[]) =>
 
 const sameCanonical = (left: unknown, right: unknown) =>
   serializeCanonicalJson(left) === serializeCanonicalJson(right)
+
+const describeCompanyPostStateMismatch = (
+  actual: CompanyDatabaseState,
+  expected: CompanyDatabaseState
+) => {
+  const actualById = new Map(
+    actual.companies.map((company) => [company.id, company])
+  )
+  const expectedById = new Map(
+    expected.companies.map((company) => [company.id, company])
+  )
+  const companyIds = sortedUniqueNumbers([
+    ...actualById.keys(),
+    ...expectedById.keys()
+  ])
+  const details: string[] = []
+
+  for (const companyId of companyIds) {
+    const actualCompany = actualById.get(companyId)
+    const expectedCompany = expectedById.get(companyId)
+    if (!actualCompany) {
+      details.push(`missing company #${companyId}`)
+      continue
+    }
+    if (!expectedCompany) {
+      details.push(`unexpected company #${companyId}`)
+      continue
+    }
+    const fields = [
+      ...new Set([
+        ...Object.keys(actualCompany),
+        ...Object.keys(expectedCompany)
+      ])
+    ]
+      .filter((field) => field !== 'id' && field !== 'updated')
+      .filter(
+        (field) =>
+          !sameCanonical(
+            actualCompany[field as keyof CompanyState],
+            expectedCompany[field as keyof CompanyState]
+          )
+      )
+      .sort((left, right) => left.localeCompare(right, 'en'))
+    if (fields.length) {
+      details.push(`company #${companyId} fields: ${fields.join(', ')}`)
+    }
+  }
+
+  return details.length
+    ? details.join('; ')
+    : 'semantic digest differs without a field-level difference'
+}
 
 export const validateFrozenPlanDerivedFields = (plan: CompanyCleanupPlan) => {
   const companyIds = sortedUniqueNumbers([
@@ -543,7 +596,12 @@ export const applyFrozenCompanyCleanup = async (input: {
         digestSemanticCompanyDatabaseState(postState) !==
         input.plan.expectedPostDatabaseDigest
       ) {
-        throw new Error('Company cleanup post-state verification failed')
+        throw new Error(
+          `Company cleanup post-state verification failed: ${describeCompanyPostStateMismatch(
+            postState,
+            input.plan.expectedPostState
+          )}`
+        )
       }
       return { databaseStatus: 'applied' as const }
     },

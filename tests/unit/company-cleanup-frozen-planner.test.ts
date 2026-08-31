@@ -5,14 +5,18 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import {
   COMPANY_CLEANUP_SCHEMA_VERSION,
+  readPlanWithVerifiedSidecar,
   writeCanonicalArtifact,
   type CompanyDatabaseState
 } from '~/scripts/companyCleanupFrozenContract'
+import { validateFrozenPlanSimulation } from '~/scripts/companyCleanupFrozenApply'
 import {
   buildCompanyInventory,
+  finalizeFrozenCompanyCleanupPlan,
   generateFrozenCompanyCleanupPlan
 } from '~/scripts/companyCleanupFrozenPlanner'
 import {
+  digestSemanticCompanyDatabaseState,
   getCompanyOwnerRef,
   getCompanyRef
 } from '~/scripts/companyCleanupFrozenState'
@@ -245,6 +249,18 @@ describe('frozen company cleanup planner', () => {
     expect(result.plan.limits.actions).toBe(1)
     expect(result.plan.warnings).toContain(
       'Manual-only plan: VNDB evidence and automatic merges were intentionally skipped'
+    )
+
+    const loaded = await readPlanWithVerifiedSidecar(paths.outputPath)
+    expect(() => validateFrozenPlanSimulation(loaded.plan)).not.toThrow()
+    expect(loaded.plan).toEqual(result.plan)
+
+    const finalized = finalizeFrozenCompanyCleanupPlan({
+      ...loaded.plan,
+      expectedPostDatabaseDigest: '0'.repeat(64)
+    })
+    expect(finalized.expectedPostDatabaseDigest).toBe(
+      digestSemanticCompanyDatabaseState(finalized.expectedPostState)
     )
   })
 })

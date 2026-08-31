@@ -35,10 +35,27 @@ import {
   resolveDecisionCompanyIds,
   validateActionTopology
 } from './companyCleanupFrozenState'
+import { validateFrozenPlanSimulation } from './companyCleanupFrozenApply'
 
 const VNDB_FETCH_CONCURRENCY = 2
 
 const unique = <T>(values: T[]) => [...new Set(values)]
+
+export const finalizeFrozenCompanyCleanupPlan = (
+  plan: CompanyCleanupPlan
+): CompanyCleanupPlan => {
+  const canonicalPlan = companyCleanupPlanSchema.parse(
+    JSON.parse(serializeCanonicalJson(plan))
+  )
+  const finalizedPlan = companyCleanupPlanSchema.parse({
+    ...canonicalPlan,
+    expectedPostDatabaseDigest: digestSemanticCompanyDatabaseState(
+      canonicalPlan.expectedPostState
+    )
+  })
+  validateFrozenPlanSimulation(finalizedPlan)
+  return finalizedPlan
+}
 
 const toMaintenanceCompany = (company: CompanyState): MaintenanceCompany => ({
   id: company.id,
@@ -398,7 +415,7 @@ export const generateFrozenCompanyCleanupPlan = async (input: {
     limits: { actions: actionCount, relations: relationCount }
   }
 
-  const validatedPlan = companyCleanupPlanSchema.parse(plan)
+  const validatedPlan = finalizeFrozenCompanyCleanupPlan(plan)
   const planDigest = await writeCanonicalArtifact(
     input.outputPath,
     validatedPlan,

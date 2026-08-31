@@ -406,4 +406,25 @@ describe('frozen company cleanup apply service', () => {
       code: 'ENOENT'
     })
   })
+
+  it('reports the exact company fields that differ after replacement', async () => {
+    const { before, after, plan } = buildPlan()
+    const unexpectedPostState = structuredClone(after)
+    unexpectedPostState.companies[0].count = 2
+    unexpectedPostState.companies[0].aliases = ['unexpected alias']
+    const tx = makeTx([before, unexpectedPostState])
+    const db = { $transaction: vi.fn((callback) => callback(tx)) }
+
+    await expect(
+      applyFrozenCompanyCleanup({
+        db: db as never,
+        plan,
+        planSha256: 'c'.repeat(64),
+        planPath: '/unused/plan.json',
+        confirmSha256: 'c'.repeat(64)
+      })
+    ).rejects.toThrow(
+      'Company cleanup post-state verification failed: company #1 fields: aliases, count'
+    )
+  })
 })
