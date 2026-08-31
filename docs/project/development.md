@@ -117,6 +117,8 @@ pnpm prisma generate
 pnpm dev
 ```
 
+同一仓库目录只能运行一个 Next 开发服务器，也不要在 `pnpm dev` 运行期间执行 `pnpm build`。当前开发和生产构建会共享 `.next`，并行读写会让开发服务器读到不完整的 manifest，出现 `ENOENT .../.next/server/pages/_app/build-manifest.json`。需要构建时先停止 dev server，构建完成后再重新启动。
+
 默认监听 `127.0.0.1:3000`。如果 Turbopack 行为异常，用 webpack 模式复查：
 
 ```bash
