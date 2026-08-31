@@ -25,6 +25,7 @@ Use this skill for API and business-service work; per-domain rules live in the m
 - Post-transition notifications are best-effort: log failures, never roll back an already committed transition.
 - Run user-scoped rate limits after auth and before DB access, multipart parsing, Sharp/S3 work or S3 cleanup; thresholds live in `app/api/message/conversation/rateLimit.ts` and `app/api/patch-submission/rateLimit.ts`.
 - Invalidate the matching caches after every patch/resource/tag/company write.
+- Company writes must treat a shared alias or overlapping batch evidence as ambiguous instead of selecting the first row. Manual VNDB refresh follows the server-side resolver flag and reports newly inserted relations separately from already-resolved companies.
 - Define request schemas in `validations/*`; return immediately when a parse helper yields a string.
 
 ## Verification

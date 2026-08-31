@@ -379,11 +379,13 @@ pnpm build
 
 ## 常见本地问题
 
-| 症状                                 | 处理                                                                                              |
-| ------------------------------------ | ------------------------------------------------------------------------------------------------- |
-| 启动时报 `.env file not found`       | 确认项目根目录存在 `.env`，文件名末尾没有空格。                                                   |
-| `pnpm install` 后 Prisma Client 缺失 | 运行 `pnpm prisma:generate`。`postinstall` 正常会自动执行。                                       |
-| `pnpm prisma:push` 要 reset database | 如果不是空开发库，立刻取消并先备份/写迁移方案。                                                   |
-| Redis 连接失败                       | 确认 Redis 服务已启动，`REDIS_HOST`、`REDIS_PORT`、`REDIS_PASSWORD` 与本机一致。                  |
-| 图片域名无法加载                     | 确认 `KUN_VISUAL_NOVEL_IMAGE_BED_HOST` 与 `next.config.ts` 的 remote pattern 一致。               |
-| `pnpm lint` 不可用                   | 当前脚本是 `next lint`；Next 15 项目可能需要迁移到 ESLint CLI。不要把 lint 通过当作发布唯一门槛。 |
+| 症状                                   | 处理                                                                                                                                                                                                                                        |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 启动时报 `.env file not found`         | 确认项目根目录存在 `.env`，文件名末尾没有空格。                                                                                                                                                                                             |
+| `pnpm install` 后 Prisma Client 缺失   | 运行 `pnpm prisma:generate`。`postinstall` 正常会自动执行。                                                                                                                                                                                 |
+| `pnpm prisma:push` 要 reset database   | 如果不是空开发库，立刻取消并先备份/写迁移方案。                                                                                                                                                                                             |
+| Redis 连接失败                         | 确认 Redis 服务已启动，`REDIS_HOST`、`REDIS_PORT`、`REDIS_PASSWORD` 与本机一致。                                                                                                                                                            |
+| 图片域名无法加载                       | 确认 `KUN_VISUAL_NOVEL_IMAGE_BED_HOST` 与 `next.config.ts` 的 remote pattern 一致。                                                                                                                                                         |
+| `pnpm lint` 不可用                     | 当前脚本是 `next lint`；Next 15 项目可能需要迁移到 ESLint CLI。不要把 lint 通过当作发布唯一门槛。                                                                                                                                           |
+| VS Code ESLint 提示找不到配置或 parser | 当前 ESLint 9 仍使用 `.eslintrc.json`；工作区固定 `eslint.useFlatConfig: false`，并把 TypeScript ESLint parser/plugin 声明为直接开发依赖。拉取依赖后执行 `ESLint: Restart ESLint Server`。迁移 `eslint.config.*` 时再一并删除这条兼容设置。 |
+| IDE 提示 Prisma 字段不存在             | Schema 变更后执行 `pnpm prisma generate` 重新生成 Client；Prisma 7 不会在 `db push` 等命令后自动生成。若 IDE 仍缓存旧类型，执行 `TypeScript: Restart TS Server`。                                                                           |
