@@ -44,9 +44,9 @@ import {
   recoverInterruptedActivation
 } from './deploySlots'
 import {
+  assertGeneratedPrismaClient,
   backupGeneratedPrismaClient,
   copyPrismaClientRuntimePackage,
-  resolvePrismaClientRuntimePaths,
   restoreGeneratedPrismaClient
 } from './prismaClientRuntimePaths'
 
@@ -206,11 +206,20 @@ const runCandidatePrismaGuard = (candidateRoot: string) => {
 
 const generateCandidatePrismaClient = (candidateRoot: string) => {
   const schemaPath = join(candidateRoot, 'prisma', 'schema')
+  const candidateNodeModules = join(candidateRoot, 'node_modules')
+  // Prisma writes its default output beside the @prisma/client package it
+  // resolves from the schema directory, so the seeded candidate package keeps
+  // generation inside the candidate instead of the server node_modules.
+  rmSync(join(candidateNodeModules, '.prisma'), {
+    recursive: true,
+    force: true
+  })
   runDeployCommand(
     'pnpm',
     ['exec', 'prisma', 'generate', `--schema=${schemaPath}`],
     { cwd: projectRoot }
   )
+  assertGeneratedPrismaClient(candidateNodeModules)
 }
 
 const seedCandidatePrismaClientPackage = (candidateRoot: string) => {
@@ -228,18 +237,16 @@ const seedCandidatePrismaClientPackage = (candidateRoot: string) => {
 const injectRuntimeDependencies = (candidateRoot: string) => {
   const rootNodeModules = resolve(projectRoot, 'node_modules')
   const candidateNodeModules = join(candidateRoot, 'node_modules')
-  const { generatedPackage } = resolvePrismaClientRuntimePaths(rootNodeModules)
-  rmSync(join(candidateNodeModules, '.prisma'), {
-    recursive: true,
-    force: true
-  })
-  cpSync(generatedPackage, join(candidateNodeModules, '.prisma'), {
-    recursive: true,
-    dereference: true
-  })
-  copyPrismaClientRuntimePackage(rootNodeModules, candidateNodeModules)
+  // The pnpm standalone artifact has no top-level react-dom; mirror the
+  // local build candidate so the runtime validator sees the same layout.
+  copyPackage(rootNodeModules, candidateNodeModules, 'react-dom')
   copyPackage(rootNodeModules, candidateNodeModules, 'ffmpeg-static')
-  for (const required of ['.prisma', '@prisma/client', 'ffmpeg-static']) {
+  for (const required of [
+    '.prisma/client',
+    '@prisma/client',
+    'react-dom',
+    'ffmpeg-static'
+  ]) {
     const target = join(candidateNodeModules, required)
     if (!existsSync(target) || !lstatSync(target).isDirectory()) {
       throw new Error(`Injected runtime package is missing: ${required}`)
@@ -253,6 +260,16 @@ const injectRuntimeDependencies = (candidateRoot: string) => {
     cpSync(rootGalleryFfmpeg, destination)
     runDeployCommand('chmod', ['755', destination])
   }
+}
+
+const preflightCandidatePrismaClient = (candidateRoot: string) => {
+  // Resolve the client from the candidate root exactly like the standalone
+  // server will, before PM2 ever starts it.
+  runDeployCommand(
+    'node',
+    ['--input-type=commonjs', '-e', "require('@prisma/client')"],
+    { cwd: candidateRoot }
+  )
 }
 
 const generateCandidateSitemap = (candidateRoot: string) => {
@@ -410,6 +427,7 @@ const main = async () => {
       seedCandidatePrismaClientPackage(candidateRoot)
       generateCandidatePrismaClient(candidateRoot)
       injectRuntimeDependencies(candidateRoot)
+      preflightCandidatePrismaClient(candidateRoot)
       generateCandidateSitemap(candidateRoot)
       validateStandaloneRuntime(candidateRoot)
 

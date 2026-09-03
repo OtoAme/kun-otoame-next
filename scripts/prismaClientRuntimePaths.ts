@@ -3,6 +3,7 @@ import {
   existsSync,
   lstatSync,
   mkdirSync,
+  readFileSync,
   realpathSync,
   rmSync,
   statSync
@@ -14,6 +15,30 @@ const assertDirectory = (path: string, label: string) => {
     throw new Error(`${label} is missing: ${path}`)
   }
   return path
+}
+
+const assertFile = (path: string, label: string) => {
+  if (!existsSync(path) || !statSync(path).isFile()) {
+    throw new Error(`${label} is missing: ${path}`)
+  }
+  return path
+}
+
+const readPackageDependencies = (packageDir: string) => {
+  const manifest = JSON.parse(
+    readFileSync(join(packageDir, 'package.json'), 'utf8')
+  ) as { dependencies?: Record<string, string> }
+  return Object.keys(manifest.dependencies ?? {})
+}
+
+const copyRealPackage = (source: string, destination: string) => {
+  rmSync(destination, { recursive: true, force: true })
+  mkdirSync(dirname(destination), { recursive: true })
+  cpSync(source, destination, { recursive: true, dereference: true })
+  if (!existsSync(destination) || !lstatSync(destination).isDirectory()) {
+    throw new Error(`Copied package is missing: ${destination}`)
+  }
+  return destination
 }
 
 export const resolvePrismaClientRuntimePaths = (rootNodeModules: string) => {
@@ -35,14 +60,35 @@ export const copyPrismaClientRuntimePackage = (
   destinationNodeModules: string
 ) => {
   const { clientPackage } = resolvePrismaClientRuntimePaths(sourceNodeModules)
-  const destination = join(destinationNodeModules, '@prisma', 'client')
-  rmSync(destination, { recursive: true, force: true })
-  mkdirSync(dirname(destination), { recursive: true })
-  cpSync(clientPackage, destination, { recursive: true, dereference: true })
-  if (!existsSync(destination) || !lstatSync(destination).isDirectory()) {
-    throw new Error('Copied @prisma/client package is missing')
+  const destination = copyRealPackage(
+    clientPackage,
+    join(destinationNodeModules, '@prisma', 'client')
+  )
+  // pnpm resolves the runtime dependencies of @prisma/client (currently
+  // @prisma/client-runtime-utils) from the store directory beside the real
+  // package. A flattened copy has to carry them beside itself instead.
+  const storeNodeModules = dirname(dirname(clientPackage))
+  for (const dependency of readPackageDependencies(clientPackage)) {
+    copyRealPackage(
+      assertDirectory(
+        join(storeNodeModules, dependency),
+        `@prisma/client dependency ${dependency}`
+      ),
+      join(destinationNodeModules, dependency)
+    )
   }
   return destination
+}
+
+export const assertGeneratedPrismaClient = (nodeModules: string) => {
+  const generatedClient = assertDirectory(
+    join(nodeModules, '.prisma', 'client'),
+    'Generated Prisma Client'
+  )
+  for (const entry of ['default.js', 'index.js']) {
+    assertFile(join(generatedClient, entry), `Generated Prisma Client ${entry}`)
+  }
+  return generatedClient
 }
 
 export const backupGeneratedPrismaClient = (

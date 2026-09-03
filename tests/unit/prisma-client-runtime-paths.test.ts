@@ -12,6 +12,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
+  assertGeneratedPrismaClient,
   backupGeneratedPrismaClient,
   copyPrismaClientRuntimePackage,
   resolvePrismaClientRuntimePaths,
@@ -101,5 +102,91 @@ describe('pnpm Prisma Client runtime paths', () => {
     expect(lstatSync(copied).isSymbolicLink()).toBe(false)
     expect(readFileSync(join(copied, 'package.json'), 'utf8')).toBe('{}')
     expect(readFileSync(sibling, 'utf8')).toBe('keep')
+  })
+
+  it('flattens the declared @prisma/client dependencies beside the copied package', () => {
+    const root = mkdtempSync(join(tmpdir(), 'otoame-prisma-runtime-'))
+    roots.push(root)
+    const sourceNodeModules = join(root, 'source/node_modules')
+    const destinationNodeModules = join(root, 'destination/node_modules')
+    const storeNodeModules = join(root, 'store/node_modules')
+    const realClient = join(storeNodeModules, '@prisma/client')
+    const realUtils = join(
+      root,
+      'utils-store/node_modules/@prisma/client-runtime-utils'
+    )
+    mkdirSync(join(sourceNodeModules, '@prisma'), { recursive: true })
+    mkdirSync(join(storeNodeModules, '.prisma/client'), { recursive: true })
+    mkdirSync(realClient, { recursive: true })
+    mkdirSync(realUtils, { recursive: true })
+    writeFileSync(
+      join(realClient, 'package.json'),
+      JSON.stringify({
+        dependencies: { '@prisma/client-runtime-utils': '7.8.0' }
+      })
+    )
+    writeFileSync(join(realUtils, 'index.js'), 'module.exports = {}')
+    symlinkSync(
+      realUtils,
+      join(storeNodeModules, '@prisma/client-runtime-utils'),
+      'dir'
+    )
+    symlinkSync(realClient, join(sourceNodeModules, '@prisma/client'), 'dir')
+
+    copyPrismaClientRuntimePackage(sourceNodeModules, destinationNodeModules)
+
+    const copiedUtils = join(
+      destinationNodeModules,
+      '@prisma/client-runtime-utils'
+    )
+    expect(lstatSync(copiedUtils).isSymbolicLink()).toBe(false)
+    expect(readFileSync(join(copiedUtils, 'index.js'), 'utf8')).toBe(
+      'module.exports = {}'
+    )
+  })
+
+  it('fails when a declared @prisma/client dependency is missing from the store', () => {
+    const root = mkdtempSync(join(tmpdir(), 'otoame-prisma-runtime-'))
+    roots.push(root)
+    const sourceNodeModules = join(root, 'source/node_modules')
+    const storeNodeModules = join(root, 'store/node_modules')
+    const realClient = join(storeNodeModules, '@prisma/client')
+    mkdirSync(join(sourceNodeModules, '@prisma'), { recursive: true })
+    mkdirSync(join(storeNodeModules, '.prisma/client'), { recursive: true })
+    mkdirSync(realClient, { recursive: true })
+    writeFileSync(
+      join(realClient, 'package.json'),
+      JSON.stringify({
+        dependencies: { '@prisma/client-runtime-utils': '7.8.0' }
+      })
+    )
+    symlinkSync(realClient, join(sourceNodeModules, '@prisma/client'), 'dir')
+
+    expect(() =>
+      copyPrismaClientRuntimePackage(
+        sourceNodeModules,
+        join(root, 'destination/node_modules')
+      )
+    ).toThrow(
+      '@prisma/client dependency @prisma/client-runtime-utils is missing'
+    )
+  })
+
+  it('accepts only a generated client that has its runtime entry files', () => {
+    const root = mkdtempSync(join(tmpdir(), 'otoame-prisma-runtime-'))
+    roots.push(root)
+    const nodeModules = join(root, 'node_modules')
+    const generatedClient = join(nodeModules, '.prisma/client')
+
+    expect(() => assertGeneratedPrismaClient(nodeModules)).toThrow(
+      'Generated Prisma Client is missing'
+    )
+
+    mkdirSync(generatedClient, { recursive: true })
+    writeFileSync(join(generatedClient, 'default.js'), '')
+    expect(() => assertGeneratedPrismaClient(nodeModules)).toThrow('index.js')
+
+    writeFileSync(join(generatedClient, 'index.js'), '')
+    expect(assertGeneratedPrismaClient(nodeModules)).toBe(generatedClient)
   })
 })

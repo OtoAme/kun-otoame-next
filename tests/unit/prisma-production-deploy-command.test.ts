@@ -131,6 +131,59 @@ describe('production Prisma deployment command', () => {
     )
   })
 
+  it('keeps the candidate-generated Prisma Client and preflights it before validation', async () => {
+    const source = await readProjectFile('scripts/deployPull.ts')
+    const generateDefinition = source.indexOf(
+      'const generateCandidatePrismaClient ='
+    )
+    const cleanPosition = source.indexOf(
+      "rmSync(join(candidateNodeModules, '.prisma')",
+      generateDefinition
+    )
+    const generateCommand = source.indexOf(
+      "['exec', 'prisma', 'generate', `--schema=${schemaPath}`]",
+      cleanPosition
+    )
+    const assertPosition = source.indexOf(
+      'assertGeneratedPrismaClient(candidateNodeModules)',
+      generateCommand
+    )
+    const generateCall = source.indexOf(
+      'generateCandidatePrismaClient(candidateRoot)',
+      assertPosition
+    )
+    const injectCall = source.indexOf(
+      'injectRuntimeDependencies(candidateRoot)',
+      generateCall
+    )
+    const preflightCall = source.indexOf(
+      'preflightCandidatePrismaClient(candidateRoot)',
+      injectCall
+    )
+    const validateCall = source.indexOf(
+      'validateStandaloneRuntime(candidateRoot)',
+      preflightCall
+    )
+
+    expect(generateDefinition).toBeGreaterThan(-1)
+    expect(cleanPosition).toBeGreaterThan(generateDefinition)
+    expect(generateCommand).toBeGreaterThan(cleanPosition)
+    expect(assertPosition).toBeGreaterThan(generateCommand)
+    expect(generateCall).toBeGreaterThan(assertPosition)
+    expect(injectCall).toBeGreaterThan(generateCall)
+    expect(preflightCall).toBeGreaterThan(injectCall)
+    expect(validateCall).toBeGreaterThan(preflightCall)
+    expect(source).toContain(
+      "copyPackage(rootNodeModules, candidateNodeModules, 'react-dom')"
+    )
+    expect(source).toContain(
+      "copyPackage(rootNodeModules, candidateNodeModules, 'ffmpeg-static')"
+    )
+    expect(source).toContain("require('@prisma/client')")
+    expect(source).not.toContain('resolvePrismaClientRuntimePaths(')
+    expect(source).not.toContain('cpSync(generatedPackage')
+  })
+
   it('holds the durable deployment lock across latest source pull and the updated core script', async () => {
     const [launcher, source] = await Promise.all([
       readProjectFile('scripts/deployPullLauncher.ts'),

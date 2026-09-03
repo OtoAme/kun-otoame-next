@@ -142,8 +142,6 @@ ffmpeg -hide_banner -encoders | grep -i libaom-av1
 
 ## 发布路径一：GitHub Release artifact
 
-> 临时状态：生产环境暂不使用 `pnpm deploy:pull` 或 `pnpm deploy:pull:pinned`。当前候选 artifact 的 Prisma Client 生成路径尚未通过真实生产布局的端到端验证；修复并完成验证前，生产更新统一使用后文的 `pnpm deploy:build`。已有 Release 仍可用于审计，不应据此直接激活 artifact。
-
 触发：
 
 - push 到 `main`
@@ -188,7 +186,8 @@ pinned 模式只 fetch 目标 tag 到临时 ref，不执行 `git pull`、merge �
 - 验证 `.env`、工作区、Release tag 与 artifact 的 `release-manifest.json`。
 - 对 latest 与 pinned 都先 fetch 实际 tag，再核对 `HEAD`、tag peeled commit 和 manifest commit；任一不一致即失败。
 - 下载候选到临时目录，先运行资源链接兼容迁移，再以显式 `--schema=<候选>/prisma/schema` 执行只读 Prisma guard。候选 guard 通过前不替换根 schema、生成客户端或切换 runtime。
-- 用候选 schema 在目标服务器生成 Prisma Client，并把 `.prisma`、`@prisma`、`ffmpeg-static` 和可选 `.ffmpeg/ffmpeg` 注入候选。
+- 先把目标服务器 `node_modules` 里的真实 `@prisma/client` 包及其声明依赖（当前是 `@prisma/client-runtime-utils`）复制进候选 `node_modules/@prisma`，再以候选 schema 运行 `prisma generate`。Prisma 把默认输出写在它从 schema 目录解析到的 `@prisma/client` 旁边，所以客户端生成在候选 `node_modules/.prisma/client`，不复用根目录已生成的客户端；生成产物缺失即终止。
+- 注入目标机架构的 `ffmpeg-static`、`react-dom`（Release artifact 的 pnpm standalone 布局没有顶层 `react-dom`）和可选 `.ffmpeg/ffmpeg`，然后在候选根目录执行 `node -e "require('@prisma/client')"` 预检模块解析。
 - 验证 runtime 完整性、生成 sitemap，再把候选安装为 `.deploy/releases/<commit>-<tag>`。
 - 写 activation journal，把 `.deploy/previous` 指向旧 current、`.deploy/current` 指向候选，并让 `.next/standalone` 保持兼容链接。
 - 重启 PM2 后确认恰好 3 个实例均从候选 cwd/script online，再请求 loopback readiness URL；只有 2xx/3xx 才完成 journal。
