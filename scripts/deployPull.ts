@@ -237,14 +237,10 @@ const seedCandidatePrismaClientPackage = (candidateRoot: string) => {
 const injectRuntimeDependencies = (candidateRoot: string) => {
   const rootNodeModules = resolve(projectRoot, 'node_modules')
   const candidateNodeModules = join(candidateRoot, 'node_modules')
-  // The pnpm standalone artifact has no top-level react-dom; mirror the
-  // local build candidate so the runtime validator sees the same layout.
-  copyPackage(rootNodeModules, candidateNodeModules, 'react-dom')
   copyPackage(rootNodeModules, candidateNodeModules, 'ffmpeg-static')
   for (const required of [
     '.prisma/client',
     '@prisma/client',
-    'react-dom',
     'ffmpeg-static'
   ]) {
     const target = join(candidateNodeModules, required)

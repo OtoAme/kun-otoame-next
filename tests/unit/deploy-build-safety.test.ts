@@ -53,7 +53,7 @@ describe('local build deployment safety', () => {
     expect(source).not.toContain(
       "copyPackage(rootNodeModules, candidateNodeModules, '@prisma')"
     )
-    expect(source).toContain(
+    expect(source).not.toContain(
       "copyPackage(rootNodeModules, candidateNodeModules, 'react-dom')"
     )
     expect(source).not.toContain(

@@ -173,7 +173,7 @@ describe('production Prisma deployment command', () => {
     expect(injectCall).toBeGreaterThan(generateCall)
     expect(preflightCall).toBeGreaterThan(injectCall)
     expect(validateCall).toBeGreaterThan(preflightCall)
-    expect(source).toContain(
+    expect(source).not.toContain(
       "copyPackage(rootNodeModules, candidateNodeModules, 'react-dom')"
     )
     expect(source).toContain(

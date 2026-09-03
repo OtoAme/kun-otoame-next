@@ -3,6 +3,7 @@ import {
   existsSync,
   lstatSync,
   mkdirSync,
+  readdirSync,
   readFileSync,
   readlinkSync,
   realpathSync,
@@ -166,12 +167,52 @@ const readJournal = (paths: DeploySlotPaths): ActivationJournal | null => {
 const journalReleasePath = (paths: DeploySlotPaths, relativePath: string) =>
   assertReleasePath(paths, resolve(paths.deployRoot, relativePath))
 
+const relinkLegacyAbsoluteSymlinks = (
+  paths: DeploySlotPaths,
+  releasePath: string
+) => {
+  // Releases adopted before verbatim symlink copies carry pnpm links rewritten
+  // to absolute paths under the mutable legacy standalone locations. Point them
+  // back inside the immutable release so activating another release cannot
+  // redirect or break them.
+  const legacyPrefixes = [
+    paths.legacyStandalone,
+    paths.legacyStandaloneBackup
+  ].map((prefix) => `${prefix}${sep}`)
+  const pending = [releasePath]
+  while (pending.length) {
+    const directory = pending.pop()!
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      const linkPath = join(directory, entry.name)
+      if (entry.isDirectory()) {
+        pending.push(linkPath)
+        continue
+      }
+      if (!entry.isSymbolicLink()) continue
+      const target = readlinkSync(linkPath)
+      const prefix = legacyPrefixes.find((candidate) =>
+        target.startsWith(candidate)
+      )
+      if (!prefix) continue
+      const inside = join(releasePath, target.slice(prefix.length))
+      if (!pathEntryExists(inside)) {
+        throw new Error(
+          `Legacy release link target is missing inside the release: ${relative(releasePath, linkPath)}`
+        )
+      }
+      atomicSymlink(linkPath, inside)
+    }
+  }
+}
+
 export const adoptLegacyDeploySlot = (paths: DeploySlotPaths) => {
   mkdirSync(paths.releasesRoot, { recursive: true })
   if (pathEntryExists(paths.current)) {
     const current = readReleasePointer(paths, paths.current)
     if (!pathEntryExists(paths.previous)) atomicSymlink(paths.previous, current)
-    readReleasePointer(paths, paths.previous)
+    const previous = readReleasePointer(paths, paths.previous)
+    relinkLegacyAbsoluteSymlinks(paths, current)
+    if (previous !== current) relinkLegacyAbsoluteSymlinks(paths, previous)
     ensureStandaloneCompatibilityLink(paths)
     return current
   }
@@ -187,7 +228,8 @@ export const adoptLegacyDeploySlot = (paths: DeploySlotPaths) => {
   if (!existsSync(release)) {
     cpSync(legacySource, staged, {
       recursive: true,
-      dereference: false
+      dereference: false,
+      verbatimSymlinks: true
     })
     const stagedNodeModules = join(staged, 'node_modules')
     const { generatedPackage } =

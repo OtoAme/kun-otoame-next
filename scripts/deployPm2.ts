@@ -7,6 +7,7 @@ import {
   statSync
 } from 'node:fs'
 import http from 'node:http'
+import { createRequire } from 'node:module'
 import { join, relative, sep } from 'node:path'
 
 type CommandResult = {
@@ -39,7 +40,6 @@ const requiredDirectories = [
   'node_modules/@prisma/client',
   'node_modules/next',
   'node_modules/react',
-  'node_modules/react-dom',
   'node_modules/ffmpeg-static'
 ]
 
@@ -75,6 +75,29 @@ const validateContainedRuntimeLinks = (standaloneDir: string) => {
       } else if (entry.isDirectory()) {
         pending.push(target)
       }
+    }
+  }
+}
+
+// pnpm links the React peers of next beside next inside node_modules/.pnpm
+// rather than at the top level, so check the resolution next itself performs.
+const validateNextPeerResolution = (standaloneDir: string) => {
+  const runtimeRoot = realpathSync(standaloneDir)
+  const nextPackage = realpathSync(join(standaloneDir, 'node_modules/next'))
+  const requireFromNext = createRequire(join(nextPackage, 'package.json'))
+  for (const specifier of ['react/package.json', 'react-dom/package.json']) {
+    let resolved: string
+    try {
+      resolved = realpathSync(requireFromNext.resolve(specifier))
+    } catch {
+      throw new Error(
+        `Standalone runtime cannot resolve ${specifier} from node_modules/next`
+      )
+    }
+    if (!isWithin(runtimeRoot, resolved)) {
+      throw new Error(
+        `Standalone runtime resolves ${specifier} outside the release: ${resolved}`
+      )
     }
   }
 }
@@ -136,6 +159,7 @@ export const validateStandaloneRuntime = (standaloneDir: string) => {
       throw new Error(`Standalone runtime file is missing: ${relativePath}`)
     }
   }
+  validateNextPeerResolution(standaloneDir)
   return serverPath.endsWith('server.mjs') ? 'server.mjs' : 'server.js'
 }
 

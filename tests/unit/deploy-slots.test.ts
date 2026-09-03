@@ -3,6 +3,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  readlinkSync,
   realpathSync,
   rmSync,
   symlinkSync,
@@ -165,5 +166,50 @@ describe('crash-safe immutable deployment slots', () => {
     expect(existsSync(join(adopted, 'node_modules/.prisma/client'))).toBe(true)
     expect(realpathSync(paths.standaloneLink)).toBe(adopted)
     expect(existsSync(paths.legacyStandaloneBackup)).toBe(true)
+    expect(readlinkSync(join(adopted, 'node_modules/@prisma/client'))).toBe(
+      '../.pnpm/prisma-client/node_modules/@prisma/client'
+    )
+  })
+
+  it('rewrites absolute legacy links left by earlier adoptions into the release', () => {
+    const { paths } = createProject()
+    const adopted = adoptLegacyDeploySlot(paths)
+    const storeReactDom = join(
+      adopted,
+      'node_modules/.pnpm/react-dom/node_modules/react-dom'
+    )
+    mkdirSync(storeReactDom, { recursive: true })
+    const linkPath = join(adopted, 'node_modules/react-dom')
+    symlinkSync(
+      join(
+        paths.legacyStandalone,
+        'node_modules/.pnpm/react-dom/node_modules/react-dom'
+      ),
+      linkPath,
+      'dir'
+    )
+
+    expect(adoptLegacyDeploySlot(paths)).toBe(adopted)
+    expect(readlinkSync(linkPath)).toBe(
+      '.pnpm/react-dom/node_modules/react-dom'
+    )
+    expect(realpathSync(linkPath)).toBe(realpathSync(storeReactDom))
+  })
+
+  it('fails closed when an absolute legacy link has no target inside the release', () => {
+    const { paths } = createProject()
+    const adopted = adoptLegacyDeploySlot(paths)
+    symlinkSync(
+      join(
+        paths.legacyStandaloneBackup,
+        'node_modules/.pnpm/missing@1.0.0/node_modules/missing'
+      ),
+      join(adopted, 'node_modules/missing'),
+      'dir'
+    )
+
+    expect(() => adoptLegacyDeploySlot(paths)).toThrow(
+      'Legacy release link target is missing inside the release: node_modules/missing'
+    )
   })
 })

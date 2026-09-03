@@ -187,8 +187,8 @@ pinned 模式只 fetch 目标 tag 到临时 ref，不执行 `git pull`、merge �
 - 对 latest 与 pinned 都先 fetch 实际 tag，再核对 `HEAD`、tag peeled commit 和 manifest commit；任一不一致即失败。
 - 下载候选到临时目录，先运行资源链接兼容迁移，再以显式 `--schema=<候选>/prisma/schema` 执行只读 Prisma guard。候选 guard 通过前不替换根 schema、生成客户端或切换 runtime。
 - 先把目标服务器 `node_modules` 里的真实 `@prisma/client` 包及其声明依赖（当前是 `@prisma/client-runtime-utils`）复制进候选 `node_modules/@prisma`，再以候选 schema 运行 `prisma generate`。Prisma 把默认输出写在它从 schema 目录解析到的 `@prisma/client` 旁边，所以客户端生成在候选 `node_modules/.prisma/client`，不复用根目录已生成的客户端；生成产物缺失即终止。
-- 注入目标机架构的 `ffmpeg-static`、`react-dom`（Release artifact 的 pnpm standalone 布局没有顶层 `react-dom`）和可选 `.ffmpeg/ffmpeg`，然后在候选根目录执行 `node -e "require('@prisma/client')"` 预检模块解析。
-- 验证 runtime 完整性、生成 sitemap，再把候选安装为 `.deploy/releases/<commit>-<tag>`。
+- 注入目标机架构的 `ffmpeg-static` 和可选 `.ffmpeg/ffmpeg`，然后在候选根目录执行 `node -e "require('@prisma/client')"` 预检模块解析。
+- 验证 runtime 完整性（固定目录与文件、release 内符号链接，以及从 release 内的 `next` 包解析 `react`/`react-dom`；pnpm 布局下它们在 `node_modules/.pnpm` 中与 `next` 相邻，顶层没有 `react-dom`）、生成 sitemap，再把候选安装为 `.deploy/releases/<commit>-<tag>`。
 - 写 activation journal，把 `.deploy/previous` 指向旧 current、`.deploy/current` 指向候选，并让 `.next/standalone` 保持兼容链接。
 - 重启 PM2 后确认恰好 3 个实例均从候选 cwd/script online，再请求 loopback readiness URL；只有 2xx/3xx 才完成 journal。
 - 候选启动或 readiness 失败时自动恢复旧 current，并再次验证旧版本；两边都失败时保留聚合错误供人工处理。
@@ -441,18 +441,19 @@ pm2 logs kun-touchgal-next
 
 ## 常见故障
 
-| 症状                               | 优先检查                                                                                                       |
-| ---------------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| PM2 报 cwd deleted 或找不到 server | 检查 `.deploy/current` 是否指向 `.deploy/releases` 内完整 runtime；`.next/standalone` 只应是兼容链接。         |
-| 图片加载失败                       | `KUN_VISUAL_NOVEL_IMAGE_BED_HOST`、`KUN_VISUAL_NOVEL_IMAGE_BED_URL`、Next image `remotePatterns`。             |
-| Prisma Client 架构不匹配           | 在目标服务器重新 `pnpm prisma generate`，确认 standalone 内 `.prisma` 和 `@prisma` 已更新。                    |
-| sitemap 缺失                       | 跑 `pnpm build:sitemap`，确认 `scripts/postbuild.ts` 或 `deployPull` 复制到 standalone public。                |
-| build 成功但运行缺资源             | 检查 `postbuild.ts` 的 assert 路径和 release packaging 的复制列表。                                            |
-| 生产站被 noindex                   | 删除 `.env` 中 `KUN_VISUAL_NOVEL_TEST_SITE_LABEL`。                                                            |
-| `deploy:pull` 找不到 release       | 确认 latest/指定 tag 有 `release.tar.gz` 与 manifest，`GITHUB_REPO` 正确，私有仓库配置 `GITHUB_TOKEN`。        |
-| 部署提示 tag / commit 不一致       | 停止切换；让工作区 HEAD 精确到目标 tag commit，确认 artifact manifest 来自同一 workflow 后重试。               |
-| 部署锁或 activation journal 存在   | 不要手工删正在使用的锁；确认 owner 进程。中断 journal 交给下一次 deploy/rollback 自动恢复。                    |
-| `deploy:build` 过程内存不足        | 增加 swap，或降低 `ecosystem.config.cjs` 的 `instances`。README 中按服务器核数调整实例数，但内存也会线性增长。 |
+| 症状                                                                    | 优先检查                                                                                                                                                                                           |
+| ----------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| PM2 报 cwd deleted 或找不到 server                                      | 检查 `.deploy/current` 是否指向 `.deploy/releases` 内完整 runtime；`.next/standalone` 只应是兼容链接。                                                                                             |
+| 激活时报 `symbolic link escapes the release`，首个新 release 被自动回滚 | 早期收编把 pnpm 相对链接改写成指向 `.next/standalone` 的绝对路径。当前脚本会在下一次部署的收编阶段把 `.deploy/releases/legacy-initial` 内这类链接改回 release 内相对链接；不要手工删除该 release。 |
+| 图片加载失败                                                            | `KUN_VISUAL_NOVEL_IMAGE_BED_HOST`、`KUN_VISUAL_NOVEL_IMAGE_BED_URL`、Next image `remotePatterns`。                                                                                                 |
+| Prisma Client 架构不匹配                                                | 在目标服务器重新 `pnpm prisma generate`，确认 standalone 内 `.prisma` 和 `@prisma` 已更新。                                                                                                        |
+| sitemap 缺失                                                            | 跑 `pnpm build:sitemap`，确认 `scripts/postbuild.ts` 或 `deployPull` 复制到 standalone public。                                                                                                    |
+| build 成功但运行缺资源                                                  | 检查 `postbuild.ts` 的 assert 路径和 release packaging 的复制列表。                                                                                                                                |
+| 生产站被 noindex                                                        | 删除 `.env` 中 `KUN_VISUAL_NOVEL_TEST_SITE_LABEL`。                                                                                                                                                |
+| `deploy:pull` 找不到 release                                            | 确认 latest/指定 tag 有 `release.tar.gz` 与 manifest，`GITHUB_REPO` 正确，私有仓库配置 `GITHUB_TOKEN`。                                                                                            |
+| 部署提示 tag / commit 不一致                                            | 停止切换；让工作区 HEAD 精确到目标 tag commit，确认 artifact manifest 来自同一 workflow 后重试。                                                                                                   |
+| 部署锁或 activation journal 存在                                        | 不要手工删正在使用的锁；确认 owner 进程。中断 journal 交给下一次 deploy/rollback 自动恢复。                                                                                                        |
+| `deploy:build` 过程内存不足                                             | 增加 swap，或降低 `ecosystem.config.cjs` 的 `instances`。README 中按服务器核数调整实例数，但内存也会线性增长。                                                                                     |
 
 ## 投稿域上线顺序
 

@@ -15,8 +15,9 @@ import {
 
 const roots: string[] = []
 
-const createRuntime = () => {
-  const root = mkdtempSync(join(tmpdir(), 'otoame-pm2-runtime-'))
+const createRuntime = (
+  root = mkdtempSync(join(tmpdir(), 'otoame-pm2-runtime-'))
+) => {
   roots.push(root)
   for (const directory of [
     '.next/server',
@@ -34,6 +35,9 @@ const createRuntime = () => {
     'config'
   ]) {
     mkdirSync(join(root, directory), { recursive: true })
+  }
+  for (const peer of ['react', 'react-dom']) {
+    writeFileSync(join(root, `node_modules/${peer}/package.json`), '{}')
   }
   for (const file of [
     'server.mjs',
@@ -100,6 +104,63 @@ describe('PM2 deployment readiness', () => {
 
     expect(() => validateStandaloneRuntime(runtime)).toThrow(
       'broken symbolic link: node_modules/next'
+    )
+  })
+
+  it('accepts React peers linked beside next in the pnpm store', () => {
+    const runtime = createRuntime()
+    rmSync(join(runtime, 'node_modules/react-dom'), {
+      recursive: true,
+      force: true
+    })
+    const nextLink = join(runtime, 'node_modules/next')
+    rmSync(nextLink, { recursive: true, force: true })
+    const storeNodeModules = join(
+      runtime,
+      'node_modules/.pnpm/next@15.5.18/node_modules'
+    )
+    const storeReactDom = join(
+      runtime,
+      'node_modules/.pnpm/react-dom@19.2.4/node_modules/react-dom'
+    )
+    mkdirSync(join(storeNodeModules, 'next'), { recursive: true })
+    mkdirSync(storeReactDom, { recursive: true })
+    writeFileSync(join(storeReactDom, 'package.json'), '{}')
+    symlinkSync(
+      '../../react-dom@19.2.4/node_modules/react-dom',
+      join(storeNodeModules, 'react-dom'),
+      'dir'
+    )
+    symlinkSync('.pnpm/next@15.5.18/node_modules/next', nextLink, 'dir')
+
+    expect(validateStandaloneRuntime(runtime)).toBe('server.mjs')
+  })
+
+  it('rejects a release whose next cannot resolve react-dom', () => {
+    const runtime = createRuntime()
+    rmSync(join(runtime, 'node_modules/react-dom'), {
+      recursive: true,
+      force: true
+    })
+
+    expect(() => validateStandaloneRuntime(runtime)).toThrow(
+      'cannot resolve react-dom/package.json from node_modules/next'
+    )
+  })
+
+  it('rejects React peers that resolve outside the release', () => {
+    const outer = mkdtempSync(join(tmpdir(), 'otoame-pm2-outer-'))
+    roots.push(outer)
+    mkdirSync(join(outer, 'node_modules/react-dom'), { recursive: true })
+    writeFileSync(join(outer, 'node_modules/react-dom/package.json'), '{}')
+    const runtime = createRuntime(join(outer, 'runtime'))
+    rmSync(join(runtime, 'node_modules/react-dom'), {
+      recursive: true,
+      force: true
+    })
+
+    expect(() => validateStandaloneRuntime(runtime)).toThrow(
+      'resolves react-dom/package.json outside the release'
     )
   })
 

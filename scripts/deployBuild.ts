@@ -75,7 +75,6 @@ const prepareLocalBuildCandidate = (candidateRoot: string) => {
     dereference: true
   })
   copyPrismaClientRuntimePackage(rootNodeModules, candidateNodeModules)
-  copyPackage(rootNodeModules, candidateNodeModules, 'react-dom')
   copyPackage(rootNodeModules, candidateNodeModules, 'ffmpeg-static')
 
   cpSync(resolve(projectRoot, 'prisma'), join(candidateRoot, 'prisma'), {
