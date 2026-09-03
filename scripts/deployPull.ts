@@ -45,7 +45,9 @@ import {
 } from './deploySlots'
 import {
   assertGeneratedPrismaClient,
+  assertSamePrismaSchema,
   backupGeneratedPrismaClient,
+  copyGeneratedPrismaClient,
   copyPrismaClientRuntimePackage,
   restoreGeneratedPrismaClient
 } from './prismaClientRuntimePaths'
@@ -204,34 +206,29 @@ const runCandidatePrismaGuard = (candidateRoot: string) => {
   )
 }
 
-const generateCandidatePrismaClient = (candidateRoot: string) => {
-  const schemaPath = join(candidateRoot, 'prisma', 'schema')
-  const candidateNodeModules = join(candidateRoot, 'node_modules')
-  // Prisma writes its default output beside the @prisma/client package it
-  // resolves from the schema directory, so the seeded candidate package keeps
-  // generation inside the candidate instead of the server node_modules.
-  rmSync(join(candidateNodeModules, '.prisma'), {
-    recursive: true,
-    force: true
-  })
-  runDeployCommand(
-    'pnpm',
-    ['exec', 'prisma', 'generate', `--schema=${schemaPath}`],
-    { cwd: projectRoot }
+const generatePrismaClientForCandidate = (candidateRoot: string) => {
+  // Prisma resolves both the CLI and @prisma/client upwards from the schema
+  // directory and refuses to generate when they live in different
+  // node_modules trees. A candidate below the project root always resolves
+  // the CLI from the root, so `prisma generate --schema=<candidate>` cannot
+  // target the candidate. The verified release identity makes the candidate
+  // schema byte-identical to the checked-out schema: assert that, generate
+  // with the server toolchain at the root, then materialize the result.
+  assertSamePrismaSchema(
+    resolve(projectRoot, 'prisma', 'schema'),
+    join(candidateRoot, 'prisma', 'schema')
   )
-  assertGeneratedPrismaClient(candidateNodeModules)
+  runDeployCommand('pnpm', ['exec', 'prisma', 'generate'], {
+    cwd: projectRoot
+  })
 }
 
-const seedCandidatePrismaClientPackage = (candidateRoot: string) => {
+const materializeCandidatePrismaClient = (candidateRoot: string) => {
   const rootNodeModules = resolve(projectRoot, 'node_modules')
   const candidateNodeModules = join(candidateRoot, 'node_modules')
+  copyGeneratedPrismaClient(rootNodeModules, candidateNodeModules)
   copyPrismaClientRuntimePackage(rootNodeModules, candidateNodeModules)
-  const clientPackage = join(candidateNodeModules, '@prisma', 'client')
-  if (!existsSync(clientPackage) || !lstatSync(clientPackage).isDirectory()) {
-    throw new Error(
-      'Candidate @prisma/client package is missing before generate'
-    )
-  }
+  assertGeneratedPrismaClient(candidateNodeModules)
 }
 
 const injectRuntimeDependencies = (candidateRoot: string) => {
@@ -420,8 +417,8 @@ const main = async () => {
       runDeployCommand('pnpm', ['rebuild', '--pending'], {
         cwd: projectRoot
       })
-      seedCandidatePrismaClientPackage(candidateRoot)
-      generateCandidatePrismaClient(candidateRoot)
+      generatePrismaClientForCandidate(candidateRoot)
+      materializeCandidatePrismaClient(candidateRoot)
       injectRuntimeDependencies(candidateRoot)
       preflightCandidatePrismaClient(candidateRoot)
       generateCandidateSitemap(candidateRoot)

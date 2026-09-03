@@ -186,7 +186,7 @@ pinned 模式只 fetch 目标 tag 到临时 ref，不执行 `git pull`、merge �
 - 验证 `.env`、工作区、Release tag 与 artifact 的 `release-manifest.json`。
 - 对 latest 与 pinned 都先 fetch 实际 tag，再核对 `HEAD`、tag peeled commit 和 manifest commit；任一不一致即失败。
 - 下载候选到临时目录，先运行资源链接兼容迁移，再以显式 `--schema=<候选>/prisma/schema` 执行只读 Prisma guard。候选 guard 通过前不替换根 schema、生成客户端或切换 runtime。
-- 先把目标服务器 `node_modules` 里的真实 `@prisma/client` 包及其声明依赖（当前是 `@prisma/client-runtime-utils`）复制进候选 `node_modules/@prisma`，再以候选 schema 运行 `prisma generate`。Prisma 把默认输出写在它从 schema 目录解析到的 `@prisma/client` 旁边，所以客户端生成在候选 `node_modules/.prisma/client`，不复用根目录已生成的客户端；生成产物缺失即终止。
+- 校验候选 `prisma/schema` 与工作区（已核对为同一 commit）的 schema 逐字节一致，然后用服务器自身的 Prisma 工具链在项目根目录执行 `prisma generate`，再把生成的 `.prisma`、真实的 `@prisma/client` 包及其声明依赖（当前是 `@prisma/client-runtime-utils`）复制进候选 `node_modules`，并确认候选 `node_modules/.prisma/client` 存在。不能对候选 schema 直接执行 `prisma generate --schema=<候选>`：Prisma 会从 schema 目录向上同时解析 `prisma` CLI 与 `@prisma/client` 并要求二者位于同一 `node_modules`，而候选位于项目根目录之下，CLI 总会解析到根目录，生成会以 “Could not resolve @prisma/client” 失败。
 - 注入目标机架构的 `ffmpeg-static` 和可选 `.ffmpeg/ffmpeg`，然后在候选根目录执行 `node -e "require('@prisma/client')"` 预检模块解析。
 - 验证 runtime 完整性（固定目录与文件、release 内符号链接，以及从 release 内的 `next` 包解析 `react`/`react-dom`；pnpm 布局下它们在 `node_modules/.pnpm` 中与 `next` 相邻，顶层没有 `react-dom`）、生成 sitemap，再把候选安装为 `.deploy/releases/<commit>-<tag>`。
 - 写 activation journal，把 `.deploy/previous` 指向旧 current、`.deploy/current` 指向候选，并让 `.next/standalone` 保持兼容链接。

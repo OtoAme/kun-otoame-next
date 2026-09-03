@@ -3,12 +3,13 @@ import {
   existsSync,
   lstatSync,
   mkdirSync,
+  readdirSync,
   readFileSync,
   realpathSync,
   rmSync,
   statSync
 } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { dirname, join, relative } from 'node:path'
 
 const assertDirectory = (path: string, label: string) => {
   if (!existsSync(path) || !statSync(path).isDirectory()) {
@@ -89,6 +90,60 @@ export const assertGeneratedPrismaClient = (nodeModules: string) => {
     assertFile(join(generatedClient, entry), `Generated Prisma Client ${entry}`)
   }
   return generatedClient
+}
+
+export const copyGeneratedPrismaClient = (
+  rootNodeModules: string,
+  destinationNodeModules: string
+) => {
+  const { generatedPackage } = resolvePrismaClientRuntimePaths(rootNodeModules)
+  return copyRealPackage(
+    generatedPackage,
+    join(destinationNodeModules, '.prisma')
+  )
+}
+
+const listPrismaSchemaFiles = (schemaDir: string) => {
+  const files: string[] = []
+  const pending = [schemaDir]
+  while (pending.length) {
+    const directory = pending.pop()!
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      const target = join(directory, entry.name)
+      if (entry.isDirectory()) {
+        pending.push(target)
+      } else if (entry.isFile() && entry.name.endsWith('.prisma')) {
+        files.push(relative(schemaDir, target))
+      }
+    }
+  }
+  return files.sort()
+}
+
+export const assertSamePrismaSchema = (
+  expectedSchemaDir: string,
+  candidateSchemaDir: string
+) => {
+  const expected = listPrismaSchemaFiles(expectedSchemaDir)
+  const candidate = listPrismaSchemaFiles(candidateSchemaDir)
+  if (expected.length === 0) {
+    throw new Error(`Prisma schema has no .prisma files: ${expectedSchemaDir}`)
+  }
+  if (expected.join('\n') !== candidate.join('\n')) {
+    throw new Error(
+      'Candidate Prisma schema files differ from the checked-out schema.'
+    )
+  }
+  for (const file of expected) {
+    const expectedSource = readFileSync(join(expectedSchemaDir, file))
+    const candidateSource = readFileSync(join(candidateSchemaDir, file))
+    if (!expectedSource.equals(candidateSource)) {
+      throw new Error(
+        `Candidate Prisma schema differs from the checked-out schema: ${file}`
+      )
+    }
+  }
+  return expected
 }
 
 export const backupGeneratedPrismaClient = (

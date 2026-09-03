@@ -57,7 +57,7 @@ describe('production Prisma deployment command', () => {
     )
     const replacementPosition = source.indexOf('installCandidateRelease(')
     const generatePosition = source.indexOf(
-      'generateCandidatePrismaClient(candidateRoot)'
+      'generatePrismaClientForCandidate(candidateRoot)'
     )
     const installPosition = source.indexOf(
       "['install', '--frozen-lockfile', '--ignore-scripts']"
@@ -86,75 +86,73 @@ describe('production Prisma deployment command', () => {
       'runCandidatePrismaGuard(candidateRoot)'
     )
     const rebuildPosition = source.indexOf("['rebuild', '--pending']")
-    const seedPosition = source.indexOf(
-      'seedCandidatePrismaClientPackage(candidateRoot)'
-    )
     const generatePosition = source.indexOf(
-      'generateCandidatePrismaClient(candidateRoot)'
+      'generatePrismaClientForCandidate(candidateRoot)'
+    )
+    const materializePosition = source.indexOf(
+      'materializeCandidatePrismaClient(candidateRoot)'
     )
 
     expect(installPosition).toBeGreaterThan(-1)
     expect(guardPosition).toBeGreaterThan(installPosition)
     expect(rebuildPosition).toBeGreaterThan(guardPosition)
-    expect(seedPosition).toBeGreaterThan(rebuildPosition)
-    expect(generatePosition).toBeGreaterThan(seedPosition)
     expect(generatePosition).toBeGreaterThan(rebuildPosition)
+    expect(materializePosition).toBeGreaterThan(generatePosition)
   })
 
-  it('injects @prisma/client into the extracted candidate before generating it', async () => {
+  it('generates from the verified root schema and materializes the client into the candidate', async () => {
     const source = await readProjectFile('scripts/deployPull.ts')
-    const seedDefinition = source.indexOf(
-      'const seedCandidatePrismaClientPackage ='
+    const generateDefinition = source.indexOf(
+      'const generatePrismaClientForCandidate ='
     )
-    const copyPosition = source.indexOf(
+    const schemaAssertion = source.indexOf(
+      'assertSamePrismaSchema(',
+      generateDefinition
+    )
+    const generateCommand = source.indexOf(
+      "['exec', 'prisma', 'generate']",
+      schemaAssertion
+    )
+    const materializeDefinition = source.indexOf(
+      'const materializeCandidatePrismaClient ='
+    )
+    const generatedCopy = source.indexOf(
+      'copyGeneratedPrismaClient(rootNodeModules, candidateNodeModules)',
+      materializeDefinition
+    )
+    const packageCopy = source.indexOf(
       'copyPrismaClientRuntimePackage(rootNodeModules, candidateNodeModules)',
-      seedDefinition
+      generatedCopy
     )
-    const seedCall = source.indexOf(
-      'seedCandidatePrismaClientPackage(candidateRoot)',
-      copyPosition
-    )
-    const generateCall = source.indexOf(
-      'generateCandidatePrismaClient(candidateRoot)',
-      seedCall
+    const generatedAssertion = source.indexOf(
+      'assertGeneratedPrismaClient(candidateNodeModules)',
+      packageCopy
     )
 
-    expect(seedDefinition).toBeGreaterThan(-1)
-    expect(copyPosition).toBeGreaterThan(seedDefinition)
-    expect(seedCall).toBeGreaterThan(copyPosition)
-    expect(generateCall).toBeGreaterThan(seedCall)
-    expect(source).toContain(
-      'Candidate @prisma/client package is missing before generate'
-    )
+    expect(generateDefinition).toBeGreaterThan(-1)
+    expect(schemaAssertion).toBeGreaterThan(generateDefinition)
+    expect(generateCommand).toBeGreaterThan(schemaAssertion)
+    expect(materializeDefinition).toBeGreaterThan(-1)
+    expect(generatedCopy).toBeGreaterThan(materializeDefinition)
+    expect(packageCopy).toBeGreaterThan(generatedCopy)
+    expect(generatedAssertion).toBeGreaterThan(packageCopy)
+    expect(source).not.toContain("'generate', `--schema=")
     expect(source).not.toContain(
       "copyPackage(rootNodeModules, candidateNodeModules, '@prisma')"
     )
   })
-
-  it('keeps the candidate-generated Prisma Client and preflights it before validation', async () => {
+  it('materializes, preflights, and validates the candidate before installing it', async () => {
     const source = await readProjectFile('scripts/deployPull.ts')
-    const generateDefinition = source.indexOf(
-      'const generateCandidatePrismaClient ='
-    )
-    const cleanPosition = source.indexOf(
-      "rmSync(join(candidateNodeModules, '.prisma')",
-      generateDefinition
-    )
-    const generateCommand = source.indexOf(
-      "['exec', 'prisma', 'generate', `--schema=${schemaPath}`]",
-      cleanPosition
-    )
-    const assertPosition = source.indexOf(
-      'assertGeneratedPrismaClient(candidateNodeModules)',
-      generateCommand
-    )
     const generateCall = source.indexOf(
-      'generateCandidatePrismaClient(candidateRoot)',
-      assertPosition
+      'generatePrismaClientForCandidate(candidateRoot)'
+    )
+    const materializeCall = source.indexOf(
+      'materializeCandidatePrismaClient(candidateRoot)',
+      generateCall
     )
     const injectCall = source.indexOf(
       'injectRuntimeDependencies(candidateRoot)',
-      generateCall
+      materializeCall
     )
     const preflightCall = source.indexOf(
       'preflightCandidatePrismaClient(candidateRoot)',
@@ -164,15 +162,14 @@ describe('production Prisma deployment command', () => {
       'validateStandaloneRuntime(candidateRoot)',
       preflightCall
     )
+    const installCall = source.indexOf('installCandidateRelease(', validateCall)
 
-    expect(generateDefinition).toBeGreaterThan(-1)
-    expect(cleanPosition).toBeGreaterThan(generateDefinition)
-    expect(generateCommand).toBeGreaterThan(cleanPosition)
-    expect(assertPosition).toBeGreaterThan(generateCommand)
-    expect(generateCall).toBeGreaterThan(assertPosition)
-    expect(injectCall).toBeGreaterThan(generateCall)
+    expect(generateCall).toBeGreaterThan(-1)
+    expect(materializeCall).toBeGreaterThan(generateCall)
+    expect(injectCall).toBeGreaterThan(materializeCall)
     expect(preflightCall).toBeGreaterThan(injectCall)
     expect(validateCall).toBeGreaterThan(preflightCall)
+    expect(installCall).toBeGreaterThan(validateCall)
     expect(source).not.toContain(
       "copyPackage(rootNodeModules, candidateNodeModules, 'react-dom')"
     )
@@ -180,10 +177,7 @@ describe('production Prisma deployment command', () => {
       "copyPackage(rootNodeModules, candidateNodeModules, 'ffmpeg-static')"
     )
     expect(source).toContain("require('@prisma/client')")
-    expect(source).not.toContain('resolvePrismaClientRuntimePaths(')
-    expect(source).not.toContain('cpSync(generatedPackage')
   })
-
   it('holds the durable deployment lock across latest source pull and the updated core script', async () => {
     const [launcher, source] = await Promise.all([
       readProjectFile('scripts/deployPullLauncher.ts'),

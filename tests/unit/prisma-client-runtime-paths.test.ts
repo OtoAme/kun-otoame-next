@@ -13,7 +13,9 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
   assertGeneratedPrismaClient,
+  assertSamePrismaSchema,
   backupGeneratedPrismaClient,
+  copyGeneratedPrismaClient,
   copyPrismaClientRuntimePackage,
   resolvePrismaClientRuntimePaths,
   restoreGeneratedPrismaClient
@@ -188,5 +190,64 @@ describe('pnpm Prisma Client runtime paths', () => {
 
     writeFileSync(join(generatedClient, 'index.js'), '')
     expect(assertGeneratedPrismaClient(nodeModules)).toBe(generatedClient)
+  })
+
+  it('materializes the root generated client as a real directory in the destination', () => {
+    const root = mkdtempSync(join(tmpdir(), 'otoame-prisma-runtime-'))
+    roots.push(root)
+    const nodeModules = join(root, 'node_modules')
+    const storeNodeModules = join(root, 'store/node_modules')
+    const destinationNodeModules = join(root, 'destination/node_modules')
+    mkdirSync(join(nodeModules, '@prisma'), { recursive: true })
+    mkdirSync(join(storeNodeModules, '@prisma/client'), { recursive: true })
+    mkdirSync(join(storeNodeModules, '.prisma/client'), { recursive: true })
+    writeFileSync(join(storeNodeModules, '.prisma/client/default.js'), 'ok')
+    symlinkSync(
+      join(storeNodeModules, '@prisma/client'),
+      join(nodeModules, '@prisma/client'),
+      'dir'
+    )
+
+    const copied = copyGeneratedPrismaClient(
+      nodeModules,
+      destinationNodeModules
+    )
+
+    expect(copied).toBe(join(destinationNodeModules, '.prisma'))
+    expect(lstatSync(copied).isSymbolicLink()).toBe(false)
+    expect(readFileSync(join(copied, 'client/default.js'), 'utf8')).toBe('ok')
+  })
+
+  it('accepts only a candidate schema that is byte-identical to the checked-out schema', () => {
+    const root = mkdtempSync(join(tmpdir(), 'otoame-prisma-schema-'))
+    roots.push(root)
+    const expected = join(root, 'root/prisma/schema')
+    const candidate = join(root, 'candidate/prisma/schema')
+    mkdirSync(join(expected, 'models'), { recursive: true })
+    mkdirSync(join(candidate, 'models'), { recursive: true })
+    writeFileSync(join(expected, 'schema.prisma'), 'generator client {}')
+    writeFileSync(join(candidate, 'schema.prisma'), 'generator client {}')
+    writeFileSync(join(expected, 'models/user.prisma'), 'model user {}')
+    writeFileSync(join(candidate, 'models/user.prisma'), 'model user {}')
+    writeFileSync(join(candidate, 'README.md'), 'ignored')
+
+    expect(assertSamePrismaSchema(expected, candidate)).toEqual([
+      'models/user.prisma',
+      'schema.prisma'
+    ])
+
+    writeFileSync(
+      join(candidate, 'models/user.prisma'),
+      'model user { id Int }'
+    )
+    expect(() => assertSamePrismaSchema(expected, candidate)).toThrow(
+      'differs from the checked-out schema: models/user.prisma'
+    )
+
+    writeFileSync(join(candidate, 'models/user.prisma'), 'model user {}')
+    writeFileSync(join(candidate, 'models/extra.prisma'), 'model extra {}')
+    expect(() => assertSamePrismaSchema(expected, candidate)).toThrow(
+      'schema files differ from the checked-out schema'
+    )
   })
 })
