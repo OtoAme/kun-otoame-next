@@ -10,37 +10,48 @@ import { setRealtimePatchDownloadStats } from '~/app/api/patch/views/buffer'
 export const downloadStats = async (
   input: z.infer<typeof updatePatchResourceStatsSchema>
 ) => {
+  // 下载计数走原生 SQL, Prisma 的 @updatedAt 会在任何 update 上刷新 updated,
+  // 纯统计不应改变资源的更新时间
   const result = await prisma.$transaction(async (prisma) => {
-    const linkUpdate = await prisma.patch_resource_link.updateMany({
-      where: {
-        id: input.linkId,
-        resource_id: input.resourceId,
-        resource: {
-          patch_id: input.patchId,
-          status: 0
-        }
-      },
-      data: { download: { increment: 1 } }
-    })
+    const linkUpdateCount = await prisma.$executeRaw`
+      UPDATE patch_resource_link
+      SET download = download + 1
+      WHERE id = ${input.linkId}
+        AND resource_id = ${input.resourceId}
+        AND EXISTS (
+          SELECT 1
+          FROM patch_resource
+          WHERE patch_resource.id = patch_resource_link.resource_id
+            AND patch_resource.patch_id = ${input.patchId}
+            AND patch_resource.status = 0
+        )
+    `
 
-    if (linkUpdate.count === 0) {
+    if (linkUpdateCount === 0) {
       return '未找到对应资源链接'
     }
 
-    await prisma.patch_resource.updateMany({
-      where: {
-        id: input.resourceId,
-        patch_id: input.patchId,
-        status: 0
-      },
-      data: { download: { increment: 1 } }
-    })
+    await prisma.$executeRaw`
+      UPDATE patch_resource
+      SET download = download + 1
+      WHERE id = ${input.resourceId}
+        AND patch_id = ${input.patchId}
+        AND status = 0
+    `
 
-    const patch = await prisma.patch.update({
-      where: { id: input.patchId },
-      data: { download: { increment: 1 } },
-      select: { unique_id: true, download: true }
-    })
+    const patchRows = await prisma.$queryRaw<
+      { unique_id: string; download: number }[]
+    >`
+      UPDATE patch
+      SET download = download + 1
+      WHERE id = ${input.patchId}
+      RETURNING unique_id, download
+    `
+
+    const patch = patchRows[0]
+    if (!patch) {
+      throw new Error('未找到对应游戏')
+    }
 
     return { uniqueId: patch.unique_id, download: patch.download }
   })
