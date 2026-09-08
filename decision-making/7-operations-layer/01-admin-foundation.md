@@ -1,293 +1,296 @@
-# 模块 01：后台地基与统一收件箱（设计草稿）
+# 模块 01：后台地基与统一收件箱（实施计划）
 
-状态：草稿，待站长审阅。基线：`decision-making/7.operations-layer-redesign.md` 第 7.1、7.2、7.3、2.2 节。计划：`decision-making/8.operations-layer-rollout-plan.md` 阶段 1，先做本模块再做模块 02。本文的事实部分来自 2026-09-06 对仓库的两次只读调查，引用处均给出文件路径。
+状态：设计草案，待站长审定，未获批准。配对文档：[PM 版](./01-admin-foundation-pm.md)。上位文档：[总计划](./00-master-plan.md)第 4.2 节（M01-1 至 M01-5）、[运营层设计基线](../7.operations-layer-redesign.md)第 2.2、7.1 至 7.3 节。标「现状」的是只读核查结论并给出位置，标「拟」的是尚未实现的设计。本文未运行构建、测试、迁移或部署。
 
----
+## 1 目标与基线
 
-## 1. 目标与对应基线章节
+| 目标                                                                                       | 依据              |
+| ------------------------------------------------------------------------------------------ | ----------------- |
+| 后台在独立根布局与独立样式入口下只用 shadcn，前台保持 HeroUI v2                            | 基线 7.2          |
+| 待审投稿、待审资源、反馈、举报进同一队列；左列表右详情；一键动作；键盘导航；今日已处理计数 | 基线 7.1          |
+| 审核投稿与资源申请时能看到发布后的前台真实样式（投稿页面与资源卡片），可内嵌可独立打开     | 基线 7.3          |
+| 后台队列门槛统一到管理员级；封禁、删条目、站点设置、群发邮件保留超级管理员                 | 基线 2.2          |
+| 旧反馈与旧举报在收件箱只读，处理仍在旧后台；旧后台过渡期完整可用                           | 总计划 3.3、4.2   |
+| 每来源按等待时长取候选，最老事项不被截断掩盖                                               | 总计划 4.2 缺口一 |
+| 今日已处理按成功的收件箱动作与业务对象统计，排除无关日志                                   | 总计划 4.2 缺口二 |
 
-| 目标 | 基线 |
-|---|---|
-| 新后台建在独立的路由组与根布局下，样式入口独立，只用 shadcn，不加载 HeroUI | 7.2 |
-| 统一收件箱：待审条目、待审资源、旧反馈、旧举报、创作者申请进同一列表，左列表右详情，一键动作，键盘导航，今日已处理计数 | 7.1 |
-| 前台预览：投稿审核时能看到发布后在前台的真实样式 | 7.3 |
-| 后台门槛统一到管理员级，破坏性操作保留超级管理员 | 2.2 |
-| 旧后台 `/admin` 保留，页面逐个迁移，全部迁完后重定向 | 计划 5 节阶段 1 |
+现状：唯一根布局 [app/layout.tsx](../../app/layout.tsx) 导入 [styles/index.css](../../styles/index.css)，后者导入 [styles/tailwind.css](../../styles/tailwind.css)（`@plugin './hero.ts'` 加载 HeroUI、`@custom-variant dark`）与 blog、prose、editor、themes，并含全局 `* { font-family … !important }`；`app/admin/layout.tsx` 嵌套其下。本模块不新增表、字段、索引、定时任务与基础设施。
 
-本模块不引入任何新表、新字段与定时任务。它是后续模块 03、04、06、08、09 站方侧界面的载体。
+## 2 偏离与理由
 
-## 2. 偏离基线的地方与理由
+| 对象                                        | 现状或原文                                                                  | 本文做法                                                             | 理由                                                                                                                                                                                                                                                                                                                                              |
+| ------------------------------------------- | --------------------------------------------------------------------------- | -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 基线 7.1「不弹二次确认，改为可撤销」        | 全部一键                                                                    | 投稿通过、要求修改、驳回为一键；资源申请拒绝与投稿判违规保留一次确认 | 两者不可逆：[resource-apply/service.ts](../../app/api/admin/resource-apply/service.ts) 在事务内 `patch_resource.delete`、事务后删 S3 对象；判违规清空 payload 并没收押金。改成可撤销要重写这两条服务；通用的确认与撤销机制本身仍未定案，本模块不改处理语义，也不把撤销工作预先派给其他模块。确认与角色授权是两件事，加确认不提升所需角色。列 D2-3 |
+| 01 草稿：五来源且 01 内可处理旧反馈与旧举报 | 五来源全处理                                                                | 四来源；旧反馈、旧举报只读，处理入口链接旧后台；创作者申请不入队     | 与总计划一致。草稿「只读会导致无人处理」不成立：旧后台在过渡期完整可用，这两类仍可在旧后台处理。是否放宽列 D1                                                                                                                                                                                                                                     |
+| 01 草稿：新增第三个预览根布局               | `(preview)` 独立根布局                                                      | 本文按「预览放在前台根布局下」编写                                   | 基线 7.3 原文即「在前台根布局下新增仅管理员可访问的预览路由」，复用既有客户端外壳条件分支代价更小。独立预览外壳仍是 D2-5 的有效备选，未被否决；若改选它，只影响 6.7 与文件清单                                                                                                                                                                    |
+| 基线未规定                                  | 后台每页服务端动作加客户端接口双通道                                        | 控制台只走 `/api/admin/*`                                            | 现状双通道鉴权与校验各写一遍且门槛已漂移。旧后台不改。列 D2-2                                                                                                                                                                                                                                                                                     |
+| 资源申请列表按浏览者 NSFW 偏好过滤          | [get.ts](../../app/api/admin/resource-apply/get.ts) 把 NSFW 头当 where 条件 | 收件箱候选查询不套该过滤                                             | 站长的浏览偏好会把待审资源挡在队列外，最老项永久缺席。旧页面行为不变                                                                                                                                                                                                                                                                              |
+| 资源申请处理先读后写                        | 事务外读 status，事务内无条件 update 或 delete                              | 事务内改条件更新与条件删除                                           | 满足 M01-4「重复动作不重复处理」的必要正确性修复，对外契约不变                                                                                                                                                                                                                                                                                    |
 
-| 偏离 | 基线原文 | 本文做法 | 理由 |
-|---|---|---|---|
-| 破坏性动作保留一次确认 | 7.1「每个动作一个键，不弹二次确认，改为可撤销」 | 通过、模板回复、标记已处理为一键无确认；拒绝资源申请、举报处理中的「删除内容」、投稿判违规这三类保留一次确认 | 现有服务不可逆：拒绝资源申请会物理删除资源行并删 S3 文件（`app/api/admin/resource-apply/service.ts` 第 88 行起）；举报「删除」会 `deleteMany` 评论或评价；判违规会清空投稿正文。把它们改成可撤销需要重写服务，属于模块 03、06 的范围。本模块不改服务语义 |
-| 三个根布局而不是两个 | 7.2 只提到前台与后台两个根布局；7.3 说「在前台根布局下新增预览路由」 | 前台 `(site)`、后台 `(console)`、预览 `(preview)` 三个根布局 | 前台根布局无条件渲染顶栏、面包屑、页脚与回到顶部（`app/layout.tsx`、`components/layout/RootRouteChrome.tsx`），iframe 里的预览不能带这些。预览根布局导入与前台完全相同的样式与 Provider，只是不渲染站点外壳，仍然满足 7.3「渲染前台真实样式」的意图 |
-| 后台数据只走接口一条通道 | 基线未规定 | 后台页面不再用每页一个 `actions.ts` 的服务端动作做首屏取数，统一由客户端调 `/api/admin/*` | 现状每个列表页都是「服务端动作首屏 + 客户端翻页」双通道，鉴权与校验各做一遍（调查 A.1）。后台不需要 SEO 与首屏直出，单通道少一半重复代码，也少一处门槛不一致的来源 |
+## 3 术语
 
-## 3. 术语补充
+| 术语       | 定义                                                                                               |
+| ---------- | -------------------------------------------------------------------------------------------------- |
+| 路由组     | Next App Router 中括号命名的目录，不进 URL，只组织布局                                             |
+| 根布局     | 直接渲染 `<html>`、`<body>` 的布局；删掉顶层布局后每个路由组各有一个，跨根导航是整页加载           |
+| 控制台     | 新后台，前缀 `/console`（D2-1），路由组 `app/(console)`，组件目录 `components/console`             |
+| 旧后台     | 现有 `app/admin/*` 与 `components/admin/*`，HeroUI 实现，本模块只减不加                            |
+| 来源       | 收件箱项出处：`submission`、`resource-apply`、`feedback`、`report`                                 |
+| 项目标识   | `来源:主键`，用于选中、深链接与动作路由                                                            |
+| 等待起点   | 计算等待时长的时间字段，按来源定义，见 4.2                                                         |
+| 候选上限   | 每来源一次取回的最多条数，超出即标记截断                                                           |
+| 只读来源   | 在收件箱可见可查，但不提供处理动作，动作入口链接旧后台                                             |
+| 今日已处理 | 当前管理员在上海时区自然日内成功完成的收件箱动作次数，按动作逐次计数，数据源是不可变的专用处理日志 |
 
-| 术语 | 定义 |
-|---|---|
-| 路由组 | Next App Router 中用括号命名的目录，如 `app/(site)`，不出现在 URL 里，只用于组织布局 |
-| 根布局 | 直接渲染 `<html>` 与 `<body>` 的 `layout.tsx`。没有父布局的布局就是根布局。删掉顶层 `app/layout.tsx` 后，每个路由组各有一个根布局；跨根布局的导航是整页加载而不是客户端导航（Next 官方约束） |
-| 控制台 | 新后台的名字，URL 前缀 `/console`，路由组 `app/(console)`，组件目录 `components/console`。与旧后台 `/admin` 并存直到迁移完成 |
-| 旧后台 | 现有 `app/admin/*` 与 `components/admin/*`，HeroUI 实现，本模块只减不加 |
-| 收件箱项 | 统一收件箱里的一行，由五种来源之一归一化而来，字段见 5.2 |
-| 来源 | 收件箱项来自哪个队列：投稿、资源申请、反馈、举报、创作者申请 |
-| 一键动作 | 选中一项后按一个键或点一个按钮即完成的处理，无确认对话框 |
-| 破坏性动作 | 会删除用户内容、清空正文或不可逆结算的处理，保留一次确认 |
-| 预览根布局 | 路由组 `app/(preview)`，只为 iframe 提供无外壳的前台真实渲染 |
-| 接口单通道 | 控制台页面的全部数据读写都经 `/api/admin/*`，服务端组件只做鉴权与骨架 |
+## 4 数据模型
 
-## 4. 数据模型
+### 4.1 变更范围
 
-无新表，无新字段，无索引变更，无迁移脚本。
+无新表、无新字段、无新索引、无迁移脚本、无 Prisma schema 改动。收件箱是只读聚合视图；写入面只有投稿与资源申请两类既有服务。唯一的数据层面新增是 `admin_log.type` 的三个新取值（该列是自由字符串，不需要迁移）。
 
-收件箱是只读聚合视图，直接读现有表：`patch_submission`（`status = 'pending'`）、`patch_resource`（`status = 2`）、`user_message`（`type = 'feedback'`，`status = 0`，`recipient_id IS NULL`）、`patch_report`（`status = 0`）、`user_message`（`type = 'apply'`，`status = 0`）。写入只复用现有处理服务，另在两处补写现有的 `admin_log` 表（见 5.4）。
+### 4.2 来源定义（现状核查加拟定谓词）
 
-## 5. 接口
+| 来源         | 待处理谓词                                                                                      | 等待起点                                         | 标识                  | 现状排序                                                                                                                 | 收件箱所需                                |
+| ------------ | ----------------------------------------------------------------------------------------------- | ------------------------------------------------ | --------------------- | ------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------- |
+| 投稿         | `patch_submission.status = 'pending'`                                                           | `COALESCE(submitted_at, created)`，见下方第 4 条 | `submission:{id}`     | pending 已是 `submitted_at asc, id asc`（[service.ts](../../app/api/admin/patch-submission/service.ts) 第 99 至 108 行） | 谓词沿用，排序与等待起点统一按 `COALESCE` |
+| 资源申请     | `patch_resource.status = 2`                                                                     | `created`                                        | `resource-apply:{id}` | `created desc`，且带 NSFW 过滤                                                                                           | `created asc, id asc`，不带 NSFW 过滤     |
+| 反馈（只读） | `user_message.type = 'feedback'`、`recipient_id IS NULL`、`sender_id IS NOT NULL`、`status = 0` | `created`                                        | `feedback:{id}`       | `created desc`，且不过滤 `status`                                                                                        | 补 `status = 0`，`created asc, id asc`    |
+| 举报（只读） | `patch_report.status = 0`，两种 `target_type` 一次取全                                          | `created`                                        | `report:{id}`         | `created desc`，`targetType` 必须逐个指定                                                                                | `created asc, id asc`                     |
 
-### 5.1 路径与命名
+四条必须写进设计的现状事实：
 
-控制台的 UI 路径是 `/console`，接口命名空间沿用 `/api/admin/*`，不新建 `/api/console`。理由：接口与界面库无关，URL 保持稳定；中间件对 `/api` 的 CSRF 校验与 `admin/stickers/import` 的排除项（`middleware.ts` 第 13 行）不需要改。
+1. [getFeedback](../../app/api/admin/feedback/service.ts) 不过滤 `status`，其 `total` 含已处理行，收件箱不能拿它当待办来源或计数口径。
+2. `getReport` 的 where 固定 `target_type: targetType`，默认 `comment`，一次只能取一种目标类型。
+3. `getPatchResourceApply` 的 limit 上限来自 `adminPaginationSchema`（最大 100），且把 NSFW 头作为 `patch` 的 where 条件。
+4. 现有 pending 排序是 `submitted_at asc`，而 Postgres 的 ASC 默认 NULLS LAST，所以「先按 `submitted_at asc` 取前 50、再在应用层回落 `created`」会把 `submitted_at` 为空的最老行留在候选窗口之外。提交动作在 draft 或 changes_requested 转 pending 时会写入 `submitted_at`（`app/api/patch-submission/submit.ts` 第 260 至 271 行），但该列在 schema 上可为空，历史行无法保证。收件箱候选因此统一按 `COALESCE(submitted_at, created), id` 在同一条查询里排序，等待起点用同一表达式：正常数据下与现排序结果一致，空值行也不会被挤出窗口。这不构成新的二选一决策，也不需要数据清理。
 
-### 5.2 新增接口
+因此：四类候选都由收件箱服务按上表谓词与第 4 条的 `COALESCE` 排序自行查询与计数（投稿的审核角色门槛在 route 层显式校验，与 `listAdminPatchSubmissions` 的门槛一致），不修改既有列表服务，旧页面行为不变。
 
-**`GET /api/admin/inbox`**
+行标识为「来源加主键」，举报一行一条记录；被举报目标下的其他待处理举报作为详情上下文按需读取，队列层不做分组统计。现状 `handleReport` 是按目标批量处理（同目标 `status = 0` 的举报一起置位并逐个发通知，见 [service.ts](../../app/api/admin/report/service.ts) 第 207 至 264 行），本批举报只读故不受影响；若 D1 放宽为可在收件箱处理，必须一并解决同目标多行的同步失效与该服务 `updateMany` 只按 id、不带状态条件的问题。
 
-- 门槛：`role >= 3`。
-- 校验：新增 `adminInboxQuerySchema`（`validations/admin.ts`）：`kinds` 为来源枚举数组，默认全部；`limitPerKind` 1 到 200，默认 200。
-- 实现：`app/api/admin/inbox/service.ts` 调用现有五个列表服务各取前 `limitPerKind` 条，归一化后合并排序。五个服务与现有入参：`listAdminPatchSubmissions`（`status: 'pending'`，`app/api/admin/patch-submission/service.ts`）、`getPatchResourceApply`（`app/api/admin/resource-apply/get.ts`，需传 NSFW 头）、`getFeedback`（`app/api/admin/feedback/service.ts`）、`getReport`（`app/api/admin/report/service.ts`，`tab: 'pending'`，`targetType` 两种各取一次）、`getAdminCreator`（`app/api/admin/creator/service.ts`）。
-- 不分页。站点规模下五个队列的未处理总量在几十到低几百之间，一次取全比跨来源分页简单且不会漏项。某来源达到上限时响应里标 `truncated: true`，界面显示「该来源还有更多，先处理这些」。
-- 归一化后的收件箱项：
+### 4.3 今日已处理
 
-| 字段 | 含义 |
-|---|---|
-| `kind` | `submission`、`resource`、`feedback`、`report`、`creator` |
-| `id` | 来源表的主键 |
-| `title` | 投稿名、资源名或所属游戏名、反馈首行、被举报内容首行、申请人名 |
-| `subtitle` | 投稿人、发布者、反馈人、举报人等 |
-| `actor` | `{ id, name, avatar }` |
-| `created` | 来源行的创建时间，ISO 字符串 |
-| `waitingSeconds` | 当前时间减 `created`，服务端算 |
-| `targetHref` | 可跳转的前台对象地址，如 `/{unique_id}` |
-| `badges` | 来源特有的短标签，如投稿的 VNDB 重复提示、举报的目标类型 |
-| `payload` | 来源特有的详情数据，形状按 `kind` 区分，直接复用现有列表服务返回的行（`AdminSubmissionRow`、`AdminResource`、`Message`、`AdminReport`、`AdminCreator`） |
+口径：当前管理员在上海时区自然日内成功完成的收件箱动作次数；数据源只有 `admin_log` 的专用 type 行，每次成功动作恰好一条。不读 `patch_submission` 的 `reviewed_at` 与 `reviewed_by_id`：这两个字段可变，「要求修改 → 作者重提 → 由另一位管理员或次日由本人再审」会把它们覆盖，前一位管理员当日的处理记录随之消失；也不用「当天 admin_log 条数」，因为会社诊断、发放萌萌点、改设置都写同一张表。
 
-- 排序：默认按 `waitingSeconds` 降序；界面可切换按来源分组。
-- 响应头 `Cache-Control: private, no-store`。
+| 动作                             | 日志现状                                                                                                                                                                                                        | 本模块                                                                                                                                            |
+| -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 投稿通过、要求修改、驳回、判违规 | [review.ts](../../app/api/patch-submission/review.ts) 的 `writeAdminLog`（第 59 至 66 行）固定写 `type: 'update'`，四个动作各写一条；`writeCompanyResolutionDiagnosticLogs` 复用同一个 helper，每条诊断再写一行 | 给 `writeAdminLog` 加可选 type 参数（默认 `'update'`），只在四个动作的那一条日志上传 `submission_review`；诊断日志保持 `'update'`，因此天然不计入 |
+| 资源申请通过、拒绝               | [resource-apply/service.ts](../../app/api/admin/resource-apply/service.ts) 已在事务内各写一条，type 是通用的 `'approve'`、`'decline'`，与创作者审核等动作无法区分                                               | 改成 `resource_apply_approve`、`resource_apply_decline`，仍各一条                                                                                 |
+| 反馈、举报                       | —                                                                                                                                                                                                               | 本批只读，不产生收件箱动作，不计入                                                                                                                |
 
-**`GET /api/admin/inbox/counts`**
+计数查询：`admin_log` 中 `user_id = 当前管理员`、`created >= 当日起点`、`type` 属于上述三个专用取值的行数。按动作逐次计数而不是按对象去重——要求修改后重提再通过是两次真实处理，应记两次；一次动作只写一条专用行，所以不会被附属日志膨胀，也不需要把对象 ID 结构化解析出来（对象 ID 仍如现状写在 content 文本里，仅供追溯）。不新增表、不新增字段。
 
-- 门槛 `role >= 3`。返回五个来源的未处理计数与「今日已处理」计数。今日已处理按当前管理员当天写入的 `admin_log` 条数统计，见 5.4。侧栏与标题栏用它，每 60 秒轮询一次。
+三个新 type 取值要在 `constants/admin.ts` 的 `ADMIN_LOG_TYPE_MAP`（第 16 行，现有键为 create、delete、approve、decline、update、grant）补中文标签，否则日志页标签为空。日志服务只做分页、日志卡片的颜色映射有回落，所以除补标签外不需要别的改动，也没有按 type 的白名单要挂。历史行保留旧取值：上线前的资源申请动作与投稿审核日志不计入当日计数，属一次性、可解释的边界。
 
-**`GET /api/admin/patch-submission/[id]`**
+自然日起点复用既有 [getShanghaiQuotaWindows](../../app/api/patch/resource/download/access/timeWindow.ts) 的 `dailyStart`，由调用方传入 `now`：不新建日期库、不依赖数据库时区、不改系统时钟。
 
-- 门槛由现有 `getAdminPatchSubmission(id, reviewerRole)` 判定（`role >= 3`）。返回现有的 `AdminPatchSubmissionDetail`，含 `preview`、`vndbDuplicates`、`companyDiagnostics`。现状这份数据只在服务端组件里生成（`app/admin/submission/[id]/page.tsx`），控制台走接口单通道需要它有一个接口。响应头 `private, no-store`。
+## 5 接口、校验、权限、幂等
 
-### 5.3 复用的处理接口
+### 5.1 命名与响应约定
 
-控制台的一键动作直接调用现有接口，不改请求与响应契约：
+界面在 `/console`（前缀为 D2-1），接口沿用 `/api/admin/*`，不新建命名空间：接口与界面库无关，[middleware.ts](../../middleware.ts) 对 `/api` 的匹配与排除项不必改。[middleware/\_csrf.ts](../../middleware/_csrf.ts) 只校验 POST、PUT、PATCH、DELETE，新增的 GET 接口不需要排除项。新接口一律 `Cache-Control: private, no-store`。错误契约沿用现状：管理接口以 HTTP 200 返回中文字符串表示失败，投稿审核状态已变时返回 409；控制台请求层按「响应是字符串即失败」处理，收到 409 只刷新该项。
 
-| 动作 | 接口 | 现状门槛 | 本模块门槛 |
-|---|---|---|---|
-| 投稿：通过、驳回、要求修改、判违规 | `POST /api/admin/patch-submission/[action]` | 服务内 `>= 3`，自审需超级管理员显式 override | 不变 |
-| 资源申请：通过、拒绝 | `PUT /api/admin/resource-apply/approve`、`.../decline` | `>= 3` | 不变 |
-| 反馈：处理并回复 | `POST /api/admin/feedback/handle` | `>= 4` | `>= 3` |
-| 举报：删除内容或驳回 | `POST /api/admin/report/handle` | `>= 4` | `>= 3` |
-| 创作者申请：通过、拒绝 | `PUT /api/admin/creator/approve`、`.../decline` | `>= 4` | `>= 3` |
-| 统计 | `GET /api/admin/stats`、`.../sum` | `>= 4` | `>= 3` |
-| 反馈、举报、创作者列表 | `GET /api/admin/feedback`、`/report`、`/creator` | `>= 4` | `>= 3` |
+### 5.2 `GET /api/admin/inbox`（拟新增 `app/api/admin/inbox/route.ts` 与 `service.ts`）
 
-错误契约不变：接口以 HTTP 200 返回中文字符串表示失败，控制台的请求层统一按 `typeof res === 'string'` 判错并以 toast 呈现；投稿审核的状态冲突返回 409（`PATCH_SUBMISSION_REVIEW_STATE_CHANGED_MESSAGE`），控制台收到后刷新该项。
+- 门槛 `role >= 3`。
+- 校验：在 `validations/admin.ts` 新增 schema，`kinds` 为来源枚举数组（默认全部）、`limitPerKind` 默认与上限 50（与既有后台投稿列表的 limit 上限一致，见 [validations/patchSubmission.ts](../../validations/patchSubmission.ts) 第 250 行；四类候选都由收件箱服务自行查询，不受既有分页 schema 的约束）。
+- 取数：按 4.2 对每个来源取一页候选，并用同一谓词单独计数；实际总数大于候选数时该来源标 `truncated`，界面显示「该来源还有更多，先处理这些」。因为每个来源都最老优先，全局最老项必然落在某来源候选内；筛选到单一来源时该来源最老项同样在首屏。
+- 归一化字段：`key`、`kind`、`id`、`title`、`subtitle`、`actor`、`waitingFrom`、`waitingSeconds`（服务端计算）、`targetHref`、`badges`、`readOnly`、`payload`（沿用各来源既有行结构，不新造类型）。
+- 排序在服务端完成：默认 `waitingSeconds` 降序，可切换按来源分组；界面不重排。
 
-### 5.4 门槛统一表
+**深链接取项**（拟新增 `app/api/admin/inbox/item/route.ts`）：按 `kind` 与 `id` 单条读取，鉴权与列表一致（`role >= 3`），返回同一套归一化结构外加 `state`（仍待处理、已被处理、已不存在）。用途是候选窗口之外的深链接与他人处理后的刷新；选中项不插入列表排序，也不改变截断口径；已处理与不存在分别给出对应提示。投稿的完整详情仍走 5.4。不为此新建通用详情路由框架。
 
-基线 2.2：后台各队列门槛统一到管理员级（`role >= 3`），破坏性操作（封禁、删条目、站点设置、群发邮件）保留超级管理员（`role >= 4`）。调查 A、B 发现的不一致与本模块的处理：
+### 5.3 `GET /api/admin/inbox/counts`（拟新增）
 
-| 位置 | 现状 | 本模块 |
-|---|---|---|
-| `app/api/admin/feedback/*`、`report/*`、`creator/*`、`log/*`、`stats/*` | `< 4` 拒绝 | 改为 `< 3` 拒绝 |
-| `app/admin/report/actions.ts` 与 `rating-report/actions.ts` | 同一个 `getReport`，前者 `< 4`、后者 `< 3` | 旧后台页面不动，随旧后台退役消失；控制台只走接口 |
-| `app/api/admin/comment/route.ts`（`< 4`）与 `comment/full/route.ts`（`< 3`） | 不一致 | 本模块不迁移评论管理，不动；迁移时统一为 `< 3` |
-| `app/api/admin/resource/route.ts`（`< 3`）与 `app/admin/resource/actions.ts`（`< 4`） | 不一致 | 本模块不迁移，不动；模块 06 迁移时以接口为准 |
-| `POST /api/admin/user`（发放萌萌点，`< 3`）与同文件其他方法（`< 4`） | 不一致 | 本模块不迁移用户管理，不动；待定：迁移时用户管理是否整体归超级管理员，含发放萌萌点（第 12 节第 4 项） |
-| `app/api/admin/setting/*`、`mail/*`、`user/*` 的封禁与删除 | `< 4` | 保持超级管理员 |
+门槛 `role >= 3`。返回四来源的精确待处理数（与列表同谓词，不复用会把已处理反馈算进去的既有 total）与今日已处理数。界面每 60 秒轮询，动作成功后立即刷新。
 
-错误文案「本页面仅超级管理员可访问」在改为管理员级的路由里同步改为「权限不足」。
+### 5.4 `GET /api/admin/patch-submission/[id]`（拟新增）
 
-### 5.5 审计日志补写
+现状详情只在服务端组件里由 `getAdminPatchSubmission(id, reviewerRole)` 生成（[service.ts](../../app/api/admin/patch-submission/service.ts) 第 147 行起，内部校验 `PATCH_SUBMISSION_REVIEW_MIN_ROLE`）。route 层显式校验登录与 `role >= 3` 后调用同一服务，返回既有结构。会社诊断在 `preview.companyDiagnostics` 之下（[AdminSubmissionDetail.tsx](../../components/admin/submission/AdminSubmissionDetail.tsx) 第 115 行），控制台读取路径必须一致。
 
-`handleFeedback`（`app/api/admin/feedback/service.ts` 第 51 行起）与 `handleReport`（`app/api/admin/report/service.ts` 第 149 行起）现状不写 `admin_log`（调查 B.2）。本模块在两者的事务内各补一条 `admin_log.create`，`type` 分别为 `feedback_handle` 与 `report_handle`，内容含处理人、目标 ID、结论与回复摘要（截断到 200 字）。用途：今日已处理计数的数据来源；模块 09 的处理量指标；补齐审计。这是本模块唯一改动现有服务行为的地方，且只增不改。
+### 5.5 处理接口与门槛
 
-### 5.6 中间件与爬虫
+| 动作                                             | 现状门槛                                                                                                                                        | 本模块                                 |
+| ------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------- |
+| 投稿通过、要求修改、驳回、判违规                 | 服务内审核角色常量；自审需超级管理员显式 override                                                                                               | 不变，直接复用                         |
+| 资源申请通过、拒绝                               | `role >= 3`                                                                                                                                     | 不变，直接复用                         |
+| 反馈处理、举报处理                               | `role < 4` 拒绝（[feedback/handle](../../app/api/admin/feedback/handle/route.ts)、[report/handle](../../app/api/admin/report/handle/route.ts)） | 不动；收件箱不调用，处理入口链接旧后台 |
+| 创作者申请、统计、日志、设置、邮件、封禁、删条目 | `role >= 4`                                                                                                                                     | 不动                                   |
 
-- `middleware.ts` 的 matcher 增加 `'/console/:path*'` 与 `'/preview/:path*'`。
-- `middleware/auth.ts` 的 `protectedPaths` 增加 `'/console'` 与 `'/preview'`。该数组用字符串前缀匹配（`startsWith`），实施时确认没有其他公开路径以这两个前缀开头。
-- 中间件只判登录不判角色（调查 D.2），角色门槛在控制台的段布局里做，见 6.2。
-- `app/robots.ts` 的 `DISALLOW_PATHS` 增加 `/console` 与 `/preview`。
-- `next.config.ts` 新增 `headers()`，对 `/preview/:path*` 返回 `Content-Security-Policy: frame-ancestors 'self'`，只允许同源页面嵌入。现状该配置没有 `headers()`（调查 E.1）。
+读取面已由基线 2.2 与总计划 M01-3 定案：四来源在收件箱里对 `role >= 3` 可读，含旧反馈与旧举报的标题与详情；这两类的写权限维持现状的 `role >= 4`，不下调，也不需要再走一次批准。由此产生的角色预期：`role >= 3` 能看到这两类并跳到旧后台，但旧后台里的处理动作会返回既有的「本页面仅超级管理员可访问」，所以跳转入口上直接标注「处理需超级管理员」，不承诺旧后台的每个链接对 `role 3` 都能完成操作。
 
-## 6. 界面
+其余既存门槛不一致（评论管理两处、资源管理接口与页面动作、发放萌萌点与同文件其他方法、两个举报 actions 同调 `getReport` 却一个 4 一个 3）在此登记；本模块不迁移这些页面故不动，由模块 06、09 统一。下调任何门槛都是真实权限变更，回退时界面与接口必须一起退。
 
-### 6.1 目录与路由组重排
+### 5.6 幂等与并发
 
-现状：只有一个根布局 `app/layout.tsx`，全部 25 个顶层路由段、`app/page.tsx`、`app/error.tsx` 都嵌在它下面；`app/robots.ts` 是根级元数据路由；仓库里没有 `not-found.tsx`、`global-error.tsx`、`loading.tsx`（调查 F）。
+现状：投稿四个动作已有 `claimPending`（带 `status: 'pending'` 条件的 `updateMany`，0 行即报状态已变），不需要改。`approvePatchResource` 事务外读 status、事务内无条件 `update`；`declinePatchResource` 事务内无条件 `delete`；两者的 `createMessage` 都传了事务客户端。并发下通过会重复发通知并重复写日志，拒绝的落后方会因行已不存在抛异常。对照事实：`handleFeedback` 的 `createMessage` 未传事务客户端，其通知本就在事务之外；本批不改反馈与举报服务，故不对它们声明同事务语义。
 
-重排后：
+拟改两处，均在既有事务内、对外契约不变：`approvePatchResource` 用带 `status: 2` 条件的 `updateMany` 抢占，更新 0 行则不发通知、不写日志，返回既有提示「当前资源状态无需审核」；`declinePatchResource` 用带 `status: 2` 条件的 `deleteMany` 抢占，删除 0 行同上，S3 清理仍在事务提交后执行且只有胜出方执行。通过与拒绝互相竞争时由同一个 `status = 2` 条件决出胜负，落败方按各自的既有提示返回，不会出现「先删后通过」或两条通知。原则：幂等靠本业务的原子状态转换，不靠先读后写，不靠前端或 Redis 锁；同一动作只由胜出方发送一次系统通知。界面的在途请求保护只是体验优化，不作为正确性依据。
 
-```
-app/
-  robots.ts                      不动，根级元数据路由
-  api/                           不动，路由处理器不需要布局
-  (site)/
-    layout.tsx                   原 app/layout.tsx 原样移入
-    providers.tsx  metadata.ts  actions.ts   随布局移入，相对导入不变
-    page.tsx                     原首页；官方约束首页必须在某个路由组内
-    error.tsx                    原 app/error.tsx 移入
-    not-found.tsx                新增，见 6.6
-    [id]/ admin/ apply/ ... user/   其余 24 个段整体移入
-  (console)/
-    layout.tsx                   第二根布局：html、body、控制台样式入口、Provider
-    error.tsx                    控制台错误边界，shadcn 实现
-    console/
-      layout.tsx                 鉴权与外壳：校验登录、role >= 3，否则 redirect('/')
-      page.tsx                   统一收件箱
-      stats/page.tsx             统计（迁移自 /admin）
-  (preview)/
-    layout.tsx                   第三根布局：与 (site) 相同的样式与 Provider，无站点外壳
-    preview/
-      submission/[id]/page.tsx   投稿预览
-```
+### 5.7 中间件、鉴权与爬虫
 
-`app/__codex` 与 `app/dev` 是空目录，git 不跟踪，不需要处理。`components/admin/*` 不动；新组件在 `components/console/*`，shadcn 基础件在 `components/console/ui/*`，`cn` 等工具在 `lib/console/utils.ts`。
+- [middleware.ts](../../middleware.ts) 的 matcher 增加 `/console/:path*`；预览若落在独立前缀，再加一条。
+- [middleware/auth.ts](../../middleware/auth.ts) 的 `protectedPaths` 现为 `/admin`、`/user`、`/comment`、`/edit`，用 `startsWith` 匹配；增加 `/console` 与预览前缀。现有 22 个顶层段没有以这两个前缀开头者。
+- 中间件只判登录；角色门槛在控制台段布局、预览页与每个接口各执行一次。
+- [app/robots.ts](../../app/robots.ts) 的 `DISALLOW_PATHS` 增加 `/console` 与预览前缀。
+- 预览若采用 iframe 内嵌：[next.config.ts](../../next.config.ts) 现无 `headers()`（只有 `redirects()`），建议随 D2-5 一起新增一条只对预览路径返回 `Content-Security-Policy: frame-ancestors 'self'` 的最小配置；预览页含可点链接，不能以「没有动作」为由省略同源限制。不引入其他安全头或新机制。
 
-### 6.2 三个根布局各自包含什么
+## 6 前后台界面及文件
 
-| 内容 | `(site)` | `(console)` | `(preview)` |
-|---|---|---|---|
-| 样式入口 | `styles/index.css` | `styles/console.css` | `styles/index.css` |
-| `HeroUIProvider`、HeroUI `ToastProvider` | 是 | 否 | 是 |
-| `next-themes` `ThemeProvider`（`attribute="class"`） | 是 | 是，同一个默认存储键，深浅色偏好前后台共享 | 是 |
-| `AppProgressProvider`（`@bprogress/next`） | 是 | 是，与库无关，让现有 `useRouter` 用法一致 | 否 |
-| `react-hot-toast` 的 `KunToaster` | 是 | 是，`components/kun/Toaster.tsx` 不依赖 HeroUI，可直接复用 | 否 |
-| `SiteThemeScript`、`SiteThemeRouteSync`、`data-kun-theme` | 是 | 否。控制台不参与站点主题，`themes.css` 的规则不会命中它 | 是，预览要与前台同色 |
-| `MessageRealtimeSync` | 是 | 否，控制台不需要轮询未读消息 | 否 |
-| 顶栏、面包屑、页脚、回到顶部 | 是 | 否，控制台自带侧栏与标题栏 | 否 |
-| 分析脚本 | 是 | 否 | 否 |
-| `viewport` 导出 | `kunViewport` | 自带，含 `width=device-width`；现状后台继承根布局的 `userScalable: false`，控制台改为允许缩放 | 同 `(site)` |
-| `metadata` | 现有 | `title: '控制台'`，`robots: noindex` | `robots: noindex` |
-| 字体 | `index.css` 的全局 `!important` 系统字体栈 | `console.css` 里对 `body` 声明同一系统字体栈，不用 `!important` | 同 `(site)` |
+### 6.1 路由重排（M01-2）
 
-`(preview)` 与 `(site)` 的差别只有外壳与分析脚本，其余通过共享同一个 `providers.tsx` 实现，不复制代码。
+现状 `app/` 根文件 7 个：actions.ts、error.tsx、layout.tsx、metadata.ts、page.tsx、providers.tsx、robots.ts；顶层页面段 22 个：[id]、admin、apply、auth、comment、company、doc、edit、friend-link、login、message、moemoepoint、otomegame、ranking、redirect、register、resource、search、settings、submission、tag、user。
 
-### 6.3 控制台样式入口 `styles/console.css`
+拟：`robots.ts` 与 `api/` 留在根（元数据路由与路由处理器不需要布局），其余 6 个根文件与 22 个段用 `git mv` 整体移入 `app/(site)/`，保证 `./providers`、`./metadata`、`./actions` 等相对导入不变；新增 `app/(site)/not-found.tsx` 与预览路由；新增 `app/(console)/layout.tsx`（第二根布局）、`app/(console)/error.tsx`、`app/(console)/console/layout.tsx`（鉴权与外壳）、`app/(console)/console/page.tsx`（收件箱）。移动后逐条核对公开 URL 不变，不新增任何重定向来维持旧地址。
 
-按 shadcn 当前 Tailwind v4 手动安装文档生成，要点：
+### 6.2 两个根布局的内容对照
 
-- `@import 'tailwindcss' source(none)`，然后显式 `@source '../app/(console)'` 与 `@source '../components/console'`。现状 `styles/tailwind.css` 没有任何扫描边界（调查 J.2），若不限定，控制台样式表会把前台所有 HeroUI 类一并编译进来。
-- `@custom-variant dark (&:is(.dark *))`，与前台一致。
-- shadcn 的 `@theme inline` 令牌块、`:root` 与 `.dark` 变量、`@layer base`。令牌名（`background`、`primary` 等）与 HeroUI 重名，但两份样式表各自编译，互不可见，这正是隔离的目的。
-- 同时在 `styles/tailwind.css` 增加 `@source not '../app/(console)'` 与 `@source not '../components/console'`，避免前台样式表编译控制台的类。
-- `prose.css`、`editor.css`、`blog.css` 全部依赖 HeroUI 工具类（调查 J.5 至 J.7），不进控制台；调查确认 `components/admin` 与 `app/admin` 对 prose、milkdown、MDX 零引用（J.8），控制台不需要它们。
+| 内容                                                   | `(site)`                               | `(console)`                                                  |
+| ------------------------------------------------------ | -------------------------------------- | ------------------------------------------------------------ |
+| 样式入口                                               | `styles/index.css`                     | `styles/console.css`（拟新增）                               |
+| HeroUI Provider 与 HeroUI Toast                        | 是                                     | 否                                                           |
+| `next-themes`（`attribute="class"`）                   | 是                                     | 是，沿用同一默认存储键，深浅色前后台共享                     |
+| 进度条 Provider、`react-hot-toast`                     | 是                                     | 是（都不依赖 HeroUI，可直接复用）                            |
+| 站点主题脚本、`data-kun-theme`、未读消息轮询、分析脚本 | 是                                     | 否                                                           |
+| 顶栏、面包屑、页脚、回到顶部                           | 是（预览路径下不渲染，见 6.7）         | 否，控制台自带侧栏与标题栏                                   |
+| viewport 与 metadata                                   | 现有 `kunViewport` 与现有 metadata     | 自带且允许缩放；标题为控制台，`noindex`                      |
+| 字体                                                   | `index.css` 的全局 `!important` 字体栈 | 在 `console.css` 对 `body` 声明同一字体栈，不用 `!important` |
 
-`components.json`：`tailwind.config` 留空（v4），`tailwind.css: "styles/console.css"`，`cssVariables: true`，`aliases.ui: "~/components/console/ui"`，`aliases.components: "~/components/console"`，`aliases.utils: "~/lib/console/utils"`，`aliases.lib: "~/lib/console"`，`aliases.hooks: "~/hooks/console"`，`iconLibrary: "lucide"`，`rsc: true`，`tsx: true`。路径别名 `~` 来自 `tsconfig.json` 的 `paths`。新增依赖：`tw-animate-css`、`class-variance-authority`，以及 CLI 按组件引入的 `@radix-ui/*`。不引入 sonner，toast 沿用 `react-hot-toast`。
+### 6.3 样式隔离与依赖（D3）
+
+拟新增 `styles/console.css`：`@import 'tailwindcss' source(none)` 开头，用 `@source` 显式加入 `../app/(console)` 与 `../components/console`；按锁定模板补齐其余导入链（当前 v4 模板另含 `tw-animate-css` 与 `shadcn/tailwind.css`，以实施时锁定版本为准）；`@custom-variant dark (&:is(.dark *))` 与前台一致；随后是 shadcn 令牌块、`:root` 与 `.dark` 变量、基础层。同时在 [styles/tailwind.css](../../styles/tailwind.css) 增加对这两个目录的 `@source not`（现状该文件只有 HeroUI 主题目录一条 `@source`，没有排除边界）。
+
+令牌重名可接受，因为两份样式表各自编译、互不加载；但不能以类名或令牌名断言隔离，两套 UI 有大量同名类，隔离必须由 E01-01 在生产构建产物上按导入链与产物内容验证。`components.json` 只服务控制台：CSS 入口指向 `styles/console.css`，别名指向 `components/console`、`components/console/ui`、`lib/console`、`hooks/console`，图标沿用 lucide；配置错会让 CLI 覆盖前台样式，首次执行前先确认。依赖清单按锁定模板实测 imports 记录于 M01-2；预期需要 `class-variance-authority`、`radix-ui`、`tw-animate-css` 与提供上述 CSS 的 `shadcn`，仓库已有 `lucide-react`、`clsx`、`tailwind-merge` 直接复用。不引入 sonner、react-query 或任何新数据层。
 
 ### 6.4 控制台外壳
 
-- 侧栏：收件箱（带未处理总数）、按来源筛选（各带计数）、统计、「旧后台」分组（链接到尚未迁移的 `/admin/*` 页面，标注「旧」）、「前台」链接、深浅色切换、当前账号与退出。桌面固定，移动端抽屉。
-- 标题栏：搜索框、刷新、今日已处理计数、键盘帮助。
-- 主区：左列表右详情，桌面用可拖分栏，移动端单列切换。URL 携带状态：`/console?kind=submission&item=123`，可深链、可刷新。
-- 错误边界 `(console)/error.tsx` 用 shadcn 组件与 `react-hot-toast`，不依赖 HeroUI。
-- 顶栏「管理后台」入口（`constants/top-bar.ts` 的 `kunAdminNavItem`）与 `components/user/SelfButton.tsx` 的 `router.push('/admin')` 改指 `/console`。跨根布局导航是整页加载，`router.push` 仍可用。`components/kun/top-bar/TopBar.tsx` 里对 `/admin/` 的高亮特判随旧后台退役删除，本模块不动。
+侧栏：收件箱（带待处理总数）、四个来源筛选（各带计数）、「旧后台」分组（逐条链接未迁移页面并标注「旧」，其中需超级管理员的页面另标注「处理需超级管理员」）、返回前台、深浅色切换、当前账号与退出；桌面固定，移动端抽屉。标题栏：搜索、刷新、今日已处理、键盘帮助。主区左列表右详情，桌面可拖分栏，移动端单列切换；筛选与选中项进 URL，可深链接、可刷新。入口切换：顶栏管理后台导航项与个人页跳转改指控制台；跨根布局是整页加载，现有 `router.push` 仍可用；旧后台地址在过渡期保持可直接访问。
 
-### 6.5 统一收件箱
+### 6.5 收件箱
 
-**列表。** 每行显示来源图标、标题、副标题、等待时长、徽标。默认按等待时长降序，可切换按来源分组。筛选状态进 URL。
+列表行：来源图标、标题、副标题、等待时长、徽标（只读来源标注「旧，去旧后台处理」）。默认按等待时长降序。
 
-**详情面板。** 按来源渲染：
+| 来源         | 详情                                                                                 | 动作                                                                                                                 |
+| ------------ | ------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------- |
+| 投稿         | 详情接口字段、押金与角色、VNDB 重复、会社诊断四节、投稿页面预览                      | 通过（一键）、要求修改与驳回（需理由）、判违规（需理由，确认）。自审按现状显示超级管理员 override                    |
+| 资源申请     | 名称、分区、类型、语言、平台、备注、全部链接与提取码、发布者与其资源数、资源卡片预览 | 通过（一键）、拒绝（需理由，确认）、「编辑后通过」链接旧后台（资源编辑表单是前台 HeroUI 组件，模块 06 重做前不复刻） |
+| 反馈（只读） | 全文、反馈人、关联链接                                                               | 「在旧后台处理」链接，标注处理需超级管理员                                                                           |
+| 举报（只读） | 举报理由、被举报内容、被举报人、所属条目、同目标其他待处理举报                       | 「在旧后台处理」链接，标注处理需超级管理员                                                                           |
 
-| 来源 | 详情内容 | 动作 |
-|---|---|---|
-| 投稿 | 调 `GET /api/admin/patch-submission/[id]`：基本字段、押金与角色、VNDB 重复列表、会社身份诊断（原样搬运现状展示逻辑，见 6.7）、前台预览 iframe | 通过（一键）、要求修改（需理由）、驳回（需理由）、判违规（需理由，破坏性，确认）。自审时按现状规则显示超级管理员 override 开关 |
-| 资源申请 | 列表返回的完整资源行：名称、分区、类型、语言、平台、备注、全部链接与提取码、发布者与其资源数 | 通过（一键）、拒绝（需理由，破坏性，确认）、「编辑后通过」链接到旧后台 `/admin/resource-apply`（资源编辑表单是前台的 HeroUI 组件，模块 06 重做前不复刻） |
-| 反馈 | 消息全文、反馈人、关联条目链接 | 模板回复并标记已处理（一键，模板见下）、自定义回复 |
-| 举报 | 举报理由、被举报内容全文、被举报人、所属条目 | 驳回（一键）、删除内容（破坏性，确认）；两者都可附回复 |
-| 创作者申请 | 申请内容、申请人、其已发布资源数 | 通过（一键）、拒绝（需理由） |
+键盘：上下选择、打开详情、正向动作、破坏性动作（进入确认）、聚焦搜索、显示帮助；只读来源不绑定处理键；焦点在输入框或文本域时全部快捷键失效。基线 3.7 的四条回复模板（已修复、需要截图、请参考指南、不在受理范围）对应的来源在本批为只读，故本批不落地模板库，随模块 03 或 D1 放宽后落地。处理后成功即移除该项并选中下一项，计数刷新；失败按接口返回的中文字符串提示；409 只刷新该项。会社阻断型歧义存在时禁用通过，与现状一致，本模块不改判定与文案。
 
-**键盘。** `j`、`k` 上下选择；`Enter` 打开详情；`a` 通过或驳回举报（当前来源的正向动作）；`d` 拒绝或删除（破坏性，进入确认）；`r` 打开回复；`/` 聚焦搜索；`?` 显示帮助。自写一个小型快捷键 hook，不引入新依赖。
+### 6.6 未匹配路由与错误边界
 
-**模板。** `constants/console/replyTemplates.ts`，首批四条来自基线 3.7：已修复、需要截图、请参考指南、不在受理范围。模块 03 的工单系统上线后由工单模板替代。
-
-**处理后。** 动作成功即从列表移除该项并选中下一项，`counts` 立即刷新；失败以 toast 显示接口返回的中文字符串；409 时刷新该项。
-
-### 6.6 未匹配路由与错误
-
-- `notFound()` 全仓库只在 `app/[id]/page.tsx` 调用一处，且没有自定义 404 页（调查 F.2）。删掉顶层布局后，未匹配 URL 的兜底页需要一个根布局来渲染。做法分两步：先在 `(site)` 内新增 `not-found.tsx`，处理站点内的 `notFound()` 与站点段内未匹配路径；实施时在开发环境验证「完全未匹配的顶层路径」由哪个根布局承接。若 Next 15.5.18 无法正确承接，启用 `experimental.globalNotFound` 并新增 `app/global-not-found.tsx`（自带 `<html>`、`<body>`，导入 `styles/index.css`），这是官方为多根布局提供的方案，15.4 起可用。是否启用实验特性列为待定（第 12 节第 6 项）。
-- `app/error.tsx` 现状依赖 `KunToaster` 与 HeroUI（调查 F.1），移入 `(site)` 后行为不变。
+现状仓库没有自定义 404 页。先在 `(site)` 新增兜底页，覆盖站点内主动触发的未找到与站点段内未匹配路径；再在仓库精确版本上实测「完全未匹配的顶层路径」由哪个根布局承接。只有实测证明无法承接，才提请启用实验特性的全局兜底（D2-6），未经站长同意不在生产启用。控制台单独有 shadcn 实现的错误边界。
 
 ### 6.7 前台预览
 
-- 路由 `app/(preview)/preview/submission/[id]/page.tsx`：服务端组件，`verifyHeaderCookie()` 未登录 `redirect('/login')`，`canAccessAdmin(role)` 不满足 `redirect('/')`；调用现有 `getAdminPatchSubmission(id, role)` 取 `preview`，渲染 `components/submission/PatchSubmissionPreviewView`，传 `preview` 与 `createdAt`。预览链路里的介绍、画廊、灯箱、链接与视频挂载全是站点组件（调查 C），在预览根布局下原样可用。
-- 控制台投稿详情里用 `<iframe src="/preview/submission/{id}">` 嵌入，同源，不加 `sandbox`；另给「在新标签打开」。深浅色通过共享的 `next-themes` 存储键保持一致。
-- 会社身份诊断的展示（`components/admin/submission/AdminSubmissionDetail.tsx` 里的「本次发布结果」「阻断型歧义」「非阻断身份冲突」「候选快照未采用」四节及标签映射）在控制台用 shadcn 组件原样重写，逻辑与文案不变；有阻断型歧义时禁用「通过」，与现状一致。这是与会社线的接口约定（计划第 8 节），会社线落地后由会社线调整。
+拟新增 `app/(site)/preview/submission/[id]/page.tsx`：服务端组件，未登录跳登录、非管理员跳首页，调用既有详情服务取预览数据，渲染现有投稿预览视图组件；位于前台根布局下，样式、Provider 与主题与前台完全相同。站点外壳隐藏：在 `constants/routes/matcher.ts`（现有一组 `isXxxPath` 判定函数）新增预览路径判定，让顶栏、面包屑返回空，外壳组件不渲染页脚与回到顶部；三者都是已有条件分支的客户端组件。控制台投稿详情用同源 iframe 嵌入并提供「在新标签打开」，深浅色因共享主题存储键自动一致。
 
-### 6.8 涉及的现有文件
+基线 7.3 同样把资源卡片预览列为「同理适用」，故一并拟新增 `app/(site)/preview/resource/[id]/page.tsx`：同一套鉴权与外壳隐藏结构，按资源 ID 读取一条待审资源（复用 4.2 的资源申请谓词，只取一条），复用前台现有卡片——[ResourceDownload.tsx](../../components/patch/resource/ResourceDownload.tsx) 导出 `ResourceDownload({ resource })`，内部渲染同目录 `DownloadCard.tsx` 的 `ResourceDownloadCard`，并带有恢复计数的副作用与点赞按钮。预览必须只读：给这两个组件加一个轻量 `preview` 展示参数（或一层展示包装），在预览下跳过恢复计数副作用、把点赞渲染成静态数字而不是可点按钮、链接与提取码直接来自管理员授权读取的预览数据，不对 pending 数据调用面向公开用户的揭示与下载接口；展开与展示类交互保留。不复刻卡片渲染逻辑，也不建第二套卡片框架。控制台的资源申请详情同样内嵌并提供独立打开。两个预览共用同一套路径判定与鉴权；承载方式仍只由 D2-5 决定，不因新增这个预览而扩大根布局方案。若 D2-5 改选独立预览外壳，改为在 `app/(preview)` 下承载这两个页面，其余不变。
 
-新增：`app/(console)/**`、`app/(preview)/**`、`app/(site)/not-found.tsx`、`components/console/**`、`lib/console/utils.ts`、`hooks/console/**`、`styles/console.css`、`components.json`、`constants/console/replyTemplates.ts`、`app/api/admin/inbox/**`、`app/api/admin/patch-submission/[id]/route.ts`。
+### 6.8 文件清单
 
-移动：`app/layout.tsx`、`providers.tsx`、`metadata.ts`、`actions.ts`、`page.tsx`、`error.tsx` 与 24 个顶层段进入 `app/(site)/`。
+拟新增：`app/(console)/**`、`app/(site)/not-found.tsx`、`app/(site)/preview/submission/[id]/page.tsx`、`app/(site)/preview/resource/[id]/page.tsx`、`components/console/**`、`lib/console/utils.ts`（`components.json` 的 utils 别名指向它，首个组件即需要）、`styles/console.css`、`components.json`、`app/api/admin/inbox/**`（含 `item`）、`app/api/admin/patch-submission/[id]/route.ts`。`hooks/console` 等目录按实际组件需要再建，不预先创建空目录。
 
-修改：`middleware.ts`、`middleware/auth.ts`、`app/robots.ts`、`next.config.ts`（`headers()`）、`styles/tailwind.css`（`@source not`）、`validations/admin.ts`（新 schema）、`constants/top-bar.ts`、`components/user/SelfButton.tsx`、五个门槛调整的路由文件、两个补写审计日志的服务文件、`tests/unit/root-layout.test.tsx`（导入路径）。
+移动：`app/` 的 6 个根文件与 22 个页面段进入 `app/(site)/`。
 
-不动：`components/admin/**`、`app/(site)/admin/**`（移动后内容不变）、`scripts/postbuild.ts`、`scripts/deployPm2.ts`、`.github/workflows/release.yml`。样式与组件是编译产物，不在运行时资产复制清单内（调查 E.4、E.5）。
+修改：[middleware.ts](../../middleware.ts)、[middleware/auth.ts](../../middleware/auth.ts)、[app/robots.ts](../../app/robots.ts)、[styles/tailwind.css](../../styles/tailwind.css)、`validations/admin.ts`、`constants/admin.ts`、`constants/top-bar.ts`、`constants/routes/matcher.ts`、顶栏与面包屑及外壳三处客户端组件、个人页跳转组件、[resource-apply/service.ts](../../app/api/admin/resource-apply/service.ts)、[review.ts](../../app/api/patch-submission/review.ts)（只给 `writeAdminLog` 加可选 type 参数，并在四个动作的主日志处传专用取值）、[ResourceDownload.tsx](../../components/patch/resource/ResourceDownload.tsx) 与同目录 `DownloadCard.tsx`（只加只读预览参数，默认行为不变）、根布局测试的导入与 mock 路径；预览采用 iframe 时另加 [next.config.ts](../../next.config.ts) 的 `headers()`。
 
-## 7. 定时任务
+不动：`components/admin/**`、移动后内容不变的 `app/(site)/admin/**`、[feedback/service.ts](../../app/api/admin/feedback/service.ts)、[report/service.ts](../../app/api/admin/report/service.ts)、[get.ts](../../app/api/admin/resource-apply/get.ts)、创作者申请与统计相关接口、部署与发布脚本。
 
-无。
+## 7 定时任务
 
-## 8. 迁移与回填
+无。各来源计数与今日已处理都在请求时实时聚合，不引入 cron、不引入快照表；指标与快照属于模块 09。
 
-- 无数据迁移。
-- 路由重排用 `git mv` 一次完成，保证移动后的相对导入（`./providers`、`./metadata`、`./actions`）不变。
-- 旧后台在本模块内保持完整可用，只有两处入口改指控制台。旧后台的退役在模块 09。
-- 文档与技能同步单独提交（`docs(...)` 或 `chore(skills)`），不混入业务代码提交，遵守 `docs/project/development.md` 的提交约定。需要修订的文档：`skills/otoame-frontend/SKILL.md` 把「HeroUI v2 是强制设计系统」限定到前台路由组并新增控制台条款；`docs/modules/app-router.md` 增加三个根布局与控制台的描述；`docs/modules/frontend-content.md` 组件分层表增加 `components/console/*`；`docs/theme-color-system.md` 的 `rg` 扫描命令排除控制台目录；`docs/project/development.md` 的样式清单加入 `styles/console.css`。
+## 8 迁移与回填
 
-## 9. 测试点
+- 数据迁移：无。不执行 `prisma migrate`、`db push` 或任何回填 SQL。
+- 路由重排用 `git mv` 完成，公开 URL 不变，提交前逐条核对 6.1 清单。
+- 行为变更三项：`admin_log` 出现三个新 type 取值（资源申请两处由通用 `approve`、`decline` 改为专用取值，投稿四个动作的主日志由 `update` 改为专用取值，诊断日志不变）；资源申请处理由先读后写改为条件更新与条件删除；旧反馈与旧举报的内容在收件箱内对 `role >= 3` 可读、写权限不变，依据基线 2.2 与总计划 M01-3，属已定范围而非待批准项。
+- 回退边界：界面与路由可整体回退；权限口径回退必须界面与接口同时回退。已经写入的新类型日志行在旧代码下标签为空，退代码消不掉，只能补标签或接受。已按条件更新处理过的资源申请数据在旧实现下不会损坏，但会重新引入重复通知风险。
+- 发布流程沿用仓库既有约定：备份与只读 preflight，无 schema 变更故不执行 sync，随后 postflight 与 schema guard、构建部署、冒烟验证。本模块只需证明没有 schema 漂移。文档阶段不运行上述任何命令。
+- 文档与技能同步单独提交，不混业务代码：前端技能文件把「HeroUI v2 是强制设计系统」限定到前台路由组并加控制台条款；App Router 文档补两个根布局；组件分层表补 `components/console/*`；主题色系文档的扫描命令排除控制台目录；开发指南样式清单加入 `styles/console.css`。
 
-- 接口：`GET /api/admin/inbox` 与 `/counts` 的鉴权（未登录、`role 2`、`role 3`）、来源筛选、`truncated` 标记、排序；`GET /api/admin/patch-submission/[id]` 的鉴权；五个门槛调整路由的新旧行为对比；`handleFeedback` 与 `handleReport` 写入 `admin_log`。沿用现有模式：`vi.mock('~/middleware/_verifyHeaderCookie')` 与整份 mock 服务模块，用 `NextRequest` 调用路由（参照 `tests/unit/api/admin-stickers-route.test.ts`）。
-- 聚合服务：mock 五个列表服务，验证归一化字段与排序。
-- 中间件：`isProtectedRoute('/console/x')` 与 `('/preview/x')` 为真。
-- 布局：`tests/unit/root-layout.test.tsx` 的导入路径改为 `~/app/(site)/layout`，断言不变。
-- 控制台组件：现状组件测试是手写 JSDOM 加 `createRoot` 并逐个 mock HeroUI 组件（调查 D），对 Radix 门户不友好。本模块只对纯逻辑写单测：快捷键 hook、收件箱排序与筛选、URL 状态编解码；渲染层验证放在验收里手工完成。是否为控制台引入 `@testing-library/react` 列为待定（第 12 节第 7 项）。
-- 全量：`styles/tailwind.css` 被修改，按 `skills/otoame-development/SKILL.md` 的规则跑全量 `pnpm test`；路由重排与 `next.config.ts` 变更要求 `pnpm build` 通过。
+## 9 测试与实验方案
 
-## 10. 验收标准
+### 9.1 自动化测试（实现期编写，作为对应实验的证据来源）
 
-1. 站长一天的审核（投稿、资源申请、反馈、举报、创作者申请）只在 `/console` 一个页面完成，不需要打开旧后台，除「编辑后通过」资源申请这一种情况。
-2. 键盘从选择到处理一项不需要鼠标。
-3. `/console` 的样式表不含任何 HeroUI 类，前台样式表不含任何控制台类（构建产物检查）。
-4. 投稿详情里的 iframe 显示与前台一致的样式，深浅色与控制台一致。
-5. 5.4 门槛表全部生效，旧后台行为不变。
-6. `pnpm typecheck`、`pnpm test`、`pnpm build` 通过；生产部署后前台首页、任一条目页、旧后台、控制台、预览页各打开一次正常。
-7. 未匹配的顶层路径有正常的 404 页。
+- E01-02 证据：收件箱列表、计数、单项取项接口的鉴权（未登录、role 1、role 2、role 3）、来源筛选、截断标记、排序；单项取项在候选窗口外、已处理、不存在三种情况下的 `state`；投稿详情接口鉴权；聚合服务在 mock 各来源查询下的归一化与排序；资源申请两个动作在「已被处理」时不发通知、不写日志、返回既有提示；中间件新前缀被识别为受保护路径。
+- E01-03 证据：今日已处理在注入 `now` 与固定自然日边界下的逐次计数与跨日归零；专用 type 过滤掉会社诊断附属日志；「要求修改后重提、再由另一管理员通过」时前一位管理员当日计数不变。
+- E01-01 证据：根布局测试导入路径更新后断言不变；生产构建通过。
+- 因为改动 `styles/tailwind.css` 与根布局，按仓库测试约定跑全量测试并跑一次生产构建。不引入新的组件测试工具（D2-7）。
 
-## 11. 非目标
+### 9.2 实验（全部未执行）
 
-- 不迁移用户、下载资源管理、游戏管理、贴纸、评论、评价、日志、设置、邮件群发、萌萌点账本页面。它们留在旧后台，由模块 06、09 或各自替代模块迁移。
-- 不改任何处理服务的语义，不引入可撤销。
+三个实验都在隔离环境进行：独立数据库、独立 Redis、独立构建产物，不连接生产、不读取生产数据。
+
+**E01-01 布局、样式隔离、预览和 404（未执行）**
+
+- 目的：证明拆成两个根布局后公开地址不变、两套样式互不混入、预览渲染前台真实样式、未匹配地址有兜底。
+- 前提与隔离环境：仓库精确版本的生产构建在隔离环境运行；role 4、role 3、role 1 各一个账号；一条含图片、画廊与外链的 pending 投稿，以及一条待审资源申请（含多个链接与提取码）；预览承载方式已按 D2-5 定稿。
+- 关键步骤：① 生产构建并记录每条路由实际加载的样式与脚本产物；② 按导入链与产物内容检查控制台样式产物是否含 HeroUI 插件产出、前台样式产物是否含控制台目录扫描结果，不以类名异同下结论；③ 依次访问首页、任一条目页、登录、用户页、旧后台任一页、控制台、两个预览页、明显不存在的顶层地址、站点段内不存在的地址；④ 前台跳控制台、控制台跳前台、控制台跳旧后台各一次；⑤ 在投稿详情内看内嵌预览并切换深浅色，再用独立标签打开同一预览；对资源申请详情重复一次，核对资源卡片是前台真实渲染，并在打开与交互期间记录网络请求、比对点赞与下载计数等相关数据行，确认预览不产生业务写入、不调用公开揭示与下载接口；两个预览各用未登录与 role 1 访问一次，确认被拒；采用 iframe 时另测同源可嵌入、跨源被拒；⑥ 移动端宽度重复③⑤并验证控制台允许缩放。
+- 通过判据：所有原公开地址返回与改造前一致的页面且未新增重定向；两个方向的样式产物检查都干净；投稿与资源两个预览在内嵌与独立打开下都是前台真实样式且深浅色与控制台一致，未登录与 role 1 访问都被拒，且预览期间没有任何业务写入或对公开揭示、下载接口的调用；两类未匹配地址都得到可读兜底页而非空白或 500。
+- 失败判据：任何公开地址失效、改变或需新增重定向维持；隔离只有截图证据；任一预览可被未登录或非管理员打开；预览触发点赞、揭示、恢复计数一类的业务写入或调用公开揭示与下载接口；以新增资源预览为由改动根布局方案（承载方式只能由 D2-5 决定）；未匹配顶层地址无法被任何根布局承接（此时才触发 D2-6，且需先取得站长同意）。
+- 验证时间点：M01-2 完成后一次；M01-5 上线前用待发布构建复跑。
+- 所需证据：构建产物路由与资源清单、逐地址状态码表、两个预览在内嵌与独立打开下的深浅色截图、预览期间的请求记录与相关数据行前后对照、样式产物检查的命令与输出。清理：销毁隔离构建产物与容器，不保留任何凭据。
+
+**E01-02 收件箱最老项、筛选、权限与审核冲突（未执行）**
+
+- 目的：证明最老事项不被排序或截断掩盖，筛选与深链接稳定，权限在界面与服务端一致，写动作在并发与过期下只产生一次结果。
+- 前提与隔离环境：隔离数据库造数：四个来源的待处理量都超过候选上限（上限 50 时各造 60 条以上），每来源各埋一条明显最老记录；反馈来源另造若干 `status` 非 0 的历史行；举报来源造同一评论下 3 条待处理举报与一条评价类举报；资源申请造一条会被 NSFW 偏好过滤掉的记录；另造一条 `submitted_at` 为空而 `created` 最老的 pending 投稿（该列可为空，用于验证 `COALESCE` 排序）；账号覆盖 role 1、2、3、4。
+- 关键步骤：① 默认排序下检查全局最老的一条是否位于首屏第一项，并核对四个来源的截断标记；② 逐来源筛选后检查该来源最老记录是否在首屏；③ 反馈来源核对返回集合与计数都不含已处理行；④ 把浏览者 NSFW 偏好设为最严格后重新取数，确认被过滤那条资源申请仍在队列；⑤ 深链接：对首屏项、候选窗口之外的项（如某来源第 60 条）、刚被另一会话处理掉的项、以及一个不存在的 ID 各取一次，新窗口打开并刷新，核对选中项一致、窗口外的项能正常打开、已处理与不存在各给出对应提示，且都不插队进列表排序；⑥ 用 role 1、role 2 访问控制台页面与四个新接口，再用 role 3 访问同样内容；role 3 从收件箱打开旧反馈与旧举报的旧后台入口，确认拿到既有的超级管理员权限提示而不是可处理界面，role 4 在同一入口可完成处理；⑦ 只读来源核对没有处理动作、旧后台入口可达，并在旧后台处理一条后刷新收件箱确认该项消失；⑧ 并发：在隔离库用测试层屏障或受控事务交错，除同一动作重复提交外，另制造相对动作竞争——同一条投稿的两个不同审核动作、同一条资源申请的通过与拒绝；再制造过期场景（先处理再用旧列表提交）；不使用两个浏览器窗口、不新建压测平台或生产延迟开关。
+- 通过判据：全局最老项在首屏第一项（含 `submitted_at` 为空的历史行样本），各来源筛选后本来源最老项可达，截断标记正确；候选窗口外与已处理、不存在的深链接都返回正确状态且不插队；反馈无已处理项；NSFW 偏好不影响待审队列；role 1、2 在页面与接口都被拒，role 3 可读四来源、能处理投稿与资源申请、在旧后台得到既有权限提示；只读来源无写入路径；并发（含相对动作）与过期下业务对象只发生一次状态变更、系统通知不重复、落败方收到既有中文提示或 409 并刷新成功。
+- 失败判据：最老项拿不到（含因 NULL 排序被挤出候选窗口）、候选窗口外的深链接打不开、越权可读或可处理、同一事项处理两次、用户收到重复通知、落败方看到未处理的异常页。
+- 验证时间点：M01-3 后跑①至⑦，M01-4 后跑全部；此后任何处理服务或候选上限改动都要复跑①⑧。
+- 所需证据：造数脚本或 SQL 摘要、接口请求与响应记录、动作前后的数据库行快照、通知表条数对比。清理：删除隔离库与造数，不在生产执行任何一步。
+
+**E01-03 处理计数与旧后台过渡（未执行）**
+
+- 目的：证明今日已处理只统计成功的收件箱动作、按动作逐次计数且不被后续状态覆盖、跨自然日正确，并证明未迁移能力在过渡期按既有角色可达。
+- 前提与隔离环境：隔离数据库；自然日边界由既有上海时区工具计算，测试与实验都注入 `now`（或使用假时钟），不修改开发机或数据库时区。
+- 关键步骤：① 当日成功完成投稿与资源申请各一次处理，核对计数为 2；② 制造一次失败动作（对已处理对象重复提交）与一次参数错误请求，核对计数不变；③ 执行与审核无关的后台操作（改设置、发放萌萌点、删除评论），以及一次会额外写多行会社诊断日志的投稿通过，核对计数只按实际动作增加、不随日志行数膨胀；④ 管理员 A 对一条投稿「要求修改」，作者重新提交，管理员 B 再通过它，核对 A 当日仍保留那一次、B 增加一次；⑤ 把注入时间推进到次日 00:10，核对计数归零且昨日动作不再计入；⑥ 用第二个管理员账号处理一件，核对两人计数互不串；⑦ 从控制台侧栏逐条打开未迁移的旧后台页面，按访问账号的既有角色核对：页面可达，需要超级管理员的动作对 role 3 返回既有提示、对 role 4 可用；⑧ 从顶栏与个人页进入控制台，同时直接访问旧后台地址，确认两者都可用。
+- 通过判据：①至⑥计数全部符合预期；⑦⑧按既有角色预期可达可用。
+- 失败判据：计数等于后台日志条数、把失败或重复请求计入、把会社诊断附属日志计入、某位管理员已完成的处理因后续再审而消失、跨日不归零、两个管理员计数互相污染、任一未迁移页面在控制台没有入口或已不可用。
+- 验证时间点：M01-4 之后、M01-5 上线前；上线后由站长在真实一轮审核中复核当日计数与实际处理件数一致。
+- 所需证据：每步的计数返回、对应业务对象与日志行清单、时间推进前后的对照。清理：删除隔离库与造数。
+
+## 10 实施任务与验收
+
+| 任务                 | 交付物                                                                                                           | 验收                                                                                                                                             |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| M01-1 冻结设计       | D1、D2-1、D2-2、D2-3、D2-5、D2-7、D2-8 的结论写回本文；旧后台路由清点表（含各页面所需角色）                      | 站长确认队列范围、旧项只读边界、预览承载方式、地址前缀、确认策略与权限表。D2-4 不阻塞、D2-6 待 E01-01 结果、D3 在 M01-2 记录，均不作为本任务出口 |
+| M01-2 路由与样式隔离 | 6.1 的移动执行完毕；两个根布局；`styles/console.css` 与双向扫描边界；`components.json` 与实测依赖清单            | 全量测试与生产构建通过；E01-01 通过                                                                                                              |
+| M01-3 收件箱读取     | 收件箱列表、计数、单项取项、投稿详情四个接口；四来源候选与归一化；候选按 4.2 第 4 条的 `COALESCE` 排序           | 排序、截断、空态、筛选、候选窗口内外的深链接、刷新正确；管理员可读、普通用户不可；E01-02 的①至⑦通过                                              |
+| M01-4 处理与权限     | 投稿与资源申请动作接入；5.6 的两处条件更新；4.3 的专用日志 type 与标签；键盘与确认                               | 重复提交与相对动作并发只产生一次结果与一次通知；自审 override、状态冲突、会社歧义与现状一致；E01-02 全部通过、E01-03 的①至⑥通过                  |
+| M01-5 预览与上线     | 投稿页面与资源卡片两个预览路由与外壳隐藏；内嵌与独立打开；入口切换（含「处理需超级管理员」标注）；旧后台入口分组 | 前台真实样式、深浅色、移动端与键盘验证通过；E01-03 的⑦⑧通过；隔离环境用待发布构建复跑 E01-01；上线后站长完成一轮真实审核                         |
+
+上线批次最小范围沿用总计划 3.3 节。上线前必须满足：投稿与资源申请可在收件箱完成处理，旧反馈与旧举报可见且有旧后台入口，未迁移能力有入口，权限、并发与计数三项有实验证据，文档与技能同步完成。
+
+## 11 非目标
+
+- 不迁移用户、资源管理、条目管理、评论、评价、贴纸、日志、设置、邮件群发、萌萌点账本、统计页面。
+- 不改处理服务的业务语义，不引入可撤销机制。
+- 不把创作者申请纳入本批收件箱；不在收件箱内处理旧反馈与旧举报（D1 若改判则另加来源、门槛、幂等与模板四项工作）。
 - 不做实时推送，只做 60 秒计数轮询与动作后刷新。
-- 不重做资源编辑表单。
-- 不删除 `components/admin/*` 与面包屑常量里的 `/admin*` 映射。
-- 不引入 sonner、react-query 等新数据层或通知库。
+- 不重做资源编辑表单；不做队列层的举报分组统计；不建通用详情路由框架，深链接只按来源与 ID 单条取项。
+- 不新增表、字段、索引、定时任务、消息总线、队列框架、规则后台、角色层级；不为将来模块预留字段或状态；不预建来源注册表。02 扩展既有举报目标，03 接入事项，08 在既有投稿来源内增加纠错类型；其余管理能力按所属模块迁移，本模块只保证接入位置明确。
+- 不删除旧后台组件、旧路由与面包屑映射；不处理旧反馈与旧举报的归档迁移（模块 09）。
 
-## 12. 待站长决定的事项
+## 12 待决定
 
-1. 控制台 URL 前缀用 `/console`，还是别的名字。
-2. 接口单通道（2 节第三行）是否接受。
-3. 破坏性动作保留一次确认（2 节第一行）是否接受。
-4. 用户管理迁移时是否整体归超级管理员，含发放萌萌点（现状发放萌萌点是管理员级）。本模块不迁移用户管理，但门槛表需要一个方向。
-5. 第三个根布局 `(preview)` 是否接受，或改为在前台根布局内用条件隐藏外壳。
-6. 未匹配路由的兜底若需启用 `experimental.globalNotFound`，是否接受在生产使用实验特性；不接受则保留 Next 默认 404 的现状行为。
-7. 是否为控制台组件测试引入 `@testing-library/react` 与 jsdom 环境；不引入则渲染层靠手工验收。
-8. 统计页是在本模块迁入 `/console/stats`，还是留到模块 09。
+| 编号 | 事项                                 | 建议                                                                                                       | 阻塞位置                  |
+| ---- | ------------------------------------ | ---------------------------------------------------------------------------------------------------------- | ------------------------- |
+| D1-a | 收件箱来源数量                       | 四来源；创作者申请留旧后台由模块 09 迁移                                                                   | M01-1，影响 4.2、4.3      |
+| D1-b | 旧反馈与旧举报在 01 内只读还是可处理 | 按总计划只读，写权限维持现状的超级管理员级；读取门槛已由基线 2.2 与总计划 M01-3 定为管理员级，不再列为待定 | M01-1，影响 5.5、5.6、6.5 |
+| D2-1 | 控制台地址前缀                       | 沿用 `/console`                                                                                            | M01-1，影响 5.7、6.1      |
+| D2-2 | 后台是否统一走接口                   | 统一走接口，旧后台不改                                                                                     | M01-1，影响 5.2 至 5.4    |
+| D2-3 | 不可逆动作是否保留一次确认           | 资源申请拒绝与投稿判违规保留一次确认。确认不改变角色门槛；本模块不实现撤销，也不预先把撤销工作派给其他模块 | M01-1，影响 6.5           |
+| D2-4 | 用户管理迁移后归谁（含发放萌萌点）   | 本模块不动、不定方向，交模块 09                                                                            | 不阻塞本模块              |
+| D2-5 | 预览承载方式                         | 放在前台根布局下；独立预览外壳仍是有效备选，两者都未被否决                                                 | M01-1，影响 5.7、6.7      |
+| D2-6 | 未匹配顶层地址若需实验特性兜底       | 先按 E01-01 实测；确需启用再单独申请                                                                       | E01-01 出结果后           |
+| D2-7 | 是否为控制台引入组件测试工具         | 不引入，渲染层由 E01-01、E01-02 覆盖                                                                       | M01-1，影响 9.1           |
+| D2-8 | 统计页迁移时间                       | 留给模块 09                                                                                                | M01-1，影响 6.4 侧栏      |
+| D3   | 后台依赖清单                         | 按锁定模板实测确定并记录                                                                                   | M01-2                     |
+
+上表的 D 项均未获站长批准，不得据此写进代码、测试或对外文案；已由基线与总计划确定的规则（四来源、管理员级读取、超级管理员保留的破坏性动作等）不因本表而悬置。
