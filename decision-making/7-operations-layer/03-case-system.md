@@ -166,7 +166,7 @@
 
 ### 6.2 后台（模块 01 的控制台）
 
-收件箱新增来源「事项」，取 `owner_type = staff` 且未结案，按状态进入时间升序并返回截断标记；等待时长对本来源按状态进入时间计算（升级项从落到站方起排队）。本模块需改模块 01 的收件箱聚合服务与列表（两者由 01 交付，本模块按其契约对接，实施前对齐）。详情与站方动作放 `components/console/case/`（拟新增）。
+收件箱新增来源「事项」，取 `owner_type = staff` 且未结案，按状态进入时间升序并返回截断标记；等待时长对本来源按状态进入时间计算（升级项从落到站方起排队）。本模块需改模块 01 的收件箱聚合服务与列表（两者由 01 交付，本模块按其契约对接，实施前对齐）。详情与站方动作放 `components/dashboard/case/`（拟新增）。
 
 相关既有事实，本模块不改：现状 [getFeedback](../../app/api/admin/feedback/service.ts) 不过滤 `status` 且按 `created desc`，若各来源各取前 N 再合并会漏最老待办；本模块只保证自身来源最老优先并带截断标记，并在验收时核对新事项不会被挤出可见范围。
 
@@ -186,7 +186,7 @@
 
 事项详情与列表、收件箱均为 `private, no-store`。公开事项的开启、订阅、升级、结案，以及隐藏/恢复/移动，提交后调用 [app/api/patch/cache.ts](../../app/api/patch/cache.ts) 的条目内容失效；隐藏、恢复、移动另加列表缓存失效（移动为两侧条目）。
 
-拟新增：`prisma/schema/case.prisma`、`constants/case.ts`、`validations/case.ts`、`types/api/case.ts`、`app/api/case/**`、`app/api/admin/case/**`、`server/tasks/caseTimeoutTask.ts`、`app/issue/**`、`components/case/**`、`components/console/case/**`、三份迁移 SQL 与测试。修改现有：[server/cron.ts](../../server/cron.ts)、[tests/unit/cron-registration.test.ts](../../tests/unit/cron-registration.test.ts)、上表三个旧服务、[FeedbackButton.tsx](../../components/patch/header/button/FeedbackButton.tsx)、资源卡片组件、[resource/get.ts](../../app/api/patch/resource/get.ts)、[types/api/patch.ts](../../types/api/patch.ts)、[middleware.ts](../../middleware.ts)、[middleware/auth.ts](../../middleware/auth.ts)、[app/robots.ts](../../app/robots.ts)、[components/user/Profile.tsx](../../components/user/Profile.tsx)（新增最小举报按钮），以及模块 01 的收件箱与 02 的举报写入端与处置原语。轻改：[app/api/admin/report/service.ts](../../app/api/admin/report/service.ts) 只抽出「删除目标加评价统计重算」的事务内 helper 供两侧共用，旧入口的行为、旧表状态与旧通知都不变。不动：`patch_report` 表结构、资源发布与编辑、揭示的现有路径。
+拟新增：`prisma/schema/case.prisma`、`constants/case.ts`、`validations/case.ts`、`types/api/case.ts`、`app/api/case/**`、`app/api/admin/case/**`、`server/tasks/caseTimeoutTask.ts`、`app/issue/**`、`components/case/**`、`components/dashboard/case/**`、三份迁移 SQL 与测试。修改现有：[server/cron.ts](../../server/cron.ts)、[tests/unit/cron-registration.test.ts](../../tests/unit/cron-registration.test.ts)、上表三个旧服务、[FeedbackButton.tsx](../../components/patch/header/button/FeedbackButton.tsx)、资源卡片组件、[resource/get.ts](../../app/api/patch/resource/get.ts)、[types/api/patch.ts](../../types/api/patch.ts)、[middleware.ts](../../middleware.ts)、[middleware/auth.ts](../../middleware/auth.ts)、[app/robots.ts](../../app/robots.ts)、[components/user/Profile.tsx](../../components/user/Profile.tsx)（新增最小举报按钮），以及模块 01 的收件箱与 02 的举报写入端与处置原语。轻改：[app/api/admin/report/service.ts](../../app/api/admin/report/service.ts) 只抽出「删除目标加评价统计重算」的事务内 helper 供两侧共用，旧入口的行为、旧表状态与旧通知都不变。不动：`patch_report` 表结构、资源发布与编辑、揭示的现有路径。
 
 ## 7 定时任务
 
