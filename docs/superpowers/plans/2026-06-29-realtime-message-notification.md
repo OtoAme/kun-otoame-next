@@ -25,7 +25,7 @@
 - Modify `app/api/message/conversation/[id]/service.ts`: support incremental message fetches.
 - Modify `app/api/message/conversation/[id]/route.ts`: add no-store header to GET responses for personalized chat data.
 - Create `components/message/MessageRealtimeSync.tsx`: global unread polling effect.
-- Modify `app/providers.tsx`: mount `MessageRealtimeSync`.
+- Modify `app/(site)/providers.tsx`: mount `MessageRealtimeSync`.
 - Modify `components/message/chat/ChatContainer.tsx`: poll active chat by `afterId`.
 - Modify `components/message/chat/ConversationList.tsx`: refresh current conversation page in the background.
 - Create `tests/unit/api/conversation-messages.test.ts`: API service regression tests.
@@ -223,7 +223,7 @@ Expected: PASS.
 
 **Files:**
 - Create: `components/message/MessageRealtimeSync.tsx`
-- Modify: `app/providers.tsx`
+- Modify: `app/(site)/providers.tsx`
 - Test: `tests/unit/message-realtime-sync.test.tsx`
 
 **Interfaces:**
@@ -256,7 +256,7 @@ Create a client component that:
 - fetches immediately on `visibilitychange` when `document.visibilityState === 'visible'`;
 - clears timers and ignores stale responses in cleanup.
 
-Mount it under `SiteThemeRouteSync` in `app/providers.tsx`.
+Mount it under `SiteThemeRouteSync` in `app/(site)/providers.tsx`.
 
 - [ ] **Step 4: Run the test and verify GREEN**
 

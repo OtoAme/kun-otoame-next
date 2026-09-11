@@ -140,7 +140,7 @@ Cloudflare purge 约定：
 
 首页缓存约定：
 
-- `home_data:*` 是首页静态 payload 的 Redis 缓存，正常匿名首页仍由 `app/page.tsx` 的 `force-static` payload 承载，不应每次客户端拉取。
+- `home_data:*` 是首页静态 payload 的 Redis 缓存，正常匿名首页仍由 `app/(site)/page.tsx` 的 `force-static` payload 承载，不应每次客户端拉取。
 - 部署或 ISR 期间如果查询到空 `galgames`，不能把这个空 payload 写入 `home_data:*`；已有空缓存也应视为无效并重新走 producer。
 - `/api/home` 只作为空静态首页的客户端自愈接口。匿名响应可短缓存，但同样不能缓存空 `galgames` 响应；个性化 cookie 请求保持 `private, no-store`。
 

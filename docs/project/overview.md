@@ -20,7 +20,7 @@ OtoAme 是基于 `kun-touchgal-next` fork 的一站式乙女游戏文化社区�
 ## 技术栈
 
 - Runtime：Node.js 22.15+、pnpm、Next.js 15 App Router、React 19。
-- UI：HeroUI、Tailwind CSS 4、lucide-react、framer-motion、Recharts/Nivo。
+- UI：前台与旧后台使用 HeroUI v2，`/dashboard` 使用 shadcn；共用 Tailwind CSS 4、lucide-react，按各自根布局加载样式与 Provider。
 - 内容：MDX posts、Milkdown/CodeMirror 编辑器、Markdown/HTML 渲染与 sanitize 管线。
 - 数据：PostgreSQL、Prisma 7、`@prisma/adapter-pg`、`pg` 连接池。
 - 缓存和锁：Redis/ioredis，统一 key 前缀为 `kun:touchgal`。
@@ -57,6 +57,8 @@ OtoAme 是基于 `kun-touchgal-next` fork 的一站式乙女游戏文化社区�
 | 路径             | 责任                                                                                      |
 | ---------------- | ----------------------------------------------------------------------------------------- |
 | `app/`           | Next.js App Router 页面、layout、metadata、server actions 与 API route handlers。         |
+| `app/(site)/`   | 前台与旧 `/admin` 页面、前台根布局和管理员只读预览。                                      |
+| `app/(dashboard)/` | `/dashboard` 控制台与独立 shadcn 根布局。                                               |
 | `app/api/*`      | API 层。常见形态是 `route.ts` 负责 HTTP/校验/鉴权，`service.ts` 或同目录函数负责业务。    |
 | `components/`    | 按页面或业务域组织的 React 组件。共享 UI 多在 `components/kun`。                          |
 | `config/`        | 站点、缓存、Redis、外部 API、重定向、友链和水印等配置。                                   |
@@ -79,6 +81,10 @@ OtoAme 是基于 `kun-touchgal-next` fork 的一站式乙女游戏文化社区�
 ### App Router 与 API 分层
 
 页面和 API 都在 `app/` 下。页面路径使用 `page.tsx`、`layout.tsx`、`metadata.ts` 和 `actions.ts`。API route handler 使用 `route.ts` 导出 `GET`、`POST`、`PUT`、`DELETE` 等方法。
+
+页面按两个路由组分根：`app/(site)/layout.tsx` 加载 `styles/index.css`，保留 HeroUI、站点主题、导航与前台 Provider；`app/(dashboard)/layout.tsx` 加载 `styles/dashboard.css` 和控制台 Provider。路由组不进入 URL，原公开页面和旧后台地址保持原样；跨根布局导航会整页加载。`app/api` 与 `app/robots.ts` 仍在根目录，控制台管理请求沿用 `/api/admin/*`。
+
+收件箱读取、单项三态与计数由 `app/api/admin/inbox` 提供，校验和共享响应分别在 `validations/inbox.ts`、`types/api/inbox.ts`。投稿完整详情 GET 与原四种审核 POST 共用 `app/api/admin/patch-submission/[action]/route.ts`。控制台界面、样式隔离与真实审核流程的模块 01 实验仍需整体验收。
 
 推荐结构：
 
@@ -127,6 +133,8 @@ Zod schema 集中在 `validations/`。API 工具函数在 [app/api/utils/parseQu
 [middleware.ts](../../middleware.ts) 匹配：
 
 - `/admin/:path*`
+- `/dashboard/:path*`
+- `/preview/:path*`
 - `/user/:path*`
 - `/comment/:path*`
 - `/edit/:path*`
@@ -138,6 +146,8 @@ Zod schema 集中在 `validations/`。API 工具函数在 [app/api/utils/parseQu
 
 - `role >= 3`：管理员。
 - `role >= 4`：超级管理员。
+
+控制台、两种管理员预览及其读取 API 均独立执行 `role >= 3` 检查；中间件负责登录。预览位于前台根布局，`/preview/:path*` 带 `Content-Security-Policy: frame-ancestors 'self'`。反馈与举报在新收件箱只读，旧后台处理权限仍为超级管理员。
 
 ### Redis、缓存和锁
 

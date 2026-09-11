@@ -50,7 +50,7 @@ if (payload.role < 4) {
 }
 ```
 
-页面侧同样限制：`app/edit/create/page.tsx:10-13` 对 `role < 4` 直接 `redirect('/')`，`app/edit/page.tsx:11-15` 把非 role 4 用户送回首页。
+页面侧同样限制：`app/(site)/edit/create/page.tsx:10-13` 对 `role < 4` 直接 `redirect('/')`，`app/(site)/edit/page.tsx:11-15` 把非 role 4 用户送回首页。
 
 **含义**：开放投稿**不是「放宽一个阈值」，而是新增一条路径**。现有 role 4 直发路径必须保留（管理员建条目不应被要求押金），因此需要在同一入口内按角色分叉：role ≥ 4 直接发布，role < 4 走暂扣 + 审核。
 
@@ -97,8 +97,8 @@ if (payload.role < 4) {
 app/api/home/route.ts、app/api/home/random/route.ts、app/api/search/route.ts、
 app/api/resource/route.ts、app/api/user/profile/resource/route.ts、
 app/api/patch/resource/download/access/route.ts（+ restore）、
-app/otomegame/actions.ts、app/resource/actions.ts、app/tag/[id]/actions.ts、
-app/user/[id]/resource/actions.ts
+app/(site)/otomegame/actions.ts、app/(site)/resource/actions.ts、app/(site)/tag/[id]/actions.ts、
+app/(site)/user/[id]/resource/actions.ts
 ```
 
 #### 坏消息：有 8 处绕过了它，直接用 `getNSFWHeader`
@@ -109,8 +109,8 @@ app/user/[id]/resource/actions.ts
 app/api/otomegame/route.ts          app/api/ranking/route.ts
 app/api/tag/otomegame/route.ts      app/api/company/otomegame/route.ts
 app/api/user/profile/favorite/route.ts
-app/ranking/actions.ts              app/admin/otomegame/actions.ts
-app/admin/resource-apply/actions.ts  app/admin/resource/actions.ts
+app/(site)/ranking/actions.ts              app/(site)/admin/otomegame/actions.ts
+app/(site)/admin/resource-apply/actions.ts  app/(site)/admin/resource/actions.ts
 ```
 
 （末三个是后台，应当**能**看到待审核条目，属于有意例外，需要在实现中显式标注而不是遗漏。）

@@ -14,7 +14,7 @@
 | 镜像与官方健康计数、已丢失资源数           | [patch-resource.prisma](../../prisma/schema/patch-resource.prisma) 无 health/official/mirror_check                                                                                                 | 读 04、06 字段聚合                                                        | M09-1        |
 | 无人回答率、自动处理占比                   | 现有库无求助与工单表                                                                                                                                                                               | 读 07 的回答记录与 03 的结案事实聚合；默认候选口径见 4.4，对外定稿保留 D9 | M09-1        |
 | 第 3.1 节旧反馈现状                        | 旧反馈是 [user_message](../../prisma/schema/user.prisma) 一行，处理即 `status=1`，回复靠字符串反解；旧举报在 [patch-report.prisma](../../prisma/schema/patch-report.prisma) 有 `handled_at`        | 全状态只读归档；旧写入端关闭，旧处理端按 D9 的选择关闭或保留              | M09-4、M09-5 |
-| 旧后台逐页替代与重定向                     | `app/admin` 下 18 个页面文件，菜单见 [SidebarContent.tsx](../../components/admin/SidebarContent.tsx)                                                                                               | 迁移表、重定向表、清理清单                                                | M09-3、M09-5 |
+| 旧后台逐页替代与重定向                     | `app/(site)/admin` 下 18 个页面文件，菜单见 [SidebarContent.tsx](../../components/admin/SidebarContent.tsx)                                                                                               | 迁移表、重定向表、清理清单                                                | M09-3、M09-5 |
 | 第 9.4 节停用页与维护清单                  | 无应用内维护模式（也不做）                                                                                                                                                                         | 1Panel 配置 + [deployment.md](../../docs/project/deployment.md) 更新      | P6-1         |
 
 ## 2. 偏离与理由
@@ -123,7 +123,7 @@
 | 用户列表、更新、删除                   | `>= 4`（[user/route.ts](../../app/api/admin/user/route.ts)）                                                                                              | 保持 `>= 4`；01 早迁，09 核对                      |
 | 发放萌萌点                             | 同文件 POST 为 `>= 3`                                                                                                                                     | 保持 `>= 3`（01 的 D2-4 已定）                     |
 | 用户账本管理查看、关闭两步验证         | 账本管理查看 `>= 3`（[access.ts](../../app/api/moemoepoint/access.ts)）；关闭两步验证 `>= 4`（[route.ts](../../app/api/admin/user/2fa/disable/route.ts)） | 两者保持现状，随 01 用户管理早迁                   |
-| 站点设置读取                           | 页面 action 为 `>= 4`（[setting/actions.ts](../../app/admin/setting/actions.ts)）                                                                         | 保持 `>= 4`；写入端同步核对                        |
+| 站点设置读取                           | 页面 action 为 `>= 4`（[setting/actions.ts](../../app/(site)/admin/setting/actions.ts)）                                                                         | 保持 `>= 4`；写入端同步核对                        |
 | 邮件群发                               | 服务写 `admin_log`（[mail/service.ts](../../app/api/admin/mail/service.ts)）                                                                              | 保持 `>= 4`，用途与实现不变                        |
 | 条目、评论、评价、贴纸的列表与常规管理 | 各路由现状不一致（01 已列）                                                                                                                               | 按 01 的审定矩阵，列表与常规管理为 `>= 3`          |
 | 删除条目                               | `>= 4`（[patch/route.ts](../../app/api/patch/route.ts) 的 `DELETE`）                                                                                      | 保持 `>= 4`；迁移只换界面，确认框不代替权限        |
@@ -148,7 +148,7 @@
 
 `dashboard/metrics/page.tsx`（指标页：队列表格、周趋势、比率曲线、内容增长）、`dashboard/archive/feedback/page.tsx` 与 `dashboard/archive/report/page.tsx`（只读归档）、`dashboard/{otomegame,comment,rating,stickers,log,user,user/[id]/moemoepoint,setting,email}/page.tsx`（迁移页面）、`components/dashboard/metrics/*`、`components/dashboard/archive/*`。图表用 [package.json](../../package.json) 已有的 `recharts`（声明 `^3.2.1`，实施前从 lockfile 核对），不新增依赖；`@nivo/line` 不引入新用法。现有 [KunAdminStatistic.tsx](../../components/admin/stats/KunAdminStatistic.tsx) 的天数选择与口径可参考，界面按 shadcn 重写。
 
-### 6.2 旧路径 → 目标（覆盖 `app/admin` 下全部 18 个页面）
+### 6.2 旧路径 → 目标（覆盖 `app/(site)/admin` 下全部 18 个页面）
 
 下表是默认承接归属；早迁页面的实际阶段与完成证据以总计划第 4.10 节为准。创作者按 D1 迁入独立页；用户管理与明细按 D2-4 已选定早迁。已逐页退役的路径保持可达，09 核对而不重建。
 
@@ -175,7 +175,7 @@
 
 ### 6.4 清理清单
 
-删除已有替代的 `app/admin/**` 页面段及其 `actions.ts`、`metadata.ts`。删除前逐个核对这些 `actions.ts` 除首屏取数外是否还有写入型 server action（读取类例见 [setting/actions.ts](../../app/admin/setting/actions.ts)），有写入的先确认新页面已覆盖同一动作与权限再删。`components/admin/**` 只删仅被退役页面使用的组件，被前台复用的错误页、分页、加载态不动。删除范围以实际引用为准：仍被其他页面或组件引用的导出保留，只删随该页面一起退役且无其他引用的部分。[SidebarContent.tsx](../../components/admin/SidebarContent.tsx) 的 16 项菜单随旧后台退役；[constants/top-bar.ts](../../constants/top-bar.ts) 的管理后台入口在 01 已改指控制台，09 核对没有遗留 `/admin` 硬链接（含面包屑路径映射常量与上述通知链接）。历史通知不改写 `user_message.link`，可达性由重定向保证。
+删除已有替代的 `app/(site)/admin/**` 页面段及其 `actions.ts`、`metadata.ts`。删除前逐个核对这些 `actions.ts` 除首屏取数外是否还有写入型 server action（读取类例见 [setting/actions.ts](../../app/(site)/admin/setting/actions.ts)），有写入的先确认新页面已覆盖同一动作与权限再删。`components/admin/**` 只删仅被退役页面使用的组件，被前台复用的错误页、分页、加载态不动。删除范围以实际引用为准：仍被其他页面或组件引用的导出保留，只删随该页面一起退役且无其他引用的部分。[SidebarContent.tsx](../../components/admin/SidebarContent.tsx) 的 16 项菜单随旧后台退役；[constants/top-bar.ts](../../constants/top-bar.ts) 的管理后台入口在 01 已改指控制台，09 核对没有遗留 `/admin` 硬链接（含面包屑路径映射常量与上述通知链接）。历史通知不改写 `user_message.link`，可达性由重定向保证。
 
 ## 7. 定时任务
 

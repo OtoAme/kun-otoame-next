@@ -1114,7 +1114,7 @@ git commit -m "feat(message): add reply menu and read indicators"
 
 **Files:**
 - Modify: `components/message/chat/ChatContainer.tsx`
-- Modify: `app/message/chat/[conversationId]/page.tsx`
+- Modify: `app/(site)/message/chat/[conversationId]/page.tsx`
 - Modify: `tests/unit/chat-container-realtime.test.tsx`
 
 **Interfaces:**
@@ -1169,7 +1169,7 @@ In `ChatContainer.tsx`:
 
 - [x] **Step 4: Update initial page props**
 
-In `app/message/chat/[conversationId]/page.tsx`, continue calling `{ page: 1, limit: 30 }` for first load and pass `response.hasMoreBefore`.
+In `app/(site)/message/chat/[conversationId]/page.tsx`, continue calling `{ page: 1, limit: 30 }` for first load and pass `response.hasMoreBefore`.
 
 - [x] **Step 5: Run GREEN**
 
@@ -1184,7 +1184,7 @@ Expected: PASS.
 - [ ] **Step 6: Commit**
 
 ```bash
-git add components/message/chat/ChatContainer.tsx app/message/chat/[conversationId]/page.tsx tests/unit/chat-container-realtime.test.tsx
+git add components/message/chat/ChatContainer.tsx app/(site)/message/chat/[conversationId]/page.tsx tests/unit/chat-container-realtime.test.tsx
 git commit -m "perf(message): use cursor history in chat UI"
 ```
 

@@ -16,7 +16,7 @@
 - `curl -k --resolve www.otoame.top:443:127.0.0.1 https://www.otoame.top/` 返回同样的 header，并额外多了 `Cache-Control: no-cache`。
 - `curl https://www.otoame.top/` 返回 `cf-cache-status: DYNAMIC`。
 - 因此 `no-cache` 是 1Panel/OpenResty HTTPS 反代层加的，不是 Next.js 加的，也不是 Cloudflare 首先加的。该项已通过注释 OpenResty 中的 `add_header Cache-Control no-cache;` 修复，本机 HTTPS 反代已只返回 Next.js 的 `s-maxage`。
-- `app/[id]/page.tsx` 已移除服务端渲染期间的浏览量写入。详情页 hydration 后由 `PatchViewBeacon` 调用 `POST /api/patch/views`，响应固定 `Cache-Control: private, no-store`。
+- `app/(site)/[id]/page.tsx` 已移除服务端渲染期间的浏览量写入。详情页 hydration 后由 `PatchViewBeacon` 调用 `POST /api/patch/views`，响应固定 `Cache-Control: private, no-store`。
 - 卡片/列表数据已经使用 `withRealtimePatchViews`，因此只要请求到达源站，列表 API 可以展示 Redis 中的实时浏览量和下载量。
 - `invalidatePatchContentCache`、`invalidatePatchListCaches`、`invalidateCompanyCaches`、`invalidateTagCaches` 已接入 Cloudflare purge。create/rewrite/download/favorite/resource/tag/company/comment/rating、详情页 tag/company 关系调整，以及相关后台更新/删除路径会进入这些失效函数。
 
@@ -77,9 +77,9 @@ kun-patch-setting-store|state|data|kunBlockedTagIds
 
 后续应用代码工作：
 
-- 修改：`app/[id]/page.tsx`  
+- 修改：`app/(site)/[id]/page.tsx`\
   在客户端 beacon 可用后，移除 SSR 中的浏览量写入。
-- 修改：`app/[id]/actions.ts`  
+- 修改：`app/(site)/[id]/actions.ts`\
   如果浏览量写入替换为 route handler，则移除或停用对应 server action。
 - 新增：`app/api/patch/views/route.ts`  
   提供客户端/beacon 触发的 POST 浏览量增加接口。
@@ -546,8 +546,8 @@ git commit -m "perf: purge cloudflare public page cache"
 **文件：**
 - 新增：`app/api/patch/views/route.ts`
 - 新增：`components/patch/view/PatchViewBeacon.tsx`
-- 修改：`app/[id]/page.tsx`
-- 修改：`app/[id]/actions.ts`
+- 修改：`app/(site)/[id]/page.tsx`
+- 修改：`app/(site)/[id]/actions.ts`
 - 修改：`components/patch/header/Container.tsx`
 - 测试：`tests/unit/api/patch-view-route.test.ts`
 
@@ -697,7 +697,7 @@ export const PatchViewBeacon = ({ uniqueId, currentView, onViewed }: Props) => {
 
 - [ ] **步骤 5：移除 SSR 浏览量写入**
 
-在 `app/[id]/page.tsx` 中，移除 `kunUpdatePatchViewsActions` import 和调用逻辑：
+在 `app/(site)/[id]/page.tsx` 中，移除 `kunUpdatePatchViewsActions` import 和调用逻辑：
 
 ```ts
   const patch = pageData.patch
@@ -739,7 +739,7 @@ pnpm typecheck
 - [ ] **步骤 8：提交**
 
 ```bash
-git add app/api/patch/views/route.ts components/patch/view/PatchViewBeacon.tsx app/[id]/page.tsx app/[id]/actions.ts components/patch/header/Container.tsx tests/unit/api/patch-view-route.test.ts
+git add app/api/patch/views/route.ts components/patch/view/PatchViewBeacon.tsx app/(site)/[id]/page.tsx app/(site)/[id]/actions.ts components/patch/header/Container.tsx tests/unit/api/patch-view-route.test.ts
 git commit -m "perf: move patch view tracking off server render"
 ```
 
@@ -872,8 +872,8 @@ PatchViewBeacon 出现在 components/patch/view/PatchViewBeacon.tsx 和 componen
 不应出现在：
 
 ```txt
-app/[id]/page.tsx
-app/[id]/actions.ts
+app/(site)/[id]/page.tsx
+app/(site)/[id]/actions.ts
 ```
 
 - [ ] **步骤 2：确认用户收藏状态不会进入共享详情页 HTML**

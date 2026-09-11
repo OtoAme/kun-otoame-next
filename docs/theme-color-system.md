@@ -4,6 +4,8 @@
 
 本文档记录站点颜色主题系统的结构、业务 token 约定，以及新增主题时需要检查的地方。
 
+适用范围为 `app/(site)` 的前台、旧后台与管理员预览。`app/(dashboard)` 使用独立的 shadcn 令牌和 `styles/dashboard.css`，仅共享 `next-themes` 深浅色状态；下方主题扫描排除 dashboard 页面、组件和样式入口。
+
 ## 主题轴
 
 项目有两套主题轴：
@@ -439,9 +441,9 @@ pnpm typecheck
 pnpm build
 
 # 使用 rg（ripgrep）—— macOS 可通过 brew install ripgrep 安装
-rg "#f31260|#006FEE" components app styles -g '*.tsx' -g '*.ts' -g '*.css'
-rg "text-amber-|text-emerald-|text-sky-|text-orange-|text-rose-" components app -g '*.tsx'
-rg -- "--heroui-border\b|--heroui-background-\d|--heroui-overlay-\d|--heroui-foreground-\d" components app styles -g '*.ts' -g '*.tsx' -g '*.css'
+rg "#f31260|#006FEE" components 'app/(site)' styles -g '*.tsx' -g '*.ts' -g '*.css' -g '!components/dashboard/**' -g '!styles/dashboard.css'
+rg "text-amber-|text-emerald-|text-sky-|text-orange-|text-rose-" components 'app/(site)' -g '*.tsx' -g '!components/dashboard/**'
+rg -g '*.ts' -g '*.tsx' -g '*.css' -g '!components/dashboard/**' -g '!styles/dashboard.css' -- "--heroui-border\b|--heroui-background-\d|--heroui-overlay-\d|--heroui-foreground-\d" components 'app/(site)' styles
 rg "hsl\(var\([^)]+\)\)\d|\$\{colors\.[^}]+\}\d" components/kun/milkdown/codemirror/theme.ts
 ```
 

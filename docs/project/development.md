@@ -204,6 +204,8 @@ pnpm dev:webpack
 
 ### 新增或修改 API
 
+控制台页面在 `app/(dashboard)/dashboard`，管理 API 继续放在 `app/api/admin`，客户端复用 `utils/kunFetch.ts`，不另建页面 server action 写入通道。收件箱共享结构在 `types/api/inbox.ts`，查询校验在 `validations/inbox.ts`；列表搜索先覆盖所选来源的全部待审记录再限制最老候选，列表 totals 随筛选与搜索变化，侧栏 counts 保持全部待处理数。新增读取接口和投稿详情 GET 都要独立校验管理员权限并返回 `Cache-Control: private, no-store`。
+
 推荐结构：
 
 ```text
@@ -304,6 +306,10 @@ pnpm test
 - 上传配额会在 upload handler 中更新 `daily_upload_size`，改失败补偿或重试逻辑时必须考虑是否要回退配额。
 
 ### 修改主题或样式
+
+先确定页面所属根布局：前台、旧 `/admin` 与管理员预览位于 `app/(site)`，使用 HeroUI v2 和 `styles/index.css`；`/dashboard` 位于 `app/(dashboard)`，使用 `components/dashboard/ui` 的 shadcn 组件及 `styles/dashboard.css`。`components.json` 的样式与别名只面向控制台。前台 Tailwind 排除 dashboard 页面、组件和 hooks，控制台用 `source(none)` 显式扫描这三处；改变导入或扫描范围后核对两套产物，不能只凭主题令牌名称判断隔离。
+
+两套根布局使用相同的 `next-themes` 深浅色存储键。以下 `data-kun-theme` 与 `--kun-*` 规则属于前台根布局；控制台不导入前台主题脚本、HeroUI Provider 或旧后台组件。两个管理员预览复用前台布局与组件，资源卡片的 `preview` 参数必须保留只读行为。
 
 先读：
 

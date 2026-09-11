@@ -6,12 +6,13 @@
 
 | 路径                                       | 说明                                                                  |
 | ------------------------------------------ | --------------------------------------------------------------------- |
-| `components/kun/*`                         | 全站共享 UI、导航、主题、编辑器、图片查看器、cropper、auth captcha。  |
-| `components/layout/*`                      | 全站布局壳和按路由裁剪的布局 chrome。                                 |
+| `components/kun/*`                         | 前台共享 UI、导航、主题、编辑器、图片查看器、cropper、auth captcha。  |
+| `components/layout/*`                      | 前台布局壳和按路由裁剪的布局 chrome。                                 |
 | `components/home/*`                        | 首页 hero、轮播、统计、卡片。                                         |
 | `components/patch/*`                       | 游戏详情页 header、introduction、resource、comment、rating、gallery。 |
 | `components/edit/*`                        | 创建/重写游戏表单，VNDB/Bangumi/Steam/DLSite 外部数据输入。           |
-| `components/admin/*`                       | 后台列表、编辑、审核、日志、邮件和设置。                              |
+| `components/admin/*`                       | 旧后台列表、编辑、审核、日志、邮件和设置。                            |
+| `components/dashboard/*`                   | 新控制台业务组件；`ui/*` 为 shadcn 基础组件。                         |
 | `components/user/*`                        | 用户主页、关注、收藏、评论、评分、资源。                              |
 | `components/ranking/*`                     | OtomeGame 排行榜。                                                    |
 | `components/moemoepoint/*`                 | 萌萌点明细与规则说明页。                                              |
@@ -22,12 +23,20 @@
 
 ## Client/Server 边界
 
+前台与旧后台的 `app/(site)` 使用 HeroUI v2；新控制台 `app/(dashboard)` 使用 shadcn，保持独立根布局、Provider 与 CSS 导入链。控制台不能导入旧后台或 HeroUI 组件；管理员预览位于前台根布局，允许复用原前台视图。`components.json` 的组件与样式别名只指向 dashboard。
+
 - `app/*/page.tsx` 默认是 Server Component。
 - 需要 hooks、事件、browser API、store 的组件使用 `'use client'`。
 - API 调用在 client 组件中通常通过 `utils/kunFetch.ts`；状态变更请求必须使用它或自行保留同样的 CSRF header 行为。后端若用非 2xx 返回 JSON 字符串业务错误（例如私聊限流 `429`），`kunFetch` 会把该字符串返回给调用方，让现有 `typeof response === 'string'` toast 分支继续工作。私聊图片上传要额外保留非 2xx 状态码，让上传 toast 能同时给出 HTTP 状态码和服务端原因，尤其是 `413` 体积超限。
 - 页面级 server action 放在对应 `app/<route>/actions.ts`。
+- 控制台业务通过既有 HTTP API 调用（管理操作在 `/api/admin/*`，账本读取在 `/api/user/[id]/moemoepoint/ledger`）；投稿详情、只读来源、字符串业务错误和 409 冲突共用既有请求工具契约。
+
+用户管理组件位于 `components/dashboard/user`。查询条件保存在 URL，列表搜索保留 500 毫秒防抖；更新与删除后的刷新使用当前查询。编辑资料保留失败草稿，关闭时清除密码；关闭两步验证使用同一弹窗中的直接操作。发放点数遇到结果未知时冻结原请求，重试保持目标、金额、理由及 `requestId`；本人余额只通过 `setMoemoepointBalance` 同步三项值。账本自定义日期显式查询，未提交草稿不显示旧范围记录，翻页使用已提交日期。
 
 ## 资源详情与下载
+
+- 管理员收件箱详情及 `/preview/resource/[id]` 可在服务端校验 `role >= 3` 后读取完整链接，响应使用 `private, no-store`，凭据只保留在组件内存。前台公开列表与普通用户的 access/restore 流程仍按下列脱敏规则执行。
+- `ResourceDownload` 与 `ResourceDownloadCard` 接收 `preview` 参数。预览保留展开和文字展示，跳过 restore/access/download 请求；点赞显示静态计数，完整链接由管理员授权读取直接传入。
 
 - 游戏详情资源下载卡片只在首屏展示存储类型、大小、下载次数和可公开校验用 hash，不直接渲染真实链接、提取码或解压码；用户点击“获取下载链接”后再调用 `/api/patch/resource/download/access` 在本地组件状态中展示完整信息。资源编辑入口需要先用 `accessResourceLinksForEdit` 水合完整链接，再打开编辑表单，不能把敏感链接重新放回资源列表数据或全局缓存。
 - `ResourceDownloadCard` 自己维护 `accessedLink`、`accessing` 和错误文案状态：未获取时显示“获取下载链接”按钮，获取中禁用按钮并显示 loading，业务字符串错误用 toast 和 `role="alert"` 行内提示展示，请求异常显示“获取下载链接失败，请稍后重试”。
@@ -128,6 +137,8 @@ Store 改动要检查使用该 store 的页面和组件，不要只改类型。
 
 ## 主题与样式
 
+本节的 `--kun-*`、HeroUI 桥接和 `data-kun-theme` 属于前台根布局。控制台样式位于 `styles/dashboard.css`：用 `source(none)` 及 `@source` 显式纳入 dashboard 页面、组件和 hooks；前台 `styles/tailwind.css` 对这三处使用 `@source not`。控制台只共享 `next-themes` 的深浅色状态，不加载前台站点主题脚本；两套产物隔离仍需按模块 01 的 E01-01 实验核对。
+
 核心文件：
 
 - `docs/theme-color-system.md`
@@ -224,10 +235,12 @@ pnpm typecheck
 
 入口：
 
-- `app/user/[id]/submission/page.tsx`（一个「发布条目」标签, 本人与访客两种视角）
-- `app/submission/[id]/page.tsx`（编辑与预览）
-- `app/admin/submission/page.tsx`（审核队列）
-- `app/admin/submission/[id]/page.tsx`（审核详情与四个审核动作）
+- `app/(site)/user/[id]/submission/page.tsx`（一个「发布条目」标签, 本人与访客两种视角）
+- `app/(site)/submission/[id]/page.tsx`（编辑与预览）
+- `app/(site)/admin/submission/page.tsx`（审核队列）
+- `app/(site)/admin/submission/[id]/page.tsx`（审核详情与四个审核动作）
+- `app/(dashboard)/dashboard/page.tsx`（新收件箱与选中项审核详情）
+- `app/(site)/preview/submission/[id]/page.tsx`（管理员前台只读预览）
 - `components/submission/**`、`store/patchSubmissionStore.ts`、`hooks/usePatchSubmissionAutosave.ts`
 
 规则：
@@ -254,7 +267,7 @@ pnpm typecheck
   显示候选到既有/待新建会社的映射、失效快照、阻断型歧义和非阻断 external-ID/name
   冲突；阻断型歧义存在时禁用「通过」，文案明确出口是会社身份维护，而不是要求投稿人
   修改。后端批准仍会重新解析并作最终栅栏，前端禁用不是正确性边界。
-- **审核队列只负责检索和进入详情。** 通过、要求修改、驳回、违规四个动作全部放在详情页，避免审核员未看正文与素材就结算；详情与作者预览共用 `publishPreview.ts` 投影和 `PatchSubmissionPreviewView`。超级管理员自审必须显式打开 override，普通管理员不能自审。详情页若收到“投稿已被撤回或处理”的状态冲突，只显示错误、关闭确认弹窗并 `router.refresh()`；其它业务错误保留当前弹窗和上下文。
+- **审核动作由详情承载。** 旧审核队列负责检索与进入详情；新控制台在收件箱选中项详情中提供通过、要求修改、驳回、违规四个动作。两处复用 `/api/admin/patch-submission` 审核服务，前台预览共用 `publishPreview.ts` 投影和 `PatchSubmissionPreviewView`。超级管理员自审必须显式打开 override，普通管理员不能自审。旧详情收到“投稿已被撤回或处理”时关闭确认弹窗并 `router.refresh()`；新控制台按相同冲突字符串刷新该项，其他业务错误保留当前上下文。
 - **投稿画廊排序随草稿流程自动同步。** ready 行与待上传项在同一个 dnd-kit 网格里排序，拖拽用独立的可聚焦、键盘可达手柄。顺序跨 localforage 与数据库两个存储、无法原子提交，所以拖动先把完整的 namespaced 序列（`server:<id>` / `local:<clientAssetId>`）写进 `submission:<id>:order` draft，刷新后按它恢复。上传截图、保存草稿、打开可编辑预览和提交审核都会先经同一个顺序 flush；同步失败就停止当前动作、保留用户排好的顺序与 draft，供下次重试。flush 进入时先排空写入队列再读 draft，否则刚拖完立刻保存会读到上一版序列，把作者已经替换掉的顺序冻结上去。并发调用共享同一次同步；请求期间若又产生了新顺序，同一次 flush 会继续同步最新 draft 后才返回成功。ready 行的序号允许不连续（待传卡可占中间位置），只要求唯一。
 - **拖拽手势本身有三个硬性要求。** ① 拖动结束时先把新序列同步渲染出来，再去等 localforage 写入：dnd-kit 在同一帧清掉全部 drag transform，等存储往返会让卡片先弹回原位、几帧后再跳进新位置，落位动画也会瞄准卡片正在离开的槽位；写入失败才回滚到拖动前的序列并提示。② 网格用 `DragOverlay` + `defaultDropAnimationSideEffects` 渲染一份跟随指针的只读副本（`aria-hidden` + `pointer-events-none`，真正的可聚焦控件只留在原卡片上），与 create/rewrite 画廊一致。③ `DndContext` 挂 `utils/dndModifiers.ts` 的本地 `restrictToParentElement`，把拖动夹在网格矩形内——外层 HeroUI Card 会裁掉 overflow，不夹取时拖出网格的部分直接被切掉，而网格外本来也没有可落下的位置。
 - **移动端能不能拖，取决于手柄上的 `touch-none`。** Pointer Events 下无法在事件监听器里阻止浏览器的原生触摸行为，`touch-action: none` 是唯一可靠手段；不设置时手指一移动浏览器就开始滚动并派发 `pointercancel`，拖拽永远激活不了。按 dnd-kit 的建议只让手柄退出（列表其余部分仍可滚动），并且手柄在 `sm` 以下放大到 44px 触摸目标。不要再加 `TouchSensor`：`PointerSensor` 已经覆盖 touch，两者并存会重复触发。

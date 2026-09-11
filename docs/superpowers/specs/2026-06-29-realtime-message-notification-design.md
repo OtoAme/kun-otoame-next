@@ -48,7 +48,7 @@ This avoids adding WebSocket/SSE infrastructure while satisfying the requested b
 
 Create `components/message/MessageRealtimeSync.tsx`.
 
-The component mounts once in `app/providers.tsx`, reads the logged-in user from `userStore`, and synchronizes `messageStore` from `/api/message/unread`.
+The component mounts once in `app/(site)/providers.tsx`, reads the logged-in user from `userStore`, and synchronizes `messageStore` from `/api/message/unread`.
 
 Rules:
 
