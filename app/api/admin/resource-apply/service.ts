@@ -49,10 +49,13 @@ export const approvePatchResource = async (
   }
 
   const result = await prisma.$transaction(async (prisma) => {
-    await prisma.patch_resource.update({
-      where: { id: resourceId },
+    const claimed = await prisma.patch_resource.updateMany({
+      where: { id: resourceId, status: 2 },
       data: { status: { set: 0 } }
     })
+    if (claimed.count === 0) {
+      return null
+    }
 
     const uniqueId = await updatePatchAttributes(resource.patch_id, prisma)
 
@@ -71,7 +74,7 @@ export const approvePatchResource = async (
 
     await prisma.admin_log.create({
       data: {
-        type: 'approve',
+        type: 'resource_apply_approve',
         user_id: adminUid,
         content: `管理员 ${admin.name} 审核通过了一条${resourceTypeName}\n\nGalgame 名称:${resource.patch.name}\n资源 ID:${resource.id}\n资源标题:${resource.name}\n上传用户:${resource.user.name}`
       }
@@ -79,6 +82,9 @@ export const approvePatchResource = async (
 
     return { uniqueId }
   })
+  if (!result) {
+    return '当前资源状态无需审核'
+  }
 
   await deletePatchResourceCache(result.uniqueId)
 
@@ -128,9 +134,12 @@ export const declinePatchResource = async (
   )
 
   const result = await prisma.$transaction(async (prisma) => {
-    await prisma.patch_resource.delete({
-      where: { id: resourceId }
+    const claimed = await prisma.patch_resource.deleteMany({
+      where: { id: resourceId, status: 2 }
     })
+    if (claimed.count === 0) {
+      return null
+    }
 
     const uniqueId = await updatePatchAttributes(resource.patch_id, prisma)
 
@@ -149,7 +158,7 @@ export const declinePatchResource = async (
 
     await prisma.admin_log.create({
       data: {
-        type: 'decline',
+        type: 'resource_apply_decline',
         user_id: adminUid,
         content: `管理员 ${admin.name} 拒绝了一条${resourceTypeName}\n\n拒绝原因:${reason}\nGalgame 名称:${resource.patch.name}\n资源 ID:${resource.id}\n资源标题:${resource.name}\n上传用户:${resource.user.name}`
       }
@@ -157,6 +166,9 @@ export const declinePatchResource = async (
 
     return { uniqueId }
   })
+  if (!result) {
+    return '当前资源状态无需审核'
+  }
 
   await deletePatchResourceCache(result.uniqueId)
 

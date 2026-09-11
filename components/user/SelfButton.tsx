@@ -46,7 +46,7 @@ export const SelfButton = ({ user }: Props) => {
           startContent={<Shield className="size-4" />}
           color="primary"
           fullWidth
-          onPress={() => router.push('/admin')}
+          onPress={() => router.push('/dashboard')}
         >
           管理后台
         </Button>

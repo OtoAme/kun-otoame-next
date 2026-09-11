@@ -36,7 +36,7 @@ describe('/otomegame page', () => {
       total: 0
     })
 
-    const { default: Page } = await import('~/app/otomegame/page')
+    const { default: Page } = await import('~/app/(site)/otomegame/page')
     const element = (await Page()) as React.ReactElement<{
       children: React.ReactElement<{
         initialVisibility?: 'pending' | 'show'

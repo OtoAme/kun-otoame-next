@@ -29,13 +29,15 @@ interface Props {
   link: PatchResourceLink
   restoredLink?: PatchResourceAccessLink
   restoredObtainedExpiresAt?: string
+  preview?: boolean
 }
 
 export const ResourceDownloadCard = ({
   resource,
   link,
   restoredLink,
-  restoredObtainedExpiresAt
+  restoredObtainedExpiresAt,
+  preview = false
 }: Props) => {
   const [manuallyAccessedLink, setManuallyAccessedLink] =
     useState<PatchResourceAccessLink | null>(null)
@@ -45,13 +47,28 @@ export const ResourceDownloadCard = ({
   const [errorMessage, setErrorMessage] = useState('')
   const restoredAccessedLink =
     restoredLink?.id === link.id ? restoredLink : null
-  const accessedLink = manuallyAccessedLink ?? restoredAccessedLink
+  const previewLink: PatchResourceAccessLink | null =
+    preview && link.content
+      ? {
+          id: link.id,
+          storage: link.storage,
+          size: link.size,
+          content: link.content,
+          code: link.code ?? '',
+          password: link.password ?? '',
+          hash: link.hash ?? ''
+        }
+      : null
+  const accessedLink = preview
+    ? previewLink
+    : (manuallyAccessedLink ?? restoredAccessedLink)
   const obtainedExpiresAt =
     manualObtainedExpiresAt ||
     (restoredAccessedLink ? (restoredObtainedExpiresAt ?? '') : '') ||
     link.obtainedExpiresAt ||
     ''
   const handleClickDownload = async () => {
+    if (preview) return
     await kunFetchPut<KunResponse<{}>>('/patch/resource/download', {
       patchId: resource.patchId,
       resourceId: resource.id,
@@ -60,6 +77,7 @@ export const ResourceDownloadCard = ({
   }
 
   const handleAccessLink = async () => {
+    if (preview) return
     setAccessing(true)
     setErrorMessage('')
 
@@ -172,6 +190,8 @@ export const ResourceDownloadCard = ({
             {renderHash(accessedLink.hash)}
           </div>
         </>
+      ) : preview ? (
+        <p className="text-sm text-default-500">该链接暂无可预览的地址</p>
       ) : (
         <div className="space-y-2">
           <Button

@@ -103,7 +103,7 @@ export const adminUpdateUserSchema = z.object({
     .min(1, { message: '用户名长度至少为 1 个字符' })
     .max(17, { message: '用户名长度不能超过 17 个字符' }),
   email: z.string().trim().email({ message: '请输入合法的邮箱格式' }),
-  role: z.coerce.number().min(1).max(3),
+  role: z.coerce.number().int().min(1).max(4),
   status: z.coerce.number().min(0).max(2),
   dailyImageCount: z.coerce.number().min(0).max(50),
   password: z.preprocess(

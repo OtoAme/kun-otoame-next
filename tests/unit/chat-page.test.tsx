@@ -8,7 +8,7 @@ const mocks = vi.hoisted(() => ({
   KunBreadcrumbTitle: vi.fn(() => <div data-testid="chat-breadcrumb-title" />)
 }))
 
-vi.mock('~/app/message/chat/actions', () => ({
+vi.mock('~/app/(site)/message/chat/actions', () => ({
   kunGetConversationMessagesAction: mocks.kunGetConversationMessagesAction
 }))
 
@@ -43,7 +43,7 @@ describe('/message/chat/[conversationId] page', () => {
 
   it('uses OtoAme private-chat metadata for the conversation page', async () => {
     const { metadata, viewport } = await import(
-      '~/app/message/chat/[conversationId]/page'
+      '~/app/(site)/message/chat/[conversationId]/page'
     )
 
     expect(metadata.title).toBe('私聊')
@@ -80,7 +80,7 @@ describe('/message/chat/[conversationId] page', () => {
     })
 
     const { default: Page } = await import(
-      '~/app/message/chat/[conversationId]/page'
+      '~/app/(site)/message/chat/[conversationId]/page'
     )
     const element = (await Page({
       params: Promise.resolve({ conversationId: '5abc' })
@@ -99,7 +99,7 @@ describe('/message/chat/[conversationId] page', () => {
     })
 
     const { default: Page } = await import(
-      '~/app/message/chat/[conversationId]/page'
+      '~/app/(site)/message/chat/[conversationId]/page'
     )
     const element = (await Page({
       params: Promise.resolve({ conversationId: '5' })

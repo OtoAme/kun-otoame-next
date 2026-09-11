@@ -1,3 +1,6 @@
+export const isAdminPreviewPath = (pathname: string): boolean =>
+  /^\/preview\/(submission|resource)\/[^/]+\/?$/.test(pathname)
+
 export const isPatchPath = (pathname: string): boolean => {
   return /^\/[A-Za-z0-9]{8}$/.test(pathname)
 }

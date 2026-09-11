@@ -10,6 +10,12 @@ const doesMiddlewareMatch = (url: string) =>
   })
 
 describe('middleware matcher', () => {
+  it('protects dashboard and both administrator preview paths', () => {
+    for (const path of ['/dashboard', '/dashboard/user', '/preview/submission/7', '/preview/resource/8']) {
+      expect(doesMiddlewareMatch(`https://www.otoame.top${path}`)).toBe(true)
+    }
+  })
+
   it('does not buffer the large admin Sticker import request', () => {
     expect(
       doesMiddlewareMatch(

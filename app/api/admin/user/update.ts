@@ -8,7 +8,7 @@ export const updateUser = async (
   input: z.infer<typeof adminUpdateUserSchema>,
   adminUid: number
 ) => {
-  const { uid, dailyImageCount, password, ...rest } = input
+  const { uid, dailyImageCount, password, role, ...rest } = input
 
   const user = await prisma.user.findUnique({
     where: { id: uid },
@@ -33,8 +33,11 @@ export const updateUser = async (
   if (!admin) {
     return '未找到该管理员'
   }
-  if (rest.role >= 3 && admin.role < 4) {
+  if (role >= 3 && admin.role < 4) {
     return '设置用户为管理员仅限超级管理员可用'
+  }
+  if (role === 4 && user.role !== 4) {
+    return '不能将用户提升为超级管理员'
   }
   if (rest.name !== user.name) {
     const existingUserByName = await prisma.user.findUnique({
@@ -61,10 +64,10 @@ export const updateUser = async (
     ...(password ? { password: '[REDACTED]' } : {})
   }
   const shouldRevokeSessions = Boolean(password) || rest.status === 2
-  const isRoleDowngrade = rest.role < user.role
+  const isRoleDowngrade = role < user.role
   const sessionUpdate = {
     ...(rest.name !== user.name ? { name: rest.name } : {}),
-    ...(rest.role !== user.role ? { role: rest.role } : {})
+    ...(role !== user.role ? { role } : {})
   }
 
   if (shouldRevokeSessions || isRoleDowngrade) {
@@ -77,6 +80,8 @@ export const updateUser = async (
       data: {
         daily_image_count: dailyImageCount,
         ...rest,
+        // Keeping role 4 must not restore it after a concurrent downgrade.
+        ...(role === 4 ? {} : { role }),
         ...(hashedPassword ? { password: hashedPassword } : {})
       }
     })

@@ -211,6 +211,50 @@ describe('approval concurrency', () => {
   })
 })
 
+describe('review activity logs', () => {
+  const actions = [
+    ['approve', () => approvePatchSubmission(1, admin, false)],
+    ['reject', () => rejectPatchSubmission(1, admin, '重复条目', false)],
+    [
+      'request changes',
+      () => requestPatchSubmissionChanges(1, admin, '请补充介绍', false)
+    ],
+    ['violate', () => violatePatchSubmission(1, admin, '内容违规', false)]
+  ] as const
+
+  it.each(actions)(
+    'counts one successful %s action in the activity log',
+    async (_, run) => {
+      await run()
+
+      expect(tx.admin_log.create).toHaveBeenCalledExactlyOnceWith({
+        data: {
+          type: 'submission_review',
+          user_id: admin.uid,
+          content: expect.stringContaining('投稿 ID: 1')
+        }
+      })
+    }
+  )
+
+  it.each(actions)(
+    'does not count a %s action or notify when the pending guard loses',
+    async (_, run) => {
+      tx.patch_submission.updateMany.mockResolvedValue({ count: 0 })
+
+      await expect(run()).rejects.toThrow(stateChangedMessage)
+
+      expect(tx.admin_log.create).not.toHaveBeenCalled()
+      expect(tx.user_message.create).not.toHaveBeenCalled()
+      expect(releaseMock).not.toHaveBeenCalled()
+      expect(forfeitMock).not.toHaveBeenCalled()
+      expect(earnMock).not.toHaveBeenCalled()
+      expect(runPublishSideEffectsMock).not.toHaveBeenCalled()
+      expect(takeDownSubmissionAssetsMock).not.toHaveBeenCalled()
+    }
+  )
+})
+
 describe('approval settlement', () => {
   it('releases the deposit and pays the reward', async () => {
     await approvePatchSubmission(1, admin, false)
@@ -367,9 +411,13 @@ describe('approval external-id conflict', () => {
     await approvePatchSubmission(1, admin, false)
 
     expect(tx.admin_log.create).toHaveBeenCalledTimes(2)
+    expect(tx.admin_log.create).toHaveBeenNthCalledWith(1, {
+      data: expect.objectContaining({ type: 'submission_review' })
+    })
     expect(tx.admin_log.create).toHaveBeenLastCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
+          type: 'update',
           content: expect.stringContaining('external-id-name-conflict')
         })
       })

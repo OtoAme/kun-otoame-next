@@ -26,7 +26,7 @@ export const kunNavItem: KunNavItem[] = [
 
 const kunAdminNavItem: KunNavItem = {
   name: '管理后台',
-  href: '/admin'
+  href: '/dashboard'
 }
 
 const kunMobileOnlyNavItem: KunNavItem[] = [

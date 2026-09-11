@@ -41,7 +41,7 @@ vi.mock('~/components/kun/Header', () => ({
 const renderMessageLayout = async (pathname: string) => {
   navigationMock.pathname = pathname
 
-  const { default: MessageLayout } = await import('~/app/message/layout')
+  const { default: MessageLayout } = await import('~/app/(site)/message/layout')
 
   return renderToStaticMarkup(
     <MessageLayout>

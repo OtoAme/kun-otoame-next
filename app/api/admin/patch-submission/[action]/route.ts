@@ -4,7 +4,12 @@ import {
   patchSubmissionApproveSchema,
   patchSubmissionRejectSchema
 } from '~/validations/patchSubmission'
-import { PATCH_SUBMISSION_REVIEW_STATE_CHANGED_MESSAGE } from '~/constants/patchSubmission'
+import {
+  PATCH_SUBMISSION_REVIEW_MIN_ROLE,
+  PATCH_SUBMISSION_REVIEW_STATE_CHANGED_MESSAGE
+} from '~/constants/patchSubmission'
+import { adminInboxIdSchema } from '~/validations/inbox'
+import { getAdminPatchSubmission } from '../service'
 import { PatchSubmissionError } from '~/app/api/patch-submission/quota'
 import {
   approvePatchSubmission,
@@ -18,6 +23,25 @@ const privateJson = (body: unknown, status = 200) =>
     status,
     headers: { 'Cache-Control': 'private, no-store' }
   })
+
+export const GET = async (
+  req: NextRequest,
+  { params }: { params: Promise<{ action: string }> }
+) => {
+  const payload = await verifyHeaderCookie(req)
+  if (!payload) return privateJson('用户未登录')
+  if (payload.role < PATCH_SUBMISSION_REVIEW_MIN_ROLE) {
+    return privateJson('您没有审核投稿的权限')
+  }
+
+  const { action } = await params
+  const parsed = adminInboxIdSchema.safeParse(action)
+  if (!parsed.success) {
+    return privateJson(parsed.error.errors[0]?.message ?? '投稿 ID 格式不正确')
+  }
+
+  return privateJson(await getAdminPatchSubmission(parsed.data, payload.role))
+}
 
 /**
  * All four review actions share one handler so the permission checks, the

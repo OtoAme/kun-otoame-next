@@ -18,6 +18,7 @@ import type {
 
 interface Props {
   resource: PatchResource
+  preview?: boolean
 }
 
 const COLLAPSED_HEIGHT_PX = 96
@@ -29,9 +30,11 @@ type RestoreState = {
   error: string
 }
 
-export const ResourceDownload = ({ resource }: Props) => {
+export const ResourceDownload = ({ resource, preview = false }: Props) => {
   const [showLinks, setShowLinks] = useState<Record<number, boolean>>(() =>
-    resource.links.some((link) => link.revealed) ? { [resource.id]: true } : {}
+    preview || resource.links.some((link) => link.revealed)
+      ? { [resource.id]: true }
+      : {}
   )
   const revealedLinkIds = useMemo(
     () =>
@@ -79,7 +82,7 @@ export const ResourceDownload = ({ resource }: Props) => {
   }, [])
 
   useEffect(() => {
-    if (revealedLinkIds.length === 0) {
+    if (preview || revealedLinkIds.length === 0) {
       restoreRequestRef.current = null
       setRestoreState({
         key: restoreKey,
@@ -152,7 +155,7 @@ export const ResourceDownload = ({ resource }: Props) => {
     return () => {
       stale = true
     }
-  }, [restoreKey, resource.id, resource.patchId, revealedLinkIds])
+  }, [preview, restoreKey, resource.id, resource.patchId, revealedLinkIds])
 
   useLayoutEffect(() => {
     const element = noteContentRef.current
@@ -238,7 +241,13 @@ export const ResourceDownload = ({ resource }: Props) => {
         />
 
         <div className="flex gap-2">
-          <ResourceLikeButton resource={resource} />
+          {preview ? (
+            <span className="self-center text-sm" aria-label="点赞数">
+              {resource.likeCount}
+            </span>
+          ) : (
+            <ResourceLikeButton resource={resource} />
+          )}
           <Button
             color="primary"
             isIconOnly
@@ -265,6 +274,7 @@ export const ResourceDownload = ({ resource }: Props) => {
                 key={link.id}
                 resource={resource}
                 link={link}
+                preview={preview}
                 {...(restoredLink
                   ? {
                       restoredLink,

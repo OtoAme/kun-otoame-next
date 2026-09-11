@@ -60,13 +60,13 @@ vi.mock('~/components/kun/theme/SiteThemeScript', () => ({
   SiteThemeScript: () => null
 }))
 
-vi.mock('~/app/providers', () => ({
+vi.mock('~/app/(site)/providers', () => ({
   Providers: ({ children }: { children: React.ReactNode }) => (
     <div data-testid="providers">{children}</div>
   )
 }))
 
-vi.mock('~/app/actions', () => ({}))
+vi.mock('~/app/(site)/actions', () => ({}))
 
 describe('RootLayout content band', () => {
   let root: Root | undefined
@@ -85,7 +85,7 @@ describe('RootLayout content band', () => {
   it('renders the global footer on regular pages', async () => {
     navigationMock.pathname = '/'
 
-    const { default: RootLayout } = await import('~/app/layout')
+    const { default: RootLayout } = await import('~/app/(site)/layout')
     const element = await RootLayout({
       children: <main data-testid="page-content">content</main>
     })
@@ -99,7 +99,7 @@ describe('RootLayout content band', () => {
   it('keeps the root content band stretchable for route-specific layout control', async () => {
     navigationMock.pathname = '/'
 
-    const { default: RootLayout } = await import('~/app/layout')
+    const { default: RootLayout } = await import('~/app/(site)/layout')
     const element = await RootLayout({
       children: <main data-testid="page-content">content</main>
     })
@@ -117,7 +117,7 @@ describe('RootLayout content band', () => {
   it('removes global footer elements from conversation detail pages', async () => {
     navigationMock.pathname = '/message/chat/12'
 
-    const { default: RootLayout } = await import('~/app/layout')
+    const { default: RootLayout } = await import('~/app/(site)/layout')
     const element = await RootLayout({
       children: <main data-testid="page-content">content</main>
     })
@@ -129,6 +129,21 @@ describe('RootLayout content band', () => {
     expect(markup).toContain('max-lg:min-h-0')
     expect(markup).toContain('max-lg:overflow-hidden')
   })
+
+  it.each(['/preview/submission/12', '/preview/resource/34'])(
+    'keeps the site renderer but omits footer controls for %s',
+    async (pathname) => {
+      navigationMock.pathname = pathname
+      const { default: RootLayout } = await import('~/app/(site)/layout')
+      const markup = renderToStaticMarkup(await RootLayout({
+        children: <main data-testid="preview-content">预览正文</main>
+      }))
+      expect(markup).toContain('data-testid="providers"')
+      expect(markup).toContain('data-testid="preview-content"')
+      expect(markup).not.toContain('data-testid="footer"')
+      expect(markup).not.toContain('data-testid="back-to-top"')
+    }
+  )
 
   it('restores document scrolling after leaving conversation detail pages', async () => {
     dom = new JSDOM('<!doctype html><div id="root"></div>', {

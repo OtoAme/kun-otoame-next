@@ -6,6 +6,8 @@ import type { NextRequest } from 'next/server'
 export const config = {
   matcher: [
     '/admin/:path*',
+    '/dashboard/:path*',
+    '/preview/:path*',
     '/user/:path*',
     '/comment/:path*',
     '/edit/:path*',

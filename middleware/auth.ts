@@ -3,7 +3,7 @@ import { parseCookies } from '~/utils/cookies'
 import { verifyKunTokenEdge } from '~/app/api/utils/jwtEdge'
 import type { NextRequest } from 'next/server'
 
-const protectedPaths = ['/admin', '/user', '/comment', '/edit']
+const protectedPaths = ['/admin', '/dashboard', '/preview', '/user', '/comment', '/edit']
 
 const domain =
   process.env.NODE_ENV === 'development'
@@ -11,7 +11,7 @@ const domain =
     : process.env.NEXT_PUBLIC_KUN_PATCH_ADDRESS_PROD
 
 export const isProtectedRoute = (pathname: string) =>
-  protectedPaths.some((path) => pathname.startsWith(path))
+  protectedPaths.some((path) => pathname === path || pathname.startsWith(`${path}/`))
 
 const redirectToLogin = (request: NextRequest) => {
   const loginUrl = new URL('/login', domain)

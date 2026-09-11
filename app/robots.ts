@@ -4,6 +4,8 @@ import type { MetadataRoute } from 'next'
 const DISALLOW_PATHS = [
   '/message',
   '/admin',
+  '/dashboard',
+  '/preview',
   '/user',
   '/tag',
   '/*?page=',

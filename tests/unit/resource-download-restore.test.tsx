@@ -181,7 +181,7 @@ describe('ResourceDownload revealed mirror restore', () => {
     })
   }
 
-  const renderResourceDownload = async (initialResource: PatchResource) => {
+  const renderResourceDownload = async (initialResource: PatchResource, preview = false) => {
     dom = new JSDOM('<!doctype html><div id="root"></div>', {
       url: 'http://localhost'
     })
@@ -206,7 +206,7 @@ describe('ResourceDownload revealed mirror restore', () => {
       React.useLayoutEffect(() => {
         onLayout?.()
       }, [currentResource, onLayout])
-      return <Component resource={currentResource} />
+      return <Component resource={currentResource} preview={preview} />
     }
     await act(async () => {
       root!.render(<Harness currentResource={initialResource} />)
@@ -229,6 +229,16 @@ describe('ResourceDownload revealed mirror restore', () => {
   beforeEach(() => {
     fetchMock.kunFetchPost.mockReset()
     downloadCardMock.render.mockReset()
+  })
+
+  it('keeps administrator preview read-only even for revealed mirrors', async () => {
+    const { container } = await renderResourceDownload(withLinks([
+      { ...link21, ...sensitiveLink21, revealed: true }
+    ], { status: 2, likeCount: 7 }), true)
+    await flushEffects()
+    expect(fetchMock.kunFetchPost).not.toHaveBeenCalled()
+    expect(container.textContent).toContain('7')
+    expect(container.textContent).not.toContain('like')
   })
 
   afterEach(async () => {

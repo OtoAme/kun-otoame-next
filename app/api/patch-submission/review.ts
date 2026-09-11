@@ -59,10 +59,11 @@ const assertNotSelfReview = (
 const writeAdminLog = (
   tx: Prisma.TransactionClient,
   reviewer: Reviewer,
-  content: string
+  content: string,
+  type = 'update'
 ) =>
   tx.admin_log.create({
-    data: { type: 'update', user_id: reviewer.uid, content }
+    data: { type, user_id: reviewer.uid, content }
   })
 
 const loadPendingSubmission = async (
@@ -234,6 +235,15 @@ export const approvePatchSubmission = async (
               }))
           })
 
+          await claimPending(tx, submissionId, {
+            status: 'published',
+            patch_id: patch.id,
+            reviewed_by_id: reviewer.uid,
+            reviewed_at: new Date(),
+            settled_at: new Date(),
+            review_reason: null
+          })
+
           let balance = null
           if (submission.reservation_id) {
             const released = await releaseMoemoepoint(tx, {
@@ -257,15 +267,6 @@ export const approvePatchSubmission = async (
             idempotencyKey: `patch_submission:${submissionId}:publish-reward`
           })
 
-          await claimPending(tx, submissionId, {
-            status: 'published',
-            patch_id: patch.id,
-            reviewed_by_id: reviewer.uid,
-            reviewed_at: new Date(),
-            settled_at: new Date(),
-            review_reason: null
-          })
-
           await createMessage(
             {
               type: 'system',
@@ -279,7 +280,8 @@ export const approvePatchSubmission = async (
           await writeAdminLog(
             tx,
             reviewer,
-            `${overrode ? '【超级管理员自审 override】' : ''}管理员 ${reviewer.name} 通过了投稿《${submission.name}》(投稿 ID: ${submissionId}), 生成游戏 ${patch.unique_id}`
+            `${overrode ? '【超级管理员自审 override】' : ''}管理员 ${reviewer.name} 通过了投稿《${submission.name}》(投稿 ID: ${submissionId}), 生成游戏 ${patch.unique_id}`,
+            'submission_review'
           )
           await writeCompanyResolutionDiagnosticLogs(
             tx,
@@ -346,6 +348,14 @@ export const rejectPatchSubmission = async (
         overrideSelfReview
       )
 
+      await claimPending(tx, submissionId, {
+        status: 'rejected',
+        reviewed_by_id: reviewer.uid,
+        reviewed_at: new Date(),
+        settled_at: new Date(),
+        review_reason: reason
+      })
+
       let balance = null
       if (submission.reservation_id) {
         const released = await releaseMoemoepoint(tx, {
@@ -357,14 +367,6 @@ export const rejectPatchSubmission = async (
         })
         balance = released.balance
       }
-
-      await claimPending(tx, submissionId, {
-        status: 'rejected',
-        reviewed_by_id: reviewer.uid,
-        reviewed_at: new Date(),
-        settled_at: new Date(),
-        review_reason: reason
-      })
 
       await createMessage(
         {
@@ -379,7 +381,8 @@ export const rejectPatchSubmission = async (
       await writeAdminLog(
         tx,
         reviewer,
-        `${overrode ? '【超级管理员自审 override】' : ''}管理员 ${reviewer.name} 驳回了投稿《${submission.name}》(投稿 ID: ${submissionId}), 押金已返还。原因: ${reason}`
+        `${overrode ? '【超级管理员自审 override】' : ''}管理员 ${reviewer.name} 驳回了投稿《${submission.name}》(投稿 ID: ${submissionId}), 押金已返还。原因: ${reason}`,
+        'submission_review'
       )
 
       return { balance }
@@ -430,7 +433,8 @@ export const requestPatchSubmissionChanges = async (
       await writeAdminLog(
         tx,
         reviewer,
-        `${overrode ? '【超级管理员自审 override】' : ''}管理员 ${reviewer.name} 要求修改投稿《${submission.name}》(投稿 ID: ${submissionId})。原因: ${reason}`
+        `${overrode ? '【超级管理员自审 override】' : ''}管理员 ${reviewer.name} 要求修改投稿《${submission.name}》(投稿 ID: ${submissionId})。原因: ${reason}`,
+        'submission_review'
       )
 
       return {}
@@ -457,18 +461,6 @@ export const violatePatchSubmission = async (
         overrideSelfReview
       )
 
-      let balance = null
-      if (submission.reservation_id) {
-        const forfeited = await forfeitMoemoepoint(tx, {
-          reservationId: submission.reservation_id,
-          reasonCode: PATCH_SUBMISSION_REASON.depositForfeited.code,
-          reason: `${PATCH_SUBMISSION_REASON.depositForfeited.text}：${reason.slice(0, 200)}`,
-          idempotencyKey: `patch_submission:${submissionId}:forfeit`,
-          operatorId: reviewer.uid
-        })
-        balance = forfeited.balance
-      }
-
       // User content is erased immediately. Asset keys and gallery rows remain
       // hidden as the durable cleanup credential until S3 deletion and CDN
       // purge are both confirmed.
@@ -480,6 +472,18 @@ export const violatePatchSubmission = async (
         review_reason: reason,
         payload: {} as Prisma.InputJsonValue
       })
+
+      let balance = null
+      if (submission.reservation_id) {
+        const forfeited = await forfeitMoemoepoint(tx, {
+          reservationId: submission.reservation_id,
+          reasonCode: PATCH_SUBMISSION_REASON.depositForfeited.code,
+          reason: `${PATCH_SUBMISSION_REASON.depositForfeited.text}：${reason.slice(0, 200)}`,
+          idempotencyKey: `patch_submission:${submissionId}:forfeit`,
+          operatorId: reviewer.uid
+        })
+        balance = forfeited.balance
+      }
 
       await createMessage(
         {
@@ -494,7 +498,8 @@ export const violatePatchSubmission = async (
       await writeAdminLog(
         tx,
         reviewer,
-        `${overrode ? '【超级管理员自审 override】' : ''}管理员 ${reviewer.name} 判定投稿《${submission.name}》违规 (投稿 ID: ${submissionId}), 扣除 ${submission.held_amount} 萌萌点。原因: ${reason}`
+        `${overrode ? '【超级管理员自审 override】' : ''}管理员 ${reviewer.name} 判定投稿《${submission.name}》违规 (投稿 ID: ${submissionId}), 扣除 ${submission.held_amount} 萌萌点。原因: ${reason}`,
+        'submission_review'
       )
 
       return { balance }

@@ -47,7 +47,7 @@ describe('moemoepoint source guard', () => {
     const [ledger, rules, adminPage] = await Promise.all([
       readFile('components/moemoepoint/LedgerContainer.tsx', 'utf8'),
       readFile('components/moemoepoint/Rules.tsx', 'utf8'),
-      readFile('app/admin/user/[id]/moemoepoint/page.tsx', 'utf8')
+      readFile('app/(site)/admin/user/[id]/moemoepoint/page.tsx', 'utf8')
     ])
 
     expect(ledger).toContain(
@@ -105,7 +105,7 @@ describe('moemoepoint source guard', () => {
   })
 
   it('gives visitors a clear login path instead of an error message', async () => {
-    const page = await readFile('app/moemoepoint/page.tsx', 'utf8')
+    const page = await readFile('app/(site)/moemoepoint/page.tsx', 'utf8')
 
     expect(page).toContain('登录后才能查看自己的萌萌点明细')
     expect(page).toContain('href="/login"')
@@ -113,7 +113,7 @@ describe('moemoepoint source guard', () => {
   })
 
   it('keeps the visitor state server-component compatible', async () => {
-    const page = await readFile('app/moemoepoint/page.tsx', 'utf8')
+    const page = await readFile('app/(site)/moemoepoint/page.tsx', 'utf8')
 
     expect(page).toContain("from '@heroui/button'")
     expect(page).toContain("from '@heroui/card'")
@@ -158,8 +158,8 @@ describe('moemoepoint source guard', () => {
 
   it('uses the 明细 terminology across moemoepoint user surfaces', async () => {
     const files = await globby([
-      'app/moemoepoint/**/*.{ts,tsx}',
-      'app/admin/user/**/moemoepoint/**/*.{ts,tsx}',
+      'app/(site)/moemoepoint/**/*.{ts,tsx}',
+      'app/(site)/admin/user/**/moemoepoint/**/*.{ts,tsx}',
       'app/api/moemoepoint/**/*.{ts,tsx}',
       'app/api/user/**/moemoepoint/**/*.{ts,tsx}',
       'components/moemoepoint/**/*.{ts,tsx}',

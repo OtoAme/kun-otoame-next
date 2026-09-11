@@ -42,7 +42,7 @@ describe('chat server actions', () => {
 
   it('rejects malformed conversation IDs before auth or DB reads', async () => {
     const { kunGetConversationMessagesAction } = await import(
-      '~/app/message/chat/actions'
+      '~/app/(site)/message/chat/actions'
     )
 
     const result = await kunGetConversationMessagesAction('5abc' as never, {
@@ -64,7 +64,7 @@ describe('chat server actions', () => {
     })
 
     const { kunGetConversationMessagesAction } = await import(
-      '~/app/message/chat/actions'
+      '~/app/(site)/message/chat/actions'
     )
 
     const result = await kunGetConversationMessagesAction(5, {
@@ -88,7 +88,7 @@ describe('chat server actions', () => {
     })
 
     const { kunGetConversationsAction } = await import(
-      '~/app/message/chat/actions'
+      '~/app/(site)/message/chat/actions'
     )
 
     const result = await kunGetConversationsAction({ page: 1, limit: 30 })

@@ -18,6 +18,9 @@ export const ADMIN_LOG_TYPE_MAP: Record<string, string> = {
   delete: '删除',
   approve: '通过',
   decline: '拒绝',
+  submission_review: '投稿审核',
+  resource_apply_approve: '资源申请通过',
+  resource_apply_decline: '资源申请拒绝',
   update: '更新',
   grant: '发放'
 }

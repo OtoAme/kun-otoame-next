@@ -12,8 +12,8 @@ vi.mock('~/app/api/moemoepoint/query', () => ({
   getMoemoepointLedger: mocks.getMoemoepointLedger
 }))
 
-import { getAdminMoemoepointLedgerAction } from '~/app/admin/user/[id]/moemoepoint/actions'
-import { getMyMoemoepointLedgerAction } from '~/app/moemoepoint/actions'
+import { getAdminMoemoepointLedgerAction } from '~/app/(site)/admin/user/[id]/moemoepoint/actions'
+import { getMyMoemoepointLedgerAction } from '~/app/(site)/moemoepoint/actions'
 
 const query = { range: '30d' as const, page: 1, limit: 30 }
 

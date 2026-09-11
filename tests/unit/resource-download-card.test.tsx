@@ -161,12 +161,14 @@ describe('ResourceDownloadCard access flow', () => {
     resource: resourceValue = resource,
     link = previewLink,
     restoredLink,
-    restoredObtainedExpiresAt
+    restoredObtainedExpiresAt,
+    preview = false
   }: {
     resource?: PatchResource
     link?: PatchResourceLink
     restoredLink?: PatchResourceAccessLink
     restoredObtainedExpiresAt?: string
+    preview?: boolean
   } = {}) => {
     dom = new JSDOM('<!doctype html><div id="root"></div>', {
       url: 'http://localhost'
@@ -190,6 +192,7 @@ describe('ResourceDownloadCard access flow', () => {
           link={link}
           restoredLink={restoredLink}
           restoredObtainedExpiresAt={restoredObtainedExpiresAt}
+          preview={preview}
         />
       )
     })
@@ -201,6 +204,21 @@ describe('ResourceDownloadCard access flow', () => {
     fetchMock.kunFetchPost.mockReset()
     fetchMock.kunFetchPut.mockReset()
     vi.mocked(toast.error).mockClear()
+  })
+
+  it('shows authorized preview links without revealing or counting downloads', async () => {
+    const { container } = await renderCard({
+      preview: true,
+      link: { ...previewLink, content: 'https://example.com/review-only', code: '1234' }
+    })
+    expect(container.textContent).toContain('https://example.com/review-only')
+    expect(container.textContent).toContain('1234')
+    expect(container.textContent).not.toContain('获取下载链接')
+    const link = container.querySelector('a')
+    expect(link).not.toBeNull()
+    await act(async () => link!.dispatchEvent(new window.MouseEvent('click', { bubbles: true, cancelable: true })))
+    expect(fetchMock.kunFetchPost).not.toHaveBeenCalled()
+    expect(fetchMock.kunFetchPut).not.toHaveBeenCalled()
   })
 
   afterEach(async () => {

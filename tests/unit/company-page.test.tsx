@@ -9,7 +9,7 @@ const mocks = vi.hoisted(() => ({
   getPatchByCompany: vi.fn()
 }))
 
-vi.mock('~/app/company/[id]/data', () => ({
+vi.mock('~/app/(site)/company/[id]/data', () => ({
   getCachedCompanyById: mocks.getCachedCompanyById
 }))
 
@@ -60,7 +60,7 @@ describe('/company/[id] page', () => {
       total: 0
     })
 
-    const { default: Page } = await import('~/app/company/[id]/page')
+    const { default: Page } = await import('~/app/(site)/company/[id]/page')
     const element = (await Page({
       params: Promise.resolve({ id: '4' })
     })) as React.ReactElement<{

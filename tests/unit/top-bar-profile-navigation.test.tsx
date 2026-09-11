@@ -210,7 +210,7 @@ describe('top bar and self-profile navigation', () => {
       '/tag',
       '/company',
       '/doc',
-      '/admin'
+      '/dashboard'
     ])
     expect(hrefs(container, '[data-mobile-menu] .kun-mobile-nav-link')).toEqual(
       [
@@ -218,7 +218,7 @@ describe('top bar and self-profile navigation', () => {
         '/tag',
         '/company',
         '/doc',
-        '/admin',
+        '/dashboard',
         '/comment',
         '/resource',
         'mailto:contact@otoame.com'
@@ -270,7 +270,7 @@ describe('top bar and self-profile navigation', () => {
       await act(async () => {
         admin?.click()
       })
-      expect(routerMock.push).toHaveBeenCalledWith('/admin')
+      expect(routerMock.push).toHaveBeenCalledWith('/dashboard')
     }
   )
 })
