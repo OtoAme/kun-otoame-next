@@ -31,11 +31,17 @@
 - 页面级 server action 放在对应 `app/<route>/actions.ts`。
 - 控制台业务通过既有 HTTP API 调用（管理操作在 `/api/admin/*`，账本读取在 `/api/user/[id]/moemoepoint/ledger`）；投稿详情、只读来源、字符串业务错误和 409 冲突共用既有请求工具契约。
 
-用户管理组件位于 `components/dashboard/user`。查询条件保存在 URL，列表搜索保留 500 毫秒防抖；更新与删除后的刷新使用当前查询。编辑资料保留失败草稿，关闭时清除密码；关闭两步验证使用同一弹窗中的直接操作。发放点数遇到结果未知时冻结原请求，重试保持目标、金额、理由及 `requestId`；本人余额只通过 `setMoemoepointBalance` 同步三项值。账本自定义日期显式查询，未提交草稿不显示旧范围记录，翻页使用已提交日期。
+待审事项只选条目来源时可查看旧列表的七种状态。默认待审队列保留全部待审记录搜索；历史状态复用既有投稿列表 API、107 字符搜索和每页 50 条分页，侧栏计数仍为待审量。历史状态或搜索变化后按当前查询重读，旧响应不得覆盖新筛选；非待审详情沿用真实状态门禁。条目取项与完整详情加载共用同一静态骨架，保持两阶段占位尺寸一致。
+
+手机待审事项的标题栏与列表、详情共用自然滚动容器：列表固定到顶的来源筛选与搜索区域，详情只固定返回列表行。上滚回顶逐步露出顶栏，返回区域下拉可平滑回顶，并尊重减少动态效果偏好。手机隐藏快捷键帮助按钮，桌面保留独立分栏滚动。普通内嵌预览按前台内容容器的实际高度收缩，以既有窗口高度为上限；长内容保持内部滚动。测量与观察器随预览文档切换清理，放大对话框和独立打开继续可用。
+
+用户管理组件位于 `components/dashboard/user`。查询条件保存在 URL，列表搜索保留 500 毫秒防抖；更新与删除后的刷新使用当前查询。列表显示总萌萌点（包括负数），点击数量进入对应账本；发放成功后重读当前列表余额。编辑资料保留失败草稿，关闭时清除密码；关闭两步验证使用同一弹窗中的直接操作。发放点数遇到结果未知时冻结原请求，重试保持目标、金额、理由及 `requestId`；本人余额只通过 `setMoemoepointBalance` 同步三项值。账本自定义日期显式查询，未提交草稿不显示旧范围记录，翻页使用已提交日期。
+
+统计首页位于 `/dashboard`，参照官方 shadcn `dashboard-01` 的概览卡片和响应式布局，在现有外壳中组合组件。保留旧全量/增长统计并补现存评分、投稿、创作者和独立待审创作者申请数；完整统计只对超级管理员请求和展示。四类待办与本人今日处理复用 `DashboardShell` 的 counts 和轮询，不再发一组重复计数请求；创作者申请不加入四来源合计。加载与失败不显示为 0，切窗口、切角色或卸载后旧响应不得覆盖当前数据。
 
 ## 资源详情与下载
 
-- 管理员收件箱详情及 `/preview/resource/[id]` 可在服务端校验 `role >= 3` 后读取完整链接，响应使用 `private, no-store`，凭据只保留在组件内存。前台公开列表与普通用户的 access/restore 流程仍按下列脱敏规则执行。
+- 管理员待审事项详情及 `/preview/resource/[id]` 可在服务端校验 `role >= 3` 后读取完整链接，响应使用 `private, no-store`，凭据只保留在组件内存。前台公开列表与普通用户的 access/restore 流程仍按下列脱敏规则执行。
 - `ResourceDownload` 与 `ResourceDownloadCard` 接收 `preview` 参数。预览保留展开和文字展示，跳过 restore/access/download 请求；点赞显示静态计数，完整链接由管理员授权读取直接传入。
 
 - 游戏详情资源下载卡片只在首屏展示存储类型、大小、下载次数和可公开校验用 hash，不直接渲染真实链接、提取码或解压码；用户点击“获取下载链接”后再调用 `/api/patch/resource/download/access` 在本地组件状态中展示完整信息。资源编辑入口需要先用 `accessResourceLinksForEdit` 水合完整链接，再打开编辑表单，不能把敏感链接重新放回资源列表数据或全局缓存。
@@ -239,7 +245,7 @@ pnpm typecheck
 - `app/(site)/submission/[id]/page.tsx`（编辑与预览）
 - `app/(site)/admin/submission/page.tsx`（审核队列）
 - `app/(site)/admin/submission/[id]/page.tsx`（审核详情与四个审核动作）
-- `app/(dashboard)/dashboard/page.tsx`（新收件箱与选中项审核详情）
+- `app/(dashboard)/dashboard/inbox/page.tsx`（新待审事项与选中项审核详情）
 - `app/(site)/preview/submission/[id]/page.tsx`（管理员前台只读预览）
 - `components/submission/**`、`store/patchSubmissionStore.ts`、`hooks/usePatchSubmissionAutosave.ts`
 
@@ -267,7 +273,7 @@ pnpm typecheck
   显示候选到既有/待新建会社的映射、失效快照、阻断型歧义和非阻断 external-ID/name
   冲突；阻断型歧义存在时禁用「通过」，文案明确出口是会社身份维护，而不是要求投稿人
   修改。后端批准仍会重新解析并作最终栅栏，前端禁用不是正确性边界。
-- **审核动作由详情承载。** 旧审核队列负责检索与进入详情；新控制台在收件箱选中项详情中提供通过、要求修改、驳回、违规四个动作。两处复用 `/api/admin/patch-submission` 审核服务，前台预览共用 `publishPreview.ts` 投影和 `PatchSubmissionPreviewView`。超级管理员自审必须显式打开 override，普通管理员不能自审。旧详情收到“投稿已被撤回或处理”时关闭确认弹窗并 `router.refresh()`；新控制台按相同冲突字符串刷新该项，其他业务错误保留当前上下文。
+- **审核动作由详情承载。** 旧审核队列负责检索与进入详情；新控制台在 `/dashboard/inbox` 选中项详情中提供通过、要求修改、驳回、违规四个动作，资源申请提供通过与拒绝；所有审核动作均先二次确认，鼠标与快捷键一致，取消/Esc 不发送写请求。新旧投稿详情复用 `/api/admin/patch-submission` 审核服务，前台预览共用 `publishPreview.ts` 投影和 `PatchSubmissionPreviewView`。超级管理员自审必须显式打开 override，普通管理员不能自审。旧详情收到“投稿已被撤回或处理”时关闭确认弹窗并 `router.refresh()`；新控制台按相同冲突字符串刷新该项，历史视图同时重读当前筛选列表；其他业务错误保留当前上下文。
 - **投稿画廊排序随草稿流程自动同步。** ready 行与待上传项在同一个 dnd-kit 网格里排序，拖拽用独立的可聚焦、键盘可达手柄。顺序跨 localforage 与数据库两个存储、无法原子提交，所以拖动先把完整的 namespaced 序列（`server:<id>` / `local:<clientAssetId>`）写进 `submission:<id>:order` draft，刷新后按它恢复。上传截图、保存草稿、打开可编辑预览和提交审核都会先经同一个顺序 flush；同步失败就停止当前动作、保留用户排好的顺序与 draft，供下次重试。flush 进入时先排空写入队列再读 draft，否则刚拖完立刻保存会读到上一版序列，把作者已经替换掉的顺序冻结上去。并发调用共享同一次同步；请求期间若又产生了新顺序，同一次 flush 会继续同步最新 draft 后才返回成功。ready 行的序号允许不连续（待传卡可占中间位置），只要求唯一。
 - **拖拽手势本身有三个硬性要求。** ① 拖动结束时先把新序列同步渲染出来，再去等 localforage 写入：dnd-kit 在同一帧清掉全部 drag transform，等存储往返会让卡片先弹回原位、几帧后再跳进新位置，落位动画也会瞄准卡片正在离开的槽位；写入失败才回滚到拖动前的序列并提示。② 网格用 `DragOverlay` + `defaultDropAnimationSideEffects` 渲染一份跟随指针的只读副本（`aria-hidden` + `pointer-events-none`，真正的可聚焦控件只留在原卡片上），与 create/rewrite 画廊一致。③ `DndContext` 挂 `utils/dndModifiers.ts` 的本地 `restrictToParentElement`，把拖动夹在网格矩形内——外层 HeroUI Card 会裁掉 overflow，不夹取时拖出网格的部分直接被切掉，而网格外本来也没有可落下的位置。
 - **移动端能不能拖，取决于手柄上的 `touch-none`。** Pointer Events 下无法在事件监听器里阻止浏览器的原生触摸行为，`touch-action: none` 是唯一可靠手段；不设置时手指一移动浏览器就开始滚动并派发 `pointercancel`，拖拽永远激活不了。按 dnd-kit 的建议只让手柄退出（列表其余部分仍可滚动），并且手柄在 `sm` 以下放大到 44px 触摸目标。不要再加 `TouchSensor`：`PointerSensor` 已经覆盖 touch，两者并存会重复触发。

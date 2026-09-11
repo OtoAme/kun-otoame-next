@@ -31,6 +31,10 @@ service/helper 负责：
 
 不要把权限、CSRF、资源归属或管理员角色只放在页面层。页面隐藏按钮只能改善体验，不能替代 API 层判断。
 
+## 统计读取
+
+`GET /api/admin/stats` 与 `/api/admin/stats/sum` 保持 `role >= 4`，成功和字符串错误均返回 `private, no-store`。`days` 接受 1～60 整数，保留原滚动窗口；`newActiveUser` 表示最近登录用户，不是 DAU。`SumData` 保留原五字段，`DashboardStatsSumData` 扩展现存评分、投稿、当前 `role = 2` 创作者人数，以及 `type = apply`、双方 ID 条件和 `status IN (0, 1)` 的待审创作者申请数。旧客户端继续使用兼容返回结构；四来源待办与个人今日处理仍由 inbox counts 提供。
+
 ## 主要 API 域
 
 控制台界面位于 `/dashboard`，管理接口仍属于 `/api/admin/*`。收件箱读取使用 `GET /api/admin/inbox`、`/item`、`/counts`，校验在 `validations/inbox.ts`，共享返回结构在 `types/api/inbox.ts`；每个接口独立校验 `role >= 3` 并返回 `private, no-store`。列表搜索先匹配所选来源全部待审记录再取最老候选，匹配 totals 与侧栏全量 counts 分开。投稿候选在数据库按 `COALESCE(submitted_at, created), id` 排序后限制条数，资源不套用 NSFW 偏好，反馈补齐待处理和消息来源条件，举报同时包含评论与评价。

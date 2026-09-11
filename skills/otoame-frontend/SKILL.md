@@ -35,7 +35,7 @@ Use this skill for pages, components, state, theme, and content.
 - Download credentials (`content`, `code`, `password`) live only in component memory — never in stores, persisted state, URLs or caches. Authenticated administrator inbox details and resource previews may receive full links; public list data stays redacted.
 - State-changing requests use `utils/kunFetch.ts` (CSRF header); surface its string business errors, never swallow them.
 - Author submission forms mutate only in `draft` and `changes_requested`; other statuses disable every mutation and external-fetch control.
-- Submission review actions live in the `/dashboard` selected-item detail and legacy `/admin/submission/[id]`; self-review needs an explicit super-admin override. Submission violation and resource rejection retain one irreversible-action confirmation.
+- Submission review actions live in `/dashboard/inbox` details and legacy `/admin/submission/[id]`; self-review needs an explicit super-admin override. Every moderation action, including keyboard shortcuts, opens confirmation before writing; preserve existing legacy confirmations without nesting another.
 - `/preview/submission/[id]` and `/preview/resource/[id]` require an administrator. Resource `preview` rendering must skip restore/access/download requests and show likes as static counts.
 - A failed gallery upload must never clear the localforage draft or navigate away; keep failures retryable.
 - Submission autosave is one serial promise chain reading `revision` at execution time; save, submit and preview stop on a failed `flush()`. Never retry a real conflict.
