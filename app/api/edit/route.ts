@@ -96,9 +96,6 @@ export const PUT = async (req: NextRequest) => {
     return NextResponse.json('您最多使用 100 个标签')
   }
 
-  const response = await updateGalgame(
-    { alias, tag, ...rest },
-    payload.uid
-  )
+  const response = await updateGalgame({ alias, tag, ...rest }, payload.uid)
   return NextResponse.json(response)
 }

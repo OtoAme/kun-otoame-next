@@ -809,7 +809,7 @@ export const importStickerAssets = async (input: ImportStickerInput) => {
     return `单次导入文件总大小不能超过 ${STICKER_MAX_IMPORT_BYTES / 1024 / 1024} MB`
   }
 
-  let pack = input.packId
+  const pack = input.packId
     ? await prisma.sticker_pack.findUnique({
         where: { id: input.packId },
         select: { id: true, slug: true, name: true, status: true }

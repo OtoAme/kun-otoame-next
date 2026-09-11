@@ -10,7 +10,9 @@ export const PatchOfficialUrl = ({ url }: { url: string }) => {
   let domain = ''
   try {
     domain = new URL(url).hostname
-  } catch { }
+  } catch {
+    // 域名解析失败时保持空域名，原 url 仍照常显示
+  }
 
   return (
     <div className="w-full mt-4 space-y-4">

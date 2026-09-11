@@ -106,8 +106,7 @@ export const MoemoepointRules = () => {
             <div className="flex flex-col gap-1 sm:flex-row sm:gap-2">
               <dt className="font-medium sm:w-32 sm:shrink-0">可用萌萌点</dt>
               <dd className="text-default-500">
-                总额减去待结算部分,
-                消费和余额门槛都使用此值。
+                总额减去待结算部分, 消费和余额门槛都使用此值。
               </dd>
             </div>
             <div className="flex flex-col gap-1 sm:flex-row sm:gap-2">

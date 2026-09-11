@@ -48,14 +48,19 @@ export const verifyKunTokenEdge = async (token: string) => {
       return null
     }
 
-    const payload = decodeJson<KunGalgamePayload & {
-      iss?: string
-      aud?: string
-      exp?: number
-    }>(encodedPayload)
+    const payload = decodeJson<
+      KunGalgamePayload & {
+        iss?: string
+        aud?: string
+        exp?: number
+      }
+    >(encodedPayload)
     const now = Math.floor(Date.now() / 1000)
 
-    if (payload.iss !== process.env.JWT_ISS || payload.aud !== process.env.JWT_AUD) {
+    if (
+      payload.iss !== process.env.JWT_ISS ||
+      payload.aud !== process.env.JWT_AUD
+    ) {
       return null
     }
     if (payload.exp !== undefined && payload.exp <= now) {

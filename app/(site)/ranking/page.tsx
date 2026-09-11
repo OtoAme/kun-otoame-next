@@ -7,7 +7,6 @@ const PAGE_SIZE = 48
 
 export const revalidate = 0
 
-
 export default async function RankingPage() {
   const response = await kunGetRankingActions({
     sortField: 'rating',

@@ -481,8 +481,7 @@ export const ChatMessage = ({
       return
     }
 
-    const isLeftSwipe =
-      deltaX < 0 && absX >= absY * SWIPE_REPLY_DIRECTION_RATIO
+    const isLeftSwipe = deltaX < 0 && absX >= absY * SWIPE_REPLY_DIRECTION_RATIO
     if (!start.isHorizontalSwipe && !isLeftSwipe) {
       resetSwipeReplyState()
       return

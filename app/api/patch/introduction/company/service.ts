@@ -27,7 +27,9 @@ export const handlePatchCompanyAction = (type: 'add' | 'delete') => {
         select: { unique_id: true }
       })
       await Promise.all([
-        patch ? invalidatePatchContentCache(patch.unique_id) : Promise.resolve(),
+        patch
+          ? invalidatePatchContentCache(patch.unique_id)
+          : Promise.resolve(),
         invalidateCompanyCaches()
       ])
     }

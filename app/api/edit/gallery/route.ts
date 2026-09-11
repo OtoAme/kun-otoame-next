@@ -205,10 +205,11 @@ export const DELETE = async (req: NextRequest) => {
     try {
       await deleteFileFromS3(key)
     } catch (error) {
-      console.error(
-        '[Upload] Failed to delete gallery S3 object',
-        { key, imageId: input.imageId, error }
-      )
+      console.error('[Upload] Failed to delete gallery S3 object', {
+        key,
+        imageId: input.imageId,
+        error
+      })
     }
   }
 

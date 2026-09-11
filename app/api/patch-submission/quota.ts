@@ -154,7 +154,11 @@ export const createPatchSubmissionDraft = async (input: CreateDraftInput) =>
         }
       })
 
-      return { submission, applied: true as const, balance: reservation.balance }
+      return {
+        submission,
+        applied: true as const,
+        balance: reservation.balance
+      }
     },
     { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted }
   )

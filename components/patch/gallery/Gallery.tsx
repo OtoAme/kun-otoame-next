@@ -78,10 +78,7 @@ const GalleryItem = ({
         className="w-full h-full object-cover transition-transform duration-500 will-change-transform group-hover:scale-110"
         loading="lazy"
       />
-      <NSFWMask
-        isVisible={!isRevealed}
-        onReveal={() => setIsRevealed(true)}
-      />
+      <NSFWMask isVisible={!isRevealed} onReveal={() => setIsRevealed(true)} />
     </div>
   )
 }

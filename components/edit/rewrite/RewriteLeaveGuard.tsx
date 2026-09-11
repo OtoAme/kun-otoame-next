@@ -30,11 +30,7 @@ export const RewriteLeaveGuard = ({ enabled, description }: Props) => {
   }
 
   return (
-    <Modal
-      isOpen={!!pendingHref}
-      onClose={cancelNavigation}
-      placement="center"
-    >
+    <Modal isOpen={!!pendingHref} onClose={cancelNavigation} placement="center">
       <ModalContent>
         <ModalHeader>离开后未上传的图片会丢失</ModalHeader>
         <ModalBody>

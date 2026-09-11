@@ -63,9 +63,12 @@ export const CommentEdit = ({ initialComment, onSuccess }: Props) => {
   const handleOpenEdit = async () => {
     setFetchingFullComment(true)
     try {
-      const res = await kunFetchGet<{ content: string }>('/admin/comment/full', {
-        commentId: initialComment.id
-      })
+      const res = await kunFetchGet<{ content: string }>(
+        '/admin/comment/full',
+        {
+          commentId: initialComment.id
+        }
+      )
       if (typeof res === 'string') {
         toast.error(res)
         return

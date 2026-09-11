@@ -110,9 +110,7 @@ export const KunTopBarUser = () => {
 
       {isMounted && user.name && (
         <>
-          <UserMessageBell
-            hasUnreadMessages={hasUnread}
-          />
+          <UserMessageBell hasUnreadMessages={hasUnread} />
 
           <UserDropdown />
         </>

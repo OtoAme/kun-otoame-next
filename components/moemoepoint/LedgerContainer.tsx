@@ -98,8 +98,9 @@ const BalanceCard = ({
       <div className="min-w-0">
         <p className="text-sm text-default-500">{label}</p>
         <p
-          className={`text-2xl font-semibold tabular-nums ${balanceValueClassName(value) ?? ''
-            }`}
+          className={`text-2xl font-semibold tabular-nums ${
+            balanceValueClassName(value) ?? ''
+          }`}
         >
           {value}
         </p>

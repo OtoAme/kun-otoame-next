@@ -46,11 +46,7 @@ import {
   useSortable
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import type {
-  DragEndEvent,
-  DragStartEvent,
-  DropAnimation
-} from '@dnd-kit/core'
+import type { DragEndEvent, DragStartEvent, DropAnimation } from '@dnd-kit/core'
 import { restrictToParentElement } from '~/utils/dndModifiers'
 import { checkImageValid } from '~/utils/resizeImage'
 import { generateUUID } from '~/utils/random'
@@ -1546,7 +1542,8 @@ export const SubmissionGalleryInput = forwardRef<SubmissionGalleryHandle>(
     const activeDragIndex = activeDragKey
       ? entries.findIndex((entry) => entry.key === activeDragKey)
       : -1
-    const activeDragEntry = activeDragIndex < 0 ? null : entries[activeDragIndex]
+    const activeDragEntry =
+      activeDragIndex < 0 ? null : entries[activeDragIndex]
 
     return (
       <div className="space-y-3">

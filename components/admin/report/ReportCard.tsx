@@ -102,7 +102,9 @@ export const ReportCard = ({ report, onHandled }: Props) => {
               <div>
                 <div className="flex items-center gap-2">
                   <Chip size="sm" variant="flat">
-                    {report.targetType === 'rating' ? '被举报评价用户' : '被举报评论用户'}
+                    {report.targetType === 'rating'
+                      ? '被举报评价用户'
+                      : '被举报评论用户'}
                   </Chip>
                   <span className="font-semibold">{report.sender.name}</span>
                   <span className="text-small text-default-500">
@@ -113,7 +115,9 @@ export const ReportCard = ({ report, onHandled }: Props) => {
                   </span>
                 </div>
                 <div className="mt-2 space-y-2">
-                  <p className="whitespace-pre-wrap">举报原因: {report.reason}</p>
+                  <p className="whitespace-pre-wrap">
+                    举报原因: {report.reason}
+                  </p>
                   <p className="text-small text-default-500 whitespace-pre-wrap">
                     被举报内容: {targetPreview}
                   </p>

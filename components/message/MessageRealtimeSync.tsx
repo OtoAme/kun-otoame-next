@@ -63,6 +63,7 @@ export const MessageRealtimeSync = () => {
           hasUnreadConversation: res.hasUnreadChat
         })
       } catch {
+        // 轮询失败时保持现有未读状态，由 finally 继续调度下一次轮询
       } finally {
         unreadSyncInFlight = false
         if (!ignore) {

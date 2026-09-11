@@ -21,10 +21,7 @@ export default async function Kun() {
 
   return (
     <Suspense>
-      <Container
-        initialTags={response.tags}
-        initialTotal={response.total}
-      />
+      <Container initialTags={response.tags} initialTotal={response.total} />
     </Suspense>
   )
 }

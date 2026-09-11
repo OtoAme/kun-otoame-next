@@ -14,7 +14,7 @@ export const CommentTab = ({ id }: Props) => {
       <CardBody className="p-4">
         <div className="space-y-2 text-default-600">
           <p className="mb-4">
-            要反馈游戏资源问题，请点击上方图片右侧的"游戏反馈"。在评论区反馈管理员不会收到通知。
+            要反馈游戏资源问题，请点击上方图片右侧的&quot;游戏反馈&quot;。在评论区反馈管理员不会收到通知。
           </p>
         </div>
 

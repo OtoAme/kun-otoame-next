@@ -6,7 +6,10 @@ export type ExternalIdField =
   | 'vndbRelationId'
   | 'dlsiteCode'
 /** Fields the database itself enforces, so a duplicate surfaces as P2002. */
-export type UniqueExternalIdField = 'bangumiId' | 'vndbRelationId' | 'dlsiteCode'
+export type UniqueExternalIdField =
+  | 'bangumiId'
+  | 'vndbRelationId'
+  | 'dlsiteCode'
 
 type DuplicatePatch = {
   id?: number

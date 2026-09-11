@@ -18,7 +18,6 @@ export const POST = async (req: NextRequest) => {
   return NextResponse.json(response)
 }
 
-
 export const PUT = async (req: NextRequest) => {
   const input = await kunParsePutBody(req, patchTagChangeSchema)
   if (typeof input === 'string') {

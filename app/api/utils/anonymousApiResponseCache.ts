@@ -23,7 +23,12 @@ type MemoryCacheEntry = {
 
 const memoryCache = new Map<string, MemoryCacheEntry>()
 
-type AnonymousApiCacheStatus = 'private' | 'memory' | 'pending' | 'redis' | 'miss'
+type AnonymousApiCacheStatus =
+  | 'private'
+  | 'memory'
+  | 'pending'
+  | 'redis'
+  | 'miss'
 
 type AnonymousApiCacheResult = {
   body: string
@@ -127,11 +132,7 @@ export const getCachedAnonymousJsonResponse = async <T>(
   const pendingResponse = pendingResponses.get(memoryCacheKey)
   if (pendingResponse) {
     const { body } = await pendingResponse
-    return jsonResponse(
-      body,
-      ANONYMOUS_API_CACHE_CONTROL,
-      'pending'
-    )
+    return jsonResponse(body, ANONYMOUS_API_CACHE_CONTROL, 'pending')
   }
 
   const cacheKey = getAnonymousApiResponseCacheKey(namespace, req)

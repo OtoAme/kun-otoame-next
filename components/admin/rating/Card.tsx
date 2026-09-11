@@ -78,17 +78,20 @@ export const RatingCard = ({
                   variant="flat"
                   size="sm"
                 >
-                  {KUN_GALGAME_RATING_RECOMMEND_MAP[rating.recommend] ?? rating.recommend}
+                  {KUN_GALGAME_RATING_RECOMMEND_MAP[rating.recommend] ??
+                    rating.recommend}
                 </Chip>
                 <Chip variant="flat" size="sm">
                   评分 {rating.overall}/10
                 </Chip>
                 <span className="text-tiny text-default-400">
-                  {KUN_GALGAME_RATING_PLAY_STATUS_MAP[rating.playStatus] ?? rating.playStatus}
+                  {KUN_GALGAME_RATING_PLAY_STATUS_MAP[rating.playStatus] ??
+                    rating.playStatus}
                 </span>
                 {rating.spoilerLevel !== 'none' && (
                   <span className="text-tiny text-warning-500">
-                    {KUN_GALGAME_RATING_SPOILER_MAP[rating.spoilerLevel] ?? rating.spoilerLevel}
+                    {KUN_GALGAME_RATING_SPOILER_MAP[rating.spoilerLevel] ??
+                      rating.spoilerLevel}
                   </span>
                 )}
               </div>

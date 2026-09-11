@@ -1,8 +1,4 @@
-import {
-  getPrefixedRedisKey,
-  redis,
-  runRedisCommand
-} from '~/lib/redis'
+import { getPrefixedRedisKey, redis, runRedisCommand } from '~/lib/redis'
 
 type ConversationRateLimitAction =
   | 'send'
@@ -223,7 +219,12 @@ export const consumeConversationImageUploadQuota = async (
 
   try {
     const rawResult = await runRedisCommand(() =>
-      redis.eval(CONVERSATION_IMAGE_UPLOAD_QUOTA_SCRIPT, 1, key, String(60 * 60))
+      redis.eval(
+        CONVERSATION_IMAGE_UPLOAD_QUOTA_SCRIPT,
+        1,
+        key,
+        String(60 * 60)
+      )
     )
     if (typeof rawResult !== 'string') {
       throw new Error('Invalid Redis image upload quota response')

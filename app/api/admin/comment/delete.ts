@@ -105,7 +105,9 @@ export const deleteComment = async (
     return {}
   })
 
-  const uniqueIds = [...new Set(comments.map((comment) => comment.patch.unique_id))]
+  const uniqueIds = [
+    ...new Set(comments.map((comment) => comment.patch.unique_id))
+  ]
   await Promise.all([
     ...uniqueIds.map((uniqueId) => invalidatePatchContentCache(uniqueId)),
     invalidatePatchListCaches()

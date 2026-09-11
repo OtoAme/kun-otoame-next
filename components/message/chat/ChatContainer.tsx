@@ -334,7 +334,7 @@ export const ChatContainer = ({
       deferScrollButtonVisibilityRef.current = true
       const shouldPreserveReplyReturnPoint = Boolean(
         options.preserveReplyReturnPoint &&
-        replyJumpReturnPointRef.current !== null
+          replyJumpReturnPointRef.current !== null
       )
       preserveReplyJumpReturnPointRef.current = shouldPreserveReplyReturnPoint
 
@@ -498,16 +498,16 @@ export const ChatContainer = ({
           prev.map((msg) =>
             msg.id === messageId
               ? {
-                ...msg,
-                type: 0,
-                content: '',
-                isDeleted: true,
-                image: null,
-                images: [],
-                stickerId: null,
-                sticker: null,
-                replyTo: null
-              }
+                  ...msg,
+                  type: 0,
+                  content: '',
+                  isDeleted: true,
+                  image: null,
+                  images: [],
+                  stickerId: null,
+                  sticker: null,
+                  replyTo: null
+                }
               : msg
           )
         )
@@ -808,6 +808,7 @@ export const ChatContainer = ({
           }
         }
       } catch {
+        // 轮询失败时保留现有消息与已读状态，由 finally 继续调度下一次轮询
       } finally {
         realtimePollInFlight = false
         if (!ignore) {

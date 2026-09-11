@@ -40,7 +40,10 @@ export const PatchTag = ({ patchId, initialTags }: Props) => {
 
       <div className="flex flex-wrap gap-2">
         {selectedTags.map((tag) => (
-          <Tooltip key={tag.id} content={`${tag.count} 个 OtomeGame 使用此标签`}>
+          <Tooltip
+            key={tag.id}
+            content={`${tag.count} 个 OtomeGame 使用此标签`}
+          >
             <Link href={`/tag/${tag.id}`}>
               <Chip color="secondary" variant="flat">
                 {tag.name}

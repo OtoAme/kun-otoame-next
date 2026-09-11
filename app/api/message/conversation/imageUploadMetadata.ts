@@ -102,7 +102,9 @@ export const consumeConversationImageUploads = async (
     '~/lib/redis'
   )
   const keys = images
-    .map((image) => getConversationImageUploadKey(conversationId, uid, image.url))
+    .map((image) =>
+      getConversationImageUploadKey(conversationId, uid, image.url)
+    )
     .map(getPrefixedRedisKey)
   const expectedImages = images.map((image) => JSON.stringify(image))
 

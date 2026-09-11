@@ -56,7 +56,9 @@ export const ApplyContainer = ({ count }: Props) => {
         </CardHeader>
         <CardBody className="gap-6">
           <div className="flex items-center justify-between">
-            <p className="text-default-500">发布游戏 / 补丁资源进度: {count}/3</p>
+            <p className="text-default-500">
+              发布游戏 / 补丁资源进度: {count}/3
+            </p>
             <Chip
               color={canApply ? 'success' : 'warning'}
               variant="flat"
@@ -89,7 +91,9 @@ export const ApplyContainer = ({ count }: Props) => {
           <div className="space-y-4">
             <div>
               <h3 className="mb-2 text-lg font-semibold">申请条件</h3>
-              <p className="text-default-500">在本站合法发布三个游戏 / 补丁资源</p>
+              <p className="text-default-500">
+                在本站合法发布三个游戏 / 补丁资源
+              </p>
               <p className="text-default-500">
                 详细信息请查看文档{' '}
                 <Link href="/doc/notice/creator">

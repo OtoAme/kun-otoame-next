@@ -29,10 +29,7 @@ export const KunRedirectContainer = () => {
 
         <div className="w-full max-w-2xl rounded-large">
           <Link isExternal href="https://pan.209911.xyz/">
-            <Image
-              alt={kunMoyuMoe.title}
-              src="/images/209911.jpg"
-            />
+            <Image alt={kunMoyuMoe.title} src="/images/209911.jpg" />
           </Link>
         </div>
       </div>

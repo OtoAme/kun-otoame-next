@@ -2,7 +2,11 @@ import { kunFetchFormData } from '~/utils/kunFetch'
 
 export const GALLERY_UPLOAD_TIMEOUT_MS = 120000
 
-export type GalleryUploadStatus = 'pending' | 'uploading' | 'uploaded' | 'failed'
+export type GalleryUploadStatus =
+  | 'pending'
+  | 'uploading'
+  | 'uploaded'
+  | 'failed'
 
 export interface GalleryUploadQueueItem {
   id: string
@@ -58,9 +62,7 @@ export const uploadOneGalleryImage = async ({
 const getErrorMessage = (error: unknown) =>
   error instanceof Error ? error.message : '图片上传失败'
 
-export const uploadGalleryItems = async <
-  T extends GalleryUploadQueueItem
->({
+export const uploadGalleryItems = async <T extends GalleryUploadQueueItem>({
   patchId,
   items,
   watermark,

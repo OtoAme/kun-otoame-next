@@ -30,7 +30,11 @@ export const KunPatchAttribute = ({
         </Chip>
       ))}
       {languages?.map((lang) => (
-        <Chip key={lang} {...semanticChipProps('resource-language')} size={size}>
+        <Chip
+          key={lang}
+          {...semanticChipProps('resource-language')}
+          size={size}
+        >
           {SUPPORTED_LANGUAGE_MAP[lang]}
         </Chip>
       ))}

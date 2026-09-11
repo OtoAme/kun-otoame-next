@@ -1,8 +1,4 @@
-import {
-  cleanupLocalUpload,
-  deleteFileFromS3,
-  uploadFileToS3
-} from '~/lib/s3'
+import { cleanupLocalUpload, deleteFileFromS3, uploadFileToS3 } from '~/lib/s3'
 import {
   consumeUpload,
   finalizeUpload,
@@ -30,7 +26,7 @@ export type UploadedPatchResource = {
 }
 
 const getS3PublicUrlPrefix = () =>
-  `${process.env.NEXT_PUBLIC_KUN_VISUAL_NOVEL_S3_STORAGE_URL?.replace(/\/+$/, '')!}/`
+  `${process.env.NEXT_PUBLIC_KUN_VISUAL_NOVEL_S3_STORAGE_URL?.replace(/\/+$/, '')}/`
 
 export const extractS3Key = (content: string) => {
   const bases = [

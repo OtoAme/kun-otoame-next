@@ -94,7 +94,9 @@ const countShowInfoFrames = (stderr: string) => {
 const parseVideoStreamSpecifiers = (stderr: string) => {
   const streams = stderr
     .split(/\r?\n/)
-    .map((line) => line.match(/Stream #(\d+:\d+)(?:\[[^\]]+\])?(?:\([^)]+\))?: Video:/))
+    .map((line) =>
+      line.match(/Stream #(\d+:\d+)(?:\[[^\]]+\])?(?:\([^)]+\))?: Video:/)
+    )
     .filter((match): match is RegExpMatchArray => Boolean(match))
     .map((match) => match[1])
 
@@ -123,25 +125,13 @@ export const countAvifFrames = async (
   inputPath: string,
   streamSpecifier?: string | null
 ) => {
-  const args = [
-    '-hide_banner',
-    '-loglevel',
-    'info',
-    '-i',
-    inputPath
-  ]
+  const args = ['-hide_banner', '-loglevel', 'info', '-i', inputPath]
 
   if (streamSpecifier) {
     args.push('-map', streamSpecifier)
   }
 
-  args.push(
-    '-vf',
-    'showinfo',
-    '-f',
-    'null',
-    '-'
-  )
+  args.push('-vf', 'showinfo', '-f', 'null', '-')
 
   const stderr = await runCommand(command, args)
 
@@ -171,7 +161,10 @@ export const probeAvifFrameCounts = async (
     return probes
   }
 
-  const streamSpecifiers = await getAvifVideoStreamSpecifiers(command, inputPath)
+  const streamSpecifiers = await getAvifVideoStreamSpecifiers(
+    command,
+    inputPath
+  )
   for (const streamSpecifier of streamSpecifiers) {
     try {
       probes.push({
@@ -193,8 +186,9 @@ const findAnimatedAvifStream = async (command: string, inputPath: string) => {
   const probes = await probeAvifFrameCounts(command, inputPath)
 
   return (
-    probes.find((probe) => probe.frameCount !== undefined && probe.frameCount > 1) ??
-    null
+    probes.find(
+      (probe) => probe.frameCount !== undefined && probe.frameCount > 1
+    ) ?? null
   )
 }
 
@@ -220,14 +214,7 @@ const tryEncodeAnimatedThumbnail = async (
     throw new Error('input AVIF has no animated video stream')
   }
 
-  const args = [
-    '-hide_banner',
-    '-loglevel',
-    'error',
-    '-y',
-    '-i',
-    inputPath
-  ]
+  const args = ['-hide_banner', '-loglevel', 'error', '-y', '-i', inputPath]
 
   if (animatedInputStream.streamSpecifier) {
     args.push('-map', animatedInputStream.streamSpecifier)
@@ -293,7 +280,12 @@ export const createAnimatedAvifThumbnail = async (
   const inputPath = path.join(directory, 'input.avif')
   const animatedOutputPath = path.join(directory, 'thumbnail-animated.avif')
   const stillOutputPath = path.join(directory, 'thumbnail-still.avif')
-  const scaleFilter = 'scale=' + GALLERY_AVIF_THUMBNAIL_MAX_WIDTH + ':' + GALLERY_AVIF_THUMBNAIL_MAX_HEIGHT + ':force_original_aspect_ratio=decrease'
+  const scaleFilter =
+    'scale=' +
+    GALLERY_AVIF_THUMBNAIL_MAX_WIDTH +
+    ':' +
+    GALLERY_AVIF_THUMBNAIL_MAX_HEIGHT +
+    ':force_original_aspect_ratio=decrease'
 
   try {
     await writeFile(inputPath, image)
@@ -313,7 +305,10 @@ export const createAnimatedAvifThumbnail = async (
         }
       } catch (error) {
         failures.push(
-          'animated:' + command + ': ' + (error instanceof Error ? error.message : String(error))
+          'animated:' +
+            command +
+            ': ' +
+            (error instanceof Error ? error.message : String(error))
         )
       }
     }
@@ -331,13 +326,17 @@ export const createAnimatedAvifThumbnail = async (
         }
       } catch (error) {
         failures.push(
-          'still:' + command + ': ' + (error instanceof Error ? error.message : String(error))
+          'still:' +
+            command +
+            ': ' +
+            (error instanceof Error ? error.message : String(error))
         )
       }
     }
 
     console.warn(
-      'Animated AVIF thumbnail generation failed for all commands: ' + failures.join(' | ')
+      'Animated AVIF thumbnail generation failed for all commands: ' +
+        failures.join(' | ')
     )
     return null
   } finally {

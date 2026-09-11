@@ -207,12 +207,12 @@ export const ResourceDetailsForm = ({
                 >
                   {section === 'galgame'
                     ? resourceTypeGroupOptions.map((group) => {
-                      return (
-                        <SelectSection key={group.key} title={group.title}>
-                          {group.options.map(renderResourceType)}
-                        </SelectSection>
-                      )
-                    })
+                        return (
+                          <SelectSection key={group.key} title={group.title}>
+                            {group.options.map(renderResourceType)}
+                          </SelectSection>
+                        )
+                      })
                     : resourceTypes.map(renderResourceType)}
                 </Select>
 

@@ -5,10 +5,7 @@ import { formatDate } from '~/utils/time'
 import { ADMIN_LOG_TYPE_MAP } from '~/constants/admin'
 import type { AdminLog } from '~/types/api/admin'
 
-const LOG_TYPE_COLOR_MAP: Record<
-  string,
-  'success' | 'danger' | 'primary'
-> = {
+const LOG_TYPE_COLOR_MAP: Record<string, 'success' | 'danger' | 'primary'> = {
   approve: 'success',
   decline: 'danger'
 }

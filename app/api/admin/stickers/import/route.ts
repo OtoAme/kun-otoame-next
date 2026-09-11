@@ -24,9 +24,7 @@ const getStringField = (formData: FormData, name: string) => {
 }
 
 const formatFileSizeLimit = (bytes: number) =>
-  bytes >= 1024 * 1024
-    ? `${bytes / 1024 / 1024} MB`
-    : `${bytes / 1024} KB`
+  bytes >= 1024 * 1024 ? `${bytes / 1024 / 1024} MB` : `${bytes / 1024} KB`
 
 export const POST = async (req: NextRequest) => {
   const csrfError = verifyKunCsrf(req)

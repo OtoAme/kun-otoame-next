@@ -49,7 +49,9 @@ export default async function AdminSubmissionPage({
     result.submissions.length
   )
   if (resolvedPage !== page) {
-    redirect(buildAdminSubmissionQueueUrl({ query, status, page: resolvedPage }))
+    redirect(
+      buildAdminSubmissionQueueUrl({ query, status, page: resolvedPage })
+    )
   }
 
   return (

@@ -79,7 +79,9 @@ export const MessageNav = ({ className }: { className?: string }) => {
         if (!ignore && unreadStatus) {
           setUnreadMessageStatus(unreadStatus)
         }
-      } catch {}
+      } catch {
+        // 获取未读状态失败时保留上次未读状态，不做额外处理
+      }
     }
     fetchUnread()
     return () => {

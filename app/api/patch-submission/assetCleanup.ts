@@ -16,7 +16,9 @@ interface SubmissionAssetOwner {
  * image and its thumbnail. Deduplicated, so a key cannot be deleted or counted
  * twice.
  */
-export const collectSubmissionAssetKeys = (submission: SubmissionAssetOwner) => [
+export const collectSubmissionAssetKeys = (
+  submission: SubmissionAssetOwner
+) => [
   ...new Set(
     [
       submission.banner_key,
@@ -167,10 +169,13 @@ export const takeDownSubmissionAssets = async (
       submission.status as (typeof PATCH_SUBMISSION_CLEANUP_STATUSES)[number]
     )
   ) {
-    console.error('Refused to take down assets of a submission that still needs them', {
-      submissionId,
-      status: submission.status
-    })
+    console.error(
+      'Refused to take down assets of a submission that still needs them',
+      {
+        submissionId,
+        status: submission.status
+      }
+    )
     return { status: 'skipped', reason: 'not-cleanable' }
   }
 

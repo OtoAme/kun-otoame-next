@@ -254,8 +254,8 @@ export const Comment = ({ initialComments, initialTotal }: Props) => {
   }
 
   const currentPlaceholder =
-    searchTypeOptions.find((option) => option.key === searchType)?.placeholder ??
-    ''
+    searchTypeOptions.find((option) => option.key === searchType)
+      ?.placeholder ?? ''
   const isAllSelected =
     comments.length > 0 &&
     comments.every((comment) => selectedCommentIds.has(comment.id))
