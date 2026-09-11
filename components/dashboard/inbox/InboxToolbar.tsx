@@ -25,12 +25,16 @@ import {
   SelectValue
 } from '~/components/dashboard/ui/select'
 import { INBOX_KIND_LABELS } from '~/constants/dashboard'
+import { PATCH_SUBMISSION_LIST_QUERY_MAX_LENGTH } from '~/constants/patchSubmission'
 import {
   INBOX_SEARCH_MAX,
+  INBOX_SUBMISSION_STATUSES,
+  INBOX_SUBMISSION_STATUS_LABELS,
   type UseInboxReturn
 } from '~/hooks/dashboard/useInbox'
 import { cn } from '~/lib/dashboard/utils'
 import { INBOX_KINDS, type InboxOrder } from '~/types/api/inbox'
+import type { PatchSubmissionStatus } from '~/types/api/patchSubmission'
 
 export interface InboxToolbarProps {
   inbox: UseInboxReturn
@@ -42,7 +46,10 @@ export interface InboxToolbarProps {
 const SHORTCUTS: Array<{ keys: string; description: string }> = [
   { keys: '↑ / ↓', description: '在列表中选择事项' },
   { keys: 'Enter', description: '打开选中事项并聚焦右侧详情' },
-  { keys: 'A', description: '触发当前详情中的「通过」操作' },
+  {
+    keys: 'A',
+    description: '触发当前详情中的「通过」操作，会先进入一次确认'
+  },
   {
     keys: 'D',
     description:
@@ -62,9 +69,14 @@ export function InboxToolbar({
     kinds,
     search,
     order,
+    submissionOnly,
+    submissionStatus,
+    historyMode,
     refreshing,
+    selectionStatus,
     toggleKind,
     setOrder,
+    setSubmissionStatus,
     submitSearch,
     refreshAll
   } = inbox
@@ -81,14 +93,23 @@ export function InboxToolbar({
   }
 
   return (
-    <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b px-3 py-2">
+    <div
+      className={cn(
+        'flex flex-wrap items-center gap-x-4 gap-y-2 border-b px-3 py-2',
+        // Mobile list view pins the whole toolbar (search plus source and
+        // status filters) to the top of the shared scroll container; the
+        // detail view lets it scroll away and pins only its back row.
+        selectionStatus === 'none' &&
+          'bg-background max-md:sticky max-md:top-0 max-md:z-10'
+      )}
+    >
       <form
         role="search"
         onSubmit={handleSubmit}
         className="flex min-w-[10rem] flex-1 items-center gap-2"
       >
         <label htmlFor="inbox-search" className="sr-only">
-          搜索待办事项
+          {historyMode ? '搜索标题、投稿人或外部ID' : '搜索待办事项'}
         </label>
         <Input
           id="inbox-search"
@@ -97,8 +118,14 @@ export function InboxToolbar({
           autoComplete="off"
           value={searchText}
           onChange={(event) => setSearchText(event.target.value)}
-          maxLength={INBOX_SEARCH_MAX}
-          placeholder="搜索待办事项"
+          maxLength={
+            historyMode
+              ? PATCH_SUBMISSION_LIST_QUERY_MAX_LENGTH
+              : INBOX_SEARCH_MAX
+          }
+          placeholder={
+            historyMode ? '搜索标题、投稿人或外部ID' : '搜索待办事项'
+          }
           className="h-8 min-w-0 flex-1"
         />
         <Button type="submit" variant="secondary" size="sm">
@@ -130,18 +157,40 @@ export function InboxToolbar({
         })}
       </fieldset>
 
-      <Select
-        value={order}
-        onValueChange={(value) => setOrder(value as InboxOrder)}
-      >
-        <SelectTrigger aria-label="排序方式" className="h-8 w-[9.5rem]">
-          <SelectValue placeholder="排序方式" />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="waiting">等待最久优先</SelectItem>
-          <SelectItem value="kind">按来源分组</SelectItem>
-        </SelectContent>
-      </Select>
+      {submissionOnly ? (
+        <Select
+          value={submissionStatus}
+          onValueChange={(value) =>
+            setSubmissionStatus(value as PatchSubmissionStatus)
+          }
+        >
+          <SelectTrigger aria-label="条目状态" className="h-8 w-[9.5rem]">
+            <SelectValue placeholder="条目状态" />
+          </SelectTrigger>
+          <SelectContent>
+            {INBOX_SUBMISSION_STATUSES.map((status) => (
+              <SelectItem key={status} value={status}>
+                {INBOX_SUBMISSION_STATUS_LABELS[status]}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      ) : null}
+
+      {historyMode ? null : (
+        <Select
+          value={order}
+          onValueChange={(value) => setOrder(value as InboxOrder)}
+        >
+          <SelectTrigger aria-label="排序方式" className="h-8 w-[9.5rem]">
+            <SelectValue placeholder="排序方式" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="waiting">等待最久优先</SelectItem>
+            <SelectItem value="kind">按来源分组</SelectItem>
+          </SelectContent>
+        </Select>
+      )}
 
       <Button
         type="button"
@@ -166,6 +215,7 @@ export function InboxToolbar({
             variant="ghost"
             size="sm"
             aria-label="键盘快捷键帮助"
+            className="hidden md:inline-flex"
           >
             <Keyboard className="size-4" aria-hidden />
             快捷键

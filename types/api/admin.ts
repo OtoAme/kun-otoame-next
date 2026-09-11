@@ -17,6 +17,13 @@ export interface SumData {
   galgameCommentCount: number
 }
 
+export interface DashboardStatsSumData extends SumData {
+  ratingCount: number
+  submissionCount: number
+  creatorCount: number
+  pendingCreatorApplyCount: number
+}
+
 export interface OverviewData {
   newUser: number
   newActiveUser: number
@@ -34,6 +41,7 @@ export interface AdminUser {
   avatar: string
   role: number
   status: number
+  moemoepoint: number
   dailyImageCount: number
   created: Date | string
   _count: {

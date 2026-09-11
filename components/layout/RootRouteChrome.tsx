@@ -157,13 +157,25 @@ export const KunRootRouteChrome = ({
       <div
         className={cn(
           isPreview
-            ? 'w-full max-w-7xl grow px-3 py-4 sm:px-6'
+            ? 'w-full max-w-7xl grow'
             : 'flex min-h-[calc(100dvh-256px)] w-full max-w-7xl grow px-3 sm:px-6',
           isConversationDetail &&
             'max-lg:min-h-0 max-lg:grow max-lg:overflow-hidden'
         )}
       >
-        {children}
+        {isPreview ? (
+          // Non-grow marker wrapper whose height equals the real preview
+          // content height, so admin preview frames can measure short
+          // pages. flow-root keeps child margins inside the measurement.
+          <div
+            data-admin-preview-content
+            className="flow-root px-3 py-4 sm:px-6"
+          >
+            {children}
+          </div>
+        ) : (
+          children
+        )}
       </div>
       {!isConversationDetail && !isPreview && <KunBackToTop />}
       {!isConversationDetail && !isPreview && <KunFooter />}

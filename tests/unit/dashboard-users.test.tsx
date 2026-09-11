@@ -16,7 +16,14 @@ const mocks = vi.hoisted(() => ({
     number,
     { user: AdminUser; currentUserId: number; onDeleted: (id: number) => void }
   >(),
-  grantProps: new Map<number, { user: AdminUser; currentUserId: number }>()
+  grantProps: new Map<
+    number,
+    {
+      user: AdminUser
+      currentUserId: number
+      onGranted?: (uid: number) => void
+    }
+  >()
 }))
 
 vi.mock('~/utils/kunFetch', () => ({ kunFetchGet: mocks.get }))
@@ -146,6 +153,7 @@ vi.mock('~/components/dashboard/user/GrantMoemoepointDialog', () => ({
   GrantMoemoepointDialog: (props: {
     user: AdminUser
     currentUserId: number
+    onGranted?: (uid: number) => void
   }) => {
     mocks.grantProps.set(props.user.id, props)
     return <button>发点 {props.user.id}</button>
@@ -172,6 +180,7 @@ const user = (id: number, overrides: Partial<AdminUser> = {}): AdminUser => ({
   avatar: '',
   role: 1,
   status: 0,
+  moemoepoint: -5,
   dailyImageCount: 2,
   created: '2026-09-01T16:05:00.000Z',
   _count: { patch: 7, patch_resource: 11 },
@@ -493,6 +502,39 @@ describe('dashboard user query and request state', () => {
 })
 
 describe('dashboard user list controls and wiring', () => {
+  it('links the actual negative balance directly to that user ledger', async () => {
+    await render('', 'page')
+    await respond(latest(), rows([user(17, { moemoepoint: -5 })]))
+    const link = document.querySelector(
+      'a[href="/dashboard/user/17/moemoepoint"]'
+    )!
+    expect(link.textContent?.trim()).toBe('-5')
+    expect(link.getAttribute('aria-label')).toContain('17')
+    expect(document.querySelector('tbody')?.textContent).not.toContain(
+      '萌萌点明细'
+    )
+  })
+
+  it('refreshes the current search after a grant without copying the previous user balance into it', async () => {
+    await render('search=old', 'page')
+    await respond(latest(), rows([user(17, { moemoepoint: -5 })]))
+    const granted = mocks.grantProps.get(17)?.onGranted
+    expect(granted).toEqual(expect.any(Function))
+    await render('search=new')
+    await respond(latest(), rows([user(18, { moemoepoint: 30 })]))
+    await act(async () => granted!(17))
+    expect(latest().query.search).toBe('new')
+    await respond(latest(), rows([user(18, { moemoepoint: 40 })]))
+    expect(
+      document
+        .querySelector('a[href="/dashboard/user/18/moemoepoint"]')
+        ?.textContent?.trim()
+    ).toBe('40')
+    expect(
+      document.querySelector('a[href="/dashboard/user/17/moemoepoint"]')
+    ).toBeNull()
+  })
+
   it('debounces typing for 500 ms and resets page while preserving size and selected search type', async () => {
     await render('page=4&limit=100&searchType=email', 'page')
     await typeSearch('  first ')
@@ -634,7 +676,8 @@ describe('dashboard user list controls and wiring', () => {
     expect(mocks.editProps.get(17)?.user).toEqual(record)
     expect(mocks.grantProps.get(17)).toEqual({
       user: record,
-      currentUserId: 44
+      currentUserId: 44,
+      onGranted: expect.any(Function)
     })
     expect(mocks.deleteProps.get(17)).toMatchObject({
       user: record,

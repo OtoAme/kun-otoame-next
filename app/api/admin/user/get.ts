@@ -70,6 +70,7 @@ export const getUserInfo = async (
     role: user.role,
     created: user.created,
     status: user.status,
+    moemoepoint: user.moemoepoint,
     dailyImageCount: user.daily_image_count,
     _count: user._count
   }))

@@ -14,15 +14,17 @@ const mocks = vi.hoisted(() => ({
   positiveDisabled: false,
   destructiveDisabled: false
 }))
-vi.mock('~/hooks/dashboard/useInbox', () => ({
-  useInbox: mocks.useInbox,
-  INBOX_SEARCH_MAX: 300
+vi.mock('~/hooks/dashboard/useInbox', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('~/hooks/dashboard/useInbox')>()),
+  useInbox: mocks.useInbox
 }))
 vi.mock('~/hooks/dashboard/use-mobile', () => ({
   useIsMobile: () => mocks.isMobile
 }))
 vi.mock('~/components/dashboard/DashboardShell', () => ({
-  useDashboard: () => ({ refreshCounts: mocks.refreshCounts })
+  useDashboard: () => ({
+    refreshCounts: mocks.refreshCounts
+  })
 }))
 vi.mock('~/utils/kunFetch', () => ({
   kunFetchGet: vi.fn(),
@@ -172,7 +174,7 @@ const submission = (
   key: `submission:${id}`,
   kind: 'submission',
   id,
-  title: `待审投稿 ${id}`,
+  title: `待审条目 ${id}`,
   subtitle: '投稿人',
   actor: { id: 7, name: '投稿人' },
   waitingFrom: '2026-09-01T00:00:00.000Z',
@@ -183,7 +185,7 @@ const submission = (
   payload: {
     id,
     status: 'pending',
-    name: `待审投稿 ${id}`,
+    name: `待审条目 ${id}`,
     authorName: '投稿人',
     authorId: 7,
     submittedAt: '2026-09-01T00:00:00.000Z',
@@ -230,6 +232,12 @@ describe('dashboard inbox presentation', () => {
       kinds: ['submission'],
       search: '',
       order: 'waiting',
+      submissionOnly: true,
+      submissionStatus: 'pending',
+      submissionPage: 1,
+      historyMode: false,
+      setSubmissionStatus: vi.fn(),
+      setSubmissionPage: vi.fn(),
       selectionStatus: 'none',
       selection: null,
       selectedKey: null,
@@ -264,6 +272,7 @@ describe('dashboard inbox presentation', () => {
       url: 'https://example.com/dashboard'
     })
     dom.window.HTMLElement.prototype.scrollIntoView = vi.fn()
+    dom.window.HTMLElement.prototype.scrollTo = vi.fn()
     Object.defineProperties(dom.window.HTMLElement.prototype, {
       attachEvent: { configurable: true, value: () => {} },
       detachEvent: { configurable: true, value: () => {} }
@@ -272,7 +281,9 @@ describe('dashboard inbox presentation', () => {
     vi.stubGlobal('document', dom.window.document)
     vi.stubGlobal('React', React)
     vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
-    root = createRoot(dom.window.document.getElementById('root')!)
+    const container = dom.window.document.getElementById('root')!
+    container.setAttribute('data-dashboard-scroll', '')
+    root = createRoot(container)
   })
   afterEach(async () => {
     await act(async () => root.unmount())
@@ -340,7 +351,7 @@ describe('dashboard inbox presentation', () => {
     })
     expect(rowKeys()).toEqual(['submission:3', 'submission:1', 'submission:2'])
     expect(bodyText()).toContain('已显示 3 / 80 条')
-    expect(bodyText()).toContain('待审投稿：该来源还有更多，先处理这些')
+    expect(bodyText()).toContain('待审条目：该来源还有更多，先处理这些')
     expect(bodyText()).not.toContain('旧反馈：该来源还有更多')
   })
 
@@ -350,7 +361,7 @@ describe('dashboard inbox presentation', () => {
     expect(
       dom.window.document.querySelector('[aria-current="true"]')
     ).toBeNull()
-    expect(bodyText()).toContain('待审投稿 99的完整详情')
+    expect(bodyText()).toContain('待审条目 99的完整详情')
     expect(bodyText()).toContain('已显示 3 / 3 条')
   })
 
@@ -397,6 +408,18 @@ describe('dashboard inbox presentation', () => {
     expect(dom.window.document.querySelector('[data-inbox-action]')).toBeNull()
   })
 
+  it('opens the existing submission detail for a processed history record', async () => {
+    const selected = submission(1)
+    await select(selected, {
+      historyMode: true,
+      submissionOnly: true,
+      submissionStatus: 'published',
+      item: { key: selected.key, data: { state: 'processed', item: selected } }
+    })
+    expect(bodyText()).toContain(`${selected.title}的完整详情`)
+    expect(bodyText()).not.toContain('该事项已被处理')
+  })
+
   it.each(['missing', 'processed'] as const)(
     'shows the %s item state and offers refresh and return actions',
     async (status) => {
@@ -432,7 +455,7 @@ describe('dashboard inbox presentation', () => {
         data: { state: 'pending', item: submission(1) }
       }
     })
-    expect(bodyText()).not.toContain('待审投稿 1的完整详情')
+    expect(bodyText()).not.toContain('待审条目 1的完整详情')
     expect(dom.window.document.querySelector('[data-inbox-action]')).toBeNull()
   })
 
@@ -474,6 +497,18 @@ describe('dashboard inbox presentation', () => {
 
   it('dispatches A and D only to the currently selected pending writable detail', async () => {
     await select(submission(2))
+    await press('a')
+    await press('d')
+    expect(mocks.positive).toHaveBeenCalledExactlyOnceWith('submission:2')
+    expect(mocks.destructive).toHaveBeenCalledExactlyOnceWith('submission:2')
+  })
+
+  it('ignores held-down auto-repeat for review actions but fires once per real press', async () => {
+    await select(submission(2))
+    await press('a', undefined, { repeat: true })
+    await press('d', undefined, { repeat: true })
+    expect(mocks.positive).not.toHaveBeenCalled()
+    expect(mocks.destructive).not.toHaveBeenCalled()
     await press('a')
     await press('d')
     expect(mocks.positive).toHaveBeenCalledExactlyOnceWith('submission:2')
@@ -607,11 +642,34 @@ describe('dashboard inbox presentation', () => {
     expect(mocks.positive).not.toHaveBeenCalled()
   })
 
+  it('starts each selected mobile item at the top of the shared page', async () => {
+    mocks.isMobile = true
+    await select(submission(1))
+    const scroller = document.getElementById('root')!
+    vi.mocked(scroller.scrollTo).mockClear()
+    await select(submission(2))
+    expect(scroller.scrollTo).toHaveBeenCalledWith({ top: 0 })
+  })
+
+  it('returns to the top of the shared page for an invalid mobile deep link', async () => {
+    mocks.isMobile = true
+    await select(submission(1))
+    const scroller = document.getElementById('root')!
+    vi.mocked(scroller.scrollTo).mockClear()
+    await render({
+      selectionStatus: 'invalid',
+      selectedKey: null,
+      selection: null
+    })
+    expect(scroller.scrollTo).toHaveBeenCalledWith({ top: 0 })
+    expect(bodyText()).toContain('事项链接无效')
+  })
+
   it('returns from mobile detail to the candidate list without clearing the active search', async () => {
     mocks.isMobile = true
     await select(submission(1), { search: '作者搜索' })
     expect(rowKeys()).toEqual([])
-    expect(bodyText()).toContain('待审投稿 1的完整详情')
+    expect(bodyText()).toContain('待审条目 1的完整详情')
     await act(async () => {
       button('返回列表').click()
     })

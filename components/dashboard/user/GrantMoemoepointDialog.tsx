@@ -241,6 +241,7 @@ export const GrantMoemoepointDialog = ({
           variant="outline"
           size="sm"
           aria-label={`为 ${user.name} (UID: ${user.id}) 发放萌萌点`}
+          className="cursor-pointer"
         >
           <Coins className="h-4 w-4" />
           发放萌萌点
@@ -339,6 +340,7 @@ export const GrantMoemoepointDialog = ({
             variant="outline"
             onClick={() => handleOpenChange(false)}
             disabled={busy}
+            className="cursor-pointer disabled:cursor-default"
           >
             {frozen ? '关闭' : '取消'}
           </Button>
@@ -346,6 +348,7 @@ export const GrantMoemoepointDialog = ({
             type="button"
             onClick={handleGrant}
             disabled={busy || (!frozen && !amount.trim())}
+            className="cursor-pointer disabled:cursor-default"
           >
             {busy && <Loader2 className="h-4 w-4 animate-spin" />}
             {busy ? '提交中…' : frozen ? '重试原请求' : '确认发放'}

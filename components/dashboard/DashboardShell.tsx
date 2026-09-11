@@ -10,6 +10,7 @@ import {
   useState,
   type ReactNode
 } from 'react'
+import { usePathname } from 'next/navigation'
 
 import { kunFetchGet } from '~/utils/kunFetch'
 import type { InboxCounts } from '~/types/api/inbox'
@@ -17,6 +18,7 @@ import {
   SidebarInset,
   SidebarProvider
 } from '~/components/dashboard/ui/sidebar'
+import { cn } from '~/lib/dashboard/utils'
 
 import { DashboardSidebar } from './DashboardSidebar'
 import { DashboardHeader } from './DashboardHeader'
@@ -58,6 +60,10 @@ export function DashboardShell({ currentUser, children }: DashboardShellProps) {
   const mountedRef = useRef(false)
   const requestGeneration = useRef(0)
   const inFlightRef = useRef<Promise<void> | null>(null)
+  const pathname = usePathname()
+  // Only the inbox page turns the inset into a shared mobile scroll
+  // container; every other dashboard page keeps the previous behavior.
+  const isInboxPath = pathname.startsWith('/dashboard/inbox')
 
   // Performs exactly one request. Never rejects, never issues a network
   // request when unmounted, and every setState is guarded by mounted +
@@ -144,7 +150,20 @@ export function DashboardShell({ currentUser, children }: DashboardShellProps) {
     <DashboardContext.Provider value={contextValue}>
       <SidebarProvider className="h-svh overflow-hidden">
         <DashboardSidebar currentUser={currentUser} />
-        <SidebarInset className="min-h-0 min-w-0">
+        {/*
+          Inbox page only, below md: this inset is the single shared scroll
+          container (header, toolbar and panes in one natural flow, sticky
+          rows anchor here). Other dashboard pages and all md+ layouts keep
+          the previous fixed-header, per-pane scrolling behavior. The data
+          attribute lets the inbox locate the container for scroll resets.
+        */}
+        <SidebarInset
+          className={cn(
+            'min-h-0 min-w-0',
+            isInboxPath && 'max-md:overflow-y-auto'
+          )}
+          data-dashboard-scroll
+        >
           <DashboardHeader />
           <div className="flex min-h-0 min-w-0 flex-1 flex-col">{children}</div>
         </SidebarInset>

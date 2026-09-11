@@ -12,7 +12,10 @@ const mocks = vi.hoisted(() => ({
   get: vi.fn(),
   post: vi.fn(),
   onProcessed: vi.fn(),
-  onStateChanged: vi.fn()
+  onStateChanged: vi.fn(),
+  // 测试专用：true 时 AlertDialog stub 在关闭后保留退出期 DOM（data-state=closed），
+  // 模拟 Radix Presence 动画保留阶段；默认 false 维持既有即时卸载行为。
+  retainClosed: { current: false }
 }))
 vi.mock('~/utils/kunFetch', () => ({
   kunFetchGet: mocks.get,
@@ -48,12 +51,20 @@ vi.mock('~/components/dashboard/ui/checkbox', () => ({
 }))
 vi.mock('~/components/dashboard/ui/alert-dialog', async () => {
   const ReactModule = await import('react')
-  const Context = ReactModule.createContext({
-    onOpenChange: (_open: boolean) => {}
+  type CloseAutoFocus = (event: { preventDefault: () => void }) => void
+  const Context = ReactModule.createContext<{
+    onOpenChange: (open: boolean) => void
+    closeAutoFocusRef: { current: CloseAutoFocus | null }
+  }>({
+    onOpenChange: (_open: boolean) => {},
+    closeAutoFocusRef: { current: null }
   })
-  const Block = ({ children }: { children?: React.ReactNode }) => (
-    <div>{children}</div>
-  )
+  const Block = (slot: string) => {
+    function AlertDialogBlock({ children }: { children?: React.ReactNode }) {
+      return <div data-slot={slot}>{children}</div>
+    }
+    return AlertDialogBlock
+  }
   return {
     AlertDialog: ({
       open,
@@ -63,13 +74,38 @@ vi.mock('~/components/dashboard/ui/alert-dialog', async () => {
       open: boolean
       onOpenChange: (open: boolean) => void
       children?: React.ReactNode
-    }) => (
-      <Context.Provider value={{ onOpenChange }}>
-        {open ? children : null}
-      </Context.Provider>
-    ),
-    AlertDialogContent: ({ children }: { children?: React.ReactNode }) => {
-      const { onOpenChange } = ReactModule.useContext(Context)
+    }) => {
+      const closeAutoFocusRef = ReactModule.useRef<CloseAutoFocus | null>(null)
+      const wasOpen = ReactModule.useRef(open)
+      ReactModule.useEffect(() => {
+        // 模拟真实 primitive：open 由 true 变 false 时触发 Content 的 onCloseAutoFocus
+        if (wasOpen.current && !open) {
+          closeAutoFocusRef.current?.({ preventDefault: () => {} })
+        }
+        wasOpen.current = open
+      }, [open])
+      // 仅在测试打开 retainClosed 时模拟退出保留期；否则保持即时卸载。
+      const hasOpened = ReactModule.useRef(open)
+      if (open) hasOpened.current = true
+      const show = open || (mocks.retainClosed.current && hasOpened.current)
+      return (
+        <Context.Provider value={{ onOpenChange, closeAutoFocusRef }}>
+          {show ? (
+            <div data-state={open ? 'open' : 'closed'}>{children}</div>
+          ) : null}
+        </Context.Provider>
+      )
+    },
+    AlertDialogContent: ({
+      children,
+      onCloseAutoFocus
+    }: {
+      children?: React.ReactNode
+      onCloseAutoFocus?: CloseAutoFocus
+    }) => {
+      const { onOpenChange, closeAutoFocusRef } =
+        ReactModule.useContext(Context)
+      closeAutoFocusRef.current = onCloseAutoFocus ?? null
       return (
         <div
           role="alertdialog"
@@ -95,10 +131,10 @@ vi.mock('~/components/dashboard/ui/alert-dialog', async () => {
         </button>
       )
     },
-    AlertDialogHeader: Block,
-    AlertDialogTitle: Block,
-    AlertDialogDescription: Block,
-    AlertDialogFooter: Block
+    AlertDialogHeader: Block('alert-dialog-header'),
+    AlertDialogTitle: Block('alert-dialog-title'),
+    AlertDialogDescription: Block('alert-dialog-description'),
+    AlertDialogFooter: Block('alert-dialog-footer')
   }
 })
 
@@ -218,6 +254,7 @@ describe('dashboard submission review detail', () => {
 
   beforeEach(() => {
     vi.resetAllMocks()
+    mocks.retainClosed.current = false
     loads = []
     writes = []
     mocks.get.mockImplementation(
@@ -293,18 +330,22 @@ describe('dashboard submission review detail', () => {
   const dialog = () => dom.window.document.querySelector('[role="alertdialog"]')
   const text = () => dom.window.document.body.textContent ?? ''
 
-  it('approves with one click using the selected submission ID, without a confirmation dialog', async () => {
+  it('approves only after a confirmation dialog that shows the target and uses the selected submission ID', async () => {
     await mount()
     expect(loads[0].path).toBe('/admin/patch-submission/1')
     await click('通过并发布')
+    expect(writes).toHaveLength(0)
+    expect(dialog()?.textContent).toContain('月光投稿')
+    expect(dialog()?.textContent).toContain('不可在本页面撤销')
+    await click('确认通过并发布')
     expect(writes).toHaveLength(1)
     expect(writes[0]).toMatchObject({
       path: '/admin/patch-submission/approve',
       body: { submissionId: 1, overrideSelfReview: false }
     })
     expect(writes[0].body).not.toHaveProperty('reason')
-    expect(dialog()).toBeNull()
     await settle({})
+    expect(dialog()).toBeNull()
     expect(mocks.onProcessed).toHaveBeenCalledExactlyOnceWith('submission:1')
     expect(mocks.onStateChanged).not.toHaveBeenCalled()
   })
@@ -327,11 +368,14 @@ describe('dashboard submission review detail', () => {
     ['要求修改', 'request-changes'],
     ['驳回', 'reject']
   ])(
-    'sends the trimmed reason for %s without an extra confirmation',
+    'sends the trimmed reason for %s only after the confirmation dialog',
     async (label, action) => {
       await mount()
       await fillReason('  请补齐游戏资料  ')
       await click(label)
+      expect(writes).toHaveLength(0)
+      expect(dialog()?.textContent).toContain('请补齐游戏资料')
+      await click(`确认${label}`)
       expect(writes[0]).toMatchObject({
         path: `/admin/patch-submission/${action}`,
         body: {
@@ -340,8 +384,8 @@ describe('dashboard submission review detail', () => {
           overrideSelfReview: false
         }
       })
-      expect(dialog()).toBeNull()
       await settle({})
+      expect(dialog()).toBeNull()
       expect(mocks.onProcessed).toHaveBeenCalledExactlyOnceWith('submission:1')
     }
   )
@@ -354,6 +398,9 @@ describe('dashboard submission review detail', () => {
     expect(dialog()).not.toBeNull()
     expect(dialog()?.textContent).toContain('10')
     expect(dialog()?.textContent).toContain('不可撤销')
+    // 弹窗打开后再次点击标记按钮（外层快捷键路径）不叠加确认、不产生写入
+    await click('违规处理')
+    expect(writes).toHaveLength(0)
     const confirm = button('确认违规处理')
     await act(async () => {
       confirm.click()
@@ -417,6 +464,8 @@ describe('dashboard submission review detail', () => {
     })
     expect(button('通过并发布').disabled).toBe(false)
     await click('通过并发布')
+    expect(writes).toHaveLength(0)
+    await click('确认通过并发布')
     expect(writes[0].body).toMatchObject({
       submissionId: 1,
       overrideSelfReview: true
@@ -547,6 +596,7 @@ describe('dashboard submission review detail', () => {
   it('refreshes only the captured item on a state conflict and never reports it as processed', async () => {
     await mount()
     await click('通过并发布')
+    await click('确认通过并发布')
     await render(item(2))
     await act(async () => {
       loads[1].resolve(detail({ id: 2, name: '另一条投稿' }))
@@ -558,12 +608,18 @@ describe('dashboard submission review detail', () => {
     expect(text()).not.toContain(PATCH_SUBMISSION_REVIEW_STATE_CHANGED_MESSAGE)
   })
 
-  it('makes only one approval write for clicks before React rerenders', async () => {
+  it('makes only one approval write for repeated trigger and confirm clicks', async () => {
     await mount()
     const approve = button('通过并发布')
     await act(async () => {
       approve.click()
       approve.click()
+    })
+    expect(writes).toHaveLength(0)
+    const confirm = button('确认通过并发布')
+    await act(async () => {
+      confirm.click()
+      confirm.click()
     })
     expect(writes).toHaveLength(1)
     expect(button('通过并发布').disabled).toBe(true)
@@ -575,17 +631,23 @@ describe('dashboard submission review detail', () => {
     await mount()
     await fillReason('审核说明')
     await click('驳回')
+    await click('确认驳回')
     await settle('服务器拒绝此次操作')
-    expect(text()).toContain('服务器拒绝此次操作')
+    expect(dialog()).not.toBeNull()
+    expect(dialog()?.textContent).toContain('服务器拒绝此次操作')
     expect(dom.window.document.querySelector('textarea')?.value).toBe(
       '审核说明'
     )
-    expect(button('驳回').disabled).toBe(false)
     expect(mocks.onProcessed).not.toHaveBeenCalled()
     expect(mocks.onStateChanged).not.toHaveBeenCalled()
-    await click('驳回')
+    await click('确认驳回')
     expect(writes).toHaveLength(2)
     expect(writes[1].body.reason).toBe('审核说明')
+    await act(async () => {
+      writes[1].resolve({})
+    })
+    expect(dialog()).toBeNull()
+    expect(mocks.onProcessed).toHaveBeenCalledExactlyOnceWith('submission:1')
   })
 
   it('does not let an old detail response replace the newly selected submission', async () => {
@@ -600,6 +662,7 @@ describe('dashboard submission review detail', () => {
     expect(text()).toContain('当前投稿')
     expect(text()).not.toContain('旧投稿')
     await click('通过并发布')
+    await click('确认通过并发布')
     expect(writes[0].body.submissionId).toBe(2)
   })
 
@@ -621,6 +684,7 @@ describe('dashboard submission review detail', () => {
     await mount()
     await fillReason('旧版本审核意见')
     await click('要求修改')
+    await click('确认要求修改')
     await render(item(1, '2026-09-02T00:00:00.000Z'))
     await act(async () => {
       loads[1].resolve(detail({ name: '同一投稿的新版本' }))
@@ -638,6 +702,7 @@ describe('dashboard submission review detail', () => {
       await mount()
       await fillReason('A审核说明')
       await click('驳回')
+      await click('确认驳回')
       await render(item(2))
       await act(async () => {
         loads[1].resolve(detail({ id: 2, name: 'B投稿' }))
@@ -661,4 +726,217 @@ describe('dashboard submission review detail', () => {
       else expect(mocks.onProcessed).not.toHaveBeenCalled()
     }
   )
+
+  it('closes the approval confirmation with Escape and makes no write', async () => {
+    await mount()
+    await click('通过并发布')
+    expect(dialog()).not.toBeNull()
+    await act(async () => {
+      dialog()?.dispatchEvent(
+        new dom.window.KeyboardEvent('keydown', {
+          key: 'Escape',
+          bubbles: true
+        })
+      )
+    })
+    expect(dialog()).toBeNull()
+    expect(writes).toHaveLength(0)
+    expect(mocks.onProcessed).not.toHaveBeenCalled()
+    expect(mocks.onStateChanged).not.toHaveBeenCalled()
+  })
+
+  it('closes a pending confirmation when the selection changes, without any write', async () => {
+    await mount()
+    await fillReason('切换前的审核意见')
+    await click('驳回')
+    expect(dialog()).not.toBeNull()
+    await render(item(2))
+    await act(async () => {
+      loads[1].resolve(detail({ id: 2, name: '新选中投稿' }))
+    })
+    expect(dialog()).toBeNull()
+    expect(writes).toHaveLength(0)
+    expect(text()).toContain('新选中投稿')
+    expect(dom.window.document.querySelector('textarea')?.value).toBe('')
+  })
+
+  it.each(['取消', 'Escape'] as const)(
+    'restores focus to the approval trigger when its confirmation closes via %s',
+    async (close) => {
+      await mount()
+      const trigger = button('通过并发布')
+      await click('通过并发布')
+      expect(dialog()).not.toBeNull()
+      if (close === '取消') {
+        await click('取消')
+      } else {
+        await act(async () => {
+          dialog()?.dispatchEvent(
+            new dom.window.KeyboardEvent('keydown', {
+              key: 'Escape',
+              bubbles: true
+            })
+          )
+        })
+      }
+      expect(dialog()).toBeNull()
+      expect(writes).toHaveLength(0)
+      expect(dom.window.document.activeElement).toBe(trigger)
+    }
+  )
+
+  it.each(['要求修改', '驳回', '违规处理'] as const)(
+    'restores focus to the %s trigger button after cancelling its confirmation',
+    async (label) => {
+      await mount()
+      await fillReason('焦点回归理由')
+      const trigger = button(label)
+      await click(label)
+      await click('取消')
+      expect(dialog()).toBeNull()
+      expect(writes).toHaveLength(0)
+      expect(dom.window.document.activeElement).toBe(trigger)
+    }
+  )
+
+  it('does not refocus the old trigger when the selection changes while confirming', async () => {
+    await mount()
+    await fillReason('切换前理由')
+    const trigger = button('驳回')
+    await click('驳回')
+    expect(dialog()).not.toBeNull()
+    await render(item(2))
+    await act(async () => {
+      loads[1].resolve(detail({ id: 2, name: '焦点新项' }))
+    })
+    expect(dialog()).toBeNull()
+    expect(writes).toHaveLength(0)
+    expect(dom.window.document.activeElement).not.toBe(trigger)
+  })
+
+  it('does not refocus the trigger after a successful review that removes the item', async () => {
+    await mount()
+    const trigger = button('通过并发布')
+    await click('通过并发布')
+    await click('确认通过并发布')
+    await settle({})
+    expect(mocks.onProcessed).toHaveBeenCalledExactlyOnceWith('submission:1')
+    expect(dom.window.document.activeElement).not.toBe(trigger)
+  })
+
+  it.each([
+    ['通过并发布', '取消', false],
+    ['通过并发布', 'Escape', false],
+    ['要求修改', '取消', true],
+    ['要求修改', 'Escape', true],
+    ['驳回', '取消', true],
+    ['驳回', 'Escape', true],
+    ['违规处理', '取消', true],
+    ['违规处理', 'Escape', true]
+  ] as const)(
+    'keeps the %s confirmation content stable while closing via %s',
+    async (label, close, needsReason) => {
+      mocks.retainClosed.current = true
+      const titleText = () =>
+        dialog()
+          ?.querySelector('[data-slot="alert-dialog-title"]')
+          ?.textContent?.trim()
+      const descriptionText = () =>
+        dialog()
+          ?.querySelector('[data-slot="alert-dialog-description"]')
+          ?.textContent?.trim()
+      const confirmButton = () => {
+        const found = [...(dialog()?.querySelectorAll('button') ?? [])].find(
+          (entry) => entry.textContent?.trim().startsWith('确认')
+        )
+        expect(found, 'confirm button').toBeDefined()
+        return found!
+      }
+
+      await mount()
+      if (needsReason) await fillReason('退出期间保留的理由')
+      await click(label)
+      expect(dialog()).not.toBeNull()
+      const titleBefore = titleText()
+      const descriptionBefore = descriptionText()
+      const variant = label === '违规处理' ? 'destructive' : 'default'
+      expect(titleBefore).toBe(`确认${label}`)
+      expect(descriptionBefore?.length).toBeGreaterThan(0)
+      expect(confirmButton().textContent?.trim()).toBe(`确认${label}`)
+      expect(confirmButton().getAttribute('data-variant')).toBe(variant)
+
+      if (close === '取消') {
+        await click('取消')
+      } else {
+        await act(async () => {
+          dialog()?.dispatchEvent(
+            new dom.window.KeyboardEvent('keydown', {
+              key: 'Escape',
+              bubbles: true
+            })
+          )
+        })
+      }
+
+      // 退出保留期：DOM 仍在且标记 data-state=closed，
+      // 标题/描述/理由区/按钮文案与 variant 不得退回其他动作或空白。
+      expect(dialog()).not.toBeNull()
+      expect(
+        dialog()?.closest('[data-state]')?.getAttribute('data-state')
+      ).toBe('closed')
+      expect(titleText()).toBe(titleBefore)
+      expect(descriptionText()).toBe(descriptionBefore)
+      expect(confirmButton().textContent?.trim()).toBe(`确认${label}`)
+      expect(confirmButton().getAttribute('data-variant')).toBe(variant)
+      if (needsReason) {
+        expect(dialog()?.textContent).toContain('退出期间保留的理由')
+      } else {
+        expect(dialog()?.textContent).not.toContain('违规原因')
+        expect(dialog()?.textContent).not.toContain('审核意见')
+      }
+
+      // 退出 DOM 中的确认按钮即便程序 click 也零写入（写入口仅认 pendingAction）。
+      await act(async () => {
+        confirmButton().click()
+      })
+      expect(writes).toHaveLength(0)
+      expect(mocks.onProcessed).not.toHaveBeenCalled()
+      expect(mocks.onStateChanged).not.toHaveBeenCalled()
+    }
+  )
+
+  it('shows the newly opened action content after a retained close and still writes once', async () => {
+    mocks.retainClosed.current = true
+    await mount()
+    await click('通过并发布')
+    await click('取消')
+    expect(dialog()).not.toBeNull()
+    expect(
+      dialog()
+        ?.querySelector('[data-slot="alert-dialog-title"]')
+        ?.textContent?.trim()
+    ).toBe('确认通过并发布')
+
+    await fillReason('改开驳回的理由')
+    await click('驳回')
+    expect(
+      dialog()
+        ?.querySelector('[data-slot="alert-dialog-title"]')
+        ?.textContent?.trim()
+    ).toBe('确认驳回')
+    expect(dialog()?.textContent).toContain('改开驳回的理由')
+
+    await click('确认驳回')
+    expect(writes).toHaveLength(1)
+    expect(writes[0]).toMatchObject({
+      path: '/admin/patch-submission/reject',
+      body: {
+        submissionId: 1,
+        reason: '改开驳回的理由',
+        overrideSelfReview: false
+      }
+    })
+    await settle({})
+    expect(mocks.onProcessed).toHaveBeenCalledExactlyOnceWith('submission:1')
+  })
 })

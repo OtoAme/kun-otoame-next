@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useId, useRef, useState } from 'react'
-import type { ReactNode } from 'react'
+import type { MouseEvent as ReactMouseEvent, ReactNode } from 'react'
 import Link from 'next/link'
 import toast from 'react-hot-toast'
 
@@ -133,9 +133,18 @@ export function ResourceInboxDetail({
   const reasonErrorId = `${reasonId}-error`
 
   const [pending, setPending] = useState(false)
-  const [declineOpen, setDeclineOpen] = useState(false)
+  // Which review action is awaiting confirmation; null = dialog closed.
+  const [confirmAction, setConfirmAction] = useState<
+    'approve' | 'decline' | null
+  >(null)
+  // Presentation-only action: updated only when a new confirmation opens and
+  // kept while Radix animates the closed DOM out, so exiting content never
+  // flips to the other action. It never gates the writer.
+  const [displayAction, setDisplayAction] = useState<'approve' | 'decline'>(
+    'approve'
+  )
   const [reason, setReason] = useState('')
-  const [declineError, setDeclineError] = useState('')
+  const [actionError, setActionError] = useState('')
 
   // Synchronous duplicate-submit guard (state updates land too late).
   const inFlightRef = useRef(false)
@@ -145,6 +154,13 @@ export function ResourceInboxDetail({
   currentKeyRef.current = item.key
   // Local state must not be touched after unmount; business callbacks still fire.
   const mountedRef = useRef(true)
+  // Focus restoration: the marker button that opened the confirmation and the
+  // item key at that moment (this controlled dialog has no AlertDialogTrigger).
+  const triggerRef = useRef<HTMLButtonElement | null>(null)
+  const triggerKeyRef = useRef(item.key)
+  // Set when the dialog closes after a successful write: the parent removes the
+  // item and owns focus, so the stale trigger must not be refocused.
+  const skipFocusRestoreRef = useRef(false)
 
   useEffect(() => {
     mountedRef.current = true
@@ -154,11 +170,13 @@ export function ResourceInboxDetail({
   }, [])
 
   useEffect(() => {
+    // Item identity change closes any stale confirmation for the previous item.
     inFlightRef.current = false
     setPending(false)
-    setDeclineOpen(false)
+    setConfirmAction(null)
     setReason('')
-    setDeclineError('')
+    setActionError('')
+    triggerRef.current = null
   }, [item.key])
 
   /** Returns { ok, message }; a string result is a business failure message. */
@@ -177,62 +195,59 @@ export function ResourceInboxDetail({
     }
   }
 
-  const handleApprove = async () => {
-    if (inFlightRef.current) return
-    inFlightRef.current = true
-    setPending(true)
-    const capturedKey = item.key
-    const resourceId = item.id
-
-    const result = await sendRequest('/admin/resource-apply/approve', {
-      resourceId
-    })
-
-    if (mountedRef.current && currentKeyRef.current === capturedKey) {
-      inFlightRef.current = false
-      setPending(false)
-    }
-
-    // Callbacks run outside any try/catch and even after unmount/selection
-    // change: the parent hook is still mounted and must remove the processed
-    // item. A parent callback error must never surface as a failed action.
-    if (result.ok) {
-      toast.success('资源已通过')
-      onProcessed(capturedKey)
-      return
-    }
-    toast.error(result.message)
-    if (STATE_CHANGED_MESSAGES.includes(result.message)) {
-      onStateChanged(capturedKey)
-    }
+  // Marker buttons (also clicked by the outer a/d keyboard layer) only open
+  // the confirmation dialog; they never write. Re-entry while a dialog is
+  // already open is ignored so outer shortcuts cannot stack dialogs.
+  // Mouse clicks and the outer a/d layer's programmatic .click() share this
+  // entry, so event.currentTarget is the reliable focus-restoration target
+  // (document.activeElement is not set by programmatic clicks).
+  const openApproveConfirm = (event: ReactMouseEvent<HTMLButtonElement>) => {
+    if (pending || confirmAction) return
+    triggerRef.current = event.currentTarget
+    triggerKeyRef.current = item.key
+    setActionError('')
+    setDisplayAction('approve')
+    setConfirmAction('approve')
   }
 
-  const openDeclineDialog = () => {
-    setDeclineError('')
-    setDeclineOpen(true)
+  const openDeclineConfirm = (event: ReactMouseEvent<HTMLButtonElement>) => {
+    if (pending || confirmAction) return
+    triggerRef.current = event.currentTarget
+    triggerKeyRef.current = item.key
+    setActionError('')
+    setDisplayAction('decline')
+    setConfirmAction('decline')
   }
 
-  const handleDecline = async () => {
+  // The single writer for both review actions; only the confirm button calls it.
+  const handleConfirm = async () => {
+    const action = confirmAction
+    if (!action) return
     const trimmedReason = reason.trim()
-    if (!trimmedReason) {
-      setDeclineError('请填写拒绝原因')
-      return
-    }
-    if (trimmedReason.length > MAX_DECLINE_REASON_LENGTH) {
-      setDeclineError(`拒绝原因不能超过 ${MAX_DECLINE_REASON_LENGTH} 字`)
-      return
+    if (action === 'decline') {
+      if (!trimmedReason) {
+        setActionError('请填写拒绝原因')
+        return
+      }
+      if (trimmedReason.length > MAX_DECLINE_REASON_LENGTH) {
+        setActionError(`拒绝原因不能超过 ${MAX_DECLINE_REASON_LENGTH} 字`)
+        return
+      }
     }
     if (inFlightRef.current) return
     inFlightRef.current = true
     setPending(true)
-    setDeclineError('')
+    setActionError('')
     const capturedKey = item.key
     const resourceId = item.id
 
-    const result = await sendRequest('/admin/resource-apply/decline', {
-      resourceId,
-      reason: trimmedReason
-    })
+    const result =
+      action === 'approve'
+        ? await sendRequest('/admin/resource-apply/approve', { resourceId })
+        : await sendRequest('/admin/resource-apply/decline', {
+            resourceId,
+            reason: trimmedReason
+          })
 
     const canTouchLocal =
       mountedRef.current && currentKeyRef.current === capturedKey
@@ -241,10 +256,16 @@ export function ResourceInboxDetail({
       setPending(false)
     }
 
+    // Callbacks run outside any try/catch and even after unmount/selection
+    // change: the parent hook is still mounted and must remove the processed
+    // item. A parent callback error must never surface as a failed action.
     if (result.ok) {
-      toast.success('资源已拒绝并删除')
+      toast.success(action === 'approve' ? '资源已通过' : '资源已拒绝并删除')
       if (canTouchLocal) {
-        setDeclineOpen(false)
+        // The processed item is about to be removed by the parent; let the
+        // inbox selection logic own focus instead of the stale trigger.
+        skipFocusRestoreRef.current = true
+        setConfirmAction(null)
       }
       onProcessed(capturedKey)
       return
@@ -252,7 +273,7 @@ export function ResourceInboxDetail({
     // Keep the dialog open with the failure visible; the entered reason is retained.
     toast.error(result.message)
     if (canTouchLocal) {
-      setDeclineError(result.message)
+      setActionError(result.message)
     }
     if (STATE_CHANGED_MESSAGES.includes(result.message)) {
       onStateChanged(capturedKey)
@@ -418,7 +439,7 @@ export function ResourceInboxDetail({
         <div className="flex flex-wrap items-center gap-2">
           <Button
             data-inbox-action="positive"
-            onClick={handleApprove}
+            onClick={openApproveConfirm}
             disabled={pending}
           >
             通过
@@ -426,7 +447,7 @@ export function ResourceInboxDetail({
           <Button
             variant="destructive"
             data-inbox-action="destructive"
-            onClick={openDeclineDialog}
+            onClick={openDeclineConfirm}
             disabled={pending}
           >
             拒绝并删除
@@ -438,67 +459,110 @@ export function ResourceInboxDetail({
           </Button>
         </div>
         <p className="text-xs text-muted-foreground">
-          通过后资源将直接发布；拒绝会永久删除该资源、其全部下载链接及该资源已上传的文件，不可恢复。「编辑后通过」需前往旧后台处理，处理需超级管理员权限。
+          通过后资源将直接发布；拒绝会永久删除该资源、其全部下载链接及该资源已上传的文件，不可恢复。两个动作均需确认后才会生效。「编辑后通过」需前往旧后台处理，处理需超级管理员权限。
         </p>
       </section>
 
       <AlertDialog
-        open={declineOpen}
+        open={confirmAction !== null}
         onOpenChange={(open) => {
-          if (!pending) {
-            setDeclineOpen(open)
+          // Cancel/Esc closes with zero writes; closing is blocked while a request runs.
+          if (!open && !pending) {
+            setConfirmAction(null)
+            setActionError('')
           }
         }}
       >
-        <AlertDialogContent>
+        <AlertDialogContent
+          className="max-h-[85vh] overflow-y-auto"
+          onCloseAutoFocus={(event) => {
+            // Controlled dialog without Trigger: Radix's default close focus
+            // falls back to BODY, so restore the initiating button explicitly.
+            event.preventDefault()
+            const trigger = triggerRef.current
+            triggerRef.current = null
+            const skip = skipFocusRestoreRef.current
+            skipFocusRestoreRef.current = false
+            if (
+              !skip &&
+              trigger &&
+              mountedRef.current &&
+              trigger.isConnected &&
+              !trigger.disabled &&
+              triggerKeyRef.current === currentKeyRef.current
+            ) {
+              trigger.focus()
+            }
+          }}
+        >
           <AlertDialogHeader>
-            <AlertDialogTitle>确认拒绝并删除该资源？</AlertDialogTitle>
+            <AlertDialogTitle>
+              {displayAction === 'approve'
+                ? '确认通过该资源？'
+                : '确认拒绝并删除该资源？'}
+            </AlertDialogTitle>
             <AlertDialogDescription>
-              此操作将永久删除资源「{resource.name || '未命名资源'}」、其全部{' '}
-              {resource.links.length}{' '}
-              条下载链接及该资源已上传的文件，删除后不可恢复。
+              {displayAction === 'approve'
+                ? `将通过资源「${resource.name || '未命名资源'}」（所属游戏 ${gameName}，共 ${resource.links.length} 条下载链接）。通过后资源将直接发布，操作立即生效。`
+                : `将拒绝并永久删除资源「${resource.name || '未命名资源'}」、其全部 ${resource.links.length} 条下载链接及该资源已上传的文件，删除后不可恢复。`}
             </AlertDialogDescription>
           </AlertDialogHeader>
-          <div className="space-y-2">
-            <div className="flex items-center justify-between gap-2">
-              <label htmlFor={reasonId} className="text-sm font-medium">
-                拒绝原因（必填，最多 {MAX_DECLINE_REASON_LENGTH} 字）
-              </label>
-              <span className="shrink-0 text-xs text-muted-foreground">
-                {reason.length}/{MAX_DECLINE_REASON_LENGTH}
-              </span>
+          {displayAction === 'decline' ? (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <label htmlFor={reasonId} className="text-sm font-medium">
+                  拒绝原因（必填，最多 {MAX_DECLINE_REASON_LENGTH} 字）
+                </label>
+                <span className="shrink-0 text-xs text-muted-foreground">
+                  {reason.length}/{MAX_DECLINE_REASON_LENGTH}
+                </span>
+              </div>
+              <Textarea
+                id={reasonId}
+                value={reason}
+                onChange={(event) => setReason(event.target.value)}
+                maxLength={MAX_DECLINE_REASON_LENGTH}
+                rows={4}
+                disabled={pending}
+                placeholder="请说明拒绝原因，将反馈给上传者"
+                aria-invalid={actionError ? true : undefined}
+                aria-describedby={actionError ? reasonErrorId : undefined}
+              />
+              {actionError ? (
+                <p
+                  id={reasonErrorId}
+                  role="alert"
+                  className="text-sm text-destructive"
+                >
+                  {actionError}
+                </p>
+              ) : null}
             </div>
-            <Textarea
-              id={reasonId}
-              value={reason}
-              onChange={(event) => setReason(event.target.value)}
-              maxLength={MAX_DECLINE_REASON_LENGTH}
-              rows={4}
-              disabled={pending}
-              placeholder="请说明拒绝原因，将反馈给上传者"
-              aria-invalid={declineError ? true : undefined}
-              aria-describedby={declineError ? reasonErrorId : undefined}
-            />
-            {declineError ? (
-              <p
-                id={reasonErrorId}
-                role="alert"
-                className="text-sm text-destructive"
-              >
-                {declineError}
-              </p>
-            ) : null}
-          </div>
+          ) : actionError ? (
+            <p
+              id={reasonErrorId}
+              role="alert"
+              className="text-sm text-destructive"
+            >
+              {actionError}
+            </p>
+          ) : null}
           <AlertDialogFooter>
             <AlertDialogCancel disabled={pending}>取消</AlertDialogCancel>
-            {/* Plain Button (not AlertDialogAction) so a failed request keeps the dialog open with the error visible. */}
-            <Button
-              variant="destructive"
-              onClick={handleDecline}
-              disabled={pending}
-            >
-              {pending ? '正在删除…' : '确认删除'}
-            </Button>
+            {/* Plain Button (not AlertDialogAction) so a failed request keeps the dialog open with the error visible; this is the only writer. */}
+            {displayAction === 'approve' ? (
+              <Button onClick={handleConfirm} disabled={pending}>
+                {pending ? '正在通过…' : '确认通过'}
+              </Button>
+            ) : (
+              <Button
+                variant="destructive"
+                onClick={handleConfirm}
+                disabled={pending}
+              >
+                {pending ? '正在删除…' : '确认删除'}
+              </Button>
+            )}
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

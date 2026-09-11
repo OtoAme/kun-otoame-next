@@ -39,14 +39,20 @@ export function DashboardHeader() {
   // Migrated pages get fixed titles; the dashboard inbox root keeps the
   // source-filter title logic (neutral unless exactly one valid kind).
   const title =
-    pathname === '/dashboard/user'
-      ? '用户管理'
-      : USER_LEDGER_PATH.test(pathname)
-        ? '用户萌萌点明细'
-        : selectedKinds.length === 1
-          ? INBOX_KIND_LABELS[selectedKinds[0]]
-          : '收件箱'
+    pathname === '/dashboard'
+      ? '统计总览'
+      : pathname === '/dashboard/user'
+        ? '用户管理'
+        : USER_LEDGER_PATH.test(pathname)
+          ? '用户萌萌点明细'
+          : selectedKinds.length === 1
+            ? INBOX_KIND_LABELS[selectedKinds[0]]
+            : '待审事项'
 
+  // The header is plain normal-flow content. On mobile it scrolls away with
+  // the shared page flow (the SidebarInset scroll container); from md up the
+  // inset does not scroll, so it stays fixed as before. It is intentionally
+  // never sticky itself.
   return (
     <header className="flex min-h-14 shrink-0 flex-wrap items-center gap-x-2 gap-y-1 border-b bg-background px-4 py-2">
       <SidebarTrigger />

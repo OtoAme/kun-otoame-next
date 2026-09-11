@@ -173,13 +173,15 @@ describe('dashboard shell', () => {
     expect(link).not.toBeNull()
     expect(link?.textContent).toContain('超级管理员')
     expect(container.querySelector('a[href="/admin/rating"]')).not.toBeNull()
+    expect(container.querySelector('a[href="/admin"]')).toBeNull()
   })
 
   it('keeps the active source link pointed at that source', async () => {
+    mocks.pathname = '/dashboard/inbox'
     mocks.params = 'kinds=submission'
     await render()
     expect(
-      container.querySelector('a[href="/dashboard?kinds=submission"]')
+      container.querySelector('a[href="/dashboard/inbox?kinds=submission"]')
     ).not.toBeNull()
   })
 
@@ -202,7 +204,7 @@ describe('dashboard shell', () => {
       expect(container.querySelector('a[href="/admin/user"]')).not.toBeNull()
       expect(
         container
-          .querySelector('a[href="/dashboard?kinds=submission"]')
+          .querySelector('a[href="/dashboard/inbox?kinds=submission"]')
           ?.getAttribute('data-active')
       ).toBe('false')
     }
@@ -219,13 +221,14 @@ describe('dashboard shell', () => {
     ['kinds=submission,resource-apply,feedback,report', 'true'],
     ['kinds=submission,report', 'false']
   ])('marks the all-sources entry correctly for %s', async (params, active) => {
+    mocks.pathname = '/dashboard/inbox'
     mocks.params = params
     await render()
     const all = [...container.querySelectorAll('a')].find(
-      (link) => link.textContent === '全部待办'
+      (link) => link.textContent === '全部待审事项'
     )
     expect(all?.getAttribute('data-active')).toBe(active)
-    expect(container.querySelector('h1')?.textContent).toBe('收件箱')
+    expect(container.querySelector('h1')?.textContent).toBe('待审事项')
   })
 
   it('does not overlap timer polling while the previous request is pending', async () => {
@@ -326,5 +329,20 @@ describe('dashboard shell', () => {
     expect(mocks.logout).not.toHaveBeenCalled()
     expect(mocks.toastError).toHaveBeenCalledWith('退出失败')
     expect(button.disabled).toBe(false)
+  })
+
+  it('marks the stats overview entry only on the dashboard home', async () => {
+    await render()
+    const stats = [...container.querySelectorAll('a')].find(
+      (link) => link.textContent === '统计总览'
+    )
+    expect(stats?.getAttribute('href')).toBe('/dashboard')
+    expect(stats?.getAttribute('data-active')).toBe('true')
+    expect(container.querySelector('h1')?.textContent).toBe('统计总览')
+    const all = [...container.querySelectorAll('a')].find(
+      (link) => link.textContent === '全部待审事项'
+    )
+    expect(all?.getAttribute('href')).toBe('/dashboard/inbox')
+    expect(all?.getAttribute('data-active')).toBe('false')
   })
 })

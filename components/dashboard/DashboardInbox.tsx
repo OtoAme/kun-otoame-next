@@ -1,7 +1,13 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
-import type { ReactNode } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState
+} from 'react'
+import type { ReactNode, TouchEvent as ReactTouchEvent } from 'react'
 import { ArrowLeft, Inbox as InboxIcon } from 'lucide-react'
 
 import { Button } from '~/components/dashboard/ui/button'
@@ -10,12 +16,12 @@ import {
   ResizablePanel,
   ResizablePanelGroup
 } from '~/components/dashboard/ui/resizable'
-import { Skeleton } from '~/components/dashboard/ui/skeleton'
 import { useIsMobile } from '~/hooks/dashboard/use-mobile'
 import { useInbox } from '~/hooks/dashboard/useInbox'
 
 import { useDashboard } from './DashboardShell'
 import { InboxDetail } from './inbox/InboxDetail'
+import { InboxDetailSkeleton } from './inbox/InboxDetailSkeleton'
 import { InboxListPane } from './inbox/InboxListPane'
 import { InboxToolbar } from './inbox/InboxToolbar'
 
@@ -24,21 +30,21 @@ export interface DashboardInboxProps {
   reviewerRole: number
 }
 
+// Downward pull distance on the back row that scrolls the shared page flow
+// back to the top. Chosen well above the tap slop so a pull is not treated
+// as a back-button tap.
+const BACK_ROW_PULL_DISTANCE = 48
+
+// Scroll-position resets must run before paint so a freshly swapped mobile
+// view never flashes at the previous offset; useEffect is the SSR fallback,
+// where no scroll position exists anyway.
+const useIsomorphicLayoutEffect =
+  typeof window !== 'undefined' ? useLayoutEffect : useEffect
+
 function StatePanel({ children }: { children: ReactNode }) {
   return (
     <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center">
       {children}
-    </div>
-  )
-}
-
-function DetailSkeleton() {
-  return (
-    <div role="status" aria-label="正在加载事项详情" className="space-y-3 p-4">
-      <Skeleton className="h-6 w-1/3" />
-      <Skeleton className="h-4 w-2/3" />
-      <Skeleton className="h-4 w-1/2" />
-      <Skeleton className="h-32 w-full" />
     </div>
   )
 }
@@ -68,10 +74,72 @@ export function DashboardInbox({
   const [helpOpen, setHelpOpen] = useState(false)
   const searchRef = useRef<HTMLInputElement | null>(null)
   const detailRef = useRef<HTMLDivElement | null>(null)
+  const sectionRef = useRef<HTMLElement | null>(null)
+  const backRowTouchStartY = useRef<number | null>(null)
+
+  // Header, toolbar and the active mobile pane share the inset scroller.
+  const getScroller = useCallback((): HTMLElement | null => {
+    return (
+      sectionRef.current?.closest<HTMLElement>('[data-dashboard-scroll]') ??
+      null
+    )
+  }, [])
+
+  // Entering a different mobile view (list, detail, invalid selection, or
+  // another item) restarts the shared flow at the top so the full chrome is
+  // visible first. Desktop keeps its two independent pane scrollers and is
+  // never touched here.
+  useIsomorphicLayoutEffect(() => {
+    if (!isMobile) {
+      return
+    }
+    getScroller()?.scrollTo({ top: 0 })
+  }, [isMobile, selectionStatus, selectedKey, getScroller])
+
+  // Leaving the inbox route must not leak a scrolled position into the next
+  // dashboard page, which shares the same container. The container outlives
+  // this component, so it is captured once at mount for the unmount cleanup.
+  useEffect(() => {
+    const scroller = getScroller()
+    return () => {
+      scroller?.scrollTo({ top: 0 })
+    }
+  }, [getScroller])
+
+  // A downward pull on the stuck back row scrolls the shared flow back to
+  // the top, revealing the full header and toolbar. The gesture also drags
+  // the flow naturally; this only completes the trip, smoothly unless the
+  // user prefers reduced motion. Clicking the back button is untouched.
+  const handleBackRowTouchStart = (event: ReactTouchEvent<HTMLDivElement>) => {
+    backRowTouchStartY.current = event.touches[0]?.clientY ?? null
+  }
+
+  const handleBackRowTouchMove = (event: ReactTouchEvent<HTMLDivElement>) => {
+    const startY = backRowTouchStartY.current
+    if (startY === null) {
+      return
+    }
+    const currentY = event.touches[0]?.clientY
+    if (currentY !== undefined && currentY - startY > BACK_ROW_PULL_DISTANCE) {
+      backRowTouchStartY.current = null
+      const reduceMotion = window.matchMedia(
+        '(prefers-reduced-motion: reduce)'
+      ).matches
+      getScroller()?.scrollTo({
+        top: 0,
+        behavior: reduceMotion ? 'auto' : 'smooth'
+      })
+    }
+  }
+
+  const handleBackRowTouchEnd = () => {
+    backRowTouchStartY.current = null
+  }
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.defaultPrevented || event.isComposing) return
+      if (event.repeat) return // 忽略长按自动重复，防止连发
       if (event.ctrlKey || event.metaKey || event.altKey) return
       if (
         document.querySelector(
@@ -123,6 +191,8 @@ export function DashboardInbox({
       }
 
       if (key === '/') {
+        // Focusing the search input also makes the browser scroll the
+        // shared flow back up to the toolbar when it is scrolled away.
         event.preventDefault()
         searchRef.current?.focus()
         searchRef.current?.select()
@@ -185,7 +255,7 @@ export function DashboardInbox({
       </StatePanel>
     )
   } else if (itemLoading) {
-    detailBody = <DetailSkeleton />
+    detailBody = <InboxDetailSkeleton />
   } else if (itemError) {
     detailBody = (
       <StatePanel>
@@ -228,7 +298,10 @@ export function DashboardInbox({
           </div>
         </StatePanel>
       )
-    } else if (data.state === 'processed') {
+    } else if (
+      data.state === 'processed' &&
+      !(inbox.historyMode && data.item.kind === 'submission')
+    ) {
       detailBody = (
         <StatePanel>
           <p className="text-sm">该事项已被处理</p>
@@ -267,13 +340,25 @@ export function DashboardInbox({
       )
     }
   } else {
-    detailBody = <DetailSkeleton />
+    detailBody = <InboxDetailSkeleton />
   }
 
+  // On mobile none of these containers scrolls or clips: height is
+  // content-driven so the whole detail (back row plus body) participates in
+  // the shared page flow. The back row sticks to the container top once it
+  // reaches it; bg-background keeps scrolled content from showing through.
+  // From md up the original fixed-height, independently scrolling pane is
+  // preserved exactly.
   const detailPanel = (
-    <div className="flex h-full min-h-0 min-w-0 flex-col">
+    <div className="flex h-full min-h-0 min-w-0 flex-col max-md:h-auto">
       {isMobile ? (
-        <div className="border-b px-2 py-1.5">
+        <div
+          className="border-b bg-background px-2 py-1.5 max-md:sticky max-md:top-0 max-md:z-10"
+          onTouchStart={handleBackRowTouchStart}
+          onTouchMove={handleBackRowTouchMove}
+          onTouchEnd={handleBackRowTouchEnd}
+          onTouchCancel={handleBackRowTouchEnd}
+        >
           <Button
             type="button"
             variant="ghost"
@@ -288,7 +373,7 @@ export function DashboardInbox({
       <div
         ref={detailRef}
         tabIndex={-1}
-        className="min-h-0 flex-1 overflow-y-auto p-4 outline-none"
+        className="min-h-0 flex-1 overflow-y-auto p-4 outline-none max-md:flex-none max-md:overflow-visible"
       >
         {detailBody}
       </div>
@@ -297,8 +382,9 @@ export function DashboardInbox({
 
   return (
     <section
+      ref={sectionRef}
       aria-label="待办处理"
-      className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
+      className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden max-md:flex-none max-md:overflow-visible"
     >
       <InboxToolbar
         inbox={inbox}
@@ -307,7 +393,7 @@ export function DashboardInbox({
         onHelpOpenChange={setHelpOpen}
       />
       {isMobile ? (
-        <div className="min-h-0 min-w-0 flex-1 overflow-hidden">
+        <div className="min-h-0 min-w-0 flex-1 overflow-hidden max-md:flex-none max-md:overflow-visible">
           {selectionStatus === 'none' ? (
             <InboxListPane inbox={inbox} />
           ) : (

@@ -1,14 +1,13 @@
 import type { InboxKind } from '~/types/api/inbox'
 
 export const INBOX_KIND_LABELS: Record<InboxKind, string> = {
-  submission: '待审投稿',
+  submission: '待审条目',
   'resource-apply': '待审资源',
   feedback: '旧反馈',
   report: '旧举报'
 }
 
 export const DASHBOARD_LEGACY_LINKS = [
-  { href: '/admin', label: '统计', minRole: 4 },
   { href: '/admin/submission', label: '投稿历史', minRole: 3 },
   { href: '/admin/resource-apply', label: '资源申请', minRole: 4 },
   { href: '/admin/feedback', label: '反馈处理', minRole: 4 },

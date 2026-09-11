@@ -146,11 +146,12 @@ export const DeleteUserDialog = ({
       <AlertDialogTrigger asChild>
         <Button
           type="button"
-          variant="destructive"
+          variant="outline"
           size="sm"
           disabled={isSelf}
           title={isSelf ? '不能删除自己' : undefined}
           aria-label={`删除用户 ${user.name} (UID: ${user.id})`}
+          className="cursor-pointer disabled:cursor-default"
         >
           <Trash2 className="h-4 w-4" />
           删除用户
@@ -181,12 +182,18 @@ export const DeleteUserDialog = ({
         )}
 
         <AlertDialogFooter>
-          <AlertDialogCancel disabled={busy}>取消</AlertDialogCancel>
+          <AlertDialogCancel
+            disabled={busy}
+            className="cursor-pointer disabled:cursor-default"
+          >
+            取消
+          </AlertDialogCancel>
           <Button
             type="button"
             variant="destructive"
             onClick={handleDelete}
             disabled={busy}
+            className="cursor-pointer disabled:cursor-default"
           >
             {busy && <Loader2 className="h-4 w-4 animate-spin" />}
             {busy ? '删除中…' : '永久删除用户'}

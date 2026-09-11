@@ -146,6 +146,7 @@ const user = {
   avatar: '',
   role: 1,
   status: 0,
+  moemoepoint: 0,
   dailyImageCount: 0,
   created: '2026-08-27T00:00:00.000Z',
   _count: { patch: 0, patch_resource: 0 }

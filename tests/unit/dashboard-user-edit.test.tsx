@@ -158,6 +158,7 @@ const user = (overrides: Partial<AdminUser> = {}): AdminUser => ({
   avatar: '',
   role: 2,
   status: 0,
+  moemoepoint: 0,
   dailyImageCount: 7,
   created: '2026-09-01T00:00:00.000Z',
   _count: { patch: 2, patch_resource: 3 },

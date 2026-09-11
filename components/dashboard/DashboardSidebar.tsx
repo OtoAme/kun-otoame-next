@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { usePathname, useSearchParams } from 'next/navigation'
 import toast from 'react-hot-toast'
 import {
+  BarChart3,
   ChevronsUpDown,
   FileText,
   Flag,
@@ -95,14 +96,14 @@ export function DashboardSidebar({ currentUser }: DashboardSidebarProps) {
   const pathname = usePathname()
   const searchParams = useSearchParams()
   const kindsParam = searchParams.get('kinds')
-  const isDashboardRoot = pathname === '/dashboard'
+  const isStatsActive = pathname === '/dashboard'
+  const isInboxRoot = pathname === '/dashboard/inbox'
   const selectedKinds = parseSelectedKinds(kindsParam)
   // All-inbox is active when there is no filter at all, or when the
   // canonical URL explicitly selects all four kinds. A partial multi-source
   // selection marks neither All nor any single source row.
   const isAllActive =
-    isDashboardRoot &&
-    (!kindsParam || selectedKinds.length === INBOX_KINDS.length)
+    isInboxRoot && (!kindsParam || selectedKinds.length === INBOX_KINDS.length)
   const isUserSectionActive =
     pathname === '/dashboard/user' || pathname.startsWith('/dashboard/user/')
   const userSectionNeedsSuperAdmin = currentUser.role < 4
@@ -125,7 +126,24 @@ export function DashboardSidebar({ currentUser }: DashboardSidebarProps) {
 
       <SidebarContent>
         <SidebarGroup>
-          <SidebarGroupLabel>收件箱</SidebarGroupLabel>
+          <SidebarMenu>
+            <SidebarMenuItem>
+              <SidebarMenuButton
+                asChild
+                isActive={isStatsActive}
+                onClick={closeMobileSidebar}
+              >
+                <Link href="/dashboard">
+                  <BarChart3 />
+                  <span>统计总览</span>
+                </Link>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          </SidebarMenu>
+        </SidebarGroup>
+
+        <SidebarGroup>
+          <SidebarGroupLabel>待审事项</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
               <SidebarMenuItem>
@@ -134,9 +152,9 @@ export function DashboardSidebar({ currentUser }: DashboardSidebarProps) {
                   isActive={isAllActive}
                   onClick={closeMobileSidebar}
                 >
-                  <Link href="/dashboard">
+                  <Link href="/dashboard/inbox">
                     <Inbox />
-                    <span>全部待办</span>
+                    <span>全部待审事项</span>
                   </Link>
                 </SidebarMenuButton>
                 {counts && (
@@ -146,7 +164,7 @@ export function DashboardSidebar({ currentUser }: DashboardSidebarProps) {
               {INBOX_KINDS.map((kind) => {
                 const Icon = KIND_ICONS[kind]
                 const isActive =
-                  isDashboardRoot &&
+                  isInboxRoot &&
                   selectedKinds.length === 1 &&
                   selectedKinds[0] === kind
                 return (
@@ -156,7 +174,7 @@ export function DashboardSidebar({ currentUser }: DashboardSidebarProps) {
                       isActive={isActive}
                       onClick={closeMobileSidebar}
                     >
-                      <Link href={`/dashboard?kinds=${kind}`}>
+                      <Link href={`/dashboard/inbox?kinds=${kind}`}>
                         <Icon />
                         <span>{INBOX_KIND_LABELS[kind]}</span>
                       </Link>

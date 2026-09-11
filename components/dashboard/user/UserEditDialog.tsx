@@ -310,6 +310,7 @@ export function UserEditDialog({ user, onUpdated }: UserEditDialogProps) {
           variant="outline"
           size="sm"
           aria-label={`编辑用户 ${user.name}`}
+          className="cursor-pointer"
         >
           编辑
         </Button>
@@ -385,7 +386,10 @@ export function UserEditDialog({ user, onUpdated }: UserEditDialogProps) {
                 onValueChange={(value) => setRole(Number(value))}
                 disabled={busy}
               >
-                <SelectTrigger id={`${fieldId}-role`} className="w-full">
+                <SelectTrigger
+                  id={`${fieldId}-role`}
+                  className="w-full cursor-pointer disabled:cursor-default"
+                >
                   <SelectValue placeholder="选择角色" />
                 </SelectTrigger>
                 <SelectContent>
@@ -415,7 +419,10 @@ export function UserEditDialog({ user, onUpdated }: UserEditDialogProps) {
                 onValueChange={(value) => setStatus(Number(value))}
                 disabled={busy}
               >
-                <SelectTrigger id={`${fieldId}-status`} className="w-full">
+                <SelectTrigger
+                  id={`${fieldId}-status`}
+                  className="w-full cursor-pointer disabled:cursor-default"
+                >
                   <SelectValue placeholder="选择状态" />
                 </SelectTrigger>
                 <SelectContent>
@@ -511,6 +518,7 @@ export function UserEditDialog({ user, onUpdated }: UserEditDialogProps) {
               size="sm"
               onClick={handleDisable2FA}
               disabled={!enable2FA || busy}
+              className="cursor-pointer disabled:cursor-default"
             >
               {busyAction === '2fa' ? (
                 <Loader2 className="animate-spin" />
@@ -536,10 +544,15 @@ export function UserEditDialog({ user, onUpdated }: UserEditDialogProps) {
               variant="outline"
               onClick={() => handleOpenChange(false)}
               disabled={busy}
+              className="cursor-pointer disabled:cursor-default"
             >
               取消
             </Button>
-            <Button type="submit" disabled={busy}>
+            <Button
+              type="submit"
+              disabled={busy}
+              className="cursor-pointer disabled:cursor-default"
+            >
               {busyAction === 'save' ? (
                 <Loader2 className="animate-spin" />
               ) : null}

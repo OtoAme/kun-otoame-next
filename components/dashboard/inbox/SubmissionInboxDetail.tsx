@@ -16,7 +16,6 @@ import { Badge } from '~/components/dashboard/ui/badge'
 import { Button } from '~/components/dashboard/ui/button'
 import { Checkbox } from '~/components/dashboard/ui/checkbox'
 import { Separator } from '~/components/dashboard/ui/separator'
-import { Skeleton } from '~/components/dashboard/ui/skeleton'
 import { Textarea } from '~/components/dashboard/ui/textarea'
 import {
   PATCH_SUBMISSION_PUBLISH_REWARD,
@@ -31,6 +30,7 @@ import { kunFetchGet, kunFetchPost } from '~/utils/kunFetch'
 import { formatChinaDateTime } from '~/utils/fixedTimezoneDate'
 
 import { CompanyDiagnostics } from './CompanyDiagnostics'
+import { InboxDetailSkeleton } from './InboxDetailSkeleton'
 import { PreviewFrame } from './PreviewFrame'
 
 type SubmissionInboxItem = Extract<InboxItem, { kind: 'submission' }>
@@ -58,6 +58,13 @@ const STATUS_META: Record<
   published: { label: '已发布', variant: 'default' },
   violation: { label: '违规处理', variant: 'destructive' },
   deleted: { label: '已删除', variant: 'outline' }
+}
+
+const ACTION_LABEL: Record<ReviewAction, string> = {
+  approve: '通过并发布',
+  'request-changes': '要求修改',
+  reject: '驳回',
+  violate: '违规处理'
 }
 
 function roleLabel(role: number): string {
@@ -107,7 +114,10 @@ export function SubmissionInboxDetail({
   const [overrideSelfReview, setOverrideSelfReview] = useState(false)
   const [working, setWorking] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
-  const [violateOpen, setViolateOpen] = useState(false)
+  const [pendingAction, setPendingAction] = useState<ReviewAction | null>(null)
+  // 呈现动作：仅在打开新确认时同步更新，关闭（含 Radix 退出动画期 DOM 保留）保持，
+  // 避免退出瞬间标题/说明/理由区/按钮退回默认动作；不参与任何写入条件。
+  const [displayAction, setDisplayAction] = useState<ReviewAction>('approve')
 
   const mountedRef = useRef(true)
   const generationRef = useRef(0)
@@ -115,6 +125,13 @@ export function SubmissionInboxDetail({
   // 渲染期间同步刷新选择引用，使 effect 之前完成的过期请求无法命中新选择。
   const keyRef = useRef(item.key)
   keyRef.current = item.key
+  // 记录发起确认的按钮及其所属 key/updated，用于关闭时显式恢复焦点；
+  // 外层快捷键经 .click() 触发，发起按钮未必是 document.activeElement。
+  const triggerRef = useRef<{
+    key: string
+    updated: string
+    element: HTMLButtonElement
+  } | null>(null)
   const updatedRef = useRef(item.payload.updated)
   updatedRef.current = item.payload.updated
 
@@ -180,7 +197,9 @@ export function SubmissionInboxDetail({
     setReason('')
     setActionError(null)
     setOverrideSelfReview(false)
-    setViolateOpen(false)
+    setPendingAction(null)
+    // 切项/换版本：旧发起按钮不属于当前选择，关闭时不恢复焦点。
+    triggerRef.current = null
   }, [item.key, item.payload.updated])
 
   const detail =
@@ -209,14 +228,7 @@ export function SubmissionInboxDetail({
         </div>
       )
     }
-    return (
-      <div className="space-y-3" aria-busy="true" aria-label="正在加载投稿详情">
-        <Skeleton className="h-6 w-2/3" />
-        <Skeleton className="h-4 w-1/4" />
-        <Skeleton className="h-24 w-full" />
-        <Skeleton className="h-48 w-full" />
-      </div>
-    )
+    return <InboxDetailSkeleton label="正在加载投稿详情" />
   }
 
   const statusMeta = STATUS_META[detail.status]
@@ -239,14 +251,36 @@ export function SubmissionInboxDetail({
   const approveDisabled =
     baseActionDisabled || detail.preview === null || hasBlockingAmbiguities
 
-  const openViolateDialog = () => {
+  // 所有审核动作（含外层快捷键点击的标记按钮）统一先开确认；
+  // 已有确认打开时不叠加、不嵌套，外层快捷键因此不再生效。
+  const openConfirm = (action: ReviewAction, trigger: HTMLButtonElement) => {
     if (lockRef.current) return
-    if (reason.trim().length === 0) {
-      setActionError('违规处理必须先填写原因')
-      return
+    if (pendingAction !== null) return
+    const trimmedReason = reason.trim()
+    if (action !== 'approve') {
+      if (trimmedReason.length === 0) {
+        setActionError(
+          action === 'violate'
+            ? '违规处理必须先填写原因'
+            : '请先填写审核意见（必填）'
+        )
+        return
+      }
+      if (trimmedReason.length > PATCH_SUBMISSION_REASON_MAX_LENGTH) {
+        setActionError(
+          `审核意见长度不能超过 ${PATCH_SUBMISSION_REASON_MAX_LENGTH} 字`
+        )
+        return
+      }
     }
     setActionError(null)
-    setViolateOpen(true)
+    triggerRef.current = {
+      key: item.key,
+      updated: item.payload.updated,
+      element: trigger
+    }
+    setDisplayAction(action)
+    setPendingAction(action)
   }
 
   const runAction = async (action: ReviewAction) => {
@@ -332,9 +366,28 @@ export function SubmissionInboxDetail({
         setReason('')
         setActionError(null)
         setOverrideSelfReview(false)
-        setViolateOpen(false)
+        // 成功移除当前项：不向即将移除的发起按钮恢复焦点。
+        triggerRef.current = null
+        setPendingAction(null)
       }
       onProcessed(capturedKey)
+    }
+  }
+
+  // 无 Trigger 的受控 AlertDialog 关闭时默认落到 BODY；改为显式恢复焦点到
+  // 仍连接、可用且属于当前 key/version 的发起按钮，其余情况不抢焦点。
+  const handleCloseAutoFocus = (event: Event) => {
+    event.preventDefault()
+    const trigger = triggerRef.current
+    triggerRef.current = null
+    if (
+      trigger !== null &&
+      trigger.key === item.key &&
+      trigger.updated === item.payload.updated &&
+      trigger.element.isConnected &&
+      !trigger.element.disabled
+    ) {
+      trigger.element.focus()
     }
   }
 
@@ -544,7 +597,7 @@ export function SubmissionInboxDetail({
             disabled={working || !pending}
             placeholder="填写给投稿人的审核意见"
             aria-describedby={
-              actionError !== null && !violateOpen
+              actionError !== null && pendingAction === null
                 ? 'submission-review-reason-hint submission-action-error'
                 : 'submission-review-reason-hint'
             }
@@ -557,7 +610,7 @@ export function SubmissionInboxDetail({
           </p>
         </div>
 
-        {actionError !== null && !violateOpen ? (
+        {actionError !== null && pendingAction === null ? (
           <p
             role="alert"
             id="submission-action-error"
@@ -571,21 +624,23 @@ export function SubmissionInboxDetail({
           <Button
             data-inbox-action="positive"
             disabled={approveDisabled}
-            onClick={() => void runAction('approve')}
+            onClick={(event) => openConfirm('approve', event.currentTarget)}
           >
             通过并发布
           </Button>
           <Button
             variant="outline"
             disabled={baseActionDisabled}
-            onClick={() => void runAction('request-changes')}
+            onClick={(event) =>
+              openConfirm('request-changes', event.currentTarget)
+            }
           >
             要求修改
           </Button>
           <Button
             variant="outline"
             disabled={baseActionDisabled}
-            onClick={() => void runAction('reject')}
+            onClick={(event) => openConfirm('reject', event.currentTarget)}
           >
             驳回
           </Button>
@@ -593,7 +648,7 @@ export function SubmissionInboxDetail({
             variant="destructive"
             data-inbox-action="destructive"
             disabled={baseActionDisabled}
-            onClick={openViolateDialog}
+            onClick={(event) => openConfirm('violate', event.currentTarget)}
           >
             违规处理
           </Button>
@@ -631,27 +686,50 @@ export function SubmissionInboxDetail({
         ) : null}
 
         <AlertDialog
-          open={violateOpen}
+          open={pendingAction !== null}
           onOpenChange={(open) => {
-            if (!working) setViolateOpen(open)
+            // 取消 / Esc 关闭且零写入；确认写请求在飞期间禁止关闭。
+            if (!open && !working) setPendingAction(null)
           }}
         >
-          <AlertDialogContent>
+          <AlertDialogContent
+            className="max-h-[85dvh] overflow-y-auto"
+            onCloseAutoFocus={handleCloseAutoFocus}
+          >
             <AlertDialogHeader>
-              <AlertDialogTitle>确认违规处理</AlertDialogTitle>
+              <AlertDialogTitle>
+                确认{ACTION_LABEL[displayAction]}
+              </AlertDialogTitle>
               <AlertDialogDescription>
-                违规处理将没收本次投稿冻结的押金 {detail.heldAmount}
-                ，清空本次投稿内容并清理其上传文件，此操作不可撤销。
+                {displayAction === 'approve'
+                  ? `将立即发布该投稿，返还冻结押金 ${detail.heldAmount}，并发放 ${PATCH_SUBMISSION_PUBLISH_REWARD} 奖励；发布后不可在本页面撤销。`
+                  : displayAction === 'request-changes'
+                    ? `押金 ${detail.heldAmount} 继续冻结，等待投稿人修改后重新提交。`
+                    : displayAction === 'reject'
+                      ? `将驳回该投稿并返还押金 ${detail.heldAmount}；驳回后不可在本页面撤销。`
+                      : `将没收本次投稿冻结的押金 ${detail.heldAmount}，清空本次投稿内容并清理其上传文件，此操作不可撤销。`}
               </AlertDialogDescription>
             </AlertDialogHeader>
             <div className="space-y-1 text-sm">
-              <p className="text-muted-foreground">违规原因</p>
-              <p className="whitespace-pre-wrap break-words">{reason.trim()}</p>
+              <p className="text-muted-foreground">审核对象</p>
+              <p className="break-words">
+                {detail.name}（投稿 #{detail.id}）
+              </p>
             </div>
+            {displayAction !== 'approve' ? (
+              <div className="space-y-1 text-sm">
+                <p className="text-muted-foreground">
+                  {displayAction === 'violate' ? '违规原因' : '审核意见'}
+                </p>
+                <p className="whitespace-pre-wrap break-words">
+                  {reason.trim()}
+                </p>
+              </div>
+            ) : null}
             {actionError !== null ? (
               <p
                 role="alert"
-                id="violate-action-error"
+                id="review-action-dialog-error"
                 className="text-sm text-destructive"
               >
                 {actionError}
@@ -660,11 +738,16 @@ export function SubmissionInboxDetail({
             <AlertDialogFooter>
               <AlertDialogCancel disabled={working}>取消</AlertDialogCancel>
               <Button
-                variant="destructive"
+                variant={
+                  displayAction === 'violate' ? 'destructive' : 'default'
+                }
                 disabled={baseActionDisabled}
-                onClick={() => void runAction('violate')}
+                onClick={() => {
+                  // 唯一写入口：仅确认按钮调用原有写函数（内部仍含 ref 锁与捕获上下文）。
+                  if (pendingAction !== null) void runAction(pendingAction)
+                }}
               >
-                {working ? '处理中…' : '确认违规处理'}
+                {working ? '处理中…' : `确认${ACTION_LABEL[displayAction]}`}
               </Button>
             </AlertDialogFooter>
           </AlertDialogContent>

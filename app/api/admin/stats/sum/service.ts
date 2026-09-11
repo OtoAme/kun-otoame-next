@@ -1,13 +1,17 @@
 import { prisma } from '~/prisma/index'
-import type { SumData } from '~/types/api/admin'
+import type { DashboardStatsSumData } from '~/types/api/admin'
 
-export const getSumData = async (): Promise<SumData> => {
+export const getSumData = async (): Promise<DashboardStatsSumData> => {
   const [
     userCount,
     galgameCount,
     galgameResourceCount,
     galgamePatchResourceCount,
-    galgameCommentCount
+    galgameCommentCount,
+    ratingCount,
+    submissionCount,
+    creatorCount,
+    pendingCreatorApplyCount
   ] = await Promise.all([
     prisma.user.count(),
     prisma.patch.count(),
@@ -17,7 +21,18 @@ export const getSumData = async (): Promise<SumData> => {
     prisma.patch_resource.count({
       where: { section: 'patch' }
     }),
-    prisma.patch_comment.count()
+    prisma.patch_comment.count(),
+    prisma.patch_rating.count(),
+    prisma.patch_submission.count(),
+    prisma.user.count({ where: { role: 2 } }),
+    prisma.user_message.count({
+      where: {
+        type: 'apply',
+        sender_id: { not: null },
+        recipient_id: null,
+        status: { in: [0, 1] }
+      }
+    })
   ])
 
   return {
@@ -25,6 +40,10 @@ export const getSumData = async (): Promise<SumData> => {
     galgameCount,
     galgameResourceCount,
     galgamePatchResourceCount,
-    galgameCommentCount
+    galgameCommentCount,
+    ratingCount,
+    submissionCount,
+    creatorCount,
+    pendingCreatorApplyCount
   }
 }

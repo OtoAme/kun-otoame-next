@@ -59,7 +59,7 @@ const STATUS_BADGE_CLASS: Record<number, string> = {
   2: 'border-red-600/40 text-red-700 dark:text-red-400'
 }
 
-const COLUMN_COUNT = 9
+const COLUMN_COUNT = 10
 const SKELETON_ROWS = 8
 const DEBOUNCE_MS = 500
 
@@ -169,7 +169,10 @@ export const DashboardUsers = ({
             value={query.searchType}
             onValueChange={(value) => setSearchType(value as UserSearchType)}
           >
-            <SelectTrigger className="w-[110px]" aria-label="搜索类型">
+            <SelectTrigger
+              className="w-[110px] cursor-pointer"
+              aria-label="搜索类型"
+            >
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -196,7 +199,10 @@ export const DashboardUsers = ({
           value={String(query.limit)}
           onValueChange={(value) => setLimit(Number(value))}
         >
-          <SelectTrigger className="w-[110px]" aria-label="每页条数">
+          <SelectTrigger
+            className="w-[110px] cursor-pointer"
+            aria-label="每页条数"
+          >
             <SelectValue placeholder={`${query.limit} 条/页`} />
           </SelectTrigger>
           <SelectContent>
@@ -213,6 +219,7 @@ export const DashboardUsers = ({
           variant="outline"
           onClick={refresh}
           disabled={loading || refreshing || blocked}
+          className="cursor-pointer disabled:cursor-default"
         >
           {refreshing ? '刷新中…' : '刷新'}
         </Button>
@@ -235,6 +242,7 @@ export const DashboardUsers = ({
               <TableHead>状态</TableHead>
               <TableHead>条目数</TableHead>
               <TableHead>资源数</TableHead>
+              <TableHead>萌萌点</TableHead>
               <TableHead>注册时间</TableHead>
               <TableHead>操作</TableHead>
             </TableRow>
@@ -268,6 +276,9 @@ export const DashboardUsers = ({
                     <Skeleton className="h-4 w-10" />
                   </TableCell>
                   <TableCell>
+                    <Skeleton className="h-4 w-12" />
+                  </TableCell>
+                  <TableCell>
                     <Skeleton className="h-4 w-36" />
                   </TableCell>
                   <TableCell>
@@ -287,6 +298,7 @@ export const DashboardUsers = ({
                       variant="outline"
                       size="sm"
                       onClick={refresh}
+                      className="cursor-pointer"
                     >
                       重试
                     </Button>
@@ -365,6 +377,18 @@ export const DashboardUsers = ({
                   </TableCell>
                   <TableCell>{user._count.patch}</TableCell>
                   <TableCell>{user._count.patch_resource}</TableCell>
+                  <TableCell>
+                    <Link
+                      href={`/dashboard/user/${user.id}/moemoepoint`}
+                      prefetch={false}
+                      aria-label={`查看 ${user.name} (UID: ${user.id}) 的萌萌点明细，当前 ${user.moemoepoint} 点`}
+                      className={`rounded-sm font-medium tabular-nums underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1${
+                        user.moemoepoint < 0 ? ' text-destructive' : ''
+                      }`}
+                    >
+                      {user.moemoepoint}
+                    </Link>
+                  </TableCell>
                   <TableCell>{formatChinaDateTime(user.created)}</TableCell>
                   <TableCell>
                     <div className="flex items-center gap-2">
@@ -372,19 +396,13 @@ export const DashboardUsers = ({
                       <GrantMoemoepointDialog
                         user={user}
                         currentUserId={currentUserId}
+                        onGranted={notifyUpdated}
                       />
                       <DeleteUserDialog
                         user={user}
                         currentUserId={currentUserId}
                         onDeleted={notifyDeleted}
                       />
-                      <Link
-                        href={`/dashboard/user/${user.id}/moemoepoint`}
-                        prefetch={false}
-                        className="text-sm whitespace-nowrap text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
-                      >
-                        萌萌点明细
-                      </Link>
                     </div>
                   </TableCell>
                 </TableRow>
@@ -405,6 +423,7 @@ export const DashboardUsers = ({
             size="sm"
             onClick={() => setPage(query.page - 1)}
             disabled={loading || blocked || query.page <= 1}
+            className="cursor-pointer disabled:cursor-default"
           >
             上一页
           </Button>
@@ -414,6 +433,7 @@ export const DashboardUsers = ({
             size="sm"
             onClick={() => setPage(query.page + 1)}
             disabled={loading || blocked || query.page >= totalPages}
+            className="cursor-pointer disabled:cursor-default"
           >
             下一页
           </Button>
