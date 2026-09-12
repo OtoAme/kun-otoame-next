@@ -43,6 +43,7 @@ Use this skill for pages, components, state, theme, and content.
 - Public `force-static` pages must not become dynamic to read cookies; theme repair belongs in `SiteThemeScript` / `SiteThemeRouteSync` / `useKunSiteTheme`.
 - Moemoepoint balances can be negative — danger semantics, never clamp to 0.
 - Polling, hydration and pagination must not overlap or let stale responses overwrite newer state.
+- Public shoutbox reads use the shared query layer and gated refresh; preserve identity/preference isolation, SSR seed ownership, hidden-page silence, error cooldown and write invalidation. Time-bound display cleanup must not rewrite cached receipt/error state. See `docs/modules/frontend-content.md` for the contract.
 - Destructive actions need confirmation and must release loading state on failure.
 
 ## Verification

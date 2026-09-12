@@ -102,7 +102,11 @@ kun:touchgal
 - `delKvPattern` 使用 `SCAN` + 批量删除，适合明确业务前缀；不要传过宽 pattern。
 - `getOrSet` 的 `shouldCacheValue` / `isCachedValueValid` 只用于拒绝明显异常的缓存值，例如首页 `home_data:*` 的空游戏列表；正常列表分页为空不能套用这个策略。
 
-小喇叭缓存使用 `shoutbox:home:v4`、`shoutbox:list:v4:p<page>`、`shoutbox:patch:v4:<uniqueId>:p<page>` 和 `shoutbox:banner:v3`，区分首页 15 条与分页 20 条载荷。列表与横幅基础 TTL 为 60 秒，游戏关联列表为 300 秒；每份值同时携带 `validUntil`，实际 Redis TTL 向下取整到该边界，`<= 0` 时不写，缓存读取也会拒绝已经越界的值。匿名 HTTP `s-maxage` 最长 30 秒且同样不越过官方时间边界。响应另带 `visibilityUntil`，表示下一次已知的官方生效/过期边界，不受基础 TTL 截短；`null` 表示没有已知边界，旧响应缺字段时前端保守回退到 `validUntil`。常规缓存到期只触发后台刷新，保留当前画面到新响应；真实边界另行保证到点清理，即使刷新仍在等待或失败也不能继续显示过期内容。用户发布、编辑、自删，官方生命周期变更，管理员处置，以及达到阈值并触发自动隐藏的举报成功后，调用 `invalidateShoutboxCaches()` 清理 `shoutbox:*` 并 best-effort 清理公开列表和横幅边缘缓存；低于阈值、只新增举报记录时不影响公开读取，无需失效。Redis 或 Cloudflare 失效失败不能把已经提交的业务事务报成失败。
+小喇叭缓存以 `shoutbox:home:v4`、`shoutbox:list:v4:p<page>`、`shoutbox:patch:v4:<uniqueId>:p<page>` 和 `shoutbox:banner:v4` 为基础键，再附加 `:r<revision>`。修订号保存在独立的 `shoutbox_revision:v1`，不随 `shoutbox:*` 清理。各身份共享原始行和时间信息，列表与横幅返回前逐请求处理关联游戏的分级／屏蔽偏好，缓存中的日期在序列化前还原。列表与横幅基础 TTL 为 60 秒，游戏列表为 300 秒；实际 TTL 向下取整到 `validUntil`，过期值不读取、不写入。匿名 HTTP `s-maxage` 最长 30 秒且不越界，个性化 HTTP 保持 `private, no-store`。
+
+`visibilityUntil` 表示下一次会改变本页展示的官方时间边界；`null` 表示没有已知边界，旧响应缺字段时前端回退到 `validUntil`。游戏作用域仅查询该游戏下一条公开官方消息的开始时间，已生效官方消息继续作为公开历史保留。构建跨界时最多经请求合并重建两次，仍无法取得有效载荷则返回读取失败；成功空结果与故障分别处理。
+
+用户发布、编辑、自删，官方生命周期变更，管理员处置，以及举报触发自动隐藏后，`invalidateShoutboxCaches()` 在业务提交后先等待修订号递增尝试，再清理 `shoutbox:*` 和公开 API 边缘缓存。旧在途构建只能填充旧代次，后续新读不再使用它；已开始的读允许返回原快照。递增失败仍尝试清理，Redis 或 Cloudflare 失败均不回滚业务。读取修订号失败时不使用持久缓存，仅在小喇叭模块内按查询键合并本进程在途 Promise，完成后释放；降级不保证跨实例合并。低于阈值、只新增举报记录时无需失效服务端公开缓存。
 
 ## Patch 缓存
 

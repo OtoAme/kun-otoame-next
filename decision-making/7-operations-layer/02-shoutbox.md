@@ -138,13 +138,13 @@
 
 ### 5.5 缓存、响应头与失效
 
-缓存由 `app/api/shoutbox/cache.ts` 实现；首页、全站分页与游戏分页使用独立键，分页契约变更时升级读取键版本，避免复用旧页长或保留范围的载荷；横幅沿用独立键。基础时长写进 [config/cache.ts](../../config/cache.ts)（列表与横幅 60 秒、游戏页关联条 300 秒）。三步缺一不可：
+缓存由 `app/api/shoutbox/cache.ts` 实现；首页、全站分页、游戏分页与横幅使用独立键。各身份共用原始数据缓存，返回前按请求的分级及屏蔽偏好处理关联游戏；个性化 HTTP 响应不影响内部缓存复用。读取键附带独立修订号，横幅原始载荷使用 v4 键隔离旧序列化结果。基础时长写进 [config/cache.ts](../../config/cache.ts)（列表与横幅 60 秒、游戏页关联条 300 秒）。完整优化与验收要求见[缓存与加载优化计划](./02-shoutbox-cache-optimization-plan.md)。三步缺一不可：
 
 1. 载荷自带 `validUntil`：从严格晚于当前、会改变本页可见集合的官方时间边界中取最早者，再与 `now + 基础时长` 取小。置顶与横幅关注当前消息的 `effective_to` 和下一条官方消息的 `effective_from`；游戏分页关注关联官方消息的开始时间。消息年龄不参与可见性与缓存到期计算。
-2. Redis 寿命 `ttl = floor((validUntil - now) / 1000)` 秒（`validUntil` 的定义已把它夹在基础时长之内），小于等于 0 就不写缓存；`isCachedValueValid` 每次用调用时刻的当前时间与载荷的 `validUntil` 比较，判定过期时 `getOrSet` 会把缓存当未命中并重新取数（[lib/redis.ts](../../lib/redis.ts) 第 423 至 425 行），不会把过期载荷返回；若重新取数也失败，接口返回不含置顶与横幅的安全空结果（横幅接口返回 `null`），而不是旧值。
+2. Redis 寿命 `ttl = floor((validUntil - now) / 1000)` 秒，小于等于 0 就不写缓存；读取时用当前时刻检查载荷有效期，越界即经 `getOrSet` 合并重建。每次实际构建重新取当前时间；构建结束跨界时最多重建两次。数据库或偏好读取失败、有限重建耗尽时返回 `503` 和通用 JSON 错误字符串，响应为 `private, no-store`，`Retry-After` 为 60 秒（游戏作用域 300 秒）；成功空列表与 `banner: null` 继续返回 `200`。
 3. 响应头逐请求算：带登录或分级/屏蔽偏好 cookie 的请求（判定复用 `isPersonalizedApiRequest`）返回 `private, no-store`；匿名请求返回 `public, s-maxage=floor(min(30, (validUntil - now) / 1000))`，单位秒、向下取整、没有下限，且不带 `stale-while-revalidate`，算得 0 秒时返回 `no-store`。这就是不复用共享匿名缓存层的原因：那层固定含 5 分钟陈旧供给，会跨过生效边界。
 
-写入后失效：用户发布/编辑/自删、站方处置、官方发布/编辑/提前结束，都在事务提交后执行 `delKvPattern('shoutbox:*')` 与 `purgePublicApiCache(['/api/shoutbox', '/api/shoutbox/banner'])`；不调用 `invalidateAnonymousApiResponseCaches()`，不改 [app/api/patch/cache.ts](../../app/api/patch/cache.ts)。清理可能返回失败或超时，失败只记日志、不回滚业务，也不让客户端以为发布失败；这正是维护清单要求人工到前台确认横幅的原因。
+写入后失效：用户发布/编辑/自删、站方处置、官方发布/编辑/提前结束，在事务提交后先等待独立键 `shoutbox_revision:v1` 的递增尝试，再执行 `delKvPattern('shoutbox:*')` 与 `purgePublicApiCache(['/api/shoutbox', '/api/shoutbox/banner'])`。修订号使写前在途构建只能填充旧代次，写后新读使用新代次；已开始的读可以返回当时快照。递增或清理失败分别记录，继续其余清理，不回滚业务、不将已提交的操作报为失败。读取修订号失败时跳过持久缓存，仅在本进程内按查询键合并在途构建，完成后释放。公共 Redis 和条目缓存基础设施不变。
 
 ### 5.6 幂等与并发一览
 
