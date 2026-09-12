@@ -140,10 +140,7 @@ export const ShoutboxCompactRow = ({
           {item.link ? (
             <>
               {' '}
-              <Link
-                href={item.link}
-                className="text-xs text-primary hover:underline"
-              >
+              <Link href={item.link} className="text-primary hover:underline">
                 查看详情
               </Link>
             </>

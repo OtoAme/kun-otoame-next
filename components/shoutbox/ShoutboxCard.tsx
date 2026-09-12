@@ -402,7 +402,7 @@ export const ShoutboxCard = ({
           {item.link ? (
             <Link
               href={item.link}
-              className="text-xs text-primary hover:underline"
+              className="text-small leading-6 text-primary hover:underline sm:text-base sm:leading-6"
             >
               查看详情
             </Link>

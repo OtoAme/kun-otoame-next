@@ -21,10 +21,10 @@ export const DashboardShoutboxBanner = () => {
     <div
       role="region"
       aria-label="站点公告"
-      className="shrink-0 border-b bg-primary/10 px-4 py-2"
+      className="shrink-0 border-b bg-primary/10 px-4 py-1.5"
     >
-      <div className="flex items-start gap-2">
-        <Megaphone className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+      <div className="flex items-center gap-2">
+        <Megaphone className="h-4 w-4 shrink-0 text-primary" />
         <div className="min-w-0 flex-1 text-sm">
           <span className="whitespace-pre-wrap break-words">
             {banner.content}

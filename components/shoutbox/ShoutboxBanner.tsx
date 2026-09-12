@@ -45,9 +45,10 @@ export const ShoutboxBanner = () => {
       }
       className="border-b border-primary-200"
       classNames={{
-        base: 'w-full',
+        base: 'w-full items-center py-1.5',
         mainWrapper: 'min-w-0 flex-1',
-        description: 'text-sm'
+        description: 'text-sm',
+        closeButton: 'translate-y-0'
       }}
     />
   )
