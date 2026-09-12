@@ -9,6 +9,7 @@
 | `components/kun/*`                         | 前台共享 UI、导航、主题、编辑器、图片查看器、cropper、auth captcha。  |
 | `components/layout/*`                      | 前台布局壳和按路由裁剪的布局 chrome。                                 |
 | `components/home/*`                        | 首页 hero、轮播、统计、卡片。                                         |
+| `components/shoutbox/*`                    | 前台小喇叭消息流、发布、关联条、横幅和举报。                          |
 | `components/patch/*`                       | 游戏详情页 header、introduction、resource、comment、rating、gallery。 |
 | `components/edit/*`                        | 创建/重写游戏表单，VNDB/Bangumi/Steam/DLSite 外部数据输入。           |
 | `components/admin/*`                       | 旧后台列表、编辑、审核、日志、邮件和设置。                            |
@@ -38,6 +39,12 @@
 用户管理组件位于 `components/dashboard/user`。查询条件保存在 URL，列表搜索保留 500 毫秒防抖；更新与删除后的刷新使用当前查询。列表显示总萌萌点（包括负数），点击数量进入对应账本；发放成功后重读当前列表余额。编辑资料保留失败草稿，关闭时清除密码；关闭两步验证使用同一弹窗中的直接操作。发放点数遇到结果未知时冻结原请求，重试保持目标、金额、理由及 `requestId`；本人余额只通过 `setMoemoepointBalance` 同步三项值。账本自定义日期显式查询，未提交草稿不显示旧范围记录，翻页使用已提交日期。
 
 统计首页位于 `/dashboard`，参照官方 shadcn `dashboard-01` 的概览卡片和响应式布局，在现有外壳中组合组件。保留旧全量/增长统计并补现存评分、投稿、创作者和独立待审创作者申请数；完整统计只对超级管理员请求和展示。四类待办与本人今日处理复用 `DashboardShell` 的 counts 和轮询，不再发一组重复计数请求；创作者申请不加入四来源合计。加载与失败不显示为 0，切窗口、切角色或卸载后旧响应不得覆盖当前数据。
+
+## 小喇叭
+
+前台小喇叭位于首页、`/shoutbox`、游戏页「关于本作的小喇叭」关联条和登录后的用户记录页，使用 HeroUI v2 的 Card、Button、Textarea、Modal、Alert 等既有组件。首页与小喇叭页每页保持 6 个槽位，生效中的官方置顶占第一行；游戏关联条显示 3 条并提供独立分页入口。重要级官方消息在站点与 Dashboard 使用各自设计系统的横幅渲染器，两者复用 `useShoutboxBanner` 的取数和按消息 ID 关闭状态；新消息不得继承旧消息的关闭状态。
+
+举报按钮对本人消息隐藏；访客点击只显示登录引导，登录用户在 HeroUI Modal 内填写原因，失败时保留草稿。控制台 `/dashboard/shoutbox` 使用 shadcn Tabs 管理官方消息、待复核、公开中与已终止四个 URL 页签，并显示待处理举报证据。隐藏、删除、恢复、举报结案以及官方提前结束或撤回都必须先打开确认界面再写请求；取消和 Escape，以及普通 Dialog 的 X 或遮罩关闭都不得写入，关闭后焦点回到触发按钮。AlertDialog 不提供 X，点击遮罩保持弹窗。控制台不导入 HeroUI，前台不复制 shadcn 组件。
 
 ## 资源详情与下载
 

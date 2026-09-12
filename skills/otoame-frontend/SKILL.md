@@ -28,6 +28,7 @@ Use this skill for pages, components, state, theme, and content.
 - `components.json` targets `styles/dashboard.css` and dashboard aliases. Preserve the separate Tailwind source scopes and the official component license in `components/dashboard/ui/LICENSE`.
 - Both roots share the `next-themes` light/dark storage key; site `--kun-*` / `data-kun-theme` palettes belong to the site root. Validate both style outputs when changing either source boundary.
 - Dashboard inbox and review requests use the existing `/api/admin/*` HTTP APIs and `kunFetch`; do not add a parallel server-action write channel.
+- Shoutbox site surfaces use HeroUI v2; `/dashboard/shoutbox` uses shadcn Tabs and dialogs. Hide, remove, restore, resolve, end and cancel must open confirmation UI before the request; dismissal writes nothing and restores focus.
 
 ## Rules
 

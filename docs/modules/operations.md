@@ -38,6 +38,18 @@
 
 详见 `docs/project/deployment.md`。
 
+#### 维护公告清单
+
+需要停站维护时，按以下顺序操作：
+
+1. 在 `/dashboard/shoutbox` 发布一条重要级官方消息，生效区间覆盖预计维护窗口。
+2. 使用前台真实页面确认全站横幅已经出现且正文、详情链接和时间无误。发布接口返回成功不等于用户已经看到，未确认前不得停站。
+3. 通过部署面板启用既有停用页并停止应用；本功能不代替面板停用页。
+4. 应用恢复并完成健康检查后，更新同一条官方消息说明恢复情况，或提前结束该消息。
+5. 再次打开前台页面，确认恢复文案已经可见，或已结束的横幅和置顶已经消失。
+
+本清单先在非生产实例完整演练并保留时间线记录；生产执行仍遵循部署文档的备份、迁移、回滚和健康检查要求。
+
 ### 维护脚本
 
 - `maintenance:resource-attributes:*`
@@ -321,6 +333,8 @@ Phase B 后应用失败时，先在 resolver=false 下运行 `pnpm deploy:rollba
 `pnpm prisma:deploy-safe` 是生产部署命令。整个 package command 不是纯只读：既有的 `migration:resource-links` 先运行且可能执行兼容性 schema/data 写入，随后才是只读 schema guard/diff，最后运行 `prisma generate`；它不运行 `prisma db push`，也不应用 diff SQL。只读 guard 只接受空 diff，或经过 PostgreSQL catalog 验证的 Prisma 7.8 `public.patch_released_idx` operator-class 精确例外。任何其他 drift 都会在 build 或 standalone 替换前终止部署，不能把例外扩大到任意 diff 输出。不要执行该假漂移建议的 `DROP INDEX` / `CREATE INDEX` SQL：下一次 introspection 后它仍会出现，而且重建索引可能阻塞生产写入。本地开发、首次安装和 disposable CI 继续使用 `pnpm prisma:push`。
 
 萌萌点账务上线时，先备份并运行只读 `migration/production-moemoepoint-ledger-preflight-2026-08-17.sql`，审核字段、表和余额 inventory；随后在维护窗口运行对应 sync。sync 在单事务中添加待结算列、明细/暂扣表、外键、约束与查询索引，并为每个既有用户写入幂等的迁移初始余额。成功后再运行 `pnpm prisma:deploy-safe`，确认 schema 无其他 drift 后才部署依赖新表的应用版本。旧应用不知道待结算字段和明细，sync 后回滚应用会继续产生未记账写入，因此应用回滚前必须停写并制定专用兼容/补偿方案。
+
+小喇叭上线先备份，再按顺序运行 `production-shoutbox-preflight-2026-09-11.sql`、`production-shoutbox-sync-2026-09-11.sql` 和 `production-shoutbox-postflight-2026-09-11.sql`。preflight 与 postflight 只读；sync 在单事务创建 `shoutbox`、把 `patch_report.patch_id` 改为可空并新增 `shoutbox_id` 外键和索引。postflight 通过后运行 `pnpm prisma:deploy-safe`，再部署依赖新表的应用版本并在非生产实例完成 E02-01～03。生产入口开启前应确认普通发布扣费、三人举报隐藏、官方消息不自动隐藏、误判只退款一次，以及横幅生效/过期和维护清单顺序；不能用 `prisma db push` 代替这三份 SQL。
 
 私聊会话隐藏字段上线时，先执行 `migration/production-conversation-hidden-preflight-2026-07-01.sql` 查看 `user_conversation.user_a_hidden` / `user_b_hidden` 是否存在且为非空 boolean；确认后执行 `migration/production-conversation-hidden-sync-2026-07-01.sql`。该同步脚本只添加缺失列、补齐空值、设置默认值和非空约束，不删除数据。
 

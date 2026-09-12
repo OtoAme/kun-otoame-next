@@ -37,26 +37,27 @@ service/helper 负责：
 
 ## 主要 API 域
 
-控制台界面位于 `/dashboard`，管理接口仍属于 `/api/admin/*`。收件箱读取使用 `GET /api/admin/inbox`、`/item`、`/counts`，校验在 `validations/inbox.ts`，共享返回结构在 `types/api/inbox.ts`；每个接口独立校验 `role >= 3` 并返回 `private, no-store`。列表搜索先匹配所选来源全部待审记录再取最老候选，匹配 totals 与侧栏全量 counts 分开。投稿候选在数据库按 `COALESCE(submitted_at, created), id` 排序后限制条数，资源不套用 NSFW 偏好，反馈补齐待处理和消息来源条件，举报同时包含评论与评价。
+控制台界面位于 `/dashboard`，管理接口仍属于 `/api/admin/*`。收件箱读取使用 `GET /api/admin/inbox`、`/item`、`/counts`，校验在 `validations/inbox.ts`，共享返回结构在 `types/api/inbox.ts`；每个接口独立校验 `role >= 3` 并返回 `private, no-store`。列表搜索先匹配所选来源全部待审记录再取最老候选，匹配 totals 与侧栏全量 counts 分开。投稿候选在数据库按 `COALESCE(submitted_at, created), id` 排序后限制条数，资源不套用 NSFW 偏好，反馈补齐待处理和消息来源条件，举报包含评论、评价与仍有关联目标的小喇叭举报。
 
 投稿完整详情 GET `/api/admin/patch-submission/{id}` 复用既有 `getAdminPatchSubmission`，与四种审核 POST 共用 `[action]/route.ts`；非法 ID 与审核动作分别校验，POST 的状态冲突仍返回原字符串和 409。今日已处理仅计当前管理员在上海自然日内的 `submission_review`、`resource_apply_approve`、`resource_apply_decline` 日志，查询使用下一日起点作为排他上界。
 
 通过、驳回和违规审核在同一业务事务内先抢占 `pending`，再调用押金结算或奖励原语；通过保留 `publishCore → claimPending → 结算` 顺序。抢占失败时发布写入回滚，落败方在结算调用之前返回既有状态冲突，避免已结算 reservation 错误取代 409。
 
-管理员收件箱和只读资源预览可经独立权限检查返回完整下载链接、提取码和密码，并保持 `private, no-store` 与组件内存存储；公开资源列表和普通用户预览继续脱敏。反馈与举报在收件箱只读，旧处理 API 的超级管理员门槛不变。
+管理员收件箱和只读资源预览可经独立权限检查返回完整下载链接、提取码和密码，并保持 `private, no-store` 与组件内存存储；公开资源列表和普通用户预览继续脱敏。反馈及举报详情在收件箱只读；评论与评价继续使用原处理 API 和超级管理员门槛，小喇叭举报统一跳到 `/dashboard/shoutbox?tab=pending_review`，由管理员级接口复核。
 
-| 域        | 路径                                                                         | 说明                                                                                        |
-| --------- | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
-| 认证      | `app/api/auth/*`                                                             | 登录、注册、2FA、验证码、邮件通知、忘记密码。                                               |
-| 游戏详情  | `app/api/patch/*`                                                            | 游戏详情、缓存内容、收藏、反馈、浏览量、评分、评论、资源。                                  |
-| 创建/编辑 | `app/api/edit/*`                                                             | 创建和重写游戏，外部数据拉取，VNDB/Bangumi/Steam/DLSite，画廊上传。                         |
-| 列表/搜索 | `app/api/otomegame`, `app/api/search`, `app/api/resource`, `app/api/ranking` | 游戏列表、搜索、资源列表、排行。                                                            |
-| 标签/公司 | `app/api/tag/*`, `app/api/company/*`                                         | 标签列表、标签游戏、公司列表、公司游戏、公司 CRUD。                                         |
-| 用户      | `app/api/user/*`                                                             | 用户资料、头像、设置、关注、收藏、状态、2FA。                                               |
-| 消息      | `app/api/message/*`                                                          | 站内消息、未读状态、会话聊天。                                                              |
-| 管理      | `app/api/admin/*`                                                            | 后台用户、资源、评论、评分、举报、邮件、设置、日志和 Sticker Pack。                         |
-| 上传      | `app/api/upload/*`                                                           | 资源文件和视频上传。                                                                        |
-| 工具      | `app/api/utils/*`                                                            | JWT、header cookie、CSRF 相关 helpers、Markdown render、Bangumi 工具、Cloudflare/IndexNow。 |
+| 域        | 路径                                                                              | 说明                                                                                        |
+| --------- | --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| 认证      | `app/api/auth/*`                                                                  | 登录、注册、2FA、验证码、邮件通知、忘记密码。                                               |
+| 游戏详情  | `app/api/patch/*`                                                                 | 游戏详情、缓存内容、收藏、反馈、浏览量、评分、评论、资源。                                  |
+| 创建/编辑 | `app/api/edit/*`                                                                  | 创建和重写游戏，外部数据拉取，VNDB/Bangumi/Steam/DLSite，画廊上传。                         |
+| 列表/搜索 | `app/api/otomegame`, `app/api/search`, `app/api/resource`, `app/api/ranking`      | 游戏列表、搜索、资源列表、排行。                                                            |
+| 标签/公司 | `app/api/tag/*`, `app/api/company/*`                                              | 标签列表、标签游戏、公司列表、公司游戏、公司 CRUD。                                         |
+| 用户      | `app/api/user/*`                                                                  | 用户资料、头像、设置、关注、收藏、状态、2FA。                                               |
+| 消息      | `app/api/message/*`                                                               | 站内消息、未读状态、会话聊天。                                                              |
+| 小喇叭    | `app/api/shoutbox/*`, `app/api/user/profile/shoutbox`, `app/api/admin/shoutbox/*` | 公开消息流与横幅、作者记录、发布编辑自删、举报、官方消息和管理员复核。                      |
+| 管理      | `app/api/admin/*`                                                                 | 后台用户、资源、评论、评分、举报、邮件、设置、日志和 Sticker Pack。                         |
+| 上传      | `app/api/upload/*`                                                                | 资源文件和视频上传。                                                                        |
+| 工具      | `app/api/utils/*`                                                                 | JWT、header cookie、CSRF 相关 helpers、Markdown render、Bangumi 工具、Cloudflare/IndexNow。 |
 
 ## 代表流程
 
@@ -135,6 +136,13 @@ service/helper 负责：
 - 私聊图片上传还有用户级小时额度，用来控制长期 S3 成本：每个用户每小时前 5 张成功上传免费，第 6 张起每张在图片处理和 S3 上传前通过统一萌萌点服务按可用余额原子扣 5 点并写消费明细；余额不足时返回用户可见错误且不进入 Sharp/S3。压缩、处理后 metadata 读取、S3 上传或 Redis metadata 登记失败时回滚本次 quota 计数，并通过 `refundMoemoepoint` 写退款明细；处理失败返回无效图片提示，上传/登记失败返回可重试错误。小时 quota Redis 不可用时上传直接返回可重试错误，避免在无法计费时继续制造 S3 成本。
 - 删除单条私聊图片消息时，API 先把消息转成 tombstone，再 best-effort 清理该消息引用的 `conversation/<conversationId>/<uid>-<timestamp>-<uuid>.avif` S3 对象。删除前必须检查其他未删除私聊消息的 `image_url`、`image_group` 和 `reply_image` 是否仍引用同一 key；仍被引用、URL 不属于本站或 key 不符合私聊图片规范时不能删除。已是 tombstone 的消息再次删除时直接返回成功，不重复更新 DB 或重跑 S3 清理。S3 清理或引用检查失败只记录错误，不阻断消息删除，后续由孤儿清理脚本兜底。
 - IM 防滥用的核心边界是用户级而不是会话级：发送限速、消息读取限速、图片硬限速、图片小时额度、图片 metadata 登记、图片 metadata 发送时原子消费、图片尺寸/类型/压缩上限、删除后 S3 清理和定时孤儿清理都必须按登录用户或 canonical S3 key 生效，避免用户通过打开多个私聊窗口绕过限制。
+
+### 小喇叭
+
+- `GET /api/shoutbox` 提供首页、小喇叭页和游戏关联消息；`GET /api/shoutbox/banner` 返回当前重要级横幅。匿名响应的共享缓存寿命必须夹在下一条官方生效或过期边界之前，带个性化 cookie 的请求保持 `private, no-store`。`GET /api/user/profile/shoutbox` 需要登录，本人可看自己的全部状态，其他登录用户只看公开记录。
+- 用户 `POST /api/shoutbox` 以 `(user_id, request_id)` 幂等发布并在同一事务扣 50 点；关键词命中必须先于任何数据库读取和扣费拒绝。生产词表为空时过滤保持关闭。`PUT` 只允许作者在 5 分钟内编辑一次公开消息，`DELETE` 把作者自己的公开或隐藏消息标为自删且不退款。
+- `POST /api/shoutbox/report` 需要登录、禁止举报本人；同一人在前一次举报结案前不能重复举报。3 名不同举报人使普通消息原子进入隐藏待复核并只通知作者；官方消息可举报但不会自动隐藏。
+- `/api/admin/shoutbox` 和 `/api/admin/shoutbox/moderate` 要求 `role >= 3`。官方消息使用发布、编辑、提前结束和撤回生命周期；普通消息的隐藏、违规删除、误判恢复与举报结案在事务中重查状态。删除与恢复会结清待处理举报，恢复使用稳定幂等键最多退还一次实付点数；官方消息只能给举报结论，不能走普通消息的隐藏、删除或恢复。
 
 ### 萌萌点账务
 

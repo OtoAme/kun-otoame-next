@@ -36,6 +36,7 @@ schema: 'prisma/schema'
 - `admin.prisma`
 - `sticker.prisma`
 - `moemoepoint.prisma`
+- `shoutbox.prisma`
 
 `prisma/index.ts` 使用 `pg.Pool` 与 `PrismaPg` adapter：
 
@@ -54,6 +55,8 @@ Schema 修改后至少运行 `pnpm prisma:generate`。会影响数据库结构�
 
 明细当前不设置 TTL，按账户生命周期完整保留。原因、关联链接和幂等键均使用有界短字段，日常记录通常远小于字段上限；上线后用 PostgreSQL 的 `pg_total_relation_size('user_moemoepoint_ledger')` 同时监控表和索引实际占用。若未来增长超出容量预算，应先把冷数据归档到只读存储并保留可查询入口，不直接截断审计明细。
 
+小喇叭使用独立 `shoutbox` 表保存普通与官方消息、实付成本、生效区间和隐藏/退款状态；`(user_id, request_id)` 是发布幂等边界。`patch_report.patch_id` 因未关联游戏的小喇叭改为可空，新增 `shoutbox_id` 并使用 `onDelete: SetNull`，使举报记录在目标删除后仍可保留。普通发布扣费、举报自动隐藏、管理员处置和误判恢复退款都在所属事务内锁定或条件更新消息状态；`refunded_at` 与账本幂等键共同保证每条消息最多退款一次。
+
 私聊会话表 `user_conversation` 使用 `user_a_hidden` / `user_b_hidden` 保存每个参与方自己的列表隐藏状态。隐藏会话不是删除历史消息；发送新消息会把双方 hidden flag 恢复为 `false`。生产同步可先运行 `migration/production-conversation-hidden-preflight-2026-07-01.sql` 检查列状态，再运行 `migration/production-conversation-hidden-sync-2026-07-01.sql` 添加缺失列并补齐默认值。
 
 Sticker 目录使用 `sticker_pack`、`sticker` 和 `user_sticker_pack`。后台新导入的资源把对象存储 key 写入 `storage_key` / `thumbnail_storage_key`，不把 CDN URL 当作唯一来源；`lib/s3.ts` 在读取时根据 CDN 配置派生公开 URL。动态 WebM 的 poster 必须先上传成功，Pack 启用和 Sticker 状态变更通过事务校验有效资源与同 Pack 封面。S3 上传后 DB 事务失败时必须删除本次对象，生产 schema 按 `production-private-chat-stickers-*` 再按 `production-sticker-admin-*` preflight/sync 执行；已经执行旧版 sync 的数据库再执行 `production-stickers-prisma-alignment-2026-08-15.sql`，然后运行 `pnpm prisma:deploy-safe`。
@@ -67,6 +70,7 @@ Sticker 目录使用 `sticker_pack`、`sticker` 和 `user_sticker_pack`。后台
 - `lib/redis.ts`
 - `config/cache.ts`
 - `app/api/patch/cache.ts`
+- `app/api/shoutbox/cache.ts`
 
 统一 key 前缀：
 
@@ -95,6 +99,8 @@ kun:touchgal
 - 分布式锁必须用 token release，不要直接 `del` lock key。
 - `delKvPattern` 使用 `SCAN` + 批量删除，适合明确业务前缀；不要传过宽 pattern。
 - `getOrSet` 的 `shouldCacheValue` / `isCachedValueValid` 只用于拒绝明显异常的缓存值，例如首页 `home_data:*` 的空游戏列表；正常列表分页为空不能套用这个策略。
+
+小喇叭缓存使用 `shoutbox:list:v1:p<page>`、`shoutbox:patch:v1:<uniqueId>:p<page>` 和 `shoutbox:banner:v1`。列表与横幅基础 TTL 为 60 秒，游戏关联列表为 300 秒；每份值同时携带 `validUntil`，实际 Redis TTL 向下取整到该边界，`<= 0` 时不写，缓存读取也会拒绝已经越界的值。匿名 HTTP `s-maxage` 最长 30 秒且同样不越过边界。用户发布、编辑、自删，官方生命周期变更，管理员处置，以及达到阈值并触发自动隐藏的举报成功后，调用 `invalidateShoutboxCaches()` 清理 `shoutbox:*` 并 best-effort 清理公开列表和横幅边缘缓存；低于阈值、只新增举报记录时不影响公开读取，无需失效。Redis 或 Cloudflare 失效失败不能把已经提交的业务事务报成失败。
 
 ## Patch 缓存
 

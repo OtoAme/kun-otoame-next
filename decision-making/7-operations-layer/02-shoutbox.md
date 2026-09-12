@@ -1,6 +1,6 @@
 # 模块 02：小喇叭、官方置顶与横幅（实施计划）
 
-状态：设计草稿，待站长审阅。事实部分来自对仓库的只读核查，引用处给出链接；未运行构建、测试、数据库或部署命令，未读取环境变量文件。
+状态：实施与隔离验收完成，待站长用户验收与发布。2026-09-12 已完成全量测试、生产构建、迁移演练、三个隔离实验、真实 Chrome 验收与本地维护重启演练；未执行生产迁移、部署或发布，实验过程未读取环境变量文件。
 
 配对：[项目管理视图](./02-shoutbox-pm.md)。上级：[总计划](./00-master-plan.md)。基线：[运营层设计基线](../7.operations-layer-redesign.md)第 9.1 至 9.4 节。任务编号沿用总计划第 4.3 节的 M02-1 至 M02-5。
 
@@ -44,7 +44,7 @@
 
 ## 4 数据模型
 
-### 4.1 `prisma/schema/shoutbox.prisma`（拟新增）
+### 4.1 `prisma/schema/shoutbox.prisma`
 
 模型 `shoutbox`，命名沿用既有 schema 风格。
 
@@ -79,9 +79,9 @@
 
 ## 5 接口、校验、权限、幂等
 
-沿用仓库约定：route 解析与鉴权、service 归属与事务，解析用 `kunParse*`，失败以 HTTP 200 返回中文字符串，写请求经既有 CSRF 与来源校验。新增校验在 `validations/shoutbox.ts`、常量与文案在 `constants/shoutbox.ts`、类型在 `types/api/shoutbox.ts`、自然月函数在 `utils/shoutboxTime.ts`（均拟新增）。不改 `middleware.ts`，不为本模块加鉴权排除项。
+沿用仓库约定：route 解析与鉴权、service 归属与事务，解析用 `kunParse*`，失败以 HTTP 200 返回中文字符串，写请求经既有 CSRF 与来源校验。校验在 `validations/shoutbox.ts`、常量与文案在 `constants/shoutbox.ts`、类型在 `types/api/shoutbox.ts`、自然月函数在 `utils/shoutboxTime.ts`。不改 `middleware.ts`，不为本模块加鉴权排除项。
 
-### 5.1 公开读接口（拟新增 `app/api/shoutbox/route.ts`、`service.ts`）
+### 5.1 公开读接口（`app/api/shoutbox/route.ts`、`service.ts`）
 
 `GET /api/shoutbox`：`page` 1–10，`limit` 只接受缺省或 6，`patch` 可选且须匹配八位 `unique_id`；上面的 `page` 上限只针对无 `patch` 的总流，带 `patch` 时只校验正整数、不设额外上限——任何固定上限都会变成基线没有要求的产品限制。返回 `{ pinned, shoutboxes, page, totalPages, validUntil }`，`pinned` 只在 `page = 1` 且无 `patch` 时可能非空。
 
@@ -90,9 +90,9 @@
 - 游戏页「更多」的分页：按上面这个并集独立分页、每页 6 条，不套总流的 10 页与 60 条封顶。基线只限制小喇叭页最多 10 页，同一游戏近三个月的关联消息应当都能翻到；关联条固定取该集合最新 3 条。`totalPages = ceil(可见集合条数 / 6)`，条数与当页数据在同一条 `Prisma.sql` 里算；同一查询先得出总数；`page > totalPages` 时跳过该页消息行读取，返回空列表与真实 `totalPages`，无需另建分页机制。
 - 掩码：载荷带条目分级，序列化时按请求偏好清空 NSFW 条目的关联信息，消息本身保留。掩码在缓存之后、响应之前执行，Redis 只存一份全集载荷。
 
-`GET /api/shoutbox/banner`（拟新增，只导出 GET）：无参数，返回最新生效重要级官方消息与 `validUntil`，没有则 `null`。
+`GET /api/shoutbox/banner`（只导出 GET）：无参数，返回最新生效重要级官方消息与 `validUntil`，没有则 `null`。
 
-作者个人页数据走服务端读取、不进 Redis、响应 `private, no-store`；本人与站方看全部状态并显示状态标签，其他访问者按可见基础条件过滤——不只是 `status = 0`，站方账号名下未生效的官方行同样不可见。
+作者个人页沿用 `/user/:path*` 的登录边界，数据走服务端读取、不进 Redis、响应 `private, no-store`；本人与站方看全部状态并显示状态标签，其他已登录用户按可见基础条件过滤——不只是 `status = 0`，站方账号名下未生效的官方行同样不可见。
 
 ### 5.2 用户写接口
 
@@ -104,13 +104,13 @@
 
 `cost` 与 `official` 只由服务端常量决定，不接受客户端传值。同一用户复用已用过的 `requestId` 但正文不同时以首次写入为准：返回既有行，不更新正文、不二次扣费，也不做载荷指纹比对；若既有行的 `official` 与本次请求类型不符，返回冲突提示且不改行，避免一次付费请求被当成官方发布。不做注册时长门槛、频率限制与同文去重。
 
-### 5.3 举报（拟新增 `app/api/shoutbox/report/route.ts`）
+### 5.3 举报（`app/api/shoutbox/report/route.ts`）
 
-登录；不能举报自己的消息；官方消息按待定口径保留举报入口，正常落库进复核队列。事务顺序：`SELECT ... FOR UPDATE` 取目标行 → 查同一举报人是否已有该目标的待处理举报 → 插入举报行（`target_type = 'shoutbox'`、`shoutbox_id`、`patch_id` 取消息关联或 `NULL`、`reported_user_id` 取作者）→ 统计该消息待处理举报的不同举报人数 → 达阈值且 `official = false` 时条件更新 `status = 0 → 2` 并写 `hidden_at`，只有这次更新命中 1 行才给作者发一条通知。行级锁让先查后插的重复检查与阈值计数都具备并发正确性，事务极短，不用 Serializable 加重试。取到目标行后先核对可举报资格：只有 `status = 0` 的消息接受新举报；未生效的官方消息（`official AND effective_from > now`）、已撤回或已删除（`status = 3`）、作者已自删（`status = 1`）的消息一律拒绝，避免靠猜 ID 给不可见内容制造举报；已进入隐藏待复核（`status = 2`）的消息允许继续接收在途举报，它们作为同一待办的补充证据，不再触发第二次隐藏。目标在举报之后才被自删的，旧举报仍可用 `resolve` 结案。通知用 `createMessage`，不用先读后写的 `createDedupMessage`。
+登录；不能举报自己的消息；官方消息保留举报入口，正常落库进复核队列，但不参与自动隐藏。事务顺序：`SELECT ... FOR UPDATE` 取目标行 → 查同一举报人是否已有该目标的待处理举报 → 插入举报行（`target_type = 'shoutbox'`、`shoutbox_id`、`patch_id` 取消息关联或 `NULL`、`reported_user_id` 取作者）→ 统计该消息待处理举报的不同举报人数 → 达到 3 人且 `official = false` 时条件更新 `status = 0 → 2` 并写 `hidden_at`，只有这次更新命中 1 行才给作者发一条通知。行级锁让先查后插的重复检查与阈值计数都具备并发正确性，事务极短，不用 Serializable 加重试。取到目标行后先核对可举报资格：只有 `status = 0` 的消息接受新举报；未生效的官方消息（`official AND effective_from > now`）、已撤回或已删除（`status = 3`）、作者已自删（`status = 1`）的消息一律拒绝，避免靠猜 ID 给不可见内容制造举报；已进入隐藏待复核（`status = 2`）的用户消息允许继续接收在途举报，它们作为同一待办的补充证据，不再触发第二次隐藏。目标在举报之后才被自删的，旧举报仍可用 `resolve` 结案。通知用 `createMessage`，不用先读后写的 `createDedupMessage`。
 
 ### 5.4 站方接口与旧举报读取面
 
-| 接口（拟新增）                      | 门槛        | 内容                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| 接口                                | 门槛        | 内容                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | ----------------------------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `GET /api/admin/shoutbox`           | `role >= 3` | 列表与筛选 `tab = pending_review \| public \| removed \| official`；`pending_review` 覆盖两类并集：存在待处理举报的消息（含官方与作者已自删的）与所有 `status = 2` 的消息（含站方主动隐藏、举报已结案的），按「最早一条待处理举报的时间，没有待处理举报时按 `hidden_at`」正序，保证最老待办可达且隐藏中的消息不会无处可查；其余按 `created desc`；响应 `private, no-store`                                                                                                                                                                                                |
 | `POST /api/admin/shoutbox`          | `role >= 3` | 发布官方消息：正文、级别、`effectiveFrom`（默认当前）、`effectiveTo`（默认 +72 小时）、可选链接、`requestId`；`official = true`、`cost = 0`，不写账务                                                                                                                                                                                                                                                                                                                                                                                                                     |
@@ -136,7 +136,7 @@
 
 ### 5.5 缓存、响应头与失效
 
-新增 `app/api/shoutbox/cache.ts`（拟新增），键 `shoutbox:list:v1:p{page}`、`shoutbox:banner:v1`、`shoutbox:patch:v1:{patchId}:p{page}`，基础时长写进 [config/cache.ts](../../config/cache.ts)（列表与横幅 60 秒、游戏页关联条 300 秒）。三步缺一不可：
+缓存由 `app/api/shoutbox/cache.ts` 实现，键 `shoutbox:list:v1:p{page}`、`shoutbox:banner:v1`、`shoutbox:patch:v1:{patchId}:p{page}`，基础时长写进 [config/cache.ts](../../config/cache.ts)（列表与横幅 60 秒、游戏页关联条 300 秒）。三步缺一不可：
 
 1. 载荷自带 `validUntil`，它是一个时刻而不是时长：在「严格晚于当前、且到点会改变本页可见集合」的边界里取最早者，再与 `now + 基础时长` 取小。参与的边界有三类：当前置顶或横幅的 `effective_to`、下一条待生效官方消息的 `effective_from`、本页中「只靠未到期这一支才可见」的行（既不在分页范围内、也不是置顶）的三个月到期时刻。先过滤再取最小值：仍在分页范围内的旧消息合法可见，它的到期时刻可能早已过去，把它算进来会让 `validUntil` 钉在过去，该页永远无法缓存并陷入立即重取。待生效边界由一次极小查询取得，到期边界对本页已过滤的数据取最小值。
 2. Redis 寿命 `ttl = floor((validUntil - now) / 1000)` 秒（`validUntil` 的定义已把它夹在基础时长之内），小于等于 0 就不写缓存；`isCachedValueValid` 每次用调用时刻的当前时间与载荷的 `validUntil` 比较，判定过期时 `getOrSet` 会把缓存当未命中并重新取数（[lib/redis.ts](../../lib/redis.ts) 第 423 至 425 行），不会把过期载荷返回；若重新取数也失败，接口返回不含置顶与横幅的安全空结果（横幅接口返回 `null`），而不是旧值。
@@ -159,11 +159,11 @@
 
 ## 6 前后台界面及文件
 
-前台（HeroUI v2，拟新增）：`app/shoutbox/`（页面、actions、metadata，`revalidate = 0`，服务端取第一页交客户端容器翻页）、`app/(site)/user/[id]/shoutbox/`、`components/shoutbox/` 下的列表、单条卡片（官方徽标与底色区分）、发布表单（含余额提示与固定的不可回复提示行；求助区在模块 07 上线前只作为纯文本提及，不给可点击链接）、举报入口、首页模块（客户端取数，6 条加「查看更多」）、游戏页关联条（3 条加「更多」）、横幅组件。修改：[components/home/Container.tsx](../../components/home/Container.tsx) 插入首页模块、[components/patch/header/Container.tsx](../../components/patch/header/Container.tsx) 插入关联条（`isNsfwBlocked` 时不渲染）、前台根布局挂横幅（模块 01 迁移前是 [app/(site)/layout.tsx](../../app/(site)/layout.tsx)，之后是 01 定稿的前台根布局）。
+前台（HeroUI v2）：`app/(site)/shoutbox/`（页面、metadata，`revalidate = 0`，服务端取第一页交客户端容器翻页）、`app/(site)/user/[id]/shoutbox/`、`components/shoutbox/` 下的列表、单条卡片（官方徽标与底色区分）、发布表单（含余额提示与固定的不可回复提示行；求助区在模块 07 上线前只作为纯文本提及，不给可点击链接）、举报入口、首页模块（客户端取数，6 条加「查看更多」）、游戏页关联条（3 条加「更多」）、横幅组件。修改：[components/home/Container.tsx](../../components/home/Container.tsx) 插入首页模块、[components/patch/header/Container.tsx](../../components/patch/header/Container.tsx) 插入关联条（`isNsfwBlocked` 时不渲染）、[app/(site)/layout.tsx](<../../app/(site)/layout.tsx>) 挂前台横幅。
 
-后台（shadcn，模块 01 的控制台，拟新增）：`dashboard/shoutbox` 页面提供官方发布表单、四个页签列表与单条处置动作；`components/dashboard/shoutbox/` 用 01 锁定的组件集，不引入新依赖、不复用前台组件；控制台根布局挂一个同样按消息 ID 读写浏览器本地关闭状态、复用同一读接口的轻薄横幅组件——总计划 M02-3 要求横幅覆盖前后台两套独立布局，样式各自实现，共享的只有取数与关闭键。投稿预览无论 01 最终选择独立根布局还是前台根布局下的预览分支，都不渲染横幅（审核对照页面不应叠加站方通知）：走预览分支时沿用 01 预览壳已有的隐藏范围，不另建第三套机制，两种选择的结果一致。
+后台（shadcn，模块 01 的 dashboard）：`dashboard/shoutbox` 页面提供官方发布表单、四个页签列表与单条处置动作；`components/dashboard/shoutbox/` 用 01 锁定的组件集，不引入新依赖、不复用前台组件；dashboard 根布局挂一个同样按消息 ID 读写浏览器本地关闭状态、复用同一读接口的轻薄横幅组件。横幅覆盖前后台两套独立布局，样式各自实现，共享的只有取数与关闭键；投稿预览沿用 dashboard 预览壳的隐藏范围，不渲染横幅。
 
-其他拟新增：`prisma/schema/shoutbox.prisma`、`validations/shoutbox.ts`、`types/api/shoutbox.ts`、`constants/shoutbox.ts`、`utils/shoutboxTime.ts`、`app/api/shoutbox/**`、`app/api/admin/shoutbox/**`、三个 `migration/production-shoutbox-*.sql`。修改：[prisma/schema/patch-report.prisma](../../prisma/schema/patch-report.prisma)、[app/api/admin/report/service.ts](../../app/api/admin/report/service.ts)、`validations/admin.ts`、`types/api/admin.ts`、后台举报列表与详情组件、[config/cache.ts](../../config/cache.ts)、`constants/moemoepoint.ts`（该文件要求业务变更同步：增加 `shoutbox.publish` 与 `shoutbox.restore_refund` 两个原因码、消费规则「发布小喇叭 -50」、获得规则「小喇叭误判恢复 +50」，并写明自删与违规删除不退）、模块 01 的收件箱来源。不动：[app/api/home/service.ts](../../app/api/home/service.ts) 与首页渲染模式、[app/api/patch/cache.ts](../../app/api/patch/cache.ts)、共享匿名缓存层、[app/api/moemoepoint/service.ts](../../app/api/moemoepoint/service.ts)、`middleware.ts`、[server/cron.ts](../../server/cron.ts)。
+本模块新增：`prisma/schema/shoutbox.prisma`、`validations/shoutbox.ts`、`types/api/shoutbox.ts`、`constants/shoutbox.ts`、`utils/shoutboxTime.ts`、`app/api/shoutbox/**`、`app/api/admin/shoutbox/**`、三个 `migration/production-shoutbox-*.sql`。修改：[prisma/schema/patch-report.prisma](../../prisma/schema/patch-report.prisma)、[app/api/admin/report/service.ts](../../app/api/admin/report/service.ts)、`validations/admin.ts`、`types/api/admin.ts`、后台举报列表与详情组件、[config/cache.ts](../../config/cache.ts)、`constants/moemoepoint.ts`（增加 `shoutbox.publish` 与 `shoutbox.restore_refund` 两个原因码、消费规则「发布小喇叭 -50」、获得规则「小喇叭误判恢复 +50」，并写明自删与违规删除不退）、模块 01 的收件箱来源。不动：[app/api/home/service.ts](../../app/api/home/service.ts) 与首页渲染模式、[app/api/patch/cache.ts](../../app/api/patch/cache.ts)、共享匿名缓存层、[app/api/moemoepoint/service.ts](../../app/api/moemoepoint/service.ts)、`middleware.ts`、[server/cron.ts](../../server/cron.ts)。
 
 文档同步（与代码同批交付）：运维文档的维护清单从 Telegram 版切到官方重要消息版，模块地图与测试文档补本模块。
 
@@ -177,13 +177,13 @@
 
 ## 8 迁移与回填
 
-三段式生产 SQL（拟新增，日期按定稿日）：
+三段式生产 SQL 已按定稿日实现：
 
 1. `production-shoutbox-preflight-<日期>.sql`：`BEGIN TRANSACTION READ ONLY`。清点 `patch_report` 行数、`patch_id` 空值数（首次应为 0）、`target_type` 取值分布、是否已存在 `shoutbox` 表与同名约束、`patch_report` 现有索引与外键。只读无 DDL。
 2. `production-shoutbox-sync-<日期>.sql`：`CREATE TABLE IF NOT EXISTS public.shoutbox`（含四类 CHECK、四条索引、作者 `ON DELETE CASCADE`、条目 `ON DELETE SET NULL`）；`ALTER TABLE public.patch_report ADD COLUMN IF NOT EXISTS shoutbox_id INTEGER` 并补外键与索引；`ALTER TABLE public.patch_report ALTER COLUMN patch_id DROP NOT NULL`。全部可重复执行，无数据回填——小喇叭是新能力，没有存量。
 3. `production-shoutbox-postflight-<日期>.sql`：只读结构校验（列可空性、四类 CHECK、索引、外键存在）。行数与 preflight 快照的比对只在首次部署做；脚本重跑时不断言 `shoutbox` 为空表或举报行数不变，避免把结构校验和一次性基线混为一谈。
 
-顺序与边界：备份 → preflight → 在审定窗口执行 sync → postflight → `pnpm prisma:deploy-safe`（前面含可写兼容迁移，不是纯只读检查）→ 构建部署 → 冒烟 → 最后开放用户发布与官方发布入口。生产不用 `prisma db push`，不放宽 schema 守卫。`DROP NOT NULL` 是目录级变更、锁时间极短，仍安排在窗口内执行。文档阶段不执行以上任何命令。
+顺序与边界：备份 → preflight → 在审定窗口执行 sync → postflight → `pnpm prisma:deploy-safe`（前面含可写兼容迁移，不是纯只读检查）→ 构建部署 → 冒烟 → 最后开放用户发布与官方发布入口。生产不用 `prisma db push`，不放宽 schema 守卫。`DROP NOT NULL` 是目录级变更、锁时间极短，仍安排在窗口内执行。该序列已在隔离库完成，生产尚未执行。
 
 回退：一旦有真实付费消息写入，不能盲目退到不认识 `shoutbox` 的旧代码（用户已扣的点会失去对应内容），预案是先关发布与官方发布入口（前台隐藏加接口返回停用文案），保留读取、处置与退款能力，再定位问题前滚。`patch_id` 恢复 NOT NULL 的前提是不存在空值行，已有小喇叭举报后必须先处理这些行，回退脚本先查后改，不预置反向 DDL。已发生的扣费与退款以账本为准，不做应用层反向补偿。
 
@@ -191,7 +191,7 @@
 
 单元测试按实验编号归口，覆盖各自的纯函数与分支：归 E02-01 的有发布与编辑共用的正文及关键词校验、幂等键与账务入参、唯一冲突重读不到本人记录时按真实错误上报而不是伪装幂等成功、编辑与自删的条件更新形态、退款分支与金额取值；归 E02-02 的有总流分页偏移与 10 页封顶、带 `patch` 时不套封顶、只校验正整数且 `page > totalPages` 时仅计算总数、不读取越界页消息行、范围边界随置顶条数变化与没有边界行时全部判为范围内、游戏页可见集合的三项并集、逐条到期表达式与 `utils/shoutboxTime.ts` 在月末样本上一致、`validUntil` 只在严格晚于当前、且到点会改变可见集合的边界里取最早者（仍在范围内的旧消息那些已经过去的到期时刻不参与）、TTL 与 `s-maxage` 的向下取整与 0 秒转 `no-store`、`isCachedValueValid` 判定过期后走重新取数、横幅组件先丢弃过期显示再重取的顺序与关闭记忆；归 E02-03 的有权限矩阵、旧举报序列化与后台组件在 `patch` 为空时的分支、`handleReport` 对小喇叭的引导返回、四个处置动作与举报状态的对应矩阵（含 `hide` 不结案、`resolve` 拒绝 `status = 2`）、迁移 SQL 的静态锁定（preflight 只读、sync 幂等、postflight 只做结构校验）。`patch_report` 改动属共享基础设施，按仓库规则跑全量测试并加一次生产构建（根布局与首页组件有改动）。mock 不能证明原子性、真实并发、外键与 CHECK 行为，那些由下面三个实验负责。
 
-三个实验编号固定，执行状态全部为**未执行**。共同前提：由本模块 sync SQL 建库的隔离 PostgreSQL 与独立 Redis、独立本地运行实例，禁止连生产、不连真实 CDN、不读取环境变量文件；服务函数接受注入的 `now`，以便断言时间边界。
+三个实验编号固定，已于 2026-09-12 在由本模块 sync SQL 建立的隔离 PostgreSQL、独立 Redis 与独立本地生产构建中全部通过；未连接生产或真实 CDN，也未读取环境变量文件。E02-01 验证账务、幂等与并发，E02-02 验证分页、自然月、置顶与横幅时间边界，E02-03 验证举报、处置、权限、通知与缓存。全量测试为 256 个文件、2221 项通过，类型检查与生产构建通过。真实 Chrome 另验证前后台 1440/390、确认取消零写入、横幅生命周期和受控失败退避；维护演练完成同一公告 ID 跨实例重启与恢复后更新。Playwright 无法产生真实 `visibilityState = 'hidden'`，该恢复可见分支由组件测试覆盖，仍列入站长真实浏览器用户验收。
 
 ### E02-01 消费、编辑、删除与误判退款
 
@@ -217,7 +217,7 @@
 
 - 目的：证明小喇叭举报能进现有举报载体并被真实处理与恢复，权限一处不漏，空 `patch` 不破坏旧读取面，处置后各读取面按声明时间更新。
 - 前提：隔离库执行完整 sync（含 `patch_id DROP NOT NULL`）；预造若干存量评论举报与评价举报行；账号覆盖 `role` 1、2、3 与未登录会话；多进程运行以复现部署形态。
-- 步骤：①举报一条未关联游戏与一条关联游戏的消息，断言举报行 `patch_id` 分别为空与有值；②同一举报人重复举报；不同举报人依次达阈值；两人并发提交临界的第三与第四条；③按 D3 候选口径举报官方消息并凑够阈值人数，再用 `resolve` 结案；另对一条作者已自删的被举报消息执行 `resolve`；再按 ID 直接举报一条未生效的官方消息、一条已撤回的官方消息、一条作者已自删的消息与一条已删除的消息各一次，并对一条隐藏中的消息追加一条在途举报；④权限矩阵：未登录与 `role` 1、2 访问站方列表、官方发布、处置接口，`role 3` 访问同一组接口，另确认旧举报只读路由仍要求 `role >= 4`、旧处理路径对小喇叭返回引导而不误处理；⑤站方对同一目标并发两次 `remove`；对另一目标先 `hide` 再驳回举报；⑥处置后依次请求首页模块、小喇叭页、关联条、横幅、作者个人页、控制台列表，记录首次反映变化的时刻与响应头；⑦回归：处理一条存量评论举报与一条评价举报，断言状态、通知、评价统计重算与条目缓存失效与改动前一致；⑧断言小喇叭举报出现在 01 的收件箱来源里，且控制台待复核队列按最早待处理举报时间正序可达，最老的待办不会被挤掉；⑨断言空 `patch` 的举报在旧列表、详情组件（`ReportCard`、`ReportHandler`）、通知链接三处都不报错、链接指向小喇叭；⑩在站方处置事务执行期间并发提交一条新举报，断言它要么被本次结论覆盖并通知、要么保持待处理留给下一次；⑪用 `role 4` 账号打开旧举报只读路由做正例、`role 3` 做反例；⑫对一条消息先 `hide`，断言它仍在待复核队列、只有作者收到通知，再对它提交 `resolve`（应被拒），最后用 `restore` 或 `remove` 结案。
+- 步骤：①举报一条未关联游戏与一条关联游戏的消息，断言举报行 `patch_id` 分别为空与有值；②同一举报人重复举报；不同举报人依次达阈值；两人并发提交临界的第三与第四条；③按 D3 已定口径举报官方消息并凑够阈值人数，再用 `resolve` 结案；另对一条作者已自删的被举报消息执行 `resolve`；再按 ID 直接举报一条未生效的官方消息、一条已撤回的官方消息、一条作者已自删的消息与一条已删除的消息各一次，并对一条隐藏中的消息追加一条在途举报；④权限矩阵：未登录与 `role` 1、2 访问站方列表、官方发布、处置接口，`role 3` 访问同一组接口，另确认旧举报只读路由仍要求 `role >= 4`、旧处理路径对小喇叭返回引导而不误处理；⑤站方对同一目标并发两次 `remove`；对另一目标先 `hide` 再驳回举报；⑥处置后依次请求首页模块、小喇叭页、关联条、横幅、作者个人页、控制台列表，记录首次反映变化的时刻与响应头；⑦回归：处理一条存量评论举报与一条评价举报，断言状态、通知、评价统计重算与条目缓存失效与改动前一致；⑧断言小喇叭举报出现在 01 的收件箱来源里，且控制台待复核队列按最早待处理举报时间正序可达，最老的待办不会被挤掉；⑨断言空 `patch` 的举报在旧列表、详情组件（`ReportCard`、`ReportHandler`）、通知链接三处都不报错、链接指向小喇叭；⑩在站方处置事务执行期间并发提交一条新举报，断言它要么被本次结论覆盖并通知、要么保持待处理留给下一次；⑪用 `role 4` 账号打开旧举报只读路由做正例、`role 3` 做反例；⑫对一条消息先 `hide`，断言它仍在待复核队列、只有作者收到通知，再对它提交 `resolve`（应被拒），最后用 `restore` 或 `remove` 结案。
 - 通过：未关联游戏的举报正常落库；重复举报被拒；阈值达成只隐藏一次、作者只收一条通知；官方消息被举报后进队列但不自动隐藏，官方与已自删消息的举报都能用 `resolve` 结案并通知举报人、不产生恢复与退款，处置期间并发提交的新举报既不漏通知也不重复通知；`hide` 之后举报仍是待办、只有作者收到通知，对 `status = 2` 的 `resolve` 被拒；未生效、已撤回、已自删与已删除的目标都拒绝新举报，隐藏中的目标接受在途举报且不触发第二次隐藏；旧举报只读路由对 `role 3` 拒绝、对 `role 4` 放行；`role` 1、2 与未登录对站方接口全部被拒、`role 3` 全部可用、旧路由门槛不变；并发 `remove` 只生效一次且 `admin_log` 只一条；驳回后消息恢复、作者与举报人各收到对应通知、余额 +50 且只一次；六个读取面在响应头声明的时间内反映变化；存量举报回归无差异；空 `patch` 全链路无异常。
 - 失败：任一低权限账号成功执行站方动作、官方消息被自动隐藏、并发处置产生两次通知或两次退款、旧举报流程因 `patch_id` 可空而报错或丢链接、某读取面在声明时间之后仍是旧值。
 - 时间点：M02-4 完成、迁移在隔离库演练之后，本批上线前。
@@ -230,24 +230,24 @@
 | 任务             | 落点                                                                                                                                                                                                                                                                   | 完成判据                                                                                                                                   |
 | ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
 | M02-1 数据与付费 | `prisma/schema/shoutbox.prisma`、`validations/shoutbox.ts`、`constants/shoutbox.ts`、`app/api/shoutbox/**`、`constants/moemoepoint.ts`                                                                                                                                 | 发布、编辑、自删的条件更新与幂等键落地；规则展示与真实扣费一致；E02-01 通过                                                                |
-| M02-2 展示与保留 | `app/shoutbox/**`、`app/(site)/user/[id]/shoutbox/**`、`components/shoutbox/**`、[components/home/Container.tsx](../../components/home/Container.tsx)、[components/patch/header/Container.tsx](../../components/patch/header/Container.tsx)、`utils/shoutboxTime.ts`          | 四个展示面按 5.1 的算法与并集规则工作；无任何删除路径；E02-02 的分页与保留部分通过                                                         |
+| M02-2 展示与保留 | `app/shoutbox/**`、`app/(site)/user/[id]/shoutbox/**`、`components/shoutbox/**`、[components/home/Container.tsx](../../components/home/Container.tsx)、[components/patch/header/Container.tsx](../../components/patch/header/Container.tsx)、`utils/shoutboxTime.ts`   | 四个展示面按 5.1 的算法与并集规则工作；无任何删除路径；E02-02 的分页与保留部分通过                                                         |
 | M02-3 官方发布   | `app/api/admin/shoutbox/**`、控制台小喇叭页、前台与控制台根布局的横幅                                                                                                                                                                                                  | 区间可设，已生效可提前结束、未生效可撤回；置顶占一个名额且范围边界随之只剩 59；横幅按消息记忆关闭并覆盖前后台；E02-02 的置顶与横幅部分通过 |
-| M02-4 举报与缓存 | [prisma/schema/patch-report.prisma](../../prisma/schema/patch-report.prisma)、[app/api/admin/report/service.ts](../../app/api/admin/report/service.ts)、`validations/admin.ts`、后台举报组件、`app/api/shoutbox/report/**`、`app/api/shoutbox/cache.ts`、01 收件箱来源 | 举报有接收端、处理端、恢复端与结案端（含官方与作者已自删的消息）；阈值与词表取自单一常量且站长确认后才对外表述；E02-03 通过                |
+| M02-4 举报与缓存 | [prisma/schema/patch-report.prisma](../../prisma/schema/patch-report.prisma)、[app/api/admin/report/service.ts](../../app/api/admin/report/service.ts)、`validations/admin.ts`、后台举报组件、`app/api/shoutbox/report/**`、`app/api/shoutbox/cache.ts`、01 收件箱来源 | 举报有接收端、处理端、恢复端与结案端（含官方与作者已自删的消息）；3 人阈值取自单一常量，生产词表为空且过滤关闭；E02-03 通过                |
 | M02-5 维护演练   | 运维文档维护清单                                                                                                                                                                                                                                                       | 清单可执行并完成一次演练记录                                                                                                               |
 
-还需满足总计划第 8 节的通用上线条件。本模块特有硬条件两条：第 12 节的自动隐藏阈值必须有站长决定；迁移必须先在隔离库完成一次完整 preflight/sync/postflight 演练。
+还需满足总计划第 8 节的通用上线条件。本模块特有硬条件是迁移必须先在隔离库完成一次完整 preflight/sync/postflight 演练。第 12 节规则已经定稿，首批关键词词表未提供前过滤保持关闭。
 
 ## 11 非目标
 
 不做回复、点赞、收藏、转发与编辑历史展示；不关联资源、不做多游戏关联；不做内容用途审查；不做动态定价、调价、频率限制与同文去重；不做站内群发与邮件群发；不改评论与评价的举报创建端；不新建举报表、工单表、关键词表或规则配置后台；不引入消息总线、队列或插件体系；不改 MDX 体系、不新增规则页面（完整规则随站点文档统一编写）；不做应用内维护模式与停用页（属阶段 6）；不改首页聚合与渲染模式、共享匿名缓存层、`middleware`、账务服务与既有周期任务；不新增依赖。
 
-## 12 待决定
+## 12 已定规则
 
-对应总计划 D3。第 2 至 4 项在站长确认前不得写成已批准规则对用户表述；实现可用建议值跑实验，但不在前台或规则文案里宣布。误判退款每条最多一次不列为待定项：它是「累计退款不超过实付」这条账务上限的直接结果。
+对应总计划 D3，已于 2026-09-12 由站长确认。误判退款每条最多一次是「累计退款不超过实付」这条账务上限的直接结果。
 
-1. 游戏页关联条名称。候选见基线第 13 节，最小建议「关于本作的小喇叭」。阻塞位置：`constants/shoutbox.ts` 的一处文案常量与关联条标题。
-2. 举报自动隐藏阈值。最小建议 3 名不同举报人，与基线其他两处 3 人阈值一致。阻塞位置：`constants/shoutbox.ts` 阈值常量、E02-03 的阈值步骤、面向用户的规则文案。
-3. 关键词兜底的处置与词表范围。最小建议：命中即在写库前拒绝且不扣费，词表在代码里维护、只收站长指定的少量词。阻塞位置：发布服务的拒绝分支与词表常量。
-4. 官方消息的举报口径。基线要求每条都有举报入口，本文最小建议是保留入口、举报落库进复核队列，自动隐藏只对非官方生效，站方用 `resolve` 给出结论并通知举报人。阻塞位置：举报服务的官方分支、`resolve` 的适用范围与 E02-03 的对应步骤。
+1. 游戏页关联条名称为「关于本作的小喇叭」。
+2. 3 名不同举报人触发用户消息自动隐藏。
+3. 关键词命中时在写库和扣费前拒绝；词表只收站长指定的少量词。首批词表尚未提供，因此生产词表保持为空、过滤关闭；测试可注入专用词证明拒绝分支不写库也不扣费。
+4. 官方消息保留举报入口并进入复核队列，但永不自动隐藏；站方只可用 `resolve` 结案并通知举报人。
 
 本模块不引入其他新参数；基线第 11 节已确认的六个小喇叭参数（50 点、6 条、10 页、3 个月、5 分钟、72 小时）直接采用。

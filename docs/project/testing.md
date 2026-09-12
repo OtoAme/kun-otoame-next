@@ -40,6 +40,7 @@ tests/unit/
 - 搜索 store：`tests/unit/search-store.test.ts`。
 - CAPTCHA：`tests/unit/captcha.test.ts`。
 - 萌萌点账务：`api/moemoepoint-service.test.ts` 覆盖可用余额条件更新、负数回退、原因超长截断（不抛错）、幂等和暂扣/返还/确认扣除；`api/moemoepoint-query.test.ts` 覆盖明细稳定排序和用户不存在时不白跑查询；`api/moemoepoint-ledger-route.test.ts` 覆盖本人/管理员权限与 no-store；`moemoepoint-ledger-action.test.ts` 覆盖 `/moemoepoint` 本人 action 与后台 action 两个入口的独立鉴权；`moemoepoint-date-range.test.ts`、`moemoepoint-migration.test.ts`、`moemoepoint-source-guard.test.ts` 分别锁定上海日期范围、生产 SQL 和禁止绕过统一 service 的源码契约。
+- 小喇叭：`api/shoutbox-service.test.ts`、`api/shoutbox-report-service.test.ts`、`api/shoutbox-review-service.test.ts` 与对应 route/contract/cache/migration 测试覆盖发布扣费幂等、编辑自删、分页与生效边界、三名举报人自动隐藏、官方举报不自动隐藏、处置状态机、通知、退款一次性、缓存寿命和生产 SQL；前端测试覆盖 HeroUI 消息流与举报、横幅、游戏关联条、作者记录、Dashboard 四页签与每个处置动作的二次确认。真实 PostgreSQL 与 Redis 的并发、DDL、缓存边界及维护演练仍由 E02-01～03 在独立环境验证，mock 不能代替。
 - 萌萌点与后台导航：`top-bar-profile-navigation.test.tsx` 覆盖桌面和移动端主导航不显示萌萌点、`role >= 3` 在帮助文档后显示管理后台，以及本人个人主页的“编辑信息 / 萌萌点明细”同行和全宽管理后台独立成行。
 - 资源链接解析、资源分类、资源派生标签口径和后台资源表格布局：`tests/unit/resource-link.test.ts`、`resource-classification.test.ts`、`patch-resource-attributes.test.ts`、`admin-resource-container-layout.test.tsx`。`resource-classification.test.ts` 还覆盖游戏类型必须搭配中文支持类型、资料集/工具单独使用时的豁免、游戏类型与其他类型混选、中文支持互斥和 schema 错误文案。
 - 资源详情表单的中文支持独立多选框、资料集/工具禁用清理、HeroUI 分组标题排版、原有选项说明与多选勾选、上拉方向和边缘渐隐：`tests/unit/resource-details-form.test.tsx`。
