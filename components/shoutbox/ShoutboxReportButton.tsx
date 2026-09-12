@@ -18,6 +18,8 @@ import toast from 'react-hot-toast'
 import { useMounted } from '~/hooks/useMounted'
 import { useUserStore } from '~/store/userStore'
 import { kunFetchPost } from '~/utils/kunFetch'
+import { notifyShoutboxPublicWrite } from './query/core'
+import { useShoutboxQueryContextOrNull } from './query/ShoutboxQueryProvider'
 
 interface Props {
   shoutboxId: number
@@ -59,6 +61,7 @@ export const ShoutboxReportButton = ({
   const [reasonError, setReasonError] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const lockRef = useRef(false)
+  const shoutboxQuery = useShoutboxQueryContextOrNull()
 
   // Own-check needs the persisted user: render nothing until mounted to avoid
   // hydration drift, and never for the author.
@@ -139,6 +142,7 @@ export const ShoutboxReportButton = ({
       toast.success('举报已提交，站方会进行复核')
       setReason('')
       setReasonError('')
+      void notifyShoutboxPublicWrite(shoutboxQuery)
       reportModal.onClose()
     } catch {
       toast.error('举报提交失败，请稍后重试')

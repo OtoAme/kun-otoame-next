@@ -24,6 +24,8 @@ import { SHOUTBOX_OFFICIAL_DEFAULT_DURATION_MS } from '~/constants/shoutbox'
 import { kunFetchPost } from '~/utils/kunFetch'
 import { generateUUID } from '~/utils/random'
 import { normalizeShoutboxContent } from '~/utils/shoutboxContent'
+import { notifyShoutboxPublicWrite } from '~/components/shoutbox/query/core'
+import { useShoutboxQueryContextOrNull } from '~/components/shoutbox/query/ShoutboxQueryProvider'
 import type { ShoutboxLevel } from '~/constants/shoutbox'
 import type { ShoutboxItem } from '~/types/api/shoutbox'
 
@@ -53,6 +55,7 @@ export const ShoutboxOfficialForm = ({ onPublished }: Props) => {
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
   const lockRef = useRef(false)
+  const shoutboxQuery = useShoutboxQueryContextOrNull()
 
   const reset = () => {
     setContent('')
@@ -111,6 +114,7 @@ export const ShoutboxOfficialForm = ({ onPublished }: Props) => {
         return
       }
       toast.success('官方消息已发布')
+      void notifyShoutboxPublicWrite(shoutboxQuery)
       reset()
       onPublished()
     } catch {

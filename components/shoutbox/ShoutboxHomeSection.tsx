@@ -48,8 +48,9 @@ export const ShoutboxHomeSection = () => {
   }
 
   const handlePublished = () => {
+    // The publish form already invalidated and refetched the observed public
+    // keys through the write-notification helper — no second fetch here.
     publishModal.onClose()
-    retry()
   }
 
   return (
@@ -125,49 +126,68 @@ export const ShoutboxHomeSection = () => {
               暂无小喇叭，来发第一条吧
             </p>
           ) : (
-            <ScrollShadow
-              className="min-h-0 divide-y divide-default-100 [scrollbar-gutter:stable_both-edges]"
-              tabIndex={0}
-              role="region"
-              aria-label="小喇叭消息列表"
-            >
-              {pinned && (
-                <ShoutboxCard
-                  item={pinned}
-                  pinned
-                  compact
-                  showDelete={false}
-                  currentUserId={currentUserId}
-                  onChanged={retry}
+            <>
+              {error !== '' && (
+                // A failed background refresh keeps the rows and shows a
+                // low-interference notice with a manual retry.
+                <Alert
+                  color="warning"
+                  variant="flat"
+                  description={error}
+                  endContent={
+                    <Button
+                      size="sm"
+                      variant="light"
+                      color="warning"
+                      onPress={retry}
+                    >
+                      重试
+                    </Button>
+                  }
                 />
               )}
-              {rows.map((item) => (
-                <ShoutboxCard
-                  key={item.id}
-                  item={item}
-                  compact
-                  showDelete={false}
-                  currentUserId={currentUserId}
-                  onChanged={retry}
-                />
-              ))}
-              {hasMore && (
-                // Last item inside the scroll region: only reachable by
-                // scrolling to the end, never a fixed footer.
-                <div className="flex justify-center py-1">
-                  <Button
-                    as={Link}
-                    href="/shoutbox"
-                    size="sm"
-                    variant="light"
-                    color="primary"
-                    endContent={<ChevronRight className="size-4" />}
-                  >
-                    显示更多
-                  </Button>
-                </div>
-              )}
-            </ScrollShadow>
+              <ScrollShadow
+                className="min-h-0 divide-y divide-default-100 [scrollbar-gutter:stable_both-edges]"
+                tabIndex={0}
+                role="region"
+                aria-label="小喇叭消息列表"
+              >
+                {pinned && (
+                  <ShoutboxCard
+                    item={pinned}
+                    pinned
+                    compact
+                    showDelete={false}
+                    currentUserId={currentUserId}
+                  />
+                )}
+                {rows.map((item) => (
+                  <ShoutboxCard
+                    key={item.id}
+                    item={item}
+                    compact
+                    showDelete={false}
+                    currentUserId={currentUserId}
+                  />
+                ))}
+                {hasMore && (
+                  // Last item inside the scroll region: only reachable by
+                  // scrolling to the end, never a fixed footer.
+                  <div className="flex justify-center py-1">
+                    <Button
+                      as={Link}
+                      href="/shoutbox"
+                      size="sm"
+                      variant="light"
+                      color="primary"
+                      endContent={<ChevronRight className="size-4" />}
+                    >
+                      显示更多
+                    </Button>
+                  </div>
+                )}
+              </ScrollShadow>
+            </>
           )}
         </CardBody>
       </Card>

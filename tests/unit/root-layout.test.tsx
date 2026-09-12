@@ -60,11 +60,18 @@ vi.mock('~/components/kun/theme/SiteThemeScript', () => ({
   SiteThemeScript: () => null
 }))
 
-vi.mock('~/app/(site)/providers', () => ({
-  Providers: ({ children }: { children: React.ReactNode }) => (
-    <div data-testid="providers">{children}</div>
+vi.mock('~/app/(site)/providers', async () => {
+  const { ShoutboxQueryProvider } = await import(
+    '~/components/shoutbox/query/ShoutboxQueryProvider'
   )
-}))
+  return {
+    Providers: ({ children }: { children: React.ReactNode }) => (
+      <ShoutboxQueryProvider>
+        <div data-testid="providers">{children}</div>
+      </ShoutboxQueryProvider>
+    )
+  }
+})
 
 vi.mock('~/app/(site)/actions', () => ({}))
 

@@ -72,6 +72,7 @@ import {
   updateOfficialShoutbox,
   updateShoutbox
 } from '~/app/api/shoutbox/service'
+import { ShoutboxReadError } from '~/app/api/shoutbox/errors'
 
 const now = new Date('2026-09-11T12:00:00.000Z')
 const requestId = '550e8400-e29b-41d4-a716-446655440000'
@@ -85,6 +86,12 @@ beforeEach(() => {
   prismaMock.admin_log.create.mockResolvedValue({})
   prismaMock.patch.findUnique.mockResolvedValue(null)
   cacheMock.invalidateShoutboxCaches.mockResolvedValue(undefined)
+  cacheMock.getShoutboxCached.mockImplementation(
+    async (_key: string, fetcher: () => Promise<unknown>) => fetcher()
+  )
+  cacheMock.getShoutboxBannerCached.mockImplementation(
+    async (_key: string, fetcher: () => Promise<unknown>) => fetcher()
+  )
   moemoepointMock.spendMoemoepoint.mockResolvedValue({
     balance: { total: 40, reserved: 0, available: 40 }
   })
@@ -553,7 +560,10 @@ describe('shoutbox user and official service boundaries', () => {
     }>((resolve) => {
       release = resolve
     })
-    cacheMock.getShoutboxCached.mockReturnValue(pending)
+    cacheMock.getShoutboxCached
+      .mockReturnValueOnce(pending)
+      .mockReturnValueOnce(pending)
+      .mockImplementation(async (_key, fetcher) => fetcher())
     prismaMock.shoutbox.findFirst.mockResolvedValue(null)
     prismaMock.shoutbox.count.mockResolvedValue(0)
     prismaMock.shoutbox.findMany.mockResolvedValue([])
@@ -612,6 +622,182 @@ describe('shoutbox user and official service boundaries', () => {
     )
   })
 
+  it('reuses a raw list payload across visibility preferences', async () => {
+    const cachedRow = row({
+      patch_id: 8,
+      patch: {
+        id: 8,
+        unique_id: 'Abc12345',
+        name: '游戏',
+        content_limit: 'nsfw',
+        tag: []
+      }
+    })
+    const payload = {
+      pinned: null,
+      shoutboxes: [cachedRow],
+      page: 1,
+      totalPages: 1,
+      validUntil: new Date(now.getTime() + 60_000).toISOString()
+    }
+    cacheMock.getShoutboxCached.mockResolvedValue(payload)
+
+    const restricted = await getShoutboxList(
+      { page: 1, limit: 20 },
+      {
+        now,
+        visibilityWhere: { content_limit: 'sfw' },
+        db: prismaMock as never
+      }
+    )
+    const unrestricted = await getShoutboxList(
+      { page: 1, limit: 20 },
+      { now, visibilityWhere: {}, db: prismaMock as never }
+    )
+
+    expect(restricted.shoutboxes[0].patch).toBeNull()
+    expect(unrestricted.shoutboxes[0].patch).toEqual({
+      id: 8,
+      uniqueId: 'Abc12345',
+      name: '游戏',
+      contentLimit: 'nsfw'
+    })
+    expect(prismaMock.shoutbox.findFirst).not.toHaveBeenCalled()
+    expect(prismaMock.shoutbox.count).not.toHaveBeenCalled()
+    expect(prismaMock.shoutbox.findMany).not.toHaveBeenCalled()
+  })
+
+  it('reuses a raw banner payload across visibility preferences', async () => {
+    const cachedRow = row({
+      official: true,
+      level: 'important',
+      effective_from: new Date(now.getTime() - 1_000),
+      effective_to: new Date(now.getTime() + 60_000),
+      patch_id: 8,
+      patch: {
+        id: 8,
+        unique_id: 'Abc12345',
+        name: '游戏',
+        content_limit: 'nsfw',
+        tag: []
+      }
+    })
+    cacheMock.getShoutboxBannerCached.mockResolvedValue({
+      banner: JSON.parse(JSON.stringify(cachedRow)),
+      validUntil: new Date(now.getTime() + 60_000).toISOString(),
+      visibilityUntil: new Date(now.getTime() + 60_000).toISOString()
+    })
+
+    const restricted = await getShoutboxBanner({
+      now,
+      visibilityWhere: { content_limit: 'sfw' },
+      db: prismaMock as never
+    })
+    const unrestricted = await getShoutboxBanner({
+      now,
+      visibilityWhere: {},
+      db: prismaMock as never
+    })
+
+    expect(restricted.banner?.patch).toBeNull()
+    expect(unrestricted.banner?.patch).toEqual({
+      id: 8,
+      uniqueId: 'Abc12345',
+      name: '游戏',
+      contentLimit: 'nsfw'
+    })
+    expect(prismaMock.shoutbox.findFirst).not.toHaveBeenCalled()
+  })
+
+  it('captures the list build time after a cache wait crosses a boundary', async () => {
+    vi.useFakeTimers()
+    try {
+      const start = new Date('2026-09-11T12:00:00.000Z')
+      const completion = new Date(start.getTime() + 61_000)
+      vi.setSystemTime(start)
+      let release!: () => void
+      const wait = new Promise<void>((resolve) => {
+        release = resolve
+      })
+      cacheMock.getShoutboxCached.mockImplementationOnce(
+        async (_key, fetcher) => {
+          await wait
+          return fetcher()
+        }
+      )
+      prismaMock.shoutbox.findFirst.mockResolvedValue(null)
+      prismaMock.shoutbox.count.mockResolvedValue(0)
+      prismaMock.shoutbox.findMany.mockResolvedValue([])
+
+      const request = getShoutboxList(
+        { page: 1, limit: 20 },
+        { db: prismaMock as never }
+      )
+      await Promise.resolve()
+      vi.setSystemTime(completion)
+      release()
+
+      const response = await request
+
+      expect(response.validUntil).toBe(
+        new Date(completion.getTime() + 60_000).toISOString()
+      )
+      const current = prismaMock.shoutbox.findFirst.mock.calls.find(
+        ([args]) => args?.where?.effective_from?.lte instanceof Date
+      )?.[0].where.effective_from.lte
+      expect(current).toEqual(completion)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('captures the banner build time after a cache wait crosses a boundary', async () => {
+    vi.useFakeTimers()
+    try {
+      const start = new Date('2026-09-11T12:00:00.000Z')
+      const completion = new Date(start.getTime() + 61_000)
+      vi.setSystemTime(start)
+      let release!: () => void
+      const wait = new Promise<void>((resolve) => {
+        release = resolve
+      })
+      cacheMock.getShoutboxBannerCached.mockImplementationOnce(
+        async (_key, fetcher) => {
+          await wait
+          return fetcher()
+        }
+      )
+      prismaMock.shoutbox.findFirst.mockResolvedValue(null)
+
+      const request = getShoutboxBanner({ db: prismaMock as never })
+      await Promise.resolve()
+      vi.setSystemTime(completion)
+      release()
+
+      const response = await request
+
+      expect(response.validUntil).toBe(
+        new Date(completion.getTime() + 60_000).toISOString()
+      )
+      expect(prismaMock.shoutbox.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            effective_from: { lte: completion }
+          })
+        })
+      )
+      expect(prismaMock.shoutbox.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            effective_from: { gt: completion }
+          })
+        })
+      )
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('uses the completion-time clock for an in-flight boundary refetch', async () => {
     vi.useFakeTimers()
     try {
@@ -621,7 +807,10 @@ describe('shoutbox user and official service boundaries', () => {
       const pending = new Promise((resolve) => {
         release = resolve
       })
-      cacheMock.getShoutboxCached.mockReturnValue(pending)
+      cacheMock.getShoutboxCached
+        .mockReturnValueOnce(pending)
+        .mockReturnValueOnce(pending)
+        .mockImplementation(async (_key, fetcher) => fetcher())
       prismaMock.shoutbox.findFirst.mockResolvedValue(null)
       prismaMock.shoutbox.count.mockResolvedValue(1)
       prismaMock.shoutbox.findMany.mockResolvedValue([
@@ -725,7 +914,35 @@ describe('shoutbox user and official service boundaries', () => {
     expect(response.visibilityUntil).toBe(future.toISOString())
   })
 
-  it('returns an immediately expired list after a failed boundary reload', async () => {
+  it('uses only the next future official message for a game boundary', async () => {
+    const future = new Date(now.getTime() + 120_000)
+    prismaMock.patch.findUnique.mockResolvedValueOnce({ id: 8, status: 0 })
+    prismaMock.shoutbox.findFirst.mockResolvedValueOnce({
+      effective_from: future
+    })
+    prismaMock.shoutbox.count.mockResolvedValueOnce(0)
+
+    const response = await getShoutboxList(
+      { page: 1, limit: 20, patch: 'Abc12345' },
+      { now, db: prismaMock as never, useCache: false }
+    )
+
+    expect(response.validUntil).toBe(future.toISOString())
+    expect(response.visibilityUntil).toBe(future.toISOString())
+    expect(prismaMock.shoutbox.findFirst).toHaveBeenCalledOnce()
+    expect(prismaMock.shoutbox.findFirst).toHaveBeenCalledWith({
+      where: {
+        official: true,
+        status: 0,
+        patch_id: 8,
+        effective_from: { gt: now }
+      },
+      orderBy: { effective_from: 'asc' },
+      select: { effective_from: true }
+    })
+  })
+
+  it('raises a read error after a failed boundary reload', async () => {
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
     try {
       cacheMock.getShoutboxCached.mockResolvedValueOnce({
@@ -739,19 +956,18 @@ describe('shoutbox user and official service boundaries', () => {
         new Error('database unavailable')
       )
 
-      const response = await getShoutboxList(
-        { page: 1, limit: 20 },
-        { now, db: prismaMock as never }
-      )
-
-      expect(response.shoutboxes).toEqual([])
-      expect(response.validUntil).toBe(now.toISOString())
+      await expect(
+        getShoutboxList(
+          { page: 1, limit: 20 },
+          { now, db: prismaMock as never }
+        )
+      ).rejects.toBeInstanceOf(ShoutboxReadError)
     } finally {
       errorSpy.mockRestore()
     }
   })
 
-  it('returns an immediately expired banner after a failed boundary reload', async () => {
+  it('raises a banner read error after a failed boundary reload', async () => {
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
     try {
       cacheMock.getShoutboxBannerCached.mockResolvedValueOnce({
@@ -762,60 +978,48 @@ describe('shoutbox user and official service boundaries', () => {
         new Error('database unavailable')
       )
 
-      const response = await getShoutboxBanner({
-        now,
-        db: prismaMock as never
-      })
-
-      expect(response.banner).toBeNull()
-      expect(response.validUntil).toBe(now.toISOString())
+      await expect(
+        getShoutboxBanner({
+          now,
+          db: prismaMock as never
+        })
+      ).rejects.toBeInstanceOf(ShoutboxReadError)
     } finally {
       errorSpy.mockRestore()
     }
   })
 
-  it('returns an immediately expired list when the cache helper rejects', async () => {
+  it('raises a read error when the cache helper rejects', async () => {
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
     try {
       cacheMock.getShoutboxCached.mockRejectedValueOnce(
         new Error('cache refresh unavailable')
       )
 
-      const response = await getShoutboxList(
-        { page: 1, limit: 20 },
-        { now, db: prismaMock as never }
-      )
-
-      expect(response).toEqual({
-        pinned: null,
-        shoutboxes: [],
-        page: 1,
-        totalPages: 0,
-        validUntil: now.toISOString(),
-        visibilityUntil: now.toISOString()
-      })
+      await expect(
+        getShoutboxList(
+          { page: 1, limit: 20 },
+          { now, db: prismaMock as never }
+        )
+      ).rejects.toBeInstanceOf(ShoutboxReadError)
     } finally {
       errorSpy.mockRestore()
     }
   })
 
-  it('returns an immediately expired banner when the cache helper rejects', async () => {
+  it('raises a banner read error when the cache helper rejects', async () => {
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
     try {
       cacheMock.getShoutboxBannerCached.mockRejectedValueOnce(
         new Error('cache refresh unavailable')
       )
 
-      const response = await getShoutboxBanner({
-        now,
-        db: prismaMock as never
-      })
-
-      expect(response).toEqual({
-        banner: null,
-        validUntil: now.toISOString(),
-        visibilityUntil: now.toISOString()
-      })
+      await expect(
+        getShoutboxBanner({
+          now,
+          db: prismaMock as never
+        })
+      ).rejects.toBeInstanceOf(ShoutboxReadError)
     } finally {
       errorSpy.mockRestore()
     }

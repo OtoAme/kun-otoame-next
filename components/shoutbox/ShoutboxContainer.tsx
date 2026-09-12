@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import { Alert } from '@heroui/alert'
@@ -8,12 +8,19 @@ import { Button } from '@heroui/button'
 import { useDisclosure } from '@heroui/modal'
 import { Spinner } from '@heroui/spinner'
 import { Megaphone } from 'lucide-react'
+import toast from 'react-hot-toast'
 import { KunNull } from '~/components/kun/Null'
 import { KunPagination } from '~/components/kun/Pagination'
-import { SHOUTBOX_PAGE_SIZE } from '~/constants/shoutbox'
-import { useUserStore } from '~/store/userStore'
-import { kunFetchGet } from '~/utils/kunFetch'
+import { useShoutboxQuery } from '~/components/shoutbox/query/useShoutboxQuery'
 import {
+  getShoutboxContextKeyPart,
+  normalizeShoutboxContext
+} from '~/components/shoutbox/query/core'
+import { useShoutboxQueryContext } from '~/components/shoutbox/query/ShoutboxQueryProvider'
+import { useUserStore } from '~/store/userStore'
+import {
+  projectShoutboxGlobalListDisplay,
+  projectShoutboxPatchListDisplay,
   resolveShoutboxCleanupMs,
   scheduleShoutboxDeadline
 } from '~/utils/shoutboxVisibility'
@@ -23,11 +30,23 @@ import {
   ShoutboxPublishModal
 } from './ShoutboxPublishModal'
 import type { ShoutboxPickedPatch } from './ShoutboxPublishForm'
-import type { ShoutboxItem, ShoutboxListResponse } from '~/types/api/shoutbox'
+import type {
+  ShoutboxItem,
+  ShoutboxListResponse,
+  ShoutboxRequestContext
+} from '~/types/api/shoutbox'
 
 interface Props {
   initialData: ShoutboxListResponse | null
   patchUniqueId?: string
+  /**
+   * The request context the SSR first page was rendered with (request uid +
+   * the normalized visibility context). It seeds only the matching query
+   * key; a client-side scope that differs (e.g. an anonymous non-default
+   * rating, which the API derives straight from the cookie) gets one fresh
+   * read after client-ready instead of inheriting the SSR payload.
+   */
+  initialContext?: ShoutboxRequestContext
 }
 
 const parseHighlightId = (raw: string | null): number | null => {
@@ -38,294 +57,131 @@ const parseHighlightId = (raw: string | null): number | null => {
   return Number.isSafeInteger(id) && id > 0 ? id : null
 }
 
-export const ShoutboxContainer = ({ initialData, patchUniqueId }: Props) => {
+export const ShoutboxContainer = ({
+  initialData,
+  patchUniqueId,
+  initialContext
+}: Props) => {
   const searchParams = useSearchParams()
   const highlightParam = parseHighlightId(searchParams.get('shoutbox'))
 
-  const [data, setData] = useState<ShoutboxListResponse | null>(initialData)
   const [page, setPage] = useState(initialData?.page ?? 1)
-  const [error, setError] = useState('')
-  const [loading, setLoading] = useState(initialData === null)
-  const [fetching, setFetching] = useState(false)
   const [highlightId, setHighlightId] = useState<number | null>(null)
-  const dataRef = useRef<ShoutboxListResponse | null>(initialData)
-  const pageRef = useRef(initialData?.page ?? 1)
-  const seqRef = useRef(0)
-  // Seq of the request currently in flight (0 = idle): automatic entries
-  // merge into it; released only by the request that still owns it.
-  const inFlightSeqRef = useRef(0)
   const publishModal = useDisclosure()
   const loginModal = useDisclosure()
 
   const currentUserId = useUserStore((state) => state.user.uid)
+  const { clientReady, scope } = useShoutboxQueryContext()
 
-  const applyData = useCallback((next: ShoutboxListResponse | null) => {
-    dataRef.current = next
-    setData(next)
-  }, [])
-
-  const applyPage = useCallback((next: number) => {
-    pageRef.current = next
-    setPage(next)
-  }, [])
-
-  const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-
-  const clearRetryTimer = useCallback(() => {
-    if (retryTimerRef.current !== null) {
-      clearTimeout(retryTimerRef.current)
-      retryTimerRef.current = null
+  // The SSR seed is frozen at the very first render: SSR and the first
+  // hydration always display it under the SSR context; after client-ready
+  // the container switches to the live API context.
+  const seedRef = useRef<{
+    context: ShoutboxRequestContext
+    data: ShoutboxListResponse
+  } | null>(null)
+  if (seedRef.current === null && initialData !== null) {
+    seedRef.current = {
+      context: normalizeShoutboxContext(initialContext ?? scope),
+      data: initialData
     }
-  }, [])
+  }
+  const seed = seedRef.current
+  const activeScope = clientReady ? scope : (seed?.context ?? scope)
 
-  // At the real visibility boundary (visibilityUntil, never TTL-truncated)
-  // the current payload may no longer be valid; stale content is dropped
-  // BEFORE the refetch starts. A patch-scoped payload's visibility is
-  // decided server-side, so the whole payload goes. In the global stream
-  // ordinary rows are public history and stay visible regardless of age; the
-  // pinned slot is dropped unconditionally because the boundary may mark the
-  // NEXT official message's effectiveFrom while the current pinned one's own
-  // interval is still running — it must not stay pinned while the refresh is
-  // pending or failed. A plain validUntil/TTL expiry drops nothing: it only
-  // triggers a silent background refresh, and the new response replaces the
-  // current content atomically.
-  const dropStalePayload = useCallback(() => {
-    const current = dataRef.current
-    if (!current) {
-      return
-    }
-    if (patchUniqueId) {
-      applyData(null)
-      return
-    }
-    if (current.pinned !== null) {
-      applyData({ ...current, pinned: null })
-    }
-  }, [applyData, patchUniqueId])
+  // SSR and first hydration always seed under the SSR request context; after
+  // client-ready (i.e. any client-side navigation) only a payload still
+  // inside its freshness window may seed a brand-new matching query, and an
+  // expired SSR page refetches immediately (initialDataUpdatedAt 0 marks the
+  // seed as received inside its own validity window, not stale-on-arrival).
+  const seedFresh =
+    seed !== null && Date.parse(seed.data.validUntil) > Date.now()
+  const query = useShoutboxQuery<ShoutboxListResponse>({
+    view: 'list',
+    page,
+    patch: patchUniqueId ?? null,
+    scopeOverride: activeScope,
+    project: patchUniqueId
+      ? projectShoutboxPatchListDisplay
+      : projectShoutboxGlobalListDisplay,
+    keepPreviousWhileLoading: true,
+    notifyOnBackgroundError: (message) => toast.error(message),
+    initialData:
+      seed !== null &&
+      page === seed.data.page &&
+      (!clientReady || seedFresh) &&
+      getShoutboxContextKeyPart(seed.context) ===
+        getShoutboxContextKeyPart(activeScope)
+        ? seed.data
+        : undefined,
+    initialDataUpdatedAt: 0
+  })
 
-  // All boundary paths (timers, immediate fire, visibility restore) go
-  // through these guards: dropping the payload re-renders with the SAME old
-  // deadlines, and without the guards the arming effect would fire again and
-  // supersede the in-flight refresh with a duplicate request. The refresh
-  // guard keys on validUntil (cache freshness), the cleanup guard on the
-  // resolved real visibility boundary.
-  const firedRefreshRef = useRef<string | null>(null)
-  const firedCleanupRef = useRef<string | null>(null)
-
-  // A failed or already-expired refresh must not leave the page stuck at a
-  // dropped boundary: back off by the base cache duration (60s for the global
-  // stream, 300s for a game-scoped view) and try again. Any new load (manual
-  // page change, retry button, boundary) clears the pending one.
-  const retryMs = patchUniqueId ? 300_000 : 60_000
-  const scheduleRetry = useCallback(() => {
-    clearRetryTimer()
-    retryTimerRef.current = setTimeout(() => {
-      retryTimerRef.current = null
-      void loadRef.current(pageRef.current, { automatic: true })
-    }, retryMs)
-  }, [clearRetryTimer, retryMs])
-
-  const load = useCallback(
-    async (
-      targetPage: number,
-      options?: { silent?: boolean; automatic?: boolean }
-    ) => {
-      // Automatic entries (TTL, real boundary, backoff, visibility restore)
-      // merge into the request already in flight; manual page changes,
-      // post-publish refreshes and the retry button always start a new seq.
-      if (options?.automatic && inFlightSeqRef.current !== 0) {
-        return
-      }
-      const seq = ++seqRef.current
-      inFlightSeqRef.current = seq
-      clearRetryTimer()
-      if (!options?.silent && dataRef.current === null) {
-        setLoading(true)
-      }
-      setFetching(true)
-      setError('')
-      try {
-        const result = await kunFetchGet<ShoutboxListResponse | string>(
-          '/shoutbox',
-          {
-            page: targetPage,
-            limit: SHOUTBOX_PAGE_SIZE,
-            ...(patchUniqueId ? { patch: patchUniqueId } : {})
-          }
-        )
-        if (seq !== seqRef.current) {
-          return
-        }
-        if (typeof result === 'string') {
-          setError(result || '获取小喇叭失败，请稍后重试')
-          scheduleRetry()
-          return
-        }
-        applyData(result)
-        applyPage(result.page)
-        // A TTL already past on arrival (slow transit, or the server's
-        // safe-empty fallback) only backs off freshness: the refresh guard
-        // keeps the arming effect from re-firing at once and hot-looping,
-        // and the applied payload stays on screen. Cleanup is judged
-        // independently against the REAL boundary — only a passed (or
-        // malformed) one drops the stale parts now; a future one stays
-        // armable by the effect, and an explicit null time-cleans nothing.
-        const validUntilMs = new Date(result.validUntil).getTime()
-        if (!Number.isFinite(validUntilMs) || validUntilMs <= Date.now()) {
-          firedRefreshRef.current = result.validUntil
-          const cleanupMs = resolveShoutboxCleanupMs(result)
-          if (
-            cleanupMs !== null &&
-            (!Number.isFinite(cleanupMs) || cleanupMs <= Date.now())
-          ) {
-            firedCleanupRef.current = String(cleanupMs)
-            dropStalePayload()
-          }
-          scheduleRetry()
-        }
-      } catch {
-        if (seq !== seqRef.current) {
-          return
-        }
-        setError('网络错误，请稍后重试')
-        scheduleRetry()
-      } finally {
-        if (inFlightSeqRef.current === seq) {
-          inFlightSeqRef.current = 0
-        }
-        if (seq === seqRef.current) {
-          setLoading(false)
-          setFetching(false)
-        }
-      }
-    },
-    [
-      applyData,
-      applyPage,
-      patchUniqueId,
-      clearRetryTimer,
-      scheduleRetry,
-      dropStalePayload
-    ]
-  )
-
-  // The server first page can lag a fresh publish or a just-crossed time
-  // boundary because the shared list payload is cached for a short base
-  // duration; silently refresh it once on mount like the message pages do.
-  const loadRef = useRef(load)
+  // First-handoff placeholder: while the ready-flipped API scope fetches its
+  // first payload, the same user keeps the SSR text with game associations
+  // cleared from BOTH the rows and the pinned slot, projected against the
+  // current time like any other payload. It never enters the new key's cache
+  // and is consumed by the first real result; a different uid or any later
+  // scope switch gets the plain pending state instead.
+  const handoffRef = useRef<{ scopeKey: string | null; done: boolean }>({
+    scopeKey: null,
+    done: false
+  })
+  const activeScopeKey = getShoutboxContextKeyPart(activeScope)
   useEffect(() => {
-    loadRef.current = load
-  }, [load])
+    if (clientReady && query.data !== undefined) {
+      handoffRef.current.done = true
+    }
+  }, [clientReady, query.data])
+  let handoffData: ShoutboxListResponse | undefined
+  if (
+    query.displayData === undefined &&
+    seed !== null &&
+    initialContext !== undefined &&
+    seed.context.uid === activeScope.uid &&
+    !handoffRef.current.done &&
+    (handoffRef.current.scopeKey === null ||
+      handoffRef.current.scopeKey === activeScopeKey)
+  ) {
+    handoffRef.current.scopeKey = activeScopeKey
+    const cleared: ShoutboxListResponse = {
+      ...seed.data,
+      pinned: seed.data.pinned ? { ...seed.data.pinned, patch: null } : null,
+      shoutboxes: seed.data.shoutboxes.map((row) => ({ ...row, patch: null }))
+    }
+    handoffData = (
+      patchUniqueId
+        ? projectShoutboxPatchListDisplay
+        : projectShoutboxGlobalListDisplay
+    )(cleared, Date.now())
+  }
+
+  const data = query.displayData ?? handoffData ?? null
+  const loading = query.status === 'pending' && data === null
+  // The error surface stays visible (with retry) even while handoff text is
+  // shown; only a successful empty payload renders the empty state.
+  const initialError =
+    query.status === 'error' && query.displayData === undefined
+      ? (query.error?.message ?? '')
+      : ''
+
+  // While the handoff placeholder is on screen the new key has no cached
+  // payload, so the base hook cannot arm the real-boundary timer. Arm a
+  // render-only one here: the pin still drops on time even if the first API
+  // read failed into its cooldown. No cache writes, no fetch — the effect
+  // ends with the handoff or a scope change.
+  const [, setHandoffTick] = useState(0)
+  const handoffCleanupMs = handoffData
+    ? resolveShoutboxCleanupMs(handoffData)
+    : null
   useEffect(() => {
-    void loadRef.current(pageRef.current, { silent: true })
-    return () => {
-      // Invalidate this lifecycle's in-flight requests: a late response must
-      // neither set state nor arm new timers after unmount or a patch switch.
-      seqRef.current += 1
-      clearRetryTimer()
-    }
-  }, [clearRetryTimer, patchUniqueId])
-
-  // Cache-freshness (validUntil/TTL) expiry: silently refresh in the
-  // background — the current rows and pinned slot stay on screen until the
-  // new response replaces them atomically. When the real visibility boundary
-  // is due at the same moment, the cleanup path owns the refetch instead, so
-  // an old payload (where the two coincide) never triggers two requests.
-  const fireRefresh = useCallback(() => {
-    const current = dataRef.current
-    if (!current || firedRefreshRef.current === current.validUntil) {
+    if (handoffCleanupMs === null) {
       return
     }
-    const cleanupMs = resolveShoutboxCleanupMs(current)
-    if (
-      cleanupMs !== null &&
-      (!Number.isFinite(cleanupMs) || cleanupMs <= Date.now())
-    ) {
-      return
-    }
-    firedRefreshRef.current = current.validUntil
-    void loadRef.current(pageRef.current, { silent: true, automatic: true })
-  }, [])
-
-  // The real visibility boundary: conservative cleanup first — a patch
-  // payload goes entirely, the global stream loses its pinned slot — then
-  // exactly one refetch. This must fire on time even while a background
-  // refresh is still in flight or backing off after a failure.
-  const fireCleanup = useCallback(() => {
-    const current = dataRef.current
-    if (!current) {
-      return
-    }
-    const cleanupMs = resolveShoutboxCleanupMs(current)
-    if (cleanupMs === null) {
-      return
-    }
-    const key = String(cleanupMs)
-    if (firedCleanupRef.current === key) {
-      return
-    }
-    firedCleanupRef.current = key
-    dropStalePayload()
-    void loadRef.current(pageRef.current, { automatic: true })
-  }, [dropStalePayload])
-
-  useEffect(() => {
-    if (!data) {
-      return
-    }
-    const now = Date.now()
-    const validUntilMs = new Date(data.validUntil).getTime()
-    const cleanupMs = resolveShoutboxCleanupMs(data)
-    const cancels: Array<() => void> = []
-    if (!Number.isFinite(validUntilMs) || validUntilMs <= now) {
-      fireRefresh()
-    } else {
-      const timer = setTimeout(fireRefresh, validUntilMs - now)
-      cancels.push(() => clearTimeout(timer))
-    }
-    if (cleanupMs !== null) {
-      if (!Number.isFinite(cleanupMs) || cleanupMs <= now) {
-        fireCleanup()
-      } else {
-        // The real boundary may sit beyond setTimeout's 32-bit delay range:
-        // wait in segments that re-check the absolute deadline before firing.
-        cancels.push(scheduleShoutboxDeadline(cleanupMs, fireCleanup))
-      }
-    }
-    return () => {
-      for (const cancel of cancels) {
-        cancel()
-      }
-    }
-  }, [data, fireRefresh, fireCleanup])
-
-  useEffect(() => {
-    const handleVisibilityChange = () => {
-      if (document.visibilityState !== 'visible') {
-        return
-      }
-      const current = dataRef.current
-      if (!current) {
-        return
-      }
-      const now = Date.now()
-      const cleanupMs = resolveShoutboxCleanupMs(current)
-      if (
-        cleanupMs !== null &&
-        (!Number.isFinite(cleanupMs) || cleanupMs <= now)
-      ) {
-        fireCleanup()
-        return
-      }
-      const validUntilMs = new Date(current.validUntil).getTime()
-      if (!Number.isFinite(validUntilMs) || validUntilMs <= now) {
-        fireRefresh()
-      }
-    }
-    document.addEventListener('visibilitychange', handleVisibilityChange)
-    return () =>
-      document.removeEventListener('visibilitychange', handleVisibilityChange)
-  }, [fireRefresh, fireCleanup])
+    return scheduleShoutboxDeadline(handoffCleanupMs, () =>
+      setHandoffTick((tick) => tick + 1)
+    )
+  }, [handoffCleanupMs])
 
   // Notification deep links (/shoutbox?shoutbox=<id>): when the target
   // message is on the current page, scroll to it and highlight it.
@@ -344,47 +200,19 @@ export const ShoutboxContainer = ({ initialData, patchUniqueId }: Props) => {
   }, [highlightParam, data])
 
   const handlePageChange = (next: number) => {
-    if (next === pageRef.current) {
+    if (next === page) {
       return
     }
-    applyPage(next)
-    void load(next)
+    setPage(next)
   }
 
   const handlePublished = (_item: ShoutboxItem) => {
     publishModal.onClose()
     // A fresh message lands at the top of page 1: jump there so the author
-    // can confirm it immediately.
-    applyPage(1)
-    void load(1)
-  }
-
-  const handleChanged = (updated: ShoutboxItem) => {
-    const current = dataRef.current
-    if (!current) {
-      return
-    }
-    applyData({
-      ...current,
-      pinned:
-        current.pinned && current.pinned.id === updated.id
-          ? updated
-          : current.pinned,
-      shoutboxes: current.shoutboxes.map((row) =>
-        row.id === updated.id ? updated : row
-      )
-    })
-  }
-
-  const handleDeleted = (id: number) => {
-    const current = dataRef.current
-    if (!current) {
-      return
-    }
-    applyData({
-      ...current,
-      shoutboxes: current.shoutboxes.filter((row) => row.id !== id)
-    })
+    // can confirm it immediately. The publish form already invalidated the
+    // public cache; the key switch (or the write-path refetch when page 1 is
+    // already observed) brings the fresh page in through the gate.
+    setPage(1)
   }
 
   const handleClickPublish = () => {
@@ -404,7 +232,7 @@ export const ShoutboxContainer = ({ initialData, patchUniqueId }: Props) => {
     : null
   const patchName = presetPatch?.name ?? null
 
-  const rows = data?.shoutboxes ?? []
+  const rows = useMemo(() => data?.shoutboxes ?? [], [data])
   const totalPages = data?.totalPages ?? 0
 
   return (
@@ -431,17 +259,17 @@ export const ShoutboxContainer = ({ initialData, patchUniqueId }: Props) => {
         </Button>
       </div>
 
-      {error && (
+      {initialError !== '' && (
         <Alert
           color="danger"
           variant="flat"
-          description={error}
+          description={initialError}
           endContent={
             <Button
               size="sm"
               variant="light"
               color="danger"
-              onPress={() => void load(pageRef.current)}
+              onPress={query.refresh}
             >
               重试
             </Button>
@@ -449,7 +277,9 @@ export const ShoutboxContainer = ({ initialData, patchUniqueId }: Props) => {
         />
       )}
 
-      {loading && !data ? (
+      {/* First-load failure renders only the error alert above (with retry);
+          a real empty SUCCESS payload is the only path to the empty state. */}
+      {loading ? (
         <div className="flex size-full items-center justify-center">
           <Spinner
             variant="default"
@@ -458,7 +288,7 @@ export const ShoutboxContainer = ({ initialData, patchUniqueId }: Props) => {
             label="正在获取小喇叭..."
           />
         </div>
-      ) : !rows.length && !data?.pinned ? (
+      ) : data === null ? null : !rows.length && !data?.pinned ? (
         <KunNull
           message={
             patchUniqueId
@@ -475,8 +305,6 @@ export const ShoutboxContainer = ({ initialData, patchUniqueId }: Props) => {
               compact
               highlight={highlightId === data.pinned.id}
               currentUserId={currentUserId}
-              onChanged={handleChanged}
-              onDeleted={handleDeleted}
             />
           )}
           {rows.map((item) => (
@@ -486,8 +314,6 @@ export const ShoutboxContainer = ({ initialData, patchUniqueId }: Props) => {
               compact
               highlight={highlightId === item.id}
               currentUserId={currentUserId}
-              onChanged={handleChanged}
-              onDeleted={handleDeleted}
             />
           ))}
         </div>
@@ -499,7 +325,7 @@ export const ShoutboxContainer = ({ initialData, patchUniqueId }: Props) => {
             total={totalPages}
             page={page}
             onPageChange={handlePageChange}
-            isLoading={fetching}
+            isLoading={query.fetchStatus === 'fetching'}
           />
         </div>
       )}

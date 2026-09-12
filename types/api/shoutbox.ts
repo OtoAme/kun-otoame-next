@@ -55,6 +55,18 @@ export interface ShoutboxHomeResponse extends ShoutboxListResponse {
   hasMore: boolean
 }
 
+/**
+ * Browser-side request context embedded in every public shoutbox query key:
+ * the current user id, the effective NSFW rating the API will apply (read
+ * from the same cookie the API reads) and the sorted/deduplicated blocked
+ * tag ids. Server responses themselves stay unchanged.
+ */
+export interface ShoutboxRequestContext {
+  uid: number
+  nsfw: string
+  blockedTags: number[]
+}
+
 export interface ShoutboxBannerResponse {
   banner: ShoutboxItem | null
   validUntil: string

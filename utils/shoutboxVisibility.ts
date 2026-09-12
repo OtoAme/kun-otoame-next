@@ -59,3 +59,61 @@ export const scheduleShoutboxDeadline = (
     }
   }
 }
+
+// --- Display projections (B3) ------------------------------------------------
+// Real-boundary cleanup happens ONLY here, at render time, so the cached
+// payload, its receive timestamp and any error state are never touched. A
+// timer in the consumer hook simply re-renders with a fresh `nowMs`.
+
+interface ShoutboxPinnedPayload {
+  pinned: unknown
+}
+
+/** Global streams (home, /shoutbox): at/past the real boundary the pinned
+ *  slot is hidden — it may already belong to the next official message —
+ *  while ordinary rows stay; they are public history regardless of age. */
+export const projectShoutboxGlobalListDisplay = <
+  T extends ShoutboxPinnedPayload & ShoutboxVisibilityPayload
+>(
+  payload: T,
+  nowMs: number
+): T => {
+  const cleanupMs = resolveShoutboxCleanupMs(payload)
+  const due =
+    cleanupMs !== null && (!Number.isFinite(cleanupMs) || cleanupMs <= nowMs)
+  if (!due || payload.pinned === null) {
+    return payload
+  }
+  return { ...payload, pinned: null }
+}
+
+/** Game-scoped lists keep their whole history: the boundary only schedules
+ *  a refetch, nothing is hidden client-side. */
+export const projectShoutboxPatchListDisplay = <T>(payload: T): T => payload
+
+interface ShoutboxBannerPayload extends ShoutboxVisibilityPayload {
+  banner: { effectiveTo: string | null } | null
+}
+
+/** The banner hides at the real boundary or when its own effective window
+ *  has ended (or is malformed); a `banner: null` payload projects to
+ *  itself. */
+export const projectShoutboxBannerDisplay = <T extends ShoutboxBannerPayload>(
+  payload: T,
+  nowMs: number
+): T => {
+  if (payload.banner === null) {
+    return payload
+  }
+  const cleanupMs = resolveShoutboxCleanupMs(payload)
+  const boundaryDue =
+    cleanupMs !== null && (!Number.isFinite(cleanupMs) || cleanupMs <= nowMs)
+  const effectiveToMs = payload.banner.effectiveTo
+    ? Date.parse(payload.banner.effectiveTo)
+    : NaN
+  const ended = !Number.isFinite(effectiveToMs) || effectiveToMs <= nowMs
+  if (!boundaryDue && !ended) {
+    return payload
+  }
+  return { ...payload, banner: null }
+}

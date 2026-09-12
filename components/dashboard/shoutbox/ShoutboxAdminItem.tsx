@@ -37,6 +37,8 @@ import type { ShoutboxLevel } from '~/constants/shoutbox'
 import { kunFetchPost, kunFetchPut } from '~/utils/kunFetch'
 import { formatChinaDateTime } from '~/utils/fixedTimezoneDate'
 import { normalizeShoutboxContent } from '~/utils/shoutboxContent'
+import { notifyShoutboxPublicWrite } from '~/components/shoutbox/query/core'
+import { useShoutboxQueryContextOrNull } from '~/components/shoutbox/query/ShoutboxQueryProvider'
 import { toLocalDateTimeInput } from './ShoutboxOfficialForm'
 import type {
   AdminShoutboxReviewItem,
@@ -113,6 +115,7 @@ export const ShoutboxAdminItem = ({ item, onChanged }: Props) => {
   const [editOpen, setEditOpen] = useState(false)
   const [resolveOpen, setResolveOpen] = useState(false)
   const lockRef = useRef(false)
+  const shoutboxQuery = useShoutboxQueryContextOrNull()
   const triggerRef = useRef<HTMLButtonElement | null>(null)
   const editTriggerRef = useRef<HTMLButtonElement | null>(null)
   const resolveTriggerRef = useRef<HTMLButtonElement | null>(null)
@@ -188,6 +191,7 @@ export const ShoutboxAdminItem = ({ item, onChanged }: Props) => {
       }
       toast.success('操作已完成')
       setPendingAction(null)
+      void notifyShoutboxPublicWrite(shoutboxQuery)
       onChanged()
     } catch {
       setActionError('网络错误，操作未完成，请稍后重试')
@@ -471,6 +475,7 @@ const ShoutboxOfficialEditDialog = ({
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const lockRef = useRef(false)
+  const shoutboxQuery = useShoutboxQueryContextOrNull()
 
   // Re-initialize from the current item on every open so an abandoned draft
   // never survives a cancel.
@@ -552,6 +557,7 @@ const ShoutboxOfficialEditDialog = ({
         return
       }
       toast.success('官方消息已更新')
+      void notifyShoutboxPublicWrite(shoutboxQuery)
       onSaved()
     } catch {
       setError('网络错误，保存未完成，请稍后重试')
@@ -669,6 +675,7 @@ const ShoutboxResolveDialog = ({
   const [working, setWorking] = useState(false)
   const [error, setError] = useState('')
   const lockRef = useRef(false)
+  const shoutboxQuery = useShoutboxQueryContextOrNull()
 
   // Same reset-on-open discipline as the official edit dialog.
   useEffect(() => {
@@ -722,6 +729,7 @@ const ShoutboxResolveDialog = ({
         return
       }
       toast.success('举报已结案')
+      void notifyShoutboxPublicWrite(shoutboxQuery)
       onResolved()
     } catch {
       setError('网络错误，结案未完成，请稍后重试')

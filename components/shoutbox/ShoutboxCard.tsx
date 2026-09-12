@@ -27,6 +27,8 @@ import { cn } from '~/utils/cn'
 import { formatChinaDateTime } from '~/utils/fixedTimezoneDate'
 import { normalizeShoutboxContent } from '~/utils/shoutboxContent'
 import { formatTimeDifference } from '~/utils/time'
+import { notifyShoutboxPublicWrite } from './query/core'
+import { useShoutboxQueryContextOrNull } from './query/ShoutboxQueryProvider'
 import { ShoutboxCompactRow } from './ShoutboxCompactRow'
 import { ShoutboxReportButton } from './ShoutboxReportButton'
 import type { ShoutboxItem } from '~/types/api/shoutbox'
@@ -82,6 +84,7 @@ export const ShoutboxCard = ({
   const [editable, setEditable] = useState(() => isWithinEditWindow(item))
   const deleteModal = useDisclosure()
   const actionLockRef = useRef(false)
+  const shoutboxQuery = useShoutboxQueryContextOrNull()
 
   // The single 5-minute edit window closes while the page is open: flip the
   // entry off exactly at the deadline instead of waiting for the next render.
@@ -153,6 +156,7 @@ export const ShoutboxCard = ({
       // The one edit chance is spent: close local eligibility immediately
       // instead of relying on the parent swapping in the updated item.
       setEditable(false)
+      void notifyShoutboxPublicWrite(shoutboxQuery)
       onChanged?.(
         response && 'id' in response
           ? response
@@ -182,6 +186,7 @@ export const ShoutboxCard = ({
       }
       toast.success('小喇叭已删除')
       deleteModal.onClose()
+      void notifyShoutboxPublicWrite(shoutboxQuery)
       onDeleted?.(item.id)
     } catch {
       toast.error('删除失败，请稍后重试')

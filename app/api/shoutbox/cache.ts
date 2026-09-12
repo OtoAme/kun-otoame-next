@@ -3,7 +3,14 @@ import {
   SHOUTBOX_LIST_CACHE_DURATION,
   SHOUTBOX_PATCH_CACHE_DURATION
 } from '~/config/cache'
-import { delKvPattern, getOrSet } from '~/lib/redis'
+import {
+  delKvPattern,
+  getKv,
+  getOrSet,
+  getPrefixedRedisKey,
+  redis,
+  runRedisCommand
+} from '~/lib/redis'
 import { purgePublicApiCache } from '~/app/api/utils/purgeCloudflareCache'
 
 export {
@@ -23,11 +30,81 @@ export const getShoutboxCacheKey = (
     : `shoutbox:list:v4:p${page}`
 }
 
-export const getShoutboxBannerCacheKey = () => 'shoutbox:banner:v3'
+export const getShoutboxBannerCacheKey = () => 'shoutbox:banner:v4'
 
 type ValidShoutboxCacheValue = {
   validUntil: string
   visibilityUntil?: string | null
+}
+
+export const SHOUTBOX_CACHE_REVISION_KEY = 'shoutbox_revision:v1'
+
+const DEFAULT_SHOUTBOX_CACHE_REVISION = '0'
+const SHOUTBOX_CACHE_REVISION_PATTERN = /^\d+$/
+
+/**
+ * A revision is kept outside the shoutbox keyspace. Reads that begin after a
+ * committed write therefore cannot reuse a value written under an older
+ * revision, even if deletion is delayed.
+ */
+export const getShoutboxCacheRevision = async () => {
+  const revision = await getKv(SHOUTBOX_CACHE_REVISION_KEY)
+  if (revision == null || revision === '')
+    return DEFAULT_SHOUTBOX_CACHE_REVISION
+  if (!SHOUTBOX_CACHE_REVISION_PATTERN.test(revision)) {
+    throw new Error('Invalid shoutbox cache revision')
+  }
+  return revision
+}
+
+export const incrementShoutboxCacheRevision = async () =>
+  String(
+    await runRedisCommand(() =>
+      redis.incr(getPrefixedRedisKey(SHOUTBOX_CACHE_REVISION_KEY))
+    )
+  )
+
+const localReadPromises = new Map<string, Promise<unknown>>()
+
+const getLocallyMerged = <T>(key: string, fetcher: () => Promise<T>) => {
+  const inFlight = localReadPromises.get(key)
+  if (inFlight) return inFlight as Promise<T>
+
+  const promise = Promise.resolve().then(fetcher)
+  localReadPromises.set(key, promise)
+  promise.then(
+    () => {
+      if (localReadPromises.get(key) === promise) localReadPromises.delete(key)
+    },
+    () => {
+      if (localReadPromises.get(key) === promise) localReadPromises.delete(key)
+    }
+  )
+  return promise
+}
+
+const getRevisionAwareKey = (key: string, revision: string) =>
+  `${key}:r${revision}`
+
+const getRevisionAwareCache = async <T extends ValidShoutboxCacheValue>(
+  key: string,
+  fetcher: () => Promise<T>,
+  ttl: number,
+  nowProvider: () => Date
+) => {
+  let revision: string
+  try {
+    revision = await getShoutboxCacheRevision()
+  } catch (error) {
+    console.error('[Shoutbox] Failed to read cache revision:', error)
+    return getLocallyMerged(key, fetcher)
+  }
+
+  return getOrSet(getRevisionAwareKey(key, revision), fetcher, ttl, {
+    staleTtl: 0,
+    getCacheTtl: (value, now) => getShoutboxCacheTtl(value.validUntil, now),
+    isCachedValueValid: (value) => isValidShoutboxCacheValue(value, nowProvider)
+  })
 }
 
 export const getShoutboxCacheTtl = (validUntil: string, now = new Date()) =>
@@ -67,24 +144,14 @@ export const getShoutboxCached = <T extends ValidShoutboxCacheValue>(
   fetcher: () => Promise<T>,
   ttl: number,
   nowProvider: () => Date = () => new Date()
-) =>
-  getOrSet(key, fetcher, ttl, {
-    staleTtl: 0,
-    getCacheTtl: (value, now) => getShoutboxCacheTtl(value.validUntil, now),
-    isCachedValueValid: (value) => isValidShoutboxCacheValue(value, nowProvider)
-  })
+) => getRevisionAwareCache(key, fetcher, ttl, nowProvider)
 
 export const getShoutboxBannerCached = <T extends ValidShoutboxCacheValue>(
   key: string,
   fetcher: () => Promise<T>,
   ttl: number,
   nowProvider: () => Date = () => new Date()
-) =>
-  getOrSet(key, fetcher, ttl, {
-    staleTtl: 0,
-    getCacheTtl: (value, now) => getShoutboxCacheTtl(value.validUntil, now),
-    isCachedValueValid: (value) => isValidShoutboxCacheValue(value, nowProvider)
-  })
+) => getRevisionAwareCache(key, fetcher, ttl, nowProvider)
 
 /**
  * Shoutbox writes affect every public list, game association and banner. Edge
@@ -92,6 +159,12 @@ export const getShoutboxBannerCached = <T extends ValidShoutboxCacheValue>(
  * failure merely because Redis or Cloudflare is unavailable.
  */
 export const invalidateShoutboxCaches = async () => {
+  try {
+    await incrementShoutboxCacheRevision()
+  } catch (error) {
+    console.error('[Shoutbox] Failed to increment cache revision:', error)
+  }
+
   try {
     await delKvPattern('shoutbox:*')
   } catch (error) {

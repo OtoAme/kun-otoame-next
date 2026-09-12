@@ -357,11 +357,13 @@ vi.mock('~/hooks/useShoutboxFeed', () => ({
 import { ShoutboxContainer } from '~/components/shoutbox/ShoutboxContainer'
 import { ShoutboxHomeSection } from '~/components/shoutbox/ShoutboxHomeSection'
 import { ShoutboxPatchStrip } from '~/components/shoutbox/ShoutboxPatchStrip'
+import { ShoutboxQueryProvider } from '~/components/shoutbox/query/ShoutboxQueryProvider'
 import { SHOUTBOX_HOME_LIMIT, SHOUTBOX_PAGE_SIZE } from '~/constants/shoutbox'
 import type {
   ShoutboxItem,
   ShoutboxListResponse,
-  ShoutboxPublishResponse
+  ShoutboxPublishResponse,
+  ShoutboxRequestContext
 } from '~/types/api/shoutbox'
 
 const makeItem = (
@@ -441,6 +443,20 @@ const clickDialogButton = async (container: HTMLElement, label: string) => {
   })
 }
 
+// TanStack notifies observers through setTimeout(0): flush it under fake or
+// real timers so cache updates reach the rendered tree.
+const flushNotify = async () => {
+  await act(async () => {
+    await Promise.resolve()
+    await Promise.resolve()
+    if (vi.isFakeTimers()) {
+      await vi.advanceTimersByTimeAsync(1)
+    } else {
+      await new Promise((resolve) => setTimeout(resolve, 1))
+    }
+  })
+}
+
 describe('ShoutboxContainer', () => {
   let dom: JSDOM | undefined
   let root: Root | undefined
@@ -448,7 +464,8 @@ describe('ShoutboxContainer', () => {
 
   const renderContainer = async (
     initialData: ShoutboxListResponse | null,
-    patchUniqueId?: string
+    patchUniqueId?: string,
+    initialContext?: ShoutboxRequestContext
   ) => {
     dom = new JSDOM('<!doctype html><div id="root"></div>', {
       url: 'http://localhost/shoutbox'
@@ -458,20 +475,29 @@ describe('ShoutboxContainer', () => {
     vi.stubGlobal('document', dom.window.document)
     vi.stubGlobal('React', React)
     vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
+    // The request gate only runs while the page is visible.
+    Object.defineProperty(dom.window.document, 'visibilityState', {
+      value: 'visible',
+      configurable: true
+    })
 
     container = dom.window.document.getElementById('root')!
     root = createRoot(container)
     await act(async () => {
       root!.render(
-        <ShoutboxContainer
-          initialData={initialData}
-          patchUniqueId={patchUniqueId}
-        />
+        <ShoutboxQueryProvider>
+          <ShoutboxContainer
+            initialData={initialData}
+            patchUniqueId={patchUniqueId}
+            initialContext={initialContext}
+          />
+        </ShoutboxQueryProvider>
       )
       await Promise.resolve()
       await Promise.resolve()
       await Promise.resolve()
     })
+    await flushNotify()
   }
 
   beforeEach(() => {
@@ -604,7 +630,7 @@ describe('ShoutboxContainer', () => {
     )
   })
 
-  it('drops the whole patch-scoped payload before refetching at the boundary', async () => {
+  it('keeps the patch-scoped history at the boundary and refetches once; a failure keeps the rows', async () => {
     vi.useFakeTimers()
     const linked = makeItem(5, {
       patch: {
@@ -619,7 +645,6 @@ describe('ShoutboxContainer', () => {
       totalPages: 1,
       validUntil: new Date(Date.now() + 30_000).toISOString()
     })
-    mocks.kunFetchGet.mockResolvedValueOnce(list)
     let resolveRefetch!: (value: unknown) => void
     let rejectRefetch!: (reason?: unknown) => void
     const refetch = new Promise((resolve, reject) => {
@@ -630,24 +655,28 @@ describe('ShoutboxContainer', () => {
 
     await renderContainer(list, 'abcd1234')
     expect(container.textContent).toContain('消息 5')
+    // A fresh SSR seed needs no mount refetch.
+    expect(mocks.kunFetchGet).not.toHaveBeenCalled()
 
-    // Cross the boundary: every patch-scoped row disappears BEFORE the
-    // refetch resolves — retention-only rows must not linger.
+    // Cross the boundary: game messages are public history and stay on
+    // screen; exactly one gated refetch starts (TTL and boundary timers
+    // merge into the same in-flight request).
     await act(async () => {
       await vi.advanceTimersByTimeAsync(30_000)
     })
-    expect(container.textContent).not.toContain('消息 5')
-    expect(mocks.kunFetchGet).toHaveBeenCalledTimes(2)
+    expect(container.textContent).toContain('消息 5')
+    expect(mocks.kunFetchGet).toHaveBeenCalledTimes(1)
 
-    // A failed refetch keeps the safe empty state instead of reviving the
-    // expired payload.
+    // A failed refetch keeps the history and surfaces a low-interference
+    // notice instead of replacing the list with an error.
     await act(async () => {
       rejectRefetch(new Error('network down'))
       await Promise.resolve()
       await Promise.resolve()
     })
-    expect(container.textContent).not.toContain('消息 5')
-    expect(container.textContent).toContain('网络错误，请稍后重试')
+    await flushNotify()
+    expect(container.textContent).toContain('消息 5')
+    expect(mocks.toastError).toHaveBeenCalledWith('网络错误，请稍后重试')
 
     // Patch-scoped views back off by the 300s patch base cache duration, not
     // the 60s global one: no retry at 60s, exactly one at 300s.
@@ -660,11 +689,11 @@ describe('ShoutboxContainer', () => {
     await act(async () => {
       await vi.advanceTimersByTimeAsync(60_000)
     })
-    expect(mocks.kunFetchGet).toHaveBeenCalledTimes(2)
+    expect(mocks.kunFetchGet).toHaveBeenCalledTimes(1)
     await act(async () => {
       await vi.advanceTimersByTimeAsync(240_000)
     })
-    expect(mocks.kunFetchGet).toHaveBeenCalledTimes(3)
+    expect(mocks.kunFetchGet).toHaveBeenCalledTimes(2)
     expect(container.textContent).toContain('消息 5')
   })
 
@@ -722,17 +751,16 @@ describe('ShoutboxContainer', () => {
       pinned: pinnedA,
       validUntil: new Date(Date.now() + 30_000).toISOString()
     })
-    mocks.kunFetchGet.mockResolvedValueOnce(list)
-    let resolveRefetch!: (value: unknown) => void
     let rejectRefetch!: (reason?: unknown) => void
-    const refetch = new Promise((resolve, reject) => {
-      resolveRefetch = resolve
+    const refetch = new Promise((_, reject) => {
       rejectRefetch = reject
     })
     mocks.kunFetchGet.mockImplementationOnce(() => refetch)
 
     await renderContainer(list)
     expect(container.textContent).toContain('置顶公告 A')
+    // A fresh SSR seed needs no mount refetch.
+    expect(mocks.kunFetchGet).not.toHaveBeenCalled()
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(30_000)
@@ -741,16 +769,17 @@ describe('ShoutboxContainer', () => {
     // rows stay on screen.
     expect(container.textContent).not.toContain('置顶公告 A')
     expect(container.textContent).toContain('消息 5')
-    expect(mocks.kunFetchGet).toHaveBeenCalledTimes(2)
+    expect(mocks.kunFetchGet).toHaveBeenCalledTimes(1)
 
     await act(async () => {
       rejectRefetch(new Error('network down'))
       await Promise.resolve()
       await Promise.resolve()
     })
+    await flushNotify()
     expect(container.textContent).not.toContain('置顶公告 A')
     expect(container.textContent).toContain('消息 5')
-    expect(container.textContent).toContain('网络错误，请稍后重试')
+    expect(mocks.toastError).toHaveBeenCalledWith('网络错误，请稍后重试')
   })
 
   const renderHome = async () => {
@@ -854,7 +883,7 @@ describe('ShoutboxContainer', () => {
     expect(container.querySelector('a[href="/shoutbox"]')).toBeNull()
   })
 
-  it('home lets the author edit their own message in place (no delete entry) and refreshes the feed', async () => {
+  it('home lets the author edit their own message in place (no delete entry); the write path owns the cache refresh', async () => {
     const own = makeItem(5, {
       user: { id: 1, name: '我', avatar: '' },
       content: '自己的消息',
@@ -899,7 +928,11 @@ describe('ShoutboxContainer', () => {
       shoutboxId: 5,
       content: '改过的内容'
     })
-    expect(feedMock.result.retry).toHaveBeenCalledTimes(1)
+    // No parent-level force retry: the card's write notification invalidates
+    // and refetches the observed public key exactly once (covered in the
+    // query-level tests with a real provider; this home harness stubs the
+    // feed hook, so the notification is a null-context no-op here).
+    expect(feedMock.result.retry).not.toHaveBeenCalled()
   })
 
   it('home publish normalizes manual newlines before sending', async () => {
@@ -931,7 +964,7 @@ describe('ShoutboxContainer', () => {
     )
   })
 
-  it('home publish opens the shared form for a logged-in user and refreshes the feed on success', async () => {
+  it('home publish opens the shared form for a logged-in user and closes on success without a duplicate refresh', async () => {
     feedMock.result = {
       data: makeList(),
       loading: false,
@@ -958,8 +991,9 @@ describe('ShoutboxContainer', () => {
 
     expect(mocks.kunFetchPost).toHaveBeenCalledTimes(1)
     expect(mocks.toastSuccess).toHaveBeenCalledWith('小喇叭已发布')
-    // The home feed refreshes after a successful publish.
-    expect(feedMock.result.retry).toHaveBeenCalledTimes(1)
+    // The write notification owns the public-cache refresh; the parent only
+    // closes the modal (no second force fetch of the same key).
+    expect(feedMock.result.retry).not.toHaveBeenCalled()
     expect(container.querySelector('[role="dialog"]')).toBeNull()
   })
 
@@ -1078,6 +1112,8 @@ describe('ShoutboxContainer', () => {
     await act(async () => {
       await vi.advanceTimersByTimeAsync(1500)
     })
+    // The TTL timer started exactly one background refresh; the seeded
+    // payload stays on screen while it is in flight.
     expect(mocks.kunFetchGet).toHaveBeenCalledTimes(1)
     expect(container.querySelector('#shoutbox-900')).not.toBeNull()
     await act(async () => {
@@ -1085,11 +1121,184 @@ describe('ShoutboxContainer', () => {
       await Promise.resolve()
       await Promise.resolve()
     })
+    await flushNotify()
     expect(container.querySelector('#shoutbox-900')).not.toBeNull()
     await act(async () => {
       await vi.advanceTimersByTimeAsync(500)
     })
+    // The real boundary hides the pinned slot on time. The refreshed payload
+    // was already expired on arrival (validUntil < its receive time), so the
+    // next fetch waits out the 60s arrival backoff instead of firing here.
     expect(container.querySelector('#shoutbox-900')).toBeNull()
+    expect(mocks.kunFetchGet).toHaveBeenCalledTimes(1)
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(60_000)
+    })
     expect(mocks.kunFetchGet).toHaveBeenCalledTimes(2)
+  })
+
+  it('SSR seed with a matching fresh context mounts with zero GETs', async () => {
+    await renderContainer(makeList(), undefined, {
+      uid: 1,
+      nsfw: 'sfw',
+      blockedTags: []
+    })
+    expect(container.textContent).toContain('消息 5')
+    expect(mocks.kunFetchGet).not.toHaveBeenCalled()
+  })
+
+  it('SSR/API context mismatch keeps the same user the SSR text with game links cleared, then replaces it with one fresh read', async () => {
+    const linked = makeItem(5, {
+      patch: {
+        id: 100,
+        uniqueId: 'abcd1234',
+        name: '示例游戏',
+        contentLimit: 'sfw'
+      }
+    })
+    const pinned = makeItem(900, {
+      official: true,
+      level: 'important',
+      cost: 0,
+      content: '置顶公告 A',
+      patch: {
+        id: 100,
+        uniqueId: 'abcd1234',
+        name: '示例游戏',
+        contentLimit: 'sfw'
+      },
+      effectiveFrom: new Date(Date.now() - 60_000).toISOString(),
+      effectiveTo: new Date(Date.now() + 3_600_000).toISOString()
+    })
+    let resolveRead!: (value: ShoutboxListResponse) => void
+    mocks.kunFetchGet.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveRead = resolve
+        })
+    )
+    // SSR ran with nsfw=all; the API context resolves to sfw — same uid.
+    await renderContainer(
+      makeList({ pinned, shoutboxes: [linked] }),
+      undefined,
+      {
+        uid: 1,
+        nsfw: 'all',
+        blockedTags: []
+      }
+    )
+
+    // Handoff placeholder while the first API read is in flight: text stays,
+    // every game association is cleared, and exactly one read goes out.
+    expect(container.textContent).toContain('消息 5')
+    expect(container.textContent).toContain('置顶公告 A')
+    expect(container.textContent).not.toContain('示例游戏')
+    expect(mocks.kunFetchGet).toHaveBeenCalledTimes(1)
+
+    await act(async () => {
+      resolveRead(makeList({ shoutboxes: [makeItem(8)] }))
+      await Promise.resolve()
+    })
+    await flushNotify()
+    expect(container.textContent).toContain('消息 8')
+    expect(mocks.kunFetchGet).toHaveBeenCalledTimes(1)
+  })
+
+  it('a different uid gets no handoff text and simply loads its own scope', async () => {
+    mocks.kunFetchGet.mockImplementation(() =>
+      Promise.resolve(makeList({ shoutboxes: [makeItem(8)] }))
+    )
+    await renderContainer(makeList(), undefined, {
+      uid: 5,
+      nsfw: 'sfw',
+      blockedTags: []
+    })
+    expect(container.textContent).not.toContain('消息 5')
+    expect(mocks.kunFetchGet).toHaveBeenCalledTimes(1)
+    await flushNotify()
+    expect(container.textContent).toContain('消息 8')
+  })
+
+  it('an expired SSR seed refetches immediately instead of backing off like a stale arrival', async () => {
+    mocks.kunFetchGet.mockImplementation(() =>
+      Promise.resolve(makeList({ shoutboxes: [makeItem(8)] }))
+    )
+    await renderContainer(
+      makeList({ validUntil: new Date(Date.now() - 1000).toISOString() }),
+      undefined,
+      { uid: 1, nsfw: 'sfw', blockedTags: [] }
+    )
+    expect(mocks.kunFetchGet).toHaveBeenCalledTimes(1)
+    await flushNotify()
+    expect(container.textContent).toContain('消息 8')
+  })
+
+  it('drops the handoff pin at its real boundary even while the first API read sits in error cooldown', async () => {
+    vi.useFakeTimers()
+    const pinned = makeItem(900, {
+      official: true,
+      level: 'important',
+      cost: 0,
+      content: '置顶公告 A',
+      effectiveFrom: new Date(Date.now() - 60_000).toISOString(),
+      effectiveTo: new Date(Date.now() + 3_600_000).toISOString()
+    })
+    const seed = makeList({
+      pinned,
+      validUntil: new Date(Date.now() + 60_000).toISOString(),
+      visibilityUntil: new Date(Date.now() + 30_000).toISOString()
+    })
+    let rejectFirst!: (reason?: unknown) => void
+    mocks.kunFetchGet.mockImplementationOnce(
+      () =>
+        new Promise((_, reject) => {
+          rejectFirst = reject
+        })
+    )
+    await renderContainer(seed, undefined, {
+      uid: 1,
+      nsfw: 'all',
+      blockedTags: []
+    })
+    expect(container.textContent).toContain('置顶公告 A')
+    expect(mocks.kunFetchGet).toHaveBeenCalledTimes(1)
+
+    // The first API read fails at T+10s: error state with a visible retry,
+    // the handoff text stays, and the 60s cooldown starts.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10_000)
+    })
+    await act(async () => {
+      rejectFirst(new Error('network down'))
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    await flushNotify()
+    expect(container.textContent).toContain('置顶公告 A')
+    expect(container.textContent).toContain('重试')
+
+    // T+30s: the real boundary drops the handoff pin on time — no new GET
+    // while the error cooldown runs.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(20_000)
+    })
+    expect(container.textContent).not.toContain('置顶公告 A')
+    expect(container.textContent).toContain('消息 5')
+    expect(mocks.kunFetchGet).toHaveBeenCalledTimes(1)
+
+    // Still nothing before the cooldown ends; the retry fires at T+70s.
+    mocks.kunFetchGet.mockImplementation(() =>
+      Promise.resolve(makeList({ shoutboxes: [makeItem(8)] }))
+    )
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(35_000)
+    })
+    expect(mocks.kunFetchGet).toHaveBeenCalledTimes(1)
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10_000)
+    })
+    await flushNotify()
+    expect(mocks.kunFetchGet).toHaveBeenCalledTimes(2)
+    expect(container.textContent).toContain('消息 8')
   })
 })

@@ -153,10 +153,35 @@ describe('GET /api/shoutbox', () => {
 
     expect(response.status).toBe(200)
     expect(routeMocks.getShoutboxHome).toHaveBeenCalledWith({
-      visibilityWhere: {},
-      useCache: true
+      visibilityWhere: {}
     })
     expect(routeMocks.getShoutboxList).not.toHaveBeenCalled()
+  })
+
+  it('returns a private retry response when the list read fails', async () => {
+    routeMocks.getShoutboxList.mockRejectedValueOnce(new Error('database down'))
+
+    const response = await listGET(
+      new NextRequest('https://example.test/api/shoutbox?page=1&limit=20')
+    )
+
+    expect(response.status).toBe(503)
+    expect(await response.json()).toBe('小喇叭暂时不可用，请稍后重试')
+    expect(response.headers.get('cache-control')).toBe('private, no-store')
+    expect(response.headers.get('retry-after')).toBe('60')
+  })
+
+  it('uses the patch retry interval for a failed game read', async () => {
+    routeMocks.getShoutboxList.mockRejectedValueOnce(new Error('database down'))
+
+    const response = await listGET(
+      new NextRequest(
+        'https://example.test/api/shoutbox?page=1&limit=20&patch=Abc12345'
+      )
+    )
+
+    expect(response.status).toBe(503)
+    expect(response.headers.get('retry-after')).toBe('300')
   })
 })
 
@@ -172,6 +197,21 @@ describe('GET /api/shoutbox/banner', () => {
     )
 
     expect(response.headers.get('cache-control')).toBe('no-store')
+  })
+
+  it('returns a private retry response when the banner read fails', async () => {
+    routeMocks.getShoutboxBanner.mockRejectedValueOnce(
+      new Error('database down')
+    )
+
+    const response = await bannerGET(
+      new NextRequest('https://example.test/api/shoutbox/banner')
+    )
+
+    expect(response.status).toBe(503)
+    expect(await response.json()).toBe('小喇叭暂时不可用，请稍后重试')
+    expect(response.headers.get('cache-control')).toBe('private, no-store')
+    expect(response.headers.get('retry-after')).toBe('60')
   })
 })
 

@@ -61,6 +61,7 @@ import {
   SHOUTBOX_BANNER_CACHE_DURATION,
   SHOUTBOX_PATCH_CACHE_DURATION
 } from './cache'
+import { ShoutboxReadError } from './errors'
 type ShoutboxCreateInput = z.infer<typeof shoutboxCreateSchema>
 type ShoutboxUpdateInput = z.infer<typeof shoutboxUpdateSchema>
 type ShoutboxDeleteInput = z.infer<typeof shoutboxDeleteSchema>
@@ -69,10 +70,9 @@ type AdminShoutboxListInput = z.infer<typeof adminShoutboxListSchema>
 type AdminShoutboxUpdateInput = z.infer<typeof adminShoutboxUpdateSchema>
 type AdminShoutboxModerateInput = z.infer<typeof adminShoutboxModerateSchema>
 type ShoutboxReportInput = z.infer<typeof shoutboxReportSchema>
-type ShoutboxListInput = Omit<
-  z.infer<typeof shoutboxListSchema>,
-  'view'
-> & { view?: ShoutboxReadView }
+type ShoutboxListInput = Omit<z.infer<typeof shoutboxListSchema>, 'view'> & {
+  view?: ShoutboxReadView
+}
 type ShoutboxProfileInput = z.infer<typeof shoutboxProfileSchema>
 type DateLike = Date | string
 
@@ -157,6 +157,12 @@ type ShoutboxCachePayload = {
   hasMore?: boolean
 }
 
+type ShoutboxBannerCachePayload = {
+  banner: ShoutboxRow | null
+  validUntil: string
+  visibilityUntil?: string | null
+}
+
 const isShoutboxStatus = (value: number): value is ShoutboxStatus =>
   (SHOUTBOX_STATUSES as readonly number[]).includes(value)
 
@@ -189,6 +195,17 @@ const normalizeShoutboxPayload = (
   ...payload,
   pinned: payload.pinned ? normalizeShoutboxRow(payload.pinned) : null,
   shoutboxes: payload.shoutboxes.map(normalizeShoutboxRow),
+  validUntil: toIso(payload.validUntil) ?? new Date(0).toISOString(),
+  ...(payload.visibilityUntil === undefined
+    ? {}
+    : { visibilityUntil: toIso(payload.visibilityUntil) })
+})
+
+const normalizeShoutboxBannerPayload = (
+  payload: ShoutboxBannerCachePayload
+): ShoutboxBannerCachePayload => ({
+  ...payload,
+  banner: payload.banner ? normalizeShoutboxRow(payload.banner) : null,
   validUntil: toIso(payload.validUntil) ?? new Date(0).toISOString(),
   ...(payload.visibilityUntil === undefined
     ? {}
@@ -449,10 +466,8 @@ const validUntilFor = (
   return value.toISOString()
 }
 
-const visibilityUntilFor = (
-  now: Date,
-  boundaries: Array<DateLike | null>
-) => toIso(minFutureDate(boundaries, now))
+const visibilityUntilFor = (now: Date, boundaries: Array<DateLike | null>) =>
+  toIso(minFutureDate(boundaries, now))
 
 export const isShoutboxPayloadValid = (
   payload: Pick<ShoutboxCachePayload, 'validUntil'>,
@@ -474,9 +489,7 @@ export const getShoutboxPageWindow = (
     return { skip: 0, take: hasPinned ? pageSize - 1 : pageSize }
   }
   return {
-    skip: hasPinned
-      ? (page - 1) * pageSize - 1
-      : (page - 1) * pageSize,
+    skip: hasPinned ? (page - 1) * pageSize - 1 : (page - 1) * pageSize,
     take: pageSize
   }
 }
@@ -611,6 +624,22 @@ const getPatchId = async (uniqueId: string, db: PrismaClient) => {
   return patch.id
 }
 
+const getNextPatchOfficialBoundary = async (
+  patchId: number,
+  now: Date,
+  db: PrismaClient
+) =>
+  db.shoutbox.findFirst({
+    where: {
+      official: true,
+      status: 0,
+      patch_id: patchId,
+      effective_from: { gt: now }
+    },
+    orderBy: { effective_from: 'asc' },
+    select: { effective_from: true }
+  })
+
 const buildPatchPayload = async (
   input: ShoutboxListInput & { patch: string },
   now: Date,
@@ -628,7 +657,8 @@ const buildPatchPayload = async (
     }
   }
 
-  const { boundaries } = await getActiveOfficialBoundaries(now, db)
+  const nextOfficial = await getNextPatchOfficialBoundary(patchId, now, db)
+  const boundaries = [nextOfficial?.effective_from ?? null]
   const where: Prisma.shoutboxWhereInput = {
     ...publicBaseWhere(now),
     patch_id: patchId
@@ -669,21 +699,6 @@ const getPayload = async (
   return buildGeneralPayload(input, now, db)
 }
 
-const emptyListPayload = (
-  input: ShoutboxListInput,
-  now: Date,
-  view: ShoutboxReadView
-): ShoutboxCachePayload => ({
-  pinned: null,
-  shoutboxes: [],
-  page: input.page,
-  totalPages: view === 'home' ? 1 : 0,
-  // A failed authoritative refresh must never be advertised as cacheable.
-  validUntil: now.toISOString(),
-  visibilityUntil: now.toISOString(),
-  ...(view === 'home' ? { hasMore: false } : {})
-})
-
 type ShoutboxReadOptions = {
   now?: Date
   visibilityWhere?: Prisma.patchWhereInput
@@ -696,17 +711,15 @@ const getShoutboxRead = async (
   options: ShoutboxReadOptions,
   view: ShoutboxReadView
 ): Promise<ShoutboxListResponse | ShoutboxHomeResponse> => {
-  const initialNow = options.now ?? new Date()
   const getNow = () => options.now ?? new Date()
-  let queryNow = initialNow
   const visibilityWhere = options.visibilityWhere ?? {}
   const db = options.db ?? prisma
   const cacheKey = getShoutboxCacheKey(
-    view === 'home' ? null : input.patch ?? null,
+    view === 'home' ? null : (input.patch ?? null),
     view === 'home' ? 1 : input.page,
     view
   )
-  const fetcher = () => getPayload(input, queryNow, db, view)
+  const fetcher = () => getPayload(input, getNow(), db, view)
   const cacheDuration =
     view === 'home'
       ? SHOUTBOX_LIST_CACHE_DURATION
@@ -714,11 +727,15 @@ const getShoutboxRead = async (
         ? SHOUTBOX_PATCH_CACHE_DURATION
         : SHOUTBOX_LIST_CACHE_DURATION
 
+  const readPayload = () =>
+    options.useCache === false
+      ? fetcher()
+      : getShoutboxCached(cacheKey, fetcher, cacheDuration, getNow)
+
   const reloadAtCompletion = async () => {
     for (let attempt = 0; attempt < 2; attempt += 1) {
-      queryNow = getNow()
       try {
-        const refreshed = normalizeShoutboxPayload(await fetcher())
+        const refreshed = normalizeShoutboxPayload(await readPayload())
         const completedNow = getNow()
         if (isShoutboxPayloadValid(refreshed, completedNow)) {
           return refreshed
@@ -731,32 +748,20 @@ const getShoutboxRead = async (
         break
       }
     }
-    return emptyListPayload(input, getNow(), view)
+    throw new ShoutboxReadError(input.patch ? 'patch' : 'global')
   }
 
   let payload: ShoutboxCachePayload
   try {
-    if (options.useCache === false) {
-      payload = normalizeShoutboxPayload(await fetcher())
-      if (!isShoutboxPayloadValid(payload, getNow())) {
-        payload = await reloadAtCompletion()
-      }
-    } else {
-      payload = normalizeShoutboxPayload(
-        await getShoutboxCached(
-          cacheKey,
-          fetcher,
-          cacheDuration,
-          getNow
-        )
-      )
-      if (!isShoutboxPayloadValid(payload, getNow())) {
-        payload = await reloadAtCompletion()
-      }
+    payload = normalizeShoutboxPayload(await readPayload())
+    if (!isShoutboxPayloadValid(payload, getNow())) {
+      payload = await reloadAtCompletion()
     }
   } catch (error) {
     console.error('[Shoutbox] Failed to load list payload:', error)
-    payload = emptyListPayload(input, getNow(), view)
+    throw error instanceof ShoutboxReadError
+      ? error
+      : new ShoutboxReadError(input.patch ? 'patch' : 'global')
   }
   return serializePayload(payload, visibilityWhere, view)
 }
@@ -779,6 +784,19 @@ export const getShoutboxHome = async (
   )) as ShoutboxHomeResponse
 }
 
+const serializeBannerPayload = (
+  payload: ShoutboxBannerCachePayload,
+  visibilityWhere: Prisma.patchWhereInput
+): ShoutboxBannerResponse => ({
+  banner: payload.banner
+    ? serializeShoutbox(payload.banner, visibilityWhere)
+    : null,
+  validUntil: payload.validUntil,
+  ...(payload.visibilityUntil === undefined
+    ? {}
+    : { visibilityUntil: payload.visibilityUntil })
+})
+
 export const getShoutboxBanner = async (
   options: {
     now?: Date
@@ -787,12 +805,11 @@ export const getShoutboxBanner = async (
     useCache?: boolean
   } = {}
 ): Promise<ShoutboxBannerResponse> => {
-  const initialNow = options.now ?? new Date()
   const getNow = () => options.now ?? new Date()
-  let queryNow = initialNow
   const visibilityWhere = options.visibilityWhere ?? {}
   const db = options.db ?? prisma
-  const fetcher = async (): Promise<ShoutboxBannerResponse> => {
+  const fetcher = async (): Promise<ShoutboxBannerCachePayload> => {
+    const queryNow = getNow()
     const [row, nextImportant] = await Promise.all([
       db.shoutbox.findFirst({
         where: importantOfficialWhere(queryNow),
@@ -811,7 +828,7 @@ export const getShoutboxBanner = async (
       })
     ])
     return {
-      banner: row ? serializeShoutbox(row, visibilityWhere) : null,
+      banner: row,
       visibilityUntil: visibilityUntilFor(queryNow, [
         row?.effective_to ?? null,
         nextImportant?.effective_from ?? null
@@ -822,11 +839,20 @@ export const getShoutboxBanner = async (
       ])
     }
   }
-  const reloadAtCompletion = async (): Promise<ShoutboxBannerResponse> => {
+  const readPayload = () =>
+    options.useCache === false
+      ? fetcher()
+      : getShoutboxBannerCached(
+          getShoutboxBannerCacheKey(),
+          fetcher,
+          SHOUTBOX_BANNER_CACHE_DURATION,
+          getNow
+        )
+
+  const reloadAtCompletion = async (): Promise<ShoutboxBannerCachePayload> => {
     for (let attempt = 0; attempt < 2; attempt += 1) {
-      queryNow = getNow()
       try {
-        const refreshed = await fetcher()
+        const refreshed = normalizeShoutboxBannerPayload(await readPayload())
         const completedNow = getNow()
         if (isShoutboxPayloadValid(refreshed, completedNow)) {
           return refreshed
@@ -836,36 +862,20 @@ export const getShoutboxBanner = async (
         break
       }
     }
-    return {
-      banner: null,
-      validUntil: getNow().toISOString(),
-      visibilityUntil: getNow().toISOString()
-    }
+    throw new ShoutboxReadError('global')
   }
 
   try {
-    if (options.useCache === false) {
-      const direct = await fetcher()
-      if (isShoutboxPayloadValid(direct, getNow())) return direct
-      return reloadAtCompletion()
+    let payload = normalizeShoutboxBannerPayload(await readPayload())
+    if (!isShoutboxPayloadValid(payload, getNow())) {
+      payload = await reloadAtCompletion()
     }
-    const cached = await getShoutboxBannerCached(
-      getShoutboxBannerCacheKey(),
-      fetcher,
-      SHOUTBOX_BANNER_CACHE_DURATION,
-      getNow
-    )
-    if (!isShoutboxPayloadValid(cached, getNow())) {
-      return reloadAtCompletion()
-    }
-    return cached
+    return serializeBannerPayload(payload, visibilityWhere)
   } catch (error) {
     console.error('[Shoutbox] Failed to load banner payload:', error)
-    return {
-      banner: null,
-      validUntil: getNow().toISOString(),
-      visibilityUntil: getNow().toISOString()
-    }
+    throw error instanceof ShoutboxReadError
+      ? error
+      : new ShoutboxReadError('global')
   }
 }
 

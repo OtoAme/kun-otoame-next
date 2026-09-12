@@ -23,6 +23,7 @@ import {
   updateShoutbox
 } from './service'
 import { getShoutboxCacheControl } from './cache'
+import { toShoutboxReadError } from './errors'
 
 const noStore = (body: unknown, status = 200) =>
   NextResponse.json(body, {
@@ -33,25 +34,32 @@ const noStore = (body: unknown, status = 200) =>
 export const GET = async (req: NextRequest) => {
   const input = kunParseGetQuery(req, shoutboxListSchema)
   if (typeof input === 'string') return NextResponse.json(input)
-  const visibilityWhere = await getPatchVisibilityWhere(req)
-  const response =
-    input.view === 'home'
-      ? await getShoutboxHome({
-          visibilityWhere,
-          useCache: !isPersonalizedApiRequest(req)
-        })
-      : await getShoutboxList(input, {
-          visibilityWhere,
-          useCache: !isPersonalizedApiRequest(req)
-        })
-  return NextResponse.json(response, {
-    headers: {
-      'Cache-Control': getShoutboxCacheControl(
-        response.validUntil,
-        isPersonalizedApiRequest(req)
-      )
-    }
-  })
+  const personalized = isPersonalizedApiRequest(req)
+  const scope = input.patch ? 'patch' : 'global'
+  try {
+    const visibilityWhere = await getPatchVisibilityWhere(req)
+    const response =
+      input.view === 'home'
+        ? await getShoutboxHome({ visibilityWhere })
+        : await getShoutboxList(input, { visibilityWhere })
+    return NextResponse.json(response, {
+      headers: {
+        'Cache-Control': getShoutboxCacheControl(
+          response.validUntil,
+          personalized
+        )
+      }
+    })
+  } catch (error) {
+    const readError = toShoutboxReadError(error, scope)
+    return NextResponse.json(readError.message, {
+      status: 503,
+      headers: {
+        'Cache-Control': 'private, no-store',
+        'Retry-After': String(readError.retryAfterSeconds)
+      }
+    })
+  }
 }
 
 export const POST = async (req: NextRequest) => {

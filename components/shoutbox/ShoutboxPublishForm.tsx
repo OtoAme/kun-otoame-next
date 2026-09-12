@@ -13,6 +13,8 @@ import { useUserStore } from '~/store/userStore'
 import { kunFetchPost } from '~/utils/kunFetch'
 import { generateUUID } from '~/utils/random'
 import { normalizeShoutboxContent } from '~/utils/shoutboxContent'
+import { notifyShoutboxPublicWrite } from './query/core'
+import { useShoutboxQueryContextOrNull } from './query/ShoutboxQueryProvider'
 import type {
   ShoutboxItem,
   ShoutboxPublishResponse
@@ -60,6 +62,7 @@ export const ShoutboxPublishForm = ({
   const setMoemoepointBalance = useUserStore(
     (state) => state.setMoemoepointBalance
   )
+  const shoutboxQuery = useShoutboxQueryContextOrNull()
   const insufficient = available < SHOUTBOX_PRICE
 
   // Optional game association: keyword search reuses the existing /api/search
@@ -176,6 +179,10 @@ export const ShoutboxPublishForm = ({
       setResults([])
       setSelectedPatch(presetPatch)
       setRequestId(generateUUID())
+      // Invalidate the public caches and let observed keys refetch BEFORE
+      // the parent callback jumps views, so the jump can never race an
+      // extra request against the write notification.
+      await notifyShoutboxPublicWrite(shoutboxQuery)
       onPublished(response)
     } catch {
       // Result unknown (network/timeout): keep the draft AND the same

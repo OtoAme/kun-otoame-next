@@ -28,6 +28,24 @@ vi.mock('next/link', () => ({
   )
 }))
 
+// The query provider subscribes to these stores through plain selector calls;
+// fixed values keep the public query scope deterministic.
+vi.mock('~/store/userStore', () => {
+  const store = { user: { uid: 0, role: 1 } }
+  const useUserStore = (selector: (state: typeof store) => unknown) =>
+    selector(store)
+  useUserStore.getState = () => store
+  return { useUserStore }
+})
+
+vi.mock('~/store/settingStore', () => {
+  const store = { data: { kunNsfwEnable: 'sfw', kunBlockedTagIds: [] } }
+  const useSettingStore = (selector: (state: typeof store) => unknown) =>
+    selector(store)
+  useSettingStore.getState = () => store
+  return { useSettingStore }
+})
+
 vi.mock('@heroui/alert', () => ({
   Alert: ({
     description,
@@ -46,6 +64,7 @@ vi.mock('@heroui/alert', () => ({
 }))
 
 import { ShoutboxBanner } from '~/components/shoutbox/ShoutboxBanner'
+import { ShoutboxQueryProvider } from '~/components/shoutbox/query/ShoutboxQueryProvider'
 import { SHOUTBOX_BANNER_DISMISS_STORAGE_KEY } from '~/hooks/useShoutboxBanner'
 import type { ShoutboxBannerResponse, ShoutboxItem } from '~/types/api/shoutbox'
 
@@ -60,6 +79,7 @@ type BannerPayload = ShoutboxBannerResponse & {
 const makeBanner = (id: number, effectiveToMs: number): ShoutboxItem => ({
   id,
   user: { id: 9, name: '站长', avatar: '' },
+  reportable: true,
   content: `重要公告 ${id}`,
   link: '',
   official: true,
@@ -72,7 +92,6 @@ const makeBanner = (id: number, effectiveToMs: number): ShoutboxItem => ({
   editedAt: null,
   hiddenAt: null,
   refundedAt: null,
-  reportable: true,
   created: new Date(Date.now() - 60_000).toISOString(),
   updated: new Date(Date.now() - 60_000).toISOString()
 })
@@ -82,6 +101,16 @@ describe('ShoutboxBanner', () => {
   let root: Root | undefined
   let container: HTMLElement
 
+  // TanStack notifies observers through setTimeout(0); under fake timers each
+  // async step ends with this flush so cache updates reach the component.
+  const flushNotify = async () => {
+    await act(async () => {
+      await Promise.resolve()
+      await Promise.resolve()
+      await vi.advanceTimersByTimeAsync(1)
+    })
+  }
+
   const renderBanner = async (options: { dismissedIds?: number[] } = {}) => {
     dom = new JSDOM('<!doctype html><div id="root"></div>', {
       url: 'http://localhost/'
@@ -90,7 +119,7 @@ describe('ShoutboxBanner', () => {
     vi.stubGlobal('document', dom.window.document)
     vi.stubGlobal('React', React)
     vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
-    // JSDOM defaults to "prerender"; the hook only revalidates on "visible".
+    // JSDOM defaults to "prerender"; the gate only runs while "visible".
     Object.defineProperty(dom.window.document, 'visibilityState', {
       value: 'visible',
       configurable: true
@@ -105,11 +134,16 @@ describe('ShoutboxBanner', () => {
     container = dom.window.document.getElementById('root')!
     root = createRoot(container)
     await act(async () => {
-      root!.render(<ShoutboxBanner />)
+      root!.render(
+        <ShoutboxQueryProvider>
+          <ShoutboxBanner />
+        </ShoutboxQueryProvider>
+      )
       await Promise.resolve()
       await Promise.resolve()
       await Promise.resolve()
     })
+    await flushNotify()
   }
 
   beforeEach(() => {
@@ -141,7 +175,11 @@ describe('ShoutboxBanner', () => {
     )
     await renderBanner({ dismissedIds: [5] })
 
-    expect(mocks.kunFetchGet).toHaveBeenCalledWith('/shoutbox/banner')
+    expect(mocks.kunFetchGet).toHaveBeenCalledWith(
+      '/shoutbox/banner',
+      undefined,
+      { timeout: 10_000 }
+    )
     expect(container.textContent).toContain('重要公告 7')
 
     await act(async () => {
@@ -154,7 +192,7 @@ describe('ShoutboxBanner', () => {
       window.localStorage.getItem(SHOUTBOX_BANNER_DISMISS_STORAGE_KEY)
     ).toBe('[5,7]')
 
-    // The refetch at the boundary still returns message 7: stays hidden.
+    // The refetch at the freshness boundary still returns message 7: hidden.
     await act(async () => {
       await vi.advanceTimersByTimeAsync(60_000)
     })
@@ -247,6 +285,7 @@ describe('ShoutboxBanner', () => {
       })
       await Promise.resolve()
     })
+    await flushNotify()
     expect(container.textContent).not.toContain('重要公告 7')
   })
 
@@ -263,12 +302,13 @@ describe('ShoutboxBanner', () => {
       document.dispatchEvent(new dom!.window.Event('visibilitychange'))
       await Promise.resolve()
     })
+    await flushNotify()
     expect(mocks.kunFetchGet).toHaveBeenCalledTimes(1)
     expect(container.textContent).toContain('重要公告 7')
 
     // Move the clock past validUntil without firing the pending boundary
-    // timer (as if the tab had been suspended): the restore handler drops the
-    // payload first, then refetches.
+    // timer (as if the tab had been suspended): the restore handler hides the
+    // payload through the projection first, then refetches.
     vi.setSystemTime(Date.now() + 120_000)
     mocks.kunFetchGet.mockResolvedValueOnce({
       banner: null,
@@ -279,6 +319,7 @@ describe('ShoutboxBanner', () => {
       await Promise.resolve()
       await Promise.resolve()
     })
+    await flushNotify()
     expect(mocks.kunFetchGet).toHaveBeenCalledTimes(2)
     expect(container.textContent).not.toContain('重要公告 7')
   })
@@ -291,12 +332,18 @@ describe('ShoutboxBanner', () => {
 
     mocks.pathname = '/preview/resource/3'
     await act(async () => {
-      root!.render(<ShoutboxBanner />)
+      root!.render(
+        <ShoutboxQueryProvider>
+          <ShoutboxBanner />
+        </ShoutboxQueryProvider>
+      )
       await Promise.resolve()
     })
+    await flushNotify()
     expect(mocks.kunFetchGet).not.toHaveBeenCalled()
     expect(container.textContent).toBe('')
   })
+
   it('retains a slow response past cache freshness but clears it at the true boundary', async () => {
     mocks.kunFetchGet
       .mockResolvedValueOnce({
@@ -307,14 +354,26 @@ describe('ShoutboxBanner', () => {
       .mockResolvedValue('暂时失败')
     await renderBanner()
     expect(container.textContent).toContain('重要公告 7')
+
+    // The true boundary hides the banner on time. The payload was already
+    // expired on arrival, so the refetch waits out the 60s arrival backoff
+    // instead of firing at the boundary.
     await act(async () => {
       await vi.advanceTimersByTimeAsync(1000)
     })
     expect(container.textContent).not.toContain('重要公告 7')
+    expect(mocks.kunFetchGet).toHaveBeenCalledTimes(1)
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(60_000)
+    })
+    // The backoff ends: one retry, which fails (string error) and stays
+    // silent for the banner.
     expect(mocks.kunFetchGet).toHaveBeenCalledTimes(2)
+    expect(container.textContent).not.toContain('重要公告')
   })
 
-  it('coalesces visibility refreshes and cancels their work when the banner becomes disabled', async () => {
+  it('coalesces visibility refreshes and ignores the result when the banner becomes disabled', async () => {
     let resolveFirst!: (value: ShoutboxBannerResponse) => void
     const payload: ShoutboxBannerResponse = {
       banner: makeBanner(7, Date.now() + 60_000),
@@ -335,15 +394,22 @@ describe('ShoutboxBanner', () => {
       document.dispatchEvent(new dom!.window.Event('visibilitychange'))
       await Promise.resolve()
     })
+    await flushNotify()
     mocks.pathname = '/preview/submission/12'
     await act(async () => {
-      root!.render(<ShoutboxBanner />)
+      root!.render(
+        <ShoutboxQueryProvider>
+          <ShoutboxBanner />
+        </ShoutboxQueryProvider>
+      )
+      await Promise.resolve()
     })
     await act(async () => {
       resolveFirst(payload)
       await Promise.resolve()
       await Promise.resolve()
     })
+    await flushNotify()
     expect(mocks.kunFetchGet).toHaveBeenCalledTimes(1)
     expect(container.textContent).toBe('')
   })

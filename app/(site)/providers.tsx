@@ -7,6 +7,7 @@ import { ThemeProvider } from 'next-themes'
 import { useRouter } from 'next/navigation'
 import { SiteThemeRouteSync } from '~/components/kun/theme/SiteThemeRouteSync'
 import { MessageRealtimeSync } from '~/components/message/MessageRealtimeSync'
+import { ShoutboxQueryProvider } from '~/components/shoutbox/query/ShoutboxQueryProvider'
 
 export const Providers = ({ children }: { children: React.ReactNode }) => {
   const router = useRouter()
@@ -23,7 +24,7 @@ export const Providers = ({ children }: { children: React.ReactNode }) => {
           <ToastProvider placement="top-center" maxVisibleToasts={4} />
           <SiteThemeRouteSync />
           <MessageRealtimeSync />
-          {children}
+          <ShoutboxQueryProvider>{children}</ShoutboxQueryProvider>
         </ThemeProvider>
       </HeroUIProvider>
     </ProgressProvider>

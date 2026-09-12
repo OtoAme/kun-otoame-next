@@ -11,9 +11,30 @@ vi.mock('~/utils/kunFetch', () => ({
   kunFetchGet: mocks.kunFetchGet
 }))
 
+// The query provider subscribes to these stores through plain selector calls;
+// fixed values keep the public query scope deterministic.
+vi.mock('~/store/userStore', () => {
+  const store = { user: { uid: 0, role: 1 } }
+  const useUserStore = (selector: (state: typeof store) => unknown) =>
+    selector(store)
+  useUserStore.getState = () => store
+  return { useUserStore }
+})
+
+vi.mock('~/store/settingStore', () => {
+  const store = { data: { kunNsfwEnable: 'sfw', kunBlockedTagIds: [] } }
+  const useSettingStore = (selector: (state: typeof store) => unknown) =>
+    selector(store)
+  useSettingStore.getState = () => store
+  return { useSettingStore }
+})
+
 import { useShoutboxFeed } from '~/hooks/useShoutboxFeed'
+import { ShoutboxQueryProvider } from '~/components/shoutbox/query/ShoutboxQueryProvider'
 import { SHOUTBOX_PAGE_SIZE } from '~/constants/shoutbox'
 import type { ShoutboxItem, ShoutboxListResponse } from '~/types/api/shoutbox'
+
+const FETCH_OPTIONS = { timeout: 10_000 }
 
 const makeItem = (
   id: number,
@@ -21,6 +42,7 @@ const makeItem = (
 ): ShoutboxItem => ({
   id,
   user: { id: 100 + id, name: `用户${id}`, avatar: '' },
+  reportable: true,
   content: `消息 ${id}`,
   link: '',
   official: false,
@@ -33,7 +55,6 @@ const makeItem = (
   editedAt: null,
   hiddenAt: null,
   refundedAt: null,
-  reportable: true,
   created: new Date(Date.now() - id * 1000).toISOString(),
   updated: new Date(Date.now() - id * 1000).toISOString(),
   ...overrides
@@ -81,6 +102,16 @@ const readProbe = (container: HTMLElement) =>
     error: string
   }
 
+// TanStack notifies observers through setTimeout(0); under fake timers each
+// async step ends with this flush so cache updates reach the probe.
+const flushNotify = async () => {
+  await act(async () => {
+    await Promise.resolve()
+    await Promise.resolve()
+    await vi.advanceTimersByTimeAsync(1)
+  })
+}
+
 describe('useShoutboxFeed', () => {
   let dom: JSDOM | undefined
   let root: Root | undefined
@@ -102,11 +133,12 @@ describe('useShoutboxFeed', () => {
     container = dom.window.document.getElementById('root')!
     root = createRoot(container)
     await act(async () => {
-      root!.render(element)
+      root!.render(<ShoutboxQueryProvider>{element}</ShoutboxQueryProvider>)
       await Promise.resolve()
       await Promise.resolve()
       await Promise.resolve()
     })
+    await flushNotify()
   }
 
   beforeEach(() => {
@@ -153,9 +185,11 @@ describe('useShoutboxFeed', () => {
     await renderProbe()
     expect(readProbe(container).pinnedId).toBe(900)
     // Home mode fetches the dedicated view=home payload, not a paged list.
-    expect(mocks.kunFetchGet).toHaveBeenCalledWith('/shoutbox', {
-      view: 'home'
-    })
+    expect(mocks.kunFetchGet).toHaveBeenCalledWith(
+      '/shoutbox',
+      { view: 'home' },
+      FETCH_OPTIONS
+    )
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(30_000)
@@ -170,6 +204,7 @@ describe('useShoutboxFeed', () => {
       rejectRefetch(new Error('network down'))
       await Promise.resolve()
       await Promise.resolve()
+      await vi.advanceTimersByTimeAsync(1)
     })
     expect(readProbe(container).pinnedId).toBeNull()
     expect(readProbe(container).rowIds).toEqual([5, 4])
@@ -207,11 +242,11 @@ describe('useShoutboxFeed', () => {
     } satisfies ShoutboxListResponse)
 
     await renderProbe(<PatchProbe patch="abcd1234" />)
-    expect(mocks.kunFetchGet).toHaveBeenCalledWith('/shoutbox', {
-      page: 1,
-      limit: SHOUTBOX_PAGE_SIZE,
-      patch: 'abcd1234'
-    })
+    expect(mocks.kunFetchGet).toHaveBeenCalledWith(
+      '/shoutbox',
+      { page: 1, limit: SHOUTBOX_PAGE_SIZE, patch: 'abcd1234' },
+      FETCH_OPTIONS
+    )
   })
 
   it('keeps the pinned slot and rows through a slow TTL refresh when the real visibility boundary is later', async () => {
@@ -267,6 +302,7 @@ describe('useShoutboxFeed', () => {
       } satisfies FeedPayload)
       await Promise.resolve()
       await Promise.resolve()
+      await vi.advanceTimersByTimeAsync(1)
     })
     expect(readProbe(container).pinnedId).toBe(901)
     expect(readProbe(container).rowIds).toEqual([5, 4])
@@ -320,6 +356,7 @@ describe('useShoutboxFeed', () => {
       rejectRefresh(new Error('network down'))
       await Promise.resolve()
       await Promise.resolve()
+      await vi.advanceTimersByTimeAsync(1)
     })
     expect(readProbe(container).pinnedId).toBeNull()
     expect(readProbe(container).error).toBe('网络错误，请稍后重试')
@@ -414,6 +451,7 @@ describe('useShoutboxFeed', () => {
       document.dispatchEvent(new dom!.window.Event('visibilitychange'))
       await Promise.resolve()
       await Promise.resolve()
+      await vi.advanceTimersByTimeAsync(1)
     })
     expect(mocks.kunFetchGet).toHaveBeenCalledTimes(2)
     expect(readProbe(container).pinnedId).toBe(900)
@@ -435,6 +473,7 @@ describe('useShoutboxFeed', () => {
       } satisfies FeedPayload)
       await Promise.resolve()
       await Promise.resolve()
+      await vi.advanceTimersByTimeAsync(1)
     })
     expect(readProbe(container).pinnedId).toBe(900)
 
@@ -450,6 +489,7 @@ describe('useShoutboxFeed', () => {
       document.dispatchEvent(new dom!.window.Event('visibilitychange'))
       await Promise.resolve()
       await Promise.resolve()
+      await vi.advanceTimersByTimeAsync(1)
     })
     expect(mocks.kunFetchGet).toHaveBeenCalledTimes(3)
     expect(readProbe(container).pinnedId).toBeNull()
@@ -466,12 +506,13 @@ describe('useShoutboxFeed', () => {
       } satisfies FeedPayload)
       await Promise.resolve()
       await Promise.resolve()
+      await vi.advanceTimersByTimeAsync(1)
     })
     expect(readProbe(container).pinnedId).toBeNull()
     expect(readProbe(container).rowIds).toEqual([5])
   })
 
-  it('never lets a stale in-flight response overwrite the data of a switched patch', async () => {
+  it('keys each patch scope separately: a stale in-flight response can never surface under a switched patch', async () => {
     let resolveFirst!: (value: unknown) => void
     mocks.kunFetchGet.mockImplementationOnce(
       () =>
@@ -488,12 +529,14 @@ describe('useShoutboxFeed', () => {
     )
 
     await renderProbe(<PatchDataProbe patch="aaaa1111" />)
-    expect(mocks.kunFetchGet).toHaveBeenCalledWith('/shoutbox', {
-      page: 1,
-      limit: SHOUTBOX_PAGE_SIZE,
-      patch: 'aaaa1111'
-    })
+    expect(mocks.kunFetchGet).toHaveBeenCalledWith(
+      '/shoutbox',
+      { page: 1, limit: SHOUTBOX_PAGE_SIZE, patch: 'aaaa1111' },
+      FETCH_OPTIONS
+    )
 
+    // Visibility restores while the first request is still in flight merge
+    // into it instead of queueing duplicates.
     await act(async () => {
       document.dispatchEvent(new dom!.window.Event('visibilitychange'))
       document.dispatchEvent(new dom!.window.Event('visibilitychange'))
@@ -501,16 +544,24 @@ describe('useShoutboxFeed', () => {
     })
     expect(mocks.kunFetchGet).toHaveBeenCalledTimes(1)
 
-    // Switching patch bumps the generation; the new load awaits the
-    // interrupted request slot instead of firing a parallel request.
+    // Switching the patch switches the query key: the new scope fetches at
+    // once; the interrupted response writes only the old key.
     await act(async () => {
-      root!.render(<PatchDataProbe patch="bbbb2222" />)
+      root!.render(
+        <ShoutboxQueryProvider>
+          <PatchDataProbe patch="bbbb2222" />
+        </ShoutboxQueryProvider>
+      )
       await Promise.resolve()
+      await vi.advanceTimersByTimeAsync(1)
     })
-    expect(mocks.kunFetchGet).toHaveBeenCalledTimes(1)
+    expect(mocks.kunFetchGet).toHaveBeenCalledWith(
+      '/shoutbox',
+      { page: 1, limit: SHOUTBOX_PAGE_SIZE, patch: 'bbbb2222' },
+      FETCH_OPTIONS
+    )
+    expect(mocks.kunFetchGet).toHaveBeenCalledTimes(2)
 
-    // The interrupted response is generation-discarded: it must not render,
-    // and the fresh fetch for the new patch is issued right after.
     await act(async () => {
       resolveFirst({
         pinned: null,
@@ -521,17 +572,9 @@ describe('useShoutboxFeed', () => {
       } satisfies ShoutboxListResponse)
       await Promise.resolve()
       await Promise.resolve()
-      await Promise.resolve()
-      await Promise.resolve()
-      await Promise.resolve()
-      await Promise.resolve()
+      await vi.advanceTimersByTimeAsync(1)
     })
     expect(readProbe(container).rowIds).toEqual([])
-    expect(mocks.kunFetchGet).toHaveBeenCalledWith('/shoutbox', {
-      page: 1,
-      limit: SHOUTBOX_PAGE_SIZE,
-      patch: 'bbbb2222'
-    })
 
     await act(async () => {
       resolveSecond({
@@ -543,12 +586,14 @@ describe('useShoutboxFeed', () => {
       } satisfies ShoutboxListResponse)
       await Promise.resolve()
       await Promise.resolve()
+      await vi.advanceTimersByTimeAsync(1)
     })
     expect(readProbe(container).rowIds).toEqual([8])
     expect(mocks.kunFetchGet).toHaveBeenCalledTimes(2)
   })
+
   it.each([null, 'future'] as const)(
-    'keeps a response with an elapsed TTL until its real boundary (%s)',
+    'backs off an already-expired arrival and still honors its real boundary (%s)',
     async (boundary) => {
       const visibilityUntil =
         boundary === null ? null : new Date(Date.now() + 1000).toISOString()
@@ -561,14 +606,30 @@ describe('useShoutboxFeed', () => {
           validUntil: new Date(Date.now() - 1).toISOString(),
           visibilityUntil
         })
-        .mockResolvedValue('暂时失败')
+        .mockResolvedValue({
+          pinned: null,
+          shoutboxes: [makeItem(5)],
+          page: 1,
+          totalPages: 1,
+          validUntil: new Date(Date.now() + 60_000).toISOString(),
+          visibilityUntil: null
+        } satisfies FeedPayload)
       await renderProbe()
       expect(readProbe(container).pinnedId).toBe(900)
+
+      // The boundary (if any) hides the pinned slot on time, but the
+      // already-expired-on-arrival payload may not refetch until the 60s
+      // backoff ends — no hot-loop, no instant refetch at the boundary.
       await act(async () => {
         await vi.advanceTimersByTimeAsync(1000)
       })
       expect(readProbe(container).pinnedId).toBe(boundary === null ? 900 : null)
-      expect(mocks.kunFetchGet).toHaveBeenCalledTimes(boundary === null ? 1 : 2)
+      expect(mocks.kunFetchGet).toHaveBeenCalledTimes(1)
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(60_000)
+      })
+      expect(mocks.kunFetchGet).toHaveBeenCalledTimes(2)
     }
   )
 })

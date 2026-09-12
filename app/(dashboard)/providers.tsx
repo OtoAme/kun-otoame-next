@@ -3,6 +3,7 @@
 import { ThemeProvider } from 'next-themes'
 import { AppProgressProvider } from '@bprogress/next'
 import { Toaster } from 'react-hot-toast'
+import { ShoutboxQueryProvider } from '~/components/shoutbox/query/ShoutboxQueryProvider'
 
 export function DashboardProviders({
   children
@@ -16,7 +17,7 @@ export function DashboardProviders({
         height="3px"
         options={{ showSpinner: false }}
       >
-        {children}
+        <ShoutboxQueryProvider>{children}</ShoutboxQueryProvider>
         <Toaster position="top-center" />
       </AppProgressProvider>
     </ThemeProvider>
