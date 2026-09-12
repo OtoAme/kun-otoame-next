@@ -7,6 +7,12 @@ description: Use when reviewing kun-otoame-next code changes for API behavior, P
 
 Use this skill for project-specific code review.
 
+## Review Boundaries
+
+Apply the checklist only to changed behavior and its dependencies. In delegated work, follow `delegate-and-review` when available; one primary reviewer owns the complete review, while Codex handles integration and adjudication.
+
+Blocking findings need a trigger, consequence, evidence and minimal fix. Keep local corrections and optional improvements separate; neither automatically adds a review round. Rechecks cover accepted fixes and their effects, plus newly evidenced serious defects. Do not add speculative mechanisms or demand full implementation reviews of disposable test tools.
+
 ## Required References
 
 - Review checklist: `docs/project/review.md`

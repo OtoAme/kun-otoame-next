@@ -14,7 +14,7 @@ Use this skill for project-specific testing work; checklists and the file map li
 
 ## Rules
 
-- Fix bugs red-green: a failing regression test named after the user-visible behavior, then the minimal fix.
+- For substantive regressions, use a failing test named after the user-visible behavior, then the minimal fix. Reversible, low-impact copy/style changes do not require new tests that mirror implementation.
 - Prefer pure-function tests (`utils/*`, `constants/*`, `validations/*`), then services with Prisma/Redis/cache/external APIs mocked, then route handlers only when HTTP behavior is the risk.
 - Use `vi.hoisted` for any value a `vi.mock` factory references.
 - Never connect a unit test to real PostgreSQL, Redis, S3, GitHub, Bangumi, VNDB or DLSite.
@@ -26,6 +26,8 @@ Use this skill for project-specific testing work; checklists and the file map li
 - Company identity E2E uses the safe 3100 launcher twice: resolver off, restart, resolver on. It verifies database sentinel and actual server flag and never touches S3.
 
 ## Verification
+
+Choose checks for the changed behavior and required project gates; reuse valid passing results. Do not repeat database experiments for UI-only fixes or rebuild for documentation changes. For temporary scripts, verify the real request/response contract on a minimal case before expanding coverage. Selector or assertion repairs can be checked and rerun directly; changes to targets, write scope or recovery need focused rechecking. If automation cannot prove a required behavior, record it as pending manual acceptance.
 
 ```bash
 pnpm test tests/unit/<target>.test.ts   # while iterating

@@ -18,12 +18,18 @@ Read the relevant project docs before editing:
 - Local setup, environment variables, admin bootstrap, and common change paths: `docs/project/development.md`
 - Testing expectations: `docs/project/testing.md`
 
+## Preferred Context Tools
+
+- Codex and delegated agents (including mkimi) are authorized by default to use fast-context for this repository's non-env files. Prefer it as the higher-level alternative to `Read` for finding files and gathering relevant code context; carry this permission and the exclusions into task briefs. Explicitly exclude `.env`, `.env.*` and their nested equivalents from searches. Inspect exact source with direct reads when results provide only paths/snippets or line-level verification is needed; fall back to `rg`/direct reads when fast-context is unavailable or unnecessary for an already-known short file.
+- Prefer Context7 for current documentation and recommended implementation patterns. For library/framework/SDK/API/CLI-specific implementation, configuration, debugging or version questions, resolve the library ID first, then query the concrete question against official sources and the project's version; skip resolution only when an exact Context7 ID is already supplied. Business-logic review or simple edits do not require unrelated documentation lookups.
+- Keep queries focused on the task. Repository read access does not authorize database writes, external mutations, or sending credentials to either tool.
+
 ## Core Rules
 
 - Keep route handlers thin: parse input, verify auth/role, call service/helper, return `NextResponse.json`.
 - Put business writes, Prisma transactions, cache invalidation, uploads, and external calls in service/helper modules.
 - Validate request data with schemas from `validations/*` and helpers in `app/api/utils/parseQuery.ts`.
-- Do not read or expose real `.env`; use `.env.example` for documentation and examples.
+- Do not read or expose real `.env`; use `.env.example` for documentation and examples. An authorized normal development command may let the application load existing configuration without sending its contents to agents or logs; this does not authorize agent inspection of secrets or database writes.
 - After schema changes, run `pnpm prisma:push` or at minimum `pnpm prisma:generate`.
 - After patch/resource/tag/company writes, verify the matching cache invalidation path.
 - Route every runtime moemoepoint mutation through `app/api/moemoepoint/service.ts`; keep the business write, conditional available-balance update, and ledger snapshot in one Prisma transaction.
@@ -49,11 +55,17 @@ Read the relevant project docs before editing:
 
 For domain-specific work, prefer the narrower skills: `otoame-api`, `otoame-data-cache`, `otoame-frontend`, or `otoame-operations`.
 
+## Delegated Implementation
+
+When delegation is requested, use `delegate-and-review` if available. The current project assignment is Luna Max for backend, mkimi K3 for frontend, and Sol for independent review; later user instructions override it. Verify availability and required configuration; do not silently substitute models. Site and legacy admin use HeroUI v2; dashboard uses shadcn official components/blocks.
+
+Codex fixes task scope, file ownership and API contracts before parallel work, then integrates and resolves review findings. Authors own implementation and relevant self-checks. Return product ambiguities and cross-owner contract changes to Codex; ordinary implementation details stay with the author. Keep generic review rounds and stopping rules in `delegate-and-review`, not per-module copies.
+
 ## Before Editing
 
 1. Identify the business domain and read nearby route, service, validation, and tests.
 2. Check whether the change touches auth, role, CSRF, cache, DB schema, uploads, or deployment.
-3. For behavior changes and bugfixes, use test-first workflow unless the user explicitly requests otherwise.
+3. For substantive behavior changes and regressions, use a focused test-first workflow. Reversible, low-impact copy/style changes need proportionate verification, not new tests that mirror the implementation. Follow current user instructions on verification scope.
 
 ## Completion Gate
 
@@ -69,3 +81,5 @@ pnpm build                              # only when build output is affected
 ```
 
 Report any command you could not run and why.
+
+Reuse passing results when the tested code and relevant environment remain valid. Repeat or broaden checks only for affected changes, failures, new evidence or an explicit release gate; documentation-only changes do not require an application rebuild.
