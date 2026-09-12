@@ -346,6 +346,15 @@ To apply this change we need to reset the database
 
 生产看到该提示必须取消。
 
+## Cloudflare 清理待排查（2026-09-12）
+
+状态：只完成代码与官方文档核对，未修改清理实现、凭据或 Zone 配置，等待后续安排。
+
+- `[Cloudflare] Purge cache was not confirmed: 200` 来自 `app/api/utils/purgeCloudflareCache.ts`：HTTP 为 2xx，但响应 JSON 的 `success` 不为 `true`，或响应无法解析。当前日志没有保留 `errors` / `messages`，单凭这行不能确认 Token 无效、权限不足或 Zone 不匹配。[官方响应与权限说明](https://developers.cloudflare.com/api/resources/cache/methods/purge/)
+- 网站页面、公开 API、游戏封面与头像清理都共用 `KUN_CF_CACHE_ZONE_ID` 和 `KUN_CF_CACHE_PURGE_API_TOKEN`，认证方式为 API Token 的 Bearer 头。若网站与图床属于不同 Cloudflare Zone，当前实现不会按 URL 切换 Zone；需要后续核对实际 Zone 归属与 Token 的 Cache Purge 授权范围，不能仅因 hostname 不同就判定必须使用不同 Token。不同 Zone 的清理请求需分别指定对应 Zone。
+- 公开 API 清理目前提交带 `https://` 的 `prefixes`；官方前缀示例采用 hostname/path。这是待核对的请求格式差异，尚不能认定为此次失败原因。[前缀清理文档](https://developers.cloudflare.com/cache/how-to/purge-cache/purge_by_prefix/)
+- 后续取证应保留一次失败响应的脱敏 `errors[].code` / `message`、清理类别及目标 hostname，再判断凭据、Zone、请求参数或响应解析问题。本轮未读取真实 env / Token，未向 Cloudflare 发出清理请求，未确认 key 本身有问题。
+
 ## 验证
 
 脚本/部署改动：

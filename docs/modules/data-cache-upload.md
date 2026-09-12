@@ -45,6 +45,8 @@ schema: 'prisma/schema'
 - connection timeout：5000ms。
 - prepared statement name cache：1000。
 
+开发环境通过 `globalThis` 复用同一个 Prisma Client 与其所属的 `pg.Pool`，prepared statement 名称缓存和计数器与该 pool 一起保留，避免热更新重复创建连接池。生产保持模块级生命周期。`disconnectPrismaAdapter()` 用于短生命周期脚本，关闭 Prisma 及其实际所属 pool 后释放对应开发缓存引用；长期服务不逐请求断开。
+
 Schema 修改后至少运行 `pnpm prisma:generate`。会影响数据库结构时运行 `pnpm prisma:push`；生产库如果出现 reset database 提示必须取消，改走 preflight/sync SQL 或 dry-run 脚本。
 
 会社身份的最终 schema 使用 `patch_company.normalized_name NOT NULL UNIQUE` 与 `patch_company_external_id.(source, external_id)` 复合唯一；alias 身份的 `normalized_value` 保持普通索引，因为不同会社共享同一别名是可表示的合法状态。生产必须先完成 Phase A、身份回填与历史清理，再执行 `production-company-identity-constraint-*` 三份 SQL；只有 postflight 与 `prisma:deploy-safe` 通过后才能打开 resolver flag。
@@ -100,7 +102,7 @@ kun:touchgal
 - `delKvPattern` 使用 `SCAN` + 批量删除，适合明确业务前缀；不要传过宽 pattern。
 - `getOrSet` 的 `shouldCacheValue` / `isCachedValueValid` 只用于拒绝明显异常的缓存值，例如首页 `home_data:*` 的空游戏列表；正常列表分页为空不能套用这个策略。
 
-小喇叭缓存使用 `shoutbox:list:v1:p<page>`、`shoutbox:patch:v1:<uniqueId>:p<page>` 和 `shoutbox:banner:v1`。列表与横幅基础 TTL 为 60 秒，游戏关联列表为 300 秒；每份值同时携带 `validUntil`，实际 Redis TTL 向下取整到该边界，`<= 0` 时不写，缓存读取也会拒绝已经越界的值。匿名 HTTP `s-maxage` 最长 30 秒且同样不越过边界。用户发布、编辑、自删，官方生命周期变更，管理员处置，以及达到阈值并触发自动隐藏的举报成功后，调用 `invalidateShoutboxCaches()` 清理 `shoutbox:*` 并 best-effort 清理公开列表和横幅边缘缓存；低于阈值、只新增举报记录时不影响公开读取，无需失效。Redis 或 Cloudflare 失效失败不能把已经提交的业务事务报成失败。
+小喇叭缓存使用 `shoutbox:home:v4`、`shoutbox:list:v4:p<page>`、`shoutbox:patch:v4:<uniqueId>:p<page>` 和 `shoutbox:banner:v3`，区分首页 15 条与分页 20 条载荷。列表与横幅基础 TTL 为 60 秒，游戏关联列表为 300 秒；每份值同时携带 `validUntil`，实际 Redis TTL 向下取整到该边界，`<= 0` 时不写，缓存读取也会拒绝已经越界的值。匿名 HTTP `s-maxage` 最长 30 秒且同样不越过官方时间边界。响应另带 `visibilityUntil`，表示下一次已知的官方生效/过期边界，不受基础 TTL 截短；`null` 表示没有已知边界，旧响应缺字段时前端保守回退到 `validUntil`。常规缓存到期只触发后台刷新，保留当前画面到新响应；真实边界另行保证到点清理，即使刷新仍在等待或失败也不能继续显示过期内容。用户发布、编辑、自删，官方生命周期变更，管理员处置，以及达到阈值并触发自动隐藏的举报成功后，调用 `invalidateShoutboxCaches()` 清理 `shoutbox:*` 并 best-effort 清理公开列表和横幅边缘缓存；低于阈值、只新增举报记录时不影响公开读取，无需失效。Redis 或 Cloudflare 失效失败不能把已经提交的业务事务报成失败。
 
 ## Patch 缓存
 

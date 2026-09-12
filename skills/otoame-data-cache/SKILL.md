@@ -15,6 +15,8 @@ Use this skill for persistence, cache, and upload consistency work.
 
 ## Rules
 
+- Development hot reloads must reuse Prisma Client and its owning pg.Pool together through the existing global runtime. Keep prepared statement naming state with that pool; do not create a new pool beside a cached client. CLI cleanup must close that same pool.
+
 - Production never runs `prisma db push`. Cancel any "reset the database" prompt; run the reviewed preflight/sync SQL, then `pnpm prisma:deploy-safe`.
 - That guard accepts only an empty diff or the catalog-verified `public.patch_released_idx` operator-class false drift — never widen it, never run its proposed `DROP INDEX` / `CREATE INDEX`.
 - Every balance change goes through the moemoepoint service in the owning transaction. Only `moemoepoint_reserved` has a non-negative CHECK; never clamp a reversal.

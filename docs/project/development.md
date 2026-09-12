@@ -125,6 +125,8 @@ pnpm dev
 pnpm dev:webpack
 ```
 
+`dev`、`dev:lan`、`dev:webpack` 通过 [devLauncher.mjs](../../scripts/devLauncher.mjs) 启动，开发终端仅隐藏 `/api/shoutbox`、`/api/admin/shoutbox` 及其子路径的成功 `GET 200` 请求行。其他状态、写请求、其他 API 与错误日志保留，生产日志不受影响。过滤规则见 [devLogFilter.mjs](../../scripts/devLogFilter.mjs)；修改启动入口后需重启 dev 才会生效。
+
 ### 6. 创建管理员账号
 
 1. 打开 `http://127.0.0.1:3000/register` 注册第一个用户。
