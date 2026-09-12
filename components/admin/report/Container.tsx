@@ -7,15 +7,18 @@ import { KunLoading } from '~/components/kun/Loading'
 import { useMounted } from '~/hooks/useMounted'
 import { ReportCard } from './ReportCard'
 import { KunPagination } from '~/components/kun/Pagination'
-import type { AdminReport, AdminReportTargetType } from '~/types/api/admin'
+import type {
+  AdminLegacyReport,
+  AdminLegacyReportTargetType
+} from '~/types/api/admin'
 
 type ReportTab = 'pending' | 'handled'
 
 interface Props {
-  initialReports: AdminReport[]
+  initialReports: AdminLegacyReport[]
   total: number
   title?: string
-  targetType?: AdminReportTargetType
+  targetType?: AdminLegacyReportTargetType
   initialLimit?: number
 }
 
@@ -26,7 +29,7 @@ export const Report = ({
   targetType = 'comment',
   initialLimit = 30
 }: Props) => {
-  const [reports, setReports] = useState<AdminReport[]>(initialReports)
+  const [reports, setReports] = useState<AdminLegacyReport[]>(initialReports)
   const [activeTab, setActiveTab] = useState<ReportTab>('pending')
   const [totalCount, setTotalCount] = useState(total)
   const [page, setPage] = useState(1)
@@ -38,7 +41,7 @@ export const Report = ({
     setLoading(true)
 
     const response = await kunFetchGet<{
-      reports: AdminReport[]
+      reports: AdminLegacyReport[]
       total: number
     }>('/admin/report', {
       page: targetPage,

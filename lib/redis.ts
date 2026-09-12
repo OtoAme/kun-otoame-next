@@ -260,12 +260,15 @@ type CacheReadResult<T> = {
   isStale: boolean
 }
 
+type CacheTtlResolver<T> = (value: T, now: Date) => number
+
 type GetOrSetOptions<T = unknown> = {
   staleTtl?: number
   lockTtl?: number
   waitForRefreshMs?: number
   shouldCacheValue?: (value: T) => boolean
   isCachedValueValid?: (value: T) => boolean
+  getCacheTtl?: CacheTtlResolver<T>
 }
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
@@ -338,17 +341,28 @@ const setCachedValue = async <T>(
   key: string,
   value: T,
   ttl: number,
-  staleTtl: number
+  staleTtl: number,
+  getCacheTtl?: CacheTtlResolver<T>
 ) => {
   const now = Date.now()
+  const resolvedTtl = getCacheTtl
+    ? Math.floor(getCacheTtl(value, new Date(now)))
+    : ttl
+  if (!Number.isFinite(resolvedTtl) || resolvedTtl <= 0) {
+    return
+  }
+  const resolvedStaleTtl = getCacheTtl ? 0 : staleTtl
   const envelope: CacheEnvelope<T> = {
     __kunCacheVersion: CACHE_ENVELOPE_VERSION,
-    expiresAt: now + ttl * 1000,
-    staleUntil: now + (ttl + staleTtl) * 1000,
+    expiresAt: now + resolvedTtl * 1000,
+    staleUntil: now + (resolvedTtl + resolvedStaleTtl) * 1000,
     value
   }
 
-  await setKv(key, JSON.stringify(envelope), getRedisTtl(ttl, staleTtl))
+  const redisTtl = getCacheTtl
+    ? resolvedTtl
+    : getRedisTtl(resolvedTtl, resolvedStaleTtl)
+  await setKv(key, JSON.stringify(envelope), redisTtl)
 }
 
 const getCachedValue = async <T>(key: string) => {
@@ -361,11 +375,12 @@ const refreshCache = async <T>(
   fetcher: () => Promise<T>,
   ttl: number,
   staleTtl: number,
-  shouldCacheValue: (value: T) => boolean
+  shouldCacheValue: (value: T) => boolean,
+  getCacheTtl?: CacheTtlResolver<T>
 ) => {
   const data = await fetcher()
   if (shouldCacheValue(data)) {
-    await setCachedValue(key, data, ttl, staleTtl)
+    await setCachedValue(key, data, ttl, staleTtl, getCacheTtl)
   }
   return data
 }
@@ -411,6 +426,7 @@ export const getOrSet = async <T>(
       options.waitForRefreshMs ?? CACHE_WAIT_FOR_REFRESH_TIMEOUT_MS
     const shouldCacheValue = options.shouldCacheValue ?? (() => true)
     const isCachedValueValid = options.isCachedValueValid ?? (() => true)
+    const getCacheTtl = options.getCacheTtl
 
     try {
       let cached: CacheReadResult<T> | null = null
@@ -440,7 +456,14 @@ export const getOrSet = async <T>(
       if (cached?.isStale) {
         if (lockToken) {
           const refreshLockToken = lockToken
-          refreshCache(key, fetcher, ttl, staleTtl, shouldCacheValue)
+          refreshCache(
+            key,
+            fetcher,
+            ttl,
+            staleTtl,
+            shouldCacheValue,
+            getCacheTtl
+          )
             .catch((error) => {
               console.error(
                 `[Redis] Background refresh error for key ${key}:`,
@@ -465,7 +488,7 @@ export const getOrSet = async <T>(
           const data = await fetcher()
           try {
             if (shouldCacheValue(data)) {
-              await setCachedValue(key, data, ttl, staleTtl)
+              await setCachedValue(key, data, ttl, staleTtl, getCacheTtl)
             }
           } catch (error) {
             console.error(`[Redis] Set error for key ${key}:`, error)
@@ -508,7 +531,7 @@ export const getOrSet = async <T>(
           const data = await fetcher()
           try {
             if (shouldCacheValue(data)) {
-              await setCachedValue(key, data, ttl, staleTtl)
+              await setCachedValue(key, data, ttl, staleTtl, getCacheTtl)
             }
           } catch (error) {
             console.error(

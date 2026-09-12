@@ -43,6 +43,7 @@ model patch {
   resource_access patch_resource_access[] @relation("patch_resource_access")
   comment  patch_comment[]  @relation("patch_comment")
   report   patch_report[]
+  shoutbox shoutbox[]
   images   patch_game_image[]
 
   submission patch_submission? @relation("patch_submission_patch")

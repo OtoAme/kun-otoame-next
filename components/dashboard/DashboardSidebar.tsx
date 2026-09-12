@@ -14,6 +14,7 @@ import {
   Inbox,
   LayoutDashboard,
   LogOut,
+  Megaphone,
   MessageSquare,
   Package,
   UserRound,
@@ -106,6 +107,7 @@ export function DashboardSidebar({ currentUser }: DashboardSidebarProps) {
     isInboxRoot && (!kindsParam || selectedKinds.length === INBOX_KINDS.length)
   const isUserSectionActive =
     pathname === '/dashboard/user' || pathname.startsWith('/dashboard/user/')
+  const isShoutboxActive = pathname.startsWith('/dashboard/shoutbox')
   const userSectionNeedsSuperAdmin = currentUser.role < 4
   const closeMobileSidebar = () => setOpenMobile(false)
 
@@ -200,6 +202,18 @@ export function DashboardSidebar({ currentUser }: DashboardSidebarProps) {
           <SidebarGroupLabel>管理</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  asChild
+                  isActive={isShoutboxActive}
+                  onClick={closeMobileSidebar}
+                >
+                  <Link href="/dashboard/shoutbox" title="小喇叭">
+                    <Megaphone />
+                    <span className="shrink-0 whitespace-nowrap">小喇叭</span>
+                  </Link>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
               <SidebarMenuItem>
                 <SidebarMenuButton
                   asChild

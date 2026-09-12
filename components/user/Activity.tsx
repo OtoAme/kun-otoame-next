@@ -17,9 +17,12 @@ export const UserActivity = ({ id }: UserActivityProps) => {
     { key: 'comment', title: '评论', href: `/user/${id}/comment` },
     { key: 'favorite', title: '收藏夹', href: `/user/${id}/favorite` },
     { key: 'resource', title: '发布资源', href: `/user/${id}/resource` },
-    // One tab for everyone: the owner manages their submissions here, visitors
-    // see only the approved, published entries.
-    { key: 'submission', title: '发布条目', href: `/user/${id}/submission` }
+    // The submission tab serves both audiences: the owner manages their
+    // submissions here, visitors see only the approved, published entries.
+    { key: 'submission', title: '发布条目', href: `/user/${id}/submission` },
+    // The shoutbox tab lists the author's records: the author and site staff
+    // see every status, other logged-in users only the public ones.
+    { key: 'shoutbox', title: '小喇叭', href: `/user/${id}/shoutbox` }
   ]
 
   return (

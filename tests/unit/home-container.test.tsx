@@ -41,6 +41,12 @@ vi.mock('~/components/home/hero/HomeHero', () => ({
   HomeHero: () => <div data-testid="home-hero" />
 }))
 
+// The shoutbox home module has its own behavior tests; stub it out so its
+// client-side fetch and boundary timers never interfere with this suite.
+vi.mock('~/components/shoutbox/ShoutboxHomeSection', () => ({
+  ShoutboxHomeSection: () => null
+}))
+
 vi.mock('~/components/resource/ResourceCard', () => ({
   ResourceCard: ({ resource }: { resource: { id: number; name: string } }) => (
     <article data-testid="resource-card">{resource.name}</article>

@@ -7,6 +7,7 @@ import {
   KUN_GALGAME_RATING_PLAY_STATUS_MAP,
   KUN_GALGAME_RATING_RECOMMEND_MAP
 } from '~/constants/galgame'
+import { getShoutboxStatusLabel } from '~/constants/shoutbox'
 import { formatChinaDateTime } from '~/utils/fixedTimezoneDate'
 import { Badge } from '~/components/dashboard/ui/badge'
 import { Button } from '~/components/dashboard/ui/button'
@@ -163,12 +164,104 @@ function FeedbackDetail({
   )
 }
 
+function ShoutboxReportDetail({
+  item
+}: {
+  item: Extract<LegacyInboxItem, { kind: 'report' }>
+}) {
+  const report = item.payload
+  if (report.targetType !== 'shoutbox') {
+    return null
+  }
+  const shoutbox = report.shoutbox
+
+  return (
+    <div className="space-y-5">
+      <header className="space-y-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <h2 className="text-lg font-semibold leading-tight">
+            小喇叭举报 #{report.id}
+          </h2>
+          <Badge variant="secondary">举报</Badge>
+          <Badge variant="outline">小喇叭</Badge>
+          {shoutbox.official && <Badge variant="secondary">官方</Badge>}
+        </div>
+        <p className="text-sm text-muted-foreground">
+          举报于 {formatChinaDateTime(report.created)}
+        </p>
+      </header>
+
+      <dl className="space-y-2">
+        <Field label="举报人">
+          <UserLink user={report.sender} />
+        </Field>
+        <Field label="消息作者">
+          <UserLink user={report.reportedUser} />
+        </Field>
+        <Field label="消息状态">
+          {getShoutboxStatusLabel(shoutbox.status, shoutbox.official)}
+        </Field>
+        <Field label="关联作品">
+          {report.patch ? (
+            <a
+              href={`/${report.patch.uniqueId}`}
+              className="break-all text-primary underline-offset-4 hover:underline"
+            >
+              {report.patch.name || report.patch.uniqueId}
+            </a>
+          ) : (
+            <EmptyValue />
+          )}
+        </Field>
+        <Field label="举报时间">{formatChinaDateTime(report.created)}</Field>
+      </dl>
+
+      <section className="space-y-2">
+        <h3 className="text-sm font-semibold">举报原因</h3>
+        {report.reason ? (
+          <p className="whitespace-pre-wrap break-words rounded-md border bg-muted/30 p-3 text-sm">
+            {report.reason}
+          </p>
+        ) : (
+          <EmptyValue />
+        )}
+      </section>
+
+      <section className="space-y-2">
+        <h3 className="text-sm font-semibold">被举报内容</h3>
+        <p className="whitespace-pre-wrap break-words rounded-md border bg-muted/30 p-3 text-sm">
+          {shoutbox.content}
+        </p>
+      </section>
+
+      <p className="rounded-md border border-dashed px-3 py-2 text-sm text-muted-foreground">
+        同目标其他待处理举报 {report.pendingForTarget} 条
+      </p>
+
+      <Separator />
+      <section className="space-y-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <Button variant="outline" asChild>
+            <a href={item.targetHref}>前往小喇叭复核</a>
+          </Button>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          小喇叭举报的复核与处置在控制台小喇叭页进行。
+        </p>
+      </section>
+    </div>
+  )
+}
+
 function ReportDetail({
   item
 }: {
   item: Extract<LegacyInboxItem, { kind: 'report' }>
 }) {
   const report = item.payload
+  if (report.targetType === 'shoutbox') {
+    return <ShoutboxReportDetail item={item} />
+  }
   const isComment = report.targetType === 'comment'
   const targetDeleted = isComment
     ? report.comment === null

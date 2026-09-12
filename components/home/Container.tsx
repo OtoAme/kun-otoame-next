@@ -4,6 +4,7 @@ import { ResourceCard } from '~/components/resource/ResourceCard'
 import Link from 'next/link'
 import { HomeHero } from './hero/HomeHero'
 import { HomeGalgameGrid } from './HomeGalgameGrid'
+import { ShoutboxHomeSection } from '~/components/shoutbox/ShoutboxHomeSection'
 import type { HomeResource } from '~/types/api/home'
 
 interface Props {
@@ -15,6 +16,8 @@ export const HomeContainer = ({ galgames, resources }: Props) => {
   return (
     <div className="mx-auto space-y-8 max-w-7xl">
       <HomeHero />
+
+      <ShoutboxHomeSection />
 
       <section className="kun-home-game-section space-y-6">
         <div className="flex items-center space-x-4">

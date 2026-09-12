@@ -8,6 +8,7 @@ import { PatchHeaderInfo } from './Info'
 import { KunAutoImageViewer } from '~/components/kun/image-viewer/AutoImageViewer'
 import { KunNull } from '~/components/kun/Null'
 import { PatchViewBeacon } from '~/components/patch/view/PatchViewBeacon'
+import { ShoutboxPatchStrip } from '~/components/shoutbox/ShoutboxPatchStrip'
 import { kunMoyuMoe } from '~/config/moyu-moe'
 import { getPatchPageTitle } from '~/utils/patch/getPatchPageTitle'
 import type { Patch, PatchIntroduction } from '~/types/api/patch'
@@ -151,6 +152,8 @@ export const PatchHeaderContainer = ({
             patch={displayPatch}
             handleClickDownloadNav={handleClickDownloadNav}
           />
+
+          <ShoutboxPatchStrip patchUniqueId={displayPatch.uniqueId} />
 
           <div ref={tabsRef} className="scroll-mt-24">
             <PatchHeaderTabs

@@ -9,13 +9,13 @@ import {
 } from '@heroui/dropdown'
 import { MoreVertical } from 'lucide-react'
 import { useUserStore } from '~/store/userStore'
-import type { AdminReport } from '~/types/api/admin'
+import type { AdminLegacyReport } from '~/types/api/admin'
 
 interface Props {
-  report: AdminReport
+  report: AdminLegacyReport
 }
 
-const buildPatchLink = (report: AdminReport) => {
+const buildPatchLink = (report: AdminLegacyReport) => {
   const uniqueId = report.patch.uniqueId
   if (!uniqueId) {
     return ''

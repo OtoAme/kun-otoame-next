@@ -4,6 +4,7 @@ import { kunGetActions } from './actions'
 import { ErrorComponent } from '~/components/error/ErrorComponent'
 import { Suspense } from 'react'
 import type { Metadata } from 'next'
+import type { AdminLegacyReport } from '~/types/api/admin'
 
 export const revalidate = 0
 
@@ -20,10 +21,16 @@ export default async function Kun() {
     return <ErrorComponent error={response} />
   }
 
+  // This page queries targetType 'comment' only; shoutbox reports are
+  // reviewed in the console, so the legacy table consumes legacy rows.
+  const legacyReports = response.reports.filter(
+    (report): report is AdminLegacyReport => report.targetType !== 'shoutbox'
+  )
+
   return (
     <Suspense>
       <Report
-        initialReports={response.reports}
+        initialReports={legacyReports}
         total={response.total}
         title="评论举报管理"
         targetType="comment"

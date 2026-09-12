@@ -11,6 +11,7 @@ import type {
   InboxPayloads,
   InboxQuery
 } from '~/types/api/inbox'
+import type { AdminLegacyReport, AdminShoutboxReport } from '~/types/api/admin'
 import type { PatchSubmissionStatus } from '~/types/api/patchSubmission'
 
 const userSelect = { id: true, name: true, avatar: true } as const
@@ -91,6 +92,21 @@ const reportSelect = {
       recommend: true,
       play_status: true
     }
+  },
+  shoutbox: {
+    select: {
+      id: true,
+      content: true,
+      official: true,
+      level: true,
+      status: true,
+      cost: true,
+      created: true,
+      hidden_at: true,
+      refunded_at: true,
+      patch_id: true,
+      patch: { select: { id: true, unique_id: true, name: true } }
+    }
   }
 } satisfies Prisma.patch_reportSelect
 
@@ -154,14 +170,23 @@ const pendingFilters = (search = '') => {
     } satisfies Prisma.user_messageWhereInput,
     report: {
       status: 0,
+      OR: [
+        { target_type: 'shoutbox', shoutbox_id: { not: null } },
+        { target_type: { in: ['comment', 'rating'] }, patch_id: { not: null } }
+      ],
       ...(search
         ? {
-            OR: [
-              { reason: contains },
-              { patch: { name: contains } },
-              { sender: { name: contains } },
-              { reported_user: { name: contains } },
-              ...ids
+            AND: [
+              {
+                OR: [
+                  { reason: contains },
+                  { patch: { name: contains } },
+                  { sender: { name: contains } },
+                  { reported_user: { name: contains } },
+                  { shoutbox: { content: contains } },
+                  ...ids
+                ]
+              }
             ]
           }
         : {})
@@ -272,7 +297,69 @@ const feedbackItem = (row: FeedbackRow, now: Date): InboxItem => ({
   }
 })
 
-const reportItem = async (row: ReportRow, now: Date): Promise<InboxItem> => {
+const reportItem = async (
+  row: ReportRow,
+  now: Date
+): Promise<InboxItem | null> => {
+  if (row.target_type === 'shoutbox') {
+    if (!row.shoutbox) return null
+    const pendingForTarget = await prisma.patch_report.count({
+      where: {
+        status: 0,
+        target_type: 'shoutbox',
+        shoutbox_id: row.shoutbox.id,
+        id: { not: row.id }
+      }
+    })
+    const payload: AdminShoutboxReport & { pendingForTarget: number } = {
+      id: row.id,
+      targetType: 'shoutbox' as const,
+      status: row.status,
+      reason: row.reason,
+      handlerReply: row.handler_reply,
+      created: row.created.toISOString(),
+      handledAt: row.handled_at?.toISOString() ?? null,
+      sender: row.sender,
+      reportedUser: row.reported_user,
+      patch: row.shoutbox.patch
+        ? {
+            id: row.shoutbox.patch.id,
+            uniqueId: row.shoutbox.patch.unique_id,
+            name: row.shoutbox.patch.name
+          }
+        : null,
+      shoutbox: {
+        id: row.shoutbox.id,
+        content: row.shoutbox.content,
+        official: row.shoutbox.official,
+        level: row.shoutbox.level,
+        status: row.shoutbox.status,
+        cost: row.shoutbox.cost,
+        created: row.shoutbox.created.toISOString(),
+        hiddenAt: row.shoutbox.hidden_at?.toISOString() ?? null,
+        refundedAt: row.shoutbox.refunded_at?.toISOString() ?? null
+      },
+      comment: null,
+      rating: null,
+      pendingForTarget
+    }
+    return {
+      key: `report:${row.id}`,
+      kind: 'report',
+      id: row.id,
+      title: row.reason.slice(0, 100),
+      subtitle: `小喇叭 · ${row.reported_user.name}`,
+      actor: row.sender,
+      ...waiting(row.created, now),
+      targetHref: '/dashboard/shoutbox?tab=pending_review',
+      badges: ['小喇叭举报'],
+      readOnly: false,
+      payload
+    }
+  }
+  if (!row.patch || !['comment', 'rating'].includes(row.target_type)) {
+    return null
+  }
   const targetType = row.target_type === 'rating' ? 'rating' : 'comment'
   const targetId = targetType === 'rating' ? row.rating_id : row.comment_id
   const pendingForTarget =
@@ -288,7 +375,7 @@ const reportItem = async (row: ReportRow, now: Date): Promise<InboxItem> => {
             id: { not: row.id }
           }
         })
-  const payload: InboxPayloads['report'] = {
+  const payload: AdminLegacyReport & { pendingForTarget: number } = {
     id: row.id,
     targetType,
     status: row.status,
@@ -414,9 +501,12 @@ export const getAdminInbox = async (
           }),
           prisma.patch_report.count({ where: where.report })
         ])
+        const reportItems = await Promise.all(
+          rows.map((row) => reportItem(row, now))
+        )
         result = {
           total,
-          items: await Promise.all(rows.map((row) => reportItem(row, now)))
+          items: reportItems.filter((item): item is InboxItem => item !== null)
         }
       }
       totals[kind] = result.total
@@ -481,11 +571,16 @@ export const getAdminInboxItem = async (
     where: { id: input.id },
     select: reportSelect
   })
-  return row
-    ? {
-        state: row.status === 0 ? 'pending' : 'processed',
-        item: await reportItem(row, now)
-      }
+  if (!row) return missing
+  if (
+    row.target_type !== 'shoutbox' &&
+    (!row.patch || !['comment', 'rating'].includes(row.target_type))
+  ) {
+    return missing
+  }
+  const item = await reportItem(row, now)
+  return item
+    ? { state: row.status === 0 ? 'pending' : 'processed', item }
     : missing
 }
 

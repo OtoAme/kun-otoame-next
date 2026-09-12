@@ -173,7 +173,16 @@ describe('admin inbox candidates', () => {
       }
     })
     expect(mocks.prisma.patch_report.count).toHaveBeenCalledWith({
-      where: { status: 0 }
+      where: {
+        status: 0,
+        OR: [
+          { target_type: 'shoutbox', shoutbox_id: { not: null } },
+          {
+            target_type: { in: ['comment', 'rating'] },
+            patch_id: { not: null }
+          }
+        ]
+      }
     })
     for (const model of [
       mocks.prisma.patch_resource,
@@ -247,6 +256,38 @@ describe('admin inbox candidates', () => {
     })
   })
 
+  it('keeps nullable patch reports out of the legacy queue and totals', async () => {
+    mocks.prisma.patch_report.findMany.mockResolvedValue([
+      report(5),
+      { ...report(6), patch: null },
+      { ...report(7, 'shoutbox'), patch: null, shoutbox: null }
+    ])
+    mocks.prisma.patch_report.count.mockResolvedValue(1)
+
+    const result = await getAdminInbox(
+      { ...query, kinds: ['report'], limitPerKind: 50 },
+      now
+    )
+
+    expect(result.items.map((item) => item.id)).toEqual([5])
+    expect(result.totals.report).toBe(1)
+    expect(result.truncated.report).toBe(false)
+    expect(mocks.prisma.patch_report.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          status: 0,
+          OR: [
+            { target_type: 'shoutbox', shoutbox_id: { not: null } },
+            {
+              target_type: { in: ['comment', 'rating'] },
+              patch_id: { not: null }
+            }
+          ]
+        }
+      })
+    )
+  })
+
   it('searches the database before limiting and uses the same predicates for totals', async () => {
     await getAdminInbox({ ...query, search: '月光' }, now)
     const sql = mocks.prisma.$queryRaw.mock.calls[0][0]
@@ -281,7 +322,9 @@ describe('admin inbox candidates', () => {
       mocks.prisma.user_message,
       mocks.prisma.patch_report
     ]) {
-      expect(model.count.mock.calls[0][0].where.OR).toContainEqual({ id: 123 })
+      const where = model.count.mock.calls[0][0].where
+      const searchOr = where.AND?.[0]?.OR ?? where.OR
+      expect(searchOr).toContainEqual({ id: 123 })
     }
     expect(mocks.prisma.$queryRaw.mock.calls[0][0].values).toContain(123)
   })
@@ -372,6 +415,31 @@ describe('admin inbox deep links', () => {
     }
   )
 
+  it('links shoutbox reports to the dashboard review page', async () => {
+    mocks.prisma.patch_report.findUnique.mockResolvedValue({
+      ...report(5, 'shoutbox'),
+      patch: null,
+      shoutbox: {
+        id: 12,
+        content: '小喇叭内容',
+        official: false,
+        level: 'normal',
+        status: 2,
+        cost: 50,
+        created,
+        hidden_at: created,
+        refunded_at: null,
+        patch: null
+      }
+    })
+
+    const result = await getAdminInboxItem({ kind: 'report', id: 5 }, now)
+
+    expect(result.item?.targetHref).toBe(
+      '/dashboard/shoutbox?tab=pending_review'
+    )
+  })
+
   it('returns processed for approved resource applications', async () => {
     mocks.prisma.patch_resource.findUnique.mockResolvedValue({
       ...resource(),
@@ -411,6 +479,19 @@ describe('admin inbox deep links', () => {
     })
     expect(mocks.prisma.patch_submission.findUnique).not.toHaveBeenCalled()
     expect(mocks.prisma.user_message.findFirst).not.toHaveBeenCalled()
+  })
+
+  it('returns missing for a legacy report whose patch was removed', async () => {
+    mocks.prisma.patch_report.findUnique.mockResolvedValue({
+      ...report(),
+      patch: null
+    })
+
+    expect(await getAdminInboxItem({ kind: 'report', id: 5 }, now)).toEqual({
+      state: 'missing',
+      item: null
+    })
+    expect(mocks.prisma.patch_report.count).not.toHaveBeenCalled()
   })
 })
 

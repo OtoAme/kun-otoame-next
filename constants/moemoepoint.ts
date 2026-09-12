@@ -59,6 +59,14 @@ export const MOEMOEPOINT_REASON = {
     code: 'message.image_refund',
     text: '私聊图片上传失败退款'
   },
+  shoutboxPublish: {
+    code: 'shoutbox.publish',
+    text: '发布小喇叭'
+  },
+  shoutboxRestoreRefund: {
+    code: 'shoutbox.restore_refund',
+    text: '小喇叭误判恢复'
+  },
   adminGrant: { code: 'admin.grant', text: '管理员发放' }
 } as const
 
@@ -90,6 +98,11 @@ export const MOEMOEPOINT_EARN_RULES = [
     amount: '+1',
     detail: '评论、评价、资源被他人点赞, 对方取消点赞时收回'
   },
+  {
+    label: '小喇叭误判恢复',
+    amount: '+50',
+    detail: '站方判定处置有误并恢复小喇叭公开显示时退回当时实付点数'
+  },
   { label: '管理员发放', amount: '+N', detail: '活动奖励或补偿' }
 ] as const
 
@@ -104,6 +117,11 @@ export const MOEMOEPOINT_SPEND_RULES = [
     label: '私聊图片超额上传',
     amount: '-5',
     detail: '每人每小时前 5 张免费, 第 6 张起每张 5 点; 上传失败自动退款'
+  },
+  {
+    label: '发布小喇叭',
+    amount: '-50',
+    detail: '发布一条不可回复的小喇叭需要 50 点; 自删与违规删除不退款'
   },
   {
     label: '他人取消对你内容的点赞',

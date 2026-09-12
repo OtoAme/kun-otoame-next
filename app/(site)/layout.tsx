@@ -7,6 +7,7 @@ import { KunNavigationBreadcrumb } from '~/components/kun/NavigationBreadcrumb'
 import { generateKunMetadata, kunViewport } from './metadata'
 import { KunRootRouteChrome } from '~/components/layout/RootRouteChrome'
 import { KunToaster } from '~/components/kun/Toaster'
+import { ShoutboxBanner } from '~/components/shoutbox/ShoutboxBanner'
 import { SiteThemeScript } from '~/components/kun/theme/SiteThemeScript'
 import {
   DEFAULT_KUN_SITE_THEME,
@@ -76,6 +77,7 @@ export default async function RootLayout({
               aria-hidden
             />
             <div className="relative z-10 flex min-h-screen flex-col items-center justify-center">
+              <ShoutboxBanner />
               <KunTopBar />
               <KunNavigationBreadcrumb />
               <KunRootRouteChrome>{children}</KunRootRouteChrome>

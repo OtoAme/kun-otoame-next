@@ -40,6 +40,11 @@ vi.mock('next/link', () => ({
 vi.mock('next-themes', () => ({
   useTheme: () => ({ resolvedTheme: 'light', setTheme: vi.fn() })
 }))
+// The shell-level banner has its own behavior tests; stub it out so its fetch
+// and timers never interfere with the shell's counts/polling assertions.
+vi.mock('~/components/dashboard/shoutbox/DashboardShoutboxBanner', () => ({
+  DashboardShoutboxBanner: () => null
+}))
 vi.mock('~/components/dashboard/ui/sidebar', () => {
   const Box = ({ children }: { children?: React.ReactNode }) => (
     <div>{children}</div>

@@ -21,6 +21,9 @@ export const ADMIN_LOG_TYPE_MAP: Record<string, string> = {
   submission_review: '投稿审核',
   resource_apply_approve: '资源申请通过',
   resource_apply_decline: '资源申请拒绝',
+  shoutbox_official_publish: '发布官方小喇叭',
+  shoutbox_official_update: '更新官方小喇叭',
+  shoutbox_moderate: '复核小喇叭',
   update: '更新',
   grant: '发放'
 }

@@ -42,6 +42,8 @@ model user {
   patch_report_received patch_report[] @relation("patch_report_reported_user")
   patch_report_handled  patch_report[] @relation("patch_report_handler")
 
+  shoutbox shoutbox[] @relation("shoutbox_author")
+
   following       user_follow_relation[] @relation("user_following")
   follower        user_follow_relation[] @relation("user_follower")
   patch           patch[]                @relation("user_patch")

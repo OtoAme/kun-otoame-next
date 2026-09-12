@@ -89,7 +89,8 @@ export interface AdminRating {
   created: Date | string
 }
 
-export type AdminReportTargetType = 'comment' | 'rating'
+export type AdminLegacyReportTargetType = 'comment' | 'rating'
+export type AdminReportTargetType = AdminLegacyReportTargetType | 'shoutbox'
 
 export interface AdminReportPatchSummary {
   id: number
@@ -112,9 +113,9 @@ export interface AdminReportRatingSummary {
 
 export type AdminFeedback = Message
 
-export interface AdminReport {
+export interface AdminLegacyReport {
   id: number
-  targetType: AdminReportTargetType
+  targetType: AdminLegacyReportTargetType
   status: number
   reason: string
   handlerReply: string
@@ -126,6 +127,34 @@ export interface AdminReport {
   created: Date | string
   handledAt: Date | string | null
 }
+
+export interface AdminShoutboxReport {
+  id: number
+  targetType: 'shoutbox'
+  status: number
+  reason: string
+  handlerReply: string
+  patch: AdminReportPatchSummary | null
+  shoutbox: {
+    id: number
+    content: string
+    official: boolean
+    level: string
+    status: number
+    cost: number
+    created: Date | string
+    hiddenAt: Date | string | null
+    refundedAt: Date | string | null
+  }
+  comment: null
+  rating: null
+  sender: KunUser
+  reportedUser: KunUser
+  created: Date | string
+  handledAt: Date | string | null
+}
+
+export type AdminReport = AdminLegacyReport | AdminShoutboxReport
 
 export interface AdminLog {
   id: number

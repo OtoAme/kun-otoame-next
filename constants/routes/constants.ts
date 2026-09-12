@@ -44,6 +44,7 @@ export const keyLabelMap: Record<string, string> = {
   '/resource': '资源下载',
   '/search': '搜索',
   '/settings/user': '用户设置',
+  '/shoutbox': '小喇叭',
   '/submission/[id]': '投稿游戏条目',
   '/tag': '游戏标签',
   '/tag/[id]': '标签详情',
@@ -52,6 +53,7 @@ export const keyLabelMap: Record<string, string> = {
   '/user/[id]/otomegame': '用户游戏',
   '/user/[id]/resource': '用户资源',
   '/user/[id]/submission': '发布条目',
+  '/user/[id]/shoutbox': '小喇叭',
   '/moemoepoint': '萌萌点明细',
   '/moemoepoint/rules': '萌萌点规则',
   '/ranking': 'OtomeGame 排行'

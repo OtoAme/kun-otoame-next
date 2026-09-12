@@ -25,14 +25,14 @@ import {
 import { kunFetchPost } from '~/utils/kunFetch'
 import toast from 'react-hot-toast'
 import { convert } from 'html-to-text'
-import type { AdminReport } from '~/types/api/admin'
+import type { AdminLegacyReport } from '~/types/api/admin'
 
 interface Props {
-  report: AdminReport
+  report: AdminLegacyReport
   onHandled: () => void
 }
 
-const buildTargetPreview = (report: AdminReport) => {
+const buildTargetPreview = (report: AdminLegacyReport) => {
   if (report.targetType === 'comment' && report.comment) {
     return convert(report.comment.content).slice(0, 300)
   }

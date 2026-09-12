@@ -1,7 +1,11 @@
 import { z } from 'zod'
 import { kunPasswordRegex } from '~/utils/validate'
 
-export const adminReportTargetTypeSchema = z.enum(['comment', 'rating'])
+export const adminReportTargetTypeSchema = z.enum([
+  'comment',
+  'rating',
+  'shoutbox'
+])
 
 export const adminPaginationSchema = z.object({
   page: z.coerce.number().min(1).max(9999999),
@@ -125,7 +129,6 @@ export const adminUpdateUserSchema = z.object({
   ),
   bio: z.string().trim().max(107, { message: '个人简介不能超过 107 个字符' })
 })
-
 
 export const approveCreatorSchema = z.object({
   messageId: z.coerce.number().min(1).max(9999999),

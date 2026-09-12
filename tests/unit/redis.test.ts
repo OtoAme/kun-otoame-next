@@ -124,6 +124,43 @@ describe('getOrSet', () => {
     expect(redisMocks.setex).not.toHaveBeenCalled()
   })
 
+  it('uses a dynamic exact TTL without stale time or jitter', async () => {
+    const key = 'test-key-dynamic-ttl'
+    const validUntil = new Date(Date.now() + 2_999)
+    const data = { validUntil: validUntil.toISOString() }
+    redisMocks.get.mockResolvedValue(null)
+    const fetcher = vi.fn().mockResolvedValue(data)
+
+    const result = await getOrSet(key, fetcher, 60, {
+      getCacheTtl: (_value, now) =>
+        Math.floor((validUntil.getTime() - now.getTime()) / 1000)
+    })
+
+    expect(result).toEqual(data)
+    const [, redisTtl, serialized] = redisMocks.setex.mock.calls[0]
+    const envelope = JSON.parse(serialized) as {
+      expiresAt: number
+      staleUntil: number
+    }
+    expect(redisTtl).toBe(2)
+    expect(envelope.staleUntil).toBe(envelope.expiresAt)
+    expect(envelope.expiresAt).toBeLessThanOrEqual(validUntil.getTime())
+  })
+
+  it('skips a dynamic cache write when the resolved TTL is zero or negative', async () => {
+    const key = 'test-key-dynamic-ttl-expired'
+    const data = { validUntil: new Date(0).toISOString() }
+    redisMocks.get.mockResolvedValue(null)
+    const fetcher = vi.fn().mockResolvedValue(data)
+
+    const result = await getOrSet(key, fetcher, 60, {
+      getCacheTtl: () => 0
+    })
+
+    expect(result).toEqual(data)
+    expect(redisMocks.setex).not.toHaveBeenCalled()
+  })
+
   it('should ignore cached values rejected by the validity predicate', async () => {
     const key = 'test-key-invalid-cache'
     const data = { items: ['fresh'] }

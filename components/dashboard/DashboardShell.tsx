@@ -22,6 +22,7 @@ import { cn } from '~/lib/dashboard/utils'
 
 import { DashboardSidebar } from './DashboardSidebar'
 import { DashboardHeader } from './DashboardHeader'
+import { DashboardShoutboxBanner } from './shoutbox/DashboardShoutboxBanner'
 
 export interface DashboardCurrentUser {
   id: number
@@ -164,6 +165,7 @@ export function DashboardShell({ currentUser, children }: DashboardShellProps) {
           )}
           data-dashboard-scroll
         >
+          <DashboardShoutboxBanner />
           <DashboardHeader />
           <div className="flex min-h-0 min-w-0 flex-1 flex-col">{children}</div>
         </SidebarInset>

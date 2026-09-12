@@ -43,11 +43,13 @@ export function DashboardHeader() {
       ? '统计总览'
       : pathname === '/dashboard/user'
         ? '用户管理'
-        : USER_LEDGER_PATH.test(pathname)
-          ? '用户萌萌点明细'
-          : selectedKinds.length === 1
-            ? INBOX_KIND_LABELS[selectedKinds[0]]
-            : '待审事项'
+        : pathname.startsWith('/dashboard/shoutbox')
+          ? '小喇叭管理'
+          : USER_LEDGER_PATH.test(pathname)
+            ? '用户萌萌点明细'
+            : selectedKinds.length === 1
+              ? INBOX_KIND_LABELS[selectedKinds[0]]
+              : '待审事项'
 
   // The header is plain normal-flow content. On mobile it scrolls away with
   // the shared page flow (the SidebarInset scroll container); from md up the

@@ -1,5 +1,10 @@
 import type { AdminSubmissionRow } from '~/app/api/admin/patch-submission/service'
-import type { AdminFeedback, AdminReport, AdminResource } from './admin'
+import type {
+  AdminFeedback,
+  AdminLegacyReport,
+  AdminResource,
+  AdminShoutboxReport
+} from './admin'
 
 export const INBOX_KINDS = [
   'submission',
@@ -15,7 +20,9 @@ export type InboxPayloads = {
   submission: AdminSubmissionRow
   'resource-apply': AdminResource
   feedback: AdminFeedback
-  report: AdminReport & { pendingForTarget: number }
+  report:
+    | (AdminLegacyReport & { pendingForTarget: number })
+    | (AdminShoutboxReport & { pendingForTarget: number })
 }
 
 export type InboxItem = {

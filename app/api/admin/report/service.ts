@@ -9,10 +9,14 @@ import {
   adminHandleReportSchema,
   adminReportPaginationSchema
 } from '~/validations/admin'
-import type { AdminReport } from '~/types/api/admin'
+import type {
+  AdminLegacyReport,
+  AdminReport,
+  AdminShoutboxReport
+} from '~/types/api/admin'
 
 const buildReportNotice = (
-  report: AdminReport,
+  report: AdminLegacyReport,
   action: 'delete' | 'reject'
 ) => {
   const defaultReply = action === 'reject' ? '已驳回' : '已处理'
@@ -25,7 +29,7 @@ const buildReportNotice = (
   return `${reportResult}\n\n举报类型: ${targetLabel}\n举报原因: ${report.reason.slice(0, 200)}\n${reportReplyLabel}: ${handleResult}`
 }
 
-const serializeReport = (report: {
+type ReportRow = {
   id: number
   target_type: string
   status: number
@@ -39,7 +43,7 @@ const serializeReport = (report: {
     id: number
     unique_id: string
     name: string
-  }
+  } | null
   comment: {
     id: number
     content: string
@@ -51,45 +55,110 @@ const serializeReport = (report: {
     recommend: string
     play_status: string
   } | null
-}): AdminReport => ({
-  id: report.id,
-  targetType: report.target_type === 'rating' ? 'rating' : 'comment',
-  status: report.status,
-  reason: report.reason,
-  handlerReply: report.handler_reply,
-  created: report.created,
-  handledAt: report.handled_at,
-  sender: report.sender,
-  reportedUser: report.reported_user,
-  patch: {
-    id: report.patch.id,
-    uniqueId: report.patch.unique_id,
-    name: report.patch.name
-  },
-  comment: report.comment
-    ? {
-        id: report.comment.id,
-        content: report.comment.content
-      }
-    : null,
-  rating: report.rating
-    ? {
-        id: report.rating.id,
-        shortSummary: report.rating.short_summary,
-        overall: report.rating.overall,
-        recommend: report.rating.recommend,
-        playStatus: report.rating.play_status
-      }
-    : null
-})
+  shoutbox: {
+    id: number
+    content: string
+    official: boolean
+    level: string
+    status: number
+    cost: number
+    created: Date
+    hidden_at: Date | null
+    refunded_at: Date | null
+    patch: {
+      id: number
+      unique_id: string
+      name: string
+    } | null
+  } | null
+}
+
+const serializeReport = (report: ReportRow): AdminReport | null => {
+  if (report.target_type === 'shoutbox') {
+    if (!report.shoutbox) return null
+    const serialized: AdminShoutboxReport = {
+      id: report.id,
+      targetType: 'shoutbox',
+      status: report.status,
+      reason: report.reason,
+      handlerReply: report.handler_reply,
+      created: report.created,
+      handledAt: report.handled_at,
+      sender: report.sender,
+      reportedUser: report.reported_user,
+      patch: report.shoutbox.patch
+        ? {
+            id: report.shoutbox.patch.id,
+            uniqueId: report.shoutbox.patch.unique_id,
+            name: report.shoutbox.patch.name
+          }
+        : null,
+      shoutbox: {
+        id: report.shoutbox.id,
+        content: report.shoutbox.content,
+        official: report.shoutbox.official,
+        level: report.shoutbox.level,
+        status: report.shoutbox.status,
+        cost: report.shoutbox.cost,
+        created: report.shoutbox.created,
+        hiddenAt: report.shoutbox.hidden_at,
+        refundedAt: report.shoutbox.refunded_at
+      },
+      comment: null,
+      rating: null
+    }
+    return serialized
+  }
+  if (
+    !report.patch ||
+    (report.target_type !== 'comment' && report.target_type !== 'rating')
+  ) {
+    return null
+  }
+  return {
+    id: report.id,
+    targetType: report.target_type === 'rating' ? 'rating' : 'comment',
+    status: report.status,
+    reason: report.reason,
+    handlerReply: report.handler_reply,
+    created: report.created,
+    handledAt: report.handled_at,
+    sender: report.sender,
+    reportedUser: report.reported_user,
+    patch: {
+      id: report.patch.id,
+      uniqueId: report.patch.unique_id,
+      name: report.patch.name
+    },
+    comment: report.comment
+      ? {
+          id: report.comment.id,
+          content: report.comment.content
+        }
+      : null,
+    rating: report.rating
+      ? {
+          id: report.rating.id,
+          shortSummary: report.rating.short_summary,
+          overall: report.rating.overall,
+          recommend: report.rating.recommend,
+          playStatus: report.rating.play_status
+        }
+      : null
+  }
+}
 
 export const getReport = async (
   input: z.infer<typeof adminReportPaginationSchema>
 ) => {
   const { page, limit, tab, targetType } = input
   const offset = (page - 1) * limit
+  const targetWhere =
+    targetType === 'shoutbox'
+      ? { target_type: 'shoutbox', shoutbox_id: { not: null } }
+      : { target_type: targetType, patch_id: { not: null } }
   const where = {
-    target_type: targetType,
+    ...targetWhere,
     ...(tab === 'pending' ? { status: 0 } : { status: { in: [2, 3] } })
   }
 
@@ -132,6 +201,26 @@ export const getReport = async (
             recommend: true,
             play_status: true
           }
+        },
+        shoutbox: {
+          select: {
+            id: true,
+            content: true,
+            official: true,
+            level: true,
+            status: true,
+            cost: true,
+            created: true,
+            hidden_at: true,
+            refunded_at: true,
+            patch: {
+              select: {
+                id: true,
+                unique_id: true,
+                name: true
+              }
+            }
+          }
         }
       },
       orderBy: { created: 'desc' },
@@ -141,7 +230,9 @@ export const getReport = async (
     prisma.patch_report.count({ where })
   ])
 
-  const reports: AdminReport[] = data.map(serializeReport)
+  const reports = data
+    .map(serializeReport)
+    .filter((report): report is AdminReport => report !== null)
 
   return { reports, total }
 }
@@ -188,17 +279,47 @@ export const handleReport = async (
           recommend: true,
           play_status: true
         }
+      },
+      shoutbox: {
+        select: {
+          id: true,
+          content: true,
+          official: true,
+          level: true,
+          status: true,
+          cost: true,
+          created: true,
+          hidden_at: true,
+          refunded_at: true,
+          patch: {
+            select: {
+              id: true,
+              unique_id: true,
+              name: true
+            }
+          }
+        }
       }
     }
   })
   if (!report) {
     return '该举报不存在'
   }
+  if (report.target_type === 'shoutbox') {
+    return '请在控制台小喇叭复核页处理'
+  }
   if (report.status !== 0) {
     return '该举报已被处理'
   }
+  if (!report.patch) {
+    return '该举报缺少条目信息，数据异常'
+  }
+  const patch = report.patch
 
   const serializedReport = serializeReport(report)
+  if (!serializedReport || serializedReport.targetType === 'shoutbox') {
+    return '该举报缺少条目信息，数据异常'
+  }
   const handleResult =
     input.content || (input.action === 'reject' ? '已驳回' : '已处理')
   const reportStatus = input.action === 'reject' ? 3 : 2
@@ -258,7 +379,7 @@ export const handleReport = async (
             input.action
           ),
           recipient_id: recipientId,
-          link: `/${report.patch.unique_id}`
+          link: `/${patch.unique_id}`
         }))
       })
     }
@@ -269,12 +390,14 @@ export const handleReport = async (
     report.target_type === 'rating' &&
     report.rating_id
   ) {
-    await recomputePatchRatingStat(report.patch_id)
+    if (report.patch_id !== null) {
+      await recomputePatchRatingStat(report.patch_id)
+    }
   }
 
   if (input.action === 'delete') {
     await Promise.all([
-      invalidatePatchContentCache(report.patch.unique_id),
+      invalidatePatchContentCache(patch.unique_id),
       invalidatePatchListCaches()
     ]).catch((error) => {
       console.error('Failed to invalidate admin report cache:', error)
