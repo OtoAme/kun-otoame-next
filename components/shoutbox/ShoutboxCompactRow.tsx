@@ -2,105 +2,171 @@
 
 import Link from 'next/link'
 import { Avatar } from '@heroui/avatar'
-import { Card, CardBody } from '@heroui/card'
 import { Chip } from '@heroui/chip'
+import { Gamepad2 } from 'lucide-react'
 import { useMounted } from '~/hooks/useMounted'
 import { cn } from '~/utils/cn'
 import { formatChinaDateTime } from '~/utils/fixedTimezoneDate'
+import { normalizeShoutboxContent } from '~/utils/shoutboxContent'
 import { formatTimeDifference } from '~/utils/time'
 import { ShoutboxReportButton } from './ShoutboxReportButton'
+import type { ReactNode } from 'react'
 import type { ShoutboxItem } from '~/types/api/shoutbox'
 
 interface Props {
   item: ShoutboxItem
   pinned?: boolean
+  actions?: ReactNode
+  /**
+   * View-level reserve for the action area: views that allow delete (the
+   * list pages) reserve two 32px slots, the others (home, per-game strip)
+   * reserve one. Per-message button visibility never changes the reserved
+   * width, so the text column and the time sit identically on every row.
+   */
+  allowsDelete?: boolean
 }
 
-/**
- * Read-only compact row for the home module and the per-game strip. Author
- * actions (edit/delete) live on the full card used by the shoutbox pages.
- */
-export const ShoutboxCompactRow = ({ item, pinned = false }: Props) => {
-  // Deterministic Asia/Shanghai text for SSR and first hydration; the
-  // relative label only replaces it after mount.
+export const ShoutboxCompactRow = ({
+  item,
+  pinned = false,
+  actions,
+  allowsDelete = false
+}: Props) => {
   const mounted = useMounted()
 
   return (
-    <Card
-      shadow="none"
+    <div
       className={cn(
-        'w-full border border-default-200',
-        item.official && 'border-primary-300 bg-primary-50'
+        // Three columns: avatar / text / actions+time. Below sm the text
+        // wrapper is display:contents: its header (badges, author, colon)
+        // takes row 1 next to the avatar and the content always starts on
+        // row 2, spanning the text and action columns — never under the
+        // avatar. From sm up the wrapper is one inline flow in the middle
+        // column, whose track always excludes the action column.
+        // min-h-10 keeps short single-line rows at a consistent height.
+        'grid min-h-10 grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-x-1 rounded-lg px-2 py-1',
+        item.official && 'bg-primary-50'
       )}
     >
-      <CardBody className="flex-row items-start gap-2 px-3 py-2">
-        <Avatar
-          src={item.user.avatar}
-          name={item.user.name}
-          size="sm"
-          className="mt-0.5 shrink-0"
-        />
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-            <Link
-              href={`/user/${item.user.id}`}
-              className="text-xs font-medium hover:underline"
+      <Avatar
+        src={item.user.avatar}
+        name={item.user.name}
+        size="sm"
+        className="h-7 w-7 shrink-0"
+      />
+      {/* Both ends share the 24px line-height (mobile 14/24, PC 16/24); on
+          PC (where the wrapper is the block middle column) sm:pt-0.5 drops
+          the 24px first text line by 2px so its center matches the 28px
+          avatar/action row. */}
+      <div className="contents min-w-0 text-small leading-6 sm:block sm:pt-0.5 sm:text-base sm:leading-6">
+        {/* Mobile: one 28px header line — badges cannot shrink, an overlong
+            author name truncates in the leftover width (full name in title).
+            Desktop: display:contents, so everything joins the text flow. */}
+        <span className="flex h-7 min-w-0 items-center sm:contents">
+          {pinned && (
+            <Chip
+              size="sm"
+              color="primary"
+              variant="bordered"
+              className="mr-1 shrink-0 align-middle"
+              classNames={{
+                base: 'max-sm:mr-0.5 max-sm:px-0.5 sm:h-5',
+                content: 'max-sm:px-0'
+              }}
             >
-              {item.user.name}
-            </Link>
-            {item.official && (
-              <Chip size="sm" color="primary" variant="flat">
-                官方
-              </Chip>
-            )}
-            {item.official && item.level === 'important' && (
-              <Chip size="sm" color="warning" variant="flat">
-                重要
-              </Chip>
-            )}
-            {pinned && (
-              <Chip size="sm" color="primary" variant="bordered">
-                置顶
-              </Chip>
-            )}
-            <time
-              dateTime={item.created}
-              className="ml-auto shrink-0 text-xs text-default-400"
+              置顶
+            </Chip>
+          )}
+          {item.official && item.level === 'important' && (
+            <Chip
+              size="sm"
+              color="danger"
+              variant="bordered"
+              className="mr-1 shrink-0 align-middle"
+              classNames={{
+                base: 'max-sm:mr-0.5 max-sm:px-0.5 sm:h-5',
+                content: 'max-sm:px-0'
+              }}
             >
-              {mounted
-                ? formatTimeDifference(item.created)
-                : formatChinaDateTime(item.created)}
-            </time>
-          </div>
-          <p className="mt-0.5 whitespace-pre-wrap break-words text-sm">
-            {item.content}
-          </p>
-          <div className="flex flex-wrap items-center gap-x-3">
-            {item.patch && (
-              <Link
+              重要
+            </Chip>
+          )}
+          <Link
+            href={`/user/${item.user.id}`}
+            title={item.user.name}
+            className="font-bold hover:underline max-sm:min-w-0 max-sm:truncate"
+          >
+            {item.user.name}
+          </Link>
+          <span className="shrink-0">：</span>
+        </span>
+        <span className="max-sm:col-start-2 max-sm:col-span-2 max-sm:row-start-2 sm:contents">
+          <span className="whitespace-pre-wrap break-words">
+            {normalizeShoutboxContent(item.content)}
+          </span>
+          {item.patch && (
+            <>
+              {' '}
+              {/* Keep the inline capsule within the 24px body line. */}
+              <Chip
+                as={Link}
                 href={`/${item.patch.uniqueId}`}
-                className="max-w-full truncate text-xs text-primary hover:underline"
+                size="sm"
+                color="primary"
+                variant="flat"
+                title={item.patch.name}
+                startContent={
+                  <Gamepad2 className="size-3.5 shrink-0" aria-hidden />
+                }
+                classNames={{
+                  base: 'h-5 min-w-0 max-w-[min(12rem,100%)] px-2 align-middle text-sm',
+                  content: 'truncate'
+                }}
               >
-                《{item.patch.name}》
-              </Link>
-            )}
-            {item.link ? (
+                {item.patch.name}
+              </Chip>
+            </>
+          )}
+          {item.link ? (
+            <>
+              {' '}
               <Link
                 href={item.link}
                 className="text-xs text-primary hover:underline"
               >
                 查看详情
               </Link>
-            ) : null}
-            <span className="ml-auto">
-              <ShoutboxReportButton
-                shoutboxId={item.id}
-                authorId={item.user.id}
-              />
-            </span>
-          </div>
+            </>
+          ) : null}
+        </span>
+      </div>
+      {/* First-line-aligned action column: the reserved slot width stays
+          view-based (allowsDelete) and empty slots never collapse; the 64px
+          time hugs the slots with a 2px gap, stays empty before mount (SSR
+          would print a long absolute date), full time in title/dateTime. */}
+      <div className="flex h-7 items-center gap-0.5">
+        <div
+          className={cn(
+            'flex items-center justify-end',
+            allowsDelete ? 'w-16' : 'w-8'
+          )}
+        >
+          {actions}
+          <ShoutboxReportButton
+            shoutboxId={item.id}
+            authorId={item.user.id}
+            reportable={item.reportable}
+            isIconOnly
+          />
         </div>
-      </CardBody>
-    </Card>
+        <time
+          dateTime={item.created}
+          title={formatChinaDateTime(item.created)}
+          className="w-16 shrink-0 whitespace-nowrap text-left text-xs leading-7 tabular-nums text-default-400"
+        >
+          {mounted ? formatTimeDifference(item.created) : ''}
+        </time>
+      </div>
+    </div>
   )
 }

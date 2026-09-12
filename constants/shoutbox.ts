@@ -1,9 +1,10 @@
 export const SHOUTBOX_PRICE = 50
-export const SHOUTBOX_PAGE_SIZE = 6
-export const SHOUTBOX_MAX_PAGES = 10
-export const SHOUTBOX_MAX_VISIBLE_SLOTS =
-  SHOUTBOX_PAGE_SIZE * SHOUTBOX_MAX_PAGES
-export const SHOUTBOX_RETENTION_MONTHS = 3
+/** Number of rows returned by the public list and game "more" view. */
+export const SHOUTBOX_PAGE_SIZE = 20
+/** Number of rows occupied by the standalone home feed, including a pin. */
+export const SHOUTBOX_HOME_LIMIT = 15
+export const SHOUTBOX_READ_VIEWS = ['list', 'home'] as const
+export type ShoutboxReadView = (typeof SHOUTBOX_READ_VIEWS)[number]
 export const SHOUTBOX_EDIT_WINDOW_MS = 5 * 60 * 1000
 export const SHOUTBOX_OFFICIAL_DEFAULT_DURATION_MS = 72 * 60 * 60 * 1000
 

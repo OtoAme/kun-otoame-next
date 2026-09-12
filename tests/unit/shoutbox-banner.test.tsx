@@ -47,7 +47,15 @@ vi.mock('@heroui/alert', () => ({
 
 import { ShoutboxBanner } from '~/components/shoutbox/ShoutboxBanner'
 import { SHOUTBOX_BANNER_DISMISS_STORAGE_KEY } from '~/hooks/useShoutboxBanner'
-import type { ShoutboxItem } from '~/types/api/shoutbox'
+import type { ShoutboxBannerResponse, ShoutboxItem } from '~/types/api/shoutbox'
+
+// The shared contract adds `visibilityUntil`: the server-known next real
+// official boundary, never TTL-truncated. Tri-state — a string cleans up at
+// that instant, null means no known boundary, an absent field (old payload)
+// falls back to validUntil.
+type BannerPayload = ShoutboxBannerResponse & {
+  visibilityUntil?: string | null
+}
 
 const makeBanner = (id: number, effectiveToMs: number): ShoutboxItem => ({
   id,
@@ -64,6 +72,7 @@ const makeBanner = (id: number, effectiveToMs: number): ShoutboxItem => ({
   editedAt: null,
   hiddenAt: null,
   refundedAt: null,
+  reportable: true,
   created: new Date(Date.now() - 60_000).toISOString(),
   updated: new Date(Date.now() - 60_000).toISOString()
 })
@@ -286,6 +295,56 @@ describe('ShoutboxBanner', () => {
       await Promise.resolve()
     })
     expect(mocks.kunFetchGet).not.toHaveBeenCalled()
+    expect(container.textContent).toBe('')
+  })
+  it('retains a slow response past cache freshness but clears it at the true boundary', async () => {
+    mocks.kunFetchGet
+      .mockResolvedValueOnce({
+        banner: makeBanner(7, Date.now() + 60_000),
+        validUntil: new Date(Date.now() - 1).toISOString(),
+        visibilityUntil: new Date(Date.now() + 1000).toISOString()
+      } satisfies BannerPayload)
+      .mockResolvedValue('暂时失败')
+    await renderBanner()
+    expect(container.textContent).toContain('重要公告 7')
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000)
+    })
+    expect(container.textContent).not.toContain('重要公告 7')
+    expect(mocks.kunFetchGet).toHaveBeenCalledTimes(2)
+  })
+
+  it('coalesces visibility refreshes and cancels their work when the banner becomes disabled', async () => {
+    let resolveFirst!: (value: ShoutboxBannerResponse) => void
+    const payload: ShoutboxBannerResponse = {
+      banner: makeBanner(7, Date.now() + 60_000),
+      validUntil: new Date(Date.now() + 60_000).toISOString(),
+      visibilityUntil: null
+    }
+    mocks.kunFetchGet
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveFirst = resolve
+          })
+      )
+      .mockResolvedValue(payload)
+    await renderBanner()
+    await act(async () => {
+      document.dispatchEvent(new dom!.window.Event('visibilitychange'))
+      document.dispatchEvent(new dom!.window.Event('visibilitychange'))
+      await Promise.resolve()
+    })
+    mocks.pathname = '/preview/submission/12'
+    await act(async () => {
+      root!.render(<ShoutboxBanner />)
+    })
+    await act(async () => {
+      resolveFirst(payload)
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(mocks.kunFetchGet).toHaveBeenCalledTimes(1)
     expect(container.textContent).toBe('')
   })
 })

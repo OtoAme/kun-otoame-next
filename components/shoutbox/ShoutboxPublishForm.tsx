@@ -12,6 +12,7 @@ import { SHOUTBOX_PRICE } from '~/constants/shoutbox'
 import { useUserStore } from '~/store/userStore'
 import { kunFetchPost } from '~/utils/kunFetch'
 import { generateUUID } from '~/utils/random'
+import { normalizeShoutboxContent } from '~/utils/shoutboxContent'
 import type {
   ShoutboxItem,
   ShoutboxPublishResponse
@@ -197,7 +198,7 @@ export const ShoutboxPublishForm = ({
         placeholder="用一句话和大家说点什么吧"
         value={content}
         onValueChange={(value) => {
-          setContent(value)
+          setContent(normalizeShoutboxContent(value))
           setContentError('')
         }}
         maxLength={200}

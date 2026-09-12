@@ -2,16 +2,26 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { kunFetchGet } from '~/utils/kunFetch'
+import {
+  resolveShoutboxCleanupMs,
+  scheduleShoutboxDeadline
+} from '~/utils/shoutboxVisibility'
 import type { ShoutboxBannerResponse, ShoutboxItem } from '~/types/api/shoutbox'
 
 /**
  * Shared data protocol for the site and dashboard shoutbox banners: fetch the
  * latest effective important official message, remember dismissal per message
- * id in browser-local storage, and refresh at the payload's validUntil
- * boundary. Styling is intentionally not shared — each root layout renders
- * its own banner on top of this hook.
+ * id in browser-local storage, and keep the payload fresh. `validUntil` is
+ * cache freshness — reaching it refreshes in the background while the current
+ * banner stays on screen until the new response replaces it atomically.
+ * `visibilityUntil` (resolved via resolveShoutboxCleanupMs, never
+ * TTL-truncated) is the server's known next real official boundary — reaching
+ * it drops the banner FIRST, even while a refresh is still in flight or
+ * failing. Styling is intentionally not shared — each root layout renders its
+ * own banner on top of this hook.
  */
-export const SHOUTBOX_BANNER_DISMISS_STORAGE_KEY = 'kun-shoutbox-banner-dismissed'
+export const SHOUTBOX_BANNER_DISMISS_STORAGE_KEY =
+  'kun-shoutbox-banner-dismissed'
 
 // Mirrors the banner base cache duration (60s); only used as the backoff when
 // a refresh fails, so an open page never keeps a stale banner forever.
@@ -85,9 +95,16 @@ export const useShoutboxBanner = (
   const generationRef = useRef(0)
   // Promise-based in-flight slot: a remount after an interrupted request
   // awaits the stale promise (whose result is generation-discarded) and then
-  // issues a fresh fetch, instead of being locked out forever.
+  // issues a fresh fetch, instead of being locked out forever. The generation
+  // tag lets same-generation callers merge into the running request.
   const inFlightRef = useRef<Promise<void> | null>(null)
+  const inFlightGenerationRef = useRef(0)
+  // Two independent timers per payload: the refresh timer arms at validUntil
+  // (cache freshness), the cleanup timer at the real visibility boundary. The
+  // cleanup side stores a cancel function: the boundary may sit beyond
+  // setTimeout's 32-bit delay range (see scheduleShoutboxDeadline).
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const cleanupCancelRef = useRef<(() => void) | null>(null)
 
   const applyPayload = useCallback((next: ShoutboxBannerResponse | null) => {
     payloadRef.current = next
@@ -118,6 +135,10 @@ export const useShoutboxBanner = (
         timerRef.current = null
       }
     }
+    const clearCleanupTimer = () => {
+      cleanupCancelRef.current?.()
+      cleanupCancelRef.current = null
+    }
 
     if (!enabled) {
       applyPayload(null)
@@ -125,22 +146,61 @@ export const useShoutboxBanner = (
       return
     }
 
-    const scheduleAfter = (delay: number) => {
+    // Both timers funnel into here. A due visibility boundary owns the
+    // moment: the banner is dropped FIRST (never keep an expired banner on
+    // screen), then exactly one load starts. A plain freshness expiry keeps
+    // the current banner while the refresh runs in the background, and a
+    // timer firing while a request is already in flight never queues a
+    // duplicate — that request's completion re-arms both timers.
+    const fireScheduled = () => {
+      const current = payloadRef.current
+      if (current) {
+        const cleanupMs = resolveShoutboxCleanupMs(current)
+        if (
+          cleanupMs !== null &&
+          (!Number.isFinite(cleanupMs) || cleanupMs <= Date.now())
+        ) {
+          clearCleanupTimer()
+          applyPayload(null)
+        }
+      }
+      if (inFlightRef.current === null) {
+        void load()
+      }
+    }
+
+    const scheduleRefresh = (delay: number) => {
       clearTimer()
       timerRef.current = setTimeout(() => {
         timerRef.current = null
-        // At a boundary the current payload may no longer be valid: drop it
-        // BEFORE the refetch starts, never keep an expired banner on screen.
-        applyPayload(null)
-        void load()
+        fireScheduled()
       }, delay)
     }
 
+    const scheduleCleanup = (deadlineMs: number) => {
+      clearCleanupTimer()
+      cleanupCancelRef.current = scheduleShoutboxDeadline(deadlineMs, () => {
+        cleanupCancelRef.current = null
+        fireScheduled()
+      })
+    }
+
     const load = async (): Promise<void> => {
-      while (inFlightRef.current) {
-        await inFlightRef.current
-      }
+      // Capture the generation BEFORE waiting on any in-flight request: a
+      // caller queued behind a slow one must not adopt a newer generation
+      // after a disable/unmount and keep working in this stale closure.
       const generation = generationRef.current
+      while (inFlightRef.current) {
+        // Same-generation callers merge into the running request; only a
+        // stale-generation one waits for the slot and re-validates after.
+        if (inFlightGenerationRef.current === generation) {
+          return
+        }
+        await inFlightRef.current
+        if (generation !== generationRef.current) {
+          return
+        }
+      }
       const request = (async () => {
         try {
           const result = await kunFetchGet<ShoutboxBannerResponse | string>(
@@ -151,27 +211,43 @@ export const useShoutboxBanner = (
           }
           if (typeof result === 'string') {
             // Business error: keep whatever is still valid and retry after
-            // the base cache duration instead of hot-looping.
-            scheduleAfter(SHOUTBOX_BANNER_RETRY_MS)
+            // the base cache duration instead of hot-looping. The armed
+            // cleanup timer still drops the banner at its real boundary.
+            scheduleRefresh(SHOUTBOX_BANNER_RETRY_MS)
             return
           }
           applyPayload(result)
+          const now = Date.now()
           const validUntilMs = new Date(result.validUntil).getTime()
-          const delay = validUntilMs - Date.now()
-          if (!Number.isFinite(validUntilMs) || delay <= 0) {
-            applyPayload(null)
-            scheduleAfter(SHOUTBOX_BANNER_RETRY_MS)
-            return
+          // A TTL already past on arrival (slow transit, or the server's
+          // safe-empty fallback) only backs off freshness — the applied
+          // payload stays instead of flickering out. Cleanup is judged
+          // independently against the REAL boundary below.
+          if (!Number.isFinite(validUntilMs) || validUntilMs <= now) {
+            scheduleRefresh(SHOUTBOX_BANNER_RETRY_MS)
+          } else {
+            scheduleRefresh(validUntilMs - now)
           }
-          scheduleAfter(delay)
+          const cleanupMs = resolveShoutboxCleanupMs(result)
+          if (cleanupMs === null) {
+            clearCleanupTimer()
+          } else if (!Number.isFinite(cleanupMs) || cleanupMs <= now) {
+            // The real boundary has already passed: drop the possibly
+            // expired banner at once; the freshness timer above refetches.
+            clearCleanupTimer()
+            applyPayload(null)
+          } else {
+            scheduleCleanup(cleanupMs)
+          }
         } catch {
           if (generation !== generationRef.current) {
             return
           }
-          scheduleAfter(SHOUTBOX_BANNER_RETRY_MS)
+          scheduleRefresh(SHOUTBOX_BANNER_RETRY_MS)
         }
       })()
       inFlightRef.current = request
+      inFlightGenerationRef.current = generation
       try {
         await request
       } finally {
@@ -185,8 +261,9 @@ export const useShoutboxBanner = (
     void load()
 
     // Returning from the background revalidates the payload against the
-    // CURRENT time before anything is shown again: expired payloads are
-    // dropped first and only then refetched.
+    // CURRENT time before anything is shown again: a passed real boundary or
+    // an ended banner interval drops first, while a merely stale cache only
+    // triggers a background refresh that keeps the current banner.
     const handleVisibilityChange = () => {
       if (document.visibilityState !== 'visible') {
         return
@@ -196,13 +273,24 @@ export const useShoutboxBanner = (
         void load()
         return
       }
-      const validUntilMs = new Date(current.validUntil).getTime()
-      const stale =
-        !Number.isFinite(validUntilMs) ||
-        validUntilMs <= Date.now() ||
-        !isBannerEffective(current.banner, Date.now())
-      if (stale) {
+      const now = Date.now()
+      const cleanupMs = resolveShoutboxCleanupMs(current)
+      if (
+        cleanupMs !== null &&
+        (!Number.isFinite(cleanupMs) || cleanupMs <= now)
+      ) {
+        fireScheduled()
+        return
+      }
+      if (!isBannerEffective(current.banner, now)) {
         applyPayload(null)
+        if (inFlightRef.current === null) {
+          void load()
+        }
+        return
+      }
+      const validUntilMs = new Date(current.validUntil).getTime()
+      if (!Number.isFinite(validUntilMs) || validUntilMs <= now) {
         void load()
       }
     }
@@ -211,6 +299,7 @@ export const useShoutboxBanner = (
     return () => {
       generationRef.current += 1
       clearTimer()
+      clearCleanupTimer()
       document.removeEventListener('visibilitychange', handleVisibilityChange)
     }
   }, [enabled, applyPayload])

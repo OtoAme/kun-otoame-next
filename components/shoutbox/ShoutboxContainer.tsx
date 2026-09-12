@@ -5,25 +5,24 @@ import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import { Alert } from '@heroui/alert'
 import { Button } from '@heroui/button'
-import {
-  Modal,
-  ModalBody,
-  ModalContent,
-  ModalHeader,
-  useDisclosure
-} from '@heroui/modal'
+import { useDisclosure } from '@heroui/modal'
+import { Spinner } from '@heroui/spinner'
 import { Megaphone } from 'lucide-react'
-import { KunLoading } from '~/components/kun/Loading'
 import { KunNull } from '~/components/kun/Null'
 import { KunPagination } from '~/components/kun/Pagination'
 import { SHOUTBOX_PAGE_SIZE } from '~/constants/shoutbox'
 import { useUserStore } from '~/store/userStore'
 import { kunFetchGet } from '~/utils/kunFetch'
+import {
+  resolveShoutboxCleanupMs,
+  scheduleShoutboxDeadline
+} from '~/utils/shoutboxVisibility'
 import { ShoutboxCard } from './ShoutboxCard'
 import {
-  ShoutboxPublishForm,
-  type ShoutboxPickedPatch
-} from './ShoutboxPublishForm'
+  ShoutboxLoginModal,
+  ShoutboxPublishModal
+} from './ShoutboxPublishModal'
+import type { ShoutboxPickedPatch } from './ShoutboxPublishForm'
 import type { ShoutboxItem, ShoutboxListResponse } from '~/types/api/shoutbox'
 
 interface Props {
@@ -52,6 +51,9 @@ export const ShoutboxContainer = ({ initialData, patchUniqueId }: Props) => {
   const dataRef = useRef<ShoutboxListResponse | null>(initialData)
   const pageRef = useRef(initialData?.page ?? 1)
   const seqRef = useRef(0)
+  // Seq of the request currently in flight (0 = idle): automatic entries
+  // merge into it; released only by the request that still owns it.
+  const inFlightSeqRef = useRef(0)
   const publishModal = useDisclosure()
   const loginModal = useDisclosure()
 
@@ -76,15 +78,17 @@ export const ShoutboxContainer = ({ initialData, patchUniqueId }: Props) => {
     }
   }, [])
 
-  // At validUntil the current payload may no longer be valid; stale content
-  // is dropped BEFORE the refetch starts. A patch-scoped payload can contain
-  // rows that are visible only through the three-month retention rule while
-  // the slot boundary is server-side, so the whole payload goes. In the
-  // global stream only ordinary rows are age-independent; the pinned slot is
-  // dropped unconditionally because validUntil may mark the NEXT official
-  // message's effectiveFrom while the current pinned one's own interval is
-  // still running — it must not stay pinned while the refresh is pending or
-  // failed.
+  // At the real visibility boundary (visibilityUntil, never TTL-truncated)
+  // the current payload may no longer be valid; stale content is dropped
+  // BEFORE the refetch starts. A patch-scoped payload's visibility is
+  // decided server-side, so the whole payload goes. In the global stream
+  // ordinary rows are public history and stay visible regardless of age; the
+  // pinned slot is dropped unconditionally because the boundary may mark the
+  // NEXT official message's effectiveFrom while the current pinned one's own
+  // interval is still running — it must not stay pinned while the refresh is
+  // pending or failed. A plain validUntil/TTL expiry drops nothing: it only
+  // triggers a silent background refresh, and the new response replaces the
+  // current content atomically.
   const dropStalePayload = useCallback(() => {
     const current = dataRef.current
     if (!current) {
@@ -99,11 +103,14 @@ export const ShoutboxContainer = ({ initialData, patchUniqueId }: Props) => {
     }
   }, [applyData, patchUniqueId])
 
-  // All three boundary paths (timer, immediate fire, visibility restore) go
-  // through this guard: dropping the payload re-renders with the SAME old
-  // validUntil, and without the guard the effect would fire again and
-  // supersede the in-flight refresh with a duplicate request.
-  const firedForValidUntilRef = useRef<string | null>(null)
+  // All boundary paths (timers, immediate fire, visibility restore) go
+  // through these guards: dropping the payload re-renders with the SAME old
+  // deadlines, and without the guards the arming effect would fire again and
+  // supersede the in-flight refresh with a duplicate request. The refresh
+  // guard keys on validUntil (cache freshness), the cleanup guard on the
+  // resolved real visibility boundary.
+  const firedRefreshRef = useRef<string | null>(null)
+  const firedCleanupRef = useRef<string | null>(null)
 
   // A failed or already-expired refresh must not leave the page stuck at a
   // dropped boundary: back off by the base cache duration (60s for the global
@@ -114,13 +121,23 @@ export const ShoutboxContainer = ({ initialData, patchUniqueId }: Props) => {
     clearRetryTimer()
     retryTimerRef.current = setTimeout(() => {
       retryTimerRef.current = null
-      void loadRef.current(pageRef.current)
+      void loadRef.current(pageRef.current, { automatic: true })
     }, retryMs)
   }, [clearRetryTimer, retryMs])
 
   const load = useCallback(
-    async (targetPage: number, options?: { silent?: boolean }) => {
+    async (
+      targetPage: number,
+      options?: { silent?: boolean; automatic?: boolean }
+    ) => {
+      // Automatic entries (TTL, real boundary, backoff, visibility restore)
+      // merge into the request already in flight; manual page changes,
+      // post-publish refreshes and the retry button always start a new seq.
+      if (options?.automatic && inFlightSeqRef.current !== 0) {
+        return
+      }
       const seq = ++seqRef.current
+      inFlightSeqRef.current = seq
       clearRetryTimer()
       if (!options?.silent && dataRef.current === null) {
         setLoading(true)
@@ -146,15 +163,24 @@ export const ShoutboxContainer = ({ initialData, patchUniqueId }: Props) => {
         }
         applyData(result)
         applyPage(result.page)
-        // A payload whose validUntil is invalid or already past (e.g. the
-        // server's safe-empty fallback) must never enter the immediate
-        // boundary path — the effect would fire again at once and hot-loop.
-        // Mirror useShoutboxFeed: keep the rows minus certainly-stale parts
-        // and silently back off by the base cache duration.
+        // A TTL already past on arrival (slow transit, or the server's
+        // safe-empty fallback) only backs off freshness: the refresh guard
+        // keeps the arming effect from re-firing at once and hot-looping,
+        // and the applied payload stays on screen. Cleanup is judged
+        // independently against the REAL boundary — only a passed (or
+        // malformed) one drops the stale parts now; a future one stays
+        // armable by the effect, and an explicit null time-cleans nothing.
         const validUntilMs = new Date(result.validUntil).getTime()
         if (!Number.isFinite(validUntilMs) || validUntilMs <= Date.now()) {
-          firedForValidUntilRef.current = result.validUntil
-          dropStalePayload()
+          firedRefreshRef.current = result.validUntil
+          const cleanupMs = resolveShoutboxCleanupMs(result)
+          if (
+            cleanupMs !== null &&
+            (!Number.isFinite(cleanupMs) || cleanupMs <= Date.now())
+          ) {
+            firedCleanupRef.current = String(cleanupMs)
+            dropStalePayload()
+          }
           scheduleRetry()
         }
       } catch {
@@ -164,6 +190,9 @@ export const ShoutboxContainer = ({ initialData, patchUniqueId }: Props) => {
         setError('网络错误，请稍后重试')
         scheduleRetry()
       } finally {
+        if (inFlightSeqRef.current === seq) {
+          inFlightSeqRef.current = 0
+        }
         if (seq === seqRef.current) {
           setLoading(false)
           setFetching(false)
@@ -189,35 +218,86 @@ export const ShoutboxContainer = ({ initialData, patchUniqueId }: Props) => {
   }, [load])
   useEffect(() => {
     void loadRef.current(pageRef.current, { silent: true })
-    return () => clearRetryTimer()
-  }, [clearRetryTimer])
+    return () => {
+      // Invalidate this lifecycle's in-flight requests: a late response must
+      // neither set state nor arm new timers after unmount or a patch switch.
+      seqRef.current += 1
+      clearRetryTimer()
+    }
+  }, [clearRetryTimer, patchUniqueId])
 
-  const fireBoundary = useCallback(() => {
+  // Cache-freshness (validUntil/TTL) expiry: silently refresh in the
+  // background — the current rows and pinned slot stay on screen until the
+  // new response replaces them atomically. When the real visibility boundary
+  // is due at the same moment, the cleanup path owns the refetch instead, so
+  // an old payload (where the two coincide) never triggers two requests.
+  const fireRefresh = useCallback(() => {
     const current = dataRef.current
-    if (!current || firedForValidUntilRef.current === current.validUntil) {
+    if (!current || firedRefreshRef.current === current.validUntil) {
       return
     }
-    firedForValidUntilRef.current = current.validUntil
+    const cleanupMs = resolveShoutboxCleanupMs(current)
+    if (
+      cleanupMs !== null &&
+      (!Number.isFinite(cleanupMs) || cleanupMs <= Date.now())
+    ) {
+      return
+    }
+    firedRefreshRef.current = current.validUntil
+    void loadRef.current(pageRef.current, { silent: true, automatic: true })
+  }, [])
+
+  // The real visibility boundary: conservative cleanup first — a patch
+  // payload goes entirely, the global stream loses its pinned slot — then
+  // exactly one refetch. This must fire on time even while a background
+  // refresh is still in flight or backing off after a failure.
+  const fireCleanup = useCallback(() => {
+    const current = dataRef.current
+    if (!current) {
+      return
+    }
+    const cleanupMs = resolveShoutboxCleanupMs(current)
+    if (cleanupMs === null) {
+      return
+    }
+    const key = String(cleanupMs)
+    if (firedCleanupRef.current === key) {
+      return
+    }
+    firedCleanupRef.current = key
     dropStalePayload()
-    void loadRef.current(pageRef.current)
+    void loadRef.current(pageRef.current, { automatic: true })
   }, [dropStalePayload])
 
   useEffect(() => {
     if (!data) {
       return
     }
+    const now = Date.now()
     const validUntilMs = new Date(data.validUntil).getTime()
-    if (!Number.isFinite(validUntilMs)) {
-      return
+    const cleanupMs = resolveShoutboxCleanupMs(data)
+    const cancels: Array<() => void> = []
+    if (!Number.isFinite(validUntilMs) || validUntilMs <= now) {
+      fireRefresh()
+    } else {
+      const timer = setTimeout(fireRefresh, validUntilMs - now)
+      cancels.push(() => clearTimeout(timer))
     }
-    const delay = validUntilMs - Date.now()
-    if (delay <= 0) {
-      fireBoundary()
-      return
+    if (cleanupMs !== null) {
+      if (!Number.isFinite(cleanupMs) || cleanupMs <= now) {
+        fireCleanup()
+      } else {
+        // The real boundary may sit beyond setTimeout's 32-bit delay range:
+        // wait in segments that re-check the absolute deadline before firing.
+        cancels.push(scheduleShoutboxDeadline(cleanupMs, fireCleanup))
+      }
     }
-    const timer = setTimeout(fireBoundary, delay)
-    return () => clearTimeout(timer)
-  }, [data, fireBoundary])
+    return () => {
+      for (const cancel of cancels) {
+        cancel()
+      }
+    }
+  }, [data, fireRefresh, fireCleanup])
 
   useEffect(() => {
     const handleVisibilityChange = () => {
@@ -228,15 +308,24 @@ export const ShoutboxContainer = ({ initialData, patchUniqueId }: Props) => {
       if (!current) {
         return
       }
+      const now = Date.now()
+      const cleanupMs = resolveShoutboxCleanupMs(current)
+      if (
+        cleanupMs !== null &&
+        (!Number.isFinite(cleanupMs) || cleanupMs <= now)
+      ) {
+        fireCleanup()
+        return
+      }
       const validUntilMs = new Date(current.validUntil).getTime()
-      if (!Number.isFinite(validUntilMs) || validUntilMs <= Date.now()) {
-        fireBoundary()
+      if (!Number.isFinite(validUntilMs) || validUntilMs <= now) {
+        fireRefresh()
       }
     }
     document.addEventListener('visibilitychange', handleVisibilityChange)
     return () =>
       document.removeEventListener('visibilitychange', handleVisibilityChange)
-  }, [fireBoundary])
+  }, [fireRefresh, fireCleanup])
 
   // Notification deep links (/shoutbox?shoutbox=<id>): when the target
   // message is on the current page, scroll to it and highlight it.
@@ -361,7 +450,14 @@ export const ShoutboxContainer = ({ initialData, patchUniqueId }: Props) => {
       )}
 
       {loading && !data ? (
-        <KunLoading hint="正在获取小喇叭..." />
+        <div className="flex size-full items-center justify-center">
+          <Spinner
+            variant="default"
+            size="md"
+            color="primary"
+            label="正在获取小喇叭..."
+          />
+        </div>
       ) : !rows.length && !data?.pinned ? (
         <KunNull
           message={
@@ -371,11 +467,12 @@ export const ShoutboxContainer = ({ initialData, patchUniqueId }: Props) => {
           }
         />
       ) : (
-        <div className="space-y-3">
+        <div className="divide-y divide-default-100">
           {data?.pinned && (
             <ShoutboxCard
               item={data.pinned}
               pinned
+              compact
               highlight={highlightId === data.pinned.id}
               currentUserId={currentUserId}
               onChanged={handleChanged}
@@ -386,6 +483,7 @@ export const ShoutboxContainer = ({ initialData, patchUniqueId }: Props) => {
             <ShoutboxCard
               key={item.id}
               item={item}
+              compact
               highlight={highlightId === item.id}
               currentUserId={currentUserId}
               onChanged={handleChanged}
@@ -406,47 +504,18 @@ export const ShoutboxContainer = ({ initialData, patchUniqueId }: Props) => {
         </div>
       )}
 
-      <Modal
+      <ShoutboxPublishModal
         isOpen={publishModal.isOpen}
         onOpenChange={publishModal.onOpenChange}
-        placement="center"
-        scrollBehavior="inside"
-      >
-        <ModalContent>
-          <ModalHeader>发布小喇叭</ModalHeader>
-          <ModalBody className="pb-6">
-            <ShoutboxPublishForm
-              key={presetPatch?.id ?? 'none'}
-              presetPatch={presetPatch}
-              lockPatchSelection={presetPatch !== null}
-              onPublished={handlePublished}
-            />
-          </ModalBody>
-        </ModalContent>
-      </Modal>
+        presetPatch={presetPatch}
+        lockPatchSelection={presetPatch !== null}
+        onPublished={handlePublished}
+      />
 
-      <Modal
+      <ShoutboxLoginModal
         isOpen={loginModal.isOpen}
         onOpenChange={loginModal.onOpenChange}
-        placement="center"
-      >
-        <ModalContent>
-          <ModalHeader>请先登录</ModalHeader>
-          <ModalBody className="pb-6">
-            <p className="text-sm text-default-500">
-              发布小喇叭需要先登录账号。
-            </p>
-            <div className="mt-3 flex gap-2">
-              <Button as={Link} href="/login" color="primary">
-                登录
-              </Button>
-              <Button as={Link} href="/register" variant="bordered">
-                注册
-              </Button>
-            </div>
-          </ModalBody>
-        </ModalContent>
-      </Modal>
+      />
     </div>
   )
 }

@@ -26,7 +26,10 @@ const EMPTY_TEXT: Record<AdminShoutboxTab, string> = {
  * Console shoutbox page. The official tab keeps the publish form and the
  * edit / end / cancel lifecycle actions; the other tabs list review, public
  * and removed records with moderation actions. Every state change goes
- * through a confirmation dialog before writing.
+ * through a confirmation dialog before writing. A `?shoutbox=<id>` URL shows
+ * a targeted view instead: just that record (any status, with its pending
+ * reports), a back-to-list button, and the same moderation handlers — the
+ * tab strip, publish form and pagination stay out.
  */
 export const DashboardShoutbox = () => {
   const {
@@ -39,8 +42,72 @@ export const DashboardShoutbox = () => {
     error,
     refresh,
     setTab,
-    setPage
+    setPage,
+    backToList
   } = useAdminShoutbox()
+
+  const listContent = loading ? (
+    <div role="status" aria-busy="true" aria-label="正在加载小喇叭列表">
+      {Array.from({ length: SKELETON_ROWS }).map((_, index) => (
+        <Skeleton
+          key={`shoutbox-skeleton-${index}`}
+          className="mb-2 h-24 w-full"
+        />
+      ))}
+    </div>
+  ) : error !== null ? (
+    <div className="flex flex-col items-center justify-center gap-3 rounded-md border py-10">
+      <p role="alert" className="text-sm text-destructive">
+        {error}
+      </p>
+      <Button variant="outline" size="sm" onClick={refresh}>
+        重试
+      </Button>
+    </div>
+  ) : items.length === 0 ? (
+    <div className="flex h-32 flex-col items-center justify-center gap-2 rounded-md border text-center">
+      <p className="text-sm text-muted-foreground">
+        {query.shoutboxId === null
+          ? EMPTY_TEXT[query.tab]
+          : `未找到小喇叭 #${query.shoutboxId}`}
+      </p>
+    </div>
+  ) : (
+    items.map((item) => (
+      <ShoutboxAdminItem key={item.id} item={item} onChanged={refresh} />
+    ))
+  )
+
+  if (query.shoutboxId !== null) {
+    return (
+      <div className="flex h-full min-h-0 min-w-0 flex-col gap-4 overflow-y-auto p-4">
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={backToList}
+          >
+            返回列表
+          </Button>
+          <p className="text-sm text-muted-foreground">
+            正在查看小喇叭 #{query.shoutboxId}
+          </p>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={refresh}
+            disabled={loading || refreshing}
+          >
+            <RefreshCw className={refreshing ? 'animate-spin' : undefined} />
+            {refreshing ? '刷新中…' : '刷新'}
+          </Button>
+        </div>
+        <div className="space-y-2">{listContent}</div>
+      </div>
+    )
+  }
 
   return (
     <div className="flex h-full min-h-0 min-w-0 flex-col gap-4 overflow-y-auto p-4">
@@ -74,41 +141,7 @@ export const DashboardShoutbox = () => {
           </div>
         )}
 
-        <div className="mt-3 space-y-2">
-          {loading ? (
-            <div role="status" aria-busy="true" aria-label="正在加载小喇叭列表">
-              {Array.from({ length: SKELETON_ROWS }).map((_, index) => (
-                <Skeleton
-                  key={`shoutbox-skeleton-${index}`}
-                  className="mb-2 h-24 w-full"
-                />
-              ))}
-            </div>
-          ) : error !== null ? (
-            <div className="flex flex-col items-center justify-center gap-3 rounded-md border py-10">
-              <p role="alert" className="text-sm text-destructive">
-                {error}
-              </p>
-              <Button variant="outline" size="sm" onClick={refresh}>
-                重试
-              </Button>
-            </div>
-          ) : items.length === 0 ? (
-            <div className="flex h-32 flex-col items-center justify-center gap-2 rounded-md border text-center">
-              <p className="text-sm text-muted-foreground">
-                {EMPTY_TEXT[query.tab]}
-              </p>
-            </div>
-          ) : (
-            items.map((item) => (
-              <ShoutboxAdminItem
-                key={item.id}
-                item={item}
-                onChanged={refresh}
-              />
-            ))
-          )}
-        </div>
+        <div className="mt-3 space-y-2">{listContent}</div>
 
         {totalPages > 1 && (
           <div className="mt-3 flex flex-wrap items-center justify-between gap-2">

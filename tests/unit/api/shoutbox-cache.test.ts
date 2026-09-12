@@ -16,7 +16,9 @@ vi.mock('~/app/api/utils/purgeCloudflareCache', () => ({
 
 import {
   getShoutboxCached,
-  getShoutboxCacheTtl
+  getShoutboxCacheKey,
+  getShoutboxCacheTtl,
+  getShoutboxBannerCacheKey
 } from '~/app/api/shoutbox/cache'
 
 describe('shoutbox cache clock validation', () => {
@@ -32,7 +34,7 @@ describe('shoutbox cache clock validation', () => {
     })
 
     await getShoutboxCached(
-      'shoutbox:list:v1:p1',
+      'shoutbox:list:v4:p1',
       async () => ({ validUntil: start.toISOString() }),
       60,
       () => current
@@ -70,5 +72,14 @@ describe('shoutbox cache clock validation', () => {
         validUntil: new Date(start.getTime() + 60_000).toISOString()
       })
     ).toBe(false)
+  })
+
+  it('keeps the fifteen-row home payload separate from list page one', () => {
+    expect(getShoutboxCacheKey(null, 1, 'home')).toBe('shoutbox:home:v4')
+    expect(getShoutboxCacheKey(null, 1)).toBe('shoutbox:list:v4:p1')
+    expect(getShoutboxCacheKey('Abc12345', 1)).toBe(
+      'shoutbox:patch:v4:Abc12345:p1'
+    )
+    expect(getShoutboxBannerCacheKey()).toBe('shoutbox:banner:v3')
   })
 })

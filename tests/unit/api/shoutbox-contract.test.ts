@@ -8,6 +8,7 @@ vi.mock('~/app/api/utils/purgeCloudflareCache', () => ({
   purgePublicApiCache: vi.fn()
 }))
 import {
+  SHOUTBOX_HOME_LIMIT,
   SHOUTBOX_PAGE_SIZE,
   SHOUTBOX_PRICE,
   SHOUTBOX_BLOCKED_KEYWORDS,
@@ -19,10 +20,6 @@ import {
   getShoutboxPageWindow
 } from '~/app/api/shoutbox/service'
 import {
-  addShoutboxRetentionMonths,
-  getShoutboxExpiry
-} from '~/utils/shoutboxTime'
-import {
   shoutboxCreateSchema,
   adminShoutboxCreateSchema,
   adminShoutboxListSchema,
@@ -33,7 +30,8 @@ import {
 describe('M02 shoutbox shared contract', () => {
   it('keeps fixed approved parameters and status labels', () => {
     expect(SHOUTBOX_PRICE).toBe(50)
-    expect(SHOUTBOX_PAGE_SIZE).toBe(6)
+    expect(SHOUTBOX_PAGE_SIZE).toBe(20)
+    expect(SHOUTBOX_HOME_LIMIT).toBe(15)
     expect(SHOUTBOX_BLOCKED_KEYWORDS).toEqual([])
     expect(getShoutboxStatusLabel(3, false)).toBe('违规删除')
     expect(getShoutboxStatusLabel(3, true)).toBe('已撤回')
@@ -43,19 +41,19 @@ describe('M02 shoutbox shared contract', () => {
     })
   })
 
-  it('uses Shanghai calendar months and clamps month ends', () => {
-    const created = new Date('2026-01-31T15:59:59.999Z')
-    const expiry = addShoutboxRetentionMonths(created, 3)
-
-    expect(expiry.toISOString()).toBe('2026-04-30T15:59:59.999Z')
-    expect(getShoutboxExpiry(created).toISOString()).toBe(expiry.toISOString())
-  })
-
   it('reserves one first-page slot for a pinned message', () => {
-    expect(getShoutboxPageWindow(1, true)).toEqual({ skip: 0, take: 5 })
-    expect(getShoutboxPageWindow(2, true)).toEqual({ skip: 5, take: 6 })
-    expect(getShoutboxPageWindow(10, false)).toEqual({ skip: 54, take: 6 })
-    expect(getShoutboxPageCount(61)).toBe(10)
+    expect(getShoutboxPageWindow(1, true)).toEqual({ skip: 0, take: 19 })
+    expect(getShoutboxPageWindow(2, true)).toEqual({ skip: 19, take: 20 })
+    expect(getShoutboxPageWindow(1, true, SHOUTBOX_HOME_LIMIT)).toEqual({
+      skip: 0,
+      take: 14
+    })
+    expect(getShoutboxPageWindow(1, false, SHOUTBOX_HOME_LIMIT)).toEqual({
+      skip: 0,
+      take: 15
+    })
+    expect(getShoutboxPageWindow(100, false)).toEqual({ skip: 1980, take: 20 })
+    expect(getShoutboxPageCount(61)).toBe(4)
     expect(getShoutboxPageCount(0)).toBe(0)
   })
 
@@ -63,29 +61,44 @@ describe('M02 shoutbox shared contract', () => {
     expect(
       shoutboxCreateSchema.safeParse({
         requestId: '550e8400-e29b-41d4-a716-446655440000',
-        content: '  一条消息  ',
+        content: '  一条\n消息  ',
         patchId: '8'
       })
     ).toMatchObject({
       success: true,
       data: {
         requestId: '550e8400-e29b-41d4-a716-446655440000',
-        content: '一条消息',
+        content: '一条 消息',
         patchId: 8
       }
     })
-    expect(shoutboxListSchema.safeParse({ page: 11, limit: 6 }).success).toBe(
-      false
+    expect(shoutboxListSchema.safeParse({ page: 11, limit: 20 }).success).toBe(
+      true
     )
     expect(
-      shoutboxListSchema.safeParse({ page: 11, limit: 6, patch: 'Abc12345' })
+      shoutboxListSchema.safeParse({ view: 'home' }).success
+    ).toBe(true)
+    expect(
+      shoutboxListSchema.safeParse({ view: 'home', limit: 15 }).success
+    ).toBe(true)
+    expect(
+      shoutboxListSchema.safeParse({ view: 'home', limit: 20 }).success
+    ).toBe(false)
+    expect(
+      shoutboxListSchema.safeParse({ view: 'home', patch: 'Abc12345' }).success
+    ).toBe(false)
+    expect(
+      shoutboxListSchema.safeParse({ view: 'home', page: 2 }).success
+    ).toBe(false)
+    expect(
+      shoutboxListSchema.safeParse({ page: 11, limit: 20, patch: 'Abc12345' })
         .success
     ).toBe(true)
-    expect(shoutboxListSchema.safeParse({ page: 1, limit: 5 }).success).toBe(
+    expect(shoutboxListSchema.safeParse({ page: 1, limit: 19 }).success).toBe(
       false
     )
     expect(
-      shoutboxListSchema.safeParse({ page: 1, limit: 6, patch: 'bad' }).success
+      shoutboxListSchema.safeParse({ page: 1, limit: 20, patch: 'bad' }).success
     ).toBe(false)
     expect(
       adminShoutboxCreateSchema.safeParse({
@@ -112,5 +125,16 @@ describe('M02 shoutbox shared contract', () => {
     expect(
       adminShoutboxListSchema.safeParse({ tab: 'pending_review' }).success
     ).toBe(true)
+    expect(
+      adminShoutboxListSchema.parse({ shoutboxId: '42' }).shoutboxId
+    ).toBe(42)
+    expect(
+      adminShoutboxListSchema.safeParse({ shoutboxId: 0 }).success
+    ).toBe(false)
+    expect(
+      adminShoutboxListSchema.safeParse({
+        shoutboxId: Number.MAX_SAFE_INTEGER
+      }).success
+    ).toBe(false)
   })
 })

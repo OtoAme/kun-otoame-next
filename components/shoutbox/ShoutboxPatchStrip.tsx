@@ -5,8 +5,9 @@ import { Button } from '@heroui/button'
 import { Card, CardBody } from '@heroui/card'
 import { ChevronRight, Megaphone } from 'lucide-react'
 import { useShoutboxFeed } from '~/hooks/useShoutboxFeed'
+import { useUserStore } from '~/store/userStore'
 import { SHOUTBOX_PATCH_STRIP_TITLE } from '~/constants/shoutbox'
-import { ShoutboxCompactRow } from '../shoutbox/ShoutboxCompactRow'
+import { ShoutboxCard } from '../shoutbox/ShoutboxCard'
 
 interface Props {
   patchUniqueId: string
@@ -19,7 +20,8 @@ interface Props {
  * to show, so the game page layout never shifts around a widget.
  */
 export const ShoutboxPatchStrip = ({ patchUniqueId }: Props) => {
-  const { data, loading } = useShoutboxFeed({ patch: patchUniqueId })
+  const { data, loading, retry } = useShoutboxFeed({ patch: patchUniqueId })
+  const currentUserId = useUserStore((state) => state.user.uid)
   const rows = (data?.shoutboxes ?? []).slice(0, 3)
 
   if ((loading && !data) || rows.length === 0) {
@@ -49,7 +51,14 @@ export const ShoutboxPatchStrip = ({ patchUniqueId }: Props) => {
           </Button>
         </div>
         {rows.map((item) => (
-          <ShoutboxCompactRow key={item.id} item={item} />
+          <ShoutboxCard
+            key={item.id}
+            item={item}
+            compact
+            showDelete={false}
+            currentUserId={currentUserId}
+            onChanged={retry}
+          />
         ))}
       </CardBody>
     </Card>

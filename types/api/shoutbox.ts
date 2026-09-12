@@ -19,6 +19,8 @@ export interface ShoutboxAuthor {
 export interface ShoutboxItem {
   id: number
   user: ShoutboxAuthor
+  /** Whether the current author is eligible to receive a new report. */
+  reportable: boolean
   content: string
   link: string
   official: boolean
@@ -45,11 +47,18 @@ export interface ShoutboxListResponse {
   page: number
   totalPages: number
   validUntil: string
+  visibilityUntil?: string | null
+}
+
+/** Home uses one fixed response page and exposes whether a more link is useful. */
+export interface ShoutboxHomeResponse extends ShoutboxListResponse {
+  hasMore: boolean
 }
 
 export interface ShoutboxBannerResponse {
   banner: ShoutboxItem | null
   validUntil: string
+  visibilityUntil?: string | null
 }
 
 export interface ShoutboxProfileResponse {

@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
       create: vi.fn(),
       updateMany: vi.fn()
     },
+    user: { findUnique: vi.fn(), findMany: vi.fn() },
     user_message: { create: vi.fn() },
     admin_log: { create: vi.fn() }
   },
@@ -86,6 +87,8 @@ beforeEach(() => {
   mocks.prisma.patch_report.findMany.mockResolvedValue([])
   mocks.prisma.patch_report.create.mockResolvedValue({ id: 30, sender_id: 8 })
   mocks.prisma.patch_report.updateMany.mockResolvedValue({ count: 1 })
+  mocks.prisma.user.findUnique.mockResolvedValue({ role: 1 })
+  mocks.prisma.user.findMany.mockResolvedValue([])
   mocks.prisma.admin_log.create.mockResolvedValue({})
   mocks.createMessage.mockResolvedValue({})
   mocks.invalidateShoutboxCaches.mockResolvedValue(undefined)
@@ -117,6 +120,34 @@ describe('shoutbox report and moderation contracts', () => {
     expect(mocks.prisma.patch_report.create).not.toHaveBeenCalled()
   })
 
+  it.each([false, true])(
+    'rejects a report for a role-4 author (%s official) before any report side effect',
+    async (official) => {
+      mocks.prisma.$queryRaw.mockResolvedValueOnce([
+        message({ official })
+      ])
+      mocks.prisma.user.findUnique.mockResolvedValueOnce({ role: 4 })
+
+      const result = await createShoutboxReport(reportInput, 8, {
+        now,
+        db: mocks.prisma as never
+      })
+
+      expect(result).toBe('超级管理员发布的小喇叭不能举报')
+      expect(mocks.prisma.user.findUnique).toHaveBeenCalledWith({
+        where: { id: 7 },
+        select: { role: true }
+      })
+      expect(mocks.prisma.patch_report.findFirst).not.toHaveBeenCalled()
+      expect(mocks.prisma.patch_report.create).not.toHaveBeenCalled()
+      expect(mocks.prisma.patch_report.findMany).not.toHaveBeenCalled()
+      expect(mocks.prisma.shoutbox.updateMany).not.toHaveBeenCalled()
+      expect(mocks.prisma.user.findMany).not.toHaveBeenCalled()
+      expect(mocks.createMessage).not.toHaveBeenCalled()
+      expect(mocks.invalidateShoutboxCaches).not.toHaveBeenCalled()
+    }
+  )
+
   it.each([
     ['an author-deleted message', { status: 1 }],
     ['a station-removed message', { status: 3 }]
@@ -142,6 +173,7 @@ describe('shoutbox report and moderation contracts', () => {
 
     expect(result).toBe('您已经举报过该小喇叭，请等待站方处理')
     expect(mocks.prisma.patch_report.create).not.toHaveBeenCalled()
+    expect(mocks.prisma.user.findMany).not.toHaveBeenCalled()
   })
 
   it('rejects a not-yet-effective official message', async () => {
@@ -207,6 +239,84 @@ describe('shoutbox report and moderation contracts', () => {
     expect(mocks.invalidateShoutboxCaches).not.toHaveBeenCalled()
   })
 
+  it('notifies every admin after a report commits and isolates recipient failures', async () => {
+    mocks.prisma.user.findMany.mockResolvedValueOnce([
+      { id: 30 },
+      { id: 31 },
+      { id: 32 }
+    ])
+    mocks.createMessage
+      .mockResolvedValueOnce({})
+      .mockRejectedValueOnce(new Error('recipient unavailable'))
+      .mockResolvedValueOnce({})
+
+    const result = await createShoutboxReport(reportInput, 8, {
+      now,
+      db: mocks.prisma as never
+    })
+
+    expect(result).toEqual({})
+    expect(mocks.prisma.user.findMany).toHaveBeenCalledWith({
+      where: { role: { gte: 3 } },
+      select: { id: true }
+    })
+    expect(mocks.createMessage).toHaveBeenCalledTimes(3)
+    expect(mocks.createMessage.mock.calls).toEqual(
+      expect.arrayContaining([
+        [
+          {
+            type: 'system',
+            content: '用户举报了小喇叭 #12，请前往后台处理。',
+            sender_id: 8,
+            recipient_id: 30,
+            link: '/dashboard/shoutbox?shoutbox=12'
+          },
+          mocks.prisma
+        ],
+        [
+          {
+            type: 'system',
+            content: '用户举报了小喇叭 #12，请前往后台处理。',
+            sender_id: 8,
+            recipient_id: 31,
+            link: '/dashboard/shoutbox?shoutbox=12'
+          },
+          mocks.prisma
+        ],
+        [
+          {
+            type: 'system',
+            content: '用户举报了小喇叭 #12，请前往后台处理。',
+            sender_id: 8,
+            recipient_id: 32,
+            link: '/dashboard/shoutbox?shoutbox=12'
+          },
+          mocks.prisma
+        ]
+      ])
+    )
+  })
+
+  it('keeps a committed report successful when the admin lookup fails', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      mocks.prisma.user.findMany.mockRejectedValueOnce(
+        new Error('admin lookup unavailable')
+      )
+
+      const result = await createShoutboxReport(reportInput, 8, {
+        now,
+        db: mocks.prisma as never
+      })
+
+      expect(result).toEqual({})
+      expect(mocks.prisma.patch_report.create).toHaveBeenCalledOnce()
+      expect(mocks.createMessage).not.toHaveBeenCalled()
+    } finally {
+      errorSpy.mockRestore()
+    }
+  })
+
   it('keeps official messages public when reports reach the threshold', async () => {
     mocks.prisma.$queryRaw.mockResolvedValueOnce([
       message({ official: true, level: 'important', effective_from: now })
@@ -216,12 +326,15 @@ describe('shoutbox report and moderation contracts', () => {
       { id: 21, sender_id: 9 },
       { id: 30, sender_id: 10 }
     ])
+    mocks.prisma.user.findUnique.mockResolvedValueOnce({ role: 3 })
 
-    await createShoutboxReport(reportInput, 10, {
+    const result = await createShoutboxReport(reportInput, 10, {
       now,
       db: mocks.prisma as never
     })
 
+    expect(result).toEqual({})
+    expect(mocks.prisma.patch_report.create).toHaveBeenCalledOnce()
     expect(mocks.prisma.shoutbox.updateMany).not.toHaveBeenCalled()
     expect(mocks.invalidateShoutboxCaches).not.toHaveBeenCalled()
   })

@@ -152,7 +152,37 @@ vi.mock('@heroui/card', () => ({
   ),
   CardBody: ({ children }: { children?: React.ReactNode }) => (
     <div>{children}</div>
+  ),
+  CardHeader: ({ children }: { children?: React.ReactNode }) => (
+    <div>{children}</div>
   )
+}))
+
+vi.mock('@heroui/scroll-shadow', () => ({
+  ScrollShadow: ({
+    children,
+    className,
+    ...rest
+  }: {
+    children?: React.ReactNode
+    className?: string
+  } & React.HTMLAttributes<HTMLDivElement>) => (
+    <div className={className} {...rest}>
+      {children}
+    </div>
+  )
+}))
+
+vi.mock('@heroui/spinner', () => ({
+  Spinner: ({ label }: { label?: string }) => (
+    <div role="status" data-testid="spinner">
+      {label}
+    </div>
+  )
+}))
+
+vi.mock('@heroui/tooltip', () => ({
+  Tooltip: ({ children }: { children?: React.ReactNode }) => <>{children}</>
 }))
 
 vi.mock('@heroui/chip', () => ({
@@ -307,9 +337,14 @@ vi.mock('~/components/kun/Pagination', () => ({
 
 // The home module drives its own data hook; tests stub the hook result
 // directly while ShoutboxContainer below keeps using the real fetch path.
+// Only the home response carries hasMore, so the stub type keeps it optional.
 const feedMock = vi.hoisted(() => ({
   result: {
-    data: null as import('~/types/api/shoutbox').ShoutboxListResponse | null,
+    data: null as
+      | (import('~/types/api/shoutbox').ShoutboxListResponse & {
+          hasMore?: boolean
+        })
+      | null,
     loading: false,
     error: '',
     retry: vi.fn()
@@ -322,6 +357,7 @@ vi.mock('~/hooks/useShoutboxFeed', () => ({
 import { ShoutboxContainer } from '~/components/shoutbox/ShoutboxContainer'
 import { ShoutboxHomeSection } from '~/components/shoutbox/ShoutboxHomeSection'
 import { ShoutboxPatchStrip } from '~/components/shoutbox/ShoutboxPatchStrip'
+import { SHOUTBOX_HOME_LIMIT, SHOUTBOX_PAGE_SIZE } from '~/constants/shoutbox'
 import type {
   ShoutboxItem,
   ShoutboxListResponse,
@@ -346,6 +382,7 @@ const makeItem = (
   editedAt: null,
   hiddenAt: null,
   refundedAt: null,
+  reportable: true,
   created: new Date(Date.now() - id * 1000).toISOString(),
   updated: new Date(Date.now() - id * 1000).toISOString(),
   ...overrides
@@ -441,6 +478,7 @@ describe('ShoutboxContainer', () => {
     vi.clearAllMocks()
     mocks.search = ''
     mocks.user.uid = 1
+    mocks.user.role = 1
     mocks.user.moemoepoint = 500
     mocks.user.moemoepointAvailable = 500
   })
@@ -457,7 +495,7 @@ describe('ShoutboxContainer', () => {
     vi.resetModules()
   })
 
-  it('renders the pinned official message as the first of six slots', async () => {
+  it('renders the pinned official message ahead of the ordinary rows', async () => {
     const pinned = makeItem(900, {
       official: true,
       level: 'important',
@@ -466,18 +504,16 @@ describe('ShoutboxContainer', () => {
       effectiveTo: new Date(Date.now() + 3_600_000).toISOString()
     })
     const rows = [5, 4, 3, 2, 1].map((id) => makeItem(id))
-    mocks.kunFetchGet.mockResolvedValue(
-      makeList({ pinned, shoutboxes: rows })
-    )
+    mocks.kunFetchGet.mockResolvedValue(makeList({ pinned, shoutboxes: rows }))
     await renderContainer(makeList({ pinned, shoutboxes: rows }))
 
-    const cards = Array.from(
-      container.querySelectorAll('[id^="shoutbox-"]')
-    )
+    const cards = Array.from(container.querySelectorAll('[id^="shoutbox-"]'))
     expect(cards).toHaveLength(6)
     expect(cards[0]?.id).toBe('shoutbox-900')
-    expect(container.textContent).toContain('官方')
+    // The official badge chip is gone; pinned and level chips stay.
+    expect(container.textContent).not.toContain('官方')
     expect(container.textContent).toContain('置顶')
+    expect(container.textContent).toContain('重要')
   })
 
   it('keeps the same requestId after an unknown publish result and applies the authoritative balance on success', async () => {
@@ -524,7 +560,7 @@ describe('ShoutboxContainer', () => {
     })
     // After publishing, the container returns to page 1 and refetches it.
     const lastListCall = mocks.kunFetchGet.mock.calls.at(-1)
-    expect(lastListCall?.[1]).toEqual({ page: 1, limit: 6 })
+    expect(lastListCall?.[1]).toEqual({ page: 1, limit: SHOUTBOX_PAGE_SIZE })
   })
 
   it('blocks publishing when the available balance is below the price', async () => {
@@ -717,27 +753,7 @@ describe('ShoutboxContainer', () => {
     expect(container.textContent).toContain('网络错误，请稍后重试')
   })
 
-  it('home module renders at most six rows including the pinned official one', async () => {
-    const pinned = makeItem(900, {
-      official: true,
-      level: 'important',
-      cost: 0,
-      effectiveFrom: new Date(Date.now() - 60_000).toISOString(),
-      effectiveTo: new Date(Date.now() + 3_600_000).toISOString()
-    })
-    // A malformed/future response with a pinned message AND six ordinary
-    // rows must still render exactly six slots.
-    feedMock.result = {
-      data: makeList({
-        pinned,
-        shoutboxes: [6, 5, 4, 3, 2, 1].map((id) => makeItem(id)),
-        totalPages: 2
-      }),
-      loading: false,
-      error: '',
-      retry: vi.fn()
-    }
-
+  const renderHome = async () => {
     dom = new JSDOM('<!doctype html><div id="root"></div>', {
       url: 'http://localhost/'
     })
@@ -750,14 +766,259 @@ describe('ShoutboxContainer', () => {
     await act(async () => {
       root!.render(<ShoutboxHomeSection />)
       await Promise.resolve()
+      await Promise.resolve()
     })
+  }
 
-    const text = container.textContent ?? ''
-    const rendered = Array.from(text.matchAll(/消息 (\d+)/g)).map(
-      (match) => match[1]
+  it('home module renders at most the home limit of rows including the pinned official one', async () => {
+    const pinned = makeItem(900, {
+      official: true,
+      level: 'important',
+      cost: 0,
+      effectiveFrom: new Date(Date.now() - 60_000).toISOString(),
+      effectiveTo: new Date(Date.now() + 3_600_000).toISOString()
+    })
+    // A malformed/future response with a pinned message AND a full page of
+    // ordinary rows must still render exactly the home limit of slots.
+    feedMock.result = {
+      data: makeList({
+        pinned,
+        shoutboxes: Array.from({ length: SHOUTBOX_HOME_LIMIT }, (_, index) =>
+          makeItem(SHOUTBOX_HOME_LIMIT - index)
+        ),
+        totalPages: 2
+      }),
+      loading: false,
+      error: '',
+      retry: vi.fn()
+    }
+
+    await renderHome()
+
+    // One author link per rendered row: the pinned official message first,
+    // then ordinary rows capped so the total never exceeds the home limit.
+    const authorLinks = Array.from(
+      container.querySelectorAll<HTMLAnchorElement>('a[href^="/user/"]')
+    ).map((link) => link.getAttribute('href'))
+    expect(authorLinks).toHaveLength(SHOUTBOX_HOME_LIMIT)
+    expect(authorLinks[0]).toBe(`/user/${100 + 900}`)
+    // The 15th ordinary row (user 101) is cut to make room for the pin.
+    expect(authorLinks).toContain(`/user/${100 + SHOUTBOX_HOME_LIMIT}`)
+    expect(authorLinks).not.toContain('/user/101')
+  })
+
+  it('home renders the "show more" entry as the scroll region\'s last item when the feed reports a 16th+ public record', async () => {
+    feedMock.result = {
+      data: { ...makeList(), hasMore: true },
+      loading: false,
+      error: '',
+      retry: vi.fn()
+    }
+    await renderHome()
+
+    const region = container.querySelector('[role="region"]')
+    expect(region).not.toBeNull()
+    const entry = region!.querySelector('a[href="/shoutbox"]')
+    expect(entry?.textContent).toContain('显示更多')
+    // The entry is the scroll region's last item and exists nowhere else:
+    // it only appears after scrolling to the end, never as a fixed footer.
+    expect(region!.lastElementChild?.contains(entry)).toBe(true)
+    expect(container.querySelectorAll('a[href="/shoutbox"]')).toHaveLength(1)
+  })
+
+  it('home keeps the "show more" footer unmounted when no further record exists or the field is missing', async () => {
+    feedMock.result = {
+      data: { ...makeList(), hasMore: false },
+      loading: false,
+      error: '',
+      retry: vi.fn()
+    }
+    await renderHome()
+    expect(container.querySelector('a[href="/shoutbox"]')).toBeNull()
+
+    // A legacy response without the field counts as "no more".
+    await act(async () => {
+      root!.unmount()
+    })
+    root = undefined
+    dom?.window.close()
+    dom = undefined
+    vi.unstubAllGlobals()
+    feedMock.result = {
+      data: makeList(),
+      loading: false,
+      error: '',
+      retry: vi.fn()
+    }
+    await renderHome()
+    expect(container.querySelector('a[href="/shoutbox"]')).toBeNull()
+  })
+
+  it('home lets the author edit their own message in place (no delete entry) and refreshes the feed', async () => {
+    const own = makeItem(5, {
+      user: { id: 1, name: '我', avatar: '' },
+      content: '自己的消息',
+      created: new Date().toISOString()
+    })
+    feedMock.result = {
+      data: makeList({ shoutboxes: [own] }),
+      loading: false,
+      error: '',
+      retry: vi.fn()
+    }
+    await renderHome()
+
+    const editButton = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="编辑"]'
     )
-    expect(rendered).toEqual(['900', '6', '5', '4', '3', '2'])
-    expect(text.indexOf('消息 900')).toBeLessThan(text.indexOf('消息 6'))
+    expect(editButton).not.toBeNull()
+    // The home module must not gain a delete entry.
+    expect(container.querySelector('button[aria-label="删除"]')).toBeNull()
+
+    await act(async () => {
+      editButton!.click()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    await fillTextarea(
+      container.querySelector<HTMLTextAreaElement>(
+        'textarea[aria-label="编辑小喇叭"]'
+      )!,
+      '改过的内容'
+    )
+    mocks.kunFetchPut.mockResolvedValue(
+      makeItem(5, {
+        user: { id: 1, name: '我', avatar: '' },
+        content: '改过的内容',
+        editedAt: new Date().toISOString()
+      })
+    )
+    await clickButton(container, '保存')
+
+    expect(mocks.kunFetchPut).toHaveBeenCalledWith('/shoutbox', {
+      shoutboxId: 5,
+      content: '改过的内容'
+    })
+    expect(feedMock.result.retry).toHaveBeenCalledTimes(1)
+  })
+
+  it('home publish normalizes manual newlines before sending', async () => {
+    feedMock.result = {
+      data: makeList(),
+      loading: false,
+      error: '',
+      retry: vi.fn()
+    }
+    const published: ShoutboxPublishResponse = {
+      ...makeItem(903, { user: { id: 1, name: '我', avatar: '' } }),
+      moemoepointBalance: { total: 450, reserved: 0, available: 450 }
+    }
+    mocks.kunFetchPost.mockResolvedValueOnce(published)
+
+    await renderHome()
+    await clickButton(container, '发布小喇叭')
+    await fillTextarea(
+      container.querySelector<HTMLTextAreaElement>(
+        'textarea[aria-label="小喇叭正文"]'
+      )!,
+      '第一行\n第二行'
+    )
+    await clickDialogButton(container, '发布小喇叭')
+
+    expect(mocks.kunFetchPost).toHaveBeenCalledWith(
+      '/shoutbox',
+      expect.objectContaining({ content: '第一行 第二行' })
+    )
+  })
+
+  it('home publish opens the shared form for a logged-in user and refreshes the feed on success', async () => {
+    feedMock.result = {
+      data: makeList(),
+      loading: false,
+      error: '',
+      retry: vi.fn()
+    }
+    const published: ShoutboxPublishResponse = {
+      ...makeItem(902, { user: { id: 1, name: '我', avatar: '' } }),
+      moemoepointBalance: { total: 450, reserved: 0, available: 450 }
+    }
+    mocks.kunFetchPost.mockResolvedValueOnce(published)
+
+    await renderHome()
+    await clickButton(container, '发布小喇叭')
+    expect(container.querySelector('[role="dialog"]')).not.toBeNull()
+
+    await fillTextarea(
+      container.querySelector<HTMLTextAreaElement>(
+        'textarea[aria-label="小喇叭正文"]'
+      )!,
+      '首页发出的小喇叭'
+    )
+    await clickDialogButton(container, '发布小喇叭')
+
+    expect(mocks.kunFetchPost).toHaveBeenCalledTimes(1)
+    expect(mocks.toastSuccess).toHaveBeenCalledWith('小喇叭已发布')
+    // The home feed refreshes after a successful publish.
+    expect(feedMock.result.retry).toHaveBeenCalledTimes(1)
+    expect(container.querySelector('[role="dialog"]')).toBeNull()
+  })
+
+  it('home publish shows the login prompt to guests instead of the form', async () => {
+    mocks.user.uid = 0
+    feedMock.result = {
+      data: makeList(),
+      loading: false,
+      error: '',
+      retry: vi.fn()
+    }
+
+    await renderHome()
+    await clickButton(container, '发布小喇叭')
+
+    expect(container.textContent).toContain('发布小喇叭需要先登录账号')
+    expect(
+      container.querySelector('textarea[aria-label="小喇叭正文"]')
+    ).toBeNull()
+    expect(mocks.kunFetchPost).not.toHaveBeenCalled()
+  })
+
+  it('keeps the official entry out of the home card and shows it inside the publish dialog to administrators only', async () => {
+    mocks.user.role = 3
+    feedMock.result = {
+      data: makeList(),
+      loading: false,
+      error: '',
+      retry: vi.fn()
+    }
+
+    await renderHome()
+    const officialLinks = () =>
+      Array.from(
+        container.querySelectorAll<HTMLAnchorElement>(
+          'a[href="/dashboard/shoutbox?tab=official"]'
+        )
+      )
+    // The home card itself carries no official explanation or entry.
+    expect(officialLinks()).toHaveLength(0)
+
+    // Opening the shared publish UI reveals the official entry to admins.
+    await clickButton(container, '发布小喇叭')
+    const dialog = container.querySelector('[role="dialog"]')
+    expect(
+      dialog?.querySelector('a[href="/dashboard/shoutbox?tab=official"]')
+    ).not.toBeNull()
+
+    await act(async () => {
+      root!.unmount()
+    })
+    root = undefined
+    dom?.window.close()
+    dom = undefined
+    vi.unstubAllGlobals()
+    mocks.user.role = 1
+    await renderHome()
+    await clickButton(container, '发布小喇叭')
+    expect(officialLinks()).toHaveLength(0)
   })
 
   it('patch strip uses the approved title and links to the per-game view', async () => {
@@ -796,5 +1057,39 @@ describe('ShoutboxContainer', () => {
       container.querySelector('a[href="/shoutbox?patch=abcd1234"]')
     ).not.toBeNull()
     expect(container.textContent).toContain('消息 5')
+  })
+  it('merges automatic refreshes and preserves a slow response until its real boundary', async () => {
+    vi.useFakeTimers()
+    const payload = makeList({
+      pinned: makeItem(900, { official: true }),
+      validUntil: new Date(Date.now() + 1000).toISOString(),
+      visibilityUntil: new Date(Date.now() + 2000).toISOString()
+    })
+    let resolveFirst!: (value: ShoutboxListResponse) => void
+    mocks.kunFetchGet
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveFirst = resolve
+          })
+      )
+      .mockResolvedValue('暂时失败')
+    await renderContainer(payload)
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1500)
+    })
+    expect(mocks.kunFetchGet).toHaveBeenCalledTimes(1)
+    expect(container.querySelector('#shoutbox-900')).not.toBeNull()
+    await act(async () => {
+      resolveFirst(payload)
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(container.querySelector('#shoutbox-900')).not.toBeNull()
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(500)
+    })
+    expect(container.querySelector('#shoutbox-900')).toBeNull()
+    expect(mocks.kunFetchGet).toHaveBeenCalledTimes(2)
   })
 })

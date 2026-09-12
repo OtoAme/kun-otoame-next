@@ -23,6 +23,7 @@ import { Textarea } from '~/components/dashboard/ui/textarea'
 import { SHOUTBOX_OFFICIAL_DEFAULT_DURATION_MS } from '~/constants/shoutbox'
 import { kunFetchPost } from '~/utils/kunFetch'
 import { generateUUID } from '~/utils/random'
+import { normalizeShoutboxContent } from '~/utils/shoutboxContent'
 import type { ShoutboxLevel } from '~/constants/shoutbox'
 import type { ShoutboxItem } from '~/types/api/shoutbox'
 
@@ -142,7 +143,9 @@ export const ShoutboxOfficialForm = ({ onPublished }: Props) => {
           aria-label="官方消息正文"
           placeholder="官方消息正文（200 字以内）"
           value={content}
-          onChange={(event) => setContent(event.target.value)}
+          onChange={(event) =>
+            setContent(normalizeShoutboxContent(event.target.value))
+          }
           maxLength={200}
           disabled={submitting}
         />

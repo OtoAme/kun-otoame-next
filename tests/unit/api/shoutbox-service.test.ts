@@ -18,7 +18,7 @@ const row = (overrides: Record<string, unknown> = {}) => ({
   refunded_at: null,
   created: new Date('2026-09-11T10:00:00.000Z'),
   updated: new Date('2026-09-11T10:00:00.000Z'),
-  user: { id: 7, name: '作者', avatar: '' },
+  user: { id: 7, name: '作者', avatar: '', role: 1 },
   patch: null,
   ...overrides
 })
@@ -65,6 +65,7 @@ import {
   createOfficialShoutbox,
   createShoutbox,
   deleteShoutbox,
+  getShoutboxHome,
   getShoutboxBanner,
   getShoutboxList,
   getUserShoutboxes,
@@ -98,7 +99,7 @@ beforeEach(() => {
 describe('shoutbox user and official service boundaries', () => {
   it('does not query an author archive without a logged-in viewer', async () => {
     const response = await getUserShoutboxes(
-      { uid: 7, page: 1, limit: 6 },
+      { uid: 7, page: 1, limit: 20 },
       null,
       { db: prismaMock as never }
     )
@@ -114,7 +115,7 @@ describe('shoutbox user and official service boundaries', () => {
     prismaMock.shoutbox.findMany.mockResolvedValueOnce([])
 
     await getUserShoutboxes(
-      { uid: 8, page: 1, limit: 6 },
+      { uid: 8, page: 1, limit: 20 },
       { uid: 7, role: 1 },
       { now: archiveNow, db: prismaMock as never }
     )
@@ -133,7 +134,7 @@ describe('shoutbox user and official service boundaries', () => {
 
   it('creates a normal message and spends 50 points in the same transaction', async () => {
     const response = await createShoutbox(
-      { requestId, content: '  新内容  ' },
+      { requestId, content: '  新\n内容  ' },
       7,
       { now, db: prismaMock as never }
     )
@@ -143,7 +144,7 @@ describe('shoutbox user and official service boundaries', () => {
         data: expect.objectContaining({
           user_id: 7,
           request_id: requestId,
-          content: '新内容',
+          content: '新 内容',
           official: false,
           level: 'normal',
           cost: 50,
@@ -169,6 +170,28 @@ describe('shoutbox user and official service boundaries', () => {
       })
     )
     expect(cacheMock.invalidateShoutboxCaches).toHaveBeenCalledOnce()
+  })
+
+  it('serializes reportability without exposing the author role', async () => {
+    prismaMock.shoutbox.findFirst.mockResolvedValue(null)
+    prismaMock.shoutbox.count.mockResolvedValueOnce(1)
+    prismaMock.shoutbox.findMany.mockResolvedValueOnce([
+      row({
+        user: { id: 7, name: '超级管理员', avatar: '', role: 4 }
+      })
+    ])
+
+    const response = await getShoutboxList(
+      { page: 1, limit: 20 },
+      { now, db: prismaMock as never, useCache: false }
+    )
+    const item = response.shoutboxes[0]
+
+    expect(item).toMatchObject({
+      reportable: false,
+      user: { id: 7, name: '超级管理员', avatar: '' }
+    })
+    expect(item?.user).not.toHaveProperty('role')
   })
 
   it('replays an existing normal message before validating a changed patch', async () => {
@@ -248,7 +271,7 @@ describe('shoutbox user and official service boundaries', () => {
   })
 
   it('limits a user edit to one conditional five-minute update', async () => {
-    await updateShoutbox({ shoutboxId: 12, content: '编辑后' }, 7, {
+    await updateShoutbox({ shoutboxId: 12, content: '编辑\r\n后' }, 7, {
       now,
       db: prismaMock as never
     })
@@ -262,7 +285,7 @@ describe('shoutbox user and official service boundaries', () => {
         edited_at: null,
         created: { gt: new Date('2026-09-11T11:55:00.000Z') }
       },
-      data: { content: '编辑后', edited_at: now }
+      data: { content: '编辑 后', edited_at: now }
     })
   })
 
@@ -369,7 +392,7 @@ describe('shoutbox user and official service boundaries', () => {
     await createOfficialShoutbox(
       {
         requestId,
-        content: '维护通知',
+        content: '维护\u2028通知',
         level: 'normal',
         link: ''
       },
@@ -381,6 +404,7 @@ describe('shoutbox user and official service boundaries', () => {
       expect.objectContaining({
         data: expect.objectContaining({
           user_id: 99,
+          content: '维护 通知',
           official: true,
           level: 'normal',
           cost: 0,
@@ -390,6 +414,27 @@ describe('shoutbox user and official service boundaries', () => {
       })
     )
     expect(moemoepointMock.spendMoemoepoint).not.toHaveBeenCalled()
+  })
+
+  it('normalizes newlines in an official edit before writing', async () => {
+    prismaMock.shoutbox.findUnique.mockResolvedValueOnce(
+      row({
+        official: true,
+        cost: 0,
+        effective_from: now,
+        effective_to: new Date('2026-09-14T12:00:00.000Z')
+      })
+    )
+
+    await updateOfficialShoutbox(
+      { shoutboxId: 12, content: '官方\n更新' },
+      99,
+      { now, db: prismaMock as never }
+    )
+
+    expect(prismaMock.shoutbox.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { content: '官方 更新' } })
+    )
   })
 
   it('replays an existing official message before validating changed times', async () => {
@@ -514,13 +559,13 @@ describe('shoutbox user and official service boundaries', () => {
     prismaMock.shoutbox.findMany.mockResolvedValue([])
 
     const first = getShoutboxList(
-      { page: 1, limit: 6 },
+      { page: 1, limit: 20 },
       { now, db: prismaMock as never }
     )
     await Promise.resolve()
     const afterBoundary = new Date(now.getTime() + 61_000)
     const second = getShoutboxList(
-      { page: 1, limit: 6 },
+      { page: 1, limit: 20 },
       { now: afterBoundary, db: prismaMock as never }
     )
 
@@ -543,24 +588,28 @@ describe('shoutbox user and official service boundaries', () => {
       JSON.parse(
         JSON.stringify({
           pinned: null,
-          shoutboxes: [row({ content: '缓存内容' })],
+          shoutboxes: [row({ content: '缓存\r\n内容' })],
           page: 1,
           totalPages: 1,
-          validUntil: new Date(now.getTime() + 60_000).toISOString()
+          validUntil: new Date(now.getTime() + 60_000).toISOString(),
+          visibilityUntil: new Date(now.getTime() + 120_000).toISOString()
         })
       )
     )
 
     const response = await getShoutboxList(
-      { page: 1, limit: 6 },
+      { page: 1, limit: 20 },
       { now, db: prismaMock as never }
     )
 
     expect(response.shoutboxes[0]).toMatchObject({
-      content: '缓存内容',
+      content: '缓存 内容',
       created: '2026-09-11T10:00:00.000Z',
       updated: '2026-09-11T10:00:00.000Z'
     })
+    expect(response.visibilityUntil).toBe(
+      new Date(now.getTime() + 120_000).toISOString()
+    )
   })
 
   it('uses the completion-time clock for an in-flight boundary refetch', async () => {
@@ -580,13 +629,13 @@ describe('shoutbox user and official service boundaries', () => {
       ])
 
       const first = getShoutboxList(
-        { page: 1, limit: 6 },
+        { page: 1, limit: 20 },
         { now: start, db: prismaMock as never }
       )
       await Promise.resolve()
       vi.setSystemTime(new Date(start.getTime() + 61_000))
       const second = getShoutboxList(
-        { page: 1, limit: 6 },
+        { page: 1, limit: 20 },
         { db: prismaMock as never }
       )
       await Promise.resolve()
@@ -617,8 +666,48 @@ describe('shoutbox user and official service boundaries', () => {
     }
   })
 
+  it('exposes the full next official boundary separately from list TTL', async () => {
+    const future = new Date(now.getTime() + 120_000)
+    prismaMock.shoutbox.findFirst
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ effective_from: future })
+    prismaMock.shoutbox.count.mockResolvedValueOnce(0)
+    prismaMock.shoutbox.findMany.mockResolvedValueOnce([])
+
+    const response = await getShoutboxList(
+      { page: 1, limit: 20 },
+      { now, db: prismaMock as never, useCache: false }
+    )
+
+    expect(response.validUntil).toBe(
+      new Date(now.getTime() + 60_000).toISOString()
+    )
+    expect(response.visibilityUntil).toBe(future.toISOString())
+  })
+
+  it('carries the full next official boundary through the home payload', async () => {
+    const future = new Date(now.getTime() + 120_000)
+    prismaMock.shoutbox.findFirst
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ effective_from: future })
+    prismaMock.shoutbox.findMany.mockResolvedValueOnce([])
+
+    const response = await getShoutboxHome({
+      now,
+      db: prismaMock as never,
+      useCache: false
+    })
+
+    expect(response.validUntil).toBe(
+      new Date(now.getTime() + 60_000).toISOString()
+    )
+    expect(response.visibilityUntil).toBe(future.toISOString())
+  })
+
   it('uses the next future important message as the banner cache boundary', async () => {
-    const future = new Date(now.getTime() + 20_000)
+    const future = new Date(now.getTime() + 120_000)
     prismaMock.shoutbox.findFirst
       .mockResolvedValueOnce(null)
       .mockResolvedValueOnce({ effective_from: future })
@@ -630,7 +719,10 @@ describe('shoutbox user and official service boundaries', () => {
     })
 
     expect(response.banner).toBeNull()
-    expect(response.validUntil).toBe(future.toISOString())
+    expect(response.validUntil).toBe(
+      new Date(now.getTime() + 60_000).toISOString()
+    )
+    expect(response.visibilityUntil).toBe(future.toISOString())
   })
 
   it('returns an immediately expired list after a failed boundary reload', async () => {
@@ -648,7 +740,7 @@ describe('shoutbox user and official service boundaries', () => {
       )
 
       const response = await getShoutboxList(
-        { page: 1, limit: 6 },
+        { page: 1, limit: 20 },
         { now, db: prismaMock as never }
       )
 
@@ -690,7 +782,7 @@ describe('shoutbox user and official service boundaries', () => {
       )
 
       const response = await getShoutboxList(
-        { page: 1, limit: 6 },
+        { page: 1, limit: 20 },
         { now, db: prismaMock as never }
       )
 
@@ -699,7 +791,8 @@ describe('shoutbox user and official service boundaries', () => {
         shoutboxes: [],
         page: 1,
         totalPages: 0,
-        validUntil: now.toISOString()
+        validUntil: now.toISOString(),
+        visibilityUntil: now.toISOString()
       })
     } finally {
       errorSpy.mockRestore()
@@ -720,7 +813,8 @@ describe('shoutbox user and official service boundaries', () => {
 
       expect(response).toEqual({
         banner: null,
-        validUntil: now.toISOString()
+        validUntil: now.toISOString(),
+        visibilityUntil: now.toISOString()
       })
     } finally {
       errorSpy.mockRestore()
@@ -764,7 +858,7 @@ describe('shoutbox user and official service boundaries', () => {
     }
   })
 
-  it('uses a bounded database page query for a game and only hydrates page IDs', async () => {
+  it('uses twenty-row pages for an unbounded game history', async () => {
     prismaMock.patch.findUnique.mockResolvedValueOnce({
       id: 8,
       status: 0,
@@ -772,70 +866,29 @@ describe('shoutbox user and official service boundaries', () => {
       tag: []
     })
     prismaMock.shoutbox.findFirst.mockResolvedValue(null)
-    prismaMock.$queryRaw.mockResolvedValueOnce([
-      {
-        id: 12,
-        total_count: 1,
-        created: new Date('2026-09-11T10:00:00.000Z'),
-        expiry_at: null,
-        in_timeline_range: true
-      }
-    ])
+    prismaMock.shoutbox.count.mockResolvedValueOnce(21)
     prismaMock.shoutbox.findMany.mockResolvedValueOnce([row()])
 
     const response = await getShoutboxList(
-      { page: 1, limit: 6, patch: 'Abc12345' },
+      { page: 2, limit: 20, patch: 'Abc12345' },
       { now, db: prismaMock as never, useCache: false }
     )
 
-    expect(response.totalPages).toBe(1)
+    expect(response.totalPages).toBe(2)
     expect(prismaMock.shoutbox.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
-          id: { in: [12] },
           patch_id: 8,
           status: 0,
           OR: expect.any(Array)
-        })
+        }),
+        skip: 20,
+        take: 20
       })
     )
   })
 
-  it('casts a non-null pinned id before the nullable check in the game query', async () => {
-    prismaMock.patch.findUnique.mockResolvedValueOnce({
-      id: 8,
-      status: 0,
-      content_limit: 'sfw',
-      tag: []
-    })
-    prismaMock.shoutbox.findFirst
-      .mockResolvedValueOnce({
-        id: 99,
-        effective_to: new Date('2026-09-14T12:00:00.000Z')
-      })
-      .mockResolvedValue(null)
-    prismaMock.$queryRaw.mockResolvedValueOnce([
-      {
-        id: 12,
-        total_count: 1,
-        created: new Date('2026-09-11T10:00:00.000Z'),
-        expiry_at: null,
-        in_timeline_range: true
-      }
-    ])
-    prismaMock.shoutbox.findMany.mockResolvedValueOnce([row({ patch_id: 8 })])
-
-    await getShoutboxList(
-      { page: 1, limit: 6, patch: 'Abc12345' },
-      { now, db: prismaMock as never, useCache: false }
-    )
-
-    const query = prismaMock.$queryRaw.mock.calls[0][0]
-    expect(query.text).toMatch(/\$\d+::integer IS NULL/)
-    expect(query.values).toContain(99)
-  })
-
-  it('does not hydrate message rows when a game page is beyond totalPages', async () => {
+  it('includes public historical game rows without a retention horizon', async () => {
     prismaMock.patch.findUnique.mockResolvedValueOnce({
       id: 8,
       status: 0,
@@ -843,90 +896,49 @@ describe('shoutbox user and official service boundaries', () => {
       tag: []
     })
     prismaMock.shoutbox.findFirst.mockResolvedValue(null)
-    prismaMock.$queryRaw.mockResolvedValueOnce([
-      {
-        id: null,
-        total_count: 6,
-        created: null,
-        expiry_at: null,
-        in_timeline_range: false
-      }
+    prismaMock.shoutbox.count.mockResolvedValueOnce(1)
+    prismaMock.shoutbox.findMany.mockResolvedValueOnce([
+      row({ patch_id: 8, created: new Date('2020-01-01T10:00:00.000Z') })
     ])
 
     const response = await getShoutboxList(
-      { page: 2, limit: 6, patch: 'Abc12345' },
+      { page: 1, limit: 20, patch: 'Abc12345' },
+      { now, db: prismaMock as never, useCache: false }
+    )
+
+    expect(response.shoutboxes).toHaveLength(1)
+    expect(response.totalPages).toBe(1)
+    expect(response.validUntil).toBe(
+      new Date(now.getTime() + 300_000).toISOString()
+    )
+    expect(response.visibilityUntil).toBeNull()
+    expect(prismaMock.shoutbox.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ patch_id: 8 }),
+        skip: 0,
+        take: 20
+      })
+    )
+  })
+
+  it('does not hydrate message rows when an unbounded game page is beyond totalPages', async () => {
+    prismaMock.patch.findUnique.mockResolvedValueOnce({
+      id: 8,
+      status: 0,
+      content_limit: 'sfw',
+      tag: []
+    })
+    prismaMock.shoutbox.findFirst.mockResolvedValue(null)
+    prismaMock.shoutbox.count.mockResolvedValueOnce(1)
+
+    const response = await getShoutboxList(
+      { page: 2, limit: 20, patch: 'Abc12345' },
       { now, db: prismaMock as never, useCache: false }
     )
 
     expect(response.totalPages).toBe(1)
     expect(response.shoutboxes).toEqual([])
     expect(prismaMock.shoutbox.findMany).not.toHaveBeenCalled()
-  })
-
-  it('keeps an out-of-range game message until its own three-month expiry', async () => {
-    const expiresAt = new Date(now.getTime() + 20_000)
-    prismaMock.patch.findUnique.mockResolvedValueOnce({
-      id: 8,
-      status: 0,
-      content_limit: 'sfw',
-      tag: []
-    })
-    prismaMock.shoutbox.findFirst.mockResolvedValue(null)
-    prismaMock.$queryRaw.mockResolvedValueOnce([
-      {
-        id: 12,
-        total_count: 1,
-        created: new Date('2026-01-01T10:00:00.000Z'),
-        expiry_at: expiresAt,
-        retention_expiry_at: expiresAt,
-        in_timeline_range: false
-      }
-    ])
-    prismaMock.shoutbox.findMany.mockResolvedValueOnce([row({ patch_id: 8 })])
-
-    const response = await getShoutboxList(
-      { page: 1, limit: 6, patch: 'Abc12345' },
-      { now, db: prismaMock as never, useCache: false }
-    )
-
-    expect(response.shoutboxes).toHaveLength(1)
-    expect(response.totalPages).toBe(1)
-    expect(response.validUntil).toBe(expiresAt.toISOString())
-    const query = prismaMock.$queryRaw.mock.calls[0][0]
-    expect(query.text).toContain('expiry_at >')
-  })
-
-  it('refreshes a game page when a preceding retention-only row expires', async () => {
-    const precedingExpiry = new Date(now.getTime() + 20_000)
-    prismaMock.patch.findUnique.mockResolvedValueOnce({
-      id: 8,
-      status: 0,
-      content_limit: 'sfw',
-      tag: []
-    })
-    prismaMock.shoutbox.findFirst.mockResolvedValue(null)
-    prismaMock.$queryRaw.mockResolvedValueOnce([
-      {
-        id: 12,
-        total_count: 7,
-        created: new Date('2026-01-01T10:00:00.000Z'),
-        expiry_at: null,
-        retention_expiry_at: precedingExpiry,
-        in_timeline_range: true
-      }
-    ])
-    prismaMock.shoutbox.findMany.mockResolvedValueOnce([row({ patch_id: 8 })])
-
-    const response = await getShoutboxList(
-      { page: 2, limit: 6, patch: 'Abc12345' },
-      { now, db: prismaMock as never, useCache: false }
-    )
-
-    expect(response.totalPages).toBe(2)
-    expect(response.validUntil).toBe(precedingExpiry.toISOString())
-    expect(prismaMock.$queryRaw.mock.calls[0][0].text).toContain(
-      'MIN(expiry_at)'
-    )
   })
 
   it('revalidates public state and patch association during game hydration', async () => {
@@ -937,19 +949,11 @@ describe('shoutbox user and official service boundaries', () => {
       tag: []
     })
     prismaMock.shoutbox.findFirst.mockResolvedValue(null)
-    prismaMock.$queryRaw.mockResolvedValueOnce([
-      {
-        id: 12,
-        total_count: 1,
-        created: new Date('2026-09-11T10:00:00.000Z'),
-        expiry_at: null,
-        in_timeline_range: true
-      }
-    ])
+    prismaMock.shoutbox.count.mockResolvedValueOnce(1)
     prismaMock.shoutbox.findMany.mockResolvedValueOnce([])
 
     const response = await getShoutboxList(
-      { page: 1, limit: 6, patch: 'Abc12345' },
+      { page: 1, limit: 20, patch: 'Abc12345' },
       { now, db: prismaMock as never, useCache: false }
     )
 
@@ -962,6 +966,90 @@ describe('shoutbox user and official service boundaries', () => {
           OR: expect.any(Array)
         })
       })
+    )
+  })
+
+  it('reserves one home slot for a pinned message and probes one more row', async () => {
+    const pinned = row({
+      id: 99,
+      official: true,
+      cost: 0,
+      effective_from: new Date('2026-09-11T11:00:00.000Z'),
+      effective_to: new Date('2026-09-14T12:00:00.000Z')
+    })
+    prismaMock.shoutbox.findFirst
+      .mockResolvedValueOnce({
+        id: 99,
+        effective_to: pinned.effective_to
+      })
+      .mockResolvedValue(null)
+    prismaMock.shoutbox.findUnique.mockResolvedValueOnce(pinned)
+    prismaMock.shoutbox.findMany.mockResolvedValueOnce(
+      Array.from({ length: 15 }, (_, index) => row({ id: 98 - index }))
+    )
+
+    const response = await getShoutboxHome({
+      now,
+      db: prismaMock as never,
+      useCache: false
+    })
+
+    expect(response.pinned?.id).toBe(99)
+    expect(response.page).toBe(1)
+    expect(response.totalPages).toBe(1)
+    expect(response.shoutboxes).toHaveLength(14)
+    expect(response.hasMore).toBe(true)
+    expect(prismaMock.shoutbox.count).not.toHaveBeenCalled()
+    expect(prismaMock.shoutbox.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        skip: 0,
+        take: 15,
+        where: expect.objectContaining({
+          status: 0,
+          id: { not: 99 }
+        })
+      })
+    )
+  })
+
+  it.each([14, 15, 16])(
+    'sets hasMore from the home probe for %i ordinary rows',
+    async (rowCount) => {
+      prismaMock.shoutbox.findFirst.mockResolvedValue(null)
+      prismaMock.shoutbox.findMany.mockResolvedValueOnce(
+        Array.from({ length: rowCount }, (_, index) => row({ id: 12 + index }))
+      )
+
+      const response = await getShoutboxHome({
+        now,
+        db: prismaMock as never,
+        useCache: false
+      })
+
+      expect(response.pinned).toBeNull()
+      expect(response.totalPages).toBe(1)
+      expect(response.shoutboxes).toHaveLength(Math.min(rowCount, 15))
+      expect(response.hasMore).toBe(rowCount > 15)
+      expect(prismaMock.shoutbox.count).not.toHaveBeenCalled()
+      expect(prismaMock.shoutbox.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ skip: 0, take: 16 })
+      )
+    }
+  )
+
+  it('allows the global list to page beyond the former sixty-row horizon', async () => {
+    prismaMock.shoutbox.findFirst.mockResolvedValue(null)
+    prismaMock.shoutbox.count.mockResolvedValueOnce(101)
+    prismaMock.shoutbox.findMany.mockResolvedValueOnce([row({ id: 1 })])
+
+    const response = await getShoutboxList(
+      { page: 6, limit: 20 },
+      { now, db: prismaMock as never, useCache: false }
+    )
+
+    expect(response.totalPages).toBe(6)
+    expect(prismaMock.shoutbox.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ skip: 100, take: 20 })
     )
   })
 
@@ -975,7 +1063,7 @@ describe('shoutbox user and official service boundaries', () => {
     prismaMock.shoutbox.findMany.mockResolvedValueOnce([])
 
     const response = await getShoutboxList(
-      { page: 1, limit: 6 },
+      { page: 1, limit: 20 },
       { now, db: prismaMock as never, useCache: false }
     )
 
@@ -1001,15 +1089,7 @@ describe('shoutbox user and official service boundaries', () => {
       tag: []
     })
     prismaMock.shoutbox.findFirst.mockResolvedValue(null)
-    prismaMock.$queryRaw.mockResolvedValueOnce([
-      {
-        id: 12,
-        total_count: 1,
-        created: new Date('2026-09-11T10:00:00.000Z'),
-        expiry_at: null,
-        in_timeline_range: true
-      }
-    ])
+    prismaMock.shoutbox.count.mockResolvedValueOnce(1)
     prismaMock.shoutbox.findMany.mockResolvedValueOnce([
       row({
         patch_id: 8,
@@ -1024,7 +1104,7 @@ describe('shoutbox user and official service boundaries', () => {
     ])
 
     const response = await getShoutboxList(
-      { page: 1, limit: 6, patch: 'Abc12345' },
+      { page: 1, limit: 20, patch: 'Abc12345' },
       {
         now,
         db: prismaMock as never,
@@ -1045,15 +1125,7 @@ describe('shoutbox user and official service boundaries', () => {
       tag: [{ tag_id: 42 }]
     })
     prismaMock.shoutbox.findFirst.mockResolvedValue(null)
-    prismaMock.$queryRaw.mockResolvedValueOnce([
-      {
-        id: 12,
-        total_count: 1,
-        created: new Date('2026-09-11T10:00:00.000Z'),
-        expiry_at: null,
-        in_timeline_range: true
-      }
-    ])
+    prismaMock.shoutbox.count.mockResolvedValueOnce(1)
     prismaMock.shoutbox.findMany.mockResolvedValueOnce([
       row({
         patch_id: 8,
@@ -1068,7 +1140,7 @@ describe('shoutbox user and official service boundaries', () => {
     ])
 
     const response = await getShoutboxList(
-      { page: 1, limit: 6, patch: 'Abc12345' },
+      { page: 1, limit: 20, patch: 'Abc12345' },
       {
         now,
         db: prismaMock as never,

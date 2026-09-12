@@ -25,7 +25,9 @@ import { useMounted } from '~/hooks/useMounted'
 import { kunFetchDelete, kunFetchPut } from '~/utils/kunFetch'
 import { cn } from '~/utils/cn'
 import { formatChinaDateTime } from '~/utils/fixedTimezoneDate'
+import { normalizeShoutboxContent } from '~/utils/shoutboxContent'
 import { formatTimeDifference } from '~/utils/time'
+import { ShoutboxCompactRow } from './ShoutboxCompactRow'
 import { ShoutboxReportButton } from './ShoutboxReportButton'
 import type { ShoutboxItem } from '~/types/api/shoutbox'
 
@@ -34,6 +36,18 @@ interface Props {
   pinned?: boolean
   showStatus?: boolean
   highlight?: boolean
+  /**
+   * Compact single-row presentation for the public list pages (/shoutbox and
+   * ?patch=), the home module and the per-game strip: the same author
+   * edit/delete logic riding on ShoutboxCompactRow. The author's own record
+   * page keeps the full card for its status display.
+   */
+  compact?: boolean
+  /**
+   * Compact mode only: set false where the surface must not gain a delete
+   * entry (home module, per-game strip); the edit entry is unaffected.
+   */
+  showDelete?: boolean
   currentUserId: number
   onChanged?: (item: ShoutboxItem) => void
   onDeleted?: (id: number) => void
@@ -50,13 +64,17 @@ export const ShoutboxCard = ({
   pinned = false,
   showStatus = false,
   highlight = false,
+  compact = false,
+  showDelete = true,
   currentUserId,
   onChanged,
   onDeleted
 }: Props) => {
   const mounted = useMounted()
   const [editing, setEditing] = useState(false)
-  const [draft, setDraft] = useState(item.content)
+  const [draft, setDraft] = useState(() =>
+    normalizeShoutboxContent(item.content)
+  )
   const [editError, setEditError] = useState('')
   const [saving, setSaving] = useState(false)
   const [deleting, setDeleting] = useState(false)
@@ -96,7 +114,7 @@ export const ShoutboxCard = ({
     isOwn && !item.official && (item.status === 0 || item.status === 2)
 
   const handleStartEdit = () => {
-    setDraft(item.content)
+    setDraft(normalizeShoutboxContent(item.content))
     setEditError('')
     setEditing(true)
   }
@@ -172,6 +190,129 @@ export const ShoutboxCard = ({
     }
   }
 
+  const editForm = (
+    <div className="space-y-2">
+      <Textarea
+        aria-label="编辑小喇叭"
+        value={draft}
+        onValueChange={(value) => {
+          setDraft(normalizeShoutboxContent(value))
+          setEditError('')
+        }}
+        maxLength={200}
+        isDisabled={saving}
+        isInvalid={editError !== ''}
+        errorMessage={editError}
+        autoFocus
+      />
+      <div className="flex items-center justify-end gap-2">
+        <span className="text-xs text-default-400">
+          {draft.trim().length} / 200
+        </span>
+        <Button
+          size="sm"
+          variant="light"
+          onPress={() => setEditing(false)}
+          isDisabled={saving}
+        >
+          取消
+        </Button>
+        <Button
+          size="sm"
+          color="primary"
+          onPress={handleSaveEdit}
+          isLoading={saving}
+        >
+          保存
+        </Button>
+      </div>
+    </div>
+  )
+
+  const deleteDialog = (
+    <Modal
+      isOpen={deleteModal.isOpen}
+      onOpenChange={deleteModal.onOpenChange}
+      placement="center"
+    >
+      <ModalContent>
+        <ModalHeader>删除小喇叭</ModalHeader>
+        <ModalBody>
+          <p className="text-sm">
+            确定要删除这条小喇叭吗？删除后不再公开显示，已消耗的萌萌点不会退回。
+          </p>
+        </ModalBody>
+        <ModalFooter>
+          <Button
+            variant="light"
+            onPress={deleteModal.onClose}
+            isDisabled={deleting}
+          >
+            取消
+          </Button>
+          <Button color="danger" onPress={handleDelete} isLoading={deleting}>
+            确认删除
+          </Button>
+        </ModalFooter>
+      </ModalContent>
+    </Modal>
+  )
+
+  // The public list pages (/shoutbox and ?patch=) render one compact row per
+  // message instead of a full card. The row presentation is ShoutboxCompactRow;
+  // the author's edit/delete entries ride in its actions slot and keep the
+  // exact same handlers, edit-window rules, draft retention and confirmation
+  // modal as the full card. Editing swaps the row for the shared edit form in
+  // place; the anchor id and the deep-link highlight stay on the wrapper.
+  if (compact) {
+    return (
+      <div
+        id={`shoutbox-${item.id}`}
+        className={cn('rounded-lg', highlight && 'ring-2 ring-primary')}
+      >
+        {editing ? (
+          <div className="px-2 py-2">{editForm}</div>
+        ) : (
+          <ShoutboxCompactRow
+            item={item}
+            pinned={pinned}
+            allowsDelete={showDelete}
+            actions={
+              mounted && (canEdit || (canDelete && showDelete)) ? (
+                <>
+                  {canEdit && (
+                    <Button
+                      size="sm"
+                      variant="light"
+                      isIconOnly
+                      aria-label="编辑"
+                      onPress={handleStartEdit}
+                    >
+                      <Pencil className="size-3.5" />
+                    </Button>
+                  )}
+                  {canDelete && showDelete && (
+                    <Button
+                      size="sm"
+                      variant="light"
+                      color="danger"
+                      isIconOnly
+                      aria-label="删除"
+                      onPress={deleteModal.onOpen}
+                    >
+                      <Trash2 className="size-3.5" />
+                    </Button>
+                  )}
+                </>
+              ) : null
+            }
+          />
+        )}
+        {deleteDialog}
+      </div>
+    )
+  }
+
   return (
     <Card
       id={`shoutbox-${item.id}`}
@@ -193,23 +334,18 @@ export const ShoutboxCard = ({
               size="sm"
               className="shrink-0"
             />
-            <span className="truncate text-sm font-medium hover:underline">
+            <span className="truncate text-small font-medium leading-6 hover:underline sm:text-base sm:leading-6">
               {item.user.name}
             </span>
           </Link>
-          {item.official && (
-            <Chip size="sm" color="primary" variant="flat">
-              官方
-            </Chip>
-          )}
-          {item.official && item.level === 'important' && (
-            <Chip size="sm" color="warning" variant="flat">
-              重要
-            </Chip>
-          )}
           {pinned && (
             <Chip size="sm" color="primary" variant="bordered">
               置顶
+            </Chip>
+          )}
+          {item.official && item.level === 'important' && (
+            <Chip size="sm" color="danger" variant="bordered">
+              重要
             </Chip>
           )}
           {showStatus && item.status !== 0 && (
@@ -241,45 +377,10 @@ export const ShoutboxCard = ({
         </div>
 
         {editing ? (
-          <div className="space-y-2">
-            <Textarea
-              aria-label="编辑小喇叭"
-              value={draft}
-              onValueChange={(value) => {
-                setDraft(value)
-                setEditError('')
-              }}
-              maxLength={200}
-              isDisabled={saving}
-              isInvalid={editError !== ''}
-              errorMessage={editError}
-              autoFocus
-            />
-            <div className="flex items-center justify-end gap-2">
-              <span className="text-xs text-default-400">
-                {draft.trim().length} / 200
-              </span>
-              <Button
-                size="sm"
-                variant="light"
-                onPress={() => setEditing(false)}
-                isDisabled={saving}
-              >
-                取消
-              </Button>
-              <Button
-                size="sm"
-                color="primary"
-                onPress={handleSaveEdit}
-                isLoading={saving}
-              >
-                保存
-              </Button>
-            </div>
-          </div>
+          editForm
         ) : (
-          <p className="whitespace-pre-wrap break-words text-sm">
-            {item.content}
+          <p className="whitespace-pre-wrap break-words text-small leading-6 sm:text-base sm:leading-6">
+            {normalizeShoutboxContent(item.content)}
           </p>
         )}
 
@@ -327,6 +428,7 @@ export const ShoutboxCard = ({
                 <ShoutboxReportButton
                   shoutboxId={item.id}
                   authorId={item.user.id}
+                  reportable={item.reportable}
                 />
               )}
             </div>
@@ -334,32 +436,7 @@ export const ShoutboxCard = ({
         </div>
       </CardBody>
 
-      <Modal
-        isOpen={deleteModal.isOpen}
-        onOpenChange={deleteModal.onOpenChange}
-        placement="center"
-      >
-        <ModalContent>
-          <ModalHeader>删除小喇叭</ModalHeader>
-          <ModalBody>
-            <p className="text-sm">
-              确定要删除这条小喇叭吗？删除后不再公开显示，已消耗的萌萌点不会退回。
-            </p>
-          </ModalBody>
-          <ModalFooter>
-            <Button
-              variant="light"
-              onPress={deleteModal.onClose}
-              isDisabled={deleting}
-            >
-              取消
-            </Button>
-            <Button color="danger" onPress={handleDelete} isLoading={deleting}>
-              确认删除
-            </Button>
-          </ModalFooter>
-        </ModalContent>
-      </Modal>
+      {deleteDialog}
     </Card>
   )
 }

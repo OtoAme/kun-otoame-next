@@ -12,12 +12,23 @@ export {
   SHOUTBOX_PATCH_CACHE_DURATION
 }
 
-export const getShoutboxCacheKey = (patch: string | null, page: number) =>
-  patch ? `shoutbox:patch:v1:${patch}:p${page}` : `shoutbox:list:v1:p${page}`
+export const getShoutboxCacheKey = (
+  patch: string | null,
+  page: number,
+  view: 'list' | 'home' = 'list'
+) => {
+  if (view === 'home') return 'shoutbox:home:v4'
+  return patch
+    ? `shoutbox:patch:v4:${patch}:p${page}`
+    : `shoutbox:list:v4:p${page}`
+}
 
-export const getShoutboxBannerCacheKey = () => 'shoutbox:banner:v1'
+export const getShoutboxBannerCacheKey = () => 'shoutbox:banner:v3'
 
-type ValidShoutboxCacheValue = { validUntil: string }
+type ValidShoutboxCacheValue = {
+  validUntil: string
+  visibilityUntil?: string | null
+}
 
 export const getShoutboxCacheTtl = (validUntil: string, now = new Date()) =>
   Math.floor((new Date(validUntil).getTime() - now.getTime()) / 1000)

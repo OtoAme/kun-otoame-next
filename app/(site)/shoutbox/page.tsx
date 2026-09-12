@@ -1,6 +1,7 @@
 import { getShoutboxList } from '~/app/api/shoutbox/service'
 import { KunBreadcrumbTitle } from '~/components/kun/BreadcrumbTitle'
 import { ShoutboxContainer } from '~/components/shoutbox/ShoutboxContainer'
+import { SHOUTBOX_PAGE_SIZE } from '~/constants/shoutbox'
 import { getPatchVisibilityWhere } from '~/utils/actions/getPatchVisibilityWhere'
 import type { ShoutboxListResponse } from '~/types/api/shoutbox'
 import type { Metadata } from 'next'
@@ -33,7 +34,7 @@ export default async function ShoutboxPage({ searchParams }: Props) {
     initialData = await getShoutboxList(
       {
         page: 1,
-        limit: 6,
+        limit: SHOUTBOX_PAGE_SIZE,
         ...(patchUniqueId ? { patch: patchUniqueId } : {})
       },
       { visibilityWhere }

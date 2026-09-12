@@ -17,6 +17,7 @@ import {
 import {
   createShoutbox,
   deleteShoutbox,
+  getShoutboxHome,
   getShoutboxList,
   MoemoepointInsufficientError,
   updateShoutbox
@@ -33,10 +34,16 @@ export const GET = async (req: NextRequest) => {
   const input = kunParseGetQuery(req, shoutboxListSchema)
   if (typeof input === 'string') return NextResponse.json(input)
   const visibilityWhere = await getPatchVisibilityWhere(req)
-  const response = await getShoutboxList(input, {
-    visibilityWhere,
-    useCache: !isPersonalizedApiRequest(req)
-  })
+  const response =
+    input.view === 'home'
+      ? await getShoutboxHome({
+          visibilityWhere,
+          useCache: !isPersonalizedApiRequest(req)
+        })
+      : await getShoutboxList(input, {
+          visibilityWhere,
+          useCache: !isPersonalizedApiRequest(req)
+        })
   return NextResponse.json(response, {
     headers: {
       'Cache-Control': getShoutboxCacheControl(

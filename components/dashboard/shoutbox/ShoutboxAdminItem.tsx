@@ -36,6 +36,7 @@ import { getShoutboxStatusLabel } from '~/constants/shoutbox'
 import type { ShoutboxLevel } from '~/constants/shoutbox'
 import { kunFetchPost, kunFetchPut } from '~/utils/kunFetch'
 import { formatChinaDateTime } from '~/utils/fixedTimezoneDate'
+import { normalizeShoutboxContent } from '~/utils/shoutboxContent'
 import { toLocalDateTimeInput } from './ShoutboxOfficialForm'
 import type {
   AdminShoutboxReviewItem,
@@ -456,7 +457,9 @@ const ShoutboxOfficialEditDialog = ({
   onSaved,
   triggerRef
 }: OfficialEditDialogProps) => {
-  const [content, setContent] = useState(item.content)
+  const [content, setContent] = useState(() =>
+    normalizeShoutboxContent(item.content)
+  )
   const [level, setLevel] = useState<ShoutboxLevel>(item.level)
   const [effectiveFrom, setEffectiveFrom] = useState(
     item.effectiveFrom ? toLocalDateTimeInput(new Date(item.effectiveFrom)) : ''
@@ -475,7 +478,7 @@ const ShoutboxOfficialEditDialog = ({
     if (!open) {
       return
     }
-    setContent(item.content)
+    setContent(normalizeShoutboxContent(item.content))
     setLevel(item.level)
     setEffectiveFrom(
       item.effectiveFrom
@@ -571,7 +574,9 @@ const ShoutboxOfficialEditDialog = ({
           <Textarea
             aria-label="官方消息正文"
             value={content}
-            onChange={(event) => setContent(event.target.value)}
+            onChange={(event) =>
+              setContent(normalizeShoutboxContent(event.target.value))
+            }
             maxLength={200}
             disabled={saving}
           />

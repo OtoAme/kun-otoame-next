@@ -10,6 +10,7 @@ const routeMocks = vi.hoisted(() => {
     deleteShoutbox: vi.fn(),
     getAdminShoutboxList: vi.fn(),
     getAdminOfficialShoutboxes: vi.fn(),
+    getShoutboxHome: vi.fn(),
     getShoutboxList: vi.fn(),
     getShoutboxBanner: vi.fn(),
     getUserShoutboxes: vi.fn(),
@@ -57,6 +58,13 @@ beforeEach(() => {
     shoutboxes: [],
     page: 1,
     totalPages: 0
+  })
+  routeMocks.getShoutboxHome.mockResolvedValue({
+    pinned: null,
+    shoutboxes: [],
+    page: 1,
+    totalPages: 0,
+    validUntil: new Date(Date.now() + 60_000).toISOString()
   })
   routeMocks.createOfficialShoutbox.mockResolvedValue({})
   routeMocks.updateOfficialShoutbox.mockResolvedValue({})
@@ -132,10 +140,23 @@ describe('GET /api/shoutbox', () => {
     })
 
     const response = await listGET(
-      new NextRequest('https://example.test/api/shoutbox?page=1&limit=6')
+      new NextRequest('https://example.test/api/shoutbox?page=1&limit=20')
     )
 
     expect(response.headers.get('cache-control')).toBe('no-store')
+  })
+
+  it('routes the independent home view to the fixed home read', async () => {
+    const response = await listGET(
+      new NextRequest('https://example.test/api/shoutbox?view=home')
+    )
+
+    expect(response.status).toBe(200)
+    expect(routeMocks.getShoutboxHome).toHaveBeenCalledWith({
+      visibilityWhere: {},
+      useCache: true
+    })
+    expect(routeMocks.getShoutboxList).not.toHaveBeenCalled()
   })
 })
 
@@ -195,6 +216,26 @@ describe('GET /api/admin/shoutbox', () => {
         limit: 20,
         tab: 'official'
       },
+      { adminRole: 3 }
+    )
+  })
+
+  it('passes a target shoutbox ID through the official tab facade', async () => {
+    routeMocks.getAdminOfficialShoutboxes.mockResolvedValueOnce({
+      shoutboxes: [],
+      page: 1,
+      totalPages: 0
+    })
+
+    const response = await adminGET(
+      new NextRequest(
+        'https://example.test/api/admin/shoutbox?shoutboxId=42&tab=official&page=7&limit=20'
+      )
+    )
+
+    expect(response.status).toBe(200)
+    expect(routeMocks.getAdminOfficialShoutboxes).toHaveBeenCalledWith(
+      { page: 7, limit: 20, tab: 'official', shoutboxId: 42 },
       { adminRole: 3 }
     )
   })
@@ -262,7 +303,7 @@ describe('GET /api/user/profile/shoutbox', () => {
 
     const response = await profileGET(
       new NextRequest(
-        'https://example.test/api/user/profile/shoutbox?uid=7&page=1&limit=6'
+        'https://example.test/api/user/profile/shoutbox?uid=7&page=1&limit=20'
       )
     )
 

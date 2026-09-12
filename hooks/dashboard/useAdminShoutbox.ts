@@ -39,11 +39,22 @@ const parsePage = (raw: string | null): number => {
     : 1
 }
 
+const parseShoutboxId = (raw: string | null): number | null => {
+  if (raw === null || !/^\d+$/.test(raw)) {
+    return null
+  }
+  const value = Number(raw)
+  return Number.isSafeInteger(value) && value >= 1 ? value : null
+}
+
 /**
  * Admin shoutbox list: four tabs (official / pending review / public /
  * removed) with the tab and page kept in the URL. Switching tabs resets to
  * page 1; responses are keyed so a stale tab's rows can never render under
- * the new one.
+ * the new one. A `shoutbox` id in the URL switches to a targeted view: the
+ * server locates that single record in any status, the page is fixed to 1
+ * and the query key carries the id, so switching targets or going back can
+ * never render a stale response.
  */
 export const useAdminShoutbox = () => {
   const router = useRouter()
@@ -51,9 +62,15 @@ export const useAdminShoutbox = () => {
   const searchParams = useSearchParams()
 
   const query = useMemo(() => {
+    const shoutboxId = parseShoutboxId(searchParams.get('shoutbox'))
     const tab = parseTab(searchParams.get('tab'))
-    const page = parsePage(searchParams.get('page'))
-    return { tab, page, key: `${tab}|${page}` }
+    const page = shoutboxId === null ? parsePage(searchParams.get('page')) : 1
+    return {
+      tab,
+      page,
+      shoutboxId,
+      key: shoutboxId === null ? `${tab}|${page}` : `shoutbox|${shoutboxId}`
+    }
   }, [searchParams])
 
   const [data, setData] = useState<{
@@ -74,11 +91,12 @@ export const useAdminShoutbox = () => {
     setError(null)
     // Never render rows belonging to a different tab/page under the new key.
     setData((prev) => (prev !== null && prev.key !== query.key ? null : prev))
-    kunFetchGet<AdminShoutboxListResponse | string>('/admin/shoutbox', {
-      tab: query.tab,
-      page: query.page,
-      limit: PAGE_SIZE
-    })
+    kunFetchGet<AdminShoutboxListResponse | string>(
+      '/admin/shoutbox',
+      query.shoutboxId === null
+        ? { tab: query.tab, page: query.page, limit: PAGE_SIZE }
+        : { shoutboxId: query.shoutboxId, page: 1, limit: PAGE_SIZE }
+    )
       .then((res) => {
         if (!active || seq !== requestSeq.current) return
         if (typeof res === 'string') {
@@ -108,8 +126,9 @@ export const useAdminShoutbox = () => {
     return () => {
       active = false
     }
-    // query.key encodes tab|page; depending on the primitive keeps the effect
-    // from re-firing on a mere identity change of the query object.
+    // query.key encodes tab|page (or the targeted id); depending on the
+    // primitive keeps the effect from re-firing on a mere identity change
+    // of the query object.
   }, [query.key, refreshNonce])
 
   const pushQuery = useCallback(
@@ -151,7 +170,14 @@ export const useAdminShoutbox = () => {
 
   const refresh = useCallback(() => setRefreshNonce((n) => n + 1), [])
 
-  const currentData = data !== null && data.key === query.key ? data.value : null
+  // Leave the targeted view: pushQuery rebuilds the params from scratch, so
+  // the shoutbox id is simply dropped and the plain tab list comes back.
+  const backToList = useCallback(() => {
+    pushQuery(query.tab, 1)
+  }, [query.tab, pushQuery])
+
+  const currentData =
+    data !== null && data.key === query.key ? data.value : null
   const currentError =
     error !== null && error.key === query.key ? error.message : null
 
@@ -165,6 +191,7 @@ export const useAdminShoutbox = () => {
     error: currentError,
     refresh,
     setTab,
-    setPage
+    setPage,
+    backToList
   }
 }

@@ -370,6 +370,7 @@ const makeOfficial = (
   editedAt: null,
   hiddenAt: null,
   refundedAt: null,
+  reportable: true,
   created: new Date(Date.now() - 60_000).toISOString(),
   updated: new Date(Date.now() - 60_000).toISOString(),
   ...overrides
@@ -393,6 +394,7 @@ const makeUser = (
   editedAt: null,
   hiddenAt: null,
   refundedAt: null,
+  reportable: true,
   created: new Date(Date.now() - id * 1000).toISOString(),
   updated: new Date(Date.now() - id * 1000).toISOString(),
   pendingReports: [],
@@ -699,10 +701,13 @@ describe('DashboardShoutbox', () => {
     expect(mocks.kunFetchPost).not.toHaveBeenCalled()
 
     await clickButton(container, '确认隐藏')
-    expect(mocks.kunFetchPost).toHaveBeenCalledWith('/admin/shoutbox/moderate', {
-      shoutboxId: 60,
-      action: 'hide'
-    })
+    expect(mocks.kunFetchPost).toHaveBeenCalledWith(
+      '/admin/shoutbox/moderate',
+      {
+        shoutboxId: 60,
+        action: 'hide'
+      }
+    )
     expect(mocks.toastSuccess).toHaveBeenCalledWith('操作已完成')
   })
 
@@ -793,12 +798,15 @@ describe('DashboardShoutbox', () => {
     mocks.kunFetchPost.mockResolvedValue({})
     mocks.kunFetchGet.mockResolvedValue(listResponse([]))
     await clickButton(container, '提交结案')
-    expect(mocks.kunFetchPost).toHaveBeenCalledWith('/admin/shoutbox/moderate', {
-      shoutboxId: 80,
-      action: 'resolve',
-      resolution: 'accept',
-      content: ''
-    })
+    expect(mocks.kunFetchPost).toHaveBeenCalledWith(
+      '/admin/shoutbox/moderate',
+      {
+        shoutboxId: 80,
+        action: 'resolve',
+        resolution: 'accept',
+        content: ''
+      }
+    )
     expect(mocks.toastSuccess).toHaveBeenCalledWith('举报已结案')
   })
 
@@ -826,10 +834,13 @@ describe('DashboardShoutbox', () => {
     mocks.kunFetchPost.mockResolvedValue({})
     mocks.kunFetchGet.mockResolvedValue(listResponse([]))
     await clickButton(container, '确认恢复')
-    expect(mocks.kunFetchPost).toHaveBeenCalledWith('/admin/shoutbox/moderate', {
-      shoutboxId: 90,
-      action: 'restore'
-    })
+    expect(mocks.kunFetchPost).toHaveBeenCalledWith(
+      '/admin/shoutbox/moderate',
+      {
+        shoutboxId: 90,
+        action: 'restore'
+      }
+    )
   })
 
   it('remove writes nothing on Cancel/Escape, stays open on overlay click, and writes the exact payload only after confirm', async () => {
@@ -888,9 +899,7 @@ describe('DashboardShoutbox', () => {
     // the overlay click must leave the dialog open with zero writes; Cancel
     // then closes it and restores focus.
     await openConfirm()
-    expect(
-      alertDialog()!.querySelector('button[aria-label="关闭"]')
-    ).toBeNull()
+    expect(alertDialog()!.querySelector('button[aria-label="关闭"]')).toBeNull()
     await act(async () => {
       container
         .querySelector<HTMLElement>('[data-testid="alert-overlay"]')!
@@ -909,10 +918,13 @@ describe('DashboardShoutbox', () => {
     mocks.kunFetchGet.mockResolvedValue(listResponse([]))
     await clickButton(container, '确认删除')
     expect(mocks.kunFetchPost).toHaveBeenCalledTimes(1)
-    expect(mocks.kunFetchPost).toHaveBeenCalledWith('/admin/shoutbox/moderate', {
-      shoutboxId: 95,
-      action: 'remove'
-    })
+    expect(mocks.kunFetchPost).toHaveBeenCalledWith(
+      '/admin/shoutbox/moderate',
+      {
+        shoutboxId: 95,
+        action: 'remove'
+      }
+    )
     expect(mocks.toastSuccess).toHaveBeenCalledWith('操作已完成')
   })
 
@@ -984,5 +996,94 @@ describe('DashboardShoutbox', () => {
       await Promise.resolve()
     })
     expectClosedWithoutWrite()
+  })
+
+  it('locates a single message via ?shoutbox= ignoring tab/page, and returns to the tab list', async () => {
+    mocks.search = 'tab=public&page=3&shoutbox=60'
+    mocks.kunFetchGet.mockResolvedValue(
+      listResponse([makeUser(60, { status: 2 })])
+    )
+    await renderPage()
+
+    // The id drives the request; the tab filter and page are ignored.
+    expect(mocks.kunFetchGet).toHaveBeenCalledWith('/admin/shoutbox', {
+      shoutboxId: 60,
+      page: 1,
+      limit: 20
+    })
+    expect(container.textContent).toContain('正在查看小喇叭 #60')
+    // The targeted record keeps its status-appropriate moderation actions.
+    const row = findRow('小喇叭 60 正文')
+    expect(rowButtons(row, '恢复公开')).toHaveLength(1)
+    // The tab strip and the official publish form stay out of this view.
+    expect(
+      Array.from(container.querySelectorAll('button')).some(
+        (button) => button.textContent?.trim() === '待复核'
+      )
+    ).toBe(false)
+    expect(
+      container.querySelector('textarea[aria-label="官方消息正文"]')
+    ).toBeNull()
+
+    await clickButton(container, '返回列表')
+    expect(mocks.routerPush).toHaveBeenCalledWith(
+      '/dashboard/shoutbox?tab=public',
+      { scroll: false }
+    )
+  })
+
+  it('shows a clear empty state when the targeted message does not exist', async () => {
+    mocks.search = 'shoutbox=999'
+    mocks.kunFetchGet.mockResolvedValue(listResponse([]))
+    await renderPage()
+
+    expect(mocks.kunFetchGet).toHaveBeenCalledWith('/admin/shoutbox', {
+      shoutboxId: 999,
+      page: 1,
+      limit: 20
+    })
+    expect(container.textContent).toContain('未找到小喇叭 #999')
+  })
+
+  it('normalizes manual newlines in the official publish content', async () => {
+    mocks.kunFetchGet.mockResolvedValue(listResponse([]))
+    await renderPage()
+
+    await fillInput(
+      container.querySelector<HTMLTextAreaElement>(
+        'textarea[aria-label="官方消息正文"]'
+      )!,
+      '第一行\n第二行'
+    )
+    mocks.kunFetchPost.mockResolvedValue(makeOfficial(43))
+    await clickButton(container, '发布官方消息')
+    expect(mocks.kunFetchPost).toHaveBeenCalledWith(
+      '/admin/shoutbox',
+      expect.objectContaining({ content: '第一行 第二行' })
+    )
+  })
+
+  it('normalizes stored and freshly typed newlines in the official edit dialog', async () => {
+    mocks.kunFetchGet.mockResolvedValue(
+      listResponse([makeOfficial(44, { content: '旧第一行\n旧第二行' })])
+    )
+    await renderPage()
+
+    await clickButton(container, '编辑')
+    const textarea = () =>
+      container.querySelector<HTMLTextAreaElement>(
+        '[role="dialog"] textarea[aria-label="官方消息正文"]'
+      )
+    // A stored newline is already a space when the dialog opens.
+    expect(textarea()?.value).toBe('旧第一行 旧第二行')
+
+    await fillInput(textarea()!, '改后\n内容')
+    expect(textarea()?.value).toBe('改后 内容')
+    mocks.kunFetchPut.mockResolvedValue({})
+    await clickButton(container, '保存')
+    expect(mocks.kunFetchPut).toHaveBeenCalledWith(
+      '/admin/shoutbox',
+      expect.objectContaining({ shoutboxId: 44, content: '改后 内容' })
+    )
   })
 })

@@ -7,11 +7,11 @@ import {
   SHOUTBOX_BLOCKED_KEYWORDS,
   SHOUTBOX_KEYWORD_REJECT_MESSAGE,
   containsShoutboxKeyword,
+  SHOUTBOX_HOME_LIMIT,
   SHOUTBOX_LEVELS,
-  SHOUTBOX_MAX_PAGES,
-  SHOUTBOX_MAX_VISIBLE_SLOTS,
   SHOUTBOX_OFFICIAL_DEFAULT_DURATION_MS,
   SHOUTBOX_PAGE_SIZE,
+  type ShoutboxReadView,
   SHOUTBOX_PRICE,
   SHOUTBOX_STATUSES,
   type ShoutboxLevel,
@@ -25,10 +25,12 @@ import {
   spendMoemoepoint
 } from '~/app/api/moemoepoint/service'
 import { createMessage } from '~/app/api/utils/message'
+import { normalizeShoutboxContent } from '~/utils/shoutboxContent'
 import type {
   ShoutboxBannerResponse,
   AdminShoutboxListResponse,
   AdminShoutboxReviewItem,
+  ShoutboxHomeResponse,
   ShoutboxItem,
   ShoutboxListResponse,
   ShoutboxPatchSummary,
@@ -67,7 +69,10 @@ type AdminShoutboxListInput = z.infer<typeof adminShoutboxListSchema>
 type AdminShoutboxUpdateInput = z.infer<typeof adminShoutboxUpdateSchema>
 type AdminShoutboxModerateInput = z.infer<typeof adminShoutboxModerateSchema>
 type ShoutboxReportInput = z.infer<typeof shoutboxReportSchema>
-type ShoutboxListInput = z.infer<typeof shoutboxListSchema>
+type ShoutboxListInput = Omit<
+  z.infer<typeof shoutboxListSchema>,
+  'view'
+> & { view?: ShoutboxReadView }
 type ShoutboxProfileInput = z.infer<typeof shoutboxProfileSchema>
 type DateLike = Date | string
 
@@ -75,6 +80,16 @@ const userSelect = {
   id: true,
   name: true,
   avatar: true
+} satisfies Prisma.userSelect
+
+// Shoutbox rows need the current author role for report eligibility. Keep this
+// select private and project the public author fields explicitly below so the
+// role can never cross the API boundary.
+const shoutboxUserSelect = {
+  id: true,
+  name: true,
+  avatar: true,
+  role: true
 } satisfies Prisma.userSelect
 
 const patchSelect = {
@@ -107,7 +122,7 @@ const shoutboxSelect = {
   refunded_at: true,
   created: true,
   updated: true,
-  user: { select: userSelect },
+  user: { select: shoutboxUserSelect },
   patch: { select: patchSelect }
 } satisfies Prisma.shoutboxSelect
 
@@ -138,6 +153,8 @@ type ShoutboxCachePayload = {
   page: number
   totalPages: number
   validUntil: string
+  visibilityUntil?: string | null
+  hasMore?: boolean
 }
 
 const isShoutboxStatus = (value: number): value is ShoutboxStatus =>
@@ -172,7 +189,10 @@ const normalizeShoutboxPayload = (
   ...payload,
   pinned: payload.pinned ? normalizeShoutboxRow(payload.pinned) : null,
   shoutboxes: payload.shoutboxes.map(normalizeShoutboxRow),
-  validUntil: toIso(payload.validUntil) ?? new Date(0).toISOString()
+  validUntil: toIso(payload.validUntil) ?? new Date(0).toISOString(),
+  ...(payload.visibilityUntil === undefined
+    ? {}
+    : { visibilityUntil: toIso(payload.visibilityUntil) })
 })
 
 const isUniqueConstraintError = (error: unknown) =>
@@ -216,7 +236,8 @@ const runWithTransactionRetry = async <T>(
   }
 }
 
-const normalizeContent = (content: string) => content.trim()
+const normalizeContent = (content: string) =>
+  normalizeShoutboxContent(content).trim()
 
 type ShoutboxKeywordList = readonly string[]
 
@@ -356,8 +377,13 @@ const serializeShoutbox = (
   visibilityWhere: Prisma.patchWhereInput = {}
 ): ShoutboxItem => ({
   id: row.id,
-  user: row.user,
-  content: row.content,
+  user: {
+    id: row.user.id,
+    name: row.user.name,
+    avatar: row.user.avatar
+  },
+  reportable: row.user.role !== 4,
+  content: normalizeShoutboxContent(row.content),
   link: row.link,
   official: row.official,
   level: isShoutboxLevel(row.level) ? row.level : 'normal',
@@ -378,18 +404,27 @@ const serializeShoutbox = (
 
 const serializePayload = (
   payload: ShoutboxCachePayload,
-  visibilityWhere: Prisma.patchWhereInput
-): ShoutboxListResponse => ({
-  pinned: payload.pinned
-    ? serializeShoutbox(payload.pinned, visibilityWhere)
-    : null,
-  shoutboxes: payload.shoutboxes.map((row) =>
-    serializeShoutbox(row, visibilityWhere)
-  ),
-  page: payload.page,
-  totalPages: payload.totalPages,
-  validUntil: payload.validUntil
-})
+  visibilityWhere: Prisma.patchWhereInput,
+  view: ShoutboxReadView
+): ShoutboxListResponse | ShoutboxHomeResponse => {
+  const response = {
+    pinned: payload.pinned
+      ? serializeShoutbox(payload.pinned, visibilityWhere)
+      : null,
+    shoutboxes: payload.shoutboxes.map((row) =>
+      serializeShoutbox(row, visibilityWhere)
+    ),
+    page: payload.page,
+    totalPages: payload.totalPages,
+    validUntil: payload.validUntil,
+    ...(payload.visibilityUntil === undefined
+      ? {}
+      : { visibilityUntil: payload.visibilityUntil })
+  }
+  return view === 'home'
+    ? { ...response, hasMore: payload.hasMore ?? false }
+    : response
+}
 
 const minFutureDate = (dates: Array<DateLike | null>, now: Date) => {
   const future = dates
@@ -414,6 +449,11 @@ const validUntilFor = (
   return value.toISOString()
 }
 
+const visibilityUntilFor = (
+  now: Date,
+  boundaries: Array<DateLike | null>
+) => toIso(minFutureDate(boundaries, now))
+
 export const isShoutboxPayloadValid = (
   payload: Pick<ShoutboxCachePayload, 'validUntil'>,
   now = new Date()
@@ -425,24 +465,26 @@ export const isShoutboxPayloadValid = (
   )
 }
 
-export const getShoutboxPageWindow = (page: number, hasPinned: boolean) => {
-  if (hasPinned && page === 1) return { skip: 0, take: SHOUTBOX_PAGE_SIZE - 1 }
+export const getShoutboxPageWindow = (
+  page: number,
+  hasPinned: boolean,
+  pageSize = SHOUTBOX_PAGE_SIZE
+) => {
+  if (page === 1) {
+    return { skip: 0, take: hasPinned ? pageSize - 1 : pageSize }
+  }
   return {
     skip: hasPinned
-      ? (page - 1) * SHOUTBOX_PAGE_SIZE - 1
-      : (page - 1) * SHOUTBOX_PAGE_SIZE,
-    take: SHOUTBOX_PAGE_SIZE
+      ? (page - 1) * pageSize - 1
+      : (page - 1) * pageSize,
+    take: pageSize
   }
 }
 
-export const getShoutboxPageCount = (visibleCount: number) =>
-  Math.min(
-    SHOUTBOX_MAX_PAGES,
-    Math.ceil(
-      Math.min(Math.max(visibleCount, 0), SHOUTBOX_MAX_VISIBLE_SLOTS) /
-        SHOUTBOX_PAGE_SIZE
-    )
-  )
+export const getShoutboxPageCount = (
+  visibleCount: number,
+  pageSize = SHOUTBOX_PAGE_SIZE
+) => Math.ceil(Math.max(visibleCount, 0) / pageSize)
 
 const getActiveOfficialBoundaries = async (now: Date, db: PrismaClient) => {
   const [pinned, banner, nextOfficial] = await Promise.all([
@@ -513,7 +555,48 @@ const buildGeneralPayload = async (
     shoutboxes: rows,
     page: input.page,
     totalPages,
-    validUntil: validUntilFor(now, SHOUTBOX_LIST_CACHE_DURATION, boundaries)
+    validUntil: validUntilFor(now, SHOUTBOX_LIST_CACHE_DURATION, boundaries),
+    visibilityUntil: visibilityUntilFor(now, boundaries)
+  }
+}
+
+const buildHomePayload = async (
+  now: Date,
+  db: PrismaClient
+): Promise<ShoutboxCachePayload> => {
+  const { pinned, boundaries } = await getActiveOfficialBoundaries(now, db)
+  const pinnedRow = pinned
+    ? await db.shoutbox.findUnique({
+        where: {
+          ...effectiveOfficialWhere(now),
+          id: pinned.id
+        },
+        select: shoutboxSelect
+      })
+    : null
+  const baseWhere = publicBaseWhere(now)
+  const timelineWhere: Prisma.shoutboxWhereInput = pinnedRow
+    ? { ...baseWhere, id: { not: pinnedRow.id } }
+    : baseWhere
+  const rows = await db.shoutbox.findMany({
+    where: timelineWhere,
+    orderBy: [{ created: 'desc' }, { id: 'desc' }],
+    skip: 0,
+    take: pinnedRow ? SHOUTBOX_HOME_LIMIT : SHOUTBOX_HOME_LIMIT + 1,
+    select: shoutboxSelect
+  })
+  const displayLimit = pinnedRow ? SHOUTBOX_HOME_LIMIT - 1 : SHOUTBOX_HOME_LIMIT
+  const hasMore = rows.length > displayLimit
+
+  return {
+    pinned: pinnedRow,
+    shoutboxes: rows.slice(0, displayLimit),
+    page: 1,
+    // Home is a single fixed response page; `hasMore` carries the link state.
+    totalPages: 1,
+    validUntil: validUntilFor(now, SHOUTBOX_LIST_CACHE_DURATION, boundaries),
+    visibilityUntil: visibilityUntilFor(now, boundaries),
+    hasMore
   }
 }
 
@@ -528,94 +611,6 @@ const getPatchId = async (uniqueId: string, db: PrismaClient) => {
   return patch.id
 }
 
-type ShoutboxPatchPageRow = {
-  id: number | null
-  total_count: number
-  created: DateLike | null
-  expiry_at: DateLike | null
-  retention_expiry_at: DateLike | null
-  in_timeline_range: boolean | null
-}
-
-const getBoundedPatchPage = async (
-  patchId: number,
-  pinnedId: number | null,
-  input: ShoutboxListInput & { patch: string },
-  now: Date,
-  db: PrismaClient
-) => {
-  const offset = SHOUTBOX_MAX_VISIBLE_SLOTS - 1 - (pinnedId ? 1 : 0)
-  const start = (input.page - 1) * SHOUTBOX_PAGE_SIZE
-  const pinnedValue =
-    pinnedId === null
-      ? Prisma.sql`NULL::integer`
-      : Prisma.sql`${pinnedId}::integer`
-  return db.$queryRaw<ShoutboxPatchPageRow[]>(Prisma.sql`
-    WITH timeline AS (
-      SELECT s.id, s.created
-      FROM shoutbox s
-      WHERE s.status = 0
-        AND (s.official = false OR s.effective_from <= ${now})
-        AND (${pinnedValue} IS NULL OR s.id <> ${pinnedValue})
-      ORDER BY s.created DESC, s.id DESC
-      OFFSET ${offset}
-      LIMIT 1
-    ), patch_candidates AS (
-      SELECT
-        s.id,
-        s.created,
-        (
-          (
-            (s.created AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Shanghai')
-            + INTERVAL '3 months'
-          ) AT TIME ZONE 'Asia/Shanghai'
-        ) AS expiry_at,
-        CASE
-          WHEN ${pinnedValue} IS NOT NULL AND s.id = ${pinnedValue} THEN TRUE
-          WHEN timeline.id IS NULL THEN TRUE
-          WHEN s.created > timeline.created
-            OR (s.created = timeline.created AND s.id >= timeline.id)
-            THEN TRUE
-          ELSE FALSE
-        END AS in_timeline_range
-      FROM shoutbox s
-      LEFT JOIN timeline ON TRUE
-      WHERE s.status = 0
-        AND (s.official = false OR s.effective_from <= ${now})
-        AND s.patch_id = ${patchId}
-    ), visible AS (
-      SELECT *
-      FROM patch_candidates
-      WHERE in_timeline_range = TRUE
-        OR expiry_at > ${now}
-    ), retention_boundaries AS (
-      SELECT MIN(expiry_at) AS retention_expiry_at
-      FROM visible
-      WHERE in_timeline_range = FALSE
-    ), totals AS (
-      SELECT COUNT(*)::integer AS total_count
-      FROM visible
-    ), page_rows AS (
-      SELECT id, created, expiry_at, in_timeline_range
-      FROM visible
-      ORDER BY created DESC, id DESC
-      OFFSET ${start}
-      LIMIT ${SHOUTBOX_PAGE_SIZE}
-    )
-    SELECT
-      page_rows.id,
-      totals.total_count,
-      page_rows.created,
-      page_rows.expiry_at,
-      retention_boundaries.retention_expiry_at,
-      page_rows.in_timeline_range
-    FROM totals
-    CROSS JOIN retention_boundaries
-    LEFT JOIN page_rows ON TRUE
-    ORDER BY page_rows.created DESC NULLS LAST, page_rows.id DESC NULLS LAST
-  `)
-}
-
 const buildPatchPayload = async (
   input: ShoutboxListInput & { patch: string },
   now: Date,
@@ -628,53 +623,46 @@ const buildPatchPayload = async (
       shoutboxes: [],
       page: input.page,
       totalPages: 0,
-      validUntil: validUntilFor(now, SHOUTBOX_PATCH_CACHE_DURATION, [])
+      validUntil: validUntilFor(now, SHOUTBOX_PATCH_CACHE_DURATION, []),
+      visibilityUntil: null
     }
   }
 
-  const { pinned, boundaries } = await getActiveOfficialBoundaries(now, db)
-  const pinnedId = pinned?.id ?? null
-  const queryRows = await getBoundedPatchPage(patchId, pinnedId, input, now, db)
-  const totalCount = Number(queryRows[0]?.total_count ?? 0)
-  const pageRows = queryRows.filter(
-    (queryRow): queryRow is ShoutboxPatchPageRow & { id: number } =>
-      typeof queryRow.id === 'number'
-  )
-  const ids = pageRows.map((queryRow) => queryRow.id)
-  const detailRows = ids.length
-    ? await db.shoutbox.findMany({
-        where: {
-          ...publicBaseWhere(now),
-          patch_id: patchId,
-          id: { in: ids }
-        },
-        select: shoutboxSelect
-      })
-    : []
-  const rowsById = new Map(detailRows.map((row) => [row.id, row]))
-  const hydratedRows = ids.flatMap((id) => {
-    const row = rowsById.get(id)
-    return row ? [row] : []
-  })
-  const expiryBoundaries = [asDate(queryRows[0]?.retention_expiry_at)]
+  const { boundaries } = await getActiveOfficialBoundaries(now, db)
+  const where: Prisma.shoutboxWhereInput = {
+    ...publicBaseWhere(now),
+    patch_id: patchId
+  }
+  const totalCount = await db.shoutbox.count({ where })
+  const totalPages = getShoutboxPageCount(totalCount)
+  const rows =
+    input.page <= totalPages
+      ? await db.shoutbox.findMany({
+          where,
+          orderBy: [{ created: 'desc' }, { id: 'desc' }],
+          skip: (input.page - 1) * SHOUTBOX_PAGE_SIZE,
+          take: SHOUTBOX_PAGE_SIZE,
+          select: shoutboxSelect
+        })
+      : []
 
   return {
     pinned: null,
-    shoutboxes: hydratedRows,
+    shoutboxes: rows,
     page: input.page,
-    totalPages: Math.ceil(totalCount / SHOUTBOX_PAGE_SIZE),
-    validUntil: validUntilFor(now, SHOUTBOX_PATCH_CACHE_DURATION, [
-      ...boundaries,
-      ...expiryBoundaries
-    ])
+    totalPages,
+    validUntil: validUntilFor(now, SHOUTBOX_PATCH_CACHE_DURATION, boundaries),
+    visibilityUntil: visibilityUntilFor(now, boundaries)
   }
 }
 
 const getPayload = async (
   input: ShoutboxListInput,
   now: Date,
-  db: PrismaClient
+  db: PrismaClient,
+  view: ShoutboxReadView
 ) => {
+  if (view === 'home') return buildHomePayload(now, db)
   if (input.patch) {
     return buildPatchPayload({ ...input, patch: input.patch }, now, db)
   }
@@ -683,34 +671,48 @@ const getPayload = async (
 
 const emptyListPayload = (
   input: ShoutboxListInput,
-  now: Date
+  now: Date,
+  view: ShoutboxReadView
 ): ShoutboxCachePayload => ({
   pinned: null,
   shoutboxes: [],
   page: input.page,
-  totalPages: 0,
+  totalPages: view === 'home' ? 1 : 0,
   // A failed authoritative refresh must never be advertised as cacheable.
-  validUntil: now.toISOString()
+  validUntil: now.toISOString(),
+  visibilityUntil: now.toISOString(),
+  ...(view === 'home' ? { hasMore: false } : {})
 })
 
-export const getShoutboxList = async (
+type ShoutboxReadOptions = {
+  now?: Date
+  visibilityWhere?: Prisma.patchWhereInput
+  db?: PrismaClient
+  useCache?: boolean
+}
+
+const getShoutboxRead = async (
   input: ShoutboxListInput,
-  options: {
-    now?: Date
-    visibilityWhere?: Prisma.patchWhereInput
-    db?: PrismaClient
-    useCache?: boolean
-  } = {}
-): Promise<ShoutboxListResponse> => {
+  options: ShoutboxReadOptions,
+  view: ShoutboxReadView
+): Promise<ShoutboxListResponse | ShoutboxHomeResponse> => {
   const initialNow = options.now ?? new Date()
   const getNow = () => options.now ?? new Date()
   let queryNow = initialNow
   const visibilityWhere = options.visibilityWhere ?? {}
   const db = options.db ?? prisma
-  const cacheKey = input.patch
-    ? getShoutboxCacheKey(input.patch, input.page)
-    : getShoutboxCacheKey(null, input.page)
-  const fetcher = () => getPayload(input, queryNow, db)
+  const cacheKey = getShoutboxCacheKey(
+    view === 'home' ? null : input.patch ?? null,
+    view === 'home' ? 1 : input.page,
+    view
+  )
+  const fetcher = () => getPayload(input, queryNow, db, view)
+  const cacheDuration =
+    view === 'home'
+      ? SHOUTBOX_LIST_CACHE_DURATION
+      : input.patch
+        ? SHOUTBOX_PATCH_CACHE_DURATION
+        : SHOUTBOX_LIST_CACHE_DURATION
 
   const reloadAtCompletion = async () => {
     for (let attempt = 0; attempt < 2; attempt += 1) {
@@ -729,7 +731,7 @@ export const getShoutboxList = async (
         break
       }
     }
-    return emptyListPayload(input, getNow())
+    return emptyListPayload(input, getNow(), view)
   }
 
   let payload: ShoutboxCachePayload
@@ -744,9 +746,7 @@ export const getShoutboxList = async (
         await getShoutboxCached(
           cacheKey,
           fetcher,
-          input.patch
-            ? SHOUTBOX_PATCH_CACHE_DURATION
-            : SHOUTBOX_LIST_CACHE_DURATION,
+          cacheDuration,
           getNow
         )
       )
@@ -756,9 +756,27 @@ export const getShoutboxList = async (
     }
   } catch (error) {
     console.error('[Shoutbox] Failed to load list payload:', error)
-    payload = emptyListPayload(input, getNow())
+    payload = emptyListPayload(input, getNow(), view)
   }
-  return serializePayload(payload, visibilityWhere)
+  return serializePayload(payload, visibilityWhere, view)
+}
+
+export const getShoutboxList = async (
+  input: ShoutboxListInput,
+  options: ShoutboxReadOptions = {}
+): Promise<ShoutboxListResponse> => {
+  const view = input.view === 'home' ? 'home' : 'list'
+  return (await getShoutboxRead(input, options, view)) as ShoutboxListResponse
+}
+
+export const getShoutboxHome = async (
+  options: ShoutboxReadOptions = {}
+): Promise<ShoutboxHomeResponse> => {
+  return (await getShoutboxRead(
+    { page: 1, view: 'home' },
+    options,
+    'home'
+  )) as ShoutboxHomeResponse
 }
 
 export const getShoutboxBanner = async (
@@ -794,6 +812,10 @@ export const getShoutboxBanner = async (
     ])
     return {
       banner: row ? serializeShoutbox(row, visibilityWhere) : null,
+      visibilityUntil: visibilityUntilFor(queryNow, [
+        row?.effective_to ?? null,
+        nextImportant?.effective_from ?? null
+      ]),
       validUntil: validUntilFor(queryNow, SHOUTBOX_BANNER_CACHE_DURATION, [
         row?.effective_to ?? null,
         nextImportant?.effective_from ?? null
@@ -816,7 +838,8 @@ export const getShoutboxBanner = async (
     }
     return {
       banner: null,
-      validUntil: getNow().toISOString()
+      validUntil: getNow().toISOString(),
+      visibilityUntil: getNow().toISOString()
     }
   }
 
@@ -840,7 +863,8 @@ export const getShoutboxBanner = async (
     console.error('[Shoutbox] Failed to load banner payload:', error)
     return {
       banner: null,
-      validUntil: getNow().toISOString()
+      validUntil: getNow().toISOString(),
+      visibilityUntil: getNow().toISOString()
     }
   }
 }
@@ -1301,6 +1325,50 @@ const getPendingShoutboxReports = async (
 }
 
 const shoutboxLink = (shoutboxId: number) => `/shoutbox?shoutbox=${shoutboxId}`
+const adminShoutboxLink = (shoutboxId: number) =>
+  `/dashboard/shoutbox?shoutbox=${shoutboxId}`
+
+const notifyShoutboxAdmins = async (
+  shoutboxId: number,
+  reporterId: number,
+  db: PrismaClient
+) => {
+  let admins: Array<{ id: number }>
+  try {
+    admins = await db.user.findMany({
+      where: { role: { gte: 3 } },
+      select: { id: true }
+    })
+  } catch (error) {
+    console.error('[Shoutbox] Failed to find admins for report notice:', error)
+    return
+  }
+  if (!Array.isArray(admins)) return
+
+  const results = await Promise.allSettled(
+    admins.map((admin) =>
+      Promise.resolve().then(() =>
+        createMessage(
+          {
+            type: 'system',
+            content: `用户举报了小喇叭 #${shoutboxId}，请前往后台处理。`,
+            sender_id: reporterId,
+            recipient_id: admin.id,
+            link: adminShoutboxLink(shoutboxId)
+          },
+          db
+        )
+      )
+    )
+  )
+  const failed = results.filter((result) => result.status === 'rejected')
+  if (failed.length) {
+    console.error('[Shoutbox] Failed to send some report notices:', {
+      shoutboxId,
+      failed: failed.length
+    })
+  }
+}
 
 const createShoutboxAuthorNotice = (
   action: 'hide' | 'remove' | 'restore',
@@ -1353,6 +1421,12 @@ export const createShoutboxReport = async (
     const row = await lockShoutbox(tx, input.shoutboxId)
     if (!row) return '小喇叭不存在'
     if (row.user_id === userId) return '不能举报自己的小喇叭'
+
+    const author = await tx.user.findUnique({
+      where: { id: row.user_id },
+      select: { role: true }
+    })
+    if (author?.role === 4) return '超级管理员发布的小喇叭不能举报'
 
     const effectiveFrom = asDate(row.effective_from)
     const notYetEffective =
@@ -1415,6 +1489,7 @@ export const createShoutboxReport = async (
   })
 
   if (typeof result === 'string') return result
+  await notifyShoutboxAdmins(input.shoutboxId, userId, db)
   if (typeof result === 'object' && result !== null && result.hidden) {
     await invalidateShoutboxCaches()
   }
@@ -1621,6 +1696,42 @@ export const moderateShoutbox = async (
 
 type AdminShoutboxTab = AdminShoutboxListInput['tab']
 
+const getAdminPendingReports = async (
+  db: PrismaClient,
+  shoutboxIds: number[]
+) => {
+  const reportsByShoutbox = new Map<number, ShoutboxPendingReport[]>()
+  if (!shoutboxIds.length) return reportsByShoutbox
+
+  const reports = await db.patch_report.findMany({
+    where: {
+      target_type: 'shoutbox',
+      status: 0,
+      shoutbox_id: { in: shoutboxIds }
+    },
+    orderBy: [{ created: 'asc' }, { id: 'asc' }],
+    select: {
+      id: true,
+      shoutbox_id: true,
+      reason: true,
+      created: true,
+      sender: { select: userSelect }
+    }
+  })
+  for (const report of Array.isArray(reports) ? reports : []) {
+    if (report.shoutbox_id === null) continue
+    const list = reportsByShoutbox.get(report.shoutbox_id) ?? []
+    list.push({
+      id: report.id,
+      reason: report.reason,
+      sender: report.sender,
+      created: toIso(report.created) ?? new Date(0).toISOString()
+    })
+    reportsByShoutbox.set(report.shoutbox_id, list)
+  }
+  return reportsByShoutbox
+}
+
 const adminShoutboxWhere = (
   tab: AdminShoutboxTab
 ): Prisma.shoutboxWhereInput => {
@@ -1668,6 +1779,26 @@ export const getAdminShoutboxList = async (
   if (options.adminRole !== undefined && options.adminRole < 3) {
     return '本页面仅管理员可访问'
   }
+  if (input.shoutboxId !== undefined) {
+    const row = await db.shoutbox.findUnique({
+      where: { id: input.shoutboxId },
+      select: shoutboxSelect
+    })
+    if (!row) {
+      return { shoutboxes: [], page: 1, totalPages: 0 }
+    }
+    const reportsByShoutbox = await getAdminPendingReports(db, [row.id])
+    return {
+      shoutboxes: [
+        {
+          ...serializeShoutbox(row),
+          pendingReports: reportsByShoutbox.get(row.id) ?? []
+        }
+      ],
+      page: 1,
+      totalPages: 1
+    } satisfies AdminShoutboxListResponse
+  }
   const where = adminShoutboxWhere(input.tab)
   const total = await db.shoutbox.count({ where })
   if (!total) {
@@ -1713,33 +1844,10 @@ export const getAdminShoutboxList = async (
   let shoutboxes: Array<ShoutboxItem | AdminShoutboxReviewItem> =
     orderedRows.map((row) => serializeShoutbox(row))
   if (input.tab === 'pending_review' && orderedRows.length) {
-    const reports = await db.patch_report.findMany({
-      where: {
-        target_type: 'shoutbox',
-        status: 0,
-        shoutbox_id: { in: orderedRows.map((row) => row.id) }
-      },
-      orderBy: [{ created: 'asc' }, { id: 'asc' }],
-      select: {
-        id: true,
-        shoutbox_id: true,
-        reason: true,
-        created: true,
-        sender: { select: userSelect }
-      }
-    })
-    const reportsByShoutbox = new Map<number, ShoutboxPendingReport[]>()
-    for (const report of reports) {
-      if (report.shoutbox_id === null) continue
-      const list = reportsByShoutbox.get(report.shoutbox_id) ?? []
-      list.push({
-        id: report.id,
-        reason: report.reason,
-        sender: report.sender,
-        created: report.created.toISOString()
-      })
-      reportsByShoutbox.set(report.shoutbox_id, list)
-    }
+    const reportsByShoutbox = await getAdminPendingReports(
+      db,
+      orderedRows.map((row) => row.id)
+    )
     shoutboxes = orderedRows.map((row) => ({
       ...serializeShoutbox(row),
       pendingReports: reportsByShoutbox.get(row.id) ?? []
@@ -1796,6 +1904,9 @@ export const getAdminOfficialShoutboxes = async (
   const db = options.db ?? prisma
   if (options.adminRole !== undefined && options.adminRole < 3) {
     return '本页面仅管理员可访问'
+  }
+  if (input.shoutboxId !== undefined) {
+    return getAdminShoutboxList(input, options)
   }
   const where: Prisma.shoutboxWhereInput = { official: true }
   const [total, rows] = await Promise.all([

@@ -1,17 +1,24 @@
 import { z } from 'zod'
 import {
+  SHOUTBOX_HOME_LIMIT,
   SHOUTBOX_LEVELS,
   SHOUTBOX_PAGE_SIZE,
-  SHOUTBOX_MAX_PAGES
+  SHOUTBOX_READ_VIEWS
 } from '~/constants/shoutbox'
+import { normalizeShoutboxContent } from '~/utils/shoutboxContent'
 
 const shoutboxIdSchema = z.coerce.number().int().min(1).max(2147483647)
 const requestIdSchema = z.string().uuid({ message: '请求 ID 必须为 UUID' })
 const contentSchema = z
   .string()
-  .trim()
-  .min(1, { message: '小喇叭正文不能为空' })
-  .max(200, { message: '小喇叭正文不能超过 200 个字符' })
+  .transform(normalizeShoutboxContent)
+  .pipe(
+    z
+      .string()
+      .trim()
+      .min(1, { message: '小喇叭正文不能为空' })
+      .max(200, { message: '小喇叭正文不能超过 200 个字符' })
+  )
 
 // The MDX reader exposes long documents under /doc/[...slug]. Keep official
 // details on that relative route so a client cannot turn the announcement
@@ -55,28 +62,45 @@ export const shoutboxReportSchema = z.object({
 
 export const shoutboxListSchema = z
   .object({
+    view: z.enum(SHOUTBOX_READ_VIEWS).default('list'),
     page: z.coerce.number().int().min(1).max(2147483647).default(1),
-    limit: z.coerce
-      .number()
-      .int()
-      .refine((value) => value === SHOUTBOX_PAGE_SIZE, {
-        message: `每页只能显示 ${SHOUTBOX_PAGE_SIZE} 条`
-      })
-      .default(SHOUTBOX_PAGE_SIZE),
+    limit: z.coerce.number().int().min(1).max(100).optional(),
     patch: z
       .string()
       .regex(/^[A-Za-z0-9]{8}$/, { message: 'OtomeGame ID 格式不正确' })
       .optional()
   })
   .superRefine((input, ctx) => {
-    if (!input.patch && input.page > SHOUTBOX_MAX_PAGES) {
+    if (input.view === 'home') {
+      if (input.patch) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['patch'],
+          message: '首页小喇叭不能关联游戏'
+        })
+      }
+      if (input.page !== 1) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['page'],
+          message: '首页小喇叭只支持第 1 页'
+        })
+      }
+      if (input.limit !== undefined && input.limit !== SHOUTBOX_HOME_LIMIT) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['limit'],
+          message: `首页小喇叭固定显示 ${SHOUTBOX_HOME_LIMIT} 条`
+        })
+      }
+      return
+    }
+
+    if (input.limit !== undefined && input.limit !== SHOUTBOX_PAGE_SIZE) {
       ctx.addIssue({
-        code: z.ZodIssueCode.too_big,
-        type: 'number',
-        maximum: SHOUTBOX_MAX_PAGES,
-        inclusive: true,
-        path: ['page'],
-        message: `小喇叭页最多为第 ${SHOUTBOX_MAX_PAGES} 页`
+        code: z.ZodIssueCode.custom,
+        path: ['limit'],
+        message: `每页只能显示 ${SHOUTBOX_PAGE_SIZE} 条`
       })
     }
   })
@@ -90,6 +114,7 @@ export const shoutboxProfileSchema = z.object({
 export const adminShoutboxListSchema = z.object({
   page: z.coerce.number().int().min(1).max(2147483647).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(20),
+  shoutboxId: shoutboxIdSchema.optional(),
   tab: z
     .enum(['pending_review', 'public', 'removed', 'official'])
     .default('official')
