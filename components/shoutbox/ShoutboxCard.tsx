@@ -38,9 +38,10 @@ interface Props {
   highlight?: boolean
   /**
    * Compact single-row presentation for the public list pages (/shoutbox and
-   * ?patch=), the home module and the per-game strip: the same author
-   * edit/delete logic riding on ShoutboxCompactRow. The author's own record
-   * page keeps the full card for its status display.
+   * ?patch=), the home module, the per-game strip and the author record page:
+   * the same author edit/delete logic riding on ShoutboxCompactRow. The
+   * record page also passes showStatus so the row carries the status label
+   * and the edited marker.
    */
   compact?: boolean
   /**
@@ -258,11 +259,10 @@ export const ShoutboxCard = ({
     </Modal>
   )
 
-  // The public list pages (/shoutbox and ?patch=) render one compact row per
-  // message instead of a full card. The row presentation is ShoutboxCompactRow;
-  // the author's edit/delete entries ride in its actions slot and keep the
-  // exact same handlers, edit-window rules, draft retention and confirmation
-  // modal as the full card. Editing swaps the row for the shared edit form in
+  // Compact mode renders one row per message via ShoutboxCompactRow. The
+  // author's edit/delete entries ride in its actions slot and keep the exact
+  // same handlers, edit-window rules, draft retention and confirmation modal
+  // as the full card. Editing swaps the row for the shared edit form in
   // place; the anchor id and the deep-link highlight stay on the wrapper.
   if (compact) {
     return (
@@ -276,6 +276,7 @@ export const ShoutboxCard = ({
           <ShoutboxCompactRow
             item={item}
             pinned={pinned}
+            showStatus={showStatus}
             allowsDelete={showDelete}
             actions={
               mounted && (canEdit || (canDelete && showDelete)) ? (

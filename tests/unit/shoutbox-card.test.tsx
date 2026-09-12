@@ -590,6 +590,71 @@ describe('ShoutboxCard', () => {
     expect(mocks.toastSuccess).toHaveBeenCalledWith('小喇叭已删除')
   })
 
+  it('compact mode shows the status label and the edited marker when showStatus is set', async () => {
+    await renderCard(
+      makeItem({
+        status: 2,
+        hiddenAt: new Date().toISOString(),
+        editedAt: new Date().toISOString()
+      }),
+      { compact: true, showStatus: true, currentUserId: 7 }
+    )
+
+    expect(container.textContent).toContain('隐藏待复核')
+    expect(container.textContent).toContain('已编辑')
+  })
+
+  it('labels an official message 已撤回 in compact mode', async () => {
+    await renderCard(makeItem({ official: true, status: 3, cost: 0 }), {
+      compact: true,
+      showStatus: true,
+      currentUserId: 7
+    })
+    expect(container.textContent).toContain('已撤回')
+  })
+
+  it('labels a violation-removed message 违规删除 in compact mode', async () => {
+    await renderCard(makeItem({ status: 3 }), {
+      compact: true,
+      showStatus: true,
+      currentUserId: 7
+    })
+    expect(container.textContent).toContain('违规删除')
+  })
+
+  it('omits the status label in compact mode without showStatus, as on the public surfaces', async () => {
+    await renderCard(
+      makeItem({ status: 2, hiddenAt: new Date().toISOString() }),
+      { compact: true, currentUserId: 7 }
+    )
+    expect(container.textContent).not.toContain('隐藏待复核')
+  })
+
+  it('keeps the self-delete confirmation for a hidden-pending-review message in the compact status view', async () => {
+    const onDeleted = vi.fn()
+    mocks.kunFetchDelete.mockResolvedValue({})
+    await renderCard(
+      makeItem({ status: 2, hiddenAt: new Date().toISOString() }),
+      {
+        compact: true,
+        showStatus: true,
+        currentUserId: 7,
+        onDeleted
+      }
+    )
+
+    expect(container.textContent).toContain('隐藏待复核')
+    await clickIconButton(container, '删除')
+    expect(container.querySelector('[role="dialog"]')).not.toBeNull()
+    expect(mocks.kunFetchDelete).not.toHaveBeenCalled()
+
+    await clickButton(container, '确认删除')
+    expect(mocks.kunFetchDelete).toHaveBeenCalledWith('/shoutbox', {
+      shoutboxId: 42
+    })
+    expect(onDeleted).toHaveBeenCalledWith(42)
+  })
+
   it("gives role-3 administrators a navigation-only review entry on other users' compact rows", async () => {
     mocks.currentUid = 99
     mocks.currentRole = 3

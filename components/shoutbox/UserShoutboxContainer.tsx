@@ -114,11 +114,12 @@ export const UserShoutboxContainer = ({ uid, initialData }: Props) => {
       {data.shoutboxes.length === 0 ? (
         <KunNull message="暂无小喇叭记录" />
       ) : (
-        <div className="space-y-3">
+        <div className="divide-y divide-default-100">
           {data.shoutboxes.map((item) => (
             <ShoutboxCard
               key={item.id}
               item={item}
+              compact
               showStatus
               currentUserId={currentUserId}
               onChanged={handleChanged}

@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { Avatar } from '@heroui/avatar'
 import { Chip } from '@heroui/chip'
 import { Gamepad2 } from 'lucide-react'
+import { getShoutboxStatusLabel } from '~/constants/shoutbox'
 import { useMounted } from '~/hooks/useMounted'
 import { cn } from '~/utils/cn'
 import { formatChinaDateTime } from '~/utils/fixedTimezoneDate'
@@ -17,6 +18,8 @@ interface Props {
   item: ShoutboxItem
   pinned?: boolean
   actions?: ReactNode
+  /** Author record page: also render the status label and the 已编辑 marker after the body. */
+  showStatus?: boolean
   /**
    * View-level reserve for the action area: views that allow delete (the
    * list pages) reserve two 32px slots, the others (home, per-game strip)
@@ -30,6 +33,7 @@ export const ShoutboxCompactRow = ({
   item,
   pinned = false,
   actions,
+  showStatus = false,
   allowsDelete = false
 }: Props) => {
   const mounted = useMounted()
@@ -43,8 +47,11 @@ export const ShoutboxCompactRow = ({
         // row 2, spanning the text and action columns — never under the
         // avatar. From sm up the wrapper is one inline flow in the middle
         // column, whose track always excludes the action column.
-        // min-h-10 keeps short single-line rows at a consistent height.
-        'grid min-h-10 grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-x-1 rounded-lg px-2 py-1',
+        // min-h-10 keeps short single-line rows at a consistent height;
+        // content-center centers the 28px first-line track in the 32px
+        // content box of such rows, and is inert once the body wraps
+        // taller — the avatar and actions stay anchored to the first line.
+        'grid min-h-10 grid-cols-[auto_minmax(0,1fr)_auto] items-start content-center gap-x-1 rounded-lg px-2 py-1',
         item.official && 'bg-primary-50'
       )}
     >
@@ -57,7 +64,10 @@ export const ShoutboxCompactRow = ({
       {/* Both ends share the 24px line-height (mobile 14/24, PC 16/24); on
           PC (where the wrapper is the block middle column) sm:pt-0.5 drops
           the 24px first text line by 2px so its center matches the 28px
-          avatar/action row. */}
+          avatar/action row. Inline chips center on the line box, not the
+          font's x-height: align-top puts the 20px chip at the line-box top
+          and top-0.5 adds the (24-20)/2 offset. Mobile badges are flex
+          items, so their offset stays sm-only. */}
       <div className="contents min-w-0 text-small leading-6 sm:block sm:pt-0.5 sm:text-base sm:leading-6">
         {/* Mobile: one 28px header line — badges cannot shrink, an overlong
             author name truncates in the leftover width (full name in title).
@@ -68,7 +78,7 @@ export const ShoutboxCompactRow = ({
               size="sm"
               color="primary"
               variant="bordered"
-              className="mr-1 shrink-0 align-middle"
+              className="mr-1 shrink-0 sm:relative sm:top-0.5 sm:align-top"
               classNames={{
                 base: 'max-sm:mr-0.5 max-sm:px-0.5 sm:h-5',
                 content: 'max-sm:px-0'
@@ -82,7 +92,7 @@ export const ShoutboxCompactRow = ({
               size="sm"
               color="danger"
               variant="bordered"
-              className="mr-1 shrink-0 align-middle"
+              className="mr-1 shrink-0 sm:relative sm:top-0.5 sm:align-top"
               classNames={{
                 base: 'max-sm:mr-0.5 max-sm:px-0.5 sm:h-5',
                 content: 'max-sm:px-0'
@@ -119,7 +129,7 @@ export const ShoutboxCompactRow = ({
                   <Gamepad2 className="size-3.5 shrink-0" aria-hidden />
                 }
                 classNames={{
-                  base: 'h-5 min-w-0 max-w-[min(12rem,100%)] px-2 align-middle text-sm',
+                  base: 'h-5 min-w-0 max-w-[min(12rem,100%)] px-2 align-top relative top-0.5 text-sm',
                   content: 'truncate'
                 }}
               >
@@ -139,6 +149,39 @@ export const ShoutboxCompactRow = ({
             </>
           ) : null}
         </span>
+        {showStatus && (item.status !== 0 || item.editedAt) && (
+          // Author record page only: wraps on its own mobile row in the text
+          // column — never under the avatar or the fixed time column; on PC
+          // it joins the middle column's inline flow right after the body.
+          <span className="max-sm:col-start-2 max-sm:row-start-3 sm:contents">
+            {item.status !== 0 && (
+              <>
+                {' '}
+                <Chip
+                  size="sm"
+                  variant="flat"
+                  color={
+                    item.status === 3
+                      ? 'danger'
+                      : item.status === 2
+                        ? 'warning'
+                        : 'default'
+                  }
+                  className="mr-1 align-top relative top-0.5"
+                  classNames={{ base: 'h-5' }}
+                >
+                  {getShoutboxStatusLabel(item.status, item.official)}
+                </Chip>
+              </>
+            )}
+            {item.editedAt && (
+              <>
+                {' '}
+                <span className="text-xs text-default-400">已编辑</span>
+              </>
+            )}
+          </span>
+        )}
       </div>
       {/* First-line-aligned action column: the reserved slot width stays
           view-based (allowsDelete) and empty slots never collapse; the 64px
