@@ -18,7 +18,8 @@ const nextConfig: NextConfig = {
     incomingRequests: {
       ignore: [
         /\/api\/message\/unread/,
-        /\/api\/message\/conversation(?:\/|$)/
+        /\/api\/message\/conversation(?:\/|$)/,
+        /^\/api\/(?:admin\/)?shoutbox(?:[/?#]|$)/
       ]
     }
   },
