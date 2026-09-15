@@ -25,6 +25,14 @@
 
 `prisma:push` 实际会先跑 `migration:resource-links`，再 `prisma db push` 和 `prisma generate`；它保留给本地开发、`deploy:install` 首次安装和 disposable CI 初始化。生产 `deploy:pull` / `deploy:build` 使用 `prisma:deploy-safe`：先运行既有的 `migration:resource-links`（可能执行兼容性 schema/data 写入），再运行只读 schema guard/diff，最后运行 `prisma generate`。该命令不运行 `prisma db push`，也不应用 diff SQL。
 
+### 模块 03 事项迁移与任务
+
+生产先备份，再依次执行 `migration/production-case-preflight-2026-09-13.sql`、`production-case-sync-2026-09-13.sql`、`production-case-postflight-2026-09-13.sql`，最后运行现有 schema guard 与部署流程。三份脚本只涉及新增的 `ops_case`、`ops_case_message`、`ops_case_subscriber`；pre/postflight 只读，sync 可重复执行，已有同名但不兼容的对象在写入前拒绝。两个可空唯一键必须允许多个 NULL，不能使用 `NULLS NOT DISTINCT`。旧反馈和举报不回填。
+
+`server/tasks/caseTimeoutTask.ts` 每小时第 17 分钟按上海时区执行：发布者归属的资源问题等待处理方超过 7 天升级站方，等待报告者超过 14 天自动结案。站方事项不自动结案；04、06 的类型不由本任务扫描。任务使用已有 Redis 锁和逐项状态条件更新，单类每批 200 条、最多 10 轮，重复执行不重复产生处理结果。
+
+数据库迁移必须先于新代码。新事项产生后，回退版本仍须保留事项读取与处理能力；不能把提交重新写回旧队列或删除新表。若回退时暂停新建事项，小喇叭依赖新订阅的阈值隐藏也暂停，需由站方人工处理。
+
 ### 部署
 
 - `pnpm deploy:install`
