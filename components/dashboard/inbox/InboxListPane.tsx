@@ -1,6 +1,7 @@
 'use client'
 
 import {
+  ClipboardList,
   FileText,
   Flag,
   MessageSquare,
@@ -26,7 +27,8 @@ const KIND_ICONS: Record<InboxKind, LucideIcon> = {
   submission: FileText,
   'resource-apply': Package,
   feedback: MessageSquare,
-  report: Flag
+  report: Flag,
+  case: ClipboardList
 }
 
 function formatWaiting(seconds: number): string {

@@ -10,6 +10,7 @@ import { UserFollow } from './follow/Follow'
 import { Stats } from './follow/Stats'
 import { SelfButton } from './SelfButton'
 import { StartChatButton } from './StartChatButton'
+import { ReportUserButton } from '~/components/case/ReportUserButton'
 import { USER_ROLE_MAP, USER_STATUS_COLOR_MAP } from '~/constants/user'
 import type { UserInfo } from '~/types/api/user'
 
@@ -108,6 +109,10 @@ export const UserProfile = ({ user }: { user: UserInfo }) => {
                     follow={user.isFollow}
                   />
                   <StartChatButton targetUserId={user.id} />
+                  <ReportUserButton
+                    targetUserId={user.id}
+                    targetUserName={user.name}
+                  />
                 </>
               )}
             </div>

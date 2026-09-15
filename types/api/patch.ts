@@ -1,6 +1,7 @@
 import { Tag } from './tag'
 import { Company } from './company'
 import type { MoemoepointBalance } from './moemoepoint'
+import type { PatchCaseSummary } from './case'
 
 export interface Patch {
   id: number
@@ -154,6 +155,8 @@ export interface PatchResource {
   status: number
   userId: number
   patchId: number
+  /** Public operations badge; never includes case text or resource links. */
+  caseSummary?: PatchCaseSummary | null
   patchName?: string
   created: string
   user: KunUser & {

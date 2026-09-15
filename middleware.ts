@@ -8,6 +8,7 @@ export const config = {
     '/admin/:path*',
     '/dashboard/:path*',
     '/preview/:path*',
+    '/issue/:path*',
     '/user/:path*',
     '/comment/:path*',
     '/edit/:path*',

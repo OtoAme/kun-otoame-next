@@ -4,7 +4,8 @@ export const INBOX_KIND_LABELS: Record<InboxKind, string> = {
   submission: '待审条目',
   'resource-apply': '待审资源',
   feedback: '旧反馈',
-  report: '旧举报'
+  report: '旧举报',
+  case: '事项'
 }
 
 export const DASHBOARD_LEGACY_LINKS = [

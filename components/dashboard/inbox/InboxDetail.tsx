@@ -1,5 +1,6 @@
 import type { InboxItem } from '~/types/api/inbox'
 
+import { CaseInboxDetail } from '~/components/dashboard/case/CaseInboxDetail'
 import { LegacyInboxDetail } from './LegacyInboxDetail'
 import { ResourceInboxDetail } from './ResourceInboxDetail'
 import { SubmissionInboxDetail } from './SubmissionInboxDetail'
@@ -41,5 +42,13 @@ export function InboxDetail({
     case 'feedback':
     case 'report':
       return <LegacyInboxDetail item={item} />
+    case 'case':
+      return (
+        <CaseInboxDetail
+          item={item}
+          onProcessed={onProcessed}
+          onStateChanged={onStateChanged}
+        />
+      )
   }
 }

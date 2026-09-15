@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { unstable_doesMiddlewareMatch } from 'next/experimental/testing/server'
 import { config } from '~/middleware'
+import { isProtectedRoute } from '~/middleware/auth'
 
 const doesMiddlewareMatch = (url: string) =>
   unstable_doesMiddlewareMatch({
@@ -10,6 +11,14 @@ const doesMiddlewareMatch = (url: string) =>
   })
 
 describe('middleware matcher', () => {
+  it('requires authentication for issue lists and details without matching other prefixes', () => {
+    for (const path of ['/issue', '/issue/7']) {
+      expect(doesMiddlewareMatch(`https://www.otoame.top${path}`)).toBe(true)
+      expect(isProtectedRoute(path)).toBe(true)
+    }
+    expect(isProtectedRoute('/issues')).toBe(false)
+  })
+
   it('protects dashboard and both administrator preview paths', () => {
     for (const path of ['/dashboard', '/dashboard/user', '/preview/submission/7', '/preview/resource/8']) {
       expect(doesMiddlewareMatch(`https://www.otoame.top${path}`)).toBe(true)

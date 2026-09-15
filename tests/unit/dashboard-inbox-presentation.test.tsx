@@ -242,12 +242,19 @@ describe('dashboard inbox presentation', () => {
       selection: null,
       selectedKey: null,
       items: rows,
-      totals: { submission: 3, 'resource-apply': 0, feedback: 0, report: 0 },
+      totals: {
+        submission: 3,
+        'resource-apply': 0,
+        feedback: 0,
+        report: 0,
+        case: 0
+      },
       truncated: {
         submission: false,
         'resource-apply': false,
         feedback: false,
-        report: false
+        report: false,
+        case: false
       },
       listLoading: false,
       listError: '',
@@ -341,12 +348,19 @@ describe('dashboard inbox presentation', () => {
   it('keeps the server row order and displays only filtered totals and selected-source truncation', async () => {
     await render({
       search: '匹配作者',
-      totals: { submission: 80, 'resource-apply': 0, feedback: 999, report: 0 },
+      totals: {
+        submission: 80,
+        'resource-apply': 0,
+        feedback: 999,
+        report: 0,
+        case: 0
+      },
       truncated: {
         submission: true,
         'resource-apply': false,
         feedback: true,
-        report: false
+        report: false,
+        case: false
       }
     })
     expect(rowKeys()).toEqual(['submission:3', 'submission:1', 'submission:2'])

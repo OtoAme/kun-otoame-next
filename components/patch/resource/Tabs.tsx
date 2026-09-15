@@ -20,6 +20,8 @@ import { Edit, MoreHorizontal, Trash2 } from 'lucide-react'
 import { useUserStore } from '~/store/userStore'
 import { ResourceInfo } from './ResourceInfo'
 import { ResourceDownload } from './ResourceDownload'
+import { ReportResourceButton } from '~/components/case/ReportResourceButton'
+import { ResourceCaseBadge } from '~/components/case/ResourceCaseBadge'
 import {
   RESOURCE_SECTION_MAP,
   SUPPORTED_RESOURCE_SECTION
@@ -37,6 +39,8 @@ type ResourceSection = (typeof SUPPORTED_RESOURCE_SECTION)[number]
 
 interface Props {
   vndbId: string
+  /** 当前条目 ID，用于报告问题时携带 expectedPatchId 校验。 */
+  patchId: number
   resources: PatchResource[]
   setEditResource: (resources: PatchResource) => void
   onOpenEdit: () => void
@@ -48,6 +52,7 @@ interface Props {
 
 export const ResourceTabs = ({
   vndbId,
+  patchId,
   resources,
   setEditResource,
   onOpenEdit,
@@ -175,43 +180,49 @@ export const ResourceTabs = ({
         <div className="space-y-2">
           <div className="flex items-start justify-between">
             <ResourceInfo resource={resource} />
-            {canManage && (
-              <Dropdown>
-                <DropdownTrigger>
-                  <Button
-                    variant="light"
-                    isIconOnly
-                    isDisabled={editLoadingResourceId === resource.id}
-                    isLoading={editLoadingResourceId === resource.id}
-                    aria-label="资源操作"
-                  >
-                    <MoreHorizontal className="size-4" />
-                  </Button>
-                </DropdownTrigger>
-                <DropdownMenu aria-label="资源操作">
-                  <DropdownItem
-                    key="edit"
-                    startContent={<Edit className="size-4" />}
-                    onPress={() => void handleOpenEditResource(resource)}
-                  >
-                    编辑
-                  </DropdownItem>
-                  <DropdownItem
-                    key="delete"
-                    className="text-danger"
-                    color="danger"
-                    startContent={<Trash2 className="size-4" />}
-                    onPress={() => {
-                      setDeleteResourceId(resource.id)
-                      onOpenDelete()
-                    }}
-                  >
-                    删除
-                  </DropdownItem>
-                </DropdownMenu>
-              </Dropdown>
-            )}
+            <div className="flex items-center gap-1">
+              <ReportResourceButton resource={resource} patchId={patchId} />
+              {canManage && (
+                <Dropdown>
+                  <DropdownTrigger>
+                    <Button
+                      variant="light"
+                      isIconOnly
+                      isDisabled={editLoadingResourceId === resource.id}
+                      isLoading={editLoadingResourceId === resource.id}
+                      aria-label="资源操作"
+                    >
+                      <MoreHorizontal className="size-4" />
+                    </Button>
+                  </DropdownTrigger>
+                  <DropdownMenu aria-label="资源操作">
+                    <DropdownItem
+                      key="edit"
+                      startContent={<Edit className="size-4" />}
+                      onPress={() => void handleOpenEditResource(resource)}
+                    >
+                      编辑
+                    </DropdownItem>
+                    <DropdownItem
+                      key="delete"
+                      className="text-danger"
+                      color="danger"
+                      startContent={<Trash2 className="size-4" />}
+                      onPress={() => {
+                        setDeleteResourceId(resource.id)
+                        onOpenDelete()
+                      }}
+                    >
+                      删除
+                    </DropdownItem>
+                  </DropdownMenu>
+                </Dropdown>
+              )}
+            </div>
           </div>
+          {resource.caseSummary && (
+            <ResourceCaseBadge summary={resource.caseSummary} />
+          )}
           <ResourceDownload resource={resource} />
         </div>
       </div>

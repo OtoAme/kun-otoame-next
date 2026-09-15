@@ -211,7 +211,14 @@ export function DashboardInbox({
         const pending =
           fresh && fresh.data.state === 'pending' ? fresh.data.item : null
         if (!pending || pending.readOnly) return
-        if (pending.kind === 'feedback' || pending.kind === 'report') return
+        // case 来源动作异构（回复/结案/隐藏/移动/处置），无正/负向映射，
+        // 不接入 a/d 快捷键；其全部动作在详情内各自弹确认。
+        if (
+          pending.kind === 'feedback' ||
+          pending.kind === 'report' ||
+          pending.kind === 'case'
+        )
+          return
         const root = detailRef.current
         if (!root) return
         const action = key === 'a' ? 'positive' : 'destructive'

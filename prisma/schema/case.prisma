@@ -1,0 +1,69 @@
+// Operations cases. The table names intentionally use the ops_ prefix because
+// `case` is a SQL reserved word and these records outlive their target rows.
+model ops_case {
+  id                     Int      @id @default(autoincrement())
+  kind                   String   @db.VarChar(32)
+  target_type            String   @db.VarChar(16)
+  target_id              Int
+  patch_id               Int?
+  patch                  patch?   @relation(fields: [patch_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  reporter_id            Int?
+  reporter               user?    @relation("ops_case_reporter", fields: [reporter_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  owner_type             String   @db.VarChar(16)
+  owner_id               Int?
+  owner                  user?    @relation("ops_case_owner", fields: [owner_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  status                 String   @default("open") @db.VarChar(20)
+  resolution             String?  @db.VarChar(32)
+  public                 Boolean  @default(false)
+  source                 String   @default("user") @db.VarChar(16)
+  dedup_key              String?  @unique @db.VarChar(96)
+  daily_key              String?  @unique @db.VarChar(96)
+  revision               Int      @default(0)
+  status_changed_at      DateTime @default(now())
+  queue_entered_at       DateTime @default(now())
+  closed_at              DateTime?
+  escalated_at           DateTime?
+  first_owner_response_at DateTime?
+  hidden_at              DateTime?
+  restored_at            DateTime?
+  reopened_count         Int      @default(0)
+  created                DateTime @default(now())
+  updated                DateTime @updatedAt
+
+  messages               ops_case_message[]
+  subscribers            ops_case_subscriber[]
+
+  @@index([status, status_changed_at])
+  @@index([owner_type, owner_id, status, status_changed_at])
+  @@index([reporter_id, created(sort: Desc)])
+  @@index([target_type, target_id, status])
+  @@index([patch_id, status])
+}
+
+model ops_case_message {
+  id         Int      @id @default(autoincrement())
+  case_id    Int
+  case       ops_case @relation(fields: [case_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  author_id  Int?
+  author     user?    @relation("ops_case_message_author", fields: [author_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  kind       String   @default("reply") @db.VarChar(8)
+  event      String?  @db.VarChar(24)
+  payload    Json?
+  body       String   @db.VarChar(5007)
+  created    DateTime @default(now())
+
+  @@index([case_id, id])
+  @@index([case_id, created, id])
+}
+
+model ops_case_subscriber {
+  id       Int      @id @default(autoincrement())
+  case_id  Int
+  case     ops_case @relation(fields: [case_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  user_id  Int
+  user     user     @relation("ops_case_subscriber", fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  created  DateTime @default(now())
+
+  @@unique([case_id, user_id])
+  @@index([user_id, created(sort: Desc)])
+}

@@ -106,6 +106,7 @@ export const Resources = ({ id, vndbId }: Props) => {
       ) : (
         <ResourceTabs
           vndbId={vndbId}
+          patchId={Number(id)}
           resources={resources}
           setEditResource={setEditResource}
           onOpenEdit={onOpenEdit}

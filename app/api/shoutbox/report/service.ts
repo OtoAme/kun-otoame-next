@@ -1,12 +1,24 @@
 import type { PrismaClient } from '@prisma/client'
 import type { z } from 'zod'
-import { createShoutboxReport } from '~/app/api/shoutbox/service'
+import { createCase } from '~/app/api/case/service'
 import type { shoutboxReportSchema } from '~/validations/shoutbox'
 
 type ShoutboxReportInput = z.infer<typeof shoutboxReportSchema>
 
-export const createReport = (
+export const createReport = async (
   input: ShoutboxReportInput,
   userId: number,
   options: { now?: Date; db?: PrismaClient } = {}
-) => createShoutboxReport(input, userId, options)
+) => {
+  const result = await createCase(
+    {
+      kind: 'content_violation',
+      targetType: 'shoutbox',
+      targetId: input.shoutboxId,
+      content: input.content
+    },
+    userId,
+    { now: options.now, db: options.db }
+  )
+  return typeof result === 'string' ? result : {}
+}

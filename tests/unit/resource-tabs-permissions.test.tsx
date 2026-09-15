@@ -27,6 +27,14 @@ vi.mock('~/components/patch/resource/ResourceDownload', () => ({
   ResourceDownload: () => <div data-testid="resource-download" />
 }))
 
+vi.mock('~/components/case/ReportResourceButton', () => ({
+  ReportResourceButton: () => <div data-testid="report-resource-button" />
+}))
+
+vi.mock('~/components/case/ResourceCaseBadge', () => ({
+  ResourceCaseBadge: () => <div data-testid="resource-case-badge" />
+}))
+
 vi.mock('~/components/patch/resource/accessResourceLinksForEdit', () => ({
   accessResourceLinksForEdit: vi.fn()
 }))
@@ -169,6 +177,7 @@ describe('ResourceTabs resource operation visibility', () => {
       root!.render(
         <ResourceTabs
           vndbId="vndb-1"
+          patchId={1}
           resources={[resource]}
           setEditResource={vi.fn()}
           onOpenEdit={vi.fn()}

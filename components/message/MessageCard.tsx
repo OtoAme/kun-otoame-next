@@ -46,13 +46,15 @@ const getNotificationIcon = (type: string) => {
 }
 
 const getCardRoute = (msg: Message) => {
+  // 已有链接优先（如事项通知的 /issue/id、管理员的 /dashboard/case/id）；
+  // 无链接时保持原兜底：有 sender 去其评论页，无 sender 回首页。
+  if (msg.link) {
+    return msg.link
+  }
   if (!msg.sender) {
     return '/'
   }
-  if (!msg.link) {
-    return `/user/${msg.sender.id}/comment`
-  }
-  return msg.link
+  return `/user/${msg.sender.id}/comment`
 }
 
 export const MessageCard = ({ msg }: Props) => {

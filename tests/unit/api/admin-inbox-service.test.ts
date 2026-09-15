@@ -507,7 +507,8 @@ describe('admin inbox counts', () => {
         submission: 100,
         'resource-apply': 20,
         feedback: 30,
-        report: 40
+        report: 40,
+        case: 0
       },
       todayProcessed: 7
     })

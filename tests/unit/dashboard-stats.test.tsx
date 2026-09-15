@@ -77,11 +77,23 @@ const zeroOverview: OverviewData = {
   newComment: 0
 }
 const counts: InboxCounts = {
-  pending: { submission: 5, 'resource-apply': 2, feedback: 3, report: 1 },
+  pending: {
+    submission: 5,
+    'resource-apply': 2,
+    feedback: 3,
+    report: 1,
+    case: 4
+  },
   todayProcessed: 4
 }
 const zeroCounts: InboxCounts = {
-  pending: { submission: 0, 'resource-apply': 0, feedback: 0, report: 0 },
+  pending: {
+    submission: 0,
+    'resource-apply': 0,
+    feedback: 0,
+    report: 0,
+    case: 0
+  },
   todayProcessed: 0
 }
 
@@ -160,9 +172,16 @@ describe('dashboard stats', () => {
     expect(cardValue('待审资源')).toBe('2')
     expect(cardValue('旧反馈')).toBe('3')
     expect(cardValue('旧举报')).toBe('1')
-    expect(cardValue('合计')).toBe('11')
+    expect(cardValue('事项')).toBe('4')
+    expect(cardValue('合计')).toBe('15')
     expect(cardValue('我今日已处理')).toBe('4')
-    for (const kind of ['submission', 'resource-apply', 'feedback', 'report']) {
+    for (const kind of [
+      'submission',
+      'resource-apply',
+      'feedback',
+      'report',
+      'case'
+    ]) {
       expect(
         container.querySelector(`a[href="/dashboard/inbox?kinds=${kind}"]`)
       ).not.toBeNull()
@@ -173,9 +192,15 @@ describe('dashboard stats', () => {
     expect(container.textContent).not.toContain('待审创作者申请')
   })
 
-  it('shows the current four-source distribution without including creator applications', async () => {
+  it('shows the current five-source distribution without including creator applications', async () => {
     mocks.context.counts = {
-      pending: { submission: 3, 'resource-apply': 1, feedback: 0, report: 0 },
+      pending: {
+        submission: 3,
+        'resource-apply': 1,
+        feedback: 0,
+        report: 0,
+        case: 2
+      },
       todayProcessed: 4
     }
     await render(4)
@@ -186,17 +211,24 @@ describe('dashboard stats', () => {
     const rows = [...distribution!.querySelectorAll('li')].map(
       (row) => row.textContent
     )
-    expect(rows).toHaveLength(4)
-    expect(rows[0]).toContain('3 · 75%')
-    expect(rows[1]).toContain('1 · 25%')
+    expect(rows).toHaveLength(5)
+    expect(rows[0]).toContain('3 · 50%')
+    expect(rows[1]).toContain('1 · 17%')
     expect(rows[2]).toContain('0 · 0%')
     expect(rows[3]).toContain('0 · 0%')
+    expect(rows[4]).toContain('2 · 33%')
     expect(distribution?.textContent).not.toContain('创作者')
   })
 
-  it('shows an honest empty distribution when all four pending counts are zero', async () => {
+  it('shows an honest empty distribution when all pending counts are zero', async () => {
     mocks.context.counts = {
-      pending: { submission: 0, 'resource-apply': 0, feedback: 0, report: 0 },
+      pending: {
+        submission: 0,
+        'resource-apply': 0,
+        feedback: 0,
+        report: 0,
+        case: 0
+      },
       todayProcessed: 4
     }
     await render(3)
@@ -240,9 +272,9 @@ describe('dashboard stats', () => {
     expect(cardValue('新增评论')).toBe('21')
   })
 
-  it('keeps pending creator applies out of the four-source total', async () => {
+  it('keeps pending creator applies out of the five-source total', async () => {
     await render(4)
-    expect(cardValue('合计')).toBe('11')
+    expect(cardValue('合计')).toBe('15')
     expect(cardValue('待审创作者申请')).toBe('9')
     expect(
       container.querySelector('a[href="/admin/creator"]')?.textContent
@@ -353,7 +385,7 @@ describe('dashboard stats', () => {
     mocks.context.counts = counts
     mocks.context.countsError = '刷新待办计数失败'
     await render(3)
-    expect(cardValue('合计')).toBe('11')
+    expect(cardValue('合计')).toBe('15')
     expect(container.textContent).toContain('刷新待办计数失败')
     await act(async () => retryIn('dashboard-inbox-heading').click())
     expect(mocks.refreshCounts).toHaveBeenCalledTimes(1)

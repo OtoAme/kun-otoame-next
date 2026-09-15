@@ -7,6 +7,7 @@ import {
 } from './download/access/actor'
 import type { ResourceAccessViewer } from './download/access/actor'
 import type { PatchResource } from '~/types/api/patch'
+import { getPublicResourceCaseBadges } from '~/app/api/case/service'
 
 const patchIdSchema = z.object({
   patchId: z.coerce.number().min(1).max(9999999)
@@ -65,6 +66,10 @@ export const getPatchResource = async (
   const linkIds = data.flatMap((resource) =>
     resource.links.map((link) => link.id)
   )
+  const caseSummaries =
+    'ops_case' in (prisma as unknown as Record<string, unknown>)
+      ? await getPublicResourceCaseBadges(resourceIds, { db: prisma })
+      : new Map()
   const actorKey = getResourceAccessViewerKey(accessViewer)
   const actorAccessWhere = getResourceAccessViewerWhere(accessViewer)
   const [activeGrants, revealedAccess] =
@@ -130,6 +135,7 @@ export const getPatchResource = async (
     status: resource.status,
     userId: resource.user_id,
     patchId: resource.patch_id,
+    caseSummary: caseSummaries.get(resource.id) ?? null,
     created: String(resource.created),
     user: {
       id: resource.user.id,

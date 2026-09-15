@@ -5,12 +5,14 @@ import type {
   AdminResource,
   AdminShoutboxReport
 } from './admin'
+import type { AdminCaseInboxPayload } from './case'
 
 export const INBOX_KINDS = [
   'submission',
   'resource-apply',
   'feedback',
-  'report'
+  'report',
+  'case'
 ] as const
 
 export type InboxKind = (typeof INBOX_KINDS)[number]
@@ -23,6 +25,7 @@ export type InboxPayloads = {
   report:
     | (AdminLegacyReport & { pendingForTarget: number })
     | (AdminShoutboxReport & { pendingForTarget: number })
+  case: AdminCaseInboxPayload
 }
 
 export type InboxItem = {

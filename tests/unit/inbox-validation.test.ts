@@ -6,9 +6,9 @@ import {
 } from '~/validations/inbox'
 
 describe('inbox query validation', () => {
-  it('defaults to all four sources and the oldest 50 candidates', () => {
+  it('defaults to all five sources and the oldest 50 candidates', () => {
     expect(adminInboxQuerySchema.parse({})).toEqual({
-      kinds: ['submission', 'resource-apply', 'feedback', 'report'],
+      kinds: ['submission', 'resource-apply', 'feedback', 'report', 'case'],
       search: '',
       order: 'waiting',
       limitPerKind: 50

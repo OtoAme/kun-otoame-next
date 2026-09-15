@@ -7,6 +7,7 @@ import toast from 'react-hot-toast'
 import {
   BarChart3,
   ChevronsUpDown,
+  ClipboardList,
   FileText,
   Flag,
   History,
@@ -65,7 +66,8 @@ const KIND_ICONS: Record<InboxKind, LucideIcon> = {
   submission: FileText,
   'resource-apply': Package,
   feedback: MessageSquare,
-  report: Flag
+  report: Flag,
+  case: ClipboardList
 }
 
 const getTotalPending = (counts: InboxCounts) =>

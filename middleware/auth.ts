@@ -3,7 +3,7 @@ import { parseCookies } from '~/utils/cookies'
 import { verifyKunTokenEdge } from '~/app/api/utils/jwtEdge'
 import type { NextRequest } from 'next/server'
 
-const protectedPaths = ['/admin', '/dashboard', '/preview', '/user', '/comment', '/edit']
+const protectedPaths = ['/admin', '/dashboard', '/preview', '/issue', '/user', '/comment', '/edit']
 
 const domain =
   process.env.NODE_ENV === 'development'

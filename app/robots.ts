@@ -6,6 +6,7 @@ const DISALLOW_PATHS = [
   '/admin',
   '/dashboard',
   '/preview',
+  '/issue',
   '/user',
   '/tag',
   '/*?page=',

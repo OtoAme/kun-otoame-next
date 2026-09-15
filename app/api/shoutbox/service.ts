@@ -1506,6 +1506,113 @@ export const createShoutboxReport = async (
   return {}
 }
 
+/**
+ * Module 03 uses these small transaction primitives for new case reports.
+ * They deliberately do not touch the legacy patch_report rows or close a
+ * case: threshold hiding is a transient moderation state and the case remains
+ * in the station queue until an operator decides it.
+ */
+export const temporarilyHideShoutboxForCase = async (
+  tx: Prisma.TransactionClient,
+  shoutboxId: number,
+  now = new Date()
+) => {
+  const row = await lockShoutbox(tx, shoutboxId)
+  if (!row || row.official || row.status !== 0) return false
+  const hidden = await tx.shoutbox.updateMany({
+    where: { id: shoutboxId, official: false, status: 0 },
+    data: { status: 2, hidden_at: now }
+  })
+  if (hidden.count !== 1) return false
+  await createMessage(
+    {
+      ...createShoutboxAuthorNotice('hide', shoutboxId),
+      recipient_id: row.user_id
+    },
+    tx
+  )
+  return true
+}
+
+export const removeShoutboxForCase = async (
+  tx: Prisma.TransactionClient,
+  shoutboxId: number,
+  adminId: number,
+  now = new Date()
+) => {
+  const row = await lockShoutbox(tx, shoutboxId)
+  if (!row) return '小喇叭不存在'
+  if (row.official) return '官方小喇叭不能通过事项删除'
+  const removed = await tx.shoutbox.updateMany({
+    where: { id: shoutboxId, official: false, status: { in: [0, 2] } },
+    data: { status: 3, updated: now }
+  })
+  if (removed.count !== 1) return '当前小喇叭不能删除'
+  await tx.admin_log.create({
+    data: {
+      type: 'shoutbox_case_moderate',
+      user_id: adminId,
+      content: `管理员通过事项处置小喇叭 #${shoutboxId}`
+    }
+  })
+  await createMessage(
+    {
+      ...createShoutboxAuthorNotice('remove', shoutboxId),
+      recipient_id: row.user_id
+    },
+    tx
+  )
+  return true
+}
+
+export const restoreShoutboxForCase = async (
+  tx: Prisma.TransactionClient,
+  shoutboxId: number,
+  adminId: number,
+  now = new Date()
+) => {
+  const row = await lockShoutbox(tx, shoutboxId)
+  if (!row) return '小喇叭不存在'
+  if (row.official || ![2, 3].includes(row.status)) return '当前小喇叭不能恢复'
+  const restored = await tx.shoutbox.updateMany({
+    where: { id: shoutboxId, official: false, status: { in: [2, 3] } },
+    data: { status: 0, hidden_at: null, updated: now }
+  })
+  if (restored.count !== 1) return '当前小喇叭不能恢复'
+  if (row.cost > 0 && row.refunded_at === null) {
+    await refundMoemoepoint(tx, {
+      userId: row.user_id,
+      amount: row.cost,
+      reasonCode: MOEMOEPOINT_REASON.shoutboxRestoreRefund.code,
+      reason: MOEMOEPOINT_REASON.shoutboxRestoreRefund.text,
+      referenceType: 'shoutbox',
+      referenceId: row.id,
+      link: shoutboxLink(row.id),
+      operatorId: adminId,
+      idempotencyKey: `shoutbox:${row.id}:restore-refund`
+    })
+    await tx.shoutbox.updateMany({
+      where: { id: row.id, status: 0, refunded_at: null },
+      data: { refunded_at: now }
+    })
+  }
+  await tx.admin_log.create({
+    data: {
+      type: 'shoutbox_case_moderate',
+      user_id: adminId,
+      content: `管理员通过事项恢复小喇叭 #${shoutboxId}`
+    }
+  })
+  await createMessage(
+    {
+      ...createShoutboxAuthorNotice('restore', shoutboxId),
+      recipient_id: row.user_id
+    },
+    tx
+  )
+  return true
+}
+
 type ShoutboxModerateOptions = {
   now?: Date
   db?: PrismaClient

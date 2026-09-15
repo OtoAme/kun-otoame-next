@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
 import {
   ClipboardCheck,
+  ClipboardList,
   Flag,
   MessageSquare,
   PackagePlus,
@@ -55,14 +56,16 @@ const INBOX_KIND_ICONS: Record<InboxKind, LucideIcon> = {
   submission: Upload,
   'resource-apply': PackagePlus,
   feedback: MessageSquare,
-  report: Flag
+  report: Flag,
+  case: ClipboardList
 }
 
 const INBOX_KIND_BAR_CLASS: Record<InboxKind, string> = {
   submission: 'bg-sky-500',
   'resource-apply': 'bg-emerald-500',
   feedback: 'bg-amber-500',
-  report: 'bg-rose-500'
+  report: 'bg-rose-500',
+  case: 'bg-violet-500'
 }
 
 const numberFormatter = new Intl.NumberFormat('zh-CN')
@@ -199,13 +202,13 @@ function PendingDistribution({ counts }: { counts: InboxCounts }) {
           当前待审分布
         </CardTitle>
         <CardDescription className="text-xs break-words">
-          四类来源待审量占比，随计数一起刷新。
+          各来源待审量占比，随计数一起刷新。
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-2.5 px-3.5">
         {total === 0 ? (
           <p className="text-sm text-muted-foreground">
-            当前没有待审事项，四类来源均为零。
+            当前没有待审事项，各来源均为零。
           </p>
         ) : (
           <>
@@ -358,7 +361,7 @@ export function DashboardStats({ reviewerRole }: DashboardStatsProps) {
                 <StatCard
                   label="合计"
                   value={pendingTotal}
-                  caption="仅统计以上四类来源"
+                  caption="仅统计以上来源"
                   icon={Sigma}
                 />
                 <StatCard

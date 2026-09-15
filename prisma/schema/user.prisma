@@ -44,6 +44,11 @@ model user {
 
   shoutbox shoutbox[] @relation("shoutbox_author")
 
+  ops_case_reported       ops_case[]            @relation("ops_case_reporter")
+  ops_case_owned          ops_case[]            @relation("ops_case_owner")
+  ops_case_message_author ops_case_message[]    @relation("ops_case_message_author")
+  ops_case_subscriptions  ops_case_subscriber[] @relation("ops_case_subscriber")
+
   following       user_follow_relation[] @relation("user_following")
   follower        user_follow_relation[] @relation("user_follower")
   patch           patch[]                @relation("user_patch")

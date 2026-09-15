@@ -1,6 +1,6 @@
 import { z } from 'zod'
+import type { Prisma } from '@prisma/client'
 import { prisma } from '~/prisma/index'
-import { recomputePatchRatingStat } from '~/app/api/patch/rating/stat'
 import {
   invalidatePatchContentCache,
   invalidatePatchListCaches
@@ -71,6 +71,97 @@ type ReportRow = {
       name: string
     } | null
   } | null
+}
+
+type ReportTargetDeleteInput = {
+  targetType: 'comment' | 'rating'
+  targetId: number
+  patchId?: number | null
+}
+
+const recomputePatchRatingStatInTransaction = async (
+  tx: Prisma.TransactionClient,
+  patchId: number
+) => {
+  const aggregate = await tx.patch_rating.aggregate({
+    where: { patch_id: patchId },
+    _avg: { overall: true },
+    _count: { _all: true }
+  })
+  const recommend = await Promise.all(
+    ['strong_no', 'no', 'neutral', 'yes', 'strong_yes'].map((value) =>
+      tx.patch_rating.count({ where: { patch_id: patchId, recommend: value } })
+    )
+  )
+  const histogram = await Promise.all(
+    Array.from({ length: 10 }, (_, index) =>
+      tx.patch_rating.count({
+        where: { patch_id: patchId, overall: index + 1 }
+      })
+    )
+  )
+  await tx.patch_rating_stat.upsert({
+    where: { patch_id: patchId },
+    create: {
+      patch_id: patchId,
+      avg_overall: aggregate._avg.overall ?? 0,
+      count: aggregate._count._all,
+      rec_strong_no: recommend[0],
+      rec_no: recommend[1],
+      rec_neutral: recommend[2],
+      rec_yes: recommend[3],
+      rec_strong_yes: recommend[4],
+      o1: histogram[0],
+      o2: histogram[1],
+      o3: histogram[2],
+      o4: histogram[3],
+      o5: histogram[4],
+      o6: histogram[5],
+      o7: histogram[6],
+      o8: histogram[7],
+      o9: histogram[8],
+      o10: histogram[9]
+    },
+    update: {
+      avg_overall: aggregate._avg.overall ?? 0,
+      count: aggregate._count._all,
+      rec_strong_no: recommend[0],
+      rec_no: recommend[1],
+      rec_neutral: recommend[2],
+      rec_yes: recommend[3],
+      rec_strong_yes: recommend[4],
+      o1: histogram[0],
+      o2: histogram[1],
+      o3: histogram[2],
+      o4: histogram[3],
+      o5: histogram[4],
+      o6: histogram[5],
+      o7: histogram[6],
+      o8: histogram[7],
+      o9: histogram[8],
+      o10: histogram[9]
+    }
+  })
+}
+
+/** Delete a legacy report target while staying inside the caller's transaction. */
+export const deleteReportedTargetInTransaction = async (
+  tx: Prisma.TransactionClient,
+  input: ReportTargetDeleteInput
+) => {
+  const deleted =
+    input.targetType === 'rating'
+      ? await tx.patch_rating.deleteMany({ where: { id: input.targetId } })
+      : await tx.patch_comment.deleteMany({ where: { id: input.targetId } })
+  if (
+    input.targetType === 'rating' &&
+    deleted.count > 0 &&
+    input.patchId !== null &&
+    input.patchId !== undefined
+  ) {
+    await recomputePatchRatingStatInTransaction(tx, input.patchId)
+  }
+  return deleted.count > 0
 }
 
 const serializeReport = (report: ReportRow): AdminReport | null => {
@@ -354,13 +445,17 @@ export const handleReport = async (
 
     if (input.action === 'delete') {
       if (report.target_type === 'rating' && report.rating_id) {
-        await prisma.patch_rating.deleteMany({
-          where: { id: report.rating_id }
+        await deleteReportedTargetInTransaction(prisma, {
+          targetType: 'rating',
+          targetId: report.rating_id,
+          patchId: report.patch_id
         })
       }
       if (report.target_type === 'comment' && report.comment_id) {
-        await prisma.patch_comment.deleteMany({
-          where: { id: report.comment_id }
+        await deleteReportedTargetInTransaction(prisma, {
+          targetType: 'comment',
+          targetId: report.comment_id,
+          patchId: report.patch_id
         })
       }
     }
@@ -384,16 +479,6 @@ export const handleReport = async (
       })
     }
   })
-
-  if (
-    input.action === 'delete' &&
-    report.target_type === 'rating' &&
-    report.rating_id
-  ) {
-    if (report.patch_id !== null) {
-      await recomputePatchRatingStat(report.patch_id)
-    }
-  }
 
   if (input.action === 'delete') {
     await Promise.all([

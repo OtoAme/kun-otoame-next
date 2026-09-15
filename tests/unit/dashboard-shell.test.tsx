@@ -121,7 +121,13 @@ import {
 } from '~/components/dashboard/DashboardShell'
 
 const counts: InboxCounts = {
-  pending: { submission: 5, 'resource-apply': 2, feedback: 3, report: 1 },
+  pending: {
+    submission: 5,
+    'resource-apply': 2,
+    feedback: 3,
+    report: 1,
+    case: 4
+  },
   todayProcessed: 4
 }
 let context: ReturnType<typeof useDashboard>
@@ -223,8 +229,9 @@ describe('dashboard shell', () => {
   })
 
   it.each([
-    ['kinds=submission,resource-apply,feedback,report', 'true'],
-    ['kinds=submission,report', 'false']
+    ['kinds=submission,resource-apply,feedback,report,case', 'true'],
+    ['kinds=submission,report', 'false'],
+    ['kinds=submission,resource-apply,feedback,report', 'false']
   ])('marks the all-sources entry correctly for %s', async (params, active) => {
     mocks.pathname = '/dashboard/inbox'
     mocks.params = params

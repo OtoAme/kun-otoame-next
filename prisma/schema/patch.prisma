@@ -45,6 +45,7 @@ model patch {
   report   patch_report[]
   shoutbox shoutbox[]
   images   patch_game_image[]
+  ops_cases ops_case[]
 
   submission patch_submission? @relation("patch_submission_patch")
 

@@ -114,4 +114,59 @@ describe('MessageCard', () => {
     expect(contentNode?.className).toContain('whitespace-pre-wrap')
     expect(contentNode?.className).toContain('break-words')
   })
+
+  it.each([
+    ['sender null with issue link keeps /issue href', null, '/issue/12', '/issue/12'],
+    [
+      'sender null with dashboard link keeps href',
+      null,
+      '/dashboard/case/9',
+      '/dashboard/case/9'
+    ],
+    ['sender null without link falls back to home', null, '', '/'],
+    [
+      'sender without link falls back to sender comment page',
+      { id: 5, name: '某人', avatar: '' },
+      '',
+      '/user/5/comment'
+    ],
+    [
+      'sender with link keeps link',
+      { id: 5, name: '某人', avatar: '' },
+      '/abc12345',
+      '/abc12345'
+    ]
+  ])('%s', async (_title, sender, link, expectedHref) => {
+    dom = new JSDOM('<!doctype html><div id="root"></div>', {
+      url: 'http://localhost'
+    })
+
+    vi.stubGlobal('window', dom.window)
+    vi.stubGlobal('document', dom.window.document)
+    vi.stubGlobal('React', React)
+    vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
+
+    const { MessageCard } = await import('~/components/message/MessageCard')
+    const container = dom.window.document.getElementById('root')
+    expect(container).not.toBeNull()
+
+    const message: Message = {
+      id: 1,
+      type: 'system',
+      content: '通知内容',
+      status: 0,
+      link,
+      created: '2026-06-29T00:00:00.000Z',
+      sender
+    }
+
+    root = createRoot(container!)
+    await act(async () => {
+      root!.render(<MessageCard msg={message} />)
+    })
+
+    expect(dom.window.document.querySelector('a')?.getAttribute('href')).toBe(
+      expectedHref
+    )
+  })
 })

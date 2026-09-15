@@ -26,9 +26,13 @@ vi.mock('~/prisma/index', () => ({
 }))
 
 const createMessageMock = vi.hoisted(() => vi.fn())
+const createCaseMock = vi.hoisted(() => vi.fn())
 
 vi.mock('~/app/api/utils/message', () => ({
   createMessage: createMessageMock
+}))
+vi.mock('~/app/api/case/service', () => ({
+  createCase: createCaseMock
 }))
 
 import { handleFeedback } from '~/app/api/admin/feedback/service'
@@ -40,20 +44,10 @@ describe('feedback messages', () => {
     prismaMock.$transaction.mockImplementation(
       (fn: (tx: typeof prismaMock) => Promise<unknown>) => fn(prismaMock)
     )
+    createCaseMock.mockResolvedValue({ case: { id: 20 } })
   })
 
-  it('keeps the feedback work item as feedback but sends admin notifications as system messages', async () => {
-    prismaMock.patch.findUnique.mockResolvedValue({
-      id: 10,
-      name: '测试游戏',
-      unique_id: 'abc12345'
-    })
-    prismaMock.user.findUnique.mockResolvedValue({
-      id: 100,
-      name: '提交者'
-    })
-    prismaMock.user.findMany.mockResolvedValue([{ id: 1 }, { id: 2 }])
-
+  it('writes feedback into an other case while keeping the old endpoint contract', async () => {
     await createFeedback(
       {
         patchId: 10,
@@ -61,20 +55,17 @@ describe('feedback messages', () => {
       },
       100
     )
-
-    const workItem = prismaMock.user_message.create.mock.calls[0][0].data
-    expect(workItem).toMatchObject({
-      type: 'feedback',
-      sender_id: 100,
-      link: '/abc12345'
-    })
-    expect(workItem.recipient_id).toBeUndefined()
-    expect(prismaMock.user_message.createMany).toHaveBeenCalledWith({
-      data: [
-        expect.objectContaining({ type: 'system', recipient_id: 1 }),
-        expect.objectContaining({ type: 'system', recipient_id: 2 })
-      ]
-    })
+    expect(createCaseMock).toHaveBeenCalledWith(
+      {
+        kind: 'other',
+        targetType: 'patch',
+        targetId: 10,
+        content: '这里是一条足够长的反馈内容'
+      },
+      100
+    )
+    expect(prismaMock.user_message.create).not.toHaveBeenCalled()
+    expect(prismaMock.user_message.createMany).not.toHaveBeenCalled()
   })
 
   it('sends handled feedback receipts as system messages', async () => {

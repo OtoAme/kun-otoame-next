@@ -20,6 +20,7 @@ import {
   ArrowLeftRight,
   CalendarCheck,
   CircleHelp,
+  Flag,
   LogOut,
   Lollipop,
   Settings,
@@ -337,6 +338,13 @@ export const UserDropdown = () => {
             startContent={<UserRound className="size-4" />}
           >
             用户主页
+          </DropdownItem>
+          <DropdownItem
+            key="issue"
+            href="/issue"
+            startContent={<Flag className="size-4" />}
+          >
+            问题处理
           </DropdownItem>
           <DropdownItem
             key="settings"

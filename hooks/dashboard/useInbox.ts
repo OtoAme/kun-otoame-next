@@ -392,13 +392,15 @@ export function useInbox({ refreshCounts }: UseInboxOptions): UseInboxReturn {
                 submission: res.total,
                 'resource-apply': 0,
                 feedback: 0,
-                report: 0
+                report: 0,
+                case: 0
               },
               truncated: {
                 submission: false,
                 'resource-apply': false,
                 feedback: false,
-                report: false
+                report: false,
+                case: false
               }
             }
           })

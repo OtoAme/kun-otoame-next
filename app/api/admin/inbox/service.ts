@@ -13,6 +13,10 @@ import type {
 } from '~/types/api/inbox'
 import type { AdminLegacyReport, AdminShoutboxReport } from '~/types/api/admin'
 import type { PatchSubmissionStatus } from '~/types/api/patchSubmission'
+import {
+  getAdminCaseInboxItem,
+  getAdminCaseInboxItems
+} from '~/app/api/case/service'
 
 const userSelect = { id: true, name: true, avatar: true } as const
 const submissionSelect = {
@@ -190,7 +194,11 @@ const pendingFilters = (search = '') => {
             ]
           }
         : {})
-    } satisfies Prisma.patch_reportWhereInput
+    } satisfies Prisma.patch_reportWhereInput,
+    case: {
+      owner_type: 'staff',
+      status: { in: ['open', 'waiting_reporter', 'waiting_owner'] }
+    } satisfies Prisma.ops_caseWhereInput
   }
 }
 
@@ -456,13 +464,15 @@ export const getAdminInbox = async (
     submission: 0,
     'resource-apply': 0,
     feedback: 0,
-    report: 0
+    report: 0,
+    case: 0
   }
   const truncated: InboxListResponse['truncated'] = {
     submission: false,
     'resource-apply': false,
     feedback: false,
-    report: false
+    report: false,
+    case: false
   }
   const groups = await Promise.all(
     input.kinds.map(async (kind) => {
@@ -491,7 +501,7 @@ export const getAdminInbox = async (
           prisma.user_message.count({ where: where.feedback })
         ])
         result = { total, items: rows.map((row) => feedbackItem(row, now)) }
-      } else {
+      } else if (kind === 'report') {
         const [rows, total] = await Promise.all([
           prisma.patch_report.findMany({
             where: where.report,
@@ -507,6 +517,16 @@ export const getAdminInbox = async (
         result = {
           total,
           items: reportItems.filter((item): item is InboxItem => item !== null)
+        }
+      } else {
+        if (!('ops_case' in prisma)) {
+          result = { total: 0, items: [] }
+        } else {
+          result = await getAdminCaseInboxItems(
+            { limit: input.limitPerKind, search: input.search },
+            now,
+            prisma
+          )
         }
       }
       totals[kind] = result.total
@@ -567,6 +587,16 @@ export const getAdminInboxItem = async (
         }
       : missing
   }
+  if (input.kind === 'case') {
+    if (!('ops_case' in prisma)) return missing
+    const item = await getAdminCaseInboxItem(input.id, now, prisma)
+    if (!item) return missing
+    const pending =
+      item.payload.status === 'open' ||
+      item.payload.status === 'waiting_owner' ||
+      item.payload.status === 'waiting_reporter'
+    return { state: pending ? 'pending' : 'processed', item }
+  }
   const row = await prisma.patch_report.findUnique({
     where: { id: input.id },
     select: reportSelect
@@ -590,12 +620,15 @@ export const getAdminInboxCounts = async (
 ): Promise<InboxCounts> => {
   const where = pendingFilters()
   const { dailyStart, dailyResetAt } = getShanghaiQuotaWindows(now)
-  const [submission, resource, feedback, report, todayProcessed] =
+  const [submission, resource, feedback, report, caseCount, todayProcessed] =
     await Promise.all([
       prisma.patch_submission.count({ where: where.submission }),
       prisma.patch_resource.count({ where: where.resource }),
       prisma.user_message.count({ where: where.feedback }),
       prisma.patch_report.count({ where: where.report }),
+      'ops_case' in prisma
+        ? prisma.ops_case.count({ where: where.case })
+        : Promise.resolve(0),
       prisma.admin_log.count({
         where: {
           user_id: reviewerId,
@@ -611,7 +644,13 @@ export const getAdminInboxCounts = async (
       })
     ])
   return {
-    pending: { submission, 'resource-apply': resource, feedback, report },
+    pending: {
+      submission,
+      'resource-apply': resource,
+      feedback,
+      report,
+      case: caseCount
+    },
     todayProcessed
   }
 }

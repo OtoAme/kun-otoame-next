@@ -64,12 +64,19 @@ const queue = (
   total = items.length
 ): InboxListResponse => ({
   items,
-  totals: { submission: total, 'resource-apply': 0, feedback: 0, report: 0 },
+  totals: {
+    submission: total,
+    'resource-apply': 0,
+    feedback: 0,
+    report: 0,
+    case: 0
+  },
   truncated: {
     submission: total > items.length,
     'resource-apply': false,
     feedback: false,
-    report: false
+    report: false,
+    case: false
   }
 })
 
