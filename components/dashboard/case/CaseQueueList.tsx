@@ -1,7 +1,5 @@
 'use client'
 
-import type { ReactNode } from 'react'
-
 import { Badge } from '~/components/dashboard/ui/badge'
 import { Button } from '~/components/dashboard/ui/button'
 import { Skeleton } from '~/components/dashboard/ui/skeleton'
@@ -19,18 +17,18 @@ import type { AdminCaseListItem } from '~/types/api/case'
 import { CASE_STATUS_BADGE_VARIANTS } from './caseBadges'
 
 /**
- * `table` aligns every row on the same tracks and is only used when the list
- * owns the full width of the case center; `card` stacks the same fields and
- * is used in the narrow rail next to an open detail, and on mobile.
+ * Column template of the wide layout. The four trailing tracks cap at their
+ * content width, so every bit of compression lands on the title track: below
+ * the threshold the row must stop being a table rather than keep shrinking
+ * its own identity column.
  */
-export type CaseQueueLayout = 'table' | 'card'
-
-// Every track may shrink to zero so a cramped workbench wraps text instead of
-// scrolling sideways. The column header reuses the same template.
 const TABLE_COLUMNS =
-  'grid-cols-[minmax(0,1fr)_minmax(0,6.5rem)_minmax(0,7rem)_minmax(0,7rem)_minmax(0,7.5rem)]'
+  '@[52rem]:grid-cols-[minmax(0,1fr)_minmax(0,6.5rem)_minmax(0,7rem)_minmax(0,7rem)_minmax(0,7.5rem)]'
 
 const TABLE_HEADINGS = ['编号与目标', '状态', '类型', '提交人', '时间']
+
+/** Shown only below the threshold, where the meta line is one flow. */
+const SEP = '@[52rem]:hidden'
 
 /** Waiting time is meaningless once a case is closed; the badge says enough. */
 const waitingText = (row: AdminCaseListItem, nowMs: number): string => {
@@ -40,25 +38,43 @@ const waitingText = (row: AdminCaseListItem, nowMs: number): string => {
   return `等待 ${formatCaseDuration(nowMs - entered)}`
 }
 
-const reporterName = (row: AdminCaseListItem): string =>
-  row.reporter?.name ?? '报告者'
-
-const reportCountText = (row: AdminCaseListItem): string =>
-  row.subscriberCount !== null ? `${row.subscriberCount} 人报告` : ''
-
-export interface CaseRowProps {
+export interface CaseQueueRowProps {
   row: AdminCaseListItem
   selected: boolean
   nowMs: number
   onSelect: (row: AdminCaseListItem) => void
+  /**
+   * Opt into the wide column layout, which then depends on the width of the
+   * nearest `@container` rather than on the viewport. Off means cards only.
+   */
+  tabular?: boolean
 }
 
-function RowShell({
+/**
+ * One queue row, in a single DOM that CSS lays out two ways.
+ *
+ * Stacked (narrow container, and everywhere when `tabular` is off):
+ *
+ *     #11  资源X（条目A）                    [等待处理方]
+ *     请补充截图
+ *     资源与描述不符 · 举报人 · 2 人报告      等待 3 天 · 09/10 08:00
+ *
+ * Aligned columns (container ≥ 52rem): the meta wrapper becomes
+ * `display: contents`, promoting its three cells to grid items so they line
+ * up with the header, without a second copy of the row in the DOM.
+ */
+export function CaseQueueRow({
   row,
   selected,
+  nowMs,
   onSelect,
-  children
-}: CaseRowProps & { children: ReactNode }) {
+  tabular = false
+}: CaseQueueRowProps) {
+  const resolutionText = caseResolutionLabel(row.resolution)
+  const waiting = waitingText(row, nowMs)
+  const reportCount =
+    row.subscriberCount !== null ? `${row.subscriberCount} 人报告` : ''
+
   return (
     <Button
       type="button"
@@ -71,19 +87,12 @@ function RowShell({
         selected && 'bg-accent'
       )}
     >
-      {children}
-    </Button>
-  )
-}
-
-function CaseTableRow(props: CaseRowProps) {
-  const { row, nowMs } = props
-  const resolutionText = caseResolutionLabel(row.resolution)
-  const waiting = waitingText(row, nowMs)
-  const reportCount = reportCountText(row)
-  return (
-    <RowShell {...props}>
-      <span className={cn('grid min-w-0 flex-1 gap-x-3', TABLE_COLUMNS)}>
+      <span
+        className={cn(
+          'grid min-w-0 flex-1 grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-1',
+          tabular && cn(TABLE_COLUMNS, '@[52rem]:items-start @[52rem]:gap-y-0')
+        )}
+      >
         <span className="min-w-0">
           <span className="flex min-w-0 items-baseline gap-2">
             <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
@@ -99,7 +108,13 @@ function CaseTableRow(props: CaseRowProps) {
             </span>
           ) : null}
         </span>
-        <span className="min-w-0">
+
+        <span
+          className={cn(
+            'min-w-0 justify-self-end',
+            tabular && '@[52rem]:justify-self-start'
+          )}
+        >
           <Badge
             variant={CASE_STATUS_BADGE_VARIANTS[row.status]}
             className="max-w-full"
@@ -112,85 +127,68 @@ function CaseTableRow(props: CaseRowProps) {
             </span>
           ) : null}
         </span>
-        <span className="min-w-0 truncate text-xs text-muted-foreground">
-          {caseKindLabel(row.kind)}
-        </span>
-        <span className="min-w-0">
-          <span className="block truncate text-xs text-muted-foreground">
-            {reporterName(row)}
-          </span>
-          {reportCount ? (
-            <span className="mt-0.5 block truncate text-xs text-muted-foreground">
-              {reportCount}
-            </span>
-          ) : null}
-        </span>
-        <span className="min-w-0 text-xs text-muted-foreground">
-          {waiting ? <span className="block truncate">{waiting}</span> : null}
-          <span className="mt-0.5 block truncate tabular-nums">
-            {formatChinaDateTime(row.updated)}
-          </span>
-        </span>
-      </span>
-    </RowShell>
-  )
-}
 
-export function CaseQueueCardRow(props: CaseRowProps) {
-  const { row, nowMs } = props
-  const resolutionText = caseResolutionLabel(row.resolution)
-  const waiting = waitingText(row, nowMs)
-  const reportCount = reportCountText(row)
-  return (
-    <RowShell {...props}>
-      <span className="min-w-0 flex-1 space-y-1">
-        <span className="flex min-w-0 items-baseline gap-2">
-          <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
-            #{row.id}
+        <span
+          className={cn(
+            'col-span-2 flex min-w-0 flex-wrap items-center gap-x-2 text-xs text-muted-foreground',
+            tabular && '@[52rem]:contents'
+          )}
+        >
+          <span className="min-w-0 truncate">{caseKindLabel(row.kind)}</span>
+          <span aria-hidden className={cn(tabular && SEP)}>
+            ·
           </span>
-          <span className="truncate text-sm font-medium">
-            {caseTargetText(row)}
-          </span>
-          <Badge
-            variant={CASE_STATUS_BADGE_VARIANTS[row.status]}
-            className="ml-auto shrink-0"
+          <span
+            className={cn(
+              'flex min-w-0 items-center gap-x-2',
+              tabular && '@[52rem]:block'
+            )}
           >
-            {caseStatusLabel(row.status)}
-          </Badge>
-        </span>
-        {row.latestMessage?.body ? (
-          <span className="block truncate text-xs text-muted-foreground">
-            {row.latestMessage.body}
+            <span className="truncate">{row.reporter?.name ?? '报告者'}</span>
+            {reportCount ? (
+              <>
+                <span aria-hidden className={cn(tabular && SEP)}>
+                  ·
+                </span>
+                <span
+                  className={cn(
+                    'truncate',
+                    tabular && '@[52rem]:mt-0.5 @[52rem]:block'
+                  )}
+                >
+                  {reportCount}
+                </span>
+              </>
+            ) : null}
           </span>
-        ) : null}
-        <span className="flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
-          <span>{caseKindLabel(row.kind)}</span>
-          <span aria-hidden>·</span>
-          <span className="truncate">{reporterName(row)}</span>
-          {reportCount ? (
-            <>
-              <span aria-hidden>·</span>
-              <span>{reportCount}</span>
-            </>
-          ) : null}
-          {waiting ? (
-            <>
-              <span aria-hidden>·</span>
-              <span>{waiting}</span>
-            </>
-          ) : null}
-          {resolutionText ? (
-            <>
-              <span aria-hidden>·</span>
-              <span>{resolutionText}</span>
-            </>
-          ) : null}
-          <span className="ml-auto shrink-0 tabular-nums">
-            {formatChinaDateTime(row.updated)}
+          <span
+            className={cn(
+              'ml-auto flex shrink-0 items-center gap-x-2',
+              tabular && '@[52rem]:ml-0 @[52rem]:block @[52rem]:min-w-0'
+            )}
+          >
+            {waiting ? (
+              <>
+                <span className={cn(tabular && '@[52rem]:block')}>
+                  {waiting}
+                </span>
+                <span aria-hidden className={cn(tabular && SEP)}>
+                  ·
+                </span>
+              </>
+            ) : null}
+            <span
+              className={cn(
+                'tabular-nums',
+                tabular && '@[52rem]:mt-0.5 @[52rem]:block @[52rem]:truncate'
+              )}
+            >
+              {formatChinaDateTime(row.updated)}
+            </span>
           </span>
         </span>
       </span>
-    </RowShell>
+    </Button>
   )
 }
 
@@ -208,7 +206,6 @@ export interface CaseQueueListProps {
   /** Copy for an empty queue; the active view supplies it. */
   emptyText: string
   searchActive: boolean
-  layout: CaseQueueLayout
   onSelect: (row: AdminCaseListItem) => void
   onPageChange: (page: number) => void
   onRetry: () => void
@@ -225,7 +222,6 @@ export function CaseQueueList({
   selectedId,
   emptyText,
   searchActive,
-  layout,
   onSelect,
   onPageChange,
   onRetry
@@ -233,13 +229,19 @@ export function CaseQueueList({
   const totalPages = total === null ? 1 : Math.max(1, Math.ceil(total / limit))
   const nowMs = now ? Date.parse(now) : Number.NaN
   const resolvedEmptyText = searchActive ? '没有找到匹配的事项' : emptyText
-  const Row = layout === 'table' ? CaseTableRow : CaseQueueCardRow
 
+  // Rows read their layout off this container, not off the viewport: the pane
+  // is narrowed by the detail, by the secondary nav appearing at lg, and by
+  // the user dragging the divider — none of which the viewport width knows.
+  //
   // Same responsive contract as the unified inbox list pane: on mobile the
   // pane is content-driven and joins the shared page flow; from md up it
   // keeps its own internal scroller.
   return (
-    <div className="flex h-full min-h-0 min-w-0 flex-col max-md:h-auto">
+    <div
+      data-case-queue-list
+      className="@container flex h-full min-h-0 min-w-0 flex-col max-md:h-auto"
+    >
       {error && rows.length > 0 ? (
         <div
           role="alert"
@@ -254,11 +256,12 @@ export function CaseQueueList({
         </div>
       ) : null}
 
-      {layout === 'table' && rows.length > 0 ? (
+      {rows.length > 0 ? (
         <div
           aria-hidden
+          data-case-table-head
           className={cn(
-            'grid gap-x-3 border-b bg-muted/40 px-3 py-1.5 text-xs text-muted-foreground',
+            'hidden gap-x-3 border-b bg-muted/40 px-3 py-1.5 text-xs text-muted-foreground @[52rem]:grid',
             TABLE_COLUMNS
           )}
         >
@@ -278,16 +281,9 @@ export function CaseQueueList({
           <div role="status" aria-label="正在加载事项列表">
             <ul className="divide-y">
               {Array.from({ length: 8 }).map((_, index) => (
-                <li key={index} className="px-3 py-3">
-                  <Skeleton
-                    className={cn(
-                      'h-4 w-full animate-none',
-                      layout === 'card' && 'mb-2'
-                    )}
-                  />
-                  {layout === 'card' ? (
-                    <Skeleton className="h-3 w-2/3 animate-none" />
-                  ) : null}
+                <li key={index} className="space-y-2 px-3 py-3">
+                  <Skeleton className="h-4 w-full animate-none" />
+                  <Skeleton className="h-3 w-2/3 animate-none" />
                 </li>
               ))}
             </ul>
@@ -310,11 +306,12 @@ export function CaseQueueList({
           <ul aria-label="事项列表" className="divide-y">
             {rows.map((row) => (
               <li key={row.id}>
-                <Row
+                <CaseQueueRow
                   row={row}
                   selected={row.id === selectedId}
                   nowMs={nowMs}
                   onSelect={onSelect}
+                  tabular
                 />
               </li>
             ))}

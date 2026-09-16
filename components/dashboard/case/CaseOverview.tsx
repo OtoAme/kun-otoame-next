@@ -20,7 +20,7 @@ import type {
   CaseStatusCounts
 } from '~/types/api/case'
 
-import { CaseQueueCardRow } from './CaseQueueList'
+import { CaseQueueRow } from './CaseQueueList'
 import {
   caseViewCount,
   PENDING_CASE_VIEW,
@@ -198,7 +198,7 @@ export function CaseOverview({
           <ul className="divide-y rounded-md border">
             {rows.map((row) => (
               <li key={row.id}>
-                <CaseQueueCardRow
+                <CaseQueueRow
                   row={row}
                   selected={false}
                   nowMs={nowMs}

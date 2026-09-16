@@ -7,7 +7,8 @@ import { Button } from '~/components/dashboard/ui/button'
 import {
   ResizableHandle,
   ResizablePanel,
-  ResizablePanelGroup
+  ResizablePanelGroup,
+  useResizableLayout
 } from '~/components/dashboard/ui/resizable'
 import {
   Select,
@@ -21,7 +22,7 @@ import { cn } from '~/lib/dashboard/utils'
 import type { AdminCaseListItem, AdminCaseListResponse } from '~/types/api/case'
 
 import { DashboardCaseDetail } from './DashboardCaseDetail'
-import { CaseQueueList, type CaseQueueLayout } from './CaseQueueList'
+import { CaseQueueList } from './CaseQueueList'
 import type { CaseCenterView } from './caseCenterViews'
 
 export const ALL_CASE_KINDS = 'all'
@@ -87,6 +88,10 @@ export function CaseQueue({
   onProcessed,
   onStateChanged
 }: CaseQueueProps) {
+  const { defaultLayout, onLayoutChanged } = useResizableLayout({
+    id: 'dashboard-case-queue'
+  })
+
   let detailBody: ReactNode = null
   if (selectionStatus === 'invalid') {
     detailBody = (
@@ -134,9 +139,6 @@ export function CaseQueue({
     </div>
   )
 
-  const layout: CaseQueueLayout =
-    !isMobile && selectionStatus === 'none' ? 'table' : 'card'
-
   const listPanel = (
     <CaseQueueList
       rows={rows}
@@ -149,7 +151,6 @@ export function CaseQueue({
       selectedId={selectedId}
       emptyText={view.emptyText}
       searchActive={searchActive}
-      layout={layout}
       onSelect={onSelect}
       onPageChange={onPageChange}
       onRetry={onRetry}
@@ -197,6 +198,8 @@ export function CaseQueue({
       ) : (
         <ResizablePanelGroup
           orientation="horizontal"
+          defaultLayout={defaultLayout}
+          onLayoutChanged={onLayoutChanged}
           className="min-h-0 min-w-0 flex-1"
         >
           <ResizablePanel

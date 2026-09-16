@@ -88,6 +88,7 @@ export function CaseCenterNav({
     <nav
       aria-label="工单中心导航"
       aria-describedby={hintId}
+      data-case-nav={orientation}
       className={cn(
         vertical
           ? 'w-56 shrink-0 space-y-3 overflow-y-auto border-r p-3'

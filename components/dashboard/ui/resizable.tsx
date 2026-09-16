@@ -49,4 +49,13 @@ function ResizableHandle({
   )
 }
 
-export { ResizableHandle, ResizablePanel, ResizablePanelGroup }
+// Layout persistence lives in this hook in v4 (there is no `autoSaveId`
+// prop); re-exported so callers keep a single entry point for the primitive.
+const useResizableLayout = ResizablePrimitive.useDefaultLayout
+
+export {
+  ResizableHandle,
+  ResizablePanel,
+  ResizablePanelGroup,
+  useResizableLayout
+}

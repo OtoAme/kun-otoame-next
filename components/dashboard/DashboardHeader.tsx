@@ -47,9 +47,13 @@ export function DashboardHeader() {
           ? '小喇叭管理'
           : USER_LEDGER_PATH.test(pathname)
             ? '用户萌萌点明细'
-            : selectedKinds.length === 1
-              ? INBOX_KIND_LABELS[selectedKinds[0]]
-              : '待审事项'
+            : // The case center carries no `kinds` param, so it has to be
+              // matched before the source-filter branch falls through.
+              pathname.startsWith('/dashboard/case')
+              ? '工单中心'
+              : selectedKinds.length === 1
+                ? INBOX_KIND_LABELS[selectedKinds[0]]
+                : '待审事项'
 
   // The header is plain normal-flow content. On mobile it scrolls away with
   // the shared page flow (the SidebarInset scroll container); from md up the

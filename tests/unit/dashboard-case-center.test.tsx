@@ -67,7 +67,12 @@ vi.mock('~/components/dashboard/ui/resizable', () => ({
   ResizablePanel: ({ children }: { children?: React.ReactNode }) => (
     <div>{children}</div>
   ),
-  ResizableHandle: () => null
+  ResizableHandle: () => null,
+  // Layout persistence reaches for localStorage; the split itself is stubbed.
+  useResizableLayout: () => ({
+    defaultLayout: undefined,
+    onLayoutChanged: vi.fn()
+  })
 }))
 vi.mock('~/components/dashboard/ui/input', () => ({
   Input: ({ onChange, ...props }: React.ComponentProps<'input'>) => (
@@ -427,6 +432,69 @@ describe('dashboard case center', () => {
     expect(text).toContain('请补充截图')
     // 未选中时列表独占整个宽度，不渲染空详情面板
     expect(container.querySelector('[aria-label="事项详情"]')).toBeNull()
+  })
+
+  it('drives the queue layout off the container width, not the viewport', async () => {
+    mocks.searchParams = new URLSearchParams('view=unresolved')
+    mocks.kunFetchGet.mockResolvedValue(listResponse([makeRow()]))
+    const container = await mount()
+    await flush()
+
+    // 视口宽不等于列表栏宽：详情打开、lg 起插入二级导航、用户拖窄，三者都会
+    // 让列表栏远小于视口。按视口判断会把首列压到 0–24px，行就认不出是哪条了。
+    const listRoot = container.querySelector('[data-case-queue-list]')!
+    expect(listRoot.className).toContain('@container')
+
+    // 表头与列模板都挂在同一个容器阈值上，窄容器下整体退回卡片
+    const head = container.querySelector('[data-case-table-head]')!
+    expect(head.className).toContain('hidden')
+    expect(head.className).toContain('@[52rem]:grid')
+
+    const rowGrid = container.querySelector('[data-case-row-id="11"] > span')!
+    expect(rowGrid.className).toContain('grid-cols-[minmax(0,1fr)_auto]')
+    expect(rowGrid.className).toContain('@[52rem]:grid-cols-[minmax(0,1fr)_')
+  })
+
+  it('keeps the overview list as cards regardless of its width', async () => {
+    mocks.kunFetchGet.mockResolvedValue(listResponse([makeRow()]))
+    const container = await mount()
+    await flush()
+
+    // 概览的「最久等待」列表没有表头，不该在宽容器下变成无头表格
+    expect(container.querySelector('[data-case-table-head]')).toBeNull()
+    const rowGrid = container.querySelector('[data-case-row-id="11"] > span')!
+    expect(rowGrid.className).toContain('grid-cols-[minmax(0,1fr)_auto]')
+    expect(rowGrid.className).not.toContain('@[52rem]:')
+  })
+
+  it('drops the vertical nav column whenever a detail is open', async () => {
+    mocks.searchParams = new URLSearchParams('view=unresolved')
+    mocks.kunFetchGet.mockResolvedValue(listResponse([makeRow({ id: 22 })]))
+    const container = await mount()
+    await flush()
+
+    // 无详情：竖列 + 横条带各一套，按 lg 互补隐藏
+    expect(
+      [...container.querySelectorAll('[data-case-nav]')].map((element) =>
+        element.getAttribute('data-case-nav')
+      )
+    ).toEqual(['vertical', 'horizontal'])
+
+    mocks.searchParams = new URLSearchParams('view=unresolved&id=22')
+    await act(async () => {
+      root!.render(<CaseCenter />)
+    })
+    await flush()
+
+    // 详情打开：只剩横条带。让断点在此处插入 224px 固定列，会使会话列
+    // 在 1 像素视口变化内从 531px 掉到 384px。
+    const navs = [...container.querySelectorAll('[data-case-nav]')]
+    expect(
+      navs.map((element) => element.getAttribute('data-case-nav'))
+    ).toEqual(['horizontal'])
+    expect(navs[0].className).not.toContain('lg:hidden')
+    // 条带仍然给出全部七个入口
+    expect(navs[0].querySelectorAll('[data-case-view]')).toHaveLength(7)
   })
 
   it('falls back to page 1 when the URL page exceeds the API limit', async () => {

@@ -321,7 +321,12 @@ export function DashboardCaseDetail({
 
   if (!detail) {
     return (
-      <div className="space-y-3" aria-label="事项详情加载失败">
+      // Centered like every other state panel in the queue, so a missing case
+      // does not render as a fragment pinned to the corner of a wide pane.
+      <div
+        className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center"
+        aria-label="事项详情加载失败"
+      >
         <p role="alert" className="text-sm text-destructive">
           {loadError || '无法查看该事项'}
         </p>

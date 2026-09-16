@@ -265,17 +265,22 @@ export function CaseCenter({ initialCaseId }: CaseCenterProps) {
     >
       <div className="flex min-h-0 min-w-0 flex-1 md:overflow-hidden">
         {/*
-          The rail is the reference mock's left navigation. With a detail
-          open it needs a much wider viewport before it can coexist with the
-          list rail and the detail's own two columns, so it yields first.
+          The rail is the reference mock's left navigation, and a detail view
+          never shows it. Letting a breakpoint insert a fixed 14rem column
+          there took 224px out of the three-column detail in a single step —
+          the conversation fell from 531px to 384px across one pixel of
+          viewport. The strip has no such step, and it is already the mode
+          every size below that breakpoint used.
         */}
-        <CaseCenterNav
-          current={view}
-          statusCounts={statusCounts}
-          orientation="vertical"
-          onSelect={handleSelectView}
-          className={cn('hidden', detailOpen ? '2xl:block' : 'lg:block')}
-        />
+        {detailOpen ? null : (
+          <CaseCenterNav
+            current={view}
+            statusCounts={statusCounts}
+            orientation="vertical"
+            onSelect={handleSelectView}
+            className="hidden lg:block"
+          />
+        )}
 
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-b px-3 py-2">
@@ -344,7 +349,7 @@ export function CaseCenter({ initialCaseId }: CaseCenterProps) {
             statusCounts={statusCounts}
             orientation="horizontal"
             onSelect={handleSelectView}
-            className={cn(detailOpen ? '2xl:hidden' : 'lg:hidden')}
+            className={cn(!detailOpen && 'lg:hidden')}
           />
 
           {isOverview ? (
