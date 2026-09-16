@@ -2,9 +2,13 @@ import { describe, expect, it } from 'vitest'
 
 import {
   caseMessageAuthorLabel,
+  caseMessageSide,
   caseResolutionLabel,
+  caseStatusHint,
   caseSystemEventText,
-  caseTargetText
+  caseTargetText,
+  caseViewerStatusText,
+  formatCaseDuration
 } from '~/components/case/caseDisplay'
 import type { CaseMessage, CaseSummary } from '~/types/api/case'
 
@@ -42,6 +46,18 @@ describe('caseDisplay helpers', () => {
     ).toBe('发布者甲')
     // 后端裁剪后的匿名报告者：author 为 null，前端只能显示「报告者」
     expect(caseMessageAuthorLabel(makeMessage({ author: null }))).toBe('报告者')
+    // 但在有权识别报告者的视角里服务端不置空作者，null 只可能是账号已注销，
+    // 这时叫「报告者」就把处理方说过的话记到了报告者名下
+    expect(caseMessageAuthorLabel(makeMessage({ author: null }), true)).toBe(
+      '已注销用户'
+    )
+    // 具名作者不受该参数影响
+    expect(
+      caseMessageAuthorLabel(
+        makeMessage({ author: { id: 2, name: '发布者甲', avatar: '' } }),
+        true
+      )
+    ).toBe('发布者甲')
   })
 
   it('renders system events from body and never leaks payload identity fields', () => {
@@ -135,5 +151,164 @@ describe('caseDisplay helpers', () => {
   it('maps resolution labels and keeps null as null', () => {
     expect(caseResolutionLabel('moved')).toBe('已移动')
     expect(caseResolutionLabel(null)).toBeNull()
+  })
+
+  it('formats compact durations with a floor of one minute', () => {
+    expect(formatCaseDuration(0)).toBe('不足 1 分钟')
+    expect(formatCaseDuration(-5000)).toBe('不足 1 分钟')
+    expect(formatCaseDuration(59_000)).toBe('不足 1 分钟')
+    expect(formatCaseDuration(5 * 60_000)).toBe('5 分钟')
+    expect(formatCaseDuration(3 * 3_600_000)).toBe('3 小时')
+    expect(formatCaseDuration(2 * 86_400_000)).toBe('2 天')
+  })
+
+  it('hints publisher escalation and reporter timeout only for timeout kinds', () => {
+    const now = Date.parse('2026-09-13T12:00:00.000Z')
+    const base = {
+      kind: 'resource_mismatch',
+      statusChangedAt: '2026-09-13T00:00:00.000Z'
+    } as const
+
+    expect(
+      caseStatusHint({ ...base, ownerType: 'publisher', status: 'open' }, now)
+    ).toBe('发布者处理中，约 6 天后升级站方')
+    expect(
+      caseStatusHint(
+        { ...base, ownerType: 'publisher', status: 'waiting_reporter' },
+        now
+      )
+    ).toBe('等待报告者回应，约 13 天后自动结案')
+    // 非超时登记类型（如违规举报）即使归属发布者也没有时限提示
+    expect(
+      caseStatusHint(
+        {
+          kind: 'content_violation',
+          ownerType: 'publisher',
+          status: 'open',
+          statusChangedAt: base.statusChangedAt
+        },
+        now
+      )
+    ).toBeNull()
+    // 超过时限后改为等待系统的提示
+    expect(
+      caseStatusHint(
+        { ...base, ownerType: 'publisher', status: 'open' },
+        now + 8 * 86_400_000
+      )
+    ).toBe('已达升级时限，等待系统升级')
+  })
+
+  it('hints staff queue waiting and stays silent for closed cases', () => {
+    const now = Date.parse('2026-09-13T12:00:00.000Z')
+    const base = {
+      kind: 'other',
+      statusChangedAt: '2026-09-11T00:00:00.000Z'
+    } as const
+    expect(
+      caseStatusHint({ ...base, ownerType: 'staff', status: 'open' }, now)
+    ).toBe('站方处理中，已等待 2 天')
+    expect(
+      caseStatusHint(
+        { ...base, ownerType: 'staff', status: 'waiting_reporter' },
+        now
+      )
+    ).toBe('等待报告者补充，已等待 2 天')
+    expect(
+      caseStatusHint({ ...base, ownerType: 'staff', status: 'resolved' }, now)
+    ).toBeNull()
+    expect(
+      caseStatusHint({ ...base, ownerType: 'staff', status: 'rejected' }, now)
+    ).toBeNull()
+  })
+})
+
+describe('case conversation and tab helpers', () => {
+  it('sides messages without guessing publisher from staff', () => {
+    // 系统事件优先于作者判定
+    expect(
+      caseMessageSide(makeMessage({ kind: 'system', event: 'resolved' }), 5)
+    ).toBe('system')
+    // 后端脱敏后的报告者只剩 author: null，仍然算报告者一侧
+    expect(caseMessageSide(makeMessage({ author: null }), 5)).toBe('reporter')
+    expect(
+      caseMessageSide(
+        makeMessage({ author: { id: 5, name: '报告人', avatar: '' } }),
+        5
+      )
+    ).toBe('reporter')
+    // 其他人只可能是处理方（接口不允许第四方回复）
+    expect(
+      caseMessageSide(
+        makeMessage({ author: { id: 8, name: '发布者甲', avatar: '' } }),
+        5
+      )
+    ).toBe('owner')
+    // 看不到报告者身份时，具名作者一律按处理方呈现
+    expect(
+      caseMessageSide(
+        makeMessage({ author: { id: 8, name: '发布者甲', avatar: '' } }),
+        null
+      )
+    ).toBe('owner')
+  })
+
+  it('refuses to pick a side for a deleted account in an identifying view', () => {
+    // author_id 与 reporter_id 都是 onDelete: SetNull，注销后报告者与处理方
+    // 的消息长得一模一样，猜哪边都会把一方的话记到另一方名下
+    expect(caseMessageSide(makeMessage({ author: null }), 5, true)).toBe(
+      'unknown'
+    )
+    // 报告者本人也注销时 reporterId 同样为 null，依旧不猜
+    expect(caseMessageSide(makeMessage({ author: null }), null, true)).toBe(
+      'unknown'
+    )
+    // 匿名视角下 author 为 null 是服务端刻意脱敏，维持原判定
+    expect(caseMessageSide(makeMessage({ author: null }), 5, false)).toBe(
+      'reporter'
+    )
+    // 具名作者不受该参数影响，两侧判定照旧
+    expect(
+      caseMessageSide(
+        makeMessage({ author: { id: 5, name: '报告人', avatar: '' } }),
+        5,
+        true
+      )
+    ).toBe('reporter')
+    expect(
+      caseMessageSide(
+        makeMessage({ author: { id: 8, name: '发布者甲', avatar: '' } }),
+        5,
+        true
+      )
+    ).toBe('owner')
+    // 系统事件优先级最高，不受影响
+    expect(
+      caseMessageSide(
+        makeMessage({ kind: 'system', event: 'resolved', author: null }),
+        5,
+        true
+      )
+    ).toBe('system')
+  })
+
+  it('switches status wording to first person only in the matching tab', () => {
+    expect(
+      caseViewerStatusText({ status: 'waiting_reporter' }, 'reported')
+    ).toBe('等待我补充')
+    expect(caseViewerStatusText({ status: 'waiting_reporter' }, 'owned')).toBe(
+      '等待报告者'
+    )
+    expect(caseViewerStatusText({ status: 'open' }, 'owned')).toBe('等待我处理')
+    expect(caseViewerStatusText({ status: 'waiting_owner' }, 'owned')).toBe(
+      '等待我处理'
+    )
+    // 关注的分页保持中立文案
+    expect(caseViewerStatusText({ status: 'open' }, 'subscribed')).toBe(
+      '等待处理方'
+    )
+    expect(caseViewerStatusText({ status: 'resolved' }, 'reported')).toBe(
+      '已解决'
+    )
   })
 })

@@ -21,6 +21,23 @@ vi.mock('~/hooks/dashboard/useInbox', async (importOriginal) => ({
 vi.mock('~/hooks/dashboard/use-mobile', () => ({
   useIsMobile: () => mocks.isMobile
 }))
+vi.mock('next/navigation', () => ({
+  useSearchParams: () => new URLSearchParams(),
+  usePathname: () => '/dashboard/inbox',
+  useRouter: () => ({ push: vi.fn(), replace: vi.fn() })
+}))
+// next/link's prefetch observer reaches for `self`, which jsdom here lacks.
+vi.mock('next/link', () => ({
+  default: ({
+    children,
+    href,
+    ...props
+  }: React.ComponentProps<'a'> & { href: string }) => (
+    <a href={href} {...props}>
+      {children}
+    </a>
+  )
+}))
 vi.mock('~/components/dashboard/DashboardShell', () => ({
   useDashboard: () => ({
     refreshCounts: mocks.refreshCounts
@@ -217,6 +234,48 @@ const feedback: Extract<InboxItem, { kind: 'feedback' }> = {
   }
 }
 
+const caseItem: Extract<InboxItem, { kind: 'case' }> = {
+  key: 'case:12',
+  kind: 'case',
+  id: 12,
+  title: '资源与描述不符 #12',
+  subtitle: '条目A',
+  actor: { id: 7, name: '举报人' },
+  waitingFrom: '2026-09-01T00:00:00.000Z',
+  waitingSeconds: 3 * 24 * 60 * 60,
+  targetHref: '/dashboard/case/12',
+  badges: ['资源与描述不符'],
+  readOnly: false,
+  payload: {
+    id: 12,
+    kind: 'resource_mismatch',
+    targetType: 'resource',
+    targetId: 7,
+    target: {
+      targetType: 'resource',
+      targetId: 7,
+      deleted: false,
+      patch: { id: 3, uniqueId: 'abc', name: '条目A' },
+      resource: {
+        id: 7,
+        name: '资源X',
+        section: 'galgame',
+        patchId: 3,
+        patch: { id: 3, uniqueId: 'abc', name: '条目A' },
+        status: 0
+      }
+    },
+    patchId: 3,
+    ownerType: 'staff',
+    status: 'open',
+    resolution: null,
+    subscriberCount: 2,
+    created: '2026-09-01T00:00:00.000Z',
+    statusChangedAt: '2026-09-01T00:00:00.000Z',
+    queueEnteredAt: '2026-09-01T00:00:00.000Z'
+  }
+}
+
 describe('dashboard inbox presentation', () => {
   let dom: JSDOM
   let root: Root
@@ -305,7 +364,8 @@ describe('dashboard inbox presentation', () => {
     })
   }
   const select = async (
-    selected = submission(1),
+    // Widened past the submission default so any source can be selected.
+    selected: InboxItem = submission(1),
     overrides: Partial<UseInboxReturn> = {}
   ) => {
     await render({
@@ -344,6 +404,31 @@ describe('dashboard inbox presentation', () => {
     })
     return event
   }
+
+  it('previews a case read-only and hands adjudication to the case center', async () => {
+    await select(caseItem, { items: [caseItem], kinds: ['case'] })
+    const text = bodyText()
+    // 摘要全部来自收件箱条目载荷，不再请求 /case/[id]
+    expect(text).toContain('#12')
+    expect(text).toContain('资源X（条目A）')
+    expect(text).toContain('等待处理方')
+    expect(text).toContain('资源与描述不符')
+    expect(text).toContain('举报人')
+    expect(text).toContain('2 人')
+    expect(text).toContain('3 天')
+    // 出口指向工单中心
+    const exit = dom.window.document.querySelector(
+      'a[href="/dashboard/case/12"]'
+    )
+    expect(exit?.textContent).toContain('前往工单中心处理')
+    // 收件箱里不出现任何裁决入口
+    const labels = [...dom.window.document.querySelectorAll('button')].map(
+      (element) => element.textContent?.trim()
+    )
+    expect(labels).not.toContain('发送回复')
+    expect(labels).not.toContain('结案')
+    expect(labels).not.toContain('隐藏资源')
+  })
 
   it('keeps the server row order and displays only filtered totals and selected-source truncation', async () => {
     await render({

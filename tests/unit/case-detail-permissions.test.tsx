@@ -41,111 +41,110 @@ vi.mock('next/link', () => ({
   )
 }))
 
-vi.mock('@heroui/react', async () => {
+vi.mock('~/components/dashboard/ui/alert-dialog', async () => {
   const R = await import('react')
-  const toArray = (children: React.ReactNode): React.ReactElement[] =>
-    (Array.isArray(children) ? children : [children]).filter(
-      (child): child is React.ReactElement => R.isValidElement(child)
-    )
+  const Ctx = R.createContext<{ onOpenChange: (open: boolean) => void }>({
+    onOpenChange: () => {}
+  })
+  const Block = (slot: string) => {
+    function MockBlock({ children }: { children?: React.ReactNode }) {
+      return <div data-slot={slot}>{children}</div>
+    }
+    return MockBlock
+  }
   return {
-    Button: ({
-      children,
-      onPress,
-      isDisabled,
-      isLoading,
-      'aria-label': ariaLabel
-    }: {
-      children?: React.ReactNode
-      onPress?: () => void
-      isDisabled?: boolean
-      isLoading?: boolean
-      'aria-label'?: string
-    }) => (
-      <button
-        aria-label={ariaLabel}
-        disabled={isDisabled || isLoading}
-        onClick={onPress}
-      >
-        {children}
-      </button>
-    ),
-    Chip: ({
-      children,
-      onClick
-    }: {
-      children?: React.ReactNode
-      onClick?: () => void
-    }) => <span onClick={onClick}>{children}</span>,
-    Modal: ({
-      isOpen,
+    AlertDialog: ({
+      open,
+      onOpenChange,
       children
     }: {
-      isOpen: boolean
+      open: boolean
+      onOpenChange: (open: boolean) => void
       children?: React.ReactNode
-    }) => (isOpen ? <div role="dialog">{children}</div> : null),
-    ModalContent: ({ children }: { children?: React.ReactNode }) => (
-      <div>{children}</div>
-    ),
-    ModalHeader: ({ children }: { children?: React.ReactNode }) => (
-      <div>{children}</div>
-    ),
-    ModalBody: ({ children }: { children?: React.ReactNode }) => (
-      <div>{children}</div>
-    ),
-    ModalFooter: ({ children }: { children?: React.ReactNode }) => (
-      <div>{children}</div>
-    ),
-    Textarea: ({
-      value,
-      onValueChange,
-      'aria-label': ariaLabel,
-      placeholder
-    }: {
-      value: string
-      onValueChange?: (value: string) => void
-      'aria-label'?: string
-      placeholder?: string
     }) => (
-      <textarea
-        aria-label={ariaLabel}
-        placeholder={placeholder}
-        value={value}
-        onChange={(event) => onValueChange?.(event.target.value)}
-      />
+      <Ctx.Provider value={{ onOpenChange }}>
+        {open ? <div>{children}</div> : null}
+      </Ctx.Provider>
     ),
-    Select: ({
+    AlertDialogContent: ({ children }: { children?: React.ReactNode }) => (
+      <div role="alertdialog">{children}</div>
+    ),
+    AlertDialogCancel: ({
       children,
-      selectedKeys,
-      onSelectionChange,
-      'aria-label': ariaLabel,
-      placeholder
+      disabled
     }: {
       children?: React.ReactNode
-      selectedKeys?: string[]
-      onSelectionChange?: (keys: Set<string>) => void
-      'aria-label'?: string
-      placeholder?: string
-    }) => (
-      <select
-        aria-label={ariaLabel}
-        value={selectedKeys?.[0] ?? ''}
-        onChange={(event) => onSelectionChange?.(new Set([event.target.value]))}
-      >
-        <option value="">{placeholder ?? ''}</option>
-        {toArray(children).map((child) => (
-          <option key={String(child.key)} value={String(child.key)}>
-            {(child.props as { children?: React.ReactNode }).children}
-          </option>
-        ))}
-      </select>
-    ),
-    SelectItem: () => null
+      disabled?: boolean
+    }) => {
+      const { onOpenChange } = R.useContext(Ctx)
+      return (
+        <button disabled={disabled} onClick={() => onOpenChange(false)}>
+          {children}
+        </button>
+      )
+    },
+    AlertDialogHeader: Block('alert-dialog-header'),
+    AlertDialogTitle: Block('alert-dialog-title'),
+    AlertDialogDescription: Block('alert-dialog-description'),
+    AlertDialogFooter: Block('alert-dialog-footer')
   }
 })
 
-import { CaseDetailContainer } from '~/components/case/CaseDetailContainer'
+vi.mock('~/components/dashboard/ui/textarea', () => ({
+  Textarea: ({ onChange, ...props }: React.ComponentProps<'textarea'>) => (
+    <textarea
+      {...props}
+      onInput={(event) =>
+        onChange?.(event as React.ChangeEvent<HTMLTextAreaElement>)
+      }
+    />
+  )
+}))
+
+vi.mock('~/components/dashboard/ui/select', async () => {
+  const R = await import('react')
+  const SelectTrigger = () => null
+  const SelectContent = ({ children }: { children?: React.ReactNode }) => (
+    <>{children}</>
+  )
+  return {
+    Select: ({
+      value,
+      onValueChange,
+      children
+    }: {
+      value: string
+      onValueChange: (value: string) => void
+      children: React.ReactNode
+    }) => {
+      const elements = R.Children.toArray(children).filter(
+        R.isValidElement
+      ) as React.ReactElement<{ children?: React.ReactNode }>[]
+      const content = elements.find((element) => element.type === SelectContent)
+      return (
+        <select
+          aria-label="处理结论"
+          value={value}
+          onChange={(event) => onValueChange(event.target.value)}
+        >
+          {content?.props.children}
+        </select>
+      )
+    },
+    SelectTrigger,
+    SelectContent,
+    SelectItem: (props: React.ComponentProps<'option'>) => (
+      <option {...props} />
+    ),
+    SelectValue: () => null
+  }
+})
+
+import { IssueCaseDetail } from '~/components/dashboard/issue/IssueCaseDetail'
 
 globalThis.React = React
+
+const NOW = Date.parse('2026-09-16T00:00:00.000Z')
 
 const makeDetail = (overrides: Partial<CaseDetail> = {}): CaseDetail => ({
   id: 9,
@@ -221,13 +220,15 @@ const makeDetail = (overrides: Partial<CaseDetail> = {}): CaseDetail => ({
 
 const detailResponse = (detail: CaseDetail) => ({ case: detail })
 
-describe('case detail permissions', () => {
+describe('issue case detail permissions', () => {
   let root: Root | undefined
   let dom: JSDOM | undefined
 
   beforeEach(() => {
     vi.clearAllMocks()
     mocks.user = { uid: 2, name: '发布者甲', role: 1 }
+    // 详情里的时限提示与重开剩余时间都读 Date.now()，固定住才有确定的文案
+    vi.spyOn(Date, 'now').mockReturnValue(NOW)
   })
 
   afterEach(() => {
@@ -237,6 +238,7 @@ describe('case detail permissions', () => {
     root = undefined
     dom = undefined
     vi.unstubAllGlobals()
+    vi.restoreAllMocks()
   })
 
   const mount = async (ui: React.ReactElement) => {
@@ -265,9 +267,14 @@ describe('case detail permissions', () => {
       button.textContent?.includes(text)
     )
 
+  const replyBox = (container: HTMLElement) =>
+    container.querySelector<HTMLTextAreaElement>(
+      'textarea[aria-label="补充说明内容"]'
+    )
+
   it('renders anonymized reporter and system events without payload identity', async () => {
     mocks.kunFetchGet.mockResolvedValue(detailResponse(makeDetail()))
-    const container = await mount(<CaseDetailContainer caseId={9} />)
+    const container = await mount(<IssueCaseDetail caseId={9} />)
     await flush()
 
     const text = container.textContent ?? ''
@@ -277,6 +284,34 @@ describe('case detail permissions', () => {
     // 系统事件回退文案，payload 身份字段不渲染
     expect(text).toContain('已升级为站方处理')
     expect(text).not.toContain('42')
+  })
+
+  it('keeps the escalation countdown out of a subscriber view', async () => {
+    // 同一条事项的两种视角。时限提示本身保留（PM 3.3 的 7 天升级是产品行为，
+    // 不是参考图那套可配置 SLA），但 PM 3.6 的关注者可见清单里没有等待时长，
+    // 所以只有能回复的一方（报告者本人／当前处理方）才看得到。
+    const base = makeDetail()
+    mocks.kunFetchGet.mockResolvedValue(detailResponse(base))
+    let container = await mount(<IssueCaseDetail caseId={9} />)
+    await flush()
+    expect(base.capabilities.canReply).toBe(false)
+    expect(container.textContent).not.toContain('升级站方')
+
+    act(() => {
+      root?.unmount()
+    })
+    root = undefined
+    mocks.kunFetchGet.mockResolvedValue(
+      detailResponse(
+        makeDetail({
+          capabilities: { ...base.capabilities, canReply: true }
+        })
+      )
+    )
+    container = await mount(<IssueCaseDetail caseId={9} />)
+    await flush()
+    // 同一份数据换成可回复的视角就该看到，证明是 canReply 收窄而不是文案没了
+    expect(container.textContent).toContain('发布者处理中，约 4 天后升级站方')
   })
 
   it('publisher can reply and resolve with confirmation; cancel writes nothing', async () => {
@@ -297,23 +332,15 @@ describe('case detail permissions', () => {
     })
     mocks.kunFetchGet.mockResolvedValue(detailResponse(detail))
     mocks.kunFetchPost.mockResolvedValue({ case: detail, changed: true })
-    const container = await mount(<CaseDetailContainer caseId={9} />)
+    const container = await mount(<IssueCaseDetail caseId={9} />)
     await flush()
 
-    // 补充说明区域与快捷回复
-    expect(container.textContent).toContain('补充说明')
-    const quick = [...container.querySelectorAll('span')].find(
-      (el) => el.textContent === '需要截图'
-    )!
+    // 快捷回复只给处理方（当前发布者），不给报告者
     await act(async () => {
-      quick.click()
+      findButton(container, '需要截图')!.click()
     })
-    const replyBox = container.querySelector<HTMLTextAreaElement>(
-      'textarea[aria-label="补充说明内容"]'
-    )!
-    expect(replyBox.value).toBe('请补充相关截图，方便进一步核对。')
+    expect(replyBox(container)!.value).toBe('请补充相关截图，方便进一步核对。')
 
-    // 发送回复
     await act(async () => {
       findButton(container, '发送')!.click()
     })
@@ -339,7 +366,7 @@ describe('case detail permissions', () => {
     await act(async () => {
       findButton(container, '结案')!.click()
     })
-    expect(container.querySelector('[role="dialog"]')).toBeNull()
+    expect(container.querySelector('[role="alertdialog"]')).toBeNull()
 
     await act(async () => {
       Object.getOwnPropertyDescriptor(
@@ -353,14 +380,14 @@ describe('case detail permissions', () => {
     await act(async () => {
       findButton(container, '结案')!.click()
     })
-    expect(container.querySelector('[role="dialog"]')).not.toBeNull()
+    expect(container.querySelector('[role="alertdialog"]')).not.toBeNull()
 
     // 取消不写请求
     await act(async () => {
       findButton(container, '取消')!.click()
     })
     expect(mocks.kunFetchPost).not.toHaveBeenCalled()
-    expect(container.querySelector('[role="dialog"]')).toBeNull()
+    expect(container.querySelector('[role="alertdialog"]')).toBeNull()
 
     // 确认后才请求，content 为空时省略
     await act(async () => {
@@ -395,16 +422,22 @@ describe('case detail permissions', () => {
     })
     mocks.kunFetchGet.mockResolvedValue(detailResponse(detail))
     mocks.kunFetchPost.mockResolvedValue({ case: detail, changed: true })
-    const container = await mount(<CaseDetailContainer caseId={9} />)
+    const container = await mount(<IssueCaseDetail caseId={9} />)
     await flush()
 
-    expect(container.textContent).toContain('结论：无法复现')
-    expect(container.textContent).not.toContain('补充说明')
+    const text = container.textContent ?? ''
+    expect(text).toContain('处理结果：无法复现')
+    expect(text).toContain('问题仍未解决？')
+    // 重开窗口由服务端 canReopen 决定，这里只把剩余时间读出来
+    expect(text).toContain('结案后 7 天内可以重新打开一次，还剩约 4 天')
+    // 已结案：回复框关闭并说明原因
+    expect(replyBox(container)).toBeNull()
+    expect(text).toContain('该问题已结案，无法继续回复')
 
     await act(async () => {
       findButton(container, '重新打开')!.click()
     })
-    expect(container.querySelector('[role="dialog"]')).not.toBeNull()
+    expect(container.querySelector('[role="alertdialog"]')).not.toBeNull()
     await act(async () => {
       findButton(container, '确认')!.click()
     })
@@ -430,16 +463,20 @@ describe('case detail permissions', () => {
       }
     })
     mocks.kunFetchGet.mockResolvedValue(detailResponse(detail))
-    const container = await mount(<CaseDetailContainer caseId={9} />)
+    const container = await mount(<IssueCaseDetail caseId={9} />)
     await flush()
 
     const text = container.textContent ?? ''
     expect(text).toContain('你已提交过同类举报')
+    // 关注者视角不给等待时长／升级倒计时
+    expect(text).not.toContain('升级站方')
+    expect(text).not.toContain('已等待')
     // subscriberCount 为 null 时不显示人数
     expect(text).not.toContain('人报告')
-    // 无对话、无动作区
-    expect(text).not.toContain('沟通记录')
-    expect(text).not.toContain('补充说明')
+    // 无对话、无回复框、无重开入口
+    expect(container.querySelector('[aria-label="沟通记录"]')).toBeNull()
+    expect(text).toContain('暂无沟通记录')
+    expect(replyBox(container)).toBeNull()
     expect(findButton(container, '重新打开')).toBeUndefined()
   })
 
@@ -461,17 +498,17 @@ describe('case detail permissions', () => {
       }
     })
     mocks.kunFetchGet.mockResolvedValue(detailResponse(detail))
-    const container = await mount(<CaseDetailContainer caseId={9} />)
+    const container = await mount(<IssueCaseDetail caseId={9} />)
     await flush()
 
-    // 不显示发布者专用结案表单
+    // 不显示发布者专用结案表单，也不给处理方快捷回复
     expect(container.querySelector('select[aria-label="处理结论"]')).toBeNull()
     expect(findButton(container, '结案')).toBeUndefined()
-    // 站方改为后台入口（mock 的 Button 不渲染 as/href，按文本查找）
-    const entry = [...container.querySelectorAll('button')].find((button) =>
-      button.textContent?.includes('在后台处理')
-    )
-    expect(entry).not.toBeUndefined()
+    expect(findButton(container, '需要截图')).toBeUndefined()
+    // 站方改为后台入口
+    const entry = container.querySelector('a[href="/dashboard/case/9"]')
+    expect(entry).not.toBeNull()
+    expect(entry!.textContent).toContain('在后台处理')
   })
 
   it('reopen conflict asks before subscribing, then navigates to the existing case', async () => {
@@ -497,7 +534,7 @@ describe('case detail permissions', () => {
       conflict: true,
       existingCaseId: 77
     })
-    const container = await mount(<CaseDetailContainer caseId={9} />)
+    const container = await mount(<IssueCaseDetail caseId={9} />)
     await flush()
 
     await act(async () => {
@@ -517,10 +554,10 @@ describe('case detail permissions', () => {
     // 说明不足时拦截
     const subscribeButton = findButton(container, '提交并关注现有问题')!
     expect(subscribeButton.disabled).toBe(true)
+    const conflictBox = () =>
+      container.querySelector<HTMLTextAreaElement>('#issue-reopen-content')!
     await act(async () => {
-      const textarea = container.querySelector<HTMLTextAreaElement>(
-        'textarea[aria-label="提交说明"]'
-      )!
+      const textarea = conflictBox()
       Object.getOwnPropertyDescriptor(
         dom!.window.HTMLTextAreaElement.prototype,
         'value'
@@ -534,11 +571,7 @@ describe('case detail permissions', () => {
       findButton(container, '提交并关注现有问题')!.click()
     })
     await flush()
-    expect(
-      container.querySelector<HTMLTextAreaElement>(
-        'textarea[aria-label="提交说明"]'
-      )!.value
-    ).toBe('我这边仍然存在问题，仍然无法下载')
+    expect(conflictBox().value).toBe('我这边仍然存在问题，仍然无法下载')
     expect(mocks.toast.success).not.toHaveBeenCalled()
     expect(mocks.routerPush).not.toHaveBeenCalled()
 

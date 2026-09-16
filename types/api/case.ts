@@ -96,6 +96,11 @@ export interface CaseMessage {
   created: string
 }
 
+export type CaseMessagePreview = Pick<
+  CaseMessage,
+  'id' | 'kind' | 'event' | 'body' | 'created'
+>
+
 export interface CaseSummary {
   id: number
   kind: CaseKind
@@ -127,13 +132,15 @@ export interface CaseSummary {
 
 export interface CaseListItem extends CaseSummary {
   /** A list can omit messages while preserving the same summary shape. */
-  latestMessage?: Pick<
-    CaseMessage,
-    'id' | 'kind' | 'event' | 'body' | 'created'
-  > | null
+  latestMessage?: CaseMessagePreview | null
   canReply: boolean
   canResolve: boolean
   canReopen: boolean
+}
+
+/** Admin list rows always include the latest message preview for dense queues. */
+export interface AdminCaseListItem extends CaseSummary {
+  latestMessage: CaseMessagePreview | null
 }
 
 export interface CaseDetail extends CaseSummary {
@@ -160,12 +167,28 @@ export interface CaseCapabilities {
   allowedResolutions: CaseResolution[]
 }
 
+/** 当前作用域内按状态的条数；每个 CaseStatus 键都存在，无数据为 0。 */
+export type CaseStatusCounts = Record<CaseStatus, number>
+
 export interface CaseListResponse {
   tab: CaseTab
   cases: CaseListItem[]
   total: number
+  /** Scoped by `tab` only, so the status tabs stay comparable to each other. */
+  statusCounts: CaseStatusCounts
   page: number
   limit: number
+}
+
+/** GET /api/admin/case response; `now` is the server clock for waiting-time display. */
+export interface AdminCaseListResponse {
+  cases: AdminCaseListItem[]
+  total: number
+  /** Scoped by kind and search only, so closed statuses are counted as well. */
+  statusCounts: CaseStatusCounts
+  page: number
+  limit: number
+  now: string
 }
 
 export interface CaseDetailResponse {

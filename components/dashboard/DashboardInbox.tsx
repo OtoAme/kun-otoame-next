@@ -30,6 +30,13 @@ export interface DashboardInboxProps {
   reviewerRole: number
 }
 
+// Every source, including case, renders through the unified queue: the
+// inbox owns cross-source ordering (oldest first) and a case row hands off
+// to the case center, which is where a case is handled.
+export function DashboardInbox(props: DashboardInboxProps) {
+  return <UnifiedInbox {...props} />
+}
+
 // Downward pull distance on the back row that scrolls the shared page flow
 // back to the top. Chosen well above the tap slop so a pull is not treated
 // as a back-button tap.
@@ -49,10 +56,7 @@ function StatePanel({ children }: { children: ReactNode }) {
   )
 }
 
-export function DashboardInbox({
-  reviewerId,
-  reviewerRole
-}: DashboardInboxProps) {
+function UnifiedInbox({ reviewerId, reviewerRole }: DashboardInboxProps) {
   const { refreshCounts } = useDashboard()
   const inbox = useInbox({ refreshCounts })
   const {

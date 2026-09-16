@@ -1,5 +1,5 @@
 import { notFound } from 'next/navigation'
-import { DashboardCaseDetail } from '~/components/dashboard/case/DashboardCaseDetail'
+import { CaseCenter } from '~/components/dashboard/case/CaseCenter'
 import { requireDashboardUser } from '~/lib/dashboard/auth'
 import type { Metadata } from 'next'
 
@@ -7,6 +7,9 @@ export const metadata: Metadata = {
   title: '事项详情'
 }
 
+// Deep links from notifications and the public issue pages land here. The
+// case center renders the same console with this case already open, so the
+// detail is never a page of its own with a different layout.
 export default async function DashboardCasePage({
   params
 }: {
@@ -19,11 +22,5 @@ export default async function DashboardCasePage({
     notFound()
   }
 
-  return (
-    <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto">
-      <div className="w-full min-w-0 max-w-3xl p-4 md:p-6">
-        <DashboardCaseDetail caseId={caseId} />
-      </div>
-    </div>
-  )
+  return <CaseCenter initialCaseId={caseId} />
 }

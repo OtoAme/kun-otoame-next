@@ -2,142 +2,85 @@ import React, { act } from 'react'
 import type { Root } from 'react-dom/client'
 import { JSDOM } from 'jsdom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { CaseListItem, CaseListResponse } from '~/types/api/case'
+import type {
+  CaseListItem,
+  CaseListResponse,
+  CaseStatusCounts
+} from '~/types/api/case'
 
 const mocks = vi.hoisted(() => ({
-  kunFetchGet: vi.fn()
+  kunFetchGet: vi.fn(),
+  searchParams: new URLSearchParams(''),
+  router: { push: vi.fn(), replace: vi.fn() }
 }))
 
 vi.mock('~/utils/kunFetch', () => ({ kunFetchGet: mocks.kunFetchGet }))
-
+vi.mock('next/navigation', () => ({
+  useSearchParams: () => mocks.searchParams,
+  usePathname: () => '/issue',
+  useRouter: () => mocks.router
+}))
 vi.mock('next/link', () => ({
   default: ({
     children,
     href,
-    className
+    className,
+    'aria-current': ariaCurrent
   }: {
     children?: React.ReactNode
     href: string
     className?: string
+    'aria-current'?: React.AriaAttributes['aria-current']
   }) => (
-    <a href={href} className={className}>
+    <a href={href} className={className} aria-current={ariaCurrent}>
       {children}
     </a>
   )
 }))
 
-vi.mock('@heroui/react', async () => {
-  const R = await import('react')
-  const toArray = (children: React.ReactNode): React.ReactElement[] =>
-    (Array.isArray(children) ? children : [children]).filter(
-      (child): child is React.ReactElement => R.isValidElement(child)
-    )
-  return {
-    Button: ({
-      children,
-      onPress,
-      isDisabled,
-      isLoading,
-      'aria-label': ariaLabel
-    }: {
-      children?: React.ReactNode
-      onPress?: () => void
-      isDisabled?: boolean
-      isLoading?: boolean
-      'aria-label'?: string
-    }) => (
-      <button
-        aria-label={ariaLabel}
-        disabled={isDisabled || isLoading}
-        onClick={onPress}
-      >
-        {children}
-      </button>
-    ),
-    Chip: ({ children }: { children?: React.ReactNode }) => (
-      <span>{children}</span>
-    ),
-    Tabs: ({
-      children,
-      selectedKey,
-      onSelectionChange,
-      'aria-label': ariaLabel
-    }: {
-      children?: React.ReactNode
-      selectedKey?: string
-      onSelectionChange?: (key: string) => void
-      'aria-label'?: string
-    }) => (
-      <div role="tablist" aria-label={ariaLabel}>
-        {toArray(children).map((tab) => {
-          const key = String(tab.key ?? '').replace(/^\.\$/, '')
-          return (
-            <button
-              key={key}
-              type="button"
-              role="tab"
-              aria-selected={key === selectedKey}
-              onClick={() => onSelectionChange?.(key)}
-            >
-              {(tab.props as { title?: React.ReactNode }).title}
-            </button>
-          )
-        })}
-      </div>
-    ),
-    Tab: () => null,
-    Select: ({
-      children,
-      selectedKeys,
-      onSelectionChange,
-      'aria-label': ariaLabel
-    }: {
-      children?: React.ReactNode
-      selectedKeys?: string[]
-      onSelectionChange?: (keys: Set<string>) => void
-      'aria-label'?: string
-    }) => (
-      <select
-        aria-label={ariaLabel}
-        value={selectedKeys?.[0] ?? ''}
-        onChange={(event) => onSelectionChange?.(new Set([event.target.value]))}
-      >
-        {toArray(children).map((child) => (
-          <option key={String(child.key)} value={String(child.key)}>
-            {(child.props as { children?: React.ReactNode }).children}
-          </option>
-        ))}
-      </select>
-    ),
-    SelectItem: () => null
-  }
-})
-
-vi.mock('~/components/kun/Loading', () => ({
-  KunLoading: ({ hint }: { hint: string }) => <div role="status">{hint}</div>
-}))
-vi.mock('~/components/kun/Null', () => ({
-  KunNull: ({ message }: { message: string }) => <div>{message}</div>
-}))
-vi.mock('~/components/kun/Pagination', () => ({
-  KunPagination: ({
-    total,
-    page,
-    onPageChange
-  }: {
-    total: number
-    page: number
-    onPageChange: (page: number) => void
-  }) => (
-    <div data-testid="pagination" data-total={total} data-page={page}>
-      <button type="button" onClick={() => onPageChange(page + 1)}>
-        下一页
-      </button>
-    </div>
+vi.mock('~/components/dashboard/issue/IssueCaseDetail', () => ({
+  IssueCaseDetail: ({ caseId }: { caseId: number }) => (
+    <section aria-label="问题详情">问题 {caseId} 的详情</section>
   )
 }))
 
-import { CaseTabsContainer } from '~/components/case/CaseTabsContainer'
+vi.mock('~/components/dashboard/ui/tabs', async () => {
+  const R = await import('react')
+  const Ctx = R.createContext<{ onValueChange?: (value: string) => void }>({})
+  return {
+    Tabs: ({
+      children,
+      onValueChange
+    }: {
+      children?: React.ReactNode
+      onValueChange?: (value: string) => void
+    }) => <Ctx.Provider value={{ onValueChange }}>{children}</Ctx.Provider>,
+    TabsList: ({ children }: { children?: React.ReactNode }) => (
+      <div role="tablist">{children}</div>
+    ),
+    TabsTrigger: ({
+      children,
+      value
+    }: {
+      children?: React.ReactNode
+      value: string
+    }) => {
+      const { onValueChange } = R.useContext(Ctx)
+      return (
+        <button
+          type="button"
+          role="tab"
+          data-value={value}
+          onClick={() => onValueChange?.(value)}
+        >
+          {children}
+        </button>
+      )
+    }
+  }
+})
+
+import { IssueWorkspace } from '~/components/dashboard/issue/IssueWorkspace'
 
 globalThis.React = React
 
@@ -192,23 +135,38 @@ const listItem = (overrides: Partial<CaseListItem> = {}): CaseListItem => ({
   ...overrides
 })
 
+const counts = (
+  overrides: Partial<CaseStatusCounts> = {}
+): CaseStatusCounts => ({
+  open: 0,
+  waiting_reporter: 0,
+  waiting_owner: 0,
+  resolved: 0,
+  rejected: 0,
+  merged: 0,
+  ...overrides
+})
+
 const listResponse = (
   items: CaseListItem[],
-  total = items.length
+  total = items.length,
+  statusCounts: CaseStatusCounts = counts()
 ): CaseListResponse => ({
   tab: 'reported',
   cases: items,
   total,
+  statusCounts,
   page: 1,
   limit: 20
 })
 
-describe('case issue page', () => {
+describe('issue workspace', () => {
   let root: Root | undefined
   let dom: JSDOM | undefined
 
   beforeEach(() => {
     vi.clearAllMocks()
+    mocks.searchParams = new URLSearchParams('')
   })
 
   afterEach(() => {
@@ -241,9 +199,14 @@ describe('case issue page', () => {
     await act(async () => {})
   }
 
-  it('fetches reported tab without status by default and renders rows', async () => {
+  const findTab = (container: HTMLElement, label: string) =>
+    [...container.querySelectorAll('[role="tab"]')].find((tab) =>
+      tab.textContent?.startsWith(label)
+    ) as HTMLElement | undefined
+
+  it('fetches the reported tab without a status filter and renders rows', async () => {
     mocks.kunFetchGet.mockResolvedValue(listResponse([listItem()]))
-    const container = await mount(<CaseTabsContainer />)
+    const container = await mount(<IssueWorkspace />)
     await flush()
 
     expect(mocks.kunFetchGet).toHaveBeenCalledWith('/case', {
@@ -257,77 +220,121 @@ describe('case issue page', () => {
     expect(text).toContain('2 人报告')
     expect(text).toContain('资源X（条目A）')
     expect(text).toContain('正文预览内容')
-    expect(container.querySelector('a[href="/issue/1"]')).not.toBeNull()
+    // 工作区内选中走查询参数，详情深链仍是 /issue/1
+    expect(container.querySelector('a[href="/issue?id=1"]')).not.toBeNull()
   })
 
-  it('switches tabs, filters status (omitted when unset), and paginates', async () => {
-    mocks.kunFetchGet.mockResolvedValue(listResponse([listItem()], 40))
-    const container = await mount(<CaseTabsContainer />)
-    await flush()
-
-    // 切到「待我处理」：page 重置
-    const ownedTab = [...container.querySelectorAll('[role="tab"]')].find(
-      (tab) => tab.textContent === '待我处理'
-    )!
-    await act(async () => {
-      ;(ownedTab as HTMLElement).click()
-    })
-    await flush()
-    expect(mocks.kunFetchGet).toHaveBeenLastCalledWith('/case', {
-      tab: 'owned',
-      page: 1,
-      limit: 20
-    })
-
-    // 选择状态后才带 status 参数
-    const statusSelect = container.querySelector<HTMLSelectElement>(
-      'select[aria-label="按状态筛选"]'
-    )!
-    await act(async () => {
-      Object.getOwnPropertyDescriptor(
-        dom!.window.HTMLSelectElement.prototype,
-        'value'
-      )!.set!.call(statusSelect, 'resolved')
-      statusSelect.dispatchEvent(
-        new dom!.window.Event('change', { bubbles: true })
+  it('groups status tabs into four and counts them from statusCounts', async () => {
+    mocks.kunFetchGet.mockResolvedValue(
+      listResponse(
+        [listItem()],
+        11,
+        counts({
+          open: 2,
+          waiting_owner: 1,
+          waiting_reporter: 3,
+          resolved: 4,
+          rejected: 1
+        })
       )
+    )
+    const container = await mount(<IssueWorkspace />)
+    await flush()
+
+    // 四组的并集等于全部，没有哪个状态只能在「全部」里看到
+    expect(findTab(container, '全部')?.textContent).toBe('全部11')
+    expect(findTab(container, '等待处理方')?.textContent).toBe('等待处理方3')
+    // 我提交的分页里 waiting_reporter 就是等我补充
+    expect(findTab(container, '等待我补充')?.textContent).toBe('等待我补充3')
+    // rejected 不单独成页签，但并进「已结案」而不是只能从「全部」看到
+    expect(findTab(container, '已结案')?.textContent).toBe('已结案5')
+  })
+
+  it('switches tabs, filters by merged status, and paginates through the URL', async () => {
+    mocks.kunFetchGet.mockResolvedValue(listResponse([listItem()], 40))
+    let container = await mount(<IssueWorkspace />)
+    await flush()
+
+    // 切到「待我处理」：page 重置、选中清空
+    await act(async () => {
+      findTab(container, '待我处理')!.click()
     })
+    expect(mocks.router.push).toHaveBeenLastCalledWith('/issue?tab=owned', {
+      scroll: false
+    })
+
+    // 「等待处理方」页签把 open 与 waiting_owner 一次筛出
+    await act(async () => {
+      findTab(container, '等待处理方')!.click()
+    })
+    expect(mocks.router.push).toHaveBeenLastCalledWith(
+      '/issue?status=processing',
+      { scroll: false }
+    )
+
+    act(() => {
+      root?.unmount()
+    })
+    root = undefined
+    mocks.searchParams = new URLSearchParams('tab=owned&status=processing')
+    container = await mount(<IssueWorkspace />)
     await flush()
     expect(mocks.kunFetchGet).toHaveBeenLastCalledWith('/case', {
       tab: 'owned',
-      status: 'resolved',
+      statuses: 'open,waiting_owner',
+      page: 1,
+      limit: 20
+    })
+    // 在「待我处理」分页里，同一组换成第一人称，与列表行徽标口径一致
+    expect(findTab(container, '等待我处理')?.textContent).toBe('等待我处理0')
+
+    // 「已结案」合并 resolved 与 rejected
+    await act(async () => {
+      findTab(container, '已结案')!.click()
+    })
+    expect(mocks.router.push).toHaveBeenLastCalledWith(
+      '/issue?tab=owned&status=closed',
+      { scroll: false }
+    )
+
+    act(() => {
+      root?.unmount()
+    })
+    root = undefined
+    mocks.searchParams = new URLSearchParams('tab=owned&status=closed')
+    container = await mount(<IssueWorkspace />)
+    await flush()
+    expect(mocks.kunFetchGet).toHaveBeenLastCalledWith('/case', {
+      tab: 'owned',
+      statuses: 'resolved,rejected',
       page: 1,
       limit: 20
     })
 
-    // 翻页
     const nextPage = [...container.querySelectorAll('button')].find(
       (button) => button.textContent === '下一页'
     )!
     await act(async () => {
       nextPage.click()
     })
-    await flush()
-    expect(mocks.kunFetchGet).toHaveBeenLastCalledWith('/case', {
-      tab: 'owned',
-      status: 'resolved',
-      page: 2,
-      limit: 20
-    })
+    expect(mocks.router.push).toHaveBeenLastCalledWith(
+      '/issue?tab=owned&status=closed&page=2',
+      { scroll: false }
+    )
   })
 
-  it('shows empty state and error retry', async () => {
+  it('shows the empty state, surfaces load errors, and retries', async () => {
     mocks.kunFetchGet.mockResolvedValue(listResponse([]))
-    const container = await mount(<CaseTabsContainer />)
+    const container = await mount(<IssueWorkspace />)
     await flush()
-    expect(container.textContent).toContain('空空如也')
+    expect(container.textContent).toContain('暂无问题')
 
     mocks.kunFetchGet.mockResolvedValue('请先登录')
-    const retryProbe = [...container.querySelectorAll('[role="tab"]')].find(
-      (tab) => tab.textContent === '我关注的'
+    const refresh = [...container.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('刷新')
     )!
     await act(async () => {
-      ;(retryProbe as HTMLElement).click()
+      refresh.click()
     })
     await flush()
     expect(container.querySelector('[role="alert"]')?.textContent).toContain(
@@ -336,7 +343,7 @@ describe('case issue page', () => {
 
     mocks.kunFetchGet.mockResolvedValue(listResponse([listItem()]))
     const retry = [...container.querySelectorAll('button')].find(
-      (button) => button.textContent === '重试'
+      (button) => button.textContent === '重新加载'
     )!
     await act(async () => {
       retry.click()

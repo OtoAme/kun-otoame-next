@@ -70,6 +70,12 @@ const KIND_ICONS: Record<InboxKind, LucideIcon> = {
   case: ClipboardList
 }
 
+// Cases queue in the inbox but are handled in the case center, so this one
+// source row links there instead of to an inbox filter.
+const KIND_HREFS: Partial<Record<InboxKind, string>> = {
+  case: '/dashboard/case'
+}
+
 const getTotalPending = (counts: InboxCounts) =>
   INBOX_KINDS.reduce((sum, kind) => sum + counts.pending[kind], 0)
 
@@ -110,6 +116,7 @@ export function DashboardSidebar({ currentUser }: DashboardSidebarProps) {
   const isUserSectionActive =
     pathname === '/dashboard/user' || pathname.startsWith('/dashboard/user/')
   const isShoutboxActive = pathname.startsWith('/dashboard/shoutbox')
+  const isCaseCenterActive = pathname.startsWith('/dashboard/case')
   const userSectionNeedsSuperAdmin = currentUser.role < 4
   const closeMobileSidebar = () => setOpenMobile(false)
 
@@ -168,9 +175,11 @@ export function DashboardSidebar({ currentUser }: DashboardSidebarProps) {
               {INBOX_KINDS.map((kind) => {
                 const Icon = KIND_ICONS[kind]
                 const isActive =
-                  isInboxRoot &&
-                  selectedKinds.length === 1 &&
-                  selectedKinds[0] === kind
+                  kind === 'case'
+                    ? isCaseCenterActive
+                    : isInboxRoot &&
+                      selectedKinds.length === 1 &&
+                      selectedKinds[0] === kind
                 return (
                   <SidebarMenuItem key={kind}>
                     <SidebarMenuButton
@@ -178,7 +187,11 @@ export function DashboardSidebar({ currentUser }: DashboardSidebarProps) {
                       isActive={isActive}
                       onClick={closeMobileSidebar}
                     >
-                      <Link href={`/dashboard/inbox?kinds=${kind}`}>
+                      <Link
+                        href={
+                          KIND_HREFS[kind] ?? `/dashboard/inbox?kinds=${kind}`
+                        }
+                      >
                         <Icon />
                         <span>{INBOX_KIND_LABELS[kind]}</span>
                       </Link>

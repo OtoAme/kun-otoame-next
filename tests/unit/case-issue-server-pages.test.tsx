@@ -18,22 +18,35 @@ vi.mock('next/navigation', () => ({
   notFound: mocks.notFound
 }))
 
-// 子组件是 client 边界；这里只验证服务端页面鉴权与渲染接线
-vi.mock('~/components/case/CaseTabsContainer', () => ({
-  CaseTabsContainer: () => <div data-testid="case-tabs-container" />
+vi.mock('next/link', () => ({
+  default: ({
+    children,
+    href
+  }: {
+    children?: React.ReactNode
+    href: string
+  }) => <a href={href}>{children}</a>
 }))
-vi.mock('~/components/case/CaseDetailContainer', () => ({
-  CaseDetailContainer: ({ caseId }: { caseId: number }) => (
-    <div data-testid="case-detail-container" data-case-id={caseId} />
+
+// 子组件是 client 边界；这里只验证服务端路由的鉴权、metadata 与接线
+vi.mock('~/components/dashboard/issue/IssueWorkspace', () => ({
+  IssueWorkspace: () => <div data-testid="issue-workspace" />
+}))
+vi.mock('~/components/dashboard/issue/IssueCaseDetail', () => ({
+  IssueCaseDetail: ({ caseId }: { caseId: number }) => (
+    <div data-testid="issue-case-detail" data-case-id={caseId} />
   )
 }))
-vi.mock('~/components/case/IssueLoginRequired', () => ({
-  IssueLoginRequired: ({ title }: { title: string }) => (
-    <div data-testid="issue-login-required">{title}</div>
+vi.mock('~/components/dashboard/issue/IssueLoginNotice', () => ({
+  IssueLoginNotice: () => <div data-testid="issue-login-notice" />
+}))
+vi.mock('~/components/dashboard/issue/IssueHeader', () => ({
+  IssueHeader: ({ user }: { user: { id: number; name: string } | null }) => (
+    <header data-testid="issue-header" data-user={user ? user.name : ''} />
   )
 }))
 
-describe('issue server pages', () => {
+describe('issue server routes', () => {
   let root: Root | undefined
   let dom: JSDOM | undefined
 
@@ -68,46 +81,83 @@ describe('issue server pages', () => {
     return container
   }
 
-  it('role 1 user renders the issue list page', async () => {
+  it('keeps the private title out of the dashboard title template', async () => {
+    const { metadata } = await import('~/app/(dashboard)/issue/layout')
+    // 父级 (dashboard) 根布局的模板是「%s - OtoAme 管理后台」，用户侧必须跳过它
+    expect(metadata.title).toEqual({ absolute: '问题处理' })
+    expect(metadata.robots).toMatchObject({ index: false, follow: false })
+  })
+
+  it('role 1 user reaches the issue pages through the layout', async () => {
     mocks.verifyHeaderCookie.mockResolvedValue({ uid: 1, name: 'u', role: 1 })
-    const { default: IssuePage } = await import('~/app/(site)/issue/page')
-    const container = await renderElement(await IssuePage())
+    const { default: IssueLayout } = await import(
+      '~/app/(dashboard)/issue/layout'
+    )
+    const container = await renderElement(
+      await IssueLayout({ children: <div data-testid="issue-children" /> })
+    )
     expect(
-      container.querySelector('[data-testid="case-tabs-container"]')
+      container.querySelector('[data-testid="issue-children"]')
+    ).not.toBeNull()
+    expect(
+      container.querySelector('[data-testid="issue-login-notice"]')
+    ).toBeNull()
+    // 用户侧自有顶栏，拿到的是登录用户而不是后台的 role >= 3 用户
+    expect(
+      container
+        .querySelector('[data-testid="issue-header"]')
+        ?.getAttribute('data-user')
+    ).toBe('u')
+  })
+
+  it('anonymous visitor gets the login guidance instead of an error', async () => {
+    mocks.verifyHeaderCookie.mockResolvedValue(null)
+    const { default: IssueLayout } = await import(
+      '~/app/(dashboard)/issue/layout'
+    )
+    const container = await renderElement(
+      await IssueLayout({ children: <div data-testid="issue-children" /> })
+    )
+    expect(
+      container.querySelector('[data-testid="issue-login-notice"]')
+    ).not.toBeNull()
+    expect(container.querySelector('[data-testid="issue-children"]')).toBeNull()
+    // 顶栏仍然渲染，只是没有用户
+    expect(
+      container
+        .querySelector('[data-testid="issue-header"]')
+        ?.getAttribute('data-user')
+    ).toBe('')
+  })
+
+  it('list page renders the workspace', async () => {
+    const { default: IssuePage } = await import('~/app/(dashboard)/issue/page')
+    const container = await renderElement(IssuePage())
+    expect(
+      container.querySelector('[data-testid="issue-workspace"]')
     ).not.toBeNull()
   })
 
-  it('role 2 user renders the issue detail page', async () => {
-    mocks.verifyHeaderCookie.mockResolvedValue({ uid: 2, name: 'u', role: 2 })
+  it('detail page passes the parsed id to the detail component', async () => {
     const { default: IssueDetailPage } = await import(
-      '~/app/(site)/issue/[id]/page'
+      '~/app/(dashboard)/issue/[id]/page'
     )
     const container = await renderElement(
       await IssueDetailPage({ params: Promise.resolve({ id: '5' }) })
     )
-    const detail = container.querySelector(
-      '[data-testid="case-detail-container"]'
-    )
+    const detail = container.querySelector('[data-testid="issue-case-detail"]')
     expect(detail).not.toBeNull()
     expect(detail!.getAttribute('data-case-id')).toBe('5')
-  })
-
-  it('anonymous visitor gets the login fallback on the list page', async () => {
-    mocks.verifyHeaderCookie.mockResolvedValue(null)
-    const { default: IssuePage } = await import('~/app/(site)/issue/page')
-    const container = await renderElement(await IssuePage())
-    expect(
-      container.querySelector('[data-testid="issue-login-required"]')
-    ).not.toBeNull()
+    // 深链回列表用的是 /issue，工作区内选中另走 /issue?id=N
+    expect(container.querySelector('a[href="/issue"]')).not.toBeNull()
   })
 
   it('invalid detail id triggers notFound', async () => {
-    mocks.verifyHeaderCookie.mockResolvedValue({ uid: 1, name: 'u', role: 1 })
     mocks.notFound.mockImplementation(() => {
       throw new Error('NEXT_NOT_FOUND')
     })
     const { default: IssueDetailPage } = await import(
-      '~/app/(site)/issue/[id]/page'
+      '~/app/(dashboard)/issue/[id]/page'
     )
     await expect(
       IssueDetailPage({ params: Promise.resolve({ id: 'abc' }) })

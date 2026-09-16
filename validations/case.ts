@@ -67,9 +67,40 @@ export const createCaseSchema = z
     }
   })
 
+/**
+ * Comma-separated status filter. The list has to arrive as one value because
+ * `kunParseGetQuery` folds the query string through `Object.fromEntries`, which
+ * keeps only the last occurrence of a repeated key. Blank input normalizes to
+ * `undefined`, duplicates collapse, and an unknown segment is rejected rather
+ * than dropped: silently ignoring it would render a filter the caller believes
+ * is active.
+ */
+export const caseStatusesSchema = z
+  .string()
+  .trim()
+  .optional()
+  .transform((value) => {
+    if (!value) return undefined
+    const parts = [
+      ...new Set(
+        value
+          .split(',')
+          .map((part) => part.trim())
+          .filter(Boolean)
+      )
+    ]
+    return parts.length ? parts : undefined
+  })
+  .pipe(
+    z
+      .array(z.enum(CASE_STATUSES, { message: '状态筛选包含未知状态' }))
+      .optional()
+  )
+
 export const caseListSchema = z.object({
   tab: caseTabSchema.default('reported'),
   status: caseStatusSchema.optional(),
+  statuses: caseStatusesSchema,
   page: z.coerce.number().int().min(1).max(2147483647).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(20)
 })
@@ -101,6 +132,19 @@ export const reopenCaseSchema = z.object({ caseId: caseIdSchema })
 
 export const adminCaseListSchema = z.object({
   status: caseStatusSchema.optional(),
+  statuses: caseStatusesSchema,
+  /**
+   * Explicit "no status predicate at all", so the unfiltered queue view does
+   * not have to be spelled as a client-side enumeration of every status — an
+   * enumeration would silently stop covering a status the product starts
+   * writing later. A query value is a string, hence the literal 'true'/'false'
+   * the repo already uses elsewhere: `z.coerce.boolean()` would read 'false'
+   * as true.
+   */
+  allStatuses: z
+    .enum(['true', 'false'])
+    .optional()
+    .transform((value) => (value === undefined ? undefined : value === 'true')),
   kind: caseKindSchema.optional(),
   page: z.coerce.number().int().min(1).max(2147483647).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(20),

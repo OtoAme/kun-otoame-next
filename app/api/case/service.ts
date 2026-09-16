@@ -47,6 +47,8 @@ import type {
 } from '~/constants/case'
 import type {
   CaseActionResponse,
+  AdminCaseListItem,
+  AdminCaseListResponse,
   CaseCapabilities,
   CaseContentActionResponse,
   CaseCreateResponse,
@@ -57,11 +59,13 @@ import type {
   CaseListResponse,
   CaseMessage,
   CaseMessagePayload,
+  CaseMessagePreview,
   CaseMessageResponse,
   CasePatchSummary,
   CaseResourceActionResponse,
   CaseReopenResponse,
   CaseResourceSummary,
+  CaseStatusCounts,
   CaseSummary,
   CaseTargetSummary,
   CaseUserSummary,
@@ -268,6 +272,21 @@ const messageSelect = {
 type CaseMessageRow = Prisma.ops_case_messageGetPayload<{
   select: typeof messageSelect
 }>
+
+const caseListSelect = {
+  ...caseSelect,
+  messages: {
+    orderBy: [{ created: 'desc' }, { id: 'desc' }],
+    take: 1,
+    select: {
+      id: true,
+      kind: true,
+      event: true,
+      body: true,
+      created: true
+    }
+  }
+} satisfies Prisma.ops_caseSelect
 
 const userSelect = { id: true, name: true, avatar: true, role: true } as const
 const unresolvedStatuses = [...CASE_UNRESOLVED_STATUSES]
@@ -694,6 +713,171 @@ const loadTarget = async (
   return { targetExists, patch }
 }
 
+const queryManyIfNeeded = async <T>(
+  ids: readonly number[],
+  query: () => Promise<T[]>
+) => (ids.length ? query() : [])
+
+/**
+ * List endpoints return at most 100 rows. Resolve their polymorphic targets in
+ * bounded batches instead of issuing one target query per case row.
+ */
+const loadTargets = async (db: CaseDb, rows: readonly CaseRow[]) => {
+  const resourceIds = rows
+    .filter((row) => row.target_type === 'resource')
+    .map((row) => row.target_id)
+  const patchTargetIds = rows
+    .filter((row) => row.target_type === 'patch')
+    .map((row) => row.target_id)
+  const patchIds = [
+    ...new Set(
+      rows
+        .map((row) => row.patch_id)
+        .filter((patchId): patchId is number => patchId !== null)
+        .concat(patchTargetIds)
+    )
+  ]
+  const commentIds = rows
+    .filter((row) => row.target_type === 'comment')
+    .map((row) => row.target_id)
+  const ratingIds = rows
+    .filter((row) => row.target_type === 'rating')
+    .map((row) => row.target_id)
+  const shoutboxIds = rows
+    .filter((row) => row.target_type === 'shoutbox')
+    .map((row) => row.target_id)
+  const userIds = rows
+    .filter((row) => row.target_type === 'user')
+    .map((row) => row.target_id)
+
+  const [resources, patches, comments, ratings, shoutboxes, users] =
+    await Promise.all([
+      queryManyIfNeeded(resourceIds, () =>
+        db.patch_resource.findMany({
+          where: { id: { in: resourceIds } },
+          select: {
+            id: true,
+            name: true,
+            section: true,
+            patch_id: true,
+            user_id: true,
+            status: true,
+            patch: { select: { id: true, unique_id: true, name: true } }
+          }
+        })
+      ),
+      queryManyIfNeeded(patchIds, () =>
+        db.patch.findMany({
+          where: { id: { in: patchIds } },
+          select: { id: true, unique_id: true, name: true }
+        })
+      ),
+      queryManyIfNeeded(commentIds, () =>
+        db.patch_comment.findMany({
+          where: { id: { in: commentIds } },
+          select: { id: true }
+        })
+      ),
+      queryManyIfNeeded(ratingIds, () =>
+        db.patch_rating.findMany({
+          where: { id: { in: ratingIds } },
+          select: { id: true }
+        })
+      ),
+      queryManyIfNeeded(shoutboxIds, () =>
+        db.shoutbox.findMany({
+          where: { id: { in: shoutboxIds } },
+          select: { id: true, status: true }
+        })
+      ),
+      queryManyIfNeeded(userIds, () =>
+        db.user.findMany({
+          where: { id: { in: userIds } },
+          select: { id: true }
+        })
+      )
+    ])
+
+  const resourceById = new Map(
+    resources.map((resource) => [resource.id, resource])
+  )
+  const patchById = new Map(patches.map((patch) => [patch.id, patch]))
+  const commentIdsFound = new Set(comments.map((comment) => comment.id))
+  const ratingIdsFound = new Set(ratings.map((rating) => rating.id))
+  const shoutboxById = new Map(
+    shoutboxes.map((shoutbox) => [shoutbox.id, shoutbox])
+  )
+  const userIdsFound = new Set(users.map((user) => user.id))
+  const targetByCaseId = new Map<number, TargetRows>()
+
+  for (const row of rows) {
+    const patch = row.patch_id ? (patchById.get(row.patch_id) ?? null) : null
+    if (row.target_type === 'resource') {
+      const resource = resourceById.get(row.target_id) ?? null
+      targetByCaseId.set(row.id, {
+        targetExists: resource !== null,
+        resource
+      })
+      continue
+    }
+    if (row.target_type === 'patch') {
+      const target = patchById.get(row.target_id) ?? null
+      targetByCaseId.set(row.id, {
+        targetExists: target !== null,
+        patch: target
+      })
+      continue
+    }
+    if (row.target_type === 'comment') {
+      targetByCaseId.set(row.id, {
+        targetExists: commentIdsFound.has(row.target_id),
+        patch
+      })
+      continue
+    }
+    if (row.target_type === 'rating') {
+      targetByCaseId.set(row.id, {
+        targetExists: ratingIdsFound.has(row.target_id),
+        patch
+      })
+      continue
+    }
+    if (row.target_type === 'shoutbox') {
+      const shoutbox = shoutboxById.get(row.target_id)
+      targetByCaseId.set(row.id, {
+        targetExists: shoutbox !== undefined,
+        patch,
+        shoutbox: shoutbox ? { status: shoutbox.status } : null
+      })
+      continue
+    }
+    if (row.target_type === 'user') {
+      targetByCaseId.set(row.id, {
+        targetExists: userIdsFound.has(row.target_id),
+        patch
+      })
+      continue
+    }
+    targetByCaseId.set(row.id, { targetExists: false, patch })
+  }
+  return targetByCaseId
+}
+
+const toMessagePreview = (
+  row: Pick<CaseMessageRow, 'id' | 'kind' | 'event' | 'body' | 'created'>
+): CaseMessagePreview => ({
+  id: row.id,
+  kind: (CASE_MESSAGE_KINDS as readonly string[]).includes(row.kind)
+    ? (row.kind as CaseMessageKind)
+    : 'reply',
+  event:
+    row.event && (CASE_MESSAGE_EVENTS as readonly string[]).includes(row.event)
+      ? (row.event as CaseMessageEvent)
+      : null,
+  body: row.body,
+  created: iso(row.created) ?? new Date(0).toISOString()
+})
+
 const toTargetSummary = (
   row: Pick<CaseRow, 'target_type' | 'target_id' | 'patch_id'>,
   target: TargetRows
@@ -995,9 +1179,10 @@ const serializeSummaryForViewer = async (
   row: CaseRow,
   viewerId: number,
   viewerRole: number,
-  subscribed: boolean
+  subscribed: boolean,
+  suppliedTarget?: TargetRows
 ) => {
-  const target = await loadTarget(db, row)
+  const target = suppliedTarget ?? (await loadTarget(db, row))
   const options = listViewOptions(
     row,
     viewerId,
@@ -1607,6 +1792,23 @@ export const createCase = async (
   }
 }
 
+/**
+ * Turn one `groupBy({ by: ['status'] })` result into a dense record. Every
+ * `CaseStatus` key is present so the tab strip can index it directly, including
+ * statuses this module never writes.
+ */
+const toStatusCounts = (
+  groups: readonly { status: string; _count: { _all: number } }[]
+): CaseStatusCounts => {
+  const counts = Object.fromEntries(
+    CASE_STATUSES.map((status) => [status, 0])
+  ) as CaseStatusCounts
+  for (const group of groups) {
+    if (isCaseStatus(group.status)) counts[group.status] += group._count._all
+  }
+  return counts
+}
+
 const getTabWhere = (tab: CaseTab, uid: number): Prisma.ops_caseWhereInput => {
   if (tab === 'owned') {
     return { owner_type: 'publisher', owner_id: uid }
@@ -1624,66 +1826,81 @@ export const listCases = async (
   options: { db?: PrismaClient } = {}
 ): Promise<CaseListResponse | string> => {
   const db = options.db ?? prisma
-  const where: Prisma.ops_caseWhereInput = {
-    ...getTabWhere(input.tab, viewerId),
-    ...(input.status ? { status: input.status } : {})
-  }
-  const [rows, total] = await Promise.all([
+  // The tab predicate alone is the counting scope: folding either status filter
+  // in would make every tab count equal its own filter. `total` adds the status
+  // filter on top of the same scope, so both come from one set of predicates.
+  // Neither number subtracts the per-row visibility trimming below, which can
+  // drop rows the count already included; that skew is pre-existing behaviour.
+  const scopeWhere = getTabWhere(input.tab, viewerId)
+  // `statuses` wins over the single `status` when both arrive. It is the form
+  // that expresses a merged tab (处理中 = open + waiting_owner), so a leftover
+  // `status` from an older client must not narrow it back down.
+  const statusWhere: Prisma.ops_caseWhereInput = input.statuses?.length
+    ? { status: { in: input.statuses } }
+    : input.status
+      ? { status: input.status }
+      : {}
+  const where: Prisma.ops_caseWhereInput = { ...scopeWhere, ...statusWhere }
+  const [rows, total, statusGroups] = await Promise.all([
     db.ops_case.findMany({
       where,
       orderBy: [{ status_changed_at: 'desc' }, { id: 'desc' }],
       skip: (input.page - 1) * input.limit,
       take: input.limit,
-      select: caseSelect
+      select: caseListSelect
     }),
-    db.ops_case.count({ where })
+    db.ops_case.count({ where }),
+    db.ops_case.groupBy({
+      by: ['status'],
+      where: scopeWhere,
+      _count: { _all: true }
+    })
   ])
-  const cases: CaseListItem[] = []
-  for (const row of rows) {
-    const subscribed = Boolean(
-      await db.ops_case_subscriber.findUnique({
-        where: { case_id_user_id: { case_id: row.id, user_id: viewerId } },
-        select: { user_id: true }
+  const caseIds = rows.map((row) => row.id)
+  const [targetByCaseId, subscribedRows] = await Promise.all([
+    loadTargets(db, rows),
+    queryManyIfNeeded(caseIds, () =>
+      db.ops_case_subscriber.findMany({
+        where: { case_id: { in: caseIds }, user_id: viewerId },
+        select: { case_id: true }
       })
     )
+  ])
+  const subscribedCaseIds = new Set(subscribedRows.map((row) => row.case_id))
+  const cases: CaseListItem[] = []
+  for (const row of rows) {
+    const subscribed = subscribedCaseIds.has(row.id)
     const serialized = await serializeSummaryForViewer(
       db,
       row,
       viewerId,
       viewerRole,
-      subscribed
+      subscribed,
+      targetByCaseId.get(row.id)
     )
     if (!serialized) continue
-    const messages =
-      serialized.view === 'subscriber-public' ||
-      serialized.view === 'subscriber-private'
-        ? []
-        : await db.ops_case_message.findMany({
-            where: { case_id: row.id },
-            orderBy: [{ created: 'desc' }, { id: 'desc' }],
-            take: 1,
-            select: messageSelect
-          })
+    const latestMessage = row.messages?.[0]
     cases.push({
       ...serialized.summary,
       ...(serialized.view !== 'subscriber-public' &&
       serialized.view !== 'subscriber-private'
         ? {
-            latestMessage: messages[0]
-              ? {
-                  id: messages[0].id,
-                  kind: messages[0].kind as CaseMessageKind,
-                  event: (messages[0].event as CaseMessageEvent | null) ?? null,
-                  body: messages[0].body,
-                  created: iso(messages[0].created) ?? new Date(0).toISOString()
-                }
+            latestMessage: latestMessage
+              ? toMessagePreview(latestMessage)
               : null
           }
         : {}),
       ...capabilitiesFor(row, viewerId, viewerRole, serialized.target)
     })
   }
-  return { tab: input.tab, cases, total, page: input.page, limit: input.limit }
+  return {
+    tab: input.tab,
+    cases,
+    total,
+    statusCounts: toStatusCounts(statusGroups),
+    page: input.page,
+    limit: input.limit
+  }
 }
 
 const actorCanReply = (row: CaseRow, uid: number, role: number) =>
@@ -2480,55 +2697,79 @@ export const handleCaseContent = async (
 export const getAdminCases = async (
   input: AdminListInput,
   options: { db?: PrismaClient; now?: Date } = {}
-) => {
+): Promise<AdminCaseListResponse> => {
   const db = options.db ?? prisma
   const now = options.now ?? new Date()
   const contains = { contains: input.search, mode: 'insensitive' as const }
-  const where: Prisma.ops_caseWhereInput = {
-    owner_type: 'staff',
-    ...(input.status
-      ? { status: input.status }
-      : { status: { in: unresolvedStatuses } }),
-    ...(input.kind ? { kind: input.kind } : {}),
-    ...(input.search
-      ? {
-          OR: [
-            {
-              id: Number.isSafeInteger(Number(input.search))
-                ? Number(input.search)
-                : undefined
-            },
-            { kind: contains },
-            { messages: { some: { body: contains } } }
-          ].filter(Boolean) as Prisma.ops_caseWhereInput[]
-        }
-      : {})
+  const numericSearch = Number(input.search)
+  const searchPredicates: Prisma.ops_caseWhereInput[] = [
+    { kind: contains },
+    { messages: { some: { body: contains } } }
+  ]
+  if (
+    input.search &&
+    Number.isSafeInteger(numericSearch) &&
+    numericSearch > 0
+  ) {
+    searchPredicates.unshift({ id: numericSearch })
   }
-  const [rows, total] = await Promise.all([
+  // Counting scope is the queue minus every status predicate — `statuses`,
+  // `status` and `allStatuses` all stay out of it. Any of them would pin each
+  // tab's count to that tab's own filter, and the default `unresolvedStatuses`
+  // window would additionally hide the closed tabs the strip has to render.
+  // `total` keeps the status predicate, so it stays the count of the rows this
+  // response pages through.
+  const scopeWhere: Prisma.ops_caseWhereInput = {
+    owner_type: 'staff',
+    ...(input.kind ? { kind: input.kind } : {}),
+    ...(input.search ? { OR: searchPredicates } : {})
+  }
+  // Status ladder, most specific rung first: an explicit list beats a single
+  // status, and `allStatuses` only opens the queue when neither was given —
+  // a concrete selection must never be widened by a leftover flag. The last
+  // rung is the inbox default and stays as it was.
+  const statusWhere: Prisma.ops_caseWhereInput = input.statuses?.length
+    ? { status: { in: input.statuses } }
+    : input.status
+      ? { status: input.status }
+      : input.allStatuses
+        ? {}
+        : { status: { in: unresolvedStatuses } }
+  const where: Prisma.ops_caseWhereInput = { ...scopeWhere, ...statusWhere }
+  const [rows, total, statusGroups] = await Promise.all([
     db.ops_case.findMany({
       where,
       orderBy: [{ status_changed_at: 'asc' }, { id: 'asc' }],
       skip: (input.page - 1) * input.limit,
       take: input.limit,
-      select: caseSelect
+      select: caseListSelect
     }),
-    db.ops_case.count({ where })
+    db.ops_case.count({ where }),
+    db.ops_case.groupBy({
+      by: ['status'],
+      where: scopeWhere,
+      _count: { _all: true }
+    })
   ])
-  const cases: CaseSummary[] = []
+  const targetByCaseId = await loadTargets(db, rows)
+  const cases: AdminCaseListItem[] = []
   for (const row of rows) {
-    const target = await loadTarget(db, row)
-    cases.push(
-      toSummary(row, target, {
+    const target = targetByCaseId.get(row.id) ?? { targetExists: false }
+    const latestMessage = row.messages?.[0]
+    cases.push({
+      ...toSummary(row, target, {
         identifyReporter: true,
         includeCount: true,
         includeOwner: true,
         includeReporter: true
-      })
-    )
+      }),
+      latestMessage: latestMessage ? toMessagePreview(latestMessage) : null
+    })
   }
   return {
     cases,
     total,
+    statusCounts: toStatusCounts(statusGroups),
     page: input.page,
     limit: input.limit,
     now: now.toISOString()

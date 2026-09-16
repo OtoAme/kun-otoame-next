@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
-import { Loader2 } from 'lucide-react'
+import { ExternalLink, Loader2 } from 'lucide-react'
 
 import {
   AlertDialog,
@@ -17,7 +17,6 @@ import { Badge } from '~/components/dashboard/ui/badge'
 import { Button } from '~/components/dashboard/ui/button'
 import { Checkbox } from '~/components/dashboard/ui/checkbox'
 import { Input } from '~/components/dashboard/ui/input'
-import { Separator } from '~/components/dashboard/ui/separator'
 import { Textarea } from '~/components/dashboard/ui/textarea'
 import {
   Select,
@@ -28,19 +27,15 @@ import {
 } from '~/components/dashboard/ui/select'
 import { InboxDetailSkeleton } from '~/components/dashboard/inbox/InboxDetailSkeleton'
 import { kunFetchGet, kunFetchPost } from '~/utils/kunFetch'
-import { formatChinaDateTime } from '~/utils/fixedTimezoneDate'
 import {
   CASE_CONTENT_MAX_LENGTH,
-  CASE_KIND_LABELS,
   CASE_QUICK_REPLIES,
-  CASE_RESOLUTION_LABELS,
-  CASE_TARGET_TYPE_LABELS
+  CASE_RESOLUTION_LABELS
 } from '~/constants/case'
 import {
-  caseMessageAuthorLabel,
+  caseKindLabel,
   caseResolutionLabel,
   caseStatusLabel,
-  caseSystemEventText,
   caseTargetText
 } from '~/components/case/caseDisplay'
 import type {
@@ -52,6 +47,10 @@ import type {
   CaseResourceActionResponse
 } from '~/types/api/case'
 import type { CaseContentAction } from '~/constants/case'
+
+import { CASE_STATUS_BADGE_VARIANTS } from './caseBadges'
+import { CaseConversation } from './CaseConversation'
+import { CaseDetailProperties } from './CaseDetailProperties'
 
 /** 驳回态结论：走 handle 的 reject 动作，其余结论走 resolve。 */
 const REJECT_RESOLUTIONS: ReadonlySet<CaseResolution> = new Set([
@@ -72,71 +71,12 @@ interface DashboardCaseDetailProps {
   onStateChanged?: () => void
 }
 
-function MetaField({
-  label,
-  children
-}: {
-  label: string
-  children: React.ReactNode
-}) {
-  return (
-    <div className="space-y-0.5">
-      <dt className="text-xs text-muted-foreground">{label}</dt>
-      <dd className="break-words text-sm">{children}</dd>
-    </div>
-  )
-}
-
-function TargetInfo({ detail }: { detail: CaseDetail }) {
-  const { target } = detail
-  if (target.deleted) {
-    return (
-      <p className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">
-        目标已删除
-      </p>
-    )
-  }
-  return (
-    <dl className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-      <MetaField label="目标类型">
-        {CASE_TARGET_TYPE_LABELS[detail.targetType] ?? detail.targetType}
-      </MetaField>
-      <MetaField label="目标">
-        {detail.targetType === 'user' ? (
-          <a
-            href={`/user/${detail.targetId}`}
-            className="text-primary underline-offset-4 hover:underline"
-          >
-            {target.label || `用户 #${detail.targetId}`}
-          </a>
-        ) : (
-          (target.label ?? null) || caseTargetText(detail)
-        )}
-      </MetaField>
-      {target.patch ? (
-        <MetaField label="所属条目">
-          <a
-            href={`/${target.patch.uniqueId}`}
-            className="text-primary underline-offset-4 hover:underline"
-          >
-            {target.patch.name || target.patch.uniqueId}
-          </a>
-        </MetaField>
-      ) : null}
-      {target.resource &&
-      target.resource.patch &&
-      target.resource.patch.id !== target.patch?.id ? (
-        <MetaField label="资源当前条目">
-          <a
-            href={`/${target.resource.patch.uniqueId}`}
-            className="text-primary underline-offset-4 hover:underline"
-          >
-            {target.resource.patch.name || target.resource.patch.uniqueId}
-          </a>
-        </MetaField>
-      ) : null}
-    </dl>
-  )
+/** 前台可打开的目标页；目标已删除或没有对应页面时不给入口。 */
+const targetHref = (detail: CaseDetail): string | null => {
+  if (detail.target.deleted) return null
+  if (detail.targetType === 'user') return `/user/${detail.targetId}`
+  const patch = detail.target.resource?.patch ?? detail.target.patch
+  return patch ? `/${patch.uniqueId}` : null
 }
 
 export function DashboardCaseDetail({
@@ -359,6 +299,8 @@ export function DashboardCaseDetail({
     setHandledUserConfirmed(false)
     if (terminal) {
       onProcessed?.()
+    } else if (action.type === 'resource' && action.action === 'restore') {
+      onStateChanged?.()
     }
     await load()
   }
@@ -400,6 +342,13 @@ export function DashboardCaseDetail({
         !capabilities.canConfirmUserHandled
       )
   )
+  const href = targetHref(detail)
+  const hasAdjudication =
+    capabilities.canResolve ||
+    capabilities.canHideResource ||
+    capabilities.canRestoreResource ||
+    capabilities.canMoveResource ||
+    capabilities.canHandleContent
 
   // 内容处置动作完全由服务端按目标当前状态给出，前端不自行推导
   const contentActionMeta = (
@@ -464,385 +413,316 @@ export function DashboardCaseDetail({
   }
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-start justify-between gap-3">
-        <h3 className="break-all text-base font-semibold">
-          {CASE_KIND_LABELS[detail.kind] ?? detail.kind} #{detail.id}
-        </h3>
-        <div className="flex shrink-0 flex-wrap items-center gap-1.5">
-          <Badge variant="secondary">{caseStatusLabel(detail.status)}</Badge>
+    <div className="@container space-y-4">
+      <header className="space-y-1.5">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="shrink-0 text-sm tabular-nums text-muted-foreground">
+            #{detail.id}
+          </span>
+          <h3 className="min-w-0 break-words text-base font-semibold">
+            {caseTargetText(detail)}
+          </h3>
+          <Badge variant={CASE_STATUS_BADGE_VARIANTS[detail.status]}>
+            {caseStatusLabel(detail.status)}
+          </Badge>
           {currentResolutionLabel ? (
             <Badge variant="outline">{currentResolutionLabel}</Badge>
           ) : null}
+          {href ? (
+            <Button asChild variant="outline" size="sm" className="ml-auto">
+              <a href={href} target="_blank" rel="noreferrer">
+                <ExternalLink className="size-4" aria-hidden />
+                查看目标
+              </a>
+            </Button>
+          ) : null}
         </div>
-      </div>
+        <p className="text-xs text-muted-foreground">
+          {caseKindLabel(detail.kind)} ·{' '}
+          {detail.ownerType === 'publisher' ? '发布者处理' : '站方处理'}
+        </p>
+      </header>
 
-      <dl className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <MetaField label="事项类型">
-          {CASE_KIND_LABELS[detail.kind] ?? detail.kind}
-        </MetaField>
-        <MetaField label="当前处理方">
-          {detail.ownerType === 'publisher'
-            ? `发布者${detail.owner ? `（${detail.owner.name}）` : ''}`
-            : '站方'}
-        </MetaField>
-        {detail.reporter ? (
-          <MetaField label="开启者">
-            <a
-              href={`/user/${detail.reporter.id}`}
-              className="text-primary underline-offset-4 hover:underline"
-            >
-              {detail.reporter.name}
-            </a>
-          </MetaField>
-        ) : (
-          <MetaField label="开启者">报告者</MetaField>
-        )}
-        {detail.subscriberCount !== null ? (
-          <MetaField label="报告人数">{detail.subscriberCount}</MetaField>
-        ) : null}
-        <MetaField label="创建时间">
-          {formatChinaDateTime(detail.created)}
-        </MetaField>
-        <MetaField label="进入当前状态">
-          {formatChinaDateTime(detail.statusChangedAt)}
-        </MetaField>
-        {detail.escalatedAt ? (
-          <MetaField label="升级时间">
-            {formatChinaDateTime(detail.escalatedAt)}
-          </MetaField>
-        ) : null}
-        {detail.firstOwnerResponseAt ? (
-          <MetaField label="首次回应">
-            {formatChinaDateTime(detail.firstOwnerResponseAt)}
-          </MetaField>
-        ) : null}
-        {detail.closedAt ? (
-          <MetaField label="结案时间">
-            {formatChinaDateTime(detail.closedAt)}
-          </MetaField>
-        ) : null}
-        {detail.hiddenAt ? (
-          <MetaField label="隐藏时间">
-            {formatChinaDateTime(detail.hiddenAt)}
-          </MetaField>
-        ) : null}
-        {detail.restoredAt ? (
-          <MetaField label="恢复时间">
-            {formatChinaDateTime(detail.restoredAt)}
-          </MetaField>
-        ) : null}
-      </dl>
-
-      <Separator />
-
-      <section className="space-y-2" aria-label="事项目标">
-        <h4 className="text-sm font-semibold">目标</h4>
-        <TargetInfo detail={detail} />
-      </section>
-
-      {detail.messages.length > 0 ? (
-        <>
-          <Separator />
+      <div className="grid min-w-0 gap-6 @[40rem]:grid-cols-[minmax(0,1fr)_16rem]">
+        <div className="min-w-0 space-y-4">
           <section className="space-y-2" aria-label="沟通记录">
             <h4 className="text-sm font-semibold">沟通记录</h4>
-            <ul className="space-y-2">
-              {detail.messages.map((message) =>
-                message.kind === 'system' ? (
-                  <li key={message.id} className="flex justify-center">
-                    <span className="rounded-full bg-muted px-3 py-1 text-xs text-muted-foreground">
-                      {caseSystemEventText(message)} ·{' '}
-                      {formatChinaDateTime(message.created)}
-                    </span>
-                  </li>
-                ) : (
-                  <li key={message.id} className="rounded-md border p-3">
-                    <div className="mb-1 flex items-center gap-2 text-xs text-muted-foreground">
-                      <span className="font-medium text-foreground">
-                        {caseMessageAuthorLabel(message)}
-                      </span>
-                      <span>{formatChinaDateTime(message.created)}</span>
-                    </div>
-                    <p className="whitespace-pre-wrap break-words text-sm">
-                      {message.body}
-                    </p>
-                  </li>
-                )
-              )}
-            </ul>
+            {/*
+              The admin detail is never anonymized (the server identifies
+              reporters here), so a null author can only be a deleted
+              account — never an anonymized one.
+            */}
+            <CaseConversation messages={detail.messages} identifiesReporter />
           </section>
-        </>
-      ) : null}
 
-      {capabilities.canReply ? (
-        <>
-          <Separator />
-          <section className="space-y-2" aria-label="回复">
-            <h4 className="text-sm font-semibold">回复</h4>
-            <div className="flex flex-wrap gap-2">
-              {CASE_QUICK_REPLIES.map((reply) => (
+          {capabilities.canReply ? (
+            <section className="space-y-2" aria-label="回复">
+              <h4 className="text-sm font-semibold">回复</h4>
+              <div className="flex flex-wrap gap-2">
+                {CASE_QUICK_REPLIES.map((reply) => (
+                  <Button
+                    key={reply.code}
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={working}
+                    onClick={() => setReplyContent(reply.content)}
+                  >
+                    {reply.label}
+                  </Button>
+                ))}
+              </div>
+              <Textarea
+                aria-label="回复内容"
+                value={replyContent}
+                onChange={(event) => setReplyContent(event.target.value)}
+                maxLength={CASE_CONTENT_MAX_LENGTH}
+                rows={3}
+                disabled={working}
+                placeholder="回复报告者（纯文字）"
+              />
+              <div className="flex items-center justify-end gap-3">
+                {actionError && pendingAction === null ? (
+                  <p role="alert" className="text-sm text-destructive">
+                    {actionError}
+                  </p>
+                ) : null}
                 <Button
-                  key={reply.code}
                   type="button"
-                  variant="outline"
                   size="sm"
-                  disabled={working}
-                  onClick={() => setReplyContent(reply.content)}
+                  disabled={!replyContent.trim() || working}
+                  onClick={() => void handleReply()}
                 >
-                  {reply.label}
+                  发送回复
                 </Button>
-              ))}
-            </div>
-            <Textarea
-              aria-label="回复内容"
-              value={replyContent}
-              onChange={(event) => setReplyContent(event.target.value)}
-              maxLength={CASE_CONTENT_MAX_LENGTH}
-              rows={3}
-              disabled={working}
-              placeholder="回复报告者（纯文字）"
-            />
-            <div className="flex items-center justify-end gap-3">
+              </div>
+            </section>
+          ) : null}
+
+          {hasAdjudication ? (
+            <section
+              className="space-y-3 rounded-md border p-3"
+              aria-label="裁决操作"
+            >
+              <h4 className="text-sm font-semibold">裁决操作</h4>
+
+              {capabilities.canResolve ? (
+                <div className="space-y-2">
+                  <label
+                    htmlFor="case-resolution"
+                    className="text-sm font-medium"
+                  >
+                    处理结论
+                  </label>
+                  <Select
+                    value={resolution}
+                    onValueChange={(value) =>
+                      setResolution(value as CaseResolution)
+                    }
+                    disabled={working}
+                  >
+                    <SelectTrigger id="case-resolution">
+                      <SelectValue placeholder="请选择处理结论" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {resolutionOptions.map((value) => (
+                        <SelectItem key={value} value={value}>
+                          {CASE_RESOLUTION_LABELS[value] ?? value}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+
+                  {isUserTargetHandled ? (
+                    <div className="space-y-2 rounded-md border border-dashed p-3">
+                      <p className="text-sm text-muted-foreground">
+                        用户举报须先在
+                        <Link
+                          href="/dashboard/user"
+                          className="mx-1 text-primary underline-offset-4 hover:underline"
+                        >
+                          用户管理
+                        </Link>
+                        完成实际处置，再回这里登记结论。
+                      </p>
+                      <div className="flex items-center gap-2">
+                        <Checkbox
+                          id="case-handled-user-confirmed"
+                          checked={handledUserConfirmed}
+                          onCheckedChange={(checked) =>
+                            setHandledUserConfirmed(checked === true)
+                          }
+                          disabled={working}
+                        />
+                        <label
+                          htmlFor="case-handled-user-confirmed"
+                          className="text-sm"
+                        >
+                          我已在用户管理完成对该用户的处置
+                        </label>
+                      </div>
+                    </div>
+                  ) : null}
+
+                  <label
+                    htmlFor="case-action-content"
+                    className="text-sm font-medium"
+                  >
+                    处理说明
+                    {isUserTargetHandled ||
+                    (resolution &&
+                      REJECT_RESOLUTIONS.has(resolution as CaseResolution))
+                      ? '（必填）'
+                      : '（可选）'}
+                  </label>
+                  <Textarea
+                    id="case-action-content"
+                    value={actionContent}
+                    onChange={(event) => setActionContent(event.target.value)}
+                    maxLength={CASE_CONTENT_MAX_LENGTH}
+                    rows={3}
+                    disabled={working}
+                    placeholder="给报告者的说明（纯文字）"
+                  />
+                  <div className="flex justify-end">
+                    <Button
+                      type="button"
+                      size="sm"
+                      disabled={!resolution || working}
+                      onClick={(event) =>
+                        openConfirm(
+                          {
+                            type: 'resolve',
+                            resolution: resolution as CaseResolution
+                          },
+                          event.currentTarget
+                        )
+                      }
+                    >
+                      结案
+                    </Button>
+                  </div>
+                </div>
+              ) : null}
+
+              {capabilities.canHideResource ||
+              capabilities.canRestoreResource ||
+              capabilities.canMoveResource ||
+              capabilities.canHandleContent ? (
+                <div className="flex flex-wrap items-center gap-2">
+                  {capabilities.canHideResource ? (
+                    <Button
+                      type="button"
+                      variant="destructive"
+                      size="sm"
+                      disabled={working}
+                      onClick={(event) =>
+                        openConfirm(
+                          { type: 'resource', action: 'hide' },
+                          event.currentTarget
+                        )
+                      }
+                    >
+                      隐藏资源
+                    </Button>
+                  ) : null}
+                  {capabilities.canRestoreResource ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={working}
+                      onClick={(event) =>
+                        openConfirm(
+                          { type: 'resource', action: 'restore' },
+                          event.currentTarget
+                        )
+                      }
+                    >
+                      恢复资源
+                    </Button>
+                  ) : null}
+                  {capabilities.allowedContentActions.map((action) => (
+                    <Button
+                      key={action}
+                      type="button"
+                      variant={
+                        contentActionMeta(action).destructive
+                          ? 'destructive'
+                          : 'outline'
+                      }
+                      size="sm"
+                      disabled={working}
+                      onClick={(event) =>
+                        openConfirm(
+                          { type: 'content', action },
+                          event.currentTarget
+                        )
+                      }
+                    >
+                      {contentActionMeta(action).label}
+                    </Button>
+                  ))}
+                </div>
+              ) : null}
+
+              {capabilities.canMoveResource ? (
+                <div className="flex flex-wrap items-end gap-2">
+                  <div className="space-y-1">
+                    <label
+                      htmlFor="case-move-target"
+                      className="text-sm font-medium"
+                    >
+                      移动到条目 ID
+                    </label>
+                    <Input
+                      id="case-move-target"
+                      inputMode="numeric"
+                      className="w-40"
+                      value={moveTargetPatchId}
+                      onChange={(event) =>
+                        setMoveTargetPatchId(event.target.value)
+                      }
+                      disabled={working}
+                      placeholder="目标条目 ID"
+                    />
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={!moveTargetPatchId.trim() || working}
+                    onClick={(event) =>
+                      openConfirm(
+                        { type: 'resource', action: 'move' },
+                        event.currentTarget
+                      )
+                    }
+                  >
+                    移动并结案
+                  </Button>
+                </div>
+              ) : null}
+
               {actionError && pendingAction === null ? (
                 <p role="alert" className="text-sm text-destructive">
                   {actionError}
                 </p>
               ) : null}
-              <Button
-                type="button"
-                size="sm"
-                disabled={!replyContent.trim() || working}
-                onClick={() => void handleReply()}
-              >
-                发送回复
-              </Button>
-            </div>
-          </section>
-        </>
-      ) : null}
+              {working ? (
+                <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
+                  正在提交…
+                </span>
+              ) : null}
+            </section>
+          ) : null}
+        </div>
 
-      {capabilities.canResolve ||
-      capabilities.canHideResource ||
-      capabilities.canRestoreResource ||
-      capabilities.canMoveResource ||
-      capabilities.canHandleContent ? (
-        <>
-          <Separator />
-          <section className="space-y-3" aria-label="裁决操作">
-            <h4 className="text-sm font-semibold">裁决操作</h4>
-
-            {capabilities.canResolve ? (
-              <div className="space-y-2">
-                <label
-                  htmlFor="case-resolution"
-                  className="text-sm font-medium"
-                >
-                  处理结论
-                </label>
-                <Select
-                  value={resolution}
-                  onValueChange={(value) =>
-                    setResolution(value as CaseResolution)
-                  }
-                  disabled={working}
-                >
-                  <SelectTrigger id="case-resolution">
-                    <SelectValue placeholder="请选择处理结论" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {resolutionOptions.map((value) => (
-                      <SelectItem key={value} value={value}>
-                        {CASE_RESOLUTION_LABELS[value] ?? value}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-
-                {isUserTargetHandled ? (
-                  <div className="space-y-2 rounded-md border border-dashed p-3">
-                    <p className="text-sm text-muted-foreground">
-                      用户举报须先在
-                      <Link
-                        href="/dashboard/user"
-                        className="mx-1 text-primary underline-offset-4 hover:underline"
-                      >
-                        用户管理
-                      </Link>
-                      完成实际处置，再回这里登记结论。
-                    </p>
-                    <div className="flex items-center gap-2">
-                      <Checkbox
-                        id="case-handled-user-confirmed"
-                        checked={handledUserConfirmed}
-                        onCheckedChange={(checked) =>
-                          setHandledUserConfirmed(checked === true)
-                        }
-                        disabled={working}
-                      />
-                      <label
-                        htmlFor="case-handled-user-confirmed"
-                        className="text-sm"
-                      >
-                        我已在用户管理完成对该用户的处置
-                      </label>
-                    </div>
-                  </div>
-                ) : null}
-
-                <label
-                  htmlFor="case-action-content"
-                  className="text-sm font-medium"
-                >
-                  处理说明
-                  {isUserTargetHandled ||
-                  (resolution &&
-                    REJECT_RESOLUTIONS.has(resolution as CaseResolution))
-                    ? '（必填）'
-                    : '（可选）'}
-                </label>
-                <Textarea
-                  id="case-action-content"
-                  value={actionContent}
-                  onChange={(event) => setActionContent(event.target.value)}
-                  maxLength={CASE_CONTENT_MAX_LENGTH}
-                  rows={3}
-                  disabled={working}
-                  placeholder="给报告者的说明（纯文字）"
-                />
-                <div className="flex justify-end">
-                  <Button
-                    type="button"
-                    size="sm"
-                    disabled={!resolution || working}
-                    onClick={(event) =>
-                      openConfirm(
-                        {
-                          type: 'resolve',
-                          resolution: resolution as CaseResolution
-                        },
-                        event.currentTarget
-                      )
-                    }
-                  >
-                    结案
-                  </Button>
-                </div>
-              </div>
-            ) : null}
-
-            {capabilities.canHideResource ||
-            capabilities.canRestoreResource ||
-            capabilities.canMoveResource ||
-            capabilities.canHandleContent ? (
-              <div className="flex flex-wrap items-center gap-2">
-                {capabilities.canHideResource ? (
-                  <Button
-                    type="button"
-                    variant="destructive"
-                    size="sm"
-                    disabled={working}
-                    onClick={(event) =>
-                      openConfirm(
-                        { type: 'resource', action: 'hide' },
-                        event.currentTarget
-                      )
-                    }
-                  >
-                    隐藏资源
-                  </Button>
-                ) : null}
-                {capabilities.canRestoreResource ? (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    disabled={working}
-                    onClick={(event) =>
-                      openConfirm(
-                        { type: 'resource', action: 'restore' },
-                        event.currentTarget
-                      )
-                    }
-                  >
-                    恢复资源
-                  </Button>
-                ) : null}
-                {capabilities.allowedContentActions.map((action) => (
-                  <Button
-                    key={action}
-                    type="button"
-                    variant={
-                      contentActionMeta(action).destructive
-                        ? 'destructive'
-                        : 'outline'
-                    }
-                    size="sm"
-                    disabled={working}
-                    onClick={(event) =>
-                      openConfirm(
-                        { type: 'content', action },
-                        event.currentTarget
-                      )
-                    }
-                  >
-                    {contentActionMeta(action).label}
-                  </Button>
-                ))}
-              </div>
-            ) : null}
-
-            {capabilities.canMoveResource ? (
-              <div className="flex flex-wrap items-end gap-2">
-                <div className="space-y-1">
-                  <label
-                    htmlFor="case-move-target"
-                    className="text-sm font-medium"
-                  >
-                    移动到条目 ID
-                  </label>
-                  <Input
-                    id="case-move-target"
-                    inputMode="numeric"
-                    className="w-40"
-                    value={moveTargetPatchId}
-                    onChange={(event) =>
-                      setMoveTargetPatchId(event.target.value)
-                    }
-                    disabled={working}
-                    placeholder="目标条目 ID"
-                  />
-                </div>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  disabled={!moveTargetPatchId.trim() || working}
-                  onClick={(event) =>
-                    openConfirm(
-                      { type: 'resource', action: 'move' },
-                      event.currentTarget
-                    )
-                  }
-                >
-                  移动并结案
-                </Button>
-              </div>
-            ) : null}
-
-            {actionError && pendingAction === null ? (
-              <p role="alert" className="text-sm text-destructive">
-                {actionError}
-              </p>
-            ) : null}
-            {working ? (
-              <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-                <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
-                正在提交…
-              </span>
-            ) : null}
-          </section>
-        </>
-      ) : null}
+        <aside className="min-w-0" aria-label="事项属性面板">
+          <CaseDetailProperties detail={detail} />
+        </aside>
+      </div>
 
       <AlertDialog
         open={pendingAction !== null}

@@ -37,11 +37,12 @@ vi.mock('~/components/dashboard/ui/alert-dialog', async () => {
   const Ctx = R.createContext<{ onOpenChange: (open: boolean) => void }>({
     onOpenChange: () => {}
   })
-  const Block =
-    (slot: string) =>
-    ({ children }: { children?: React.ReactNode }) => (
-      <div data-slot={slot}>{children}</div>
-    )
+  const Block = (slot: string) => {
+    function MockBlock({ children }: { children?: React.ReactNode }) {
+      return <div data-slot={slot}>{children}</div>
+    }
+    return MockBlock
+  }
   return {
     AlertDialog: ({
       open,
@@ -360,6 +361,43 @@ describe('dashboard case detail', () => {
     )
   })
 
+  it('labels a null author as a deleted account, never as the reporter', async () => {
+    const detail = makeDetail({
+      messages: [
+        {
+          id: 1,
+          kind: 'reply',
+          event: null,
+          body: '举报原因正文',
+          author: { id: 5, name: '举报人', avatar: '' },
+          payload: null,
+          created: '2026-09-13T00:00:00.000Z'
+        },
+        {
+          id: 2,
+          kind: 'reply',
+          event: null,
+          body: '处理方回复正文',
+          author: null,
+          payload: null,
+          created: '2026-09-13T01:00:00.000Z'
+        }
+      ]
+    })
+    mocks.kunFetchGet.mockResolvedValue(detailResponse(detail))
+    const container = await mount(<DashboardCaseDetail caseId={9} />)
+    await flush()
+
+    // 后台视角服务端不脱敏任何作者，所以 author 为 null 只可能是账号已注销；
+    // 记到「报告者」名下会把处理方说的话算到举报人头上
+    const conversation = container.querySelector(
+      'section[aria-label="沟通记录"]'
+    )!
+    expect(conversation.textContent).toContain('已注销用户')
+    expect(conversation.textContent).not.toContain('报告者')
+    expect(conversation.textContent).toContain('处理方回复正文')
+  })
+
   it('resolve requires confirmation; cancel writes nothing; conflict keeps dialog', async () => {
     const detail = makeDetail({
       kind: 'other',
@@ -673,6 +711,54 @@ describe('dashboard case detail', () => {
       '/admin/case/9/content',
       { action: 'delete' }
     )
+  })
+
+  it('refreshes the list after restoring a hidden resource', async () => {
+    const detail = makeDetail({
+      kind: 'resource_mismatch',
+      targetType: 'resource',
+      status: 'resolved',
+      resolution: 'escalated_hidden',
+      hiddenAt: '2026-09-13T00:00:00.000Z',
+      closedAt: '2026-09-13T00:00:00.000Z',
+      capabilities: {
+        canReply: false,
+        canResolve: false,
+        canReopen: false,
+        canHideResource: false,
+        canRestoreResource: true,
+        canMoveResource: false,
+        canHandleContent: false,
+        canConfirmUserHandled: false,
+        allowedContentActions: [],
+        allowedResolutions: []
+      }
+    })
+    mocks.kunFetchGet.mockResolvedValue(detailResponse(detail))
+    mocks.kunFetchPost.mockResolvedValue({ case: detail, changed: true })
+    const container = await mount(
+      <DashboardCaseDetail
+        caseId={9}
+        onProcessed={mocks.onProcessed}
+        onStateChanged={mocks.onStateChanged}
+      />
+    )
+    await flush()
+
+    await act(async () => {
+      findButton(container, '恢复资源')!.click()
+    })
+    expect(mocks.kunFetchPost).not.toHaveBeenCalled()
+    await act(async () => {
+      findButton(container, '确认')!.click()
+    })
+    await flush()
+
+    expect(mocks.kunFetchPost).toHaveBeenCalledWith('/admin/case/9/resource', {
+      action: 'restore'
+    })
+    expect(mocks.onStateChanged).toHaveBeenCalledOnce()
+    expect(mocks.onProcessed).not.toHaveBeenCalled()
   })
 
   it('move validates target patch id before confirming', async () => {
