@@ -218,7 +218,9 @@ describe('listCompanyMergeSuggestions', () => {
     vi.clearAllMocks()
   })
 
-  it('returns pending rows in the API shape', async () => {
+  it('returns pending rows in the API shape with their participant companies', async () => {
+    // 空白会被折叠, 超过 60 字只发开头一段
+    const longIntroduction = '甲 '.repeat(40).trim()
     mocks.prisma.company_merge_suggestion.findMany.mockResolvedValue([
       {
         id: 3,
@@ -230,25 +232,107 @@ describe('listCompanyMergeSuggestions', () => {
         detected_at: new Date('2026-09-17T03:04:05.000Z')
       }
     ])
+    mocks.prisma.patch_company.findMany.mockResolvedValue([
+      {
+        id: 1,
+        name: 'Koei',
+        alias: ['光栄'],
+        introduction: longIntroduction,
+        user_id: 42,
+        official_website: ['https://koei.example'],
+        parent_brand: ['Koei Tecmo']
+      },
+      {
+        id: 2,
+        name: 'KOEI Co., Ltd.',
+        alias: [],
+        introduction: '',
+        user_id: 42,
+        official_website: [],
+        parent_brand: []
+      }
+    ])
 
-    await expect(listCompanyMergeSuggestions()).resolves.toEqual({
-      items: [
+    const result = await listCompanyMergeSuggestions()
+
+    expect(result.items[0]).toEqual({
+      id: 3,
+      kind: 'suffix-unique-hit',
+      status: 'pending',
+      foldedKey: 'koei',
+      targetCompanyId: 1,
+      sourceCompanyIds: [2],
+      names: ['Koei', 'KOEI Co., Ltd.'],
+      participants: [
         {
-          id: 3,
-          kind: 'suffix-unique-hit',
-          status: 'pending',
-          foldedKey: 'koei',
-          targetCompanyId: 1,
-          sourceCompanyIds: [2],
-          names: ['Koei', 'KOEI Co., Ltd.'],
-          detectedAt: '2026-09-17T03:04:05.000Z'
+          companyId: 1,
+          name: 'Koei',
+          aliases: ['光栄'],
+          introductionPreview: `${longIntroduction.slice(0, 60)}…`,
+          ownerId: 42,
+          officialWebsites: ['https://koei.example'],
+          parentBrands: ['Koei Tecmo']
+        },
+        {
+          companyId: 2,
+          name: 'KOEI Co., Ltd.',
+          aliases: [],
+          introductionPreview: '',
+          ownerId: 42,
+          officialWebsites: [],
+          parentBrands: []
         }
-      ]
+      ],
+      detectedAt: '2026-09-17T03:04:05.000Z'
     })
 
     expect(mocks.prisma.company_merge_suggestion.findMany).toHaveBeenCalledWith(
       expect.objectContaining({ where: { status: 'pending' } })
     )
+  })
+
+  it('keeps a cluster readable when one of its companies is already gone', async () => {
+    mocks.prisma.company_merge_suggestion.findMany.mockResolvedValue([
+      {
+        id: 3,
+        kind: 'suffix-unique-hit',
+        folded_key: 'koei',
+        target_company_id: 1,
+        source_company_ids: [2],
+        names: ['Koei', 'KOEI Co., Ltd.'],
+        detected_at: new Date('2026-09-17T03:04:05.000Z')
+      }
+    ])
+    mocks.prisma.patch_company.findMany.mockResolvedValue([
+      {
+        id: 1,
+        name: 'Koei',
+        alias: [],
+        introduction: '',
+        user_id: 42,
+        official_website: [],
+        parent_brand: []
+      }
+    ])
+
+    const result = await listCompanyMergeSuggestions()
+
+    expect(result.items[0].participants[1]).toEqual({
+      companyId: 2,
+      name: null,
+      aliases: [],
+      introductionPreview: '',
+      ownerId: null,
+      officialWebsites: [],
+      parentBrands: []
+    })
+  })
+
+  it('does not read the company table when the queue is empty', async () => {
+    mocks.prisma.company_merge_suggestion.findMany.mockResolvedValue([])
+
+    await expect(listCompanyMergeSuggestions()).resolves.toEqual({ items: [] })
+    expect(mocks.prisma.patch_company.findMany).not.toHaveBeenCalled()
   })
 })
 

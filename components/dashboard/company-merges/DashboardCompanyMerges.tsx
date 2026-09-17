@@ -23,6 +23,7 @@ import {
   type CompanyMergeSuggestionListResponse
 } from '~/types/api/companyMerges'
 import { DismissSuggestionDialog } from './DismissSuggestionDialog'
+import { MergeSuggestionDialog } from './MergeSuggestionDialog'
 
 const SKELETON_ROWS = 3
 const FALLBACK_ERROR = '获取会社合并建议失败，请稍后重试'
@@ -30,10 +31,10 @@ const NETWORK_ERROR = '网络错误，请检查网络连接后重试'
 const DETECT_FALLBACK_ERROR = '检测失败，请稍后重试'
 
 /**
- * Company merge queue. 检测 only scans `patch_company` and writes suggestions;
- * nothing on this page merges or edits a company, so the only actions are
- * detect, refresh and dismiss. Dismissed keys are never revived by a later
- * scan.
+ * Company merge queue. 检测 only scans `patch_company` and writes suggestions.
+ * 驳回 records the decision and touches nothing else; 合并 is the one action on
+ * this page that writes company rows, and it does so through the same writer as
+ * the offline cleanup. Dismissed keys are never revived by a later scan.
  */
 export const DashboardCompanyMerges = () => {
   const [items, setItems] = useState<CompanyMergeSuggestion[] | null>(null)
@@ -116,7 +117,8 @@ export const DashboardCompanyMerges = () => {
     }
   }
 
-  const handleDismissed = useCallback((id: number) => {
+  // 驳回与合并都让这一行离开队列, 列表本地先摘掉, 不必等下一次刷新。
+  const handleResolved = useCallback((id: number) => {
     setItems((prev) =>
       prev === null ? prev : prev.filter((item) => item.id !== id)
     )
@@ -197,11 +199,18 @@ export const DashboardCompanyMerges = () => {
                   {formatChinaDateTime(suggestion.detectedAt)}
                 </TableCell>
                 <TableCell className="text-right align-top">
-                  <DismissSuggestionDialog
-                    suggestion={suggestion}
-                    onDismissed={handleDismissed}
-                    fallbackFocusRef={listRef}
-                  />
+                  <div className="flex justify-end gap-2">
+                    <MergeSuggestionDialog
+                      suggestion={suggestion}
+                      onMerged={handleResolved}
+                      fallbackFocusRef={listRef}
+                    />
+                    <DismissSuggestionDialog
+                      suggestion={suggestion}
+                      onDismissed={handleResolved}
+                      fallbackFocusRef={listRef}
+                    />
+                  </div>
                 </TableCell>
               </TableRow>
             ))}
@@ -233,7 +242,7 @@ export const DashboardCompanyMerges = () => {
           刷新
         </Button>
         <p className="text-sm text-muted-foreground">
-          检测只读取会社表并生成建议，不会合并或修改任何会社。
+          检测只读取会社表并生成建议；合并与驳回都要在这里手动确认。
         </p>
       </div>
 
