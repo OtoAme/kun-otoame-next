@@ -10,6 +10,7 @@ import {
   type CompanyDatabaseState
 } from '~/scripts/companyCleanupFrozenContract'
 import { validateFrozenPlanSimulation } from '~/scripts/companyCleanupFrozenApply'
+import { normalizeCompanyValue } from '~/app/api/company/identity/normalize'
 import {
   buildCompanyInventory,
   fetchNextmoeEvidence,
@@ -304,6 +305,166 @@ const nextmoeFetchers = () => ({
   pauseNextmoeBatches: async () => undefined
 })
 
+const MEBIUS_VARIANT_NAME = 'Mebius（株式会社メビウス）'
+const MEBIUS_VARIANT_NORMALIZED = normalizeCompanyValue(MEBIUS_VARIANT_NAME)
+
+/**
+ * DUSK INDEX: GION in production: the VNDB and Bangumi refs are shared by a
+ * Mebius spelling that belongs to the same catalog company and by a separate
+ * Cherrymochi studio.
+ */
+const gionState = (): CompanyDatabaseState => ({
+  companies: [
+    {
+      id: 51,
+      ref: getCompanyRef({
+        id: 51,
+        name: 'Mebius',
+        normalizedName: 'mebius'
+      }),
+      name: 'Mebius',
+      normalizedName: 'mebius',
+      introduction: '',
+      count: 2,
+      primaryLanguage: ['ja'],
+      sourceWebsites: [],
+      parentBrands: [],
+      aliases: [],
+      ownerRef: getCompanyOwnerRef(42),
+      updated: '2026-08-31T00:00:00.000Z',
+      externalIds: [],
+      identities: [
+        {
+          kind: 'name',
+          origin: 'authoritative',
+          value: 'Mebius',
+          normalizedValue: 'mebius',
+          confirmedByRef: null
+        }
+      ],
+      relations: [
+        {
+          patchId: 100,
+          patchUniqueId: 'patch-100',
+          vndbId: 'v49059',
+          bangumiId: 473829
+        }
+      ]
+    },
+    {
+      id: 52,
+      ref: getCompanyRef({
+        id: 52,
+        name: MEBIUS_VARIANT_NAME,
+        normalizedName: MEBIUS_VARIANT_NORMALIZED
+      }),
+      name: MEBIUS_VARIANT_NAME,
+      normalizedName: MEBIUS_VARIANT_NORMALIZED,
+      introduction: '',
+      count: 1,
+      primaryLanguage: ['ja'],
+      sourceWebsites: [],
+      parentBrands: [],
+      aliases: [],
+      ownerRef: getCompanyOwnerRef(42),
+      updated: '2026-08-31T00:00:00.000Z',
+      externalIds: [],
+      identities: [
+        {
+          kind: 'name',
+          origin: 'legacy',
+          value: MEBIUS_VARIANT_NAME,
+          normalizedValue: MEBIUS_VARIANT_NORMALIZED,
+          confirmedByRef: null
+        }
+      ],
+      relations: [
+        {
+          patchId: 101,
+          patchUniqueId: 'patch-101',
+          vndbId: null,
+          bangumiId: 473829
+        }
+      ]
+    },
+    {
+      id: 53,
+      ref: getCompanyRef({
+        id: 53,
+        name: 'Cherrymochi',
+        normalizedName: 'cherrymochi'
+      }),
+      name: 'Cherrymochi',
+      normalizedName: 'cherrymochi',
+      introduction: '',
+      count: 1,
+      primaryLanguage: ['ja'],
+      sourceWebsites: [],
+      parentBrands: [],
+      aliases: [],
+      ownerRef: getCompanyOwnerRef(42),
+      updated: '2026-08-31T00:00:00.000Z',
+      externalIds: [],
+      identities: [
+        {
+          kind: 'name',
+          origin: 'authoritative',
+          value: 'Cherrymochi',
+          normalizedValue: 'cherrymochi',
+          confirmedByRef: null
+        }
+      ],
+      relations: [
+        {
+          patchId: 102,
+          patchUniqueId: 'patch-102',
+          vndbId: 'v49059',
+          bangumiId: null
+        }
+      ]
+    }
+  ]
+})
+
+const gionFetchers = () => ({
+  fetchNextmoeWorks: vi.fn(async (refs: string[]) => ({
+    object: 'list' as const,
+    items: refs.map((ref) => ({
+      object: 'work',
+      id: `work:${ref}`,
+      companies: [
+        { object: 'company', id: 'mebius-cat', display_name: 'Mebius' },
+        {
+          object: 'company',
+          id: 'cherrymochi-cat',
+          display_name: 'Cherrymochi'
+        }
+      ]
+    })),
+    missing: []
+  })),
+  fetchNextmoeCompanies: vi.fn(async (ids: string[]) => ({
+    object: 'list' as const,
+    items: ids.map((id) =>
+      id === 'mebius-cat'
+        ? {
+            object: 'company',
+            id,
+            display_name: 'Mebius',
+            aliases: [
+              { value: MEBIUS_VARIANT_NAME, lang: 'ja' },
+              { value: 'mebius', lang: 'ja' },
+              { value: '株式会社メビウス', lang: 'ja' },
+              { value: 'メビウス機械', lang: 'ja', is_machine: true }
+            ]
+          }
+        : { object: 'company', id, display_name: 'Cherrymochi' }
+    ),
+    missing: []
+  })),
+  pauseNextmoeBatches: async () => undefined
+})
+
 describe('frozen company cleanup planner', () => {
   it('refuses to write a plan when snapshot B differs from snapshot A', async () => {
     const snapshotA = state()
@@ -496,6 +657,99 @@ describe('frozen company cleanup planner', () => {
     // The simulated apply writes the merged relation map size, not the stale
     // pre-merge counter; production triggers are asserted separately.
     expect(merged.count).toBe(2)
+    expect(() => validateFrozenPlanSimulation(result.plan)).not.toThrow()
+  })
+
+  it('binds and merges only one of two catalog companies sharing a work', async () => {
+    const snapshot = gionState()
+    const paths = await prepareArtifacts(snapshot)
+    const fetchers = gionFetchers()
+
+    const result = await generateFrozenCompanyCleanupPlan({
+      db: database([snapshot, snapshot]) as never,
+      ...paths,
+      fetchVndbCandidates: vi.fn(async () => []),
+      ...fetchers
+    })
+
+    expect(fetchers.fetchNextmoeWorks).toHaveBeenCalledWith([
+      'vndb:v49059',
+      'bangumi:473829'
+    ])
+    expect(fetchers.fetchNextmoeCompanies).toHaveBeenCalledWith([
+      'mebius-cat',
+      'cherrymochi-cat'
+    ])
+    expect(result.plan.blockers).toEqual([])
+    // A frozen plan serializes every array in canonical order, so the evidence
+    // is ordered by its canonical JSON rather than by company id.
+    expect(result.plan.evidenceActions).toEqual([
+      {
+        companyId: 53,
+        source: 'nextmoe',
+        externalId: 'cherrymochi-cat',
+        authoritativeValues: ['Cherrymochi']
+      },
+      {
+        companyId: 51,
+        source: 'nextmoe',
+        externalId: 'mebius-cat',
+        authoritativeValues: [
+          'mebius',
+          'Mebius（株式会社メビウス）',
+          '株式会社メビウス'
+        ]
+      }
+    ])
+    // The catalog's machine alias is dropped before the evidence is frozen.
+    expect(
+      result.plan.evidenceActions.find(
+        (action) => action.externalId === 'mebius-cat'
+      )?.authoritativeValues
+    ).not.toContain('メビウス機械')
+    expect(result.plan.mergeActions).toMatchObject([
+      { kind: 'automatic', targetCompanyId: 51, sourceCompanyIds: [52] }
+    ])
+    expect(result.plan.limits.actions).toBe(3)
+
+    const postState = result.plan.expectedPostState
+    expect(postState.companies.map((company) => company.id)).toEqual([51, 53])
+    const [mebius, cherrymochi] = postState.companies
+    expect(mebius.name).toBe('Mebius')
+    expect(mebius.externalIds).toContainEqual({
+      source: 'nextmoe',
+      externalId: 'mebius-cat'
+    })
+    expect(mebius.aliases).toContain('Mebius（株式会社メビウス）')
+    expect(mebius.aliases).toContain('株式会社メビウス')
+    expect(
+      [...mebius.relations]
+        .sort((left, right) => left.patchId - right.patchId)
+        .map((relation) => [
+          relation.patchId,
+          relation.vndbId,
+          relation.bangumiId
+        ])
+    ).toEqual([
+      [100, 'v49059', 473829],
+      [101, null, 473829]
+    ])
+
+    expect(cherrymochi.name).toBe('Cherrymochi')
+    expect(cherrymochi.aliases).toEqual([])
+    expect(cherrymochi.externalIds).toContainEqual({
+      source: 'nextmoe',
+      externalId: 'cherrymochi-cat'
+    })
+    expect(cherrymochi.relations).toEqual([
+      {
+        patchId: 102,
+        patchUniqueId: 'patch-102',
+        vndbId: 'v49059',
+        bangumiId: null
+      }
+    ])
+
     expect(() => validateFrozenPlanSimulation(result.plan)).not.toThrow()
   })
 })

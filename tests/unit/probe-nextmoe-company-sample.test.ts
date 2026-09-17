@@ -20,6 +20,12 @@ const work = (id: string, companyIds: string[]) => ({
   }))
 })
 
+// The probe asks for its frozen work sample in one batch: the Koei refs first,
+// then DUSK INDEX: GION and 耽美梦想2. Steam ids stay local and are never
+// sent as a NextMoe ref.
+const SAMPLE_WORK_REF_QUERY =
+  'works:vndb:v2168,bangumi:21041,vndb:v49059,bangumi:473829,vndb:v3996,bangumi:60542'
+
 const company = (id: string) => ({
   object: 'company',
   id,
@@ -115,7 +121,7 @@ describe('runNextmoeCompanySampleProbe', () => {
     await runNextmoeCompanySampleProbe(client, (line) => lines.push(line))
 
     expect(calls).toEqual([
-      'works:vndb:v2168,bangumi:21041',
+      SAMPLE_WORK_REF_QUERY,
       'producers:vndb:p473',
       'ids:99,7'
     ])
@@ -152,10 +158,7 @@ describe('runNextmoeCompanySampleProbe', () => {
     await runNextmoeCompanySampleProbe(client, (line) => lines.push(line))
 
     expect(client.listCompaniesByIds).not.toHaveBeenCalled()
-    expect(calls).toEqual([
-      'works:vndb:v2168,bangumi:21041',
-      'producers:vndb:p473'
-    ])
+    expect(calls).toEqual([SAMPLE_WORK_REF_QUERY, 'producers:vndb:p473'])
     expect(JSON.parse(lines[0]).workCompanies).toBeNull()
   })
 

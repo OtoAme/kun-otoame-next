@@ -7,7 +7,14 @@ import {
   type NextmoeCatalogClient
 } from '~/app/api/company/nextmoe/client'
 
-const SAMPLE_WORK_REFS = ['vndb:v2168', 'bangumi:21041']
+const SAMPLE_WORK_REFS = [
+  'vndb:v2168',
+  'bangumi:21041',
+  'vndb:v49059',
+  'bangumi:473829',
+  'vndb:v3996',
+  'bangumi:60542'
+]
 const SAMPLE_COMPANY_REFS = ['vndb:p473']
 const SAMPLE_COMPANY_ID_MAX = 100
 

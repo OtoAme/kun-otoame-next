@@ -7,6 +7,7 @@ import {
   type CompanyNextmoeEvidenceCandidate,
   type MaintenanceCompany
 } from '~/scripts/companyIdentityMaintenance'
+import { normalizeCompanyValue } from '~/app/api/company/identity/normalize'
 import type { TrustedCompanyCandidate } from '~/app/api/company/identity/types'
 
 const company = (
@@ -42,6 +43,18 @@ const vndbCandidate = (
     primaryLanguage: 'ja',
     sourceWebsites: []
   }
+})
+
+const nextmoeCandidate = (
+  companyId: number,
+  externalId: string,
+  displayName: string,
+  values: string[]
+): CompanyNextmoeEvidenceCandidate => ({
+  companyId,
+  externalId,
+  displayName,
+  values
 })
 
 describe('company identity maintenance inventory', () => {
@@ -182,18 +195,6 @@ describe('authoritative VNDB evidence planning', () => {
 })
 
 describe('authoritative NextMoe evidence planning', () => {
-  const nextmoeCandidate = (
-    companyId: number,
-    externalId: string,
-    displayName: string,
-    values: string[]
-  ): CompanyNextmoeEvidenceCandidate => ({
-    companyId,
-    externalId,
-    displayName,
-    values
-  })
-
   const koeiCompanies = () => [
     company(12, 'KOEI Co., Ltd.', {
       normalizedName: 'koei co., ltd.',
@@ -365,5 +366,189 @@ describe('authoritative alias merge planning', () => {
     const result = buildAuthoritativeAliasCompanyMergePlan(companies)
     expect(result.merges).toEqual([])
     expect(result.warnings[0]).toContain('Skip ambiguous company')
+  })
+})
+
+/**
+ * Production dirty data: one work lists several spellings and several catalog
+ * companies. NextMoe evidence is resolved per catalog company, so only the
+ * spellings carried by the same catalog company merge into each other.
+ */
+describe('NextMoe evidence across production name variants', () => {
+  const mebiusCatalogValues = [
+    'Mebius',
+    'Mebius（株式会社メビウス）',
+    'mebius',
+    '株式会社メビウス'
+  ]
+
+  // 'Mebius' and 'mebius' normalize alike, so evidence keeps the last spelling
+  // the catalog returned for that value.
+  const mebiusAuthoritativeValues = [
+    'mebius',
+    'Mebius（株式会社メビウス）',
+    '株式会社メビウス'
+  ]
+
+  const mebiusCompanies = () => [
+    company(1, 'Mebius', {
+      normalizedName: normalizeCompanyValue('Mebius'),
+      count: 3
+    }),
+    company(2, 'Mebius（株式会社メビウス）', {
+      normalizedName: normalizeCompanyValue('Mebius（株式会社メビウス）'),
+      count: 1
+    }),
+    company(3, 'mebius', {
+      normalizedName: normalizeCompanyValue('mebius'),
+      count: 1
+    })
+  ]
+
+  it('merges every mebius spelling into the highest-count company', () => {
+    const companies = mebiusCompanies()
+    const evidence = planAuthoritativeNextmoeCompanyEvidence({
+      companies,
+      candidates: companies.map((row) =>
+        nextmoeCandidate(row.id, 'mebius-cat', 'Mebius', mebiusCatalogValues)
+      )
+    })
+
+    expect(evidence.actions).toEqual([
+      {
+        companyId: 1,
+        source: 'nextmoe',
+        externalId: 'mebius-cat',
+        authoritativeValues: mebiusAuthoritativeValues
+      }
+    ])
+    expect(
+      buildAuthoritativeAliasCompanyMergePlan(companies, evidence.actions)
+        .merges
+    ).toEqual([
+      {
+        targetCompanyId: 1,
+        targetName: 'Mebius',
+        sourceCompanyIds: [3, 2],
+        sourceNames: ['mebius', 'Mebius（株式会社メビウス）']
+      }
+    ])
+  })
+
+  it('keeps two catalog companies from the same work apart', () => {
+    const companies = [
+      company(1, 'Mebius', {
+        normalizedName: normalizeCompanyValue('Mebius'),
+        count: 3
+      }),
+      company(2, 'Cherrymochi', {
+        normalizedName: normalizeCompanyValue('Cherrymochi'),
+        count: 1
+      })
+    ]
+    const evidence = planAuthoritativeNextmoeCompanyEvidence({
+      companies,
+      candidates: [
+        nextmoeCandidate(1, 'mebius-cat', 'Mebius', mebiusCatalogValues),
+        nextmoeCandidate(2, 'cherrymochi-cat', 'Cherrymochi', ['Cherrymochi'])
+      ]
+    })
+
+    expect(evidence.actions).toEqual([
+      {
+        companyId: 1,
+        source: 'nextmoe',
+        externalId: 'mebius-cat',
+        authoritativeValues: mebiusAuthoritativeValues
+      },
+      {
+        companyId: 2,
+        source: 'nextmoe',
+        externalId: 'cherrymochi-cat',
+        authoritativeValues: ['Cherrymochi']
+      }
+    ])
+    expect(
+      buildAuthoritativeAliasCompanyMergePlan(companies, evidence.actions)
+        .merges
+    ).toEqual([])
+  })
+
+  it('merges the Tenky spelling into its catalog company', () => {
+    const companies = [
+      company(1, 'Tenky', {
+        normalizedName: normalizeCompanyValue('Tenky'),
+        count: 1
+      }),
+      company(2, 'テンキー', {
+        normalizedName: normalizeCompanyValue('テンキー'),
+        count: 1
+      })
+    ]
+    const evidence = planAuthoritativeNextmoeCompanyEvidence({
+      companies,
+      candidates: companies.map((row) =>
+        nextmoeCandidate(row.id, 'tenky-cat', 'Tenky', ['Tenky', 'テンキー'])
+      )
+    })
+
+    expect(evidence.actions).toEqual([
+      {
+        companyId: 1,
+        source: 'nextmoe',
+        externalId: 'tenky-cat',
+        authoritativeValues: ['Tenky', 'テンキー']
+      }
+    ])
+    expect(
+      buildAuthoritativeAliasCompanyMergePlan(companies, evidence.actions)
+        .merges
+    ).toEqual([
+      {
+        targetCompanyId: 1,
+        targetName: 'Tenky',
+        sourceCompanyIds: [2],
+        sourceNames: ['テンキー']
+      }
+    ])
+  })
+
+  it('keeps the KONAMI publisher out of the Tenky developer', () => {
+    const companies = [
+      company(1, 'KONAMI', {
+        normalizedName: normalizeCompanyValue('KONAMI'),
+        count: 5
+      }),
+      company(2, 'テンキー', {
+        normalizedName: normalizeCompanyValue('テンキー'),
+        count: 1
+      })
+    ]
+    const evidence = planAuthoritativeNextmoeCompanyEvidence({
+      companies,
+      candidates: [
+        nextmoeCandidate(1, 'konami-cat', 'KONAMI', ['KONAMI']),
+        nextmoeCandidate(2, 'tenky-cat', 'Tenky', ['Tenky', 'テンキー'])
+      ]
+    })
+
+    expect(evidence.actions).toEqual([
+      {
+        companyId: 1,
+        source: 'nextmoe',
+        externalId: 'konami-cat',
+        authoritativeValues: ['KONAMI']
+      },
+      {
+        companyId: 2,
+        source: 'nextmoe',
+        externalId: 'tenky-cat',
+        authoritativeValues: ['Tenky', 'テンキー']
+      }
+    ])
+    expect(
+      buildAuthoritativeAliasCompanyMergePlan(companies, evidence.actions)
+        .merges
+    ).toEqual([])
   })
 })
