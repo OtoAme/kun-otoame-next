@@ -15,6 +15,7 @@ import {
   LayoutDashboard,
   LogOut,
   Megaphone,
+  Merge,
   MessageSquare,
   Package,
   UserRound,
@@ -108,6 +109,7 @@ export function DashboardSidebar({ currentUser }: DashboardSidebarProps) {
   const isUserSectionActive =
     pathname === '/dashboard/user' || pathname.startsWith('/dashboard/user/')
   const isShoutboxActive = pathname.startsWith('/dashboard/shoutbox')
+  const isCompanyMergesActive = pathname.startsWith('/dashboard/company-merges')
   const userSectionNeedsSuperAdmin = currentUser.role < 4
   const closeMobileSidebar = () => setOpenMobile(false)
 
@@ -211,6 +213,18 @@ export function DashboardSidebar({ currentUser }: DashboardSidebarProps) {
                   <Link href="/dashboard/shoutbox" title="小喇叭">
                     <Megaphone />
                     <span className="shrink-0 whitespace-nowrap">小喇叭</span>
+                  </Link>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  asChild
+                  isActive={isCompanyMergesActive}
+                  onClick={closeMobileSidebar}
+                >
+                  <Link href="/dashboard/company-merges" title="会社合并">
+                    <Merge />
+                    <span className="shrink-0 whitespace-nowrap">会社合并</span>
                   </Link>
                 </SidebarMenuButton>
               </SidebarMenuItem>

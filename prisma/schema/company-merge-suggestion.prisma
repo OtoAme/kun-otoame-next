@@ -1,0 +1,40 @@
+/// Merge candidates detected by the identity dashboard. Detection only writes
+/// here: the queue never mutates `patch_company`, so a suggestion is a human
+/// review item rather than a pending write.
+///
+/// There is deliberately no unique constraint on (kind, folded_key, status).
+/// A key that was dismissed can be detected again later and dismissed a second
+/// time, which would collide; only one *pending* row per key is allowed and the
+/// detect service enforces that by lookup.
+///
+/// `resolved_by_user_id` is a plain scalar instead of a `user` relation: the
+/// opposite relation field would have to live in `prisma/schema/user.prisma`,
+/// which this stage does not touch.
+model company_merge_suggestion {
+  id Int @id @default(autoincrement())
+
+  // 'suffix-unique-hit' for now; every detector adds its own kind.
+  kind String @db.VarChar(32)
+  // pending | dismissed | accepted
+  status String @db.VarChar(16)
+  // Legal-form-folded name every company of the cluster shares.
+  folded_key String @db.VarChar(107)
+
+  target_company_id  Int
+  source_company_ids Int[]
+  // Cluster order: the target name first, then the sources.
+  names String[]
+
+  // { kind, foldedKey } — enough to re-derive the cluster without a re-scan.
+  evidence Json
+
+  detected_at         DateTime  @default(now())
+  resolved_at         DateTime?
+  resolved_by_user_id Int?
+
+  created DateTime @default(now())
+  updated DateTime @updatedAt
+
+  @@index([status, detected_at(sort: Desc)])
+  @@index([kind, folded_key, status])
+}
