@@ -1,7 +1,7 @@
 import { chmod, mkdtemp, realpath, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
   COMPANY_CLEANUP_SCHEMA_VERSION,
@@ -12,6 +12,7 @@ import {
 import { validateFrozenPlanSimulation } from '~/scripts/companyCleanupFrozenApply'
 import {
   buildCompanyInventory,
+  fetchNextmoeEvidence,
   finalizeFrozenCompanyCleanupPlan,
   generateFrozenCompanyCleanupPlan
 } from '~/scripts/companyCleanupFrozenPlanner'
@@ -22,8 +23,18 @@ import {
 } from '~/scripts/companyCleanupFrozenState'
 
 const temporaryDirectories: string[] = []
+const originalNextmoeApiKey = process.env.KUN_NEXTMOE_API_KEY
+
+beforeEach(() => {
+  delete process.env.KUN_NEXTMOE_API_KEY
+})
 
 afterEach(async () => {
+  if (originalNextmoeApiKey === undefined) {
+    delete process.env.KUN_NEXTMOE_API_KEY
+  } else {
+    process.env.KUN_NEXTMOE_API_KEY = originalNextmoeApiKey
+  }
   await Promise.all(
     temporaryDirectories
       .splice(0)
@@ -61,7 +72,14 @@ const state = (withVndbRelation = false): CompanyDatabaseState => ({
         }
       ],
       relations: withVndbRelation
-        ? [{ patchId: 10, patchUniqueId: 'patch-10', vndbId: 'v10' }]
+        ? [
+            {
+              patchId: 10,
+              patchUniqueId: 'patch-10',
+              vndbId: 'v10',
+              bangumiId: null
+            }
+          ]
         : []
     }
   ]
@@ -96,7 +114,9 @@ const manualMergeState = (): CompanyDatabaseState => {
         confirmedByRef: null
       }
     ],
-    relations: [{ patchId: 11, patchUniqueId: 'patch-11', vndbId: 'v11' }]
+    relations: [
+      { patchId: 11, patchUniqueId: 'patch-11', vndbId: 'v11', bangumiId: null }
+    ]
   })
   return snapshot
 }
@@ -128,7 +148,8 @@ const toRows = (snapshot: CompanyDatabaseState) =>
       patch_id: relation.patchId,
       patch: {
         unique_id: relation.patchUniqueId,
-        vndb_id: relation.vndbId
+        vndb_id: relation.vndbId,
+        bangumi_id: relation.bangumiId
       }
     }))
   }))
@@ -177,6 +198,111 @@ const database = (snapshots: CompanyDatabaseState[]) => {
     }
   }
 }
+
+const nextmoeState = (): CompanyDatabaseState => ({
+  companies: [
+    {
+      id: 12,
+      ref: getCompanyRef({
+        id: 12,
+        name: 'KOEI Co., Ltd.',
+        normalizedName: 'koei co., ltd.'
+      }),
+      name: 'KOEI Co., Ltd.',
+      normalizedName: 'koei co., ltd.',
+      introduction: '',
+      count: 5,
+      primaryLanguage: ['ja'],
+      sourceWebsites: [],
+      parentBrands: [],
+      aliases: [],
+      ownerRef: getCompanyOwnerRef(42),
+      updated: '2026-08-31T00:00:00.000Z',
+      externalIds: [],
+      identities: [
+        {
+          kind: 'name',
+          origin: 'authoritative',
+          value: 'KOEI Co., Ltd.',
+          normalizedValue: 'koei co., ltd.',
+          confirmedByRef: null
+        }
+      ],
+      relations: [
+        {
+          patchId: 20,
+          patchUniqueId: 'patch-20',
+          vndbId: 'v2168',
+          bangumiId: 21041
+        }
+      ]
+    },
+    {
+      id: 34,
+      ref: getCompanyRef({
+        id: 34,
+        name: 'コーエー',
+        normalizedName: 'コーエー'
+      }),
+      name: 'コーエー',
+      normalizedName: 'コーエー',
+      introduction: '',
+      count: 1,
+      primaryLanguage: ['ja'],
+      sourceWebsites: [],
+      parentBrands: [],
+      aliases: [],
+      ownerRef: getCompanyOwnerRef(42),
+      updated: '2026-08-31T00:00:00.000Z',
+      externalIds: [],
+      identities: [
+        {
+          kind: 'name',
+          origin: 'authoritative',
+          value: 'コーエー',
+          normalizedValue: 'コーエー',
+          confirmedByRef: null
+        }
+      ],
+      relations: [
+        {
+          patchId: 21,
+          patchUniqueId: 'patch-21',
+          vndbId: null,
+          bangumiId: 21041
+        }
+      ]
+    }
+  ]
+})
+
+const nextmoeFetchers = () => ({
+  fetchNextmoeWorks: vi.fn(async (refs: string[]) => ({
+    object: 'list' as const,
+    items: refs.map((ref) => ({
+      object: 'work',
+      id: `work:${ref}`,
+      companies: [
+        { object: 'company', id: '99', display_name: 'KOEI Co., Ltd.' }
+      ]
+    })),
+    missing: []
+  })),
+  fetchNextmoeCompanies: vi.fn(async (ids: string[]) => ({
+    object: 'list' as const,
+    items: ids.map((id) => ({
+      object: 'company',
+      id,
+      display_name: 'KOEI Co., Ltd.',
+      aliases: [
+        { value: 'コーエー', lang: 'ja' },
+        { value: '光栄', lang: 'ja', is_machine: true }
+      ]
+    })),
+    missing: []
+  })),
+  pauseNextmoeBatches: async () => undefined
+})
 
 describe('frozen company cleanup planner', () => {
   it('refuses to write a plan when snapshot B differs from snapshot A', async () => {
@@ -230,15 +356,19 @@ describe('frozen company cleanup planner', () => {
     const fetchVndbCandidates = vi.fn(() => {
       throw new Error('manual-only planning must not access VNDB')
     })
+    const fetchers = nextmoeFetchers()
 
     const result = await generateFrozenCompanyCleanupPlan({
       db: database([snapshot, snapshot]) as never,
       ...paths,
       manualOnly: true,
-      fetchVndbCandidates
+      fetchVndbCandidates,
+      ...fetchers
     })
 
     expect(fetchVndbCandidates).not.toHaveBeenCalled()
+    expect(fetchers.fetchNextmoeWorks).not.toHaveBeenCalled()
+    expect(fetchers.fetchNextmoeCompanies).not.toHaveBeenCalled()
     expect(result.plan.evidenceActions).toEqual([])
     expect(result.plan.mergeActions).toHaveLength(1)
     expect(result.plan.mergeActions[0]).toMatchObject({
@@ -262,5 +392,161 @@ describe('frozen company cleanup planner', () => {
     expect(finalized.expectedPostDatabaseDigest).toBe(
       digestSemanticCompanyDatabaseState(finalized.expectedPostState)
     )
+  })
+
+  it('plans without a configured NextMoe catalog instead of blocking', async () => {
+    delete process.env.KUN_NEXTMOE_API_KEY
+    const snapshot = state(true)
+    const paths = await prepareArtifacts(snapshot)
+
+    const result = await generateFrozenCompanyCleanupPlan({
+      db: database([snapshot, snapshot]) as never,
+      ...paths,
+      fetchVndbCandidates: vi.fn(async () => [])
+    })
+
+    expect(result.plan.blockers).toEqual([])
+    expect(result.plan.warnings).toContain('NextMoe catalog is not configured')
+  })
+
+  it('freezes a NextMoe fetch failure as a blocker instead of binding partial evidence', async () => {
+    const snapshot = state(true)
+    const paths = await prepareArtifacts(snapshot)
+    const fetchers = nextmoeFetchers()
+    fetchers.fetchNextmoeWorks.mockRejectedValueOnce(
+      new Error('NextMoe unavailable')
+    )
+
+    const result = await generateFrozenCompanyCleanupPlan({
+      db: database([snapshot, snapshot]) as never,
+      ...paths,
+      fetchVndbCandidates: vi.fn(async () => []),
+      ...fetchers
+    })
+
+    expect(fetchers.fetchNextmoeWorks).toHaveBeenCalledWith(['vndb:v10'])
+    expect(result.plan.blockers).toContainEqual(
+      expect.stringContaining('External evidence is incomplete')
+    )
+    expect(result.plan.blockers).toContainEqual(
+      expect.stringContaining('NextMoe unavailable')
+    )
+    expect(result.plan.evidenceActions).toEqual([])
+  })
+
+  it('binds one NextMoe catalog company and merges the absorbed company', async () => {
+    const snapshot = nextmoeState()
+    const paths = await prepareArtifacts(snapshot)
+    const fetchers = nextmoeFetchers()
+
+    const result = await generateFrozenCompanyCleanupPlan({
+      db: database([snapshot, snapshot]) as never,
+      ...paths,
+      fetchVndbCandidates: vi.fn(async () => []),
+      ...fetchers
+    })
+
+    expect(fetchers.fetchNextmoeWorks).toHaveBeenCalledWith([
+      'vndb:v2168',
+      'bangumi:21041'
+    ])
+    expect(fetchers.fetchNextmoeCompanies).toHaveBeenCalledWith(['99'])
+    expect(result.plan.blockers).toEqual([])
+    expect(result.plan.evidenceActions).toEqual([
+      {
+        companyId: 12,
+        source: 'nextmoe',
+        externalId: '99',
+        authoritativeValues: ['KOEI Co., Ltd.', 'コーエー']
+      }
+    ])
+    expect(result.plan.mergeActions).toMatchObject([
+      { kind: 'automatic', targetCompanyId: 12, sourceCompanyIds: [34] }
+    ])
+    expect(result.plan.limits.actions).toBe(2)
+  })
+})
+
+describe('NextMoe evidence fetching', () => {
+  const relationState = (refs: string[]): CompanyDatabaseState => ({
+    companies: [
+      {
+        id: 1,
+        ref: getCompanyRef({
+          id: 1,
+          name: 'Palette',
+          normalizedName: 'palette'
+        }),
+        name: 'Palette',
+        normalizedName: 'palette',
+        introduction: '',
+        count: refs.length,
+        primaryLanguage: [],
+        sourceWebsites: [],
+        parentBrands: [],
+        aliases: [],
+        ownerRef: getCompanyOwnerRef(42),
+        updated: '2026-08-31T00:00:00.000Z',
+        externalIds: [],
+        identities: [],
+        relations: refs.map((ref, index) => ({
+          patchId: index + 1,
+          patchUniqueId: `patch-${index + 1}`,
+          vndbId: `v${ref}`,
+          bangumiId: null
+        }))
+      }
+    ]
+  })
+
+  it('collects relation refs in batches of one hundred with a pause between them', async () => {
+    const refs = Array.from({ length: 101 }, (_, index) => String(index + 1))
+    const pauseBetweenBatches = vi.fn(async () => undefined)
+    const fetchNextmoeWorks = vi.fn(async (_refs: string[]) => ({
+      object: 'list' as const,
+      items: [],
+      missing: []
+    }))
+
+    const result = await fetchNextmoeEvidence({
+      state: relationState(refs),
+      fetchNextmoeWorks,
+      fetchNextmoeCompanies: vi.fn(async () => ({
+        object: 'list' as const,
+        items: [],
+        missing: []
+      })),
+      pauseBetweenBatches
+    })
+
+    expect(fetchNextmoeWorks.mock.calls.map(([batch]) => batch.length)).toEqual(
+      [100, 1]
+    )
+    expect(fetchNextmoeWorks.mock.calls[1][0]).toEqual(['vndb:v101'])
+    expect(pauseBetweenBatches).toHaveBeenCalledTimes(1)
+    expect(result).toEqual({ candidates: [], failures: [], warnings: [] })
+  })
+
+  it('reports a batch failure and keeps the other batches', async () => {
+    const refs = Array.from({ length: 101 }, (_, index) => String(index + 1))
+    const fetchNextmoeWorks = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('NextMoe unavailable'))
+      .mockResolvedValue({ object: 'list', items: [], missing: [] })
+
+    const result = await fetchNextmoeEvidence({
+      state: relationState(refs),
+      fetchNextmoeWorks,
+      fetchNextmoeCompanies: vi.fn(async () => ({
+        object: 'list' as const,
+        items: [],
+        missing: []
+      })),
+      pauseBetweenBatches: async () => undefined
+    })
+
+    expect(result.failures).toHaveLength(1)
+    expect(result.failures[0]).toContain('NextMoe unavailable')
+    expect(fetchNextmoeWorks).toHaveBeenCalledTimes(2)
   })
 })

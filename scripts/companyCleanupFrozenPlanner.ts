@@ -1,10 +1,22 @@
 import type { PrismaClient } from '@prisma/client'
 import type { TrustedCompanyCandidate } from '~/app/api/company/identity/types'
+import {
+  NEXTMOE_CATALOG_BATCH_MAX,
+  createNextmoeCatalogClient,
+  isNextmoeCatalogConfigured,
+  nextmoeAliasValues,
+  type NextmoeCompanyList,
+  type NextmoeWorkList
+} from '~/app/api/company/nextmoe/client'
+import { normalizeCompanyValue } from '~/app/api/company/identity/normalize'
 import { fetchVerifiedVndbCompanyCandidates } from '~/app/api/edit/vndbCompanyCandidates'
 import {
   buildAuthoritativeAliasCompanyMergePlan,
   buildCompanyIdentityInventory,
+  planAuthoritativeNextmoeCompanyEvidence,
   planAuthoritativeVndbCompanyEvidence,
+  type CompanyEvidencePlan,
+  type CompanyNextmoeEvidenceCandidate,
   type MaintenanceCompany
 } from './companyIdentityMaintenance'
 import {
@@ -61,6 +73,7 @@ const toMaintenanceCompany = (company: CompanyState): MaintenanceCompany => ({
   id: company.id,
   name: company.name,
   normalizedName: company.normalizedName,
+  count: company.count,
   alias: company.aliases,
   identities: company.identities.map((identity) => ({
     kind: identity.kind,
@@ -179,6 +192,173 @@ const fetchVndbEvidence = async (
   return { candidatesByVndbId, warnings }
 }
 
+const NEXTMOE_BATCH_PAUSE_MS = 1000
+
+const defaultNextmoeBatchPause = (ms: number) =>
+  new Promise<void>((resolve) => setTimeout(resolve, ms))
+
+const chunkValues = (values: string[], size: number) =>
+  Array.from({ length: Math.ceil(values.length / size) }, (_, index) =>
+    values.slice(index * size, (index + 1) * size)
+  )
+
+const fetchNextmoeBatch = async <Item>(
+  label: string,
+  keys: string[],
+  fetchBatch: (keys: string[]) => Promise<{ items: Item[] }>,
+  failures: string[],
+  pause: (ms: number) => Promise<void>
+) => {
+  const items: Item[] = []
+  const batches = chunkValues(keys, NEXTMOE_CATALOG_BATCH_MAX)
+  for (const [index, batch] of batches.entries()) {
+    if (index > 0) await pause(NEXTMOE_BATCH_PAUSE_MS)
+    try {
+      items.push(...(await fetchBatch(batch)).items)
+    } catch (error) {
+      failures.push(
+        `NextMoe ${label} fetch failed for ${batch.length} key(s) starting at ${batch[0]}: ${error instanceof Error ? error.message : String(error)}`
+      )
+    }
+  }
+  return items
+}
+
+/**
+ * NextMoe catalog evidence: work refs come from the patch relations the
+ * inventory already froze, and every catalog company they mention is matched
+ * to local companies by reviewed main name only.
+ */
+export const fetchNextmoeEvidence = async (input: {
+  state: CompanyDatabaseState
+  fetchNextmoeWorks?: (refs: string[]) => Promise<NextmoeWorkList>
+  fetchNextmoeCompanies?: (ids: string[]) => Promise<NextmoeCompanyList>
+  pauseBetweenBatches?: (ms: number) => Promise<void>
+}): Promise<{
+  candidates: CompanyNextmoeEvidenceCandidate[]
+  failures: string[]
+  warnings: string[]
+}> => {
+  if (
+    !input.fetchNextmoeWorks &&
+    !input.fetchNextmoeCompanies &&
+    !isNextmoeCatalogConfigured()
+  ) {
+    return {
+      candidates: [],
+      failures: [],
+      warnings: ['NextMoe catalog is not configured']
+    }
+  }
+
+  const client = createNextmoeCatalogClient(
+    input.pauseBetweenBatches ? { sleep: input.pauseBetweenBatches } : undefined
+  )
+  const fetchWorks =
+    input.fetchNextmoeWorks ??
+    ((refs: string[]) => client.listWorksByRefs(refs))
+  const fetchCompanies =
+    input.fetchNextmoeCompanies ??
+    ((ids: string[]) => client.listCompaniesByIds(ids))
+  const pause = input.pauseBetweenBatches ?? defaultNextmoeBatchPause
+  const failures: string[] = []
+
+  const refs = unique(
+    input.state.companies.flatMap((company) =>
+      company.relations.flatMap((relation) => {
+        const relationRefs: string[] = []
+        const vndbId = relation.vndbId?.trim()
+        if (vndbId) relationRefs.push(`vndb:${vndbId.toLowerCase()}`)
+        if (relation.bangumiId !== null) {
+          relationRefs.push(`bangumi:${relation.bangumiId}`)
+        }
+        return relationRefs
+      })
+    )
+  )
+  const works = await fetchNextmoeBatch(
+    'work',
+    refs,
+    fetchWorks,
+    failures,
+    pause
+  )
+  const catalogCompanyIds = unique(
+    works.flatMap((work) =>
+      (work.companies ?? []).map((company) => company.id.trim())
+    )
+  ).filter(Boolean)
+  const catalogCompanies = await fetchNextmoeBatch(
+    'company',
+    catalogCompanyIds,
+    fetchCompanies,
+    failures,
+    pause
+  )
+
+  const valuesByCatalogId = new Map<
+    string,
+    { displayName: string; values: string[] }
+  >()
+  for (const company of catalogCompanies) {
+    const id = company.id.trim()
+    const values = nextmoeAliasValues(company)
+    if (!id || !values.length) continue
+    valuesByCatalogId.set(id, {
+      displayName: company.display_name.trim(),
+      values
+    })
+  }
+
+  const candidates: CompanyNextmoeEvidenceCandidate[] = []
+  for (const company of input.state.companies) {
+    if (!company.normalizedName) continue
+    for (const [externalId, catalogCompany] of valuesByCatalogId) {
+      if (
+        !catalogCompany.values.some(
+          (value) => normalizeCompanyValue(value) === company.normalizedName
+        )
+      ) {
+        continue
+      }
+      candidates.push({
+        companyId: company.id,
+        externalId,
+        displayName: catalogCompany.displayName,
+        values: catalogCompany.values
+      })
+    }
+  }
+
+  return { candidates, failures, warnings: [] }
+}
+
+const planCompanyEvidence = (
+  state: CompanyDatabaseState,
+  vndb: { candidatesByVndbId: Map<string, TrustedCompanyCandidate[]> },
+  nextmoe: { candidates: CompanyNextmoeEvidenceCandidate[] }
+): CompanyEvidencePlan => {
+  const maintenanceCompanies = state.companies.map(toMaintenanceCompany)
+  const vndbPlan = planAuthoritativeVndbCompanyEvidence(
+    state.companies.map((company, index) => ({
+      company: maintenanceCompanies[index],
+      candidates: company.relations.flatMap((relation) =>
+        relation.vndbId
+          ? (vndb.candidatesByVndbId.get(relation.vndbId) ?? [])
+          : []
+      )
+    }))
+  )
+  const nextmoePlan = planAuthoritativeNextmoeCompanyEvidence({
+    companies: maintenanceCompanies,
+    candidates: nextmoe.candidates
+  })
+  return {
+    actions: [...vndbPlan.actions, ...nextmoePlan.actions],
+    warnings: [...vndbPlan.warnings, ...nextmoePlan.warnings]
+  }
+}
+
 const buildAutomaticMergeInputs = (
   state: CompanyDatabaseState,
   evidenceActions: CompanyCleanupPlan['evidenceActions'],
@@ -244,6 +424,9 @@ export const generateFrozenCompanyCleanupPlan = async (input: {
   manualOnly?: boolean
   now?: Date
   fetchVndbCandidates?: (vndbId: string) => Promise<TrustedCompanyCandidate[]>
+  fetchNextmoeWorks?: (refs: string[]) => Promise<NextmoeWorkList>
+  fetchNextmoeCompanies?: (ids: string[]) => Promise<NextmoeCompanyList>
+  pauseNextmoeBatches?: (ms: number) => Promise<void>
 }) => {
   const inventoryArtifact = await readArtifactWithVerifiedSidecar(
     input.inventoryPath
@@ -282,6 +465,14 @@ export const generateFrozenCompanyCleanupPlan = async (input: {
         snapshotA,
         input.fetchVndbCandidates ?? fetchVerifiedVndbCompanyCandidates
       )
+  const nextmoe = input.manualOnly
+    ? { candidates: [], failures: [], warnings: [] }
+    : await fetchNextmoeEvidence({
+        state: snapshotA,
+        fetchNextmoeWorks: input.fetchNextmoeWorks,
+        fetchNextmoeCompanies: input.fetchNextmoeCompanies,
+        pauseBetweenBatches: input.pauseNextmoeBatches
+      })
 
   const snapshotB = await loadCompanyDatabaseState(input.db)
   const digestB = digestCompanyDatabaseState(snapshotB)
@@ -295,16 +486,7 @@ export const generateFrozenCompanyCleanupPlan = async (input: {
 
   const evidencePlan = input.manualOnly
     ? { actions: [], warnings: [] }
-    : planAuthoritativeVndbCompanyEvidence(
-        snapshotA.companies.map((company) => ({
-          company: toMaintenanceCompany(company),
-          candidates: company.relations.flatMap((relation) =>
-            relation.vndbId
-              ? (fetched.candidatesByVndbId.get(relation.vndbId) ?? [])
-              : []
-          )
-        }))
-      )
+    : planCompanyEvidence(snapshotA, fetched, nextmoe)
   const resolved = resolveDecisionCompanyIds(snapshotA, decisions)
   const manuallyConsumed = new Set(
     resolved.merges.flatMap((merge) => merge.sourceCompanyIds)
@@ -326,12 +508,12 @@ export const generateFrozenCompanyCleanupPlan = async (input: {
     evidencePlan.actions.length + mergeInputs.length + resolved.deletions.length
   if (actionCount > COMPANY_CLEANUP_MAX_ACTIONS) {
     throw new Error(
-      `Company cleanup plan exceeds ${COMPANY_CLEANUP_MAX_ACTIONS} actions`
+      `Company cleanup plan exceeds ${COMPANY_CLEANUP_MAX_ACTIONS} actions (got ${actionCount})`
     )
   }
   const blockers = [
     ...automatic.blockers,
-    ...fetched.warnings.map(
+    ...[...fetched.warnings, ...nextmoe.failures].map(
       (warning) => `External evidence is incomplete: ${warning}`
     )
   ]
@@ -363,7 +545,7 @@ export const generateFrozenCompanyCleanupPlan = async (input: {
     .reduce((sum, company) => sum + company.relations.length, 0)
   if (relationCount > COMPANY_CLEANUP_MAX_RELATIONS) {
     throw new Error(
-      `Company cleanup plan exceeds ${COMPANY_CLEANUP_MAX_RELATIONS} relations`
+      `Company cleanup plan exceeds ${COMPANY_CLEANUP_MAX_RELATIONS} relations (got ${relationCount})`
     )
   }
   const patchUniqueIds = unique(
@@ -397,6 +579,8 @@ export const generateFrozenCompanyCleanupPlan = async (input: {
           ]
         : []),
       ...fetched.warnings,
+      ...nextmoe.failures,
+      ...nextmoe.warnings,
       ...evidencePlan.warnings,
       ...automatic.warnings
     ],

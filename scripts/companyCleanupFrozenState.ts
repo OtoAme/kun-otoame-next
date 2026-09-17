@@ -73,7 +73,9 @@ export const loadCompanyDatabaseState = async (
         orderBy: [{ patch_id: 'asc' }, { id: 'asc' }],
         select: {
           patch_id: true,
-          patch: { select: { unique_id: true, vndb_id: true } }
+          patch: {
+            select: { unique_id: true, vndb_id: true, bangumi_id: true }
+          }
         }
       }
     }
@@ -116,7 +118,8 @@ export const loadCompanyDatabaseState = async (
         relations: row.patch_relations.map((relation) => ({
           patchId: relation.patch_id,
           patchUniqueId: relation.patch.unique_id,
-          vndbId: relation.patch.vndb_id
+          vndbId: relation.patch.vndb_id,
+          bangumiId: relation.patch.bangumi_id
         }))
       }
     })
