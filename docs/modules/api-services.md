@@ -229,6 +229,9 @@ service/helper 负责：
   `authoritative` 规范化别名 → `legacy` 原值精确别名 → 同批候选交集 → 新建；角色不
   参与同一性判定。开关关闭时预览与来源选择保持旧行为，但 Phase B
   `normalized_name` / external ID 唯一冲突的外层事务重试与胜者重读兼容层始终生效。
+  `ensureCompanyRelationsByName` 另有法人后缀第二查找键（`Co., Ltd.` / `Inc.` /
+  `GmbH` / `KK` / `株式会社` / `有限会社`）：规范化值本身不变；剥后缀后全库恰好一家才
+  挂靠，多家则仍新建且不报歧义，命中不写 `authoritative` 别名。`Studio` 等名称后缀不剥。
 - PostgreSQL 唯一冲突后当前事务已 aborted；公司身份冲突只能由拥有事务的最外层入口
   整笔重跑，最多 3 次。只识别 `patch_company.normalized_name` 与
   `patch_company_external_id.(source, external_id)` 两个目标约束，其它 `P2002` 不得

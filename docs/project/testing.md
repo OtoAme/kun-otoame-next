@@ -33,7 +33,7 @@ tests/unit/
 - JWT session：`tests/unit/jwt-session.test.ts`。
 - Redis 封装：`tests/unit/redis.test.ts`。
 - 创建/重写 store 合并：`tests/unit/edit-store.test.ts`。
-- 会社维护：`company-identity-maintenance.test.ts` 覆盖身份盘点、NextMoe stored/proposed，以及 GION / Tenky 名称变体在别名足够时的合并与不合并；`company-cleanup-frozen-*.test.ts` 覆盖 canonical inventory/decisions/plan、SHA、冻结证据、漂移零写入、事务回滚、重放与独立 cache receipt。`company-nextmoe-client.test.ts` mock `fetch`，不打真网。零关系会社不会隐式删除。
+- 会社维护：`company-identity-maintenance.test.ts` 覆盖身份盘点、NextMoe stored/proposed，以及 GION / Tenky 名称变体在别名足够时的合并与不合并；`company-legal-suffix.test.ts` 与 `company-identity-compatibility.test.ts` 覆盖法人后缀第二查找键（唯一命中挂靠、冲突新建、不剥 Studio）。`company-cleanup-frozen-*.test.ts` 覆盖 canonical inventory/decisions/plan、SHA、冻结证据、漂移零写入、事务回滚、重放与独立 cache receipt。`company-nextmoe-client.test.ts` mock `fetch`，不打真网。零关系会社不会隐式删除。
 - 标签 / 会社计数触发器：`tests/unit/tag-company-count-migration.test.ts` 静态锁定四份生产 SQL、六个 statement-level transition-table 触发器、SHARE 锁回填、rollback 范围和应用层无手工计数。Vitest 不执行数据库触发器，真实计数不变量由 PostgreSQL 演练与生产 postflight 负责。
 - 公司身份 Phase B：`tests/unit/company-identity-constraint-migration.test.ts` 锁定 preflight/sync/postflight 及 rollback/rollback-postflight、阻断项 / shared alias warning、NOT NULL、两个 Prisma 原生唯一索引和 Phase A 恢复形态；真实约束、回滚和零漂移需在 disposable PostgreSQL 上演练。
 - 部署：`deploy-release-safety`、`deploy-slots`、`deploy-lock`、`deploy-activation`、`deploy-pm2-readiness`、`deploy-build-safety`、`prisma-production-schema-path` 与 `prisma-client-runtime-paths` 锁定 manifest/tag/commit 绑定、candidate guard、不可变 current/previous、journal/互斥锁、PM2/HTTP readiness、失败回退和客户端注入。
