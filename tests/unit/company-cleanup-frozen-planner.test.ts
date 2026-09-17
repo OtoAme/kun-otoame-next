@@ -464,6 +464,39 @@ describe('frozen company cleanup planner', () => {
       { kind: 'automatic', targetCompanyId: 12, sourceCompanyIds: [34] }
     ])
     expect(result.plan.limits.actions).toBe(2)
+
+    const postState = result.plan.expectedPostState
+    expect(postState.companies.map((company) => company.id)).toEqual([12])
+    const merged = postState.companies[0]
+    expect(merged.name).toBe('KOEI Co., Ltd.')
+    expect(merged.normalizedName).toBe('koei co., ltd.')
+    expect(merged.externalIds).toContainEqual({
+      source: 'nextmoe',
+      externalId: '99'
+    })
+    expect(merged.aliases).toContain('コーエー')
+
+    const relations = [...merged.relations].sort(
+      (left, right) => left.patchId - right.patchId
+    )
+    expect(
+      relations.map((relation) => [relation.patchId, relation.patchUniqueId])
+    ).toEqual([
+      [20, 'patch-20'],
+      [21, 'patch-21']
+    ])
+    expect(relations.map((relation) => relation.vndbId)).toEqual([
+      'v2168',
+      null
+    ])
+    expect(relations.map((relation) => relation.bangumiId)).toEqual([
+      21041, 21041
+    ])
+
+    // The simulated apply writes the merged relation map size, not the stale
+    // pre-merge counter; production triggers are asserted separately.
+    expect(merged.count).toBe(2)
+    expect(() => validateFrozenPlanSimulation(result.plan)).not.toThrow()
   })
 })
 
