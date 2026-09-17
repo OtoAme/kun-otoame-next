@@ -270,6 +270,121 @@ describe('legacy company writer Phase B compatibility', () => {
     expect(client.patch_company_name_identity.createMany).toHaveBeenCalled()
   })
 
+  it('attaches a submitted name to the only company that folds to its legal-suffix key', async () => {
+    const client = tx()
+    const legalFormWinner = {
+      id: 7,
+      name: 'KOEI Co., Ltd.',
+      alias: [],
+      normalized_name: 'koei co., ltd.',
+      introduction: '',
+      primary_language: [],
+      official_website: [],
+      parent_brand: []
+    }
+    client.patch_company.findMany.mockResolvedValueOnce([legalFormWinner])
+
+    const result = await ensureCompanyRelationsByName(
+      client as never,
+      5,
+      new Map([['Koei', { ...companyInput, name: 'Koei', alias: [] }]])
+    )
+
+    expect(client.patch_company.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          OR: expect.arrayContaining([
+            expect.objectContaining({ normalized_name: { contains: 'koei' } })
+          ])
+        })
+      })
+    )
+    expect(client.patch_company.createManyAndReturn).not.toHaveBeenCalled()
+    expect(result).toMatchObject({ ensured: 0, related: 1, insertedIds: [7] })
+  })
+
+  it('creates a new company when several rows fold to the same legal-suffix key', async () => {
+    const client = tx()
+    client.patch_company.findMany
+      .mockResolvedValueOnce([
+        { id: 7, name: 'Koei', alias: [], normalized_name: 'koei' },
+        {
+          id: 8,
+          name: 'KOEI Co., Ltd.',
+          alias: [],
+          normalized_name: 'koei co., ltd.'
+        }
+      ])
+      .mockResolvedValueOnce([
+        { id: 9, name: 'Koei Inc.', alias: [], normalized_name: 'koei inc.' }
+      ])
+    client.patch_company.createManyAndReturn.mockResolvedValue([{ id: 9 }])
+    client.patch_company.findUnique.mockResolvedValue({
+      id: 9,
+      name: 'Koei Inc.',
+      alias: [],
+      normalized_name: 'koei inc.',
+      name_identities: []
+    })
+    client.patch_company_name_identity.createMany.mockResolvedValue({ count: 1 })
+    client.patch_company_name_identity.deleteMany.mockResolvedValue({ count: 0 })
+
+    const result = await ensureCompanyRelationsByName(
+      client as never,
+      5,
+      new Map([['Koei Inc.', { ...companyInput, name: 'Koei Inc.', alias: [] }]])
+    )
+
+    expect(client.patch_company.createManyAndReturn).toHaveBeenCalledOnce()
+    expect(result).toMatchObject({ ensured: 1, related: 1 })
+  })
+
+  it('merges two submitted names that only differ by their legal form', async () => {
+    const client = tx()
+    const created = {
+      id: 7,
+      name: 'Koei',
+      alias: ['KOEI Co., Ltd.'],
+      normalized_name: 'koei',
+      introduction: '',
+      primary_language: [],
+      official_website: [],
+      parent_brand: []
+    }
+    client.patch_company.findMany
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([created])
+    client.patch_company.createManyAndReturn.mockResolvedValue([{ id: 7 }])
+    client.patch_company.findUnique.mockResolvedValue({
+      ...created,
+      name_identities: []
+    })
+    client.patch_company_name_identity.createMany.mockResolvedValue({ count: 2 })
+    client.patch_company_name_identity.deleteMany.mockResolvedValue({ count: 0 })
+
+    const result = await ensureCompanyRelationsByName(
+      client as never,
+      5,
+      new Map([
+        ['Koei', { ...companyInput, name: 'Koei', alias: [] }],
+        ['KOEI Co., Ltd.', { ...companyInput, name: 'KOEI Co., Ltd.', alias: [] }]
+      ])
+    )
+
+    expect(client.patch_company.createManyAndReturn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: [
+          expect.objectContaining({
+            name: 'Koei',
+            alias: ['KOEI Co., Ltd.'],
+            normalized_name: 'koei'
+          })
+        ]
+      })
+    )
+    expect(result).toMatchObject({ ensured: 1, related: 1 })
+  })
+
   it('locks and reloads existing metadata before concurrent enrichment', async () => {
     const state = {
       id: 7,

@@ -1,5 +1,6 @@
 import { Prisma } from '@prisma/client'
 import { addPatchCompanyRelations } from './companyRelationHelper'
+import { foldLegalCompanySuffix } from '~/app/api/company/identity/legalSuffix'
 import {
   COMPANY_IDENTITY_VALUE_MAX_LENGTH,
   isCompanyIdentityValueWithinLimit,
@@ -42,6 +43,7 @@ interface PreparedCompanyGroup {
   input: CompanyCreateInput
   lookupValues: string[]
   normalizedLookupValues: string[]
+  suffixLookupKeys: string[]
   normalizedName: string
 }
 
@@ -115,13 +117,43 @@ const mergeCompanyInputs = (
   user_id: primary.user_id
 })
 
+type RawCompanyGroup = { input: CompanyCreateInput; submittedNames: string[] }
+
+/**
+ * Names that only differ by a legal form ("Koei" / "KOEI Co., Ltd.") describe
+ * one company, so they are merged into a single group before lookup. The first
+ * submitted spelling stays the main name and the others become aliases.
+ */
+const mergeGroupsByLegalSuffix = (groups: Map<string, RawCompanyGroup>) => {
+  const ownersByKey = new Map<string, string[]>()
+  for (const normalizedName of groups.keys()) {
+    const key = foldLegalCompanySuffix(normalizedName)
+    if (!key) continue
+    ownersByKey.set(key, [...(ownersByKey.get(key) ?? []), normalizedName])
+  }
+
+  for (const owners of ownersByKey.values()) {
+    if (owners.length < 2) continue
+    const [primaryKey, ...mergedKeys] = owners
+    const primary = groups.get(primaryKey)
+    if (!primary) continue
+    for (const mergedKey of mergedKeys) {
+      const merged = groups.get(mergedKey)
+      if (!merged) continue
+      primary.input = mergeCompanyInputs(primary.input, merged.input)
+      primary.submittedNames = uniqueTrimmed([
+        ...primary.submittedNames,
+        ...merged.submittedNames
+      ])
+      groups.delete(mergedKey)
+    }
+  }
+}
+
 const prepareCompanyGroups = (
   companiesByName: Map<string, CompanyCreateInput>
 ): PreparedCompanyGroup[] => {
-  const groups = new Map<
-    string,
-    { input: CompanyCreateInput; submittedNames: string[] }
-  >()
+  const groups = new Map<string, RawCompanyGroup>()
 
   for (const [rawSubmittedName, rawInput] of companiesByName) {
     const submittedName = rawSubmittedName.trim()
@@ -163,6 +195,8 @@ const prepareCompanyGroups = (
     }
   }
 
+  mergeGroupsByLegalSuffix(groups)
+
   const prepared = [...groups.entries()].map(
     ([normalizedName, { input, submittedNames }]) => {
       const lookupValues = validCompanyIdentityValues([
@@ -170,12 +204,16 @@ const prepareCompanyGroups = (
         input.name,
         ...(input.alias ?? [])
       ])
+      const normalizedLookupValues = [
+        ...new Set(lookupValues.map(normalizeCompanyValue))
+      ]
       return {
         input,
         lookupValues,
-        normalizedLookupValues: [
-          ...new Set(lookupValues.map(normalizeCompanyValue))
-        ],
+        normalizedLookupValues,
+        suffixLookupKeys: [
+          ...new Set(normalizedLookupValues.map(foldLegalCompanySuffix))
+        ].filter(Boolean),
         normalizedName
       }
     }
@@ -209,16 +247,38 @@ const prepareCompanyGroups = (
 }
 
 const buildCompanyLookupWhere = (
-  companyNames: string[]
+  companyNames: string[],
+  suffixLookupKeys: string[]
 ): Prisma.patch_companyWhereInput => ({
-  OR: companyNames.map((name) => ({
-    OR: [{ name }, { alias: { has: name } }]
-  }))
+  OR: [
+    ...companyNames.map((name) => ({
+      OR: [{ name }, { alias: { has: name } }]
+    })),
+    // A stored name that carries the legal form never equals the folded key, so
+    // the folded key is used as a substring prefilter. Every candidate it
+    // returns is re-checked in memory against its folded name, aliases and
+    // normalized_name. A row whose legal form only appears inside its alias
+    // array is not reachable from SQL and stays a miss.
+    ...suffixLookupKeys.map((key) => ({
+      normalized_name: { contains: key }
+    }))
+  ]
 })
 
 const uniqueCompanyMatches = (companies: CompanyResolutionRow[]) => [
   ...new Map(companies.map((company) => [company.id, company])).values()
 ]
+
+const companySuffixLookupKeys = (company: CompanyResolutionRow): string[] =>
+  [
+    foldLegalCompanySuffix(normalizeCompanyValue(company.name)),
+    ...company.alias.map((alias) =>
+      foldLegalCompanySuffix(normalizeCompanyValue(alias))
+    ),
+    ...(company.normalized_name
+      ? [foldLegalCompanySuffix(company.normalized_name)]
+      : [])
+  ].filter(Boolean)
 
 const resolveCompanyGroups = (
   groups: PreparedCompanyGroup[],
@@ -226,7 +286,11 @@ const resolveCompanyGroups = (
   allowNormalizedNameFallback: boolean
 ) => {
   const resolved = new Map<PreparedCompanyGroup, CompanyResolutionRow>()
+  const suffixMatched = new Set<PreparedCompanyGroup>()
   const ambiguities: CompanyEnsureAmbiguity[] = []
+  const suffixKeysByCompanyId = new Map(
+    companies.map((company) => [company.id, companySuffixLookupKeys(company)])
+  )
 
   for (const group of groups) {
     const exactNameMatches = uniqueCompanyMatches(
@@ -259,13 +323,29 @@ const resolveCompanyGroups = (
       })
     } else if (strongestMatches.length === 1) {
       resolved.set(group, strongestMatches[0])
+    } else if (group.suffixLookupKeys.length) {
+      // A legal-form-only difference is the weakest evidence. Exactly one
+      // candidate is attached without projecting a new identity; zero or
+      // several candidates fall through to the create path, so a suffix
+      // collision never blocks a submission.
+      const suffixMatches = uniqueCompanyMatches(
+        companies.filter((company) =>
+          (suffixKeysByCompanyId.get(company.id) ?? []).some((key) =>
+            group.suffixLookupKeys.includes(key)
+          )
+        )
+      )
+      if (suffixMatches.length === 1) {
+        resolved.set(group, suffixMatches[0])
+        suffixMatched.add(group)
+      }
     }
   }
 
   if (ambiguities.length) {
     throw new CompanyEnsureAmbiguityError(ambiguities)
   }
-  return resolved
+  return { resolved, suffixMatched }
 }
 
 const enrichExistingCompany = async (
@@ -343,7 +423,10 @@ export const ensureCompanyRelationsByName = async (
   const lookupValues = uniqueTrimmed(
     groups.flatMap((group) => group.lookupValues)
   )
-  const where = buildCompanyLookupWhere(lookupValues)
+  const suffixLookupKeys = [
+    ...new Set(groups.flatMap((group) => group.suffixLookupKeys))
+  ]
+  const where = buildCompanyLookupWhere(lookupValues, suffixLookupKeys)
   const existing = await tx.patch_company.findMany({
     where,
     select: companyResolutionSelect
@@ -366,7 +449,7 @@ export const ensureCompanyRelationsByName = async (
     groups,
     existingForResolution,
     constraintCompatibility
-  )
+  ).resolved
   const toCreateGroups = groups.filter((group) => !initiallyResolved.has(group))
   const toCreate = toCreateGroups.map((group) => ({
     ...group.input,
@@ -406,11 +489,12 @@ export const ensureCompanyRelationsByName = async (
     ...compatibleExisting,
     ...postConflictWinners
   ])
-  const resolved = resolveCompanyGroups(
+  const resolution = resolveCompanyGroups(
     groups,
     availableCompanies,
     constraintCompatibility || needsPostConflictFallback
   )
+  const resolved = resolution.resolved
   const unresolved = groups.filter((group) => !resolved.has(group))
   if (unresolved.length) {
     throw new Error(
@@ -437,7 +521,14 @@ export const ensureCompanyRelationsByName = async (
     if (insertedCompanyIds.has(companyId)) {
       await syncCompanyIdentityProjection(tx, { companyId, aliasOrigin })
     } else if (aliasOrigin === 'authoritative') {
-      await enrichExistingCompany(tx, companyId, companyGroups)
+      // A company reached only through its legal form keeps its current
+      // projection: suffix evidence is too weak to rewrite authoritative rows.
+      const enrichableGroups = companyGroups.filter(
+        (group) => !resolution.suffixMatched.has(group)
+      )
+      if (enrichableGroups.length) {
+        await enrichExistingCompany(tx, companyId, enrichableGroups)
+      }
     }
   }
 
