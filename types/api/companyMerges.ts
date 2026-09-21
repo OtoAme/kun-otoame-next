@@ -1,6 +1,7 @@
 const KIND_LABELS: Record<string, string> = {
   'suffix-unique-hit': '仅法人格后缀不同',
-  'name-variant': '名称变体（标点 / 括号注音 / 法人格）'
+  'name-variant': '名称变体（标点 / 括号 / 法人格 / 中文粘连）',
+  'source-pair': '同一作品的来源别名对得上'
 }
 
 /** The column vocabulary; this queue only ever serves `pending` rows. */
@@ -52,6 +53,10 @@ export interface CompanyMergeDetectResponse {
   updated: number
   /** Keys left alone because the operator already dismissed them. */
   skipped: number
+  /** Wall time for this scan, including VNDB / NextMoe. */
+  durationMs: number
+  /** Short operator-facing notes, e.g. NextMoe skipped after 522. */
+  notes: string[]
 }
 
 export interface CompanyMergeDismissResponse {

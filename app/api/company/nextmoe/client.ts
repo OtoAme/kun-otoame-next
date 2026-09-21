@@ -53,7 +53,13 @@ type NextmoeFailureKind =
   | 'quota'
   | 'rate-limited'
   | 'server'
+  | 'unavailable'
   | 'missing'
+
+const NEXTMOE_CATALOG_FETCH_TIMEOUT_MS = 15000
+
+const isCloudflareOriginFailure = (status: number) =>
+  status >= 520 && status <= 527
 
 const defaultSleep = (ms: number) =>
   new Promise<void>((resolve) => setTimeout(resolve, ms))
@@ -102,6 +108,7 @@ const classifyFailure = (
   if (status === 401 || status === 403) return 'auth'
   if (status === 429 && code === 'QUOTA_EXCEEDED') return 'quota'
   if (status === 429) return 'rate-limited'
+  if (isCloudflareOriginFailure(status)) return 'unavailable'
   if (status >= 500) return 'server'
   // ENTITY_MERGED and every other unretryable status resolve as missing keys.
   return 'missing'
@@ -147,12 +154,35 @@ export const createNextmoeCatalogClient = (
   ) =>
     `${NEXTMOE_CATALOG_BASE_URL}${path}?${lane}=${keys.join(',')}&include=${include}&nsfw=true`
 
-  const logFailure = (response: Response) => {
-    const requestId = response.headers.get('x-request-id')
-    console.error(
-      `[nextmoe] catalog request failed with status ${response.status}` +
-        (requestId ? ` (X-Request-ID: ${requestId})` : '')
-    )
+  const listCounts = (parsed: unknown) => {
+    if (!isRecord(parsed)) return { items: 0, missing: 0 }
+    return {
+      items: Array.isArray(parsed.items) ? parsed.items.length : 0,
+      missing: Array.isArray(parsed.missing) ? parsed.missing.length : 0
+    }
+  }
+
+  const logCatalog = (
+    path: string,
+    lane: NextmoeCatalogLane,
+    include: string,
+    keys: string[],
+    attempt: number,
+    result: string,
+    ms: number,
+    extra = ''
+  ) => {
+    const line =
+      `[nextmoe] GET ${path} ${lane}=${keys.length} include=${include} ` +
+      `attempt=${attempt + 1}/${NEXTMOE_CATALOG_MAX_ATTEMPTS} -> ${result} ${ms}ms` +
+      extra
+    if (result.startsWith('2') || result === 'ok') {
+      // eslint-disable-next-line no-console
+      console.info(line)
+    } else {
+      // eslint-disable-next-line no-console
+      console.error(line)
+    }
   }
 
   const requestList = async <T>(
@@ -170,29 +200,75 @@ export const createNextmoeCatalogClient = (
       attempt += 1
     ) {
       let response: Response
+      const started = Date.now()
       try {
         response = await requestFetch(buildUrl(path, lane, include, keys), {
           method: 'GET',
           headers: {
             Authorization: `Bearer ${configuredKey}`,
             Accept: 'application/json'
-          }
+          },
+          signal: AbortSignal.timeout(NEXTMOE_CATALOG_FETCH_TIMEOUT_MS)
         })
       } catch (error) {
-        console.error('[nextmoe] catalog request could not be sent', error)
-        return null
+        const timedOut =
+          error instanceof Error &&
+          (error.name === 'TimeoutError' || error.name === 'AbortError')
+        const detail =
+          error instanceof Error ? error.message : 'unknown fetch error'
+        logCatalog(
+          path,
+          lane,
+          include,
+          keys,
+          attempt,
+          timedOut ? 'timeout' : 'network-error',
+          Date.now() - started,
+          ` items=0 missing=${keys.length} (${detail})`
+        )
+        if (!timedOut) {
+          disabled = true
+          return null
+        }
+        if (attempt === NEXTMOE_CATALOG_MAX_ATTEMPTS - 1) return null
+        await sleep(serverErrorDelayMs(attempt))
+        continue
       }
+
+      const elapsed = Date.now() - started
+      const requestId = response.headers.get('x-request-id')
+      const requestIdNote = requestId ? ` X-Request-ID=${requestId}` : ''
 
       if (response.ok) {
         let body: unknown
         try {
           body = await response.json()
         } catch {
-          console.error('[nextmoe] catalog response body was not JSON')
+          logCatalog(
+            path,
+            lane,
+            include,
+            keys,
+            attempt,
+            String(response.status),
+            elapsed,
+            ` items=0 missing=${keys.length} body=not-json${requestIdNote}`
+          )
           return null
         }
 
         const parsed = parseBody(body)
+        const counts = listCounts(parsed ?? body)
+        logCatalog(
+          path,
+          lane,
+          include,
+          keys,
+          attempt,
+          parsed ? String(response.status) : `${response.status}-unparsed`,
+          elapsed,
+          ` items=${counts.items} missing=${counts.missing}${requestIdNote}`
+        )
         if (parsed === null) {
           console.error(
             '[nextmoe] catalog response did not match the expected shape'
@@ -201,10 +277,19 @@ export const createNextmoeCatalogClient = (
         return parsed
       }
 
-      logFailure(response)
       const kind = classifyFailure(
         response.status,
         await readProblemCode(response)
+      )
+      logCatalog(
+        path,
+        lane,
+        include,
+        keys,
+        attempt,
+        String(response.status),
+        elapsed,
+        ` items=0 missing=${keys.length} kind=${kind}${requestIdNote}`
       )
 
       if (kind === 'auth' || kind === 'quota') {
@@ -216,7 +301,7 @@ export const createNextmoeCatalogClient = (
         await sleep(retryAfterMs(response))
         continue
       }
-      if (kind === 'server') {
+      if (kind === 'server' || kind === 'unavailable') {
         await sleep(serverErrorDelayMs(attempt))
         continue
       }

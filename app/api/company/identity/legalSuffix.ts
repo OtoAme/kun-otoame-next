@@ -5,7 +5,7 @@ import { normalizeCompanyValue } from './normalize'
  * the value instead of at a token boundary. NFKC has already converted the
  * fullwidth spellings by the time these are applied.
  */
-const CJK_LEGAL_FORMS = ['株式会社', '有限会社'] as const
+const CJK_LEGAL_FORMS = ['株式会社', '有限会社', '合同会社'] as const
 
 interface LatinSuffixRule {
   pattern: RegExp
@@ -15,6 +15,10 @@ interface LatinSuffixRule {
 
 const LATIN_SUFFIX_RULES: readonly LatinSuffixRule[] = [
   { pattern: /co[\s.,]*ltd\.?$/, requireBoundaryBefore: false },
+  { pattern: /ltd\.?$/, requireBoundaryBefore: false },
+  { pattern: /llc\.?$/, requireBoundaryBefore: false },
+  { pattern: /corp\.?$/, requireBoundaryBefore: false },
+  { pattern: /limited$/, requireBoundaryBefore: false },
   { pattern: /inc\.?$/, requireBoundaryBefore: false },
   { pattern: /gmbh\.?$/, requireBoundaryBefore: false },
   { pattern: /kk$/, requireBoundaryBefore: true }
@@ -79,11 +83,25 @@ export const legalSuffixLookupKeys = (raw: string): string[] => {
 }
 
 const PUNCTUATION_AND_SPACE = /[\s\p{P}\p{S}]+/gu
-const PARENTHETICAL_NOTE = /[（(][^（）()]*[）)]/g
+const parentheticalInnerPattern = () => /[（(]([^（）()]*)[）)]/g
 
 /** "mebius." and "Mebius" share this key; letters and digits stay. */
 export const foldPunctuation = (normalized: string): string =>
   normalized.replace(PUNCTUATION_AND_SPACE, '')
+
+/**
+ * Inner text of a single layer of fullwidth/halfwidth parentheses, so
+ * "拓洋興業（TAKUYO）" also compares as "takuyo". Nested or unmatched brackets
+ * are left alone.
+ */
+export const parentheticalInnerValues = (raw: string): string[] => {
+  const values: string[] = []
+  for (const match of raw.matchAll(parentheticalInnerPattern())) {
+    const inner = match[1]?.trim()
+    if (inner) values.push(inner)
+  }
+  return values
+}
 
 /**
  * Drop a single layer of fullwidth/halfwidth parenthetical notes so
@@ -91,4 +109,4 @@ export const foldPunctuation = (normalized: string): string =>
  * name outside the brackets. Nested or unmatched brackets are left alone.
  */
 export const foldParentheticalName = (raw: string): string =>
-  normalizeCompanyValue(raw.replace(PARENTHETICAL_NOTE, ''))
+  normalizeCompanyValue(raw.replace(parentheticalInnerPattern(), ''))

@@ -1,7 +1,8 @@
 import {
   foldLegalCompanySuffix,
   foldParentheticalName,
-  foldPunctuation
+  foldPunctuation,
+  parentheticalInnerValues
 } from './legalSuffix'
 import { normalizeCompanyValue } from './normalize'
 
@@ -15,7 +16,7 @@ export type NameVariantSuggestion = {
   names: string[]
 }
 
-type VariantCompany = {
+export type NameVariantCompany = {
   id: number
   name: string
   normalizedName: string | null
@@ -25,33 +26,75 @@ type VariantCompany = {
 }
 
 const MIN_KEY_LENGTH = 2
+const CJK_CHAR = String.raw`[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]`
+const CJK_PREFIX = new RegExp(`^(${CJK_CHAR}+)`, 'u')
+const CJK_SUFFIX = new RegExp(`(${CJK_CHAR}+)$`, 'u')
+const ALL_CJK = new RegExp(`^${CJK_CHAR}+$`, 'u')
 
 /**
- * Keys that may connect two spellings of the same studio: legal-form suffix,
- * punctuation/spacing, and a parenthetical note. Alias arrays stay out — those
- * are historical labels, not identity.
+ * Compact form leftover after stripping a CJK prefix or suffix of length ≥ 2.
+ * "劳斯麦斯Rolls-Mice" yields "rollsmice"; "Operetta Due" has a Latin leftover
+ * and yields nothing.
  */
-export const nameVariantKeys = (
+const cjkGlueRemainders = (compact: string): string[] => {
+  const remainders: string[] = []
+  const prefix = CJK_PREFIX.exec(compact)
+  if (prefix && prefix[1].length >= 2) {
+    const rest = compact.slice(prefix[1].length)
+    if (rest.length >= MIN_KEY_LENGTH && !ALL_CJK.test(rest)) {
+      remainders.push(rest)
+    }
+  }
+  const suffix = CJK_SUFFIX.exec(compact)
+  if (suffix && suffix[1].length >= 2) {
+    const rest = compact.slice(0, -suffix[1].length)
+    if (rest.length >= MIN_KEY_LENGTH && !ALL_CJK.test(rest)) {
+      remainders.push(rest)
+    }
+  }
+  return remainders
+}
+
+const variantKeysFromValue = (
   raw: string,
   normalizedName?: string | null
 ): string[] => {
   const normalized = normalizedName ?? normalizeCompanyValue(raw)
   const suffix = foldLegalCompanySuffix(normalized)
-  const noParen = foldParentheticalName(raw)
-  const noParenSuffix = foldLegalCompanySuffix(noParen)
-  const keys = [
+  const punctNormalized = foldPunctuation(normalized)
+  const punctSuffix = foldPunctuation(suffix)
+  return [
     suffix,
-    foldPunctuation(normalized),
-    foldPunctuation(suffix),
-    noParen,
-    noParenSuffix,
-    foldPunctuation(noParen),
-    foldPunctuation(noParenSuffix)
+    punctNormalized,
+    punctSuffix,
+    ...cjkGlueRemainders(punctNormalized),
+    ...cjkGlueRemainders(punctSuffix)
+  ]
+}
+
+/**
+ * Keys that may connect two spellings of the same studio: legal-form suffix,
+ * punctuation/spacing, a parenthetical note (outer and inner), and CJK glued
+ * onto a Latin name. Alias arrays stay out — those are historical labels, not
+ * identity.
+ */
+export const nameVariantKeys = (
+  raw: string,
+  normalizedName?: string | null
+): string[] => {
+  const keys = [
+    ...variantKeysFromValue(raw, normalizedName),
+    ...variantKeysFromValue(foldParentheticalName(raw)),
+    ...parentheticalInnerValues(raw).flatMap((inner) =>
+      variantKeysFromValue(inner)
+    )
   ].filter((key) => key.length >= MIN_KEY_LENGTH)
   return [...new Set(keys)]
 }
 
-const clusterKeys = (company: VariantCompany): string[] => {
+export const nameVariantClusterKeys = (
+  company: NameVariantCompany
+): string[] => {
   const keys = [
     ...nameVariantKeys(company.name, company.normalizedName),
     ...(company.identities ?? [])
@@ -63,7 +106,9 @@ const clusterKeys = (company: VariantCompany): string[] => {
   return [...new Set(keys)]
 }
 
-const hasConflictingExternalIds = (members: VariantCompany[]): boolean => {
+export const hasConflictingCompanyExternalIds = (
+  members: NameVariantCompany[]
+): boolean => {
   const valuesBySource = new Map<string, Set<string>>()
   for (const member of members) {
     for (const [source, rawValue] of Object.entries(member.externalIds ?? {})) {
@@ -103,14 +148,14 @@ const union = (parent: Map<number, number>, left: number, right: number) => {
  * Cherrymochi on the same game stays out because it does not share a key.
  */
 export function suggestNameVariantHits(
-  companies: VariantCompany[]
+  companies: NameVariantCompany[]
 ): NameVariantSuggestion[] {
   const parent = new Map(companies.map((company) => [company.id, company.id]))
   const membersByKey = new Map<string, Set<number>>()
   const keysByCompany = new Map<number, string[]>()
 
   for (const company of companies) {
-    const keys = clusterKeys(company)
+    const keys = nameVariantClusterKeys(company)
     keysByCompany.set(company.id, keys)
     for (const key of keys) {
       const members = membersByKey.get(key) ?? new Set<number>()
@@ -126,7 +171,7 @@ export function suggestNameVariantHits(
     }
   }
 
-  const groups = new Map<number, VariantCompany[]>()
+  const groups = new Map<number, NameVariantCompany[]>()
   for (const company of companies) {
     const root = findRoot(parent, company.id)
     groups.set(root, [...(groups.get(root) ?? []), company])
@@ -137,14 +182,16 @@ export function suggestNameVariantHits(
     if (members.length < 2) continue
     const memberIds = new Set(members.map((company) => company.id))
     const memberKeys = [
-      ...new Set(members.flatMap((company) => keysByCompany.get(company.id) ?? []))
+      ...new Set(
+        members.flatMap((company) => keysByCompany.get(company.id) ?? [])
+      )
     ]
     const closed = memberKeys.every((key) => {
       const holders = membersByKey.get(key)
       return holders && [...holders].every((id) => memberIds.has(id))
     })
     if (!closed) continue
-    if (hasConflictingExternalIds(members)) continue
+    if (hasConflictingCompanyExternalIds(members)) continue
 
     const ordered = [...members].sort((left, right) => left.id - right.id)
     const [target, ...sources] = ordered
@@ -153,9 +200,10 @@ export function suggestNameVariantHits(
         (keysByCompany.get(company.id) ?? []).includes(key)
       )
     )
-    const foldedKey = [...sharedKeys].sort(
-      (left, right) => right.length - left.length || left.localeCompare(right)
-    )[0] ?? ordered.map((company) => company.id).join('-')
+    const foldedKey =
+      [...sharedKeys].sort(
+        (left, right) => right.length - left.length || left.localeCompare(right)
+      )[0] ?? ordered.map((company) => company.id).join('-')
 
     suggestions.push({
       kind: NAME_VARIANT_KIND,

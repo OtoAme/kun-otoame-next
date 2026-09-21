@@ -1,5 +1,22 @@
 import { suggestSuffixUniqueHits } from '~/app/api/company/identity/suffixSuggestions'
 import { suggestNameVariantHits } from '~/app/api/company/identity/nameVariantSuggestions'
+import {
+  SOURCE_PAIR_KIND,
+  suggestSourcePairHits,
+  type SourcePairPatch,
+  type SourcePairProgress,
+  type SourcePairSuggestion
+} from '~/app/api/company/identity/sourcePairSuggestions'
+import {
+  createNextmoeCatalogClient,
+  isNextmoeCatalogConfigured
+} from '~/app/api/company/nextmoe/client'
+import { loadVndbDevelopers as loadVndbDevelopersDefault } from '~/app/api/edit/vndbCompanyCandidates'
+import type { VndbProducer } from '~/lib/arnebiae/vndb'
+import type {
+  NextmoeCompanyList,
+  NextmoeWorkList
+} from '~/app/api/company/nextmoe/types'
 import { prisma } from '~/prisma/index'
 import {
   CompanyMergeApplyError,
@@ -16,7 +33,32 @@ import type {
 
 const SUFFIX_UNIQUE_HIT_KIND = 'suffix-unique-hit'
 const NAME_VARIANT_KIND = 'name-variant'
-const DETECT_KINDS = [SUFFIX_UNIQUE_HIT_KIND, NAME_VARIANT_KIND] as const
+const DETECT_KINDS = [
+  SUFFIX_UNIQUE_HIT_KIND,
+  NAME_VARIANT_KIND,
+  SOURCE_PAIR_KIND
+] as const
+
+const defaultSleep = (ms: number) =>
+  new Promise<void>((resolve) => setTimeout(resolve, ms))
+
+export type DetectCompanyMergeSuggestionsOptions = {
+  loadVndbDevelopers?: (vndbId: string) => Promise<VndbProducer[]>
+  listNextmoeWorksByRefs?: (refs: string[]) => Promise<NextmoeWorkList>
+  listNextmoeCompaniesByIds?: (ids: string[]) => Promise<NextmoeCompanyList>
+  isNextmoeConfigured?: () => boolean
+  sleep?: (ms: number) => Promise<void>
+  onProgress?: (event: SourcePairProgress) => void
+}
+
+type DetectedSuggestion = {
+  kind: string
+  targetCompanyId: number
+  sourceCompanyIds: number[]
+  foldedKey: string
+  names: string[]
+  evidence?: SourcePairSuggestion['evidence']
+}
 
 const clusterIdKey = (
   targetCompanyId: number,
@@ -191,126 +233,207 @@ const loadClusterInput = async () => {
   })
 }
 
+const rememberSuggestion = (
+  byCluster: Map<string, DetectedSuggestion>,
+  suggestion: DetectedSuggestion
+) => {
+  const key = clusterIdKey(
+    suggestion.targetCompanyId,
+    suggestion.sourceCompanyIds
+  )
+  const previous = byCluster.get(key)
+  if (
+    !previous ||
+    suggestion.sourceCompanyIds.length > previous.sourceCompanyIds.length
+  ) {
+    byCluster.set(key, suggestion)
+  }
+}
+
+const loadSourcePairPatches = async (): Promise<SourcePairPatch[]> => {
+  const patches = await prisma.patch.findMany({
+    where: {
+      OR: [{ vndb_id: { not: null } }, { bangumi_id: { not: null } }]
+    },
+    select: {
+      id: true,
+      vndb_id: true,
+      bangumi_id: true,
+      company: { select: { company_id: true } }
+    }
+  })
+  return patches.flatMap((patch) => {
+    const companyIds = [...new Set(patch.company.map((row) => row.company_id))]
+    if (companyIds.length < 2) return []
+    return [
+      {
+        id: patch.id,
+        vndbId: patch.vndb_id,
+        bangumiId: patch.bangumi_id,
+        companyIds
+      }
+    ]
+  })
+}
+
+const collectSourcePairSuggestions = async (
+  companies: Awaited<ReturnType<typeof loadClusterInput>>,
+  options: DetectCompanyMergeSuggestionsOptions
+): Promise<SourcePairSuggestion[]> => {
+  const patches = await loadSourcePairPatches()
+  if (patches.length === 0) return []
+
+  const sleep = options.sleep ?? defaultSleep
+  const nextmoeConfigured =
+    options.isNextmoeConfigured ?? isNextmoeCatalogConfigured
+  let listWorks = options.listNextmoeWorksByRefs
+  if (nextmoeConfigured() && !listWorks) {
+    const client = createNextmoeCatalogClient({ sleep })
+    listWorks = (refs) => client.listWorksByRefs(refs)
+  }
+
+  return suggestSourcePairHits(companies, patches, {
+    loadVndbDevelopers: options.loadVndbDevelopers ?? loadVndbDevelopersDefault,
+    listNextmoeWorksByRefs: listWorks,
+    isNextmoeConfigured: nextmoeConfigured,
+    sleep,
+    onProgress: options.onProgress
+  })
+}
+
 /**
  * Read-only scan of `patch_company`, then an upsert of the resulting clusters
  * into the queue. Existing pending rows are refreshed in place; a key that was
  * dismissed is counted and left untouched, because this stage has no explicit
  * reopen action. No company is ever written.
  */
-export const detectCompanyMergeSuggestions =
-  async (): Promise<CompanyMergeDetectResponse> => {
-    const companies = await loadClusterInput()
-    const byCluster = new Map<
-      string,
-      | ReturnType<typeof suggestSuffixUniqueHits>[number]
-      | ReturnType<typeof suggestNameVariantHits>[number]
-    >()
-    for (const suggestion of [
-      ...suggestSuffixUniqueHits(companies),
-      ...suggestNameVariantHits(companies)
-    ]) {
-      const key = clusterIdKey(
-        suggestion.targetCompanyId,
-        suggestion.sourceCompanyIds
-      )
-      const previous = byCluster.get(key)
-      if (
-        !previous ||
-        suggestion.sourceCompanyIds.length > previous.sourceCompanyIds.length
-      ) {
-        byCluster.set(key, suggestion)
-      }
+export const detectCompanyMergeSuggestions = async (
+  options: DetectCompanyMergeSuggestionsOptions = {}
+): Promise<CompanyMergeDetectResponse> => {
+  const started = Date.now()
+  const notes: string[] = []
+  // eslint-disable-next-line no-console
+  console.info('[company-merges:detect] start')
+  const companies = await loadClusterInput()
+  // eslint-disable-next-line no-console
+  console.info(`[company-merges:detect] companies=${companies.length}`)
+  const byCluster = new Map<string, DetectedSuggestion>()
+  for (const suggestion of [
+    ...suggestSuffixUniqueHits(companies),
+    ...suggestNameVariantHits(companies)
+  ]) {
+    rememberSuggestion(byCluster, suggestion)
+  }
+  try {
+    const sourcePairs = await collectSourcePairSuggestions(companies, options)
+    for (const suggestion of sourcePairs) {
+      rememberSuggestion(byCluster, suggestion)
     }
-    const suggestions = [...byCluster.values()]
-    if (suggestions.length === 0) {
-      return { created: 0, updated: 0, skipped: 0 }
+  } catch (error) {
+    // eslint-disable-next-line no-console
+    console.error('[company-merges:detect] source-pair failed:', error)
+    notes.push('来源别名扫描失败，已跳过，仅保留本地规则结果')
+  }
+  const suggestions = [...byCluster.values()]
+  if (suggestions.length === 0) {
+    const durationMs = Date.now() - started
+    // eslint-disable-next-line no-console
+    console.info(`[company-merges:detect] done ${durationMs}ms clusters=0`)
+    return { created: 0, updated: 0, skipped: 0, durationMs, notes }
+  }
+
+  const existing = await prisma.company_merge_suggestion.findMany({
+    where: {
+      kind: { in: [...DETECT_KINDS] },
+      status: { in: [PENDING, DISMISSED] }
+    },
+    select: {
+      id: true,
+      folded_key: true,
+      status: true,
+      target_company_id: true,
+      source_company_ids: true
+    }
+  })
+
+  const pendingIdByKey = new Map<string, number>()
+  const dismissedKeys = new Set<string>()
+  for (const row of existing) {
+    const clusterKey = clusterIdKey(
+      row.target_company_id,
+      row.source_company_ids
+    )
+    const keys = [row.folded_key, clusterKey]
+    if (row.status === PENDING) {
+      for (const key of keys) {
+        if (!pendingIdByKey.has(key)) pendingIdByKey.set(key, row.id)
+      }
+      continue
+    }
+    for (const key of keys) dismissedKeys.add(key)
+  }
+
+  const detectedAt = new Date()
+  let created = 0
+  let updated = 0
+  let skipped = 0
+
+  for (const suggestion of suggestions) {
+    const cluster = {
+      target_company_id: suggestion.targetCompanyId,
+      source_company_ids: suggestion.sourceCompanyIds,
+      names: suggestion.names,
+      evidence:
+        suggestion.kind === SOURCE_PAIR_KIND && suggestion.evidence
+          ? suggestion.evidence
+          : {
+              kind: suggestion.kind,
+              foldedKey: suggestion.foldedKey
+            },
+      detected_at: detectedAt
     }
 
-    const existing = await prisma.company_merge_suggestion.findMany({
-      where: {
-        kind: { in: [...DETECT_KINDS] },
-        status: { in: [PENDING, DISMISSED] }
-      },
-      select: {
-        id: true,
-        folded_key: true,
-        status: true,
-        target_company_id: true,
-        source_company_ids: true
+    const clusterKey = clusterIdKey(
+      suggestion.targetCompanyId,
+      suggestion.sourceCompanyIds
+    )
+    const pendingId =
+      pendingIdByKey.get(clusterKey) ?? pendingIdByKey.get(suggestion.foldedKey)
+    if (pendingId !== undefined) {
+      await prisma.company_merge_suggestion.update({
+        where: { id: pendingId },
+        data: cluster
+      })
+      updated += 1
+      continue
+    }
+
+    if (
+      dismissedKeys.has(clusterKey) ||
+      dismissedKeys.has(suggestion.foldedKey)
+    ) {
+      skipped += 1
+      continue
+    }
+
+    await prisma.company_merge_suggestion.create({
+      data: {
+        ...cluster,
+        kind: suggestion.kind,
+        status: PENDING,
+        folded_key: suggestion.foldedKey
       }
     })
-
-    const pendingIdByKey = new Map<string, number>()
-    const dismissedKeys = new Set<string>()
-    for (const row of existing) {
-      const clusterKey = clusterIdKey(
-        row.target_company_id,
-        row.source_company_ids
-      )
-      const keys = [row.folded_key, clusterKey]
-      if (row.status === PENDING) {
-        for (const key of keys) {
-          if (!pendingIdByKey.has(key)) pendingIdByKey.set(key, row.id)
-        }
-        continue
-      }
-      for (const key of keys) dismissedKeys.add(key)
-    }
-
-    const detectedAt = new Date()
-    let created = 0
-    let updated = 0
-    let skipped = 0
-
-    for (const suggestion of suggestions) {
-      const cluster = {
-        target_company_id: suggestion.targetCompanyId,
-        source_company_ids: suggestion.sourceCompanyIds,
-        names: suggestion.names,
-        evidence: {
-          kind: suggestion.kind,
-          foldedKey: suggestion.foldedKey
-        },
-        detected_at: detectedAt
-      }
-
-      const clusterKey = clusterIdKey(
-        suggestion.targetCompanyId,
-        suggestion.sourceCompanyIds
-      )
-      const pendingId =
-        pendingIdByKey.get(clusterKey) ??
-        pendingIdByKey.get(suggestion.foldedKey)
-      if (pendingId !== undefined) {
-        await prisma.company_merge_suggestion.update({
-          where: { id: pendingId },
-          data: cluster
-        })
-        updated += 1
-        continue
-      }
-
-      if (
-        dismissedKeys.has(clusterKey) ||
-        dismissedKeys.has(suggestion.foldedKey)
-      ) {
-        skipped += 1
-        continue
-      }
-
-      await prisma.company_merge_suggestion.create({
-        data: {
-          ...cluster,
-          kind: suggestion.kind,
-          status: PENDING,
-          folded_key: suggestion.foldedKey
-        }
-      })
-      created += 1
-    }
-
-    return { created, updated, skipped }
+    created += 1
   }
+
+  const durationMs = Date.now() - started
+  // eslint-disable-next-line no-console
+  console.info(
+    `[company-merges:detect] done ${durationMs}ms created=${created} updated=${updated} skipped=${skipped}`
+  )
+  return { created, updated, skipped, durationMs, notes }
+}
 
 /**
  * Dismiss one pending row and record who did it. The status guard lives in the
@@ -363,6 +486,7 @@ const invalidateMergedCompanyCaches = async (
     ])
     return null
   } catch (error) {
+    // eslint-disable-next-line no-console
     console.error('Company merge cache invalidation failed:', error)
     return '合并已经写入数据库，但缓存失效失败：页面可能仍显示旧数据，请稍后重试。'
   }
@@ -470,6 +594,7 @@ export const applyCompanyMergeSuggestion = async (
     if (error instanceof CompanyMergeApplyError) {
       return error.message
     }
+    // eslint-disable-next-line no-console
     console.error('Company merge apply failed:', error)
     return '合并失败，会社数据未改动，请刷新列表后重试'
   }

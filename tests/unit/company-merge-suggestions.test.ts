@@ -16,6 +16,9 @@ const mocks = vi.hoisted(() => ({
       create: vi.fn(),
       update: vi.fn(),
       updateMany: vi.fn()
+    },
+    patch: {
+      findMany: vi.fn()
     }
   }
 }))
@@ -59,6 +62,7 @@ const expectNoCompanyWrites = () => {
 describe('detectCompanyMergeSuggestions', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mocks.prisma.patch.findMany.mockResolvedValue([])
   })
 
   it('writes one pending suggestion for a folded-key cluster', async () => {
@@ -72,7 +76,9 @@ describe('detectCompanyMergeSuggestions', () => {
     await expect(detectCompanyMergeSuggestions()).resolves.toEqual({
       created: 1,
       updated: 0,
-      skipped: 0
+      skipped: 0,
+      durationMs: expect.any(Number),
+      notes: expect.any(Array)
     })
 
     expect(mocks.prisma.company_merge_suggestion.create).toHaveBeenCalledTimes(
@@ -107,7 +113,9 @@ describe('detectCompanyMergeSuggestions', () => {
     await expect(detectCompanyMergeSuggestions()).resolves.toEqual({
       created: 0,
       updated: 1,
-      skipped: 0
+      skipped: 0,
+      durationMs: expect.any(Number),
+      notes: expect.any(Array)
     })
 
     expect(mocks.prisma.company_merge_suggestion.update).toHaveBeenCalledWith({
@@ -136,7 +144,9 @@ describe('detectCompanyMergeSuggestions', () => {
     await expect(detectCompanyMergeSuggestions()).resolves.toEqual({
       created: 0,
       updated: 0,
-      skipped: 1
+      skipped: 1,
+      durationMs: expect.any(Number),
+      notes: expect.any(Array)
     })
 
     expect(mocks.prisma.company_merge_suggestion.create).not.toHaveBeenCalled()
@@ -157,7 +167,9 @@ describe('detectCompanyMergeSuggestions', () => {
     await expect(detectCompanyMergeSuggestions()).resolves.toEqual({
       created: 0,
       updated: 0,
-      skipped: 0
+      skipped: 0,
+      durationMs: expect.any(Number),
+      notes: expect.any(Array)
     })
 
     expect(
@@ -183,7 +195,9 @@ describe('detectCompanyMergeSuggestions', () => {
     await expect(detectCompanyMergeSuggestions()).resolves.toEqual({
       created: 1,
       updated: 0,
-      skipped: 0
+      skipped: 0,
+      durationMs: expect.any(Number),
+      notes: expect.any(Array)
     })
 
     expect(mocks.prisma.company_merge_suggestion.create).toHaveBeenCalledWith({

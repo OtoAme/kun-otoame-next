@@ -41,6 +41,7 @@ export const DashboardCompanyMerges = () => {
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [detecting, setDetecting] = useState(false)
+  const [detectElapsedSec, setDetectElapsedSec] = useState(0)
   const [refreshNonce, setRefreshNonce] = useState(0)
   const requestSeq = useRef(0)
   const detectInflightRef = useRef(false)
@@ -86,6 +87,19 @@ export const DashboardCompanyMerges = () => {
 
   const refresh = useCallback(() => setRefreshNonce((nonce) => nonce + 1), [])
 
+  useEffect(() => {
+    if (!detecting) {
+      setDetectElapsedSec(0)
+      return
+    }
+    const started = Date.now()
+    const tick = () =>
+      setDetectElapsedSec(Math.floor((Date.now() - started) / 1000))
+    tick()
+    const id = window.setInterval(tick, 1000)
+    return () => window.clearInterval(id)
+  }, [detecting])
+
   const handleDetect = async () => {
     // 同步锁: await 之前先落 ref 锁, 防止连击重复提交
     if (detectInflightRef.current) {
@@ -105,8 +119,13 @@ export const DashboardCompanyMerges = () => {
         toast.error(DETECT_FALLBACK_ERROR)
         return
       }
+      const seconds = Math.max(1, Math.round((res.durationMs ?? 0) / 1000))
+      const extra =
+        Array.isArray(res.notes) && res.notes.length > 0
+          ? `（${res.notes.join('；')}）`
+          : ''
       toast.success(
-        `检测完成：新增 ${res.created} 条，更新 ${res.updated} 条，跳过 ${res.skipped} 条`
+        `检测完成：新增 ${res.created} 条，更新 ${res.updated} 条，跳过 ${res.skipped} 条，耗时 ${seconds}s${extra}`
       )
       refresh()
     } catch {
@@ -241,8 +260,14 @@ export const DashboardCompanyMerges = () => {
           <RefreshCw className={loading ? 'animate-spin' : undefined} />
           刷新
         </Button>
-        <p className="text-sm text-muted-foreground">
-          检测只读取会社表并生成建议；合并与驳回都要在这里手动确认。
+        <p
+          className="text-sm text-muted-foreground"
+          aria-live="polite"
+          role={detecting ? 'status' : undefined}
+        >
+          {detecting
+            ? `检测中（已等待 ${detectElapsedSec}s）。先跑本地规则，再查 VNDB；NextMoe 超时或 522 会跳过，终端会打 [company-merges:detect] 日志。`
+            : '检测只生成建议；合并与驳回都要在这里手动确认。'}
         </p>
       </div>
 

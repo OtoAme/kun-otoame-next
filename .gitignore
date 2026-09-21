@@ -63,3 +63,6 @@ scripts/create-test-user.ts
 
 # prisma generated
 prisma/generated
+
+# grok
+.grok-delegate/

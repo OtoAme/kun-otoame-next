@@ -415,6 +415,52 @@ describe('fail open behaviour', () => {
     expect(sleep.mock.calls[0][0]).toBeLessThanOrEqual(300)
   })
 
+  it('retries a timeout and keeps the items from the successful attempt', async () => {
+    const timeout = Object.assign(
+      new Error('The operation was aborted due to timeout'),
+      { name: 'TimeoutError' }
+    )
+    const sleep = vi.fn<(ms: number) => Promise<void>>(async () => {})
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockRejectedValueOnce(timeout)
+      .mockResolvedValueOnce(
+        jsonResponse({
+          object: 'list',
+          items: [{ object: 'work', id: 'w_01' }]
+        })
+      )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const client = createNextmoeCatalogClient({ apiKey: 'nextmoe-key', sleep })
+    const list = await client.listWorksByRefs(['vndb:v2168'])
+
+    expect(list.items).toEqual([{ object: 'work', id: 'w_01' }])
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(sleep).toHaveBeenCalledTimes(1)
+  })
+
+  it('retries Cloudflare origin failures and keeps later batches', async () => {
+    const sleep = vi.fn<(ms: number) => Promise<void>>(async () => {})
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse({ code: 'ERROR' }, { status: 522 }))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          object: 'list',
+          items: [{ object: 'work', id: 'w_01' }]
+        })
+      )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const client = createNextmoeCatalogClient({ apiKey: 'nextmoe-key', sleep })
+    const list = await client.listWorksByRefs(['vndb:v2168'])
+
+    expect(list.items).toEqual([{ object: 'work', id: 'w_01' }])
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(sleep).toHaveBeenCalledTimes(1)
+  })
+
   it('gives up after two server error retries', async () => {
     const sleep = vi.fn<(ms: number) => Promise<void>>(async () => {})
     const fetchMock = vi

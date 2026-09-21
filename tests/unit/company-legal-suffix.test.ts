@@ -26,6 +26,15 @@ describe('company legal suffix folding', () => {
     expect(fold('Koei GmbH')).toBe('koei')
     expect(fold('Koei KK')).toBe('koei')
     expect(fold('Koei, KK')).toBe('koei')
+    expect(fold('G.rev Ltd.')).toBe('g.rev')
+    expect(fold('G.rev ltd')).toBe('g.rev')
+    expect(fold('Re,AER LLC.')).toBe('re,aer')
+    expect(fold('Re,AER LLC')).toBe('re,aer')
+    expect(fold('Celtia Corp.')).toBe('celtia')
+    expect(fold('Celtia Corp')).toBe('celtia')
+    expect(fold('Celtia Limited')).toBe('celtia')
+    expect(fold('合同会社セルティア')).toBe('セルティア')
+    expect(fold('セルティア合同会社')).toBe('セルティア')
   })
 
   it('does not treat a parenthetical 株式会社 as a trailing legal form', () => {
@@ -41,6 +50,9 @@ describe('company legal suffix folding', () => {
       'メビウス株式会社',
       'Mebius（株式会社メビウス）',
       'Koei Games',
+      'G.rev Ltd.',
+      'Re,AER LLC.',
+      '合同会社セルティア',
       '株式会社'
     ]) {
       const once = fold(raw)
@@ -64,6 +76,8 @@ describe('company legal suffix folding', () => {
     expect(fold('Key Soft')).toBe('key soft')
     expect(fold('KoeiKK')).toBe('koeikk')
     expect(fold('Zinc')).toBe('zinc')
+    expect(fold('PlayMeow Games')).toBe('playmeow games')
+    expect(fold('unlimited')).toBe('unlimited')
   })
 
   it('reports no suffix key when only the legal form remains', () => {
@@ -122,7 +136,11 @@ describe('suffix unique hit suggestions', () => {
     expect(suggestions).toHaveLength(1)
     expect(suggestions[0].targetCompanyId).toBe(1)
     expect(suggestions[0].sourceCompanyIds).toEqual([2, 3])
-    expect(suggestions[0].names).toEqual(['Koei', 'KOEI Co., Ltd.', 'Koei Inc.'])
+    expect(suggestions[0].names).toEqual([
+      'Koei',
+      'KOEI Co., Ltd.',
+      'Koei Inc.'
+    ])
   })
 
   it('prefers the name without a legal form as the merge target', () => {
