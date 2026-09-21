@@ -1,5 +1,6 @@
 const KIND_LABELS: Record<string, string> = {
-  'suffix-unique-hit': '仅法人格后缀不同'
+  'suffix-unique-hit': '仅法人格后缀不同',
+  'name-variant': '名称变体（标点 / 括号注音 / 法人格）'
 }
 
 /** The column vocabulary; this queue only ever serves `pending` rows. */

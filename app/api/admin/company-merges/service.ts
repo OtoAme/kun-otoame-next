@@ -1,4 +1,5 @@
 import { suggestSuffixUniqueHits } from '~/app/api/company/identity/suffixSuggestions'
+import { suggestNameVariantHits } from '~/app/api/company/identity/nameVariantSuggestions'
 import { prisma } from '~/prisma/index'
 import {
   CompanyMergeApplyError,
@@ -14,6 +15,16 @@ import type {
 } from '~/types/api/companyMerges'
 
 const SUFFIX_UNIQUE_HIT_KIND = 'suffix-unique-hit'
+const NAME_VARIANT_KIND = 'name-variant'
+const DETECT_KINDS = [SUFFIX_UNIQUE_HIT_KIND, NAME_VARIANT_KIND] as const
+
+const clusterIdKey = (
+  targetCompanyId: number,
+  sourceCompanyIds: number[] | null | undefined
+) =>
+  [targetCompanyId, ...(sourceCompanyIds ?? [])]
+    .sort((left, right) => left - right)
+    .join(',')
 const PENDING = 'pending'
 const DISMISSED = 'dismissed'
 const ACCEPTED = 'accepted'
@@ -188,29 +199,62 @@ const loadClusterInput = async () => {
  */
 export const detectCompanyMergeSuggestions =
   async (): Promise<CompanyMergeDetectResponse> => {
-    const suggestions = suggestSuffixUniqueHits(await loadClusterInput())
+    const companies = await loadClusterInput()
+    const byCluster = new Map<
+      string,
+      | ReturnType<typeof suggestSuffixUniqueHits>[number]
+      | ReturnType<typeof suggestNameVariantHits>[number]
+    >()
+    for (const suggestion of [
+      ...suggestSuffixUniqueHits(companies),
+      ...suggestNameVariantHits(companies)
+    ]) {
+      const key = clusterIdKey(
+        suggestion.targetCompanyId,
+        suggestion.sourceCompanyIds
+      )
+      const previous = byCluster.get(key)
+      if (
+        !previous ||
+        suggestion.sourceCompanyIds.length > previous.sourceCompanyIds.length
+      ) {
+        byCluster.set(key, suggestion)
+      }
+    }
+    const suggestions = [...byCluster.values()]
     if (suggestions.length === 0) {
       return { created: 0, updated: 0, skipped: 0 }
     }
 
     const existing = await prisma.company_merge_suggestion.findMany({
       where: {
-        kind: SUFFIX_UNIQUE_HIT_KIND,
+        kind: { in: [...DETECT_KINDS] },
         status: { in: [PENDING, DISMISSED] }
       },
-      select: { id: true, folded_key: true, status: true }
+      select: {
+        id: true,
+        folded_key: true,
+        status: true,
+        target_company_id: true,
+        source_company_ids: true
+      }
     })
 
     const pendingIdByKey = new Map<string, number>()
     const dismissedKeys = new Set<string>()
     for (const row of existing) {
+      const clusterKey = clusterIdKey(
+        row.target_company_id,
+        row.source_company_ids
+      )
+      const keys = [row.folded_key, clusterKey]
       if (row.status === PENDING) {
-        if (!pendingIdByKey.has(row.folded_key)) {
-          pendingIdByKey.set(row.folded_key, row.id)
+        for (const key of keys) {
+          if (!pendingIdByKey.has(key)) pendingIdByKey.set(key, row.id)
         }
         continue
       }
-      dismissedKeys.add(row.folded_key)
+      for (const key of keys) dismissedKeys.add(key)
     }
 
     const detectedAt = new Date()
@@ -230,7 +274,13 @@ export const detectCompanyMergeSuggestions =
         detected_at: detectedAt
       }
 
-      const pendingId = pendingIdByKey.get(suggestion.foldedKey)
+      const clusterKey = clusterIdKey(
+        suggestion.targetCompanyId,
+        suggestion.sourceCompanyIds
+      )
+      const pendingId =
+        pendingIdByKey.get(clusterKey) ??
+        pendingIdByKey.get(suggestion.foldedKey)
       if (pendingId !== undefined) {
         await prisma.company_merge_suggestion.update({
           where: { id: pendingId },
@@ -240,7 +290,10 @@ export const detectCompanyMergeSuggestions =
         continue
       }
 
-      if (dismissedKeys.has(suggestion.foldedKey)) {
+      if (
+        dismissedKeys.has(clusterKey) ||
+        dismissedKeys.has(suggestion.foldedKey)
+      ) {
         skipped += 1
         continue
       }

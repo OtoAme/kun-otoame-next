@@ -28,6 +28,10 @@ describe('company legal suffix folding', () => {
     expect(fold('Koei, KK')).toBe('koei')
   })
 
+  it('does not treat a parenthetical 株式会社 as a trailing legal form', () => {
+    expect(fold('Mebius（株式会社メビウス）')).toBe('mebius(株式会社メビウス)')
+  })
+
   it('is idempotent', () => {
     for (const raw of [
       'KOEI Co., Ltd.',

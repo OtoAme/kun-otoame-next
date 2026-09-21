@@ -77,3 +77,18 @@ export const legalSuffixLookupKeys = (raw: string): string[] => {
     Boolean
   )
 }
+
+const PUNCTUATION_AND_SPACE = /[\s\p{P}\p{S}]+/gu
+const PARENTHETICAL_NOTE = /[（(][^（）()]*[）)]/g
+
+/** "mebius." and "Mebius" share this key; letters and digits stay. */
+export const foldPunctuation = (normalized: string): string =>
+  normalized.replace(PUNCTUATION_AND_SPACE, '')
+
+/**
+ * Drop a single layer of fullwidth/halfwidth parenthetical notes so
+ * "Mebius（株式会社メビウス）" and "Sanctuary（サンクチュアリ）" compare as the
+ * name outside the brackets. Nested or unmatched brackets are left alone.
+ */
+export const foldParentheticalName = (raw: string): string =>
+  normalizeCompanyValue(raw.replace(PARENTHETICAL_NOTE, ''))
