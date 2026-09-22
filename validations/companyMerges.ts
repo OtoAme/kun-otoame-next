@@ -1,8 +1,20 @@
 import { z } from 'zod'
+import { COMPANY_MERGE_SUGGESTION_STATUSES } from '~/types/api/companyMerges'
+
+export const listCompanyMergeSuggestionsSchema = z.object({
+  status: z
+    .enum(COMPANY_MERGE_SUGGESTION_STATUSES, {
+      message: '状态必须是 pending、dismissed 或 accepted'
+    })
+    .default('pending')
+})
 
 export const dismissCompanyMergeSuggestionSchema = z.object({
   id: z.coerce.number().int().min(1).max(9999999)
 })
+
+export const reopenCompanyMergeSuggestionSchema =
+  dismissCompanyMergeSuggestionSchema
 
 const companyId = z.coerce.number().int().min(1).max(9999999)
 

@@ -28,7 +28,9 @@ import type {
   CompanyMergeDetectResponse,
   CompanyMergeDismissResponse,
   CompanyMergeParticipant,
-  CompanyMergeSuggestionListResponse
+  CompanyMergeReopenResponse,
+  CompanyMergeSuggestionListResponse,
+  CompanyMergeSuggestionStatus
 } from '~/types/api/companyMerges'
 
 const SUFFIX_UNIQUE_HIT_KIND = 'suffix-unique-hit'
@@ -96,46 +98,70 @@ const toIntroductionPreview = (introduction: string) => {
 const uniqueSorted = (values: string[]) =>
   [...new Set(values)].sort((left, right) => left.localeCompare(right, 'en'))
 
-export const listCompanyMergeSuggestions =
-  async (): Promise<CompanyMergeSuggestionListResponse> => {
-    const rows = await prisma.company_merge_suggestion.findMany({
-      where: { status: PENDING },
-      orderBy: [{ detected_at: 'desc' }, { id: 'desc' }],
-      select: {
-        id: true,
-        kind: true,
-        folded_key: true,
-        target_company_id: true,
-        source_company_ids: true,
-        names: true,
-        detected_at: true
-      }
-    })
-    if (rows.length === 0) {
-      return { items: [] }
+export const listCompanyMergeSuggestions = async (
+  status: CompanyMergeSuggestionStatus = PENDING
+): Promise<CompanyMergeSuggestionListResponse> => {
+  const rows = await prisma.company_merge_suggestion.findMany({
+    where: { status },
+    orderBy:
+      status === PENDING
+        ? [{ detected_at: 'desc' }, { id: 'desc' }]
+        : [{ resolved_at: 'desc' }, { id: 'desc' }],
+    select: {
+      id: true,
+      kind: true,
+      folded_key: true,
+      target_company_id: true,
+      source_company_ids: true,
+      names: true,
+      detected_at: true,
+      resolved_at: true,
+      resolved_by_user_id: true
     }
+  })
+  if (rows.length === 0) {
+    return { items: [] }
+  }
 
-    const participantIds = [
-      ...new Set(
-        rows.flatMap((row) => [
-          row.target_company_id,
-          ...row.source_company_ids
-        ])
-      )
-    ]
-    const companies = await prisma.patch_company.findMany({
-      where: { id: { in: participantIds } },
-      select: COMPANY_MERGE_PARTICIPANT_SELECT
-    })
-    const companyById = new Map(
-      companies.map((company) => [company.id, company])
+  const participantIds = [
+    ...new Set(
+      rows.flatMap((row) => [row.target_company_id, ...row.source_company_ids])
     )
+  ]
+  const companies = await prisma.patch_company.findMany({
+    where: { id: { in: participantIds } },
+    select: COMPANY_MERGE_PARTICIPANT_SELECT
+  })
+  const companyById = new Map(companies.map((company) => [company.id, company]))
 
-    return {
-      items: rows.map((row) => ({
+  const resolverIds = [
+    ...new Set(
+      rows.flatMap((row) =>
+        row.resolved_by_user_id == null ? [] : [row.resolved_by_user_id]
+      )
+    )
+  ]
+  const resolverNameById = new Map<number, string>()
+  if (resolverIds.length > 0) {
+    const users = await prisma.user.findMany({
+      where: { id: { in: resolverIds } },
+      select: { id: true, name: true }
+    })
+    for (const user of users) {
+      resolverNameById.set(user.id, user.name)
+    }
+  }
+
+  return {
+    items: rows.map((row) => {
+      const resolvedByName =
+        row.resolved_by_user_id == null
+          ? undefined
+          : resolverNameById.get(row.resolved_by_user_id)
+      return {
         id: row.id,
         kind: row.kind,
-        status: PENDING,
+        status,
         foldedKey: row.folded_key,
         targetCompanyId: row.target_company_id,
         sourceCompanyIds: row.source_company_ids,
@@ -156,10 +182,14 @@ export const listCompanyMergeSuggestions =
             }
           }
         ),
-        detectedAt: row.detected_at.toISOString()
-      }))
-    }
+        detectedAt: row.detected_at.toISOString(),
+        resolvedAt: row.resolved_at ? row.resolved_at.toISOString() : null,
+        resolvedByUserId: row.resolved_by_user_id,
+        ...(resolvedByName ? { resolvedByName } : {})
+      }
+    })
   }
+}
 
 type ScannedCompany = {
   id: number
@@ -303,9 +333,10 @@ const collectSourcePairSuggestions = async (
 
 /**
  * Read-only scan of `patch_company`, then an upsert of the resulting clusters
- * into the queue. Existing pending rows are refreshed in place; a key that was
- * dismissed is counted and left untouched, because this stage has no explicit
- * reopen action. No company is ever written.
+ * into the queue. Existing pending rows are refreshed in place; a key that is
+ * currently dismissed is counted and left untouched. Reopening a dismissed row
+ * puts that key back to pending, so a later scan refreshes it instead of
+ * skipping. No company is ever written.
  */
 export const detectCompanyMergeSuggestions = async (
   options: DetectCompanyMergeSuggestionsOptions = {}
@@ -463,6 +494,43 @@ export const dismissCompanyMergeSuggestion = async (
   })
 
   return existing ? '该建议已处理，无法重复驳回' : '未找到该会社合并建议'
+}
+
+/**
+ * Put a dismissed row back to pending on the same id. Does not insert a new
+ * row and does not touch companies. Detect still skips keys that are currently
+ * dismissed; after this write the key is pending, so the next scan refreshes it.
+ */
+export const reopenCompanyMergeSuggestion = async (
+  id: number
+): Promise<CompanyMergeReopenResponse | string> => {
+  const result = await prisma.company_merge_suggestion.updateMany({
+    where: { id, status: DISMISSED },
+    data: {
+      status: PENDING,
+      resolved_at: null,
+      resolved_by_user_id: null
+    }
+  })
+
+  if (result.count > 0) {
+    return { id }
+  }
+
+  const existing = await prisma.company_merge_suggestion.findUnique({
+    where: { id },
+    select: { id: true, status: true }
+  })
+  if (!existing) {
+    return '未找到该会社合并建议'
+  }
+  if (existing.status === PENDING) {
+    return '该建议仍待处理，无需重新打开'
+  }
+  if (existing.status === ACCEPTED) {
+    return '该建议已合并，无法重新打开'
+  }
+  return '该建议不是已驳回状态，无法重新打开'
 }
 
 /**

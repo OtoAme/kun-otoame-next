@@ -289,8 +289,20 @@ export const MergeSuggestionDialog = ({
         )
         .map((participant) => `#${participant.companyId}`)
         .join('、')
+      const survivingName = draft.name.trim()
       toast.success(
-        `已把会社 ${mergedSourceIds} 合并进 #${response.targetCompanyId}`
+        <span>
+          已把会社 {mergedSourceIds} 合并进 #{response.targetCompanyId}
+          {survivingName ? ` ${survivingName}` : ''}。
+          <a
+            href={`/company/${response.targetCompanyId}`}
+            target="_blank"
+            rel="noreferrer"
+            className="ml-1 underline"
+          >
+            打开主会社页
+          </a>
+        </span>
       )
       if (response.cacheWarning) {
         toast.error(response.cacheWarning)

@@ -14,29 +14,163 @@ import {
   TableHeader,
   TableRow
 } from '~/components/dashboard/ui/table'
+import { Tabs, TabsList, TabsTrigger } from '~/components/dashboard/ui/tabs'
 import { kunFetchGet, kunFetchPost } from '~/utils/kunFetch'
 import { formatChinaDateTime } from '~/utils/fixedTimezoneDate'
 import {
   getCompanyMergeSuggestionKindLabel,
   type CompanyMergeDetectResponse,
   type CompanyMergeSuggestion,
-  type CompanyMergeSuggestionListResponse
+  type CompanyMergeSuggestionListResponse,
+  type CompanyMergeSuggestionStatus
 } from '~/types/api/companyMerges'
 import { DismissSuggestionDialog } from './DismissSuggestionDialog'
 import { MergeSuggestionDialog } from './MergeSuggestionDialog'
+import { ReopenSuggestionDialog } from './ReopenSuggestionDialog'
 
 const SKELETON_ROWS = 3
 const FALLBACK_ERROR = '获取会社合并建议失败，请稍后重试'
 const NETWORK_ERROR = '网络错误，请检查网络连接后重试'
 const DETECT_FALLBACK_ERROR = '检测失败，请稍后重试'
 
+const STATUS_TABS: Array<{
+  value: CompanyMergeSuggestionStatus
+  label: string
+}> = [
+  { value: 'pending', label: '待处理' },
+  { value: 'dismissed', label: '已驳回' },
+  { value: 'accepted', label: '已合并' }
+]
+
+const EMPTY_COPY: Record<
+  CompanyMergeSuggestionStatus,
+  { title: string; hint: string }
+> = {
+  pending: {
+    title: '没有待处理的会社合并建议',
+    hint: '点「检测」扫描一次会社表'
+  },
+  dismissed: {
+    title: '没有已驳回的会社合并建议',
+    hint: '驳回后会出现在这里，可以重新打开'
+  },
+  accepted: {
+    title: '没有已合并的记录',
+    hint: '确认合并后会出现在这里'
+  }
+}
+
+const COMPANY_LINK_CLASS =
+  'rounded-sm text-primary underline-offset-4 hover:underline focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none'
+
+const clusterCompanyIds = (suggestion: CompanyMergeSuggestion) => [
+  suggestion.targetCompanyId,
+  ...suggestion.sourceCompanyIds
+]
+
+const survivingCompanyIdOf = (suggestion: CompanyMergeSuggestion) =>
+  Math.min(...clusterCompanyIds(suggestion))
+
+const operatorLabel = (suggestion: CompanyMergeSuggestion) => {
+  if (suggestion.resolvedByUserId == null) return '—'
+  if (suggestion.resolvedByName) {
+    return `${suggestion.resolvedByName}（#${suggestion.resolvedByUserId}）`
+  }
+  return `#${suggestion.resolvedByUserId}`
+}
+
+const CompanyLabel = ({
+  companyId,
+  frozenName,
+  liveName
+}: {
+  companyId: number
+  frozenName: string | undefined
+  liveName: string | null | undefined
+}) => {
+  const label = frozenName?.trim() || `#${companyId}`
+  if (liveName == null) {
+    return (
+      <span className="text-sm">
+        {label}
+        <span className="text-xs text-muted-foreground">
+          {' '}
+          #{companyId}（已不存在）
+        </span>
+      </span>
+    )
+  }
+  return (
+    <a
+      href={`/company/${companyId}`}
+      target="_blank"
+      rel="noreferrer"
+      className={COMPANY_LINK_CLASS}
+    >
+      {label}
+      <span className="text-xs text-muted-foreground"> #{companyId}</span>
+    </a>
+  )
+}
+
+const SuggestionCompanies = ({
+  suggestion,
+  showTargetBadge
+}: {
+  suggestion: CompanyMergeSuggestion
+  showTargetBadge: boolean
+}) => {
+  const ids = clusterCompanyIds(suggestion)
+  return (
+    <div className="flex flex-col gap-1">
+      {ids.map((companyId, index) => {
+        const participant = suggestion.participants[index]
+        const label = (
+          <CompanyLabel
+            companyId={companyId}
+            frozenName={suggestion.names[index]}
+            liveName={participant?.name}
+          />
+        )
+        if (index === 0 && showTargetBadge) {
+          return (
+            <span
+              key={`${suggestion.id}-company-${companyId}`}
+              className="flex items-center gap-2 text-sm font-medium"
+            >
+              <Badge variant="secondary">目标</Badge>
+              {label}
+            </span>
+          )
+        }
+        return (
+          <span
+            key={`${suggestion.id}-company-${companyId}`}
+            className={
+              showTargetBadge
+                ? 'flex items-center gap-2 pl-4 text-sm text-muted-foreground'
+                : 'flex items-center gap-2 text-sm'
+            }
+          >
+            {label}
+          </span>
+        )
+      })}
+    </div>
+  )
+}
+
 /**
- * Company merge queue. 检测 only scans `patch_company` and writes suggestions.
- * 驳回 records the decision and touches nothing else; 合并 is the one action on
- * this page that writes company rows, and it does so through the same writer as
- * the offline cleanup. Dismissed keys are never revived by a later scan.
+ * Company merge queue plus dismissed/accepted history. Detect only scans
+ * `patch_company` and writes suggestions; 驳回 / 重新打开 record the decision
+ * and touch nothing else; 合并 is the one action that writes company rows,
+ * through the same writer as the offline cleanup.
+ *
+ * 检测按钮始终显示：秒表与检测请求挂在页签外，切换页签不丢秒表；完成后刷新
+ * 当前页签。检测只对「当前仍 dismissed」的键跳过。
  */
 export const DashboardCompanyMerges = () => {
+  const [status, setStatus] = useState<CompanyMergeSuggestionStatus>('pending')
   const [items, setItems] = useState<CompanyMergeSuggestion[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
@@ -45,7 +179,7 @@ export const DashboardCompanyMerges = () => {
   const [refreshNonce, setRefreshNonce] = useState(0)
   const requestSeq = useRef(0)
   const detectInflightRef = useRef(false)
-  // 驳回成功后焦点退到这里; 它包住骨架屏/错误/空态/表格四种分支, 永远在 DOM 里。
+  const loadedStatusRef = useRef<CompanyMergeSuggestionStatus | null>(null)
   const listRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
@@ -53,8 +187,12 @@ export const DashboardCompanyMerges = () => {
     let active = true
     setLoading(true)
     setError(null)
+    if (loadedStatusRef.current !== status) {
+      setItems(null)
+    }
     kunFetchGet<CompanyMergeSuggestionListResponse | string>(
-      '/admin/company-merges'
+      '/admin/company-merges',
+      { status }
     )
       .then((res) => {
         if (!active || seq !== requestSeq.current) return
@@ -64,6 +202,7 @@ export const DashboardCompanyMerges = () => {
           return
         }
         if (res && Array.isArray(res.items)) {
+          loadedStatusRef.current = status
           setItems(res.items)
           return
         }
@@ -75,7 +214,6 @@ export const DashboardCompanyMerges = () => {
         setItems(null)
         setError(NETWORK_ERROR)
       })
-      // 失败路径同样要解除 loading, 否则骨架屏会一直挂着
       .finally(() => {
         if (!active || seq !== requestSeq.current) return
         setLoading(false)
@@ -83,7 +221,7 @@ export const DashboardCompanyMerges = () => {
     return () => {
       active = false
     }
-  }, [refreshNonce])
+  }, [refreshNonce, status])
 
   const refresh = useCallback(() => setRefreshNonce((nonce) => nonce + 1), [])
 
@@ -101,7 +239,6 @@ export const DashboardCompanyMerges = () => {
   }, [detecting])
 
   const handleDetect = async () => {
-    // 同步锁: await 之前先落 ref 锁, 防止连击重复提交
     if (detectInflightRef.current) {
       return
     }
@@ -136,12 +273,17 @@ export const DashboardCompanyMerges = () => {
     }
   }
 
-  // 驳回与合并都让这一行离开队列, 列表本地先摘掉, 不必等下一次刷新。
   const handleResolved = useCallback((id: number) => {
     setItems((prev) =>
       prev === null ? prev : prev.filter((item) => item.id !== id)
     )
   }, [])
+
+  const empty = EMPTY_COPY[status]
+  const showOperator = status !== 'pending'
+  const showSurviving = status === 'accepted'
+  const showFoldedKey = status === 'pending'
+  const showActions = status !== 'accepted'
 
   const listContent =
     loading && items === null ? (
@@ -164,75 +306,119 @@ export const DashboardCompanyMerges = () => {
       </div>
     ) : items === null || items.length === 0 ? (
       <div className="flex h-32 flex-col items-center justify-center gap-2 rounded-md border text-center">
-        <p className="text-sm text-muted-foreground">
-          没有待处理的会社合并建议
-        </p>
-        <p className="text-xs text-muted-foreground">
-          点「检测」扫描一次会社表
-        </p>
+        <p className="text-sm text-muted-foreground">{empty.title}</p>
+        <p className="text-xs text-muted-foreground">{empty.hint}</p>
       </div>
     ) : (
       <div className="rounded-md border">
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>会社</TableHead>
+              {status !== 'pending' ? <TableHead>时间</TableHead> : null}
+              {status === 'pending' ? <TableHead>会社</TableHead> : null}
               <TableHead>类型</TableHead>
-              <TableHead>折叠键</TableHead>
-              <TableHead>检测时间</TableHead>
-              <TableHead className="text-right">操作</TableHead>
+              {status !== 'pending' ? <TableHead>会社</TableHead> : null}
+              {showSurviving ? <TableHead>主会社</TableHead> : null}
+              {showFoldedKey ? <TableHead>折叠键</TableHead> : null}
+              {status === 'pending' ? <TableHead>检测时间</TableHead> : null}
+              {showOperator ? <TableHead>操作者</TableHead> : null}
+              {showActions ? (
+                <TableHead className="text-right">操作</TableHead>
+              ) : null}
             </TableRow>
           </TableHeader>
           <TableBody>
-            {items.map((suggestion) => (
-              <TableRow key={suggestion.id}>
-                <TableCell className="align-top">
-                  <div className="flex flex-col gap-1">
-                    <span className="flex items-center gap-2 text-sm font-medium">
-                      <Badge variant="secondary">目标</Badge>
-                      {suggestion.names[0] ?? `#${suggestion.targetCompanyId}`}
-                      <span className="text-xs text-muted-foreground">
-                        #{suggestion.targetCompanyId}
-                      </span>
-                    </span>
-                    {suggestion.sourceCompanyIds.map((id, index) => (
-                      <span
-                        key={`${suggestion.id}-source-${id}`}
-                        className="flex items-center gap-2 pl-4 text-sm text-muted-foreground"
-                      >
-                        {suggestion.names[index + 1] ?? `#${id}`}
-                        <span className="text-xs">#{id}</span>
-                      </span>
-                    ))}
-                  </div>
-                </TableCell>
-                <TableCell className="align-top text-sm">
-                  {getCompanyMergeSuggestionKindLabel(suggestion.kind)}
-                </TableCell>
-                <TableCell className="align-top">
-                  <code className="rounded bg-muted px-1 text-xs break-all">
-                    {suggestion.foldedKey}
-                  </code>
-                </TableCell>
-                <TableCell className="align-top text-sm text-muted-foreground">
-                  {formatChinaDateTime(suggestion.detectedAt)}
-                </TableCell>
-                <TableCell className="text-right align-top">
-                  <div className="flex justify-end gap-2">
-                    <MergeSuggestionDialog
-                      suggestion={suggestion}
-                      onMerged={handleResolved}
-                      fallbackFocusRef={listRef}
-                    />
-                    <DismissSuggestionDialog
-                      suggestion={suggestion}
-                      onDismissed={handleResolved}
-                      fallbackFocusRef={listRef}
-                    />
-                  </div>
-                </TableCell>
-              </TableRow>
-            ))}
+            {items.map((suggestion) => {
+              const survivingId = survivingCompanyIdOf(suggestion)
+              const survivingIndex =
+                clusterCompanyIds(suggestion).indexOf(survivingId)
+              const survivingParticipant =
+                suggestion.participants[survivingIndex]
+              const timeValue =
+                status === 'pending'
+                  ? suggestion.detectedAt
+                  : (suggestion.resolvedAt ?? suggestion.detectedAt)
+              return (
+                <TableRow key={suggestion.id}>
+                  {status !== 'pending' ? (
+                    <TableCell className="align-top text-sm text-muted-foreground">
+                      {formatChinaDateTime(timeValue)}
+                    </TableCell>
+                  ) : null}
+                  {status === 'pending' ? (
+                    <TableCell className="align-top">
+                      <SuggestionCompanies
+                        suggestion={suggestion}
+                        showTargetBadge
+                      />
+                    </TableCell>
+                  ) : null}
+                  <TableCell className="align-top text-sm">
+                    {getCompanyMergeSuggestionKindLabel(suggestion.kind)}
+                  </TableCell>
+                  {status !== 'pending' ? (
+                    <TableCell className="align-top">
+                      <SuggestionCompanies
+                        suggestion={suggestion}
+                        showTargetBadge={false}
+                      />
+                    </TableCell>
+                  ) : null}
+                  {showSurviving ? (
+                    <TableCell className="align-top">
+                      <CompanyLabel
+                        companyId={survivingId}
+                        frozenName={suggestion.names[survivingIndex]}
+                        liveName={survivingParticipant?.name}
+                      />
+                    </TableCell>
+                  ) : null}
+                  {showFoldedKey ? (
+                    <TableCell className="align-top">
+                      <code className="rounded bg-muted px-1 text-xs break-all">
+                        {suggestion.foldedKey}
+                      </code>
+                    </TableCell>
+                  ) : null}
+                  {status === 'pending' ? (
+                    <TableCell className="align-top text-sm text-muted-foreground">
+                      {formatChinaDateTime(timeValue)}
+                    </TableCell>
+                  ) : null}
+                  {showOperator ? (
+                    <TableCell className="align-top text-sm text-muted-foreground">
+                      {operatorLabel(suggestion)}
+                    </TableCell>
+                  ) : null}
+                  {showActions ? (
+                    <TableCell className="text-right align-top">
+                      <div className="flex justify-end gap-2">
+                        {status === 'pending' ? (
+                          <>
+                            <MergeSuggestionDialog
+                              suggestion={suggestion}
+                              onMerged={handleResolved}
+                              fallbackFocusRef={listRef}
+                            />
+                            <DismissSuggestionDialog
+                              suggestion={suggestion}
+                              onDismissed={handleResolved}
+                              fallbackFocusRef={listRef}
+                            />
+                          </>
+                        ) : (
+                          <ReopenSuggestionDialog
+                            suggestion={suggestion}
+                            onReopened={handleResolved}
+                            fallbackFocusRef={listRef}
+                          />
+                        )}
+                      </div>
+                    </TableCell>
+                  ) : null}
+                </TableRow>
+              )
+            })}
           </TableBody>
         </Table>
       </div>
@@ -270,6 +456,25 @@ export const DashboardCompanyMerges = () => {
             : '检测只生成建议；合并与驳回都要在这里手动确认。'}
         </p>
       </div>
+
+      <Tabs
+        value={status}
+        onValueChange={(value) =>
+          setStatus(value as CompanyMergeSuggestionStatus)
+        }
+      >
+        <TabsList>
+          {STATUS_TABS.map((tab) => (
+            <TabsTrigger
+              key={tab.value}
+              value={tab.value}
+              className="cursor-pointer"
+            >
+              {tab.label}
+            </TabsTrigger>
+          ))}
+        </TabsList>
+      </Tabs>
 
       <div
         ref={listRef}

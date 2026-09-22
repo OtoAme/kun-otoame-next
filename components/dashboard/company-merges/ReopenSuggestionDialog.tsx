@@ -2,7 +2,7 @@
 
 import { useRef, useState, type RefObject } from 'react'
 import toast from 'react-hot-toast'
-import { Loader2, X } from 'lucide-react'
+import { Loader2, RotateCcw } from 'lucide-react'
 import {
   AlertDialog,
   AlertDialogCancel,
@@ -16,37 +16,32 @@ import {
 import { Button } from '~/components/dashboard/ui/button'
 import { kunFetchPost } from '~/utils/kunFetch'
 import type {
-  CompanyMergeDismissResponse,
+  CompanyMergeReopenResponse,
   CompanyMergeSuggestion
 } from '~/types/api/companyMerges'
 
-interface DismissSuggestionDialogProps {
+interface ReopenSuggestionDialogProps {
   suggestion: CompanyMergeSuggestion
-  onDismissed: (id: number) => void
-  /** Where focus goes once the dismissed row has taken the trigger with it. */
+  onReopened: (id: number) => void
   fallbackFocusRef: RefObject<HTMLElement | null>
 }
 
 /**
- * Dismiss one queued suggestion. The dialog only records the decision: the
- * companies themselves are never touched, and the key stays suppressed until
- * someone reopens it by hand.
+ * Put a dismissed suggestion back to pending on the same row. Companies are
+ * not written. The next detect will refresh this key instead of skipping it.
  */
-export const DismissSuggestionDialog = ({
+export const ReopenSuggestionDialog = ({
   suggestion,
-  onDismissed,
+  onReopened,
   fallbackFocusRef
-}: DismissSuggestionDialogProps) => {
+}: ReopenSuggestionDialogProps) => {
   const [open, setOpen] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
-  // 同步锁: await 之前先落 ref 锁, 防止连击重复提交
   const inflightRef = useRef(false)
   const triggerRef = useRef<HTMLButtonElement | null>(null)
 
-  // 驳回成功后本行会被移除, 触发按钮随之卸载; Radix 的默认回焦会落到
-  // <body>。按钮还在就交还给它, 否则退到列表容器。
   const handleCloseAutoFocus = (event: Event) => {
     event.preventDefault()
     const trigger = triggerRef.current
@@ -58,7 +53,6 @@ export const DismissSuggestionDialog = ({
   }
 
   const handleOpenChange = (nextOpen: boolean) => {
-    // 驳回在途时锁定关闭 (含 X / Escape / 遮罩 / 取消)
     if (inflightRef.current) {
       return
     }
@@ -68,7 +62,7 @@ export const DismissSuggestionDialog = ({
     }
   }
 
-  const handleDismiss = async () => {
+  const handleReopen = async () => {
     if (inflightRef.current) {
       return
     }
@@ -82,12 +76,11 @@ export const DismissSuggestionDialog = ({
     let unknownFailure = false
     let succeeded = false
     try {
-      const res = await kunFetchPost<CompanyMergeDismissResponse | string>(
-        '/admin/company-merges/dismiss',
+      const res = await kunFetchPost<CompanyMergeReopenResponse | string>(
+        '/admin/company-merges/reopen',
         { id: targetId }
       )
       if (typeof res === 'string') {
-        // kunFetch 约定: 任何字符串 (包括空串) 都是业务错误
         businessError = res
       } else {
         succeeded = true
@@ -100,22 +93,22 @@ export const DismissSuggestionDialog = ({
     }
 
     if (succeeded) {
-      toast.success(`已驳回会社合并建议 #${targetId}`)
+      toast.success(`已重新打开会社合并建议 #${targetId}`)
       setOpen(false)
       setError(null)
-      onDismissed(targetId)
+      onReopened(targetId)
       return
     }
 
     if (businessError !== null) {
-      setError(businessError.trim() || '驳回失败，请稍后重试')
+      setError(businessError.trim() || '重新打开失败，请稍后重试')
       return
     }
 
     if (unknownFailure) {
-      toast.error('网络异常，驳回结果未知，请刷新列表后核对')
+      toast.error('网络异常，重新打开结果未知，请刷新列表后核对')
       setError(
-        '网络异常，驳回结果未知。请刷新列表确认该建议是否仍待处理，再决定是否重试。'
+        '网络异常，重新打开结果未知。请刷新列表确认该建议是否仍为已驳回，再决定是否重试。'
       )
     }
   }
@@ -128,11 +121,11 @@ export const DismissSuggestionDialog = ({
           type="button"
           variant="outline"
           size="sm"
-          aria-label={`驳回会社合并建议 #${suggestion.id}`}
+          aria-label={`重新打开会社合并建议 #${suggestion.id}`}
           className="cursor-pointer"
         >
-          <X />
-          驳回
+          <RotateCcw />
+          重新打开
         </Button>
       </AlertDialogTrigger>
       <AlertDialogContent
@@ -144,11 +137,10 @@ export const DismissSuggestionDialog = ({
         }}
       >
         <AlertDialogHeader>
-          <AlertDialogTitle>驳回这条合并建议</AlertDialogTitle>
+          <AlertDialogTitle>重新打开这条合并建议</AlertDialogTitle>
           <AlertDialogDescription>
-            建议 #{suggestion.id} 将被标记为已驳回，折叠键「
-            {suggestion.foldedKey}
-            」在重新检测时不会再自动出现。会社数据不会被修改，也不会有任何合并发生。
+            建议 #{suggestion.id} 将回到待处理，折叠键「{suggestion.foldedKey}
+            」之后再检测时会刷新这条建议，而不是继续跳过。不会新建一行，也不会改动会社数据。
           </AlertDialogDescription>
         </AlertDialogHeader>
 
@@ -167,13 +159,12 @@ export const DismissSuggestionDialog = ({
           </AlertDialogCancel>
           <Button
             type="button"
-            variant="destructive"
-            onClick={handleDismiss}
+            onClick={handleReopen}
             disabled={busy}
             className="cursor-pointer disabled:cursor-default"
           >
             {busy && <Loader2 className="animate-spin" />}
-            {busy ? '驳回中…' : '确认驳回'}
+            {busy ? '重新打开中…' : '确认重新打开'}
           </Button>
         </AlertDialogFooter>
       </AlertDialogContent>

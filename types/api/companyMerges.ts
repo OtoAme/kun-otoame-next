@@ -4,8 +4,14 @@ const KIND_LABELS: Record<string, string> = {
   'source-pair': '同一作品的来源别名对得上'
 }
 
-/** The column vocabulary; this queue only ever serves `pending` rows. */
-export type CompanyMergeSuggestionStatus = 'pending' | 'dismissed' | 'accepted'
+export const COMPANY_MERGE_SUGGESTION_STATUSES = [
+  'pending',
+  'dismissed',
+  'accepted'
+] as const
+
+export type CompanyMergeSuggestionStatus =
+  (typeof COMPANY_MERGE_SUGGESTION_STATUSES)[number]
 
 /**
  * One company of a queued cluster, as it looked when the list was read. Every
@@ -40,6 +46,10 @@ export interface CompanyMergeSuggestion {
   /** 与 `[targetCompanyId, ...sourceCompanyIds]` 同序。 */
   participants: CompanyMergeParticipant[]
   detectedAt: string
+  resolvedAt: string | null
+  resolvedByUserId: number | null
+  /** 查得到操作者用户名时带上；查不到则省略，前端退回 `#id`。 */
+  resolvedByName?: string
 }
 
 export interface CompanyMergeSuggestionListResponse {
@@ -60,6 +70,10 @@ export interface CompanyMergeDetectResponse {
 }
 
 export interface CompanyMergeDismissResponse {
+  id: number
+}
+
+export interface CompanyMergeReopenResponse {
   id: number
 }
 
