@@ -200,8 +200,6 @@ export const publishSubmissionCore = async (
       const link = vndbProducerLink(producer, input.authorId)
       return link ? [link] : []
     })
-    const vndbPlan = planIncomingCompanyLinks(snapshots, vndbIncoming)
-    const vndbLinked = vndbPlan.linkIds.length + vndbPlan.create.length > 0
     const vndbNames = new Set(
       payload.vndbDevelopers.map((name) => name.trim()).filter(Boolean)
     )
@@ -212,22 +210,18 @@ export const publishSubmissionCore = async (
       const trimmed = name.trim()
       if (!trimmed) return []
       if (input.vndbProducers && vndbNames.has(trimmed)) return []
-      if (vndbLinked && bangumiNames.has(trimmed)) return []
+      if (vndbIncoming.length > 0 && bangumiNames.has(trimmed)) return []
       return [stringCompanyLink(trimmed, input.authorId, payload)]
     })
-    const stringPlan = planIncomingCompanyLinks(snapshots, stringIncoming)
+    const plan = planIncomingCompanyLinks(snapshots, [
+      ...vndbIncoming,
+      ...stringIncoming
+    ])
     await applyIncomingCompanyPlan(
       tx,
       patch.id,
-      vndbPlan,
-      'authoritative',
-      input.constraintCompatibility
-    )
-    await applyIncomingCompanyPlan(
-      tx,
-      patch.id,
-      stringPlan,
-      'legacy',
+      plan,
+      vndbIncoming.length > 0 ? 'authoritative' : 'legacy',
       input.constraintCompatibility
     )
     touchedCompanies = true

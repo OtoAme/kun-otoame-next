@@ -24,6 +24,20 @@ vi.mock('~/app/api/edit/_postToIndexNow', () => ({
   postToIndexNow: vi.fn()
 }))
 
+const planIncomingCompanyLinksMock = vi.hoisted(() => vi.fn())
+vi.mock('~/app/api/edit/linkIncomingCompanies', async () => {
+  const actual = await vi.importActual<
+    typeof import('~/app/api/edit/linkIncomingCompanies')
+  >('~/app/api/edit/linkIncomingCompanies')
+  planIncomingCompanyLinksMock.mockImplementation(
+    actual.planIncomingCompanyLinks
+  )
+  return {
+    ...actual,
+    planIncomingCompanyLinks: planIncomingCompanyLinksMock
+  }
+})
+
 import { publishSubmissionCore } from '~/app/api/patch-submission/publishCore'
 import type { PatchSubmissionPayload } from '~/types/api/patchSubmission'
 
@@ -96,9 +110,43 @@ describe('submission publish company branch', () => {
       gallery: []
     })
 
-    expect(applyIncomingCompanyPlanMock).toHaveBeenCalled()
+    expect(applyIncomingCompanyPlanMock).toHaveBeenCalledOnce()
+    expect(planIncomingCompanyLinksMock).toHaveBeenCalledOnce()
     expect(applyCompanyResolutionMock).not.toHaveBeenCalled()
     expect(ensureCompanyRelationsByNameMock).not.toHaveBeenCalled()
+  })
+
+  it('plans VNDB producers before Steam in one pass', async () => {
+    await publishSubmissionCore(tx as never, {
+      authorId: 100,
+      payload: {
+        ...payload,
+        vndbId: 'v1',
+        vndbDevelopers: ['スタジオ'],
+        bangumiDevelopers: ['Bangumi House'],
+        steamDevelopers: ['Steam House']
+      },
+      bannerKey: null,
+      gallery: [],
+      vndbProducers: [
+        {
+          id: 'p1',
+          name: 'Studio',
+          original: 'スタジオ',
+          aliases: [],
+          type: 'co'
+        }
+      ]
+    })
+
+    expect(planIncomingCompanyLinksMock).toHaveBeenCalledOnce()
+    const incoming = planIncomingCompanyLinksMock.mock.calls[0]?.[1] as Array<{
+      createName: string
+    }>
+    expect(incoming.map((item) => item.createName)).toEqual([
+      'スタジオ',
+      'Steam House'
+    ])
   })
 
   it('uses the same resolver branch as preview when the server flag is on', async () => {

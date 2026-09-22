@@ -67,6 +67,13 @@ const companySuffixKeys = (company: LinkCompanySnapshot) =>
     ...(company.normalizedName ? [company.normalizedName] : [])
   ])
 
+const aliasIdentities = (aliases: string[]): NameVariantCompany['identities'] =>
+  aliases.map((alias) => ({
+    origin: 'authoritative',
+    kind: 'alias',
+    normalizedValue: normalizeCompanyValue(alias)
+  }))
+
 export const planIncomingCompanyLinks = (
   companies: LinkCompanySnapshot[],
   incoming: IncomingCompanyLink[]
@@ -75,21 +82,111 @@ export const planIncomingCompanyLinks = (
   const enrich: IncomingCompanyPlan['enrich'] = []
   const create: PlannedCompanyCreate[] = []
   const blocked: IncomingCompanyPlan['blocked'] = []
-  const variants = companies.map(asVariantCompany)
+  const working = companies.map((company) => ({
+    ...company,
+    alias: [...company.alias],
+    externalIds: { ...(company.externalIds ?? {}) },
+    identities: company.identities ? [...company.identities] : undefined
+  }))
+  let variants = working.map(asVariantCompany)
+  let nextVirtualId = -1
+  const virtualCreates = new Map<number, PlannedCompanyCreate>()
+
+  const refreshVariant = (snapshot: LinkCompanySnapshot) => {
+    const next = asVariantCompany(snapshot)
+    const index = variants.findIndex((company) => company.id === snapshot.id)
+    if (index >= 0) variants[index] = next
+    else variants.push(next)
+  }
+
+  const dropVirtual = (id: number, positiveIds: number[]) => {
+    const planned = virtualCreates.get(id)
+    const snapshot = working.find((company) => company.id === id)
+    if (!planned || !snapshot) return
+    const spellings = unique([planned.name, ...planned.alias])
+    for (const positiveId of positiveIds) {
+      enrich.push({ companyId: positiveId, spellings })
+    }
+    const createIndex = create.indexOf(planned)
+    if (createIndex >= 0) create.splice(createIndex, 1)
+    virtualCreates.delete(id)
+    const workingIndex = working.findIndex((company) => company.id === id)
+    if (workingIndex >= 0) working.splice(workingIndex, 1)
+    variants = variants.filter((company) => company.id !== id)
+  }
+
+  const foldInto = (
+    id: number,
+    spellings: string[],
+    externalId?: string
+  ): boolean => {
+    const planned = virtualCreates.get(id)
+    const snapshot = working.find((company) => company.id === id)
+    if (!planned || !snapshot) return false
+    const bound = snapshot.externalIds?.vndb
+    if (externalId && bound && bound !== externalId) {
+      blocked.push({
+        spellings,
+        matchedCompanies: [{ id: snapshot.id, name: snapshot.name }]
+      })
+      return false
+    }
+    if (externalId && !bound) {
+      snapshot.externalIds = { ...(snapshot.externalIds ?? {}), vndb: externalId }
+    }
+    const extra = unique(spellings).filter(
+      (spelling) => spelling !== planned.name && !planned.alias.includes(spelling)
+    )
+    planned.alias.push(...extra)
+    snapshot.alias = unique([...snapshot.alias, ...extra])
+    snapshot.identities = aliasIdentities(snapshot.alias)
+    refreshVariant(snapshot)
+    return true
+  }
+
+  const attach = (ids: number[], spellings: string[], externalId?: string) => {
+    const positives = ids.filter((id) => id > 0)
+    const virtuals = ids.filter((id) => id < 0)
+    if (positives.length) {
+      for (const id of positives) {
+        linkIds.add(id)
+        enrich.push({ companyId: id, spellings })
+      }
+      for (const id of virtuals) dropVirtual(id, positives)
+      return
+    }
+    for (const id of virtuals) foldInto(id, spellings, externalId)
+  }
+
+  const rememberCreate = (item: PlannedCompanyCreate, externalId?: string) => {
+    const id = nextVirtualId
+    nextVirtualId -= 1
+    const snapshot: LinkCompanySnapshot = {
+      id,
+      name: item.name,
+      alias: [...item.alias],
+      normalizedName: normalizeCompanyValue(item.name),
+      externalIds: externalId ? { vndb: externalId } : {},
+      identities: aliasIdentities(item.alias)
+    }
+    working.push(snapshot)
+    variants.push(asVariantCompany(snapshot))
+    create.push(item)
+    virtualCreates.set(id, item)
+  }
 
   incoming.forEach((item, index) => {
     const spellings = unique(item.spellings)
     const createName = item.createName.trim()
     if (!spellings.length || !createName) return
-
     const externalId = item.externalId?.trim()
+
     if (externalId) {
-      const bound = companies.filter(
+      const bound = working.filter(
         (company) => company.externalIds?.vndb === externalId
       )
       if (bound.length === 1) {
-        linkIds.add(bound[0].id)
-        enrich.push({ companyId: bound[0].id, spellings })
+        attach([bound[0].id], spellings, externalId)
         return
       }
       if (bound.length > 1) {
@@ -104,16 +201,17 @@ export const planIncomingCompanyLinks = (
       }
     }
 
-    const exact = companies.filter(
+    const exact = working.filter(
       (company) =>
         spellings.includes(company.name) ||
         company.alias.some((alias) => spellings.includes(alias))
     )
     if (exact.length) {
-      for (const company of exact) {
-        linkIds.add(company.id)
-        enrich.push({ companyId: company.id, spellings })
-      }
+      attach(
+        exact.map((company) => company.id),
+        spellings,
+        externalId
+      )
       return
     }
 
@@ -122,15 +220,11 @@ export const planIncomingCompanyLinks = (
         normalizeCompanyValue(spelling) !== normalizeCompanyValue(createName)
     )
     const classified = classifyIncomingNameVariant(variants, {
-      id: -1 - index,
+      id: -1_000_000 - index,
       name: createName,
       normalizedName: normalizeCompanyValue(createName),
       alias: [],
-      identities: otherSpellings.map((spelling) => ({
-        origin: 'authoritative',
-        kind: 'alias',
-        normalizedValue: normalizeCompanyValue(spelling)
-      })),
+      identities: aliasIdentities(otherSpellings),
       externalIds: externalId ? { vndb: externalId } : {}
     })
     if (classified.kind === 'blocked') {
@@ -138,42 +232,40 @@ export const planIncomingCompanyLinks = (
       return
     }
     if (classified.kind === 'link') {
-      for (const id of classified.ids) {
-        linkIds.add(id)
-        enrich.push({ companyId: id, spellings })
-      }
+      attach(classified.ids, spellings, externalId)
       return
     }
 
     const keys = suffixKeys(spellings)
-    const suffixHits = companies.filter((company) =>
+    const suffixHits = working.filter((company) =>
       companySuffixKeys(company).some((key) => keys.includes(key))
     )
     if (suffixHits.length) {
-      for (const company of suffixHits) linkIds.add(company.id)
+      attach(
+        suffixHits.map((company) => company.id),
+        spellings,
+        externalId
+      )
       return
     }
 
-    create.push({
-      name: createName,
-      alias: unique(item.storeAliases).filter((alias) => alias !== createName),
-      introduction: item.introduction?.trim() ?? '',
-      primaryLanguage: unique(item.primaryLanguage ?? []),
-      websites: unique(item.websites ?? []),
-      userId: item.userId
-    })
+    rememberCreate(
+      {
+        name: createName,
+        alias: unique(item.storeAliases).filter((alias) => alias !== createName),
+        introduction: item.introduction?.trim() ?? '',
+        primaryLanguage: unique(item.primaryLanguage ?? []),
+        websites: unique(item.websites ?? []),
+        userId: item.userId
+      },
+      externalId
+    )
   })
 
-  const createdNames = new Set<string>()
   return {
-    linkIds: [...linkIds],
-    enrich,
-    create: create.filter((item) => {
-      const key = normalizeCompanyValue(item.name)
-      if (createdNames.has(key)) return false
-      createdNames.add(key)
-      return true
-    }),
+    linkIds: [...linkIds].filter((id) => id > 0),
+    enrich: enrich.filter((item) => item.companyId > 0),
+    create,
     blocked
   }
 }

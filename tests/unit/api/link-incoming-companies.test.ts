@@ -128,6 +128,63 @@ describe('planIncomingCompanyLinks', () => {
     expect(plan.linkIds).toEqual([7])
   })
 
+  it('folds a later Steam spelling into the company this batch is about to create', () => {
+    const plan = planIncomingCompanyLinks(
+      [],
+      [
+        producer('Kotama Yuri', '小珠ゆり'),
+        {
+          spellings: ['Kotama Yuri'],
+          createName: 'Kotama Yuri',
+          storeAliases: [],
+          userId: 1
+        }
+      ]
+    )
+    expect(plan.linkIds).toEqual([])
+    expect(plan.create).toEqual([
+      expect.objectContaining({
+        name: '小珠ゆり',
+        alias: ['Kotama Yuri']
+      })
+    ])
+  })
+
+  it('folds a later legal-suffix spelling into the same new company', () => {
+    const plan = planIncomingCompanyLinks(
+      [],
+      [producer('Studio', ''), producer('Studio Inc.', '')]
+    )
+    expect(plan.create).toHaveLength(1)
+    expect(plan.create[0]?.name).toBe('Studio')
+    expect(plan.create[0]?.alias).toContain('Studio Inc.')
+  })
+
+  it('still creates WINGALD when it shares no name-variant key with the new company', () => {
+    const plan = planIncomingCompanyLinks(
+      [],
+      [
+        producer('Kotama Yuri', '小珠ゆり'),
+        {
+          spellings: ['WINGALD'],
+          createName: 'WINGALD',
+          storeAliases: [],
+          userId: 1
+        }
+      ]
+    )
+    expect(plan.create.map((item) => item.name)).toEqual(['小珠ゆり', 'WINGALD'])
+  })
+
+  it('keeps an existing company ahead of a row this batch has not inserted', () => {
+    const plan = planIncomingCompanyLinks(
+      [company(6, 'Otomate', ['オトメイト'])],
+      [producer('Brand New', '新会社'), producer('Otomate', 'オトメイト')]
+    )
+    expect(plan.linkIds).toEqual([6])
+    expect(plan.create.map((item) => item.name)).toEqual(['新会社'])
+  })
+
   it('creates one new company with the original as its name', () => {
     const plan = planIncomingCompanyLinks([], [producer('Brand New', '新会社')])
     expect(plan.linkIds).toEqual([])
