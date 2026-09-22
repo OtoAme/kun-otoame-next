@@ -88,7 +88,7 @@ pnpm typecheck
 
 ## 项目 Skill 设计
 
-项目 skills 是项目资产，不属于某个 agent 工具。唯一来源是仓库根目录 `skills/`，`.codex/skills` 和 `.claude/skills` 是指向它的软链接；只修改 `skills/` 下的文件，不要新建工具专用副本。原则：
+项目 skills 是项目资产，不属于某个 agent 工具。唯一来源是仓库根目录 `skills/`，`.codex/skills`、`.claude/skills` 和 `.grok/skills` 是指向它的软链接；只修改 `skills/` 下的文件，不要新建工具专用副本。根目录 `AGENTS.md` 在会话开始时注入，要求先读匹配 skill 全文再读 Required References。原则：
 
 - Skill 保持精简，不复制长文档。
 - Skill frontmatter 描述触发条件，不描述完整流程。

@@ -34,7 +34,7 @@
 
 ## 项目 Skills
 
-项目 skills 是项目资产，不属于某个 agent 工具。唯一来源是仓库根目录 `skills/`，`.codex/skills` 和 `.claude/skills` 都是指向它的软链接，让不同 agent 工具自动发现同一份内容。只修改 `skills/` 下的文件，不要新建工具专用副本。
+项目 skills 是项目资产，不属于某个 agent 工具。唯一来源是仓库根目录 `skills/`，`.codex/skills`、`.claude/skills` 和 `.grok/skills` 都是指向它的软链接，让不同 agent 工具自动发现同一份内容。根目录 `AGENTS.md` 要求先读匹配 skill 和 Required References。只修改 `skills/` 下的文件，不要新建工具专用副本。
 
 完整分工表见 [`skills/README.md`](../../skills/README.md)（唯一来源，不在此重复维护）。
 

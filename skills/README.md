@@ -8,9 +8,12 @@
 skills/                   # 唯一来源，git 跟踪真实文件
 .codex/skills -> ../skills   # 软链接，供 Codex 自动发现
 .claude/skills -> ../skills  # 软链接，供 Claude Code 自动发现
+.grok/skills  -> ../skills   # 软链接，供 Grok 自动发现
 ```
 
-新增或修改 skill 时只改 `skills/` 下的文件。不要在 `.codex/` 或 `.claude/` 里放工具专用副本，否则内容会分叉。要接入新的 agent 工具时，按同样方式加一条指向 `../skills` 的软链接即可。
+根目录 `AGENTS.md` 会在会话开始时注入，要求先读匹配的 skill 全文，再读 skill 里的 Required References（`docs/project/*`、`docs/modules/*`）。Codex 还会把仓库根目录 `skills/` 本身当作 skill 根目录；Claude Code 和 Grok 靠上述软链接发现同一份内容。
+
+新增或修改 skill 时只改 `skills/` 下的文件。不要在 `.codex/`、`.claude/` 或 `.grok/` 里放工具专用副本，否则内容会分叉。要接入新的 agent 工具时，按同样方式加一条指向 `../skills` 的软链接即可。
 
 ## Skill 分工
 
