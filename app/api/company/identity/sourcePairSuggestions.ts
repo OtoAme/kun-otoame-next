@@ -1,8 +1,6 @@
 import type { VndbProducer } from '~/lib/arnebiae/vndb'
 import {
   NEXTMOE_CATALOG_BATCH_MAX,
-  nextmoeAliasValues,
-  type NextmoeCompany,
   type NextmoeCompanyList,
   type NextmoeWork,
   type NextmoeWorkList
@@ -24,11 +22,19 @@ export const SOURCE_PAIR_NEXTMOE_BATCH = 20
 const VNDB_DEVELOPER_TYPES = new Set(['co', 'ng', 'in'])
 const FOLDED_KEY_MAX_LENGTH = 107
 
+export type SourcePairHit = {
+  companyId: number
+  source: 'vndb' | 'nextmoe'
+  field: 'name' | 'original' | 'alias' | 'display_name'
+  value: string
+}
+
 export type SourcePairEvidence = {
   kind: typeof SOURCE_PAIR_KIND
   patchId: number
   upstreamIds: string[]
   bag: string[]
+  hits: SourcePairHit[]
 }
 
 export type SourcePairSuggestion = {
@@ -66,10 +72,17 @@ export type SourcePairProgress = {
   detail?: string
 }
 
+type EvidenceField = {
+  source: 'vndb' | 'nextmoe'
+  field: 'name' | 'original' | 'alias' | 'display_name'
+  value: string
+}
+
 type NameBag = {
   upstreamIds: string[]
   strings: string[]
   keys: Set<string>
+  entries: EvidenceField[]
 }
 
 const uniqueStrings = (values: Array<string | null | undefined>) => [
@@ -104,40 +117,69 @@ const workRefKeys = (work: NextmoeWork): string[] =>
       `${ref.source.trim().toLowerCase()}:${ref.external_id.trim().toLowerCase()}`
   )
 
-const bagFromStrings = (
+const bagFromEntries = (
   upstreamIds: string[],
-  strings: Array<string | null | undefined>
+  entries: EvidenceField[]
 ): NameBag | null => {
-  const unique = uniqueStrings(strings)
-  if (unique.length === 0 || upstreamIds.length === 0) return null
+  const uniqueEntries = entries.filter(
+    (entry, index) =>
+      entry.value.trim().length > 0 &&
+      entries.findIndex(
+        (other) =>
+          other.source === entry.source &&
+          other.field === entry.field &&
+          other.value === entry.value
+      ) === index
+  )
+  const strings = uniqueStrings(uniqueEntries.map((entry) => entry.value))
+  if (strings.length === 0 || upstreamIds.length === 0) return null
   return {
     upstreamIds,
-    strings: unique,
-    keys: new Set(unique.flatMap((value) => nameVariantKeys(value)))
+    strings,
+    keys: new Set(strings.flatMap((value) => nameVariantKeys(value))),
+    entries: uniqueEntries.map((entry) => ({
+      ...entry,
+      value: entry.value.trim()
+    }))
   }
 }
 
 const isAllowedVndbDeveloper = (developer: VndbProducer) =>
   !developer.type || VNDB_DEVELOPER_TYPES.has(developer.type)
 
+const trimmedField = (
+  source: EvidenceField['source'],
+  field: EvidenceField['field'],
+  value: string | null | undefined
+): EvidenceField | null => {
+  const trimmed = value?.trim()
+  if (!trimmed) return null
+  return { source, field, value: trimmed }
+}
+
 const vndbBag = (developer: VndbProducer): NameBag | null => {
   if (!isAllowedVndbDeveloper(developer)) return null
   const producerId = developer.id?.trim()
   if (!producerId) return null
-  return bagFromStrings(
+  return bagFromEntries(
     [`vndb:${producerId.toLowerCase()}`],
-    [developer.name, developer.original, ...(developer.aliases ?? [])]
+    [
+      trimmedField('vndb', 'name', developer.name),
+      trimmedField('vndb', 'original', developer.original),
+      ...(developer.aliases ?? []).map((alias) =>
+        trimmedField('vndb', 'alias', alias)
+      )
+    ].flatMap((entry) => (entry ? [entry] : []))
   )
 }
 
-const nextmoeBagStrings = (
-  company: NextmoeCompany | { display_name: string }
-): string[] => {
-  if ('latin' in company || 'aliases' in company) {
-    const full = company as NextmoeCompany
-    return uniqueStrings([...nextmoeAliasValues(full), full.latin])
-  }
-  return uniqueStrings([company.display_name])
+const nextmoeBag = (
+  upstreamId: string,
+  company: { display_name: string }
+): NameBag | null => {
+  const displayName = trimmedField('nextmoe', 'display_name', company.display_name)
+  if (!displayName) return null
+  return bagFromEntries([upstreamId], [displayName])
 }
 
 const keysIntersect = (left: string[], right: Set<string>) =>
@@ -145,6 +187,33 @@ const keysIntersect = (left: string[], right: Set<string>) =>
 
 const foldedKeyFor = (upstreamIds: string[], memberIds: number[]) =>
   (upstreamIds[0] ?? clusterIdKey(memberIds)).slice(0, FOLDED_KEY_MAX_LENGTH)
+
+const hitsForMembers = (
+  members: NameVariantCompany[],
+  entries: EvidenceField[]
+): SourcePairHit[] => {
+  const hits: SourcePairHit[] = []
+  const seen = new Set<string>()
+  for (const member of [...members].sort((left, right) => left.id - right.id)) {
+    const companyKeys = new Set(nameVariantClusterKeys(member))
+    for (const entry of entries) {
+      const matched = nameVariantKeys(entry.value).some((key) =>
+        companyKeys.has(key)
+      )
+      if (!matched) continue
+      const identity = `${member.id}|${entry.source}|${entry.field}|${entry.value}`
+      if (seen.has(identity)) continue
+      seen.add(identity)
+      hits.push({
+        companyId: member.id,
+        source: entry.source,
+        field: entry.field,
+        value: entry.value
+      })
+    }
+  }
+  return hits
+}
 
 const suggestionFromMembers = (
   members: NameVariantCompany[],
@@ -168,7 +237,8 @@ const suggestionFromMembers = (
       kind: SOURCE_PAIR_KIND,
       patchId,
       upstreamIds: bag.upstreamIds,
-      bag: bag.strings
+      bag: bag.strings,
+      hits: hitsForMembers(ordered, bag.entries)
     }
   }
 }
@@ -257,10 +327,7 @@ const loadNextmoeBagsByPatch = async (
         const catalogId = workCompany.id.trim()
         if (!catalogId || seenUpstream.has(catalogId)) continue
         seenUpstream.add(catalogId)
-        const bag = bagFromStrings(
-          [catalogId],
-          nextmoeBagStrings(workCompany)
-        )
+        const bag = nextmoeBag(catalogId, workCompany)
         if (bag) bags.push(bag)
       }
     }

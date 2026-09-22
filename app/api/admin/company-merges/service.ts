@@ -17,6 +17,7 @@ import type {
   NextmoeCompanyList,
   NextmoeWorkList
 } from '~/app/api/company/nextmoe/types'
+import type { Prisma } from '@prisma/client'
 import { prisma } from '~/prisma/index'
 import {
   CompanyMergeApplyError,
@@ -32,14 +33,20 @@ import type {
   CompanyMergeSuggestionListResponse,
   CompanyMergeSuggestionStatus
 } from '~/types/api/companyMerges'
-
-const SUFFIX_UNIQUE_HIT_KIND = 'suffix-unique-hit'
-const NAME_VARIANT_KIND = 'name-variant'
-const DETECT_KINDS = [
-  SUFFIX_UNIQUE_HIT_KIND,
-  NAME_VARIANT_KIND,
-  SOURCE_PAIR_KIND
-] as const
+import { writePartialMergeExclusions } from './autoExclude'
+import {
+  lockCompanyMergeQueue,
+  lockCompanyMergeSuggestionRows
+} from './queueLock'
+import {
+  CompanyMergeMemberKeyError,
+  assertCompanyMergeEvidence,
+  parseCompanyMergeEvidenceHits,
+  readResolutionSource,
+  readStoredCompanyIds,
+  toCandidateKey,
+  toMemberKey
+} from '~/validations/companyMerges'
 
 const defaultSleep = (ms: number) =>
   new Promise<void>((resolve) => setTimeout(resolve, ms))
@@ -114,9 +121,14 @@ export const listCompanyMergeSuggestions = async (
       target_company_id: true,
       source_company_ids: true,
       names: true,
+      evidence: true,
       detected_at: true,
       resolved_at: true,
-      resolved_by_user_id: true
+      resolved_by_user_id: true,
+      selected_company_ids: true,
+      applied_source_company_ids: true,
+      applied_target_company_id: true,
+      resolution_source: true
     }
   })
   if (rows.length === 0) {
@@ -185,7 +197,21 @@ export const listCompanyMergeSuggestions = async (
         detectedAt: row.detected_at.toISOString(),
         resolvedAt: row.resolved_at ? row.resolved_at.toISOString() : null,
         resolvedByUserId: row.resolved_by_user_id,
-        ...(resolvedByName ? { resolvedByName } : {})
+        ...(resolvedByName ? { resolvedByName } : {}),
+        selectedCompanyIds: readStoredCompanyIds(row.selected_company_ids, 2),
+        appliedTargetCompanyId:
+          typeof row.applied_target_company_id === 'number'
+            ? row.applied_target_company_id
+            : null,
+        appliedSourceCompanyIds: readStoredCompanyIds(
+          row.applied_source_company_ids,
+          1
+        ),
+        resolutionSource: readResolutionSource(row.resolution_source),
+        hits: parseCompanyMergeEvidenceHits(row.evidence, [
+          row.target_company_id,
+          ...row.source_company_ids
+        ])
       }
     })
   }
@@ -331,18 +357,89 @@ const collectSourcePairSuggestions = async (
   })
 }
 
+const asJson = (value: unknown): Prisma.InputJsonValue =>
+  value as Prisma.InputJsonValue
+
+const isUniqueConstraintError = (error: unknown) =>
+  typeof error === 'object' &&
+  error !== null &&
+  'code' in error &&
+  (error as { code?: string }).code === 'P2002'
+
+const sameIdSet = (left: readonly number[], right: readonly number[]) => {
+  if (left.length !== right.length) return false
+  const rightIds = new Set(right)
+  return left.every((id) => rightIds.has(id))
+}
+
+type PlannedSuggestion = {
+  suggestion: DetectedSuggestion
+  companyIds: number[]
+  memberKey: string
+  candidateKey: string
+  evidence: ReturnType<typeof assertCompanyMergeEvidence>
+}
+
+type QueueRow = {
+  id: number
+  status: string
+  member_key: string
+  candidate_key: string | null
+}
+
+const candidateKeyFor = (suggestion: DetectedSuggestion) => {
+  const companyIds = [
+    suggestion.targetCompanyId,
+    ...suggestion.sourceCompanyIds
+  ]
+  if (suggestion.kind === SOURCE_PAIR_KIND && suggestion.evidence) {
+    return toCandidateKey({
+      kind: suggestion.kind,
+      companyIds,
+      upstreamIds: suggestion.evidence.upstreamIds,
+      patchId: suggestion.evidence.patchId
+    })
+  }
+  return toCandidateKey({ kind: suggestion.kind, companyIds })
+}
+
+const evidenceFor = (suggestion: DetectedSuggestion) => {
+  const companyIds = [
+    suggestion.targetCompanyId,
+    ...suggestion.sourceCompanyIds
+  ]
+  if (suggestion.kind === SOURCE_PAIR_KIND && suggestion.evidence) {
+    return assertCompanyMergeEvidence(
+      {
+        kind: suggestion.evidence.kind,
+        patchId: suggestion.evidence.patchId,
+        upstreamIds: suggestion.evidence.upstreamIds,
+        bag: suggestion.evidence.bag,
+        hits: suggestion.evidence.hits
+      },
+      companyIds
+    )
+  }
+  return assertCompanyMergeEvidence(
+    {
+      kind: suggestion.kind,
+      foldedKey: suggestion.foldedKey,
+      hits: []
+    },
+    companyIds
+  )
+}
+
 /**
- * Read-only scan of `patch_company`, then an upsert of the resulting clusters
- * into the queue. Existing pending rows are refreshed in place; a key that is
- * currently dismissed is counted and left untouched. Reopening a dismissed row
- * puts that key back to pending, so a later scan refreshes it instead of
- * skipping. No company is ever written.
+ * Read-only scan of `patch_company`, then write suggestions. Skip identity is
+ * `member_key`, never `folded_key`. Source-pair rows are found again by
+ * `candidate_key` when the member set changes. No company is written.
  */
 export const detectCompanyMergeSuggestions = async (
   options: DetectCompanyMergeSuggestionsOptions = {}
 ): Promise<CompanyMergeDetectResponse> => {
   const started = Date.now()
-  const notes: string[] = []
+  const earlyNotes: string[] = []
   // eslint-disable-next-line no-console
   console.info('[company-merges:detect] start')
   const companies = await loadClusterInput()
@@ -363,174 +460,350 @@ export const detectCompanyMergeSuggestions = async (
   } catch (error) {
     // eslint-disable-next-line no-console
     console.error('[company-merges:detect] source-pair failed:', error)
-    notes.push('来源别名扫描失败，已跳过，仅保留本地规则结果')
+    earlyNotes.push('来源别名扫描失败，已跳过，仅保留本地规则结果')
   }
   const suggestions = [...byCluster.values()]
   if (suggestions.length === 0) {
     const durationMs = Date.now() - started
     // eslint-disable-next-line no-console
     console.info(`[company-merges:detect] done ${durationMs}ms clusters=0`)
-    return { created: 0, updated: 0, skipped: 0, durationMs, notes }
+    return { created: 0, updated: 0, skipped: 0, durationMs, notes: earlyNotes }
   }
 
-  const existing = await prisma.company_merge_suggestion.findMany({
-    where: {
-      kind: { in: [...DETECT_KINDS] },
-      status: { in: [PENDING, DISMISSED] }
-    },
-    select: {
-      id: true,
-      folded_key: true,
-      status: true,
-      target_company_id: true,
-      source_company_ids: true
-    }
-  })
-
-  const pendingIdByKey = new Map<string, number>()
-  const dismissedKeys = new Set<string>()
-  for (const row of existing) {
-    const clusterKey = clusterIdKey(
-      row.target_company_id,
-      row.source_company_ids
-    )
-    const keys = [row.folded_key, clusterKey]
-    if (row.status === PENDING) {
-      for (const key of keys) {
-        if (!pendingIdByKey.has(key)) pendingIdByKey.set(key, row.id)
-      }
-      continue
-    }
-    for (const key of keys) dismissedKeys.add(key)
-  }
-
-  const detectedAt = new Date()
-  let created = 0
-  let updated = 0
-  let skipped = 0
-
+  const planned: PlannedSuggestion[] = []
+  let earlySkipped = 0
   for (const suggestion of suggestions) {
-    const cluster = {
-      target_company_id: suggestion.targetCompanyId,
-      source_company_ids: suggestion.sourceCompanyIds,
-      names: suggestion.names,
-      evidence:
-        suggestion.kind === SOURCE_PAIR_KIND && suggestion.evidence
-          ? suggestion.evidence
-          : {
-              kind: suggestion.kind,
-              foldedKey: suggestion.foldedKey
-            },
-      detected_at: detectedAt
-    }
-
-    const clusterKey = clusterIdKey(
-      suggestion.targetCompanyId,
-      suggestion.sourceCompanyIds
-    )
-    const pendingId =
-      pendingIdByKey.get(clusterKey) ?? pendingIdByKey.get(suggestion.foldedKey)
-    if (pendingId !== undefined) {
-      await prisma.company_merge_suggestion.update({
-        where: { id: pendingId },
-        data: cluster
+    try {
+      const companyIds = [
+        suggestion.targetCompanyId,
+        ...suggestion.sourceCompanyIds
+      ]
+      planned.push({
+        suggestion,
+        companyIds,
+        memberKey: toMemberKey(companyIds),
+        candidateKey: candidateKeyFor(suggestion),
+        evidence: evidenceFor(suggestion)
       })
-      updated += 1
-      continue
+    } catch (error) {
+      earlySkipped += 1
+      earlyNotes.push(
+        error instanceof Error ? error.message : '会社组合无法写入建议'
+      )
     }
-
-    if (
-      dismissedKeys.has(clusterKey) ||
-      dismissedKeys.has(suggestion.foldedKey)
-    ) {
-      skipped += 1
-      continue
+  }
+  if (planned.length === 0) {
+    const durationMs = Date.now() - started
+    return {
+      created: 0,
+      updated: 0,
+      skipped: earlySkipped,
+      durationMs,
+      notes: earlyNotes
     }
-
-    await prisma.company_merge_suggestion.create({
-      data: {
-        ...cluster,
-        kind: suggestion.kind,
-        status: PENDING,
-        folded_key: suggestion.foldedKey
-      }
-    })
-    created += 1
   }
 
-  const durationMs = Date.now() - started
-  // eslint-disable-next-line no-console
-  console.info(
-    `[company-merges:detect] done ${durationMs}ms created=${created} updated=${updated} skipped=${skipped}`
-  )
-  return { created, updated, skipped, durationMs, notes }
+  const plannedMemberKeys = [...new Set(planned.map((item) => item.memberKey))]
+  const plannedCandidateKeys = [
+    ...new Set(planned.map((item) => item.candidateKey))
+  ]
+  const queueWhere = {
+    OR: [
+      { member_key: { in: plannedMemberKeys } },
+      { candidate_key: { in: plannedCandidateKeys } }
+    ]
+  }
+  const queueSelect = {
+    id: true,
+    status: true,
+    member_key: true,
+    candidate_key: true
+  } as const
+
+  try {
+    const written = await prisma.$transaction(
+      async (tx) => {
+        await lockCompanyMergeQueue(tx)
+        const discovered = await tx.company_merge_suggestion.findMany({
+          where: queueWhere,
+          select: queueSelect
+        })
+        const touchKeys = new Set<string>(plannedMemberKeys)
+        for (const row of discovered) {
+          if (row.member_key) touchKeys.add(row.member_key)
+        }
+        await lockCompanyMergeSuggestionRows(tx, [...touchKeys])
+        const existing = await tx.company_merge_suggestion.findMany({
+          where: queueWhere,
+          select: queueSelect
+        })
+
+        const relevant = existing.flatMap((row): QueueRow[] => {
+          if (!row.member_key) return []
+          const matchesMember = plannedMemberKeys.includes(row.member_key)
+          const matchesCandidate =
+            row.candidate_key != null &&
+            plannedCandidateKeys.includes(row.candidate_key)
+          if (!matchesMember && !matchesCandidate) return []
+          return [
+            {
+              id: row.id,
+              status: row.status,
+              member_key: row.member_key,
+              candidate_key: row.candidate_key
+            }
+          ]
+        })
+        const pendingByMember = new Map<string, QueueRow>()
+        const pendingByCandidate = new Map<string, QueueRow>()
+        for (const row of relevant) {
+          if (row.status !== PENDING) continue
+          if (!pendingByMember.has(row.member_key)) {
+            pendingByMember.set(row.member_key, row)
+          }
+          if (
+            row.candidate_key &&
+            !pendingByCandidate.has(row.candidate_key)
+          ) {
+            pendingByCandidate.set(row.candidate_key, row)
+          }
+        }
+        const blocksMemberKey = (memberKey: string) =>
+          relevant.some(
+            (row) =>
+              row.member_key === memberKey &&
+              (row.status === DISMISSED || row.status === ACCEPTED)
+          )
+
+        const notes: string[] = []
+        let created = 0
+        let updated = 0
+        let skipped = 0
+        const detectedAt = new Date()
+
+        for (const item of planned) {
+          const { suggestion, memberKey, candidateKey, evidence } = item
+          const cluster = {
+            target_company_id: suggestion.targetCompanyId,
+            source_company_ids: suggestion.sourceCompanyIds,
+            names: suggestion.names,
+            evidence: asJson(evidence),
+            detected_at: detectedAt,
+            folded_key: suggestion.foldedKey,
+            member_key: memberKey
+          }
+          const candidateRow = pendingByCandidate.get(candidateKey)
+          if (candidateRow && candidateRow.member_key === memberKey) {
+            await tx.company_merge_suggestion.update({
+              where: { id: candidateRow.id },
+              data: cluster
+            })
+            updated += 1
+            continue
+          }
+          if (candidateRow) {
+            if (blocksMemberKey(memberKey)) {
+              skipped += 1
+              continue
+            }
+            const occupant = pendingByMember.get(memberKey)
+            if (occupant && occupant.id !== candidateRow.id) {
+              notes.push(
+                `组合 ${memberKey} 已有待处理建议 #${occupant.id}，建议 #${candidateRow.id} 保持原成员`
+              )
+              skipped += 1
+              continue
+            }
+            await tx.company_merge_pending_key.deleteMany({
+              where: { suggestion_id: candidateRow.id }
+            })
+            await tx.company_merge_suggestion.update({
+              where: { id: candidateRow.id },
+              data: cluster
+            })
+            await tx.company_merge_pending_key.create({
+              data: { member_key: memberKey, suggestion_id: candidateRow.id }
+            })
+            pendingByMember.delete(candidateRow.member_key)
+            candidateRow.member_key = memberKey
+            pendingByMember.set(memberKey, candidateRow)
+            updated += 1
+            continue
+          }
+
+          const occupant = pendingByMember.get(memberKey)
+          if (occupant && occupant.candidate_key == null) {
+            const taken = pendingByCandidate.get(candidateKey)
+            await tx.company_merge_suggestion.update({
+              where: { id: occupant.id },
+              data: {
+                ...cluster,
+                ...(!taken || taken.id === occupant.id
+                  ? { candidate_key: candidateKey }
+                  : {})
+              }
+            })
+            if (!taken || taken.id === occupant.id) {
+              occupant.candidate_key = candidateKey
+              pendingByCandidate.set(candidateKey, occupant)
+            }
+            updated += 1
+            continue
+          }
+          if (occupant) {
+            notes.push(
+              `组合 ${memberKey} 已有待处理建议 #${occupant.id}，本次不新建`
+            )
+            skipped += 1
+            continue
+          }
+          if (blocksMemberKey(memberKey)) {
+            skipped += 1
+            continue
+          }
+
+          const createdRow = await tx.company_merge_suggestion.create({
+            data: {
+              ...cluster,
+              kind: suggestion.kind,
+              status: PENDING,
+              candidate_key: candidateKey
+            }
+          })
+          await tx.company_merge_pending_key.create({
+            data: { member_key: memberKey, suggestion_id: createdRow.id }
+          })
+          const queued: QueueRow = {
+            id: createdRow.id,
+            status: PENDING,
+            member_key: memberKey,
+            candidate_key: candidateKey
+          }
+          pendingByMember.set(memberKey, queued)
+          pendingByCandidate.set(candidateKey, queued)
+          created += 1
+        }
+
+        return { created, updated, skipped, notes }
+      },
+      { timeout: 60_000 }
+    )
+    const durationMs = Date.now() - started
+    // eslint-disable-next-line no-console
+    console.info(
+      `[company-merges:detect] done ${durationMs}ms created=${written.created} updated=${written.updated} skipped=${earlySkipped + written.skipped}`
+    )
+    return {
+      created: written.created,
+      updated: written.updated,
+      skipped: earlySkipped + written.skipped,
+      durationMs,
+      notes: [...earlyNotes, ...written.notes]
+    }
+  } catch (error) {
+    // eslint-disable-next-line no-console
+    console.error('[company-merges:detect] write failed:', error)
+    return {
+      created: 0,
+      updated: 0,
+      skipped: earlySkipped,
+      durationMs: Date.now() - started,
+      notes: [...earlyNotes, '建议写入失败，本次没有保存']
+    }
+  }
 }
 
 /**
- * Dismiss one pending row and record who did it. The status guard lives in the
- * `updateMany` filter so two reviewers clicking at once cannot both win; the
- * follow-up read only runs to tell "already resolved" apart from "no such row".
+ * Dismiss one pending row, record the operator, and free its pending-key.
+ * The status guard stays in `updateMany` so two reviewers cannot both win.
  */
 export const dismissCompanyMergeSuggestion = async (
   id: number,
   userId: number
 ): Promise<CompanyMergeDismissResponse | string> => {
-  const result = await prisma.company_merge_suggestion.updateMany({
-    where: { id, status: PENDING },
-    data: {
-      status: DISMISSED,
-      resolved_at: new Date(),
-      resolved_by_user_id: userId
-    }
-  })
-
-  if (result.count > 0) {
-    return { id }
+  try {
+    return await prisma.$transaction(async (tx) => {
+      await lockCompanyMergeQueue(tx)
+      const existing = await tx.company_merge_suggestion.findUnique({
+        where: { id },
+        select: { id: true, status: true, member_key: true }
+      })
+      if (!existing) return '未找到该会社合并建议'
+      if (existing.status !== PENDING) return '该建议已处理，无法重复驳回'
+      await lockCompanyMergeSuggestionRows(tx, [existing.member_key])
+      const updated = await tx.company_merge_suggestion.updateMany({
+        where: { id, status: PENDING },
+        data: {
+          status: DISMISSED,
+          resolved_at: new Date(),
+          resolved_by_user_id: userId,
+          resolution_source: 'operator-dismiss'
+        }
+      })
+      if (updated.count === 0) return '该建议已处理，无法重复驳回'
+      await tx.company_merge_pending_key.deleteMany({
+        where: { suggestion_id: id }
+      })
+      return { id }
+    })
+  } catch (error) {
+    // eslint-disable-next-line no-console
+    console.error('[company-merges] dismiss failed:', error)
+    return '驳回失败，请刷新列表后重试'
   }
-
-  const existing = await prisma.company_merge_suggestion.findUnique({
-    where: { id },
-    select: { id: true }
-  })
-
-  return existing ? '该建议已处理，无法重复驳回' : '未找到该会社合并建议'
 }
 
 /**
- * Put a dismissed row back to pending on the same id. Does not insert a new
- * row and does not touch companies. Detect still skips keys that are currently
- * dismissed; after this write the key is pending, so the next scan refreshes it.
+ * Put a dismissed row back to pending on the same id and insert its
+ * pending-key. If that member_key is already held, the row stays dismissed.
+ * Clears `resolution_source`. Does not touch companies.
  */
 export const reopenCompanyMergeSuggestion = async (
   id: number
 ): Promise<CompanyMergeReopenResponse | string> => {
-  const result = await prisma.company_merge_suggestion.updateMany({
-    where: { id, status: DISMISSED },
-    data: {
-      status: PENDING,
-      resolved_at: null,
-      resolved_by_user_id: null
-    }
-  })
-
-  if (result.count > 0) {
-    return { id }
+  try {
+    return await prisma.$transaction(async (tx) => {
+      await lockCompanyMergeQueue(tx)
+      const existing = await tx.company_merge_suggestion.findUnique({
+        where: { id },
+        select: { id: true, status: true, member_key: true }
+      })
+      if (!existing) return '未找到该会社合并建议'
+      if (existing.status === PENDING) return '该建议仍待处理，无需重新打开'
+      if (existing.status === ACCEPTED) return '该建议已合并，无法重新打开'
+      if (existing.status !== DISMISSED) {
+        return '该建议不是已驳回状态，无法重新打开'
+      }
+      await lockCompanyMergeSuggestionRows(tx, [existing.member_key])
+      const taken = await tx.company_merge_pending_key.findUnique({
+        where: { member_key: existing.member_key },
+        select: { suggestion_id: true }
+      })
+      if (taken && taken.suggestion_id !== existing.id) {
+        return '已有待处理的同一组会社'
+      }
+      const updated = await tx.company_merge_suggestion.updateMany({
+        where: { id, status: DISMISSED },
+        data: {
+          status: PENDING,
+          resolved_at: null,
+          resolved_by_user_id: null,
+          resolution_source: null
+        }
+      })
+      if (updated.count === 0) return '该建议不是已驳回状态，无法重新打开'
+      await tx.company_merge_pending_key.create({
+        data: { member_key: existing.member_key, suggestion_id: existing.id }
+      })
+      return { id }
+    })
+  } catch (error) {
+    if (isUniqueConstraintError(error)) return '已有待处理的同一组会社'
+    if (error instanceof CompanyMergeMemberKeyError) return error.message
+    // eslint-disable-next-line no-console
+    console.error('[company-merges] reopen failed:', error)
+    return '重新打开失败，请刷新列表后重试'
   }
-
-  const existing = await prisma.company_merge_suggestion.findUnique({
-    where: { id },
-    select: { id: true, status: true }
-  })
-  if (!existing) {
-    return '未找到该会社合并建议'
-  }
-  if (existing.status === PENDING) {
-    return '该建议仍待处理，无需重新打开'
-  }
-  if (existing.status === ACCEPTED) {
-    return '该建议已合并，无法重新打开'
-  }
-  return '该建议不是已驳回状态，无法重新打开'
 }
 
 /**
@@ -561,20 +834,17 @@ const invalidateMergedCompanyCaches = async (
 }
 
 /**
- * Apply one queued suggestion. The primary company is always the smallest id
- * in the cluster. The operator picks the main name and introduction source;
- * owner comes from whichever participant originally held that name.
- *
- * The suggestion row is written in the same transaction as the companies, so a
- * crash can never leave "companies merged but suggestion still pending". The
- * reverse race — another operator resolving the same row first — is caught by
- * the `status: pending` guard inside that transaction and merges nothing.
+ * Apply the checked subset of one queued suggestion. The surviving company is
+ * the smallest checked id. The client target is ignored. Owner is derived only
+ * from the checked companies. Unchecked ids stay, and each is paired with the
+ * survivor as a partial-merge exclusion in the same transaction.
  */
 export const applyCompanyMergeSuggestion = async (
   input: {
     id: number
     name: string
     introductionFromCompanyId: number
+    selectedCompanyIds: number[]
     targetCompanyId?: number
     ownerFromCompanyId?: number
   },
@@ -582,7 +852,15 @@ export const applyCompanyMergeSuggestion = async (
 ): Promise<CompanyMergeApplyResponse | string> => {
   const suggestion = await prisma.company_merge_suggestion.findFirst({
     where: { id: input.id, status: PENDING },
-    select: { id: true, target_company_id: true, source_company_ids: true }
+    select: {
+      id: true,
+      kind: true,
+      target_company_id: true,
+      source_company_ids: true,
+      names: true,
+      evidence: true,
+      member_key: true
+    }
   })
   if (!suggestion) {
     const existing = await prisma.company_merge_suggestion.findUnique({
@@ -593,18 +871,41 @@ export const applyCompanyMergeSuggestion = async (
   }
 
   const clusterIds = [
-    suggestion.target_company_id,
-    ...suggestion.source_company_ids
+    ...new Set([
+      suggestion.target_company_id,
+      ...suggestion.source_company_ids
+    ])
   ]
-  const targetCompanyId = Math.min(...clusterIds)
-  const sourceCompanyIds = clusterIds.filter(
-    (companyId) => companyId !== targetCompanyId
-  )
-  if (sourceCompanyIds.length === 0) {
-    return '该建议没有可被合并的其它会社'
+  let clusterKey: string
+  try {
+    clusterKey = toMemberKey(clusterIds)
+  } catch (error) {
+    if (error instanceof CompanyMergeMemberKeyError) return error.message
+    throw error
   }
-  if (!clusterIds.includes(input.introductionFromCompanyId)) {
-    return '介绍的来源必须是该建议涉及的会社之一'
+  const selected = [...new Set(input.selectedCompanyIds ?? [])].sort(
+    (left, right) => left - right
+  )
+  if (selected.length < 2) return '至少选择两家会社'
+  if (selected.some((companyId) => !clusterIds.includes(companyId))) {
+    return '勾选的会社必须属于这条建议'
+  }
+  const targetCompanyId = selected[0]
+  const sourceCompanyIds = selected.slice(1)
+  if (!selected.includes(input.introductionFromCompanyId)) {
+    return '介绍的来源必须是勾选的会社之一'
+  }
+  const unselectedIds = clusterIds.filter(
+    (companyId) => !selected.includes(companyId)
+  )
+  let exclusionKeys: string[]
+  try {
+    exclusionKeys = unselectedIds.map((companyId) =>
+      toMemberKey([targetCompanyId, companyId])
+    )
+  } catch (error) {
+    if (error instanceof CompanyMergeMemberKeyError) return error.message
+    throw error
   }
 
   let result: ApplySingleCompanyMergeResult
@@ -618,8 +919,13 @@ export const applyCompanyMergeSuggestion = async (
       introductionFromCompanyId: input.introductionFromCompanyId,
       reason: `Dashboard merge of suggestion #${suggestion.id}`,
       hooks: {
-        // 事务内重读建议行: 检测可能刚刷新过这一簇 (加进或移走一家会社), 所以要求
-        // 参与会社的集合完全一致, 而不是只要求提交的 id 还在簇里。
+        beforeCompanyLocks: async (tx) => {
+          await lockCompanyMergeQueue(tx)
+          const keys = new Set<string>([clusterKey, ...exclusionKeys])
+          if (suggestion.member_key) keys.add(suggestion.member_key)
+          await lockCompanyMergeSuggestionRows(tx, [...keys])
+        },
+        // 事务内重读整组 id。检测若已按 candidate_key 改过成员，与开头快照不同则回滚。
         beforeApply: async (tx) => {
           const locked = await tx.company_merge_suggestion.findFirst({
             where: { id: input.id, status: PENDING },
@@ -628,14 +934,13 @@ export const applyCompanyMergeSuggestion = async (
           if (!locked) {
             throw new CompanyMergeApplyError('该建议已被处理，请刷新列表')
           }
-          const lockedIds = new Set([
-            locked.target_company_id,
-            ...locked.source_company_ids
-          ])
-          if (
-            lockedIds.size !== clusterIds.length ||
-            clusterIds.some((companyId) => !lockedIds.has(companyId))
-          ) {
+          const lockedIds = [
+            ...new Set([
+              locked.target_company_id,
+              ...locked.source_company_ids
+            ])
+          ]
+          if (!sameIdSet(lockedIds, clusterIds)) {
             throw new CompanyMergeApplyError(
               '该建议涉及的会社已经变化，请刷新列表后重新确认'
             )
@@ -647,13 +952,41 @@ export const applyCompanyMergeSuggestion = async (
             data: {
               status: ACCEPTED,
               resolved_at: new Date(),
-              resolved_by_user_id: userId
+              resolved_by_user_id: userId,
+              resolution_source: 'operator-merge',
+              selected_company_ids: selected,
+              applied_source_company_ids: sourceCompanyIds,
+              applied_target_company_id: targetCompanyId
             }
           })
           if (accepted.count === 0) {
             throw new CompanyMergeApplyError(
               '该建议已被他人处理，本次合并没有提交'
             )
+          }
+          await tx.company_merge_pending_key.deleteMany({
+            where: { suggestion_id: input.id }
+          })
+          try {
+            await writePartialMergeExclusions(tx, {
+              parentId: suggestion.id,
+              parentKind: suggestion.kind,
+              parentNames: suggestion.names,
+              parentTargetCompanyId: suggestion.target_company_id,
+              parentSourceCompanyIds: suggestion.source_company_ids,
+              parentEvidence: suggestion.evidence,
+              survivorId: targetCompanyId,
+              unselectedIds,
+              resolvedByUserId: userId
+            })
+          } catch (error) {
+            if (
+              error instanceof CompanyMergeMemberKeyError ||
+              (error instanceof Error && error.message === '会社合并证据无法写入')
+            ) {
+              throw new CompanyMergeApplyError(error.message)
+            }
+            throw error
           }
         }
       }

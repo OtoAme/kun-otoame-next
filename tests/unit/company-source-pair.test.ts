@@ -1,7 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const mocks = vi.hoisted(() => ({
-  prisma: {
+const mocks = vi.hoisted(() => {
+  const prisma = {
+    $transaction: vi.fn(),
+    $executeRawUnsafe: vi.fn().mockResolvedValue(0),
+    $queryRawUnsafe: vi.fn().mockResolvedValue([]),
     patch_company: {
       findMany: vi.fn(),
       create: vi.fn(),
@@ -17,11 +20,20 @@ const mocks = vi.hoisted(() => ({
       update: vi.fn(),
       updateMany: vi.fn()
     },
+    company_merge_pending_key: {
+      findUnique: vi.fn(),
+      create: vi.fn(),
+      deleteMany: vi.fn()
+    },
     patch: {
       findMany: vi.fn()
     }
   }
-}))
+  prisma.$transaction.mockImplementation(
+    async (callback: (tx: typeof prisma) => Promise<unknown>) => callback(prisma)
+  )
+  return { prisma }
+})
 
 vi.mock('~/prisma/index', () => ({ prisma: mocks.prisma }))
 
@@ -81,7 +93,13 @@ afterEach(() => {
 describe('source-pair kind label', () => {
   it('labels source-pair as same-work alias matches', () => {
     expect(getCompanyMergeSuggestionKindLabel('source-pair')).toBe(
-      '同一作品的来源别名对得上'
+      '同一作品在 VNDB 或 NextMoe 中的名称相对应'
+    )
+    expect(getCompanyMergeSuggestionKindLabel('suffix-unique-hit')).toBe(
+      '去除公司后缀后名称一致'
+    )
+    expect(getCompanyMergeSuggestionKindLabel('name-variant')).toBe(
+      '标点、括号、公司后缀或中外文连写不同'
     )
   })
 })
@@ -126,6 +144,73 @@ describe('suggestSourcePairHits', () => {
       expect.arrayContaining(['Tenky', 'テンキー'])
     )
     expect(suggestions[0].names).not.toContain('KONAMI')
+    expect(suggestions[0].evidence.hits).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          companyId: 446,
+          source: 'vndb',
+          field: 'name',
+          value: 'Tenky'
+        }),
+        expect.objectContaining({
+          companyId: 447,
+          source: 'vndb',
+          field: 'original',
+          value: 'テンキー'
+        })
+      ])
+    )
+  })
+
+  it('records a VNDB alias as hit evidence', async () => {
+    const suggestions = await suggestSourcePairHits(
+      [
+        company(407, 'Kotama Yuri'),
+        company(408, 'WINGALD'),
+        company(409, '小珠ゆり')
+      ],
+      [
+        {
+          id: 814,
+          vndbId: 'v1',
+          bangumiId: null,
+          companyIds: [407, 408, 409]
+        }
+      ],
+      {
+        loadVndbDevelopers: async () => [
+          {
+            id: 'p5101',
+            name: 'Kotama Yuri',
+            original: '小珠ゆり',
+            aliases: ['WINGALD'],
+            type: 'co'
+          }
+        ],
+        isNextmoeConfigured: () => false,
+        sleep: async () => {}
+      }
+    )
+
+    expect(suggestions).toHaveLength(1)
+    expect(suggestions[0].targetCompanyId).toBe(407)
+    expect(suggestions[0].sourceCompanyIds).toEqual([408, 409])
+    expect(suggestions[0].evidence.hits).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          companyId: 408,
+          source: 'vndb',
+          field: 'alias',
+          value: 'WINGALD'
+        }),
+        expect.objectContaining({
+          companyId: 409,
+          source: 'vndb',
+          field: 'original',
+          value: '小珠ゆり'
+        })
+      ])
+    )
   })
 
   it('pairs Mebius variants from NextMoe and leaves Cherrymochi out', async () => {
@@ -232,12 +317,20 @@ describe('detectCompanyMergeSuggestions source-pair', () => {
         target_company_id: 446,
         source_company_ids: [447],
         names: ['Tenky', 'テンキー'],
+        member_key: '446,447',
+        candidate_key: 'source-pair|vndb:p1850|patch:99',
         evidence: expect.objectContaining({
           kind: 'source-pair',
           patchId: 99,
-          upstreamIds: ['vndb:p1850']
+          upstreamIds: ['vndb:p1850'],
+          hits: expect.arrayContaining([
+            expect.objectContaining({ source: 'vndb', field: 'name', value: 'Tenky' })
+          ])
         })
       })
+    })
+    expect(mocks.prisma.company_merge_pending_key.create).toHaveBeenCalledWith({
+      data: { member_key: '446,447', suggestion_id: 1 }
     })
     const evidence =
       mocks.prisma.company_merge_suggestion.create.mock.calls[0][0].data

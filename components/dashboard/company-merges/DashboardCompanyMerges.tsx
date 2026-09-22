@@ -18,7 +18,9 @@ import { Tabs, TabsList, TabsTrigger } from '~/components/dashboard/ui/tabs'
 import { kunFetchGet, kunFetchPost } from '~/utils/kunFetch'
 import { formatChinaDateTime } from '~/utils/fixedTimezoneDate'
 import {
+  getCompanyMergeResolutionSourceLabel,
   getCompanyMergeSuggestionKindLabel,
+  LEGACY_COMPANY_MERGE_SELECTION_LABEL,
   type CompanyMergeDetectResponse,
   type CompanyMergeSuggestion,
   type CompanyMergeSuggestionListResponse,
@@ -68,8 +70,36 @@ const clusterCompanyIds = (suggestion: CompanyMergeSuggestion) => [
   ...suggestion.sourceCompanyIds
 ]
 
-const survivingCompanyIdOf = (suggestion: CompanyMergeSuggestion) =>
-  Math.min(...clusterCompanyIds(suggestion))
+const formatCompanyIds = (ids: number[] | null) =>
+  ids === null
+    ? LEGACY_COMPANY_MERGE_SELECTION_LABEL
+    : ids.map((id) => `#${id}`).join('、')
+
+const HistoryOutcome = ({
+  suggestion
+}: {
+  suggestion: CompanyMergeSuggestion
+}) => (
+  <div className="flex max-w-xs flex-col gap-1 text-xs text-muted-foreground">
+    <span>
+      来源：{getCompanyMergeResolutionSourceLabel(suggestion.resolutionSource)}
+    </span>
+    {suggestion.status === 'accepted' ? (
+      <>
+        <span>勾选：{formatCompanyIds(suggestion.selectedCompanyIds)}</span>
+        <span>
+          留下：
+          {suggestion.appliedTargetCompanyId === null
+            ? LEGACY_COMPANY_MERGE_SELECTION_LABEL
+            : `#${suggestion.appliedTargetCompanyId}`}
+        </span>
+        <span>
+          删除：{formatCompanyIds(suggestion.appliedSourceCompanyIds)}
+        </span>
+      </>
+    ) : null}
+  </div>
+)
 
 const operatorLabel = (suggestion: CompanyMergeSuggestion) => {
   if (suggestion.resolvedByUserId == null) return '—'
@@ -167,7 +197,7 @@ const SuggestionCompanies = ({
  * through the same writer as the offline cleanup.
  *
  * 检测按钮始终显示：秒表与检测请求挂在页签外，切换页签不丢秒表；完成后刷新
- * 当前页签。检测只对「当前仍 dismissed」的键跳过。
+ * 当前页签。检测只按 member_key 跳过已驳回或已合并的组合，折叠键只展示。
  */
 export const DashboardCompanyMerges = () => {
   const [status, setStatus] = useState<CompanyMergeSuggestionStatus>('pending')
@@ -282,6 +312,7 @@ export const DashboardCompanyMerges = () => {
   const empty = EMPTY_COPY[status]
   const showOperator = status !== 'pending'
   const showSurviving = status === 'accepted'
+  const showOutcome = status !== 'pending'
   const showFoldedKey = status === 'pending'
   const showActions = status !== 'accepted'
 
@@ -319,6 +350,7 @@ export const DashboardCompanyMerges = () => {
               <TableHead>类型</TableHead>
               {status !== 'pending' ? <TableHead>会社</TableHead> : null}
               {showSurviving ? <TableHead>主会社</TableHead> : null}
+              {showOutcome ? <TableHead>结果</TableHead> : null}
               {showFoldedKey ? <TableHead>折叠键</TableHead> : null}
               {status === 'pending' ? <TableHead>检测时间</TableHead> : null}
               {showOperator ? <TableHead>操作者</TableHead> : null}
@@ -329,7 +361,10 @@ export const DashboardCompanyMerges = () => {
           </TableHeader>
           <TableBody>
             {items.map((suggestion) => {
-              const survivingId = survivingCompanyIdOf(suggestion)
+              const survivingId =
+                suggestion.appliedTargetCompanyId ??
+                Math.min(...clusterCompanyIds(suggestion))
+              const survivingKnown = suggestion.appliedTargetCompanyId !== null
               const survivingIndex =
                 clusterCompanyIds(suggestion).indexOf(survivingId)
               const survivingParticipant =
@@ -366,11 +401,22 @@ export const DashboardCompanyMerges = () => {
                   ) : null}
                   {showSurviving ? (
                     <TableCell className="align-top">
-                      <CompanyLabel
-                        companyId={survivingId}
-                        frozenName={suggestion.names[survivingIndex]}
-                        liveName={survivingParticipant?.name}
-                      />
+                      {survivingKnown ? (
+                        <CompanyLabel
+                          companyId={survivingId}
+                          frozenName={suggestion.names[survivingIndex]}
+                          liveName={survivingParticipant?.name}
+                        />
+                      ) : (
+                        <span className="text-sm text-muted-foreground">
+                          {LEGACY_COMPANY_MERGE_SELECTION_LABEL}
+                        </span>
+                      )}
+                    </TableCell>
+                  ) : null}
+                  {showOutcome ? (
+                    <TableCell className="align-top">
+                      <HistoryOutcome suggestion={suggestion} />
                     </TableCell>
                   ) : null}
                   {showFoldedKey ? (

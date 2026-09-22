@@ -172,6 +172,16 @@ interface FakeSuggestion {
   source_company_ids: number[]
   resolved_at: Date | null
   resolved_by_user_id: number | null
+  member_key?: string | null
+  candidate_key?: string | null
+  names?: string[]
+  evidence?: unknown
+  resolution_source?: string | null
+  selected_company_ids?: number[] | null
+  applied_source_company_ids?: number[] | null
+  applied_target_company_id?: number | null
+  kind?: string
+  folded_key?: string
 }
 
 interface FakeIdentityRow {
@@ -229,12 +239,33 @@ const createFakeCompanyDatabase = (input: {
     }))
   }))
 
+  const withSuggestionDefaults = (
+    suggestion: Partial<FakeSuggestion> &
+      Pick<FakeSuggestion, 'id' | 'status' | 'target_company_id' | 'source_company_ids'>
+  ): FakeSuggestion => ({
+    resolved_at: null,
+    resolved_by_user_id: null,
+    member_key: null,
+    candidate_key: null,
+    names: [],
+    evidence: { hits: [] },
+    resolution_source: null,
+    selected_company_ids: null,
+    applied_source_company_ids: null,
+    applied_target_company_id: null,
+    kind: 'suffix-unique-hit',
+    folded_key: '',
+    ...suggestion
+  })
+
   const suggestions = new Map<number, FakeSuggestion>(
     (input.suggestions ?? []).map((suggestion) => [
       suggestion.id,
-      { ...suggestion, resolved_at: null, resolved_by_user_id: null }
+      withSuggestionDefaults(suggestion)
     ])
   )
+  const pendingKeys = new Map<string, number>()
+  let nextSuggestionId = 1000
 
   let queryCount = 0
   let nextRowId = 100
@@ -252,13 +283,19 @@ const createFakeCompanyDatabase = (input: {
     if (args.where.status && row.status !== args.where.status) return null
     return {
       id: row.id,
+      kind: row.kind,
       target_company_id: row.target_company_id,
-      source_company_ids: row.source_company_ids
+      source_company_ids: row.source_company_ids,
+      names: row.names,
+      evidence: row.evidence,
+      member_key: row.member_key,
+      status: row.status
     }
   }
 
   const tx = {
     $executeRawUnsafe: vi.fn().mockResolvedValue(0),
+    $queryRawUnsafe: vi.fn().mockResolvedValue([]),
     // 每次 assertCounterContract 都是「先查触发器, 再查计数一致性」
     $queryRaw: vi.fn().mockImplementation(() => {
       const result =
@@ -436,6 +473,110 @@ const createFakeCompanyDatabase = (input: {
           Object.assign(row, args.data)
           return Promise.resolve({ count: 1 })
         }
+      ),
+      update: vi.fn(
+        (args: { where: { id: number }; data: Partial<FakeSuggestion> }) => {
+          const row = suggestions.get(args.where.id)
+          if (!row) throw new Error('fake database: unknown suggestion')
+          Object.assign(row, args.data)
+          return Promise.resolve(row)
+        }
+      ),
+      create: vi.fn((args: { data: Partial<FakeSuggestion> }) => {
+        const id = args.data.id ?? (nextSuggestionId += 1)
+        const row = withSuggestionDefaults({
+          id,
+          status: args.data.status ?? 'pending',
+          target_company_id: args.data.target_company_id ?? 0,
+          source_company_ids: args.data.source_company_ids ?? [],
+          ...args.data
+        })
+        suggestions.set(id, row)
+        return Promise.resolve(row)
+      }),
+      findMany: vi.fn(
+        (args?: {
+          where?: {
+            member_key?: string
+            status?: string | { in?: string[] }
+          }
+        }) => {
+          const memberKey = args?.where?.member_key
+          const status = args?.where?.status
+          return Promise.resolve(
+            [...suggestions.values()].filter((row) => {
+              if (memberKey && row.member_key !== memberKey) return false
+              if (typeof status === 'string' && row.status !== status) {
+                return false
+              }
+              if (
+                status &&
+                typeof status === 'object' &&
+                status.in &&
+                !status.in.includes(row.status)
+              ) {
+                return false
+              }
+              return true
+            })
+          )
+        }
+      ),
+      findUnique: vi.fn((args: { where: { id: number } }) =>
+        Promise.resolve(suggestions.get(args.where.id) ?? null)
+      )
+    },
+    company_merge_pending_key: {
+      deleteMany: vi.fn(
+        (args: { where: { suggestion_id?: number; member_key?: string } }) => {
+          let count = 0
+          for (const [memberKey, suggestionId] of [...pendingKeys.entries()]) {
+            if (
+              args.where.suggestion_id !== undefined &&
+              suggestionId !== args.where.suggestion_id
+            ) {
+              continue
+            }
+            if (
+              args.where.member_key !== undefined &&
+              memberKey !== args.where.member_key
+            ) {
+              continue
+            }
+            pendingKeys.delete(memberKey)
+            count += 1
+          }
+          return Promise.resolve({ count })
+        }
+      ),
+      create: vi.fn(
+        (args: { data: { member_key: string; suggestion_id: number } }) => {
+          for (const [memberKey, suggestionId] of pendingKeys) {
+            if (
+              memberKey === args.data.member_key ||
+              suggestionId === args.data.suggestion_id
+            ) {
+              throw Object.assign(new Error('Unique constraint failed'), {
+                code: 'P2002'
+              })
+            }
+          }
+          pendingKeys.set(args.data.member_key, args.data.suggestion_id)
+          return Promise.resolve(args.data)
+        }
+      ),
+      findUnique: vi.fn(
+        (args: { where: { member_key: string } }) => {
+          const suggestionId = pendingKeys.get(args.where.member_key)
+          return Promise.resolve(
+            suggestionId === undefined
+              ? null
+              : {
+                  member_key: args.where.member_key,
+                  suggestion_id: suggestionId
+                }
+          )
+        }
       )
     }
   }
@@ -446,12 +587,17 @@ const createFakeCompanyDatabase = (input: {
       const suggestionSnapshot = [...suggestions.entries()].map(
         ([id, row]) => [id, structuredClone(row)] as const
       )
+      const keySnapshot = [...pendingKeys.entries()]
       try {
         return await callback(tx)
       } catch (error) {
         rows.splice(0, rows.length, ...structuredClone(rowSnapshot))
         suggestions.clear()
         for (const [id, row] of suggestionSnapshot) suggestions.set(id, row)
+        pendingKeys.clear()
+        for (const [memberKey, suggestionId] of keySnapshot) {
+          pendingKeys.set(memberKey, suggestionId)
+        }
         throw error
       }
     }
@@ -461,6 +607,7 @@ const createFakeCompanyDatabase = (input: {
     tx,
     $transaction,
     suggestions,
+    pendingKeys,
     findSuggestion,
     readRows: () => rows,
     readState: () =>
@@ -862,6 +1009,7 @@ describe('applyCompanyMergeSuggestion', () => {
   const applyInput = {
     id: 7,
     targetCompanyId: 1,
+    selectedCompanyIds: [1, 2],
     name: 'Koei',
     ownerFromCompanyId: 1,
     introductionFromCompanyId: 2
@@ -924,6 +1072,7 @@ describe('applyCompanyMergeSuggestion', () => {
         {
           id: 7,
           targetCompanyId: 2,
+          selectedCompanyIds: [1, 2],
           name: 'KOEI Co., Ltd.',
           ownerFromCompanyId: 2,
           introductionFromCompanyId: 2
@@ -1014,5 +1163,379 @@ describe('applyCompanyMergeSuggestion', () => {
       '未找到该会社合并建议'
     )
     expect(mocks.prisma.$transaction).not.toHaveBeenCalled()
+  })
+
+  it('takes the merge-queue lock before company table locks', async () => {
+    const database = createDatabase()
+    database.suggestions.set(7, {
+      ...suggestion,
+      resolved_at: null,
+      resolved_by_user_id: null
+    })
+    mocks.prisma.$transaction = database.$transaction
+    mocks.prisma.company_merge_suggestion.findFirst.mockImplementation(
+      database.findSuggestion
+    )
+
+    await applyCompanyMergeSuggestion(applyInput, 42)
+
+    const statements = database.tx.$executeRawUnsafe.mock.calls.map(([sql]) =>
+      String(sql)
+    )
+    const advisory = statements.findIndex((sql) =>
+      sql.includes("'company-merge-queue'")
+    )
+    const tableLock = statements.findIndex((sql) => sql.includes('LOCK TABLE'))
+    expect(advisory).toBeGreaterThanOrEqual(0)
+    expect(advisory).toBeLessThan(tableLock)
+  })
+})
+
+describe('applyCompanyMergeSuggestion subset', () => {
+  const parentEvidence = {
+    kind: 'source-pair',
+    patchId: 814,
+    upstreamIds: ['vndb:p5101'],
+    hits: [
+      { companyId: 407, source: 'vndb', field: 'name', value: 'Kotama Yuri' },
+      { companyId: 408, source: 'vndb', field: 'alias', value: 'WINGALD' },
+      { companyId: 409, source: 'vndb', field: 'original', value: '小珠ゆり' }
+    ]
+  }
+
+  const subsetState = (): CompanyDatabaseState => ({
+    companies: [
+      company(407, 'Kotama Yuri', 11, {
+        count: 1,
+        introduction: 'yuri intro',
+        relations: [relation(10)]
+      }),
+      company(408, 'WINGALD', 99, {
+        count: 1,
+        introduction: 'wingald intro',
+        sourceWebsites: ['https://wingald.example'],
+        relations: [relation(20)]
+      }),
+      company(409, '小珠ゆり', 22, {
+        count: 1,
+        introduction: 'kozue intro',
+        aliases: ['小珠'],
+        relations: [relation(30)]
+      })
+    ]
+  })
+
+  const wire = (
+    database: ReturnType<typeof createFakeCompanyDatabase>,
+    extra: Partial<FakeSuggestion> = {}
+  ) => {
+    database.suggestions.set(7, {
+      id: 7,
+      status: 'pending',
+      kind: 'source-pair',
+      target_company_id: 407,
+      source_company_ids: [408, 409],
+      names: ['Kotama Yuri', 'WINGALD', '小珠ゆり'],
+      member_key: '407,408,409',
+      candidate_key: 'source-pair|vndb:p5101|patch:814',
+      evidence: parentEvidence,
+      folded_key: 'vndb:p5101',
+      resolved_at: null,
+      resolved_by_user_id: null,
+      ...extra
+    })
+    mocks.prisma.$transaction = database.$transaction
+    mocks.prisma.company_merge_suggestion.findFirst.mockImplementation(
+      database.findSuggestion
+    )
+  }
+
+  const selectedInput = {
+    id: 7,
+    targetCompanyId: 408,
+    selectedCompanyIds: [407, 409],
+    name: '小珠ゆり',
+    ownerFromCompanyId: 99,
+    introductionFromCompanyId: 409
+  }
+
+  const rowsWithKey = (
+    database: ReturnType<typeof createFakeCompanyDatabase>,
+    memberKey: string
+  ) =>
+    [...database.suggestions.values()].filter(
+      (row) => row.member_key === memberKey
+    )
+
+  it('merges only the checked companies and leaves the unchecked row untouched', async () => {
+    const database = createFakeCompanyDatabase({
+      state: subsetState(),
+      ownerIds: { 407: 11, 408: 99, 409: 22 }
+    })
+    wire(database)
+
+    await expect(applyCompanyMergeSuggestion(selectedInput, 42)).resolves.toEqual({
+      id: 7,
+      targetCompanyId: 407,
+      databaseStatus: 'applied'
+    })
+
+    const rows = database.readRows()
+    expect(rows.map((row) => row.id).sort((left, right) => left - right)).toEqual([
+      407, 408
+    ])
+    const survivor = rows.find((row) => row.id === 407)
+    const untouched = rows.find((row) => row.id === 408)
+    expect(survivor?.name).toBe('小珠ゆり')
+    expect(survivor?.user_id).toBe(22)
+    expect(survivor?.introduction).toBe('kozue intro')
+    expect(survivor?.official_website).not.toContain('https://wingald.example')
+    expect(survivor?.alias).toEqual(expect.arrayContaining(['Kotama Yuri', '小珠']))
+    expect(survivor?.patch_relations.map((item) => item.patch_id).sort()).toEqual([
+      10, 30
+    ])
+    expect(untouched).toMatchObject({
+      name: 'WINGALD',
+      user_id: 99,
+      introduction: 'wingald intro',
+      count: 1,
+      official_website: ['https://wingald.example']
+    })
+    expect(untouched?.patch_relations.map((item) => item.patch_id)).toEqual([20])
+
+    expect(database.suggestions.get(7)).toMatchObject({
+      status: 'accepted',
+      resolution_source: 'operator-merge',
+      selected_company_ids: [407, 409],
+      applied_target_company_id: 407,
+      applied_source_company_ids: [409],
+      member_key: '407,408,409'
+    })
+    expect(rowsWithKey(database, '407,408')).toEqual([
+      expect.objectContaining({
+        status: 'dismissed',
+        resolution_source: 'partial-merge-exclusion',
+        candidate_key: null,
+        member_key: '407,408',
+        names: ['Kotama Yuri', 'WINGALD']
+      })
+    ])
+    expect(database.pendingKeys.has('407,408')).toBe(false)
+    expect(
+      rowsWithKey(database, '407,408')[0]?.evidence
+    ).toMatchObject({
+      resolutionSource: 'partial-merge-exclusion',
+      parentSuggestionId: 7,
+      patchId: 814,
+      upstreamIds: ['vndb:p5101'],
+      hits: [
+        { companyId: 407, source: 'vndb', field: 'name', value: 'Kotama Yuri' },
+        { companyId: 408, source: 'vndb', field: 'alias', value: 'WINGALD' }
+      ]
+    })
+
+    expect(
+      mocks.invalidateCompanyCaches.mock.calls
+        .map(([companyId]) => companyId)
+        .sort((left, right) => left - right)
+    ).toEqual([407, 409])
+    expect(
+      mocks.invalidatePatchContentCache.mock.calls.map(([uniqueId]) => uniqueId).sort()
+    ).toEqual(['patch-10', 'patch-30'])
+
+    const statements = database.tx.$executeRawUnsafe.mock.calls.map(([sql]) =>
+      String(sql)
+    )
+    expect(
+      statements.findIndex((sql) => sql.includes("'company-merge-queue'"))
+    ).toBeLessThan(statements.findIndex((sql) => sql.includes('LOCK TABLE')))
+    expect(database.tx.$queryRawUnsafe.mock.calls.map((call) => call[1])).toEqual([
+      '407,408',
+      '407,408,409'
+    ])
+  })
+
+  it('still merges the checked pair when an unchecked company is already gone', async () => {
+    const state = subsetState()
+    state.companies = state.companies.filter((row) => row.id !== 408)
+    const database = createFakeCompanyDatabase({
+      state,
+      ownerIds: { 407: 11, 409: 22 }
+    })
+    wire(database)
+
+    await expect(applyCompanyMergeSuggestion(selectedInput, 42)).resolves.toEqual({
+      id: 7,
+      targetCompanyId: 407,
+      databaseStatus: 'applied'
+    })
+    expect(database.readRows().some((row) => row.id === 409)).toBe(false)
+    expect(database.readRows().some((row) => row.id === 407)).toBe(true)
+  })
+
+  it('rejects an introduction source that was not checked', async () => {
+    const database = createFakeCompanyDatabase({
+      state: subsetState(),
+      ownerIds: { 407: 11, 408: 99, 409: 22 }
+    })
+    wire(database)
+
+    await expect(
+      applyCompanyMergeSuggestion(
+        { ...selectedInput, introductionFromCompanyId: 408 },
+        42
+      )
+    ).resolves.toBe('介绍的来源必须是勾选的会社之一')
+    expect(database.$transaction).not.toHaveBeenCalled()
+    expect(database.suggestions.get(7)?.status).toBe('pending')
+  })
+
+  it('does not default a missing selection to the whole cluster', async () => {
+    const database = createFakeCompanyDatabase({
+      state: subsetState(),
+      ownerIds: { 407: 11, 408: 99, 409: 22 }
+    })
+    wire(database)
+    const { selectedCompanyIds, ...withoutSelection } = selectedInput
+    void selectedCompanyIds
+
+    await expect(
+      applyCompanyMergeSuggestion(
+        withoutSelection as typeof selectedInput,
+        42
+      )
+    ).resolves.toBe('至少选择两家会社')
+    expect(database.$transaction).not.toHaveBeenCalled()
+  })
+
+  it('turns an existing pending pair into the exclusion instead of inserting another row', async () => {
+    const database = createFakeCompanyDatabase({
+      state: subsetState(),
+      ownerIds: { 407: 11, 408: 99, 409: 22 }
+    })
+    wire(database)
+    database.suggestions.set(50, {
+      id: 50,
+      status: 'pending',
+      target_company_id: 407,
+      source_company_ids: [408],
+      member_key: '407,408',
+      candidate_key: 'suffix-unique-hit|407,408',
+      names: ['keep', 'me'],
+      resolved_at: null,
+      resolved_by_user_id: null
+    })
+    database.pendingKeys.set('407,408', 50)
+
+    await applyCompanyMergeSuggestion(selectedInput, 42)
+
+    expect(rowsWithKey(database, '407,408')).toEqual([
+      expect.objectContaining({
+        id: 50,
+        status: 'dismissed',
+        resolution_source: 'partial-merge-exclusion',
+        candidate_key: null,
+        names: ['keep', 'me']
+      })
+    ])
+    expect(database.pendingKeys.has('407,408')).toBe(false)
+  })
+
+  it('does not overwrite an operator dismiss when excluding the same pair', async () => {
+    const database = createFakeCompanyDatabase({
+      state: subsetState(),
+      ownerIds: { 407: 11, 408: 99, 409: 22 }
+    })
+    wire(database)
+    const resolvedAt = new Date('2026-01-01T00:00:00.000Z')
+    database.suggestions.set(51, {
+      id: 51,
+      status: 'dismissed',
+      target_company_id: 407,
+      source_company_ids: [408],
+      member_key: '407,408',
+      names: ['Kotama Yuri', 'WINGALD'],
+      resolution_source: 'operator-dismiss',
+      resolved_at: resolvedAt,
+      resolved_by_user_id: 5,
+      evidence: { hits: [] }
+    })
+
+    await applyCompanyMergeSuggestion(selectedInput, 42)
+
+    const kept = database.suggestions.get(51)
+    expect(rowsWithKey(database, '407,408')).toHaveLength(1)
+    expect(kept?.resolved_by_user_id).toBe(5)
+    expect(kept?.resolved_at).toBe(resolvedAt)
+    expect(kept?.resolution_source).toBe('operator-dismiss')
+    expect(kept?.evidence).toMatchObject({
+      hits: [],
+      laterPartialMergeExclusions: [
+        expect.objectContaining({ parentSuggestionId: 7, memberKey: '407,408' })
+      ]
+    })
+  })
+
+  it('updates the parent pointer on an existing automatic exclusion without moving its time', async () => {
+    const database = createFakeCompanyDatabase({
+      state: subsetState(),
+      ownerIds: { 407: 11, 408: 99, 409: 22 }
+    })
+    wire(database)
+    const resolvedAt = new Date('2026-02-02T00:00:00.000Z')
+    database.suggestions.set(52, {
+      id: 52,
+      status: 'dismissed',
+      target_company_id: 407,
+      source_company_ids: [408],
+      member_key: '407,408',
+      candidate_key: null,
+      resolution_source: 'partial-merge-exclusion',
+      resolved_at: resolvedAt,
+      resolved_by_user_id: 8,
+      evidence: {
+        hits: [],
+        resolutionSource: 'partial-merge-exclusion',
+        parentSuggestionId: 3
+      }
+    })
+
+    await applyCompanyMergeSuggestion(selectedInput, 42)
+
+    const kept = database.suggestions.get(52)
+    expect(rowsWithKey(database, '407,408')).toHaveLength(1)
+    expect(kept?.resolved_at).toBe(resolvedAt)
+    expect(kept?.resolved_by_user_id).toBe(8)
+    expect(kept?.evidence).toMatchObject({ parentSuggestionId: 7 })
+  })
+
+  it('does not insert an exclusion when that pair was already accepted', async () => {
+    const database = createFakeCompanyDatabase({
+      state: subsetState(),
+      ownerIds: { 407: 11, 408: 99, 409: 22 }
+    })
+    wire(database)
+    database.suggestions.set(53, {
+      id: 53,
+      status: 'accepted',
+      target_company_id: 407,
+      source_company_ids: [408],
+      member_key: '407,408',
+      resolution_source: 'operator-merge',
+      resolved_at: new Date('2026-03-03T00:00:00.000Z'),
+      resolved_by_user_id: 8,
+      names: ['Kotama Yuri', 'WINGALD']
+    })
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    await applyCompanyMergeSuggestion(selectedInput, 42)
+
+    expect(rowsWithKey(database, '407,408')).toEqual([
+      expect.objectContaining({ id: 53, status: 'accepted' })
+    ])
+    expect(errorSpy).toHaveBeenCalledWith(
+      '[company-merges] skip auto-exclude member_key=407,408 already accepted'
+    )
+    errorSpy.mockRestore()
   })
 })

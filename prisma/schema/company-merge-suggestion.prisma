@@ -2,31 +2,60 @@
 /// here: the queue never mutates `patch_company`, so a suggestion is a human
 /// review item rather than a pending write.
 ///
-/// There is deliberately no unique constraint on (kind, folded_key, status).
-/// A key that was dismissed can be detected again later and dismissed a second
-/// time, which would collide; only one *pending* row per key is allowed and the
-/// detect service enforces that by lookup.
+/// Skip and reopen identity is `member_key` (de-duplicated company ids, numeric
+/// order, comma-joined). `folded_key` is display-only and is not a skip key.
+/// There is deliberately no unique constraint on `(kind, folded_key, status)`
+/// and no partial unique index: dismissed rows may repeat, and the production
+/// schema guard only allows the catalog false-drift of `patch_released_idx`.
+/// Pending occupancy is `company_merge_pending_key` (one ordinary unique row
+/// per pending suggestion).
+///
+/// `selected_company_ids` and `applied_source_company_ids` are JSON, not
+/// scalar lists, so SQL NULL can mean "this older row did not store a subset".
+/// `resolution_source` is NULL for those legacy rows.
+///
+/// `candidate_key` finds the same source-pair suggestion after its members
+/// change (`source-pair|<sorted upstream ids>|patch:<id>`). Suffix and
+/// punctuation suggestions use `kind|member_key`, so a member change is a
+/// different row. Legacy rows may keep a null `candidate_key`.
 ///
 /// `resolved_by_user_id` is a plain scalar instead of a `user` relation: the
 /// opposite relation field would have to live in `prisma/schema/user.prisma`,
-/// which this stage does not touch.
+/// which this stage does not touch. Application code does not delete
+/// suggestion rows; `onDelete: Restrict` stops a manual delete from orphaning
+/// a pending key.
 model company_merge_suggestion {
   id Int @id @default(autoincrement())
 
-  // 'suffix-unique-hit' for now; every detector adds its own kind.
+  // 'suffix-unique-hit' | 'name-variant' | 'source-pair'. Exclusion rows keep
+  // the parent kind; `resolution_source` says why they were closed.
   kind String @db.VarChar(32)
   // pending | dismissed | accepted
   status String @db.VarChar(16)
-  // Legal-form-folded name every company of the cluster shares.
+  // Display only. Not used to skip, reopen, or lock.
   folded_key String @db.VarChar(107)
 
+  // Detected full group. Not rewritten to the applied subset.
   target_company_id  Int
   source_company_ids Int[]
-  // Cluster order: the target name first, then the sources.
+  // Cluster order: the detected target name first, then the sources.
   names String[]
 
-  // { kind, foldedKey } — enough to re-derive the cluster without a re-scan.
+  // Validated before write. `hits` is required; a failed read becomes [].
   evidence Json
+
+  // null = legacy row did not store the checked ids.
+  selected_company_ids Json?
+  // null = legacy row did not store the deleted ids.
+  applied_source_company_ids Json?
+  // null = legacy row did not store the surviving company.
+  applied_target_company_id Int?
+  // Full detected group. NOT NULL after sync-c.
+  member_key String @db.VarChar(512)
+  // Null on legacy rows and on partial-merge exclusion rows.
+  candidate_key String? @db.VarChar(512)
+  // null | operator-dismiss | operator-merge | partial-merge-exclusion
+  resolution_source String? @db.VarChar(32)
 
   detected_at         DateTime  @default(now())
   resolved_at         DateTime?
@@ -35,6 +64,20 @@ model company_merge_suggestion {
   created DateTime @default(now())
   updated DateTime @updatedAt
 
+  pending_key company_merge_pending_key?
+
   @@index([status, detected_at(sort: Desc)])
   @@index([kind, folded_key, status])
+  @@index([member_key, status])
+  @@index([candidate_key, status])
+}
+
+/// The one pending suggestion allowed to hold a member_key. Dismiss, accept,
+/// and partial-merge exclusion delete the row; reopen inserts it again or
+/// fails when another suggestion already holds the key.
+model company_merge_pending_key {
+  member_key    String   @id @db.VarChar(512)
+  suggestion_id Int      @unique
+  suggestion    company_merge_suggestion @relation(fields: [suggestion_id], references: [id], onDelete: Restrict)
+  created       DateTime @default(now())
 }

@@ -75,13 +75,15 @@ export interface ApplySingleCompanyMergeInput {
   lockTimeoutMs?: number
   statementTimeoutMs?: number
   /**
-   * Work that has to be atomic with the merge. `beforeApply` runs once the
-   * maintenance locks are held and before any company write (use it to re-read
-   * and validate caller-side rows such as the queue suggestion); `afterApply`
-   * runs after the merge has been verified, still inside the transaction, so a
-   * failure there rolls the merge back instead of leaving it unrecorded.
+   * Work that has to be atomic with the merge. `beforeCompanyLocks` runs after
+   * the transaction timeouts and before any company-table lock (advisory lock,
+   * then suggestion rows). `beforeApply` runs once the maintenance locks are
+   * held and before any company write. `afterApply` runs after the merge has
+   * been verified, still inside the transaction, so a failure there rolls the
+   * merge back instead of leaving it unrecorded.
    */
   hooks?: {
+    beforeCompanyLocks?: (tx: Prisma.TransactionClient) => Promise<void>
     beforeApply?: (tx: Prisma.TransactionClient) => Promise<void>
     afterApply?: (tx: Prisma.TransactionClient) => Promise<void>
   }
@@ -238,6 +240,7 @@ export const applySingleCompanyMerge = async (
   return input.db.$transaction(
     async (tx) => {
       await setTransactionTimeouts(tx, lockTimeoutMs, statementTimeoutMs)
+      await input.hooks?.beforeCompanyLocks?.(tx)
       await lockCompanyMaintenanceTables(tx)
       await assertCounterContract(tx)
       await input.hooks?.beforeApply?.(tx)
