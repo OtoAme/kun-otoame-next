@@ -265,7 +265,7 @@ service/helper 负责：
 - resolver 开关关闭时暂时保留旧兼容行为：VNDB 成功关联后不再使用 Bangumi
   developer，Steam developer 与 DLSite circle 仍独立补充。**这不是最终产品规则**；
   开关启用后四个来源全部进入 resolver，Bangumi 独有发行商/制作方不得再被丢弃。
-- VNDB producer 新建会社时，`introduction` 使用 VNDB 的 `description`；不得再把 alias 数组拼成逗号串冒充简介。resolver 关闭时，新建、重写、详情页重抓和投稿批准共用 `planIncomingCompanyLinks`。拉丁 `name` 配含汉字或假名的 `original` 时，新建行主名用 `original`。匹配只用 `name` 与 `original`，不用别名袋。精确对上、封闭名称变体组，或后缀对上已有会社时只挂关系，不插入新行，也不改已有主名。投稿在事务外拉取完整 producer；拉取失败则整笔批准回滚，不用只含原文的字符串创建会社。resolver 打开后仍按身份计划第 10 条。历史 `ensurePatchCompanyFromDlsite` 同样必须走共享 resolver 与外层唯一冲突重试，不得退回只按精确 `name` 查找；关系变化后同时失效会社缓存与该游戏内容缓存。
+- VNDB producer 新建会社时，`introduction` 使用 VNDB 的 `description`；不得再把 alias 数组拼成逗号串冒充简介。resolver 关闭时，新建、重写、详情页重抓和投稿批准共用 `planIncomingCompanyLinks`。拉丁 `name` 配含汉字或假名的 `original` 时，新建行主名用 `original`。匹配只用 `name` 与 `original`，不用别名袋。精确对上、封闭名称变体组，或后缀对上已有会社时只挂关系，不插入新行，也不改已有主名。投稿在事务外拉取完整 producer；拉取失败则整笔批准回滚，不用只含原文的字符串创建会社。同一次计划里，先决定新建的行会立刻参加后续查重，VNDB 开发商排在 Steam 与 DLsite 前面，避免同一批再插入一家。resolver 打开后仍按身份计划第 10 条。历史 `ensurePatchCompanyFromDlsite` 同样必须走共享 resolver 与外层唯一冲突重试，不得退回只按精确 `name` 查找；关系变化后同时失效会社缓存与该游戏内容缓存。
 - 外部公司关系必须按 `name` 和 `alias` 查找已有公司；提交名只命中一家会社的 alias 时，应关联到已有会社，而不是创建新会社。共享 alias 是允许存在的歧义状态，旧兼容 helper 不得按无序查询的第一行静默选一家，必须停止本次会社关系写入并返回维护提示。
 - 旧兼容 helper 在写库前按 `normalized_name` 合并同批等价主名，合并别名、语言和来源网站；不同主名之间出现 alias/name 证据重叠时阻断，不得一次创建两家疑似重复会社。VNDB 权威数据唯一命中既有会社时，必须先锁行并重新读取最新数据，再只补空简介并合并别名、语言、网站，最后同步 identity projection；不得覆盖已有人工简介，也不得用锁前快照覆盖并发写入。
 - 详情页手动重新获取 VNDB 会社时必须遵循同一个 server-only resolver flag：开启后走共享 resolver 并写 external ID，关闭时只走带歧义保护的兼容 helper。返回值区分解析到的会社数和本次新增关系数；重复重抓已有关系应显示“无需新增关联”，不能虚报新增数量。
