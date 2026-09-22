@@ -108,6 +108,9 @@ HOSTNAME = "127.0.0.1"
 # 申请地址：https://next.bgm.tv/demo/access-token/create
 BANGUMI_ACCESS_TOKEN = "kkkkkkkkkkkkkkkkkkkkkkkkkkkk"
 
+# kungal API， 可选，仅服务端使用。用于合并被重复创建的会社（会社别名未被归入主会社，而是被程序误创建了冗余会社。合并例子：Tenky / テンキー）
+# KUN_NEXTMOE_API_KEY = ""
+
 # 邮件服务地址
 KUN_VISUAL_NOVEL_EMAIL_FROM = "纸月花雨"
 KUN_VISUAL_NOVEL_EMAIL_HOST = "otoame.moe"
