@@ -11,9 +11,15 @@ import {
   mapTagNamesToIds
 } from '~/app/api/edit/tagEnsureHelper'
 import {
-  ensureCompanyRelationsByName,
-  type CompanyCreateInput
+  applyIncomingCompanyPlan,
+  loadCompanyLinkSnapshots
 } from '~/app/api/edit/companyEnsureHelper'
+import {
+  planIncomingCompanyLinks,
+  type IncomingCompanyLink
+} from '~/app/api/edit/linkIncomingCompanies'
+import { selectLegacyVndbCompanyNames } from '~/app/api/edit/legacyVndbCompanyName'
+import type { VndbProducer } from '~/lib/arnebiae/vndb'
 import { applyCompanyResolution } from '~/app/api/company/identity/resolver'
 import { isCompanyIdentityResolverEnabled } from '~/app/api/company/identity/retry'
 import {
@@ -40,8 +46,52 @@ export interface PublishCoreInput {
   bannerKey: string | null
   gallery: PublishAsset[]
   companyCandidates?: TrustedCompanyCandidate[]
+  /** Fetched outside this transaction. `undefined` means there is no VNDB id. */
+  vndbProducers?: VndbProducer[]
   constraintCompatibility?: boolean
 }
+
+const vndbProducerLink = (
+  producer: VndbProducer,
+  userId: number
+): IncomingCompanyLink | null => {
+  const selected = selectLegacyVndbCompanyNames(producer)
+  if (!selected) return null
+  const spellings = [
+    ...new Set(
+      [producer.name, producer.original]
+        .map((value) => value?.trim() ?? '')
+        .filter(Boolean)
+    )
+  ]
+  return {
+    spellings,
+    createName: selected.name,
+    storeAliases: selected.alias,
+    introduction: producer.description?.trim() ?? '',
+    primaryLanguage: producer.lang ? [producer.lang] : [],
+    websites: (producer.extlinks ?? [])
+      .map((link) => link?.url?.trim() ?? '')
+      .filter(Boolean),
+    externalId: producer.id?.trim() || undefined,
+    userId
+  }
+}
+
+const stringCompanyLink = (
+  name: string,
+  userId: number,
+  payload: PatchSubmissionPayload
+): IncomingCompanyLink => ({
+  spellings: [name],
+  createName: name,
+  storeAliases: [],
+  websites:
+    name === payload.dlsiteCircleName.trim() && payload.dlsiteCircleLink.trim()
+      ? [payload.dlsiteCircleLink.trim()]
+      : [],
+  userId
+})
 
 /**
  * Everything the publish transaction touches, and nothing else.
@@ -141,27 +191,42 @@ export const publishSubmissionCore = async (
     )
     companyResolutionDiagnostics = resolution.diagnostics
     touchedCompanies = resolution.companyIds.length > 0
-  } else if (projection.companyNames.length) {
-    const companyNames = projection.companyNames
-    const companiesByName = new Map<string, CompanyCreateInput>(
-      companyNames.map((name) => [
-        name,
-        {
-          name,
-          introduction: '',
-          alias: [],
-          official_website:
-            name === payload.dlsiteCircleName && payload.dlsiteCircleLink
-              ? [payload.dlsiteCircleLink]
-              : [],
-          user_id: input.authorId
-        }
-      ])
+  } else if (
+    projection.companyNames.length ||
+    (input.vndbProducers?.length ?? 0) > 0
+  ) {
+    const snapshots = await loadCompanyLinkSnapshots(tx)
+    const vndbIncoming = (input.vndbProducers ?? []).flatMap((producer) => {
+      const link = vndbProducerLink(producer, input.authorId)
+      return link ? [link] : []
+    })
+    const vndbPlan = planIncomingCompanyLinks(snapshots, vndbIncoming)
+    const vndbLinked = vndbPlan.linkIds.length + vndbPlan.create.length > 0
+    const vndbNames = new Set(
+      payload.vndbDevelopers.map((name) => name.trim()).filter(Boolean)
     )
-    await ensureCompanyRelationsByName(
+    const bangumiNames = new Set(
+      payload.bangumiDevelopers.map((name) => name.trim()).filter(Boolean)
+    )
+    const stringIncoming = projection.companyNames.flatMap((name) => {
+      const trimmed = name.trim()
+      if (!trimmed) return []
+      if (input.vndbProducers && vndbNames.has(trimmed)) return []
+      if (vndbLinked && bangumiNames.has(trimmed)) return []
+      return [stringCompanyLink(trimmed, input.authorId, payload)]
+    })
+    const stringPlan = planIncomingCompanyLinks(snapshots, stringIncoming)
+    await applyIncomingCompanyPlan(
       tx,
       patch.id,
-      companiesByName,
+      vndbPlan,
+      'authoritative',
+      input.constraintCompatibility
+    )
+    await applyIncomingCompanyPlan(
+      tx,
+      patch.id,
+      stringPlan,
       'legacy',
       input.constraintCompatibility
     )

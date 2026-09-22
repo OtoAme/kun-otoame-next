@@ -1,8 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const ensureCompanyRelationsByNameMock = vi.hoisted(() => vi.fn())
+const applyIncomingCompanyPlanMock = vi.hoisted(() => vi.fn())
+const loadCompanyLinkSnapshotsMock = vi.hoisted(() => vi.fn(async () => []))
 vi.mock('~/app/api/edit/companyEnsureHelper', () => ({
   ensureCompanyRelationsByName: ensureCompanyRelationsByNameMock,
+  applyIncomingCompanyPlan: applyIncomingCompanyPlanMock,
+  loadCompanyLinkSnapshots: loadCompanyLinkSnapshotsMock,
   uniqueTrimmed: (values: string[]) => [
     ...new Set(values.map((value) => value.trim()).filter(Boolean))
   ]
@@ -92,8 +96,9 @@ describe('submission publish company branch', () => {
       gallery: []
     })
 
-    expect(ensureCompanyRelationsByNameMock).toHaveBeenCalledOnce()
+    expect(applyIncomingCompanyPlanMock).toHaveBeenCalled()
     expect(applyCompanyResolutionMock).not.toHaveBeenCalled()
+    expect(ensureCompanyRelationsByNameMock).not.toHaveBeenCalled()
   })
 
   it('uses the same resolver branch as preview when the server flag is on', async () => {

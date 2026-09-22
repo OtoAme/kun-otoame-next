@@ -1,3 +1,4 @@
+import { selectLegacyVndbCompanyNames } from '~/app/api/edit/legacyVndbCompanyName'
 import { fetchVndbVn } from '~/lib/arnebiae/vndb'
 import type { VNDBDetailResult } from '~/lib/arnebiae/vndb'
 import type {
@@ -48,7 +49,7 @@ export const fetchVndbDetailsData = async (
   const developers = [
     ...new Set(
       producers
-        .map((producer) => producer.name?.trim())
+        .map((producer) => selectLegacyVndbCompanyNames(producer)?.name)
         .filter((name): name is string => Boolean(name))
     )
   ]

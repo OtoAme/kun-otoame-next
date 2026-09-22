@@ -218,3 +218,59 @@ export function suggestNameVariantHits(
     (left, right) => left.targetCompanyId - right.targetCompanyId
   )
 }
+
+/**
+ * Where an incoming spelling sits among existing companies. `none` means it
+ * shares no name-variant key. `blocked` means the shared keys are not a closed
+ * cluster, or the cluster has conflicting external ids. `link` is the existing
+ * companies in that closed cluster.
+ */
+export const classifyIncomingNameVariant = (
+  existing: NameVariantCompany[],
+  incoming: NameVariantCompany
+): { kind: 'none' } | { kind: 'blocked' } | { kind: 'link'; ids: number[] } => {
+  const companies = [
+    ...existing.filter((company) => company.id !== incoming.id),
+    incoming
+  ]
+  const parent = new Map(companies.map((company) => [company.id, company.id]))
+  const membersByKey = new Map<string, Set<number>>()
+  const keysByCompany = new Map<number, string[]>()
+
+  for (const company of companies) {
+    const keys = nameVariantClusterKeys(company)
+    keysByCompany.set(company.id, keys)
+    for (const key of keys) {
+      const members = membersByKey.get(key) ?? new Set<number>()
+      members.add(company.id)
+      membersByKey.set(key, members)
+    }
+  }
+
+  for (const members of membersByKey.values()) {
+    const ids = [...members]
+    for (let index = 1; index < ids.length; index += 1) {
+      union(parent, ids[0], ids[index])
+    }
+  }
+
+  const root = findRoot(parent, incoming.id)
+  const members = companies.filter(
+    (company) => findRoot(parent, company.id) === root
+  )
+  const existingMembers = members.filter((company) => company.id !== incoming.id)
+  if (!existingMembers.length) return { kind: 'none' }
+
+  const memberIds = new Set(members.map((company) => company.id))
+  const memberKeys = [
+    ...new Set(members.flatMap((company) => keysByCompany.get(company.id) ?? []))
+  ]
+  const closed = memberKeys.every((key) => {
+    const holders = membersByKey.get(key)
+    return holders && [...holders].every((id) => memberIds.has(id))
+  })
+  if (!closed || hasConflictingCompanyExternalIds(members)) {
+    return { kind: 'blocked' }
+  }
+  return { kind: 'link', ids: existingMembers.map((company) => company.id) }
+}

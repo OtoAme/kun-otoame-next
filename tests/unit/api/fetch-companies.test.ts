@@ -53,6 +53,7 @@ vi.mock('~/app/api/company/identity/resolver', () => ({
   CompanyResolutionAmbiguityError: class CompanyResolutionAmbiguityError extends Error {}
 }))
 
+import { selectLegacyVndbCompanyNames } from '~/app/api/edit/legacyVndbCompanyName'
 import { ensurePatchCompaniesFromVNDB } from '~/app/api/edit/fetchCompanies'
 
 describe('ensurePatchCompaniesFromVNDB', () => {
@@ -161,6 +162,7 @@ describe('ensurePatchCompaniesFromVNDB', () => {
   it('invalidates the patch detail cache when VNDB fetch adds companies', async () => {
     prismaMocks._tx.patch_company.findMany
       .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
       .mockResolvedValueOnce([{ id: 7, name: 'VNDB Studio', alias: [] }])
     prismaMocks._tx.patch_company.findUnique.mockResolvedValue({
       name: 'VNDB Studio',
@@ -211,8 +213,191 @@ describe('ensurePatchCompaniesFromVNDB', () => {
     })
   })
 
+  it('stores the original as the new company name and keeps the Latin name as an alias', async () => {
+    const selected = selectLegacyVndbCompanyNames({
+      name: 'Studio',
+      original: 'スタジオ',
+      aliases: ['WINGALD']
+    })
+    fetchVndbVnMock.mockResolvedValueOnce({
+      results: [
+        {
+          developers: [
+            {
+              id: 'p1',
+              name: 'Studio',
+              original: 'スタジオ',
+              aliases: ['WINGALD'],
+              lang: 'ja',
+              type: 'co',
+              description: 'Visual novel developer.',
+              extlinks: []
+            }
+          ]
+        }
+      ]
+    })
+    prismaMocks._tx.patch_company.findMany
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ id: 7, name: 'スタジオ', alias: ['Studio'] }])
+    prismaMocks._tx.patch_company.findUnique.mockResolvedValue({
+      name: 'スタジオ',
+      alias: ['Studio', 'WINGALD'],
+      normalized_name: 'スタジオ',
+      name_identities: []
+    })
+
+    const result = await ensurePatchCompaniesFromVNDB(10, 'v123', 100)
+
+    expect(selected?.name).toBe('スタジオ')
+    expect(result).toEqual({ ensured: 1, resolved: 1, related: 1 })
+    expect(
+      prismaMocks._tx.patch_company.createManyAndReturn
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: [
+          expect.objectContaining({
+            name: 'スタジオ',
+            alias: ['Studio', 'WINGALD'],
+            normalized_name: 'スタジオ',
+            introduction: 'Visual novel developer.'
+          })
+        ]
+      })
+    )
+  })
+
+  it('attaches a Latin existing company instead of creating the original name', async () => {
+    fetchVndbVnMock.mockResolvedValueOnce({
+      results: [
+        {
+          developers: [
+            {
+              id: 'p1',
+              name: 'Studio',
+              original: 'スタジオ',
+              aliases: [],
+              lang: 'ja',
+              type: 'co',
+              description: '',
+              extlinks: []
+            }
+          ]
+        }
+      ]
+    })
+    prismaMocks._tx.patch_company.findMany.mockResolvedValueOnce([
+      {
+        id: 7,
+        name: 'Studio',
+        alias: [],
+        normalized_name: 'studio',
+        introduction: 'Kept intro',
+        primary_language: [],
+        official_website: [],
+        parent_brand: []
+      }
+    ])
+    prismaMocks._tx.patch_company.findUnique.mockResolvedValue({
+      id: 7,
+      name: 'Studio',
+      alias: [],
+      normalized_name: 'studio',
+      introduction: 'Kept intro',
+      primary_language: [],
+      official_website: [],
+      parent_brand: [],
+      name_identities: []
+    })
+
+    const result = await ensurePatchCompaniesFromVNDB(10, 'v123', 100)
+
+    expect(result.ensured).toBe(0)
+    expect(
+      prismaMocks._tx.patch_company.createManyAndReturn
+    ).not.toHaveBeenCalled()
+    expect(prismaMocks._tx.patch_company.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 7 },
+        data: expect.objectContaining({
+          alias: expect.arrayContaining(['スタジオ'])
+        })
+      })
+    )
+    expect(prismaMocks._tx.patch_company.update.mock.calls[0]?.[0].data.name).toBeUndefined()
+  })
+
+  it('stops when the original and the Latin name belong to different companies', async () => {
+    fetchVndbVnMock.mockResolvedValueOnce({
+      results: [
+        {
+          developers: [
+            {
+              id: 'p1',
+              name: 'Studio',
+              original: 'スタジオ',
+              aliases: [],
+              type: 'co'
+            }
+          ]
+        }
+      ]
+    })
+    prismaMocks._tx.patch_company.findMany.mockResolvedValueOnce([
+      {
+        id: 1,
+        name: 'スタジオ',
+        alias: [],
+        normalized_name: 'スタジオ',
+        introduction: '',
+        primary_language: [],
+        official_website: [],
+        parent_brand: []
+      },
+      {
+        id: 2,
+        name: 'Studio',
+        alias: [],
+        normalized_name: 'studio',
+        introduction: '',
+        primary_language: [],
+        official_website: [],
+        parent_brand: []
+      }
+    ])
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    const result = await ensurePatchCompaniesFromVNDB(10, 'v123', 100)
+    errorSpy.mockRestore()
+
+    expect(result.ensured).toBe(0)
+    expect(result.resolved).toBe(2)
+    expect(
+      prismaMocks._tx.patch_company.createManyAndReturn
+    ).not.toHaveBeenCalled()
+  })
+
   it('uses the identity resolver for manual VNDB refresh when enabled', async () => {
     process.env.KUN_COMPANY_IDENTITY_RESOLVER_ENABLED = 'true'
+    fetchVndbVnMock.mockResolvedValueOnce({
+      results: [
+        {
+          developers: [
+            {
+              id: 'p1',
+              name: 'Studio',
+              original: 'スタジオ',
+              aliases: [],
+              lang: 'ja',
+              type: 'co',
+              description: 'Visual novel developer.',
+              extlinks: []
+            }
+          ]
+        }
+      ]
+    })
 
     const result = await ensurePatchCompaniesFromVNDB(10, 'v123', 100)
 
@@ -250,15 +435,15 @@ describe('ensurePatchCompaniesFromVNDB', () => {
         parent_brand: []
       })
       .mockResolvedValue({
+        id: 7,
         name: 'VNDB Studio',
         alias: ['Original Studio', 'Studio Alias'],
         normalized_name: 'vndb studio',
         name_identities: []
       })
     prismaMocks._tx.$queryRaw
-      .mockResolvedValueOnce([{ id: 7 }])
-      .mockResolvedValueOnce([{ id: 7 }])
       .mockResolvedValueOnce([])
+      .mockResolvedValue([{ id: 7 }])
 
     const result = await ensurePatchCompaniesFromVNDB(10, 'v123', 100)
 

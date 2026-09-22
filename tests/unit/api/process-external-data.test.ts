@@ -222,6 +222,7 @@ describe('processSubmittedExternalData company relations', () => {
   it('merges same company names from fallback and secondary sources before relating them', async () => {
     prismaMocks._tx.patch_company.findMany
       .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
       .mockResolvedValueOnce([
         { id: 1, name: 'A', alias: [] },
         { id: 2, name: 'B', alias: [] },
@@ -258,6 +259,7 @@ describe('processSubmittedExternalData company relations', () => {
 
   it('uses Bangumi developers only when VNDB developers are empty', async () => {
     prismaMocks._tx.patch_company.findMany
+      .mockResolvedValueOnce([])
       .mockResolvedValueOnce([])
       .mockResolvedValueOnce([
         { id: 1, name: 'VNDB Studio', alias: [] },
@@ -358,6 +360,7 @@ describe('processSubmittedExternalData company relations', () => {
   it('uses Bangumi fallback when submitted and fetched VNDB companies are empty', async () => {
     prismaMocks._tx.patch_company.findMany
       .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
       .mockResolvedValueOnce([{ id: 4, name: 'Bangumi Studio', alias: [] }])
 
     await processSubmittedExternalData(
@@ -406,6 +409,7 @@ describe('processSubmittedExternalData company relations', () => {
 
   it('uses submitted VNDB developers before Bangumi when fetched VNDB companies are empty', async () => {
     prismaMocks._tx.patch_company.findMany
+      .mockResolvedValueOnce([])
       .mockResolvedValueOnce([])
       .mockResolvedValueOnce([
         { id: 5, name: 'Submitted VNDB Studio', alias: [] }

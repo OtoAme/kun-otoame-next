@@ -6,6 +6,11 @@ import {
   isCompanyIdentityValueWithinLimit,
   normalizeCompanyValue
 } from '~/app/api/company/identity/normalize'
+import type {
+  IncomingCompanyPlan,
+  LinkCompanySnapshot,
+  PlannedCompanyCreate
+} from './linkIncomingCompanies'
 import { syncCompanyIdentityProjection } from '~/app/api/company/identity/projection'
 import type { CompanyIdentityOrigin } from '~/app/api/company/identity/projection'
 import { PatchSubmissionError } from '~/app/api/patch-submission/quota'
@@ -368,19 +373,19 @@ const enrichExistingCompany = async (
   const normalizedCompanyName =
     company.normalized_name ?? normalizeCompanyValue(company.name)
   const aliases = validCompanyIdentityValues([
-    ...company.alias,
+    ...(company.alias ?? []),
     ...inputs.flatMap((input) => [input.name, ...(input.alias ?? [])])
   ]).filter((alias) => normalizeCompanyValue(alias) !== normalizedCompanyName)
   const primaryLanguages = uniqueTrimmed([
-    ...company.primary_language,
+    ...(company.primary_language ?? []),
     ...inputs.flatMap((input) => input.primary_language ?? [])
   ])
   const officialWebsites = uniqueTrimmed([
-    ...company.official_website,
+    ...(company.official_website ?? []),
     ...inputs.flatMap((input) => input.official_website ?? [])
   ])
   const parentBrands = uniqueTrimmed([
-    ...company.parent_brand,
+    ...(company.parent_brand ?? []),
     ...inputs.flatMap((input) => input.parent_brand ?? [])
   ])
   const introduction =
@@ -541,3 +546,110 @@ export const ensureCompanyRelationsByName = async (
     insertedIds
   }
 }
+
+export const appendAuthoritativeSpellings = async (
+  tx: TxClient,
+  companyId: number,
+  spellings: string[]
+) => {
+  const values = uniqueTrimmed(spellings)
+  if (!values.length) return
+  const [name, ...alias] = values
+  await enrichExistingCompany(tx, companyId, [
+    {
+      input: { name, alias, user_id: 0 },
+      lookupValues: values,
+      normalizedLookupValues: values.map((value) => normalizeCompanyValue(value)),
+      suffixLookupKeys: [],
+      normalizedName: normalizeCompanyValue(name)
+    }
+  ])
+}
+
+export const applyIncomingCompanyPlan = async (
+  tx: TxClient,
+  patchId: number,
+  plan: IncomingCompanyPlan,
+  aliasOrigin: CompanyIdentityOrigin,
+  constraintCompatibility = false
+) => {
+  if (plan.blocked.length) {
+    throw new CompanyEnsureAmbiguityError(
+      plan.blocked.map((item) => ({
+        submittedNames: item.spellings,
+        matchedCompanies: item.matchedCompanies
+      }))
+    )
+  }
+
+  const insertedRelationIds: number[] = []
+  if (plan.create.length) {
+    const companiesByName = new Map<string, CompanyCreateInput>(
+      plan.create.map((item) => [item.name, plannedCreateInput(item)])
+    )
+    const created = await ensureCompanyRelationsByName(
+      tx,
+      patchId,
+      companiesByName,
+      aliasOrigin,
+      constraintCompatibility
+    )
+    insertedRelationIds.push(...created.insertedIds)
+  }
+
+  if (plan.linkIds.length) {
+    insertedRelationIds.push(
+      ...(await addPatchCompanyRelations(tx, patchId, plan.linkIds))
+    )
+  }
+
+  if (aliasOrigin === 'authoritative') {
+    for (const item of plan.enrich) {
+      await appendAuthoritativeSpellings(tx, item.companyId, item.spellings)
+    }
+  }
+
+  return insertedRelationIds
+}
+
+export const loadCompanyLinkSnapshots = async (
+  tx: TxClient
+): Promise<LinkCompanySnapshot[]> => {
+  const rows = await tx.patch_company.findMany({
+    select: {
+      id: true,
+      name: true,
+      alias: true,
+      normalized_name: true,
+      external_ids: { select: { source: true, external_id: true } },
+      name_identities: {
+        select: { origin: true, kind: true, normalized_value: true }
+      }
+    }
+  })
+  return rows.map((row) => ({
+    id: row.id,
+    name: row.name,
+    alias: row.alias,
+    normalizedName: row.normalized_name,
+    externalIds: Object.fromEntries(
+      (row.external_ids ?? [])
+        .filter((item) => item.source === 'vndb')
+        .map((item) => ['vndb', item.external_id])
+    ),
+    identities: (row.name_identities ?? []).map((identity) => ({
+      origin: identity.origin,
+      kind: identity.kind,
+      normalizedValue: identity.normalized_value
+    }))
+  }))
+}
+
+const plannedCreateInput = (item: PlannedCompanyCreate): CompanyCreateInput => ({
+  name: item.name,
+  introduction: item.introduction,
+  alias: item.alias,
+  primary_language: item.primaryLanguage,
+  official_website: item.websites,
+  user_id: item.userId
+})

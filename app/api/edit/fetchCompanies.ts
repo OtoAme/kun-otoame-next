@@ -6,8 +6,13 @@ import {
 import type { VndbProducer } from '~/lib/arnebiae/vndb'
 import {
   CompanyEnsureAmbiguityError,
-  ensureCompanyRelationsByName
+  applyIncomingCompanyPlan,
+  loadCompanyLinkSnapshots
 } from './companyEnsureHelper'
+import {
+  planIncomingCompanyLinks,
+  type IncomingCompanyLink
+} from './linkIncomingCompanies'
 import {
   isCompanyIdentityResolverEnabled,
   runWithCompanyIdentityConstraintRetry
@@ -16,6 +21,7 @@ import {
   CompanyResolutionAmbiguityError,
   applyCompanyResolution
 } from '~/app/api/company/identity/resolver'
+import { selectLegacyVndbCompanyNames } from './legacyVndbCompanyName'
 import {
   fetchVerifiedVndbCompanyCandidates,
   loadVndbDevelopers
@@ -74,31 +80,36 @@ const invalidateEnsuredCompanyCaches = async (
   })
 }
 
-const toCompanyCreate = (producer: VndbProducer, uid: number) => {
-  const name = producer?.name ?? ''
-  const primary_language = producer?.lang ? [producer.lang] : []
-  const aliasRaw = [
-    ...(producer?.original ? [producer.original] : []),
-    ...(Array.isArray(producer?.aliases) ? producer.aliases : [])
-  ].filter(Boolean) as string[]
-  const alias = uniq(aliasRaw)
-  const official_website = Array.isArray(producer?.extlinks)
+const producerToIncoming = (
+  producer: VndbProducer,
+  uid: number
+): IncomingCompanyLink | null => {
+  const selected = selectLegacyVndbCompanyNames(producer)
+  if (!selected) return null
+  const spellings = [
+    ...new Set(
+      [producer.name, producer.original]
+        .map((value) => value?.trim() ?? '')
+        .filter(Boolean)
+    )
+  ]
+  const websites = Array.isArray(producer.extlinks)
     ? uniq(
         producer.extlinks
-          .map((l) => l?.url)
+          .map((link) => link?.url)
           .filter(Boolean)
-          .map((u) => String(u))
+          .map((url) => String(url))
       )
     : []
   return {
-    name,
+    spellings,
+    createName: selected.name,
+    storeAliases: selected.alias,
     introduction: producer.description?.trim() ?? '',
-    count: 0,
-    primary_language,
-    official_website,
-    parent_brand: [] as string[],
-    alias,
-    user_id: uid
+    primaryLanguage: producer.lang ? [producer.lang] : [],
+    websites,
+    externalId: producer.id?.trim() || undefined,
+    userId: uid
   }
 }
 
@@ -133,41 +144,35 @@ export const ensurePatchCompaniesFromVNDB = async (
 
       if (!devs.length) return emptyEnsureResult()
 
-      const companiesByName = new Map<
-        string,
-        ReturnType<typeof toCompanyCreate>
-      >()
-      for (const p of devs) {
-        const name = p?.name
-        if (!name) continue
-        if (!companiesByName.has(name)) {
-          companiesByName.set(name, toCompanyCreate(p, uid))
-        }
-      }
-
-      const companyNames = Array.from(companiesByName.keys())
-      if (!companyNames.length) return emptyEnsureResult()
+      const incoming = devs.flatMap((producer) => {
+        const link = producerToIncoming(producer, uid)
+        return link ? [link] : []
+      })
+      if (!incoming.length) return emptyEnsureResult()
 
       const legacyResult = await runWithCompanyIdentityConstraintRetry(
         (attempt) =>
           prisma.$transaction(
             async (tx) => {
-              const relationResult = await ensureCompanyRelationsByName(
+              const plan = planIncomingCompanyLinks(
+                await loadCompanyLinkSnapshots(tx),
+                incoming
+              )
+              const insertedIds = await applyIncomingCompanyPlan(
                 tx,
                 patchId,
-                companiesByName,
+                plan,
                 'authoritative',
                 attempt > 1
               )
-
-              return {
-                ensured: relationResult.ensured,
-                related: relationResult.related,
-                insertedIds: relationResult.insertedIds
-              }
-            },
-            { timeout: 60000 }
-          )
+            return {
+              ensured: plan.create.length,
+              related: plan.linkIds.length + plan.create.length,
+              insertedIds
+            }
+          },
+          { timeout: 60000 }
+        )
       )
 
       result = {

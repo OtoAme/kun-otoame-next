@@ -6,6 +6,7 @@ vi.mock('~/lib/arnebiae/vndb', () => ({
   fetchVndbVn: fetchVndbVnMock
 }))
 
+import { selectLegacyVndbCompanyNames } from '~/app/api/edit/legacyVndbCompanyName'
 import { POST } from '~/app/api/edit/vndb/details/route'
 
 const request = (body: unknown) =>
@@ -50,11 +51,18 @@ describe('VNDB details API', () => {
       ['id', '=', 'v123'],
       'title, titles.lang, titles.title, aliases, released, developers{id,name,original,aliases,lang,type,description,extlinks{url}}'
     )
+    expect(json.developers).toEqual([
+      selectLegacyVndbCompanyNames({
+        name: 'Studio',
+        original: 'スタジオ',
+        aliases: ['Alias Studio']
+      })?.name
+    ])
     expect(json).toEqual({
       titles: ['ゲーム', 'Game', 'Alias'],
       released: '2024-01-02',
       tags: [],
-      developers: ['Studio'],
+      developers: ['スタジオ'],
       producers: [
         {
           id: 'p1',

@@ -15,6 +15,7 @@ const prismaMocks = vi.hoisted(() => {
     $transaction: vi.fn((fn: (transaction: typeof tx) => Promise<unknown>) =>
       fn(tx)
     ),
+    patch_submission: tx.patch_submission,
     _tx: tx
   }
 })

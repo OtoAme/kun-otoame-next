@@ -13,12 +13,14 @@ import {
   PATCH_SUBMISSION_REVIEW_STATE_CHANGED_MESSAGE
 } from '~/constants/patchSubmission'
 import { takeDownSubmissionAssets } from './assetCleanup'
+import { loadVndbDevelopers } from '~/app/api/edit/vndbCompanyCandidates'
 import { publishSubmissionCore, runPublishSideEffects } from './publishCore'
 import { PatchSubmissionError } from './quota'
 import { decodePatchSubmissionPayload } from './payloadCodec'
 import { collectPatchSubmissionCompanyCandidates } from './companyCandidates'
 import {
   isCompanyIdentityConstraintError,
+  isCompanyIdentityResolverEnabled,
   runWithCompanyIdentityConstraintRetry
 } from '~/app/api/company/identity/retry'
 import type { CompanyResolutionDiagnostic } from '~/app/api/company/identity/resolver'
@@ -195,6 +197,25 @@ export const approvePatchSubmission = async (
     touchedCompanies: boolean
   }
   try {
+    const pending = await prisma.patch_submission.findUnique({
+      where: { id: submissionId },
+      select: { payload: true, status: true }
+    })
+    let vndbProducers: Awaited<ReturnType<typeof loadVndbDevelopers>> | undefined
+    if (pending?.status === 'pending' && !isCompanyIdentityResolverEnabled()) {
+      const decoded = decodePatchSubmissionPayload(pending.payload, {
+        complete: true
+      })
+      const vndbId = decoded.success ? decoded.data.vndbId.trim() : ''
+      if (vndbId) {
+        try {
+          vndbProducers = await loadVndbDevelopers(vndbId)
+        } catch {
+          throw new PatchSubmissionError('VNDB 会社信息暂时无法获取，请稍后重试')
+        }
+      }
+    }
+
     result = await runWithCompanyIdentityConstraintRetry((attempt) =>
       prisma.$transaction(
         async (tx) => {
@@ -224,6 +245,7 @@ export const approvePatchSubmission = async (
             payload,
             bannerKey: submission.banner_key,
             companyCandidates: companyCandidates.candidates,
+            vndbProducers,
             constraintCompatibility: attempt > 1,
             gallery: submission.gallery
               .filter((image) => image.image_key)
