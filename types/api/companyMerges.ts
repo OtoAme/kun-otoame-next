@@ -93,6 +93,21 @@ export interface CompanyMergeSuggestionListResponse {
   items: CompanyMergeSuggestion[]
 }
 
+export type CompanyMergeDetectPhase = 'local' | 'nextmoe' | 'vndb' | 'write'
+
+/** One step of a running detect scan. `total` is 0 when that step is skipped. */
+export interface CompanyMergeDetectProgress {
+  phase: CompanyMergeDetectPhase
+  current: number
+  total: number
+  detail?: string
+}
+
+export type CompanyMergeDetectStreamEvent =
+  | ({ type: 'progress' } & CompanyMergeDetectProgress)
+  | ({ type: 'done' } & CompanyMergeDetectResponse)
+  | { type: 'error'; message: string }
+
 export interface CompanyMergeDetectResponse {
   /** Keys written as new pending rows. */
   created: number

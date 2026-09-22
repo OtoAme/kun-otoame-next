@@ -15,13 +15,16 @@ import {
   TableRow
 } from '~/components/dashboard/ui/table'
 import { Tabs, TabsList, TabsTrigger } from '~/components/dashboard/ui/tabs'
-import { kunFetchGet, kunFetchPost } from '~/utils/kunFetch'
+import { kunFetchGet } from '~/utils/kunFetch'
 import { formatChinaDateTime } from '~/utils/fixedTimezoneDate'
 import {
   getCompanyMergeResolutionSourceLabel,
   getCompanyMergeSuggestionKindLabel,
   LEGACY_COMPANY_MERGE_SELECTION_LABEL,
+  type CompanyMergeDetectPhase,
+  type CompanyMergeDetectProgress,
   type CompanyMergeDetectResponse,
+  type CompanyMergeDetectStreamEvent,
   type CompanyMergeSuggestion,
   type CompanyMergeSuggestionListResponse,
   type CompanyMergeSuggestionStatus
@@ -34,6 +37,73 @@ const SKELETON_ROWS = 3
 const FALLBACK_ERROR = '获取会社合并建议失败，请稍后重试'
 const NETWORK_ERROR = '网络错误，请检查网络连接后重试'
 const DETECT_FALLBACK_ERROR = '检测失败，请稍后重试'
+const DETECT_PHASES: CompanyMergeDetectPhase[] = [
+  'local',
+  'nextmoe',
+  'vndb',
+  'write'
+]
+
+const detectPhaseLabel = (event: CompanyMergeDetectProgress) => {
+  if (event.phase === 'local') return event.detail ?? '本地规则'
+  if (event.phase === 'write') return event.detail ?? '正在写入合并建议'
+  if (event.phase === 'nextmoe') {
+    if (event.total === 0) return `NextMoe ${event.detail ?? '已跳过'}`
+    const detail = event.detail ? `，${event.detail}` : ''
+    return `NextMoe 第 ${event.current}/${event.total} 批${detail}`
+  }
+  return `VNDB 第 ${event.current}/${event.total} 部`
+}
+
+const readDetectStream = async (
+  onProgress: (event: CompanyMergeDetectProgress) => void
+): Promise<CompanyMergeDetectResponse | string> => {
+  const response = await fetch('/api/admin/company-merges/detect', {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'X-Requested-With': 'kun-fetch' }
+  })
+  const contentType = response.headers.get('content-type') ?? ''
+  if (contentType.includes('application/json')) {
+    const body: unknown = await response.json()
+    return typeof body === 'string' && body.trim()
+      ? body
+      : DETECT_FALLBACK_ERROR
+  }
+  if (!response.ok || !response.body) return DETECT_FALLBACK_ERROR
+
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  let doneEvent: CompanyMergeDetectResponse | null = null
+  let errorMessage: string | null = null
+  const consume = (line: string) => {
+    if (!line.trim()) return
+    const event = JSON.parse(line) as CompanyMergeDetectStreamEvent
+    if (event.type === 'progress') {
+      onProgress(event)
+      return
+    }
+    if (event.type === 'done') {
+      doneEvent = event
+      return
+    }
+    errorMessage = event.message || DETECT_FALLBACK_ERROR
+  }
+  while (true) {
+    const chunk = await reader.read()
+    if (chunk.done) break
+    buffer += decoder.decode(chunk.value, { stream: true })
+    const lines = buffer.split('\n')
+    buffer = lines.pop() ?? ''
+    for (const line of lines) consume(line)
+  }
+  buffer += decoder.decode()
+  if (buffer.trim()) consume(buffer)
+  if (errorMessage) return errorMessage
+  if (!doneEvent) return DETECT_FALLBACK_ERROR
+  return doneEvent
+}
 
 const STATUS_TABS: Array<{
   value: CompanyMergeSuggestionStatus
@@ -196,7 +266,7 @@ const SuggestionCompanies = ({
  * and touch nothing else; 合并 is the one action that writes company rows,
  * through the same writer as the offline cleanup.
  *
- * 检测按钮始终显示：秒表与检测请求挂在页签外，切换页签不丢秒表；完成后刷新
+ * 检测按钮始终显示：秒表与各阶段进度挂在页签外，切换页签不丢；完成后刷新
  * 当前页签。检测只按 member_key 跳过已驳回或已合并的组合，折叠键只展示。
  */
 export const DashboardCompanyMerges = () => {
@@ -206,6 +276,9 @@ export const DashboardCompanyMerges = () => {
   const [loading, setLoading] = useState(false)
   const [detecting, setDetecting] = useState(false)
   const [detectElapsedSec, setDetectElapsedSec] = useState(0)
+  const [detectPhases, setDetectPhases] = useState<
+    Partial<Record<CompanyMergeDetectPhase, CompanyMergeDetectProgress>>
+  >({})
   const [refreshNonce, setRefreshNonce] = useState(0)
   const requestSeq = useRef(0)
   const detectInflightRef = useRef(false)
@@ -274,10 +347,14 @@ export const DashboardCompanyMerges = () => {
     }
     detectInflightRef.current = true
     setDetecting(true)
+    setDetectPhases({})
     try {
-      const res = await kunFetchPost<CompanyMergeDetectResponse | string>(
-        '/admin/company-merges/detect'
-      )
+      const res = await readDetectStream((event) => {
+        setDetectPhases((previous) => ({
+          ...previous,
+          [event.phase]: event
+        }))
+      })
       if (typeof res === 'string') {
         toast.error(res.trim() || DETECT_FALLBACK_ERROR)
         return
@@ -492,15 +569,42 @@ export const DashboardCompanyMerges = () => {
           <RefreshCw className={loading ? 'animate-spin' : undefined} />
           刷新
         </Button>
-        <p
-          className="text-sm text-muted-foreground"
+        <div
+          className="flex min-w-0 flex-1 flex-col gap-1"
           aria-live="polite"
           role={detecting ? 'status' : undefined}
         >
-          {detecting
-            ? `检测中（已等待 ${detectElapsedSec}s）。先跑本地规则，再查 VNDB；NextMoe 超时或 522 会跳过，终端会打 [company-merges:detect] 日志。`
-            : '检测只生成建议；合并与驳回都要在这里手动确认。'}
-        </p>
+          {detecting ? (
+            <>
+              <p className="text-sm text-muted-foreground">
+                检测中（已等待 {detectElapsedSec}s）
+              </p>
+              {DETECT_PHASES.flatMap((phase) => {
+                const event = detectPhases[phase]
+                if (!event) return []
+                return [
+                  <div key={phase} className="flex max-w-xl flex-col gap-1">
+                    <p className="text-sm text-muted-foreground">
+                      {detectPhaseLabel(event)}
+                    </p>
+                    {event.total > 0 ? (
+                      <progress
+                        className="h-1.5 w-full appearance-none overflow-hidden rounded-full [&::-moz-progress-bar]:bg-primary [&::-webkit-progress-bar]:bg-muted [&::-webkit-progress-value]:bg-primary"
+                        value={event.current}
+                        max={event.total}
+                        aria-hidden="true"
+                      />
+                    ) : null}
+                  </div>
+                ]
+              })}
+            </>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              检测只生成建议；合并与驳回都要在这里手动确认。
+            </p>
+          )}
+        </div>
       </div>
 
       <Tabs

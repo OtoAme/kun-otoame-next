@@ -4,7 +4,6 @@ import {
   SOURCE_PAIR_KIND,
   suggestSourcePairHits,
   type SourcePairPatch,
-  type SourcePairProgress,
   type SourcePairSuggestion
 } from '~/app/api/company/identity/sourcePairSuggestions'
 import {
@@ -26,6 +25,7 @@ import {
 } from '~/scripts/companyCleanupDashboardMerge'
 import type {
   CompanyMergeApplyResponse,
+  CompanyMergeDetectProgress,
   CompanyMergeDetectResponse,
   CompanyMergeDismissResponse,
   CompanyMergeParticipant,
@@ -57,7 +57,7 @@ export type DetectCompanyMergeSuggestionsOptions = {
   listNextmoeCompaniesByIds?: (ids: string[]) => Promise<NextmoeCompanyList>
   isNextmoeConfigured?: () => boolean
   sleep?: (ms: number) => Promise<void>
-  onProgress?: (event: SourcePairProgress) => void
+  onProgress?: (event: CompanyMergeDetectProgress) => void
 }
 
 type DetectedSuggestion = {
@@ -440,8 +440,17 @@ export const detectCompanyMergeSuggestions = async (
 ): Promise<CompanyMergeDetectResponse> => {
   const started = Date.now()
   const earlyNotes: string[] = []
+  const report = (event: CompanyMergeDetectProgress) => {
+    options.onProgress?.(event)
+  }
   // eslint-disable-next-line no-console
   console.info('[company-merges:detect] start')
+  report({
+    phase: 'local',
+    current: 0,
+    total: 1,
+    detail: '正在读取会社'
+  })
   const companies = await loadClusterInput()
   // eslint-disable-next-line no-console
   console.info(`[company-merges:detect] companies=${companies.length}`)
@@ -452,6 +461,12 @@ export const detectCompanyMergeSuggestions = async (
   ]) {
     rememberSuggestion(byCluster, suggestion)
   }
+  report({
+    phase: 'local',
+    current: 1,
+    total: 1,
+    detail: '本地规则已完成'
+  })
   try {
     const sourcePairs = await collectSourcePairSuggestions(companies, options)
     for (const suggestion of sourcePairs) {
@@ -520,6 +535,12 @@ export const detectCompanyMergeSuggestions = async (
     candidate_key: true
   } as const
 
+  report({
+    phase: 'write',
+    current: 0,
+    total: 1,
+    detail: '正在写入合并建议'
+  })
   try {
     const written = await prisma.$transaction(
       async (tx) => {

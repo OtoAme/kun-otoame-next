@@ -15,9 +15,13 @@ import {
 export const SOURCE_PAIR_KIND = 'source-pair'
 export const SOURCE_PAIR_VNDB_PAUSE_MS = 250
 export const SOURCE_PAIR_VNDB_CONCURRENCY = 4
-export const SOURCE_PAIR_NEXTMOE_PAUSE_MS = 1000
-/** Collection `limit` defaults to 20; fat `refs=` batches with include=companies were 522/timeout. */
-export const SOURCE_PAIR_NEXTMOE_BATCH = 20
+/**
+ * Gap between serial catalog requests. Full-size batches stay under the
+ * 60/minute limit without the old one-second pause.
+ */
+export const SOURCE_PAIR_NEXTMOE_PAUSE_MS = 200
+/** One in-flight request, at the public batch-lane maximum of 100 keys. */
+export const SOURCE_PAIR_NEXTMOE_BATCH = NEXTMOE_CATALOG_BATCH_MAX
 
 const VNDB_DEVELOPER_TYPES = new Set(['co', 'ng', 'in'])
 const FOLDED_KEY_MAX_LENGTH = 107
@@ -254,38 +258,38 @@ const fetchBatched = async <T>(
   if (keys.length === 0) return []
   const items: T[] = []
   const batches = chunk(keys, batchSize)
-  const runBatch = async (batch: string[]): Promise<T[]> => {
-    const page = await fetchBatch(batch)
-    if (page.items.length > 0 || batch.length <= 10) return page.items
-    const mid = Math.ceil(batch.length / 2)
-    // eslint-disable-next-line no-console
-    console.info(
-      `[company-merges:detect] nextmoe empty batch of ${batch.length}, splitting`
-    )
-    const left = await runBatch(batch.slice(0, mid))
-    const right = await runBatch(batch.slice(mid))
-    return [...left, ...right]
-  }
+  onProgress?.({
+    phase: 'nextmoe',
+    current: 0,
+    total: batches.length,
+    detail: `共 ${keys.length} 个引用，每批 ${batchSize} 个`
+  })
   for (const [index, batch] of batches.entries()) {
     if (index > 0) await sleep(pauseMs)
     try {
-      const pageItems = await runBatch(batch)
-      items.push(...pageItems)
+      const page = await fetchBatch(batch)
+      items.push(...page.items)
       // eslint-disable-next-line no-console
       console.info(
-        `[company-merges:detect] nextmoe batch ${index + 1}/${batches.length} keys=${batch.length} items=${pageItems.length}`
+        `[company-merges:detect] nextmoe batch ${index + 1}/${batches.length} keys=${batch.length} items=${page.items.length}`
       )
       onProgress?.({
         phase: 'nextmoe',
         current: index + 1,
         total: batches.length,
-        detail: `keys=${batch.length} items=${pageItems.length}`
+        detail: `本批 ${batch.length} 个引用，返回 ${page.items.length} 条`
       })
     } catch {
       // eslint-disable-next-line no-console
       console.info(
         `[company-merges:detect] nextmoe batch ${index + 1}/${batches.length} keys=${batch.length} skipped after retries`
       )
+      onProgress?.({
+        phase: 'nextmoe',
+        current: index + 1,
+        total: batches.length,
+        detail: `本批 ${batch.length} 个引用未返回，已跳过`
+      })
     }
   }
   return items
@@ -299,7 +303,15 @@ const loadNextmoeBagsByPatch = async (
   const bagsByPatch = new Map<number, NameBag[]>()
   const configured = options.isNextmoeConfigured?.() ?? false
   const listWorks = options.listNextmoeWorksByRefs
-  if (!configured || !listWorks) return bagsByPatch
+  if (!configured || !listWorks) {
+    options.onProgress?.({
+      phase: 'nextmoe',
+      current: 0,
+      total: 0,
+      detail: '未配置，已跳过'
+    })
+    return bagsByPatch
+  }
 
   const refs = uniqueStrings(patches.flatMap(patchRefs))
   const batchSize = SOURCE_PAIR_NEXTMOE_BATCH
@@ -337,10 +349,80 @@ const loadNextmoeBagsByPatch = async (
   return bagsByPatch
 }
 
+const loadVndbBagsByPatch = async (
+  patches: SourcePairPatch[],
+  options: SourcePairOptions
+): Promise<Map<number, NameBag[]>> => {
+  const vndbBagsByPatch = new Map<number, NameBag[]>()
+  const vndbPatches = patches.filter((patch) => patch.vndbId?.trim())
+  const loadVndb = options.loadVndbDevelopers
+  if (!loadVndb || vndbPatches.length === 0) return vndbBagsByPatch
+
+  const concurrency = Math.max(
+    1,
+    options.vndbConcurrency ?? SOURCE_PAIR_VNDB_CONCURRENCY
+  )
+  let vndbDone = 0
+  let cursor = 0
+  options.onProgress?.({
+    phase: 'vndb',
+    current: 0,
+    total: vndbPatches.length,
+    detail: `共 ${vndbPatches.length} 部`
+  })
+  const runVndbWorker = async () => {
+    while (loadVndb) {
+      const index = cursor
+      cursor += 1
+      const patch = vndbPatches[index]
+      if (!patch) return
+      const vndbId = patch.vndbId?.trim()
+      if (!vndbId) {
+        vndbDone += 1
+        options.onProgress?.({
+          phase: 'vndb',
+          current: vndbDone,
+          total: vndbPatches.length
+        })
+        continue
+      }
+      try {
+        const developers = await loadVndb(vndbId)
+        const bags = developers.flatMap((developer) => {
+          const bag = vndbBag(developer)
+          return bag ? [bag] : []
+        })
+        if (bags.length > 0) vndbBagsByPatch.set(patch.id, bags)
+      } catch {
+        // Missing key / 429 / 5xx: skip this patch's VNDB bags.
+      }
+      vndbDone += 1
+      options.onProgress?.({
+        phase: 'vndb',
+        current: vndbDone,
+        total: vndbPatches.length
+      })
+      if (vndbDone === vndbPatches.length || vndbDone % 20 === 0) {
+        // eslint-disable-next-line no-console
+        console.info(
+          `[company-merges:detect] vndb ${vndbDone}/${vndbPatches.length}`
+        )
+      }
+    }
+  }
+  await Promise.all(
+    Array.from({ length: Math.min(concurrency, vndbPatches.length) }, () =>
+      runVndbWorker()
+    )
+  )
+  return vndbBagsByPatch
+}
+
 /**
  * Same-patch source-pair suggestions: local companies on one work that land in
  * the same upstream name bag (VNDB producer or NextMoe company). Different
  * bags on the same patch stay apart. Fetch failures skip this layer.
+ * NextMoe and VNDB run together; neither result depends on the other.
  */
 export async function suggestSourcePairHits(
   companies: NameVariantCompany[],
@@ -365,65 +447,16 @@ export async function suggestSourcePairHits(
     }`
   )
 
-  const nextmoeBagsByPatch = await loadNextmoeBagsByPatch(
-    eligible,
-    options,
-    sleep
-  )
+  const [nextmoeBagsByPatch, vndbBagsByPatch] = await Promise.all([
+    loadNextmoeBagsByPatch(eligible, options, sleep),
+    loadVndbBagsByPatch(eligible, options)
+  ])
   // eslint-disable-next-line no-console
   console.info(
     `[company-merges:detect] nextmoe bags for ${nextmoeBagsByPatch.size} patches`
   )
 
   const byCluster = new Map<string, SourcePairSuggestion>()
-  const vndbBagsByPatch = new Map<number, NameBag[]>()
-  const vndbPatches = eligible.filter((patch) => patch.vndbId?.trim())
-  const concurrency = Math.max(
-    1,
-    options.vndbConcurrency ?? SOURCE_PAIR_VNDB_CONCURRENCY
-  )
-  let vndbDone = 0
-  let cursor = 0
-  const loadVndb = options.loadVndbDevelopers
-  const runVndbWorker = async () => {
-    while (loadVndb) {
-      const index = cursor
-      cursor += 1
-      const patch = vndbPatches[index]
-      if (!patch) return
-      const vndbId = patch.vndbId?.trim()
-      if (!vndbId) continue
-      try {
-        const developers = await loadVndb(vndbId)
-        const bags = developers.flatMap((developer) => {
-          const bag = vndbBag(developer)
-          return bag ? [bag] : []
-        })
-        if (bags.length > 0) vndbBagsByPatch.set(patch.id, bags)
-      } catch {
-        // Missing key / 429 / 5xx: skip this patch's VNDB bags.
-      }
-      vndbDone += 1
-      if (vndbDone === vndbPatches.length || vndbDone % 20 === 0) {
-        // eslint-disable-next-line no-console
-        console.info(
-          `[company-merges:detect] vndb ${vndbDone}/${vndbPatches.length}`
-        )
-        options.onProgress?.({
-          phase: 'vndb',
-          current: vndbDone,
-          total: vndbPatches.length
-        })
-      }
-    }
-  }
-  if (loadVndb && vndbPatches.length > 0) {
-    await Promise.all(
-      Array.from({ length: Math.min(concurrency, vndbPatches.length) }, () =>
-        runVndbWorker()
-      )
-    )
-  }
 
   for (const patch of eligible) {
     const locals = [...new Set(patch.companyIds)].flatMap((companyId) => {

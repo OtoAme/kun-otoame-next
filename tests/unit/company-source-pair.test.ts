@@ -38,7 +38,12 @@ const mocks = vi.hoisted(() => {
 vi.mock('~/prisma/index', () => ({ prisma: mocks.prisma }))
 
 import { detectCompanyMergeSuggestions } from '~/app/api/admin/company-merges/service'
-import { suggestSourcePairHits } from '~/app/api/company/identity/sourcePairSuggestions'
+import {
+  SOURCE_PAIR_NEXTMOE_BATCH,
+  SOURCE_PAIR_NEXTMOE_PAUSE_MS,
+  suggestSourcePairHits
+} from '~/app/api/company/identity/sourcePairSuggestions'
+import { NEXTMOE_CATALOG_BATCH_MAX } from '~/app/api/company/nextmoe/types'
 import { normalizeCompanyValue } from '~/app/api/company/identity/normalize'
 import { getCompanyMergeSuggestionKindLabel } from '~/types/api/companyMerges'
 import type { VndbProducer } from '~/lib/arnebiae/vndb'
@@ -105,6 +110,50 @@ describe('source-pair kind label', () => {
 })
 
 describe('suggestSourcePairHits', () => {
+  it('asks NextMoe for works in full catalog batches, one request at a time', async () => {
+    const listNextmoeWorksByRefs = vi.fn(async (refs: string[]) => ({
+      object: 'list' as const,
+      items: [],
+      missing: refs
+    }))
+    const sleep = vi.fn(async () => {})
+    const progress: Array<{ phase: string; current: number; total: number }> =
+      []
+    const patches = Array.from({ length: 150 }, (_, index) => ({
+      id: index + 1,
+      vndbId: `v${index + 1}`,
+      bangumiId: null,
+      companyIds: [1, 2]
+    }))
+
+    await suggestSourcePairHits(
+      [company(1, 'Alpha'), company(2, 'Beta')],
+      patches,
+      {
+        listNextmoeWorksByRefs,
+        isNextmoeConfigured: () => true,
+        loadVndbDevelopers: async () => [],
+        sleep,
+        onProgress: (event) => {
+          if (event.phase === 'nextmoe') progress.push(event)
+        }
+      }
+    )
+
+    expect(SOURCE_PAIR_NEXTMOE_BATCH).toBe(NEXTMOE_CATALOG_BATCH_MAX)
+    expect(SOURCE_PAIR_NEXTMOE_PAUSE_MS).toBe(200)
+    expect(listNextmoeWorksByRefs).toHaveBeenCalledTimes(2)
+    expect(listNextmoeWorksByRefs.mock.calls[0]?.[0]).toHaveLength(100)
+    expect(listNextmoeWorksByRefs.mock.calls[1]?.[0]).toHaveLength(50)
+    expect(sleep).toHaveBeenCalledTimes(1)
+    expect(sleep).toHaveBeenCalledWith(200)
+    expect(progress.at(-1)).toMatchObject({
+      phase: 'nextmoe',
+      current: 2,
+      total: 2
+    })
+  })
+
   it('pairs Tenky with テンキー from VNDB and leaves KONAMI out', async () => {
     const sleep = vi.fn(async () => {})
     const suggestions = await suggestSourcePairHits(
