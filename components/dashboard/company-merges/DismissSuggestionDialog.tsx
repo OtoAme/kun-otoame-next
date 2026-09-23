@@ -146,8 +146,8 @@ export const DismissSuggestionDialog = ({
         <AlertDialogHeader>
           <AlertDialogTitle>驳回这条合并建议</AlertDialogTitle>
           <AlertDialogDescription>
-            建议 #{suggestion.id} 将被整组驳回。再检测时按这一组会社
-            id 跳过，不会自动拆出其中几家的新建议。折叠键「
+            建议 #{suggestion.id} 将被整组驳回。再检测时按这一组会社 id
+            跳过，不会自动拆出其中几家的新建议。折叠键「
             {suggestion.foldedKey}
             」只是展示。会社数据不会被修改，也不会有任何合并发生。
           </AlertDialogDescription>

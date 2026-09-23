@@ -181,7 +181,11 @@ const nextmoeBag = (
   upstreamId: string,
   company: { display_name: string }
 ): NameBag | null => {
-  const displayName = trimmedField('nextmoe', 'display_name', company.display_name)
+  const displayName = trimmedField(
+    'nextmoe',
+    'display_name',
+    company.display_name
+  )
   if (!displayName) return null
   return bagFromEntries([upstreamId], [displayName])
 }

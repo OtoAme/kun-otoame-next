@@ -39,14 +39,19 @@ export type IncomingCompanyPlan = {
   linkIds: number[]
   enrich: Array<{ companyId: number; spellings: string[] }>
   create: PlannedCompanyCreate[]
-  blocked: Array<{ spellings: string[]; matchedCompanies: Array<{ id: number; name: string }> }>
+  blocked: Array<{
+    spellings: string[]
+    matchedCompanies: Array<{ id: number; name: string }>
+  }>
 }
 
 const unique = (values: string[]) => [
   ...new Set(values.map((value) => value.trim()).filter(Boolean))
 ]
 
-const asVariantCompany = (company: LinkCompanySnapshot): NameVariantCompany => ({
+const asVariantCompany = (
+  company: LinkCompanySnapshot
+): NameVariantCompany => ({
   id: company.id,
   name: company.name,
   normalizedName: company.normalizedName,
@@ -132,10 +137,14 @@ export const planIncomingCompanyLinks = (
       return false
     }
     if (externalId && !bound) {
-      snapshot.externalIds = { ...(snapshot.externalIds ?? {}), vndb: externalId }
+      snapshot.externalIds = {
+        ...(snapshot.externalIds ?? {}),
+        vndb: externalId
+      }
     }
     const extra = unique(spellings).filter(
-      (spelling) => spelling !== planned.name && !planned.alias.includes(spelling)
+      (spelling) =>
+        spelling !== planned.name && !planned.alias.includes(spelling)
     )
     planned.alias.push(...extra)
     snapshot.alias = unique([...snapshot.alias, ...extra])
@@ -252,7 +261,9 @@ export const planIncomingCompanyLinks = (
     rememberCreate(
       {
         name: createName,
-        alias: unique(item.storeAliases).filter((alias) => alias !== createName),
+        alias: unique(item.storeAliases).filter(
+          (alias) => alias !== createName
+        ),
         introduction: item.introduction?.trim() ?? '',
         primaryLanguage: unique(item.primaryLanguage ?? []),
         websites: unique(item.websites ?? []),

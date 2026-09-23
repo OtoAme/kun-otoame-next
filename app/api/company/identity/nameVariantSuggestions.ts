@@ -258,12 +258,16 @@ export const classifyIncomingNameVariant = (
   const members = companies.filter(
     (company) => findRoot(parent, company.id) === root
   )
-  const existingMembers = members.filter((company) => company.id !== incoming.id)
+  const existingMembers = members.filter(
+    (company) => company.id !== incoming.id
+  )
   if (!existingMembers.length) return { kind: 'none' }
 
   const memberIds = new Set(members.map((company) => company.id))
   const memberKeys = [
-    ...new Set(members.flatMap((company) => keysByCompany.get(company.id) ?? []))
+    ...new Set(
+      members.flatMap((company) => keysByCompany.get(company.id) ?? [])
+    )
   ]
   const closed = memberKeys.every((key) => {
     const holders = membersByKey.get(key)

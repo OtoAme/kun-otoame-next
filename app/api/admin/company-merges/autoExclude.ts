@@ -231,8 +231,7 @@ export const writePartialMergeExclusions = async (
     }
 
     const manual = rows.find(
-      (row) =>
-        row.status === DISMISSED && row.resolution_source !== PARTIAL
+      (row) => row.status === DISMISSED && row.resolution_source !== PARTIAL
     )
     if (manual) {
       const appended = appendLaterExclusion({
@@ -251,8 +250,7 @@ export const writePartialMergeExclusions = async (
     }
 
     const automatic = rows.find(
-      (row) =>
-        row.status === DISMISSED && row.resolution_source === PARTIAL
+      (row) => row.status === DISMISSED && row.resolution_source === PARTIAL
     )
     if (automatic) {
       const current = isRecord(automatic.evidence) ? automatic.evidence : {}

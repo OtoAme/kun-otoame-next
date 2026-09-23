@@ -165,14 +165,14 @@ export const ensurePatchCompaniesFromVNDB = async (
                 'authoritative',
                 attempt > 1
               )
-            return {
-              ensured: plan.create.length,
-              related: plan.linkIds.length + plan.create.length,
-              insertedIds
-            }
-          },
-          { timeout: 60000 }
-        )
+              return {
+                ensured: plan.create.length,
+                related: plan.linkIds.length + plan.create.length,
+                insertedIds
+              }
+            },
+            { timeout: 60000 }
+          )
       )
 
       result = {

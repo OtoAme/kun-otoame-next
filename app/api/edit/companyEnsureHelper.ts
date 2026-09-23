@@ -559,7 +559,9 @@ export const appendAuthoritativeSpellings = async (
     {
       input: { name, alias, user_id: 0 },
       lookupValues: values,
-      normalizedLookupValues: values.map((value) => normalizeCompanyValue(value)),
+      normalizedLookupValues: values.map((value) =>
+        normalizeCompanyValue(value)
+      ),
       suffixLookupKeys: [],
       normalizedName: normalizeCompanyValue(name)
     }
@@ -645,7 +647,9 @@ export const loadCompanyLinkSnapshots = async (
   }))
 }
 
-const plannedCreateInput = (item: PlannedCompanyCreate): CompanyCreateInput => ({
+const plannedCreateInput = (
+  item: PlannedCompanyCreate
+): CompanyCreateInput => ({
   name: item.name,
   introduction: item.introduction,
   alias: item.alias,

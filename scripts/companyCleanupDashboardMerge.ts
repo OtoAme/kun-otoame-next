@@ -228,9 +228,7 @@ export const applySingleCompanyMerge = async (
     (input.ownerFromCompanyId === undefined ||
       !participantIds.has(input.ownerFromCompanyId))
   ) {
-    throw new CompanyMergeApplyError(
-      '记录所有者的来源必须是本次合并的参与会社'
-    )
+    throw new CompanyMergeApplyError('记录所有者的来源必须是本次合并的参与会社')
   }
 
   const lockTimeoutMs = input.lockTimeoutMs ?? DEFAULT_LOCK_TIMEOUT_MS

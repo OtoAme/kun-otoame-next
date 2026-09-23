@@ -22,7 +22,9 @@ export const lockCompanyMergeSuggestionRows = async (
   memberKeys: readonly string[]
 ) => {
   const keys = [
-    ...new Set(memberKeys.map((key) => key.trim()).filter((key) => key.length > 0))
+    ...new Set(
+      memberKeys.map((key) => key.trim()).filter((key) => key.length > 0)
+    )
   ].sort((left, right) => (left < right ? -1 : left > right ? 1 : 0))
   for (const memberKey of keys) {
     await tx.$queryRawUnsafe(

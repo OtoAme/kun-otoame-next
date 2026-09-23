@@ -148,8 +148,6 @@ export const getCompanyMergeSuggestionKindLabel = (kind: string) =>
 export const getCompanyMergeResolutionSourceLabel = (
   source: CompanyMergeResolutionSource | null
 ) =>
-  source === null
-    ? '旧记录未记录处理来源'
-    : RESOLUTION_SOURCE_LABELS[source]
+  source === null ? '旧记录未记录处理来源' : RESOLUTION_SOURCE_LABELS[source]
 
 export const LEGACY_COMPANY_MERGE_SELECTION_LABEL = '旧记录未保存勾选结果'

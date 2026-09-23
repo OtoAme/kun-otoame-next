@@ -201,7 +201,9 @@ export const approvePatchSubmission = async (
       where: { id: submissionId },
       select: { payload: true, status: true }
     })
-    let vndbProducers: Awaited<ReturnType<typeof loadVndbDevelopers>> | undefined
+    let vndbProducers:
+      | Awaited<ReturnType<typeof loadVndbDevelopers>>
+      | undefined
     if (pending?.status === 'pending' && !isCompanyIdentityResolverEnabled()) {
       const decoded = decodePatchSubmissionPayload(pending.payload, {
         complete: true
@@ -211,7 +213,9 @@ export const approvePatchSubmission = async (
         try {
           vndbProducers = await loadVndbDevelopers(vndbId)
         } catch {
-          throw new PatchSubmissionError('VNDB 会社信息暂时无法获取，请稍后重试')
+          throw new PatchSubmissionError(
+            'VNDB 会社信息暂时无法获取，请稍后重试'
+          )
         }
       }
     }

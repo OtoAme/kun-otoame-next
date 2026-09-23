@@ -167,7 +167,10 @@ export const readStoredCompanyIds = (
   minimum: number
 ): number[] | null => {
   if (value == null) return null
-  const parsed = z.array(z.number().int().positive()).min(minimum).safeParse(value)
+  const parsed = z
+    .array(z.number().int().positive())
+    .min(minimum)
+    .safeParse(value)
   return parsed.success ? parsed.data : null
 }
 
