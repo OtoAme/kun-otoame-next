@@ -13,15 +13,15 @@ Investigation (rounds 1–2) closed URL/auth/`include`, query encoding, collecti
 
 NextMoe catalog origin behind Cloudflare is **bimodal**, not “our query is illegal”:
 
-| When origin is warm | When origin is sick |
-| --- | --- |
+| When origin is warm                                                              | When origin is sick                                                                                                                                       |
+| -------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 1 ref ~1–2s 200; 20 vndb refs + `include=companies,refs` ~1.2s 200, 68 companies | 3 vndb refs **22s 200** (twice); `/companies?ids=` **43s 200**; `/companies?refs=vndb:p473` **45s timeout** then later **734ms 200**; CF **522 ~19s SYN** |
 
 Our client fights that distribution:
 
 1. `AbortSignal.timeout(15s)` sits **inside** real 200s (22s, 43s) and **before** CF’s ~19s 522. Detect logs `timeout`; NextMoe’s app dashboard can still show a later 200 or nothing (edge 522 never hits origin). Matches “~11 successes, 0 5xx” vs our empty batches.
 2. Three attempts with **200–400ms** backoff retry a sick origin. CF’s own 522 guidance is on the order of **120s**. Abort does not cancel origin work.
-3. `fetchBatched` treats timeout as `items=0` and **splits** batches `>10`. Timeout is not “batch too fat”: 20 refs were *faster* than 3. Split multiplies 15s hangs.
+3. `fetchBatched` treats timeout as `items=0` and **splits** batches `>10`. Timeout is not “batch too fat”: 20 refs were _faster_ than 3. Split multiplies 15s hangs.
 4. `/v2/catalog/companies?include=aliases` is **optional** for source-pair and flakier than works. Work `include=companies` already has `display_name`. VNDB `name ∪ original ∪ aliases` is the Tenky/テンキー bag. NextMoe Tenky aliases were empty even when works succeeded.
 
 A logged detect (211 patches, 277 refs, batch=20) did: batches 1–2 timeout, 3–4 200 (14 items), batch 5 HTTP 520, then **empty NextMoe for the rest**; VNDB 209/209 still finished; `created=0 updated=32`. Layer 1 is fine. Layer 2 NextMoe is the stall.
@@ -32,11 +32,11 @@ A logged detect (211 patches, 277 refs, batch=20) did: batches 1–2 timeout, 3�
 
 Choose **12s fail-fast**, not 20s.
 
-| Budget | What it catches | Cost on a sick origin (2 consecutive failures, then breaker) |
-| --- | --- | --- |
-| 12s | Warm 200s (0.7–2s). Still hides 19s 522 and 22s 200. | ~24s of NextMoe hang, then VNDB-only |
-| 20s | Can *observe* CF 522 (~19s). Still misses 22s/43s 200s. | ~40s hang before breaker |
-| 45s | Finds the 43s company 200. Unusable for detect UX. | Forbidden (see §6) |
+| Budget | What it catches                                         | Cost on a sick origin (2 consecutive failures, then breaker) |
+| ------ | ------------------------------------------------------- | ------------------------------------------------------------ |
+| 12s    | Warm 200s (0.7–2s). Still hides 19s 522 and 22s 200.    | ~24s of NextMoe hang, then VNDB-only                         |
+| 20s    | Can _observe_ CF 522 (~19s). Still misses 22s/43s 200s. | ~40s hang before breaker                                     |
+| 45s    | Finds the 43s company 200. Unusable for detect UX.      | Forbidden (see §6)                                           |
 
 22s/43s 200s are **out of scope for detect**. Waiting 20s does not harvest them and delays the breaker. Observing 522 is a debug nicety; we already know 15s aborts hide 522. Detect must stay interactive; VNDB is the source-pair backbone.
 
@@ -86,7 +86,7 @@ Delete the `batch.length > 10` recursive split in `fetchBatched` (or never treat
 
 ### 3.5 Do not disable the client process-wide on 520
 
-Current uncommitted client already retries 520 without `disabled = true`. Keep that: **520/timeout must not set `disabled`**. Detect-layer breaker is what stops further *detect* calls. Other callers of the same process (frozen planner, probe) must not inherit “detect gave up”.
+Current uncommitted client already retries 520 without `disabled = true`. Keep that: **520/timeout must not set `disabled`**. Detect-layer breaker is what stops further _detect_ calls. Other callers of the same process (frozen planner, probe) must not inherit “detect gave up”.
 
 ### 3.6 Skip `/companies` alias hydration on detect
 
@@ -106,15 +106,15 @@ Be precise. Two objects, two contracts.
 
 Used by detect, `scripts/probeNextmoeCompanySample.ts`, frozen planner.
 
-| Kind | Attempts | `disabled` | Return |
-| --- | --- | --- | --- |
-| 2xx parsed list | 1 | no | list |
-| timeout / AbortError | **1** (no retry) | **no** | empty list + `originError: 'timeout'` |
-| 520–527 | **1** | **no** | empty list + `originError: 'unavailable'` |
-| other 5xx | 1 for detect callers; default may stay 1 as well (do not restore 200ms×3 on 52x) | no | empty + `originError: 'server'` |
-| 429 `RATE_LIMITED` | up to 3, sleep `Retry-After` | no | retry then empty |
-| 429 `QUOTA_EXCEEDED` / 401 / 403 | 1 | **yes** (this instance) | empty |
-| non-timeout send failure (DNS/TLS) | 1 | **yes** | empty |
+| Kind                               | Attempts                                                                         | `disabled`              | Return                                    |
+| ---------------------------------- | -------------------------------------------------------------------------------- | ----------------------- | ----------------------------------------- |
+| 2xx parsed list                    | 1                                                                                | no                      | list                                      |
+| timeout / AbortError               | **1** (no retry)                                                                 | **no**                  | empty list + `originError: 'timeout'`     |
+| 520–527                            | **1**                                                                            | **no**                  | empty list + `originError: 'unavailable'` |
+| other 5xx                          | 1 for detect callers; default may stay 1 as well (do not restore 200ms×3 on 52x) | no                      | empty + `originError: 'server'`           |
+| 429 `RATE_LIMITED`                 | up to 3, sleep `Retry-After`                                                     | no                      | retry then empty                          |
+| 429 `QUOTA_EXCEEDED` / 401 / 403   | 1                                                                                | **yes** (this instance) | empty                                     |
+| non-timeout send failure (DNS/TLS) | 1                                                                                | **yes**                 | empty                                     |
 
 Required knobs (options on `createNextmoeCatalogClient`):
 
@@ -201,7 +201,7 @@ Update the contract:
 - **Single failure continues:** fail, then 200 with items → third call happens; consecutive counter reset.
 - **520 does not disable later batches at the client:** if the test uses the real client with a fetch mock, 520 then 200 on the next batch succeeds. Detect-layer breaker still trips after **two** consecutive 520s (that is detect, not client).
 - **VNDB-first:** with a NextMoe fetcher that hangs until a latch, VNDB `loadVndbDevelopers` is invoked **before** the latch is released (or: VNDB mock call order index `<` first NextMoe call). Tenky/テンキー still pairs from VNDB when NextMoe returns empty.
-- **No companies hydration:** `listNextmoeCompaniesByIds` is **not** called even when works return company ids. Mebius source-pair that *only* existed via NextMoe aliases may drop — acceptable; VNDB + display_name remain. Existing Cherrymochi non-merge still holds.
+- **No companies hydration:** `listNextmoeCompaniesByIds` is **not** called even when works return company ids. Mebius source-pair that _only_ existed via NextMoe aliases may drop — acceptable; VNDB + display_name remain. Existing Cherrymochi non-merge still holds.
 - Layer 1 still creates when source-pair fetchers throw (existing test).
 - Fail-open: detect `created/updated` still returns; `notes` includes the breaker sentence when tripped.
 
@@ -249,16 +249,16 @@ Code then a **separate** `docs(company): …` commit (Conventional Commits + ski
 
 ## 9. Files
 
-| File | Change |
-| --- | --- |
-| `app/api/company/nextmoe/client.ts` | 12s; one-shot on timeout/52x; `originError`; never `disabled` on those |
-| `tests/unit/company-nextmoe-client.test.ts` | new contract |
-| `app/api/company/identity/sourcePairSuggestions.ts` | VNDB-first; no companies; no split; breaker |
-| `app/api/admin/company-merges/service.ts` | notes; client options if constructed here |
-| `types/api/companyMerges.ts` | only if notes copy needs a comment |
-| `components/dashboard/company-merges/DashboardCompanyMerges.tsx` | helper text; keep timer |
-| `tests/unit/company-source-pair.test.ts` | breaker / no-split / no-companies / VNDB-first |
-| docs/skills | PR C |
+| File                                                             | Change                                                                 |
+| ---------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| `app/api/company/nextmoe/client.ts`                              | 12s; one-shot on timeout/52x; `originError`; never `disabled` on those |
+| `tests/unit/company-nextmoe-client.test.ts`                      | new contract                                                           |
+| `app/api/company/identity/sourcePairSuggestions.ts`              | VNDB-first; no companies; no split; breaker                            |
+| `app/api/admin/company-merges/service.ts`                        | notes; client options if constructed here                              |
+| `types/api/companyMerges.ts`                                     | only if notes copy needs a comment                                     |
+| `components/dashboard/company-merges/DashboardCompanyMerges.tsx` | helper text; keep timer                                                |
+| `tests/unit/company-source-pair.test.ts`                         | breaker / no-split / no-companies / VNDB-first                         |
+| docs/skills                                                      | PR C                                                                   |
 
 ---
 
