@@ -8,7 +8,8 @@ const stripSqlComments = (sql: string) =>
   sql.replaceAll(/--.*$/gm, '').replaceAll(/\/\*[\s\S]*?\*\//g, '')
 
 const files = {
-  preflight: 'migration/production-company-merge-subset-preflight-2026-09-22.sql',
+  preflight:
+    'migration/production-company-merge-subset-preflight-2026-09-22.sql',
   syncA: 'migration/production-company-merge-subset-sync-a-2026-09-22.sql',
   syncB: 'migration/production-company-merge-subset-sync-b-2026-09-22.sql',
   preflight2:

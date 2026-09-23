@@ -30,7 +30,8 @@ const mocks = vi.hoisted(() => {
     }
   }
   prisma.$transaction.mockImplementation(
-    async (callback: (tx: typeof prisma) => Promise<unknown>) => callback(prisma)
+    async (callback: (tx: typeof prisma) => Promise<unknown>) =>
+      callback(prisma)
   )
   return { prisma }
 })
@@ -373,7 +374,11 @@ describe('detectCompanyMergeSuggestions source-pair', () => {
           patchId: 99,
           upstreamIds: ['vndb:p1850'],
           hits: expect.arrayContaining([
-            expect.objectContaining({ source: 'vndb', field: 'name', value: 'Tenky' })
+            expect.objectContaining({
+              source: 'vndb',
+              field: 'name',
+              value: 'Tenky'
+            })
           ])
         })
       })

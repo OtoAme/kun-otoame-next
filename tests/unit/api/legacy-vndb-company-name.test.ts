@@ -1,11 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { selectLegacyVndbCompanyNames } from '~/app/api/edit/legacyVndbCompanyName'
 
-const names = (
-  name: string,
-  original?: string | null,
-  aliases?: string[]
-) => selectLegacyVndbCompanyNames({ name, original, aliases })
+const names = (name: string, original?: string | null, aliases?: string[]) =>
+  selectLegacyVndbCompanyNames({ name, original, aliases })
 
 describe('selectLegacyVndbCompanyNames', () => {
   it('uses a Han or kana original when the VNDB name is Latin', () => {
@@ -37,7 +34,9 @@ describe('selectLegacyVndbCompanyNames', () => {
   })
 
   it('does not let producer aliases choose the primary name', () => {
-    expect(names('Studio', 'スタジオ', ['WINGALD', 'スタジオ', 'Studio'])).toEqual({
+    expect(
+      names('Studio', 'スタジオ', ['WINGALD', 'スタジオ', 'Studio'])
+    ).toEqual({
       name: 'スタジオ',
       alias: ['Studio', 'WINGALD']
     })

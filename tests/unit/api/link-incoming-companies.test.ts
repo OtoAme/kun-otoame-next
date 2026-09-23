@@ -44,9 +44,9 @@ describe('planIncomingCompanyLinks', () => {
     }
     expect(planIncomingCompanyLinks(mebius, [fromProducer]).create).toEqual([])
     expect(planIncomingCompanyLinks(mebius, [fromString]).create).toEqual([])
-    expect(planIncomingCompanyLinks(mebius, [fromProducer]).linkIds.sort()).toEqual(
-      planIncomingCompanyLinks(mebius, [fromString]).linkIds.sort()
-    )
+    expect(
+      planIncomingCompanyLinks(mebius, [fromProducer]).linkIds.sort()
+    ).toEqual(planIncomingCompanyLinks(mebius, [fromString]).linkIds.sort())
   })
 
   it('does not insert a company already covered by a closed name-variant group', () => {
@@ -109,9 +109,10 @@ describe('planIncomingCompanyLinks', () => {
   })
 
   it('keeps Otomate as the existing row', () => {
-    const plan = planIncomingCompanyLinks([company(6, 'Otomate', ['オトメイト'])], [
-      producer('Otomate', 'オトメイト')
-    ])
+    const plan = planIncomingCompanyLinks(
+      [company(6, 'Otomate', ['オトメイト'])],
+      [producer('Otomate', 'オトメイト')]
+    )
     expect(plan.create).toEqual([])
     expect(plan.linkIds).toEqual([6])
   })
@@ -173,7 +174,10 @@ describe('planIncomingCompanyLinks', () => {
         }
       ]
     )
-    expect(plan.create.map((item) => item.name)).toEqual(['小珠ゆり', 'WINGALD'])
+    expect(plan.create.map((item) => item.name)).toEqual([
+      '小珠ゆり',
+      'WINGALD'
+    ])
   })
 
   it('keeps an existing company ahead of a row this batch has not inserted', () => {

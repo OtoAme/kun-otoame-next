@@ -325,7 +325,9 @@ describe('ensurePatchCompaniesFromVNDB', () => {
         })
       })
     )
-    expect(prismaMocks._tx.patch_company.update.mock.calls[0]?.[0].data.name).toBeUndefined()
+    expect(
+      prismaMocks._tx.patch_company.update.mock.calls[0]?.[0].data.name
+    ).toBeUndefined()
   })
 
   it('stops when the original and the Latin name belong to different companies', async () => {
