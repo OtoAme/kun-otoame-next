@@ -387,6 +387,120 @@ type QueueRow = {
   candidate_key: string | null
 }
 
+const deletePendingSuggestion = async (
+  tx: Prisma.TransactionClient,
+  suggestionId: number
+) => {
+  await tx.company_merge_pending_key.deleteMany({
+    where: { suggestion_id: suggestionId }
+  })
+  await tx.company_merge_suggestion.delete({ where: { id: suggestionId } })
+}
+
+/**
+ * Drop company ids that no longer exist from pending suggestions. A row with
+ * fewer than two live companies is removed, not dismissed or accepted.
+ * Shrinking onto a member_key that is already taken deletes this pending row
+ * instead of stealing the key or rewriting history.
+ */
+export const prunePendingSuggestionsWithMissingCompanies = async (
+  tx: Prisma.TransactionClient,
+  options: { exceptSuggestionId?: number } = {}
+) => {
+  const pending = await tx.company_merge_suggestion.findMany({
+    where: { status: PENDING },
+    select: {
+      id: true,
+      kind: true,
+      candidate_key: true,
+      target_company_id: true,
+      source_company_ids: true,
+      names: true,
+      member_key: true
+    }
+  })
+  const rows = pending.filter(
+    (row) =>
+      row.id !== options.exceptSuggestionId &&
+      Number.isInteger(row.target_company_id) &&
+      Array.isArray(row.source_company_ids)
+  )
+  if (rows.length === 0) return
+
+  const referencedIds = [
+    ...new Set(
+      rows.flatMap((row) => [row.target_company_id, ...row.source_company_ids])
+    )
+  ]
+  const liveCompanies = await tx.patch_company.findMany({
+    where: { id: { in: referencedIds } },
+    select: { id: true }
+  })
+  const liveIds = new Set(liveCompanies.map((company) => company.id))
+
+  for (const row of rows) {
+    const originalIds = [row.target_company_id, ...row.source_company_ids]
+    const nameById = new Map(
+      originalIds.map((companyId, index) => [
+        companyId,
+        row.names?.[index] ?? `#${companyId}`
+      ])
+    )
+    const live = [
+      ...new Set(originalIds.filter((companyId) => liveIds.has(companyId)))
+    ].sort((left, right) => left - right)
+    if (live.length < 2) {
+      await deletePendingSuggestion(tx, row.id)
+      continue
+    }
+
+    let memberKey: string
+    try {
+      memberKey = toMemberKey(live)
+    } catch {
+      await deletePendingSuggestion(tx, row.id)
+      continue
+    }
+    const sameMembers =
+      memberKey === row.member_key &&
+      originalIds.length === live.length &&
+      originalIds.every((companyId) => liveIds.has(companyId))
+    if (sameMembers) continue
+
+    const occupants = await tx.company_merge_suggestion.findMany({
+      where: { member_key: memberKey, NOT: { id: row.id } },
+      select: { id: true, status: true }
+    })
+    if (occupants.length > 0) {
+      await deletePendingSuggestion(tx, row.id)
+      continue
+    }
+
+    const candidateKey =
+      row.kind === SOURCE_PAIR_KIND
+        ? row.candidate_key
+        : toCandidateKey({ kind: row.kind, companyIds: live })
+    await tx.company_merge_pending_key.deleteMany({
+      where: { suggestion_id: row.id }
+    })
+    await tx.company_merge_suggestion.update({
+      where: { id: row.id },
+      data: {
+        target_company_id: live[0],
+        source_company_ids: live.slice(1),
+        names: live.map(
+          (companyId) => nameById.get(companyId) ?? `#${companyId}`
+        ),
+        member_key: memberKey,
+        candidate_key: candidateKey
+      }
+    })
+    await tx.company_merge_pending_key.create({
+      data: { member_key: memberKey, suggestion_id: row.id }
+    })
+  }
+}
+
 const candidateKeyFor = (suggestion: DetectedSuggestion) => {
   const companyIds = [
     suggestion.targetCompanyId,
@@ -478,13 +592,6 @@ export const detectCompanyMergeSuggestions = async (
     earlyNotes.push('来源别名扫描失败，已跳过，仅保留本地规则结果')
   }
   const suggestions = [...byCluster.values()]
-  if (suggestions.length === 0) {
-    const durationMs = Date.now() - started
-    // eslint-disable-next-line no-console
-    console.info(`[company-merges:detect] done ${durationMs}ms clusters=0`)
-    return { created: 0, updated: 0, skipped: 0, durationMs, notes: earlyNotes }
-  }
-
   const planned: PlannedSuggestion[] = []
   let earlySkipped = 0
   for (const suggestion of suggestions) {
@@ -505,16 +612,6 @@ export const detectCompanyMergeSuggestions = async (
       earlyNotes.push(
         error instanceof Error ? error.message : '会社组合无法写入建议'
       )
-    }
-  }
-  if (planned.length === 0) {
-    const durationMs = Date.now() - started
-    return {
-      created: 0,
-      updated: 0,
-      skipped: earlySkipped,
-      durationMs,
-      notes: earlyNotes
     }
   }
 
@@ -545,6 +642,10 @@ export const detectCompanyMergeSuggestions = async (
     const written = await prisma.$transaction(
       async (tx) => {
         await lockCompanyMergeQueue(tx)
+        await prunePendingSuggestionsWithMissingCompanies(tx)
+        if (planned.length === 0) {
+          return { created: 0, updated: 0, skipped: 0, notes: [] as string[] }
+        }
         const discovered = await tx.company_merge_suggestion.findMany({
           where: queueWhere,
           select: queueSelect
@@ -582,10 +683,7 @@ export const detectCompanyMergeSuggestions = async (
           if (!pendingByMember.has(row.member_key)) {
             pendingByMember.set(row.member_key, row)
           }
-          if (
-            row.candidate_key &&
-            !pendingByCandidate.has(row.candidate_key)
-          ) {
+          if (row.candidate_key && !pendingByCandidate.has(row.candidate_key)) {
             pendingByCandidate.set(row.candidate_key, row)
           }
         }
@@ -601,8 +699,23 @@ export const detectCompanyMergeSuggestions = async (
         let updated = 0
         let skipped = 0
         const detectedAt = new Date()
+        const referencedIds = [
+          ...new Set(planned.flatMap((item) => item.companyIds))
+        ]
+        const stillThere = new Set(
+          (
+            await tx.patch_company.findMany({
+              where: { id: { in: referencedIds } },
+              select: { id: true }
+            })
+          ).map((company) => company.id)
+        )
+        const activePlanned = planned.filter((item) =>
+          item.companyIds.every((companyId) => stillThere.has(companyId))
+        )
+        skipped += planned.length - activePlanned.length
 
-        for (const item of planned) {
+        for (const item of activePlanned) {
           const { suggestion, memberKey, candidateKey, evidence } = item
           const cluster = {
             target_company_id: suggestion.targetCompanyId,
@@ -892,10 +1005,7 @@ export const applyCompanyMergeSuggestion = async (
   }
 
   const clusterIds = [
-    ...new Set([
-      suggestion.target_company_id,
-      ...suggestion.source_company_ids
-    ])
+    ...new Set([suggestion.target_company_id, ...suggestion.source_company_ids])
   ]
   let clusterKey: string
   try {
@@ -956,10 +1066,7 @@ export const applyCompanyMergeSuggestion = async (
             throw new CompanyMergeApplyError('该建议已被处理，请刷新列表')
           }
           const lockedIds = [
-            ...new Set([
-              locked.target_company_id,
-              ...locked.source_company_ids
-            ])
+            ...new Set([locked.target_company_id, ...locked.source_company_ids])
           ]
           if (!sameIdSet(lockedIds, clusterIds)) {
             throw new CompanyMergeApplyError(
@@ -1003,12 +1110,16 @@ export const applyCompanyMergeSuggestion = async (
           } catch (error) {
             if (
               error instanceof CompanyMergeMemberKeyError ||
-              (error instanceof Error && error.message === '会社合并证据无法写入')
+              (error instanceof Error &&
+                error.message === '会社合并证据无法写入')
             ) {
               throw new CompanyMergeApplyError(error.message)
             }
             throw error
           }
+          await prunePendingSuggestionsWithMissingCompanies(tx, {
+            exceptSuggestionId: input.id
+          })
         }
       }
     })

@@ -19,7 +19,8 @@ const mocks = vi.hoisted(() => {
       findUnique: vi.fn(),
       create: vi.fn(),
       update: vi.fn(),
-      updateMany: vi.fn()
+      updateMany: vi.fn(),
+      delete: vi.fn()
     },
     company_merge_pending_key: {
       findUnique: vi.fn(),
@@ -36,7 +37,8 @@ const mocks = vi.hoisted(() => {
     }
   }
   prisma.$transaction.mockImplementation(
-    async (callback: (tx: typeof prisma) => Promise<unknown>) => callback(prisma)
+    async (callback: (tx: typeof prisma) => Promise<unknown>) =>
+      callback(prisma)
   )
   return { prisma }
 })
@@ -47,6 +49,7 @@ import {
   detectCompanyMergeSuggestions,
   dismissCompanyMergeSuggestion,
   listCompanyMergeSuggestions,
+  prunePendingSuggestionsWithMissingCompanies,
   reopenCompanyMergeSuggestion
 } from '~/app/api/admin/company-merges/service'
 import { normalizeCompanyValue } from '~/app/api/company/identity/normalize'
@@ -285,18 +288,21 @@ describe('detectCompanyMergeSuggestions', () => {
         externalIds: [{ source: 'vndb', external_id: 'p2' }]
       })
     ])
+    mocks.prisma.company_merge_suggestion.findMany.mockResolvedValue([])
 
-    await expect(detectCompanyMergeSuggestions()).resolves.toEqual({
+    const result = await detectCompanyMergeSuggestions()
+
+    expect(result).toEqual({
       created: 0,
       updated: 0,
       skipped: 0,
       durationMs: expect.any(Number),
-      notes: expect.any(Array)
+      notes: []
     })
-
-    expect(
-      mocks.prisma.company_merge_suggestion.findMany
-    ).not.toHaveBeenCalled()
+    expect(result.notes).not.toContain('建议写入失败，本次没有保存')
+    expect(mocks.prisma.company_merge_suggestion.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { status: 'pending' } })
+    )
     expect(mocks.prisma.company_merge_suggestion.create).not.toHaveBeenCalled()
   })
 
@@ -341,10 +347,13 @@ describe('detectCompanyMergeSuggestions', () => {
 
     await detectCompanyMergeSuggestions()
 
-    expect(mocks.prisma.patch_company.findMany).toHaveBeenCalledTimes(1)
-    for (const call of mocks.prisma.patch_company.findMany.mock.calls) {
-      expect(call[0]).not.toHaveProperty('where')
-    }
+    expect(mocks.prisma.patch_company.findMany).toHaveBeenCalledTimes(2)
+    expect(
+      mocks.prisma.patch_company.findMany.mock.calls[0]?.[0]
+    ).not.toHaveProperty('where')
+    expect(mocks.prisma.patch_company.findMany.mock.calls[1]?.[0]).toEqual(
+      expect.objectContaining({ select: { id: true } })
+    )
     expectNoCompanyWrites()
   })
 })
@@ -566,9 +575,9 @@ describe('dismissCompanyMergeSuggestion', () => {
         resolution_source: 'operator-dismiss'
       }
     })
-    expect(mocks.prisma.company_merge_pending_key.deleteMany).toHaveBeenCalledWith(
-      { where: { suggestion_id: 7 } }
-    )
+    expect(
+      mocks.prisma.company_merge_pending_key.deleteMany
+    ).toHaveBeenCalledWith({ where: { suggestion_id: 7 } })
     expectNoCompanyWrites()
   })
 
@@ -804,12 +813,16 @@ describe('company merge keys and evidence', () => {
     ).toHaveLength(2)
     expect(
       companyMergeEvidenceSchema(members).safeParse({
-        hits: [{ companyId: 407, source: 'vndb', field: 'display_name', value: 'x' }]
+        hits: [
+          { companyId: 407, source: 'vndb', field: 'display_name', value: 'x' }
+        ]
       }).success
     ).toBe(false)
     expect(
       companyMergeEvidenceSchema(members).safeParse({
-        hits: [{ companyId: 407, source: 'nextmoe', field: 'alias', value: 'x' }]
+        hits: [
+          { companyId: 407, source: 'nextmoe', field: 'alias', value: 'x' }
+        ]
       }).success
     ).toBe(false)
     expect(
@@ -817,10 +830,12 @@ describe('company merge keys and evidence', () => {
         hits: [{ companyId: 999, source: 'vndb', field: 'name', value: 'x' }]
       }).success
     ).toBe(false)
-    expect(companyMergeEvidenceSchema(members).safeParse({}).success).toBe(false)
-    expect(parseCompanyMergeEvidenceHits({ kind: 'suffix-unique-hit' }, members)).toEqual(
-      []
+    expect(companyMergeEvidenceSchema(members).safeParse({}).success).toBe(
+      false
     )
+    expect(
+      parseCompanyMergeEvidenceHits({ kind: 'suffix-unique-hit' }, members)
+    ).toEqual([])
   })
 
   it('requires selectedCompanyIds on apply', () => {
@@ -885,11 +900,7 @@ describe('detect member_key decisions', () => {
         id: 814,
         vndb_id: 'v1',
         bangumi_id: null,
-        company: [
-          { company_id: 407 },
-          { company_id: 408 },
-          { company_id: 409 }
-        ]
+        company: [{ company_id: 407 }, { company_id: 408 }, { company_id: 409 }]
       }
     ])
     mocks.prisma.company_merge_suggestion.findMany.mockResolvedValue([
@@ -943,11 +954,7 @@ describe('detect member_key decisions', () => {
         id: 814,
         vndb_id: 'v1',
         bangumi_id: null,
-        company: [
-          { company_id: 407 },
-          { company_id: 408 },
-          { company_id: 409 }
-        ]
+        company: [{ company_id: 407 }, { company_id: 408 }, { company_id: 409 }]
       }
     ])
     mocks.prisma.company_merge_suggestion.findMany.mockResolvedValue([
@@ -1010,5 +1017,153 @@ describe('detect member_key decisions', () => {
     )
     expect(mocks.prisma.company_merge_suggestion.create).not.toHaveBeenCalled()
     expectNoCompanyWrites()
+  })
+})
+
+describe('prunePendingSuggestionsWithMissingCompanies', () => {
+  const tx = mocks.prisma
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('deletes a pending suggestion when fewer than two companies remain', async () => {
+    tx.company_merge_suggestion.findMany.mockImplementation(
+      async (args?: { where?: { status?: string; member_key?: string } }) => {
+        if (args?.where?.status === 'pending' && !args.where.member_key) {
+          return [
+            {
+              id: 11,
+              kind: 'name-variant',
+              candidate_key: 'name-variant|6,442,482',
+              target_company_id: 6,
+              source_company_ids: [442, 482],
+              names: [
+                'Otomate',
+                'オトメイト（PSP版）',
+                'オトメイト（Otomate）'
+              ],
+              member_key: '6,442,482'
+            }
+          ]
+        }
+        return []
+      }
+    )
+    tx.patch_company.findMany.mockResolvedValue([{ id: 6 }])
+
+    await prunePendingSuggestionsWithMissingCompanies(tx as never)
+
+    expect(tx.company_merge_pending_key.deleteMany).toHaveBeenCalledWith({
+      where: { suggestion_id: 11 }
+    })
+    expect(tx.company_merge_suggestion.delete).toHaveBeenCalledWith({
+      where: { id: 11 }
+    })
+    expect(tx.company_merge_suggestion.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { status: 'pending' } })
+    )
+    expect(tx.company_merge_suggestion.update).not.toHaveBeenCalled()
+  })
+
+  it('shrinks a pending suggestion to the companies that still exist', async () => {
+    tx.company_merge_suggestion.findMany.mockImplementation(
+      async (args?: { where?: { member_key?: string; status?: string } }) => {
+        if (args?.where?.member_key === '6,482') return []
+        return [
+          {
+            id: 11,
+            kind: 'name-variant',
+            candidate_key: 'name-variant|6,442,482',
+            target_company_id: 6,
+            source_company_ids: [442, 482],
+            names: ['Otomate', 'オトメイト（PSP版）', 'オトメイト（Otomate）'],
+            member_key: '6,442,482'
+          }
+        ]
+      }
+    )
+    tx.patch_company.findMany.mockResolvedValue([{ id: 6 }, { id: 482 }])
+
+    await prunePendingSuggestionsWithMissingCompanies(tx as never)
+
+    expect(tx.company_merge_suggestion.delete).not.toHaveBeenCalled()
+    expect(tx.company_merge_suggestion.update).toHaveBeenCalledWith({
+      where: { id: 11 },
+      data: {
+        target_company_id: 6,
+        source_company_ids: [482],
+        names: ['Otomate', 'オトメイト（Otomate）'],
+        member_key: '6,482',
+        candidate_key: 'name-variant|6,482'
+      }
+    })
+    expect(tx.company_merge_pending_key.create).toHaveBeenCalledWith({
+      data: { member_key: '6,482', suggestion_id: 11 }
+    })
+  })
+
+  it('deletes the stale pending row instead of stealing an occupied member key', async () => {
+    tx.company_merge_suggestion.findMany.mockImplementation(
+      async (args?: { where?: { member_key?: string; status?: string } }) => {
+        if (args?.where?.member_key === '6,482') {
+          return [{ id: 20, status: 'pending' }]
+        }
+        return [
+          {
+            id: 11,
+            kind: 'name-variant',
+            candidate_key: 'name-variant|6,442,482',
+            target_company_id: 6,
+            source_company_ids: [442, 482],
+            names: ['Otomate', 'gone', 'still'],
+            member_key: '6,442,482'
+          }
+        ]
+      }
+    )
+    tx.patch_company.findMany.mockResolvedValue([{ id: 6 }, { id: 482 }])
+
+    await prunePendingSuggestionsWithMissingCompanies(tx as never)
+
+    expect(tx.company_merge_suggestion.delete).toHaveBeenCalledWith({
+      where: { id: 11 }
+    })
+    expect(tx.company_merge_suggestion.update).not.toHaveBeenCalled()
+    expect(tx.company_merge_pending_key.create).not.toHaveBeenCalled()
+  })
+
+  it('prunes during detect even when no new cluster is produced', async () => {
+    tx.patch_company.findMany.mockResolvedValue([company(6, 'Otomate')])
+    tx.company_merge_suggestion.findMany.mockImplementation(
+      async (args?: { select?: { target_company_id?: boolean } }) => {
+        if (args?.select?.target_company_id) {
+          return [
+            {
+              id: 11,
+              kind: 'name-variant',
+              candidate_key: 'name-variant|6,442',
+              target_company_id: 6,
+              source_company_ids: [442],
+              names: ['Otomate', 'オトメイト（PSP版）'],
+              member_key: '6,442'
+            }
+          ]
+        }
+        return []
+      }
+    )
+    tx.patch_company.findMany.mockImplementation(
+      async (args?: { where?: { id?: { in?: number[] } } }) => {
+        if (args?.where?.id?.in) return [{ id: 6 }]
+        return [company(6, 'Otomate')]
+      }
+    )
+
+    await detectCompanyMergeSuggestions()
+
+    expect(tx.company_merge_suggestion.delete).toHaveBeenCalledWith({
+      where: { id: 11 }
+    })
   })
 })

@@ -241,7 +241,10 @@ const createFakeCompanyDatabase = (input: {
 
   const withSuggestionDefaults = (
     suggestion: Partial<FakeSuggestion> &
-      Pick<FakeSuggestion, 'id' | 'status' | 'target_company_id' | 'source_company_ids'>
+      Pick<
+        FakeSuggestion,
+        'id' | 'status' | 'target_company_id' | 'source_company_ids'
+      >
   ): FakeSuggestion => ({
     resolved_at: null,
     resolved_by_user_id: null,
@@ -524,7 +527,13 @@ const createFakeCompanyDatabase = (input: {
       ),
       findUnique: vi.fn((args: { where: { id: number } }) =>
         Promise.resolve(suggestions.get(args.where.id) ?? null)
-      )
+      ),
+      delete: vi.fn((args: { where: { id: number } }) => {
+        const row = suggestions.get(args.where.id)
+        if (!row) throw new Error('fake database: unknown suggestion')
+        suggestions.delete(args.where.id)
+        return Promise.resolve(row)
+      })
     },
     company_merge_pending_key: {
       deleteMany: vi.fn(
@@ -565,19 +574,17 @@ const createFakeCompanyDatabase = (input: {
           return Promise.resolve(args.data)
         }
       ),
-      findUnique: vi.fn(
-        (args: { where: { member_key: string } }) => {
-          const suggestionId = pendingKeys.get(args.where.member_key)
-          return Promise.resolve(
-            suggestionId === undefined
-              ? null
-              : {
-                  member_key: args.where.member_key,
-                  suggestion_id: suggestionId
-                }
-          )
-        }
-      )
+      findUnique: vi.fn((args: { where: { member_key: string } }) => {
+        const suggestionId = pendingKeys.get(args.where.member_key)
+        return Promise.resolve(
+          suggestionId === undefined
+            ? null
+            : {
+                member_key: args.where.member_key,
+                suggestion_id: suggestionId
+              }
+        )
+      })
     }
   }
 
@@ -1274,26 +1281,30 @@ describe('applyCompanyMergeSuggestion subset', () => {
     })
     wire(database)
 
-    await expect(applyCompanyMergeSuggestion(selectedInput, 42)).resolves.toEqual({
+    await expect(
+      applyCompanyMergeSuggestion(selectedInput, 42)
+    ).resolves.toEqual({
       id: 7,
       targetCompanyId: 407,
       databaseStatus: 'applied'
     })
 
     const rows = database.readRows()
-    expect(rows.map((row) => row.id).sort((left, right) => left - right)).toEqual([
-      407, 408
-    ])
+    expect(
+      rows.map((row) => row.id).sort((left, right) => left - right)
+    ).toEqual([407, 408])
     const survivor = rows.find((row) => row.id === 407)
     const untouched = rows.find((row) => row.id === 408)
     expect(survivor?.name).toBe('小珠ゆり')
     expect(survivor?.user_id).toBe(22)
     expect(survivor?.introduction).toBe('kozue intro')
     expect(survivor?.official_website).not.toContain('https://wingald.example')
-    expect(survivor?.alias).toEqual(expect.arrayContaining(['Kotama Yuri', '小珠']))
-    expect(survivor?.patch_relations.map((item) => item.patch_id).sort()).toEqual([
-      10, 30
-    ])
+    expect(survivor?.alias).toEqual(
+      expect.arrayContaining(['Kotama Yuri', '小珠'])
+    )
+    expect(
+      survivor?.patch_relations.map((item) => item.patch_id).sort()
+    ).toEqual([10, 30])
     expect(untouched).toMatchObject({
       name: 'WINGALD',
       user_id: 99,
@@ -1301,7 +1312,9 @@ describe('applyCompanyMergeSuggestion subset', () => {
       count: 1,
       official_website: ['https://wingald.example']
     })
-    expect(untouched?.patch_relations.map((item) => item.patch_id)).toEqual([20])
+    expect(untouched?.patch_relations.map((item) => item.patch_id)).toEqual([
+      20
+    ])
 
     expect(database.suggestions.get(7)).toMatchObject({
       status: 'accepted',
@@ -1321,9 +1334,7 @@ describe('applyCompanyMergeSuggestion subset', () => {
       })
     ])
     expect(database.pendingKeys.has('407,408')).toBe(false)
-    expect(
-      rowsWithKey(database, '407,408')[0]?.evidence
-    ).toMatchObject({
+    expect(rowsWithKey(database, '407,408')[0]?.evidence).toMatchObject({
       resolutionSource: 'partial-merge-exclusion',
       parentSuggestionId: 7,
       patchId: 814,
@@ -1340,7 +1351,9 @@ describe('applyCompanyMergeSuggestion subset', () => {
         .sort((left, right) => left - right)
     ).toEqual([407, 409])
     expect(
-      mocks.invalidatePatchContentCache.mock.calls.map(([uniqueId]) => uniqueId).sort()
+      mocks.invalidatePatchContentCache.mock.calls
+        .map(([uniqueId]) => uniqueId)
+        .sort()
     ).toEqual(['patch-10', 'patch-30'])
 
     const statements = database.tx.$executeRawUnsafe.mock.calls.map(([sql]) =>
@@ -1349,10 +1362,9 @@ describe('applyCompanyMergeSuggestion subset', () => {
     expect(
       statements.findIndex((sql) => sql.includes("'company-merge-queue'"))
     ).toBeLessThan(statements.findIndex((sql) => sql.includes('LOCK TABLE')))
-    expect(database.tx.$queryRawUnsafe.mock.calls.map((call) => call[1])).toEqual([
-      '407,408',
-      '407,408,409'
-    ])
+    expect(
+      database.tx.$queryRawUnsafe.mock.calls.map((call) => call[1])
+    ).toEqual(['407,408', '407,408,409'])
   })
 
   it('still merges the checked pair when an unchecked company is already gone', async () => {
@@ -1364,7 +1376,9 @@ describe('applyCompanyMergeSuggestion subset', () => {
     })
     wire(database)
 
-    await expect(applyCompanyMergeSuggestion(selectedInput, 42)).resolves.toEqual({
+    await expect(
+      applyCompanyMergeSuggestion(selectedInput, 42)
+    ).resolves.toEqual({
       id: 7,
       targetCompanyId: 407,
       databaseStatus: 'applied'
@@ -1400,10 +1414,7 @@ describe('applyCompanyMergeSuggestion subset', () => {
     void selectedCompanyIds
 
     await expect(
-      applyCompanyMergeSuggestion(
-        withoutSelection as typeof selectedInput,
-        42
-      )
+      applyCompanyMergeSuggestion(withoutSelection as typeof selectedInput, 42)
     ).resolves.toBe('至少选择两家会社')
     expect(database.$transaction).not.toHaveBeenCalled()
   })
@@ -1507,6 +1518,35 @@ describe('applyCompanyMergeSuggestion subset', () => {
     expect(kept?.resolved_at).toBe(resolvedAt)
     expect(kept?.resolved_by_user_id).toBe(8)
     expect(kept?.evidence).toMatchObject({ parentSuggestionId: 7 })
+  })
+
+  it('removes another pending suggestion whose other company was deleted', async () => {
+    const database = createFakeCompanyDatabase({
+      state: subsetState(),
+      ownerIds: { 407: 11, 408: 99, 409: 22 }
+    })
+    wire(database)
+    database.suggestions.set(80, {
+      id: 80,
+      status: 'pending',
+      kind: 'suffix-unique-hit',
+      target_company_id: 408,
+      source_company_ids: [409],
+      names: ['WINGALD', '小珠ゆり'],
+      member_key: '408,409',
+      candidate_key: 'suffix-unique-hit|408,409',
+      folded_key: 'wingald',
+      evidence: { hits: [] },
+      resolved_at: null,
+      resolved_by_user_id: null
+    })
+    database.pendingKeys.set('408,409', 80)
+
+    await applyCompanyMergeSuggestion(selectedInput, 42)
+
+    expect(database.suggestions.has(80)).toBe(false)
+    expect(database.pendingKeys.has('408,409')).toBe(false)
+    expect(database.suggestions.get(7)?.status).toBe('accepted')
   })
 
   it('does not insert an exclusion when that pair was already accepted', async () => {
