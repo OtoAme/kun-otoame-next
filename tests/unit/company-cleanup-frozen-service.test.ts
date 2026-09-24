@@ -69,7 +69,14 @@ const beforeState = (): CompanyDatabaseState => ({
           confirmedByRef: null
         }
       ],
-      relations: [{ patchId: 10, patchUniqueId: 'patch-10', vndbId: 'v10' }]
+      relations: [
+        {
+          patchId: 10,
+          patchUniqueId: 'patch-10',
+          vndbId: 'v10',
+          bangumiId: null
+        }
+      ]
     }
   ]
 })
@@ -104,7 +111,8 @@ const toRows = (state: CompanyDatabaseState) =>
       patch_id: relation.patchId,
       patch: {
         unique_id: relation.patchUniqueId,
-        vndb_id: relation.vndbId
+        vndb_id: relation.vndbId,
+        bangumi_id: relation.bangumiId
       }
     }))
   }))

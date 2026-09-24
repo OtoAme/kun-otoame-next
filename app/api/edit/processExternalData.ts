@@ -5,10 +5,12 @@ import {
   fetchVerifiedVndbCompanyCandidates
 } from './fetchCompanies'
 import {
-  ensureCompanyRelationsByName,
+  applyIncomingCompanyPlan,
+  loadCompanyLinkSnapshots,
   uniqueTrimmed,
   type CompanyCreateInput
 } from './companyEnsureHelper'
+import { planIncomingCompanyLinks } from './linkIncomingCompanies'
 import {
   buildTagLookupWhere,
   getCanonicalTagIds,
@@ -166,14 +168,23 @@ const ensureSubmittedCompanies = async (
   return runWithCompanyIdentityConstraintRetry((attempt) =>
     prisma.$transaction(
       async (tx) => {
-        const result = await ensureCompanyRelationsByName(
+        const plan = planIncomingCompanyLinks(
+          await loadCompanyLinkSnapshots(tx),
+          [...companiesByName.values()].map((company) => ({
+            spellings: [company.name],
+            createName: company.name,
+            storeAliases: company.alias ?? [],
+            websites: company.official_website,
+            userId: company.user_id
+          }))
+        )
+        return applyIncomingCompanyPlan(
           tx,
           patchId,
-          companiesByName,
+          plan,
           'legacy',
           attempt > 1
         )
-        return result.insertedIds
       },
       { timeout: 60000 }
     )

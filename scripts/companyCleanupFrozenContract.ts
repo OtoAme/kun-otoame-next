@@ -14,8 +14,8 @@ import { dirname, isAbsolute, relative, resolve } from 'node:path'
 import { execFileSync } from 'node:child_process'
 import { z } from 'zod'
 
-export const COMPANY_CLEANUP_SCHEMA_VERSION = 1 as const
-export const COMPANY_CLEANUP_TOOL_VERSION = 'company-cleanup-frozen-v1'
+export const COMPANY_CLEANUP_SCHEMA_VERSION = 2 as const
+export const COMPANY_CLEANUP_TOOL_VERSION = 'company-cleanup-frozen-v2'
 export const COMPANY_NORMALIZATION_VERSION = 'nfkc-lowercase-whitespace-v1'
 export const COMPANY_CLEANUP_MAX_ACTIONS = 100
 export const COMPANY_CLEANUP_MAX_RELATIONS = 5000
@@ -46,7 +46,8 @@ export const companyRelationSchema = z
   .object({
     patchId: id,
     patchUniqueId: nonEmptyString,
-    vndbId: z.string().nullable()
+    vndbId: z.string().nullable(),
+    bangumiId: z.number().int().nullable()
   })
   .strict()
 
@@ -127,7 +128,7 @@ export const companyCleanupDecisionsSchema = z
 export const companyEvidenceActionSchema = z
   .object({
     companyId: id,
-    source: z.enum(['vndb', 'bangumi', 'steam', 'dlsite']),
+    source: z.enum(['vndb', 'bangumi', 'steam', 'dlsite', 'nextmoe']),
     externalId: nonEmptyString.max(107),
     authoritativeValues: z.array(nonEmptyString.max(107)).min(1)
   })

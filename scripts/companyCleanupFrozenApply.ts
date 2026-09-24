@@ -96,7 +96,7 @@ const sortedUniqueStrings = (values: string[]) =>
 const sameCanonical = (left: unknown, right: unknown) =>
   serializeCanonicalJson(left) === serializeCanonicalJson(right)
 
-const describeCompanyPostStateMismatch = (
+export const describeCompanyPostStateMismatch = (
   actual: CompanyDatabaseState,
   expected: CompanyDatabaseState
 ) => {
@@ -251,7 +251,7 @@ export const validateFrozenPlanSimulation = (plan: CompanyCleanupPlan) => {
   }
 }
 
-const assertCounterContract = async (tx: Prisma.TransactionClient) => {
+export const assertCounterContract = async (tx: Prisma.TransactionClient) => {
   const triggers = await tx.$queryRaw<
     Array<{
       trigger_name: string
@@ -340,7 +340,7 @@ const assertCounterContract = async (tx: Prisma.TransactionClient) => {
   }
 }
 
-const setTransactionTimeouts = async (
+export const setTransactionTimeouts = async (
   tx: Prisma.TransactionClient,
   lockTimeoutMs: number,
   statementTimeoutMs: number
@@ -361,7 +361,9 @@ const setTransactionTimeouts = async (
   )
 }
 
-const lockCompanyMaintenanceTables = async (tx: Prisma.TransactionClient) => {
+export const lockCompanyMaintenanceTables = async (
+  tx: Prisma.TransactionClient
+) => {
   await tx.$executeRawUnsafe(
     'LOCK TABLE public.patch_company_relation IN SHARE ROW EXCLUSIVE MODE'
   )
@@ -376,11 +378,22 @@ const lockCompanyMaintenanceTables = async (tx: Prisma.TransactionClient) => {
   )
 }
 
-const replaceAffectedCompanyState = async (
+/**
+ * The slice of a cleanup plan the writer actually consumes: which companies are
+ * rewritten under the maintenance locks, and what they must look like
+ * afterwards. Kept separate from `CompanyCleanupPlan` so callers that build the
+ * post-state in memory (the dashboard merge) do not have to fabricate a plan.
+ */
+export interface CompanyStateReplacement {
+  affectedCompanyIds: number[]
+  expectedPostState: CompanyDatabaseState
+}
+
+export const replaceAffectedCompanyState = async (
   tx: Prisma.TransactionClient,
-  plan: CompanyCleanupPlan
+  input: CompanyStateReplacement
 ) => {
-  const affectedCompanyIds = new Set(plan.cacheTargets.companyIds)
+  const affectedCompanyIds = new Set(input.affectedCompanyIds)
   if (!affectedCompanyIds.size) return
 
   const actualCompanies = await tx.patch_company.findMany({
@@ -412,8 +425,8 @@ const replaceAffectedCompanyState = async (
       ])
   )
 
-  const expectedCompanies = plan.expectedPostState.companies.filter((company) =>
-    affectedCompanyIds.has(company.id)
+  const expectedCompanies = input.expectedPostState.companies.filter(
+    (company) => affectedCompanyIds.has(company.id)
   )
   const expectedIds = new Set(expectedCompanies.map((company) => company.id))
   const removedCompanyIds = [...affectedCompanyIds].filter(
@@ -589,7 +602,10 @@ export const applyFrozenCompanyCleanup = async (input: {
         return { databaseStatus: 'already-applied' as const }
       }
 
-      await replaceAffectedCompanyState(tx, input.plan)
+      await replaceAffectedCompanyState(tx, {
+        affectedCompanyIds: input.plan.cacheTargets.companyIds,
+        expectedPostState: input.plan.expectedPostState
+      })
       await assertCounterContract(tx)
       const postState = await loadCompanyDatabaseState(tx)
       if (

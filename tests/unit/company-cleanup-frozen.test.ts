@@ -47,7 +47,8 @@ afterEach(async () => {
 const relation = (patchId: number, patchUniqueId: string) => ({
   patchId,
   patchUniqueId,
-  vndbId: `v${patchId}`
+  vndbId: `v${patchId}`,
+  bangumiId: null
 })
 
 const company = (
@@ -345,7 +346,7 @@ describe('frozen company cleanup cache retry', () => {
     const plan = planFor(before, before, [], [])
     const planSha256 = 'd'.repeat(64)
     await writeCanonicalArtifact(getReceiptPath(planPath), {
-      schemaVersion: 1,
+      schemaVersion: COMPANY_CLEANUP_SCHEMA_VERSION,
       toolVersion: COMPANY_CLEANUP_TOOL_VERSION,
       planSha256,
       expectedPostDatabaseDigest: plan.expectedPostDatabaseDigest,

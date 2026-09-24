@@ -85,6 +85,7 @@ REDIS_PASSWORD=''
 | `NODE_ENV`                                                             | 本地为 `development`。                                                                                       |
 | `KUN_GALLERY_FFMPEG_PATH`                                              | 可选。只在需要固定使用自备 FFmpeg 处理 Gallery 动态 AVIF 缩略图时填写绝对路径；默认会尝试项目内置 fallback。 |
 | `BANGUMI_ACCESS_TOKEN`                                                 | Bangumi 标签/开发商匹配需要；不使用相关功能时可保留占位值，但调用外部接口会失败。                            |
+| `KUN_NEXTMOE_API_KEY`                                                  | 可选。仅服务端。会社冻结 plan 用 NextMoe catalog 对齐跨源名称时需要；不进 `dotenv-check`，未配置则跳过该证据。 |
 | `KUN_VISUAL_NOVEL_EMAIL_*`                                             | 邮件发送相关；注册验证码/邮件通知需要真实配置。                                                              |
 | `KUN_VISUAL_NOVEL_S3_*`、`NEXT_PUBLIC_KUN_VISUAL_NOVEL_S3_STORAGE_URL` | 上传资源和图片访问需要真实配置。                                                                             |
 | `KUN_VISUAL_NOVEL_IMAGE_BED_*`                                         | Next image 远程域名和图片 URL 拼接依赖。                                                                     |
@@ -93,7 +94,7 @@ REDIS_PASSWORD=''
 | `KUN_VISUAL_NOVEL_TEST_SITE_LABEL`                                     | 测试站 noindex 标记；生产必须删除或注释。                                                                    |
 | `GITHUB_REPO`、`GITHUB_TOKEN`                                          | 只影响 `deploy:pull`。                                                                                       |
 
-`validations/dotenv-check.ts` 只校验构建/运行强依赖。`REDIS_PASSWORD`、`KUN_GALLERY_FFMPEG_PATH`、`BANGUMI_ACCESS_TOKEN`、`GITHUB_REPO`、`GITHUB_TOKEN` 等变量由具体使用点读取；如果你启用相关功能，仍要在 `.env` 中补齐。
+`validations/dotenv-check.ts` 只校验构建/运行强依赖。`REDIS_PASSWORD`、`KUN_GALLERY_FFMPEG_PATH`、`BANGUMI_ACCESS_TOKEN`、`KUN_NEXTMOE_API_KEY`、`GITHUB_REPO`、`GITHUB_TOKEN` 等变量由具体使用点读取；如果你启用相关功能，仍要在 `.env` 中补齐。
 
 ### 4. 初始化数据库 schema
 

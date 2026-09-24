@@ -7,7 +7,7 @@ description: Use when changing OtoAme application code, adding routes, updating 
 
 Use this skill for project-specific development in `kun-otoame-next`.
 
-These skills are project assets, not agent-tool assets. They live in the repository-root `skills/` directory; `.codex/skills` and `.claude/skills` are symlinks to it. Edit the files under `skills/` and never fork a tool-specific copy.
+These skills are project assets, not agent-tool assets. They live in the repository-root `skills/` directory; `.codex/skills`, `.claude/skills`, and `.grok/skills` are symlinks to it. Edit the files under `skills/` and never fork a tool-specific copy.
 
 ## Required References
 

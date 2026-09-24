@@ -239,6 +239,9 @@ service/helper 负责：
   `authoritative` 规范化别名 → `legacy` 原值精确别名 → 同批候选交集 → 新建；角色不
   参与同一性判定。开关关闭时预览与来源选择保持旧行为，但 Phase B
   `normalized_name` / external ID 唯一冲突的外层事务重试与胜者重读兼容层始终生效。
+  `ensureCompanyRelationsByName` 另有法人后缀第二查找键（`Co., Ltd.` / `Inc.` /
+  `GmbH` / `KK` / `株式会社` / `有限会社`）：规范化值本身不变；剥后缀后全库恰好一家才
+  挂靠，多家则仍新建且不报歧义，命中不写 `authoritative` 别名。`Studio` 等名称后缀不剥。
 - PostgreSQL 唯一冲突后当前事务已 aborted；公司身份冲突只能由拥有事务的最外层入口
   整笔重跑，最多 3 次。只识别 `patch_company.normalized_name` 与
   `patch_company_external_id.(source, external_id)` 两个目标约束，其它 `P2002` 不得
@@ -246,7 +249,7 @@ service/helper 负责：
 - `patch_tag.count` 与 `patch_company.count` 只由关系表上的 statement-level 数据库触发器维护；应用、同步脚本和清理脚本不得手工 increment / decrement 或绝对重算。关系 helper 仍返回本次实际插入 / 删除的 ID，用于判断缓存失效，不用于改 count。删除整个游戏会级联删除关系，因此必须同时失效 tag/company/list 缓存。
 - Phase B 之后 `patch_company.normalized_name` 为非空唯一列，`patch_company_external_id.(source, external_id)` 为复合唯一；跨会社 `patch_company_name_identity.normalized_value` 仍只是普通索引，合法共享 alias 由 resolver 报歧义而不是被数据库禁止。所有公司创建入口必须通过共享 helper 注入规范化主名，目标唯一冲突只允许从最外层事务重试。
 - 修改公司后必须调用 `invalidateCompanyCaches`。
-- 历史会社脏数据只通过 production frozen cleanup 清理：先生成只读 inventory，由人工 decisions 明确 canonical 合并、元数据保留和删除，再生成带 SHA 的计划；dry/apply/cache 不能重新规划或临场改写动作，只有 cache 按冻结目标访问 Redis / Cloudflare。零作品关系不构成删除许可，任何删除都必须在 decisions 与审核过的 plan 中显式出现。在线创建/编辑流程不承担批量历史合并；带服务端候选快照的已发布投稿仍会审计正式关系与 `external-id-name-conflict`。
+- 历史会社脏数据只通过 production frozen cleanup 清理：先生成只读 inventory，由人工 decisions 明确 canonical 合并、元数据保留和删除，再生成带 SHA 的计划；dry/apply/cache 不能重新规划或临场改写动作，只有 cache 按冻结目标访问 Redis / Cloudflare。plan 可额外用 NextMoe catalog 把 VNDB / Bangumi 名称变体收成同一家会社（`patch_company_external_id.source = nextmoe`）；这不打开运行时 resolver，也不回写 `patch.vndb_id` / `bangumi_id`。零作品关系不构成删除许可，任何删除都必须在 decisions 与审核过的 plan 中显式出现。在线创建/编辑流程不承担批量历史合并；带服务端候选快照的已发布投稿仍会审计正式关系与 `external-id-name-conflict`。
 
 ### 编辑外部数据合并
 
@@ -272,7 +275,7 @@ service/helper 负责：
 - resolver 开关关闭时暂时保留旧兼容行为：VNDB 成功关联后不再使用 Bangumi
   developer，Steam developer 与 DLSite circle 仍独立补充。**这不是最终产品规则**；
   开关启用后四个来源全部进入 resolver，Bangumi 独有发行商/制作方不得再被丢弃。
-- VNDB producer 新建会社时，`introduction` 使用 VNDB 的 `description`；不得再把 alias 数组拼成逗号串冒充简介。历史 `ensurePatchCompanyFromDlsite` 同样必须走共享 resolver 与外层唯一冲突重试，不得退回只按精确 `name` 查找；关系变化后同时失效会社缓存与该游戏内容缓存。
+- VNDB producer 新建会社时，`introduction` 使用 VNDB 的 `description`；不得再把 alias 数组拼成逗号串冒充简介。resolver 关闭时，新建、重写、详情页重抓和投稿批准共用 `planIncomingCompanyLinks`。拉丁 `name` 配含汉字或假名的 `original` 时，新建行主名用 `original`。匹配只用 `name` 与 `original`，不用别名袋。精确对上、封闭名称变体组，或后缀对上已有会社时只挂关系，不插入新行，也不改已有主名。投稿在事务外拉取完整 producer；拉取失败则整笔批准回滚，不用只含原文的字符串创建会社。同一次计划里，先决定新建的行会立刻参加后续查重，VNDB 开发商排在 Steam 与 DLsite 前面，避免同一批再插入一家。resolver 打开后仍按身份计划第 10 条。历史 `ensurePatchCompanyFromDlsite` 同样必须走共享 resolver 与外层唯一冲突重试，不得退回只按精确 `name` 查找；关系变化后同时失效会社缓存与该游戏内容缓存。
 - 外部公司关系必须按 `name` 和 `alias` 查找已有公司；提交名只命中一家会社的 alias 时，应关联到已有会社，而不是创建新会社。共享 alias 是允许存在的歧义状态，旧兼容 helper 不得按无序查询的第一行静默选一家，必须停止本次会社关系写入并返回维护提示。
 - 旧兼容 helper 在写库前按 `normalized_name` 合并同批等价主名，合并别名、语言和来源网站；不同主名之间出现 alias/name 证据重叠时阻断，不得一次创建两家疑似重复会社。VNDB 权威数据唯一命中既有会社时，必须先锁行并重新读取最新数据，再只补空简介并合并别名、语言、网站，最后同步 identity projection；不得覆盖已有人工简介，也不得用锁前快照覆盖并发写入。
 - 详情页手动重新获取 VNDB 会社时必须遵循同一个 server-only resolver flag：开启后走共享 resolver 并写 external ID，关闭时只走带歧义保护的兼容 helper。返回值区分解析到的会社数和本次新增关系数；重复重抓已有关系应显示“无需新增关联”，不能虚报新增数量。
