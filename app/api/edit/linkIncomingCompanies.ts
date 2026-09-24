@@ -170,7 +170,7 @@ export const planIncomingCompanyLinks = (
   const rememberCreate = (item: PlannedCompanyCreate, externalId?: string) => {
     const id = nextVirtualId
     nextVirtualId -= 1
-    const snapshot: LinkCompanySnapshot = {
+    const snapshot: (typeof working)[number] = {
       id,
       name: item.name,
       alias: [...item.alias],
