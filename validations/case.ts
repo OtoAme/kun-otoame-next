@@ -2,10 +2,13 @@ import { z } from 'zod'
 import {
   CASE_ADMIN_ACTIONS,
   CASE_CONTENT_ACTIONS,
+  CASE_IMAGE_MAX_PER_MESSAGE,
   CASE_KINDS,
   CASE_MESSAGE_MIN_LENGTH,
+  CASE_OWNER_TYPES,
   CASE_RESOLUTIONS,
   CASE_RESOURCE_ACTIONS,
+  CASE_SITE_TARGET_ID,
   CASE_STATUSES,
   CASE_TABS,
   CASE_TARGET_TYPES,
@@ -35,23 +38,52 @@ export const caseTabSchema = z.enum(CASE_TABS)
 export const caseResolutionSchema = z.enum(CASE_RESOLUTIONS)
 
 /**
+ * Keys returned by `POST /api/case/image`. The server only accepts keys it
+ * registered for the same user, so the pattern is a cheap early filter.
+ */
+export const caseImageKeysSchema = z
+  .array(
+    z
+      .string()
+      .max(300)
+      .regex(/^case\/\d+\/[A-Za-z0-9-]+\.avif$/, { message: '图片信息无效' })
+  )
+  .max(CASE_IMAGE_MAX_PER_MESSAGE, {
+    message: `每条说明最多 ${CASE_IMAGE_MAX_PER_MESSAGE} 张图片`
+  })
+  .refine((keys) => new Set(keys).size === keys.length, {
+    message: '图片不能重复'
+  })
+  .optional()
+  .default([])
+
+export const caseMinimumLength = (kind: string) =>
+  kind === 'content_violation'
+    ? CASE_REPORT_MIN_LENGTH
+    : CASE_DESCRIPTION_MIN_LENGTH
+
+const minimumLengthMessage = (kind: string, minimum: number) =>
+  kind === 'content_violation'
+    ? `举报原因最少 ${minimum} 个字符`
+    : `问题描述最少 ${minimum} 个字符`
+
+/**
  * Unknown fields are stripped by Zod. Ownership, source, public visibility and
  * patch_id therefore cannot be supplied by a caller even if an old client
- * sends fields with those names.
+ * sends fields with those names. A site request has no target row, so its
+ * `targetId` is ignored and pinned to 0.
  */
 export const createCaseSchema = z
   .object({
     kind: caseKindSchema,
     targetType: caseTargetTypeSchema,
-    targetId: idSchema,
+    targetId: z.unknown().optional(),
     expectedPatchId: idSchema.optional(),
-    content: contentSchema
+    content: contentSchema,
+    imageKeys: caseImageKeysSchema
   })
-  .superRefine((input, ctx) => {
-    const minimum =
-      input.kind === 'content_violation'
-        ? CASE_REPORT_MIN_LENGTH
-        : CASE_DESCRIPTION_MIN_LENGTH
+  .transform((input, ctx) => {
+    const minimum = caseMinimumLength(input.kind)
     if (input.content.length < minimum) {
       ctx.addIssue({
         code: z.ZodIssueCode.too_small,
@@ -59,12 +91,22 @@ export const createCaseSchema = z
         inclusive: true,
         type: 'string',
         path: ['content'],
-        message:
-          input.kind === 'content_violation'
-            ? `举报原因最少 ${minimum} 个字符`
-            : `问题描述最少 ${minimum} 个字符`
+        message: minimumLengthMessage(input.kind, minimum)
       })
     }
+    if (input.targetType === 'site') {
+      return { ...input, targetId: CASE_SITE_TARGET_ID }
+    }
+    const targetId = idSchema.safeParse(input.targetId)
+    if (!targetId.success) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['targetId'],
+        message: targetId.error.issues[0]?.message ?? 'ID 必须为正整数'
+      })
+      return z.NEVER
+    }
+    return { ...input, targetId: targetId.data }
   })
 
 /**
@@ -107,15 +149,18 @@ export const caseListSchema = z.object({
 
 export const caseIdParamSchema = z.object({ id: caseIdSchema })
 
+const replyContentSchema = z
+  .string({ message: '回复内容必须是文本' })
+  .trim()
+  .min(CASE_MESSAGE_MIN_LENGTH, { message: '回复内容不能为空' })
+  .max(CASE_CONTENT_MAX_LENGTH, {
+    message: `回复内容最多 ${CASE_CONTENT_MAX_LENGTH} 个字符`
+  })
+
 export const appendCaseMessageSchema = z.object({
   caseId: caseIdSchema,
-  content: z
-    .string({ message: '回复内容必须是文本' })
-    .trim()
-    .min(CASE_MESSAGE_MIN_LENGTH, { message: '回复内容不能为空' })
-    .max(CASE_CONTENT_MAX_LENGTH, {
-      message: `回复内容最多 ${CASE_CONTENT_MAX_LENGTH} 个字符`
-    })
+  content: replyContentSchema,
+  imageKeys: caseImageKeysSchema
 })
 export const appendCaseMessageBodySchema = appendCaseMessageSchema.omit({
   caseId: true
@@ -128,7 +173,39 @@ export const resolveCaseSchema = z.object({
 })
 export const resolveCaseBodySchema = resolveCaseSchema.omit({ caseId: true })
 
-export const reopenCaseSchema = z.object({ caseId: caseIdSchema })
+/** Reopening and review requests both carry the reporter's reason (D16, D19). */
+const reasonSchema = z
+  .string({ message: '理由必须是文本' })
+  .trim()
+  .min(CASE_MESSAGE_MIN_LENGTH, { message: '请写明理由' })
+  .max(CASE_CONTENT_MAX_LENGTH, {
+    message: `理由最多 ${CASE_CONTENT_MAX_LENGTH} 个字符`
+  })
+
+export const reopenCaseSchema = z.object({
+  caseId: caseIdSchema,
+  content: reasonSchema
+})
+export const reopenCaseBodySchema = reopenCaseSchema.omit({ caseId: true })
+
+export const reviewCaseSchema = z.object({
+  caseId: caseIdSchema,
+  content: reasonSchema
+})
+export const reviewCaseBodySchema = reviewCaseSchema.omit({ caseId: true })
+
+export const confirmCaseSchema = z.object({
+  caseId: caseIdSchema,
+  solved: z.boolean({ message: '请选择是否已解决' })
+})
+export const confirmCaseBodySchema = confirmCaseSchema.omit({ caseId: true })
+
+export const proposeCaseSchema = z.object({
+  caseId: caseIdSchema,
+  resolution: caseResolutionSchema,
+  content: reasonSchema
+})
+export const proposeCaseBodySchema = proposeCaseSchema.omit({ caseId: true })
 
 export const adminCaseListSchema = z.object({
   status: caseStatusSchema.optional(),
@@ -146,6 +223,12 @@ export const adminCaseListSchema = z.object({
     .optional()
     .transform((value) => (value === undefined ? undefined : value === 'true')),
   kind: caseKindSchema.optional(),
+  /**
+   * `staff` is the station queue. `publisher` is the read-only oversight view
+   * of publisher-owned cases (D22); it never feeds the unified inbox.
+   */
+  ownerType: z.enum(CASE_OWNER_TYPES).default('staff'),
+  ownerId: idSchema.optional(),
   page: z.coerce.number().int().min(1).max(2147483647).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(20),
   search: z.string().trim().max(300).default('')

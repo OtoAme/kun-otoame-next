@@ -220,9 +220,13 @@ export const ResourceTabs = ({
               )}
             </div>
           </div>
-          {resource.caseSummary && (
-            <ResourceCaseBadge summary={resource.caseSummary} />
-          )}
+          {resource.caseSummaries?.length ? (
+            <div className="flex flex-wrap gap-2">
+              {resource.caseSummaries.map((summary) => (
+                <ResourceCaseBadge key={summary.kind} summary={summary} />
+              ))}
+            </div>
+          ) : null}
           <ResourceDownload resource={resource} />
         </div>
       </div>

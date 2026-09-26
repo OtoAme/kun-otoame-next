@@ -207,6 +207,10 @@ const makeDetail = (overrides: Partial<CaseDetail> = {}): CaseDetail => ({
     canReply: false,
     canResolve: false,
     canReopen: false,
+    canWithdraw: false,
+    canConfirm: false,
+    canReview: false,
+    canPropose: false,
     canHideResource: false,
     canRestoreResource: false,
     canMoveResource: false,
@@ -282,7 +286,7 @@ describe('issue case detail permissions', () => {
     expect(text).toContain('报告者')
     expect(text).toContain('下载下来和描述不一致')
     // 系统事件回退文案，payload 身份字段不渲染
-    expect(text).toContain('已升级为站方处理')
+    expect(text).toContain('已提交给网站管理员处理')
     expect(text).not.toContain('42')
   })
 
@@ -321,6 +325,10 @@ describe('issue case detail permissions', () => {
         canReply: true,
         canResolve: true,
         canReopen: false,
+        canWithdraw: false,
+        canConfirm: false,
+        canReview: false,
+        canPropose: false,
         canHideResource: false,
         canRestoreResource: false,
         canMoveResource: false,
@@ -339,14 +347,14 @@ describe('issue case detail permissions', () => {
     await act(async () => {
       findButton(container, '需要截图')!.click()
     })
-    expect(replyBox(container)!.value).toBe('请补充相关截图，方便进一步核对。')
+    expect(replyBox(container)!.value).toBe('请补充相关截图（回复时可以直接附图），方便进一步核对。')
 
     await act(async () => {
       findButton(container, '发送')!.click()
     })
     await flush()
     expect(mocks.kunFetchPost).toHaveBeenCalledWith('/case/9/message', {
-      content: '请补充相关截图，方便进一步核对。'
+      content: '请补充相关截图（回复时可以直接附图），方便进一步核对。'
     })
 
     // 结案：选项只来自 allowedResolutions
@@ -411,6 +419,10 @@ describe('issue case detail permissions', () => {
         canReply: false,
         canResolve: false,
         canReopen: true,
+        canWithdraw: false,
+        canConfirm: false,
+        canReview: false,
+        canPropose: false,
         canHideResource: false,
         canRestoreResource: false,
         canMoveResource: false,
@@ -488,6 +500,10 @@ describe('issue case detail permissions', () => {
         canReply: true,
         canResolve: true,
         canReopen: false,
+        canWithdraw: false,
+        canConfirm: false,
+        canReview: false,
+        canPropose: false,
         canHideResource: false,
         canRestoreResource: false,
         canMoveResource: false,
@@ -520,6 +536,10 @@ describe('issue case detail permissions', () => {
         canReply: false,
         canResolve: false,
         canReopen: true,
+        canWithdraw: false,
+        canConfirm: false,
+        canReview: false,
+        canPropose: false,
         canHideResource: false,
         canRestoreResource: false,
         canMoveResource: false,

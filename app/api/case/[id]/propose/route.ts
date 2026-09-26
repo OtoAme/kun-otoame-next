@@ -1,11 +1,8 @@
 import { NextRequest } from 'next/server'
 import { kunParsePostBody } from '~/app/api/utils/parseQuery'
 import { verifyHeaderCookie } from '~/middleware/_verifyHeaderCookie'
-import {
-  appendCaseMessageBodySchema,
-  caseIdParamSchema
-} from '~/validations/case'
-import { appendCaseMessage } from '../../service'
+import { caseIdParamSchema, proposeCaseBodySchema } from '~/validations/case'
+import { proposeCaseClosure } from '../../service'
 import { inboxJson } from '~/app/api/admin/inbox/response'
 
 const getId = (raw: string) => {
@@ -21,11 +18,11 @@ export const POST = async (
   if (!payload) return inboxJson('用户未登录')
   const id = getId((await params).id)
   if (id === null) return inboxJson('问题 ID 格式不正确')
-  const body = await kunParsePostBody(req, appendCaseMessageBodySchema)
+  const body = await kunParsePostBody(req, proposeCaseBodySchema)
   if (typeof body === 'string') return inboxJson(body)
   return inboxJson(
-    await appendCaseMessage(
-      { caseId: id, content: body.content, imageKeys: body.imageKeys },
+    await proposeCaseClosure(
+      { caseId: id, resolution: body.resolution, content: body.content },
       payload.uid,
       payload.role
     )

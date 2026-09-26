@@ -127,12 +127,15 @@ export const caseViewerStatusText = (
 }
 
 const SYSTEM_EVENT_FALLBACK: Record<CaseMessageEvent, string> = {
-  escalated: '已升级为站方处理',
+  escalated: '已提交给网站管理员处理',
   resolved: '已结案',
   reopened: '已重新打开',
   hidden: '资源已被隐藏',
   restored: '资源已恢复',
-  moved: '资源已移动至正确条目'
+  moved: '资源已移动至正确条目',
+  withdrawn: '开启者已撤回自己的报告',
+  confirmed: '报告者已确认处理结果',
+  close_proposed: '原发布者提请结案'
 }
 
 /**

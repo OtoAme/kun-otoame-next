@@ -107,7 +107,10 @@ const validPathRoutes = [
     name: 'user reopen',
     service: mocks.reopenCase,
     run: (id = '12') =>
-      caseReopenPOST(postRequest(`/api/case/${id}/reopen`, {}), pathParams(id))
+      caseReopenPOST(
+        postRequest(`/api/case/${id}/reopen`, { content: '还没有修好' }),
+        pathParams(id)
+      )
   },
   {
     name: 'admin detail',
@@ -328,7 +331,8 @@ describe('case route input ownership', () => {
         kind: 'other',
         targetType: 'patch',
         targetId: 10,
-        content: '条目资料需要进一步核对'
+        content: '条目资料需要进一步核对',
+        imageKeys: []
       },
       7
     )
@@ -346,7 +350,7 @@ describe('case route input ownership', () => {
           pathParams('42')
         ),
       service: mocks.appendCaseMessage,
-      expected: [{ caseId: 42, content: '回复内容' }, 7, 3]
+      expected: [{ caseId: 42, content: '回复内容', imageKeys: [] }, 7, 3]
     },
     {
       name: 'user resolve',

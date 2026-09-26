@@ -210,6 +210,10 @@ const makeDetail = (overrides: Partial<CaseDetail> = {}): CaseDetail => ({
     canReply: false,
     canResolve: false,
     canReopen: false,
+    canWithdraw: false,
+    canConfirm: false,
+    canReview: false,
+    canPropose: false,
     canHideResource: false,
     canRestoreResource: false,
     canMoveResource: false,
@@ -294,6 +298,10 @@ describe('dashboard case detail', () => {
         canReply: true,
         canResolve: false,
         canReopen: false,
+        canWithdraw: false,
+        canConfirm: false,
+        canReview: false,
+        canPropose: false,
         canHideResource: false,
         canRestoreResource: false,
         canMoveResource: false,
@@ -326,7 +334,7 @@ describe('dashboard case detail', () => {
     const replyBox = container.querySelector<HTMLTextAreaElement>(
       'textarea[aria-label="回复内容"]'
     )!
-    expect(replyBox.value).toBe('请补充相关截图，方便进一步核对。')
+    expect(replyBox.value).toBe('请补充相关截图（回复时可以直接附图），方便进一步核对。')
 
     // 回复不需要二次确认：不出现确认弹窗
     await act(async () => {
@@ -336,7 +344,7 @@ describe('dashboard case detail', () => {
     expect(container.querySelector('[role="alertdialog"]')).toBeNull()
     expect(mocks.kunFetchPost).toHaveBeenCalledWith('/admin/case/9/handle', {
       action: 'reply',
-      content: '请补充相关截图，方便进一步核对。'
+      content: '请补充相关截图（回复时可以直接附图），方便进一步核对。'
     })
     expect(mocks.onStateChanged).toHaveBeenCalled()
     expect(mocks.onProcessed).not.toHaveBeenCalled()
@@ -355,7 +363,7 @@ describe('dashboard case detail', () => {
       container.querySelector<HTMLTextAreaElement>(
         'textarea[aria-label="回复内容"]'
       )!.value
-    ).toBe('请补充相关截图，方便进一步核对。')
+    ).toBe('请补充相关截图（回复时可以直接附图），方便进一步核对。')
     expect(container.querySelector('[role="alert"]')?.textContent).toContain(
       '网络错误'
     )
@@ -406,6 +414,10 @@ describe('dashboard case detail', () => {
         canReply: false,
         canResolve: true,
         canReopen: false,
+        canWithdraw: false,
+        canConfirm: false,
+        canReview: false,
+        canPropose: false,
         canHideResource: false,
         canRestoreResource: false,
         canMoveResource: false,
@@ -476,6 +488,10 @@ describe('dashboard case detail', () => {
         canReply: false,
         canResolve: true,
         canReopen: false,
+        canWithdraw: false,
+        canConfirm: false,
+        canReview: false,
+        canPropose: false,
         canHideResource: false,
         canRestoreResource: false,
         canMoveResource: false,
@@ -534,6 +550,10 @@ describe('dashboard case detail', () => {
         canReply: false,
         canResolve: true,
         canReopen: false,
+        canWithdraw: false,
+        canConfirm: false,
+        canReview: false,
+        canPropose: false,
         canHideResource: false,
         canRestoreResource: false,
         canMoveResource: false,
@@ -612,6 +632,10 @@ describe('dashboard case detail', () => {
         canReply: false,
         canResolve: true,
         canReopen: false,
+        canWithdraw: false,
+        canConfirm: false,
+        canReview: false,
+        canPropose: false,
         canHideResource: false,
         canRestoreResource: false,
         canMoveResource: false,
@@ -656,6 +680,10 @@ describe('dashboard case detail', () => {
         canReply: false,
         canResolve: false,
         canReopen: false,
+        canWithdraw: false,
+        canConfirm: false,
+        canReview: false,
+        canPropose: false,
         canHideResource: true,
         canRestoreResource: false,
         canMoveResource: false,
@@ -725,6 +753,10 @@ describe('dashboard case detail', () => {
         canReply: false,
         canResolve: false,
         canReopen: false,
+        canWithdraw: false,
+        canConfirm: false,
+        canReview: false,
+        canPropose: false,
         canHideResource: false,
         canRestoreResource: true,
         canMoveResource: false,
@@ -784,6 +816,10 @@ describe('dashboard case detail', () => {
         canReply: false,
         canResolve: false,
         canReopen: false,
+        canWithdraw: false,
+        canConfirm: false,
+        canReview: false,
+        canPropose: false,
         canHideResource: false,
         canRestoreResource: false,
         canMoveResource: true,
@@ -863,6 +899,10 @@ describe('dashboard case detail', () => {
         canReply: false,
         canResolve: false,
         canReopen: false,
+        canWithdraw: false,
+        canConfirm: false,
+        canReview: false,
+        canPropose: false,
         canHideResource: false,
         canRestoreResource: true,
         canMoveResource: false,
@@ -916,6 +956,10 @@ describe('dashboard case detail', () => {
         canReply: false,
         canResolve: false,
         canReopen: false,
+        canWithdraw: false,
+        canConfirm: false,
+        canReview: false,
+        canPropose: false,
         canHideResource: false,
         canRestoreResource: false,
         canMoveResource: false,

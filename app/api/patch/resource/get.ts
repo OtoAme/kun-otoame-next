@@ -135,7 +135,7 @@ export const getPatchResource = async (
     status: resource.status,
     userId: resource.user_id,
     patchId: resource.patch_id,
-    caseSummary: caseSummaries.get(resource.id) ?? null,
+    caseSummaries: caseSummaries.get(resource.id) ?? [],
     created: String(resource.created),
     user: {
       id: resource.user.id,

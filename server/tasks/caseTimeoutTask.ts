@@ -7,12 +7,17 @@ import {
   CASE_MAX_TIMEOUT_ROUNDS,
   CASE_PUBLISHER_ESCALATION_AFTER_MS,
   CASE_PUBLISHER_TIMEOUT_KINDS,
+  CASE_REMINDER_LEAD_MS,
   CASE_REPORTER_TIMEOUT_AFTER_MS,
   CASE_REPORTER_TIMEOUT_KINDS,
   CASE_TIMEOUT_LOCK_KEY,
   CASE_TIMEOUT_LOCK_TTL_SECONDS
 } from '~/constants/case'
-import { timeoutCloseCase, upgradeCase } from '~/app/api/case/service'
+import {
+  remindCase,
+  timeoutCloseCase,
+  upgradeCase
+} from '~/app/api/case/service'
 
 export const CASE_TIMEOUT_CRON_EXPRESSION = '17 * * * *'
 export const CASE_TIMEOUT_TIMEZONE = 'Asia/Shanghai'
@@ -50,6 +55,58 @@ const loadDueEscalations = async (db: TimeoutDb, now: Date) =>
     select: { id: true }
   })
 
+/**
+ * Scan three (D22): cases inside the last 48 hours before either deadline that
+ * have not been reminded on their current revision. `reminded_revision` only
+ * ever takes the current revision and revisions only grow, so "below the
+ * current revision" is the same as "not reminded this round"; the field
+ * reference keeps reminded rounds out of the batch, so the loop cannot spin.
+ */
+const loadDueReminders = async (db: TimeoutDb, now: Date) => {
+  const notReminded = {
+    OR: [
+      { reminded_revision: null },
+      { reminded_revision: { lt: db.ops_case.fields.revision } }
+    ]
+  }
+  return db.ops_case.findMany({
+    where: {
+      owner_type: 'publisher',
+      OR: [
+        {
+          status: { in: ['open', 'waiting_owner'] },
+          kind: { in: [...CASE_PUBLISHER_TIMEOUT_KINDS] },
+          status_changed_at: {
+            lt: new Date(
+              now.getTime() -
+                CASE_PUBLISHER_ESCALATION_AFTER_MS +
+                CASE_REMINDER_LEAD_MS
+            ),
+            gte: new Date(now.getTime() - CASE_PUBLISHER_ESCALATION_AFTER_MS)
+          }
+        },
+        {
+          status: 'waiting_reporter',
+          reporter_id: { not: null },
+          kind: { in: [...CASE_REPORTER_TIMEOUT_KINDS] },
+          status_changed_at: {
+            lt: new Date(
+              now.getTime() -
+                CASE_REPORTER_TIMEOUT_AFTER_MS +
+                CASE_REMINDER_LEAD_MS
+            ),
+            gte: new Date(now.getTime() - CASE_REPORTER_TIMEOUT_AFTER_MS)
+          }
+        }
+      ],
+      AND: [notReminded]
+    },
+    orderBy: [{ status_changed_at: 'asc' }, { id: 'asc' }],
+    take: CASE_MAX_TIMEOUT_BATCH,
+    select: { id: true }
+  })
+}
+
 const runRows = async (
   rows: Array<{ id: number }>,
   action: (id: number) => Promise<unknown>
@@ -76,13 +133,14 @@ const runRows = async (
   return processed
 }
 
-/** Run both module 03 timeout scans once. It is safe to call manually in tests. */
+/** Run the module 03 timeout and reminder scans once. Safe to call manually in tests. */
 export const runCaseTimeoutTask = async (
   now = new Date(),
   db: PrismaClient = prisma
 ) => {
   let timedOut = 0
   let escalated = 0
+  let reminded = 0
   for (let round = 0; round < CASE_MAX_TIMEOUT_ROUNDS; round += 1) {
     const rows = await loadDueReporterTimeouts(db, now)
     if (!rows.length) break
@@ -95,7 +153,13 @@ export const runCaseTimeoutTask = async (
     escalated += await runRows(rows, (id) => upgradeCase(id, { now, db }))
     if (rows.length < CASE_MAX_TIMEOUT_BATCH) break
   }
-  return { timedOut, escalated }
+  for (let round = 0; round < CASE_MAX_TIMEOUT_ROUNDS; round += 1) {
+    const rows = await loadDueReminders(db, now)
+    if (!rows.length) break
+    reminded += await runRows(rows, (id) => remindCase(id, { now, db }))
+    if (rows.length < CASE_MAX_TIMEOUT_BATCH) break
+  }
+  return { timedOut, escalated, reminded }
 }
 
 export const caseTimeoutTask = cron.createTask(

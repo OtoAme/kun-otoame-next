@@ -27,6 +27,9 @@ model ops_case {
   hidden_at              DateTime?
   restored_at            DateTime?
   reopened_count         Int      @default(0)
+  // The revision on which the pre-deadline reminder was sent. It is not a
+  // state version: writing it never advances `revision`.
+  reminded_revision      Int?
   created                DateTime @default(now())
   updated                DateTime @updatedAt
 
@@ -52,8 +55,23 @@ model ops_case_message {
   body       String   @db.VarChar(5007)
   created    DateTime @default(now())
 
+  images     ops_case_message_image[]
+
   @@index([case_id, id])
   @@index([case_id, created, id])
+}
+
+// Reporter images attached to one reply or report note. The object is only
+// reachable through the dialogue visibility; nothing public lists these keys.
+model ops_case_message_image {
+  id          Int              @id @default(autoincrement())
+  message_id  Int
+  message     ops_case_message @relation(fields: [message_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  storage_key String           @db.VarChar(1007)
+  sort        Int
+  created     DateTime         @default(now())
+
+  @@unique([message_id, sort])
 }
 
 model ops_case_subscriber {

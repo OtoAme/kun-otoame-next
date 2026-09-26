@@ -155,8 +155,8 @@ export interface PatchResource {
   status: number
   userId: number
   patchId: number
-  /** Public operations badge; never includes case text or resource links. */
-  caseSummary?: PatchCaseSummary | null
+  /** Public operations badges; never include case text or resource links. */
+  caseSummaries?: PatchCaseSummary[]
   patchName?: string
   created: string
   user: KunUser & {

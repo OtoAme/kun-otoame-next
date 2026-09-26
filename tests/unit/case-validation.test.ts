@@ -78,6 +78,7 @@ describe('case validation', () => {
       limit: 20
     })
     expect(adminCaseListSchema.parse({})).toEqual({
+      ownerType: 'staff',
       page: 1,
       limit: 20,
       search: ''
@@ -207,12 +208,13 @@ describe('case validation', () => {
       targetType: 'patch',
       targetId: 10,
       expectedPatchId: 10,
-      content: '条目资料需要进一步核对'
+      content: '条目资料需要进一步核对',
+      imageKeys: []
     })
 
     expect(
       appendCaseMessageBodySchema.parse({ caseId: 999, content: '回复' })
-    ).toEqual({ content: '回复' })
+    ).toEqual({ content: '回复', imageKeys: [] })
     expect(
       resolveCaseBodySchema.parse({
         caseId: 999,

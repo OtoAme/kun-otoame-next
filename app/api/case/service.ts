@@ -11,26 +11,40 @@ import {
 import {
   CASE_ACTOR_TYPES,
   CASE_CLOSED_STATUSES,
+  CASE_CLOSING_EVENTS,
   CASE_CONTENT_ACTIONS,
+  CASE_HANDLER_RESOLUTIONS_BY_KIND,
   CASE_KIND_LABELS,
   CASE_KIND_TARGETS,
   CASE_KINDS,
   CASE_MESSAGE_EVENTS,
   CASE_MESSAGE_KINDS,
+  CASE_NOTICE_SNIPPET_LENGTH,
   CASE_OWNER_TYPES,
   CASE_PUBLISHER_ESCALATION_AFTER_MS,
+  CASE_PUBLISHER_KINDS,
   CASE_PUBLISHER_TIMEOUT_KINDS,
+  CASE_REMINDER_LEAD_MS,
   CASE_REPORTER_TIMEOUT_AFTER_MS,
   CASE_REPORTER_TIMEOUT_KINDS,
   CASE_RESOLUTIONS_BY_KIND,
   CASE_REOPEN_WINDOW_MS,
   CASE_RESOLUTIONS,
+  CASE_SITE_TARGET_ID,
   CASE_STATUSES,
+  CASE_TARGET_TYPE_LABELS,
   CASE_TARGET_TYPES,
   CASE_UNRESOLVED_STATUSES,
   CASE_RESOLUTION_LABELS,
-  OPEN_CASE_KINDS
+  OPEN_CASE_KINDS,
+  caseTextHasGuideLink,
+  isCaseOpenerScoped
 } from '~/constants/case'
+import {
+  caseImageUrl,
+  consumeCaseImageUploads,
+  restoreCaseImageUploads
+} from './imageUpload'
 import { SHOUTBOX_AUTO_HIDE_REPORTER_THRESHOLD } from '~/constants/shoutbox'
 import type {
   CaseActorType,
@@ -62,6 +76,7 @@ import type {
   CaseMessagePreview,
   CaseMessageResponse,
   CasePatchSummary,
+  CasePendingCountResponse,
   CaseResourceActionResponse,
   CaseReopenResponse,
   CaseResourceSummary,
@@ -69,7 +84,8 @@ import type {
   CaseSummary,
   CaseTargetSummary,
   CaseUserSummary,
-  AdminCaseInboxPayload
+  AdminCaseInboxPayload,
+  PatchCaseSummary
 } from '~/types/api/case'
 import type {
   adminCaseContentSchema,
@@ -85,11 +101,19 @@ import type { z } from 'zod'
 
 type CaseTx = Prisma.TransactionClient
 type CaseDb = PrismaClient | CaseTx
-type CreateCaseInput = z.infer<typeof createCaseSchema>
+/** Legacy report adapters construct inputs without images. */
+type CreateCaseInput = Omit<z.infer<typeof createCaseSchema>, 'imageKeys'> & {
+  imageKeys?: string[]
+}
 type CaseListInput = z.infer<typeof caseListSchema>
-type AppendCaseInput = z.infer<typeof appendCaseMessageSchema>
+type AppendCaseInput = Omit<
+  z.infer<typeof appendCaseMessageSchema>,
+  'imageKeys'
+> & { imageKeys?: string[] }
 type ResolveCaseInput = z.infer<typeof resolveCaseSchema>
-type AdminListInput = z.infer<typeof adminCaseListSchema>
+type AdminListInput = Omit<z.infer<typeof adminCaseListSchema>, 'ownerType'> & {
+  ownerType?: CaseOwnerType
+}
 type AdminHandleInput = z.infer<typeof adminCaseHandleSchema>
 type AdminResourceInput = z.infer<typeof adminCaseResourceSchema>
 type AdminContentInput = z.infer<typeof adminCaseContentSchema>
@@ -218,6 +242,7 @@ const caseSelect = {
   hidden_at: true,
   restored_at: true,
   reopened_count: true,
+  reminded_revision: true,
   reporter_id: true,
   owner: { select: { id: true, name: true, avatar: true, role: true } },
   reporter: { select: { id: true, name: true, avatar: true, role: true } },
@@ -251,6 +276,7 @@ const caseLockSelect = {
   hidden_at: true,
   restored_at: true,
   reopened_count: true,
+  reminded_revision: true,
   reporter_id: true,
   owner: { select: { id: true, name: true, avatar: true, role: true } },
   reporter: { select: { id: true, name: true, avatar: true, role: true } },
@@ -266,7 +292,11 @@ const messageSelect = {
   payload: true,
   body: true,
   created: true,
-  author: { select: { id: true, name: true, avatar: true, role: true } }
+  author: { select: { id: true, name: true, avatar: true, role: true } },
+  images: {
+    orderBy: { sort: 'asc' },
+    select: { storage_key: true }
+  }
 } satisfies Prisma.ops_case_messageSelect
 
 type CaseMessageRow = Prisma.ops_case_messageGetPayload<{
@@ -320,11 +350,21 @@ const dateKey = (now: Date) => {
   return shanghai.toISOString().slice(0, 10)
 }
 
+/**
+ * Opener-scoped combinations (entry suggestions, site feedback) append the
+ * opener, so each user keeps one open case of their own (D14, D21).
+ */
 export const buildCaseDedupKey = (
   targetType: CaseTargetType,
   targetId: number,
-  kind: CaseKind
-) => `${targetType}:${targetId}:${kind}`
+  kind: CaseKind,
+  openerId?: number | null
+) =>
+  isCaseOpenerScoped(kind, targetType) &&
+  openerId !== null &&
+  openerId !== undefined
+    ? `${targetType}:${targetId}:${kind}:${openerId}`
+    : `${targetType}:${targetId}:${kind}`
 
 export const buildCaseDailyKey = (
   userId: number,
@@ -336,6 +376,8 @@ export const buildCaseDailyKey = (
 const toUser = (user: { id: number; name: string; avatar: string } | null) =>
   user ? { id: user.id, name: user.name, avatar: user.avatar } : null
 
+const SITE_TARGET_LABEL = '站务反馈'
+
 const targetSummary = (input: {
   targetType: CaseTargetType
   targetId: number
@@ -343,6 +385,7 @@ const targetSummary = (input: {
   resource?: CaseResourceSummary | null
   status?: number
   deleted?: boolean
+  label?: string
 }) =>
   ({
     targetType: input.targetType,
@@ -350,7 +393,8 @@ const targetSummary = (input: {
     deleted: input.deleted ?? (input.resource === null && input.patch === null),
     ...(input.status === undefined ? {} : { status: input.status }),
     patch: input.patch ?? null,
-    resource: input.resource ?? null
+    resource: input.resource ?? null,
+    ...(input.label ? { label: input.label } : {})
   }) satisfies CaseTargetSummary
 
 type DerivedTarget = {
@@ -415,11 +459,14 @@ const deriveTarget = async (
     ) {
       return '该资源已被移动，请刷新后重试'
     }
-    // Only the public resource mismatch flow belongs to the publisher. Wrong
-    // patch and the frozen resource violation flow are station cases even
-    // when the resource author is an ordinary publisher.
-    const publisherOwned =
-      kind === 'resource_mismatch' && resource.user.role <= 2
+    // Only the public publisher kinds (description mismatch and the interim
+    // link failure) belong to the publisher. Wrong patch and the frozen
+    // resource violation flow are station cases even when the resource author
+    // is an ordinary publisher.
+    const publisherKind = (CASE_PUBLISHER_KINDS as readonly string[]).includes(
+      kind
+    )
+    const publisherOwned = publisherKind && resource.user.role <= 2
     const ownerType: CaseOwnerType = publisherOwned ? 'publisher' : 'staff'
     const ownerId = publisherOwned ? resource.user_id : null
     return {
@@ -428,7 +475,7 @@ const deriveTarget = async (
       patchId: resource.patch_id,
       ownerType,
       ownerId,
-      public: kind === 'resource_mismatch',
+      public: publisherKind,
       target: targetSummary({
         targetType,
         targetId,
@@ -593,6 +640,26 @@ const deriveTarget = async (
     }
   }
 
+  if (targetType === 'site') {
+    if (targetId !== CASE_SITE_TARGET_ID) return '站务反馈的目标不合法'
+    return {
+      targetType,
+      targetId,
+      patchId: null,
+      ownerType: 'staff',
+      ownerId: null,
+      public: false,
+      target: targetSummary({
+        targetType,
+        targetId,
+        patch: null,
+        resource: null,
+        deleted: false,
+        label: SITE_TARGET_LABEL
+      })
+    }
+  }
+
   return '当前模块尚未开放该目标'
 }
 
@@ -606,7 +673,7 @@ const getCaseLock = async (tx: CaseTx, id: number) => {
              status, resolution, public, source, dedup_key, daily_key, revision,
              status_changed_at, queue_entered_at, closed_at, escalated_at,
              first_owner_response_at, hidden_at, restored_at, reopened_count,
-             reporter_id, created, updated
+             reminded_revision, reporter_id, created, updated
       FROM ops_case
       WHERE id = ${id}
       FOR UPDATE
@@ -670,6 +737,7 @@ const loadTarget = async (
       patch
     }
   }
+  if (row.target_type === 'site') return { targetExists: true }
   const patch = row.patch_id
     ? await db.patch.findUnique({
         where: { id: row.patch_id },
@@ -858,6 +926,10 @@ const loadTargets = async (db: CaseDb, rows: readonly CaseRow[]) => {
       })
       continue
     }
+    if (row.target_type === 'site') {
+      targetByCaseId.set(row.id, { targetExists: true })
+      continue
+    }
     targetByCaseId.set(row.id, { targetExists: false, patch })
   }
   return targetByCaseId
@@ -914,6 +986,16 @@ const toTargetSummary = (
       deleted: target.targetExists === false
     })
   }
+  if (targetType === 'site') {
+    return targetSummary({
+      targetType,
+      targetId: row.target_id,
+      patch: null,
+      resource: null,
+      deleted: false,
+      label: SITE_TARGET_LABEL
+    })
+  }
   return targetSummary({
     targetType,
     targetId: row.target_id,
@@ -962,6 +1044,9 @@ const serializeMessage = (
     author: safeAuthor,
     ...(options.includePayload
       ? { payload: sanitizePayload(row.payload) }
+      : {}),
+    ...(row.images?.length
+      ? { images: row.images.map((image) => caseImageUrl(image.storage_key)) }
       : {}),
     created: iso(row.created) ?? new Date(0).toISOString()
   }
@@ -1049,44 +1134,61 @@ const canViewCase = (
   if (row.owner_type === 'publisher' && row.owner_id === viewerId) {
     return 'publisher' as const
   }
-  if (
-    row.public &&
-    row.owner_type === 'staff' &&
-    row.escalated_at !== null &&
-    originalPublisherId === viewerId
-  ) {
-    return 'publisher-readonly' as const
+  if (isOriginalPublisher(row, viewerId, originalPublisherId)) {
+    return 'original-publisher' as const
   }
   if (subscribed && row.public) return 'subscriber-public' as const
   if (subscribed && !row.public) return 'subscriber-private' as const
   return null
 }
 
+/**
+ * The publisher a public case was handed off from, by timeout or by the
+ * opener's review request. For publisher kinds this is the resource author.
+ */
+const isOriginalPublisher = (
+  row: Pick<CaseRow, 'public' | 'owner_type' | 'escalated_at'>,
+  viewerId: number,
+  originalPublisherId?: number
+) =>
+  row.public &&
+  row.owner_type === 'staff' &&
+  row.escalated_at !== null &&
+  originalPublisherId === viewerId
+
+/** Facts only a detail read loads; list rows leave these actions off. */
+type CaseRoundFacts = {
+  lastClosureActor: CaseActorType | null
+  confirmedThisRound: boolean
+}
+
 const capabilitiesFor = (
   row: CaseRow,
   viewerId: number,
   viewerRole: number,
-  target?: TargetRows
+  target?: TargetRows,
+  round?: CaseRoundFacts
 ): CaseCapabilities => {
   const unresolved = unresolvedStatuses.includes(row.status as never)
+  const closed = closedStatuses.includes(row.status as never)
   const owner = row.owner_type === 'publisher' && row.owner_id === viewerId
   const admin = viewerRole >= 3
+  const reporter = row.reporter_id === viewerId
+  const withinReopenWindow =
+    row.closed_at !== null &&
+    row.closed_at.getTime() >= Date.now() - CASE_REOPEN_WINDOW_MS
+  const originalPublisher =
+    !admin && isOriginalPublisher(row, viewerId, target?.resource?.user_id)
   const allowedResolutions: CaseResolution[] =
     !isCaseKind(row.kind) || (!admin && !owner)
       ? []
-      : row.kind === 'resource_mismatch'
-        ? row.owner_type === 'staff' && row.escalated_at !== null
-          ? ['escalated_ignored']
-          : ['repaired', 'unreproducible', 'out_of_scope']
-        : row.kind === 'resource_wrong_patch'
-          ? ['not_established']
-          : row.kind === 'content_violation'
-            ? row.target_type === 'user' && viewerRole >= 4
-              ? ['not_established', 'handled']
-              : ['not_established']
-            : row.kind === 'other'
-              ? ['handled', 'out_of_scope']
-              : [...CASE_RESOLUTIONS_BY_KIND[row.kind]]
+      : row.kind === 'resource_wrong_patch'
+        ? ['not_established']
+        : row.kind === 'content_violation'
+          ? row.target_type === 'user' && viewerRole >= 4
+            ? ['not_established', 'handled']
+            : ['not_established']
+          : [...CASE_HANDLER_RESOLUTIONS_BY_KIND[row.kind]]
   const allowedContentActions: CaseContentAction[] =
     !admin ||
     !unresolved ||
@@ -1108,21 +1210,32 @@ const capabilitiesFor = (
             ? ['takedown']
             : ['delete']
   return {
-    canReply: unresolved && (admin || owner || row.reporter_id === viewerId),
+    canReply:
+      unresolved && (admin || owner || reporter || originalPublisher),
     canResolve: unresolved && allowedResolutions.length > 0 && (admin || owner),
     canReopen:
-      row.reporter_id === viewerId &&
-      closedStatuses.includes(row.status as never) &&
-      row.reopened_count === 0 &&
-      row.closed_at !== null &&
-      row.closed_at.getTime() >= Date.now() - CASE_REOPEN_WINDOW_MS,
+      reporter && closed && row.reopened_count === 0 && withinReopenWindow,
+    canWithdraw: reporter && unresolved,
+    canConfirm:
+      reporter &&
+      closed &&
+      withinReopenWindow &&
+      round !== undefined &&
+      !round.confirmedThisRound,
+    canReview:
+      reporter &&
+      closed &&
+      withinReopenWindow &&
+      row.owner_type === 'publisher' &&
+      row.reopened_count === 1 &&
+      round?.lastClosureActor === 'publisher',
+    canPropose: unresolved && originalPublisher,
+    // D13: a timed-out description case is fixed and closed, never hidden.
     canHideResource:
       admin &&
       unresolved &&
-      ((row.kind === 'resource_mismatch' &&
-        row.owner_type === 'staff' &&
-        row.escalated_at !== null) ||
-        (row.kind === 'content_violation' && row.target_type === 'resource')),
+      row.kind === 'content_violation' &&
+      row.target_type === 'resource',
     canRestoreResource:
       admin &&
       closedStatuses.includes(row.status as never) &&
@@ -1158,19 +1271,20 @@ const listViewOptions = (
     originalPublisherId
   )
   if (!view) return null
-  const identifyReporter = view === 'admin' || view === 'reporter'
+  // D15: everyone who can read the dialogue sees real signatures. Followers
+  // never read the dialogue, so they never learn other reporters either.
   const full =
     view === 'admin' ||
     view === 'reporter' ||
     view === 'publisher' ||
-    view === 'publisher-readonly'
+    view === 'original-publisher'
   return {
     view,
-    identifyReporter,
+    identifyReporter: full,
     includeCount: full || view === 'subscriber-public',
     includeOwner:
       view === 'admin' || view === 'reporter' || view === 'publisher',
-    includeReporter: identifyReporter
+    includeReporter: full
   }
 }
 
@@ -1223,28 +1337,94 @@ const notifyCaseUsers = async (
   })
 }
 
+/** Single-line, bounded excerpt of a user-written text for notification bodies. */
+const noticeSnippet = (text: string | null | undefined) => {
+  const flat = (text ?? '').replace(/\s+/g, ' ').trim()
+  if (!flat) return ''
+  return flat.length > CASE_NOTICE_SNIPPET_LENGTH
+    ? `${flat.slice(0, CASE_NOTICE_SNIPPET_LENGTH)}…`
+    : flat
+}
+
+const withSnippet = (sentence: string, text: string | null | undefined) => {
+  const snippet = noticeSnippet(text)
+  return snippet ? `${sentence}：${snippet}` : `${sentence}。`
+}
+
+const clip = (name: string) => (name.length > 30 ? `${name.slice(0, 30)}…` : name)
+
+/**
+ * Names the case in a notification (D22) without exposing private content:
+ * a resource or patch by name, a report only by what kind of thing it is.
+ */
+const describeCaseForNotice = async (
+  db: CaseDb,
+  row: Pick<CaseRow, 'target_type' | 'target_id'>
+) => {
+  if (row.target_type === 'resource') {
+    const resource = await db.patch_resource.findUnique({
+      where: { id: row.target_id },
+      select: { name: true }
+    })
+    return resource ? `资源「${clip(resource.name)}」` : '资源问题'
+  }
+  if (row.target_type === 'patch') {
+    const patch = await db.patch.findUnique({
+      where: { id: row.target_id },
+      select: { name: true }
+    })
+    return patch ? `条目「${clip(patch.name)}」` : '条目问题'
+  }
+  if (row.target_type === 'site') return SITE_TARGET_LABEL
+  const label = isCaseTargetType(row.target_type)
+    ? CASE_TARGET_TYPE_LABELS[row.target_type]
+    : '内容'
+  return `${label}举报`
+}
+
+const loadStaffIds = async (tx: CaseTx) =>
+  (
+    await tx.user.findMany({
+      where: { role: { gte: 3 } },
+      select: { id: true }
+    })
+  ).map(({ id }) => id)
+
 const notifyCaseParticipants = async (
   tx: CaseTx,
   row: CaseRow,
   content: string,
-  senderId?: number | null
+  senderId?: number | null,
+  options: {
+    /** Users who acted themselves and need no notice about it. */
+    excludeUserIds?: readonly number[]
+    /** Text for users who only follow the case (D15). */
+    followerContent?: string
+  } = {}
 ) => {
   const recipients = new Map<
     number,
-    { link: string; senderId: number | null; priority: number }
+    {
+      link: string
+      senderId: number | null
+      priority: number
+      followerOnly: boolean
+    }
   >()
   const linkPriority = (link: string) =>
     link === `/dashboard/case/${row.id}` ? 3 : link === caseLink(row.id) ? 2 : 1
   const addRecipient = (
     recipientId: number | null | undefined,
     link: string,
-    recipientSenderId: number | null = null
+    recipientSenderId: number | null = null,
+    followerOnly = false
   ) => {
     if (
       !Number.isInteger(recipientId) ||
       recipientId === undefined ||
       recipientId === null ||
-      recipientId <= 0
+      recipientId <= 0 ||
+      options.excludeUserIds?.includes(recipientId)
     )
       return
     const existing = recipients.get(recipientId)
@@ -1256,8 +1436,11 @@ const notifyCaseParticipants = async (
       recipients.set(recipientId, {
         link,
         senderId: recipientSenderId,
-        priority
+        priority,
+        followerOnly: followerOnly && (existing?.followerOnly ?? true)
       })
+    } else if (!followerOnly) {
+      existing.followerOnly = false
     }
   }
   if (row.reporter_id !== null) addRecipient(row.reporter_id, caseLink(row.id))
@@ -1268,7 +1451,9 @@ const notifyCaseParticipants = async (
     where: { case_id: row.id },
     select: { user_id: true }
   })
-  for (const { user_id } of subscribers) addRecipient(user_id, caseLink(row.id))
+  for (const { user_id } of subscribers) {
+    addRecipient(user_id, caseLink(row.id), null, true)
+  }
   if (row.target_type === 'resource') {
     const resource = await tx.patch_resource.findUnique({
       where: { id: row.target_id },
@@ -1285,11 +1470,7 @@ const notifyCaseParticipants = async (
     if (authorLink && resource) addRecipient(resource.user_id, authorLink)
   }
   if (row.owner_type === 'staff') {
-    const admins = await tx.user.findMany({
-      where: { role: { gte: 3 } },
-      select: { id: true }
-    })
-    for (const { id } of admins) {
+    for (const id of await loadStaffIds(tx)) {
       addRecipient(id, `/dashboard/case/${row.id}`, senderId ?? null)
     }
   }
@@ -1297,7 +1478,10 @@ const notifyCaseParticipants = async (
   await tx.user_message.createMany({
     data: [...recipients].map(([recipient_id, value]) => ({
       type: 'system',
-      content,
+      content:
+        value.followerOnly && options.followerContent
+          ? options.followerContent
+          : content,
       sender_id: value.senderId,
       recipient_id,
       link: value.link
@@ -1340,10 +1524,130 @@ type InternalCaseOpenInput = {
   targetId: number
   reporterId?: number | null
   content?: string
+  /** Image keys already consumed from the upload registry by the caller. */
+  imageKeys?: readonly string[]
   source?: CaseSource
   expectedPatchId?: number
   now?: Date
   allowFrozen?: boolean
+}
+
+const imageCreate = (imageKeys: readonly string[] | undefined) =>
+  imageKeys?.length
+    ? {
+        images: {
+          create: imageKeys.map((storage_key, sort) => ({ storage_key, sort }))
+        }
+      }
+    : {}
+
+type ReplyActor = 'reporter' | 'owner' | 'staff' | 'original-publisher'
+
+const replyActorFor = (
+  row: CaseRow,
+  uid: number,
+  role: number,
+  originalPublisherId?: number
+): ReplyActor | null => {
+  if (role >= 3) return 'staff'
+  if (row.reporter_id === uid) return 'reporter'
+  if (row.owner_type === 'publisher' && row.owner_id === uid) return 'owner'
+  if (isOriginalPublisher(row, uid, originalPublisherId)) {
+    return 'original-publisher'
+  }
+  return null
+}
+
+const originalPublisherIdFor = async (
+  db: CaseDb,
+  row: Pick<CaseRow, 'target_type' | 'target_id' | 'escalated_at'>
+) => {
+  if (row.target_type !== 'resource' || row.escalated_at === null) {
+    return undefined
+  }
+  const resource = await db.patch_resource.findUnique({
+    where: { id: row.target_id },
+    select: { user_id: true }
+  })
+  return resource?.user_id
+}
+
+/**
+ * Writes one dialogue reply inside the caller's transaction and applies the
+ * reply rows of the transition table (plan 5.4). A reply from the publisher a
+ * case was handed off from never changes state or the first-response time.
+ */
+const appendReplyInTx = async (
+  tx: CaseTx,
+  row: CaseRow,
+  uid: number,
+  actor: ReplyActor,
+  content: string,
+  imageKeys: readonly string[],
+  now: Date
+): Promise<CaseMessageRow | string> => {
+  const isReporter = actor === 'reporter'
+  const isProcessingParty = actor === 'owner' || actor === 'staff'
+  const nextStatus: CaseStatus =
+    isReporter && row.status === 'waiting_reporter'
+      ? 'waiting_owner'
+      : isProcessingParty &&
+          row.reporter_id !== null &&
+          (row.status === 'open' || row.status === 'waiting_owner')
+        ? 'waiting_reporter'
+        : (row.status as CaseStatus)
+  const stateChanged = nextStatus !== row.status
+  const firstOwnerResponse =
+    isProcessingParty && row.first_owner_response_at === null ? now : null
+  const updated = await tx.ops_case.updateMany({
+    where: { id: row.id, status: row.status, revision: row.revision },
+    data: {
+      ...(stateChanged
+        ? {
+            status: nextStatus,
+            status_changed_at: now,
+            revision: { increment: 1 }
+          }
+        : {}),
+      ...(firstOwnerResponse
+        ? { first_owner_response_at: firstOwnerResponse }
+        : {}),
+      updated: now
+    }
+  })
+  if (updated.count === 0) return '该问题刚刚被他人更新，请刷新后重试'
+  const message = await tx.ops_case_message.create({
+    data: {
+      case_id: row.id,
+      author_id: uid,
+      kind: 'reply',
+      body: content,
+      created: now,
+      ...imageCreate(imageKeys)
+    },
+    select: messageSelect
+  })
+  const notice = withSnippet(
+    `${await describeCaseForNotice(tx, row)}有新的回复`,
+    content
+  )
+  if (isReporter || actor === 'original-publisher') {
+    if (row.owner_type === 'publisher' && row.owner_id !== null) {
+      await notifyCaseUsers(tx, row.id, [row.owner_id], notice)
+    } else {
+      await notifyCaseUsers(
+        tx,
+        row.id,
+        await loadStaffIds(tx),
+        notice,
+        isReporter ? null : uid,
+        `/dashboard/case/${row.id}`
+      )
+    }
+  } else if (row.reporter_id !== null) {
+    await notifyCaseUsers(tx, row.id, [row.reporter_id], notice, uid)
+  }
+  return message
 }
 
 const applyShoutboxThreshold = async (
@@ -1382,9 +1686,11 @@ export const openCaseInternal = async (
   const dedupKey = buildCaseDedupKey(
     input.targetType,
     input.targetId,
-    input.kind
+    input.kind,
+    input.reporterId
   )
   const source = input.source ?? 'system'
+  const body = input.content?.trim() ?? ''
   const dailyKey =
     input.reporterId !== null &&
     input.reporterId !== undefined &&
@@ -1397,16 +1703,18 @@ export const openCaseInternal = async (
           now
         )
       : null
-  const existing = await tx.ops_case.findUnique({
-    where: { dedup_key: dedupKey },
-    select: { id: true, status: true, reporter_id: true }
-  })
-  if (existing) {
-    const locked = await getCaseLock(tx, existing.id)
+
+  /**
+   * Dedup hit: register the follower and keep what they wrote (D15). The
+   * opener resubmitting is a supplement and follows the reply transitions; a
+   * later reporter's note changes no state and sends no notice.
+   */
+  const joinOpenCase = async (caseId: number) => {
+    const locked = await getCaseLock(tx, caseId)
     if (!locked) return '问题不存在'
     if (!unresolvedStatuses.includes(locked.status as never)) {
       return {
-        justClosed: true,
+        justClosed: true as const,
         caseId: locked.id,
         created: false,
         subscribed: false
@@ -1415,10 +1723,35 @@ export const openCaseInternal = async (
     let subscribed = false
     if (input.reporterId !== null && input.reporterId !== undefined) {
       const result = await tx.ops_case_subscriber.createMany({
-        data: [{ case_id: existing.id, user_id: input.reporterId }],
+        data: [{ case_id: locked.id, user_id: input.reporterId }],
         skipDuplicates: true
       })
       subscribed = result.count > 0
+      if (body && locked.reporter_id === input.reporterId) {
+        const reply = await appendReplyInTx(
+          tx,
+          locked,
+          input.reporterId,
+          'reporter',
+          body,
+          input.imageKeys ?? [],
+          now
+        )
+        // The subscription row is already written; roll it back with the
+        // failed supplement instead of committing half the request.
+        if (typeof reply === 'string') rollbackCaseOperation(reply)
+      } else if (body) {
+        await tx.ops_case_message.create({
+          data: {
+            case_id: locked.id,
+            author_id: input.reporterId,
+            kind: 'report',
+            body,
+            created: now,
+            ...imageCreate(input.imageKeys)
+          }
+        })
+      }
     }
     const shoutboxHidden = await applyShoutboxThreshold(
       tx,
@@ -1429,6 +1762,12 @@ export const openCaseInternal = async (
     )
     return { caseId: locked.id, created: false, subscribed, shoutboxHidden }
   }
+
+  const existing = await tx.ops_case.findUnique({
+    where: { dedup_key: dedupKey },
+    select: { id: true, status: true, reporter_id: true }
+  })
+  if (existing) return joinOpenCase(existing.id)
 
   if (dailyKey !== null) {
     const daily = await tx.ops_case.findUnique({
@@ -1467,50 +1806,7 @@ export const openCaseInternal = async (
       where: { dedup_key: dedupKey },
       select: { id: true, status: true }
     })
-    if (winner) {
-      const locked = await getCaseLock(tx, winner.id)
-      if (!locked) return '问题不存在'
-      if (!unresolvedStatuses.includes(locked.status as never)) {
-        return {
-          justClosed: true,
-          caseId: locked.id,
-          created: false,
-          subscribed: false
-        }
-      }
-      if (input.reporterId !== null && input.reporterId !== undefined) {
-        const result = await tx.ops_case_subscriber.createMany({
-          data: [{ case_id: locked.id, user_id: input.reporterId }],
-          skipDuplicates: true
-        })
-        const shoutboxHidden = await applyShoutboxThreshold(
-          tx,
-          input.targetType,
-          input.targetId,
-          locked.id,
-          now
-        )
-        return {
-          caseId: locked.id,
-          created: false,
-          subscribed: result.count > 0,
-          shoutboxHidden
-        }
-      }
-      const shoutboxHidden = await applyShoutboxThreshold(
-        tx,
-        input.targetType,
-        input.targetId,
-        locked.id,
-        now
-      )
-      return {
-        caseId: locked.id,
-        created: false,
-        subscribed: false,
-        shoutboxHidden
-      }
-    }
+    if (winner) return joinOpenCase(winner.id)
     if (dailyKey !== null) {
       const daily = await tx.ops_case.findUnique({
         where: { daily_key: dailyKey },
@@ -1526,7 +1822,6 @@ export const openCaseInternal = async (
     select: caseSelect
   })
   if (!row) return '问题创建失败，请重试'
-  const body = input.content?.trim() ?? ''
   if (body) {
     await tx.ops_case_message.create({
       data: {
@@ -1534,7 +1829,8 @@ export const openCaseInternal = async (
         author_id: input.reporterId ?? null,
         kind: 'reply',
         body,
-        created: now
+        created: now,
+        ...imageCreate(input.imageKeys)
       }
     })
   }
@@ -1546,18 +1842,17 @@ export const openCaseInternal = async (
       skipDuplicates: true
     })
   }
-  const ownerNotice = `有新的${CASE_KIND_LABELS[input.kind]}待处理，请前往问题处理查看。`
+  const ownerNotice = withSnippet(
+    `${await describeCaseForNotice(tx, row)}有新的「${CASE_KIND_LABELS[input.kind]}」待处理`,
+    body
+  )
   if (row.owner_type === 'publisher' && row.owner_id !== null) {
     await notifyCaseUsers(tx, row.id, [row.owner_id], ownerNotice)
   } else {
-    const admins = await tx.user.findMany({
-      where: { role: { gte: 3 } },
-      select: { id: true }
-    })
     await notifyCaseUsers(
       tx,
       row.id,
-      admins.map(({ id }) => id),
+      await loadStaffIds(tx),
       ownerNotice,
       input.reporterId,
       `/dashboard/case/${row.id}`
@@ -1611,6 +1906,10 @@ type CloseCaseInput = {
   status?: Extract<CaseStatus, 'resolved' | 'rejected'>
   now?: Date
   additionalData?: Prisma.ops_caseUpdateInput
+  /** Users who performed the closure themselves (a withdrawing opener). */
+  excludeRecipientIds?: readonly number[]
+  /** Replacement text for followers who are neither opener nor owner. */
+  followerNotice?: string
 }
 
 /**
@@ -1666,11 +1965,19 @@ export const closeCaseInternal = async (tx: CaseTx, input: CloseCaseInput) => {
     payload,
     input.body ?? `问题已结案：${CASE_RESOLUTION_LABELS[input.resolution]}`
   )
+  const subject = await describeCaseForNotice(tx, row)
   await notifyCaseParticipants(
     tx,
     row,
-    `您的问题处理已有结果：${CASE_RESOLUTION_LABELS[input.resolution]}。`,
-    input.actorId
+    withSnippet(
+      `${subject}已有处理结果：${CASE_RESOLUTION_LABELS[input.resolution]}`,
+      input.body
+    ),
+    input.actorId,
+    {
+      excludeUserIds: input.excludeRecipientIds,
+      followerContent: input.followerNotice
+    }
   )
   return { changed: true as const, row, resolution: input.resolution }
 }
@@ -1704,34 +2011,59 @@ const fetchCaseForViewer = async (
     target.resource?.user_id
   )!
   const summary = toSummary(row, target, options)
-  const messagesRows =
-    view === 'subscriber-public' || view === 'subscriber-private'
-      ? []
-      : await db.ops_case_message.findMany({
-          where: { case_id: id },
-          orderBy: [{ created: 'asc' }, { id: 'asc' }],
-          select: messageSelect
-        })
+  const follower = view === 'subscriber-public' || view === 'subscriber-private'
+  // Followers only read back the note they wrote themselves (D15).
+  const messagesRows = await db.ops_case_message.findMany({
+    where: follower
+      ? { case_id: id, kind: 'report', author_id: viewerId }
+      : { case_id: id },
+    orderBy: [{ created: 'asc' }, { id: 'asc' }],
+    select: messageSelect
+  })
   const detail: CaseDetail = {
     ...summary,
     messages: messagesRows.map((message) =>
       serializeMessage(message, {
-        identifyReporter: options.identifyReporter,
+        identifyReporter: options.identifyReporter || follower,
         reporterId: row.reporter_id,
         includePayload: view === 'admin'
       })
     ),
+    // A follower of a private report joined by submitting one of their own.
     ...(view === 'subscriber-private'
-      ? {
-          viewerSubscription: {
-            subscribed: true,
-            submitted: row.reporter_id === viewerId
-          }
-        }
+      ? { viewerSubscription: { subscribed: true, submitted: true } }
       : {}),
-    capabilities: capabilitiesFor(row, viewerId, viewerRole, target)
+    capabilities: capabilitiesFor(
+      row,
+      viewerId,
+      viewerRole,
+      target,
+      follower ? undefined : roundFacts(messagesRows)
+    )
   }
   return { case: detail }
+}
+
+/** Who closed the current round, and whether its opener already answered it. */
+const roundFacts = (
+  messages: readonly Pick<CaseMessageRow, 'kind' | 'event' | 'payload'>[]
+): CaseRoundFacts => {
+  let lastClosureActor: CaseActorType | null = null
+  let confirmedThisRound = false
+  for (const message of messages) {
+    if (message.kind !== 'system' || !message.event) continue
+    if ((CASE_CLOSING_EVENTS as readonly string[]).includes(message.event)) {
+      const actor = sanitizePayload(message.payload)?.actor_type
+      lastClosureActor =
+        actor && (CASE_ACTOR_TYPES as readonly string[]).includes(actor)
+          ? actor
+          : null
+      confirmedThisRound = false
+    } else if (message.event === 'confirmed') {
+      confirmedThisRound = true
+    }
+  }
+  return { lastClosureActor, confirmedThisRound }
 }
 
 export const getCase = (
@@ -1748,18 +2080,31 @@ export const createCase = async (
 ): Promise<CaseCreateResponse | string> => {
   const db = options.db ?? prisma
   const now = options.now ?? new Date()
-  const result = await db.$transaction(async (tx) =>
-    openCaseInternal(tx, {
-      kind: input.kind,
-      targetType: input.targetType,
-      targetId: input.targetId,
-      expectedPatchId: input.expectedPatchId,
-      reporterId,
-      content: input.content,
-      source: 'user',
-      now
-    })
-  )
+  const imageKeys = input.imageKeys ?? []
+  const consumed = await consumeCaseImageUploads(reporterId, imageKeys)
+  if (consumed) return consumed
+  let result: Awaited<ReturnType<typeof openCaseInternal>> | string
+  try {
+    result = await runCaseOperation(db, (tx) =>
+      openCaseInternal(tx, {
+        kind: input.kind,
+        targetType: input.targetType,
+        targetId: input.targetId,
+        expectedPatchId: input.expectedPatchId,
+        reporterId,
+        content: input.content,
+        imageKeys,
+        source: 'user',
+        now
+      })
+    )
+  } catch (error) {
+    await restoreCaseImageUploads(reporterId, imageKeys)
+    throw error
+  }
+  if (typeof result === 'string' || result.justClosed) {
+    await restoreCaseImageUploads(reporterId, imageKeys)
+  }
   if (typeof result === 'string') return result
   if (result.justClosed) {
     return {
@@ -1809,14 +2154,69 @@ const toStatusCounts = (
   return counts
 }
 
-const getTabWhere = (tab: CaseTab, uid: number): Prisma.ops_caseWhereInput => {
+/**
+ * Public cases handed off from the viewer's resources to the site
+ * administrator. They stay listed under「待我处理」so the publisher can still
+ * reply and propose a closure (D20).
+ */
+const loadHandedOffCaseIds = async (db: CaseDb, uid: number) => {
+  const rows = await db.$queryRaw<Array<{ id: number }>>(Prisma.sql`
+    SELECT c.id
+    FROM ops_case c
+    JOIN patch_resource r ON r.id = c.target_id
+    WHERE c.target_type = 'resource'
+      AND c.public = TRUE
+      AND c.owner_type = 'staff'
+      AND c.escalated_at IS NOT NULL
+      AND r.user_id = ${uid}
+    ORDER BY c.id DESC
+    LIMIT 500
+  `)
+  return Array.isArray(rows)
+    ? rows.map((row) => Number(row.id)).filter(Number.isSafeInteger)
+    : []
+}
+
+const getTabWhere = async (
+  db: CaseDb,
+  tab: CaseTab,
+  uid: number
+): Promise<{ where: Prisma.ops_caseWhereInput; handedOff: Set<number> }> => {
   if (tab === 'owned') {
-    return { owner_type: 'publisher', owner_id: uid }
+    const handedOff = new Set(await loadHandedOffCaseIds(db, uid))
+    const owned: Prisma.ops_caseWhereInput = {
+      owner_type: 'publisher',
+      owner_id: uid
+    }
+    return {
+      where: handedOff.size
+        ? { OR: [owned, { id: { in: [...handedOff] } }] }
+        : owned,
+      handedOff
+    }
   }
   if (tab === 'subscribed') {
-    return { subscribers: { some: { user_id: uid } } }
+    return {
+      where: { subscribers: { some: { user_id: uid } } },
+      handedOff: new Set()
+    }
   }
-  return { reporter_id: uid }
+  return { where: { reporter_id: uid }, handedOff: new Set() }
+}
+
+/** Cases the viewer still has an unread notification for (D22). */
+const loadUnreadCaseIds = async (
+  db: CaseDb,
+  viewerId: number,
+  caseIds: readonly number[]
+) => {
+  if (!caseIds.length) return new Set<number>()
+  const links = caseIds.map(caseLink)
+  const rows = await db.user_message.findMany({
+    where: { recipient_id: viewerId, status: 0, link: { in: links } },
+    select: { link: true }
+  })
+  return new Set(rows.map((row) => Number(row.link.replace(/^\/issue\//, ''))))
 }
 
 export const listCases = async (
@@ -1831,7 +2231,11 @@ export const listCases = async (
   // filter on top of the same scope, so both come from one set of predicates.
   // Neither number subtracts the per-row visibility trimming below, which can
   // drop rows the count already included; that skew is pre-existing behaviour.
-  const scopeWhere = getTabWhere(input.tab, viewerId)
+  const { where: scopeWhere, handedOff } = await getTabWhere(
+    db,
+    input.tab,
+    viewerId
+  )
   // `statuses` wins over the single `status` when both arrive. It is the form
   // that expresses a merged tab (处理中 = open + waiting_owner), so a leftover
   // `status` from an older client must not narrow it back down.
@@ -1857,14 +2261,15 @@ export const listCases = async (
     })
   ])
   const caseIds = rows.map((row) => row.id)
-  const [targetByCaseId, subscribedRows] = await Promise.all([
+  const [targetByCaseId, subscribedRows, unreadCaseIds] = await Promise.all([
     loadTargets(db, rows),
     queryManyIfNeeded(caseIds, () =>
       db.ops_case_subscriber.findMany({
         where: { case_id: { in: caseIds }, user_id: viewerId },
         select: { case_id: true }
       })
-    )
+    ),
+    loadUnreadCaseIds(db, viewerId, caseIds)
   ])
   const subscribedCaseIds = new Set(subscribedRows.map((row) => row.case_id))
   const cases: CaseListItem[] = []
@@ -1890,6 +2295,8 @@ export const listCases = async (
               : null
           }
         : {}),
+      hasUnread: unreadCaseIds.has(row.id),
+      handedOff: handedOff.has(row.id),
       ...capabilitiesFor(row, viewerId, viewerRole, serialized.target)
     })
   }
@@ -1903,11 +2310,6 @@ export const listCases = async (
   }
 }
 
-const actorCanReply = (row: CaseRow, uid: number, role: number) =>
-  role >= 3 ||
-  row.reporter_id === uid ||
-  (row.owner_type === 'publisher' && row.owner_id === uid)
-
 export const appendCaseMessage = async (
   input: AppendCaseInput,
   uid: number,
@@ -1916,80 +2318,45 @@ export const appendCaseMessage = async (
 ): Promise<CaseMessageResponse | string> => {
   const db = options.db ?? prisma
   const now = options.now ?? new Date()
-  const result = await db.$transaction(async (tx) => {
-    const row = await getCaseLock(tx, input.caseId)
-    if (!row) return '问题不存在'
-    if (!unresolvedStatuses.includes(row.status as never)) return '该问题已结案'
-    if (!actorCanReply(row, uid, role)) return '无权回复该问题'
-    const isReporter = row.reporter_id === uid && role < 3
-    const isOwner =
-      row.owner_type === 'publisher' && row.owner_id === uid && role < 3
-    const isProcessingParty = role >= 3 || isOwner
-    const nextStatus: CaseStatus =
-      isReporter && row.status === 'waiting_reporter'
-        ? 'waiting_owner'
-        : isProcessingParty &&
-            row.reporter_id !== null &&
-            (row.status === 'open' || row.status === 'waiting_owner')
-          ? 'waiting_reporter'
-          : (row.status as CaseStatus)
-    const stateChanged = nextStatus !== row.status
-    const firstOwnerResponse =
-      !isReporter && row.first_owner_response_at === null ? now : null
-    const updated = await tx.ops_case.updateMany({
-      where: { id: row.id, status: row.status, revision: row.revision },
-      data: {
-        ...(stateChanged
-          ? {
-              status: nextStatus,
-              status_changed_at: now,
-              revision: { increment: 1 }
-            }
-          : {}),
-        ...(firstOwnerResponse
-          ? { first_owner_response_at: firstOwnerResponse }
-          : {}),
-        updated: now
-      }
+  const imageKeys = input.imageKeys ?? []
+  const consumed = await consumeCaseImageUploads(uid, imageKeys)
+  if (consumed) return consumed
+  let result:
+    | string
+    | { row: CaseRow; message: CaseMessageRow }
+  try {
+    result = await db.$transaction(async (tx) => {
+      const row = await getCaseLock(tx, input.caseId)
+      if (!row) return '问题不存在'
+      if (!unresolvedStatuses.includes(row.status as never))
+        return '该问题已结案'
+      const actor = replyActorFor(
+        row,
+        uid,
+        role,
+        await originalPublisherIdFor(tx, row)
+      )
+      if (!actor) return '无权回复该问题'
+      const message = await appendReplyInTx(
+        tx,
+        row,
+        uid,
+        actor,
+        input.content,
+        imageKeys,
+        now
+      )
+      if (typeof message === 'string') return message
+      return { row, message }
     })
-    if (updated.count === 0) return '该问题刚刚被他人更新，请刷新后重试'
-    const message = await tx.ops_case_message.create({
-      data: {
-        case_id: row.id,
-        author_id: uid,
-        kind: 'reply',
-        body: input.content,
-        created: now
-      },
-      select: messageSelect
-    })
-    const recipients: number[] = []
-    if (isReporter) {
-      if (row.owner_type === 'publisher' && row.owner_id !== null)
-        recipients.push(row.owner_id)
-      if (row.owner_type === 'staff') {
-        const admins = await tx.user.findMany({
-          where: { role: { gte: 3 } },
-          select: { id: true }
-        })
-        recipients.push(...admins.map(({ id }) => id))
-      }
-    } else if (row.reporter_id !== null) {
-      recipients.push(row.reporter_id)
-    }
-    await notifyCaseUsers(
-      tx,
-      row.id,
-      recipients,
-      '问题处理有新的回复，请前往问题处理查看。',
-      isReporter ? null : uid,
-      row.owner_type === 'staff' && isReporter
-        ? `/dashboard/case/${row.id}`
-        : caseLink(row.id)
-    )
-    return { row, message }
-  })
-  if (typeof result === 'string') return result
+  } catch (error) {
+    await restoreCaseImageUploads(uid, imageKeys)
+    throw error
+  }
+  if (typeof result === 'string') {
+    await restoreCaseImageUploads(uid, imageKeys)
+    return result
+  }
   const row = await getCaseById(db, input.caseId)
   if (!row) return '问题不存在'
   const serialized = await serializeSummaryForViewer(db, row, uid, role, true)
@@ -1997,16 +2364,66 @@ export const appendCaseMessage = async (
   return {
     case: serialized.summary,
     message: serializeMessage(result.message, {
-      identifyReporter: role >= 3 || result.row.reporter_id === uid,
+      identifyReporter: true,
       reporterId: result.row.reporter_id,
       includePayload: role >= 3
     })
   }
 }
 
+/** Numbers behind the「问题处理」entry of the site user menu (D22). */
+export const getPendingCaseCounts = async (
+  uid: number,
+  options: { db?: PrismaClient } = {}
+): Promise<CasePendingCountResponse> => {
+  const db = options.db ?? prisma
+  const [owned, waitingReporter] = await Promise.all([
+    db.ops_case.count({
+      where: {
+        owner_type: 'publisher',
+        owner_id: uid,
+        status: { in: ['open', 'waiting_owner'] }
+      }
+    }),
+    db.ops_case.count({
+      where: { reporter_id: uid, status: 'waiting_reporter' }
+    })
+  ])
+  return { owned, waitingReporter }
+}
+
 const assertResolution = (kind: string, resolution: string) => {
   if (!isCaseKind(kind) || !isCaseResolution(resolution)) return false
   return CASE_RESOLUTIONS_BY_KIND[kind].includes(resolution)
+}
+
+const isHandlerResolution = (kind: string, resolution: string) =>
+  isCaseKind(kind) &&
+  isCaseResolution(resolution) &&
+  CASE_HANDLER_RESOLUTIONS_BY_KIND[kind].includes(resolution)
+
+/**
+ * Closure notes the reporter is owed: what was checked for「无法复现」(D16),
+ * and one of the three guides for「不在受理范围」(D12). Site feedback has no
+ * matching guide, so its out-of-scope closure only needs the explanation.
+ */
+const closingNoteError = (
+  row: Pick<CaseRow, 'kind' | 'target_type'>,
+  resolution: CaseResolution,
+  content: string
+) => {
+  if (resolution === 'unreproducible' && !content.trim()) {
+    return '以「无法复现」结案时请写明核对了什么'
+  }
+  if (resolution === 'out_of_scope') {
+    if (row.kind === 'other' && row.target_type === 'site') {
+      return content.trim() ? null : '以「不在受理范围」结案时请写明理由'
+    }
+    if (!caseTextHasGuideLink(content)) {
+      return '以「不在受理范围」结案时请附上下载、压缩包或投稿指南中的一篇链接'
+    }
+  }
+  return null
 }
 
 export const resolveCase = async (
@@ -2023,14 +2440,13 @@ export const resolveCase = async (
       return '当前问题不支持该结论'
     if (row.owner_type !== 'publisher' || row.owner_id !== uid)
       return '只有当前资源发布者可以结案'
-    if (row.kind !== 'resource_mismatch') return '当前问题不能由发布者结案'
-    if (
-      !(
-        ['repaired', 'unreproducible', 'out_of_scope'] as CaseResolution[]
-      ).includes(input.resolution)
-    ) {
+    if (!(CASE_PUBLISHER_KINDS as readonly string[]).includes(row.kind))
+      return '当前问题不能由发布者结案'
+    if (!isHandlerResolution(row.kind, input.resolution)) {
       return '发布者不能使用该结论'
     }
+    const noteError = closingNoteError(row, input.resolution, input.content)
+    if (noteError) return noteError
     return closeCaseInternal(tx, {
       caseId: row.id,
       expectedStatuses: unresolvedStatuses as CaseStatus[],
@@ -2051,33 +2467,47 @@ export const resolveCase = async (
   return { case: serialized.summary, changed: true }
 }
 
-const notifyReopen = async (tx: CaseTx, row: CaseRow) => {
+const notifyReopen = async (tx: CaseTx, row: CaseRow, reason: string) => {
+  const notice = withSnippet(
+    `${await describeCaseForNotice(tx, row)}被报告者重新打开`,
+    reason
+  )
   if (row.owner_type === 'publisher' && row.owner_id !== null) {
-    await notifyCaseUsers(
-      tx,
-      row.id,
-      [row.owner_id],
-      '您负责的问题已被开启者重新提交，请前往问题处理查看。'
-    )
+    await notifyCaseUsers(tx, row.id, [row.owner_id], notice)
   } else {
-    const admins = await tx.user.findMany({
-      where: { role: { gte: 3 } },
-      select: { id: true }
-    })
     await notifyCaseUsers(
       tx,
       row.id,
-      admins.map(({ id }) => id),
-      '问题已重新提交，请前往后台问题处理查看。',
+      await loadStaffIds(tx),
+      notice,
       null,
       `/dashboard/case/${row.id}`
     )
   }
 }
 
+/** The opener's reason, recorded as their own reply after the event. */
+const writeReporterReason = (
+  tx: CaseTx,
+  caseId: number,
+  uid: number,
+  content: string,
+  now: Date
+) =>
+  tx.ops_case_message.create({
+    data: {
+      case_id: caseId,
+      author_id: uid,
+      kind: 'reply',
+      body: content,
+      created: now
+    }
+  })
+
 export const reopenCase = async (
   caseId: number,
   uid: number,
+  content: string,
   options: { now?: Date; db?: PrismaClient } = {}
 ): Promise<CaseReopenResponse | string> => {
   const db = options.db ?? prisma
@@ -2104,7 +2534,8 @@ export const reopenCase = async (
       const dedupKey = buildCaseDedupKey(
         row.target_type as CaseTargetType,
         row.target_id,
-        row.kind as CaseKind
+        row.kind as CaseKind,
+        row.reporter_id
       )
       conflictKey = dedupKey
       const collision = await tx.ops_case.findUnique({
@@ -2151,7 +2582,8 @@ export const reopenCase = async (
         },
         '问题已重新提交，处理方会继续跟进。'
       )
-      await notifyReopen(tx, row)
+      await writeReporterReason(tx, row.id, uid, content, now)
+      await notifyReopen(tx, row, content)
       return { changed: true }
     })
   } catch (error) {
@@ -2182,6 +2614,329 @@ export const reopenCase = async (
   return { case: serialized.summary, changed: true }
 }
 
+const latestClosureActor = async (tx: CaseTx, caseId: number) => {
+  const message = await tx.ops_case_message.findFirst({
+    where: {
+      case_id: caseId,
+      kind: 'system',
+      event: { in: [...CASE_CLOSING_EVENTS] }
+    },
+    orderBy: [{ created: 'desc' }, { id: 'desc' }],
+    select: { payload: true }
+  })
+  return sanitizePayload(message?.payload ?? null)?.actor_type ?? null
+}
+
+const reserializeAfterAction = async (
+  db: PrismaClient,
+  caseId: number,
+  uid: number,
+  role: number
+): Promise<CaseActionResponse | string> => {
+  const row = await getCaseById(db, caseId)
+  if (!row) return '问题不存在'
+  await invalidateCasePatchCaches(db, [row.patch_id])
+  const serialized = await serializeSummaryForViewer(db, row, uid, role, true)
+  if (!serialized) return '问题不存在'
+  return { case: serialized.summary, changed: true }
+}
+
+/**
+ * Second-stage appeal (D16). After the publisher closed the reopened case, the
+ * opener may hand it to the site administrator once. It reuses the handoff
+ * shape of the timeout escalation, and the administrator's closure is final:
+ * `reopened_count = 2` blocks both reopen and review afterwards.
+ */
+export const reviewCase = async (
+  caseId: number,
+  uid: number,
+  content: string,
+  options: { now?: Date; db?: PrismaClient } = {}
+): Promise<CaseReopenResponse | string> => {
+  const db = options.db ?? prisma
+  const now = options.now ?? new Date()
+  let conflictKey: string | null = null
+  let result: { changed: true } | CaseReopenResponse | string
+  try {
+    result = await db.$transaction(async (tx) => {
+      const row = await getCaseLock(tx, caseId)
+      if (!row) return '问题不存在'
+      if (row.reporter_id !== uid) return '只有开启者可以申请复核'
+      if (!closedStatuses.includes(row.status as never))
+        return '当前问题尚未结案'
+      if (row.owner_type !== 'publisher' || row.reopened_count !== 1) {
+        return '发布者在重新打开后再次结案，才能申请网站管理员复核'
+      }
+      if (
+        !row.closed_at ||
+        row.closed_at.getTime() < now.getTime() - CASE_REOPEN_WINDOW_MS
+      ) {
+        return '该问题已超过 7 天，不能申请复核'
+      }
+      if ((await latestClosureActor(tx, row.id)) !== 'publisher') {
+        return '只有发布者给出的结论可以申请复核'
+      }
+      const dedupKey = buildCaseDedupKey(
+        row.target_type as CaseTargetType,
+        row.target_id,
+        row.kind as CaseKind,
+        row.reporter_id
+      )
+      conflictKey = dedupKey
+      const collision = await tx.ops_case.findUnique({
+        where: { dedup_key: dedupKey },
+        select: { id: true }
+      })
+      if (collision && collision.id !== row.id) {
+        return { conflict: true as const, existingCaseId: collision.id }
+      }
+      const updated = await tx.ops_case.updateMany({
+        where: {
+          id: row.id,
+          status: row.status,
+          revision: row.revision,
+          owner_type: 'publisher',
+          reopened_count: 1
+        },
+        data: {
+          status: 'open',
+          owner_type: 'staff',
+          owner_id: null,
+          dedup_key: dedupKey,
+          status_changed_at: now,
+          queue_entered_at: now,
+          escalated_at: now,
+          first_owner_response_at: null,
+          reopened_count: { increment: 1 },
+          revision: { increment: 1 },
+          updated: now
+        }
+      })
+      if (updated.count === 0) return '该问题刚刚被他人处理，请刷新后重试'
+      await appendCaseSystemMessage(
+        tx,
+        row.id,
+        'reopened',
+        {
+          resolution: row.resolution,
+          closed_at: iso(row.closed_at),
+          first_owner_response_at: iso(row.first_owner_response_at),
+          from_status: row.status,
+          to_status: 'open',
+          from_state_entered_at: row.status_changed_at.toISOString(),
+          queue_entered_at: now.toISOString()
+        },
+        '报告者申请网站管理员复核。'
+      )
+      await appendCaseSystemMessage(
+        tx,
+        row.id,
+        'escalated',
+        {
+          escalation_trigger: 'review_request',
+          from_status: row.status,
+          to_status: 'open',
+          from_state_entered_at: row.status_changed_at.toISOString(),
+          queue_entered_at: now.toISOString(),
+          from_owner_type: row.owner_type,
+          from_owner_id: row.owner_id
+        },
+        '问题已提交给网站管理员复核，网站管理员的结论为最终结果。'
+      )
+      await writeReporterReason(tx, row.id, uid, content, now)
+      const subject = await describeCaseForNotice(tx, row)
+      await notifyCaseUsers(
+        tx,
+        row.id,
+        await loadStaffIds(tx),
+        withSnippet(`${subject}的报告者申请网站管理员复核`, content),
+        null,
+        `/dashboard/case/${row.id}`
+      )
+      if (row.owner_id !== null) {
+        await notifyCaseUsers(
+          tx,
+          row.id,
+          [row.owner_id],
+          `${subject}的报告者已申请网站管理员复核。`
+        )
+      }
+      return { changed: true as const }
+    })
+  } catch (error) {
+    const code = getUniqueConstraintCode(error)
+    if (code === 'P2002' || code === '23505') {
+      const existing = conflictKey
+        ? await db.ops_case.findUnique({
+            where: { dedup_key: conflictKey },
+            select: { id: true }
+          })
+        : null
+      if (existing && existing.id !== caseId) {
+        return { conflict: true, existingCaseId: existing.id }
+      }
+      return '该目标已有正在处理的问题'
+    }
+    throw error
+  }
+  if (typeof result === 'string' || 'conflict' in result) return result
+  return reserializeAfterAction(db, caseId, uid, 1)
+}
+
+/**
+ * The opener takes the report back (D18). Without other followers the case
+ * closes as「开启者撤回」; otherwise only the opener's subscription goes and
+ * the case continues for the other reporters.
+ */
+export const withdrawCase = async (
+  caseId: number,
+  uid: number,
+  options: { now?: Date; db?: PrismaClient } = {}
+): Promise<CaseActionResponse | string> => {
+  const db = options.db ?? prisma
+  const now = options.now ?? new Date()
+  const result = await db.$transaction(async (tx) => {
+    const row = await getCaseLock(tx, caseId)
+    if (!row) return '问题不存在'
+    if (row.reporter_id !== uid) return '只有开启者可以撤回'
+    if (!unresolvedStatuses.includes(row.status as never)) return '该问题已结案'
+    const others = await tx.ops_case_subscriber.count({
+      where: { case_id: row.id, user_id: { not: uid } }
+    })
+    if (others === 0) {
+      const closed = await closeCaseInternal(tx, {
+        caseId: row.id,
+        expectedStatuses: [row.status as CaseStatus],
+        resolution: 'reporter_withdrawn',
+        actorType: 'reporter',
+        actorId: uid,
+        body: '报告者已撤回，事项结束。',
+        excludeRecipientIds: [uid],
+        now
+      })
+      return closed.changed ? { changed: true as const } : closed.reason
+    }
+    await tx.ops_case_subscriber.deleteMany({
+      where: { case_id: row.id, user_id: uid }
+    })
+    await appendCaseSystemMessage(
+      tx,
+      row.id,
+      'withdrawn',
+      { actor_type: 'reporter' },
+      '开启者已撤回自己的报告；还有其他报告者，事项继续处理。'
+    )
+    return { changed: true as const }
+  })
+  if (typeof result === 'string') return result
+  return reserializeAfterAction(db, caseId, uid, 1)
+}
+
+/** 「解决了 / 没解决」for the latest closure, recorded once per round (D19). */
+export const confirmCase = async (
+  caseId: number,
+  uid: number,
+  solved: boolean,
+  options: { now?: Date; db?: PrismaClient } = {}
+): Promise<CaseActionResponse | string> => {
+  const db = options.db ?? prisma
+  const now = options.now ?? new Date()
+  const result = await db.$transaction(async (tx) => {
+    const row = await getCaseLock(tx, caseId)
+    if (!row) return '问题不存在'
+    if (row.reporter_id !== uid) return '只有开启者可以确认处理结果'
+    if (!closedStatuses.includes(row.status as never))
+      return '当前问题尚未结案'
+    if (
+      !row.closed_at ||
+      row.closed_at.getTime() < now.getTime() - CASE_REOPEN_WINDOW_MS
+    ) {
+      return '该问题已超过 7 天，不能再确认'
+    }
+    const systemMessages = await tx.ops_case_message.findMany({
+      where: { case_id: row.id, kind: 'system' },
+      orderBy: [{ created: 'asc' }, { id: 'asc' }],
+      select: { kind: true, event: true, payload: true }
+    })
+    if (roundFacts(systemMessages).confirmedThisRound) {
+      return '你已经确认过这次处理结果'
+    }
+    await appendCaseSystemMessage(
+      tx,
+      row.id,
+      'confirmed',
+      {
+        resolution: row.resolution,
+        closed_at: iso(row.closed_at),
+        solved
+      },
+      solved ? '报告者确认：问题已解决。' : '报告者确认：问题仍未解决。'
+    )
+    return { changed: true as const }
+  })
+  if (typeof result === 'string') return result
+  return reserializeAfterAction(db, caseId, uid, 1)
+}
+
+/**
+ * After a handoff the original publisher may still propose a closure (D20).
+ * It changes no state; the administrator adopts it through `handle`.
+ */
+export const proposeCaseClosure = async (
+  input: { caseId: number; resolution: CaseResolution; content: string },
+  uid: number,
+  role: number,
+  options: { now?: Date; db?: PrismaClient } = {}
+): Promise<CaseActionResponse | string> => {
+  const db = options.db ?? prisma
+  const now = options.now ?? new Date()
+  if (role >= 3) return '网站管理员请直接结案'
+  const result = await db.$transaction(async (tx) => {
+    const row = await getCaseLock(tx, input.caseId)
+    if (!row) return '问题不存在'
+    if (!unresolvedStatuses.includes(row.status as never)) return '该问题已结案'
+    if (!isOriginalPublisher(row, uid, await originalPublisherIdFor(tx, row))) {
+      return '只有原发布者可以提请结案'
+    }
+    if (!isHandlerResolution(row.kind, input.resolution)) {
+      return '当前问题不支持该结论'
+    }
+    const noteError = closingNoteError(row, input.resolution, input.content)
+    if (noteError) return noteError
+    const label = CASE_RESOLUTION_LABELS[input.resolution]
+    await appendCaseSystemMessage(
+      tx,
+      row.id,
+      'close_proposed',
+      { resolution: input.resolution },
+      `原发布者提请以「${label}」结案。`
+    )
+    await tx.ops_case_message.create({
+      data: {
+        case_id: row.id,
+        author_id: uid,
+        kind: 'reply',
+        body: input.content,
+        created: now
+      }
+    })
+    await notifyCaseUsers(
+      tx,
+      row.id,
+      await loadStaffIds(tx),
+      withSnippet(
+        `${await describeCaseForNotice(tx, row)}的原发布者提请以「${label}」结案`,
+        input.content
+      ),
+      uid,
+      `/dashboard/case/${row.id}`
+    )
+    return { changed: true as const }
+  })
+  if (typeof result === 'string') return result
+  return reserializeAfterAction(db, input.caseId, uid, role)
+}
+
 export const handleCaseAsAdmin = async (
   input: AdminHandleInput,
   adminId: number,
@@ -2205,25 +2960,27 @@ export const handleCaseAsAdmin = async (
     if (!row) return '问题不存在'
     let resolution = input.resolution
     if (input.action === 'reject' && resolution === undefined) {
-      resolution =
-        row.kind === 'resource_mismatch' ? 'out_of_scope' : 'not_established'
-    }
-    if (!resolution || !assertResolution(row.kind, resolution))
-      return '当前问题不支持该结论'
-    if (resolution === 'not_established' && !input.content.trim()) {
-      return '登记不成立必须填写处理说明'
+      resolution = (CASE_PUBLISHER_KINDS as readonly string[]).includes(
+        row.kind
+      )
+        ? 'out_of_scope'
+        : 'not_established'
     }
     if (resolution === 'reporter_unresponsive') {
       return '开启者未回应只能由超时任务登记'
     }
-    if (
-      row.kind === 'resource_mismatch' &&
-      row.owner_type === 'staff' &&
-      row.escalated_at !== null &&
-      resolution !== 'escalated_ignored'
-    ) {
-      return '已升级的资源问题只能隐藏或忽略'
+    if (resolution === 'reporter_withdrawn') {
+      return '开启者撤回只能由开启者本人登记'
     }
+    // D13 retired the escalated hide/ignore pair: handed-off cases use the
+    // same closing resolutions as the publisher would have.
+    if (!resolution || !isHandlerResolution(row.kind, resolution))
+      return '当前问题不支持该结论'
+    if (resolution === 'not_established' && !input.content.trim()) {
+      return '登记不成立必须填写处理说明'
+    }
+    const noteError = closingNoteError(row, resolution, input.content)
+    if (noteError) return noteError
     if (
       row.kind === 'content_violation' &&
       row.target_type === 'shoutbox' &&
@@ -2237,38 +2994,13 @@ export const handleCaseAsAdmin = async (
         return '隐藏中的小喇叭必须删除或恢复'
       }
     }
-    if (
-      ['moved', 'escalated_hidden', 'violation_hidden', 'handled'].includes(
-        resolution
-      )
-    ) {
-      if (
-        !(
-          row.kind === 'other' &&
-          row.target_type === 'patch' &&
-          resolution === 'handled'
-        )
-      ) {
-        if (
-          !(
-            row.kind === 'content_violation' &&
-            row.target_type === 'user' &&
-            resolution === 'handled'
-          )
-        ) {
-          return '该结论必须通过对应的处置动作完成'
-        }
-      }
-    }
-    if (
-      resolution === 'escalated_ignored' &&
-      !(
-        row.kind === 'resource_mismatch' &&
-        row.owner_type === 'staff' &&
-        row.escalated_at !== null
-      )
-    ) {
-      return '该结论只能用于已升级的资源问题'
+    if (['moved', 'violation_hidden', 'handled'].includes(resolution)) {
+      const plainHandled =
+        resolution === 'handled' &&
+        (row.kind === 'other' ||
+          row.kind === 'patch_info' ||
+          (row.kind === 'content_violation' && row.target_type === 'user'))
+      if (!plainHandled) return '该结论必须通过对应的处置动作完成'
     }
     if (
       input.action === 'reject' &&
@@ -2339,15 +3071,12 @@ export const handleCaseResource = async (
     const resource = await lockResource(tx, initial.target_id)
     if (!resource) return '资源不存在'
     if (input.action === 'hide') {
+      // D13: a timed-out description case is fixed and closed, never hidden;
+      // only a resource violation report may hide the resource.
       if (
         !unresolvedStatuses.includes(initial.status as never) ||
-        !(
-          (initial.kind === 'resource_mismatch' &&
-            initial.owner_type === 'staff' &&
-            initial.escalated_at !== null) ||
-          (initial.kind === 'content_violation' &&
-            initial.target_type === 'resource')
-        )
+        initial.kind !== 'content_violation' ||
+        initial.target_type !== 'resource'
       )
         return '当前问题不能隐藏资源'
       if (resource.status !== 0) return '当前资源不能隐藏'
@@ -2365,14 +3094,10 @@ export const handleCaseResource = async (
           content: `管理员通过问题 #${initial.id} 隐藏资源 #${resource.id}`
         }
       })
-      const resolution: CaseResolution =
-        initial.kind === 'content_violation'
-          ? 'violation_hidden'
-          : 'escalated_hidden'
       const closed = await closeCaseInternal(tx, {
         caseId: initial.id,
         expectedStatuses: unresolvedStatuses as CaseStatus[],
-        resolution,
+        resolution: 'violation_hidden',
         actorType: 'staff',
         actorId: adminId,
         event: 'hidden',
@@ -2719,8 +3444,14 @@ export const getAdminCases = async (
   // window would additionally hide the closed tabs the strip has to render.
   // `total` keeps the status predicate, so it stays the count of the rows this
   // response pages through.
+  // `publisher` is the read-only oversight view (D22). It shares the list
+  // shape but never feeds the inbox, which keeps its own staff-only query.
+  const ownerType = input.ownerType ?? 'staff'
   const scopeWhere: Prisma.ops_caseWhereInput = {
-    owner_type: 'staff',
+    owner_type: ownerType,
+    ...(ownerType === 'publisher' && input.ownerId
+      ? { owner_id: input.ownerId }
+      : {}),
     ...(input.kind ? { kind: input.kind } : {}),
     ...(input.search ? { OR: searchPredicates } : {})
   }
@@ -2824,6 +3555,7 @@ export const upgradeCase = async (
       row.id,
       'escalated',
       {
+        escalation_trigger: 'timeout',
         from_status: row.status,
         to_status: 'open',
         from_state_entered_at: row.status_changed_at.toISOString(),
@@ -2831,23 +3563,20 @@ export const upgradeCase = async (
         from_owner_type: row.owner_type,
         from_owner_id: row.owner_id
       },
-      '发布者处理超时，问题已升级至站方。'
+      '发布者 7 天未处理，问题已提交给网站管理员处理。'
     )
+    const notice = `${await describeCaseForNotice(tx, row)}的发布者 7 天未处理，已提交给网站管理员处理。`
     await notifyCaseUsers(
       tx,
       row.id,
       [row.owner_id ?? 0, row.reporter_id ?? 0],
-      '问题已升级至站方处理。'
+      notice
     )
-    const admins = await tx.user.findMany({
-      where: { role: { gte: 3 } },
-      select: { id: true }
-    })
     await notifyCaseUsers(
       tx,
       row.id,
-      admins.map(({ id }) => id),
-      '问题已升级至站方处理。',
+      await loadStaffIds(tx),
+      notice,
       null,
       `/dashboard/case/${row.id}`
     )
@@ -2883,6 +3612,9 @@ export const timeoutCloseCase = async (
       resolution: 'reporter_unresponsive',
       actorType: 'system',
       event: 'resolved',
+      // Followers answered nothing wrong; tell them the case ended because
+      // the first reporter went quiet, and that a new report is welcome (D15).
+      followerNotice: `${await describeCaseForNotice(tx, row)}的首位报告者没有补充材料，事项已结束；如果你仍遇到这个问题，可以重新提交。`,
       now
     })
   })
@@ -2892,13 +3624,86 @@ export const timeoutCloseCase = async (
   return result
 }
 
+/**
+ * One reminder 48 hours before either timeout (D22). The reminder is bound to
+ * the state revision, so each waiting round reminds once and a state change
+ * starts a new round. Writing `reminded_revision` never advances `revision`.
+ */
+export const remindCase = async (
+  caseId: number,
+  options: { now?: Date; db?: PrismaClient } = {}
+) => {
+  const db = options.db ?? prisma
+  const now = options.now ?? new Date()
+  return db.$transaction(async (tx) => {
+    const row = await getCaseLock(tx, caseId)
+    if (!row || row.owner_type !== 'publisher') return { changed: false }
+    if (row.reminded_revision !== null && row.reminded_revision >= row.revision)
+      return { changed: false }
+    const entered = row.status_changed_at.getTime()
+    const waitingOwner =
+      (row.status === 'open' || row.status === 'waiting_owner') &&
+      (CASE_PUBLISHER_TIMEOUT_KINDS as readonly string[]).includes(row.kind)
+    const waitingReporter =
+      row.status === 'waiting_reporter' &&
+      row.reporter_id !== null &&
+      (CASE_REPORTER_TIMEOUT_KINDS as readonly string[]).includes(row.kind)
+    const deadline = waitingOwner
+      ? entered + CASE_PUBLISHER_ESCALATION_AFTER_MS
+      : waitingReporter
+        ? entered + CASE_REPORTER_TIMEOUT_AFTER_MS
+        : null
+    if (
+      deadline === null ||
+      now.getTime() < deadline - CASE_REMINDER_LEAD_MS ||
+      now.getTime() >= deadline
+    ) {
+      return { changed: false }
+    }
+    const updated = await tx.ops_case.updateMany({
+      where: {
+        id: row.id,
+        status: row.status,
+        revision: row.revision,
+        OR: [
+          { reminded_revision: null },
+          { reminded_revision: { lt: row.revision } }
+        ]
+      },
+      data: { reminded_revision: row.revision }
+    })
+    if (updated.count === 0) return { changed: false }
+    const subject = await describeCaseForNotice(tx, row)
+    if (waitingOwner && row.owner_id !== null) {
+      await notifyCaseUsers(
+        tx,
+        row.id,
+        [row.owner_id],
+        `${subject}还有 2 天将提交给网站管理员处理，请尽快回复或结案。`
+      )
+    } else if (waitingReporter && row.reporter_id !== null) {
+      await notifyCaseUsers(
+        tx,
+        row.id,
+        [row.reporter_id],
+        `${subject}的处理方在等你补充，还有 2 天将自动结案。`
+      )
+    }
+    return { changed: true }
+  })
+}
+
+/**
+ * Public resource badges, one per open public case (D17: a resource may carry
+ * both a description case and an interim link-failure case).
+ */
 export const getPublicResourceCaseBadges = async (
   resourceIds: number[],
   options: { db?: PrismaClient } = {}
 ) => {
   const db = options.db ?? prisma
-  if (!resourceIds.length)
-    return new Map<number, { reportCount: number; ownerType: CaseOwnerType }>()
+  const result = new Map<number, PatchCaseSummary[]>()
+  if (!resourceIds.length) return result
   const rows = await db.ops_case.findMany({
     where: {
       target_type: 'resource',
@@ -2906,22 +3711,23 @@ export const getPublicResourceCaseBadges = async (
       public: true,
       status: { in: unresolvedStatuses }
     },
+    orderBy: [{ id: 'asc' }],
     select: {
       target_id: true,
+      kind: true,
       owner_type: true,
       _count: { select: { subscribers: true } }
     }
   })
-  const result = new Map<
-    number,
-    { reportCount: number; ownerType: CaseOwnerType }
-  >()
   for (const row of rows) {
-    if (!isCaseOwnerType(row.owner_type)) continue
-    result.set(row.target_id, {
+    if (!isCaseOwnerType(row.owner_type) || !isCaseKind(row.kind)) continue
+    const badges = result.get(row.target_id) ?? []
+    badges.push({
+      kind: row.kind,
       reportCount: row._count.subscribers,
       ownerType: row.owner_type
     })
+    result.set(row.target_id, badges)
   }
   return result
 }

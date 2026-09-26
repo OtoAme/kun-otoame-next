@@ -122,6 +122,8 @@ const listItem = (overrides: Partial<CaseListItem> = {}): CaseListItem => ({
   restoredAt: null,
   created: '2026-09-13T00:00:00.000Z',
   updated: '2026-09-13T00:00:00.000Z',
+  hasUnread: false,
+  handedOff: false,
   latestMessage: {
     id: 11,
     kind: 'reply',

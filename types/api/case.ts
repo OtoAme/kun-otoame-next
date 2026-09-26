@@ -1,6 +1,7 @@
 import type {
   CaseActorType,
   CaseContentAction,
+  CaseEscalationTrigger,
   CaseKind,
   CaseMessageEvent,
   CaseMessageKind,
@@ -15,6 +16,7 @@ import type {
 export type {
   CaseActorType,
   CaseContentAction,
+  CaseEscalationTrigger,
   CaseKind,
   CaseMessageEvent,
   CaseMessageKind,
@@ -62,8 +64,12 @@ export interface CaseActorSummary extends CaseUserSummary {
   role?: number
 }
 
-/** Public resource badge. It is deliberately limited to count and owner. */
+/**
+ * Public resource badge, one per open public case on the resource. It is
+ * deliberately limited to kind, count and owner.
+ */
 export interface PatchCaseSummary {
+  kind: CaseKind
   reportCount: number
   ownerType: Extract<CaseOwnerType, 'publisher' | 'staff'>
 }
@@ -84,6 +90,8 @@ export interface CaseMessagePayload {
   resource_id?: number
   previous_resource_status?: number
   handled_target?: 'comment' | 'rating' | 'shoutbox' | 'user' | 'missing'
+  escalation_trigger?: CaseEscalationTrigger
+  solved?: boolean
 }
 
 export interface CaseMessage {
@@ -93,6 +101,8 @@ export interface CaseMessage {
   body: string
   author: CaseActorSummary | null
   payload?: CaseMessagePayload | null
+  /** Image URLs of this note; present only where the dialogue is visible. */
+  images?: string[]
   created: string
 }
 
@@ -133,6 +143,10 @@ export interface CaseSummary {
 export interface CaseListItem extends CaseSummary {
   /** A list can omit messages while preserving the same summary shape. */
   latestMessage?: CaseMessagePreview | null
+  /** The viewer still has an unread notification pointing at this case. */
+  hasUnread: boolean
+  /** The viewer is the publisher this case was handed off from (D20). */
+  handedOff: boolean
   canReply: boolean
   canResolve: boolean
   canReopen: boolean
@@ -157,6 +171,14 @@ export interface CaseCapabilities {
   canReply: boolean
   canResolve: boolean
   canReopen: boolean
+  /** Opener withdraws while the case is open (D18). */
+  canWithdraw: boolean
+  /** Opener answers「解决了 / 没解决」for the latest closure (D19). */
+  canConfirm: boolean
+  /** Opener asks the site administrator to review a publisher's closure (D16). */
+  canReview: boolean
+  /** Publisher the case was handed off from proposes a closure (D20). */
+  canPropose: boolean
   canHideResource: boolean
   canRestoreResource: boolean
   canMoveResource: boolean
@@ -268,4 +290,19 @@ export type CaseCreateInput = {
   targetId: number
   expectedPatchId?: number
   content: string
+  imageKeys?: string[]
+}
+
+/** GET /api/case/pending-count, used by the site user menu (D22). */
+export interface CasePendingCountResponse {
+  /** Publisher-owned cases waiting on the viewer. */
+  owned: number
+  /** The viewer's own cases waiting for their supplement. */
+  waitingReporter: number
+}
+
+/** POST /api/case/image. The key is what create/reply requests send back. */
+export interface CaseImageUploadResponse {
+  key: string
+  url: string
 }
