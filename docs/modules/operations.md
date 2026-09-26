@@ -27,9 +27,9 @@
 
 ### 模块 03 事项迁移与任务
 
-生产先备份，再依次执行 `migration/production-case-preflight-2026-09-13.sql`、`production-case-sync-2026-09-13.sql`、`production-case-postflight-2026-09-13.sql`，最后运行现有 schema guard 与部署流程。三份脚本只涉及新增的 `ops_case`、`ops_case_message`、`ops_case_subscriber`；pre/postflight 只读，sync 可重复执行，已有同名但不兼容的对象在写入前拒绝。两个可空唯一键必须允许多个 NULL，不能使用 `NULLS NOT DISTINCT`。旧反馈和举报不回填。
+生产先备份，再依次执行 `migration/production-case-preflight-2026-09-13.sql`、`production-case-sync-2026-09-13.sql`、`production-case-postflight-2026-09-13.sql`，接着依次执行 `production-case-feedback-preflight-2026-09-26.sql`、`production-case-feedback-sync-2026-09-26.sql`、`production-case-feedback-postflight-2026-09-26.sql`，最后运行现有 schema guard 与部署流程。前三份只涉及新增的 `ops_case`、`ops_case_message`、`ops_case_subscriber`；后三份只加 `ops_case.reminded_revision` 与报告者图片表 `ops_case_message_image`。每组 pre/postflight 只读，sync 可重复执行，已有同名但不兼容的对象在写入前拒绝。2026-09-13 的三份按基表列数精确核对，加法迁移之后不再重跑，改跑 2026-09-26 这组。两个可空唯一键必须允许多个 NULL，不能使用 `NULLS NOT DISTINCT`。旧反馈和举报不回填。
 
-`server/tasks/caseTimeoutTask.ts` 每小时第 17 分钟按上海时区执行：发布者归属的资源问题等待处理方超过 7 天升级站方，等待报告者超过 14 天自动结案。站方事项不自动结案；04、06 的类型不由本任务扫描。任务使用已有 Redis 锁和逐项状态条件更新，单类每批 200 条、最多 10 轮，重复执行不重复产生处理结果。
+`server/tasks/caseTimeoutTask.ts` 每小时第 17 分钟按上海时区执行：发布者归属的资源问题（资源与描述不符、链接失效）等待处理方超过 7 天提交给网站管理员，等待报告者超过 14 天自动结案；两个时限到期前 48 小时各提醒一次，提醒以 `reminded_revision` 绑定状态修订号，同一轮只发一次。站方事项不自动结案；04、06 的类型不由本任务扫描。任务使用已有 Redis 锁和逐项状态条件更新，单类每批 200 条、最多 10 轮，重复执行不重复产生处理结果。
 
 数据库迁移必须先于新代码。新事项产生后，回退版本仍须保留事项读取与处理能力；不能把提交重新写回旧队列或删除新表。若回退时暂停新建事项，小喇叭依赖新订阅的阈值隐藏也暂停，需由站方人工处理。
 

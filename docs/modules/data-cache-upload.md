@@ -227,6 +227,8 @@ Gallery 图片上传走 `app/api/edit/gallery/route.ts` 和 `app/api/edit/galler
 - 删除已发送的私聊图片消息时，`deleteMessage` 会先设置 `is_deleted = true`，再 best-effort 清理该消息中不再被其他未删除消息引用的 canonical `conversation/` S3 objects；如果消息已经是 tombstone，重复删除直接返回成功，不重复写 DB 或重跑 S3 cleanup。删除前会从 `KUN_VISUAL_NOVEL_IMAGE_BED_URL` 或 `NEXT_PUBLIC_KUN_VISUAL_NOVEL_S3_STORAGE_URL` 提取 key，并拒绝非本站 URL 或不符合私聊图片 key 规范的对象；引用检查或 S3 删除失败只记录错误，不回滚消息 tombstone，仍由孤儿清理脚本兜底。
 - 回复图片时，`user_private_message.reply_image` 保存被引用图片的 metadata 快照；它来自同会话被回复消息的图片组索引校验结果，不直接信任前端传入完整图片对象。
 
+事项报告者图片（模块 03 D11）走 `app/api/case/image`，形态沿用私聊图片但不计费：登录后、读取 multipart 前先过 `image-upload-intake`（30 次/分钟，fail-open）；JPG/PNG/WebP/AVIF 单张入站上限 8MB，超出返回 `413`；实际上传 `image-upload` 20 次/10 分钟，Redis 不可用时 fail-closed。Sharp resize 到 1920x1080 内输出 AVIF，仍超过 1.5MB 时拒绝。S3 key 为 `case/<uid>/<timestamp>-<uuid>.avif`，上传后写 `case:image-upload:<uid>:<key>` 登记 1 小时，登记失败时 best-effort 删除刚上传的对象。提交或补充事项时由 Redis Lua 原子校验并删除本人登记（每条说明最多 3 张），事项写入失败或结果为「刚刚结案」时写回登记供重试。图片只记在 `ops_case_message_image`，随所在对话的可见性下发，不进资源徽标或公开图库。上传后未提交的对象目前没有孤儿清理脚本。
+
 消息动作限频走 `app/api/message/conversation/rateLimit.ts`，使用 Redis Lua 原子 `INCR` + `EXPIRE` 固定窗口。key 使用 `conversation:rate-limit:<action>:<uid>`，通过 `getPrefixedRedisKey` 显式加上 `kun:touchgal` 前缀后传给低层 `redis.eval`。当前 action 和阈值：
 
 - `send`：发送私聊消息 30 次/分钟。

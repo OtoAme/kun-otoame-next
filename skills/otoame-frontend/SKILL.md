@@ -32,7 +32,7 @@ Use this skill for pages, components, state, theme, and content.
 
 ## Rules
 
-- `/issue` uses HeroUI v2 and `/dashboard/case/[id]` uses the shared shadcn case detail. Consume `types/api/case.ts` capabilities and redacted fields; do not fetch identities or dialogue omitted for the viewer. Confirm every case moderation action before sending the request.
+- `/issue` uses shadcn under the `(dashboard)` route group (`components/dashboard/issue/`) and `/dashboard/case/[id]` uses the shared shadcn case detail; case entries embedded in site pages stay HeroUI v2. Both sides share UI-free logic in `components/case/caseDisplay.ts` and the resource-card phenomenon table in `constants/issueTriage.ts`. Consume `types/api/case.ts` capabilities and redacted fields; do not fetch identities or dialogue omitted for the viewer. Confirm every case moderation action before sending the request. User-facing case copy says 网站管理员, not 站方.
 - Frontend gating is UX only; the API must re-check every permission.
 - Download credentials (`content`, `code`, `password`) live only in component memory — never in stores, persisted state, URLs or caches. Authenticated administrator inbox details and resource previews may receive full links; public list data stays redacted.
 - State-changing requests use `utils/kunFetch.ts` (CSRF header); surface its string business errors, never swallow them.
