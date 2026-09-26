@@ -118,7 +118,7 @@
 
 ## 7 定时任务
 
-新增 `server/tasks/linkHealthTask.ts`，在 `server/cron.ts` 注册，沿用 `cron.createTask` + `withTaskLock`（`Asia/Shanghai`、`noOverlap: true`、锁键 `cron:link-health:lock`、TTL 10 分钟），每 15 分钟一次，每类每轮最多 200 行，按 `health_changed_at` 升序处理「所有已到期记录」而非本轮新到期，到期比较按 5.1 的边界表。职责只有两项：一，发布者归属的 `suspect` 链接在事项 `open` / `waiting_owner` 持续 7 天无操作 → `broken`、结论「超时失效」；站方归属（`touchgal`）不套用该超时（基线 3.4「站方归属的工单没有超时」），只留站方待办。二，`disputed` 且 `health_changed_at` 早于 30 天、争议轮内强证据未达阈值 → `ok`、结论「自动收敛可用」。所有写入都是 5.2 的条件更新，重复执行不重复通知或结案；模块 03 的通用超时任务必须跳过链接类事项，这条写进 03 的状态契约。阈值判定不在任务里，锁失效或积压只影响延迟，不影响结果。
+新增 `server/tasks/linkHealthTask.ts`，在 `server/cron.ts` 注册，沿用 `cron.createTask` + `withTaskLock`（`Asia/Shanghai`、`noOverlap: true`、锁键 `cron:link-health:lock`、TTL 10 分钟），每 15 分钟一次，每类每轮最多 200 行，按 `health_changed_at` 升序处理「所有已到期记录」而非本轮新到期，到期比较按 5.1 的边界表。职责只有两项：一，发布者归属的 `suspect` 链接在事项 `open` / `waiting_owner` 持续 7 天无操作 → `broken`、结论「超时失效」；站方归属（`touchgal`）不套用该超时（基线 3.4「站方归属的工单没有超时」），只留站方待办。二，`disputed` 且 `health_changed_at` 早于 30 天、争议轮内强证据未达阈值 → `ok`、结论「自动收敛可用」。所有写入都是 5.2 的条件更新，重复执行不重复通知或结案；模块 03 的通用超时任务必须跳过链接类事项，这条写进 03 的状态契约。阈值判定不在任务里，锁失效或积压只影响延迟，不影响结果。链接类事项的结论代码登记在 03 实施计划 12.2：「核实可用」「已补链」沿用 03 已登记的 `verified_available`、`relinked`，其余结论由本模块在该表补登。03 在本模块上线前用临时类型 `resource_link_failure` 承接用户报告的链接失效（03 D17）；本模块与 05 同批上线后该类型停止新建，已开的由 03 按原规则走完，本模块不转换。
 
 ## 8 迁移与回填
 
