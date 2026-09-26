@@ -36,7 +36,6 @@ import {
   CASE_TARGET_TYPES,
   CASE_UNRESOLVED_STATUSES,
   CASE_RESOLUTION_LABELS,
-  OPEN_CASE_KINDS,
   caseTextHasGuideLink,
   isCaseOpenerScoped
 } from '~/constants/case'
@@ -1210,8 +1209,7 @@ const capabilitiesFor = (
             ? ['takedown']
             : ['delete']
   return {
-    canReply:
-      unresolved && (admin || owner || reporter || originalPublisher),
+    canReply: unresolved && (admin || owner || reporter || originalPublisher),
     canResolve: unresolved && allowedResolutions.length > 0 && (admin || owner),
     canReopen:
       reporter && closed && row.reopened_count === 0 && withinReopenWindow,
@@ -1351,7 +1349,8 @@ const withSnippet = (sentence: string, text: string | null | undefined) => {
   return snippet ? `${sentence}：${snippet}` : `${sentence}。`
 }
 
-const clip = (name: string) => (name.length > 30 ? `${name.slice(0, 30)}…` : name)
+const clip = (name: string) =>
+  name.length > 30 ? `${name.slice(0, 30)}…` : name
 
 /**
  * Names the case in a notification (D22) without exposing private content:
@@ -2020,6 +2019,16 @@ const fetchCaseForViewer = async (
     orderBy: [{ created: 'asc' }, { id: 'asc' }],
     select: messageSelect
   })
+  const capabilities = capabilitiesFor(
+    row,
+    viewerId,
+    viewerRole,
+    target,
+    follower ? undefined : roundFacts(messagesRows)
+  )
+  // An opener who withdrew while others still follow keeps reading the case
+  // but has nothing left to withdraw (D18).
+  if (!subscription) capabilities.canWithdraw = false
   const detail: CaseDetail = {
     ...summary,
     messages: messagesRows.map((message) =>
@@ -2033,13 +2042,7 @@ const fetchCaseForViewer = async (
     ...(view === 'subscriber-private'
       ? { viewerSubscription: { subscribed: true, submitted: true } }
       : {}),
-    capabilities: capabilitiesFor(
-      row,
-      viewerId,
-      viewerRole,
-      target,
-      follower ? undefined : roundFacts(messagesRows)
-    )
+    capabilities
   }
   return { case: detail }
 }
@@ -2066,12 +2069,23 @@ const roundFacts = (
   return { lastClosureActor, confirmedThisRound }
 }
 
-export const getCase = (
+export const getCase = async (
   caseId: number,
   viewerId: number,
   viewerRole: number,
   options: { db?: PrismaClient } = {}
-) => fetchCaseForViewer(options.db ?? prisma, caseId, viewerId, viewerRole)
+) => {
+  const db = options.db ?? prisma
+  const result = await fetchCaseForViewer(db, caseId, viewerId, viewerRole)
+  // Opening the case reads its notices, which clears the list's「有新回复」(D22).
+  if (typeof result !== 'string') {
+    await db.user_message.updateMany({
+      where: { recipient_id: viewerId, status: 0, link: caseLink(caseId) },
+      data: { status: 1 }
+    })
+  }
+  return result
+}
 
 export const createCase = async (
   input: CreateCaseInput,
@@ -2321,9 +2335,7 @@ export const appendCaseMessage = async (
   const imageKeys = input.imageKeys ?? []
   const consumed = await consumeCaseImageUploads(uid, imageKeys)
   if (consumed) return consumed
-  let result:
-    | string
-    | { row: CaseRow; message: CaseMessageRow }
+  let result: string | { row: CaseRow; message: CaseMessageRow }
   try {
     result = await db.$transaction(async (tx) => {
       const row = await getCaseLock(tx, input.caseId)
@@ -2800,6 +2812,12 @@ export const withdrawCase = async (
     if (!row) return '问题不存在'
     if (row.reporter_id !== uid) return '只有开启者可以撤回'
     if (!unresolvedStatuses.includes(row.status as never)) return '该问题已结案'
+    // Withdrawing while others follow drops only the opener's subscription.
+    const own = await tx.ops_case_subscriber.findUnique({
+      where: { case_id_user_id: { case_id: row.id, user_id: uid } },
+      select: { user_id: true }
+    })
+    if (!own) return '你已经撤回过这条问题'
     const others = await tx.ops_case_subscriber.count({
       where: { case_id: row.id, user_id: { not: uid } }
     })
@@ -2845,8 +2863,7 @@ export const confirmCase = async (
     const row = await getCaseLock(tx, caseId)
     if (!row) return '问题不存在'
     if (row.reporter_id !== uid) return '只有开启者可以确认处理结果'
-    if (!closedStatuses.includes(row.status as never))
-      return '当前问题尚未结案'
+    if (!closedStatuses.includes(row.status as never)) return '当前问题尚未结案'
     if (
       !row.closed_at ||
       row.closed_at.getTime() < now.getTime() - CASE_REOPEN_WINDOW_MS

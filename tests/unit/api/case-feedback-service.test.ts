@@ -28,7 +28,11 @@ const mocks = vi.hoisted(() => {
     patch_resource: { findUnique: vi.fn(), findMany: vi.fn() },
     patch: { findUnique: vi.fn(), findMany: vi.fn() },
     user: { findMany: vi.fn(), findUnique: vi.fn() },
-    user_message: { createMany: vi.fn(), findMany: vi.fn() },
+    user_message: {
+      createMany: vi.fn(),
+      findMany: vi.fn(),
+      updateMany: vi.fn()
+    },
     admin_log: { create: vi.fn() }
   }
   return {
@@ -171,6 +175,7 @@ beforeEach(() => {
   mocks.tx.user.findMany.mockResolvedValue([{ id: 90 }, { id: 91 }])
   mocks.tx.user_message.createMany.mockResolvedValue({ count: 1 })
   mocks.tx.user_message.findMany.mockResolvedValue([])
+  mocks.tx.user_message.updateMany.mockResolvedValue({ count: 0 })
   mocks.consumeCaseImageUploads.mockResolvedValue(null)
   mocks.restoreCaseImageUploads.mockResolvedValue(undefined)
 })
@@ -315,10 +320,14 @@ describe('case feedback rules (M03-6, M03-7)', () => {
 
   it('makes the publisher explain「无法复现」and link a guide for「不在受理范围」', async () => {
     await expect(
-      resolveCase({ caseId: 42, resolution: 'unreproducible', content: '' }, 2, {
-        now,
-        db: mocks.tx as never
-      })
+      resolveCase(
+        { caseId: 42, resolution: 'unreproducible', content: '' },
+        2,
+        {
+          now,
+          db: mocks.tx as never
+        }
+      )
     ).resolves.toBe('以「无法复现」结案时请写明核对了什么')
     await expect(
       resolveCase(
@@ -348,7 +357,11 @@ describe('case feedback rules (M03-6, M03-7)', () => {
 
   it('retires hide and ignore on a handed-off description case (D13)', async () => {
     mocks.tx.ops_case.findUnique.mockResolvedValue(
-      caseRow({ owner_type: 'staff', owner_id: null, escalated_at: hoursAgo(2) })
+      caseRow({
+        owner_type: 'staff',
+        owner_id: null,
+        escalated_at: hoursAgo(2)
+      })
     )
 
     await expect(
@@ -365,12 +378,10 @@ describe('case feedback rules (M03-6, M03-7)', () => {
       )
     ).resolves.toBe('当前问题不支持该结论')
     await expect(
-      handleCaseResource(
-        { caseId: 42, action: 'hide', content: '' },
-        90,
-        3,
-        { now, db: mocks.tx as never }
-      )
+      handleCaseResource({ caseId: 42, action: 'hide', content: '' }, 90, 3, {
+        now,
+        db: mocks.tx as never
+      })
     ).resolves.toBe('当前问题不能隐藏资源')
 
     const repaired = await handleCaseAsAdmin(
@@ -402,15 +413,14 @@ describe('case feedback rules (M03-6, M03-7)', () => {
         { now, db: mocks.tx as never }
       )
 
-    await expect(handle('')).resolves.toBe(
-      '以「不在受理范围」结案时请写明理由'
-    )
+    await expect(handle('')).resolves.toBe('以「不在受理范围」结案时请写明理由')
     await expect(handle('改名需要在个人设置里自助完成')).resolves.toMatchObject(
       { changed: true }
     )
   })
 
   it('closes a sole withdrawal as「开启者撤回」and spares the withdrawer the notice', async () => {
+    mocks.tx.ops_case_subscriber.findUnique.mockResolvedValue({ user_id: 5 })
     const result = await withdrawCase(42, 5, { now, db: mocks.tx as never })
 
     expect(result).toMatchObject({ changed: true })
@@ -428,6 +438,7 @@ describe('case feedback rules (M03-6, M03-7)', () => {
   })
 
   it('only drops the opener when other reporters still follow the case', async () => {
+    mocks.tx.ops_case_subscriber.findUnique.mockResolvedValue({ user_id: 5 })
     mocks.tx.ops_case_subscriber.count.mockResolvedValue(2)
 
     await withdrawCase(42, 5, { now, db: mocks.tx as never })
@@ -440,6 +451,20 @@ describe('case feedback rules (M03-6, M03-7)', () => {
       event: 'withdrawn',
       payload: { actor_type: 'reporter' }
     })
+  })
+
+  it('refuses a second withdrawal and stops offering it once the opener left', async () => {
+    mocks.tx.ops_case_subscriber.findUnique.mockResolvedValue(null)
+
+    await expect(
+      withdrawCase(42, 5, { now, db: mocks.tx as never })
+    ).resolves.toBe('你已经撤回过这条问题')
+    expect(mocks.tx.ops_case_message.create).not.toHaveBeenCalled()
+
+    const detail = await getCase(42, 5, 1, { db: mocks.tx as never })
+    expect(
+      typeof detail === 'string' ? detail : detail.case.capabilities
+    ).toMatchObject({ canWithdraw: false })
   })
 
   it('hands a twice-closed publisher case to the site administrator on review', async () => {
@@ -501,10 +526,18 @@ describe('case feedback rules (M03-6, M03-7)', () => {
 
   it('records one closure confirmation per round', async () => {
     mocks.tx.ops_case.findUnique.mockResolvedValue(
-      caseRow({ status: 'resolved', resolution: 'repaired', closed_at: hoursAgo(1) })
+      caseRow({
+        status: 'resolved',
+        resolution: 'repaired',
+        closed_at: hoursAgo(1)
+      })
     )
     mocks.tx.ops_case_message.findMany.mockResolvedValueOnce([
-      { kind: 'system', event: 'resolved', payload: { actor_type: 'publisher' } }
+      {
+        kind: 'system',
+        event: 'resolved',
+        payload: { actor_type: 'publisher' }
+      }
     ])
 
     await expect(
@@ -512,11 +545,18 @@ describe('case feedback rules (M03-6, M03-7)', () => {
     ).resolves.toMatchObject({ changed: true })
     expect(createdMessages()[0]).toMatchObject({
       event: 'confirmed',
-      payload: expect.objectContaining({ solved: false, resolution: 'repaired' })
+      payload: expect.objectContaining({
+        solved: false,
+        resolution: 'repaired'
+      })
     })
 
     mocks.tx.ops_case_message.findMany.mockResolvedValueOnce([
-      { kind: 'system', event: 'resolved', payload: { actor_type: 'publisher' } },
+      {
+        kind: 'system',
+        event: 'resolved',
+        payload: { actor_type: 'publisher' }
+      },
       { kind: 'system', event: 'confirmed', payload: { solved: false } }
     ])
     await expect(
@@ -526,7 +566,11 @@ describe('case feedback rules (M03-6, M03-7)', () => {
 
   it('lets only the original publisher propose a closure on a handed-off case', async () => {
     mocks.tx.ops_case.findUnique.mockResolvedValue(
-      caseRow({ owner_type: 'staff', owner_id: null, escalated_at: hoursAgo(2) })
+      caseRow({
+        owner_type: 'staff',
+        owner_id: null,
+        escalated_at: hoursAgo(2)
+      })
     )
 
     await expect(
@@ -561,7 +605,11 @@ describe('case feedback rules (M03-6, M03-7)', () => {
       caseRow({ status: 'resolved', closed_at: hoursAgo(3), reopened_count: 1 })
     )
     mocks.tx.ops_case_message.findMany.mockResolvedValue([
-      { kind: 'system', event: 'resolved', payload: { actor_type: 'publisher' } }
+      {
+        kind: 'system',
+        event: 'resolved',
+        payload: { actor_type: 'publisher' }
+      }
     ])
 
     const detail = await getCase(42, 5, 1, { db: mocks.tx as never })
@@ -572,6 +620,11 @@ describe('case feedback rules (M03-6, M03-7)', () => {
       canReview: true,
       canReopen: false,
       canWithdraw: false
+    })
+    // Opening the case reads the viewer's notices for it (D22).
+    expect(mocks.tx.user_message.updateMany).toHaveBeenCalledWith({
+      where: { recipient_id: 5, status: 0, link: '/issue/42' },
+      data: { status: 1 }
     })
     // D15: the publisher-side dialogue carries real signatures now.
     const publisherView = await getCase(42, 2, 1, { db: mocks.tx as never })
@@ -615,7 +668,10 @@ describe('case feedback rules (M03-6, M03-7)', () => {
 
   it('tells followers why a quiet first reporter ended the case', async () => {
     mocks.tx.ops_case.findUnique.mockResolvedValue(
-      caseRow({ status: 'waiting_reporter', status_changed_at: hoursAgo(15 * 24) })
+      caseRow({
+        status: 'waiting_reporter',
+        status_changed_at: hoursAgo(15 * 24)
+      })
     )
     mocks.tx.ops_case_subscriber.findMany.mockResolvedValue([
       { user_id: 5 },
