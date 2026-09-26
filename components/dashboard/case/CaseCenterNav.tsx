@@ -21,7 +21,13 @@ interface CaseCenterNavProps {
   className?: string
 }
 
-const GROUP_ORDER: CaseViewGroup[] = ['overview', 'unresolved', 'closed', 'all']
+const GROUP_ORDER: CaseViewGroup[] = [
+  'overview',
+  'unresolved',
+  'closed',
+  'all',
+  'oversight'
+]
 
 const viewsOf = (group: CaseViewGroup) =>
   CASE_CENTER_VIEWS.filter((view) => view.group === group)

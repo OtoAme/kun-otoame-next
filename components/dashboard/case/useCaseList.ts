@@ -16,6 +16,8 @@ export interface CaseListQuery {
   params: CaseListParams
   kind: string
   search: string
+  /** Publisher filter of the publisher view; empty for none. */
+  ownerId: string
   page: number
   limit: number
 }
@@ -42,13 +44,18 @@ export interface CaseListState {
  *   hidden rather than relabelled as the current filter's result.
  *
  * `statusCounts` is cached against a narrower key than the rows: the server
- * scopes it by kind and search only, so it stays correct while a status or
- * page change is still in flight.
+ * scopes it by owner, kind and search only, so it stays correct while a
+ * status or page change is still in flight.
  */
 export function useCaseList(query: CaseListQuery): CaseListState {
-  const { params, kind, search, page, limit } = query
-  const queryKey = JSON.stringify([params, kind, search, page, limit])
-  const scopeKey = JSON.stringify([kind, search])
+  const { params, kind, search, ownerId, page, limit } = query
+  const queryKey = JSON.stringify([params, kind, search, ownerId, page, limit])
+  const scopeKey = JSON.stringify([
+    params.ownerType ?? 'staff',
+    ownerId,
+    kind,
+    search
+  ])
 
   const [listState, setListState] = useState<{
     queryKey: string
@@ -86,6 +93,7 @@ export function useCaseList(query: CaseListQuery): CaseListState {
         {
           // 未选状态/类型/搜索时不发送对应参数，默认即站方未结队列
           ...params,
+          ...(ownerId ? { ownerId } : {}),
           ...(kind ? { kind } : {}),
           ...(search ? { search } : {}),
           page,
@@ -107,7 +115,7 @@ export function useCaseList(query: CaseListQuery): CaseListState {
         setLoading(false)
       }
     }
-  }, [params, kind, search, page, limit, queryKey, scopeKey])
+  }, [params, kind, search, ownerId, page, limit, queryKey, scopeKey])
 
   useEffect(() => {
     void fetchList()

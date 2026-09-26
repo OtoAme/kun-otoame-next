@@ -22,7 +22,7 @@ export interface IssueHeaderUser {
 
 /**
  * 用户侧自有顶栏。导航只放真实可去的地方：站点、问题处理本身、用户菜单。
- * 知识库属模块 07、提交入口在站点页面内的举报按钮上，两者都不做空壳入口。
+ * 知识库属模块 07，不做空壳入口；提交入口在站点页面内，站务反馈在工作区页头。
  */
 export function IssueHeader({ user }: { user: IssueHeaderUser | null }) {
   const initial = user?.name.trim().slice(0, 1) || '我'

@@ -62,6 +62,8 @@ export function CaseConversation({
                 <span className="font-medium text-foreground">
                   {caseMessageAuthorLabel(message, identifiesReporter)}
                 </span>
+                {/* A later reporter's note saved on this case (D15). */}
+                {message.kind === 'report' ? <span>其他报告者</span> : null}
                 <span className="tabular-nums">
                   {formatChinaDateTime(message.created)}
                 </span>
@@ -69,6 +71,20 @@ export function CaseConversation({
               <p className="whitespace-pre-wrap break-words text-sm">
                 {message.body}
               </p>
+              {message.images?.length ? (
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {message.images.map((url, index) => (
+                    <a key={url} href={url} target="_blank" rel="noreferrer">
+                      <img
+                        src={url}
+                        alt={`附图 ${index + 1}`}
+                        loading="lazy"
+                        className="size-20 rounded-md border object-cover"
+                      />
+                    </a>
+                  ))}
+                </div>
+              ) : null}
             </div>
           </li>
         )

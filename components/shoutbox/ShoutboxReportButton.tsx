@@ -1,23 +1,14 @@
 'use client'
 
-import { useRef, useState } from 'react'
 import Link from 'next/link'
 import { Button } from '@heroui/button'
-import { Textarea } from '@heroui/input'
-import {
-  Modal,
-  ModalBody,
-  ModalContent,
-  ModalFooter,
-  ModalHeader,
-  useDisclosure
-} from '@heroui/modal'
+import { useDisclosure } from '@heroui/modal'
 import { Tooltip } from '@heroui/tooltip'
 import { Flag } from 'lucide-react'
-import toast from 'react-hot-toast'
 import { useMounted } from '~/hooks/useMounted'
 import { useUserStore } from '~/store/userStore'
-import { kunFetchPost } from '~/utils/kunFetch'
+import { CaseLoginPrompt } from '~/components/case/CaseLoginPrompt'
+import { CaseViolationReportModal } from '~/components/case/CaseViolationReportModal'
 import { notifyShoutboxPublicWrite } from './query/core'
 import { useShoutboxQueryContextOrNull } from './query/ShoutboxQueryProvider'
 
@@ -40,11 +31,10 @@ interface Props {
  * and the compact rows. The author's own message never shows it — for
  * administrators either. Administrators (role >= 3) get a same-size review
  * entry on other people's messages that only navigates to the dashboard's
- * targeted view and never submits a report; everyone else gets the report
- * form, and guests the existing login prompt. A message the server marks
+ * targeted view and never submits a report; everyone else gets the shared
+ * case report form, and guests the login prompt. A message the server marks
  * not reportable renders no report entry at all — without the entry there
- * is no path that could submit such a report. A failed or refused
- * submission keeps the draft so it can be adjusted and retried.
+ * is no path that could submit such a report.
  */
 export const ShoutboxReportButton = ({
   shoutboxId,
@@ -57,10 +47,6 @@ export const ShoutboxReportButton = ({
   const role = useUserStore((state) => state.user.role)
   const reportModal = useDisclosure()
   const loginModal = useDisclosure()
-  const [reason, setReason] = useState('')
-  const [reasonError, setReasonError] = useState('')
-  const [submitting, setSubmitting] = useState(false)
-  const lockRef = useRef(false)
   const shoutboxQuery = useShoutboxQueryContextOrNull()
 
   // Own-check needs the persisted user: render nothing until mounted to avoid
@@ -115,43 +101,6 @@ export const ShoutboxReportButton = ({
     }
   }
 
-  const handleSubmit = async () => {
-    const content = reason.trim()
-    if (content.length < 2) {
-      setReasonError('举报原因最少 2 个字符')
-      return
-    }
-    if (content.length > 5000) {
-      setReasonError('举报原因最多 5000 个字符')
-      return
-    }
-    if (lockRef.current) {
-      return
-    }
-    lockRef.current = true
-    setSubmitting(true)
-    try {
-      const response = await kunFetchPost<KunResponse<{}>>('/shoutbox/report', {
-        shoutboxId,
-        content
-      })
-      if (typeof response === 'string') {
-        toast.error(response)
-        return
-      }
-      toast.success('举报已提交，站方会进行复核')
-      setReason('')
-      setReasonError('')
-      void notifyShoutboxPublicWrite(shoutboxQuery)
-      reportModal.onClose()
-    } catch {
-      toast.error('举报提交失败，请稍后重试')
-    } finally {
-      lockRef.current = false
-      setSubmitting(false)
-    }
-  }
-
   const trigger = isIconOnly ? (
     <Button
       size="sm"
@@ -177,74 +126,21 @@ export const ShoutboxReportButton = ({
     <>
       {isIconOnly ? <Tooltip content="举报">{trigger}</Tooltip> : trigger}
 
-      <Modal
+      <CaseViolationReportModal
         isOpen={reportModal.isOpen}
-        onOpenChange={(open) => {
-          if (!open && !submitting) {
-            reportModal.onClose()
-          }
-        }}
-        placement="center"
-      >
-        <ModalContent>
-          <ModalHeader>举报小喇叭</ModalHeader>
-          <ModalBody>
-            <Textarea
-              aria-label="举报原因"
-              placeholder="请说明举报原因，站方会进行复核"
-              value={reason}
-              onValueChange={(value) => {
-                setReason(value)
-                setReasonError('')
-              }}
-              maxLength={5000}
-              isDisabled={submitting}
-              isInvalid={reasonError !== ''}
-              errorMessage={reasonError}
-              autoFocus
-            />
-          </ModalBody>
-          <ModalFooter>
-            <Button
-              variant="light"
-              onPress={reportModal.onClose}
-              isDisabled={submitting}
-            >
-              取消
-            </Button>
-            <Button
-              color="primary"
-              onPress={handleSubmit}
-              isLoading={submitting}
-            >
-              提交举报
-            </Button>
-          </ModalFooter>
-        </ModalContent>
-      </Modal>
+        onClose={reportModal.onClose}
+        title="举报小喇叭"
+        subject="举报这条小喇叭。"
+        target={{ targetType: 'shoutbox', targetId: shoutboxId }}
+        // 举报可能触发阈值自动隐藏，提交后刷新公开列表
+        onSubmitted={() => void notifyShoutboxPublicWrite(shoutboxQuery)}
+      />
 
-      <Modal
+      <CaseLoginPrompt
         isOpen={loginModal.isOpen}
         onOpenChange={loginModal.onOpenChange}
-        placement="center"
-      >
-        <ModalContent>
-          <ModalHeader>请先登录</ModalHeader>
-          <ModalBody className="pb-6">
-            <p className="text-sm text-default-500">
-              举报小喇叭需要先登录账号。
-            </p>
-            <div className="mt-3 flex gap-2">
-              <Button as={Link} href="/login" color="primary">
-                登录
-              </Button>
-              <Button as={Link} href="/register" variant="bordered">
-                注册
-              </Button>
-            </div>
-          </ModalBody>
-        </ModalContent>
-      </Modal>
+        action="举报小喇叭"
+      />
     </>
   )
 }

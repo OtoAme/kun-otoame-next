@@ -172,7 +172,7 @@ export function IssueCaseList({
             <Inbox className="size-7 text-muted-foreground" aria-hidden />
             <p className="text-sm font-medium">{emptyText}</p>
             <p className="text-xs text-muted-foreground">
-              在条目或资源页面用「报告问题」提交后，可以在这里跟进处理进度。
+              在游戏页面或资源卡片上提交问题后，可以在这里跟进处理进度。
             </p>
           </div>
         ) : (
@@ -180,6 +180,11 @@ export function IssueCaseList({
             {rows.map((row) => {
               const selected = row.id === selectedId
               const resolutionText = caseResolutionLabel(row.resolution)
+              // 转交后仍列在原发布者的「待我处理」里，标明已不归自己处理（D20）
+              const statusText =
+                row.handedOff && !resolutionText
+                  ? '已交给网站管理员'
+                  : caseViewerStatusText(row, tab)
               return (
                 <li key={row.id}>
                   <Link
@@ -197,11 +202,24 @@ export function IssueCaseList({
                         <span className="truncate text-xs text-muted-foreground tabular-nums">
                           #{row.id}
                         </span>
+                        {row.hasUnread ? (
+                          <span className="flex shrink-0 items-center gap-1 text-xs font-medium text-primary">
+                            <span
+                              aria-hidden
+                              className="size-1.5 rounded-full bg-primary"
+                            />
+                            有新回复
+                          </span>
+                        ) : null}
                         <Badge
-                          variant={STATUS_BADGE_VARIANTS[row.status]}
+                          variant={
+                            row.handedOff && !resolutionText
+                              ? 'secondary'
+                              : STATUS_BADGE_VARIANTS[row.status]
+                          }
                           className="ml-auto shrink-0"
                         >
-                          {caseViewerStatusText(row, tab)}
+                          {statusText}
                         </Badge>
                       </span>
                       <span className="block truncate text-sm font-medium">

@@ -16,7 +16,7 @@ import { Input } from '~/components/dashboard/ui/input'
 import { useIsMobile } from '~/hooks/dashboard/use-mobile'
 import { OPEN_CASE_KINDS } from '~/constants/case'
 import { cn } from '~/lib/dashboard/utils'
-import type { AdminCaseListItem } from '~/types/api/case'
+import type { AdminCaseListItem, CaseStatusCounts } from '~/types/api/case'
 
 import { useDashboard } from '../DashboardShell'
 import { CaseCenterNav } from './CaseCenterNav'
@@ -26,6 +26,7 @@ import {
   DEFAULT_CASE_VIEW,
   UNRESOLVED_CASE_VIEW,
   findCaseView,
+  isPublisherCaseView,
   type CaseCenterView
 } from './caseCenterViews'
 import { useCaseList } from './useCaseList'
@@ -51,6 +52,12 @@ const parsePage = (raw: string | null): number => {
   return Number.isSafeInteger(page) && page >= 1 && page <= PG_INT_MAX
     ? page
     : 1
+}
+
+/** Publisher filter of the publisher view: a user id, or '' for none. */
+const parseOwnerId = (raw: string | null): string => {
+  if (!raw || !/^[1-9]\d*$/.test(raw)) return ''
+  return Number(raw) <= PG_INT_MAX ? raw : ''
 }
 
 type SelectionParse =
@@ -102,6 +109,8 @@ export function CaseCenter({ initialCaseId }: CaseCenterProps) {
         : DEFAULT_CASE_VIEW
   const caseKind = parseCaseKind(searchParams.get('caseKind'))
   const search = parseSearch(searchParams.get('search'))
+  const publisherView = isPublisherCaseView(view)
+  const ownerId = publisherView ? parseOwnerId(searchParams.get('owner')) : ''
   const page = parsePage(searchParams.get('page'))
   const paramSelection = parseSelection(searchParams.get('id'))
   const selection: SelectionParse =
@@ -117,11 +126,20 @@ export function CaseCenter({ initialCaseId }: CaseCenterProps) {
     params: isOverview ? UNRESOLVED_CASE_VIEW.params : view.params,
     kind: isOverview ? '' : caseKind,
     search: isOverview ? '' : search,
+    ownerId,
     page: isOverview ? 1 : page,
     limit: isOverview ? OVERVIEW_PAGE_SIZE : QUEUE_PAGE_SIZE
   }
   const { list, rows, rowsRef, statusCounts, loading, error, refetch } =
     useCaseList(listQuery)
+
+  // Navigation badges count the staff queue. The publisher view's counts are
+  // publisher-scoped, so while it is open the badges keep the last staff ones.
+  const [staffCounts, setStaffCounts] = useState<CaseStatusCounts | null>(null)
+  useEffect(() => {
+    if (!publisherView && statusCounts) setStaffCounts(statusCounts)
+  }, [publisherView, statusCounts])
+  const navCounts = publisherView ? staffCounts : statusCounts
 
   const [searchText, setSearchText] = useState(search)
   // Reflect the URL-driven search value (back/forward navigation) in the input.
@@ -138,6 +156,7 @@ export function CaseCenter({ initialCaseId }: CaseCenterProps) {
         view?: CaseCenterView
         caseKind?: string
         search?: string
+        ownerId?: string
         page?: number
         selection?: number | null
       },
@@ -147,6 +166,7 @@ export function CaseCenter({ initialCaseId }: CaseCenterProps) {
         view: patch.view ?? view,
         caseKind: patch.caseKind ?? caseKind,
         search: patch.search ?? search,
+        ownerId: patch.ownerId ?? ownerId,
         page: patch.page ?? page,
         selection: patch.selection === undefined ? selectedId : patch.selection
       }
@@ -157,6 +177,9 @@ export function CaseCenter({ initialCaseId }: CaseCenterProps) {
       if (next.view.countKeys !== null) {
         if (next.caseKind) q.set('caseKind', next.caseKind)
         if (next.search) q.set('search', next.search)
+        if (next.ownerId && isPublisherCaseView(next.view)) {
+          q.set('owner', next.ownerId)
+        }
         if (next.page > 1) q.set('page', String(next.page))
         if (next.selection !== null) q.set('id', String(next.selection))
       }
@@ -165,7 +188,7 @@ export function CaseCenter({ initialCaseId }: CaseCenterProps) {
       if (mode === 'replace') router.replace(href, { scroll: false })
       else router.push(href, { scroll: false })
     },
-    [view, caseKind, search, page, selectedId, router]
+    [view, caseKind, search, ownerId, page, selectedId, router]
   )
 
   // A filter change is a new result set: back to page 1. The open detail is
@@ -175,6 +198,9 @@ export function CaseCenter({ initialCaseId }: CaseCenterProps) {
   }
   const handleKindChange = (value: string) => {
     navigate({ caseKind: value === ALL_CASE_KINDS ? '' : value, page: 1 })
+  }
+  const handleOwnerIdChange = (value: string) => {
+    navigate({ ownerId: parseOwnerId(value), page: 1 })
   }
   const handleSearchSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -275,7 +301,7 @@ export function CaseCenter({ initialCaseId }: CaseCenterProps) {
         {detailOpen ? null : (
           <CaseCenterNav
             current={view}
-            statusCounts={statusCounts}
+            statusCounts={navCounts}
             orientation="vertical"
             onSelect={handleSelectView}
             className="hidden lg:block"
@@ -346,7 +372,7 @@ export function CaseCenter({ initialCaseId }: CaseCenterProps) {
 
           <CaseCenterNav
             current={view}
-            statusCounts={statusCounts}
+            statusCounts={navCounts}
             orientation="horizontal"
             onSelect={handleSelectView}
             className={cn(!detailOpen && 'lg:hidden')}
@@ -378,11 +404,13 @@ export function CaseCenter({ initialCaseId }: CaseCenterProps) {
               page={page}
               pageSize={QUEUE_PAGE_SIZE}
               caseKind={caseKind}
+              ownerId={ownerId}
               searchActive={search.trim().length > 0}
               selectedId={selectedId}
               selectionStatus={selectionStatus}
               isMobile={isMobile}
               onKindChange={handleKindChange}
+              onOwnerIdChange={handleOwnerIdChange}
               onPageChange={handlePageChange}
               onSelect={handleSelect}
               onClearSelection={clearSelection}

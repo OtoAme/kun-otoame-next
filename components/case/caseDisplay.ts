@@ -6,13 +6,15 @@ import {
   CASE_REPORTER_TIMEOUT_KINDS,
   CASE_RESOLUTION_LABELS,
   CASE_STATUS_LABELS,
-  CASE_TARGET_TYPE_LABELS
+  CASE_TARGET_TYPE_LABELS,
+  caseTextHasGuideLink
 } from '~/constants/case'
 import type {
   CaseKind,
   CaseMessage,
   CaseMessageEvent,
   CaseOwnerType,
+  CaseResolution,
   CaseStatus,
   CaseSummary,
   CaseTab
@@ -20,6 +22,10 @@ import type {
 
 export const caseKindLabel = (kind: CaseSummary['kind']): string =>
   CASE_KIND_LABELS[kind] ?? kind
+
+/** User-facing handler name; the docs keep the term 站方 (D22). */
+export const caseOwnerLabel = (ownerType: CaseOwnerType): string =>
+  ownerType === 'publisher' ? '发布者' : '网站管理员'
 
 export const caseStatusLabel = (status: CaseStatus): string =>
   CASE_STATUS_LABELS[status] ?? status
@@ -47,6 +53,24 @@ export const caseTargetText = (
     return patchName ? `${resourceName}（${patchName}）` : resourceName
   }
   return item.target.label || `${typeLabel} #${item.targetId}`
+}
+
+/**
+ * Site page for the case target (D22): a resource opens its card on the game
+ * page, other game-bound targets open the game page. Deleted targets and site
+ * feedback have no page.
+ */
+export const caseTargetHref = (
+  item: Pick<CaseSummary, 'targetType' | 'targetId' | 'target'>
+): string | null => {
+  if (item.target.deleted) return null
+  if (item.targetType === 'user') return `/user/${item.targetId}`
+  const resource = item.target.resource
+  if (item.targetType === 'resource' && resource?.patch) {
+    return `/${resource.patch.uniqueId}?tab=resources&resourceSection=${resource.section}&resourceId=${resource.id}`
+  }
+  const patch = resource?.patch ?? item.target.patch
+  return patch ? `/${patch.uniqueId}` : null
 }
 
 /**
@@ -90,13 +114,17 @@ export const caseMessageAuthorLabel = (
  *   `onDelete: SetNull`, so a deleted reporter and a deleted processing party
  *   look identical here — the side is genuinely unknowable and must not be
  *   guessed, or a moderator's words end up filed under the reporter.
+ *
+ * A `report` message is a later reporter's note saved on the case (D15), so it
+ * is filed under「其他报告者」whoever wrote it.
  */
 export const caseMessageSide = (
   message: CaseMessage,
   reporterId: number | null | undefined,
   identifiesReporter = false
-): 'system' | 'reporter' | 'owner' | 'unknown' => {
+): 'system' | 'reporter' | 'other-reporter' | 'owner' | 'unknown' => {
   if (message.kind === 'system') return 'system'
+  if (message.kind === 'report') return 'other-reporter'
   if (!message.author) return identifiesReporter ? 'unknown' : 'reporter'
   return reporterId !== null &&
     reporterId !== undefined &&
@@ -196,8 +224,8 @@ export const caseStatusHint = (
     ) {
       const remaining = enteredAt + CASE_PUBLISHER_ESCALATION_AFTER_MS - now
       return remaining > 0
-        ? `发布者处理中，约 ${formatCaseDuration(remaining)}后升级站方`
-        : '已达升级时限，等待系统升级'
+        ? `发布者处理中，约 ${formatCaseDuration(remaining)}后提交给网站管理员处理`
+        : '已到时限，即将提交给网站管理员处理'
     }
     if (
       item.status === 'waiting_reporter' &&
@@ -213,5 +241,70 @@ export const caseStatusHint = (
   const waited = formatCaseDuration(now - enteredAt)
   return item.status === 'waiting_reporter'
     ? `等待报告者补充，已等待 ${waited}`
-    : `站方处理中，已等待 ${waited}`
+    : `网站管理员处理中，已等待 ${waited}`
+}
+
+/**
+ * The server's closing-note rule (D12, D16, D21), mirrored so a form can
+ * stop before submitting. Called with an empty note it returns what the note
+ * must contain; null means the note is optional or already fine.
+ */
+export const caseClosingNoteError = (
+  item: Pick<CaseSummary, 'kind' | 'targetType'>,
+  resolution: CaseResolution | '',
+  content: string
+): string | null => {
+  if (resolution === 'unreproducible') {
+    return content.trim() ? null : '以「无法复现」结案时请写明核对了什么'
+  }
+  if (resolution !== 'out_of_scope') return null
+  if (item.kind === 'other' && item.targetType === 'site') {
+    return content.trim() ? null : '以「不在受理范围」结案时请写明理由'
+  }
+  return caseTextHasGuideLink(content)
+    ? null
+    : '以「不在受理范围」结案时请附上下载、压缩包或投稿指南中的一篇链接'
+}
+
+const ROUND_BOUNDARY_EVENTS: ReadonlySet<CaseMessageEvent> = new Set([
+  'escalated',
+  'reopened',
+  'resolved',
+  'hidden',
+  'moved'
+])
+
+/**
+ * The original publisher's latest closure proposal in the current round (D20):
+ * the `close_proposed` event and the note written right after it. Only the
+ * admin view carries payloads, so other views get null.
+ */
+export const caseLatestProposal = (
+  messages: readonly CaseMessage[]
+): { resolution: CaseResolution; note: string; created: string } | null => {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index]
+    if (message.event && ROUND_BOUNDARY_EVENTS.has(message.event)) return null
+    if (message.event !== 'close_proposed') continue
+    const resolution = message.payload?.resolution
+    if (!resolution) return null
+    const note = messages[index + 1]
+    return {
+      resolution,
+      note: note && note.kind === 'reply' ? note.body : '',
+      created: message.created
+    }
+  }
+  return null
+}
+
+/** Whether the latest handoff came from the opener's review request (D16). */
+export const caseReviewRequested = (messages: readonly CaseMessage[]) => {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index]
+    if (message.event === 'escalated') {
+      return message.payload?.escalation_trigger === 'review_request'
+    }
+  }
+  return false
 }

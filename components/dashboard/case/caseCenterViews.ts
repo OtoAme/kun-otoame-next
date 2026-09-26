@@ -6,6 +6,7 @@ import {
   LayoutDashboard,
   Layers,
   UserRoundCheck,
+  UsersRound,
   type LucideIcon
 } from 'lucide-react'
 
@@ -21,6 +22,8 @@ export interface CaseListParams {
   statuses?: string
   /** A query value is a string; the schema takes 'true'/'false', not 1/0. */
   allStatuses?: 'true'
+  /** Read-only oversight of publisher-owned cases (D22); absent means staff. */
+  ownerType?: 'publisher'
 }
 
 export interface CaseCenterView {
@@ -41,13 +44,19 @@ export interface CaseCenterView {
   emptyText: string
 }
 
-export type CaseViewGroup = 'overview' | 'unresolved' | 'closed' | 'all'
+export type CaseViewGroup =
+  | 'overview'
+  | 'unresolved'
+  | 'closed'
+  | 'all'
+  | 'oversight'
 
 export const CASE_VIEW_GROUP_LABELS: Record<CaseViewGroup, string> = {
   overview: '概览',
   unresolved: '未结',
   closed: '已结案',
-  all: '全部'
+  all: '全部',
+  oversight: '只读'
 }
 
 const byStatuses = (keys: readonly CaseStatus[]): CaseListParams => ({
@@ -146,12 +155,24 @@ export const CASE_CENTER_VIEWS: CaseCenterView[] = [
     countKeys: CASE_STATUSES,
     params: { allStatuses: 'true' },
     emptyText: '还没有任何事项'
+  },
+  {
+    // D22: publisher-owned cases the staff may step into before the 7-day
+    // handoff. Read-only oversight: outside the inbox and the pending counts.
+    value: 'publisher',
+    label: '发布者处理中',
+    icon: UsersRound,
+    group: 'oversight',
+    depth: 0,
+    countKeys: CASE_UNRESOLVED_STATUSES,
+    params: { ownerType: 'publisher' },
+    emptyText: '没有仍由发布者处理的事项'
   }
 ]
 
 /** Says out loud that the six queue numbers are not mutually exclusive. */
 export const CASE_VIEW_OVERLAP_HINT =
-  '待处理与等待报告者是未结事项的两个子集；全部事项另含已结案。'
+  '待处理与等待报告者是未结事项的两个子集；全部事项另含已结案。发布者处理中不在站方队列里。'
 
 export const DEFAULT_CASE_VIEW = CASE_CENTER_VIEWS[0]
 /** Staff queue: what the overview reports on and where a deep link lands. */
@@ -165,12 +186,17 @@ export const findCaseView = (raw: string | null): CaseCenterView =>
 /**
  * Badge number for one navigation entry: the sum of the same status keys the
  * entry filters by. `statusCounts` is scoped by kind and search only, never
- * by a status parameter, so one response feeds every entry at once.
+ * by a status parameter, so one response feeds every entry at once. The
+ * counts in hand are the staff queue's, so the publisher view has no badge.
  */
 export const caseViewCount = (
   counts: CaseStatusCounts | null,
   view: CaseCenterView
 ): number | null => {
-  if (!counts || view.countKeys === null) return null
+  if (!counts || view.countKeys === null || view.params.ownerType) return null
   return view.countKeys.reduce((sum, status) => sum + counts[status], 0)
 }
+
+/** Views listing publisher-owned cases rather than the staff queue. */
+export const isPublisherCaseView = (view: CaseCenterView) =>
+  view.params.ownerType === 'publisher'

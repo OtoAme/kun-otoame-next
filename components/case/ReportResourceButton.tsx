@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import Link from 'next/link'
 import {
   Button,
   Modal,
@@ -8,6 +9,8 @@ import {
   ModalContent,
   ModalFooter,
   ModalHeader,
+  Radio,
+  RadioGroup,
   Textarea,
   useDisclosure
 } from '@heroui/react'
@@ -19,6 +22,11 @@ import {
   CASE_CONTENT_MAX_LENGTH,
   CASE_DESCRIPTION_MIN_LENGTH
 } from '~/constants/case'
+import { enabledIssueTriagePhenomena } from '~/constants/issueTriage'
+import { CaseImageField } from './CaseImageField'
+import { CaseLoginPrompt } from './CaseLoginPrompt'
+import { CaseSubmitResult } from './CaseSubmitResult'
+import { useCaseImageUploads } from './useCaseImageUploads'
 import type { CaseCreateResponse } from '~/types/api/case'
 import type { PatchResource } from '~/types/api/patch'
 
@@ -28,33 +36,58 @@ interface Props {
   patchId: number
 }
 
+const PHENOMENA = enabledIssueTriagePhenomena()
+
 export const ReportResourceButton = ({ resource, patchId }: Props) => {
   const { user } = useUserStore((state) => state)
   const { isOpen, onOpen, onClose } = useDisclosure()
+  const login = useDisclosure()
+  const uploads = useCaseImageUploads()
+  const [phenomenonKey, setPhenomenonKey] = useState('')
   const [content, setContent] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const [result, setResult] = useState<CaseCreateResponse | null>(null)
 
-  if (user.uid < 1) {
-    return null
-  }
-
-  // 与资源 Tabs 官方/社区同一口径：作者 role > 2 视为官方资源，归站方处理。
+  const guest = user.uid < 1
+  const phenomenon = PHENOMENA.find((item) => item.key === phenomenonKey)
+  const destination = phenomenon?.destination
+  // 与资源 Tabs 官方/社区同一口径：作者 role > 2 视为官方资源，归网站管理员处理。
   const official = (resource.user?.role ?? 0) > 2
   const handlerHint = official
-    ? '该问题由站方处理，预计首次响应在 7 天内。'
-    : '该问题先由资源发布者处理，预计首次响应在 7 天内；若发布者 7 天未处理，会自动升级给站方。'
+    ? '该问题由网站管理员处理，预计首次响应在 7 天内。'
+    : '该问题先由资源发布者处理，预计首次响应在 7 天内；发布者 7 天未处理时会提交给网站管理员处理。'
+  const tooShort = content.trim().length < CASE_DESCRIPTION_MIN_LENGTH
+
+  const handleClose = () => {
+    if (submitting) return
+    // 提交成功后收起即清空；取消时保留草稿，重新打开可以接着写
+    if (result) {
+      setResult(null)
+      setPhenomenonKey('')
+      setContent('')
+      uploads.reset()
+    }
+    onClose()
+  }
 
   const handleSubmit = async () => {
+    if (destination?.type !== 'case') return
+    if (guest) {
+      onClose()
+      login.onOpen()
+      return
+    }
     const trimmed = content.trim()
-    if (trimmed.length < CASE_DESCRIPTION_MIN_LENGTH || submitting) return
+    if (tooShort || submitting || uploads.uploading) return
     setSubmitting(true)
     try {
       const res = await kunFetchPost<CaseCreateResponse | string>('/case', {
-        kind: 'resource_mismatch',
+        kind: destination.kind,
         targetType: 'resource',
         targetId: resource.id,
         expectedPatchId: patchId,
-        content: trimmed
+        content: trimmed,
+        imageKeys: uploads.keys
       })
       if (typeof res === 'string') {
         // 业务失败（日限额、资源已被移动等）保留输入
@@ -65,16 +98,7 @@ export const ReportResourceButton = ({ resource, patchId }: Props) => {
         toast('相同问题刚刚结案，请重新提交')
         return
       }
-      // created=false 且 subscribed=false 的幂等成功也按成功收起
-      toast.success(
-        res.created
-          ? '已提交，可在「问题处理」页跟进进度'
-          : res.subscribed
-            ? '该资源已有相同问题正在处理，已为你登记关注'
-            : '已登记，正在处理'
-      )
-      setContent('')
-      onClose()
+      setResult(res)
     } catch {
       // 网络失败保留输入
       toast.error('网络错误，提交失败，请重试')
@@ -94,46 +118,128 @@ export const ReportResourceButton = ({ resource, patchId }: Props) => {
         报告问题
       </Button>
 
-      <Modal isOpen={isOpen} onClose={onClose}>
+      <Modal isOpen={isOpen} onClose={handleClose} scrollBehavior="inside">
         <ModalContent>
-          <ModalHeader className="flex flex-col gap-1">报告问题</ModalHeader>
+          <ModalHeader className="flex flex-col gap-1">
+            报告问题
+            <span className="text-sm font-normal text-default-500">
+              {resource.name}
+            </span>
+          </ModalHeader>
           <ModalBody>
-            <p className="text-sm text-default-500">
-              资源与描述不符（{resource.name}）。{handlerHint}
-              处理进度和结果可在「问题处理」页查看。
-            </p>
-            <Textarea
-              aria-label="问题描述"
-              isRequired
-              placeholder={`请描述实际内容与资源描述不符的地方（至少 ${CASE_DESCRIPTION_MIN_LENGTH} 个字符，纯文字）`}
-              value={content}
-              onValueChange={setContent}
-              maxLength={CASE_CONTENT_MAX_LENGTH}
-              isInvalid={
-                content.length > 0 &&
-                content.trim().length < CASE_DESCRIPTION_MIN_LENGTH
-              }
-              errorMessage={`问题描述最少 ${CASE_DESCRIPTION_MIN_LENGTH} 个字符`}
-            />
+            {result ? (
+              <CaseSubmitResult
+                result={result}
+                handler={`${official ? '网站管理员' : '资源发布者'}，预计 7 天内首次回应`}
+              />
+            ) : (
+              <>
+                <RadioGroup
+                  aria-label="遇到的问题"
+                  label="遇到了什么问题？"
+                  value={phenomenonKey}
+                  onValueChange={setPhenomenonKey}
+                >
+                  {PHENOMENA.map((item) => (
+                    <Radio
+                      key={item.key}
+                      value={item.key}
+                      description={item.examples}
+                    >
+                      {item.label}
+                    </Radio>
+                  ))}
+                </RadioGroup>
+
+                {destination?.type === 'guide' && (
+                  <div className="space-y-2 rounded-medium bg-default-100 p-3 text-sm">
+                    <p>这类问题不需要提交，可以先看这些说明：</p>
+                    <ul className="space-y-1">
+                      {destination.links.map((link) => (
+                        <li key={link.href}>
+                          <Link
+                            href={link.href}
+                            target="_blank"
+                            className="text-primary underline-offset-2 hover:underline"
+                          >
+                            {link.label}
+                          </Link>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {destination?.type === 'case' && (
+                  <div className="space-y-3">
+                    <p className="text-sm text-default-500">
+                      {handlerHint}
+                      {official ? '网站管理员' : '发布者'}
+                      能看到你的用户名和说明。
+                    </p>
+                    {guest ? (
+                      <p className="text-sm text-default-500">
+                        提交需要先登录账号。
+                      </p>
+                    ) : (
+                      <>
+                        <Textarea
+                          aria-label="问题描述"
+                          isRequired
+                          placeholder={phenomenon?.placeholder}
+                          description={`至少 ${CASE_DESCRIPTION_MIN_LENGTH} 个字符，纯文字；可以附截图`}
+                          value={content}
+                          onValueChange={setContent}
+                          maxLength={CASE_CONTENT_MAX_LENGTH}
+                          isInvalid={content.length > 0 && tooShort}
+                          errorMessage={`问题描述最少 ${CASE_DESCRIPTION_MIN_LENGTH} 个字符`}
+                        />
+                        <CaseImageField
+                          uploads={uploads}
+                          isDisabled={submitting}
+                        />
+                      </>
+                    )}
+                  </div>
+                )}
+              </>
+            )}
           </ModalBody>
           <ModalFooter>
-            <Button variant="light" onPress={onClose} isDisabled={submitting}>
-              取消
-            </Button>
-            <Button
-              color="primary"
-              onPress={() => void handleSubmit()}
-              isDisabled={
-                content.trim().length < CASE_DESCRIPTION_MIN_LENGTH ||
-                submitting
-              }
-              isLoading={submitting}
-            >
-              提交
-            </Button>
+            {result || destination?.type !== 'case' ? (
+              <Button variant="light" onPress={handleClose}>
+                关闭
+              </Button>
+            ) : (
+              <>
+                <Button
+                  variant="light"
+                  onPress={handleClose}
+                  isDisabled={submitting}
+                >
+                  取消
+                </Button>
+                <Button
+                  color="primary"
+                  onPress={() => void handleSubmit()}
+                  isDisabled={
+                    !guest && (tooShort || submitting || uploads.uploading)
+                  }
+                  isLoading={submitting}
+                >
+                  {guest ? '登录后提交' : '提交'}
+                </Button>
+              </>
+            )}
           </ModalFooter>
         </ModalContent>
       </Modal>
+
+      <CaseLoginPrompt
+        isOpen={login.isOpen}
+        onOpenChange={login.onOpenChange}
+        action="报告问题"
+      />
     </>
   )
 }

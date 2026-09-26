@@ -14,6 +14,7 @@ import type { CaseListItem, CaseListResponse, CaseTab } from '~/types/api/case'
 
 import { IssueCaseDetail } from './IssueCaseDetail'
 import { IssueCaseList } from './IssueCaseList'
+import { IssueSiteFeedbackDialog } from './IssueSiteFeedbackDialog'
 import {
   parseStatusFilter,
   statusFilterStatuses,
@@ -196,11 +197,19 @@ export function IssueWorkspace() {
 
   return (
     <div className="space-y-4">
-      <div className={cn('space-y-1', hasSelection && 'max-lg:hidden')}>
-        <h1 className="text-2xl font-semibold tracking-tight">问题处理</h1>
-        <p className="text-sm text-muted-foreground">
-          查看和跟进你提交的、需要你处理的、以及你关注的问题。要提交新问题，请在对应的条目或资源页面使用「报告问题」入口。
-        </p>
+      <div
+        className={cn(
+          'flex flex-wrap items-start justify-between gap-3',
+          hasSelection && 'max-lg:hidden'
+        )}
+      >
+        <div className="min-w-0 space-y-1">
+          <h1 className="text-2xl font-semibold tracking-tight">问题处理</h1>
+          <p className="text-sm text-muted-foreground">
+            查看和跟进你提交的、需要你处理的、以及你关注的问题。资源和游戏的问题请在对应页面提交；需要网站管理员修改数据的请求，用「站务反馈」。
+          </p>
+        </div>
+        <IssueSiteFeedbackDialog onSubmitted={() => void fetchList()} />
       </div>
 
       <div

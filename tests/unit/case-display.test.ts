@@ -1,15 +1,20 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  caseClosingNoteError,
+  caseLatestProposal,
   caseMessageAuthorLabel,
   caseMessageSide,
   caseResolutionLabel,
+  caseReviewRequested,
   caseStatusHint,
   caseSystemEventText,
+  caseTargetHref,
   caseTargetText,
   caseViewerStatusText,
   formatCaseDuration
 } from '~/components/case/caseDisplay'
+import { CASE_GUIDE_LINKS } from '~/constants/case'
 import type { CaseMessage, CaseSummary } from '~/types/api/case'
 
 const makeMessage = (overrides: Partial<CaseMessage>): CaseMessage => ({
@@ -169,9 +174,10 @@ describe('caseDisplay helpers', () => {
       statusChangedAt: '2026-09-13T00:00:00.000Z'
     } as const
 
+    // D22: user-facing wording names the site administrator, not 站方
     expect(
       caseStatusHint({ ...base, ownerType: 'publisher', status: 'open' }, now)
-    ).toBe('发布者处理中，约 6 天后升级站方')
+    ).toBe('发布者处理中，约 6 天后提交给网站管理员处理')
     expect(
       caseStatusHint(
         { ...base, ownerType: 'publisher', status: 'waiting_reporter' },
@@ -196,7 +202,7 @@ describe('caseDisplay helpers', () => {
         { ...base, ownerType: 'publisher', status: 'open' },
         now + 8 * 86_400_000
       )
-    ).toBe('已达升级时限，等待系统升级')
+    ).toBe('已到时限，即将提交给网站管理员处理')
   })
 
   it('hints staff queue waiting and stays silent for closed cases', () => {
@@ -207,7 +213,7 @@ describe('caseDisplay helpers', () => {
     } as const
     expect(
       caseStatusHint({ ...base, ownerType: 'staff', status: 'open' }, now)
-    ).toBe('站方处理中，已等待 2 天')
+    ).toBe('网站管理员处理中，已等待 2 天')
     expect(
       caseStatusHint(
         { ...base, ownerType: 'staff', status: 'waiting_reporter' },
@@ -292,6 +298,19 @@ describe('case conversation and tab helpers', () => {
     ).toBe('system')
   })
 
+  it('files a later reporter note under the other reporters (D15)', () => {
+    expect(
+      caseMessageSide(
+        makeMessage({
+          kind: 'report',
+          author: { id: 9, name: '后来者', avatar: '' }
+        }),
+        5,
+        true
+      )
+    ).toBe('other-reporter')
+  })
+
   it('switches status wording to first person only in the matching tab', () => {
     expect(
       caseViewerStatusText({ status: 'waiting_reporter' }, 'reported')
@@ -310,5 +329,128 @@ describe('case conversation and tab helpers', () => {
     expect(caseViewerStatusText({ status: 'resolved' }, 'reported')).toBe(
       '已解决'
     )
+  })
+})
+
+describe('case feedback helpers (D16, D20, D22)', () => {
+  const patch = { id: 3, uniqueId: 'abcd1234', name: '条目A' }
+
+  it('links targets to their site pages and gives site feedback none', () => {
+    expect(
+      caseTargetHref({
+        targetType: 'resource',
+        targetId: 7,
+        target: makeTarget({
+          resource: {
+            id: 7,
+            name: '资源X',
+            section: 'galgame',
+            patchId: 3,
+            patch,
+            status: 0
+          }
+        })
+      })
+    ).toBe('/abcd1234?tab=resources&resourceSection=galgame&resourceId=7')
+    expect(
+      caseTargetHref({
+        targetType: 'comment',
+        targetId: 11,
+        target: makeTarget({ targetType: 'comment', patch })
+      })
+    ).toBe('/abcd1234')
+    expect(
+      caseTargetHref({
+        targetType: 'user',
+        targetId: 12,
+        target: makeTarget({ targetType: 'user' })
+      })
+    ).toBe('/user/12')
+    expect(
+      caseTargetHref({
+        targetType: 'site',
+        targetId: 0,
+        target: makeTarget({ targetType: 'site', label: '站务反馈' })
+      })
+    ).toBeNull()
+    expect(
+      caseTargetHref({
+        targetType: 'patch',
+        targetId: 3,
+        target: makeTarget({ targetType: 'patch', patch, deleted: true })
+      })
+    ).toBeNull()
+  })
+
+  it('mirrors the server closing-note rule', () => {
+    const resource = {
+      kind: 'resource_mismatch',
+      targetType: 'resource'
+    } as const
+    const site = { kind: 'other', targetType: 'site' } as const
+    expect(caseClosingNoteError(resource, 'repaired', '')).toBeNull()
+    expect(caseClosingNoteError(resource, 'unreproducible', ' ')).toBe(
+      '以「无法复现」结案时请写明核对了什么'
+    )
+    expect(caseClosingNoteError(resource, 'out_of_scope', '不受理')).toBe(
+      '以「不在受理范围」结案时请附上下载、压缩包或投稿指南中的一篇链接'
+    )
+    expect(
+      caseClosingNoteError(
+        resource,
+        'out_of_scope',
+        `请看 ${CASE_GUIDE_LINKS.download}`
+      )
+    ).toBeNull()
+    // Site feedback has no guide to link, only a reason (D21).
+    expect(caseClosingNoteError(site, 'out_of_scope', '')).toBe(
+      '以「不在受理范围」结案时请写明理由'
+    )
+    expect(caseClosingNoteError(site, 'out_of_scope', '需自助修改')).toBeNull()
+  })
+
+  it('finds the proposal of the current round and the review handoff', () => {
+    const proposed = [
+      makeMessage({
+        id: 1,
+        kind: 'system',
+        event: 'escalated',
+        payload: { escalation_trigger: 'review_request' }
+      }),
+      makeMessage({
+        id: 2,
+        kind: 'system',
+        event: 'close_proposed',
+        payload: { resolution: 'repaired' },
+        created: '2026-09-20T00:00:00.000Z'
+      }),
+      makeMessage({
+        id: 3,
+        body: '已重新上传',
+        author: { id: 2, name: '发布者甲', avatar: '' }
+      })
+    ]
+    expect(caseLatestProposal(proposed)).toEqual({
+      resolution: 'repaired',
+      note: '已重新上传',
+      created: '2026-09-20T00:00:00.000Z'
+    })
+    expect(caseReviewRequested(proposed)).toBe(true)
+    // A later round boundary makes the proposal stale.
+    expect(
+      caseLatestProposal([
+        ...proposed,
+        makeMessage({ id: 4, kind: 'system', event: 'resolved' })
+      ])
+    ).toBeNull()
+    expect(
+      caseReviewRequested([
+        makeMessage({
+          kind: 'system',
+          event: 'escalated',
+          payload: { escalation_trigger: 'timeout' }
+        })
+      ])
+    ).toBe(false)
   })
 })

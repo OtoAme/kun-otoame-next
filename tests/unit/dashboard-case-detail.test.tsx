@@ -334,7 +334,9 @@ describe('dashboard case detail', () => {
     const replyBox = container.querySelector<HTMLTextAreaElement>(
       'textarea[aria-label="回复内容"]'
     )!
-    expect(replyBox.value).toBe('请补充相关截图（回复时可以直接附图），方便进一步核对。')
+    expect(replyBox.value).toBe(
+      '请补充相关截图（回复时可以直接附图），方便进一步核对。'
+    )
 
     // 回复不需要二次确认：不出现确认弹窗
     await act(async () => {
@@ -511,14 +513,22 @@ describe('dashboard case detail', () => {
     await act(async () => {
       findButton(container, '结案')!.click()
     })
-    // 无理由不开弹窗
+    // 无理由不开弹窗；「不在受理范围」须带一篇指南链接（D12）
     expect(container.querySelector('[role="alertdialog"]')).toBeNull()
-    expect(container.textContent).toContain('需要填写理由')
+    expect(container.textContent).toContain(
+      '请附上下载、压缩包或投稿指南中的一篇链接'
+    )
 
     const contentBox = container.querySelector<HTMLTextAreaElement>(
       'textarea#case-action-content'
     )!
     await setInput(contentBox, '不在受理范围的理由')
+    await act(async () => {
+      findButton(container, '结案')!.click()
+    })
+    expect(container.querySelector('[role="alertdialog"]')).toBeNull()
+
+    await setInput(contentBox, '不在受理范围，请看 /doc/notice/contribute')
     await act(async () => {
       findButton(container, '结案')!.click()
     })
@@ -530,8 +540,86 @@ describe('dashboard case detail', () => {
     expect(mocks.kunFetchPost).toHaveBeenCalledWith('/admin/case/9/handle', {
       action: 'reject',
       resolution: 'out_of_scope',
-      content: '不在受理范围的理由'
+      content: '不在受理范围，请看 /doc/notice/contribute'
     })
+  })
+
+  it('adopts the original publisher proposal with its note (D20)', async () => {
+    const detail = makeDetail({
+      ownerType: 'staff',
+      escalatedAt: '2026-09-12T00:00:00.000Z',
+      messages: [
+        {
+          id: 21,
+          kind: 'system',
+          event: 'escalated',
+          body: '',
+          author: null,
+          payload: { escalation_trigger: 'review_request' },
+          created: '2026-09-12T00:00:00.000Z'
+        },
+        {
+          id: 22,
+          kind: 'system',
+          event: 'close_proposed',
+          body: '原发布者提请以「已修正」结案。',
+          author: null,
+          payload: { resolution: 'repaired' },
+          created: '2026-09-13T00:00:00.000Z'
+        },
+        {
+          id: 23,
+          kind: 'reply',
+          event: null,
+          body: '已重新上传第 3 分卷',
+          author: { id: 2, name: '发布者甲', avatar: '' },
+          payload: null,
+          created: '2026-09-13T00:00:00.000Z'
+        }
+      ],
+      capabilities: {
+        canReply: true,
+        canResolve: true,
+        canReopen: false,
+        canWithdraw: false,
+        canConfirm: false,
+        canReview: false,
+        canPropose: false,
+        canHideResource: false,
+        canRestoreResource: false,
+        canMoveResource: false,
+        canHandleContent: false,
+        canConfirmUserHandled: false,
+        allowedContentActions: [],
+        allowedResolutions: ['repaired', 'unreproducible', 'out_of_scope']
+      }
+    })
+    mocks.kunFetchGet.mockResolvedValue(detailResponse(detail))
+    mocks.kunFetchPost.mockResolvedValue({ case: detail, changed: true })
+    const onProcessed = vi.fn()
+    const container = await mount(
+      <DashboardCaseDetail caseId={9} onProcessed={onProcessed} />
+    )
+    await flush()
+
+    // D16: a review handoff is marked; D20: the proposal sits on top.
+    expect(container.textContent).toContain('报告者申请复核')
+    expect(container.textContent).toContain('原发布者提请以「已修正」结案')
+    await act(async () => {
+      findButton(container, '采纳')!.click()
+    })
+    expect(container.querySelector('[role="alertdialog"]')).not.toBeNull()
+    expect(mocks.kunFetchPost).not.toHaveBeenCalled()
+    await act(async () => {
+      findButton(container, '确认')!.click()
+    })
+    await flush()
+    expect(mocks.kunFetchPost).toHaveBeenCalledWith('/admin/case/9/handle', {
+      action: 'resolve',
+      resolution: 'repaired',
+      content: '已重新上传第 3 分卷'
+    })
+    expect(onProcessed).toHaveBeenCalled()
   })
 
   it('user report handled needs explicit confirmation and non-empty note', async () => {

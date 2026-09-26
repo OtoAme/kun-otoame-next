@@ -25,7 +25,13 @@ import { CASE_STATUS_BADGE_VARIANTS } from './caseBadges'
 const TABLE_COLUMNS =
   '@[52rem]:grid-cols-[minmax(0,1fr)_minmax(0,6.5rem)_minmax(0,7rem)_minmax(0,7rem)_minmax(0,7.5rem)]'
 
-const TABLE_HEADINGS = ['编号与目标', '状态', '类型', '提交人', '时间']
+const tableHeadings = (showOwner: boolean) => [
+  '编号与目标',
+  '状态',
+  '类型',
+  showOwner ? '发布者' : '提交人',
+  '时间'
+]
 
 /** Shown only below the threshold, where the meta line is one flow. */
 const SEP = '@[52rem]:hidden'
@@ -48,6 +54,8 @@ export interface CaseQueueRowProps {
    * nearest `@container` rather than on the viewport. Off means cards only.
    */
   tabular?: boolean
+  /** Name the publisher who owns the case instead of the reporter (D22). */
+  showOwner?: boolean
 }
 
 /**
@@ -68,12 +76,16 @@ export function CaseQueueRow({
   selected,
   nowMs,
   onSelect,
-  tabular = false
+  tabular = false,
+  showOwner = false
 }: CaseQueueRowProps) {
   const resolutionText = caseResolutionLabel(row.resolution)
   const waiting = waitingText(row, nowMs)
   const reportCount =
     row.subscriberCount !== null ? `${row.subscriberCount} 人报告` : ''
+  const personName = showOwner
+    ? (row.owner?.name ?? '发布者')
+    : (row.reporter?.name ?? '报告者')
 
   return (
     <Button
@@ -126,6 +138,11 @@ export function CaseQueueRow({
               {resolutionText}
             </span>
           ) : null}
+          {row.reopenedCount > 0 ? (
+            <span className="mt-0.5 block truncate text-xs text-muted-foreground">
+              重开 {row.reopenedCount} 次
+            </span>
+          ) : null}
         </span>
 
         <span
@@ -144,7 +161,7 @@ export function CaseQueueRow({
               tabular && '@[52rem]:block'
             )}
           >
-            <span className="truncate">{row.reporter?.name ?? '报告者'}</span>
+            <span className="truncate">{personName}</span>
             {reportCount ? (
               <>
                 <span aria-hidden className={cn(tabular && SEP)}>
@@ -206,6 +223,8 @@ export interface CaseQueueListProps {
   /** Copy for an empty queue; the active view supplies it. */
   emptyText: string
   searchActive: boolean
+  /** Publisher view: rows name the owning publisher (D22). */
+  showOwner?: boolean
   onSelect: (row: AdminCaseListItem) => void
   onPageChange: (page: number) => void
   onRetry: () => void
@@ -222,6 +241,7 @@ export function CaseQueueList({
   selectedId,
   emptyText,
   searchActive,
+  showOwner = false,
   onSelect,
   onPageChange,
   onRetry
@@ -265,7 +285,7 @@ export function CaseQueueList({
             TABLE_COLUMNS
           )}
         >
-          {TABLE_HEADINGS.map((heading) => (
+          {tableHeadings(showOwner).map((heading) => (
             <span key={heading} className="min-w-0 truncate">
               {heading}
             </span>
@@ -312,6 +332,7 @@ export function CaseQueueList({
                   nowMs={nowMs}
                   onSelect={onSelect}
                   tabular
+                  showOwner={showOwner}
                 />
               </li>
             ))}

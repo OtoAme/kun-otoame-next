@@ -14,16 +14,13 @@ import {
   useDisclosure
 } from '@heroui/modal'
 import { Textarea } from '@heroui/input'
-import {
-  kunFetchDelete,
-  kunFetchGet,
-  kunFetchPost,
-  kunFetchPut
-} from '~/utils/kunFetch'
+import { kunFetchDelete, kunFetchGet, kunFetchPut } from '~/utils/kunFetch'
 import toast from 'react-hot-toast'
 import { kunErrorHandler } from '~/utils/kunErrorHandler'
 import { useUserStore } from '~/store/userStore'
 import { convert } from 'html-to-text'
+import { CaseLoginPrompt } from '~/components/case/CaseLoginPrompt'
+import { CaseViolationReportModal } from '~/components/case/CaseViolationReportModal'
 import type { PatchComment } from '~/types/api/patch'
 
 interface Props {
@@ -105,24 +102,7 @@ export const CommentDropdown = ({ comment, setComments }: Props) => {
     onOpen: onOpenReport,
     onClose: onCloseReport
   } = useDisclosure()
-  const [reportValue, setReportValue] = useState('')
-  const [reporting, setReporting] = useState(false)
-  const handleSubmitReport = async () => {
-    setReporting(true)
-    const res = await kunFetchPost<KunResponse<{}>>('/patch/comment/report', {
-      commentId: comment.id,
-      patchId: comment.patchId,
-      content: reportValue
-    })
-    if (typeof res === 'string') {
-      toast.error(res)
-    } else {
-      setReportValue('')
-      toast.success('提交举报成功')
-    }
-    onCloseReport()
-    setReporting(false)
-  }
+  const login = useDisclosure()
 
   return (
     <>
@@ -163,7 +143,7 @@ export const CommentDropdown = ({ comment, setComments }: Props) => {
           <DropdownItem
             key="report"
             startContent={<TriangleAlert className="size-4" />}
-            onPress={onOpenReport}
+            onPress={user.uid > 0 ? onOpenReport : login.onOpen}
           >
             举报评论
           </DropdownItem>
@@ -227,33 +207,23 @@ export const CommentDropdown = ({ comment, setComments }: Props) => {
         </ModalContent>
       </Modal>
 
-      <Modal isOpen={isOpenReport} onClose={onCloseReport}>
-        <ModalContent>
-          <ModalHeader className="flex flex-col gap-1">举报评论</ModalHeader>
-          <ModalBody>
-            <Textarea
-              label={`举报 ${convert(comment.content).slice(0, 20)}`}
-              isRequired
-              placeholder="请填写举报原因"
-              value={reportValue}
-              onChange={(e) => setReportValue(e.target.value)}
-            />
-          </ModalBody>
-          <ModalFooter>
-            <Button variant="light" onPress={onCloseReport}>
-              取消
-            </Button>
-            <Button
-              color="primary"
-              onPress={handleSubmitReport}
-              isDisabled={reporting}
-              isLoading={reporting}
-            >
-              提交
-            </Button>
-          </ModalFooter>
-        </ModalContent>
-      </Modal>
+      <CaseViolationReportModal
+        isOpen={isOpenReport}
+        onClose={onCloseReport}
+        title="举报评论"
+        subject={`举报评论「${convert(comment.content).slice(0, 20)}」。`}
+        target={{
+          targetType: 'comment',
+          targetId: comment.id,
+          expectedPatchId: comment.patchId
+        }}
+      />
+
+      <CaseLoginPrompt
+        isOpen={login.isOpen}
+        onOpenChange={login.onOpenChange}
+        action="举报评论"
+      />
     </>
   )
 }

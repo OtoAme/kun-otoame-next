@@ -33,11 +33,15 @@ import {
   CASE_RESOLUTION_LABELS
 } from '~/constants/case'
 import {
+  caseClosingNoteError,
   caseKindLabel,
+  caseLatestProposal,
   caseResolutionLabel,
+  caseReviewRequested,
   caseStatusLabel,
   caseTargetText
 } from '~/components/case/caseDisplay'
+import { formatChinaDateTime } from '~/utils/fixedTimezoneDate'
 import type {
   CaseActionResponse,
   CaseContentActionResponse,
@@ -58,8 +62,14 @@ const REJECT_RESOLUTIONS: ReadonlySet<CaseResolution> = new Set([
   'out_of_scope'
 ])
 
+const OUT_OF_SCOPE_TEMPLATE =
+  CASE_QUICK_REPLIES.find((reply) => reply.code === 'out_of_scope')?.content ??
+  ''
+
 type PendingAction =
   | { type: 'resolve'; resolution: CaseResolution }
+  // 采纳原发布者的提请（D20）：以提请的结论结案，提请说明作为结案说明
+  | { type: 'adopt'; resolution: CaseResolution; note: string }
   | { type: 'resource'; action: 'hide' | 'restore' | 'move' }
   | { type: 'content'; action: CaseContentAction }
 
@@ -195,6 +205,13 @@ export function DashboardCaseDetail({
         return
       }
       const trimmed = actionContent.trim()
+      const noteError = detail
+        ? caseClosingNoteError(detail, action.resolution, trimmed)
+        : null
+      if (noteError) {
+        setActionError(noteError)
+        return
+      }
       if (REJECT_RESOLUTIONS.has(action.resolution) && !trimmed) {
         setActionError('以该结论结案需要填写理由')
         return
@@ -237,7 +254,19 @@ export function DashboardCaseDetail({
     let terminal = false
     try {
       let res: CaseActionResponse | string
-      if (action.type === 'resolve') {
+      if (action.type === 'adopt') {
+        terminal = true
+        res = await kunFetchPost<CaseActionResponse | string>(
+          `/admin/case/${caseId}/handle`,
+          {
+            action: REJECT_RESOLUTIONS.has(action.resolution)
+              ? 'reject'
+              : 'resolve',
+            resolution: action.resolution,
+            ...(action.note ? { content: action.note } : {})
+          }
+        )
+      } else if (action.type === 'resolve') {
         const trimmed = actionContent.trim()
         terminal = true
         res = await kunFetchPost<CaseActionResponse | string>(
@@ -348,6 +377,16 @@ export function DashboardCaseDetail({
       )
   )
   const href = targetHref(detail)
+  const proposal = capabilities.canResolve
+    ? caseLatestProposal(detail.messages)
+    : null
+  const reviewRequested =
+    detail.ownerType === 'staff' && caseReviewRequested(detail.messages)
+  const noteRule = resolution
+    ? caseClosingNoteError(detail, resolution, '')
+    : null
+  const dialogNote =
+    displayAction?.type === 'adopt' ? displayAction.note : actionContent.trim()
   const hasAdjudication =
     capabilities.canResolve ||
     capabilities.canHideResource ||
@@ -387,6 +426,9 @@ export function DashboardCaseDetail({
     if (action.type === 'resolve') {
       return `确认结案（${CASE_RESOLUTION_LABELS[action.resolution]}）`
     }
+    if (action.type === 'adopt') {
+      return `采纳提请（${CASE_RESOLUTION_LABELS[action.resolution]}）`
+    }
     if (action.type === 'resource') {
       return action.action === 'hide'
         ? '确认隐藏资源'
@@ -404,6 +446,9 @@ export function DashboardCaseDetail({
         return '将登记「已处理」并结案。请确认已在用户管理完成对该用户的实际处置，处理说明会通知举报人。'
       }
       return `将以「${CASE_RESOLUTION_LABELS[action.resolution]}」结案，报告者与关注者会收到通知。`
+    }
+    if (action.type === 'adopt') {
+      return `将以原发布者提请的「${CASE_RESOLUTION_LABELS[action.resolution]}」结案，提请说明作为结案说明通知报告者与关注者。`
     }
     if (action.type === 'resource') {
       if (action.action === 'hide') {
@@ -442,14 +487,62 @@ export function DashboardCaseDetail({
             </Button>
           ) : null}
         </div>
-        <p className="text-xs text-muted-foreground">
-          {caseKindLabel(detail.kind)} ·{' '}
-          {detail.ownerType === 'publisher' ? '发布者处理' : '站方处理'}
+        <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+          <span>
+            {caseKindLabel(detail.kind)} ·{' '}
+            {detail.ownerType === 'publisher' ? '发布者处理' : '站方处理'}
+          </span>
+          {/* D16: the site administrator's closure here is final. */}
+          {reviewRequested ? (
+            <Badge variant="secondary">报告者申请复核</Badge>
+          ) : null}
         </p>
       </header>
 
       <div className="grid min-w-0 gap-6 @[40rem]:grid-cols-[minmax(0,1fr)_16rem]">
         <div className="min-w-0 space-y-4">
+          {proposal ? (
+            <section
+              aria-label="原发布者的提请"
+              className="space-y-2 rounded-md border border-primary/40 bg-primary/5 p-3"
+            >
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h4 className="text-sm font-semibold">
+                  原发布者提请以「
+                  {CASE_RESOLUTION_LABELS[proposal.resolution] ??
+                    proposal.resolution}
+                  」结案
+                </h4>
+                <Button
+                  type="button"
+                  size="sm"
+                  disabled={working}
+                  onClick={(event) =>
+                    openConfirm(
+                      {
+                        type: 'adopt',
+                        resolution: proposal.resolution,
+                        note: proposal.note
+                      },
+                      event.currentTarget
+                    )
+                  }
+                >
+                  采纳
+                </Button>
+              </div>
+              {proposal.note ? (
+                <p className="whitespace-pre-wrap break-words text-sm">
+                  {proposal.note}
+                </p>
+              ) : null}
+              <p className="text-xs text-muted-foreground">
+                提请于 {formatChinaDateTime(proposal.created)}
+                。不采纳时直接回复说明即可。
+              </p>
+            </section>
+          ) : null}
+
           <section className="space-y-2" aria-label="沟通记录">
             <h4 className="text-sm font-semibold">沟通记录</h4>
             {/*
@@ -575,6 +668,7 @@ export function DashboardCaseDetail({
                   >
                     处理说明
                     {isUserTargetHandled ||
+                    noteRule ||
                     (resolution &&
                       REJECT_RESOLUTIONS.has(resolution as CaseResolution))
                       ? '（必填）'
@@ -589,6 +683,30 @@ export function DashboardCaseDetail({
                     disabled={working}
                     placeholder="给报告者的说明（纯文字）"
                   />
+                  {noteRule ? (
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <p className="text-xs text-muted-foreground">
+                        {noteRule}
+                      </p>
+                      {resolution === 'out_of_scope' &&
+                      OUT_OF_SCOPE_TEMPLATE &&
+                      !(
+                        detail.kind === 'other' && detail.targetType === 'site'
+                      ) ? (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          disabled={working}
+                          onClick={() =>
+                            setActionContent(OUT_OF_SCOPE_TEMPLATE)
+                          }
+                        >
+                          填入指南模板
+                        </Button>
+                      ) : null}
+                    </div>
+                  ) : null}
                   <div className="flex justify-end">
                     <Button
                       type="button"
@@ -754,12 +872,10 @@ export function DashboardCaseDetail({
               {caseTargetText(detail)}（事项 #{detail.id}）
             </p>
           </div>
-          {actionContent.trim() ? (
+          {dialogNote ? (
             <div className="space-y-1 text-sm">
               <p className="text-muted-foreground">处理说明</p>
-              <p className="whitespace-pre-wrap break-words">
-                {actionContent.trim()}
-              </p>
+              <p className="whitespace-pre-wrap break-words">{dialogNote}</p>
             </div>
           ) : null}
           {actionError && pendingAction !== null ? (

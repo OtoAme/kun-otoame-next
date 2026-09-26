@@ -1,9 +1,10 @@
 'use client'
 
-import type { ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { ArrowLeft } from 'lucide-react'
 
 import { Button } from '~/components/dashboard/ui/button'
+import { Input } from '~/components/dashboard/ui/input'
 import {
   ResizableHandle,
   ResizablePanel,
@@ -23,7 +24,7 @@ import type { AdminCaseListItem, AdminCaseListResponse } from '~/types/api/case'
 
 import { DashboardCaseDetail } from './DashboardCaseDetail'
 import { CaseQueueList } from './CaseQueueList'
-import type { CaseCenterView } from './caseCenterViews'
+import { isPublisherCaseView, type CaseCenterView } from './caseCenterViews'
 
 export const ALL_CASE_KINDS = 'all'
 
@@ -37,11 +38,14 @@ interface CaseQueueProps {
   page: number
   pageSize: number
   caseKind: string
+  /** Publisher filter of the publisher view; empty for none. */
+  ownerId: string
   searchActive: boolean
   selectedId: number | null
   selectionStatus: 'none' | 'invalid' | 'ok'
   isMobile: boolean
   onKindChange: (kind: string) => void
+  onOwnerIdChange: (ownerId: string) => void
   onPageChange: (page: number) => void
   onSelect: (row: AdminCaseListItem) => void
   onClearSelection: () => void
@@ -77,11 +81,13 @@ export function CaseQueue({
   page,
   pageSize,
   caseKind,
+  ownerId,
   searchActive,
   selectedId,
   selectionStatus,
   isMobile,
   onKindChange,
+  onOwnerIdChange,
   onPageChange,
   onSelect,
   onClearSelection,
@@ -91,6 +97,12 @@ export function CaseQueue({
   const { defaultLayout, onLayoutChanged } = useResizableLayout({
     id: 'dashboard-case-queue'
   })
+  const publisherView = isPublisherCaseView(view)
+  const [ownerText, setOwnerText] = useState(ownerId)
+  // Reflect the URL-driven filter (back/forward navigation) in the input.
+  useEffect(() => {
+    setOwnerText(ownerId)
+  }, [ownerId])
 
   let detailBody: ReactNode = null
   if (selectionStatus === 'invalid') {
@@ -150,7 +162,8 @@ export function CaseQueue({
       error={error}
       selectedId={selectedId}
       emptyText={view.emptyText}
-      searchActive={searchActive}
+      searchActive={searchActive || ownerId !== ''}
+      showOwner={publisherView}
       onSelect={onSelect}
       onPageChange={onPageChange}
       onRetry={onRetry}
@@ -181,9 +194,45 @@ export function CaseQueue({
             ))}
           </SelectContent>
         </Select>
+        {publisherView ? (
+          <form
+            className="flex items-center gap-2"
+            onSubmit={(event) => {
+              event.preventDefault()
+              onOwnerIdChange(ownerText.trim())
+            }}
+          >
+            <label htmlFor="case-owner-filter" className="sr-only">
+              发布者用户 ID
+            </label>
+            <Input
+              id="case-owner-filter"
+              inputMode="numeric"
+              autoComplete="off"
+              value={ownerText}
+              onChange={(event) => setOwnerText(event.target.value)}
+              placeholder="发布者用户 ID"
+              className="h-8 w-36"
+            />
+            <Button type="submit" variant="secondary" size="sm">
+              筛选
+            </Button>
+            {ownerId ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => onOwnerIdChange('')}
+              >
+                清除
+              </Button>
+            ) : null}
+          </form>
+        ) : null}
         <span className="text-xs text-muted-foreground">
           {list === null ? `已显示 ${rows.length} 条` : `共 ${list.total} 条`}
           {loading && rows.length > 0 ? '，更新中…' : ''}
+          {publisherView ? '（仍归发布者，不进收件箱）' : ''}
         </span>
       </div>
 

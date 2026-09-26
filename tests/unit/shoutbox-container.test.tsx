@@ -276,7 +276,48 @@ vi.mock('@heroui/react', () => ({
       ))}
     </div>
   ),
-  AutocompleteItem: () => null
+  AutocompleteItem: () => null,
+  // The shared case report form and login prompt on each row's report entry.
+  Button: ({
+    children,
+    onPress,
+    isDisabled,
+    href
+  }: {
+    children?: React.ReactNode
+    onPress?: () => void
+    isDisabled?: boolean
+    href?: string
+  }) =>
+    href ? (
+      <a href={href}>{children}</a>
+    ) : (
+      <button disabled={isDisabled} onClick={onPress}>
+        {children}
+      </button>
+    ),
+  Modal: ({
+    children,
+    isOpen
+  }: {
+    children?: React.ReactNode
+    isOpen?: boolean
+  }) => (isOpen ? <div role="dialog">{children}</div> : null),
+  ModalBody: ({ children }: { children?: React.ReactNode }) => (
+    <div>{children}</div>
+  ),
+  ModalContent: ({ children }: { children?: React.ReactNode }) => (
+    <div>{children}</div>
+  ),
+  ModalFooter: ({ children }: { children?: React.ReactNode }) => (
+    <div>{children}</div>
+  ),
+  ModalHeader: ({ children }: { children?: React.ReactNode }) => (
+    <h2>{children}</h2>
+  ),
+  Textarea: ({ 'aria-label': ariaLabel }: { 'aria-label'?: string }) => (
+    <textarea aria-label={ariaLabel} />
+  )
 }))
 
 vi.mock('@heroui/modal', () => ({

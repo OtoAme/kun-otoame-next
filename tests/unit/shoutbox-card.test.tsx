@@ -164,6 +164,72 @@ vi.mock('@heroui/modal', () => ({
   }
 }))
 
+// The shared case report form and login prompt import the HeroUI barrel.
+vi.mock('@heroui/react', () => ({
+  Button: ({
+    children,
+    onPress,
+    isDisabled,
+    isLoading,
+    href,
+    'aria-label': ariaLabel
+  }: {
+    children?: React.ReactNode
+    onPress?: () => void
+    isDisabled?: boolean
+    isLoading?: boolean
+    href?: string
+    'aria-label'?: string
+  }) =>
+    href ? (
+      <a href={href} aria-label={ariaLabel}>
+        {children}
+      </a>
+    ) : (
+      <button
+        aria-label={ariaLabel}
+        disabled={isDisabled || isLoading}
+        onClick={onPress}
+      >
+        {children}
+      </button>
+    ),
+  Modal: ({
+    children,
+    isOpen
+  }: {
+    children?: React.ReactNode
+    isOpen?: boolean
+  }) => (isOpen ? <div role="dialog">{children}</div> : null),
+  ModalBody: ({ children }: { children?: React.ReactNode }) => (
+    <div>{children}</div>
+  ),
+  ModalContent: ({ children }: { children?: React.ReactNode }) => (
+    <div>{children}</div>
+  ),
+  ModalFooter: ({ children }: { children?: React.ReactNode }) => (
+    <div>{children}</div>
+  ),
+  ModalHeader: ({ children }: { children?: React.ReactNode }) => (
+    <h2>{children}</h2>
+  ),
+  Textarea: ({
+    value,
+    onValueChange,
+    'aria-label': ariaLabel
+  }: {
+    value?: string
+    onValueChange?: (value: string) => void
+    'aria-label'?: string
+  }) => (
+    <textarea
+      aria-label={ariaLabel}
+      value={value}
+      onInput={(event) => onValueChange?.(event.currentTarget.value)}
+    />
+  )
+}))
+
 import { ShoutboxCard } from '~/components/shoutbox/ShoutboxCard'
 import type { ShoutboxItem } from '~/types/api/shoutbox'
 
@@ -407,26 +473,36 @@ describe('ShoutboxCard', () => {
     expect(mocks.kunFetchPost).not.toHaveBeenCalled()
   })
 
-  it("submits a report for another user's message and closes with a success toast", async () => {
+  it("submits a report for another user's message and shows where it went", async () => {
     mocks.currentUid = 99
-    mocks.kunFetchPost.mockResolvedValue({})
+    mocks.kunFetchPost.mockResolvedValue({
+      case: { id: 5, public: false, subscriberCount: null },
+      created: true,
+      subscribed: false
+    })
     await renderCard(makeItem(), { currentUserId: 99 })
 
     await clickButton(container, '举报')
+    // D22: the form names the handler and the first-response time.
+    expect(container.textContent).toContain('预计首次响应在 3 天内')
     const textarea = container.querySelector<HTMLTextAreaElement>(
       'textarea[aria-label="举报原因"]'
     )!
     await fillTextarea(textarea, '垃圾广告')
     await clickButton(container, '提交举报')
 
-    expect(mocks.kunFetchPost).toHaveBeenCalledWith('/shoutbox/report', {
-      shoutboxId: 42,
-      content: '垃圾广告'
+    expect(mocks.kunFetchPost).toHaveBeenCalledWith('/case', {
+      kind: 'content_violation',
+      targetType: 'shoutbox',
+      targetId: 42,
+      content: '垃圾广告',
+      imageKeys: []
     })
-    expect(mocks.toastSuccess).toHaveBeenCalledWith(
-      '举报已提交，站方会进行复核'
-    )
-    expect(container.querySelector('[role="dialog"]')).toBeNull()
+    // The result replaces the vanishing toast and links to the case.
+    expect(container.textContent).toContain('已交给网站管理员')
+    expect(
+      container.querySelector('a[href="/issue/5"]')?.textContent
+    ).toContain('查看这条问题')
   })
 
   it('keeps the draft and the dialog open when the report is refused', async () => {

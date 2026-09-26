@@ -7,23 +7,34 @@ const mocks = vi.hoisted(() => ({
   toast: Object.assign(vi.fn(), { success: vi.fn(), error: vi.fn() }),
   kunFetchGet: vi.fn(),
   kunFetchPost: vi.fn(),
+  kunFetchFormData: vi.fn(),
   user: { uid: 100, name: 'Tester', role: 1 }
 }))
 
 vi.mock('react-hot-toast', () => ({ default: mocks.toast }))
 vi.mock('~/utils/kunFetch', () => ({
   kunFetchGet: mocks.kunFetchGet,
-  kunFetchPost: mocks.kunFetchPost
+  kunFetchPost: mocks.kunFetchPost,
+  kunFetchFormData: mocks.kunFetchFormData
 }))
 vi.mock('~/store/userStore', () => ({
   useUserStore: (selector: (state: { user: typeof mocks.user }) => unknown) =>
     selector({ user: mocks.user })
 }))
+vi.mock('next/link', () => ({
+  default: ({
+    children,
+    href
+  }: {
+    children?: React.ReactNode
+    href: string
+  }) => <a href={href}>{children}</a>
+}))
 
 vi.mock('@heroui/react', async () => {
   const R = await import('react')
   const toArray = (children: React.ReactNode): React.ReactElement[] =>
-    (Array.isArray(children) ? children : [children]).filter(
+    (Array.isArray(children) ? children.flat() : [children]).filter(
       (child): child is React.ReactElement => R.isValidElement(child)
     )
   return {
@@ -32,25 +43,29 @@ vi.mock('@heroui/react', async () => {
       onPress,
       isDisabled,
       isLoading,
+      href,
       'aria-label': ariaLabel
     }: {
       children?: React.ReactNode
       onPress?: () => void
       isDisabled?: boolean
       isLoading?: boolean
+      href?: string
       'aria-label'?: string
-    }) => (
-      <button
-        aria-label={ariaLabel}
-        disabled={isDisabled || isLoading}
-        onClick={onPress}
-      >
-        {children}
-      </button>
-    ),
-    Chip: ({ children }: { children?: React.ReactNode }) => (
-      <span>{children}</span>
-    ),
+    }) =>
+      href ? (
+        <a href={href} aria-label={ariaLabel}>
+          {children}
+        </a>
+      ) : (
+        <button
+          aria-label={ariaLabel}
+          disabled={isDisabled || isLoading}
+          onClick={onPress}
+        >
+          {children}
+        </button>
+      ),
     Modal: ({
       isOpen,
       children
@@ -130,6 +145,7 @@ vi.mock('@heroui/react', async () => {
         {toArray(children).map((child) => {
           const props = child.props as {
             value: string
+            description?: string
             children?: React.ReactNode
           }
           return (
@@ -141,6 +157,7 @@ vi.mock('@heroui/react', async () => {
                 onChange={() => onValueChange?.(props.value)}
               />
               {props.children}
+              {props.description ? <small>{props.description}</small> : null}
             </label>
           )
         })}
@@ -175,7 +192,19 @@ const resource = {
   user: { id: 2, name: '发布者', avatar: '', role: 1 }
 } as unknown as PatchResource
 
+const officialResource = {
+  ...resource,
+  user: { id: 3, name: '管理员', avatar: '', role: 3 }
+} as unknown as PatchResource
+
 const patch = { id: 1, uniqueId: 'abc', name: '条目A' } as never
+
+const created = (id: number, overrides: Record<string, unknown> = {}) => ({
+  case: { id, public: true, subscriberCount: 1 },
+  created: true,
+  subscribed: false,
+  ...overrides
+})
 
 const flush = async () => {
   await act(async () => {})
@@ -205,6 +234,9 @@ describe('case entry buttons', () => {
   })
 
   const mount = async (ui: React.ReactElement) => {
+    act(() => {
+      root?.unmount()
+    })
     dom = new JSDOM('<!doctype html><div id="root"></div>', {
       url: 'http://localhost'
     })
@@ -251,290 +283,408 @@ describe('case entry buttons', () => {
     })
   }
 
-  it('hides report entries for anonymous users', async () => {
-    mocks.user = { uid: 0, name: '', role: 0 }
-    const container = await mount(
-      <ReportResourceButton resource={resource} patchId={1} />
-    )
-    expect(container.querySelector('button')).toBeNull()
-  })
-
-  it('submits resource mismatch with expectedPatchId and closes on created', async () => {
-    mocks.kunFetchPost.mockResolvedValue({
-      case: { id: 5 },
-      created: true,
-      subscribed: false
-    })
-    const container = await mount(
-      <ReportResourceButton resource={resource} patchId={1} />
-    )
-
-    await act(async () => {
-      findButton(container, '报告问题')!.click()
-    })
-    expect(container.querySelector('[role="dialog"]')).not.toBeNull()
-
-    // 字数不足时禁用提交
-    await setTextarea(container, '问题描述', '太短')
-    expect(findButton(container, '提交')!.disabled).toBe(true)
-
-    await setTextarea(container, '问题描述', '实际内容与描述不符，缺文件')
-    const submit = findButton(container, '提交')!
-    expect(submit.disabled).toBe(false)
-    await act(async () => {
-      submit.click()
-    })
-    await flush()
-
-    expect(mocks.kunFetchPost).toHaveBeenCalledWith('/case', {
-      kind: 'resource_mismatch',
-      targetType: 'resource',
-      targetId: 7,
-      expectedPatchId: 1,
-      content: '实际内容与描述不符，缺文件'
-    })
-    expect(mocks.toast.success).toHaveBeenCalledWith(
-      '已提交，可在「问题处理」页跟进进度'
-    )
-    expect(container.querySelector('[role="dialog"]')).toBeNull()
-  })
-
-  it('shows dedup notice on subscribed and keeps dialog on business error', async () => {
-    mocks.kunFetchPost.mockResolvedValue({
-      case: { id: 5 },
-      created: false,
-      subscribed: true
-    })
-    const container = await mount(
-      <ReportResourceButton resource={resource} patchId={1} />
-    )
-    await act(async () => {
-      findButton(container, '报告问题')!.click()
-    })
-    await setTextarea(container, '问题描述', '实际内容与描述不符，缺文件')
-    await act(async () => {
-      findButton(container, '提交')!.click()
-    })
-    await flush()
-    expect(mocks.toast.success).toHaveBeenCalledWith(
-      '该资源已有相同问题正在处理，已为你登记关注'
-    )
-
-    // 业务错误（字符串）保留输入并保持弹窗
-    mocks.kunFetchPost.mockResolvedValue('同一资源每天最多提交一次')
-    await act(async () => {
-      findButton(container, '报告问题')!.click()
-    })
-    await setTextarea(container, '问题描述', '再次尝试提交同资源问题')
-    await act(async () => {
-      findButton(container, '提交')!.click()
-    })
-    await flush()
-    expect(mocks.toast.error).toHaveBeenCalledWith('同一资源每天最多提交一次')
-    expect(container.querySelector('[role="dialog"]')).not.toBeNull()
-    expect(
-      container.querySelector<HTMLTextAreaElement>(
-        'textarea[aria-label="问题描述"]'
-      )!.value
-    ).toBe('再次尝试提交同资源问题')
-
-    // 网络错误同样保留输入并释放 loading
-    mocks.kunFetchPost.mockRejectedValue(new Error('network'))
-    await act(async () => {
-      findButton(container, '提交')!.click()
-    })
-    await flush()
-    expect(mocks.toast.error).toHaveBeenCalledWith('网络错误，提交失败，请重试')
-    expect(findButton(container, '提交')!.disabled).toBe(false)
-  })
-
-  it('submits user report as content_violation and hides on own profile', async () => {
-    const own = await mount(
-      <ReportUserButton targetUserId={100} targetUserName="Tester" />
-    )
-    expect(own.querySelector('button')).toBeNull()
-    own.ownerDocument.body.innerHTML = ''
-
-    mocks.kunFetchPost.mockResolvedValue({
-      case: { id: 6 },
-      created: true,
-      subscribed: false
-    })
-    const container = await mount(
-      <ReportUserButton targetUserId={200} targetUserName="某人" />
-    )
-    await act(async () => {
-      findButton(container, '举报')!.click()
-    })
-    await setTextarea(container, '举报原因', '违规内容')
-    await act(async () => {
-      findButton(container, '提交')!.click()
-    })
-    await flush()
-    expect(mocks.kunFetchPost).toHaveBeenCalledWith('/case', {
-      kind: 'content_violation',
-      targetType: 'user',
-      targetId: 200,
-      content: '违规内容'
-    })
-  })
-
-  it('FeedbackButton guides patch-info without submission and posts other/wrong-patch cases', async () => {
-    mocks.kunFetchGet.mockResolvedValue([resource])
-    mocks.kunFetchPost.mockResolvedValue({
-      case: { id: 8 },
-      created: true,
-      subscribed: false
-    })
-    const container = await mount(<FeedbackButton patch={patch} />)
-
-    await act(async () => {
-      container
-        .querySelector<HTMLButtonElement>('button[aria-label="游戏反馈"]')!
-        .click()
-    })
-    // 默认选项「条目资料有误」只有引导文案，没有提交按钮
-    expect(container.textContent).toContain('条目资料有误')
-    expect(findButton(container, '提交')).toBeUndefined()
-    expect(mocks.kunFetchPost).not.toHaveBeenCalled()
-
-    // 「其他」直接创建 other × patch
-    const radios = container.querySelectorAll<HTMLInputElement>(
-      'input[type="radio"]'
-    )
-    const otherRadio = [...radios].find((radio) => radio.value === 'other')!
-    await act(async () => {
-      otherRadio.click()
-    })
-    await setTextarea(container, '问题描述', '条目相关的其他问题描述')
-    await act(async () => {
-      findButton(container, '提交')!.click()
-    })
-    await flush()
-    expect(mocks.kunFetchPost).toHaveBeenCalledWith('/case', {
-      kind: 'other',
-      targetType: 'patch',
-      targetId: 1,
-      content: '条目相关的其他问题描述'
-    })
-
-    // 「资源发错条目」按需拉取资源列表并创建 resource_wrong_patch
-    // 上一次提交成功已关闭弹窗，重新打开并选择该选项
-    mocks.kunFetchPost.mockClear()
-    await act(async () => {
-      container
-        .querySelector<HTMLButtonElement>('button[aria-label="游戏反馈"]')!
-        .click()
-    })
-    const wrongPatchRadio = [
+  const pickRadio = async (container: HTMLElement, value: string) => {
+    const radio = [
       ...container.querySelectorAll<HTMLInputElement>('input[type="radio"]')
-    ].find((radio) => radio.value === 'resource_wrong_patch')!
+    ].find((candidate) => candidate.value === value)!
     await act(async () => {
-      wrongPatchRadio.click()
+      radio.click()
     })
-    await flush()
-    expect(mocks.kunFetchGet).toHaveBeenCalledWith('/patch/resource', {
-      patchId: 1
-    })
+  }
 
-    const select = container.querySelector<HTMLSelectElement>(
-      'select[aria-label="选择资源"]'
-    )!
-    await act(async () => {
-      setNativeValue(select, '7', 'change')
-    })
-    await setTextarea(container, '问题描述', '这个资源不属于该条目')
-    await act(async () => {
-      findButton(container, '提交')!.click()
-    })
-    await flush()
-    expect(mocks.kunFetchPost).toHaveBeenCalledWith('/case', {
-      kind: 'resource_wrong_patch',
-      targetType: 'resource',
-      targetId: 7,
-      expectedPatchId: 1,
-      content: '这个资源不属于该条目'
-    })
-  })
-
-  it('UI2: idempotent success (created=false, subscribed=false) still confirms and closes', async () => {
-    mocks.kunFetchPost.mockResolvedValue({
-      case: { id: 5 },
-      created: false,
-      subscribed: false
-    })
-    const container = await mount(
-      <ReportResourceButton resource={resource} patchId={1} />
-    )
+  const openResourceReport = async (container: HTMLElement) => {
     await act(async () => {
       findButton(container, '报告问题')!.click()
     })
-    await setTextarea(container, '问题描述', '实际内容与描述不符，缺文件')
-    await act(async () => {
-      findButton(container, '提交')!.click()
+  }
+
+  describe('resource card「报告问题」(D17)', () => {
+    it('shows guests the entry, answers guide phenomena and asks them to log in before a case', async () => {
+      mocks.user = { uid: 0, name: '', role: 0 }
+      const container = await mount(
+        <ReportResourceButton resource={resource} patchId={1} />
+      )
+      await openResourceReport(container)
+
+      // 现象即选项，下面附例子；05 的现象已登记但不显示
+      const text = container.textContent ?? ''
+      expect(text).toContain('资源与描述不符')
+      expect(text).toContain('链接失效')
+      expect(text).toContain('网盘显示已删除或已过期')
+      expect(text).not.toContain('发在了错误的条目下')
+      expect(text).not.toContain('疑似违规或有害内容')
+
+      // 分流：下载慢只给指南，不产生事项
+      await pickRadio(container, 'download_slow')
+      expect(
+        container.querySelector('a[href="/doc/notice/download"]')
+      ).not.toBeNull()
+      expect(findButton(container, '提交')).toBeUndefined()
+
+      // 需要建事项的现象：访客在点击提交时被引导登录，不先写说明
+      await pickRadio(container, 'resource_mismatch')
+      expect(
+        container.querySelector('textarea[aria-label="问题描述"]')
+      ).toBeNull()
+      await act(async () => {
+        findButton(container, '登录后提交')!.click()
+      })
+      expect(container.textContent).toContain('报告问题需要先登录账号')
+      expect(container.querySelector('a[href="/login"]')).not.toBeNull()
+      expect(mocks.kunFetchPost).not.toHaveBeenCalled()
     })
-    await flush()
-    expect(mocks.toast.success).toHaveBeenCalledWith('已登记，正在处理')
-    expect(container.querySelector('[role="dialog"]')).toBeNull()
-    // 已收起清空：再次打开是空表单
-    await act(async () => {
-      findButton(container, '报告问题')!.click()
+
+    it('submits the chosen phenomenon and switches to a result with a direct link', async () => {
+      mocks.kunFetchPost.mockResolvedValue(created(5))
+      const container = await mount(
+        <ReportResourceButton resource={resource} patchId={1} />
+      )
+      await openResourceReport(container)
+      await pickRadio(container, 'resource_mismatch')
+
+      // D15 身份告知与处理方、首次响应提示
+      const text = container.textContent ?? ''
+      expect(text).toContain('发布者能看到你的用户名和说明')
+      expect(text).toContain('该问题先由资源发布者处理，预计首次响应在 7 天内')
+      expect(
+        container
+          .querySelector('textarea[aria-label="问题描述"]')
+          ?.getAttribute('placeholder')
+      ).toBe('描述里写的是……，实际拿到的是……')
+
+      // 字数不足时禁用提交
+      await setTextarea(container, '问题描述', '太短')
+      expect(findButton(container, '提交')!.disabled).toBe(true)
+      await setTextarea(container, '问题描述', '实际内容与描述不符，缺文件')
+      await act(async () => {
+        findButton(container, '提交')!.click()
+      })
+      await flush()
+
+      expect(mocks.kunFetchPost).toHaveBeenCalledWith('/case', {
+        kind: 'resource_mismatch',
+        targetType: 'resource',
+        targetId: 7,
+        expectedPatchId: 1,
+        content: '实际内容与描述不符，缺文件',
+        imageKeys: []
+      })
+      expect(mocks.toast.success).not.toHaveBeenCalled()
+      expect(container.textContent).toContain(
+        '已交给资源发布者，预计 7 天内首次回应'
+      )
+      expect(
+        container.querySelector('a[href="/issue/5"]')?.textContent
+      ).toContain('查看这条问题')
+
+      // 关闭后清空：再次打开是空表单
+      await act(async () => {
+        findButton(container, '关闭')!.click()
+      })
+      await openResourceReport(container)
+      expect(
+        container.querySelector('textarea[aria-label="问题描述"]')
+      ).toBeNull()
+      await pickRadio(container, 'resource_mismatch')
+      expect(
+        container.querySelector<HTMLTextAreaElement>(
+          'textarea[aria-label="问题描述"]'
+        )!.value
+      ).toBe('')
     })
-    expect(
-      container.querySelector<HTMLTextAreaElement>(
-        'textarea[aria-label="问题描述"]'
-      )!.value
-    ).toBe('')
+
+    it('files link failures as their own interim kind and names the admin on official resources', async () => {
+      mocks.kunFetchPost.mockResolvedValue(created(6))
+      const container = await mount(
+        <ReportResourceButton resource={officialResource} patchId={1} />
+      )
+      await openResourceReport(container)
+      await pickRadio(container, 'link_failure')
+
+      expect(container.textContent).toContain(
+        '该问题由网站管理员处理，预计首次响应在 7 天内'
+      )
+      expect(container.textContent).toContain(
+        '网站管理员能看到你的用户名和说明'
+      )
+      await setTextarea(container, '问题描述', '第二条百度网盘链接显示已过期')
+      await act(async () => {
+        findButton(container, '提交')!.click()
+      })
+      await flush()
+      expect(mocks.kunFetchPost).toHaveBeenCalledWith(
+        '/case',
+        expect.objectContaining({ kind: 'resource_link_failure' })
+      )
+      expect(container.textContent).toContain('已交给网站管理员')
+    })
+
+    it('uploads images and sends their keys with the report (D11)', async () => {
+      mocks.kunFetchFormData.mockResolvedValue({
+        key: 'case/100/1-a.avif',
+        url: 'https://img.example/case/100/1-a.avif'
+      })
+      mocks.kunFetchPost.mockResolvedValue(created(7))
+      const container = await mount(
+        <ReportResourceButton resource={resource} patchId={1} />
+      )
+      await openResourceReport(container)
+      await pickRadio(container, 'resource_mismatch')
+
+      const input =
+        container.querySelector<HTMLInputElement>('input[type="file"]')!
+      const file = new dom!.window.File(['x'], 'shot.png', {
+        type: 'image/png'
+      })
+      Object.defineProperty(input, 'files', { value: [file] })
+      await act(async () => {
+        input.dispatchEvent(new dom!.window.Event('change', { bubbles: true }))
+      })
+      await flush()
+      expect(mocks.kunFetchFormData).toHaveBeenCalledWith(
+        '/case/image',
+        expect.anything()
+      )
+      expect(
+        container.querySelector(
+          'img[src="https://img.example/case/100/1-a.avif"]'
+        )
+      ).not.toBeNull()
+
+      await setTextarea(container, '问题描述', '实际内容与描述不符，缺文件')
+      await act(async () => {
+        findButton(container, '提交')!.click()
+      })
+      await flush()
+      expect(mocks.kunFetchPost).toHaveBeenCalledWith(
+        '/case',
+        expect.objectContaining({ imageKeys: ['case/100/1-a.avif'] })
+      )
+    })
+
+    it('says how many reported on a dedup hit and keeps the draft on errors', async () => {
+      mocks.kunFetchPost.mockResolvedValue({
+        case: { id: 5, public: true, subscriberCount: 3 },
+        created: false,
+        subscribed: true
+      })
+      const container = await mount(
+        <ReportResourceButton resource={resource} patchId={1} />
+      )
+      await openResourceReport(container)
+      await pickRadio(container, 'resource_mismatch')
+      await setTextarea(container, '问题描述', '实际内容与描述不符，缺文件')
+      await act(async () => {
+        findButton(container, '提交')!.click()
+      })
+      await flush()
+      expect(container.textContent).toContain('已为你登记关注')
+      expect(container.textContent).toContain('已有 3 人报告')
+
+      // 业务错误（字符串）保留输入并保持表单
+      await act(async () => {
+        findButton(container, '关闭')!.click()
+      })
+      mocks.kunFetchPost.mockResolvedValue('您今天已经提交过该资源的问题')
+      await openResourceReport(container)
+      await pickRadio(container, 'resource_mismatch')
+      await setTextarea(container, '问题描述', '再次尝试提交同资源问题')
+      await act(async () => {
+        findButton(container, '提交')!.click()
+      })
+      await flush()
+      expect(mocks.toast.error).toHaveBeenCalledWith(
+        '您今天已经提交过该资源的问题'
+      )
+      expect(
+        container.querySelector<HTMLTextAreaElement>(
+          'textarea[aria-label="问题描述"]'
+        )!.value
+      ).toBe('再次尝试提交同资源问题')
+
+      // 网络错误同样保留输入并释放 loading
+      mocks.kunFetchPost.mockRejectedValue(new Error('network'))
+      await act(async () => {
+        findButton(container, '提交')!.click()
+      })
+      await flush()
+      expect(mocks.toast.error).toHaveBeenCalledWith(
+        '网络错误，提交失败，请重试'
+      )
+      expect(findButton(container, '提交')!.disabled).toBe(false)
+    })
   })
 
-  it('UI3: entries show expected first-response hints', async () => {
-    const resourceContainer = await mount(
-      <ReportResourceButton resource={resource} patchId={1} />
-    )
-    await act(async () => {
-      findButton(resourceContainer, '报告问题')!.click()
-    })
-    expect(resourceContainer.textContent).toContain('预计首次响应在 7 天内')
-    act(() => {
-      root?.unmount()
+  describe('user profile「举报」', () => {
+    it('hides on the own profile and asks guests to log in', async () => {
+      const own = await mount(
+        <ReportUserButton targetUserId={100} targetUserName="Tester" />
+      )
+      expect(own.querySelector('button')).toBeNull()
+
+      mocks.user = { uid: 0, name: '', role: 0 }
+      const guest = await mount(
+        <ReportUserButton targetUserId={200} targetUserName="某人" />
+      )
+      await act(async () => {
+        findButton(guest, '举报')!.click()
+      })
+      expect(guest.textContent).toContain('举报需要先登录账号')
+      expect(guest.querySelector('textarea')).toBeNull()
     })
 
-    const userContainer = await mount(
-      <ReportUserButton targetUserId={200} targetUserName="某人" />
-    )
-    await act(async () => {
-      findButton(userContainer, '举报')!.click()
-    })
-    expect(userContainer.textContent).toContain('预计首次响应在 3 天内')
-    act(() => {
-      root?.unmount()
+    it('submits content_violation with the 3-day hint and shows the result', async () => {
+      mocks.kunFetchPost.mockResolvedValue({
+        case: { id: 6, public: false, subscriberCount: null },
+        created: true,
+        subscribed: false
+      })
+      const container = await mount(
+        <ReportUserButton targetUserId={200} targetUserName="某人" />
+      )
+      await act(async () => {
+        findButton(container, '举报')!.click()
+      })
+      expect(container.textContent).toContain('预计首次响应在 3 天内')
+      expect(container.textContent).toContain('被举报的用户看不到你的举报')
+      await setTextarea(container, '举报原因', '违规内容')
+      await act(async () => {
+        findButton(container, '提交举报')!.click()
+      })
+      await flush()
+      expect(mocks.kunFetchPost).toHaveBeenCalledWith('/case', {
+        kind: 'content_violation',
+        targetType: 'user',
+        targetId: 200,
+        content: '违规内容',
+        imageKeys: []
+      })
+      expect(container.textContent).toContain(
+        '已交给网站管理员，预计 3 天内首次回应'
+      )
     })
 
-    mocks.kunFetchGet.mockResolvedValue([resource])
-    const feedbackContainer = await mount(<FeedbackButton patch={patch} />)
-    await act(async () => {
-      feedbackContainer
-        .querySelector<HTMLButtonElement>('button[aria-label="游戏反馈"]')!
-        .click()
-    })
-    const wrongPatchRadio = [
-      ...feedbackContainer.querySelectorAll<HTMLInputElement>(
-        'input[type="radio"]'
+    it('does not reveal other reporters of a private report on a dedup hit', async () => {
+      mocks.kunFetchPost.mockResolvedValue({
+        case: { id: 6, public: false, subscriberCount: null },
+        created: false,
+        subscribed: true
+      })
+      const container = await mount(
+        <ReportUserButton targetUserId={200} targetUserName="某人" />
       )
-    ].find((radio) => radio.value === 'resource_wrong_patch')!
-    await act(async () => {
-      wrongPatchRadio.click()
+      await act(async () => {
+        findButton(container, '举报')!.click()
+      })
+      await setTextarea(container, '举报原因', '违规内容')
+      await act(async () => {
+        findButton(container, '提交举报')!.click()
+      })
+      await flush()
+      const text = container.textContent ?? ''
+      expect(text).toContain('已提交')
+      expect(text).not.toContain('相同问题')
+      expect(text).not.toContain('人报告')
     })
-    expect(feedbackContainer.textContent).toContain('预计首次响应在 7 天内')
-    // 「其他」不承诺时限
-    const otherRadio = [
-      ...feedbackContainer.querySelectorAll<HTMLInputElement>(
-        'input[type="radio"]'
+  })
+
+  describe('item page「反馈」(D14, D22)', () => {
+    const openFeedback = async (container: HTMLElement) => {
+      await act(async () => {
+        container
+          .querySelector<HTMLButtonElement>('button[aria-label="游戏反馈"]')!
+          .click()
+      })
+    }
+
+    it('prompts guests to log in as soon as they open it', async () => {
+      mocks.user = { uid: 0, name: '', role: 0 }
+      const container = await mount(<FeedbackButton patch={patch} />)
+      await openFeedback(container)
+      expect(container.textContent).toContain('提交反馈需要先登录账号')
+      expect(container.querySelector('textarea')).toBeNull()
+    })
+
+    it('submits entry corrections as patch_info to the site administrator', async () => {
+      mocks.kunFetchPost.mockResolvedValue(
+        created(8, { case: { id: 8, public: false, subscriberCount: null } })
       )
-    ].find((radio) => radio.value === 'other')!
-    await act(async () => {
-      otherRadio.click()
+      const container = await mount(<FeedbackButton patch={patch} />)
+      await openFeedback(container)
+
+      expect(container.textContent).toContain(
+        '由网站管理员核对后修改，预计首次响应在 7 天内'
+      )
+      await setTextarea(container, '问题描述', '发售日期应为 2019-04-26')
+      await act(async () => {
+        findButton(container, '提交')!.click()
+      })
+      await flush()
+      expect(mocks.kunFetchPost).toHaveBeenCalledWith('/case', {
+        kind: 'patch_info',
+        targetType: 'patch',
+        targetId: 1,
+        content: '发售日期应为 2019-04-26',
+        imageKeys: []
+      })
+      expect(container.textContent).toContain(
+        '已交给网站管理员，预计 7 天内首次回应'
+      )
     })
-    expect(feedbackContainer.textContent).not.toContain('预计首次响应')
+
+    it('posts other and wrong-patch cases with their own hints', async () => {
+      mocks.kunFetchGet.mockResolvedValue([resource])
+      mocks.kunFetchPost.mockResolvedValue(created(9))
+      const container = await mount(<FeedbackButton patch={patch} />)
+      await openFeedback(container)
+
+      // 「其他」不承诺时限
+      await pickRadio(container, 'other')
+      expect(container.textContent).toContain('不承诺首次响应时限')
+      await setTextarea(container, '问题描述', '条目相关的其他问题描述')
+      await act(async () => {
+        findButton(container, '提交')!.click()
+      })
+      await flush()
+      expect(mocks.kunFetchPost).toHaveBeenCalledWith('/case', {
+        kind: 'other',
+        targetType: 'patch',
+        targetId: 1,
+        content: '条目相关的其他问题描述',
+        imageKeys: []
+      })
+
+      // 「资源发错条目」按需拉取资源列表并创建 resource_wrong_patch
+      await act(async () => {
+        findButton(container, '关闭')!.click()
+      })
+      mocks.kunFetchPost.mockClear()
+      await openFeedback(container)
+      await pickRadio(container, 'resource_wrong_patch')
+      await flush()
+      expect(mocks.kunFetchGet).toHaveBeenCalledWith('/patch/resource', {
+        patchId: 1
+      })
+      expect(container.textContent).toContain('预计首次响应在 7 天内')
+      const select = container.querySelector<HTMLSelectElement>(
+        'select[aria-label="选择资源"]'
+      )!
+      await act(async () => {
+        setNativeValue(select, '7', 'change')
+      })
+      await setTextarea(container, '问题描述', '这个资源不属于该条目')
+      await act(async () => {
+        findButton(container, '提交')!.click()
+      })
+      await flush()
+      expect(mocks.kunFetchPost).toHaveBeenCalledWith('/case', {
+        kind: 'resource_wrong_patch',
+        targetType: 'resource',
+        targetId: 7,
+        expectedPatchId: 1,
+        content: '这个资源不属于该条目',
+        imageKeys: []
+      })
+    })
   })
 })

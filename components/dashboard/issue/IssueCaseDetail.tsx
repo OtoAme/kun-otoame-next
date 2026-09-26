@@ -7,9 +7,12 @@ import {
   CheckCircle2,
   Clock3,
   ExternalLink,
+  PencilLine,
   RotateCcw,
+  Scale,
   Send,
   TriangleAlert,
+  Undo2,
   XCircle
 } from 'lucide-react'
 import toast from 'react-hot-toast'
@@ -42,6 +45,7 @@ import { useUserStore } from '~/store/userStore'
 import {
   CASE_CONTENT_MAX_LENGTH,
   CASE_DESCRIPTION_MIN_LENGTH,
+  CASE_HANDLER_RESOLUTIONS_BY_KIND,
   CASE_QUICK_REPLIES,
   CASE_REOPEN_WINDOW_MS,
   CASE_REPORT_MIN_LENGTH,
@@ -49,16 +53,20 @@ import {
   CASE_UNRESOLVED_STATUSES
 } from '~/constants/case'
 import {
+  caseClosingNoteError,
   caseKindLabel,
   caseMessageAuthorLabel,
   caseMessageSide,
+  caseOwnerLabel,
   caseResolutionLabel,
   caseStatusHint,
   caseStatusLabel,
   caseSystemEventText,
+  caseTargetHref,
   caseTargetText,
   formatCaseDuration
 } from '~/components/case/caseDisplay'
+import { useCaseImageUploads } from '~/components/case/useCaseImageUploads'
 import { cn } from '~/lib/dashboard/utils'
 import type {
   CaseActionResponse,
@@ -72,6 +80,8 @@ import type {
   CaseStatus
 } from '~/types/api/case'
 
+import { IssueImageField } from './IssueImageField'
+
 const STATUS_BADGE_VARIANTS: Record<
   CaseStatus,
   'default' | 'secondary' | 'destructive' | 'outline'
@@ -84,6 +94,13 @@ const STATUS_BADGE_VARIANTS: Record<
   merged: 'outline'
 }
 
+/** Writes behind a confirmation dialog; each maps to one case API route. */
+type IssueAction = 'resolve' | 'reopen' | 'review' | 'withdraw' | 'propose'
+
+const OUT_OF_SCOPE_TEMPLATE =
+  CASE_QUICK_REPLIES.find((reply) => reply.code === 'out_of_scope')?.content ??
+  ''
+
 interface IssueCaseDetailProps {
   caseId: number
   /** 工作区上下文：详情里的写操作改变了列表行时回调。 */
@@ -91,10 +108,11 @@ interface IssueCaseDetailProps {
 }
 
 /**
- * 会话时间轴。系统事件用分隔线呈现，回复按角色区分，两者都来自真实的
- * `detail.messages`——本系统的状态机是 open/waiting_owner ↔ waiting_reporter
- * 往复后才终结，没有单向阶段，所以这里不画阶段进度条。用户侧拿不到 payload
- * （服务端只给 admin 视角下发），系统事件文案走服务端合成的 body 与事件回退。
+ * 会话时间轴。系统事件用分隔线呈现，回复按署名一方区分（报告者、其他报告者、
+ * 处理方，D15），附图随所在的那条对话显示（D11）。本系统的状态机是
+ * open/waiting_owner ↔ waiting_reporter 往复后才终结，没有单向阶段，所以这里
+ * 不画阶段进度条。用户侧拿不到 payload（服务端只给 admin 视角下发），系统事件
+ * 文案走服务端合成的 body 与事件回退。
  */
 function CaseTimeline({
   messages,
@@ -130,6 +148,17 @@ function CaseTimeline({
         const authorName = caseMessageAuthorLabel(message, identifiesReporter)
         const isViewer =
           message.author !== null && message.author.id === viewerId
+        // 注销账号无法判定属于哪一侧，不贴角色徽标而不是猜一个
+        const sideLabel =
+          side === 'owner'
+            ? '处理方'
+            : side === 'reporter'
+              ? '报告者'
+              : side === 'other-reporter'
+                ? isViewer
+                  ? '报告者'
+                  : '其他报告者'
+                : null
         return (
           <li key={message.id} className="flex gap-3">
             <span
@@ -150,12 +179,11 @@ function CaseTimeline({
                 <span className="font-medium text-foreground">
                   {authorName}
                 </span>
-                {/* 注销账号无法判定属于哪一侧，不贴角色徽标而不是猜一个 */}
-                {side === 'unknown' ? null : (
+                {sideLabel ? (
                   <Badge variant={side === 'owner' ? 'secondary' : 'outline'}>
-                    {side === 'owner' ? '处理方' : '报告者'}
+                    {sideLabel}
                   </Badge>
-                )}
+                ) : null}
                 {isViewer ? <span>（我）</span> : null}
                 <span>{formatChinaDateTime(message.created)}</span>
               </span>
@@ -168,6 +196,26 @@ function CaseTimeline({
               >
                 {message.body}
               </span>
+              {message.images?.length ? (
+                <span className="flex flex-wrap gap-2">
+                  {message.images.map((url, index) => (
+                    <a
+                      key={url}
+                      href={url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="block"
+                    >
+                      <img
+                        src={url}
+                        alt={`${authorName}的附图 ${index + 1}`}
+                        loading="lazy"
+                        className="size-20 rounded-md border object-cover"
+                      />
+                    </a>
+                  ))}
+                </span>
+              ) : null}
             </span>
           </li>
         )
@@ -185,16 +233,19 @@ export function IssueCaseDetail({ caseId, onChanged }: IssueCaseDetailProps) {
 
   const [replyContent, setReplyContent] = useState('')
   const [replyError, setReplyError] = useState('')
+  const replyUploads = useCaseImageUploads()
   const [resolution, setResolution] = useState<CaseResolution | ''>('')
   const [resolveContent, setResolveContent] = useState('')
-  const [pendingAction, setPendingAction] = useState<
-    'resolve' | 'reopen' | null
-  >(null)
+  const [proposeResolution, setProposeResolution] = useState<
+    CaseResolution | ''
+  >('')
+  const [proposeContent, setProposeContent] = useState('')
+  const [pendingAction, setPendingAction] = useState<IssueAction | null>(null)
   // 退出动画期间保留呈现动作，不参与写入条件
-  const [displayAction, setDisplayAction] = useState<
-    'resolve' | 'reopen' | null
-  >(null)
-  // 重开撞上同目标新未结事项：先展示冲突，等用户明确点击后才提交关注
+  const [displayAction, setDisplayAction] = useState<IssueAction | null>(null)
+  // 重开与复核的理由（D16、D19）
+  const [reasonContent, setReasonContent] = useState('')
+  // 重开或复核撞上同目标新未结事项：先展示冲突，等用户明确点击后才提交关注
   const [reopenConflictId, setReopenConflictId] = useState<number | null>(null)
   const [reopenContent, setReopenContent] = useState('')
   const [actionError, setActionError] = useState('')
@@ -243,34 +294,40 @@ export function IssueCaseDetail({ caseId, onChanged }: IssueCaseDetailProps) {
   }, [load])
 
   // 换一条问题时清空本地表单状态
+  const resetReplyUploads = replyUploads.reset
   useEffect(() => {
     setReplyContent('')
     setReplyError('')
+    resetReplyUploads()
     setResolution('')
     setResolveContent('')
+    setProposeResolution('')
+    setProposeContent('')
     setPendingAction(null)
     setDisplayAction(null)
+    setReasonContent('')
     setReopenConflictId(null)
     setReopenContent('')
     setActionError('')
-  }, [caseId])
+  }, [caseId, resetReplyUploads])
 
   const handleReply = async () => {
     const content = replyContent.trim()
-    if (!content || lockRef.current) return
+    if (!content || replyUploads.uploading || lockRef.current) return
     lockRef.current = true
     setWorking(true)
     setReplyError('')
     try {
       const res = await kunFetchPost<CaseMessageResponse | string>(
         `/case/${caseId}/message`,
-        { content }
+        { content, imageKeys: replyUploads.keys }
       )
       if (typeof res === 'string') {
         setReplyError(res || '发送失败，请稍后重试')
         return
       }
       setReplyContent('')
+      replyUploads.reset()
       await load()
       onChanged?.()
     } catch {
@@ -282,57 +339,118 @@ export function IssueCaseDetail({ caseId, onChanged }: IssueCaseDetailProps) {
     }
   }
 
-  const openConfirm = (action: 'resolve' | 'reopen') => {
-    if (lockRef.current || pendingAction !== null) return
+  const openConfirm = (action: IssueAction) => {
+    if (!detail || lockRef.current || pendingAction !== null) return
     setActionError('')
+    setReasonContent('')
     setReopenConflictId(null)
     setReopenContent('')
-    if (action === 'resolve' && !resolution) {
-      setActionError('请先选择处理结论')
-      return
+    if (action === 'resolve') {
+      if (!resolution) {
+        setActionError('请先选择处理结论')
+        return
+      }
+      const noteError = caseClosingNoteError(detail, resolution, resolveContent)
+      if (noteError) {
+        setActionError(noteError)
+        return
+      }
+    }
+    if (action === 'propose') {
+      if (!proposeResolution) {
+        setActionError('请先选择提请的结论')
+        return
+      }
+      if (!proposeContent.trim()) {
+        setActionError('请写明你做了什么')
+        return
+      }
+      const noteError = caseClosingNoteError(
+        detail,
+        proposeResolution,
+        proposeContent
+      )
+      if (noteError) {
+        setActionError(noteError)
+        return
+      }
     }
     setDisplayAction(action)
     setPendingAction(action)
   }
 
-  const runAction = async (action: 'resolve' | 'reopen') => {
+  const postAction = (action: IssueAction) => {
+    switch (action) {
+      case 'resolve':
+        return kunFetchPost<CaseActionResponse | string>(
+          `/case/${caseId}/resolve`,
+          {
+            resolution,
+            ...(resolveContent.trim() ? { content: resolveContent.trim() } : {})
+          }
+        )
+      case 'reopen':
+      case 'review':
+        return kunFetchPost<CaseReopenResponse | string>(
+          `/case/${caseId}/${action}`,
+          { content: reasonContent.trim() }
+        )
+      case 'withdraw':
+        return kunFetchPost<CaseActionResponse | string>(
+          `/case/${caseId}/withdraw`,
+          {}
+        )
+      case 'propose':
+        return kunFetchPost<CaseActionResponse | string>(
+          `/case/${caseId}/propose`,
+          { resolution: proposeResolution, content: proposeContent.trim() }
+        )
+    }
+  }
+
+  const runAction = async (action: IssueAction) => {
     if (lockRef.current) return
+    if ((action === 'reopen' || action === 'review') && !reasonContent.trim()) {
+      setActionError('请写明理由')
+      return
+    }
     lockRef.current = true
     setWorking(true)
     setActionError('')
     try {
-      const res =
-        action === 'resolve'
-          ? await kunFetchPost<CaseActionResponse | string>(
-              `/case/${caseId}/resolve`,
-              {
-                resolution,
-                ...(resolveContent.trim()
-                  ? { content: resolveContent.trim() }
-                  : {})
-              }
-            )
-          : await kunFetchPost<CaseReopenResponse | string>(
-              `/case/${caseId}/reopen`,
-              {}
-            )
+      const res = await postAction(action)
       if (typeof res === 'string') {
         setActionError(res || '操作失败，请稍后重试')
         return
       }
-      if (action === 'reopen' && 'conflict' in res) {
+      if ('conflict' in res) {
         // 撞上新未结事项：只展示冲突，不自动提交、不自动关注
         setReopenConflictId(res.existingCaseId)
         return
       }
       setPendingAction(null)
+      setReasonContent('')
       if (action === 'resolve') {
         setResolution('')
         setResolveContent('')
-        toast.success('已结案')
-      } else {
-        toast.success('已重新打开')
       }
+      if (action === 'propose') {
+        setProposeResolution('')
+        setProposeContent('')
+      }
+      toast.success(
+        action === 'resolve'
+          ? '已结案'
+          : action === 'reopen'
+            ? '已重新打开'
+            : action === 'review'
+              ? '已提交给网站管理员复核'
+              : action === 'propose'
+                ? '已提请网站管理员结案'
+                : res.case.status === 'resolved'
+                  ? '已撤回，问题已结束'
+                  : '已撤回你的报告，其他报告者的问题继续处理'
+      )
       await load()
       onChanged?.()
     } catch {
@@ -340,6 +458,54 @@ export function IssueCaseDetail({ caseId, onChanged }: IssueCaseDetailProps) {
     } finally {
       lockRef.current = false
       setWorking(false)
+    }
+  }
+
+  // 结案确认（D19）：「没解决」接着打开当时还能用的重开或复核
+  const handleConfirm = async (solved: boolean) => {
+    if (!detail || lockRef.current) return
+    const next: IssueAction | null = solved
+      ? null
+      : detail.capabilities.canReopen
+        ? 'reopen'
+        : detail.capabilities.canReview
+          ? 'review'
+          : null
+    lockRef.current = true
+    setWorking(true)
+    setActionError('')
+    let recorded = false
+    try {
+      const res = await kunFetchPost<CaseActionResponse | string>(
+        `/case/${caseId}/confirm`,
+        { solved }
+      )
+      if (typeof res === 'string') {
+        setActionError(res || '操作失败，请稍后重试')
+        return
+      }
+      recorded = true
+      toast.success(
+        solved
+          ? '感谢确认'
+          : next
+            ? '已记录，请写明哪里还没有解决'
+            : '已记录。这个问题已不能再重开或复核，仍遇到问题可以重新提交'
+      )
+      await load()
+      onChanged?.()
+    } catch {
+      setActionError('网络错误，操作未完成，请稍后重试')
+    } finally {
+      lockRef.current = false
+      setWorking(false)
+    }
+    if (recorded && next) {
+      setReasonContent('')
+      setReopenConflictId(null)
+      setReopenContent('')
+      setDisplayAction(next)
+      setPendingAction(next)
     }
   }
 
@@ -432,8 +598,8 @@ export function IssueCaseDetail({ caseId, onChanged }: IssueCaseDetailProps) {
   const closed = detail.status === 'resolved' || detail.status === 'rejected'
   // PM 3.6 把关注者可见范围写成穷举白名单，等待时长与升级倒计时都不在其中。
   // 这里拿一个写权限标志当可见性判据：`canReply` 等价于服务端的
-  // `actorCanReply`（管理员、当前发布者处理方、报告者本人），纯关注者三项皆假，
-  // 这个集合正好是「该看时限的人」，因此不必让后端另外下发视角标记。
+  // `actorCanReply`（管理员、当前发布者处理方、报告者本人、转交后的原发布者），
+  // 纯关注者皆假，这个集合正好是「该看时限的人」，因此不必让后端另外下发视角标记。
   //
   // 耦合提醒：上面这层等价是当前契约的巧合，不是它承诺的语义。若模块 04 / 07
   // 让 `actorCanReply` 纳入新的一方，时限提示会跟着静默放开，届时必须回到
@@ -453,8 +619,15 @@ export function IssueCaseDetail({ caseId, onChanged }: IssueCaseDetailProps) {
     CASE_UNRESOLVED_STATUSES.includes(
       detail.status as (typeof CASE_UNRESOLVED_STATUSES)[number]
     )
+  // 转交后的原发布者（D20）只由服务端的 canPropose 标出
+  const viewerIsHandedOffPublisher = capabilities.canPropose
+  const targetHref = caseTargetHref(detail)
+  const showEditResource =
+    detail.targetType === 'resource' &&
+    targetHref !== null &&
+    (viewerIsOwnerPublisher || viewerIsHandedOffPublisher)
 
-  // 重开窗口由服务端的 canReopen 决定（报告者本人、已结案、未重开过、7 天内）；
+  // 重开与复核窗口由服务端决定（报告者本人、已结案、7 天内）；
   // 这里只把剩余时间读出来，不自行判定资格。
   const reopenDeadline = detail.closedAt
     ? Date.parse(detail.closedAt) + CASE_REOPEN_WINDOW_MS
@@ -462,11 +635,52 @@ export function IssueCaseDetail({ caseId, onChanged }: IssueCaseDetailProps) {
   const reopenRemaining = Number.isNaN(reopenDeadline)
     ? null
     : formatCaseDuration(reopenDeadline - Date.now())
+  const remainingText = reopenRemaining ? `，还剩约 ${reopenRemaining}` : ''
 
   const minReopenLength =
     detail.kind === 'content_violation'
       ? CASE_REPORT_MIN_LENGTH
       : CASE_DESCRIPTION_MIN_LENGTH
+  const resolveNoteRule = resolution
+    ? caseClosingNoteError(detail, resolution, '')
+    : null
+  const proposeNoteRule = proposeResolution
+    ? caseClosingNoteError(detail, proposeResolution, '')
+    : null
+  const proposeResolutions = CASE_HANDLER_RESOLUTIONS_BY_KIND[detail.kind] ?? []
+
+  const dialogTitle =
+    displayAction === 'resolve'
+      ? '确认结案'
+      : displayAction === 'withdraw'
+        ? '确认撤回'
+        : displayAction === 'propose'
+          ? '确认提请结案'
+          : reopenConflictId !== null
+            ? '该目标已有正在处理的问题'
+            : displayAction === 'review'
+              ? '请网站管理员复核'
+              : '重新打开'
+  const dialogDescription =
+    displayAction === 'resolve'
+      ? `将以「${
+          CASE_RESOLUTION_LABELS[resolution as CaseResolution] ?? resolution
+        }」结案，结案后报告者会收到通知。`
+      : displayAction === 'withdraw'
+        ? '没有其他人报告同一问题时，这条问题会以「开启者撤回」结束；还有其他报告者时，只撤回你的报告，问题继续处理。'
+        : displayAction === 'propose'
+          ? `将提请以「${
+              CASE_RESOLUTION_LABELS[proposeResolution as CaseResolution] ??
+              proposeResolution
+            }」结案，网站管理员确认后才会结案。`
+          : reopenConflictId !== null
+            ? '该目标已有一条正在处理的同类问题，这条旧问题不再重开。你可以填写说明后提交并关注现有问题，可查看处理状态，结案后会收到通知。'
+            : displayAction === 'review'
+              ? '提交后这条问题会交给网站管理员复核，发布者也会收到通知。网站管理员的结论是最终结果，之后不能再重开或复核。'
+              : '重新打开后，该问题会回到待处理状态并通知处理方；每个问题只能重新打开一次。'
+  const needsReason =
+    (displayAction === 'reopen' || displayAction === 'review') &&
+    reopenConflictId === null
 
   return (
     <Card className="gap-0 overflow-hidden py-0">
@@ -474,9 +688,21 @@ export function IssueCaseDetail({ caseId, onChanged }: IssueCaseDetailProps) {
         <header className="space-y-2">
           <div className="flex flex-wrap items-start justify-between gap-2">
             <h2 className="min-w-0 text-lg font-semibold break-words">
-              {caseTargetText(detail)}
+              {targetHref ? (
+                <Link
+                  href={targetHref}
+                  className="underline-offset-4 hover:underline"
+                >
+                  {caseTargetText(detail)}
+                </Link>
+              ) : (
+                caseTargetText(detail)
+              )}
             </h2>
             <div className="flex shrink-0 flex-wrap items-center gap-2">
+              {viewerIsHandedOffPublisher ? (
+                <Badge variant="secondary">已交给网站管理员</Badge>
+              ) : null}
               <Badge variant={STATUS_BADGE_VARIANTS[detail.status]}>
                 {caseStatusLabel(detail.status)}
               </Badge>
@@ -492,9 +718,7 @@ export function IssueCaseDetail({ caseId, onChanged }: IssueCaseDetailProps) {
             <span aria-hidden>·</span>
             <span>提交于 {formatChinaDateTime(detail.created)}</span>
             <span aria-hidden>·</span>
-            <span>
-              处理方：{detail.ownerType === 'publisher' ? '发布者' : '站方'}
-            </span>
+            <span>处理方：{caseOwnerLabel(detail.ownerType)}</span>
             {detail.subscriberCount !== null ? (
               <span>{detail.subscriberCount} 人报告</span>
             ) : null}
@@ -504,6 +728,14 @@ export function IssueCaseDetail({ caseId, onChanged }: IssueCaseDetailProps) {
               <Clock3 className="size-3.5 shrink-0" aria-hidden />
               {statusHint}
             </p>
+          ) : null}
+          {showEditResource ? (
+            <Button asChild variant="outline" size="sm">
+              <Link href={targetHref}>
+                <PencilLine className="size-4" aria-hidden />
+                去修改资源
+              </Link>
+            </Button>
           ) : null}
         </header>
 
@@ -534,15 +766,51 @@ export function IssueCaseDetail({ caseId, onChanged }: IssueCaseDetailProps) {
                 结案于 {formatChinaDateTime(detail.closedAt)}
               </p>
             ) : null}
-            {capabilities.canReopen ? (
+            {capabilities.canConfirm ? (
+              <>
+                <Separator />
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="min-w-0 space-y-0.5">
+                    <p className="text-sm font-medium">问题解决了吗？</p>
+                    <p className="text-xs text-muted-foreground">
+                      结案后 7 天内可以告诉我们结果{remainingText}。
+                      {capabilities.canReopen
+                        ? '没解决可以重新打开一次。'
+                        : capabilities.canReview
+                          ? '没解决可以请网站管理员复核。'
+                          : ''}
+                    </p>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={working}
+                      onClick={() => void handleConfirm(true)}
+                    >
+                      解决了
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={working}
+                      onClick={() => void handleConfirm(false)}
+                    >
+                      没解决
+                    </Button>
+                  </div>
+                </div>
+              </>
+            ) : capabilities.canReopen ? (
               <>
                 <Separator />
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div className="min-w-0 space-y-0.5">
                     <p className="text-sm font-medium">问题仍未解决？</p>
                     <p className="text-xs text-muted-foreground">
-                      结案后 7 天内可以重新打开一次
-                      {reopenRemaining ? `，还剩约 ${reopenRemaining}` : ''}。
+                      结案后 7 天内可以重新打开一次{remainingText}。
                     </p>
                   </div>
                   <Button
@@ -554,6 +822,31 @@ export function IssueCaseDetail({ caseId, onChanged }: IssueCaseDetailProps) {
                   >
                     <RotateCcw className="size-4" aria-hidden />
                     重新打开
+                  </Button>
+                </div>
+              </>
+            ) : capabilities.canReview ? (
+              <>
+                <Separator />
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="min-w-0 space-y-0.5">
+                    <p className="text-sm font-medium">
+                      对发布者的结论仍有异议？
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      可以请网站管理员复核一次，网站管理员的结论是最终结果
+                      {remainingText}。
+                    </p>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={working}
+                    onClick={() => openConfirm('review')}
+                  >
+                    <Scale className="size-4" aria-hidden />
+                    请网站管理员复核
                   </Button>
                 </div>
               </>
@@ -579,7 +872,7 @@ export function IssueCaseDetail({ caseId, onChanged }: IssueCaseDetailProps) {
         {showStaffDashboardEntry ? (
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-4">
             <p className="text-sm text-muted-foreground">
-              你可以以站方身份在后台处理该问题。
+              你可以以网站管理员身份在后台处理该问题。
             </p>
             <Button asChild variant="outline" size="sm">
               <Link href={`/dashboard/case/${detail.id}`}>
@@ -622,8 +915,30 @@ export function IssueCaseDetail({ caseId, onChanged }: IssueCaseDetailProps) {
               maxLength={CASE_CONTENT_MAX_LENGTH}
               rows={2}
               disabled={working}
-              placeholder="结案说明（可选，纯文字）"
+              placeholder={
+                resolveNoteRule
+                  ? '结案说明（必填，纯文字）'
+                  : '结案说明（可选，纯文字）'
+              }
             />
+            {resolveNoteRule ? (
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-xs text-muted-foreground">
+                  {resolveNoteRule}
+                </p>
+                {resolution === 'out_of_scope' && OUT_OF_SCOPE_TEMPLATE ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={working}
+                    onClick={() => setResolveContent(OUT_OF_SCOPE_TEMPLATE)}
+                  >
+                    填入指南模板
+                  </Button>
+                ) : null}
+              </div>
+            ) : null}
             <div className="flex justify-end">
               <Button
                 type="button"
@@ -637,6 +952,97 @@ export function IssueCaseDetail({ caseId, onChanged }: IssueCaseDetailProps) {
           </section>
         ) : null}
 
+        {viewerIsHandedOffPublisher ? (
+          <section
+            aria-label="提请结案"
+            className="space-y-2 rounded-lg border p-4"
+          >
+            <h3 className="text-sm font-semibold">提请结案</h3>
+            <p className="text-xs text-muted-foreground">
+              这条问题已交给网站管理员处理。你仍可以回复；已经处理好时，选一个结论并写明做了什么，由网站管理员确认后结案。
+            </p>
+            <label htmlFor="issue-propose-resolution" className="sr-only">
+              提请的结论
+            </label>
+            <Select
+              value={proposeResolution}
+              onValueChange={(value) =>
+                setProposeResolution(value as CaseResolution)
+              }
+              disabled={working}
+            >
+              <SelectTrigger id="issue-propose-resolution">
+                <SelectValue placeholder="请选择提请的结论" />
+              </SelectTrigger>
+              <SelectContent>
+                {proposeResolutions.map((value) => (
+                  <SelectItem key={value} value={value}>
+                    {CASE_RESOLUTION_LABELS[value] ?? value}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Textarea
+              aria-label="提请说明"
+              value={proposeContent}
+              onChange={(event) => setProposeContent(event.target.value)}
+              maxLength={CASE_CONTENT_MAX_LENGTH}
+              rows={2}
+              disabled={working}
+              placeholder="你做了什么（必填，纯文字）"
+            />
+            {proposeNoteRule ? (
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-xs text-muted-foreground">
+                  {proposeNoteRule}
+                </p>
+                {proposeResolution === 'out_of_scope' &&
+                OUT_OF_SCOPE_TEMPLATE ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={working}
+                    onClick={() => setProposeContent(OUT_OF_SCOPE_TEMPLATE)}
+                  >
+                    填入指南模板
+                  </Button>
+                ) : null}
+              </div>
+            ) : null}
+            <div className="flex justify-end">
+              <Button
+                type="button"
+                size="sm"
+                disabled={
+                  !proposeResolution || !proposeContent.trim() || working
+                }
+                onClick={() => openConfirm('propose')}
+              >
+                提请结案
+              </Button>
+            </div>
+          </section>
+        ) : null}
+
+        {capabilities.canWithdraw ? (
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-dashed p-3">
+            <p className="text-xs text-muted-foreground">
+              问题已经解决，或者不再需要处理？
+            </p>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={working}
+              onClick={() => openConfirm('withdraw')}
+            >
+              <Undo2 className="size-4" aria-hidden />
+              撤回
+            </Button>
+          </div>
+        ) : null}
+
         {actionError && pendingAction === null ? (
           <p role="alert" className="text-sm text-destructive">
             {actionError}
@@ -647,7 +1053,7 @@ export function IssueCaseDetail({ caseId, onChanged }: IssueCaseDetailProps) {
       <div className="border-t bg-muted/30 p-3">
         {capabilities.canReply ? (
           <div className="space-y-2">
-            {viewerIsOwnerPublisher ? (
+            {viewerIsOwnerPublisher || viewerIsHandedOffPublisher ? (
               <div className="flex flex-wrap gap-2">
                 {CASE_QUICK_REPLIES.map((reply) => (
                   <Button
@@ -671,30 +1077,35 @@ export function IssueCaseDetail({ caseId, onChanged }: IssueCaseDetailProps) {
               rows={3}
               disabled={working}
               className="bg-background"
-              placeholder="补充说明或回复（纯文字）"
+              placeholder="补充说明或回复（纯文字，可以附图）"
             />
-            <div className="flex items-center justify-end gap-3">
-              {replyError ? (
-                <p role="alert" className="min-w-0 text-sm text-destructive">
-                  {replyError}
-                </p>
-              ) : null}
-              <Button
-                type="button"
-                size="sm"
-                disabled={!replyContent.trim() || working}
-                onClick={() => void handleReply()}
-              >
-                <Send className="size-4" aria-hidden />
-                发送
-              </Button>
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <IssueImageField uploads={replyUploads} disabled={working} />
+              <div className="flex items-center gap-3">
+                {replyError ? (
+                  <p role="alert" className="min-w-0 text-sm text-destructive">
+                    {replyError}
+                  </p>
+                ) : null}
+                <Button
+                  type="button"
+                  size="sm"
+                  disabled={
+                    !replyContent.trim() || working || replyUploads.uploading
+                  }
+                  onClick={() => void handleReply()}
+                >
+                  <Send className="size-4" aria-hidden />
+                  发送
+                </Button>
+              </div>
             </div>
           </div>
         ) : (
           <p className="text-sm text-muted-foreground">
             {closed
-              ? capabilities.canReopen
-                ? '该问题已结案，无法继续回复。重新打开后可以继续沟通。'
+              ? capabilities.canReopen || capabilities.canReview
+                ? '该问题已结案，无法继续回复。重新打开或申请复核后可以继续沟通。'
                 : '该问题已结案，无法继续回复。'
               : '你没有回复该问题的权限。'}
           </p>
@@ -707,6 +1118,7 @@ export function IssueCaseDetail({ caseId, onChanged }: IssueCaseDetailProps) {
           // 取消 / Esc 关闭且零写入；确认写请求在飞期间禁止关闭
           if (!open && !working) {
             setPendingAction(null)
+            setReasonContent('')
             setReopenConflictId(null)
             setReopenContent('')
             setActionError('')
@@ -715,26 +1127,32 @@ export function IssueCaseDetail({ caseId, onChanged }: IssueCaseDetailProps) {
       >
         <AlertDialogContent className="max-h-[85dvh] overflow-y-auto">
           <AlertDialogHeader>
-            <AlertDialogTitle>
-              {displayAction === 'resolve'
-                ? '确认结案'
-                : reopenConflictId !== null
-                  ? '该目标已有正在处理的问题'
-                  : '确认重新打开'}
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              {displayAction === 'resolve'
-                ? `将以「${
-                    CASE_RESOLUTION_LABELS[resolution as CaseResolution] ??
-                    resolution
-                  }」结案，结案后报告者会收到通知。`
-                : reopenConflictId !== null
-                  ? '该目标已有一条正在处理的同类问题，这条旧问题不再重开。你可以填写说明后提交并关注现有问题，可查看处理状态，结案后会收到通知。'
-                  : '重新打开后，该问题会回到待处理状态并通知处理方；每个问题只能重新打开一次。'}
-            </AlertDialogDescription>
+            <AlertDialogTitle>{dialogTitle}</AlertDialogTitle>
+            <AlertDialogDescription>{dialogDescription}</AlertDialogDescription>
           </AlertDialogHeader>
 
-          {displayAction === 'reopen' && reopenConflictId !== null ? (
+          {needsReason ? (
+            <div className="space-y-1">
+              <label
+                htmlFor="issue-action-reason"
+                className="text-sm font-medium"
+              >
+                {displayAction === 'review' ? '复核理由' : '重开理由'}
+              </label>
+              <Textarea
+                id="issue-action-reason"
+                value={reasonContent}
+                onChange={(event) => setReasonContent(event.target.value)}
+                maxLength={CASE_CONTENT_MAX_LENGTH}
+                rows={3}
+                disabled={working}
+                placeholder="哪里还没有解决（纯文字）"
+              />
+            </div>
+          ) : null}
+
+          {(displayAction === 'reopen' || displayAction === 'review') &&
+          reopenConflictId !== null ? (
             <div className="space-y-1">
               <label
                 htmlFor="issue-reopen-content"
@@ -762,7 +1180,8 @@ export function IssueCaseDetail({ caseId, onChanged }: IssueCaseDetailProps) {
 
           <AlertDialogFooter>
             <AlertDialogCancel disabled={working}>取消</AlertDialogCancel>
-            {pendingAction === 'reopen' && reopenConflictId !== null ? (
+            {(pendingAction === 'reopen' || pendingAction === 'review') &&
+            reopenConflictId !== null ? (
               <Button
                 disabled={working || !reopenContent.trim()}
                 onClick={() => void handleSubscribeExisting()}
@@ -771,7 +1190,7 @@ export function IssueCaseDetail({ caseId, onChanged }: IssueCaseDetailProps) {
               </Button>
             ) : (
               <Button
-                disabled={working}
+                disabled={working || (needsReason && !reasonContent.trim())}
                 onClick={() => {
                   // 唯一写入口：仅确认按钮调用写函数（内部仍含 ref 锁）
                   if (pendingAction !== null) void runAction(pendingAction)

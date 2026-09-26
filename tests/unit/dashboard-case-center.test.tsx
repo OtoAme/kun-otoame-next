@@ -339,7 +339,7 @@ describe('dashboard case center', () => {
     const labels = [...nav.querySelectorAll('[data-case-view]')].map(
       (element) => element.textContent?.replace(/\d+$/, '')
     )
-    expect(labels.length).toBe(7)
+    expect(labels.length).toBe(8)
     expect(new Set(labels).size).toBe(labels.length)
   })
 
@@ -387,6 +387,73 @@ describe('dashboard case center', () => {
     await flush()
     // 未结事项不传任何状态参数：服务端默认窗口同时是收件箱队列的定义
     expect(mocks.kunFetchGet).toHaveBeenLastCalledWith('/admin/case', {
+      page: 1,
+      limit: 20
+    })
+  })
+
+  it('lists publisher-owned cases apart from the staff queue (D22)', async () => {
+    mocks.kunFetchGet.mockResolvedValue(
+      listResponse([makeRow()], 1, SAMPLE_COUNTS)
+    )
+    const container = await mount()
+    await flush()
+    expect(navButton(container, 'unresolved').textContent).toBe('未结事项8')
+
+    await act(async () => {
+      navButton(container, 'publisher').click()
+    })
+    expect(lastPushedHref()).toBe('/dashboard/case?view=publisher')
+    mocks.kunFetchGet.mockResolvedValue(
+      listResponse(
+        [
+          makeRow({
+            id: 12,
+            ownerType: 'publisher',
+            owner: { id: 2, name: '发布者甲', avatar: '' },
+            reopenedCount: 1
+          })
+        ],
+        1,
+        { open: 1 }
+      )
+    )
+    await applyNavigation(lastPushedHref())
+    await flush()
+    expect(mocks.kunFetchGet).toHaveBeenLastCalledWith('/admin/case', {
+      ownerType: 'publisher',
+      page: 1,
+      limit: 20
+    })
+    // Rows name the publisher and the reopen count; the view has no badge and
+    // the staff badges keep the staff numbers.
+    const text = container.textContent ?? ''
+    expect(text).toContain('发布者甲')
+    expect(text).toContain('重开 1 次')
+    expect(navButton(container, 'publisher').textContent).toBe('发布者处理中')
+    expect(navButton(container, 'unresolved').textContent).toBe('未结事项8')
+
+    // 可按发布者筛选
+    const ownerInput =
+      container.querySelector<HTMLInputElement>('#case-owner-filter')!
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(
+        dom!.window.HTMLInputElement.prototype,
+        'value'
+      )!.set!.call(ownerInput, '2')
+      ownerInput.dispatchEvent(
+        new dom!.window.Event('input', { bubbles: true })
+      )
+    })
+    await act(async () => {
+      findButton(container, '筛选').click()
+    })
+    expect(lastPushedHref()).toBe('/dashboard/case?view=publisher&owner=2')
+    await applyNavigation(lastPushedHref())
+    await flush()
+    expect(mocks.kunFetchGet).toHaveBeenLastCalledWith('/admin/case', {
+      ownerType: 'publisher',
+      ownerId: '2',
       page: 1,
       limit: 20
     })
@@ -494,7 +561,7 @@ describe('dashboard case center', () => {
     ).toEqual(['horizontal'])
     expect(navs[0].className).not.toContain('lg:hidden')
     // 条带仍然给出全部七个入口
-    expect(navs[0].querySelectorAll('[data-case-view]')).toHaveLength(7)
+    expect(navs[0].querySelectorAll('[data-case-view]')).toHaveLength(8)
   })
 
   it('falls back to page 1 when the URL page exceeds the API limit', async () => {

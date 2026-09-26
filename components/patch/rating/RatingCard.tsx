@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import type { CSSProperties } from 'react'
 import { Card, CardBody, CardHeader } from '@heroui/card'
-import { Button, Chip, Tooltip, Textarea } from '@heroui/react'
+import { Button, Chip, Tooltip } from '@heroui/react'
 import {
   Modal,
   ModalBody,
@@ -18,7 +18,9 @@ import { formatTimeDifference } from '~/utils/time'
 import { RatingLikeButton } from './RatingLike'
 import { useUserStore } from '~/store/userStore'
 import toast from 'react-hot-toast'
-import { kunFetchDelete, kunFetchPost } from '~/utils/kunFetch'
+import { kunFetchDelete } from '~/utils/kunFetch'
+import { CaseLoginPrompt } from '~/components/case/CaseLoginPrompt'
+import { CaseViolationReportModal } from '~/components/case/CaseViolationReportModal'
 import { RatingModal } from './RatingModal'
 import { semanticChipProps, type SemanticToken } from '~/utils/semanticColor'
 import {
@@ -86,35 +88,13 @@ export const RatingCard = ({
     onOpen: onOpenReport,
     onClose: onCloseReport
   } = useDisclosure()
-  const [reportValue, setReportValue] = useState('')
-  const [reporting, setReporting] = useState(false)
+  const login = useDisclosure()
   const {
     isOpen: isOpenDelete,
     onOpen: onOpenDelete,
     onClose: onCloseDelete
   } = useDisclosure()
   const [deleting, setDeleting] = useState(false)
-  const handleSubmitReport = async () => {
-    if (!reportValue.trim()) {
-      toast.error('请填写举报原因')
-      return
-    }
-
-    setReporting(true)
-    const res = await kunFetchPost<KunResponse<{}>>('/patch/rating/report', {
-      ratingId: rating.id,
-      patchId,
-      content: reportValue.trim()
-    })
-    if (typeof res === 'string') {
-      toast.error(res)
-    } else {
-      setReportValue('')
-      onCloseReport()
-      toast.success('提交举报成功')
-    }
-    setReporting(false)
-  }
 
   const handleDeleteRating = async () => {
     if (!canEdit) {
@@ -229,13 +209,14 @@ export const RatingCard = ({
           <RatingLikeButton rating={rating} />
 
           <div className="flex gap-1">
-            {user.uid > 0 && user.uid !== rating.user.id && (
+            {user.uid !== rating.user.id && (
               <Tooltip content="举报">
                 <Button
                   variant="light"
                   isIconOnly
                   size="sm"
-                  onPress={onOpenReport}
+                  aria-label="举报评价"
+                  onPress={user.uid > 0 ? onOpenReport : login.onOpen}
                   className="text-default-500"
                 >
                   <TriangleAlert className="size-4" />
@@ -287,33 +268,25 @@ export const RatingCard = ({
         />
       </Modal>
 
-      <Modal isOpen={isOpenReport} onClose={onCloseReport} placement="center">
-        <ModalContent>
-          <ModalHeader className="flex flex-col gap-1">举报评价</ModalHeader>
-          <ModalBody>
-            <Textarea
-              label={`举报 ${rating.shortSummary.slice(0, 20) || `总分 ${rating.overall}/10`}`}
-              isRequired
-              placeholder="请填写举报原因"
-              value={reportValue}
-              onValueChange={setReportValue}
-            />
-          </ModalBody>
-          <ModalFooter>
-            <Button variant="light" onPress={onCloseReport}>
-              取消
-            </Button>
-            <Button
-              color="primary"
-              onPress={handleSubmitReport}
-              isDisabled={reporting}
-              isLoading={reporting}
-            >
-              提交
-            </Button>
-          </ModalFooter>
-        </ModalContent>
-      </Modal>
+      <CaseViolationReportModal
+        isOpen={isOpenReport}
+        onClose={onCloseReport}
+        title="举报评价"
+        subject={`举报评价「${
+          rating.shortSummary.slice(0, 20) || `总分 ${rating.overall}/10`
+        }」。`}
+        target={{
+          targetType: 'rating',
+          targetId: rating.id,
+          expectedPatchId: patchId
+        }}
+      />
+
+      <CaseLoginPrompt
+        isOpen={login.isOpen}
+        onOpenChange={login.onOpenChange}
+        action="举报评价"
+      />
 
       <Modal isOpen={isOpenDelete} onClose={onCloseDelete} placement="center">
         <ModalContent>
@@ -332,34 +305,6 @@ export const RatingCard = ({
               isLoading={deleting}
             >
               删除
-            </Button>
-          </ModalFooter>
-        </ModalContent>
-      </Modal>
-
-      <Modal isOpen={isOpenReport} onClose={onCloseReport}>
-        <ModalContent>
-          <ModalHeader className="flex flex-col gap-1">举报评价</ModalHeader>
-          <ModalBody>
-            <Textarea
-              label={`举报 ${rating.shortSummary.slice(0, 20) || `总分 ${rating.overall}/10`}`}
-              isRequired
-              placeholder="请填写举报原因"
-              value={reportValue}
-              onValueChange={setReportValue}
-            />
-          </ModalBody>
-          <ModalFooter>
-            <Button variant="light" onPress={onCloseReport}>
-              取消
-            </Button>
-            <Button
-              color="primary"
-              onPress={handleSubmitReport}
-              isDisabled={reporting}
-              isLoading={reporting}
-            >
-              提交
             </Button>
           </ModalFooter>
         </ModalContent>
