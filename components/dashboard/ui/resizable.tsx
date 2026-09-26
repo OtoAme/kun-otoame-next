@@ -51,7 +51,18 @@ function ResizableHandle({
 
 // Layout persistence lives in this hook in v4 (there is no `autoSaveId`
 // prop); re-exported so callers keep a single entry point for the primitive.
-const useResizableLayout = ResizablePrimitive.useDefaultLayout
+// Its `storage = localStorage` default throws during server rendering, so the
+// server reads an empty store and the browser keeps using localStorage.
+const serverLayoutStorage = { getItem: () => null, setItem: () => {} }
+
+const useResizableLayout = (
+  options: Parameters<typeof ResizablePrimitive.useDefaultLayout>[0]
+) =>
+  ResizablePrimitive.useDefaultLayout({
+    storage:
+      typeof window === 'undefined' ? serverLayoutStorage : window.localStorage,
+    ...options
+  })
 
 export {
   ResizableHandle,
