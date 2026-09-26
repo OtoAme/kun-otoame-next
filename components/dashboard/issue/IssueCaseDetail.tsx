@@ -136,12 +136,13 @@ function CaseTimeline({
               key={message.id}
               className="flex items-center gap-3 text-xs text-muted-foreground"
             >
-              <Separator className="flex-1" />
-              <span className="shrink-0 text-center">
+              <Separator className="min-w-4 flex-1" />
+              {/* 结案说明等长文本要能换行，不能被卡片裁掉 */}
+              <span className="max-w-[85%] min-w-0 text-center break-words">
                 {caseSystemEventText(message)} ·{' '}
                 {formatChinaDateTime(message.created)}
               </span>
-              <Separator className="flex-1" />
+              <Separator className="min-w-4 flex-1" />
             </li>
           )
         }
@@ -594,8 +595,9 @@ export function IssueCaseDetail({ caseId, onChanged }: IssueCaseDetailProps) {
   }
 
   const { capabilities } = detail
-  const resolutionLabel = caseResolutionLabel(detail.resolution)
   const closed = detail.status === 'resolved' || detail.status === 'rejected'
+  // 重开与复核保留上一轮结论（实施计划 5.4），未结时不当作当前结果展示
+  const resolutionLabel = closed ? caseResolutionLabel(detail.resolution) : null
   // PM 3.6 把关注者可见范围写成穷举白名单，等待时长与升级倒计时都不在其中。
   // 这里拿一个写权限标志当可见性判据：`canReply` 等价于服务端的
   // `actorCanReply`（管理员、当前发布者处理方、报告者本人、转交后的原发布者），

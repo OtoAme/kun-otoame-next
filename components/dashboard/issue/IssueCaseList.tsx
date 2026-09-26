@@ -179,12 +179,17 @@ export function IssueCaseList({
           <ul aria-label="问题列表" className="divide-y">
             {rows.map((row) => {
               const selected = row.id === selectedId
-              const resolutionText = caseResolutionLabel(row.resolution)
+              const closed =
+                row.status === 'resolved' || row.status === 'rejected'
+              // 重开与复核保留上一轮结论，未结的行不显示它
+              const resolutionText = closed
+                ? caseResolutionLabel(row.resolution)
+                : null
               // 转交后仍列在原发布者的「待我处理」里，标明已不归自己处理（D20）
-              const statusText =
-                row.handedOff && !resolutionText
-                  ? '已交给网站管理员'
-                  : caseViewerStatusText(row, tab)
+              const handedOffOpen = row.handedOff && !closed
+              const statusText = handedOffOpen
+                ? '已交给网站管理员'
+                : caseViewerStatusText(row, tab)
               return (
                 <li key={row.id}>
                   <Link
@@ -213,7 +218,7 @@ export function IssueCaseList({
                         ) : null}
                         <Badge
                           variant={
-                            row.handedOff && !resolutionText
+                            handedOffOpen
                               ? 'secondary'
                               : STATUS_BADGE_VARIANTS[row.status]
                           }

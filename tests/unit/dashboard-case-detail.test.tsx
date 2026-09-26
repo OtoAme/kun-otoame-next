@@ -560,20 +560,20 @@ describe('dashboard case detail', () => {
         },
         {
           id: 22,
-          kind: 'system',
-          event: 'close_proposed',
-          body: '原发布者提请以「已修正」结案。',
-          author: null,
-          payload: { resolution: 'repaired' },
-          created: '2026-09-13T00:00:00.000Z'
-        },
-        {
-          id: 23,
           kind: 'reply',
           event: null,
           body: '已重新上传第 3 分卷',
           author: { id: 2, name: '发布者甲', avatar: '' },
           payload: null,
+          created: '2026-09-13T00:00:00.000Z'
+        },
+        {
+          id: 23,
+          kind: 'system',
+          event: 'close_proposed',
+          body: '原发布者提请以「已修正」结案。',
+          author: null,
+          payload: { resolution: 'repaired' },
           created: '2026-09-13T00:00:00.000Z'
         }
       ],

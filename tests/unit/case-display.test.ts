@@ -417,17 +417,18 @@ describe('case feedback helpers (D16, D20, D22)', () => {
         event: 'escalated',
         payload: { escalation_trigger: 'review_request' }
       }),
+      // The service writes the note first, right before its event.
       makeMessage({
         id: 2,
+        body: '已重新上传',
+        author: { id: 2, name: '发布者甲', avatar: '' }
+      }),
+      makeMessage({
+        id: 3,
         kind: 'system',
         event: 'close_proposed',
         payload: { resolution: 'repaired' },
         created: '2026-09-20T00:00:00.000Z'
-      }),
-      makeMessage({
-        id: 3,
-        body: '已重新上传',
-        author: { id: 2, name: '发布者甲', avatar: '' }
       })
     ]
     expect(caseLatestProposal(proposed)).toEqual({

@@ -276,7 +276,7 @@ const ROUND_BOUNDARY_EVENTS: ReadonlySet<CaseMessageEvent> = new Set([
 
 /**
  * The original publisher's latest closure proposal in the current round (D20):
- * the `close_proposed` event and the note written right after it. Only the
+ * the `close_proposed` event and the note written right before it. Only the
  * admin view carries payloads, so other views get null.
  */
 export const caseLatestProposal = (
@@ -288,7 +288,7 @@ export const caseLatestProposal = (
     if (message.event !== 'close_proposed') continue
     const resolution = message.payload?.resolution
     if (!resolution) return null
-    const note = messages[index + 1]
+    const note = messages[index - 1]
     return {
       resolution,
       note: note && note.kind === 'reply' ? note.body : '',

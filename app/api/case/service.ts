@@ -2921,13 +2921,7 @@ export const proposeCaseClosure = async (
     const noteError = closingNoteError(row, input.resolution, input.content)
     if (noteError) return noteError
     const label = CASE_RESOLUTION_LABELS[input.resolution]
-    await appendCaseSystemMessage(
-      tx,
-      row.id,
-      'close_proposed',
-      { resolution: input.resolution },
-      `原发布者提请以「${label}」结案。`
-    )
+    // The note goes first so it sits right before its event by time and id.
     await tx.ops_case_message.create({
       data: {
         case_id: row.id,
@@ -2937,6 +2931,13 @@ export const proposeCaseClosure = async (
         created: now
       }
     })
+    await appendCaseSystemMessage(
+      tx,
+      row.id,
+      'close_proposed',
+      { resolution: input.resolution },
+      `原发布者提请以「${label}」结案。`
+    )
     await notifyCaseUsers(
       tx,
       row.id,

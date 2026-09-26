@@ -590,7 +590,13 @@ describe('case feedback rules (M03-6, M03-7)', () => {
     )
     expect(result).toMatchObject({ changed: true })
     expect(mocks.tx.ops_case.updateMany).not.toHaveBeenCalled()
+    // The note is written first so it sorts right before its event.
     expect(createdMessages()[0]).toMatchObject({
+      kind: 'reply',
+      author_id: 2,
+      body: '已重新上传第 3 分卷'
+    })
+    expect(createdMessages()[1]).toMatchObject({
       event: 'close_proposed',
       payload: { resolution: 'repaired' }
     })

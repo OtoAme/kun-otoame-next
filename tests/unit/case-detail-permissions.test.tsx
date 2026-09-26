@@ -861,4 +861,25 @@ describe('issue case detail permissions', () => {
       '以「无法复现」结案时请写明核对了什么'
     )
   })
+
+  it('does not present the last round result on a reopened case', async () => {
+    mocks.user = { uid: 5, name: '报告者乙', role: 1 }
+    mocks.kunFetchGet.mockResolvedValue(
+      detailResponse(
+        makeDetail({
+          status: 'open',
+          resolution: 'unreproducible',
+          reopenedCount: 1,
+          closedAt: '2026-09-13T02:00:00.000Z',
+          capabilities: capabilities({ canReply: true, canWithdraw: true })
+        })
+      )
+    )
+    const container = await mount(<IssueCaseDetail caseId={9} />)
+    await flush()
+
+    const text = container.textContent ?? ''
+    expect(text).not.toContain('处理结果')
+    expect(text).not.toContain('无法复现')
+  })
 })
