@@ -16,8 +16,8 @@ const mocks = vi.hoisted(() => {
     patch: { findMany: vi.fn() },
     patch_comment: { findMany: vi.fn() },
     patch_rating: { findMany: vi.fn() },
-    shoutbox: { findMany: vi.fn() },
-    user: { findMany: vi.fn() },
+    shoutbox: { findMany: vi.fn(), findUnique: vi.fn() },
+    user: { findMany: vi.fn(), findUnique: vi.fn() },
     user_message: { createMany: vi.fn(), findMany: vi.fn() },
     admin_log: { create: vi.fn() }
   }
@@ -114,7 +114,9 @@ beforeEach(() => {
   mocks.tx.patch_comment.findMany.mockResolvedValue([])
   mocks.tx.patch_rating.findMany.mockResolvedValue([])
   mocks.tx.shoutbox.findMany.mockResolvedValue([])
+  mocks.tx.shoutbox.findUnique.mockResolvedValue(null)
   mocks.tx.user.findMany.mockResolvedValue([{ id: 3 }, { id: 4 }, { id: 9 }])
+  mocks.tx.user.findUnique.mockResolvedValue(null)
   mocks.tx.user_message.createMany.mockResolvedValue({ count: 4 })
   mocks.tx.user_message.findMany.mockResolvedValue([])
 })
@@ -382,6 +384,42 @@ describe('case service contracts', () => {
     expect(mocks.tx.ops_case.groupBy.mock.calls[0][0].where.OR).toContainEqual(
       resourceMatch
     )
+  })
+
+  it('names a live target without a game in the inbox row and calls only a missing one deleted', async () => {
+    mocks.tx.ops_case.findMany.mockResolvedValueOnce([
+      {
+        ...row(),
+        id: 7,
+        target_type: 'shoutbox',
+        target_id: 24,
+        patch_id: null
+      },
+      { ...row(), id: 8, target_type: 'user', target_id: 11, patch_id: null },
+      { ...row(), id: 9, target_type: 'user', target_id: 12, patch_id: null }
+    ])
+    mocks.tx.shoutbox.findUnique.mockResolvedValue({
+      id: 24,
+      status: 0,
+      content: '加群领资源',
+      user: { id: 11, name: '发帖人', avatar: '' }
+    })
+    mocks.tx.user.findUnique.mockImplementation(
+      async ({ where }: { where: { id: number } }) =>
+        where.id === 11 ? { id: 11, name: '被举报用户', avatar: '' } : null
+    )
+
+    const { items } = await getAdminCaseInboxItems(
+      { limit: 20 },
+      now,
+      mocks.prisma as never
+    )
+
+    expect(items.map((item) => item.subtitle)).toEqual([
+      '小喇叭 #24',
+      '用户 #11',
+      '目标已删除'
+    ])
   })
 
   it('feeds the inbox only staff cases waiting on the handler (D23)', async () => {

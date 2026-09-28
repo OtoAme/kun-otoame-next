@@ -4196,8 +4196,13 @@ const serializeAdminCaseInboxItem = async (
     kind: 'case',
     id: row.id,
     title: `${CASE_KIND_LABELS[summary.kind]} #${row.id}`,
-    subtitle:
-      summary.target.patch?.name ?? summary.target.label ?? '目标已删除',
+    // A shoutbox or user target carries no game name; only a missing target
+    // is deleted.
+    subtitle: summary.target.deleted
+      ? '目标已删除'
+      : (summary.target.patch?.name ??
+        summary.target.label ??
+        `${CASE_TARGET_TYPE_LABELS[summary.targetType]} #${summary.targetId}`),
     actor: summary.reporter ?? null,
     waitingFrom: row.status_changed_at.toISOString(),
     waitingSeconds: Math.max(
