@@ -18,7 +18,8 @@ const mocks = vi.hoisted(() => {
     patch_rating: { findMany: vi.fn() },
     shoutbox: { findMany: vi.fn() },
     user: { findMany: vi.fn() },
-    user_message: { createMany: vi.fn() }
+    user_message: { createMany: vi.fn(), findMany: vi.fn() },
+    admin_log: { create: vi.fn() }
   }
   return { prisma: tx, tx }
 })
@@ -33,11 +34,15 @@ vi.mock('~/app/api/patch/cache', () => ({
   invalidatePatchListCaches: vi.fn()
 }))
 vi.mock('~/app/api/utils/message', () => ({ createMessage: vi.fn() }))
+vi.mock('~/app/api/case/rateLimit', () => ({
+  checkCaseRateLimit: vi.fn().mockResolvedValue(null)
+}))
 
 import {
   buildCaseDailyKey,
   buildCaseDedupKey,
   closeCaseInternal,
+  getAdminCaseInboxItems,
   getAdminCases,
   listCases
 } from '~/app/api/case/service'
@@ -78,6 +83,18 @@ const row = () => ({
   updated: now
 })
 
+// An admin search first reads the resources its queue targets (`distinct` on
+// target_id); every other `ops_case.findMany` is a list query.
+type FindManyArgs = {
+  distinct?: unknown
+  where: { OR?: unknown[]; [key: string]: unknown }
+}
+const findManyCalls = () =>
+  mocks.tx.ops_case.findMany.mock.calls.map(([args]) => args as FindManyArgs)
+const isTargetQuery = (args: FindManyArgs) => args.distinct !== undefined
+const listCalls = () => findManyCalls().filter((args) => !isTargetQuery(args))
+const targetCalls = () => findManyCalls().filter(isTargetQuery)
+
 beforeEach(() => {
   vi.clearAllMocks()
   mocks.tx.$queryRaw.mockResolvedValue([{}])
@@ -99,9 +116,41 @@ beforeEach(() => {
   mocks.tx.shoutbox.findMany.mockResolvedValue([])
   mocks.tx.user.findMany.mockResolvedValue([{ id: 3 }, { id: 4 }, { id: 9 }])
   mocks.tx.user_message.createMany.mockResolvedValue({ count: 4 })
+  mocks.tx.user_message.findMany.mockResolvedValue([])
 })
 
 describe('case service contracts', () => {
+  it('redacts a hidden reply in the reporter list preview', async () => {
+    mocks.tx.ops_case.findMany.mockResolvedValueOnce([
+      {
+        ...row(),
+        messages: [
+          {
+            id: 61,
+            kind: 'reply',
+            event: null,
+            body: '已隐藏的原文',
+            payload: { hidden_at: now.toISOString() },
+            created: now
+          }
+        ]
+      }
+    ])
+    const result = await listCases(
+      { tab: 'reported', page: 1, limit: 20 },
+      2,
+      1,
+      { db: mocks.prisma as never }
+    )
+    if (typeof result === 'string') throw new Error(result)
+    expect(result.cases[0].latestMessage).toMatchObject({
+      id: 61,
+      body: '该内容已被网站管理员隐藏。'
+    })
+    expect(JSON.stringify(result)).not.toContain('已隐藏的原文')
+    expect(result.cases[0].latestMessage).not.toHaveProperty('payload')
+  })
+
   it('keeps dedup and Shanghai daily keys stable at the day boundary', () => {
     expect(buildCaseDedupKey('resource', 8, 'resource_mismatch')).toBe(
       'resource:8:resource_mismatch'
@@ -126,6 +175,14 @@ describe('case service contracts', () => {
       })
     ).resolves.toMatchObject({ changed: true })
 
+    // Every staff closure counts toward「今日已处理」(review item 24).
+    expect(mocks.tx.admin_log.create).toHaveBeenCalledWith({
+      data: {
+        type: 'case_close',
+        user_id: 99,
+        content: '管理员以「已处理」结案问题 #42'
+      }
+    })
     expect(mocks.tx.user_message.createMany).toHaveBeenCalledOnce()
     const data = mocks.tx.user_message.createMany.mock.calls[0][0].data as {
       recipient_id: number
@@ -166,7 +223,9 @@ describe('case service contracts', () => {
         }
       ]
     }
-    mocks.tx.ops_case.findMany.mockResolvedValueOnce([adminRow])
+    mocks.tx.ops_case.findMany.mockImplementation(async (args: FindManyArgs) =>
+      isTargetQuery(args) ? [] : [adminRow]
+    )
     mocks.tx.ops_case.count.mockResolvedValueOnce(1)
     mocks.tx.patch.findMany.mockResolvedValueOnce([
       { id: 7, unique_id: 'patch-7', name: '测试条目' }
@@ -192,24 +251,158 @@ describe('case service contracts', () => {
         body: '请补充截图'
       }
     })
-    const listArgs = mocks.tx.ops_case.findMany.mock.calls[0][0]
+    const [listArgs] = listCalls() as Array<FindManyArgs & { orderBy: unknown }>
     expect(listArgs.where).toMatchObject({
       owner_type: 'staff',
       status: 'open',
       kind: 'content_violation'
     })
-    expect(listArgs.where.OR).toContainEqual({
-      messages: {
-        some: { body: { contains: '月光', mode: 'insensitive' } }
+    // The resource lookup keeps the queue but not the status filter, which
+    // the status counts must not inherit.
+    expect(targetCalls().map((args) => args.where)).toEqual([
+      {
+        owner_type: 'staff',
+        kind: 'content_violation',
+        target_type: 'resource'
       }
-    })
-    expect(listArgs.where.OR).toHaveLength(2)
+    ])
+    // Review item 25: dialogue text, game name and reporter name besides the
+    // kind code; no case targets a resource, and '月光' names no kind.
+    const contains = { contains: '月光', mode: 'insensitive' }
+    expect(listArgs.where.OR).toEqual([
+      { kind: contains },
+      { messages: { some: { body: contains } } },
+      { patch: { name: contains } },
+      { reporter: { name: contains } }
+    ])
     expect(listArgs.orderBy).toEqual([
       { status_changed_at: 'asc' },
       { id: 'asc' }
     ])
     expect(mocks.tx.patch.findMany).toHaveBeenCalledOnce()
     expect(mocks.tx.patch_comment.findMany).toHaveBeenCalledOnce()
+  })
+
+  it('finds a case by its number, a kind label or a resource name (item 25)', async () => {
+    const contains = (search: string) => ({
+      contains: search,
+      mode: 'insensitive'
+    })
+    const searchWhere = async (search: string) => {
+      mocks.tx.ops_case.findMany.mockClear()
+      await getAdminCases(
+        { page: 1, limit: 20, search },
+        { db: mocks.prisma as never, now }
+      )
+      return listCalls()[0].where.OR ?? []
+    }
+
+    const byId = await searchWhere('42')
+    expect(byId[0]).toEqual({ id: 42 })
+    expect(byId).toHaveLength(5)
+    // Past the int4 range the text is still searched, just not as an id.
+    expect(await searchWhere('2147483648')).not.toContainEqual({
+      id: 2147483648
+    })
+
+    expect(await searchWhere('链接')).toContainEqual({
+      kind: {
+        in: ['resource_link_failure', 'link_suspect', 'link_disputed']
+      }
+    })
+    // No case in the queue targets a resource, so no resource is read.
+    expect(mocks.tx.patch_resource.findMany).not.toHaveBeenCalled()
+
+    mocks.tx.ops_case.findMany.mockImplementation(async (args: FindManyArgs) =>
+      isTargetQuery(args)
+        ? [{ target_id: 8 }, { target_id: 9 }, { target_id: 30 }]
+        : []
+    )
+    mocks.tx.patch_resource.findMany.mockResolvedValueOnce([
+      { id: 9 },
+      { id: 8 }
+    ])
+    const byResource = await searchWhere('体验版')
+    expect(mocks.tx.patch_resource.findMany).toHaveBeenLastCalledWith({
+      where: { id: { in: [8, 9, 30] }, name: contains('体验版') },
+      select: { id: true }
+    })
+    expect(byResource).toContainEqual({
+      target_type: 'resource',
+      target_id: { in: [9, 8] }
+    })
+  })
+
+  it('matches resource names among every resource its queue targets, uncut (item 25)', async () => {
+    const ids = Array.from({ length: 201 }, (_, index) => index + 1)
+    mocks.tx.ops_case.findMany.mockImplementation(async (args: FindManyArgs) =>
+      isTargetQuery(args) ? ids.map((target_id) => ({ target_id })) : []
+    )
+    mocks.tx.patch_resource.findMany.mockImplementation(
+      async ({ where }: { where: { id: { in: number[] } } }) =>
+        where.id.in.map((id) => ({ id }))
+    )
+
+    await getAdminCases(
+      { status: 'open', page: 1, limit: 20, search: '体验版' },
+      { db: mocks.prisma as never, now }
+    )
+    await getAdminCaseInboxItems(
+      { limit: 20, search: '体验版' },
+      now,
+      mocks.prisma as never
+    )
+
+    // The case center looks across every status for its counts; the inbox
+    // only among the cases waiting on the handler.
+    expect(targetCalls().map((args) => args.where)).toEqual([
+      { owner_type: 'staff', target_type: 'resource' },
+      {
+        owner_type: 'staff',
+        status: { in: ['open', 'waiting_owner'] },
+        target_type: 'resource'
+      }
+    ])
+    for (const args of [
+      ...targetCalls(),
+      ...mocks.tx.patch_resource.findMany.mock.calls.map(([args]) => args)
+    ]) {
+      expect(args).not.toHaveProperty('take')
+    }
+    for (const [args] of mocks.tx.patch_resource.findMany.mock.calls) {
+      expect(args.where.id).toEqual({ in: ids })
+    }
+    const resourceMatch = { target_type: 'resource', target_id: { in: ids } }
+    for (const args of listCalls()) {
+      expect(args.where.OR).toContainEqual(resourceMatch)
+    }
+    for (const [args] of mocks.tx.ops_case.count.mock.calls) {
+      expect(args.where.OR).toContainEqual(resourceMatch)
+    }
+    expect(mocks.tx.ops_case.groupBy.mock.calls[0][0].where.OR).toContainEqual(
+      resourceMatch
+    )
+  })
+
+  it('feeds the inbox only staff cases waiting on the handler (D23)', async () => {
+    await getAdminCaseInboxItems({ limit: 20 }, now, mocks.prisma as never)
+    await getAdminCaseInboxItems(
+      { limit: 20, search: '月光' },
+      now,
+      mocks.prisma as never
+    )
+
+    const waitingHandler = {
+      owner_type: 'staff',
+      status: { in: ['open', 'waiting_owner'] }
+    }
+    const [plain, searched] = listCalls()
+    expect(plain.where).toEqual(waitingHandler)
+    expect(mocks.tx.ops_case.count.mock.calls[0][0].where).toEqual(
+      waitingHandler
+    )
+    expect(searched.where).toMatchObject(waitingHandler)
+    expect(searched.where.OR).toHaveLength(4)
   })
 
   it('counts list statuses across the whole tab instead of the status filter', async () => {
@@ -331,7 +524,7 @@ describe('case service contracts', () => {
       owner_type: 'staff',
       kind: 'content_violation'
     })
-    expect(countsArgs.where.OR).toHaveLength(2)
+    expect(countsArgs.where.OR).toHaveLength(4)
     expect(result.statusCounts).toEqual({
       open: 18,
       waiting_reporter: 0,

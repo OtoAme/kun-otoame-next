@@ -66,6 +66,18 @@ vi.mock('~/components/dashboard/ui/input', () => ({
     />
   )
 }))
+// react-dom loads before the jsdom globals here, so onChange cannot hook the
+// input event; the embedded case detail's textarea reports through onInput.
+vi.mock('~/components/dashboard/ui/textarea', () => ({
+  Textarea: ({ onChange, ...props }: React.ComponentProps<'textarea'>) => (
+    <textarea
+      {...props}
+      onInput={(event) =>
+        onChange?.(event as React.ChangeEvent<HTMLTextAreaElement>)
+      }
+    />
+  )
+}))
 vi.mock('~/components/dashboard/ui/checkbox', () => ({
   Checkbox: ({
     checked,
@@ -183,6 +195,8 @@ vi.mock('~/components/dashboard/inbox/LegacyInboxDetail', () => ({
 }))
 
 import { DashboardInbox } from '~/components/dashboard/DashboardInbox'
+import { kunFetchGet, kunFetchPost } from '~/utils/kunFetch'
+import type { CaseDetail } from '~/types/api/case'
 
 const submission = (
   id: number,
@@ -405,29 +419,113 @@ describe('dashboard inbox presentation', () => {
     return event
   }
 
-  it('previews a case read-only and hands adjudication to the case center', async () => {
+  const caseDetail = (overrides: Partial<CaseDetail> = {}): CaseDetail => ({
+    ...caseItem.payload,
+    ownerType: 'staff',
+    owner: null,
+    reporter: { id: 7, name: '举报人', avatar: '' },
+    public: true,
+    source: 'user',
+    subscriberCount: 2,
+    reopenedCount: 0,
+    escalatedAt: null,
+    firstOwnerResponseAt: null,
+    closedAt: null,
+    hiddenAt: null,
+    restoredAt: null,
+    updated: '2026-09-01T00:00:00.000Z',
+    messages: [],
+    capabilities: {
+      canReply: true,
+      canResolve: true,
+      canReopen: false,
+      canWithdraw: false,
+      canConfirm: false,
+      canReview: false,
+      canPropose: false,
+      canHideResource: false,
+      canRestoreResource: false,
+      canMoveResource: false,
+      canHandleContent: false,
+      canConfirmUserHandled: false,
+      canHideMessages: true,
+      allowedContentActions: [],
+      allowedResolutions: ['repaired', 'unreproducible', 'out_of_scope']
+    },
+    ...overrides
+  })
+
+  const reply = async (content: string) => {
+    const textarea = dom.window.document.querySelector<HTMLTextAreaElement>(
+      'textarea[aria-label="回复内容"]'
+    )!
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(
+        dom.window.HTMLTextAreaElement.prototype,
+        'value'
+      )!.set!.call(textarea, content)
+      textarea.dispatchEvent(new dom.window.Event('input', { bubbles: true }))
+    })
+    await act(async () => {
+      button('发送回复').click()
+    })
+    await act(async () => {})
+  }
+
+  it('handles a case inside the inbox with the case center detail (review item 2)', async () => {
+    vi.mocked(kunFetchGet).mockResolvedValue({ case: caseDetail() })
     await select(caseItem, { items: [caseItem], kinds: ['case'] })
-    const text = bodyText()
-    // 摘要全部来自收件箱条目载荷，不再请求 /case/[id]
-    expect(text).toContain('#12')
-    expect(text).toContain('资源X（条目A）')
-    expect(text).toContain('等待处理方')
-    expect(text).toContain('资源与描述不符')
-    expect(text).toContain('举报人')
-    expect(text).toContain('2 人')
-    expect(text).toContain('3 天')
-    // 出口指向工单中心
-    const exit = dom.window.document.querySelector(
-      'a[href="/dashboard/case/12"]'
-    )
-    expect(exit?.textContent).toContain('前往工单中心处理')
-    // 收件箱里不出现任何裁决入口
+    await act(async () => {})
+
+    // The same detail as the case center, loaded from /case/[id].
+    expect(kunFetchGet).toHaveBeenCalledWith('/case/12')
     const labels = [...dom.window.document.querySelectorAll('button')].map(
       (element) => element.textContent?.trim()
     )
-    expect(labels).not.toContain('发送回复')
-    expect(labels).not.toContain('结案')
-    expect(labels).not.toContain('隐藏资源')
+    expect(labels).toContain('发送回复')
+    expect(labels).toContain('结案')
+    expect(bodyText()).toContain('资源X（条目A）')
+
+    // Handing the case to its reporter takes it out of the inbox (D23).
+    vi.mocked(kunFetchPost).mockResolvedValueOnce({
+      case: { ...caseDetail(), status: 'waiting_reporter' },
+      message: null
+    })
+    await reply('请补充截图')
+    expect(kunFetchPost).toHaveBeenCalledWith('/admin/case/12/handle', {
+      action: 'reply',
+      content: '请补充截图'
+    })
+    expect(state.onProcessed).toHaveBeenCalledWith('case:12')
+    expect(state.onStateChanged).not.toHaveBeenCalled()
+  })
+
+  it('keeps a case in the inbox when the reply keeps the turn (D28)', async () => {
+    vi.mocked(kunFetchGet).mockResolvedValue({ case: caseDetail() })
+    await select(caseItem, { items: [caseItem], kinds: ['case'] })
+    await act(async () => {})
+
+    const keepTurn = dom.window.document.querySelector<HTMLInputElement>(
+      'input#case-reply-await-reporter'
+    )!
+    await act(async () => {
+      keepTurn.click()
+    })
+    vi.mocked(kunFetchPost).mockResolvedValueOnce({
+      case: caseDetail(),
+      message: null
+    })
+    await reply('收到，稍后处理')
+    expect(kunFetchPost).toHaveBeenCalledWith('/admin/case/12/handle', {
+      action: 'reply',
+      content: '收到，稍后处理',
+      awaitReporter: false
+    })
+    // The case stays queued and its detail stays mounted: the inbox's
+    // conflict refresh would remount it and drop the administrator's drafts.
+    expect(state.onStateChanged).not.toHaveBeenCalled()
+    expect(state.onProcessed).not.toHaveBeenCalled()
+    expect(kunFetchGet).toHaveBeenLastCalledWith('/case/12')
   })
 
   it('keeps the server row order and displays only filtered totals and selected-source truncation', async () => {

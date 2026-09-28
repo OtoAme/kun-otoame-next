@@ -14,7 +14,9 @@ export const POST = async (req: NextRequest) => {
   if (!payload) return privateJson('用户未登录')
   const input = await kunParsePostBody(req, createCaseSchema)
   if (typeof input === 'string') return privateJson(input)
-  return privateJson(await createCase(input, payload.uid))
+  return privateJson(
+    await createCase(input, payload.uid, { role: payload.role })
+  )
 }
 
 export const GET = async (req: NextRequest) => {

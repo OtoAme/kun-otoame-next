@@ -216,6 +216,7 @@ const makeDetail = (overrides: Partial<CaseDetail> = {}): CaseDetail => ({
     canMoveResource: false,
     canHandleContent: false,
     canConfirmUserHandled: false,
+    canHideMessages: false,
     allowedContentActions: [],
     allowedResolutions: []
   },
@@ -372,6 +373,7 @@ describe('issue case detail permissions', () => {
         canMoveResource: false,
         canHandleContent: false,
         canConfirmUserHandled: false,
+        canHideMessages: false,
         allowedContentActions: [],
         allowedResolutions: ['repaired', 'unreproducible', 'out_of_scope']
       }
@@ -469,6 +471,7 @@ describe('issue case detail permissions', () => {
         canMoveResource: false,
         canHandleContent: false,
         canConfirmUserHandled: false,
+        canHideMessages: false,
         allowedContentActions: [],
         allowedResolutions: []
       }
@@ -555,6 +558,7 @@ describe('issue case detail permissions', () => {
         canMoveResource: false,
         canHandleContent: false,
         canConfirmUserHandled: false,
+        canHideMessages: false,
         allowedContentActions: [],
         allowedResolutions: ['repaired', 'unreproducible', 'out_of_scope']
       }
@@ -591,6 +595,7 @@ describe('issue case detail permissions', () => {
         canMoveResource: false,
         canHandleContent: false,
         canConfirmUserHandled: false,
+        canHideMessages: false,
         allowedContentActions: [],
         allowedResolutions: []
       }
@@ -708,6 +713,49 @@ describe('issue case detail permissions', () => {
     expect(
       [...container.querySelectorAll('a')].map((a) => a.getAttribute('href'))
     ).toContain('/abc?tab=resources&resourceSection=galgame&resourceId=7')
+  })
+
+  it('shows a hidden note as its placeholder and links guide paths (D27, item 20)', async () => {
+    mocks.user = { uid: 5, name: '报告者乙', role: 1 }
+    mocks.kunFetchGet.mockResolvedValue(
+      detailResponse(
+        makeDetail({
+          reporter: { id: 5, name: '报告者乙', avatar: '' },
+          messages: [
+            {
+              id: 1,
+              kind: 'reply',
+              event: null,
+              body: '解压失败请先看 /doc/notice/repair-rar',
+              author: { id: 2, name: '发布者甲', avatar: '' },
+              payload: null,
+              created: '2026-09-13T00:00:00.000Z'
+            },
+            {
+              id: 2,
+              kind: 'report',
+              event: null,
+              body: '该内容已被网站管理员隐藏。',
+              author: { id: 8, name: '后来者丙', avatar: '' },
+              hidden: true,
+              created: '2026-09-13T01:00:00.000Z'
+            }
+          ]
+        })
+      )
+    )
+    const container = await mount(<IssueCaseDetail caseId={9} />)
+    await flush()
+
+    const guide = [...container.querySelectorAll('a')].find(
+      (link) => link.getAttribute('href') === '/doc/notice/repair-rar'
+    )
+    expect(guide?.textContent).toBe('/doc/notice/repair-rar')
+    expect(guide?.getAttribute('target')).toBe('_blank')
+    const placeholder = [...container.querySelectorAll('span')].find(
+      (span) => span.textContent === '该内容已被网站管理员隐藏。'
+    )
+    expect(placeholder?.className).toContain('italic')
   })
 
   it('opener withdraws through a confirmation (D18)', async () => {

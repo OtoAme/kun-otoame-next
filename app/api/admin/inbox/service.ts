@@ -17,6 +17,19 @@ import {
   getAdminCaseInboxItem,
   getAdminCaseInboxItems
 } from '~/app/api/case/service'
+import { CASE_WAITING_HANDLER_STATUSES } from '~/constants/case'
+
+/**
+ * Admin log types that count toward「今日已处理」: one row per completed
+ * review or case closure (module 01 plan 4.3; module 03 M03-8 adds
+ * `case_close`).
+ */
+const PROCESSED_LOG_TYPES = [
+  'submission_review',
+  'resource_apply_approve',
+  'resource_apply_decline',
+  'case_close'
+]
 
 const userSelect = { id: true, name: true, avatar: true } as const
 const submissionSelect = {
@@ -195,9 +208,11 @@ const pendingFilters = (search = '') => {
           }
         : {})
     } satisfies Prisma.patch_reportWhereInput,
+    // D23: only the cases whose turn it is; waiting on the reporter stays
+    // in the case center.
     case: {
       owner_type: 'staff',
-      status: { in: ['open', 'waiting_reporter', 'waiting_owner'] }
+      status: { in: [...CASE_WAITING_HANDLER_STATUSES] }
     } satisfies Prisma.ops_caseWhereInput
   }
 }
@@ -591,10 +606,11 @@ export const getAdminInboxItem = async (
     if (!('ops_case' in prisma)) return missing
     const item = await getAdminCaseInboxItem(input.id, now, prisma)
     if (!item) return missing
-    const pending =
-      item.payload.status === 'open' ||
-      item.payload.status === 'waiting_owner' ||
-      item.payload.status === 'waiting_reporter'
+    // Same predicate as the list (D23): a case handed to its reporter has
+    // left the queue.
+    const pending = (
+      CASE_WAITING_HANDLER_STATUSES as readonly string[]
+    ).includes(item.payload.status)
     return { state: pending ? 'pending' : 'processed', item }
   }
   const row = await prisma.patch_report.findUnique({
@@ -633,13 +649,7 @@ export const getAdminInboxCounts = async (
         where: {
           user_id: reviewerId,
           created: { gte: dailyStart, lt: dailyResetAt },
-          type: {
-            in: [
-              'submission_review',
-              'resource_apply_approve',
-              'resource_apply_decline'
-            ]
-          }
+          type: { in: PROCESSED_LOG_TYPES }
         }
       })
     ])

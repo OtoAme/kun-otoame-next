@@ -71,8 +71,8 @@ const KIND_ICONS: Record<InboxKind, LucideIcon> = {
   case: ClipboardList
 }
 
-// Cases queue in the inbox but are handled in the case center, so this one
-// source row links there instead of to an inbox filter.
+// The inbox only queues cases waiting on the handler (D23); the case center
+// holds every other view of them, so this one source row links there.
 const KIND_HREFS: Partial<Record<InboxKind, string>> = {
   case: '/dashboard/case'
 }

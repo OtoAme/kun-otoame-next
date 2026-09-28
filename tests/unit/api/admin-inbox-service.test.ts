@@ -16,12 +16,17 @@ const mocks = vi.hoisted(() => ({
 }))
 
 vi.mock('~/prisma/index', () => ({ prisma: mocks.prisma }))
+vi.mock('~/app/api/case/service', () => ({
+  getAdminCaseInboxItem: vi.fn().mockResolvedValue(null),
+  getAdminCaseInboxItems: vi.fn().mockResolvedValue({ items: [], total: 0 })
+}))
 
 import {
   getAdminInbox,
   getAdminInboxCounts,
   getAdminInboxItem
 } from '~/app/api/admin/inbox/service'
+import { getAdminCaseInboxItem } from '~/app/api/case/service'
 import type { InboxQuery } from '~/types/api/inbox'
 
 const now = new Date('2026-09-10T12:00:00.000Z')
@@ -523,11 +528,57 @@ describe('admin inbox counts', () => {
           in: [
             'submission_review',
             'resource_apply_approve',
-            'resource_apply_decline'
+            'resource_apply_decline',
+            // Module 03 M03-8: every staff case closure (review item 24).
+            'case_close'
           ]
         }
       }
     })
+  })
+
+  it('counts only staff cases waiting on the handler and treats the others as left (D23)', async () => {
+    const opsCase = {
+      count: vi.fn().mockResolvedValue(6),
+      findUnique: vi.fn(),
+      findMany: vi.fn()
+    }
+    const prisma = mocks.prisma as Record<string, unknown>
+    prisma.ops_case = opsCase
+    try {
+      const counts = await getAdminInboxCounts(9, now)
+      expect(counts.pending.case).toBe(6)
+      expect(opsCase.count).toHaveBeenCalledWith({
+        where: {
+          owner_type: 'staff',
+          status: { in: ['open', 'waiting_owner'] }
+        }
+      })
+
+      // The single-item read applies the same predicate: a case handed to
+      // its reporter has left the queue.
+      for (const [status, state] of [
+        ['open', 'pending'],
+        ['waiting_owner', 'pending'],
+        ['waiting_reporter', 'processed'],
+        ['resolved', 'processed']
+      ] as const) {
+        vi.mocked(getAdminCaseInboxItem).mockResolvedValueOnce({
+          key: 'case:12',
+          payload: { status }
+        } as never)
+        expect(
+          (await getAdminInboxItem({ kind: 'case', id: 12 }, now)).state
+        ).toBe(state)
+      }
+      expect(getAdminCaseInboxItem).toHaveBeenLastCalledWith(
+        12,
+        now,
+        mocks.prisma
+      )
+    } finally {
+      delete prisma.ops_case
+    }
   })
 
   it.each([

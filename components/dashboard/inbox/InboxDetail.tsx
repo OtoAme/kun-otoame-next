@@ -43,12 +43,6 @@ export function InboxDetail({
     case 'report':
       return <LegacyInboxDetail item={item} />
     case 'case':
-      return (
-        <CaseInboxDetail
-          item={item}
-          onProcessed={onProcessed}
-          onStateChanged={onStateChanged}
-        />
-      )
+      return <CaseInboxDetail item={item} onProcessed={onProcessed} />
   }
 }

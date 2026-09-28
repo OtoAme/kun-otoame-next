@@ -76,6 +76,15 @@ export const CASE_CLOSED_STATUSES = [
   'resolved',
   'rejected'
 ] as const satisfies readonly CaseStatus[]
+/**
+ * 等待处理方: the handler's turn. The unified inbox and its sidebar count only
+ * take staff cases in these states (D23); a case waiting on its reporter
+ * stays in the case center.
+ */
+export const CASE_WAITING_HANDLER_STATUSES = [
+  'open',
+  'waiting_owner'
+] as const satisfies readonly CaseStatus[]
 
 export const CASE_SOURCES = [
   'user',
@@ -148,6 +157,7 @@ export const CASE_RESOLUTIONS = [
   'not_established',
   'violation_hidden',
   'handled',
+  'declined',
   'other'
 ] as const
 export type CaseResolution = (typeof CASE_RESOLUTIONS)[number]
@@ -173,15 +183,33 @@ export const CASE_RESOLUTIONS_BY_KIND: Record<
     'reporter_unresponsive',
     'reporter_withdrawn'
   ],
-  resource_wrong_patch: ['moved', 'not_established', 'reporter_withdrawn'],
+  resource_wrong_patch: [
+    'moved',
+    'not_established',
+    'reporter_unresponsive',
+    'reporter_withdrawn'
+  ],
   content_violation: [
     'handled',
     'not_established',
     'violation_hidden',
+    'reporter_unresponsive',
     'reporter_withdrawn'
   ],
-  other: ['handled', 'out_of_scope', 'reporter_withdrawn'],
-  patch_info: ['handled', 'out_of_scope', 'reporter_withdrawn'],
+  other: [
+    'handled',
+    'out_of_scope',
+    'declined',
+    'reporter_unresponsive',
+    'reporter_withdrawn'
+  ],
+  patch_info: [
+    'handled',
+    'out_of_scope',
+    'declined',
+    'reporter_unresponsive',
+    'reporter_withdrawn'
+  ],
   link_suspect: [],
   link_disputed: [],
   takedown_request: [],
@@ -197,8 +225,10 @@ export const CASE_HANDLER_RESOLUTIONS_BY_KIND: Record<
   resource_link_failure: ['relinked', 'verified_available', 'out_of_scope'],
   resource_wrong_patch: ['moved', 'not_established'],
   content_violation: ['handled', 'not_established', 'violation_hidden'],
-  other: ['handled', 'out_of_scope'],
-  patch_info: ['handled', 'out_of_scope'],
+  // 不采纳 answers a suggestion the site will not act on with a reason
+  // instead of a guide link.
+  other: ['handled', 'out_of_scope', 'declined'],
+  patch_info: ['handled', 'out_of_scope', 'declined'],
   link_suspect: [],
   link_disputed: [],
   takedown_request: [],
@@ -245,6 +275,24 @@ export const CASE_QUICK_REPLIES = [
     content: `该问题不在当前受理范围内。下载问题见 ${CASE_GUIDE_LINKS.download}，压缩包问题见 ${CASE_GUIDE_LINKS.repairRar}，求资源与投稿见 ${CASE_GUIDE_LINKS.contribute}。`
   }
 ] as const
+
+type CaseQuickReplyCode = (typeof CASE_QUICK_REPLIES)[number]['code']
+
+/** Quick replies that make sense for the kind; resource guides stay off reports. */
+const CASE_QUICK_REPLY_CODES_BY_KIND: Partial<
+  Record<CaseKind, readonly CaseQuickReplyCode[]>
+> = {
+  resource_wrong_patch: ['need_more_info'],
+  content_violation: ['need_more_info'],
+  patch_info: ['repaired', 'need_more_info']
+}
+
+export const caseQuickRepliesFor = (kind: CaseKind) => {
+  const codes = CASE_QUICK_REPLY_CODES_BY_KIND[kind]
+  return codes
+    ? CASE_QUICK_REPLIES.filter((reply) => codes.includes(reply.code))
+    : CASE_QUICK_REPLIES
+}
 
 export const CASE_KIND_LABELS: Record<CaseKind, string> = {
   resource_mismatch: '资源与描述不符',
@@ -294,6 +342,7 @@ export const CASE_RESOLUTION_LABELS: Record<CaseResolution, string> = {
   not_established: '不成立',
   violation_hidden: '违规隐藏',
   handled: '已处理',
+  declined: '不采纳',
   other: '其他'
 }
 
@@ -313,9 +362,12 @@ export const CASE_KIND_TARGETS = {
 /**
  * Combinations whose dedup key also carries the opener: every user keeps one
  * open case of their own instead of subscribing to someone else's (D14, D21).
+ * Other feedback on a game is free text, so two users rarely report the same
+ * thing and merging them would close one user's issue with another's.
  */
 export const CASE_OPENER_SCOPED_TARGETS = [
   { kind: 'patch_info', targetType: 'patch' },
+  { kind: 'other', targetType: 'patch' },
   { kind: 'other', targetType: 'site' }
 ] as const satisfies readonly { kind: CaseKind; targetType: CaseTargetType }[]
 
@@ -378,6 +430,12 @@ export const CASE_REPORTER_TIMEOUT_KINDS = [
 ] as const
 export const CASE_PUBLISHER_ESCALATION_AFTER_MS = 7 * 24 * 60 * 60 * 1000
 export const CASE_REPORTER_TIMEOUT_AFTER_MS = 14 * 24 * 60 * 60 * 1000
+/**
+ * A staff-owned case never times out (D5). Once it has waited on its reporter
+ * as long as the publisher-side timeout, the site administrator may close it
+ * as 开启者未回应 by hand (D24), so the conclusion means the same everywhere.
+ */
+export const CASE_STAFF_UNRESPONSIVE_AFTER_MS = CASE_REPORTER_TIMEOUT_AFTER_MS
 export const CASE_REOPEN_WINDOW_MS = 7 * 24 * 60 * 60 * 1000
 /** Reminder lead before either timeout fires; one reminder per state revision. */
 export const CASE_REMINDER_LEAD_MS = 48 * 60 * 60 * 1000

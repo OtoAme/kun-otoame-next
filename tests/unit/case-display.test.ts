@@ -6,11 +6,13 @@ import {
   caseMessageAuthorLabel,
   caseMessageSide,
   caseResolutionLabel,
+  caseResourceStatusLabel,
   caseReviewRequested,
   caseStatusHint,
   caseSystemEventText,
   caseTargetHref,
   caseTargetText,
+  caseTextSegments,
   caseViewerStatusText,
   formatCaseDuration
 } from '~/components/case/caseDisplay'
@@ -453,5 +455,131 @@ describe('case feedback helpers (D16, D20, D22)', () => {
         })
       ])
     ).toBe(false)
+  })
+})
+
+describe('site administrator review helpers (M03-8)', () => {
+  const patch = { id: 3, uniqueId: 'abcd1234', name: '条目A' }
+
+  it('opens the reported entry itself from the dashboard (item 4)', () => {
+    const comment = {
+      targetType: 'comment',
+      targetId: 11,
+      target: makeTarget({ targetType: 'comment', patch })
+    } as const
+    const shoutbox = {
+      targetType: 'shoutbox',
+      targetId: 14,
+      target: makeTarget({ targetType: 'shoutbox' })
+    } as const
+
+    expect(caseTargetHref(comment, { forAdmin: true })).toBe(
+      '/abcd1234?tab=comments&commentId=11'
+    )
+    expect(caseTargetHref(comment)).toBe('/abcd1234')
+    expect(
+      caseTargetHref(
+        {
+          targetType: 'rating',
+          targetId: 13,
+          target: makeTarget({ targetType: 'rating', patch })
+        },
+        { forAdmin: true }
+      )
+    ).toBe('/abcd1234?tab=rating&ratingId=13')
+    expect(caseTargetHref(shoutbox, { forAdmin: true })).toBe(
+      '/dashboard/shoutbox?shoutbox=14'
+    )
+    expect(caseTargetHref(shoutbox)).toBeNull()
+    expect(
+      caseTargetHref(
+        {
+          ...comment,
+          target: makeTarget({ targetType: 'comment', patch, deleted: true })
+        },
+        { forAdmin: true }
+      )
+    ).toBeNull()
+  })
+
+  it('names the resource state and falls back for an unknown one (item 8)', () => {
+    expect(caseResourceStatusLabel(0)).toBe('公开')
+    expect(caseResourceStatusLabel(1)).toBe('已隐藏')
+    expect(caseResourceStatusLabel(2)).toBe('待审核')
+    expect(caseResourceStatusLabel(9)).toBe('状态 9')
+  })
+
+  it('links only standalone guide paths in dialogue text (item 20)', () => {
+    expect(
+      caseTextSegments(
+        `请先看 ${CASE_GUIDE_LINKS.download}。解压见（${CASE_GUIDE_LINKS.repairRar}）`
+      )
+    ).toEqual([
+      { type: 'text', text: '请先看 ' },
+      {
+        type: 'guide',
+        text: CASE_GUIDE_LINKS.download,
+        href: CASE_GUIDE_LINKS.download
+      },
+      { type: 'text', text: '。解压见（' },
+      {
+        type: 'guide',
+        text: CASE_GUIDE_LINKS.repairRar,
+        href: CASE_GUIDE_LINKS.repairRar
+      },
+      { type: 'text', text: '）' }
+    ])
+    // Another site's URL or a longer path keeps the text as it is.
+    for (const text of [
+      `https://example.com${CASE_GUIDE_LINKS.download}`,
+      `${CASE_GUIDE_LINKS.contribute}-old`,
+      `/mirror${CASE_GUIDE_LINKS.contribute}`
+    ]) {
+      expect(caseTextSegments(text)).toEqual([{ type: 'text', text }])
+    }
+    expect(caseTextSegments('')).toEqual([])
+  })
+
+  it('asks for a reason when declining (D25)', () => {
+    const suggestion = { kind: 'patch_info', targetType: 'patch' } as const
+    expect(caseClosingNoteError(suggestion, 'declined', ' ')).toBe(
+      '以「不采纳」结案时请写明理由'
+    )
+    expect(
+      caseClosingNoteError(suggestion, 'declined', '发售日期以官网为准')
+    ).toBeNull()
+  })
+
+  it('drops a proposal the site administrator already answered (item 15)', () => {
+    const publisher = { id: 2, name: '发布者甲', avatar: '' }
+    const proposed = [
+      makeMessage({ id: 1, body: '已重新上传', author: publisher }),
+      makeMessage({
+        id: 2,
+        kind: 'system',
+        event: 'close_proposed',
+        payload: { resolution: 'repaired' }
+      })
+    ]
+    const replyBy = (id: number, author: CaseMessage['author']) =>
+      makeMessage({ id, body: '回复', author })
+
+    // The reporter or the proposer talking on leaves it open.
+    expect(
+      caseLatestProposal(
+        [
+          ...proposed,
+          replyBy(3, { id: 5, name: '报告者', avatar: '' }),
+          replyBy(4, publisher)
+        ],
+        5
+      )
+    ).toMatchObject({ resolution: 'repaired', note: '已重新上传' })
+    expect(
+      caseLatestProposal(
+        [...proposed, replyBy(3, { id: 90, name: '网站管理员', avatar: '' })],
+        5
+      )
+    ).toBeNull()
   })
 })

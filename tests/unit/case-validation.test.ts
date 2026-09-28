@@ -13,6 +13,7 @@ import {
   adminCaseContentBodySchema,
   adminCaseHandleBodySchema,
   adminCaseListSchema,
+  adminCaseMessageHideBodySchema,
   adminCaseResourceBodySchema,
   appendCaseMessageBodySchema,
   caseIdParamSchema,
@@ -248,6 +249,67 @@ describe('case validation', () => {
         content: '说明',
         handledUserConfirmed: 'true'
       }).success
+    ).toBe(false)
+  })
+
+  it('lets only the admin reply carry images and keep the turn (D28)', () => {
+    expect(
+      adminCaseHandleBodySchema.parse({
+        action: 'reply',
+        content: '请看截图',
+        imageKeys: ['case/90/1-a.avif'],
+        awaitReporter: false
+      })
+    ).toEqual({
+      action: 'reply',
+      content: '请看截图',
+      imageKeys: ['case/90/1-a.avif'],
+      awaitReporter: false
+    })
+    expect(
+      adminCaseHandleBodySchema.safeParse({
+        action: 'reply',
+        content: '请看截图',
+        awaitReporter: 'false'
+      }).success
+    ).toBe(false)
+    expect(
+      adminCaseHandleBodySchema.safeParse({
+        action: 'reply',
+        content: '请看截图',
+        imageKeys: ['case/90/1-a.avif', 'case/90/1-a.avif']
+      }).success
+    ).toBe(false)
+    // The public reply body has no such switch.
+    expect(
+      appendCaseMessageBodySchema.parse({
+        content: '回复',
+        awaitReporter: false
+      })
+    ).toEqual({ content: '回复', imageKeys: [] })
+  })
+
+  it('takes a message id and an explicit hidden flag for hiding a note (D27)', () => {
+    expect(
+      adminCaseMessageHideBodySchema.parse({
+        caseId: 999,
+        messageId: '61',
+        hidden: true
+      })
+    ).toEqual({ messageId: 61, hidden: true })
+    expect(
+      adminCaseMessageHideBodySchema.safeParse({ messageId: 61 }).error
+        ?.issues[0].message
+    ).toBe('请选择隐藏或取消隐藏')
+    expect(
+      adminCaseMessageHideBodySchema.safeParse({
+        messageId: 61,
+        hidden: 'true'
+      }).success
+    ).toBe(false)
+    expect(
+      adminCaseMessageHideBodySchema.safeParse({ messageId: 0, hidden: true })
+        .success
     ).toBe(false)
   })
 })

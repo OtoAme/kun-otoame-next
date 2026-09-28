@@ -89,8 +89,9 @@ export interface CaseCenterProps {
  * 工单中心. A self-contained operations console for staff-owned cases: its
  * own secondary navigation, overview and queues, living inside the dashboard
  * shell so authentication, the global sidebar and the header are not
- * duplicated. The unified inbox keeps the case source for queueing and links
- * in here; this is the only place a case is actually handled.
+ * duplicated. The unified inbox queues the cases waiting on the handler and
+ * renders the same detail component for them (D23); every other view of the
+ * staff queue lives here.
  */
 export function CaseCenter({ initialCaseId }: CaseCenterProps) {
   const router = useRouter()
@@ -261,10 +262,13 @@ export function CaseCenter({ initialCaseId }: CaseCenterProps) {
     void refreshCounts()
   }, [navigate, refetch, refreshCounts, rowsRef])
 
-  // Non-terminal changes (reply): the row's status badge may have changed.
+  // Non-terminal changes (reply): the row's status badge may have changed,
+  // and a reply that hands the case to its reporter leaves the inbox's
+  // pending count (D23), so the shell counts refresh too.
   const handleStateChanged = useCallback(() => {
     refetch()
-  }, [refetch])
+    void refreshCounts()
+  }, [refetch, refreshCounts])
 
   const handleRefresh = () => {
     refetch()

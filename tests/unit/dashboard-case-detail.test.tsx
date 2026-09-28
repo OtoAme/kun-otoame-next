@@ -7,13 +7,15 @@ import type { CaseDetail } from '~/types/api/case'
 const mocks = vi.hoisted(() => ({
   kunFetchGet: vi.fn(),
   kunFetchPost: vi.fn(),
+  kunFetchFormData: vi.fn(),
   onProcessed: vi.fn(),
   onStateChanged: vi.fn()
 }))
 
 vi.mock('~/utils/kunFetch', () => ({
   kunFetchGet: mocks.kunFetchGet,
-  kunFetchPost: mocks.kunFetchPost
+  kunFetchPost: mocks.kunFetchPost,
+  kunFetchFormData: mocks.kunFetchFormData
 }))
 
 vi.mock('next/link', () => ({
@@ -159,7 +161,9 @@ vi.mock('~/components/dashboard/ui/select', async () => {
   }
 })
 
+import { CaseInboxDetail } from '~/components/dashboard/case/CaseInboxDetail'
 import { DashboardCaseDetail } from '~/components/dashboard/case/DashboardCaseDetail'
+import { CaseMovePatchSearch } from '~/components/dashboard/case/CaseMovePatchSearch'
 
 globalThis.React = React
 
@@ -219,6 +223,7 @@ const makeDetail = (overrides: Partial<CaseDetail> = {}): CaseDetail => ({
     canMoveResource: false,
     canHandleContent: false,
     canConfirmUserHandled: false,
+    canHideMessages: false,
     allowedContentActions: [],
     allowedResolutions: []
   },
@@ -227,12 +232,32 @@ const makeDetail = (overrides: Partial<CaseDetail> = {}): CaseDetail => ({
 
 const detailResponse = (detail: CaseDetail) => ({ case: detail })
 
+const capabilities = (
+  overrides: Partial<CaseDetail['capabilities']> = {}
+): CaseDetail['capabilities'] => ({
+  ...makeDetail().capabilities,
+  ...overrides
+})
+
+const patchTarget: CaseDetail['target'] = {
+  targetType: 'patch',
+  targetId: 3,
+  deleted: false,
+  patch: { id: 3, uniqueId: 'abc', name: '条目A' },
+  resource: null
+}
+
 describe('dashboard case detail', () => {
   let root: Root | undefined
   let dom: JSDOM | undefined
 
   beforeEach(() => {
     vi.clearAllMocks()
+    // clearAllMocks keeps implementations and once-queues; a test's fetch
+    // mocks must not leak into the next one.
+    mocks.kunFetchGet.mockReset()
+    mocks.kunFetchPost.mockReset()
+    mocks.kunFetchFormData.mockReset()
   })
 
   afterEach(() => {
@@ -307,6 +332,7 @@ describe('dashboard case detail', () => {
         canMoveResource: false,
         canHandleContent: false,
         canConfirmUserHandled: false,
+        canHideMessages: false,
         allowedContentActions: [],
         allowedResolutions: []
       }
@@ -425,6 +451,7 @@ describe('dashboard case detail', () => {
         canMoveResource: false,
         canHandleContent: false,
         canConfirmUserHandled: false,
+        canHideMessages: false,
         allowedContentActions: [],
         allowedResolutions: ['handled', 'out_of_scope']
       }
@@ -471,6 +498,8 @@ describe('dashboard case detail', () => {
     expect(container.textContent).toContain('该事项刚刚被其他人处理')
     expect(mocks.onStateChanged).toHaveBeenCalled()
     expect(mocks.onProcessed).not.toHaveBeenCalled()
+    // 冲突后详情原地重读，弹窗仍在
+    expect(mocks.kunFetchGet).toHaveBeenCalledTimes(2)
 
     // 再次确认成功：终结动作回调 onProcessed
     mocks.kunFetchPost.mockResolvedValue({ case: detail, changed: true })
@@ -479,7 +508,7 @@ describe('dashboard case detail', () => {
     })
     await flush()
     expect(mocks.onProcessed).toHaveBeenCalled()
-    expect(mocks.kunFetchGet).toHaveBeenCalledTimes(2)
+    expect(mocks.kunFetchGet).toHaveBeenCalledTimes(3)
   })
 
   it('reject-like resolution requires reason and posts reject action', async () => {
@@ -499,6 +528,7 @@ describe('dashboard case detail', () => {
         canMoveResource: false,
         canHandleContent: false,
         canConfirmUserHandled: false,
+        canHideMessages: false,
         allowedContentActions: [],
         allowedResolutions: ['handled', 'out_of_scope']
       }
@@ -590,6 +620,7 @@ describe('dashboard case detail', () => {
         canMoveResource: false,
         canHandleContent: false,
         canConfirmUserHandled: false,
+        canHideMessages: false,
         allowedContentActions: [],
         allowedResolutions: ['repaired', 'unreproducible', 'out_of_scope']
       }
@@ -647,6 +678,7 @@ describe('dashboard case detail', () => {
         canMoveResource: false,
         canHandleContent: false,
         canConfirmUserHandled: true,
+        canHideMessages: false,
         allowedContentActions: [],
         allowedResolutions: ['handled', 'not_established']
       }
@@ -656,11 +688,18 @@ describe('dashboard case detail', () => {
     const container = await mount(<DashboardCaseDetail caseId={9} />)
     await flush()
 
-    // 用户管理入口提示
-    expect(container.querySelector('a[href="/dashboard/user"]')).toBeNull()
+    // 用户管理入口提示直接打开被举报用户（审阅第 5 条）。jsdom 的选择器
+    // 匹配不了含 & 的属性值，所以按 href 属性逐个比对。
+    const userManagementLinks = () =>
+      [...container.querySelectorAll('a')].filter(
+        (link) =>
+          link.getAttribute('href') ===
+          '/dashboard/user?searchType=id&search=200'
+      )
+    expect(userManagementLinks()).toHaveLength(0)
     const select = container.querySelector('select')!
     await setInput(select as HTMLSelectElement, 'handled')
-    expect(container.querySelector('a[href="/dashboard/user"]')).not.toBeNull()
+    expect(userManagementLinks()).toHaveLength(1)
 
     // 未勾选确认直接结案 -> 拦截
     await act(async () => {
@@ -729,6 +768,7 @@ describe('dashboard case detail', () => {
         canMoveResource: false,
         canHandleContent: false,
         canConfirmUserHandled: false,
+        canHideMessages: false,
         allowedContentActions: [],
         allowedResolutions: ['handled', 'not_established']
       }
@@ -777,6 +817,7 @@ describe('dashboard case detail', () => {
         canMoveResource: false,
         canHandleContent: true,
         canConfirmUserHandled: false,
+        canHideMessages: false,
         allowedContentActions: ['delete'],
         allowedResolutions: []
       }
@@ -850,6 +891,7 @@ describe('dashboard case detail', () => {
         canMoveResource: false,
         canHandleContent: false,
         canConfirmUserHandled: false,
+        canHideMessages: false,
         allowedContentActions: [],
         allowedResolutions: []
       }
@@ -913,6 +955,7 @@ describe('dashboard case detail', () => {
         canMoveResource: true,
         canHandleContent: false,
         canConfirmUserHandled: false,
+        canHideMessages: false,
         allowedContentActions: [],
         allowedResolutions: []
       }
@@ -996,6 +1039,7 @@ describe('dashboard case detail', () => {
         canMoveResource: false,
         canHandleContent: false,
         canConfirmUserHandled: false,
+        canHideMessages: false,
         allowedContentActions: [],
         allowedResolutions: []
       }
@@ -1053,6 +1097,7 @@ describe('dashboard case detail', () => {
         canMoveResource: false,
         canHandleContent: true,
         canConfirmUserHandled: false,
+        canHideMessages: false,
         allowedContentActions: ['takedown', 'restore'],
         allowedResolutions: []
       }
@@ -1092,5 +1137,695 @@ describe('dashboard case detail', () => {
       findButton(container, '取消')!.click()
     })
     expect(mocks.kunFetchPost).toHaveBeenCalledTimes(1)
+  })
+
+  const dialog = (container: HTMLElement) =>
+    container.querySelector<HTMLElement>('[role="alertdialog"]')
+
+  it('sends reply images and can keep the turn (items 9, 17, D28)', async () => {
+    const detail = makeDetail({
+      capabilities: capabilities({ canReply: true })
+    })
+    mocks.kunFetchGet.mockResolvedValue(detailResponse(detail))
+    mocks.kunFetchFormData.mockResolvedValue({
+      key: 'case/90/1-a.avif',
+      url: 'https://img.example/case/90/1-a.avif'
+    })
+    mocks.kunFetchPost.mockResolvedValue({
+      case: detail,
+      message: detail.messages[0]
+    })
+    const container = await mount(
+      <DashboardCaseDetail
+        caseId={9}
+        onProcessed={mocks.onProcessed}
+        onStateChanged={mocks.onStateChanged}
+      />
+    )
+    await flush()
+
+    const fileInput =
+      container.querySelector<HTMLInputElement>('input[type="file"]')!
+    Object.defineProperty(fileInput, 'files', {
+      configurable: true,
+      value: [new File(['image'], 'shot.png', { type: 'image/png' })]
+    })
+    await act(async () => {
+      fileInput.dispatchEvent(
+        new dom!.window.Event('change', { bubbles: true })
+      )
+    })
+    await flush()
+    expect(mocks.kunFetchFormData).toHaveBeenCalledWith(
+      '/case/image',
+      expect.any(FormData)
+    )
+    expect(
+      container.querySelector('img[alt="附图 1"]')?.getAttribute('src')
+    ).toBe('https://img.example/case/90/1-a.avif')
+
+    // 审阅第 23 条：写明谁能看到；D28：取消勾选则留在待处理
+    expect(container.textContent).toContain('报告者能看到这条回复')
+    const handOver = container.querySelector<HTMLInputElement>(
+      'input#case-reply-await-reporter'
+    )!
+    expect(handOver.checked).toBe(true)
+    await act(async () => {
+      handOver.click()
+    })
+    expect(container.textContent).toContain('事项仍留在待处理，不交给报告者。')
+
+    await setInput(
+      container.querySelector<HTMLTextAreaElement>(
+        'textarea[aria-label="回复内容"]'
+      )!,
+      '收到，稍后核对截图'
+    )
+    await act(async () => {
+      findButton(container, '发送回复')!.click()
+    })
+    await flush()
+    expect(mocks.kunFetchPost).toHaveBeenCalledWith('/admin/case/9/handle', {
+      action: 'reply',
+      content: '收到，稍后核对截图',
+      imageKeys: ['case/90/1-a.avif'],
+      awaitReporter: false
+    })
+    // 收件箱据返回的摘要判断事项是否离开队列
+    expect(mocks.onStateChanged).toHaveBeenCalledWith(detail)
+    expect(mocks.onProcessed).not.toHaveBeenCalled()
+    expect(container.querySelector('img[alt="附图 1"]')).toBeNull()
+    expect(
+      container.querySelector<HTMLInputElement>(
+        'input#case-reply-await-reporter'
+      )!.checked
+    ).toBe(true)
+  })
+
+  it('hides and unhides a note only after confirmation (D27)', async () => {
+    const detail = makeDetail({
+      messages: [
+        {
+          id: 1,
+          kind: 'reply',
+          event: null,
+          body: '举报原因正文',
+          author: { id: 5, name: '举报人', avatar: '' },
+          payload: null,
+          created: '2026-09-13T00:00:00.000Z'
+        },
+        {
+          id: 2,
+          kind: 'report',
+          event: null,
+          body: '加群领资源',
+          author: { id: 8, name: '后来者', avatar: '' },
+          payload: { hidden_at: '2026-09-13T02:00:00.000Z' },
+          hidden: true,
+          created: '2026-09-13T01:00:00.000Z'
+        }
+      ],
+      capabilities: capabilities({ canHideMessages: true })
+    })
+    mocks.kunFetchGet.mockResolvedValue(detailResponse(detail))
+    mocks.kunFetchPost.mockResolvedValue({ case: detail, changed: true })
+    const container = await mount(
+      <DashboardCaseDetail
+        caseId={9}
+        onProcessed={mocks.onProcessed}
+        onStateChanged={mocks.onStateChanged}
+      />
+    )
+    await flush()
+
+    const conversationButtons = () => [
+      ...container
+        .querySelector('section[aria-label="沟通记录"]')!
+        .querySelectorAll('button')
+    ]
+    expect(container.textContent).toContain('已隐藏，仅网站管理员可见')
+    expect(conversationButtons().map((button) => button.textContent)).toEqual([
+      '隐藏',
+      '取消隐藏'
+    ])
+
+    await act(async () => {
+      conversationButtons()[0].click()
+    })
+    expect(dialog(container)!.textContent).toContain('确认隐藏这条对话')
+    expect(dialog(container)!.textContent).toContain('举报原因正文')
+    expect(mocks.kunFetchPost).not.toHaveBeenCalled()
+    await act(async () => {
+      findButton(dialog(container)!, '确认')!.click()
+    })
+    await flush()
+    expect(mocks.kunFetchPost).toHaveBeenCalledWith(
+      '/admin/case/9/message-hide',
+      { messageId: 1, hidden: true }
+    )
+    // 隐藏不改事项状态，收件箱不移除
+    expect(mocks.onStateChanged).toHaveBeenCalledOnce()
+    expect(mocks.onProcessed).not.toHaveBeenCalled()
+
+    await act(async () => {
+      conversationButtons()[1].click()
+    })
+    expect(dialog(container)!.textContent).toContain('确认取消隐藏')
+    await act(async () => {
+      findButton(dialog(container)!, '确认')!.click()
+    })
+    await flush()
+    expect(mocks.kunFetchPost).toHaveBeenLastCalledWith(
+      '/admin/case/9/message-hide',
+      { messageId: 2, hidden: false }
+    )
+  })
+
+  it('shows the reported content and warns that a reopened case closes for good (items 3, 14)', async () => {
+    const detail = makeDetail({
+      reopenedCount: 1,
+      target: {
+        ...makeDetail().target,
+        content: {
+          text: '加群领资源',
+          author: { id: 12, name: '评论者', avatar: '' }
+        }
+      },
+      capabilities: capabilities({
+        canHideMessages: true,
+        canHandleContent: true,
+        allowedContentActions: ['delete']
+      })
+    })
+    mocks.kunFetchGet.mockResolvedValue(detailResponse(detail))
+    const container = await mount(<DashboardCaseDetail caseId={9} />)
+    await flush()
+
+    const aside = container.querySelector('aside[aria-label="事项属性面板"]')!
+    expect(
+      aside.querySelector('blockquote[aria-label="被举报内容"]')?.textContent
+    ).toBe('加群领资源')
+    expect(aside.textContent).toContain('评论者')
+
+    // 隐藏对话不是结案动作，不带最终结论提示
+    const finalNotice = '这条问题已重开过：结案后报告者不能再重开或申请复核。'
+    await act(async () => {
+      findButton(
+        container.querySelector<HTMLElement>('section[aria-label="沟通记录"]')!,
+        '隐藏'
+      )!.click()
+    })
+    expect(dialog(container)!.textContent).not.toContain(finalNotice)
+    await act(async () => {
+      findButton(dialog(container)!, '取消')!.click()
+    })
+
+    await act(async () => {
+      findButton(container, '删除被举报评论')!.click()
+    })
+    expect(dialog(container)!.textContent).toContain('被举报内容（评论者）')
+    expect(dialog(container)!.textContent).toContain('加群领资源')
+    expect(dialog(container)!.textContent).toContain(finalNotice)
+    expect(mocks.kunFetchPost).not.toHaveBeenCalled()
+  })
+
+  it('links guide paths and offers only the quick replies for the kind (items 18, 20)', async () => {
+    const detail = makeDetail({
+      status: 'waiting_reporter',
+      messages: [
+        {
+          id: 1,
+          kind: 'reply',
+          event: null,
+          body: '请先看 /doc/notice/download 再试',
+          author: { id: 90, name: '网站管理员甲', avatar: '' },
+          payload: null,
+          created: '2026-09-13T00:00:00.000Z'
+        }
+      ],
+      capabilities: capabilities({ canReply: true })
+    })
+    mocks.kunFetchGet.mockResolvedValue(detailResponse(detail))
+    const container = await mount(<DashboardCaseDetail caseId={9} />)
+    await flush()
+
+    const guide = [
+      ...container
+        .querySelector('section[aria-label="沟通记录"]')!
+        .querySelectorAll('a')
+    ].find((link) => link.getAttribute('href') === '/doc/notice/download')
+    expect(guide?.textContent).toBe('/doc/notice/download')
+    expect(guide?.getAttribute('target')).toBe('_blank')
+
+    // 违规举报只留「需要截图」
+    expect(findButton(container, '需要截图')).toBeDefined()
+    for (const label of ['已修复', '下载问题', '压缩包问题', '不在受理范围']) {
+      expect(findButton(container, label)).toBeUndefined()
+    }
+    // 已在等待报告者时回复不再交接，不显示该选项
+    expect(
+      container.querySelector('input#case-reply-await-reporter')
+    ).toBeNull()
+  })
+
+  it('keeps the last conclusion out of the header and offers the new closures (items 6, 7, D24, D25)', async () => {
+    const detail = makeDetail({
+      kind: 'patch_info',
+      targetType: 'patch',
+      targetId: 3,
+      target: patchTarget,
+      status: 'waiting_reporter',
+      resolution: 'handled',
+      reopenedCount: 1,
+      relatedOpenCaseIds: [43, 45],
+      capabilities: capabilities({
+        canResolve: true,
+        allowedResolutions: [
+          'handled',
+          'out_of_scope',
+          'declined',
+          'reporter_unresponsive'
+        ]
+      })
+    })
+    mocks.kunFetchGet.mockResolvedValue(detailResponse(detail))
+    mocks.kunFetchPost.mockResolvedValue({ case: detail, changed: true })
+    const container = await mount(
+      <DashboardCaseDetail caseId={9} onProcessed={mocks.onProcessed} />
+    )
+    await flush()
+
+    expect(container.querySelector('header')!.textContent).not.toContain(
+      '已处理'
+    )
+    const aside = container.querySelector('aside[aria-label="事项属性面板"]')!
+    expect(aside.textContent).toContain('上次结论')
+    expect(aside.textContent).toContain(
+      '已满 14 天，可以以「开启者未回应」结案'
+    )
+    expect(
+      [...aside.querySelectorAll('a')].map((link) => link.getAttribute('href'))
+    ).toEqual(
+      expect.arrayContaining(['/dashboard/case/43', '/dashboard/case/45'])
+    )
+
+    // D24：确认框说明关注者会收到的说明，并带最终结论提示（审阅第 14 条）
+    const select = container.querySelector('select')!
+    await setInput(select, 'reporter_unresponsive')
+    await act(async () => {
+      findButton(container, '结案')!.click()
+    })
+    expect(dialog(container)!.textContent).toContain('报告者已满 14 天没有补充')
+    expect(dialog(container)!.textContent).toContain(
+      '这条问题已重开过：结案后报告者不能再重开或申请复核。'
+    )
+    await act(async () => {
+      findButton(dialog(container)!, '取消')!.click()
+    })
+
+    // D25：不采纳须写理由，按驳回提交
+    await setInput(select, 'declined')
+    await act(async () => {
+      findButton(container, '结案')!.click()
+    })
+    expect(dialog(container)).toBeNull()
+    await setInput(
+      container.querySelector<HTMLTextAreaElement>(
+        'textarea#case-action-content'
+      )!,
+      '发售日期以官网为准'
+    )
+    await act(async () => {
+      findButton(container, '结案')!.click()
+    })
+    await act(async () => {
+      findButton(dialog(container)!, '确认')!.click()
+    })
+    await flush()
+    expect(mocks.kunFetchPost).toHaveBeenCalledWith('/admin/case/9/handle', {
+      action: 'reject',
+      resolution: 'declined',
+      content: '发售日期以官网为准'
+    })
+    expect(mocks.onProcessed).toHaveBeenCalled()
+  })
+
+  it('shows the conclusion in the header once the case is closed (item 6)', async () => {
+    mocks.kunFetchGet.mockResolvedValue(
+      detailResponse(
+        makeDetail({
+          status: 'rejected',
+          resolution: 'not_established',
+          closedAt: '2026-09-14T00:00:00.000Z'
+        })
+      )
+    )
+    const container = await mount(<DashboardCaseDetail caseId={9} />)
+    await flush()
+
+    expect(container.querySelector('header')!.textContent).toContain('不成立')
+    const aside = container.querySelector('aside[aria-label="事项属性面板"]')!
+    expect(aside.textContent).toContain('结论')
+    expect(aside.textContent).not.toContain('上次结论')
+  })
+
+  it.each(['business', 'network'])(
+    'shows %s search failures instead of an empty result',
+    async (failure) => {
+      if (failure === 'business')
+        mocks.kunFetchPost.mockResolvedValue('搜索过于频繁，请稍后重试')
+      else mocks.kunFetchPost.mockRejectedValue(new Error('offline'))
+      const container = await mount(<CaseMovePatchSearch onPick={vi.fn()} />)
+      await setInput(
+        container.querySelector<HTMLInputElement>('input')!,
+        '条目'
+      )
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 350))
+      })
+      await flush()
+
+      expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+        failure === 'business' ? '搜索过于频繁，请稍后重试' : '搜索失败'
+      )
+      expect(container.textContent).not.toContain('没有找到')
+    }
+  )
+
+  it('clears obsolete move candidates and ignores an older search response', async () => {
+    let resolveOld!: (value: unknown) => void
+    mocks.kunFetchPost
+      .mockResolvedValueOnce({
+        galgames: [{ id: 11, name: '旧候选', uniqueId: 'old' }],
+        total: 1
+      })
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveOld = resolve
+          })
+      )
+      .mockResolvedValueOnce({
+        galgames: [{ id: 13, name: '新候选', uniqueId: 'new' }],
+        total: 1
+      })
+    const container = await mount(<CaseMovePatchSearch onPick={vi.fn()} />)
+    const input = container.querySelector<HTMLInputElement>('input')!
+    const finishSearch = async () => {
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 350))
+      })
+      await flush()
+    }
+    await setInput(input, '旧')
+    await finishSearch()
+    expect(container.textContent).toContain('旧候选')
+
+    await setInput(input, '中间')
+    expect(container.textContent).not.toContain('旧候选')
+    await finishSearch()
+    await setInput(input, '新')
+    await finishSearch()
+    await act(async () => {
+      resolveOld({
+        galgames: [{ id: 12, name: '过期候选', uniqueId: 'stale' }],
+        total: 1
+      })
+    })
+    await flush()
+    expect(container.textContent).toContain('新候选')
+    expect(container.textContent).not.toContain('过期候选')
+  })
+
+  it('finds the move destination by game name (item 16)', async () => {
+    const detail = makeDetail({
+      kind: 'resource_wrong_patch',
+      targetType: 'resource',
+      targetId: 7,
+      target: {
+        targetType: 'resource',
+        targetId: 7,
+        deleted: false,
+        patch: { id: 3, uniqueId: 'abc', name: '条目A' },
+        resource: {
+          id: 7,
+          name: '资源X',
+          section: 'galgame',
+          patchId: 3,
+          patch: { id: 3, uniqueId: 'abc', name: '条目A' },
+          status: 0
+        }
+      },
+      capabilities: capabilities({ canMoveResource: true })
+    })
+    mocks.kunFetchGet.mockResolvedValue(detailResponse(detail))
+    mocks.kunFetchPost.mockImplementation(async (url: string) =>
+      url === '/search'
+        ? {
+            galgames: [
+              { id: 3, uniqueId: 'abc', name: '条目A' },
+              { id: 123, uniqueId: 'def', name: '条目B' }
+            ],
+            total: 2
+          }
+        : { case: detail, changed: true, action: 'move' }
+    )
+    const container = await mount(<DashboardCaseDetail caseId={9} />)
+    await flush()
+
+    await setInput(
+      container.querySelector<HTMLInputElement>('input#case-move-search')!,
+      '条目'
+    )
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 350))
+    })
+    await flush()
+    expect(mocks.kunFetchPost).toHaveBeenCalledWith(
+      '/search',
+      expect.objectContaining({
+        limit: 8,
+        queryString: JSON.stringify([
+          { type: 'keyword', mode: 'include', name: '条目' }
+        ])
+      })
+    )
+    // 资源当前所在的条目不作为候选
+    const results = container.querySelector<HTMLElement>(
+      'ul[aria-label="搜索结果"]'
+    )!
+    expect(results.querySelectorAll('li')).toHaveLength(1)
+    await act(async () => {
+      findButton(results, '条目B')!.click()
+    })
+    expect(
+      container.querySelector<HTMLInputElement>('input#case-move-target')!.value
+    ).toBe('123')
+    expect(container.textContent).toContain('已选择：条目B（条目 #123）')
+
+    await act(async () => {
+      findButton(container, '移动并结案')!.click()
+    })
+    expect(dialog(container)!.textContent).toContain('条目B（条目 #123）')
+    await act(async () => {
+      findButton(dialog(container)!, '确认')!.click()
+    })
+    await flush()
+    expect(mocks.kunFetchPost).toHaveBeenLastCalledWith(
+      '/admin/case/9/resource',
+      { action: 'move', targetPatchId: 123 }
+    )
+  })
+
+  it('keeps the inbox detail and its drafts in place unless the case leaves the queue (item 2)', async () => {
+    const detail = makeDetail({
+      kind: 'other',
+      targetType: 'patch',
+      targetId: 3,
+      target: patchTarget,
+      capabilities: capabilities({
+        canReply: true,
+        canResolve: true,
+        allowedResolutions: ['handled', 'out_of_scope', 'declined']
+      })
+    })
+    mocks.kunFetchGet.mockResolvedValue(detailResponse(detail))
+    const onProcessed = vi.fn()
+    const container = await mount(
+      <CaseInboxDetail
+        item={{ key: 'case:9', id: 9 } as never}
+        onProcessed={onProcessed}
+      />
+    )
+    await flush()
+    const replyBox = () =>
+      container.querySelector<HTMLTextAreaElement>(
+        'textarea[aria-label="回复内容"]'
+      )!
+    const noteBox = () =>
+      container.querySelector<HTMLTextAreaElement>(
+        'textarea#case-action-content'
+      )!
+
+    // A failed closure keeps the dialog, its error and every draft.
+    await setInput(replyBox(), '回复草稿')
+    await setInput(container.querySelector('select')!, 'handled')
+    await setInput(noteBox(), '已按官网资料修正')
+    await act(async () => {
+      findButton(container, '结案')!.click()
+    })
+    mocks.kunFetchPost.mockResolvedValueOnce('该问题已被他人处理')
+    await act(async () => {
+      findButton(dialog(container)!, '确认')!.click()
+    })
+    await flush()
+    expect(dialog(container)!.textContent).toContain('该问题已被他人处理')
+    expect(noteBox().value).toBe('已按官网资料修正')
+    expect(replyBox().value).toBe('回复草稿')
+    await act(async () => {
+      findButton(dialog(container)!, '取消')!.click()
+    })
+
+    // Keeping the turn leaves the case queued (D28)…
+    await act(async () => {
+      container
+        .querySelector<HTMLInputElement>('input#case-reply-await-reporter')!
+        .click()
+    })
+    mocks.kunFetchPost.mockResolvedValueOnce({
+      case: detail,
+      message: detail.messages[0]
+    })
+    await act(async () => {
+      findButton(container, '发送回复')!.click()
+    })
+    await flush()
+    expect(onProcessed).not.toHaveBeenCalled()
+    expect(noteBox().value).toBe('已按官网资料修正')
+
+    // …while handing it to the reporter takes it out (D23).
+    await setInput(replyBox(), '请补充截图')
+    mocks.kunFetchPost.mockResolvedValueOnce({
+      case: { ...detail, status: 'waiting_reporter' },
+      message: detail.messages[0]
+    })
+    await act(async () => {
+      findButton(container, '发送回复')!.click()
+    })
+    await flush()
+    expect(onProcessed).toHaveBeenCalledWith('case:9')
+  })
+
+  it('reloads the inbox detail in place after a conflict and keeps the error (item 2)', async () => {
+    const open = makeDetail({
+      kind: 'other',
+      targetType: 'patch',
+      targetId: 3,
+      target: patchTarget,
+      capabilities: capabilities({
+        canResolve: true,
+        allowedResolutions: ['handled', 'out_of_scope', 'declined']
+      })
+    })
+    const closed = makeDetail({
+      ...open,
+      status: 'resolved',
+      resolution: 'handled',
+      closedAt: '2026-09-14T00:00:00.000Z',
+      capabilities: capabilities()
+    })
+    mocks.kunFetchGet
+      .mockResolvedValueOnce(detailResponse(open))
+      .mockResolvedValue(detailResponse(closed))
+    const onProcessed = vi.fn()
+    const container = await mount(
+      <CaseInboxDetail
+        item={{ key: 'case:9', id: 9 } as never}
+        onProcessed={onProcessed}
+      />
+    )
+    await flush()
+
+    await setInput(container.querySelector('select')!, 'handled')
+    await act(async () => {
+      findButton(container, '结案')!.click()
+    })
+    mocks.kunFetchPost.mockResolvedValueOnce('该问题已被他人处理')
+    await act(async () => {
+      findButton(dialog(container)!, '确认')!.click()
+    })
+    await flush()
+
+    // Another administrator closed it: the detail shows that, the error stays.
+    expect(mocks.kunFetchGet).toHaveBeenCalledTimes(2)
+    expect(dialog(container)!.textContent).toContain('该问题已被他人处理')
+    expect(container.querySelector('header')!.textContent).toContain('已解决')
+    expect(container.querySelector('section[aria-label="裁决操作"]')).toBeNull()
+    expect(onProcessed).not.toHaveBeenCalled()
+  })
+
+  it('keeps the reason visible when a reply finds the case already closed (item 2)', async () => {
+    const open = makeDetail({
+      capabilities: capabilities({ canReply: true })
+    })
+    const closed = makeDetail({
+      status: 'resolved',
+      resolution: 'handled',
+      closedAt: '2026-09-14T00:00:00.000Z'
+    })
+    mocks.kunFetchGet
+      .mockResolvedValueOnce(detailResponse(open))
+      .mockResolvedValue(detailResponse(closed))
+    mocks.kunFetchPost.mockResolvedValueOnce('该问题已结案')
+    const onProcessed = vi.fn()
+    const container = await mount(
+      <CaseInboxDetail
+        item={{ key: 'case:9', id: 9 } as never}
+        onProcessed={onProcessed}
+      />
+    )
+    await flush()
+
+    await setInput(
+      container.querySelector<HTMLTextAreaElement>(
+        'textarea[aria-label="回复内容"]'
+      )!,
+      '请补充截图'
+    )
+    await act(async () => {
+      findButton(container, '发送回复')!.click()
+    })
+    await flush()
+
+    // The reply form is gone with the closed case; the reason stays on screen.
+    expect(mocks.kunFetchGet).toHaveBeenCalledTimes(2)
+    expect(container.querySelector('header')!.textContent).toContain('已解决')
+    expect(container.querySelector('section[aria-label="回复"]')).toBeNull()
+    expect(container.querySelector('[role="alert"]')?.textContent).toBe(
+      '该问题已结案'
+    )
+    expect(onProcessed).not.toHaveBeenCalled()
+  })
+
+  it('does not search again for a trailing space (item 16)', async () => {
+    mocks.kunFetchPost.mockResolvedValue({
+      galgames: [{ id: 11, name: '条目B', uniqueId: 'b' }],
+      total: 1
+    })
+    const container = await mount(<CaseMovePatchSearch onPick={vi.fn()} />)
+    const input = container.querySelector<HTMLInputElement>('input')!
+    const settle = async () => {
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 350))
+      })
+      await flush()
+    }
+
+    await setInput(input, '条目')
+    await settle()
+    await setInput(input, '条目 ')
+    await settle()
+    expect(mocks.kunFetchPost).toHaveBeenCalledTimes(1)
+    expect(container.textContent).toContain('条目B')
   })
 })

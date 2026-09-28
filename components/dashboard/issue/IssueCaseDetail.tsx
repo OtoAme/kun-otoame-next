@@ -50,7 +50,8 @@ import {
   CASE_REOPEN_WINDOW_MS,
   CASE_REPORT_MIN_LENGTH,
   CASE_RESOLUTION_LABELS,
-  CASE_UNRESOLVED_STATUSES
+  CASE_UNRESOLVED_STATUSES,
+  caseQuickRepliesFor
 } from '~/constants/case'
 import {
   caseClosingNoteError,
@@ -79,6 +80,8 @@ import type {
   CaseResolution,
   CaseStatus
 } from '~/types/api/case'
+
+import { CaseMessageText } from '~/components/dashboard/case/CaseMessageText'
 
 import { IssueImageField } from './IssueImageField'
 
@@ -139,7 +142,7 @@ function CaseTimeline({
               <Separator className="min-w-4 flex-1" />
               {/* 结案说明等长文本要能换行，不能被卡片裁掉 */}
               <span className="max-w-[85%] min-w-0 text-center break-words">
-                {caseSystemEventText(message)} ·{' '}
+                <CaseMessageText text={caseSystemEventText(message)} /> ·{' '}
                 {formatChinaDateTime(message.created)}
               </span>
               <Separator className="min-w-4 flex-1" />
@@ -192,10 +195,12 @@ function CaseTimeline({
                 className={cn(
                   'block rounded-lg px-3 py-2 text-sm break-words whitespace-pre-wrap',
                   side === 'owner' ? 'bg-muted' : 'border',
-                  side === 'unknown' && 'border-dashed'
+                  side === 'unknown' && 'border-dashed',
+                  // D27：被网站管理员隐藏的对话只剩占位文字
+                  message.hidden && 'border-dashed text-muted-foreground italic'
                 )}
               >
-                {message.body}
+                <CaseMessageText text={message.body} />
               </span>
               {message.images?.length ? (
                 <span className="flex flex-wrap gap-2">
@@ -1057,7 +1062,7 @@ export function IssueCaseDetail({ caseId, onChanged }: IssueCaseDetailProps) {
           <div className="space-y-2">
             {viewerIsOwnerPublisher || viewerIsHandedOffPublisher ? (
               <div className="flex flex-wrap gap-2">
-                {CASE_QUICK_REPLIES.map((reply) => (
+                {caseQuickRepliesFor(detail.kind).map((reply) => (
                   <Button
                     key={reply.code}
                     type="button"

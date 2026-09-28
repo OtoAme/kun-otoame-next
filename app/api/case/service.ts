@@ -1,5 +1,6 @@
 import { Prisma } from '@prisma/client'
 import type { PrismaClient } from '@prisma/client'
+import { convert as htmlToText } from 'html-to-text'
 import { prisma } from '~/prisma'
 import { getShanghaiQuotaWindows } from '~/app/api/patch/resource/download/access/timeWindow'
 import { createMessage } from '~/app/api/utils/message'
@@ -31,10 +32,12 @@ import {
   CASE_REOPEN_WINDOW_MS,
   CASE_RESOLUTIONS,
   CASE_SITE_TARGET_ID,
+  CASE_STAFF_UNRESPONSIVE_AFTER_MS,
   CASE_STATUSES,
   CASE_TARGET_TYPE_LABELS,
   CASE_TARGET_TYPES,
   CASE_UNRESOLVED_STATUSES,
+  CASE_WAITING_HANDLER_STATUSES,
   CASE_RESOLUTION_LABELS,
   caseTextHasGuideLink,
   isCaseOpenerScoped
@@ -44,6 +47,7 @@ import {
   consumeCaseImageUploads,
   restoreCaseImageUploads
 } from './imageUpload'
+import { checkCaseRateLimit } from './rateLimit'
 import { SHOUTBOX_AUTO_HIDE_REPORTER_THRESHOLD } from '~/constants/shoutbox'
 import type {
   CaseActorType,
@@ -62,6 +66,7 @@ import type {
   CaseActionResponse,
   AdminCaseListItem,
   AdminCaseListResponse,
+  AdminCaseMessageHideResponse,
   CaseCapabilities,
   CaseContentActionResponse,
   CaseCreateResponse,
@@ -81,6 +86,7 @@ import type {
   CaseResourceSummary,
   CaseStatusCounts,
   CaseSummary,
+  CaseTargetContent,
   CaseTargetSummary,
   CaseUserSummary,
   AdminCaseInboxPayload,
@@ -90,6 +96,7 @@ import type {
   adminCaseContentSchema,
   adminCaseHandleSchema,
   adminCaseListSchema,
+  adminCaseMessageHideSchema,
   adminCaseResourceSchema,
   appendCaseMessageSchema,
   caseListSchema,
@@ -108,12 +115,20 @@ type CaseListInput = z.infer<typeof caseListSchema>
 type AppendCaseInput = Omit<
   z.infer<typeof appendCaseMessageSchema>,
   'imageKeys'
-> & { imageKeys?: string[] }
+> & {
+  imageKeys?: string[]
+  /** Site administrator replies only: false keeps the turn (D28). */
+  awaitReporter?: boolean
+}
 type ResolveCaseInput = z.infer<typeof resolveCaseSchema>
 type AdminListInput = Omit<z.infer<typeof adminCaseListSchema>, 'ownerType'> & {
   ownerType?: CaseOwnerType
 }
-type AdminHandleInput = z.infer<typeof adminCaseHandleSchema>
+type AdminHandleInput = Omit<
+  z.infer<typeof adminCaseHandleSchema>,
+  'imageKeys'
+> & { imageKeys?: string[] }
+type AdminMessageHideInput = z.infer<typeof adminCaseMessageHideSchema>
 type AdminResourceInput = z.infer<typeof adminCaseResourceSchema>
 type AdminContentInput = z.infer<typeof adminCaseContentSchema>
 
@@ -311,6 +326,7 @@ const caseListSelect = {
       id: true,
       kind: true,
       event: true,
+      payload: true,
       body: true,
       created: true
     }
@@ -705,6 +721,16 @@ type TargetRows = {
   shoutbox?: {
     status: number
   } | null
+  /** Reported content; loaded for single-case reads only. */
+  content?: CaseTargetContent | null
+}
+
+const TARGET_CONTENT_MAX_LENGTH = 1000
+const authorSelect = { id: true, name: true, avatar: true } as const
+
+const contentText = (text: string, html = false) => {
+  const plain = html ? htmlToText(text, { wordwrap: false }) : text
+  return plain.trim().slice(0, TARGET_CONTENT_MAX_LENGTH)
 }
 
 const loadTarget = async (
@@ -744,40 +770,65 @@ const loadTarget = async (
       })
     : null
   let targetExists = false
+  let content: CaseTargetContent | null = null
   if (row.target_type === 'comment') {
-    targetExists = Boolean(
-      await db.patch_comment.findUnique({
-        where: { id: row.target_id },
-        select: { id: true }
-      })
-    )
+    const comment = await db.patch_comment.findUnique({
+      where: { id: row.target_id },
+      select: { id: true, content: true, user: { select: authorSelect } }
+    })
+    targetExists = Boolean(comment)
+    if (comment) {
+      content = {
+        text: contentText(comment.content, true),
+        author: comment.user
+      }
+    }
   } else if (row.target_type === 'rating') {
-    targetExists = Boolean(
-      await db.patch_rating.findUnique({
-        where: { id: row.target_id },
-        select: { id: true }
-      })
-    )
+    const rating = await db.patch_rating.findUnique({
+      where: { id: row.target_id },
+      select: {
+        id: true,
+        overall: true,
+        short_summary: true,
+        user: { select: authorSelect }
+      }
+    })
+    targetExists = Boolean(rating)
+    if (rating) {
+      content = {
+        text: contentText(rating.short_summary),
+        author: rating.user,
+        overall: rating.overall
+      }
+    }
   } else if (row.target_type === 'shoutbox') {
     const shoutbox = await db.shoutbox.findUnique({
       where: { id: row.target_id },
-      select: { id: true, status: true }
+      select: {
+        id: true,
+        status: true,
+        content: true,
+        user: { select: authorSelect }
+      }
     })
     targetExists = Boolean(shoutbox)
     return {
       targetExists,
       patch,
-      shoutbox: shoutbox ? { status: shoutbox.status } : null
+      shoutbox: shoutbox ? { status: shoutbox.status } : null,
+      content: shoutbox
+        ? { text: contentText(shoutbox.content), author: shoutbox.user }
+        : null
     }
   } else if (row.target_type === 'user') {
-    targetExists = Boolean(
-      await db.user.findUnique({
-        where: { id: row.target_id },
-        select: { id: true }
-      })
-    )
+    const user = await db.user.findUnique({
+      where: { id: row.target_id },
+      select: authorSelect
+    })
+    targetExists = Boolean(user)
+    if (user) content = { text: '', author: user }
   }
-  return { targetExists, patch }
+  return { targetExists, patch, content }
 }
 
 const queryManyIfNeeded = async <T>(
@@ -934,8 +985,12 @@ const loadTargets = async (db: CaseDb, rows: readonly CaseRow[]) => {
   return targetByCaseId
 }
 
+/** Previews never show a hidden note, not even in the admin queue. */
 const toMessagePreview = (
-  row: Pick<CaseMessageRow, 'id' | 'kind' | 'event' | 'body' | 'created'>
+  row: Pick<
+    CaseMessageRow,
+    'id' | 'kind' | 'event' | 'payload' | 'body' | 'created'
+  >
 ): CaseMessagePreview => ({
   id: row.id,
   kind: (CASE_MESSAGE_KINDS as readonly string[]).includes(row.kind)
@@ -945,17 +1000,20 @@ const toMessagePreview = (
     row.event && (CASE_MESSAGE_EVENTS as readonly string[]).includes(row.event)
       ? (row.event as CaseMessageEvent)
       : null,
-  body: row.body,
+  body: isHiddenMessage(row) ? HIDDEN_MESSAGE_BODY : row.body,
   created: iso(row.created) ?? new Date(0).toISOString()
 })
 
 const toTargetSummary = (
   row: Pick<CaseRow, 'target_type' | 'target_id' | 'patch_id'>,
-  target: TargetRows
+  target: TargetRows,
+  includeContent = false
 ) => {
   const targetType = isCaseTargetType(row.target_type)
     ? row.target_type
     : ('patch' as const)
+  const content =
+    includeContent && target.content ? { content: target.content } : {}
   if (targetType === 'resource') {
     const resource = target.resource
     return targetSummary({
@@ -976,14 +1034,17 @@ const toTargetSummary = (
     })
   }
   if (targetType === 'shoutbox') {
-    return targetSummary({
-      targetType,
-      targetId: row.target_id,
-      patch: patchSummary(target.patch ?? null),
-      resource: null,
-      status: target.shoutbox?.status,
-      deleted: target.targetExists === false
-    })
+    return {
+      ...targetSummary({
+        targetType,
+        targetId: row.target_id,
+        patch: patchSummary(target.patch ?? null),
+        resource: null,
+        status: target.shoutbox?.status,
+        deleted: target.targetExists === false
+      }),
+      ...content
+    }
   }
   if (targetType === 'site') {
     return targetSummary({
@@ -995,13 +1056,16 @@ const toTargetSummary = (
       label: SITE_TARGET_LABEL
     })
   }
-  return targetSummary({
-    targetType,
-    targetId: row.target_id,
-    patch: patchSummary(target.patch ?? null),
-    resource: null,
-    deleted: target.targetExists === false
-  })
+  return {
+    ...targetSummary({
+      targetType,
+      targetId: row.target_id,
+      patch: patchSummary(target.patch ?? null),
+      resource: null,
+      deleted: target.targetExists === false
+    }),
+    ...content
+  }
 }
 
 const sanitizePayload = (
@@ -1012,14 +1076,26 @@ const sanitizePayload = (
   return payload as CaseMessagePayload
 }
 
+const HIDDEN_MESSAGE_BODY = '该内容已被网站管理员隐藏。'
+
+/** A reply or report note the site administrator hid; system rows never are. */
+const isHiddenMessage = (
+  row: Pick<CaseMessageRow, 'kind' | 'payload'>
+): boolean =>
+  row.kind !== 'system' &&
+  typeof sanitizePayload(row.payload)?.hidden_at === 'string'
+
 const serializeMessage = (
   row: CaseMessageRow,
   options: {
     identifyReporter: boolean
     reporterId?: number | null
+    /** Admin views: payloads, and the original text of hidden notes. */
     includePayload: boolean
   }
 ): CaseMessage => {
+  const hidden = isHiddenMessage(row)
+  const concealed = hidden && !options.includePayload
   const author = row.author ? toUser(row.author) : null
   const safeAuthor =
     row.author &&
@@ -1039,14 +1115,15 @@ const serializeMessage = (
       (CASE_MESSAGE_EVENTS as readonly string[]).includes(row.event)
         ? (row.event as CaseMessageEvent)
         : null,
-    body: row.body,
+    body: concealed ? HIDDEN_MESSAGE_BODY : row.body,
     author: safeAuthor,
     ...(options.includePayload
       ? { payload: sanitizePayload(row.payload) }
       : {}),
-    ...(row.images?.length
+    ...(!concealed && row.images?.length
       ? { images: row.images.map((image) => caseImageUrl(image.storage_key)) }
       : {}),
+    ...(hidden ? { hidden: true } : {}),
     created: iso(row.created) ?? new Date(0).toISOString()
   }
 }
@@ -1061,6 +1138,8 @@ const toSummary = (
     includeCount: boolean
     includeOwner: boolean
     includeReporter: boolean
+    /** Admin detail: the reported comment, rating, shoutbox or user. */
+    includeTargetContent?: boolean
   }
 ): CaseSummary => {
   const kind = isCaseKind(row.kind) ? row.kind : 'other'
@@ -1081,7 +1160,7 @@ const toSummary = (
     kind,
     targetType,
     targetId: row.target_id,
-    target: toTargetSummary(row, target),
+    target: toTargetSummary(row, target, options.includeTargetContent),
     patchId: row.patch_id,
     ownerType,
     ...(options.includeOwner
@@ -1178,7 +1257,7 @@ const capabilitiesFor = (
     row.closed_at.getTime() >= Date.now() - CASE_REOPEN_WINDOW_MS
   const originalPublisher =
     !admin && isOriginalPublisher(row, viewerId, target?.resource?.user_id)
-  const allowedResolutions: CaseResolution[] =
+  const handlerResolutions: CaseResolution[] =
     !isCaseKind(row.kind) || (!admin && !owner)
       ? []
       : row.kind === 'resource_wrong_patch'
@@ -1188,6 +1267,10 @@ const capabilitiesFor = (
             ? ['not_established', 'handled']
             : ['not_established']
           : [...CASE_HANDLER_RESOLUTIONS_BY_KIND[row.kind]]
+  const allowedResolutions: CaseResolution[] =
+    admin && canCloseAsStaffUnresponsive(row, new Date())
+      ? [...handlerResolutions, 'reporter_unresponsive']
+      : handlerResolutions
   const allowedContentActions: CaseContentAction[] =
     !admin ||
     !unresolved ||
@@ -1249,10 +1332,30 @@ const capabilitiesFor = (
       unresolved &&
       row.kind === 'content_violation' &&
       row.target_type === 'user',
+    canHideMessages: admin,
     allowedContentActions,
     allowedResolutions
   }
 }
+
+/**
+ * D24: a staff case never times out (D5), but once it has waited on its
+ * reporter as long as the publisher-side timeout the site administrator may
+ * record 开启者未回应 by hand.
+ */
+const canCloseAsStaffUnresponsive = (
+  row: Pick<
+    CaseRow,
+    'kind' | 'owner_type' | 'status' | 'reporter_id' | 'status_changed_at'
+  >,
+  now: Date
+) =>
+  row.owner_type === 'staff' &&
+  row.status === 'waiting_reporter' &&
+  row.reporter_id !== null &&
+  assertResolution(row.kind, 'reporter_unresponsive') &&
+  row.status_changed_at.getTime() <=
+    now.getTime() - CASE_STAFF_UNRESPONSIVE_AFTER_MS
 
 const listViewOptions = (
   row: CaseRow,
@@ -1343,6 +1446,14 @@ const noticeSnippet = (text: string | null | undefined) => {
     ? `${flat.slice(0, CASE_NOTICE_SNIPPET_LENGTH)}…`
     : flat
 }
+
+/**
+ * Followers answered nothing wrong: when a case ends as 开启者未回应, by the
+ * timeout or by hand (D24), they learn the first reporter went quiet and that
+ * a new report is welcome (D15).
+ */
+const unresponsiveFollowerNotice = (subject: string) =>
+  `${subject}的首位报告者没有补充材料，事项已结束；如果你仍遇到这个问题，可以重新提交。`
 
 const withSnippet = (sentence: string, text: string | null | undefined) => {
   const snippet = noticeSnippet(text)
@@ -1529,6 +1640,12 @@ type InternalCaseOpenInput = {
   expectedPatchId?: number
   now?: Date
   allowFrozen?: boolean
+  /**
+   * The opener's resubmission turns into a reply that notifies the handler,
+   * so a non-administrator submitting from a page counts it toward the
+   * per-case reply cap (D29).
+   */
+  limitSupplement?: boolean
 }
 
 const imageCreate = (imageKeys: readonly string[] | undefined) =>
@@ -1575,6 +1692,10 @@ const originalPublisherIdFor = async (
  * Writes one dialogue reply inside the caller's transaction and applies the
  * reply rows of the transition table (plan 5.4). A reply from the publisher a
  * case was handed off from never changes state or the first-response time.
+ *
+ * A processing party's reply hands the turn to the reporter. Only the site
+ * administrator may pass `awaitReporter: false` to answer without doing so;
+ * the case then keeps its state and its place in the queue (D28).
  */
 const appendReplyInTx = async (
   tx: CaseTx,
@@ -1583,14 +1704,17 @@ const appendReplyInTx = async (
   actor: ReplyActor,
   content: string,
   imageKeys: readonly string[],
-  now: Date
+  now: Date,
+  awaitReporter = true
 ): Promise<CaseMessageRow | string> => {
   const isReporter = actor === 'reporter'
   const isProcessingParty = actor === 'owner' || actor === 'staff'
+  const handOver = actor !== 'staff' || awaitReporter
   const nextStatus: CaseStatus =
     isReporter && row.status === 'waiting_reporter'
       ? 'waiting_owner'
       : isProcessingParty &&
+          handOver &&
           row.reporter_id !== null &&
           (row.status === 'open' || row.status === 'waiting_owner')
         ? 'waiting_reporter'
@@ -1630,21 +1754,53 @@ const appendReplyInTx = async (
     `${await describeCaseForNotice(tx, row)}有新的回复`,
     content
   )
+  const senderId = isReporter ? null : uid
+  const others = (ids: readonly (number | null | undefined)[]) =>
+    ids.filter((id): id is number => typeof id === 'number' && id !== uid)
   if (isReporter || actor === 'original-publisher') {
     if (row.owner_type === 'publisher' && row.owner_id !== null) {
-      await notifyCaseUsers(tx, row.id, [row.owner_id], notice)
+      await notifyCaseUsers(tx, row.id, others([row.owner_id]), notice)
     } else {
       await notifyCaseUsers(
         tx,
         row.id,
-        await loadStaffIds(tx),
+        others(await loadStaffIds(tx)),
         notice,
-        isReporter ? null : uid,
+        senderId,
         `/dashboard/case/${row.id}`
       )
     }
-  } else if (row.reporter_id !== null) {
-    await notifyCaseUsers(tx, row.id, [row.reporter_id], notice, uid)
+  } else {
+    // The site administrator's answer also reaches the publisher still
+    // owning the case, who would otherwise miss an intervention before the
+    // handoff (review item 19).
+    await notifyCaseUsers(
+      tx,
+      row.id,
+      others([
+        row.reporter_id,
+        actor === 'staff' && row.owner_type === 'publisher'
+          ? row.owner_id
+          : null
+      ]),
+      notice,
+      uid
+    )
+  }
+  // D20: the publisher a case was handed off from still answers and proposes
+  // closures, so the administrator's and the reporter's replies reach them.
+  if (isReporter || actor === 'staff') {
+    const originalPublisherId =
+      row.owner_type === 'staff' && row.public
+        ? await originalPublisherIdFor(tx, row)
+        : undefined
+    await notifyCaseUsers(
+      tx,
+      row.id,
+      others([originalPublisherId]),
+      notice,
+      senderId
+    )
   }
   return message
 }
@@ -1727,6 +1883,16 @@ export const openCaseInternal = async (
       })
       subscribed = result.count > 0
       if (body && locked.reporter_id === input.reporterId) {
+        // The case is only known here, so the cap is checked inside the
+        // transaction; a refusal rolls the subscription back with it.
+        if (input.limitSupplement) {
+          const limited = await checkCaseRateLimit(
+            'message',
+            input.reporterId,
+            locked.id
+          )
+          if (limited) rollbackCaseOperation(limited)
+        }
         const reply = await appendReplyInTx(
           tx,
           locked,
@@ -1964,6 +2130,17 @@ export const closeCaseInternal = async (tx: CaseTx, input: CloseCaseInput) => {
     payload,
     input.body ?? `问题已结案：${CASE_RESOLUTION_LABELS[input.resolution]}`
   )
+  // Every staff closure, whatever action performed it, is one processed
+  // item for the dashboard's「今日已处理」(review item 24).
+  if (input.actorType === 'staff' && input.actorId) {
+    await tx.admin_log.create({
+      data: {
+        type: 'case_close',
+        user_id: input.actorId,
+        content: `管理员以「${CASE_RESOLUTION_LABELS[input.resolution]}」结案问题 #${row.id}`
+      }
+    })
+  }
   const subject = await describeCaseForNotice(tx, row)
   await notifyCaseParticipants(
     tx,
@@ -1974,7 +2151,11 @@ export const closeCaseInternal = async (tx: CaseTx, input: CloseCaseInput) => {
     ),
     input.actorId,
     {
-      excludeUserIds: input.excludeRecipientIds,
+      // Whoever closed the case needs no notice about it (review item 22).
+      excludeUserIds: [
+        ...(input.excludeRecipientIds ?? []),
+        ...(input.actorId ? [input.actorId] : [])
+      ],
       followerContent: input.followerNotice
     }
   )
@@ -2009,7 +2190,11 @@ const fetchCaseForViewer = async (
     Boolean(subscription),
     target.resource?.user_id
   )!
-  const summary = toSummary(row, target, options)
+  const admin = view === 'admin'
+  const summary = toSummary(row, target, {
+    ...options,
+    includeTargetContent: admin
+  })
   const follower = view === 'subscriber-public' || view === 'subscriber-private'
   // Followers only read back the note they wrote themselves (D15).
   const messagesRows = await db.ops_case_message.findMany({
@@ -2029,22 +2214,53 @@ const fetchCaseForViewer = async (
   // An opener who withdrew while others still follow keeps reading the case
   // but has nothing left to withdraw (D18).
   if (!subscription) capabilities.canWithdraw = false
+  const relatedOpenCaseIds = admin ? await loadRelatedOpenCaseIds(db, row) : []
   const detail: CaseDetail = {
     ...summary,
     messages: messagesRows.map((message) =>
       serializeMessage(message, {
         identifyReporter: options.identifyReporter || follower,
         reporterId: row.reporter_id,
-        includePayload: view === 'admin'
+        includePayload: admin
       })
     ),
     // A follower of a private report joined by submitting one of their own.
     ...(view === 'subscriber-private'
       ? { viewerSubscription: { subscribed: true, submitted: true } }
       : {}),
+    ...(relatedOpenCaseIds.length ? { relatedOpenCaseIds } : {}),
     capabilities
   }
   return { case: detail }
+}
+
+const RELATED_OPEN_CASE_LIMIT = 20
+
+/**
+ * Opener-scoped cases on a game never merge (D14, D26). After fixing the
+ * entry the administrator needs the other open ones of the same kind, which
+ * are only listed here; closing them stays one case at a time.
+ */
+const loadRelatedOpenCaseIds = async (db: CaseDb, row: CaseRow) => {
+  if (
+    row.target_type !== 'patch' ||
+    !isCaseOpenerScoped(row.kind, row.target_type)
+  ) {
+    return []
+  }
+  const rows = await db.ops_case.findMany({
+    where: {
+      id: { not: row.id },
+      kind: row.kind,
+      target_type: 'patch',
+      target_id: row.target_id,
+      status: { in: unresolvedStatuses }
+    },
+    orderBy: [{ id: 'asc' }],
+    take: RELATED_OPEN_CASE_LIMIT,
+    select: { id: true }
+  })
+  return rows.map((related) => related.id)
 }
 
 /** Who closed the current round, and whether its opener already answered it. */
@@ -2090,7 +2306,8 @@ export const getCase = async (
 export const createCase = async (
   input: CreateCaseInput,
   reporterId: number,
-  options: { now?: Date; db?: PrismaClient } = {}
+  /** `role` exempts site administrators from the reply cap (D29). */
+  options: { now?: Date; db?: PrismaClient; role?: number } = {}
 ): Promise<CaseCreateResponse | string> => {
   const db = options.db ?? prisma
   const now = options.now ?? new Date()
@@ -2109,7 +2326,8 @@ export const createCase = async (
         content: input.content,
         imageKeys,
         source: 'user',
-        now
+        now,
+        limitSupplement: (options.role ?? 0) < 3
       })
     )
   } catch (error) {
@@ -2332,6 +2550,12 @@ export const appendCaseMessage = async (
 ): Promise<CaseMessageResponse | string> => {
   const db = options.db ?? prisma
   const now = options.now ?? new Date()
+  // Every reply notifies the other side, so a non-administrator's replies are
+  // capped per case before any database or image work (D29).
+  if (role < 3) {
+    const limited = await checkCaseRateLimit('message', uid, input.caseId)
+    if (limited) return limited
+  }
   const imageKeys = input.imageKeys ?? []
   const consumed = await consumeCaseImageUploads(uid, imageKeys)
   if (consumed) return consumed
@@ -2356,7 +2580,8 @@ export const appendCaseMessage = async (
         actor,
         input.content,
         imageKeys,
-        now
+        now,
+        input.awaitReporter ?? true
       )
       if (typeof message === 'string') return message
       return { row, message }
@@ -2416,8 +2641,9 @@ const isHandlerResolution = (kind: string, resolution: string) =>
 
 /**
  * Closure notes the reporter is owed: what was checked for「无法复现」(D16),
- * and one of the three guides for「不在受理范围」(D12). Site feedback has no
- * matching guide, so its out-of-scope closure only needs the explanation.
+ * the reason for「不采纳」(D25), and one of the three guides for「不在受理
+ * 范围」(D12). Site feedback has no matching guide, so its out-of-scope
+ * closure only needs the explanation.
  */
 const closingNoteError = (
   row: Pick<CaseRow, 'kind' | 'target_type'>,
@@ -2426,6 +2652,9 @@ const closingNoteError = (
 ) => {
   if (resolution === 'unreproducible' && !content.trim()) {
     return '以「无法复现」结案时请写明核对了什么'
+  }
+  if (resolution === 'declined' && !content.trim()) {
+    return '以「不采纳」结案时请写明理由'
   }
   if (resolution === 'out_of_scope') {
     if (row.kind === 'other' && row.target_type === 'site') {
@@ -2966,11 +3195,21 @@ export const handleCaseAsAdmin = async (
   if (input.action === 'reply') {
     if (!input.content.trim()) return '回复内容不能为空'
     return appendCaseMessage(
-      { caseId: input.caseId, content: input.content },
+      {
+        caseId: input.caseId,
+        content: input.content,
+        imageKeys: input.imageKeys ?? [],
+        awaitReporter: input.awaitReporter
+      },
       adminId,
       adminRole,
       options
     )
+  }
+  // D30: a closing note is the text of the closing event, which carries no
+  // images; a picture goes into a reply first.
+  if (input.imageKeys?.length) {
+    return '结案说明不能附图，需要配图请先发一条带图回复'
   }
   const now = options.now ?? new Date()
   const result = await db.$transaction(async (tx) => {
@@ -2984,16 +3223,20 @@ export const handleCaseAsAdmin = async (
         ? 'out_of_scope'
         : 'not_established'
     }
-    if (resolution === 'reporter_unresponsive') {
-      return '开启者未回应只能由超时任务登记'
-    }
     if (resolution === 'reporter_withdrawn') {
       return '开启者撤回只能由开启者本人登记'
     }
-    // D13 retired the escalated hide/ignore pair: handed-off cases use the
-    // same closing resolutions as the publisher would have.
-    if (!resolution || !isHandlerResolution(row.kind, resolution))
+    if (!resolution) return '当前问题不支持该结论'
+    const staffUnresponsive = resolution === 'reporter_unresponsive'
+    if (staffUnresponsive) {
+      if (!canCloseAsStaffUnresponsive(row, now)) {
+        return '只有等待报告者满 14 天的站方事项可以登记「开启者未回应」'
+      }
+    } else if (!isHandlerResolution(row.kind, resolution)) {
+      // D13 retired the escalated hide/ignore pair: handed-off cases use the
+      // same closing resolutions as the publisher would have.
       return '当前问题不支持该结论'
+    }
     if (resolution === 'not_established' && !input.content.trim()) {
       return '登记不成立必须填写处理说明'
     }
@@ -3022,11 +3265,11 @@ export const handleCaseAsAdmin = async (
     }
     if (
       input.action === 'reject' &&
-      !(['not_established', 'out_of_scope'] as CaseResolution[]).includes(
-        resolution
-      )
+      !(
+        ['not_established', 'out_of_scope', 'declined'] as CaseResolution[]
+      ).includes(resolution)
     ) {
-      return '驳回只能使用不成立或不在受理范围结论'
+      return '驳回只能使用不成立、不在受理范围或不采纳结论'
     }
     if (
       row.kind === 'content_violation' &&
@@ -3039,15 +3282,28 @@ export const handleCaseAsAdmin = async (
         return '请先在既有用户管理入口完成处置，确认后填写处理说明'
       }
     }
-    const targetStatus = input.action === 'reject' ? 'rejected' : 'resolved'
+    // D25 records 不采纳 as a rejection whichever action carries it.
+    const targetStatus =
+      input.action === 'reject' || resolution === 'declined'
+        ? 'rejected'
+        : 'resolved'
     return closeCaseInternal(tx, {
       caseId: row.id,
-      expectedStatuses: unresolvedStatuses as CaseStatus[],
+      expectedStatuses: staffUnresponsive
+        ? ['waiting_reporter']
+        : (unresolvedStatuses as CaseStatus[]),
       resolution,
       actorType: 'staff',
       actorId: adminId,
       body: input.content || undefined,
       status: targetStatus,
+      ...(staffUnresponsive
+        ? {
+            followerNotice: unresponsiveFollowerNotice(
+              await describeCaseForNotice(tx, row)
+            )
+          }
+        : {}),
       now
     })
   })
@@ -3342,6 +3598,7 @@ export const handleCaseContent = async (
       const { deleteReportedTargetInTransaction } = await import(
         '~/app/api/admin/report/service'
       )
+      let deletedLabel: string | null = null
       if (row.target_type === 'comment') {
         const comment = await tx.patch_comment.findUnique({
           where: { id: row.target_id },
@@ -3356,6 +3613,7 @@ export const handleCaseContent = async (
           })
           if (!deleted)
             rollbackCaseOperation('评论刚刚被他人处理，请刷新后重试')
+          deletedLabel = '评论'
         }
       } else if (row.target_type === 'rating') {
         const rating = await tx.patch_rating.findUnique({
@@ -3371,9 +3629,21 @@ export const handleCaseContent = async (
           })
           if (!deleted)
             rollbackCaseOperation('评价刚刚被他人处理，请刷新后重试')
+          deletedLabel = '评价'
         }
       } else {
         return '评论和评价使用 delete，小喇叭请使用 takedown 或 restore'
+      }
+      // The shoutbox primitives log their own moderation; a deletion through
+      // the case needs its own record (review item 24).
+      if (deletedLabel) {
+        await tx.admin_log.create({
+          data: {
+            type: 'case_content_delete',
+            user_id: adminId,
+            content: `管理员通过问题 #${row.id} 删除${deletedLabel} #${row.target_id}`
+          }
+        })
       }
     } else if (row.target_type === 'shoutbox') {
       const { removeShoutboxForCase, restoreShoutboxForCase } = await import(
@@ -3437,25 +3707,127 @@ export const handleCaseContent = async (
   }
 }
 
+/**
+ * Hides or unhides one reply or later-reporter note (D27). Only that row's
+ * `payload.hidden_at` changes: the case keeps its state and revision, nobody
+ * is notified, and admin_log records who acted. The condition on the value
+ * just read turns a repeated or crossed request into a refusal, not a flip.
+ */
+export const setCaseMessageHidden = async (
+  input: AdminMessageHideInput,
+  adminId: number,
+  adminRole: number,
+  options: { now?: Date; db?: PrismaClient } = {}
+): Promise<AdminCaseMessageHideResponse | string> => {
+  const db = options.db ?? prisma
+  if (adminRole < 3) return '本页面仅管理员可访问'
+  const now = options.now ?? new Date()
+  const result = await db.$transaction(async (tx) => {
+    const message = await tx.ops_case_message.findFirst({
+      where: { id: input.messageId, case_id: input.caseId },
+      select: { id: true, kind: true, payload: true }
+    })
+    if (!message) return '该对话不存在'
+    if (message.kind !== 'reply' && message.kind !== 'report') {
+      return '系统消息不能隐藏'
+    }
+    const hiddenAt = sanitizePayload(message.payload)?.hidden_at
+    const currentlyHidden = typeof hiddenAt === 'string'
+    if (currentlyHidden === input.hidden) return { changed: false as const }
+    const updated = await tx.ops_case_message.updateMany({
+      where: {
+        id: message.id,
+        case_id: input.caseId,
+        payload:
+          typeof hiddenAt === 'string'
+            ? { path: ['hidden_at'], equals: hiddenAt }
+            : { equals: Prisma.AnyNull }
+      },
+      data: {
+        payload: input.hidden ? { hidden_at: now.toISOString() } : Prisma.DbNull
+      }
+    })
+    if (updated.count === 0) return '该对话刚刚被他人处理，请刷新后重试'
+    await tx.admin_log.create({
+      data: {
+        type: input.hidden ? 'case_message_hide' : 'case_message_unhide',
+        user_id: adminId,
+        content: `管理员${input.hidden ? '隐藏' : '取消隐藏'}问题 #${input.caseId} 的对话 #${message.id}`
+      }
+    })
+    return { changed: true as const }
+  })
+  if (typeof result === 'string') return result
+  const row = await getCaseById(db, input.caseId)
+  if (!row) return '问题不存在'
+  const serialized = await serializeSummaryForViewer(
+    db,
+    row,
+    adminId,
+    adminRole,
+    true
+  )
+  if (!serialized) return '问题不存在'
+  return { case: serialized.summary, changed: result.changed }
+}
+
+/**
+ * Admin search over the case center and the inbox (review item 25): case id,
+ * kind code or Chinese label, game name, resource name, reporter name and
+ * dialogue text. A resource target has no relation on the case row, so
+ * resource names are matched first, only among the resources the cases in
+ * `scope` point at: no match is cut off, and the id list grows with the case
+ * queue instead of the resource table.
+ */
+const buildAdminCaseSearch = async (
+  db: CaseDb,
+  search: string,
+  scope: Prisma.ops_caseWhereInput
+): Promise<Prisma.ops_caseWhereInput[]> => {
+  const contains = { contains: search, mode: 'insensitive' as const }
+  const predicates: Prisma.ops_caseWhereInput[] = [
+    { kind: contains },
+    { messages: { some: { body: contains } } },
+    { patch: { name: contains } },
+    { reporter: { name: contains } }
+  ]
+  const numeric = Number(search)
+  if (Number.isSafeInteger(numeric) && numeric > 0 && numeric <= CASE_ID_MAX) {
+    predicates.unshift({ id: numeric })
+  }
+  const labelKinds = CASE_KINDS.filter((kind) =>
+    CASE_KIND_LABELS[kind].includes(search)
+  )
+  if (labelKinds.length) predicates.push({ kind: { in: labelKinds } })
+  const targets = await db.ops_case.findMany({
+    where: { ...scope, target_type: 'resource' },
+    select: { target_id: true },
+    distinct: ['target_id']
+  })
+  const resources = targets.length
+    ? await db.patch_resource.findMany({
+        where: {
+          id: { in: targets.map((target) => target.target_id) },
+          name: contains
+        },
+        select: { id: true }
+      })
+    : []
+  if (resources.length) {
+    predicates.push({
+      target_type: 'resource',
+      target_id: { in: resources.map((resource) => resource.id) }
+    })
+  }
+  return predicates
+}
+
 export const getAdminCases = async (
   input: AdminListInput,
   options: { db?: PrismaClient; now?: Date } = {}
 ): Promise<AdminCaseListResponse> => {
   const db = options.db ?? prisma
   const now = options.now ?? new Date()
-  const contains = { contains: input.search, mode: 'insensitive' as const }
-  const numericSearch = Number(input.search)
-  const searchPredicates: Prisma.ops_caseWhereInput[] = [
-    { kind: contains },
-    { messages: { some: { body: contains } } }
-  ]
-  if (
-    input.search &&
-    Number.isSafeInteger(numericSearch) &&
-    numericSearch > 0
-  ) {
-    searchPredicates.unshift({ id: numericSearch })
-  }
   // Counting scope is the queue minus every status predicate — `statuses`,
   // `status` and `allStatuses` all stay out of it. Any of them would pin each
   // tab's count to that tab's own filter, and the default `unresolvedStatuses`
@@ -3465,13 +3837,18 @@ export const getAdminCases = async (
   // `publisher` is the read-only oversight view (D22). It shares the list
   // shape but never feeds the inbox, which keeps its own staff-only query.
   const ownerType = input.ownerType ?? 'staff'
-  const scopeWhere: Prisma.ops_caseWhereInput = {
+  const queueWhere: Prisma.ops_caseWhereInput = {
     owner_type: ownerType,
     ...(ownerType === 'publisher' && input.ownerId
       ? { owner_id: input.ownerId }
       : {}),
-    ...(input.kind ? { kind: input.kind } : {}),
-    ...(input.search ? { OR: searchPredicates } : {})
+    ...(input.kind ? { kind: input.kind } : {})
+  }
+  const scopeWhere: Prisma.ops_caseWhereInput = {
+    ...queueWhere,
+    ...(input.search
+      ? { OR: await buildAdminCaseSearch(db, input.search, queueWhere) }
+      : {})
   }
   // Status ladder, most specific rung first: an explicit list beats a single
   // status, and `allStatuses` only opens the queue when neither was given —
@@ -3630,9 +4007,9 @@ export const timeoutCloseCase = async (
       resolution: 'reporter_unresponsive',
       actorType: 'system',
       event: 'resolved',
-      // Followers answered nothing wrong; tell them the case ended because
-      // the first reporter went quiet, and that a new report is welcome (D15).
-      followerNotice: `${await describeCaseForNotice(tx, row)}的首位报告者没有补充材料，事项已结束；如果你仍遇到这个问题，可以重新提交。`,
+      followerNotice: unresponsiveFollowerNotice(
+        await describeCaseForNotice(tx, row)
+      ),
       now
     })
   })
@@ -3750,20 +4127,23 @@ export const getPublicResourceCaseBadges = async (
   return result
 }
 
+/**
+ * The inbox's case source: staff cases waiting on the handler, oldest first
+ * (D23). A case waiting on its reporter stays in the case center.
+ */
 export const getAdminCaseInboxItems = async (
   input: { limit: number; search?: string },
   now = new Date(),
   db: PrismaClient = prisma
 ): Promise<{ items: CaseInboxItem[]; total: number }> => {
-  const contains = {
-    contains: input.search ?? '',
-    mode: 'insensitive' as const
+  const queueWhere: Prisma.ops_caseWhereInput = {
+    owner_type: 'staff',
+    status: { in: [...CASE_WAITING_HANDLER_STATUSES] }
   }
   const where: Prisma.ops_caseWhereInput = {
-    owner_type: 'staff',
-    status: { in: unresolvedStatuses },
+    ...queueWhere,
     ...(input.search
-      ? { OR: [{ kind: contains }, { messages: { some: { body: contains } } }] }
+      ? { OR: await buildAdminCaseSearch(db, input.search, queueWhere) }
       : {})
   }
   const [rows, total] = await Promise.all([

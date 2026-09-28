@@ -24,6 +24,14 @@ export const ADMIN_LOG_TYPE_MAP: Record<string, string> = {
   shoutbox_official_publish: '发布官方小喇叭',
   shoutbox_official_update: '更新官方小喇叭',
   shoutbox_moderate: '复核小喇叭',
+  shoutbox_case_moderate: '事项处置小喇叭',
+  case_close: '事项结案',
+  case_content_delete: '事项删除内容',
+  case_resource_hide: '事项隐藏资源',
+  case_resource_restore: '事项恢复资源',
+  case_resource_move: '事项移动资源',
+  case_message_hide: '隐藏事项对话',
+  case_message_unhide: '取消隐藏事项对话',
   update: '更新',
   grant: '发放'
 }

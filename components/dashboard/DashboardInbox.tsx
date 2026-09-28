@@ -31,8 +31,8 @@ export interface DashboardInboxProps {
 }
 
 // Every source, including case, renders through the unified queue: the
-// inbox owns cross-source ordering (oldest first) and a case row hands off
-// to the case center, which is where a case is handled.
+// inbox owns cross-source ordering (oldest first), and a case row opens the
+// case center's own detail so it can be handled in place.
 export function DashboardInbox(props: DashboardInboxProps) {
   return <UnifiedInbox {...props} />
 }

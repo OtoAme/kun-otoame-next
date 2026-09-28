@@ -41,7 +41,7 @@ export const caseResolutionSchema = z.enum(CASE_RESOLUTIONS)
  * Keys returned by `POST /api/case/image`. The server only accepts keys it
  * registered for the same user, so the pattern is a cheap early filter.
  */
-export const caseImageKeysSchema = z
+const caseImageKeyListSchema = z
   .array(
     z
       .string()
@@ -54,8 +54,8 @@ export const caseImageKeysSchema = z
   .refine((keys) => new Set(keys).size === keys.length, {
     message: '图片不能重复'
   })
-  .optional()
-  .default([])
+
+export const caseImageKeysSchema = caseImageKeyListSchema.optional().default([])
 
 export const caseMinimumLength = (kind: string) =>
   kind === 'content_violation'
@@ -239,9 +239,29 @@ export const adminCaseHandleSchema = z.object({
   action: z.enum(CASE_ADMIN_ACTIONS),
   resolution: caseResolutionSchema.optional(),
   content: contentSchema.optional().default(''),
-  handledUserConfirmed: z.boolean().optional()
+  handledUserConfirmed: z.boolean().optional(),
+  /**
+   * Reply only: images uploaded through the case image endpoint. Closing
+   * notes carry none (D30), so there is no default to add to other actions.
+   */
+  imageKeys: caseImageKeyListSchema.optional(),
+  /**
+   * Reply only. false keeps the turn with the site administrator instead of
+   * handing the case to the reporter (D28); absent keeps the default.
+   */
+  awaitReporter: z.boolean().optional()
 })
 export const adminCaseHandleBodySchema = adminCaseHandleSchema.omit({
+  caseId: true
+})
+
+/** Hide or unhide one reply or later-reporter note (D27). */
+export const adminCaseMessageHideSchema = z.object({
+  caseId: caseIdSchema,
+  messageId: caseIdSchema,
+  hidden: z.boolean({ message: '请选择隐藏或取消隐藏' })
+})
+export const adminCaseMessageHideBodySchema = adminCaseMessageHideSchema.omit({
   caseId: true
 })
 

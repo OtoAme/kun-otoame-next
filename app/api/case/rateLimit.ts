@@ -3,9 +3,11 @@ import { getPrefixedRedisKey, redis, runRedisCommand } from '~/lib/redis'
 /**
  * Case image uploads create object storage cost, so the upload tier fails
  * closed on a Redis outage (docs/modules/data-cache-upload.md). The intake
- * tier only protects multipart parsing and stays fail-open.
+ * tier only protects multipart parsing and stays fail-open. Every reply
+ * notifies the other side, so a non-administrator's replies are capped per
+ * case (D29); a Redis outage must not block a reply, so that tier fails open.
  */
-type CaseRateLimitAction = 'image-upload-intake' | 'image-upload'
+type CaseRateLimitAction = 'image-upload-intake' | 'image-upload' | 'message'
 
 type Policy = {
   limit: number
@@ -26,6 +28,12 @@ const POLICIES: Record<CaseRateLimitAction, Policy> = {
     windowSeconds: 10 * 60,
     messagePrefix: '图片上传过于频繁',
     failClosed: true
+  },
+  message: {
+    limit: 5,
+    windowSeconds: 10 * 60,
+    messagePrefix: '回复过于频繁',
+    failClosed: false
   }
 }
 
@@ -49,12 +57,16 @@ const RATE_LIMIT_SCRIPT = `
   return cjson.encode({ allowed = true })
 `
 
+/** `scope` narrows the bucket below the user, e.g. to one case for replies. */
 export const checkCaseRateLimit = async (
   action: CaseRateLimitAction,
-  uid: number
+  uid: number,
+  scope?: number
 ): Promise<string | null> => {
   const policy = POLICIES[action]
-  const key = getPrefixedRedisKey(`case:rate-limit:${action}:${uid}`)
+  const key = getPrefixedRedisKey(
+    `case:rate-limit:${action}:${uid}${scope === undefined ? '' : `:${scope}`}`
+  )
 
   try {
     const raw = await runRedisCommand(() =>
@@ -87,6 +99,7 @@ export const checkCaseRateLimit = async (
     console.error('Failed to check the case rate limit', {
       action,
       uid,
+      scope,
       error
     })
     return policy.failClosed ? '服务暂时不可用，请稍后重试' : null

@@ -74,6 +74,38 @@ export const PatchHeaderContainer = ({
     setTimeout(scrollWhenReady, 0)
   }
 
+  // Deep links from notifications, profile cards and the case dashboard open
+  // the matching tab; the tab's own list then locates the entry by its id.
+  useEffect(() => {
+    const targetTab = searchParams.get('tab')
+    const targetCommentId = searchParams.get('commentId')
+    const targetRatingId = searchParams.get('ratingId')
+    const targetResourceId = searchParams.get('resourceId')
+
+    if (targetTab === 'comments' || targetCommentId) {
+      setSelected('comments')
+      tabsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      return
+    }
+
+    if (targetTab === 'rating' || targetRatingId) {
+      setSelected('rating')
+      tabsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      return
+    }
+
+    if (targetTab === 'resources' || targetResourceId) {
+      setSelected('resources')
+      tabsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      return
+    }
+
+    if (targetTab === 'introduction') {
+      setSelected('introduction')
+      tabsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }
+  }, [searchParams])
+
   useEffect(() => {
     seedTarget({
       id: displayPatch.id,

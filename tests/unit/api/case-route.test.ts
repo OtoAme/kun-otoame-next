@@ -13,7 +13,8 @@ const mocks = vi.hoisted(() => ({
   getAdminCaseDetail: vi.fn(),
   handleCaseAsAdmin: vi.fn(),
   handleCaseResource: vi.fn(),
-  handleCaseContent: vi.fn()
+  handleCaseContent: vi.fn(),
+  setCaseMessageHidden: vi.fn()
 }))
 
 vi.mock('~/middleware/_verifyHeaderCookie', () => ({
@@ -32,6 +33,7 @@ import {
 import { GET as adminCaseDetailGET } from '~/app/api/admin/case/[id]/route'
 import { POST as adminCaseContentPOST } from '~/app/api/admin/case/[id]/content/route'
 import { POST as adminCaseHandlePOST } from '~/app/api/admin/case/[id]/handle/route'
+import { POST as adminCaseMessageHidePOST } from '~/app/api/admin/case/[id]/message-hide/route'
 import { POST as adminCaseResourcePOST } from '~/app/api/admin/case/[id]/resource/route'
 import { GET as adminCaseListGET } from '~/app/api/admin/case/route'
 
@@ -46,7 +48,8 @@ const serviceMocks = [
   mocks.getAdminCaseDetail,
   mocks.handleCaseAsAdmin,
   mocks.handleCaseResource,
-  mocks.handleCaseContent
+  mocks.handleCaseContent,
+  mocks.setCaseMessageHidden
 ]
 
 const postRequest = (url: string, body: unknown) =>
@@ -139,6 +142,18 @@ const validPathRoutes = [
         postRequest(`/api/admin/case/${id}/resource`, {
           action: 'move',
           targetPatchId: 20
+        }),
+        pathParams(id)
+      )
+  },
+  {
+    name: 'admin message hide',
+    service: mocks.setCaseMessageHidden,
+    run: (id = '12') =>
+      adminCaseMessageHidePOST(
+        postRequest(`/api/admin/case/${id}/message-hide`, {
+          messageId: 61,
+          hidden: true
         }),
         pathParams(id)
       )
@@ -311,6 +326,45 @@ describe('case route validation and error strings', () => {
 })
 
 describe('case route input ownership', () => {
+  it.each([true, false])(
+    'uses the path and authenticated actor to set hidden=%s',
+    async (hidden) => {
+      const response = await adminCaseMessageHidePOST(
+        postRequest('/api/admin/case/42/message-hide', {
+          caseId: 999,
+          messageId: 61,
+          hidden,
+          adminId: 99,
+          adminRole: 4
+        }),
+        pathParams('42')
+      )
+      noStore(response)
+      expect(mocks.setCaseMessageHidden).toHaveBeenCalledWith(
+        { caseId: 42, messageId: 61, hidden },
+        7,
+        3
+      )
+    }
+  )
+
+  it.each([
+    { messageId: 61 },
+    { messageId: 0, hidden: true },
+    { messageId: 61, hidden: 'false' }
+  ])(
+    'rejects an invalid message visibility request %j before writing',
+    async (body) => {
+      const response = await adminCaseMessageHidePOST(
+        postRequest('/api/admin/case/42/message-hide', body),
+        pathParams('42')
+      )
+      expect(typeof (await response.json())).toBe('string')
+      expect(response.headers.get('Cache-Control')).toBe('private, no-store')
+      expect(mocks.setCaseMessageHidden).not.toHaveBeenCalled()
+    }
+  )
+
   it('strips server-derived fields before creating a case', async () => {
     const response = await caseCreatePOST(
       postRequest('/api/case', {
@@ -326,6 +380,7 @@ describe('case route input ownership', () => {
     )
 
     noStore(response)
+    // The caller's role only exempts administrators from the reply cap (D29).
     expect(mocks.createCase).toHaveBeenCalledWith(
       {
         kind: 'other',
@@ -334,7 +389,8 @@ describe('case route input ownership', () => {
         content: '条目资料需要进一步核对',
         imageKeys: []
       },
-      7
+      7,
+      { role: 3 }
     )
   })
 

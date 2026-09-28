@@ -26,11 +26,13 @@ import {
   SelectValue
 } from '~/components/dashboard/ui/select'
 import { InboxDetailSkeleton } from '~/components/dashboard/inbox/InboxDetailSkeleton'
+import { IssueImageField } from '~/components/dashboard/issue/IssueImageField'
 import { kunFetchGet, kunFetchPost } from '~/utils/kunFetch'
 import {
   CASE_CONTENT_MAX_LENGTH,
   CASE_QUICK_REPLIES,
-  CASE_RESOLUTION_LABELS
+  CASE_RESOLUTION_LABELS,
+  caseQuickRepliesFor
 } from '~/constants/case'
 import {
   caseClosingNoteError,
@@ -39,27 +41,38 @@ import {
   caseResolutionLabel,
   caseReviewRequested,
   caseStatusLabel,
+  caseTargetHref,
   caseTargetText
 } from '~/components/case/caseDisplay'
+import { useCaseImageUploads } from '~/components/case/useCaseImageUploads'
 import { formatChinaDateTime } from '~/utils/fixedTimezoneDate'
 import type {
+  AdminCaseMessageHideResponse,
   CaseActionResponse,
   CaseContentActionResponse,
   CaseDetail,
   CaseDetailResponse,
+  CaseMessage,
+  CaseMessageResponse,
   CaseResolution,
-  CaseResourceActionResponse
+  CaseResourceActionResponse,
+  CaseSummary
 } from '~/types/api/case'
 import type { CaseContentAction } from '~/constants/case'
 
 import { CASE_STATUS_BADGE_VARIANTS } from './caseBadges'
 import { CaseConversation } from './CaseConversation'
-import { CaseDetailProperties } from './CaseDetailProperties'
+import {
+  CaseDetailProperties,
+  userManagementHref
+} from './CaseDetailProperties'
+import { CaseMovePatchSearch } from './CaseMovePatchSearch'
 
 /** 驳回态结论：走 handle 的 reject 动作，其余结论走 resolve。 */
 const REJECT_RESOLUTIONS: ReadonlySet<CaseResolution> = new Set([
   'not_established',
-  'out_of_scope'
+  'out_of_scope',
+  'declined'
 ])
 
 const OUT_OF_SCOPE_TEMPLATE =
@@ -72,22 +85,25 @@ type PendingAction =
   | { type: 'adopt'; resolution: CaseResolution; note: string }
   | { type: 'resource'; action: 'hide' | 'restore' | 'move' }
   | { type: 'content'; action: CaseContentAction }
+  // 隐藏或取消隐藏一条对话（D27），不改事项状态
+  | { type: 'hide-message'; message: CaseMessage; hidden: boolean }
 
 interface DashboardCaseDetailProps {
   caseId: number
   /** 收件箱上下文：终结动作成功后回调（父组件从列表移除该项）。 */
   onProcessed?: () => void
-  /** 收件箱上下文：非终结动作（回复）成功后回调，用于刷新列表行。 */
-  onStateChanged?: () => void
+  /**
+   * 非终结动作（回复、恢复资源、隐藏对话）或业务失败后回调，用于刷新列表行。
+   * 回复成功时带上服务端返回的最新摘要，收件箱据此判断事项是否已离开队列。
+   */
+  onStateChanged?: (updated?: CaseSummary) => void
 }
 
-/** 前台可打开的目标页；目标已删除或没有对应页面时不给入口。 */
-const targetHref = (detail: CaseDetail): string | null => {
-  if (detail.target.deleted) return null
-  if (detail.targetType === 'user') return `/user/${detail.targetId}`
-  const patch = detail.target.resource?.patch ?? detail.target.patch
-  return patch ? `/${patch.uniqueId}` : null
-}
+const isTerminal = (action: PendingAction) =>
+  action.type === 'resolve' ||
+  action.type === 'adopt' ||
+  action.type === 'content' ||
+  (action.type === 'resource' && action.action !== 'restore')
 
 export function DashboardCaseDetail({
   caseId,
@@ -99,9 +115,13 @@ export function DashboardCaseDetail({
   const [loading, setLoading] = useState(true)
 
   const [replyContent, setReplyContent] = useState('')
+  const replyUploads = useCaseImageUploads()
+  // D28：默认交给报告者补充；取消勾选则事项留在待处理原位
+  const [awaitReporter, setAwaitReporter] = useState(true)
   const [resolution, setResolution] = useState<CaseResolution | ''>('')
   const [actionContent, setActionContent] = useState('')
   const [moveTargetPatchId, setMoveTargetPatchId] = useState('')
+  const [moveTargetName, setMoveTargetName] = useState('')
   const [handledUserConfirmed, setHandledUserConfirmed] = useState(false)
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null)
   // 退出动画期间保留呈现动作，不参与写入条件
@@ -153,36 +173,49 @@ export function DashboardCaseDetail({
   }, [load])
 
   // 换一条事项时清空本地表单状态
+  const resetReplyUploads = replyUploads.reset
   useEffect(() => {
     setReplyContent('')
+    resetReplyUploads()
+    setAwaitReporter(true)
     setResolution('')
     setActionContent('')
     setMoveTargetPatchId('')
+    setMoveTargetName('')
     setHandledUserConfirmed(false)
     setPendingAction(null)
     setDisplayAction(null)
     setActionError('')
     triggerRef.current = null
-  }, [caseId])
+  }, [caseId, resetReplyUploads])
 
   const handleReply = async () => {
     const content = replyContent.trim()
-    if (!content || lockRef.current) return
+    if (!content || replyUploads.uploading || lockRef.current) return
     lockRef.current = true
     setWorking(true)
     setActionError('')
     try {
-      const res = await kunFetchPost<CaseActionResponse | string>(
+      const res = await kunFetchPost<CaseMessageResponse | string>(
         `/admin/case/${caseId}/handle`,
-        { action: 'reply', content }
+        {
+          action: 'reply',
+          content,
+          ...(replyUploads.keys.length ? { imageKeys: replyUploads.keys } : {}),
+          ...(awaitReporter ? {} : { awaitReporter: false })
+        }
       )
       if (typeof res === 'string') {
+        // 业务失败（含已被他人结案）保留草稿，原地重读以呈现最新状态
         setActionError(res || '回复失败，请稍后重试')
+        void load()
         return
       }
       setReplyContent('')
+      replyUploads.reset()
+      setAwaitReporter(true)
       await load()
-      onStateChanged?.()
+      onStateChanged?.(res.case)
     } catch {
       // 网络失败保留输入
       setActionError('网络错误，回复未完成，请稍后重试')
@@ -251,11 +284,10 @@ export function DashboardCaseDetail({
     setActionError('')
 
     let succeeded = false
-    let terminal = false
+    const terminal = isTerminal(action)
     try {
-      let res: CaseActionResponse | string
+      let res: CaseActionResponse | AdminCaseMessageHideResponse | string
       if (action.type === 'adopt') {
-        terminal = true
         res = await kunFetchPost<CaseActionResponse | string>(
           `/admin/case/${caseId}/handle`,
           {
@@ -268,7 +300,6 @@ export function DashboardCaseDetail({
         )
       } else if (action.type === 'resolve') {
         const trimmed = actionContent.trim()
-        terminal = true
         res = await kunFetchPost<CaseActionResponse | string>(
           `/admin/case/${caseId}/handle`,
           {
@@ -283,7 +314,6 @@ export function DashboardCaseDetail({
           }
         )
       } else if (action.type === 'resource') {
-        terminal = action.action !== 'restore'
         res = await kunFetchPost<CaseResourceActionResponse | string>(
           `/admin/case/${caseId}/resource`,
           {
@@ -294,8 +324,12 @@ export function DashboardCaseDetail({
             ...(actionContent.trim() ? { content: actionContent.trim() } : {})
           }
         )
+      } else if (action.type === 'hide-message') {
+        res = await kunFetchPost<AdminCaseMessageHideResponse | string>(
+          `/admin/case/${caseId}/message-hide`,
+          { messageId: action.message.id, hidden: action.hidden }
+        )
       } else {
-        terminal = true
         res = await kunFetchPost<CaseContentActionResponse | string>(
           `/admin/case/${caseId}/content`,
           {
@@ -306,9 +340,11 @@ export function DashboardCaseDetail({
       }
 
       if (typeof res === 'string') {
-        // 业务失败（含条件更新冲突）保留输入，并刷新以呈现最新状态
+        // 业务失败（含条件更新冲突）保留输入与确认框；详情原地重读以呈现最新状态，
+        // 列表由调用方刷新
         setActionError(res || '操作失败，请稍后重试')
         onStateChanged?.()
+        void load()
         return
       }
       succeeded = true
@@ -322,13 +358,16 @@ export function DashboardCaseDetail({
     if (!succeeded) return
     triggerRef.current = null
     setPendingAction(null)
-    setActionContent('')
-    setResolution('')
-    setMoveTargetPatchId('')
-    setHandledUserConfirmed(false)
+    if (action.type !== 'hide-message') {
+      setActionContent('')
+      setResolution('')
+      setMoveTargetPatchId('')
+      setMoveTargetName('')
+      setHandledUserConfirmed(false)
+    }
     if (terminal) {
       onProcessed?.()
-    } else if (action.type === 'resource' && action.action === 'restore') {
+    } else {
       onStateChanged?.()
     }
     await load()
@@ -367,7 +406,11 @@ export function DashboardCaseDetail({
   }
 
   const { capabilities } = detail
-  const currentResolutionLabel = caseResolutionLabel(detail.resolution)
+  const closed = detail.status === 'resolved' || detail.status === 'rejected'
+  // 重开与复核保留上一轮结论（实施计划 5.4），未结时不当作当前结论（审阅第 6 条）
+  const currentResolutionLabel = closed
+    ? caseResolutionLabel(detail.resolution)
+    : null
   const resolutionOptions = capabilities.allowedResolutions.filter(
     (value) =>
       !(
@@ -376,23 +419,49 @@ export function DashboardCaseDetail({
         !capabilities.canConfirmUserHandled
       )
   )
-  const href = targetHref(detail)
+  const href = caseTargetHref(detail, { forAdmin: true })
   const proposal = capabilities.canResolve
-    ? caseLatestProposal(detail.messages)
+    ? caseLatestProposal(detail.messages, detail.reporter?.id)
     : null
   const reviewRequested =
     detail.ownerType === 'staff' && caseReviewRequested(detail.messages)
+  // D16 与重开一次的规则：复核结论和重开过的事项，站方结案后不能再重开或复核
+  const finalNotice = reviewRequested
+    ? '这是复核结论：结案后报告者不能再重开或申请复核。'
+    : detail.reopenedCount >= 1
+      ? '这条问题已重开过：结案后报告者不能再重开或申请复核。'
+      : ''
   const noteRule = resolution
     ? caseClosingNoteError(detail, resolution, '')
     : null
   const dialogNote =
-    displayAction?.type === 'adopt' ? displayAction.note : actionContent.trim()
+    displayAction?.type === 'adopt'
+      ? displayAction.note
+      : displayAction?.type === 'hide-message'
+        ? ''
+        : actionContent.trim()
   const hasAdjudication =
     capabilities.canResolve ||
     capabilities.canHideResource ||
     capabilities.canRestoreResource ||
     capabilities.canMoveResource ||
     capabilities.canHandleContent
+  const quickReplies = caseQuickRepliesFor(detail.kind)
+  // 审阅第 23 条：写明这条回复谁看得到
+  const handedOff =
+    detail.ownerType === 'staff' && detail.public && detail.escalatedAt !== null
+  const replyAudience =
+    detail.ownerType === 'publisher'
+      ? '报告者与发布者都能看到这条回复'
+      : handedOff
+        ? '报告者与原发布者都能看到这条回复'
+        : '报告者能看到这条回复'
+  // 只有轮到处理方时，回复才会把事项交给报告者（D28）
+  const canHandOver =
+    detail.reporter !== null &&
+    detail.reporter !== undefined &&
+    (detail.status === 'open' || detail.status === 'waiting_owner')
+  const targetContent = detail.target.content
 
   // 内容处置动作完全由服务端按目标当前状态给出，前端不自行推导
   const contentActionMeta = (
@@ -429,6 +498,9 @@ export function DashboardCaseDetail({
     if (action.type === 'adopt') {
       return `采纳提请（${CASE_RESOLUTION_LABELS[action.resolution]}）`
     }
+    if (action.type === 'hide-message') {
+      return action.hidden ? '确认隐藏这条对话' : '确认取消隐藏'
+    }
     if (action.type === 'resource') {
       return action.action === 'hide'
         ? '确认隐藏资源'
@@ -439,16 +511,23 @@ export function DashboardCaseDetail({
     return `确认${contentActionMeta(action.action).label}`
   }
 
-  const displayActionDescription = (action: PendingAction | null): string => {
-    if (!action) return ''
+  const baseActionDescription = (action: PendingAction): string => {
     if (action.type === 'resolve') {
       if (action.resolution === 'handled' && detail.targetType === 'user') {
         return '将登记「已处理」并结案。请确认已在用户管理完成对该用户的实际处置，处理说明会通知举报人。'
+      }
+      if (action.resolution === 'reporter_unresponsive') {
+        return '报告者已满 14 天没有补充，将以「开启者未回应」结案；关注者会收到可以重新提交的说明。'
       }
       return `将以「${CASE_RESOLUTION_LABELS[action.resolution]}」结案，报告者与关注者会收到通知。`
     }
     if (action.type === 'adopt') {
       return `将以原发布者提请的「${CASE_RESOLUTION_LABELS[action.resolution]}」结案，提请说明作为结案说明通知报告者与关注者。`
+    }
+    if (action.type === 'hide-message') {
+      return action.hidden
+        ? '隐藏后，除网站管理员外的所有人只看到「该内容已被网站管理员隐藏。」，附图也不再显示；原文保留，可以取消隐藏。已经发出的通知摘要不会收回。'
+        : '取消后，能查看对话的人会重新看到这条内容与附图。'
     }
     if (action.type === 'resource') {
       if (action.action === 'hide') {
@@ -461,6 +540,18 @@ export function DashboardCaseDetail({
     }
     return contentActionMeta(action.action).description
   }
+
+  const displayActionDescription = (action: PendingAction | null): string => {
+    if (!action) return ''
+    const base = baseActionDescription(action)
+    return isTerminal(action) && finalNotice ? `${base}${finalNotice}` : base
+  }
+
+  const toggleHidden = (message: CaseMessage, trigger: HTMLButtonElement) =>
+    openConfirm(
+      { type: 'hide-message', message, hidden: !message.hidden },
+      trigger
+    )
 
   return (
     <div className="@container space-y-4">
@@ -498,6 +589,16 @@ export function DashboardCaseDetail({
           ) : null}
         </p>
       </header>
+
+      {/* 失败后重读发现事项已被他人结案时，回复区与裁决区都不再渲染，原因改在这里显示 */}
+      {actionError &&
+      pendingAction === null &&
+      !capabilities.canReply &&
+      !hasAdjudication ? (
+        <p role="alert" className="text-sm text-destructive">
+          {actionError}
+        </p>
+      ) : null}
 
       <div className="grid min-w-0 gap-6 @[40rem]:grid-cols-[minmax(0,1fr)_16rem]">
         <div className="min-w-0 space-y-4">
@@ -538,7 +639,7 @@ export function DashboardCaseDetail({
               ) : null}
               <p className="text-xs text-muted-foreground">
                 提请于 {formatChinaDateTime(proposal.created)}
-                。不采纳时直接回复说明即可。
+                。不采纳时直接回复说明即可，回复后这条提请会收起。
               </p>
             </section>
           ) : null}
@@ -550,14 +651,24 @@ export function DashboardCaseDetail({
               reporters here), so a null author can only be a deleted
               account — never an anonymized one.
             */}
-            <CaseConversation messages={detail.messages} identifiesReporter />
+            <CaseConversation
+              messages={detail.messages}
+              identifiesReporter
+              onToggleHidden={
+                capabilities.canHideMessages ? toggleHidden : undefined
+              }
+              actionsDisabled={working}
+            />
           </section>
 
           {capabilities.canReply ? (
             <section className="space-y-2" aria-label="回复">
-              <h4 className="text-sm font-semibold">回复</h4>
+              <div className="flex flex-wrap items-baseline justify-between gap-2">
+                <h4 className="text-sm font-semibold">回复</h4>
+                <p className="text-xs text-muted-foreground">{replyAudience}</p>
+              </div>
               <div className="flex flex-wrap gap-2">
-                {CASE_QUICK_REPLIES.map((reply) => (
+                {quickReplies.map((reply) => (
                   <Button
                     key={reply.code}
                     type="button"
@@ -577,22 +688,54 @@ export function DashboardCaseDetail({
                 maxLength={CASE_CONTENT_MAX_LENGTH}
                 rows={3}
                 disabled={working}
-                placeholder="回复报告者（纯文字）"
+                placeholder="回复内容（纯文字，可以附图）"
               />
-              <div className="flex items-center justify-end gap-3">
-                {actionError && pendingAction === null ? (
-                  <p role="alert" className="text-sm text-destructive">
-                    {actionError}
-                  </p>
-                ) : null}
-                <Button
-                  type="button"
-                  size="sm"
-                  disabled={!replyContent.trim() || working}
-                  onClick={() => void handleReply()}
-                >
-                  发送回复
-                </Button>
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <IssueImageField uploads={replyUploads} disabled={working} />
+                <div className="flex flex-col items-end gap-2">
+                  {canHandOver ? (
+                    <div className="flex items-center gap-2">
+                      <Checkbox
+                        id="case-reply-await-reporter"
+                        checked={awaitReporter}
+                        onCheckedChange={(checked) =>
+                          setAwaitReporter(checked === true)
+                        }
+                        disabled={working}
+                      />
+                      <label
+                        htmlFor="case-reply-await-reporter"
+                        className="text-sm"
+                      >
+                        回复后等待报告者补充
+                      </label>
+                    </div>
+                  ) : null}
+                  {canHandOver && !awaitReporter ? (
+                    <p className="text-xs text-muted-foreground">
+                      事项仍留在待处理，不交给报告者。
+                    </p>
+                  ) : null}
+                  <div className="flex items-center gap-3">
+                    {actionError && pendingAction === null ? (
+                      <p role="alert" className="text-sm text-destructive">
+                        {actionError}
+                      </p>
+                    ) : null}
+                    <Button
+                      type="button"
+                      size="sm"
+                      disabled={
+                        !replyContent.trim() ||
+                        working ||
+                        replyUploads.uploading
+                      }
+                      onClick={() => void handleReply()}
+                    >
+                      发送回复
+                    </Button>
+                  </div>
+                </div>
               </div>
             </section>
           ) : null}
@@ -636,7 +779,7 @@ export function DashboardCaseDetail({
                       <p className="text-sm text-muted-foreground">
                         用户举报须先在
                         <Link
-                          href="/dashboard/user"
+                          href={userManagementHref(detail.targetId)}
                           className="mx-1 text-primary underline-offset-4 hover:underline"
                         >
                           用户管理
@@ -681,7 +824,7 @@ export function DashboardCaseDetail({
                     maxLength={CASE_CONTENT_MAX_LENGTH}
                     rows={3}
                     disabled={working}
-                    placeholder="给报告者的说明（纯文字）"
+                    placeholder="给报告者的说明（纯文字；需要配图请先回复）"
                   />
                   {noteRule ? (
                     <div className="flex flex-wrap items-center justify-between gap-2">
@@ -790,40 +933,56 @@ export function DashboardCaseDetail({
               ) : null}
 
               {capabilities.canMoveResource ? (
-                <div className="flex flex-wrap items-end gap-2">
-                  <div className="space-y-1">
-                    <label
-                      htmlFor="case-move-target"
-                      className="text-sm font-medium"
-                    >
-                      移动到条目 ID
-                    </label>
-                    <Input
-                      id="case-move-target"
-                      inputMode="numeric"
-                      className="w-40"
-                      value={moveTargetPatchId}
-                      onChange={(event) =>
-                        setMoveTargetPatchId(event.target.value)
+                <div className="space-y-3">
+                  <CaseMovePatchSearch
+                    disabled={working}
+                    excludePatchId={detail.target.resource?.patchId}
+                    onPick={(patch) => {
+                      setMoveTargetPatchId(String(patch.id))
+                      setMoveTargetName(patch.name)
+                    }}
+                  />
+                  <div className="flex flex-wrap items-end gap-2">
+                    <div className="space-y-1">
+                      <label
+                        htmlFor="case-move-target"
+                        className="text-sm font-medium"
+                      >
+                        或直接填写条目 ID
+                      </label>
+                      <Input
+                        id="case-move-target"
+                        inputMode="numeric"
+                        className="w-40"
+                        value={moveTargetPatchId}
+                        onChange={(event) => {
+                          setMoveTargetPatchId(event.target.value)
+                          setMoveTargetName('')
+                        }}
+                        disabled={working}
+                        placeholder="目标条目 ID"
+                      />
+                    </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={!moveTargetPatchId.trim() || working}
+                      onClick={(event) =>
+                        openConfirm(
+                          { type: 'resource', action: 'move' },
+                          event.currentTarget
+                        )
                       }
-                      disabled={working}
-                      placeholder="目标条目 ID"
-                    />
+                    >
+                      移动并结案
+                    </Button>
                   </div>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    disabled={!moveTargetPatchId.trim() || working}
-                    onClick={(event) =>
-                      openConfirm(
-                        { type: 'resource', action: 'move' },
-                        event.currentTarget
-                      )
-                    }
-                  >
-                    移动并结案
-                  </Button>
+                  {moveTargetName ? (
+                    <p className="text-xs text-muted-foreground">
+                      已选择：{moveTargetName}（条目 #{moveTargetPatchId}）
+                    </p>
+                  ) : null}
                 </div>
               ) : null}
 
@@ -872,6 +1031,38 @@ export function DashboardCaseDetail({
               {caseTargetText(detail)}（事项 #{detail.id}）
             </p>
           </div>
+          {displayAction?.type === 'hide-message' ? (
+            <div className="space-y-1 text-sm">
+              <p className="text-muted-foreground">对话内容</p>
+              <p className="line-clamp-4 whitespace-pre-wrap break-words">
+                {displayAction.message.body}
+              </p>
+            </div>
+          ) : targetContent ? (
+            // 审阅第 3 条：确认删除、下架或结案前看得到被举报的内容本身
+            <div className="space-y-1 text-sm">
+              <p className="text-muted-foreground">
+                {detail.targetType === 'user' ? '被举报用户' : '被举报内容'}
+                {targetContent.author ? `（${targetContent.author.name}）` : ''}
+              </p>
+              {targetContent.text ? (
+                <p className="line-clamp-6 whitespace-pre-wrap break-words">
+                  {targetContent.text}
+                </p>
+              ) : null}
+            </div>
+          ) : null}
+          {displayAction?.type === 'resource' &&
+          displayAction.action === 'move' ? (
+            <div className="space-y-1 text-sm">
+              <p className="text-muted-foreground">移动到</p>
+              <p className="break-words">
+                {moveTargetName
+                  ? `${moveTargetName}（条目 #${moveTargetPatchId}）`
+                  : `条目 #${moveTargetPatchId}`}
+              </p>
+            </div>
+          ) : null}
           {dialogNote ? (
             <div className="space-y-1 text-sm">
               <p className="text-muted-foreground">处理说明</p>
@@ -889,6 +1080,8 @@ export function DashboardCaseDetail({
               variant={
                 (displayAction?.type === 'resource' &&
                   displayAction.action === 'hide') ||
+                (displayAction?.type === 'hide-message' &&
+                  displayAction.hidden) ||
                 (displayAction?.type === 'content' &&
                   contentActionMeta(displayAction.action).destructive)
                   ? 'destructive'

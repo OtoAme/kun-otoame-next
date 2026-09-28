@@ -43,6 +43,18 @@ export interface CaseResourceSummary {
   status: number
 }
 
+/**
+ * What was reported, for the site administrator deciding a violation report:
+ * the comment, rating or shoutbox text and who wrote it, or the reported user.
+ * Only the admin view carries it.
+ */
+export interface CaseTargetContent {
+  text: string
+  author: CaseUserSummary | null
+  /** Rating score out of 10. */
+  overall?: number
+}
+
 export interface CaseTargetSummary {
   targetType: CaseTargetType
   targetId: number
@@ -52,6 +64,7 @@ export interface CaseTargetSummary {
   patch: CasePatchSummary | null
   resource: CaseResourceSummary | null
   label?: string
+  content?: CaseTargetContent
 }
 
 export interface CaseUserSummary {
@@ -92,6 +105,11 @@ export interface CaseMessagePayload {
   handled_target?: 'comment' | 'rating' | 'shoutbox' | 'user' | 'missing'
   escalation_trigger?: CaseEscalationTrigger
   solved?: boolean
+  /**
+   * The only key a reply or report row may carry: when the site administrator
+   * hid it (D27). Who hid it lives in admin_log.
+   */
+  hidden_at?: string
 }
 
 export interface CaseMessage {
@@ -103,6 +121,11 @@ export interface CaseMessage {
   payload?: CaseMessagePayload | null
   /** Image URLs of this note; present only where the dialogue is visible. */
   images?: string[]
+  /**
+   * The site administrator hid this note. Other viewers get a placeholder
+   * body and no images; the admin view keeps the original to review it.
+   */
+  hidden?: boolean
   created: string
 }
 
@@ -157,6 +180,21 @@ export interface AdminCaseListItem extends CaseSummary {
   latestMessage: CaseMessagePreview | null
 }
 
+/** POST /api/admin/case/[id]/handle reply body. */
+export interface AdminCaseReplyInput {
+  action: 'reply'
+  content: string
+  imageKeys?: string[]
+  /** false keeps the turn with the handler (D28); omit to hand it over. */
+  awaitReporter?: boolean
+}
+
+/** POST /api/admin/case/[id]/message-hide (D27). */
+export interface AdminCaseMessageHideResponse {
+  case: CaseSummary
+  changed: boolean
+}
+
 export interface CaseDetail extends CaseSummary {
   messages: CaseMessage[]
   /** For private reports this only contains the requesting user's own record. */
@@ -164,6 +202,12 @@ export interface CaseDetail extends CaseSummary {
     subscribed: boolean
     submitted: boolean
   }
+  /**
+   * Admin view of an opener-scoped game case (entry suggestion or other
+   * feedback): the other open cases of the same kind on the same game, so
+   * one edit of the entry can be followed by closing each of them (D14, D26).
+   */
+  relatedOpenCaseIds?: number[]
   capabilities: CaseCapabilities
 }
 
@@ -184,6 +228,8 @@ export interface CaseCapabilities {
   canMoveResource: boolean
   canHandleContent: boolean
   canConfirmUserHandled: boolean
+  /** Site administrator hides or unhides replies and report notes (D27). */
+  canHideMessages: boolean
   /** Actions are derived from the current target state; the UI must not infer them. */
   allowedContentActions: CaseContentAction[]
   allowedResolutions: CaseResolution[]
