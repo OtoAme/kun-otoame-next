@@ -80,8 +80,9 @@
 | 投稿通过、要求修改、驳回、判违规 | [review.ts](../../app/api/patch-submission/review.ts) 的 `writeAdminLog`（第 59 至 66 行）固定写 `type: 'update'`，四个动作各写一条；`writeCompanyResolutionDiagnosticLogs` 复用同一个 helper，每条诊断再写一行 | 给 `writeAdminLog` 加可选 type 参数（默认 `'update'`），只在四个动作的那一条日志上传 `submission_review`；诊断日志保持 `'update'`，因此天然不计入 |
 | 资源申请通过、拒绝               | [resource-apply/service.ts](../../app/api/admin/resource-apply/service.ts) 已在事务内各写一条，type 是通用的 `'approve'`、`'decline'`，与创作者审核等动作无法区分                                               | 改成 `resource_apply_approve`、`resource_apply_decline`，仍各一条                                                                                 |
 | 反馈、举报                       | —                                                                                                                                                                                                               | 本批只读，不产生待审事项动作，不计入                                                                                                                |
+| 事项（模块 03，2026-09-28 起）   | 站方结案不写日志；资源隐藏、恢复、移动与小喇叭处置各写一条动作日志                                                                                                                                              | 每次站方结案（含驳回、采纳提请与各类处置）在结案事务内写一条 `case_close`，计入；动作日志照旧，不计入（03 实施计划 5.4、6.2，M03-8）                 |
 
-计数查询：`admin_log` 中 `user_id = 当前管理员`、`当日起点 <= created < 下一日起点`、`type` 属于上述三个专用取值的行数。按动作逐次计数而不是按对象去重——要求修改后重提再通过是两次真实处理，应记两次；一次动作只写一条专用行，所以不会被附属日志膨胀，也不需要把对象 ID 结构化解析出来（对象 ID 仍如现状写在 content 文本里，仅供追溯）。不新增表、不新增字段。
+计数查询：`admin_log` 中 `user_id = 当前管理员`、`当日起点 <= created < 下一日起点`、`type` 属于上述专用取值（三个审核类型，以及 2026-09-28 起的 `case_close`）的行数。按动作逐次计数而不是按对象去重——要求修改后重提再通过是两次真实处理，应记两次；一次动作只写一条专用行，所以不会被附属日志膨胀，也不需要把对象 ID 结构化解析出来（对象 ID 仍如现状写在 content 文本里，仅供追溯）。不新增表、不新增字段。
 
 三个新 type 取值要在 `constants/admin.ts` 的 `ADMIN_LOG_TYPE_MAP`（第 16 行，现有键为 create、delete、approve、decline、update、grant）补中文标签，否则日志页标签为空。日志服务只做分页、日志卡片的颜色映射有回落，所以除补标签外不需要别的改动，也没有按 type 的白名单要挂。历史行保留旧取值：上线前的资源申请动作与投稿审核日志不计入当日计数，属一次性、可解释的边界。
 
