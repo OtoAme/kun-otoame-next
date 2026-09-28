@@ -51,7 +51,7 @@
 
 - 写入 `useRewritePatchStore`，让编辑页可以复用当前游戏数据。
 - 挂载 `PatchViewBeacon`，详情页打开后发送一次浏览量写入请求，并对展示值做一次乐观更新。
-- 管理 introduction/resources/comments/ratings 等 tabs。
+- 管理 introduction/resources/comments/ratings 等 tabs；读取 `tab`、`commentId`、`ratingId`、`resourceId` 深链参数切换页签，具体内容由对应列表定位。
 - 点击“下载”时切换到资源 tab 并滚动到资源区。
 - 根据 NSFW 状态设置 document title。
 

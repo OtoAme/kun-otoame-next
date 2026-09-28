@@ -30,6 +30,7 @@ tests/unit/
 现有覆盖重点：
 
 - API service 逻辑：`tests/unit/api/*`。
+- 事项处理：`api/case-feedback-service.test.ts`、`api/case-service.test.ts`、`api/case-route.test.ts`、`api/case-rate-limit.test.ts`、`api/admin-inbox-service.test.ts` 覆盖等待处理方口径、14 天手动结案、按开启者去重、隐藏对话裁剪、通知排除操作者、管理员结案日志、完整资源名搜索和回复限频。`dashboard-case-detail.test.tsx`、`dashboard-inbox-presentation.test.tsx`、`case-detail-permissions.test.tsx` 与展示／校验测试覆盖回复附图、不交给报告者、确认后隐藏、举报内容、指南链接、复核最终提示、提请收起、收件箱内详情在失败后保留输入，以及移动目标搜索的失败与过期响应。真实 PostgreSQL、Redis、图片上传与浏览器路径需在隔离环境验证，mock 不能代替。
 - JWT session：`tests/unit/jwt-session.test.ts`。
 - Redis 封装：`tests/unit/redis.test.ts`。
 - 创建/重写 store 合并：`tests/unit/edit-store.test.ts`。
