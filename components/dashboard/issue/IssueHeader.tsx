@@ -1,7 +1,8 @@
 'use client'
 
+import Image from 'next/image'
 import Link from 'next/link'
-import { ChevronDown, House, LifeBuoy, UserRound } from 'lucide-react'
+import { ChevronDown, House, UserRound } from 'lucide-react'
 
 import { Button } from '~/components/dashboard/ui/button'
 import {
@@ -35,9 +36,14 @@ export function IssueHeader({ user }: { user: IssueHeaderUser | null }) {
           prefetch={false}
           className="flex shrink-0 items-center gap-2 rounded-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
         >
-          <span className="flex size-7 items-center justify-center rounded-md bg-primary text-primary-foreground">
-            <LifeBuoy className="size-4" aria-hidden />
-          </span>
+          <Image
+            src="/favicon.webp"
+            alt=""
+            width={28}
+            height={28}
+            priority
+            className="shrink-0"
+          />
           <span className="text-sm font-semibold">{kunMoyuMoe.titleShort}</span>
         </Link>
 
