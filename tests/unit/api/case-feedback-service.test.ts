@@ -92,6 +92,7 @@ import {
   handleCaseResource,
   proposeCaseClosure,
   remindCase,
+  reopenCase,
   resolveCase,
   reviewCase,
   setCaseMessageHidden,
@@ -1527,5 +1528,218 @@ describe('manual test review fixes (M03-9)', () => {
       'original-publisher',
       undefined
     ])
+  })
+})
+
+describe('original publisher closing a timeout handoff (D36)', () => {
+  const db = () => mocks.tx as never
+  const handedOff = (overrides: Record<string, unknown> = {}) =>
+    caseRow({
+      owner_type: 'staff',
+      owner_id: null,
+      escalated_at: hoursAgo(2),
+      ...overrides
+    })
+  type Trigger = 'timeout' | 'review_request'
+  // The detail read derives the trigger from the dialogue it loads.
+  const dialogue = (trigger: Trigger) =>
+    mocks.tx.ops_case_message.findMany.mockResolvedValue([
+      {
+        id: 70,
+        kind: 'system',
+        event: 'escalated',
+        payload: { escalation_trigger: trigger },
+        body: '问题已提交给网站管理员处理。',
+        created: hoursAgo(2),
+        author: null,
+        images: []
+      }
+    ])
+  // The resolve and propose routes read the latest handoff in their transaction.
+  const lastHandoff = (trigger: Trigger) =>
+    mocks.tx.ops_case_message.findFirst.mockResolvedValue({
+      payload: { escalation_trigger: trigger }
+    })
+  const capabilitiesOf = async (uid: number) => {
+    const detail = await getCase(42, uid, 1, { db: db() })
+    if (typeof detail === 'string') throw new Error(detail)
+    return detail.case.capabilities
+  }
+  const resolve = (resolution: string, content = '', uid = 2) =>
+    resolveCase({ caseId: 42, resolution: resolution as never, content }, uid, {
+      now,
+      db: db()
+    })
+  const propose = () =>
+    proposeCaseClosure(
+      { caseId: 42, resolution: 'repaired', content: '已重新上传第 3 分卷' },
+      2,
+      1,
+      { now, db: db() }
+    )
+  const onlyPropose = '该问题只能提请结案，由网站管理员确认后结案'
+
+  it('lets the original publisher close a timeout handoff as the publisher', async () => {
+    mocks.tx.ops_case.findUnique.mockResolvedValue(handedOff())
+    dialogue('timeout')
+    expect(await capabilitiesOf(2)).toMatchObject({
+      canReply: true,
+      canResolve: true,
+      canPropose: false,
+      allowedResolutions: ['repaired', 'unreproducible', 'out_of_scope']
+    })
+
+    lastHandoff('timeout')
+    mocks.tx.ops_case_subscriber.findMany.mockResolvedValue([
+      { user_id: 5 },
+      { user_id: 8 }
+    ])
+    await expect(
+      resolve('repaired', '已重新上传第 3 分卷')
+    ).resolves.toMatchObject({ changed: true })
+    expect(mocks.tx.ops_case_message.findFirst).toHaveBeenCalledWith({
+      where: { case_id: 42, kind: 'system', event: 'escalated' },
+      orderBy: [{ created: 'desc' }, { id: 'desc' }],
+      select: { payload: true }
+    })
+    expect(mocks.tx.ops_case.updateMany.mock.calls[0][0]).toMatchObject({
+      where: { id: 42, revision: 3 },
+      data: { status: 'resolved', resolution: 'repaired', dedup_key: null }
+    })
+    expect(createdMessages()[0]).toMatchObject({
+      kind: 'system',
+      event: 'resolved',
+      payload: expect.objectContaining({
+        actor_type: 'publisher',
+        resolution: 'repaired'
+      })
+    })
+    // A publisher closure: no processed item for the site administrators and
+    // no notice to them; reporter and followers hear, the closer does not.
+    expect(mocks.tx.admin_log.create).not.toHaveBeenCalled()
+    expect(noticeRows().map((row) => row.recipient_id)).toEqual([5, 8])
+  })
+
+  it('holds the original publisher to the publisher closing rules (D12, D16)', async () => {
+    mocks.tx.ops_case.findUnique.mockResolvedValue(handedOff())
+    lastHandoff('timeout')
+
+    await expect(resolve('unreproducible')).resolves.toBe(
+      '以「无法复现」结案时请写明核对了什么'
+    )
+    await expect(resolve('out_of_scope', '这是网络问题')).resolves.toContain(
+      '指南中的一篇链接'
+    )
+    await expect(resolve('escalated_ignored')).resolves.toBe(
+      '发布者不能使用该结论'
+    )
+    expect(mocks.tx.ops_case.updateMany).not.toHaveBeenCalled()
+  })
+
+  it('leaves nothing to propose where the original publisher may close', async () => {
+    mocks.tx.ops_case.findUnique.mockResolvedValue(handedOff())
+    lastHandoff('timeout')
+
+    await expect(propose()).resolves.toBe('该问题可以直接结案，无需提请')
+    expect(mocks.tx.ops_case_message.create).not.toHaveBeenCalled()
+    expect(mocks.tx.user_message.createMany).not.toHaveBeenCalled()
+  })
+
+  it('keeps a review handoff with the site administrator (D16, D20)', async () => {
+    // Without a reopen count in the way, the trigger alone decides.
+    mocks.tx.ops_case.findUnique.mockResolvedValue(handedOff())
+    dialogue('review_request')
+    expect(await capabilitiesOf(2)).toMatchObject({
+      canResolve: false,
+      canPropose: true,
+      allowedResolutions: []
+    })
+
+    lastHandoff('review_request')
+    await expect(resolve('repaired', '已重新上传')).resolves.toBe(onlyPropose)
+    expect(mocks.tx.ops_case.updateMany).not.toHaveBeenCalled()
+    await expect(propose()).resolves.toMatchObject({ changed: true })
+  })
+
+  it('keeps a reopened timeout handoff with the site administrator', async () => {
+    mocks.tx.ops_case.findUnique.mockResolvedValue(
+      handedOff({ reopened_count: 1 })
+    )
+    dialogue('timeout')
+    expect(await capabilitiesOf(2)).toMatchObject({
+      canResolve: false,
+      canPropose: true
+    })
+
+    lastHandoff('timeout')
+    await expect(resolve('repaired', '已重新上传')).resolves.toBe(onlyPropose)
+    expect(mocks.tx.ops_case.updateMany).not.toHaveBeenCalled()
+  })
+
+  it('refuses anyone but the original publisher', async () => {
+    mocks.tx.ops_case.findUnique.mockResolvedValue(handedOff())
+    dialogue('timeout')
+    expect(await capabilitiesOf(5)).toMatchObject({
+      canResolve: false,
+      canPropose: false
+    })
+
+    lastHandoff('timeout')
+    await expect(resolve('repaired', '', 9)).resolves.toBe(
+      '只有当前资源发布者可以结案'
+    )
+    await expect(resolve('repaired', '', 5)).resolves.toBe(
+      '只有当前资源发布者可以结案'
+    )
+    expect(mocks.tx.ops_case.updateMany).not.toHaveBeenCalled()
+  })
+
+  it('keeps the case with the site administrator once the reporter reopens it', async () => {
+    mocks.tx.ops_case.findUnique.mockResolvedValue(
+      handedOff({
+        status: 'resolved',
+        resolution: 'repaired',
+        closed_at: hoursAgo(3),
+        dedup_key: null
+      })
+    )
+
+    await expect(
+      reopenCase(42, 5, '第 3 分卷还是打不开', { now, db: db() })
+    ).resolves.toMatchObject({ changed: true })
+    const update = mocks.tx.ops_case.updateMany.mock.calls[0][0]
+    expect(update.data).toMatchObject({
+      status: 'open',
+      reopened_count: { increment: 1 }
+    })
+    expect(update.data).not.toHaveProperty('owner_type')
+    expect(update.data).not.toHaveProperty('owner_id')
+    expect(noticeRows()).toEqual([
+      expect.objectContaining({ recipient_id: 90, link: '/dashboard/case/42' }),
+      expect.objectContaining({ recipient_id: 91, link: '/dashboard/case/42' })
+    ])
+
+    // From here on the original publisher only proposes.
+    mocks.tx.ops_case.findUnique.mockResolvedValue(
+      handedOff({ reopened_count: 1, resolution: 'repaired' })
+    )
+    dialogue('timeout')
+    expect(await capabilitiesOf(2)).toMatchObject({
+      canResolve: false,
+      canPropose: true
+    })
+
+    // The case no longer belongs to the publisher, so no review follows.
+    mocks.tx.ops_case.findUnique.mockResolvedValue(
+      handedOff({
+        status: 'resolved',
+        resolution: 'repaired',
+        closed_at: hoursAgo(1),
+        reopened_count: 1
+      })
+    )
+    await expect(
+      reviewCase(42, 5, '还是打不开', { now, db: db() })
+    ).resolves.toBe('发布者在重新打开后再次结案，才能申请网站管理员复核')
   })
 })

@@ -221,6 +221,11 @@ export interface CaseDetail extends CaseSummary {
 
 export interface CaseCapabilities {
   canReply: boolean
+  /**
+   * The publisher owning the case or the site administrator closes it; so
+   * does the publisher it was handed off from by timeout, while its reporter
+   * never reopened it (D36).
+   */
   canResolve: boolean
   canReopen: boolean
   /** Opener withdraws while the case is open (D18). */
@@ -229,7 +234,10 @@ export interface CaseCapabilities {
   canConfirm: boolean
   /** Opener asks the site administrator to review a publisher's closure (D16). */
   canReview: boolean
-  /** Publisher the case was handed off from proposes a closure (D20). */
+  /**
+   * Publisher the case was handed off from proposes a closure (D20), unless
+   * they may close it themselves (D36).
+   */
   canPropose: boolean
   canHideResource: boolean
   canRestoreResource: boolean

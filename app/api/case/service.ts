@@ -58,6 +58,7 @@ import { SHOUTBOX_AUTO_HIDE_REPORTER_THRESHOLD } from '~/constants/shoutbox'
 import type {
   CaseActorType,
   CaseContentAction,
+  CaseEscalationTrigger,
   CaseKind,
   CaseMessageEvent,
   CaseMessageKind,
@@ -1259,10 +1260,33 @@ const isOriginalPublisher = (
   row.escalated_at !== null &&
   originalPublisherId === viewerId
 
+/**
+ * D36: a case that reached the site administrator only because its publisher
+ * let it time out, and that its reporter never reopened, is still the
+ * original publisher's to close. After a review request or any reopen they
+ * only propose (D16, D20). Capabilities and the resolve and propose routes
+ * share this check.
+ */
+const canCloseAsOriginalPublisher = (
+  row: Pick<
+    CaseRow,
+    'public' | 'owner_type' | 'escalated_at' | 'status' | 'reopened_count'
+  >,
+  viewerId: number,
+  originalPublisherId: number | undefined,
+  escalationTrigger: CaseEscalationTrigger | null | undefined
+) =>
+  isOriginalPublisher(row, viewerId, originalPublisherId) &&
+  escalationTrigger === 'timeout' &&
+  row.reopened_count === 0 &&
+  unresolvedStatuses.includes(row.status as never)
+
 /** Facts only a detail read loads; list rows leave these actions off. */
 type CaseRoundFacts = {
   lastClosureActor: CaseActorType | null
   confirmedThisRound: boolean
+  /** How the case last reached the site administrator (D36). */
+  lastEscalationTrigger: CaseEscalationTrigger | null
 }
 
 const capabilitiesFor = (
@@ -1282,8 +1306,16 @@ const capabilitiesFor = (
     row.closed_at.getTime() >= Date.now() - CASE_REOPEN_WINDOW_MS
   const originalPublisher =
     !admin && isOriginalPublisher(row, viewerId, target?.resource?.user_id)
+  const originalPublisherCloses =
+    !admin &&
+    canCloseAsOriginalPublisher(
+      row,
+      viewerId,
+      target?.resource?.user_id,
+      round?.lastEscalationTrigger
+    )
   const handlerResolutions: CaseResolution[] =
-    !isCaseKind(row.kind) || (!admin && !owner)
+    !isCaseKind(row.kind) || (!admin && !owner && !originalPublisherCloses)
       ? []
       : row.kind === 'resource_wrong_patch'
         ? ['not_established']
@@ -1318,7 +1350,10 @@ const capabilitiesFor = (
             : ['delete']
   return {
     canReply: unresolved && (admin || owner || reporter || originalPublisher),
-    canResolve: unresolved && allowedResolutions.length > 0 && (admin || owner),
+    canResolve:
+      unresolved &&
+      allowedResolutions.length > 0 &&
+      (admin || owner || originalPublisherCloses),
     canReopen:
       reporter && closed && row.reopened_count === 0 && withinReopenWindow,
     canWithdraw: reporter && unresolved,
@@ -1335,7 +1370,7 @@ const capabilitiesFor = (
       row.owner_type === 'publisher' &&
       row.reopened_count === 1 &&
       round?.lastClosureActor === 'publisher',
-    canPropose: unresolved && originalPublisher,
+    canPropose: unresolved && originalPublisher && !originalPublisherCloses,
     // D13: a timed-out description case is fixed and closed, never hidden.
     canHideResource:
       admin &&
@@ -1569,6 +1604,8 @@ const notifyCaseParticipants = async (
     excludeUserIds?: readonly number[]
     /** Text for users who only follow the case (D15). */
     followerContent?: string
+    /** False leaves the staff queue out of a staff case's notice (D36). */
+    notifyStaff?: boolean
   } = {}
 ) => {
   const recipients = new Map<
@@ -1638,7 +1675,7 @@ const notifyCaseParticipants = async (
         : null
     if (authorLink && resource) addRecipient(resource.user_id, authorLink)
   }
-  if (row.owner_type === 'staff') {
+  if (row.owner_type === 'staff' && options.notifyStaff !== false) {
     for (const id of await loadStaffIds(tx)) {
       addRecipient(id, `/dashboard/case/${row.id}`, senderId ?? null)
     }
@@ -2138,6 +2175,11 @@ type CloseCaseInput = {
   excludeRecipientIds?: readonly number[]
   /** Replacement text for followers who are neither opener nor owner. */
   followerNotice?: string
+  /**
+   * False keeps the site administrators out of the notice although the case
+   * is theirs: the original publisher closed it themselves (D36).
+   */
+  notifyStaff?: boolean
 }
 
 /**
@@ -2219,7 +2261,8 @@ export const closeCaseInternal = async (tx: CaseTx, input: CloseCaseInput) => {
         ...(input.excludeRecipientIds ?? []),
         ...(input.actorId ? [input.actorId] : [])
       ],
-      followerContent: input.followerNotice
+      followerContent: input.followerNotice,
+      notifyStaff: input.notifyStaff
     }
   )
   return { changed: true as const, row, resolution: input.resolution }
@@ -2329,12 +2372,16 @@ const loadRelatedOpenCaseIds = async (db: CaseDb, row: CaseRow) => {
   return rows.map((related) => related.id)
 }
 
-/** Who closed the current round, and whether its opener already answered it. */
+/**
+ * Who closed the current round, whether its opener already answered it, and
+ * how the case last reached the site administrator.
+ */
 const roundFacts = (
   messages: readonly Pick<CaseMessageRow, 'kind' | 'event' | 'payload'>[]
 ): CaseRoundFacts => {
   let lastClosureActor: CaseActorType | null = null
   let confirmedThisRound = false
+  let lastEscalationTrigger: CaseEscalationTrigger | null = null
   for (const message of messages) {
     if (message.kind !== 'system' || !message.event) continue
     if ((CASE_CLOSING_EVENTS as readonly string[]).includes(message.event)) {
@@ -2346,9 +2393,12 @@ const roundFacts = (
       confirmedThisRound = false
     } else if (message.event === 'confirmed') {
       confirmedThisRound = true
+    } else if (message.event === 'escalated') {
+      lastEscalationTrigger =
+        sanitizePayload(message.payload)?.escalation_trigger ?? null
     }
   }
-  return { lastClosureActor, confirmedThisRound }
+  return { lastClosureActor, confirmedThisRound, lastEscalationTrigger }
 }
 
 export const getCase = async (
@@ -2751,6 +2801,22 @@ const closingNoteError = (
   return null
 }
 
+/** The trigger of the case's latest handoff to the site administrator. */
+const latestEscalationTrigger = async (tx: CaseTx, caseId: number) => {
+  const message = await tx.ops_case_message.findFirst({
+    where: { case_id: caseId, kind: 'system', event: 'escalated' },
+    orderBy: [{ created: 'desc' }, { id: 'desc' }],
+    select: { payload: true }
+  })
+  return sanitizePayload(message?.payload ?? null)?.escalation_trigger ?? null
+}
+
+/**
+ * The publisher closes their own case, and the original publisher closes a
+ * case handed off by timeout that was never reopened (D36). Either way the
+ * closure is the publisher's: it writes no `case_close` log and sends the
+ * staff queue no notice.
+ */
 export const resolveCase = async (
   input: ResolveCaseInput,
   uid: number,
@@ -2763,8 +2829,23 @@ export const resolveCase = async (
     if (!row) return '问题不存在'
     if (!assertResolution(row.kind, input.resolution))
       return '当前问题不支持该结论'
-    if (row.owner_type !== 'publisher' || row.owner_id !== uid)
-      return '只有当前资源发布者可以结案'
+    if (row.owner_type !== 'publisher' || row.owner_id !== uid) {
+      const originalPublisherId = await originalPublisherIdFor(tx, row)
+      if (!isOriginalPublisher(row, uid, originalPublisherId))
+        return '只有当前资源发布者可以结案'
+      if (!unresolvedStatuses.includes(row.status as never))
+        return '该问题已结案'
+      if (
+        !canCloseAsOriginalPublisher(
+          row,
+          uid,
+          originalPublisherId,
+          await latestEscalationTrigger(tx, row.id)
+        )
+      ) {
+        return '该问题只能提请结案，由网站管理员确认后结案'
+      }
+    }
     if (!(CASE_PUBLISHER_KINDS as readonly string[]).includes(row.kind))
       return '当前问题不能由发布者结案'
     if (!isHandlerResolution(row.kind, input.resolution)) {
@@ -2779,6 +2860,7 @@ export const resolveCase = async (
       actorType: 'publisher',
       actorId: uid,
       body: input.content || undefined,
+      notifyStaff: false,
       now
     })
   })
@@ -3241,7 +3323,9 @@ export const confirmCase = async (
 
 /**
  * After a handoff the original publisher may still propose a closure (D20).
- * It changes no state; the administrator adopts it through `handle`.
+ * It changes no state; the administrator adopts it through `handle`. Where
+ * the original publisher may close the case themselves (D36) there is
+ * nothing to propose.
  */
 export const proposeCaseClosure = async (
   input: { caseId: number; resolution: CaseResolution; content: string },
@@ -3256,8 +3340,19 @@ export const proposeCaseClosure = async (
     const row = await getCaseLock(tx, input.caseId)
     if (!row) return '问题不存在'
     if (!unresolvedStatuses.includes(row.status as never)) return '该问题已结案'
-    if (!isOriginalPublisher(row, uid, await originalPublisherIdFor(tx, row))) {
+    const originalPublisherId = await originalPublisherIdFor(tx, row)
+    if (!isOriginalPublisher(row, uid, originalPublisherId)) {
       return '只有原发布者可以提请结案'
+    }
+    if (
+      canCloseAsOriginalPublisher(
+        row,
+        uid,
+        originalPublisherId,
+        await latestEscalationTrigger(tx, row.id)
+      )
+    ) {
+      return '该问题可以直接结案，无需提请'
     }
     if (!isHandlerResolution(row.kind, input.resolution)) {
       return '当前问题不支持该结论'

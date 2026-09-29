@@ -432,6 +432,8 @@ describe('issue case detail permissions', () => {
       findButton(container, '结案')!.click()
     })
     expect(container.querySelector('[role="alertdialog"]')).not.toBeNull()
+    // 自己的事项结案后重开仍回到发布者，确认框不提网站管理员（D36 只改转交的事项）
+    expect(container.textContent).not.toContain('重开后由网站管理员处理')
 
     // 取消不写请求
     await act(async () => {
@@ -939,6 +941,70 @@ describe('issue case detail permissions', () => {
       resolution: 'repaired',
       content: '已重新上传第二分卷'
     })
+  })
+
+  it('lets the original publisher close a timeout handoff instead of proposing (D36)', async () => {
+    const detail = makeDetail({
+      ownerType: 'staff',
+      escalatedAt: '2026-09-14T00:00:00.000Z',
+      capabilities: capabilities({
+        canReply: true,
+        canResolve: true,
+        allowedResolutions: ['repaired', 'unreproducible', 'out_of_scope']
+      })
+    })
+    mocks.kunFetchGet.mockResolvedValue(detailResponse(detail))
+    mocks.kunFetchPost.mockResolvedValue({ case: detail, changed: true })
+    const container = await mount(<IssueCaseDetail caseId={9} />)
+    await flush()
+
+    // 仍标已交给网站管理员，发布者的工具照旧
+    const text = container.textContent ?? ''
+    expect(text).toContain('已交给网站管理员')
+    expect(text).toContain('去修改资源')
+    expect(findButton(container, '需要截图')).toBeDefined()
+    // 结案表单取代提请
+    expect(container.querySelector('section[aria-label="提请结案"]')).toBeNull()
+    expect(container.querySelector('section[aria-label="结案"]')).not.toBeNull()
+    expect(container.querySelector('a[href="/dashboard/case/9"]')).toBeNull()
+
+    await chooseResolution(container, 'repaired')
+    await act(async () => {
+      findButton(container, '结案')!.click()
+    })
+    expect(container.textContent).toContain(
+      '结案后报告者会收到通知。报告者可以重开一次，重开后由网站管理员处理。'
+    )
+    await act(async () => {
+      findButton(container, '确认')!.click()
+    })
+    await flush()
+    expect(mocks.kunFetchPost).toHaveBeenCalledWith('/case/9/resolve', {
+      resolution: 'repaired'
+    })
+  })
+
+  it('keeps the site administrator on the dashboard entry for a handed-off case', async () => {
+    mocks.user = { uid: 9, name: '管理员', role: 3 }
+    const detail = makeDetail({
+      ownerType: 'staff',
+      escalatedAt: '2026-09-14T00:00:00.000Z',
+      capabilities: capabilities({
+        canReply: true,
+        canResolve: true,
+        canHideMessages: true,
+        allowedResolutions: ['repaired', 'unreproducible', 'out_of_scope']
+      })
+    })
+    mocks.kunFetchGet.mockResolvedValue(detailResponse(detail))
+    const container = await mount(<IssueCaseDetail caseId={9} />)
+    await flush()
+
+    expect(container.querySelector('select[aria-label="处理结论"]')).toBeNull()
+    expect(container.textContent).not.toContain('已交给网站管理员')
+    expect(
+      container.querySelector('a[href="/dashboard/case/9"]')?.textContent
+    ).toContain('在后台处理')
   })
 
   it('asks the publisher for a note before closing as unreproducible (D16)', async () => {

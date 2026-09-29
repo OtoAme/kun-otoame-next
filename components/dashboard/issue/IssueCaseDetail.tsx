@@ -639,19 +639,25 @@ export function IssueCaseDetail({ caseId, onChanged }: IssueCaseDetailProps) {
   // 守住当前结论。
   const statusHint = capabilities.canReply ? caseStatusHint(detail) : null
 
-  // UI1：/case/[id]/resolve 仅当前发布者可用。管理员在用户侧查看时不显示该表单，
+  // UI1：/case/[id]/resolve 只给发布者用。管理员在用户侧查看时不显示该表单，
   // 改给「在后台处理」入口，站方裁决由后台组件执行。
   const viewerIsOwnerPublisher =
     detail.ownerType === 'publisher' && detail.owner?.id === user.uid
-  const showPublisherResolve = capabilities.canResolve && viewerIsOwnerPublisher
+  // D36：超时转交且报告者没有重开过时，原发布者可以直接结案。用户侧在站方事项上
+  // 拿到 canResolve 的只有网站管理员和这位原发布者，网站管理员仍走后台入口。
+  const viewerClosesHandedOff =
+    capabilities.canResolve && detail.ownerType === 'staff' && user.role < 3
+  const showPublisherResolve =
+    capabilities.canResolve && (viewerIsOwnerPublisher || viewerClosesHandedOff)
   const showStaffDashboardEntry =
     user.role >= 3 &&
     !viewerIsOwnerPublisher &&
     CASE_UNRESOLVED_STATUSES.includes(
       detail.status as (typeof CASE_UNRESOLVED_STATUSES)[number]
     )
-  // 转交后的原发布者（D20）只由服务端的 canPropose 标出
-  const viewerIsHandedOffPublisher = capabilities.canPropose
+  // 转交后的原发布者只由服务端能力位标出：可提请结案（D20），或可直接结案（D36）
+  const viewerIsHandedOffPublisher =
+    capabilities.canPropose || viewerClosesHandedOff
   const targetHref = caseTargetHref(detail)
   const showEditResource =
     detail.targetType === 'resource' &&
@@ -696,7 +702,11 @@ export function IssueCaseDetail({ caseId, onChanged }: IssueCaseDetailProps) {
     displayAction === 'resolve'
       ? `将以「${
           CASE_RESOLUTION_LABELS[resolution as CaseResolution] ?? resolution
-        }」结案，结案后报告者会收到通知。`
+        }」结案，结案后报告者会收到通知。${
+          viewerClosesHandedOff
+            ? '报告者可以重开一次，重开后由网站管理员处理。'
+            : ''
+        }`
       : displayAction === 'withdraw'
         ? '没有其他人报告同一问题时，这条问题会以「开启者撤回」结束；还有其他报告者时，问题改由下一位报告者跟进，你写过的说明仍保留在事项里，你将不再收到这条问题的通知，也不能再打开它。'
         : displayAction === 'propose'
@@ -983,7 +993,7 @@ export function IssueCaseDetail({ caseId, onChanged }: IssueCaseDetailProps) {
           </section>
         ) : null}
 
-        {viewerIsHandedOffPublisher ? (
+        {capabilities.canPropose ? (
           <section
             aria-label="提请结案"
             className="space-y-2 rounded-lg border p-4"
