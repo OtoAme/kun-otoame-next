@@ -1107,11 +1107,15 @@ const serializeMessage = (
     includePayload: boolean
     /** Resource author of a case handed to the site administrator. */
     originalPublisherId?: number | null
+    /** Publisher who still owns the case. */
+    publisherId?: number | null
   }
 ): CaseMessage => {
   const hidden = isHiddenMessage(row)
   const concealed = hidden && !options.includePayload
   const author = row.author ? toUser(row.author) : null
+  // Every handling-side reply is marked, so a reply without a side is a
+  // reporter's, including an opener who withdrew and handed over (D33).
   const authorSide =
     row.kind !== 'reply' || !row.author
       ? undefined
@@ -1121,7 +1125,11 @@ const serializeMessage = (
             options.originalPublisherId !== undefined &&
             row.author.id === options.originalPublisherId
           ? ('original-publisher' as const)
-          : undefined
+          : options.publisherId !== null &&
+              options.publisherId !== undefined &&
+              row.author.id === options.publisherId
+            ? ('publisher' as const)
+            : undefined
   const safeAuthor =
     row.author &&
     !options.identifyReporter &&
@@ -2315,13 +2323,13 @@ const fetchCaseForViewer = async (
     target,
     follower ? undefined : roundFacts(messagesRows)
   )
-  // An opener who withdrew while others still follow keeps reading the case
-  // but has nothing left to withdraw (D18).
+  // Without a subscription there is nothing left to withdraw (D18).
   if (!subscription) capabilities.canWithdraw = false
   const relatedOpenCaseIds = admin ? await loadRelatedOpenCaseIds(db, row) : []
+  // A deleted resource no longer names its author; the handoff event does.
   const handedOffFrom =
     row.public && row.owner_type === 'staff' && row.escalated_at !== null
-      ? target.resource?.user_id
+      ? (target.resource?.user_id ?? handoffOwnerId(messagesRows))
       : null
   const detail: CaseDetail = {
     ...summary,
@@ -2330,7 +2338,8 @@ const fetchCaseForViewer = async (
         identifyReporter: options.identifyReporter || follower,
         reporterId: row.reporter_id,
         includePayload: admin,
-        originalPublisherId: handedOffFrom
+        originalPublisherId: handedOffFrom,
+        publisherId: row.owner_type === 'publisher' ? row.owner_id : null
       })
     ),
     // A follower of a private report joined by submitting one of their own.
@@ -2370,6 +2379,18 @@ const loadRelatedOpenCaseIds = async (db: CaseDb, row: CaseRow) => {
     select: { id: true }
   })
   return rows.map((related) => related.id)
+}
+
+/** The publisher the latest handoff to the site administrator came from. */
+const handoffOwnerId = (
+  messages: readonly Pick<CaseMessageRow, 'kind' | 'event' | 'payload'>[]
+): number | undefined => {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index]
+    if (message.kind !== 'system' || message.event !== 'escalated') continue
+    return sanitizePayload(message.payload)?.from_owner_id ?? undefined
+  }
+  return undefined
 }
 
 /**

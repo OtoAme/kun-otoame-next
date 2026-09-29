@@ -129,11 +129,11 @@ export interface CaseMessage {
    */
   hidden?: boolean
   /**
-   * Which side wrote a reply that is not the opener's: the site administrator,
-   * or the publisher after the case was handed to the site administrator.
-   * Absent for the publisher still handling the case.
+   * The handling side of a reply: the site administrator, the publisher who
+   * still owns the case, or the publisher it was handed off from. Absent on a
+   * reporter's reply, including an opener who withdrew and handed over.
    */
-  authorSide?: 'staff' | 'original-publisher'
+  authorSide?: 'staff' | 'original-publisher' | 'publisher'
   created: string
 }
 

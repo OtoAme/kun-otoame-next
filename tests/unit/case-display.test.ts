@@ -258,20 +258,32 @@ describe('case conversation and tab helpers', () => {
         5
       )
     ).toBe('reporter')
-    // 其他人只可能是处理方（接口不允许第四方回复）
+    // 处理方一侧的回复由服务端标出 authorSide，不再按「不是报告者」去猜
     expect(
       caseMessageSide(
-        makeMessage({ author: { id: 8, name: '发布者甲', avatar: '' } }),
+        makeMessage({
+          author: { id: 8, name: '发布者甲', avatar: '' },
+          authorSide: 'publisher'
+        }),
         5
       )
     ).toBe('owner')
-    // 看不到报告者身份时，具名作者一律按处理方呈现
     expect(
       caseMessageSide(
-        makeMessage({ author: { id: 8, name: '发布者甲', avatar: '' } }),
+        makeMessage({
+          author: { id: 8, name: '发布者甲', avatar: '' },
+          authorSide: 'staff'
+        }),
         null
       )
     ).toBe('owner')
+    // 没有标记、又不是当前开启者：撤回后交出事项的原开启者（D33）
+    expect(
+      caseMessageSide(
+        makeMessage({ author: { id: 9, name: '原开启者', avatar: '' } }),
+        5
+      )
+    ).toBe('other-reporter')
   })
 
   it('refuses to pick a side for a deleted account in an identifying view', () => {
@@ -298,7 +310,10 @@ describe('case conversation and tab helpers', () => {
     ).toBe('reporter')
     expect(
       caseMessageSide(
-        makeMessage({ author: { id: 8, name: '发布者甲', avatar: '' } }),
+        makeMessage({
+          author: { id: 8, name: '发布者甲', avatar: '' },
+          authorSide: 'publisher'
+        }),
         5,
         true
       )

@@ -1529,6 +1529,49 @@ describe('manual test review fixes (M03-9)', () => {
       undefined
     ])
   })
+
+  it('marks the owning publisher and leaves a handed-over opener unmarked (D33)', async () => {
+    mocks.tx.ops_case_subscriber.findUnique.mockResolvedValue({ user_id: 5 })
+    mocks.tx.ops_case_message.findMany.mockResolvedValue([
+      reply(1, { id: 11, role: 1 }),
+      reply(2, { id: 2, role: 1 }),
+      reply(3, { id: 5, role: 1 })
+    ])
+
+    const detail = await getCase(42, 5, 1, { db: db() })
+    if (typeof detail === 'string') throw new Error(detail)
+    // 11 opened the case and withdrew; 5 took it over.
+    expect(detail.case.messages.map((message) => message.authorSide)).toEqual([
+      undefined,
+      'publisher',
+      undefined
+    ])
+  })
+
+  it('names the original publisher from the handoff once the resource is gone', async () => {
+    mocks.tx.ops_case.findUnique.mockResolvedValue(
+      caseRow({ owner_type: 'staff', owner_id: null, escalated_at: hoursAgo(2) })
+    )
+    mocks.tx.patch_resource.findUnique.mockResolvedValue(null)
+    mocks.tx.ops_case_subscriber.findUnique.mockResolvedValue({ user_id: 5 })
+    mocks.tx.ops_case_message.findMany.mockResolvedValue([
+      {
+        id: 1,
+        kind: 'system',
+        event: 'escalated',
+        payload: { escalation_trigger: 'timeout', from_owner_id: 2 },
+        body: '发布者 7 天未处理，问题已提交给网站管理员处理。',
+        created: now,
+        author: null,
+        images: []
+      },
+      reply(2, { id: 2, role: 1 })
+    ])
+
+    const detail = await getCase(42, 5, 1, { db: db() })
+    if (typeof detail === 'string') throw new Error(detail)
+    expect(detail.case.messages[1].authorSide).toBe('original-publisher')
+  })
 })
 
 describe('original publisher closing a timeout handoff (D36)', () => {

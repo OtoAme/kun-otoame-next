@@ -171,9 +171,9 @@ export const caseMessageAuthorLabel = (
 /**
  * Which side of the conversation a message belongs to, derived only from what
  * the server exposes. A system entry is flagged by `kind`; a named author is
- * the reporter when the id matches and otherwise the processing party, since
- * the API lets nobody else reply. The caller must not try to tell publisher
- * from staff — message authors are serialized without a role.
+ * the processing party when the server marked the reply with `authorSide`,
+ * the reporter when the id matches the opener, and otherwise another
+ * reporter: an opener who withdrew and handed the case over (D33).
  *
  * `author: null` has two very different causes, and `identifiesReporter`
  * (`'reporter' in detail`) is what separates them:
@@ -197,11 +197,12 @@ export const caseMessageSide = (
   if (message.kind === 'system') return 'system'
   if (message.kind === 'report') return 'other-reporter'
   if (!message.author) return identifiesReporter ? 'unknown' : 'reporter'
+  if (message.authorSide) return 'owner'
   return reporterId !== null &&
     reporterId !== undefined &&
     message.author.id === reporterId
     ? 'reporter'
-    : 'owner'
+    : 'other-reporter'
 }
 
 /**

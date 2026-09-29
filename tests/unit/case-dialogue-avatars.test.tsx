@@ -224,7 +224,11 @@ describe('case dialogue avatars', () => {
       case: makeDetail({
         messages: [
           note(1, null),
-          note(2, { id: 2, name: '发布者甲', avatar: AVATAR })
+          note(
+            2,
+            { id: 2, name: '发布者甲', avatar: AVATAR },
+            { authorSide: 'publisher' }
+          )
         ]
       })
     })
