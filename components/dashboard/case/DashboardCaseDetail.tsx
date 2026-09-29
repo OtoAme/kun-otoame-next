@@ -660,6 +660,7 @@ export function DashboardCaseDetail({
             */}
             <CaseConversation
               messages={detail.messages}
+              reporterId={detail.reporter?.id}
               identifiesReporter
               onToggleHidden={
                 capabilities.canHideMessages ? toggleHidden : undefined

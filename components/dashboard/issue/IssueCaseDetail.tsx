@@ -26,6 +26,11 @@ import {
   AlertDialogHeader,
   AlertDialogTitle
 } from '~/components/dashboard/ui/alert-dialog'
+import {
+  Avatar,
+  AvatarFallback,
+  AvatarImage
+} from '~/components/dashboard/ui/avatar'
 import { Badge } from '~/components/dashboard/ui/badge'
 import { Button } from '~/components/dashboard/ui/button'
 import { Card } from '~/components/dashboard/ui/card'
@@ -170,19 +175,22 @@ function CaseTimeline({
                 : null
         return (
           <li key={message.id} className="flex gap-3">
-            <span
-              aria-hidden
-              className={cn(
-                'mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full text-xs font-medium',
-                side === 'owner'
-                  ? 'bg-primary text-primary-foreground'
-                  : 'bg-muted text-muted-foreground',
-                // 注销账号：不偏向任何一侧，虚线圈与虚线气泡
-                side === 'unknown' && 'border border-dashed bg-transparent'
-              )}
-            >
-              {authorName.trim().slice(0, 1)}
-            </span>
+            {/* 名字就在右侧以文字出现，头像与首字都只作装饰 */}
+            <Avatar aria-hidden className="mt-0.5">
+              {message.author?.avatar ? (
+                <AvatarImage src={message.author.avatar} alt="" />
+              ) : null}
+              <AvatarFallback
+                className={cn(
+                  'text-xs font-medium',
+                  side === 'owner' && 'bg-primary text-primary-foreground',
+                  // 注销账号：不偏向任何一侧，虚线圈与虚线气泡
+                  side === 'unknown' && 'border border-dashed bg-transparent'
+                )}
+              >
+                {authorName.trim().slice(0, 1)}
+              </AvatarFallback>
+            </Avatar>
             <span className="min-w-0 flex-1 space-y-1">
               <span className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                 <span className="font-medium text-foreground">

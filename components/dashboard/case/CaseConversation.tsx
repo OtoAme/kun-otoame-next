@@ -2,19 +2,28 @@
 
 import { EyeOff, Eye } from 'lucide-react'
 
+import {
+  Avatar,
+  AvatarFallback,
+  AvatarImage
+} from '~/components/dashboard/ui/avatar'
 import { Badge } from '~/components/dashboard/ui/badge'
 import { Button } from '~/components/dashboard/ui/button'
 import { formatChinaDateTime } from '~/utils/fixedTimezoneDate'
 import {
   caseMessageAuthorLabel,
+  caseMessageSide,
   caseSystemEventText
 } from '~/components/case/caseDisplay'
+import { cn } from '~/lib/dashboard/utils'
 import type { CaseMessage } from '~/types/api/case'
 
 import { CaseMessageText } from './CaseMessageText'
 
 interface CaseConversationProps {
   messages: CaseMessage[]
+  /** Tells the reporter's replies from the processing party's by avatar color. */
+  reporterId?: number | null
   /**
    * Whether this viewer is one the server identifies reporters to. It decides
    * what a null author means: for a viewer who never sees reporter identity it
@@ -31,12 +40,46 @@ interface CaseConversationProps {
 }
 
 /**
+ * Decorative, since the author's name is printed beside it. Without an avatar
+ * the initial is colored like /issue: the processing party in primary, a
+ * deleted account dashed because it belongs to no side.
+ */
+function AuthorAvatar({
+  message,
+  reporterId,
+  identifiesReporter
+}: {
+  message: CaseMessage
+  reporterId?: number | null
+  identifiesReporter: boolean
+}) {
+  const side = caseMessageSide(message, reporterId, identifiesReporter)
+  return (
+    <Avatar size="sm" aria-hidden>
+      {message.author?.avatar ? (
+        <AvatarImage src={message.author.avatar} alt="" />
+      ) : null}
+      <AvatarFallback
+        className={cn(
+          'font-medium',
+          side === 'owner' && 'bg-primary text-primary-foreground',
+          side === 'unknown' && 'border border-dashed bg-transparent'
+        )}
+      >
+        {caseMessageAuthorLabel(message, identifiesReporter).trim().slice(0, 1)}
+      </AvatarFallback>
+    </Avatar>
+  )
+}
+
+/**
  * Conversation timeline. Replies and system events share one chronological
  * rail but are deliberately not styled alike: a reply is somebody's text that
  * can be answered, a system event is a state change nobody wrote.
  */
 export function CaseConversation({
   messages,
+  reporterId,
   identifiesReporter = false,
   onToggleHidden,
   actionsDisabled = false
@@ -79,6 +122,11 @@ export function CaseConversation({
               }
             >
               <div className="mb-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+                <AuthorAvatar
+                  message={message}
+                  reporterId={reporterId}
+                  identifiesReporter={identifiesReporter}
+                />
                 <span className="font-medium text-foreground">
                   {caseMessageAuthorLabel(message, identifiesReporter)}
                 </span>
