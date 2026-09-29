@@ -1,5 +1,7 @@
 'use client'
 
+import { ArrowDown, ArrowUp } from 'lucide-react'
+
 import { Badge } from '~/components/dashboard/ui/badge'
 import { Button } from '~/components/dashboard/ui/button'
 import { Skeleton } from '~/components/dashboard/ui/skeleton'
@@ -11,6 +13,7 @@ import {
   caseTargetText,
   formatCaseDuration
 } from '~/components/case/caseDisplay'
+import type { CaseSortField, CaseSortOrder } from '~/constants/case'
 import { cn } from '~/lib/dashboard/utils'
 import type { AdminCaseListItem } from '~/types/api/case'
 
@@ -25,13 +28,22 @@ import { CASE_STATUS_BADGE_VARIANTS } from './caseBadges'
 const TABLE_COLUMNS =
   '@[52rem]:grid-cols-[minmax(0,1fr)_minmax(0,6.5rem)_minmax(0,7rem)_minmax(0,7rem)_minmax(0,7.5rem)]'
 
-const tableHeadings = (showOwner: boolean) => [
-  '编号与目标',
-  '状态',
-  '类型',
-  showOwner ? '发布者' : '提交人',
-  '时间'
+const tableColumns = (
+  showOwner: boolean
+): { label: string; sort: CaseSortField }[] => [
+  { label: '编号与目标', sort: 'id' },
+  { label: '状态', sort: 'status' },
+  { label: '类型', sort: 'kind' },
+  showOwner
+    ? { label: '发布者', sort: 'owner' }
+    : { label: '提交人', sort: 'reporter' },
+  { label: '时间', sort: 'time' }
 ]
+
+const ORDER_LABELS: Record<CaseSortOrder, string> = {
+  asc: '升序',
+  desc: '降序'
+}
 
 /** Shown only below the threshold, where the meta line is one flow. */
 const SEP = '@[52rem]:hidden'
@@ -201,13 +213,14 @@ export function CaseQueueRow({
                 </span>
               </>
             ) : null}
+            {/* The clock the waiting text and the time column's sort read. */}
             <span
               className={cn(
                 'tabular-nums',
                 tabular && '@[52rem]:mt-0.5 @[52rem]:block @[52rem]:truncate'
               )}
             >
-              {formatChinaDateTime(row.updated)}
+              {formatChinaDateTime(row.statusChangedAt)}
             </span>
           </span>
         </span>
@@ -232,7 +245,11 @@ export interface CaseQueueListProps {
   searchActive: boolean
   /** Publisher view: rows name the owning publisher (D22). */
   showOwner?: boolean
+  sort: CaseSortField
+  order: CaseSortOrder
   onSelect: (row: AdminCaseListItem) => void
+  /** A column head was clicked; the caller decides the direction. */
+  onSortChange: (sort: CaseSortField) => void
   onPageChange: (page: number) => void
   onRetry: () => void
 }
@@ -249,13 +266,17 @@ export function CaseQueueList({
   emptyText,
   searchActive,
   showOwner = false,
+  sort,
+  order,
   onSelect,
+  onSortChange,
   onPageChange,
   onRetry
 }: CaseQueueListProps) {
   const totalPages = total === null ? 1 : Math.max(1, Math.ceil(total / limit))
   const nowMs = now ? Date.parse(now) : Number.NaN
   const resolvedEmptyText = searchActive ? '没有找到匹配的事项' : emptyText
+  const SortArrow = order === 'asc' ? ArrowUp : ArrowDown
 
   // Rows read their layout off this container, not off the viewport: the pane
   // is narrowed by the detail, by the secondary nav appearing at lg, and by
@@ -283,22 +304,46 @@ export function CaseQueueList({
         </div>
       ) : null}
 
-      {rows.length > 0 ? (
-        <div
-          aria-hidden
-          data-case-table-head
-          className={cn(
-            'hidden gap-x-3 border-b bg-muted/40 px-3 py-1.5 text-xs text-muted-foreground @[52rem]:grid',
-            TABLE_COLUMNS
-          )}
-        >
-          {tableHeadings(showOwner).map((heading) => (
-            <span key={heading} className="min-w-0 truncate">
-              {heading}
-            </span>
-          ))}
-        </div>
-      ) : null}
+      {/*
+        Column heads sort the list. They stay mounted while a new order
+        loads, so the head just clicked keeps keyboard focus. Below the
+        threshold they are hidden and the cards keep the order in the URL.
+      */}
+      <div
+        role="group"
+        aria-label="列表排序"
+        data-case-table-head
+        className={cn(
+          'hidden gap-x-3 border-b bg-muted/40 px-3 py-0.5 text-xs text-muted-foreground @[52rem]:grid',
+          TABLE_COLUMNS
+        )}
+      >
+        {tableColumns(showOwner).map((column) => {
+          const active = column.sort === sort
+          return (
+            <Button
+              key={column.sort}
+              type="button"
+              variant="ghost"
+              size="xs"
+              data-case-sort={column.sort}
+              aria-label={
+                active
+                  ? `按${column.label}排序，当前${ORDER_LABELS[order]}`
+                  : `按${column.label}排序`
+              }
+              onClick={() => onSortChange(column.sort)}
+              className={cn(
+                '-ml-1.5 max-w-full min-w-0 justify-self-start px-1.5 font-normal',
+                active && 'text-foreground'
+              )}
+            >
+              <span className="truncate">{column.label}</span>
+              {active ? <SortArrow aria-hidden /> : null}
+            </Button>
+          )
+        })}
+      </div>
 
       <div
         className="min-h-0 flex-1 overflow-y-auto max-md:flex-none max-md:overflow-visible"

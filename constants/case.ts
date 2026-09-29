@@ -318,6 +318,53 @@ export const CASE_SEARCH_FIELD_LABELS: Record<CaseSearchField, string> = {
   content: '对话内容'
 }
 
+/**
+ * Columns the case center list sorts by. `time` is `status_changed_at`, the
+ * waiting order the queue always had; `reporter` and `owner` sort by the
+ * user's name.
+ */
+export const CASE_SORT_FIELDS = [
+  'id',
+  'status',
+  'kind',
+  'reporter',
+  'owner',
+  'time'
+] as const
+export type CaseSortField = (typeof CASE_SORT_FIELDS)[number]
+export const CASE_SORT_ORDERS = ['asc', 'desc'] as const
+export type CaseSortOrder = (typeof CASE_SORT_ORDERS)[number]
+
+/**
+ * Status filter of the case center list. It groups statuses the way their
+ * badge reads rather than by code, so open and waiting_owner (both 等待处理方)
+ * stay one option.
+ */
+export const CASE_STATUS_FILTERS = [
+  'pending',
+  'waiting_reporter',
+  'resolved',
+  'rejected'
+] as const
+export type CaseStatusFilter = (typeof CASE_STATUS_FILTERS)[number]
+export const CASE_STATUS_FILTER_STATUSES: Record<
+  CaseStatusFilter,
+  readonly CaseStatus[]
+> = {
+  pending: CASE_WAITING_HANDLER_STATUSES,
+  waiting_reporter: ['waiting_reporter'],
+  resolved: ['resolved'],
+  rejected: ['rejected']
+}
+/**
+ * Ascending order of the status column: the filter's groups, then merged,
+ * which module 03 never writes and the filter does not offer.
+ */
+export const CASE_STATUS_SORT_GROUPS: readonly (readonly CaseStatus[])[] = [
+  ...CASE_STATUS_FILTERS.map((filter) => CASE_STATUS_FILTER_STATUSES[filter]),
+  ['merged']
+]
+
 export const CASE_KIND_LABELS: Record<CaseKind, string> = {
   resource_mismatch: '资源与描述不符',
   resource_link_failure: '链接失效',

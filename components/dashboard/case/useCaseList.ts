@@ -3,7 +3,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { kunFetchGet } from '~/utils/kunFetch'
-import type { CaseSearchField } from '~/constants/case'
+import type {
+  CaseSearchField,
+  CaseSortField,
+  CaseSortOrder
+} from '~/constants/case'
 import type {
   AdminCaseListItem,
   AdminCaseListResponse,
@@ -19,6 +23,9 @@ export interface CaseListQuery {
   search: string
   /** Search scope; `all` is the default and is not sent. */
   searchField: CaseSearchField
+  /** List order; `time` ascending is the default and is not sent. */
+  sort: CaseSortField
+  order: CaseSortOrder
   /** Publisher filter of the publisher view; empty for none. */
   ownerId: string
   page: number
@@ -48,15 +55,27 @@ export interface CaseListState {
  *
  * `statusCounts` is cached against a narrower key than the rows: the server
  * scopes it by owner, kind and search only, so it stays correct while a
- * status or page change is still in flight.
+ * status, sort or page change is still in flight.
  */
 export function useCaseList(query: CaseListQuery): CaseListState {
-  const { params, kind, search, searchField, ownerId, page, limit } = query
+  const {
+    params,
+    kind,
+    search,
+    searchField,
+    sort,
+    order,
+    ownerId,
+    page,
+    limit
+  } = query
   const queryKey = JSON.stringify([
     params,
     kind,
     search,
     searchField,
+    sort,
+    order,
     ownerId,
     page,
     limit
@@ -103,12 +122,15 @@ export function useCaseList(query: CaseListQuery): CaseListState {
       const res = await kunFetchGet<AdminCaseListResponse | string>(
         '/admin/case',
         {
-          // 未选状态/类型/搜索时不发送对应参数，默认即站方未结队列
+          // 未选状态/类型/搜索时不发送对应参数，默认即站方未结队列；
+          // 默认排序（等待时间升序）同样不发送
           ...params,
           ...(ownerId ? { ownerId } : {}),
           ...(kind ? { kind } : {}),
           ...(search ? { search } : {}),
           ...(search && searchField !== 'all' ? { searchField } : {}),
+          ...(sort !== 'time' ? { sort } : {}),
+          ...(order !== 'asc' ? { order } : {}),
           page,
           limit
         }
@@ -133,6 +155,8 @@ export function useCaseList(query: CaseListQuery): CaseListState {
     kind,
     search,
     searchField,
+    sort,
+    order,
     ownerId,
     page,
     limit,

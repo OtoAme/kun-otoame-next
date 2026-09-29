@@ -868,4 +868,270 @@ describe('case service contracts', () => {
       owner_type: 'staff'
     })
   })
+
+  it('lifts the case a 全部 search names only in the default order', async () => {
+    mocks.tx.ops_case.findFirst.mockResolvedValue({ ...row(), id: 8 })
+    const listFor = async (input: Record<string, unknown>) => {
+      mocks.tx.ops_case.findFirst.mockClear()
+      mocks.tx.ops_case.findMany.mockClear()
+      await getAdminCases(
+        { page: 1, limit: 20, search: '8', ...input },
+        { db: mocks.prisma as never, now }
+      )
+      return listCalls()[0] as unknown as {
+        where: Record<string, unknown>
+        skip: number
+        take: number
+      }
+    }
+
+    // A column picked in the header sorts strictly, the named case included.
+    for (const input of [{ sort: 'id' }, { sort: 'time', order: 'desc' }]) {
+      const args = await listFor(input)
+      expect(mocks.tx.ops_case.findFirst).not.toHaveBeenCalled()
+      expect(args.where.id).toBeUndefined()
+      expect(args).toMatchObject({ skip: 0, take: 20 })
+    }
+    const lifted = await listFor({ sort: 'time', order: 'asc' })
+    expect(mocks.tx.ops_case.findFirst).toHaveBeenCalledOnce()
+    expect(lifted.where.id).toEqual({ not: 8 })
+    expect(lifted).toMatchObject({ skip: 0, take: 19 })
+  })
+})
+
+describe('admin case list sorting', () => {
+  type Person = { id: number; name: string; avatar: string; role: number }
+  type Item = Record<string, unknown>
+  type Where = Record<string, unknown>
+  type OrderBy = Record<string, unknown>[]
+
+  const person = (id: number, name: string): Person => ({
+    id,
+    name,
+    avatar: '',
+    role: 1
+  })
+  const amy = person(31, 'amy')
+  const bob = person(32, 'bob')
+  const cat = person(33, 'cat')
+  const kim = person(41, 'kim')
+  const jon = person(42, 'jon')
+  const ada = person(43, 'ada')
+  // Neither the status nor the kind codes are in their display order, so a
+  // plain ORDER BY on either column fails the orders below. Cases 2 and 4
+  // share a badge (等待处理方) with different codes.
+  const items: Item[] = [
+    [1, 'rejected', 'patch_info', 5, amy, kim],
+    [2, 'open', 'other', 3, null, jon],
+    [3, 'waiting_reporter', 'resource_mismatch', 1, cat, null],
+    [4, 'waiting_owner', 'content_violation', 2, amy, kim],
+    [5, 'resolved', 'resource_link_failure', 4, bob, null],
+    [6, 'open', 'resource_mismatch', 6, null, jon],
+    [7, 'merged', 'other', 0, bob, ada]
+  ].map(([id, status, kind, minute, reporter, owner]) => ({
+    ...row(),
+    id,
+    status,
+    kind,
+    owner_type: 'publisher',
+    status_changed_at: new Date(Date.UTC(2026, 8, 1, 0, minute as number)),
+    reporter_id: (reporter as Person | null)?.id ?? null,
+    reporter,
+    owner_id: (owner as Person | null)?.id ?? null,
+    owner
+  }))
+
+  const matches = (item: Item, where: Where): boolean =>
+    Object.entries(where).every(([key, condition]) => {
+      if (key === 'AND') {
+        return (condition as Where[]).every((part) => matches(item, part))
+      }
+      if (condition !== null && typeof condition === 'object') {
+        if ('in' in condition) {
+          return (condition.in as unknown[]).includes(item[key])
+        }
+        if ('not' in condition) return item[key] !== condition.not
+      }
+      return item[key] === condition
+    })
+
+  // Like PostgreSQL, a missing value sorts as the largest one.
+  const compare = (orderBy: OrderBy) => (a: Item, b: Item) => {
+    for (const entry of orderBy) {
+      const [field, spec] = Object.entries(entry)[0]
+      const nested = typeof spec === 'object' && spec !== null
+      const direction = nested ? (spec as { name: string }).name : spec
+      const pick = (item: Item) =>
+        nested
+          ? ((item[field] as { name: string } | null)?.name ?? null)
+          : item[field]
+      const [x, y] = [pick(a), pick(b)] as [
+        string | number | Date | null,
+        string | number | Date | null
+      ]
+      const sign = direction === 'asc' ? 1 : -1
+      if (x === null || y === null) {
+        if (x !== y) return x === null ? sign : -sign
+        continue
+      }
+      if (x < y) return -sign
+      if (x > y) return sign
+    }
+    return 0
+  }
+
+  beforeEach(() => {
+    mocks.tx.ops_case.findMany.mockImplementation(
+      async (args: {
+        where: Where
+        orderBy?: OrderBy
+        skip?: number
+        take?: number
+        distinct?: unknown
+      }) => {
+        if (args.distinct) return []
+        const sorted = items
+          .filter((item) => matches(item, args.where))
+          .sort(compare(args.orderBy ?? []))
+        const skip = args.skip ?? 0
+        return sorted.slice(skip, skip + (args.take ?? sorted.length))
+      }
+    )
+    mocks.tx.ops_case.count.mockImplementation(
+      async ({ where }: { where: Where }) =>
+        items.filter((item) => matches(item, where)).length
+    )
+    mocks.tx.ops_case.groupBy.mockImplementation(
+      async ({ by: [field], where }: { by: string[]; where: Where }) => {
+        const counts = new Map<unknown, number>()
+        for (const item of items.filter((entry) => matches(entry, where))) {
+          counts.set(item[field], (counts.get(item[field]) ?? 0) + 1)
+        }
+        return [...counts].map(([value, all]) => ({
+          [field]: value,
+          _count: { _all: all }
+        }))
+      }
+    )
+  })
+
+  const list = (page: number, limit: number, input: Record<string, unknown>) =>
+    getAdminCases(
+      {
+        ownerType: 'publisher',
+        allStatuses: true,
+        page,
+        limit,
+        search: '',
+        ...input
+      },
+      { db: mocks.prisma as never, now }
+    )
+
+  /** Every page of the sorted list, one request per page. */
+  const pagesOf = async (limit: number, input: Record<string, unknown>) => {
+    const pages: number[][] = []
+    let total = Infinity
+    for (let page = 1; (page - 1) * limit < total; page += 1) {
+      const result = await list(page, limit, input)
+      total = result.total
+      pages.push(result.cases.map((item) => item.id))
+    }
+    return pages
+  }
+
+  const orders: [Record<string, unknown>, number[]][] = [
+    [{}, [7, 3, 4, 2, 5, 1, 6]],
+    [{ sort: 'time', order: 'desc' }, [6, 1, 5, 2, 4, 3, 7]],
+    [{ sort: 'id' }, [1, 2, 3, 4, 5, 6, 7]],
+    [{ sort: 'id', order: 'desc' }, [7, 6, 5, 4, 3, 2, 1]],
+    // 等待处理方 (open and waiting_owner together), 等待报告者, 已解决,
+    // 已驳回, then merged; each group in waiting order.
+    [{ sort: 'status' }, [4, 2, 6, 3, 5, 1, 7]],
+    [{ sort: 'status', order: 'desc' }, [7, 1, 5, 3, 6, 2, 4]],
+    // The kind filter's order.
+    [{ sort: 'kind' }, [3, 6, 5, 4, 7, 2, 1]],
+    [{ sort: 'kind', order: 'desc' }, [1, 2, 7, 4, 5, 6, 3]],
+    // By name, then waiting order; nobody's cases stay last either way.
+    [{ sort: 'reporter' }, [4, 1, 7, 5, 3, 2, 6]],
+    [{ sort: 'reporter', order: 'desc' }, [3, 5, 7, 1, 4, 6, 2]],
+    [{ sort: 'owner' }, [7, 2, 6, 4, 1, 3, 5]],
+    [{ sort: 'owner', order: 'desc' }, [1, 4, 6, 2, 7, 5, 3]]
+  ]
+
+  it.each(orders)(
+    'pages %j across every boundary without repeating a case',
+    async (input, expected) => {
+      for (let limit = 1; limit <= expected.length; limit += 1) {
+        const pages = await pagesOf(limit, input)
+        expect(pages.flat(), `limit ${limit}`).toEqual(expected)
+        expect(pages).toHaveLength(Math.ceil(expected.length / limit))
+      }
+    }
+  )
+
+  it('cuts a page across status groups with one read per group', async () => {
+    const result = await list(2, 2, { sort: 'status' })
+    expect(result.cases.map((item) => item.id)).toEqual([6, 3])
+    expect(result.total).toBe(7)
+    const reads = listCalls() as unknown as {
+      where: { AND: Where[] }
+      orderBy: OrderBy
+      skip: number
+      take: number
+    }[]
+    expect(
+      reads.map((args) => [args.where.AND[1], args.skip, args.take])
+    ).toEqual([
+      [{ status: { in: ['open', 'waiting_owner'] } }, 2, 1],
+      [{ status: { in: ['waiting_reporter'] } }, 0, 1]
+    ])
+    for (const args of reads) {
+      expect(args.where.AND[0]).toEqual({ owner_type: 'publisher' })
+      expect(args.orderBy).toEqual([
+        { status_changed_at: 'asc' },
+        { id: 'asc' }
+      ])
+    }
+    // Group sizes come from the filtered rows; the badge counts stay unfiltered.
+    const groupBys = mocks.tx.ops_case.groupBy.mock.calls.map(([args]) => args)
+    expect(groupBys).toContainEqual({
+      by: ['status'],
+      where: { owner_type: 'publisher' },
+      _count: { _all: true }
+    })
+  })
+
+  it('orders by the named user and reads nobody’s cases after them', async () => {
+    await list(1, 7, { sort: 'reporter', order: 'desc' })
+    const reads = listCalls() as unknown as {
+      where: { AND: Where[] }
+      orderBy: OrderBy
+    }[]
+    expect(reads.map((args) => args.where.AND[1])).toEqual([
+      { reporter_id: { not: null } },
+      { reporter_id: null }
+    ])
+    expect(reads.map((args) => args.orderBy)).toEqual([
+      [
+        { reporter: { name: 'desc' } },
+        { status_changed_at: 'desc' },
+        { id: 'desc' }
+      ],
+      [{ status_changed_at: 'desc' }, { id: 'desc' }]
+    ])
+  })
+
+  it('keeps the default and the id order to a single list read', async () => {
+    await list(1, 3, {})
+    await list(1, 3, { sort: 'id', order: 'desc' })
+    const reads = listCalls() as unknown as { orderBy: OrderBy }[]
+    expect(reads.map((args) => args.orderBy)).toEqual([
+      [{ status_changed_at: 'asc' }, { id: 'asc' }],
+      [{ id: 'desc' }]
+    ])
+    // Only the status counts group rows; only the total counts them.
+    expect(mocks.tx.ops_case.groupBy).toHaveBeenCalledTimes(2)
+    expect(mocks.tx.ops_case.count).toHaveBeenCalledTimes(2)
+  })
 })

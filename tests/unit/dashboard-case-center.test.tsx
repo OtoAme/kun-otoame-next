@@ -773,4 +773,243 @@ describe('dashboard case center', () => {
     expect(mocks.router.push).toHaveBeenCalled()
     expect(lastPushedHref()).not.toContain('id=')
   })
+
+  /** Values offered by the status filter, or null when it is not shown. */
+  const statusOptions = (container: HTMLElement) => {
+    const select = [...container.querySelectorAll('select')].find((element) =>
+      element.querySelector('option[value="waiting_reporter"]')
+    )
+    return select
+      ? [...select.querySelectorAll('option')].map((option) => option.value)
+      : null
+  }
+
+  it('filters by a status group through the URL instead of the view statuses', async () => {
+    mocks.searchParams = new URLSearchParams('view=all&page=2')
+    mocks.kunFetchGet.mockResolvedValue(
+      listResponse([makeRow()], 1, SAMPLE_COUNTS)
+    )
+    const container = await mount()
+    await flush()
+
+    // 按界面状态分组：open 与 waiting_owner 同为「等待处理方」，合成一项
+    expect(statusOptions(container)).toEqual([
+      'all',
+      'pending',
+      'waiting_reporter',
+      'resolved',
+      'rejected'
+    ])
+    await chooseOption(container, 'rejected', 'rejected')
+    // 筛选变化回到第 1 页
+    expect(lastPushedHref()).toBe(
+      '/dashboard/case?view=all&caseStatus=rejected'
+    )
+    await applyNavigation(lastPushedHref())
+    await flush()
+    // 代替视图自身的 allStatuses，而不是叠加
+    expect(mocks.kunFetchGet).toHaveBeenLastCalledWith('/admin/case', {
+      statuses: 'rejected',
+      page: 1,
+      limit: 20
+    })
+    // 导航徽标仍是整个视图的计数
+    expect(navButton(container, 'all').textContent).toBe('全部事项20')
+  })
+
+  it('offers only the status groups the current view spans', async () => {
+    mocks.kunFetchGet.mockResolvedValue(listResponse([makeRow()]))
+    const container = await mount()
+    await flush()
+    // 概览没有列表筛选
+    expect(statusOptions(container)).toBeNull()
+
+    await applyNavigation('/dashboard/case?view=unresolved')
+    expect(statusOptions(container)).toEqual([
+      'all',
+      'pending',
+      'waiting_reporter'
+    ])
+    // 只剩一个分组的视图本身就是这个筛选
+    for (const view of [
+      'pending',
+      'waiting_reporter',
+      'resolved',
+      'rejected'
+    ]) {
+      await applyNavigation(`/dashboard/case?view=${view}`)
+      expect(statusOptions(container), view).toBeNull()
+    }
+
+    // 发布者处理中只有前两组，状态筛选保留 ownerType
+    await applyNavigation('/dashboard/case?view=publisher')
+    expect(statusOptions(container)).toEqual([
+      'all',
+      'pending',
+      'waiting_reporter'
+    ])
+    await chooseOption(container, 'pending', 'pending')
+    expect(lastPushedHref()).toBe(
+      '/dashboard/case?view=publisher&caseStatus=pending'
+    )
+    await applyNavigation(lastPushedHref())
+    await flush()
+    expect(mocks.kunFetchGet).toHaveBeenLastCalledWith('/admin/case', {
+      ownerType: 'publisher',
+      statuses: 'open,waiting_owner',
+      page: 1,
+      limit: 20
+    })
+
+    // 手改网址带上视图之外的分组时忽略它
+    await applyNavigation('/dashboard/case?view=unresolved&caseStatus=rejected')
+    await flush()
+    expect(mocks.kunFetchGet).toHaveBeenLastCalledWith('/admin/case', {
+      page: 1,
+      limit: 20
+    })
+  })
+
+  it('keeps the status filter across kind and search changes and clears it on a view switch', async () => {
+    mocks.searchParams = new URLSearchParams('view=all&caseStatus=rejected')
+    mocks.kunFetchGet.mockResolvedValue(listResponse([makeRow()]))
+    const container = await mount()
+    await flush()
+
+    await chooseOption(container, 'content_violation', 'content_violation')
+    expect(lastPushedHref()).toBe(
+      '/dashboard/case?view=all&caseKind=content_violation&caseStatus=rejected'
+    )
+    await applyNavigation(lastPushedHref())
+    await flush()
+    expect(mocks.kunFetchGet).toHaveBeenLastCalledWith('/admin/case', {
+      statuses: 'rejected',
+      kind: 'content_violation',
+      page: 1,
+      limit: 20
+    })
+
+    const input = container.querySelector<HTMLInputElement>(
+      'input[type="search"]'
+    )!
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(
+        dom!.window.HTMLInputElement.prototype,
+        'value'
+      )!.set!.call(input, '资源X')
+      input.dispatchEvent(new dom!.window.Event('input', { bubbles: true }))
+    })
+    await act(async () => {
+      findButton(container, '搜索').click()
+    })
+    expect(lastPushedHref()).toContain('caseStatus=rejected')
+    expect(lastPushedHref()).toContain('search=')
+
+    await act(async () => {
+      navButton(container, 'unresolved').click()
+    })
+    expect(lastPushedHref()).toBe(
+      '/dashboard/case?view=unresolved&caseKind=content_violation'
+    )
+  })
+
+  /** Column heads carry the sort key they request. */
+  const sortButton = (container: HTMLElement, sort: string) =>
+    container.querySelector<HTMLButtonElement>(
+      `button[data-case-sort="${sort}"]`
+    )!
+
+  it('sorts by a column head, flipping the current one like Explorer', async () => {
+    mocks.searchParams = new URLSearchParams('view=unresolved&page=2')
+    mocks.kunFetchGet.mockResolvedValue(listResponse([makeRow()], 21))
+    const container = await mount()
+    await flush()
+
+    // 表头是可用键盘操作的按钮，不再对读屏隐藏
+    const head = container.querySelector('[data-case-table-head]')!
+    expect(head.getAttribute('aria-hidden')).toBeNull()
+    expect(
+      [...head.querySelectorAll('button')].map((button) =>
+        button.getAttribute('aria-label')
+      )
+    ).toEqual([
+      '按编号与目标排序',
+      '按状态排序',
+      '按类型排序',
+      '按提交人排序',
+      '按时间排序，当前升序'
+    ])
+    expect(sortButton(container, 'time').querySelector('svg')).not.toBeNull()
+    expect(sortButton(container, 'kind').querySelector('svg')).toBeNull()
+
+    // 点当前列切换升降序，换排序回到第 1 页，默认值不写进网址
+    await act(async () => {
+      sortButton(container, 'time').click()
+    })
+    expect(lastPushedHref()).toBe('/dashboard/case?view=unresolved&order=desc')
+    await applyNavigation(lastPushedHref())
+    await flush()
+    expect(mocks.kunFetchGet).toHaveBeenLastCalledWith('/admin/case', {
+      order: 'desc',
+      page: 1,
+      limit: 20
+    })
+    expect(sortButton(container, 'time').getAttribute('aria-label')).toBe(
+      '按时间排序，当前降序'
+    )
+
+    // 点另一列从升序开始
+    await act(async () => {
+      sortButton(container, 'kind').click()
+    })
+    expect(lastPushedHref()).toBe('/dashboard/case?view=unresolved&sort=kind')
+    await applyNavigation(lastPushedHref())
+    await flush()
+    expect(mocks.kunFetchGet).toHaveBeenLastCalledWith('/admin/case', {
+      sort: 'kind',
+      page: 1,
+      limit: 20
+    })
+    await act(async () => {
+      sortButton(container, 'kind').click()
+    })
+    expect(lastPushedHref()).toBe(
+      '/dashboard/case?view=unresolved&sort=kind&order=desc'
+    )
+    await applyNavigation(lastPushedHref())
+    await flush()
+    await act(async () => {
+      sortButton(container, 'status').click()
+    })
+    expect(lastPushedHref()).toBe('/dashboard/case?view=unresolved&sort=status')
+  })
+
+  it('reads the sort from the URL and sorts the publisher view by its publisher', async () => {
+    mocks.searchParams = new URLSearchParams(
+      'view=publisher&sort=owner&order=desc'
+    )
+    mocks.kunFetchGet.mockResolvedValue(listResponse([makeRow()]))
+    const container = await mount()
+    await flush()
+
+    expect(mocks.kunFetchGet).toHaveBeenLastCalledWith('/admin/case', {
+      ownerType: 'publisher',
+      sort: 'owner',
+      order: 'desc',
+      page: 1,
+      limit: 20
+    })
+    expect(sortButton(container, 'reporter')).toBeNull()
+    expect(sortButton(container, 'owner').getAttribute('aria-label')).toBe(
+      '按发布者排序，当前降序'
+    )
+
+    // 人名这一列换个视图仍按人名排：站方视图里它是提交人
+    await act(async () => {
+      navButton(container, 'all').click()
+    })
+    expect(lastPushedHref()).toBe(
+      '/dashboard/case?view=all&sort=reporter&order=desc'
+    )
+  })
 })

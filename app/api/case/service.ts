@@ -33,6 +33,7 @@ import {
   CASE_RESOLUTIONS,
   CASE_SITE_TARGET_ID,
   CASE_STAFF_UNRESPONSIVE_AFTER_MS,
+  CASE_STATUS_SORT_GROUPS,
   CASE_STATUSES,
   CASE_TARGET_TYPE_LABELS,
   CASE_TARGET_TYPES,
@@ -42,7 +43,11 @@ import {
   caseTextHasGuideLink,
   isCaseOpenerScoped
 } from '~/constants/case'
-import type { CaseSearchField } from '~/constants/case'
+import type {
+  CaseSearchField,
+  CaseSortField,
+  CaseSortOrder
+} from '~/constants/case'
 import {
   caseImageUrl,
   consumeCaseImageUploads,
@@ -124,10 +129,12 @@ type AppendCaseInput = Omit<
 type ResolveCaseInput = z.infer<typeof resolveCaseSchema>
 type AdminListInput = Omit<
   z.infer<typeof adminCaseListSchema>,
-  'ownerType' | 'searchField'
+  'ownerType' | 'searchField' | 'sort' | 'order'
 > & {
   ownerType?: CaseOwnerType
   searchField?: CaseSearchField
+  sort?: CaseSortField
+  order?: CaseSortOrder
 }
 type AdminHandleInput = Omit<
   z.infer<typeof adminCaseHandleSchema>,
@@ -3948,6 +3955,177 @@ const buildAdminCaseSearch = async (
   return predicates
 }
 
+type CaseListRow = Prisma.ops_caseGetPayload<{ select: typeof caseListSelect }>
+
+/** A run of list rows that pages as one block, in its own order. */
+interface CasePageSegment {
+  where: Prisma.ops_caseWhereInput
+  count: number
+  orderBy: Prisma.ops_caseOrderByWithRelationInput[]
+}
+
+const waitingOrder = (
+  order: CaseSortOrder
+): Prisma.ops_caseOrderByWithRelationInput[] => [
+  { status_changed_at: order },
+  { id: order }
+]
+
+/**
+ * Read the window `[skip, skip + take)` across consecutive segments: every
+ * segment it overlaps is read with its own skip/take and the pieces join in
+ * segment order, so a page boundary neither repeats nor drops a row.
+ */
+const findSegmentedCasePage = async (
+  db: CaseDb,
+  segments: readonly CasePageSegment[],
+  skip: number,
+  take: number
+) => {
+  const reads: Promise<CaseListRow[]>[] = []
+  let start = 0
+  for (const segment of segments) {
+    const from = Math.max(start, skip)
+    const to = Math.min(start + segment.count, skip + take)
+    if (from < to) {
+      reads.push(
+        db.ops_case.findMany({
+          where: segment.where,
+          orderBy: segment.orderBy,
+          skip: from - start,
+          take: to - from,
+          select: caseListSelect
+        })
+      )
+    }
+    start += segment.count
+  }
+  return (await Promise.all(reads)).flat()
+}
+
+/**
+ * Status and kind sort the way the case center shows them, not by code:
+ * statuses by their badge, so open and waiting_owner (both 等待处理方) stay
+ * together, and kinds in the kind filter's order. Prisma cannot order by
+ * such a rank without raw SQL, so each group is a segment sized by counting
+ * the filtered rows; a value outside the vocabulary sorts after every group.
+ * Descending reverses the groups and the order inside each.
+ */
+const groupedCaseSegments = async (
+  db: CaseDb,
+  where: Prisma.ops_caseWhereInput,
+  sort: 'status' | 'kind',
+  order: CaseSortOrder
+) => {
+  const counts = new Map<string, number>(
+    sort === 'status'
+      ? (
+          await db.ops_case.groupBy({
+            by: ['status'],
+            where,
+            _count: { _all: true }
+          })
+        ).map((group) => [group.status, group._count._all])
+      : (
+          await db.ops_case.groupBy({
+            by: ['kind'],
+            where,
+            _count: { _all: true }
+          })
+        ).map((group) => [group.kind, group._count._all])
+  )
+  const groups: (readonly string[])[] =
+    sort === 'status'
+      ? [...CASE_STATUS_SORT_GROUPS]
+      : CASE_KINDS.map((kind) => [kind])
+  const known = new Set(groups.flat())
+  groups.push([...counts.keys()].filter((value) => !known.has(value)))
+  const segments = groups.map(
+    (values): CasePageSegment => ({
+      where: {
+        AND: [
+          where,
+          sort === 'status'
+            ? { status: { in: [...values] } }
+            : { kind: { in: [...values] } }
+        ]
+      },
+      count: values.reduce((sum, value) => sum + (counts.get(value) ?? 0), 0),
+      orderBy: waitingOrder(order)
+    })
+  )
+  return order === 'desc' ? segments.reverse() : segments
+}
+
+/**
+ * Reporter and publisher sort by the user's name. A case without that user
+ * (the account is gone, or there never was one) stays last either way.
+ */
+const personCaseSegments = async (
+  db: CaseDb,
+  where: Prisma.ops_caseWhereInput,
+  sort: 'reporter' | 'owner',
+  order: CaseSortOrder
+): Promise<CasePageSegment[]> => {
+  const named: Prisma.ops_caseWhereInput = {
+    AND: [
+      where,
+      sort === 'reporter'
+        ? { reporter_id: { not: null } }
+        : { owner_id: { not: null } }
+    ]
+  }
+  const nameless: Prisma.ops_caseWhereInput = {
+    AND: [
+      where,
+      sort === 'reporter' ? { reporter_id: null } : { owner_id: null }
+    ]
+  }
+  const [namedCount, namelessCount] = await Promise.all([
+    db.ops_case.count({ where: named }),
+    db.ops_case.count({ where: nameless })
+  ])
+  return [
+    {
+      where: named,
+      count: namedCount,
+      orderBy: [
+        sort === 'reporter'
+          ? { reporter: { name: order } }
+          : { owner: { name: order } },
+        ...waitingOrder(order)
+      ]
+    },
+    { where: nameless, count: namelessCount, orderBy: waitingOrder(order) }
+  ]
+}
+
+/** One page of the case center list in the order its header asks for. */
+const findAdminCasePage = async (
+  db: CaseDb,
+  where: Prisma.ops_caseWhereInput,
+  sort: CaseSortField,
+  order: CaseSortOrder,
+  skip: number,
+  take: number
+): Promise<CaseListRow[]> => {
+  if (sort === 'status' || sort === 'kind') {
+    const segments = await groupedCaseSegments(db, where, sort, order)
+    return findSegmentedCasePage(db, segments, skip, take)
+  }
+  if (sort === 'reporter' || sort === 'owner') {
+    const segments = await personCaseSegments(db, where, sort, order)
+    return findSegmentedCasePage(db, segments, skip, take)
+  }
+  return db.ops_case.findMany({
+    where,
+    orderBy: sort === 'id' ? [{ id: order }] : waitingOrder(order),
+    skip,
+    take,
+    select: caseListSelect
+  })
+}
+
 export const getAdminCases = async (
   input: AdminListInput,
   options: { db?: PrismaClient; now?: Date } = {}
@@ -3995,10 +4173,16 @@ export const getAdminCases = async (
         ? {}
         : { status: { in: unresolvedStatuses } }
   const where: Prisma.ops_caseWhereInput = { ...scopeWhere, ...statusWhere }
+  const sort = input.sort ?? 'time'
+  const order = input.order ?? 'asc'
   // Searching 全部, the case the text names leads page 1 ahead of the
   // waiting order (M03-9); the paged rows skip it, so no page repeats it.
+  // A column picked in the header is followed strictly instead.
   const namedId =
-    input.search && (input.searchField ?? 'all') === 'all'
+    input.search &&
+    (input.searchField ?? 'all') === 'all' &&
+    sort === 'time' &&
+    order === 'asc'
       ? caseIdFromSearch(input.search)
       : null
   const named =
@@ -4010,13 +4194,14 @@ export const getAdminCases = async (
         })
   const offset = (input.page - 1) * input.limit
   const [pagedRows, total, statusGroups] = await Promise.all([
-    db.ops_case.findMany({
-      where: named ? { ...where, id: { not: named.id } } : where,
-      orderBy: [{ status_changed_at: 'asc' }, { id: 'asc' }],
-      skip: named && input.page > 1 ? offset - 1 : offset,
-      take: named && input.page === 1 ? input.limit - 1 : input.limit,
-      select: caseListSelect
-    }),
+    findAdminCasePage(
+      db,
+      named ? { ...where, id: { not: named.id } } : where,
+      sort,
+      order,
+      named && input.page > 1 ? offset - 1 : offset,
+      named && input.page === 1 ? input.limit - 1 : input.limit
+    ),
     db.ops_case.count({ where }),
     db.ops_case.groupBy({
       by: ['status'],

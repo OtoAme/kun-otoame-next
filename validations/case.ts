@@ -10,6 +10,8 @@ import {
   CASE_RESOURCE_ACTIONS,
   CASE_SEARCH_FIELDS,
   CASE_SITE_TARGET_ID,
+  CASE_SORT_FIELDS,
+  CASE_SORT_ORDERS,
   CASE_STATUSES,
   CASE_TABS,
   CASE_TARGET_TYPES,
@@ -234,7 +236,13 @@ export const adminCaseListSchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(20),
   search: z.string().trim().max(300).default(''),
   /** Which field the search matches; `all` matches every one of them. */
-  searchField: z.enum(CASE_SEARCH_FIELDS).default('all')
+  searchField: z.enum(CASE_SEARCH_FIELDS).default('all'),
+  /**
+   * List order. The default, `time` ascending, is the waiting order the
+   * queue always had, and only it lifts the case a 全部 search names.
+   */
+  sort: z.enum(CASE_SORT_FIELDS).default('time'),
+  order: z.enum(CASE_SORT_ORDERS).default('asc')
 })
 
 export const adminCaseHandleSchema = z.object({

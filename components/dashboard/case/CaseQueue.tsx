@@ -18,7 +18,15 @@ import {
   SelectTrigger,
   SelectValue
 } from '~/components/dashboard/ui/select'
-import { CASE_KIND_LABELS, OPEN_CASE_KINDS } from '~/constants/case'
+import { caseStatusLabel } from '~/components/case/caseDisplay'
+import {
+  CASE_KIND_LABELS,
+  CASE_STATUS_FILTER_STATUSES,
+  OPEN_CASE_KINDS,
+  type CaseSortField,
+  type CaseSortOrder,
+  type CaseStatusFilter
+} from '~/constants/case'
 import { cn } from '~/lib/dashboard/utils'
 import type { AdminCaseListItem, AdminCaseListResponse } from '~/types/api/case'
 
@@ -27,6 +35,7 @@ import { CaseQueueList } from './CaseQueueList'
 import { isPublisherCaseView, type CaseCenterView } from './caseCenterViews'
 
 export const ALL_CASE_KINDS = 'all'
+export const ALL_CASE_STATUSES = 'all'
 
 interface CaseQueueProps {
   view: CaseCenterView
@@ -38,6 +47,11 @@ interface CaseQueueProps {
   page: number
   pageSize: number
   caseKind: string
+  /** Status groups the view offers; empty hides the status filter. */
+  statusFilters: readonly CaseStatusFilter[]
+  caseStatus: CaseStatusFilter | ''
+  sort: CaseSortField
+  order: CaseSortOrder
   /** Publisher filter of the publisher view; empty for none. */
   ownerId: string
   searchActive: boolean
@@ -45,6 +59,8 @@ interface CaseQueueProps {
   selectionStatus: 'none' | 'invalid' | 'ok'
   isMobile: boolean
   onKindChange: (kind: string) => void
+  onCaseStatusChange: (status: string) => void
+  onSortChange: (sort: CaseSortField) => void
   onOwnerIdChange: (ownerId: string) => void
   onPageChange: (page: number) => void
   onSelect: (row: AdminCaseListItem) => void
@@ -81,12 +97,18 @@ export function CaseQueue({
   page,
   pageSize,
   caseKind,
+  statusFilters,
+  caseStatus,
+  sort,
+  order,
   ownerId,
   searchActive,
   selectedId,
   selectionStatus,
   isMobile,
   onKindChange,
+  onCaseStatusChange,
+  onSortChange,
   onOwnerIdChange,
   onPageChange,
   onSelect,
@@ -162,9 +184,12 @@ export function CaseQueue({
       error={error}
       selectedId={selectedId}
       emptyText={view.emptyText}
-      searchActive={searchActive || ownerId !== ''}
+      searchActive={searchActive || ownerId !== '' || caseStatus !== ''}
       showOwner={publisherView}
+      sort={sort}
+      order={order}
       onSelect={onSelect}
+      onSortChange={onSortChange}
       onPageChange={onPageChange}
       onRetry={onRetry}
     />
@@ -194,6 +219,24 @@ export function CaseQueue({
             ))}
           </SelectContent>
         </Select>
+        {statusFilters.length ? (
+          <Select
+            value={caseStatus || ALL_CASE_STATUSES}
+            onValueChange={onCaseStatusChange}
+          >
+            <SelectTrigger aria-label="状态筛选" className="h-8 w-[8rem]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={ALL_CASE_STATUSES}>全部状态</SelectItem>
+              {statusFilters.map((filter) => (
+                <SelectItem key={filter} value={filter}>
+                  {caseStatusLabel(CASE_STATUS_FILTER_STATUSES[filter][0])}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        ) : null}
         {publisherView ? (
           <form
             className="flex items-center gap-2"

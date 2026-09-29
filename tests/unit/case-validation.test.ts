@@ -83,7 +83,9 @@ describe('case validation', () => {
       page: 1,
       limit: 20,
       search: '',
-      searchField: 'all'
+      searchField: 'all',
+      sort: 'time',
+      order: 'asc'
     })
 
     for (const input of [
@@ -112,6 +114,27 @@ describe('case validation', () => {
     expect(
       adminCaseListSchema.safeParse({ page: '1', limit: '100' }).success
     ).toBe(true)
+  })
+
+  it('sorts the admin list only by a known column and direction', () => {
+    for (const sort of ['id', 'status', 'kind', 'reporter', 'owner', 'time']) {
+      expect(adminCaseListSchema.parse({ sort }).sort).toBe(sort)
+    }
+    expect(adminCaseListSchema.parse({ order: 'desc' }).order).toBe('desc')
+    expect(adminCaseListSchema.parse({ sort: 'kind' }).order).toBe('asc')
+
+    for (const input of [
+      { sort: 'status_changed_at' },
+      { sort: 'name' },
+      { sort: '' },
+      { order: 'DESC' },
+      { order: 'up' }
+    ]) {
+      expect(
+        adminCaseListSchema.safeParse(input).success,
+        JSON.stringify(input)
+      ).toBe(false)
+    }
   })
 
   it('requires positive integer path IDs within the Int range', () => {

@@ -4,6 +4,7 @@ import {
   useCallback,
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState
 } from 'react'
@@ -24,8 +25,14 @@ import { useIsMobile } from '~/hooks/dashboard/use-mobile'
 import {
   CASE_SEARCH_FIELDS,
   CASE_SEARCH_FIELD_LABELS,
+  CASE_SORT_FIELDS,
+  CASE_STATUS_FILTERS,
+  CASE_STATUS_FILTER_STATUSES,
   OPEN_CASE_KINDS,
-  type CaseSearchField
+  type CaseSearchField,
+  type CaseSortField,
+  type CaseSortOrder,
+  type CaseStatusFilter
 } from '~/constants/case'
 import { cn } from '~/lib/dashboard/utils'
 import type { AdminCaseListItem, CaseStatusCounts } from '~/types/api/case'
@@ -39,7 +46,8 @@ import {
   UNRESOLVED_CASE_VIEW,
   findCaseView,
   isPublisherCaseView,
-  type CaseCenterView
+  type CaseCenterView,
+  type CaseListParams
 } from './caseCenterViews'
 import { useCaseList } from './useCaseList'
 
@@ -72,6 +80,45 @@ const SEARCH_PLACEHOLDERS: Record<CaseSearchField, string> = {
   reporter: '输入报告者用户名',
   content: '输入对话里的文字'
 }
+
+/**
+ * Status filter options of a view: the groups its statuses reach into. A view
+ * inside one group is that filter already, and the overview lists nothing.
+ */
+const statusFiltersFor = (view: CaseCenterView): CaseStatusFilter[] => {
+  const keys = view.countKeys
+  if (keys === null) return []
+  const filters = CASE_STATUS_FILTERS.filter((filter) =>
+    CASE_STATUS_FILTER_STATUSES[filter].some((status) => keys.includes(status))
+  )
+  return filters.length > 1 ? filters : []
+}
+
+const parseCaseStatus = (
+  raw: string | null,
+  filters: readonly CaseStatusFilter[]
+): CaseStatusFilter | '' => filters.find((filter) => filter === raw) ?? ''
+
+const SORT_FIELD_SET: ReadonlySet<string> = new Set(CASE_SORT_FIELDS)
+const parseSortField = (raw: string | null): CaseSortField =>
+  raw !== null && SORT_FIELD_SET.has(raw) ? (raw as CaseSortField) : 'time'
+
+const parseSortOrder = (raw: string | null): CaseSortOrder =>
+  raw === 'desc' ? 'desc' : 'asc'
+
+/**
+ * The person column names the reporter, and the publisher in the publisher
+ * view, so a sort by it follows the column into the view it lands on.
+ */
+const sortForView = (
+  sort: CaseSortField,
+  view: CaseCenterView
+): CaseSortField =>
+  sort === 'reporter' || sort === 'owner'
+    ? isPublisherCaseView(view)
+      ? 'owner'
+      : 'reporter'
+    : sort
 
 const parsePage = (raw: string | null): number => {
   const page = Number(raw)
@@ -135,8 +182,15 @@ export function CaseCenter({ initialCaseId }: CaseCenterProps) {
         ? UNRESOLVED_CASE_VIEW
         : DEFAULT_CASE_VIEW
   const caseKind = parseCaseKind(searchParams.get('caseKind'))
+  const statusFilters = statusFiltersFor(view)
+  const caseStatus = parseCaseStatus(
+    searchParams.get('caseStatus'),
+    statusFilters
+  )
   const search = parseSearch(searchParams.get('search'))
   const searchField = parseSearchField(searchParams.get('searchField'))
+  const sort = sortForView(parseSortField(searchParams.get('sort')), view)
+  const order = parseSortOrder(searchParams.get('order'))
   const publisherView = isPublisherCaseView(view)
   const ownerId = publisherView ? parseOwnerId(searchParams.get('owner')) : ''
   const page = parsePage(searchParams.get('page'))
@@ -149,13 +203,28 @@ export function CaseCenter({ initialCaseId }: CaseCenterProps) {
   const selectedId = selection.status === 'ok' ? selection.id : null
 
   const isOverview = view.countKeys === null
+  // A status filter stands in for the view's own status parameter; the owner
+  // scope stays. Memoized because the list refetches whenever `params` does.
+  const viewParams = useMemo<CaseListParams>(() => {
+    const keys = view.countKeys
+    if (!caseStatus || keys === null) return view.params
+    return {
+      ...(view.params.ownerType ? { ownerType: view.params.ownerType } : {}),
+      statuses: CASE_STATUS_FILTER_STATUSES[caseStatus]
+        .filter((status) => keys.includes(status))
+        .join(',')
+    }
+  }, [view, caseStatus])
   const listQuery = {
     // The overview reports on the staff queue, so it reuses that filter.
-    params: isOverview ? UNRESOLVED_CASE_VIEW.params : view.params,
+    params: isOverview ? UNRESOLVED_CASE_VIEW.params : viewParams,
     kind: isOverview ? '' : caseKind,
     search: isOverview ? '' : search,
     // The field only shapes a submitted search; alone it changes no result.
     searchField: !isOverview && search ? searchField : 'all',
+    // The overview lists the head of the waiting order.
+    sort: isOverview ? 'time' : sort,
+    order: isOverview ? 'asc' : order,
     ownerId,
     page: isOverview ? 1 : page,
     limit: isOverview ? OVERVIEW_PAGE_SIZE : QUEUE_PAGE_SIZE
@@ -185,19 +254,26 @@ export function CaseCenter({ initialCaseId }: CaseCenterProps) {
       patch: {
         view?: CaseCenterView
         caseKind?: string
+        caseStatus?: CaseStatusFilter | ''
         search?: string
         searchField?: CaseSearchField
+        sort?: CaseSortField
+        order?: CaseSortOrder
         ownerId?: string
         page?: number
         selection?: number | null
       },
       mode: 'push' | 'replace' = 'push'
     ) => {
+      const nextView = patch.view ?? view
       const next = {
-        view: patch.view ?? view,
+        view: nextView,
         caseKind: patch.caseKind ?? caseKind,
+        caseStatus: patch.caseStatus ?? caseStatus,
         search: patch.search ?? search,
         searchField: patch.searchField ?? searchField,
+        sort: sortForView(patch.sort ?? sort, nextView),
+        order: patch.order ?? order,
         ownerId: patch.ownerId ?? ownerId,
         page: patch.page ?? page,
         selection: patch.selection === undefined ? selectedId : patch.selection
@@ -209,10 +285,13 @@ export function CaseCenter({ initialCaseId }: CaseCenterProps) {
       if (next.searchField !== 'all') q.set('searchField', next.searchField)
       if (next.view.countKeys !== null) {
         if (next.caseKind) q.set('caseKind', next.caseKind)
+        if (next.caseStatus) q.set('caseStatus', next.caseStatus)
         if (next.search) q.set('search', next.search)
         if (next.ownerId && isPublisherCaseView(next.view)) {
           q.set('owner', next.ownerId)
         }
+        if (next.sort !== 'time') q.set('sort', next.sort)
+        if (next.order !== 'asc') q.set('order', next.order)
         if (next.page > 1) q.set('page', String(next.page))
         if (next.selection !== null) q.set('id', String(next.selection))
       }
@@ -221,16 +300,41 @@ export function CaseCenter({ initialCaseId }: CaseCenterProps) {
       if (mode === 'replace') router.replace(href, { scroll: false })
       else router.push(href, { scroll: false })
     },
-    [view, caseKind, search, searchField, ownerId, page, selectedId, router]
+    [
+      view,
+      caseKind,
+      caseStatus,
+      search,
+      searchField,
+      sort,
+      order,
+      ownerId,
+      page,
+      selectedId,
+      router
+    ]
   )
 
   // A filter change is a new result set: back to page 1. The open detail is
   // self-contained and stays open, matching the inbox's outside-window rule.
+  // The status filter's groups depend on the view, so a view switch drops it.
   const handleSelectView = (next: CaseCenterView) => {
-    navigate({ view: next, page: 1 })
+    navigate({ view: next, caseStatus: '', page: 1 })
   }
   const handleKindChange = (value: string) => {
     navigate({ caseKind: value === ALL_CASE_KINDS ? '' : value, page: 1 })
+  }
+  const handleCaseStatusChange = (value: string) => {
+    navigate({ caseStatus: parseCaseStatus(value, statusFilters), page: 1 })
+  }
+  // Explorer's column heads: the sorted column flips its direction, another
+  // column starts ascending.
+  const handleSortChange = (column: CaseSortField) => {
+    navigate(
+      column === sort
+        ? { order: order === 'asc' ? 'desc' : 'asc', page: 1 }
+        : { sort: column, order: 'asc', page: 1 }
+    )
   }
   const handleOwnerIdChange = (value: string) => {
     navigate({ ownerId: parseOwnerId(value), page: 1 })
@@ -458,12 +562,18 @@ export function CaseCenter({ initialCaseId }: CaseCenterProps) {
               page={page}
               pageSize={QUEUE_PAGE_SIZE}
               caseKind={caseKind}
+              statusFilters={statusFilters}
+              caseStatus={caseStatus}
+              sort={sort}
+              order={order}
               ownerId={ownerId}
               searchActive={search.trim().length > 0}
               selectedId={selectedId}
               selectionStatus={selectionStatus}
               isMobile={isMobile}
               onKindChange={handleKindChange}
+              onCaseStatusChange={handleCaseStatusChange}
+              onSortChange={handleSortChange}
               onOwnerIdChange={handleOwnerIdChange}
               onPageChange={handlePageChange}
               onSelect={handleSelect}
