@@ -59,6 +59,18 @@ export const CASE_VIEW_GROUP_LABELS: Record<CaseViewGroup, string> = {
   oversight: '只读'
 }
 
+/**
+ * Who handles each group's cases, in the detail's 处理方 wording. Only the
+ * read-only group lists cases still owned by their publisher.
+ */
+export const CASE_VIEW_GROUP_OWNERS: Record<CaseViewGroup, string> = {
+  overview: '站方处理',
+  unresolved: '站方处理',
+  closed: '站方处理',
+  all: '站方处理',
+  oversight: '发布者处理'
+}
+
 const byStatuses = (keys: readonly CaseStatus[]): CaseListParams => ({
   statuses: keys.join(',')
 })
@@ -170,9 +182,12 @@ export const CASE_CENTER_VIEWS: CaseCenterView[] = [
   }
 ]
 
-/** Says out loud that the six queue numbers are not mutually exclusive. */
+/**
+ * Says out loud that the six queue numbers are not mutually exclusive, and
+ * which cases the 站方处理 groups hold.
+ */
 export const CASE_VIEW_OVERLAP_HINT =
-  '待处理与等待报告者是未结事项的两个子集；全部事项另含已结案。发布者处理中不在站方队列里。'
+  '待处理与等待报告者是未结事项的两个子集；全部事项另含已结案。站方处理：违规举报、条目资料有误、资源发错条目、站务反馈与条目页「其他」、官方资源的问题，以及发布者 7 天未处理或报告者申请复核后转来的资源问题。发布者处理中不在站方队列里。'
 
 export const DEFAULT_CASE_VIEW = CASE_CENTER_VIEWS[0]
 /** Staff queue: what the overview reports on and where a deep link lands. */

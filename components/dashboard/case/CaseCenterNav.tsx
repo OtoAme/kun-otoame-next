@@ -7,6 +7,7 @@ import type { CaseStatusCounts } from '~/types/api/case'
 import {
   CASE_CENTER_VIEWS,
   CASE_VIEW_GROUP_LABELS,
+  CASE_VIEW_GROUP_OWNERS,
   CASE_VIEW_OVERLAP_HINT,
   caseViewCount,
   type CaseCenterView,
@@ -103,22 +104,33 @@ export function CaseCenterNav({
       )}
     >
       {vertical ? (
-        GROUP_ORDER.map((group) => (
-          <div key={group} className="space-y-1">
-            <p className="px-2 text-xs font-semibold text-muted-foreground">
-              {CASE_VIEW_GROUP_LABELS[group]}
-            </p>
-            {/* The indent rail makes the two subsets read as one block. */}
-            <ul
-              className={cn(
-                'space-y-0.5',
-                group === 'unresolved' && 'border-l border-transparent'
-              )}
-            >
-              {viewsOf(group).map(entry)}
-            </ul>
-          </div>
-        ))
+        GROUP_ORDER.map((group) => {
+          const titleId = `case-center-nav-group-${group}`
+          return (
+            <div key={group} className="space-y-1">
+              {/* The owner sits inside the title that names the list. */}
+              <p
+                id={titleId}
+                className="flex items-baseline justify-between gap-2 px-2 text-xs font-semibold text-muted-foreground"
+              >
+                {CASE_VIEW_GROUP_LABELS[group]}
+                <span className="font-normal">
+                  {CASE_VIEW_GROUP_OWNERS[group]}
+                </span>
+              </p>
+              {/* The indent rail makes the two subsets read as one block. */}
+              <ul
+                aria-labelledby={titleId}
+                className={cn(
+                  'space-y-0.5',
+                  group === 'unresolved' && 'border-l border-transparent'
+                )}
+              >
+                {viewsOf(group).map(entry)}
+              </ul>
+            </div>
+          )
+        })
       ) : (
         <div className="flex items-center gap-2 overflow-x-auto">
           {GROUP_ORDER.map((group) => (
