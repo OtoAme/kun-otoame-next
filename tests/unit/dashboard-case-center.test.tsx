@@ -267,6 +267,24 @@ describe('dashboard case center', () => {
       (button) => button.textContent === text
     )!
 
+  /** The mocked selects render natively; pick one by an option it offers. */
+  const chooseOption = async (
+    container: HTMLElement,
+    offered: string,
+    value: string
+  ) => {
+    const select = [...container.querySelectorAll('select')].find((element) =>
+      element.querySelector(`option[value="${offered}"]`)
+    )!
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(
+        dom!.window.HTMLSelectElement.prototype,
+        'value'
+      )!.set!.call(select, value)
+      select.dispatchEvent(new dom!.window.Event('change', { bubbles: true }))
+    })
+  }
+
   it('opens on the overview, which reports on the default queue only', async () => {
     mocks.kunFetchGet.mockResolvedValue(
       listResponse([makeRow()], 1, SAMPLE_COUNTS)
@@ -335,7 +353,7 @@ describe('dashboard case center', () => {
     // open 与 waiting_owner 在 CASE_STATUS_LABELS 里同为「等待处理方」，
     // 必须合成一个「待处理」入口而不是两个同名入口。导航渲染两套
     // （竖列 + 横条，互补隐藏），只数其中一套。
-    const nav = container.querySelector('nav[aria-label="工单中心导航"]')!
+    const nav = container.querySelector('nav[aria-label="事项中心导航"]')!
     const labels = [...nav.querySelectorAll('[data-case-view]')].map(
       (element) => element.textContent?.replace(/\d+$/, '')
     )
@@ -582,16 +600,7 @@ describe('dashboard case center', () => {
     const container = await mount()
     await flush()
 
-    const kindSelect = container.querySelector('select')!
-    await act(async () => {
-      Object.getOwnPropertyDescriptor(
-        dom!.window.HTMLSelectElement.prototype,
-        'value'
-      )!.set!.call(kindSelect, 'content_violation')
-      kindSelect.dispatchEvent(
-        new dom!.window.Event('change', { bubbles: true })
-      )
-    })
+    await chooseOption(container, 'content_violation', 'content_violation')
     expect(lastPushedHref()).toContain('caseKind=content_violation')
     await applyNavigation(lastPushedHref())
     await flush()
@@ -631,6 +640,40 @@ describe('dashboard case center', () => {
       page: 1,
       limit: 20
     })
+  })
+
+  it('narrows a submitted search to the chosen field through the URL (M03-9)', async () => {
+    mocks.searchParams = new URLSearchParams('view=unresolved&search=%238')
+    mocks.kunFetchGet.mockResolvedValue(listResponse([makeRow()]))
+    const container = await mount()
+    await flush()
+
+    await chooseOption(container, 'reporter', 'id')
+    expect(lastPushedHref()).toContain('searchField=id')
+    await applyNavigation(lastPushedHref())
+    await flush()
+    expect(mocks.kunFetchGet).toHaveBeenLastCalledWith('/admin/case', {
+      search: '#8',
+      searchField: 'id',
+      page: 1,
+      limit: 20
+    })
+    expect(
+      container.querySelector<HTMLInputElement>('input[type="search"]')!
+        .placeholder
+    ).toBe('输入事项编号，如 8 或 #8')
+  })
+
+  it('does not refetch when only the field changes without a search', async () => {
+    mocks.searchParams = new URLSearchParams('view=unresolved')
+    mocks.kunFetchGet.mockResolvedValue(listResponse([makeRow()]))
+    const container = await mount()
+    await flush()
+
+    await chooseOption(container, 'reporter', 'reporter')
+    await applyNavigation(lastPushedHref())
+    await flush()
+    expect(mocks.kunFetchGet).toHaveBeenCalledTimes(1)
   })
 
   it('runs a search typed on the overview against the default queue', async () => {

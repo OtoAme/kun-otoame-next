@@ -13,8 +13,20 @@ import { ChevronRight, RefreshCw, Search } from 'lucide-react'
 
 import { Button } from '~/components/dashboard/ui/button'
 import { Input } from '~/components/dashboard/ui/input'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue
+} from '~/components/dashboard/ui/select'
 import { useIsMobile } from '~/hooks/dashboard/use-mobile'
-import { OPEN_CASE_KINDS } from '~/constants/case'
+import {
+  CASE_SEARCH_FIELDS,
+  CASE_SEARCH_FIELD_LABELS,
+  OPEN_CASE_KINDS,
+  type CaseSearchField
+} from '~/constants/case'
 import { cn } from '~/lib/dashboard/utils'
 import type { AdminCaseListItem, CaseStatusCounts } from '~/types/api/case'
 
@@ -46,6 +58,20 @@ const parseCaseKind = (raw: string | null): string =>
 
 const parseSearch = (raw: string | null): string =>
   (raw ?? '').trim().slice(0, SEARCH_MAX)
+
+const SEARCH_FIELD_SET: ReadonlySet<string> = new Set(CASE_SEARCH_FIELDS)
+const parseSearchField = (raw: string | null): CaseSearchField =>
+  raw !== null && SEARCH_FIELD_SET.has(raw) ? (raw as CaseSearchField) : 'all'
+
+const SEARCH_PLACEHOLDERS: Record<CaseSearchField, string> = {
+  all: '搜索编号、类型、游戏、资源、报告者或对话内容',
+  id: '输入事项编号，如 8 或 #8',
+  kind: '输入类型，如 条目资料有误',
+  patch: '输入游戏名',
+  resource: '输入资源名',
+  reporter: '输入报告者用户名',
+  content: '输入对话里的文字'
+}
 
 const parsePage = (raw: string | null): number => {
   const page = Number(raw)
@@ -86,7 +112,7 @@ export interface CaseCenterProps {
 }
 
 /**
- * 工单中心. A self-contained operations console for staff-owned cases: its
+ * 事项中心. A self-contained operations console for staff-owned cases: its
  * own secondary navigation, overview and queues, living inside the dashboard
  * shell so authentication, the global sidebar and the header are not
  * duplicated. The unified inbox queues the cases waiting on the handler and
@@ -110,6 +136,7 @@ export function CaseCenter({ initialCaseId }: CaseCenterProps) {
         : DEFAULT_CASE_VIEW
   const caseKind = parseCaseKind(searchParams.get('caseKind'))
   const search = parseSearch(searchParams.get('search'))
+  const searchField = parseSearchField(searchParams.get('searchField'))
   const publisherView = isPublisherCaseView(view)
   const ownerId = publisherView ? parseOwnerId(searchParams.get('owner')) : ''
   const page = parsePage(searchParams.get('page'))
@@ -127,6 +154,8 @@ export function CaseCenter({ initialCaseId }: CaseCenterProps) {
     params: isOverview ? UNRESOLVED_CASE_VIEW.params : view.params,
     kind: isOverview ? '' : caseKind,
     search: isOverview ? '' : search,
+    // The field only shapes a submitted search; alone it changes no result.
+    searchField: !isOverview && search ? searchField : 'all',
     ownerId,
     page: isOverview ? 1 : page,
     limit: isOverview ? OVERVIEW_PAGE_SIZE : QUEUE_PAGE_SIZE
@@ -157,6 +186,7 @@ export function CaseCenter({ initialCaseId }: CaseCenterProps) {
         view?: CaseCenterView
         caseKind?: string
         search?: string
+        searchField?: CaseSearchField
         ownerId?: string
         page?: number
         selection?: number | null
@@ -167,6 +197,7 @@ export function CaseCenter({ initialCaseId }: CaseCenterProps) {
         view: patch.view ?? view,
         caseKind: patch.caseKind ?? caseKind,
         search: patch.search ?? search,
+        searchField: patch.searchField ?? searchField,
         ownerId: patch.ownerId ?? ownerId,
         page: patch.page ?? page,
         selection: patch.selection === undefined ? selectedId : patch.selection
@@ -175,6 +206,7 @@ export function CaseCenter({ initialCaseId }: CaseCenterProps) {
       if (next.view.value !== DEFAULT_CASE_VIEW.value) {
         q.set('view', next.view.value)
       }
+      if (next.searchField !== 'all') q.set('searchField', next.searchField)
       if (next.view.countKeys !== null) {
         if (next.caseKind) q.set('caseKind', next.caseKind)
         if (next.search) q.set('search', next.search)
@@ -189,7 +221,7 @@ export function CaseCenter({ initialCaseId }: CaseCenterProps) {
       if (mode === 'replace') router.replace(href, { scroll: false })
       else router.push(href, { scroll: false })
     },
-    [view, caseKind, search, ownerId, page, selectedId, router]
+    [view, caseKind, search, searchField, ownerId, page, selectedId, router]
   )
 
   // A filter change is a new result set: back to page 1. The open detail is
@@ -202,6 +234,9 @@ export function CaseCenter({ initialCaseId }: CaseCenterProps) {
   }
   const handleOwnerIdChange = (value: string) => {
     navigate({ ownerId: parseOwnerId(value), page: 1 })
+  }
+  const handleSearchFieldChange = (value: string) => {
+    navigate({ searchField: parseSearchField(value), page: 1 })
   }
   const handleSearchSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -290,7 +325,7 @@ export function CaseCenter({ initialCaseId }: CaseCenterProps) {
   return (
     <div
       ref={scrollRef}
-      aria-label="工单中心"
+      aria-label="事项中心"
       className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto md:overflow-hidden"
     >
       <div className="flex min-h-0 min-w-0 flex-1 md:overflow-hidden">
@@ -322,7 +357,7 @@ export function CaseCenter({ initialCaseId }: CaseCenterProps) {
                 disabled={isOverview}
                 onClick={() => handleSelectView(DEFAULT_CASE_VIEW)}
               >
-                工单中心
+                事项中心
               </Button>
               {isOverview ? null : (
                 <>
@@ -340,6 +375,21 @@ export function CaseCenter({ initialCaseId }: CaseCenterProps) {
               onSubmit={handleSearchSubmit}
               className="flex min-w-[10rem] flex-1 items-center gap-2"
             >
+              <Select
+                value={searchField}
+                onValueChange={handleSearchFieldChange}
+              >
+                <SelectTrigger aria-label="搜索范围" className="h-8 w-[7rem]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {CASE_SEARCH_FIELDS.map((field) => (
+                    <SelectItem key={field} value={field}>
+                      {CASE_SEARCH_FIELD_LABELS[field]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
               <label htmlFor="case-center-search" className="sr-only">
                 搜索事项
               </label>
@@ -350,7 +400,7 @@ export function CaseCenter({ initialCaseId }: CaseCenterProps) {
                 value={searchText}
                 onChange={(event) => setSearchText(event.target.value)}
                 maxLength={SEARCH_MAX}
-                placeholder="搜索编号、类型或内容"
+                placeholder={SEARCH_PLACEHOLDERS[searchField]}
                 className="h-8 min-w-0 flex-1"
               />
               <Button type="submit" variant="secondary" size="sm">

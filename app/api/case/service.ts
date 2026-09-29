@@ -42,6 +42,7 @@ import {
   caseTextHasGuideLink,
   isCaseOpenerScoped
 } from '~/constants/case'
+import type { CaseSearchField } from '~/constants/case'
 import {
   caseImageUrl,
   consumeCaseImageUploads,
@@ -121,8 +122,12 @@ type AppendCaseInput = Omit<
   awaitReporter?: boolean
 }
 type ResolveCaseInput = z.infer<typeof resolveCaseSchema>
-type AdminListInput = Omit<z.infer<typeof adminCaseListSchema>, 'ownerType'> & {
+type AdminListInput = Omit<
+  z.infer<typeof adminCaseListSchema>,
+  'ownerType' | 'searchField'
+> & {
   ownerType?: CaseOwnerType
+  searchField?: CaseSearchField
 }
 type AdminHandleInput = Omit<
   z.infer<typeof adminCaseHandleSchema>,
@@ -1092,11 +1097,23 @@ const serializeMessage = (
     reporterId?: number | null
     /** Admin views: payloads, and the original text of hidden notes. */
     includePayload: boolean
+    /** Resource author of a case handed to the site administrator. */
+    originalPublisherId?: number | null
   }
 ): CaseMessage => {
   const hidden = isHiddenMessage(row)
   const concealed = hidden && !options.includePayload
   const author = row.author ? toUser(row.author) : null
+  const authorSide =
+    row.kind !== 'reply' || !row.author
+      ? undefined
+      : row.author.role >= 3
+        ? ('staff' as const)
+        : options.originalPublisherId !== null &&
+            options.originalPublisherId !== undefined &&
+            row.author.id === options.originalPublisherId
+          ? ('original-publisher' as const)
+          : undefined
   const safeAuthor =
     row.author &&
     !options.identifyReporter &&
@@ -1124,6 +1141,7 @@ const serializeMessage = (
       ? { images: row.images.map((image) => caseImageUrl(image.storage_key)) }
       : {}),
     ...(hidden ? { hidden: true } : {}),
+    ...(authorSide ? { authorSide } : {}),
     created: iso(row.created) ?? new Date(0).toISOString()
   }
 }
@@ -1357,6 +1375,37 @@ const canCloseAsStaffUnresponsive = (
   row.status_changed_at.getTime() <=
     now.getTime() - CASE_STAFF_UNRESPONSIVE_AFTER_MS
 
+/** Violation reports are private: reporters never learn about each other. */
+const isViolationReport = (row: Pick<CaseRow, 'kind'>) =>
+  row.kind === 'content_violation'
+
+/**
+ * Other reporters' notes a viewer must not read: followers see only their
+ * own note. The opener of a violation report reads their own notes, the site
+ * administrator's replies and the system rows, but not who else reported or
+ * handed the case over (D15, D31, D33).
+ */
+const messageWhereForViewer = (
+  row: Pick<CaseRow, 'id' | 'kind'>,
+  view: NonNullable<ReturnType<typeof canViewCase>>,
+  viewerId: number
+): Prisma.ops_case_messageWhereInput =>
+  view === 'subscriber-public' || view === 'subscriber-private'
+    ? { case_id: row.id, kind: 'report', author_id: viewerId }
+    : view === 'reporter' && isViolationReport(row)
+      ? {
+          case_id: row.id,
+          OR: [
+            { author_id: viewerId },
+            { kind: 'reply', author: { is: { role: { gte: 3 } } } },
+            {
+              kind: 'system',
+              OR: [{ event: null }, { event: { not: 'withdrawn' } }]
+            }
+          ]
+        }
+      : { case_id: row.id }
+
 const listViewOptions = (
   row: CaseRow,
   viewerId: number,
@@ -1379,10 +1428,13 @@ const listViewOptions = (
     view === 'reporter' ||
     view === 'publisher' ||
     view === 'original-publisher'
+  // D31: the opener of a violation report is just one of its reporters, so
+  // the count stays with the site administrator as it does for followers.
+  const privateReporter = view === 'reporter' && isViolationReport(row)
   return {
     view,
     identifyReporter: full,
-    includeCount: full || view === 'subscriber-public',
+    includeCount: (full && !privateReporter) || view === 'subscriber-public',
     includeOwner:
       view === 'admin' || view === 'reporter' || view === 'publisher',
     includeReporter: full
@@ -1720,8 +1772,12 @@ const appendReplyInTx = async (
         ? 'waiting_reporter'
         : (row.status as CaseStatus)
   const stateChanged = nextStatus !== row.status
+  // Only the owning side's own answer is the owner's first response: a site
+  // administrator stepping into a publisher's case does not count (D32).
+  const ownersOwnReply =
+    actor === 'owner' || (actor === 'staff' && row.owner_type === 'staff')
   const firstOwnerResponse =
-    isProcessingParty && row.first_owner_response_at === null ? now : null
+    ownersOwnReply && row.first_owner_response_at === null ? now : null
   const updated = await tx.ops_case.updateMany({
     where: { id: row.id, status: row.status, revision: row.revision },
     data: {
@@ -2198,9 +2254,7 @@ const fetchCaseForViewer = async (
   const follower = view === 'subscriber-public' || view === 'subscriber-private'
   // Followers only read back the note they wrote themselves (D15).
   const messagesRows = await db.ops_case_message.findMany({
-    where: follower
-      ? { case_id: id, kind: 'report', author_id: viewerId }
-      : { case_id: id },
+    where: messageWhereForViewer(row, view, viewerId),
     orderBy: [{ created: 'asc' }, { id: 'asc' }],
     select: messageSelect
   })
@@ -2215,13 +2269,18 @@ const fetchCaseForViewer = async (
   // but has nothing left to withdraw (D18).
   if (!subscription) capabilities.canWithdraw = false
   const relatedOpenCaseIds = admin ? await loadRelatedOpenCaseIds(db, row) : []
+  const handedOffFrom =
+    row.public && row.owner_type === 'staff' && row.escalated_at !== null
+      ? target.resource?.user_id
+      : null
   const detail: CaseDetail = {
     ...summary,
     messages: messagesRows.map((message) =>
       serializeMessage(message, {
         identifyReporter: options.identifyReporter || follower,
         reporterId: row.reporter_id,
-        includePayload: admin
+        includePayload: admin,
+        originalPublisherId: handedOffFrom
       })
     ),
     // A follower of a private report joined by submitting one of their own.
@@ -2516,7 +2575,21 @@ export const listCases = async (
       targetByCaseId.get(row.id)
     )
     if (!serialized) continue
-    const latestMessage = row.messages?.[0]
+    let latestMessage: (typeof row.messages)[number] | undefined =
+      row.messages?.[0]
+    // A violation report's opener never previews another reporter's note (D31).
+    if (
+      latestMessage?.kind === 'report' &&
+      serialized.view === 'reporter' &&
+      isViolationReport(row)
+    ) {
+      latestMessage =
+        (await db.ops_case_message.findFirst({
+          where: messageWhereForViewer(row, serialized.view, viewerId),
+          orderBy: [{ created: 'desc' }, { id: 'desc' }],
+          select: caseListSelect.messages.select
+        })) ?? undefined
+    }
     cases.push({
       ...serialized.summary,
       ...(serialized.view !== 'subscriber-public' &&
@@ -2994,12 +3067,14 @@ export const reviewCase = async (
         null,
         `/dashboard/case/${row.id}`
       )
+      // The publisher can read the reason in the dialogue anyway, so the
+      // notice carries the same snippet as the administrators' one.
       if (row.owner_id !== null) {
         await notifyCaseUsers(
           tx,
           row.id,
           [row.owner_id],
-          `${subject}的报告者已申请网站管理员复核。`
+          withSnippet(`${subject}的报告者申请网站管理员复核`, content)
         )
       }
       return { changed: true as const }
@@ -3041,16 +3116,21 @@ export const withdrawCase = async (
     if (!row) return '问题不存在'
     if (row.reporter_id !== uid) return '只有开启者可以撤回'
     if (!unresolvedStatuses.includes(row.status as never)) return '该问题已结案'
-    // Withdrawing while others follow drops only the opener's subscription.
+    // The opener withdraws through their own subscription; without it there
+    // is nothing left to withdraw (D18).
     const own = await tx.ops_case_subscriber.findUnique({
       where: { case_id_user_id: { case_id: row.id, user_id: uid } },
       select: { user_id: true }
     })
     if (!own) return '你已经撤回过这条问题'
-    const others = await tx.ops_case_subscriber.count({
-      where: { case_id: row.id, user_id: { not: uid } }
+    // D33: the earliest remaining reporter takes the case over, so somebody
+    // can still answer the handler; the withdrawer leaves it completely.
+    const successor = await tx.ops_case_subscriber.findFirst({
+      where: { case_id: row.id, user_id: { not: uid } },
+      orderBy: [{ created: 'asc' }, { user_id: 'asc' }],
+      select: { user_id: true }
     })
-    if (others === 0) {
+    if (!successor) {
       const closed = await closeCaseInternal(tx, {
         caseId: row.id,
         expectedStatuses: [row.status as CaseStatus],
@@ -3063,6 +3143,24 @@ export const withdrawCase = async (
       })
       return closed.changed ? { changed: true as const } : closed.reason
     }
+    // A successor who now owes the handler an answer gets the full 14 days.
+    const waitingOnReporter = row.status === 'waiting_reporter'
+    const moved = await tx.ops_case.updateMany({
+      where: {
+        id: row.id,
+        reporter_id: uid,
+        status: row.status,
+        revision: row.revision
+      },
+      data: {
+        reporter_id: successor.user_id,
+        ...(waitingOnReporter
+          ? { status_changed_at: now, revision: { increment: 1 } }
+          : {}),
+        updated: now
+      }
+    })
+    if (moved.count === 0) return '该问题刚刚被他人更新，请刷新后重试'
     await tx.ops_case_subscriber.deleteMany({
       where: { case_id: row.id, user_id: uid }
     })
@@ -3070,8 +3168,14 @@ export const withdrawCase = async (
       tx,
       row.id,
       'withdrawn',
-      { actor_type: 'reporter' },
-      '开启者已撤回自己的报告；还有其他报告者，事项继续处理。'
+      { actor_type: 'reporter', successor_id: successor.user_id },
+      '开启者已撤回自己的报告，改由下一位报告者跟进，事项继续处理。'
+    )
+    await notifyCaseUsers(
+      tx,
+      row.id,
+      [successor.user_id],
+      `${await describeCaseForNotice(tx, row)}改由你作为报告者跟进，处理方需要补充材料时会通知你。`
     )
     return { changed: true as const }
   })
@@ -3588,6 +3692,9 @@ export const handleCaseContent = async (
         actorId: adminId,
         payload: { handled_target: 'missing' },
         body: input.content || '目标已不存在，事项已登记处理。',
+        // A misjudgement restore is a 不成立 finding: rejected like every
+        // other 不成立, whichever action records it (D25 precedent).
+        status: input.action === 'restore' ? 'rejected' : 'resolved',
         now
       })
       if (!closed.changed) return closed.reason
@@ -3654,6 +3761,7 @@ export const handleCaseContent = async (
           tx,
           row.target_id,
           adminId,
+          row.id,
           now
         )
         if (typeof removed === 'string') return removed
@@ -3662,6 +3770,7 @@ export const handleCaseContent = async (
           tx,
           row.target_id,
           adminId,
+          row.id,
           now
         )
         if (typeof restored === 'string') return restored
@@ -3679,6 +3788,7 @@ export const handleCaseContent = async (
       actorId: adminId,
       payload: { handled_target: row.target_type },
       body: input.content || undefined,
+      status: input.action === 'restore' ? 'rejected' : 'resolved',
       now
     })
     if (!closed.changed) rollbackCaseOperation(closed.reason)
@@ -3782,23 +3892,35 @@ export const setCaseMessageHidden = async (
 const buildAdminCaseSearch = async (
   db: CaseDb,
   search: string,
-  scope: Prisma.ops_caseWhereInput
+  scope: Prisma.ops_caseWhereInput,
+  field: CaseSearchField = 'all'
 ): Promise<Prisma.ops_caseWhereInput[]> => {
+  const within = (wanted: CaseSearchField) => field === 'all' || field === wanted
   const contains = { contains: search, mode: 'insensitive' as const }
-  const predicates: Prisma.ops_caseWhereInput[] = [
-    { kind: contains },
-    { messages: { some: { body: contains } } },
-    { patch: { name: contains } },
-    { reporter: { name: contains } }
-  ]
-  const numeric = Number(search)
-  if (Number.isSafeInteger(numeric) && numeric > 0 && numeric <= CASE_ID_MAX) {
-    predicates.unshift({ id: numeric })
+  const predicates: Prisma.ops_caseWhereInput[] = []
+  // 「#8」and「8」both name case 8 (M03-9).
+  const numeric = Number(search.replace(/^#/, ''))
+  if (
+    within('id') &&
+    Number.isSafeInteger(numeric) &&
+    numeric > 0 &&
+    numeric <= CASE_ID_MAX
+  ) {
+    predicates.push({ id: numeric })
   }
-  const labelKinds = CASE_KINDS.filter((kind) =>
-    CASE_KIND_LABELS[kind].includes(search)
-  )
-  if (labelKinds.length) predicates.push({ kind: { in: labelKinds } })
+  if (within('kind')) {
+    predicates.push({ kind: contains })
+    const labelKinds = CASE_KINDS.filter((kind) =>
+      CASE_KIND_LABELS[kind].includes(search)
+    )
+    if (labelKinds.length) predicates.push({ kind: { in: labelKinds } })
+  }
+  if (within('content')) {
+    predicates.push({ messages: { some: { body: contains } } })
+  }
+  if (within('patch')) predicates.push({ patch: { name: contains } })
+  if (within('reporter')) predicates.push({ reporter: { name: contains } })
+  if (!within('resource')) return predicates
   const targets = await db.ops_case.findMany({
     where: { ...scope, target_type: 'resource' },
     select: { target_id: true },
@@ -3847,7 +3969,14 @@ export const getAdminCases = async (
   const scopeWhere: Prisma.ops_caseWhereInput = {
     ...queueWhere,
     ...(input.search
-      ? { OR: await buildAdminCaseSearch(db, input.search, queueWhere) }
+      ? {
+          OR: await buildAdminCaseSearch(
+            db,
+            input.search,
+            queueWhere,
+            input.searchField
+          )
+        }
       : {})
   }
   // Status ladder, most specific rung first: an explicit list beats a single

@@ -24,6 +24,14 @@ export interface IssueTriagePhenomenon {
   enabled: boolean
 }
 
+/**
+ * 「求资源或催更」answer shared with the game feedback entry. Module 07
+ * points it at the help board once that board ships.
+ */
+export const REQUEST_RESOURCE_GUIDE_LINKS = [
+  { href: CASE_GUIDE_LINKS.contribute, label: '内容贡献指南' }
+] as const
+
 export const ISSUE_TRIAGE_PHENOMENA: readonly IssueTriagePhenomenon[] = [
   {
     key: 'resource_mismatch',
@@ -68,10 +76,7 @@ export const ISSUE_TRIAGE_PHENOMENA: readonly IssueTriagePhenomenon[] = [
     key: 'request_resource',
     label: '求资源或催更',
     examples: '想要的资源不在这里、希望更新版本',
-    destination: {
-      type: 'guide',
-      links: [{ href: CASE_GUIDE_LINKS.contribute, label: '内容贡献指南' }]
-    },
+    destination: { type: 'guide', links: REQUEST_RESOURCE_GUIDE_LINKS },
     enabled: true
   },
   {
@@ -79,7 +84,8 @@ export const ISSUE_TRIAGE_PHENOMENA: readonly IssueTriagePhenomenon[] = [
     label: '发在了错误的条目下',
     examples: '这条资源属于另一个游戏',
     destination: { type: 'case', kind: 'resource_wrong_patch' },
-    enabled: false
+    placeholder: '这条资源实际属于哪个游戏（游戏名或条目链接）……',
+    enabled: true
   },
   {
     key: 'violation',

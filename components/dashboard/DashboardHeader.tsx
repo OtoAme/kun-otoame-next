@@ -50,7 +50,7 @@ export function DashboardHeader() {
             : // The case center carries no `kinds` param, so it has to be
               // matched before the source-filter branch falls through.
               pathname.startsWith('/dashboard/case')
-              ? '工单中心'
+              ? '事项中心'
               : selectedKinds.length === 1
                 ? INBOX_KIND_LABELS[selectedKinds[0]]
                 : '待审事项'

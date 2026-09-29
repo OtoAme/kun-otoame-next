@@ -268,6 +268,20 @@ export const formatCaseDuration = (ms: number): string => {
   return `${Math.floor(hours / 24)} 天`
 }
 
+/**
+ * Time left before a deadline, rounded up at every unit so the countdown
+ * agrees with the 48-hour reminder:「还有 2 天」is shown as「约 2 天」, not 1.
+ */
+export const formatCaseRemaining = (ms: number): string => {
+  const seconds = Math.max(0, Math.ceil(ms / 1000))
+  if (seconds < 60) return '不足 1 分钟'
+  const minutes = Math.ceil(seconds / 60)
+  if (minutes < 60) return `${minutes} 分钟`
+  const hours = Math.ceil(minutes / 60)
+  if (hours < 24) return `${hours} 小时`
+  return `${Math.ceil(hours / 24)} 天`
+}
+
 interface CaseStatusHintSource {
   kind: CaseKind
   ownerType: CaseOwnerType
@@ -295,7 +309,7 @@ export const caseStatusHint = (
     ) {
       const remaining = enteredAt + CASE_PUBLISHER_ESCALATION_AFTER_MS - now
       return remaining > 0
-        ? `发布者处理中，约 ${formatCaseDuration(remaining)}后提交给网站管理员处理`
+        ? `发布者处理中，约 ${formatCaseRemaining(remaining)}后提交给网站管理员处理`
         : '已到时限，即将提交给网站管理员处理'
     }
     if (
@@ -304,7 +318,7 @@ export const caseStatusHint = (
     ) {
       const remaining = enteredAt + CASE_REPORTER_TIMEOUT_AFTER_MS - now
       return remaining > 0
-        ? `等待报告者回应，约 ${formatCaseDuration(remaining)}后自动结案`
+        ? `等待报告者回应，约 ${formatCaseRemaining(remaining)}后自动结案`
         : '已达自动结案时限，等待系统结案'
     }
     return null

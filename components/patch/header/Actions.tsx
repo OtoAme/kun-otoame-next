@@ -126,10 +126,16 @@ export const PatchHeaderActions = ({
               </Tooltip>
             )}
 
-            <FeedbackButton patch={patch} />
+            <FeedbackButton
+              patch={patch}
+              onOpenResources={handleClickDownloadNav}
+            />
           </>
         ) : (
-          <FeedbackButton patch={patch} />
+          <FeedbackButton
+            patch={patch}
+            onOpenResources={handleClickDownloadNav}
+          />
         )}
       </div>
 

@@ -92,7 +92,7 @@ export function CaseCenterNav({
 
   return (
     <nav
-      aria-label="工单中心导航"
+      aria-label="事项中心导航"
       aria-describedby={hintId}
       data-case-nav={orientation}
       className={cn(

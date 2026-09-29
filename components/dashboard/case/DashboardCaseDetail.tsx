@@ -116,7 +116,9 @@ export function DashboardCaseDetail({
 
   const [replyContent, setReplyContent] = useState('')
   const replyUploads = useCaseImageUploads()
-  // D28：默认交给报告者补充；取消勾选则事项留在待处理原位
+  // D28：默认交给报告者补充；取消勾选则事项留在待处理原位。
+  // D32：仍归发布者的事项里站方介入默认不交给报告者，发布者的 7 天照常计时。
+  const handOverByDefault = detail?.ownerType !== 'publisher'
   const [awaitReporter, setAwaitReporter] = useState(true)
   const [resolution, setResolution] = useState<CaseResolution | ''>('')
   const [actionContent, setActionContent] = useState('')
@@ -189,6 +191,11 @@ export function DashboardCaseDetail({
     triggerRef.current = null
   }, [caseId, resetReplyUploads])
 
+  // 归属读到之后才知道默认该不该交给报告者
+  useEffect(() => {
+    setAwaitReporter(handOverByDefault)
+  }, [caseId, handOverByDefault])
+
   const handleReply = async () => {
     const content = replyContent.trim()
     if (!content || replyUploads.uploading || lockRef.current) return
@@ -213,7 +220,7 @@ export function DashboardCaseDetail({
       }
       setReplyContent('')
       replyUploads.reset()
-      setAwaitReporter(true)
+      setAwaitReporter(handOverByDefault)
       await load()
       onStateChanged?.(res.case)
     } catch {
@@ -713,7 +720,9 @@ export function DashboardCaseDetail({
                   ) : null}
                   {canHandOver && !awaitReporter ? (
                     <p className="text-xs text-muted-foreground">
-                      事项仍留在待处理，不交给报告者。
+                      {detail.ownerType === 'publisher'
+                        ? '事项仍等发布者处理，发布者的 7 天时限照常计时。'
+                        : '事项仍留在待处理，不交给报告者。'}
                     </p>
                   ) : null}
                   <div className="flex items-center gap-3">

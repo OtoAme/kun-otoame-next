@@ -8,6 +8,7 @@ import {
   CASE_OWNER_TYPES,
   CASE_RESOLUTIONS,
   CASE_RESOURCE_ACTIONS,
+  CASE_SEARCH_FIELDS,
   CASE_SITE_TARGET_ID,
   CASE_STATUSES,
   CASE_TABS,
@@ -231,7 +232,9 @@ export const adminCaseListSchema = z.object({
   ownerId: idSchema.optional(),
   page: z.coerce.number().int().min(1).max(2147483647).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(20),
-  search: z.string().trim().max(300).default('')
+  search: z.string().trim().max(300).default(''),
+  /** Which field the search matches; `all` matches every one of them. */
+  searchField: z.enum(CASE_SEARCH_FIELDS).default('all')
 })
 
 export const adminCaseHandleSchema = z.object({

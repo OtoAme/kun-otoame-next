@@ -5,7 +5,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
   toast: Object.assign(vi.fn(), { success: vi.fn(), error: vi.fn() }),
-  kunFetchGet: vi.fn(),
   kunFetchPost: vi.fn(),
   kunFetchFormData: vi.fn(),
   user: { uid: 100, name: 'Tester', role: 1 }
@@ -13,7 +12,6 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('react-hot-toast', () => ({ default: mocks.toast }))
 vi.mock('~/utils/kunFetch', () => ({
-  kunFetchGet: mocks.kunFetchGet,
   kunFetchPost: mocks.kunFetchPost,
   kunFetchFormData: mocks.kunFetchFormData
 }))
@@ -103,33 +101,6 @@ vi.mock('@heroui/react', async () => {
         onChange={(event) => onValueChange?.(event.target.value)}
       />
     ),
-    Select: ({
-      children,
-      selectedKeys,
-      onSelectionChange,
-      'aria-label': ariaLabel,
-      placeholder
-    }: {
-      children?: React.ReactNode
-      selectedKeys?: string[]
-      onSelectionChange?: (keys: Set<string>) => void
-      'aria-label'?: string
-      placeholder?: string
-    }) => (
-      <select
-        aria-label={ariaLabel}
-        value={selectedKeys?.[0] ?? ''}
-        onChange={(event) => onSelectionChange?.(new Set([event.target.value]))}
-      >
-        <option value="">{placeholder ?? ''}</option>
-        {toArray(children).map((child) => (
-          <option key={String(child.key)} value={String(child.key)}>
-            {(child.props as { children?: React.ReactNode }).children}
-          </option>
-        ))}
-      </select>
-    ),
-    SelectItem: () => null,
     RadioGroup: ({
       children,
       value,
@@ -254,22 +225,6 @@ describe('case entry buttons', () => {
   }
 
   // React 受控组件：直接赋值会被 value tracker 忽略，需要 native setter + input 事件
-  const setNativeValue = (
-    element: HTMLTextAreaElement | HTMLSelectElement,
-    value: string,
-    event: 'input' | 'change'
-  ) => {
-    const prototype =
-      element instanceof dom!.window.HTMLSelectElement
-        ? dom!.window.HTMLSelectElement.prototype
-        : dom!.window.HTMLTextAreaElement.prototype
-    Object.getOwnPropertyDescriptor(prototype, 'value')!.set!.call(
-      element,
-      value
-    )
-    element.dispatchEvent(new dom!.window.Event(event, { bubbles: true }))
-  }
-
   const setTextarea = async (
     container: HTMLElement,
     label: string,
@@ -279,7 +234,11 @@ describe('case entry buttons', () => {
       `textarea[aria-label="${label}"]`
     )!
     await act(async () => {
-      setNativeValue(textarea, value, 'input')
+      Object.getOwnPropertyDescriptor(
+        dom!.window.HTMLTextAreaElement.prototype,
+        'value'
+      )!.set!.call(textarea, value)
+      textarea.dispatchEvent(new dom!.window.Event('input', { bubbles: true }))
     })
   }
 
@@ -306,12 +265,12 @@ describe('case entry buttons', () => {
       )
       await openResourceReport(container)
 
-      // 现象即选项，下面附例子；05 的现象已登记但不显示
+      // 现象即选项，下面附例子；05 的违规现象已登记但不显示
       const text = container.textContent ?? ''
       expect(text).toContain('资源与描述不符')
       expect(text).toContain('链接失效')
       expect(text).toContain('网盘显示已删除或已过期')
-      expect(text).not.toContain('发在了错误的条目下')
+      expect(text).toContain('发在了错误的条目下')
       expect(text).not.toContain('疑似违规或有害内容')
 
       // 分流：下载慢只给指南，不产生事项
@@ -417,6 +376,44 @@ describe('case entry buttons', () => {
         expect.objectContaining({ kind: 'resource_link_failure' })
       )
       expect(container.textContent).toContain('已交给网站管理员')
+    })
+
+    it('files a wrong-patch resource straight to the site administrator (M03-9)', async () => {
+      mocks.kunFetchPost.mockResolvedValue(
+        created(10, { case: { id: 10, public: false, subscriberCount: null } })
+      )
+      const container = await mount(
+        <ReportResourceButton resource={resource} patchId={1} />
+      )
+      await openResourceReport(container)
+      await pickRadio(container, 'wrong_patch')
+
+      // 普通发布者的资源也不经发布者
+      const text = container.textContent ?? ''
+      expect(text).toContain('该问题由网站管理员处理，预计首次响应在 7 天内')
+      expect(text).toContain('网站管理员能看到你的用户名和说明')
+      expect(text).not.toContain('资源发布者')
+      expect(
+        container
+          .querySelector('textarea[aria-label="问题描述"]')
+          ?.getAttribute('placeholder')
+      ).toBe('这条资源实际属于哪个游戏（游戏名或条目链接）……')
+      await setTextarea(container, '问题描述', '这是条目B的汉化补丁，不属于这里')
+      await act(async () => {
+        findButton(container, '提交')!.click()
+      })
+      await flush()
+      expect(mocks.kunFetchPost).toHaveBeenCalledWith('/case', {
+        kind: 'resource_wrong_patch',
+        targetType: 'resource',
+        targetId: 7,
+        expectedPatchId: 1,
+        content: '这是条目B的汉化补丁，不属于这里',
+        imageKeys: []
+      })
+      expect(container.textContent).toContain(
+        '已交给网站管理员，预计 7 天内首次回应'
+      )
     })
 
     it('uploads images and sends their keys with the report (D11)', async () => {
@@ -589,6 +586,10 @@ describe('case entry buttons', () => {
   })
 
   describe('item page「反馈」(D14, D22)', () => {
+    const onOpenResources = vi.fn()
+    const feedback = () => (
+      <FeedbackButton patch={patch} onOpenResources={onOpenResources} />
+    )
     const openFeedback = async (container: HTMLElement) => {
       await act(async () => {
         container
@@ -599,7 +600,7 @@ describe('case entry buttons', () => {
 
     it('prompts guests to log in as soon as they open it', async () => {
       mocks.user = { uid: 0, name: '', role: 0 }
-      const container = await mount(<FeedbackButton patch={patch} />)
+      const container = await mount(feedback())
       await openFeedback(container)
       expect(container.textContent).toContain('提交反馈需要先登录账号')
       expect(container.querySelector('textarea')).toBeNull()
@@ -609,11 +610,15 @@ describe('case entry buttons', () => {
       mocks.kunFetchPost.mockResolvedValue(
         created(8, { case: { id: 8, public: false, subscriberCount: null } })
       )
-      const container = await mount(<FeedbackButton patch={patch} />)
+      const container = await mount(feedback())
       await openFeedback(container)
 
       expect(container.textContent).toContain(
         '由网站管理员核对后修改，预计首次响应在 7 天内'
+      )
+      // 重复条目并入「条目资料有误」
+      expect(container.textContent).toContain(
+        '和其他条目重复也选这一项，写明重复的条目链接'
       )
       await setTextarea(container, '问题描述', '发售日期应为 2019-04-26')
       await act(async () => {
@@ -632,10 +637,9 @@ describe('case entry buttons', () => {
       )
     })
 
-    it('posts other and wrong-patch cases with their own hints', async () => {
-      mocks.kunFetchGet.mockResolvedValue([resource])
+    it('posts other cases without a response promise', async () => {
       mocks.kunFetchPost.mockResolvedValue(created(9))
-      const container = await mount(<FeedbackButton patch={patch} />)
+      const container = await mount(feedback())
       await openFeedback(container)
 
       // 「其他」不承诺时限
@@ -653,38 +657,43 @@ describe('case entry buttons', () => {
         content: '条目相关的其他问题描述',
         imageKeys: []
       })
+    })
 
-      // 「资源发错条目」按需拉取资源列表并创建 resource_wrong_patch
-      await act(async () => {
-        findButton(container, '关闭')!.click()
-      })
-      mocks.kunFetchPost.mockClear()
+    it('points wrong-patch resources to the resource card (M03-9)', async () => {
+      const container = await mount(feedback())
       await openFeedback(container)
       await pickRadio(container, 'resource_wrong_patch')
-      await flush()
-      expect(mocks.kunFetchGet).toHaveBeenCalledWith('/patch/resource', {
-        patchId: 1
-      })
-      expect(container.textContent).toContain('预计首次响应在 7 天内')
-      const select = container.querySelector<HTMLSelectElement>(
-        'select[aria-label="选择资源"]'
-      )!
+
+      // 只给指引，不建事项
+      expect(container.textContent).toContain('选择「发在了错误的条目下」')
+      expect(container.querySelector('textarea')).toBeNull()
+      expect(findButton(container, '提交')).toBeUndefined()
+
       await act(async () => {
-        setNativeValue(select, '7', 'change')
+        findButton(container, '去资源链接')!.click()
       })
-      await setTextarea(container, '问题描述', '这个资源不属于该条目')
-      await act(async () => {
-        findButton(container, '提交')!.click()
-      })
-      await flush()
-      expect(mocks.kunFetchPost).toHaveBeenCalledWith('/case', {
-        kind: 'resource_wrong_patch',
-        targetType: 'resource',
-        targetId: 7,
-        expectedPatchId: 1,
-        content: '这个资源不属于该条目',
-        imageKeys: []
-      })
+      expect(onOpenResources).toHaveBeenCalledTimes(1)
+      expect(container.querySelector('[role="dialog"]')).toBeNull()
+      // 再次打开回到默认的「条目资料有误」
+      await openFeedback(container)
+      expect(
+        container.querySelector('textarea[aria-label="问题描述"]')
+      ).not.toBeNull()
+      expect(mocks.kunFetchPost).not.toHaveBeenCalled()
+    })
+
+    it('answers resource requests with the contribution guide (M03-9)', async () => {
+      const container = await mount(feedback())
+      await openFeedback(container)
+      await pickRadio(container, 'request_resource')
+
+      expect(
+        container.querySelector('a[href="/doc/notice/contribute"]')
+          ?.textContent
+      ).toBe('内容贡献指南')
+      expect(container.querySelector('textarea')).toBeNull()
+      expect(findButton(container, '提交')).toBeUndefined()
+      expect(findButton(container, '关闭')).toBeDefined()
     })
   })
 })

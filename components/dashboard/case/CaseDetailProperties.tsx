@@ -162,7 +162,7 @@ export function CaseDetailProperties({ detail }: { detail: CaseDetail }) {
   const timeFields: { label: string; value: string | null }[] = [
     { label: '创建时间', value: detail.created },
     { label: '进入当前状态', value: detail.statusChangedAt },
-    { label: '升级时间', value: detail.escalatedAt },
+    { label: '提交给网站管理员', value: detail.escalatedAt },
     { label: '首次回应', value: detail.firstOwnerResponseAt },
     { label: '结案时间', value: detail.closedAt },
     { label: '隐藏时间', value: detail.hiddenAt },

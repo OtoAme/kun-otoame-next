@@ -21,6 +21,7 @@ const mocks = vi.hoisted(() => {
     },
     ops_case_subscriber: {
       findUnique: vi.fn(),
+      findFirst: vi.fn(),
       findMany: vi.fn(),
       createMany: vi.fn(),
       count: vi.fn(),
@@ -29,6 +30,7 @@ const mocks = vi.hoisted(() => {
     patch_resource: { findUnique: vi.fn(), findMany: vi.fn() },
     patch: { findUnique: vi.fn(), findMany: vi.fn() },
     patch_comment: { findUnique: vi.fn() },
+    shoutbox: { findUnique: vi.fn() },
     user: { findMany: vi.fn(), findUnique: vi.fn() },
     user_message: {
       createMany: vi.fn(),
@@ -42,7 +44,9 @@ const mocks = vi.hoisted(() => {
     consumeCaseImageUploads: vi.fn(),
     restoreCaseImageUploads: vi.fn(),
     checkCaseRateLimit: vi.fn(),
-    deleteReportedTargetInTransaction: vi.fn()
+    deleteReportedTargetInTransaction: vi.fn(),
+    removeShoutboxForCase: vi.fn(),
+    restoreShoutboxForCase: vi.fn()
   }
 })
 
@@ -66,6 +70,13 @@ vi.mock('~/app/api/case/rateLimit', () => ({
 }))
 vi.mock('~/app/api/admin/report/service', () => ({
   deleteReportedTargetInTransaction: mocks.deleteReportedTargetInTransaction
+}))
+vi.mock('~/app/api/shoutbox/service', () => ({
+  removeShoutboxForCase: mocks.removeShoutboxForCase,
+  restoreShoutboxForCase: mocks.restoreShoutboxForCase
+}))
+vi.mock('~/app/api/shoutbox/cache', () => ({
+  invalidateShoutboxCaches: vi.fn()
 }))
 
 import { Prisma } from '@prisma/client'
@@ -174,6 +185,7 @@ beforeEach(() => {
   mocks.tx.ops_case_message.findMany.mockResolvedValue([])
   mocks.tx.ops_case_message.findFirst.mockResolvedValue(null)
   mocks.tx.ops_case_subscriber.findUnique.mockResolvedValue(null)
+  mocks.tx.ops_case_subscriber.findFirst.mockResolvedValue(null)
   mocks.tx.ops_case_subscriber.findMany.mockResolvedValue([{ user_id: 5 }])
   mocks.tx.ops_case_subscriber.createMany.mockResolvedValue({ count: 1 })
   mocks.tx.ops_case_subscriber.count.mockResolvedValue(0)
@@ -455,19 +467,47 @@ describe('case feedback rules (M03-6, M03-7)', () => {
     expect(noticeRows().map((row) => row.recipient_id)).toContain(2)
   })
 
-  it('only drops the opener when other reporters still follow the case', async () => {
+  it('hands the case to the earliest remaining reporter on withdrawal (D33)', async () => {
     mocks.tx.ops_case_subscriber.findUnique.mockResolvedValue({ user_id: 5 })
-    mocks.tx.ops_case_subscriber.count.mockResolvedValue(2)
+    mocks.tx.ops_case_subscriber.findFirst.mockResolvedValue({ user_id: 10 })
 
     await withdrawCase(42, 5, { now, db: mocks.tx as never })
 
+    expect(mocks.tx.ops_case_subscriber.findFirst).toHaveBeenCalledWith({
+      where: { case_id: 42, user_id: { not: 5 } },
+      orderBy: [{ created: 'asc' }, { user_id: 'asc' }],
+      select: { user_id: true }
+    })
+    expect(mocks.tx.ops_case.updateMany.mock.calls[0][0]).toEqual({
+      where: { id: 42, reporter_id: 5, status: 'open', revision: 3 },
+      data: { reporter_id: 10, updated: now }
+    })
     expect(mocks.tx.ops_case_subscriber.deleteMany).toHaveBeenCalledWith({
       where: { case_id: 42, user_id: 5 }
     })
-    expect(mocks.tx.ops_case.updateMany).not.toHaveBeenCalled()
     expect(createdMessages()[0]).toMatchObject({
       event: 'withdrawn',
-      payload: { actor_type: 'reporter' }
+      payload: { actor_type: 'reporter', successor_id: 10 }
+    })
+    const notices = noticeRows()
+    expect(notices.map((row) => row.recipient_id)).toEqual([10])
+    expect(String(notices[0].content)).toContain('改由你作为报告者跟进')
+  })
+
+  it('restarts the reporter clock for a successor who owes an answer (D33)', async () => {
+    mocks.tx.ops_case.findUnique.mockResolvedValue(
+      caseRow({ status: 'waiting_reporter', status_changed_at: hoursAgo(13 * 24) })
+    )
+    mocks.tx.ops_case_subscriber.findUnique.mockResolvedValue({ user_id: 5 })
+    mocks.tx.ops_case_subscriber.findFirst.mockResolvedValue({ user_id: 10 })
+
+    await withdrawCase(42, 5, { now, db: mocks.tx as never })
+
+    expect(mocks.tx.ops_case.updateMany.mock.calls[0][0].data).toEqual({
+      reporter_id: 10,
+      status_changed_at: now,
+      revision: { increment: 1 },
+      updated: now
     })
   })
 
@@ -526,6 +566,10 @@ describe('case feedback rules (M03-6, M03-7)', () => {
     })
     const recipients = noticeRows().map((row) => row.recipient_id)
     expect(recipients).toEqual(expect.arrayContaining([90, 91, 2]))
+    // The publisher reads the reason in the dialogue, so the notice carries it too.
+    expect(
+      noticeRows().find((row) => row.recipient_id === 2)?.content
+    ).toContain('申请网站管理员复核：发布者没看截图就结案了')
   })
 
   it('refuses a review when the latest closure did not come from the publisher', async () => {
@@ -1302,5 +1346,186 @@ describe('site administrator review fixes (M03-8)', () => {
     expect(
       mocks.tx.admin_log.create.mock.calls.map(([args]) => args.data.type)
     ).toEqual(['case_content_delete', 'case_close'])
+  })
+
+  const shoutboxCase = () =>
+    caseRow({
+      kind: 'content_violation',
+      target_type: 'shoutbox',
+      target_id: 10,
+      owner_type: 'staff',
+      owner_id: null,
+      public: false
+    })
+
+  const shoutboxRow = (status: number) => ({
+    id: 10,
+    status,
+    content: '10000000000000000000',
+    user: { id: 6, name: '创作者', avatar: '' }
+  })
+
+  it('records a misjudgement restore as rejected, like every 不成立', async () => {
+    mocks.tx.ops_case.findUnique.mockResolvedValue(shoutboxCase())
+    mocks.tx.shoutbox.findUnique.mockResolvedValue(shoutboxRow(2))
+    mocks.restoreShoutboxForCase.mockResolvedValue(true)
+
+    await expect(
+      handleCaseContent({ caseId: 42, action: 'restore', content: '' }, 90, 3, {
+        now,
+        db: db()
+      })
+    ).resolves.toMatchObject({ changed: true, action: 'restore' })
+    expect(mocks.restoreShoutboxForCase).toHaveBeenCalledWith(
+      mocks.tx,
+      10,
+      90,
+      42,
+      now
+    )
+    expect(mocks.tx.ops_case.updateMany.mock.calls[0][0].data).toMatchObject({
+      status: 'rejected',
+      resolution: 'not_established'
+    })
+  })
+
+  it('rejects a restore whose shoutbox is already gone, and resolves a takedown', async () => {
+    mocks.tx.ops_case.findUnique.mockResolvedValue(shoutboxCase())
+    mocks.tx.shoutbox.findUnique.mockResolvedValue(null)
+    await handleCaseContent(
+      { caseId: 42, action: 'restore', content: '' },
+      90,
+      3,
+      { now, db: db() }
+    )
+    expect(mocks.tx.ops_case.updateMany.mock.calls[0][0].data).toMatchObject({
+      status: 'rejected',
+      resolution: 'not_established'
+    })
+
+    mocks.tx.shoutbox.findUnique.mockResolvedValue(shoutboxRow(0))
+    mocks.removeShoutboxForCase.mockResolvedValue(true)
+    await handleCaseContent(
+      { caseId: 42, action: 'takedown', content: '' },
+      90,
+      3,
+      { now, db: db() }
+    )
+    // The shoutbox log names the case that carried the takedown.
+    expect(mocks.removeShoutboxForCase).toHaveBeenCalledWith(
+      mocks.tx,
+      10,
+      90,
+      42,
+      now
+    )
+    expect(mocks.tx.ops_case.updateMany.mock.calls[1][0].data).toMatchObject({
+      status: 'resolved',
+      resolution: 'handled'
+    })
+  })
+})
+
+describe('manual test review fixes (M03-9)', () => {
+  const db = () => mocks.tx as never
+  const reply = (id: number, author: { id: number; role: number }) => ({
+    id,
+    kind: 'reply',
+    event: null,
+    payload: null,
+    body: `回复 ${id}`,
+    created: now,
+    author: { ...author, name: `用户 ${author.id}`, avatar: '' },
+    images: []
+  })
+
+  it('keeps other reporters away from a violation report opener (D31)', async () => {
+    mocks.tx.ops_case.findUnique.mockResolvedValue(
+      caseRow({
+        kind: 'content_violation',
+        target_type: 'comment',
+        target_id: 300,
+        owner_type: 'staff',
+        owner_id: null,
+        public: false,
+        dedup_key: 'comment:300:content_violation',
+        _count: { subscribers: 3 }
+      })
+    )
+    mocks.tx.ops_case_subscriber.findUnique.mockResolvedValue({ user_id: 5 })
+    mocks.tx.patch_comment.findUnique.mockResolvedValue({
+      id: 300,
+      patch_id: 7,
+      content: '<p>被举报的评论</p>',
+      user: { id: 12, name: '评论者', avatar: '' }
+    })
+
+    const detail = await getCase(42, 5, 1, { db: db() })
+    if (typeof detail === 'string') throw new Error(detail)
+    expect(detail.case.subscriberCount).toBeNull()
+    expect(mocks.tx.ops_case_message.findMany.mock.calls[0][0].where).toEqual({
+      case_id: 42,
+      OR: [
+        { author_id: 5 },
+        { kind: 'reply', author: { is: { role: { gte: 3 } } } },
+        {
+          kind: 'system',
+          OR: [{ event: null }, { event: { not: 'withdrawn' } }]
+        }
+      ]
+    })
+  })
+
+  it('still shows a resource opener every reporter and the count (D15)', async () => {
+    mocks.tx.ops_case_subscriber.findUnique.mockResolvedValue({ user_id: 5 })
+
+    const detail = await getCase(42, 5, 1, { db: db() })
+    if (typeof detail === 'string') throw new Error(detail)
+    expect(detail.case.subscriberCount).toBe(1)
+    expect(mocks.tx.ops_case_message.findMany.mock.calls[0][0].where).toEqual({
+      case_id: 42
+    })
+  })
+
+  it('leaves the first response to the publisher when an administrator steps in (D32)', async () => {
+    await handleCaseAsAdmin(
+      { caseId: 42, action: 'reply', content: '站方先看一下', awaitReporter: false },
+      90,
+      3,
+      { now, db: db() }
+    )
+    expect(mocks.tx.ops_case.updateMany.mock.calls[0][0].data).not.toHaveProperty(
+      'first_owner_response_at'
+    )
+
+    await appendCaseMessage(
+      { caseId: 42, content: '已经在核对文件了' },
+      2,
+      1,
+      { now, db: db() }
+    )
+    expect(mocks.tx.ops_case.updateMany.mock.calls[1][0].data).toMatchObject({
+      first_owner_response_at: now
+    })
+  })
+
+  it('signs administrator and original publisher replies by their side', async () => {
+    mocks.tx.ops_case.findUnique.mockResolvedValue(
+      caseRow({ owner_type: 'staff', owner_id: null, escalated_at: hoursAgo(2) })
+    )
+    mocks.tx.ops_case_subscriber.findUnique.mockResolvedValue({ user_id: 5 })
+    mocks.tx.ops_case_message.findMany.mockResolvedValue([
+      reply(1, { id: 90, role: 4 }),
+      reply(2, { id: 2, role: 2 }),
+      reply(3, { id: 5, role: 1 })
+    ])
+
+    const detail = await getCase(42, 5, 1, { db: db() })
+    if (typeof detail === 'string') throw new Error(detail)
+    expect(detail.case.messages.map((message) => message.authorSide)).toEqual([
+      'staff',
+      'original-publisher',
+      undefined
+    ])
   })
 })

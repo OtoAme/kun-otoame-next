@@ -79,7 +79,14 @@ export function CaseQueueRow({
   tabular = false,
   showOwner = false
 }: CaseQueueRowProps) {
-  const resolutionText = caseResolutionLabel(row.resolution)
+  const resolutionLabel = caseResolutionLabel(row.resolution)
+  // 重开或复核中的事项还没有结论，列表里的旧结论标为「上次」（审阅第 6 条）
+  const resolutionText =
+    resolutionLabel &&
+    row.status !== 'resolved' &&
+    row.status !== 'rejected'
+      ? `上次：${resolutionLabel}`
+      : resolutionLabel
   const waiting = waitingText(row, nowMs)
   const reportCount =
     row.subscriberCount !== null ? `${row.subscriberCount} 人报告` : ''

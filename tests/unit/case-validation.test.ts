@@ -82,7 +82,8 @@ describe('case validation', () => {
       ownerType: 'staff',
       page: 1,
       limit: 20,
-      search: ''
+      search: '',
+      searchField: 'all'
     })
 
     for (const input of [

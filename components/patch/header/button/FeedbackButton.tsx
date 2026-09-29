@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import Link from 'next/link'
 import {
   Button,
   Modal,
@@ -10,68 +11,65 @@ import {
   ModalHeader,
   Radio,
   RadioGroup,
-  Select,
-  SelectItem,
   Textarea,
   Tooltip,
   useDisclosure
 } from '@heroui/react'
 import { MessageCircleQuestion } from 'lucide-react'
 import toast from 'react-hot-toast'
-import { kunFetchGet, kunFetchPost } from '~/utils/kunFetch'
+import { kunFetchPost } from '~/utils/kunFetch'
 import { useUserStore } from '~/store/userStore'
-import { RESOURCE_SECTION_MAP } from '~/constants/resource'
 import {
   CASE_CONTENT_MAX_LENGTH,
   CASE_DESCRIPTION_MIN_LENGTH
 } from '~/constants/case'
+import { REQUEST_RESOURCE_GUIDE_LINKS } from '~/constants/issueTriage'
 import { CaseImageField } from '~/components/case/CaseImageField'
 import { CaseLoginPrompt } from '~/components/case/CaseLoginPrompt'
 import { CaseSubmitResult } from '~/components/case/CaseSubmitResult'
 import { useCaseImageUploads } from '~/components/case/useCaseImageUploads'
 import type { CaseCreateResponse } from '~/types/api/case'
-import type { Patch, PatchResource } from '~/types/api/patch'
+import type { Patch } from '~/types/api/patch'
 
 interface Props {
   patch: Patch
+  /** Opens the 资源链接 tab, where a wrong-patch resource is reported. */
+  onOpenResources: () => void
 }
 
-type FeedbackOption = 'patch_info' | 'resource_wrong_patch' | 'other'
+type CaseOption = 'patch_info' | 'other'
+// 指引项不建事项：发错条目在那条资源的卡片上报告，求资源看贡献指南
+type GuideOption = 'resource_wrong_patch' | 'request_resource'
+type FeedbackOption = CaseOption | GuideOption
+
+const isCaseOption = (option: FeedbackOption): option is CaseOption =>
+  option === 'patch_info' || option === 'other'
 
 // 处理方与预计首次响应沿用基线 8.6 的受理范围口径
-const OPTION_HINTS: Record<FeedbackOption, string> = {
-  patch_info: '由网站管理员核对后修改，预计首次响应在 7 天内。',
-  resource_wrong_patch:
-    '选择发错条目的资源，由网站管理员处理，预计首次响应在 7 天内。',
+const OPTION_HINTS: Record<CaseOption, string> = {
+  patch_info:
+    '由网站管理员核对后修改，预计首次响应在 7 天内。和其他条目重复也选这一项，写明重复的条目链接。',
   other: '其他与该游戏相关的问题，由网站管理员处理，不承诺首次响应时限。'
 }
 
-const OPTION_HANDLERS: Record<FeedbackOption, string> = {
+const OPTION_HANDLERS: Record<CaseOption, string> = {
   patch_info: '网站管理员，预计 7 天内首次回应',
-  resource_wrong_patch: '网站管理员，预计 7 天内首次回应',
   other: '网站管理员'
 }
 
-const OPTION_PLACEHOLDERS: Record<FeedbackOption, string> = {
+const OPTION_PLACEHOLDERS: Record<CaseOption, string> = {
   patch_info:
     '哪一项资料有误（如发售日期、会社、简介），正确内容是……，来源是……',
-  resource_wrong_patch: '这条资源实际属于哪个游戏……',
   other: '请描述遇到的问题'
 }
 
-export const FeedbackButton = ({ patch }: Props) => {
+export const FeedbackButton = ({ patch, onOpenResources }: Props) => {
   const { user } = useUserStore((state) => state)
   const { isOpen, onOpen, onClose } = useDisclosure()
   const login = useDisclosure()
   const uploads = useCaseImageUploads()
   const [option, setOption] = useState<FeedbackOption>('patch_info')
   const [content, setContent] = useState('')
-  const [resources, setResources] = useState<PatchResource[] | null>(null)
-  const [resourcesLoading, setResourcesLoading] = useState(false)
-  const [resourcesError, setResourcesError] = useState('')
-  const [selectedResourceId, setSelectedResourceId] = useState<number | null>(
-    null
-  )
   const [submitting, setSubmitting] = useState(false)
   const [result, setResult] = useState<CaseCreateResponse | null>(null)
 
@@ -84,76 +82,33 @@ export const FeedbackButton = ({ patch }: Props) => {
       setResult(null)
       setOption('patch_info')
       setContent('')
-      setSelectedResourceId(null)
       uploads.reset()
     }
     onClose()
   }
 
-  const fetchResources = async () => {
-    setResourcesLoading(true)
-    setResourcesError('')
-    try {
-      const res = await kunFetchGet<PatchResource[] | string>(
-        '/patch/resource',
-        { patchId: patch.id }
-      )
-      if (typeof res === 'string') {
-        setResourcesError(res || '资源列表加载失败')
-      } else {
-        setResources(res)
-      }
-    } catch {
-      setResourcesError('网络错误，资源列表加载失败')
-    } finally {
-      setResourcesLoading(false)
-    }
-  }
-
-  const handleOptionChange = (value: string) => {
-    const next = value as FeedbackOption
-    setOption(next)
-    if (
-      next === 'resource_wrong_patch' &&
-      resources === null &&
-      !resourcesLoading
-    ) {
-      void fetchResources()
-    }
+  const handleOpenResources = () => {
+    setOption('patch_info')
+    onClose()
+    onOpenResources()
   }
 
   const tooShort = content.trim().length < CASE_DESCRIPTION_MIN_LENGTH
 
   const handleSubmit = async () => {
+    if (!isCaseOption(option)) return
     if (tooShort || submitting || uploads.uploading) return
-    const trimmed = content.trim()
-    const payload =
-      option === 'resource_wrong_patch'
-        ? {
-            kind: 'resource_wrong_patch',
-            targetType: 'resource',
-            targetId: selectedResourceId ?? 0,
-            expectedPatchId: patch.id,
-            content: trimmed,
-            imageKeys: uploads.keys
-          }
-        : {
-            kind: option,
-            targetType: 'patch',
-            targetId: patch.id,
-            content: trimmed,
-            imageKeys: uploads.keys
-          }
-    if (!payload.targetId) return
-
     setSubmitting(true)
     try {
-      const res = await kunFetchPost<CaseCreateResponse | string>(
-        '/case',
-        payload
-      )
+      const res = await kunFetchPost<CaseCreateResponse | string>('/case', {
+        kind: option,
+        targetType: 'patch',
+        targetId: patch.id,
+        content: content.trim(),
+        imageKeys: uploads.keys
+      })
       if (typeof res === 'string') {
-        // 业务失败（目标已被移动等）保留输入
+        // 业务失败（条目不可用等）保留输入
         toast.error(res || '提交失败，请稍后重试')
         return
       }
@@ -168,12 +123,6 @@ export const FeedbackButton = ({ patch }: Props) => {
       setSubmitting(false)
     }
   }
-
-  const submitDisabled =
-    submitting ||
-    uploads.uploading ||
-    tooShort ||
-    (option === 'resource_wrong_patch' && !selectedResourceId)
 
   return (
     <>
@@ -195,7 +144,7 @@ export const FeedbackButton = ({ patch }: Props) => {
             提交 {patch.name} 的反馈
           </ModalHeader>
           <ModalBody>
-            {result ? (
+            {result && isCaseOption(option) ? (
               <CaseSubmitResult
                 result={result}
                 handler={OPTION_HANDLERS[option]}
@@ -205,84 +154,76 @@ export const FeedbackButton = ({ patch }: Props) => {
                 <RadioGroup
                   aria-label="反馈类型"
                   value={option}
-                  onValueChange={handleOptionChange}
+                  onValueChange={(value) => setOption(value as FeedbackOption)}
                 >
                   <Radio value="patch_info">条目资料有误</Radio>
                   <Radio value="resource_wrong_patch">资源发错条目</Radio>
+                  <Radio value="request_resource">求资源或催更</Radio>
                   <Radio value="other">其他</Radio>
                 </RadioGroup>
 
-                <p className="text-sm text-default-500">
-                  {OPTION_HINTS[option]}
-                  {option === 'patch_info' && user.role > 2
-                    ? '你也可以直接用「编辑游戏信息」修改。'
-                    : ''}
-                </p>
-
                 {option === 'resource_wrong_patch' && (
-                  <div className="space-y-2">
-                    {resourcesError ? (
-                      <div className="flex items-center gap-2">
-                        <p role="alert" className="text-sm text-danger">
-                          {resourcesError}
-                        </p>
-                        <Button
-                          size="sm"
-                          variant="bordered"
-                          onPress={() => void fetchResources()}
-                        >
-                          重试
-                        </Button>
-                      </div>
-                    ) : (
-                      <Select
-                        aria-label="选择资源"
-                        placeholder="请选择发错条目的资源"
-                        isLoading={resourcesLoading}
-                        selectedKeys={
-                          selectedResourceId ? [String(selectedResourceId)] : []
-                        }
-                        onSelectionChange={(keys) => {
-                          if (keys === 'all') return
-                          const value = Array.from(keys)[0]
-                          setSelectedResourceId(value ? Number(value) : null)
-                        }}
-                      >
-                        {(resources ?? []).map((resource) => (
-                          <SelectItem key={String(resource.id)}>
-                            {`${resource.name}（${
-                              RESOURCE_SECTION_MAP[resource.section] ??
-                              resource.section
-                            }）`}
-                          </SelectItem>
-                        ))}
-                      </Select>
-                    )}
-                    {resources !== null && resources.length === 0 && (
-                      <p className="text-sm text-default-400">
-                        该条目暂无可选资源
-                      </p>
-                    )}
+                  <div className="space-y-2 rounded-medium bg-default-100 p-3 text-sm">
+                    <p>
+                      资源发错条目请在那条资源上报告：打开「资源链接」，在资源卡片上点「报告问题」，选择「发在了错误的条目下」。网站管理员核对后会把资源移到正确的游戏。
+                    </p>
+                    <Button
+                      size="sm"
+                      color="primary"
+                      variant="flat"
+                      onPress={handleOpenResources}
+                    >
+                      去资源链接
+                    </Button>
                   </div>
                 )}
 
-                <Textarea
-                  aria-label="问题描述"
-                  isRequired
-                  placeholder={OPTION_PLACEHOLDERS[option]}
-                  description={`至少 ${CASE_DESCRIPTION_MIN_LENGTH} 个字符，纯文字；可以附截图`}
-                  value={content}
-                  onValueChange={setContent}
-                  maxLength={CASE_CONTENT_MAX_LENGTH}
-                  isInvalid={content.length > 0 && tooShort}
-                  errorMessage={`问题描述最少 ${CASE_DESCRIPTION_MIN_LENGTH} 个字符`}
-                />
-                <CaseImageField uploads={uploads} isDisabled={submitting} />
+                {option === 'request_resource' && (
+                  <div className="space-y-2 rounded-medium bg-default-100 p-3 text-sm">
+                    <p>求资源、催更不需要提交反馈，可以先看这些说明：</p>
+                    <ul className="space-y-1">
+                      {REQUEST_RESOURCE_GUIDE_LINKS.map((link) => (
+                        <li key={link.href}>
+                          <Link
+                            href={link.href}
+                            target="_blank"
+                            className="text-primary underline-offset-2 hover:underline"
+                          >
+                            {link.label}
+                          </Link>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {isCaseOption(option) && (
+                  <>
+                    <p className="text-sm text-default-500">
+                      {OPTION_HINTS[option]}
+                      {option === 'patch_info' && user.role > 2
+                        ? '你也可以直接用「编辑游戏信息」修改。'
+                        : ''}
+                    </p>
+                    <Textarea
+                      aria-label="问题描述"
+                      isRequired
+                      placeholder={OPTION_PLACEHOLDERS[option]}
+                      description={`至少 ${CASE_DESCRIPTION_MIN_LENGTH} 个字符，纯文字；可以附截图`}
+                      value={content}
+                      onValueChange={setContent}
+                      maxLength={CASE_CONTENT_MAX_LENGTH}
+                      isInvalid={content.length > 0 && tooShort}
+                      errorMessage={`问题描述最少 ${CASE_DESCRIPTION_MIN_LENGTH} 个字符`}
+                    />
+                    <CaseImageField uploads={uploads} isDisabled={submitting} />
+                  </>
+                )}
               </>
             )}
           </ModalBody>
           <ModalFooter>
-            {result ? (
+            {result || !isCaseOption(option) ? (
               <Button variant="light" onPress={handleClose}>
                 关闭
               </Button>
@@ -298,7 +239,7 @@ export const FeedbackButton = ({ patch }: Props) => {
                 <Button
                   color="primary"
                   onPress={() => void handleSubmit()}
-                  isDisabled={submitDisabled}
+                  isDisabled={submitting || uploads.uploading || tooShort}
                   isLoading={submitting}
                 >
                   提交

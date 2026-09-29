@@ -485,7 +485,8 @@ describe('issue case detail permissions', () => {
     expect(text).toContain('处理结果：无法复现')
     expect(text).toContain('问题仍未解决？')
     // 重开窗口由服务端 canReopen 决定，这里只把剩余时间读出来
-    expect(text).toContain('结案后 7 天内可以重新打开一次，还剩约 4 天')
+    // 还剩 4 天 2 小时：剩余时间向上取整，与到期提醒同一口径
+    expect(text).toContain('结案后 7 天内可以重新打开一次，还剩约 5 天')
     // 已结案：回复框关闭并说明原因
     expect(replyBox(container)).toBeNull()
     expect(text).toContain('该问题已结案，无法继续回复')
@@ -713,6 +714,60 @@ describe('issue case detail permissions', () => {
     expect(
       [...container.querySelectorAll('a')].map((a) => a.getAttribute('href'))
     ).toContain('/abc?tab=resources&resourceSection=galgame&resourceId=7')
+  })
+
+  it('signs handler-side replies by who wrote them (M03-9)', async () => {
+    mocks.user = { uid: 5, name: '报告者乙', role: 1 }
+    mocks.kunFetchGet.mockResolvedValue(
+      detailResponse(
+        makeDetail({
+          ownerType: 'staff',
+          escalatedAt: '2026-09-14T00:00:00.000Z',
+          reporter: { id: 5, name: '报告者乙', avatar: '' },
+          messages: [
+            {
+              id: 1,
+              kind: 'reply',
+              event: null,
+              body: '缺少第二分卷',
+              author: { id: 5, name: '报告者乙', avatar: '' },
+              payload: null,
+              created: '2026-09-13T00:00:00.000Z'
+            },
+            {
+              id: 2,
+              kind: 'reply',
+              event: null,
+              body: '已重新上传第二分卷',
+              author: { id: 2, name: '发布者甲', avatar: '' },
+              authorSide: 'original-publisher',
+              payload: null,
+              created: '2026-09-14T01:00:00.000Z'
+            },
+            {
+              id: 3,
+              kind: 'reply',
+              event: null,
+              body: '请重新下载核对',
+              author: { id: 1, name: '站长', avatar: '' },
+              authorSide: 'staff',
+              payload: null,
+              created: '2026-09-14T02:00:00.000Z'
+            }
+          ]
+        })
+      )
+    )
+    const container = await mount(<IssueCaseDetail caseId={9} />)
+    await flush()
+
+    const rows = [
+      ...container.querySelectorAll('ol[aria-label="沟通记录"] > li')
+    ].map((row) => row.textContent ?? '')
+    expect(rows[0]).toContain('报告者')
+    expect(rows[1]).toContain('原发布者')
+    expect(rows[2]).toContain('网站管理员')
+    expect(rows.slice(1).some((row) => row.includes('处理方'))).toBe(false)
   })
 
   it('shows a hidden note as its placeholder and links guide paths (D27, item 20)', async () => {

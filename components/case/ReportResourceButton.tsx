@@ -20,7 +20,8 @@ import { kunFetchPost } from '~/utils/kunFetch'
 import { useUserStore } from '~/store/userStore'
 import {
   CASE_CONTENT_MAX_LENGTH,
-  CASE_DESCRIPTION_MIN_LENGTH
+  CASE_DESCRIPTION_MIN_LENGTH,
+  CASE_PUBLISHER_KINDS
 } from '~/constants/case'
 import { enabledIssueTriagePhenomena } from '~/constants/issueTriage'
 import { CaseImageField } from './CaseImageField'
@@ -53,7 +54,12 @@ export const ReportResourceButton = ({ resource, patchId }: Props) => {
   const destination = phenomenon?.destination
   // 与资源 Tabs 官方/社区同一口径：作者 role > 2 视为官方资源，归网站管理员处理。
   const official = (resource.user?.role ?? 0) > 2
-  const handlerHint = official
+  // 只有与描述不符、链接失效先交发布者；发错条目始终由网站管理员处理。
+  const staffHandled =
+    official ||
+    (destination?.type === 'case' &&
+      !(CASE_PUBLISHER_KINDS as readonly string[]).includes(destination.kind))
+  const handlerHint = staffHandled
     ? '该问题由网站管理员处理，预计首次响应在 7 天内。'
     : '该问题先由资源发布者处理，预计首次响应在 7 天内；发布者 7 天未处理时会提交给网站管理员处理。'
   const tooShort = content.trim().length < CASE_DESCRIPTION_MIN_LENGTH
@@ -130,7 +136,7 @@ export const ReportResourceButton = ({ resource, patchId }: Props) => {
             {result ? (
               <CaseSubmitResult
                 result={result}
-                handler={`${official ? '网站管理员' : '资源发布者'}，预计 7 天内首次回应`}
+                handler={`${staffHandled ? '网站管理员' : '资源发布者'}，预计 7 天内首次回应`}
               />
             ) : (
               <>
@@ -174,7 +180,7 @@ export const ReportResourceButton = ({ resource, patchId }: Props) => {
                   <div className="space-y-3">
                     <p className="text-sm text-default-500">
                       {handlerHint}
-                      {official ? '网站管理员' : '发布者'}
+                      {staffHandled ? '网站管理员' : '发布者'}
                       能看到你的用户名和说明。
                     </p>
                     {guest ? (

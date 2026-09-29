@@ -1538,6 +1538,7 @@ export const removeShoutboxForCase = async (
   tx: Prisma.TransactionClient,
   shoutboxId: number,
   adminId: number,
+  caseId: number,
   now = new Date()
 ) => {
   const row = await lockShoutbox(tx, shoutboxId)
@@ -1552,7 +1553,7 @@ export const removeShoutboxForCase = async (
     data: {
       type: 'shoutbox_case_moderate',
       user_id: adminId,
-      content: `管理员通过事项处置小喇叭 #${shoutboxId}`
+      content: `管理员通过问题 #${caseId} 下架小喇叭 #${shoutboxId}`
     }
   })
   await createMessage(
@@ -1569,6 +1570,7 @@ export const restoreShoutboxForCase = async (
   tx: Prisma.TransactionClient,
   shoutboxId: number,
   adminId: number,
+  caseId: number,
   now = new Date()
 ) => {
   const row = await lockShoutbox(tx, shoutboxId)
@@ -1600,7 +1602,7 @@ export const restoreShoutboxForCase = async (
     data: {
       type: 'shoutbox_case_moderate',
       user_id: adminId,
-      content: `管理员通过事项恢复小喇叭 #${shoutboxId}`
+      content: `管理员通过问题 #${caseId} 恢复小喇叭 #${shoutboxId}`
     }
   })
   await createMessage(

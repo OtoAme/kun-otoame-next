@@ -105,6 +105,8 @@ export interface CaseMessagePayload {
   handled_target?: 'comment' | 'rating' | 'shoutbox' | 'user' | 'missing'
   escalation_trigger?: CaseEscalationTrigger
   solved?: boolean
+  /** Withdrawal with other reporters left: who took the case over (D33). */
+  successor_id?: number
   /**
    * The only key a reply or report row may carry: when the site administrator
    * hid it (D27). Who hid it lives in admin_log.
@@ -126,6 +128,12 @@ export interface CaseMessage {
    * body and no images; the admin view keeps the original to review it.
    */
   hidden?: boolean
+  /**
+   * Which side wrote a reply that is not the opener's: the site administrator,
+   * or the publisher after the case was handed to the site administrator.
+   * Absent for the publisher still handling the case.
+   */
+  authorSide?: 'staff' | 'original-publisher'
   created: string
 }
 

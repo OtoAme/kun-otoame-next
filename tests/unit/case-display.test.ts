@@ -14,7 +14,8 @@ import {
   caseTargetText,
   caseTextSegments,
   caseViewerStatusText,
-  formatCaseDuration
+  formatCaseDuration,
+  formatCaseRemaining
 } from '~/components/case/caseDisplay'
 import { CASE_GUIDE_LINKS } from '~/constants/case'
 import type { CaseMessage, CaseSummary } from '~/types/api/case'
@@ -169,6 +170,18 @@ describe('caseDisplay helpers', () => {
     expect(formatCaseDuration(2 * 86_400_000)).toBe('2 天')
   })
 
+  it('rounds time left up so the countdown matches the 48-hour reminder', () => {
+    const hour = 3_600_000
+    // D-01: 1 day 23 hours left is the「还有 2 天」reminder window
+    expect(formatCaseRemaining(47 * hour)).toBe('2 天')
+    expect(formatCaseRemaining(48 * hour)).toBe('2 天')
+    expect(formatCaseRemaining(23.5 * hour)).toBe('1 天')
+    expect(formatCaseRemaining(59.5 * 60_000)).toBe('1 小时')
+    expect(formatCaseRemaining(30 * 60_000)).toBe('30 分钟')
+    expect(formatCaseRemaining(30_000)).toBe('不足 1 分钟')
+    expect(formatCaseRemaining(-5000)).toBe('不足 1 分钟')
+  })
+
   it('hints publisher escalation and reporter timeout only for timeout kinds', () => {
     const now = Date.parse('2026-09-13T12:00:00.000Z')
     const base = {
@@ -179,13 +192,13 @@ describe('caseDisplay helpers', () => {
     // D22: user-facing wording names the site administrator, not 站方
     expect(
       caseStatusHint({ ...base, ownerType: 'publisher', status: 'open' }, now)
-    ).toBe('发布者处理中，约 6 天后提交给网站管理员处理')
+    ).toBe('发布者处理中，约 7 天后提交给网站管理员处理')
     expect(
       caseStatusHint(
         { ...base, ownerType: 'publisher', status: 'waiting_reporter' },
         now
       )
-    ).toBe('等待报告者回应，约 13 天后自动结案')
+    ).toBe('等待报告者回应，约 14 天后自动结案')
     // 非超时登记类型（如违规举报）即使归属发布者也没有时限提示
     expect(
       caseStatusHint(

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { kunFetchGet } from '~/utils/kunFetch'
+import type { CaseSearchField } from '~/constants/case'
 import type {
   AdminCaseListItem,
   AdminCaseListResponse,
@@ -16,6 +17,8 @@ export interface CaseListQuery {
   params: CaseListParams
   kind: string
   search: string
+  /** Search scope; `all` is the default and is not sent. */
+  searchField: CaseSearchField
   /** Publisher filter of the publisher view; empty for none. */
   ownerId: string
   page: number
@@ -48,13 +51,22 @@ export interface CaseListState {
  * status or page change is still in flight.
  */
 export function useCaseList(query: CaseListQuery): CaseListState {
-  const { params, kind, search, ownerId, page, limit } = query
-  const queryKey = JSON.stringify([params, kind, search, ownerId, page, limit])
+  const { params, kind, search, searchField, ownerId, page, limit } = query
+  const queryKey = JSON.stringify([
+    params,
+    kind,
+    search,
+    searchField,
+    ownerId,
+    page,
+    limit
+  ])
   const scopeKey = JSON.stringify([
     params.ownerType ?? 'staff',
     ownerId,
     kind,
-    search
+    search,
+    searchField
   ])
 
   const [listState, setListState] = useState<{
@@ -96,6 +108,7 @@ export function useCaseList(query: CaseListQuery): CaseListState {
           ...(ownerId ? { ownerId } : {}),
           ...(kind ? { kind } : {}),
           ...(search ? { search } : {}),
+          ...(search && searchField !== 'all' ? { searchField } : {}),
           page,
           limit
         }
@@ -115,7 +128,17 @@ export function useCaseList(query: CaseListQuery): CaseListState {
         setLoading(false)
       }
     }
-  }, [params, kind, search, ownerId, page, limit, queryKey, scopeKey])
+  }, [
+    params,
+    kind,
+    search,
+    searchField,
+    ownerId,
+    page,
+    limit,
+    queryKey,
+    scopeKey
+  ])
 
   useEffect(() => {
     void fetchList()

@@ -10,7 +10,7 @@ const mocks = vi.hoisted(() => {
       groupBy: vi.fn(),
       updateMany: vi.fn()
     },
-    ops_case_message: { create: vi.fn(), findMany: vi.fn() },
+    ops_case_message: { create: vi.fn(), findMany: vi.fn(), findFirst: vi.fn() },
     ops_case_subscriber: { findMany: vi.fn() },
     patch_resource: { findMany: vi.fn() },
     patch: { findMany: vi.fn() },
@@ -151,6 +151,57 @@ describe('case service contracts', () => {
     })
     expect(JSON.stringify(result)).not.toContain('已隐藏的原文')
     expect(result.cases[0].latestMessage).not.toHaveProperty('payload')
+  })
+
+  it('never previews another reporter’s note to a violation report opener (D31)', async () => {
+    mocks.tx.ops_case.findMany.mockResolvedValueOnce([
+      {
+        ...row(),
+        messages: [
+          {
+            id: 62,
+            kind: 'report',
+            event: null,
+            body: '另一位举报人的理由',
+            payload: null,
+            created: now
+          }
+        ]
+      }
+    ])
+    mocks.tx.ops_case_message.findFirst.mockResolvedValueOnce({
+      id: 61,
+      kind: 'reply',
+      event: null,
+      body: '开启者自己的说明',
+      payload: null,
+      created: now
+    })
+    const result = await listCases(
+      { tab: 'reported', page: 1, limit: 20 },
+      2,
+      1,
+      { db: mocks.prisma as never }
+    )
+    if (typeof result === 'string') throw new Error(result)
+    expect(mocks.tx.ops_case_message.findFirst.mock.calls[0][0].where).toEqual({
+      case_id: 42,
+      OR: [
+        { author_id: 2 },
+        { kind: 'reply', author: { is: { role: { gte: 3 } } } },
+        {
+          kind: 'system',
+          OR: [{ event: null }, { event: { not: 'withdrawn' } }]
+        }
+      ]
+    })
+    expect(result.cases[0].latestMessage).toMatchObject({
+      id: 61,
+      body: '开启者自己的说明'
+    })
+    // Like a follower, the opener gets no reporter count on a private report.
+    expect(result.cases[0].subscriberCount).toBeNull()
+    expect(JSON.stringify(result)).not.toContain('另一位举报人的理由')
   })
 
   it('keeps dedup and Shanghai daily keys stable at the day boundary', () => {
@@ -333,6 +384,47 @@ describe('case service contracts', () => {
       target_type: 'resource',
       target_id: { in: [9, 8] }
     })
+  })
+
+  it('narrows the search to the chosen field (M03-9)', async () => {
+    const contains = (search: string) => ({
+      contains: search,
+      mode: 'insensitive'
+    })
+    const searchWhere = async (
+      search: string,
+      searchField: 'id' | 'content' | 'reporter'
+    ) => {
+      mocks.tx.ops_case.findMany.mockClear()
+      await getAdminCases(
+        { page: 1, limit: 20, search, searchField },
+        { db: mocks.prisma as never, now }
+      )
+      return listCalls()[0].where.OR
+    }
+
+    expect(await searchWhere('8', 'id')).toEqual([{ id: 8 }])
+    expect(await searchWhere('#8', 'id')).toEqual([{ id: 8 }])
+    // Text in the number field matches nothing rather than everything.
+    expect(await searchWhere('体验版', 'id')).toEqual([])
+    expect(await searchWhere('8', 'content')).toEqual([
+      { messages: { some: { body: contains('8') } } }
+    ])
+    expect(await searchWhere('saya', 'reporter')).toEqual([
+      { reporter: { name: contains('saya') } }
+    ])
+    // Only the resource scope reads the case targets and the resource table.
+    expect(targetCalls()).toHaveLength(0)
+    expect(mocks.tx.patch_resource.findMany).not.toHaveBeenCalled()
+    // The schema defaults to `all` and rejects an unknown field.
+    expect(
+      adminCaseListSchema.parse({ search: '8', searchField: 'id' }).searchField
+    ).toBe('id')
+    expect(adminCaseListSchema.parse({ search: '8' }).searchField).toBe('all')
+    expect(
+      adminCaseListSchema.safeParse({ search: '8', searchField: 'owner' })
+        .success
+    ).toBe(false)
   })
 
   it('matches resource names among every resource its queue targets, uncut (item 25)', async () => {

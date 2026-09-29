@@ -294,6 +294,30 @@ export const caseQuickRepliesFor = (kind: CaseKind) => {
     : CASE_QUICK_REPLIES
 }
 
+/**
+ * Search scope of the case center (M03-9). `all` keeps matching the number,
+ * kind, game, resource, reporter and dialogue together (review item 25).
+ */
+export const CASE_SEARCH_FIELDS = [
+  'all',
+  'id',
+  'kind',
+  'patch',
+  'resource',
+  'reporter',
+  'content'
+] as const
+export type CaseSearchField = (typeof CASE_SEARCH_FIELDS)[number]
+export const CASE_SEARCH_FIELD_LABELS: Record<CaseSearchField, string> = {
+  all: '全部',
+  id: '编号',
+  kind: '类型',
+  patch: '游戏',
+  resource: '资源',
+  reporter: '报告者',
+  content: '对话内容'
+}
+
 export const CASE_KIND_LABELS: Record<CaseKind, string> = {
   resource_mismatch: '资源与描述不符',
   resource_link_failure: '链接失效',

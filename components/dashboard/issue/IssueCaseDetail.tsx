@@ -65,7 +65,7 @@ import {
   caseSystemEventText,
   caseTargetHref,
   caseTargetText,
-  formatCaseDuration
+  formatCaseRemaining
 } from '~/components/case/caseDisplay'
 import { useCaseImageUploads } from '~/components/case/useCaseImageUploads'
 import { cn } from '~/lib/dashboard/utils'
@@ -153,9 +153,14 @@ function CaseTimeline({
         const isViewer =
           message.author !== null && message.author.id === viewerId
         // 注销账号无法判定属于哪一侧，不贴角色徽标而不是猜一个
+        // 处理方一侧按实际身份署名：站方介入写「网站管理员」，转交后写「原发布者」
         const sideLabel =
           side === 'owner'
-            ? '处理方'
+            ? message.authorSide === 'staff'
+              ? '网站管理员'
+              : message.authorSide === 'original-publisher'
+                ? '原发布者'
+                : '处理方'
             : side === 'reporter'
               ? '报告者'
               : side === 'other-reporter'
@@ -455,8 +460,14 @@ export function IssueCaseDetail({ caseId, onChanged }: IssueCaseDetailProps) {
                 ? '已提请网站管理员结案'
                 : res.case.status === 'resolved'
                   ? '已撤回，问题已结束'
-                  : '已撤回你的报告，其他报告者的问题继续处理'
+                  : '已撤回你的报告，问题改由其他报告者跟进'
       )
+      if (action === 'withdraw' && res.case.status !== 'resolved') {
+        // D33：下一位报告者接替后本人不能再打开这条问题，回到列表
+        onChanged?.()
+        router.push('/issue')
+        return
+      }
       await load()
       onChanged?.()
     } catch {
@@ -574,6 +585,9 @@ export function IssueCaseDetail({ caseId, onChanged }: IssueCaseDetailProps) {
   }
 
   if (!detail) {
+    // 无权查看或已不存在时重试没有意义，只给回到列表的出路
+    const permanent =
+      loadError === '无权查看该问题' || loadError === '问题不存在'
     return (
       <Card className="py-12">
         <div
@@ -581,7 +595,9 @@ export function IssueCaseDetail({ caseId, onChanged }: IssueCaseDetailProps) {
           className="flex flex-col items-center gap-2 px-6 text-center"
         >
           <TriangleAlert className="size-7 text-destructive" aria-hidden />
-          <p className="text-sm font-medium">加载失败，请重试</p>
+          <p className="text-sm font-medium">
+            {permanent ? '无法查看这个问题' : '加载失败，请重试'}
+          </p>
           <p className="text-xs text-muted-foreground">
             {loadError || '无法查看该问题'}
           </p>
@@ -590,9 +606,9 @@ export function IssueCaseDetail({ caseId, onChanged }: IssueCaseDetailProps) {
             variant="outline"
             size="sm"
             className="mt-1"
-            onClick={() => void load()}
+            onClick={() => (permanent ? router.push('/issue') : void load())}
           >
-            重新加载
+            {permanent ? '返回问题处理' : '重新加载'}
           </Button>
         </div>
       </Card>
@@ -641,7 +657,7 @@ export function IssueCaseDetail({ caseId, onChanged }: IssueCaseDetailProps) {
     : Number.NaN
   const reopenRemaining = Number.isNaN(reopenDeadline)
     ? null
-    : formatCaseDuration(reopenDeadline - Date.now())
+    : formatCaseRemaining(reopenDeadline - Date.now())
   const remainingText = reopenRemaining ? `，还剩约 ${reopenRemaining}` : ''
 
   const minReopenLength =
@@ -674,7 +690,7 @@ export function IssueCaseDetail({ caseId, onChanged }: IssueCaseDetailProps) {
           CASE_RESOLUTION_LABELS[resolution as CaseResolution] ?? resolution
         }」结案，结案后报告者会收到通知。`
       : displayAction === 'withdraw'
-        ? '没有其他人报告同一问题时，这条问题会以「开启者撤回」结束；还有其他报告者时，只撤回你的报告，问题继续处理。'
+        ? '没有其他人报告同一问题时，这条问题会以「开启者撤回」结束；还有其他报告者时，问题改由下一位报告者跟进，你写过的说明仍保留在事项里，你将不再收到这条问题的通知，也不能再打开它。'
         : displayAction === 'propose'
           ? `将提请以「${
               CASE_RESOLUTION_LABELS[proposeResolution as CaseResolution] ??
@@ -1153,7 +1169,7 @@ export function IssueCaseDetail({ caseId, onChanged }: IssueCaseDetailProps) {
                 maxLength={CASE_CONTENT_MAX_LENGTH}
                 rows={3}
                 disabled={working}
-                placeholder="哪里还没有解决（纯文字）"
+                placeholder="哪里还没有解决（必填，纯文字）"
               />
             </div>
           ) : null}
