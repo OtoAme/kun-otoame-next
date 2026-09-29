@@ -3881,6 +3881,14 @@ export const setCaseMessageHidden = async (
   return { case: serialized.summary, changed: result.changed }
 }
 
+/** The case a search names:「8」and「#8」both name case 8 (M03-9). */
+const caseIdFromSearch = (search: string): number | null => {
+  const numeric = Number(search.replace(/^#/, ''))
+  return Number.isSafeInteger(numeric) && numeric > 0 && numeric <= CASE_ID_MAX
+    ? numeric
+    : null
+}
+
 /**
  * Admin search over the case center and the inbox (review item 25): case id,
  * kind code or Chinese label, game name, resource name, reporter name and
@@ -3898,16 +3906,8 @@ const buildAdminCaseSearch = async (
   const within = (wanted: CaseSearchField) => field === 'all' || field === wanted
   const contains = { contains: search, mode: 'insensitive' as const }
   const predicates: Prisma.ops_caseWhereInput[] = []
-  // 「#8」and「8」both name case 8 (M03-9).
-  const numeric = Number(search.replace(/^#/, ''))
-  if (
-    within('id') &&
-    Number.isSafeInteger(numeric) &&
-    numeric > 0 &&
-    numeric <= CASE_ID_MAX
-  ) {
-    predicates.push({ id: numeric })
-  }
+  const caseId = caseIdFromSearch(search)
+  if (within('id') && caseId !== null) predicates.push({ id: caseId })
   if (within('kind')) {
     predicates.push({ kind: contains })
     const labelKinds = CASE_KINDS.filter((kind) =>
@@ -3991,12 +3991,26 @@ export const getAdminCases = async (
         ? {}
         : { status: { in: unresolvedStatuses } }
   const where: Prisma.ops_caseWhereInput = { ...scopeWhere, ...statusWhere }
-  const [rows, total, statusGroups] = await Promise.all([
+  // Searching 全部, the case the text names leads page 1 ahead of the
+  // waiting order (M03-9); the paged rows skip it, so no page repeats it.
+  const namedId =
+    input.search && (input.searchField ?? 'all') === 'all'
+      ? caseIdFromSearch(input.search)
+      : null
+  const named =
+    namedId === null
+      ? null
+      : await db.ops_case.findFirst({
+          where: { ...where, id: namedId },
+          select: caseListSelect
+        })
+  const offset = (input.page - 1) * input.limit
+  const [pagedRows, total, statusGroups] = await Promise.all([
     db.ops_case.findMany({
-      where,
+      where: named ? { ...where, id: { not: named.id } } : where,
       orderBy: [{ status_changed_at: 'asc' }, { id: 'asc' }],
-      skip: (input.page - 1) * input.limit,
-      take: input.limit,
+      skip: named && input.page > 1 ? offset - 1 : offset,
+      take: named && input.page === 1 ? input.limit - 1 : input.limit,
       select: caseListSelect
     }),
     db.ops_case.count({ where }),
@@ -4006,6 +4020,7 @@ export const getAdminCases = async (
       _count: { _all: true }
     })
   ])
+  const rows = named && input.page === 1 ? [named, ...pagedRows] : pagedRows
   const targetByCaseId = await loadTargets(db, rows)
   const cases: AdminCaseListItem[] = []
   for (const row of rows) {

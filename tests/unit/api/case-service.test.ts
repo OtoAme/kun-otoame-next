@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => {
     $queryRaw: vi.fn(),
     ops_case: {
       findUnique: vi.fn(),
+      findFirst: vi.fn(),
       findMany: vi.fn(),
       count: vi.fn(),
       groupBy: vi.fn(),
@@ -99,6 +100,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   mocks.tx.$queryRaw.mockResolvedValue([{}])
   mocks.tx.ops_case.findUnique.mockResolvedValue(row())
+  mocks.tx.ops_case.findFirst.mockResolvedValue(null)
   mocks.tx.ops_case.findMany.mockResolvedValue([])
   mocks.tx.ops_case.count.mockResolvedValue(0)
   mocks.tx.ops_case.groupBy.mockResolvedValue([])
@@ -416,6 +418,8 @@ describe('case service contracts', () => {
     // Only the resource scope reads the case targets and the resource table.
     expect(targetCalls()).toHaveLength(0)
     expect(mocks.tx.patch_resource.findMany).not.toHaveBeenCalled()
+    // A scoped search keeps the waiting order; only 全部 lifts a named case.
+    expect(mocks.tx.ops_case.findFirst).not.toHaveBeenCalled()
     // The schema defaults to `all` and rejects an unknown field.
     expect(
       adminCaseListSchema.parse({ search: '8', searchField: 'id' }).searchField
@@ -425,6 +429,50 @@ describe('case service contracts', () => {
       adminCaseListSchema.safeParse({ search: '8', searchField: 'owner' })
         .success
     ).toBe(false)
+  })
+
+  it('lists the case a 全部 search names first, without repeating it (M03-9)', async () => {
+    mocks.tx.ops_case.findFirst.mockResolvedValue({ ...row(), id: 8 })
+    mocks.tx.ops_case.findMany.mockResolvedValue([{ ...row(), id: 2 }])
+    mocks.tx.ops_case.count.mockResolvedValue(3)
+    const pageArgs = () =>
+      listCalls()[0] as unknown as {
+        where: Record<string, unknown>
+        skip: number
+        take: number
+      }
+
+    const first = await getAdminCases(
+      { page: 1, limit: 20, search: '8' },
+      { db: mocks.prisma as never, now }
+    )
+    expect(first.cases.map((item) => item.id)).toEqual([8, 2])
+    expect(first.total).toBe(3)
+    expect(mocks.tx.ops_case.findFirst.mock.calls[0][0].where).toMatchObject({
+      id: 8,
+      owner_type: 'staff'
+    })
+    expect(pageArgs().where.id).toEqual({ not: 8 })
+    expect(pageArgs()).toMatchObject({ skip: 0, take: 19 })
+
+    // Later pages shift by the lifted row instead of showing it again.
+    mocks.tx.ops_case.findMany.mockClear()
+    const second = await getAdminCases(
+      { page: 2, limit: 20, search: '#8' },
+      { db: mocks.prisma as never, now }
+    )
+    expect(second.cases.map((item) => item.id)).toEqual([2])
+    expect(pageArgs()).toMatchObject({ skip: 19, take: 20 })
+
+    // A number outside the filter changes nothing.
+    mocks.tx.ops_case.findFirst.mockResolvedValue(null)
+    mocks.tx.ops_case.findMany.mockClear()
+    await getAdminCases(
+      { page: 1, limit: 20, search: '8' },
+      { db: mocks.prisma as never, now }
+    )
+    expect(pageArgs().where.id).toBeUndefined()
+    expect(pageArgs()).toMatchObject({ skip: 0, take: 20 })
   })
 
   it('matches resource names among every resource its queue targets, uncut (item 25)', async () => {
