@@ -35,11 +35,11 @@ describe('case center navigation owners', () => {
       ]
     )
     expect(groups).toEqual([
-      ['概览站方处理', ['overview']],
-      ['未结站方处理', ['unresolved', 'pending', 'waiting_reporter']],
-      ['已结案站方处理', ['resolved', 'rejected']],
-      ['全部站方处理', ['all']],
-      ['只读发布者处理', ['publisher']]
+      ['概览 · 站方', ['overview']],
+      ['未结 · 站方', ['unresolved', 'pending', 'waiting_reporter']],
+      ['已结案 · 站方', ['resolved', 'rejected']],
+      ['全部 · 站方', ['all']],
+      ['只读 · 发布者', ['publisher']]
     ])
   })
 

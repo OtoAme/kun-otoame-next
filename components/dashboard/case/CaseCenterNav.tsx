@@ -111,10 +111,11 @@ export function CaseCenterNav({
               {/* The owner sits inside the title that names the list. */}
               <p
                 id={titleId}
-                className="flex items-baseline justify-between gap-2 px-2 text-xs font-semibold text-muted-foreground"
+                className="px-2 text-xs font-semibold text-muted-foreground"
               >
                 {CASE_VIEW_GROUP_LABELS[group]}
                 <span className="font-normal">
+                  {' · '}
                   {CASE_VIEW_GROUP_OWNERS[group]}
                 </span>
               </p>
