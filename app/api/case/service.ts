@@ -2577,9 +2577,13 @@ export const listCases = async (
     if (!serialized) continue
     let latestMessage: (typeof row.messages)[number] | undefined =
       row.messages?.[0]
-    // A violation report's opener never previews another reporter's note (D31).
+    // A violation report's opener previews only what their detail shows: no
+    // other reporter's note and no withdrawal after a takeover (D31, D33).
+    // The preview row carries no author, so anything but a system message
+    // other than a withdrawal is read again through the same filter.
     if (
-      latestMessage?.kind === 'report' &&
+      latestMessage &&
+      !(latestMessage.kind === 'system' && latestMessage.event !== 'withdrawn') &&
       serialized.view === 'reporter' &&
       isViolationReport(row)
     ) {
@@ -3101,8 +3105,8 @@ export const reviewCase = async (
 
 /**
  * The opener takes the report back (D18). Without other followers the case
- * closes as「开启者撤回」; otherwise only the opener's subscription goes and
- * the case continues for the other reporters.
+ * closes as「开启者撤回」; otherwise the earliest follower becomes the opener
+ * and the withdrawer leaves the case (D33).
  */
 export const withdrawCase = async (
   caseId: number,

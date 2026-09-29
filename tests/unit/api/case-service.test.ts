@@ -125,21 +125,19 @@ beforeEach(() => {
 
 describe('case service contracts', () => {
   it('redacts a hidden reply in the reporter list preview', async () => {
+    const hiddenReply = {
+      id: 61,
+      kind: 'reply',
+      event: null,
+      body: '已隐藏的原文',
+      payload: { hidden_at: now.toISOString() },
+      created: now
+    }
     mocks.tx.ops_case.findMany.mockResolvedValueOnce([
-      {
-        ...row(),
-        messages: [
-          {
-            id: 61,
-            kind: 'reply',
-            event: null,
-            body: '已隐藏的原文',
-            payload: { hidden_at: now.toISOString() },
-            created: now
-          }
-        ]
-      }
+      { ...row(), messages: [hiddenReply] }
     ])
+    // A violation report's opener reads the preview through the D31 filter.
+    mocks.tx.ops_case_message.findFirst.mockResolvedValueOnce(hiddenReply)
     const result = await listCases(
       { tab: 'reported', page: 1, limit: 20 },
       2,
@@ -204,6 +202,53 @@ describe('case service contracts', () => {
     // Like a follower, the opener gets no reporter count on a private report.
     expect(result.cases[0].subscriberCount).toBeNull()
     expect(JSON.stringify(result)).not.toContain('另一位举报人的理由')
+  })
+
+  it('keeps a takeover out of a violation report successor’s preview (D31, D33)', async () => {
+    const listWith = async (latest: Record<string, unknown>) => {
+      mocks.tx.ops_case.findMany.mockResolvedValueOnce([
+        { ...row(), messages: [latest] }
+      ])
+      const result = await listCases(
+        { tab: 'reported', page: 1, limit: 20 },
+        2,
+        1,
+        { db: mocks.prisma as never }
+      )
+      if (typeof result === 'string') throw new Error(result)
+      return result
+    }
+    mocks.tx.ops_case_message.findFirst.mockResolvedValueOnce({
+      id: 60,
+      kind: 'report',
+      event: null,
+      body: '接替者自己的举报理由',
+      payload: null,
+      created: now
+    })
+    const takenOver = await listWith({
+      id: 63,
+      kind: 'system',
+      event: 'withdrawn',
+      body: '开启者已撤回自己的报告，改由下一位报告者跟进，事项继续处理。',
+      payload: { actor_type: 'reporter', successor_id: 2 },
+      created: now
+    })
+    expect(takenOver.cases[0].latestMessage).toMatchObject({ id: 60 })
+    expect(JSON.stringify(takenOver)).not.toContain('开启者已撤回')
+
+    // A closing message shows as it is, without a second read.
+    mocks.tx.ops_case_message.findFirst.mockClear()
+    const closed = await listWith({
+      id: 64,
+      kind: 'system',
+      event: 'resolved',
+      body: '问题已结案：不成立',
+      payload: { actor_type: 'staff' },
+      created: now
+    })
+    expect(mocks.tx.ops_case_message.findFirst).not.toHaveBeenCalled()
+    expect(closed.cases[0].latestMessage).toMatchObject({ id: 64 })
   })
 
   it('keeps dedup and Shanghai daily keys stable at the day boundary', () => {
@@ -415,7 +460,7 @@ describe('case service contracts', () => {
     expect(await searchWhere('saya', 'reporter')).toEqual([
       { reporter: { name: contains('saya') } }
     ])
-    // Only the resource scope reads the case targets and the resource table.
+    // Besides 全部, only the 资源 scope reads case targets and resources.
     expect(targetCalls()).toHaveLength(0)
     expect(mocks.tx.patch_resource.findMany).not.toHaveBeenCalled()
     // A scoped search keeps the waiting order; only 全部 lifts a named case.
