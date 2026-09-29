@@ -1757,9 +1757,12 @@ describe('original publisher closing a timeout handoff (D36)', () => {
     })
     expect(update.data).not.toHaveProperty('owner_type')
     expect(update.data).not.toHaveProperty('owner_id')
+    // The reason reaches the original publisher too, as the reporter's replies
+    // on a handed-off case do (review item 19).
     expect(noticeRows()).toEqual([
       expect.objectContaining({ recipient_id: 90, link: '/dashboard/case/42' }),
-      expect.objectContaining({ recipient_id: 91, link: '/dashboard/case/42' })
+      expect.objectContaining({ recipient_id: 91, link: '/dashboard/case/42' }),
+      expect.objectContaining({ recipient_id: 2, link: '/issue/42' })
     ])
 
     // From here on the original publisher only proposes.

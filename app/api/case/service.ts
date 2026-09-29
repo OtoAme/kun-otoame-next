@@ -2911,6 +2911,14 @@ const notifyReopen = async (tx: CaseTx, row: CaseRow, reason: string) => {
       null,
       `/dashboard/case/${row.id}`
     )
+    // The reason is the reporter's word on a handed-off case, which reaches
+    // its original publisher like the reporter's replies (review item 19).
+    const originalPublisherId = row.public
+      ? await originalPublisherIdFor(tx, row)
+      : undefined
+    if (originalPublisherId !== undefined) {
+      await notifyCaseUsers(tx, row.id, [originalPublisherId], notice)
+    }
   }
 }
 
