@@ -71,7 +71,8 @@ vi.mock('~/components/dashboard/ui/resizable', () => ({
   // Layout persistence reaches for localStorage; the split itself is stubbed.
   useResizableLayout: () => ({
     defaultLayout: undefined,
-    onLayoutChanged: vi.fn()
+    onLayoutChanged: vi.fn(),
+    groupRef: { current: null }
   })
 }))
 vi.mock('~/components/dashboard/ui/input', () => ({

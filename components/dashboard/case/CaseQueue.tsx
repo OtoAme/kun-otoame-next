@@ -94,7 +94,7 @@ export function CaseQueue({
   onProcessed,
   onStateChanged
 }: CaseQueueProps) {
-  const { defaultLayout, onLayoutChanged } = useResizableLayout({
+  const { defaultLayout, onLayoutChanged, groupRef } = useResizableLayout({
     id: 'dashboard-case-queue'
   })
   const publisherView = isPublisherCaseView(view)
@@ -247,6 +247,7 @@ export function CaseQueue({
       ) : (
         <ResizablePanelGroup
           orientation="horizontal"
+          groupRef={groupRef}
           defaultLayout={defaultLayout}
           onLayoutChanged={onLayoutChanged}
           className="min-h-0 min-w-0 flex-1"

@@ -1,5 +1,6 @@
 'use client'
 
+import { useEffect, useRef, useState } from 'react'
 import { cn } from '~/lib/dashboard/utils'
 import { GripVerticalIcon } from 'lucide-react'
 import * as ResizablePrimitive from 'react-resizable-panels'
@@ -50,19 +51,32 @@ function ResizableHandle({
 }
 
 // Layout persistence lives in this hook in v4 (there is no `autoSaveId`
-// prop); re-exported so callers keep a single entry point for the primitive.
-// Its `storage = localStorage` default throws during server rendering, so the
-// server reads an empty store and the browser keeps using localStorage.
-const serverLayoutStorage = { getItem: () => null, setItem: () => {} }
+// prop); wrapped so callers keep a single entry point for the primitive.
+// The server has no localStorage, and the hook reads its store while
+// hydrating as well, so a saved layout made the hydrating render disagree
+// with the server's. Until mounted it reads an empty store like the server;
+// the saved layout then goes through `groupRef`, because a group only takes
+// `defaultLayout` when it first registers. Pass `groupRef` to the group.
+const emptyLayoutStorage = { getItem: () => null, setItem: () => {} }
 
 const useResizableLayout = (
   options: Parameters<typeof ResizablePrimitive.useDefaultLayout>[0]
-) =>
-  ResizablePrimitive.useDefaultLayout({
-    storage:
-      typeof window === 'undefined' ? serverLayoutStorage : window.localStorage,
+) => {
+  const [mounted, setMounted] = useState(false)
+  useEffect(() => setMounted(true), [])
+  const groupRef = useRef<ResizablePrimitive.GroupImperativeHandle | null>(
+    null
+  )
+  const layout = ResizablePrimitive.useDefaultLayout({
+    storage: mounted ? window.localStorage : emptyLayoutStorage,
     ...options
   })
+  const { defaultLayout } = layout
+  useEffect(() => {
+    if (defaultLayout) groupRef.current?.setLayout(defaultLayout)
+  }, [defaultLayout])
+  return { ...layout, groupRef }
+}
 
 export {
   ResizableHandle,
