@@ -29,7 +29,7 @@ Use this skill for pages, components, state, theme, and content.
 - Both roots share the `next-themes` light/dark storage key; site `--kun-*` / `data-kun-theme` palettes belong to the site root. Validate both style outputs when changing either source boundary.
 - Dashboard inbox and review requests use the existing `/api/admin/*` HTTP APIs and `kunFetch`; do not add a parallel server-action write channel.
 - Persist split widths only through `useResizableLayout` (`components/dashboard/ui/resizable.tsx`): pass its `groupRef` to `ResizablePanelGroup`, use stable Panel ids and pass matching `panelIds` in DOM order so re-entry and refresh restore widths. The hook reads an empty store until mounted so hydration matches the server, then applies the saved layout through `groupRef`. Case queue cards align status, prior resolution, reopen count and time at the right edge; wide table status text stays left-aligned.
-- Shoutbox site surfaces use HeroUI v2; `/dashboard/shoutbox` uses shadcn Tabs and dialogs. Hide, remove, restore, resolve, end and cancel must open confirmation UI before the request; dismissal writes nothing and restores focus.
+- Shoutbox site surfaces use HeroUI v2; `/dashboard/shoutbox` uses shadcn Tabs and dialogs. Hide, remove, restore, resolve, end and cancel must open confirmation UI before the request; dismissal writes nothing and restores focus. Official removal is labelled 移除 / 已移除 and remains available on expired status-0 announcements; its confirmation explains that public history is removed, while early ending retains it.
 
 ## Rules
 
