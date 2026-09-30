@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import {
   caseClosingNoteError,
+  caseDeletedTargetNoteError,
   caseLatestProposal,
   caseMessageAuthorLabel,
   caseMessageSide,
@@ -607,6 +608,76 @@ describe('site administrator review helpers (M03-8)', () => {
       caseLatestProposal(
         [...proposed, replyBy(3, { id: 90, name: '网站管理员', avatar: '' })],
         5
+      )
+    ).toBeNull()
+  })
+})
+
+describe('deleted target closing-note rule (D37)', () => {
+  const deletedResource = {
+    kind: 'resource_mismatch',
+    targetType: 'resource',
+    target: makeTarget({ deleted: true })
+  } as const
+
+  it('requires a hand-written note for any resolution on a deleted target', () => {
+    // 与服务端同一检查顺序：目标已删除先于各结论自己的说明规则
+    for (const resolution of [
+      'repaired',
+      'unreproducible',
+      'out_of_scope'
+    ] as const) {
+      expect(caseClosingNoteError(deletedResource, resolution, ' ')).toBe(
+        '资源已删除，请填写处理说明'
+      )
+    }
+    // 有说明后不再拦已删除目标这条，但结论自身的规则仍然适用
+    expect(
+      caseClosingNoteError(
+        deletedResource,
+        'repaired',
+        '资源已删除，核对过记录'
+      )
+    ).toBeNull()
+    expect(
+      caseClosingNoteError(deletedResource, 'unreproducible', '核对了第二分卷')
+    ).toBeNull()
+    expect(
+      caseClosingNoteError(deletedResource, 'out_of_scope', '不受理')
+    ).toBe('以「不在受理范围」结案时请附上下载、压缩包或投稿指南中的一篇链接')
+  })
+
+  it('names the deleted target type and keeps existing targets optional', () => {
+    const deleted = { deleted: true } as const
+    expect(
+      caseDeletedTargetNoteError({ targetType: 'comment', target: deleted }, '')
+    ).toBe('评论已删除，请填写处理说明')
+    expect(
+      caseDeletedTargetNoteError({ targetType: 'patch', target: deleted }, '  ')
+    ).toBe('条目已删除，请填写处理说明')
+    expect(
+      caseDeletedTargetNoteError(
+        { targetType: 'comment', target: deleted },
+        '评论已被作者自行删除'
+      )
+    ).toBeNull()
+    // 现存目标的说明仍然可选；不带 target 的旧调用保持原语义
+    expect(
+      caseDeletedTargetNoteError(
+        { targetType: 'comment', target: { deleted: false } },
+        ''
+      )
+    ).toBeNull()
+    expect(caseDeletedTargetNoteError({ targetType: 'comment' }, '')).toBeNull()
+    expect(
+      caseClosingNoteError(
+        {
+          kind: 'resource_mismatch',
+          targetType: 'resource',
+          target: { deleted: false }
+        },
+        'repaired',
+        ''
       )
     ).toBeNull()
   })

@@ -331,15 +331,38 @@ export const caseStatusHint = (
 }
 
 /**
- * The server's closing-note rule (D12, D16, D21, D25), mirrored so a form can
- * stop before submitting. Called with an empty note it returns what the note
- * must contain; null means the note is optional or already fine.
+ * A deleted target demands a hand-written note on any manual closure or
+ * proposal (D37). The server re-reads the target state inside the operation
+ * transaction and returns the same string, so this only stops a blank note
+ * one step earlier. `target` is optional so older Pick-typed calls keep
+ * their previous meaning.
+ */
+export const caseDeletedTargetNoteError = (
+  item: Pick<CaseSummary, 'targetType'> & {
+    target?: Pick<CaseSummary['target'], 'deleted'>
+  },
+  content: string
+): string | null => {
+  if (!item.target?.deleted || content.trim()) return null
+  const typeLabel = CASE_TARGET_TYPE_LABELS[item.targetType] ?? '目标'
+  return `${typeLabel}已删除，请填写处理说明`
+}
+
+/**
+ * The server's closing-note rule (D12, D16, D21, D25, D37), mirrored so a
+ * form can stop before submitting. Called with an empty note it returns what
+ * the note must contain; null means the note is optional or already fine.
+ * The deleted-target rule comes first, matching the server's check order.
  */
 export const caseClosingNoteError = (
-  item: Pick<CaseSummary, 'kind' | 'targetType'>,
+  item: Pick<CaseSummary, 'kind' | 'targetType'> & {
+    target?: Pick<CaseSummary['target'], 'deleted'>
+  },
   resolution: CaseResolution | '',
   content: string
 ): string | null => {
+  const deletedTargetError = caseDeletedTargetNoteError(item, content)
+  if (deletedTargetError) return deletedTargetError
   if (resolution === 'unreproducible') {
     return content.trim() ? null : '以「无法复现」结案时请写明核对了什么'
   }

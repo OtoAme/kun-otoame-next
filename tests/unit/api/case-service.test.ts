@@ -98,7 +98,18 @@ const targetCalls = () => findManyCalls().filter(isTargetQuery)
 
 beforeEach(() => {
   vi.clearAllMocks()
-  mocks.tx.$queryRaw.mockResolvedValue([{}])
+  mocks.tx.$queryRaw.mockImplementation(
+    (query: { strings?: readonly string[]; values?: readonly unknown[] }) => {
+      const sql = query.strings?.join(' ') ?? ''
+      if (sql.includes('FOR KEY SHARE')) {
+        const ids = (query.values ?? []).filter(
+          (value): value is number => typeof value === 'number'
+        )
+        return Promise.resolve(ids.map((id) => ({ id })))
+      }
+      return Promise.resolve([{}])
+    }
+  )
   mocks.tx.ops_case.findUnique.mockResolvedValue(row())
   mocks.tx.ops_case.findFirst.mockResolvedValue(null)
   mocks.tx.ops_case.findMany.mockResolvedValue([])

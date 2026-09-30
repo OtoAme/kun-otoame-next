@@ -64,9 +64,7 @@ const useResizableLayout = (
 ) => {
   const [mounted, setMounted] = useState(false)
   useEffect(() => setMounted(true), [])
-  const groupRef = useRef<ResizablePrimitive.GroupImperativeHandle | null>(
-    null
-  )
+  const groupRef = useRef<ResizablePrimitive.GroupImperativeHandle | null>(null)
   const layout = ResizablePrimitive.useDefaultLayout({
     storage: mounted ? window.localStorage : emptyLayoutStorage,
     ...options

@@ -1828,4 +1828,247 @@ describe('dashboard case detail', () => {
     expect(mocks.kunFetchPost).toHaveBeenCalledTimes(1)
     expect(container.textContent).toContain('条目B')
   })
+
+  const deletedCommentTarget: CaseDetail['target'] = {
+    targetType: 'comment',
+    targetId: 33,
+    deleted: true,
+    patch: { id: 3, uniqueId: 'abc', name: '条目A' },
+    resource: null
+  }
+
+  it('requires a note when resolving a case whose target was deleted (D37)', async () => {
+    const detail = makeDetail({
+      target: deletedCommentTarget,
+      capabilities: capabilities({
+        canResolve: true,
+        allowedResolutions: ['not_established']
+      })
+    })
+    mocks.kunFetchGet.mockResolvedValue(detailResponse(detail))
+    mocks.kunFetchPost.mockResolvedValue({ case: detail, changed: true })
+    const container = await mount(<DashboardCaseDetail caseId={9} />)
+    await flush()
+
+    // 必填标记在选定结论前就出现；失效目标跳转不出现
+    expect(container.textContent).toContain('评论已删除')
+    expect(container.textContent).toContain('处理说明（必填）')
+    expect(
+      [...container.querySelectorAll('a')].some((link) =>
+        link.getAttribute('href')?.includes('commentId=33')
+      )
+    ).toBe(false)
+
+    // 空白说明被拦，先于「不成立须写理由」的既有检查，不发请求
+    await setInput(container.querySelector('select')!, 'not_established')
+    await act(async () => {
+      findButton(container, '结案')!.click()
+    })
+    expect(dialog(container)).toBeNull()
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+      '评论已删除，请填写处理说明'
+    )
+    expect(mocks.kunFetchPost).not.toHaveBeenCalled()
+
+    // 有说明后沿用既有确认框与请求路径
+    await setInput(
+      container.querySelector<HTMLTextAreaElement>(
+        'textarea#case-action-content'
+      )!,
+      '评论已被作者自行删除，无需再处置'
+    )
+    await act(async () => {
+      findButton(container, '结案')!.click()
+    })
+    expect(dialog(container)).not.toBeNull()
+    await act(async () => {
+      findButton(dialog(container)!, '确认')!.click()
+    })
+    await flush()
+    expect(mocks.kunFetchPost).toHaveBeenCalledWith('/admin/case/9/handle', {
+      action: 'reject',
+      resolution: 'not_established',
+      content: '评论已被作者自行删除，无需再处置'
+    })
+  })
+
+  it('requires a note for a content action on a deleted target (D37)', async () => {
+    const detail = makeDetail({
+      target: deletedCommentTarget,
+      capabilities: capabilities({
+        canResolve: true,
+        allowedResolutions: ['not_established'],
+        canHandleContent: true,
+        allowedContentActions: ['delete']
+      })
+    })
+    mocks.kunFetchGet.mockResolvedValue(detailResponse(detail))
+    mocks.kunFetchPost.mockResolvedValue({
+      case: detail,
+      changed: true,
+      action: 'delete'
+    })
+    const container = await mount(<DashboardCaseDetail caseId={9} />)
+    await flush()
+
+    // 处置动作以结案收尾，空白说明同样被拦
+    await act(async () => {
+      findButton(container, '删除被举报评论')!.click()
+    })
+    expect(dialog(container)).toBeNull()
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+      '评论已删除，请填写处理说明'
+    )
+    expect(mocks.kunFetchPost).not.toHaveBeenCalled()
+
+    await setInput(
+      container.querySelector<HTMLTextAreaElement>(
+        'textarea#case-action-content'
+      )!,
+      '评论已被作者自行删除，登记处理'
+    )
+    await act(async () => {
+      findButton(container, '删除被举报评论')!.click()
+    })
+    expect(dialog(container)).not.toBeNull()
+    await act(async () => {
+      findButton(dialog(container)!, '确认')!.click()
+    })
+    await flush()
+    expect(mocks.kunFetchPost).toHaveBeenCalledWith('/admin/case/9/content', {
+      action: 'delete',
+      content: '评论已被作者自行删除，登记处理'
+    })
+  })
+
+  it('shows no user-management link for a deleted user target resolved as handled (D37)', async () => {
+    const detail = makeDetail({
+      targetType: 'user',
+      targetId: 200,
+      target: {
+        targetType: 'user',
+        targetId: 200,
+        deleted: true,
+        patch: null,
+        resource: null,
+        label: '被举报用户'
+      },
+      capabilities: capabilities({
+        canResolve: true,
+        canConfirmUserHandled: true,
+        allowedResolutions: ['handled', 'not_established']
+      })
+    })
+    mocks.kunFetchGet.mockResolvedValue(detailResponse(detail))
+    mocks.kunFetchPost.mockResolvedValue({ case: detail, changed: true })
+    const container = await mount(<DashboardCaseDetail caseId={9} />)
+    await flush()
+
+    await setInput(container.querySelector('select')!, 'handled')
+    // 账号已删除：不生成失效的用户管理链接，给删除提示；
+    // 确认勾选与说明必填的规则不变
+    expect(
+      [...container.querySelectorAll('a')].filter(
+        (link) =>
+          link.getAttribute('href') ===
+          '/dashboard/user?searchType=id&search=200'
+      )
+    ).toHaveLength(0)
+    expect(container.textContent).toContain('被举报账号已删除')
+
+    const checkbox = container.querySelector<HTMLInputElement>(
+      'input#case-handled-user-confirmed'
+    )!
+    expect(container.textContent).toContain('我确认该账号已删除，无需再处置')
+
+    // 未勾选确认直接结案 -> 拦截，守卫提示同样不再指向用户管理
+    await setInput(
+      container.querySelector<HTMLTextAreaElement>(
+        'textarea#case-action-content'
+      )!,
+      '账号已注销，登记处理完毕'
+    )
+    await act(async () => {
+      findButton(container, '结案')!.click()
+    })
+    expect(dialog(container)).toBeNull()
+    const guardError = container.querySelector('[role="alert"]')?.textContent
+    expect(guardError).toContain('请先确认该账号已删除，无需再处置')
+    expect(guardError).not.toContain('用户管理')
+    expect(mocks.kunFetchPost).not.toHaveBeenCalled()
+
+    // 勾选后走既有确认框与请求路径，确认框同样不再提用户管理
+    await act(async () => {
+      checkbox.click()
+    })
+    await act(async () => {
+      findButton(container, '结案')!.click()
+    })
+    expect(dialog(container)).not.toBeNull()
+    expect(dialog(container)!.textContent).toContain('被举报账号已删除')
+    expect(dialog(container)!.textContent).not.toContain('用户管理完成')
+    await act(async () => {
+      findButton(dialog(container)!, '确认')!.click()
+    })
+    await flush()
+    expect(mocks.kunFetchPost).toHaveBeenCalledWith('/admin/case/9/handle', {
+      action: 'resolve',
+      resolution: 'handled',
+      content: '账号已注销，登记处理完毕',
+      handledUserConfirmed: true
+    })
+  })
+
+  it('keeps deleted-target jumps and existing-resource actions off a deleted resource (D37)', async () => {
+    // 能力位由服务端给出：无论它怎么给，已删除目标都不渲染
+    // 「查看目标」与必须操作现存资源的隐藏/恢复/移动
+    const detail = makeDetail({
+      kind: 'resource_mismatch',
+      targetType: 'resource',
+      targetId: 7,
+      public: true,
+      target: {
+        targetType: 'resource',
+        targetId: 7,
+        deleted: true,
+        patch: { id: 3, uniqueId: 'abc', name: '条目A' },
+        resource: null
+      },
+      capabilities: capabilities({
+        canResolve: true,
+        allowedResolutions: ['repaired', 'unreproducible', 'out_of_scope'],
+        canHideResource: true,
+        canRestoreResource: true,
+        canMoveResource: true
+      })
+    })
+    mocks.kunFetchGet.mockResolvedValue(detailResponse(detail))
+    const container = await mount(<DashboardCaseDetail caseId={9} />)
+    await flush()
+
+    expect(container.textContent).toContain('资源已删除')
+    const anchors = [...container.querySelectorAll('a')]
+    expect(anchors.some((link) => link.textContent?.includes('查看目标'))).toBe(
+      false
+    )
+    expect(
+      anchors.some((link) => link.getAttribute('href')?.includes('resourceId='))
+    ).toBe(false)
+    expect(findButton(container, '隐藏资源')).toBeUndefined()
+    expect(findButton(container, '恢复资源')).toBeUndefined()
+    expect(findButton(container, '移动并结案')).toBeUndefined()
+    // 结案不受影响，说明必填，空白被拦
+    expect(
+      container.querySelector('section[aria-label="裁决操作"]')
+    ).not.toBeNull()
+    await setInput(container.querySelector('select')!, 'repaired')
+    await act(async () => {
+      findButton(container, '结案')!.click()
+    })
+    expect(dialog(container)).toBeNull()
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+      '资源已删除，请填写处理说明'
+    )
+    expect(mocks.kunFetchPost).not.toHaveBeenCalled()
+  })
 })

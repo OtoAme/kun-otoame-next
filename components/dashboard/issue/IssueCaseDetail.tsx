@@ -471,7 +471,8 @@ export function IssueCaseDetail({ caseId, onChanged }: IssueCaseDetailProps) {
                   : '已撤回你的报告，问题改由其他报告者跟进'
       )
       if (action === 'withdraw' && res.case.status !== 'resolved') {
-        // D33：下一位报告者接替后本人不能再打开这条问题，回到列表
+        // D33+D37：接替后本人退出报告者与关注关系，回到列表；同一账号独立
+        // 具有的处理方权限与相应通知由服务端能力位保留，前端不推断身份
         onChanged?.()
         router.push('/issue')
         return
@@ -708,7 +709,7 @@ export function IssueCaseDetail({ caseId, onChanged }: IssueCaseDetailProps) {
             : ''
         }`
       : displayAction === 'withdraw'
-        ? '没有其他人报告同一问题时，这条问题会以「开启者撤回」结束；还有其他报告者时，问题改由下一位报告者跟进，你写过的说明仍保留在事项里，你将不再收到这条问题的通知，也不能再打开它。'
+        ? '没有其他人报告同一问题时，这条问题会以「开启者撤回」结束；还有其他报告者时，问题改由下一位报告者跟进，你写过的说明仍保留在事项里。撤回只退出你的报告者与关注关系，此后不再以该身份收到这条问题的通知；你同时独立具有的处理方权限及相应通知不受影响。'
         : displayAction === 'propose'
           ? `将提请以「${
               CASE_RESOLUTION_LABELS[proposeResolution as CaseResolution] ??
@@ -957,7 +958,7 @@ export function IssueCaseDetail({ caseId, onChanged }: IssueCaseDetailProps) {
               rows={2}
               disabled={working}
               placeholder={
-                resolveNoteRule
+                resolveNoteRule || detail.target.deleted
                   ? '结案说明（必填，纯文字）'
                   : '结案说明（可选，纯文字）'
               }

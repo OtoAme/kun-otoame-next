@@ -307,10 +307,7 @@ export function CaseQueue({
           >
             {listPanel}
           </ResizablePanel>
-          <ResizableHandle
-            withHandle
-            aria-label="调整事项列表和详情宽度"
-          />
+          <ResizableHandle withHandle aria-label="调整事项列表和详情宽度" />
           <ResizablePanel
             id={CASE_PANEL_IDS[1]}
             defaultSize="66%"

@@ -77,7 +77,11 @@ export function suggestSuffixUniqueHits(
     name: string
     normalizedName: string | null
     alias: string[]
-    identities?: Array<{ origin: string; kind: string; normalizedValue: string }>
+    identities?: Array<{
+      origin: string
+      kind: string
+      normalizedValue: string
+    }>
     externalIds?: Record<string, string | number | null | undefined>
   }>
 ): SuffixUniqueHitSuggestion[] {

@@ -31,6 +31,7 @@ import {
   CASE_RESOLUTIONS_BY_KIND,
   CASE_REOPEN_WINDOW_MS,
   CASE_RESOLUTIONS,
+  CASE_ESCALATION_TRIGGERS,
   CASE_SITE_TARGET_ID,
   CASE_STAFF_UNRESPONSIVE_AFTER_MS,
   CASE_STATUS_SORT_GROUPS,
@@ -146,6 +147,7 @@ type AdminResourceInput = z.infer<typeof adminCaseResourceSchema>
 type AdminContentInput = z.infer<typeof adminCaseContentSchema>
 
 const CASE_ID_MAX = 2147483647
+const CASE_TRANSACTION_RETRY_COUNT = 3
 
 /**
  * A domain write can precede the case CAS (resource/content moderation). A
@@ -162,15 +164,102 @@ class CaseOperationRollbackError extends Error {
 
 const runCaseOperation = async <T>(
   db: PrismaClient,
-  operation: (tx: Prisma.TransactionClient) => Promise<T>
+  operation: (tx: Prisma.TransactionClient) => Promise<T>,
+  retryLockConflicts = false
 ): Promise<T | string> => {
   try {
-    return await db.$transaction(operation)
+    return retryLockConflicts
+      ? await runCaseTransaction(db, operation)
+      : await db.$transaction(operation)
   } catch (error) {
     if (error instanceof CaseOperationRollbackError) return error.message
     throw error
   }
 }
+
+const isRetryableCaseTransactionConflict = (error: unknown) => {
+  const pending = [error]
+  const seen = new Set<unknown>()
+  for (let depth = 0; pending.length && depth < 8; depth += 1) {
+    const current = pending.shift()
+    if (!current || seen.has(current)) continue
+    seen.add(current)
+    if (typeof current !== 'object') continue
+    const details = current as {
+      code?: unknown
+      cause?: unknown
+      originalCode?: unknown
+      kind?: unknown
+    }
+    if (details.code === 'P2034' || details.code === '40P01') return true
+    if (
+      details.kind === 'TransactionWriteConflict' &&
+      (details.originalCode === '40001' || details.originalCode === '40P01')
+    ) {
+      return true
+    }
+    if (details.cause) pending.push(details.cause)
+    if (details.originalCode && details.kind === 'TransactionWriteConflict') {
+      pending.push({ code: details.originalCode })
+    }
+  }
+  return false
+}
+
+const waitForCaseTransactionRetry = (milliseconds: number) =>
+  new Promise<void>((resolve) => setTimeout(resolve, milliseconds))
+
+/**
+ * User deletion locks the user row before its FK actions reach ops_case. Case
+ * writes lock the case first, then their notification recipients. If those
+ * sets overlap PostgreSQL can choose either transaction as the deadlock
+ * victim; retry only the rolled-back database callback, never its outer
+ * Redis/image work.
+ */
+const runCaseTransaction = async <T>(
+  db: PrismaClient,
+  operation: (tx: Prisma.TransactionClient) => Promise<T>
+): Promise<T> => {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      return await db.$transaction(operation)
+    } catch (error) {
+      if (
+        !isRetryableCaseTransactionConflict(error) ||
+        attempt >= CASE_TRANSACTION_RETRY_COUNT - 1
+      ) {
+        throw error
+      }
+      await waitForCaseTransactionRetry(20 * (attempt + 1))
+    }
+  }
+}
+
+const lockCaseUsers = async (tx: CaseTx, userIds: readonly number[]) => {
+  const ids = [
+    ...new Set(
+      userIds.filter(
+        (id) => Number.isSafeInteger(id) && id > 0 && id <= CASE_ID_MAX
+      )
+    )
+  ].sort((left, right) => left - right)
+  if (!ids.length) return new Set<number>()
+  const rows = await tx.$queryRaw<Array<{ id: number }>>(Prisma.sql`
+    SELECT id
+    FROM "user"
+    WHERE id IN (${Prisma.join(ids)})
+    ORDER BY id ASC
+    FOR KEY SHARE
+  `)
+  return new Set(
+    rows
+      .map((row) => Number(row.id))
+      .filter((id) => Number.isSafeInteger(id) && id > 0)
+  )
+}
+
+const lockCaseActor = async (tx: CaseTx, userId: number) =>
+  (await lockCaseUsers(tx, [userId])).has(userId)
 
 const rollbackCaseOperation = (message: string): never => {
   throw new CaseOperationRollbackError(message)
@@ -216,6 +305,7 @@ const invalidateCasePatchCaches = async (
       )
       for (const result of results) {
         if (result.status === 'rejected') {
+          // eslint-disable-next-line no-console -- Keep post-commit cache failures observable.
           console.error(
             '[Case] Failed to invalidate patch content cache:',
             result.reason
@@ -223,6 +313,7 @@ const invalidateCasePatchCaches = async (
         }
       }
     } catch (error) {
+      // eslint-disable-next-line no-console -- Keep post-commit cache failures observable.
       console.error('[Case] Failed to load patch cache keys:', error)
     }
   }
@@ -230,6 +321,7 @@ const invalidateCasePatchCaches = async (
     try {
       await invalidatePatchListCaches()
     } catch (error) {
+      // eslint-disable-next-line no-console -- Keep post-commit cache failures observable.
       console.error('[Case] Failed to invalidate patch list caches:', error)
     }
   }
@@ -242,6 +334,7 @@ const invalidateCaseShoutboxCaches = async () => {
     )
     await invalidateShoutboxCaches()
   } catch (error) {
+    // eslint-disable-next-line no-console -- Keep post-commit cache failures observable.
     console.error('[Case] Failed to invalidate shoutbox caches:', error)
   }
 }
@@ -1268,6 +1361,107 @@ const isOriginalPublisher = (
   row.escalated_at !== null &&
   originalPublisherId === viewerId
 
+type HandoffFact = {
+  caseId: number
+  publisherId: number
+  escalationTrigger: CaseEscalationTrigger | null
+}
+
+const needsHandoffFact = (
+  row: Pick<CaseRow, 'target_type' | 'public' | 'owner_type' | 'escalated_at'>
+) =>
+  row.target_type === 'resource' &&
+  row.public &&
+  row.owner_type === 'staff' &&
+  row.escalated_at !== null
+
+const isCaseEscalationTrigger = (
+  value: unknown
+): value is CaseEscalationTrigger =>
+  typeof value === 'string' &&
+  (CASE_ESCALATION_TRIGGERS as readonly string[]).includes(value)
+
+/**
+ * Resolve the identity from the latest handoff event, then verify that exact
+ * event's account still exists. Selection happens in SQL before payload
+ * validation so malformed latest history never falls back to an older owner.
+ */
+const loadLatestHandoffFacts = async (
+  db: CaseDb,
+  rows: readonly Pick<
+    CaseRow,
+    'id' | 'target_type' | 'public' | 'owner_type' | 'escalated_at'
+  >[]
+) => {
+  const eligibleIds = rows.filter(needsHandoffFact).map(({ id }) => id)
+  if (!eligibleIds.length) return new Map<number, HandoffFact>()
+
+  const latest = await db.$queryRaw<
+    Array<{ case_id: number; payload: Prisma.JsonValue | null }>
+  >(Prisma.sql`
+    SELECT c.id AS case_id, latest.payload
+    FROM ops_case AS c
+    CROSS JOIN LATERAL (
+      SELECT m.payload
+      FROM ops_case_message AS m
+      WHERE m.case_id = c.id
+        AND m.kind = 'system'
+        AND m.event = 'escalated'
+      ORDER BY m.created DESC, m.id DESC
+      LIMIT 1
+    ) AS latest
+    WHERE c.id IN (${Prisma.join(eligibleIds)})
+  `)
+  if (!Array.isArray(latest) || !latest.length) {
+    return new Map<number, HandoffFact>()
+  }
+
+  const candidates = new Map<number, HandoffFact>()
+  for (const event of latest) {
+    const payload = sanitizePayload(event.payload)
+    const publisherId = payload?.from_owner_id
+    if (
+      payload?.from_owner_type !== 'publisher' ||
+      typeof publisherId !== 'number' ||
+      !Number.isSafeInteger(publisherId) ||
+      publisherId <= 0 ||
+      publisherId > CASE_ID_MAX
+    ) {
+      continue
+    }
+    candidates.set(event.case_id, {
+      caseId: event.case_id,
+      publisherId,
+      escalationTrigger: isCaseEscalationTrigger(payload.escalation_trigger)
+        ? payload.escalation_trigger
+        : null
+    })
+  }
+  if (!candidates.size) return new Map<number, HandoffFact>()
+
+  const users = await db.user.findMany({
+    where: {
+      id: {
+        in: [
+          ...new Set([...candidates.values()].map((item) => item.publisherId))
+        ]
+      }
+    },
+    select: { id: true }
+  })
+  const existingIds = new Set(users.map(({ id }) => id))
+  const facts = new Map<number, HandoffFact>()
+  for (const [caseId, candidate] of candidates) {
+    if (existingIds.has(candidate.publisherId)) facts.set(caseId, candidate)
+  }
+  return facts
+}
+
+const handoffFactFor = async (db: CaseDb, row: CaseRow) => {
+  if (!needsHandoffFact(row)) return undefined
+  return (await loadLatestHandoffFacts(db, [row])).get(row.id)
+}
+
 /**
  * D36: a case that reached the site administrator only because its publisher
  * let it time out, and that its reporter never reopened, is still the
@@ -1293,8 +1487,6 @@ const canCloseAsOriginalPublisher = (
 type CaseRoundFacts = {
   lastClosureActor: CaseActorType | null
   confirmedThisRound: boolean
-  /** How the case last reached the site administrator (D36). */
-  lastEscalationTrigger: CaseEscalationTrigger | null
 }
 
 const capabilitiesFor = (
@@ -1302,7 +1494,8 @@ const capabilitiesFor = (
   viewerId: number,
   viewerRole: number,
   target?: TargetRows,
-  round?: CaseRoundFacts
+  round?: CaseRoundFacts,
+  handoffFact?: HandoffFact
 ): CaseCapabilities => {
   const unresolved = unresolvedStatuses.includes(row.status as never)
   const closed = closedStatuses.includes(row.status as never)
@@ -1313,14 +1506,14 @@ const capabilitiesFor = (
     row.closed_at !== null &&
     row.closed_at.getTime() >= Date.now() - CASE_REOPEN_WINDOW_MS
   const originalPublisher =
-    !admin && isOriginalPublisher(row, viewerId, target?.resource?.user_id)
+    !admin && isOriginalPublisher(row, viewerId, handoffFact?.publisherId)
   const originalPublisherCloses =
     !admin &&
     canCloseAsOriginalPublisher(
       row,
       viewerId,
-      target?.resource?.user_id,
-      round?.lastEscalationTrigger
+      handoffFact?.publisherId,
+      handoffFact?.escalationTrigger
     )
   const handlerResolutions: CaseResolution[] =
     !isCaseKind(row.kind) || (!admin && !owner && !originalPublisherCloses)
@@ -1497,21 +1690,27 @@ const serializeSummaryForViewer = async (
   viewerId: number,
   viewerRole: number,
   subscribed: boolean,
-  suppliedTarget?: TargetRows
+  suppliedTarget?: TargetRows,
+  suppliedHandoffFact?: HandoffFact | null
 ) => {
   const target = suppliedTarget ?? (await loadTarget(db, row))
+  const handoffFact =
+    suppliedHandoffFact === undefined
+      ? await handoffFactFor(db, row)
+      : (suppliedHandoffFact ?? undefined)
   const options = listViewOptions(
     row,
     viewerId,
     viewerRole,
     subscribed,
-    target.resource?.user_id
+    handoffFact?.publisherId
   )
   if (!options) return null
   return {
     summary: toSummary(row, target, options),
     view: options.view,
-    target
+    target,
+    handoffFact
   }
 }
 
@@ -1526,11 +1725,28 @@ const notifyCaseUsers = async (
   link = caseLink(caseId)
 ) => {
   const ids = [
-    ...new Set(recipientIds.filter((id) => Number.isInteger(id) && id > 0))
+    ...new Set(
+      recipientIds.filter(
+        (id) => Number.isInteger(id) && id > 0 && id !== senderId
+      )
+    )
   ]
   if (!ids.length) return
+  const lockedUserIds = await lockCaseUsers(
+    tx,
+    senderId === null || senderId === undefined ? ids : [...ids, senderId]
+  )
+  if (
+    senderId !== null &&
+    senderId !== undefined &&
+    !lockedUserIds.has(senderId)
+  ) {
+    throw new Error('Case notice sender account no longer exists')
+  }
+  const existingRecipientIds = ids.filter((id) => lockedUserIds.has(id))
+  if (!existingRecipientIds.length) return
   await tx.user_message.createMany({
-    data: ids.map((recipientId) => ({
+    data: existingRecipientIds.map((recipientId) => ({
       type: 'system',
       content,
       sender_id: senderId ?? null,
@@ -1668,7 +1884,7 @@ const notifyCaseParticipants = async (
   for (const { user_id } of subscribers) {
     addRecipient(user_id, caseLink(row.id), null, true)
   }
-  if (row.target_type === 'resource') {
+  if (row.target_type === 'resource' && !row.public) {
     const resource = await tx.patch_resource.findUnique({
       where: { id: row.target_id },
       select: {
@@ -1676,12 +1892,14 @@ const notifyCaseParticipants = async (
         patch: { select: { unique_id: true } }
       }
     })
-    const authorLink = row.public
-      ? caseLink(row.id)
-      : resource?.patch?.unique_id
-        ? `/${resource.patch.unique_id}`
-        : null
+    const authorLink = resource?.patch?.unique_id
+      ? `/${resource.patch.unique_id}`
+      : null
     if (authorLink && resource) addRecipient(resource.user_id, authorLink)
+  }
+  if (row.public && row.owner_type === 'staff') {
+    const handoffFact = await handoffFactFor(tx, row)
+    if (handoffFact) addRecipient(handoffFact.publisherId, caseLink(row.id))
   }
   if (row.owner_type === 'staff' && options.notifyStaff !== false) {
     for (const id of await loadStaffIds(tx)) {
@@ -1689,17 +1907,31 @@ const notifyCaseParticipants = async (
     }
   }
   if (!recipients.size) return
-  await tx.user_message.createMany({
-    data: [...recipients].map(([recipient_id, value]) => ({
+  const candidateAccountIds = [
+    ...recipients.keys(),
+    ...[...recipients.values()]
+      .map(({ senderId }) => senderId)
+      .filter((id): id is number => id !== null)
+  ]
+  const existingAccountIds = await lockCaseUsers(tx, candidateAccountIds)
+  const data = [...recipients]
+    .filter(([recipientId]) => existingAccountIds.has(recipientId))
+    .map(([recipient_id, value]) => ({
       type: 'system',
       content:
         value.followerOnly && options.followerContent
           ? options.followerContent
           : content,
-      sender_id: value.senderId,
+      sender_id:
+        value.senderId !== null && existingAccountIds.has(value.senderId)
+          ? value.senderId
+          : null,
       recipient_id,
       link: value.link
     }))
+  if (!data.length) return
+  await tx.user_message.createMany({
+    data
   })
 }
 
@@ -1778,20 +2010,6 @@ const replyActorFor = (
   return null
 }
 
-const originalPublisherIdFor = async (
-  db: CaseDb,
-  row: Pick<CaseRow, 'target_type' | 'target_id' | 'escalated_at'>
-) => {
-  if (row.target_type !== 'resource' || row.escalated_at === null) {
-    return undefined
-  }
-  const resource = await db.patch_resource.findUnique({
-    where: { id: row.target_id },
-    select: { user_id: true }
-  })
-  return resource?.user_id
-}
-
 /**
  * Writes one dialogue reply inside the caller's transaction and applies the
  * reply rows of the transition table (plan 5.4). A reply from the publisher a
@@ -1865,23 +2083,38 @@ const appendReplyInTx = async (
   const senderId = isReporter ? null : uid
   const others = (ids: readonly (number | null | undefined)[]) =>
     ids.filter((id): id is number => typeof id === 'number' && id !== uid)
+  const handoffFact =
+    (isReporter || actor === 'staff') &&
+    row.public &&
+    row.owner_type === 'staff'
+      ? await handoffFactFor(tx, row)
+      : undefined
   if (isReporter || actor === 'original-publisher') {
     if (row.owner_type === 'publisher' && row.owner_id !== null) {
       await notifyCaseUsers(tx, row.id, others([row.owner_id]), notice)
     } else {
+      const staffIds = await loadStaffIds(tx)
       await notifyCaseUsers(
         tx,
         row.id,
-        others(await loadStaffIds(tx)),
+        others(staffIds),
         notice,
         senderId,
         `/dashboard/case/${row.id}`
       )
+      if (handoffFact && !staffIds.includes(handoffFact.publisherId)) {
+        await notifyCaseUsers(
+          tx,
+          row.id,
+          others([handoffFact.publisherId]),
+          notice
+        )
+      }
     }
   } else {
-    // The site administrator's answer also reaches the publisher still
-    // owning the case, who would otherwise miss an intervention before the
-    // handoff (review item 19).
+    // One notice reaches every affected participant. The historical publisher
+    // can also be the opener, so keep them in this same deduplicated delivery
+    // (D20, review item 19).
     await notifyCaseUsers(
       tx,
       row.id,
@@ -1889,25 +2122,11 @@ const appendReplyInTx = async (
         row.reporter_id,
         actor === 'staff' && row.owner_type === 'publisher'
           ? row.owner_id
-          : null
+          : null,
+        actor === 'staff' ? handoffFact?.publisherId : null
       ]),
       notice,
       uid
-    )
-  }
-  // D20: the publisher a case was handed off from still answers and proposes
-  // closures, so the administrator's and the reporter's replies reach them.
-  if (isReporter || actor === 'staff') {
-    const originalPublisherId =
-      row.owner_type === 'staff' && row.public
-        ? await originalPublisherIdFor(tx, row)
-        : undefined
-    await notifyCaseUsers(
-      tx,
-      row.id,
-      others([originalPublisherId]),
-      notice,
-      senderId
     )
   }
   return message
@@ -2288,21 +2507,22 @@ const fetchCaseForViewer = async (
     where: { case_id_user_id: { case_id: id, user_id: viewerId } },
     select: { user_id: true }
   })
-  const target = await loadTarget(db, row)
+  const handoffFact = await handoffFactFor(db, row)
   const view = canViewCase(
     row,
     viewerId,
     viewerRole,
     Boolean(subscription),
-    target.resource?.user_id
+    handoffFact?.publisherId
   )
   if (!view) return '无权查看该问题'
+  const target = await loadTarget(db, row)
   const options = listViewOptions(
     row,
     viewerId,
     viewerRole,
     Boolean(subscription),
-    target.resource?.user_id
+    handoffFact?.publisherId
   )!
   const admin = view === 'admin'
   const summary = toSummary(row, target, {
@@ -2321,16 +2541,13 @@ const fetchCaseForViewer = async (
     viewerId,
     viewerRole,
     target,
-    follower ? undefined : roundFacts(messagesRows)
+    follower ? undefined : roundFacts(messagesRows),
+    handoffFact
   )
   // Without a subscription there is nothing left to withdraw (D18).
   if (!subscription) capabilities.canWithdraw = false
   const relatedOpenCaseIds = admin ? await loadRelatedOpenCaseIds(db, row) : []
-  // A deleted resource no longer names its author; the handoff event does.
-  const handedOffFrom =
-    row.public && row.owner_type === 'staff' && row.escalated_at !== null
-      ? (target.resource?.user_id ?? handoffOwnerId(messagesRows))
-      : null
+  const handedOffFrom = handoffFact?.publisherId ?? null
   const detail: CaseDetail = {
     ...summary,
     messages: messagesRows.map((message) =>
@@ -2381,18 +2598,6 @@ const loadRelatedOpenCaseIds = async (db: CaseDb, row: CaseRow) => {
   return rows.map((related) => related.id)
 }
 
-/** The publisher the latest handoff to the site administrator came from. */
-const handoffOwnerId = (
-  messages: readonly Pick<CaseMessageRow, 'kind' | 'event' | 'payload'>[]
-): number | undefined => {
-  for (let index = messages.length - 1; index >= 0; index -= 1) {
-    const message = messages[index]
-    if (message.kind !== 'system' || message.event !== 'escalated') continue
-    return sanitizePayload(message.payload)?.from_owner_id ?? undefined
-  }
-  return undefined
-}
-
 /**
  * Who closed the current round, whether its opener already answered it, and
  * how the case last reached the site administrator.
@@ -2402,7 +2607,6 @@ const roundFacts = (
 ): CaseRoundFacts => {
   let lastClosureActor: CaseActorType | null = null
   let confirmedThisRound = false
-  let lastEscalationTrigger: CaseEscalationTrigger | null = null
   for (const message of messages) {
     if (message.kind !== 'system' || !message.event) continue
     if ((CASE_CLOSING_EVENTS as readonly string[]).includes(message.event)) {
@@ -2414,12 +2618,9 @@ const roundFacts = (
       confirmedThisRound = false
     } else if (message.event === 'confirmed') {
       confirmedThisRound = true
-    } else if (message.event === 'escalated') {
-      lastEscalationTrigger =
-        sanitizePayload(message.payload)?.escalation_trigger ?? null
     }
   }
-  return { lastClosureActor, confirmedThisRound, lastEscalationTrigger }
+  return { lastClosureActor, confirmedThisRound }
 }
 
 export const getCase = async (
@@ -2528,49 +2729,127 @@ const toStatusCounts = (
  * administrator. They stay listed under「待我处理」so the publisher can still
  * reply and propose a closure (D20).
  */
-const loadHandedOffCaseIds = async (db: CaseDb, uid: number) => {
-  const rows = await db.$queryRaw<Array<{ id: number }>>(Prisma.sql`
-    SELECT c.id
-    FROM ops_case c
-    JOIN patch_resource r ON r.id = c.target_id
-    WHERE c.target_type = 'resource'
-      AND c.public = TRUE
-      AND c.owner_type = 'staff'
-      AND c.escalated_at IS NOT NULL
-      AND r.user_id = ${uid}
-    ORDER BY c.id DESC
-    LIMIT 500
-  `)
-  return Array.isArray(rows)
-    ? rows.map((row) => Number(row.id)).filter(Number.isSafeInteger)
-    : []
-}
-
-const getTabWhere = async (
-  db: CaseDb,
-  tab: CaseTab,
-  uid: number
-): Promise<{ where: Prisma.ops_caseWhereInput; handedOff: Set<number> }> => {
+const getTabWhere = (tab: CaseTab, uid: number): Prisma.ops_caseWhereInput => {
   if (tab === 'owned') {
-    const handedOff = new Set(await loadHandedOffCaseIds(db, uid))
-    const owned: Prisma.ops_caseWhereInput = {
-      owner_type: 'publisher',
-      owner_id: uid
-    }
-    return {
-      where: handedOff.size
-        ? { OR: [owned, { id: { in: [...handedOff] } }] }
-        : owned,
-      handedOff
-    }
+    return { owner_type: 'publisher', owner_id: uid }
   }
   if (tab === 'subscribed') {
-    return {
-      where: { subscribers: { some: { user_id: uid } } },
-      handedOff: new Set()
-    }
+    return { subscribers: { some: { user_id: uid } } }
   }
-  return { where: { reporter_id: uid }, handedOff: new Set() }
+  return { reporter_id: uid }
+}
+
+type OwnedCasePageRow = {
+  id: number
+  publisher_id: number | null
+  escalation_trigger: CaseEscalationTrigger | null
+}
+
+type OwnedCaseWindow = {
+  page: OwnedCasePageRow[]
+  total: number
+  statusCounts: Array<{ status: string; count: number }>
+}
+
+const loadOwnedCaseWindow = async (
+  db: CaseDb,
+  uid: number,
+  input: CaseListInput
+): Promise<OwnedCaseWindow> => {
+  const statuses = input.statuses?.length
+    ? input.statuses
+    : input.status
+      ? [input.status]
+      : []
+  const statusFilter = statuses.length
+    ? Prisma.sql`WHERE status IN (${Prisma.join(statuses)})`
+    : Prisma.empty
+  const rows = await db.$queryRaw<
+    Array<{
+      page: OwnedCasePageRow[]
+      total: number
+      status_counts: Array<{ status: string; count: number }>
+    }>
+  >(Prisma.sql`
+    WITH candidates AS MATERIALIZED (
+      SELECT
+        c.id,
+        c.status,
+        c.status_changed_at,
+        handoff_user.id AS publisher_id,
+        CASE
+          WHEN latest.payload->>'escalation_trigger' IN (
+            'timeout', 'review_request'
+          ) THEN latest.payload->>'escalation_trigger'
+          ELSE NULL
+        END AS escalation_trigger
+      FROM ops_case AS c
+      LEFT JOIN LATERAL (
+        SELECT m.payload
+        FROM ops_case_message AS m
+        WHERE m.case_id = c.id
+          AND m.kind = 'system'
+          AND m.event = 'escalated'
+        ORDER BY m.created DESC, m.id DESC
+        LIMIT 1
+      ) AS latest ON (
+        c.target_type = 'resource'
+        AND c.public = TRUE
+        AND c.owner_type = 'staff'
+        AND c.escalated_at IS NOT NULL
+      )
+      LEFT JOIN "user" AS handoff_user
+        ON handoff_user.id::numeric = CASE
+          WHEN latest.payload->>'from_owner_type' = 'publisher'
+            AND jsonb_typeof(latest.payload->'from_owner_id') = 'number'
+          THEN (latest.payload->>'from_owner_id')::numeric
+          ELSE NULL::numeric
+        END
+      WHERE (c.owner_type = 'publisher' AND c.owner_id = ${uid})
+         OR handoff_user.id = ${uid}
+    ),
+    filtered AS MATERIALIZED (
+      SELECT id, status, status_changed_at, publisher_id, escalation_trigger
+      FROM candidates
+      ${statusFilter}
+    ),
+    page AS (
+      SELECT id, status_changed_at, publisher_id, escalation_trigger
+      FROM filtered
+      ORDER BY status_changed_at DESC, id DESC
+      OFFSET ${(input.page - 1) * input.limit}
+      LIMIT ${input.limit}
+    ),
+    status_counts AS (
+      SELECT status, COUNT(*)::int AS count
+      FROM candidates
+      GROUP BY status
+    )
+    SELECT
+      COALESCE(
+        (SELECT jsonb_agg(
+          jsonb_build_object(
+            'id', id,
+            'publisher_id', publisher_id,
+            'escalation_trigger', escalation_trigger
+          ) ORDER BY status_changed_at DESC, id DESC
+        ) FROM page),
+        '[]'::jsonb
+      ) AS page,
+      (SELECT COUNT(*)::int FROM filtered) AS total,
+      COALESCE(
+        (SELECT jsonb_agg(
+          jsonb_build_object('status', status, 'count', count)
+        ) FROM status_counts),
+        '[]'::jsonb
+      ) AS status_counts
+  `)
+  const result = Array.isArray(rows) ? rows[0] : undefined
+  return {
+    page: result?.page ?? [],
+    total: Number(result?.total ?? 0),
+    statusCounts: result?.status_counts ?? []
+  }
 }
 
 /** Cases the viewer still has an unread notification for (D22). */
@@ -2600,11 +2879,7 @@ export const listCases = async (
   // filter on top of the same scope, so both come from one set of predicates.
   // Neither number subtracts the per-row visibility trimming below, which can
   // drop rows the count already included; that skew is pre-existing behaviour.
-  const { where: scopeWhere, handedOff } = await getTabWhere(
-    db,
-    input.tab,
-    viewerId
-  )
+  const scopeWhere = getTabWhere(input.tab, viewerId)
   // `statuses` wins over the single `status` when both arrive. It is the form
   // that expresses a merged tab (处理中 = open + waiting_owner), so a leftover
   // `status` from an older client must not narrow it back down.
@@ -2614,21 +2889,73 @@ export const listCases = async (
       ? { status: input.status }
       : {}
   const where: Prisma.ops_caseWhereInput = { ...scopeWhere, ...statusWhere }
-  const [rows, total, statusGroups] = await Promise.all([
-    db.ops_case.findMany({
-      where,
-      orderBy: [{ status_changed_at: 'desc' }, { id: 'desc' }],
-      skip: (input.page - 1) * input.limit,
-      take: input.limit,
-      select: caseListSelect
-    }),
-    db.ops_case.count({ where }),
-    db.ops_case.groupBy({
-      by: ['status'],
-      where: scopeWhere,
-      _count: { _all: true }
+  let rows: CaseListRow[]
+  let total: number
+  let statusGroups: Array<{ status: string; _count: { _all: number } }>
+  let handoffFacts: Map<number, HandoffFact>
+  if (input.tab === 'owned') {
+    const window = await loadOwnedCaseWindow(db, viewerId, input)
+    const ids = window.page.map(({ id }) => id)
+    const selectedRows = await queryManyIfNeeded(ids, () =>
+      db.ops_case.findMany({
+        where: { id: { in: ids } },
+        select: caseListSelect
+      })
+    )
+    const rowsById = new Map(selectedRows.map((row) => [row.id, row]))
+    rows = ids.flatMap((id) => {
+      const row = rowsById.get(id)
+      return row ? [row] : []
     })
-  ])
+    total = window.total
+    statusGroups = window.statusCounts.map(({ status, count }) => ({
+      status,
+      _count: { _all: count }
+    }))
+    handoffFacts = new Map(
+      window.page.flatMap(({ id, publisher_id, escalation_trigger }) =>
+        publisher_id === null
+          ? []
+          : [
+              [
+                id,
+                {
+                  caseId: id,
+                  publisherId: publisher_id,
+                  escalationTrigger: isCaseEscalationTrigger(escalation_trigger)
+                    ? escalation_trigger
+                    : null
+                }
+              ] as const
+            ]
+      )
+    )
+  } else {
+    const [pageRows, pageTotal, pageStatusGroups] = await Promise.all([
+      db.ops_case.findMany({
+        where,
+        orderBy: [{ status_changed_at: 'desc' }, { id: 'desc' }],
+        skip: (input.page - 1) * input.limit,
+        take: input.limit,
+        select: caseListSelect
+      }),
+      db.ops_case.count({ where }),
+      db.ops_case.groupBy({
+        by: ['status'],
+        where: scopeWhere,
+        _count: { _all: true }
+      })
+    ])
+    rows = pageRows
+    total = pageTotal
+    statusGroups = pageStatusGroups
+    handoffFacts = await loadLatestHandoffFacts(db, rows)
+  }
+  const handedOff = new Set(
+    [...handoffFacts]
+      .filter(([, fact]) => fact.publisherId === viewerId)
+      .map(([caseId]) => caseId)
+  )
   const caseIds = rows.map((row) => row.id)
   const [targetByCaseId, subscribedRows, unreadCaseIds] = await Promise.all([
     loadTargets(db, rows),
@@ -2650,7 +2977,8 @@ export const listCases = async (
       viewerId,
       viewerRole,
       subscribed,
-      targetByCaseId.get(row.id)
+      targetByCaseId.get(row.id),
+      handoffFacts.get(row.id) ?? null
     )
     if (!serialized) continue
     let latestMessage: (typeof row.messages)[number] | undefined =
@@ -2661,7 +2989,9 @@ export const listCases = async (
     // other than a withdrawal is read again through the same filter.
     if (
       latestMessage &&
-      !(latestMessage.kind === 'system' && latestMessage.event !== 'withdrawn') &&
+      !(
+        latestMessage.kind === 'system' && latestMessage.event !== 'withdrawn'
+      ) &&
       serialized.view === 'reporter' &&
       isViolationReport(row)
     ) {
@@ -2684,7 +3014,14 @@ export const listCases = async (
         : {}),
       hasUnread: unreadCaseIds.has(row.id),
       handedOff: handedOff.has(row.id),
-      ...capabilitiesFor(row, viewerId, viewerRole, serialized.target)
+      ...capabilitiesFor(
+        row,
+        viewerId,
+        viewerRole,
+        serialized.target,
+        undefined,
+        serialized.handoffFact
+      )
     })
   }
   return {
@@ -2716,17 +3053,14 @@ export const appendCaseMessage = async (
   if (consumed) return consumed
   let result: string | { row: CaseRow; message: CaseMessageRow }
   try {
-    result = await db.$transaction(async (tx) => {
+    result = await runCaseTransaction(db, async (tx) => {
+      if (!(await lockCaseActor(tx, uid))) return '账号不存在或已注销'
       const row = await getCaseLock(tx, input.caseId)
       if (!row) return '问题不存在'
       if (!unresolvedStatuses.includes(row.status as never))
         return '该问题已结案'
-      const actor = replyActorFor(
-        row,
-        uid,
-        role,
-        await originalPublisherIdFor(tx, row)
-      )
+      const handoffFact = await handoffFactFor(tx, row)
+      const actor = replyActorFor(row, uid, role, handoffFact?.publisherId)
       if (!actor) return '无权回复该问题'
       const message = await appendReplyInTx(
         tx,
@@ -2822,16 +3156,28 @@ const closingNoteError = (
   return null
 }
 
-/** The trigger of the case's latest handoff to the site administrator. */
-const latestEscalationTrigger = async (tx: CaseTx, caseId: number) => {
-  const message = await tx.ops_case_message.findFirst({
-    where: { case_id: caseId, kind: 'system', event: 'escalated' },
-    orderBy: [{ created: 'desc' }, { id: 'desc' }],
-    select: { payload: true }
-  })
-  return sanitizePayload(message?.payload ?? null)?.escalation_trigger ?? null
+const caseTargetMissing = async (
+  tx: CaseTx,
+  row: Pick<CaseRow, 'target_type' | 'target_id' | 'patch_id'>
+) => !(await loadTarget(tx, row)).targetExists
+
+const deletedTargetNote = (row: Pick<CaseRow, 'target_type'>) => {
+  const label = isCaseTargetType(row.target_type)
+    ? CASE_TARGET_TYPE_LABELS[row.target_type]
+    : '目标'
+  return `${label}已删除，请填写处理说明`
 }
 
+const deletedTargetNoteError = async (
+  tx: CaseTx,
+  row: Pick<CaseRow, 'target_type' | 'target_id' | 'patch_id'>,
+  content: string
+) => {
+  if (!(await caseTargetMissing(tx, row)) || content.trim()) return null
+  return deletedTargetNote(row)
+}
+
+/** The trigger of the case's latest handoff to the site administrator. */
 /**
  * The publisher closes their own case, and the original publisher closes a
  * case handed off by timeout that was never reopened (D36). Either way the
@@ -2845,14 +3191,15 @@ export const resolveCase = async (
 ): Promise<CaseActionResponse | string> => {
   const db = options.db ?? prisma
   const now = options.now ?? new Date()
-  const result = await db.$transaction(async (tx) => {
+  const result = await runCaseTransaction(db, async (tx) => {
+    if (!(await lockCaseActor(tx, uid))) return '账号不存在或已注销'
     const row = await getCaseLock(tx, input.caseId)
     if (!row) return '问题不存在'
     if (!assertResolution(row.kind, input.resolution))
       return '当前问题不支持该结论'
     if (row.owner_type !== 'publisher' || row.owner_id !== uid) {
-      const originalPublisherId = await originalPublisherIdFor(tx, row)
-      if (!isOriginalPublisher(row, uid, originalPublisherId))
+      const handoffFact = await handoffFactFor(tx, row)
+      if (!isOriginalPublisher(row, uid, handoffFact?.publisherId))
         return '只有当前资源发布者可以结案'
       if (!unresolvedStatuses.includes(row.status as never))
         return '该问题已结案'
@@ -2860,8 +3207,8 @@ export const resolveCase = async (
         !canCloseAsOriginalPublisher(
           row,
           uid,
-          originalPublisherId,
-          await latestEscalationTrigger(tx, row.id)
+          handoffFact?.publisherId,
+          handoffFact?.escalationTrigger
         )
       ) {
         return '该问题只能提请结案，由网站管理员确认后结案'
@@ -2872,6 +3219,12 @@ export const resolveCase = async (
     if (!isHandlerResolution(row.kind, input.resolution)) {
       return '发布者不能使用该结论'
     }
+    const deletedTargetError = await deletedTargetNoteError(
+      tx,
+      row,
+      input.content
+    )
+    if (deletedTargetError) return deletedTargetError
     const noteError = closingNoteError(row, input.resolution, input.content)
     if (noteError) return noteError
     return closeCaseInternal(tx, {
@@ -2895,7 +3248,12 @@ export const resolveCase = async (
   return { case: serialized.summary, changed: true }
 }
 
-const notifyReopen = async (tx: CaseTx, row: CaseRow, reason: string) => {
+const notifyReopen = async (
+  tx: CaseTx,
+  row: CaseRow,
+  reason: string,
+  actorId: number
+) => {
   const notice = withSnippet(
     `${await describeCaseForNotice(tx, row)}被报告者重新打开`,
     reason
@@ -2903,21 +3261,28 @@ const notifyReopen = async (tx: CaseTx, row: CaseRow, reason: string) => {
   if (row.owner_type === 'publisher' && row.owner_id !== null) {
     await notifyCaseUsers(tx, row.id, [row.owner_id], notice)
   } else {
+    const staffIds = await loadStaffIds(tx)
+    const handoffFact =
+      row.public && row.owner_type === 'staff'
+        ? await handoffFactFor(tx, row)
+        : undefined
+    const otherStaffIds = staffIds.filter((id) => id !== actorId)
     await notifyCaseUsers(
       tx,
       row.id,
-      await loadStaffIds(tx),
+      otherStaffIds,
       notice,
       null,
       `/dashboard/case/${row.id}`
     )
     // The reason is the reporter's word on a handed-off case, which reaches
     // its original publisher like the reporter's replies (review item 19).
-    const originalPublisherId = row.public
-      ? await originalPublisherIdFor(tx, row)
-      : undefined
-    if (originalPublisherId !== undefined) {
-      await notifyCaseUsers(tx, row.id, [originalPublisherId], notice)
+    if (
+      handoffFact &&
+      handoffFact.publisherId !== actorId &&
+      !staffIds.includes(handoffFact.publisherId)
+    ) {
+      await notifyCaseUsers(tx, row.id, [handoffFact.publisherId], notice)
     }
   }
 }
@@ -2954,7 +3319,8 @@ export const reopenCase = async (
     | CaseReopenResponse
     | string = ''
   try {
-    result = await db.$transaction(async (tx) => {
+    result = await runCaseTransaction(db, async (tx) => {
+      if (!(await lockCaseActor(tx, uid))) return '账号不存在或已注销'
       const row = await getCaseLock(tx, caseId)
       if (!row) return '问题不存在'
       if (row.reporter_id !== uid) return '只有开启者可以重新提交'
@@ -3019,7 +3385,7 @@ export const reopenCase = async (
         '问题已重新提交，处理方会继续跟进。'
       )
       await writeReporterReason(tx, row.id, uid, content, now)
-      await notifyReopen(tx, row, content)
+      await notifyReopen(tx, row, content, uid)
       return { changed: true }
     })
   } catch (error) {
@@ -3094,7 +3460,8 @@ export const reviewCase = async (
   let conflictKey: string | null = null
   let result: { changed: true } | CaseReopenResponse | string
   try {
-    result = await db.$transaction(async (tx) => {
+    result = await runCaseTransaction(db, async (tx) => {
+      if (!(await lockCaseActor(tx, uid))) return '账号不存在或已注销'
       const row = await getCaseLock(tx, caseId)
       if (!row) return '问题不存在'
       if (row.reporter_id !== uid) return '只有开启者可以申请复核'
@@ -3181,17 +3548,22 @@ export const reviewCase = async (
       )
       await writeReporterReason(tx, row.id, uid, content, now)
       const subject = await describeCaseForNotice(tx, row)
+      const staffIds = (await loadStaffIds(tx)).filter((id) => id !== uid)
       await notifyCaseUsers(
         tx,
         row.id,
-        await loadStaffIds(tx),
+        staffIds,
         withSnippet(`${subject}的报告者申请网站管理员复核`, content),
         null,
         `/dashboard/case/${row.id}`
       )
       // The publisher can read the reason in the dialogue anyway, so the
       // notice carries the same snippet as the administrators' one.
-      if (row.owner_id !== null) {
+      if (
+        row.owner_id !== null &&
+        row.owner_id !== uid &&
+        !staffIds.includes(row.owner_id)
+      ) {
         await notifyCaseUsers(
           tx,
           row.id,
@@ -3233,7 +3605,8 @@ export const withdrawCase = async (
 ): Promise<CaseActionResponse | string> => {
   const db = options.db ?? prisma
   const now = options.now ?? new Date()
-  const result = await db.$transaction(async (tx) => {
+  const result = await runCaseTransaction(db, async (tx) => {
+    if (!(await lockCaseActor(tx, uid))) return '账号不存在或已注销'
     const row = await getCaseLock(tx, caseId)
     if (!row) return '问题不存在'
     if (row.reporter_id !== uid) return '只有开启者可以撤回'
@@ -3314,7 +3687,8 @@ export const confirmCase = async (
 ): Promise<CaseActionResponse | string> => {
   const db = options.db ?? prisma
   const now = options.now ?? new Date()
-  const result = await db.$transaction(async (tx) => {
+  const result = await runCaseTransaction(db, async (tx) => {
+    if (!(await lockCaseActor(tx, uid))) return '账号不存在或已注销'
     const row = await getCaseLock(tx, caseId)
     if (!row) return '问题不存在'
     if (row.reporter_id !== uid) return '只有开启者可以确认处理结果'
@@ -3365,20 +3739,21 @@ export const proposeCaseClosure = async (
   const db = options.db ?? prisma
   const now = options.now ?? new Date()
   if (role >= 3) return '网站管理员请直接结案'
-  const result = await db.$transaction(async (tx) => {
+  const result = await runCaseTransaction(db, async (tx) => {
+    if (!(await lockCaseActor(tx, uid))) return '账号不存在或已注销'
     const row = await getCaseLock(tx, input.caseId)
     if (!row) return '问题不存在'
     if (!unresolvedStatuses.includes(row.status as never)) return '该问题已结案'
-    const originalPublisherId = await originalPublisherIdFor(tx, row)
-    if (!isOriginalPublisher(row, uid, originalPublisherId)) {
+    const handoffFact = await handoffFactFor(tx, row)
+    if (!isOriginalPublisher(row, uid, handoffFact?.publisherId)) {
       return '只有原发布者可以提请结案'
     }
     if (
       canCloseAsOriginalPublisher(
         row,
         uid,
-        originalPublisherId,
-        await latestEscalationTrigger(tx, row.id)
+        handoffFact?.publisherId,
+        handoffFact?.escalationTrigger
       )
     ) {
       return '该问题可以直接结案，无需提请'
@@ -3386,6 +3761,12 @@ export const proposeCaseClosure = async (
     if (!isHandlerResolution(row.kind, input.resolution)) {
       return '当前问题不支持该结论'
     }
+    const deletedTargetError = await deletedTargetNoteError(
+      tx,
+      row,
+      input.content
+    )
+    if (deletedTargetError) return deletedTargetError
     const noteError = closingNoteError(row, input.resolution, input.content)
     if (noteError) return noteError
     const label = CASE_RESOLUTION_LABELS[input.resolution]
@@ -3451,7 +3832,8 @@ export const handleCaseAsAdmin = async (
     return '结案说明不能附图，需要配图请先发一条带图回复'
   }
   const now = options.now ?? new Date()
-  const result = await db.$transaction(async (tx) => {
+  const result = await runCaseTransaction(db, async (tx) => {
+    if (!(await lockCaseActor(tx, adminId))) return '账号不存在或已注销'
     const row = await getCaseLock(tx, input.caseId)
     if (!row) return '问题不存在'
     let resolution = input.resolution
@@ -3466,6 +3848,12 @@ export const handleCaseAsAdmin = async (
       return '开启者撤回只能由开启者本人登记'
     }
     if (!resolution) return '当前问题不支持该结论'
+    const deletedTargetError = await deletedTargetNoteError(
+      tx,
+      row,
+      input.content
+    )
+    if (deletedTargetError) return deletedTargetError
     const staffUnresponsive = resolution === 'reporter_unresponsive'
     if (staffUnresponsive) {
       if (!canCloseAsStaffUnresponsive(row, now)) {
@@ -3577,182 +3965,188 @@ export const handleCaseResource = async (
   const db = options.db ?? prisma
   if (adminRole < 3) return '本页面仅管理员可访问'
   const now = options.now ?? new Date()
-  const result = await runCaseOperation(db, async (tx) => {
-    const initial = await resourceCaseRow(tx, input.caseId)
-    if (!initial) return '问题不存在'
-    if (initial.target_type !== 'resource') return '该问题目标不是资源'
-    const resource = await lockResource(tx, initial.target_id)
-    if (!resource) return '资源不存在'
-    if (input.action === 'hide') {
-      // D13: a timed-out description case is fixed and closed, never hidden;
-      // only a resource violation report may hide the resource.
+  const result = await runCaseOperation(
+    db,
+    async (tx) => {
+      if (!(await lockCaseActor(tx, adminId))) return '账号不存在或已注销'
+      const initial = await resourceCaseRow(tx, input.caseId)
+      if (!initial) return '问题不存在'
+      if (initial.target_type !== 'resource') return '该问题目标不是资源'
+      const resource = await lockResource(tx, initial.target_id)
+      if (!resource) return '资源不存在'
+      if (input.action === 'hide') {
+        // D13: a timed-out description case is fixed and closed, never hidden;
+        // only a resource violation report may hide the resource.
+        if (
+          !unresolvedStatuses.includes(initial.status as never) ||
+          initial.kind !== 'content_violation' ||
+          initial.target_type !== 'resource'
+        )
+          return '当前问题不能隐藏资源'
+        if (resource.status !== 0) return '当前资源不能隐藏'
+        const resourceUpdated = await tx.patch_resource.updateMany({
+          where: { id: resource.id, status: 0 },
+          data: { status: 1, updated: now }
+        })
+        if (resourceUpdated.count !== 1)
+          rollbackCaseOperation('该资源刚刚被他人处理，请刷新后重试')
+        const uniqueId = await updatePatchAttributes(resource.patch_id, tx)
+        await tx.admin_log.create({
+          data: {
+            type: 'case_resource_hide',
+            user_id: adminId,
+            content: `管理员通过问题 #${initial.id} 隐藏资源 #${resource.id}`
+          }
+        })
+        const closed = await closeCaseInternal(tx, {
+          caseId: initial.id,
+          expectedStatuses: unresolvedStatuses as CaseStatus[],
+          resolution: 'violation_hidden',
+          actorType: 'staff',
+          actorId: adminId,
+          event: 'hidden',
+          payload: {
+            resource_id: resource.id,
+            previous_resource_status: resource.status
+          },
+          additionalData: { hidden_at: now },
+          now
+        })
+        if (!closed.changed) rollbackCaseOperation(closed.reason)
+        return { action: 'hide' as const, patchId: resource.patch_id, uniqueId }
+      }
+      if (input.action === 'restore') {
+        if (
+          !closedStatuses.includes(initial.status as never) ||
+          !['escalated_hidden', 'violation_hidden'].includes(
+            initial.resolution ?? ''
+          ) ||
+          initial.hidden_at === null ||
+          initial.restored_at !== null
+        )
+          return '该隐藏不是此问题造成或已经恢复过'
+        if (resource.status !== 1) return '当前资源不能恢复'
+        const resourceUpdated = await tx.patch_resource.updateMany({
+          where: { id: resource.id, status: 1 },
+          data: { status: 0, updated: now }
+        })
+        if (resourceUpdated.count !== 1)
+          rollbackCaseOperation('该资源刚刚被他人处理，请刷新后重试')
+        const uniqueId = await updatePatchAttributes(resource.patch_id, tx)
+        const updated = await tx.ops_case.updateMany({
+          where: {
+            id: initial.id,
+            status: initial.status,
+            hidden_at: { not: null },
+            restored_at: null
+          },
+          data: { restored_at: now, updated: now }
+        })
+        if (updated.count === 0)
+          rollbackCaseOperation('该问题刚刚被他人处理，请刷新后重试')
+        await appendCaseSystemMessage(
+          tx,
+          initial.id,
+          'restored',
+          {
+            resource_id: resource.id,
+            previous_resource_status: resource.status,
+            from_status: initial.status,
+            to_status: initial.status
+          },
+          '资源已恢复公开显示。'
+        )
+        if (resource.user_id) {
+          await notifyCaseUsers(
+            tx,
+            initial.id,
+            [resource.user_id],
+            '该资源已恢复公开显示。',
+            adminId,
+            initial.public ? caseLink(initial.id) : `/${uniqueId}`
+          )
+        }
+        await tx.admin_log.create({
+          data: {
+            type: 'case_resource_restore',
+            user_id: adminId,
+            content: `管理员通过问题 #${initial.id} 恢复资源 #${resource.id}`
+          }
+        })
+        return {
+          action: 'restore' as const,
+          patchId: resource.patch_id,
+          uniqueId
+        }
+      }
       if (
-        !unresolvedStatuses.includes(initial.status as never) ||
-        initial.kind !== 'content_violation' ||
-        initial.target_type !== 'resource'
-      )
-        return '当前问题不能隐藏资源'
-      if (resource.status !== 0) return '当前资源不能隐藏'
+        initial.kind !== 'resource_wrong_patch' ||
+        !unresolvedStatuses.includes(initial.status as never)
+      ) {
+        return '当前问题不能移动资源'
+      }
+      const targetPatchId = input.targetPatchId
+      if (!targetPatchId) return '移动资源必须提供目标条目'
+      if (targetPatchId === resource.patch_id)
+        return '目标条目必须与当前条目不同'
+      const targetPatch = await tx.patch.findUnique({
+        where: { id: targetPatchId },
+        select: { id: true, unique_id: true, status: true }
+      })
+      if (!targetPatch || targetPatch.status !== 0)
+        return '目标条目不存在或不可用'
+      const fromPatchId = resource.patch_id
       const resourceUpdated = await tx.patch_resource.updateMany({
-        where: { id: resource.id, status: 0 },
-        data: { status: 1, updated: now }
+        where: { id: resource.id, patch_id: fromPatchId },
+        data: { patch_id: targetPatchId, updated: now }
       })
       if (resourceUpdated.count !== 1)
         rollbackCaseOperation('该资源刚刚被他人处理，请刷新后重试')
-      const uniqueId = await updatePatchAttributes(resource.patch_id, tx)
+      await tx.patch_resource_access.updateMany({
+        where: { resource_id: resource.id },
+        data: { patch_id: targetPatchId, updated: now }
+      })
+      const linkedCasesUpdated = await tx.ops_case.updateMany({
+        where: { target_type: 'resource', target_id: resource.id },
+        data: { patch_id: targetPatchId, updated: now }
+      })
+      if (linkedCasesUpdated.count === 0)
+        rollbackCaseOperation('该资源刚刚被他人处理，请刷新后重试')
+      const [fromUniqueId, toUniqueId] = await Promise.all([
+        updatePatchAttributes(fromPatchId, tx),
+        updatePatchAttributes(targetPatchId, tx)
+      ])
       await tx.admin_log.create({
         data: {
-          type: 'case_resource_hide',
+          type: 'case_resource_move',
           user_id: adminId,
-          content: `管理员通过问题 #${initial.id} 隐藏资源 #${resource.id}`
+          content: `管理员通过问题 #${initial.id} 移动资源 #${resource.id}（${fromPatchId} -> ${targetPatchId}）`
         }
       })
       const closed = await closeCaseInternal(tx, {
         caseId: initial.id,
         expectedStatuses: unresolvedStatuses as CaseStatus[],
-        resolution: 'violation_hidden',
+        resolution: 'moved',
         actorType: 'staff',
         actorId: adminId,
-        event: 'hidden',
+        event: 'moved',
         payload: {
           resource_id: resource.id,
-          previous_resource_status: resource.status
+          from_patch_id: fromPatchId,
+          to_patch_id: targetPatchId
         },
-        additionalData: { hidden_at: now },
         now
       })
       if (!closed.changed) rollbackCaseOperation(closed.reason)
-      return { action: 'hide' as const, patchId: resource.patch_id, uniqueId }
-    }
-    if (input.action === 'restore') {
-      if (
-        !closedStatuses.includes(initial.status as never) ||
-        !['escalated_hidden', 'violation_hidden'].includes(
-          initial.resolution ?? ''
-        ) ||
-        initial.hidden_at === null ||
-        initial.restored_at !== null
-      )
-        return '该隐藏不是此问题造成或已经恢复过'
-      if (resource.status !== 1) return '当前资源不能恢复'
-      const resourceUpdated = await tx.patch_resource.updateMany({
-        where: { id: resource.id, status: 1 },
-        data: { status: 0, updated: now }
-      })
-      if (resourceUpdated.count !== 1)
-        rollbackCaseOperation('该资源刚刚被他人处理，请刷新后重试')
-      const uniqueId = await updatePatchAttributes(resource.patch_id, tx)
-      const updated = await tx.ops_case.updateMany({
-        where: {
-          id: initial.id,
-          status: initial.status,
-          hidden_at: { not: null },
-          restored_at: null
-        },
-        data: { restored_at: now, updated: now }
-      })
-      if (updated.count === 0)
-        rollbackCaseOperation('该问题刚刚被他人处理，请刷新后重试')
-      await appendCaseSystemMessage(
-        tx,
-        initial.id,
-        'restored',
-        {
-          resource_id: resource.id,
-          previous_resource_status: resource.status,
-          from_status: initial.status,
-          to_status: initial.status
-        },
-        '资源已恢复公开显示。'
-      )
-      if (resource.user_id) {
-        await notifyCaseUsers(
-          tx,
-          initial.id,
-          [resource.user_id],
-          '该资源已恢复公开显示。',
-          adminId,
-          initial.public ? caseLink(initial.id) : `/${uniqueId}`
-        )
-      }
-      await tx.admin_log.create({
-        data: {
-          type: 'case_resource_restore',
-          user_id: adminId,
-          content: `管理员通过问题 #${initial.id} 恢复资源 #${resource.id}`
-        }
-      })
       return {
-        action: 'restore' as const,
-        patchId: resource.patch_id,
-        uniqueId
+        action: 'move' as const,
+        fromPatchId,
+        toPatchId: targetPatchId,
+        uniqueId: `${fromUniqueId}:${toUniqueId}`
       }
-    }
-    if (
-      initial.kind !== 'resource_wrong_patch' ||
-      !unresolvedStatuses.includes(initial.status as never)
-    ) {
-      return '当前问题不能移动资源'
-    }
-    const targetPatchId = input.targetPatchId
-    if (!targetPatchId) return '移动资源必须提供目标条目'
-    if (targetPatchId === resource.patch_id) return '目标条目必须与当前条目不同'
-    const targetPatch = await tx.patch.findUnique({
-      where: { id: targetPatchId },
-      select: { id: true, unique_id: true, status: true }
-    })
-    if (!targetPatch || targetPatch.status !== 0)
-      return '目标条目不存在或不可用'
-    const fromPatchId = resource.patch_id
-    const resourceUpdated = await tx.patch_resource.updateMany({
-      where: { id: resource.id, patch_id: fromPatchId },
-      data: { patch_id: targetPatchId, updated: now }
-    })
-    if (resourceUpdated.count !== 1)
-      rollbackCaseOperation('该资源刚刚被他人处理，请刷新后重试')
-    await tx.patch_resource_access.updateMany({
-      where: { resource_id: resource.id },
-      data: { patch_id: targetPatchId, updated: now }
-    })
-    const linkedCasesUpdated = await tx.ops_case.updateMany({
-      where: { target_type: 'resource', target_id: resource.id },
-      data: { patch_id: targetPatchId, updated: now }
-    })
-    if (linkedCasesUpdated.count === 0)
-      rollbackCaseOperation('该资源刚刚被他人处理，请刷新后重试')
-    const [fromUniqueId, toUniqueId] = await Promise.all([
-      updatePatchAttributes(fromPatchId, tx),
-      updatePatchAttributes(targetPatchId, tx)
-    ])
-    await tx.admin_log.create({
-      data: {
-        type: 'case_resource_move',
-        user_id: adminId,
-        content: `管理员通过问题 #${initial.id} 移动资源 #${resource.id}（${fromPatchId} -> ${targetPatchId}）`
-      }
-    })
-    const closed = await closeCaseInternal(tx, {
-      caseId: initial.id,
-      expectedStatuses: unresolvedStatuses as CaseStatus[],
-      resolution: 'moved',
-      actorType: 'staff',
-      actorId: adminId,
-      event: 'moved',
-      payload: {
-        resource_id: resource.id,
-        from_patch_id: fromPatchId,
-        to_patch_id: targetPatchId
-      },
-      now
-    })
-    if (!closed.changed) rollbackCaseOperation(closed.reason)
-    return {
-      action: 'move' as const,
-      fromPatchId,
-      toPatchId: targetPatchId,
-      uniqueId: `${fromUniqueId}:${toUniqueId}`
-    }
-  })
+    },
+    true
+  )
   if (typeof result === 'string') return result
   const row = await getCaseById(db, input.caseId)
   if (!row) return '问题不存在'
@@ -3790,145 +4184,137 @@ export const handleCaseContent = async (
   const db = options.db ?? prisma
   if (adminRole < 3) return '本页面仅管理员可访问'
   const now = options.now ?? new Date()
-  const result = await runCaseOperation(db, async (tx) => {
-    const row = await getCaseLock(tx, input.caseId)
-    if (!row) return '问题不存在'
-    if (
-      row.kind !== 'content_violation' ||
-      !unresolvedStatuses.includes(row.status as never)
-    ) {
-      return '当前问题不能执行内容处置'
-    }
-    if (row.target_type === 'user') {
-      return '用户举报请先在既有用户管理入口完成处置，再登记结论'
-    }
-    const targetMissing =
-      (row.target_type === 'comment' &&
-        !(await tx.patch_comment.findUnique({
-          where: { id: row.target_id },
-          select: { id: true }
-        }))) ||
-      (row.target_type === 'rating' &&
-        !(await tx.patch_rating.findUnique({
-          where: { id: row.target_id },
-          select: { id: true }
-        }))) ||
-      (row.target_type === 'shoutbox' &&
-        !(await tx.shoutbox.findUnique({
-          where: { id: row.target_id },
-          select: { id: true }
-        })))
-    if (targetMissing) {
+  const result = await runCaseOperation(
+    db,
+    async (tx) => {
+      if (!(await lockCaseActor(tx, adminId))) return '账号不存在或已注销'
+      const row = await getCaseLock(tx, input.caseId)
+      if (!row) return '问题不存在'
+      if (
+        row.kind !== 'content_violation' ||
+        !unresolvedStatuses.includes(row.status as never)
+      ) {
+        return '当前问题不能执行内容处置'
+      }
+      if (row.target_type === 'user') {
+        return '用户举报请先在既有用户管理入口完成处置，再登记结论'
+      }
+      const targetMissing = await caseTargetMissing(tx, row)
+      if (targetMissing) {
+        if (!input.content.trim()) return deletedTargetNote(row)
+        const closed = await closeCaseInternal(tx, {
+          caseId: row.id,
+          expectedStatuses: unresolvedStatuses as CaseStatus[],
+          resolution:
+            input.action === 'restore' ? 'not_established' : 'handled',
+          actorType: 'staff',
+          actorId: adminId,
+          payload: { handled_target: 'missing' },
+          body: input.content,
+          // A misjudgement restore is a 不成立 finding: rejected like every
+          // other 不成立, whichever action records it (D25 precedent).
+          status: input.action === 'restore' ? 'rejected' : 'resolved',
+          now
+        })
+        if (!closed.changed) return closed.reason
+        return { targetMissing: true, action: input.action }
+      }
+      let patchId: number | null = row.patch_id
+      if (input.action === 'delete') {
+        const { deleteReportedTargetInTransaction } = await import(
+          '~/app/api/admin/report/service'
+        )
+        let deletedLabel: string | null = null
+        if (row.target_type === 'comment') {
+          const comment = await tx.patch_comment.findUnique({
+            where: { id: row.target_id },
+            select: { id: true, patch_id: true }
+          })
+          if (comment) {
+            patchId = comment.patch_id
+            const deleted = await deleteReportedTargetInTransaction(tx, {
+              targetType: 'comment',
+              targetId: comment.id,
+              patchId: comment.patch_id
+            })
+            if (!deleted)
+              rollbackCaseOperation('评论刚刚被他人处理，请刷新后重试')
+            deletedLabel = '评论'
+          }
+        } else if (row.target_type === 'rating') {
+          const rating = await tx.patch_rating.findUnique({
+            where: { id: row.target_id },
+            select: { id: true, patch_id: true }
+          })
+          if (rating) {
+            patchId = rating.patch_id
+            const deleted = await deleteReportedTargetInTransaction(tx, {
+              targetType: 'rating',
+              targetId: rating.id,
+              patchId: rating.patch_id
+            })
+            if (!deleted)
+              rollbackCaseOperation('评价刚刚被他人处理，请刷新后重试')
+            deletedLabel = '评价'
+          }
+        } else {
+          return '评论和评价使用 delete，小喇叭请使用 takedown 或 restore'
+        }
+        // The shoutbox primitives log their own moderation; a deletion through
+        // the case needs its own record (review item 24).
+        if (deletedLabel) {
+          await tx.admin_log.create({
+            data: {
+              type: 'case_content_delete',
+              user_id: adminId,
+              content: `管理员通过问题 #${row.id} 删除${deletedLabel} #${row.target_id}`
+            }
+          })
+        }
+      } else if (row.target_type === 'shoutbox') {
+        const { removeShoutboxForCase, restoreShoutboxForCase } = await import(
+          '~/app/api/shoutbox/service'
+        )
+        if (input.action === 'takedown') {
+          const removed = await removeShoutboxForCase(
+            tx,
+            row.target_id,
+            adminId,
+            row.id,
+            now
+          )
+          if (typeof removed === 'string') return removed
+        } else if (input.action === 'restore') {
+          const restored = await restoreShoutboxForCase(
+            tx,
+            row.target_id,
+            adminId,
+            row.id,
+            now
+          )
+          if (typeof restored === 'string') return restored
+        }
+      } else {
+        return '小喇叭请使用 takedown 或 restore'
+      }
+      const resolution: CaseResolution =
+        input.action === 'restore' ? 'not_established' : 'handled'
       const closed = await closeCaseInternal(tx, {
         caseId: row.id,
         expectedStatuses: unresolvedStatuses as CaseStatus[],
-        resolution: input.action === 'restore' ? 'not_established' : 'handled',
+        resolution,
         actorType: 'staff',
         actorId: adminId,
-        payload: { handled_target: 'missing' },
-        body: input.content || '目标已不存在，事项已登记处理。',
-        // A misjudgement restore is a 不成立 finding: rejected like every
-        // other 不成立, whichever action records it (D25 precedent).
+        payload: { handled_target: row.target_type },
+        body: input.content || undefined,
         status: input.action === 'restore' ? 'rejected' : 'resolved',
         now
       })
-      if (!closed.changed) return closed.reason
-      return { targetMissing: true, action: input.action }
-    }
-    let patchId: number | null = row.patch_id
-    if (input.action === 'delete') {
-      const { deleteReportedTargetInTransaction } = await import(
-        '~/app/api/admin/report/service'
-      )
-      let deletedLabel: string | null = null
-      if (row.target_type === 'comment') {
-        const comment = await tx.patch_comment.findUnique({
-          where: { id: row.target_id },
-          select: { id: true, patch_id: true }
-        })
-        if (comment) {
-          patchId = comment.patch_id
-          const deleted = await deleteReportedTargetInTransaction(tx, {
-            targetType: 'comment',
-            targetId: comment.id,
-            patchId: comment.patch_id
-          })
-          if (!deleted)
-            rollbackCaseOperation('评论刚刚被他人处理，请刷新后重试')
-          deletedLabel = '评论'
-        }
-      } else if (row.target_type === 'rating') {
-        const rating = await tx.patch_rating.findUnique({
-          where: { id: row.target_id },
-          select: { id: true, patch_id: true }
-        })
-        if (rating) {
-          patchId = rating.patch_id
-          const deleted = await deleteReportedTargetInTransaction(tx, {
-            targetType: 'rating',
-            targetId: rating.id,
-            patchId: rating.patch_id
-          })
-          if (!deleted)
-            rollbackCaseOperation('评价刚刚被他人处理，请刷新后重试')
-          deletedLabel = '评价'
-        }
-      } else {
-        return '评论和评价使用 delete，小喇叭请使用 takedown 或 restore'
-      }
-      // The shoutbox primitives log their own moderation; a deletion through
-      // the case needs its own record (review item 24).
-      if (deletedLabel) {
-        await tx.admin_log.create({
-          data: {
-            type: 'case_content_delete',
-            user_id: adminId,
-            content: `管理员通过问题 #${row.id} 删除${deletedLabel} #${row.target_id}`
-          }
-        })
-      }
-    } else if (row.target_type === 'shoutbox') {
-      const { removeShoutboxForCase, restoreShoutboxForCase } = await import(
-        '~/app/api/shoutbox/service'
-      )
-      if (input.action === 'takedown') {
-        const removed = await removeShoutboxForCase(
-          tx,
-          row.target_id,
-          adminId,
-          row.id,
-          now
-        )
-        if (typeof removed === 'string') return removed
-      } else if (input.action === 'restore') {
-        const restored = await restoreShoutboxForCase(
-          tx,
-          row.target_id,
-          adminId,
-          row.id,
-          now
-        )
-        if (typeof restored === 'string') return restored
-      }
-    } else {
-      return '小喇叭请使用 takedown 或 restore'
-    }
-    const resolution: CaseResolution =
-      input.action === 'restore' ? 'not_established' : 'handled'
-    const closed = await closeCaseInternal(tx, {
-      caseId: row.id,
-      expectedStatuses: unresolvedStatuses as CaseStatus[],
-      resolution,
-      actorType: 'staff',
-      actorId: adminId,
-      payload: { handled_target: row.target_type },
-      body: input.content || undefined,
-      status: input.action === 'restore' ? 'rejected' : 'resolved',
-      now
-    })
-    if (!closed.changed) rollbackCaseOperation(closed.reason)
-    return { targetMissing: false, action: input.action, patchId }
-  })
+      if (!closed.changed) rollbackCaseOperation(closed.reason)
+      return { targetMissing: false, action: input.action, patchId }
+    },
+    true
+  )
   if (typeof result === 'string') return result
   const row = await getCaseById(db, input.caseId)
   if (!row) return '问题不存在'
@@ -3967,7 +4353,8 @@ export const setCaseMessageHidden = async (
   const db = options.db ?? prisma
   if (adminRole < 3) return '本页面仅管理员可访问'
   const now = options.now ?? new Date()
-  const result = await db.$transaction(async (tx) => {
+  const result = await runCaseTransaction(db, async (tx) => {
+    if (!(await lockCaseActor(tx, adminId))) return '账号不存在或已注销'
     const message = await tx.ops_case_message.findFirst({
       where: { id: input.messageId, case_id: input.caseId },
       select: { id: true, kind: true, payload: true }
@@ -4038,7 +4425,8 @@ const buildAdminCaseSearch = async (
   scope: Prisma.ops_caseWhereInput,
   field: CaseSearchField = 'all'
 ): Promise<Prisma.ops_caseWhereInput[]> => {
-  const within = (wanted: CaseSearchField) => field === 'all' || field === wanted
+  const within = (wanted: CaseSearchField) =>
+    field === 'all' || field === wanted
   const contains = { contains: search, mode: 'insensitive' as const }
   const predicates: Prisma.ops_caseWhereInput[] = []
   const caseId = caseIdFromSearch(search)
@@ -4372,7 +4760,7 @@ export const upgradeCase = async (
 ) => {
   const db = options.db ?? prisma
   const now = options.now ?? new Date()
-  const result = await db.$transaction(async (tx) => {
+  const result = await runCaseTransaction(db, async (tx) => {
     const row = await getCaseLock(tx, caseId)
     if (!row) return { changed: false as const, reason: '问题不存在' }
     if (
@@ -4418,16 +4806,19 @@ export const upgradeCase = async (
       '发布者 7 天未处理，问题已提交给网站管理员处理。'
     )
     const notice = `${await describeCaseForNotice(tx, row)}的发布者 7 天未处理，已提交给网站管理员处理。`
+    const staffIds = await loadStaffIds(tx)
     await notifyCaseUsers(
       tx,
       row.id,
-      [row.owner_id ?? 0, row.reporter_id ?? 0],
+      [row.owner_id ?? 0, row.reporter_id ?? 0].filter(
+        (id) => !staffIds.includes(id)
+      ),
       notice
     )
     await notifyCaseUsers(
       tx,
       row.id,
-      await loadStaffIds(tx),
+      staffIds,
       notice,
       null,
       `/dashboard/case/${row.id}`
@@ -4446,7 +4837,7 @@ export const timeoutCloseCase = async (
 ) => {
   const db = options.db ?? prisma
   const now = options.now ?? new Date()
-  const result = await db.$transaction(async (tx) => {
+  const result = await runCaseTransaction(db, async (tx) => {
     const row = await getCaseLock(tx, caseId)
     if (!row) return { changed: false as const, reason: '问题不存在' }
     if (
@@ -4487,7 +4878,7 @@ export const remindCase = async (
 ) => {
   const db = options.db ?? prisma
   const now = options.now ?? new Date()
-  return db.$transaction(async (tx) => {
+  return runCaseTransaction(db, async (tx) => {
     const row = await getCaseLock(tx, caseId)
     if (!row || row.owner_type !== 'publisher') return { changed: false }
     if (row.reminded_revision !== null && row.reminded_revision >= row.revision)

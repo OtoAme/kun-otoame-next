@@ -36,6 +36,7 @@ import {
 } from '~/constants/case'
 import {
   caseClosingNoteError,
+  caseDeletedTargetNoteError,
   caseKindLabel,
   caseLatestProposal,
   caseResolutionLabel,
@@ -258,7 +259,11 @@ export function DashboardCaseDetail({
       }
       if (isUserTargetHandled) {
         if (!handledUserConfirmed) {
-          setActionError('请先确认已在用户管理完成对该用户的处置')
+          setActionError(
+            detail?.target.deleted
+              ? '请先确认该账号已删除，无需再处置'
+              : '请先确认已在用户管理完成对该用户的处置'
+          )
           return
         }
         if (!trimmed) {
@@ -275,6 +280,16 @@ export function DashboardCaseDetail({
       }
       if (detail && detail.target.resource?.patchId === targetId) {
         setActionError('目标条目与当前条目相同')
+        return
+      }
+    }
+    // 目标已不存在时处置动作同样以结案收尾，服务端要求附上非空说明（D37）
+    if (action.type === 'content') {
+      const noteError = detail
+        ? caseDeletedTargetNoteError(detail, actionContent)
+        : null
+      if (noteError) {
+        setActionError(noteError)
         return
       }
     }
@@ -447,11 +462,18 @@ export function DashboardCaseDetail({
       : displayAction?.type === 'hide-message'
         ? ''
         : actionContent.trim()
+  // D37：目标已删除时停用必须操作现存资源的动作（隐藏/恢复/移动），
+  // 结案与内容处置仍取自能力位，服务端在操作事务内重读目标状态
+  const targetDeleted = detail.target.deleted
+  const canHideExistingResource = capabilities.canHideResource && !targetDeleted
+  const canRestoreExistingResource =
+    capabilities.canRestoreResource && !targetDeleted
+  const canMoveExistingResource = capabilities.canMoveResource && !targetDeleted
   const hasAdjudication =
     capabilities.canResolve ||
-    capabilities.canHideResource ||
-    capabilities.canRestoreResource ||
-    capabilities.canMoveResource ||
+    canHideExistingResource ||
+    canRestoreExistingResource ||
+    canMoveExistingResource ||
     capabilities.canHandleContent
   const quickReplies = caseQuickRepliesFor(detail.kind)
   // 审阅第 23 条：写明这条回复谁看得到
@@ -521,7 +543,9 @@ export function DashboardCaseDetail({
   const baseActionDescription = (action: PendingAction): string => {
     if (action.type === 'resolve') {
       if (action.resolution === 'handled' && detail.targetType === 'user') {
-        return '将登记「已处理」并结案。请确认已在用户管理完成对该用户的实际处置，处理说明会通知举报人。'
+        return detail.target.deleted
+          ? '将登记「已处理」并结案。被举报账号已删除，确认无需再处置并填写处理说明，说明会通知举报人。'
+          : '将登记「已处理」并结案。请确认已在用户管理完成对该用户的实际处置，处理说明会通知举报人。'
       }
       if (action.resolution === 'reporter_unresponsive') {
         return '报告者已满 14 天没有补充，将以「开启者未回应」结案；关注者会收到可以重新提交的说明。'
@@ -786,15 +810,22 @@ export function DashboardCaseDetail({
 
                   {isUserTargetHandled ? (
                     <div className="space-y-2 rounded-md border border-dashed p-3">
+                      {/* D37：账号已删除时不生成失效的用户管理链接；确认勾选与说明规则不变 */}
                       <p className="text-sm text-muted-foreground">
-                        用户举报须先在
-                        <Link
-                          href={userManagementHref(detail.targetId)}
-                          className="mx-1 text-primary underline-offset-4 hover:underline"
-                        >
-                          用户管理
-                        </Link>
-                        完成实际处置，再回这里登记结论。
+                        {targetDeleted ? (
+                          '被举报账号已删除，无需再在用户管理处置，确认后填写处理说明登记结论。'
+                        ) : (
+                          <>
+                            用户举报须先在
+                            <Link
+                              href={userManagementHref(detail.targetId)}
+                              className="mx-1 text-primary underline-offset-4 hover:underline"
+                            >
+                              用户管理
+                            </Link>
+                            完成实际处置，再回这里登记结论。
+                          </>
+                        )}
                       </p>
                       <div className="flex items-center gap-2">
                         <Checkbox
@@ -809,7 +840,9 @@ export function DashboardCaseDetail({
                           htmlFor="case-handled-user-confirmed"
                           className="text-sm"
                         >
-                          我已在用户管理完成对该用户的处置
+                          {targetDeleted
+                            ? '我确认该账号已删除，无需再处置'
+                            : '我已在用户管理完成对该用户的处置'}
                         </label>
                       </div>
                     </div>
@@ -822,6 +855,7 @@ export function DashboardCaseDetail({
                     处理说明
                     {isUserTargetHandled ||
                     noteRule ||
+                    targetDeleted ||
                     (resolution &&
                       REJECT_RESOLUTIONS.has(resolution as CaseResolution))
                       ? '（必填）'
@@ -881,12 +915,12 @@ export function DashboardCaseDetail({
                 </div>
               ) : null}
 
-              {capabilities.canHideResource ||
-              capabilities.canRestoreResource ||
-              capabilities.canMoveResource ||
+              {canHideExistingResource ||
+              canRestoreExistingResource ||
+              canMoveExistingResource ||
               capabilities.canHandleContent ? (
                 <div className="flex flex-wrap items-center gap-2">
-                  {capabilities.canHideResource ? (
+                  {canHideExistingResource ? (
                     <Button
                       type="button"
                       variant="destructive"
@@ -902,7 +936,7 @@ export function DashboardCaseDetail({
                       隐藏资源
                     </Button>
                   ) : null}
-                  {capabilities.canRestoreResource ? (
+                  {canRestoreExistingResource ? (
                     <Button
                       type="button"
                       variant="outline"
@@ -942,7 +976,7 @@ export function DashboardCaseDetail({
                 </div>
               ) : null}
 
-              {capabilities.canMoveResource ? (
+              {canMoveExistingResource ? (
                 <div className="space-y-3">
                   <CaseMovePatchSearch
                     disabled={working}

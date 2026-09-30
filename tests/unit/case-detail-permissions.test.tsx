@@ -832,6 +832,11 @@ describe('issue case detail permissions', () => {
       findButton(container, '撤回')!.click()
     })
     expect(container.textContent).toContain('开启者撤回')
+    // D37：撤回只退出报告者与关注关系，不绝对宣称不能再打开或收不到通知；
+    // 同一账号独立具有的处理方权限与相应通知保留
+    expect(container.textContent).toContain('不再以该身份收到这条问题的通知')
+    expect(container.textContent).toContain('处理方权限及相应通知不受影响')
+    expect(container.textContent).not.toContain('不能再打开')
     expect(mocks.kunFetchPost).not.toHaveBeenCalled()
     await act(async () => {
       findButton(container, '确认')!.click()
@@ -981,6 +986,127 @@ describe('issue case detail permissions', () => {
     await flush()
     expect(mocks.kunFetchPost).toHaveBeenCalledWith('/case/9/resolve', {
       resolution: 'repaired'
+    })
+  })
+
+  const deletedResourceTarget: CaseDetail['target'] = {
+    targetType: 'resource',
+    targetId: 7,
+    deleted: true,
+    patch: { id: 3, uniqueId: 'abc', name: '条目A' },
+    resource: null
+  }
+
+  it('lets the original publisher close a deleted target, note required (D36, D37)', async () => {
+    const detail = makeDetail({
+      ownerType: 'staff',
+      escalatedAt: '2026-09-14T00:00:00.000Z',
+      target: deletedResourceTarget,
+      capabilities: capabilities({
+        canReply: true,
+        canResolve: true,
+        allowedResolutions: ['repaired', 'unreproducible', 'out_of_scope']
+      })
+    })
+    mocks.kunFetchGet.mockResolvedValue(detailResponse(detail))
+    mocks.kunFetchPost.mockResolvedValue({ case: detail, changed: true })
+    const container = await mount(<IssueCaseDetail caseId={9} />)
+    await flush()
+
+    // 目标已删除：失效跳转与「去修改资源」不出现，D36 结案表单仍可达
+    expect(container.textContent).toContain('资源已删除')
+    expect(container.textContent).toContain('已交给网站管理员')
+    const anchors = [...container.querySelectorAll('a')]
+    expect(
+      anchors.some((link) => link.getAttribute('href')?.includes('resourceId='))
+    ).toBe(false)
+    expect(
+      anchors.some((link) => link.textContent?.includes('去修改资源'))
+    ).toBe(false)
+    const noteBox = container.querySelector<HTMLTextAreaElement>(
+      'textarea[aria-label="结案说明"]'
+    )!
+    expect(noteBox.placeholder).toBe('结案说明（必填，纯文字）')
+
+    // 空白说明被拦，不发请求
+    await chooseResolution(container, 'repaired')
+    expect(container.textContent).toContain('资源已删除，请填写处理说明')
+    await act(async () => {
+      findButton(container, '结案')!.click()
+    })
+    expect(container.querySelector('[role="alertdialog"]')).toBeNull()
+    expect(mocks.kunFetchPost).not.toHaveBeenCalled()
+
+    // 有说明后沿用既有确认框与请求路径
+    await typeInto(
+      container,
+      'textarea[aria-label="结案说明"]',
+      '资源已删除，核对过下载记录'
+    )
+    await act(async () => {
+      findButton(container, '结案')!.click()
+    })
+    expect(container.querySelector('[role="alertdialog"]')).not.toBeNull()
+    expect(container.textContent).toContain('重开后由网站管理员处理')
+    await act(async () => {
+      findButton(container, '确认')!.click()
+    })
+    await flush()
+    expect(mocks.kunFetchPost).toHaveBeenCalledWith('/case/9/resolve', {
+      resolution: 'repaired',
+      content: '资源已删除，核对过下载记录'
+    })
+  })
+
+  it('keeps a deleted target to proposal only when direct closure is not offered (D20, D37)', async () => {
+    const detail = makeDetail({
+      ownerType: 'staff',
+      escalatedAt: '2026-09-14T00:00:00.000Z',
+      reopenedCount: 1,
+      target: deletedResourceTarget,
+      capabilities: capabilities({ canReply: true, canPropose: true })
+    })
+    mocks.kunFetchGet.mockResolvedValue(detailResponse(detail))
+    mocks.kunFetchPost.mockResolvedValue({ case: detail, changed: true })
+    const container = await mount(<IssueCaseDetail caseId={9} />)
+    await flush()
+
+    // 只提请不结案，目标跳转与「去修改资源」同样不出现
+    expect(container.querySelector('section[aria-label="结案"]')).toBeNull()
+    expect(
+      container.querySelector('section[aria-label="提请结案"]')
+    ).not.toBeNull()
+    expect(
+      [...container.querySelectorAll('button')].some(
+        (button) => button.textContent === '结案'
+      )
+    ).toBe(false)
+    const anchors = [...container.querySelectorAll('a')]
+    expect(
+      anchors.some((link) => link.getAttribute('href')?.includes('resourceId='))
+    ).toBe(false)
+    expect(
+      anchors.some((link) => link.textContent?.includes('去修改资源'))
+    ).toBe(false)
+
+    await chooseResolution(container, 'repaired')
+    expect(findButton(container, '提请结案')!.disabled).toBe(true)
+    await typeInto(
+      container,
+      'textarea[aria-label="提请说明"]',
+      '已按描述重新核对并补链'
+    )
+    await act(async () => {
+      findButton(container, '提请结案')!.click()
+    })
+    expect(container.textContent).toContain('网站管理员确认后才会结案')
+    await act(async () => {
+      findButton(container, '确认')!.click()
+    })
+    await flush()
+    expect(mocks.kunFetchPost).toHaveBeenCalledWith('/case/9/propose', {
+      resolution: 'repaired',
+      content: '已按描述重新核对并补链'
     })
   })
 
