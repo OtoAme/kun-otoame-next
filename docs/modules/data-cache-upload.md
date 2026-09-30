@@ -233,6 +233,8 @@ Gallery 图片上传走 `app/api/edit/gallery/route.ts` 和 `app/api/edit/galler
 
 `ops_case` 的 `patch_info × patch`、`other × patch` 与 `other × site` 去重键包含开启者。隐藏对话使用既有 `ops_case_message.payload.hidden_at`，以读到的隐藏值作条件更新；重复同状态请求不写日志，竞争失败返回刷新提示。原文和图片引用保留，不删除 S3 对象，读取时按身份裁剪。管理员结案日志与结案状态写在同一事务。
 
+D37 的历史原发布者来自最新转交事件，账号存在性与通知插入之间通过按 ID 排序的用户行 `FOR KEY SHARE` 保护；已注销的收件人被跳过，缺失的发送者不再作为外键写入。结案通知合并开启者、关注者、归属方及历史原发布者，一人一条，排除执行者；同一通知同时包含站方接收身份时优先后台链接。账号注销可能先锁用户、随后触及事项，与事项写入形成死锁；对应写操作只对已回滚的事务冲突有限重试整笔数据库事务，不在已中止的事务内吞掉外键错误继续写入，也不重复消费限频或图片登记。资源处置仍保持先资源、后事项的锁序。本次没有 schema 变更或历史数据回填。
+
 消息动作限频走 `app/api/message/conversation/rateLimit.ts`，使用 Redis Lua 原子 `INCR` + `EXPIRE` 固定窗口。key 使用 `conversation:rate-limit:<action>:<uid>`，通过 `getPrefixedRedisKey` 显式加上 `kun:touchgal` 前缀后传给低层 `redis.eval`。当前 action 和阈值：
 
 - `send`：发送私聊消息 30 次/分钟。

@@ -59,6 +59,8 @@ tests/unit/
 - 外部 ID、主题、标签等纯逻辑。
 - 编辑外部 ID 查重：`api/duplicate.test.ts`、`api/create-galgame-timeout.test.ts`、`patch-update-gallery.test.ts` 和 `steam-input.test.tsx` 覆盖 Steam ID 软重复可继续创建/重写/拉取 Steam 数据，以及 Bangumi ID 硬唯一和 Prisma `P2002` 竞态提示。
 
+模块 03 的 D37 回归位于 `api/case-feedback-service.test.ts`、`api/case-service.test.ts` 及三个事项详情／展示测试中：历史原发布者身份不随资源删除或换作者改变；最新事件的身份校验失败不回退，未知转交原因不能获得 D36 直接结案能力；注销收件人／发送者被安全处理，双身份回复通知只发一次；删除目标人工结案与提请要求说明，两侧界面停用失效链接并保留独立处理方权限。超过 500 条历史分页、真实删除及通知锁竞争、自然定时调度与生产产物浏览器验证使用独立 PostgreSQL／Redis 和源码副本，执行结果记录在模块 03 的 M03-11 验证记录，不能用 mock 结果替代。
+
 ## 何时新增测试
 
 必须新增或更新测试：

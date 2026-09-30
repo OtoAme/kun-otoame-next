@@ -15,6 +15,8 @@ Use this skill for persistence, cache, and upload consistency work.
 
 ## Rules
 
+- Historical case participation comes from the selected latest handoff event, without a resource join or 500-row cap (D37); batch list identity facts. Keep account existence and notification foreign keys safe against concurrent account deletion. A PostgreSQL foreign-key failure aborts the transaction: never catch it and continue writing inside that transaction. Preserve resource-before-case locking and keep Redis/image consumption outside any whole-transaction retry.
+
 - Development hot reloads must reuse Prisma Client and its owning pg.Pool together through the existing global runtime. Keep prepared statement naming state with that pool; do not create a new pool beside a cached client. CLI cleanup must close that same pool.
 
 - Production never runs `prisma db push`. Cancel any "reset the database" prompt; run the reviewed preflight/sync SQL, then `pnpm prisma:deploy-safe`.
