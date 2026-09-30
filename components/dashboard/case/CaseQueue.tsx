@@ -37,6 +37,9 @@ import { isPublisherCaseView, type CaseCenterView } from './caseCenterViews'
 export const ALL_CASE_KINDS = 'all'
 export const ALL_CASE_STATUSES = 'all'
 
+// Saved layouts must keep the same panel keys across navigation and hydration.
+const CASE_PANEL_IDS = ['case-queue-list', 'case-queue-detail']
+
 interface CaseQueueProps {
   view: CaseCenterView
   list: AdminCaseListResponse | null
@@ -117,7 +120,8 @@ export function CaseQueue({
   onStateChanged
 }: CaseQueueProps) {
   const { defaultLayout, onLayoutChanged, groupRef } = useResizableLayout({
-    id: 'dashboard-case-queue'
+    id: 'dashboard-case-queue',
+    panelIds: CASE_PANEL_IDS
   })
   const publisherView = isPublisherCaseView(view)
   const [ownerText, setOwnerText] = useState(ownerId)
@@ -296,14 +300,19 @@ export function CaseQueue({
           className="min-h-0 min-w-0 flex-1"
         >
           <ResizablePanel
+            id={CASE_PANEL_IDS[0]}
             defaultSize="34%"
             minSize="280px"
             className="min-h-0 min-w-0"
           >
             {listPanel}
           </ResizablePanel>
-          <ResizableHandle withHandle />
+          <ResizableHandle
+            withHandle
+            aria-label="调整事项列表和详情宽度"
+          />
           <ResizablePanel
+            id={CASE_PANEL_IDS[1]}
             defaultSize="66%"
             minSize="320px"
             className="min-h-0 min-w-0"

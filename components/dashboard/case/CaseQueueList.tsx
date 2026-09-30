@@ -142,8 +142,8 @@ export function CaseQueueRow({
 
         <span
           className={cn(
-            'min-w-0 justify-self-end',
-            tabular && '@[52rem]:justify-self-start'
+            'min-w-0 justify-self-end text-right',
+            tabular && '@[52rem]:justify-self-start @[52rem]:text-left'
           )}
         >
           <Badge
