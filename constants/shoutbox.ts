@@ -44,7 +44,7 @@ export const SHOUTBOX_STATUS_LABELS: Record<ShoutboxStatus, string> = {
 }
 
 export const getShoutboxStatusLabel = (status: number, official: boolean) => {
-  if (official && status === 3) return '已撤回'
+  if (official && status === 3) return '已移除'
   if (!official && status === 3) return '违规删除'
   return SHOUTBOX_STATUS_LABELS[status as ShoutboxStatus] ?? '未知状态'
 }

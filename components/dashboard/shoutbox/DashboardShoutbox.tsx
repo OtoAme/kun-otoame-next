@@ -24,7 +24,7 @@ const EMPTY_TEXT: Record<AdminShoutboxTab, string> = {
 
 /**
  * Console shoutbox page. The official tab keeps the publish form and the
- * edit / end / cancel lifecycle actions; the other tabs list review, public
+ * edit / end / removal lifecycle actions; the other tabs list review, public
  * and removed records with moderation actions. Every state change goes
  * through a confirmation dialog before writing. A `?shoutbox=<id>` URL shows
  * a targeted view instead: just that record (any status, with its pending

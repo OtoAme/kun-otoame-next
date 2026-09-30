@@ -34,7 +34,7 @@ describe('M02 shoutbox shared contract', () => {
     expect(SHOUTBOX_HOME_LIMIT).toBe(15)
     expect(SHOUTBOX_BLOCKED_KEYWORDS).toEqual([])
     expect(getShoutboxStatusLabel(3, false)).toBe('违规删除')
-    expect(getShoutboxStatusLabel(3, true)).toBe('已撤回')
+    expect(getShoutboxStatusLabel(3, true)).toBe('已移除')
     expect(ADMIN_LOG_TYPE_MAP).toMatchObject({
       shoutbox_official_publish: '发布官方小喇叭',
       shoutbox_official_update: '更新官方小喇叭'

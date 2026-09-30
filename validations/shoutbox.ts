@@ -150,7 +150,7 @@ export const adminShoutboxUpdateSchema = z
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['action'],
-        message: '结束或撤回不能同时修改其他字段'
+        message: '结束或移除不能同时修改其他字段'
       })
     } else if (!input.action && !hasFields) {
       ctx.addIssue({

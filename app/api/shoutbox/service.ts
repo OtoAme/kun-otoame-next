@@ -1192,7 +1192,7 @@ export const updateOfficialShoutbox = async (
     input.effectiveFrom !== undefined ||
     input.effectiveTo !== undefined ||
     input.link !== undefined
-  if (input.action && hasFields) return '结束或撤回不能同时修改其他字段'
+  if (input.action && hasFields) return '结束或移除不能同时修改其他字段'
   if (!input.action && !hasFields) return '请提供要更新的内容'
 
   const result = await runWithTransactionRetry(async (tx) => {
@@ -1204,31 +1204,22 @@ export const updateOfficialShoutbox = async (
     if (!existing.official) return '只能编辑官方小喇叭'
 
     if (input.action === 'cancel') {
-      const from = asDate(existing.effective_from)
-      const to = asDate(existing.effective_to)
-      if (
-        existing.status !== 0 ||
-        !from ||
-        !to ||
-        to.getTime() <= now.getTime()
-      ) {
-        return '已过期的官方小喇叭不能撤回'
-      }
+      // Expired announcements remain in public history until removed.
+      if (existing.status !== 0) return '官方小喇叭当前不能移除'
       const updated = await tx.shoutbox.updateMany({
         where: {
           id: input.shoutboxId,
           official: true,
-          status: 0,
-          effective_to: { gt: now }
+          status: 0
         },
         data: { status: 3 }
       })
-      if (updated.count === 0) return '官方小喇叭当前不能撤回'
+      if (updated.count === 0) return '官方小喇叭当前不能移除'
       await tx.admin_log.create({
         data: {
           type: 'shoutbox_official_update',
           user_id: adminId,
-          content: `管理员撤回官方小喇叭 #${input.shoutboxId}`
+          content: `管理员移除官方小喇叭 #${input.shoutboxId}`
         }
       })
       return {}

@@ -680,13 +680,13 @@ describe('ShoutboxCard', () => {
     expect(container.textContent).toContain('已编辑')
   })
 
-  it('labels an official message 已撤回 in compact mode', async () => {
+  it('labels an official message 已移除 in compact mode', async () => {
     await renderCard(makeItem({ official: true, status: 3, cost: 0 }), {
       compact: true,
       showStatus: true,
       currentUserId: 7
     })
-    expect(container.textContent).toContain('已撤回')
+    expect(container.textContent).toContain('已移除')
   })
 
   it('labels a violation-removed message 违规删除 in compact mode', async () => {

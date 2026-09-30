@@ -329,8 +329,7 @@ describe('shoutbox user and official service boundaries', () => {
       where: {
         id: 12,
         official: true,
-        status: 0,
-        effective_to: { gt: now }
+        status: 0
       },
       data: { status: 3 }
     })
@@ -353,8 +352,7 @@ describe('shoutbox user and official service boundaries', () => {
       where: {
         id: 12,
         official: true,
-        status: 0,
-        effective_to: { gt: now }
+        status: 0
       },
       data: { status: 3 }
     })
@@ -376,23 +374,87 @@ describe('shoutbox user and official service boundaries', () => {
     })
   })
 
-  it('rejects cancel after an official message has expired', async () => {
-    prismaMock.shoutbox.findUnique.mockResolvedValueOnce(
-      row({
-        official: true,
-        cost: 0,
-        effective_from: new Date('2026-09-11T11:00:00.000Z'),
-        effective_to: now
+  it.each([
+    ['at its end time', now],
+    ['after it expired', new Date('2026-09-11T11:30:00.000Z')]
+  ])(
+    'removes an official message %s while retaining its record',
+    async (_label, effectiveTo) => {
+      prismaMock.shoutbox.findUnique.mockResolvedValueOnce(
+        row({
+          official: true,
+          cost: 0,
+          effective_from: new Date('2026-09-11T11:00:00.000Z'),
+          effective_to: effectiveTo
+        })
+      )
+
+      await expect(
+        updateOfficialShoutbox({ shoutboxId: 12, action: 'cancel' }, 99, {
+          now,
+          db: prismaMock as never
+        })
+      ).resolves.toEqual({})
+      expect(prismaMock.shoutbox.updateMany).toHaveBeenCalledWith({
+        where: { id: 12, official: true, status: 0 },
+        data: { status: 3 }
       })
-    )
+      expect(prismaMock.admin_log.create).toHaveBeenCalledWith({
+        data: {
+          type: 'shoutbox_official_update',
+          user_id: 99,
+          content: '管理员移除官方小喇叭 #12'
+        }
+      })
+      expect(cacheMock.invalidateShoutboxCaches).toHaveBeenCalledOnce()
+      expect(moemoepointMock.refundMoemoepoint).not.toHaveBeenCalled()
+    }
+  )
+
+  it.each([1, 2, 3])(
+    'does not remove an official message already in status %s',
+    async (status) => {
+      prismaMock.shoutbox.findUnique.mockResolvedValueOnce(
+        row({ official: true, status })
+      )
+
+      await expect(
+        updateOfficialShoutbox({ shoutboxId: 12, action: 'cancel' }, 99, {
+          now,
+          db: prismaMock as never
+        })
+      ).resolves.toBe('官方小喇叭当前不能移除')
+      expect(prismaMock.shoutbox.updateMany).not.toHaveBeenCalled()
+      expect(prismaMock.admin_log.create).not.toHaveBeenCalled()
+      expect(cacheMock.invalidateShoutboxCaches).not.toHaveBeenCalled()
+    }
+  )
+
+  it('rejects official removal by a non-admin before reading or writing', async () => {
+    await expect(
+      updateOfficialShoutbox({ shoutboxId: 12, action: 'cancel' }, 7, {
+        now,
+        db: prismaMock as never,
+        adminRole: 2
+      })
+    ).resolves.toBe('本页面仅管理员可访问')
+    expect(prismaMock.$transaction).not.toHaveBeenCalled()
+    expect(cacheMock.invalidateShoutboxCaches).not.toHaveBeenCalled()
+  })
+
+  it('does not remove an ordinary message through the official lifecycle', async () => {
+    prismaMock.shoutbox.findUnique.mockResolvedValueOnce(row())
 
     await expect(
       updateOfficialShoutbox({ shoutboxId: 12, action: 'cancel' }, 99, {
         now,
-        db: prismaMock as never
+        db: prismaMock as never,
+        adminRole: 3
       })
-    ).resolves.toBe('已过期的官方小喇叭不能撤回')
+    ).resolves.toBe('只能编辑官方小喇叭')
     expect(prismaMock.shoutbox.updateMany).not.toHaveBeenCalled()
+    expect(prismaMock.admin_log.create).not.toHaveBeenCalled()
+    expect(cacheMock.invalidateShoutboxCaches).not.toHaveBeenCalled()
   })
 
   it('publishes official messages for free with the normal default level', async () => {
@@ -539,8 +601,9 @@ describe('shoutbox user and official service boundaries', () => {
         now,
         db: prismaMock as never
       })
-    ).resolves.toBe('官方小喇叭当前不能撤回')
+    ).resolves.toBe('官方小喇叭当前不能移除')
     expect(prismaMock.admin_log.create).not.toHaveBeenCalled()
+    expect(cacheMock.invalidateShoutboxCaches).not.toHaveBeenCalled()
   })
 
   it('rechecks a shared in-flight payload when the second caller crosses its boundary', async () => {

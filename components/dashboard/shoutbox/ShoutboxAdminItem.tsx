@@ -55,15 +55,15 @@ const CONFIRM_META: Record<
   end: {
     title: '提前结束官方消息',
     description:
-      '这条官方消息的生效结束时间将提前到当前，之后它不再置顶，也不再显示全站横幅。',
+      '这条官方消息将立即结束置顶和全站横幅展示，仍保留在公开消息流中。若需停止所有公开展示，请使用移除。',
     confirm: '确认结束',
     destructive: false
   },
   cancel: {
-    title: '撤回官方消息',
+    title: '移除官方消息',
     description:
-      '这条官方消息将被撤回：退出所有展示位置，不再置顶或显示全站横幅，尚未到生效开始的也不会再生效；后台记录中状态显示为已撤回。',
-    confirm: '确认撤回',
+      '移除后，这条官方消息将退出公开消息流、置顶和全站横幅，尚未生效的也不会再展示。后台保留记录，状态显示为已移除。',
+    confirm: '确认移除',
     destructive: true
   },
   hide: {
@@ -98,7 +98,7 @@ interface Props {
 }
 
 /**
- * One admin shoutbox row. Official messages keep their edit / end / cancel
+ * One admin shoutbox row. Official messages keep their edit / end / removal
  * lifecycle; moderation actions are shown strictly by status: official only
  * resolve; status 2 only remove/restore; status 1 (author-deleted) only
  * resolve; a public user message can be hidden or removed, and resolved when
@@ -130,11 +130,11 @@ export const ShoutboxAdminItem = ({ item, onChanged }: Props) => {
   const now = Date.now()
 
   // Official lifecycle: end stays strictly active-only (from < now < to);
-  // cancel covers every status-0 message whose window has not ended yet.
+  // removal also covers expired messages that remain in public history.
   const canEdit = item.official && item.status === 0
   const canEnd =
     item.official && item.status === 0 && fromMs < now && toMs > now
-  const canCancel = item.official && item.status === 0 && toMs > now
+  const canRemoveOfficial = item.official && item.status === 0
   // Moderation visibility mirrors the server guards; the server re-checks
   // every condition and its error string is surfaced verbatim.
   const canHide = !item.official && item.status === 0
@@ -328,14 +328,14 @@ export const ShoutboxAdminItem = ({ item, onChanged }: Props) => {
             提前结束
           </Button>
         )}
-        {canCancel && (
+        {canRemoveOfficial && (
           <Button
-            variant="outline"
+            variant="destructive"
             size="sm"
             disabled={working}
             onClick={(event) => openConfirm('cancel', event.currentTarget)}
           >
-            撤回
+            移除
           </Button>
         )}
         {canHide && (

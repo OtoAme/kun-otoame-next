@@ -11,7 +11,8 @@ const mocks = vi.hoisted(() => ({
   toastError: vi.fn(),
   routerPush: vi.fn(),
   search: '',
-  uuid: vi.fn()
+  uuid: vi.fn(),
+  notifyShoutboxPublicWrite: vi.fn()
 }))
 
 vi.mock('~/utils/kunFetch', () => ({
@@ -21,6 +22,10 @@ vi.mock('~/utils/kunFetch', () => ({
 }))
 
 vi.mock('~/utils/random', () => ({ generateUUID: mocks.uuid }))
+
+vi.mock('~/components/shoutbox/query/core', () => ({
+  notifyShoutboxPublicWrite: mocks.notifyShoutboxPublicWrite
+}))
 
 vi.mock('react-hot-toast', () => ({
   default: { success: mocks.toastSuccess, error: mocks.toastError }
@@ -556,13 +561,15 @@ describe('DashboardShoutbox', () => {
     await renderPage()
     mocks.kunFetchGet.mockClear()
 
-    // An active official message offers both 提前结束 and 撤回.
+    // An active official message offers both 提前结束 and 移除.
     await clickButton(container, '提前结束')
     expect(container.querySelector('[role="alertdialog"]')).not.toBeNull()
     expect(mocks.kunFetchPut).not.toHaveBeenCalled()
 
     mocks.kunFetchPut.mockResolvedValue({})
-    mocks.kunFetchGet.mockResolvedValue(listResponse([makeOfficial(41)]))
+    mocks.kunFetchGet.mockResolvedValue(
+      listResponse([makeOfficial(41, { effectiveTo: new Date().toISOString() })])
+    )
     await clickButton(container, '确认结束')
 
     expect(mocks.kunFetchPut).toHaveBeenCalledWith('/admin/shoutbox', {
@@ -576,20 +583,19 @@ describe('DashboardShoutbox', () => {
       limit: 20
     })
 
-    // The still-active message (list refreshed with the same row) can also be
-    // withdrawn, again only after the second confirmation.
-    await clickButton(container, '撤回')
+    // Ending keeps the history public; removal is still available afterwards.
+    await clickButton(container, '移除')
     expect(container.querySelector('[role="alertdialog"]')).not.toBeNull()
     expect(mocks.kunFetchPut).toHaveBeenCalledTimes(1)
 
-    await clickButton(container, '确认撤回')
+    await clickButton(container, '确认移除')
     expect(mocks.kunFetchPut).toHaveBeenCalledWith('/admin/shoutbox', {
       shoutboxId: 41,
       action: 'cancel'
     })
   })
 
-  it('confirms 撤回 for a not-yet-effective official message before writing', async () => {
+  it('confirms 移除 for a not-yet-effective official message before writing', async () => {
     mocks.kunFetchGet.mockResolvedValue(
       listResponse([
         makeOfficial(42, {
@@ -600,19 +606,19 @@ describe('DashboardShoutbox', () => {
     )
     await renderPage()
 
-    // A future message cannot be ended, only withdrawn.
+    // A future message can be removed before it starts.
     expect(
       Array.from(container.querySelectorAll('button')).some((button) =>
         button.textContent?.includes('提前结束')
       )
     ).toBe(false)
 
-    await clickButton(container, '撤回')
+    await clickButton(container, '移除')
     expect(container.querySelector('[role="alertdialog"]')).not.toBeNull()
     expect(mocks.kunFetchPut).not.toHaveBeenCalled()
 
     mocks.kunFetchPut.mockResolvedValue({})
-    await clickButton(container, '确认撤回')
+    await clickButton(container, '确认移除')
     expect(mocks.kunFetchPut).toHaveBeenCalledWith('/admin/shoutbox', {
       shoutboxId: 42,
       action: 'cancel'
@@ -632,6 +638,100 @@ describe('DashboardShoutbox', () => {
     Array.from(row.querySelectorAll<HTMLButtonElement>('button')).filter(
       (button) => button.textContent?.includes(label)
     )
+
+  it('removes an expired announcement only after confirmation and keeps the management record', async () => {
+    const expired = makeOfficial(45, {
+      effectiveFrom: new Date(Date.now() - 7_200_000).toISOString(),
+      effectiveTo: new Date(Date.now() - 3_600_000).toISOString()
+    })
+    mocks.kunFetchGet.mockResolvedValue(listResponse([expired]))
+    await renderPage()
+
+    const removeButton = rowButtons(findRow('官方消息 45'), '移除')[0]!
+    expect(removeButton).toBeDefined()
+    const dialog = () => container.querySelector('[role="alertdialog"]')
+    const open = async () => {
+      await act(async () => removeButton.click())
+      expect(dialog()).not.toBeNull()
+      expect(dialog()?.textContent).toContain('后台保留记录')
+    }
+
+    await open()
+    await clickButton(container, '取消')
+    expect(dialog()).toBeNull()
+    expect(document.activeElement).toBe(removeButton)
+    expect(mocks.kunFetchPut).not.toHaveBeenCalled()
+
+    await open()
+    await act(async () => {
+      dialog()!.dispatchEvent(
+        new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true })
+      )
+    })
+    expect(dialog()).toBeNull()
+    expect(document.activeElement).toBe(removeButton)
+    expect(mocks.kunFetchPut).not.toHaveBeenCalled()
+    expect(mocks.notifyShoutboxPublicWrite).not.toHaveBeenCalled()
+
+    await open()
+    mocks.kunFetchPut.mockResolvedValue({})
+    mocks.kunFetchGet.mockResolvedValue(
+      listResponse([{ ...expired, status: 3 }])
+    )
+    await clickButton(container, '确认移除')
+    expect(mocks.kunFetchPut).toHaveBeenCalledExactlyOnceWith(
+      '/admin/shoutbox',
+      {
+        shoutboxId: 45,
+        action: 'cancel'
+      }
+    )
+    expect(mocks.kunFetchPost).not.toHaveBeenCalled()
+    expect(mocks.notifyShoutboxPublicWrite).toHaveBeenCalledOnce()
+    expect(dialog()).toBeNull()
+    const removedRow = findRow('官方消息 45')
+    expect(removedRow.textContent).toContain('已移除')
+    expect(rowButtons(removedRow, '移除')).toHaveLength(0)
+    expect(rowButtons(removedRow, '编辑')).toHaveLength(0)
+  })
+
+  it.each(['business', 'network'])(
+    'keeps announcement removal retryable after a %s error',
+    async (failure) => {
+      mocks.kunFetchGet.mockResolvedValue(listResponse([makeOfficial(46)]))
+      await renderPage()
+      await clickButton(container, '移除')
+      mocks.kunFetchGet.mockClear()
+      if (failure === 'business') {
+        mocks.kunFetchPut.mockResolvedValueOnce('官方小喇叭当前不能移除')
+      } else {
+        mocks.kunFetchPut.mockRejectedValueOnce(new Error('offline'))
+      }
+
+      await clickButton(container, '确认移除')
+      const dialog = container.querySelector('[role="alertdialog"]')!
+      expect(dialog).not.toBeNull()
+      expect(dialog.querySelector('[role="alert"]')?.textContent).toBe(
+        failure === 'business'
+          ? '官方小喇叭当前不能移除'
+          : '网络错误，操作未完成，请稍后重试'
+      )
+      expect(mocks.kunFetchGet).not.toHaveBeenCalled()
+      expect(mocks.notifyShoutboxPublicWrite).not.toHaveBeenCalled()
+      expect(rowButtons(dialog as HTMLElement, '确认移除')[0]?.disabled).toBe(
+        false
+      )
+
+      mocks.kunFetchPut.mockResolvedValueOnce({})
+      mocks.kunFetchGet.mockResolvedValue(
+        listResponse([makeOfficial(46, { status: 3 })])
+      )
+      await clickButton(container, '确认移除')
+      expect(mocks.kunFetchPut).toHaveBeenCalledTimes(2)
+      expect(mocks.notifyShoutboxPublicWrite).toHaveBeenCalledOnce()
+      expect(container.querySelector('[role="alertdialog"]')).toBeNull()
+    }
+  )
 
   it('switches tabs through the URL, resets the page and refetches with the new tab', async () => {
     mocks.search = 'tab=public&page=2'
