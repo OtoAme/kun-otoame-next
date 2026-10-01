@@ -348,6 +348,7 @@ service/helper 负责：
 规则：
 
 - 头像、邮箱、密码、2FA、屏蔽标签和私信设置都必须校验当前用户身份。
+- 用户名和签名写入分别由 `app/api/user/setting/username/service.ts`、`app/api/user/setting/bio/service.ts` 处理。去除首尾空格后与当前值相同的请求直接返回成功，不写资料或扣点。真实改名在同一事务内先条件更新用户名，再通过账务服务扣除 30 可用萌萌点；并发相同请求只由更新成功的一次扣费，提交后同步登录会话中的用户名。
 - 邮箱回滚接口 `/api/user/setting/email/revert` 是 CSRF 豁免路径，因为它使用邮件中的一次性 token。
 - 资料页查询要区分本人视图、公开资料和悬浮卡片的字段暴露。
 

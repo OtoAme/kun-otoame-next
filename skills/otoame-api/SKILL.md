@@ -9,7 +9,7 @@ Use this skill for API and business-service work; per-domain rules live in the m
 
 ## Required References
 
-- `docs/modules/api-services.md` — API 约定, 消息和反馈, 萌萌点账务, 搜索和列表, 标签和公司, 编辑外部数据合并, 资源发布和上传, 投稿域 patch_submission, 输入校验, 安全约束
+- `docs/modules/api-services.md` — API 约定, 消息和反馈, 萌萌点账务, 搜索和列表, 标签和公司, 编辑外部数据合并, 资源发布和上传, 用户设置和资料, 投稿域 patch_submission, 输入校验, 安全约束
 - `docs/modules/data-cache-upload.md` — Patch 缓存, 上传与 S3, 下载授权与事件
 - `docs/project/testing.md`
 
@@ -31,6 +31,7 @@ Use this skill for API and business-service work; per-domain rules live in the m
 - Submission candidates must order `COALESCE(submitted_at, created), id` in the database before limiting. Daily inbox processing counts include the three review log types plus `case_close`, using the reviewer's Shanghai natural-day window and exclusive next-day boundary.
 - Never trust a client-supplied S3 URL or upload metadata; consume server-registered metadata atomically, exactly once.
 - All runtime moemoepoint mutations go through `app/api/moemoepoint/service.ts` in the owning business transaction; never write `moemoepoint` / `moemoepoint_reserved` directly.
+- Unchanged profile text must skip writes and fees. Claim a username change through a conditional update before charging in the same transaction; concurrent identical submissions pay once.
 - Shoutbox keyword rejection must happen before database and accounting work. Three distinct pending reporters may atomically hide a normal message; restore refunds at most the recorded cost once through a stable ledger idempotency key. Official `action: 'cancel'` removes any status-0 announcement, including expired ones, from every public surface; `end` stops pin/banner display while retaining public history.
 - Submission approval writes `patch` only inside the final transaction; a lost `pending` guard returns `409` and rolls back publish, settlement, notifications and logs.
 - Submission approve/reject/violate must claim `pending` before deposit settlement or rewards; approval keeps `publishCore` before the claim in the same transaction. A losing review must return the existing state conflict before calling settled-reservation primitives.

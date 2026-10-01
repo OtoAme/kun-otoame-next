@@ -233,12 +233,15 @@ pnpm typecheck
 
 ## 浏览器与 HTTP 端到端脚本
 
-仓库有四套独立脚本，直接使用 `playwright-core` / HTTP 客户端，不通过 `@playwright/test` runner：
+用户名与签名设置的单元回归位于 `tests/unit/user-profile-settings.test.tsx` 和 `tests/unit/api/user-profile-settings.test.ts`，覆盖预填、未修改禁用、校验、异步资料刷新、保存失败重试和改名扣费事务。
+
+仓库有五套独立脚本，直接使用 `playwright-core` / HTTP 客户端，不通过 `@playwright/test` runner：
 
 - `tests/e2e/edit-upload-guards.e2e.ts`
 - `tests/e2e/patch-submission-lifecycle.e2e.ts`
 - `tests/e2e/submission-ui.e2e.ts`
 - `tests/e2e/company-identity.e2e.ts`
+- `tests/e2e/user-profile-settings.e2e.ts`
 
 它们会创建、修改、审核或删除真实数据，只能对明确的 disposable `touchgal_e2e` 数据库和单独的 3100 dev server 运行。执行前必须确认 server 进程实际使用的数据库，而不是只看当前 shell `.env`；CSRF 地址需设置为 `NEXT_PUBLIC_KUN_PATCH_ADDRESS_DEV=http://127.0.0.1:3100`，并提供脚本顶部列出的测试用户/JWT/Redis 环境变量。示例：
 
@@ -279,6 +282,8 @@ KUN_E2E_DATABASE_URL='postgresql://<user>:<password>@127.0.0.1:5432/touchgal_e2e
 停止唯一的 3100 server，按相同步骤重启为 `--resolver=on` 并运行 `--expect-resolver=on`。测试会读取 sentinel，证明 HTTP server 和短生命周期 resolver worker 都连接显式 `_e2e` 库，并通过预览语义证明 server 实际 flag。create 场景绕过上传入口后直接调用真实 resolver 事务；整套 company identity E2E 不发出任何 S3 写入或删除请求。
 
 `submission-ui.e2e.ts` 覆盖名称错误清除、自动/显式保存、服务端预览、上传失败跨刷新保留和进度重试；`patch-submission-lifecycle.e2e.ts` 从建草稿走到通知链接、审核详情，并覆盖审核页打开期间作者撤回、撤回通知、过期审核刷新、重新提交与正式发布；`edit-upload-guards.e2e.ts` 覆盖 create/rewrite 上传守卫；`company-identity.e2e.ts` 覆盖 flag-off/flag-on 的创建、重写、投稿预览/批准、歧义和真实计数触发器。列表页是服务端渲染的，脚本点击交互控件前必须等待客户端 hydration；模拟上传失败使用确定性的 HTTP 错误响应，不要用延迟 `route.abort()` 制造请求生命周期竞态。
+
+`user-profile-settings.e2e.ts` 覆盖用户名与签名预填、未修改或校验失败时禁用保存、失败重试、刷新持久化、移动端，以及并发改名只扣费一次。它要求本机 `touchgal_e2e`、独立的 Redis 实例和非 6379 的 `REDIS_PORT`，用匿名资料读取确认 3100 server 的数据库身份后，再建立测试会话。脚本创建并清理自己的测试账号；`KUN_E2E_BROWSER_PATH` 指定浏览器，`KUN_E2E_ARTIFACT_DIR` 指定报告和截图目录。
 
 ## 已知缺口
 

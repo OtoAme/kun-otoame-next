@@ -15,7 +15,7 @@ pnpm test
 pnpm typecheck
 ```
 
-当前没有统一的 `@playwright/test` config/runner 或 CI harness，但 `tests/e2e/*.e2e.ts` 有四套直接使用 `playwright-core` / HTTP 客户端的脚本。它们会写真实数据，只能连接单独 3100 服务和 disposable `touchgal_e2e`；会社身份脚本必须用安全 server launcher 分别跑 resolver off/on，且不触碰 S3。运行边界见 `docs/project/testing.md`。
+当前没有统一的 `@playwright/test` config/runner 或 CI harness，但 `tests/e2e/*.e2e.ts` 有五套直接使用 `playwright-core` / HTTP 客户端的脚本。它们会写真实数据，只能连接单独 3100 服务和 disposable `touchgal_e2e`；会社身份脚本必须用安全 server launcher 分别跑 resolver off/on，且不触碰 S3。用户资料设置脚本还要求独立 Redis，并核对改名余额与账单。运行边界见 `docs/project/testing.md`。
 
 ## 当前测试覆盖
 

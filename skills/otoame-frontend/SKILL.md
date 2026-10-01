@@ -10,7 +10,7 @@ Use this skill for pages, components, state, theme, and content.
 ## Required References
 
 - `docs/modules/app-router.md` — 首页, 用户与消息页面, 标签和公司详情页
-- `docs/modules/frontend-content.md` — 资源详情与下载, 萌萌点, 消息展示, 状态管理, 主题与样式, 投稿页面
+- `docs/modules/frontend-content.md` — 资源详情与下载, 萌萌点, 消息展示, 状态管理, 用户资料设置, 主题与样式, 投稿页面
 - `docs/modules/private-chat-stickers.md` — 管理后台
 - `docs/theme-color-system.md` — `--kun-*` / `--kun-chat-*` tokens
 
@@ -41,6 +41,7 @@ Use this skill for pages, components, state, theme, and content.
 - Frontend gating is UX only; the API must re-check every permission.
 - Download credentials (`content`, `code`, `password`) live only in component memory — never in stores, persisted state, URLs or caches. Authenticated administrator inbox details and resource previews may receive full links; public list data stays redacted.
 - State-changing requests use `utils/kunFetch.ts` (CSRF header); surface its string business errors, never swallow them.
+- Profile fields prefill saved text and enable saving only for valid changes after trimming. Update saved state only on success; preserve drafts on failure and during background refresh.
 - Author submission forms mutate only in `draft` and `changes_requested`; other statuses disable every mutation and external-fetch control.
 - Submission review actions live in `/dashboard/inbox` details and legacy `/admin/submission/[id]`; self-review needs an explicit super-admin override. Every moderation action, including keyboard shortcuts, opens confirmation before writing; preserve existing legacy confirmations without nesting another.
 - `/preview/submission/[id]` and `/preview/resource/[id]` require an administrator. Resource `preview` rendering must skip restore/access/download requests and show likes as static counts.

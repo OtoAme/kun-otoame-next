@@ -20,6 +20,7 @@ Use this skill for project-specific testing work; checklists and the file map li
 - Never connect a unit test to real PostgreSQL, Redis, S3, GitHub, Bangumi, VNDB or DLSite.
 - Real DDL, lock-timeout and migration rehearsals run only on a disposable PostgreSQL; migration unit tests lock the SQL contracts statically and keep preflights read-only.
 - `tests/e2e/*.e2e.ts` create and settle real records. Confirm the running 3100 server actually uses disposable `touchgal_e2e`; never fall back to the default `.env` database.
+- Profile-settings E2E also requires isolated Redis on a non-6379 port; verify balances and ledger rows, then remove the run's test accounts and sessions.
 - Assert behavior — return values, Prisma conditions and transaction boundaries, cache invalidation, upload lock/finalize/compensation, permission and quota edges. Never assert only that a mock was called.
 - Money paths assert the business write, conditional balance update and ledger snapshot in one transaction, plus negative reversals and reason truncation.
 - Destructive E2E preparation requires `e2e:db:prepare --reset --backup=<absolute-new-file>`. The explicit URL must differ from `KUN_DATABASE_URL` and end exactly `_e2e`; backup verification precedes reset. Docker uses guarded `KUN_E2E_PG_CONTAINER` and additionally requires a loopback URL.
