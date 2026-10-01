@@ -301,7 +301,9 @@ Cloudflare 清理在服务端运行时读取以下配置，修改后需重启应
 
 SaaS 接入填写承载该自定义主机名、配置回退源的 provider Zone ID。网站和图床的回退源在两个 Zone 时，分别填写这两组配置；默认缓存键下，清理 URL 仍使用访客访问的自定义主机名。若额外配置了 URL 重写或自定义缓存键，需按 [Cloudflare 缓存键文档](https://developers.cloudflare.com/cache/how-to/cache-keys/) 核对实际缓存键。
 
-上线后分别选取网站与图床已命中缓存的 URL，触发对应业务清理，再检查 `cf-cache-status`、`age` 和内容是否更新；前缀清理通常应出现 `MISS` 或 `EXPIRED`。API 返回成功只表示清理请求被接受，不能代替实际命中验证。失败日志和排查步骤见 [运维文档](../modules/operations.md#cloudflare-缓存清理与排查)。
+网站 Cache Rules 使用[三条完整规则](performance-optimization.md#cloudflare-cache-rules-推荐配置)：前两条同时匹配 `GET` 和 `PURGE`，最后的 bypass 规则只按方法绕过这两者以外的请求，个性化条件仍独立执行。`PURGE` 用于单 URL 清理时的规则匹配，应用调用 Cloudflare 清理 API 仍为带 Token 认证的 `POST`。
+
+上线后分别选取网站与图床已命中缓存的 URL，触发对应业务清理，再检查 `cf-cache-status`、`age` 和内容是否更新。完整 URL 清理与前缀清理均应在缓存 TTL 内观察到 `MISS` 或 `EXPIRED`，随后重新缓存为 `HIT`，`age` 从零附近计数；API 前缀还需检查多个 query 变体。API 返回成功只表示清理请求被接受，不能代替实际命中验证。失败日志和排查步骤见 [运维文档](../modules/operations.md#cloudflare-缓存清理与排查)。
 
 GitHub Actions 只需要构建期公开变量：
 

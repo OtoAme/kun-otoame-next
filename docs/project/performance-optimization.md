@@ -119,6 +119,8 @@
 
 Cloudflare Cache Rules 会叠加执行，多个规则冲突时后命中的规则覆盖前面的规则。因此缓存规则本身必须排除个性化 cookie，同时把 bypass 兜底规则放在缓存规则之后。不要创建全站 `Cache Everything`。
 
+单 URL 清理时，Cloudflare 会以 `PURGE` 方法评估缓存规则。因此两条缓存规则同时匹配 `GET` 和 `PURGE`，第三条规则的方法绕过条件同时排除这两种方法。应用调用清理 API 仍使用 `POST` 和 Token 认证；这里的 `PURGE` 用于 Cloudflare 内部的规则匹配。[官方说明](https://developers.cloudflare.com/cache/how-to/purge-cache/purge-by-single-file/#cache-rules-that-match-on-request-properties)
+
 **规则 1：公开 HTML 页面缓存**
 
 规则名：
@@ -132,7 +134,7 @@ Cloudflare Cache Rules 会叠加执行，多个规则冲突时后命中的规则
 
 ```txt
 http.host eq "www.otoame.top"
-and http.request.method eq "GET"
+and (http.request.method eq "GET" or http.request.method eq "PURGE")
 and (
   http.request.uri.path eq "/"
   or http.request.uri.path eq "/otomegame"
@@ -188,7 +190,7 @@ and not has_key(http.request.headers, "next-router-segment-prefetch")
 
 ```txt
 http.host eq "www.otoame.top"
-and http.request.method eq "GET"
+and (http.request.method eq "GET" or http.request.method eq "PURGE")
 and (
   http.request.uri.path eq "/api/tag/otomegame"
   or http.request.uri.path eq "/api/company/otomegame"
@@ -228,7 +230,7 @@ and not http.cookie contains "kun-patch-setting-store|state|data|kunBlockedTagId
 ```txt
 http.host eq "www.otoame.top"
 and (
-  http.request.method ne "GET"
+  (http.request.method ne "GET" and http.request.method ne "PURGE")
   or http.cookie contains "kun-galgame-patch-moe-token"
   or http.cookie contains "kun-patch-setting-store|state|data|kunNsfwEnable"
   or http.cookie contains "kun-patch-setting-store|state|data|kunBlockedTagIds"
@@ -257,7 +259,9 @@ and (
 
 #### 验证命令
 
-配置后连续请求两次，第二次应看到 `cf-cache-status: HIT` 和递增的 `age`。注意不要用 `curl -I` / `curl --head` 验证这些规则；`curl -I` 发送的是 `HEAD` 请求，而缓存规则只允许 `GET`。
+配置后使用 `GET` 连续请求两次，第二次应看到 `cf-cache-status: HIT` 和递增的 `age`。`curl -I` / `curl --head` 发送的 `HEAD` 会命中方法绕过条件，不能用于验证这里的内容缓存；`PURGE` 条件用于 Cloudflare 清理时的规则匹配。
+
+清理验收需分别覆盖页面与静态文件的完整 URL，以及公开 API 前缀的多个 query 变体：先确认测试地址已为 `HIT`，调用对应清理后应观察到 `MISS` 或 `EXPIRED`，再次访问恢复 `HIT` 且 `age` 从零附近重新计数。使用同一出口与 Cloudflare 节点对比，并尽量在原缓存 TTL 内完成，避免把自然过期当作清理成功。清理 API 的 `success: true` 只表示请求被接受，不能替代这些响应头检查。
 
 ```bash
 curl -s -D - -o /dev/null https://www.otoame.top/ | grep -i 'cf-cache-status\|age\|cache-control\|vary'

@@ -8,6 +8,8 @@
 
 **技术栈：** Next.js App Router、React Server Components、Redis 缓存 helper、Prisma、1Panel Docker OpenResty、Cloudflare Cache Rules 与 Purge Cache API、Vitest、ApacheBench/k6。
 
+Cloudflare 上线时使用[性能优化指南中的完整规则与顺序](../../project/performance-optimization.md#cloudflare-cache-rules-推荐配置)。缓存规则同时匹配 `GET` / `PURGE`，方法绕过条件排除两者，以支持完整 URL 清理。
+
 ---
 
 ## 当前结论
@@ -231,11 +233,11 @@ Bypass cache
 
 - [ ] **步骤 2：添加公开 HTML 缓存规则，但排除详情页**
 
-在 bypass 规则之后创建 Cache Rule：
+在 bypass 规则之前放置 Cache Rule：
 
 ```txt
 http.host eq "www.otoame.top"
-and http.request.method eq "GET"
+and (http.request.method eq "GET" or http.request.method eq "PURGE")
 and (
   http.request.uri.path eq "/"
   or http.request.uri.path eq "/otomegame"
@@ -269,11 +271,11 @@ starts_with(http.request.uri.path, "/api/")
 
 - [ ] **步骤 3：添加匿名列表 API 缓存规则**
 
-在个性化 bypass 规则之后创建 Cache Rule：
+在个性化 bypass 规则之前放置 Cache Rule：
 
 ```txt
 http.host eq "www.otoame.top"
-and http.request.method eq "GET"
+and (http.request.method eq "GET" or http.request.method eq "PURGE")
 and (
   http.request.uri.path eq "/api/tag/otomegame"
   or http.request.uri.path eq "/api/company/otomegame"
@@ -891,7 +893,7 @@ app/(site)/[id]/actions.ts
 
 ```txt
 http.host eq "www.otoame.top"
-and http.request.method eq "GET"
+and (http.request.method eq "GET" or http.request.method eq "PURGE")
 and http.request.uri.path matches "^/[A-Za-z0-9]{8}$"
 and not http.cookie contains "kun-galgame-patch-moe-token"
 and not http.cookie contains "kun-patch-setting-store|state|data|kunNsfwEnable"

@@ -362,6 +362,7 @@ To apply this change we need to reset the database
 - 公开 API 的 `prefixes` 使用 `hostname/path`，不带协议、query 或 fragment；调用方仍可传完整 URL。[前缀清理文档](https://developers.cloudflare.com/cache/how-to/purge-cache/purge_by_prefix/)
 - `[Cloudflare] Purge cache was not confirmed:` 后附 `zone`（`site` / `default`）、`status`、`hostnames`、`reason` 和脱敏 `errors`。`api_rejected` 表示 HTTP 或 JSON 未确认成功，`unreadable_response` 表示响应无法解析，`request_failed` 表示请求异常，`missing_config` 表示显式网站 Zone 缺少 Token。日志不保留 Token、Zone ID 或完整 URL。[官方响应与权限说明](https://developers.cloudflare.com/api/resources/cache/methods/purge/)
 - 多 Zone 请求中任一组失败都会返回 `success: false`，素材与会社清理凭据据此保留重试。不要只用状态码 `200` 判断成功，也不要删除未结算记录来清空积压。
+- 若完整 URL 清理返回 `success: true`，但同一节点仍持续 `HIT` 且 `age` 增长，先核对 Cache Rules 是否同时匹配 `GET` / `PURGE`，以及最后的方法绕过条件是否排除了 `PURGE`。仅前缀清理成功不能代替单 URL 验收。[完整规则与验证方法](../project/performance-optimization.md#cloudflare-cache-rules-推荐配置)
 - 部署验收需分别检查网站页面、公开 API 的多个 query 变体和图床图片：清理后查看内容与 `cf-cache-status` / `age`。若请求被接受但内容仍旧，核对 provider Zone、Token 的 Cache Purge 授权及自定义缓存键；`429` 则按 [清理限额](https://developers.cloudflare.com/cache/how-to/purge-cache/#availability-and-limits) 排查。
 - `e2eCompanyIdentityServer.ts` 将默认与网站的四个 Cloudflare 变量全部置空，覆盖继承配置；E2E 不能触发真实 Zone 清理。
 

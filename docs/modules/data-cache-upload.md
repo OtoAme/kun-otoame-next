@@ -146,7 +146,7 @@ kun:touchgal
 
 Cloudflare purge 约定：
 
-- 公开 HTML 用 `purgePublicPageCache(paths)`，按完整 URL files 清理。
+- 公开 HTML 用 `purgePublicPageCache(paths)`，按完整 URL files 清理。Cloudflare 缓存规则需同时匹配 `GET` / `PURGE`，方法绕过条件需同时排除两者；完整配置见[性能优化指南](../project/performance-optimization.md#cloudflare-cache-rules-推荐配置)。
 - 匿名公开 API 用 `purgePublicApiCache(paths)`。底层 `purgeCloudflareCache` 的 prefixes 接受完整 URL 或 `hostname/path`，归一为后者并去掉 query 和 fragment 后去重。`www.otoame.top/api/tag/otomegame` 会覆盖该路径的 query 变体。[官方格式](https://developers.cloudflare.com/cache/how-to/purge-cache/purge_by_prefix/)
 - `KUN_CF_CACHE_ZONE_ID` / `KUN_CF_CACHE_PURGE_API_TOKEN` 是默认／图床配置。可选 `KUN_CF_CACHE_SITE_ZONE_ID` 只接收 `kunMoyuMoe.domain.main` 的精确主机名；`KUN_CF_CACHE_SITE_PURGE_API_TOKEN` 留空时复用默认 Token。未配网站 Zone 时沿用默认配置，空白值视为未配置。
 - 按每条 URL 的主机名分组，最多并发发送两个 Zone 请求，每个保留 3 秒超时。SaaS 的 Zone ID 由配置明确指定为承载自定义主机名的 provider Zone；完整 URL 保留访客地址，前缀只作格式归一。
