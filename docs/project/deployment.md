@@ -291,6 +291,18 @@ proxy_set_header X-Forwarded-Proto $scheme;
 - `KUN_DEPLOY_READINESS_TIMEOUT_MS` 可把 PM2 + HTTP readiness 总超时设为 5000–120000 毫秒，默认 30000。
 - CSRF origin/referer 校验依赖 `NEXT_PUBLIC_KUN_PATCH_ADDRESS_DEV` 和 `NEXT_PUBLIC_KUN_PATCH_ADDRESS_PROD`，生产域名变更时必须同步。
 
+Cloudflare 清理在服务端运行时读取以下配置，修改后需重启应用；新增网站变量均可选，不需要加入 GitHub Actions 构建配置：
+
+| 配置 | 用途 |
+| --- | --- |
+| `KUN_CF_CACHE_ZONE_ID` / `KUN_CF_CACHE_PURGE_API_TOKEN` | 默认 Zone 与 Token，处理图床及其他非网站主机名；网站未配独立 Zone 时也使用。 |
+| `KUN_CF_CACHE_SITE_ZONE_ID` | 可选的网站 Zone，只匹配 `kunMoyuMoe.domain.main` 的主机名。 |
+| `KUN_CF_CACHE_SITE_PURGE_API_TOKEN` | 可选的网站 Token；留空复用默认 Token。单 Token 可授权两个 Zone 的 `Zone → Cache Purge → Purge`。 |
+
+SaaS 接入填写承载该自定义主机名、配置回退源的 provider Zone ID。网站和图床的回退源在两个 Zone 时，分别填写这两组配置；默认缓存键下，清理 URL 仍使用访客访问的自定义主机名。若额外配置了 URL 重写或自定义缓存键，需按 [Cloudflare 缓存键文档](https://developers.cloudflare.com/cache/how-to/cache-keys/) 核对实际缓存键。
+
+上线后分别选取网站与图床已命中缓存的 URL，触发对应业务清理，再检查 `cf-cache-status`、`age` 和内容是否更新；前缀清理通常应出现 `MISS` 或 `EXPIRED`。API 返回成功只表示清理请求被接受，不能代替实际命中验证。失败日志和排查步骤见 [运维文档](../modules/operations.md#cloudflare-缓存清理与排查)。
+
 GitHub Actions 只需要构建期公开变量：
 
 - `NEXT_PUBLIC_KUN_PATCH_ADDRESS_DEV`
@@ -461,7 +473,7 @@ pm2 logs kun-touchgal-next
 2. 无冲突后跑对应 sync。它会把 `vndb_relation_id` 归一为小写、加大小写无关唯一性所需的 CHECK，并 `CREATE UNIQUE INDEX CONCURRENTLY`（因此必须在显式事务之外执行）。
 3. 再跑 `production-patch-submission-preflight-2026-08-24.sql` 与对应 sync，建 `patch_submission` / `patch_submission_gallery` 与状态 CHECK。preflight 在首次上线缺表时会把行检查标为 `skipped_missing_table`，也能分别识别只存在一张表的中断状态；preflight 只读，sync 可重跑。
 4. 跑 `production-patch-submission-orphan-cleanup-preflight-2026-08-25.sql`，审核结果后再跑对应 sync，创建 durable orphan cleanup outbox；随后执行 `pnpm prisma:deploy-safe`。应用代码依赖该表，必须先完成 schema rollout。
-5. 确认 `KUN_VISUAL_NOVEL_IMAGE_BED_URL` 与 `NEXT_PUBLIC_KUN_VISUAL_NOVEL_S3_STORAGE_URL` 中每个公开 hostname 都在 Cloudflare purge 凭据覆盖范围内。两者可以不同，但清理会对所有去重后的完整 URL purge；若某个 base 不由该 Cloudflare zone 管理，不能把失败响应当成功跳过。
+5. 确认 `KUN_VISUAL_NOVEL_IMAGE_BED_URL` 与 `NEXT_PUBLIC_KUN_VISUAL_NOVEL_S3_STORAGE_URL` 的公开 hostname 均由默认 `KUN_CF_CACHE_ZONE_ID` 及其 Token 覆盖；只有主机名与 `kunMoyuMoe.domain.main` 完全相同的 URL 才会使用已配置的网站 Zone。SaaS 使用对应 provider Zone，清理仍提交所有去重后的公开 URL。任一 Zone 未确认成功都保留清理记录供重试。
 6. 后端上线后再开放入口（用户主页的投稿标签与后台审核入口）。
 7. 生产不跑 `prisma db push`。
 

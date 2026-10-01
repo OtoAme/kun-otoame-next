@@ -89,7 +89,8 @@ REDIS_PASSWORD=''
 | `KUN_VISUAL_NOVEL_EMAIL_*`                                             | 邮件发送相关；注册验证码/邮件通知需要真实配置。                                                              |
 | `KUN_VISUAL_NOVEL_S3_*`、`NEXT_PUBLIC_KUN_VISUAL_NOVEL_S3_STORAGE_URL` | 上传资源和图片访问需要真实配置。                                                                             |
 | `KUN_VISUAL_NOVEL_IMAGE_BED_*`                                         | Next image 远程域名和图片 URL 拼接依赖。                                                                     |
-| `KUN_CF_CACHE_*`                                                       | Cloudflare 缓存清理；本地通常不会用到。                                                                      |
+| `KUN_CF_CACHE_ZONE_ID`、`KUN_CF_CACHE_PURGE_API_TOKEN`                  | 默认／图床的 Cloudflare 清理配置；网站未设置独立 Zone 时也使用。本地可置空。 |
+| `KUN_CF_CACHE_SITE_ZONE_ID`、`KUN_CF_CACHE_SITE_PURGE_API_TOKEN`        | 可选的网站 Zone 与 Token；网站 Token 留空复用默认 Token，需授权网站 Zone。SaaS 填对应 provider Zone ID。 |
 | `KUN_VISUAL_NOVEL_INDEX_NOW_KEY`                                       | IndexNow key；生产需要在 `public` 放同名 txt。                                                               |
 | `KUN_VISUAL_NOVEL_TEST_SITE_LABEL`                                     | 测试站 noindex 标记；生产必须删除或注释。                                                                    |
 | `GITHUB_REPO`、`GITHUB_TOKEN`                                          | 只影响 `deploy:pull`。                                                                                       |

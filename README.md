@@ -131,10 +131,15 @@ KUN_VISUAL_NOVEL_IMAGE_BED_HOST = "img-test.example.com"
 KUN_VISUAL_NOVEL_IMAGE_BED_URL = "https://img-test.example.com"
 
 # Cloudflare 清除缓存相关配置
-# "Zone ID"在 Cloudflare 域名概览页面的右下角
+# 默认 Zone：图床，以及未配置独立 Zone 时的网站
+# SaaS 接入填承载自定义主机名、配置回退源的 provider Zone ID
 KUN_CF_CACHE_ZONE_ID = "kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk"
 # 申请具有 Zone “清除缓存”的 API 令牌填入下方
 KUN_CF_CACHE_PURGE_API_TOKEN = "kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk"
+# 可选：网站使用另一 Zone 时填写；留空沿用默认 Zone
+KUN_CF_CACHE_SITE_ZONE_ID = ""
+# 可选：留空复用默认 Token，该 Token 需有网站 Zone 的 Cache Purge 权限
+KUN_CF_CACHE_SITE_PURGE_API_TOKEN = ""
 
 # 替换为你自己随机生成字符串，并在 public 目录下新建一个txt，文件名和内容都是该字符串
 KUN_VISUAL_NOVEL_INDEX_NOW_KEY = "a7xmyp2ob6kst9bkkdt2hnhj04rpctzd"
@@ -149,6 +154,8 @@ GITHUB_REPO="OtoAme/kun-otoame-next"
 # 申请地址: https://github.com/settings/tokens (权限需勾选: repo)
 # GITHUB_TOKEN="ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
 ```
+
+Cloudflare 的网站配置按 `config/moyu-moe.ts` 中 `kunMoyuMoe.domain.main` 的主机名匹配；图床和其他主机名使用默认配置。SaaS 接入时，清理请求发到对应 provider Zone，清理 URL 保留访客使用的自定义主机名。配置与验证方法见 [部署文档](docs/project/deployment.md#环境变量)。
 
 ### 3.初始化数据库
 

@@ -140,14 +140,18 @@ kun:touchgal
 - `deletePatchResourceCache(uniqueId)`
 - `bumpPatchFavoriteCacheVersion(uid)`
 
-这些失效函数会同时清理 Redis、触发 `safeRevalidatePath`，并通过 `app/api/utils/purgeCloudflareCache.ts` 清理公开页面或公开 API 的 Cloudflare 缓存。Cloudflare 环境变量缺失时 purge helper 会安全 no-op；业务写入不能因为边缘缓存清理失败而失败。
+这些失效函数会同时清理 Redis、触发 `safeRevalidatePath`，并通过 `app/api/utils/purgeCloudflareCache.ts` 清理公开页面或公开 API 的 Cloudflare 缓存。目标 Zone 配置不完整时跳过该组请求并返回未确认；其他已配置的组仍会执行，业务写入不能因为边缘缓存清理失败而失败。
 
 创建 / 重写主体提交后再执行的缓存失效必须逐项 best-effort：缓存或 IndexNow 故障只记日志，不能让已经提交的游戏、奖励或重写被 API 报成失败。公司 enrichment 抛错时仍额外失效公司缓存，避免部分外部写入已经落库却继续展示旧关系。
 
 Cloudflare purge 约定：
 
 - 公开 HTML 用 `purgePublicPageCache(paths)`，按完整 URL files 清理。
-- 匿名公开 API 用 `purgePublicApiCache(paths)`，按 URL prefix 清理。prefix 不带 query string，`/api/tag/otomegame` 会覆盖 `/api/tag/otomegame?...` 的 query 变体。
+- 匿名公开 API 用 `purgePublicApiCache(paths)`。底层 `purgeCloudflareCache` 的 prefixes 接受完整 URL 或 `hostname/path`，归一为后者并去掉 query 和 fragment 后去重。`www.otoame.top/api/tag/otomegame` 会覆盖该路径的 query 变体。[官方格式](https://developers.cloudflare.com/cache/how-to/purge-cache/purge_by_prefix/)
+- `KUN_CF_CACHE_ZONE_ID` / `KUN_CF_CACHE_PURGE_API_TOKEN` 是默认／图床配置。可选 `KUN_CF_CACHE_SITE_ZONE_ID` 只接收 `kunMoyuMoe.domain.main` 的精确主机名；`KUN_CF_CACHE_SITE_PURGE_API_TOKEN` 留空时复用默认 Token。未配网站 Zone 时沿用默认配置，空白值视为未配置。
+- 按每条 URL 的主机名分组，最多并发发送两个 Zone 请求，每个保留 3 秒超时。SaaS 的 Zone ID 由配置明确指定为承载自定义主机名的 provider Zone；完整 URL 保留访客地址，前缀只作格式归一。
+- 只有所有组均收到 HTTP 成功且 JSON `success: true` 才返回成功。返回第一个未确认组的状态码，未发送或网络失败为 `0`；全部成功返回首组状态码。显式网站 Zone 缺少可用 Token 时不会退回默认 Zone。素材 outbox、孤儿清理和会社 cache receipt 继续依据 `success` 重试。
+- 失败日志包含 `site` / `default`、HTTP 状态、主机名、失败原因与脱敏 `errors[].code` / `message`，不输出 Token、Zone ID 或完整请求 URL。
 - `/api/home`、`/api/tag/otomegame` 和 `/api/company/otomegame` 的匿名响应缓存也要配合 `invalidateAnonymousApiResponseCaches()` 清理 Redis/进程热缓存。
 
 首页缓存约定：

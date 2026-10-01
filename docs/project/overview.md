@@ -213,7 +213,7 @@ Zod schema 集中在 `validations/`。API 工具函数在 [app/api/utils/parseQu
 | Redis                  | `REDIS_HOST`、`REDIS_PORT`、`REDIS_PASSWORD`                                                                                |
 | Email                  | `KUN_VISUAL_NOVEL_EMAIL_*`                                                                                                  |
 | S3/image bed           | `KUN_VISUAL_NOVEL_S3_*`、`NEXT_PUBLIC_KUN_VISUAL_NOVEL_S3_STORAGE_URL`、`KUN_VISUAL_NOVEL_IMAGE_BED_*`                      |
-| Cloudflare cache purge | `KUN_CF_CACHE_ZONE_ID`、`KUN_CF_CACHE_PURGE_API_TOKEN`                                                                      |
+| Cloudflare cache purge | 默认／图床：`KUN_CF_CACHE_ZONE_ID`、`KUN_CF_CACHE_PURGE_API_TOKEN`；独立网站可选：`KUN_CF_CACHE_SITE_ZONE_ID`、`KUN_CF_CACHE_SITE_PURGE_API_TOKEN` |
 | IndexNow               | `KUN_VISUAL_NOVEL_INDEX_NOW_KEY`                                                                                            |
 | Bangumi                | `BANGUMI_ACCESS_TOKEN`                                                                                                      |
 | FFmpeg                 | 可选 `KUN_GALLERY_FFMPEG_PATH`，Gallery 动态 AVIF 缩略图默认还会尝试 standalone/local BtbN、`ffmpeg-static` 和系统 `ffmpeg` |

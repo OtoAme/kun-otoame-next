@@ -54,7 +54,7 @@
 - `invalidatePatchListCaches()`: 调用 `revalidatePath('/')` 和 `/otomegame`
 - `invalidatePatchContentCache()`: 调用 `revalidatePath('/[id]')`
 - ISR 失效通过 `safeRevalidatePath` 封装，维护脚本环境缺少 Next static generation store 时不会中断 Redis 失效流程
-- Cloudflare purge 通过 `purgePublicPageCache()` 和 `purgePublicApiCache()` 接入同一失效链路；缺少 `KUN_CF_CACHE_ZONE_ID` 或 `KUN_CF_CACHE_PURGE_API_TOKEN` 时安全 no-op
+- Cloudflare purge 通过 `purgePublicPageCache()` 和 `purgePublicApiCache()` 接入同一失效链路；网站优先使用 `KUN_CF_CACHE_SITE_ZONE_ID` 及可选网站 Token，否则沿用默认配置。目标配置不完整时跳过该组并返回未确认，其他组仍会执行；前缀统一为不带协议、query 和 fragment 的 `hostname/path`
 
 ### 5. 匿名 API 缓存头 ✅
 
@@ -112,7 +112,7 @@
 
 - 1Panel/OpenResty 不再追加 `Cache-Control: no-cache`。
 - 生产环境已部署 `POST /api/patch/views` 和 `GET /api/patch/stats` 的 no-store 改造。
-- 生产环境已配置 `KUN_CF_CACHE_ZONE_ID` 和 `KUN_CF_CACHE_PURGE_API_TOKEN`，公开写入路径可以触发 Cloudflare purge。
+- 生产环境已配置网站缓存所属 Zone 及有 Cache Purge 权限的 Token；网站与图床分属不同 Zone 时，补齐 `KUN_CF_CACHE_SITE_ZONE_ID`，网站 Token 可独立配置或复用已授权两个 Zone 的默认 Token。SaaS 填承载网站自定义主机名的 provider Zone ID。
 - 不开启 1Panel OpenResty 的服务器缓存、浏览器缓存、反代缓存来缓存应用 HTML；第一阶段只使用 Cloudflare，避免多层缓存失效链路不一致。
 
 #### Cloudflare Cache Rules 推荐配置
