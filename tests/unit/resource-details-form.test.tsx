@@ -408,7 +408,7 @@ describe('resource details form', () => {
       hint?.previousElementSibling?.querySelector('[aria-label="类型"]')
     ).not.toBeNull()
     expect(
-      hint?.nextElementSibling?.querySelector('[aria-label="语言"]')
+      hint?.nextElementSibling?.querySelector('[aria-label="平台"]')
     ).not.toBeNull()
     expect(
       dom.window.document.querySelectorAll(

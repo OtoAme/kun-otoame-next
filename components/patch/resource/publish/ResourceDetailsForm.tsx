@@ -267,32 +267,6 @@ export const ResourceDetailsForm = ({
         />
 
         <Controller
-          name="language"
-          control={control}
-          render={({ field }) => (
-            <Select
-              isRequired
-              label="语言"
-              classNames={resourceFieldClassNames}
-              placeholder="请选择语言"
-              selectionMode="multiple"
-              selectedKeys={field.value}
-              onSelectionChange={(key) => {
-                field.onChange([...key] as string[])
-              }}
-              isInvalid={!!errors.language}
-              errorMessage={errors.language?.message}
-            >
-              {SUPPORTED_LANGUAGE.map((lang) => (
-                <SelectItem key={lang}>
-                  {SUPPORTED_LANGUAGE_MAP[lang]}
-                </SelectItem>
-              ))}
-            </Select>
-          )}
-        />
-
-        <Controller
           name="platform"
           control={control}
           render={({ field }) => (
@@ -312,6 +286,32 @@ export const ResourceDetailsForm = ({
               {allowedPlatforms.map((platform) => (
                 <SelectItem key={platform}>
                   {SUPPORTED_PLATFORM_MAP[platform]}
+                </SelectItem>
+              ))}
+            </Select>
+          )}
+        />
+
+        <Controller
+          name="language"
+          control={control}
+          render={({ field }) => (
+            <Select
+              isRequired
+              label="语言"
+              classNames={resourceFieldClassNames}
+              placeholder="请选择语言"
+              selectionMode="multiple"
+              selectedKeys={field.value}
+              onSelectionChange={(key) => {
+                field.onChange([...key] as string[])
+              }}
+              isInvalid={!!errors.language}
+              errorMessage={errors.language?.message}
+            >
+              {SUPPORTED_LANGUAGE.map((lang) => (
+                <SelectItem key={lang}>
+                  {SUPPORTED_LANGUAGE_MAP[lang]}
                 </SelectItem>
               ))}
             </Select>
