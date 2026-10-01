@@ -49,6 +49,8 @@ export const envSchema = z.object({
 
   KUN_CF_CACHE_ZONE_ID: z.string(),
   KUN_CF_CACHE_PURGE_API_TOKEN: z.string(),
+  KUN_CF_CACHE_SITE_ZONE_ID: z.string().optional(),
+  KUN_CF_CACHE_SITE_PURGE_API_TOKEN: z.string().optional(),
 
   KUN_VISUAL_NOVEL_INDEX_NOW_KEY: z.string(),
 

@@ -71,6 +71,8 @@ export const buildE2ECompanyServerLaunchConfig = (
       // incomplete pair as disabled; IndexNow has the same fail-closed guard.
       KUN_CF_CACHE_ZONE_ID: '',
       KUN_CF_CACHE_PURGE_API_TOKEN: '',
+      KUN_CF_CACHE_SITE_ZONE_ID: '',
+      KUN_CF_CACHE_SITE_PURGE_API_TOKEN: '',
       KUN_VISUAL_NOVEL_INDEX_NOW_KEY: ''
     }
   }

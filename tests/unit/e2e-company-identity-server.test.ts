@@ -55,6 +55,8 @@ describe('company identity E2E server launcher', () => {
       NEXT_PUBLIC_KUN_PATCH_ADDRESS_DEV: 'http://127.0.0.1:3000',
       KUN_CF_CACHE_ZONE_ID: 'production-zone',
       KUN_CF_CACHE_PURGE_API_TOKEN: 'production-token',
+      KUN_CF_CACHE_SITE_ZONE_ID: 'production-site-zone',
+      KUN_CF_CACHE_SITE_PURGE_API_TOKEN: 'production-site-token',
       KUN_VISUAL_NOVEL_INDEX_NOW_KEY: 'production-index-key'
     }
 
@@ -85,6 +87,8 @@ describe('company identity E2E server launcher', () => {
       KUN_E2E_ORIGIN: 'http://127.0.0.1:3100',
       KUN_CF_CACHE_ZONE_ID: '',
       KUN_CF_CACHE_PURGE_API_TOKEN: '',
+      KUN_CF_CACHE_SITE_ZONE_ID: '',
+      KUN_CF_CACHE_SITE_PURGE_API_TOKEN: '',
       KUN_VISUAL_NOVEL_INDEX_NOW_KEY: ''
     })
     expect(sourceEnv.KUN_CF_CACHE_ZONE_ID).toBe('production-zone')
