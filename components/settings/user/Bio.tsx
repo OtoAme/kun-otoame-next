@@ -4,31 +4,46 @@ import { Card, CardBody, CardFooter, CardHeader } from '@heroui/card'
 import { Textarea } from '@heroui/input'
 import { Button } from '@heroui/button'
 import { useUserStore } from '~/store/userStore'
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { kunFetchPost } from '~/utils/kunFetch'
 import { bioSchema } from '~/validations/user'
+import { errorReporter, kunErrorHandler } from '~/utils/kunErrorHandler'
 import toast from 'react-hot-toast'
 
 export const Bio = () => {
   const { user, setUser } = useUserStore((state) => state)
-  const [bio, setBio] = useState('')
-  const [error, setError] = useState('')
+  const [bio, setBio] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+  const saving = useRef(false)
+  const inputValue = bio ?? user.bio
+  const result = bioSchema.safeParse({ bio: inputValue })
+  const hasChanges = inputValue.trim() !== user.bio.trim()
+  const canSave = !!user.uid && hasChanges && result.success && !loading
+  const error =
+    hasChanges && !result.success ? result.error.errors[0].message : ''
 
   const handleSave = async () => {
-    const result = bioSchema.safeParse({ bio })
-    if (!result.success) {
-      setError(result.error.errors[0].message)
-    } else {
-      setError('')
-      setUser({ ...user, bio })
-      setLoading(true)
+    if (!canSave || !result.success || saving.current) {
+      return
+    }
 
-      await kunFetchPost<KunResponse<{}>>('/user/setting/bio', { bio })
-
+    saving.current = true
+    setLoading(true)
+    try {
+      const res = await kunFetchPost<KunResponse<{}>>(
+        '/user/setting/bio',
+        result.data
+      )
+      kunErrorHandler(res, () => {
+        setUser({ ...useUserStore.getState().user, bio: result.data.bio })
+        setBio(null)
+        toast.success('更新签名成功')
+      })
+    } catch (error) {
+      errorReporter(error)
+    } finally {
+      saving.current = false
       setLoading(false)
-      toast.success('更新签名成功')
-      setBio('')
     }
   }
 
@@ -44,9 +59,9 @@ export const Bio = () => {
         <Textarea
           label="签名"
           autoComplete="text"
-          defaultValue={user.bio}
-          value={bio}
-          onChange={(e) => setBio(e.target.value)}
+          value={inputValue}
+          onValueChange={setBio}
+          isDisabled={!user.uid || loading}
           isInvalid={!!error}
           errorMessage={error}
         />
@@ -61,7 +76,7 @@ export const Bio = () => {
           className="ml-auto"
           onPress={handleSave}
           isLoading={loading}
-          disabled={loading}
+          isDisabled={!canSave}
         >
           保存
         </Button>

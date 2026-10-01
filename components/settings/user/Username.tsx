@@ -4,9 +4,9 @@ import { Card, CardBody, CardFooter, CardHeader } from '@heroui/card'
 import { Input } from '@heroui/input'
 import { Button } from '@heroui/button'
 import { useUserStore } from '~/store/userStore'
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { kunFetchPost } from '~/utils/kunFetch'
-import { kunErrorHandler } from '~/utils/kunErrorHandler'
+import { errorReporter, kunErrorHandler } from '~/utils/kunErrorHandler'
 import { usernameSchema } from '~/validations/user'
 import {
   Modal,
@@ -23,34 +23,44 @@ export const Username = () => {
   const { user, setUser, setMoemoepointBalance } = useUserStore(
     (state) => state
   )
-  const [username, setUsername] = useState('')
-  const [error, setError] = useState('')
+  const [username, setUsername] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+  const saving = useRef(false)
   const { isOpen, onOpen, onOpenChange } = useDisclosure()
+  const inputValue = username ?? user.name
+  const result = usernameSchema.safeParse({ username: inputValue })
+  const hasChanges = inputValue.trim() !== user.name.trim()
+  const canSave = !!user.uid && hasChanges && result.success && !loading
+  const error =
+    hasChanges && !result.success ? result.error.errors[0].message : ''
 
   const handleSave = async () => {
+    if (!canSave || !result.success || saving.current) {
+      return false
+    }
     if (user.moemoepointAvailable < 30) {
       toast.error('更改用户名需要 30 可用萌萌点，您的可用萌萌点不足')
-      return
+      return false
     }
 
-    const result = usernameSchema.safeParse({ username })
-    if (!result.success) {
-      setError(result.error.errors[0].message)
-    } else {
-      setError('')
-
-      setLoading(true)
-
+    saving.current = true
+    setLoading(true)
+    try {
       const res = await kunFetchPost<
         KunResponse<{ balance: MoemoepointBalance }>
-      >('/user/setting/username', { username })
+      >('/user/setting/username', result.data)
       kunErrorHandler(res, (value) => {
-        toast.success('更新用户名成功')
-        setUser({ ...user, name: username })
+        setUser({ ...useUserStore.getState().user, name: result.data.username })
         setMoemoepointBalance(value.balance)
-        setUsername('')
+        setUsername(null)
+        toast.success('更新用户名成功')
       })
+      return typeof res !== 'string'
+    } catch (error) {
+      errorReporter(error)
+      return false
+    } finally {
+      saving.current = false
       setLoading(false)
     }
   }
@@ -67,9 +77,9 @@ export const Username = () => {
         <Input
           label="用户名"
           autoComplete="text"
-          defaultValue={user.name}
-          value={username}
-          onChange={(e) => setUsername(e.target.value)}
+          value={inputValue}
+          onValueChange={setUsername}
+          isDisabled={!user.uid || loading}
           isInvalid={!!error}
           errorMessage={error}
         />
@@ -86,11 +96,20 @@ export const Username = () => {
           variant="solid"
           className="ml-auto"
           onPress={onOpen}
+          isDisabled={!canSave}
         >
           保存
         </Button>
 
-        <Modal isOpen={isOpen} onOpenChange={onOpenChange}>
+        <Modal
+          isOpen={isOpen}
+          onOpenChange={() => {
+            if (!saving.current) onOpenChange()
+          }}
+          isDismissable={!loading}
+          isKeyboardDismissDisabled={loading}
+          hideCloseButton={loading}
+        >
           <ModalContent>
             {(onClose) => (
               <>
@@ -101,17 +120,21 @@ export const Username = () => {
                   <p>更改用户名需要消耗您 30 可用萌萌点, 该操作不可撤销</p>
                 </ModalBody>
                 <ModalFooter>
-                  <Button color="danger" variant="light" onPress={onClose}>
+                  <Button
+                    color="danger"
+                    variant="light"
+                    onPress={onClose}
+                    isDisabled={loading}
+                  >
                     关闭
                   </Button>
                   <Button
                     color="primary"
-                    onPress={() => {
-                      handleSave()
-                      onClose()
+                    onPress={async () => {
+                      if (await handleSave()) onClose()
                     }}
                     isLoading={loading}
-                    disabled={loading}
+                    isDisabled={!canSave}
                   >
                     确定
                   </Button>
