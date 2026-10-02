@@ -11,6 +11,14 @@ const imageViewerMock = vi.hoisted(() => ({
   props: undefined as { preload?: number } | undefined
 }))
 
+const imagePreloadMock = vi.hoisted(() => ({
+  instances: [] as Array<{
+    src: string
+    decoding: string
+    fetchPriority: string
+  }>
+}))
+
 vi.mock('~/components/kun/image-viewer/ImageViewer', () => ({
   KunImageViewer: ({
     children,
@@ -59,6 +67,19 @@ describe('Patch gallery', () => {
     vi.stubGlobal('document', dom.window.document)
     vi.stubGlobal('React', React)
     vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
+    class PreloadImage {
+      decoding = ''
+      fetchPriority = ''
+
+      set src(value: string) {
+        imagePreloadMock.instances.push({
+          src: value,
+          decoding: this.decoding,
+          fetchPriority: this.fetchPriority
+        })
+      }
+    }
+    dom.window.Image = PreloadImage as unknown as typeof dom.window.Image
 
     const { Gallery } = await import('~/components/patch/gallery/Gallery')
     const container = dom.window.document.getElementById('root')
@@ -81,6 +102,7 @@ describe('Patch gallery', () => {
     dom = undefined
     imageViewerMock.openedIndex = undefined
     imageViewerMock.props = undefined
+    imagePreloadMock.instances = []
     vi.unstubAllGlobals()
     vi.resetModules()
   })
@@ -91,16 +113,35 @@ describe('Patch gallery', () => {
     expect(imageViewerMock.props?.preload).toBe(2)
   })
 
-  it('does not wire thumbnail loads to a manual original preload queue', async () => {
+  it('preloads each original after its thumbnail finishes loading', async () => {
     const container = await renderGallery()
+    const thumbnails = container.querySelectorAll('img')
+
+    expect(imagePreloadMock.instances).toEqual([])
 
     await act(async () => {
-      container.querySelectorAll('img').forEach((img) => {
-        img.dispatchEvent(new dom!.window.Event('load'))
-      })
+      thumbnails[0].dispatchEvent(new dom!.window.Event('load'))
     })
 
-    expect(imageViewerMock.openedIndex).toBeUndefined()
+    expect(imagePreloadMock.instances).toEqual([
+      {
+        src: 'https://img.example/patch/1/gallery/1.avif',
+        decoding: 'async',
+        fetchPriority: 'low'
+      }
+    ])
+
+    await act(async () => {
+      thumbnails[0].dispatchEvent(new dom!.window.Event('load'))
+    })
+
+    expect(imagePreloadMock.instances).toHaveLength(1)
+
+    await act(async () => {
+      thumbnails[1].dispatchEvent(new dom!.window.Event('load'))
+    })
+
+    expect(imagePreloadMock.instances).toHaveLength(2)
   })
 
   it('opens the selected gallery slot', async () => {

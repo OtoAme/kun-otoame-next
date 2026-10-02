@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { KunImageViewer } from '~/components/kun/image-viewer/ImageViewer'
 import { NSFWMask } from '~/components/kun/NSFWMask'
 import type { PatchImage } from '~/types/api/patch'
@@ -60,6 +60,26 @@ const GalleryItem = ({
   onOpen: () => void
 }) => {
   const [isRevealed, setIsRevealed] = useState(!image.isNSFW)
+  const [isPreviewLoaded, setIsPreviewLoaded] = useState(false)
+  const preloadedOriginalRef = useRef<string | null>(null)
+  const previewSrc = getGalleryPreviewSrc(image)
+  const originalSrc = getGalleryOriginalSrc(image)
+
+  useEffect(() => {
+    if (
+      !isPreviewLoaded ||
+      previewSrc === originalSrc ||
+      preloadedOriginalRef.current === originalSrc
+    ) {
+      return
+    }
+
+    const originalImage = new window.Image()
+    originalImage.decoding = 'async'
+    originalImage.fetchPriority = 'low'
+    originalImage.src = originalSrc
+    preloadedOriginalRef.current = originalSrc
+  }, [isPreviewLoaded, originalSrc, previewSrc])
 
   const handleClick = () => {
     if (isRevealed) {
@@ -73,10 +93,11 @@ const GalleryItem = ({
       onClick={handleClick}
     >
       <img
-        src={getGalleryPreviewSrc(image)}
+        src={previewSrc}
         alt="Game Screenshot"
         className="w-full h-full object-cover transition-transform duration-500 will-change-transform group-hover:scale-110"
         loading="lazy"
+        onLoad={() => setIsPreviewLoaded(true)}
       />
       <NSFWMask isVisible={!isRevealed} onReveal={() => setIsRevealed(true)} />
     </div>
