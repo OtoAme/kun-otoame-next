@@ -172,7 +172,7 @@ Store 改动要检查使用该 store 的页面和组件，不要只改类型。
 - 创建页 gallery 草稿存在 localforage，主体已创建但 gallery 未全部上传完成时还会保存已创建 patch 目标；清除创建草稿时必须同步清理 gallery draft、已创建 patch 目标和水印开关。重写页新增图片存在 `rewriteStore.newImages`，提交成功后由上传接口返回最终 `url` 和 `thumbnailUrl`。
 - 详情页和重写页已有 gallery 图片使用 `thumbnailUrl ?? url` 作为列表预览，灯箱始终使用原图 `url`。rewrite 提交已有图片时只传 id、NSFW 和排序，不能把 `thumbnailUrl` 当作原图 URL 写回数据库。
 - NSFW 遮罩下仍会加载 `thumbnailUrl ?? url`；如果缩略图是 animated WebP 或 animated AVIF，可以在遮罩下播放。没有生成缩略图的 animated AVIF 会回退加载原图，不生成占位图。
-- gallery 原图预载交给 `yet-another-react-lightbox` 的 `carousel.preload`。不要在缩略图 `onLoad` 后用自定义 `Image()` / `decode()` 队列预取原图，否则会和灯箱当前图或相邻图加载重复。
+- gallery 原图在对应缩略图完成加载后，由 `GalleryItem` 使用浏览器 `Image` 以 `decoding="async"` 和 `fetchPriority="low"` 启动后台预载；原图 URL 与缩略图 URL 相同时不重复请求。灯箱仍通过 `yet-another-react-lightbox` 的 `carousel.preload` 预载相邻 slide，点击前已启动的原图请求由浏览器缓存复用。
 - gallery 展示使用普通 `<img>` 和 `KunImageViewer`，动态 WebP / AVIF 依赖浏览器原生播放，不在前端拆帧或转码。`KunImageViewer` 可以接收 `previewSrc`，通过 `yet-another-react-lightbox` 的 custom slide 先显示缩略图，原图加载完成后淡入切换；灯箱主图、相邻预载和下载都使用原图 `url`。详情页 gallery 保留前后各两张相邻 lightbox slide 来维持滑动动画并预载相邻原图。
 
 ## 主题与样式
