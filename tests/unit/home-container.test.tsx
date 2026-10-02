@@ -81,6 +81,13 @@ const makeGalgame = (): GalgameCard => ({
   averageRating: 0
 })
 
+const makeGalgames = (count: number): GalgameCard[] =>
+  Array.from({ length: count }, (_, index) => ({
+    ...makeGalgame(),
+    id: index + 1,
+    uniqueId: `game${String(index).padStart(4, '0')}`
+  }))
+
 describe('HomeContainer', () => {
   let root: Root | undefined
   let dom: JSDOM | undefined
@@ -179,6 +186,26 @@ describe('HomeContainer', () => {
     await renderHome()
 
     expect(fetchMock.kunFetchGet).not.toHaveBeenCalledWith('/home')
+  })
+
+  it('renders all 24 static games with a single batch stats request', async () => {
+    fetchMock.kunFetchGet.mockResolvedValue({ stats: {} })
+
+    const galgames = makeGalgames(24)
+    const container = await renderHome(galgames)
+
+    expect(
+      container.querySelectorAll('[data-testid="galgame-card"]')
+    ).toHaveLength(24)
+    expect(fetchMock.kunFetchGet).not.toHaveBeenCalledWith('/home')
+
+    const statsCalls = fetchMock.kunFetchGet.mock.calls.filter(
+      ([url]) => url === '/patch/stats'
+    )
+    expect(statsCalls).toHaveLength(1)
+    expect(statsCalls[0][1]).toEqual({
+      uniqueIds: galgames.map((galgame) => galgame.uniqueId).join(',')
+    })
   })
 
   it('does not lose the empty-home fallback result under StrictMode remount', async () => {

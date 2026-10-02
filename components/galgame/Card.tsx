@@ -12,9 +12,16 @@ import { Star } from 'lucide-react'
 interface Props {
   patch: GalgameCard
   openOnNewTab?: boolean
+  prefetch?: boolean
+  imageDecoding?: 'sync' | 'async' | 'auto'
 }
 
-export const GalgameCard = ({ patch, openOnNewTab = true }: Props) => {
+export const GalgameCard = ({
+  patch,
+  openOnNewTab = true,
+  prefetch,
+  imageDecoding
+}: Props) => {
   const [imageLoaded, setImageLoaded] = useState(false)
 
   return (
@@ -23,6 +30,7 @@ export const GalgameCard = ({ patch, openOnNewTab = true }: Props) => {
       as={Link}
       href={`/${patch.uniqueId}`}
       target={openOnNewTab ? '_blank' : '_self'}
+      prefetch={prefetch}
       className="kun-game-card w-full border border-default-100 dark:border-default-200"
     >
       <CardHeader className="p-0">
@@ -49,6 +57,7 @@ export const GalgameCard = ({ patch, openOnNewTab = true }: Props) => {
                 : '/otoame.avif'
             }
             style={{ aspectRatio: '16/9' }}
+            decoding={imageDecoding}
             onLoad={() => setImageLoaded(true)}
           />
 

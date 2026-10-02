@@ -114,7 +114,13 @@ export const HomeGalgameGrid = ({ galgames }: Props) => {
   return (
     <div className="grid grid-cols-2 gap-2 sm:gap-6 md:grid-cols-3 lg:grid-cols-4">
       {displayGalgames.map((galgame) => (
-        <GalgameCard key={galgame.id} patch={galgame} openOnNewTab={false} />
+        <GalgameCard
+          key={galgame.id}
+          patch={galgame}
+          openOnNewTab={false}
+          prefetch={false}
+          imageDecoding="async"
+        />
       ))}
     </div>
   )

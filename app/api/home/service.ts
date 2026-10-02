@@ -10,7 +10,7 @@ import { HOME_CACHE_DURATION } from '~/config/cache'
 import { getOrSet } from '~/lib/redis'
 import { withRealtimePatchViews } from '~/app/api/patch/views/realtime'
 
-const HOME_GALGAME_LIMIT = 12
+const HOME_GALGAME_LIMIT = 24
 const HOME_RESOURCE_LIMIT = 4
 const HOME_PAYLOAD_CACHE_VERSION = 'v2'
 

@@ -40,12 +40,13 @@ describe('getHomeData', () => {
     mocks.prisma.patch_resource.findMany.mockResolvedValue([])
   })
 
-  it('keeps the static home payload compact', async () => {
+  it('fetches 24 latest games for six desktop rows', async () => {
     await getHomeData({ content_limit: 'sfw' })
 
     expect(mocks.prisma.patch.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        take: 12
+        orderBy: { created: 'desc' },
+        take: 24
       })
     )
     expect(mocks.prisma.patch_resource.findMany).toHaveBeenCalledWith(
@@ -55,11 +56,11 @@ describe('getHomeData', () => {
     )
   })
 
-  it('includes payload shape in the Redis key', async () => {
+  it('uses a cache key for the 24-game home payload', async () => {
     await getHomeData({ content_limit: 'sfw' })
 
     expect(mocks.getOrSet).toHaveBeenCalledWith(
-      expect.stringMatching(/^home_data:v2:g12:r4:/),
+      expect.stringMatching(/^home_data:v2:g24:r4:/),
       expect.any(Function),
       expect.any(Number),
       expect.any(Object)
