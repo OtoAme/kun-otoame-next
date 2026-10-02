@@ -105,6 +105,9 @@
 规则：
 
 - 首页是 `force-static`，正常首屏游戏和资源来自服务端静态 payload，不要为了修复部署后的空列表把首页改成动态 SSR。
+- 首页静态 payload 返回最新 24 条游戏。`HomeGalgameGrid` 按响应式网格展示：桌面端 4 列 × 6 行，平板端 3 列 × 8 行，手机端 2 列 × 12 行。
+- 首页封面采用一次性加载，`GalgameCard` 使用 `decoding="async"` 异步解码；当前布局不使用虚拟列表。
+- 首页游戏卡片向详情页链接传入 `prefetch={false}`，点击后仍正常导航；`GalgameCard` 的 `prefetch` 为可选参数，其他列表不受影响。
 - 首页游戏 section 只在静态 payload 的 `galgames` 为空时，由客户端补拉一次 `/api/home`；静态 payload 非空时不能额外请求 `/api/home`，只保留现有 `/api/patch/stats` 实时浏览量合并。
 - `/api/home` 是部署空快照的兜底路径。匿名请求使用短响应缓存；登录、NSFW 设置或 blocked tag cookie 请求仍按个性化可见性返回 `private, no-store`。
 - 调整首页首屏数据时，要同时检查 `home_data:*` Redis payload cache、`/api/home` 匿名响应缓存、Cloudflare API purge、`/api/patch/stats` 实时叠加，避免空结果被缓存后长期覆盖静态首页。
