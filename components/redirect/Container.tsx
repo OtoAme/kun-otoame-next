@@ -18,9 +18,19 @@ export const KunRedirectContainer = () => {
           <KunRedirectCard />
         </Suspense>
 
-        <div className="max-w-2xl">
+        <div className="w-full max-w-2xl">
           <Alert
-            description="下载如果出现问题请至公告中的常见问题文章寻找解决方法，点击下方图片查看免费绘画资源。"
+            description={
+              <>
+                下载如果出现问题，请移步阅读
+                <Link href="/doc/notice/start" size="sm" underline="always">
+                  🔗常见问题文章
+                </Link>
+                查询解决方案。
+                <br />
+                如果觉得本站好用的话，请把本站分享给更多人，这对我们非常重要，谢谢♥️！！
+              </>
+            }
             title="公告"
             color="secondary"
             variant="faded"
@@ -28,9 +38,9 @@ export const KunRedirectContainer = () => {
         </div>
 
         <div className="w-full max-w-2xl rounded-large">
-          <Link isExternal href="https://pan.209911.xyz/">
-            <Image alt={kunMoyuMoe.title} src="/images/209911.jpg" />
-          </Link>
+          {/* <Link isExternal href="https://pan.209911.xyz/"> */}
+          <Image alt={kunMoyuMoe.title} src="/images/invite.png" />
+          {/* </Link> */}
         </div>
       </div>
     </div>
