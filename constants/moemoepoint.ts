@@ -101,7 +101,7 @@ export const MOEMOEPOINT_EARN_RULES = [
   {
     label: '小喇叭误判恢复',
     amount: '+50',
-    detail: '站方判定处置有误并恢复小喇叭公开显示时退回当时实付点数'
+    detail: '网站管理员判定处置有误并恢复小喇叭公开显示时退回当时实付点数'
   },
   { label: '管理员发放', amount: '+N', detail: '活动奖励或补偿' }
 ] as const

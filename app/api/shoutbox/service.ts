@@ -1377,10 +1377,10 @@ const createShoutboxAuthorNotice = (
 ) => {
   const content =
     action === 'hide'
-      ? '您的小喇叭因收到多名用户举报，已暂时隐藏，等待站方复核。'
+      ? '您的小喇叭因收到多名用户举报，已暂时隐藏，等待网站管理员复核。'
       : action === 'remove'
-        ? '您的小喇叭已被站方认定违规并删除。'
-        : '您的小喇叭已被站方恢复公开显示。'
+        ? '您的小喇叭已被网站管理员认定违规并删除。'
+        : '您的小喇叭已被网站管理员恢复公开显示。'
   return {
     type: 'report' as const,
     content,
