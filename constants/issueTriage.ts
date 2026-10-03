@@ -10,7 +10,12 @@ import type { CaseKind } from '~/constants/case'
  */
 export type IssueTriageDestination =
   | { type: 'case'; kind: CaseKind }
-  | { type: 'guide'; links: readonly { href: string; label: string }[] }
+  | {
+      type: 'guide'
+      links: readonly { href: string; label: string }[]
+      /** Sentence above the links; the entry falls back to a generic one. */
+      note?: string
+    }
 
 export interface IssueTriagePhenomenon {
   key: string
@@ -26,8 +31,11 @@ export interface IssueTriagePhenomenon {
 
 /**
  * 「求资源或催更」answer shared with the game feedback entry. Module 07
- * points it at the help board once that board ships.
+ * points the note and the links at the help board once that board ships.
  */
+export const REQUEST_RESOURCE_GUIDE_NOTE =
+  '求资源、催更需要等待求助区建成，届时可以在求助区发布，现在不需要提交。想自己补充资源，可以先看这些说明：'
+
 export const REQUEST_RESOURCE_GUIDE_LINKS = [
   { href: CASE_GUIDE_LINKS.contribute, label: '内容贡献指南' }
 ] as const
@@ -76,7 +84,11 @@ export const ISSUE_TRIAGE_PHENOMENA: readonly IssueTriagePhenomenon[] = [
     key: 'request_resource',
     label: '求资源或催更',
     examples: '想要的资源不在这里、希望更新版本',
-    destination: { type: 'guide', links: REQUEST_RESOURCE_GUIDE_LINKS },
+    destination: {
+      type: 'guide',
+      links: REQUEST_RESOURCE_GUIDE_LINKS,
+      note: REQUEST_RESOURCE_GUIDE_NOTE
+    },
     enabled: true
   },
   {

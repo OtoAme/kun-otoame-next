@@ -293,6 +293,25 @@ describe('case entry buttons', () => {
       expect(mocks.kunFetchPost).not.toHaveBeenCalled()
     })
 
+    it('tells resource requests to wait for the help board', async () => {
+      const container = await mount(
+        <ReportResourceButton resource={resource} patchId={1} />
+      )
+      await openResourceReport(container)
+
+      await pickRadio(container, 'request_resource')
+      expect(container.textContent).toContain('等待求助区建成')
+      expect(
+        container.querySelector('a[href="/doc/notice/contribute"]')?.textContent
+      ).toBe('内容贡献指南')
+      expect(findButton(container, '提交')).toBeUndefined()
+
+      // 其他指南现象仍用通用说明
+      await pickRadio(container, 'download_slow')
+      expect(container.textContent).toContain('这类问题不需要提交')
+      expect(container.textContent).not.toContain('等待求助区建成')
+    })
+
     it('submits the chosen phenomenon and switches to a result with a direct link', async () => {
       mocks.kunFetchPost.mockResolvedValue(created(5))
       const container = await mount(
@@ -682,11 +701,30 @@ describe('case entry buttons', () => {
       expect(mocks.kunFetchPost).not.toHaveBeenCalled()
     })
 
+    it('points link failures to the resource card (D38)', async () => {
+      const container = await mount(feedback())
+      await openFeedback(container)
+      await pickRadio(container, 'resource_link_failure')
+
+      // 只给指引，不建事项
+      expect(container.textContent).toContain('选择「链接失效」')
+      expect(container.querySelector('textarea')).toBeNull()
+      expect(findButton(container, '提交')).toBeUndefined()
+
+      await act(async () => {
+        findButton(container, '去资源链接')!.click()
+      })
+      expect(onOpenResources).toHaveBeenCalledTimes(1)
+      expect(container.querySelector('[role="dialog"]')).toBeNull()
+      expect(mocks.kunFetchPost).not.toHaveBeenCalled()
+    })
+
     it('answers resource requests with the contribution guide (M03-9)', async () => {
       const container = await mount(feedback())
       await openFeedback(container)
       await pickRadio(container, 'request_resource')
 
+      expect(container.textContent).toContain('等待求助区建成')
       expect(
         container.querySelector('a[href="/doc/notice/contribute"]')
           ?.textContent

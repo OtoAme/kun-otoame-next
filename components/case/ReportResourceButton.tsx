@@ -159,7 +159,10 @@ export const ReportResourceButton = ({ resource, patchId }: Props) => {
 
                 {destination?.type === 'guide' && (
                   <div className="space-y-2 rounded-medium bg-default-100 p-3 text-sm">
-                    <p>这类问题不需要提交，可以先看这些说明：</p>
+                    <p>
+                      {destination.note ??
+                        '这类问题不需要提交，可以先看这些说明：'}
+                    </p>
                     <ul className="space-y-1">
                       {destination.links.map((link) => (
                         <li key={link.href}>

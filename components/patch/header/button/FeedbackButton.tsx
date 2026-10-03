@@ -23,7 +23,10 @@ import {
   CASE_CONTENT_MAX_LENGTH,
   CASE_DESCRIPTION_MIN_LENGTH
 } from '~/constants/case'
-import { REQUEST_RESOURCE_GUIDE_LINKS } from '~/constants/issueTriage'
+import {
+  REQUEST_RESOURCE_GUIDE_LINKS,
+  REQUEST_RESOURCE_GUIDE_NOTE
+} from '~/constants/issueTriage'
 import { CaseImageField } from '~/components/case/CaseImageField'
 import { CaseLoginPrompt } from '~/components/case/CaseLoginPrompt'
 import { CaseSubmitResult } from '~/components/case/CaseSubmitResult'
@@ -33,17 +36,31 @@ import type { Patch } from '~/types/api/patch'
 
 interface Props {
   patch: Patch
-  /** Opens the 资源链接 tab, where a wrong-patch resource is reported. */
+  /** Opens the 资源链接 tab, where wrong-patch and link-failure resources are reported. */
   onOpenResources: () => void
 }
 
 type CaseOption = 'patch_info' | 'other'
-// 指引项不建事项：发错条目在那条资源的卡片上报告，求资源看贡献指南
-type GuideOption = 'resource_wrong_patch' | 'request_resource'
+// 指引项不建事项：发错条目、链接失效在那条资源的卡片上报告，求资源看贡献指南
+type ResourceGuideOption = 'resource_wrong_patch' | 'resource_link_failure'
+type GuideOption = ResourceGuideOption | 'request_resource'
 type FeedbackOption = CaseOption | GuideOption
 
 const isCaseOption = (option: FeedbackOption): option is CaseOption =>
   option === 'patch_info' || option === 'other'
+
+const isResourceGuideOption = (
+  option: FeedbackOption
+): option is ResourceGuideOption =>
+  option === 'resource_wrong_patch' || option === 'resource_link_failure'
+
+// 旧反馈入口在条目页，资源问题改到资源卡片「报告问题」里提交（D34、D38）
+const RESOURCE_GUIDES: Record<ResourceGuideOption, string> = {
+  resource_wrong_patch:
+    '资源发错条目请在那条资源上报告：打开「资源链接」，在资源卡片上点「报告问题」，选择「发在了错误的条目下」。网站管理员核对后会把资源移到正确的游戏。',
+  resource_link_failure:
+    '资源链接失效请在那条资源上报告：打开「资源链接」，在资源卡片上点「报告问题」，选择「链接失效」并写明是哪条链接。问题会先交给资源发布者补链，官方资源由网站管理员处理。'
+}
 
 // 处理方与预计首次响应沿用基线 8.6 的受理范围口径
 const OPTION_HINTS: Record<CaseOption, string> = {
@@ -158,15 +175,14 @@ export const FeedbackButton = ({ patch, onOpenResources }: Props) => {
                 >
                   <Radio value="patch_info">条目资料有误</Radio>
                   <Radio value="resource_wrong_patch">资源发错条目</Radio>
+                  <Radio value="resource_link_failure">资源链接失效</Radio>
                   <Radio value="request_resource">求资源或催更</Radio>
                   <Radio value="other">其他</Radio>
                 </RadioGroup>
 
-                {option === 'resource_wrong_patch' && (
+                {isResourceGuideOption(option) && (
                   <div className="space-y-2 rounded-medium bg-default-100 p-3 text-sm">
-                    <p>
-                      资源发错条目请在那条资源上报告：打开「资源链接」，在资源卡片上点「报告问题」，选择「发在了错误的条目下」。网站管理员核对后会把资源移到正确的游戏。
-                    </p>
+                    <p>{RESOURCE_GUIDES[option]}</p>
                     <Button
                       size="sm"
                       color="primary"
@@ -180,7 +196,7 @@ export const FeedbackButton = ({ patch, onOpenResources }: Props) => {
 
                 {option === 'request_resource' && (
                   <div className="space-y-2 rounded-medium bg-default-100 p-3 text-sm">
-                    <p>求资源、催更不需要提交反馈，可以先看这些说明：</p>
+                    <p>{REQUEST_RESOURCE_GUIDE_NOTE}</p>
                     <ul className="space-y-1">
                       {REQUEST_RESOURCE_GUIDE_LINKS.map((link) => (
                         <li key={link.href}>
