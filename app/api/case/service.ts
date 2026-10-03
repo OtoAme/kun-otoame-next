@@ -3130,14 +3130,15 @@ const isHandlerResolution = (kind: string, resolution: string) =>
 
 /**
  * Closure notes the reporter is owed: what was checked for「无法复现」(D16),
- * the reason for「不采纳」(D25), and one of the three guides for「不在受理
- * 范围」(D12). Site feedback has no matching guide, so its out-of-scope
- * closure only needs the explanation.
+ * the reason for「不采纳」(D25), and for「不在受理范围」one of the three
+ * guides when a publisher closes (D12). A site administrator's reason may lie
+ * outside those guides, so their out-of-scope closure only needs the
+ * explanation (D39).
  */
 const closingNoteError = (
-  row: Pick<CaseRow, 'kind' | 'target_type'>,
   resolution: CaseResolution,
-  content: string
+  content: string,
+  closer: Extract<CaseActorType, 'publisher' | 'staff'>
 ) => {
   if (resolution === 'unreproducible' && !content.trim()) {
     return '以「无法复现」结案时请写明核对了什么'
@@ -3146,7 +3147,7 @@ const closingNoteError = (
     return '以「不采纳」结案时请写明理由'
   }
   if (resolution === 'out_of_scope') {
-    if (row.kind === 'other' && row.target_type === 'site') {
+    if (closer === 'staff') {
       return content.trim() ? null : '以「不在受理范围」结案时请写明理由'
     }
     if (!caseTextHasGuideLink(content)) {
@@ -3225,7 +3226,11 @@ export const resolveCase = async (
       input.content
     )
     if (deletedTargetError) return deletedTargetError
-    const noteError = closingNoteError(row, input.resolution, input.content)
+    const noteError = closingNoteError(
+      input.resolution,
+      input.content,
+      'publisher'
+    )
     if (noteError) return noteError
     return closeCaseInternal(tx, {
       caseId: row.id,
@@ -3767,7 +3772,11 @@ export const proposeCaseClosure = async (
       input.content
     )
     if (deletedTargetError) return deletedTargetError
-    const noteError = closingNoteError(row, input.resolution, input.content)
+    const noteError = closingNoteError(
+      input.resolution,
+      input.content,
+      'publisher'
+    )
     if (noteError) return noteError
     const label = CASE_RESOLUTION_LABELS[input.resolution]
     // The note goes first so it sits right before its event by time and id.
@@ -3867,7 +3876,7 @@ export const handleCaseAsAdmin = async (
     if (resolution === 'not_established' && !input.content.trim()) {
       return '登记不成立必须填写处理说明'
     }
-    const noteError = closingNoteError(row, resolution, input.content)
+    const noteError = closingNoteError(resolution, input.content, 'staff')
     if (noteError) return noteError
     if (
       row.kind === 'content_violation' &&

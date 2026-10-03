@@ -419,25 +419,36 @@ describe('case feedback helpers (D16, D20, D22)', () => {
       targetType: 'resource'
     } as const
     const site = { kind: 'other', targetType: 'site' } as const
-    expect(caseClosingNoteError(resource, 'repaired', '')).toBeNull()
-    expect(caseClosingNoteError(resource, 'unreproducible', ' ')).toBe(
-      '以「无法复现」结案时请写明核对了什么'
+    expect(caseClosingNoteError(resource, 'repaired', '', 'publisher')).toBe(
+      null
     )
-    expect(caseClosingNoteError(resource, 'out_of_scope', '不受理')).toBe(
-      '以「不在受理范围」结案时请附上下载、压缩包或投稿指南中的一篇链接'
-    )
+    expect(
+      caseClosingNoteError(resource, 'unreproducible', ' ', 'publisher')
+    ).toBe('以「无法复现」结案时请写明核对了什么')
+    expect(
+      caseClosingNoteError(resource, 'out_of_scope', '不受理', 'publisher')
+    ).toBe('以「不在受理范围」结案时请附上下载、压缩包或投稿指南中的一篇链接')
     expect(
       caseClosingNoteError(
         resource,
         'out_of_scope',
-        `请看 ${CASE_GUIDE_LINKS.download}`
+        `请看 ${CASE_GUIDE_LINKS.download}`,
+        'publisher'
       )
     ).toBeNull()
-    // Site feedback has no guide to link, only a reason (D21).
-    expect(caseClosingNoteError(site, 'out_of_scope', '')).toBe(
+    // A site administrator's reasons may lie outside the guides (D39).
+    expect(caseClosingNoteError(resource, 'out_of_scope', ' ', 'staff')).toBe(
       '以「不在受理范围」结案时请写明理由'
     )
-    expect(caseClosingNoteError(site, 'out_of_scope', '需自助修改')).toBeNull()
+    expect(
+      caseClosingNoteError(resource, 'out_of_scope', '不受理', 'staff')
+    ).toBeNull()
+    expect(caseClosingNoteError(site, 'out_of_scope', '', 'staff')).toBe(
+      '以「不在受理范围」结案时请写明理由'
+    )
+    expect(
+      caseClosingNoteError(site, 'out_of_scope', '需自助修改', 'staff')
+    ).toBeNull()
   })
 
   it('finds the proposal of the current round and the review handoff', () => {
@@ -571,11 +582,16 @@ describe('site administrator review helpers (M03-8)', () => {
 
   it('asks for a reason when declining (D25)', () => {
     const suggestion = { kind: 'patch_info', targetType: 'patch' } as const
-    expect(caseClosingNoteError(suggestion, 'declined', ' ')).toBe(
+    expect(caseClosingNoteError(suggestion, 'declined', ' ', 'staff')).toBe(
       '以「不采纳」结案时请写明理由'
     )
     expect(
-      caseClosingNoteError(suggestion, 'declined', '发售日期以官网为准')
+      caseClosingNoteError(
+        suggestion,
+        'declined',
+        '发售日期以官网为准',
+        'staff'
+      )
     ).toBeNull()
   })
 
@@ -627,23 +643,34 @@ describe('deleted target closing-note rule (D37)', () => {
       'unreproducible',
       'out_of_scope'
     ] as const) {
-      expect(caseClosingNoteError(deletedResource, resolution, ' ')).toBe(
-        '资源已删除，请填写处理说明'
-      )
+      expect(
+        caseClosingNoteError(deletedResource, resolution, ' ', 'publisher')
+      ).toBe('资源已删除，请填写处理说明')
     }
     // 有说明后不再拦已删除目标这条，但结论自身的规则仍然适用
     expect(
       caseClosingNoteError(
         deletedResource,
         'repaired',
-        '资源已删除，核对过记录'
+        '资源已删除，核对过记录',
+        'publisher'
       )
     ).toBeNull()
     expect(
-      caseClosingNoteError(deletedResource, 'unreproducible', '核对了第二分卷')
+      caseClosingNoteError(
+        deletedResource,
+        'unreproducible',
+        '核对了第二分卷',
+        'publisher'
+      )
     ).toBeNull()
     expect(
-      caseClosingNoteError(deletedResource, 'out_of_scope', '不受理')
+      caseClosingNoteError(
+        deletedResource,
+        'out_of_scope',
+        '不受理',
+        'publisher'
+      )
     ).toBe('以「不在受理范围」结案时请附上下载、压缩包或投稿指南中的一篇链接')
   })
 
@@ -671,13 +698,10 @@ describe('deleted target closing-note rule (D37)', () => {
     expect(caseDeletedTargetNoteError({ targetType: 'comment' }, '')).toBeNull()
     expect(
       caseClosingNoteError(
-        {
-          kind: 'resource_mismatch',
-          targetType: 'resource',
-          target: { deleted: false }
-        },
+        { targetType: 'resource', target: { deleted: false } },
         'repaired',
-        ''
+        '',
+        'publisher'
       )
     ).toBeNull()
   })

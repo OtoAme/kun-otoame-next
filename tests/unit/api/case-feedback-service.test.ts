@@ -501,6 +501,30 @@ describe('case feedback rules (M03-6, M03-7)', () => {
     )
   })
 
+  it('lets a site administrator close out of scope with a reason instead of a guide (D39)', async () => {
+    mocks.tx.ops_case.findUnique.mockResolvedValue(
+      caseRow({
+        owner_type: 'staff',
+        owner_id: null,
+        escalated_at: hoursAgo(2)
+      })
+    )
+    const handle = (content: string) =>
+      handleCaseAsAdmin(
+        { caseId: 42, action: 'resolve', resolution: 'out_of_scope', content },
+        90,
+        3,
+        { now, db: mocks.tx as never }
+      )
+
+    await expect(handle(' ')).resolves.toBe(
+      '以「不在受理范围」结案时请写明理由'
+    )
+    await expect(
+      handle('报告的是游戏本体的剧情问题，不属于资源问题')
+    ).resolves.toMatchObject({ changed: true })
+  })
+
   it('closes a sole withdrawal as「开启者撤回」and spares the withdrawer the notice', async () => {
     mocks.tx.ops_case_subscriber.findUnique.mockResolvedValue({ user_id: 5 })
     const result = await withdrawCase(42, 5, { now, db: mocks.tx as never })

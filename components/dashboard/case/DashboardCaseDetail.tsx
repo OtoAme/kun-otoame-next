@@ -247,7 +247,7 @@ export function DashboardCaseDetail({
       }
       const trimmed = actionContent.trim()
       const noteError = detail
-        ? caseClosingNoteError(detail, action.resolution, trimmed)
+        ? caseClosingNoteError(detail, action.resolution, trimmed, 'staff')
         : null
       if (noteError) {
         setActionError(noteError)
@@ -454,7 +454,7 @@ export function DashboardCaseDetail({
       ? '这条问题已重开过：结案后报告者不能再重开或申请复核。'
       : ''
   const noteRule = resolution
-    ? caseClosingNoteError(detail, resolution, '')
+    ? caseClosingNoteError(detail, resolution, '', 'staff')
     : null
   const dialogNote =
     displayAction?.type === 'adopt'

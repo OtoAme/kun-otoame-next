@@ -543,22 +543,17 @@ describe('dashboard case detail', () => {
     await act(async () => {
       findButton(container, '结案')!.click()
     })
-    // 无理由不开弹窗；「不在受理范围」须带一篇指南链接（D12）
+    // 无理由不开弹窗；网站管理员写明理由即可，不要求指南链接（D39）
     expect(container.querySelector('[role="alertdialog"]')).toBeNull()
     expect(container.textContent).toContain(
-      '请附上下载、压缩包或投稿指南中的一篇链接'
+      '以「不在受理范围」结案时请写明理由'
     )
+    expect(container.textContent).not.toContain('指南中的一篇链接')
 
     const contentBox = container.querySelector<HTMLTextAreaElement>(
       'textarea#case-action-content'
     )!
     await setInput(contentBox, '不在受理范围的理由')
-    await act(async () => {
-      findButton(container, '结案')!.click()
-    })
-    expect(container.querySelector('[role="alertdialog"]')).toBeNull()
-
-    await setInput(contentBox, '不在受理范围，请看 /doc/notice/contribute')
     await act(async () => {
       findButton(container, '结案')!.click()
     })
@@ -570,7 +565,7 @@ describe('dashboard case detail', () => {
     expect(mocks.kunFetchPost).toHaveBeenCalledWith('/admin/case/9/handle', {
       action: 'reject',
       resolution: 'out_of_scope',
-      content: '不在受理范围，请看 /doc/notice/contribute'
+      content: '不在受理范围的理由'
     })
   })
 

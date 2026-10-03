@@ -369,7 +369,12 @@ export function IssueCaseDetail({ caseId, onChanged }: IssueCaseDetailProps) {
         setActionError('请先选择处理结论')
         return
       }
-      const noteError = caseClosingNoteError(detail, resolution, resolveContent)
+      const noteError = caseClosingNoteError(
+        detail,
+        resolution,
+        resolveContent,
+        'publisher'
+      )
       if (noteError) {
         setActionError(noteError)
         return
@@ -387,7 +392,8 @@ export function IssueCaseDetail({ caseId, onChanged }: IssueCaseDetailProps) {
       const noteError = caseClosingNoteError(
         detail,
         proposeResolution,
-        proposeContent
+        proposeContent,
+        'publisher'
       )
       if (noteError) {
         setActionError(noteError)
@@ -679,11 +685,12 @@ export function IssueCaseDetail({ caseId, onChanged }: IssueCaseDetailProps) {
     detail.kind === 'content_violation'
       ? CASE_REPORT_MIN_LENGTH
       : CASE_DESCRIPTION_MIN_LENGTH
+  // `/issue` 上能结案和提请的只有发布者（网站管理员在后台处理）
   const resolveNoteRule = resolution
-    ? caseClosingNoteError(detail, resolution, '')
+    ? caseClosingNoteError(detail, resolution, '', 'publisher')
     : null
   const proposeNoteRule = proposeResolution
-    ? caseClosingNoteError(detail, proposeResolution, '')
+    ? caseClosingNoteError(detail, proposeResolution, '', 'publisher')
     : null
   const proposeResolutions = CASE_HANDLER_RESOLUTIONS_BY_KIND[detail.kind] ?? []
 

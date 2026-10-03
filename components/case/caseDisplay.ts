@@ -10,6 +10,7 @@ import {
   CASE_TARGET_TYPE_LABELS,
   caseTextHasGuideLink
 } from '~/constants/case'
+import type { CaseActorType } from '~/constants/case'
 import type {
   CaseKind,
   CaseMessage,
@@ -349,17 +350,19 @@ export const caseDeletedTargetNoteError = (
 }
 
 /**
- * The server's closing-note rule (D12, D16, D21, D25, D37), mirrored so a
+ * The server's closing-note rule (D12, D16, D25, D37, D39), mirrored so a
  * form can stop before submitting. Called with an empty note it returns what
  * the note must contain; null means the note is optional or already fine.
  * The deleted-target rule comes first, matching the server's check order.
  */
 export const caseClosingNoteError = (
-  item: Pick<CaseSummary, 'kind' | 'targetType'> & {
+  item: Pick<CaseSummary, 'targetType'> & {
     target?: Pick<CaseSummary['target'], 'deleted'>
   },
   resolution: CaseResolution | '',
-  content: string
+  content: string,
+  /** Publishers link a guide for「不在受理范围」; site administrators explain (D39). */
+  closer: Extract<CaseActorType, 'publisher' | 'staff'>
 ): string | null => {
   const deletedTargetError = caseDeletedTargetNoteError(item, content)
   if (deletedTargetError) return deletedTargetError
@@ -370,7 +373,7 @@ export const caseClosingNoteError = (
     return content.trim() ? null : '以「不采纳」结案时请写明理由'
   }
   if (resolution !== 'out_of_scope') return null
-  if (item.kind === 'other' && item.targetType === 'site') {
+  if (closer === 'staff') {
     return content.trim() ? null : '以「不在受理范围」结案时请写明理由'
   }
   return caseTextHasGuideLink(content)
