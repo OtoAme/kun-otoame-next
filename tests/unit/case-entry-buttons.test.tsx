@@ -35,35 +35,42 @@ vi.mock('@heroui/react', async () => {
     (Array.isArray(children) ? children.flat() : [children]).filter(
       (child): child is React.ReactElement => R.isValidElement(child)
     )
+  type ButtonProps = {
+    children?: React.ReactNode
+    onPress?: () => void
+    isDisabled?: boolean
+    isLoading?: boolean
+    href?: string
+    'aria-label'?: string
+  }
   return {
-    Button: ({
-      children,
-      onPress,
-      isDisabled,
-      isLoading,
-      href,
-      'aria-label': ariaLabel
-    }: {
-      children?: React.ReactNode
-      onPress?: () => void
-      isDisabled?: boolean
-      isLoading?: boolean
-      href?: string
-      'aria-label'?: string
-    }) =>
-      href ? (
-        <a href={href} aria-label={ariaLabel}>
-          {children}
-        </a>
-      ) : (
-        <button
-          aria-label={ariaLabel}
-          disabled={isDisabled || isLoading}
-          onClick={onPress}
-        >
-          {children}
-        </button>
-      ),
+    Button: R.forwardRef<HTMLButtonElement, ButtonProps>(
+      (
+        {
+          children,
+          onPress,
+          isDisabled,
+          isLoading,
+          href,
+          'aria-label': ariaLabel
+        },
+        ref
+      ) =>
+        href ? (
+          <a href={href} aria-label={ariaLabel}>
+            {children}
+          </a>
+        ) : (
+          <button
+            ref={ref}
+            aria-label={ariaLabel}
+            disabled={isDisabled || isLoading}
+            onClick={onPress}
+          >
+            {children}
+          </button>
+        )
+    ),
     Modal: ({
       isOpen,
       children
@@ -440,6 +447,9 @@ describe('case entry buttons', () => {
       expect(
         container.querySelector('a[href="/issue/5"]')?.textContent
       ).toContain('查看这条问题')
+      expect(dom!.window.document.activeElement).toBe(
+        findButton(container, '关闭')
+      )
 
       // 关闭后清空：再次打开是空表单
       await act(async () => {

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import {
   Button,
@@ -48,6 +48,13 @@ export const ReportResourceButton = ({ resource, patchId }: Props) => {
   const [content, setContent] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [result, setResult] = useState<CaseCreateResponse | null>(null)
+  const resultCloseRef = useRef<HTMLButtonElement>(null)
+
+  useEffect(() => {
+    if (result) {
+      resultCloseRef.current?.focus()
+    }
+  }, [result])
 
   const guest = user.uid < 1
   const phenomenon = PHENOMENA.find((item) => item.key === phenomenonKey)
@@ -224,7 +231,11 @@ export const ReportResourceButton = ({ resource, patchId }: Props) => {
           </ModalBody>
           <ModalFooter>
             {result || destination?.type !== 'case' ? (
-              <Button variant="light" onPress={handleClose}>
+              <Button
+                ref={resultCloseRef}
+                variant="light"
+                onPress={handleClose}
+              >
                 关闭
               </Button>
             ) : (

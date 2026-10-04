@@ -1,5 +1,6 @@
 'use client'
 
+import { useMounted } from '~/hooks/useMounted'
 import { Card, CardBody } from '@heroui/card'
 import { Divider } from '@heroui/divider'
 import { Chip, Tooltip } from '@heroui/react'
@@ -27,6 +28,8 @@ export const PatchHeaderInfo = ({
   patch,
   handleClickDownloadNav
 }: PatchHeaderInfoProps) => {
+  const isMounted = useMounted()
+
   return (
     <Card>
       <CardBody className="p-0">
@@ -72,7 +75,9 @@ export const PatchHeaderInfo = ({
               <KunUser
                 user={patch.user}
                 userProps={{
-                  name: `${patch.user.name} - ${formatTimeDifference(patch.created)}`,
+                  name: isMounted
+                    ? `${patch.user.name} - ${formatTimeDifference(patch.created)}`
+                    : patch.user.name,
                   avatarProps: {
                     showFallback: true,
                     name: patch.user.name.charAt(0).toUpperCase(),

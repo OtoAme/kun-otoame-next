@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import {
   Button,
@@ -91,6 +91,13 @@ export const FeedbackButton = ({ patch, onOpenResources }: Props) => {
   const [content, setContent] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [result, setResult] = useState<CaseCreateResponse | null>(null)
+  const resultCloseRef = useRef<HTMLButtonElement>(null)
+
+  useEffect(() => {
+    if (result) {
+      resultCloseRef.current?.focus()
+    }
+  }, [result])
 
   // 反馈需要登录，打开时就提示，不让访客写完才发现（D22）
   const handleOpen = () => (user.uid < 1 ? login.onOpen() : onOpen())
@@ -244,7 +251,11 @@ export const FeedbackButton = ({ patch, onOpenResources }: Props) => {
           </ModalBody>
           <ModalFooter>
             {result || !isCaseOption(option) ? (
-              <Button variant="light" onPress={handleClose}>
+              <Button
+                ref={resultCloseRef}
+                variant="light"
+                onPress={handleClose}
+              >
                 关闭
               </Button>
             ) : (

@@ -1,6 +1,6 @@
 'use client'
 
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   Button,
   Modal,
@@ -59,7 +59,14 @@ export const CaseViolationReportModal = ({
   const [submitting, setSubmitting] = useState(false)
   const [result, setResult] = useState<CaseCreateResponse | null>(null)
   const lockRef = useRef(false)
+  const resultCloseRef = useRef<HTMLButtonElement>(null)
   const tooShort = content.trim().length < CASE_REPORT_MIN_LENGTH
+
+  useEffect(() => {
+    if (result) {
+      resultCloseRef.current?.focus()
+    }
+  }, [result])
 
   const handleClose = () => {
     if (submitting) return
@@ -141,7 +148,7 @@ export const CaseViolationReportModal = ({
         </ModalBody>
         <ModalFooter>
           {result ? (
-            <Button variant="light" onPress={handleClose}>
+            <Button ref={resultCloseRef} variant="light" onPress={handleClose}>
               关闭
             </Button>
           ) : (
