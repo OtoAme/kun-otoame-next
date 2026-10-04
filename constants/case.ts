@@ -8,6 +8,9 @@ export const CASE_KINDS = [
   'resource_mismatch',
   // Interim kind until modules 04 and 05 ship link-level failure reports.
   'resource_link_failure',
+  'resource_runtime',
+  'resource_request',
+  'resource_other',
   'resource_wrong_patch',
   'content_violation',
   'other',
@@ -24,16 +27,26 @@ export type CaseKind = (typeof CASE_KINDS)[number]
 export const OPEN_CASE_KINDS = [
   'resource_mismatch',
   'resource_link_failure',
+  'resource_runtime',
+  'resource_request',
+  'resource_other',
   'resource_wrong_patch',
   'content_violation',
   'other',
   'patch_info'
 ] as const satisfies readonly CaseKind[]
 
-/** Resource kinds that go to the resource publisher unless the resource is official. */
+/**
+ * Resource kinds that go to the resource publisher unless the resource is
+ * official. `resource_request` is included because resource targets are
+ * publisher-owned; its patch target is always a staff-owned case.
+ */
 export const CASE_PUBLISHER_KINDS = [
   'resource_mismatch',
-  'resource_link_failure'
+  'resource_link_failure',
+  'resource_runtime',
+  'resource_request',
+  'resource_other'
 ] as const satisfies readonly CaseKind[]
 
 export const CASE_TARGET_TYPES = [
@@ -183,6 +196,27 @@ export const CASE_RESOLUTIONS_BY_KIND: Record<
     'reporter_unresponsive',
     'reporter_withdrawn'
   ],
+  resource_runtime: [
+    'repaired',
+    'unreproducible',
+    'out_of_scope',
+    'reporter_unresponsive',
+    'reporter_withdrawn'
+  ],
+  resource_request: [
+    'handled',
+    'declined',
+    'out_of_scope',
+    'reporter_unresponsive',
+    'reporter_withdrawn'
+  ],
+  resource_other: [
+    'repaired',
+    'unreproducible',
+    'out_of_scope',
+    'reporter_unresponsive',
+    'reporter_withdrawn'
+  ],
   resource_wrong_patch: [
     'moved',
     'not_established',
@@ -223,6 +257,9 @@ export const CASE_HANDLER_RESOLUTIONS_BY_KIND: Record<
 > = {
   resource_mismatch: ['repaired', 'unreproducible', 'out_of_scope'],
   resource_link_failure: ['relinked', 'verified_available', 'out_of_scope'],
+  resource_runtime: ['repaired', 'unreproducible', 'out_of_scope'],
+  resource_request: ['handled', 'declined', 'out_of_scope'],
+  resource_other: ['repaired', 'unreproducible', 'out_of_scope'],
   resource_wrong_patch: ['moved', 'not_established'],
   content_violation: ['handled', 'not_established', 'violation_hidden'],
   // 不采纳 answers a suggestion the site will not act on with a reason
@@ -368,6 +405,9 @@ export const CASE_STATUS_SORT_GROUPS: readonly (readonly CaseStatus[])[] = [
 export const CASE_KIND_LABELS: Record<CaseKind, string> = {
   resource_mismatch: '资源与描述不符',
   resource_link_failure: '链接失效',
+  resource_runtime: '解压或运行问题',
+  resource_request: '求资源或催更',
+  resource_other: '资源其他问题',
   resource_wrong_patch: '资源发错条目',
   content_violation: '违规举报',
   other: '其他',
@@ -421,6 +461,9 @@ export const CASE_RESOLUTION_LABELS: Record<CaseResolution, string> = {
 export const CASE_KIND_TARGETS = {
   resource_mismatch: ['resource'],
   resource_link_failure: ['resource'],
+  resource_runtime: ['resource'],
+  resource_request: ['resource', 'patch'],
+  resource_other: ['resource'],
   resource_wrong_patch: ['resource'],
   content_violation: ['comment', 'rating', 'shoutbox', 'user'],
   other: ['patch', 'site'],
@@ -432,12 +475,14 @@ export const CASE_KIND_TARGETS = {
 
 /**
  * Combinations whose dedup key also carries the opener: every user keeps one
- * open case of their own instead of subscribing to someone else's (D14, D21).
- * Other feedback on a game is free text, so two users rarely report the same
- * thing and merging them would close one user's issue with another's.
+ * open case of their own instead of subscribing to someone else's (D14, D21,
+ * D26). Other feedback on a game and resource requests on an entry are free
+ * text, so two users rarely report the same thing and merging them would
+ * close one user's issue with another's.
  */
 export const CASE_OPENER_SCOPED_TARGETS = [
   { kind: 'patch_info', targetType: 'patch' },
+  { kind: 'resource_request', targetType: 'patch' },
   { kind: 'other', targetType: 'patch' },
   { kind: 'other', targetType: 'site' }
 ] as const satisfies readonly { kind: CaseKind; targetType: CaseTargetType }[]
@@ -490,14 +535,23 @@ export const FROZEN_CASE_KIND_TARGETS = [
   }
 ] as const
 
-/** Only module 03's publisher-owned resource kinds join the generic timeout task. */
+/**
+ * Kinds eligible for publisher-side timeout handling. A `resource_request`
+ * targeting a patch is still staff-owned and is excluded by the owner check.
+ */
 export const CASE_PUBLISHER_TIMEOUT_KINDS = [
   'resource_mismatch',
-  'resource_link_failure'
+  'resource_link_failure',
+  'resource_runtime',
+  'resource_request',
+  'resource_other'
 ] as const
 export const CASE_REPORTER_TIMEOUT_KINDS = [
   'resource_mismatch',
-  'resource_link_failure'
+  'resource_link_failure',
+  'resource_runtime',
+  'resource_request',
+  'resource_other'
 ] as const
 export const CASE_PUBLISHER_ESCALATION_AFTER_MS = 7 * 24 * 60 * 60 * 1000
 export const CASE_REPORTER_TIMEOUT_AFTER_MS = 14 * 24 * 60 * 60 * 1000

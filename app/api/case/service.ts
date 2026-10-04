@@ -580,10 +580,9 @@ const deriveTarget = async (
     ) {
       return '该资源已被移动，请刷新后重试'
     }
-    // Only the public publisher kinds (description mismatch and the interim
-    // link failure) belong to the publisher. Wrong patch and the frozen
-    // resource violation flow are station cases even when the resource author
-    // is an ordinary publisher.
+    // Public resource kinds belong to the publisher unless the resource is
+    // official. `resource_request` is also a publisher kind, but its patch
+    // target is handled by the station in the patch target branch below.
     const publisherKind = (CASE_PUBLISHER_KINDS as readonly string[]).includes(
       kind
     )
@@ -3239,6 +3238,7 @@ export const resolveCase = async (
       actorType: 'publisher',
       actorId: uid,
       body: input.content || undefined,
+      status: input.resolution === 'declined' ? 'rejected' : undefined,
       notifyStaff: false,
       now
     })
@@ -3894,7 +3894,8 @@ export const handleCaseAsAdmin = async (
     if (['moved', 'violation_hidden', 'handled'].includes(resolution)) {
       const plainHandled =
         resolution === 'handled' &&
-        (row.kind === 'other' ||
+        (row.kind === 'resource_request' ||
+          row.kind === 'other' ||
           row.kind === 'patch_info' ||
           (row.kind === 'content_violation' && row.target_type === 'user'))
       if (!plainHandled) return '该结论必须通过对应的处置动作完成'

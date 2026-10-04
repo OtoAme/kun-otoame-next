@@ -275,6 +275,7 @@ describe('case entry buttons', () => {
 
       // 分流：下载慢只给指南，不产生事项
       await pickRadio(container, 'download_slow')
+      expect(container.textContent).toContain('这类问题不需要提交')
       expect(
         container.querySelector('a[href="/doc/notice/download"]')
       ).not.toBeNull()
@@ -293,23 +294,108 @@ describe('case entry buttons', () => {
       expect(mocks.kunFetchPost).not.toHaveBeenCalled()
     })
 
-    it('tells resource requests to wait for the help board', async () => {
+    it('shows repair guides alongside the form and files runtime problems as resource_runtime (D40)', async () => {
+      mocks.kunFetchPost.mockResolvedValue(created(11))
       const container = await mount(
         <ReportResourceButton resource={resource} patchId={1} />
       )
       await openResourceReport(container)
+      await pickRadio(container, 'archive_or_runtime')
 
+      // 说明链接和输入框同时显示（D40）
+      expect(
+        container.querySelector('a[href="/doc/notice/repair-rar"]')?.textContent
+      ).toBe('压缩包修复教程')
+      expect(
+        container.querySelector('a[href="/doc/notice/start"]')?.textContent
+      ).toBe('网站说明和常见问题')
+      expect(container.textContent).toContain('报错内容和已经试过的方法')
+      expect(
+        container.querySelector('textarea[aria-label="问题描述"]')
+      ).not.toBeNull()
+      expect(container.textContent).toContain(
+        '该问题先由资源发布者处理，预计首次响应在 7 天内'
+      )
+
+      await setTextarea(container, '问题描述', '解压到一半提示压缩包已损坏')
+      await act(async () => {
+        findButton(container, '提交')!.click()
+      })
+      await flush()
+      expect(mocks.kunFetchPost).toHaveBeenCalledWith('/case', {
+        kind: 'resource_runtime',
+        targetType: 'resource',
+        targetId: 7,
+        expectedPatchId: 1,
+        content: '解压到一半提示压缩包已损坏',
+        imageKeys: []
+      })
+      expect(container.textContent).toContain(
+        '已交给资源发布者，预计 7 天内首次回应'
+      )
+    })
+
+    it('files resource requests and other resource problems as their own kinds (D40)', async () => {
+      mocks.kunFetchPost.mockResolvedValue(created(12))
+      const container = await mount(
+        <ReportResourceButton resource={resource} patchId={1} />
+      )
+      await openResourceReport(container)
       await pickRadio(container, 'request_resource')
-      expect(container.textContent).toContain('等待求助区建成')
+
+      // 针对这条资源催更：贡献指南与输入框同时显示
+      expect(container.textContent).toContain(
+        '希望更新版本，或补充其他版本、语言、平台'
+      )
       expect(
         container.querySelector('a[href="/doc/notice/contribute"]')?.textContent
       ).toBe('内容贡献指南')
-      expect(findButton(container, '提交')).toBeUndefined()
+      expect(
+        container.querySelector('textarea[aria-label="问题描述"]')
+      ).not.toBeNull()
+      expect(container.textContent).toContain(
+        '该问题先由资源发布者处理，预计首次响应在 7 天内'
+      )
+      await setTextarea(container, '问题描述', '希望更新到 v1.1 版本')
+      await act(async () => {
+        findButton(container, '提交')!.click()
+      })
+      await flush()
+      expect(mocks.kunFetchPost).toHaveBeenCalledWith('/case', {
+        kind: 'resource_request',
+        targetType: 'resource',
+        targetId: 7,
+        expectedPatchId: 1,
+        content: '希望更新到 v1.1 版本',
+        imageKeys: []
+      })
 
-      // 其他指南现象仍用通用说明
-      await pickRadio(container, 'download_slow')
-      expect(container.textContent).toContain('这类问题不需要提交')
-      expect(container.textContent).not.toContain('等待求助区建成')
+      // 「其他」提交 resource_other，收以上都不符合的资源问题
+      await act(async () => {
+        findButton(container, '关闭')!.click()
+      })
+      mocks.kunFetchPost.mockResolvedValue(created(13))
+      await openResourceReport(container)
+      await pickRadio(container, 'resource_other')
+      expect(container.textContent).toContain('以上都不符合的资源问题')
+      expect(
+        container
+          .querySelector('textarea[aria-label="问题描述"]')
+          ?.getAttribute('placeholder')
+      ).toBe('请描述遇到的问题')
+      await setTextarea(container, '问题描述', '资源页的其他问题描述')
+      await act(async () => {
+        findButton(container, '提交')!.click()
+      })
+      await flush()
+      expect(mocks.kunFetchPost).toHaveBeenCalledWith('/case', {
+        kind: 'resource_other',
+        targetType: 'resource',
+        targetId: 7,
+        expectedPatchId: 1,
+        content: '资源页的其他问题描述',
+        imageKeys: []
+      })
     })
 
     it('submits the chosen phenomenon and switches to a result with a direct link', async () => {
@@ -719,19 +805,43 @@ describe('case entry buttons', () => {
       expect(mocks.kunFetchPost).not.toHaveBeenCalled()
     })
 
-    it('answers resource requests with the contribution guide (M03-9)', async () => {
+    it('files resource requests to the site administrator with the contribution guide shown (D40)', async () => {
+      mocks.kunFetchPost.mockResolvedValue(created(14))
       const container = await mount(feedback())
       await openFeedback(container)
-      await pickRadio(container, 'request_resource')
+      await pickRadio(container, 'resource_request')
 
-      expect(container.textContent).toContain('等待求助区建成')
+      // 贡献指南与输入框同时显示（D40）
       expect(
-        container.querySelector('a[href="/doc/notice/contribute"]')
-          ?.textContent
+        container.querySelector('a[href="/doc/notice/contribute"]')?.textContent
       ).toBe('内容贡献指南')
-      expect(container.querySelector('textarea')).toBeNull()
-      expect(findButton(container, '提交')).toBeUndefined()
-      expect(findButton(container, '关闭')).toBeDefined()
+      expect(
+        container.querySelector('textarea[aria-label="问题描述"]')
+      ).not.toBeNull()
+      expect(container.textContent).toContain(
+        '由网站管理员处理，不承诺首次响应时限'
+      )
+      expect(
+        container
+          .querySelector('textarea[aria-label="问题描述"]')
+          ?.getAttribute('placeholder')
+      ).toBe('想要的资源或希望更新的内容是……')
+
+      await setTextarea(container, '问题描述', '想要这个游戏的汉化版资源')
+      await act(async () => {
+        findButton(container, '提交')!.click()
+      })
+      await flush()
+      expect(mocks.kunFetchPost).toHaveBeenCalledWith('/case', {
+        kind: 'resource_request',
+        targetType: 'patch',
+        targetId: 1,
+        content: '想要这个游戏的汉化版资源',
+        imageKeys: []
+      })
+      // 结果页的处理方与「其他」一致：网站管理员，不承诺时限
+      expect(container.textContent).toContain('已交给网站管理员')
+      expect(container.textContent).toContain('查看这条问题')
     })
   })
 })

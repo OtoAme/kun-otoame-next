@@ -40,43 +40,45 @@ interface Props {
   onOpenResources: () => void
 }
 
-type CaseOption = 'patch_info' | 'other'
-// 指引项不建事项：发错条目、链接失效在那条资源的卡片上报告，求资源看贡献指南
-type ResourceGuideOption = 'resource_wrong_patch' | 'resource_link_failure'
-type GuideOption = ResourceGuideOption | 'request_resource'
+// 求资源或催更（D40）：按人各自一条，交网站管理员，不承诺首次响应时限
+type CaseOption = 'patch_info' | 'resource_request' | 'other'
+// 指引项不建事项：发错条目、链接失效在那条资源的卡片上报告（D34、D38）
+type GuideOption = 'resource_wrong_patch' | 'resource_link_failure'
 type FeedbackOption = CaseOption | GuideOption
 
 const isCaseOption = (option: FeedbackOption): option is CaseOption =>
-  option === 'patch_info' || option === 'other'
+  option === 'patch_info' || option === 'resource_request' || option === 'other'
 
-const isResourceGuideOption = (
-  option: FeedbackOption
-): option is ResourceGuideOption =>
+const isGuideOption = (option: FeedbackOption): option is GuideOption =>
   option === 'resource_wrong_patch' || option === 'resource_link_failure'
 
 // 旧反馈入口在条目页，资源问题改到资源卡片「报告问题」里提交（D34、D38）
-const RESOURCE_GUIDES: Record<ResourceGuideOption, string> = {
+const RESOURCE_GUIDES: Record<GuideOption, string> = {
   resource_wrong_patch:
     '资源发错条目请在那条资源上报告：打开「资源链接」，在资源卡片上点「报告问题」，选择「发在了错误的条目下」。网站管理员核对后会把资源移到正确的游戏。',
   resource_link_failure:
     '资源链接失效请在那条资源上报告：打开「资源链接」，在资源卡片上点「报告问题」，选择「链接失效」并写明是哪条链接。问题会先交给资源发布者补链，官方资源由网站管理员处理。'
 }
 
-// 处理方与预计首次响应沿用基线 8.6 的受理范围口径
+// 处理方与预计首次响应沿用基线 8.6 的受理范围口径；求资源或催更按 D40
 const OPTION_HINTS: Record<CaseOption, string> = {
   patch_info:
     '由网站管理员核对后修改，预计首次响应在 7 天内。和其他条目重复也选这一项，写明重复的条目链接。',
+  resource_request:
+    '想要这个游戏的资源或希望更新时提交，由网站管理员处理，不承诺首次响应时限。',
   other: '其他与该游戏相关的问题，由网站管理员处理，不承诺首次响应时限。'
 }
 
 const OPTION_HANDLERS: Record<CaseOption, string> = {
   patch_info: '网站管理员，预计 7 天内首次回应',
+  resource_request: '网站管理员',
   other: '网站管理员'
 }
 
 const OPTION_PLACEHOLDERS: Record<CaseOption, string> = {
   patch_info:
     '哪一项资料有误（如发售日期、会社、简介），正确内容是……，来源是……',
+  resource_request: '想要的资源或希望更新的内容是……',
   other: '请描述遇到的问题'
 }
 
@@ -111,6 +113,8 @@ export const FeedbackButton = ({ patch, onOpenResources }: Props) => {
   }
 
   const tooShort = content.trim().length < CASE_DESCRIPTION_MIN_LENGTH
+  // 贡献指南在求资源或催更的输入框上方同时显示（D40）
+  const showRequestGuide = option === 'resource_request'
 
   const handleSubmit = async () => {
     if (!isCaseOption(option)) return
@@ -176,11 +180,11 @@ export const FeedbackButton = ({ patch, onOpenResources }: Props) => {
                   <Radio value="patch_info">条目资料有误</Radio>
                   <Radio value="resource_wrong_patch">资源发错条目</Radio>
                   <Radio value="resource_link_failure">资源链接失效</Radio>
-                  <Radio value="request_resource">求资源或催更</Radio>
+                  <Radio value="resource_request">求资源或催更</Radio>
                   <Radio value="other">其他</Radio>
                 </RadioGroup>
 
-                {isResourceGuideOption(option) && (
+                {isGuideOption(option) && (
                   <div className="space-y-2 rounded-medium bg-default-100 p-3 text-sm">
                     <p>{RESOURCE_GUIDES[option]}</p>
                     <Button
@@ -194,27 +198,27 @@ export const FeedbackButton = ({ patch, onOpenResources }: Props) => {
                   </div>
                 )}
 
-                {option === 'request_resource' && (
-                  <div className="space-y-2 rounded-medium bg-default-100 p-3 text-sm">
-                    <p>{REQUEST_RESOURCE_GUIDE_NOTE}</p>
-                    <ul className="space-y-1">
-                      {REQUEST_RESOURCE_GUIDE_LINKS.map((link) => (
-                        <li key={link.href}>
-                          <Link
-                            href={link.href}
-                            target="_blank"
-                            className="text-primary underline-offset-2 hover:underline"
-                          >
-                            {link.label}
-                          </Link>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-
                 {isCaseOption(option) && (
                   <>
+                    {showRequestGuide && (
+                      <div className="space-y-2 rounded-medium bg-default-100 p-3 text-sm">
+                        <p>{REQUEST_RESOURCE_GUIDE_NOTE}</p>
+                        <ul className="space-y-1">
+                          {REQUEST_RESOURCE_GUIDE_LINKS.map((link) => (
+                            <li key={link.href}>
+                              <Link
+                                href={link.href}
+                                target="_blank"
+                                className="text-primary underline-offset-2 hover:underline"
+                              >
+                                {link.label}
+                              </Link>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+
                     <p className="text-sm text-default-500">
                       {OPTION_HINTS[option]}
                       {option === 'patch_info' && user.role > 2

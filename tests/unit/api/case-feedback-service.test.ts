@@ -104,6 +104,7 @@ import {
   reviewCase,
   setCaseMessageHidden,
   timeoutCloseCase,
+  upgradeCase,
   withdrawCase
 } from '~/app/api/case/service'
 import { CASE_GUIDE_LINKS, CASE_QUICK_REPLIES } from '~/constants/case'
@@ -398,6 +399,124 @@ describe('case feedback rules (M03-6, M03-7)', () => {
       dedup_key: 'resource:100:resource_link_failure',
       daily_key: '5:resource:100:2026-09-26'
     })
+  })
+
+  it.each(['resource_runtime', 'resource_request', 'resource_other'] as const)(
+    'routes %s on a user resource to the publisher with a daily key (D40)',
+    async (kind) => {
+      mocks.tx.ops_case.findUnique
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(null)
+        .mockResolvedValue(caseRow({ kind, dedup_key: 'x' }))
+
+      await createCase(
+        {
+          kind,
+          targetType: 'resource',
+          targetId: 100,
+          content: '第二个分卷解压报错，修复后仍然不行'
+        },
+        5,
+        { now, db: mocks.tx as never }
+      )
+
+      expect(
+        mocks.tx.ops_case.createMany.mock.calls[0][0].data[0]
+      ).toMatchObject({
+        kind,
+        owner_type: 'publisher',
+        owner_id: 2,
+        public: true,
+        dedup_key: `resource:100:${kind}`,
+        daily_key: '5:resource:100:2026-09-26'
+      })
+    }
+  )
+
+  it('sends game-level resource requests to the site administrator, one per person (D40)', async () => {
+    expect(buildCaseDedupKey('patch', 7, 'resource_request', 5)).toBe(
+      'patch:7:resource_request:5'
+    )
+    mocks.tx.ops_case.findUnique.mockResolvedValueOnce(null).mockResolvedValue(
+      caseRow({
+        kind: 'resource_request',
+        target_type: 'patch',
+        target_id: 7,
+        owner_type: 'staff',
+        owner_id: null,
+        public: false
+      })
+    )
+
+    await createCase(
+      {
+        kind: 'resource_request',
+        targetType: 'patch',
+        targetId: 7,
+        content: '希望补充 PC 中文版的资源'
+      },
+      5,
+      { now, db: mocks.tx as never }
+    )
+
+    expect(mocks.tx.ops_case.createMany.mock.calls[0][0].data[0]).toMatchObject(
+      {
+        kind: 'resource_request',
+        target_type: 'patch',
+        owner_type: 'staff',
+        owner_id: null,
+        public: false,
+        dedup_key: 'patch:7:resource_request:5',
+        daily_key: null
+      }
+    )
+  })
+
+  it('records a publisher declining a request as a rejection (D25, D40)', async () => {
+    mocks.tx.ops_case.findUnique.mockResolvedValue(
+      caseRow({ kind: 'resource_request' })
+    )
+    const decline = (content: string) =>
+      resolveCase({ caseId: 42, resolution: 'declined', content }, 2, {
+        now,
+        db: mocks.tx as never
+      })
+
+    await expect(decline(' ')).resolves.toBe('以「不采纳」结案时请写明理由')
+    await expect(decline('这个版本暂时不打算更新')).resolves.toMatchObject({
+      changed: true
+    })
+    expect(mocks.tx.ops_case.updateMany.mock.calls[0][0].data).toMatchObject({
+      status: 'rejected',
+      resolution: 'declined'
+    })
+  })
+
+  it('lets the site administrator close a request as handled (D40)', async () => {
+    mocks.tx.ops_case.findUnique.mockResolvedValue(
+      caseRow({
+        kind: 'resource_request',
+        target_type: 'patch',
+        target_id: 7,
+        owner_type: 'staff',
+        owner_id: null,
+        public: false
+      })
+    )
+
+    await expect(
+      handleCaseAsAdmin(
+        {
+          caseId: 42,
+          action: 'resolve',
+          resolution: 'handled',
+          content: '已补充 PC 中文版资源'
+        },
+        90,
+        3,
+        { now, db: mocks.tx as never }
+      )
+    ).resolves.toMatchObject({ changed: true })
   })
 
   it('makes the publisher explain「无法复现」and link a guide for「不在受理范围」', async () => {
@@ -834,6 +953,64 @@ describe('case feedback rules (M03-6, M03-7)', () => {
     const opener = rows.find((row) => row.recipient_id === 5)
     expect(String(follower?.content)).toContain('首位报告者没有补充材料')
     expect(String(opener?.content)).toContain('开启者未回应')
+  })
+
+  it.each(['resource_runtime', 'resource_request', 'resource_other'] as const)(
+    'hands %s to the site administrator after seven days',
+    async (kind) => {
+      mocks.tx.ops_case.findUnique.mockResolvedValue(
+        caseRow({ kind, status_changed_at: hoursAgo(8 * 24) })
+      )
+
+      await expect(
+        upgradeCase(42, { now, db: mocks.tx as never })
+      ).resolves.toEqual({ changed: true })
+      expect(mocks.tx.ops_case.updateMany.mock.calls[0][0].data).toMatchObject({
+        owner_type: 'staff',
+        owner_id: null
+      })
+    }
+  )
+
+  it.each(['resource_runtime', 'resource_request', 'resource_other'] as const)(
+    'auto-closes %s after fourteen days without reporter follow-up',
+    async (kind) => {
+      mocks.tx.ops_case.findUnique.mockResolvedValue(
+        caseRow({
+          kind,
+          status: 'waiting_reporter',
+          status_changed_at: hoursAgo(15 * 24)
+        })
+      )
+
+      await expect(
+        timeoutCloseCase(42, { now, db: mocks.tx as never })
+      ).resolves.toMatchObject({ changed: true })
+      expect(mocks.tx.ops_case.updateMany.mock.calls[0][0].data).toMatchObject({
+        resolution: 'reporter_unresponsive'
+      })
+    }
+  )
+
+  it('does not apply publisher timeouts to a patch-target resource request', async () => {
+    const patchRequest = caseRow({
+      kind: 'resource_request',
+      target_type: 'patch',
+      target_id: 7,
+      owner_type: 'staff',
+      owner_id: null,
+      public: false,
+      status_changed_at: hoursAgo(15 * 24)
+    })
+    mocks.tx.ops_case.findUnique.mockResolvedValue(patchRequest)
+
+    await expect(
+      upgradeCase(42, { now, db: mocks.tx as never })
+    ).resolves.toEqual({ changed: false })
+    await expect(
+      timeoutCloseCase(42, { now, db: mocks.tx as never })
+    ).resolves.toEqual({ changed: false })
+    expect(mocks.tx.ops_case.updateMany).not.toHaveBeenCalled()
   })
 
   it('returns one public badge per open case kind on a resource', async () => {

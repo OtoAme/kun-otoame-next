@@ -7,14 +7,23 @@ import type { CaseKind } from '~/constants/case'
  * (choosing a link or the whole resource), turns on the rows that are
  * registered but hidden here, and points「链接失效」at module 04's failure
  * report. Keep it the single switch point; do not add a second entry.
+ *
+ * D40: a case destination may carry a `guide` — a guiding sentence plus
+ * links rendered above the handler hint and the input.
  */
 export type IssueTriageDestination =
-  | { type: 'case'; kind: CaseKind }
+  | {
+      type: 'case'
+      kind: CaseKind
+      /** Shown above the handler hint and the input, alongside the form. */
+      guide?: {
+        note: string
+        links: readonly { href: string; label: string }[]
+      }
+    }
   | {
       type: 'guide'
       links: readonly { href: string; label: string }[]
-      /** Sentence above the links; the entry falls back to a generic one. */
-      note?: string
     }
 
 export interface IssueTriagePhenomenon {
@@ -30,11 +39,13 @@ export interface IssueTriagePhenomenon {
 }
 
 /**
- * 「求资源或催更」answer shared with the game feedback entry. Module 07
- * points the note and the links at the help board once that board ships.
+ * 「求资源或催更」note and links shared by the resource card phenomenon and
+ * the game feedback entry (D40): both submit a case and show these above the
+ * input. Module 07 decides at launch whether these go to the help board;
+ * both entries follow this constant.
  */
 export const REQUEST_RESOURCE_GUIDE_NOTE =
-  '求资源、催更需要等待求助区建成，届时可以在求助区发布，现在不需要提交。想自己补充资源，可以先看这些说明：'
+  '提交前可以先看内容贡献指南，想自己补充资源也可以直接发布：'
 
 export const REQUEST_RESOURCE_GUIDE_LINKS = [
   { href: CASE_GUIDE_LINKS.contribute, label: '内容贡献指南' }
@@ -72,23 +83,32 @@ export const ISSUE_TRIAGE_PHENOMENA: readonly IssueTriagePhenomenon[] = [
     label: '解压失败或游戏无法运行',
     examples: '压缩包损坏、解压报错、无法启动、乱码、存档问题',
     destination: {
-      type: 'guide',
-      links: [
-        { href: CASE_GUIDE_LINKS.repairRar, label: '压缩包修复教程' },
-        { href: '/doc/notice/start', label: '网站说明和常见问题' }
-      ]
+      type: 'case',
+      kind: 'resource_runtime',
+      guide: {
+        note: '可以先按这些说明排查；提交时请写清报错内容和已经试过的方法：',
+        links: [
+          { href: CASE_GUIDE_LINKS.repairRar, label: '压缩包修复教程' },
+          { href: '/doc/notice/start', label: '网站说明和常见问题' }
+        ]
+      }
     },
+    placeholder: '报错信息是……，已经试过……',
     enabled: true
   },
   {
     key: 'request_resource',
     label: '求资源或催更',
-    examples: '想要的资源不在这里、希望更新版本',
+    examples: '希望更新版本，或补充其他版本、语言、平台',
     destination: {
-      type: 'guide',
-      links: REQUEST_RESOURCE_GUIDE_LINKS,
-      note: REQUEST_RESOURCE_GUIDE_NOTE
+      type: 'case',
+      kind: 'resource_request',
+      guide: {
+        note: REQUEST_RESOURCE_GUIDE_NOTE,
+        links: REQUEST_RESOURCE_GUIDE_LINKS
+      }
     },
+    placeholder: '希望更新到哪个版本，或想补充的版本、语言、平台是……',
     enabled: true
   },
   {
@@ -97,6 +117,14 @@ export const ISSUE_TRIAGE_PHENOMENA: readonly IssueTriagePhenomenon[] = [
     examples: '这条资源属于另一个游戏',
     destination: { type: 'case', kind: 'resource_wrong_patch' },
     placeholder: '这条资源实际属于哪个游戏（游戏名或条目链接）……',
+    enabled: true
+  },
+  {
+    key: 'resource_other',
+    label: '其他',
+    examples: '以上都不符合的资源问题',
+    destination: { type: 'case', kind: 'resource_other' },
+    placeholder: '请描述遇到的问题',
     enabled: true
   },
   {

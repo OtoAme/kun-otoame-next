@@ -187,7 +187,7 @@ export const CASE_CENTER_VIEWS: CaseCenterView[] = [
  * which cases the 站方 groups hold.
  */
 export const CASE_VIEW_OVERLAP_HINT =
-  '待处理与等待报告者是未结事项的两个子集；全部事项另含已结案。站方：违规举报、条目资料有误、资源发错条目、站务反馈与条目页「其他」、官方资源的问题，以及发布者 7 天未处理或报告者申请复核后转来的资源问题。发布者处理中不在站方队列里。'
+  '待处理与等待报告者是未结事项的两个子集；全部事项另含已结案。站方：违规举报、条目资料有误、资源发错条目、站务反馈与条目页「其他」、条目页「求资源或催更」、官方资源的问题，以及发布者 7 天未处理或报告者申请复核后转来的资源问题。发布者处理中不在站方队列里。'
 
 export const DEFAULT_CASE_VIEW = CASE_CENTER_VIEWS[0]
 /** Staff queue: what the overview reports on and where a deep link lands. */

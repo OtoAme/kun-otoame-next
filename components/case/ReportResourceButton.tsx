@@ -54,7 +54,8 @@ export const ReportResourceButton = ({ resource, patchId }: Props) => {
   const destination = phenomenon?.destination
   // 与资源 Tabs 官方/社区同一口径：作者 role > 2 视为官方资源，归网站管理员处理。
   const official = (resource.user?.role ?? 0) > 2
-  // 只有与描述不符、链接失效先交发布者；发错条目始终由网站管理员处理。
+  // CASE_PUBLISHER_KINDS 内的现象先交资源发布者（与描述不符、链接失效、解压
+  // 或运行、求资源或催更、资源其他）；发错条目等其余事项始终由网站管理员处理。
   const staffHandled =
     official ||
     (destination?.type === 'case' &&
@@ -62,6 +63,16 @@ export const ReportResourceButton = ({ resource, patchId }: Props) => {
   const handlerHint = staffHandled
     ? '该问题由网站管理员处理，预计首次响应在 7 天内。'
     : '该问题先由资源发布者处理，预计首次响应在 7 天内；发布者 7 天未处理时会提交给网站管理员处理。'
+  // 指南现象只给说明；带说明的提交现象把说明块放在处理方提示和输入框上方（D40）。
+  const guideBlock =
+    destination?.type === 'guide'
+      ? {
+          note: '这类问题不需要提交，可以先看这些说明：',
+          links: destination.links
+        }
+      : destination?.type === 'case'
+        ? destination.guide
+        : undefined
   const tooShort = content.trim().length < CASE_DESCRIPTION_MIN_LENGTH
 
   const handleClose = () => {
@@ -157,14 +168,11 @@ export const ReportResourceButton = ({ resource, patchId }: Props) => {
                   ))}
                 </RadioGroup>
 
-                {destination?.type === 'guide' && (
+                {guideBlock && (
                   <div className="space-y-2 rounded-medium bg-default-100 p-3 text-sm">
-                    <p>
-                      {destination.note ??
-                        '这类问题不需要提交，可以先看这些说明：'}
-                    </p>
+                    <p>{guideBlock.note}</p>
                     <ul className="space-y-1">
-                      {destination.links.map((link) => (
+                      {guideBlock.links.map((link) => (
                         <li key={link.href}>
                           <Link
                             href={link.href}

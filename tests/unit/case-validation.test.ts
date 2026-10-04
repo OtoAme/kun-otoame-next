@@ -116,6 +116,23 @@ describe('case validation', () => {
     ).toBe(true)
   })
 
+  it('accepts the D40 public kind and target combinations', () => {
+    for (const input of [
+      { kind: 'resource_runtime', targetType: 'resource', targetId: 10 },
+      { kind: 'resource_request', targetType: 'resource', targetId: 10 },
+      { kind: 'resource_request', targetType: 'patch', targetId: 7 },
+      { kind: 'resource_other', targetType: 'resource', targetId: 10 }
+    ] as const) {
+      expect(
+        createCaseSchema.safeParse({
+          ...input,
+          content: '这是一个足够长度的问题描述'
+        }).success,
+        JSON.stringify(input)
+      ).toBe(true)
+    }
+  })
+
   it('sorts the admin list only by a known column and direction', () => {
     for (const sort of ['id', 'status', 'kind', 'reporter', 'owner', 'time']) {
       expect(adminCaseListSchema.parse({ sort }).sort).toBe(sort)
