@@ -8,7 +8,7 @@ import {
 import { logResourceAccessOutcome } from './observability'
 import type { Prisma } from '@prisma/client'
 import type { ResourceAccessActor } from './actor'
-import type { PatchResourceAccessResponse } from '~/types/api/patch'
+import type { PatchResourceHealthAccessResponse } from '~/types/api/patch'
 
 export type ResourceAccessServiceError = {
   kind: 'resource-access-error'
@@ -64,7 +64,7 @@ export const accessPatchResourceLink = async (
   input: z.infer<typeof accessPatchResourceLinkSchema>,
   visibilityWhere: Prisma.patchWhereInput,
   actor: ResourceAccessActor
-): Promise<PatchResourceAccessResponse | ResourceAccessServiceError> => {
+): Promise<PatchResourceHealthAccessResponse | ResourceAccessServiceError> => {
   const link = await prisma.patch_resource_link.findFirst({
     where: {
       id: input.linkId,
@@ -117,13 +117,18 @@ export const accessPatchResourceLink = async (
       linkId: link.id,
       storage: link.storage,
       section,
-      now
+      now,
+      visibilityWhere
     })
   } catch (error) {
     if (error instanceof ResourceAccessGrantBusyError) {
       return createResourceAccessError(503, '获取下载链接繁忙，请稍后再试', 1)
     }
     throw error
+  }
+
+  if (result.kind === 'not_found') {
+    return createResourceAccessError(404, '未找到对应资源链接')
   }
 
   if (result.kind === 'limited') {
@@ -145,22 +150,21 @@ export const accessPatchResourceLink = async (
       operation: 'access',
       outcome: 'manual_reused',
       actorType: actor.actorType,
-      section
+      section: result.section
     })
   }
 
-  const { resource: _resource, ...safeLink } = link
   const quota =
     result.kind === 'resource_granted' &&
     actor.actorType === 'visitor' &&
-    section === 'galgame' &&
+    result.section === 'galgame' &&
     result.quota?.scope === 'visitor' &&
     result.quota.resourceKind === 'galgame'
       ? result.quota
       : undefined
 
   return {
-    link: safeLink,
+    link: result.link,
     access: {
       kind: result.kind,
       actorType: actor.actorType,

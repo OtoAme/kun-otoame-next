@@ -1,0 +1,58 @@
+model patch_resource_link_report {
+  id             Int                 @id @default(autoincrement())
+  link_id        Int
+  link           patch_resource_link @relation(fields: [link_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  link_version   Int
+  evidence_round Int
+  user_id        Int
+  user           user                @relation("link_report_author", fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  reason         String              @db.VarChar(32)
+  weight         Decimal             @db.Decimal(3, 1)
+  ever_counted   Boolean
+  created        DateTime            @default(now())
+
+  @@unique([link_id, link_version, evidence_round, user_id], map: "link_report_identity_key")
+  @@index([link_id, link_version, evidence_round, created], map: "link_report_window_idx")
+}
+
+model patch_resource_link_history {
+  id                Int            @id @default(autoincrement())
+  resource_id       Int
+  resource          patch_resource @relation(fields: [resource_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  // Original slot identity survives removal; deliberately not a link FK.
+  link_id           Int
+  from_version      Int
+  old_content       String?
+  old_storage       String?        @db.VarChar(107)
+  old_size          String?        @db.VarChar(107)
+  reason            String         @db.VarChar(20)
+  operator_user_id  Int?
+  operator          user?          @relation("link_history_operator", fields: [operator_user_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  health_transition Json?
+  health_event_key  String?        @unique @db.VarChar(107)
+  created           DateTime       @default(now())
+
+  @@index([resource_id, created(sort: Desc)])
+  @@index([link_id, created(sort: Desc)])
+}
+
+model patch_resource_link_check {
+  link_id           Int                 @id
+  link              patch_resource_link @relation(fields: [link_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  patch_id          Int
+  resource_id       Int
+  link_version      Int
+  evidence_round    Int
+  health            String              @db.VarChar(20)
+  health_changed_at DateTime?
+  request_id        String              @db.Uuid
+  input_signature   String              @db.VarChar(64)
+  requested_at      DateTime
+  completed_at      DateTime
+  verdict           String              @db.VarChar(20)
+  provider          String?             @db.VarChar(20)
+  reason            String              @db.VarChar(32)
+  checked_at        DateTime?
+  cached            Boolean
+  failed            Boolean
+}

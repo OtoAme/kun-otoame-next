@@ -138,6 +138,7 @@ const userActor: ResourceAccessActor = {
 }
 
 const sensitiveLink21 = {
+  version: 1,
   id: 21,
   storage: 'user',
   size: '2 GB',
@@ -148,6 +149,7 @@ const sensitiveLink21 = {
 }
 
 const sensitiveLink22 = {
+  version: 1,
   id: 22,
   storage: 's3',
   size: '3 GB',
@@ -158,9 +160,11 @@ const sensitiveLink22 = {
 }
 
 const RESTORE_LINK_SELECT = {
+  link_version: true,
   link: {
     select: {
       id: true,
+      version: true,
       storage: true,
       size: true,
       content: true,
@@ -246,7 +250,7 @@ describe('resource access restore service', () => {
       '~/app/api/patch/resource/download/access/restore/service'
     )
     prismaMocks.patch_resource_access.findMany.mockResolvedValueOnce([
-      { link: sensitiveLink21 }
+      { link_version: 1, link: sensitiveLink21 }
     ])
 
     const result = await restorePatchResourceLinks(
@@ -285,7 +289,7 @@ describe('resource access restore service', () => {
       '~/app/api/patch/resource/download/access/restore/service'
     )
     prismaMocks.patch_resource_access.findMany.mockResolvedValueOnce([
-      { link: sensitiveLink22 }
+      { link_version: 1, link: sensitiveLink22 }
     ])
 
     const result = await restorePatchResourceLinks(
@@ -318,9 +322,9 @@ describe('resource access restore service', () => {
       '~/app/api/patch/resource/download/access/restore/service'
     )
     prismaMocks.patch_resource_access.findMany.mockResolvedValueOnce([
-      { link: sensitiveLink21 },
-      { link: sensitiveLink21 },
-      { link: sensitiveLink22 }
+      { link_version: 1, link: sensitiveLink21 },
+      { link_version: 1, link: sensitiveLink21 },
+      { link_version: 1, link: sensitiveLink22 }
     ])
 
     const result = await restorePatchResourceLinks(
@@ -339,7 +343,7 @@ describe('resource access restore service', () => {
       '~/app/api/patch/resource/download/access/restore/service'
     )
     prismaMocks.patch_resource_access.findMany.mockResolvedValueOnce([
-      { link: sensitiveLink21 }
+      { link_version: 1, link: sensitiveLink21 }
     ])
 
     const result = await restorePatchResourceLinks(

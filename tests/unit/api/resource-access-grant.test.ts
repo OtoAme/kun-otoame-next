@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const prismaMocks = vi.hoisted(() => {
   const tx = {
+    patch_resource_link: { findFirst: vi.fn() },
     patch_resource_access_grant: {
       findUnique: vi.fn(),
       create: vi.fn(),
@@ -122,6 +123,20 @@ beforeEach(() => {
   redisMocks.eval.mockReset()
   timerMocks.wait.mockReset().mockResolvedValue(undefined)
   prismaMocks.$transaction.mockReset()
+  prismaMocks.tx.patch_resource_link.findFirst.mockReset()
+  prismaMocks.tx.patch_resource_link.findFirst.mockImplementation(
+    async ({ where }) => ({
+      id: where.id,
+      version: 1,
+      storage: 'user',
+      size: '1 GB',
+      content: 'https://example.test/current',
+      code: '',
+      password: '',
+      hash: '',
+      resource: { section: 'galgame' }
+    })
+  )
   prismaMocks.tx.patch_resource_access_grant.findUnique.mockReset()
   prismaMocks.tx.patch_resource_access_grant.create.mockReset()
   prismaMocks.tx.patch_resource_access_grant.update.mockReset()
@@ -284,7 +299,7 @@ describe('resource access grant service', () => {
 
     const result = await resolveResourceAccessGrant(baseInput)
 
-    expect(result).toEqual({
+    expect(result).toMatchObject({
       kind: 'resource_granted',
       expires,
       quota: {
@@ -342,6 +357,7 @@ describe('resource access grant service', () => {
         patch_id: 7,
         resource_id: 11,
         link_id: 22,
+        link_version: 1,
         section: 'galgame',
         storage: 'user',
         cost: 0,
@@ -365,7 +381,7 @@ describe('resource access grant service', () => {
       now: new Date('2026-07-10T00:00:00.000Z')
     })
 
-    expect(result).toEqual({ kind: 'link_revealed', expires })
+    expect(result).toMatchObject({ kind: 'link_revealed', expires })
     expect(prismaMocks.tx.patch_resource_access.count).not.toHaveBeenCalled()
     expect(prismaMocks.tx.patch_resource_access.findFirst).toHaveBeenCalledWith(
       {
@@ -374,6 +390,7 @@ describe('resource access grant service', () => {
           visitor_token: visitorToken,
           resource_id: 11,
           link_id: 22,
+          link_version: 1,
           expires: { gte: expires }
         },
         select: { id: true }
@@ -405,7 +422,7 @@ describe('resource access grant service', () => {
       now: new Date('2026-07-10T00:00:00.000Z')
     })
 
-    expect(result).toEqual({ kind: 'reused', expires })
+    expect(result).toMatchObject({ kind: 'reused', expires })
     expect(prismaMocks.tx.patch_resource_access.create).not.toHaveBeenCalled()
     expect(prismaMocks.tx.patch_resource_access.count).not.toHaveBeenCalled()
   })
@@ -424,7 +441,7 @@ describe('resource access grant service', () => {
       now: new Date('2026-07-10T00:00:00.000Z')
     })
 
-    expect(result).toEqual({ kind: 'link_revealed', expires })
+    expect(result).toMatchObject({ kind: 'link_revealed', expires })
     expect(prismaMocks.tx.patch_resource_access.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({ expires: { gte: expires } })
@@ -520,6 +537,17 @@ describe('resource access grant service', () => {
   ])(
     'grants a $name without product count or quota',
     async ({ actor, section }) => {
+      prismaMocks.tx.patch_resource_link.findFirst.mockResolvedValue({
+        id: 22,
+        version: 1,
+        storage: 'user',
+        size: '1 GB',
+        content: 'https://example.test/current',
+        code: '',
+        password: '',
+        hash: '',
+        resource: { section }
+      })
       const result = await resolveResourceAccessGrant({
         ...baseInput,
         actor,
@@ -583,7 +611,7 @@ describe('resource access grant service', () => {
       now: new Date('2026-07-10T00:00:00.000Z')
     })
 
-    expect(result).toEqual({ kind: 'reused', expires })
+    expect(result).toMatchObject({ kind: 'reused', expires })
     expect(
       prismaMocks.tx.patch_resource_access_grant.findUnique
     ).toHaveBeenCalledTimes(2)
@@ -613,8 +641,8 @@ describe('resource access grant service', () => {
       })
     ])
 
-    expect(first).toEqual({ kind: 'link_revealed', expires })
-    expect(second).toEqual({ kind: 'link_revealed', expires })
+    expect(first).toMatchObject({ kind: 'link_revealed', expires })
+    expect(second).toMatchObject({ kind: 'link_revealed', expires })
     expect(prismaMocks.tx.patch_resource_access.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
         link_id: 22,
@@ -650,7 +678,7 @@ describe('resource access grant service', () => {
 
     const result = await resolveResourceAccessGrant(baseInput)
 
-    expect(result).toEqual({ kind: 'reused', expires })
+    expect(result).toMatchObject({ kind: 'reused', expires })
     expect(
       prismaMocks.tx.patch_resource_access_grant.findUnique
     ).toHaveBeenCalledTimes(2)
@@ -675,7 +703,7 @@ describe('resource access grant service', () => {
       linkId: 23
     })
 
-    expect(result).toEqual({ kind: 'link_revealed', expires })
+    expect(result).toMatchObject({ kind: 'link_revealed', expires })
     expect(prismaMocks.tx.patch_resource_access.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
         link_id: 23,

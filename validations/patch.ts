@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { linkHealthIdSchema, linkVersionBaseSchema } from './linkHealth'
 import { ResourceSizeRegex } from '~/utils/validate'
 import {
   SUPPORTED_TYPE,
@@ -271,6 +272,56 @@ export const patchResourceUpdateSchema = patchResourceSchemaBase
     validateChineseSupportByType(data, ctx)
     validateResourceUpdateLinks(data, ctx)
   })
+
+/** W04 stable-slot contract; both editors switch with the data writer. */
+export const patchResourceStableEditFormSchema = patchResourceSchemaBase
+  .extend({
+    patchId: linkHealthIdSchema,
+    baseLinks: z.array(linkVersionBaseSchema).max(10),
+    links: z
+      .array(
+        patchResourceLinkSchema.and(
+          z.object({ id: linkHealthIdSchema.optional() })
+        )
+      )
+      .min(1, { message: '请至少添加一个资源链接' })
+      .max(10, { message: '单个资源最多添加 10 条链接' })
+  })
+  .superRefine((data, ctx) => {
+    validateResourceTypesBySection(data, ctx)
+    validateResourcePlatformsByType(data, ctx)
+    validateChineseSupportByType(data, ctx)
+    validateResourceUpdateLinks(data, ctx)
+
+    const baseIds = new Set<number>()
+    data.baseLinks.forEach((link, index) => {
+      if (baseIds.has(link.id)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: '链接编辑基点中存在重复 ID',
+          path: ['baseLinks', index, 'id']
+        })
+      }
+      baseIds.add(link.id)
+    })
+    const finalIds = new Set<number>()
+    data.links.forEach((link, index) => {
+      if (link.id === undefined) return
+      if (finalIds.has(link.id) || !baseIds.has(link.id)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: '链接 ID 重复或不在编辑基点中，请刷新后重试',
+          path: ['links', index, 'id']
+        })
+      }
+      finalIds.add(link.id)
+    })
+  })
+
+export const patchResourceStableUpdateSchema =
+  patchResourceStableEditFormSchema.and(
+    z.object({ resourceId: linkHealthIdSchema })
+  )
 
 export const declinePullRequestSchema = z.object({
   prId: z.coerce.number({ message: 'ID 必须为数字' }).min(1).max(9999999),

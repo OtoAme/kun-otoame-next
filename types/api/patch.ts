@@ -2,6 +2,16 @@ import { Tag } from './tag'
 import { Company } from './company'
 import type { MoemoepointBalance } from './moemoepoint'
 import type { PatchCaseSummary } from './case'
+import type { z } from 'zod'
+import type {
+  LinkCheckSummary,
+  LinkHealthSummary,
+  LinkVersionBase
+} from './linkHealth'
+import type {
+  patchResourceStableEditFormSchema,
+  patchResourceStableUpdateSchema
+} from '~/validations/patch'
 
 export interface Patch {
   id: number
@@ -139,6 +149,39 @@ export interface PatchResourceAccessRestoreResponse {
   obtainedExpiresAt: string | null
 }
 
+/** Required 04/05/10 projection, adopted with the stable-slot reader/writer. */
+export interface PatchResourceHealthLink
+  extends Omit<PatchResourceLink, 'content' | 'code' | 'password'>,
+    LinkHealthSummary {}
+
+export interface PatchResourceHealthAccessLink extends PatchResourceAccessLink {
+  /** Version of the very same snapshot that supplies content/code/password. */
+  version: number
+}
+
+export interface PatchResourceHealthAccessResponse
+  extends Omit<PatchResourceAccessResponse, 'link'> {
+  link: PatchResourceHealthAccessLink
+}
+
+export interface PatchResourceHealthAccessRestoreResponse
+  extends Omit<PatchResourceAccessRestoreResponse, 'links'> {
+  links: PatchResourceHealthAccessLink[]
+}
+
+export type PatchResourceStableEditForm = z.output<
+  typeof patchResourceStableEditFormSchema
+>
+export type PatchResourceStableUpdateRequest = z.output<
+  typeof patchResourceStableUpdateSchema
+>
+
+/** Private editor hydration; capture baseLinks once, never at submit time. */
+export interface PatchResourceHealthEditData {
+  baseLinks: LinkVersionBase[]
+  links: (PatchResourceHealthLink & PatchResourceHealthAccessLink)[]
+}
+
 export interface PatchResource {
   id: number
   name: string
@@ -167,6 +210,28 @@ export interface PatchResource {
 
 export interface PatchResourceCreateResponse extends PatchResource {
   moemoepointBalance: MoemoepointBalance
+}
+
+export interface PatchResourceHealth extends Omit<PatchResource, 'links'> {
+  links: PatchResourceHealthLink[]
+}
+
+/** Saving is committed before these checks; failed checks never undo it. */
+export interface PatchResourceStableUpdateResponse extends PatchResourceHealth {
+  linkChecks: (
+    | {
+        linkId: number
+        linkVersion: number
+        outcome: 'observed' | 'failed'
+        check: LinkCheckSummary
+      }
+    | {
+        linkId: number
+        linkVersion: number
+        outcome: 'superseded'
+        check: null
+      }
+  )[]
 }
 
 export interface PatchComment {

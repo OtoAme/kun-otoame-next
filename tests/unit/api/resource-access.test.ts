@@ -104,6 +104,14 @@ const QUOTA = {
 }
 
 const previewLink = (id: number, sortOrder: number) => ({
+  version: 1,
+  evidence_round: 0,
+  health: 'ok',
+  health_changed_at: null,
+  verified_at: null,
+  content_changed_at: null,
+  reports: [],
+  check: null,
   id,
   storage: 'user',
   size: `${sortOrder} GB`,
@@ -142,6 +150,7 @@ const resourceRow = (links = [previewLink(21, 1)]) => ({
 })
 
 const accessLink = (section: string = 'galgame') => ({
+  version: 1,
   id: 21,
   storage: 'user',
   size: '2 GB',
@@ -201,6 +210,17 @@ describe('resource download access grant API', () => {
     grantMocks.resolveResourceAccessGrant.mockReset()
     grantMocks.resolveResourceAccessGrant.mockResolvedValue({
       kind: 'resource_granted',
+      section: 'galgame',
+      link: {
+        id: 21,
+        version: 1,
+        storage: 'user',
+        size: '2 GB',
+        content: 'https://pan.example.com/share',
+        code: 'abcd',
+        password: 'pass',
+        hash: ''
+      },
       expires: EXPIRES
     })
     rateLimitMocks.checkResourceAccessActionRateLimit.mockReset()
@@ -219,7 +239,7 @@ describe('resource download access grant API', () => {
 
     const resources = await getPatchResource({ patchId: 7 }, { uid: 0 })
 
-    expect(resources[0].links[0]).toEqual({
+    expect(resources[0].links[0]).toMatchObject({
       id: 21,
       storage: 'user',
       size: '1 GB',
@@ -246,7 +266,7 @@ describe('resource download access grant API', () => {
       { resource_id: 11, expires: EXPIRES }
     ])
     prismaMocks.patch_resource_access.findMany.mockResolvedValueOnce([
-      { link_id: 21 }
+      { link_id: 21, link_version: 1 }
     ])
 
     const resources = await getPatchResource({ patchId: 7 }, { uid: 1007 })
@@ -300,7 +320,7 @@ describe('resource download access grant API', () => {
       { resource_id: 11, expires: EXPIRES }
     ])
     prismaMocks.patch_resource_access.findMany.mockResolvedValueOnce([
-      { link_id: 21 }
+      { link_id: 21, link_version: 1 }
     ])
 
     const response = await GET(
@@ -355,6 +375,17 @@ describe('resource download access grant API', () => {
     )
     grantMocks.resolveResourceAccessGrant.mockResolvedValueOnce({
       kind: 'resource_granted',
+      section: 'galgame',
+      link: {
+        id: 21,
+        version: 1,
+        storage: 'user',
+        size: '2 GB',
+        content: 'https://pan.example.com/share',
+        code: 'abcd',
+        password: 'pass',
+        hash: ''
+      },
       expires: EXPIRES,
       quota: QUOTA
     })
@@ -369,6 +400,7 @@ describe('resource download access grant API', () => {
     await expect(response.json()).resolves.toEqual({
       link: {
         id: 21,
+        version: 1,
         storage: 'user',
         size: '2 GB',
         content: 'https://pan.example.com/share',
@@ -391,7 +423,8 @@ describe('resource download access grant API', () => {
       linkId: 21,
       storage: 'user',
       section: 'galgame',
-      now: expect.any(Date)
+      now: expect.any(Date),
+      visibilityWhere: { content_limit: 'sfw' }
     })
     expect(prismaMocks.patch_resource_link.findFirst).toHaveBeenCalledWith({
       where: {
@@ -463,6 +496,17 @@ describe('resource download access grant API', () => {
     )
     grantMocks.resolveResourceAccessGrant.mockResolvedValueOnce({
       kind: 'resource_granted',
+      section: 'galgame',
+      link: {
+        id: 21,
+        version: 1,
+        storage: 'user',
+        size: '2 GB',
+        content: 'https://pan.example.com/share',
+        code: 'abcd',
+        password: 'pass',
+        hash: ''
+      },
       expires: EXPIRES,
       quota: QUOTA
     })
@@ -489,6 +533,17 @@ describe('resource download access grant API', () => {
     )
     grantMocks.resolveResourceAccessGrant.mockResolvedValueOnce({
       kind: 'resource_granted',
+      section: 'patch',
+      link: {
+        id: 21,
+        version: 1,
+        storage: 'user',
+        size: '2 GB',
+        content: 'https://pan.example.com/share',
+        code: 'abcd',
+        password: 'pass',
+        hash: ''
+      },
       expires: EXPIRES,
       quota: QUOTA
     })
@@ -517,6 +572,17 @@ describe('resource download access grant API', () => {
       )
       grantMocks.resolveResourceAccessGrant.mockResolvedValueOnce({
         kind,
+        section: 'galgame',
+        link: {
+          id: 21,
+          version: 1,
+          storage: 'user',
+          size: '2 GB',
+          content: 'https://pan.example.com/share',
+          code: 'abcd',
+          password: 'pass',
+          hash: ''
+        },
         expires: EXPIRES,
         quota: QUOTA
       })

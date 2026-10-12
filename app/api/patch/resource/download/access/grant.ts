@@ -17,6 +17,7 @@ type GrantInput = {
   storage: string
   section: 'galgame' | 'patch'
   now: Date
+  visibilityWhere?: Prisma.patchWhereInput
 }
 
 type VisitorQuotaPayload = {
@@ -36,7 +37,10 @@ type VisitorQuotaCheck =
       resetsAt: { daily: string; weekly: string }
     }
 
-const buildAccessEventCreateData = (input: GrantInput) => ({
+const buildAccessEventCreateData = (
+  input: GrantInput,
+  linkVersion: number
+) => ({
   actor_type: input.actor.actorType,
   user_id: input.actor.actorType === 'user' ? input.actor.uid : null,
   visitor_token:
@@ -44,6 +48,7 @@ const buildAccessEventCreateData = (input: GrantInput) => ({
   patch_id: input.patchId,
   resource_id: input.resourceId,
   link_id: input.linkId,
+  link_version: linkVersion,
   section: input.section,
   storage: input.storage,
   cost: 0,
@@ -146,6 +151,44 @@ export const resolveResourceAccessGrant = async (input: GrantInput) => {
     try {
       return await prisma.$transaction(
         async (tx) => {
+          const target = await tx.patch_resource_link.findFirst({
+            where: {
+              id: input.linkId,
+              resource_id: input.resourceId,
+              resource: {
+                id: input.resourceId,
+                patch_id: input.patchId,
+                status: 0,
+                patch: {
+                  id: input.patchId,
+                  status: 0,
+                  ...input.visibilityWhere
+                }
+              }
+            },
+            select: {
+              id: true,
+              version: true,
+              storage: true,
+              size: true,
+              content: true,
+              code: true,
+              password: true,
+              hash: true,
+              resource: { select: { section: true } }
+            }
+          })
+          if (!target) return { kind: 'not_found' as const }
+          const { resource, ...link } = target
+          if (resource.section !== 'galgame' && resource.section !== 'patch') {
+            throw new Error('Invalid resource section')
+          }
+          // Address, version and event facts all come from this transaction.
+          const snapshotInput: GrantInput = {
+            ...input,
+            storage: link.storage,
+            section: resource.section
+          }
           const actorKey = getResourceAccessActorKey(input.actor)
           const current = await tx.patch_resource_access_grant.findUnique({
             where: {
@@ -162,18 +205,24 @@ export const resolveResourceAccessGrant = async (input: GrantInput) => {
                 ...getResourceAccessActorWhere(input.actor),
                 resource_id: input.resourceId,
                 link_id: input.linkId,
+                link_version: link.version,
                 expires: { gte: current.expires }
               },
               select: { id: true }
             })
 
             if (revealed) {
-              return { kind: 'reused' as const, expires: current.expires }
+              return {
+                kind: 'reused' as const,
+                expires: current.expires,
+                link,
+                section: snapshotInput.section
+              }
             }
 
             await tx.patch_resource_access.create({
               data: {
-                ...buildAccessEventCreateData(input),
+                ...buildAccessEventCreateData(snapshotInput, link.version),
                 access_kind: 'link_reveal',
                 expires: current.expires
               }
@@ -181,11 +230,13 @@ export const resolveResourceAccessGrant = async (input: GrantInput) => {
 
             return {
               kind: 'link_revealed' as const,
-              expires: current.expires
+              expires: current.expires,
+              link,
+              section: snapshotInput.section
             }
           }
 
-          const quotaCheck = await checkVisitorResourceQuota(tx, input)
+          const quotaCheck = await checkVisitorResourceQuota(tx, snapshotInput)
           if (!quotaCheck.allowed) {
             const { allowed: _allowed, ...limited } = quotaCheck
             return { kind: 'limited' as const, ...limited }
@@ -214,7 +265,7 @@ export const resolveResourceAccessGrant = async (input: GrantInput) => {
 
           await tx.patch_resource_access.create({
             data: {
-              ...buildAccessEventCreateData(input),
+              ...buildAccessEventCreateData(snapshotInput, link.version),
               access_kind: 'resource_grant',
               expires
             }
@@ -223,6 +274,8 @@ export const resolveResourceAccessGrant = async (input: GrantInput) => {
           return {
             kind: 'resource_granted' as const,
             expires: grant.expires,
+            link,
+            section: snapshotInput.section,
             ...(quotaCheck.quota ? { quota: quotaCheck.quota } : {})
           }
         },

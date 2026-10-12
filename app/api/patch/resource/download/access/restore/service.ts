@@ -7,7 +7,7 @@ import {
 } from '../actor'
 import type { Prisma } from '@prisma/client'
 import type { ResourceAccessActor } from '../actor'
-import type { PatchResourceAccessRestoreResponse } from '~/types/api/patch'
+import type { PatchResourceHealthAccessRestoreResponse } from '~/types/api/patch'
 
 type RestoreInput = z.infer<typeof restorePatchResourceLinksSchema>
 
@@ -16,7 +16,7 @@ export const restorePatchResourceLinks = async (
   visibilityWhere: Prisma.patchWhereInput,
   actor: ResourceAccessActor,
   now = new Date()
-): Promise<PatchResourceAccessRestoreResponse> => {
+): Promise<PatchResourceHealthAccessRestoreResponse> => {
   const actorKey = getResourceAccessActorKey(actor)
   const grant = await prisma.patch_resource_access_grant.findUnique({
     where: {
@@ -47,9 +47,11 @@ export const restorePatchResourceLinks = async (
       }
     },
     select: {
+      link_version: true,
       link: {
         select: {
           id: true,
+          version: true,
           storage: true,
           size: true,
           content: true,
@@ -61,7 +63,13 @@ export const restorePatchResourceLinks = async (
     }
   })
 
-  const linkById = new Map(access.map(({ link }) => [link.id, link]))
+  const linkById = new Map(
+    access.flatMap(({ link, link_version }) =>
+      link && link_version !== null && link_version === link.version
+        ? [[link.id, link] as const]
+        : []
+    )
+  )
   return {
     links: input.linkIds.flatMap((id) => {
       const link = linkById.get(id)

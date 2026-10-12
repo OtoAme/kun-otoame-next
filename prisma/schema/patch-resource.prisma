@@ -10,10 +10,11 @@ model patch_resource {
   // 0 - normal, 1 - banned, 2 - pending approval
   status   Int      @default(0)
 
-  like_by user_patch_resource_like_relation[]
-  links   patch_resource_link[]
-  access  patch_resource_access[]
-  grants  patch_resource_access_grant[] @relation("patch_resource_access_grant")
+  like_by      user_patch_resource_like_relation[]
+  links        patch_resource_link[]
+  access       patch_resource_access[]
+  grants       patch_resource_access_grant[]       @relation("patch_resource_access_grant")
+  link_history patch_resource_link_history[]
 
   user_id  Int
   user     user  @relation("user_patch_resource", fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
@@ -30,24 +31,33 @@ model patch_resource {
 }
 
 model patch_resource_link {
-  id         Int    @id @default(autoincrement())
-  storage    String @db.VarChar(107)
-  size       String @default("") @db.VarChar(107)
-  code       String @default("") @db.VarChar(1007)
-  password   String @default("") @db.VarChar(1007)
-  hash       String @default("")
-  content    String @default("")
-  sort_order Int    @default(0)
-  download   Int    @default(0)
+  id                 Int       @id @default(autoincrement())
+  storage            String    @db.VarChar(107)
+  size               String    @default("") @db.VarChar(107)
+  code               String    @default("") @db.VarChar(1007)
+  password           String    @default("") @db.VarChar(1007)
+  hash               String    @default("")
+  content            String    @default("")
+  sort_order         Int       @default(0)
+  download           Int       @default(0)
+  health             String    @default("ok") @db.VarChar(20)
+  version            Int       @default(1)
+  evidence_round     Int       @default(0)
+  health_changed_at  DateTime?
+  verified_at        DateTime?
+  content_changed_at DateTime?
 
   resource_id Int
-  resource    patch_resource @relation(fields: [resource_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  resource    patch_resource               @relation(fields: [resource_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   access      patch_resource_access[]
+  reports     patch_resource_link_report[]
+  check       patch_resource_link_check?
 
   created DateTime @default(now())
   updated DateTime @updatedAt
 
   @@index([resource_id, sort_order])
+  @@index([health, health_changed_at])
 }
 
 model patch_resource_access_grant {
@@ -80,8 +90,9 @@ model patch_resource_access {
   resource_id Int
   resource    patch_resource @relation(fields: [resource_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
-  link_id Int
-  link    patch_resource_link @relation(fields: [link_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  link_id      Int?
+  link_version Int?
+  link         patch_resource_link? @relation(fields: [link_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
 
   created DateTime @default(now())
   updated DateTime @updatedAt
