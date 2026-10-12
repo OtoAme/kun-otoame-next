@@ -29,9 +29,19 @@
 
 生产先备份，再依次执行 `migration/production-case-preflight-2026-09-13.sql`、`production-case-sync-2026-09-13.sql`、`production-case-postflight-2026-09-13.sql`，接着依次执行 `production-case-feedback-preflight-2026-09-26.sql`、`production-case-feedback-sync-2026-09-26.sql`、`production-case-feedback-postflight-2026-09-26.sql`，最后运行现有 schema guard 与部署流程。前三份只涉及新增的 `ops_case`、`ops_case_message`、`ops_case_subscriber`；后三份只加 `ops_case.reminded_revision` 与报告者图片表 `ops_case_message_image`。每组 pre/postflight 只读，sync 可重复执行，已有同名但不兼容的对象在写入前拒绝。2026-09-13 的三份按基表列数精确核对，加法迁移之后不再重跑，改跑 2026-09-26 这组。两个可空唯一键必须允许多个 NULL，不能使用 `NULLS NOT DISTINCT`。旧反馈和举报不回填。
 
-`server/tasks/caseTimeoutTask.ts` 每小时第 17 分钟按上海时区执行：发布者归属的资源问题（资源与描述不符、链接失效）等待处理方超过 7 天提交给网站管理员，等待报告者超过 14 天自动结案；两个时限到期前 48 小时各提醒一次，提醒以 `reminded_revision` 绑定状态修订号，同一轮只发一次。站方事项不自动结案；04、06 的类型不由本任务扫描。任务使用已有 Redis 锁和逐项状态条件更新，单类每批 200 条、最多 10 轮，重复执行不重复产生处理结果。
+`server/tasks/caseTimeoutTask.ts` 每小时第 17 分钟按上海时区执行：发布者归属的资源问题（资源与描述不符、存量临时链接失效及 D40 的资源类型）等待处理方超过 7 天提交给网站管理员，等待报告者超过 14 天自动结案；两个时限到期前 48 小时各提醒一次，提醒以 `reminded_revision` 绑定状态修订号，同一轮只发一次。站方事项不自动结案；link_suspect、link_disputed 和 06 的类型不由本任务扫描。任务使用已有 Redis 锁和逐项状态条件更新，单类每批 200 条、最多 10 轮，重复执行不重复产生处理结果。
 
 数据库迁移必须先于新代码。新事项产生后，回退版本仍须保留事项读取与处理能力；不能把提交重新写回旧队列或删除新表。若回退时暂停新建事项，小喇叭依赖新订阅的阈值隐藏也暂停，需由站方人工处理。
+
+### 链接健康任务与 checker（04／10）
+
+`server/tasks/linkHealthTask.ts` 经 `server/cron.ts` 注册，每小时第 27 分钟（Asia/Shanghai）执行，使用 `noOverlap` 和 55 分钟 `withTaskLock`。普通 suspect 按 health_changed_at 固定 7 天进入 broken，回复不延期；普通 owner_verification disputed 固定 30 天收敛可用。必须重读锁内完整基点和最新有效事项上下文；持久化 machine_user_conflict、坏／缺上下文或过期基点均跳过自动收敛，不能用后来的 unknown／失败检测抹去冲突。
+
+扫描只查询到期 suspect／disputed，每批 200、最多 10 轮，按 ID 前进并记录 `link-health:task-cursor`（7 天 TTL）；跳过目标也推进游标，后续调用能越过永久跳过的前缀，无后续候选时归零。游标 Redis 读写失败使用本进程回退，不保证跨实例保存；单项失败记录固定安全事件并继续。已有任务锁在获取异常时最多尝试 3 次、间隔 500 ms，仍无锁则整轮不执行；业务技术限频 Redis 故障沿用 fail-open，不能混同任务锁语义。健康／报告先锁 link 再锁 case，资源变更按 resource → links → cases；完整数据库冲突重试不包含外部检测或上传。
+
+checker 是独立自托管服务，不连接网站 DB／Redis，也不做全站扫描。可复现资产在 [deployment/link-checker](../../deployment/link-checker/README.md)，[pin.json](../../deployment/link-checker/pin.json) 固定上游 `c74022f4dbbb7c8c39be7da15701763efa2ffffd`、归档／补丁哈希和许可证。构建、合成 HTTP／DNS 回归、localhost 冒烟与 systemd 草案均以该目录说明为准；默认 loopback、零缓存，草案未安装或部署。
+
+网站通过服务端可信 endpoint/Bearer 单次调用 `/v1/check`，总预算 15 秒、响应 8 KiB、拒绝跳转；提供者出站保护在补丁服务的实际 DNS／IPv4／IPv6 dial 层。仅 Quark 获得当前正常／异常真实样本及合成分支的准入，41010／41031／partial 仍是 unknown；UC／百度／彩云／123 仅识别、不主动检查，真实资格待验证。日志和报告只保留安全元数据，不写原始 URL／码／provider body／认证或 cookie。生产构建与整站集成验收范围见[测试指南](../project/testing.md#link-health-first-batch)，不能把合成服务测试当作线上下载可用性保证。
 
 ### 部署
 
@@ -204,6 +214,8 @@ pnpm deploy:rollback
 - `server/tasks/setCleanupTask.ts`
 - `server/tasks/flushPatchViewsTask.ts`
 - `server/tasks/cleanupSubmissionAssetsTask.ts`
+- `server/tasks/caseTimeoutTask.ts`
+- `server/tasks/linkHealthTask.ts`
 - `server/tasks/syncKunPatchTypeTask.ts`
 - `server/tasks/withTaskLock.ts`
 

@@ -35,7 +35,7 @@ service/helper 负责：
 
 `app/api/case` 提供本人相关的提交、列表、详情、补充、发布者结案、重开（须带理由）、复核（`review`）、撤回（`withdraw`）、结案确认（`confirm`）、原发布者提请结案（`propose`）、用户菜单待办数（`pending-count`）与对话图片上传（`image`）；`app/api/admin/case` 提供站方回复、裁决、资源隐藏／恢复／移动、内容处置及单条对话隐藏／取消隐藏（`[id]/message-hide`）。列表另可按 `ownerType=publisher`（可加 `ownerId`）读取仍归发布者的事项，这个视图不进收件箱。输入校验与共享响应位于 `validations/case.ts`、`types/api/case.ts`，所有响应使用 `private, no-store`。用户页为 `/issue`，站方详情为 `/dashboard/case/[id]`。统一收件箱的 `case` 来源只聚合归站方且等待处理方（`open`、`waiting_owner`）的事项，侧栏计数和单项待处理判定使用相同条件；等待报告者的事项在事项中心查看。搜索覆盖编号（`8` 与 `#8` 均可）、类型英文值与中文名、游戏名、资源名、报告者名和对话正文，先搜索全部候选再按等待时间截取。事项行与资源没有关联，资源名只在同一队列的事项所指向的资源里匹配：匹配结果不截断，带进查询的资源 ID 也只随事项数量增长。事项中心的 `GET /api/admin/case` 另收 `searchField`（`all`、`id`、`kind`、`patch`、`resource`、`reporter`、`content`，默认 `all`）：`all` 同时匹配上述各项，其余只用对应一项；`id` 只按编号精确匹配，文字没有结果；限定为资源以外的单项时不查询资源表。`all` 下、按默认排序时，输入正好是当前筛选内某个事项的编号，该事项排在第 1 页首位，分页行跳过它，`total` 不变；选了其他排序就严格按该列排列。列表另收 `sort`（`id`、`status`、`kind`、`reporter`、`owner`、`time`，默认 `time`）与 `order`（`asc`、`desc`，默认 `asc`）：`time` 按 `status_changed_at, id`，`id` 只按编号；`status` 按界面徽标分组（`open` 与 `waiting_owner` 同为等待处理方，其后依次为 `waiting_reporter`、`resolved`、`rejected`、`merged`），`kind` 按 `CASE_KINDS`（即类型筛选）的顺序，词表外的值排在所有分组之后，降序时分组与组内一起反转。Prisma 不能按这种自定义次序排序，服务端对筛选后的行按组 `groupBy` 计数、每组作为一段，把请求的分页窗口拆到它覆盖的各段，各用自己的 `skip`/`take` 读取后按段序拼接，不写原生 SQL。`reporter`、`owner` 按关联用户名排序，`reporter_id`／`owner_id` 为空的行另成一段，不论升降序都在最后；组内与同名时按 `status_changed_at`、`id` 同向排序。收件箱搜索不带范围，也不调整顺序。打开详情会把本人指向该事项的未读通知标为已读，列表的「有新回复」随之消失。
 
-资源与描述不符、临时类型链接失效（`resource_link_failure`）、解压或运行问题（`resource_runtime`）、资源其他问题（`resource_other`）与资源卡片上的求资源或催更（`resource_request × resource`）由发布者处理，现有作者角色大于 2 的官方资源归站方；资源发错条目、条目资料有误（`patch_info`）、条目页的求资源或催更（`resource_request × patch`）、违规举报、其他反馈与站务反馈（目标 `site`，ID 固定为 0）归站方。类型、目标、归属与公开性由服务端校验或推导。同目标同类型的未结事项合并为关注，后来者的说明与图片存为原事项里的 `report` 对话；`patch_info`、条目页的 `resource_request` 与 `other`、站务反馈的去重键带上开启者，每人各一条。发布者归属的问题保留每人每资源每天一次的数据库唯一约束，`CASE_PUBLISHER_KINDS` 的各类型共用；7 天转交与 14 天自动结案也只扫这些类型里归属发布者的事项。关注不改状态修订号。结案「无法复现」须写说明；「不在受理范围」由发布者结案（`resolve`，含 D36 的原发布者）或提请（`propose`）时须带下载、压缩包或投稿指南的链接，网站管理员经 `handle` 结案时只需写明理由（D39）。`patch_info`、`other` 与 `resource_request` 还可用「不采纳」驳回，必须写理由，记为 `rejected`；`resource_request` 的发布者结案同样适用，网站管理员的「已处理」走普通结案（D40）。站方事项等待报告者满 14 天后可手动以「开启者未回应」结案，仍不提醒或自动结案。
+资源与描述不符、解压或运行问题（`resource_runtime`）、资源其他问题（`resource_other`）与资源卡片上的求资源或催更（`resource_request × resource`）由发布者处理，现有作者角色大于 2 的官方资源归站方；资源发错条目、条目资料有误（`patch_info`）、条目页的求资源或催更（`resource_request × patch`）、违规举报、其他反馈与站务反馈（目标 `site`，ID 固定为 0）归站方。类型、目标、归属与公开性由服务端校验或推导。临时 `resource_link_failure` 停止新建，存量仍按原规则处理；`content_violation × resource` 已接入私有站方举报，复用现有举报可见性、隐藏／恢复与结论守卫。同目标同类型的未结事项合并为关注，后来者的说明与图片存为原事项里的 `report` 对话；`patch_info`、条目页的 `resource_request` 与 `other`、站务反馈的去重键带上开启者，每人各一条。发布者归属的问题保留每人每资源每天一次的数据库唯一约束，`CASE_PUBLISHER_KINDS` 的各类型共用；7 天转交与 14 天自动结案也只扫这些类型里归属发布者的事项。关注不改状态修订号。结案「无法复现」须写说明；「不在受理范围」由发布者结案（`resolve`，含 D36 的原发布者）或提请（`propose`）时须带下载、压缩包或投稿指南的链接，网站管理员经 `handle` 结案时只需写明理由（D39）。`patch_info`、`other` 与 `resource_request` 还可用「不采纳」驳回，必须写理由，记为 `rejected`；`resource_request` 的发布者结案同样适用，网站管理员的「已处理」走普通结案（D40）。站方事项等待报告者满 14 天后可手动以「开启者未回应」结案，仍不提醒或自动结案。
 
 超时转交（最近一条 `escalated` 的 `escalation_trigger = timeout`）且 `reopened_count = 0` 的未结公开事项，原发布者也可调用 `resolve` 直接结案（D36）。判断只在服务端 `canCloseAsOriginalPublisher` 里：详情用已校验的最新转交事实计算 `capabilities`（`canResolve` 为真、`canPropose` 为假，`allowedResolutions` 为该类型的处理方结论），`resolve` 与 `propose` 在加锁的事务里重读最近一条转交事件，能力位与接口不会不一致。结论与说明规则同发布者结案；执行者记为 `publisher`，不写 `case_close`、不计入「今日已处理」；`closeCaseInternal` 以 `notifyStaff: false` 发通知，报告者与关注者收到，执行者本人和网站管理员不收。`propose` 对这类事项返回「该问题可以直接结案，无需提请」；复核转来或重开过的转交事项，原发布者调用 `resolve` 得到「该问题只能提请结案，由网站管理员确认后结案」。报告者重开后事项仍归站方，重开通知发给网站管理员与原发布者，原发布者此后只能提请；复核要求事项归属发布者，因此不会出现。
 
@@ -43,11 +43,32 @@ service/helper 负责：
 
 管理员详情提供被举报评论、评价、小喇叭的当前内容摘要（最多 1000 字符）与作者，以及用户举报对象；普通用户响应不带此字段。同条目的其他未结修改意见或其他反馈按同类型列出最多 20 个链接。隐藏对话仅修改该条 `payload.hidden_at`，记录隐藏／取消隐藏日志，不改事项状态、不发通知；系统消息不可隐藏。普通用户的详情裁掉隐藏正文和图片，列表摘要同样显示占位；管理员详情可查看原文。已发出的通知摘要不追溯撤回。
 
-报告者对处理方不匿名：详情与通知显示真实署名。升级后的原发布者仍可读、可回复、可提请结案，由站方采纳后结案；超时转交且未重开过的事项改为由原发布者直接结案（D36，见上文）。资源关注者只看摘要、人数与本人的说明，私有举报关注者只看本人提交确认、状态与结论。违规举报（`content_violation`）的开启者只读到本人写的说明、`role >= 3` 的回复和系统消息（不含 `withdrawn`），看不到其他举报人的说明、署名与报告人数；「我提交的」列表的最新消息摘要按同一条件取：最新一条不是（`withdrawn` 以外的）系统消息时，改取该开启者可见的最新一条，接替后的撤回消息因此也不会出现在接替者的摘要里（D31、D33）。资源问题的开启者仍看全部对话与人数。图片随所在对话的可见性下发，不进徽标。开启者撤回时若还有其他关注者，由最早登记的关注者（订阅按 `created` 升序、再按 `user_id`）接替：条件更新带 id、原 `reporter_id`、状态与修订号，把 `reporter_id` 改为接替者；事项正等待报告者时，状态进入时间重置为此刻并递增修订号，接替者得到完整 14 天，到期前提醒随之重算。撤回者的关注随即删除，此后不再以报告者／订阅者身份收到通知或打开事项，独立具有的发布者或管理员权限保留；系统写入 `withdrawn` 消息（payload `{ actor_type: 'reporter', successor_id }`）并通知接替者（D33）。没有其他关注者时以「开启者撤回」结案。任何回复、结案、资源或内容动作都在服务端重新校验权限。用户举报的「已处理」仅限超级管理员明确确认处置并填写说明：现存账号须先在用户管理完成实际处置，账号已删除时确认删除事实；评论、评价、小喇叭须由实际处置动作结案。小喇叭误判恢复（含目标已不存在时）以「不成立」结案并记为 `rejected`，与其他「不成立」一致。
+报告者对处理方不匿名：详情与通知显示真实署名。升级后的原发布者仍可读、可回复、可提请结案，由站方采纳后结案；超时转交且未重开过的事项改为由原发布者直接结案（D36，见上文）。资源关注者只看摘要、人数与本人的说明，私有举报关注者只看本人提交确认、状态与结论。违规举报（`content_violation`）的开启者只读到本人写的说明、`role >= 3` 的回复和系统消息（不含 `withdrawn`），看不到其他举报人的说明、署名与报告人数；「我提交的」列表的最新消息摘要按同一条件取：最新一条不是（`withdrawn` 以外的）系统消息时，改取该开启者可见的最新一条，接替后的撤回消息因此也不会出现在接替者的摘要里（D31、D33）。公开资源问题的开启者仍看全部对话与人数。图片随所在对话的可见性下发，不进徽标。开启者撤回时若还有其他关注者，由最早登记的关注者（订阅按 `created` 升序、再按 `user_id`）接替：条件更新带 id、原 `reporter_id`、状态与修订号，把 `reporter_id` 改为接替者；事项正等待报告者时，状态进入时间重置为此刻并递增修订号，接替者得到完整 14 天，到期前提醒随之重算。撤回者的关注随即删除，此后不再以报告者／订阅者身份收到通知或打开事项，独立具有的发布者或管理员权限保留；系统写入 `withdrawn` 消息（payload `{ actor_type: 'reporter', successor_id }`）并通知接替者（D33）。没有其他关注者时以「开启者撤回」结案。任何回复、结案、资源或内容动作都在服务端重新校验权限。用户举报的「已处理」仅限超级管理员明确确认处置并填写说明：现存账号须先在用户管理完成实际处置，账号已删除时确认删除事实；评论、评价、小喇叭须由实际处置动作结案。小喇叭误判恢复（含目标已不存在时）以「不成立」结案并记为 `rejected`，与其他「不成立」一致。
 
 旧条目反馈、评论举报、评价举报与小喇叭举报 URL 保留请求和返回兼容，但新提交统一写入事项；不再写旧反馈或 `patch_report`。旧记录、旧待处理记录和历史链接继续可用。小喇叭的三名举报人自动隐藏与误判退款延续模块 02，阈值隐藏不结案，超级管理员全部消息继续禁止新举报。
 
 资源隐藏、删除或换作者不改变事项的历史参与关系（D37）。仍归发布者的事项以 `owner_id` 确定处理人；公开资源事项转交站方后，先按 `created DESC, id DESC` 选出最新一条 `system/escalated`，再校验其 `from_owner_type = publisher`、正整数 `from_owner_id` 及账号仍存在，原发布者身份与 D36 转交原因从同一条事件取得。最新记录缺失或无效时，不回退当前资源作者或更早事件。详情、署名、操作、通知和「待我处理」列表使用同一规则；列表在数据库分页和计数前应用完整身份范围，不截断为 500 条。删除目标显示占位并停用资源跳转及依赖现存资源的动作；删除本身不结案、不改归属或时限。人工结案和提请必须有非空说明，服务端在操作事务内核对目标状态；原有指南、复核及 D36 结案规则继续适用。通知去重并排除执行者，账号删除竞态不得使其他参与人的合法操作失败。
+
+## 链接报告、健康与检测（04／05／10）
+
+本节描述已实现的首批代码；整链 HTTP、生产构建及桌面／390px 浏览器技术验证已通过。用户验收仍在进行，已报告的前端布局问题待修复，尚未生产发布；验证范围见[测试指南](../project/testing.md#link-health-first-batch)。
+
+| 接口 | 实际职责 |
+| --- | --- |
+| `POST /api/patch/resource/link/report` | 当前版本失效报告；登录且最近 30 天获取过该版本，必要时先取得一次机器观察。 |
+| `GET /api/patch/resource/link/health` | 发布者自己的补链列表。 |
+| `POST /api/patch/resource/link/health` | 按当前基点核实可用或确认失效。 |
+| `POST /api/patch/resource/link-check` | 有权管理／检测该链接的发布者或管理员手动检测。 |
+| `GET /api/admin/link-health` | `role >= 3` 的健康列表、主机统计与追踪起始时间。 |
+| `POST /api/admin/link-health/resolve` | `role >= 3` 裁决当前 disputed 链接可用或失效。 |
+
+HTTP 层复用 `link/http.ts` 的登录、角色、CSRF、技术限频与 `private, no-store`；共享输入／响应在 `validations/linkHealth.ts`、`types/api/linkHealth.ts`。`link/service.ts` 独占报告与健康事务，`link/read.ts` 负责列表／失效收件箱读取，`linkHealthProjection.ts` 统一安全事实和能力；`link-check/service.ts` 在事务外调用纯 `checker.ts`，再在链接锁内核对版本、健康基点与当前输入签名。快照按观察时间（无 checkedAt 时按请求时间）保存，迟到完成的旧观察不能覆盖新观察；手动检测的转移记录实际 publisher／staff 执行者，自动补链检测记 system。
+
+报告原因 `deleted`／`access_condition` 权重为 1，确认尝试换网络后的 `unreachable` 为 0.5；下载慢只给指南。每用户、链接版本和证据轮次一条记录，重复有效报告不刷新时间或权重；72 小时累计权重阈值为 3。可信的新鲜删除／取消／过期机器证据直接进入 broken；机器可用与达阈值报告并存时进入 disputed，保留链接可见性并公开两项安全事实。unknown 不作健康裁决。普通疑似、发布者核实后的争议与持久化的 `machine_user_conflict` 使用不同规则；来源升级保留同一事项、证据轮次和健康时钟。
+
+链接事项只能由 `app/api/case/linkHealth.ts` 的 `openLinkCaseInternal(tx, input)`／`closeLinkCases(tx, input)` 在调用者事务中处理。先锁实际链接集合，再按 ID 锁事项；关闭选择器 `resourceIds`、`linkIds`、`targets(linkId, linkVersion)` 互斥，空集合无操作，CAS 胜出者才发结案通知。每链接版本只有一个未结 key，suspect → disputed 沿用同一系统开启、reporter=null 的事项，实际报告者订阅。先选最新存在的 `payload.link_health` 再解码；坏上下文不回退，也不能驱动自动化。通用 resolve／propose／reopen／review／withdraw／confirm／站方结案不能绕过健康服务，旧版本不可重开。删除或补链不顺带关闭资源目标或存量临时事项（D37）；条目反馈的资源引导、结案说明和求资源目标分工继续保留 D38–D40。
+
+统一收件箱的 `broken-link` 只收 touchgal 存储的 broken 链接，排除仍有未结链接事项的目标；列表、计数与单项判定共用选择规则，已处理单项返回 `processed` 与 `item: null`。载荷仅有安全摘要；补链／移除跳既有受权资源编辑页，不另建资源删除入口。
 
 ## 统计读取
 
@@ -318,14 +339,14 @@ service/helper 负责：
 - DB 写入成功后 `finalizeUpload`；DB 写入失败后删除已上传 S3 object；S3 上传失败要释放 consume lock。
 - 审计日志不能记录资源链接、提取码、密码和 hash。
 - 修改资源时必须校验 `resourceId` 与提交的 `patchId` 属于同一条资源，避免过期列表或篡改请求把资源写入后却刷新错误游戏的派生属性和缓存。
-- 管理员从后台修改他人发布的资源时，必须向资源发布者发送 `type: 'system'` 的站内通知，并只列出实际变更的安全字段摘要；字段名和值要使用前端资源表单展示文案。资源链接变更要忽略重建链接记录造成的数据库 ID 变化，并给出字段级安全摘要：数量和存储类型可展示统计，`存储类型`、`大小 (MB 或 GB)` 可展示前后值，`资源链接`、`提取码`、`解压码`、`Hash` 只展示填写状态或“已更新”，不暴露原始链接内容、提取码、密码或 hash。
+- 管理员从后台修改他人发布的资源时，必须向资源发布者发送 `type: 'system'` 的站内通知，并只列出实际变更的安全字段摘要；字段名和值要使用前端资源表单展示文案。资源链接按稳定 ID 比较实际变化，并给出字段级安全摘要：数量和存储类型可展示统计，`存储类型`、`大小 (MB 或 GB)` 可展示前后值，`资源链接`、`提取码`、`解压码`、`Hash` 只展示填写状态或“已更新”，不暴露原始链接内容、提取码、密码或 hash。通知与管理日志通过保存事务内的 `onSaved` 回调写入。
 - 后台资源更新和删除的管理日志要按资源 `section` 区分“游戏资源”和“补丁资源”，不能把所有资源统一写作补丁资源。后台更新接口返回值要保留 `patchName` 等列表上下文，供前端立即更新当前行。
 
 下载链接按需获取和资源级授权：
 
-- 游戏详情资源列表 `/api/patch/resource` 只返回下载链接预览字段：`id`、`storage`、`size`、`hash`、`sortOrder`、`download`。`content`、`code` 和 `password` 不能出现在列表响应、详情页首屏 payload 或公开资源列表缓存中。
+- 游戏详情资源列表 `/api/patch/resource` 只返回下载链接预览字段及安全健康投影，包括 `id`、`version`、`storage`、`size`、`hash`、`sortOrder`、`download`。`content`、`code` 和 `password` 不能出现在列表响应、详情页首屏 payload 或公开资源列表缓存中。
 - `hash` 继续作为公开校验字段返回，主要用于对象存储补丁资源的完整性校验；它不等同于真实下载地址或网盘提取信息。
-- 真实资源链接、提取码和解压码只能通过 `POST /api/patch/resource/download/access` 按单个 link 获取。请求体复用 `patchId`、`resourceId`、`linkId` 三元组校验，返回单个 `link`，包含 `id`、`storage`、`size`、`content`、`code`、`password`、`hash`。
+- 普通用户的真实资源链接、提取码和解压码通过 `POST /api/patch/resource/download/access` 按单个 link 获取。请求体复用 `patchId`、`resourceId`、`linkId` 三元组校验，返回单个 `link`，包含 `id`、`version`、`storage`、`size`、`content`、`code`、`password`、`hash`；凭据与版本来自同一授权事务读取。
 - Access API 必须同时校验 link ID、资源归属、游戏归属、资源 `status = 0`、游戏 `status = 0` 和 `getPatchVisibilityWhere(req)` 返回的可见性条件，不能只按 `linkId` 裸查。
 - Access 和 restore API 的全部响应都必须返回 `Cache-Control: private, no-store`。解析失败返回 400，资源不可访问或不存在返回 404，产品限额和技术限频返回 429，并带 `Retry-After`；并发授权暂时无法完成或服务异常返回 503。
 - Grant 的 Serializable 事务最多尝试 3 次。除 Prisma Client 的 `P2002` / `P2034` 外，Prisma 7 `@prisma/adapter-pg` 直接暴露的 `DriverAdapterError`（`cause.kind = 'TransactionWriteConflict'` 且 PostgreSQL SQLSTATE 为 `40001`）也属于同一类可重试冲突；前两次失败后在事务外分别退避 50 ms、100 ms，再从事务起点重读 grant、event 和额度。第三次仍冲突才映射为安全的 503，其他 adapter、连接或 SQL 错误不得按冲突重试。

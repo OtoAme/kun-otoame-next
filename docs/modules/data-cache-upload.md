@@ -329,15 +329,32 @@ D37 的历史原发布者来自最新转交事件，账号存在性与通知插�
 
 历史脏数据修复使用 `pnpm maintenance:resource-attributes:dry` 预览、`pnpm maintenance:resource-attributes:apply` 应用；脚本同样只按已发布资源重算 `type`、`language` 和 `platform`。`pnpm migration:patch-counters` 安装的 `resource_count` 触发器也只计入已发布资源，并在资源审核状态变化时同步增减。
 
+## 稳定链接与健康数据（04／10）
+
+`patch_resource_link.id` 是稳定槽位，`version` 从 1 开始；仅规范化后的地址 content 改变时递增。排序、大小、存储类型或提取码变化保留版本及下载计数，提取码／存储类型变化仍会使旧输入检测快照失配。发布者和管理员 PUT 都使用 `patchResourceStableUpdateSchema`：提交完整原始 `baseLinks: [{ id, version }]`，保留旧槽位的 ID，新槽位不带 ID。事务先锁资源，再按 ID 锁完整当前链接集合；遗漏、重复、外来、过期或不完整基点均在写入前拒绝，不能只比较提交后保留的子集。
+
+地址替换在同一事务记录旧地址／版本历史、重置健康轮次和核实时间、关闭旧版链接事项；单槽删除先记录历史并结链接事项，再删链接。资源移动保留链接版本，清空旧获取事件的 link_id，不改变历史参与关系。普通发布者可编辑资源元数据并保留未变的 touchgal 槽位，但不能改动、移除、重排或伪造该受保护槽位。
+
+健康字段为 `health`、`evidence_round`、`health_changed_at`、`verified_at`、`content_changed_at`。相关表在 `prisma/schema/patch-resource-link-health.prisma`：
+
+- `patch_resource_link_report` 按链接／版本／轮次／用户唯一，保留安全原因、权重及 ever_counted。
+- `patch_resource_link_check` 每链接一条最新输入观察，保存版本／轮次／健康基点、请求身份、输入签名、观察时间与安全结果；公开响应不返回内部签名、原始 URL／码或 provider body。
+- `patch_resource_link_history` 保留原槽位和 from_version；原 link_id 故意不设链接外键，单槽删除后仍能追溯。健康事件有唯一 health_event_key 和安全转移 JSON，旧地址历史不进公开投影。
+
+生产结构按顺序使用 `migration/production-link-health-preflight-2026-10-09.sql`、`migration/production-link-health-sync-2026-10-09.sql`、`migration/production-link-health-postflight-2026-10-09.sql`，随后执行已有 `pnpm prisma:deploy-safe`；pre/postflight 只读，不能用生产 db push 代替。迁移不猜测历史获取版本，旧 event 的 link_version 保持 null，不能据此获得当前版本报告资格。
+
+上传消费、S3、finalize、缓存和 checker 网络请求在数据库事务外；冲突只重试完整数据库事务，不重复上传或检测。资源变更的审计／通知属于保存事务，提交后的缓存、finalize 或检测失败保留已提交成功并给安全失败结果。补偿删除上传对象前重新检查现存引用，不能删掉仍被其它链接使用的同内容对象。
+
 ## 下载授权与事件
 
 下载访问状态分成资源级 grant 和镜像级 event：
 
 - `patch_resource_access_grant` 只包含 `actor_key`、`resource_id` 和 `expires`，复合主键保证同一 actor/resource 只有一条 grant。新授权从首次获取起固定有效 24 小时；同一授权期内点开其它镜像、重复查看或自动恢复都不延长 `expires`。
-- `patch_resource_access` 保留 actor、资源、镜像、section、storage、cost、expires 和 created 等审计信息；`access_kind` 是唯一新增的事件分类字段。新资源授权写 `resource_grant`，有效授权内首次点开另一镜像写 `link_reveal`，重复查看不新增 event。
+- `patch_resource_access` 保留 actor、资源、镜像、section、storage、cost、expires 和 created 等审计信息；`access_kind` 分类为 `resource_grant`／`link_reveal`，新事件另记录事务内读取的 link_version。link_id 可空且外键为 `onDelete: SetNull`，删除单槽保留资源授权及日／周额度事实。新资源授权写 `resource_grant`，有效授权内首次点开另一镜像写 `link_reveal`，重复查看不新增 event。
 - Grant 写事务使用 PostgreSQL Serializable，最多尝试 3 次。Prisma `P2002` / `P2034` 和 adapter 直接暴露的 `DriverAdapterError` `TransactionWriteConflict` / SQLSTATE `40001` 都从完整事务起点重试；前两次冲突后分别在事务外等待 50 ms、100 ms。不要把等待放进事务 callback，也不要把其他 driver/连接错误误判成序列化冲突。
 - 游客游戏资源的日/周产品额度只统计 `access_kind = 'resource_grant'`。登录用户和补丁资源不进入该产品额度；共享 IP 不承担产品额度。
-- 刷新后的恢复同时只读 grant 和 event，只返回当前 actor 已点过且授权仍有效的镜像。不要为恢复写 event，也不要新增持久化的 `revealed` 字段或 ID 数组；资源列表里的 `revealed` 是从 event 查询派生的 preview 状态。
+- 获取返回的凭据、版本和 event 的 link_version 必须来自同一事务读取。地址更新后旧版事件不代表当前版已获取；有效资源授权内重新获取当前版本只写 link_reveal，不续期、不重复计资源额度。
+- 刷新后的恢复同时只读 grant 和 event，只返回当前 actor 已点过、link_version 与当前链接一致且授权仍有效的镜像；null 或旧版事件不恢复凭据。不要为恢复写 event，也不要新增持久化的 `revealed` 字段或 ID 数组；资源列表里的 `revealed` 是从当前版本 event 查询派生的 preview 状态。
 - Grant/event 读写不改变资源派生属性和公开列表统计，因此不触发 `deletePatchResourceCache`。包含 `obtained` / `revealed` 的 `/api/patch/resource` 和含真实凭据的 access/restore 响应必须 `private, no-store`。
 - Redis 只做每 actor 每分钟 30 次的短时技术限频，不承载日/周产品额度。清除 visitor cookie 会创建新的游客身份；只有首次无有效 cookie 的游客按 IP hash 做技术限频，不能据此给共享 IP 分配或封禁产品额度。
 

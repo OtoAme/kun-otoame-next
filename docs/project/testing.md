@@ -202,6 +202,34 @@ prismaMocks.$transaction.mockImplementation((fn) => fn(prismaMocks._tx))
 
 已存在基础测试：[tests/unit/resource-link.test.ts](../../tests/unit/resource-link.test.ts)。
 
+<a id="link-health-first-batch"></a>
+
+## 04／05／10 首批验收
+
+首批于 2026-10-09 完成全量测试、隔离数据事务、整链 HTTP、生产构建及桌面／390px 浏览器验证，实际范围和证据见[首批验收记录](../../decision-making/7-operations-layer/12-first-batch-acceptance.md)。2026-10-12 用户验收中已报告前端问题，需逐项修复并复验；用户验收与生产发布尚未完成，既有技术验证不能替代这两个环节。
+
+以下是现有产品测试文件；路径均相对于 `tests/unit/`：
+
+| 范围 | 定向文件 |
+| --- | --- |
+| 稳定 ID、完整原基点、版本／删除／事务回滚与安全通知 | `api/patch-resource-update.test.ts`、`api/resource-stable-route.test.ts`、`api/resource-deletion.test.ts`、`api/admin-resource-update-message.test.ts` |
+| 当前版本获取／只读恢复及生产迁移约束 | `api/resource-access-version.test.ts`、`api/resource-access-restore.test.ts`、`link-health-migration.test.ts` |
+| 输入匹配投影、能力、管理员精确读取与失效收件箱 | `link-health-projection.test.ts`、`api/resource-health-read.test.ts`、`api/resource-health-read-routes.test.ts`、`api/link-health-inbox-read.test.ts` |
+| 报告策略、HTTP 权限／CSRF／限频与到期游标 | `link-health-policy.test.ts`、`api/link-health-http.test.ts`、`link-health-task.test.ts` |
+| 链接事项选择器／版本／通知／坏上下文与旧资源事项 | `api/case-link-health.test.ts`、`api/case-feedback-service.test.ts`、`api/case-service.test.ts`、`api/case-route.test.ts`、`case-validation.test.ts` |
+| 纯 checker 请求、严格结果／时间／缓存、8 KiB／15 秒／泄漏边界 | `api/link-check-adapter.test.ts` |
+| 读取快照、两步报告、稳定编辑与唯一受权编辑入口 | `resource-download-card-health.test.tsx`、`resource-download-restore.test.tsx`、`resource-download-late-callback.test.tsx`、`case-entry-buttons.test.tsx`、`resource-edit-stable.test.tsx`、`resource-link-edit-page.test.tsx` |
+| 事项能力、后台健康页与 broken-link 收件箱 | `dashboard-case-link-health.test.tsx`、`dashboard-link-health.test.tsx`、`broken-link-inbox-detail.test.tsx`、`dashboard-inbox-state.test.tsx` |
+
+正式验收须在明确隔离的 PostgreSQL／Redis、源码副本和受控 checker HTTP 下证明：
+
+- 全基点并发编辑、同版本获取与地址替换竞态、单槽 SetNull 保留额度、删除／移动的真实外键锁和整个事务重试、每次胜出只一条通知；D37 资源目标和存量临时事项继续处理。
+- 报告去重／权重／获取资格，重复有效报告不额外检测；当前输入快照按观察顺序保存，码变化或迟到回包不复用旧观察，手动 actor 和当前 caseId 如实返回。同事项来源升级保留轮次／健康时钟，机器冲突与坏上下文跳过自动化，满批跳过前缀后游标仍向后推进。
+- 通过真实受控 HTTP 验证鉴权、限频、超时、跳转、超限响应、安全错误、三个独立公开事实及编辑已提交后的检测失败。外部 provider 不进入单元测试；独立 checker 的固定源构建和合成出站／DNS／日志用例见 [deployment/link-checker](../../deployment/link-checker/README.md)，其它网盘仍无准入。
+- 完成生产构建后，从实际产物验证桌面／390px：两步目标选择、broken 折叠仍可选、当前快照凭据与过期回调、确认取消零写入、最后一条禁移除、隐藏资源的 role 3 精确管理员 DTO、完整旧基点与 409 保留草稿、保存／取消回到可解析的收件箱选中项。不能仅用组件渲染测试代替浏览器验证。
+
+不得连接默认／生产库或以未经授权的真实链接代替受控样本；隔离身份和环境须按验收配置提供。纯文档改动检查路径／链接与 diff，并执行 `pnpm test:docs-contracts`；无需重跑应用全量或构建。
+
 ## 修 bug 的红绿流程
 
 1. 写一个最小失败测试，名称描述用户可见行为。

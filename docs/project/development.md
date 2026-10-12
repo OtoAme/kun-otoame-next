@@ -350,6 +350,16 @@ pnpm typecheck
 4. 如果 GitHub Actions build 需要该变量，更新 `.github/workflows/release.yml`。
 5. 如果只有服务端使用，不要加 `NEXT_PUBLIC_`。
 
+链接检测的服务端配置由 `app/api/patch/resource/link-check/config.ts` 在调用时读取，客户端不能传 endpoint 或 key：
+
+| 变量 | 用途与示例 |
+| --- | --- |
+| `KUN_LINK_CHECKER_ENDPOINT` | 可信 checker origin，如 `http://127.0.0.1:6734`；跨主机使用受限 HTTPS。适配器固定请求 `/v1/check`，拒绝用户信息、查询、片段及跳转，HTTP 只允许精确 loopback。 |
+| `KUN_LINK_CHECKER_API_KEY` | 独立服务 Bearer 密钥，如 `<dedicated-service-key>`，须与 checker 的受权 key 对应；不能使用网站登录 token、用户 cookie 或提取码。 |
+| `KUN_LINK_HEALTH_TRACKING_STARTED_AT` | 可选真实追踪起始时间，如 `<actual-rollout-RFC3339-time>`；未配置或无法解析时管理 DTO 返回 null，不能用构建时间／示例日期伪造上线时间。 |
+
+这些变量仅服务端读取，不加 `NEXT_PUBLIC_`；endpoint 和密钥不进响应或日志，追踪起始时间只通过管理员 DTO 的 trackingStartedAt 展示。空／非法 checker 配置产生安全 unknown／失败摘要，不制造 checkedAt 或可用结论。独立服务的构建、零缓存及 localhost 运行配置见 [deployment/link-checker/README.md](../../deployment/link-checker/README.md)；示例使用占位符。
+
 ## 本地数据库和管理员
 
 初始化数据库后，注册第一个用户，再用 Prisma Studio 或 SQL 把用户 `role` 设为 `4`。角色约定：

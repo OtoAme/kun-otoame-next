@@ -15,6 +15,8 @@ Use this skill for persistence, cache, and upload consistency work.
 
 ## Rules
 
+- Resource links retain stable IDs and require the complete original `baseLinks` for edits; only canonical address changes advance version. Lock resource → actual links → cases for resource mutations, while link health owns link → case without reverse parent locks. Single-link deletion uses access `SetNull` and preserves quota facts; access credentials/event version come from one transaction and restore remains read-only/current-version. See `docs/modules/data-cache-upload.md`.
+- Health reports/checks/history use the dated link-health migration trio and current-input signatures; never invent historical acquisition versions or expose old-address history/signatures publicly. Upload/checker calls stay outside whole-transaction retries, and postcommit failures cannot report an already committed save as rolled back.
 - Historical case participation comes from the selected latest handoff event, without a resource join or 500-row cap (D37); batch list identity facts. Keep account existence and notification foreign keys safe against concurrent account deletion. A PostgreSQL foreign-key failure aborts the transaction: never catch it and continue writing inside that transaction. Preserve resource-before-case locking and keep Redis/image consumption outside any whole-transaction retry.
 
 - Development hot reloads must reuse Prisma Client and its owning pg.Pool together through the existing global runtime. Keep prepared statement naming state with that pool; do not create a new pool beside a cached client. CLI cleanup must close that same pool.
