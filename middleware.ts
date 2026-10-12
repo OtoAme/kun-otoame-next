@@ -21,7 +21,10 @@ export const middleware = async (request: NextRequest) => {
   if (request.nextUrl.pathname.startsWith('/api')) {
     const csrfError = verifyKunCsrf(request)
     if (csrfError) {
-      return NextResponse.json(csrfError, { status: 403 })
+      return NextResponse.json(csrfError, {
+        status: 403,
+        headers: { 'Cache-Control': 'private, no-store' }
+      })
     }
     return NextResponse.next()
   }
