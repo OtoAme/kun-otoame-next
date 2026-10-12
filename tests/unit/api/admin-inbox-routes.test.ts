@@ -94,6 +94,14 @@ describe.each(routes)(
       expect(response.headers.get('Cache-Control')).toBe('private, no-store')
       expect(service).not.toHaveBeenCalled()
     })
+    if (run !== routes[3].run)
+      it('keeps datasource failure private and does not leak the exception', async () => {
+        service.mockRejectedValue(new Error('synthetic private exception'))
+        const response = await run()
+        expect(response.status).toBe(503)
+        expect(response.headers.get('cache-control')).toBe('private, no-store')
+        expect(await response.json()).toBe('事项读取暂时不可用，请稍后再试')
+      })
 
     it('rejects role 2 independently of middleware', async () => {
       mocks.verifyHeaderCookie.mockResolvedValue({ uid: 7, role: 2 })
@@ -123,12 +131,29 @@ describe('admin inbox route parameters', () => {
         'https://example.com/api/admin/inbox?kinds=submission,report&search=%E6%9C%88%E5%85%89&limitPerKind=12&order=kind'
       )
     )
-    expect(mocks.getAdminInbox).toHaveBeenCalledWith({
-      kinds: ['submission', 'report'],
-      search: '月光',
-      order: 'kind',
-      limitPerKind: 12
-    })
+    expect(mocks.getAdminInbox).toHaveBeenCalledWith(
+      {
+        kinds: ['submission', 'report'],
+        search: '月光',
+        order: 'kind',
+        limitPerKind: 12
+      },
+      undefined,
+      { uid: 7, role: 3 }
+    )
+  })
+
+  it('forwards the verified viewer to item projection without accepting request impersonation', async () => {
+    await item(
+      new NextRequest(
+        'https://example.com/api/admin/inbox/item?kind=resource-apply&id=3&uid=999&role=4'
+      )
+    )
+    expect(mocks.getAdminInboxItem).toHaveBeenCalledWith(
+      { kind: 'resource-apply', id: 3 },
+      undefined,
+      { uid: 7, role: 3 }
+    )
   })
 
   it.each(['kind=report&id=1.5', 'kind=creator&id=1', 'kind=feedback&id=0'])(

@@ -6,8 +6,11 @@ import { RefreshCw } from 'lucide-react'
 import { Button } from '~/components/dashboard/ui/button'
 import { Separator } from '~/components/dashboard/ui/separator'
 import { SidebarTrigger } from '~/components/dashboard/ui/sidebar'
-import { INBOX_KIND_LABELS } from '~/constants/dashboard'
-import { INBOX_KINDS, type InboxKind } from '~/types/api/inbox'
+import { LINK_HEALTH_INBOX_KIND_LABELS } from '~/constants/dashboard'
+import {
+  LINK_HEALTH_INBOX_KINDS,
+  type LinkHealthInboxKind
+} from '~/types/api/inbox'
 import { cn } from '~/lib/dashboard/utils'
 
 import { useDashboard } from './DashboardShell'
@@ -15,15 +18,15 @@ import { ThemeToggle } from './ThemeToggle'
 
 // Normalizes the canonical comma-separated kinds param into the deduped set
 // of valid selected kinds (any order, unknown segments ignored).
-const parseSelectedKinds = (raw: string | null): InboxKind[] => {
+const parseSelectedKinds = (raw: string | null): LinkHealthInboxKind[] => {
   if (!raw) {
     return []
   }
-  const selected = new Set<InboxKind>()
+  const selected = new Set<LinkHealthInboxKind>()
   for (const part of raw.split(',')) {
     const kind = part.trim()
-    if ((INBOX_KINDS as readonly string[]).includes(kind)) {
-      selected.add(kind as InboxKind)
+    if ((LINK_HEALTH_INBOX_KINDS as readonly string[]).includes(kind)) {
+      selected.add(kind as LinkHealthInboxKind)
     }
   }
   return Array.from(selected)
@@ -52,7 +55,7 @@ export function DashboardHeader() {
               pathname.startsWith('/dashboard/case')
               ? '事项中心'
               : selectedKinds.length === 1
-                ? INBOX_KIND_LABELS[selectedKinds[0]]
+                ? LINK_HEALTH_INBOX_KIND_LABELS[selectedKinds[0]]
                 : '待审事项'
 
   // The header is plain normal-flow content. On mobile it scrolls away with

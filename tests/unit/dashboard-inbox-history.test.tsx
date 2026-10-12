@@ -10,9 +10,9 @@ import {
 import { formatChinaDateTime } from '~/utils/fixedTimezoneDate'
 import type { AdminSubmissionRow } from '~/app/api/admin/patch-submission/service'
 import type {
-  InboxItem,
-  InboxItemResponse,
-  InboxListResponse
+  LinkHealthInboxItem,
+  LinkHealthInboxItemResponse,
+  LinkHealthInboxListResponse
 } from '~/types/api/inbox'
 import type { PatchSubmissionStatus } from '~/types/api/patchSubmission'
 
@@ -47,7 +47,7 @@ interface HistoryResponse {
   total: number
 }
 
-type Response = InboxListResponse | InboxItemResponse | HistoryResponse | string
+type Response = LinkHealthInboxListResponse | LinkHealthInboxItemResponse | HistoryResponse | string
 
 type Request = {
   path: string
@@ -56,7 +56,7 @@ type Request = {
   reject: (error: Error) => void
 }
 
-const submission = (id: number, title = `投稿 ${id}`): InboxItem => ({
+const submission = (id: number, title = `投稿 ${id}`): LinkHealthInboxItem => ({
   key: `submission:${id}`,
   kind: 'submission',
   id,
@@ -82,27 +82,29 @@ const submission = (id: number, title = `投稿 ${id}`): InboxItem => ({
 })
 
 const queue = (
-  items: InboxItem[],
+  items: LinkHealthInboxItem[],
   total = items.length
-): InboxListResponse => ({
+): LinkHealthInboxListResponse => ({
   items,
   totals: {
     submission: total,
     'resource-apply': 0,
     feedback: 0,
     report: 0,
-    case: 0
+case: 0,
+    'broken-link': 0
   },
   truncated: {
     submission: total > items.length,
     'resource-apply': false,
     feedback: false,
     report: false,
-    case: false
+case: false,
+    'broken-link': false
   }
 })
 
-const processedItem = (item: InboxItem): InboxItemResponse => ({
+const processedItem = (item: LinkHealthInboxItem): LinkHealthInboxItemResponse => ({
   state: 'processed',
   item
 })
@@ -126,7 +128,7 @@ const historyRow = (
   created: '2026-09-01T00:00:00.000Z'
 })
 
-const historyItem = (row: AdminSubmissionRow): InboxItem => ({
+const historyItem = (row: AdminSubmissionRow): LinkHealthInboxItem => ({
   key: `submission:${row.id}`,
   kind: 'submission',
   id: row.id,
@@ -367,14 +369,16 @@ describe('dashboard inbox submission history mode', () => {
       'resource-apply': 0,
       feedback: 0,
       report: 0,
-      case: 0
+case: 0,
+      'broken-link': 0
     })
     expect(current.truncated).toEqual({
       submission: false,
       'resource-apply': false,
       feedback: false,
       report: false,
-      case: false
+case: false,
+      'broken-link': false
     })
     expect(current.listLoading).toBe(false)
     expect(mocks.refreshCounts).not.toHaveBeenCalled()
@@ -935,14 +939,16 @@ describe('dashboard inbox submission history mode', () => {
             'resource-apply': 0,
             feedback: 0,
             report: 0,
-            case: 0
+            case: 0,
+            'broken-link': 0
           },
           truncated: {
             submission: false,
             'resource-apply': false,
             feedback: false,
             report: false,
-            case: false
+            case: false,
+            'broken-link': false
           }
         })
       )
@@ -969,14 +975,16 @@ describe('dashboard inbox submission history mode', () => {
             'resource-apply': 0,
             feedback: 0,
             report: 0,
-            case: 0
+case: 0,
+            'broken-link': 0
           },
           truncated: {
             submission: false,
             'resource-apply': false,
             feedback: false,
             report: false,
-            case: false
+            case: false,
+            'broken-link': false
           }
         })
       )
@@ -997,14 +1005,16 @@ describe('dashboard inbox submission history mode', () => {
             'resource-apply': 0,
             feedback: 0,
             report: 0,
-            case: 0
+case: 0,
+            'broken-link': 0
           },
           truncated: {
             submission: false,
             'resource-apply': false,
             feedback: false,
             report: false,
-            case: false
+            case: false,
+            'broken-link': false
           }
         })
       )
@@ -1031,14 +1041,16 @@ describe('dashboard inbox submission history mode', () => {
           'resource-apply': 0,
           feedback: 0,
           report: 0,
-          case: 0
+case: 0,
+          'broken-link': 0
         },
         truncated: {
           submission: false,
           'resource-apply': false,
           feedback: false,
           report: false,
-          case: false
+case: false,
+          'broken-link': false
         },
         setSubmissionPage
       }
@@ -1070,14 +1082,16 @@ describe('dashboard inbox submission history mode', () => {
             'resource-apply': 0,
             feedback: 0,
             report: 0,
-            case: 0
+case: 0,
+            'broken-link': 0
           },
           truncated: {
             submission: false,
             'resource-apply': false,
             feedback: false,
             report: false,
-            case: false
+            case: false,
+            'broken-link': false
           }
         })
       )

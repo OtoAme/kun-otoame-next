@@ -1,12 +1,13 @@
-import type { InboxItem } from '~/types/api/inbox'
+import type { LinkHealthInboxItem } from '~/types/api/inbox'
 
 import { CaseInboxDetail } from '~/components/dashboard/case/CaseInboxDetail'
+import { BrokenLinkInboxDetail } from './BrokenLinkInboxDetail'
 import { LegacyInboxDetail } from './LegacyInboxDetail'
 import { ResourceInboxDetail } from './ResourceInboxDetail'
 import { SubmissionInboxDetail } from './SubmissionInboxDetail'
 
 export interface InboxDetailProps {
-  item: InboxItem
+  item: LinkHealthInboxItem
   reviewerId: number
   reviewerRole: number
   onProcessed: (key: string) => void
@@ -44,5 +45,7 @@ export function InboxDetail({
       return <LegacyInboxDetail item={item} />
     case 'case':
       return <CaseInboxDetail item={item} onProcessed={onProcessed} />
+    case 'broken-link':
+      return <BrokenLinkInboxDetail item={item} onProcessed={onProcessed} />
   }
 }

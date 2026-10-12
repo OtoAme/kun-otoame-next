@@ -6,13 +6,28 @@ import {
 } from '~/validations/inbox'
 
 describe('inbox query validation', () => {
-  it('defaults to all five sources and the oldest 50 candidates', () => {
+  it('defaults to all six sources and the oldest 50 candidates', () => {
     expect(adminInboxQuerySchema.parse({})).toEqual({
-      kinds: ['submission', 'resource-apply', 'feedback', 'report', 'case'],
+      kinds: [
+        'submission',
+        'resource-apply',
+        'feedback',
+        'report',
+        'case',
+        'broken-link'
+      ],
       search: '',
       order: 'waiting',
       limitPerKind: 50
     })
+  })
+  it('accepts the runtime broken-link source in list and item requests', () => {
+    expect(adminInboxQuerySchema.parse({ kinds: 'broken-link' }).kinds).toEqual(
+      ['broken-link']
+    )
+    expect(
+      adminInboxItemSchema.parse({ kind: 'broken-link', id: '123' })
+    ).toEqual({ kind: 'broken-link', id: 123 })
   })
 
   it('decodes one comma-separated source parameter and trims search', () => {

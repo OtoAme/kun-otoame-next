@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { INBOX_KINDS } from '~/types/api/inbox'
+import { INBOX_KINDS, LINK_HEALTH_INBOX_KINDS } from '~/types/api/inbox'
 
 export const adminInboxKindSchema = z.enum(INBOX_KINDS)
 
@@ -29,4 +29,18 @@ export const adminInboxQuerySchema = z.object({
 export const adminInboxItemSchema = z.object({
   kind: adminInboxKindSchema,
   id: adminInboxIdSchema
+})
+
+export const adminLinkHealthInboxKindSchema = z.enum(LINK_HEALTH_INBOX_KINDS)
+
+export const adminLinkHealthInboxQuerySchema = adminInboxQuerySchema.extend({
+  kinds: z
+    .string()
+    .transform((value) => [...new Set(value.split(','))])
+    .pipe(z.array(adminLinkHealthInboxKindSchema).min(1))
+    .default(LINK_HEALTH_INBOX_KINDS.join(','))
+})
+
+export const adminLinkHealthInboxItemSchema = adminInboxItemSchema.extend({
+  kind: adminLinkHealthInboxKindSchema
 })

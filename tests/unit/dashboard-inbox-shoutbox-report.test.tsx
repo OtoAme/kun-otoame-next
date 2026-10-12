@@ -24,9 +24,9 @@ vi.mock('~/components/dashboard/ui/separator', () => ({
 }))
 
 import { LegacyInboxDetail } from '~/components/dashboard/inbox/LegacyInboxDetail'
-import type { InboxItem } from '~/types/api/inbox'
+import type { LinkHealthInboxItem } from '~/types/api/inbox'
 
-type LegacyReportItem = Extract<InboxItem, { kind: 'feedback' | 'report' }>
+type LegacyReportItem = Extract<LinkHealthInboxItem, { kind: 'feedback' | 'report' }>
 
 const user = (id: number, name: string) => ({ id, name, avatar: '' })
 

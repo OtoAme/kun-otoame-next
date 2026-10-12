@@ -311,7 +311,7 @@ function UnifiedInbox({ reviewerId, reviewerRole }: DashboardInboxProps) {
       )
     } else if (
       data.state === 'processed' &&
-      !(inbox.historyMode && data.item.kind === 'submission')
+      !(inbox.historyMode && data.item?.kind === 'submission')
     ) {
       detailBody = (
         <StatePanel>
@@ -338,7 +338,7 @@ function UnifiedInbox({ reviewerId, reviewerRole }: DashboardInboxProps) {
           </div>
         </StatePanel>
       )
-    } else {
+    } else if (data.item !== null) {
       detailBody = (
         <InboxDetail
           key={data.item.key}

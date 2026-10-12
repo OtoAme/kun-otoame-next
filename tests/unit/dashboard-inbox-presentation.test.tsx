@@ -3,7 +3,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { JSDOM } from 'jsdom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { UseInboxReturn } from '~/hooks/dashboard/useInbox'
-import type { InboxItem } from '~/types/api/inbox'
+import type { LinkHealthInboxItem } from '~/types/api/inbox'
 
 const mocks = vi.hoisted(() => ({
   useInbox: vi.fn(),
@@ -158,7 +158,7 @@ vi.mock('~/components/dashboard/ui/dialog', async () => {
   }
 })
 
-function MockWritableDetail({ item }: { item: InboxItem }) {
+function MockWritableDetail({ item }: { item: LinkHealthInboxItem }) {
   return (
     <section aria-label={`${item.kind}详情`}>
       <p>{item.title}的完整详情</p>
@@ -186,7 +186,7 @@ vi.mock('~/components/dashboard/inbox/ResourceInboxDetail', () => ({
   ResourceInboxDetail: MockWritableDetail
 }))
 vi.mock('~/components/dashboard/inbox/LegacyInboxDetail', () => ({
-  LegacyInboxDetail: ({ item }: { item: InboxItem }) => (
+  LegacyInboxDetail: ({ item }: { item: LinkHealthInboxItem }) => (
     <section aria-label={`${item.kind}详情`}>
       <p>{item.title}的只读详情</p>
       <a href={item.targetHref}>旧后台处理</a>
@@ -201,7 +201,7 @@ import type { CaseDetail } from '~/types/api/case'
 const submission = (
   id: number,
   waitingSeconds = 60
-): Extract<InboxItem, { kind: 'submission' }> => ({
+): Extract<LinkHealthInboxItem, { kind: 'submission' }> => ({
   key: `submission:${id}`,
   kind: 'submission',
   id,
@@ -225,7 +225,7 @@ const submission = (
     created: '2026-09-01T00:00:00.000Z'
   }
 })
-const feedback: Extract<InboxItem, { kind: 'feedback' }> = {
+const feedback: Extract<LinkHealthInboxItem, { kind: 'feedback' }> = {
   key: 'feedback:8',
   kind: 'feedback',
   id: 8,
@@ -248,7 +248,7 @@ const feedback: Extract<InboxItem, { kind: 'feedback' }> = {
   }
 }
 
-const caseItem: Extract<InboxItem, { kind: 'case' }> = {
+const caseItem: Extract<LinkHealthInboxItem, { kind: 'case' }> = {
   key: 'case:12',
   kind: 'case',
   id: 12,
@@ -320,14 +320,16 @@ describe('dashboard inbox presentation', () => {
         'resource-apply': 0,
         feedback: 0,
         report: 0,
-        case: 0
+        case: 0,
+        'broken-link': 0
       },
       truncated: {
         submission: false,
         'resource-apply': false,
         feedback: false,
         report: false,
-        case: false
+        case: false,
+        'broken-link': false
       },
       listLoading: false,
       listError: '',
@@ -379,7 +381,7 @@ describe('dashboard inbox presentation', () => {
   }
   const select = async (
     // Widened past the submission default so any source can be selected.
-    selected: InboxItem = submission(1),
+    selected: LinkHealthInboxItem = submission(1),
     overrides: Partial<UseInboxReturn> = {}
   ) => {
     await render({
@@ -536,14 +538,16 @@ describe('dashboard inbox presentation', () => {
         'resource-apply': 0,
         feedback: 999,
         report: 0,
-        case: 0
+        case: 0,
+        'broken-link': 0
       },
       truncated: {
         submission: true,
         'resource-apply': false,
         feedback: true,
         report: false,
-        case: false
+        case: false,
+        'broken-link': false
       }
     })
     expect(rowKeys()).toEqual(['submission:3', 'submission:1', 'submission:2'])
@@ -884,5 +888,66 @@ describe('dashboard inbox presentation', () => {
       )?.value
     ).toBe('作者搜索')
     expect(dom.window.document.querySelector('[data-inbox-action]')).toBeNull()
+  })
+  it('renders the activated broken-link source end to end: filter, route and detail', async () => {
+    const brokenItem: LinkHealthInboxItem = {
+      key: 'broken-link:21',
+      kind: 'broken-link',
+      id: 21,
+      title: '资源X 的站内资源盘链接已失效',
+      subtitle: '条目A',
+      actor: null,
+      waitingFrom: '2026-10-08T00:00:00.000Z',
+      waitingSeconds: 172800,
+      targetHref: '/admin/resource/link/7?linkId=21',
+      badges: ['已失效'],
+      readOnly: false,
+      payload: {
+        link: {
+          patchId: 3,
+          resourceId: 7,
+          linkId: 21,
+          version: 2,
+          evidenceRound: 1,
+          health: 'broken',
+          healthChangedAt: '2026-10-08T00:00:00.000Z',
+          verifiedAt: null,
+          lastRelinkAt: null,
+          ownerType: 'staff',
+          disputeSource: null,
+          recentReportCount: 4,
+          latestCheck: null,
+          capabilities: {
+            ownerActions: [],
+            resolveActions: [],
+            canCheck: false,
+            canEdit: true
+          },
+          patch: { uniqueId: 'abc12345', name: '条目A' },
+          resource: { name: '资源X', section: 'galgame' },
+          storage: 'touchgal',
+          size: '2 GB',
+          hostname: 'pan.touchgal.example.com',
+          brokenForSeconds: 172800,
+          caseId: null
+        },
+        actions: { relink: true, remove: true }
+      }
+    } as never
+    await select(brokenItem, { items: [brokenItem], kinds: ['broken-link'] })
+
+    // 来源筛选里的新 kind 与其标签出现（激活后不再被过滤掉）
+    expect(bodyText()).toContain('失效链接待办')
+    expect(
+      dom.window.document.querySelector('input[aria-label="失效链接待办"]')
+    ).not.toBeNull()
+    // 详情路由到脱敏的 broken-link 面板，动作只跳既有受权编辑路径
+    expect(bodyText()).toContain('pan.touchgal.example.com')
+    expect(bodyText()).toContain('已失效 2 天')
+    expect(
+      [...dom.window.document.querySelectorAll('a')]
+        .find((anchor) => anchor.textContent?.includes('去补链'))
+        ?.getAttribute('href')
+    ).toBe('/admin/resource/link/7?linkId=21')
   })
 })

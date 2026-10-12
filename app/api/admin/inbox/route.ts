@@ -3,7 +3,7 @@ import { verifyHeaderCookie } from '~/middleware/_verifyHeaderCookie'
 import { kunParseGetQuery } from '~/app/api/utils/parseQuery'
 import { adminInboxQuerySchema } from '~/validations/inbox'
 import { getAdminInbox } from './service'
-import { inboxJson } from './response'
+import { inboxJson, inboxReadJson } from './response'
 
 export const GET = async (req: NextRequest) => {
   const payload = await verifyHeaderCookie(req)
@@ -13,5 +13,10 @@ export const GET = async (req: NextRequest) => {
   const input = kunParseGetQuery(req, adminInboxQuerySchema)
   if (typeof input === 'string') return inboxJson(input)
 
-  return inboxJson(await getAdminInbox(input))
+  return inboxReadJson(() =>
+    getAdminInbox(input, undefined, {
+      uid: payload.uid,
+      role: payload.role
+    })
+  )
 }

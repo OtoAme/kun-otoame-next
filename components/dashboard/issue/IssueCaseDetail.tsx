@@ -87,6 +87,8 @@ import type {
 } from '~/types/api/case'
 
 import { CaseMessageText } from '~/components/dashboard/case/CaseMessageText'
+import { LinkHealthCaseActions } from '~/components/dashboard/case/LinkHealthCaseActions'
+import { readCaseLinkHealth } from '~/components/case/linkHealthActionFlow'
 
 import { IssueImageField } from './IssueImageField'
 
@@ -786,6 +788,15 @@ export function IssueCaseDetail({ caseId, onChanged }: IssueCaseDetailProps) {
               </Link>
             </Button>
           ) : null}
+          {(() => {
+            const linkHealth = readCaseLinkHealth(detail)
+            return linkHealth ? (
+              <LinkHealthCaseActions
+                linkHealth={linkHealth}
+                onChanged={() => void load()}
+              />
+            ) : null
+          })()}
         </header>
 
         {detail.viewerSubscription?.submitted ? (

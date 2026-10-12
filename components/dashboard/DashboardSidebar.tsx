@@ -19,6 +19,7 @@ import {
   Merge,
   MessageSquare,
   Package,
+  Unlink,
   UserRound,
   Users,
   type LucideIcon
@@ -48,12 +49,12 @@ import {
 } from '~/components/dashboard/ui/dropdown-menu'
 import {
   DASHBOARD_LEGACY_LINKS,
-  INBOX_KIND_LABELS
+  LINK_HEALTH_INBOX_KIND_LABELS
 } from '~/constants/dashboard'
 import {
-  INBOX_KINDS,
-  type InboxCounts,
-  type InboxKind
+  LINK_HEALTH_INBOX_KINDS,
+  type LinkHealthInboxCounts,
+  type LinkHealthInboxKind
 } from '~/types/api/inbox'
 import { kunFetchPost } from '~/utils/kunFetch'
 import { useUserStore } from '~/store/userStore'
@@ -63,34 +64,35 @@ import { cn } from '~/lib/dashboard/utils'
 
 import { useDashboard, type DashboardCurrentUser } from './DashboardShell'
 
-const KIND_ICONS: Record<InboxKind, LucideIcon> = {
+const KIND_ICONS: Record<LinkHealthInboxKind, LucideIcon> = {
   submission: FileText,
   'resource-apply': Package,
   feedback: MessageSquare,
   report: Flag,
-  case: ClipboardList
+  case: ClipboardList,
+  'broken-link': Unlink
 }
 
 // The inbox only queues cases waiting on the handler (D23); the case center
 // holds every other view of them, so this one source row links there.
-const KIND_HREFS: Partial<Record<InboxKind, string>> = {
+const KIND_HREFS: Partial<Record<LinkHealthInboxKind, string>> = {
   case: '/dashboard/case'
 }
 
-const getTotalPending = (counts: InboxCounts) =>
-  INBOX_KINDS.reduce((sum, kind) => sum + counts.pending[kind], 0)
+const getTotalPending = (counts: LinkHealthInboxCounts) =>
+  LINK_HEALTH_INBOX_KINDS.reduce((sum, kind) => sum + counts.pending[kind], 0)
 
 // Normalizes the canonical comma-separated kinds param into the deduped set
 // of valid selected kinds (any order, unknown segments ignored).
-const parseSelectedKinds = (raw: string | null): InboxKind[] => {
+const parseSelectedKinds = (raw: string | null): LinkHealthInboxKind[] => {
   if (!raw) {
     return []
   }
-  const selected = new Set<InboxKind>()
+  const selected = new Set<LinkHealthInboxKind>()
   for (const part of raw.split(',')) {
     const kind = part.trim()
-    if ((INBOX_KINDS as readonly string[]).includes(kind)) {
-      selected.add(kind as InboxKind)
+    if ((LINK_HEALTH_INBOX_KINDS as readonly string[]).includes(kind)) {
+      selected.add(kind as LinkHealthInboxKind)
     }
   }
   return Array.from(selected)
@@ -113,12 +115,14 @@ export function DashboardSidebar({ currentUser }: DashboardSidebarProps) {
   // canonical URL explicitly selects all four kinds. A partial multi-source
   // selection marks neither All nor any single source row.
   const isAllActive =
-    isInboxRoot && (!kindsParam || selectedKinds.length === INBOX_KINDS.length)
+    isInboxRoot &&
+    (!kindsParam || selectedKinds.length === LINK_HEALTH_INBOX_KINDS.length)
   const isUserSectionActive =
     pathname === '/dashboard/user' || pathname.startsWith('/dashboard/user/')
   const isShoutboxActive = pathname.startsWith('/dashboard/shoutbox')
   const isCaseCenterActive = pathname.startsWith('/dashboard/case')
   const isCompanyMergesActive = pathname.startsWith('/dashboard/company-merges')
+  const isLinkHealthActive = pathname.startsWith('/dashboard/link-health')
   const userSectionNeedsSuperAdmin = currentUser.role < 4
   const closeMobileSidebar = () => setOpenMobile(false)
 
@@ -174,7 +178,7 @@ export function DashboardSidebar({ currentUser }: DashboardSidebarProps) {
                   <SidebarMenuBadge>{getTotalPending(counts)}</SidebarMenuBadge>
                 )}
               </SidebarMenuItem>
-              {INBOX_KINDS.map((kind) => {
+              {LINK_HEALTH_INBOX_KINDS.map((kind) => {
                 const Icon = KIND_ICONS[kind]
                 const isActive =
                   kind === 'case'
@@ -195,7 +199,7 @@ export function DashboardSidebar({ currentUser }: DashboardSidebarProps) {
                         }
                       >
                         <Icon />
-                        <span>{INBOX_KIND_LABELS[kind]}</span>
+                        <span>{LINK_HEALTH_INBOX_KIND_LABELS[kind]}</span>
                       </Link>
                     </SidebarMenuButton>
                     {counts && (
@@ -219,6 +223,20 @@ export function DashboardSidebar({ currentUser }: DashboardSidebarProps) {
           <SidebarGroupLabel>管理</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  asChild
+                  isActive={isLinkHealthActive}
+                  onClick={closeMobileSidebar}
+                >
+                  <Link href="/dashboard/link-health" title="已失效链接">
+                    <Unlink />
+                    <span className="shrink-0 whitespace-nowrap">
+                      已失效链接
+                    </span>
+                  </Link>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
               <SidebarMenuItem>
                 <SidebarMenuButton
                   asChild

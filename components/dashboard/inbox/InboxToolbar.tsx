@@ -24,7 +24,7 @@ import {
   SelectTrigger,
   SelectValue
 } from '~/components/dashboard/ui/select'
-import { INBOX_KIND_LABELS } from '~/constants/dashboard'
+import { LINK_HEALTH_INBOX_KIND_LABELS } from '~/constants/dashboard'
 import { PATCH_SUBMISSION_LIST_QUERY_MAX_LENGTH } from '~/constants/patchSubmission'
 import {
   INBOX_SEARCH_MAX,
@@ -33,7 +33,7 @@ import {
   type UseInboxReturn
 } from '~/hooks/dashboard/useInbox'
 import { cn } from '~/lib/dashboard/utils'
-import { INBOX_KINDS, type InboxOrder } from '~/types/api/inbox'
+import { LINK_HEALTH_INBOX_KINDS, type InboxOrder } from '~/types/api/inbox'
 import type { PatchSubmissionStatus } from '~/types/api/patchSubmission'
 
 export interface InboxToolbarProps {
@@ -136,7 +136,7 @@ export function InboxToolbar({
 
       <fieldset className="flex flex-wrap items-center gap-x-3 gap-y-1">
         <legend className="sr-only">来源筛选</legend>
-        {INBOX_KINDS.map((kind) => {
+        {LINK_HEALTH_INBOX_KINDS.map((kind) => {
           const checked = kinds.includes(kind)
           const isLastChecked = checked && kinds.length === 1
           return (
@@ -149,9 +149,9 @@ export function InboxToolbar({
                 checked={checked}
                 disabled={isLastChecked}
                 onCheckedChange={(value) => toggleKind(kind, value === true)}
-                aria-label={INBOX_KIND_LABELS[kind]}
+                aria-label={LINK_HEALTH_INBOX_KIND_LABELS[kind]}
               />
-              {INBOX_KIND_LABELS[kind]}
+              {LINK_HEALTH_INBOX_KIND_LABELS[kind]}
             </label>
           )
         })}

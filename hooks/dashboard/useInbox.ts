@@ -11,12 +11,12 @@ import {
   PATCH_SUBMISSION_LIST_PAGE_MAX,
   PATCH_SUBMISSION_LIST_QUERY_MAX_LENGTH
 } from '~/constants/patchSubmission'
-import { INBOX_KINDS } from '~/types/api/inbox'
+import { LINK_HEALTH_INBOX_KINDS } from '~/types/api/inbox'
 import type {
-  InboxItem,
-  InboxItemResponse,
-  InboxKind,
-  InboxListResponse,
+  LinkHealthInboxItem,
+  LinkHealthInboxItemResponse,
+  LinkHealthInboxKind,
+  LinkHealthInboxListResponse,
   InboxOrder
 } from '~/types/api/inbox'
 import {
@@ -55,7 +55,7 @@ export const INBOX_SUBMISSION_STATUS_LABELS: Record<
 }
 
 export interface InboxSelection {
-  kind: InboxKind
+  kind: LinkHealthInboxKind
   id: number
 }
 
@@ -67,7 +67,7 @@ export type InboxSelectionParse =
 /** Fetched detail keyed by the exact request key so stale content is never rendered under a new selection. */
 export interface InboxItemState {
   key: string
-  data: InboxItemResponse
+  data: LinkHealthInboxItemResponse
 }
 
 export interface UseInboxOptions {
@@ -76,7 +76,7 @@ export interface UseInboxOptions {
 }
 
 export interface UseInboxReturn {
-  kinds: InboxKind[]
+  kinds: LinkHealthInboxKind[]
   search: string
   order: InboxOrder
   /** True only when the submission source stands alone; the status filter shows then. */
@@ -90,9 +90,9 @@ export interface UseInboxReturn {
   selectionStatus: InboxSelectionParse['status']
   selection: InboxSelection | null
   selectedKey: string | null
-  items: InboxItem[]
-  totals: Record<InboxKind, number> | null
-  truncated: Record<InboxKind, boolean> | null
+  items: LinkHealthInboxItem[]
+  totals: Record<LinkHealthInboxKind, number> | null
+  truncated: Record<LinkHealthInboxKind, boolean> | null
   /** True while the current query has no matching data yet, or a fetch is in flight. */
   listLoading: boolean
   /** Error belonging to the current query only; '' otherwise. */
@@ -103,10 +103,10 @@ export interface UseInboxReturn {
   itemError: string
   refreshing: boolean
   /** Live mirror of the actually displayed (current-query) rows for keyboard cursor / neighbor math. */
-  itemsRef: React.MutableRefObject<InboxItem[]>
-  selectItem: (item: InboxItem) => void
+  itemsRef: React.MutableRefObject<LinkHealthInboxItem[]>
+  selectItem: (item: LinkHealthInboxItem) => void
   clearSelection: () => void
-  toggleKind: (kind: InboxKind, checked: boolean) => void
+  toggleKind: (kind: LinkHealthInboxKind, checked: boolean) => void
   setOrder: (order: InboxOrder) => void
   /** Switching status always resets the page and clears the selection. */
   setSubmissionStatus: (status: PatchSubmissionStatus) => void
@@ -121,8 +121,8 @@ export interface UseInboxReturn {
   onStateChanged: (key: string) => Promise<void>
 }
 
-const KIND_SET: ReadonlySet<string> = new Set(INBOX_KINDS)
-const EMPTY_ITEMS: InboxItem[] = []
+const KIND_SET: ReadonlySet<string> = new Set(LINK_HEALTH_INBOX_KINDS)
+const EMPTY_ITEMS: LinkHealthInboxItem[] = []
 const ID_PATTERN = /^[1-9]\d*$/
 
 function parseId(raw: string): number | null {
@@ -132,15 +132,15 @@ function parseId(raw: string): number | null {
   return id
 }
 
-function parseKinds(raw: string | null): InboxKind[] {
-  if (!raw) return [...INBOX_KINDS]
+function parseKinds(raw: string | null): LinkHealthInboxKind[] {
+  if (!raw) return [...LINK_HEALTH_INBOX_KINDS]
   const valid = raw
     .split(',')
     .map((s) => s.trim())
-    .filter((s): s is InboxKind => KIND_SET.has(s))
+    .filter((s): s is LinkHealthInboxKind => KIND_SET.has(s))
   const unique = Array.from(new Set(valid))
-  if (unique.length === 0) return [...INBOX_KINDS]
-  return INBOX_KINDS.filter((k) => unique.includes(k))
+  if (unique.length === 0) return [...LINK_HEALTH_INBOX_KINDS]
+  return LINK_HEALTH_INBOX_KINDS.filter((k) => unique.includes(k))
 }
 
 function parseSearch(raw: string | null): string {
@@ -172,7 +172,7 @@ function parseSubmissionPage(raw: string | null): number {
   return page
 }
 
-function parseSelection(
+export function parseSelection(
   kindRaw: string | null,
   idRaw: string | null
 ): InboxSelectionParse {
@@ -180,7 +180,10 @@ function parseSelection(
   if (!kindRaw || !idRaw || !KIND_SET.has(kindRaw)) return { status: 'invalid' }
   const id = parseId(idRaw)
   if (id === null) return { status: 'invalid' }
-  return { status: 'ok', selection: { kind: kindRaw as InboxKind, id } }
+  return {
+    status: 'ok',
+    selection: { kind: kindRaw as LinkHealthInboxKind, id }
+  }
 }
 
 function parseKey(key: string): InboxSelection | null {
@@ -190,7 +193,7 @@ function parseKey(key: string): InboxSelection | null {
   if (!KIND_SET.has(kind)) return null
   const id = parseId(key.slice(idx + 1))
   if (id === null) return null
-  return { kind: kind as InboxKind, id }
+  return { kind: kind as LinkHealthInboxKind, id }
 }
 
 export function selectionToKey(sel: InboxSelection): string {
@@ -208,7 +211,7 @@ interface AdminSubmissionHistoryResponse {
  * record, not a read-only legacy pointer: readOnly stays false and the payload
  * carries the actual status so list and detail can render it directly.
  */
-function historyRowToInboxItem(row: AdminSubmissionRow): InboxItem {
+function historyRowToInboxItem(row: AdminSubmissionRow): LinkHealthInboxItem {
   return {
     key: `submission:${row.id}`,
     kind: 'submission',
@@ -227,7 +230,7 @@ function historyRowToInboxItem(row: AdminSubmissionRow): InboxItem {
 
 interface ListState {
   queryKey: string
-  data: InboxListResponse
+  data: LinkHealthInboxListResponse
 }
 
 export function useInbox({ refreshCounts }: UseInboxOptions): UseInboxReturn {
@@ -335,7 +338,7 @@ export function useInbox({ refreshCounts }: UseInboxOptions): UseInboxReturn {
   }
   const selectedKeyRef = React.useRef<string | null>(null)
   selectedKeyRef.current = selectedKey
-  const itemsRef = React.useRef<InboxItem[]>(EMPTY_ITEMS)
+  const itemsRef = React.useRef<LinkHealthInboxItem[]>(EMPTY_ITEMS)
 
   const [listState, setListState] = React.useState<ListState | null>(null)
   const [listLoading, setListLoading] = React.useState(false)
@@ -393,21 +396,23 @@ export function useInbox({ refreshCounts }: UseInboxOptions): UseInboxReturn {
                 'resource-apply': 0,
                 feedback: 0,
                 report: 0,
-                case: 0
+                case: 0,
+                'broken-link': 0
               },
               truncated: {
                 submission: false,
                 'resource-apply': false,
                 feedback: false,
                 report: false,
-                case: false
+                case: false,
+                'broken-link': false
               }
             }
           })
         }
         return
       }
-      const res = await kunFetchGet<InboxListResponse | string>(
+      const res = await kunFetchGet<LinkHealthInboxListResponse | string>(
         '/admin/inbox',
         {
           kinds: kk,
@@ -480,7 +485,7 @@ export function useInbox({ refreshCounts }: UseInboxOptions): UseInboxReturn {
     setItemErrorState(null)
     setItemLoading(true)
     try {
-      const res = await kunFetchGet<InboxItemResponse | string>(
+      const res = await kunFetchGet<LinkHealthInboxItemResponse | string>(
         '/admin/inbox/item',
         {
           kind: sel.kind,
@@ -526,7 +531,7 @@ export function useInbox({ refreshCounts }: UseInboxOptions): UseInboxReturn {
   const navigate = React.useCallback(
     (
       patch: {
-        kinds?: InboxKind[]
+        kinds?: LinkHealthInboxKind[]
         search?: string
         order?: InboxOrder
         selection?: InboxSelection | null
@@ -598,7 +603,8 @@ export function useInbox({ refreshCounts }: UseInboxOptions): UseInboxReturn {
   }, [historyMode, listState, currentQueryKey, submissionPage, navigate])
 
   const selectItem = React.useCallback(
-    (it: InboxItem) => navigate({ selection: { kind: it.kind, id: it.id } }),
+    (it: LinkHealthInboxItem) =>
+      navigate({ selection: { kind: it.kind, id: it.id } }),
     [navigate]
   )
   const clearSelection = React.useCallback(
@@ -606,13 +612,13 @@ export function useInbox({ refreshCounts }: UseInboxOptions): UseInboxReturn {
     [navigate]
   )
   const toggleKind = React.useCallback(
-    (kind: InboxKind, checked: boolean) => {
+    (kind: LinkHealthInboxKind, checked: boolean) => {
       const cur = stateRef.current.kinds
       const next = checked ? [...cur, kind] : cur.filter((k) => k !== kind)
       if (next.length === 0) return // at least one source must stay selected
       // Any source change leaves history mode: the queue always comes back to pending.
       navigate({
-        kinds: INBOX_KINDS.filter((k) => next.includes(k)),
+        kinds: LINK_HEALTH_INBOX_KINDS.filter((k) => next.includes(k)),
         submissionStatus: 'pending',
         submissionPage: 1
       })
@@ -759,9 +765,9 @@ export function useInbox({ refreshCounts }: UseInboxOptions): UseInboxReturn {
         }
         // else: a newer request/selection owns the visible detail lifecycle now.
       }
-      let res: InboxItemResponse | string
+      let res: LinkHealthInboxItemResponse | string
       try {
-        res = await kunFetchGet<InboxItemResponse | string>(
+        res = await kunFetchGet<LinkHealthInboxItemResponse | string>(
           '/admin/inbox/item',
           {
             kind: sel.kind,

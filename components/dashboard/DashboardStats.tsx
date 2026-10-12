@@ -9,6 +9,7 @@ import {
   MessageSquare,
   PackagePlus,
   Sigma,
+  Unlink,
   Upload,
   UserPlus,
   type LucideIcon
@@ -21,10 +22,13 @@ import {
   OVERVIEW_MIN_DAYS,
   useDashboardStats
 } from '~/hooks/dashboard/useDashboardStats'
-import { INBOX_KIND_LABELS } from '~/constants/dashboard'
+import { LINK_HEALTH_INBOX_KIND_LABELS } from '~/constants/dashboard'
 import { cn } from '~/lib/dashboard/utils'
-import { INBOX_KINDS } from '~/types/api/inbox'
-import type { InboxCounts, InboxKind } from '~/types/api/inbox'
+import { LINK_HEALTH_INBOX_KINDS } from '~/types/api/inbox'
+import type {
+  LinkHealthInboxCounts,
+  LinkHealthInboxKind
+} from '~/types/api/inbox'
 import {
   Card,
   CardAction,
@@ -52,20 +56,22 @@ const compactCardHeaderClass = 'px-3.5'
 const compactCardFooterClass =
   'px-3.5 text-xs break-words text-muted-foreground'
 
-const INBOX_KIND_ICONS: Record<InboxKind, LucideIcon> = {
+const INBOX_KIND_ICONS: Record<LinkHealthInboxKind, LucideIcon> = {
   submission: Upload,
   'resource-apply': PackagePlus,
   feedback: MessageSquare,
   report: Flag,
-  case: ClipboardList
+  case: ClipboardList,
+  'broken-link': Unlink
 }
 
-const INBOX_KIND_BAR_CLASS: Record<InboxKind, string> = {
+const INBOX_KIND_BAR_CLASS: Record<LinkHealthInboxKind, string> = {
   submission: 'bg-sky-500',
   'resource-apply': 'bg-emerald-500',
   feedback: 'bg-amber-500',
   report: 'bg-rose-500',
-  case: 'bg-violet-500'
+  case: 'bg-violet-500',
+  'broken-link': 'bg-slate-500'
 }
 
 const numberFormatter = new Intl.NumberFormat('zh-CN')
@@ -187,8 +193,11 @@ function InlineError(props: {
   )
 }
 
-function PendingDistribution({ counts }: { counts: InboxCounts }) {
-  const total = INBOX_KINDS.reduce((sum, kind) => sum + counts.pending[kind], 0)
+function PendingDistribution({ counts }: { counts: LinkHealthInboxCounts }) {
+  const total = LINK_HEALTH_INBOX_KINDS.reduce(
+    (sum, kind) => sum + counts.pending[kind],
+    0
+  )
   return (
     <Card
       className="min-w-0 gap-2.5 py-3 shadow-xs"
@@ -216,7 +225,7 @@ function PendingDistribution({ counts }: { counts: InboxCounts }) {
               className="flex h-2.5 w-full overflow-hidden rounded-full bg-muted"
               aria-hidden="true"
             >
-              {INBOX_KINDS.map((kind) => {
+              {LINK_HEALTH_INBOX_KINDS.map((kind) => {
                 const value = counts.pending[kind]
                 if (value <= 0) {
                   return null
@@ -231,7 +240,7 @@ function PendingDistribution({ counts }: { counts: InboxCounts }) {
               })}
             </div>
             <ul className="grid grid-cols-2 gap-x-3 gap-y-1.5 @lg/main:grid-cols-4">
-              {INBOX_KINDS.map((kind) => {
+              {LINK_HEALTH_INBOX_KINDS.map((kind) => {
                 const value = counts.pending[kind]
                 const percent = Math.round((value / total) * 100)
                 return (
@@ -247,7 +256,7 @@ function PendingDistribution({ counts }: { counts: InboxCounts }) {
                       aria-hidden="true"
                     />
                     <span className="min-w-0 break-words text-muted-foreground">
-                      {INBOX_KIND_LABELS[kind]}
+                      {LINK_HEALTH_INBOX_KIND_LABELS[kind]}
                     </span>
                     <span className="ml-auto shrink-0 tabular-nums">
                       {numberFormatter.format(value)} · {percent}%
@@ -297,7 +306,10 @@ export function DashboardStats({ reviewerRole }: DashboardStatsProps) {
   }
 
   const pendingTotal = counts
-    ? INBOX_KINDS.reduce((total, kind) => total + counts.pending[kind], 0)
+    ? LINK_HEALTH_INBOX_KINDS.reduce(
+        (total, kind) => total + counts.pending[kind],
+        0
+      )
     : 0
 
   return (
@@ -328,7 +340,7 @@ export function DashboardStats({ reviewerRole }: DashboardStatsProps) {
                 />
               ) : null}
               <div className={inboxGridClass}>
-                {INBOX_KINDS.map((kind) => {
+                {LINK_HEALTH_INBOX_KINDS.map((kind) => {
                   const KindIcon = INBOX_KIND_ICONS[kind]
                   return (
                     <Link
@@ -344,7 +356,7 @@ export function DashboardStats({ reviewerRole }: DashboardStatsProps) {
                       >
                         <CardHeader className={compactCardHeaderClass}>
                           <CardDescription className="text-xs break-words">
-                            {INBOX_KIND_LABELS[kind]}
+                            {LINK_HEALTH_INBOX_KIND_LABELS[kind]}
                           </CardDescription>
                           <CardAction>
                             <KindIcon

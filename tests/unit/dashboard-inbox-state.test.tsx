@@ -3,9 +3,9 @@ import { createRoot, type Root } from 'react-dom/client'
 import { JSDOM } from 'jsdom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type {
-  InboxItem,
-  InboxItemResponse,
-  InboxListResponse
+  LinkHealthInboxItem,
+  LinkHealthInboxItemResponse,
+  LinkHealthInboxListResponse
 } from '~/types/api/inbox'
 
 const mocks = vi.hoisted(() => ({
@@ -26,7 +26,7 @@ vi.mock('next/navigation', () => ({
 
 import { useInbox, type UseInboxReturn } from '~/hooks/dashboard/useInbox'
 
-type Response = InboxListResponse | InboxItemResponse | string
+type Response = LinkHealthInboxListResponse | LinkHealthInboxItemResponse | string
 type Request = {
   path: string
   query: Record<string, unknown>
@@ -34,7 +34,7 @@ type Request = {
   reject: (error: Error) => void
 }
 
-const submission = (id: number, title = `投稿 ${id}`): InboxItem => ({
+const submission = (id: number, title = `投稿 ${id}`): LinkHealthInboxItem => ({
   key: `submission:${id}`,
   kind: 'submission',
   id,
@@ -60,31 +60,33 @@ const submission = (id: number, title = `投稿 ${id}`): InboxItem => ({
 })
 
 const queue = (
-  items: InboxItem[],
+  items: LinkHealthInboxItem[],
   total = items.length
-): InboxListResponse => ({
+): LinkHealthInboxListResponse => ({
   items,
   totals: {
     submission: total,
     'resource-apply': 0,
     feedback: 0,
     report: 0,
-    case: 0
+case: 0,
+    'broken-link': 0
   },
   truncated: {
     submission: total > items.length,
     'resource-apply': false,
     feedback: false,
     report: false,
-    case: false
+case: false,
+    'broken-link': false
   }
 })
 
-const pending = (item: InboxItem): InboxItemResponse => ({
+const pending = (item: LinkHealthInboxItem): LinkHealthInboxItemResponse => ({
   state: 'pending',
   item
 })
-const processed = (item: InboxItem): InboxItemResponse => ({
+const processed = (item: LinkHealthInboxItem): LinkHealthInboxItemResponse => ({
   state: 'processed',
   item:
     item.kind === 'submission'

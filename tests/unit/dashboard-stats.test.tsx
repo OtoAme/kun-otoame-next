@@ -82,7 +82,8 @@ const counts: InboxCounts = {
     'resource-apply': 2,
     feedback: 3,
     report: 1,
-    case: 4
+    case: 4,
+    'broken-link': 0
   },
   todayProcessed: 4
 }
@@ -92,7 +93,8 @@ const zeroCounts: InboxCounts = {
     'resource-apply': 0,
     feedback: 0,
     report: 0,
-    case: 0
+    case: 0,
+    'broken-link': 0
   },
   todayProcessed: 0
 }
@@ -199,7 +201,8 @@ describe('dashboard stats', () => {
         'resource-apply': 1,
         feedback: 0,
         report: 0,
-        case: 2
+        case: 2,
+        'broken-link': 0
       },
       todayProcessed: 4
     }
@@ -211,12 +214,14 @@ describe('dashboard stats', () => {
     const rows = [...distribution!.querySelectorAll('li')].map(
       (row) => row.textContent
     )
-    expect(rows).toHaveLength(5)
+    // broken-link 激活后来源行到 6 条，新增行以 0 计且不计创作者申请
+    expect(rows).toHaveLength(6)
     expect(rows[0]).toContain('3 · 50%')
     expect(rows[1]).toContain('1 · 17%')
     expect(rows[2]).toContain('0 · 0%')
     expect(rows[3]).toContain('0 · 0%')
     expect(rows[4]).toContain('2 · 33%')
+    expect(rows[5]).toContain('0 · 0%')
     expect(distribution?.textContent).not.toContain('创作者')
   })
 
@@ -227,7 +232,8 @@ describe('dashboard stats', () => {
         'resource-apply': 0,
         feedback: 0,
         report: 0,
-        case: 0
+        case: 0,
+        'broken-link': 0
       },
       todayProcessed: 4
     }

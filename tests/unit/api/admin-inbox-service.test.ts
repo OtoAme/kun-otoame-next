@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
       findUnique: vi.fn(),
       count: vi.fn()
     },
+    patch_resource_link: { findMany: vi.fn(), findUnique: vi.fn() },
     patch_resource: { findMany: vi.fn(), findUnique: vi.fn(), count: vi.fn() },
     user_message: { findMany: vi.fn(), findFirst: vi.fn(), count: vi.fn() },
     patch_report: { findMany: vi.fn(), findUnique: vi.fn(), count: vi.fn() },
@@ -73,7 +74,15 @@ const resource = () => ({
       hash: 'hash',
       content: 'https://example.com/file',
       sort_order: 0,
-      download: 4
+      download: 4,
+      version: 1,
+      evidence_round: 0,
+      health: 'ok',
+      health_changed_at: null,
+      verified_at: null,
+      content_changed_at: null,
+      reports: [],
+      check: null
     }
   ]
 })
@@ -126,6 +135,7 @@ beforeEach(() => {
     model.findMany.mockResolvedValue([])
     model.count.mockResolvedValue(0)
   }
+  mocks.prisma.patch_resource_link.findMany.mockResolvedValue([])
   mocks.prisma.admin_log.count.mockResolvedValue(0)
 })
 
@@ -513,7 +523,8 @@ describe('admin inbox counts', () => {
         'resource-apply': 20,
         feedback: 30,
         report: 40,
-        case: 0
+        case: 0,
+        'broken-link': 0
       },
       todayProcessed: 7
     })

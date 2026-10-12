@@ -1,3 +1,15 @@
+import {
+  getLinkDisputeSources,
+  linkHealthSelect,
+  projectLinkHealth,
+  type LinkHealthViewer
+} from '~/app/api/patch/resource/linkHealthProjection'
+import type { LinkDisputeSource } from '~/types/api/linkHealth'
+import {
+  loadBrokenInboxRows,
+  loadInboxLink,
+  projectHealthRows
+} from '~/app/api/patch/resource/link/read'
 import { Prisma } from '@prisma/client'
 import { prisma } from '~/prisma/index'
 import { getShanghaiQuotaWindows } from '~/app/api/patch/resource/download/access/timeWindow'
@@ -42,42 +54,33 @@ const submissionSelect = {
   created: true,
   user: { select: userSelect }
 } satisfies Prisma.patch_submissionSelect
-const resourceSelect = {
-  id: true,
-  name: true,
-  section: true,
-  type: true,
-  language: true,
-  note: true,
-  platform: true,
-  download: true,
-  status: true,
-  user_id: true,
-  patch_id: true,
-  created: true,
-  patch: { select: { name: true, unique_id: true } },
-  user: {
-    select: {
-      ...userSelect,
-      role: true,
-      _count: { select: { patch_resource: true } }
+const resourceSelect = (now = new Date()) =>
+  ({
+    id: true,
+    name: true,
+    section: true,
+    type: true,
+    language: true,
+    note: true,
+    platform: true,
+    download: true,
+    status: true,
+    user_id: true,
+    patch_id: true,
+    created: true,
+    patch: { select: { name: true, unique_id: true } },
+    user: {
+      select: {
+        ...userSelect,
+        role: true,
+        _count: { select: { patch_resource: true } }
+      }
+    },
+    links: {
+      orderBy: [{ sort_order: 'asc' }, { id: 'asc' }],
+      select: linkHealthSelect(now)
     }
-  },
-  links: {
-    orderBy: [{ sort_order: 'asc' }, { id: 'asc' }],
-    select: {
-      id: true,
-      storage: true,
-      size: true,
-      code: true,
-      password: true,
-      hash: true,
-      content: true,
-      sort_order: true,
-      download: true
-    }
-  }
-} satisfies Prisma.patch_resourceSelect
+  }) satisfies Prisma.patch_resourceSelect
 const feedbackSelect = {
   id: true,
   type: true,
@@ -131,7 +134,7 @@ type SubmissionRow = Prisma.patch_submissionGetPayload<{
   select: typeof submissionSelect
 }>
 type ResourceRow = Prisma.patch_resourceGetPayload<{
-  select: typeof resourceSelect
+  select: ReturnType<typeof resourceSelect>
 }>
 type FeedbackRow = Prisma.user_messageGetPayload<{
   select: typeof feedbackSelect
@@ -249,7 +252,12 @@ const submissionItem = (row: SubmissionRow, now: Date): InboxItem => ({
   }
 })
 
-const resourceItem = (row: ResourceRow, now: Date): InboxItem => ({
+const resourceItem = (
+  row: ResourceRow,
+  now: Date,
+  viewer?: LinkHealthViewer,
+  disputeSources = new Map<number, LinkDisputeSource>()
+): InboxItem => ({
   key: `resource-apply:${row.id}`,
   kind: 'resource-apply',
   id: row.id,
@@ -270,7 +278,18 @@ const resourceItem = (row: ResourceRow, now: Date): InboxItem => ({
     language: row.language,
     note: row.note,
     platform: row.platform,
+    baseLinks: row.links.map((link) => ({
+      id: link.id,
+      version: link.version
+    })),
     links: row.links.map((link) => ({
+      ...projectLinkHealth(
+        link,
+        row.user_id,
+        viewer,
+        disputeSources.get(link.id) ?? null,
+        now
+      ),
       id: link.id,
       storage: link.storage,
       size: link.size,
@@ -441,6 +460,35 @@ const reportItem = async (
   }
 }
 
+const brokenInboxItems = async (
+  rows: Awaited<ReturnType<typeof loadBrokenInboxRows>>,
+  now: Date,
+  viewer?: LinkHealthViewer
+): Promise<InboxItem[]> => {
+  const projected = await projectHealthRows(
+    rows,
+    viewer ?? { uid: 0, role: 0 },
+    now
+  )
+  return projected.map((link, index) => ({
+    key: `broken-link:${link.linkId}`,
+    kind: 'broken-link',
+    id: link.linkId,
+    title: link.resource.name || link.patch.name,
+    subtitle: link.patch.name,
+    actor: null,
+    waitingFrom: rows[index].health_changed_at!.toISOString(),
+    waitingSeconds: link.brokenForSeconds ?? 0,
+    targetHref: `/admin/resource/link/${link.resourceId}?linkId=${link.linkId}`,
+    badges: ['资源盘链接失效'],
+    readOnly: false,
+    payload: {
+      link: { ...link, storage: 'touchgal', health: 'broken' },
+      actions: { relink: true, remove: rows[index].resource.links.length > 1 }
+    }
+  }))
+}
+
 const listSubmissions = async (input: InboxQuery, now: Date) => {
   const where = pendingFilters(input.search).submission
   const id = searchId(input.search)
@@ -472,7 +520,8 @@ const listSubmissions = async (input: InboxQuery, now: Date) => {
 
 export const getAdminInbox = async (
   input: InboxQuery,
-  now = new Date()
+  now = new Date(),
+  viewer?: LinkHealthViewer
 ): Promise<InboxListResponse> => {
   const where = pendingFilters(input.search)
   const totals: InboxListResponse['totals'] = {
@@ -480,14 +529,16 @@ export const getAdminInbox = async (
     'resource-apply': 0,
     feedback: 0,
     report: 0,
-    case: 0
+    case: 0,
+    'broken-link': 0
   }
   const truncated: InboxListResponse['truncated'] = {
     submission: false,
     'resource-apply': false,
     feedback: false,
     report: false,
-    case: false
+    case: false,
+    'broken-link': false
   }
   const groups = await Promise.all(
     input.kinds.map(async (kind) => {
@@ -500,11 +551,25 @@ export const getAdminInbox = async (
             where: where.resource,
             take: input.limitPerKind,
             orderBy: [...oldestFirst],
-            select: resourceSelect
+            select: resourceSelect(now)
           }),
           prisma.patch_resource.count({ where: where.resource })
         ])
-        result = { total, items: rows.map((row) => resourceItem(row, now)) }
+        const disputeSources = await getLinkDisputeSources(
+          rows.flatMap((row) =>
+            row.links.map((link) => ({
+              ...link,
+              resourceId: row.id,
+              patchId: row.patch_id
+            }))
+          )
+        )
+        result = {
+          total,
+          items: rows.map((row) =>
+            resourceItem(row, now, viewer, disputeSources)
+          )
+        }
       } else if (kind === 'feedback') {
         const [rows, total] = await Promise.all([
           prisma.user_message.findMany({
@@ -532,6 +597,16 @@ export const getAdminInbox = async (
         result = {
           total,
           items: reportItems.filter((item): item is InboxItem => item !== null)
+        }
+      } else if (kind === 'broken-link') {
+        const all = await loadBrokenInboxRows(input.search, now)
+        result = {
+          total: all.length,
+          items: await brokenInboxItems(
+            all.slice(0, input.limitPerKind),
+            now,
+            viewer
+          )
         }
       } else {
         if (!('ops_case' in prisma)) {
@@ -563,9 +638,22 @@ export const getAdminInbox = async (
 
 export const getAdminInboxItem = async (
   input: { kind: InboxKind; id: number },
-  now = new Date()
+  now = new Date(),
+  viewer?: LinkHealthViewer
 ): Promise<InboxItemResponse> => {
   const missing = { state: 'missing', item: null } as const
+  if (input.kind === 'broken-link') {
+    const row = await loadInboxLink(input.id, now)
+    if (!row) return missing
+    const pending = (await loadBrokenInboxRows('', now)).find(
+      (link) => link.id === input.id
+    )
+    if (!pending) return { state: 'processed', item: null }
+    return {
+      state: 'pending',
+      item: (await brokenInboxItems([pending], now, viewer))[0]
+    }
+  }
   if (input.kind === 'submission') {
     const row = await prisma.patch_submission.findUnique({
       where: { id: input.id },
@@ -581,12 +669,21 @@ export const getAdminInboxItem = async (
   if (input.kind === 'resource-apply') {
     const row = await prisma.patch_resource.findUnique({
       where: { id: input.id },
-      select: resourceSelect
+      select: resourceSelect(now)
     })
+    const disputeSources = row
+      ? await getLinkDisputeSources(
+          row.links.map((link) => ({
+            ...link,
+            resourceId: row.id,
+            patchId: row.patch_id
+          }))
+        )
+      : new Map<number, LinkDisputeSource>()
     return row
       ? {
           state: row.status === 2 ? 'pending' : 'processed',
-          item: resourceItem(row, now)
+          item: resourceItem(row, now, viewer, disputeSources)
         }
       : missing
   }
@@ -636,30 +733,39 @@ export const getAdminInboxCounts = async (
 ): Promise<InboxCounts> => {
   const where = pendingFilters()
   const { dailyStart, dailyResetAt } = getShanghaiQuotaWindows(now)
-  const [submission, resource, feedback, report, caseCount, todayProcessed] =
-    await Promise.all([
-      prisma.patch_submission.count({ where: where.submission }),
-      prisma.patch_resource.count({ where: where.resource }),
-      prisma.user_message.count({ where: where.feedback }),
-      prisma.patch_report.count({ where: where.report }),
-      'ops_case' in prisma
-        ? prisma.ops_case.count({ where: where.case })
-        : Promise.resolve(0),
-      prisma.admin_log.count({
-        where: {
-          user_id: reviewerId,
-          created: { gte: dailyStart, lt: dailyResetAt },
-          type: { in: PROCESSED_LOG_TYPES }
-        }
-      })
-    ])
+  const [
+    submission,
+    resource,
+    feedback,
+    report,
+    caseCount,
+    todayProcessed,
+    broken
+  ] = await Promise.all([
+    prisma.patch_submission.count({ where: where.submission }),
+    prisma.patch_resource.count({ where: where.resource }),
+    prisma.user_message.count({ where: where.feedback }),
+    prisma.patch_report.count({ where: where.report }),
+    'ops_case' in prisma
+      ? prisma.ops_case.count({ where: where.case })
+      : Promise.resolve(0),
+    prisma.admin_log.count({
+      where: {
+        user_id: reviewerId,
+        created: { gte: dailyStart, lt: dailyResetAt },
+        type: { in: PROCESSED_LOG_TYPES }
+      }
+    }),
+    loadBrokenInboxRows('', now)
+  ])
   return {
     pending: {
       submission,
       'resource-apply': resource,
       feedback,
       report,
-      case: caseCount
+      case: caseCount,
+      'broken-link': broken.length
     },
     todayProcessed
   }

@@ -15,13 +15,17 @@ export default async function ResourcePreviewPage({
 }: {
   params: Promise<{ id: string }>
 }) {
-  await requireDashboardUser()
+  const viewer = await requireDashboardUser()
   const input = adminInboxIdSchema.safeParse((await params).id)
   if (!input.success) notFound()
-  const result = await getAdminInboxItem({
-    kind: 'resource-apply',
-    id: input.data
-  })
+  const result = await getAdminInboxItem(
+    {
+      kind: 'resource-apply',
+      id: input.data
+    },
+    undefined,
+    { uid: viewer.id, role: viewer.role }
+  )
   if (result.state !== 'pending' || result.item.kind !== 'resource-apply')
     notFound()
   return <ResourceDownload resource={result.item.payload} preview />

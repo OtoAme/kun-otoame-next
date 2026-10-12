@@ -68,6 +68,8 @@ import {
   userManagementHref
 } from './CaseDetailProperties'
 import { CaseMovePatchSearch } from './CaseMovePatchSearch'
+import { LinkHealthCaseActions } from './LinkHealthCaseActions'
+import { readCaseLinkHealth } from '~/components/case/linkHealthActionFlow'
 
 /** 驳回态结论：走 handle 的 reject 动作，其余结论走 resolve。 */
 const REJECT_RESOLUTIONS: ReadonlySet<CaseResolution> = new Set([
@@ -1045,7 +1047,16 @@ export function DashboardCaseDetail({
           ) : null}
         </div>
 
-        <aside className="min-w-0" aria-label="事项属性面板">
+        <aside className="min-w-0 space-y-3" aria-label="事项属性面板">
+          {(() => {
+            const linkHealth = readCaseLinkHealth(detail)
+            return linkHealth ? (
+              <LinkHealthCaseActions
+                linkHealth={linkHealth}
+                onChanged={() => void load()}
+              />
+            ) : null
+          })()}
           <CaseDetailProperties detail={detail} />
         </aside>
       </div>

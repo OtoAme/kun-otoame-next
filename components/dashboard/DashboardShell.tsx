@@ -13,7 +13,7 @@ import {
 import { usePathname } from 'next/navigation'
 
 import { kunFetchGet } from '~/utils/kunFetch'
-import type { InboxCounts } from '~/types/api/inbox'
+import type { LinkHealthInboxCounts } from '~/types/api/inbox'
 import {
   SidebarInset,
   SidebarProvider
@@ -31,7 +31,7 @@ export interface DashboardCurrentUser {
 }
 
 export interface DashboardContextValue {
-  counts: InboxCounts | null
+  counts: LinkHealthInboxCounts | null
   countsLoading: boolean
   countsError: string
   refreshCounts: () => Promise<void>
@@ -55,7 +55,7 @@ interface DashboardShellProps {
 }
 
 export function DashboardShell({ currentUser, children }: DashboardShellProps) {
-  const [counts, setCounts] = useState<InboxCounts | null>(null)
+  const [counts, setCounts] = useState<LinkHealthInboxCounts | null>(null)
   const [countsLoading, setCountsLoading] = useState(true)
   const [countsError, setCountsError] = useState('')
   const mountedRef = useRef(false)
@@ -76,7 +76,7 @@ export function DashboardShell({ currentUser, children }: DashboardShellProps) {
     const generation = ++requestGeneration.current
     setCountsLoading(true)
     try {
-      const result = await kunFetchGet<InboxCounts | string>(
+      const result = await kunFetchGet<LinkHealthInboxCounts | string>(
         '/admin/inbox/counts'
       )
       if (!mountedRef.current || generation !== requestGeneration.current) {

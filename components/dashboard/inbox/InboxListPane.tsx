@@ -6,6 +6,7 @@ import {
   Flag,
   MessageSquare,
   Package,
+  Unlink,
   type LucideIcon
 } from 'lucide-react'
 
@@ -13,7 +14,7 @@ import { Badge } from '~/components/dashboard/ui/badge'
 import { Button } from '~/components/dashboard/ui/button'
 import { Skeleton } from '~/components/dashboard/ui/skeleton'
 import type { AdminSubmissionRow } from '~/app/api/admin/patch-submission/service'
-import { INBOX_KIND_LABELS } from '~/constants/dashboard'
+import { LINK_HEALTH_INBOX_KIND_LABELS } from '~/constants/dashboard'
 import { formatChinaDateTime } from '~/utils/fixedTimezoneDate'
 import {
   INBOX_HISTORY_LIMIT,
@@ -21,14 +22,15 @@ import {
   type UseInboxReturn
 } from '~/hooks/dashboard/useInbox'
 import { cn } from '~/lib/dashboard/utils'
-import type { InboxKind } from '~/types/api/inbox'
+import type { LinkHealthInboxKind } from '~/types/api/inbox'
 
-const KIND_ICONS: Record<InboxKind, LucideIcon> = {
+const KIND_ICONS: Record<LinkHealthInboxKind, LucideIcon> = {
   submission: FileText,
   'resource-apply': Package,
   feedback: MessageSquare,
   report: Flag,
-  case: ClipboardList
+  case: ClipboardList,
+  'broken-link': Unlink
 }
 
 function formatWaiting(seconds: number): string {
@@ -125,7 +127,7 @@ export function InboxListPane({ inbox }: { inbox: UseInboxReturn }) {
         </div>
         {truncatedKinds.map((kind) => (
           <p key={kind} className="text-xs text-muted-foreground">
-            {INBOX_KIND_LABELS[kind]}：该来源还有更多，先处理这些
+            {LINK_HEALTH_INBOX_KIND_LABELS[kind]}：该来源还有更多，先处理这些
           </p>
         ))}
       </div>
@@ -237,7 +239,7 @@ export function InboxListPane({ inbox }: { inbox: UseInboxReturn }) {
                             {formatWaiting(item.waitingSeconds)}
                           </span>
                           <Badge variant="secondary">
-                            {INBOX_KIND_LABELS[item.kind]}
+                            {LINK_HEALTH_INBOX_KIND_LABELS[item.kind]}
                           </Badge>
                           {item.badges.map((badge, index) => (
                             <Badge

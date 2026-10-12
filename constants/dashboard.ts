@@ -1,11 +1,25 @@
-import type { InboxKind } from '~/types/api/inbox'
+import type { InboxKind, LinkHealthInboxKind } from '~/types/api/inbox'
 
 export const INBOX_KIND_LABELS: Record<InboxKind, string> = {
   submission: '待审条目',
   'resource-apply': '待审资源',
   feedback: '旧反馈',
   report: '旧举报',
-  case: '事项'
+  case: '事项',
+  'broken-link': '失效链接待办'
+}
+
+/** W04-health 合流时随收件箱读写面一起启用的完整标签表。 */
+export const LINK_HEALTH_INBOX_KIND_LABELS: Record<
+  LinkHealthInboxKind,
+  string
+> = {
+  submission: '待审条目',
+  'resource-apply': '待审资源',
+  feedback: '旧反馈',
+  report: '旧举报',
+  case: '事项',
+  'broken-link': '失效链接待办'
 }
 
 export const DASHBOARD_LEGACY_LINKS = [

@@ -126,7 +126,8 @@ const counts: InboxCounts = {
     'resource-apply': 2,
     feedback: 3,
     report: 1,
-    case: 4
+    case: 4,
+    'broken-link': 0
   },
   todayProcessed: 4
 }
@@ -229,7 +230,11 @@ describe('dashboard shell', () => {
   })
 
   it.each([
-    ['kinds=submission,resource-apply,feedback,report,case', 'true'],
+    [
+      'kinds=submission,resource-apply,feedback,report,case,broken-link',
+      'true'
+    ],
+    ['kinds=submission,resource-apply,feedback,report,case', 'false'],
     ['kinds=submission,report', 'false'],
     ['kinds=submission,resource-apply,feedback,report', 'false']
   ])('marks the all-sources entry correctly for %s', async (params, active) => {
