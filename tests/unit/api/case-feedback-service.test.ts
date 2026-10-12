@@ -869,35 +869,44 @@ describe('case feedback rules (M03-6, M03-7)', () => {
   })
 
   it('offers confirm and review to the opener only where the round allows it', async () => {
-    mocks.tx.ops_case.findUnique.mockResolvedValue(
-      caseRow({ status: 'resolved', closed_at: hoursAgo(3), reopened_count: 1 })
-    )
-    mocks.tx.ops_case_message.findMany.mockResolvedValue([
-      {
-        kind: 'system',
-        event: 'resolved',
-        payload: { actor_type: 'publisher' }
-      }
-    ])
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(now.getTime())
+    try {
+      mocks.tx.ops_case.findUnique.mockResolvedValue(
+        caseRow({
+          status: 'resolved',
+          closed_at: hoursAgo(3),
+          reopened_count: 1
+        })
+      )
+      mocks.tx.ops_case_message.findMany.mockResolvedValue([
+        {
+          kind: 'system',
+          event: 'resolved',
+          payload: { actor_type: 'publisher' }
+        }
+      ])
 
-    const detail = await getCase(42, 5, 1, { db: mocks.tx as never })
-    if (typeof detail === 'string') throw new Error(detail)
+      const detail = await getCase(42, 5, 1, { db: mocks.tx as never })
+      if (typeof detail === 'string') throw new Error(detail)
 
-    expect(detail.case.capabilities).toMatchObject({
-      canConfirm: true,
-      canReview: true,
-      canReopen: false,
-      canWithdraw: false
-    })
-    // Opening the case reads the viewer's notices for it (D22).
-    expect(mocks.tx.user_message.updateMany).toHaveBeenCalledWith({
-      where: { recipient_id: 5, status: 0, link: '/issue/42' },
-      data: { status: 1 }
-    })
-    // D15: the publisher-side dialogue carries real signatures now.
-    const publisherView = await getCase(42, 2, 1, { db: mocks.tx as never })
-    if (typeof publisherView === 'string') throw new Error(publisherView)
-    expect(publisherView.case.reporter).toMatchObject({ id: 5 })
+      expect(detail.case.capabilities).toMatchObject({
+        canConfirm: true,
+        canReview: true,
+        canReopen: false,
+        canWithdraw: false
+      })
+      // Opening the case reads the viewer's notices for it (D22).
+      expect(mocks.tx.user_message.updateMany).toHaveBeenCalledWith({
+        where: { recipient_id: 5, status: 0, link: '/issue/42' },
+        data: { status: 1 }
+      })
+      // D15: the publisher-side dialogue carries real signatures now.
+      const publisherView = await getCase(42, 2, 1, { db: mocks.tx as never })
+      if (typeof publisherView === 'string') throw new Error(publisherView)
+      expect(publisherView.case.reporter).toMatchObject({ id: 5 })
+    } finally {
+      clock.mockRestore()
+    }
   })
 
   it('reminds once in the last 48 hours before the publisher deadline', async () => {
