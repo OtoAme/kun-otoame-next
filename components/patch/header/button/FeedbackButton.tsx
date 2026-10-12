@@ -52,12 +52,13 @@ const isCaseOption = (option: FeedbackOption): option is CaseOption =>
 const isGuideOption = (option: FeedbackOption): option is GuideOption =>
   option === 'resource_wrong_patch' || option === 'resource_link_failure'
 
-// 旧反馈入口在条目页，资源问题改到资源卡片「报告问题」里提交（D34、D38）
+// 旧反馈入口在条目页，资源问题改到资源卡片的「遇到问题」与链接旁的
+// 「报告失效」提交（D34、D38；04/05 上线后链接失效改指链接旁的报告入口）
 const RESOURCE_GUIDES: Record<GuideOption, string> = {
   resource_wrong_patch:
-    '资源发错条目请在那条资源上报告：打开「资源链接」，在资源卡片上点「报告问题」，选择「发在了错误的条目下」。网站管理员核对后会把资源移到正确的游戏。',
+    '资源发错条目请在那条资源上报告：打开「资源链接」，在资源卡片上点「遇到问题」，选择「整条资源」，再选「发在了错误的条目下」。网站管理员核对后会把资源移到正确的游戏。',
   resource_link_failure:
-    '资源链接失效请在那条资源上报告：打开「资源链接」，在资源卡片上点「报告问题」，选择「链接失效」并写明是哪条链接。问题会先交给资源发布者补链，官方资源由网站管理员处理。'
+    '资源链接失效请在那条资源上报告：打开「资源链接」，在那条链接旁点「报告失效」，选择看到的现象。失效报告累计后由该链接的归属方处理：普通链接先交给资源发布者补链，站内资源盘链接由网站管理员处理。'
 }
 
 // 处理方与预计首次响应沿用基线 8.6 的受理范围口径；求资源或催更按 D40

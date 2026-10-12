@@ -1,9 +1,10 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import {
   Button,
+  Chip,
   Modal,
   ModalBody,
   ModalContent,
@@ -23,27 +24,54 @@ import {
   CASE_DESCRIPTION_MIN_LENGTH,
   CASE_PUBLISHER_KINDS
 } from '~/constants/case'
+import { SUPPORTED_RESOURCE_LINK_MAP } from '~/constants/resource'
 import { enabledIssueTriagePhenomena } from '~/constants/issueTriage'
 import { CaseImageField } from './CaseImageField'
 import { CaseLoginPrompt } from './CaseLoginPrompt'
 import { CaseSubmitResult } from './CaseSubmitResult'
 import { useCaseImageUploads } from './useCaseImageUploads'
+import { LinkReportPanel } from '~/components/patch/resource/LinkReportPanel'
+import { readLinkHealth } from '~/components/patch/resource/linkHealthDisplay'
 import type { CaseCreateResponse } from '~/types/api/case'
-import type { PatchResource } from '~/types/api/patch'
+import type { LinkHealthMutationResponse } from '~/types/api/linkHealth'
+import type { PatchResource, PatchResourceLink } from '~/types/api/patch'
 
 interface Props {
   resource: PatchResource
   /** 当前页面所属条目 ID，随请求作为 expectedPatchId 校验资源是否已被移动。 */
   patchId: number
+  /** 链接类报告成功后上抛最新链接事实（卡片据此有序合并展示）。 */
+  onReported?: (view: LinkHealthMutationResponse['link']) => void
 }
 
-const PHENOMENA = enabledIssueTriagePhenomena()
+type TargetSelection = 'resource' | `link:${number}` | ''
 
-export const ReportResourceButton = ({ resource, patchId }: Props) => {
+const selectionForLink = (link: PatchResourceLink): TargetSelection =>
+  `link:${link.id}`
+
+const linkLabel = (link: PatchResourceLink, index: number): string => {
+  const storage = SUPPORTED_RESOURCE_LINK_MAP[link.storage] ?? link.storage
+  const broken = readLinkHealth(link)?.health === 'broken'
+  return `链接 #${index + 1}（${storage} · ${link.size}）${broken ? ' · 已失效' : ''}`
+}
+
+/**
+ * 模块 05 的统一入口「遇到问题」：先选目标（卡片里的某条链接，含已折叠的
+ * 失效链接，或整条资源），再选现象，每个现象一个去向。链接失效走模块 04
+ * 的报告投票；D34/D40 的事项行与原样继承；指南现象不出现提交按钮。关闭
+ * 对话框不保存草稿；服务器拒绝时保留输入。
+ */
+export const ReportResourceButton = ({
+  resource,
+  patchId,
+  onReported
+}: Props) => {
   const { user } = useUserStore((state) => state)
   const { isOpen, onOpen, onClose } = useDisclosure()
   const login = useDisclosure()
   const uploads = useCaseImageUploads()
+  const [step, setStep] = useState<1 | 2>(1)
+  const [target, setTarget] = useState<TargetSelection>('')
   const [phenomenonKey, setPhenomenonKey] = useState('')
   const [content, setContent] = useState('')
   const [submitting, setSubmitting] = useState(false)
@@ -57,19 +85,35 @@ export const ReportResourceButton = ({ resource, patchId }: Props) => {
   }, [result])
 
   const guest = user.uid < 1
-  const phenomenon = PHENOMENA.find((item) => item.key === phenomenonKey)
+
+  const selectedLink = useMemo(() => {
+    if (!target.startsWith('link:')) {
+      return null
+    }
+    const linkId = Number(target.slice(5))
+    return resource.links.find((link) => link.id === linkId) ?? null
+  }, [target, resource.links])
+
+  const targetType = selectedLink ? 'link' : 'resource'
+  const phenomena = useMemo(
+    () => enabledIssueTriagePhenomena(step === 2 ? targetType : undefined),
+    [step, targetType]
+  )
+  const phenomenon = phenomena.find((item) => item.key === phenomenonKey)
   const destination = phenomenon?.destination
+
   // 与资源 Tabs 官方/社区同一口径：作者 role > 2 视为官方资源，归网站管理员处理。
   const official = (resource.user?.role ?? 0) > 2
-  // CASE_PUBLISHER_KINDS 内的现象先交资源发布者（与描述不符、链接失效、解压
-  // 或运行、求资源或催更、资源其他）；发错条目等其余事项始终由网站管理员处理。
   const staffHandled =
     official ||
     (destination?.type === 'case' &&
       !(CASE_PUBLISHER_KINDS as readonly string[]).includes(destination.kind))
-  const handlerHint = staffHandled
-    ? '该问题由网站管理员处理，预计首次响应在 7 天内。'
-    : '该问题先由资源发布者处理，预计首次响应在 7 天内；发布者 7 天未处理时会提交给网站管理员处理。'
+  const handlerHint =
+    destination?.type === 'case' && destination.kind === 'content_violation'
+      ? '该问题由网站管理员处理，预计首次响应在 3 天内。'
+      : staffHandled
+        ? '该问题由网站管理员处理，预计首次响应在 7 天内。'
+        : '该问题先由资源发布者处理，预计首次响应在 7 天内；发布者 7 天未处理时会提交给网站管理员处理。'
   // 指南现象只给说明；带说明的提交现象把说明块放在处理方提示和输入框上方（D40）。
   const guideBlock =
     destination?.type === 'guide'
@@ -82,22 +126,45 @@ export const ReportResourceButton = ({ resource, patchId }: Props) => {
         : undefined
   const tooShort = content.trim().length < CASE_DESCRIPTION_MIN_LENGTH
 
-  const handleClose = () => {
-    if (submitting) return
-    // 提交成功后收起即清空；取消时保留草稿，重新打开可以接着写
-    if (result) {
-      setResult(null)
-      setPhenomenonKey('')
-      setContent('')
-      uploads.reset()
-    }
-    onClose()
+  /** 05：关闭对话框不保存草稿。 */
+  const resetAll = () => {
+    setStep(1)
+    setTarget('')
+    setPhenomenonKey('')
+    setContent('')
+    setResult(null)
+    uploads.reset()
   }
 
-  const handleSubmit = async () => {
+  const handleClose = () => {
+    if (submitting) return
+    onClose()
+    resetAll()
+  }
+
+  const handleOpen = () => {
+    // 单链接的资源默认选中那条链接，界面仍显示当前所选目标。
+    if (resource.links.length === 1) {
+      setTarget(selectionForLink(resource.links[0]))
+    }
+    onOpen()
+  }
+
+  const handleBack = () => {
+    setStep(1)
+    setPhenomenonKey('')
+  }
+
+  const handleNext = () => {
+    if (!target) return
+    setStep(2)
+  }
+
+  const handleSubmitCase = async () => {
     if (destination?.type !== 'case') return
     if (guest) {
       onClose()
+      resetAll()
       login.onOpen()
       return
     }
@@ -131,40 +198,81 @@ export const ReportResourceButton = ({ resource, patchId }: Props) => {
     }
   }
 
+  const targetSummary = selectedLink
+    ? linkLabel(
+        selectedLink,
+        resource.links.findIndex((link) => link.id === selectedLink.id)
+      )
+    : `整条资源 · ${resource.name || '资源备注'}`
+
+  // 结果页的处理方与预计首次响应按实际类型区分（content_violation 为 3 天）。
+  const resultHandlerHint =
+    destination?.type === 'case' && destination.kind === 'content_violation'
+      ? '网站管理员，预计 3 天内首次回应'
+      : `${staffHandled ? '网站管理员' : '资源发布者'}，预计 7 天内首次回应`
+
   return (
     <>
       <Button
         size="sm"
         variant="light"
         startContent={<Flag className="size-4" />}
-        onPress={onOpen}
+        onPress={handleOpen}
       >
-        报告问题
+        遇到问题
       </Button>
 
       <Modal isOpen={isOpen} onClose={handleClose} scrollBehavior="inside">
         <ModalContent>
           <ModalHeader className="flex flex-col gap-1">
-            报告问题
+            遇到问题
             <span className="text-sm font-normal text-default-500">
               {resource.name}
             </span>
           </ModalHeader>
           <ModalBody>
             {result ? (
-              <CaseSubmitResult
-                result={result}
-                handler={`${staffHandled ? '网站管理员' : '资源发布者'}，预计 7 天内首次回应`}
-              />
+              <CaseSubmitResult result={result} handler={resultHandlerHint} />
+            ) : step === 1 ? (
+              <RadioGroup
+                aria-label="选择遇到问题的目标"
+                label="这个问题出在哪里？"
+                value={target}
+                onValueChange={(value) => setTarget(value as TargetSelection)}
+              >
+                {resource.links.map((link, index) => (
+                  <Radio
+                    key={link.id}
+                    value={selectionForLink(link)}
+                    description={
+                      readLinkHealth(link)?.health === 'broken'
+                        ? '已失效链接仍可选中反馈'
+                        : undefined
+                    }
+                  >
+                    {linkLabel(link, index)}
+                  </Radio>
+                ))}
+                <Radio value="resource" description="问题不针对某一条链接">
+                  整条资源
+                </Radio>
+              </RadioGroup>
             ) : (
               <>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-default-500">当前目标</span>
+                  <Chip size="sm" variant="flat">
+                    {targetSummary}
+                  </Chip>
+                </div>
+
                 <RadioGroup
                   aria-label="遇到的问题"
                   label="遇到了什么问题？"
                   value={phenomenonKey}
                   onValueChange={setPhenomenonKey}
                 >
-                  {PHENOMENA.map((item) => (
+                  {phenomena.map((item) => (
                     <Radio
                       key={item.key}
                       value={item.key}
@@ -174,6 +282,12 @@ export const ReportResourceButton = ({ resource, patchId }: Props) => {
                     </Radio>
                   ))}
                 </RadioGroup>
+
+                {phenomenon?.handlerHint && (
+                  <p className="text-sm text-default-500">
+                    {phenomenon.handlerHint}
+                  </p>
+                )}
 
                 {guideBlock && (
                   <div className="space-y-2 rounded-medium bg-default-100 p-3 text-sm">
@@ -192,6 +306,24 @@ export const ReportResourceButton = ({ resource, patchId }: Props) => {
                       ))}
                     </ul>
                   </div>
+                )}
+
+                {destination?.type === 'link_report' && selectedLink && (
+                  // 按 真实目标+版本+固定原因 记面板实例：切换现象（强/弱证据）
+                  // 或换链接时整面板重建，reason 与网络确认、提交状态不串台；
+                  // 链接旁快捷入口（自选 reason）不受影响
+                  <LinkReportPanel
+                    key={`${selectedLink.id}:${
+                      readLinkHealth(selectedLink)?.version ?? 'legacy'
+                    }:${destination.reason}`}
+                    patchId={patchId}
+                    resourceId={resource.id}
+                    link={selectedLink}
+                    reason={destination.reason}
+                    onCancel={handleClose}
+                    onLoginRequired={login.onOpen}
+                    onReported={onReported}
+                  />
                 )}
 
                 {destination?.type === 'case' && (
@@ -230,7 +362,7 @@ export const ReportResourceButton = ({ resource, patchId }: Props) => {
             )}
           </ModalBody>
           <ModalFooter>
-            {result || destination?.type !== 'case' ? (
+            {result ? (
               <Button
                 ref={resultCloseRef}
                 variant="light"
@@ -238,8 +370,24 @@ export const ReportResourceButton = ({ resource, patchId }: Props) => {
               >
                 关闭
               </Button>
-            ) : (
+            ) : step === 1 ? (
               <>
+                <Button variant="light" onPress={handleClose}>
+                  取消
+                </Button>
+                <Button
+                  color="primary"
+                  onPress={handleNext}
+                  isDisabled={!target}
+                >
+                  下一步
+                </Button>
+              </>
+            ) : destination?.type === 'case' ? (
+              <>
+                <Button variant="light" onPress={handleBack}>
+                  上一步
+                </Button>
                 <Button
                   variant="light"
                   onPress={handleClose}
@@ -249,13 +397,26 @@ export const ReportResourceButton = ({ resource, patchId }: Props) => {
                 </Button>
                 <Button
                   color="primary"
-                  onPress={() => void handleSubmit()}
+                  onPress={() => void handleSubmitCase()}
                   isDisabled={
                     !guest && (tooShort || submitting || uploads.uploading)
                   }
                   isLoading={submitting}
                 >
                   {guest ? '登录后提交' : '提交'}
+                </Button>
+              </>
+            ) : destination?.type === 'link_report' ? (
+              <Button variant="light" onPress={handleBack}>
+                上一步
+              </Button>
+            ) : (
+              <>
+                <Button variant="light" onPress={handleBack}>
+                  上一步
+                </Button>
+                <Button variant="light" onPress={handleClose}>
+                  关闭
                 </Button>
               </>
             )}

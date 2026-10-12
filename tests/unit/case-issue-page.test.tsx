@@ -84,6 +84,16 @@ import { IssueWorkspace } from '~/components/dashboard/issue/IssueWorkspace'
 
 globalThis.React = React
 
+/** 「链接待修复」分组共用 kunFetchGet：按 URL 返回各自的响应。 */
+const emptyLinkHealth = { items: [], total: 0, page: 1, limit: 10 }
+const respondTo = (caseResponse: unknown) => {
+  mocks.kunFetchGet.mockImplementation((url: string) =>
+    Promise.resolve(
+      url === '/patch/resource/link/health' ? emptyLinkHealth : caseResponse
+    )
+  )
+}
+
 const listItem = (overrides: Partial<CaseListItem> = {}): CaseListItem => ({
   id: 1,
   kind: 'resource_mismatch',
@@ -207,7 +217,7 @@ describe('issue workspace', () => {
     ) as HTMLElement | undefined
 
   it('fetches the reported tab without a status filter and renders rows', async () => {
-    mocks.kunFetchGet.mockResolvedValue(listResponse([listItem()]))
+    respondTo(listResponse([listItem()]))
     const container = await mount(<IssueWorkspace />)
     await flush()
 
@@ -227,7 +237,7 @@ describe('issue workspace', () => {
   })
 
   it('groups status tabs into four and counts them from statusCounts', async () => {
-    mocks.kunFetchGet.mockResolvedValue(
+    respondTo(
       listResponse(
         [listItem()],
         11,
@@ -253,7 +263,7 @@ describe('issue workspace', () => {
   })
 
   it('switches tabs, filters by merged status, and paginates through the URL', async () => {
-    mocks.kunFetchGet.mockResolvedValue(listResponse([listItem()], 40))
+    respondTo(listResponse([listItem()], 40))
     let container = await mount(<IssueWorkspace />)
     await flush()
 
@@ -326,12 +336,12 @@ describe('issue workspace', () => {
   })
 
   it('shows the empty state, surfaces load errors, and retries', async () => {
-    mocks.kunFetchGet.mockResolvedValue(listResponse([]))
+    respondTo(listResponse([]))
     const container = await mount(<IssueWorkspace />)
     await flush()
     expect(container.textContent).toContain('暂无问题')
 
-    mocks.kunFetchGet.mockResolvedValue('请先登录')
+    respondTo('请先登录')
     const refresh = [...container.querySelectorAll('button')].find((button) =>
       button.textContent?.includes('刷新')
     )!
@@ -343,7 +353,7 @@ describe('issue workspace', () => {
       '请先登录'
     )
 
-    mocks.kunFetchGet.mockResolvedValue(listResponse([listItem()]))
+    respondTo(listResponse([listItem()]))
     const retry = [...container.querySelectorAll('button')].find(
       (button) => button.textContent === '重新加载'
     )!
