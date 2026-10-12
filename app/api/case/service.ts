@@ -112,8 +112,21 @@ import type {
   resolveCaseSchema
 } from '~/validations/case'
 import type { z } from 'zod'
+import { linkCaseContextSchema } from '~/validations/linkHealth'
+import { LINK_HEALTH_POLICY } from '~/constants/linkHealth'
+import type { LinkCaseContext } from '~/types/api/linkHealth'
+import {
+  linkHealthSelect,
+  projectLinkHealth
+} from '~/app/api/patch/resource/linkHealthProjection'
+import type { HealthLinkRow } from '~/app/api/patch/resource/linkHealthProjection'
+import {
+  linkContextMatchesTarget,
+  lockLinkCaseTarget,
+  readLinkCaseContext
+} from './linkHealth'
 
-type CaseTx = Prisma.TransactionClient
+export type CaseTx = Prisma.TransactionClient
 type CaseDb = PrismaClient | CaseTx
 /** Legacy report adapters construct inputs without images. */
 type CreateCaseInput = Omit<z.infer<typeof createCaseSchema>, 'imageKeys'> & {
@@ -190,8 +203,26 @@ const isRetryableCaseTransactionConflict = (error: unknown) => {
       cause?: unknown
       originalCode?: unknown
       kind?: unknown
+      meta?: unknown
     }
     if (details.code === 'P2034' || details.code === '40P01') return true
+    if (
+      details.code === 'P2010' &&
+      details.meta &&
+      typeof details.meta === 'object'
+    ) {
+      const adapter = (details.meta as { driverAdapterError?: unknown })
+        .driverAdapterError
+      if (adapter && typeof adapter === 'object') {
+        const cause = (adapter as { cause?: unknown }).cause
+        const state =
+          cause && typeof cause === 'object'
+            ? (cause as { originalCode?: unknown }).originalCode
+            : undefined
+        if (typeof state === 'string' && ['40001', '40P01'].includes(state))
+          return true
+      }
+    }
     if (
       details.kind === 'TransactionWriteConflict' &&
       (details.originalCode === '40001' || details.originalCode === '40P01')
@@ -235,7 +266,7 @@ const runCaseTransaction = async <T>(
   }
 }
 
-const lockCaseUsers = async (tx: CaseTx, userIds: readonly number[]) => {
+export const lockCaseUsers = async (tx: CaseTx, userIds: readonly number[]) => {
   const ids = [
     ...new Set(
       userIds.filter(
@@ -479,13 +510,16 @@ export const buildCaseDedupKey = (
   targetType: CaseTargetType,
   targetId: number,
   kind: CaseKind,
-  openerId?: number | null
+  openerId?: number | null,
+  linkVersion?: number
 ) =>
-  isCaseOpenerScoped(kind, targetType) &&
-  openerId !== null &&
-  openerId !== undefined
-    ? `${targetType}:${targetId}:${kind}:${openerId}`
-    : `${targetType}:${targetId}:${kind}`
+  targetType === 'link' && linkVersion !== undefined
+    ? `link:${targetId}:v:${linkVersion}`
+    : isCaseOpenerScoped(kind, targetType) &&
+        openerId !== null &&
+        openerId !== undefined
+      ? `${targetType}:${targetId}:${kind}:${openerId}`
+      : `${targetType}:${targetId}:${kind}`
 
 export const buildCaseDailyKey = (
   userId: number,
@@ -519,6 +553,7 @@ const targetSummary = (input: {
   }) satisfies CaseTargetSummary
 
 type DerivedTarget = {
+  linkPublisherId?: number
   targetType: CaseTargetType
   targetId: number
   patchId: number | null
@@ -547,6 +582,7 @@ const deriveTarget = async (
     reporterId?: number | null
     now?: Date
     allowFrozen?: boolean
+    linkContext?: LinkCaseContext
   }
 ): Promise<DerivedTarget | string> => {
   const { kind, targetType, targetId, expectedPatchId, reporterId } = input
@@ -556,6 +592,61 @@ const deriveTarget = async (
   const allowed = (CASE_KIND_TARGETS as Record<string, readonly string[]>)[kind]
   if (!input.allowFrozen && (!allowed || !allowed.includes(targetType))) {
     return '当前问题类型暂不支持该目标'
+  }
+
+  if (targetType === 'link') {
+    if (
+      !input.allowFrozen ||
+      input.reporterId != null ||
+      !input.linkContext ||
+      !['link_suspect', 'link_disputed'].includes(kind)
+    ) {
+      return '链接事项只能由链接健康服务创建'
+    }
+    const link = await lockLinkCaseTarget(tx, targetId)
+    if (
+      !link ||
+      link.resource_status !== 0 ||
+      link.patch_status !== 0 ||
+      !linkContextMatchesTarget(input.linkContext, link) ||
+      kind !== `link_${input.linkContext.health}`
+    )
+      return '链接上下文已变化'
+    const ownerType =
+      kind === 'link_disputed' ||
+      link.storage === LINK_HEALTH_POLICY.staffStorage
+        ? 'staff'
+        : 'publisher'
+    const patch = {
+      id: link.patch_id,
+      uniqueId: link.patch_unique_id,
+      name: link.patch_name
+    }
+    return {
+      targetType,
+      targetId,
+      patchId: link.patch_id,
+      ...(link.storage === LINK_HEALTH_POLICY.staffStorage
+        ? {}
+        : { linkPublisherId: link.resource_user_id }),
+      ownerType,
+      ownerId: ownerType === 'publisher' ? link.resource_user_id : null,
+      public: true,
+      target: targetSummary({
+        targetType,
+        targetId,
+        patch,
+        resource: {
+          id: link.resource_id,
+          name: link.resource_name,
+          section: link.section,
+          patchId: link.patch_id,
+          patch,
+          status: link.resource_status
+        },
+        deleted: false
+      })
+    }
   }
 
   if (targetType === 'resource') {
@@ -573,6 +664,8 @@ const deriveTarget = async (
       }
     })
     if (!resource) return '资源不存在'
+    if (kind === 'content_violation' && reporterId === resource.user_id)
+      return '不能举报自己发布的资源'
     if (resource.status !== 0) return '该资源当前不可举报'
     if (
       expectedPatchId !== undefined &&
@@ -786,7 +879,7 @@ const deriveTarget = async (
 const getCaseById = (db: CaseDb, id: number) =>
   db.ops_case.findUnique({ where: { id }, select: caseSelect })
 
-const getCaseLock = async (tx: CaseTx, id: number) => {
+export const getCaseLock = async (tx: CaseTx, id: number) => {
   if (typeof tx.$queryRaw === 'function') {
     const rows = await tx.$queryRaw<CaseRow[]>(Prisma.sql`
       SELECT id, kind, target_type, target_id, patch_id, owner_type, owner_id,
@@ -808,6 +901,8 @@ const getCaseLock = async (tx: CaseTx, id: number) => {
 }
 
 type TargetRows = {
+  link?: HealthLinkRow
+  linkContext?: LinkCaseContext | null
   targetExists?: boolean
   patch?: {
     id: number
@@ -840,8 +935,35 @@ const contentText = (text: string, html = false) => {
 
 const loadTarget = async (
   db: CaseDb,
-  row: Pick<CaseRow, 'target_type' | 'target_id' | 'patch_id'>
+  row: Pick<CaseRow, 'target_type' | 'target_id' | 'patch_id'> & { id?: number }
 ): Promise<TargetRows> => {
+  if (row.target_type === 'link') {
+    const link = await db.patch_resource_link.findUnique({
+      where: { id: row.target_id },
+      select: {
+        ...linkHealthSelect(),
+        resource: {
+          select: {
+            id: true,
+            name: true,
+            section: true,
+            patch_id: true,
+            user_id: true,
+            status: true,
+            patch: { select: { id: true, unique_id: true, name: true } }
+          }
+        }
+      }
+    })
+    const context =
+      row.id === undefined ? null : await readLinkCaseContext(db, row.id)
+    return {
+      targetExists: Boolean(link),
+      resource: link?.resource ?? null,
+      link: link ?? undefined,
+      linkContext: context
+    }
+  }
   if (row.target_type === 'resource') {
     const resource = await db.patch_resource.findUnique({
       where: { id: row.target_id },
@@ -946,6 +1068,9 @@ const queryManyIfNeeded = async <T>(
  * bounded batches instead of issuing one target query per case row.
  */
 const loadTargets = async (db: CaseDb, rows: readonly CaseRow[]) => {
+  const linkIds = rows
+    .filter((row) => row.target_type === 'link')
+    .map((row) => row.target_id)
   const resourceIds = rows
     .filter((row) => row.target_type === 'resource')
     .map((row) => row.target_id)
@@ -973,7 +1098,7 @@ const loadTargets = async (db: CaseDb, rows: readonly CaseRow[]) => {
     .filter((row) => row.target_type === 'user')
     .map((row) => row.target_id)
 
-  const [resources, patches, comments, ratings, shoutboxes, users] =
+  const [resources, patches, comments, ratings, shoutboxes, users, links] =
     await Promise.all([
       queryManyIfNeeded(resourceIds, () =>
         db.patch_resource.findMany({
@@ -1018,6 +1143,25 @@ const loadTargets = async (db: CaseDb, rows: readonly CaseRow[]) => {
           where: { id: { in: userIds } },
           select: { id: true }
         })
+      ),
+      queryManyIfNeeded(linkIds, () =>
+        db.patch_resource_link.findMany({
+          where: { id: { in: linkIds } },
+          select: {
+            id: true,
+            resource: {
+              select: {
+                id: true,
+                name: true,
+                section: true,
+                patch_id: true,
+                user_id: true,
+                status: true,
+                patch: { select: { id: true, unique_id: true, name: true } }
+              }
+            }
+          }
+        })
       )
     ])
 
@@ -1031,10 +1175,19 @@ const loadTargets = async (db: CaseDb, rows: readonly CaseRow[]) => {
     shoutboxes.map((shoutbox) => [shoutbox.id, shoutbox])
   )
   const userIdsFound = new Set(users.map((user) => user.id))
+  const linkById = new Map(links.map((link) => [link.id, link]))
   const targetByCaseId = new Map<number, TargetRows>()
 
   for (const row of rows) {
     const patch = row.patch_id ? (patchById.get(row.patch_id) ?? null) : null
+    if (row.target_type === 'link') {
+      const link = linkById.get(row.target_id)
+      targetByCaseId.set(row.id, {
+        targetExists: Boolean(link),
+        resource: link?.resource ?? null
+      })
+      continue
+    }
     if (row.target_type === 'resource') {
       const resource = resourceById.get(row.target_id) ?? null
       targetByCaseId.set(row.id, {
@@ -1119,7 +1272,7 @@ const toTargetSummary = (
     : ('patch' as const)
   const content =
     includeContent && target.content ? { content: target.content } : {}
-  if (targetType === 'resource') {
+  if (targetType === 'resource' || targetType === 'link') {
     const resource = target.resource
     return targetSummary({
       targetType,
@@ -1369,7 +1522,7 @@ type HandoffFact = {
 const needsHandoffFact = (
   row: Pick<CaseRow, 'target_type' | 'public' | 'owner_type' | 'escalated_at'>
 ) =>
-  row.target_type === 'resource' &&
+  (row.target_type === 'resource' || row.target_type === 'link') &&
   row.public &&
   row.owner_type === 'staff' &&
   row.escalated_at !== null
@@ -1389,7 +1542,12 @@ const loadLatestHandoffFacts = async (
   db: CaseDb,
   rows: readonly Pick<
     CaseRow,
-    'id' | 'target_type' | 'public' | 'owner_type' | 'escalated_at'
+    | 'id'
+    | 'target_type'
+    | 'target_id'
+    | 'public'
+    | 'owner_type'
+    | 'escalated_at'
   >[]
 ) => {
   const eligibleIds = rows.filter(needsHandoffFact).map(({ id }) => id)
@@ -1405,7 +1563,8 @@ const loadLatestHandoffFacts = async (
       FROM ops_case_message AS m
       WHERE m.case_id = c.id
         AND m.kind = 'system'
-        AND m.event = 'escalated'
+        AND ((c.target_type='link' AND m.payload ? 'link_health' AND (m.event='escalated' OR m.event IS NULL))
+          OR (c.target_type<>'link' AND m.event='escalated'))
       ORDER BY m.created DESC, m.id DESC
       LIMIT 1
     ) AS latest
@@ -1417,6 +1576,22 @@ const loadLatestHandoffFacts = async (
 
   const candidates = new Map<number, HandoffFact>()
   for (const event of latest) {
+    const target = rows.find((row) => row.id === event.case_id)
+    if (target?.target_type === 'link') {
+      const context = await readLinkCaseContext(db, event.case_id)
+      const eventContext = linkCaseContextSchema.safeParse(
+        sanitizePayload(event.payload)?.link_health
+      )
+      if (
+        !context ||
+        context.linkId !== target.target_id ||
+        !eventContext.success ||
+        eventContext.data.linkId !== context.linkId ||
+        eventContext.data.linkVersion !== context.linkVersion ||
+        eventContext.data.resourceId !== context.resourceId
+      )
+        continue
+    }
     const payload = sanitizePayload(event.payload)
     const publisherId = payload?.from_owner_id
     if (
@@ -1496,6 +1671,7 @@ const capabilitiesFor = (
   round?: CaseRoundFacts,
   handoffFact?: HandoffFact
 ): CaseCapabilities => {
+  const linkCase = row.target_type === 'link'
   const unresolved = unresolvedStatuses.includes(row.status as never)
   const closed = closedStatuses.includes(row.status as never)
   const owner = row.owner_type === 'publisher' && row.owner_id === viewerId
@@ -1551,26 +1727,34 @@ const capabilitiesFor = (
   return {
     canReply: unresolved && (admin || owner || reporter || originalPublisher),
     canResolve:
+      !linkCase &&
       unresolved &&
       allowedResolutions.length > 0 &&
       (admin || owner || originalPublisherCloses),
     canReopen:
-      reporter && closed && row.reopened_count === 0 && withinReopenWindow,
-    canWithdraw: reporter && unresolved,
+      !linkCase &&
+      reporter &&
+      closed &&
+      row.reopened_count === 0 &&
+      withinReopenWindow,
+    canWithdraw: !linkCase && reporter && unresolved,
     canConfirm:
+      !linkCase &&
       reporter &&
       closed &&
       withinReopenWindow &&
       round !== undefined &&
       !round.confirmedThisRound,
     canReview:
+      !linkCase &&
       reporter &&
       closed &&
       withinReopenWindow &&
       row.owner_type === 'publisher' &&
       row.reopened_count === 1 &&
       round?.lastClosureActor === 'publisher',
-    canPropose: unresolved && originalPublisher && !originalPublisherCloses,
+    canPropose:
+      !linkCase && unresolved && originalPublisher && !originalPublisherCloses,
     // D13: a timed-out description case is fixed and closed, never hidden.
     canHideResource:
       admin &&
@@ -1594,7 +1778,7 @@ const capabilitiesFor = (
       row.target_type === 'user',
     canHideMessages: admin,
     allowedContentActions,
-    allowedResolutions
+    allowedResolutions: linkCase ? [] : allowedResolutions
   }
 }
 
@@ -1803,6 +1987,7 @@ const describeCaseForNotice = async (
     return patch ? `条目「${clip(patch.name)}」` : '条目问题'
   }
   if (row.target_type === 'site') return SITE_TARGET_LABEL
+  if (row.target_type === 'link') return '链接问题'
   const label = isCaseTargetType(row.target_type)
     ? CASE_TARGET_TYPE_LABELS[row.target_type]
     : '内容'
@@ -1896,6 +2081,14 @@ const notifyCaseParticipants = async (
       : null
     if (authorLink && resource) addRecipient(resource.user_id, authorLink)
   }
+  if (row.target_type === 'link') {
+    const link = await tx.patch_resource_link.findUnique({
+      where: { id: row.target_id },
+      select: { storage: true, resource: { select: { user_id: true } } }
+    })
+    if (link && link.storage !== LINK_HEALTH_POLICY.staffStorage)
+      addRecipient(link.resource.user_id, caseLink(row.id))
+  }
   if (row.public && row.owner_type === 'staff') {
     const handoffFact = await handoffFactFor(tx, row)
     if (handoffFact) addRecipient(handoffFact.publisherId, caseLink(row.id))
@@ -1975,6 +2168,8 @@ type InternalCaseOpenInput = {
   expectedPatchId?: number
   now?: Date
   allowFrozen?: boolean
+  /** Only the typed link helper passes this system fact. */
+  linkContext?: LinkCaseContext
   /**
    * The opener's resubmission turns into a reply that notifies the handler,
    * so a non-administrator submitting from a page counts it toward the
@@ -2155,6 +2350,14 @@ export const openCaseInternal = async (
   input: InternalCaseOpenInput
 ) => {
   const now = input.now ?? new Date()
+  if (
+    input.targetType === 'link' &&
+    (input.source !== 'system' ||
+      input.reporterId != null ||
+      !input.linkContext)
+  ) {
+    return '链接事项只能由链接健康服务创建'
+  }
   // Resource creation must use the same row lock as resource moves. This
   // keeps the derived patch_id valid until the case/subscriber write ends and
   // preserves the resource -> case lock order.
@@ -2168,7 +2371,8 @@ export const openCaseInternal = async (
     input.targetType,
     input.targetId,
     input.kind,
-    input.reporterId
+    input.reporterId,
+    input.linkContext?.linkVersion
   )
   const source = input.source ?? 'system'
   const body = input.content?.trim() ?? ''
@@ -2287,7 +2491,10 @@ export const openCaseInternal = async (
         status_changed_at: now,
         queue_entered_at: now,
         created: now,
-        updated: now
+        updated: now,
+        ...(input.targetType === 'link' && input.kind === 'link_disputed'
+          ? { escalated_at: now }
+          : {})
       }
     ],
     skipDuplicates: true
@@ -2313,6 +2520,27 @@ export const openCaseInternal = async (
     select: caseSelect
   })
   if (!row) return '问题创建失败，请重试'
+  if (input.targetType === 'link' && input.linkContext) {
+    await tx.ops_case_message.create({
+      data: {
+        case_id: row.id,
+        author_id: null,
+        kind: 'system',
+        event: null,
+        payload: asInputJson({
+          link_health: input.linkContext,
+          ...(derived.linkPublisherId
+            ? {
+                from_owner_type: 'publisher',
+                from_owner_id: derived.linkPublisherId
+              }
+            : {})
+        }),
+        body: `${CASE_KIND_LABELS[input.kind]}，等待处理方核实。`,
+        created: now
+      }
+    })
+  }
   if (body) {
     await tx.ops_case_message.create({
       data: {
@@ -2337,7 +2565,9 @@ export const openCaseInternal = async (
     `${await describeCaseForNotice(tx, row)}有新的「${CASE_KIND_LABELS[input.kind]}」待处理`,
     body
   )
-  if (row.owner_type === 'publisher' && row.owner_id !== null) {
+  if (input.targetType === 'link') {
+    await notifyCaseParticipants(tx, row, ownerNotice)
+  } else if (row.owner_type === 'publisher' && row.owner_id !== null) {
     await notifyCaseUsers(tx, row.id, [row.owner_id], ownerNotice)
   } else {
     await notifyCaseUsers(
@@ -2362,12 +2592,138 @@ export const openCaseInternal = async (
   return { caseId: row.id, created: true, subscribed: false, shoutboxHidden }
 }
 
+/** Only promotes the case; the caller already owns the link health CAS. */
+export const promoteLinkCaseInternal = async (
+  tx: CaseTx,
+  caseId: number,
+  context: LinkCaseContext,
+  now: Date
+) => {
+  const row = await getCaseLock(tx, caseId)
+  if (
+    !row ||
+    row.target_type !== 'link' ||
+    row.kind !== 'link_suspect' ||
+    row.source !== 'system' ||
+    row.reporter_id !== null ||
+    context.health !== 'disputed' ||
+    !unresolvedStatuses.includes(row.status as never)
+  )
+    return false
+  const changed = await tx.ops_case.updateMany({
+    where: {
+      id: row.id,
+      kind: 'link_suspect',
+      status: row.status,
+      revision: row.revision,
+      dedup_key: `link:${context.linkId}:v:${context.linkVersion}`
+    },
+    data: {
+      kind: 'link_disputed',
+      owner_type: 'staff',
+      owner_id: null,
+      status: 'open',
+      status_changed_at: now,
+      queue_entered_at: now,
+      escalated_at: now,
+      first_owner_response_at: null,
+      revision: { increment: 1 },
+      updated: now
+    }
+  })
+  if (changed.count !== 1) return false
+  await appendCaseSystemMessage(
+    tx,
+    row.id,
+    'escalated',
+    {
+      link_health: context,
+      actor_type: 'system',
+      from_owner_type: row.owner_type,
+      from_owner_id: row.owner_id,
+      from_status: row.status,
+      to_status: 'open',
+      from_state_entered_at: row.status_changed_at.toISOString(),
+      queue_entered_at: now.toISOString()
+    },
+    '链接存在争议，已提交网站管理员复核。',
+    now
+  )
+  await notifyCaseParticipants(
+    tx,
+    { ...row, kind: 'link_disputed', owner_type: 'staff', owner_id: null },
+    '链接存在争议，已提交网站管理员复核。'
+  )
+  return true
+}
+
+/** Source-only escalation; link health/basis and the case queue clock stay intact. */
+export const upgradeLinkConflictContextInternal = async (
+  tx: CaseTx,
+  caseId: number,
+  context: LinkCaseContext,
+  now: Date
+) => {
+  const row = await getCaseLock(tx, caseId)
+  const previous = await readLinkCaseContext(tx, caseId)
+  if (
+    !row ||
+    row.kind !== 'link_disputed' ||
+    row.target_type !== 'link' ||
+    row.source !== 'system' ||
+    row.reporter_id !== null ||
+    !unresolvedStatuses.includes(row.status as never) ||
+    !previous ||
+    previous.source !== 'owner_verification' ||
+    context.source !== 'machine_user_conflict' ||
+    previous.linkId !== context.linkId ||
+    previous.linkVersion !== context.linkVersion ||
+    previous.resourceId !== context.resourceId ||
+    previous.patchId !== context.patchId ||
+    previous.evidenceRound !== context.evidenceRound ||
+    previous.healthChangedAt !== context.healthChangedAt
+  )
+    return false
+  const publisher = await handoffFactFor(tx, row)
+  const changed = await tx.ops_case.updateMany({
+    where: {
+      id: row.id,
+      kind: 'link_disputed',
+      status: row.status,
+      revision: row.revision
+    },
+    data: { revision: { increment: 1 }, updated: now }
+  })
+  if (changed.count !== 1) return false
+  await appendCaseSystemMessage(
+    tx,
+    row.id,
+    'escalated',
+    {
+      link_health: context,
+      actor_type: 'system',
+      ...(publisher
+        ? { from_owner_type: 'publisher', from_owner_id: publisher.publisherId }
+        : {})
+    },
+    '检测端可访问与用户报告存在冲突，等待网站管理员复核。',
+    now
+  )
+  await notifyCaseParticipants(
+    tx,
+    row,
+    '链接检测与用户报告存在冲突，等待网站管理员复核。'
+  )
+  return true
+}
+
 export const appendCaseSystemMessage = async (
   tx: CaseTx,
   caseId: number,
   event: CaseMessageEvent,
   payload: Record<string, unknown> | null,
-  body: string
+  body: string,
+  createdAt?: Date
 ) => {
   if (!(CASE_MESSAGE_EVENTS as readonly string[]).includes(event)) {
     throw new Error('Invalid case event')
@@ -2379,7 +2735,8 @@ export const appendCaseSystemMessage = async (
       kind: 'system',
       event,
       payload: asInputJson(payload),
-      body: body.slice(0, 5007)
+      body: body.slice(0, 5007),
+      ...(createdAt ? { created: createdAt } : {})
     },
     select: messageSelect
   })
@@ -2564,6 +2921,35 @@ const fetchCaseForViewer = async (
       : {}),
     ...(relatedOpenCaseIds.length ? { relatedOpenCaseIds } : {}),
     capabilities
+  }
+  if (row.target_type === 'link') {
+    const link = target.link
+    const context = target.linkContext
+    const current =
+      link &&
+      context &&
+      target.resource &&
+      context.linkId === link.id &&
+      context.linkVersion === link.version &&
+      context.resourceId === target.resource.id &&
+      context.patchId === target.resource.patch_id &&
+      context.evidenceRound === link.evidence_round &&
+      context.health === link.health &&
+      context.healthChangedAt === iso(link.health_changed_at)
+    detail.linkHealth = current
+      ? {
+          patchId: target.resource!.patch_id,
+          resourceId: target.resource!.id,
+          linkId: link!.id,
+          ...projectLinkHealth(
+            link!,
+            target.resource!.user_id,
+            { uid: viewerId, role: viewerRole },
+            context!.source === 'user_reports' ? null : context!.source
+          )
+        }
+      : null
+    if (!current) detail.capabilities.canReply = false
   }
   return { case: detail }
 }
@@ -3054,6 +3440,16 @@ export const appendCaseMessage = async (
   try {
     result = await runCaseTransaction(db, async (tx) => {
       if (!(await lockCaseActor(tx, uid))) return '账号不存在或已注销'
+      const initial = await tx.ops_case.findUnique({
+        where: { id: input.caseId },
+        select: { target_type: true, target_id: true }
+      })
+      if (initial?.target_type === 'link') {
+        const link = await lockLinkCaseTarget(tx, initial.target_id)
+        const context = await readLinkCaseContext(tx, input.caseId)
+        if (!link || !context || !linkContextMatchesTarget(context, link))
+          return '链接上下文已变化，请刷新后重试'
+      }
       const row = await getCaseLock(tx, input.caseId)
       if (!row) return '问题不存在'
       if (!unresolvedStatuses.includes(row.status as never))
@@ -3195,6 +3591,7 @@ export const resolveCase = async (
     if (!(await lockCaseActor(tx, uid))) return '账号不存在或已注销'
     const row = await getCaseLock(tx, input.caseId)
     if (!row) return '问题不存在'
+    if (row.target_type === 'link') return '链接事项请通过链接健康操作处理'
     if (!assertResolution(row.kind, input.resolution))
       return '当前问题不支持该结论'
     if (row.owner_type !== 'publisher' || row.owner_id !== uid) {
@@ -3328,6 +3725,7 @@ export const reopenCase = async (
       if (!(await lockCaseActor(tx, uid))) return '账号不存在或已注销'
       const row = await getCaseLock(tx, caseId)
       if (!row) return '问题不存在'
+      if (row.target_type === 'link') return '链接事项请通过链接健康操作处理'
       if (row.reporter_id !== uid) return '只有开启者可以重新提交'
       if (!closedStatuses.includes(row.status as never))
         return '当前问题尚未结案'
@@ -3469,6 +3867,7 @@ export const reviewCase = async (
       if (!(await lockCaseActor(tx, uid))) return '账号不存在或已注销'
       const row = await getCaseLock(tx, caseId)
       if (!row) return '问题不存在'
+      if (row.target_type === 'link') return '链接事项请通过链接健康操作处理'
       if (row.reporter_id !== uid) return '只有开启者可以申请复核'
       if (!closedStatuses.includes(row.status as never))
         return '当前问题尚未结案'
@@ -3614,6 +4013,7 @@ export const withdrawCase = async (
     if (!(await lockCaseActor(tx, uid))) return '账号不存在或已注销'
     const row = await getCaseLock(tx, caseId)
     if (!row) return '问题不存在'
+    if (row.target_type === 'link') return '链接事项请通过链接健康操作处理'
     if (row.reporter_id !== uid) return '只有开启者可以撤回'
     if (!unresolvedStatuses.includes(row.status as never)) return '该问题已结案'
     // The opener withdraws through their own subscription; without it there
@@ -3696,6 +4096,7 @@ export const confirmCase = async (
     if (!(await lockCaseActor(tx, uid))) return '账号不存在或已注销'
     const row = await getCaseLock(tx, caseId)
     if (!row) return '问题不存在'
+    if (row.target_type === 'link') return '链接事项请通过链接健康操作处理'
     if (row.reporter_id !== uid) return '只有开启者可以确认处理结果'
     if (!closedStatuses.includes(row.status as never)) return '当前问题尚未结案'
     if (
@@ -3748,6 +4149,7 @@ export const proposeCaseClosure = async (
     if (!(await lockCaseActor(tx, uid))) return '账号不存在或已注销'
     const row = await getCaseLock(tx, input.caseId)
     if (!row) return '问题不存在'
+    if (row.target_type === 'link') return '链接事项请通过链接健康操作处理'
     if (!unresolvedStatuses.includes(row.status as never)) return '该问题已结案'
     const handoffFact = await handoffFactFor(tx, row)
     if (!isOriginalPublisher(row, uid, handoffFact?.publisherId)) {
@@ -3845,6 +4247,7 @@ export const handleCaseAsAdmin = async (
     if (!(await lockCaseActor(tx, adminId))) return '账号不存在或已注销'
     const row = await getCaseLock(tx, input.caseId)
     if (!row) return '问题不存在'
+    if (row.target_type === 'link') return '链接事项请通过链接健康操作处理'
     let resolution = input.resolution
     if (input.action === 'reject' && resolution === undefined) {
       resolution = (CASE_PUBLISHER_KINDS as readonly string[]).includes(
@@ -4106,6 +4509,23 @@ export const handleCaseResource = async (
       if (!targetPatch || targetPatch.status !== 0)
         return '目标条目不存在或不可用'
       const fromPatchId = resource.patch_id
+      // Freeze the physical link set before any case locks. A move changes
+      // acquisition context, not the address/version of these slots.
+      const movedLinks = await tx.$queryRaw<
+        { id: number; version: number; storage: string }[]
+      >(Prisma.sql`
+        SELECT l.id, l.version, l.storage FROM patch_resource_link l
+        WHERE l.resource_id=${resource.id} ORDER BY l.id ASC FOR UPDATE OF l
+      `)
+      const linkIds = movedLinks.map((link) => link.id)
+      const relatedCases = await tx.$queryRaw<
+        { id: number; target_type: string; target_id: number; status: string }[]
+      >(Prisma.sql`
+        SELECT id, target_type, target_id, status FROM ops_case
+        WHERE (target_type='resource' AND target_id=${resource.id})
+          ${linkIds.length ? Prisma.sql`OR (target_type='link' AND target_id IN (${Prisma.join(linkIds)}))` : Prisma.empty}
+        ORDER BY id ASC FOR UPDATE
+      `)
       const resourceUpdated = await tx.patch_resource.updateMany({
         where: { id: resource.id, patch_id: fromPatchId },
         data: { patch_id: targetPatchId, updated: now }
@@ -4114,7 +4534,7 @@ export const handleCaseResource = async (
         rollbackCaseOperation('该资源刚刚被他人处理，请刷新后重试')
       await tx.patch_resource_access.updateMany({
         where: { resource_id: resource.id },
-        data: { patch_id: targetPatchId, updated: now }
+        data: { patch_id: targetPatchId, link_id: null, updated: now }
       })
       const linkedCasesUpdated = await tx.ops_case.updateMany({
         where: { target_type: 'resource', target_id: resource.id },
@@ -4122,6 +4542,50 @@ export const handleCaseResource = async (
       })
       if (linkedCasesUpdated.count === 0)
         rollbackCaseOperation('该资源刚刚被他人处理，请刷新后重试')
+      if (linkIds.length) {
+        await tx.ops_case.updateMany({
+          where: { target_type: 'link', target_id: { in: linkIds } },
+          data: { patch_id: targetPatchId, updated: now }
+        })
+        for (const linked of relatedCases) {
+          if (
+            linked.target_type !== 'link' ||
+            !unresolvedStatuses.includes(linked.status as never)
+          )
+            continue
+          const context = await readLinkCaseContext(tx, linked.id)
+          const link = movedLinks.find((item) => item.id === linked.target_id)
+          if (
+            !context ||
+            !link ||
+            context.linkId !== link.id ||
+            context.linkVersion !== link.version ||
+            context.resourceId !== resource.id ||
+            context.patchId !== fromPatchId
+          )
+            continue
+          await tx.ops_case_message.create({
+            data: {
+              case_id: linked.id,
+              kind: 'system',
+              author_id: null,
+              event: null,
+              created: now,
+              payload: asInputJson({
+                link_health: { ...context, patchId: targetPatchId },
+                actor_type: 'staff',
+                ...(link.storage === LINK_HEALTH_POLICY.staffStorage
+                  ? {}
+                  : {
+                      from_owner_type: 'publisher',
+                      from_owner_id: resource.user_id
+                    })
+              }),
+              body: '资源已移动，链接事项的条目上下文已同步更新。'
+            }
+          })
+        }
+      }
       const [fromUniqueId, toUniqueId] = await Promise.all([
         updatePatchAttributes(fromPatchId, tx),
         updatePatchAttributes(targetPatchId, tx)
@@ -4773,6 +5237,7 @@ export const upgradeCase = async (
   const result = await runCaseTransaction(db, async (tx) => {
     const row = await getCaseLock(tx, caseId)
     if (!row) return { changed: false as const, reason: '问题不存在' }
+    if (row.target_type === 'link') return { changed: false as const }
     if (
       row.owner_type !== 'publisher' ||
       !CASE_PUBLISHER_TIMEOUT_KINDS.includes(row.kind as never) ||
@@ -4850,6 +5315,7 @@ export const timeoutCloseCase = async (
   const result = await runCaseTransaction(db, async (tx) => {
     const row = await getCaseLock(tx, caseId)
     if (!row) return { changed: false as const, reason: '问题不存在' }
+    if (row.target_type === 'link') return { changed: false as const }
     if (
       row.owner_type !== 'publisher' ||
       !CASE_REPORTER_TIMEOUT_KINDS.includes(row.kind as never) ||
@@ -4890,7 +5356,8 @@ export const remindCase = async (
   const now = options.now ?? new Date()
   return runCaseTransaction(db, async (tx) => {
     const row = await getCaseLock(tx, caseId)
-    if (!row || row.owner_type !== 'publisher') return { changed: false }
+    if (!row || row.target_type === 'link' || row.owner_type !== 'publisher')
+      return { changed: false }
     if (row.reminded_revision !== null && row.reminded_revision >= row.revision)
       return { changed: false }
     const entered = row.status_changed_at.getTime()

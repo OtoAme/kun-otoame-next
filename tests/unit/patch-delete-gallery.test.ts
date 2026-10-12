@@ -1,3 +1,9 @@
+const closeLinkCasesMock = vi.hoisted(() =>
+  vi.fn(async () => ({ closedCaseIds: [] }))
+)
+vi.mock('~/app/api/case/linkHealth', () => ({
+  closeLinkCases: closeLinkCasesMock
+}))
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const deleteFileFromS3Mock = vi.hoisted(() => vi.fn())
@@ -39,6 +45,7 @@ vi.mock('~/lib/redis', () => ({
 
 const prismaMocks = vi.hoisted(() => {
   const tx = {
+    $queryRaw: vi.fn(),
     patch_resource: { delete: vi.fn() },
     patch: { delete: vi.fn() }
   }
@@ -47,7 +54,18 @@ const prismaMocks = vi.hoisted(() => {
     patch: { findUnique: vi.fn() },
     patch_resource: { findMany: vi.fn() },
     patch_game_image: { findMany: vi.fn(), deleteMany: vi.fn() },
-    $transaction: vi.fn(async (fn) => fn(tx)),
+    $transaction: vi.fn(async (fn) =>
+      fn(
+        Object.assign(tx, {
+          patch: { ...tx.patch, findUnique: prismaMocks.patch.findUnique },
+          patch_resource: {
+            ...tx.patch_resource,
+            findMany: prismaMocks.patch_resource.findMany
+          },
+          patch_game_image: prismaMocks.patch_game_image
+        })
+      )
+    ),
     _tx: tx
   }
 })
@@ -58,7 +76,8 @@ import { deletePatchById } from '~/app/api/patch/delete'
 
 describe('patch delete with gallery S3 cleanup', () => {
   beforeEach(() => {
-    vi.resetAllMocks()
+    vi.clearAllMocks()
+    prismaMocks._tx.$queryRaw.mockResolvedValue([{ id: 123 }])
     vi.spyOn(console, 'error').mockImplementation(() => {})
     process.env.NEXT_PUBLIC_KUN_VISUAL_NOVEL_S3_STORAGE_URL =
       'https://img.example'

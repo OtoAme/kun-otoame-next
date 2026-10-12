@@ -6,24 +6,30 @@ import {
   getResourceAccessViewerWhere
 } from './download/access/actor'
 import type { ResourceAccessViewer } from './download/access/actor'
-import type { PatchResource } from '~/types/api/patch'
+import type { PatchResourceHealth } from '~/types/api/patch'
 import { getPublicResourceCaseBadges } from '~/app/api/case/service'
+import {
+  getLinkDisputeSources,
+  linkHealthSelect,
+  projectLinkHealth
+} from './linkHealthProjection'
 
 const patchIdSchema = z.object({
   patchId: z.coerce.number().min(1).max(9999999)
 })
 
 const normalizeResourceAccessViewer = (
-  viewer: number | ResourceAccessViewer
-): ResourceAccessViewer =>
+  viewer: number | (ResourceAccessViewer & { role?: number })
+): ResourceAccessViewer & { role?: number } =>
   typeof viewer === 'number' ? { uid: viewer } : viewer
 
 export const getPatchResource = async (
   input: z.infer<typeof patchIdSchema>,
-  viewer: number | ResourceAccessViewer
+  viewer: number | (ResourceAccessViewer & { role?: number })
 ) => {
   const { patchId } = input
   const accessViewer = normalizeResourceAccessViewer(viewer)
+  const now = new Date()
 
   const data = await prisma.patch_resource.findMany({
     where: {
@@ -40,14 +46,7 @@ export const getPatchResource = async (
         }
       },
       links: {
-        select: {
-          id: true,
-          storage: true,
-          size: true,
-          hash: true,
-          sort_order: true,
-          download: true
-        },
+        select: linkHealthSelect(now),
         orderBy: { sort_order: 'asc' }
       },
       _count: {
@@ -61,10 +60,23 @@ export const getPatchResource = async (
     }
   })
 
-  const now = new Date()
   const resourceIds = data.map((resource) => resource.id)
   const linkIds = data.flatMap((resource) =>
     resource.links.map((link) => link.id)
+  )
+  const versionsByLinkId = new Map(
+    data.flatMap((resource) =>
+      resource.links.map((link) => [link.id, link.version] as const)
+    )
+  )
+  const disputeSources = await getLinkDisputeSources(
+    data.flatMap((resource) =>
+      resource.links.map((link) => ({
+        ...link,
+        resourceId: resource.id,
+        patchId: resource.patch_id
+      }))
+    )
   )
   const caseSummaries =
     'ops_case' in (prisma as unknown as Record<string, unknown>)
@@ -89,7 +101,7 @@ export const getPatchResource = async (
               link_id: { in: linkIds },
               expires: { gt: now }
             },
-            select: { link_id: true }
+            select: { link_id: true, link_version: true }
           })
         ])
       : [[], []]
@@ -98,10 +110,16 @@ export const getPatchResource = async (
     activeGrants.map((grant) => [grant.resource_id, grant.expires])
   )
   const revealedLinkIds = new Set(
-    revealedAccess.map((access) => access.link_id)
+    revealedAccess.flatMap((access) =>
+      access.link_id !== null &&
+      access.link_version !== null &&
+      access.link_version === versionsByLinkId.get(access.link_id)
+        ? [access.link_id]
+        : []
+    )
   )
 
-  const resources: PatchResource[] = data.map((resource) => ({
+  const resources: PatchResourceHealth[] = data.map((resource) => ({
     id: resource.id,
     name: resource.name,
     section: resource.section,
@@ -114,6 +132,13 @@ export const getPatchResource = async (
       const obtainedExpires = expiresByResourceId.get(resource.id)
 
       return {
+        ...projectLinkHealth(
+          link,
+          resource.user_id,
+          { uid: accessViewer.uid, role: accessViewer.role ?? 0 },
+          disputeSources.get(link.id) ?? null,
+          now
+        ),
         id: link.id,
         storage: link.storage,
         size: link.size,
@@ -147,7 +172,17 @@ export const getPatchResource = async (
   }))
 
   // 按平台优先级排序，相同平台则按语言优先级排序
-  resources.sort(compareResources)
+  resources.sort(
+    (left, right) =>
+      Number(
+        left.links.length > 0 &&
+          left.links.every((link) => link.health === 'broken')
+      ) -
+        Number(
+          right.links.length > 0 &&
+            right.links.every((link) => link.health === 'broken')
+        ) || compareResources(left, right)
+  )
 
   return resources
 }

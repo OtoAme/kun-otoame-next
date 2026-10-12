@@ -17,6 +17,7 @@ export const adminPaginationSchema = z.object({
 })
 
 export const adminResourcePaginationSchema = adminPaginationSchema.extend({
+  resourceId: z.coerce.number().int().positive().max(2147483647).optional(),
   limit: z.coerce.number().min(1).max(500),
   userId: z.coerce.number().min(1).max(9999999).optional()
 })

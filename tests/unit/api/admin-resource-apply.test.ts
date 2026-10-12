@@ -1,8 +1,16 @@
+const closeLinkCasesMock = vi.hoisted(() =>
+  vi.fn(async () => ({ closedCaseIds: [] }))
+)
+vi.mock('~/app/api/case/linkHealth', () => ({
+  closeLinkCases: closeLinkCasesMock
+}))
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const prismaMocks = vi.hoisted(() => {
   const tx = {
+    $queryRaw: vi.fn(),
     patch_resource: {
+      findUnique: vi.fn(),
       updateMany: vi.fn(),
       deleteMany: vi.fn()
     },
@@ -83,6 +91,8 @@ beforeEach(() => {
   prismaMocks.$transaction.mockImplementation((fn) => fn(tx))
   prismaMocks.patch_resource.findUnique.mockResolvedValue(pendingResource)
   prismaMocks.user.findUnique.mockResolvedValue({ id: 3, name: '管理员' })
+  tx.$queryRaw.mockResolvedValue([{ id: 10 }])
+  tx.patch_resource.findUnique.mockResolvedValue(pendingResource)
   tx.patch_resource.updateMany.mockResolvedValue({ count: 1 })
   tx.patch_resource.deleteMany.mockResolvedValue({ count: 1 })
   helperMocks.updatePatchAttributes.mockResolvedValue('abcd1234')
@@ -173,22 +183,28 @@ describe('resource review races', () => {
 
       const results = await Promise.all([first.run(), second.run()])
 
-      expect(results).toEqual([{}, stateChangedMessage])
+      expect(
+        results.filter((result) => typeof result !== 'string')
+      ).toHaveLength(1)
+      expect(
+        results.filter((result) => result === stateChangedMessage)
+      ).toHaveLength(1)
+      const winner = results[0] === stateChangedMessage ? second : first
       expect(helperMocks.updatePatchAttributes).toHaveBeenCalledExactlyOnceWith(
         20,
         tx
       )
       expect(tx.user_message.create).toHaveBeenCalledExactlyOnceWith({
-        data: { type: 'system', recipient_id: 5, ...first.message }
+        data: { type: 'system', recipient_id: 5, ...winner.message }
       })
       expect(tx.admin_log.create).toHaveBeenCalledExactlyOnceWith({
-        data: expect.objectContaining({ type: first.logType, user_id: 3 })
+        data: expect.objectContaining({ type: winner.logType, user_id: 3 })
       })
       expect(
         helperMocks.deletePatchResourceCache
       ).toHaveBeenCalledExactlyOnceWith('abcd1234')
       expect(helperMocks.deletePatchResourceLink).toHaveBeenCalledTimes(
-        first.name === 'decline' ? 2 : 0
+        winner.name === 'decline' ? 2 : 0
       )
     }
   )
@@ -197,6 +213,10 @@ describe('resource review races', () => {
     'does not decline a resource already in status %i',
     async (status) => {
       prismaMocks.patch_resource.findUnique.mockResolvedValue({
+        ...pendingResource,
+        status
+      })
+      tx.patch_resource.findUnique.mockResolvedValue({
         ...pendingResource,
         status
       })

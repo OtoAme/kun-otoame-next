@@ -17,7 +17,9 @@ import {
   CASE_TARGET_TYPES,
   CASE_CONTENT_MAX_LENGTH,
   CASE_DESCRIPTION_MIN_LENGTH,
-  CASE_REPORT_MIN_LENGTH
+  CASE_REPORT_MIN_LENGTH,
+  OPEN_CASE_KINDS,
+  CASE_KIND_TARGETS
 } from '~/constants/case'
 
 const idSchema = z.coerce
@@ -86,6 +88,19 @@ export const createCaseSchema = z
     imageKeys: caseImageKeysSchema
   })
   .transform((input, ctx) => {
+    const targets = (CASE_KIND_TARGETS as Record<string, readonly string[]>)[
+      input.kind
+    ]
+    if (
+      !(OPEN_CASE_KINDS as readonly string[]).includes(input.kind) ||
+      !targets?.includes(input.targetType)
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['kind'],
+        message: '当前问题类型暂不支持该目标'
+      })
+    }
     const minimum = caseMinimumLength(input.kind)
     if (input.content.length < minimum) {
       ctx.addIssue({

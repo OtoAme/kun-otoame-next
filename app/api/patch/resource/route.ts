@@ -9,7 +9,7 @@ import {
 import { verifyHeaderCookie } from '~/middleware/_verifyHeaderCookie'
 import {
   patchResourceCreateSchema,
-  patchResourceUpdateSchema
+  patchResourceStableUpdateSchema
 } from '~/validations/patch'
 import { getPatchResource } from './get'
 import { createPatchResource } from './create'
@@ -19,6 +19,20 @@ import { prisma } from '~/prisma/index'
 import { acquireKvLock, releaseKvLock } from '~/lib/redis'
 import { getResourceAccessVisitorToken } from './download/access/actor'
 import { toMoemoepointBalance } from '~/utils/moemoepoint'
+import { LINK_HEALTH_ERRORS } from '~/constants/linkHealth'
+
+const stableResourceJson = (value: unknown, status?: number) => {
+  const matched =
+    typeof value === 'string'
+      ? Object.values(LINK_HEALTH_ERRORS).find(
+          (error) => error.message === value
+        )
+      : undefined
+  return NextResponse.json(value, {
+    status: status ?? matched?.status ?? 200,
+    headers: { 'Cache-Control': 'private, no-store' }
+  })
+}
 
 const patchIdSchema = z.object({
   patchId: z.coerce.number().min(1).max(9999999)
@@ -61,6 +75,7 @@ export const GET = async (req: NextRequest) => {
 
   const response = await getPatchResource(input, {
     uid: payload?.uid ?? 0,
+    role: payload?.role ?? 0,
     visitorToken: getResourceAccessVisitorToken(req)
   })
   return NextResponse.json(response, {
@@ -133,22 +148,13 @@ export const POST = async (req: NextRequest) => {
 }
 
 export const PUT = async (req: NextRequest) => {
-  const input = await kunParsePutBody(req, patchResourceUpdateSchema)
-  if (typeof input === 'string') {
-    return NextResponse.json(input)
-  }
+  const input = await kunParsePutBody(req, patchResourceStableUpdateSchema)
+  if (typeof input === 'string')
+    return stableResourceJson(LINK_HEALTH_ERRORS.invalid_request.message, 400)
   const payload = await verifyHeaderCookie(req)
-  if (!payload) {
-    return NextResponse.json('用户未登录')
-  }
-
-  const storageError = validateResourceLinkStorage(input, payload.role)
-  if (storageError) {
-    return NextResponse.json(storageError)
-  }
-
+  if (!payload) return stableResourceJson('用户未登录', 401)
   const response = await updatePatchResource(input, payload.uid, payload.role)
-  return NextResponse.json(response)
+  return stableResourceJson(response)
 }
 
 export const DELETE = async (req: NextRequest) => {

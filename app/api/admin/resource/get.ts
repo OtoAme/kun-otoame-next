@@ -1,3 +1,10 @@
+import {
+  getLinkDisputeSources,
+  linkHealthSelect,
+  projectLinkHealth,
+  type LinkHealthViewer
+} from '~/app/api/patch/resource/linkHealthProjection'
+import type { PatchResourceHealthEditData } from '~/types/api/patch'
 import { z } from 'zod'
 import { prisma } from '~/prisma/index'
 import { adminResourcePaginationSchema } from '~/validations/admin'
@@ -5,12 +12,15 @@ import type { AdminResource } from '~/types/api/admin'
 
 export const getPatchResource = async (
   input: z.infer<typeof adminResourcePaginationSchema>,
-  nsfwEnable: Record<string, string | undefined>
+  nsfwEnable: Record<string, string | undefined>,
+  viewer?: LinkHealthViewer
 ) => {
-  const { page, limit, search, userId } = input
+  const { page, limit, search, userId, resourceId } = input
   const offset = (page - 1) * limit
+  const now = new Date()
 
   const where = {
+    ...(resourceId !== undefined ? { id: resourceId } : {}),
     ...(search
       ? {
           OR: [
@@ -63,6 +73,7 @@ export const getPatchResource = async (
           }
         },
         links: {
+          select: linkHealthSelect(now),
           orderBy: { sort_order: 'asc' }
         }
       }
@@ -70,42 +81,65 @@ export const getPatchResource = async (
     prisma.patch_resource.count({ where })
   ])
 
-  const resources: AdminResource[] = data.map((resource) => ({
-    id: resource.id,
-    name: resource.name,
-    section: resource.section,
-    uniqueId: resource.patch.unique_id,
-    patchName: resource.patch.name,
-    type: resource.type,
-    language: resource.language,
-    note: resource.note,
-    platform: resource.platform,
-    links: resource.links.map((link) => ({
-      id: link.id,
-      storage: link.storage,
-      size: link.size,
-      code: link.code,
-      password: link.password,
-      hash: link.hash,
-      content: link.content,
-      sortOrder: link.sort_order,
-      download: link.download
-    })),
-    download: resource.download,
-    likeCount: 0,
-    isLike: false,
-    status: resource.status,
-    userId: resource.user_id,
-    patchId: resource.patch_id,
-    created: String(resource.created),
-    user: {
-      id: resource.user.id,
-      name: resource.user.name,
-      avatar: resource.user.avatar,
-      role: resource.user.role,
-      patchCount: 0
-    }
-  }))
+  const disputeSources = await getLinkDisputeSources(
+    data.flatMap((resource) =>
+      resource.links.map((link) => ({
+        ...link,
+        resourceId: resource.id,
+        patchId: resource.patch_id
+      }))
+    )
+  )
+
+  const resources: (AdminResource & PatchResourceHealthEditData)[] = data.map(
+    (resource) => ({
+      id: resource.id,
+      name: resource.name,
+      section: resource.section,
+      uniqueId: resource.patch.unique_id,
+      patchName: resource.patch.name,
+      type: resource.type,
+      language: resource.language,
+      note: resource.note,
+      platform: resource.platform,
+      baseLinks: resource.links.map((link) => ({
+        id: link.id,
+        version: link.version
+      })),
+      links: resource.links.map((link) => ({
+        ...projectLinkHealth(
+          link,
+          resource.user_id,
+          viewer,
+          disputeSources.get(link.id) ?? null,
+          now
+        ),
+        id: link.id,
+        storage: link.storage,
+        size: link.size,
+        code: link.code,
+        password: link.password,
+        hash: link.hash,
+        content: link.content,
+        sortOrder: link.sort_order,
+        download: link.download
+      })),
+      download: resource.download,
+      likeCount: 0,
+      isLike: false,
+      status: resource.status,
+      userId: resource.user_id,
+      patchId: resource.patch_id,
+      created: String(resource.created),
+      user: {
+        id: resource.user.id,
+        name: resource.user.name,
+        avatar: resource.user.avatar,
+        role: resource.user.role,
+        patchCount: 0
+      }
+    })
+  )
 
   return { resources, total }
 }

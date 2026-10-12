@@ -70,6 +70,7 @@ export interface AdminGalgame {
 
 export interface AdminResource extends PatchResource {
   patchName: string
+  baseLinks?: import('./linkHealth').LinkVersionBase[]
 }
 
 export type AdminComment = PatchComment

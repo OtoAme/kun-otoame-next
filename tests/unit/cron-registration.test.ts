@@ -5,7 +5,8 @@ const taskMocks = vi.hoisted(() => ({
   cleanup: vi.fn(),
   views: vi.fn(),
   submissionAssets: vi.fn(),
-  caseTimeout: vi.fn()
+  caseTimeout: vi.fn(),
+  linkHealth: vi.fn()
 }))
 
 vi.mock('~/server/tasks/resetDailyTask', () => ({
@@ -24,6 +25,10 @@ vi.mock('~/server/tasks/caseTimeoutTask', () => ({
   caseTimeoutTask: { start: taskMocks.caseTimeout }
 }))
 
+vi.mock('~/server/tasks/linkHealthTask', () => ({
+  linkHealthTask: { start: taskMocks.linkHealth }
+}))
+
 import { setKUNGalgameTask } from '~/server/cron'
 
 describe('server cron registration', () => {
@@ -36,5 +41,6 @@ describe('server cron registration', () => {
     expect(taskMocks.views).toHaveBeenCalledTimes(1)
     expect(taskMocks.submissionAssets).toHaveBeenCalledTimes(1)
     expect(taskMocks.caseTimeout).toHaveBeenCalledTimes(1)
+    expect(taskMocks.linkHealth).toHaveBeenCalledTimes(1)
   })
 })

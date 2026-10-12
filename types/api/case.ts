@@ -12,6 +12,7 @@ import type {
   CaseTargetType,
   CaseTab
 } from '~/constants/case'
+import type { LinkCaseContext, LinkHealthView } from './linkHealth'
 
 export type {
   CaseActorType,
@@ -88,6 +89,7 @@ export interface PatchCaseSummary {
 }
 
 export interface CaseMessagePayload {
+  link_health?: LinkCaseContext
   resolution?: CaseResolution
   closed_at?: string
   actor_type?: CaseActorType
@@ -204,6 +206,8 @@ export interface AdminCaseMessageHideResponse {
 }
 
 export interface CaseDetail extends CaseSummary {
+  /** Safe current-version projection, null for stale/malformed link context. */
+  linkHealth?: LinkHealthView | null
   messages: CaseMessage[]
   /** For private reports this only contains the requesting user's own record. */
   viewerSubscription?: {

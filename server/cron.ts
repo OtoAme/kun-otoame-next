@@ -3,6 +3,7 @@ import { setCleanupTask } from './tasks/setCleanupTask'
 import { flushPatchViewsTask } from './tasks/flushPatchViewsTask'
 import { cleanupSubmissionAssetsTask } from './tasks/cleanupSubmissionAssetsTask'
 import { caseTimeoutTask } from './tasks/caseTimeoutTask'
+import { linkHealthTask } from './tasks/linkHealthTask'
 
 let isTaskStarted = false
 
@@ -16,5 +17,6 @@ export const setKUNGalgameTask = () => {
   flushPatchViewsTask.start()
   cleanupSubmissionAssetsTask.start()
   caseTimeoutTask.start()
+  linkHealthTask.start()
   isTaskStarted = true
 }

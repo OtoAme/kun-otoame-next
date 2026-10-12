@@ -288,7 +288,7 @@ describe('resource download access grant API', () => {
         link_id: { in: [21, 22] },
         expires: { gt: expect.any(Date) }
       },
-      select: { link_id: true }
+      select: { link_id: true, link_version: true }
     })
     expect(resources[0].links).toEqual(
       expect.arrayContaining([
@@ -348,7 +348,7 @@ describe('resource download access grant API', () => {
         link_id: { in: [21] },
         expires: { gt: expect.any(Date) }
       },
-      select: { link_id: true }
+      select: { link_id: true, link_version: true }
     })
     await expect(response.json()).resolves.toMatchObject([
       {

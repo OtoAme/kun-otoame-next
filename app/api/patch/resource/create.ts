@@ -19,6 +19,7 @@ import type {
 } from '~/types/api/patch'
 import { earnMoemoepoint } from '~/app/api/moemoepoint/service'
 import { MOEMOEPOINT_REASON } from '~/constants/moemoepoint'
+import { projectLinkHealth } from './linkHealthProjection'
 
 type PreparedResourceLink = {
   storage: string
@@ -151,6 +152,10 @@ export const createPatchResource = async (
           note: newResource.note,
           platform: newResource.platform,
           links: newResource.links.map((link) => ({
+            ...projectLinkHealth({ ...link, check: null, reports: [] }, uid, {
+              uid,
+              role: userRole
+            }),
             id: link.id,
             storage: link.storage,
             size: link.size,

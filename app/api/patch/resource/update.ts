@@ -1,6 +1,8 @@
-import { z } from 'zod'
+import { Prisma } from '@prisma/client'
 import { prisma } from '~/prisma/index'
-import { patchResourceUpdateSchema } from '~/validations/patch'
+import { patchResourceStableUpdateSchema } from '~/validations/patch'
+import { LINK_HEALTH_ERRORS } from '~/constants/linkHealth'
+import { closeLinkCases } from '~/app/api/case/linkHealth'
 import {
   cleanupUploadedResourceDirs,
   compensateUploadedResources,
@@ -13,255 +15,453 @@ import {
   type UploadedPatchResource
 } from './_helper'
 import { parseResourceLink } from '~/utils/resourceLink'
-import type { PatchResource } from '~/types/api/patch'
+import { checkRelinkedResource } from './link-check/service'
+import {
+  getLinkDisputeSources,
+  projectLinkHealth
+} from './linkHealthProjection'
+import {
+  lockResourceForMutation,
+  resourceMutationInclude,
+  resourcePostCommit,
+  ResourceMutationError,
+  runResourceMutation,
+  type LockedResource
+} from './mutation'
+import type {
+  PatchResourceStableUpdateRequest,
+  PatchResourceStableUpdateResponse
+} from '~/types/api/patch'
 
-type PreparedResourceLink = {
-  storage: string
-  size: string
-  code: string
-  password: string
-  hash: string
-  content: string
-  sort_order: number
-  download: number
+type LinkInput = PatchResourceStableUpdateRequest['links'][number]
+type PrivateUpdatedResource = Omit<
+  PatchResourceStableUpdateResponse,
+  'links'
+> & {
+  links: (PatchResourceStableUpdateResponse['links'][number] & {
+    content: string
+    code: string
+    password: string
+  })[]
+}
+export type ResourceUpdateOptions = {
+  onSaved?: (
+    tx: Prisma.TransactionClient,
+    before: LockedResource,
+    after: PrivateUpdatedResource
+  ) => Promise<void>
+}
+const conflict = () =>
+  new ResourceMutationError(LINK_HEALTH_ERRORS.resource_conflict.message)
+const editableFields = [
+  'storage',
+  'size',
+  'code',
+  'password',
+  'hash',
+  'content',
+  'sort_order'
+] as const
+const linkSortOrders = (
+  resource: LockedResource,
+  input: PatchResourceStableUpdateRequest
+) => {
+  const retained = input.links.flatMap((link) =>
+    link.id === undefined ? [] : [link.id]
+  )
+  const original = [...resource.links]
+    .sort((a, b) => a.sort_order - b.sort_order || a.id - b.id)
+    .filter((link) => retained.includes(link.id))
+    .map((link) => link.id)
+  const lastExisting = input.links.findLastIndex(
+    (link) => link.id !== undefined
+  )
+  const appendedOnly = input.links
+    .slice(0, lastExisting + 1)
+    .every((link) => link.id !== undefined)
+  if (!appendedOnly || retained.some((id, index) => id !== original[index]))
+    return input.links.map((_, index) => index)
+  let nextOrder = Math.max(-1, ...resource.links.map((link) => link.sort_order))
+  return input.links.map((link) => {
+    if (link.id !== undefined)
+      return resource.links.find((old) => old.id === link.id)?.sort_order ?? 0
+    if (++nextOrder > 2147483647) throw conflict()
+    return nextOrder
+  })
+}
+const canonicalLink = (
+  link: LinkInput,
+  sortOrder: number,
+  existing?: LockedResource['links'][number],
+  uploaded?: UploadedPatchResource
+) => {
+  const parsed =
+    link.storage === 's3'
+      ? { url: link.content, code: '' }
+      : parseResourceLink(link.content)
+  return {
+    storage: link.storage,
+    size:
+      uploaded?.size ??
+      (existing?.storage === 's3' && link.storage === 's3' && !link.uploadId
+        ? existing.size
+        : link.size),
+    hash:
+      uploaded?.hash ??
+      (existing?.storage === 's3' && link.storage === 's3' && !link.uploadId
+        ? existing.hash
+        : link.hash),
+    content:
+      uploaded?.downloadLink ??
+      (existing?.storage === 's3' && link.storage === 's3' && !link.uploadId
+        ? existing.content
+        : parsed.url),
+    code: link.code || parsed.code,
+    password: link.password,
+    sort_order: sortOrder
+  }
+}
+const validateBaseAndPermissions = (
+  resource: LockedResource,
+  input: PatchResourceStableUpdateRequest,
+  uid: number,
+  role: number
+) => {
+  if (resource.patch_id !== input.patchId)
+    throw new ResourceMutationError('资源不属于该 OtomeGame', 409)
+  if (resource.user_id !== uid && role < 3)
+    throw new ResourceMutationError('您没有权限更改该资源', 403)
+  if (
+    resource.links.length !== input.baseLinks.length ||
+    resource.links.some(
+      (link) =>
+        !input.baseLinks.some(
+          (base) => base.id === link.id && base.version === link.version
+        )
+    )
+  )
+    throw conflict()
+  const ids = new Set(
+    input.links.flatMap((link) => (link.id === undefined ? [] : [link.id]))
+  )
+  const orders = linkSortOrders(resource, input)
+  const retainedOrder = [...resource.links]
+    .sort((a, b) => a.sort_order - b.sort_order || a.id - b.id)
+    .filter((link) => ids.has(link.id))
+    .map((link) => link.id)
+  const desiredOrder = input.links.flatMap((link) =>
+    link.id === undefined ? [] : [link.id]
+  )
+  for (const old of resource.links) {
+    if (role < 3 && old.storage === 'touchgal') {
+      const index = input.links.findIndex((link) => link.id === old.id)
+      const next = input.links[index]
+      if (
+        !ids.has(old.id) ||
+        !next ||
+        next.uploadId ||
+        retainedOrder.some(
+          (id) =>
+            id !== old.id &&
+            retainedOrder.indexOf(id) < retainedOrder.indexOf(old.id) !==
+              desiredOrder.indexOf(id) < desiredOrder.indexOf(old.id)
+        ) ||
+        editableFields.some(
+          (key) => canonicalLink(next, orders[index], old)[key] !== old[key]
+        )
+      )
+        throw new ResourceMutationError(
+          LINK_HEALTH_ERRORS.forbidden.message,
+          403
+        )
+    }
+  }
+  for (const link of input.links) {
+    const old = resource.links.find((row) => row.id === link.id)
+    if (link.id !== undefined && !old) throw conflict()
+    if (role < 3 && link.storage === 'touchgal' && !old)
+      throw new ResourceMutationError(LINK_HEALTH_ERRORS.forbidden.message, 403)
+    if (role < 2 && link.storage === 's3')
+      throw new ResourceMutationError('仅创作者和管理员可使用对象存储', 403)
+    if (role < 3 && input.section === 'galgame' && link.storage === 's3')
+      throw new ResourceMutationError('仅管理员可为游戏资源使用对象存储', 403)
+    if (
+      link.storage === 's3' &&
+      !(old?.storage === 's3' && !link.uploadId) &&
+      !link.uploadId
+    )
+      throw new ResourceMutationError('请先上传资源文件', 400)
+    if (role < 3 && link.storage === 'touchgal' && old?.storage !== 'touchgal')
+      throw new ResourceMutationError(LINK_HEALTH_ERRORS.forbidden.message, 403)
+  }
 }
 
 export const updatePatchResource = async (
-  input: z.infer<typeof patchResourceUpdateSchema>,
+  submitted: PatchResourceStableUpdateRequest,
   uid: number,
-  userRole: number
-) => {
-  const { resourceId, patchId, links, ...resourceData } = input
-  const resource = await prisma.patch_resource.findUnique({
+  userRole: number,
+  options: ResourceUpdateOptions = {}
+): Promise<PatchResourceStableUpdateResponse | string> => {
+  const parsed = patchResourceStableUpdateSchema.safeParse(submitted)
+  if (!parsed.success) return LINK_HEALTH_ERRORS.invalid_request.message
+  const input = parsed.data
+  const { resourceId, patchId } = input
+  const initial = await prisma.patch_resource.findUnique({
     where: { id: resourceId },
-    include: {
-      links: {
-        orderBy: { sort_order: 'asc' }
-      }
-    }
+    include: resourceMutationInclude()
   })
-  if (!resource) {
-    return '未找到该资源'
-  }
-
-  const resourceUserUid = resource.user_id
-  if (resource.user_id !== uid && userRole < 3) {
-    return '您没有权限更改该资源'
-  }
-
-  if (resource.patch_id !== patchId) {
-    return '资源不属于该 OtomeGame'
-  }
-
-  const currentPatch = await prisma.patch.findUnique({
-    where: { id: patchId },
-    select: {
-      name: true,
-      type: true,
-      language: true,
-      platform: true
-    }
-  })
-  if (!currentPatch) {
-    return '未找到该资源对应的 OtomeGame 信息, 请确认 OtomeGame 存在'
-  }
-
-  const existingLinksById = new Map(
-    resource.links.map((link) => [link.id, link])
-  )
-  const nextLinkIds = new Set(
-    links
-      .map((link) => link.id)
-      .filter((id): id is number => typeof id === 'number')
-  )
-  const linksToDelete = resource.links.filter(
-    (link) => !nextLinkIds.has(link.id)
-  )
-  const s3LinksToDelete: { id: number; content: string; storage: string }[] = []
-  const preparedLinks: PreparedResourceLink[] = []
-  const uploadedResources: UploadedPatchResource[] = []
-  let dbCommitted = false
-
-  for (const removedLink of linksToDelete) {
-    if (removedLink.storage === 's3') {
-      s3LinksToDelete.push(removedLink)
-    }
-  }
-
+  if (!initial) return '未找到该资源'
   try {
-    for (const [index, link] of links.entries()) {
-      const existingLink =
-        typeof link.id === 'number' ? existingLinksById.get(link.id) : null
-      if (typeof link.id === 'number' && !existingLink) {
-        await compensateUploadedResources(uploadedResources)
-        await releaseUploadedResourceLocks(uploadedResources)
-        return '资源链接不存在或不属于该资源'
-      }
-
-      let content = link.content
-      let code = link.code
-      let hash = link.hash
-      let size = link.size
-      const download = existingLink?.download ?? 0
-
-      if (link.storage === 's3') {
-        if (existingLink && existingLink.storage === 's3' && !link.uploadId) {
-          content = existingLink.content
-          hash = existingLink.hash
-          size = existingLink.size
-        } else {
-          if (!link.uploadId) {
-            await compensateUploadedResources(uploadedResources)
-            await releaseUploadedResourceLocks(uploadedResources)
-            return '请先上传资源文件'
-          }
-
-          const result = await uploadPatchResource(patchId, link.uploadId!, uid)
-          if (typeof result === 'string') {
-            await compensateUploadedResources(uploadedResources)
-            await releaseUploadedResourceLocks(uploadedResources)
-            return result
-          }
-
-          uploadedResources.push(result)
-          content = result.downloadLink
-          hash = result.hash
-          size = result.size
-
-          if (existingLink?.storage === 's3') {
-            s3LinksToDelete.push(existingLink)
-          }
-        }
-      } else {
-        const parsedLink = parseResourceLink(content)
-        content = parsedLink.url
-        code = code || parsedLink.code
-
-        if (existingLink?.storage === 's3') {
-          s3LinksToDelete.push(existingLink)
-        }
-      }
-
-      preparedLinks.push({
-        storage: link.storage,
-        size,
-        code,
-        password: link.password,
-        hash,
-        content,
-        sort_order: index,
-        download
-      })
+    validateBaseAndPermissions(initial, input, uid, userRole)
+  } catch (error) {
+    if (error instanceof ResourceMutationError) return error.message
+    throw error
+  }
+  const uploadedResources: UploadedPatchResource[] = []
+  const uploadsByIndex = new Map<number, UploadedPatchResource>()
+  let committed = false
+  try {
+    for (const [index, link] of input.links.entries()) {
+      if (link.storage !== 's3' || !link.uploadId) continue
+      const uploaded = await uploadPatchResource(patchId, link.uploadId, uid)
+      if (typeof uploaded === 'string')
+        throw new ResourceMutationError(uploaded, 400)
+      uploadedResources.push(uploaded)
+      uploadsByIndex.set(index, uploaded)
     }
-
-    const { resourceResponse, uniqueId } = await prisma.$transaction(
-      async (prisma) => {
-        const newResource = await prisma.patch_resource.update({
-          where: { id: resourceId, user_id: resourceUserUid },
-          data: {
-            ...resourceData,
-            links: {
-              deleteMany: {},
-              create: preparedLinks
+    const now = new Date()
+    const result = await runResourceMutation(async (tx) => {
+      const before = await lockResourceForMutation(tx, resourceId, now)
+      if (!before) throw new ResourceMutationError('未找到该资源', 404)
+      validateBaseAndPermissions(before, input, uid, userRole)
+      const orders = linkSortOrders(before, input)
+      const actorType =
+        userRole >= 3 ? ('staff' as const) : ('publisher' as const)
+      const retainedIds = new Set(
+        input.links.flatMap((link) => (link.id === undefined ? [] : [link.id]))
+      )
+      const removed = before.links.filter((link) => !retainedIds.has(link.id))
+      const obsoleteS3 = new Set(
+        removed
+          .filter((link) => link.storage === 's3')
+          .map((link) => link.content)
+      )
+      // All locks are already held in ID order before taking any case lock.
+      if (removed.length) {
+        for (const link of removed)
+          await tx.patch_resource_link_history.create({
+            data: {
+              resource_id: resourceId,
+              link_id: link.id,
+              from_version: link.version,
+              old_content: link.content,
+              old_storage: link.storage,
+              old_size: link.size,
+              reason: 'remove',
+              operator_user_id: uid,
+              created: now
             }
-          },
-          include: {
-            user: {
-              include: {
-                _count: {
-                  select: { patch_resource: true }
-                }
-              }
-            },
-            patch: {
-              select: {
-                unique_id: true
-              }
-            },
-            links: {
-              orderBy: { sort_order: 'asc' }
-            }
+          })
+        await closeLinkCases(tx, {
+          linkIds: removed.map((link) => link.id),
+          resolution: 'link_removed',
+          actorType,
+          actorId: uid,
+          now
+        })
+        const deleted = await tx.patch_resource_link.deleteMany({
+          where: {
+            resource_id: resourceId,
+            id: { in: removed.map((link) => link.id) }
           }
         })
-
-        const uniqueId = await updatePatchAttributes(patchId, prisma)
-
-        const resourceResponse: PatchResource = {
-          id: newResource.id,
-          name: newResource.name,
-          section: newResource.section,
-          uniqueId: newResource.patch.unique_id,
-          type: newResource.type,
-          language: newResource.language,
-          note: newResource.note,
-          platform: newResource.platform,
-          links: newResource.links.map((link) => ({
+        if (deleted.count !== removed.length) throw conflict()
+      }
+      for (const [index, link] of input.links.entries()) {
+        const old = before.links.find((row) => row.id === link.id)
+        const next = canonicalLink(
+          link,
+          orders[index],
+          old,
+          uploadsByIndex.get(index)
+        )
+        if (!old) {
+          await tx.patch_resource_link.create({
+            data: { ...next, resource_id: resourceId }
+          })
+          continue
+        }
+        const data: Prisma.patch_resource_linkUpdateManyMutationInput = {}
+        for (const key of editableFields)
+          if (next[key] !== old[key]) data[key] = next[key] as never
+        const relinked = next.content !== old.content
+        if (relinked) {
+          if (old.version === 2147483647) throw conflict()
+          await closeLinkCases(tx, {
+            targets: [{ linkId: old.id, linkVersion: old.version }],
+            resolution: 'relinked',
+            actorType,
+            actorId: uid,
+            now
+          })
+          await tx.patch_resource_link_history.create({
+            data: {
+              resource_id: resourceId,
+              link_id: old.id,
+              from_version: old.version,
+              old_content: old.content,
+              old_storage: old.storage,
+              old_size: old.size,
+              reason: 'relink',
+              operator_user_id: uid,
+              created: now
+            }
+          })
+          Object.assign(data, {
+            version: old.version + 1,
+            evidence_round: 0,
+            health: 'ok',
+            verified_at: null,
+            health_changed_at:
+              old.health === 'ok' ? old.health_changed_at : now,
+            content_changed_at: now
+          })
+        }
+        if (Object.keys(data).length) {
+          const updated = await tx.patch_resource_link.updateMany({
+            where: {
+              id: old.id,
+              resource_id: resourceId,
+              version: old.version
+            },
+            data
+          })
+          if (updated.count !== 1) throw conflict()
+        }
+        if (
+          old.storage === 's3' &&
+          (next.storage !== 's3' || next.content !== old.content)
+        )
+          obsoleteS3.add(old.content)
+      }
+      await tx.patch_resource.update({
+        where: { id: resourceId },
+        data: {
+          section: input.section,
+          name: input.name,
+          note: input.note,
+          type: input.type,
+          language: input.language,
+          platform: input.platform
+        }
+      })
+      const uniqueId = await updatePatchAttributes(patchId, tx)
+      const fresh = await tx.patch_resource.findUniqueOrThrow({
+        where: { id: resourceId },
+        include: resourceMutationInclude(now)
+      })
+      const disputes = await getLinkDisputeSources(
+        fresh.links.map((link) => ({ ...link, resourceId, patchId })),
+        tx
+      )
+      const response: PatchResourceStableUpdateResponse = {
+        id: fresh.id,
+        name: fresh.name,
+        section: fresh.section,
+        uniqueId: fresh.patch.unique_id,
+        patchName: fresh.patch.name,
+        type: fresh.type,
+        language: fresh.language,
+        platform: fresh.platform,
+        note: fresh.note,
+        links: [...fresh.links]
+          .sort((a, b) => a.sort_order - b.sort_order || a.id - b.id)
+          .map((link) => ({
+            ...projectLinkHealth(
+              link,
+              fresh.user_id,
+              { uid, role: userRole },
+              disputes.get(link.id) ?? null,
+              now
+            ),
             id: link.id,
             storage: link.storage,
             size: link.size,
-            code: link.code,
-            password: link.password,
             hash: link.hash,
-            content: link.content,
             sortOrder: link.sort_order,
             download: link.download
           })),
-          download: newResource.download,
-          likeCount: 0,
-          isLike: false,
-          status: newResource.status,
-          userId: newResource.user_id,
-          patchId: newResource.patch_id,
-          created: String(newResource.created),
-          user: {
-            id: newResource.user.id,
-            name: newResource.user.name,
-            avatar: newResource.user.avatar,
-            patchCount: newResource.user._count.patch_resource,
-            role: newResource.user.role
-          }
-        }
-
-        return { resourceResponse, uniqueId }
+        download: fresh.download,
+        likeCount: 0,
+        isLike: false,
+        status: fresh.status,
+        userId: fresh.user_id,
+        patchId: fresh.patch_id,
+        created: fresh.created.toISOString(),
+        user: {
+          id: fresh.user.id,
+          name: fresh.user.name,
+          avatar: fresh.user.avatar,
+          role: fresh.user.role,
+          patchCount: fresh.user._count.patch_resource
+        },
+        linkChecks: []
       }
-    )
-    dbCommitted = true
-
-    await finalizeUploadedResources(uploadedResources, {
-      userId: uid,
-      patchId,
-      resourceId
-    })
-    await cleanupUploadedResourceDirs(uploadedResources, {
-      userId: uid,
-      patchId,
-      resourceId
-    })
-
-    const deletedContents = Array.from(
-      new Set(s3LinksToDelete.map((link) => link.content))
-    )
-    for (const content of deletedContents) {
-      try {
-        await deletePatchResourceLink(content)
-      } catch (error) {
-        console.error('[Upload] Failed to delete old S3 object after update', {
-          content,
-          resourceId,
-          patchId,
-          error
+      if (options.onSaved)
+        await options.onSaved(tx, before, {
+          ...response,
+          links: response.links.map((link) => {
+            const source = fresh.links.find((row) => row.id === link.id)!
+            return {
+              ...link,
+              content: source.content,
+              code: source.code,
+              password: source.password
+            }
+          })
         })
-      }
-    }
-
-    await deletePatchResourceCache(uniqueId)
-
-    return resourceResponse
+      return { response, uniqueId, obsoleteS3: [...obsoleteS3] }
+    })
+    committed = true
+    const context = { userId: uid, patchId, resourceId }
+    await resourcePostCommit('upload-finalize', () =>
+      finalizeUploadedResources(uploadedResources, context)
+    )
+    await resourcePostCommit('upload-directory-cleanup', () =>
+      cleanupUploadedResourceDirs(uploadedResources, context)
+    )
+    for (const content of result.obsoleteS3)
+      await resourcePostCommit('obsolete-resource-object', () =>
+        deletePatchResourceLink(content)
+      )
+    await resourcePostCommit('resource-cache', () =>
+      deletePatchResourceCache(result.uniqueId)
+    )
+    return checkRelinkedResource(result.response, input.baseLinks, {
+      uid,
+      role: userRole
+    })
   } catch (error) {
-    if (!dbCommitted) {
-      await compensateUploadedResources(uploadedResources)
+    if (!committed) {
+      // Content-addressed uploads can replace an already referenced object.
+      // A failed edit must never compensate by deleting that live object.
+      const unreferenced: UploadedPatchResource[] = []
+      for (const uploaded of uploadedResources) {
+        try {
+          if (
+            (await prisma.patch_resource_link.count({
+              where: { content: uploaded.downloadLink }
+            })) === 0
+          )
+            unreferenced.push(uploaded)
+        } catch {
+          console.error('[Resource] Upload compensation reference check failed')
+        }
+      }
+      await compensateUploadedResources(unreferenced)
       await releaseUploadedResourceLocks(uploadedResources)
     }
+    if (error instanceof ResourceMutationError) return error.message
     throw error
   }
 }

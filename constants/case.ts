@@ -1,3 +1,9 @@
+import { LINK_CASE_RESOLUTIONS } from './linkHealth'
+
+const linkCaseResolutions = Object.keys(
+  LINK_CASE_RESOLUTIONS
+) as (keyof typeof LINK_CASE_RESOLUTIONS)[]
+
 /**
  * Shared vocabulary for the operations case system.
  *
@@ -6,7 +12,7 @@
  */
 export const CASE_KINDS = [
   'resource_mismatch',
-  // Interim kind until modules 04 and 05 ship link-level failure reports.
+  // Historical resource reports remain processable; new reports use link health.
   'resource_link_failure',
   'resource_runtime',
   'resource_request',
@@ -15,10 +21,10 @@ export const CASE_KINDS = [
   'content_violation',
   'other',
   'patch_info',
-  // Reserved contracts for later modules. They are intentionally not
-  // accepted by the public create endpoint until those modules ship.
+  // System link cases use the health helper, not the public create endpoint.
   'link_suspect',
   'link_disputed',
+  // Reserved for later modules.
   'takedown_request',
   'mirror_version_check'
 ] as const
@@ -26,7 +32,6 @@ export type CaseKind = (typeof CASE_KINDS)[number]
 
 export const OPEN_CASE_KINDS = [
   'resource_mismatch',
-  'resource_link_failure',
   'resource_runtime',
   'resource_request',
   'resource_other',
@@ -58,7 +63,7 @@ export const CASE_TARGET_TYPES = [
   'user',
   // Site-wide requests have no target row; target_id is always 0.
   'site',
-  // Reserved for modules 04 and 07.
+  // Link targets are internal to module 04; help remains reserved for 07.
   'link',
   'help'
 ] as const
@@ -164,8 +169,7 @@ export const CASE_RESOLUTIONS = [
   'escalated_ignored',
   'reporter_unresponsive',
   'reporter_withdrawn',
-  'relinked',
-  'verified_available',
+  ...linkCaseResolutions,
   'moved',
   'not_established',
   'violation_hidden',
@@ -244,8 +248,8 @@ export const CASE_RESOLUTIONS_BY_KIND: Record<
     'reporter_unresponsive',
     'reporter_withdrawn'
   ],
-  link_suspect: [],
-  link_disputed: [],
+  link_suspect: linkCaseResolutions,
+  link_disputed: linkCaseResolutions,
   takedown_request: [],
   mirror_version_check: []
 }
@@ -447,8 +451,7 @@ export const CASE_RESOLUTION_LABELS: Record<CaseResolution, string> = {
   escalated_ignored: '升级后忽略',
   reporter_unresponsive: '开启者未回应',
   reporter_withdrawn: '开启者撤回',
-  relinked: '已补链',
-  verified_available: '核实可用',
+  ...LINK_CASE_RESOLUTIONS,
   moved: '已移动',
   not_established: '不成立',
   violation_hidden: '违规隐藏',
@@ -460,12 +463,11 @@ export const CASE_RESOLUTION_LABELS: Record<CaseResolution, string> = {
 /** Public API allows only these combinations in module 03. */
 export const CASE_KIND_TARGETS = {
   resource_mismatch: ['resource'],
-  resource_link_failure: ['resource'],
   resource_runtime: ['resource'],
   resource_request: ['resource', 'patch'],
   resource_other: ['resource'],
   resource_wrong_patch: ['resource'],
-  content_violation: ['comment', 'rating', 'shoutbox', 'user'],
+  content_violation: ['comment', 'rating', 'shoutbox', 'user', 'resource'],
   other: ['patch', 'site'],
   patch_info: ['patch']
 } as const satisfies Record<
@@ -497,12 +499,6 @@ export const isCaseOpenerScoped = (kind: string, targetType: string) =>
  * own entry point without changing the persisted vocabulary.
  */
 export const FROZEN_CASE_KIND_TARGETS = [
-  {
-    kind: 'content_violation',
-    targetType: 'resource',
-    ownerType: 'staff',
-    timeout: 'none'
-  },
   {
     kind: 'content_violation',
     targetType: 'help',

@@ -40,6 +40,6 @@ export const DELETE = async (req: NextRequest) => {
     return NextResponse.json('本页面仅超级管理员可访问')
   }
 
-  const response = await deletePatchById(input)
+  const response = await deletePatchById(input, payload.uid)
   return NextResponse.json(response)
 }

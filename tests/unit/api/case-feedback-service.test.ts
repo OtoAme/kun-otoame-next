@@ -246,9 +246,7 @@ beforeEach(() => {
         )
       }
       return Promise.resolve(
-        [90, 91]
-          .filter((id) => !missing.has(id))
-          .map((id) => ({ id }))
+        [90, 91].filter((id) => !missing.has(id)).map((id) => ({ id }))
       )
     }
   )
@@ -370,35 +368,29 @@ describe('case feedback rules (M03-6, M03-7)', () => {
     ])
   })
 
-  it('routes the interim link-failure kind to the publisher with a daily key', async () => {
-    // No open case, no report today, then the freshly inserted row.
-    mocks.tx.ops_case.findUnique
-      .mockResolvedValueOnce(null)
-      .mockResolvedValueOnce(null)
-      .mockResolvedValue(
-        caseRow({ kind: 'resource_link_failure', dedup_key: 'x' })
-      )
-
-    await createCase(
+  it('rejects new temporary link-failure reports while historical cases stay processable', async () => {
+    const result = await createCase(
       {
         kind: 'resource_link_failure',
         targetType: 'resource',
         targetId: 100,
-        content: '百度网盘那条显示分享已取消'
+        content: 'synthetic old link report'
       },
       5,
       { now, db: mocks.tx as never }
     )
-
-    const inserted = mocks.tx.ops_case.createMany.mock.calls[0][0].data[0]
-    expect(inserted).toMatchObject({
-      kind: 'resource_link_failure',
-      owner_type: 'publisher',
-      owner_id: 2,
-      public: true,
-      dedup_key: 'resource:100:resource_link_failure',
-      daily_key: '5:resource:100:2026-09-26'
-    })
+    expect(result).toBe('当前问题类型暂不支持该目标')
+    expect(mocks.tx.ops_case.createMany).not.toHaveBeenCalled()
+    mocks.tx.ops_case.findUnique.mockResolvedValue(
+      caseRow({ kind: 'resource_link_failure' })
+    )
+    const closed = await resolveCase(
+      { caseId: 42, resolution: 'verified_available', content: '' },
+      2,
+      { now, db: mocks.tx as never }
+    )
+    expect(closed).toMatchObject({ changed: true })
+    expect(mocks.tx.ops_case.updateMany).toHaveBeenCalled()
   })
 
   it.each(['resource_runtime', 'resource_request', 'resource_other'] as const)(
@@ -691,7 +683,10 @@ describe('case feedback rules (M03-6, M03-7)', () => {
 
   it('restarts the reporter clock for a successor who owes an answer (D33)', async () => {
     mocks.tx.ops_case.findUnique.mockResolvedValue(
-      caseRow({ status: 'waiting_reporter', status_changed_at: hoursAgo(13 * 24) })
+      caseRow({
+        status: 'waiting_reporter',
+        status_changed_at: hoursAgo(13 * 24)
+      })
     )
     mocks.tx.ops_case_subscriber.findUnique.mockResolvedValue({ user_id: 5 })
     mocks.tx.ops_case_subscriber.findFirst.mockResolvedValue({ user_id: 10 })
@@ -1120,16 +1115,23 @@ describe('site administrator review fixes (M03-8)', () => {
     })
 
     expect(recipients()).toEqual([5, 90, 91])
-    expect(noticeRows().filter(({ recipient_id }) => recipient_id !== 5)).toEqual(
+    expect(
+      noticeRows().filter(({ recipient_id }) => recipient_id !== 5)
+    ).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ recipient_id: 90, sender_id: null }),
         expect.objectContaining({ recipient_id: 91, sender_id: null })
       ])
     )
     const recipientLock = mocks.tx.$queryRaw.mock.calls
-      .map(([query]) => query as { strings?: readonly string[]; values?: unknown[] })
+      .map(
+        ([query]) =>
+          query as { strings?: readonly string[]; values?: unknown[] }
+      )
       .find(({ strings }) => strings?.join(' ').includes('FOR KEY SHARE'))
-    expect(recipientLock?.values).toEqual(expect.arrayContaining([2, 8, 90, 91]))
+    expect(recipientLock?.values).toEqual(
+      expect.arrayContaining([2, 8, 90, 91])
+    )
   })
 
   it('lets the administrator record「开启者未回应」only after 14 days on the reporter (D24)', async () => {
@@ -1735,17 +1737,19 @@ describe('site administrator review fixes (M03-8)', () => {
     mocks.tx.ops_case.findUnique.mockResolvedValue(shoutboxCase())
     mocks.tx.shoutbox.findUnique.mockResolvedValue(null)
     await expect(
-      handleCaseContent(
-        { caseId: 42, action: 'restore', content: '' },
-        90,
-        3,
-        { now, db: db() }
-      )
+      handleCaseContent({ caseId: 42, action: 'restore', content: '' }, 90, 3, {
+        now,
+        db: db()
+      })
     ).resolves.toBe('小喇叭已删除，请填写处理说明')
     expect(mocks.tx.ops_case.updateMany).not.toHaveBeenCalled()
 
     await handleCaseContent(
-      { caseId: 42, action: 'restore', content: '小喇叭已删除，记录本次误判处理。' },
+      {
+        caseId: 42,
+        action: 'restore',
+        content: '小喇叭已删除，记录本次误判处理。'
+      },
       90,
       3,
       { now, db: db() }
@@ -1841,21 +1845,24 @@ describe('manual test review fixes (M03-9)', () => {
 
   it('leaves the first response to the publisher when an administrator steps in (D32)', async () => {
     await handleCaseAsAdmin(
-      { caseId: 42, action: 'reply', content: '站方先看一下', awaitReporter: false },
+      {
+        caseId: 42,
+        action: 'reply',
+        content: '站方先看一下',
+        awaitReporter: false
+      },
       90,
       3,
       { now, db: db() }
     )
-    expect(mocks.tx.ops_case.updateMany.mock.calls[0][0].data).not.toHaveProperty(
-      'first_owner_response_at'
-    )
+    expect(
+      mocks.tx.ops_case.updateMany.mock.calls[0][0].data
+    ).not.toHaveProperty('first_owner_response_at')
 
-    await appendCaseMessage(
-      { caseId: 42, content: '已经在核对文件了' },
-      2,
-      1,
-      { now, db: db() }
-    )
+    await appendCaseMessage({ caseId: 42, content: '已经在核对文件了' }, 2, 1, {
+      now,
+      db: db()
+    })
     expect(mocks.tx.ops_case.updateMany.mock.calls[1][0].data).toMatchObject({
       first_owner_response_at: now
     })
@@ -1863,7 +1870,11 @@ describe('manual test review fixes (M03-9)', () => {
 
   it('signs administrator and original publisher replies by their side', async () => {
     mocks.tx.ops_case.findUnique.mockResolvedValue(
-      caseRow({ owner_type: 'staff', owner_id: null, escalated_at: hoursAgo(2) })
+      caseRow({
+        owner_type: 'staff',
+        owner_id: null,
+        escalated_at: hoursAgo(2)
+      })
     )
     setHandoff({
       escalation_trigger: 'timeout',
@@ -1906,7 +1917,11 @@ describe('manual test review fixes (M03-9)', () => {
 
   it('names the original publisher from the handoff once the resource is gone', async () => {
     mocks.tx.ops_case.findUnique.mockResolvedValue(
-      caseRow({ owner_type: 'staff', owner_id: null, escalated_at: hoursAgo(2) })
+      caseRow({
+        owner_type: 'staff',
+        owner_id: null,
+        escalated_at: hoursAgo(2)
+      })
     )
     mocks.tx.patch_resource.findUnique.mockResolvedValue(null)
     mocks.tx.ops_case_subscriber.findUnique.mockResolvedValue({ user_id: 5 })

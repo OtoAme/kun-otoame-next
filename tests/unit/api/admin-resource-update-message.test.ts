@@ -19,6 +19,7 @@ vi.mock('~/prisma/index', () => ({
 }))
 
 const updatePatchResourceByRoleMock = vi.hoisted(() => vi.fn())
+let coreResponse: PatchResource
 
 vi.mock('~/app/api/patch/resource/update', () => ({
   updatePatchResource: updatePatchResourceByRoleMock
@@ -38,6 +39,10 @@ import { updatePatchResource } from '~/app/api/admin/resource/update'
 
 const updateInput = {
   resourceId: 10,
+  baseLinks: [
+    { id: 29, version: 1 },
+    { id: 30, version: 1 }
+  ],
   patchId: 20,
   section: 'galgame' as const,
   name: '修正后的资源',
@@ -143,7 +148,15 @@ describe('admin resource update notifications', () => {
     )
     prismaMocks.user.findUnique.mockResolvedValue({ id: 3, name: '管理员' })
     prismaMocks.patch_resource.findUnique.mockResolvedValue(originalResource)
-    updatePatchResourceByRoleMock.mockResolvedValue(updatedResource)
+    coreResponse = updatedResource
+    updatePatchResourceByRoleMock.mockImplementation(
+      async (_input, _uid, _role, options) => {
+        const original = await prismaMocks.patch_resource.findUnique()
+        const after = { ...coreResponse, patchName: original.patch.name }
+        await options.onSaved(prismaMocks, original, after)
+        return after
+      }
+    )
   })
 
   it('notifies the resource owner when an admin updates their resource', async () => {
@@ -153,7 +166,8 @@ describe('admin resource update notifications', () => {
     expect(updatePatchResourceByRoleMock).toHaveBeenCalledWith(
       updateInput,
       3,
-      3
+      3,
+      expect.objectContaining({ onSaved: expect.any(Function) })
     )
     expect(createMessageMock).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -226,14 +240,14 @@ describe('admin resource update notifications', () => {
       ...originalResource,
       user_id: 3
     })
-    updatePatchResourceByRoleMock.mockResolvedValue({
+    coreResponse = {
       ...updatedResource,
       userId: 3,
       user: {
         ...updatedResource.user,
         id: 3
       }
-    })
+    }
 
     await updatePatchResource(updateInput, 3)
 
@@ -257,7 +271,7 @@ describe('admin resource update notifications', () => {
         }
       ]
     })
-    updatePatchResourceByRoleMock.mockResolvedValue({
+    coreResponse = {
       ...updatedResource,
       name: originalResource.name,
       type: originalResource.type,
@@ -277,7 +291,7 @@ describe('admin resource update notifications', () => {
           download: 0
         }
       ]
-    })
+    }
 
     await updatePatchResource(updateInput, 3)
 
@@ -311,7 +325,7 @@ describe('admin resource update notifications', () => {
         }
       ]
     })
-    updatePatchResourceByRoleMock.mockResolvedValue({
+    coreResponse = {
       ...updatedResource,
       name: originalResource.name,
       type: originalResource.type,
@@ -331,7 +345,7 @@ describe('admin resource update notifications', () => {
           download: 0
         }
       ]
-    })
+    }
 
     await updatePatchResource(updateInput, 3)
 

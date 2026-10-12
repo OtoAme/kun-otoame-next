@@ -24,6 +24,9 @@ export const kunGetActions = async (
 
   const nsfwEnable = await getNSFWHeader()
 
-  const response = await getPatchResource(input, nsfwEnable)
+  const response = await getPatchResource(input, nsfwEnable, {
+    uid: payload.uid,
+    role: payload.role
+  })
   return response
 }

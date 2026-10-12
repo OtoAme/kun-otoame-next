@@ -65,4 +65,21 @@ describe('admin resource list service', () => {
       })
     })
   })
+  it('adds exact resource identity while retaining the existing patch preference and hidden-resource access', async () => {
+    await getPatchResource(
+      { page: 1, limit: 1, search: '', resourceId: 17, userId: undefined },
+      { content_limit: 'sfw' },
+      { uid: 9, role: 3 }
+    )
+    expect(prismaMocks.patch_resource.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 17, patch: { content_limit: 'sfw' } },
+        take: 1,
+        skip: 0
+      })
+    )
+    expect(prismaMocks.patch_resource.count).toHaveBeenCalledWith({
+      where: { id: 17, patch: { content_limit: 'sfw' } }
+    })
+  })
 })

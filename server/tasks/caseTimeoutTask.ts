@@ -28,6 +28,7 @@ const loadDueReporterTimeouts = async (db: TimeoutDb, now: Date) =>
   db.ops_case.findMany({
     where: {
       owner_type: 'publisher',
+      target_type: { not: 'link' },
       reporter_id: { not: null },
       status: 'waiting_reporter',
       kind: { in: [...CASE_REPORTER_TIMEOUT_KINDS] },
@@ -44,6 +45,7 @@ const loadDueEscalations = async (db: TimeoutDb, now: Date) =>
   db.ops_case.findMany({
     where: {
       owner_type: 'publisher',
+      target_type: { not: 'link' },
       status: { in: ['open', 'waiting_owner'] },
       kind: { in: [...CASE_PUBLISHER_TIMEOUT_KINDS] },
       status_changed_at: {
@@ -72,6 +74,7 @@ const loadDueReminders = async (db: TimeoutDb, now: Date) => {
   return db.ops_case.findMany({
     where: {
       owner_type: 'publisher',
+      target_type: { not: 'link' },
       OR: [
         {
           status: { in: ['open', 'waiting_owner'] },

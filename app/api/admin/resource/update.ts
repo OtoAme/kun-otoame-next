@@ -2,7 +2,7 @@ import { z } from 'zod'
 import { prisma } from '~/prisma/index'
 import { updatePatchResource as updatePatchResourceByRole } from '~/app/api/patch/resource/update'
 import { sanitizeResourceForAuditLog } from '~/app/api/patch/resource/_helper'
-import { patchResourceUpdateSchema } from '~/validations/patch'
+import { patchResourceStableUpdateSchema } from '~/validations/patch'
 import { createMessage } from '~/app/api/utils/message'
 import {
   RESOURCE_SECTION_MAP,
@@ -12,7 +12,6 @@ import {
   storageTypes
 } from '~/constants/resource'
 import type { PatchResource } from '~/types/api/patch'
-import type { AdminResource } from '~/types/api/admin'
 
 type ResourceChangeSource = {
   name: string
@@ -372,7 +371,7 @@ const buildResourceChangeSummary = (
 }
 
 export const updatePatchResource = async (
-  input: z.infer<typeof patchResourceUpdateSchema>,
+  input: z.infer<typeof patchResourceStableUpdateSchema>,
   uid: number
 ) => {
   const admin = await prisma.user.findUnique({ where: { id: uid } })
@@ -380,69 +379,54 @@ export const updatePatchResource = async (
     return '未找到该管理员'
   }
 
-  const { resourceId } = input
-  const resource = await prisma.patch_resource.findUnique({
-    where: { id: resourceId },
-    include: {
-      patch: {
-        select: {
-          name: true
+  return updatePatchResourceByRole(input, uid, 3, {
+    onSaved: async (tx, resource, updatedResource) => {
+      const before = {
+        id: resource.id,
+        name: resource.name,
+        section: resource.section,
+        type: resource.type,
+        language: resource.language,
+        platform: resource.platform,
+        note: resource.note,
+        links: resource.links.map((link) => ({
+          id: link.id,
+          storage: link.storage,
+          size: link.size,
+          content: link.content,
+          code: link.code,
+          password: link.password,
+          hash: link.hash,
+          sort_order: link.sort_order
+        }))
+      }
+      const resourceTypeName =
+        updatedResource.section === 'galgame' ? '游戏资源' : '补丁资源'
+      if (resource.user_id !== uid) {
+        const changeSummary = buildResourceChangeSummary(
+          before,
+          updatedResource
+        )
+        await createMessage(
+          {
+            type: 'system',
+            content: `管理员修改了你发布的${resourceTypeName}「${updatedResource.name}」。${changeSummary ? `\n\n修改内容:\n${changeSummary}` : ''}`,
+            sender_id: uid,
+            recipient_id: resource.user_id,
+            link: updatedResource.uniqueId
+              ? `/${updatedResource.uniqueId}`
+              : '/'
+          },
+          tx
+        )
+      }
+      await tx.admin_log.create({
+        data: {
+          type: 'update',
+          user_id: uid,
+          content: `管理员 ${admin.name} 更新了一个${resourceTypeName}信息\n\n原${resourceTypeName}信息:\n${JSON.stringify(sanitizeResourceForAuditLog(before))}\n\n新${resourceTypeName}信息:\n${JSON.stringify(sanitizeResourceForAuditLog(updatedResource))}`
         }
-      },
-      links: {
-        orderBy: { sort_order: 'asc' }
-      }
+      })
     }
-  })
-  if (!resource) {
-    return '未找到该资源'
-  }
-
-  const updatedResource = await updatePatchResourceByRole(input, uid, 3)
-  if (typeof updatedResource === 'string') {
-    return updatedResource
-  }
-  const updatedAdminResource: AdminResource = {
-    ...updatedResource,
-    patchName: resource.patch.name
-  }
-
-  const sanitizedResource = sanitizeResourceForAuditLog(resource)
-  const sanitizedUpdatedResource =
-    sanitizeResourceForAuditLog(updatedAdminResource)
-  const resourceTypeName =
-    updatedAdminResource.section === 'galgame' ? '游戏资源' : '补丁资源'
-
-  return await prisma.$transaction(async (prisma) => {
-    if (resource.user_id !== uid) {
-      const changeSummary = buildResourceChangeSummary(
-        resource,
-        updatedAdminResource
-      )
-      await createMessage(
-        {
-          type: 'system',
-          content: `管理员修改了你发布的${resourceTypeName}「${updatedAdminResource.name}」。${
-            changeSummary ? `\n\n修改内容:\n${changeSummary}` : ''
-          }`,
-          sender_id: uid,
-          recipient_id: resource.user_id,
-          link: updatedAdminResource.uniqueId
-            ? `/${updatedAdminResource.uniqueId}`
-            : '/'
-        },
-        prisma
-      )
-    }
-
-    await prisma.admin_log.create({
-      data: {
-        type: 'update',
-        user_id: uid,
-        content: `管理员 ${admin.name} 更新了一个${resourceTypeName}信息\n\n原${resourceTypeName}信息:\n${JSON.stringify(sanitizedResource)}\n\n新${resourceTypeName}信息:\n${JSON.stringify(sanitizedUpdatedResource)}`
-      }
-    })
-
-    return updatedAdminResource
   })
 }
