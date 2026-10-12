@@ -14,6 +14,10 @@ import {
 } from '@heroui/react'
 import toast from 'react-hot-toast'
 import { EditResourceDialog } from '~/components/patch/resource/edit/EditResourceDialog'
+import {
+  captureResourceEditContext,
+  withEditContext
+} from '~/components/patch/resource/accessResourceLinksForEdit'
 import { kunFetchPut } from '~/utils/kunFetch'
 import { kunErrorHandler } from '~/utils/kunErrorHandler'
 import type { AdminResource } from '~/types/api/admin'
@@ -34,6 +38,23 @@ export const ResourceApprovalButton = ({
     onOpen: onOpenEdit,
     onClose: onCloseEdit
   } = useDisclosure()
+  const [editResource, setEditResource] = useState<PatchResource | null>(null)
+
+  // 待审资源 DTO 自带 baseLinks 与带凭据的健康链接（已授权读取）：打开编辑
+  // 即捕获基点，不为编辑走下载获取通道制造授权。
+  const handleOpenEdit = () => {
+    const context = captureResourceEditContext(resource)
+    if (!context) {
+      toast.error('链接编辑基点缺失，请刷新列表后再试')
+      return
+    }
+    setEditResource(withEditContext({ ...resource }, context))
+    onOpenEdit()
+  }
+  const handleCloseEdit = () => {
+    onCloseEdit()
+    setEditResource(null)
+  }
   const {
     isOpen: isOpenApprove,
     onOpen: onOpenApprove,
@@ -87,7 +108,7 @@ export const ResourceApprovalButton = ({
         size="sm"
         variant="flat"
         startContent={<Edit2 size={14} />}
-        onPress={onOpenEdit}
+        onPress={handleOpenEdit}
       >
         编辑
       </Button>
@@ -101,20 +122,22 @@ export const ResourceApprovalButton = ({
       <Modal
         size="3xl"
         isOpen={isOpenEdit}
-        onClose={onCloseEdit}
+        onClose={handleCloseEdit}
         scrollBehavior="outside"
         isDismissable={false}
         isKeyboardDismissDisabled={true}
       >
-        <EditResourceDialog
-          onClose={onCloseEdit}
-          resource={resource}
-          onSuccess={(updatedResource) => {
-            onResourceUpdated?.(updatedResource)
-            onCloseEdit()
-          }}
-          type="admin"
-        />
+        {isOpenEdit && editResource && (
+          <EditResourceDialog
+            onClose={handleCloseEdit}
+            resource={editResource}
+            onSuccess={(updatedResource) => {
+              onResourceUpdated?.(updatedResource)
+              handleCloseEdit()
+            }}
+            type="admin"
+          />
+        )}
       </Modal>
 
       <Modal isOpen={isOpenApprove} onClose={onCloseApprove}>

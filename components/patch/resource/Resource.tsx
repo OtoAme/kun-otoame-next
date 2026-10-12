@@ -146,18 +146,21 @@ export const Resources = ({ id, vndbId }: Props) => {
         isDismissable={false}
         isKeyboardDismissDisabled={true}
       >
-        <EditResourceDialog
-          onClose={onCloseEdit}
-          resource={editResource!}
-          onSuccess={(res) => {
-            setResources((prevResources) =>
-              prevResources.map((resource) =>
-                resource.id === res.id ? res : resource
+        {/* 每次打开都重新挂载：基点随打开一次性捕获，关闭即销毁草稿生命周期 */}
+        {isOpenEdit && editResource && (
+          <EditResourceDialog
+            onClose={onCloseEdit}
+            resource={editResource}
+            onSuccess={(res) => {
+              setResources((prevResources) =>
+                prevResources.map((resource) =>
+                  resource.id === res.id ? res : resource
+                )
               )
-            )
-            onCloseEdit()
-          }}
-        />
+              onCloseEdit()
+            }}
+          />
+        )}
       </Modal>
 
       <Modal isOpen={isOpenDelete} onClose={onCloseDelete} placement="center">

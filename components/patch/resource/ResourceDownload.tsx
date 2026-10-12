@@ -9,46 +9,99 @@ import { formatTimeDifference } from '~/utils/time'
 import { kunFetchPost } from '~/utils/kunFetch'
 import { ResourceLikeButton } from './ResourceLike'
 import { ResourceDownloadCard } from './DownloadCard'
+import { ReportResourceButton } from '~/components/case/ReportResourceButton'
 import { markdownToHtml } from './kun/markdownToHtml'
+import {
+  brokenLinksFoldText,
+  countBrokenLinks,
+  latestRelinkAt,
+  readLinkHealth,
+  readSnapshotId
+} from './linkHealthDisplay'
 import type {
   PatchResource,
-  PatchResourceAccessLink,
-  PatchResourceAccessRestoreResponse
+  PatchResourceHealthAccessRestoreResponse,
+  PatchResourceHealthAccessLink,
+  PatchResourceLink
 } from '~/types/api/patch'
+import type { LinkHealthSummary } from '~/types/api/linkHealth'
 
 interface Props {
   resource: PatchResource
   preview?: boolean
+  /** Opens the existing resource editor; a link id focuses its address field. */
+  onEdit?: (resource: PatchResource, focusLinkId?: number) => void
 }
 
 const COLLAPSED_HEIGHT_PX = 96
 
+// 已失效链接不提供获取入口，也不参与已获取恢复（E04-04）。
+const restorableLinkId = (link: PatchResourceLink) =>
+  link.revealed && readLinkHealth(link)?.health !== 'broken'
+
 type RestoreState = {
   key: string
-  links: Map<number, PatchResourceAccessLink>
+  links: Map<number, PatchResourceHealthAccessLink>
   expiresAt: string
   error: string
 }
 
-export const ResourceDownload = ({ resource, preview = false }: Props) => {
+export const ResourceDownload = ({
+  resource,
+  preview = false,
+  onEdit
+}: Props) => {
   const [showLinks, setShowLinks] = useState<Record<number, boolean>>(() =>
     preview || resource.links.some((link) => link.revealed)
       ? { [resource.id]: true }
       : {}
   )
-  const revealedLinkIds = useMemo(
+  // 凭据标识 = 目标 + 当前读取快照版本：补链或换版本必然换身份并重新恢复
+  const revealedLinks = useMemo(
     () =>
-      [
-        ...new Set(
-          resource.links.filter((link) => link.revealed).map((link) => link.id)
-        )
-      ].sort((left, right) => left - right),
+      resource.links
+        .filter(restorableLinkId)
+        .map((link) => ({
+          id: link.id,
+          version: readLinkHealth(link)?.version ?? null
+        }))
+        .sort((left, right) => left.id - right.id),
     [resource.links]
   )
-  const restoreKey = `${resource.patchId}:${resource.id}:${revealedLinkIds.join(',')}`
+  const revealedLinkIds = useMemo(
+    () => revealedLinks.map((entry) => entry.id),
+    [revealedLinks]
+  )
+  const brokenFold = brokenLinksFoldText(
+    countBrokenLinks(resource.links),
+    latestRelinkAt(resource.links)
+  )
+  // 「遇到问题」报告结果按链接下发到对应卡片的事实展示。每条更新都带上
+  // 捕获时的读取快照标记：迟到的旧快照回调即使闯过清理窗口也不被渲染；
+  // 新快照（对象引用变化）同时清空旧表并回到服务端事实
+  const [healthUpdates, setHealthUpdates] = useState<
+    Record<number, { view: LinkHealthSummary; snapshotId: number }>
+  >({})
+  useEffect(() => {
+    setHealthUpdates({})
+  }, [resource])
+  const snapshotId = readSnapshotId(resource)
+  // 渲染即更新的当前快照引用：旧快照闭包的迟到回调整笔丢弃，不覆盖
+  // 同 linkId 已收到的新快照成功结果
+  const currentSnapshotRef = useRef(snapshotId)
+  currentSnapshotRef.current = snapshotId
+  const healthUpdateFor = (linkId: number): LinkHealthSummary | null => {
+    const entry = healthUpdates[linkId]
+    return entry && entry.snapshotId === snapshotId ? entry.view : null
+  }
+  const restoreKey = `${resource.patchId}:${resource.id}:${readSnapshotId(resource)}:${revealedLinks
+    .map((entry) => `${entry.id}:${entry.version ?? 'na'}`)
+    .join(',')}`
+  const linkVersionKey = (link: PatchResourceLink): string =>
+    `${link.id}:${readLinkHealth(link)?.version ?? 'na'}`
   const restoreRequestRef = useRef<{
     key: string
-    promise: Promise<PatchResourceAccessRestoreResponse | string>
+    promise: Promise<PatchResourceHealthAccessRestoreResponse | string>
   } | null>(null)
   const [restoreState, setRestoreState] = useState<RestoreState>({
     key: '',
@@ -103,19 +156,24 @@ export const ResourceDownload = ({ resource, preview = false }: Props) => {
       })
       restoreRequestRef.current = {
         key: restoreKey,
-        promise: kunFetchPost<PatchResourceAccessRestoreResponse | string>(
-          '/patch/resource/download/access/restore',
-          {
-            patchId: resource.patchId,
-            resourceId: resource.id,
-            linkIds: revealedLinkIds
-          }
-        )
+        promise: kunFetchPost<
+          PatchResourceHealthAccessRestoreResponse | string
+        >('/patch/resource/download/access/restore', {
+          patchId: resource.patchId,
+          resourceId: resource.id,
+          linkIds: revealedLinkIds
+        })
       }
     }
 
     let stale = false
     const request = restoreRequestRef.current
+    // 只去重真正相同的 in-flight：完成即释放，下一身份或父级刷新都重新读取
+    const releaseCompletedRequest = () => {
+      if (restoreRequestRef.current === request) {
+        restoreRequestRef.current = null
+      }
+    }
     void request.promise
       .then((response) => {
         if (stale || restoreRequestRef.current?.key !== restoreKey) return
@@ -126,6 +184,7 @@ export const ResourceDownload = ({ resource, preview = false }: Props) => {
             expiresAt: '',
             error: '已获取链接恢复失败，可点击单条链接重试'
           })
+          releaseCompletedRequest()
           return
         }
 
@@ -140,6 +199,7 @@ export const ResourceDownload = ({ resource, preview = false }: Props) => {
           expiresAt: response.obtainedExpiresAt ?? '',
           error: ''
         })
+        releaseCompletedRequest()
       })
       .catch(() => {
         if (!stale && restoreRequestRef.current?.key === restoreKey) {
@@ -150,6 +210,7 @@ export const ResourceDownload = ({ resource, preview = false }: Props) => {
             error: '已获取链接恢复失败，可点击单条链接重试'
           })
         }
+        releaseCompletedRequest()
       })
 
     return () => {
@@ -226,21 +287,24 @@ export const ResourceDownload = ({ resource, preview = false }: Props) => {
         <p>{resource.name}</p>
       )}
 
-      <div className="flex justify-between">
-        <KunUser
-          user={resource.user}
-          userProps={{
-            name: resource.user.name,
-            description: `${formatTimeDifference(resource.created)} • 已发布资源 ${resource.user.patchCount} 个`,
-            avatarProps: {
-              showFallback: true,
-              src: resource.user.avatar,
-              name: resource.user.name.charAt(0).toUpperCase()
-            }
-          }}
-        />
+      {/* 用户与操作一行装不下的窄屏自然换行：用户名可收缩，动作仍可完整右落；桌面仍紧凑同行 */}
+      <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
+        <div className="min-w-0 max-w-full shrink">
+          <KunUser
+            user={resource.user}
+            userProps={{
+              name: resource.user.name,
+              description: `${formatTimeDifference(resource.created)} • 已发布资源 ${resource.user.patchCount} 个`,
+              avatarProps: {
+                showFallback: true,
+                src: resource.user.avatar,
+                name: resource.user.name.charAt(0).toUpperCase()
+              }
+            }}
+          />
+        </div>
 
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           {preview ? (
             <span className="self-center text-sm" aria-label="点赞数">
               {resource.likeCount}
@@ -256,11 +320,33 @@ export const ResourceDownload = ({ resource, preview = false }: Props) => {
           >
             <Download className="size-4" />
           </Button>
+          {!preview && (
+            <ReportResourceButton
+              resource={resource}
+              patchId={resource.patchId}
+              onReported={(view) => {
+                // 旧快照闭包的迟到回调整笔 no-op，保留已收到的新匹配更新
+                if (snapshotId !== currentSnapshotRef.current) {
+                  return
+                }
+                setHealthUpdates((current) => ({
+                  ...current,
+                  [view.linkId]: { view, snapshotId }
+                }))
+              }}
+            />
+          )}
         </div>
       </div>
 
       {showLinks[resource.id] && (
         <div className="space-y-3">
+          {brokenFold && (
+            <p className="text-sm text-default-500" role="status">
+              {brokenFold}
+            </p>
+          )}
+
           {currentRestoreState?.error && (
             <p role="alert" className="text-sm text-danger">
               {currentRestoreState.error}
@@ -268,13 +354,21 @@ export const ResourceDownload = ({ resource, preview = false }: Props) => {
           )}
 
           {resource.links.map((link) => {
-            const restoredLink = currentRestoreState?.links.get(link.id)
+            const restoredLink =
+              readLinkHealth(link)?.health === 'broken'
+                ? undefined
+                : currentRestoreState?.links.get(link.id)
             return (
+              // id+version 作为子键：版本推进即全新卡片，旧凭据/旧状态不带入
               <ResourceDownloadCard
-                key={link.id}
+                key={linkVersionKey(link)}
                 resource={resource}
                 link={link}
                 preview={preview}
+                healthUpdate={healthUpdateFor(link.id)}
+                onRelink={
+                  onEdit ? (target) => onEdit(resource, target.id) : undefined
+                }
                 {...(restoredLink
                   ? {
                       restoredLink,

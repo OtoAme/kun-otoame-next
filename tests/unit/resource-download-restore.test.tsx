@@ -56,6 +56,10 @@ vi.mock('~/components/patch/resource/kun/markdownToHtml', () => ({
   markdownToHtml: vi.fn(async (markdown: string) => markdown)
 }))
 
+vi.mock('~/components/case/ReportResourceButton', () => ({
+  ReportResourceButton: () => <button type="button">遇到问题</button>
+}))
+
 vi.mock('~/components/patch/resource/DownloadCard', () => ({
   ResourceDownloadCard: ({
     link,
@@ -310,7 +314,8 @@ describe('ResourceDownload revealed mirror restore', () => {
     const first = withLinks([{ ...link21, revealed: true }, link22])
     const { container, rerender } = await renderResourceDownload(first)
 
-    await rerender(withLinks([{ ...link21, revealed: true }, { ...link22 }]))
+    // 同一读取快照（同一资源对象）的状态渲染不引发新请求（不连续 refetch）
+    await rerender(first)
 
     expect(fetchMock.kunFetchPost).toHaveBeenCalledTimes(1)
     request.resolve({
@@ -542,5 +547,94 @@ describe('ResourceDownload revealed mirror restore', () => {
     await flushEffects()
 
     expect(container.textContent).toBe('')
+  })
+
+  it('refetches after a completed restore on re-render (no permanent reuse of finished promises)', async () => {
+    fetchMock.kunFetchPost.mockResolvedValue({
+      links: [sensitiveLink21],
+      obtainedExpiresAt: '2026-07-11T00:00:00.000Z'
+    })
+    const { rerender } = await renderResourceDownload(
+      withLinks([{ ...link21, obtained: true, revealed: true }])
+    )
+    await flushEffects()
+    expect(fetchMock.kunFetchPost).toHaveBeenCalledTimes(1)
+
+    // 相同的静态身份重新渲染（父级刷新资源列表）：完成态不复用，重新读
+    await rerender(withLinks([{ ...link21, obtained: true, revealed: true }]))
+    await flushEffects()
+    expect(fetchMock.kunFetchPost).toHaveBeenCalledTimes(2)
+  })
+
+  it('a relinked version changes the restore identity and triggers a fresh read', async () => {
+    fetchMock.kunFetchPost.mockResolvedValue({
+      links: [sensitiveLink21],
+      obtainedExpiresAt: '2026-07-11T00:00:00.000Z'
+    })
+    const healthV2 = {
+      ...link21,
+      revealed: true,
+      obtained: true,
+      version: 2,
+      evidenceRound: 0,
+      health: 'ok' as const,
+      healthChangedAt: null,
+      verifiedAt: null,
+      lastRelinkAt: null,
+      ownerType: 'publisher' as const,
+      disputeSource: null,
+      recentReportCount: 0,
+      latestCheck: null,
+      capabilities: {
+        ownerActions: [] as never[],
+        resolveActions: [],
+        canCheck: false,
+        canEdit: false
+      }
+    }
+    const { rerender } = await renderResourceDownload(withLinks([healthV2]))
+    await flushEffects()
+    expect(fetchMock.kunFetchPost).toHaveBeenCalledTimes(1)
+
+    // 同 id 补链到 v3：恢复身份变化，必发新请求
+    await rerender(withLinks([{ ...healthV2, version: 3 } as PatchResourceLink]))
+    await flushEffects()
+    expect(fetchMock.kunFetchPost).toHaveBeenCalledTimes(2)
+    expect(fetchMock.kunFetchPost).toHaveBeenLastCalledWith(
+      '/patch/resource/download/access/restore',
+      { patchId: 7, resourceId: 11, linkIds: [21] }
+    )
+  })
+
+  it('a same-version new read snapshot issues a new restore and ignores the old one', async () => {
+    const firstRequest = deferred<{
+      links: PatchResourceAccessLink[]
+      obtainedExpiresAt: string | null
+    }>()
+    fetchMock.kunFetchPost
+      .mockReturnValueOnce(firstRequest.promise)
+      .mockReturnValueOnce(
+        Promise.resolve({
+          links: [sensitiveLink21],
+          obtainedExpiresAt: '2026-07-12T00:00:00.000Z'
+        })
+      )
+    const { container, rerender } = await renderResourceDownload(
+      withLinks([{ ...link21, obtained: true, revealed: true }])
+    )
+
+    // 同 id 同版本，但父级递上新的读取快照（对象引用变化）：新请求必发，
+    // 旧快照请求的结果不再应用
+    await rerender(withLinks([{ ...link21, obtained: true, revealed: true }]))
+    expect(fetchMock.kunFetchPost).toHaveBeenCalledTimes(2)
+    firstRequest.resolve({
+      links: [
+        { ...sensitiveLink21, content: 'https://stale.example.com/old-copy' }
+      ],
+      obtainedExpiresAt: '2026-07-11T00:00:00.000Z'
+    })
+    await flushEffects()
+    expect(container.textContent).not.toContain('https://stale.example.com/old-copy')
+    expect(container.textContent).toContain(sensitiveLink21.content)
   })
 })

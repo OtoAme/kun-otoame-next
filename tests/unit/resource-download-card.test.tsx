@@ -79,6 +79,77 @@ vi.mock('@heroui/snippet', () => ({
   )
 }))
 
+vi.mock('@heroui/react', async () => {
+  const R = await import('react')
+  return {
+    Modal: ({
+      isOpen,
+      children
+    }: {
+      isOpen: boolean
+      children?: React.ReactNode
+    }) => (isOpen ? <div role="dialog">{children}</div> : null),
+    ModalContent: ({ children }: { children?: React.ReactNode }) => (
+      <div>{children}</div>
+    ),
+    ModalHeader: ({ children }: { children?: React.ReactNode }) => (
+      <div>{children}</div>
+    ),
+    ModalBody: ({ children }: { children?: React.ReactNode }) => (
+      <div>{children}</div>
+    ),
+    ModalFooter: ({ children }: { children?: React.ReactNode }) => (
+      <div>{children}</div>
+    ),
+    Button: ({
+      children,
+      onPress,
+      isDisabled,
+      isLoading
+    }: {
+      children?: React.ReactNode
+      onPress?: () => void
+      isDisabled?: boolean
+      isLoading?: boolean
+    }) => (
+      <button type="button" disabled={isDisabled || isLoading} onClick={onPress}>
+        {children}
+      </button>
+    ),
+    Checkbox: ({
+      children,
+      isSelected,
+      onValueChange
+    }: {
+      children?: React.ReactNode
+      isSelected?: boolean
+      onValueChange?: (checked: boolean) => void
+    }) => (
+      <label>
+        <input
+          type="checkbox"
+          checked={!!isSelected}
+          onChange={(event) => onValueChange?.(event.target.checked)}
+        />
+        {children}
+      </label>
+    ),
+    Radio: () => null,
+    RadioGroup: ({ children }: { children?: React.ReactNode }) => (
+      <div role="radiogroup">{children}</div>
+    ),
+    useDisclosure: () => {
+      const [isOpen, setIsOpen] = R.useState(false)
+      return {
+        isOpen,
+        onOpen: () => setIsOpen(true),
+        onClose: () => setIsOpen(false),
+        onOpenChange: setIsOpen
+      }
+    }
+  }
+})
+
 vi.mock('~/components/kun/external-link/ExternalLink', () => ({
   KunExternalLink: ({
     children,

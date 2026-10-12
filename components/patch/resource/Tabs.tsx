@@ -20,13 +20,13 @@ import { Edit, MoreHorizontal, Trash2 } from 'lucide-react'
 import { useUserStore } from '~/store/userStore'
 import { ResourceInfo } from './ResourceInfo'
 import { ResourceDownload } from './ResourceDownload'
-import { ReportResourceButton } from '~/components/case/ReportResourceButton'
 import { ResourceCaseBadge } from '~/components/case/ResourceCaseBadge'
 import {
   RESOURCE_SECTION_MAP,
   SUPPORTED_RESOURCE_SECTION
 } from '~/constants/resource'
 import { accessResourceLinksForEdit } from './accessResourceLinksForEdit'
+import { kunFetchPost } from '~/utils/kunFetch'
 import { KunLoading } from '~/components/kun/Loading'
 import { KunNull } from '~/components/kun/Null'
 import type { PatchResource } from '~/types/api/patch'
@@ -52,7 +52,7 @@ interface Props {
 
 export const ResourceTabs = ({
   vndbId,
-  patchId,
+  patchId: _patchId,
   resources,
   setEditResource,
   onOpenEdit,
@@ -141,11 +141,18 @@ export const ResourceTabs = ({
     {} as Record<ResourceSection, PatchResource[]>
   )
 
-  const handleOpenEditResource = async (resource: PatchResource) => {
+  const handleOpenEditResource = async (
+    resource: PatchResource,
+    focusLinkId?: number
+  ) => {
     setEditLoadingResourceId(resource.id)
 
     try {
-      const hydratedResource = await accessResourceLinksForEdit(resource)
+      const hydratedResource = await accessResourceLinksForEdit(
+        resource,
+        kunFetchPost,
+        focusLinkId
+      )
       if (typeof hydratedResource === 'string') {
         toast.error(hydratedResource)
         return
@@ -181,7 +188,6 @@ export const ResourceTabs = ({
           <div className="flex items-start justify-between">
             <ResourceInfo resource={resource} />
             <div className="flex items-center gap-1">
-              <ReportResourceButton resource={resource} patchId={patchId} />
               {canManage && (
                 <Dropdown>
                   <DropdownTrigger>
@@ -227,7 +233,12 @@ export const ResourceTabs = ({
               ))}
             </div>
           ) : null}
-          <ResourceDownload resource={resource} />
+          <ResourceDownload
+            resource={resource}
+            onEdit={(target, focusLinkId) =>
+              void handleOpenEditResource(target, focusLinkId)
+            }
+          />
         </div>
       </div>
     )

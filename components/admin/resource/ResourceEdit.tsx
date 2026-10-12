@@ -15,6 +15,10 @@ import { Edit2, Trash2 } from 'lucide-react'
 import { useUserStore } from '~/store/userStore'
 import { kunFetchDelete } from '~/utils/kunFetch'
 import { EditResourceDialog } from '~/components/patch/resource/edit/EditResourceDialog'
+import {
+  captureResourceEditContext,
+  withEditContext
+} from '~/components/patch/resource/accessResourceLinksForEdit'
 import type { AdminResource } from '~/types/api/admin'
 import type { PatchResource } from '~/types/api/patch'
 
@@ -36,6 +40,23 @@ export const ResourceEdit = ({
     onOpen: onOpenEdit,
     onClose: onCloseEdit
   } = useDisclosure()
+  const [editResource, setEditResource] = useState<PatchResource | null>(null)
+
+  // 后台 DTO 自带 baseLinks 与带凭据的健康链接（已授权读取），打开编辑时
+  // 一次性捕获基点；不为编辑去走下载获取通道制造授权。
+  const handleOpenEdit = () => {
+    const context = captureResourceEditContext(initialResource)
+    if (!context) {
+      toast.error('链接编辑基点缺失，请刷新列表后再试')
+      return
+    }
+    setEditResource(withEditContext({ ...initialResource }, context))
+    onOpenEdit()
+  }
+  const handleCloseEdit = () => {
+    onCloseEdit()
+    setEditResource(null)
+  }
 
   const {
     isOpen: isOpenDelete,
@@ -65,7 +86,7 @@ export const ResourceEdit = ({
       ...resource,
       patchName: resource.patchName ?? initialResource.patchName
     })
-    onCloseEdit()
+    handleCloseEdit()
   }
 
   return (
@@ -76,7 +97,7 @@ export const ResourceEdit = ({
           size="sm"
           variant="light"
           isDisabled={currentUser.role < 3}
-          onPress={onOpenEdit}
+          onPress={handleOpenEdit}
         >
           <Edit2 size={16} />
         </Button>
@@ -95,17 +116,19 @@ export const ResourceEdit = ({
       <Modal
         size="3xl"
         isOpen={isOpenEdit}
-        onClose={onCloseEdit}
+        onClose={handleCloseEdit}
         scrollBehavior="outside"
         isDismissable={false}
         isKeyboardDismissDisabled={true}
       >
-        <EditResourceDialog
-          onClose={onCloseEdit}
-          resource={initialResource}
-          onSuccess={handleUpdateSuccess}
-          type="admin"
-        />
+        {isOpenEdit && editResource && (
+          <EditResourceDialog
+            onClose={handleCloseEdit}
+            resource={editResource}
+            onSuccess={handleUpdateSuccess}
+            type="admin"
+          />
+        )}
       </Modal>
 
       <Modal isOpen={isOpenDelete} onClose={onCloseDelete} placement="center">

@@ -29,6 +29,8 @@ interface ResourceLinksInputProps {
   watch: WatchType
   section: string
   setUploadingResource: Dispatch<SetStateAction<boolean>>
+  /** 补链入口：把这条链接的地址栏滚动定位并高亮。 */
+  focusLinkId?: number
 }
 
 const getDefaultLinkStorage = (section: string, role: number) => {
@@ -69,12 +71,16 @@ export const ResourceLinksInput = ({
   setValue,
   watch,
   section,
-  setUploadingResource
+  setUploadingResource,
+  focusLinkId
 }: ResourceLinksInputProps) => {
   const userRole = useUserStore((state) => state.user.role)
+  // keyName 避开领域 id：fieldArray 生成的行键放在 __fieldKey，绝不覆盖
+  // 链接的领域 ID（既有 ID 原样回传、新槽位不带 ID）。
   const { fields, append, remove } = useFieldArray({
     control,
-    name: 'links'
+    name: 'links',
+    keyName: '__fieldKey'
   })
   const links = watch('links') || []
 
@@ -83,6 +89,19 @@ export const ResourceLinksInput = ({
       append(createEmptyResourceLink(section, userRole))
     }
   }, [append, fields.length, section, userRole])
+
+  // 补链：等表单渲染后把目标链接的卡片滚动到视口中央。
+  useEffect(() => {
+    if (focusLinkId === undefined) {
+      return
+    }
+    const timer = window.setTimeout(() => {
+      document
+        .getElementById(`resource-edit-link-${focusLinkId}`)
+        ?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    }, 100)
+    return () => window.clearTimeout(timer)
+  }, [focusLinkId])
 
   const handleFetchTouchGalSize = async (content: string, index: number) => {
     const currentLink = links[index]
@@ -132,13 +151,30 @@ export const ResourceLinksInput = ({
         const currentLink = links[index]
         const currentStorage =
           currentLink?.storage || getDefaultLinkStorage(section, userRole)
+        const existingLinkId =
+          typeof currentLink?.id === 'number' ? currentLink.id : null
+        const focused =
+          existingLinkId !== null && existingLinkId === focusLinkId
 
         return (
-          <Card key={field.id} className="border border-default-200">
+          <Card
+            key={field.__fieldKey}
+            id={
+              existingLinkId !== null
+                ? `resource-edit-link-${existingLinkId}`
+                : undefined
+            }
+            className={
+              focused
+                ? 'border border-primary ring-2 ring-primary ring-offset-2 ring-offset-background'
+                : 'border border-default-200'
+            }
+          >
             <CardBody className="space-y-4">
               <div className="flex items-center justify-between">
                 <Chip color="primary" variant="flat">
                   链接 #{index + 1}
+                  {focused ? '（补链：修改下面的地址）' : ''}
                 </Chip>
 
                 <Button

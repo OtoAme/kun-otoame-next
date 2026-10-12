@@ -191,9 +191,16 @@ describe('resource dialog helper text', () => {
     const { EditResourceDialog } = await import(
       '~/components/patch/resource/edit/EditResourceDialog'
     )
+    const { withEditContext } = await import(
+      '~/components/patch/resource/accessResourceLinksForEdit'
+    )
+    // 稳定槽位契约：打开编辑必须携带一次性基点（M04-1）
+    const editable = withEditContext(resource, {
+      baseLinks: [{ id: 20, version: 1 }]
+    })
     const rendered = await renderComponent(
       <EditResourceDialog
-        resource={resource}
+        resource={editable}
         onClose={vi.fn()}
         onSuccess={vi.fn()}
       />

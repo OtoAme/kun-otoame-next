@@ -8,6 +8,11 @@ interface Fields {
   name: string
   section: ResourceSection
   patchId: number
+  /** 稳定槽位编辑基点（M04-1）；发布表单不使用。 */
+  baseLinks?: {
+    id: number
+    version: number
+  }[]
   links: {
     id?: number
     storage: string
