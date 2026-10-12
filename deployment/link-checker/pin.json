@@ -1,0 +1,23 @@
+{
+  "repository": "https://github.com/kungal/kungal-link-live-checker",
+  "revision": "c74022f4dbbb7c8c39be7da15701763efa2ffffd",
+  "archive_url": "https://codeload.github.com/kungal/kungal-link-live-checker/tar.gz/c74022f4dbbb7c8c39be7da15701763efa2ffffd",
+  "archive_sha256": "30ab4df333bcd96869b989f5dcf1dde74dbfd7d912120e2a91503614a220ef0b",
+  "patch_sha256": "35a2a0977c67101e9aa84dc49ac8fea163dc8ee15dc277bc82fb73c15134a03a",
+  "license": "AGPL-3.0",
+  "changed_upstream_files": [
+    "cmd/server/main.go",
+    "internal/config/config.go",
+    "internal/httpapi/server.go",
+    "internal/provider/baidu/baidu.go",
+    "internal/provider/baidu/baidu_test.go",
+    "internal/provider/caiyun/caiyun.go",
+    "internal/provider/caiyun/caiyun_test.go",
+    "internal/provider/pan123/pan123.go",
+    "internal/provider/pan123/pan123_test.go",
+    "internal/provider/quarkfamily/quarkfamily.go",
+    "internal/provider/quarkfamily/quarkfamily_test.go",
+    "internal/providerhttp/providerhttp.go",
+    "internal/service/service.go"
+  ]
+}

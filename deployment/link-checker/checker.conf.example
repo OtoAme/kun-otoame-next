@@ -1,0 +1,19 @@
+# Service-only configuration; never load the website repository environment.
+# Empty key deliberately rejects all /v1 requests. Operator supplies a dedicated key.
+LLC_ADDR=127.0.0.1:6734
+LLC_API_KEYS=
+LLC_CHECK_TIMEOUT=2s
+LLC_BATCH_MAX=1
+LLC_CACHE_TTL_ALIVE=0s
+LLC_CACHE_TTL_DEAD=0s
+LLC_CACHE_TTL_UNKNOWN=0s
+LLC_RATE_RPS=1
+LLC_RATE_BURST=1
+LLC_QUARK_BLOCKED_AS_DEAD=false
+LLC_QUARK_VERIFY_DETAIL=true
+LLC_UC_ENABLED=false
+LLC_UC_TOKEN_URL=https://pc-api.uc.cn/1/clouddrive/share/sharepage/token?pr=UCBrowser&fr=pc
+LLC_UC_DETAIL_URL=https://pc-api.uc.cn/1/clouddrive/share/sharepage/detail?pr=UCBrowser&fr=pc
+LLC_BAIDU_ENABLED=false
+LLC_CAIYUN_ENABLED=false
+LLC_PAN123_ENABLED=false

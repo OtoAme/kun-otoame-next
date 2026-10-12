@@ -1,0 +1,1052 @@
+--- a/cmd/server/main.go
++++ b/cmd/server/main.go
+@@ -4,7 +4,6 @@
+ 	"context"
+ 	"errors"
+ 	"log/slog"
+-	"net"
+ 	"net/http"
+ 	"os"
+ 	"os/signal"
+@@ -20,6 +19,7 @@
+ 	"github.com/KunMoe/kungal-link-live-checker/internal/provider/pan123"
+ 	"github.com/KunMoe/kungal-link-live-checker/internal/provider/quark"
+ 	"github.com/KunMoe/kungal-link-live-checker/internal/provider/uc"
++	"github.com/KunMoe/kungal-link-live-checker/internal/providerhttp"
+ 	"github.com/KunMoe/kungal-link-live-checker/internal/ratelimit"
+ 	"github.com/KunMoe/kungal-link-live-checker/internal/service"
+ )
+@@ -31,15 +31,7 @@
+ 
+ 	log := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
+ 
+-	httpClient := &http.Client{
+-		Timeout: cfg.CheckTimeout,
+-		Transport: &http.Transport{
+-			DialContext:         (&net.Dialer{Timeout: 5 * time.Second}).DialContext,
+-			TLSHandshakeTimeout: 5 * time.Second,
+-			MaxIdleConns:        100,
+-			IdleConnTimeout:     90 * time.Second,
+-		},
+-	}
++	httpClient := providerhttp.NewClient(cfg.CheckTimeout)
+ 
+ 	checkers := []checker.Checker{
+ 		quark.New(quark.Options{
+@@ -86,10 +78,12 @@
+ 		IdleTimeout:       60 * time.Second,
+ 	}
+ 
++	serveFailed := make(chan struct{}, 1)
+ 	go func() {
+ 		log.Info("listening", "addr", cfg.Addr, "providers", registry.Names(), "auth_keys", len(cfg.APIKeys))
+ 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+-			log.Error("server error", "err", err)
++			log.Error("server error")
++			serveFailed <- struct{}{}
+ 			stop()
+ 		}
+ 	}()
+@@ -99,6 +93,12 @@
+ 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+ 	defer cancel()
+ 	if err := srv.Shutdown(shutdownCtx); err != nil {
+-		log.Error("graceful shutdown failed", "err", err)
++		log.Error("graceful shutdown failed")
++		os.Exit(1)
++	}
++	select {
++	case <-serveFailed:
++		os.Exit(1)
++	default:
+ 	}
+ }
+--- a/internal/config/config.go
++++ b/internal/config/config.go
+@@ -35,16 +35,16 @@
+ 
+ func Load() Config {
+ 	return Config{
+-		Addr:               env("LLC_ADDR", ":6734"),
++		Addr:               env("LLC_ADDR", "127.0.0.1:6734"),
+ 		APIKeys:            splitNonEmpty(env("LLC_API_KEYS", "")),
+ 		CheckTimeout:       envDuration("LLC_CHECK_TIMEOUT", 8*time.Second),
+ 		BatchMax:           envInt("LLC_BATCH_MAX", 50),
+-		TTLAlive:           envDuration("LLC_CACHE_TTL_ALIVE", 12*time.Hour),
+-		TTLDead:            envDuration("LLC_CACHE_TTL_DEAD", 7*24*time.Hour),
++		TTLAlive:           envDuration("LLC_CACHE_TTL_ALIVE", 0),
++		TTLDead:            envDuration("LLC_CACHE_TTL_DEAD", 0),
+ 		TTLUnknown:         envDuration("LLC_CACHE_TTL_UNKNOWN", 0),
+ 		RateRPS:            envFloat("LLC_RATE_RPS", 5),
+ 		RateBurst:          envInt("LLC_RATE_BURST", 5),
+-		QuarkBlockedAsDead: envBool("LLC_QUARK_BLOCKED_AS_DEAD", true),
++		QuarkBlockedAsDead: envBool("LLC_QUARK_BLOCKED_AS_DEAD", false),
+ 		QuarkVerifyDetail:  envBool("LLC_QUARK_VERIFY_DETAIL", true),
+ 		UCEnabled:          envBool("LLC_UC_ENABLED", true),
+ 		UCTokenURL:         env("LLC_UC_TOKEN_URL", "https://pc-api.uc.cn/1/clouddrive/share/sharepage/token?pr=UCBrowser&fr=pc"),
+--- a/internal/httpapi/server.go
++++ b/internal/httpapi/server.go
+@@ -36,7 +36,10 @@
+ 	mux.HandleFunc("GET /healthz", s.handleHealth)
+ 	mux.Handle("POST /v1/check", s.auth.middleware(http.HandlerFunc(s.handleCheck)))
+ 	mux.Handle("POST /v1/check/batch", s.auth.middleware(http.HandlerFunc(s.handleBatch)))
+-	return mux
++	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
++		w.Header().Set("Cache-Control", "private, no-store")
++		mux.ServeHTTP(w, r)
++	})
+ }
+ 
+ type checkRequest struct {
+@@ -98,6 +101,7 @@
+ 
+ func writeJSON(w http.ResponseWriter, status int, v any) {
+ 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
++	w.Header().Set("Cache-Control", "private, no-store")
+ 	w.WriteHeader(status)
+ 	_ = json.NewEncoder(w).Encode(v)
+ }
+--- a/internal/provider/baidu/baidu.go
++++ b/internal/provider/baidu/baidu.go
+@@ -2,9 +2,7 @@
+ 
+ import (
+ 	"context"
+-	"encoding/json"
+ 	"errors"
+-	"io"
+ 	"log/slog"
+ 	"net/http"
+ 	"net/http/cookiejar"
+@@ -12,8 +10,10 @@
+ 	"regexp"
+ 	"strconv"
+ 	"strings"
++	"time"
+ 
+ 	"github.com/KunMoe/kungal-link-live-checker/internal/checker"
++	"github.com/KunMoe/kungal-link-live-checker/internal/providerhttp"
+ )
+ 
+ const (
+@@ -40,10 +40,12 @@
+ func New(opts Options) *Checker {
+ 	base := opts.Client
+ 	if base == nil {
+-		base = http.DefaultClient
++		base = providerhttp.NewClient(8 * time.Second)
+ 	}
+ 	jar, _ := cookiejar.New(nil)
+-	client := &http.Client{Transport: base.Transport, Timeout: base.Timeout, Jar: jar}
++	clientCopy := *base
++	clientCopy.Jar = jar
++	client := &clientCopy
+ 
+ 	c := &Checker{
+ 		client:    client,
+@@ -84,6 +86,8 @@
+ 	// plain int would decode that as 0, which this checker reads as alive.
+ 	Errno   *int   `json:"errno"`
+ 	ShowMsg string `json:"show_msg"`
++	ShareID *int64 `json:"shareid"`
++	UK      *int64 `json:"uk"`
+ }
+ 
+ func (c *Checker) Check(ctx context.Context, u *url.URL, passcode string) checker.Verdict {
+@@ -113,12 +117,15 @@
+ 	}
+ 	defer resp.Body.Close()
+ 
+-	raw, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+-	if err != nil {
+-		return checker.Unknown(checker.ReasonNetworkError, "")
++	if resp.StatusCode != http.StatusOK {
++		return checker.Unknown(checker.ReasonUnparseable, "")
++	}
++	raw, err := providerhttp.ReadBody(resp.Body, 1<<20)
++	if err != nil {
++		return checker.Unknown(checker.ReasonUnparseable, "")
+ 	}
+ 	var info shortURLInfo
+-	if err := json.Unmarshal(raw, &info); err != nil {
++	if err := providerhttp.DecodeJSON(raw, &info); err != nil {
+ 		return checker.Unknown(checker.ReasonUnparseable, "")
+ 	}
+ 	// errno -9 was first read as "locked, therefore alive". It is not: a deleted
+@@ -153,16 +160,19 @@
+ 	}
+ 	defer resp.Body.Close()
+ 
+-	raw, err := io.ReadAll(io.LimitReader(resp.Body, 512<<10))
++	if resp.StatusCode != http.StatusOK {
++		return checker.Unknown(checker.ReasonUnparseable, "-9")
++	}
++	raw, err := providerhttp.ReadBody(resp.Body, 512<<10)
+ 	if err != nil {
+ 		return checker.Unknown(checker.ReasonPasscodeRequired, "-9")
+ 	}
+ 	body := string(raw)
+ 	switch {
+-	case strings.Contains(body, "链接不存在"):
++	case strings.Contains(body, "<title>百度网盘-链接不存在</title>") && !strings.Contains(body, "请输入提取码"):
+ 		return checker.Dead(checker.ReasonShareNotFound, "-9/page")
+ 	case strings.Contains(body, "请输入提取码"):
+-		return checker.Alive(checker.ReasonShareOK, "-9/page")
++		return checker.Unknown(checker.ReasonPasscodeRequired, "-9/page")
+ 	default:
+ 		return checker.Unknown(checker.ReasonPasscodeRequired, "-9")
+ 	}
+@@ -176,6 +186,9 @@
+ 	code := strconv.Itoa(errno)
+ 	switch errno {
+ 	case 0:
++		if info.ShareID == nil || *info.ShareID <= 0 || info.UK == nil || *info.UK <= 0 {
++			return checker.Unknown(checker.ReasonUnparseable, "0")
++		}
+ 		return checker.Alive(checker.ReasonShareOK, code)
+ 	case -9:
+ 		return checker.Unknown(checker.ReasonPasscodeRequired, code)
+@@ -183,8 +196,8 @@
+ 		return checker.Dead(checker.ReasonShareNotFound, code)
+ 	default:
+ 		c.logger.Warn("unrecognized baidu errno; treating as unknown (possible anti-crawl or API drift)",
+-			"errno", errno, "show_msg", info.ShowMsg)
+-		return checker.Unknown(checker.ReasonUnparseable, code)
++			"provider", "baidu")
++		return checker.Unknown(checker.ReasonUnparseable, "")
+ 	}
+ }
+ 
+@@ -207,6 +220,6 @@
+ 	if err != nil {
+ 		return
+ 	}
+-	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 1<<16))
++	_, _ = providerhttp.ReadBody(resp.Body, 1<<16)
+ 	_ = resp.Body.Close()
+ }
+--- a/internal/provider/baidu/baidu_test.go
++++ b/internal/provider/baidu/baidu_test.go
+@@ -60,7 +60,7 @@
+ 		{"public 0 -> alive", 0, "", checker.StatusAlive, checker.ReasonShareOK},
+ 		{"deleted -21 -> dead", -21, "", checker.StatusDead, checker.ReasonShareNotFound},
+ 		{"-9 + 链接不存在 page -> dead", -9, `<title>百度网盘-链接不存在</title>`, checker.StatusDead, checker.ReasonShareNotFound},
+-		{"-9 + 请输入提取码 page -> alive", -9, `<title>百度网盘 请输入提取码</title>`, checker.StatusAlive, checker.ReasonShareOK},
++		{"-9 + 请输入提取码 page -> unknown", -9, `<title>百度网盘 请输入提取码</title>`, checker.StatusUnknown, checker.ReasonPasscodeRequired},
+ 		{"-9 + neutral page -> unknown", -9, `<html>nothing useful</html>`, checker.StatusUnknown, checker.ReasonPasscodeRequired},
+ 		{"malformed 140 -> unknown", 140, "", checker.StatusUnknown, checker.ReasonUnparseable},
+ 		{"unseen errno -> unknown", -55, "", checker.StatusUnknown, checker.ReasonUnparseable},
+--- a/internal/provider/caiyun/caiyun.go
++++ b/internal/provider/caiyun/caiyun.go
+@@ -5,15 +5,16 @@
+ 	"context"
+ 	"encoding/json"
+ 	"errors"
+-	"io"
+ 	"log/slog"
+ 	"net/http"
+ 	"net/url"
+ 	"regexp"
+ 	"slices"
+ 	"strings"
++	"time"
+ 
+ 	"github.com/KunMoe/kungal-link-live-checker/internal/checker"
++	"github.com/KunMoe/kungal-link-live-checker/internal/providerhttp"
+ )
+ 
+ const (
+@@ -43,7 +44,7 @@
+ 		logger:    opts.Logger,
+ 	}
+ 	if c.client == nil {
+-		c.client = http.DefaultClient
++		c.client = providerhttp.NewClient(8 * time.Second)
+ 	}
+ 	if c.apiURL == "" {
+ 		c.apiURL = defaultAPIURL
+@@ -84,8 +85,10 @@
+ }
+ 
+ type response struct {
+-	Code string `json:"code"`
+-	Desc string `json:"desc"`
++	Code    string          `json:"code"`
++	Desc    string          `json:"desc"`
++	Success *bool           `json:"success"`
++	Data    json.RawMessage `json:"data"`
+ }
+ 
+ func (c *Checker) Check(ctx context.Context, u *url.URL, _ string) checker.Verdict {
+@@ -114,12 +117,15 @@
+ 	}
+ 	defer resp.Body.Close()
+ 
+-	raw, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
++	if resp.StatusCode != http.StatusOK {
++		return checker.Unknown(checker.ReasonUnparseable, "")
++	}
++	raw, err := providerhttp.ReadBody(resp.Body, 1<<20)
+ 	if err != nil {
+-		return checker.Unknown(checker.ReasonNetworkError, "")
++		return checker.Unknown(checker.ReasonUnparseable, "")
+ 	}
+ 	var r response
+-	if err := json.Unmarshal(raw, &r); err != nil {
++	if err := providerhttp.DecodeJSON(raw, &r); err != nil {
+ 		return checker.Unknown(checker.ReasonUnparseable, "")
+ 	}
+ 	return c.mapCode(r)
+@@ -128,16 +134,17 @@
+ func (c *Checker) mapCode(r response) checker.Verdict {
+ 	switch r.Code {
+ 	case "0":
++		if r.Success == nil || !*r.Success || !providerhttp.ObjectData(r.Data) {
++			return checker.Unknown(checker.ReasonUnparseable, "0")
++		}
+ 		return checker.Alive(checker.ReasonShareOK, r.Code)
+ 	case "9188":
+-		// 提取码非法. The share exists and only the passcode was rejected, so this
+-		// is alive; reading it as an error and returning dead kills live links.
+-		return checker.Alive(checker.ReasonShareOK, r.Code)
++		return checker.Unknown(checker.ReasonPasscodeRequired, r.Code)
+ 	case "200000727":
+ 		return checker.Dead(checker.ReasonShareNotFound, r.Code)
+ 	default:
+ 		c.logger.Warn("unrecognized caiyun code; treating as unknown (possible API drift)",
+-			"code", r.Code, "desc", r.Desc)
+-		return checker.Unknown(checker.ReasonUnparseable, r.Code)
++			"provider", "caiyun")
++		return checker.Unknown(checker.ReasonUnparseable, "")
+ 	}
+ }
+--- a/internal/provider/caiyun/caiyun_test.go
++++ b/internal/provider/caiyun/caiyun_test.go
+@@ -18,7 +18,7 @@
+ func newChecker(t *testing.T, code, desc string) *Checker {
+ 	t.Helper()
+ 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+-		fmt.Fprintf(w, `{"code":%q,"desc":%q,"success":true,"data":null}`, code, desc)
++		fmt.Fprintf(w, `{"code":%q,"desc":%q,"success":true,"data":{"synthetic":true}}`, code, desc)
+ 	}))
+ 	t.Cleanup(srv.Close)
+ 	return New(Options{APIURL: srv.URL, Client: srv.Client(), Logger: quietLogger()})
+@@ -42,7 +42,7 @@
+ 		wantReason string
+ 	}{
+ 		{"ok -> alive", "0", "", checker.StatusAlive, checker.ReasonShareOK},
+-		{"passcode-locked 9188 -> alive", "9188", "提取码非法", checker.StatusAlive, checker.ReasonShareOK},
++		{"passcode-locked 9188 -> unknown", "9188", "提取码非法", checker.StatusUnknown, checker.ReasonPasscodeRequired},
+ 		{"gone 200000727 -> dead", "200000727", "外链不存在/外链被分享者取消", checker.StatusDead, checker.ReasonShareNotFound},
+ 		{"unseen code -> unknown", "300000001", "啥玩意", checker.StatusUnknown, checker.ReasonUnparseable},
+ 	}
+@@ -50,7 +50,11 @@
+ 		t.Run(tc.name, func(t *testing.T) {
+ 			c := newChecker(t, tc.code, tc.desc)
+ 			got := c.Check(context.Background(), mustURL(t, shareURL), "")
+-			if got.Status != tc.wantStatus || got.Reason != tc.wantReason || got.ProviderCode != tc.code {
++			wantCode := tc.code
++			if tc.code == "300000001" {
++				wantCode = ""
++			}
++			if got.Status != tc.wantStatus || got.Reason != tc.wantReason || got.ProviderCode != wantCode {
+ 				t.Fatalf("code %s: got %+v, want {%s %s %s}", tc.code, got, tc.wantStatus, tc.wantReason, tc.code)
+ 			}
+ 		})
+--- a/internal/provider/pan123/pan123.go
++++ b/internal/provider/pan123/pan123.go
+@@ -4,15 +4,16 @@
+ 	"context"
+ 	"encoding/json"
+ 	"errors"
+-	"io"
+ 	"log/slog"
+ 	"net/http"
+ 	"net/url"
+ 	"regexp"
+ 	"strconv"
+ 	"strings"
++	"time"
+ 
+ 	"github.com/KunMoe/kungal-link-live-checker/internal/checker"
++	"github.com/KunMoe/kungal-link-live-checker/internal/providerhttp"
+ )
+ 
+ const defaultUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+@@ -32,7 +33,7 @@
+ func New(opts Options) *Checker {
+ 	c := &Checker{client: opts.Client, userAgent: opts.UserAgent, logger: opts.Logger}
+ 	if c.client == nil {
+-		c.client = http.DefaultClient
++		c.client = providerhttp.NewClient(8 * time.Second)
+ 	}
+ 	if c.userAgent == "" {
+ 		c.userAgent = defaultUserAgent
+@@ -46,12 +47,11 @@
+ func (c *Checker) Name() string { return "pan123" }
+ 
+ var (
+-	hostRe = regexp.MustCompile(`(?i)(^|\.)123(pan|684|865|912)\.(com|cn)$`)
+-	keyRe  = regexp.MustCompile(`/(?:s|123pan)/([A-Za-z0-9_-]+)`)
++	keyRe = regexp.MustCompile(`/(?:s|123pan)/([A-Za-z0-9_-]+)`)
+ )
+ 
+ func (c *Checker) Matches(u *url.URL) bool {
+-	return hostRe.MatchString(strings.ToLower(u.Hostname()))
++	return providerhttp.Pan123URLAllowed(u)
+ }
+ 
+ func extractKey(u *url.URL) string {
+@@ -63,8 +63,9 @@
+ }
+ 
+ type response struct {
+-	Code    int    `json:"code"`
+-	Message string `json:"message"`
++	Code    *int            `json:"code"`
++	Message string          `json:"message"`
++	Data    json.RawMessage `json:"data"`
+ }
+ 
+ func (c *Checker) Check(ctx context.Context, u *url.URL, passcode string) checker.Verdict {
+@@ -109,39 +110,48 @@
+ 	}
+ 	defer resp.Body.Close()
+ 
+-	raw, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
++	if resp.StatusCode != http.StatusOK {
++		return checker.Unknown(checker.ReasonUnparseable, "")
++	}
++	raw, err := providerhttp.ReadBody(resp.Body, 1<<20)
+ 	if err != nil {
+-		return checker.Unknown(checker.ReasonNetworkError, "")
++		return checker.Unknown(checker.ReasonUnparseable, "")
+ 	}
+ 	var r response
+-	if err := json.Unmarshal(raw, &r); err != nil {
++	if err := providerhttp.DecodeJSON(raw, &r); err != nil || r.Code == nil {
+ 		return checker.Unknown(checker.ReasonUnparseable, "")
+ 	}
+ 	return c.mapCode(r)
+ }
+ 
+ func (c *Checker) mapCode(r response) checker.Verdict {
+-	code := strconv.Itoa(r.Code)
+-	switch r.Code {
++	if r.Code == nil {
++		return checker.Unknown(checker.ReasonUnparseable, "")
++	}
++	code := strconv.Itoa(*r.Code)
++	switch *r.Code {
+ 	case 0:
++		if strings.TrimSpace(r.Message) == "" || strings.Contains(r.Message, "提取码") || !providerhttp.ObjectData(r.Data) {
++			return checker.Unknown(checker.ReasonUnparseable, "0")
++		}
+ 		return checker.Alive(checker.ReasonShareOK, code)
+ 	case 5103:
+ 		// 5103 is two different answers: "此分享不存在" and "提取码错误". Only the
+ 		// message separates them, so mapping the code straight to dead kills
+ 		// every passcode-locked share that is still perfectly alive.
+ 		switch {
+-		case strings.Contains(r.Message, "不存在"):
++		case strings.TrimSpace(r.Message) == "此分享不存在":
+ 			return checker.Dead(checker.ReasonShareNotFound, code)
+-		case strings.Contains(r.Message, "提取码"):
+-			return checker.Alive(checker.ReasonShareOK, code)
++		case strings.TrimSpace(r.Message) == "提取码错误":
++			return checker.Unknown(checker.ReasonPasscodeRequired, code)
+ 		default:
+ 			c.logger.Warn("unrecognized 123pan 5103 message; treating as unknown",
+-				"message", r.Message)
++				"provider", "pan123")
+ 			return checker.Unknown(checker.ReasonUnparseable, code)
+ 		}
+ 	default:
+ 		c.logger.Warn("unrecognized 123pan code; treating as unknown (possible API drift)",
+-			"code", r.Code, "message", r.Message)
+-		return checker.Unknown(checker.ReasonUnparseable, code)
++			"provider", "pan123")
++		return checker.Unknown(checker.ReasonUnparseable, "")
+ 	}
+ }
+--- a/internal/provider/pan123/pan123_test.go
++++ b/internal/provider/pan123/pan123_test.go
+@@ -37,7 +37,7 @@
+ 			w.WriteHeader(http.StatusNotFound)
+ 			return
+ 		}
+-		fmt.Fprintf(w, `{"code":%d,"message":%q,"data":null}`, code, message)
++		fmt.Fprintf(w, `{"code":%d,"message":%q,"data":{"synthetic":true}}`, code, message)
+ 	}
+ }
+ 
+@@ -51,7 +51,7 @@
+ 	}{
+ 		{"ok -> alive", 0, "ok", checker.StatusAlive, checker.ReasonShareOK},
+ 		{"5103 不存在 -> dead", 5103, "此分享不存在", checker.StatusDead, checker.ReasonShareNotFound},
+-		{"5103 提取码错误 -> alive (locked)", 5103, "提取码错误", checker.StatusAlive, checker.ReasonShareOK},
++		{"5103 提取码错误 -> unknown", 5103, "提取码错误", checker.StatusUnknown, checker.ReasonPasscodeRequired},
+ 		{"5103 unknown message -> unknown", 5103, "服务器开小差", checker.StatusUnknown, checker.ReasonUnparseable},
+ 		{"other code -> unknown", 9999, "???", checker.StatusUnknown, checker.ReasonUnparseable},
+ 	}
+@@ -98,7 +98,6 @@
+ 		"https://www.123pan.com/s/abc",
+ 		"https://123912.com/s/abc",
+ 		"https://www.123684.com/s/abc",
+-		"https://1851621325.share.123pan.cn/123pan/abc",
+ 	} {
+ 		if !c.Matches(mustURL(t, h)) {
+ 			t.Fatalf("should match %q", h)
+--- a/internal/provider/quarkfamily/quarkfamily.go
++++ b/internal/provider/quarkfamily/quarkfamily.go
+@@ -5,7 +5,6 @@
+ 	"context"
+ 	"encoding/json"
+ 	"errors"
+-	"io"
+ 	"log/slog"
+ 	"net/http"
+ 	"net/url"
+@@ -13,8 +12,10 @@
+ 	"slices"
+ 	"strconv"
+ 	"strings"
++	"time"
+ 
+ 	"github.com/KunMoe/kungal-link-live-checker/internal/checker"
++	"github.com/KunMoe/kungal-link-live-checker/internal/providerhttp"
+ )
+ 
+ type Config struct {
+@@ -38,7 +39,7 @@
+ 
+ func New(cfg Config) *Checker {
+ 	if cfg.Client == nil {
+-		cfg.Client = http.DefaultClient
++		cfg.Client = providerhttp.NewClient(8 * time.Second)
+ 	}
+ 	if cfg.Logger == nil {
+ 		cfg.Logger = slog.Default()
+@@ -66,8 +67,8 @@
+ }
+ 
+ type tokenResp struct {
+-	Status  int    `json:"status"`
+-	Code    int    `json:"code"`
++	Status  *int   `json:"status"`
++	Code    *int   `json:"code"`
+ 	Message string `json:"message"`
+ 	Data    struct {
+ 		Stoken string `json:"stoken"`
+@@ -121,16 +122,27 @@
+ 	}
+ 	defer resp.Body.Close()
+ 
+-	// The verdict is in the JSON body, not the HTTP status: 41008 arrives as 404
+-	// and 41031 as 403, so branching on resp.StatusCode reads a live share as
+-	// gone. Parse the body regardless of status.
+-	raw, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+-	if err != nil {
+-		return checker.Unknown(checker.ReasonNetworkError, "")
++	// Only known 403/404 provider envelopes are allowed below. Other transport
++	// failures, including a 5xx body with a gone code, cannot change health.
++	if resp.StatusCode != 200 && resp.StatusCode != 403 && resp.StatusCode != 404 {
++		return checker.Unknown(checker.ReasonUnparseable, "")
++	}
++	raw, err := providerhttp.ReadBody(resp.Body, 1<<20)
++	if err != nil {
++		return checker.Unknown(checker.ReasonUnparseable, "")
+ 	}
+ 
+ 	var tr tokenResp
+-	if err := json.Unmarshal(raw, &tr); err != nil {
++	if err := providerhttp.DecodeJSON(raw, &tr); err != nil || tr.Code == nil {
++		return checker.Unknown(checker.ReasonUnparseable, "")
++	}
++	if tr.Status != nil && *tr.Status != resp.StatusCode {
++		return checker.Unknown(checker.ReasonUnparseable, "")
++	}
++	if resp.StatusCode == 403 && *tr.Code != 41031 {
++		return checker.Unknown(checker.ReasonUnparseable, "")
++	}
++	if resp.StatusCode == 404 && *tr.Code != 41008 && *tr.Code != 41004 && *tr.Code != 41006 && *tr.Code != 41011 && *tr.Code != 41012 && *tr.Code != 41010 {
+ 		return checker.Unknown(checker.ReasonUnparseable, "")
+ 	}
+ 	v := c.mapCode(tr)
+@@ -141,14 +153,17 @@
+ 	if v.Status == checker.StatusAlive && c.cfg.DetailURL != "" {
+ 		return c.verifyDetail(ctx, pwdID, tr.Data.Stoken)
+ 	}
++	if v.Status == checker.StatusAlive {
++		return checker.Unknown(checker.ReasonUnparseable, "0")
++	}
+ 	return v
+ }
+ 
+ type detailResp struct {
+-	Code int `json:"code"`
+-	Data struct {
+-		Share struct {
+-			PartialViolation bool `json:"partial_violation"`
++	Code *int `json:"code"`
++	Data *struct {
++		Share *struct {
++			PartialViolation *bool `json:"partial_violation"`
+ 		} `json:"share"`
+ 	} `json:"data"`
+ }
+@@ -191,28 +206,37 @@
+ 	}
+ 	defer resp.Body.Close()
+ 
+-	raw, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+-	if err != nil {
+-		return checker.Unknown(checker.ReasonNetworkError, "")
++	if resp.StatusCode != http.StatusOK {
++		return checker.Unknown(checker.ReasonUnparseable, "")
++	}
++	raw, err := providerhttp.ReadBody(resp.Body, 1<<20)
++	if err != nil {
++		return checker.Unknown(checker.ReasonUnparseable, "")
+ 	}
+ 	var dr detailResp
+-	if err := json.Unmarshal(raw, &dr); err != nil {
+-		return checker.Unknown(checker.ReasonUnparseable, "")
+-	}
+-	if dr.Code != 0 {
++	if err := providerhttp.DecodeJSON(raw, &dr); err != nil || dr.Code == nil {
++		return checker.Unknown(checker.ReasonUnparseable, "")
++	}
++	if *dr.Code != 0 {
+ 		c.cfg.Logger.Warn("share detail returned a non-zero code; treating as unknown",
+-			"provider", c.cfg.Name, "code", dr.Code)
+-		return checker.Unknown(checker.ReasonUnparseable, strconv.Itoa(dr.Code))
+-	}
+-	if dr.Data.Share.PartialViolation {
++			"provider", c.cfg.Name)
++		return checker.Unknown(checker.ReasonUnparseable, "")
++	}
++	if dr.Data == nil || dr.Data.Share == nil || dr.Data.Share.PartialViolation == nil {
++		return checker.Unknown(checker.ReasonUnparseable, "0")
++	}
++	if *dr.Data.Share.PartialViolation {
+ 		return checker.Unknown(checker.ReasonShareBlocked, "0/partial_violation")
+ 	}
+ 	return checker.Alive(checker.ReasonShareOK, "0")
+ }
+ 
+ func (c *Checker) mapCode(tr tokenResp) checker.Verdict {
+-	code := strconv.Itoa(tr.Code)
+-	switch tr.Code {
++	if tr.Code == nil {
++		return checker.Unknown(checker.ReasonUnparseable, "")
++	}
++	code := strconv.Itoa(*tr.Code)
++	switch *tr.Code {
+ 	case 0:
+ 		// A real OK always carries an stoken. Code 0 without one is some other
+ 		// envelope, so trusting the code alone reports a false alive.
+@@ -225,17 +249,17 @@
+ 		return checker.Unknown(checker.ReasonPasscodeRequired, code)
+ 	}
+ 
+-	if reason, ok := goneDeadCodes[tr.Code]; ok {
++	if reason, ok := goneDeadCodes[*tr.Code]; ok {
++		if tr.Data.Stoken != "" {
++			return checker.Unknown(checker.ReasonUnparseable, "")
++		}
+ 		return checker.Dead(reason, code)
+ 	}
+-	if blockedCodes[tr.Code] {
+-		if c.cfg.BlockedAsDead {
+-			return checker.Dead(checker.ReasonShareBlocked, code)
+-		}
++	if blockedCodes[*tr.Code] {
+ 		return checker.Unknown(checker.ReasonShareBlocked, code)
+ 	}
+ 
+ 	c.cfg.Logger.Warn("unrecognized provider code; treating as unknown (possible API drift)",
+-		"provider", c.cfg.Name, "code", tr.Code, "message", tr.Message)
+-	return checker.Unknown(checker.ReasonUnparseable, code)
+-}
++		"provider", c.cfg.Name)
++	return checker.Unknown(checker.ReasonUnparseable, "")
++}
+--- a/internal/provider/quarkfamily/quarkfamily_test.go
++++ b/internal/provider/quarkfamily/quarkfamily_test.go
+@@ -20,7 +20,11 @@
+ 
+ func newChecker(t *testing.T, blockedAsDead bool, status int, body string) *Checker {
+ 	t.Helper()
+-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
++	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
++		if r.Method == http.MethodGet {
++			io.WriteString(w, `{"code":0,"data":{"share":{"partial_violation":false}}}`)
++			return
++		}
+ 		w.WriteHeader(status)
+ 		_, _ = io.WriteString(w, body)
+ 	}))
+@@ -29,6 +33,7 @@
+ 		Name:          "quark",
+ 		Hosts:         []string{"pan.quark.cn"},
+ 		TokenURL:      srv.URL,
++		DetailURL:     srv.URL + "/detail",
+ 		BlockedAsDead: blockedAsDead,
+ 		Client:        srv.Client(),
+ 		Logger:        quietLogger(),
+@@ -68,11 +73,11 @@
+ 			wantStatus: checker.StatusUnknown, wantReason: checker.ReasonPasscodeRequired, wantCode: "41008",
+ 		},
+ 		{
+-			name:          "blocked 41031, BlockedAsDead=true -> dead",
++			name:          "blocked 41031, BlockedAsDead=true -> unknown",
+ 			blockedAsDead: true,
+ 			httpStatus:    403,
+ 			body:          `{"status":403,"code":41031,"message":"分享者用户封禁链接查看受限"}`,
+-			wantStatus:    checker.StatusDead, wantReason: checker.ReasonShareBlocked, wantCode: "41031",
++			wantStatus:    checker.StatusUnknown, wantReason: checker.ReasonShareBlocked, wantCode: "41031",
+ 		},
+ 		{
+ 			name:          "blocked 41031, BlockedAsDead=false -> unknown",
+@@ -106,11 +111,11 @@
+ 			wantStatus: checker.StatusDead, wantReason: checker.ReasonShareNotFound, wantCode: "41012",
+ 		},
+ 		{
+-			name:          "41010 violation, BlockedAsDead=true -> dead/share_blocked",
++			name:          "41010 violation, BlockedAsDead=true -> unknown/share_blocked",
+ 			blockedAsDead: true,
+ 			httpStatus:    404,
+ 			body:          `{"status":404,"code":41010,"message":"文件涉及违规内容"}`,
+-			wantStatus:    checker.StatusDead, wantReason: checker.ReasonShareBlocked, wantCode: "41010",
++			wantStatus:    checker.StatusUnknown, wantReason: checker.ReasonShareBlocked, wantCode: "41010",
+ 		},
+ 		{
+ 			name:          "41010 violation, BlockedAsDead=false -> unknown/share_blocked",
+@@ -123,7 +128,7 @@
+ 			name:       "unrecognized code -> unknown, never dead",
+ 			httpStatus: 200,
+ 			body:       `{"status":200,"code":99999,"message":"???"}`,
+-			wantStatus: checker.StatusUnknown, wantReason: checker.ReasonUnparseable, wantCode: "99999",
++			wantStatus: checker.StatusUnknown, wantReason: checker.ReasonUnparseable, wantCode: "",
+ 		},
+ 		{
+ 			name:       "html / non-json body -> unknown unparseable",
+@@ -252,9 +257,9 @@
+ 			wantStatus: checker.StatusUnknown, wantReason: checker.ReasonUnparseable,
+ 		},
+ 		{
+-			name: "detail missing share object -> alive (no violation flag)", detailStatus: 200,
++			name: "detail missing share object -> unknown", detailStatus: 200,
+ 			detailBody: `{"code":0,"data":{}}`,
+-			wantStatus: checker.StatusAlive, wantReason: checker.ReasonShareOK,
++			wantStatus: checker.StatusUnknown, wantReason: checker.ReasonUnparseable,
+ 		},
+ 	}
+ 	for _, tc := range cases {
+@@ -298,10 +303,11 @@
+ 	}
+ }
+ 
+-func TestDetailSkippedWhenNotConfigured(t *testing.T) {
++func TestTokenAloneDoesNotClaimAvailable(t *testing.T) {
+ 	c := newChecker(t, true, 200, okToken)
++	c.cfg.DetailURL = ""
+ 	got := c.Check(context.Background(), mustURL(t, "https://pan.quark.cn/s/abc"), "")
+-	if got.Status != checker.StatusAlive {
+-		t.Fatalf("got %+v, want alive when DetailURL is empty", got)
+-	}
+-}
++	if got.Status != checker.StatusUnknown {
++		t.Fatalf("got %+v, want unknown when DetailURL is empty", got)
++	}
++}
+--- /dev/null
++++ b/internal/providerhttp/providerhttp.go
+@@ -0,0 +1,225 @@
++// Package providerhttp restricts this checker's five provider HTTP destinations.
++package providerhttp
++
++import (
++	"bytes"
++	"context"
++	"encoding/json"
++	"errors"
++	"io"
++	"net"
++	"net/http"
++	"net/netip"
++	"net/url"
++	"slices"
++	"strings"
++	"time"
++	"unicode"
++)
++
++// Share authorities and API authorities are distinct; no wildcard/subdomain rule.
++var pan123Hosts = []string{
++	"123pan.com", "www.123pan.com", "123684.com", "www.123684.com",
++	"123865.com", "www.123865.com", "123912.com", "www.123912.com",
++}
++
++var shareHosts = append([]string{
++	"pan.quark.cn", "drive.uc.cn", "pan.baidu.com", "caiyun.139.com", "yun.139.com",
++}, pan123Hosts...)
++
++var apiHosts = append([]string{
++	"drive-pc.quark.cn", "pc-api.uc.cn", "pan.baidu.com", "share-kd-njs.yun.139.com",
++}, pan123Hosts...)
++
++func allowedURL(u *url.URL, hosts []string) bool {
++	if u == nil || u.Scheme != "https" || u.User != nil || u.Opaque != "" {
++		return false
++	}
++	host := strings.ToLower(u.Hostname())
++	if !slices.Contains(hosts, host) {
++		return false
++	}
++	// Reject empty, non-default and noncanonical ports, including trailing colon.
++	return u.Host == u.Hostname() || u.Host == net.JoinHostPort(u.Hostname(), "443")
++}
++
++func ShareURLAllowed(u *url.URL) bool  { return allowedURL(u, shareHosts) }
++func Pan123URLAllowed(u *url.URL) bool { return allowedURL(u, pan123Hosts) }
++
++// Conservatively exclude special-use ranges, not merely RFC1918 addresses.
++var deniedPrefixes = func() []netip.Prefix {
++	var result []netip.Prefix
++	for _, cidr := range []string{
++		"0.0.0.0/8", "10.0.0.0/8", "100.64.0.0/10", "127.0.0.0/8",
++		"169.254.0.0/16", "172.16.0.0/12", "192.0.0.0/24", "192.0.2.0/24",
++		"192.88.99.0/24", "192.168.0.0/16", "198.18.0.0/15", "198.51.100.0/24",
++		"203.0.113.0/24", "224.0.0.0/4", "240.0.0.0/4",
++		"2001::/23", "2001:db8::/32", "2002::/16", "3fff::/20",
++	} {
++		result = append(result, netip.MustParsePrefix(cidr))
++	}
++	return result
++}()
++
++var globalV6 = netip.MustParsePrefix("2000::/3")
++
++func publicAddress(addr netip.Addr) bool {
++	if !addr.IsValid() || addr.Zone() != "" {
++		return false
++	}
++	addr = addr.Unmap()
++	if !addr.IsGlobalUnicast() || addr.IsPrivate() || addr.IsLoopback() || addr.IsLinkLocalUnicast() {
++		return false
++	}
++	if addr.Is6() && !globalV6.Contains(addr) {
++		return false
++	}
++	for _, prefix := range deniedPrefixes {
++		if prefix.Contains(addr) {
++			return false
++		}
++	}
++	return true
++}
++
++type lookupFunc func(context.Context, string, string) ([]netip.Addr, error)
++type dialFunc func(context.Context, string, string) (net.Conn, error)
++
++func providerDial(lookup lookupFunc, dial dialFunc) dialFunc {
++	return func(ctx context.Context, network, authority string) (net.Conn, error) {
++		host, port, err := net.SplitHostPort(authority)
++		if err != nil || port != "443" || !slices.Contains(apiHosts, strings.ToLower(host)) {
++			return nil, errors.New("provider authority rejected")
++		}
++		addresses, err := lookup(ctx, "ip", host)
++		if err != nil || len(addresses) == 0 {
++			return nil, errors.New("provider DNS unavailable")
++		}
++		// Reject mixed public/private answers before opening any connection.
++		for _, address := range addresses {
++			if !publicAddress(address) {
++				return nil, errors.New("provider DNS rejected")
++			}
++		}
++		for _, address := range addresses {
++			// Bind the vetted literal. The dialer must never resolve host a second time.
++			conn, err := dial(ctx, network, net.JoinHostPort(address.Unmap().String(), port))
++			if err == nil {
++				return conn, nil
++			}
++			if ctx.Err() != nil {
++				break
++			}
++		}
++		return nil, errors.New("provider connection unavailable")
++	}
++}
++
++type restrictedTransport struct{ base *http.Transport }
++
++func (t restrictedTransport) RoundTrip(r *http.Request) (*http.Response, error) {
++	if !allowedURL(r.URL, apiHosts) {
++		return nil, errors.New("provider URL rejected")
++	}
++	return t.base.RoundTrip(r)
++}
++
++func NewClient(timeout time.Duration) *http.Client {
++	dialer := &net.Dialer{Timeout: 5 * time.Second}
++	transport := &http.Transport{
++		// No environment proxy: it would move DNS/dial outside this policy.
++		DialContext:         providerDial(net.DefaultResolver.LookupNetIP, dialer.DialContext),
++		TLSHandshakeTimeout: 5 * time.Second,
++		MaxIdleConns:        20, IdleConnTimeout: 30 * time.Second,
++	}
++	return &http.Client{
++		Timeout: timeout, Transport: restrictedTransport{transport},
++		// A redirect is an unverified provider response. Follow none.
++		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
++	}
++}
++
++func ReadBody(body io.Reader, limit int64) ([]byte, error) {
++	raw, err := io.ReadAll(io.LimitReader(body, limit+1))
++	if err != nil {
++		return nil, err
++	}
++	if int64(len(raw)) > limit {
++		return nil, errors.New("provider response too large")
++	}
++	return raw, nil
++}
++
++// Duplicate keys are ambiguous provider evidence. Unknown fields remain legal.
++func DecodeJSON(raw []byte, target any) error {
++	decoder := json.NewDecoder(bytes.NewReader(raw))
++	decoder.UseNumber()
++	var value func(int) error
++	value = func(depth int) error {
++		if depth > 32 {
++			return errors.New("provider JSON nesting rejected")
++		}
++		token, err := decoder.Token()
++		if err != nil {
++			return err
++		}
++		delim, ok := token.(json.Delim)
++		if !ok {
++			return nil
++		}
++		if delim == '{' {
++			seen := make(map[string]bool)
++			for decoder.More() {
++				key, err := decoder.Token()
++				if err != nil {
++					return err
++				}
++				name, ok := key.(string)
++				folded := foldedJSONName(name)
++				if !ok || seen[folded] {
++					return errors.New("provider JSON key rejected")
++				}
++				seen[folded] = true
++				if err := value(depth + 1); err != nil {
++					return err
++				}
++			}
++		} else if delim == '[' {
++			for decoder.More() {
++				if err := value(depth + 1); err != nil {
++					return err
++				}
++			}
++		} else {
++			return errors.New("provider JSON delimiter rejected")
++		}
++		_, err = decoder.Token()
++		return err
++	}
++	if err := value(0); err != nil {
++		return err
++	}
++	if _, err := decoder.Token(); err != io.EOF {
++		return errors.New("provider JSON trailing data rejected")
++	}
++	return json.Unmarshal(raw, target)
++}
++
++// encoding/json v1 folds struct names by Unicode SimpleFold equivalence.
++// Canonicalize each key once, then use the per-object map; no pairwise scan.
++func foldedJSONName(name string) string {
++	return strings.Map(func(r rune) rune {
++		for {
++			next := unicode.SimpleFold(r)
++			if next <= r {
++				return next
++			}
++			r = next
++		}
++	}, name)
++}
++
++func ObjectData(raw json.RawMessage) bool {
++	var data map[string]json.RawMessage
++	return json.Unmarshal(raw, &data) == nil && len(data) > 0
++}
+--- a/internal/service/service.go
++++ b/internal/service/service.go
+@@ -2,6 +2,8 @@
+ 
+ import (
+ 	"context"
++	"crypto/sha256"
++	"encoding/hex"
+ 	"log/slog"
+ 	"net/url"
+ 	"strings"
+@@ -9,6 +11,7 @@
+ 
+ 	"github.com/KunMoe/kungal-link-live-checker/internal/cache"
+ 	"github.com/KunMoe/kungal-link-live-checker/internal/checker"
++	"github.com/KunMoe/kungal-link-live-checker/internal/providerhttp"
+ 	"github.com/KunMoe/kungal-link-live-checker/internal/ratelimit"
+ )
+ 
+@@ -63,7 +66,7 @@
+ 	start := s.now()
+ 
+ 	u, err := url.Parse(strings.TrimSpace(rawURL))
+-	if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
++	if err != nil || !providerhttp.ShareURLAllowed(u) {
+ 		return s.result("unknown", checker.Unknown(checker.ReasonUnsupported, ""))
+ 	}
+ 
+@@ -75,7 +78,7 @@
+ 	key := cacheKey(u, passcode)
+ 	if hit, ok := s.cache.Get(key); ok {
+ 		s.log.Info("check", "provider", hit.provider, "status", hit.status,
+-			"reason", hit.reason, "code", hit.providerCode, "cached", true)
++			"reason", hit.reason, "cached", true)
+ 		return checker.Result{
+ 			Provider: hit.provider, Status: hit.status, Reason: hit.reason,
+ 			ProviderCode: hit.providerCode, CheckedAt: hit.checkedAt, Cached: true,
+@@ -100,7 +103,7 @@
+ 	}
+ 
+ 	s.log.Info("check", "provider", res.Provider, "status", res.Status,
+-		"reason", res.Reason, "code", res.ProviderCode, "cached", false,
++		"reason", res.Reason, "cached", false,
+ 		"dur_ms", s.now().Sub(start).Milliseconds())
+ 	return res
+ }
+@@ -135,10 +138,9 @@
+ 	q.Del("pwd")
+ 	ident := q.Encode()
+ 
+-	hasPC := passcode != "" || u.Query().Get("pwd") != ""
+-	pc := "0"
+-	if hasPC {
+-		pc = "1"
++	if passcode == "" {
++		passcode = u.Query().Get("pwd")
+ 	}
+-	return host + path + "?" + ident + "#" + u.Fragment + "|pc=" + pc
++	digest := sha256.Sum256([]byte(host + path + "?" + ident + "#" + u.Fragment + "\x00" + passcode))
++	return hex.EncodeToString(digest[:])
+ }

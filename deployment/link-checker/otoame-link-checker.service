@@ -1,0 +1,27 @@
+[Unit]
+Description=OtoAme pinned link checker
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=60
+StartLimitBurst=3
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/otoame-link-checker/checker.conf
+WorkingDirectory=/opt/otoame-link-checker/current
+ExecStart=/opt/otoame-link-checker/current/llc
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=15
+KillMode=control-group
+DynamicUser=yes
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+UMask=0077
+MemoryMax=128M
+TasksMax=64
+
+[Install]
+WantedBy=multi-user.target
