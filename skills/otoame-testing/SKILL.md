@@ -19,7 +19,7 @@ Use this skill for project-specific testing work; checklists and the file map li
 - Use `vi.hoisted` for any value a `vi.mock` factory references.
 - Never connect a unit test to real PostgreSQL, Redis, S3, GitHub, Bangumi, VNDB or DLSite.
 - Real DDL, lock-timeout and migration rehearsals run only on a disposable PostgreSQL; migration unit tests lock the SQL contracts statically and keep preflights read-only.
-- `tests/e2e/*.e2e.ts` create and settle real records. Confirm the running 3100 server actually uses disposable `touchgal_e2e`; never fall back to the default `.env` database.
+- Write-harness `tests/e2e/*.e2e.ts` create and settle real records. Confirm the running 3100 server actually uses disposable `touchgal_e2e`; never fall back to the default `.env` database. `tests/e2e/resource-card-mobile.e2e.ts` is a read-only 3000 layout check and must not join that write harness.
 - Profile-settings E2E also requires isolated Redis on a non-6379 port; verify balances and ledger rows, then remove the run's test accounts and sessions.
 - Assert behavior — return values, Prisma conditions and transaction boundaries, cache invalidation, upload lock/finalize/compensation, permission and quota edges. Never assert only that a mock was called.
 - Money paths assert the business write, conditional balance update and ledger snapshot in one transaction, plus negative reversals and reason truncation.

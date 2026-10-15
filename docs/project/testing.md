@@ -47,7 +47,7 @@ tests/unit/
 - 资源链接解析、资源分类、资源派生标签口径和后台资源表格布局：`tests/unit/resource-link.test.ts`、`resource-classification.test.ts`、`patch-resource-attributes.test.ts`、`admin-resource-container-layout.test.tsx`。`resource-classification.test.ts` 还覆盖游戏类型必须搭配中文支持类型、资料集/工具单独使用时的豁免、游戏类型与其他类型混选、中文支持互斥和 schema 错误文案。
 - 资源详情表单的中文支持独立多选框、资料集/工具禁用清理、HeroUI 分组标题排版、原有选项说明与多选勾选、上拉方向和边缘渐隐：`tests/unit/resource-details-form.test.tsx`。
 - 资源详情页操作权限和游客添加资源引导：`resource-permissions.test.ts`、`resource-tabs-permissions.test.tsx`、`resource-create-action.test.tsx` 覆盖资源作者/管理员权限显隐，以及游客不挂载发布表单、登录用户直接打开发布流程。
-- 下载链接按需获取：`api/resource-access-policy.test.ts`、`api/resource-access-grant.test.ts`、`api/resource-access-rate-limit.test.ts`、`api/resource-access.test.ts` 和 `api/resource-access-restore.test.ts` 覆盖 24 小时资源授权、事件分类、游客日/周额度、技术限频、access/restore 隐私响应和只读恢复；`resource-download-card.test.tsx`、`resource-download-restore.test.tsx` 覆盖镜像级展示、组件内存凭据、批量自动恢复和未点镜像隐藏；`resource-access-links-helper.test.ts` 覆盖编辑资源前按需水合完整链接。
+- 下载链接按需获取：`api/resource-access-policy.test.ts`、`api/resource-access-grant.test.ts`、`api/resource-access-rate-limit.test.ts`、`api/resource-access.test.ts` 和 `api/resource-access-restore.test.ts` 覆盖 24 小时资源授权、事件分类、游客日/周额度、技术限频、access/restore 隐私响应和只读恢复；`resource-download-card.test.tsx`、`resource-download-restore.test.tsx` 覆盖镜像级展示、组件内存凭据、批量自动恢复和未点镜像隐藏，以及揭示后凭据在卡片内换行；`resource-access-links-helper.test.ts` 覆盖编辑资源前按需水合完整链接。
 - Gallery 上传链路：`gallery-upload.test.ts` / `gallery-route.test.ts` 覆盖服务端转码、缩略图、S3 补偿和 route，其中 Sharp/S3 都是 mock，静态图的 AVIF 转码加缩略图行为要和动态 WebP/AVIF 的保留原图行为分开断言，并单独覆盖 animated WebP 缩略图的单帧尺寸处理、缩略图字节数不小于原图时不放弃缩略图的兜底，以及 animated AVIF encoder 成功 / 回退首帧 / 绝不生成占位图三条分支；`gallery-upload-batch.test.ts` 覆盖前端逐张上传失败保留和只重试失败项，`create-patch-draft.test.ts` 覆盖创建页保留整组图片草稿与已创建 patch 目标；`gallery-drop.test.ts` 覆盖网页图片 URL/HTML 拖拽导入；`gallery-remote-import.test.ts` 和 `gallery-remote-route.test.ts` 覆盖远程图片导入、SSRF 边界和权限。
 - Gallery 前端展示：`gallery-preview.test.ts`、`image-viewer-slides.test.ts`、`patch-gallery.test.tsx` 和 `image-viewer.test.tsx` 覆盖缩略图/原图 URL 选择、缩略图加载后不扇出原图请求、灯箱自身负责相邻原图预载和相邻 slide 动画，以及渐进式灯箱的 `previewSrc` 行为。
 - 投稿链路：`patch-submission-quota.test.ts`、`patch-submission-submit.test.ts`、`patch-submission-review.test.ts`、`patch-submission-review-route.test.ts` 和 `admin-submission-detail.test.tsx` 覆盖押金、提交/撤回审核员通知、状态机、软/硬重复外部 ID、审核并发回滚、过期审核的 `409` 与详情刷新；通知测试必须锁定「状态栅栏先成功再通知」的顺序，以及审核员查询整体失败和单个收件人投递失败都不能回滚或把已提交的状态转换报成失败。会社身份相关的 `company-resolver.test.ts`、`company-identity-retry.test.ts`、`company-identity-compatibility.test.ts` 与 `patch-submission-publish-core-company.test.ts` 还要锁定证据优先级、共享别名歧义、可信/非可信写入边界、只重试两个目标约束、事务外整笔重跑、flag-off 兼容和预览/批准同一开关；`patch-submission-publish-preview.test.ts`、`patch-submission-preview-view.test.tsx`、`patch-submission-preview-route.test.ts` 覆盖共享发布投影、正式条目外观、封面原图灯箱、分级、管理员专属会社诊断与普通用户不泄漏细节的私有预览；`patch-submission-readonly-controls.test.tsx` 覆盖驳回投稿保留内容展示但禁用全部编辑、外部抓取与回填入口；`patch-submission-asset-cleanup.test.ts`、`patch-submission-orphan-cleanup.test.ts`、`patch-submission-upload-draft.test.ts`、`patch-submission-autosave.test.tsx`、`patch-submission-asset-route.test.ts` 和 `patch-submission-gallery-input.test.tsx` 锁定 outbox、跨刷新重试、串行保存和权限边界。
@@ -263,15 +263,16 @@ pnpm typecheck
 
 用户名与签名设置的单元回归位于 `tests/unit/user-profile-settings.test.tsx` 和 `tests/unit/api/user-profile-settings.test.ts`，覆盖预填、未修改禁用、校验、异步资料刷新、保存失败重试和改名扣费事务。
 
-仓库有五套独立脚本，直接使用 `playwright-core` / HTTP 客户端，不通过 `@playwright/test` runner：
+仓库有六套独立脚本，直接使用 `playwright-core` / HTTP 客户端，不通过 `@playwright/test` runner：
 
 - `tests/e2e/edit-upload-guards.e2e.ts`
 - `tests/e2e/patch-submission-lifecycle.e2e.ts`
 - `tests/e2e/submission-ui.e2e.ts`
 - `tests/e2e/company-identity.e2e.ts`
 - `tests/e2e/user-profile-settings.e2e.ts`
+- `tests/e2e/resource-card-mobile.e2e.ts`
 
-它们会创建、修改、审核或删除真实数据，只能对明确的 disposable `touchgal_e2e` 数据库和单独的 3100 dev server 运行。执行前必须确认 server 进程实际使用的数据库，而不是只看当前 shell `.env`；CSRF 地址需设置为 `NEXT_PUBLIC_KUN_PATCH_ADDRESS_DEV=http://127.0.0.1:3100`，并提供脚本顶部列出的测试用户/JWT/Redis 环境变量。示例：
+前五套会创建、修改、审核或删除真实数据，只能对明确的 disposable `touchgal_e2e` 数据库和单独的 3100 dev server 运行。执行前必须确认 server 进程实际使用的数据库，而不是只看当前 shell `.env`；CSRF 地址需设置为 `NEXT_PUBLIC_KUN_PATCH_ADDRESS_DEV=http://127.0.0.1:3100`，并提供脚本顶部列出的测试用户/JWT/Redis 环境变量。示例：
 
 ```bash
 node --env-file=.env tests/e2e/submission-ui.e2e.ts
@@ -312,6 +313,12 @@ KUN_E2E_DATABASE_URL='postgresql://<user>:<password>@127.0.0.1:5432/touchgal_e2e
 `submission-ui.e2e.ts` 覆盖名称错误清除、自动/显式保存、服务端预览、上传失败跨刷新保留和进度重试；`patch-submission-lifecycle.e2e.ts` 从建草稿走到通知链接、审核详情，并覆盖审核页打开期间作者撤回、撤回通知、过期审核刷新、重新提交与正式发布；`edit-upload-guards.e2e.ts` 覆盖 create/rewrite 上传守卫；`company-identity.e2e.ts` 覆盖 flag-off/flag-on 的创建、重写、投稿预览/批准、歧义和真实计数触发器。列表页是服务端渲染的，脚本点击交互控件前必须等待客户端 hydration；模拟上传失败使用确定性的 HTTP 错误响应，不要用延迟 `route.abort()` 制造请求生命周期竞态。
 
 `user-profile-settings.e2e.ts` 覆盖用户名与签名预填、未修改或校验失败时禁用保存、失败重试、刷新持久化、移动端，以及并发改名只扣费一次。它要求本机 `touchgal_e2e`、独立的 Redis 实例和非 6379 的 `REDIS_PORT`，用匿名资料读取确认 3100 server 的数据库身份后，再建立测试会话。脚本创建并清理自己的测试账号；`KUN_E2E_BROWSER_PATH` 指定浏览器，`KUN_E2E_ARTIFACT_DIR` 指定报告和截图目录。
+
+`resource-card-mobile.e2e.ts` 是只读布局检查，默认打正在跑的 3000 站点（`KUN_E2E_BASE_URL`，路径 `KUN_E2E_RESOURCE_CARD_PATH`，默认 `/ui479c1f?tab=resources`）。它拦截 access/restore，不写 grant、不消耗额度、不依赖 CSRF，并在 360px 揭示长链接／提取码／解压码后断言 `#resource-*` 不横向撑破、子节点不画出视口。不要把它接到 3100 / `touchgal_e2e` 写入套件里。
+
+```bash
+node tests/e2e/resource-card-mobile.e2e.ts
+```
 
 ## 已知缺口
 

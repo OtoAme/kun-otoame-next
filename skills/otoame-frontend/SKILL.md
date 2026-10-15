@@ -14,13 +14,19 @@ Use this skill for pages, components, state, theme, and content.
 - `docs/modules/private-chat-stickers.md` — 管理后台
 - `docs/theme-color-system.md` — `--kun-*` / `--kun-chat-*` tokens
 
+## Mobile and Responsive Layout
+
+- Treat mobile display and touch usability as baseline requirements for all frontend work, including the site, legacy admin, dashboard and shared components. Consider narrow screens when designing, changing or reviewing UI, even when the request or reference only shows a desktop layout.
+- Adapt to available width: reflow columns, sidebars, split panes and action rows; constrain long text, links, media and tables without unintended page-level horizontal scrolling. Keep essential content and actions reachable on mobile; use local scrolling where the content requires it.
+- Keep text readable and touch targets comfortably sized and spaced. Core actions must work without hover. Menus, dialogs and drawers must fit the available viewport and keep their content and controls reachable; account for the virtual keyboard and safe areas when relevant.
+
 ## Site and Legacy Admin: HeroUI v2
 
 - Pages under `app/(site)` and their components, including legacy `/admin` and administrator previews, use HeroUI v2. Read the `@heroui/react` version from `package.json` and check current v2 docs through Context7; never apply v3 APIs.
 - Pick building blocks in order: existing project component → HeroUI v2 component → composed HeroUI primitives → native/custom only when HeroUI has no v2 capability. Justify exceptions at handoff.
 - Never rebuild buttons, form controls, tabs, cards, chips, badges, tables, pagination, loading states, menus, tooltips, popovers, drawers or dialogs from raw elements plus Tailwind.
 - Preserve React Aria behavior: documented props and slots, labels, errors, keyboard interaction, focus visibility and restoration, disabled/loading semantics, overlay dismissal.
-- Customize in order: props and variants → `className` / `classNames` slots → HeroUI theme tokens → project `--kun-*` tokens. Never fork HeroUI markup, target generated class names, or scatter one-off `dark:` fixes. Keep layouts responsive, touch-safe and `prefers-reduced-motion` aware.
+- Customize in order: props and variants → `className` / `classNames` slots → HeroUI theme tokens → project `--kun-*` tokens. Never fork HeroUI markup, target generated class names, or scatter one-off `dark:` fixes. Respect `prefers-reduced-motion`.
 
 ## Dashboard: shadcn
 
@@ -33,7 +39,7 @@ Use this skill for pages, components, state, theme, and content.
 
 ## Rules
 
-- Resource links show independent health, machine observation and report facts through server capabilities. Bind credentials/actions/callbacks to the full target, version and current read snapshot; a same-version new snapshot must discard old credentials and late results. Broken links remain selectable in the single two-step report entry. See `docs/modules/frontend-content.md`.
+- Resource links show independent health, machine observation and report facts through server capabilities. Bind credentials/actions/callbacks to the full target, version and current read snapshot; a same-version new snapshot must discard old credentials and late results. The card uses a health dot plus always-on status text; machine/report/processing details stay in the dot popover. Mirror chrome follows the resource-card demo (nested HeroUI `Card`s with `shadow="none"` and `overflow-visible` plus `min-w-0 max-w-full` on Card/CardBody, semibold 链接 #N title, solid get-link, 20px white netdisk tiles). Do not rebuild those cards, report callouts, or the health-dot trigger from raw `div`/`button` plus Tailwind; the health-dot is `Button size="sm" isIconOnly` with a 24px box so the status line is not stretched to 32px. The mirror title row's right side is icon-only 检测链接, 补链, and 报告失效 after reveal, with 报告失效 last and the names on Tooltip plus `aria-label`. The publisher, like, and download row stays the production `flex justify-between` / `flex gap-2` and does not host 遇到问题. Verify / confirm-broken / staff resolve sit in a dashed 处理 strip. Revealed download URLs shrink to content (`w-fit max-w-full` in a `min-w-0 max-w-full` wrapper) so empty space on that row does not navigate. Credential Snippets wrap via `classNames.pre` `!whitespace-pre-wrap break-all` because the HeroUI theme `pre` is nowrap. Title and note keep production `flex-col` / `mt-2` / `kun-prose` spacing. Broken links remain gettable after the resource-level fold and selectable in the two-step report entry. See `docs/modules/frontend-content.md`.
 - Capture full `baseLinks` once per resource edit session, preserve drafts on 409 and never replace the old base during background refresh. Broken inbox edits use the existing role-3 HeroUI `/admin/resource/link/<resourceId>?linkId=<linkId>` page and exact administrator DTO, never a download grant; dashboard details remain shadcn and return with valid inbox kind/id selection.
 - Deleted case targets keep their dialogue and historical participant capabilities (D37). Suppress dead target links and resource-dependent actions; require a nonblank manual closure/proposal note through the shared `caseClosingNoteError`, passing the closing side: 不在受理范围 needs a guide link from publishers but only a reason from site administrators (D39). Keep drafts and errors when the server rejects a stale operation.
 
@@ -56,6 +62,9 @@ Use this skill for pages, components, state, theme, and content.
 - Destructive actions need confirmation and must release loading state on failure.
 
 ## Verification
+
+- For layout or interaction changes, check the affected UI in a browser at a narrow phone width (around 360 CSS px) and a desktop width; include tablet widths and relevant breakpoint transitions when the layout changes there. Exercise relevant long content, navigation, forms and overlays for overflow, clipping, scrolling and touch access.
+- Automated tests and type checks do not establish mobile layout correctness. Report which viewport sizes and interactions were checked, and state any browser verification that could not be completed.
 
 ```bash
 pnpm test tests/unit/<target>.test.ts   # while iterating
