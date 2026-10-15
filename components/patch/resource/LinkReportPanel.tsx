@@ -1,7 +1,14 @@
 'use client'
 
 import { useState } from 'react'
-import { Button, Checkbox, Radio, RadioGroup } from '@heroui/react'
+import {
+  Button,
+  Card,
+  CardBody,
+  Checkbox,
+  Radio,
+  RadioGroup
+} from '@heroui/react'
 import toast from 'react-hot-toast'
 import { kunFetchPost } from '~/utils/kunFetch'
 import { useUserStore } from '~/store/userStore'
@@ -139,18 +146,20 @@ export const LinkReportPanel = ({
       )}
 
       {needsAck && (
-        <div className="space-y-2 rounded-medium bg-default-100 p-3 text-sm">
-          <p>
-            打不开或超时可能和你的网络环境有关，请先尝试更换网络或使用加速器；
-            只有确认之后这次报告才会被计入。
-          </p>
-          <Checkbox
-            isSelected={networkAcknowledged}
-            onValueChange={setNetworkAcknowledged}
-          >
-            我已尝试更换网络或加速器
-          </Checkbox>
-        </div>
+        <Card shadow="none" className="bg-default-100">
+          <CardBody className="gap-2 p-3 text-sm">
+            <p>
+              打不开或超时可能和你的网络环境有关，请先尝试更换网络或使用加速器；
+              只有确认之后这次报告才会被计入。
+            </p>
+            <Checkbox
+              isSelected={networkAcknowledged}
+              onValueChange={setNetworkAcknowledged}
+            >
+              我已尝试更换网络或加速器
+            </Checkbox>
+          </CardBody>
+        </Card>
       )}
 
       {guest && (

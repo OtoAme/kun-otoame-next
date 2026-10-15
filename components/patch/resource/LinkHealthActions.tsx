@@ -10,6 +10,8 @@ import {
   ModalHeader,
   useDisclosure
 } from '@heroui/react'
+import { Tooltip } from '@heroui/tooltip'
+import { PenLine, ScanSearch } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { kunFetchPost } from '~/utils/kunFetch'
 import type { PatchResourceLink } from '~/types/api/patch'
@@ -33,6 +35,11 @@ interface Props {
   /** 补链 opens the existing resource editor focused at this link's address. */
   onRelink?: () => void
   onChanged?: (view: LinkHealthMutationResponse['link']) => void
+  /**
+   * `maintain` sits on the health row (检测 / 补链).
+   * `decide` is the dashed 处理 strip (核实 / 确认失效 / 判定).
+   */
+  group: 'maintain' | 'decide'
 }
 
 /**
@@ -45,7 +52,8 @@ export const LinkHealthActions = ({
   resourceId,
   link,
   onRelink,
-  onChanged
+  onChanged,
+  group
 }: Props) => {
   const health = readLinkHealth(link)
   const confirm = useDisclosure()
@@ -56,12 +64,15 @@ export const LinkHealthActions = ({
     return null
   }
   const { capabilities } = health
-  const hasAction =
+  const canRelink = Boolean(capabilities.canEdit && onRelink)
+  const hasMaintain = capabilities.canCheck || canRelink
+  const hasDecide =
     capabilities.ownerActions.length > 0 ||
-    capabilities.resolveActions.length > 0 ||
-    capabilities.canCheck ||
-    (capabilities.canEdit && !!onRelink)
-  if (!hasAction) {
+    capabilities.resolveActions.length > 0
+  if (group === 'maintain' && !hasMaintain) {
+    return null
+  }
+  if (group === 'decide' && !hasDecide) {
     return null
   }
 
@@ -105,52 +116,74 @@ export const LinkHealthActions = ({
 
   return (
     <>
-      <div className="flex flex-wrap gap-2">
-        {capabilities.ownerActions.includes('verify') && (
-          <Button
-            size="sm"
-            variant="flat"
-            onPress={() => openConfirm({ kind: 'verify' })}
-          >
-            {linkHealthActionLabel({ kind: 'verify' })}
-          </Button>
-        )}
-        {capabilities.ownerActions.includes('confirm_broken') && (
-          <Button
-            size="sm"
-            variant="flat"
-            color="danger"
-            onPress={() => openConfirm({ kind: 'confirm_broken' })}
-          >
-            {linkHealthActionLabel({ kind: 'confirm_broken' })}
-          </Button>
-        )}
-        {capabilities.resolveActions.map((action) => (
-          <Button
-            key={action}
-            size="sm"
-            variant="flat"
-            color={action === 'broken' ? 'danger' : 'primary'}
-            onPress={() => openConfirm({ kind: 'resolve', action })}
-          >
-            {linkHealthActionLabel({ kind: 'resolve', action })}
-          </Button>
-        ))}
-        {capabilities.canCheck && (
-          <Button
-            size="sm"
-            variant="flat"
-            onPress={() => openConfirm({ kind: 'check' })}
-          >
-            {linkHealthActionLabel({ kind: 'check' })}
-          </Button>
-        )}
-        {capabilities.canEdit && onRelink && (
-          <Button size="sm" variant="flat" color="primary" onPress={onRelink}>
-            补链
-          </Button>
-        )}
-      </div>
+      {group === 'maintain' ? (
+        <div className="flex items-center gap-0.5">
+          {capabilities.canCheck && (
+            <Tooltip content={linkHealthActionLabel({ kind: 'check' })}>
+              <Button
+                size="sm"
+                variant="light"
+                isIconOnly
+                aria-label={linkHealthActionLabel({ kind: 'check' })}
+                className="shrink-0"
+                onPress={() => openConfirm({ kind: 'check' })}
+              >
+                <ScanSearch className="size-4" />
+              </Button>
+            </Tooltip>
+          )}
+          {canRelink && (
+            <Tooltip content="补链">
+              <Button
+                size="sm"
+                variant="light"
+                isIconOnly
+                aria-label="补链"
+                className="shrink-0"
+                onPress={onRelink}
+              >
+                <PenLine className="size-4" />
+              </Button>
+            </Tooltip>
+          )}
+        </div>
+      ) : (
+        <div className="flex flex-wrap items-center gap-2 border-t border-dashed border-default-200 pt-2">
+          <span className="text-[11px] font-medium tracking-wide text-default-400">
+            处理
+          </span>
+          {capabilities.ownerActions.includes('verify') && (
+            <Button
+              size="sm"
+              variant="bordered"
+              onPress={() => openConfirm({ kind: 'verify' })}
+            >
+              {linkHealthActionLabel({ kind: 'verify' })}
+            </Button>
+          )}
+          {capabilities.ownerActions.includes('confirm_broken') && (
+            <Button
+              size="sm"
+              variant="bordered"
+              color="danger"
+              onPress={() => openConfirm({ kind: 'confirm_broken' })}
+            >
+              {linkHealthActionLabel({ kind: 'confirm_broken' })}
+            </Button>
+          )}
+          {capabilities.resolveActions.map((action) => (
+            <Button
+              key={action}
+              size="sm"
+              variant="bordered"
+              color={action === 'broken' ? 'danger' : 'primary'}
+              onPress={() => openConfirm({ kind: 'resolve', action })}
+            >
+              {linkHealthActionLabel({ kind: 'resolve', action })}
+            </Button>
+          ))}
+        </div>
+      )}
 
       <Modal
         isOpen={confirm.isOpen}

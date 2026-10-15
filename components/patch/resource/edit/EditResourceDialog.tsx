@@ -238,7 +238,7 @@ export const EditResourceDialog = ({
         </Button>
         <Button
           color="primary"
-          disabled={editing || uploadingResource}
+          isDisabled={editing || uploadingResource}
           isLoading={editing || uploadingResource}
           onPress={() => {
             void handleSubmit(handleUpdateResource)()

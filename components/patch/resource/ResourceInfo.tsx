@@ -9,11 +9,12 @@ interface Props {
 
 export const ResourceInfo = ({ resource }: Props) => {
   return (
-    <div className="space-y-2">
+    <div className="min-w-0 space-y-2">
       <KunPatchAttribute
         types={resource.type}
         languages={resource.language}
         platforms={resource.platform}
+        chipContentClassName="font-medium"
       />
     </div>
   )

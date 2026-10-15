@@ -18,6 +18,7 @@ import {
   readLinkHealth,
   readSnapshotId
 } from './linkHealthDisplay'
+import { useResourceLinkHealthUpdates } from './useResourceLinkHealthUpdates'
 import type {
   PatchResource,
   PatchResourceHealthAccessRestoreResponse,
@@ -31,13 +32,14 @@ interface Props {
   preview?: boolean
   /** Opens the existing resource editor; a link id focuses its address field. */
   onEdit?: (resource: PatchResource, focusLinkId?: number) => void
+  /** When the parent owns「遇到问题」, hide the copy on the user/download row. */
+  hideReportButton?: boolean
+  healthUpdateFor?: (linkId: number) => LinkHealthSummary | null
 }
 
 const COLLAPSED_HEIGHT_PX = 96
 
-// 已失效链接不提供获取入口，也不参与已获取恢复（E04-04）。
-const restorableLinkId = (link: PatchResourceLink) =>
-  link.revealed && readLinkHealth(link)?.health !== 'broken'
+const restorableLinkId = (link: PatchResourceLink) => Boolean(link.revealed)
 
 type RestoreState = {
   key: string
@@ -49,7 +51,9 @@ type RestoreState = {
 export const ResourceDownload = ({
   resource,
   preview = false,
-  onEdit
+  onEdit,
+  hideReportButton = false,
+  healthUpdateFor: healthUpdateForProp
 }: Props) => {
   const [showLinks, setShowLinks] = useState<Record<number, boolean>>(() =>
     preview || resource.links.some((link) => link.revealed)
@@ -76,24 +80,38 @@ export const ResourceDownload = ({
     countBrokenLinks(resource.links),
     latestRelinkAt(resource.links)
   )
-  // 「遇到问题」报告结果按链接下发到对应卡片的事实展示。每条更新都带上
-  // 捕获时的读取快照标记：迟到的旧快照回调即使闯过清理窗口也不被渲染；
-  // 新快照（对象引用变化）同时清空旧表并回到服务端事实
-  const [healthUpdates, setHealthUpdates] = useState<
-    Record<number, { view: LinkHealthSummary; snapshotId: number }>
-  >({})
+  const liveLinks = useMemo(
+    () =>
+      resource.links.filter(
+        (link) => readLinkHealth(link)?.health !== 'broken'
+      ),
+    [resource.links]
+  )
+  const deadLinks = useMemo(
+    () =>
+      resource.links.filter(
+        (link) => readLinkHealth(link)?.health === 'broken'
+      ),
+    [resource.links]
+  )
+  const hasRevealedBroken = useMemo(
+    () =>
+      resource.links.some(
+        (link) =>
+          readLinkHealth(link)?.health === 'broken' && link.revealed === true
+      ),
+    [resource.links]
+  )
+  const [brokenOpen, setBrokenOpen] = useState(hasRevealedBroken)
+  const wasRevealedBroken = useRef(hasRevealedBroken)
   useEffect(() => {
-    setHealthUpdates({})
-  }, [resource])
-  const snapshotId = readSnapshotId(resource)
-  // 渲染即更新的当前快照引用：旧快照闭包的迟到回调整笔丢弃，不覆盖
-  // 同 linkId 已收到的新快照成功结果
-  const currentSnapshotRef = useRef(snapshotId)
-  currentSnapshotRef.current = snapshotId
-  const healthUpdateFor = (linkId: number): LinkHealthSummary | null => {
-    const entry = healthUpdates[linkId]
-    return entry && entry.snapshotId === snapshotId ? entry.view : null
-  }
+    if (hasRevealedBroken && !wasRevealedBroken.current) {
+      setBrokenOpen(true)
+    }
+    wasRevealedBroken.current = hasRevealedBroken
+  }, [hasRevealedBroken])
+  const localHealth = useResourceLinkHealthUpdates(resource)
+  const healthUpdateFor = healthUpdateForProp ?? localHealth.healthUpdateFor
   const restoreKey = `${resource.patchId}:${resource.id}:${readSnapshotId(resource)}:${revealedLinks
     .map((entry) => `${entry.id}:${entry.version ?? 'na'}`)
     .join(',')}`
@@ -229,15 +247,43 @@ export const ResourceDownload = ({
     }
   }, [note])
 
+  const linkIndexMap = useMemo(() => {
+    const map = new Map<number, number>()
+    resource.links.forEach((link, i) => map.set(link.id, i + 1))
+    return map
+  }, [resource.links])
+
+  const renderLinkCard = (link: PatchResourceLink) => {
+    const restoredLink = currentRestoreState?.links.get(link.id)
+    return (
+      // id+version 作为子键：版本推进即全新卡片，旧凭据/旧状态不带入
+      <ResourceDownloadCard
+        key={linkVersionKey(link)}
+        resource={resource}
+        link={link}
+        linkIndex={linkIndexMap.get(link.id) ?? 1}
+        preview={preview}
+        healthUpdate={healthUpdateFor(link.id)}
+        onRelink={onEdit ? (target) => onEdit(resource, target.id) : undefined}
+        {...(restoredLink
+          ? {
+              restoredLink,
+              restoredObtainedExpiresAt: currentRestoreState?.expiresAt ?? ''
+            }
+          : {})}
+      />
+    )
+  }
+
   return (
-    <div className="space-y-2">
+    <div className="min-w-0 space-y-2">
       {resource.note ? (
         <div className="w-full">
           <div className="flex flex-col">
             <h3 className="font-medium">
               {resource.name ? resource.name : '资源备注'}
             </h3>
-            <p className="text-sm text-default-5000">
+            <p className="text-sm text-default-500">
               该补丁资源创建于 {formatTimeDifference(resource.created)}
             </p>
           </div>
@@ -287,24 +333,21 @@ export const ResourceDownload = ({
         <p>{resource.name}</p>
       )}
 
-      {/* 用户与操作一行装不下的窄屏自然换行：用户名可收缩，动作仍可完整右落；桌面仍紧凑同行 */}
-      <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
-        <div className="min-w-0 max-w-full shrink">
-          <KunUser
-            user={resource.user}
-            userProps={{
-              name: resource.user.name,
-              description: `${formatTimeDifference(resource.created)} • 已发布资源 ${resource.user.patchCount} 个`,
-              avatarProps: {
-                showFallback: true,
-                src: resource.user.avatar,
-                name: resource.user.name.charAt(0).toUpperCase()
-              }
-            }}
-          />
-        </div>
+      <div className="flex justify-between">
+        <KunUser
+          user={resource.user}
+          userProps={{
+            name: resource.user.name,
+            description: `${formatTimeDifference(resource.created)} • 已发布资源 ${resource.user.patchCount} 个`,
+            avatarProps: {
+              showFallback: true,
+              src: resource.user.avatar,
+              name: resource.user.name.charAt(0).toUpperCase()
+            }
+          }}
+        />
 
-        <div className="flex flex-wrap gap-2">
+        <div className="flex gap-2">
           {preview ? (
             <span className="self-center text-sm" aria-label="点赞数">
               {resource.likeCount}
@@ -320,65 +363,40 @@ export const ResourceDownload = ({
           >
             <Download className="size-4" />
           </Button>
-          {!preview && (
+          {!preview && !hideReportButton && (
             <ReportResourceButton
               resource={resource}
               patchId={resource.patchId}
-              onReported={(view) => {
-                // 旧快照闭包的迟到回调整笔 no-op，保留已收到的新匹配更新
-                if (snapshotId !== currentSnapshotRef.current) {
-                  return
-                }
-                setHealthUpdates((current) => ({
-                  ...current,
-                  [view.linkId]: { view, snapshotId }
-                }))
-              }}
+              onReported={localHealth.onReported}
             />
           )}
         </div>
       </div>
 
       {showLinks[resource.id] && (
-        <div className="space-y-3">
-          {brokenFold && (
-            <p className="text-sm text-default-500" role="status">
-              {brokenFold}
-            </p>
-          )}
-
+        <div className="grid min-w-0 gap-2.5">
           {currentRestoreState?.error && (
             <p role="alert" className="text-sm text-danger">
               {currentRestoreState.error}
             </p>
           )}
 
-          {resource.links.map((link) => {
-            const restoredLink =
-              readLinkHealth(link)?.health === 'broken'
-                ? undefined
-                : currentRestoreState?.links.get(link.id)
-            return (
-              // id+version 作为子键：版本推进即全新卡片，旧凭据/旧状态不带入
-              <ResourceDownloadCard
-                key={linkVersionKey(link)}
-                resource={resource}
-                link={link}
-                preview={preview}
-                healthUpdate={healthUpdateFor(link.id)}
-                onRelink={
-                  onEdit ? (target) => onEdit(resource, target.id) : undefined
-                }
-                {...(restoredLink
-                  ? {
-                      restoredLink,
-                      restoredObtainedExpiresAt:
-                        currentRestoreState?.expiresAt ?? ''
-                    }
-                  : {})}
-              />
-            )
-          })}
+          {liveLinks.map(renderLinkCard)}
+
+          {deadLinks.length > 0 && brokenFold ? (
+            <>
+              <Button
+                variant="bordered"
+                className="h-auto justify-start whitespace-normal border-dashed py-2.5 text-left text-sm text-default-500"
+                aria-expanded={brokenOpen}
+                onPress={() => setBrokenOpen((open) => !open)}
+              >
+                {brokenFold}
+                {brokenOpen ? '' : ' · 已折叠'}
+              </Button>
+              {brokenOpen ? deadLinks.map(renderLinkCard) : null}
+            </>
+          ) : null}
         </div>
       )}
     </div>

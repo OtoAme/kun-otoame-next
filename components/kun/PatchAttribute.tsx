@@ -14,25 +14,53 @@ interface Props {
   languages?: string[]
   platforms?: string[]
   size?: 'lg' | 'md' | 'sm'
+  chipContentClassName?: string
 }
+
+const withContentClass = (
+  props: ReturnType<typeof semanticChipProps>,
+  chipContentClassName?: string
+) =>
+  chipContentClassName
+    ? {
+        ...props,
+        classNames: {
+          ...props.classNames,
+          content: [props.classNames.content, chipContentClassName]
+            .filter(Boolean)
+            .join(' ')
+        }
+      }
+    : props
 
 export const KunPatchAttribute = ({
   types,
   languages = [],
   platforms = [],
-  size = 'md'
+  size = 'md',
+  chipContentClassName
 }: Props) => {
   return (
     <div className="flex flex-wrap gap-2">
       {sortResourceTypes(types).map((type) => (
-        <Chip key={type} {...semanticChipProps('resource-type')} size={size}>
+        <Chip
+          key={type}
+          {...withContentClass(
+            semanticChipProps('resource-type'),
+            chipContentClassName
+          )}
+          size={size}
+        >
           {SUPPORTED_TYPE_MAP[type]}
         </Chip>
       ))}
       {languages?.map((lang) => (
         <Chip
           key={lang}
-          {...semanticChipProps('resource-language')}
+          {...withContentClass(
+            semanticChipProps('resource-language'),
+            chipContentClassName
+          )}
           size={size}
         >
           {SUPPORTED_LANGUAGE_MAP[lang]}
@@ -41,7 +69,10 @@ export const KunPatchAttribute = ({
       {platforms?.map((platform) => (
         <Chip
           key={platform}
-          {...semanticChipProps('resource-platform')}
+          {...withContentClass(
+            semanticChipProps('resource-platform'),
+            chipContentClassName
+          )}
           size={size}
         >
           {SUPPORTED_PLATFORM_MAP[platform]}

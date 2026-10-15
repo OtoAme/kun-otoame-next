@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import { kunFetchPut } from '~/utils/kunFetch'
-import { Button } from '@heroui/button'
-import { Tooltip } from '@heroui/tooltip'
+import { Button, Tooltip } from '@heroui/react'
 import { Heart } from 'lucide-react'
 import { useUserStore } from '~/store/userStore'
 import toast from 'react-hot-toast'
@@ -46,10 +45,10 @@ export const ResourceLikeButton = ({ resource }: Props) => {
   }
 
   return (
-    <Tooltip key="like" color="default" content="点赞" placement="bottom">
+    <Tooltip key="like" color="default" content="点赞" placement="top">
       <Button
         variant="light"
-        disabled={loading}
+        isDisabled={loading}
         onPress={toggleLike}
         className="min-w-0 px-2"
       >

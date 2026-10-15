@@ -25,6 +25,13 @@ export const LINK_CHECK_PROVIDERS = [
   'caiyun',
   'pan123'
 ] as const
+export const LINK_CHECK_PROVIDER_LABELS = {
+  baidu: '百度网盘',
+  quark: '夸克网盘',
+  uc: 'UC网盘',
+  caiyun: '和彩云',
+  pan123: '123云盘'
+} as const satisfies Record<(typeof LINK_CHECK_PROVIDERS)[number], string>
 export const LINK_CHECK_REASONS = [
   'share_available',
   'share_deleted',

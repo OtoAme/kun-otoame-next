@@ -2,32 +2,37 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Snippet } from '@heroui/snippet'
-import { Chip } from '@heroui/chip'
-import { Button } from '@heroui/button'
 import {
+  Button,
+  Card,
+  CardBody,
   Modal,
   ModalBody,
   ModalContent,
   ModalHeader,
   useDisclosure
 } from '@heroui/react'
-import { Cloud, Database, Flag, Link as LinkIcon } from 'lucide-react'
+import { Tooltip } from '@heroui/tooltip'
+import { Flag, Link as LinkIcon } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { LINK_HEALTH_ERRORS } from '~/constants/linkHealth'
 import { SUPPORTED_RESOURCE_LINK_MAP } from '~/constants/resource'
 import { kunFetchPost, kunFetchPut } from '~/utils/kunFetch'
+import { parseResourceLink } from '~/utils/resourceLink'
+import { recognizeLinkCheckProvider } from '~/utils/recognizeLinkCheckProvider'
 import { KunExternalLink } from '~/components/kun/external-link/ExternalLink'
 import {
   isHealthAtLeast,
+  LINK_HEALTH_LABELS,
   mergeHealthProjection,
   readLinkHealth,
   readSnapshotId
 } from './linkHealthDisplay'
-import { LinkHealthStatus } from './LinkHealthStatus'
+import { LinkHealthDot } from './LinkHealthDot'
 import { LinkReportPanel } from './LinkReportPanel'
 import { LinkHealthActions } from './LinkHealthActions'
+import { NetdiskChip } from './NetdiskChip'
 import { CaseLoginPrompt } from '~/components/case/CaseLoginPrompt'
-import type { JSX } from 'react'
 import type {
   PatchResource,
   PatchResourceAccessLink,
@@ -36,12 +41,34 @@ import type {
   PatchResourceLink,
   ResourceAccessQuota
 } from '~/types/api/patch'
-import type { LinkHealthSummary } from '~/types/api/linkHealth'
+import type {
+  LinkCheckProvider,
+  LinkHealthSummary
+} from '~/types/api/linkHealth'
 
-const storageIcons: { [key: string]: JSX.Element } = {
-  touchgal: <Database className="size-4" />,
-  s3: <Cloud className="size-4" />,
-  user: <LinkIcon className="size-4" />
+const displayBlack3Hash = (hash: string) => hash.replace(/^b3:/i, '')
+
+const wrapLongTextClass =
+  'min-w-0 max-w-full break-all [overflow-wrap:anywhere]'
+// HeroUI Snippet `pre` is whitespace-nowrap; important wrap beats the theme slot.
+const credentialSnippetClassNames = {
+  base: 'min-w-0 max-w-full',
+  pre: `${wrapLongTextClass} !whitespace-pre-wrap`
+}
+
+const resolveNetdiskProvider = (
+  link: PatchResourceLink,
+  healthProvider: LinkCheckProvider | null | undefined,
+  accessedContent?: string
+) => {
+  const raw = accessedContent || link.content
+  if (raw) {
+    const fromUrl = recognizeLinkCheckProvider(parseResourceLink(raw).url)
+    if (fromUrl) {
+      return fromUrl
+    }
+  }
+  return healthProvider ?? null
 }
 
 /** 版本存在时的凭据/请求匹配：旧版本请求、迟到响应与恢复结果一律丢弃。 */
@@ -54,6 +81,8 @@ const versionMatches = (
 interface Props {
   resource: PatchResource
   link: PatchResourceLink
+  /** 从 1 开始的链接序号，用于显示「链接 #N」。 */
+  linkIndex?: number
   restoredLink?: PatchResourceAccessLink
   restoredObtainedExpiresAt?: string
   preview?: boolean
@@ -66,6 +95,7 @@ interface Props {
 export const ResourceDownloadCard = ({
   resource,
   link,
+  linkIndex = 1,
   restoredLink,
   restoredObtainedExpiresAt,
   preview = false,
@@ -132,7 +162,6 @@ export const ResourceDownloadCard = ({
         : null
     return mergeHealthProjection(withParent, currentOverride)
   }, [serverHealth, healthUpdate, healthOverride, snapshotId])
-  const isBroken = health?.health === 'broken'
 
   // 本快照内发起的动作/报告结果：记录来源快照；换快照后来源响应被丢弃
   const applyLocalHealthResult = (view: LinkHealthSummary) =>
@@ -250,8 +279,12 @@ export const ResourceDownloadCard = ({
         <p className="text-sm">
           BLACK3 校验码 (您可以根据此校验码校验下载文件完整性)
         </p>
-        <Snippet symbol="" className="flex overflow-auto whitespace-normal">
-          {hash}
+        <Snippet
+          symbol=""
+          className="flex min-w-0 max-w-full overflow-auto whitespace-normal"
+          classNames={credentialSnippetClassNames}
+        >
+          {displayBlack3Hash(hash)}
         </Snippet>
       </div>
     ) : null
@@ -266,187 +299,195 @@ export const ResourceDownloadCard = ({
         link: health
       }
     : null
+  const netdiskProvider = resolveNetdiskProvider(
+    link,
+    health?.latestCheck?.provider,
+    accessedLink?.content
+  )
+  const healthMeta = health
+    ? [LINK_HEALTH_LABELS[health.health], link.size].filter(Boolean).join(' · ')
+    : link.size
+  const showReport = Boolean(!preview && health && accessedLink)
+  const linkLabel = `链接 #${linkIndex}`
 
-  // 已失效：折叠获取入口，保留脱敏标识、状态与处理动作；仍可被「遇到问题」选中。
-  if (isBroken && health) {
-    return (
-      <div className="flex flex-col space-y-2">
-        <div className="flex items-center gap-2">
-          <Chip
-            color="secondary"
-            variant="flat"
-            startContent={storageIcons[link.storage]}
+  const credentials = accessedLink ? (
+    <Card
+      shadow="none"
+      radius="lg"
+      className="min-w-0 max-w-full overflow-visible border border-default-200 bg-content1"
+    >
+      <CardBody className="min-w-0 max-w-full gap-2 overflow-visible p-3">
+        <div className="min-w-0 max-w-full">
+          <KunExternalLink
+            className={`inline-flex ${wrapLongTextClass} w-fit`}
+            onPress={handleClickDownload}
+            underline="always"
+            link={accessedLink.content}
           >
-            {SUPPORTED_RESOURCE_LINK_MAP[link.storage] ?? link.storage}
-          </Chip>
-          <Chip variant="flat" startContent={<Database className="w-4 h-4" />}>
-            {link.size}
-          </Chip>
+            <span className={wrapLongTextClass}>{accessedLink.content}</span>
+          </KunExternalLink>
         </div>
 
-        <LinkHealthStatus link={health} />
-        <p className="text-sm text-default-500">
-          该链接已失效，暂不提供获取；仍可在下方「遇到问题」中选择它反馈。
-        </p>
+        {(accessedLink.code || accessedLink.password) && (
+          <div className="flex min-w-0 max-w-full flex-wrap gap-2">
+            {accessedLink.code && (
+              <Snippet
+                tooltipProps={{
+                  content: '点击复制提取码'
+                }}
+                size="sm"
+                symbol="提取码"
+                color="primary"
+                className="min-w-0 max-w-full py-0"
+                classNames={credentialSnippetClassNames}
+              >
+                {accessedLink.code}
+              </Snippet>
+            )}
 
-        {!preview && (
-          <LinkHealthActions
-            {...healthMutationProps!}
-            onRelink={onRelink ? () => onRelink(link) : undefined}
-            onChanged={applyLocalHealthResult}
-          />
+            {accessedLink.password && (
+              <Snippet
+                tooltipProps={{
+                  content: '点击复制解压码'
+                }}
+                size="sm"
+                symbol="解压码"
+                color="primary"
+                className="min-w-0 max-w-full py-0"
+                classNames={credentialSnippetClassNames}
+              >
+                {accessedLink.password}
+              </Snippet>
+            )}
+          </div>
         )}
-      </div>
-    )
-  }
+
+        {renderHash(accessedLink.hash ?? '')}
+      </CardBody>
+    </Card>
+  ) : preview ? (
+    <p className="text-sm text-default-500">该链接暂无可预览的地址</p>
+  ) : (
+    <>
+      <Button
+        color="primary"
+        className="w-fit"
+        isLoading={accessing}
+        isDisabled={accessing}
+        startContent={!accessing ? <LinkIcon className="size-4" /> : null}
+        onPress={handleAccessLink}
+      >
+        {accessButtonText}
+      </Button>
+
+      {errorMessage && (
+        <p role="alert" className="text-sm text-danger">
+          {errorMessage}
+        </p>
+      )}
+
+      {renderHash(link.hash)}
+    </>
+  )
+
+  const healthActionProps =
+    !preview && healthMutationProps
+      ? {
+          ...healthMutationProps,
+          onRelink: onRelink ? () => onRelink(link) : undefined,
+          onChanged: applyLocalHealthResult
+        }
+      : null
 
   return (
-    <div className="flex flex-col space-y-2">
-      <div className="flex items-center gap-2">
-        <Chip
-          color="secondary"
-          variant="flat"
-          startContent={storageIcons[link.storage]}
-        >
-          {SUPPORTED_RESOURCE_LINK_MAP[link.storage] ?? link.storage}
-        </Chip>
-        <Chip variant="flat" startContent={<Database className="w-4 h-4" />}>
-          {link.size}
-        </Chip>
-      </div>
-
-      {health && <LinkHealthStatus link={health} />}
-
-      {accessedLink ? (
-        <>
-          <p className="text-sm text-default-500">点击下面的链接以下载</p>
-
-          <div className="space-y-2">
-            <KunExternalLink
-              className="break-all"
-              onPress={handleClickDownload}
-              underline="always"
-              link={accessedLink.content}
-            >
-              {accessedLink.content}
-            </KunExternalLink>
-
-            <div className="flex flex-wrap gap-2">
-              {accessedLink.code && (
-                <Snippet
-                  tooltipProps={{
-                    content: '点击复制提取码'
-                  }}
-                  size="sm"
-                  symbol="提取码"
-                  color="primary"
-                  className="max-w-full py-0"
-                >
-                  {accessedLink.code}
-                </Snippet>
-              )}
-
-              {accessedLink.password && (
-                <Snippet
-                  tooltipProps={{
-                    content: '点击复制解压码'
-                  }}
-                  size="sm"
-                  symbol="解压码"
-                  color="primary"
-                  className="max-w-full py-0"
-                >
-                  {accessedLink.password}
-                </Snippet>
-              )}
-            </div>
-
-            {renderHash(accessedLink.hash ?? '')}
+    <Card
+      shadow="none"
+      radius="lg"
+      className="min-w-0 max-w-full overflow-visible border border-default-200 bg-default-50"
+    >
+      <CardBody className="min-w-0 max-w-full gap-2.5 overflow-visible p-3">
+        <div className="flex items-center gap-x-2.5 gap-y-1">
+          <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+            <div className="font-semibold">{linkLabel}</div>
+            <NetdiskChip provider={netdiskProvider} />
+            {healthMeta ? (
+              <div
+                className="flex items-center gap-1.5 text-xs font-normal leading-4 text-default-500"
+                aria-label="链接状态"
+              >
+                {health ? <LinkHealthDot link={health} /> : null}
+                <span>{healthMeta}</span>
+              </div>
+            ) : null}
           </div>
-        </>
-      ) : preview ? (
-        <p className="text-sm text-default-500">该链接暂无可预览的地址</p>
-      ) : (
-        <div className="space-y-2">
-          {/* 疑似失效与争议都保留获取入口（04 §3.1/3.4） */}
-          <Button
-            color="primary"
-            variant="flat"
-            isLoading={accessing}
-            isDisabled={accessing}
-            startContent={!accessing ? <LinkIcon className="size-4" /> : null}
-            onPress={handleAccessLink}
-          >
-            {accessButtonText}
-          </Button>
 
-          {errorMessage && (
-            <p role="alert" className="text-sm text-danger">
-              {errorMessage}
-            </p>
-          )}
-
-          {renderHash(link.hash)}
-        </div>
-      )}
-
-      {quota && quota.remaining.daily <= 2 && (
-        <p className="text-sm text-default-500" role="status">
-          您当前是游客，今日还可获取 {quota.remaining.daily} 个游戏资源条目
-        </p>
-      )}
-
-      {!preview && health && (
-        <div className="flex flex-wrap gap-2">
-          <Button
-            size="sm"
-            variant="light"
-            startContent={<Flag className="size-4" />}
-            onPress={report.onOpen}
-          >
-            报告失效
-          </Button>
-          <LinkHealthActions
-            {...healthMutationProps!}
-            onRelink={onRelink ? () => onRelink(link) : undefined}
-            onChanged={applyLocalHealthResult}
-          />
-        </div>
-      )}
-
-      <Modal
-        isOpen={report.isOpen}
-        onClose={report.onClose}
-        scrollBehavior="inside"
-      >
-        <ModalContent>
-          <ModalHeader className="flex flex-col gap-1">
-            报告失效
-            <span className="text-sm font-normal text-default-500">
-              {SUPPORTED_RESOURCE_LINK_MAP[link.storage] ?? link.storage} ·{' '}
-              {link.size}
-            </span>
-          </ModalHeader>
-          <ModalBody className="pb-6">
-            {health && (
-              <LinkReportPanel
-                patchId={resource.patchId}
-                resourceId={resource.id}
-                link={health}
-                onCancel={report.onClose}
-                onLoginRequired={login.onOpen}
-                onReported={applyLocalHealthResult}
-              />
+          <div className="ms-auto flex shrink-0 items-center gap-0.5">
+            {healthActionProps ? (
+              <LinkHealthActions group="maintain" {...healthActionProps} />
+            ) : null}
+            {showReport && (
+              <Tooltip content="报告失效">
+                <Button
+                  size="sm"
+                  variant="light"
+                  isIconOnly
+                  aria-label="报告失效"
+                  className="shrink-0"
+                  onPress={report.onOpen}
+                >
+                  <Flag className="size-4" />
+                </Button>
+              </Tooltip>
             )}
-          </ModalBody>
-        </ModalContent>
-      </Modal>
+          </div>
+        </div>
 
-      <CaseLoginPrompt
-        isOpen={login.isOpen}
-        onOpenChange={login.onOpenChange}
-        action="报告失效"
-      />
-    </div>
+        {credentials}
+
+        {quota && quota.remaining.daily <= 2 && (
+          <p className="text-sm text-default-500" role="status">
+            您当前是游客，今日还可获取 {quota.remaining.daily} 个游戏资源条目
+          </p>
+        )}
+
+        {healthActionProps ? (
+          <LinkHealthActions group="decide" {...healthActionProps} />
+        ) : null}
+
+        <Modal
+          isOpen={report.isOpen}
+          onClose={report.onClose}
+          scrollBehavior="inside"
+        >
+          <ModalContent>
+            <ModalHeader className="flex flex-col gap-1">
+              报告失效
+              <span className="text-sm font-normal text-default-500">
+                {SUPPORTED_RESOURCE_LINK_MAP[link.storage] ?? link.storage} ·{' '}
+                {link.size}
+              </span>
+            </ModalHeader>
+            <ModalBody className="pb-6">
+              {health && (
+                <LinkReportPanel
+                  patchId={resource.patchId}
+                  resourceId={resource.id}
+                  link={health}
+                  onCancel={report.onClose}
+                  onLoginRequired={login.onOpen}
+                  onReported={applyLocalHealthResult}
+                />
+              )}
+            </ModalBody>
+          </ModalContent>
+        </Modal>
+
+        <CaseLoginPrompt
+          isOpen={login.isOpen}
+          onOpenChange={login.onOpenChange}
+          action="报告失效"
+        />
+      </CardBody>
+    </Card>
   )
 }

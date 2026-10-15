@@ -67,12 +67,21 @@ vi.mock('@heroui/chip', () => ({
 vi.mock('@heroui/snippet', () => ({
   Snippet: ({
     children,
-    symbol
+    symbol,
+    className,
+    classNames
   }: {
     children?: React.ReactNode
     symbol?: React.ReactNode
+    className?: string
+    classNames?: { base?: string; pre?: string }
   }) => (
-    <span>
+    <span
+      data-snippet=""
+      className={className}
+      data-base-class={classNames?.base}
+      data-pre-class={classNames?.pre}
+    >
       {symbol}
       {children}
     </span>
@@ -105,14 +114,24 @@ vi.mock('@heroui/react', async () => {
       children,
       onPress,
       isDisabled,
-      isLoading
+      isLoading,
+      startContent,
+      'aria-label': ariaLabel
     }: {
       children?: React.ReactNode
       onPress?: () => void
       isDisabled?: boolean
       isLoading?: boolean
+      startContent?: React.ReactNode
+      'aria-label'?: string
     }) => (
-      <button type="button" disabled={isDisabled || isLoading} onClick={onPress}>
+      <button
+        type="button"
+        aria-label={ariaLabel}
+        disabled={isDisabled || isLoading}
+        onClick={onPress}
+      >
+        {startContent}
         {children}
       </button>
     ),
@@ -138,6 +157,15 @@ vi.mock('@heroui/react', async () => {
     RadioGroup: ({ children }: { children?: React.ReactNode }) => (
       <div role="radiogroup">{children}</div>
     ),
+    Popover: ({ children }: { children?: React.ReactNode }) => (
+      <div>{children}</div>
+    ),
+    PopoverTrigger: ({ children }: { children?: React.ReactNode }) => (
+      <>{children}</>
+    ),
+    PopoverContent: ({ children }: { children?: React.ReactNode }) => (
+      <div>{children}</div>
+    ),
     useDisclosure: () => {
       const [isOpen, setIsOpen] = R.useState(false)
       return {
@@ -146,7 +174,27 @@ vi.mock('@heroui/react', async () => {
         onClose: () => setIsOpen(false),
         onOpenChange: setIsOpen
       }
-    }
+    },
+    Card: ({
+      children,
+      id,
+      className
+    }: {
+      children?: React.ReactNode
+      id?: string
+      className?: string
+    }) => (
+      <div id={id} className={className}>
+        {children}
+      </div>
+    ),
+    CardBody: ({
+      children,
+      className
+    }: {
+      children?: React.ReactNode
+      className?: string
+    }) => <div className={className}>{children}</div>
   }
 })
 
@@ -154,14 +202,17 @@ vi.mock('~/components/kun/external-link/ExternalLink', () => ({
   KunExternalLink: ({
     children,
     link,
-    onPress
+    onPress,
+    className
   }: {
     children?: React.ReactNode
     link: string
     onPress?: () => void
+    className?: string
   }) => (
     <a
       href={link}
+      className={className}
       onClick={(event) => {
         event.preventDefault()
         onPress?.()
@@ -214,6 +265,9 @@ const resource: PatchResource = {
   }
 }
 
+const classTokens = (value: string | null | undefined) =>
+  (value ?? '').split(/\s+/).filter(Boolean)
+
 const lowQuota: ResourceAccessQuota = {
   scope: 'visitor',
   resourceKind: 'galgame',
@@ -261,6 +315,7 @@ describe('ResourceDownloadCard access flow', () => {
         <ResourceDownloadCard
           resource={resourceValue}
           link={link}
+          linkIndex={1}
           restoredLink={restoredLink}
           restoredObtainedExpiresAt={restoredObtainedExpiresAt}
           preview={preview}
@@ -280,14 +335,22 @@ describe('ResourceDownloadCard access flow', () => {
   it('shows authorized preview links without revealing or counting downloads', async () => {
     const { container } = await renderCard({
       preview: true,
-      link: { ...previewLink, content: 'https://example.com/review-only', code: '1234' }
+      link: {
+        ...previewLink,
+        content: 'https://example.com/review-only',
+        code: '1234'
+      }
     })
     expect(container.textContent).toContain('https://example.com/review-only')
     expect(container.textContent).toContain('1234')
     expect(container.textContent).not.toContain('获取下载链接')
     const link = container.querySelector('a')
     expect(link).not.toBeNull()
-    await act(async () => link!.dispatchEvent(new window.MouseEvent('click', { bubbles: true, cancelable: true })))
+    await act(async () =>
+      link!.dispatchEvent(
+        new window.MouseEvent('click', { bubbles: true, cancelable: true })
+      )
+    )
     expect(fetchMock.kunFetchPost).not.toHaveBeenCalled()
     expect(fetchMock.kunFetchPut).not.toHaveBeenCalled()
   })
@@ -383,7 +446,7 @@ describe('ResourceDownloadCard access flow', () => {
 
     await act(async () => {
       root!.render(
-        <ResourceDownloadCard resource={resource} link={obtainedLink} />
+        <ResourceDownloadCard resource={resource} link={obtainedLink} linkIndex={1} />
       )
     })
 
@@ -506,6 +569,101 @@ describe('ResourceDownloadCard access flow', () => {
     expect(fetchMock.kunFetchPost).not.toHaveBeenCalled()
   })
 
+  it('keeps the revealed download url clickable only on the link text', async () => {
+    const restoredLink: PatchResourceAccessLink = {
+      id: 21,
+      storage: 'user',
+      size: '2 GB',
+      content: 'https://pan.example.com/short',
+      code: '',
+      password: '',
+      hash: ''
+    }
+
+    const { container } = await renderCard({
+      link: { ...previewLink, obtained: true, revealed: true },
+      restoredLink,
+      restoredObtainedExpiresAt: '2026-07-11T00:00:00.000Z'
+    })
+
+    const url = [...container.querySelectorAll('a')].find(
+      (el) => el.getAttribute('href') === restoredLink.content
+    )
+    expect(url).toBeTruthy()
+    expect(url!.className.split(/\s+/)).toEqual(
+      expect.arrayContaining(['w-fit', 'max-w-full', 'break-all'])
+    )
+    expect(url!.parentElement?.tagName).toBe('DIV')
+    expect(classTokens(url!.parentElement?.className)).toEqual(
+      expect.arrayContaining(['min-w-0', 'max-w-full'])
+    )
+    expect(url!.parentElement?.querySelector('a')).toBe(url)
+  })
+
+  it('wraps revealed download credentials so they stay inside the card', async () => {
+    const restoredLink: PatchResourceAccessLink = {
+      id: 21,
+      storage: 'user',
+      size: '2 GB',
+      content:
+        'https://pan.quark.cn/s/ui479c1agwgas-very-long-share-path-that-must-wrap',
+      code: 'EXTRACT_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+      password: 'UNZIP_BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB',
+      hash: ''
+    }
+
+    const { container } = await renderCard({
+      link: { ...previewLink, obtained: true, revealed: true },
+      restoredLink,
+      restoredObtainedExpiresAt: '2026-07-11T00:00:00.000Z'
+    })
+
+    const url = [...container.querySelectorAll('a')].find(
+      (el) => el.getAttribute('href') === restoredLink.content
+    )
+    expect(url).toBeTruthy()
+    expect(classTokens(url!.className)).toEqual(
+      expect.arrayContaining([
+        'min-w-0',
+        'w-fit',
+        'max-w-full',
+        'break-all',
+        '[overflow-wrap:anywhere]'
+      ])
+    )
+    expect(classTokens(url!.parentElement?.className)).toEqual(
+      expect.arrayContaining(['min-w-0', 'max-w-full'])
+    )
+
+    const snippets = [...container.querySelectorAll('[data-snippet]')]
+    expect(snippets).toHaveLength(2)
+    for (const snippet of snippets) {
+      expect(classTokens(snippet.className)).toEqual(
+        expect.arrayContaining(['min-w-0', 'max-w-full'])
+      )
+      expect(classTokens(snippet.getAttribute('data-base-class'))).toEqual(
+        expect.arrayContaining(['min-w-0', 'max-w-full'])
+      )
+      expect(classTokens(snippet.getAttribute('data-pre-class'))).toEqual(
+        expect.arrayContaining([
+          '!whitespace-pre-wrap',
+          'break-all',
+          '[overflow-wrap:anywhere]'
+        ])
+      )
+    }
+
+    const cards = [...container.querySelectorAll('div')].filter((el) =>
+      classTokens(el.className).includes('overflow-visible')
+    )
+    expect(cards.length).toBeGreaterThanOrEqual(2)
+    for (const card of cards) {
+      expect(classTokens(card.className)).toEqual(
+        expect.arrayContaining(['min-w-0', 'max-w-full'])
+      )
+    }
+  })
+
   it('ignores a restored mirror with a different link ID', async () => {
     const mismatchedLink: PatchResourceAccessLink = {
       id: 22,
@@ -553,7 +711,7 @@ describe('ResourceDownloadCard access flow', () => {
     )
     await act(async () => {
       root!.render(
-        <ResourceDownloadCard resource={resource} link={revealedLink} />
+        <ResourceDownloadCard resource={resource} link={revealedLink} linkIndex={1} />
       )
     })
 
@@ -600,6 +758,7 @@ describe('ResourceDownloadCard access flow', () => {
         <ResourceDownloadCard
           resource={resource}
           link={revealedLink}
+          linkIndex={1}
           restoredLink={restoredLink}
           restoredObtainedExpiresAt="2026-07-11T00:00:00.000Z"
         />
@@ -607,7 +766,7 @@ describe('ResourceDownloadCard access flow', () => {
     })
     await act(async () => {
       root!.render(
-        <ResourceDownloadCard resource={resource} link={revealedLink} />
+        <ResourceDownloadCard resource={resource} link={revealedLink} linkIndex={1} />
       )
     })
 

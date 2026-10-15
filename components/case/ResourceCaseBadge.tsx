@@ -15,7 +15,12 @@ export const ResourceCaseBadge = ({ summary }: Props) => {
   const handler =
     summary.ownerType === 'publisher' ? '发布者处理中' : '网站管理员处理中'
   return (
-    <Chip size="sm" color="warning" variant="flat">
+    <Chip
+      size="sm"
+      color="warning"
+      variant="flat"
+      className="h-auto max-w-full whitespace-normal"
+    >
       {`${CASE_KIND_LABELS[summary.kind]} · 已有 ${summary.reportCount} 人报告，${handler}`}
     </Chip>
   )

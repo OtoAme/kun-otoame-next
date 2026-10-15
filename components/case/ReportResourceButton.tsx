@@ -4,6 +4,8 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import {
   Button,
+  Card,
+  CardBody,
   Chip,
   Modal,
   ModalBody,
@@ -16,6 +18,7 @@ import {
   useDisclosure
 } from '@heroui/react'
 import { Flag } from 'lucide-react'
+import { Tooltip } from '@heroui/tooltip'
 import toast from 'react-hot-toast'
 import { kunFetchPost } from '~/utils/kunFetch'
 import { useUserStore } from '~/store/userStore'
@@ -42,6 +45,8 @@ interface Props {
   patchId: number
   /** 链接类报告成功后上抛最新链接事实（卡片据此有序合并展示）。 */
   onReported?: (view: LinkHealthMutationResponse['link']) => void
+  /** 窄屏只显示图标 + Tooltip。 */
+  compact?: boolean
 }
 
 type TargetSelection = 'resource' | `link:${number}` | ''
@@ -64,7 +69,8 @@ const linkLabel = (link: PatchResourceLink, index: number): string => {
 export const ReportResourceButton = ({
   resource,
   patchId,
-  onReported
+  onReported,
+  compact = false
 }: Props) => {
   const { user } = useUserStore((state) => state)
   const { isOpen, onOpen, onClose } = useDisclosure()
@@ -211,16 +217,26 @@ export const ReportResourceButton = ({
       ? '网站管理员，预计 3 天内首次回应'
       : `${staffHandled ? '网站管理员' : '资源发布者'}，预计 7 天内首次回应`
 
+  const reportButton = (
+    <Button
+      size="sm"
+      variant="light"
+      startContent={!compact ? <Flag className="size-4" /> : undefined}
+      isIconOnly={compact}
+      aria-label={compact ? '遇到问题' : undefined}
+      onPress={handleOpen}
+    >
+      {compact ? <Flag className="size-4" /> : '遇到问题'}
+    </Button>
+  )
+
   return (
     <>
-      <Button
-        size="sm"
-        variant="light"
-        startContent={<Flag className="size-4" />}
-        onPress={handleOpen}
-      >
-        遇到问题
-      </Button>
+      {compact ? (
+        <Tooltip content="遇到问题">{reportButton}</Tooltip>
+      ) : (
+        reportButton
+      )}
 
       <Modal isOpen={isOpen} onClose={handleClose} scrollBehavior="inside">
         <ModalContent>
@@ -290,22 +306,24 @@ export const ReportResourceButton = ({
                 )}
 
                 {guideBlock && (
-                  <div className="space-y-2 rounded-medium bg-default-100 p-3 text-sm">
-                    <p>{guideBlock.note}</p>
-                    <ul className="space-y-1">
-                      {guideBlock.links.map((link) => (
-                        <li key={link.href}>
-                          <Link
-                            href={link.href}
-                            target="_blank"
-                            className="text-primary underline-offset-2 hover:underline"
-                          >
-                            {link.label}
-                          </Link>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
+                  <Card shadow="none" className="bg-default-100">
+                    <CardBody className="gap-2 p-3 text-sm">
+                      <p>{guideBlock.note}</p>
+                      <ul className="space-y-1">
+                        {guideBlock.links.map((link) => (
+                          <li key={link.href}>
+                            <Link
+                              href={link.href}
+                              target="_blank"
+                              className="text-primary underline-offset-2 hover:underline"
+                            >
+                              {link.label}
+                            </Link>
+                          </li>
+                        ))}
+                      </ul>
+                    </CardBody>
+                  </Card>
                 )}
 
                 {destination?.type === 'link_report' && selectedLink && (

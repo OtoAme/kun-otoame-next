@@ -15,14 +15,20 @@ vi.mock('@heroui/button', () => ({
     children,
     onPress,
     disabled,
+    isDisabled,
     isLoading
   }: {
     children?: React.ReactNode
     onPress?: () => void
     disabled?: boolean
+    isDisabled?: boolean
     isLoading?: boolean
   }) => (
-    <button type="button" disabled={disabled || isLoading} onClick={onPress}>
+    <button
+      type="button"
+      disabled={disabled || isDisabled || isLoading}
+      onClick={onPress}
+    >
       {children}
     </button>
   )

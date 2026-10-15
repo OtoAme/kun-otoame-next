@@ -109,6 +109,24 @@ const link22: PatchResourceLink = {
   download: 0
 }
 
+const healthFields = {
+  version: 3,
+  evidenceRound: 1,
+  healthChangedAt: null,
+  verifiedAt: null,
+  lastRelinkAt: '2026-10-01T00:00:00.000Z',
+  ownerType: 'publisher' as const,
+  disputeSource: null,
+  recentReportCount: 0,
+  latestCheck: null,
+  capabilities: {
+    ownerActions: [] as never[],
+    resolveActions: [] as never[],
+    canCheck: false,
+    canEdit: false
+  }
+}
+
 const sensitiveLink21: PatchResourceAccessLink = {
   id: 21,
   storage: 'user',
@@ -288,6 +306,105 @@ describe('ResourceDownload revealed mirror restore', () => {
     expect(
       container.querySelector('[data-testid="download-card-22"]')
     ).not.toBeNull()
+  })
+
+  it('restores a previously revealed broken mirror', async () => {
+    fetchMock.kunFetchPost.mockResolvedValueOnce({
+      links: [sensitiveLink21],
+      obtainedExpiresAt: '2026-07-11T00:00:00.000Z'
+    })
+    const { container } = await renderResourceDownload(
+      withLinks([
+        {
+          ...link21,
+          ...healthFields,
+          health: 'broken',
+          revealed: true
+        } as PatchResourceLink
+      ])
+    )
+    await flushEffects()
+    expect(fetchMock.kunFetchPost).toHaveBeenCalledWith(
+      '/patch/resource/download/access/restore',
+      { patchId: 7, resourceId: 11, linkIds: [21] }
+    )
+    expect(
+      container.querySelector('[data-testid="download-card-21"]')
+    ).not.toBeNull()
+    expect(container.textContent).not.toContain('已折叠')
+  })
+
+  it('hides unrevealed broken mirrors behind the fold until expanded', async () => {
+    const { container } = await renderResourceDownload(
+      withLinks([
+        { ...link21, ...healthFields, health: 'ok' } as PatchResourceLink,
+        { ...link22, ...healthFields, health: 'broken' } as PatchResourceLink
+      ])
+    )
+    await flushEffects()
+
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('button[aria-label]')!.click()
+    })
+
+    expect(
+      container.querySelector('[data-testid="download-card-21"]')
+    ).not.toBeNull()
+    expect(
+      container.querySelector('[data-testid="download-card-22"]')
+    ).toBeNull()
+    expect(container.textContent).toContain('1 条链接已失效')
+    expect(container.textContent).toContain('已折叠')
+
+    await act(async () => {
+      ;[...container.querySelectorAll('button')]
+        .find((button) => button.textContent?.includes('条链接已失效'))!
+        .click()
+    })
+
+    expect(
+      container.querySelector('[data-testid="download-card-22"]')
+    ).not.toBeNull()
+    expect(container.textContent).toContain('获取下载链接')
+    expect(container.textContent).not.toContain('已折叠')
+  })
+
+  it('opens the fold when a broken mirror later becomes revealed', async () => {
+    fetchMock.kunFetchPost.mockResolvedValue({
+      links: [sensitiveLink22],
+      obtainedExpiresAt: '2026-07-11T00:00:00.000Z'
+    })
+    const liveAndDead = withLinks([
+      { ...link21, ...healthFields, health: 'ok' } as PatchResourceLink,
+      { ...link22, ...healthFields, health: 'broken' } as PatchResourceLink
+    ])
+    const { container, rerender } = await renderResourceDownload(liveAndDead)
+    await flushEffects()
+
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('button[aria-label]')!.click()
+    })
+    expect(
+      container.querySelector('[data-testid="download-card-22"]')
+    ).toBeNull()
+
+    await rerender(
+      withLinks([
+        { ...link21, ...healthFields, health: 'ok' } as PatchResourceLink,
+        {
+          ...link22,
+          ...healthFields,
+          health: 'broken',
+          revealed: true
+        } as PatchResourceLink
+      ])
+    )
+    await flushEffects()
+
+    expect(
+      container.querySelector('[data-testid="download-card-22"]')
+    ).not.toBeNull()
+    expect(container.textContent).not.toContain('已折叠')
   })
 
   it('stays collapsed and skips restore when no mirror was revealed', async () => {

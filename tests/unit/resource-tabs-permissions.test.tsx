@@ -92,15 +92,29 @@ vi.mock('@heroui/react', () => ({
       {children}
     </button>
   ),
-  Card: ({ children }: { children?: React.ReactNode }) => (
-    <section>{children}</section>
+  Card: ({
+    children,
+    id,
+    className
+  }: {
+    children?: React.ReactNode
+    id?: string
+    className?: string
+  }) => (
+    <section id={id} className={className}>
+      {children}
+    </section>
   ),
   CardHeader: ({ children }: { children?: React.ReactNode }) => (
     <header>{children}</header>
   ),
-  CardBody: ({ children }: { children?: React.ReactNode }) => (
-    <div>{children}</div>
-  ),
+  CardBody: ({
+    children,
+    className
+  }: {
+    children?: React.ReactNode
+    className?: string
+  }) => <div className={className}>{children}</div>,
   Chip: ({ children }: { children?: React.ReactNode }) => (
     <span>{children}</span>
   ),
@@ -216,6 +230,9 @@ describe('ResourceTabs resource operation visibility', () => {
     const container = await renderTabs()
 
     expect(container.querySelector('[aria-label="资源操作"]')).toBeNull()
+    expect(
+      container.querySelector('[data-testid="report-resource-button"]')
+    ).not.toBeNull()
   })
 
   it.each([

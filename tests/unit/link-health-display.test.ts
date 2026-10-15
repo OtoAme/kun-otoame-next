@@ -178,6 +178,9 @@ describe('fold helpers', () => {
     expect(
       brokenLinksFoldText(2, '2026-10-01T00:00:00.000Z')
     ).toContain('2 条链接已失效 · 最近补链')
+    expect(
+      brokenLinksFoldText(2, '2026-10-01T00:00:00.000Z')
+    ).not.toContain('已折叠')
   })
 })
 

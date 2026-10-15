@@ -90,6 +90,20 @@ vi.mock('@heroui/react', async () => {
     ModalFooter: ({ children }: { children?: React.ReactNode }) => (
       <div>{children}</div>
     ),
+    Card: ({
+      children,
+      className
+    }: {
+      children?: React.ReactNode
+      className?: string
+    }) => <div className={className}>{children}</div>,
+    CardBody: ({
+      children,
+      className
+    }: {
+      children?: React.ReactNode
+      className?: string
+    }) => <div className={className}>{children}</div>,
     Chip: ({ children }: { children?: React.ReactNode }) => (
       <span>{children}</span>
     ),

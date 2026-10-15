@@ -21,6 +21,8 @@ import { useUserStore } from '~/store/userStore'
 import { ResourceInfo } from './ResourceInfo'
 import { ResourceDownload } from './ResourceDownload'
 import { ResourceCaseBadge } from '~/components/case/ResourceCaseBadge'
+import { ReportResourceButton } from '~/components/case/ReportResourceButton'
+import { useResourceLinkHealthUpdates } from './useResourceLinkHealthUpdates'
 import {
   RESOURCE_SECTION_MAP,
   SUPPORTED_RESOURCE_SECTION
@@ -50,9 +52,103 @@ interface Props {
   setSelectedSection: (section: ResourceSection) => void
 }
 
+const ResourceCard = ({
+  resource,
+  patchId,
+  highlighted,
+  canManage,
+  editLoading,
+  onEdit,
+  onDelete
+}: {
+  resource: PatchResource
+  patchId: number
+  highlighted: boolean
+  canManage: boolean
+  editLoading: boolean
+  onEdit: (resource: PatchResource, focusLinkId?: number) => void
+  onDelete: () => void
+}) => {
+  const { healthUpdateFor, onReported } = useResourceLinkHealthUpdates(resource)
+
+  return (
+    <Card
+      id={`resource-${resource.id}`}
+      shadow="none"
+      radius="lg"
+      className={
+        highlighted
+          ? 'min-w-0 max-w-full overflow-visible border border-default-200 ring-2 ring-primary ring-offset-2 ring-offset-background'
+          : 'min-w-0 max-w-full overflow-visible border border-default-200'
+      }
+    >
+      <CardBody className="min-w-0 max-w-full space-y-2 overflow-visible p-3">
+        <div className="flex items-start justify-between gap-x-3 gap-y-1">
+          <ResourceInfo resource={resource} />
+          <div className="ms-auto flex shrink-0 items-center gap-1">
+            <ReportResourceButton
+              resource={resource}
+              patchId={patchId}
+              onReported={onReported}
+              compact
+            />
+            {canManage && (
+              <Dropdown>
+                <DropdownTrigger>
+                  <Button
+                    size="sm"
+                    variant="light"
+                    isIconOnly
+                    isDisabled={editLoading}
+                    isLoading={editLoading}
+                    aria-label="资源操作"
+                  >
+                    <MoreHorizontal className="size-4" />
+                  </Button>
+                </DropdownTrigger>
+                <DropdownMenu aria-label="资源操作">
+                  <DropdownItem
+                    key="edit"
+                    startContent={<Edit className="size-4" />}
+                    onPress={() => onEdit(resource)}
+                  >
+                    编辑
+                  </DropdownItem>
+                  <DropdownItem
+                    key="delete"
+                    className="text-danger"
+                    color="danger"
+                    startContent={<Trash2 className="size-4" />}
+                    onPress={onDelete}
+                  >
+                    删除
+                  </DropdownItem>
+                </DropdownMenu>
+              </Dropdown>
+            )}
+          </div>
+        </div>
+        {resource.caseSummaries?.length ? (
+          <div className="flex flex-wrap gap-2">
+            {resource.caseSummaries.map((summary) => (
+              <ResourceCaseBadge key={summary.kind} summary={summary} />
+            ))}
+          </div>
+        ) : null}
+        <ResourceDownload
+          resource={resource}
+          hideReportButton
+          healthUpdateFor={healthUpdateFor}
+          onEdit={(target, focusLinkId) => onEdit(target, focusLinkId)}
+        />
+      </CardBody>
+    </Card>
+  )
+}
+
 export const ResourceTabs = ({
   vndbId,
-  patchId: _patchId,
+  patchId,
   resources,
   setEditResource,
   onOpenEdit,
@@ -167,82 +263,27 @@ export const ResourceTabs = ({
     }
   }
 
-  const renderResourceCard = (resource: PatchResource) => {
-    const canManage = canManageResource({
-      resourceUserId: resource.userId,
-      userId: user.uid,
-      userRole: user.role
-    })
-
-    return (
-      <div
-        key={resource.id}
-        id={`resource-${resource.id}`}
-        className={
-          highlightedResourceId === resource.id
-            ? 'border p-3 rounded-2xl border-default-200 ring-2 ring-primary ring-offset-2 ring-offset-background'
-            : 'border p-3 rounded-2xl border-default-200'
-        }
-      >
-        <div className="space-y-2">
-          <div className="flex items-start justify-between">
-            <ResourceInfo resource={resource} />
-            <div className="flex items-center gap-1">
-              {canManage && (
-                <Dropdown>
-                  <DropdownTrigger>
-                    <Button
-                      variant="light"
-                      isIconOnly
-                      isDisabled={editLoadingResourceId === resource.id}
-                      isLoading={editLoadingResourceId === resource.id}
-                      aria-label="资源操作"
-                    >
-                      <MoreHorizontal className="size-4" />
-                    </Button>
-                  </DropdownTrigger>
-                  <DropdownMenu aria-label="资源操作">
-                    <DropdownItem
-                      key="edit"
-                      startContent={<Edit className="size-4" />}
-                      onPress={() => void handleOpenEditResource(resource)}
-                    >
-                      编辑
-                    </DropdownItem>
-                    <DropdownItem
-                      key="delete"
-                      className="text-danger"
-                      color="danger"
-                      startContent={<Trash2 className="size-4" />}
-                      onPress={() => {
-                        setDeleteResourceId(resource.id)
-                        onOpenDelete()
-                      }}
-                    >
-                      删除
-                    </DropdownItem>
-                  </DropdownMenu>
-                </Dropdown>
-              )}
-            </div>
-          </div>
-          {resource.caseSummaries?.length ? (
-            <div className="flex flex-wrap gap-2">
-              {resource.caseSummaries.map((summary) => (
-                <ResourceCaseBadge key={summary.kind} summary={summary} />
-              ))}
-            </div>
-          ) : null}
-          <ResourceDownload
-            resource={resource}
-            onEdit={(target, focusLinkId) =>
-              void handleOpenEditResource(target, focusLinkId)
-            }
-          />
-        </div>
-      </div>
-    )
-  }
+  const renderResourceCard = (resource: PatchResource) => (
+    <ResourceCard
+      key={resource.id}
+      resource={resource}
+      patchId={patchId}
+      highlighted={highlightedResourceId === resource.id}
+      canManage={canManageResource({
+        resourceUserId: resource.userId,
+        userId: user.uid,
+        userRole: user.role
+      })}
+      editLoading={editLoadingResourceId === resource.id}
+      onEdit={(target, focusLinkId) =>
+        void handleOpenEditResource(target, focusLinkId)
+      }
+      onDelete={() => {
+        setDeleteResourceId(resource.id)
+        onOpenDelete()
+      }}
+    />
+  )
 
   return (
     <Tabs
@@ -276,7 +317,7 @@ export const ResourceTabs = ({
           >
             <div className="space-y-6">
               {official.length > 0 && (
-                <Card>
+                <Card className="min-w-0 max-w-full overflow-visible">
                   <CardHeader>
                     <Link href="/">
                       <User
@@ -291,14 +332,14 @@ export const ResourceTabs = ({
                       />
                     </Link>
                   </CardHeader>
-                  <CardBody className="space-y-2 gap-3">
+                  <CardBody className="min-w-0 max-w-full gap-3 overflow-visible">
                     {official.map((res) => renderResourceCard(res))}
                   </CardBody>
                 </Card>
               )}
 
               {community.length > 0 && (
-                <Card>
+                <Card className="min-w-0 max-w-full overflow-visible">
                   <CardHeader>
                     <Link target="_blank" href={kunMoyuMoe.domain.forum}>
                       <User
@@ -313,7 +354,7 @@ export const ResourceTabs = ({
                       />
                     </Link>
                   </CardHeader>
-                  <CardBody className="space-y-3">
+                  <CardBody className="min-w-0 max-w-full gap-3 overflow-visible">
                     {community.map((res) => renderResourceCard(res))}
                   </CardBody>
                 </Card>

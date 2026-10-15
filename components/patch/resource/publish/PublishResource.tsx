@@ -167,7 +167,7 @@ export const PublishResource = ({
           </Button>
           <Button
             color="primary"
-            disabled={creating || uploadingResource}
+            isDisabled={creating || uploadingResource}
             isLoading={creating}
             endContent={<Upload className="size-4" />}
             onPress={() => {

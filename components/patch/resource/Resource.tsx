@@ -181,7 +181,7 @@ export const Resources = ({ id, vndbId }: Props) => {
             <Button
               color="danger"
               onPress={handleDeleteResource}
-              disabled={deleting}
+              isDisabled={deleting}
               isLoading={deleting}
             >
               删除

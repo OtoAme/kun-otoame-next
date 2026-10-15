@@ -32,3 +32,38 @@ img {
     Microsoft YaHei,
     sans-serif !important;
 }
+
+.kun-link-health-dot {
+  display: block;
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  box-shadow: 0 0 0 2px color-mix(in srgb, currentColor 22%, transparent);
+}
+
+.kun-link-health-dot[data-health='ok'] {
+  background: hsl(var(--heroui-success));
+  color: hsl(var(--heroui-success));
+}
+
+.kun-link-health-dot[data-health='ok'][data-hollow='true'] {
+  background: transparent;
+  box-shadow:
+    inset 0 0 0 1.5px hsl(var(--heroui-success)),
+    0 0 0 2px color-mix(in srgb, hsl(var(--heroui-success)) 16%, transparent);
+}
+
+.kun-link-health-dot[data-health='suspect'] {
+  background: hsl(var(--heroui-warning));
+  color: hsl(var(--heroui-warning));
+}
+
+.kun-link-health-dot[data-health='disputed'] {
+  background: hsl(var(--heroui-secondary));
+  color: hsl(var(--heroui-secondary));
+}
+
+.kun-link-health-dot[data-health='broken'] {
+  background: hsl(var(--heroui-danger));
+  color: hsl(var(--heroui-danger));
+}

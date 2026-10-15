@@ -51,11 +51,7 @@ vi.mock('@heroui/button', () => ({
     isLoading?: boolean
     startContent?: React.ReactNode
   }) => (
-    <button
-      type="button"
-      disabled={isDisabled || isLoading}
-      onClick={onPress}
-    >
+    <button type="button" disabled={isDisabled || isLoading} onClick={onPress}>
       {startContent}
       {children}
     </button>
@@ -67,8 +63,18 @@ vi.mock('@heroui/chip', () => ({
   )
 }))
 vi.mock('@heroui/snippet', () => ({
-  Snippet: ({ children }: { children?: React.ReactNode }) => (
-    <span>{children}</span>
+  Snippet: ({
+    children,
+    className,
+    classNames
+  }: {
+    children?: React.ReactNode
+    className?: string
+    classNames?: { base?: string; pre?: string }
+  }) => (
+    <span className={className} data-pre-class={classNames?.pre}>
+      {children}
+    </span>
   )
 }))
 
@@ -89,7 +95,10 @@ vi.mock('@heroui/react', async () => {
       hideCloseButton?: boolean
     }) =>
       isOpen ? (
-        <div role="dialog" data-hide-close-button={hideCloseButton ? 'true' : 'false'}>
+        <div
+          role="dialog"
+          data-hide-close-button={hideCloseButton ? 'true' : 'false'}
+        >
           {children}
         </div>
       ) : null,
@@ -110,16 +119,19 @@ vi.mock('@heroui/react', async () => {
       onPress,
       isDisabled,
       isLoading,
-      startContent
+      startContent,
+      'aria-label': ariaLabel
     }: {
       children?: React.ReactNode
       onPress?: () => void
       isDisabled?: boolean
       isLoading?: boolean
       startContent?: React.ReactNode
+      'aria-label'?: string
     }) => (
       <button
         type="button"
+        aria-label={ariaLabel}
         disabled={isDisabled || isLoading}
         onClick={onPress}
       >
@@ -178,6 +190,15 @@ vi.mock('@heroui/react', async () => {
         })}
       </div>
     ),
+    Popover: ({ children }: { children?: React.ReactNode }) => (
+      <div>{children}</div>
+    ),
+    PopoverTrigger: ({ children }: { children?: React.ReactNode }) => (
+      <>{children}</>
+    ),
+    PopoverContent: ({ children }: { children?: React.ReactNode }) => (
+      <div>{children}</div>
+    ),
     useDisclosure: () => {
       const [isOpen, setIsOpen] = R.useState(false)
       return {
@@ -186,21 +207,37 @@ vi.mock('@heroui/react', async () => {
         onClose: () => setIsOpen(false),
         onOpenChange: setIsOpen
       }
-    }
+    },
+    Card: ({
+      children,
+      id,
+      className
+    }: {
+      children?: React.ReactNode
+      id?: string
+      className?: string
+    }) => (
+      <div id={id} className={className}>
+        {children}
+      </div>
+    ),
+    CardBody: ({
+      children,
+      className
+    }: {
+      children?: React.ReactNode
+      className?: string
+    }) => <div className={className}>{children}</div>
   }
 })
 
-import type {
-  PatchResource,
-  PatchResourceHealthLink
-} from '~/types/api/patch'
+import type { PatchResource, PatchResourceHealthLink } from '~/types/api/patch'
 import type { LinkHealthMutationResponse } from '~/types/api/linkHealth'
 
 globalThis.React = React
 
-// DownloadCard 顶部有模块级 JSX（storageIcons），必须在 React 全局就绪后动态导入
+// DownloadCard 依赖 HeroUI 在 JSDOM 里的 React 全局，必须在环境就绪后动态导入
 let ResourceDownloadCard: typeof import('~/components/patch/resource/DownloadCard').ResourceDownloadCard
-
 
 const healthLink = (
   overrides: Partial<PatchResourceHealthLink> = {}
@@ -229,6 +266,17 @@ const healthLink = (
   },
   ...overrides
 })
+
+const accessedLink = {
+  id: 21,
+  storage: 'user',
+  size: '2 GB',
+  content: 'https://pan.quark.cn/s/SYN',
+  code: 'abcd',
+  password: '',
+  hash: '',
+  version: 3
+}
 
 const resource: PatchResource = {
   id: 11,
@@ -320,14 +368,39 @@ describe('ResourceDownloadCard link health (04/10)', () => {
   }
 
   const findButton = (container: HTMLElement, text: string) =>
-    [...container.querySelectorAll('button')].find((button) =>
-      button.textContent?.includes(text)
+    [...container.querySelectorAll('button')].find(
+      (button) =>
+        button.textContent?.includes(text) ||
+        button.getAttribute('aria-label')?.includes(text)
     )
 
   const findExactButton = (container: HTMLElement, text: string) =>
     [...container.querySelectorAll('button')].find(
-      (button) => button.textContent === text
+      (button) =>
+        button.textContent === text ||
+        button.getAttribute('aria-label') === text
     )
+
+  it('always shows the health label and only offers 报告失效 after credentials are revealed', async () => {
+    const hidden = await mount(
+      <ResourceDownloadCard resource={resource} link={healthLink()} />
+    )
+    expect(hidden.textContent).toContain('正常 · 2 GB')
+    expect(
+      hidden.querySelector('button[aria-label="正常，查看检测详情"]')
+    ).not.toBeNull()
+    expect(hidden.querySelector('.kun-link-health-dot')).not.toBeNull()
+    expect(findButton(hidden, '报告失效')).toBeUndefined()
+
+    const shown = await mount(
+      <ResourceDownloadCard
+        resource={resource}
+        link={healthLink()}
+        restoredLink={accessedLink}
+      />
+    )
+    expect(findButton(shown, '报告失效')).not.toBeUndefined()
+  })
 
   it('keeps the access entry and shows every fact on a suspect link', async () => {
     const container = await mount(
@@ -350,10 +423,12 @@ describe('ResourceDownloadCard link health (04/10)', () => {
     )
     const text = container.textContent ?? ''
     expect(text).toContain('获取下载链接')
+    expect(text).toContain('疑似失效 · 2 GB')
+    expect(text).toContain('夸克网盘')
     expect(text).toContain('检测端可访问')
     expect(text).toContain('近期 3 人报告问题')
     expect(text).toContain('疑似失效，等待归属方处理')
-    expect(findButton(container, '报告失效')).not.toBeUndefined()
+    expect(findButton(container, '报告失效')).toBeUndefined()
   })
 
   it('keeps acquisition on machine/user conflict disputes with the frozen copy', async () => {
@@ -373,7 +448,7 @@ describe('ResourceDownloadCard link health (04/10)', () => {
     expect(text).toContain('检测端可访问，但有用户反馈异常 · 等待复核')
   })
 
-  it('folds broken links: no acquisition, redacted status, actions stay capability-driven', async () => {
+  it('keeps acquisition on folded broken links and still shows capability-driven actions', async () => {
     const onRelink = vi.fn()
     const container = await mount(
       <ResourceDownloadCard
@@ -392,10 +467,11 @@ describe('ResourceDownloadCard link health (04/10)', () => {
       />
     )
     const text = container.textContent ?? ''
-    expect(text).not.toContain('获取下载链接')
-    expect(text).not.toContain('查看已获取链接')
-    expect(text).toContain('该链接已失效，暂不提供获取')
+    expect(text).toContain('获取下载链接')
+    expect(text).toContain('已失效 · 2 GB')
+    expect(text).not.toContain('该链接已失效，暂不提供获取')
     expect(text).toContain('近期 4 人报告问题')
+    expect(findButton(container, '报告失效')).toBeUndefined()
 
     // 补链走既有编辑入口（定位地址栏），不直接写
     await act(async () => {
@@ -437,7 +513,11 @@ describe('ResourceDownloadCard link health (04/10)', () => {
       caseId: 12
     })
     const container = await mount(
-      <ResourceDownloadCard resource={resource} link={healthLink()} />
+      <ResourceDownloadCard
+        resource={resource}
+        link={healthLink()}
+        restoredLink={accessedLink}
+      />
     )
     await act(async () => {
       findButton(container, '报告失效')!.click()
@@ -577,8 +657,10 @@ describe('RUI-01 credential identity fencing', () => {
   }
 
   const findButton = (container: HTMLElement, text: string) =>
-    [...container.querySelectorAll('button')].find((button) =>
-      button.textContent?.includes(text)
+    [...container.querySelectorAll('button')].find(
+      (button) =>
+        button.textContent?.includes(text) ||
+        button.getAttribute('aria-label')?.includes(text)
     )
 
   const accessResponse = (version: number, content: string) => ({
@@ -618,7 +700,10 @@ describe('RUI-01 credential identity fencing', () => {
 
     // 补链 v3→v4：同 id 的旧地址立即消失，回到获取入口
     await rerender(
-      <ResourceDownloadCard resource={resource} link={healthLink({ version: 4 })} />
+      <ResourceDownloadCard
+        resource={resource}
+        link={healthLink({ version: 4 })}
+      />
     )
     expect(container.textContent).not.toContain('https://pan.example.com/v3')
     expect(findButton(container, '获取下载链接')).not.toBeUndefined()
@@ -643,7 +728,10 @@ describe('RUI-01 credential identity fencing', () => {
     })
     // 请求在飞期间目标已推进版本：迟到回包丢弃且按钮释放
     await rerender(
-      <ResourceDownloadCard resource={resource} link={healthLink({ version: 4 })} />
+      <ResourceDownloadCard
+        resource={resource}
+        link={healthLink({ version: 4 })}
+      />
     )
     await act(async () => {
       resolveAccess?.(accessResponse(3, 'https://pan.example.com/v3'))
@@ -769,13 +857,17 @@ describe('RUI-02 one projection drives display, basis and buttons', () => {
   }
 
   const findButton = (container: HTMLElement, text: string) =>
-    [...container.querySelectorAll('button')].find((button) =>
-      button.textContent?.includes(text)
+    [...container.querySelectorAll('button')].find(
+      (button) =>
+        button.textContent?.includes(text) ||
+        button.getAttribute('aria-label')?.includes(text)
     )
 
   const findExactButton = (container: HTMLElement, text: string) =>
     [...container.querySelectorAll('button')].find(
-      (button) => button.textContent === text
+      (button) =>
+        button.textContent === text ||
+        button.getAttribute('aria-label') === text
     )
 
   it('after a successful verify the next action uses the returned round and health', async () => {
@@ -913,8 +1005,9 @@ describe('RUI-02 one projection drives display, basis and buttons', () => {
         })}
       />
     )
-    expect(container.textContent).toContain('该链接已失效，暂不提供获取')
-    expect(findButton(container, '获取下载链接')).toBeUndefined()
+    expect(container.textContent).toContain('已失效 · 2 GB')
+    expect(container.textContent).not.toContain('该链接已失效，暂不提供获取')
+    expect(findButton(container, '获取下载链接')).not.toBeUndefined()
   })
 
   it('merges a parent-provided health update by version ordering and drops it when the server passes it', async () => {
@@ -1010,13 +1103,17 @@ describe('read-snapshot provenance for credentials and mutations', () => {
   }
 
   const findButton = (container: HTMLElement, text: string) =>
-    [...container.querySelectorAll('button')].find((button) =>
-      button.textContent?.includes(text)
+    [...container.querySelectorAll('button')].find(
+      (button) =>
+        button.textContent?.includes(text) ||
+        button.getAttribute('aria-label')?.includes(text)
     )
 
   const findExactButton = (container: HTMLElement, text: string) =>
     [...container.querySelectorAll('button')].find(
-      (button) => button.textContent === text
+      (button) =>
+        button.textContent === text ||
+        button.getAttribute('aria-label') === text
     )
 
   const accessResponse = (version: number, content: string, code: string) => ({
@@ -1138,9 +1235,7 @@ describe('read-snapshot provenance for credentials and mutations', () => {
     // 服务端新快照在响应前就位：同版本同轮次的 suspect（含更新的快照事实）
     const renewed = {
       ...resource,
-      links: [
-        healthLink({ ...suspect, recentReportCount: 9 })
-      ]
+      links: [healthLink({ ...suspect, recentReportCount: 9 })]
     }
     await rerender(
       <ResourceDownloadCard resource={renewed} link={renewed.links[0]} />

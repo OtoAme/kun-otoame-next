@@ -5,6 +5,7 @@ import {
   LINK_HEALTH_POLICY
 } from '~/constants/linkHealth'
 import { parseResourceLink } from '~/utils/resourceLink'
+import { recognizeLinkCheckProviderFromUrl } from '~/utils/recognizeLinkCheckProvider'
 import type {
   LinkCheckIdentity,
   LinkCheckProvider,
@@ -28,44 +29,6 @@ type Options = {
 }
 type FailureReason = Exclude<LinkCheckReason, `share_${string}`>
 const BODY_LIMIT = 8 * 1024
-const pan123Hosts = new Set([
-  '123pan.com',
-  'www.123pan.com',
-  '123684.com',
-  'www.123684.com',
-  '123865.com',
-  'www.123865.com',
-  '123912.com',
-  'www.123912.com'
-])
-
-const recognize = (url: URL): LinkCheckProvider | null => {
-  if (url.protocol !== 'https:' || url.username || url.password || url.port)
-    return null
-  if (
-    url.hostname === 'pan.quark.cn' &&
-    /^\/s\/[A-Za-z0-9]+\/?$/.test(url.pathname)
-  )
-    return 'quark'
-  if (
-    url.hostname === 'drive.uc.cn' &&
-    /^\/s\/[A-Za-z0-9]+\/?$/.test(url.pathname)
-  )
-    return 'uc'
-  if (
-    url.hostname === 'pan.baidu.com' &&
-    /^\/s\/1[A-Za-z0-9_-]+\/?$/.test(url.pathname)
-  )
-    return 'baidu'
-  if (url.hostname === 'caiyun.139.com' || url.hostname === 'yun.139.com')
-    return 'caiyun'
-  if (
-    pan123Hosts.has(url.hostname) &&
-    /^\/(s|123pan)\/[A-Za-z0-9_-]+\/?$/.test(url.pathname)
-  )
-    return 'pan123'
-  return null
-}
 
 /** This is the only provider/passcode/signature algorithm used by readers/writers. */
 export const prepareLinkCheckInput = (
@@ -77,7 +40,7 @@ export const prepareLinkCheckInput = (
   let effectivePasscode = ''
   try {
     const url = new URL(parsed.url)
-    provider = recognize(url)
+    provider = recognizeLinkCheckProviderFromUrl(url)
     if (provider && provider !== 'caiyun') {
       // Saved extraction code wins. Only explicit extraction/access labels are
       // accepted from pasted text; an unzip-password label is never a fallback.
@@ -303,7 +266,7 @@ export const checkLink = async (
   let timer: ReturnType<typeof setTimeout> | undefined
   try {
     if (
-      recognize(new URL(prepared.url)) !== 'quark' ||
+      recognizeLinkCheckProviderFromUrl(new URL(prepared.url)) !== 'quark' ||
       typeof options.config.apiKey !== 'string' ||
       !options.config.apiKey ||
       /\s/.test(options.config.apiKey) ||
