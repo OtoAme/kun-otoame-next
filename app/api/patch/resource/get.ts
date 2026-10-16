@@ -7,6 +7,7 @@ import {
 } from './download/access/actor'
 import type { ResourceAccessViewer } from './download/access/actor'
 import type { PatchResourceHealth } from '~/types/api/patch'
+import { recognizeResourceDiskKind } from '~/utils/resourceDiskKind'
 import { getPublicResourceCaseBadges } from '~/app/api/case/service'
 import {
   getLinkDisputeSources,
@@ -143,6 +144,7 @@ export const getPatchResource = async (
         storage: link.storage,
         size: link.size,
         hash: link.hash,
+        diskKind: recognizeResourceDiskKind(link.content, link.storage),
         sortOrder: link.sort_order,
         download: link.download,
         revealed: revealedLinkIds.has(link.id),

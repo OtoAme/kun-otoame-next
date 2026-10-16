@@ -8,6 +8,7 @@ import type {
   LinkHealthSummary,
   LinkVersionBase
 } from './linkHealth'
+import type { ResourceDiskKind } from '~/utils/resourceDiskKind'
 import type {
   patchResourceStableEditFormSchema,
   patchResourceStableUpdateSchema
@@ -104,6 +105,8 @@ export interface PatchResourceLink {
   obtained?: boolean
   obtainedExpiresAt?: string
   revealed?: boolean
+  /** 公开列表下发的存储种类，不含地址。 */
+  diskKind?: ResourceDiskKind
   code?: string
   password?: string
   content?: string

@@ -18,8 +18,6 @@ import toast from 'react-hot-toast'
 import { LINK_HEALTH_ERRORS } from '~/constants/linkHealth'
 import { SUPPORTED_RESOURCE_LINK_MAP } from '~/constants/resource'
 import { kunFetchPost, kunFetchPut } from '~/utils/kunFetch'
-import { parseResourceLink } from '~/utils/resourceLink'
-import { recognizeLinkCheckProvider } from '~/utils/recognizeLinkCheckProvider'
 import { KunExternalLink } from '~/components/kun/external-link/ExternalLink'
 import {
   isHealthAtLeast,
@@ -32,6 +30,7 @@ import { LinkHealthDot } from './LinkHealthDot'
 import { LinkReportPanel } from './LinkReportPanel'
 import { LinkHealthActions } from './LinkHealthActions'
 import { NetdiskChip } from './NetdiskChip'
+import { resolveDisplayedDiskKind } from '~/utils/resourceDiskKind'
 import { CaseLoginPrompt } from '~/components/case/CaseLoginPrompt'
 import type {
   PatchResource,
@@ -41,10 +40,7 @@ import type {
   PatchResourceLink,
   ResourceAccessQuota
 } from '~/types/api/patch'
-import type {
-  LinkCheckProvider,
-  LinkHealthSummary
-} from '~/types/api/linkHealth'
+import type { LinkHealthSummary } from '~/types/api/linkHealth'
 
 const displayBlack3Hash = (hash: string) => hash.replace(/^b3:/i, '')
 
@@ -54,21 +50,6 @@ const wrapLongTextClass =
 const credentialSnippetClassNames = {
   base: 'min-w-0 max-w-full',
   pre: `${wrapLongTextClass} !whitespace-pre-wrap`
-}
-
-const resolveNetdiskProvider = (
-  link: PatchResourceLink,
-  healthProvider: LinkCheckProvider | null | undefined,
-  accessedContent?: string
-) => {
-  const raw = accessedContent || link.content
-  if (raw) {
-    const fromUrl = recognizeLinkCheckProvider(parseResourceLink(raw).url)
-    if (fromUrl) {
-      return fromUrl
-    }
-  }
-  return healthProvider ?? null
 }
 
 /** 版本存在时的凭据/请求匹配：旧版本请求、迟到响应与恢复结果一律丢弃。 */
@@ -299,11 +280,12 @@ export const ResourceDownloadCard = ({
         link: health
       }
     : null
-  const netdiskProvider = resolveNetdiskProvider(
-    link,
-    health?.latestCheck?.provider,
-    accessedLink?.content
-  )
+  const diskKind = resolveDisplayedDiskKind({
+    storage: link.storage,
+    content: accessedLink?.content || link.content,
+    diskKind: link.diskKind,
+    healthProvider: health?.latestCheck?.provider
+  })
   const healthMeta = health
     ? [LINK_HEALTH_LABELS[health.health], link.size].filter(Boolean).join(' · ')
     : link.size
@@ -409,7 +391,7 @@ export const ResourceDownloadCard = ({
         <div className="flex items-center gap-x-2.5 gap-y-1">
           <div className="flex min-w-0 flex-wrap items-center gap-1.5">
             <div className="font-semibold">{linkLabel}</div>
-            <NetdiskChip provider={netdiskProvider} />
+            <NetdiskChip kind={diskKind} />
             {healthMeta ? (
               <div
                 className="flex items-center gap-1.5 text-xs font-normal leading-4 text-default-500"

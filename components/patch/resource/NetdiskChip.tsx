@@ -1,7 +1,11 @@
 'use client'
 
 import { Chip } from '@heroui/chip'
-import { LINK_CHECK_PROVIDER_LABELS } from '~/constants/linkHealth'
+import { Database, Link2 } from 'lucide-react'
+import {
+  RESOURCE_DISK_KIND_LABELS,
+  type ResourceDiskKind
+} from '~/utils/resourceDiskKind'
 import type { LinkCheckProvider } from '~/types/api/linkHealth'
 
 const brandImgClass =
@@ -13,7 +17,7 @@ const BrandTile = ({ children }: { children: React.ReactNode }) => (
   </span>
 )
 
-const ProviderMark = ({ id }: { id: LinkCheckProvider }) => {
+const NetdiskMark = ({ id }: { id: LinkCheckProvider }) => {
   switch (id) {
     case 'baidu':
       return <img src="/brand/baidu.svg" alt="" className={brandImgClass} />
@@ -38,25 +42,40 @@ const ProviderMark = ({ id }: { id: LinkCheckProvider }) => {
   }
 }
 
-interface Props {
-  provider: LinkCheckProvider | null | undefined
-}
-
-export const NetdiskChip = ({ provider }: Props) => {
-  if (!provider) {
-    return null
+const DiskMark = ({ kind }: { kind: ResourceDiskKind }) => {
+  if (kind === 'otoame') {
+    return <img src="/brand/cloudreve.svg" alt="" className={brandImgClass} />
   }
-
-  return (
-    <Chip
-      size="sm"
-      color="primary"
-      variant="flat"
-      startContent={<ProviderMark id={provider} />}
-      className="h-7 pl-1.5"
-      classNames={{ content: 'font-medium' }}
-    >
-      {LINK_CHECK_PROVIDER_LABELS[provider]}
-    </Chip>
-  )
+  if (kind === 'object') {
+    return (
+      <BrandTile>
+        <Database className="size-3.5 text-default-700" aria-hidden />
+      </BrandTile>
+    )
+  }
+  if (kind === 'other') {
+    return (
+      <BrandTile>
+        <Link2 className="size-3.5 text-default-700" aria-hidden />
+      </BrandTile>
+    )
+  }
+  return <NetdiskMark id={kind} />
 }
+
+interface Props {
+  kind: ResourceDiskKind
+}
+
+export const NetdiskChip = ({ kind }: Props) => (
+  <Chip
+    size="sm"
+    color="primary"
+    variant="flat"
+    startContent={<DiskMark kind={kind} />}
+    className="h-7 pl-1.5"
+    classNames={{ content: 'font-medium' }}
+  >
+    {RESOURCE_DISK_KIND_LABELS[kind]}
+  </Chip>
+)
