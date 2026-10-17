@@ -1,13 +1,14 @@
 import { randomUUID } from 'node:crypto'
 import { prisma } from '~/prisma/index'
 import { LINK_HEALTH_POLICY as P } from '~/constants/linkHealth'
+import { canCheckResourceLink } from '~/components/patch/resource/resourcePermissions'
 import { getLinkDisputeSources } from '../linkHealthProjection'
 import {
   healthBasis,
   loadHealthTarget,
   assertHealthBasis,
   requireAcquisition,
-  requireLinkManagement,
+  requireLinkCheck,
   submitLinkReport,
   acceptLinkCheck,
   LinkHealthError,
@@ -131,7 +132,7 @@ export const checkManagedLink = async (
   const now = options.now ?? (() => new Date())
   const row = await loadHealthTarget(input, visibility, now())
   assertHealthBasis(row, input)
-  requireLinkManagement(row, actor, true)
+  requireLinkCheck(row, actor)
   const observation = await execute(row, options)
   const response = await acceptLinkCheck(
     input,
@@ -141,7 +142,10 @@ export const checkManagedLink = async (
     now(),
     mode
   )
-  return { response, snapshot: observation.snapshot }
+  return {
+    response: { ...response, result: safeSummary(observation.snapshot, now()) },
+    snapshot: observation.snapshot
+  }
 }
 export const manualLinkCheck = async (
   input: LinkHealthBasis,
@@ -201,6 +205,18 @@ export const checkRelinkedResource = async (
       healthChangedAt: link.healthChangedAt
     }
     try {
+      const row = await loadHealthTarget(basis, {}, now())
+      assertHealthBasis(row, basis)
+      if (
+        !canCheckResourceLink({
+          storage: row.storage,
+          content: row.content,
+          resourceUserId: row.resource.user_id,
+          userId: actor.uid,
+          userRole: actor.role
+        })
+      )
+        continue
       const checked = await checkManagedLink(
         basis,
         actor,

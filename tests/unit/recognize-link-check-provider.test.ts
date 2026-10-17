@@ -4,6 +4,10 @@ import { recognizeLinkCheckProvider } from '~/utils/recognizeLinkCheckProvider'
 describe('recognizeLinkCheckProvider', () => {
   it.each([
     ['https://pan.quark.cn/s/SYN', 'quark'],
+    ['http://pan.quark.cn/s/SYN', 'quark'],
+    ['https://123pan.cn/s/SYN', 'pan123'],
+    ['https://www.123pan.cn/s/SYN', 'pan123'],
+    ['https://share.123pan.cn/s/SYN', 'pan123'],
     ['https://drive.uc.cn/s/SYN', 'uc'],
     ['https://pan.baidu.com/s/1SYN', 'baidu'],
     ['https://caiyun.139.com/front/#/detail?linkID=SYN', 'caiyun'],
@@ -15,7 +19,8 @@ describe('recognizeLinkCheckProvider', () => {
   })
 
   it.each([
-    'http://pan.quark.cn/s/SYN',
+    'https://caiyun.139.com/m/i?bad%2Fid',
+    'https://caiyun.139.com/front/#/detail?linkID=',
     'https://pan.quark.cn:8443/s/SYN',
     'https://SYN:SYN@pan.quark.cn/s/SYN',
     'https://pan.quark.cn.evil.invalid/s/SYN',

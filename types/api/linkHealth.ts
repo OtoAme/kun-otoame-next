@@ -69,7 +69,11 @@ export type LinkCheckObservation =
   | {
       verdict: 'broken'
       provider: LinkCheckProvider
-      reason: 'share_deleted' | 'share_cancelled' | 'share_expired'
+      reason:
+        | 'share_deleted'
+        | 'share_cancelled'
+        | 'share_expired'
+        | 'share_blocked'
     }
   | {
       verdict: 'unknown'
@@ -131,6 +135,8 @@ export interface LinkReportResponse extends LinkHealthMutationResponse {
 
 export interface LinkCheckResponse extends LinkHealthMutationResponse {
   check: 'observed' | 'failed'
+  /** This attempt's safe result, independent of the latest stored observation. */
+  result: LinkCheckSummary
 }
 
 export interface LinkHealthListRow extends LinkHealthView {
@@ -201,7 +207,7 @@ export type CloseLinkCasesInput = (
     }
 ) & {
   resolution: LinkCaseResolution
-  actorType: 'system' | 'publisher' | 'staff'
+  actorType: 'system' | 'publisher' | 'staff' | 'user'
   actorId?: number | null
   now: Date
 }

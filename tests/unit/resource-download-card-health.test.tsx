@@ -402,6 +402,47 @@ describe('ResourceDownloadCard link health (04/10)', () => {
     expect(findButton(shown, '报告失效')).not.toBeUndefined()
   })
 
+  it.each(['user', 'touchgal'])('offers a signed-in non-owner inspection of an unrevealed %s link', async (storage) => {
+    const container = await mount(
+      <ResourceDownloadCard
+        resource={resource}
+        link={healthLink({
+          storage,
+          capabilities: { ownerActions: [], resolveActions: [], canCheck: true, canEdit: false }
+        })}
+      />
+    )
+    expect(findButton(container, '检测链接')).not.toBeUndefined()
+    for (const action of ['我已核实可用', '确认失效', '补链', '报告失效'])
+      expect(findButton(container, action)).toBeUndefined()
+    expect(mocks.kunFetchPost).not.toHaveBeenCalled()
+    await act(async () => { findButton(container, '检测链接')!.click() })
+    expect(container.querySelector('[role="dialog"]')).not.toBeNull()
+    expect(mocks.kunFetchPost).not.toHaveBeenCalled()
+  })
+
+  it('hides unsupported detection despite an old quark result and keeps the separate edit entry', async () => {
+    const onRelink = vi.fn()
+    const container = await mount(
+      <ResourceDownloadCard
+        resource={resource}
+        link={healthLink({
+          capabilities: { ownerActions: [], resolveActions: [], canCheck: false, canEdit: true },
+          latestCheck: {
+            verdict: 'available', provider: 'quark', reason: 'share_available', failed: false,
+            checkedAt: '2026-10-09T00:00:00.000Z', attemptedAt: '2026-10-09T00:00:00.000Z', stale: true
+          }
+        })}
+        onRelink={onRelink}
+      />
+    )
+    expect(findButton(container, '检测链接')).toBeUndefined()
+    expect(findButton(container, '获取下载链接')).not.toBeUndefined()
+    await act(async () => { findButton(container, '补链')!.click() })
+    expect(onRelink).toHaveBeenCalledTimes(1)
+    expect(mocks.kunFetchPost).not.toHaveBeenCalled()
+  })
+
   it('keeps the access entry and shows every fact on a suspect link', async () => {
     const container = await mount(
       <ResourceDownloadCard

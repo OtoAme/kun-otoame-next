@@ -5,7 +5,10 @@ import {
   LINK_HEALTH_POLICY
 } from '~/constants/linkHealth'
 import { parseResourceLink } from '~/utils/resourceLink'
-import { recognizeLinkCheckProviderFromUrl } from '~/utils/recognizeLinkCheckProvider'
+import {
+  getCaiyunShareId,
+  recognizeLinkCheckProviderFromUrl
+} from '~/utils/recognizeLinkCheckProvider'
 import type {
   LinkCheckIdentity,
   LinkCheckProvider,
@@ -45,22 +48,22 @@ export const prepareLinkCheckInput = (
       // Saved extraction code wins. Only explicit extraction/access labels are
       // accepted from pasted text; an unzip-password label is never a fallback.
       effectivePasscode =
-        link.code ||
+        link.code.trim() ||
         url.searchParams.get('pwd') ||
         url.searchParams.get('password') ||
         url.searchParams.get('code') ||
         link.content.match(/(?:提取码|访问码)\s*[：:]\s*([A-Za-z0-9]+)/)?.[1] ||
         ''
+      effectivePasscode = effectivePasscode.trim()
     }
-    for (const key of ['pwd', 'password', 'code']) url.searchParams.delete(key)
-    if (provider !== 'caiyun') {
+    if (provider) {
+      const caiyunId = provider === 'caiyun' ? getCaiyunShareId(url) : null
+      url.protocol = 'https:'
       url.search = ''
       url.hash = ''
-    } else if (url.hash.includes('?')) {
-      const index = url.hash.indexOf('?')
-      const params = new URLSearchParams(url.hash.slice(index + 1))
-      for (const key of ['pwd', 'password', 'code']) params.delete(key)
-      url.hash = url.hash.slice(0, index + 1) + params.toString()
+      // URLSearchParams would turn a bare /m/i?ID into ?ID=, which LLC
+      // cannot extract. All three Caiyun formats share this explicit form.
+      if (caiyunId) url.searchParams.set('linkID', caiyunId)
     }
     preparedUrl = url.href
   } catch {
@@ -193,42 +196,68 @@ const readWire = async (response: Response, signal: AbortSignal) => {
 
 const mapObservation = (wire: Wire) => {
   const code = wire.providerCode ?? ''
+  const family = wire.provider === 'quark' || wire.provider === 'uc'
   if (wire.status === 'alive' && wire.reason === 'share_ok' && code === '0')
     return { verdict: 'available' as const, reason: 'share_available' as const }
   if (wire.status === 'dead') {
-    if (wire.reason === 'share_not_found' && ['41004', '41006'].includes(code))
+    const deleted: Record<Wire['provider'], readonly string[]> = {
+      quark: ['41004', '41006'],
+      uc: ['41004', '41006'],
+      baidu: ['-21', '-9/page'],
+      caiyun: ['200000727'],
+      pan123: ['5103'],
+      unknown: []
+    }
+    if (
+      wire.reason === 'share_not_found' &&
+      deleted[wire.provider].includes(code)
+    )
       return { verdict: 'broken' as const, reason: 'share_deleted' as const }
-    if (wire.reason === 'share_not_found' && code === '41012')
+    if (family && wire.reason === 'share_not_found' && code === '41012')
       return { verdict: 'broken' as const, reason: 'share_cancelled' as const }
-    if (wire.reason === 'share_expired' && code === '41011')
+    if (family && wire.reason === 'share_expired' && code === '41011')
       return { verdict: 'broken' as const, reason: 'share_expired' as const }
+    if (
+      family &&
+      wire.reason === 'share_blocked' &&
+      ['41010', '41031'].includes(code)
+    )
+      return { verdict: 'broken' as const, reason: 'share_blocked' as const }
+  }
+  // LLC's legacy "alive" on these codes proves a share exists, but does
+  // not verify access with the submitted extraction code.
+  if (
+    wire.status === 'alive' &&
+    wire.reason === 'share_ok' &&
+    ((wire.provider === 'baidu' && code === '-9/page') ||
+      (wire.provider === 'caiyun' && code === '9188') ||
+      (wire.provider === 'pan123' && code === '5103'))
+  ) {
+    return { verdict: 'unknown' as const, reason: 'access_unverified' as const }
   }
   if (wire.status === 'unknown') {
     if (
-      (wire.reason === 'share_blocked' &&
+      (family &&
+        wire.reason === 'share_blocked' &&
         ['41010', '41031', '0/partial_violation'].includes(code)) ||
-      (wire.reason === 'passcode_required' && code === '41008')
+      wire.reason === 'passcode_required'
     ) {
       return {
         verdict: 'unknown' as const,
         reason: 'access_unverified' as const
       }
     }
-    if (code === '') {
-      const failures: Record<string, FailureReason> = {
-        unsupported_provider: 'unsupported',
-        rate_limited: 'rate_limited',
-        timeout: 'timeout',
-        network_error: 'unavailable',
-        unparseable_response: 'invalid_response',
-        captcha_required: 'access_unverified',
-        login_required: 'access_unverified'
-      }
-      if (Object.hasOwn(failures, wire.reason))
-        throw new CheckFailure(failures[wire.reason])
+    const failures: Record<string, FailureReason> = {
+      unsupported_provider: 'unsupported',
+      rate_limited: 'rate_limited',
+      timeout: 'timeout',
+      network_error: 'unavailable',
+      unparseable_response: 'invalid_response',
+      captcha_required: 'access_unverified',
+      login_required: 'access_unverified'
     }
-    if (wire.reason === 'unparseable_response' && code === '0')
-      throw new CheckFailure('invalid_response')
+    if (Object.hasOwn(failures, wire.reason))
+      throw new CheckFailure(failures[wire.reason])
   }
   throw new CheckFailure('untrusted_result')
 }
@@ -258,7 +287,7 @@ export const checkLink = async (
     !Number.isFinite(requested)
   )
     return failed('untrusted_result')
-  if (prepared.provider !== 'quark') return failed('unsupported')
+  if (!prepared.provider) return failed('unsupported')
   const elapsed = clock().getTime() - requested
   if (elapsed < 0) return failed('untrusted_result')
   if (elapsed >= LINK_HEALTH_POLICY.checkBudgetMs) return failed('timeout')
@@ -266,7 +295,8 @@ export const checkLink = async (
   let timer: ReturnType<typeof setTimeout> | undefined
   try {
     if (
-      recognizeLinkCheckProviderFromUrl(new URL(prepared.url)) !== 'quark' ||
+      recognizeLinkCheckProviderFromUrl(new URL(prepared.url)) !==
+        prepared.provider ||
       typeof options.config.apiKey !== 'string' ||
       !options.config.apiKey ||
       /\s/.test(options.config.apiKey) ||
@@ -276,6 +306,22 @@ export const checkLink = async (
     )
       throw new CheckFailure('unavailable')
     const endpoint = endpointUrl(options.config.endpoint)
+    const shareUrl = new URL(prepared.url)
+    // LLC keys by URL but older versions only distinguish passcode presence.
+    // Its providers ignore this query parameter; the cache includes it. Bind
+    // it to the input, handling basis and a bounded window, without raw codes.
+    shareUrl.searchParams.set(
+      'otoame_check',
+      createHash('sha256')
+        .update(
+          JSON.stringify([
+            captured.inputSignature,
+            captured.basis,
+            Math.floor(requested / LINK_HEALTH_POLICY.checkCacheMaxAgeMs)
+          ])
+        )
+        .digest('hex')
+    )
     const deadline = new Promise<never>((_, reject) => {
       timer = setTimeout(() => {
         controller.abort()
@@ -287,10 +333,11 @@ export const checkLink = async (
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          Accept: 'application/json',
           Authorization: `Bearer ${options.config.apiKey}`
         },
         body: JSON.stringify({
-          url: prepared.url,
+          url: shareUrl.href,
           ...(prepared.passcode ? { passcode: prepared.passcode } : {})
         }),
         signal: controller.signal,
@@ -326,10 +373,16 @@ export const checkLink = async (
     if (completed.getTime() - requested > LINK_HEALTH_POLICY.checkBudgetMs)
       throw new CheckFailure('timeout')
     if (
-      wire.provider !== 'quark' ||
-      cached ||
+      (wire.provider !== prepared.provider &&
+        !(
+          wire.provider === 'unknown' &&
+          wire.status === 'unknown' &&
+          wire.reason === 'unsupported_provider'
+        )) ||
       !Number.isFinite(checked) ||
-      checked < requested - LINK_HEALTH_POLICY.checkClockSkewMs ||
+      (cached
+        ? completed.getTime() - checked > LINK_HEALTH_POLICY.checkCacheMaxAgeMs
+        : checked < requested - LINK_HEALTH_POLICY.checkClockSkewMs) ||
       checked > completed.getTime() + LINK_HEALTH_POLICY.checkClockSkewMs ||
       (basisTime !== null &&
         (!Number.isFinite(basisTime) || checked < basisTime))
@@ -339,11 +392,11 @@ export const checkLink = async (
     return {
       ...captured,
       ...observation,
-      provider: 'quark',
+      provider: prepared.provider,
       failed: false,
       checkedAt: new Date(checked).toISOString(),
       completedAt: completed.toISOString(),
-      cached: false
+      cached
     }
   } catch (error) {
     return failed(

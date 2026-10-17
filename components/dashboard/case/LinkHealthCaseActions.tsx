@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import toast from 'react-hot-toast'
 import { HeartPulse } from 'lucide-react'
 
@@ -17,18 +17,20 @@ import {
 import { Badge } from '~/components/dashboard/ui/badge'
 import { Button } from '~/components/dashboard/ui/button'
 import { kunFetchPost } from '~/utils/kunFetch'
-import type {
-  LinkHealthMutationResponse,
-  LinkHealthView
-} from '~/types/api/linkHealth'
+import type { LinkHealthView } from '~/types/api/linkHealth'
 import { isLinkConflictError } from '~/components/patch/resource/linkHealthDisplay'
 import {
   linkBasisFromView,
   linkHealthActionConfirmText,
   linkHealthActionLabel,
   linkHealthActionRequest,
+  readLinkHealthActionResponse,
   type LinkHealthPendingAction
 } from '~/components/case/linkHealthActionFlow'
+import {
+  INVALID_LINK_CHECK_FEEDBACK,
+  linkCheckFeedback
+} from '~/components/case/linkCheckFeedback'
 
 interface LinkHealthCaseActionsProps {
   linkHealth: LinkHealthView
@@ -47,6 +49,16 @@ export function LinkHealthCaseActions({
 }: LinkHealthCaseActionsProps) {
   const [pending, setPending] = useState<LinkHealthPendingAction | null>(null)
   const [submitting, setSubmitting] = useState(false)
+  const inFlight = useRef(false)
+  const mounted = useRef(true)
+  const current = useRef(linkHealth)
+  current.current = linkHealth
+  useEffect(() => {
+    mounted.current = true
+    return () => {
+      mounted.current = false
+    }
+  }, [])
 
   const { capabilities } = linkHealth
   const ownerActions = [
@@ -66,32 +78,43 @@ export function LinkHealthCaseActions({
   }
 
   const handleConfirm = async () => {
-    if (!pending) return
+    if (!pending || inFlight.current) return
+    const isCurrent = () => mounted.current && current.current === linkHealth
+    const basis = linkBasisFromView(linkHealth)
+    inFlight.current = true
     setSubmitting(true)
+    let accepted = false
     try {
-      const { url, body } = linkHealthActionRequest(
-        pending,
-        linkBasisFromView(linkHealth)
-      )
-      const res = await kunFetchPost<LinkHealthMutationResponse | string>(
-        url,
-        body
-      )
-      if (typeof res === 'string') {
-        toast.error(res || '操作失败，请稍后重试')
-        if (isLinkConflictError(res)) {
+      const { url, body } = linkHealthActionRequest(pending, basis)
+      const raw = await kunFetchPost<unknown>(url, body)
+      if (!isCurrent()) return
+      if (typeof raw === 'string') {
+        toast.error(raw || '操作失败，请稍后重试')
+        if (isLinkConflictError(raw)) {
           setPending(null)
         }
         return
       }
-      toast.success(pending.kind === 'check' ? '检测完成' : '已提交')
+      const res = readLinkHealthActionResponse(raw, basis)
+      if (!res) {
+        toast.error(INVALID_LINK_CHECK_FEEDBACK.message)
+        return
+      }
+      const feedback =
+        pending.kind === 'check'
+          ? linkCheckFeedback(res)
+          : { type: 'success' as const, message: '已提交' }
+      if (feedback.type === 'info') toast(feedback.message)
+      else toast[feedback.type](feedback.message)
       setPending(null)
-      onChanged()
+      accepted = true
     } catch {
-      toast.error('网络错误，操作失败，请重试')
+      if (isCurrent()) toast.error('网络错误，操作失败，请重试')
     } finally {
-      setSubmitting(false)
+      inFlight.current = false
+      if (mounted.current) setSubmitting(false)
     }
+    if (accepted) onChanged()
   }
 
   return (

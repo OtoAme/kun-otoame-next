@@ -7,6 +7,10 @@ import {
 } from '~/constants/linkHealth'
 import { CASE_UNRESOLVED_STATUSES } from '~/constants/case'
 import {
+  canCheckResourceLink,
+  canManageResourceLink
+} from '~/components/patch/resource/resourcePermissions'
+import {
   openLinkCaseInternal,
   closeLinkCases,
   readLinkCaseContext
@@ -148,16 +152,27 @@ export const requireAcquisition = async (
 }
 export const requireLinkManagement = (
   row: HealthTargetRow,
-  actor: HealthActor,
-  check = false
+  actor: HealthActor
 ) => {
   if (!actor.uid) throw new LinkHealthError('login_required')
   const allowed =
     row.storage === P.staffStorage
       ? actor.role >= P.staffMinRole
-      : row.resource.user_id === actor.uid ||
-        (check && actor.role >= P.staffMinRole)
+      : row.resource.user_id === actor.uid
   if (!allowed) throw new LinkHealthError('forbidden')
+}
+export const requireLinkCheck = (row: HealthTargetRow, actor: HealthActor) => {
+  if (!(actor.uid > 0)) throw new LinkHealthError('login_required')
+  if (
+    !canCheckResourceLink({
+      storage: row.storage,
+      content: row.content,
+      resourceUserId: row.resource.user_id,
+      userId: actor.uid,
+      userRole: actor.role
+    })
+  )
+    throw new LinkHealthError('forbidden')
 }
 const unresolvedCase = (tx: Prisma.TransactionClient, row: HealthTargetRow) =>
   tx.ops_case.findFirst({
@@ -188,16 +203,34 @@ const saveObservation = async (
   const decoded = linkCheckSnapshotSchema.safeParse(snapshot)
   if (!decoded.success) throw new LinkHealthError('state_conflict')
   const value = decoded.data
+  const qualified = !value.failed && value.verdict !== 'unknown' ? value : null
   const existing = row.check
   const instant = value.checkedAt ?? value.requestedAt
   if (
     existing &&
     existing.link_version === row.version &&
-    existing.input_signature === value.inputSignature &&
-    Date.parse(instant) <=
-      (existing.checked_at ?? existing.requested_at).getTime()
-  )
-    return null
+    existing.input_signature === value.inputSignature
+  ) {
+    const observedAt = Date.parse(instant)
+    const existingAt = (existing.checked_at ?? existing.requested_at).getTime()
+    // A fresh request may reuse the same qualified cached observation. Keep
+    // that attempt current and let it inform the current report threshold,
+    // while rejecting older observations and conflicting same-time results.
+    if (
+      observedAt < existingAt ||
+      (observedAt === existingAt &&
+        (value.provider !== existing.provider ||
+          value.verdict !== existing.verdict ||
+          value.reason !== existing.reason ||
+          value.failed !== existing.failed))
+    )
+      return null
+    if (
+      observedAt === existingAt &&
+      Date.parse(value.requestedAt) <= existing.requested_at.getTime()
+    )
+      return qualified
+  }
   const data = {
     patch_id: value.basis.patchId,
     resource_id: value.basis.resourceId,
@@ -223,9 +256,7 @@ const saveObservation = async (
     create: { link_id: row.id, ...data },
     update: data
   })
-  return !value.failed && !value.cached && value.verdict !== 'unknown'
-    ? value
-    : null
+  return qualified
 }
 const notifyUncasedTransition = async (
   tx: Prisma.TransactionClient,
@@ -259,7 +290,7 @@ const applyTransition = async (
   row: HealthTargetRow,
   transition: HealthTransition,
   now: Date,
-  actorType: 'system' | 'staff' | 'publisher',
+  actorType: 'system' | 'staff' | 'publisher' | 'user',
   actorId: number | null,
   observation?: LinkCheckSnapshot | null,
   verify = false
@@ -654,7 +685,7 @@ export const acceptLinkCheck = async (
   const result = await runResourceMutation(async (tx) => {
     const row = await loadHealthTarget(target, visibility, now, tx, true)
     assertObservation(row, observation)
-    requireLinkManagement(row, actor, true)
+    requireLinkCheck(row, actor)
     const machine = await saveObservation(tx, row, observation.snapshot)
     const sum = await tx.patch_resource_link_report.aggregate({
       where: {
@@ -685,7 +716,14 @@ export const acceptLinkCheck = async (
             ? 'system'
             : actor.role >= P.staffMinRole
               ? 'staff'
-              : 'publisher',
+              : canManageResourceLink({
+                  storage: row.storage,
+                  resourceUserId: row.resource.user_id,
+                  userId: actor.uid,
+                  userRole: actor.role
+                })
+                ? 'publisher'
+                : 'user',
           mode === 'automatic' ? null : actor.uid,
           machine
         )

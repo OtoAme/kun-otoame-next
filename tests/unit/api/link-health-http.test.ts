@@ -18,6 +18,10 @@ vi.mock('~/app/api/patch/resource/link/rateLimit', () => ({
 vi.mock('~/app/api/utils/getPatchVisibilityWhere', () => ({
   getPatchVisibilityWhere: mocks.visibility
 }))
+vi.mock('~/app/api/patch/resource/link-check/service', () => ({
+  manualLinkCheck: mocks.write
+}))
+import { POST as checkLink } from '~/app/api/patch/resource/link-check/route'
 import { healthWrite, healthRead } from '~/app/api/patch/resource/link/http'
 import {
   linkReportSchema,
@@ -45,6 +49,28 @@ beforeEach(() => {
   mocks.write.mockResolvedValue({ changed: false })
 })
 describe('link health HTTP boundary', () => {
+  const checkBody = {
+    patchId: 1, resourceId: 2, linkId: 3, linkVersion: 1,
+    evidenceRound: 0, health: 'ok', healthChangedAt: null
+  }
+  it.each([1, 2])('accepts the link-check route for a normal role %s with verified visibility', async (role) => {
+    mocks.auth.mockResolvedValue({ uid: 88, role })
+    const result = await checkLink(req(checkBody))
+    expect(result.status).toBe(200)
+    expect(result.headers.get('cache-control')).toBe('private, no-store')
+    expect(mocks.write).toHaveBeenCalledWith(checkBody, { uid: 88, role }, { content_limit: 'sfw' })
+  })
+  it.each(['guest', 'csrf', 'rate'])('rejects link-check %s requests before business or checker work', async (reason) => {
+    if (reason === 'guest') mocks.auth.mockResolvedValue(null)
+    if (reason === 'csrf') mocks.csrf.mockReturnValue('csrf')
+    if (reason === 'rate') mocks.rate.mockResolvedValue(60)
+    const result = await checkLink(req(checkBody))
+    expect(result.status).toBe(reason === 'guest' ? 401 : reason === 'csrf' ? 403 : 429)
+    expect(result.headers.get('cache-control')).toBe('private, no-store')
+    expect(mocks.write).not.toHaveBeenCalled()
+    if (reason === 'rate') expect(result.headers.get('retry-after')).toBe('60')
+  })
+
   it('authenticates before body/rate/business work and always uses private string errors', async () => {
     mocks.auth.mockResolvedValue(null)
     const result = await healthWrite(

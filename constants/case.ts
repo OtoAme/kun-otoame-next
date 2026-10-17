@@ -116,7 +116,8 @@ export const CASE_ACTOR_TYPES = [
   'system',
   'publisher',
   'staff',
-  'reporter'
+  'reporter',
+  'user'
 ] as const
 export type CaseActorType = (typeof CASE_ACTOR_TYPES)[number]
 

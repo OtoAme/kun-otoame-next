@@ -342,7 +342,7 @@ beforeEach(() => {
       return link
         ? {
             ...link,
-            content: 'SYN_PRIVATE_URL',
+            content: 'https://pan.quark.cn/s/SYNPRIVATE',
             code: 'SYN_PRIVATE_CODE',
             password: 'SYN_PRIVATE_PASSWORD',
             size: '1GB',
@@ -848,12 +848,12 @@ describe('system link case creation, context and permissions', () => {
     expect(follower.case.linkHealth?.capabilities).toEqual({
       ownerActions: [],
       resolveActions: [],
-      canCheck: false,
+      canCheck: true,
       canEdit: false
     })
     const safe = JSON.stringify(owner)
     for (const secret of [
-      'SYN_PRIVATE_URL',
+      'https://pan.quark.cn/s/SYNPRIVATE',
       'SYN_PRIVATE_CODE',
       'SYN_PRIVATE_PASSWORD'
     ])

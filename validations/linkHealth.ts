@@ -155,7 +155,12 @@ export const linkCheckSnapshotSchema = z
     checkIdentity.extend({
       verdict: z.literal('broken'),
       provider: checkProvider,
-      reason: z.enum(['share_deleted', 'share_cancelled', 'share_expired']),
+      reason: z.enum([
+        'share_deleted',
+        'share_cancelled',
+        'share_expired',
+        'share_blocked'
+      ]),
       failed: z.literal(false),
       checkedAt: z.string().datetime()
     }),
@@ -186,11 +191,13 @@ export const linkCheckSnapshotSchema = z
         message: '检测观察时间晚于本次完成时间'
       })
     }
-    if (!value.failed && !value.cached && value.checkedAt) {
+    if (!value.failed && value.checkedAt) {
       const checked = Date.parse(value.checkedAt)
       if (
         completed - requested > LINK_HEALTH_POLICY.checkBudgetMs ||
-        checked < requested - LINK_HEALTH_POLICY.checkClockSkewMs ||
+        (value.cached
+          ? completed - checked > LINK_HEALTH_POLICY.checkCacheMaxAgeMs
+          : checked < requested - LINK_HEALTH_POLICY.checkClockSkewMs) ||
         (value.basis.healthChangedAt !== null &&
           checked < Date.parse(value.basis.healthChangedAt))
       ) {

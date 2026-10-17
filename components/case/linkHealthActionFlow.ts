@@ -1,4 +1,8 @@
-import type { LinkHealthBasis, LinkHealthView } from '~/types/api/linkHealth'
+import type {
+  LinkHealthBasis,
+  LinkHealthMutationResponse,
+  LinkHealthView
+} from '~/types/api/linkHealth'
 
 /** 链接健康动作的请求分类（检查、归属方核实/确认失效、站方争议裁决）。 */
 export type LinkHealthPendingAction =
@@ -40,7 +44,7 @@ export const linkHealthActionConfirmText = (
         ? '以站方身份打开并核对后，确认这条链接当前可用？争议将按判定结果结案。'
         : '以站方身份打开并核对后，确认这条链接已经失效？链接会标记为已失效并折叠，争议将结案。'
     case 'check':
-      return '检测会由服务器实际访问这条链接，结果可能更新链接状态；检测失败会记为无法判断。是否继续？'
+      return '目前支持百度网盘、夸克网盘、UC 网盘、和彩云和 123 云盘。服务器会检查受支持的链接，结果可能更新链接状态；访问验证或检测失败时会提示无法判断。是否继续？'
   }
 }
 
@@ -92,6 +96,26 @@ export const readCaseLinkHealth = (detail: unknown): LinkHealthView | null => {
     typeof candidate.version !== 'number' ||
     typeof candidate.capabilities !== 'object' ||
     candidate.capabilities === null
+  ) {
+    return null
+  }
+  return candidate
+}
+
+/** Only apply a response to the target/version that initiated the action. */
+export const readLinkHealthActionResponse = (
+  value: unknown,
+  basis: LinkHealthBasis
+): LinkHealthMutationResponse | null => {
+  const candidate = value as LinkHealthMutationResponse | null
+  const view = readCaseLinkHealth({ linkHealth: candidate?.link })
+  if (
+    !view ||
+    typeof candidate?.changed !== 'boolean' ||
+    view.patchId !== basis.patchId ||
+    view.resourceId !== basis.resourceId ||
+    view.linkId !== basis.linkId ||
+    view.version !== basis.linkVersion
   ) {
     return null
   }

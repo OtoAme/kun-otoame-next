@@ -1,3 +1,6 @@
+import { parseResourceLink } from '~/utils/resourceLink'
+import { recognizeLinkCheckProvider } from '~/utils/recognizeLinkCheckProvider'
+
 export const canManageResource = ({
   resourceUserId,
   userId,
@@ -25,7 +28,14 @@ export const canManageResourceLink = ({
 
 export const canCheckResourceLink = (input: {
   storage: string
+  content: string
   resourceUserId: number
   userId: number
   userRole: number
-}) => input.userId > 0 && (input.userRole >= 3 || canManageResourceLink(input))
+}) => {
+  if (!(input.userId > 0 && input.userRole >= 1)) return false
+  const scheme = input.content.trim().match(/^([a-z][a-z\d+.-]*):/i)?.[1]
+  if (scheme && !/^https?$/i.test(scheme)) return false
+  const { url } = parseResourceLink(input.content)
+  return /^https?:\/\/[^/\\]/i.test(url) && recognizeLinkCheckProvider(url) !== null
+}

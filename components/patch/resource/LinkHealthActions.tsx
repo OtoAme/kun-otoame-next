@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   Button,
   Modal,
@@ -25,8 +25,13 @@ import {
   linkHealthActionConfirmText,
   linkHealthActionLabel,
   linkHealthActionRequest,
+  readLinkHealthActionResponse,
   type LinkHealthPendingAction as PendingAction
 } from '~/components/case/linkHealthActionFlow'
+import {
+  INVALID_LINK_CHECK_FEEDBACK,
+  linkCheckFeedback
+} from '~/components/case/linkCheckFeedback'
 
 interface Props {
   patchId: number
@@ -59,6 +64,16 @@ export const LinkHealthActions = ({
   const confirm = useDisclosure()
   const [pending, setPending] = useState<PendingAction | null>(null)
   const [submitting, setSubmitting] = useState(false)
+  const inFlight = useRef(false)
+  const mounted = useRef(true)
+  const current = useRef({ patchId, resourceId, link })
+  current.current = { patchId, resourceId, link }
+  useEffect(() => {
+    mounted.current = true
+    return () => {
+      mounted.current = false
+    }
+  }, [])
 
   if (!health) {
     return null
@@ -82,36 +97,53 @@ export const LinkHealthActions = ({
   }
 
   const handleConfirm = async () => {
-    if (!pending) return
+    if (!pending || inFlight.current) return
+    const isCurrent = () =>
+      mounted.current &&
+      current.current.patchId === patchId &&
+      current.current.resourceId === resourceId &&
+      current.current.link === link
     const basis = buildLinkBasis(patchId, resourceId, link)
     if (!basis) {
       toast.error('页面数据不是最新版本，请刷新后重试')
       return
     }
+    inFlight.current = true
     setSubmitting(true)
+    let accepted: LinkHealthMutationResponse | null = null
     try {
       const { url, body } = linkHealthActionRequest(pending, basis)
-      const res = await kunFetchPost<LinkHealthMutationResponse | string>(
-        url,
-        body
-      )
+      const raw = await kunFetchPost<unknown>(url, body)
 
-      if (typeof res === 'string') {
+      if (!isCurrent()) return
+      if (typeof raw === 'string') {
         // 409 版本/状态/冷却与资格错误：明示并保留现状，不自动重试。
-        toast.error(res || '操作失败，请稍后重试')
-        if (isLinkConflictError(res)) {
+        toast.error(raw || '操作失败，请稍后重试')
+        if (isLinkConflictError(raw)) {
           confirm.onClose()
         }
         return
       }
-      onChanged?.(res.link)
-      toast.success(pending.kind === 'check' ? '检测完成' : '已提交')
+      const res = readLinkHealthActionResponse(raw, basis)
+      if (!res) {
+        toast.error(INVALID_LINK_CHECK_FEEDBACK.message)
+        return
+      }
+      const feedback =
+        pending.kind === 'check'
+          ? linkCheckFeedback(res)
+          : { type: 'success' as const, message: '已提交' }
+      if (feedback.type === 'info') toast(feedback.message)
+      else toast[feedback.type](feedback.message)
+      accepted = res
       confirm.onClose()
     } catch {
-      toast.error('网络错误，操作失败，请重试')
+      if (isCurrent()) toast.error('网络错误，操作失败，请重试')
     } finally {
-      setSubmitting(false)
+      inFlight.current = false
+      if (mounted.current) setSubmitting(false)
     }
+    if (accepted) onChanged?.(accepted.link)
   }
 
   return (

@@ -28,7 +28,7 @@ describe('resource permissions', () => {
   })
 
   it('reserves ordinary-link verification to its publisher while staff can inspect it', () => {
-    const staff = { storage: 'user', resourceUserId: 7, userId: 8, userRole: 3 }
+    const staff = { storage: 'user', content: 'https://pan.quark.cn/s/SYN', resourceUserId: 7, userId: 8, userRole: 3 }
     expect(canManageResourceLink(staff)).toBe(false)
     expect(canCheckResourceLink(staff)).toBe(true)
     expect(canManageResourceLink({ ...staff, userId: 7, userRole: 1 })).toBe(
@@ -36,15 +36,16 @@ describe('resource permissions', () => {
     )
   })
 
-  it('reserves resource-disk actions to staff even when the publisher owns the resource', () => {
+  it('reserves resource-disk management to staff while its publisher can inspect it', () => {
     const publisher = {
       storage: 'touchgal',
+      content: 'https://pan.quark.cn/s/SYN',
       resourceUserId: 7,
       userId: 7,
       userRole: 2
     }
     expect(canManageResourceLink(publisher)).toBe(false)
-    expect(canCheckResourceLink(publisher)).toBe(false)
+    expect(canCheckResourceLink(publisher)).toBe(true)
     expect(canManageResourceLink({ ...publisher, userRole: 3 })).toBe(true)
     expect(canCheckResourceLink({ ...publisher, userId: 0, userRole: 3 })).toBe(
       false

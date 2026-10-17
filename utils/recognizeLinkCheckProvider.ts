@@ -8,8 +8,26 @@ const pan123Hosts = new Set([
   '123865.com',
   'www.123865.com',
   '123912.com',
-  'www.123912.com'
+  'www.123912.com',
+  '123pan.cn',
+  'www.123pan.cn',
+  'share.123pan.cn',
+  '123684.cn',
+  'www.123684.cn',
+  '123865.cn',
+  'www.123865.cn',
+  '123912.cn',
+  'www.123912.cn'
 ])
+
+export const getCaiyunShareId = (url: URL) => {
+  const fragmentQuery = url.hash.split('?')[1] ?? ''
+  const id =
+    url.searchParams.get('linkID') ||
+    new URLSearchParams(fragmentQuery).get('linkID') ||
+    url.search.slice(1).split('&')[0]
+  return /^[A-Za-z0-9_-]+$/.test(id) ? id : null
+}
 
 /**
  * Same host/path rules as the link-check adapter. Safe for client UI
@@ -18,7 +36,12 @@ const pan123Hosts = new Set([
 export const recognizeLinkCheckProviderFromUrl = (
   url: URL
 ): LinkCheckProvider | null => {
-  if (url.protocol !== 'https:' || url.username || url.password || url.port) {
+  if (
+    !['https:', 'http:'].includes(url.protocol) ||
+    url.username ||
+    url.password ||
+    url.port
+  ) {
     return null
   }
   if (
@@ -39,7 +62,10 @@ export const recognizeLinkCheckProviderFromUrl = (
   ) {
     return 'baidu'
   }
-  if (url.hostname === 'caiyun.139.com' || url.hostname === 'yun.139.com') {
+  if (
+    (url.hostname === 'caiyun.139.com' || url.hostname === 'yun.139.com') &&
+    getCaiyunShareId(url)
+  ) {
     return 'caiyun'
   }
   if (

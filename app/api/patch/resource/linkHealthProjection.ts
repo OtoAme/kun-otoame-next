@@ -123,6 +123,7 @@ export const projectLinkHealth = (
     : 'ok'
   const permission = {
     storage: link.storage,
+    content: link.content,
     resourceUserId,
     userId: viewer?.uid ?? 0,
     userRole: viewer?.role ?? 0

@@ -23,7 +23,7 @@ const link = (id = 3, health = 'ok') => ({
   reports: [],
   check: null,
   storage: 'user',
-  content: 'https://example.test/share',
+  content: 'https://pan.quark.cn/s/SYN',
   code: 'private-code',
   password: 'private-password',
   hash: '',
@@ -67,6 +67,38 @@ beforeEach(() => {
 })
 
 describe('current-version resource health reads', () => {
+  it.each(['https://pan.otoame.top/s/SYN', 'https://example.test/file.zip'])(
+    'keeps current unsupported URLs private and uncheckable for all viewers: %s', async (content) => {
+      const item = resource()
+      item.links[0].content = content
+      db.patch_resource.findMany.mockResolvedValue([item])
+      for (const viewer of [{ uid: 88, role: 1 }, { uid: 7, role: 2 }, { uid: 88, role: 3 }]) {
+        const result = await getPatchResource({ patchId: 1 }, viewer)
+        expect(result[0].links[0].capabilities.canCheck).toBe(false)
+        expect(result[0].links[0].capabilities.canEdit).toBe(viewer.uid === 7 || viewer.role >= 3)
+        expect(JSON.stringify(result)).not.toContain(content)
+        expect(result[0].links[0]).not.toHaveProperty('content')
+      }
+    }
+  )
+
+  it.each([
+    ['user', 1], ['user', 2], ['touchgal', 1], ['touchgal', 2]
+  ] as const)('offers unacquired %s links to a signed-in role %s for inspection only', async (storage, role) => {
+    const item = resource()
+    item.links[0].storage = storage
+    db.patch_resource.findMany.mockResolvedValue([item])
+    db.patch_resource_access_grant.findMany.mockResolvedValue([])
+    const result = await getPatchResource({ patchId: 1 }, { uid: 88, role })
+    expect(result[0].links[0]).toMatchObject({
+      revealed: false,
+      capabilities: { canCheck: true, canEdit: false, ownerActions: [], resolveActions: [] }
+    })
+    expect(result[0].links[0].obtained).not.toBe(true)
+    for (const secret of ['content', 'code', 'password'])
+      expect(result[0].links[0]).not.toHaveProperty(secret)
+  })
+
   it('returns exact hidden admin resource with authoritative edit base and credentials', async () => {
     db.patch_resource.findMany.mockResolvedValue([{ ...resource(), status: 1 }])
     const result = await getAdminResource(
@@ -78,7 +110,7 @@ describe('current-version resource health reads', () => {
       id: 2,
       status: 1,
       baseLinks: [{ id: 3, version: 2 }],
-      links: [{ content: 'https://example.test/share', code: 'private-code' }]
+      links: [{ content: 'https://pan.quark.cn/s/SYN', code: 'private-code' }]
     })
     expect(db.patch_resource.findMany).toHaveBeenCalledWith(
       expect.objectContaining({ where: { id: 2, patch: {} } })
@@ -126,7 +158,7 @@ describe('current-version resource health reads', () => {
       const result = await read(input, {}, { uid: 8, role: 3 })
       expect(result.resources[0].baseLinks).toEqual([{ id: 3, version: 2 }])
       expect(result.resources[0].links[0]).toMatchObject({
-        content: 'https://example.test/share',
+        content: 'https://pan.quark.cn/s/SYN',
         code: 'private-code',
         version: 2,
         capabilities: { canCheck: true, canEdit: true, ownerActions: [] }

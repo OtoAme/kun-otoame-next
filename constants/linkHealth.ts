@@ -17,7 +17,7 @@ export const LINK_REPORT_WEIGHTS = {
 export const LINK_HEALTH_OWNER_ACTIONS = ['verify', 'confirm_broken'] as const
 export const LINK_HEALTH_RESOLVE_ACTIONS = ['available', 'broken'] as const
 export const LINK_CHECK_VERDICTS = ['available', 'broken', 'unknown'] as const
-// Candidate adapters; inclusion here does not approve a provider mapping.
+// Providers supported by LLC; result tuples are validated by the adapter.
 export const LINK_CHECK_PROVIDERS = [
   'baidu',
   'quark',
@@ -37,6 +37,7 @@ export const LINK_CHECK_REASONS = [
   'share_deleted',
   'share_cancelled',
   'share_expired',
+  'share_blocked',
   'access_unverified',
   'unsupported',
   'rate_limited',
@@ -73,6 +74,7 @@ export const LINK_HEALTH_POLICY = {
   checkDisplayTtlMs: 60 * 60 * 1000,
   checkBudgetMs: 15 * 1000,
   checkClockSkewMs: 5 * 1000,
+  checkCacheMaxAgeMs: 5 * 60 * 1000,
   staffMinRole: 3,
   staffStorage: 'touchgal'
 } as const

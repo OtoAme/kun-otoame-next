@@ -60,6 +60,41 @@ const withCheck = (): HealthLinkRow => {
 beforeEach(() => raw.mockReset())
 
 describe('safe current-input link health projection', () => {
+  it.each([
+    'https://pan.otoame.top/s/SYN',
+    'https://fixture.s3.example.test/SYN.zip',
+    'https://1drv.ms/f/SYN',
+    'https://example.test/s/SYN',
+    'https://pan.quark.cn.evil.test/s/SYN',
+    'https://pan.quark.cn/'
+  ])('never derives support from ownership or an old quark observation for %s', (content) => {
+    const link = { ...withCheck(), content }
+    for (const storage of ['user', 'touchgal']) {
+      link.storage = storage
+      for (const viewer of [{ uid: 88, role: 1 }, { uid: 7, role: 2 }, { uid: 88, role: 3 }]) {
+        const projected = projectLinkHealth(link, 7, viewer, null, now)
+        expect(projected.capabilities.canCheck).toBe(false)
+        expect(projected.capabilities.canEdit).toBe(viewer.uid === 7 || viewer.role >= 3)
+        for (const secret of [content, link.code, link.password])
+          expect(JSON.stringify(projected)).not.toContain(secret)
+      }
+    }
+  })
+
+  it.each([
+    ['user', 1], ['user', 2], ['touchgal', 1], ['touchgal', 2]
+  ] as const)('offers role %s/%s inspection without ownership or arbitration capabilities', (storage, role) => {
+    for (const health of ['suspect', 'disputed']) {
+      const link = { ...row(), storage, health }
+      const projected = projectLinkHealth(link, 7, { uid: 88, role }, null, now)
+      expect(projected.capabilities).toEqual({
+        canCheck: true, canEdit: false, ownerActions: [], resolveActions: []
+      })
+      for (const secret of [link.content, link.code, link.password])
+        expect(JSON.stringify(projected)).not.toContain(secret)
+    }
+  })
+
   it('keeps feedback distinct across rounds and capability ownership distinct from staff inspection', () => {
     const link = row()
     expect(projectLinkHealth(link, 7, undefined, null, now)).toMatchObject({

@@ -169,6 +169,25 @@ describe('LinkHealthCaseActions (case detail link actions)', () => {
     expect(container.querySelector('[aria-label="链接处理"]')).toBeNull()
   })
 
+  it('hides unsupported detection while preserving independent owner actions', async () => {
+    const container = await mount(
+      <LinkHealthCaseActions
+        linkHealth={view({
+          health: 'suspect',
+          capabilities: { ownerActions: ['verify'], resolveActions: [], canCheck: false, canEdit: true },
+          latestCheck: {
+            verdict: 'available', provider: 'quark', reason: 'share_available', failed: false,
+            checkedAt: '2026-10-09T00:00:00.000Z', attemptedAt: '2026-10-09T00:00:00.000Z', stale: true
+          }
+        })}
+        onChanged={vi.fn()}
+      />
+    )
+    expect(findExactButton(container, '检测链接')).toBeUndefined()
+    expect(findExactButton(container, '我已核实可用')).not.toBeUndefined()
+    expect(mocks.kunFetchPost).not.toHaveBeenCalled()
+  })
+
   it('posts the staff resolve with the full disputed basis after confirmation', async () => {
     const linkHealth = view()
     mocks.kunFetchPost.mockResolvedValue(mutationResponse(linkHealth))

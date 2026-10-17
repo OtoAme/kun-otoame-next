@@ -124,7 +124,6 @@ describe('pure checker input preparation', () => {
     )
   })
   it.each([
-    'http://pan.quark.cn/s/SYN',
     'https://pan.quark.cn:8443/s/SYN',
     'https://SYN:SYN@pan.quark.cn/s/SYN',
     'https://pan.quark.cn.evil.invalid/s/SYN',
@@ -159,7 +158,9 @@ describe('single trusted checker request', () => {
       headers: { Authorization: 'Bearer SYN_SERVICE_KEY' }
     })
     expect(JSON.parse(request.body)).toEqual({
-      url: prepared().url,
+      url: expect.stringMatching(
+        /^https:\/\/pan\.quark\.cn\/s\/SYNTHETIC\?otoame_check=[a-f0-9]{64}$/
+      ),
       passcode: 'SYN_CODE'
     })
     expect(request.signal).toBeInstanceOf(AbortSignal)
@@ -167,13 +168,7 @@ describe('single trusted checker request', () => {
   })
   it('does not send unsupported/unqualified providers or an identity with mismatched signature', async () => {
     const fetch = vi.fn()
-    for (const url of [
-      'https://drive.uc.cn/s/SYN',
-      'https://pan.baidu.com/s/1SYN',
-      'https://caiyun.139.com/m/i?SYN',
-      'https://www.123pan.com/s/SYN',
-      'https://unsupported.invalid/SYN'
-    ]) {
+    for (const url of ['https://unsupported.invalid/SYN']) {
       const value = prepareLinkCheckInput({ ...link, content: url })
       expect(
         await checkLink(identity(value.inputSignature), value, {
@@ -286,8 +281,6 @@ describe('qualified tuple and observation validation', () => {
   })
   it.each([
     { provider: 'uc' },
-    { cached: true },
-    { status: 'dead', reason: 'share_blocked', providerCode: '41010' },
     { status: 'alive', providerCode: '41008' },
     { reason: 'SYN_RAW_MESSAGE' },
     { providerCode: undefined }
