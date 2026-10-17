@@ -58,13 +58,38 @@ service/helper 负责：
 | `POST /api/patch/resource/link/report` | 当前版本失效报告；登录且最近 30 天获取过该版本，必要时先取得一次机器观察。 |
 | `GET /api/patch/resource/link/health` | 发布者自己的补链列表。 |
 | `POST /api/patch/resource/link/health` | 按当前基点核实可用或确认失效。 |
-| `POST /api/patch/resource/link-check` | 有权管理／检测该链接的发布者或管理员手动检测。 |
+| `POST /api/patch/resource/link-check` | 所有登录用户均可检测本人可见、已发布且受 LLC 支持的网盘分享链接，包括他人发布的资源；无需先获取下载链接。 |
 | `GET /api/admin/link-health` | `role >= 3` 的健康列表、主机统计与追踪起始时间。 |
 | `POST /api/admin/link-health/resolve` | `role >= 3` 裁决当前 disputed 链接可用或失效。 |
 
-HTTP 层复用 `link/http.ts` 的登录、角色、CSRF、技术限频与 `private, no-store`；共享输入／响应在 `validations/linkHealth.ts`、`types/api/linkHealth.ts`。`link/service.ts` 独占报告与健康事务，`link/read.ts` 负责列表／失效收件箱读取，`linkHealthProjection.ts` 统一安全事实和能力；`link-check/service.ts` 在事务外调用纯 `checker.ts`，再在链接锁内核对版本、健康基点与当前输入签名。快照按观察时间（无 checkedAt 时按请求时间）保存，迟到完成的旧观察不能覆盖新观察；手动检测的转移记录实际 publisher／staff 执行者，自动补链检测记 system。
+HTTP 层复用 `link/http.ts` 的登录、角色、CSRF、技术限频与 `private, no-store`；共享输入／响应在 `validations/linkHealth.ts`、`types/api/linkHealth.ts`。`link/service.ts` 独占报告与健康事务，`link/read.ts` 负责列表／失效收件箱读取，`linkHealthProjection.ts` 统一安全事实和能力；`link-check/service.ts` 在事务外调用纯 `checker.ts`，再在链接锁内核对版本、健康基点与当前输入签名。快照按观察时间（无 checkedAt 时按请求时间）保存，迟到完成的旧观察不能覆盖新观察；手动检测记录真实执行者 ID，普通检测用户记 user、拥有该链接管理权的发布者记 publisher、管理员记 staff，自动补链检测记 system。
 
-报告原因 `deleted`／`access_condition` 权重为 1，确认尝试换网络后的 `unreachable` 为 0.5；下载慢只给指南。每用户、链接版本和证据轮次一条记录，重复有效报告不刷新时间或权重；72 小时累计权重阈值为 3。可信的新鲜删除／取消／过期机器证据直接进入 broken；机器可用与达阈值报告并存时进入 disputed，保留链接可见性并公开两项安全事实。unknown 不作健康裁决。普通疑似、发布者核实后的争议与持久化的 `machine_user_conflict` 使用不同规则；来源升级保留同一事项、证据轮次和健康时钟。
+`canCheck` 与链接管理权限独立：登录用户可检测当前地址被 LLC 提供者规则识别的分享链接，前后两次服务校验与前端能力投影使用一致规则。支持范围取自当前服务端链接内容，不取存储标签或历史检测提供者；官方资源盘、对象存储、其他第三方地址及不合法分享地址不提供检测入口。游客、隐藏／未发布／不满足可见性条件的资源不能检测；CSRF 和每用户每分钟 30 次技术限频继续生效。核实可用、确认失效、资源编辑和争议裁决分别保持原有归属及角色限制，检测响应只返回安全摘要。
+
+补链保存后的自动检测先核对当前版本和完整基点，再跳过不受支持的地址，不为其生成失败或 superseded 摘要。真正的并发版本／基点变化仍按 superseded 返回；失效报告继续使用既有人工处理规则。
+
+手动检测响应的 `check` 和 `result` 描述本次尝试；`result` 是只含提供者、结论、安全原因及时间的 `LinkCheckSummary`，与可能已被并发检测更新的 `link.latestCheck` 分开。前端按本次结果提示，不能把 HTTP 成功或旧观察当作检测成功。适配器支持百度、夸克、UC、和彩云和 123 云盘，按 [LLC 协议源码](https://github.com/OtoAme/kungal-link-live-checker/tree/a8bc4f120c6d4d549d465ec0aef04bcc40ddd042/internal/provider) 校验提供者、状态、原因与状态码的组合：
+
+| checker 返回 | 本站机器观察 |
+| --- | --- |
+| 五家 `alive / share_ok / 0` | `available / share_available` |
+| 夸克／UC `dead / share_not_found / 41004` 或 `41006` | `broken / share_deleted` |
+| 夸克／UC `dead / share_not_found / 41012` | `broken / share_cancelled` |
+| 夸克／UC `dead / share_expired / 41011` | `broken / share_expired` |
+| 夸克／UC `dead / share_blocked / 41010` 或 `41031` | `broken / share_blocked` |
+| 百度 `dead / share_not_found / -21` 或 `-9/page`；和彩云同组合 `200000727`；123 同组合 `5103` | `broken / share_deleted` |
+| 百度 `alive / share_ok / -9/page`、和彩云同组合 `9188`、123 同组合 `5103` | `unknown / access_unverified`；这些返回只证明出现提取码页面或提取码错误 |
+| 夸克／UC `unknown / share_blocked / 41010`、`41031` 或 `0/partial_violation`；各家 `unknown / passcode_required` | `unknown / access_unverified`，保留观察时间 |
+
+限流、超时、网络错误、响应解析失败、验证码及登录要求等安全失败保持 unknown，不因附带 providerCode 而丢失故障分类。远端未启用某提供者时的 `unknown / unsupported_provider` 返回安全的 `unsupported`。响应越界、时间异常、提供者不匹配及未知成功／失效组合不能作为有效结论；原始状态码与响应体不进入公开摘要。
+
+`cached: true` 保留 LLC 原始 `checkedAt`；完成请求时观察不超过 5 分钟、且不早于当前健康处理基点的缓存可参与健康判断。非缓存观察仍要求落在请求／完成时间的 5 秒时钟误差范围内。快照校验和落库执行同一时间约束；重复命中同一观察可更新较新的尝试时间并参与报告阈值，不能覆盖较新的观察或同刻冲突结论。
+
+启用 `share_blocked` 写入前须完成 [2026-10-17 CHECK 增量迁移](data-cache-upload.md#稳定链接与健康数据0410)。这个约束不由 Prisma 的字符串字段表达，应用枚举和 mock 测试通过不能替代数据库迁移验证。
+
+请求只向配置的 `/v1/check` 发送 JSON `url` 和可选 `passcode`。保存的提取码去除首尾空白后优先于 URL／明确提取码标签；解压密码不参与检测，和彩云不传提取码。已知 HTTP 分享正规化为 HTTPS，和彩云裸查询与片段格式统一为 `linkID`。123 的精确主机表覆盖四组 `.com`／`.cn` 根域及 `www`，另含 `share.123pan.cn`。为兼容 LLC 按 URL 缓存却只区分提取码有无的实现，请求 URL 加入 `otoame_check` 摘要，绑定输入签名、完整处理基点与 5 分钟时间窗口；各提供者只读取原分享标识，这个字段不改变分享目标。窗口轮换避免长期缓存一直挡住新检测，换码或处理状态变化不会命中原输入的缓存。
+
+报告原因 `deleted`／`access_condition` 权重为 1，确认尝试换网络后的 `unreachable` 为 0.5；下载慢只给指南。每用户、链接版本和证据轮次一条记录，重复有效报告不刷新时间或权重；72 小时累计权重阈值为 3。可信的新鲜删除／取消／过期／屏蔽机器证据直接进入 broken；机器可用与达阈值报告并存时进入 disputed，保留链接可见性并公开两项安全事实。unknown 不作健康裁决。普通疑似、发布者核实后的争议与持久化的 `machine_user_conflict` 使用不同规则；来源升级保留同一事项、证据轮次和健康时钟。
 
 链接事项只能由 `app/api/case/linkHealth.ts` 的 `openLinkCaseInternal(tx, input)`／`closeLinkCases(tx, input)` 在调用者事务中处理。先锁实际链接集合，再按 ID 锁事项；关闭选择器 `resourceIds`、`linkIds`、`targets(linkId, linkVersion)` 互斥，空集合无操作，CAS 胜出者才发结案通知。每链接版本只有一个未结 key，suspect → disputed 沿用同一系统开启、reporter=null 的事项，实际报告者订阅。先选最新存在的 `payload.link_health` 再解码；坏上下文不回退，也不能驱动自动化。通用 resolve／propose／reopen／review／withdraw／confirm／站方结案不能绕过健康服务，旧版本不可重开。删除或补链不顺带关闭资源目标或存量临时事项（D37）；条目反馈的资源引导、结案说明和求资源目标分工继续保留 D38–D40。
 

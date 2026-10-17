@@ -41,7 +41,9 @@
 
 checker 是独立自托管服务，不连接网站 DB／Redis，也不做全站扫描。可复现资产在 [deployment/link-checker](../../deployment/link-checker/README.md)，[pin.json](../../deployment/link-checker/pin.json) 固定上游 `c74022f4dbbb7c8c39be7da15701763efa2ffffd`、归档／补丁哈希和许可证。构建、合成 HTTP／DNS 回归、localhost 冒烟与 systemd 草案均以该目录说明为准；默认 loopback、零缓存，草案未安装或部署。
 
-网站通过服务端可信 endpoint/Bearer 单次调用 `/v1/check`，总预算 15 秒、响应 8 KiB、拒绝跳转；提供者出站保护在补丁服务的实际 DNS／IPv4／IPv6 dial 层。仅 Quark 获得当前正常／异常真实样本及合成分支的准入，41010／41031／partial 仍是 unknown；UC／百度／彩云／123 仅识别、不主动检查，真实资格待验证。日志和报告只保留安全元数据，不写原始 URL／码／provider body／认证或 cookie。生产构建与整站集成验收范围见[测试指南](../project/testing.md#link-health-first-batch)，不能把合成服务测试当作线上下载可用性保证。
+网站通过服务端可信 endpoint/Bearer 单次调用 `/v1/check`，总预算 15 秒、响应 8 KiB、拒绝跳转。当前适配远端 LLC 的夸克、UC、百度、和彩云和 123；`dead/share_blocked/41010` 或 `41031` 可判失效，部分违规保持 unknown。5 分钟内且属于当前处理基点的缓存保留原始观察时间，可参与健康判断；请求中的 `otoame_check` 摘要按输入、基点和时间窗口隔离 LLC 缓存。提供者组合、提取码处理及错误规则见 [API 模块](api-services.md#链接报告健康与检测040510)。网站日志和响应只保留安全元数据，不写原始 URL／码／provider body／认证或 cookie。上面的固定补丁资产与远端服务是独立产物，出站保护及提供者启用情况应核对实际部署版本；五家协议回归不等同于五家真实网盘的在线验收。整站集成验收范围见[测试指南](../project/testing.md#link-health-first-batch)。
+
+上线屏蔽失效映射前，按顺序执行 `production-link-health-blocked-{preflight,sync,postflight}-2026-10-17.sql`，扩展 `link_check_shape_check`。同步只接受已验证的完整旧／新约束，锁等待上限 5 秒、语句上限 60 秒，失败回滚，不更新业务行。应用可回退而保留这个兼容旧值的约束；若必须收窄回旧定义，先暂停新写入并确认不存在 `share_blocked` 快照，不能删除已有观察来强行回退。首次安装与后续验证顺序见 [数据模块](data-cache-upload.md#稳定链接与健康数据0410)。
 
 ### 部署
 

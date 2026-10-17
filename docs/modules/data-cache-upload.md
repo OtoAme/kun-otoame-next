@@ -343,6 +343,8 @@ D37 的历史原发布者来自最新转交事件，账号存在性与通知插�
 
 生产结构按顺序使用 `migration/production-link-health-preflight-2026-10-09.sql`、`migration/production-link-health-sync-2026-10-09.sql`、`migration/production-link-health-postflight-2026-10-09.sql`，随后执行已有 `pnpm prisma:deploy-safe`；pre/postflight 只读，不能用生产 db push 代替。迁移不猜测历史获取版本，旧 event 的 link_version 保持 null，不能据此获得当前版本报告资格。
 
+LLC 的屏蔽失效原因 `share_blocked` 还需要依次执行 `migration/production-link-health-blocked-preflight-2026-10-17.sql`、`migration/production-link-health-blocked-sync-2026-10-17.sql`、`migration/production-link-health-blocked-postflight-2026-10-17.sql`。旧版 `link_check_shape_check` 不接受该原因，缺少增量迁移时保存检测结果会因 CHECK 失败返回 503。增量只扩展这一个 CHECK 的失效原因集合，不改业务行；同步在事务中锁表、验证完整旧／新定义并原子替换，重复执行无操作。已有 10 月 9 日结构的数据库只运行增量三份；新库先完成 10 月 9 日三份，再运行增量。增量完成后使用新的 postflight，不再重跑只认识旧约束的 10 月 9 日形态检查。
+
 上传消费、S3、finalize、缓存和 checker 网络请求在数据库事务外；冲突只重试完整数据库事务，不重复上传或检测。资源变更的审计／通知属于保存事务，提交后的缓存、finalize 或检测失败保留已提交成功并给安全失败结果。补偿删除上传对象前重新检查现存引用，不能删掉仍被其它链接使用的同内容对象。
 
 ## 下载授权与事件

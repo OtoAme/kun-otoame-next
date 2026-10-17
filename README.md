@@ -104,6 +104,15 @@ HOSTNAME = "127.0.0.1"
 # 仅在自备 FFmpeg 时填写，建议使用生产服务器上的绝对路径；修改后需要重启服务。
 # KUN_GALLERY_FFMPEG_PATH = "/usr/local/bin/ffmpeg"
 
+# Link live checker（可选，仅服务端读取；独立服务器的配置见下文接入说明）
+# 填 HTTPS 根地址，如 https://checker.example.com；本站自动请求 /v1/check。
+KUN_LINK_CHECKER_ENDPOINT = ""
+# 填 checker 的 LLC_API_KEYS 中为本站分配的一把独立密钥，不带 Bearer 前缀。
+KUN_LINK_CHECKER_API_KEY = ""
+# 可选：真实启用链接健康追踪的 RFC3339 时间（含时区），仅用于管理员统计展示。
+# 未启用或不确定实际时间时留空；格式为 YYYY-MM-DDTHH:mm:ss+08:00。
+KUN_LINK_HEALTH_TRACKING_STARTED_AT = ""
+
 # Bangumi Access Token，用于自动匹配游戏标签、开发商，并读取登录可见条目
 # 申请地址：https://next.bgm.tv/demo/access-token/create
 BANGUMI_ACCESS_TOKEN = "kkkkkkkkkkkkkkkkkkkkkkkkkkkk"
@@ -156,6 +165,8 @@ GITHUB_REPO="OtoAme/kun-otoame-next"
 ```
 
 Cloudflare 的网站配置按 `config/moyu-moe.ts` 中 `kunMoyuMoe.domain.main` 的主机名匹配；图床和其他主机名使用默认配置。SaaS 接入时，清理请求发到对应 provider Zone，清理 URL 保留访客使用的自定义主机名。配置与验证方法见 [部署文档](docs/project/deployment.md#环境变量)。
+
+独立服务器上的链接检测服务按下文 [Link live checker 接入](#link-live-checker-接入) 配置。
 
 ### 3.初始化数据库
 
@@ -388,6 +399,45 @@ pnpm deploy:rollback
    ```
 
    你可以把这里的 instances 数量改为对应你服务器核数的数字，比如你划出了一个 4c8g 的小鸡，可以把 instances 改为 4，6c12g 则可以把 instances 改为 6
+
+### Link live checker 接入
+
+本站通过后端调用独立部署的 [LLC](https://github.com/OtoAme/kungal-link-live-checker)，支持百度、夸克、UC、和彩云和 123 云盘。生产网站应先完成 [链接健康结构迁移](./docs/modules/data-cache-upload.md#稳定链接与健康数据0410) 并部署对应网站版本，再填写运行时配置。
+
+已安装链接健康结构的数据库还需运行 `migration/production-link-health-blocked-{preflight,sync,postflight}-2026-10-17.sql`，让数据库 CHECK 接受 `share_blocked`；只更新应用代码会使屏蔽结果落库时返回 503。具体顺序和幂等检查见上面的迁移说明。
+
+在**网站服务器的项目根目录 `.env`** 中填写：
+
+| 变量 | 填写内容 |
+| --- | --- |
+| `KUN_LINK_CHECKER_ENDPOINT` | checker 的 HTTPS 根地址，例如 `https://checker.example.com`，替换为实际域名；本站固定请求该地址下的 `/v1/check`。 |
+| `KUN_LINK_CHECKER_API_KEY` | checker 的 `LLC_API_KEYS` 中为本站分配的一把独立密钥，只填原始 key，不带 `Bearer ` 前缀。 |
+| `KUN_LINK_HEALTH_TRACKING_STARTED_AT` | 可选，填写真实启用链接健康追踪的 RFC3339 时间，须包含时区；仅用于管理员统计展示，不确定时留空。 |
+
+这些变量仅服务端读取，保留上述名称，填写在网站服务器上即可。endpoint 或密钥留空时，机器检测返回无法判断。独立服务器的 endpoint 必须使用 HTTPS；同机部署可用 `http://127.0.0.1:6734`。
+
+在 **checker 服务器** 上配置 HTTPS 反向代理，将 `/v1/check` 转发到 checker 本地服务，并将访问来源限制为网站服务器。代理需保留 `Authorization`、关闭缓存、直接转发而不跳转；日志不记录请求体和认证头。网站与 checker 服务器应保持时间同步。
+
+确认远端 LLC 已启用需要的提供者，并保留分享详情验证。当前 LLC 的屏蔽判定配置如下；调整远端配置后需重启 LLC：
+
+```dotenv
+LLC_QUARK_VERIFY_DETAIL=true
+LLC_QUARK_BLOCKED_AS_DEAD=true
+```
+
+LLC 内部缓存可以开启。本站接受 5 分钟内且不早于当前链接处理状态的缓存观察，保留 LLC 原始检测时间；请求按链接输入、处理状态和时间窗口隔离缓存，避免换码或补链后复用旧结论。夸克／UC 明确返回 `dead / share_blocked / 41010` 或 `41031` 时标记失效，部分违规和提取码未验证保持无法判断。具体映射见 [API 模块说明](./docs/modules/api-services.md#链接报告健康与检测040510)。
+
+修改网站 `.env` 后，在**网站项目根目录**重新读取 PM2 配置并重启网站实例：
+
+```bash
+pm2 restart ecosystem.config.cjs --only kun-touchgal-next --update-env
+```
+
+只修改这些运行时变量时，无需重新构建。随后登录任意正常账号，打开本人可见的受支持网盘资源，点击「检测链接」，确认已知可用链接显示「检测端可访问」及检测时间；无需是发布者或管理员，也无需先获取下载链接。若显示「无法判断 / 检测失败」，检查 HTTPS 连通性、密钥、代理转发、提供者是否启用及两台服务器的时间。
+
+检测由手动操作、符合条件的失效报告或补链保存按需触发，不进行全站扫描；LLC 尚未支持的网盘保留人工处理流程。
+
+「检测链接」入口只出现在受支持的网盘分享链接上；官方资源盘、对象存储和其他第三方链接不显示该入口。支持情况按当前实际地址判断，与资源归属或存储标签无关。
 
 ### Gallery 动态 AVIF 缩略图生产检查
 

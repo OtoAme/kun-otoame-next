@@ -358,7 +358,7 @@ pnpm typecheck
 | `KUN_LINK_CHECKER_API_KEY` | 独立服务 Bearer 密钥，如 `<dedicated-service-key>`，须与 checker 的受权 key 对应；不能使用网站登录 token、用户 cookie 或提取码。 |
 | `KUN_LINK_HEALTH_TRACKING_STARTED_AT` | 可选真实追踪起始时间，如 `<actual-rollout-RFC3339-time>`；未配置或无法解析时管理 DTO 返回 null，不能用构建时间／示例日期伪造上线时间。 |
 
-这些变量仅服务端读取，不加 `NEXT_PUBLIC_`；endpoint 和密钥不进响应或日志，追踪起始时间只通过管理员 DTO 的 trackingStartedAt 展示。空／非法 checker 配置产生安全 unknown／失败摘要，不制造 checkedAt 或可用结论。独立服务的构建、零缓存及 localhost 运行配置见 [deployment/link-checker/README.md](../../deployment/link-checker/README.md)；示例使用占位符。
+这些变量仅服务端读取，不加 `NEXT_PUBLIC_`；endpoint 和密钥不进响应或日志，追踪起始时间只通过管理员 DTO 的 trackingStartedAt 展示。空／非法 checker 配置产生安全 unknown／失败摘要，不制造 checkedAt 或可用结论。当前远端 LLC 接入与缓存规则见 [README](../../README.md#link-live-checker-接入) 和 [API 模块](../modules/api-services.md#链接报告健康与检测040510)；[deployment/link-checker](../../deployment/link-checker/README.md) 保留固定版本补丁的构建和 localhost 验证资产。
 
 ## 本地数据库和管理员
 
