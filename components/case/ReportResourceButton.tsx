@@ -34,9 +34,18 @@ import { CaseLoginPrompt } from './CaseLoginPrompt'
 import { CaseSubmitResult } from './CaseSubmitResult'
 import { useCaseImageUploads } from './useCaseImageUploads'
 import { LinkReportPanel } from '~/components/patch/resource/LinkReportPanel'
-import { readLinkHealth } from '~/components/patch/resource/linkHealthDisplay'
+import {
+  linkHealthForDisplay,
+  maintenanceSnoozeExpired,
+  readLinkHealth,
+  readSnapshotId
+} from '~/components/patch/resource/linkHealthDisplay'
+import { requestExpiredHealthReread } from '~/components/patch/resource/useResourceLinkHealthUpdates'
 import type { CaseCreateResponse } from '~/types/api/case'
-import type { LinkHealthMutationResponse } from '~/types/api/linkHealth'
+import type {
+  LinkHealthMutationResponse,
+  LinkHealthSummary
+} from '~/types/api/linkHealth'
 import type { PatchResource, PatchResourceLink } from '~/types/api/patch'
 
 interface Props {
@@ -45,6 +54,8 @@ interface Props {
   patchId: number
   /** 链接类报告成功后上抛最新链接事实（卡片据此有序合并展示）。 */
   onReported?: (view: LinkHealthMutationResponse['link']) => void
+  /** Page projection for the current read. Labels and the report panel use it. */
+  healthUpdateFor?: (linkId: number) => LinkHealthSummary | null
   /** 窄屏只显示图标 + Tooltip。 */
   compact?: boolean
 }
@@ -70,6 +81,7 @@ export const ReportResourceButton = ({
   resource,
   patchId,
   onReported,
+  healthUpdateFor,
   compact = false
 }: Props) => {
   const { user } = useUserStore((state) => state)
@@ -91,14 +103,73 @@ export const ReportResourceButton = ({
   }, [result])
 
   const guest = user.uid < 1
+  const onReportedRef = useRef(onReported)
+  onReportedRef.current = onReported
+  const appliedReread = useRef(new Set<string>())
+  const projectedLink = (link: PatchResourceLink): PatchResourceLink => {
+    const projected = linkHealthForDisplay(
+      link,
+      healthUpdateFor?.(link.id) ?? null
+    )
+    return projected ? { ...link, ...projected } : link
+  }
+  const expiredTargets = resource.links.flatMap((link) => {
+    const health = readLinkHealth(projectedLink(link))
+    const resumesAt = health?.maintenance?.resumesAt
+    if (
+      !health ||
+      !resumesAt ||
+      !maintenanceSnoozeExpired(health.maintenance)
+    ) {
+      return []
+    }
+    return [{ linkId: link.id, version: health.version, resumesAt }]
+  })
+  const expiredKey = expiredTargets
+    .map((item) => `${item.linkId}@${item.version}@${item.resumesAt}`)
+    .join('|')
+  const expiredTargetsRef = useRef(expiredTargets)
+  expiredTargetsRef.current = expiredTargets
+
+  useEffect(() => {
+    if (!expiredKey) return
+    const origin = readSnapshotId(resource)
+    const resourceObject = resource
+    for (const target of expiredTargetsRef.current) {
+      const attempt = `${origin}@${target.linkId}@${target.version}@${target.resumesAt}`
+      if (appliedReread.current.has(attempt)) continue
+      appliedReread.current.add(attempt)
+      void requestExpiredHealthReread({
+        patchId: resourceObject.patchId,
+        resourceId: resourceObject.id,
+        linkId: target.linkId,
+        version: target.version,
+        resumesAt: target.resumesAt,
+        snapshotId: origin,
+        stillOrigin: () => readSnapshotId(resourceObject) === origin
+      }).then((view) => {
+        if (!view || readSnapshotId(resourceObject) !== origin) return
+        if (
+          view.patchId !== resourceObject.patchId ||
+          view.resourceId !== resourceObject.id ||
+          view.linkId !== target.linkId ||
+          view.version !== target.version
+        ) {
+          return
+        }
+        onReportedRef.current?.(view)
+      })
+    }
+  }, [expiredKey, resource])
 
   const selectedLink = useMemo(() => {
     if (!target.startsWith('link:')) {
       return null
     }
     const linkId = Number(target.slice(5))
-    return resource.links.find((link) => link.id === linkId) ?? null
-  }, [target, resource.links])
+    const link = resource.links.find((item) => item.id === linkId)
+    return link ? projectedLink(link) : null
+  }, [target, resource, healthUpdateFor])
 
   const targetType = selectedLink ? 'link' : 'resource'
   const phenomena = useMemo(
@@ -256,19 +327,22 @@ export const ReportResourceButton = ({
                 value={target}
                 onValueChange={(value) => setTarget(value as TargetSelection)}
               >
-                {resource.links.map((link, index) => (
-                  <Radio
-                    key={link.id}
-                    value={selectionForLink(link)}
-                    description={
-                      readLinkHealth(link)?.health === 'broken'
-                        ? '已失效链接仍可选中反馈'
-                        : undefined
-                    }
-                  >
-                    {linkLabel(link, index)}
-                  </Radio>
-                ))}
+                {resource.links.map((link, index) => {
+                  const shown = projectedLink(link)
+                  return (
+                    <Radio
+                      key={link.id}
+                      value={selectionForLink(link)}
+                      description={
+                        readLinkHealth(shown)?.health === 'broken'
+                          ? '已失效链接仍可选中反馈'
+                          : undefined
+                      }
+                    >
+                      {linkLabel(shown, index)}
+                    </Radio>
+                  )
+                })}
                 <Radio value="resource" description="问题不针对某一条链接">
                   整条资源
                 </Radio>

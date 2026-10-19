@@ -17,6 +17,11 @@ import {
 } from '~/app/api/case/linkHealth'
 import { lockCaseUsers } from '~/app/api/case/service'
 import { createMessage } from '~/app/api/utils/message'
+import {
+  assertLinkMaintenanceFeedbackOpen,
+  recordLinkMaintenanceReport,
+  attachMaintenanceCase
+} from '../maintenance/service'
 import { deletePatchResourceCache } from '../_helper'
 import {
   runResourceMutation,
@@ -72,9 +77,15 @@ const targetSelect = (now: Date) =>
       }
     }
   }) satisfies Prisma.patch_resource_linkSelect
-export type HealthTargetRow = Prisma.patch_resource_linkGetPayload<{
+type CurrentHealthTargetRow = Prisma.patch_resource_linkGetPayload<{
   select: ReturnType<typeof targetSelect>
 }>
+export type HealthTargetRow = Omit<
+  CurrentHealthTargetRow,
+  'maintenance_controls'
+> & {
+  maintenance_controls?: CurrentHealthTargetRow['maintenance_controls']
+}
 export const healthBasis = (row: HealthTargetRow): LinkHealthBasis => ({
   patchId: row.resource.patch_id,
   resourceId: row.resource_id,
@@ -263,15 +274,13 @@ const notifyUncasedTransition = async (
   row: HealthTargetRow,
   actorId: number | null
 ) => {
-  const recipients =
-    row.storage === P.staffStorage
-      ? (
-          await tx.user.findMany({
-            where: { role: { gte: P.staffMinRole } },
-            select: { id: true }
-          })
-        ).map((user) => user.id)
-      : [row.resource.user_id]
+  if (row.storage !== P.staffStorage) return
+  const recipients = (
+    await tx.user.findMany({
+      where: { role: { gte: P.staffMinRole } },
+      select: { id: true }
+    })
+  ).map((user) => user.id)
   const accounts = await lockCaseUsers(tx, recipients)
   for (const id of recipients)
     if (id !== actorId && accounts.has(id))
@@ -293,7 +302,8 @@ const applyTransition = async (
   actorType: 'system' | 'staff' | 'publisher' | 'user',
   actorId: number | null,
   observation?: LinkCheckSnapshot | null,
-  verify = false
+  verify = false,
+  excludeRecipientIds: readonly number[] = []
 ) => {
   if (row.health === transition.health) {
     if (
@@ -387,6 +397,8 @@ const applyTransition = async (
       resolution: transition.resolution,
       actorType,
       actorId,
+      excludeRecipientIds,
+      suppressPublisher: actorType === 'system' || Boolean(observation),
       now
     })
     if (!closed.closedCaseIds.length)
@@ -484,6 +496,7 @@ export const submitLinkReport = async (
   let invalidation: HealthTargetRow | undefined
   const result = await runResourceMutation(async (tx) => {
     const row = await loadHealthTarget(input, visibility, now, tx, true)
+    await assertLinkMaintenanceFeedbackOpen(tx, row, now)
     if (expected) assertHealthBasis(row, expected)
     if (observation) {
       assertObservation(row, observation)
@@ -530,7 +543,15 @@ export const submitLinkReport = async (
         changed: false,
         report,
         weight: Number(existing!.weight) as 0 | 0.5 | 1,
-        caseId: (await unresolvedCase(tx, row))?.id ?? null
+        caseId: (await unresolvedCase(tx, row))?.id ?? null,
+        maintenance: await recordLinkMaintenanceReport(
+          tx,
+          row,
+          actor,
+          report,
+          Number(existing!.weight),
+          now
+        )
       }
     const data = {
       reason: input.reason,
@@ -551,6 +572,14 @@ export const submitLinkReport = async (
       await tx.patch_resource_link_report.create({
         data: { ...identity, ...data }
       })
+    const maintenance = await recordLinkMaintenanceReport(
+      tx,
+      row,
+      actor,
+      report,
+      actualWeight,
+      now
+    )
     const machine = await saveObservation(tx, row, observation?.snapshot)
     const sum = await tx.patch_resource_link_report.aggregate({
       where: {
@@ -609,67 +638,81 @@ export const submitLinkReport = async (
       }
     }
     invalidation = row
+    const caseId = (await unresolvedCase(tx, row))?.id ?? null
+    await attachMaintenanceCase(tx, row, caseId)
     return {
       link: await view(tx, row, actor, now),
       changed,
       report,
       weight: actualWeight,
-      caseId: (await unresolvedCase(tx, row))?.id ?? null
+      caseId,
+      maintenance
     }
   })
   if (invalidation) await invalidate(invalidation)
   return result
 }
 
+export const mutateLinkHealthInternal = async (
+  tx: Prisma.TransactionClient,
+  input: LinkHealthActionRequest | LinkHealthResolveRequest,
+  actor: HealthActor,
+  visibility: Prisma.patchWhereInput,
+  now = new Date(),
+  excludeRecipientIds: readonly number[] = []
+) => {
+  const row = await loadHealthTarget(input, visibility, now, tx, true)
+  assertHealthBasis(row, input)
+  const resolve = input.action === 'available' || input.action === 'broken'
+  if (resolve) {
+    if (actor.role < P.staffMinRole || !actor.uid)
+      throw new LinkHealthError('forbidden')
+    if (row.health !== 'disputed') throw new LinkHealthError('state_conflict')
+  } else {
+    requireLinkManagement(row, actor)
+    if (
+      input.action === 'verify'
+        ? !['suspect', 'broken'].includes(row.health)
+        : row.health !== 'suspect'
+    )
+      throw new LinkHealthError('state_conflict')
+  }
+  if (
+    input.action === 'verify' &&
+    row.verified_at &&
+    now.getTime() - row.verified_at.getTime() < P.verificationIntervalMs
+  )
+    throw new LinkHealthError('verification_cooldown')
+  const transition: HealthTransition =
+    input.action === 'verify'
+      ? { health: 'ok', resolution: 'verified_available' }
+      : input.action === 'confirm_broken'
+        ? { health: 'broken', resolution: 'confirmed_broken' }
+        : input.action === 'available'
+          ? { health: 'ok', resolution: 'staff_available' }
+          : { health: 'broken', resolution: 'staff_broken' }
+  const changed = await applyTransition(
+    tx,
+    row,
+    transition,
+    now,
+    actor.role >= P.staffMinRole ? 'staff' : 'publisher',
+    actor.uid,
+    null,
+    input.action === 'verify',
+    excludeRecipientIds
+  )
+  return { response: { link: await view(tx, row, actor, now), changed }, row }
+}
 export const mutateLinkHealth = async (
   input: LinkHealthActionRequest | LinkHealthResolveRequest,
   actor: HealthActor,
   visibility: Prisma.patchWhereInput,
   now = new Date()
 ): Promise<LinkHealthMutationResponse> => {
-  const result = await runResourceMutation(async (tx) => {
-    const row = await loadHealthTarget(input, visibility, now, tx, true)
-    assertHealthBasis(row, input)
-    const resolve = input.action === 'available' || input.action === 'broken'
-    if (resolve) {
-      if (actor.role < P.staffMinRole || !actor.uid)
-        throw new LinkHealthError('forbidden')
-      if (row.health !== 'disputed') throw new LinkHealthError('state_conflict')
-    } else {
-      requireLinkManagement(row, actor)
-      if (
-        input.action === 'verify'
-          ? !['suspect', 'broken'].includes(row.health)
-          : row.health !== 'suspect'
-      )
-        throw new LinkHealthError('state_conflict')
-    }
-    if (
-      input.action === 'verify' &&
-      row.verified_at &&
-      now.getTime() - row.verified_at.getTime() < P.verificationIntervalMs
-    )
-      throw new LinkHealthError('verification_cooldown')
-    const transition: HealthTransition =
-      input.action === 'verify'
-        ? { health: 'ok', resolution: 'verified_available' }
-        : input.action === 'confirm_broken'
-          ? { health: 'broken', resolution: 'confirmed_broken' }
-          : input.action === 'available'
-            ? { health: 'ok', resolution: 'staff_available' }
-            : { health: 'broken', resolution: 'staff_broken' }
-    const changed = await applyTransition(
-      tx,
-      row,
-      transition,
-      now,
-      actor.role >= P.staffMinRole ? 'staff' : 'publisher',
-      actor.uid,
-      null,
-      input.action === 'verify'
-    )
-    return { response: { link: await view(tx, row, actor, now), changed }, row }
-  })
+  const result = await runResourceMutation((tx) =>
+    mutateLinkHealthInternal(tx, input, actor, visibility, now)
+  )
   await invalidate(result.row)
   return result.response
 }
@@ -717,11 +760,11 @@ export const acceptLinkCheck = async (
             : actor.role >= P.staffMinRole
               ? 'staff'
               : canManageResourceLink({
-                  storage: row.storage,
-                  resourceUserId: row.resource.user_id,
-                  userId: actor.uid,
-                  userRole: actor.role
-                })
+                    storage: row.storage,
+                    resourceUserId: row.resource.user_id,
+                    userId: actor.uid,
+                    userRole: actor.role
+                  })
                 ? 'publisher'
                 : 'user',
           mode === 'automatic' ? null : actor.uid,

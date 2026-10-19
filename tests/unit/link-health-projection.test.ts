@@ -60,6 +60,15 @@ const withCheck = (): HealthLinkRow => {
 beforeEach(() => raw.mockReset())
 
 describe('safe current-input link health projection', () => {
+  it('returns only the safe current-version maintenance restriction with its own revision', () => {
+    const link = { ...row(), maintenance_controls: [
+      { link_version: 1, revision: 99, frozen: true, events: [] },
+      { link_version: 2, revision: 4, frozen: false, events: [{ state:'snoozed',snoozed_until:new Date(now.getTime()+1) }] }
+    ] }
+    expect(projectLinkHealth(link,7,undefined,null,now).maintenance).toEqual({revision:4,restriction:'snoozed',resumesAt:new Date(now.getTime()+1).toISOString()})
+    expect(projectLinkHealth(link,7,undefined,null,new Date(now.getTime()+1)).maintenance).toEqual({revision:4,restriction:null,resumesAt:null})
+    expect(projectLinkHealth(row(),7,undefined,null,now).maintenance).toEqual({revision:0,restriction:null,resumesAt:null})
+  })
   it.each([
     'https://pan.otoame.top/s/SYN',
     'https://fixture.s3.example.test/SYN.zip',

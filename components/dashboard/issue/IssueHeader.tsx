@@ -49,10 +49,24 @@ export function IssueHeader({ user }: { user: IssueHeaderUser | null }) {
 
         <Separator orientation="vertical" className="hidden h-5 sm:block" />
 
-        <nav aria-label="问题处理导航" className="hidden sm:block">
+        <nav
+          aria-label="用户工作台"
+          className="flex min-w-0 flex-wrap items-center gap-1"
+        >
           <Link
-            href="/issue"
-            aria-current="page"
+            href="/workspace/resources"
+            className="rounded-md px-2 py-1 text-sm font-medium text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+          >
+            我的资源
+          </Link>
+          <Link
+            href="/workspace/entries"
+            className="rounded-md px-2 py-1 text-sm font-medium text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+          >
+            我的条目
+          </Link>
+          <Link
+            href="/workspace/issues"
             className="rounded-md px-2 py-1 text-sm font-medium text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
           >
             问题处理

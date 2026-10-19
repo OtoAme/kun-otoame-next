@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const db = vi.hoisted(() => ({
   $queryRaw: vi.fn(),
   $transaction: vi.fn(),
+  patch_resource_link_maintenance: { findUnique: vi.fn() },
   patch_resource: {
     findUnique: vi.fn(),
     findMany: vi.fn(),
@@ -130,6 +131,13 @@ beforeEach(() => {
   })
 })
 describe('transaction-owned deletion chains', () => {
+  it('rechecks workspace ownership under lock even for an administrator', async () => {
+    resource.user_id = 8
+    expect(await publisherDelete({ resourceId: 10 }, 7, 4, { expectedOwnerId: 7 })).toBe('您没有权限操作该资源')
+    expect(db.patch_resource.delete).not.toHaveBeenCalled()
+    expect(side.reverse).not.toHaveBeenCalled()
+    expect(side.close).not.toHaveBeenCalled()
+  })
   it.each([
     {
       name: 'publisher',

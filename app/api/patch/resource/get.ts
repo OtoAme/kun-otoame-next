@@ -174,17 +174,7 @@ export const getPatchResource = async (
   }))
 
   // 按平台优先级排序，相同平台则按语言优先级排序
-  resources.sort(
-    (left, right) =>
-      Number(
-        left.links.length > 0 &&
-          left.links.every((link) => link.health === 'broken')
-      ) -
-        Number(
-          right.links.length > 0 &&
-            right.links.every((link) => link.health === 'broken')
-        ) || compareResources(left, right)
-  )
+  resources.sort(compareResources)
 
   return resources
 }

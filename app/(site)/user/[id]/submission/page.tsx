@@ -1,15 +1,7 @@
+import Link from 'next/link'
 import { verifyHeaderCookie } from '~/utils/actions/verifyHeaderCookie'
 import { getPatchVisibilityWhere } from '~/utils/actions/getPatchVisibilityWhere'
-import { getCurrentBalance } from '~/app/api/moemoepoint/service'
-import { prisma } from '~/prisma/index'
-import {
-  getPatchSubmissionQuota,
-  listOwnPatchSubmissions
-} from '~/app/api/patch-submission/service'
 import { getUserPatch } from '~/app/api/user/profile/patch/service'
-import { AdminEntryPanel } from '~/components/submission/AdminEntryPanel'
-import { SubmissionList } from '~/components/submission/SubmissionList'
-import { SubmissionQuotaPanel } from '~/components/submission/SubmissionQuotaPanel'
 import { UserPatch } from '~/components/user/patch/Container'
 import type { Metadata } from 'next'
 
@@ -21,8 +13,8 @@ export const metadata: Metadata = {
 export const dynamic = 'force-dynamic'
 
 /**
- * One tab, two audiences. The profile owner manages how they publish here, while
- * everyone else sees only the entries that were approved and published.
+ * Public profile tab. Private submission management lives in the workspace;
+ * this page only shows the entries visitors are already allowed to see.
  */
 export default async function UserSubmissionPage({
   params
@@ -37,64 +29,27 @@ export default async function UserSubmissionPage({
     { uid: profileId, page: 1, limit: 20 },
     visibilityWhere
   )
-
-  const publishedSection = published.total > 0 && (
-    <section className="space-y-4">
-      {/* Published entries render as the same public game cards visitors see,
-          stats and all — not as submission rows. */}
-      <h2 className="text-xl">已发布条目</h2>
-      <UserPatch
-        galgames={published.galgames}
-        total={published.total}
-        uid={profileId}
-      />
-    </section>
-  )
-
-  if (payload && payload.uid === profileId) {
-    const list = await listOwnPatchSubmissions(profileId, 1, 50)
-    // A published submission is represented by its live entry below, so the
-    // management list only carries the ones still in flight or closed.
-    const inFlight = list.submissions.filter(
-      (submission) => submission.status !== 'published'
-    )
-    // Same gate as /edit/create: these users publish directly, so they get the
-    // editor instead of the deposit-backed submission flow.
-    const canPublishDirectly = payload.role >= 4
-
-    if (canPublishDirectly) {
-      return (
-        <div className="w-full py-4 mx-auto space-y-6">
-          <AdminEntryPanel />
-          {/* Someone promoted after submitting still needs to finish or delete
-              those drafts, otherwise their deposit stays reserved forever. */}
-          {inFlight.length > 0 && <SubmissionList submissions={inFlight} />}
-          {publishedSection}
-        </div>
-      )
-    }
-
-    const [quota, balance] = await Promise.all([
-      getPatchSubmissionQuota(profileId, payload.role),
-      getCurrentBalance(prisma, profileId)
-    ])
-
-    return (
-      <div className="w-full py-4 mx-auto space-y-6">
-        <SubmissionQuotaPanel quota={quota} balance={balance} />
-        <SubmissionList submissions={inFlight} />
-        {publishedSection}
-      </div>
-    )
-  }
+  const isOwner = Boolean(payload && payload.uid === profileId)
 
   return (
-    <div className="w-full py-4 mx-auto">
-      <UserPatch
-        galgames={published.galgames}
-        total={published.total}
-        uid={profileId}
-      />
+    <div className="mx-auto w-full space-y-6 py-4">
+      {isOwner ? (
+        <p className="text-sm text-default-500">
+          投稿、额度和资源维护已移到
+          <Link href="/workspace/entries" className="mx-1 text-primary">
+            用户工作台
+          </Link>
+          。这里只展示已发布的公开条目。
+        </p>
+      ) : null}
+      <section className="space-y-4">
+        <h2 className="text-xl">已发布条目</h2>
+        <UserPatch
+          galgames={published.galgames}
+          total={published.total}
+          uid={profileId}
+        />
+      </section>
     </div>
   )
 }

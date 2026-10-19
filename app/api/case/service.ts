@@ -4,6 +4,15 @@ import { convert as htmlToText } from 'html-to-text'
 import { prisma } from '~/prisma'
 import { getShanghaiQuotaWindows } from '~/app/api/patch/resource/download/access/timeWindow'
 import { createMessage } from '~/app/api/utils/message'
+import {
+  workspaceIssueHref,
+  parseWorkspaceIssueNotification
+} from '~/utils/workspaceRoutes'
+import {
+  countActionableMaintenance,
+  representedPublisherLinkCaseIds
+} from '~/app/api/patch/resource/maintenance/read'
+import { lockLinkMaintenance } from '~/app/api/patch/resource/maintenance/service'
 import { updatePatchAttributes } from '~/app/api/patch/resource/_helper'
 import {
   invalidatePatchContentCache,
@@ -1897,7 +1906,7 @@ const serializeSummaryForViewer = async (
   }
 }
 
-const caseLink = (id: number) => `/issue/${id}`
+const caseLink = workspaceIssueHref
 
 const notifyCaseUsers = async (
   tx: CaseTx,
@@ -2014,6 +2023,7 @@ const notifyCaseParticipants = async (
     followerContent?: string
     /** False leaves the staff queue out of a staff case's notice (D36). */
     notifyStaff?: boolean
+    suppressLinkPublisher?: boolean
   } = {}
 ) => {
   const recipients = new Map<
@@ -2081,13 +2091,26 @@ const notifyCaseParticipants = async (
       : null
     if (authorLink && resource) addRecipient(resource.user_id, authorLink)
   }
+  let suppressedPublisherId: number | null = null
   if (row.target_type === 'link') {
     const link = await tx.patch_resource_link.findUnique({
       where: { id: row.target_id },
-      select: { storage: true, resource: { select: { user_id: true } } }
+      select: {
+        storage: true,
+        resource: {
+          select: { user_id: true, user: { select: { role: true } } }
+        }
+      }
     })
     if (link && link.storage !== LINK_HEALTH_POLICY.staffStorage)
       addRecipient(link.resource.user_id, caseLink(row.id))
+    if (
+      options.suppressLinkPublisher &&
+      link &&
+      link.storage !== LINK_HEALTH_POLICY.staffStorage &&
+      link.resource.user.role < 3
+    )
+      suppressedPublisherId = link.resource.user_id
   }
   if (row.public && row.owner_type === 'staff') {
     const handoffFact = await handoffFactFor(tx, row)
@@ -2098,6 +2121,7 @@ const notifyCaseParticipants = async (
       addRecipient(id, `/dashboard/case/${row.id}`, senderId ?? null)
     }
   }
+  if (suppressedPublisherId !== null) recipients.delete(suppressedPublisherId)
   if (!recipients.size) return
   const candidateAccountIds = [
     ...recipients.keys(),
@@ -2566,7 +2590,9 @@ export const openCaseInternal = async (
     body
   )
   if (input.targetType === 'link') {
-    await notifyCaseParticipants(tx, row, ownerNotice)
+    await notifyCaseParticipants(tx, row, ownerNotice, undefined, {
+      suppressLinkPublisher: true
+    })
   } else if (row.owner_type === 'publisher' && row.owner_id !== null) {
     await notifyCaseUsers(tx, row.id, [row.owner_id], ownerNotice)
   } else {
@@ -2652,7 +2678,9 @@ export const promoteLinkCaseInternal = async (
   await notifyCaseParticipants(
     tx,
     { ...row, kind: 'link_disputed', owner_type: 'staff', owner_id: null },
-    '链接存在争议，已提交网站管理员复核。'
+    '链接存在争议，已提交网站管理员复核。',
+    undefined,
+    { suppressLinkPublisher: true }
   )
   return true
 }
@@ -2712,7 +2740,9 @@ export const upgradeLinkConflictContextInternal = async (
   await notifyCaseParticipants(
     tx,
     row,
-    '链接检测与用户报告存在冲突，等待网站管理员复核。'
+    '链接检测与用户报告存在冲突，等待网站管理员复核。',
+    undefined,
+    { suppressLinkPublisher: true }
   )
   return true
 }
@@ -2763,6 +2793,7 @@ type CloseCaseInput = {
    * is theirs: the original publisher closed it themselves (D36).
    */
   notifyStaff?: boolean
+  suppressLinkPublisher?: boolean
 }
 
 /**
@@ -2845,7 +2876,8 @@ export const closeCaseInternal = async (tx: CaseTx, input: CloseCaseInput) => {
         ...(input.actorId ? [input.actorId] : [])
       ],
       followerContent: input.followerNotice,
-      notifyStaff: input.notifyStaff
+      notifyStaff: input.notifyStaff,
+      suppressLinkPublisher: input.suppressLinkPublisher
     }
   )
   return { changed: true as const, row, resolution: input.resolution }
@@ -2954,6 +2986,24 @@ const fetchCaseForViewer = async (
   return { case: detail }
 }
 
+export const canReadCaseForViewer = async (
+  db: CaseDb,
+  caseId: number,
+  uid: number,
+  role: number
+): Promise<boolean> => {
+  const row = await getCaseById(db, caseId)
+  if (!row) return false
+  const subscription = await db.ops_case_subscriber.findUnique({
+    where: { case_id_user_id: { case_id: caseId, user_id: uid } },
+    select: { user_id: true }
+  })
+  const fact = await handoffFactFor(db, row)
+  return Boolean(
+    canViewCase(row, uid, role, Boolean(subscription), fact?.publisherId)
+  )
+}
+
 const RELATED_OPEN_CASE_LIMIT = 20
 
 /**
@@ -3019,7 +3069,11 @@ export const getCase = async (
   // Opening the case reads its notices, which clears the list's「有新回复」(D22).
   if (typeof result !== 'string') {
     await db.user_message.updateMany({
-      where: { recipient_id: viewerId, status: 0, link: caseLink(caseId) },
+      where: {
+        recipient_id: viewerId,
+        status: 0,
+        link: { in: [caseLink(caseId), `/issue/${caseId}`] }
+      },
       data: { status: 1 }
     })
   }
@@ -3141,6 +3195,7 @@ const loadOwnedCaseWindow = async (
   uid: number,
   input: CaseListInput
 ): Promise<OwnedCaseWindow> => {
+  const represented = await representedPublisherLinkCaseIds(uid, db)
   const statuses = input.statuses?.length
     ? input.statuses
     : input.status
@@ -3190,8 +3245,9 @@ const loadOwnedCaseWindow = async (
           THEN (latest.payload->>'from_owner_id')::numeric
           ELSE NULL::numeric
         END
-      WHERE (c.owner_type = 'publisher' AND c.owner_id = ${uid})
-         OR handoff_user.id = ${uid}
+      WHERE ((c.owner_type = 'publisher' AND c.owner_id = ${uid})
+         OR handoff_user.id = ${uid})
+         ${represented.length ? Prisma.sql`AND c.id NOT IN (${Prisma.join(represented)})` : Prisma.empty}
     ),
     filtered AS MATERIALIZED (
       SELECT id, status, status_changed_at, publisher_id, escalation_trigger
@@ -3244,12 +3300,17 @@ const loadUnreadCaseIds = async (
   caseIds: readonly number[]
 ) => {
   if (!caseIds.length) return new Set<number>()
-  const links = caseIds.map(caseLink)
+  const links = caseIds.flatMap((id) => [caseLink(id), `/issue/${id}`])
   const rows = await db.user_message.findMany({
     where: { recipient_id: viewerId, status: 0, link: { in: links } },
     select: { link: true }
   })
-  return new Set(rows.map((row) => Number(row.link.replace(/^\/issue\//, ''))))
+  return new Set(
+    rows.flatMap((row) => {
+      const id = parseWorkspaceIssueNotification(row.link)
+      return id !== null && caseIds.includes(id) ? [id] : []
+    })
+  )
 }
 
 export const listCases = async (
@@ -3498,19 +3559,22 @@ export const getPendingCaseCounts = async (
   options: { db?: PrismaClient } = {}
 ): Promise<CasePendingCountResponse> => {
   const db = options.db ?? prisma
+  const represented = await representedPublisherLinkCaseIds(uid, db)
+  const maintenance = await countActionableMaintenance(uid, db)
   const [owned, waitingReporter] = await Promise.all([
     db.ops_case.count({
       where: {
         owner_type: 'publisher',
         owner_id: uid,
-        status: { in: ['open', 'waiting_owner'] }
+        status: { in: ['open', 'waiting_owner'] },
+        ...(represented.length ? { id: { notIn: represented } } : {})
       }
     }),
     db.ops_case.count({
       where: { reporter_id: uid, status: 'waiting_reporter' }
     })
   ])
-  return { owned, waitingReporter }
+  return { owned: owned + maintenance, waitingReporter }
 }
 
 const assertResolution = (kind: string, resolution: string) => {
@@ -4518,6 +4582,11 @@ export const handleCaseResource = async (
         WHERE l.resource_id=${resource.id} ORDER BY l.id ASC FOR UPDATE OF l
       `)
       const linkIds = movedLinks.map((link) => link.id)
+      await lockLinkMaintenance(tx, linkIds)
+      await tx.patch_resource_link_maintenance.updateMany({
+        where: { resource_id: resource.id },
+        data: { patch_id: targetPatchId }
+      })
       const relatedCases = await tx.$queryRaw<
         { id: number; target_type: string; target_id: number; status: string }[]
       >(Prisma.sql`

@@ -22,10 +22,12 @@ import { KunExternalLink } from '~/components/kun/external-link/ExternalLink'
 import {
   isHealthAtLeast,
   LINK_HEALTH_LABELS,
+  maintenanceSnoozeExpired,
   mergeHealthProjection,
   readLinkHealth,
   readSnapshotId
 } from './linkHealthDisplay'
+import { requestExpiredHealthReread } from './useResourceLinkHealthUpdates'
 import { LinkHealthDot } from './LinkHealthDot'
 import { LinkReportPanel } from './LinkReportPanel'
 import { LinkHealthActions } from './LinkHealthActions'
@@ -40,7 +42,7 @@ import type {
   PatchResourceLink,
   ResourceAccessQuota
 } from '~/types/api/patch'
-import type { LinkHealthSummary } from '~/types/api/linkHealth'
+import type { LinkHealthSummary, LinkHealthView } from '~/types/api/linkHealth'
 
 const displayBlack3Hash = (hash: string) => hash.replace(/^b3:/i, '')
 
@@ -71,6 +73,8 @@ interface Props {
   onRelink?: (link: PatchResourceLink) => void
   /** 父级健康更新（两步对话框的报告结果），按版本/轮次有序合并。 */
   healthUpdate?: LinkHealthSummary | null
+  /** Bubbles report/check/verify/resolve into the page projection. */
+  onHealthResult?: (view: LinkHealthView) => void
 }
 
 export const ResourceDownloadCard = ({
@@ -81,7 +85,8 @@ export const ResourceDownloadCard = ({
   restoredObtainedExpiresAt,
   preview = false,
   onRelink,
-  healthUpdate = null
+  healthUpdate = null,
+  onHealthResult
 }: Props) => {
   const [manualAccess, setManualAccess] = useState<{
     link: PatchResourceHealthAccessLink
@@ -145,8 +150,70 @@ export const ResourceDownloadCard = ({
   }, [serverHealth, healthUpdate, healthOverride, snapshotId])
 
   // 本快照内发起的动作/报告结果：记录来源快照；换快照后来源响应被丢弃
-  const applyLocalHealthResult = (view: LinkHealthSummary) =>
-    setHealthOverride({ view, snapshotId })
+  const applyHealthRef = useRef<(view: LinkHealthSummary) => void>(() => {})
+  const appliedReread = useRef(new Set<string>())
+  const expiredResume =
+    health?.maintenance?.restriction === 'snoozed'
+      ? health.maintenance.resumesAt
+      : null
+
+  useEffect(() => {
+    if (
+      !health ||
+      !expiredResume ||
+      !maintenanceSnoozeExpired(health.maintenance)
+    ) {
+      return
+    }
+    const origin = snapshotId
+    const version = health.version
+    const linkId = link.id
+    const attempt = `${origin}@${linkId}@${version}@${expiredResume}`
+    if (appliedReread.current.has(attempt)) return
+    appliedReread.current.add(attempt)
+    const resourceObject = resource
+    void requestExpiredHealthReread({
+      patchId: resourceObject.patchId,
+      resourceId: resourceObject.id,
+      linkId,
+      version,
+      resumesAt: expiredResume,
+      snapshotId: origin,
+      stillOrigin: () => readSnapshotId(resourceObject) === origin
+    }).then((view) => {
+      if (!view || readSnapshotId(resourceObject) !== origin) return
+      if (
+        view.patchId !== resourceObject.patchId ||
+        view.resourceId !== resourceObject.id ||
+        view.linkId !== linkId ||
+        view.version !== version
+      ) {
+        return
+      }
+      applyHealthRef.current(view)
+    })
+  }, [expiredResume, health, link.id, resource, snapshotId])
+
+  const applyLocalHealthResult = (view: LinkHealthSummary) => {
+    setHealthOverride((current) => {
+      const previous =
+        current && current.snapshotId === snapshotId ? current.view : null
+      const merged = mergeHealthProjection(
+        mergeHealthProjection(serverHealth, previous),
+        view
+      )
+      return merged ? { view: merged, snapshotId } : current
+    })
+    const candidate = view as LinkHealthView
+    if (
+      typeof candidate.patchId === 'number' &&
+      typeof candidate.resourceId === 'number' &&
+      typeof candidate.linkId === 'number'
+    ) {
+      onHealthResult?.(candidate)
+    }
+  }
+  applyHealthRef.current = applyLocalHealthResult
 
   const restoredAccessedLink =
     restoredLink?.id === link.id &&

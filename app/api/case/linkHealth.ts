@@ -3,6 +3,10 @@ import { CASE_UNRESOLVED_STATUSES } from '~/constants/case'
 import { LINK_CASE_RESOLUTIONS } from '~/constants/linkHealth'
 import { linkCaseContextSchema } from '~/validations/linkHealth'
 import {
+  finishLinkMaintenanceForMutation,
+  lockLinkMaintenance
+} from '~/app/api/patch/resource/maintenance/service'
+import {
   closeCaseInternal,
   getCaseLock,
   lockCaseUsers,
@@ -210,7 +214,11 @@ export const openLinkCaseInternal = async (
 /** Link locks precede every case lock; resource locks belong to the caller. */
 export const closeLinkCases = async (
   tx: CaseTx,
-  input: CloseLinkCasesInput
+  input: CloseLinkCasesInput & {
+    excludeRecipientIds?: readonly number[]
+    suppressPublisher?: boolean
+    notificationBatch?: Set<number>
+  }
 ): Promise<CloseLinkCasesResult> => {
   const selectors = ['resourceIds', 'linkIds', 'targets'] as const
   const chosen = selectors.filter((key) => input[key] !== undefined)
@@ -233,10 +241,17 @@ export const closeLinkCases = async (
     ? Prisma.sql`l.resource_id IN (${Prisma.join(ids)})`
     : Prisma.sql`l.id IN (${Prisma.join(ids)})`
   const links = await tx.$queryRaw<
-    { id: number; version: number; resource_id: number; patch_id: number }[]
+    {
+      id: number
+      version: number
+      resource_id: number
+      patch_id: number
+      patch_unique_id: string
+    }[]
   >(Prisma.sql`
-    SELECT l.id, l.version, l.resource_id, r.patch_id
+    SELECT l.id, l.version, l.resource_id, r.patch_id, p.unique_id AS patch_unique_id
     FROM patch_resource_link l JOIN patch_resource r ON r.id=l.resource_id
+    JOIN patch p ON p.id=r.patch_id
     WHERE ${where}
     ORDER BY l.id ASC
     FOR UPDATE OF l
@@ -247,6 +262,34 @@ export const closeLinkCases = async (
       )
     : links.map((link) => ({ linkId: link.id, linkVersion: link.version }))
   if (!targets.length) return { closedCaseIds: [] }
+  const notified = input.notificationBatch ?? new Set<number>()
+  for (const id of input.excludeRecipientIds ?? []) notified.add(id)
+  if (input.resolution === 'link_removed' || input.resolution === 'relinked') {
+    await lockLinkMaintenance(
+      tx,
+      links.map((link) => link.id)
+    )
+    for (const resourceId of [
+      ...new Set(links.map((link) => link.resource_id))
+    ]) {
+      const group = links.filter((link) => link.resource_id === resourceId)
+      const results = await finishLinkMaintenanceForMutation(tx, {
+        links: targets
+          .filter((target) => group.some((link) => link.id === target.linkId))
+          .map((target) => ({
+            id: target.linkId,
+            version: target.linkVersion
+          })),
+        resourceId,
+        uniqueId: group[0].patch_unique_id,
+        outcome: input.resolution === 'relinked' ? 'relinked' : 'removed',
+        actorId: input.actorId ?? 0,
+        now: input.now,
+        excludeRecipientIds: [...notified]
+      })
+      for (const id of results) notified.add(id)
+    }
+  }
   const keys = [
     ...new Set(
       targets.map((target) => linkCaseKey(target.linkId, target.linkVersion))
@@ -286,6 +329,9 @@ export const closeLinkCases = async (
       actorType: input.actorType,
       actorId: input.actorId,
       payload: { link_health: context },
+      excludeRecipientIds: [...notified],
+      suppressLinkPublisher:
+        input.suppressPublisher ?? input.actorType === 'system',
       now: input.now
     })
     if (result.changed) closedCaseIds.push(row.id)

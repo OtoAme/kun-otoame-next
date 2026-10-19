@@ -16,6 +16,7 @@ import {
   type HealthTargetRow
 } from '../link/service'
 import { reportWeight, reportWriteKind } from '../link/policy'
+import { assertLinkMaintenanceFeedbackOpen } from '../maintenance/service'
 import { prepareLinkCheckInput, checkLink } from './checker'
 import { getLinkCheckerConfig } from './config'
 import type { Prisma } from '@prisma/client'
@@ -76,6 +77,7 @@ export const reportLinkWithCheck = async (
 ) => {
   const now = options.now ?? (() => new Date())
   const row = await loadHealthTarget(input, visibility, now())
+  await assertLinkMaintenanceFeedbackOpen(prisma, row, now())
   await requireAcquisition(prisma, row, actor.uid, now())
   const basis = healthBasis(row)
   const existing = await prisma.patch_resource_link_report.findUnique({

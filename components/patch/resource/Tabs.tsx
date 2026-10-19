@@ -89,6 +89,7 @@ const ResourceCard = ({
             <ReportResourceButton
               resource={resource}
               patchId={patchId}
+              healthUpdateFor={healthUpdateFor}
               onReported={onReported}
               compact
             />
@@ -139,6 +140,7 @@ const ResourceCard = ({
           resource={resource}
           hideReportButton
           healthUpdateFor={healthUpdateFor}
+          onHealthResult={onReported}
           onEdit={(target, focusLinkId) => onEdit(target, focusLinkId)}
         />
       </CardBody>

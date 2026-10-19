@@ -14,9 +14,7 @@ import type { CaseListItem, CaseListResponse, CaseTab } from '~/types/api/case'
 
 import { IssueCaseDetail } from './IssueCaseDetail'
 import { IssueCaseList } from './IssueCaseList'
-import { IssueLinkRepairList } from './IssueLinkRepairList'
 import { IssueSiteFeedbackDialog } from './IssueSiteFeedbackDialog'
-import { useLinkRepairList } from './useLinkRepairList'
 import {
   parseStatusFilter,
   statusFilterStatuses,
@@ -61,9 +59,6 @@ export function IssueWorkspace() {
   const page = parsePage(searchParams.get('page'))
   const selectedId = parseSelection(searchParams.get('id'))
   const hasSelection = selectedId !== null
-
-  // 「链接待修复」分组只在「待我处理」页签请求（模块 04，M04-5）。
-  const repair = useLinkRepairList(tab === 'owned')
 
   const statusesParam = statusFilterStatuses(statusKey).join(',')
 
@@ -261,12 +256,6 @@ export function IssueWorkspace() {
           </Button>
         </div>
       ) : null}
-
-      {tab === 'owned' && (
-        <div className={cn(hasSelection && 'max-lg:hidden')}>
-          <IssueLinkRepairList repair={repair} />
-        </div>
-      )}
 
       {/*
         单栏宽度下列表与详情互斥呈现（用 CSS 切换，避免 SSR 后再按视口翻转造成闪动）；

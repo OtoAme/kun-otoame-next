@@ -69,7 +69,7 @@ export const getPatchCommentSchema = z.object({
   commentId: z.coerce.number().min(1).max(9999999).optional()
 })
 
-const patchResourceLinkSchema = z
+export const patchResourceLinkSchema = z
   .object({
     id: z.coerce.number().min(1).max(9999999).optional(),
     storage: z
@@ -105,7 +105,7 @@ const patchResourceLinkSchema = z
     }
   })
 
-const patchResourceSchemaBase = z.object({
+export const patchResourceSchemaBase = z.object({
   patchId: z.coerce.number().min(1).max(9999999),
   section: z.enum(SUPPORTED_RESOURCE_SECTION, {
     message: '资源链接类型仅能为 OtomeGame 或补丁'
@@ -141,7 +141,7 @@ const patchResourceSchemaBase = z.object({
     )
 })
 
-const validateResourceTypesBySection = (
+export const validateResourceTypesBySection = (
   data: { section: string; type: string[] },
   ctx: z.RefinementCtx
 ) => {
@@ -161,7 +161,7 @@ const validateResourceTypesBySection = (
   }
 }
 
-const validateResourcePlatformsByType = (
+export const validateResourcePlatformsByType = (
   data: { section: string; type: string[]; platform: string[] },
   ctx: z.RefinementCtx
 ) => {
@@ -183,7 +183,7 @@ const validateResourcePlatformsByType = (
   }
 }
 
-const validateChineseSupportByType = (
+export const validateChineseSupportByType = (
   data: { section: string; type: string[] },
   ctx: z.RefinementCtx
 ) => {

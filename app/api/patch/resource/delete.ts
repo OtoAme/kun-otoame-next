@@ -25,13 +25,19 @@ const resourceIdSchema = z.object({
 export const deleteResource = async (
   input: z.infer<typeof resourceIdSchema>,
   uid: number,
-  userRole: number
+  userRole: number,
+  options: { expectedOwnerId?: number } = {}
 ) => {
   try {
     const result = await runResourceMutation(async (tx) => {
       const patchResource = await lockResourceForMutation(tx, input.resourceId)
       if (!patchResource)
         throw new ResourceMutationError('未找到对应的资源', 404)
+      if (
+        options.expectedOwnerId !== undefined &&
+        patchResource.user_id !== options.expectedOwnerId
+      )
+        throw new ResourceMutationError('您没有权限操作该资源', 403)
       if (patchResource.user_id !== uid && userRole < 3)
         throw new ResourceMutationError('您没有权限删除该资源', 403)
       if (
@@ -42,12 +48,13 @@ export const deleteResource = async (
           LINK_HEALTH_ERRORS.forbidden.message,
           403
         )
+      const now = new Date()
       await closeLinkCases(tx, {
         resourceIds: [patchResource.id],
         resolution: 'link_removed',
         actorType: userRole >= 3 ? 'staff' : 'publisher',
         actorId: uid,
-        now: new Date()
+        now
       })
       const pointChange = await reverseMoemoepoint(tx, {
         userId: patchResource.user_id,

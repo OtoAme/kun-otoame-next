@@ -7,13 +7,15 @@ const mocks = vi.hoisted(() => ({
   toast: Object.assign(vi.fn(), { success: vi.fn(), error: vi.fn() }),
   kunFetchPost: vi.fn(),
   kunFetchPut: vi.fn(),
+  kunFetchGet: vi.fn(),
   user: { uid: 100, name: 'Tester', role: 1 }
 }))
 
 vi.mock('react-hot-toast', () => ({ default: mocks.toast }))
 vi.mock('~/utils/kunFetch', () => ({
   kunFetchPost: mocks.kunFetchPost,
-  kunFetchPut: mocks.kunFetchPut
+  kunFetchPut: mocks.kunFetchPut,
+  kunFetchGet: mocks.kunFetchGet
 }))
 vi.mock('~/store/userStore', () => ({
   useUserStore: (selector: (state: { user: typeof mocks.user }) => unknown) =>
@@ -551,7 +553,8 @@ describe('ResourceDownloadCard link health (04/10)', () => {
       ...mutationResponse({ health: 'suspect', recentReportCount: 4 }),
       report: 'recorded',
       weight: 0.5,
-      caseId: 12
+      caseId: 12,
+      maintenance: { event: 'opened', publisherNotified: true }
     })
     const container = await mount(
       <ResourceDownloadCard
@@ -591,7 +594,9 @@ describe('ResourceDownloadCard link health (04/10)', () => {
         networkAcknowledged: true
       }
     )
-    expect(dialog.textContent).toContain('已交给其归属方处理')
+    expect(dialog.textContent).toContain('已记录一次报告。已通知发布者。')
+    expect(dialog.textContent).not.toContain('归属方')
+    expect(dialog.textContent).not.toContain('已合并')
   })
 
   it('surfaces the named 409 and never silently refresh-resubmits check', async () => {
@@ -1377,5 +1382,72 @@ describe('read-snapshot provenance for credentials and mutations', () => {
     })
     await act(async () => {})
     expect(findExactButton(container, '确认')).toBeUndefined()
+  })
+
+  it('re-reads an expired pause for the report entrance and ignores a different version', async () => {
+    const onHealthResult = vi.fn()
+    mocks.kunFetchGet.mockResolvedValue([
+      {
+        ...resource,
+        links: [
+          healthLink({
+            version: 9,
+            maintenance: { revision: 8, restriction: 'stopped', resumesAt: null }
+          })
+        ]
+      }
+    ])
+    await mount(
+      <ResourceDownloadCard
+        resource={resource}
+        link={healthLink({
+          maintenance: {
+            revision: 3,
+            restriction: 'snoozed',
+            resumesAt: '2020-01-01T00:00:00.000Z'
+          }
+        })}
+        onHealthResult={onHealthResult}
+      />
+    )
+    await act(async () => {})
+    expect(mocks.kunFetchPost).not.toHaveBeenCalled()
+    expect(mocks.kunFetchGet).toHaveBeenCalledWith('/patch/resource', { patchId: 7 })
+    expect(onHealthResult).not.toHaveBeenCalled()
+
+    mocks.kunFetchGet.mockResolvedValue([
+      {
+        ...resource,
+        links: [
+          healthLink({
+            maintenance: { revision: 3, restriction: null, resumesAt: null }
+          })
+        ]
+      }
+    ])
+    await mount(
+      <ResourceDownloadCard
+        resource={{ ...resource }}
+        link={healthLink({
+          maintenance: {
+            revision: 3,
+            restriction: 'snoozed',
+            resumesAt: '2020-02-01T00:00:00.000Z'
+          }
+        })}
+        onHealthResult={onHealthResult}
+      />
+    )
+    await act(async () => {})
+    expect(mocks.kunFetchPost).not.toHaveBeenCalled()
+    expect(onHealthResult).toHaveBeenCalledWith(
+      expect.objectContaining({
+        patchId: 7,
+        resourceId: 11,
+        linkId: 21,
+        version: 3,
+        maintenance: { revision: 3, restriction: null, resumesAt: null }
+      })
+    )
   })
 })

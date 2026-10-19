@@ -668,7 +668,7 @@ describe('issue case detail permissions', () => {
       targetId: 7,
       content: '我这边仍然存在问题，仍然无法下载'
     })
-    expect(mocks.routerPush).toHaveBeenCalledWith('/issue/77')
+    expect(mocks.routerPush).toHaveBeenCalledWith('/workspace/issues/77')
   })
 
   it('shows images and signs later reporter notes as other reporters (D11, D15)', async () => {

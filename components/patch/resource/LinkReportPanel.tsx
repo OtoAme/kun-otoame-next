@@ -17,7 +17,9 @@ import {
   buildLinkTarget,
   linkReportOutcomeText,
   LINK_REPORT_REASON_HINTS,
-  LINK_REPORT_REASON_LABELS
+  LINK_REPORT_REASON_LABELS,
+  maintenanceRestrictionText,
+  readLinkHealth
 } from './linkHealthDisplay'
 import type { PatchResourceLink } from '~/types/api/patch'
 import type {
@@ -65,9 +67,15 @@ export const LinkReportPanel = ({
 
   const guest = user.uid < 1
   const target = buildLinkTarget(patchId, resourceId, link)
+  const restrictionText = maintenanceRestrictionText(
+    readLinkHealth(link)?.maintenance
+  )
   const needsAck = reason === WEAK_REASON
   const canSubmit =
-    !!target && !submitting && (!needsAck || networkAcknowledged)
+    !!target &&
+    !restrictionText &&
+    !submitting &&
+    (!needsAck || networkAcknowledged)
 
   const handleSubmit = async () => {
     if (guest) {
@@ -93,7 +101,7 @@ export const LinkReportPanel = ({
         return
       }
       onReported?.(res.link)
-      setResultText(linkReportOutcomeText(res.report, res.caseId))
+      setResultText(linkReportOutcomeText(res.report, res.maintenance))
     } catch {
       toast.error('网络错误，提交失败，请重试')
     } finally {
@@ -119,6 +127,12 @@ export const LinkReportPanel = ({
       {!target && (
         <p className="text-sm text-default-500">
           页面数据不是最新版本，请刷新页面后再报告。
+        </p>
+      )}
+
+      {restrictionText && (
+        <p className="text-sm break-all text-warning-600" role="status">
+          {restrictionText}
         </p>
       )}
 

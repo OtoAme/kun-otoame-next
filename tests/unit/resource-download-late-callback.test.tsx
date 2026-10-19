@@ -56,10 +56,15 @@ vi.mock('~/components/patch/resource/DownloadCard', () => ({
     healthUpdate = null
   }: {
     link: { id: number }
-    healthUpdate?: { health: string } | null
+    healthUpdate?: {
+      health: string
+      maintenance?: { revision?: number } | null
+    } | null
   }) => (
     <div data-testid={`download-card-${link.id}`}>
-      {healthUpdate ? `update:${healthUpdate.health}` : 'server'}
+      {healthUpdate
+        ? `update:${healthUpdate.health}:m${healthUpdate.maintenance?.revision ?? 0}`
+        : 'server'}
     </div>
   )
 }))
@@ -256,5 +261,65 @@ describe('ResourceDownload two-step callback provenance (parent tie)', () => {
     expect(container.textContent).not.toContain('update:ok')
     // 已收到的新匹配更新不得被旧回调覆盖
     expect(container.textContent).toContain('update:suspect')
+  })
+
+  it('merges a late health packet without clearing a newer restriction or moving the card', async () => {
+    const container = await mount(resource)
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('button[aria-label]')!.click()
+    })
+    const report = mocks.reportedCallbacks.at(-1)!
+    const packet = (
+      health: string,
+      evidenceRound: number,
+      revision: number
+    ) => ({
+      patchId: 7,
+      resourceId: 11,
+      linkId: 21,
+      version: 2,
+      evidenceRound,
+      health,
+      healthChangedAt: '2026-10-09T05:00:00.000Z',
+      verifiedAt: null,
+      lastRelinkAt: null,
+      ownerType: 'publisher',
+      disputeSource: null,
+      recentReportCount: 3,
+      latestCheck: null,
+      capabilities: {
+        ownerActions: [],
+        resolveActions: [],
+        canCheck: false,
+        canEdit: false
+      },
+      maintenance: {
+        revision,
+        restriction: revision >= 2 ? 'stopped' : null,
+        resumesAt: null
+      }
+    })
+    await act(async () => {
+      report(packet('ok', 3, 2))
+    })
+    expect(container.textContent).toContain('update:ok:m2')
+    const order = () =>
+      [...container.querySelectorAll('[data-testid^="download-card-"]')].map(
+        (node) => node.getAttribute('data-testid')
+      )
+    expect(order()).toEqual(['download-card-21'])
+
+    await act(async () => {
+      report(packet('broken', 1, 1))
+    })
+    expect(container.textContent).toContain('update:ok:m2')
+    expect(container.textContent).not.toContain('update:broken')
+
+    await act(async () => {
+      report(packet('broken', 4, 1))
+    })
+    expect(container.textContent).toContain('update:broken:m2')
+    expect(order()).toEqual(['download-card-21'])
+    expect(mocks.kunFetchPost).not.toHaveBeenCalled()
   })
 })

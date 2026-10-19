@@ -12,6 +12,7 @@ import {
   canManageResourceLink
 } from '~/components/patch/resource/resourcePermissions'
 import { prepareLinkCheckInput } from './link-check/checker'
+import { maintenanceRestriction } from './maintenance/policy'
 import type {
   LinkCheckProvider,
   LinkDisputeSource,
@@ -46,12 +47,29 @@ export const linkHealthSelect = (now = new Date()) =>
         }
       },
       select: { user_id: true, link_version: true }
+    },
+    maintenance_controls: {
+      select: {
+        link_version: true,
+        revision: true,
+        frozen: true,
+        events: {
+          where: { active_key: { not: null } },
+          select: { state: true, snoozed_until: true }
+        }
+      }
     }
   }) satisfies Prisma.patch_resource_linkSelect
 
-export type HealthLinkRow = Prisma.patch_resource_linkGetPayload<{
+type CurrentHealthLinkRow = Prisma.patch_resource_linkGetPayload<{
   select: ReturnType<typeof linkHealthSelect>
 }>
+export type HealthLinkRow = Omit<
+  CurrentHealthLinkRow,
+  'maintenance_controls'
+> & {
+  maintenance_controls?: CurrentHealthLinkRow['maintenance_controls']
+}
 type ContextLink = Pick<
   HealthLinkRow,
   'id' | 'health' | 'version' | 'evidence_round' | 'health_changed_at'
@@ -191,6 +209,12 @@ export const projectLinkHealth = (
     }
   }
   return {
+    maintenance: maintenanceRestriction(
+      link.maintenance_controls?.find(
+        (control) => control.link_version === link.version
+      ),
+      now
+    ),
     version: link.version,
     evidenceRound: link.evidence_round,
     health,

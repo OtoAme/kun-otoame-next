@@ -126,5 +126,6 @@ export const LINK_HEALTH_LOCK_ORDER = [
   'patch',
   'patch_resource',
   'patch_resource_link',
+  'patch_resource_link_maintenance',
   'ops_case'
 ] as const

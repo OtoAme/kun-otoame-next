@@ -17,7 +17,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('~/utils/kunFetch', () => ({ kunFetchGet: mocks.kunFetchGet }))
 vi.mock('next/navigation', () => ({
   useSearchParams: () => mocks.searchParams,
-  usePathname: () => '/issue',
+  usePathname: () => '/workspace/issues',
   useRouter: () => mocks.router
 }))
 vi.mock('next/link', () => ({
@@ -232,8 +232,12 @@ describe('issue workspace', () => {
     expect(text).toContain('2 人报告')
     expect(text).toContain('资源X（条目A）')
     expect(text).toContain('正文预览内容')
-    // 工作区内选中走查询参数，详情深链仍是 /issue/1
-    expect(container.querySelector('a[href="/issue?id=1"]')).not.toBeNull()
+    expect(container.querySelector('a[href="/workspace/issues?id=1"]')).not.toBeNull()
+    expect(
+      mocks.kunFetchGet.mock.calls.some(
+        (call) => call[0] === '/patch/resource/link/health'
+      )
+    ).toBe(false)
   })
 
   it('groups status tabs into four and counts them from statusCounts', async () => {
@@ -271,7 +275,7 @@ describe('issue workspace', () => {
     await act(async () => {
       findTab(container, '待我处理')!.click()
     })
-    expect(mocks.router.push).toHaveBeenLastCalledWith('/issue?tab=owned', {
+    expect(mocks.router.push).toHaveBeenLastCalledWith('/workspace/issues?tab=owned', {
       scroll: false
     })
 
@@ -280,7 +284,7 @@ describe('issue workspace', () => {
       findTab(container, '等待处理方')!.click()
     })
     expect(mocks.router.push).toHaveBeenLastCalledWith(
-      '/issue?status=processing',
+      '/workspace/issues?status=processing',
       { scroll: false }
     )
 
@@ -305,7 +309,7 @@ describe('issue workspace', () => {
       findTab(container, '已结案')!.click()
     })
     expect(mocks.router.push).toHaveBeenLastCalledWith(
-      '/issue?tab=owned&status=closed',
+      '/workspace/issues?tab=owned&status=closed',
       { scroll: false }
     )
 
@@ -330,7 +334,7 @@ describe('issue workspace', () => {
       nextPage.click()
     })
     expect(mocks.router.push).toHaveBeenLastCalledWith(
-      '/issue?tab=owned&status=closed&page=2',
+      '/workspace/issues?tab=owned&status=closed&page=2',
       { scroll: false }
     )
   })

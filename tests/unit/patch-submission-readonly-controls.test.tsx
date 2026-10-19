@@ -365,6 +365,11 @@ describe('rejected patch submission controls', () => {
       await Promise.resolve()
     })
 
+    expect(
+      dom.window.document.querySelector('a[href="/workspace/entries"]')
+        ?.textContent
+    ).toContain('返回工作台')
+
     const buttons = [...dom.window.document.querySelectorAll('button')]
     for (const label of [
       '获取 VNDB 数据',

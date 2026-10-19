@@ -14,6 +14,7 @@ import {
   ModalFooter,
   ModalHeader
 } from '@heroui/react'
+import Link from 'next/link'
 import { useRouter } from '@bprogress/next'
 import toast from 'react-hot-toast'
 import { kunFetchPost } from '~/utils/kunFetch'
@@ -231,8 +232,16 @@ export const SubmissionEditor = ({ submission }: Props) => {
       )}
 
       <Card>
-        <CardHeader className="flex items-center justify-between">
-          <h1 className="text-2xl">投稿游戏条目</h1>
+        <CardHeader className="flex flex-wrap items-center justify-between gap-2">
+          <div className="min-w-0 space-y-1">
+            <h1 className="text-2xl">投稿游戏条目</h1>
+            <Link
+              href="/workspace/entries"
+              className="text-sm text-primary underline-offset-2 hover:underline"
+            >
+              返回工作台
+            </Link>
+          </div>
           <div className="flex items-center gap-2">
             {saveState !== 'idle' && (
               <Chip

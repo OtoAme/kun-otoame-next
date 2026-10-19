@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 const mocks = vi.hoisted(() => ({
   toast: Object.assign(vi.fn(), { success: vi.fn(), error: vi.fn() }),
   kunFetchPost: vi.fn(),
+  kunFetchGet: vi.fn(),
   kunFetchFormData: vi.fn(),
   user: { uid: 100, name: 'Tester', role: 1 }
 }))
@@ -13,6 +14,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('react-hot-toast', () => ({ default: mocks.toast }))
 vi.mock('~/utils/kunFetch', () => ({
   kunFetchPost: mocks.kunFetchPost,
+  kunFetchGet: mocks.kunFetchGet,
   kunFetchFormData: mocks.kunFetchFormData
 }))
 vi.mock('~/store/userStore', () => ({
@@ -705,12 +707,19 @@ describe('case entry buttons', () => {
           reason: 'deleted'
         }
       )
-      expect(container.textContent).toContain('已记录一次报告')
-      expect(container.textContent).toContain('暂不通知归属方')
+      const result = [...container.querySelectorAll('p')].find((node) =>
+        node.textContent?.startsWith('已记录一次报告')
+      )
+      expect(result?.textContent).toBe('已记录一次报告。')
     })
 
-    it('announces the owner handoff only when the server returns a caseId', async () => {
-      mocks.kunFetchPost.mockResolvedValue(reportResponse({ caseId: 44 }))
+    it('shows notice and merge from the receipt and ignores caseId', async () => {
+      mocks.kunFetchPost.mockResolvedValue(
+        reportResponse({
+          caseId: 44,
+          maintenance: { event: 'merged', publisherNotified: true }
+        })
+      )
       const container = await mount(
         <ReportResourceButton resource={resource} patchId={1} />
       )
@@ -721,7 +730,14 @@ describe('case entry buttons', () => {
         findButton(container, '提交')!.click()
       })
       await flush()
-      expect(container.textContent).toContain('该链接的问题已交给其归属方处理')
+      const result = [...container.querySelectorAll('p')].find((node) =>
+        node.textContent?.startsWith('已记录一次报告')
+      )
+      expect(result?.textContent).toBe(
+        '已记录一次报告。已通知发布者，已合并到当前维护。'
+      )
+      expect(result?.textContent).not.toContain('44')
+      expect(result?.textContent).not.toContain('归属方')
     })
 
     it('requires the network acknowledgement before a weak report can be sent', async () => {
@@ -1260,6 +1276,68 @@ describe('two-step phenomenon switch resets the report panel', () => {
         linkVersion: 2,
         reason: 'deleted'
       }
+    )
+  })
+
+  it('labels links from the page projection and re-reads an expired pause without reporting', async () => {
+    const projected = await mount(
+      <ReportResourceButton
+        resource={resource}
+        patchId={1}
+        healthUpdateFor={(linkId) =>
+          linkId === 101 ? healthLink({ id: 101, health: 'broken' }) : null
+        }
+      />
+    )
+    await act(async () => {
+      findButton(projected, '遇到问题')!.click()
+    })
+    expect(projected.textContent).toContain('已失效')
+    expect(mocks.kunFetchPost).not.toHaveBeenCalled()
+
+    const onReported = vi.fn()
+    const pausedResource = {
+      ...resource,
+      links: [
+        healthLink({
+          id: 101,
+          maintenance: {
+            revision: 4,
+            restriction: 'snoozed',
+            resumesAt: '2020-01-01T00:00:00.000Z'
+          }
+        })
+      ]
+    } as unknown as PatchResource
+    mocks.kunFetchGet.mockResolvedValue([
+      {
+        ...pausedResource,
+        links: [
+          healthLink({
+            id: 101,
+            maintenance: { revision: 4, restriction: null, resumesAt: null }
+          })
+        ]
+      }
+    ])
+    await mount(
+      <ReportResourceButton
+        resource={pausedResource}
+        patchId={1}
+        onReported={onReported}
+      />
+    )
+    await act(async () => {})
+    expect(mocks.kunFetchPost).not.toHaveBeenCalled()
+    expect(mocks.kunFetchGet).toHaveBeenCalledWith('/patch/resource', { patchId: 1 })
+    expect(onReported).toHaveBeenCalledWith(
+      expect.objectContaining({
+        patchId: 1,
+        resourceId: 7,
+        linkId: 101,
+        version: 2,
+        maintenance: { revision: 4, restriction: null, resumesAt: null }
+      })
     )
   })
 })

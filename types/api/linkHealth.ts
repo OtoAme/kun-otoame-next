@@ -1,4 +1,5 @@
 import type { z } from 'zod'
+import type { LinkMaintenanceReportReceipt, LinkMaintenanceRestriction } from './linkMaintenance'
 import type {
   LINK_CASE_RESOLUTIONS,
   LINK_CHECK_PROVIDERS,
@@ -103,6 +104,8 @@ export interface LinkHealthCapabilities {
 
 /** Attached to each public link; no addresses, codes or reporter identities. */
 export interface LinkHealthSummary {
+  /** Absent on older read snapshots; current readers always include revision 0 or later. */
+  maintenance?: LinkMaintenanceRestriction
   version: number
   evidenceRound: number
   health: LinkHealth
@@ -126,6 +129,7 @@ export interface LinkHealthMutationResponse {
 }
 
 export interface LinkReportResponse extends LinkHealthMutationResponse {
+  maintenance?: LinkMaintenanceReportReceipt
   /** Duplicate is a successful no-op; zero weight is still a saved report. */
   report: 'recorded' | 'renewed' | 'duplicate'
   weight: 0 | 0.5 | 1

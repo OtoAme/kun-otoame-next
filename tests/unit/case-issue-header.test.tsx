@@ -36,5 +36,15 @@ describe('issue header', () => {
     expect(icon.getAttribute('alt')).toBe('')
     expect(home.textContent).toBe(kunMoyuMoe.titleShort)
     expect(home.querySelector('svg')).toBeNull()
+    const nav = doc.querySelector('nav[aria-label="用户工作台"]')!
+    expect(nav.querySelector('a[href="/workspace/resources"]')?.textContent).toBe(
+      '我的资源'
+    )
+    expect(nav.querySelector('a[href="/workspace/entries"]')?.textContent).toBe(
+      '我的条目'
+    )
+    expect(nav.querySelector('a[href="/workspace/issues"]')?.textContent).toBe(
+      '问题处理'
+    )
   })
 })

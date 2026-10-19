@@ -14,6 +14,9 @@ const mocks = vi.hoisted(() => {
     patch_resource_link: { findUnique: vi.fn() },
     patch_resource: { findUnique: vi.fn(), updateMany: vi.fn() },
     patch_resource_access: { updateMany: vi.fn() },
+    patch_resource_link_maintenance: { updateMany: vi.fn(), findUnique: vi.fn() },
+    patch_resource_link_maintenance_event: { updateMany: vi.fn() },
+    patch_resource_link_maintenance_participant: { findMany: vi.fn() },
     patch: { findUnique: vi.fn(), findMany: vi.fn() },
     user: { findMany: vi.fn() },
     user_message: { createMany: vi.fn(), updateMany: vi.fn() },
@@ -43,7 +46,9 @@ import {
 } from '~/app/api/case/linkHealth'
 import {
   getCase,
+  canReadCaseForViewer,
   createCase,
+  appendCaseMessage,
   openCaseInternal,
   resolveCase,
   reopenCase,
@@ -58,6 +63,7 @@ import {
   remindCase
 } from '~/app/api/case/service'
 import { createCaseSchema } from '~/validations/case'
+import { createMessage } from '~/app/api/utils/message'
 import type {
   CloseLinkCasesInput,
   LinkCaseContext
@@ -171,6 +177,7 @@ beforeEach(() => {
       const sql = query.strings.join(' ')
       const values = query.values
       sqlCalls.push({ sql, values })
+      if (sql.includes('patch_resource_link_maintenance')) return []
       if (sql.includes('FOR KEY SHARE'))
         return values
           .filter((value) => typeof value === 'number')
@@ -235,17 +242,17 @@ beforeEach(() => {
           .sort((a, b) => a.id - b.id)
       }
       if (sql.includes('FROM ops_case'))
-        return cases.filter((row) => row.id === values[0])
+        return cases.filter((row) => row.id === values[0]).map((row) => structuredClone(row))
       throw new Error('Unexpected query in isolated case test')
     }
   )
   mocks.tx.ops_case.findUnique.mockImplementation(
     async ({ where }: { where: { id?: number; dedup_key?: string } }) =>
-      cases.find((row) =>
+      structuredClone(cases.find((row) =>
         where.id === undefined
           ? row.dedup_key === where.dedup_key
           : row.id === where.id
-      ) ?? null
+      ) ?? null)
   )
   mocks.tx.ops_case.updateMany.mockImplementation(async ({ where, data }) => {
     const matched = cases.filter(
@@ -359,6 +366,7 @@ beforeEach(() => {
               section: 'galgame',
               patch_id: link.patch_id,
               user_id: 6,
+              user: { role: 1 },
               status: 0,
               patch: { id: 7, unique_id: 'SYN00001', name: 'Synthetic game' }
             }
@@ -408,6 +416,20 @@ const close = (
   )
 
 describe('closeLinkCases caller transaction boundary', () => {
+  it('completes maintenance for every existing deletion caller even when feedback had no separate health notice', async () => {
+    mocks.tx.patch_resource_link_maintenance.findUnique.mockResolvedValue({
+      id:1,revision:1,events:[{id:70,active_key:'maintenance:1',state:'pending'}]
+    })
+    mocks.tx.patch_resource_link_maintenance.updateMany.mockResolvedValue({count:1})
+    mocks.tx.patch_resource_link_maintenance_event.updateMany.mockResolvedValue({count:1})
+    mocks.tx.patch_resource_link_maintenance_participant.findMany.mockResolvedValue([{user_id:22}])
+    await close({linkIds:[12]})
+    expect(mocks.tx.patch_resource_link_maintenance_event.updateMany.mock.calls[0][0]).toMatchObject({
+      where:{id:70},data:{active_key:null,state:'handled',outcome:'removed'}
+    })
+    expect(createMessage).toHaveBeenCalledWith(expect.objectContaining({recipient_id:22,link:'/SYN00001?tab=resources#resource-3'}),mocks.tx)
+    expect(mocks.tx.user_message.createMany).not.toHaveBeenCalled()
+  })
   it('empty selections perform no queries or side effects', async () => {
     for (const selector of [
       { linkIds: [] },
@@ -418,6 +440,12 @@ describe('closeLinkCases caller transaction boundary', () => {
     expect(mocks.tx.$queryRaw).not.toHaveBeenCalled()
     expect(mocks.tx.$transaction).not.toHaveBeenCalled()
     expect(mocks.tx.user_message.createMany).not.toHaveBeenCalled()
+  })
+  it('excludes recipients already notified by the same maintenance response while keeping others', async () => {
+    await closeLinkCases(mocks.tx as never, { linkIds: [12], resolution: 'verified_available', actorType: 'publisher', actorId: 6,
+      excludeRecipientIds: [22], now })
+    expect(mocks.tx.user_message.createMany).not.toHaveBeenCalled()
+    expect(cases.find((row) => row.id===40)?.status).toBe('resolved')
   })
 
   it('rejects multiple selectors and invalid IDs before locking', async () => {
@@ -438,7 +466,11 @@ describe('closeLinkCases caller transaction boundary', () => {
     expect(sqlCalls[0].sql).toContain('ORDER BY l.id ASC')
     expect(sqlCalls[0].sql).toContain('FOR UPDATE OF l')
     expect(sqlCalls[0].sql).not.toContain('FOR UPDATE OF r')
-    expect(sqlCalls[1].sql).toContain('ORDER BY id ASC')
+    const caseIndex = sqlCalls.findIndex((query) => query.sql.includes('dedup_key IN'))
+    const maintenanceIndex = sqlCalls.findIndex((query) => query.sql.includes('patch_resource_link_maintenance'))
+    expect(maintenanceIndex).toBeGreaterThan(0)
+    expect(caseIndex).toBeGreaterThan(maintenanceIndex)
+    expect(sqlCalls[caseIndex].sql).toContain('ORDER BY id ASC')
     expect(
       mocks.tx.ops_case.updateMany.mock.calls.map(([args]) => args.where.id)
     ).toEqual([10, 40])
@@ -449,7 +481,7 @@ describe('closeLinkCases caller transaction boundary', () => {
         args.data
           .map((message: { recipient_id: number }) => message.recipient_id)
           .sort((left: number, right: number) => left - right)
-      ).toEqual([6, 22])
+      ).toEqual([22])
     expect(mocks.tx.$transaction).not.toHaveBeenCalled()
   })
 
@@ -543,6 +575,16 @@ describe('closeLinkCases caller transaction boundary', () => {
 })
 
 describe('system link case creation, context and permissions', () => {
+  it('reuses historical publisher read permission without marking notices, and rejects unrelated users', async () => {
+    cases = []; contexts.clear(); subscribers.clear()
+    await open()
+    const changedAt = new Date(now.getTime()+1000)
+    Object.assign(links[0],{health:'disputed',evidence_round:1,health_changed_at:changedAt})
+    await open({...context(),health:'disputed',source:'owner_verification',evidenceRound:1,healthChangedAt:changedAt.toISOString()})
+    expect(await canReadCaseForViewer(mocks.tx as never,50,6,1)).toBe(true)
+    expect(await canReadCaseForViewer(mocks.tx as never,50,88,1)).toBe(false)
+    expect(mocks.tx.user_message.updateMany).not.toHaveBeenCalled()
+  })
   const open = (value: LinkCaseContext = context(), reporterIds = [22, 33]) =>
     openLinkCaseInternal(mocks.tx as never, {
       context: value,
@@ -571,13 +613,13 @@ describe('system link case creation, context and permissions', () => {
       author_id: null,
       payload: { link_health: context() }
     })
-    expect(mocks.tx.user_message.createMany).toHaveBeenCalledTimes(1)
+    expect(mocks.tx.user_message.createMany).not.toHaveBeenCalled()
     const repeats = await open(context(), [33, 44])
     expect(repeats).toEqual({ caseId: 50, created: false, changed: false })
     expect([...subscribers.get(50)!]).toEqual([22, 33, 44])
     expect(cases).toHaveLength(1)
     expect(messages).toHaveLength(1)
-    expect(mocks.tx.user_message.createMany).toHaveBeenCalledTimes(1)
+    expect(mocks.tx.user_message.createMany).not.toHaveBeenCalled()
     expect(mocks.tx.$transaction).not.toHaveBeenCalled()
   })
 
@@ -595,10 +637,51 @@ describe('system link case creation, context and permissions', () => {
     ).toEqual([9])
   })
 
-  it('promotes suspect to disputed on the same case and preserves machine conflict on later reports', async () => {
+  it.each([
+    ['quark', 'owner_verification'],
+    ['quark', 'machine_user_conflict'],
+    ['touchgal', 'owner_verification'],
+    ['touchgal', 'machine_user_conflict']
+  ] as const)(
+    'opening a %s dispute from %s notifies staff without another publisher reminder',
+    async (storage, source) => {
+      cases = []
+      contexts.clear()
+      subscribers.clear()
+      Object.assign(links[0], { storage, health: 'disputed', evidence_round: 1 })
+      const owned: LinkCaseContext = {
+        ...context(),
+        health: 'disputed',
+        source: 'owner_verification',
+        evidenceRound: 1
+      }
+      const disputed: LinkCaseContext = source === 'owner_verification'
+        ? owned
+        : {
+            ...owned,
+            source,
+            machine: {
+              provider: 'quark',
+              reason: 'share_available',
+              checkedAt: now.toISOString()
+            }
+          }
+      expect(await open(disputed)).toEqual({ caseId: 50, created: true, changed: true })
+      expect(cases[0]).toMatchObject({ kind: 'link_disputed', owner_type: 'staff', owner_id: null })
+      expect(mocks.tx.user_message.createMany).toHaveBeenCalledOnce()
+      expect(mocks.tx.user_message.createMany.mock.calls[0][0].data).toEqual([
+        expect.objectContaining({ recipient_id: 9, type: 'system', link: '/dashboard/case/50' })
+      ])
+      expect(await open(disputed, [44])).toEqual({ caseId: 50, created: false, changed: false })
+      expect(mocks.tx.user_message.createMany).toHaveBeenCalledOnce()
+    }
+  )
+
+  it.each(['quark', 'touchgal'])('promotes a %s suspect to disputed without another publisher reminder and preserves machine conflict on later reports', async (storage) => {
     cases = []
     contexts.clear()
     subscribers.clear()
+    links[0].storage = storage
     await open()
     const changedAt = new Date(now.getTime() + 1000)
     Object.assign(links[0], {
@@ -633,9 +716,10 @@ describe('system link case creation, context and permissions', () => {
     })
     const notices = mocks.tx.user_message.createMany.mock.calls
       .at(-1)![0]
-      .data.map((row: { recipient_id: number }) => row.recipient_id)
-    expect(new Set(notices).size).toBe(notices.length)
-    expect(notices).toEqual(expect.arrayContaining([6, 9, 22, 33]))
+      .data as { recipient_id: number; link: string }[]
+    const recipients = notices.map((row) => row.recipient_id)
+    expect([...recipients].sort((left, right) => left - right)).toEqual([9, 22, 33])
+    expect(notices.find((row) => row.recipient_id === 9)?.link).toBe('/dashboard/case/50')
     const before = messages.length
     const ownerContext: LinkCaseContext = {
       ...context(),
@@ -723,6 +807,7 @@ describe('system link case creation, context and permissions', () => {
         checkedAt: now.toISOString()
       }
     }
+    mocks.tx.user_message.createMany.mockClear()
     const later = new Date(now.getTime() + 1000)
     expect(
       await openLinkCaseInternal(mocks.tx as never, {
@@ -745,6 +830,13 @@ describe('system link case creation, context and permissions', () => {
       created: later,
       payload: { from_owner_type: 'publisher', from_owner_id: 6 }
     })
+    expect(mocks.tx.user_message.createMany).toHaveBeenCalledOnce()
+    const notices = mocks.tx.user_message.createMany.mock.calls[0][0].data as {
+      recipient_id: number
+      link: string
+    }[]
+    expect(notices.map((row) => row.recipient_id).sort((left, right) => left - right)).toEqual([9, 22, 33])
+    expect(notices.find((row) => row.recipient_id === 9)?.link).toBe('/dashboard/case/50')
     const publisher = await getCase(50, 6, 1, { db: mocks.tx as never })
     expect(typeof publisher).not.toBe('string')
     const count = messages.length
@@ -756,11 +848,56 @@ describe('system link case creation, context and permissions', () => {
       })
     ).toEqual({ caseId: 50, created: false, changed: false })
     expect(messages).toHaveLength(count)
+    expect(mocks.tx.user_message.createMany).toHaveBeenCalledOnce()
     expect(links[0]).toMatchObject({
       health: 'disputed',
       evidence_round: 1,
       health_changed_at: now
     })
+  })
+
+  it.each(['suspect', 'disputed'] as const)('keeps notifying the publisher about real staff dialogue on a %s link case', async (health) => {
+    cases = []
+    contexts.clear()
+    subscribers.clear()
+    links[0].health = health
+    await open(health === 'suspect' ? context() : {
+      ...context(), health: 'disputed', source: 'owner_verification'
+    })
+    mocks.tx.user_message.createMany.mockClear()
+    const result = await appendCaseMessage(
+      { caseId: 50, content: '已查看反馈，请补充复现步骤。' },
+      9,
+      3,
+      { now, db: mocks.tx as never }
+    )
+    expect(result).toMatchObject({ message: { body: '已查看反馈，请补充复现步骤。' } })
+    expect(mocks.tx.user_message.createMany).toHaveBeenCalledOnce()
+    expect(mocks.tx.user_message.createMany.mock.calls[0][0].data).toEqual([
+      expect.objectContaining({ recipient_id: 6, sender_id: 9, type: 'system', link: '/workspace/issues/50', content: expect.stringContaining('有新的回复') })
+    ])
+  })
+
+  it('keeps notifying the publisher and reporters of an administrator link decision', async () => {
+    cases = []
+    contexts.clear()
+    subscribers.clear()
+    links[0].health = 'disputed'
+    await open({ ...context(), health: 'disputed', source: 'owner_verification' })
+    mocks.tx.user_message.createMany.mockClear()
+    expect(await closeLinkCases(mocks.tx as never, {
+      targets: [{ linkId: 12, linkVersion: 1 }],
+      resolution: 'staff_available', actorType: 'staff', actorId: 9, now
+    })).toEqual({ closedCaseIds: [50] })
+    expect(cases[0]).toMatchObject({ status: 'resolved', resolution: 'staff_available' })
+    expect(mocks.tx.user_message.createMany).toHaveBeenCalledOnce()
+    const notices = mocks.tx.user_message.createMany.mock.calls[0][0].data as {
+      recipient_id: number
+      link: string
+    }[]
+    expect(notices.map((row) => row.recipient_id).sort((left, right) => left - right)).toEqual([6, 22, 33])
+    expect(notices.find((row) => row.recipient_id === 6)).toMatchObject({ type: 'system', link: '/workspace/issues/50', content: expect.stringContaining('已有处理结果') })
+    expect(mocks.tx.admin_log.create).toHaveBeenCalledWith({ data: expect.objectContaining({ type: 'case_close', user_id: 9 }) })
   })
 
   it('rejects stale/foreign basis and malformed latest context without falling back or opening a replacement', async () => {

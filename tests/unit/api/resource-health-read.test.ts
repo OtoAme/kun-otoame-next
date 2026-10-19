@@ -126,8 +126,8 @@ describe('current-version resource health reads', () => {
       { link_id: null, link_version: 2 }
     ])
     const result = await getPatchResource({ patchId: 1 }, { uid: 7, role: 1 })
-    expect(result.map((row) => row.id)).toEqual([8, 2])
-    expect(result[1].links[0]).toMatchObject({
+    expect(result.map((row) => row.id)).toEqual([2, 8])
+    expect(result[0].links[0]).toMatchObject({
       id: 3,
       health: 'broken',
       version: 2,
@@ -146,7 +146,7 @@ describe('current-version resource health reads', () => {
       { link_id: 3, link_version: 2 }
     ])
     expect(
-      (await getPatchResource({ patchId: 1 }, { uid: 7, role: 1 }))[1].links[0]
+      (await getPatchResource({ patchId: 1 }, { uid: 7, role: 1 }))[0].links[0]
         .revealed
     ).toBe(true)
   })

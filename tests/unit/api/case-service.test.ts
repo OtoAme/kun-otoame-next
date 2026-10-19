@@ -45,6 +45,7 @@ import {
   closeCaseInternal,
   getAdminCaseInboxItems,
   getAdminCases,
+  getPendingCaseCounts,
   listCases
 } from '~/app/api/case/service'
 import { CASE_STATUSES } from '~/constants/case'
@@ -135,6 +136,30 @@ beforeEach(() => {
 })
 
 describe('case service contracts', () => {
+  it('uses the same represented-case exclusion for owned lists and counts, and adds only actionable maintenance', async () => {
+    const context = { patchId: 7, resourceId: 3, linkId: 12, linkVersion: 1, health: 'suspect', evidenceRound: 2, healthChangedAt: now.toISOString(), source: 'user_reports' }
+    mocks.tx.$queryRaw.mockImplementation(async (query) => {
+      if (query.sql.includes('SELECT DISTINCT c.id')) return [{ id: 8,link_id:12,link_version:1,resource_id:3,patch_id:7,health:'suspect',evidence_round:2,health_changed_at:now,context }]
+      if (query.sql.includes('SELECT COUNT(*) AS count')) return [{ count: 2n }]
+      if (query.sql.includes('WITH candidates AS MATERIALIZED')) return [{page:[],total:1,status_counts:[]}]
+      return []
+    })
+    mocks.tx.ops_case.count.mockImplementation(async ({where}) => where.reporter_id ? 4 : 1)
+    expect(await getPendingCaseCounts(7,{db:mocks.prisma as never})).toEqual({owned:3,waitingReporter:4})
+    expect(mocks.tx.ops_case.count.mock.calls[0][0].where).toMatchObject({ id:{notIn:[8]},status:{in:['open','waiting_owner']} })
+    await listCases({tab:'owned',page:1,limit:20},7,2,{db:mocks.prisma as never})
+    const query=mocks.tx.$queryRaw.mock.calls.map(([query])=>query).find((query)=>query.sql.includes('WITH candidates AS MATERIALIZED'))
+    expect(query.sql).toContain('AND c.id NOT IN')
+    expect(query.values).toContain(8)
+  })
+  it.each(['/issue/42','/workspace/issues/42'])('recognizes a precise unread notification at %s and queries both legal addresses', async (href) => {
+    mocks.tx.ops_case.findMany.mockResolvedValue([row()])
+    mocks.tx.user_message.findMany.mockResolvedValue([{link:href},{link:'/issue/NaN'},{link:'/workspace/issues/42?x=1'}])
+    const result=await listCases({tab:'reported',page:1,limit:20},2,1,{db:mocks.prisma as never})
+    if(typeof result==='string') throw new Error(result)
+    expect(result.cases[0].hasUnread).toBe(true)
+    expect(mocks.tx.user_message.findMany.mock.calls[0][0].where).toMatchObject({ recipient_id:2,status:0,link:{in:['/workspace/issues/42','/issue/42']} })
+  })
   it('redacts a hidden reply in the reporter list preview', async () => {
     const hiddenReply = {
       id: 61,
@@ -306,7 +331,7 @@ describe('case service contracts', () => {
     ])
     expect(data.find((message) => message.recipient_id === 2)).toMatchObject({
       sender_id: null,
-      link: '/issue/42'
+      link: '/workspace/issues/42'
     })
     for (const recipientId of [3, 4, 9]) {
       expect(

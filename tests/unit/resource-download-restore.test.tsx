@@ -18,6 +18,10 @@ const downloadCardMock = vi.hoisted(() => ({
   render: vi.fn()
 }))
 
+const reportMock = vi.hoisted(() => ({
+  callbacks: [] as Array<(view: unknown) => void>
+}))
+
 vi.mock('~/utils/kunFetch', () => ({
   kunFetchPost: fetchMock.kunFetchPost
 }))
@@ -57,7 +61,14 @@ vi.mock('~/components/patch/resource/kun/markdownToHtml', () => ({
 }))
 
 vi.mock('~/components/case/ReportResourceButton', () => ({
-  ReportResourceButton: () => <button type="button">遇到问题</button>
+  ReportResourceButton: ({
+    onReported
+  }: {
+    onReported?: (view: unknown) => void
+  }) => {
+    reportMock.callbacks.push(onReported!)
+    return <button type="button">遇到问题</button>
+  }
 }))
 
 vi.mock('~/components/patch/resource/DownloadCard', () => ({
@@ -251,6 +262,7 @@ describe('ResourceDownload revealed mirror restore', () => {
   beforeEach(() => {
     fetchMock.kunFetchPost.mockReset()
     downloadCardMock.render.mockReset()
+    reportMock.callbacks.length = 0
   })
 
   it('keeps administrator preview read-only even for revealed mirrors', async () => {
@@ -351,8 +363,10 @@ describe('ResourceDownload revealed mirror restore', () => {
       container.querySelector('[data-testid="download-card-21"]')
     ).not.toBeNull()
     expect(
-      container.querySelector('[data-testid="download-card-22"]')
-    ).toBeNull()
+      container
+        .querySelector('[data-testid="download-card-22"]')
+        ?.closest('[hidden]')
+    ).not.toBeNull()
     expect(container.textContent).toContain('1 条链接已失效')
     expect(container.textContent).toContain('已折叠')
 
@@ -362,9 +376,9 @@ describe('ResourceDownload revealed mirror restore', () => {
         .click()
     })
 
-    expect(
-      container.querySelector('[data-testid="download-card-22"]')
-    ).not.toBeNull()
+    const expanded = container.querySelector('[data-testid="download-card-22"]')
+    expect(expanded).not.toBeNull()
+    expect(expanded?.closest('[hidden]')).toBeNull()
     expect(container.textContent).toContain('获取下载链接')
     expect(container.textContent).not.toContain('已折叠')
   })
@@ -385,8 +399,10 @@ describe('ResourceDownload revealed mirror restore', () => {
       container.querySelector<HTMLButtonElement>('button[aria-label]')!.click()
     })
     expect(
-      container.querySelector('[data-testid="download-card-22"]')
-    ).toBeNull()
+      container
+        .querySelector('[data-testid="download-card-22"]')
+        ?.closest('[hidden]')
+    ).not.toBeNull()
 
     await rerender(
       withLinks([
@@ -401,9 +417,9 @@ describe('ResourceDownload revealed mirror restore', () => {
     )
     await flushEffects()
 
-    expect(
-      container.querySelector('[data-testid="download-card-22"]')
-    ).not.toBeNull()
+    const revealed = container.querySelector('[data-testid="download-card-22"]')
+    expect(revealed).not.toBeNull()
+    expect(revealed?.closest('[hidden]')).toBeNull()
     expect(container.textContent).not.toContain('已折叠')
   })
 
@@ -753,5 +769,119 @@ describe('ResourceDownload revealed mirror restore', () => {
     await flushEffects()
     expect(container.textContent).not.toContain('https://stale.example.com/old-copy')
     expect(container.textContent).toContain(sensitiveLink21.content)
+  })
+
+  it('folds a newly broken link without dropping credentials or moving cards', async () => {
+    fetchMock.kunFetchPost.mockResolvedValue({
+      links: [sensitiveLink21],
+      obtainedExpiresAt: '2026-07-11T00:00:00.000Z'
+    })
+    const ok = { ...healthFields, health: 'ok' as const }
+    const { container } = await renderResourceDownload(
+      withLinks([
+        { ...link21, ...ok, revealed: true } as PatchResourceLink,
+        { ...link22, ...ok, revealed: false } as PatchResourceLink
+      ])
+    )
+    await flushEffects()
+    expect(fetchMock.kunFetchPost).toHaveBeenCalledTimes(1)
+    expect(container.textContent).toContain(sensitiveLink21.content)
+    const order = () =>
+      [...container.querySelectorAll('[data-testid^="download-card-"]')].map(
+        (node) => node.getAttribute('data-testid')
+      )
+    expect(order()).toEqual(['download-card-21', 'download-card-22'])
+
+    const report = reportMock.callbacks.at(-1)!
+    const packet = (health: 'broken' | 'ok', evidenceRound: number) => ({
+      patchId: 7,
+      resourceId: 11,
+      linkId: 22,
+      version: 3,
+      evidenceRound,
+      health,
+      healthChangedAt: '2026-10-02T00:00:00.000Z',
+      verifiedAt: null,
+      lastRelinkAt: null,
+      ownerType: 'publisher' as const,
+      disputeSource: null,
+      recentReportCount: 1,
+      latestCheck: null,
+      capabilities: healthFields.capabilities
+    })
+    await act(async () => {
+      report(packet('broken', 2))
+    })
+    expect(
+      container
+        .querySelector('[data-testid="download-card-22"]')
+        ?.closest('[hidden]')
+    ).not.toBeNull()
+    expect(
+      container
+        .querySelector('[data-testid="download-card-21"]')
+        ?.closest('[hidden]')
+    ).toBeNull()
+    expect(container.textContent).toContain(sensitiveLink21.content)
+    expect(order()).toEqual(['download-card-21', 'download-card-22'])
+    expect(fetchMock.kunFetchPost).toHaveBeenCalledTimes(1)
+
+    await act(async () => {
+      report(packet('ok', 3))
+    })
+    expect(
+      container
+        .querySelector('[data-testid="download-card-22"]')
+        ?.closest('[hidden]')
+    ).toBeNull()
+    expect(container.textContent).toContain(sensitiveLink21.content)
+    expect(order()).toEqual(['download-card-21', 'download-card-22'])
+    expect(fetchMock.kunFetchPost).toHaveBeenCalledTimes(1)
+  })
+
+  it('folds a revealed link when a health action marks it broken and keeps credentials', async () => {
+    fetchMock.kunFetchPost.mockResolvedValue({
+      links: [sensitiveLink21],
+      obtainedExpiresAt: '2026-07-11T00:00:00.000Z'
+    })
+    const ok = { ...healthFields, health: 'ok' as const }
+    const { container } = await renderResourceDownload(
+      withLinks([
+        { ...link21, ...ok, revealed: true } as PatchResourceLink,
+        { ...link22, ...ok, revealed: true } as PatchResourceLink
+      ])
+    )
+    await flushEffects()
+    expect(fetchMock.kunFetchPost).toHaveBeenCalledTimes(1)
+    expect(container.textContent).toContain(sensitiveLink21.content)
+    expect(container.textContent).not.toContain('已折叠')
+
+    const report = reportMock.callbacks.at(-1)!
+    await act(async () => {
+      report({
+        patchId: 7,
+        resourceId: 11,
+        linkId: 22,
+        version: 3,
+        evidenceRound: 2,
+        health: 'broken',
+        healthChangedAt: '2026-10-02T00:00:00.000Z',
+        verifiedAt: null,
+        lastRelinkAt: null,
+        ownerType: 'publisher',
+        disputeSource: null,
+        recentReportCount: 1,
+        latestCheck: null,
+        capabilities: healthFields.capabilities
+      })
+    })
+    expect(
+      container
+        .querySelector('[data-testid="download-card-22"]')
+        ?.closest('[hidden]')
+    ).not.toBeNull()
+    expect(container.textContent).toContain(sensitiveLink21.content)
+    expect(container.textContent).toContain('已折叠')
+    expect(fetchMock.kunFetchPost).toHaveBeenCalledTimes(1)
   })
 })

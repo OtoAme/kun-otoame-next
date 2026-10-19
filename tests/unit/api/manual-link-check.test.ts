@@ -1,10 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const mocks = vi.hoisted(() => ({ load: vi.fn(), accept: vi.fn(), checkPermission: vi.fn(), fetch: vi.fn() }))
+const mocks = vi.hoisted(() => ({ load: vi.fn(), accept: vi.fn(), checkPermission: vi.fn(), fetch: vi.fn(), freeze: vi.fn(), reports: { findUnique: vi.fn() } }))
 vi.mock('~/app/api/patch/resource/link-check/config', () => ({
   getLinkCheckerConfig: () => ({ endpoint: 'https://checker.example.test', apiKey: 'fixture-service-key' })
 }))
-vi.mock('~/prisma/index', () => ({ prisma: {} }))
+vi.mock('~/prisma/index', () => ({ prisma: { patch_resource_link_report: mocks.reports } }))
+vi.mock('~/app/api/patch/resource/maintenance/service', () => ({ assertLinkMaintenanceFeedbackOpen: mocks.freeze }))
 vi.mock('~/app/api/patch/resource/linkHealthProjection', () => ({
   getLinkDisputeSources: vi.fn()
 }))
@@ -29,7 +30,8 @@ vi.mock('~/app/api/patch/resource/link/service', () => ({
 
 import {
   manualLinkCheck,
-  checkManagedLink
+  checkManagedLink,
+  reportLinkWithCheck
 } from '~/app/api/patch/resource/link-check/service'
 
 const basis = {
@@ -45,6 +47,8 @@ const actor = { uid: 1, role: 3 }
 
 beforeEach(() => {
   vi.clearAllMocks()
+  mocks.freeze.mockReset()
+  mocks.reports.findUnique.mockResolvedValue(null)
   vi.stubGlobal('fetch', mocks.fetch)
   mocks.fetch.mockImplementation(async () => new Response(JSON.stringify({
     provider: 'quark', status: 'unknown', reason: 'unsupported_provider', providerCode: '0',
@@ -70,6 +74,12 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals())
 
 describe('manual checker attempt response', () => {
+  it('rejects frozen feedback before any outbound checker request', async () => {
+    mocks.freeze.mockRejectedValue(new Error('暂缓维护'))
+    await expect(reportLinkWithCheck({patchId:3,resourceId:7,linkId:21,linkVersion:2,reason:'deleted'},actor,{})).rejects.toThrow('暂缓维护')
+    expect(mocks.fetch).not.toHaveBeenCalled()
+    expect(mocks.accept).not.toHaveBeenCalled()
+  })
   it('checks ordinary-user eligibility before the checker and accepts as the same actor', async () => {
     const ordinary = { uid: 88, role: 1 }
     await manualLinkCheck(basis, ordinary, {})

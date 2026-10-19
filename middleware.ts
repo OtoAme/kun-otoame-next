@@ -9,6 +9,7 @@ export const config = {
     '/dashboard/:path*',
     '/preview/:path*',
     '/issue/:path*',
+    '/workspace/:path*',
     '/user/:path*',
     '/comment/:path*',
     '/edit/:path*',

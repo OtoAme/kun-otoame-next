@@ -1,5 +1,10 @@
 import { LINK_HEALTH_ERRORS } from '~/constants/linkHealth'
+import { LINK_MAINTENANCE_ERRORS } from '~/constants/linkMaintenance'
 import { formatTimeDifference } from '~/utils/time'
+import type {
+  LinkMaintenanceReportReceipt,
+  LinkMaintenanceRestriction
+} from '~/types/api/linkMaintenance'
 
 const snapshotIds = new WeakMap<object, number>()
 let snapshotSeq = 0
@@ -26,6 +31,7 @@ import type {
   LinkHealth,
   LinkHealthBasis,
   LinkHealthSummary,
+  LinkHealthView,
   LinkReportReason,
   LinkTarget
 } from '~/types/api/linkHealth'
@@ -228,6 +234,84 @@ export const isHealthAtLeast = (
  * cases (same version+round) are settled by snapshot provenance at the call
  * sites, not by this ordering alone.
  */
+export const maintenanceRevisionOf = (
+  summary:
+    | { maintenance?: LinkMaintenanceRestriction | null }
+    | null
+    | undefined
+): number => summary?.maintenance?.revision ?? 0
+
+const maintenanceIsOpen = (
+  restriction: LinkMaintenanceRestriction | null | undefined
+): boolean => !restriction?.restriction
+
+const maintenanceIsSnoozed = (
+  restriction: LinkMaintenanceRestriction | null | undefined
+): boolean => restriction?.restriction === 'snoozed'
+
+/**
+ * A paused restriction whose resume time has passed. Callers re-read; they
+ * do not submit a report from this predicate.
+ */
+export const maintenanceSnoozeExpired = (
+  restriction: LinkMaintenanceRestriction | null | undefined,
+  now = Date.now()
+): boolean => {
+  if (!maintenanceIsSnoozed(restriction) || !restriction?.resumesAt)
+    return false
+  const time = Date.parse(restriction.resumesAt)
+  return Number.isFinite(time) && time <= now
+}
+
+/** Health view for one public read. It does not copy the resource object. */
+export const healthViewFromLink = (
+  patchId: number,
+  resourceId: number,
+  link: PatchResourceLink
+): LinkHealthView | null => {
+  const health = readLinkHealth(link)
+  if (!health) return null
+  return {
+    patchId,
+    resourceId,
+    linkId: link.id,
+    version: health.version,
+    evidenceRound: health.evidenceRound,
+    health: health.health,
+    healthChangedAt: health.healthChangedAt,
+    verifiedAt: health.verifiedAt,
+    lastRelinkAt: health.lastRelinkAt,
+    ownerType: health.ownerType,
+    disputeSource: health.disputeSource,
+    recentReportCount: health.recentReportCount,
+    latestCheck: health.latestCheck,
+    capabilities: health.capabilities,
+    ...(health.maintenance ? { maintenance: health.maintenance } : {})
+  }
+}
+
+/**
+ * Maintenance revision merges on its own clock, and only after the caller has
+ * rejected a different link version. A missing field is revision 0. At the
+ * same revision an open re-read beats a stale snooze in either direction.
+ */
+export const mergeMaintenanceRestriction = (
+  current: LinkMaintenanceRestriction | null | undefined,
+  incoming: LinkMaintenanceRestriction | null | undefined
+): LinkMaintenanceRestriction | undefined => {
+  const currentRevision = current?.revision ?? 0
+  const incomingRevision = incoming?.revision ?? 0
+  if (incomingRevision > currentRevision) return incoming ?? undefined
+  if (currentRevision > incomingRevision) return current ?? undefined
+  if (maintenanceIsSnoozed(incoming) && maintenanceIsOpen(current)) {
+    return current ?? undefined
+  }
+  if (maintenanceIsSnoozed(current) && maintenanceIsOpen(incoming)) {
+    return incoming ?? undefined
+  }
+  return incoming ?? current ?? undefined
+}
+
 export const mergeHealthProjection = (
   server: PatchResourceHealthLink | null,
   update: LinkHealthSummary | null
@@ -235,15 +319,48 @@ export const mergeHealthProjection = (
   if (!server) {
     return null
   }
-  if (!update) {
+  if (!update || update.version !== server.version) {
     return server
   }
-  return isHealthAtLeast(update, server) ? { ...server, ...update } : server
+  const healthSource = isHealthAtLeast(update, server) ? update : server
+  const maintenance = mergeMaintenanceRestriction(
+    server.maintenance,
+    update.maintenance
+  )
+  const { maintenance: _ignored, ...healthFields } = healthSource
+  const merged: PatchResourceHealthLink = { ...server, ...healthFields }
+  if (maintenance) merged.maintenance = maintenance
+  else delete merged.maintenance
+  return merged
 }
 
+/** Same display fact the fold, count, status text and actions read. */
+export const linkHealthForDisplay = (
+  link: PatchResourceLink,
+  update: LinkHealthSummary | null
+): PatchResourceHealthLink | null =>
+  mergeHealthProjection(readLinkHealth(link), update)
+
+export const maintenanceRestrictionText = (
+  restriction: LinkMaintenanceRestriction | null | undefined
+): string | null => {
+  if (!restriction?.restriction) return null
+  if (restriction.restriction === 'stopped') {
+    return LINK_MAINTENANCE_ERRORS.feedback_stopped.message
+  }
+  const until = restriction.resumesAt
+    ? `，恢复时间 ${restriction.resumesAt}`
+    : ''
+  return `${LINK_MAINTENANCE_ERRORS.feedback_snoozed.message}${until}`
+}
+
+/**
+ * Receipt copy comes only from the maintenance outcome. caseId is not a
+ * proxy for whether the publisher was notified or the report was merged.
+ */
 export const linkReportOutcomeText = (
   outcome: LinkReportOutcome,
-  caseId: number | null
+  receipt?: LinkMaintenanceReportReceipt | null
 ): string => {
   const base =
     outcome === 'recorded'
@@ -251,7 +368,9 @@ export const linkReportOutcomeText = (
       : outcome === 'renewed'
         ? '已更新你的报告'
         : '你已经报告过这条链接，本次不会重复计数'
-  return caseId === null
-    ? `${base}。报告会先按机制累计，暂不通知归属方`
-    : `${base}。该链接的问题已交给其归属方处理`
+  if (!receipt || receipt.event === 'none') return `${base}。`
+  const notes: string[] = []
+  if (receipt.publisherNotified) notes.push('已通知发布者')
+  if (receipt.event === 'merged') notes.push('已合并到当前维护')
+  return notes.length > 0 ? `${base}。${notes.join('，')}。` : `${base}。`
 }

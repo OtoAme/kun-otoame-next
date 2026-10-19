@@ -52,6 +52,7 @@ model patch_resource_link {
   access      patch_resource_access[]
   reports     patch_resource_link_report[]
   check       patch_resource_link_check?
+  maintenance_controls patch_resource_link_maintenance[]
 
   created DateTime @default(now())
   updated DateTime @updatedAt

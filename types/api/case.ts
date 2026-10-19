@@ -361,7 +361,7 @@ export type CaseCreateInput = {
 
 /** GET /api/case/pending-count, used by the site user menu (D22). */
 export interface CasePendingCountResponse {
-  /** Publisher-owned cases waiting on the viewer. */
+  /** Actionable maintenance + owned cases, with represented publisher link cases counted once. */
   owned: number
   /** The viewer's own cases waiting for their supplement. */
   waitingReporter: number

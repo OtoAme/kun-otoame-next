@@ -364,7 +364,7 @@ describe('case feedback rules (M03-6, M03-7)', () => {
     })
     expect(createdMessages()[0]).toMatchObject({ kind: 'reply', author_id: 5 })
     expect(noticeRows()).toEqual([
-      expect.objectContaining({ recipient_id: 2, link: '/issue/42' })
+      expect.objectContaining({ recipient_id: 2, link: '/workspace/issues/42' })
     ])
   })
 
@@ -892,7 +892,7 @@ describe('case feedback rules (M03-6, M03-7)', () => {
       })
       // Opening the case reads the viewer's notices for it (D22).
       expect(mocks.tx.user_message.updateMany).toHaveBeenCalledWith({
-        where: { recipient_id: 5, status: 0, link: '/issue/42' },
+        where: { recipient_id: 5, status: 0, link: { in: ['/workspace/issues/42', '/issue/42'] } },
         data: { status: 1 }
       })
       // D15: the publisher-side dialogue carries real signatures now.
@@ -1375,7 +1375,7 @@ describe('site administrator review fixes (M03-8)', () => {
     await adminReply('请发布者核对一下第 3 分卷')
 
     expect(recipients().sort()).toEqual([2, 5])
-    expect(noticeRows().every((row) => row.link === '/issue/42')).toBe(true)
+    expect(noticeRows().every((row) => row.link === '/workspace/issues/42')).toBe(true)
   })
 
   it('keeps the original publisher in the loop after a handoff (item 19)', async () => {
@@ -1406,7 +1406,7 @@ describe('site administrator review fixes (M03-8)', () => {
           recipient_id: 90,
           link: '/dashboard/case/42'
         }),
-        expect.objectContaining({ recipient_id: 2, link: '/issue/42' })
+        expect.objectContaining({ recipient_id: 2, link: '/workspace/issues/42' })
       ])
     )
     expect(recipients()).not.toContain(5)
@@ -2197,7 +2197,7 @@ describe('original publisher closing a timeout handoff (D36)', () => {
     expect(noticeRows()).toEqual([
       expect.objectContaining({ recipient_id: 90, link: '/dashboard/case/42' }),
       expect.objectContaining({ recipient_id: 91, link: '/dashboard/case/42' }),
-      expect.objectContaining({ recipient_id: 2, link: '/issue/42' })
+      expect.objectContaining({ recipient_id: 2, link: '/workspace/issues/42' })
     ])
 
     // From here on the original publisher only proposes.

@@ -35,6 +35,7 @@ model ops_case {
 
   messages               ops_case_message[]
   subscribers            ops_case_subscriber[]
+  maintenance_events     patch_resource_link_maintenance_event[]
 
   @@index([status, status_changed_at])
   @@index([owner_type, owner_id, status, status_changed_at])

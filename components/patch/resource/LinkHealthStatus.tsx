@@ -2,7 +2,8 @@ import type { PatchResourceHealthLink } from '~/types/api/patch'
 import {
   linkCheckSummaryText,
   linkProcessingStateText,
-  linkReportCountText
+  linkReportCountText,
+  maintenanceRestrictionText
 } from './linkHealthDisplay'
 
 interface Props {
@@ -16,6 +17,7 @@ interface Props {
  */
 export const LinkHealthStatus = ({ link }: Props) => {
   const processing = linkProcessingStateText(link)
+  const restrictionText = maintenanceRestrictionText(link.maintenance)
   const warn = link.health !== 'ok'
   // 已定规则的期限/去向提示：disputed 需要人工复核，不显示 7 天自动判坏
   const deadlineHint =
@@ -43,6 +45,9 @@ export const LinkHealthStatus = ({ link }: Props) => {
         </p>
       )}
       {deadlineHint && <p className="text-default-500">{deadlineHint}</p>}
+      {restrictionText && (
+        <p className="break-all text-warning-600">{restrictionText}</p>
+      )}
     </div>
   )
 }

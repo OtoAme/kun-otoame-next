@@ -12,6 +12,7 @@ const db = vi.hoisted(() => ({
     deleteMany: vi.fn()
   },
   patch_resource_link_history: { create: vi.fn() },
+  patch_resource_link_maintenance: { findUnique: vi.fn() },
   $queryRaw: vi.fn(),
   $transaction: vi.fn()
 }))
@@ -38,7 +39,7 @@ vi.mock('~/app/api/patch/resource/linkHealthProjection', async (original) => ({
   >()),
   getLinkDisputeSources: vi.fn(async () => new Map())
 }))
-import { updatePatchResource } from '~/app/api/patch/resource/update'
+import { updatePatchResource, updateWorkspacePatchResource } from '~/app/api/patch/resource/update'
 import { LINK_HEALTH_ERRORS } from '~/constants/linkHealth'
 const date = new Date('2026-10-09T00:00:00Z')
 const makeLink = (id = 30, order = 0) => ({
@@ -192,6 +193,25 @@ beforeEach(() => {
   })
 })
 describe('stable resource edits', () => {
+  it('expands workspace protected refs from locked rows and rejects full protected input', async () => {
+    resource.links[0].storage = 'touchgal'
+    const { resourceId, patchId: _patchId, ...input } = request()
+    const protectedInput = { ...input, links: [{ id: 30, version: 1 }] }
+    expect(typeof await updateWorkspacePatchResource(resourceId, protectedInput, 3, 2)).not.toBe('string')
+    expect(db.patch_resource_link.updateMany).not.toHaveBeenCalled()
+    expect(await updateWorkspacePatchResource(resourceId, input, 3, 2)).toBe('您没有权限操作该资源')
+    expect(await updateWorkspacePatchResource(resourceId, protectedInput, 99, 4)).toBe('您没有权限操作该资源')
+  })
+  it.each([1, 2])('refuses ordinary author status %s after locking, before any write', async (status) => {
+    const input = request()
+    db.$queryRaw.mockImplementation(async () => {
+      resource.status = status
+      return [{ id: 10 }]
+    })
+    expect(await updatePatchResource(input, 3, 2)).toBe('待审核或封禁的资源暂不支持编辑')
+    expect(db.patch_resource.update).not.toHaveBeenCalled()
+    expect(db.patch_resource_link.updateMany).not.toHaveBeenCalled()
+  })
   it('allows ordinary removal before an unchanged protected slot without compacting its order', async () => {
     resource.links.push({ ...makeLink(31, 1), storage: 'touchgal' })
     const input = request()

@@ -4,7 +4,10 @@ import type { Prisma } from '@prisma/client'
 const mocks = vi.hoisted(() => ({
   prisma: {
     $transaction: vi.fn(),
-    patch_resource_link: { findFirst: vi.fn() }
+    patch_resource_link: { findFirst: vi.fn() },
+    patch_resource_link_maintenance: { findUnique: vi.fn() },
+    patch_resource_link_report: { findUnique: vi.fn() },
+    patch_resource_access: { findFirst: vi.fn() }
   },
   close: vi.fn(),
   open: vi.fn(),
@@ -32,7 +35,7 @@ vi.mock('~/app/api/patch/resource/_helper', () => ({
   deletePatchResourceCache: mocks.invalidate
 }))
 
-import { checkManagedLink, checkRelinkedResource } from '~/app/api/patch/resource/link-check/service'
+import { checkManagedLink, checkRelinkedResource, reportLinkWithCheck } from '~/app/api/patch/resource/link-check/service'
 import { projectLinkHealth } from '~/app/api/patch/resource/linkHealthProjection'
 import type { PatchResourceStableUpdateResponse } from '~/types/api/patch'
 import {
@@ -71,6 +74,7 @@ const makeRow = () => ({
   reports: [],
   check: null,
   resource: {
+    user: { role: 2 },
     user_id: 4,
     patch_id: 3,
     status: 0,
@@ -124,6 +128,9 @@ const savedResource = (): PatchResourceStableUpdateResponse => ({
 })
 beforeEach(() => {
   vi.clearAllMocks()
+  mocks.prisma.patch_resource_link_maintenance.findUnique.mockReset().mockResolvedValue(null)
+  mocks.prisma.patch_resource_link_report.findUnique.mockResolvedValue(null)
+  mocks.prisma.patch_resource_access.findFirst.mockResolvedValue({ id: 1 })
   row = makeRow() as HealthTargetRow
   weight = 0
   currentActor = actor
@@ -157,7 +164,9 @@ beforeEach(() => {
       })
     },
     patch_resource_link_history: { create: vi.fn() },
+    patch_resource_link_maintenance: mocks.prisma.patch_resource_link_maintenance,
     patch_resource_link_report: {
+      create: vi.fn(),
       aggregate: vi.fn().mockImplementation(async () => ({ _sum: { weight } })),
       findMany: vi
         .fn()
@@ -180,6 +189,24 @@ beforeEach(() => {
 })
 
 describe('trusted checker observation through managed health transaction', () => {
+  it('keeps maintenance pending when a machine observation resolves health and its case', async () => {
+    row.maintenance_controls=[{link_version:2,revision:5,frozen:false,events:[{state:'pending',snoozed_until:null}]}]
+    const result=await run()
+    expect(result.response.link).toMatchObject({health:'broken',maintenance:{revision:5,restriction:null,resumesAt:null}})
+    expect(row.maintenance_controls[0].events[0].state).toBe('pending')
+    expect(mocks.prisma.patch_resource_link_maintenance.findUnique).not.toHaveBeenCalled()
+  })
+  it('rejects an in-flight feedback after stop commits, before saving reports or observations under the lock', async () => {
+    fetchCheck.mockImplementation(async () => {
+      mocks.prisma.patch_resource_link_maintenance.findUnique.mockResolvedValue({ revision:4,frozen:true,events:[] })
+      return new Response(JSON.stringify({ provider:'quark',status:'unknown',reason:'unsupported_provider',providerCode:'0',checkedAt:now.toISOString(),cached:false }))
+    })
+    await expect(reportLinkWithCheck({patchId:3,resourceId:7,linkId:21,linkVersion:2,reason:'deleted'}, {uid:9,role:1}, visibility,
+      {config,now:()=>now,fetch:fetchCheck})).rejects.toMatchObject({status:409})
+    expect(fetchCheck).toHaveBeenCalledOnce()
+    expect(tx.patch_resource_link_report.create).not.toHaveBeenCalled()
+    expect(tx.patch_resource_link_check.upsert).not.toHaveBeenCalled()
+  })
   it.each([
     'https://pan.otoame.top/s/SYN',
     'https://fixture.s3.example.test/SYN.zip',

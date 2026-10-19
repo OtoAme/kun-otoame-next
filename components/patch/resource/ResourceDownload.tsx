@@ -13,8 +13,8 @@ import { ReportResourceButton } from '~/components/case/ReportResourceButton'
 import { markdownToHtml } from './kun/markdownToHtml'
 import {
   brokenLinksFoldText,
-  countBrokenLinks,
   latestRelinkAt,
+  linkHealthForDisplay,
   readLinkHealth,
   readSnapshotId
 } from './linkHealthDisplay'
@@ -25,7 +25,7 @@ import type {
   PatchResourceHealthAccessLink,
   PatchResourceLink
 } from '~/types/api/patch'
-import type { LinkHealthSummary } from '~/types/api/linkHealth'
+import type { LinkHealthSummary, LinkHealthView } from '~/types/api/linkHealth'
 
 interface Props {
   resource: PatchResource
@@ -35,6 +35,8 @@ interface Props {
   /** When the parent owns「遇到问题」, hide the copy on the user/download row. */
   hideReportButton?: boolean
   healthUpdateFor?: (linkId: number) => LinkHealthSummary | null
+  /** Report, check, verify and resolve all land in the same page projection. */
+  onHealthResult?: (view: LinkHealthView) => void
 }
 
 const COLLAPSED_HEIGHT_PX = 96
@@ -53,7 +55,8 @@ export const ResourceDownload = ({
   preview = false,
   onEdit,
   hideReportButton = false,
-  healthUpdateFor: healthUpdateForProp
+  healthUpdateFor: healthUpdateForProp,
+  onHealthResult: onHealthResultProp
 }: Props) => {
   const [showLinks, setShowLinks] = useState<Record<number, boolean>>(() =>
     preview || resource.links.some((link) => link.revealed)
@@ -76,42 +79,53 @@ export const ResourceDownload = ({
     () => revealedLinks.map((entry) => entry.id),
     [revealedLinks]
   )
-  const brokenFold = brokenLinksFoldText(
-    countBrokenLinks(resource.links),
-    latestRelinkAt(resource.links)
-  )
-  const liveLinks = useMemo(
-    () =>
-      resource.links.filter(
-        (link) => readLinkHealth(link)?.health !== 'broken'
-      ),
-    [resource.links]
-  )
-  const deadLinks = useMemo(
-    () =>
-      resource.links.filter(
-        (link) => readLinkHealth(link)?.health === 'broken'
-      ),
-    [resource.links]
-  )
-  const hasRevealedBroken = useMemo(
-    () =>
-      resource.links.some(
-        (link) =>
-          readLinkHealth(link)?.health === 'broken' && link.revealed === true
-      ),
-    [resource.links]
-  )
-  const [brokenOpen, setBrokenOpen] = useState(hasRevealedBroken)
-  const wasRevealedBroken = useRef(hasRevealedBroken)
-  useEffect(() => {
-    if (hasRevealedBroken && !wasRevealedBroken.current) {
-      setBrokenOpen(true)
-    }
-    wasRevealedBroken.current = hasRevealedBroken
-  }, [hasRevealedBroken])
   const localHealth = useResourceLinkHealthUpdates(resource)
   const healthUpdateFor = healthUpdateForProp ?? localHealth.healthUpdateFor
+  const publishHealth = onHealthResultProp ?? localHealth.onReported
+  const projectedHealth = (link: PatchResourceLink) =>
+    linkHealthForDisplay(link, healthUpdateFor(link.id))
+  const brokenLinks = resource.links.filter(
+    (link) => projectedHealth(link)?.health === 'broken'
+  )
+  const brokenFold = brokenLinksFoldText(
+    brokenLinks.length,
+    latestRelinkAt(
+      resource.links.map((link) => {
+        const projected = projectedHealth(link)
+        return projected ? { ...link, ...projected } : link
+      })
+    )
+  )
+  const hasRevealedBroken = resource.links.some(
+    (link) =>
+      projectedHealth(link)?.health === 'broken' && link.revealed === true
+  )
+  const brokenKey = brokenLinks.map((link) => link.id).join(',')
+  const snapshotId = readSnapshotId(resource)
+  const [brokenOpen, setBrokenOpen] = useState(hasRevealedBroken)
+  const previousBrokenKey = useRef<string | null>(null)
+  const previousSnapshot = useRef(snapshotId)
+  useEffect(() => {
+    if (previousSnapshot.current !== snapshotId) {
+      previousSnapshot.current = snapshotId
+      previousBrokenKey.current = brokenKey
+      setBrokenOpen(hasRevealedBroken)
+      return
+    }
+    if (previousBrokenKey.current === null) {
+      previousBrokenKey.current = brokenKey
+      return
+    }
+    if (previousBrokenKey.current === brokenKey) return
+    const previous = new Set(
+      previousBrokenKey.current.split(',').filter(Boolean)
+    )
+    previousBrokenKey.current = brokenKey
+    const addedBroken = brokenKey
+      .split(',')
+      .some((id) => id && !previous.has(id))
+    if (addedBroken) setBrokenOpen(false)
+  }, [brokenKey, hasRevealedBroken, snapshotId])
   const restoreKey = `${resource.patchId}:${resource.id}:${readSnapshotId(resource)}:${revealedLinks
     .map((entry) => `${entry.id}:${entry.version ?? 'na'}`)
     .join(',')}`
@@ -264,6 +278,7 @@ export const ResourceDownload = ({
         linkIndex={linkIndexMap.get(link.id) ?? 1}
         preview={preview}
         healthUpdate={healthUpdateFor(link.id)}
+        onHealthResult={publishHealth}
         onRelink={onEdit ? (target) => onEdit(resource, target.id) : undefined}
         {...(restoredLink
           ? {
@@ -367,7 +382,8 @@ export const ResourceDownload = ({
             <ReportResourceButton
               resource={resource}
               patchId={resource.patchId}
-              onReported={localHealth.onReported}
+              healthUpdateFor={healthUpdateFor}
+              onReported={publishHealth}
             />
           )}
         </div>
@@ -381,21 +397,30 @@ export const ResourceDownload = ({
             </p>
           )}
 
-          {liveLinks.map(renderLinkCard)}
-
-          {deadLinks.length > 0 && brokenFold ? (
-            <>
-              <Button
-                variant="bordered"
-                className="h-auto justify-start whitespace-normal border-dashed py-2.5 text-left text-sm text-default-500"
-                aria-expanded={brokenOpen}
-                onPress={() => setBrokenOpen((open) => !open)}
+          {resource.links.map((link) => {
+            const broken = projectedHealth(link)?.health === 'broken'
+            const collapsed = broken && !brokenOpen
+            return (
+              <div
+                key={link.id}
+                hidden={collapsed}
+                className={`min-w-0 max-w-full ${broken ? 'order-2' : 'order-1'}`}
               >
-                {brokenFold}
-                {brokenOpen ? '' : ' · 已折叠'}
-              </Button>
-              {brokenOpen ? deadLinks.map(renderLinkCard) : null}
-            </>
+                {renderLinkCard(link)}
+              </div>
+            )
+          })}
+
+          {brokenLinks.length > 0 && brokenFold ? (
+            <Button
+              variant="bordered"
+              className="order-1 h-auto justify-start whitespace-normal border-dashed py-2.5 text-left text-sm text-default-500"
+              aria-expanded={brokenOpen}
+              onPress={() => setBrokenOpen((open) => !open)}
+            >
+              {brokenFold}
+              {brokenOpen ? '' : ' · 已折叠'}
+            </Button>
           ) : null}
         </div>
       )}

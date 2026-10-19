@@ -16,6 +16,7 @@ import {
   XCircle
 } from 'lucide-react'
 import toast from 'react-hot-toast'
+import { workspaceIssueHref } from '~/utils/workspaceRoutes'
 
 import {
   AlertDialog,
@@ -482,7 +483,7 @@ export function IssueCaseDetail({ caseId, onChanged }: IssueCaseDetailProps) {
         // D33+D37：接替后本人退出报告者与关注关系，回到列表；同一账号独立
         // 具有的处理方权限与相应通知由服务端能力位保留，前端不推断身份
         onChanged?.()
-        router.push('/issue')
+        router.push('/workspace/issues')
         return
       }
       await load()
@@ -581,7 +582,7 @@ export function IssueCaseDetail({ caseId, onChanged }: IssueCaseDetailProps) {
       setReopenContent('')
       onChanged?.()
       // 进入返回的按权限脱敏详情
-      router.push(`/issue/${res.case.id}`)
+      router.push(workspaceIssueHref(res.case.id))
     } catch {
       setActionError('网络错误，提交失败，请重试')
     } finally {
@@ -623,7 +624,9 @@ export function IssueCaseDetail({ caseId, onChanged }: IssueCaseDetailProps) {
             variant="outline"
             size="sm"
             className="mt-1"
-            onClick={() => (permanent ? router.push('/issue') : void load())}
+            onClick={() =>
+              permanent ? router.push('/workspace/issues') : void load()
+            }
           >
             {permanent ? '返回问题处理' : '重新加载'}
           </Button>

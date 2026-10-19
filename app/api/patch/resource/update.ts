@@ -1,6 +1,9 @@
 import { Prisma } from '@prisma/client'
 import { prisma } from '~/prisma/index'
 import { patchResourceStableUpdateSchema } from '~/validations/patch'
+import { workspaceResourceUpdateSchema } from '~/validations/workspace'
+import { WORKSPACE_ERRORS } from '~/constants/workspace'
+import type { WorkspaceResourceUpdateInput } from '~/types/api/workspace'
 import { LINK_HEALTH_ERRORS } from '~/constants/linkHealth'
 import { closeLinkCases } from '~/app/api/case/linkHealth'
 import {
@@ -16,6 +19,7 @@ import {
 } from './_helper'
 import { parseResourceLink } from '~/utils/resourceLink'
 import { checkRelinkedResource } from './link-check/service'
+import { lockLinkMaintenance } from './maintenance/service'
 import {
   getLinkDisputeSources,
   projectLinkHealth
@@ -131,6 +135,11 @@ const validateBaseAndPermissions = (
     throw new ResourceMutationError('资源不属于该 OtomeGame', 409)
   if (resource.user_id !== uid && role < 3)
     throw new ResourceMutationError('您没有权限更改该资源', 403)
+  if (role < 3 && resource.status !== 0)
+    throw new ResourceMutationError(
+      WORKSPACE_ERRORS.resource_readonly.message,
+      403
+    )
   if (
     resource.links.length !== input.baseLinks.length ||
     resource.links.some(
@@ -160,15 +169,16 @@ const validateBaseAndPermissions = (
         !ids.has(old.id) ||
         !next ||
         next.uploadId ||
+        ['storage', 'size', 'code', 'password', 'hash', 'content'].some(
+          (key) => next[key as keyof LinkInput] !== old[key as keyof typeof old]
+        ) ||
         retainedOrder.some(
           (id) =>
             id !== old.id &&
             retainedOrder.indexOf(id) < retainedOrder.indexOf(old.id) !==
               desiredOrder.indexOf(id) < desiredOrder.indexOf(old.id)
         ) ||
-        editableFields.some(
-          (key) => canonicalLink(next, orders[index], old)[key] !== old[key]
-        )
+        orders[index] !== old.sort_order
       )
         throw new ResourceMutationError(
           LINK_HEALTH_ERRORS.forbidden.message,
@@ -196,27 +206,78 @@ const validateBaseAndPermissions = (
   }
 }
 
-export const updatePatchResource = async (
-  submitted: PatchResourceStableUpdateRequest,
+const savePatchResource = async (
+  submitted: PatchResourceStableUpdateRequest | WorkspaceResourceUpdateInput,
   uid: number,
   userRole: number,
-  options: ResourceUpdateOptions = {}
+  options: ResourceUpdateOptions = {},
+  workspaceResourceId?: number
 ): Promise<PatchResourceStableUpdateResponse | string> => {
-  const parsed = patchResourceStableUpdateSchema.safeParse(submitted)
+  const parsed =
+    workspaceResourceId === undefined
+      ? patchResourceStableUpdateSchema.safeParse(submitted)
+      : workspaceResourceUpdateSchema.safeParse(submitted)
   if (!parsed.success) return LINK_HEALTH_ERRORS.invalid_request.message
-  const input = parsed.data
-  const { resourceId, patchId } = input
+  const resourceId =
+    workspaceResourceId ??
+    (parsed.data as PatchResourceStableUpdateRequest).resourceId
   const initial = await prisma.patch_resource.findUnique({
     where: { id: resourceId },
     include: resourceMutationInclude()
   })
-  if (!initial) return '未找到该资源'
+  if (!initial)
+    return workspaceResourceId === undefined
+      ? '未找到该资源'
+      : WORKSPACE_ERRORS.not_found.message
+  const resolveInput = (
+    resource: LockedResource
+  ): PatchResourceStableUpdateRequest => {
+    if (workspaceResourceId === undefined)
+      return parsed.data as PatchResourceStableUpdateRequest
+    if (resource.user_id !== uid)
+      throw new ResourceMutationError(WORKSPACE_ERRORS.forbidden.message, 403)
+    const workspace = parsed.data as WorkspaceResourceUpdateInput
+    return {
+      ...workspace,
+      resourceId,
+      patchId: resource.patch_id,
+      links: workspace.links.map((link) => {
+        const old = resource.links.find((row) => row.id === link.id)
+        if ('storage' in link) {
+          if (userRole < 3 && old?.storage === 'touchgal')
+            throw new ResourceMutationError(
+              WORKSPACE_ERRORS.forbidden.message,
+              403
+            )
+          return link
+        }
+        if (!old || old.version !== link.version) throw conflict()
+        if (userRole >= 3 || old.storage !== 'touchgal')
+          throw new ResourceMutationError(
+            WORKSPACE_ERRORS.forbidden.message,
+            403
+          )
+        return {
+          id: old.id,
+          storage: old.storage,
+          size: old.size,
+          content: old.content,
+          code: old.code,
+          password: old.password,
+          hash: old.hash
+        }
+      })
+    }
+  }
+  let input: PatchResourceStableUpdateRequest
   try {
+    input = resolveInput(initial)
     validateBaseAndPermissions(initial, input, uid, userRole)
   } catch (error) {
     if (error instanceof ResourceMutationError) return error.message
     throw error
   }
+  const patchId = input.patchId
   const uploadedResources: UploadedPatchResource[] = []
   const uploadsByIndex = new Map<number, UploadedPatchResource>()
   let committed = false
@@ -233,6 +294,9 @@ export const updatePatchResource = async (
     const result = await runResourceMutation(async (tx) => {
       const before = await lockResourceForMutation(tx, resourceId, now)
       if (!before) throw new ResourceMutationError('未找到该资源', 404)
+      const lockedInput = resolveInput(before)
+      if (lockedInput.patchId !== patchId) throw conflict()
+      const input = lockedInput
       validateBaseAndPermissions(before, input, uid, userRole)
       const orders = linkSortOrders(before, input)
       const actorType =
@@ -246,6 +310,11 @@ export const updatePatchResource = async (
           .filter((link) => link.storage === 's3')
           .map((link) => link.content)
       )
+      await lockLinkMaintenance(
+        tx,
+        before.links.map((link) => link.id)
+      )
+      const notificationBatch = new Set<number>()
       // All locks are already held in ID order before taking any case lock.
       if (removed.length) {
         for (const link of removed)
@@ -267,6 +336,7 @@ export const updatePatchResource = async (
           resolution: 'link_removed',
           actorType,
           actorId: uid,
+          notificationBatch,
           now
         })
         const deleted = await tx.patch_resource_link.deleteMany({
@@ -279,12 +349,18 @@ export const updatePatchResource = async (
       }
       for (const [index, link] of input.links.entries()) {
         const old = before.links.find((row) => row.id === link.id)
-        const next = canonicalLink(
-          link,
-          orders[index],
-          old,
-          uploadsByIndex.get(index)
-        )
+        const next =
+          userRole < 3 && old?.storage === 'touchgal'
+            ? {
+                storage: old.storage,
+                size: old.size,
+                hash: old.hash,
+                content: old.content,
+                code: old.code,
+                password: old.password,
+                sort_order: old.sort_order
+              }
+            : canonicalLink(link, orders[index], old, uploadsByIndex.get(index))
         if (!old) {
           await tx.patch_resource_link.create({
             data: { ...next, resource_id: resourceId }
@@ -302,6 +378,7 @@ export const updatePatchResource = async (
             resolution: 'relinked',
             actorType,
             actorId: uid,
+            notificationBatch,
             now
           })
           await tx.patch_resource_link_history.create({
@@ -465,3 +542,17 @@ export const updatePatchResource = async (
     throw error
   }
 }
+
+export const updatePatchResource = (
+  submitted: PatchResourceStableUpdateRequest,
+  uid: number,
+  userRole: number,
+  options: ResourceUpdateOptions = {}
+) => savePatchResource(submitted, uid, userRole, options)
+
+export const updateWorkspacePatchResource = (
+  resourceId: number,
+  submitted: WorkspaceResourceUpdateInput,
+  uid: number,
+  userRole: number
+) => savePatchResource(submitted, uid, userRole, {}, resourceId)

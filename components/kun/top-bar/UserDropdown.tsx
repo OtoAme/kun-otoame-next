@@ -366,10 +366,17 @@ export const UserDropdown = () => {
             用户主页
           </DropdownItem>
           <DropdownItem
-            key="issue"
-            href="/issue"
+            key="workspace"
+            href="/workspace/resources"
             startContent={<Flag className="size-4" />}
             description={caseCountText || undefined}
+          >
+            用户工作台
+          </DropdownItem>
+          <DropdownItem
+            key="issue"
+            href="/workspace/issues"
+            startContent={<Flag className="size-4" />}
           >
             问题处理
           </DropdownItem>
