@@ -349,6 +349,12 @@ LLC 的屏蔽失效原因 `share_blocked` 还需要依次执行 `migration/produ
 
 ## 下载授权与事件
 
+维护控制、独立轮次、参与者和 2026-10-19 迁移见 [workspace.md](workspace.md)。
+资源变更按资源 → 实际链接 → 维护 → 事项锁定；单链接路径不反向取得父资源锁。
+维护控制的 resource_id 为历史标量，避免首报插入时因外键隐式反向加锁；link_id
+使用 SetNull 保留删除历史。维护公开限制变更走既有资源缓存失效，提交后失败不回滚。
+维护事件与健康事项分别完成，不能用健康 evidence_round 或健康结案代替维护回应。
+
 下载访问状态分成资源级 grant 和镜像级 event：
 
 - `patch_resource_access_grant` 只包含 `actor_key`、`resource_id` 和 `expires`，复合主键保证同一 actor/resource 只有一条 grant。新授权从首次获取起固定有效 24 小时；同一授权期内点开其它镜像、重复查看或自动恢复都不延长 `expires`。

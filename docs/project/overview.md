@@ -98,6 +98,10 @@ OtoAme 是基于 `kun-touchgal-next` fork 的一站式乙女游戏文化社区�
 - [app/api/edit/create.ts](../../app/api/edit/create.ts) 创建游戏、上传 banner、写入 rating stat、处理外部标签并失效缓存。
 - [app/api/patch/resource/\_helper.ts](../../app/api/patch/resource/_helper.ts) 处理资源上传消费、S3 补偿、缓存失效和审计日志脱敏。
 
+登录用户的本人管理位于 `/workspace`，使用独立 shadcn 用户外壳；`/dashboard` 保持
+管理员门槛。工作台 API、受保护链接引用、维护状态和迁移见
+[用户工作台模块](../modules/workspace.md)。旧 `/issue` 地址兼容跳转到工作台。
+
 ### 数据访问
 
 [prisma/index.ts](../../prisma/index.ts) 使用 `pg.Pool` 和 `PrismaPg` adapter 创建 Prisma Client：
@@ -134,6 +138,8 @@ Zod schema 集中在 `validations/`。API 工具函数在 [app/api/utils/parseQu
 
 - `/admin/:path*`
 - `/dashboard/:path*`
+- `/workspace/:path*`
+- `/issue/:path*`
 - `/preview/:path*`
 - `/user/:path*`
 - `/comment/:path*`

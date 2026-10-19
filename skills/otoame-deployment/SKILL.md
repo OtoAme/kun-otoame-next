@@ -12,6 +12,7 @@ Use this skill for deployment and release work.
 - Deployment guide: `docs/project/deployment.md`
 - Runtime map: `docs/project/overview.md`
 - Environment and local setup details: `docs/project/development.md`
+- Workspace/maintenance cutover: `docs/modules/workspace.md`
 
 ## Deployment Paths
 

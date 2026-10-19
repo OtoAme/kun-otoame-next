@@ -114,6 +114,13 @@
 
 ## 用户与消息页面
 
+登录后的本人管理入口为 `/workspace`，默认进入 `/workspace/resources`。条目、资源和
+事项页面均位于 `app/(dashboard)/workspace`，使用独立 `WorkspaceShell`，不挂载管理员
+外壳或请求全站计数。布局调用 `requireWorkspaceUser`，middleware 同时保护该路径。
+`/issue` 和详情兼容跳转，只保留合法筛选、页码和选中项。个人投稿页保留公开贡献展示，
+私有管理改由工作台入口进入；投稿编辑完成后返回工作台。具体读写与状态契约见
+[workspace.md](workspace.md)。
+
 用户页：
 
 - `app/(site)/user/[id]/*`

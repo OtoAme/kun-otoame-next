@@ -12,10 +12,12 @@ Use this skill for API and business-service work; per-domain rules live in the m
 - `docs/modules/api-services.md` — API 约定, 消息和反馈, 萌萌点账务, 搜索和列表, 标签和公司, 编辑外部数据合并, 资源发布和上传, 用户设置和资料, 投稿域 patch_submission, 输入校验, 安全约束
 - `docs/modules/data-cache-upload.md` — Patch 缓存, 上传与 S3, 下载授权与事件
 - `docs/project/testing.md`
+- `docs/modules/workspace.md` — session-scoped management, protected references, maintenance and case notifications
 
 ## Rules
 
 - Enforce auth, role, ownership and CSRF in the route or service. Frontend visibility is never a permission.
+- Workspace writes recheck their own-user scope under lock, including administrator callers. Maintenance freezes are checked before checker I/O and again inside report transactions; only the first effective report prompts ordinary publishers.
 - Link reports/health/checks use the dedicated link services and authoritative projection in `docs/modules/api-services.md`. Open/close link cases through the real helpers in the caller transaction, link-before-case locks and winner-only notices; generic case actions cannot bypass health policy or reopen old versions. Decode only the selected latest present context; corruption never falls back.
 - Authenticated users may check visible published links recognized by LLC provider rules without a prior download. Derive support from current content, never storage labels or old observations; unsupported links expose no check action. Keep owner/staff management separate, preserve CSRF/rate limits, and record ordinary check initiators as user.
 - Keep health, machine observation and report facts independent. Qualified deleted/cancelled/expired/blocked evidence may mark broken; available plus threshold reports stays disputed, and unknown cannot erase conclusions. LLC supports five providers through audited result tuples; accept cached observations only within five minutes and the current handling basis, preserving original timestamps and isolating cache inputs. Detect outside transactions, recheck basis/signature under lock, preserve manual actors and never expose URL/code/signature/provider bodies. See the link-health contract in `docs/modules/api-services.md`.

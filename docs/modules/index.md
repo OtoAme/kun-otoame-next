@@ -16,6 +16,8 @@
 
 ## 贡献者阅读路径
 
+用户工作台、本人编辑、维护事件和健康事项的跨模块契约见 [workspace.md](./workspace.md)。
+
 1. 新贡献者先读 [../project/development.md](../project/development.md)，完成本地启动。
 2. 想改页面或组件，读 [app-router.md](./app-router.md) 和 [frontend-content.md](./frontend-content.md)。
 3. 想改接口或业务规则，读 [api-services.md](./api-services.md)。

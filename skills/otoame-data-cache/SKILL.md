@@ -12,10 +12,11 @@ Use this skill for persistence, cache, and upload consistency work.
 - `docs/modules/data-cache-upload.md` — Prisma, Redis, Patch 缓存, 上传与 S3, 投稿素材的 key 布局, 资源派生属性, 下载授权与事件
 - `docs/modules/operations.md` — 迁移策略, 维护脚本
 - `docs/project/testing.md`
+- `docs/modules/workspace.md` — independent maintenance rounds, lock order and production migration
 
 ## Rules
 
-- Resource links retain stable IDs and require the complete original `baseLinks` for edits; only canonical address changes advance version. Lock resource → actual links → cases for resource mutations, while link health owns link → case without reverse parent locks. Single-link deletion uses access `SetNull` and preserves quota facts; access credentials/event version come from one transaction and restore remains read-only/current-version. See `docs/modules/data-cache-upload.md`.
+- Resource links retain stable IDs and require the complete original `baseLinks` for edits; only canonical address changes advance version. Lock resource → actual links → maintenance → cases for resource mutations; single-link paths never acquire a parent lock in reverse, including implicit FK locks. Single-link deletion uses access `SetNull` and preserves quota facts; access credentials/event version come from one transaction and restore remains read-only/current-version. See `docs/modules/data-cache-upload.md`.
 - Health reports/checks/history use the dated link-health migration trio and current-input signatures; never invent historical acquisition versions or expose old-address history/signatures publicly. Upload/checker calls stay outside whole-transaction retries, and postcommit failures cannot report an already committed save as rolled back.
 - Link-check reasons also have a database CHECK. `share_blocked` requires the 2026-10-17 incremental migration trio after the base schema; verify real PostgreSQL constraints on a disposable database, not only Prisma mocks. See `docs/modules/data-cache-upload.md` for rollout and postflight order.
 - Historical case participation comes from the selected latest handoff event, without a resource join or 500-row cap (D37); batch list identity facts. Keep account existence and notification foreign keys safe against concurrent account deletion. A PostgreSQL foreign-key failure aborts the transaction: never catch it and continue writing inside that transaction. Preserve resource-before-case locking and keep Redis/image consumption outside any whole-transaction retry.

@@ -409,6 +409,14 @@ To apply this change we need to reset the database, do you want to continue?
 
 Phase B 应用失败先关闭 resolver 并执行 `pnpm deploy:rollback`，验证 previous release 能否兼容 Phase B。只有 previous 兼容层也失败时才在持续停写下执行 `production-company-identity-constraint-rollback-2026-08-30.sql` 和 `production-company-identity-constraint-rollback-postflight-2026-08-30.sql`；这组 SQL 保留所有业务数据，只恢复 Phase A 索引与 nullable 形态。计数触发器的数据库回滚使用独立 `production-tag-company-count-rollback-2026-08-30.sql`，并且必须先恢复匹配的手工计数应用版本再开放关系写入。
 
+### 用户工作台与维护上线
+
+用户工作台与维护机制上线前，先完成既有 2026-10-09 链接健康结构和 2026-10-17 CHECK
+增量，再执行 2026-10-19 维护 preflight、sync、postflight。必须停止旧写入并备份，
+通过 `pnpm prisma:deploy-safe` 后切换同版本实例；旧应用会绕过反馈冻结，不能在有写流量
+时单独回退或混跑。迁移不补发历史通知、不改健康事项时钟，重跑保留真实维护事件。
+完整文件与验收入口见 [工作台模块](../modules/workspace.md#迁移与验证)。
+
 ## 回滚思路
 
 应用回滚和数据库回滚必须分开计划。当前受管部署保留不可变 `.deploy/current` 与 `.deploy/previous`，应用层离线回滚直接运行：

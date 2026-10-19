@@ -17,6 +17,7 @@ Read the relevant project docs before editing:
 - Module navigation: `docs/modules/index.md`
 - Local setup, environment variables, admin bootstrap, and common change paths: `docs/project/development.md`
 - Testing expectations: `docs/project/testing.md`
+- User workspace and maintenance changes: `docs/modules/workspace.md`
 
 ## Preferred Context Tools
 

@@ -20,6 +20,7 @@ Blocking findings need a trigger, consequence, evidence and minimal fix. Keep lo
 - Module map: `docs/modules/index.md`
 - Testing guide: `docs/project/testing.md`
 - Quality and docs/skill rules: `docs/modules/quality.md`
+- Workspace contracts and lock/notification boundaries: `docs/modules/workspace.md`
 - Deployment guide when CI/build files changed: `docs/project/deployment.md`
 
 ## Review Priorities

@@ -268,7 +268,7 @@ pnpm typecheck
 
 用户名与签名设置的单元回归位于 `tests/unit/user-profile-settings.test.tsx` 和 `tests/unit/api/user-profile-settings.test.ts`，覆盖预填、未修改禁用、校验、异步资料刷新、保存失败重试和改名扣费事务。
 
-仓库有六套独立脚本，直接使用 `playwright-core` / HTTP 客户端，不通过 `@playwright/test` runner：
+仓库的既有六套独立脚本，直接使用 `playwright-core` / HTTP 客户端，不通过 `@playwright/test` runner：
 
 - `tests/e2e/edit-upload-guards.e2e.ts`
 - `tests/e2e/patch-submission-lifecycle.e2e.ts`
@@ -324,6 +324,16 @@ KUN_E2E_DATABASE_URL='postgresql://<user>:<password>@127.0.0.1:5432/touchgal_e2e
 ```bash
 node tests/e2e/resource-card-mobile.e2e.ts
 ```
+
+## 工作台与维护整链验收
+
+工作台与维护的整链脚本为 `tests/e2e/workspace-maintenance.e2e.ts` 和
+`tests/e2e/workspace-maintenance-migration.e2e.ts`。前者在独立 3100 服务、非默认端口
+PostgreSQL／Redis、本机受控 checker 和对象存储替身下验证真实读写、并发、资格、冻结、
+通知、健康时钟、删除／移动、素材消费及浏览器；后者验证只读检查、首次安装、非空
+回填、锁超时回滚、幂等和上线后记录保护。两者不加载真实 `.env`，只接受显式一次性
+`_e2e` 数据库。参数和生命周期见 [工作台模块](../modules/workspace.md#迁移与验证)。
+真实迁移与生产构建结果需要绑定实际源码版本，mock 通过不能替代整链验收。
 
 ## 已知缺口
 

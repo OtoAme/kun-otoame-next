@@ -235,6 +235,13 @@ pnpm deploy:rollback
 
 ## 迁移策略
 
+工作台维护结构使用 `production-link-maintenance-{preflight,sync,postflight}-2026-10-19.sql`，
+在既有链接健康结构及 2026-10-17 CHECK 增量之后执行。pre/postflight 只读；sync
+单事务且幂等，不改既有健康约束、事项上下文或时钟，不补发历史通知。上线前停止旧
+写入，postflight 和 schema guard 通过后切换同版本实例；禁止旧新版混跑绕过反馈冻结。
+回填条件、锁顺序和一次性 PostgreSQL 验收见 [workspace.md](workspace.md)。暂缓到期
+由读写时刻派生，不新增 cron，也不暂停健康任务时钟。
+
 资源访问缺表上线使用
 `migration/production-resource-access-bootstrap-preflight-2026-07-12.sql` 及对应 sync，
 然后复用现有 grant pair。Bootstrap 保持手工执行，不加入 deploy-safe。Steam ID

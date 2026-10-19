@@ -12,6 +12,7 @@ Use this skill for operational code and release plumbing.
 - Module guide: `docs/modules/operations.md`
 - Deployment guide: `docs/project/deployment.md`
 - Review guide: `docs/project/review.md`
+- Workspace migration: `docs/modules/workspace.md`
 
 ## Rules
 
@@ -28,6 +29,7 @@ Use this skill for operational code and release plumbing.
 - Link health tasks keep fixed 7-day ordinary suspect and 30-day owner-verification dispute clocks; persisted machine conflicts and corrupt contexts skip automation. Preserve bounded ID-cursor progress through skipped targets, task-lock failure skipping and separate Redis cursor fallback semantics. Do not put link kinds into the ordinary case timeout task; see `docs/modules/operations.md`.
 - The link checker is a separate pinned self-hosted service under `deployment/link-checker`, loopback/zero-cache by default, without whole-site scanning. Keep its revision/hash/license and audited provider admission explicit; recognized providers are not automatically qualified, and synthetic tests are not live reliability evidence. Never log share URLs/codes/provider bodies/auth/cookies.
 - Migration scripts need dry-run/preflight behavior for production data.
+- Link-maintenance rollout follows the existing health/CHECK migrations with the 2026-10-19 read-only preflight, transactional sync and postflight. Preserve case clocks and real maintenance records; never backfill notifications or mix old and new report writers. Snooze expiry needs no cron.
 - Patch-submission production preflight must stay read-only, independently skip row checks when either submission table is absent, and report defaults that conflict with Prisma `@updatedAt`. The sync creates those columns without defaults and idempotently drops legacy defaults. Docker-hosted PostgreSQL rollout uses `docker exec -i` for redirected SQL, a verified host-side `pg_dump` after PM2 stops, ordered syncs, repeated preflights as postflight, and a pinned Release; never substitute production `prisma:push`.
 - Moemoepoint ledger rollout must run `production-moemoepoint-ledger-preflight-2026-08-17.sql`, then the reviewed sync, then `pnpm prisma:deploy-safe` before starting code that depends on the new tables; do not roll the application back alone while writes are live because older code bypasses the ledger.
 - Shoutbox rollout runs `production-shoutbox-preflight-2026-09-11.sql`, sync, postflight, then `pnpm prisma:deploy-safe` before deploying dependent code. Keep pre/postflight read-only and never substitute `prisma db push`.

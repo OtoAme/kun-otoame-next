@@ -11,6 +11,7 @@ Use this skill for project-specific testing work; checklists and the file map li
 
 - `docs/project/testing.md` — 当前测试栈, 测试目录, 何时新增测试, 测试优先级, Vitest mock 模式, API service 测试约定, Redis 测试约定, Prisma/事务测试约定, 上传和资源测试, 浏览器与 HTTP 端到端脚本
 - `docs/project/development.md`
+- `docs/modules/workspace.md` — isolated HTTP, checker, upload and migration acceptance
 
 ## Rules
 
