@@ -308,7 +308,7 @@ export function WorkspaceEntries() {
           </Button>
         </div>
         <form
-          className="flex min-w-0 flex-1 flex-wrap gap-2"
+          className="flex w-full min-w-0 shrink-0 flex-wrap gap-2 sm:w-auto sm:flex-1"
           onSubmit={(event) => {
             event.preventDefault()
             setPage(1)
@@ -322,7 +322,12 @@ export function WorkspaceEntries() {
             className="min-w-0 flex-1"
             placeholder="搜索名称"
           />
-          <Button type="submit" size="sm" variant="outline">
+          <Button
+            type="submit"
+            size="sm"
+            variant="outline"
+            className="shrink-0"
+          >
             搜索
           </Button>
         </form>
