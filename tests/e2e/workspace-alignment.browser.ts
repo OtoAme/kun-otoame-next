@@ -142,6 +142,9 @@ const select = async (
     'Select label must identify one option even when its description is visible'
   )
   await choice.click()
+  await page
+    .getByRole('listbox', { includeHidden: true })
+    .waitFor({ state: 'detached' })
 }
 const checkbox = async (
   page: Page,
@@ -657,6 +660,60 @@ export async function runWorkspaceAlignment(h: Harness) {
                   .waitFor()
               }
               if (label === 'entries') {
+                if (viewport.width <= 390) {
+                  const search = page.getByRole('textbox', {
+                    name: '搜索条目',
+                    exact: true
+                  })
+                  const submit = page
+                    .locator('form')
+                    .filter({ has: search })
+                    .getByRole('button', { name: '搜索', exact: true })
+                  assert.equal(await submit.isVisible(), true)
+                  const inputBox = await search.boundingBox()
+                  const buttonBox = await submit.boundingBox()
+                  assert(
+                    inputBox && buttonBox,
+                    'Mobile entry search controls must be visible'
+                  )
+                  await writeFile(
+                    resolve(
+                      h.artifactDir,
+                      `alignment-${viewport.width}-${scheme}-entry-search.json`
+                    ),
+                    JSON.stringify(
+                      { sourceSha, viewport, scheme, inputBox, buttonBox },
+                      null,
+                      2
+                    )
+                  )
+                  assert(
+                    inputBox.width >= 160,
+                    `Entry search input is only ${inputBox.width}px at ${viewport.width}px`
+                  )
+                  for (const box of [inputBox, buttonBox])
+                    assert(
+                      box.x >= -1 &&
+                        box.y >= -1 &&
+                        box.x + box.width <= viewport.width + 1 &&
+                        box.y + box.height <= viewport.height + 1,
+                      `Entry search control escapes viewport: ${JSON.stringify(box)}`
+                    )
+                  const overlapX =
+                    Math.min(
+                      inputBox.x + inputBox.width,
+                      buttonBox.x + buttonBox.width
+                    ) - Math.max(inputBox.x, buttonBox.x)
+                  const overlapY =
+                    Math.min(
+                      inputBox.y + inputBox.height,
+                      buttonBox.y + buttonBox.height
+                    ) - Math.max(inputBox.y, buttonBox.y)
+                  assert(
+                    overlapX <= 0.5 || overlapY <= 0.5,
+                    'Entry search input and button overlap'
+                  )
+                }
                 for (const item of matrixEntries) {
                   const card = entryCard(page, item.name)
                   await card.waitFor()
