@@ -21,6 +21,6 @@ Use natural language throughout explanatory prose. Only operational guides retai
 
 Verify new explanations and failure handling against current evidence. Distinguish implementation, approved requirements and actual deployment; historical tests do not establish current operation. Put unsupported gaps in the delivery report, not unfinished prose.
 
-Maintain one primary home for each important fact and update navigation and incoming links. Replace superseded rules instead of appending contradictory exceptions. Independently review substantial rewrites and high-risk instructions within the user's authorized workflow; this does not authorize automatic multi-model delegation.
+Maintain one primary home for each important fact and update navigation and incoming links. Replace superseded rules instead of appending contradictory exceptions. Independently review substantial rewrites and high-risk instructions within the user's authorized workflow.
 
 Mechanical checks verify local structure, not factual accuracy or usability. Report checks, evidence and remaining limits.

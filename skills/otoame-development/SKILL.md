@@ -19,7 +19,7 @@ Use this entry skill before domain work. Project skills have one source under th
 
 User instructions define scope and override generic skill procedures. Continue authorized, reversible local work; obtain authorization for destructive, external, costly or expanded actions. Reading source grants no database, storage, email, commit, push or deployment permission.
 
-Exclude real environment files and variants, credentials, private keys, database dumps and private user data from inspection and transfer. Prefer focused workspace search; consult current official library documentation through Context7 when needed. The development guide records the standing Mirasim authorization and its exact exclusions; do not broaden its recipient or purpose. Delegate only when requested, using the current model assignment.
+Exclude real environment files and variants, credentials, private keys, database dumps and private user data from inspection and transfer. Prefer focused workspace search; consult current official library documentation through Context7 when needed.
 
 Keep server authorization, business transactions, accounting, upload compensation and cache invalidation intact. Preserve compatibility identifiers. Use Conventional Commits when commits are authorized; review documentation and skills after code changes and commit their synchronization separately.
 

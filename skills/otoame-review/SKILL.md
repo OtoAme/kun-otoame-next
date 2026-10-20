@@ -5,7 +5,7 @@ description: Use when reviewing OtoAme code, documentation, tests, data changes,
 
 # OtoAme Review
 
-Read the development entry first. Review changed behavior and necessary dependencies within the user's scope; do not turn every change into a whole-system rewrite or multi-model review.
+Read the development entry first. Review changed behavior and necessary dependencies within the user's scope; do not turn every change into a whole-system rewrite.
 
 ## Required References
 
