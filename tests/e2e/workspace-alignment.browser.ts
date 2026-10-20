@@ -2280,11 +2280,20 @@ async function profileCases(
           'Expected the global avatar trigger identified by its actual Avatar name'
         )
         await avatar.click()
-        await page
-          .getByRole('menu', { name: 'Profile Actions' })
-          .getByRole('menuitem', { name: /工作台|我的资源/ })
-          .first()
-          .waitFor()
+        const menu = page.getByRole('menu')
+        await menu.waitFor()
+        assert.equal(await menu.count(), 1, 'Expected one open avatar menu')
+        const workspace = menu.getByRole('menuitem', {
+          name: '用户工作台',
+          exact: true
+        })
+        await workspace.waitFor()
+        assert.equal(
+          await workspace.getAttribute('href'),
+          '/workspace/resources'
+        )
+        await workspace.click()
+        await page.waitForURL('**/workspace/resources')
       }
     }
   )
