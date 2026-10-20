@@ -1042,7 +1042,8 @@ export async function runWorkspaceAlignment(h: Harness) {
             !detail.platform.includes('windows')
         )
         assert(
-          detail.language.includes('zh-cn') && detail.language.includes('ja')
+          detail.language.includes('zh-Hans') && detail.language.includes('ja'),
+          `Expected independent Simplified Chinese and Japanese languages, got ${JSON.stringify(detail.language)}`
         )
         await noOverflow(
           page,
