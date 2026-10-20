@@ -2074,7 +2074,7 @@ async function submissionCases(
         )
       }
       await openDelete()
-      await confirm(page).click()
+      await button(dialog(page), '删除并返还').click()
       await dialog(page).getByRole('alert').waitFor()
       assert.equal((await draftStorage(page, id)).length, 3)
       await button(dialog(page), '取消').click()
@@ -2094,7 +2094,7 @@ async function submissionCases(
             new URL(res.url()).pathname === `/api/patch-submission/${id}` &&
             res.request().method() === 'DELETE'
         )
-        await confirm(page).click()
+        await button(dialog(page), '删除并返还').click()
         assert.equal((await deleted).status(), 200)
         await waitFor(
           async () => (await entryCard(page, submitted.name).count()) === 0,
@@ -2165,17 +2165,15 @@ async function submissionCases(
       const ledgerBefore = await h.prisma.user_moemoepoint_ledger.count({
         where: { user_id: author.id }
       })
-      await entryCard(page, terminal.name)
-        .locator('button[aria-haspopup="menu"]')
-        .click()
       const hidden = page.waitForResponse(
         (res) =>
           new URL(res.url()).pathname ===
             `/api/patch-submission/${terminal.id}` &&
           res.request().method() === 'PATCH'
       )
-      await page.getByRole('menuitem', { name: /隐藏/ }).click()
-      if (await dialog(page).count()) await confirm(page).click()
+      await entryCard(page, terminal.name)
+        .getByRole('button', { name: '从列表隐藏', exact: true })
+        .click()
       assert.equal((await hidden).status(), 200)
       assert.equal(
         (
