@@ -13,9 +13,11 @@ import type {
 } from 'playwright-core'
 import { storageTypes } from '../../constants/resource'
 import { PATCH_SUBMISSION_REASON } from '../../constants/patchSubmission'
+import type { KunUploadFileResponse } from '../../types/api/upload'
 import type {
   WorkspaceResourceDetail,
-  WorkspaceResourcesResponse
+  WorkspaceResourcesResponse,
+  WorkspaceResourceUpdateInput
 } from '../../types/api/workspace'
 
 type Actor = { id: number; name: string; role: number; token: string }
@@ -1199,6 +1201,348 @@ async function editorCases(
         'Background baseline save missing'
       )
       assert.deepEqual(submitted, base.baseLinks)
+    }
+  )
+  await scenario(
+    'same-id reload keeps failed upload on cancel/error/409 and clears it only after a successful new session',
+    async () => {
+      assert.equal(staff.role, 4)
+      const item = await seedResource(
+        h,
+        staff,
+        s3.patch_id,
+        `${h.run} same-id upload session`,
+        { storage: 's3', section: 'patch' }
+      )
+      const { page } = await contextFor(staff)
+      await openEditor(page, h.origin, item.id)
+      const before = json<WorkspaceResourceDetail>(
+        await h.request(staff, 'GET', resourcePath(item.id))
+      )
+      const filename = 'alignment-retained-failure.zip'
+      let uploads = 0
+      await page.route('**/api/upload/resource', (route) => {
+        uploads++
+        return route.fulfill({
+          status: 503,
+          contentType: 'application/json',
+          body: JSON.stringify('受控上传失败')
+        })
+      })
+      await page.getByLabel('上传资源文件').setInputFiles({
+        name: filename,
+        mimeType: 'application/zip',
+        buffer: Buffer.alloc(1024, 5)
+      })
+      const retry = button(page, '重试上传')
+      const failedFile = page.getByText(filename, { exact: true })
+      await retry.waitFor()
+      await failedFile.waitFor()
+      assert.equal(uploads, 1)
+      const draftName = `${h.run} retain failed upload draft`
+      await nameInput(page).fill(draftName)
+      let reads = 0
+      let failRead = true
+      let submittedBase: unknown
+      const handler = (route: Route) => {
+        if (route.request().method() === 'PUT') {
+          submittedBase = route.request().postDataJSON().baseLinks
+          return route.fulfill({
+            status: 409,
+            contentType: 'application/json',
+            body: JSON.stringify('受控编辑冲突')
+          })
+        }
+        if (route.request().method() !== 'GET') return route.continue()
+        reads++
+        if (!failRead) return route.continue()
+        return route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify('受控读取失败：保留上传状态')
+        })
+      }
+      await page.route(`**${resourcePath(item.id)}`, handler)
+      const assertRetained = async () => {
+        assert.equal(await nameInput(page).inputValue(), draftName)
+        assert.equal(await failedFile.isVisible(), true)
+        assert.equal(await retry.isEnabled(), true)
+        assert.equal(uploads, 1, 'Reload must not retry an upload')
+      }
+      await reload(page).click()
+      await button(dialog(page), '取消').click()
+      assert.equal(reads, 0, 'Cancelled dirty reload must not send GET')
+      await assertRetained()
+      const failedRead = page.waitForResponse(
+        (res) =>
+          new URL(res.url()).pathname === resourcePath(item.id) &&
+          res.request().method() === 'GET'
+      )
+      await reload(page).click()
+      await confirm(page).click()
+      assert.equal(typeof (await (await failedRead).json()), 'string')
+      await waitFor(
+        () => reload(page).isEnabled(),
+        'Failed reload did not settle'
+      )
+      assert.equal(reads, 1)
+      await assertRetained()
+      const conflicted = page.waitForResponse(
+        (res) =>
+          new URL(res.url()).pathname === resourcePath(item.id) &&
+          res.request().method() === 'PUT'
+      )
+      await button(page, '保存').click()
+      assert.equal((await conflicted).status(), 409)
+      await waitFor(
+        () => button(page, '保存').isEnabled(),
+        '409 did not settle'
+      )
+      assert.deepEqual(submittedBase, before.baseLinks)
+      await assertRetained()
+      failRead = false
+      const latestRead = page.waitForResponse(
+        (res) =>
+          new URL(res.url()).pathname === resourcePath(item.id) &&
+          res.request().method() === 'GET'
+      )
+      await reload(page).click()
+      await confirm(page).click()
+      const response = await latestRead
+      assert.equal(response.status(), 200)
+      const latest = (await response.json()) as WorkspaceResourceDetail
+      assert.equal(latest.id, before.id)
+      assert.deepEqual(latest.baseLinks, before.baseLinks)
+      assert.deepEqual(
+        latest.links.map(({ id, version }) => ({ id, version })),
+        before.links.map(({ id, version }) => ({ id, version }))
+      )
+      await waitFor(
+        async () => (await nameInput(page).inputValue()) === before.name,
+        'Successful same-id reload did not restore the server draft'
+      )
+      await waitFor(
+        async () =>
+          (await retry.count()) === 0 && (await failedFile.count()) === 0,
+        'Successful same-id/same-version reload kept the previous failed file session'
+      )
+      assert.equal(
+        await page.getByLabel('资源备注', { exact: true }).inputValue(),
+        before.note
+      )
+      assert.equal(reads, 2)
+      assert.equal(uploads, 1)
+      await page.unroute(`**${resourcePath(item.id)}`, handler)
+    }
+  )
+  await scenario(
+    'delayed genuine upload receipt preserves newer draft fields or their explicitly disabled originals',
+    async () => {
+      assert.equal(staff.role, 4)
+      const item = await seedResource(
+        h,
+        staff,
+        s3.patch_id,
+        `${h.run} upload merge session`,
+        { storage: 's3', section: 'patch', second: true }
+      )
+      const { page } = await contextFor(staff)
+      await openEditor(page, h.origin, item.id)
+      const fields = [
+        {
+          label: '资源名称',
+          input: nameInput(page),
+          next: `${h.run} latest upload name`
+        },
+        {
+          label: '资源备注',
+          input: page.getByLabel('资源备注', { exact: true }),
+          next: `${h.run} latest upload note`
+        },
+        {
+          label: '提取码',
+          input: page.getByLabel('提取码', { exact: true }).first(),
+          next: 'new-code'
+        },
+        {
+          label: '解压码',
+          input: page.getByLabel('解压码', { exact: true }).first(),
+          next: 'new-password'
+        },
+        {
+          label: '另一链接提取码',
+          input: page.getByLabel('提取码', { exact: true }).nth(1),
+          next: 'other-new-code'
+        }
+      ]
+      const observed: {
+        label: string
+        disabled: boolean
+        original: string
+        expected: string
+      }[] = []
+      for (const field of fields) {
+        assert.equal(
+          await field.input.isEditable(),
+          true,
+          `${field.label} must start editable`
+        )
+        const original = await field.input.inputValue()
+        observed.push({
+          label: field.label,
+          disabled: false,
+          original,
+          expected: original
+        })
+      }
+      let uploaded: KunUploadFileResponse | undefined
+      let release: () => void = () => {}
+      const gate = new Promise<void>((done) => {
+        release = done
+      })
+      let uploadFinished: () => void = () => {}
+      const uploadSettled = new Promise<void>((done) => {
+        uploadFinished = done
+      })
+      const handler = async (route: Route) => {
+        const response = await route.fetch()
+        assert.equal(
+          response.status(),
+          200,
+          'Genuine upload API must succeed before holding its receipt'
+        )
+        const result = (await response.json()) as KunUploadFileResponse | string
+        assert.notEqual(
+          typeof result,
+          'string',
+          'Real upload returned an error'
+        )
+        assert(
+          typeof result !== 'string' &&
+            result.uploadId &&
+            result.fileHash &&
+            result.fileSize
+        )
+        assert.equal(result.filetype, 's3')
+        uploaded = result
+        await gate
+        await route.fulfill({ response })
+        uploadFinished()
+      }
+      await page.route('**/api/upload/resource', handler)
+      try {
+        await page.getByLabel('上传资源文件').setInputFiles({
+          name: 'alignment-merge-receipt.zip',
+          mimeType: 'application/zip',
+          buffer: Buffer.alloc(1024, 6)
+        })
+        await waitFor(
+          () => uploaded !== undefined,
+          'Genuine upload did not reach the held receipt'
+        )
+        for (const [index, field] of fields.entries()) {
+          const entry = observed[index]
+          entry.disabled = await field.input.isDisabled()
+          if (entry.disabled) {
+            assert.equal(await field.input.isEditable(), false)
+            assert.equal(await field.input.inputValue(), entry.original)
+          } else {
+            assert.equal(
+              await field.input.isEditable(),
+              true,
+              `${field.label} is neither editable nor disabled`
+            )
+            await field.input.fill(field.next)
+            entry.expected = field.next
+          }
+          assert.equal(await field.input.inputValue(), entry.expected)
+        }
+        await writeFile(
+          resolve(h.artifactDir, 'upload-draft-field-guards.json'),
+          JSON.stringify(
+            {
+              run: h.run,
+              sourceSha: process.env.KUN_E2E_SOURCE_SHA,
+              fields: observed
+            },
+            null,
+            2
+          )
+        )
+        release()
+        await within(uploadSettled, 'Genuine upload receipt was not delivered')
+        assert(uploaded)
+        await waitFor(
+          async () =>
+            (await page
+              .getByLabel('校验值', { exact: true })
+              .first()
+              .inputValue()) === uploaded!.fileHash &&
+            (await button(page, '保存').isEnabled()),
+          'Registered upload metadata did not enter the current draft'
+        )
+        for (const [index, field] of fields.entries())
+          assert.equal(
+            await field.input.inputValue(),
+            observed[index].expected,
+            `${field.label} was overwritten by an old upload session`
+          )
+        assert.equal(
+          await page
+            .getByLabel('资源大小', { exact: true })
+            .first()
+            .inputValue(),
+          uploaded.fileSize
+        )
+        const save = page.waitForResponse(
+          (res) =>
+            new URL(res.url()).pathname === resourcePath(item.id) &&
+            res.request().method() === 'PUT'
+        )
+        await button(page, '保存').click()
+        const response = await save
+        assert.equal(
+          response.status(),
+          200,
+          'Real save with registered upload must succeed'
+        )
+        assert.notEqual(typeof (await response.json()), 'string')
+        const submitted = response
+          .request()
+          .postDataJSON() as WorkspaceResourceUpdateInput
+        assert.equal(submitted.name, observed[0].expected)
+        assert.equal(submitted.note, observed[1].expected)
+        const link = submitted.links.find(
+          (entry) => entry.id === item.links[0].id
+        )
+        assert(link && 'uploadId' in link)
+        assert.equal(link.uploadId, uploaded.uploadId)
+        assert.equal(link.hash, uploaded.fileHash)
+        assert.equal(link.size, uploaded.fileSize)
+        const saved = json<WorkspaceResourceDetail>(
+          await h.request(staff, 'GET', resourcePath(item.id))
+        )
+        assert.equal(saved.name, observed[0].expected)
+        assert.equal(saved.note, observed[1].expected)
+        const savedLink = saved.links.find(
+          (entry) => entry.id === item.links[0].id
+        )
+        const otherLink = saved.links.find(
+          (entry) => entry.id === item.links[1].id
+        )
+        assert(
+          savedLink && !savedLink.protected && otherLink && !otherLink.protected
+        )
+        assert.equal(savedLink.code, observed[2].expected)
+        assert.equal(savedLink.password, observed[3].expected)
+        assert.equal(otherLink.code, observed[4].expected)
+        assert.equal(savedLink.hash, uploaded.fileHash)
+        assert.equal(savedLink.size, uploaded.fileSize)
+        assert.equal(savedLink.storage, 's3')
+      } finally {
+        release()
+        await page.unroute('**/api/upload/resource', handler)
+      }
     }
   )
   await scenario(
