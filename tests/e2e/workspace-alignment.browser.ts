@@ -1614,24 +1614,105 @@ async function editorCases(
         releaseSave = done
       })
       await openEditor(page, h.origin, s3.id)
-      await nameInput(page).fill(`${h.run} held real save`)
-      await page.route(`**${resourcePath(s3.id)}`, async (route) => {
+      const submittedName = `${h.run} held real save`
+      const laterName = `${h.run} typed after save submission`
+      await nameInput(page).fill(submittedName)
+      let readsAfterSave = 0
+      let nameDisabledDuringSave = false
+      const saveHandler = async (route: Route) => {
+        if (route.request().method() === 'GET') readsAfterSave++
         if (route.request().method() !== 'PUT') return route.continue()
+        assert.equal(route.request().postDataJSON().name, submittedName)
         putSeen = true
         await saveGate
         await route.continue()
-      })
+      }
+      await page.route(`**${resourcePath(s3.id)}`, saveHandler)
+      const saved = page.waitForResponse(
+        (res) =>
+          new URL(res.url()).pathname === resourcePath(s3.id) &&
+          res.request().method() === 'PUT'
+      )
+      const reread = page.waitForResponse(
+        (res) =>
+          new URL(res.url()).pathname === resourcePath(s3.id) &&
+          res.request().method() === 'GET'
+      )
       try {
         await button(page, '保存').click()
         await waitFor(() => putSeen, 'Pending save not observed')
         assert.equal(await reload(page).isDisabled(), true)
+        nameDisabledDuringSave = await nameInput(page).isDisabled()
+        if (nameDisabledDuringSave) {
+          assert.equal(await nameInput(page).isEditable(), false)
+          assert.equal(await nameInput(page).inputValue(), submittedName)
+        } else {
+          assert.equal(await nameInput(page).isEditable(), true)
+          await nameInput(page).fill(laterName)
+          assert.equal(await nameInput(page).inputValue(), laterName)
+        }
       } finally {
         releaseSave()
       }
+      const savedResponse = await saved
+      assert.equal(savedResponse.status(), 200, 'Held real PUT must succeed')
+      assert.notEqual(typeof (await savedResponse.json()), 'string')
+      const rereadResponse = await reread
+      assert.equal(rereadResponse.status(), 200)
+      const canonical = (await rereadResponse.json()) as WorkspaceResourceDetail
+      assert.equal(canonical.id, s3.id)
+      assert.equal(
+        canonical.name,
+        submittedName,
+        'Late input must stay unsaved'
+      )
       await waitFor(
-        () => button(page, '保存').isEnabled(),
+        async () =>
+          (await button(page, '保存').isEnabled()) &&
+          (await reload(page).isEnabled()),
         'Actual save did not settle'
       )
+      const retainedName = nameDisabledDuringSave ? submittedName : laterName
+      assert.equal(await nameInput(page).inputValue(), retainedName)
+      assert.equal(await nameInput(page).isEnabled(), true)
+      const readsBeforeCancel = readsAfterSave
+      assert.equal(
+        readsBeforeCancel,
+        1,
+        'Committed save must finish its detail GET'
+      )
+      if (!nameDisabledDuringSave) {
+        await reload(page).click()
+        await dialog(page).waitFor()
+        assert.equal(
+          readsAfterSave,
+          readsBeforeCancel,
+          'Dirty reload must await confirmation'
+        )
+        await button(dialog(page), '取消').click()
+        assert.equal(
+          readsAfterSave,
+          readsBeforeCancel,
+          'Cancelled reload must not send GET'
+        )
+        assert.equal(await nameInput(page).inputValue(), laterName)
+      }
+      await writeFile(
+        resolve(h.artifactDir, 'held-save-edit-guards.json'),
+        JSON.stringify(
+          {
+            run: h.run,
+            sourceSha: process.env.KUN_E2E_SOURCE_SHA,
+            nameDisabledDuringSave,
+            submittedName,
+            retainedName,
+            dirtyConfirmationChecked: !nameDisabledDuringSave
+          },
+          null,
+          2
+        )
+      )
+      await page.unroute(`**${resourcePath(s3.id)}`, saveHandler)
       const late = await contextFor(owner)
       await openEditor(late.page, h.origin, original.id)
       let readSeen = false
