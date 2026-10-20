@@ -13,6 +13,7 @@ import type {
 } from 'playwright-core'
 import { storageTypes } from '../../constants/resource'
 import { PATCH_SUBMISSION_REASON } from '../../constants/patchSubmission'
+import type { UserSession } from '../../types/api/session'
 import type { KunUploadFileResponse } from '../../types/api/upload'
 import type {
   WorkspaceResourceDetail,
@@ -758,15 +759,23 @@ export async function runWorkspaceAlignment(h: Harness) {
         await page.goto(`${h.origin}/workspace/resources`, {
           waitUntil: 'networkidle'
         })
+        const resourcesPanel = page.getByRole('tabpanel', {
+          name: '资源列表',
+          exact: true
+        })
+        const maintenancePanel = page.getByRole('tabpanel', {
+          name: '链接维护',
+          exact: true
+        })
         await page
           .getByRole('textbox', { name: '搜索资源或游戏' })
           .fill(`${h.run} backlog`)
         await button(page, '搜索').click()
         await select(page, '分区', '游戏资源')
         await button(page, '下一页').click()
-        await page.getByText('2 / 2', { exact: true }).waitFor()
+        await resourcesPanel.getByText('2 / 2', { exact: true }).waitFor()
         await page.getByRole('tab', { name: '链接维护', exact: true }).click()
-        await page.getByText('1 / 2', { exact: true }).waitFor()
+        await maintenancePanel.getByText('1 / 2', { exact: true }).waitFor()
         await select(page, /维护分区|资源分区/, '全部分区')
         const maintenanceSearch = page.getByRole('textbox', {
           name: /搜索维护/
@@ -774,7 +783,7 @@ export async function runWorkspaceAlignment(h: Harness) {
         await maintenanceSearch.fill('backlog')
         await button(page, '搜索').click()
         await button(page, '下一页').click()
-        await page.getByText('2 / 2', { exact: true }).waitFor()
+        await maintenancePanel.getByText('2 / 2', { exact: true }).waitFor()
         await page.getByRole('tab', { name: '资源列表', exact: true }).click()
         assert.equal(
           await page
@@ -789,10 +798,10 @@ export async function runWorkspaceAlignment(h: Harness) {
               .textContent()
           )?.includes('游戏资源')
         )
-        await page.getByText('2 / 2', { exact: true }).waitFor()
+        await resourcesPanel.getByText('2 / 2', { exact: true }).waitFor()
         await page.getByRole('tab', { name: '链接维护', exact: true }).click()
         assert.equal(await maintenanceSearch.inputValue(), 'backlog')
-        await page.getByText('2 / 2', { exact: true }).waitFor()
+        await maintenancePanel.getByText('2 / 2', { exact: true }).waitFor()
         await page
           .getByRole('link', { name: /打开资源/ })
           .first()
@@ -2150,7 +2159,22 @@ async function profileCases(
     'profile owner-only full-width workspace action, admin action and avatar navigation',
     async () => {
       for (const actor of [actors[0], actors[2]]) {
-        const { page } = await contextFor(actor)
+        const { context, page } = await contextFor(actor)
+        const session = json<UserSession>(
+          await h.request(actor, 'GET', '/api/user/session')
+        )
+        assert.equal(session.user.uid, actor.id)
+        assert.equal(session.user.role, actor.role)
+        await context.addInitScript(
+          ({ user, origin }) => {
+            if (location.origin === origin)
+              localStorage.setItem(
+                'kun-patch-user-store',
+                JSON.stringify({ state: { user }, version: 0 })
+              )
+          },
+          { user: session.user, origin: h.origin }
+        )
         await page.goto(`${h.origin}/user/${actor.id}/resource`, {
           waitUntil: 'networkidle'
         })
