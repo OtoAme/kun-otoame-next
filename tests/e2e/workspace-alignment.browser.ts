@@ -650,7 +650,7 @@ export async function runWorkspaceAlignment(h: Harness) {
                   .getByRole('textbox', { name: '搜索资源或游戏' })
                   .fill(h.run)
                 await button(page, '搜索').first().click()
-                await select(page, '资源状态', '已封禁')
+                await select(page, '状态', '已封禁')
                 await resourceCard(page, readonly.id)
                   .getByText('已封禁', { exact: true })
                   .waitFor()
@@ -762,7 +762,7 @@ export async function runWorkspaceAlignment(h: Harness) {
           .getByRole('textbox', { name: '搜索资源或游戏' })
           .fill(`${h.run} backlog`)
         await button(page, '搜索').click()
-        await select(page, '资源分区', '游戏资源')
+        await select(page, '分区', '游戏资源')
         await button(page, '下一页').click()
         await page.getByText('2 / 2', { exact: true }).waitFor()
         await page.getByRole('tab', { name: '链接维护', exact: true }).click()
@@ -785,7 +785,7 @@ export async function runWorkspaceAlignment(h: Harness) {
         assert(
           (
             await page
-              .getByRole('combobox', { name: '资源分区', exact: true })
+              .getByRole('combobox', { name: '分区', exact: true })
               .textContent()
           )?.includes('游戏资源')
         )
