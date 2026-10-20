@@ -6,7 +6,7 @@
 import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
 import { createServer, type ServerResponse } from 'node:http'
-import { mkdir, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { PrismaClient } from '@prisma/client'
 import { PrismaPg } from '@prisma/adapter-pg'
@@ -14,6 +14,7 @@ import { Pool } from 'pg'
 import Redis from 'ioredis'
 import jwt from 'jsonwebtoken'
 import { chromium } from 'playwright-core'
+import { runWorkspaceAlignment } from './workspace-alignment.browser'
 import type {
   LinkHealthBasis,
   LinkReportResponse
@@ -58,6 +59,12 @@ assert(
 )
 assert.equal(required('REDIS_HOST'), '127.0.0.1')
 assert(Number.isInteger(redisPort) && redisPort > 1024 && redisPort !== 6379)
+
+const sourceSha = required('KUN_E2E_SOURCE_SHA')
+assert(
+  /^[a-f0-9]{40}$/.test(sourceSha),
+  'Bind acceptance to the integrated source SHA'
+)
 
 const pool = new Pool({ connectionString: database.href, max: 6 })
 const prisma = new PrismaClient({ adapter: new PrismaPg(pool) })
@@ -131,6 +138,14 @@ const objects = createServer(async (request, response) => {
     assert(bytes > 0)
     objectPuts += 1
     response.writeHead(200, { ETag: '"synthetic-object"' }).end()
+  } else if (
+    request.method === 'GET' &&
+    request.url?.includes('/alignment-valid/banner.webp')
+  ) {
+    const image = await readFile(
+      new URL('../../public/favicon.webp', import.meta.url)
+    )
+    response.writeHead(200, { 'Content-Type': 'image/webp' }).end(image)
   } else if (request.method === 'DELETE') {
     response.writeHead(204).end()
   } else response.writeHead(404).end()
@@ -1415,6 +1430,16 @@ const main = async () => {
     })
     try {
       if (process.env.KUN_E2E_BROWSER_PHASE !== 'public') {
+        await runWorkspaceAlignment({
+          browser,
+          prisma,
+          origin: origin.origin,
+          run,
+          artifactDir,
+          actor,
+          request,
+          passed
+        })
         for (const width of [360, 390, 1280]) {
           await redis.del(`kun:touchgal:link-health:user:${owner.id}`)
           const context = await browser.newContext({
@@ -1472,8 +1497,15 @@ const main = async () => {
           })
           await nameInput.waitFor({ state: 'visible' })
           let writes = 0
+          let editorReads = 0
           const submittedBases: unknown[] = []
           page.on('request', (outgoing) => {
+            if (
+              new URL(outgoing.url()).pathname ===
+                `/api/workspace/resources/${browserEdit.id}` &&
+              outgoing.method() === 'GET'
+            )
+              editorReads += 1
             if (
               new URL(outgoing.url()).pathname ===
                 `/api/workspace/resources/${browserEdit.id}` &&
@@ -1518,17 +1550,19 @@ const main = async () => {
               content: `https://example.invalid/new-${randomUUID()}`
             }
           })
-          const refreshed = page.waitForResponse(
-            (response) =>
-              new URL(response.url()).pathname ===
-                `/api/workspace/resources/${browserEdit.id}` &&
-              response.request().method() === 'GET'
-          )
+          const readsBeforeCancel = editorReads
           await page
-            .getByRole('button', { name: '重新读取', exact: true })
-            .first()
+            .getByRole('button', { name: '载入最新版本', exact: true })
             .click()
-          await refreshed
+          await page
+            .getByRole('alertdialog')
+            .getByRole('button', { name: '取消', exact: true })
+            .click()
+          assert.equal(
+            editorReads,
+            readsBeforeCancel,
+            'Cancel must not request a new editing baseline'
+          )
           assert.equal(await nameInput.inputValue(), draftName)
           await page.getByRole('button', { name: '保存', exact: true }).click()
           await eventually(
@@ -1538,8 +1572,35 @@ const main = async () => {
           assert.deepEqual(
             submittedBases[1],
             submittedBases[0],
-            'Background refresh must not advance the captured edit baseline'
+            'Cancelled explicit reload must not advance the captured edit baseline'
           )
+          const refreshed = page.waitForResponse(
+            (response) =>
+              new URL(response.url()).pathname ===
+                `/api/workspace/resources/${browserEdit.id}` &&
+              response.request().method() === 'GET'
+          )
+          await page
+            .getByRole('button', { name: '载入最新版本', exact: true })
+            .click()
+          await page
+            .getByRole('alertdialog')
+            .getByRole('button', { name: '确认', exact: true })
+            .click()
+          const latestRead = (await (
+            await refreshed
+          ).json()) as WorkspaceResourceDetail
+          await eventually(
+            async () => (await nameInput.inputValue()) === latestRead.name,
+            'Successful reload did not replace the draft'
+          )
+          await nameInput.fill(draftName)
+          await page.getByRole('button', { name: '保存', exact: true }).click()
+          await eventually(
+            () => submittedBases.length === 3,
+            'Reloaded save never arrived'
+          )
+          assert.deepEqual(submittedBases[2], latestRead.baseLinks)
           assert.equal(
             await page.evaluate(
               () => document.documentElement.scrollWidth <= innerWidth + 1
@@ -1607,10 +1668,8 @@ const main = async () => {
             { waitUntil: 'networkidle' }
           )
           const maintenanceNote = page
+            .getByRole('alertdialog')
             .getByRole('textbox', { name: '维护说明', exact: true })
-            .first()
-          await maintenanceNote.waitFor({ state: 'visible' })
-          await maintenanceNote.fill(`${width}px 保留维护回应`)
           let maintenanceWrites = 0
           page.on('request', (outgoing) => {
             if (
@@ -1624,6 +1683,7 @@ const main = async () => {
             .getByRole('button', { name: '回应', exact: true })
             .first()
             .click()
+          await maintenanceNote.fill(`${width}px 保留维护回应`)
           await page
             .getByRole('alertdialog')
             .getByRole('button', { name: '取消', exact: true })
@@ -1654,10 +1714,18 @@ const main = async () => {
           await failedConfirmation
             .getByRole('button', { name: '取消', exact: true })
             .click()
+          await page
+            .getByRole('button', { name: '回应', exact: true })
+            .first()
+            .click()
           assert.equal(
             await maintenanceNote.inputValue(),
             `${width}px 保留维护回应`
           )
+          await page
+            .getByRole('alertdialog')
+            .getByRole('button', { name: '取消', exact: true })
+            .click()
           assert.equal(maintenanceWrites, 1)
           assert(
             !(await page.evaluate(
@@ -1688,7 +1756,7 @@ const main = async () => {
           { waitUntil: 'networkidle' }
         )
         const fileInput = uploadPage.getByLabel('上传资源文件')
-        await fileInput.waitFor({ state: 'visible' })
+        await fileInput.waitFor({ state: 'attached' })
         assert.equal(
           await fileInput.isEnabled(),
           true,
@@ -1875,6 +1943,7 @@ try {
     JSON.stringify(
       {
         run,
+        sourceSha,
         checks,
         checkerCalls,
         passed: true,
@@ -1894,6 +1963,7 @@ try {
     JSON.stringify(
       {
         run,
+        sourceSha,
         checks,
         checkerCalls,
         browser:
