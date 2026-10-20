@@ -100,6 +100,7 @@ vi.mock('@heroui/button', () => ({
 
 vi.mock('lucide-react', () => ({
   BadgeCheck: () => <span data-testid="badge-check" />,
+  LayoutDashboard: () => <span data-testid="layout-dashboard" />,
   Pencil: () => <span data-testid="pencil" />,
   ReceiptText: () => <span data-testid="receipt" />,
   Shield: () => <span data-testid="shield" />
@@ -236,16 +237,30 @@ describe('top bar and self-profile navigation', () => {
       (button) => button.textContent === '申请成为创作者'
     )
 
+    const workspace = buttons.find(
+      (button) => button.textContent === '用户工作台'
+    )
+
     expect(edit).toBeDefined()
     expect(ledger).toBeDefined()
     expect(apply).toBeDefined()
+    expect(workspace).toBeDefined()
     expect(edit?.parentElement).toBe(ledger?.parentElement)
     expect(apply?.parentElement).not.toBe(edit?.parentElement)
+    expect(workspace?.parentElement).not.toBe(edit?.parentElement)
+    expect(workspace?.parentElement).toBe(apply?.parentElement)
+    expect(
+      workspace?.querySelector('[data-testid="layout-dashboard"]')
+    ).not.toBeNull()
 
     await act(async () => {
       ledger?.click()
     })
     expect(routerMock.push).toHaveBeenCalledWith('/moemoepoint')
+    await act(async () => {
+      workspace?.click()
+    })
+    expect(routerMock.push).toHaveBeenCalledWith('/workspace')
   })
 
   it.each([3, 4])(
@@ -259,18 +274,31 @@ describe('top bar and self-profile navigation', () => {
         (button) => button.textContent === '萌萌点明细'
       )
       const admin = buttons.find((button) => button.textContent === '管理后台')
+      const workspace = buttons.find(
+        (button) => button.textContent === '用户工作台'
+      )
 
       expect(edit).toBeDefined()
       expect(ledger).toBeDefined()
       expect(admin).toBeDefined()
+      expect(workspace).toBeDefined()
       expect(container.textContent).not.toContain('申请成为创作者')
       expect(edit?.parentElement).toBe(ledger?.parentElement)
       expect(admin?.parentElement).not.toBe(edit?.parentElement)
+      expect(workspace?.parentElement).not.toBe(edit?.parentElement)
+      expect(workspace?.parentElement).toBe(admin?.parentElement)
+      expect(
+        workspace?.querySelector('[data-testid="layout-dashboard"]')
+      ).not.toBeNull()
 
       await act(async () => {
         admin?.click()
       })
       expect(routerMock.push).toHaveBeenCalledWith('/dashboard')
+      await act(async () => {
+        workspace?.click()
+      })
+      expect(routerMock.push).toHaveBeenCalledWith('/workspace')
     }
   )
 })
