@@ -88,6 +88,8 @@ KUN_E2E_DATABASE_URL='<同一一次性数据库连接>' pnpm e2e:company-identit
 
 工作台[整链验收](../../tests/e2e/workspace-maintenance.e2e.ts)与[迁移验收](../../tests/e2e/workspace-maintenance-migration.e2e.ts)还要求非默认本机数据库和 Redis、受控检测服务与对象存储替身，不加载真实环境配置。迁移检查包含上线后真实维护记录保护，不能只验空库。
 
+工作台整链验收还需显式提供 `KUN_E2E_SOURCE_SHA`，填写本次整合源码的完整提交号，并核对隔离副本与该提交一致；结果记录中的提交号不能代替这项核对。它调用[工作台浏览器扩展](../../tests/e2e/workspace-alignment.browser.ts)，检查资源分类与编辑、投稿操作、个人入口，以及四个视口的深浅色布局。正常操作通过真实接口执行，网络失败与迟到响应使用受控拦截；脚本和截图存在不代表本次验收已经通过，须检查各组实际结果。
+
 [资源卡手机检查](../../tests/e2e/resource-card-mobile.e2e.ts)是单独的只读布局检查，默认读取正在运行的 3000 站点并拦截下载获取和恢复，不写授权或消耗额度。按[直接运行 TypeScript 的版本前提](#准备会社身份一次性验收)使用 Node.js 22.18 或更高的 22.x，先用 `KUN_E2E_BASE_URL` 和 `KUN_E2E_RESOURCE_CARD_PATH` 指向本次允许读取的页面，再执行：
 
 ```bash
