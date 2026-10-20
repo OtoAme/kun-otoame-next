@@ -363,10 +363,12 @@ export function WorkspaceResourceEditor({
           submitted,
           refreshed
         )
-        baseSession.current = next
+        // Dirty compares against the server snapshot, not unsaved flight input.
+        const canonical = sessionFromDetail(refreshed)
+        baseSession.current = { ...canonical, epoch: next.epoch }
+        capturedFor.current = refreshed.id
         return next
       })
-      capturedFor.current = refreshed.id
     } catch {
       if (request !== requestRef.current) return
       setError('网络错误，保存失败，请重试')

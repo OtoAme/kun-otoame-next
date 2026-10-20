@@ -1042,6 +1042,113 @@ describe('workspace resource editor', () => {
     ).toBe('资源乙')
   })
 
+  it('confirms reload after an edit during save and reads directly when nothing changed in flight', async () => {
+    const container = await mount()
+    const name = container.querySelector(
+      'input[aria-label="资源名称"]'
+    ) as HTMLInputElement
+    expect(name.value).toBe('资源甲')
+
+    let release: ((value: unknown) => void) | undefined
+    mocks.kunFetchGet.mockImplementation((url: string) => {
+      if (url === '/workspace/resources/9') {
+        return new Promise((resolve) => {
+          release = resolve
+        })
+      }
+      return Promise.resolve(current)
+    })
+    mocks.kunFetchPut.mockResolvedValue({
+      links: [
+        { id: 1, version: 2 },
+        { id: 2, version: 5 }
+      ],
+      linkChecks: []
+    })
+    await act(async () => {
+      button(container, '保存')!.click()
+    })
+    await act(async () => {
+      setValue(name, '飞行中的名称')
+    })
+    const saved = detail({ name: '资源甲' })
+    release!(saved)
+    await settle()
+    expect(mocks.kunFetchPut.mock.calls[0]?.[1].name).toBe('资源甲')
+    expect(name.value).toBe('飞行中的名称')
+
+    mocks.kunFetchGet.mockImplementation(async (url: string) => {
+      if (url === '/auth/captcha') {
+        return { images: [], sessionId: 'captcha-session' }
+      }
+      return current
+    })
+    current = saved
+    const resourceReads = () =>
+      mocks.kunFetchGet.mock.calls.filter(
+        (call) => call[0] === '/workspace/resources/9'
+      ).length
+    const puts = () => mocks.kunFetchPut.mock.calls.length
+    const readsAtReload = resourceReads()
+    const putsAtReload = puts()
+    await act(async () => {
+      button(container, '载入最新版本')!.click()
+    })
+    await settle()
+    const reloadDialog = dom!.window.document.querySelector(
+      '[role="alertdialog"]'
+    )
+    expect(reloadDialog?.textContent).toContain('尚未保存的修改')
+    expect(resourceReads()).toBe(readsAtReload)
+    expect(puts()).toBe(putsAtReload)
+    expect(name.value).toBe('飞行中的名称')
+
+    await act(async () => {
+      button(reloadDialog!, '取消')!.click()
+    })
+    await settle()
+    expect(resourceReads()).toBe(readsAtReload)
+    expect(puts()).toBe(putsAtReload)
+    expect(name.value).toBe('飞行中的名称')
+    expect(
+      dom!.window.document.querySelector('[role="alertdialog"]')
+    ).toBeNull()
+
+    await act(async () => {
+      button(container, '载入最新版本')!.click()
+    })
+    await settle()
+    const confirmDialog = dom!.window.document.querySelector(
+      '[role="alertdialog"]'
+    )!
+    expect(resourceReads()).toBe(readsAtReload)
+    await act(async () => {
+      button(confirmDialog, '确认')!.click()
+    })
+    await settle()
+    expect(name.value).toBe('资源甲')
+    expect(resourceReads()).toBe(readsAtReload + 1)
+    expect(puts()).toBe(putsAtReload)
+
+    current = detail({ name: '服务端新名称' })
+    await act(async () => {
+      button(container, '保存')!.click()
+    })
+    await settle()
+    expect(name.value).toBe('服务端新名称')
+    current = detail({ name: '再次读取' })
+    const readsBeforeDirect = resourceReads()
+    await act(async () => {
+      button(container, '载入最新版本')!.click()
+    })
+    await settle()
+    expect(
+      dom!.window.document.querySelector('[role="alertdialog"]')
+    ).toBeNull()
+    expect(name.value).toBe('再次读取')
+    expect(resourceReads()).toBe(readsBeforeDirect + 1)
+  })
+
   it('keeps object-storage address, size, and checksum read-only and says protected links are site-managed', async () => {
     current = detail({
       links: [
@@ -1482,10 +1589,22 @@ describe('workspace resource editor', () => {
 
   it('shows required markers and the full type description', async () => {
     const container = await mount()
+    const describedNote = (control: Element | null) => {
+      const id = control?.getAttribute('aria-describedby')
+      if (!id) return null
+      return (
+        [...container.querySelectorAll('span')].find(
+          (item) => item.id === id
+        ) ?? null
+      )
+    }
     for (const label of ['资源类型', '资源语言', '资源平台', '中文支持']) {
       const control = container.querySelector(`[aria-label="${label}"]`)
+      expect(control?.tagName).toBe('BUTTON')
+      expect(control?.getAttribute('role')).toBeNull()
       expect(control?.getAttribute('aria-label')).toBe(label)
-      expect(control?.getAttribute('aria-required')).toBe('true')
+      expect(control?.getAttribute('aria-required')).toBeNull()
+      expect(describedNote(control)?.textContent?.trim()).toBe('必填')
     }
     const description = [...container.querySelectorAll('span')].find(
       (item) => item.textContent === '在 Windows, macOS 等电脑设备上运行的游戏'
@@ -1509,7 +1628,12 @@ describe('workspace resource editor', () => {
       '[aria-label="中文支持"]'
     ) as HTMLButtonElement
     expect(chinese.disabled).toBe(true)
+    expect(chinese.getAttribute('aria-label')).toBe('中文支持')
     expect(chinese.getAttribute('aria-required')).toBeNull()
+    expect(chinese.getAttribute('aria-describedby')).toBeNull()
+    expect(describedNote(chinese)).toBeNull()
+    const typeTrigger = container.querySelector('[aria-label="资源类型"]')
+    expect(describedNote(typeTrigger)?.textContent?.trim()).toBe('必填')
     expect(container.textContent).toContain('日本語')
   })
 })

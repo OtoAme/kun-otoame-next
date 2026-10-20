@@ -1,5 +1,6 @@
 'use client'
 
+import { useId } from 'react'
 import { ChevronDown } from 'lucide-react'
 import { Button } from '~/components/dashboard/ui/button'
 import {
@@ -49,9 +50,13 @@ export function WorkspaceMultiSelect({
   disabled?: boolean
   onChange: (values: string[]) => void
   placeholder?: string
-  /** Visible required marker. Does not change the trigger's accessible name. */
+  /**
+   * Visible required marker, linked with aria-describedby.
+   * The trigger stays a menu button, so it does not use aria-required.
+   */
   required?: boolean
 }) {
+  const requiredId = useId()
   const flat = groups
     ? groups.flatMap((group) => group.options)
     : (options ?? [])
@@ -96,7 +101,12 @@ export function WorkspaceMultiSelect({
     <div className="grid min-w-0 gap-1 text-sm">
       <span>
         {label}
-        {required ? <span className="text-destructive"> 必填</span> : null}
+        {required ? (
+          <span id={requiredId} className="text-destructive">
+            {' '}
+            必填
+          </span>
+        ) : null}
       </span>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
@@ -105,7 +115,7 @@ export function WorkspaceMultiSelect({
             variant="outline"
             disabled={disabled}
             aria-label={triggerLabel ?? label}
-            aria-required={required || undefined}
+            aria-describedby={required ? requiredId : undefined}
             className={cn(
               'h-auto min-h-9 w-full justify-between gap-2 font-normal',
               !selected.length && 'text-muted-foreground'
