@@ -97,6 +97,8 @@ Review 前先确认改动类型：
 
 ## 文档和 skill
 
+项目文档按[文档规范](documentation.md)复核内容、事实依据与读者任务，检查相应审阅结论和验证结果。`pnpm docs:check` 的机械检查不能代替内容审阅。
+
 - 文档是否引用当前存在的源码路径、脚本名和命令。
 - README、`docs/project/*`、`docs/modules/*` 是否对同一部署/API/cache 规则说法一致。
 - `skills/*/SKILL.md` 的 frontmatter description 是否是触发条件，不是长流程摘要。

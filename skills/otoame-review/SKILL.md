@@ -23,6 +23,8 @@ Blocking findings need a trigger, consequence, evidence and minimal fix. Keep lo
 - Workspace contracts and lock/notification boundaries: `docs/modules/workspace.md`
 - Deployment guide when CI/build files changed: `docs/project/deployment.md`
 
+For documentation changes, use [otoame-documentation](../otoame-documentation/SKILL.md) and [the documentation standard](../../docs/project/documentation.md) to review factual support and reader tasks. Mechanical checks do not establish content quality.
+
 ## Review Priorities
 
 1. Security: auth, roles, CSRF, secret leakage, unsafe redirects, audit log exposure.

@@ -1,5 +1,7 @@
 # Quality, Testing, Review
 
+项目文档的写作、事实核查与内容验收见[文档规范](../project/documentation.md)。
+
 本模块说明测试、review 和项目 skills 的质量门槛。
 
 ## 测试入口
@@ -132,10 +134,12 @@ pnpm build
 
 只改 docs/skills 时 import 图同样选不出任何用例，但不等于免测：bootstrap、sticker、deploy 命令和主题契约测试会直接读取 README、部分 `docs/project/*`、`docs/modules/*`、`docs/theme-color-system.md` 和部分 `skills/*/SKILL.md`。docs/skills-only 提交必须做：
 
+改文档时可先运行 `pnpm docs:check` 定位机械问题；下面的 `test:docs-contracts` 会先运行同一检查，再运行文档契约与检查器测试。内容准确性和任务可用性仍按文档规范审阅，不能由命令通过代替。
+
 ```bash
 pnpm test:docs-contracts
 rg -n "T[B]D|TO[D]O|f[i]ll in|implement late[r]" docs skills README.md
 wc -w skills/*/SKILL.md
 ```
 
-`test:docs-contracts` 固定列出所有通过文件系统读取文档/skill 的契约测试；新增这类测试时必须同步把文件加进该脚本。`wc -w` 用于核对领域 skill 的 100-250 words 预算；该预算适用于所有领域 skill，完整操作流程下沉到 Required References 指向的文档，skill 内只保留高风险不变量。
+`test:docs-contracts` 包含文档机械检查，并固定列出通过文件系统读取文档/skill 的契约测试与检查器测试；新增这类测试时必须同步把文件加进该脚本。`wc -w` 用于核对领域 skill 的 100-250 words 预算；该预算适用于所有领域 skill，完整操作流程下沉到 Required References 指向的文档，skill 内只保留高风险不变量。

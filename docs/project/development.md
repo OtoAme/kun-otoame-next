@@ -168,6 +168,8 @@ pnpm dev:webpack
 
 ## 开发工作流
 
+编写或审阅项目文档时，先读 [otoame-documentation](../../skills/otoame-documentation/SKILL.md)，按[文档规范](documentation.md)组织内容、核对依据并完成审阅。检查命令见[质量门槛](../modules/quality.md#完成前证据)。
+
 1. 先定位业务域：页面在 `app/<route>`，组件在 `components/<domain>`，API 在 `app/api/<domain>`，校验在 `validations`。
 2. 如果是行为变更或 bugfix，先写或更新 Vitest 测试。项目约定见 [testing.md](testing.md)。
 3. 改 API 时先看 route handler 的鉴权、角色和 CSRF 是否符合现有模式。

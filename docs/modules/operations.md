@@ -88,6 +88,7 @@ checker 是独立自托管服务，不连接网站 DB／Redis，也不做全站�
 
 ### 验证脚本
 
+- `pnpm docs:check`：离线检查改动的维护文档；检查范围、定向参数和内容审阅要求见[文档规范](../project/documentation.md)。
 - `pnpm e2e:db:prepare --reset --backup=<绝对且不存在的文件>`：只对显式 `KUN_E2E_DATABASE_URL` 的 `*_e2e` PostgreSQL 建立并验证备份后重置；`KUN_E2E_PG_CONTAINER` 启用 Docker 内 `pg_dump` / `psql`，此模式额外要求 loopback URL。
 - `pnpm e2e:company-server --resolver=off|on`：唯一的 3100 company E2E server launcher，拒绝共享 `.next` 的 3000/3100 并发 dev server。
 - `pnpm e2e:company-identity --expect-resolver=off|on`：在 server 两次重启之间分别验证两种运行时语义；只连接 `_e2e`，不走 S3 写入或删除。

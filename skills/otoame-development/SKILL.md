@@ -19,6 +19,8 @@ Read the relevant project docs before editing:
 - Testing expectations: `docs/project/testing.md`
 - User workspace and maintenance changes: `docs/modules/workspace.md`
 
+For project documentation work, also read [otoame-documentation](../otoame-documentation/SKILL.md) and its required standard before drafting or reviewing prose.
+
 ## Preferred Context Tools
 
 - Codex and delegated agents (including mkimi) are authorized by default to use fast-context for this repository's non-env files. Prefer it as the higher-level alternative to `Read` for finding files and gathering relevant code context; carry this permission and the exclusions into task briefs. Explicitly exclude `.env`, `.env.*` and their nested equivalents from searches. Inspect exact source with direct reads when results provide only paths/snippets or line-level verification is needed; fall back to `rg`/direct reads when fast-context is unavailable or unnecessary for an already-known short file.

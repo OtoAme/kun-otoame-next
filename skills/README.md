@@ -20,6 +20,7 @@ skills/                   # 唯一来源，git 跟踪真实文件
 | Skill                | 触发场景                                                             |
 | -------------------- | -------------------------------------------------------------------- |
 | `otoame-development` | 仓库通用开发入口和项目规则总览。                                     |
+| `otoame-documentation` | 项目文档写作、结构调整、事实核对与可用性审阅；用户更新日志使用 `otoame-changelog`。 |
 | `otoame-api`         | API routes、service、validation、业务权限和管理接口。                |
 | `otoame-data-cache`  | Prisma、Redis、缓存失效、上传、S3、资源属性和迁移。                  |
 | `otoame-frontend`    | App Router、React components、stores、主题、MDX、编辑器和 NSFW UI。  |
