@@ -76,8 +76,12 @@ export interface WorkspaceResourceSummary {
   patchId: number
   patchUniqueId: string
   patchName: string
+  patchBanner: string
   name: string
   section: string
+  type: string[]
+  language: string[]
+  platform: string[]
   status: number
   created: string
   linkCount: number
@@ -100,9 +104,6 @@ export interface WorkspaceEditableLink extends PatchResourceHealthAccessLink {
 }
 export interface WorkspaceResourceDetail extends WorkspaceResourceSummary {
   note: string
-  type: string[]
-  language: string[]
-  platform: string[]
   baseLinks: LinkVersionBase[]
   links: (WorkspaceProtectedLink | WorkspaceEditableLink)[]
   maintenance: LinkMaintenanceItem[]
