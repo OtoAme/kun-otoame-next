@@ -57,9 +57,10 @@
     "e2e:company-server": "esno scripts/e2eCompanyIdentityServer.ts",
     "e2e:company-identity": "node --env-file=.env tests/e2e/company-identity.e2e.ts",
     "stickers:sync": "esno scripts/syncStickers.ts",
+    "docs:check": "esno scripts/checkDocs.ts",
     "test": "vitest run",
     "test:changed": "vitest run --changed --passWithNoTests",
-    "test:docs-contracts": "vitest run tests/unit/resource-access-bootstrap-migration.test.ts tests/unit/sticker-production-migration.test.ts tests/unit/prisma-production-deploy-command.test.ts tests/unit/theme.test.ts"
+    "test:docs-contracts": "pnpm docs:check && vitest run tests/unit/docs-check.test.ts tests/unit/resource-access-bootstrap-migration.test.ts tests/unit/sticker-production-migration.test.ts tests/unit/prisma-production-deploy-command.test.ts tests/unit/theme.test.ts"
   },
   "author": {
     "name": "KUN1007",
