@@ -1,42 +1,27 @@
 ---
 name: otoame-testing
-description: Use when adding, fixing, or reviewing tests in kun-otoame-next, especially Vitest tests for APIs, Prisma services, Redis cache, resource links, uploads, themes, or utility functions.
+description: Use when designing, changing, running, or reviewing OtoAme tests and verification workflows.
 ---
 
 # OtoAme Testing
 
-Use this skill for project-specific testing work; checklists and the file map live in the testing guide.
+Read the development entry first. Choose evidence according to the changed behavior and the risk it introduces.
 
 ## Required References
 
-- `docs/project/testing.md` — 当前测试栈, 测试目录, 何时新增测试, 测试优先级, Vitest mock 模式, API service 测试约定, Redis 测试约定, Prisma/事务测试约定, 上传和资源测试, 浏览器与 HTTP 端到端脚本
-- `docs/project/development.md`
-- `docs/modules/workspace.md` — isolated HTTP, checker, upload and migration acceptance
+- [测试操作与隔离](../../docs/project/testing.md)
+- [开发环境](../../docs/project/development.md)
+- [质量边界](../../docs/modules/quality.md)
+- [工作台与维护](../../docs/modules/workspace.md)
 
-## Rules
+## Critical Invariants
 
-- For substantive regressions, use a failing test named after the user-visible behavior, then the minimal fix. Reversible, low-impact copy/style changes do not require new tests that mirror implementation.
-- Prefer pure-function tests (`utils/*`, `constants/*`, `validations/*`), then services with Prisma/Redis/cache/external APIs mocked, then route handlers only when HTTP behavior is the risk.
-- Use `vi.hoisted` for any value a `vi.mock` factory references.
-- Never connect a unit test to real PostgreSQL, Redis, S3, GitHub, Bangumi, VNDB or DLSite.
-- Real DDL, lock-timeout and migration rehearsals run only on a disposable PostgreSQL; migration unit tests lock the SQL contracts statically and keep preflights read-only.
-- Write-harness `tests/e2e/*.e2e.ts` create and settle real records. Confirm the running 3100 server actually uses disposable `touchgal_e2e`; never fall back to the default `.env` database. `tests/e2e/resource-card-mobile.e2e.ts` is a read-only 3000 layout check and must not join that write harness.
-- Profile-settings E2E also requires isolated Redis on a non-6379 port; verify balances and ledger rows, then remove the run's test accounts and sessions.
-- Assert behavior — return values, Prisma conditions and transaction boundaries, cache invalidation, upload lock/finalize/compensation, permission and quota edges. Never assert only that a mock was called.
-- Money paths assert the business write, conditional balance update and ledger snapshot in one transaction, plus negative reversals and reason truncation.
-- Destructive E2E preparation requires `e2e:db:prepare --reset --backup=<absolute-new-file>`. The explicit URL must differ from `KUN_DATABASE_URL` and end exactly `_e2e`; backup verification precedes reset. Docker uses guarded `KUN_E2E_PG_CONTAINER` and additionally requires a loopback URL.
-- Company identity E2E uses the safe 3100 launcher twice: resolver off, restart, resolver on. It verifies database sentinel and actual server flag and never touches S3.
+For substantive regressions, establish a meaningful failing behavior test before the smallest fix. Reversible low-impact copy or styling changes need proportionate checks, not tests that mirror implementation.
 
-## Verification
+Unit tests must not connect real databases, caches, storage, mail or external providers. Assert permissions, results, transaction boundaries, accounting, races, cache effects and compensation rather than merely mocked calls. Respect the runner's mock initialization rules.
 
-Choose checks for the changed behavior and required project gates; reuse valid passing results. Do not repeat database experiments for UI-only fixes or rebuild for documentation changes. For temporary scripts, verify the real request/response contract on a minimal case before expanding coverage. Selector or assertion repairs can be checked and rerun directly; changes to targets, write scope or recovery need focused rechecking. If automation cannot prove a required behavior, record it as pending manual acceptance.
+Real constraints, locks and migrations require disposable infrastructure. Destructive preparation requires explicit isolated database identity and a new absolute verified backup. Never fall back to the default configuration or trust shell variables as proof of the running server's identity.
 
-```bash
-pnpm test tests/unit/<target>.test.ts   # while iterating
-pnpm test:changed && pnpm typecheck     # default commit gate
-pnpm test                               # checkpoints — see docs/modules/quality.md
+Keep write harnesses separate from read-only layout checks. Use controlled checker and storage substitutes, isolate Redis, disable external invalidations and clean only the run's own records.
 
-pnpm test tests/unit/api/conversation-rate-limit.test.ts
-pnpm test tests/unit/gallery-upload.test.ts tests/unit/gallery-route.test.ts
-pnpm test tests/unit/theme.test.ts
-```
+Changed-test selection cannot discover every filesystem-read asset. Follow the guide for explicit contracts and broader gates; reuse still-valid passing evidence. Report actual commands and unverified browser, production or integration behavior.

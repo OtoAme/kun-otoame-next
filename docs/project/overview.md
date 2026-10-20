@@ -1,235 +1,65 @@
-# OtoAme Project Overview
+# 项目架构与职责
 
-本文档记录当前仓库的实际结构和运行模型，用于新维护者或 AI agent 快速建立上下文。命令和路径以仓库根目录为准。
+OtoAme 是乙女游戏文化社区，围绕游戏条目组织介绍、截图、评价、评论和下载资源。用户可以查找内容、贡献资源、投稿条目和反馈问题；发布者通过工作台维护本人内容，站方通过管理后台审核和处理站务。
 
-## 项目定位
+本文解释各部分如何协作。按任务查找文档可从[维护文档导航](../README.md)进入；具体页面边界见[页面与访问入口](../modules/app-router.md)，业务限制见[权限与业务规则](../modules/api-services.md)。这里说明当前仓库实现，是否已在目标环境启用，还取决于数据库结构、服务配置和实际发布版本。
 
-OtoAme 是基于 `kun-touchgal-next` fork 的一站式乙女游戏文化社区。当前仓库保留上游历史，但主线已经围绕 OtoAme 做了路由、文案、资源类型、画廊、缓存、部署和管理后台能力的改造。
+## 谁使用哪些入口
 
-关键入口：
+| 使用者 | 主要入口与权限边界 |
+| --- | --- |
+| 游客 | 浏览公开内容，按游客额度获取可见的下载资源；发布、反馈和私聊需要登录。 |
+| 登录用户 | 管理本人账号、投稿、资源、问题和消息；工作台向所有登录用户开放，包括尚无贡献记录的用户。 |
+| 创作者 | 在普通用户能力之外，可按上传条件将补丁资源上传到对象存储；网站资源盘仍限管理员使用。 |
+| 管理员 | 进入管理后台，审核投稿、资源申请、处理事项并查看受权管理数据。部分用户管理和完整统计仍限超级管理员。 |
+| 超级管理员 | 执行用户管理、完整统计及其他单独受限的管理操作。 |
 
-- [README.md](../../README.md)：面向部署者的运行、环境变量和部署说明。
-- [package.json](../../package.json)：所有常用脚本和依赖版本。
-- [next.config.ts](../../next.config.ts)：Next.js build、MDX、standalone 输出、图片域名和部署跳过检查开关。
-- [prisma.config.ts](../../prisma.config.ts)：Prisma schema 目录与数据源配置。
-- [vitest.config.ts](../../vitest.config.ts)：单元测试环境与 `~/*` 路径别名。
-- [docs/project/development.md](development.md)：本地从零启动、环境变量、管理员初始化和常见开发路径。
-- [docs/project/deployment.md](deployment.md)：服务器上线、CI/CD release、PM2、反向代理和回滚。
-- [docs/modules/index.md](../modules/index.md)：按代码模块组织的详细文档导航。
+工作台和管理后台共用一套界面基础，但身份要求分别检查。能进入工作台不代表能进入后台；管理员使用工作台时仍只管理本人内容。隐藏按钮不能替代服务器的权限检查。
 
-## 技术栈
+## 系统由哪些部分组成
 
-- Runtime：Node.js 22.15+、pnpm、Next.js 15 App Router、React 19。
-- UI：前台与旧后台使用 HeroUI v2，`/dashboard` 使用 shadcn；共用 Tailwind CSS 4、lucide-react，按各自根布局加载样式与 Provider。
-- 内容：MDX posts、Milkdown/CodeMirror 编辑器、Markdown/HTML 渲染与 sanitize 管线。
-- 数据：PostgreSQL、Prisma 7、`@prisma/adapter-pg`、`pg` 连接池。
-- 缓存和锁：Redis/ioredis，统一 key 前缀为 `kun:touchgal`。
-- 测试：Vitest 4，当前以 Node 环境单元测试为主。
-- 部署：Next standalone output、PM2、GitHub Actions release artifact、服务器本地构建脚本。
+| 部分 | 职责与依赖 |
+| --- | --- |
+| 公开网站 | 展示游戏、资源和社区内容，提供投稿、编辑和消息界面。前台与旧后台使用 HeroUI，工作台和新后台使用 shadcn，两套界面分别加载样式。 |
+| 网站服务器 | 使用 Next.js 组织页面与 HTTP 接口。入口先检查请求格式和身份，再由业务服务完成查询、保存、审核、账务和通知。 |
+| PostgreSQL | 保存用户、正式内容、投稿、资源、下载授权、问题对话、萌萌点账目和审计记录，是这些持久事实的依据。Prisma 负责应用与数据库之间的数据访问。 |
+| Redis | 暂存查询结果、限频计数、上传登记、浏览量缓冲和任务锁。缓存减少重复查询；其中的上传登记和额度计数还参与特定业务流程，不能把清空 Redis 当作无影响的刷新。 |
+| 对象存储 | 保存上传的资源和图片，网站数据库保存对应引用。S3 是应用采用的对象存储接口；删除文件与删除数据库记录需要协调。 |
+| 边缘缓存 | Cloudflare 可以在应用之外保存匿名公开响应。应用支持主动清理，但是否真正命中或清理成功，需要在目标环境确认。 |
+| 后台任务 | 由应用进程启动，执行每日重置、临时数据清理、浏览量入库、投稿素材巡检、问题超时处理和链接健康处理六类任务。跨实例执行依赖任务锁。 |
 
-## 新用户阅读顺序
+游戏条目与下载资源分开保存：一个条目可以有多份资源，一份资源可以提供多个下载链接。投稿在审核通过前独立保存，不进入正式内容查询。链接的可用结论、机器检测观察、用户报告和发布者维护记录也各有职责，不能用其中一种替代其余事实。
 
-1. 只想本地跑起来：读 [development.md](development.md) 的“从零启动”。
-2. 要理解代码结构：读本文档“目录地图”和“运行时架构”。
-3. 要按模块理解源码：读 [docs/modules/index.md](../modules/index.md)。
-4. 要上线服务器：读 [deployment.md](deployment.md)。
-5. 要改代码：读 [development.md](development.md) 和 [testing.md](testing.md)。
-6. 要审 PR：读 [review.md](review.md)。
+## 一次访问如何流转
 
-上游文档核对点：
+浏览公开列表时，浏览器可能先取得静态页面或缓存响应；需要登录状态、内容分级或屏蔽标签的部分，再按访问者条件读取。业务服务查询 Redis 或数据库，返回该读者可见的内容。游戏详情的浏览量由页面打开后的独立请求记录，不在服务端生成页面时增加。
 
-- [Next.js standalone output](https://nextjs.org/docs/app/api-reference/config/next-config-js/output)：`output: 'standalone'` 会生成可独立运行的 `.next/standalone`。
-- [Next.js TypeScript build check](https://nextjs.org/docs/app/api-reference/config/next-config-js/typescript)：`typescript.ignoreBuildErrors` 会跳过 build 内置类型检查，只应在部署流程另行运行 `pnpm typecheck` 时使用。
-- [Prisma schema location](https://www.prisma.io/docs/orm/prisma-schema/overview/location)：本仓库使用 `prisma.config.ts` 指向 `prisma/schema`，并按业务域拆分 schema 文件。
-- [Vitest vi.mock/vi.hoisted](https://vitest.dev/api/vi.html#vi-hoisted)：现有测试使用 `vi.mock` 与 `vi.hoisted`，符合 Vitest 对提升 mock 的要求。
+保存、审核或付费操作先在服务器检查身份、归属和当前状态，再把必须共同成功的数据放在同一数据库事务中。事务是一组共同提交或共同撤销的数据库操作，用于避免只扣费未完成业务、重复审核或部分保存。遇到竞争时，系统可能拒绝过期修改，或对已确认可重试的数据库冲突有限重试。
 
-## 命名兼容性
+上传、外部资料读取和链接检测会访问其他服务，不能由数据库事务一并撤销。上传失败需要释放占用或补偿清理；数据库已提交后的缓存刷新、通知或检测失败，则按各自流程处理。保存成功只证明内容已保存，不能据此宣称检测完成、缓存已刷新或链接已恢复。具体保证见[数据、缓存与上传一致性](../modules/data-cache-upload.md)。
 
-仓库内仍保留部分上游历史命名，这是兼容成本，不代表业务语义回退：
+## 可信边界
 
-- `package.json` 包名、PM2 进程名和部分 Redis key 仍是 `kun-touchgal-next` / `kun:touchgal`。
-- 旧 cookie、token、type helper 和部分 internal type 仍含 `galgame`，例如 `kun-galgame-patch-moe-token`、`GalgameCardSelectField`。
-- 用户可见文案和新增业务文档应使用 OtoAme / OtomeGame，除非引用现有路径、key、类型或兼容字段。
-- 改名类变更风险较高，会影响 cookie、缓存、部署、SEO 和第三方链接；不要在功能 PR 中顺手大范围改名。
+- 浏览器提交的身份、角色、资源归属、上传地址和外部资料都不能直接作为授权依据。服务器重新检查当前登录会话、数据库记录和本人上传登记。
+- 管理员页面、预览和管理接口分别执行角色检查。完整下载地址、提取码、解压码、个人消息和账目不进入匿名共享响应。
+- 状态变更请求要通过跨站请求伪造防护，确认请求来自受信任的网站页面。大体积上传即使绕过统一入口，也由上传接口自行检查。
+- 机器检测只提供受校验的观察。超时、验证码、提取码页或网络失败不能自动证明链接可用或失效。
+- 外部名称可能重名或存在别名歧义；会社身份解析不能凭返回顺序认定同一家公司。外部读取失败的影响取决于具体发布流程。
 
-## 目录地图
+## 运行与维护边界
 
-| 路径             | 责任                                                                                      |
-| ---------------- | ----------------------------------------------------------------------------------------- |
-| `app/`           | Next.js App Router 页面、layout、metadata、server actions 与 API route handlers。         |
-| `app/(site)/`   | 前台与旧 `/admin` 页面、前台根布局和管理员只读预览。                                      |
-| `app/(dashboard)/` | `/dashboard` 控制台与独立 shadcn 根布局。                                               |
-| `app/api/*`      | API 层。常见形态是 `route.ts` 负责 HTTP/校验/鉴权，`service.ts` 或同目录函数负责业务。    |
-| `components/`    | 按页面或业务域组织的 React 组件。共享 UI 多在 `components/kun`。                          |
-| `config/`        | 站点、缓存、Redis、外部 API、重定向、友链和水印等配置。                                   |
-| `constants/`     | 前后端共享枚举、选项、路由和业务常量。                                                    |
-| `docs/`          | 维护文档。`docs/project` 是项目工程手册，`docs/theme-color-system.md` 是主题系统文档。    |
-| `lib/`           | 外部服务和基础设施封装，如 Redis、S3、OneDrive、VNDB/DLSite/Steam。                       |
-| `middleware/`    | Next middleware 使用的认证、CSRF、header cookie 校验。                                    |
-| `migration/`     | 一次性或生产辅助数据修复脚本，部分脚本有 dry/apply 模式。                                 |
-| `posts/`         | MDX 内容源。构建时会复制进 standalone 产物。                                              |
-| `prisma/schema/` | Prisma schema 拆分文件。`schema.prisma` 只包含 generator/datasource，模型分散在相邻文件。 |
-| `scripts/`       | 构建、部署、维护、sitemap、标签治理等运维脚本。                                           |
-| `server/`        | cron 任务和验证码图片等运行时资源。                                                       |
-| `store/`         | Zustand stores。                                                                          |
-| `tests/unit/`    | Vitest 单元测试。                                                                         |
-| `utils/`         | 纯工具、server action helpers、URL/markdown/resource/rating 等通用逻辑。                  |
-| `validations/`   | Zod schema，API 和表单输入校验。                                                          |
+应用按可独立运行的构建产物发布，当前进程配置为三个实例。数据库连接池随每个进程独立存在；扩实例会增加数据库连接需求。静态页面、Redis 与边缘缓存的职责和陈旧性限制见[当前性能策略](performance-optimization.md)。
 
-## 运行时架构
+数据库中尚未安装应用依赖的结构时，需要先完成经审核的迁移和检查，再切换应用。某些变更还要求停写、回填、验证约束或同步配置；不能从仓库存在新结构推断生产已经迁移。备份、发布顺序和回滚条件集中维护在[部署指南](deployment.md)与[日常运维](../modules/operations.md)。
 
-### App Router 与 API 分层
+仓库保留部分上游兼容命名，涉及既有登录凭据、缓存和部署标识。调整这些名称可能使用户会话、缓存或部署失效，应作为专门的兼容变更评估。
 
-页面和 API 都在 `app/` 下。页面路径使用 `page.tsx`、`layout.tsx`、`metadata.ts` 和 `actions.ts`。API route handler 使用 `route.ts` 导出 `GET`、`POST`、`PUT`、`DELETE` 等方法。
+## 源码入口
 
-页面按两个路由组分根：`app/(site)/layout.tsx` 加载 `styles/index.css`，保留 HeroUI、站点主题、导航与前台 Provider；`app/(dashboard)/layout.tsx` 加载 `styles/dashboard.css` 和控制台 Provider。路由组不进入 URL，原公开页面和旧后台地址保持原样；跨根布局导航会整页加载。`app/api` 与 `app/robots.ts` 仍在根目录，控制台管理请求沿用 `/api/admin/*`。
-
-收件箱读取、单项三态与计数由 `app/api/admin/inbox` 提供，校验和共享响应分别在 `validations/inbox.ts`、`types/api/inbox.ts`。投稿完整详情 GET 与原四种审核 POST 共用 `app/api/admin/patch-submission/[action]/route.ts`。控制台界面、样式隔离与真实审核流程的模块 01 实验仍需整体验收。
-
-推荐结构：
-
-- HTTP 层：解析 request、调用 Zod schema、验证登录/角色、返回 `NextResponse.json`。
-- Service 层：业务事务、Prisma 查询、缓存失效、外部 API 调用。
-- Utility 层：纯函数、格式化、解析、跨域复用逻辑。
-
-示例：
-
-- [app/api/edit/route.ts](../../app/api/edit/route.ts) 解析 form data、校验登录和角色。
-- [app/api/edit/create.ts](../../app/api/edit/create.ts) 创建游戏、上传 banner、写入 rating stat、处理外部标签并失效缓存。
-- [app/api/patch/resource/\_helper.ts](../../app/api/patch/resource/_helper.ts) 处理资源上传消费、S3 补偿、缓存失效和审计日志脱敏。
-
-登录用户的本人管理位于 `/workspace`，使用独立 shadcn 用户外壳；`/dashboard` 保持
-管理员门槛。工作台 API、受保护链接引用、维护状态和迁移见
-[用户工作台模块](../modules/workspace.md)。旧 `/issue` 地址兼容跳转到工作台。
-
-### 数据访问
-
-[prisma/index.ts](../../prisma/index.ts) 使用 `pg.Pool` 和 `PrismaPg` adapter 创建 Prisma Client：
-
-- 连接池 `max: 30`。
-- `connectionTimeoutMillis: 5000`，`idleTimeoutMillis: 30000`。
-- 自定义 prepared statement name cache，最多 1000 条。
-
-Schema 放在 `prisma/schema` 目录，使用 Prisma 7 的配置文件 [prisma.config.ts](../../prisma.config.ts) 指向该目录。改 schema 后应运行：
-
-```bash
-pnpm prisma:push
-```
-
-这个脚本会先运行 `migration:resource-links`，再 `prisma db push` 和 `prisma generate`。
-
-### 输入校验
-
-Zod schema 集中在 `validations/`。API 工具函数在 [app/api/utils/parseQuery.ts](../../app/api/utils/parseQuery.ts)：
-
-- `kunParseGetQuery`
-- `kunParsePostBody`
-- `kunParsePutBody`
-- `kunParseDeleteQuery`
-- `kunParseFormData`
-
-这些函数失败时返回字符串，成功时返回 schema data。调用处必须先判断 `typeof input === 'string'`。
-
-[validations/dotenv-check.ts](../../validations/dotenv-check.ts) 会读取项目根目录 `.env` 并校验构建/运行必需变量。部分可选变量只在 [.env.example](../../.env.example) 和使用点体现，例如 `REDIS_PASSWORD`、`BANGUMI_ACCESS_TOKEN`、`GITHUB_REPO`、`GITHUB_TOKEN`。不要在测试、文档、issue 或 prompt 中复制真实 `.env` 值。
-
-### 鉴权、CSRF 和角色
-
-[middleware.ts](../../middleware.ts) 匹配：
-
-- `/admin/:path*`
-- `/dashboard/:path*`
-- `/workspace/:path*`
-- `/issue/:path*`
-- `/preview/:path*`
-- `/user/:path*`
-- `/comment/:path*`
-- `/edit/:path*`
-- `/api/((?!home$|upload/|admin/stickers/import/?$|tag/otomegame|company/otomegame).*)`
-
-一般 API 先过 `verifyKunCsrf`，但只读匿名热点 `/api/home`、`/api/tag/otomegame`、`/api/company/otomegame` 以及大体积上传路径 `/api/upload/*`、`/api/admin/stickers/import` 从 matcher 中排除。状态变更请求必须带 `x-requested-with: kun-fetch`，并且 `origin` 或 `referer` 的 host 必须匹配 `NEXT_PUBLIC_KUN_PATCH_ADDRESS_DEV` / `NEXT_PUBLIC_KUN_PATCH_ADDRESS_PROD`。被排除的上传 API 必须在 handler 内自行校验 CSRF，避免 middleware 缓冲并截断大 body。页面路由使用 [middleware/auth.ts](../../middleware/auth.ts) 校验 `kun-galgame-patch-moe-token`，未登录跳转 `/login`。
-
-常见角色约束：
-
-- `role >= 3`：管理员。
-- `role >= 4`：超级管理员。
-
-控制台、两种管理员预览及其读取 API 均独立执行 `role >= 3` 检查；中间件负责登录。预览位于前台根布局，`/preview/:path*` 带 `Content-Security-Policy: frame-ancestors 'self'`。反馈与举报在新收件箱只读，旧后台处理权限仍为超级管理员。
-
-### Redis、缓存和锁
-
-[lib/redis.ts](../../lib/redis.ts) 统一封装 Redis：
-
-- key 前缀：`kun:touchgal`。
-- command timeout：2000ms。
-- 支持单 key、多 key、pattern 删除、分布式锁、上传元数据消费锁。
-- `getOrSet` 提供 envelope、fresh/stale、single-flight、refresh lock 和 TTL jitter。
-
-[app/api/patch/cache.ts](../../app/api/patch/cache.ts) 定义 patch 相关 key 与失效函数：
-
-- 内容：`patch:*`、`patch:introduction:*`。
-- 列表：首页、游戏列表、排行、资源列表、标签游戏、公司游戏。
-- 收藏状态：按用户和游戏缓存，并通过 version key 批量失效。
-- 公开边缘缓存：同一失效函数会调用 `purgePublicPageCache` / `purgePublicApiCache` 清理 Cloudflare files 或 prefixes。
-
-改动写入逻辑时必须同步检查缓存失效。常见写入后调用：
-
-- `invalidatePatchContentCache(uniqueId)`
-- `invalidatePatchListCaches()`
-- `invalidateCompanyCaches(companyId)`
-- `invalidateTagCaches()`
-- `deletePatchResourceCache(uniqueId)`
-
-匿名公开 API 的 Cloudflare prefix purge 不带 query string；`/api/tag/otomegame` 会覆盖它的 query 变体。详情页浏览量写入不在 SSR 中执行，客户端调用 `POST /api/patch/views`，响应必须保持 `private, no-store`。
-
-### 上传和资源
-
-上传分两步：
-
-1. 上传 handler 写本地临时文件和 Redis metadata。
-2. 业务提交时通过 `consumeUpload` 获取锁，上传 S3，事务完成后 `finalizeUpload`，失败时释放锁或补偿删除 S3。
-
-关键文件：
-
-- `app/api/upload/resource/route.ts`
-- `app/api/upload/resourceUtils.ts`
-- `app/api/patch/resource/_helper.ts`
-- `lib/s3.ts`
-
-审计日志必须脱敏资源链接、提取码、密码和 hash，可复用 `sanitizeResourceForAuditLog` / `sanitizeResourceLinksForAuditLog`。
-
-### 内容和 MDX
-
-`posts/` 是 MDX 内容源，`lib/mdx` 提供读取、目录树和自定义元素。`next.config.ts` 使用 `@next/mdx`，并允许 `.md`、`.mdx` page extensions。`postbuild` 会把 `posts` 复制到 standalone 产物。
-
-### Cron 和任务
-
-[server/cron.ts](../../server/cron.ts) 只负责启动任务并防止重复启动：
-
-- `resetDailyTask`
-- `setCleanupTask`
-- `flushPatchViewsTask`
-
-任务实现位于 `server/tasks/`。多个实例部署时需注意任务锁，已有 `withTaskLock.ts`。浏览量写入是 Redis buffer + 定时 flush：请求侧写 `app/api/patch/views/buffer.ts`，任务侧由 `flushPatchViewsTask` 每 2 分钟批量落库。
-
-## 外部服务
-
-| 服务                   | 配置                                                                                                                        |
-| ---------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| PostgreSQL             | `KUN_DATABASE_URL`                                                                                                          |
-| Redis                  | `REDIS_HOST`、`REDIS_PORT`、`REDIS_PASSWORD`                                                                                |
-| Email                  | `KUN_VISUAL_NOVEL_EMAIL_*`                                                                                                  |
-| S3/image bed           | `KUN_VISUAL_NOVEL_S3_*`、`NEXT_PUBLIC_KUN_VISUAL_NOVEL_S3_STORAGE_URL`、`KUN_VISUAL_NOVEL_IMAGE_BED_*`                      |
-| Cloudflare cache purge | 默认／图床：`KUN_CF_CACHE_ZONE_ID`、`KUN_CF_CACHE_PURGE_API_TOKEN`；独立网站可选：`KUN_CF_CACHE_SITE_ZONE_ID`、`KUN_CF_CACHE_SITE_PURGE_API_TOKEN` |
-| IndexNow               | `KUN_VISUAL_NOVEL_INDEX_NOW_KEY`                                                                                            |
-| Bangumi                | `BANGUMI_ACCESS_TOKEN`                                                                                                      |
-| FFmpeg                 | 可选 `KUN_GALLERY_FFMPEG_PATH`，Gallery 动态 AVIF 缩略图默认还会尝试 standalone/local BtbN、`ffmpeg-static` 和系统 `ffmpeg` |
-| GitHub release deploy  | `GITHUB_REPO`、可选 `GITHUB_TOKEN`                                                                                          |
-
-## 维护原则
-
-- 新 API 先定义/复用 Zod schema，再写 route handler。
-- DB 写入优先放到 service/helper，route handler 保持薄。
-- 写入 patch、tag、company、resource 后必须明确缓存失效。
-- 上传资源必须保留 Redis lock、S3 compensation、finalize/cleanup 语义。
-- 角色和 CSRF 不能只依赖前端按钮隐藏。
-- 部署构建允许跳过 Next 内置 lint/type validation，但发布前必须单独运行 `pnpm typecheck`，必要时运行 `pnpm test`。
+- [页面、工作台与后台入口](../../app/)
+- [请求保护与登录拦截](../../middleware.ts)
+- [管理员访问检查](../../lib/dashboard/auth.ts)与[工作台登录检查](../../lib/workspace/auth.ts)
+- [数据库访问生命周期](../../prisma/index.ts)与[按领域划分的数据结构](../../prisma/schema/)
+- [缓存与临时登记](../../lib/redis.ts)、[内容缓存刷新](../../app/api/patch/cache.ts)与[对象存储访问](../../lib/s3.ts)
+- [后台任务注册](../../server/cron.ts)与[任务实现](../../server/tasks/)
+- [运行依赖与维护命令入口](../../package.json)、[构建配置](../../next.config.ts)与[多进程配置](../../ecosystem.config.cjs)

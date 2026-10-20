@@ -1,188 +1,55 @@
-# App Router And Pages
+# 页面分工与访问边界
 
-本模块说明 Next.js App Router 页面、server actions、metadata 和组件如何组织。
+OtoAme 的页面分为公开网站、用户工作台和管理后台。页面负责呈现内容和操作入口；能否读取或修改数据，由服务器按当前身份和业务条件检查。全局协作关系见[项目架构](../project/overview.md)，具体权限见[权限与业务规则](api-services.md)。
 
-## 入口结构
+## 公开网站
 
-| 路径                  | 责任                                      |
-| --------------------- | ----------------------------------------- |
-| `app/(site)/layout.tsx`      | 前台与旧后台根 layout，加载 HeroUI 样式。 |
-| `app/(site)/providers.tsx`   | 前台 providers。                          |
-| `app/(site)/metadata.ts`     | 前台 metadata helper。                    |
-| `app/(site)/page.tsx`        | 首页。                                    |
-| `app/(site)/[id]/*`          | 游戏详情页，动态路由是 8 位 `unique_id`。 |
-| `app/(site)/admin/*`         | 旧管理后台页面，URL 仍为 `/admin`。       |
-| `app/(site)/preview/*`       | 管理员投稿与资源只读预览。                |
-| `app/(dashboard)/layout.tsx` | 控制台根 layout，加载 shadcn 样式。       |
-| `app/(dashboard)/dashboard/*` | `/dashboard` 页面与管理员段布局。       |
-| `app/(site)/edit/*`          | 创建/编辑游戏。                           |
-| `app/(site)/message/*`       | 消息、会话、通知页面。                    |
-| `app/(site)/doc/*`           | MDX 文档/公告页面。                       |
-| `app/(site)/settings/user/*` | 用户设置。                                |
+首页、游戏列表、标签和会社页面帮助读者发现内容。首页提供默认不含成人内容的最新 24 条游戏和 4 份资源的静态首屏数据，浏览器随后补充实时浏览量与下载量；只有首屏游戏数据为空时，才额外读取首页数据进行补充。静态页面不应混入某一用户的登录状态或屏蔽偏好。
 
-页面通常由三类文件组成：
+标签详情页先提供标签资料，再按访问者的条件读取游戏列表。会社详情页可以复用不含成人内容的默认游戏列表；登录、允许成人内容或设置了屏蔽标签的读者，需要按自己的条件重新读取。成人内容偏好和屏蔽标签同时生效，不能只处理其中一项。当前缓存策略见[性能与缓存限制](../project/performance-optimization.md)。
 
-- `page.tsx`：Server Component 页面入口。
-- `metadata.ts`：页面 metadata。
-- `actions.ts`：server actions 或页面侧 API 封装。
+游戏详情页汇集介绍、资源、评论和评价，并支持直接定位某份资源、评论或评价。非法的游戏地址不进入详情读取。成人内容未获允许时，页面隐藏标题和内容。浏览量在页面打开后的独立请求中记录，服务器生成页面本身不增加浏览量。
 
-两个路由组不改变页面 URL，跨根布局导航是整页加载。`app/api` 和 `app/robots.ts` 保留在根目录；控制台通过 HTTP API 读取和处理业务，不新增页面 server action 写入入口。
+搜索抓取规则要求爬虫避开用户、消息、后台和预览等指定目录；未允许展示的成人条目另提供禁止索引的页面说明。搜索引擎是否收录不能据此作绝对保证，抓取规则也不代替访问权限。
 
-## 游戏详情页
+资源菜单面向资源作者和管理员。游客也能看到添加资源入口，但点击后先提示登录，不先打开需要填写的发布表单。下载地址、提取码和解压码由服务器按单次获取请求提供，不随公开首屏一起下发；资格与期限见[下载授权](data-cache-upload.md#下载资格与隐私)。
 
-代表路径：
+网站帮助与公告使用独立内容源。前台和旧后台使用 HeroUI 界面，主题与内容渲染规则见[前端与内容](frontend-content.md)及[主题说明](../theme-color-system.md)。
 
-- `app/(site)/[id]/page.tsx`
-- `app/(site)/[id]/actions.ts`
-- `app/(site)/[id]/metadata.ts`
-- `components/patch/header/Container.tsx`
-- `components/patch/resource/Resource.tsx`
+## 用户工作台
 
-详情页规则：
+所有登录用户均可进入工作台，包括没有投稿或资源记录的用户。工作台分别展示本人条目与投稿、本人资源与链接维护、本人提交或参与的问题；它不加载管理员菜单或全站待办数。
 
-- `id` 必须匹配 `/^[A-Za-z0-9]{8}$/`，否则 `notFound()`。
-- 页面数据来自 `kunGetPatchPageDataActions({ uniqueId })`。
-- 登录状态来自 `verifyHeaderCookie()`。
-- NSFW 显示状态来自 `getNSFWHeader()`。
-- `revalidate = 120`，浏览量不在服务端渲染期间写入；页面 hydration 后由 `PatchViewBeacon` 调用 `POST /api/patch/views`，该接口返回 `Cache-Control: private, no-store`。
-- 如果 NSFW 被阻挡，标题和内容会隐藏。
+工作台身份来自服务器会话，访问者不能通过修改请求选择其他用户。管理员从工作台操作时也遵守本人范围。待审核、封禁资源只提供必要状态，普通作者不能通过编辑入口取得受限下载信息或绕过审核。详细编辑权限、未保存内容保留和维护操作见[用户工作台与链接维护](workspace.md)。
 
-前端详情容器 `PatchHeaderContainer` 负责：
+个人主页展示正式公开贡献，私有投稿管理放在工作台。投稿编辑仍使用独立编辑页：草稿和要求修改的投稿可以编辑，待审核投稿须先撤回。普通作者的已发布条目提供查看和反馈更正入口，既有管理员直接创建与重写能力另行保留。
 
-- 写入 `useRewritePatchStore`，让编辑页可以复用当前游戏数据。
-- 挂载 `PatchViewBeacon`，详情页打开后发送一次浏览量写入请求，并对展示值做一次乐观更新。
-- 管理 introduction/resources/comments/ratings 等 tabs；读取 `tab`、`commentId`、`ratingId`、`resourceId` 深链参数切换页签，具体内容由对应列表定位。
-- 点击“下载”时切换到资源 tab 并滚动到资源区。
-- 根据 NSFW 状态设置 document title。
+旧问题页地址继续转向工作台，并保留合法的筛选、页码与选中项。历史通知仍能通过原地址进入，不需要改写既有通知。
 
-资源详情区的资源操作菜单只在当前用户是资源作者或管理员（`role >= 3`）时渲染；游客和无资源编辑权限的普通用户不显示三个点入口。添加资源按钮对游客仍可见，但点击只打开登录/注册提示，提示中说明普通用户也可以贡献资源；登录后才打开发布表单，避免游客填写后才发现需要登录。资源详情表单在游戏资源分区使用独立的“中文支持”多选上拉框，只有选择游戏类型时显示红色必填 `*`；主类型下拉使用 HeroUI 的 `SelectSection` / `SelectItem` 按游戏类型和其他类型分组，借用其标题排版和选项间距，但保留原有选项说明和多选勾选样式，不添加图标或快捷键；类型下拉保持从上方打开并开启边缘渐隐，游戏类型、工具补丁和中文支持的最大高度分别为 `300px`、`300px` 和 `256px`，工具补丁类型右侧显示翻译补丁说明。仅选择资料集或工具时，前端禁用并清除中文支持值；与游戏类型混选时保持中文支持可用并由前后端共同校验。
+## 管理后台与预览
 
-## 管理后台
+管理后台要求管理员身份；进入后台后，用户管理和完整统计仍单独要求超级管理员。管理员可以查看收件箱、本人今日处理数和受权事项；查看他人萌萌点明细要求管理员身份，不随用户管理页一起提升为超级管理员门槛。具体操作的授权由对应接口再次检查。
 
-代表路径：
+收件箱集中呈现待审投稿、资源申请和其他待处理记录。新问题通过事项处理；历史反馈与举报保留原有入口，其中部分处理操作仍要求超级管理员。等待报告者补充的问题保留在事项中心，不计入等待站方处理的收件箱。审核、通知和计数规则见[反馈与处理](api-services.md#反馈与处理)。
 
-- `app/(dashboard)/dashboard/layout.tsx`、`app/(dashboard)/dashboard/page.tsx`
-- `components/dashboard/*`、`components/dashboard/ui/*`
-- `app/(site)/admin/layout.tsx`
-- `app/(site)/admin/*/page.tsx`
-- `components/admin/*`
-- `app/api/admin/*`
+管理员可以使用前台外观预览投稿和待审资源。两种预览各自检查管理员身份；资源预览只接受待审资源，跳过下载获取、恢复与点赞写入。预览可在同源管理页面中嵌入，不能把预览地址当作公开分享入口。
 
-新控制台由独立的 shadcn 根布局承载，不导入旧后台或 HeroUI 组件。`/dashboard` 为统计总览，`/dashboard/inbox` 待审事项读取投稿、资源申请、反馈和举报，统一管理员门槛；反馈与举报只读，处理链接分别沿用旧后台反馈、评论举报和评价举报页面，其写权限保持超级管理员。隔离技术验证与上线状态见模块 01 实施计划第 9、10 节。
+前台与旧后台、新后台与工作台分别由两套根布局承载，样式和界面依赖分开加载。跨两套布局导航会重新加载整页；共享布局本身不决定管理员权限。
 
-首页复用原 `stats` 与 `stats/sum`，完整统计与独立创作者申请数仍限超级管理员，管理员首页只请求和显示四来源待办及本人今日已处理。原 `/dashboard` 的待审事项查询深链保留全部参数转向 `/dashboard/inbox`；旧 `/admin` 统计页在过渡期保留。
+## 账号、账目与消息
 
-`/dashboard/user` 承接用户查询与既有管理操作，列表页单独要求 `role >= 4`；`/dashboard/user/[id]/moemoepoint` 独立要求 `role >= 3`，不能被用户目录的超级管理员父布局拦截。两页分别复用现有管理员用户接口和账本 HTTP 查询接口；旧 `/admin/user` 及旧明细地址保留，发布并稳定使用后再按计划逐页退役。
+账号设置只允许本人修改。萌萌点中心展示登录用户自己的明细；萌萌点规则页公开可读，不因个人账目需要登录而一并限制。管理员查看他人明细使用独立受权入口。
 
-旧后台功能按资源域拆分：
+消息中心区分系统通知与私聊。点击铃铛进入通知中心，通知列表呈现后才确认已读；通知已读不会顺带清除私聊红点。全站未读同步只更新红点，不自动把通知标为已读。
 
-- 用户、创作者、游戏、资源、资源申请。
-- 评论、评分、反馈、举报、日志。
-- 邮件和站点设置。
+私聊详情只向会话成员开放。消息会持续补拉新增内容，向上翻阅时读取更早历史；移除私聊只隐藏本人列表记录，新消息或重新打开会使会话再次出现。发送、删除、隐私和图片费用见[消息规则](api-services.md#消息与私聊)。
 
-旧投稿审核队列位于 `/admin/submission`，只展示检索结果与「查看」入口；旧详情 `/admin/submission/[id]` 与新控制台选中项详情承载通过、要求修改、驳回、违规四个动作。完整详情 GET `/api/admin/patch-submission/{id}` 与四种动作 POST 共用 `app/api/admin/patch-submission/[action]/route.ts`，每种 HTTP 方法保留自己的参数校验。动态投稿 ID 必须是严格正整数，页面读取与动作 API 都要独立校验管理员权限。
+## 源码入口
 
-`/preview/submission/[id]` 和 `/preview/resource/[id]` 位于前台根布局，复用前台真实视图并隐藏顶栏、面包屑、页脚和回到顶部。两路都校验管理员权限，支持同源 iframe，资源预览仅读取待审资源；`ResourceDownload` 和 `ResourceDownloadCard` 的 `preview` 模式跳过恢复、揭示与下载接口，点赞只显示静态数字。
-
-资源管理列表的主标题使用“下载资源管理”。资源列必须把资源条目名作为主行、所属游戏名作为可点击副行展示；资源 / 补丁归属放在紧随资源列后的“类型”列，不要挤在名称行里；对象存储链接的大小来自上传结果，编辑表单中大小输入必须禁用，普通外链大小仍可编辑；发布资源和更改资源链接弹窗中的说明性小字及表单 label 应使用 `select-none`，但不能影响输入框内容、按钮、链接等可交互元素；后台资源编辑成功后要用接口返回值立即更新当前行或重新拉取列表，删除成功后要刷新列表，避免继续用旧行数据再次编辑。
-
-权限规则不应只靠页面隐藏按钮。所有后台 API 必须在 route handler 校验登录和角色。常见要求：
-
-- `role >= 3`：管理员。
-- `role >= 4`：超级管理员。
-
-## 首页
-
-代表路径：
-
-- `app/(site)/page.tsx`
-- `app/(site)/actions.ts`
-- `app/api/home/service.ts`
-- `app/api/home/route.ts`
-- `components/home/Container.tsx`
-- `components/home/HomeGalgameGrid.tsx`
-
-规则：
-
-- 首页是 `force-static`，正常首屏游戏和资源来自服务端静态 payload，不要为了修复部署后的空列表把首页改成动态 SSR。
-- 首页静态 payload 返回最新 24 条游戏。`HomeGalgameGrid` 按响应式网格展示：桌面端 4 列 × 6 行，平板端 3 列 × 8 行，手机端 2 列 × 12 行。
-- 首页封面采用一次性加载，`GalgameCard` 使用 `decoding="async"` 异步解码；当前布局不使用虚拟列表。
-- 首页游戏卡片向详情页链接传入 `prefetch={false}`，点击后仍正常导航；`GalgameCard` 的 `prefetch` 为可选参数，其他列表不受影响。
-- 首页游戏 section 只在静态 payload 的 `galgames` 为空时，由客户端补拉一次 `/api/home`；静态 payload 非空时不能额外请求 `/api/home`，只保留现有 `/api/patch/stats` 实时浏览量合并。
-- `/api/home` 是部署空快照的兜底路径。匿名请求使用短响应缓存；登录、NSFW 设置或 blocked tag cookie 请求仍按个性化可见性返回 `private, no-store`。
-- 调整首页首屏数据时，要同时检查 `home_data:*` Redis payload cache、`/api/home` 匿名响应缓存、Cloudflare API purge、`/api/patch/stats` 实时叠加，避免空结果被缓存后长期覆盖静态首页。
-
-## 用户与消息页面
-
-登录后的本人管理入口为 `/workspace`，默认进入 `/workspace/resources`。条目、资源和
-事项页面均位于 `app/(dashboard)/workspace`，使用独立 `WorkspaceShell`，不挂载管理员
-外壳或请求全站计数。布局调用 `requireWorkspaceUser`，middleware 同时保护该路径。
-`/issue` 和详情兼容跳转，只保留合法筛选、页码和选中项。个人投稿页保留公开贡献展示，
-私有管理改由工作台入口进入；投稿编辑完成后返回工作台。具体读写与状态契约见
-[workspace.md](workspace.md)。
-
-用户页：
-
-- `app/(site)/user/[id]/*`
-- `components/user/*`
-- `app/api/user/profile/*`
-
-萌萌点中心位于 `/moemoepoint`，只展示登录用户自己的明细。它是独立顶级路由段，不挂在 `/user/[id]/` 下——那个段的语义是“某用户的**公开**主页”，把私密账务塞进去会迫使布局传权限 flag、三个入口各写一遍鉴权。`/moemoepoint` **不在 middleware matcher 里**，边缘不鉴权，登录判断在页面内做；不要把 `/moemoepoint/:path*` 加进 matcher，否则公开的 `/moemoepoint/rules` 也会被踢去 `/login`。页面服务端默认加载最近 30 天，客户端使用 HeroUI v2 Tabs、DateRangePicker、Table 和共享分页切换 7 天、30 天或最长 90 天的自定义日期；窄屏改用卡片列表，4 列表格会横向溢出。
-
-萌萌点明细不占用桌面或移动端主导航；登录用户可从头像下拉或本人个人主页“编辑信息”右侧进入。`role >= 3` 的管理员在“帮助文档”之后看到 `/dashboard` 入口，桌面导航与移动端侧栏保持同一顺序；本人个人主页的管理后台按钮另起一行。
-
-`/moemoepoint/rules` 是公开可索引的规则说明页，纯静态、不查库，数据来自 `constants/moemoepoint.ts` 的 `MOEMOEPOINT_EARN_RULES` / `MOEMOEPOINT_SPEND_RULES` / `MOEMOEPOINT_THRESHOLD_RULES`。**改动萌萌点金额或门槛时必须同步这三个常量**，否则用户看到的规则会和真实扣费不一致。
-
-管理员查看他人明细在后台 `/admin/user/[id]/moemoepoint`（`app/(site)/admin/` 下唯一的动态路由）。角色由 `app/(site)/admin/layout.tsx` 统一拦 `role < 3`，页面不需要再写角色判断；但同目录的 server action 是可独立调用的入口，必须自己再校验一次。
-
-消息页：
-
-- `app/(site)/message/*`
-- `components/message/*`
-- `app/api/message/*`
-
-通知正文按纯文本渲染，前端会保留后端消息里的换行，供系统通知展示多行变更摘要。
-
-未读状态由 `app/api/message/service.ts` 查询普通消息与聊天会话未读数。会话模块在 `app/api/message/conversation/*`。顶栏铃铛只负责导航到通知中心，不应在用户看到通知列表前调用 `/api/message/read`。通知页由消息导航在首屏消息已经渲染后调用 `/api/message/read`，用服务端返回的 `MessageUnreadStatus` 同步全局红点；不要只在前端把通知和私聊红点一起乐观清空。消息列表客户端首次 hydrate 时先保留服务端首屏数据，随后立即以无整页 loading 的后台请求刷新当前页，让切回通知标签时能拿到最新列表，同时避免刚看到的内容被加载态遮住。消息导航红点以 `messageStore` 为单一状态源，通知页不再发额外 `/api/message/unread` 覆盖刚确认的已读状态；跨路由未读请求必须在 effect cleanup 后忽略过期返回。
-
-登录后的全站未读状态由 `components/message/MessageRealtimeSync.tsx` 在 `app/(site)/providers.tsx` 中挂载同步。它只轮询 `/api/message/unread` 并写入 `messageStore`，不负责标记已读；系统通知、评论回复、@、关注等 `user_message` 新通知在任意页面到达时，表现为顶栏铃铛小红点动态亮起，不弹 toast。页面隐藏时降频，回到可见状态时立即同步一次，但不能在已有未读同步请求仍在进行时再发起第二个 `/api/message/unread` 请求。私聊会话卡片禁用 Next Link 预取，避免个性化聊天详情使用停留列表时预取到的旧 RSC payload。私聊会话列表首屏和 API 列表刷新必须在 DB 读取前走 `message-read` 限频；私聊详情页服务端首屏必须用严格十进制 helper 校验 `conversationId`，并在初始消息 DB 读取前走 `message-read` 限频；非法 ID 渲染 `无效的会话 ID`，限频命中渲染用户可见重试字符串。`ChatContainer` 打开后立即用 `/api/message/conversation/[id]?afterId=<latestId>` 补拉一次，可见窗口约每 2 秒继续增量获取，隐藏窗口降频并在恢复可见时立即补拉；实时 `afterId` 游标只由服务端拉取到的消息推进，本地刚发送成功的消息只插入 UI，不推进游标，避免双方同时发送时略早的对方消息被永久跳过。收到对方消息后调用 `/api/message/conversation/[id]/read` 并用返回值同步红点。会话消息接口的 `afterId` 增量请求只查新增消息，不再统计整段历史总数；历史消息上翻使用 `beforeId=<oldestId>` 游标加载更早消息，不能用 page/skip 翻页扫过整段会话。会话列表页挂载后会立即后台刷新当前页，让最新消息、未读 chip 和私聊红点不依赖手动刷新；列表摘要使用 `user_conversation.last_message_id` 对应的消息作为预览来源，不能用按时间重排的消息查询猜测最后一条。私聊详情页的“移除私聊”只隐藏当前用户列表记录；重新发起已有会话会先调用创建/打开接口恢复可见性再跳转。所有这些个性化消息接口都必须保持 `private, no-store`。
-
-私聊详情页消息气泡支持文本消息、图片消息、回复预览和发送方已读/未读状态。所有存在正文的消息，包括短单行文本、长文本、带回复预览的正文和图片说明文字，都使用 Telegram 风格尾部元信息布局：正文保持普通左对齐内联文本流，在文本尾部追加不可见内联占位为元信息留出空间，发送时间、编辑标记和自己消息的轻量对钩贴在同一段落右下角/末行右侧；占位只镜像真实元信息宽度，不能贡献行高、padding 或额外垂直高度；不能把尾部文字拆成单独右对齐行，不能用 `text-align-last: justify` 拉伸文字，不能用固定/手写换行、两列 grid、`justify-between` 或 float/right-column 布局。图片-only 消息把同一组元信息放在右下角半透明遮罩中。对钩语义来自 `user_private_message.status`。右键菜单可对消息选择“回复”；如果当前气泡内有选中文本，还会出现“回复选中文本”。消息气泡本身必须可聚焦，键盘用户可通过 Enter、Space、菜单键或 Shift+F10 打开同一个操作菜单，菜单使用 `menu` / `menuitem` 语义并保留可见焦点。移动端左滑消息气泡直接进入与右键“回复”相同的回复草稿路径，并用水平阈值区分纵向滚动。图片右键菜单复制的是图片链接；右键落在某一张图片上时，回复会绑定这张图片并显示主题色遮罩。图片-only 且没有文本说明的消息不显示编辑入口。回复预览支持图片缩略图，点击已发送消息里的回复预览会短暂滚动到被引用消息并高亮目标内容。聊天窗口离开底部时显示浮动回底部按钮；如果刚通过回复预览跳转，按钮第一次点击会短暂滚动回到跳转前位置并高亮原回复消息，之后再作为普通回底部按钮使用；普通回底部点击同样使用短滚动动画，并在点击时立即触发原地渐隐，按钮退出和按钮自身按压反馈都不能造成先向下位移再消失的观感。移动端长按菜单不可用时，组件保留单击回复入口的扩展空间，交互必须避免和图片预览、复制、编辑、删除冲突。输入区加号折叠菜单承载附件能力，目前只开放图片；菜单支持 Escape 关闭并使用 menu/menuitem 语义。图片先上传到 `/api/message/conversation/[id]/image` 获取同会话、同用户短期登记过的 metadata，再随发送消息请求写入消息记录；前端不能拼装或复用未登记图片 URL 绕过上传流。
-
-## 标签和公司详情页
-
-代表路径：
-
-- `app/(site)/tag/[id]/page.tsx`
-- `app/(site)/company/[id]/page.tsx`
-- `components/tag/detail/Container.tsx`
-- `components/company/detail/Container.tsx`
-
-规则：
-
-- `/tag/[id]` 和 `/company/[id]` 都是 `force-static` 公开页面，默认可进入匿名 HTML 缓存；不要在页面渲染阶段读取登录、NSFW 或 blocked tag cookie 来生成个性化列表。
-- `/company/[id]` 可以在服务端预取默认 SFW 公司游戏列表，并传给客户端作为匿名默认筛选首屏数据。客户端默认筛选状态下，匿名用户复用这份静态列表；登录、NSFW `nsfw` / `all`、或 blocked tag cookie 存在时，首屏应通过 `/api/company/otomegame` 补拉个性化列表。
-- `/tag/[id]` 不在服务端预取游戏列表；登录用户在客户端首屏通过 `/api/tag/otomegame` 拉取列表，避免静态产物混入登录态、blocked tag 或 NSFW 结果。
-- 调整 tag/company 详情列表首屏逻辑时，要同时验证匿名默认场景不多打 API、个性化场景会补拉 API，并检查 StrictMode 下不会重复请求。
-
-## 页面开发规则
-
-- 只有需要浏览器 API、状态、事件或 hooks 的组件才加 `'use client'`。
-- 页面参数和 search params 必须经过 schema 或显式校验。
-- 页面不直接承载复杂 Prisma 逻辑，业务逻辑放到 API service 或 actions。
-- 新页面要同步 metadata。
-- 受保护页面必须确认 `middleware.ts` matcher 是否覆盖。
-
-## 变更检查
-
-页面/组件改动至少运行：
-
-```bash
-pnpm typecheck
-```
-
-涉及共享逻辑、stores、filters 或 API 数据形态时，加跑相关测试或全量：
-
-```bash
-pnpm test
-```
+- [前台布局与导航](../../app/(site)/layout.tsx)及[工作台与后台共用的界面根布局](../../app/(dashboard)/layout.tsx)
+- [页面登录拦截](../../middleware/auth.ts)、[工作台身份检查](../../lib/workspace/auth.ts)、[后台身份检查](../../lib/dashboard/auth.ts)与[搜索抓取限制](../../app/robots.ts)
+- [首页与静态数据入口](../../app/(site)/page.tsx)、[首页数据读取](../../app/api/home/service.ts)与[游戏详情入口](../../app/(site)/[id]/page.tsx)
+- [标签详情入口](../../app/(site)/tag/[id]/page.tsx)与[会社详情入口](../../app/(site)/company/[id]/page.tsx)
+- [本人工作台页面](../../app/(dashboard)/workspace/)与[旧问题地址兼容](../../utils/workspaceRoutes.ts)
+- [管理后台页面](../../app/(dashboard)/dashboard/)与[管理员预览](../../app/(site)/preview/)
+- [个人萌萌点中心](../../app/(site)/moemoepoint/)与[消息页面](../../app/(site)/message/)

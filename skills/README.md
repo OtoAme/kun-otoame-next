@@ -1,35 +1,22 @@
-# 项目 Skills
+# 项目技能分工
 
-本目录是 OtoAme 项目 skills 的唯一来源，属于项目资产，不属于某个 agent 工具。
+项目技能是本仓库共享的协作指引，唯一来源为根目录 skills。Codex、Claude Code 和 Grok 通过各自目录的链接发现同一份内容，修改时只编辑此目录，不建立工具专用副本。通用工作约束见[项目指引](../AGENTS.md)。
 
-## 目录布局
+## 按任务选择技能
 
-```
-skills/                   # 唯一来源，git 跟踪真实文件
-.codex/skills -> ../skills   # 软链接，供 Codex 自动发现
-.claude/skills -> ../skills  # 软链接，供 Claude Code 自动发现
-.grok/skills  -> ../skills   # 软链接，供 Grok 自动发现
-```
+| 场景 | 先读技能 |
+| --- | --- |
+| 任何仓库开发 | [开发入口](otoame-development/SKILL.md) |
+| 维护文档写作与审阅 | [文档治理](otoame-documentation/SKILL.md) |
+| 登录、权限与业务规则 | [业务接口](otoame-api/SKILL.md) |
+| 数据、缓存、上传与结构变更 | [数据一致性](otoame-data-cache/SKILL.md) |
+| 页面、组件、状态、内容与主题 | [前端](otoame-frontend/SKILL.md) |
+| 应用发布、环境配置与恢复 | [部署](otoame-deployment/SKILL.md) |
+| 脚本、迁移、后台任务与维护命令 | [运维](otoame-operations/SKILL.md) |
+| 测试设计、隔离与验证 | [测试](otoame-testing/SKILL.md) |
+| 变更审阅与发布风险 | [审阅](otoame-review/SKILL.md) |
+| 面向用户的中文更新日志 | [更新日志](otoame-changelog/SKILL.md) |
 
-根目录 `AGENTS.md` 会在会话开始时注入，要求先读匹配的 skill 全文，再读 skill 里的 Required References（`docs/project/*`、`docs/modules/*`）。Codex 还会把仓库根目录 `skills/` 本身当作 skill 根目录；Claude Code 和 Grok 靠上述软链接发现同一份内容。
+先完整阅读开发技能，再读领域技能和其中链接的必读文档。技能保留用途、高风险不变量与参考入口；详细业务和操作步骤归[维护文档](../docs/README.md)。领域技能保持 100–250 个英文单词，引用用可点击链接。
 
-新增或修改 skill 时只改 `skills/` 下的文件。不要在 `.codex/`、`.claude/` 或 `.grok/` 里放工具专用副本，否则内容会分叉。要接入新的 agent 工具时，按同样方式加一条指向 `../skills` 的软链接即可。
-
-## Skill 分工
-
-| Skill                | 触发场景                                                             |
-| -------------------- | -------------------------------------------------------------------- |
-| `otoame-development` | 仓库通用开发入口和项目规则总览。                                     |
-| `otoame-documentation` | 项目文档写作、结构调整、事实核对与可用性审阅；用户更新日志使用 `otoame-changelog`。 |
-| `otoame-api`         | API routes、service、validation、业务权限和管理接口。                |
-| `otoame-data-cache`  | Prisma、Redis、缓存失效、上传、S3、资源属性和迁移。                  |
-| `otoame-frontend`    | App Router、React components、stores、主题、MDX、编辑器和 NSFW UI。  |
-| `otoame-operations`  | scripts、migrations、cron、postbuild、release packaging 和维护命令。 |
-| `otoame-deployment`  | PM2、Next standalone、CI/CD release、env vars 和生产部署。           |
-| `otoame-testing`     | Vitest 测试、mock、目标测试选择。                                    |
-| `otoame-review`      | 代码审阅、发布风险和未验证风险报告。                                 |
-| `otoame-changelog`   | 用户侧中文更新日志。                                                 |
-
-## 写作约定
-
-Skill 只保留触发条件、必读文档、关键规则和验证命令；详细业务知识放在 `docs/project/*` 和 `docs/modules/*`，由 skill 回链。质量门槛与同步规则见 [../docs/modules/quality.md](../docs/modules/quality.md)。
+用户指令优先，技能不扩大写入、发布或委派权限。变更后检查必读引用和本表是否一致，按[质量边界](../docs/modules/quality.md)同步文档并记录验证。

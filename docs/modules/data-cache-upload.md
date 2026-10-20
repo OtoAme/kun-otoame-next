@@ -1,425 +1,114 @@
-# Data, Cache, Upload
+# 数据、缓存与上传一致性
 
-本模块覆盖 Prisma、Redis 缓存、上传元数据、S3 和资源一致性。
+OtoAme 将持久业务记录、短期缓存和文件分别保存。数据库记录决定内容归属、授权、费用与处理结果；缓存减少重复读取；对象存储承载文件。它们不能共同提交，因此每条写入流程需要明确哪些变化必须一起成功，哪些失败留待补偿或重试。
 
-## Prisma
+本页解释这些保证与限制。权限、收费和投稿规则见[权限与业务规则](api-services.md)，具体维护命令与迁移步骤见[日常运维](operations.md)和[部署指南](../project/deployment.md)。
 
-生产库缺少 `patch_resource_access` 时，必须先运行
-`migration/production-resource-access-bootstrap-preflight-2026-07-12.sql` 和对应 sync
-精确创建 Phase 2 基础表，再运行现有 grant migration；不得用生产
-`prisma:push` 代替。空表路径使用实际 `MAX(id)=0`，已有 Phase 2 或中断恢复路径
-使用停机后的实际非负 max ID 和带时区 cutover。
+## 数据为何分别保存
 
-入口：
+| 保存位置 | 保存的事实与用途 |
+| --- | --- |
+| PostgreSQL | 用户和正式内容、尚未发布的投稿、资源与链接、下载授权和获取记录、问题对话、维护记录、账目及审计。需要长期追溯或参与并发判断的事实保存在这里。 |
+| Redis | 查询缓存、短时限频、上传登记、任务锁和浏览量缓冲。部分数据只是可重建副本，部分参与上传、费用或并发控制，故障影响不能一概而论。 |
+| 对象存储 | 资源文件、封面、截图、私聊图片和贴纸。数据库保存真实文件引用；不能只凭页面消失认定文件已删除。 |
+| 浏览器 | 尚未提交的表单、投稿素材和重试所需内容。服务器不能代替浏览器清除这些本地记录。 |
 
-- `prisma.config.ts`
-- `prisma/index.ts`
-- `prisma/schema/*`
+Prisma 是数据库访问层，数据库连接池随服务进程保留。开发热更新复用客户端及其所属连接池，避免不断增加连接；短生命周期维护进程退出时关闭自己的连接，长期应用不逐请求断开。
 
-`prisma.config.ts` 指向 schema 文件夹：
+萌萌点账目按账户生命周期保留，不设自动过期；删除账户会删除其账目与暂扣记录，审计中的操作人关系可以保留为空。标签与会社的关联数量由数据库关系变更触发器维护，应用和清理脚本不再自行计数，以免重复或遗漏。
 
-```ts
-schema: 'prisma/schema'
-```
+## 保存与并发冲突
 
-`prisma/schema/schema.prisma` 只放 generator 和 datasource，模型按域拆分：
+业务数据、相关账务和必须共同成立的处理记录放在同一数据库事务中。投稿审核、下载额度、资源编辑和事项动作都需要在写入时重新检查状态，不能只相信页面打开时的内容。数据库冲突只在已识别的可重试情形下有限重试；上传和外部检测不随数据库事务一起重做。
 
-- `user.prisma`
-- `patch.prisma`
-- `patch-resource.prisma`
-- `patch-comment.prisma`
-- `patch-company.prisma`
-- `patch-tag.prisma`
-- `patch-rating.prisma`
-- `patch-report.prisma`
-- `conversation.prisma`
-- `admin.prisma`
-- `sticker.prisma`
-- `moemoepoint.prisma`
-- `shoutbox.prisma`
+资源中的每个链接保持自己的身份。地址规范化后真正改变，才视为新的地址版本；调整排序、大小、存储类型或提取码不重新开始地址版本。提取码或存储类型改变仍会使旧检测观察不再适用于当前输入。旧地址历史留作管理追溯，不对公众提供。
 
-`prisma/index.ts` 使用 `pg.Pool` 与 `PrismaPg` adapter：
+编辑时需要对照打开编辑时的完整原链接集合及地址版本。集合或版本过期、遗漏、重复或混入其他资源的链接，系统会拒绝保存，避免覆盖他人的修改。界面在冲突或请求失败后保留未保存内容，以及打开编辑时用于比较的链接和地址版本，保存成功后才更新比较记录；具体界面行为见[工作台](workspace.md)。普通作者可以保留网站资源盘中的受保护链接，但不能改动、删除、重排或伪造这些链接。
 
-- pool max：30。
-- idle timeout：30000ms。
-- connection timeout：5000ms。
-- prepared statement name cache：1000。
+地址替换会在保存事务中留存历史、开始新健康轮次并结束旧版本的链接事项与维护。删除单个链接保留必要的获取额度和处理历史；移动资源不改写历史参与身份。资源、链接、维护和事项按固定先后协调锁定，防止并发操作相互等待或写出矛盾结果。普通资源问题仍独立处理，不能借补链或删除链接顺带结案。
 
-开发环境通过 `globalThis` 复用同一个 Prisma Client 与其所属的 `pg.Pool`，prepared statement 名称缓存和计数器与该 pool 一起保留，避免热更新重复创建连接池。生产保持模块级生命周期。`disconnectPrismaAdapter()` 用于短生命周期脚本，关闭 Prisma 及其实际所属 pool 后释放对应开发缓存引用；长期服务不逐请求断开。
+资源分类和卡片统计只汇总已发布资源。待审、封禁或删除资源不能继续贡献平台、语言、类型与资源数量；资源审核、移动和增删改后需同步更新相关展示。
 
-Schema 修改后至少运行 `pnpm prisma:generate`。会影响数据库结构时运行 `pnpm prisma:push`；生产库如果出现 reset database 提示必须取消，改走 preflight/sync SQL 或 dry-run 脚本。
+## 下载资格与隐私
 
-会社身份的最终 schema 使用 `patch_company.normalized_name NOT NULL UNIQUE` 与 `patch_company_external_id.(source, external_id)` 复合唯一；alias 身份的 `normalized_value` 保持普通索引，因为不同会社共享同一别名是可表示的合法状态。生产必须先完成 Phase A、身份回填与历史清理，再执行 `production-company-identity-constraint-*` 三份 SQL；只有 postflight 与 `prisma:deploy-safe` 通过后才能打开 resolver flag。
+公开资源列表、首屏和普通预览只展示链接概况，不提供真实地址、提取码和解压码。用于文件完整性校验的摘要可以公开，它不等于下载凭据。读者主动获取某个镜像时，服务器重新核对游戏、资源和链接归属，以及发布状态和内容可见范围，再返回该镜像的凭据。
 
-萌萌点账务使用 `user.moemoepoint_reserved`、`user_moemoepoint_ledger` 和 `user_moemoepoint_reservation`。总额保留在原 `moemoepoint` 字段；待结算不改变总额，可用余额在读取时计算为 `moemoepoint - moemoepoint_reserved`。明细和暂扣记录随账户保留，用户删除时级联删除；操作人/结算人删除时只把审计外键置空。生产先运行 `production-moemoepoint-ledger-preflight-2026-08-17.sql`，审核后运行对应 sync；sync 会为既有账户建立幂等的迁移初始余额明细，然后再运行 `pnpm prisma:deploy-safe` 校验 schema。
+下载授权以一份资源为单位，首次获取起固定有效 24 小时。同一授权内首次打开另一镜像只增加该镜像的获取记录；重复打开、页面恢复或重新读取都不延长期限。获取记录中的地址版本与返回的凭据来自同一次事务，避免把旧地址的资格误用于新地址。
 
-数据库层只对 `moemoepoint_reserved` 施加非负 CHECK，总额 `moemoepoint` **没有下限**：取消点赞、删除资源等回退必须真实扣回，账本才是完整审计链。不要在没有产品决策的情况下补一条 `moemoepoint >= 0` 约束，也不要在 service 里 clamp 回退金额；上线用的 dated preflight 会统计既有负余额账户，负数是预期结果而不是待修数据。投稿押金实际使用 `reserveMoemoepoint` / `releaseMoemoepoint` / `forfeitMoemoepoint` 与 `user_moemoepoint_reservation`，接入点见 [投稿域](api-services.md)，不要当成未启用的预留基础设施删改。
+游客获取游戏资源按上海自然日最多 5 份、自然周最多 20 份，只统计新建或续期的资源授权。同一有效授权内查看其他镜像不重复消耗额度；登录用户和补丁资源当前没有这一产品硬限制。并发获取在数据库中共同检查授权与额度，竞争无法完成时返回可重试错误，不先放行再补记额度。
 
-明细当前不设置 TTL，按账户生命周期完整保留。原因、关联链接和幂等键均使用有界短字段，日常记录通常远小于字段上限；上线后用 PostgreSQL 的 `pg_total_relation_size('user_moemoepoint_ledger')` 同时监控表和索引实际占用。若未来增长超出容量预算，应先把冷数据归档到只读存储并保留可查询入口，不直接截断审计明细。
+登录用户按账号识别，游客按浏览器中的专用身份凭据识别。共享 IP 不分摊产品额度；清除游客身份凭据会产生新的游客身份。获取与恢复另有每个访问者每分钟 30 次的技术限频，首次没有身份凭据的游客才使用 IP 摘要进行该限频。
 
-小喇叭使用独立 `shoutbox` 表保存普通与官方消息、实付成本、生效区间和隐藏/退款状态；`(user_id, request_id)` 是发布幂等边界。`patch_report.patch_id` 因未关联游戏的小喇叭改为可空，新增 `shoutbox_id` 并使用 `onDelete: SetNull`，使举报记录在目标删除后仍可保留。普通发布扣费、举报自动隐藏、管理员处置和误判恢复退款都在所属事务内锁定或条件更新消息状态；`refunded_at` 与账本幂等键共同保证每条消息最多退款一次。
+刷新页面后的恢复是只读操作：只返回本人已打开、授权未过期、仍可见且地址版本相同的镜像，不建立新授权、不增加获取记录，也不恢复未点过或已被替换的地址。个人获取状态和真实凭据禁止共享缓存，凭据只保留在界面内存中。作者或管理员的编辑读取与下载获取不同，不产生下载记录或失效反馈资格。
 
-私聊会话表 `user_conversation` 使用 `user_a_hidden` / `user_b_hidden` 保存每个参与方自己的列表隐藏状态。隐藏会话不是删除历史消息；发送新消息会把双方 hidden flag 恢复为 `false`。生产同步可先运行 `migration/production-conversation-hidden-preflight-2026-07-01.sql` 检查列状态，再运行 `migration/production-conversation-hidden-sync-2026-07-01.sql` 添加缺失列并补齐默认值。
+历史授权迁移可能保留尚未到期的旧授权，最长延续 72 小时；这是兼容旧数据的条件，新授权仍为 24 小时。切换与回滚后的重新迁移条件由[部署指南](../project/deployment.md)维护。
 
-Sticker 目录使用 `sticker_pack`、`sticker` 和 `user_sticker_pack`。后台新导入的资源把对象存储 key 写入 `storage_key` / `thumbnail_storage_key`，不把 CDN URL 当作唯一来源；`lib/s3.ts` 在读取时根据 CDN 配置派生公开 URL。动态 WebM 的 poster 必须先上传成功，Pack 启用和 Sticker 状态变更通过事务校验有效资源与同 Pack 封面。S3 上传后 DB 事务失败时必须删除本次对象，生产 schema 按 `production-private-chat-stickers-*` 再按 `production-sticker-admin-*` preflight/sync 执行；已经执行旧版 sync 的数据库再执行 `production-stickers-prisma-alignment-2026-08-15.sql`，然后运行 `pnpm prisma:deploy-safe`。
+## 缓存何时刷新
 
-`patch.steam_id` 是普通可空字段，不是唯一字段；它保留普通索引用于软查重和 Steam 输入提示，因为合集或二合一商店页可能让多部游戏共用同一个 Steam App ID。生产库若仍有旧唯一约束或唯一索引，先运行 `migration/production-steam-id-soft-duplicate-preflight-2026-07-09.sql` 查看当前约束/索引和重复预览，再运行 `migration/production-steam-id-soft-duplicate-sync-2026-07-09.sql` 移除唯一约束并创建普通索引。
+保存后的缓存刷新需要覆盖所有受影响的展示，不能只刷新当前页面。
 
-## Redis
+| 业务变化 | 需要更新的展示范围 |
+| --- | --- |
+| 游戏内容或资源增删改、资源审核 | 游戏详情与简介、首页、游戏和资源列表、排行及相关标签和会社列表。 |
+| 标签和会社资料、条目关系变化 | 对应目录与详情、关联游戏列表；会社关系还需刷新受影响的游戏详情。 |
+| 评论、评价、收藏与下载统计 | 按是否影响卡片统计更新内容及列表；仅修改正文等不改变数量的操作至少更新详情。 |
+| 链接维护的公开限制变化 | 资源读取与公开健康摘要。维护对话、参与者和内部说明不进入公开缓存。 |
+| 私人授权或镜像获取 | 只改变该访问者的获取状态，不因此清理全站资源列表。 |
 
-入口：
+刷新链路包含 Redis、页面重新生成和对应边缘缓存；匿名完整响应缓存也需清理。Redis 刷新失败可能阻止同次调用继续完成后续刷新，不能把调用刷新入口等同于所有层已经成功。已提交的保存不因后续刷新失败撤销，部分读者仍可能暂时看到旧结果。各层寿命与多实例限制见[性能策略](../project/performance-optimization.md)。
 
-- `lib/redis.ts`
-- `config/cache.ts`
-- `app/api/patch/cache.ts`
-- `app/api/shoutbox/cache.ts`
+小喇叭共享的是原始公开数据，返回前按访问者的游戏可见偏好过滤。缓存寿命不跨过已知的官方消息展示边界；公开变更先推进独立版本，再尝试清理缓存。已经开始的读取可以返回旧快照，低于自动隐藏阈值的新增举报不改变公开数据。缓存版本读取失败时，仅在本进程合并相同查询，不保证跨实例合并；数据库读取失败与成功空结果分别返回，不能用空列表掩盖故障。
 
-统一 key 前缀：
+边缘清理按公开地址的实际主机分组选用配置，所有目标组都确认成功才视为完成。素材清理和会社维护据此保留未完成凭据。详细配置与实测步骤见[运维指南](operations.md)，应用接受清理请求不证明边缘内容已经更新。
 
-```text
-kun:touchgal
-```
+## 资源上传与保存失败
 
-基础 API：
+资源文件先写入服务器临时目录，并登记上传人、大小、校验摘要和文件位置，登记有效期为 24 小时。发布时只消费本人的有效登记；同一登记正在被提交时，其他请求不能重复消费。对象存储中的地址、大小和校验信息来自服务器登记，不能由浏览器任意填写替代。
 
-- `setKv`
-- `getKv`
-- `getKvs`
-- `delKv`
-- `delKvs`
-- `delKvPattern`
-- `acquireKvLock`
-- `releaseKvLock`
-- `getOrSet`
+文件上传对象存储后，业务保存才能引用它。对象存储上传失败会释放本次占用。资源编辑在数据库保存失败时，先查现有链接是否仍引用本次上传的文件，只尝试删除查询确认未被引用的对象；引用查询失败时不删。新建资源的失败补偿没有这项引用检查，会直接尝试删除本次已经上传的对象。同一游戏再次上传相同内容、相同文件名时会使用同一文件位置；如果新建请求在保存前失败，清理可能影响已有资源仍在使用的文件。
 
-`getOrSet` 支持 envelope、fresh/stale、single-flight、refresh lock、TTL jitter。新增缓存时优先复用，不要手写裸 Redis key。
+失败分支会尝试释放本次上传登记的占用，保存成功后才完成登记消费与本地清理。补偿本身也可能失败，应保留日志供核查，不能宣称所有失败都已自动清理。
 
-约定：
+提交后的登记清理、缓存刷新或链接检测失败，保留已经成功的保存结果。特别是补链保存成功，不等于后续检测已完成；检测异常不能把已保存内容报告成已回滚。
 
-- 传给 `setKv` / `getKv` / `delKv` / `delKvPattern` 的 key 不带 `kun:touchgal` 前缀，helper 会自动补。
-- 只有需要 Redis hash、Lua、multi 或跨 key 原子操作时才直接用 `redis` + `runRedisCommand`，这类 key 要像 `app/api/patch/views/buffer.ts` 一样显式写完整前缀。
-- 分布式锁必须用 token release，不要直接 `del` lock key。
-- `delKvPattern` 使用 `SCAN` + 批量删除，适合明确业务前缀；不要传过宽 pattern。
-- `getOrSet` 的 `shouldCacheValue` / `isCachedValueValid` 只用于拒绝明显异常的缓存值，例如首页 `home_data:*` 的空游戏列表；正常列表分页为空不能套用这个策略。
+上传大小、权限和每日额度见[资源发布规则](api-services.md#资源发布与分类)。每日额度会在临时文件处理前先占用，后续失败目前不会自动返还该额度。它与私聊图片的失败退款流程不同。
 
-小喇叭缓存以 `shoutbox:home:v4`、`shoutbox:list:v4:p<page>`、`shoutbox:patch:v4:<uniqueId>:p<page>` 和 `shoutbox:banner:v4` 为基础键，再附加 `:r<revision>`。修订号保存在独立的 `shoutbox_revision:v1`，不随 `shoutbox:*` 清理。各身份共享原始行和时间信息，列表与横幅返回前逐请求处理关联游戏的分级／屏蔽偏好，缓存中的日期在序列化前还原。列表与横幅基础 TTL 为 60 秒，游戏列表为 300 秒；实际 TTL 向下取整到 `validUntil`，过期值不读取、不写入。匿名 HTTP `s-maxage` 最长 30 秒且不越界，个性化 HTTP 保持 `private, no-store`。
+维护删除操作应先确认文件不再被其他内容使用。游戏资源删除只接受精确匹配本站存储地址的文件，拒绝外站及相似主机名；私聊图片另检查其专用文件范围，不能把通用删除规则用于所有文件。
 
-`visibilityUntil` 表示下一次会改变本页展示的官方时间边界；`null` 表示没有已知边界，旧响应缺字段时前端回退到 `validUntil`。游戏作用域仅查询该游戏下一条公开官方消息的开始时间，已生效官方消息继续作为公开历史保留。构建跨界时最多经请求合并重建两次，仍无法取得有效载荷则返回读取失败；成功空结果与故障分别处理。
+## 图片、投稿素材与清理
 
-用户发布、编辑、自删，官方生命周期变更，管理员处置，以及举报触发自动隐藏后，`invalidateShoutboxCaches()` 在业务提交后先等待修订号递增尝试，再清理 `shoutbox:*` 和公开 API 边缘缓存。旧在途构建只能填充旧代次，后续新读不再使用它；已开始的读允许返回原快照。递增失败仍尝试清理，Redis 或 Cloudflare 失败均不回滚业务。读取修订号失败时不使用持久缓存，仅在小喇叭模块内按查询键合并本进程在途 Promise，完成后释放；降级不保证跨实例合并。低于阈值、只新增举报记录时无需失效服务端公开缓存。
+截图支持 JPG、PNG、WebP 和 AVIF，入站图片最多 8 MB。静态图片缩小到 1920 × 1080 以内，按选择添加水印并转换为 AVIF，输出最多 1.5 MB，同时生成真实缩略图。动态 WebP 和 AVIF 保留原动画，原图最多 8 MB，不重新编码原图或添加水印。动态缩略图依赖可用的图像或视频处理工具；无法生成时可以没有缩略图，不能用占位图冒充。原图上传或数据库保存失败需要补偿，缩略图失败是否影响原图按实际图片流程处理。
 
-## Patch 缓存
+从网页地址导入截图只允许管理员使用。服务器只读取公开网络中的网页地址，每次解析和跳转都排除内网目标，最多跟随 3 次跳转，读取图片最多 8 MB，避免用户输入使服务器访问内部服务。
 
-入口：
-
-- `app/api/patch/cache.ts`
-- `app/api/patch/_content.ts`
-- `app/api/patch/pageData.ts`
-
-主要 key：
-
-- `patch:<uniqueId>`
-- `patch:introduction:<uniqueId>`
-- `patch:favorite:<uid>:<uniqueId>`
-- `patch:favorite:version:<uid>`
-- `home_data:*`
-- `galgame_list:*`
-- `ranking_list:*`
-- `resource_list:*`
-- `company_list:*`
-- `company_detail:*`
-- `tag_galgame_list:*`
-- `company_galgame_list:*`
-
-写入游戏、资源、标签、公司后必须明确失效对应缓存。常用函数：
-
-- `invalidatePatchContentCache(uniqueId)`
-- `invalidatePatchListCaches()`
-- `invalidateCompanyCaches(companyId?)`
-- `invalidateTagCaches()`
-- `deletePatchResourceCache(uniqueId)`
-- `bumpPatchFavoriteCacheVersion(uid)`
-
-这些失效函数会同时清理 Redis、触发 `safeRevalidatePath`，并通过 `app/api/utils/purgeCloudflareCache.ts` 清理公开页面或公开 API 的 Cloudflare 缓存。目标 Zone 配置不完整时跳过该组请求并返回未确认；其他已配置的组仍会执行，业务写入不能因为边缘缓存清理失败而失败。
+批量截图上传可以部分成功。创建页在主体已创建但图片失败时保留整组本地草稿和目标条目，重试只上传失败项；重写页保留已成功的新图和失败待重试项，不能用整体失败提示诱导重复创建。图片处理能力与回填操作见[运维指南](operations.md)。
 
-创建 / 重写主体提交后再执行的缓存失效必须逐项 best-effort：缓存或 IndexNow 故障只记日志，不能让已经提交的游戏、奖励或重写被 API 报成失败。公司 enrichment 抛错时仍额外失效公司缓存，避免部分外部写入已经落库却继续展示旧关系。
-
-Cloudflare purge 约定：
-
-- 公开 HTML 用 `purgePublicPageCache(paths)`，按完整 URL files 清理。Cloudflare 缓存规则需同时匹配 `GET` / `PURGE`，方法绕过条件需同时排除两者；完整配置见[性能优化指南](../project/performance-optimization.md#cloudflare-cache-rules-推荐配置)。
-- 匿名公开 API 用 `purgePublicApiCache(paths)`。底层 `purgeCloudflareCache` 的 prefixes 接受完整 URL 或 `hostname/path`，归一为后者并去掉 query 和 fragment 后去重。`www.otoame.top/api/tag/otomegame` 会覆盖该路径的 query 变体。[官方格式](https://developers.cloudflare.com/cache/how-to/purge-cache/purge_by_prefix/)
-- `KUN_CF_CACHE_ZONE_ID` / `KUN_CF_CACHE_PURGE_API_TOKEN` 是默认／图床配置。可选 `KUN_CF_CACHE_SITE_ZONE_ID` 只接收 `kunMoyuMoe.domain.main` 的精确主机名；`KUN_CF_CACHE_SITE_PURGE_API_TOKEN` 留空时复用默认 Token。未配网站 Zone 时沿用默认配置，空白值视为未配置。
-- 按每条 URL 的主机名分组，最多并发发送两个 Zone 请求，每个保留 3 秒超时。SaaS 的 Zone ID 由配置明确指定为承载自定义主机名的 provider Zone；完整 URL 保留访客地址，前缀只作格式归一。
-- 只有所有组均收到 HTTP 成功且 JSON `success: true` 才返回成功。返回第一个未确认组的状态码，未发送或网络失败为 `0`；全部成功返回首组状态码。显式网站 Zone 缺少可用 Token 时不会退回默认 Zone。素材 outbox、孤儿清理和会社 cache receipt 继续依据 `success` 重试。
-- 失败日志包含 `site` / `default`、HTTP 状态、主机名、失败原因与脱敏 `errors[].code` / `message`，不输出 Token、Zone ID 或完整请求 URL。
-- `/api/home`、`/api/tag/otomegame` 和 `/api/company/otomegame` 的匿名响应缓存也要配合 `invalidateAnonymousApiResponseCaches()` 清理 Redis/进程热缓存。
-
-首页缓存约定：
-
-- `home_data:*` 是首页静态 payload 的 Redis 缓存，正常匿名首页仍由 `app/(site)/page.tsx` 的 `force-static` payload 承载，不应每次客户端拉取。
-- 部署或 ISR 期间如果查询到空 `galgames`，不能把这个空 payload 写入 `home_data:*`；已有空缓存也应视为无效并重新走 producer。
-- `/api/home` 只作为空静态首页的客户端自愈接口。匿名响应可短缓存，但同样不能缓存空 `galgames` 响应；个性化 cookie 请求保持 `private, no-store`。
-
-浏览量不是普通 patch cache：详情页由 `components/patch/view/PatchViewBeacon.tsx` 在客户端调用 `POST /api/patch/views`，该接口返回 `Cache-Control: private, no-store`，底层 `app/api/patch/views/buffer.ts` 使用 Redis hash 记录 `views:buffer`、`patch:stats:view` 和 `patch:stats:download`，`server/tasks/flushPatchViewsTask.ts` 每 2 分钟把 pending buffer 批量写入 PostgreSQL。静态首页卡片通过 `GET /api/patch/stats` no-store 接口拉取实时 view/download 并做客户端合并。改列表、详情、首页或排行统计时要同时检查实时叠加和落库任务。
+投稿素材在审核前已经写入对象存储，通过不可猜的地址减少偶然发现，但知道地址的人仍可读取，不能称为私有存储。批准时只移交数据库引用，不移动文件。已发布条目仍在使用的素材应当保留，不能因为原投稿已结束就删除这些文件。
 
-评论、评分、下载、收藏、详情页 tag/company 关系会影响公开卡片统计、详情内容或 tag/company 页面。对应写入成功后必须清理内容缓存和列表缓存；仅更新评论正文/简评这类不改变列表计数的操作至少要清理内容缓存。后台更新/删除、举报处理和维护接口也要遵守同一规则。
+投稿来源的图片与直接创建条目的图片使用不同存储布局。后续编辑、换封面、删图和回填必须按实际保存的地址识别文件，不能按正式图片编号推算投稿文件位置。未审素材被驳回、违规处理或删除后，还需清理已经进入边缘缓存的图片。
 
-patch-company 关系的创建、删除和外部数据拉取必须同时调用 `invalidateCompanyCaches` 和受影响 patch 的 `invalidatePatchContentCache(uniqueId)`。只失效公司/列表缓存会让公司页和游戏详情页给出互相矛盾的公司信息。
+投稿素材清理有两类记录：驳回、违规处理或删除的投稿自身保留的清理积压，以及单独保存的文件清理记录。单独保存的文件清理记录先在短数据库事务中记录文件和公开地址；执行时重新读取活动投稿与正式内容的使用情况，仍被使用的文件取消清理。它会保留已经记录的历史公开地址，只有文件删除与这些地址的边缘清理均确认成功，才删除待办。
 
-## 上传与 S3
-
-入口：
+投稿自身的清理积压没有同等的逐文件引用复查和历史公开地址记录，不能套用单独保存的文件清理记录的保护范围。两条路径的完成条件、改域名或恢复数据后的人工核对，集中见[投稿素材清理操作](operations.md#投稿素材清理的范围)。不能为了清空积压而删除未完成记录。
 
-- `app/api/upload/resource/route.ts`
-- `app/api/upload/resourceUtils.ts`
-- `app/api/patch/resource/_helper.ts`
-- `app/api/edit/gallery/route.ts`
-- `app/api/edit/galleryUpload.ts`
-- `lib/s3.ts`
-
-上传分两阶段：
+自动投稿素材任务目前只巡检和报告积压，不删除文件、不建立清理待办，也不清理边缘缓存。真正删除需走经确认的维护流程。
 
-1. `/api/upload/resource` 接收文件，验证登录、CSRF、扩展名、大小、角色、每日配额、待审核资源限制。
-2. 文件写入本地 `uploads/<uploadId>`，计算 BLAKE3 hash，把 metadata 写入 Redis，TTL 24 小时。
-3. 发布资源时调用 `consumeUpload(uploadId, userId)`，通过 Redis Lua 原子校验 owner 并加 consume lock。
-4. 上传到 S3 key：`patch/<patchId>/resource/<hash>/<filename>`。
-5. DB 写入完成后 `finalizeUpload` 删除 metadata 和 lock。
-6. 失败时释放 lock 或删除已上传 S3 object。
+私聊图片先短期登记，发送时按用户与会话一次性消费；消息保存失败会尝试恢复登记供重试。图片处理、对象存储或登记失败时回退本次小时额度和已收费用，已上传对象也会尝试清理。已发送消息删除后先停止返回正文和图片，再尝试清理不再被其他消息或回复引用的文件；清理失败不撤销消息删除。未发送的过期图片由维护清理处理。
 
-资源上传限制来自源码：
+事项图片不收费，登记有效 1 小时，提交时按本人登记一次性使用，每条说明最多 3 张，随对话权限返回。写入失败时尝试恢复登记；上传后未提交的事项图片目前没有独立孤儿清理脚本，不能把私聊清理能力套用于它。
 
-- 文件大小：非空文件到 100 MB。
-- 每日上传：5GB。
-- `role < 2` 不可上传。
-- `role < 3` 且可用萌萌点（总额减待结算）小于 20 不可上传。
-- 创作者 `role === 2` 需要 CAPTCHA。
-- 创作者或管理员才能上传对象存储资源。
-- 普通创作者如果有待审核资源，不能继续发布新资源。
-- 上传 handler 会先用 `updateMany` 增加 `daily_upload_size`，避免并发绕过配额。若后续流程失败，目前不会自动回退每日配额；改这里前要先设计补偿策略。
+## 数据库变更与恢复边界
 
-Gallery 图片上传走 `app/api/edit/gallery/route.ts` 和 `app/api/edit/galleryUpload.ts`，不使用资源上传的 Redis metadata/consume lock。规则：
+应用依赖的新结构、唯一性约束、计数触发器和数据库校验约束都需要实际安装。数据库尚未具备这些结构时，先按依赖完成迁移、回填和检查，再切换应用；不能用生产直接同步结构代替经过审核的迁移。
 
-- `patch_game_image.url` 保存原图 URL，旧路径保持 `patch/<patchId>/gallery/<imageId>.<ext>`；`patch_game_image.thumbnail_url` 是 nullable，只在真实生成缩略图时保存，路径为 `patch/<patchId>/gallery/thumbnail/thumb-<imageId>.<thumbExt>`，文件名显式带 `thumb-` 前缀，便于在浏览器 Network 中区分缩略图和原图。
-- 创建页和重写页的 gallery 上传使用共享批处理队列：单张失败不能吞掉已成功图片，也不能让创建页在截图失败时清空 localforage 草稿或跳转详情页。创建页在主体已创建后保留整组 gallery 草稿和已创建 patch 目标，成功项标记 `uploaded`，失败项标记 `failed`，重试只上传失败项；重写页只把成功上传的新图写入已有图片列表，并把失败新图留在前端状态供重试。
-- 浏览器网页图片拖拽不一定产生 `File`，尤其 Windows 从网页拖图时常只带 URL/HTML。远程拖拽导入走 `app/api/edit/gallery/remote/route.ts` 和 `app/api/edit/galleryRemoteImport.ts`：必须要求登录且 `role >= 3`，只允许 HTTP/HTTPS，DNS 解析结果和每次 redirect 目标都必须是公网地址，最大重定向 3 次，远程图片体积上限 8MB，并通过响应头或 magic bytes 限定为 JPG/PNG/WebP/AVIF。
-- 静态 JPG/PNG/WebP/AVIF 会 resize 到 1920x1080 内，按水印开关 composite OtoAme 水印，再输出为 AVIF，单张输出上限 1.5MB；同时生成小尺寸 AVIF 缩略图。
-- 动态 WebP 和动态 AVIF 优先保留动画，原样上传到 S3，不 resize、不重新编码、不添加水印，URL 后缀分别保持 `.webp` / `.avif`；动态 WebP 会尝试生成 animated WebP 缩略图。缩略图处理参考 PicList / picgo-plugin-compress 的保守策略使用 WebP quality 75、高 effort；但 gallery 的目标是降低预览解码尺寸，不能仅因缩略图字节数不小于原图就取消缩略图。Sharp 处理 animated WebP 时，`resize` 参数必须按单帧目标尺寸传入；帧数只用于限制单帧高度，避免内部纵向堆叠总高度超过 WebP 单边维度上限。缩略图生成或上传失败时不阻断原图，`thumbnail_url` 写 `null`。
-- 动态原图上限 8MB；超过限制返回用户可见错误，不创建可见 gallery URL。
-- 动态 AVIF 通过 ISO BMFF `avis` brand 在调用 Sharp 前短路处理，因为 Sharp AVIF 输出不支持 image sequence，不能把动态 AVIF 送入静态 AVIF 转码路径；V2 使用独立 `ffmpeg` adapter 尝试生成真实 animated AVIF 缩略图，动态缩略图失败时再尝试真实首帧 AVIF 缩略图。adapter 依次尝试 `KUN_GALLERY_FFMPEG_PATH`、standalone `.ffmpeg/ffmpeg`、根目录 `node_modules/.ffmpeg/ffmpeg`、`ffmpeg-static` 和系统 `ffmpeg`。没有可用 encoder、编码超时、生成体积超过 512KB 或上传失败时不阻断原图，`thumbnail_url` 写 `null`，不生成占位图。
-- gallery 写入成功后要更新 `patch_game_image.url` 和 nullable `thumbnail_url` 并调用 `invalidatePatchContentCache(uniqueId)`；S3 上传或 DB 更新失败后删除已创建的 `patch_game_image` 记录，并补偿删除已真实上传的原图和缩略图 object。
-- gallery 图片删除必须在删除 DB 记录的同时清理 S3 对象：
-  - rewrite、整条目删除和 `DELETE /api/edit/gallery?imageId=xxx` 都要先从库中 URL 反解 key，再删除 DB 记录。
-  - canonical `patch/<patchId>/...` 对象仍在事务提交后 best-effort 删除；`patch-submission/...` 对象必须在同一数据库事务写入 `patch_submission_orphan_cleanup`，事务外才允许尝试 S3 删除与 CDN purge。失败保留 job，由维护命令重试。
-  - `extractS3Key` 同时接受 `KUN_VISUAL_NOVEL_IMAGE_BED_URL` 与 `NEXT_PUBLIC_KUN_VISUAL_NOVEL_S3_STORAGE_URL` 的精确 base；外部 URL 和相似 hostname 必须拒绝。
-- animated AVIF 缩略图 adapter 使用临时目录处理用户输入，`ffmpeg` 子进程有超时限制，并且输出体积必须在缩略图上限内；animated 输出成功后还会用 `showinfo` 确认输出帧数大于 1，避免把静态首帧误判为 animated AVIF 缩略图。部分 Linux FFmpeg 会把 AVIF 的默认 stream 解析为 1 帧 still item，adapter 会继续探测后续 video stream 并选择多帧 stream 编码缩略图。`ffmpeg-static` 的 install script 必须允许运行，否则 bundled binary 可能不存在。`ffmpeg-static` 下载的是安装机器当前平台的 binary，`deploy:pull` 需要把目标服务器 `node_modules/ffmpeg-static` 注入 standalone，避免 release artifact 构建机和生产机架构不一致。部署环境没有可用 animated AVIF encoder 时会自动回退为无缩略图或静图首帧。引入其他 libavif / Node binding 方案前仍要先评估部署成本、CPU 成本、失败补偿和安全边界。
-- 部分 `ffmpeg-static` Linux binary 可以解码 AVIF 但不能稳定输出 animated AVIF。需要强 animated AVIF 缩略图时，在 Linux x64/arm64 服务器显式运行 `pnpm gallery:ffmpeg:install` 下载 BtbN 静态构建到 `node_modules/.ffmpeg/ffmpeg`，或用 `KUN_GALLERY_FFMPEG_PATH` 指向自备 FFmpeg 的绝对路径。`KUN_GALLERY_FFMPEG_PATH` 优先级最高，修改 `.env` 后需要重启服务；`postbuild.ts` 会把 `node_modules/.ffmpeg/ffmpeg` 复制到 standalone 的 `.ffmpeg/ffmpeg`；普通安装不自动下载该大文件，保持默认部署较轻。
-- 本地或部署前可用 `pnpm exec esno scripts/verifyGalleryAnimatedAvifThumbnail.ts <animated.avif> [output.avif]` 验证 animated AVIF 缩略图 encoder；该脚本只读写本地文件，不连接 S3 或数据库，并会列出各候选 FFmpeg 对输入和输出解析到的帧数及非默认 video stream。生产上线前应在目标服务器执行，成功输出 `Wrote animated AVIF thumbnail: ... frames ...`。
-- 历史 gallery 缩略图回填使用 `pnpm maintenance:gallery-thumbnails:dry` 和 `pnpm maintenance:gallery-thumbnails:apply`。dry-run 只扫描 `thumbnail_url IS NULL` 的本站 gallery 原图并统计，不下载原图、不写 S3、不写 DB；apply 只上传真实缩略图并回填 `thumbnail_url`，不会重传或改写原图。生产默认按低负载运行：`--limit=50 --batch=20 --concurrency=1 --delay=1000`，建议分批执行；3c 服务器或正在承载线上流量时保持 `--concurrency=1`，必要时加 `--skip-animated-avif` 跳过 FFmpeg 成本较高的动态 AVIF。常用范围参数：`--patch-id=123`、`--start-id=456`、`--limit=50`、`--max-original-mb=8`、`--verbose`。summary 中 `galleryTotal` 是当前范围 URL 非空的 gallery 图片总数，`alreadyWithThumbnail` 是已有 `thumbnail_url`、无需回填压缩的数量，`missingThumbnail` 是仍缺 `thumbnail_url` 的数量，`scanned` 是本次查出并检查的缺缩略图候选数，`eligible` 是符合回填规则的数量，`updated` 是 apply 实际写入 `thumbnail_url` 的数量，`skipped` 是候选中被规则跳过的数量，`failed` 是未恢复错误数量；`scanned=0` 且 `missingThumbnail=0` 表示当前范围没有缺 `thumbnail_url` 的 gallery 候选项，不代表没有 gallery 图片。
+迁移前的备份、停写窗口、应用与数据库先后顺序，以及失败后能否只回退应用，集中在[部署指南](../project/deployment.md)和[日常运维](operations.md)维护。账目、事项和下载历史不能因回退应用而丢失；未知恢复路径不能用删除记录或重置数据库代替。
 
-私聊图片上传走 `app/api/message/conversation/[id]/image`，不使用资源上传的 Redis metadata/consume lock，也不写入 gallery 表。它有自己的短期 Redis metadata，用来证明发送请求里的图片 URL 来自同一会话、同一用户的上传流。规则：
+## 源码入口
 
-- 只允许会话成员上传，handler 内必须校验登录态和 CSRF。
-- handler 在登录态和严格会话 ID 校验后、读取 multipart `formData()` 前先执行 `image-upload-intake` 用户级限频，避免过量上传请求消耗表单解析内存和 CPU。
-- 支持 JPG/PNG/WebP/AVIF，单张入站上限 8MB；超出该上限或超过 Next 默认 10MiB 客户端 body 缓冲上限时，route 必须返回 `413` 和“图片大小不能超过 8 MB”的用户可见字符串。静态图片按 create gallery 的尺寸策略 resize 到 1920x1080 内并输出 AVIF，不添加水印。输出 AVIF 仍超过 1.5MB 时返回用户可见错误。
-- Sharp 解码/压缩或处理后 metadata 读取失败时，上传服务必须返回“图片处理失败，请重新选择有效图片”，并回滚本次小时额度和已扣萌萌点，不能把坏图片或处理失败冒成 500。
-- S3 key 使用 `conversation/<conversationId>/<uid>-<timestamp>-<uuid>.avif`，避免不同会话或用户文件名冲突。
-- `uploadImageToS3` 必须传入 `image/avif`，返回 metadata 也以最终 AVIF 的宽高、大小、MIME 和文件名为准。
-- 通过会话成员、类型和大小校验后，上传服务必须先重新检查收件人的 `allow_private_message`。如果对方已关闭接收私信，直接返回用户可见错误，不消耗真实 `image-upload` 动作限流、小时 quota、萌萌点、Sharp 转码或 S3 写入。
-- 上传接口只返回 URL、MIME、尺寸和大小等发送消息所需 metadata；同时用 `setKv` 写入 `conversation:image-upload:<conversationId>:<uid>:<urlHash>`，TTL 为 1 小时。真正创建消息仍由 `/api/message/conversation/[id]` 完成，发送服务用 Redis Lua 按会话、用户和 URL hash 原子校验每张图片 metadata 并删除登记；登记缺失或不匹配时拒绝发送并提示重新上传，避免客户端伪造任意图片 URL，也避免同一个上传凭证被重复发送成多条图片消息。若发送服务已消费 metadata 但消息 DB 事务失败，必须 best-effort 重新写回这些 metadata，保留原 1 小时 TTL，方便用户重试发送。
-- 每个用户每小时有 5 张私聊图片免费上传额度，Redis key 为 `conversation:image-upload-quota:<uid>`，使用 Lua 原子 `INCR` + `EXPIRE`。从第 6 张起每张在 Sharp/S3 之前通过 `spendMoemoepoint` 按可用余额原子扣 5 点并写明细。余额不足时回滚本次 quota 计数并拒绝上传；压缩、metadata 读取、S3 上传或 Redis metadata 登记失败时也回滚 quota，并通过 `refundMoemoepoint` 退回已扣点数和记录退款明细。小时 quota Redis 不可用时上传 fail-closed，返回可重试错误，不继续产生图片处理或对象存储成本。
-- S3 上传成功但 Redis metadata 登记失败时，上传服务必须调用 `deleteFileFromS3` best-effort 删除刚上传的 object，再返回“图片上传记录保存失败，请稍后重试”。用户上传后一直未发送、或发送前 metadata 过期时，S3 对象由 `pnpm maintenance:conversation-images:dry` / `apply` 清理。该脚本扫描 `conversation/` 前缀，只处理符合 `conversation/<conversationId>/<uid>-<timestamp>-<uuid>.avif` 规范且默认超过 2 小时的对象，并在删除前检查非删除 `user_private_message` 的 `image_url`、`image_group` 和 `reply_image` 是否仍引用该 key；tombstone 行遗留的旧图片字段不阻止孤儿清理。dry-run 默认 `--limit=200`，不写 S3/DB；apply 默认 `--limit=100 --batch=50 --concurrency=1 --delay=1000`，适合生产低负载分批执行。可用 `--conversation-id=123` 缩小前缀，`--older-than-hours=N` 延长安全窗口。
-- 删除已发送的私聊图片消息时，`deleteMessage` 会先设置 `is_deleted = true`，再 best-effort 清理该消息中不再被其他未删除消息引用的 canonical `conversation/` S3 objects；如果消息已经是 tombstone，重复删除直接返回成功，不重复写 DB 或重跑 S3 cleanup。删除前会从 `KUN_VISUAL_NOVEL_IMAGE_BED_URL` 或 `NEXT_PUBLIC_KUN_VISUAL_NOVEL_S3_STORAGE_URL` 提取 key，并拒绝非本站 URL 或不符合私聊图片 key 规范的对象；引用检查或 S3 删除失败只记录错误，不回滚消息 tombstone，仍由孤儿清理脚本兜底。
-- 回复图片时，`user_private_message.reply_image` 保存被引用图片的 metadata 快照；它来自同会话被回复消息的图片组索引校验结果，不直接信任前端传入完整图片对象。
-
-事项提交与对话图片（模块 03 D11，含管理员回复）走 `app/api/case/image`，形态沿用私聊图片但不计费：登录后、读取 multipart 前先过 `image-upload-intake`（30 次/分钟，fail-open）；JPG/PNG/WebP/AVIF 单张入站上限 8MB，超出返回 `413`；实际上传 `image-upload` 20 次/10 分钟，Redis 不可用时 fail-closed。Sharp resize 到 1920x1080 内输出 AVIF，仍超过 1.5MB 时拒绝。S3 key 为 `case/<uid>/<timestamp>-<uuid>.avif`，上传后写 `case:image-upload:<uid>:<key>` 登记 1 小时，登记失败时 best-effort 删除刚上传的对象。提交或补充事项时由 Redis Lua 原子校验并删除本人登记（每条说明最多 3 张），事项写入失败或结果为「刚刚结案」时写回登记供重试。图片只记在 `ops_case_message_image`，随所在对话的可见性下发，不进资源徽标或公开图库。上传后未提交的对象目前没有孤儿清理脚本。结案、处置及提请说明不消费图片。
-
-事项回复限频位于 `app/api/case/rateLimit.ts`：非管理员按 `case:rate-limit:message:<uid>:<caseId>` 分桶，使用带 `kun:touchgal` 前缀的 Redis Lua 固定窗口，每 600 秒最多 5 次，故障时放行文字回复。普通回复在数据库和图片登记消费前检查；开启者从提交入口追加说明时，在锁定既有事项后检查，拒绝会回滚事务并恢复图片登记。新建事项与后来者说明不消耗回复额度。
-
-`ops_case` 的 `patch_info × patch`、`other × patch` 与 `other × site` 去重键包含开启者。隐藏对话使用既有 `ops_case_message.payload.hidden_at`，以读到的隐藏值作条件更新；重复同状态请求不写日志，竞争失败返回刷新提示。原文和图片引用保留，不删除 S3 对象，读取时按身份裁剪。管理员结案日志与结案状态写在同一事务。
-
-D37 的历史原发布者来自最新转交事件，账号存在性与通知插入之间通过按 ID 排序的用户行 `FOR KEY SHARE` 保护；已注销的收件人被跳过，缺失的发送者不再作为外键写入。结案通知合并开启者、关注者、归属方及历史原发布者，一人一条，排除执行者；同一通知同时包含站方接收身份时优先后台链接。账号注销可能先锁用户、随后触及事项，与事项写入形成死锁；对应写操作只对已回滚的事务冲突有限重试整笔数据库事务，不在已中止的事务内吞掉外键错误继续写入，也不重复消费限频或图片登记。资源处置仍保持先资源、后事项的锁序。本次没有 schema 变更或历史数据回填。
-
-消息动作限频走 `app/api/message/conversation/rateLimit.ts`，使用 Redis Lua 原子 `INCR` + `EXPIRE` 固定窗口。key 使用 `conversation:rate-limit:<action>:<uid>`，通过 `getPrefixedRedisKey` 显式加上 `kun:touchgal` 前缀后传给低层 `redis.eval`。当前 action 和阈值：
-
-- `send`：发送私聊消息 30 次/分钟。
-- `image-upload-intake`：私聊图片上传入口 30 次/分钟，在 route 读取 multipart `formData()` 之前执行，用于保护表单解析成本。
-- `image-upload`：私聊图片上传 10 次/5 分钟，在会话成员、文件类型/大小和收件人隐私校验之后执行，用于保护小时额度、Sharp 转码和 S3 写入成本。
-- `conversation-open`：私聊检查/打开 60 次/分钟，用于保护用户资料页预检、创建和恢复隐藏会话入口；route 在 DB 读取、扣点、创建或恢复可见性之前执行该检查。
-- `conversation-manage`：私聊移除/隐藏 30 次/分钟，用于保护 `user_conversation` hidden flag 和未读计数写入；HTTP route 在调用 `deleteConversation` 之前执行该检查，命中限流时不读取会话记录，service 也在会话成员校验之后、隐藏写入之前保留兜底检查。route 预检查通过后调用 service 时要跳过兜底，避免一次请求消耗两次管理额度；重复移除已隐藏且未读为 0 的会话直接 no-op。
-- `message-read`：私聊会话列表读取、私聊消息拉取、服务端首屏聊天加载和已读同步共用 180 次/分钟，用于保护会话列表后台刷新、活跃聊天轮询、历史拉取、首屏 RSC 加载和 read-sync 对应的 DB 查询/写入；route 或 server action 在读取会话和消息、或清理未读计数前执行该检查。前端正常会话列表约每 15 秒刷新一次，活跃会话约每 2 秒轮询一次并可能补一次状态查询，180 次/分钟是异常请求熔断，不是普通聊天节流。
-- `message-write`：单条私聊消息编辑/删除 60 次/分钟，用于保护编辑 DB 写入、删除 tombstone 写入，以及删除图片消息时的 S3 引用检查和 best-effort cleanup；service 在会话成员校验之后、消息行读取之前执行该检查。
-- `notification-read`：普通站内通知列表 `/api/message/all` 和未读同步 `/api/message/unread` 共用 180 次/分钟，用于保护通知列表分页、顶栏/消息导航未读轮询对应的 `user_message` 与 `user_conversation` 读取；route 在通知 DB 读取前执行该检查。
-- `notification-write`：普通站内通知标已读和清理已读 `/api/message/read` PUT/DELETE 共用 30 次/分钟，用于保护 `user_message` 状态写入和删除；route 在 `readMessage`、`clearReadMessage`、以及后续未读状态重读前执行该检查。
-
-限频命中时 service 返回结构化限流结果，由 route 转成 `429 Too Many Requests`、`Retry-After` 秒数和 `private, no-store` 响应；响应体保留用户可见字符串。动作限频 Redis 检查失败时 fail-open 并记录错误，避免 Redis 短暂故障阻断文字私聊；图片小时 quota/扣费链路 Redis 不可用时 fail-closed，避免无法计费时继续写 S3。
-
-投稿域（`app/api/patch-submission/rateLimit.ts`）在这个依据上再分三层，**不要当 bug 改回统一 fail-open**：
-
-- **fail-closed**：新建草稿（20/小时）、提交（20/小时）、素材上传（30/10 分钟）。这些碰钱或产生 S3 成本，Redis 不可用时宁可拒绝。
-- **fail-open**：草稿读取（240/分钟）、自动保存（120/分钟）。纯技术限频，Redis 抖动不应打断用户编辑。
-- **不设限频**：删除返还、管理员驳回/批准/违规结算。这与 fail-open 不是一回事——fail-open 超阈值仍返回 429，而返还押金的路径连 429 都不能有，否则用户的押金会被计数器卡住。这些路径的最终防线是数据库状态机与结算幂等键。
-
-## S3
-
-`lib/s3.ts` 使用 AWS SDK v3：
-
-- endpoint：`KUN_VISUAL_NOVEL_S3_STORAGE_ENDPOINT`
-- region：`KUN_VISUAL_NOVEL_S3_STORAGE_REGION`
-- bucket：`KUN_VISUAL_NOVEL_S3_STORAGE_BUCKET_NAME`
-- credentials：`KUN_VISUAL_NOVEL_S3_STORAGE_ACCESS_KEY_ID`、`KUN_VISUAL_NOVEL_S3_STORAGE_SECRET_ACCESS_KEY`
-- maxAttempts：3
-
-操作：
-
-- `uploadImageToS3`
-- `uploadVideoToS3`
-- `uploadFileToS3`
-- `deleteFileFromS3`
-- `cleanupLocalUpload`
-
-`uploadImageToS3` 默认 content type 是 `image/avif`。如果上传原样动态 WebP 等非 AVIF 图片，调用方必须显式传入正确 content type，避免对象存储或 CDN 以错误 MIME 返回。
-
-删除资源前必须确认没有其他 `patch_resource_link` 引用同一 content。
-
-`extractS3Key` 定义在 `app/api/patch/resource/_helper.ts`，patch 域四个从库中 URL 反解 S3 key 的删除路径（rewrite 提交、整条目删除、单图删除、资源链接删除）统一复用它，不要在 patch 域另写解析。它只接受以 `KUN_VISUAL_NOVEL_IMAGE_BED_URL` 或 `NEXT_PUBLIC_KUN_VISUAL_NOVEL_S3_STORAGE_URL` 精确 base 开头的 URL；删除逻辑遇到非本站 URL 或相似 hostname 会拒绝删除并记录错误，这是防止误删外部链接的保护。私聊图片删除使用专门的 `extractConversationImageS3Key`（在同样的 base 校验之外还校验 `conversation/` key 格式），Gallery 缩略图回填脚本使用自己的 `getGalleryBackfillS3Key`；这两处是有意独立的实现，不要把它们合并进 `extractS3Key`，合并会丢掉私聊更严格的 key 校验。
-
-### 投稿素材的 key 布局（不同于正式条目）
-
-通过 `/edit/create` 直接创建的正式条目素材在 `patch/<patchId>/banner/*` 与 `patch/<patchId>/gallery/*`（canonical 布局，`scripts/galleryThumbnailBackfill.ts` 与 `app/api/utils/purgeCache.ts` 依赖它按 patchId 推导 URL）。
-
-投稿素材**不遵循这个布局**：它写在 `patch-submission/<submissionId>-<随机>/...`，key 由服务端生成、不可猜测。批准时素材不搬动, 直接成为正式条目引用的对象, 所以：
-
-投稿画廊是暂存上传：拖入只写浏览器本地 outbox（localforage），点击「上传」才产生服务端行与 S3 对象，因此误拖不再制造需要 orphan cleanup 回收的对象。水印开关按投稿 ID 持久化在同一 store，上传时冻结进每个 item。浏览器侧的三份记录（items、watermark、order）只能由浏览器清理：删除草稿成功后由 `SubmissionList` 统一清除，服务端无法触及。
-
-- `draft` / `pending` / `changes_requested` 行上的 key 是活动引用；`published` 行上的 key 只作原始投稿溯源，线上保护只看 `patch` / `patch_game_image`；`rejected` / `violation` / `deleted` 行上的非空 key 是待完成的投稿行 outbox。只有后三种状态可进入 `takeDownSubmissionAssets`。
-- 投稿行 outbox 用于已知投稿的结算：先删 S3，再 purge 所有已配置公开 base，全部确认后才清空 banner key 并删除 gallery 行。部分 S3 删除失败仍要 purge 已删对象；Cloudflare 只有 HTTP 成功且响应 `success: true` 才算确认。
-- 真正无所属行的 orphan、上传补偿、正式条目换图或删图不能靠投稿行保存重试凭据。删除这些对象前必须在同一个短数据库事务 upsert `patch_submission_orphan_cleanup`，保存 object key 与当时所有 purge URL；事务外执行 S3 和 HTTP，二者都成功才删 job。配置 hostname 后续变化时，旧 purge URL 仍须保留并与新 URL 合并。
-- 每次执行 durable orphan job 都要重新计算 serving references。被活动投稿或正式 `patch` / `patch_game_image` 引用的对象要取消 job，绝不能删除；历史 CDN hostname 下但路径仍为 `/patch-submission/` 的正式 URL要 fail-safe 视为引用。
-- 清理命令（`scripts/cleanupSubmissionAssets.ts`）按“终态投稿行 outbox → 已持久 orphan jobs → 过宽限期的新 S3 orphan”处理。dry-run 不写 job；apply 发现新 orphan 时先落 job，再允许删除。
-- `patch_submission_gallery.id` 与批准后新建的 `patch_game_image.id` 没有对应关系。投稿来源 gallery key 只能从库中 URL 反解，不能按正式行 ID 推导；`scripts/galleryThumbnailBackfill.ts` 的 canonical 路径检查必须继续跳过这些对象。
-- 已发布条目在 rewrite 页继续添加截图时，`POST /api/edit/gallery` 先按 `patch_id` 查关联的 `patch_submission`：有关联就为每次上传生成新的 `patch-submission/<submissionId>-<随机>/gallery` 前缀，无关联才使用 canonical `patch/<patchId>/gallery`。`uploadPatchGalleryImage` 必须返回实际写入的原图/缩略图 key，route 用返回 key 组装数据库 URL，不能再按行 ID 重新推导。这样投稿来源条目的后续截图保持同一种可识别、可持久清理的路径；历史混合路径仍须按库中 URL 正确删除。
-- `purgeCache.ts` 按 patchId 推导的三个封面 URL 对投稿 key 是空推。换封面时旧投稿 key 由 durable orphan outbox 清理。
-- 未审素材是公开可取的，被预览后可能进 CDN，因此 `reject` / `violation` / 用户删除必须隐藏 DTO，并连带 purge 封面三变体与每张图的主图、缩略图 URL。
-- 投稿 gallery 上传把 `watermark` 传给共享 `preparePatchGalleryImage`；静态图按开关处理，动态 WebP/AVIF 沿用共享规则跳过水印。批量 NSFW 更新必须锁投稿并验证所有 gallery ID 归属，不能改写其他投稿的行。
-- 投稿 gallery 的浏览器重试凭据存于 localforage：Blob + 文件元数据 + 服务端幂等使用的稳定 `clientAssetId`。失败和刷新中断都保留；服务端 ready 后才移除。上传 API 对已经 ready 的同 ID 必须返回完整公开 gallery DTO，不能要求客户端重新生成 ID，否则会产生重复行。
-
-## 资源派生属性
-
-`utils/patchResourceAttributes.ts` 定义资源可见口径：只有 `patch_resource.status = 0` 的已发布资源能参与游戏卡片和详情页的资源派生信息。`app/api/patch/resource/_helper.ts` 的 `updatePatchAttributes`、`scripts/rebuildPatchResourceAttributes.ts`、`migration/reclassify-resource-types.ts` 和卡片 / 详情页 `_count.resource` 查询都应复用这个口径。
-
-`updatePatchAttributes` 会根据审核通过的资源重新汇总 patch 的：
-
-- `type`
-- `language`
-- `platform`
-- `resource_update_time`
-
-新增资源类型、语言或平台时要同步检查：
-
-- `constants/resource.ts`
-- `validations/patch.ts`
-- 资源发布/编辑组件
-- `tests/unit/resource-classification.test.ts`
-
-游戏资源的 `pc` / `emulator` / `mobile` 类型无论是否同时选择 `material` / `tool`，都必须与 `official-zh` / `chinese` / `machine` / `row` 中至少一个中文支持类型同时出现；仅选择 `material` 或 `tool` 时不需要且不允许中文支持类型。该约束由 `constants/resource.ts` 的共享 helper 和 `validations/patch.ts` 的 create/edit/update schema 共同维护。
-
-资源增删改审核通过后要调用 `deletePatchResourceCache(uniqueId)` 或等价的内容缓存 + 列表缓存失效，避免详情页、资源列表、排行和标签/公司游戏列表读到旧属性。
-
-资源更新前必须确认资源当前 `patch_id` 等于提交的 `patchId`。这个校验要发生在 S3 上传消费、链接重建、`updatePatchAttributes` 和 `deletePatchResourceCache` 之前，避免过期后台列表或篡改请求把派生属性和缓存失效打到错误游戏上。
-
-历史脏数据修复使用 `pnpm maintenance:resource-attributes:dry` 预览、`pnpm maintenance:resource-attributes:apply` 应用；脚本同样只按已发布资源重算 `type`、`language` 和 `platform`。`pnpm migration:patch-counters` 安装的 `resource_count` 触发器也只计入已发布资源，并在资源审核状态变化时同步增减。
-
-## 稳定链接与健康数据（04／10）
-
-`patch_resource_link.id` 是稳定槽位，`version` 从 1 开始；仅规范化后的地址 content 改变时递增。排序、大小、存储类型或提取码变化保留版本及下载计数，提取码／存储类型变化仍会使旧输入检测快照失配。发布者和管理员 PUT 都使用 `patchResourceStableUpdateSchema`：提交完整原始 `baseLinks: [{ id, version }]`，保留旧槽位的 ID，新槽位不带 ID。事务先锁资源，再按 ID 锁完整当前链接集合；遗漏、重复、外来、过期或不完整基点均在写入前拒绝，不能只比较提交后保留的子集。
-
-地址替换在同一事务记录旧地址／版本历史、重置健康轮次和核实时间、关闭旧版链接事项；单槽删除先记录历史并结链接事项，再删链接。资源移动保留链接版本，清空旧获取事件的 link_id，不改变历史参与关系。普通发布者可编辑资源元数据并保留未变的 touchgal 槽位，但不能改动、移除、重排或伪造该受保护槽位。
-
-健康字段为 `health`、`evidence_round`、`health_changed_at`、`verified_at`、`content_changed_at`。相关表在 `prisma/schema/patch-resource-link-health.prisma`：
-
-- `patch_resource_link_report` 按链接／版本／轮次／用户唯一，保留安全原因、权重及 ever_counted。
-- `patch_resource_link_check` 每链接一条最新输入观察，保存版本／轮次／健康基点、请求身份、输入签名、观察时间与安全结果；公开响应不返回内部签名、原始 URL／码或 provider body。
-- `patch_resource_link_history` 保留原槽位和 from_version；原 link_id 故意不设链接外键，单槽删除后仍能追溯。健康事件有唯一 health_event_key 和安全转移 JSON，旧地址历史不进公开投影。
-
-生产结构按顺序使用 `migration/production-link-health-preflight-2026-10-09.sql`、`migration/production-link-health-sync-2026-10-09.sql`、`migration/production-link-health-postflight-2026-10-09.sql`，随后执行已有 `pnpm prisma:deploy-safe`；pre/postflight 只读，不能用生产 db push 代替。迁移不猜测历史获取版本，旧 event 的 link_version 保持 null，不能据此获得当前版本报告资格。
-
-LLC 的屏蔽失效原因 `share_blocked` 还需要依次执行 `migration/production-link-health-blocked-preflight-2026-10-17.sql`、`migration/production-link-health-blocked-sync-2026-10-17.sql`、`migration/production-link-health-blocked-postflight-2026-10-17.sql`。旧版 `link_check_shape_check` 不接受该原因，缺少增量迁移时保存检测结果会因 CHECK 失败返回 503。增量只扩展这一个 CHECK 的失效原因集合，不改业务行；同步在事务中锁表、验证完整旧／新定义并原子替换，重复执行无操作。已有 10 月 9 日结构的数据库只运行增量三份；新库先完成 10 月 9 日三份，再运行增量。增量完成后使用新的 postflight，不再重跑只认识旧约束的 10 月 9 日形态检查。
-
-上传消费、S3、finalize、缓存和 checker 网络请求在数据库事务外；冲突只重试完整数据库事务，不重复上传或检测。资源变更的审计／通知属于保存事务，提交后的缓存、finalize 或检测失败保留已提交成功并给安全失败结果。补偿删除上传对象前重新检查现存引用，不能删掉仍被其它链接使用的同内容对象。
-
-## 下载授权与事件
-
-维护控制、独立轮次、参与者和 2026-10-19 迁移见 [workspace.md](workspace.md)。
-资源变更按资源 → 实际链接 → 维护 → 事项锁定；单链接路径不反向取得父资源锁。
-维护控制的 resource_id 为历史标量，避免首报插入时因外键隐式反向加锁；link_id
-使用 SetNull 保留删除历史。维护公开限制变更走既有资源缓存失效，提交后失败不回滚。
-维护事件与健康事项分别完成，不能用健康 evidence_round 或健康结案代替维护回应。
-
-下载访问状态分成资源级 grant 和镜像级 event：
-
-- `patch_resource_access_grant` 只包含 `actor_key`、`resource_id` 和 `expires`，复合主键保证同一 actor/resource 只有一条 grant。新授权从首次获取起固定有效 24 小时；同一授权期内点开其它镜像、重复查看或自动恢复都不延长 `expires`。
-- `patch_resource_access` 保留 actor、资源、镜像、section、storage、cost、expires 和 created 等审计信息；`access_kind` 分类为 `resource_grant`／`link_reveal`，新事件另记录事务内读取的 link_version。link_id 可空且外键为 `onDelete: SetNull`，删除单槽保留资源授权及日／周额度事实。新资源授权写 `resource_grant`，有效授权内首次点开另一镜像写 `link_reveal`，重复查看不新增 event。
-- Grant 写事务使用 PostgreSQL Serializable，最多尝试 3 次。Prisma `P2002` / `P2034` 和 adapter 直接暴露的 `DriverAdapterError` `TransactionWriteConflict` / SQLSTATE `40001` 都从完整事务起点重试；前两次冲突后分别在事务外等待 50 ms、100 ms。不要把等待放进事务 callback，也不要把其他 driver/连接错误误判成序列化冲突。
-- 游客游戏资源的日/周产品额度只统计 `access_kind = 'resource_grant'`。登录用户和补丁资源不进入该产品额度；共享 IP 不承担产品额度。
-- 获取返回的凭据、版本和 event 的 link_version 必须来自同一事务读取。地址更新后旧版事件不代表当前版已获取；有效资源授权内重新获取当前版本只写 link_reveal，不续期、不重复计资源额度。
-- 刷新后的恢复同时只读 grant 和 event，只返回当前 actor 已点过、link_version 与当前链接一致且授权仍有效的镜像；null 或旧版事件不恢复凭据。不要为恢复写 event，也不要新增持久化的 `revealed` 字段或 ID 数组；资源列表里的 `revealed` 是从当前版本 event 查询派生的 preview 状态。
-- Grant/event 读写不改变资源派生属性和公开列表统计，因此不触发 `deletePatchResourceCache`。包含 `obtained` / `revealed` 的 `/api/patch/resource` 和含真实凭据的 access/restore 响应必须 `private, no-store`。
-- Redis 只做每 actor 每分钟 30 次的短时技术限频，不承载日/周产品额度。清除 visitor cookie 会创建新的游客身份；只有首次无有效 cookie 的游客按 IP hash 做技术限频，不能据此给共享 IP 分配或封禁产品额度。
-
-## 上线观察与回滚
-
-下面的只读查询只聚合资源级 event 和 grant 数量，不输出真实下载凭据、visitor token、IP、IP hash、actorKey、Redis key 或资源/镜像 ID：
-
-```sql
-WITH rollout AS (
-  SELECT MIN(created) AS started_at
-  FROM patch_resource_access
-  WHERE access_kind = 'resource_grant'
-)
-SELECT
-  DATE_TRUNC(
-    'day',
-    (pra.created AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Shanghai'
-  ) AS shanghai_day,
-  pra.actor_type,
-  pra.section,
-  pra.access_kind,
-  COUNT(*) AS event_count
-FROM patch_resource_access pra
-CROSS JOIN rollout
-WHERE rollout.started_at IS NOT NULL
-  AND pra.access_kind IN ('resource_grant', 'link_reveal')
-  AND pra.created >= rollout.started_at
-  AND pra.created >= (CURRENT_TIMESTAMP AT TIME ZONE 'UTC') - INTERVAL '14 days'
-GROUP BY 1, 2, 3, 4
-ORDER BY 1 DESC, 2, 3, 4;
-
-SELECT
-  COUNT(*) FILTER (WHERE expires > (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')) AS active_grants,
-  COUNT(*) FILTER (WHERE expires <= (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')) AS expired_grants
-FROM patch_resource_access_grant;
-```
-
-`resource_grant` 与 `link_reveal` 由上面的 DB event 聚合；首条 `resource_grant` 的 `created` 作为新应用开始写事件的保守下界，避免迁移时统一标记为 `link_reveal` 的旧行污染 14 天指标。运维若记录了更准确的应用切换时间，应以该时间替换 rollout CTE。
-
-`daily_limited`、`weekly_limited`、`manual_reused`、`rate_limited` 和 `manual_failed` 由 `observability.ts` 的 `resource-access-outcome` 结构化日志聚合。自动 restore 不写 event，也不混入 `manual_reused`：restore route 对每个完成的只读请求记录 `restore_succeeded`，对映射为 503 的异常记录 `restore_failed`；日志聚合按 `operation = restore` 计算成功率 = `restore_succeeded / (restore_succeeded + restore_failed)`，技术 429 另看 `rate_limited`。这样自动恢复成功率和错误率有明确采集路径，不依赖 access event 猜测。
-
-安全日志只允许 `operation`、`outcome`、`actorType` 和可选 `section`，不得记录 `content`、`code`、`password`、`hash`、`visitorToken`、IP/IP hash、`actorKey`、Redis key、资源/镜像 ID 或完整资源名称。若部署平台已有 HTTP route status 指标，可用 restore route 的 200/429/503 交叉校验上述聚合，但 DB 中仍不得为了 restore 指标新增事件。
-
-Rollout 时要用固定 cutoff/cutover 完成 preflight、sync 和 postflight，并在切换新应用前排空旧 access writer。上线时仍有效的旧授权最长可能继续 72 小时；这是迁移兼容行为，不是新的产品规则。所有新授权统一为 24 小时。回滚旧应用后如果旧 writer 再次写入旧事件，下次上线必须建立新的固定 snapshot，不能沿用上一次 cutoff/cutover。
-
-## 测试
-
-重点测试：
-
-- `tests/unit/redis.test.ts`
-- `tests/unit/patch-resource-attributes.test.ts`
-- `tests/unit/resource-link.test.ts`
-- `tests/unit/resource-classification.test.ts`
-- `tests/unit/gallery-upload.test.ts`
-- `tests/unit/gallery-upload-batch.test.ts`
-- `tests/unit/gallery-drop.test.ts`
-- `tests/unit/gallery-remote-import.test.ts`
-- `tests/unit/gallery-remote-route.test.ts`
-
-上传/S3 的真实集成测试当前没有统一 harness。修改上传流程时，必须补单元测试或记录手动验证步骤。
+- [数据库访问生命周期](../../prisma/index.ts)与[业务数据结构](../../prisma/schema/)
+- [统一缓存、上传登记和锁](../../lib/redis.ts)、[内容缓存刷新](../../app/api/patch/cache.ts)与[小喇叭缓存](../../app/api/shoutbox/cache.ts)
+- [资源编辑与并发检查](../../app/api/patch/resource/update.ts)、[资源新建与失败清理](../../app/api/patch/resource/create.ts)、[上传消费与清理补偿](../../app/api/patch/resource/_helper.ts)及[临时资源上传](../../app/api/upload/resource/route.ts)
+- [下载授权与额度](../../app/api/patch/resource/download/access/)、[只读恢复](../../app/api/patch/resource/download/access/restore/service.ts)与[公开资源概况](../../app/api/patch/resource/get.ts)
+- [截图处理与缩略图](../../app/api/edit/galleryUpload.ts)、[网页截图导入](../../app/api/edit/galleryRemoteImport.ts)、[投稿素材清理](../../app/api/patch-submission/assetCleanup.ts)与[持久清理待办](../../app/api/patch-submission/orphanCleanup.ts)
+- [私聊图片处理](../../app/api/message/conversation/[id]/image/service.ts)、[私聊消息与删除](../../app/api/message/conversation/[id]/service.ts)及[事项图片](../../app/api/case/imageUpload.ts)
+- [链接维护一致性](../../app/api/patch/resource/maintenance/service.ts)、[账户账务](../../app/api/moemoepoint/service.ts)与[标签和会社计数迁移](../../migration/production-tag-company-count-sync-2026-08-30.sql)

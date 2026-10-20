@@ -1,29 +1,26 @@
 ---
 name: otoame-documentation
-description: Use when authoring, updating, or reviewing technical and business maintenance documentation in kun-otoame-next, excluding user-facing release notes handled by otoame-changelog.
+description: Use when writing, editing, restructuring, or reviewing OtoAme maintenance documentation and project guidance.
 ---
 
 # OtoAme Documentation
 
-Scope includes `docs/`, `README.md`, operations, and deployment guides.
+Use this skill for maintained project prose. User release notes use the changelog skill. Read the development entry first and follow the documentation standard as the main writing authority.
 
-## Required Reference
+## Required References
 
-- [Documentation standard](../../docs/project/documentation.md)
+- [文档标准](../../docs/project/documentation.md)
+- [按任务导航](../../docs/README.md)
+- [文档检查操作](../../docs/project/testing.md)
 
-Read the standard before editing prose. It is the single source of truth for voice, structure, and factual gates.
+## Critical Invariants
 
-## Core Workflow
+Organize each page around a reader task. Explain who acts, under which conditions, and what result and limits follow. Preserve permissions, privacy, amounts, quotas, deadlines, concurrency and recovery conditions.
 
-1. **Classify task & audience**: Identify content type. Keep one primary job per page. Verify version, release, environment, and permission boundaries when they affect readers.
-2. **Verify facts first**: Check claims against source, tests, or runtime evidence. Net new explanations need verified mechanisms. Never leave unverified assumptions in finished docs.
-3. **Draft concisely**: Follow formal, compact prose. How-to procedures require prerequisites, verified steps, observable results, and recovery paths for failures (report gaps instead of inventing steps). Distinguish runnable commands from illustrations.
-4. **Preserve working prose**: Retain accurate existing text; edit only to fix factual errors, ambiguity, or broken tasks.
-5. **Recheck the rewrite**: Audit added claims and recovery steps. Unsupported steps belong in review notes, never ready-to-publish prose.
-6. **Check incoming links**: Link every new or moved page from another maintained documentation page.
+Use natural language throughout explanatory prose. Only operational guides retain commands and configuration necessary for their task. Never reproduce program implementations, SQL bodies, styling examples, function inventories or internal response fields, including in technical reference sections. Link precise source locations with descriptive Chinese labels.
 
-## Verification Gate
+Verify new explanations and failure handling against current evidence. Distinguish implementation, approved requirements and actual deployment; historical tests do not establish current operation. Put unsupported gaps in the delivery report, not unfinished prose.
 
-Use `pnpm docs:check` for focused iteration, and run `pnpm test:docs-contracts` before final handoff.
+Maintain one primary home for each important fact and update navigation and incoming links. Replace superseded rules instead of appending contradictory exceptions. Independently review substantial rewrites and high-risk instructions within the user's authorized workflow; this does not authorize automatic multi-model delegation.
 
-Mechanical checks verify relative links, placeholders, headings, and inbound links. They do not prove factual accuracy or task usability.
+Mechanical checks verify local structure, not factual accuracy or usability. Report checks, evidence and remaining limits.

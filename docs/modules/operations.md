@@ -1,408 +1,299 @@
-# Operations, Scripts, Migrations, Tasks
+# 数据库与日常运维操作指南
 
-本模块覆盖脚本、部署、迁移、定时任务和 CI。
+本指南集中维护数据库迁移、备份恢复、清理回填、后台任务与边缘缓存验收。应用下载、构建、进程切换与运行配置归[部署指南](../project/deployment.md)。只执行本次已经授权且目标明确的操作，读取和预览也要保护私有数据；命令存在不等于获准在生产执行。
 
-## 脚本分类
+## 开始一次维护
 
-`package.json` 是命令入口。
+先确认目标主机、应用提交、数据库、发布标签和维护范围，选出本次依赖的迁移，审阅影响并在一次性设施演练。真实维护前保留当前运行产物、配置恢复资料及验证过的备份。私有盘点、计划、回执、日志与备份放在仓库及全部工作区之外的受限持久目录，目录权限 0700、文件 0600。
 
-### 开发与构建
+需要公告时，在后台小喇叭发布覆盖窗口的重要官方消息。恢复后按实际结果提前结束或移除：提前结束保留公开历史，移除退出公开展示。公告不代替停止旧进程和写入。
 
-- `pnpm dev`
-- `pnpm dev:webpack`
-- `pnpm dev:lan`
-- `pnpm build`
-- `pnpm build:sitemap`
-- `pnpm postbuild`
-- `pnpm typecheck`
-- `pnpm test`
+迁移按只读预检、审核、同步、只读复检执行；没有独立复检文件时，以同组预检重跑检查完成状态。同名对象不兼容、非法数据或冲突时停止，不能通过删对象或自动合并数据凑成可执行状态。大数据修复先预览并保存输出。
 
-### Prisma
+## 停写、备份与执行文件
 
-- `pnpm prisma:push`
-- `pnpm prisma:deploy-safe`
-- `pnpm prisma:generate`
-
-`prisma:push` 实际会先跑 `migration:resource-links`，再 `prisma db push` 和 `prisma generate`；它保留给本地开发、`deploy:install` 首次安装和 disposable CI 初始化。生产 `deploy:pull` / `deploy:build` 使用 `prisma:deploy-safe`：先运行既有的 `migration:resource-links`（可能执行兼容性 schema/data 写入），再运行只读 schema guard/diff，最后运行 `prisma generate`。该命令不运行 `prisma db push`，也不应用 diff SQL。
-
-### 模块 03 事项迁移与任务
-
-生产先备份，再依次执行 `migration/production-case-preflight-2026-09-13.sql`、`production-case-sync-2026-09-13.sql`、`production-case-postflight-2026-09-13.sql`，接着依次执行 `production-case-feedback-preflight-2026-09-26.sql`、`production-case-feedback-sync-2026-09-26.sql`、`production-case-feedback-postflight-2026-09-26.sql`，最后运行现有 schema guard 与部署流程。前三份只涉及新增的 `ops_case`、`ops_case_message`、`ops_case_subscriber`；后三份只加 `ops_case.reminded_revision` 与报告者图片表 `ops_case_message_image`。每组 pre/postflight 只读，sync 可重复执行，已有同名但不兼容的对象在写入前拒绝。2026-09-13 的三份按基表列数精确核对，加法迁移之后不再重跑，改跑 2026-09-26 这组。两个可空唯一键必须允许多个 NULL，不能使用 `NULLS NOT DISTINCT`。旧反馈和举报不回填。
-
-`server/tasks/caseTimeoutTask.ts` 每小时第 17 分钟按上海时区执行：发布者归属的资源问题（资源与描述不符、存量临时链接失效及 D40 的资源类型）等待处理方超过 7 天提交给网站管理员，等待报告者超过 14 天自动结案；两个时限到期前 48 小时各提醒一次，提醒以 `reminded_revision` 绑定状态修订号，同一轮只发一次。站方事项不自动结案；link_suspect、link_disputed 和 06 的类型不由本任务扫描。任务使用已有 Redis 锁和逐项状态条件更新，单类每批 200 条、最多 10 轮，重复执行不重复产生处理结果。
-
-数据库迁移必须先于新代码。新事项产生后，回退版本仍须保留事项读取与处理能力；不能把提交重新写回旧队列或删除新表。若回退时暂停新建事项，小喇叭依赖新订阅的阈值隐藏也暂停，需由站方人工处理。
-
-### 链接健康任务与 checker（04／10）
-
-`server/tasks/linkHealthTask.ts` 经 `server/cron.ts` 注册，每小时第 27 分钟（Asia/Shanghai）执行，使用 `noOverlap` 和 55 分钟 `withTaskLock`。普通 suspect 按 health_changed_at 固定 7 天进入 broken，回复不延期；普通 owner_verification disputed 固定 30 天收敛可用。必须重读锁内完整基点和最新有效事项上下文；持久化 machine_user_conflict、坏／缺上下文或过期基点均跳过自动收敛，不能用后来的 unknown／失败检测抹去冲突。
-
-扫描只查询到期 suspect／disputed，每批 200、最多 10 轮，按 ID 前进并记录 `link-health:task-cursor`（7 天 TTL）；跳过目标也推进游标，后续调用能越过永久跳过的前缀，无后续候选时归零。游标 Redis 读写失败使用本进程回退，不保证跨实例保存；单项失败记录固定安全事件并继续。已有任务锁在获取异常时最多尝试 3 次、间隔 500 ms，仍无锁则整轮不执行；业务技术限频 Redis 故障沿用 fail-open，不能混同任务锁语义。健康／报告先锁 link 再锁 case，资源变更按 resource → links → cases；完整数据库冲突重试不包含外部检测或上传。
-
-checker 是独立自托管服务，不连接网站 DB／Redis，也不做全站扫描。可复现资产在 [deployment/link-checker](../../deployment/link-checker/README.md)，[pin.json](../../deployment/link-checker/pin.json) 固定上游 `c74022f4dbbb7c8c39be7da15701763efa2ffffd`、归档／补丁哈希和许可证。构建、合成 HTTP／DNS 回归、localhost 冒烟与 systemd 草案均以该目录说明为准；默认 loopback、零缓存，草案未安装或部署。
-
-网站通过服务端可信 endpoint/Bearer 单次调用 `/v1/check`，总预算 15 秒、响应 8 KiB、拒绝跳转。当前适配远端 LLC 的夸克、UC、百度、和彩云和 123；`dead/share_blocked/41010` 或 `41031` 可判失效，部分违规保持 unknown。5 分钟内且属于当前处理基点的缓存保留原始观察时间，可参与健康判断；请求中的 `otoame_check` 摘要按输入、基点和时间窗口隔离 LLC 缓存。提供者组合、提取码处理及错误规则见 [API 模块](api-services.md#链接报告健康与检测040510)。网站日志和响应只保留安全元数据，不写原始 URL／码／provider body／认证或 cookie。上面的固定补丁资产与远端服务是独立产物，出站保护及提供者启用情况应核对实际部署版本；五家协议回归不等同于五家真实网盘的在线验收。整站集成验收范围见[测试指南](../project/testing.md#link-health-first-batch)。
-
-上线屏蔽失效映射前，按顺序执行 `production-link-health-blocked-{preflight,sync,postflight}-2026-10-17.sql`，扩展 `link_check_shape_check`。同步只接受已验证的完整旧／新约束，锁等待上限 5 秒、语句上限 60 秒，失败回滚，不更新业务行。应用可回退而保留这个兼容旧值的约束；若必须收窄回旧定义，先暂停新写入并确认不存在 `share_blocked` 快照，不能删除已有观察来强行回退。首次安装与后续验证顺序见 [数据模块](data-cache-upload.md#稳定链接与健康数据0410)。
-
-### 部署
-
-- `pnpm deploy:install`
-- `pnpm deploy:build`
-- `pnpm deploy:pull`
-- `pnpm deploy:pull:pinned`
-- `pnpm deploy:rollback`
-- `pnpm gallery:ffmpeg:install`
-- `pnpm start`
-- `pnpm stop`
-
-详见 `docs/project/deployment.md`。
-
-#### 维护公告清单
-
-需要停站维护时，按以下顺序操作：
-
-1. 在 `/dashboard/shoutbox` 发布一条重要级官方消息，生效区间覆盖预计维护窗口。
-2. 使用前台真实页面确认全站横幅已经出现且正文、详情链接和时间无误。发布接口返回成功不等于用户已经看到，未确认前不得停站。
-3. 通过部署面板启用既有停用页并停止应用；本功能不代替面板停用页。
-4. 应用恢复并完成健康检查后，更新同一条官方消息说明恢复情况，或提前结束该消息。
-5. 再次打开前台页面，确认恢复文案已经可见，或已结束的横幅和置顶已经消失。
-
-本清单先在非生产实例完整演练并保留时间线记录；生产执行仍遵循部署文档的备份、迁移、回滚和健康检查要求。
-
-### 维护脚本
-
-- `maintenance:resource-attributes:*`
-- `maintenance:dirty-tags:*`
-- `maintenance:tags:*`
-- `maintenance:companies:inventory` / `maintenance:companies:plan`
-- `maintenance:companies:dirty:dry` / `maintenance:companies:dirty:apply` / `maintenance:companies:dirty:cache`
-- `maintenance:conversation-images:*`
-- `maintenance:submission-assets:*`
-- `stickers:sync`：校验并同步内置 Sticker Pack 资源。默认 dry-run；加 `--apply` 后才会上传 WebP/WebM、生成动态 poster 并 upsert 数据库目录。静态 WebP 最大 512 KB，动态 WebM 必须为带透明通道、无音频的 VP9，最大 300 KB，超限直接拒绝；poster 使用内容哈希 key，避免 immutable CDN 复用旧图。
-- Sticker 管理后台位于 `/admin/stickers`，服务端导入支持单张、多文件和 ZIP；ZIP 导入会检查路径穿越、符号链接、加密条目、ZIP Bomb、重复内容和解压大小，失败时清理已上传对象。
-- 生产数据库变更按顺序执行 `migration/production-private-chat-stickers-preflight-2026-08-14.sql`、对应 sync，再执行 `migration/production-sticker-admin-preflight-2026-08-14.sql`、对应 sync。preflight 只读，sync 前必须审核重复 hash、封面引用和外键定义检查结果。已经执行过旧版 Sticker sync 的数据库，还要在备份后执行 `migration/production-stickers-prisma-alignment-2026-08-15.sql`，再运行 `pnpm prisma:deploy-safe`；该纠正脚本不触碰 `patch_released_idx`。
-- `maintenance:gallery-thumbnails:*`
-- `migration:resource-type:*`
-- `migration:patch-counters`
-
-### 验证脚本
-
-- `pnpm docs:check`：离线检查改动的维护文档；检查范围、定向参数和内容审阅要求见[文档规范](../project/documentation.md)。
-- `pnpm e2e:db:prepare --reset --backup=<绝对且不存在的文件>`：只对显式 `KUN_E2E_DATABASE_URL` 的 `*_e2e` PostgreSQL 建立并验证备份后重置；`KUN_E2E_PG_CONTAINER` 启用 Docker 内 `pg_dump` / `psql`，此模式额外要求 loopback URL。
-- `pnpm e2e:company-server --resolver=off|on`：唯一的 3100 company E2E server launcher，拒绝共享 `.next` 的 3000/3100 并发 dev server。
-- `pnpm e2e:company-identity --expect-resolver=off|on`：在 server 两次重启之间分别验证两种运行时语义；只连接 `_e2e`，不走 S3 写入或删除。
-- `pnpm gallery:ffmpeg:install`：可选安装 Linux x64/arm64 BtbN FFmpeg 到 `node_modules/.ffmpeg/ffmpeg`，用于强 animated AVIF gallery 缩略图；普通安装不自动运行，保持部署较轻。自备 FFmpeg 时也可以改用 `.env` 的 `KUN_GALLERY_FFMPEG_PATH` 指向绝对路径，修改后需要重启 PM2。
-- `pnpm exec esno scripts/verifyGalleryAnimatedAvifThumbnail.ts <animated.avif> [output.avif]`：验证当前机器的 `KUN_GALLERY_FFMPEG_PATH`、standalone `.ffmpeg/ffmpeg`、`ffmpeg-static` 或系统 `ffmpeg/libaom-av1` 能否生成 animated AVIF gallery 缩略图；只读写本地文件，不访问数据库或 S3。脚本会列出各候选 FFmpeg 对输入样本和输出缩略图解析到的帧数，包括 Linux FFmpeg 暴露出的非默认多帧 video stream，避免把静态首帧误判为 animated AVIF。生产运行前应在目标服务器执行，建议使用 `pnpm exec esno scripts/verifyGalleryAnimatedAvifThumbnail.ts ./public/images/animated-sample.avif ./public/images/tmp/animated-sample-thumb.avif`，确认输出 `Wrote animated AVIF thumbnail: ... frames ...`。
-
-带 `dry` 的脚本先 dry-run，确认输出后再 apply。
-
-Steam ID 软查重上线时，先备份数据库，再运行 `migration/production-steam-id-soft-duplicate-preflight-2026-07-09.sql` 查看生产库里旧唯一约束/索引和重复 Steam ID 预览；确认后运行 `migration/production-steam-id-soft-duplicate-sync-2026-07-09.sql`。该 sync 使用 `CREATE INDEX CONCURRENTLY`，不要包在显式事务中执行；它会移除旧 `steam_id` 唯一约束/索引并创建普通 `patch_steam_id_idx`。
-
-`maintenance:resource-attributes:dry` 会按已发布资源（`patch_resource.status = 0`）重算每个游戏卡片/详情页使用的 `type`、`language` 和 `platform` 派生标签，预览历史脏数据中哪些 patch 会变化，不写 DB。确认输出后运行 `maintenance:resource-attributes:apply`，脚本会更新派生字段并失效受影响的详情和列表缓存。待审核、封禁或已删除资源不能进入这些派生标签。
-
-`migration:resource-type:*` 在迁移单条资源类型/平台后，也必须按同一已发布资源口径重算 patch 派生属性。`migration:patch-counters` 安装和回填的 `resource_count` 只统计已发布资源，并监听 `patch_resource.status` 变化；运行旧触发器的环境修复卡片资源数时，应重新执行 `pnpm migration:patch-counters`。
-
-`maintenance:submission-assets:dry` 只读展示三类积压：终态投稿行 outbox、已经持久化的 orphan cleanup jobs、以及超过宽限期的新 S3 orphan；它不写 job、不删对象、不 purge。确认后用 `maintenance:submission-assets:apply`，处理顺序固定为“投稿行 outbox → 已有 orphan jobs → 新 orphan”。新 orphan 必须先写入 `patch_submission_orphan_cleanup`，保存 object key 和当时所有公开 URL，才允许执行 S3 删除与 Cloudflare purge；两者都确认成功后才删除 job。每次 apply 都重新检查活动投稿和正式 `patch` / `patch_game_image` 引用，被引用对象会取消 job。`published` 投稿行只保留溯源，不保护对象；真正的线上引用以正式条目行为准。新 S3 orphan 仍只处理过了默认 24 小时宽限期的对象，可用 `--grace-hours` 与 `--limit` 调整。
-
-submission assets summary 中，`cleanup submissions` 是 `rejected` / `violation` / `deleted` 行上仍有 key 的结算积压；`persisted orphan jobs` 是已具备 durable retry credential 的无所属对象；`new S3 orphans` 是本轮扫描发现、尚未持久化的候选。任一 apply 后仍非零都需要查看 `owed` / `bookkeepingFailed` 日志，不要通过手工删行来“清空”积压。
-
-`maintenance:gallery-thumbnails:dry` 扫描历史 gallery 中 `thumbnail_url IS NULL` 的本站原图，输出待回填数量，不下载原图、不写 S3、不写 DB。确认 dry-run 后用 `maintenance:gallery-thumbnails:apply` 分批回填真实缩略图；apply 默认 `--limit=50 --batch=20 --concurrency=1 --delay=1000`，适合生产 3c 服务器低负载执行，并会逐张打印当前处理的游戏、gallery 图片 ID、完成状态和耗时。常用生产命令是 `pnpm maintenance:gallery-thumbnails:apply -- --limit=50 --batch=20 --concurrency=1 --delay=1000`，重复执行直到 dry-run 无候选；如果 FFmpeg 性能或可用性不确定，先加 `--skip-animated-avif`。
-
-gallery thumbnails summary 字段含义：`galleryTotal` 是当前范围内 URL 非空的 gallery 图片总数；`alreadyWithThumbnail` 是已有 `thumbnail_url`、无需回填压缩的图片数；`missingThumbnail` 是仍缺 `thumbnail_url` 的图片数；`scanned` 是本次从数据库查出并检查的缺缩略图候选图片数，受 `--limit` 限制；`eligible` 是符合回填规则的图片数，dry-run 中表示 apply 会处理的数量；`updated` 是 apply 实际写入 `thumbnail_url` 的图片数，dry-run 中应为 `0`；`skipped` 是查到候选但因 URL 非本站、路径不规范、原图过大、缩略图生成不可用等原因跳过的数量；`failed` 是处理过程中出现未恢复错误的数量。`scanned=0` 且 `missingThumbnail=0` 表示当前范围没有缺 `thumbnail_url` 的 gallery 候选项，不代表数据库里没有 gallery 图片。
-
-`maintenance:conversation-images:dry` 扫描私聊上传产生的 `conversation/` S3 前缀，查找上传后未发送、且已经超过 Redis metadata TTL 安全窗口的孤儿图片。dry-run 默认 `--limit=200 --batch=50 --older-than-hours=2`，只输出 summary 和候选 key，不删除对象。确认候选无误后运行 `maintenance:conversation-images:apply`；apply 默认 `--limit=100 --batch=50 --concurrency=1 --delay=1000`，删除前会检查非删除 `user_private_message` 的 `image_url`、`image_group` 和 `reply_image` 是否仍引用该 key，引用中的对象不会删除，tombstone 行遗留字段不会阻止清理。常用生产命令是 `pnpm maintenance:conversation-images:apply -- --limit=100 --batch=50 --concurrency=1 --delay=1000`；需要缩小影响面时可加 `--conversation-id=123`，需要更保守时加大 `--older-than-hours=6`。
-
-conversation images summary 字段含义：`scanned` 是本次从 S3 列出的对象数；`eligible` 是符合 key 规范、超过时间阈值且未被消息引用的候选数；`deleted` 是 apply 实际删除的对象数；`referenced` 是仍被消息字段引用而跳过的对象数；`tooNew` 是未超过安全时间阈值的对象数；`invalidKey` 是不符合私聊图片 key 规范的对象数；`failed` 是删除失败数量。dry-run 的 `Candidates` 列表只是预览，不代表已删除。
-
-`maintenance:tags:auto-alias:dry` 会在生产库里扫描“某个 tag 的 name 命中另一个主 tag 的 alias”的历史重复数据，并生成合并计划。dry-run 只做计划校验和关系数量预览，不加载所有受影响 patch 的 `unique_id`，避免生产数据量大时预览过慢。确认输出无误后再运行 `maintenance:tags:auto-alias:apply`；apply 会移动 patch 关系、合并 alias、迁移用户 blocked tag，并失效 tag/list/受影响 patch 内容缓存。`patch_tag.count` 随关系变化由数据库触发器维护，脚本不得修正。多主 tag 共用同一 alias 时会跳过并输出 warning，需要人工计划。
-
-手工合并仍使用 `maintenance:tags:merge:* -- --plan=path/to/merge-plan.json`。本地库没有生产 tag 数据时，不要用本地 dry-run 结果判断生产影响面，应在生产备份后对生产库 dry-run。
-
-生产会社清理使用**冻结计划**，不再由 dry/apply 每次重新联网和重新规划。完整顺序是 inventory → 人工 decisions → plan → dry → apply → cache：
+以下适用于数据库在 Docker 容器、应用由 PM2 管理的场景。逐条执行并检查结果，尖括号全部替换为本次核对的值；认证使用既有受限凭据机制，不把密码写进命令历史。
 
 ```bash
-pnpm maintenance:companies:inventory --out=/var/lib/kun-otoame/maintenance/company/<run-id>/company-inventory.json
-pnpm maintenance:companies:plan --manual-only --inventory=/var/lib/kun-otoame/maintenance/company/<run-id>/company-inventory.json --decisions=/var/lib/kun-otoame/maintenance/company/<run-id>/company-decisions.json --out=/var/lib/kun-otoame/maintenance/company/<run-id>/company-cleanup-plan.json
-pnpm maintenance:companies:dirty:dry --plan=/var/lib/kun-otoame/maintenance/company/<run-id>/company-cleanup-plan.json
-pnpm maintenance:companies:dirty:apply --plan=/var/lib/kun-otoame/maintenance/company/<run-id>/company-cleanup-plan.json --confirm-sha256=<审核过的计划摘要>
-pnpm maintenance:companies:dirty:cache --plan=/var/lib/kun-otoame/maintenance/company/<run-id>/company-cleanup-plan.json
+export OTOAME_PG_CONTAINER='<数据库容器>'
+export OTOAME_PG_USER='<数据库用户>'
+export OTOAME_PG_DATABASE='<目标数据库>'
+export OTOAME_BACKUP_FILE='<仓库外且尚不存在的绝对备份文件>'
+docker inspect --format '{{.State.Status}}' "$OTOAME_PG_CONTAINER"
+git status --short
+git rev-parse HEAD
 ```
 
-`inventory` 只读生产数据库并写出带 SHA-256 sidecar 的 canonical JSON；人工 decisions 只能用 inventory 中的 opaque company ref 表达合并、删除、owner / introduction 保留策略与理由。**零作品关系不是删除指令**：任何公司删除都必须显式写入 decisions，并再次出现在审核过的冻结 plan 中；没有明确裁决的空公司、仅名称相近、`legacy` alias、共享 alias 或歧义证据一律保留。
-
-生产已人工确认的少量重复会社使用 `plan --manual-only`：只消费 decisions 中明确列出的合并和删除，不访问 VNDB 或 NextMoe，也不生成 automatic merge。它仍连续读取实时数据库快照 A/B，并在任一 normalized name、external ID、identity 或 relation digest 变化时拒绝产出计划。省略 `--manual-only` 才会在两次快照之间读取 VNDB 与（若配置了 `KUN_NEXTMOE_API_KEY`）NextMoe 公开 catalog，补充 authoritative evidence 并提出 automatic merge。NextMoe 只按作品上的 `vndb_id` / `bangumi_id` 反查会社，不走 `company_rollup` 或家族 graph；同一 catalog 会社命中多家本地行时，已有 `nextmoe` 外部 id 的那家是 canonical，否则按作品数、主名、id 选取，其余名称并入 authoritative 别名由既有自动合并吸收。未配置密钥只留下 warning，不阻断 plan。铸钥后可用 `pnpm exec esno scripts/probeNextmoeCompanySample.ts` 只读探测 Koei（`v2168` / `21041` / `p473`）、GION（`v49059` / `473829`）和耽美梦想2（`v3996` / `60542`）；Steam id 不作为 NextMoe ref。未配置密钥则跳过。
-
-Dashboard `/dashboard/company-merges`（role ≥ 3）可手动检测名称变体（法人格含 Ltd/LLC、标点、括号内外、中文粘连）以及同作来源别名袋（VNDB 的 `name` / `original` / `aliases` 都是候选证据；NextMoe 只打 `works?include=companies,refs`，证据字段只有 `display_name`，不拉 `/companies` 详情）。合并框每家默认勾选，至少两家；只合并勾中的 id，主会社是勾中最小 id，介绍、官网、父品牌、缺行拦截和成功提示只看勾中的会社，记录所有者只从勾中会社按主名推导。未勾选的会社不删除。部分合并会给「留下的主会社 + 每个未勾选 id」写一条 `resolution_source=partial-merge-exclusion` 的已驳回行，不占 pending-key；已有人工驳回（含 `resolution_source` 为空的旧驳回）不改操作者和时间。检测与驳回不写 `patch_company`。跳过和重新打开只认 `member_key`（去重后按数字升序的会社 id），不认 `folded_key` 或 `vndb:p…`；`folded_key` 只展示。source-pair 用不变的 `candidate_key`（`source-pair|<排序后的 upstreamIds>|patch:<id>`）找回同一条 pending，成员变了就更新那一行；目标 `member_key` 已是 dismissed 或 accepted 则跳过，已被别的 pending 占用则保留本行和旧 key 并记入本次 notes。后缀和标点类的 `candidate_key` 含成员 id，成员变了就是另一条建议。每个 pending 恰好一条 `company_merge_pending_key`（普通唯一，`onDelete: Restrict`），没有 SQL-only partial unique。`selected_company_ids` 与 `applied_source_company_ids` 是可空 JSON，`applied_target_company_id` 和 `resolution_source` 为空表示旧记录没保存。重新打开在同一事务插入 pending-key，键已被占用则失败且行仍是 dismissed，并清空 `resolution_source`。驳回整组不会自动拆出子集。源会社删除、旧 `/company/<id>` 404。本地库若仍有运营模块 03 的 `ops_case` 表，不要对该库跑整份 `pnpm prisma:push`。建议表不存在时先跑 `migration/production-company-merge-suggestion-sync-2026-09-17.sql`，再按顺序跑 `migration/production-company-merge-subset-preflight-2026-09-22.sql`、`sync-a`、`sync-b`、`preflight-2`、`sync-c`、`postflight`；应用代码不得先于 sync-c 上线。不要对生产 schema 或 `otoame_prod_dump` 做 `db push`。用生产 dump 演练时导入独立数据库。冻结契约为 schema/tool v2，关系快照含 `bangumiId`；旧 inventory / plan 必须用当前 commit 重做。两种模式都会冻结动作、完整前后状态、缓存目标、工具/规范化版本和生成 commit，并写出独立 SHA sidecar。inventory、decisions、plan、sidecar、receipt、日志与数据库备份应放在仓库和所有 worktree 之外的 `0700` 持久目录，文件使用 `0600`，不得提交或跟随部署清理。
-
-`dirty:dry` 与 `dirty:apply` 不访问 VNDB、NextMoe、Redis 或 Cloudflare，只接受同一个严格 plan。apply 还要求 `--confirm-sha256` 精确匹配，按固定顺序锁住 company relation/company/external ID/name identity 四张表，再核对计数触发器、计数不变量和完整前置快照；任何漂移均在零写入状态失败，整份计划在一个事务里提交或整体回滚。`dirty:cache` 不再写数据库或访问 VNDB，只按 receipt 重试 Redis 与 Cloudflare。`patch_company.count` 只由数据库触发器维护，脚本不增减也不重算。
-
-apply 提交后写 receipt。若 Redis / Cloudflare 失效失败，只在数据库仍等于计划完整后置状态时重跑 `dirty:cache`，不要重新生成计划或重写数据库。合并没有自动 unmerge；恢复依赖执行前验证过的数据库备份和本次审计物。
-
-## Postbuild
-
-`scripts/postbuild.ts` 在 `next build` 后执行：
-
-1. 运行 `pnpm build:sitemap`。
-2. 复制 `public`。
-3. 复制 `.next/static`。
-4. 复制 `server/image`。
-5. 复制 `posts`。
-6. 复制 `config/redirect.json`。
-7. assert 关键 runtime 文件存在。
-
-Next standalone 默认不会自动带上 `public` 和 `.next/static`，这是 Next 官方 standalone output 的约束；本仓库通过 `postbuild` 补齐运行时资源。
-
-新增 runtime asset 目录时，必须同步：
-
-- `scripts/postbuild.ts`
-- `.github/workflows/release.yml` 的 release packaging
-- `docs/project/deployment.md`
-
-## Release Workflow
-
-`.github/workflows/release.yml`：
-
-- 监听 `main` 和 `workflow_dispatch`。
-- 启动 PostgreSQL 15 和 Redis。
-- 写构建用 `.env`。
-- 运行 `pnpm prisma:push`。
-- 运行 `pnpm build`，并设置 `KUN_DEPLOY_BUILD_SKIP_CHECKS=true`。
-- 打包 `release.tar.gz`，内容包括 standalone、`.next/static`、`.next/server`、`.next/BUILD_ID`、`public`、`server/image`、`posts`、`config/redirect.json` 和 `prisma`。
-- 生成包含秒、workflow run number 与短 commit SHA 的唯一 CalVer tag，并创建 GitHub Release。
-- 在 artifact 根目录写入 `release-manifest.json`，绑定 manifest version、tag 与精确 commit SHA。
-
-release packaging 还会删除包内 `package.json` 的 `"type": "module"`，并把 `server.js` 改名为 `server.mjs`。`ecosystem.config.cjs` 和 `deployPull.ts` 都支持优先启动 `server.mjs`，本地 standalone 则回退到 `server.js`。
-
-`release.yml` 是仓库唯一的 workflow，CI 不运行测试或类型检查；同步上游带回的 `lint-check.yml`（监听 `master`，在本仓库永不触发）保持删除。
-
-## Deploy Pull
-
-`pnpm deploy:pull` 是 latest 模式：部署锁内先要求工作区干净并执行 `git pull --ff-only`，再取得 GitHub latest Release。高风险维护窗口使用 pinned 模式：
+预检可在允许的只读阶段执行。需要排空旧写入时，停止全部旧应用实例，检查确已停止，同时停止其他相关写入进程，再建立宿主机备份：
 
 ```bash
-KUN_DEPLOY_RELEASE_TAG='<审核过的 tag>' pnpm deploy:pull:pinned
+pm2 stop kun-touchgal-next
+pm2 status
+umask 077
+test ! -e "$OTOAME_BACKUP_FILE"
+docker exec "$OTOAME_PG_CONTAINER" pg_dump -U "$OTOAME_PG_USER" -d "$OTOAME_PG_DATABASE" --format=custom --compress=6 --no-owner --no-privileges > "$OTOAME_BACKUP_FILE"
+test -s "$OTOAME_BACKUP_FILE"
+docker exec -i "$OTOAME_PG_CONTAINER" pg_restore --list < "$OTOAME_BACKUP_FILE" > /dev/null
 ```
 
-pinned 模式只 fetch 指定 tag 到临时 ref，不执行 pull、merge 或 checkout。两种模式都要求当前 `HEAD`、fetch 后剥离到 commit 的 tag 与 artifact manifest 三者的 commit 完全相同，并校验 manifest tag；旧版没有 manifest 的 R1/R3 artifact 只能按历史人工快照流程保留，不能交给当前 deploy pull。
+确认父目录受限、备份非空且目录验证成功后继续；目录验证不等于已经演练完整恢复。不能只把备份留在数据库容器内。
 
-下载的候选先在临时目录接受 candidate Prisma guard：兼容迁移先运行，schema guard 通过显式 `--schema` 校验候选 schema，随后才为候选生成并注入目标服务器架构的 Prisma Client、`@prisma`、`ffmpeg-static` 与可选 `.ffmpeg/ffmpeg`。guard 失败不会先替换根 schema 或当前 runtime。
-
-已验证 runtime 以 `<commit>-<tag>` 保存到 `.deploy/releases/`。`.deploy/current` 和 `.deploy/previous` 是原子切换的符号链接；`.next/standalone` 只保留指向 `.deploy/current` 的兼容链接，构建清理 `.next` 不会删除可回滚 release。部署操作由 `.deploy/operation.lock` 串行化，切换前写 `.deploy/activation-journal.json`；中断后先恢复 journal 指向的旧 release。
-
-激活后必须同时满足：恰好 3 个 `kun-touchgal-next` PM2 实例 online、cwd/script 指向候选 release，以及 loopback `KUN_DEPLOY_SMOKE_URL`（默认 `http://127.0.0.1:3000/`）返回 2xx/3xx。`KUN_DEPLOY_READINESS_TIMEOUT_MS` 可设为 5000–120000 毫秒。候选未就绪时自动恢复并验证旧 release；旧 release 也无法恢复时命令以聚合错误退出。
-
-离线应用回滚使用：
+每一份审核文件分别执行，将变量替换为下文实际文件路径。重定向需要容器标准输入参数：
 
 ```bash
-pnpm deploy:rollback
+export OTOAME_SQL_FILE='<审核的 migration 文件路径>'
+docker exec -i "$OTOAME_PG_CONTAINER" psql -X -v ON_ERROR_STOP=1 -U "$OTOAME_PG_USER" -d "$OTOAME_PG_DATABASE" < "$OTOAME_SQL_FILE"
 ```
 
-它只恢复中断激活或切到 `.deploy/previous`，重新校验 PM2/HTTP 后才完成；不访问 GitHub、不改 Git、不运行 Prisma guard，也不改数据库。数据库 schema 回滚必须另走审核过的 rollback SQL。
-
-私有仓库需要 `GITHUB_TOKEN`。下载时脚本会处理 GitHub/S3 跳转，并且跨域跳转不会继续携带 Authorization header。
-
-## Deploy Build
-
-`scripts/deployBuild.ts` 使用同一部署锁与 immutable slot/readiness 机制：先 fast-forward pull、安装依赖并运行 `pnpm prisma:deploy-safe`，再在服务器构建候选、补齐 Prisma/FFmpeg/runtime assets，写本地 manifest 并激活。build 时注入 `KUN_DEPLOY_BUILD_SKIP_CHECKS=true`，但发布前仍必须单独通过类型与测试门禁。
-
-这个路径会在服务器上完整构建，比 `deploy:pull` 消耗更多 CPU/内存，但不依赖 GitHub Release 产物。
-
-## 定时任务
-
-入口：
-
-- `server/cron.ts`
-- `server/tasks/resetDailyTask.ts`
-- `server/tasks/setCleanupTask.ts`
-- `server/tasks/flushPatchViewsTask.ts`
-- `server/tasks/cleanupSubmissionAssetsTask.ts`
-- `server/tasks/caseTimeoutTask.ts`
-- `server/tasks/linkHealthTask.ts`
-- `server/tasks/syncKunPatchTypeTask.ts`
-- `server/tasks/withTaskLock.ts`
-
-`setKUNGalgameTask` 防止同一进程重复 start。多实例部署时，任务实现应使用 `withTaskLock` 防止多实例重复执行。
-
-任务职责：
-
-- 重置每日状态。
-- 清理临时上传。
-- 每 2 分钟刷新 patch 浏览量缓冲。
-- 每日 04:00（`Asia/Shanghai`）只读巡检投稿素材；8 小时 task lock 覆盖全桶扫描，并启用本进程 `noOverlap`。任务固定以 `apply: false` 调用维护引擎，只记录终态投稿行积压、已持久 orphan jobs 和新 S3 orphan，不写 outbox、不删 S3、不 purge。
-- 同步资源类型。
-
-常驻任务通过 CLI dependencies 复用扫描逻辑，但不得调用 `close()`：该方法会 `$disconnect()` 共享 Prisma client，仅 CLI 退出时使用。修改 `server/cron.ts` 或 task 文件后需要重启运行进程，新的 `createTask` 才会由 `setKUNGalgameTask()` 启动。
-
-## 迁移策略
-
-工作台维护结构使用 `production-link-maintenance-{preflight,sync,postflight}-2026-10-19.sql`，
-在既有链接健康结构及 2026-10-17 CHECK 增量之后执行。pre/postflight 只读；sync
-单事务且幂等，不改既有健康约束、事项上下文或时钟，不补发历史通知。上线前停止旧
-写入，postflight 和 schema guard 通过后切换同版本实例；禁止旧新版混跑绕过反馈冻结。
-回填条件、锁顺序和一次性 PostgreSQL 验收见 [workspace.md](workspace.md)。暂缓到期
-由读写时刻派生，不新增 cron，也不暂停健康任务时钟。
-
-资源访问缺表上线使用
-`migration/production-resource-access-bootstrap-preflight-2026-07-12.sql` 及对应 sync，
-然后复用现有 grant pair。Bootstrap 保持手工执行，不加入 deploy-safe。Steam ID
-sync 已支持清理并重建 invalid/not-ready/not-live 的目标索引，并在资源访问停机
-窗口前完成 postflight。维护窗口部署使用
-`KUN_DEPLOY_RELEASE_TAG='<已审核 tag>' pnpm deploy:pull:pinned` 固定目标产物。
-
-`migration/*` 包含生产辅助 SQL 和脚本，`migration/backup/*` 是历史脚本。
-
-投稿域生产迁移依次使用 VNDB Release ID unique、patch submission、submission
-orphan cleanup 三组 preflight/sync。`production-patch-submission-preflight-2026-08-24.sql`
-在主表或画廊表缺失时只输出 `skipped_missing_table`，不会查询不存在的表；两张表
-分别加栅栏，以便识别只完成一半的中断部署。Prisma `@updatedAt` 对应列不得有数据库
-默认值；preflight 会输出 `updated_default`，sync 可重跑地删除历史错误默认值。
-Docker PostgreSQL 的逐条命令、备份、postflight 和固定 Release tag 流程见
-`docs/project/deployment.md` 的“投稿域上线顺序”。
-
-会社身份解析的 Phase A 结构使用独立的三份 SQL，必须先于任何读取新列或新表的
-应用代码部署：
-
-1. `production-company-identity-bootstrap-preflight-2026-08-30.sql` 只读盘点；首次
-   上线时目标列、表和索引显示 `ready_to_create` 是预期结果，既有对象显示
-   `definition_mismatch` 会直接阻断。
-2. `production-company-identity-bootstrap-sync-2026-08-30.sql` 在单事务中增加可空
-   `normalized_name`、投稿 `company_candidates` 快照列和两张身份表。该阶段只建普通
-   全局查询索引；`normalized_name` 与 `(source, external_id)` 的最终唯一约束尚未启用。
-3. `production-company-identity-bootstrap-postflight-2026-08-30.sql` 独立核对列类型、
-   Prisma `@updatedAt` 默认值、外键动作、索引定义及 Phase A 不含最终全局唯一约束。
-4. postflight 通过后运行 `pnpm prisma:deploy-safe`，再部署依赖该结构的应用版本。
-
-三份 SQL 都在一次性 PostgreSQL 18 上验证过首次安装和重复执行。生产仍禁止用
-`prisma db push` 代替这组迁移；后续身份回填和最终约束有各自独立的迁移阶段。
-
-Phase A postflight 和 `pnpm prisma:deploy-safe` 通过、且包含会社身份双写的应用版本部署
-完成后，使用 `pnpm maintenance:companies:identity:dry` 盘点身份回填。dry-run 只按 ID
-分批读取，不写数据库；它会报告需要补写的 `normalized_name`、身份行更新、创建和删除
-数量。确认结果后运行 `pnpm maintenance:companies:identity:apply`，完成后必须再次运行
-dry-run，所有变更计数都应为 0。两条命令都支持例如 `-- --batch-size 200`，批大小会被
-限制在 1–1000。
-
-回填规则固定为：会社主名身份记为 `authoritative`；首次从历史 alias 数组生成的身份只能
-记为 `legacy`，已经有依据的 `authoritative` 身份不得被回填降级；本阶段不回填外部 ID。
-同一会社内部按 kind + 规范化值去重；不同会社共享同一别名是合法现状，不得因此自动
-合并。若历史主名或别名本身、或其 NFKC 规范化结果无法放入 107 字符身份列，dry-run 会
-中止；应先人工核对并修正该会社，不能截断后继续。apply 为每家公司使用短事务，并复用
-在线写入的同一投影函数；维护进程使用独立 Prisma/pg 连接池并在退出时关闭，不影响常驻
-应用的共享客户端。
-
-会社 resolver 代码可以随 Phase A 应用提前部署，但
-`KUN_COMPANY_IDENTITY_RESOLVER_ENABLED` 必须保持未配置或 `false`。该变量是仅服务端读取
-的运行时开关，不得改成 `NEXT_PUBLIC_*`；只有完成历史盘点/清理、标签与会社计数触发器
-迁移、Phase B 两个最终唯一约束及 postflight，并仍处于既定停写窗口时，才允许将其设为
-`true` 并重启进程。启用会同时切换 `/edit` 公司来源、作者/管理员投稿预览和投稿批准，
-不能只切其中一条。
-
-若启用烟雾测试失败，把开关恢复为 `false` 并重启即可让预览与来源选择回到旧行为；已经
-部署的目标唯一约束兼容层仍会从事务外重试并读取规范化胜者，所以无需回滚身份表或约束。
-只有兼容层本身也失败时才重新暂停会社关系写入。当前阶段只安装代码，**不要提前打开
-开关**。
-
-标签与会社的 `count` 是关系表行数的数据库派生值。生产迁移由以下四份文件组成：
-
-- `production-tag-company-count-preflight-2026-08-30.sql`
-- `production-tag-company-count-sync-2026-08-30.sql`
-- `production-tag-company-count-postflight-2026-08-30.sql`
-- `production-tag-company-count-rollback-2026-08-30.sql`
-
-上线必须保持以下顺序，不能先装触发器再部署旧应用，否则同一条关系会被应用和触发器各计一次：
-
-1. 备份数据库，运行只读 preflight，并留存两张表的偏差行数和最大偏差。偏差只报告；缺表、`count` / ID 列类型不符、目标函数或触发器无法安全替换才阻断。
-2. 部署“已删除所有 tag/company 手工增减、但仍保留旧绝对修复”的应用版本。这个短窗口可能漏计，sync 的全量回填会修正。
-3. 在低峰维护窗口运行 sync。它在同一事务内安装 INSERT / DELETE / UPDATE 六个 statement-level transition-table 触发器，对两张关系表取得 `SHARE` 锁，再绝对重算全部计数。
-4. 运行独立 postflight；六个函数、六个触发器的 catalog 定义和两张表的计数不变量必须全部通过。再次运行 sync 应显示两个 backfill 都是 `UPDATE 0`。
-5. postflight 通过后，才部署删除 `patch/delete.ts`、会社清理和标签合并脚本中旧绝对修复的后续应用版本。
+工具直接在主机时使用：
 
 ```bash
-psql -X --set ON_ERROR_STOP=on -d "$KUN_DATABASE_URL" -f migration/production-tag-company-count-preflight-2026-08-30.sql
-psql -X --set ON_ERROR_STOP=on -d "$KUN_DATABASE_URL" -f migration/production-tag-company-count-sync-2026-08-30.sql
-psql -X --set ON_ERROR_STOP=on -d "$KUN_DATABASE_URL" -f migration/production-tag-company-count-postflight-2026-08-30.sql
+psql -X -v ON_ERROR_STOP=1 -d "$KUN_DATABASE_URL" -f "$OTOAME_SQL_FILE"
 ```
 
-Docker 中的 PostgreSQL 使用既有的 `docker exec -i ... psql ... < migration/...sql` 形式逐份执行。回滚必须暂停所有标签 / 会社关系写入：先运行 rollback（它只删除这六个目标触发器与函数，并在同一事务加锁重算两类计数），再部署带手工计数的旧应用；确认 preflight 只报告对象待创建且计数无偏差后才恢复写入。不要只回滚应用，也不要在写入仍开放时只删除触发器。
+不要给并发建索引文件外包单事务。任何一步失败先停止后续执行并保持必要停写，保留输出与备份，按本页失败处理核对中断状态。
 
-会社身份 Phase B 把 Phase A 的可空 / 普通索引升级为 `normalized_name NOT NULL UNIQUE` 与 `(source, external_id) UNIQUE`。交付物同时包含数据库回退和回退后检查：
+## 生产结构检查
 
-- `production-company-identity-constraint-preflight-2026-08-30.sql`
-- `production-company-identity-constraint-sync-2026-08-30.sql`
-- `production-company-identity-constraint-postflight-2026-08-30.sql`
-- `production-company-identity-constraint-rollback-2026-08-30.sql`
-- `production-company-identity-constraint-rollback-postflight-2026-08-30.sql`
-
-这一步开始连续停写窗口。先暂停创建游戏、重写游戏和投稿批准等会社关系写入，再运行身份 backfill dry-run，并按本节前述冻结流程重新生成生产 inventory、人工 decisions 与 plan。生产计划必须在停写后的实时快照上生成和审核，不能复用本地 ID 或停写前已漂移的 plan；跨会社共享 alias 是合法 warning，不要求清零。确认后依次运行：
+审核迁移执行后运行：
 
 ```bash
-pnpm maintenance:companies:identity:dry
-pnpm maintenance:companies:inventory --out=<审计目录>/company-inventory.json
-pnpm maintenance:companies:plan --manual-only --inventory=<审计目录>/company-inventory.json --decisions=<审计目录>/company-decisions.json --out=<审计目录>/company-cleanup-plan.json
-pnpm maintenance:companies:dirty:dry --plan=<审计目录>/company-cleanup-plan.json
-pnpm maintenance:companies:dirty:apply --plan=<审计目录>/company-cleanup-plan.json --confirm-sha256=<审核过的计划摘要>
-pnpm maintenance:companies:dirty:cache --plan=<审计目录>/company-cleanup-plan.json
-psql -X --set ON_ERROR_STOP=on -d "$KUN_DATABASE_URL" -f migration/production-company-identity-constraint-preflight-2026-08-30.sql
-psql -X --set ON_ERROR_STOP=on -d "$KUN_DATABASE_URL" -f migration/production-company-identity-constraint-sync-2026-08-30.sql
-psql -X --set ON_ERROR_STOP=on -d "$KUN_DATABASE_URL" -f migration/production-company-identity-constraint-postflight-2026-08-30.sql
 pnpm prisma:deploy-safe
 ```
 
-sync 会删除 Phase A 的两个普通索引并创建 Prisma 原生可表达的两个唯一索引；不要用 `prisma db push` 代替。postflight 通过后，用 R4 artifact 的**候选 schema**执行 guard/Client 生成并部署，resolver 先保持 `false`，再改为 `true` 并重启受控实例。此开关会同时切换 `/edit`、作者 / 管理员投稿预览和投稿批准，不能分开启用。
+整条命令不是只读：先运行可能写结构或数据的资源链接兼容迁移，再只读比较结构，最后生成客户端。它不直接同步生产结构，也不应用差异建议。已有持久库不能改用开发初始化或接受数据库重置。
 
-恢复外部写入前，必须在 flag 已开启的实例完成三条烟雾测试：创建一条游戏、重写一条游戏、批准一条投稿；逐条核对预览 canonical 会社与正式关系一致，Bangumi 独有发行 / 制作会社没有被丢弃，并且没有唯一冲突残留。若失败，把 flag 恢复为 `false` 并重启；Phase B 兼容层可承接 flag-off 流量，此时可以恢复写入后再排查。只有兼容层也失败才需要继续停写。
+检查只接受空差异，或经过 PostgreSQL 实际定义核验的 Prisma 7.8 发行日期索引精确识别差异，目标为 `public.patch_released_idx`。不能扩大例外，也不要执行其建议的删除与重建 SQL；它会反复显示，重建可能阻塞生产写入。其他差异通过审核迁移解决，再按[固定发布流程](../project/deployment.md#发布已经审核的版本)切换。
 
-Phase B 后应用失败时，先在 resolver=false 下运行 `pnpm deploy:rollback` 恢复 `.deploy/previous`，并做 flag-off 兼容烟雾；这一步不改数据库。只有 previous release 的兼容层也无法在 Phase B 上运行时，才继续保持停写并执行 constraint rollback SQL，随后运行 rollback postflight。rollback 只移除两个最终唯一索引、恢复 Phase A 普通索引并取消 `normalized_name NOT NULL`，不删除 company、identity、external ID 或投稿快照数据；数据库回到 Phase A 后才能启动只兼容 Phase A 的旧应用。
+## 按能力选择迁移
 
-生产变更要求：
+只运行目标环境尚缺且已经审核的依赖，不把整表当作无条件批处理。每行链接按顺序执行。
 
-- 先备份。
-- 在部署前先运行 review 通过的 preflight/sync SQL；大数据操作先 dry-run。
-- 不在生产 `prisma db push` reset database。
-- 大表数据修复要分批、可重入、可观测。
+| 能力 | 文件与完成条件 |
+| --- | --- |
+| 通用兼容结构 | [预检](../../migration/production-schema-preflight-2026-05-03.sql)、[同步](../../migration/production-schema-sync-2026-05-03.sql)，完成后重跑预检。 |
+| 私聊列表隐藏 | [预检](../../migration/production-conversation-hidden-preflight-2026-07-01.sql)、[同步](../../migration/production-conversation-hidden-sync-2026-07-01.sql)，复检列定义，不删除历史。 |
+| Steam 软重复 | [预检](../../migration/production-steam-id-soft-duplicate-preflight-2026-07-09.sql)、[同步及内置复检](../../migration/production-steam-id-soft-duplicate-sync-2026-07-09.sql)，在显式事务外执行，确认旧唯一限制解除、普通索引有效；失败索引由加固同步识别恢复。 |
+| 资源访问缺基础表 | [预检](../../migration/production-resource-access-bootstrap-preflight-2026-07-12.sql)、[同步](../../migration/production-resource-access-bootstrap-sync-2026-07-12.sql)，复检后走下节授权迁移；不加入自动部署。 |
+| 私聊贴纸基础与管理 | 依次运行[基础预检](../../migration/production-private-chat-stickers-preflight-2026-08-14.sql)、[基础同步](../../migration/production-private-chat-stickers-sync-2026-08-14.sql)、[管理预检](../../migration/production-sticker-admin-preflight-2026-08-14.sql)、[管理同步](../../migration/production-sticker-admin-sync-2026-08-14.sql)。旧安装追加[结构对齐](../../migration/production-stickers-prisma-alignment-2026-08-15.sql)，复检重复内容、封面与外键；不处理发行日期索引。 |
+| 萌萌点账目 | [预检](../../migration/production-moemoepoint-ledger-preflight-2026-08-17.sql)、[同步](../../migration/production-moemoepoint-ledger-sync-2026-08-17.sql)，重跑预检确认结构与幂等初始账目；旧版不记账，不能有写流量时单独回退应用。 |
+| 投稿和素材清理 | 依次运行[发行版本唯一预检](../../migration/production-vndb-relation-id-unique-preflight-2026-08-24.sql)、[同步](../../migration/production-vndb-relation-id-unique-sync-2026-08-24.sql)、[投稿预检](../../migration/production-patch-submission-preflight-2026-08-24.sql)、[同步](../../migration/production-patch-submission-sync-2026-08-24.sql)、[清理预检](../../migration/production-patch-submission-orphan-cleanup-preflight-2026-08-25.sql)、[同步](../../migration/production-patch-submission-orphan-cleanup-sync-2026-08-25.sql)。完成后重跑三份预检，见下文。 |
+| 会社身份基础 | [预检](../../migration/production-company-identity-bootstrap-preflight-2026-08-30.sql)、[同步](../../migration/production-company-identity-bootstrap-sync-2026-08-30.sql)、[复检](../../migration/production-company-identity-bootstrap-postflight-2026-08-30.sql)，先于依赖新结构的代码。 |
+| 标签与会社计数 | [预检](../../migration/production-tag-company-count-preflight-2026-08-30.sql)、[同步](../../migration/production-tag-company-count-sync-2026-08-30.sql)、[复检](../../migration/production-tag-company-count-postflight-2026-08-30.sql)，按下文避免双重计数。 |
+| 会社最终约束 | [预检](../../migration/production-company-identity-constraint-preflight-2026-08-30.sql)、[同步](../../migration/production-company-identity-constraint-sync-2026-08-30.sql)、[复检](../../migration/production-company-identity-constraint-postflight-2026-08-30.sql)，持续停写并完成冻结清理。 |
+| 小喇叭 | [预检](../../migration/production-shoutbox-preflight-2026-09-11.sql)、[同步](../../migration/production-shoutbox-sync-2026-09-11.sql)、[复检](../../migration/production-shoutbox-postflight-2026-09-11.sql)，检查扣费、三人隐藏、官方例外、退款一次及生效边界后开放。 |
+| 问题处理基础 | [预检](../../migration/production-case-preflight-2026-09-13.sql)、[同步](../../migration/production-case-sync-2026-09-13.sql)、[复检](../../migration/production-case-postflight-2026-09-13.sql)，再装下一行扩展。 |
+| 问题附图与提醒 | [预检](../../migration/production-case-feedback-preflight-2026-09-26.sql)、[同步](../../migration/production-case-feedback-sync-2026-09-26.sql)、[复检](../../migration/production-case-feedback-postflight-2026-09-26.sql)，扩展后不重跑只认基础列数的检查，旧反馈与举报不回填。 |
 
-`pnpm prisma:deploy-safe` 是生产部署命令。整个 package command 不是纯只读：既有的 `migration:resource-links` 先运行且可能执行兼容性 schema/data 写入，随后才是只读 schema guard/diff，最后运行 `prisma generate`；它不运行 `prisma db push`，也不应用 diff SQL。只读 guard 只接受空 diff，或经过 PostgreSQL catalog 验证的 Prisma 7.8 `public.patch_released_idx` operator-class 精确例外。任何其他 drift 都会在 build 或 standalone 替换前终止部署，不能把例外扩大到任意 diff 输出。不要执行该假漂移建议的 `DROP INDEX` / `CREATE INDEX` SQL：下一次 introspection 后它仍会出现，而且重建索引可能阻塞生产写入。本地开发、首次安装和 disposable CI 继续使用 `pnpm prisma:push`。
+### 资源访问授权
 
-萌萌点账务上线时，先备份并运行只读 `migration/production-moemoepoint-ledger-preflight-2026-08-17.sql`，审核字段、表和余额 inventory；随后在维护窗口运行对应 sync。sync 在单事务中添加待结算列、明细/暂扣表、外键、约束与查询索引，并为每个既有用户写入幂等的迁移初始余额。成功后再运行 `pnpm prisma:deploy-safe`，确认 schema 无其他 drift 后才部署依赖新表的应用版本。旧应用不知道待结算字段和明细，sync 后回滚应用会继续产生未记账写入，因此应用回滚前必须停写并制定专用兼容/补偿方案。
+先在维护窗口前完成 Steam 软重复与复检。排空旧获取写入并备份，缺基础表先补齐。运行[授权预检](../../migration/production-resource-access-grant-preflight-2026-07-10.sql)，从实际输出取得停写后的最大记录号与含时区切换时刻；空表最大号为 0，不能用示例或停写前旧快照。
 
-小喇叭上线先备份，再按顺序运行 `production-shoutbox-preflight-2026-09-11.sql`、`production-shoutbox-sync-2026-09-11.sql` 和 `production-shoutbox-postflight-2026-09-11.sql`。preflight 与 postflight 只读；sync 在单事务创建 `shoutbox`、把 `patch_report.patch_id` 改为可空并新增 `shoutbox_id` 外键和索引。postflight 通过后运行 `pnpm prisma:deploy-safe`，再部署依赖新表的应用版本并在非生产实例完成 E02-01～03。生产入口开启前应确认普通发布扣费、三人举报隐藏、官方消息不自动隐藏、误判只退款一次，以及横幅生效/过期和维护清单顺序；不能用 `prisma db push` 代替这三份 SQL。
-
-私聊会话隐藏字段上线时，先执行 `migration/production-conversation-hidden-preflight-2026-07-01.sql` 查看 `user_conversation.user_a_hidden` / `user_b_hidden` 是否存在且为非空 boolean；确认后执行 `migration/production-conversation-hidden-sync-2026-07-01.sql`。该同步脚本只添加缺失列、补齐空值、设置默认值和非空约束，不删除数据。
-
-严重提示：
-
-```text
-To apply this change we need to reset the database
-```
-
-生产看到该提示必须取消。
-
-## Cloudflare 缓存清理与排查
-
-- `app/api/utils/purgeCloudflareCache.ts` 按 URL 精确主机名选择默认／图床配置或独立网站配置。变量与 SaaS provider Zone 的填写规则见 [部署文档](../project/deployment.md#环境变量)；不能只凭访问域名推断承载缓存的 Zone。
-- 公开 API 的 `prefixes` 使用 `hostname/path`，不带协议、query 或 fragment；调用方仍可传完整 URL。[前缀清理文档](https://developers.cloudflare.com/cache/how-to/purge-cache/purge_by_prefix/)
-- `[Cloudflare] Purge cache was not confirmed:` 后附 `zone`（`site` / `default`）、`status`、`hostnames`、`reason` 和脱敏 `errors`。`api_rejected` 表示 HTTP 或 JSON 未确认成功，`unreadable_response` 表示响应无法解析，`request_failed` 表示请求异常，`missing_config` 表示显式网站 Zone 缺少 Token。日志不保留 Token、Zone ID 或完整 URL。[官方响应与权限说明](https://developers.cloudflare.com/api/resources/cache/methods/purge/)
-- 多 Zone 请求中任一组失败都会返回 `success: false`，素材与会社清理凭据据此保留重试。不要只用状态码 `200` 判断成功，也不要删除未结算记录来清空积压。
-- 若完整 URL 清理返回 `success: true`，但同一节点仍持续 `HIT` 且 `age` 增长，先核对 Cache Rules 是否同时匹配 `GET` / `PURGE`，以及最后的方法绕过条件是否排除了 `PURGE`。仅前缀清理成功不能代替单 URL 验收。[完整规则与验证方法](../project/performance-optimization.md#cloudflare-cache-rules-推荐配置)
-- 部署验收需分别检查网站页面、公开 API 的多个 query 变体和图床图片：清理后查看内容与 `cf-cache-status` / `age`。若请求被接受但内容仍旧，核对 provider Zone、Token 的 Cache Purge 授权及自定义缓存键；`429` 则按 [清理限额](https://developers.cloudflare.com/cache/how-to/purge-cache/#availability-and-limits) 排查。
-- `e2eCompanyIdentityServer.ts` 将默认与网站的四个 Cloudflare 变量全部置空，覆盖继承配置；E2E 不能触发真实 Zone 清理。
-
-## 验证
-
-脚本/部署改动：
+固定这两个实际值用于本次全部执行：
 
 ```bash
-pnpm typecheck
-pnpm test
-pnpm build
+export OTOAME_ACCESS_MAX_ID='<实际非负最大记录号>'
+export OTOAME_ACCESS_CUTOVER_AT='<实际含时区切换时刻>'
+docker exec -i "$OTOAME_PG_CONTAINER" psql -X -v ON_ERROR_STOP=1 -U "$OTOAME_PG_USER" -d "$OTOAME_PG_DATABASE" -v legacy_max_id="$OTOAME_ACCESS_MAX_ID" -v legacy_cutover_at="$OTOAME_ACCESS_CUTOVER_AT" < migration/production-resource-access-grant-sync-2026-07-10.sql
 ```
 
-不能运行 `pnpm build` 时，要至少说明原因，并静态检查 `postbuild.ts` 和 release packaging 是否同步。
+以完全相同的值再运行[授权同步](../../migration/production-resource-access-grant-sync-2026-07-10.sql)，再将上述命令输入文件换成授权预检，带相同参数复检，确认分类、授权与索引完整。同步在显式事务外执行；中断按现有检查核对，不猜测已完成。
 
-CI/workflow 改动还要静态确认：
+通过结构检查后只启动审核固定版本。旧有效授权最多可能延续 72 小时，新授权固定 24 小时。旧版重新写过旧格式后，下次必须重新排空并建立新快照，不能沿用旧参数。
 
-- workflow 分支是否覆盖当前主分支。
-- 构建期 `.env` 是否满足 `validations/dotenv-check.ts`。
-- 新增 `NEXT_PUBLIC_*` 是否同步 GitHub Environment secrets。
-- release artifact 是否包含 standalone 运行时实际读取的目录或文件。
+### 投稿上线
+
+发行版本预检出现任何大小写重复组时停止人工裁决，不自动合并。唯一同步使用并发索引，不外包事务。投稿预检分别处理主表和画廊缺失，首次缺表可跳过对应行检查；已有不兼容类型、状态或约束须先解决。
+
+完成后重跑三份预检，确认结构存在、非法行数为零、自动更新时间列没有数据库默认值、清理表具备。旧默认值由当前可重跑同步修正，不能忽略检查。先完成清理结构和缓存权限，再启动依赖代码，受权走草稿、上传、提交和审核短流程；没有真实写入授权时在隔离环境验证。
+
+### 会社身份与计数
+
+先装身份基础，部署与之兼容、解析关闭且能同步身份的版本；不能用最终数据模型检查强行跳过中间依赖。回填先预览再应用，完成后变更数应为零：
+
+```bash
+pnpm maintenance:companies:identity:dry
+pnpm maintenance:companies:identity:apply
+pnpm maintenance:companies:identity:dry
+```
+
+历史别名保留为历史证据，不冒充可信来源，不猜外部编号。名称过长时人工核对，不截断继续；不同公司共享别名可保留，不因此自动合并。
+
+计数迁移前先部署不手工增减计数的兼容应用，再安装六类触发器、回填并复检实际定义与计数；重复同步应无回填变化。通过后才部署完全移除旧绝对修复的后续版本，避免双重计数。最终应用和维护脚本都只能由数据库维护关系计数。
+
+最终约束需连续停写创建、重写、投稿批准及会社关系修改，重新盘点和审核冻结清理，按下节预览、执行、清缓存，再安装约束与复检。共享别名告警不必清零，主名和外部身份冲突须处理。以候选实际结构检查发布兼容版本，先保持 `KUN_COMPANY_IDENTITY_RESOLVER_ENABLED=false`，再启用同一服务端开关并重启受控实例。
+
+恢复写入前核对创建、重写、投稿预览与批准三条链路，预览与正式关系一致、有效来源未丢、无唯一冲突。失败先关闭开关并验证兼容路径；兼容也失败则持续停写，按恢复节处理。源码存在不证明生产已经启用。
+
+### 链接健康与维护结构
+
+依次运行[健康预检](../../migration/production-link-health-preflight-2026-10-09.sql)、[同步](../../migration/production-link-health-sync-2026-10-09.sql)、[复检](../../migration/production-link-health-postflight-2026-10-09.sql)，再运行[屏蔽原因预检](../../migration/production-link-health-blocked-preflight-2026-10-17.sql)、[同步](../../migration/production-link-health-blocked-sync-2026-10-17.sql)、[复检](../../migration/production-link-health-blocked-postflight-2026-10-17.sql)。已有基础只补增量，增量后用认识新约束的检查，不重跑旧定义检查。
+
+屏蔽原因同步只替换经过核对的约束，不修改业务记录，锁等待 5 秒、语句上限 60 秒，失败整体回滚。历史获取记录不猜地址版本，也不据此取得当前版本报告资格。回退应用可以保留兼容扩展约束；必须收窄时先停写并确认没有新增原因记录，不能删观察强行回退。
+
+随后运行[维护预检](../../migration/production-link-maintenance-preflight-2026-10-19.sql)、[同步](../../migration/production-link-maintenance-sync-2026-10-19.sql)、[复检](../../migration/production-link-maintenance-postflight-2026-10-19.sql)。先停旧写入并备份，同步单事务、相同超时边界；只接续当前地址、合法最新依据、仍归发布者未结、曾有有效报告且尚无首次回应的普通疑似事项。不改健康时钟、不补发通知，重跑保护真实维护记录。检查后切同版本实例，禁止旧版混跑绕过反馈冻结。
+
+## 冻结会社清理与合并
+
+前提是身份、计数结构和受限审计目录具备，备份已经验证。顺序为盘点、人工裁决、冻结计划、预览、执行和缓存确认。下列路径与摘要须替换为本次真实文件：
+
+```bash
+pnpm maintenance:companies:inventory --out=<审计目录>/inventory.json
+pnpm maintenance:companies:plan --manual-only --inventory=<审计目录>/inventory.json --decisions=<审计目录>/decisions.json --out=<审计目录>/plan.json
+pnpm maintenance:companies:dirty:dry --plan=<审计目录>/plan.json
+pnpm maintenance:companies:dirty:apply --plan=<审计目录>/plan.json --confirm-sha256=<审核计划摘要>
+pnpm maintenance:companies:dirty:cache --plan=<审计目录>/plan.json
+```
+
+人工裁决仅引用本次盘点对象，明确合并、删除、所有者、内容保留与理由。零作品关系不是删除许可，没有明确裁决的对象保留。手工模式不访问 VNDB 或 NextMoe、不提自动合并；两次数据库快照变化拒绝产计划。需外部证据且获授权时，省略手工参数才在规划阶段读取 VNDB 和可选 NextMoe。只有规划可以联网取证，预览和执行不重规划、不访问资料或缓存。
+
+执行要求精确摘要，核对完整前置状态、工具版本、来源与计数，漂移在零写入下拒绝；整体提交或回滚，提交后保存回执。缓存失败只在数据库仍匹配完整后置状态时重试缓存，不重跑数据库动作。合并没有自动拆分，恢复依赖备份和审计物。旧工具盘点与计划不能混用当前版本，关系快照必须包含当前要求的完整来源信息。
+
+后台合并建议检测与驳回不改会社。确认至少选两家，只合并所选，最小编号为保留对象，未选不删并记录排除关系。源公司删除后旧链接可能失效。按实际成员识别跳过与重开，不按相近名称认同一组。
+
+建议表缺失时先运行[建议预检](../../migration/production-company-merge-suggestion-preflight-2026-09-17.sql)和[同步](../../migration/production-company-merge-suggestion-sync-2026-09-17.sql)，再依次执行[子集预检](../../migration/production-company-merge-subset-preflight-2026-09-22.sql)、[同步一](../../migration/production-company-merge-subset-sync-a-2026-09-22.sql)、[同步二](../../migration/production-company-merge-subset-sync-b-2026-09-22.sql)、[第二预检](../../migration/production-company-merge-subset-preflight-2-2026-09-22.sql)、[同步三](../../migration/production-company-merge-subset-sync-c-2026-09-22.sql)、[复检](../../migration/production-company-merge-subset-postflight-2026-09-22.sql)，依赖代码不能提前运行。含旧运营结构的持久库同样不能直接推结构；生产转储只恢复到独立演练库，不对转储保留库操作。
+
+## 日常预览、清理和回填
+
+先核对目标、范围与授权。涉及写入时有备份或明确文件恢复限制，先读预览输出，确认候选与预计变化，再用同样范围执行；预览失败停止。
+
+| 任务 | 预览与执行 | 完成与失败处理 |
+| --- | --- | --- |
+| 资源派生分类 | `pnpm maintenance:resource-attributes:dry`；确认后 `pnpm maintenance:resource-attributes:apply` | 只按已发布资源重算并刷新缓存，待审与封禁不参与。 |
+| 资源类型重分类 | `pnpm migration:resource-type:dry`；确认后 `pnpm migration:resource-type:apply` | 同步游戏派生分类；资源计数触发器由 `pnpm migration:patch-counters` 在审核窗口安装与回填。 |
+| 标签别名重复 | `pnpm maintenance:tags:auto-alias:dry`；确认后 `pnpm maintenance:tags:auto-alias:apply` | 迁移关系、别名及屏蔽偏好，数据库维护计数；多主歧义保留并人工裁决。 |
+| 人工标签合并 | `pnpm maintenance:tags:export --out=<审计目录>/tags.json` 后使用 `pnpm maintenance:tags:merge:dry -- --plan=<审核计划>`；确认后 `pnpm maintenance:tags:merge:apply -- --plan=<同一计划>` | 核对真实盘点，空本地库不能证明生产影响；脏标签清理另有 `pnpm maintenance:dirty-tags:dry` 和对应 `apply`，先审核候选。 |
+| 截图缩略图 | `pnpm maintenance:gallery-thumbnails:dry`；确认后 `pnpm maintenance:gallery-thumbnails:apply -- --limit=50 --batch=20 --concurrency=1 --delay=1000` | 预览不下载原图、不写存储或数据库，执行只补真实缩略图，不改原图；失败看跳过与错误，再缩范围复查。 |
+| 未发送私聊图片 | `pnpm maintenance:conversation-images:dry`；确认后 `pnpm maintenance:conversation-images:apply -- --limit=100 --batch=50 --concurrency=1 --delay=1000` | 默认仅删超过 2 小时、路径符合且不被未删除消息或回复引用的对象；预览默认最多 200，执行前重查引用。失败保留错误，不能把候选当已删。 |
+| 投稿素材积压 | `pnpm maintenance:submission-assets:dry`；确认后 `pnpm maintenance:submission-assets:apply` | 预览不写待办、不删文件、不清边缘。执行依次处理终态投稿积压、持久待办和新无主文件，默认宽限 24 小时，可用 `--grace-hours` 与 `--limit` 调整。 |
+| 内置贴纸 | `pnpm stickers:sync -- --manifest=<本地清单>`；确认后同命令加 `--apply` | 校验后上传与更新目录，不删历史贴纸；格式与步骤见[贴纸维护](private-chat-stickers.md#导入和同步操作)。 |
+
+截图可用 `--patch-id`、`--start-id`、`--limit`、`--max-original-mb` 缩范围，不确定编码成本时加 `--skip-animated-avif`。私聊图片可用 `--conversation-id` 和更长 `--older-than-hours` 缩范围。保持生产低并发，视频工具安装和验证见部署指南。
+
+截图摘要区分总图、已有缩略图、缺图、扫描、合格、更新、跳过和失败。扫描为零且无缺图只表示当前范围无需补图，不表示没有图库。私聊摘要区分扫描、合格、已删、引用中、过新、路径不符和失败，预览不产生删除。
+
+### 投稿素材清理的范围
+
+同一维护命令先处理投稿记录上的清理积压，再处理单独保存的文件清理记录，最后发现新的无主文件。新发现的对象先写入持久待办，再尝试删除。前两类记录的保护范围不同：
+
+| 记录 | 当前检查与完成判定 |
+| --- | --- |
+| 已驳回、违规处理或删除的投稿仍记录的清理积压 | 检查投稿属于可清理状态，按其中的文件记录删除，只从当前配置生成公开地址。文件删除及这些地址的缓存清理确认后，清空投稿上的文件记录；不逐文件复查其他活动投稿或正式条目是否仍在使用，也不保存已经退出配置的旧公开地址。 |
+| 单独保存的文件清理记录 | 执行时重新读取活动投稿与正式内容引用，仍被使用则取消该待办；保留已记录的历史公开地址，并在删除前保存新增地址。文件删除与已记录地址的缓存清理都确认后才结清。 |
+
+迁移图床或资源公开域名、从备份恢复或人工修复数据后，执行投稿积压清理前，操作者须核对待删文件是否仍被活动投稿或正式条目使用，并核对曾使用过的公开域名及其缓存清理情况。引用关系不清时先停止本次清理，仅凭投稿已经结束不能代替文件核对。旧域名缓存尚未确认清除时，即使命令报告完成，也不能认定素材已下架。
+
+积压未清应核对未完成、记账失败与缓存日志，不能手工删记录清空。事项未提交图片与贴纸清理失败没有可套用的通用持久重试任务，不把私聊或投稿清理误用于其他目录。
+
+## 定时任务怎样观察
+
+应用注册每日重置、临时上传清理、浏览量入库、投稿素材巡检、问题超时和链接健康六类任务。临时上传每小时清理超过一天的残留，浏览量每两分钟入库。投稿素材每天上海时间凌晨 4 点只巡检，使用本进程防重入和 8 小时多实例锁，不删除或建立清理待办。
+
+问题超时每小时第 17 分钟处理相关发布者问题的转交、结案与到期前提醒，站方问题和链接健康不混入。健康每小时第 27 分钟处理普通疑似 7 天、核实后普通争议 30 天到期，持久机器冲突与损坏依据跳过。按编号推进，每批 200、最多 10 轮，跳过也推进；游标保存失败只在本进程回退，不承诺跨实例进度。任务锁获取失败跳过整轮，不能套普通技术限频故障放行规则。
+
+修改任务注册或实现后重启应用。常驻任务复用维护引擎但不能关闭共享数据库连接。检查日志与未完成计数，页面正常不能证明任务已经执行。
+
+## 失败与数据库恢复
+
+停写后任一步失败，保持必要写入停止，记录发生在同步前、中还是应用切换中，保留备份和输出并重新核对实际状态。可重入只适用于文件已支持的中断点，不等于任意失败自动恢复。
+
+应用回退只处理运行版本，见[部署恢复](../project/deployment.md#离线回退应用)。旧版必须兼容账务、维护冻结、事项和新约束。新事项不能转写旧队列或删表；暂停新事项创建时，依赖关注记录的小喇叭自动隐藏也需由管理员人工处理。
+
+会社解析失败先关闭开关、验证兼容上一版。只有上一版也不能兼容最终结构，才在持续停写下执行[约束回退](../../migration/production-company-identity-constraint-rollback-2026-08-30.sql)及[回退复检](../../migration/production-company-identity-constraint-rollback-postflight-2026-08-30.sql)，恢复基础可空形态但保留业务数据。计数回退需停关系写入，执行[计数回退](../../migration/production-tag-company-count-rollback-2026-08-30.sql)，部署匹配手工计数版本、检查计数后再开放。[合并建议专用回退](../../migration/production-company-merge-subset-rollback-2026-09-22.sql)也需审阅演练，不与会社数据合并恢复混用。
+
+真正数据恢复是独立的破坏性操作，基于本次已验证备份、恢复目标与审计物制定审核方案，先在隔离库验证。不能用结构强推、重置、清表或未经审核的覆盖恢复对齐。本仓库没有自动撤销任意生产变更的通用任务。
+
+## Cloudflare 共享缓存配置与验收
+
+前提是目标版本已实现公开写入失效、实时统计禁止缓存及私有响应隔离，反代不额外覆盖源站缓存头。先核对区域和令牌权限，SaaS 使用承载自定义主机名的提供方区域，不能从访问域名猜。网站与图床分区时按[运行配置](../project/deployment.md#运行配置)分别填写；显式网站区域缺令牌不会退回默认区域。
+
+按下列顺序建立三条规则，不全站缓存。规则叠加时，同一设置冲突以后命中为准，见[官方顺序说明](https://developers.cloudflare.com/cache/how-to/cache-rules/order/)。下面把 `<网站主机>` 替换为精确主机，不带协议。
+
+第一条只缓存匿名公开 HTML：
+
+```text
+http.host eq "<网站主机>"
+and (http.request.method eq "GET" or http.request.method eq "PURGE")
+and (
+  http.request.uri.path eq "/"
+  or http.request.uri.path eq "/otomegame"
+  or http.request.uri.path eq "/tag"
+  or starts_with(http.request.uri.path, "/tag/")
+  or http.request.uri.path eq "/company"
+  or starts_with(http.request.uri.path, "/company/")
+)
+and not http.cookie contains "kun-galgame-patch-moe-token"
+and not http.cookie contains "kun-patch-setting-store|state|data|kunNsfwEnable"
+and not http.cookie contains "kun-patch-setting-store|state|data|kunBlockedTagIds"
+and not has_key(http.request.headers, "rsc")
+and not has_key(http.request.headers, "next-router-prefetch")
+and not has_key(http.request.headers, "next-router-state-tree")
+and not has_key(http.request.headers, "next-router-segment-prefetch")
+```
+
+游戏详情 HTML、个人页面和框架数据请求不进入该范围。第二条只缓存匿名标签与会社列表 API：
+
+```text
+http.host eq "<网站主机>"
+and (http.request.method eq "GET" or http.request.method eq "PURGE")
+and (
+  http.request.uri.path eq "/api/tag/otomegame"
+  or http.request.uri.path eq "/api/company/otomegame"
+)
+and not http.cookie contains "kun-galgame-patch-moe-token"
+and not http.cookie contains "kun-patch-setting-store|state|data|kunNsfwEnable"
+and not http.cookie contains "kun-patch-setting-store|state|data|kunBlockedTagIds"
+```
+
+两条动作均允许缓存，边缘寿命选择使用源站缓存控制头、缺头则绕过，浏览器寿命尊重源站，保留默认缓存键和完整查询参数，不按设备拆分，缓存欺骗盔甲保持本方案的关闭设置。查询排序仅在套餐支持并有需要时使用，不能忽略查询字符串。设置含义见[官方规则设置](https://developers.cloudflare.com/cache/how-to/cache-rules/settings/)。
+
+第三条放在最后，绕过个性化、框架数据和非白名单业务请求：
+
+```text
+http.host eq "<网站主机>"
+and (
+  (http.request.method ne "GET" and http.request.method ne "PURGE")
+  or http.cookie contains "kun-galgame-patch-moe-token"
+  or http.cookie contains "kun-patch-setting-store|state|data|kunNsfwEnable"
+  or http.cookie contains "kun-patch-setting-store|state|data|kunBlockedTagIds"
+  or has_key(http.request.headers, "rsc")
+  or has_key(http.request.headers, "next-router-prefetch")
+  or has_key(http.request.headers, "next-router-state-tree")
+  or has_key(http.request.headers, "next-router-segment-prefetch")
+  or (
+    starts_with(http.request.uri.path, "/api/")
+    and http.request.uri.path ne "/api/tag/otomegame"
+    and http.request.uri.path ne "/api/company/otomegame"
+  )
+)
+```
+
+第三条动作设为绕过。缓存与方法绕过同时考虑获取和清理方法，因为[单 URL 清理会评估规则](https://developers.cloudflare.com/cache/how-to/purge-cache/purge-by-single-file/#cache-rules-that-match-on-request-properties)；应用调用清理 API 仍为认证请求。不要强制覆盖私有或禁止保存的源站响应，也不要叠加未纳入失效链的反代 HTML 缓存。
+
+验收用 GET 连续请求，同一出口、节点与原寿命内比较内容和响应头，不用 HEAD。设为本次受控公开页面或白名单 API 的完整地址：
+
+```bash
+export OTOAME_CACHE_URL='<本次受控公开地址>'
+curl -fsS -D - -o /dev/null "$OTOAME_CACHE_URL"
+curl -fsS -D - -o /dev/null "$OTOAME_CACHE_URL"
+```
+
+观察 `cf-cache-status`、`age`、`cache-control`、`vary` 和 API 的 `x-kun-cache`。可缓存的匿名响应应能从未命中到命中；登录、成人偏好、屏蔽标签、框架数据、实时统计和写入请求不应命中共享缓存。使用受控账号和浏览器分别验这些情况，不能以伪造登录值证明真实个性化边界。验证不同查询返回正确各自结果，不只比较年龄。平台接受规则不证明所有响应都可缓存。
+
+分别验证页面和图片完整地址清理，以及 API 前缀多组查询。清理前确认命中，在原缓存寿命内触发已授权业务失效，观察新内容、未命中或过期，随后重新命中且年龄重算，避免把自然过期当成功。[前缀清理](https://developers.cloudflare.com/cache/how-to/purge-cache/purge_by_prefix/)用主机与路径，不带协议、查询和片段，覆盖对应查询变体。
+
+任一区域未确认成功，都保留素材或会社清理凭据，不能只凭 HTTP 成功结清。失败核对区域、令牌权限、提供方区域、公开地址、自定义键、规则顺序与清理方法；日志不输出令牌、区域标识、完整资源地址或分享凭据。图片仍旧时核对源对象与浏览器缓存，边缘成功不等于浏览器立即更新。
+
+## 性能与索引评估
+
+先确定测试边缘命中、源站未命中还是个性化请求，绑定源码、数据量、实例、工具和范围。对独立测试环境逐级增加负载，观察延迟分位、错误率、CPU、内存、数据库连接和缓存命中。客户端握手或带宽先饱和时换测量环境，不能据此推断源站上限。生产压力测试需单独授权，本页不保留历史吞吐量作为当前承诺。
+
+索引调整先核对数据库与源码定义，再取得真实查询的执行计划、扫描量和成本，检查统计与长期使用。未使用不等于可删除，索引可能承担去重约束。变更用审核迁移并在验证环境演练，不粘贴临时建索引或全库重建。用途见[索引说明](../project/database-indexes.md)。
+
+## 源码入口
+
+- [维护命令](../../package.json)、[生产检查](../../scripts/checkPrismaProductionSchema.ts)与[迁移文件](../../migration/)
+- [冻结会社计划](../../scripts/companyCleanupPlan.ts)、[执行与回执](../../scripts/cleanupDirtyCompanies.ts)及[缓存重试](../../scripts/companyCleanupCache.ts)
+- [缩略图回填](../../scripts/galleryThumbnailBackfill.ts)、[私聊孤儿清理](../../scripts/cleanupConversationImages.ts)与[投稿素材维护](../../scripts/cleanupSubmissionAssets.ts)
+- [任务注册](../../server/cron.ts)、[任务锁](../../server/tasks/withTaskLock.ts)与[健康任务](../../server/tasks/linkHealthTask.ts)
+- [公开响应缓存头](../../app/api/utils/cacheHeaders.ts)、[内容缓存失效](../../app/api/patch/cache.ts)与[分区域清理](../../app/api/utils/purgeCloudflareCache.ts)

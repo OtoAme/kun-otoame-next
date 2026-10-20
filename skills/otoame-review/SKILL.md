@@ -1,62 +1,28 @@
 ---
 name: otoame-review
-description: Use when reviewing kun-otoame-next code changes for API behavior, Prisma writes, Redis cache invalidation, uploads, auth, deployment, tests, or release risk.
+description: Use when reviewing OtoAme code, documentation, tests, data changes, uploads, authorization, cache behavior, or release risk.
 ---
 
 # OtoAme Review
 
-Use this skill for project-specific code review.
-
-## Review Boundaries
-
-Apply the checklist only to changed behavior and its dependencies. In delegated work, follow `delegate-and-review` when available; one primary reviewer owns the complete review, while Codex handles integration and adjudication.
-
-Blocking findings need a trigger, consequence, evidence and minimal fix. Keep local corrections and optional improvements separate; neither automatically adds a review round. Rechecks cover accepted fixes and their effects, plus newly evidenced serious defects. Do not add speculative mechanisms or demand full implementation reviews of disposable test tools.
+Read the development entry first. Review changed behavior and necessary dependencies within the user's scope; do not turn every change into a whole-system rewrite or multi-model review.
 
 ## Required References
 
-- Review checklist: `docs/project/review.md`
-- Architecture map: `docs/project/overview.md`
-- Module map: `docs/modules/index.md`
-- Testing guide: `docs/project/testing.md`
-- Quality and docs/skill rules: `docs/modules/quality.md`
-- Workspace contracts and lock/notification boundaries: `docs/modules/workspace.md`
-- Deployment guide when CI/build files changed: `docs/project/deployment.md`
+- [审阅指南](../../docs/project/review.md)
+- [模块路线](../../docs/modules/index.md)
+- [质量与证据](../../docs/modules/quality.md)
+- [验证操作](../../docs/project/testing.md)
+- [文档标准](../../docs/project/documentation.md)
 
-For documentation changes, use [otoame-documentation](../otoame-documentation/SKILL.md) and [the documentation standard](../../docs/project/documentation.md) to review factual support and reader tasks. Mechanical checks do not establish content quality.
+## Critical Invariants
 
-## Review Priorities
+Prioritize authorization, privacy, data integrity, accounting, concurrency, cache correctness, upload compensation and release compatibility. Check server boundaries independently of frontend visibility. Protect credentials, historical participation and live file references.
 
-1. Security: auth, roles, CSRF, secret leakage, unsafe redirects, audit log exposure.
-2. Data integrity: Prisma transactions, counters, duplicate handling, destructive schema changes.
-3. Cache correctness: patch/resource/tag/company/favorite invalidation.
-4. Upload safety: Redis consume locks, S3 compensation, finalize, cleanup.
-5. Deployment safety: standalone assets, server.mjs/server.js, PM2 cwd, Prisma client generation, env vars.
-6. Docs/skills: source paths, workflow facts, triggers, module references, and post-commit sync remain consistent.
-7. Tests: regression coverage for behavior changes.
+Use current source and meaningful tests as evidence; mock success cannot establish real constraints, browser behavior or production deployment. High-risk operations require reviewed prerequisites, backups and supported recovery conditions. Application rollback alone does not undo data changes.
 
-Shoutbox reviews must check charge/refund idempotency, three-distinct-reporter auto-hide, official-message immunity from auto-hide and ordinary moderation, effective-time cache boundaries, nullable report targets, and confirmation-before-write for every dashboard moderation action.
+For documentation, verify each new explanation and task step, preserve critical business limits and keep implementation inventories out of prose. Mechanical checks are not factual review.
 
-Resource-access schema reviews must include `migration/production-resource-access-bootstrap-preflight-2026-07-12.sql`, its sync, grant interruption states, Steam invalid-index recovery, fixed snapshots, and command-scoped Release tag pinning.
+Report blocking findings first with a concrete trigger, consequence, source and minimum correction. Separate optional improvements and remaining questions. Recheck accepted fixes and their effects, expanding only for newly evidenced serious risks.
 
-Docs/skill updates must be reviewed as a separate commit from application code, tests, migrations, or generated artifacts.
-
-## Output Format
-
-Lead with findings:
-
-```text
-Critical
-- [file:line] ...
-
-Important
-- [file:line] ...
-
-Minor
-- [file:line] ...
-
-Questions
-- ...
-```
-
-If there are no findings, say that clearly and list unverified risks or commands not run.
+When no findings remain, say so and name unperformed checks. Review authority does not grant production writes, source transfers, publication or deployment.

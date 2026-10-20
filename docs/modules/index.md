@@ -1,43 +1,11 @@
-# Module Documentation Index
+# 模块阅读路线
 
-本文档是 OtoAme 的模块级导航。`docs/project/*` 说明如何运行、测试、部署和 review；`docs/modules/*` 说明代码按模块如何协作。
+全套文档按任务的入口见[维护文档导航](../README.md)。本页说明模块之间怎样衔接，避免只看某一层而误判结果。
 
-## 模块地图
+阅读[页面边界](app-router.md)可先找到用户从哪里进入，再读[业务规则](api-services.md)判断能否操作、收费和时限。涉及保存、下载凭据或文件失败时，继续读[数据与上传一致性](data-cache-upload.md)。页面显示与交互要求归[前端与内容](frontend-content.md)，颜色含义归[主题系统](../theme-color-system.md)。
 
-| 模块                   | 文档                                                   | 主要路径                                                                                                                                                                                                       |
-| ---------------------- | ------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| App Router 与页面      | [app-router.md](./app-router.md)                       | `app/*`, `components/*`, `store/*`                                                                                                                                                                             |
-| API 与业务服务         | [api-services.md](./api-services.md)                   | `app/api/*`, `validations/*`, `types/api/*`                                                                                                                                                                    |
-| 数据、缓存与上传       | [data-cache-upload.md](./data-cache-upload.md)         | `prisma/*`, `lib/redis.ts`, `lib/s3.ts`, `app/api/upload/*`                                                                                                                                                    |
-| 前端组件、主题与内容   | [frontend-content.md](./frontend-content.md)           | `components/*`, `styles/*`, `lib/mdx/*`, `posts/*`                                                                                                                                                             |
-| 运维、脚本、迁移与任务 | [operations.md](./operations.md)                       | `scripts/*`, `migration/*`, `server/tasks/*`, `.github/workflows/*`                                                                                                                                            |
-| 私聊 Sticker           | [private-chat-stickers.md](./private-chat-stickers.md) | `app/api/message/stickers/*`, `app/api/admin/stickers/*`, `app/(site)/admin/stickers/*`, `components/admin/stickers/*`, `components/message/chat/*`, `scripts/syncStickers.ts`, `prisma/schema/sticker.prisma` |
-| 测试、验证与审阅       | [quality.md](./quality.md)                             | `tests/*`, `vitest.config.ts`, `skills/*`                                                                                                                                                                      |
+[工作台与链接维护](workspace.md)贯穿本人权限、资源编辑、用户反馈和健康处理；[私聊贴纸](private-chat-stickers.md)贯穿目录管理、发送资格与媒体展示。它们引用公共业务规则，不另建一套授权或费用规则。
 
-## 贡献者阅读路径
+需要执行变更时，环境准备归[开发指南](../project/development.md)，应用发布归[部署指南](../project/deployment.md)，迁移和日常数据维护归[运维指南](operations.md)。[质量边界](quality.md)说明证据能证明什么，测试步骤和审阅要求分别归[测试指南](../project/testing.md)与[审阅指南](../project/review.md)。
 
-用户工作台、本人编辑、维护事件和健康事项的跨模块契约见 [workspace.md](./workspace.md)。
-
-1. 新贡献者先读 [../project/development.md](../project/development.md)，完成本地启动。
-2. 想改页面或组件，读 [app-router.md](./app-router.md) 和 [frontend-content.md](./frontend-content.md)。
-3. 想改接口或业务规则，读 [api-services.md](./api-services.md)。
-4. 想改 schema、缓存、上传、资源，读 [data-cache-upload.md](./data-cache-upload.md)。
-5. 想改部署、脚本、迁移、定时任务，读 [operations.md](./operations.md)。
-6. 提交前读 [quality.md](./quality.md) 和 [../project/review.md](../project/review.md)。
-
-## 跨模块契约
-
-- API 状态变更请求受 CSRF header + origin/referer host 校验；`/api/upload/*` 必须在 handler 内自行校验。
-- Prisma schema 位于 `prisma/schema`，生产 schema 变更不能直接确认 reset database。
-- Redis helper 会自动补 `kun:touchgal` 前缀；直接用 `redis` 的低层代码必须显式写完整 key 并说明原子性需求。
-- Patch/resource/tag/company/favorite/comment/rating 和详情页 tag/company 关系写入后要同步缓存失效；公开页面和匿名公开 API 的 Cloudflare purge 已接入 `app/api/patch/cache.ts` 的失效 helper。
-- Next standalone 运行时资源要同时出现在 `scripts/postbuild.ts` 和 release packaging。
-- 新环境变量要同步 `validations/dotenv-check.ts`、`.env.example`、README、CI 或说明它只在可选功能中使用。
-
-## 项目 Skills
-
-项目 skills 是项目资产，不属于某个 agent 工具。唯一来源是仓库根目录 `skills/`，`.codex/skills`、`.claude/skills` 和 `.grok/skills` 都是指向它的软链接，让不同 agent 工具自动发现同一份内容。根目录 `AGENTS.md` 要求先读匹配 skill 和 Required References。只修改 `skills/` 下的文件，不要新建工具专用副本。
-
-完整分工表见 [`skills/README.md`](../../skills/README.md)（唯一来源，不在此重复维护）。
-
-Skill 只保留触发条件、必读文档、关键规则和验证命令；具体业务细节以本目录和 `docs/project/*` 为准。
+进入源码前按[技能分工](../../skills/README.md)读取相应技能及必读文档。模块文档维护业务含义，源码链接提供精确追溯。

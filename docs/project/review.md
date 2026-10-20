@@ -1,147 +1,32 @@
-# OtoAme Review Guide
+# 变更审阅指南
 
-本文档用于代码 review。重点不是格式，而是防止项目特定风险进入生产。
+审阅的目标是判断本次变更能否保持业务、权限与数据正确，并找出上线前必须解决的问题。先确定用户要求、变更范围和实际版本，再检查受影响的流程及依赖；不因发现相关代码就扩成全仓重构。
 
-## 快速检查
+## 按后果核对
 
-Review 前先确认改动类型：
+| 领域 | 审阅者应确认 |
+| --- | --- |
+| 身份与隐私 | 每个可直接调用的入口核对登录、角色、归属、可见性与请求来源；私有信息不进公开列表、共享缓存、日志或网址。 |
+| 账务与状态 | 业务、费用、押金和必要日志共同提交；重复或竞争落败不重复结算，奖励回退可如实成为负余额。 |
+| 数据与文件 | 资源编辑比较完整原集合，文件只消费本人登记；失败补偿保护现存引用，持久清理未完成不能丢凭据。 |
+| 反馈与维护 | 处理方、历史参与身份、可见对话、期限及通知正确；维护回应不判健康，通用事项动作不能绕过链接规则。 |
+| 缓存与展示 | 写入覆盖受影响详情、列表与边缘；个人偏好和下载凭据隔离；已保存不能因后处理失败改报回滚。 |
+| 前端 | 手机与桌面核心动作可达，错误保留草稿，确认取消零写入，旧请求不覆盖新目标；验收要求与已验证结果分开。 |
+| 部署 | 审核产物与源码绑定，运行资源齐全，新结构先安装且有备份与失败计划；回退应用不等于恢复数据库。 |
+| 文档与测试 | 新事实有依据，读者能完成任务，安全含义有主要维护位置；测试断言真实行为而非旧措辞。 |
 
-- 页面/UI
-- API/service
-- Prisma schema/data migration
-- Redis/cache
-- 上传/S3/resource
-- 鉴权/CSRF/角色
-- 部署/CI/build
-- 文档/技能
+深入核对时按[模块路线](../modules/index.md)选择相关说明。小喇叭需特别核对重复扣费、三人隐藏、官方例外和退款一次性；下载需核对资源级额度、镜像与版本；会社需核对歧义与计数归属；上传与迁移需核对外部副作用和中断状态。
 
-按类型套用下面的检查项。模块细节见 [../modules/index.md](../modules/index.md)。
+## 操作与证据
 
-## 通用检查
+执行检查按[测试指南](testing.md)，发布和迁移分别按[部署指南](deployment.md)与[运维指南](../modules/operations.md)。审阅授权不自动允许真实数据写入、线上链接检测、提交、推送或部署。
 
-- 改动是否集中在相关业务域，没有无关格式化或大范围重排。
-- TypeScript 类型是否表达了真实数据形态，而不是靠 `any` 绕过。
-- 新增环境变量是否同步 `.env.example`、README、CI。
-- 构建期公开变量是否仅使用 `NEXT_PUBLIC_*`，服务端 secret 是否没有进入前端 bundle。
-- 新增外部调用是否有超时、错误处理和服务端私密变量隔离。
-- 用户输入是否走 Zod schema 或明确 normalize。
-- 用户可见错误是否不会泄漏 token、资源链接、密码、提取码、hash。
-- 测试是否覆盖新规则和 bug regression。
+结构变更不能只看数据模型或模拟数据库测试，应核对现存数据、索引与约束、停写条件、恢复及实际校验。发布脚本的成功日志不能替代目标实例与访问结果；流水线构建通过不代表已运行类型和测试。
 
-## API 和 service
+文档审阅按[文档标准](documentation.md)逐项核对新增解释、操作与失败处理。文档契约若只绑定过期标题或重复清单，指出需要保留的安全含义及新位置；不能要求作者恢复错误说法来满足断言。
 
-- Route handler 是否只负责解析、鉴权、角色和响应。
-- Service 是否封装业务写入、事务和副作用。
-- `kunParse*` 返回字符串错误时是否立即返回。
-- `verifyHeaderCookie` 或 JWT 校验是否存在。
-- 管理功能是否校验 `role >= 3` 或 `role >= 4`。
-- 非 upload API 是否受 middleware CSRF 覆盖；upload API 是否在 handler 内自行处理安全校验。
-- 状态变更请求是否满足 `x-requested-with: kun-fetch` 和 origin/referer host 校验，新增豁免是否足够窄。
-- `NextResponse.json` 返回语义是否符合现有调用端预期。
+## 提交审阅结论
 
-## Prisma 和数据
+先报告会阻止交付的问题，分别写明触发条件、可见后果、具体证据和最小修正。局部措辞与可选改进单独说明，不自动增加审阅轮次。复核覆盖接受的修复、其影响及新出现的严重证据，不重复无限全量检查。
 
-- 缺少 `patch_resource_access` 的生产库是否先运行
-  `migration/production-resource-access-bootstrap-preflight-2026-07-12.sql` 与对应 sync，
-  再运行 grant pair；是否避免生产 `prisma:push`。
-- 是否覆盖空表和非空 Phase 2 snapshot、grant 每个中断点、PK/index 名冲突、
-  `lock_timeout` 完整回滚、Steam invalid index 修复及固定 Release tag。
-
-- 事务是否覆盖必须原子化的写入。
-- `createMany` 是否需要 `skipDuplicates`。
-- 计数器 increment/decrement 是否和关系增删一致。
-- 删除前是否检查引用，尤其是 S3 object、资源链接、评论、收藏。
-- `prisma:push` 是否足够；生产数据变更是否需要 preflight/sync SQL 或 dry-run。
-- Prisma Client 生成是否纳入验证。
-
-## Redis 和缓存
-
-- 新 cache key 是否使用 `lib/redis.ts`，没有裸写未加前缀的 key。
-- 如果直接用 `redis` / `runRedisCommand`，是否需要 Redis hash/Lua/multi 等低层能力，并显式写完整 key 前缀。
-- TTL 是否合理，是否需要 jitter/stale 策略。
-- 写入 patch、resource、tag、company、favorite 后是否调用对应失效函数。
-- 批量删除是否控制数量，避免危险 scan 或阻塞。
-- 锁是否用 token 释放，避免误删他人锁。
-
-## 上传、资源和 S3
-
-- 上传消费是否必须经过 `consumeUpload`。
-- 上传 handler 是否保留角色、萌萌点、CAPTCHA、每日 5GB 配额和待审核资源限制。
-- Gallery 静态图是否仍输出 AVIF 并按开关加水印，动态 WebP/AVIF 是否原样保留动画且跳过水印。
-- Gallery 原图是否保持 `patch/<patchId>/gallery/<imageId>.<ext>` 旧路径，缩略图是否使用 `patch/<patchId>/gallery/thumbnail/thumb-<imageId>.<thumbExt>`，便于在 Network 中直接识别缩略图请求。
-- Gallery 动态原图和缩略图是否有大小上限、正确 URL 后缀和 S3 content type。
-- S3 原图或缩略图上传成功后，后续上传或 DB 写失败是否补偿删除。
-- 完成后是否 `finalizeUpload`，失败时是否记录足够上下文。
-- 本地临时目录清理失败是否可由 cron 后续处理。
-- 删除 S3 object 前是否确认没有其他 `patch_resource_link` 引用。
-- 审计日志是否用 `sanitizeResourceForAuditLog` 或等价脱敏。
-
-## 前端和组件
-
-- Client component 是否只在确实需要 hook、事件或浏览器 API 时使用。
-- Server action/API 调用是否处理 loading、错误和权限失败。
-- Gallery 列表是否使用 `thumbnailUrl ?? url`，灯箱是否仍使用原图 `url`；rewrite 提交是否没有把 `thumbnailUrl` 写回原图字段。
-- Gallery 原图预取是否按当前槽位顺序而不是文件名编号提升优先级。
-- 文案是否和 OtoAme 当前命名一致，避免回退到 TouchGal/GalGame 除非路径兼容需要。
-- 移动端是否不会遮挡核心操作。
-- 新图标优先用 lucide-react 或项目已有图标系统。
-
-## 部署和 CI
-
-- `KUN_DEPLOY_BUILD_SKIP_CHECKS=true` 是否只用于部署构建加速，不替代 `pnpm typecheck`。
-- `postbuild.ts` 是否复制所有 standalone 运行时资源，并有 assert。
-- Release packaging 是否同步复制新增 runtime 目录，并处理 `.next/server`、`.next/BUILD_ID`、Prisma schema 和 `server.mjs`。
-- PM2 cwd、server.mjs/server.js 逻辑是否和产物一致。
-- GitHub Actions 中的 `NEXT_PUBLIC_*` 是否只有公开变量。
-- workflow 分支是否覆盖当前主分支和 PR。
-
-## 文档和 skill
-
-项目文档按[文档规范](documentation.md)复核内容、事实依据与读者任务，检查相应审阅结论和验证结果。`pnpm docs:check` 的机械检查不能代替内容审阅。
-
-- 文档是否引用当前存在的源码路径、脚本名和命令。
-- README、`docs/project/*`、`docs/modules/*` 是否对同一部署/API/cache 规则说法一致。
-- `skills/*/SKILL.md` 的 frontmatter description 是否是触发条件，不是长流程摘要。
-- Skill 是否只保留入口、规则和验证命令，详细知识是否回链到 docs。
-- 新模块是否先更新现有 skill；只有出现新的独立工作流时才新增 skill。
-- 提交信息是否全部使用约定式提交，格式为 `<type>(<scope>): <subject>`。
-- 每个代码提交后是否检查并同步了对应文档和 skill；重大行为、API、数据、缓存、部署、测试或工作流变更必须有同步更新。
-- 文档 / skill 同步是否作为独立提交出现，没有和业务代码、测试或迁移改动混在同一个 commit 中。
-
-## 测试要求
-
-最低期待：
-
-- Bugfix 有先失败后通过的 regression test。
-- 纯函数有直接单元测试。
-- API service 有 Prisma/cache mock 断言。
-- Schema/cache/upload/deploy 类改动至少有说明为何不能自动测试，以及手动验证步骤。
-
-常用命令：
-
-```bash
-pnpm test tests/unit/<target>.test.ts
-pnpm test
-pnpm typecheck
-pnpm build
-```
-
-## Review 输出格式
-
-建议按严重程度输出：
-
-```text
-Critical
-- [file:line] 会导致数据丢失、权限绕过、生产不可启动的问题。
-
-Important
-- [file:line] 可能导致错误结果、缓存脏读、部署失败、缺测试。
-
-Minor
-- [file:line] 可维护性、命名、局部重复。
-
-Questions
-- 需要作者确认的假设。
-```
-
-如果没有发现问题，也要明确说明剩余风险，例如“未运行 `pnpm build`”或“上传流程只做了静态 review”。
+没有发现问题时明确说明，并列出未运行或无法证明的事项。重大文档重写与高风险操作说明由未参与起草者独立复核事实及任务可用性；具体作者和模型服从当前任务安排。

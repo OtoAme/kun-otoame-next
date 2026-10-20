@@ -1,22 +1,11 @@
-# OtoAme
+# OtoAme 协作指引
 
-项目 skills 的唯一来源是仓库根目录 `skills/`。`.codex/skills`、`.claude/skills`、`.grok/skills` 都指向它。改 skill 只改 `skills/`。
+开始修改前，先完整阅读[开发技能](skills/otoame-development/SKILL.md)，再根据[技能分工](skills/README.md)选择领域技能，完整阅读其必读文档。先理解文档和规则，再探索源码与修改文件；文档任务还需阅读[文档技能](skills/otoame-documentation/SKILL.md)与[文档标准](docs/project/documentation.md)。全部维护主题从[总导航](docs/README.md)进入。
 
-动手改这个仓库的应用代码、项目文档、测试、schema、缓存、API、前端、运维或部署之前，先完整读完对应 `SKILL.md`，再读其中 Required References 列出的 `docs/project/*` 和 `docs/modules/*`。先读 skill 和文档，再探代码或改文件。
+项目技能只在仓库根目录的 skills 维护。Codex、Claude Code 和 Grok 的技能目录均通过链接共用这一来源，不建立工具专用副本，也不修改这些链接来完成普通任务。
 
-| 场景                      | 先读                                 |
-| ------------------------- | ------------------------------------ |
-| 任何仓库开发              | `skills/otoame-development/SKILL.md` |
-| 项目文档编写与审阅       | `skills/otoame-documentation/SKILL.md` |
-| API、鉴权、业务规则       | `skills/otoame-api/SKILL.md`         |
-| Prisma、Redis、上传、迁移 | `skills/otoame-data-cache/SKILL.md`  |
-| 页面、组件、主题          | `skills/otoame-frontend/SKILL.md`    |
-| scripts、CI、维护命令     | `skills/otoame-operations/SKILL.md`  |
-| 部署、PM2、环境变量       | `skills/otoame-deployment/SKILL.md`  |
-| 测试                      | `skills/otoame-testing/SKILL.md`     |
-| 审阅                      | `skills/otoame-review/SKILL.md`      |
-| 中文更新日志              | `skills/otoame-changelog/SKILL.md`   |
+用户的明确要求与验收条件决定范围，并优先于技能中的通用流程。安全、可逆且在范围内的本地工作继续进行；破坏性、难以恢复、对外可见、收费或明显扩大范围的动作需要先确认。源码读取授权不包含数据库、对象存储、邮件写入、提交、推送或部署授权。不要把每次开发自动扩大为多模型全量审阅。
 
-仓库开发任务始终先读 `otoame-development`，再读对得上的领域 skill。分工表见 `skills/README.md`。
+探索非配置源码优先使用 fast-context；明确限定当前工作区，排除真实环境配置及其变体、凭据、私钥、数据库备份、依赖与构建目录，不沿链接读取工作区之外的内容。已知短文件可直接读取。不得引用、记录或传输意外出现的秘密或真实私有用户数据。外部库、平台或工具的具体用法先通过 Context7 查官方资料，先解析库标识，再询问具体问题；普通业务核对不做无关外部调研。
 
-非 env 代码探索优先用 fast-context。排除 `.env`、`.env.*` 和凭据。
+只改完成任务必需的文件。每次行为修改都复核受影响的文档与技能；代码和文档同步分别提交，提交采用约定式提交。完成前核对范围、事实与链接，报告实际验证和未验证风险。隐私与受权委派的完整边界见[开发指南](docs/project/development.md)。

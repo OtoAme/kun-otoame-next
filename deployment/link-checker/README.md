@@ -1,73 +1,57 @@
-# Pinned OtoAme link checker
+# 固定版本链接检测服务操作指南
 
-This directory contains a bounded patch and regression overlays for [kungal/kungal-link-live-checker](https://github.com/kungal/kungal-link-live-checker) at `c74022f4dbbb7c8c39be7da15701763efa2ffffd`; it does not vendor the upstream repository. `pin.json` binds the upstream archive and patch hashes. `UPSTREAM-LICENSE` preserves the upstream AGPL-3.0 license; distribute the exact patched source, license and manifest with any service artifact.
+本目录保存独立检测服务的固定源码清单、有限补丁、合成回归和服务配置草案，不包含整份上游源码，也没有安装生产服务。网站如何接入见[部署指南](../../docs/project/deployment.md#启用链接检测)，业务判断见[链接检测规则](../../docs/modules/api-services.md#链接反馈健康与维护)。
 
-These instructions describe this pinned service artifact. Current website integration with remote LLC supports five providers, recent cached observations and explicit blocked verdicts; see the [website contract](../../docs/modules/api-services.md#链接报告健康与检测040510) and [connection settings](../../README.md#link-live-checker-接入). The pinned patch itself still returns unknown for blocked results and its example disables four providers.
+固定服务基于 [kungal 链接检测项目的指定提交](https://github.com/kungal/kungal-link-live-checker/tree/c74022f4dbbb7c8c39be7da15701763efa2ffffd)。[固定清单](pin.json)绑定上游归档与补丁摘要，[上游许可证](UPSTREAM-LICENSE)保留 AGPL 归属；分发服务产物时一并提供精确补丁源码、清单和许可证。网站适配的远端服务与此固定产物是独立版本，不能互相代替验收。
 
-The HTTP interface remains `POST /v1/check`, JSON `url` and optional `passcode`, `Authorization: Bearer`, and `provider/status/reason/providerCode/checkedAt/cached` results. Empty service keys reject all business requests. Provider faults remain HTTP 200 with unknown; `/healthz` is public and only confirms the process runs. Results and error responses use `private, no-store`.
+## 构建与本机验证
 
-## Build and verify
+前提是已有 Python 3、Git 和 Go 1.23 或更高版本，取得固定公开源码归档，准备仓库外的独立目录。下列尖括号替换为实际绝对路径，构建目录必须不存在；工具拒绝覆盖已有目录。操作不加载网站真实环境配置，不连接数据库、Redis、存储或邮件，也不请求真实分享。
 
-Use existing Python 3, git and Go (the pinned source requires Go 1.23+). The build command performs no dependency installation or live provider probes. Its tests create only local HTTP/TLS fixtures, synthetic DNS and transport responses. Build source, logs, caches and binaries stay in a **new** directory outside the repository; an existing directory is rejected without replacement.
+先下载精确归档到准备好的隔离目录：
 
-Download the exact public archive to your isolated task directory if it is not already available:
-
-```sh
-curl --proto '=https' --connect-timeout 10 --max-time 30 -fL \
-  https://codeload.github.com/kungal/kungal-link-live-checker/tar.gz/c74022f4dbbb7c8c39be7da15701763efa2ffffd \
-  -o /private/tmp/otoame-ops-20261009/checker/pinned-source.tar.gz
+```bash
+curl --proto '=https' --connect-timeout 10 --max-time 30 -fL https://codeload.github.com/kungal/kungal-link-live-checker/tar.gz/c74022f4dbbb7c8c39be7da15701763efa2ffffd -o <隔离目录>/pinned-source.tar.gz
 ```
 
-Build the native artifact (the output directory must not exist):
+构建本机产物：
 
-```sh
-python3 deployment/link-checker/build.py \
-  --archive /private/tmp/otoame-ops-20261009/checker/pinned-source.tar.gz \
-  --work-dir /private/tmp/otoame-ops-20261009/checker/native-build
+```bash
+python3 deployment/link-checker/build.py --archive <隔离目录>/pinned-source.tar.gz --work-dir <尚不存在的构建目录>
 ```
 
-For a Linux amd64 target, use a different new directory and add `--goos linux --goarch amd64`. Tests still run natively before cross-compilation. All Go paths are isolated, toolchain downloads/proxies are disabled, and no repository environment or upstream deployment script is loaded. `manifest.json` records revision, archive/patch/overlay/source/binary hashes, toolchain metadata and actual test counts. `bin/llc` is the exact tested-source artifact. Run `go test -json -count=1 ./evaluation ./internal/providerhttp` in the prepared source to focus on the regressions.
+构建使用已有工具，不自动安装依赖；禁用工具链下载与代理，隔离源码、日志、缓存和二进制。测试使用本机 HTTP、TLS、DNS 和合成网络响应。需要 Linux amd64 产物时换一个新目录并加 `--goos linux --goarch amd64`，先执行本机测试再交叉编译，不能直接在本机运行异构产物。
 
-Exercise the exact native binary, authentication and outbound rejection over real localhost HTTP:
+检查输出清单中的版本、源码、补丁、测试和二进制摘要，确认确实由本次固定源生成。对本机产物执行受控 HTTP 验证：
 
-```sh
-python3 deployment/link-checker/smoke.py \
-  --manifest /private/tmp/otoame-ops-20261009/checker/native-build/manifest.json \
-  --report /private/tmp/otoame-ops-20261009/checker/native-smoke.json
+```bash
+python3 deployment/link-checker/smoke.py --manifest <本机构建目录>/manifest.json --report <隔离目录>/smoke.json
+python3 deployment/link-checker/tests/startup.py --manifest <本机构建目录>/manifest.json --report <隔离目录>/startup.json
 ```
 
-The smoke requests are synthetic, and its configured loopback provider endpoint must receive zero calls. It stops its checker and fixture before returning; the three-state HTTP regression uses the actual handler/service/providers with a synthetic provider transport in the Go suite.
+验证应完成认证、出站拒绝与启动失败检查，并结束自己启动的进程。失败保留隔离报告，核对归档摘要、工具版本和具体合成用例，不改固定值绕过校验，也不换真实网盘来证明通过。
 
-## Local run and service draft
+## 服务配置与启用条件
 
-An isolated local launch supplies only dedicated service configuration; this example deliberately leaves the API key empty and providers other than Quark disabled:
+固定草案监听 `127.0.0.1:6734`，缓存默认关闭，业务密钥为空时拒绝全部业务请求。进程健康页只说明进程在运行，不证明能访问某网盘或完成下载。业务入口为 `/v1/check`，使用独立服务密钥，不用网站登录凭据、用户 cookie、提取码或解压密码作认证。
 
-```sh
-env -i PATH=/usr/bin:/bin LLC_ADDR=127.0.0.1:6734 LLC_API_KEYS= \
-  LLC_CHECK_TIMEOUT=2s LLC_RATE_RPS=1 LLC_RATE_BURST=1 LLC_BATCH_MAX=1 \
-  LLC_CACHE_TTL_ALIVE=0s LLC_CACHE_TTL_DEAD=0s LLC_CACHE_TTL_UNKNOWN=0s \
-  LLC_QUARK_VERIFY_DETAIL=true LLC_QUARK_BLOCKED_AS_DEAD=false \
-  LLC_UC_ENABLED=false LLC_BAIDU_ENABLED=false LLC_CAIYUN_ENABLED=false LLC_PAN123_ENABLED=false \
-  /private/tmp/otoame-ops-20261009/checker/native-build/bin/llc
-```
+核对[配置草案](checker.conf.example)和[系统服务草案](otoame-link-checker.service)，不要把文件存在解释为已安装。当前示例只启用夸克，其他四家关闭；固定补丁将屏蔽与部分违规结果保留为无法判断，即使旧配置开关要求判失效也不改变它。网站远端支持更多提供者或屏蔽结果，需核对实际远端版本，不能套此产物的默认能力。
 
-Supply a dedicated service key through the operator's process/service configuration for authenticated checks. Do not use a website login token, user cookie or extraction/unzip password as service authentication. The checker owns Baidu's anonymous cookie jar. It needs no database, Redis, S3, mail service, browser or scanning task.
+取得生产部署授权并完成目标 Linux 验证后，将审核产物放入不可变版本目录，维护当前与上一版的受控指向，服务配置由管理员管理且权限为 0600。目标架构、系统服务限制、重启和资源上限须在目标机验证；本目录不自动提供主机、入口或云资源。
 
-`checker.conf.example` and `otoame-link-checker.service` are deployment drafts, **not installed services**. After explicit production approval, use an immutable reviewed artifact under `/opt/otoame-link-checker/releases/<revision>-<patch-hash>/llc`, atomically point `current` to it, and keep a root-managed 0600 `/etc/otoame-link-checker/checker.conf`. Retain the previous artifact for rollback. Verify the manifest and target architecture first. The unit runs a dynamic unprivileged user with read-only system/home, private tmp and bounded restarts/resources; target Linux/systemd and limits require target-host validation.
+跨机使用限制来源为网站后端的 HTTPS 入口，仅转发单次检测，保留认证、不跳转、不缓存，限制请求大小与并发，不记录请求体、参数、认证或 cookie。批量上限设为一项不会删除批量路由，入口仍需拒绝该路由。检测服务出站地址与身份登录流量分离。
 
-The example disables UC/Baidu/Caiyun/123; those requests return unknown. Their implementations remain available for synthetic verification and explicit enablement. Quark is always registered by the pinned entry point. This artifact's live acceptance covers a normal and an abnormal Quark sample; individual deleted/cancelled/expired branches are covered by synthetic regressions. Its blocked 41010 response remains unknown under the patch's own provider policy.
+## 结果与出站限制
 
-Keep the checker on its own egress IP, separate from identity/login traffic. Its listener defaults to `127.0.0.1:6734`; a cross-host caller uses separately approved private TLS ingress restricted to the website backend. Forward only `/v1/check`, preserve Authorization, disable caching, bound request size/concurrency, and omit request body/arguments/authorization from logs. `LLC_BATCH_MAX=1` limits batch size but does not remove the batch route; deny it at ingress. No private ingress, system service or cloud resource is provisioned by these assets.
+提供者必须逐个经过资格审阅：能识别地址不等于检测结论已经可靠。分享与提供者接口使用 HTTPS 和精确允许主机，拒绝任意子域、重定向、内网、特殊用途地址或混合解析；连接绑定经过校验的实际地址并保留原主机证书验证，环境代理不能绕过。
 
-## Hardened boundaries and sample qualification
+固定产物对缺字段、重复或损坏数据、超量响应、错误提取码、验证码、超时和网络故障返回无法判断，不因接口成功就称链接可用。JSON 响应上限 1 MiB，百度页面 512 KiB，初始化 cookie 读取 64 KiB。启用缓存时身份区分实际提取码并保留原观察时间，网站还要独立核对新鲜度与当前地址。
 
-- All user share and provider API URLs require HTTPS, exact allowed hosts, no userinfo and port absent or exactly 443. The 123 list contains `123pan.com`, `123684.com`, `123865.com`, `123912.com` and their `www` forms; arbitrary subdomains, personal `share.123pan.cn` and other aliases are unknown until a separately reviewed exact-host addition and live samples. No regex wildcard is used.
-- The provider transport disables environment proxies, validates every resolved IPv4/IPv6 address at the actual dial, rejects private/special-use/mixed answers and binds the connection to the vetted literal IP. TLS still validates the original provider hostname. All redirects are rejected, including Baidu's rewrapped client. Loopback endpoint overrides cannot bypass the shipped transport.
-- Required numeric/string codes and success fields, token/detail shapes, positive Baidu share identifiers and nonempty successful data objects are checked. Duplicate JSON keys, malformed/trailing values, over-limit bodies and 429/5xx/redirect responses are unknown. Only explicitly mapped Quark/UC 403/404 JSON codes are retained; other providers require HTTP 200.
-- Reads use cap+1: JSON 1 MiB, Baidu page 512 KiB and cookie warmup 64 KiB. Quark/UC missing detail cannot claim available. Blocked and partial-violation results stay unknown even with the legacy blocked-as-dead flag. Baidu extraction-code pages, Caiyun 9188 and 123 wrong-code 5103 are unknown. 123 gone 5103 requires the exact audited 不存在 message, while Baidu's page-negative candidate requires the existing exact gone title and no conflicting code prompt.
-- Three cache TTL defaults and this deployment configuration are zero. If explicitly enabled, cache identity includes the actual selected extraction code under SHA-256; different code values cannot cross-cache. Cached results retain the original observation time. Website health decisions apply their own freshness, version, round and input guards.
-- Logs contain fixed events and safe provider/status/reason/duration/cache metadata; they omit raw URL, extraction code, provider message/body, unknown provider codes, authorization and cookies. The response exposes only audited known providerCode values, never submitted credentials.
+固定产物的 123 精确主机范围不等于网站适配器范围；新别名须单独审阅与受权样本验证。日志只保留安全提供者、结果、耗时与缓存等信息，不记录分享地址、提取码、原始响应或认证。
 
-Synthetic tests prove these boundaries, not live-provider reliability or download completion. The 30 HTTP and 24 provider regression groups trace the prior evaluation's cases, with additional missing/duplicate/type/oversize/DNS/IPv6/TLS/redirect/log tests. Live tests require explicit sample authorization and a separate private sample file outside the repository. Record only opaque sample ID, expected/actual safe verdict, safe reason/providerCode/checkedAt and exact artifact hashes; never request URLs, passcodes or raw provider responses in logs or reports. This artifact's normal/abnormal Quark scope is covered by the two authorized samples; distinct failure subtypes use synthetic regression coverage. Website integration, full E10/E2E and production deployment are separate tasks.
+合成验证支持安全边界判断，不能证明真实网盘可靠率或下载完成。真实样本需另行授权并保存在仓库外私有文件，报告只记录不透明样本编号、预期与实际安全结论、时间及精确产物摘要，不输出真实链接或响应。失败后恢复到已验证上一产物需同时核对服务配置与网站兼容性，不改网站数据库。
 
-The JSON duplicate guard uses the same Unicode case-fold equivalence as encoding/json v1, including nested keys. Unexpected listener startup failure exits nonzero for Restart=on-failure; normal SIGTERM exits zero. The bounded process regression is `python3 deployment/link-checker/tests/startup.py --manifest <native manifest> --report <new isolated report>`.
+## 源码入口
+
+- [可复现构建](build.py)、[本机验证](smoke.py)与[回归覆盖](tests/)
+- [有限上游补丁](hardening.patch)与[固定版本及摘要](pin.json)

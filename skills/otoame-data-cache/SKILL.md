@@ -1,50 +1,31 @@
 ---
 name: otoame-data-cache
-description: Use when changing kun-otoame-next Prisma schema, database access, Redis cache, upload metadata, S3 resources, patch resource attributes, migrations, or cache invalidation behavior.
+description: Use when changing OtoAme persistence, database structures, Redis caches, upload metadata, object storage, resource attributes, migrations, or invalidation.
 ---
 
-# OtoAme Data Cache
+# OtoAme Data, Cache and Uploads
 
-Use this skill for persistence, cache, and upload consistency work.
+Read the development entry first. Linked guides own detailed persistence guarantees.
 
 ## Required References
 
-- `docs/modules/data-cache-upload.md` — Prisma, Redis, Patch 缓存, 上传与 S3, 投稿素材的 key 布局, 资源派生属性, 下载授权与事件
-- `docs/modules/operations.md` — 迁移策略, 维护脚本
-- `docs/project/testing.md`
-- `docs/modules/workspace.md` — independent maintenance rounds, lock order and production migration
+- [数据、缓存与上传一致性](../../docs/modules/data-cache-upload.md)
+- [权限与业务规则](../../docs/modules/api-services.md)
+- [本人工作台与链接维护](../../docs/modules/workspace.md)
+- [数据库维护与迁移](../../docs/modules/operations.md)
+- [生产部署与恢复](../../docs/project/deployment.md)
+- [测试与验证](../../docs/project/testing.md)
 
-## Rules
+## Critical Invariants
 
-- Resource links retain stable IDs and require the complete original `baseLinks` for edits; only canonical address changes advance version. Lock resource → actual links → maintenance → cases for resource mutations; single-link paths never acquire a parent lock in reverse, including implicit FK locks. Single-link deletion uses access `SetNull` and preserves quota facts; access credentials/event version come from one transaction and restore remains read-only/current-version. See `docs/modules/data-cache-upload.md`.
-- Health reports/checks/history use the dated link-health migration trio and current-input signatures; never invent historical acquisition versions or expose old-address history/signatures publicly. Upload/checker calls stay outside whole-transaction retries, and postcommit failures cannot report an already committed save as rolled back.
-- Link-check reasons also have a database CHECK. `share_blocked` requires the 2026-10-17 incremental migration trio after the base schema; verify real PostgreSQL constraints on a disposable database, not only Prisma mocks. See `docs/modules/data-cache-upload.md` for rollout and postflight order.
-- Historical case participation comes from the selected latest handoff event, without a resource join or 500-row cap (D37); batch list identity facts. Keep account existence and notification foreign keys safe against concurrent account deletion. A PostgreSQL foreign-key failure aborts the transaction: never catch it and continue writing inside that transaction. Preserve resource-before-case locking and keep Redis/image consumption outside any whole-transaction retry.
-
-- Development hot reloads must reuse Prisma Client and its owning pg.Pool together through the existing global runtime. Keep prepared statement naming state with that pool; do not create a new pool beside a cached client. CLI cleanup must close that same pool.
-
-- Production never runs `prisma db push`. Cancel any "reset the database" prompt; run the reviewed preflight/sync SQL, then `pnpm prisma:deploy-safe`.
-- That guard accepts only an empty diff or the catalog-verified `public.patch_released_idx` operator-class false drift — never widen it, never run its proposed `DROP INDEX` / `CREATE INDEX`.
-- Every balance change goes through the moemoepoint service in the owning transaction. Only `moemoepoint_reserved` has a non-negative CHECK; never clamp a reversal.
-- Shoutbox rollout uses its reviewed preflight/sync/postflight SQL; `patch_report.patch_id` is nullable only because shoutbox reports may have no patch, and `shoutbox_id` uses `onDelete: SetNull` to retain report history.
-- `ops_case` uses nullable ordinary unique keys for active-case deduplication and publisher daily limits; `patch_info`, `other × patch`, `resource_request × patch` and site-feedback dedup keys include the opener. Subscriptions do not advance state revisions. Case report images register `case:image-upload:<uid>:<key>` in Redis and are consumed atomically on submit; production adds `reminded_revision` and `ops_case_message_image` only through the 2026-09-26 case-feedback SQL trio. Close through `closeCaseInternal`, log staff closures in that transaction and exclude the actor from deduplicated notices. Message hiding conditionally updates `payload.hidden_at`; retain text and image references and redact non-admin reads. Resource/content writes and case closure share a transaction: after any write, a failed state guard must throw to roll back before conversion to a business error. Resource operations lock the resource before its case.
-- Call the matching invalidation helper after every patch/resource/tag/company write, including the patch content cache for company-relation writes.
-- Cloudflare purges use explicit default/site provider zones selected by the visitor hostname; keep public URLs, normalize prefixes to hostname/path, and require every zone to acknowledge success before settling cleanup records. Cache Rules must match `GET` / `PURGE`; method-based bypass excludes both. See `docs/modules/data-cache-upload.md`.
-- `patch_tag.count` and `patch_company.count` are maintained only by the six statement-level relation triggers. Application and maintenance code must never increment, decrement, or absolutely repair them; relation helpers return changed IDs only for cache invalidation.
-- Phase B company identity uses `patch_company.normalized_name NOT NULL UNIQUE` and a unique `(source, external_id)` pair. Cross-company alias identities remain non-unique. Every company create path must derive `normalized_name` through the shared normalization/helper path, and production installs these constraints only through the reviewed constraint preflight/sync/postflight SQL.
-- Because cross-company aliases are intentionally non-unique, legacy writers must reject multi-owner alias matches and overlapping batch evidence; they must never use database row order to choose a company. Coalesce normalized-equivalent batch names before insert. Before enriching a canonical company with authoritative metadata, lock the row and re-read it so concurrent refreshes cannot overwrite each other.
-- Pass helper keys unprefixed; direct `redis` / `runRedisCommand` needs an explicit full prefix.
-- Shoutbox shares raw cache values across reader preferences and applies game visibility when serializing each response. Respect `validUntil` in Redis and HTTP TTLs. Public writes advance the independent revision before best-effort `shoutbox:*` and edge invalidation; a below-threshold report insert does not change public server data. Read failures return 503, distinct from successful empty results. Details and fallback limits: `docs/modules/data-cache-upload.md`.
-- Never delete an S3 object before its durable cleanup credential exists: `patch-submission/` deletes upsert `patch_submission_orphan_cleanup` in the same short DB transaction; `published` keys never enter cleanup.
-- Patch-domain deletes resolve keys only through `extractS3Key` (exact configured bases, lookalike hosts rejected); conversation images and the gallery backfill keep their own dedicated, stricter resolvers.
-- Upload publishing keeps `consumeUpload` → S3 → `finalizeUpload` with compensation on every failure path.
-- Action rate limits fail open on Redis errors; the image hourly quota fails closed — never unmetered S3 writes.
-- Company cleanup consumes a reviewed frozen plan, locks all company state, verifies exact pre-state/count invariants, and preserves provenance. Zero relations never imply deletion. Cache receipt retry is allowed only while the database matches the full post-state.
+- Preserve stable link identity, complete edit comparisons and address-version authorization. Restore only previously revealed, current-version mirrors without extending grants or consuming quota.
+- Coordinate resource, link, maintenance and case locks in the established order. Recheck ownership and state while locked; retry only recognized database conflicts, without repeating uploads or external detection.
+- Keep the database client with its owning connection pool across development reloads. Long-running services must not disconnect shared infrastructure.
+- Use shared accounting and database-maintained relation counts. Preserve negative balance reversals, deposit settlement and company ambiguity protections.
+- Refresh every affected content, list and edge cache. Preserve personalized response isolation and time-bound public visibility; cache failures do not undo committed writes.
+- Consume only registered uploads. Compensate failed saves without deleting referenced objects; persist submission cleanup obligations before deleting files, retaining them until storage and edge cleanup both succeed.
+- Production changes require verified backups, reviewed migrations, prerequisite checks and compatible application rollout. Never accept a database reset or widen schema-check exceptions to conceal drift.
 
 ## Verification
 
-```bash
-pnpm test tests/unit/<target>.test.ts   # while iterating
-pnpm test:changed && pnpm typecheck     # default commit gate
-pnpm test                               # checkpoints — see docs/modules/quality.md
-```
+Test permissions, races, cache effects and compensation. Use disposable infrastructure for real constraints and migration recovery; report unverified runtime behavior.

@@ -1,343 +1,102 @@
-# OtoAme Testing Guide
+# 测试与隔离验收操作指南
 
-本文档记录当前项目测试策略和新增测试约定。
+测试要证明变更后的业务结果、失败边界与权限保持正确。单元测试、真实数据库、浏览器和目标环境各回答不同问题，不能互相代替。证据的判断见[质量边界](../modules/quality.md)，具体业务规则见[模块路线](../modules/index.md)。
 
-## 当前测试栈
+## 选择相称的检查
 
-- Runner：Vitest 4。
-- 配置：[vitest.config.ts](../../vitest.config.ts)。
-- 环境：`node`。
-- 全局 API：`globals: true`。
-- 路径别名：`~` 指向仓库根目录。
-- Node：使用 22.15+，以匹配 Vitest 对 `vi.mock` / `vi.hoisted` 的 Node loader 要求和 CI 主版本环境。
+前提是依赖已安装、使用项目要求的 Node.js 版本，并且清楚命令是否接触真实服务。单元测试用 Vitest 的本地替身隔离数据库、Redis、存储和外部平台，不能连接真实服务。
 
-运行：
-
-```bash
-pnpm test
-pnpm test tests/unit/resource-link.test.ts
-pnpm test tests/unit/api/batch-tag.test.ts
-```
-
-## 测试目录
-
-```text
-tests/unit/
-  api/
-  *.test.ts
-```
-
-现有覆盖重点：
-
-- API service 逻辑：`tests/unit/api/*`。
-- 事项处理：`api/case-feedback-service.test.ts`、`api/case-service.test.ts`、`api/case-route.test.ts`、`api/case-rate-limit.test.ts`、`api/admin-inbox-service.test.ts` 覆盖等待处理方口径、14 天手动结案、按开启者去重、隐藏对话裁剪、通知排除操作者、管理员结案日志、完整资源名搜索和回复限频，以及违规举报开启者的对话与列表摘要过滤（D31）、站方介入不算发布者首次回应与回复署名（D32）、撤回后由最早关注者接替并重置报告者时限（D33）、误判恢复记为不成立、搜索范围与「全部」下编号命中排首位（只在默认排序）。`api/case-service.test.ts` 另用按条件过滤、排序的内存替身锁定事项中心排序：每一列的升降序在任意页大小下逐页翻完都不重复、不遗漏，状态与类型按界面分组分段读取（跨组的一页每组只查一次，组大小取自筛选后的行），人名排序时无人的行在最后，默认与编号排序只读一次。`api/case-feedback-service.test.ts` 覆盖 D36：原发布者结案记为发布者、不写结案日志、只通知报告者与关注者，沿用发布者的结案说明规则，可以直接结案时提请被拒，复核转来、重开过或不是原发布者时结案被拒，重开后留在网站管理员队列、重开通知也发给原发布者（链接 `/issue`），且不能复核；以及处理方回复都带 `authorSide`、D33 接替后的原开启者不带、资源删除后从转交事件取原发布者；D40 的解压或运行、求资源或催更、资源其他问题以资源为目标时交发布者并写日限额键、7 天转交与 14 天结案照常，条目上的求资源或催更归站方、按开启者去重、不进超时任务，发布者以「不采纳」结案记为已驳回且须写理由，网站管理员可直接登记「已处理」。`case-validation.test.ts` 只接受已知的排序列与方向，并接受 D40 的类型与目标组合。`dashboard-case-detail.test.tsx`、`dashboard-inbox-presentation.test.tsx`、`case-detail-permissions.test.tsx` 与展示／校验测试覆盖回复附图、不交给报告者、确认后隐藏、举报内容、指南链接、复核最终提示、提请收起、收件箱内详情在失败后保留输入、处理方一侧按实际身份署名、剩余时间向上取整，以及移动目标搜索的失败与过期响应；`case-detail-permissions.test.tsx` 另覆盖 D36 的结案表单取代提请、确认框多出的重开说明、网站管理员在用户侧仍走后台入口，`case-display.test.ts` 覆盖署名只认 `authorSide`、未标记的非开启者归为其他报告者；`case-entry-buttons.test.tsx` 覆盖资源卡片的发错条目直接交网站管理员，解压或运行、求资源或催更与「其他」提交各自类型且说明与输入框同时显示、下载慢只给指南，游戏反馈的发错条目与链接失效两个指引项不建事项，求资源或催更以条目为目标交网站管理员；`dashboard-case-center.test.tsx` 覆盖搜索范围写进网址参数、没有搜索词时只改范围不重新请求，状态筛选按视图给选项、写进网址并代替视图的状态参数、换类型与搜索时保留而换视图时清除，以及表头按钮的可访问名称、升降序切换、排序写进网址与「发布者处理中」按发布者排序；`case-dialogue-avatars.test.tsx` 覆盖两处对话显示已加载的头像且只作装饰、图片加载前保留首字、首字按一侧配色（处理方主色、注销账号虚线、被隐去身份的报告者不画虚线）、系统事件不画头像；`dashboard-case-center-nav.test.tsx` 覆盖分组标题写明处理方并作为该组列表的名称、导航说明列出归站方的事项；`case-issue-header.test.tsx` 覆盖 `/issue` 顶栏在站点名旁显示网站图标且链接名只读站点名。真实 PostgreSQL、Redis、图片上传与浏览器路径需在隔离环境验证，mock 不能代替。
-- JWT session：`tests/unit/jwt-session.test.ts`。
-- Redis 封装：`tests/unit/redis.test.ts`。
-- Cloudflare：`api/purge-cloudflare-cache.test.ts` 覆盖默认／网站 Zone 分发、共享与独立 Token、SaaS 访客 URL 保留、前缀归一、部分失败与脱敏日志；`e2e-company-identity-server.test.ts` 覆盖四个清理变量全部置空。真实 Zone 权限和边缘命中需按部署文档验收。
-- 创建/重写 store 合并：`tests/unit/edit-store.test.ts`。
-- 会社维护：`company-identity-maintenance.test.ts` 覆盖身份盘点、NextMoe stored/proposed；`company-legal-suffix.test.ts` 与 `company-name-variant.test.ts` 覆盖 Ltd/LLC、括号内外键、中文粘连；`company-source-pair.test.ts` 覆盖同作来源袋且不并 KONAMI/Cherrymochi，检测不打 NextMoe `/companies`；`company-merge-suggestions.test.ts` 覆盖检测 upsert；`company-merge-apply.test.ts` 覆盖冻结写入器。`company-nextmoe-client.test.ts` 覆盖超时/520 重试与结果日志。零关系会社不会隐式删除。
-- 标签 / 会社计数触发器：`tests/unit/tag-company-count-migration.test.ts` 静态锁定四份生产 SQL、六个 statement-level transition-table 触发器、SHARE 锁回填、rollback 范围和应用层无手工计数。Vitest 不执行数据库触发器，真实计数不变量由 PostgreSQL 演练与生产 postflight 负责。
-- 公司身份 Phase B：`tests/unit/company-identity-constraint-migration.test.ts` 锁定 preflight/sync/postflight 及 rollback/rollback-postflight、阻断项 / shared alias warning、NOT NULL、两个 Prisma 原生唯一索引和 Phase A 恢复形态；真实约束、回滚和零漂移需在 disposable PostgreSQL 上演练。
-- 部署：`deploy-release-safety`、`deploy-slots`、`deploy-lock`、`deploy-activation`、`deploy-pm2-readiness`、`deploy-build-safety`、`prisma-production-schema-path` 与 `prisma-client-runtime-paths` 锁定 manifest/tag/commit 绑定、candidate guard、不可变 current/previous、journal/互斥锁、PM2/HTTP readiness、失败回退和客户端注入。
-- 搜索 store：`tests/unit/search-store.test.ts`。
-- CAPTCHA：`tests/unit/captcha.test.ts`。
-- 萌萌点账务：`api/moemoepoint-service.test.ts` 覆盖可用余额条件更新、负数回退、原因超长截断（不抛错）、幂等和暂扣/返还/确认扣除；`api/moemoepoint-query.test.ts` 覆盖明细稳定排序和用户不存在时不白跑查询；`api/moemoepoint-ledger-route.test.ts` 覆盖本人/管理员权限与 no-store；`moemoepoint-ledger-action.test.ts` 覆盖 `/moemoepoint` 本人 action 与后台 action 两个入口的独立鉴权；`moemoepoint-date-range.test.ts`、`moemoepoint-migration.test.ts`、`moemoepoint-source-guard.test.ts` 分别锁定上海日期范围、生产 SQL 和禁止绕过统一 service 的源码契约。
-- 小喇叭：`api/shoutbox-service.test.ts`、`api/shoutbox-report-service.test.ts`、`api/shoutbox-review-service.test.ts` 与对应 route/contract/cache/migration 测试覆盖发布扣费幂等、编辑自删、分页与生效边界、三名举报人自动隐藏、官方举报不自动隐藏、处置状态机、通知、退款一次性、缓存寿命和生产 SQL；前端测试覆盖 HeroUI 消息流与举报、横幅、游戏关联条、作者记录、Dashboard 四页签与每个处置动作的二次确认。真实 PostgreSQL 与 Redis 的并发、DDL、缓存边界及维护演练仍由 E02-01～03 在独立环境验证，mock 不能代替。
-- 萌萌点与后台导航：`top-bar-profile-navigation.test.tsx` 覆盖桌面和移动端主导航不显示萌萌点、`role >= 3` 在帮助文档后显示管理后台，以及本人个人主页的“编辑信息 / 萌萌点明细”同行和全宽管理后台独立成行。
-- 资源链接解析、资源分类、资源派生标签口径和后台资源表格布局：`tests/unit/resource-link.test.ts`、`resource-classification.test.ts`、`patch-resource-attributes.test.ts`、`admin-resource-container-layout.test.tsx`。`resource-classification.test.ts` 还覆盖游戏类型必须搭配中文支持类型、资料集/工具单独使用时的豁免、游戏类型与其他类型混选、中文支持互斥和 schema 错误文案。
-- 资源详情表单的中文支持独立多选框、资料集/工具禁用清理、HeroUI 分组标题排版、原有选项说明与多选勾选、上拉方向和边缘渐隐：`tests/unit/resource-details-form.test.tsx`。
-- 资源详情页操作权限和游客添加资源引导：`resource-permissions.test.ts`、`resource-tabs-permissions.test.tsx`、`resource-create-action.test.tsx` 覆盖资源作者/管理员权限显隐，以及游客不挂载发布表单、登录用户直接打开发布流程。
-- 下载链接按需获取：`api/resource-access-policy.test.ts`、`api/resource-access-grant.test.ts`、`api/resource-access-rate-limit.test.ts`、`api/resource-access.test.ts` 和 `api/resource-access-restore.test.ts` 覆盖 24 小时资源授权、事件分类、游客日/周额度、技术限频、access/restore 隐私响应和只读恢复；`resource-download-card.test.tsx`、`resource-download-restore.test.tsx` 覆盖镜像级展示、组件内存凭据、批量自动恢复和未点镜像隐藏，以及揭示后凭据在卡片内换行；`resource-access-links-helper.test.ts` 覆盖编辑资源前按需水合完整链接。
-- Gallery 上传链路：`gallery-upload.test.ts` / `gallery-route.test.ts` 覆盖服务端转码、缩略图、S3 补偿和 route，其中 Sharp/S3 都是 mock，静态图的 AVIF 转码加缩略图行为要和动态 WebP/AVIF 的保留原图行为分开断言，并单独覆盖 animated WebP 缩略图的单帧尺寸处理、缩略图字节数不小于原图时不放弃缩略图的兜底，以及 animated AVIF encoder 成功 / 回退首帧 / 绝不生成占位图三条分支；`gallery-upload-batch.test.ts` 覆盖前端逐张上传失败保留和只重试失败项，`create-patch-draft.test.ts` 覆盖创建页保留整组图片草稿与已创建 patch 目标；`gallery-drop.test.ts` 覆盖网页图片 URL/HTML 拖拽导入；`gallery-remote-import.test.ts` 和 `gallery-remote-route.test.ts` 覆盖远程图片导入、SSRF 边界和权限。
-- Gallery 前端展示：`gallery-preview.test.ts`、`image-viewer-slides.test.ts`、`patch-gallery.test.tsx` 和 `image-viewer.test.tsx` 覆盖缩略图/原图 URL 选择、缩略图加载后不扇出原图请求、灯箱自身负责相邻原图预载和相邻 slide 动画，以及渐进式灯箱的 `previewSrc` 行为。
-- 投稿链路：`patch-submission-quota.test.ts`、`patch-submission-submit.test.ts`、`patch-submission-review.test.ts`、`patch-submission-review-route.test.ts` 和 `admin-submission-detail.test.tsx` 覆盖押金、提交/撤回审核员通知、状态机、软/硬重复外部 ID、审核并发回滚、过期审核的 `409` 与详情刷新；通知测试必须锁定「状态栅栏先成功再通知」的顺序，以及审核员查询整体失败和单个收件人投递失败都不能回滚或把已提交的状态转换报成失败。会社身份相关的 `company-resolver.test.ts`、`company-identity-retry.test.ts`、`company-identity-compatibility.test.ts` 与 `patch-submission-publish-core-company.test.ts` 还要锁定证据优先级、共享别名歧义、可信/非可信写入边界、只重试两个目标约束、事务外整笔重跑、flag-off 兼容和预览/批准同一开关；`patch-submission-publish-preview.test.ts`、`patch-submission-preview-view.test.tsx`、`patch-submission-preview-route.test.ts` 覆盖共享发布投影、正式条目外观、封面原图灯箱、分级、管理员专属会社诊断与普通用户不泄漏细节的私有预览；`patch-submission-readonly-controls.test.tsx` 覆盖驳回投稿保留内容展示但禁用全部编辑、外部抓取与回填入口；`patch-submission-asset-cleanup.test.ts`、`patch-submission-orphan-cleanup.test.ts`、`patch-submission-upload-draft.test.ts`、`patch-submission-autosave.test.tsx`、`patch-submission-asset-route.test.ts` 和 `patch-submission-gallery-input.test.tsx` 锁定 outbox、跨刷新重试、串行保存和权限边界。
-- Sticker 管理链路：`sticker-assets.test.ts` 覆盖真实 WebP、300 KB WebM、32 MiB ZIP 与 64 MiB 解压总量限制、对象 key、单前导 `/` 导出根目录归一化，以及 `..`、盘符、UNC、符号链接和 ZIP Bomb 等安全边界；`api/admin-stickers.test.ts` 覆盖 Pack 启用条件、封面保护和 S3 失败补偿；`api/admin-stickers-route.test.ts` 覆盖非管理员 API 拒绝、30 MiB ZIP 入口校验和损坏 multipart 的 `400` 降级；`middleware-matcher.test.ts` 确认大体积 Sticker 导入绕过 middleware 缓冲且相邻管理 API 仍受保护；`admin-sticker-container.test.tsx` 覆盖 Pack 主从布局、粘性且仅含大封面与红绿状态点的紧凑侧栏、移动端状态值、无对钩的选中背景、未保存设置保护、无有效 Sticker 时禁止启用、启用状态删除禁用、动态 Sticker 缩略图、粘性 Sticker 批量操作、导入后保留目标 Pack、无重复 Toast 的 HeroUI 行内校验、对象清理失败警告和服务端渲染 Select 的稳定 ID；`admin-sticker-pack-status-cover.test.tsx` 直接渲染真实 HeroUI Badge，锁定 `content=""` 与 `isDot` 组合；`sticker-thumbnail.test.tsx` 覆盖动态 WebM 使用完整预载、仅在实际可见时解码、离开再返回时保持同一视频节点和播放进度，以及可见视频在暂停或停滞后主动续播；`chat-input.test.tsx` 与 `chat-message-menu.test.tsx` 覆盖选择面板和回复预览播放非封面 WebM，`chat-input.test.tsx` 还锁定 Sticker 触发器在 HeroUI Textarea 中绝对定位且不参与高度计算、文字保留右侧空间、Picker 的 Presence 弹出/淡出配置和减弱动态效果分支、移动端 Picker 通过 Portal 固定在聊天消息区底部并保持全宽和半高、不再依赖 `100vw`，以及宽屏 Picker 使用聊天消息窗口 `60%` 宽度并按触发器实际位置右对齐、所有宽度统一使用 5 列、宽屏可容纳 4 行 Sticker；`chat-container-realtime.test.tsx` 覆盖 Portal 宿主受消息可视区域约束、提供 container query 上下文并传入输入组件；`api/stickers.test.ts` 和 `api/conversation-service.test.ts` 覆盖禁用 Pack/独立 Sticker 消息的发送校验与历史数据兼容。
-- 私聊 Sticker 消息渲染：`chat-message-menu.test.tsx` 锁定可用 Sticker 使用零内边距透明容器直出，不带普通气泡背景、描边或阴影，同时保留右下角时间/已读浮层；不可用 Sticker 仍显示普通文本降级气泡。
-- 消息红点和实时同步：`message-nav.test.tsx` 覆盖通知页已读、已读请求异常或字符串业务错误后的可重试/user-visible toast 与未读状态恢复、恢复读取也失败或限频时回滚到乐观清除前的红点快照、过期未读请求 cleanup、通知/私聊红点分离；`message-container.test.tsx` 覆盖通知首屏 hydrate 保留首屏并后台刷新当前页、通知分页并发请求忽略旧响应、分页限频字符串保留当前列表并 toast、清理已读消息前必须确认、清理限频字符串保留弹窗和列表且不额外刷新；`user-message-bell.test.tsx` 覆盖顶栏铃铛只导航、不在通知展示前标已读，以及 `/api/user/session` 返回 `unread: null` 时保留当前红点状态；`message-realtime-sync.test.tsx` 覆盖全站未读轮询、任意页面新通知只点亮铃铛红点、可见性恢复同步、可见性恢复期间不重入已有未读同步请求，以及后台未读同步限频字符串保留当前红点状态；`chat-page.test.tsx` 和 `chat-actions.test.ts` 覆盖私聊详情页服务端首屏严格会话 ID 校验、server action 初始会话列表/消息读取 `message-read` 限流和限流时不继续 DB 读取；`chat-input.test.tsx` 覆盖私聊输入法组合期 Enter 不发送、`Shift+Enter` 换行、发送去重、发送/图片上传异常提示可重试错误、图片上传请求异常透出具体原因、回复 payload、回复图片缩略图、图片菜单发送、快速连续粘贴仍限制 9 张图片、多图预览单张移除、多图部分上传失败后只重试失败图片（包括服务端字符串和请求抛错）、失败后追加图片仍保留成功上传 metadata、图片发送后清空文件输入以便重选同一文件，以及 Escape 关闭附件菜单；`chat-message-menu.test.tsx` 覆盖消息气泡回复菜单、键盘打开气泡菜单、文本末端元信息底部对齐、图片-only 右下遮罩元信息、已读角标、图片渲染、图片链接复制、图片右键回复索引、编辑聚焦、单条消息删除前必须确认、编辑/删除请求异常后的可重试 toast 与提交态恢复，以及回复预览点击；`chat-container-realtime.test.tsx` 覆盖私聊详情页打开后立即 `afterId` 补拉、首次和实时已读同步异常提示可重试错误、`beforeId` 上翻历史、历史加载失败后释放 loading 并提示用户、历史哨兵重复触发不重入同一游标请求、2 秒可见轮询、隐藏降频/恢复立即补拉、可见性恢复期间不重入已有实时请求、上翻阅读历史时实时新消息不强制滚动到底部、去重合并、本地删除后立即清空旧正文/图片/回复 metadata 成 tombstone、被回复消息删除后清理回复草稿、回复预览跳转和当前会话已读同步；`delete-conversation-button.test.tsx` 覆盖移除私聊请求异常后的可重试 toast 与危险操作 loading 恢复；`conversation-list-realtime.test.tsx` 覆盖会话列表首屏 hydrate 保留首屏并后台刷新当前页、后台刷新 unread chip、total/pagination 同步、并发翻页/刷新时忽略旧响应、显式加载期间静默轮询不抢占当前请求、私聊详情链接禁用预取、以及当前页无未读时不清除全局私聊红点；`api/user-session.test.ts` 覆盖 `/api/user/session` 返回 `private, no-store`，正常路径读取 unread，未读子查询命中 `notification-read` 限流时不读取 `user_message` / `user_conversation` 并返回 `unread: null`；`api/conversation-service.test.ts` 覆盖目标用户关闭私聊时不能新建会话、新建私聊萌萌点扣费使用事务内原子条件扣减、普通用户和管理员并发创建同一对话命中唯一约束后返回既有会话、已有会话也不能绕过收件人关闭接收私信设置、回复预览、回复图片快照、回复归属校验、图片消息写入、发送图片成功会原子消费 Redis 上传 metadata 且未登记 metadata 会被拒绝、消息事务失败时会恢复已消费 metadata 供重试、编辑/删除命中 `message-write` 限流时不读取消息行或触发 S3 cleanup、删除图片消息后只清理未被其他未删除消息引用的 S3 对象、重复删除已 tombstone 消息不会重跑 S3 清理、S3 清理失败不阻断消息 tombstone、基于 `last_message_id` 的列表摘要、脏图片摘要显示不可用占位、已删除最后一条消息不泄露旧摘要，以及移除私聊只隐藏当前用户、重复移除已隐藏会话不重复写库、并在重新打开/发送消息时恢复可见；`api/conversation-image-upload.test.ts` 覆盖私聊图片上传权限、类型/大小限制、上传入口 `image-upload-intake` 限流在 multipart 解析前返回 429、上传超限在 Sharp/S3 前被拒绝、每小时免费额度后的萌萌点扣费/余额不足拒绝/失败退款和 quota 回滚、图片处理失败返回用户可见错误并退款/回滚 quota、S3 上传失败返回对象存储可重试错误并退款/回滚 quota、route 层 `429` / `Retry-After` / no-store 响应、Sharp metadata、S3 参数、上传 metadata 登记和登记失败后的 S3 补偿及记录保存可重试错误；`api/conversation-rate-limit.test.ts` 覆盖私聊 Redis 原子限频 key、发送/图片上传入口/图片上传/检查打开/私聊管理/消息读取/消息操作/通知读取/通知操作阈值、等待秒数、动作限频 Redis 故障 fail-open、图片小时 quota key/扣费阈值/回滚和 quota 故障 unavailable；`conversation-image-cleanup.test.ts` 覆盖私聊 S3 孤儿图片清理脚本的 dry-run/apply 默认值、key 规范、非删除消息引用保护、tombstone 遗留引用不保护和删除失败 summary；`api/message-unread.test.ts` 覆盖未读状态形态、隐藏会话不参与私聊红点聚合、普通用户不能调用 `POST /api/message` 伪造任意通知、通知已读/清理空操作不重复写 DB、通知列表/未读/标已读/清理命中限流时返回 `429` / `Retry-After` / no-store 且不继续读写 DB、私聊已读 route 严格会话 ID 校验、已读同步限流时不继续读写 DB、当前用户 unread counter 已为 0 时不重复写 DB，以及 no-store 响应头；`api/notification-toggle-abuse.test.ts` 覆盖取消收藏、取消评论点赞、取消评价点赞和取消资源点赞不创建通知；`api/mention-message.test.ts` 覆盖评论提及通知去重、跳过自己、忽略不存在用户和单条评论限额；`api/conversation-messages.test.ts` 覆盖会话消息增量查询、严格会话路由 ID 校验、首屏响应时间正序、`beforeId` 历史游标、消息 metadata 映射、脏图片消息缺少有效 metadata 时降级为文本占位、已删除消息响应不泄露旧正文/图片/回复 metadata、`afterId` 不统计历史总数、图片 payload 必须声明为图片消息、纯空白编辑内容会被拒绝、发送/编辑/删除/移除私聊/会话列表读取/消息读取/检查打开私聊限流的 `429` / `Retry-After` / no-store 响应、检查/打开、会话列表读取、消息读取、消息编辑/删除和移除私聊限流时不继续读写 DB，移除私聊成功路径只消耗一次 `conversation-manage` 检查，以及会话检查接口的 no-store 响应；`kun-fetch.test.ts` 覆盖非 2xx JSON 字符串错误体仍返回给现有 toast 分支；`start-chat-button.test.tsx` 覆盖用户资料页打开已有会话时先 POST 恢复隐藏会话再跳转，以及检查/打开私聊请求异常后的可重试 toast 与 loading 恢复。
-- 共享请求工具：`kun-fetch.test.ts` 确认 Fast Refresh 或导航产生的预期 `AbortError` 保持 reject 语义供调用方清理状态，但不记录为应用错误；其它网络和状态码错误仍保留现有反馈路径。
-- 私聊浮动回底部按钮：`chat-container-realtime.test.tsx` 覆盖离开底部时显示按钮、普通回到底部短滚动动画、点击普通回底部时立即原地渐隐、按钮渐隐卸载，以及回复预览跳转后先回到跳转前位置并高亮原消息再恢复普通回底部。
-- 私聊附件菜单：`chat-input.test.tsx` 覆盖附件加号菜单在已有待发送图片预览时仍高于图片预览和移除按钮。
-- 外部 ID、主题、标签等纯逻辑。
-- 编辑外部 ID 查重：`api/duplicate.test.ts`、`api/create-galgame-timeout.test.ts`、`patch-update-gallery.test.ts` 和 `steam-input.test.tsx` 覆盖 Steam ID 软重复可继续创建/重写/拉取 Steam 数据，以及 Bangumi ID 硬唯一和 Prisma `P2002` 竞态提示。
-
-模块 03 的 D37 回归位于 `api/case-feedback-service.test.ts`、`api/case-service.test.ts` 及三个事项详情／展示测试中：历史原发布者身份不随资源删除或换作者改变；最新事件的身份校验失败不回退，未知转交原因不能获得 D36 直接结案能力；注销收件人／发送者被安全处理，双身份回复通知只发一次；删除目标人工结案与提请要求说明，两侧界面停用失效链接并保留独立处理方权限。超过 500 条历史分页、真实删除及通知锁竞争、自然定时调度与生产产物浏览器验证使用独立 PostgreSQL／Redis 和源码副本，执行结果记录在模块 03 的 M03-11 验证记录，不能用 mock 结果替代。
-
-## 何时新增测试
-
-必须新增或更新测试：
-
-- API service 行为变更。
-- 纯工具函数变更。
-- Prisma 写入规则、计数器、缓存失效、权限判断变更。
-- 资源链接、上传、下载、提取码、S3 补偿相关变更。
-- Gallery create/rewrite 上传失败保留、重试、网页拖拽远程导入和 `/api/edit/gallery/remote` 安全边界相关变更。
-- CSRF、角色、资源归属、每日上传配额、用户设置权限相关变更。
-- 主题 token、语义颜色、过滤器、排序、外部 ID 解析变更。
-- 编辑页外部数据合并规则变更，包括 VNDB/Bangumi/Steam 字段保留、Steam ID 软重复提示但不阻塞、resolver 开启时四来源全部保留、alias 公司匹配和 store 函数式合并。
-- 维护脚本的冻结合并计划变更，尤其是会社 inventory/decisions/plan 的审计绑定、alias 歧义、显式删除、关系迁移与缓存 receipt；tag/company count 由数据库触发器与 postflight 验证，不再由维护脚本预览或修复。
-- 修 bug 时要加能在修复前失败的 regression test。
-
-可以暂不新增测试但要手动验证：
-
-- 只改静态文案。
-- 只改 README 或项目文档。
-- 视觉微调且没有逻辑分支。
-
-## 测试优先级
-
-1. 纯函数优先：`utils/*`、`constants/*`、`validations/*`。
-2. Service 次之：mock Prisma、Redis、外部 API，验证业务行为。
-3. Route handler 最后：只有当 HTTP 解析、header、cookie、status 行为本身是风险点时再测。
-
-标签/公司维护脚本生成的合并计划同样优先写纯函数测试：本地库没有生产标签数据，只能验证计划本身，不能用本地 dry-run 结果推断生产影响面。
-
-## Vitest mock 模式
-
-项目已有模式：
-
-```ts
-import { describe, it, expect, vi, beforeEach } from 'vitest'
-
-const prismaMocks = vi.hoisted(() => {
-  const tx = {
-    patch_tag: {
-      createMany: vi.fn(),
-      findMany: vi.fn(),
-      updateMany: vi.fn()
-    }
-  }
-
-  return {
-    patch_tag: {
-      findMany: vi.fn()
-    },
-    $transaction: vi.fn((fn) => fn(tx)),
-    _tx: tx
-  }
-})
-
-vi.mock('~/prisma/index', () => ({
-  prisma: prismaMocks
-}))
-```
-
-使用 `vi.hoisted` 的原因是 `vi.mock` 会被 Vitest 提升，mock factory 不能依赖尚未初始化的普通变量。
-
-## API service 测试约定
-
-测试 service 时优先验证：
-
-- 返回值。
-- Prisma 查询条件和事务写入。
-- 缓存失效函数是否被调用。
-- 权限和边界条件。
-- 输入去重、normalize、alias 匹配等业务规则。
-- 外部数据合并规则，例如 resolver 开启时 VNDB/Bangumi/Steam/DLSite 会社全部保留、关闭时旧来源互斥仅作回退兼容、Bangumi 标签仍保留、VNDB 标签不导入、Steam ID 软重复和 Bangumi ID 硬唯一；还要覆盖 alias 感知的标签/公司匹配、VNDB producer description 写入简介、DLSite 会社走共享 resolver、创建与更新时的 tag alias 全局唯一、Bangumi 简介/标题按点击填入、重写查重排除当前 patch、创建页清除草稿和 store 的函数式合并。
-- 用户身份、角色阈值和 owner mismatch。
-- 消息类型回归：反馈工单保持 `type: 'feedback'`，而发给用户或管理员的反馈通知必须是 `type: 'system'`，否则会绕过系统通知筛选。
-
-避免：
-
-- 只验证 mock 被调用，没验证行为结果。
-- mock 过深导致测试复制实现。
-- 在单元测试里真实连接 PostgreSQL、Redis、S3、GitHub、Bangumi、VNDB、DLSite。
-- 为了让测试好写而把 API 权限判断移到前端。
-
-## Redis 测试约定
-
-Redis 相关逻辑分两类：
-
-- key 生成、envelope、stale 逻辑：可单测纯逻辑或 mock `redis`。
-- 真实 Redis 集成：只在明确需要时加集成测试，并隔离 key 前缀和 cleanup。
-
-写缓存失效测试时，优先断言调用的是 `delKvPattern('业务前缀:*')` 或公开失效函数，而不是散落的低层 key。
-
-直接使用 `redis` / `runRedisCommand` 的模块要单独检查 key 前缀和原子性，例如浏览量 buffer 使用 Redis hash 和 Lua，不能简单套 `setKv` 测试模式。
-
-## Prisma/事务测试约定
-
-萌萌点变更测试必须断言业务写入、条件余额更新和明细快照位于同一事务。消费/暂扣用“总额减待结算”的可用余额判断；奖励回退允许出现负数，这是有意的审计设计，不要改成 clamp。明细 `reason` 超长必须截断而不是抛错——否则长游戏名会让发布游戏整个事务回滚（banner 已上传 S3，留下孤儿对象）。新增任何萌萌点写入点时要更新原因代码、同步 `constants/moemoepoint.ts` 里供规则页展示的三个常量、覆盖现有业务测试，并确保 `moemoepoint-source-guard.test.ts` 仍能阻止 service 外的直接 `increment` / `decrement` / `set` / SQL 写入。
-
-资源访问 bootstrap 的静态契约测试读取
-`migration/production-resource-access-bootstrap-preflight-2026-07-12.sql` 和对应 sync；
-真实 DDL、锁超时回滚、非空 Phase 2 backfill、grant 中断恢复及 Steam invalid index
-恢复必须在独立 disposable PostgreSQL 18 验收，不能连接本地持久库或生产库。
-
-投稿域迁移的静态契约由 `tests/unit/patch-submission-migration.test.ts` 锁定：preflight
-必须保持只读，并在 `patch_submission` 或 `patch_submission_gallery` 不存在时分别跳过
-对应行检查；sync 必须让两个 Prisma `@updatedAt` 列保持无数据库默认值并能修复旧
-默认值。真实 SQL 演练同样只能使用独立 disposable PostgreSQL，不能连接持久库。
-
-mock transaction 需要模拟真实 Prisma transaction callback：
-
-```ts
-prismaMocks.$transaction.mockImplementation((fn) => fn(prismaMocks._tx))
-```
-
-事务测试要覆盖：
-
-- create/update/delete 的顺序敏感行为。
-- 计数器 increment/decrement。
-- `skipDuplicates`。
-- rollback 前的外部副作用补偿策略，尤其是上传和 S3。
-
-## 上传和资源测试
-
-资源相关至少覆盖：
-
-- 链接解析和提取码合并。
-- 资源列表、初始页面数据和公开缓存不能下发真实下载链接、提取码或解压码；access/restore API 必须校验资源归属、游戏归属和可见性，并保持 `private, no-store`。测试日志和快照不能泄露凭据、visitor token、IP/IP hash、actorKey、Redis key 或资源/镜像 ID。
-- 资源授权固定 24 小时。`link_reveal`、`reused` 和自动 restore 都不能延长 `expires`；restore 只能读取点过且仍有效的镜像，不能新增 grant 或 access event。
-- 新资源授权写 `resource_grant`，有效授权内首次点另一镜像写 `link_reveal`，重复同一镜像不新增 event。只有游客游戏资源的 `resource_grant` 消耗产品额度和返回 quota。
-- 游客游戏资源按上海自然日 5 个、自然周 20 个资源条目测试边界；登录用户和补丁资源不受产品硬限制。日/周临界并发只能成功一个首次 grant，另一请求重试后必须返回对应 limited，不能越过第 6 个或第 21 个。
-- Access/restore 每 actor 每分钟 30 次技术限频要覆盖 429、`Retry-After`、no-store、Redis fail-open，以及首次无 cookie 游客只用 IP hash 限频；IP 不能参与产品额度。
-- 同资源同镜像并发只能新增一条 event；同资源不同镜像并发只能有一个 `resource_grant` 和一个同到期时间的 `link_reveal`。不能只用 mock `P2034` 代替预发布 PostgreSQL 竞态验收。
-- Prisma 7 `@prisma/adapter-pg` 可能把 PostgreSQL SQLSTATE `40001` 直接暴露为 `DriverAdapterError` + `TransactionWriteConflict`，而不是包装成 `P2034`。Grant 单元测试必须覆盖两种错误形态、事务外 50/100 ms 退避和第三次冲突耗尽；真实 PostgreSQL 验收仍要证明 daily 4→5、weekly 19→20 的失败方重试后返回对应 limited，而不是 503。
-- Migration backfill 要覆盖固定 cutoff/cutover、旧 event 的 `link_reveal` 分类、每 actor/resource 的 grant 完整性、canonical event 对齐和重复执行幂等；历史重复 event 只盘点，不删除或去重。
-- 上传 owner mismatch、already consuming、not found。
-- S3 URL key 提取拒绝非本站 URL。
-- DB 写失败后的 compensation。
-- audit log 脱敏。
-- 每日上传配额和创作者 CAPTCHA / 萌萌点限制。
-
-已存在基础测试：[tests/unit/resource-link.test.ts](../../tests/unit/resource-link.test.ts)。
-
-<a id="link-health-first-batch"></a>
-
-## 04／05／10 首批验收
-
-首批于 2026-10-09 完成全量测试、隔离数据事务、整链 HTTP、生产构建及桌面／390px 浏览器验证，实际范围和证据见[首批验收记录](../../decision-making/7-operations-layer/12-first-batch-acceptance.md)。2026-10-12 用户验收中已报告前端问题，需逐项修复并复验；用户验收与生产发布尚未完成，既有技术验证不能替代这两个环节。
-
-以下是现有产品测试文件；路径均相对于 `tests/unit/`：
-
-| 范围 | 定向文件 |
+| 改动 | 应验证的结果 |
 | --- | --- |
-| 稳定 ID、完整原基点、版本／删除／事务回滚与安全通知 | `api/patch-resource-update.test.ts`、`api/resource-stable-route.test.ts`、`api/resource-deletion.test.ts`、`api/admin-resource-update-message.test.ts` |
-| 当前版本获取／只读恢复及生产迁移约束 | `api/resource-access-version.test.ts`、`api/resource-access-restore.test.ts`、`link-health-migration.test.ts` |
-| 输入匹配投影、能力、管理员精确读取与失效收件箱 | `link-health-projection.test.ts`、`api/resource-health-read.test.ts`、`api/resource-health-read-routes.test.ts`、`api/link-health-inbox-read.test.ts` |
-| 报告策略、HTTP 权限／CSRF／限频与到期游标 | `link-health-policy.test.ts`、`api/link-health-http.test.ts`、`link-health-task.test.ts` |
-| 链接事项选择器／版本／通知／坏上下文与旧资源事项 | `api/case-link-health.test.ts`、`api/case-feedback-service.test.ts`、`api/case-service.test.ts`、`api/case-route.test.ts`、`case-validation.test.ts` |
-| 纯 checker 请求、严格结果／时间／缓存、8 KiB／15 秒／泄漏边界 | `api/link-check-adapter.test.ts` |
-| 五家 LLC 结果映射、屏蔽失效、分享格式与缓存输入隔离 | `api/link-check-providers.test.ts` |
-| 检测到健康落库、缓存结论及重复观察的报告阈值 | `api/link-check-health.test.ts` |
-| 当前分享地址的检测资格、登录与管理权限隔离、每用户技术限频 | `link-check-permissions.test.ts`、`api/link-health-http.test.ts` |
-| LLC 屏蔽原因与数据库 CHECK 对齐、只读预检、事务与升级幂等契约 | `link-health-blocked-migration.test.ts` |
-| 本次检测摘要与最新观察分离、两侧反馈及迟到／失败边界 | `api/manual-link-check.test.ts`、`link-check-feedback.test.tsx` |
-| 读取快照、两步报告、稳定编辑与唯一受权编辑入口 | `resource-download-card-health.test.tsx`、`resource-download-restore.test.tsx`、`resource-download-late-callback.test.tsx`、`case-entry-buttons.test.tsx`、`resource-edit-stable.test.tsx`、`resource-link-edit-page.test.tsx` |
-| 事项能力、后台健康页与 broken-link 收件箱 | `dashboard-case-link-health.test.tsx`、`dashboard-link-health.test.tsx`、`broken-link-inbox-detail.test.tsx`、`dashboard-inbox-state.test.tsx` |
+| 纯工具或输入校验 | 有效、非法和边界输入的实际返回。 |
+| 业务接口 | 权限、归属、状态竞争、账务与通知、缓存受影响范围。 |
+| 数据结构或迁移 | 静态约束加一次性 PostgreSQL 的首次安装、非空数据、重复执行、中断与锁超时回滚。 |
+| 上传与删除 | 本人登记、一次消费、部分失败、引用保护与补偿，必要时受控存储替身。 |
+| 页面与交互 | 对应组件测试及受影响浏览器流程，手机、桌面和相关断点。 |
+| 部署和运行资源 | 类型、相应测试、产物完整性与目标环境就绪，构建受影响时构建。 |
+| 文档和技能 | 离线引用与契约检查，再独立审阅事实和任务可用性。 |
 
-正式验收须在明确隔离的 PostgreSQL／Redis、源码副本和受控 checker HTTP 下证明：
+行为修复先写最小失败测试，确认失败确由目标缺陷引起，再修复并验证。替身应体现真实事务和输入过滤，断言可观察结果及事务范围，不能只断言某个替身被调用。共享替身的初始化需遵守 Vitest 的提升规则；参考现有测试，不复制实现逐行自证。
 
-- 全基点并发编辑、同版本获取与地址替换竞态、单槽 SetNull 保留额度、删除／移动的真实外键锁和整个事务重试、每次胜出只一条通知；D37 资源目标和存量临时事项继续处理。
-- 报告去重／权重／获取资格，重复有效报告不额外检测；当前输入快照按观察顺序保存，码变化或迟到回包不复用旧观察，手动 actor 和当前 caseId 如实返回。同事项来源升级保留轮次／健康时钟，机器冲突与坏上下文跳过自动化，满批跳过前缀后游标仍向后推进。
-- 通过真实受控 HTTP 验证鉴权、限频、超时、跳转、超限响应、安全错误、三个独立公开事实及编辑已提交后的检测失败。外部 provider 不进入单元测试；独立 checker 的固定源构建和合成出站／DNS／日志用例见 [deployment/link-checker](../../deployment/link-checker/README.md)。网站的五家协议回归使用合成响应与 mock 数据库，真实网盘联测须单独提供受权样本。
-- 完成生产构建后，从实际产物验证桌面／390px：两步目标选择、broken 折叠仍可选、当前快照凭据与过期回调、确认取消零写入、最后一条禁移除、隐藏资源的 role 3 精确管理员 DTO、完整旧基点与 409 保留草稿、保存／取消回到可解析的收件箱选中项。不能仅用组件渲染测试代替浏览器验证。
-
-不得连接默认／生产库或以未经授权的真实链接代替受控样本；隔离身份和环境须按验收配置提供。纯文档改动检查路径／链接与 diff，并执行 `pnpm test:docs-contracts`；无需重跑应用全量或构建。
-
-## 修 bug 的红绿流程
-
-1. 写一个最小失败测试，名称描述用户可见行为。
-2. 运行目标测试，确认失败原因是 bug，而不是测试拼写或 mock 缺失。
-3. 写最小修复。
-4. 运行目标测试确认通过。
-5. 运行相关测试文件或全量 `pnpm test`。
-
-示例命令：
+迭代时运行目标文件，尖括号替换为本次实际路径：
 
 ```bash
-pnpm test tests/unit/api/batch-tag.test.ts
-pnpm test
+pnpm test tests/unit/<目标文件>.test.ts
+```
+
+一般提交前门槛：
+
+```bash
+pnpm test:changed
 pnpm typecheck
 ```
 
-## 发布前验证矩阵
-
-| 改动                         | 最小验证                                                                      |
-| ---------------------------- | ----------------------------------------------------------------------------- |
-| 纯 utils                     | 目标测试 + `pnpm typecheck`                                                   |
-| API service                  | 目标 API 测试 + `pnpm typecheck`                                              |
-| Prisma schema                | `pnpm prisma:generate` 或 `pnpm prisma:push` + `pnpm typecheck` + `pnpm test` |
-| Redis/cache                  | 目标测试 + 相关 API 测试 + `pnpm typecheck`                                   |
-| 上传/S3                      | 目标测试 + 手动上传流程说明 + `pnpm typecheck`                                |
-| Auth/CSRF/role               | 目标 API/service 测试 + `pnpm typecheck`                                      |
-| Next config/postbuild/deploy | `pnpm typecheck` + 可行时 `pnpm build`                                        |
-| UI-only                      | `pnpm typecheck`，复杂交互加手动验证                                          |
-
-## 浏览器与 HTTP 端到端脚本
-
-用户名与签名设置的单元回归位于 `tests/unit/user-profile-settings.test.tsx` 和 `tests/unit/api/user-profile-settings.test.ts`，覆盖预填、未修改禁用、校验、异步资料刷新、保存失败重试和改名扣费事务。
-
-仓库的既有六套独立脚本，直接使用 `playwright-core` / HTTP 客户端，不通过 `@playwright/test` runner：
-
-- `tests/e2e/edit-upload-guards.e2e.ts`
-- `tests/e2e/patch-submission-lifecycle.e2e.ts`
-- `tests/e2e/submission-ui.e2e.ts`
-- `tests/e2e/company-identity.e2e.ts`
-- `tests/e2e/user-profile-settings.e2e.ts`
-- `tests/e2e/resource-card-mobile.e2e.ts`
-
-前五套会创建、修改、审核或删除真实数据，只能对明确的 disposable `touchgal_e2e` 数据库和单独的 3100 dev server 运行。执行前必须确认 server 进程实际使用的数据库，而不是只看当前 shell `.env`；CSRF 地址需设置为 `NEXT_PUBLIC_KUN_PATCH_ADDRESS_DEV=http://127.0.0.1:3100`，并提供脚本顶部列出的测试用户/JWT/Redis 环境变量。示例：
+推送、发布、共享基础设施变化或导入关系无法覆盖的文件变更时运行相关完整检查；构建产物受影响时再构建：
 
 ```bash
-node --env-file=.env tests/e2e/submission-ui.e2e.ts
-node --env-file=.env tests/e2e/patch-submission-lifecycle.e2e.ts
-node --env-file=.env tests/e2e/edit-upload-guards.e2e.ts
+pnpm test
+pnpm build
 ```
 
-如果数据库名不是 `touchgal_e2e`、3100 服务未启动或测试身份缺失，停止而不是退回默认库执行。
+受影响测试选择依据程序导入关系，样式、迁移文件、数据库结构与文档等通过文件读取的内容不一定被选中，应明确指定对应契约测试。已经通过且源码与环境仍有效的结果可以复用，不因文档修改重跑应用构建。
 
-会社身份的真实数据库验证有专用准备器。它具有破坏性，因此必须显式给出与 `KUN_DATABASE_URL` 不同、数据库名**严格以 `_e2e` 结尾**的 `KUN_E2E_DATABASE_URL`，同时指定一个尚不存在的绝对备份路径：
+## 只修改文档
+
+在仓库根目录运行：
 
 ```bash
-KUN_E2E_DATABASE_URL='postgresql://<user>:<password>@127.0.0.1:5432/touchgal_e2e' pnpm e2e:db:prepare --reset --backup=/private/tmp/touchgal_e2e-before-company-e2e.dump
+pnpm docs:check
+pnpm test:docs-contracts
 ```
 
-准备器先创建 `0600` custom-format dump 并用 `pg_restore --list` 验证，再 reset schema、执行最终 Prisma schema、安装并 postflight 六个 tag/company 计数触发器、检查 Phase B 约束，最后写入隔离测试身份和 sentinel。备份路径或文件经符号链接、文件已存在、目标不是 `_e2e`、或 URL 等于应用默认库时都会在 reset 前失败。
+前者检查当前相对版本控制基准的维护文档变更；后者包含同一机械检查及固定文档契约和检查器测试。检查指定文件可用 `pnpm docs:check docs/project/documentation.md`，选择提交范围可用 `pnpm docs:check --base HEAD~1`。检查只核对本地相对目标、标题、占位、新页面入口及删改引用，不验证远程页面、站内路由、锚点、事实或自然语言。
 
-如果 PostgreSQL 的 `pg_dump` / `psql` 只存在于 Docker 容器，额外传入严格容器名；Docker 模式的连接 URL 必须是 loopback：
+若旧契约只绑定过期标题、内部名称或重复迁移清单，应保留安全含义并报告待调整断言，不为通过测试恢复错误文案。未执行或失败的检查如实报告。事实审阅按[文档标准](documentation.md)另行完成。
+
+## 哪些行为需要真实隔离设施
+
+下载日周额度的临界并发、重复获取与当前地址资格；资源完整对照编辑、删除、移动与真实锁序；投稿撤回和审核竞争、押金结算；事项通知与账号删除竞争；数据库触发器和唯一性；缓存失效与官方生效边界，都不能只用模拟事务证明。
+
+链接检测使用本机受控 HTTP 服务和合成响应，覆盖登录、来源保护、超时、拒绝跳转、大小上限、错误脱敏、时间与迟到结果。真实网盘仅在另行取得受权样本后验证，不能用生产分享代替测试样本。检测服务自身的固定源验证见[独立检测服务指南](../../deployment/link-checker/README.md)。
+
+浏览器验证应覆盖长链接、失效折叠、两步反馈、确认取消零写入、最后一链删除限制、受限预览、保存冲突保留输入、跨目标迟到响应，以及手机虚拟键盘和焦点。它们是验收要求，本页不声称已有全站通过记录。
+
+## 准备会社身份一次性验收
+
+本节准备器和会社验收命令通过 Node.js 直接运行 TypeScript，使用 Node.js 22.18 或更高的 22.x，且保持默认类型剥除启用；它让 Node.js 忽略类型标注后执行脚本，不代替类型检查。22.15–22.17 默认未开启这项能力，不能直接照以下命令运行。其他直接以 Node.js 运行的端到端脚本，包括后文手机布局检查，也采用这一测试前提；应用本身仍按[开发指南](development.md#在空开发库启动)要求的最低版本运行。版本依据见 [Node.js 官方 TypeScript 说明](https://nodejs.org/docs/latest-v22.x/api/typescript.html#type-stripping)。
+
+前提是已准备可丢弃 PostgreSQL、隔离 Redis、浏览器，以及项目源码副本；数据库连接必须显式给出、与应用默认库不同，名称严格以 `_e2e` 结尾。安全启动器固定本机 3100 端口，当前工作区不得已有开发服务器。以下尖括号均为操作者在隔离环境填写的值，备份路径必须是绝对且尚不存在的文件。
 
 ```bash
-KUN_E2E_DATABASE_URL='postgresql://<user>:<password>@127.0.0.1:5432/touchgal_e2e' KUN_E2E_PG_CONTAINER='postgres18' pnpm e2e:db:prepare --reset --backup=/private/tmp/touchgal_e2e-before-company-e2e.dump
+KUN_E2E_DATABASE_URL='<一次性数据库连接>' pnpm e2e:db:prepare --reset --backup=<新绝对备份路径>
 ```
 
-同一 worktree 不能同时运行 3000 与 3100 的 Next dev，它们共享 `.next`。使用安全 launcher 先跑 resolver-off；launcher 固定 `127.0.0.1:3100`、覆盖数据库和 CSRF 地址、关闭 Cloudflare/IndexNow 副作用，并在发现 `.next/dev/lock` 或 3000/3100 已占用时拒绝启动：
+准备器先写权限受限的自定义格式备份并验证目录，再重置、安装结构与计数触发器、检查约束，写入测试身份标记。目标、路径或备份验证不符会在重置前拒绝。数据库工具只在容器内时增加 `KUN_E2E_PG_CONTAINER`，连接还须为精确本机回环地址；不得改用真实持久库完成准备。
+
+分别启动解析关闭与开启的两轮服务，每轮在另一终端运行对应验收：
 
 ```bash
-KUN_E2E_DATABASE_URL='postgresql://<user>:<password>@127.0.0.1:5432/touchgal_e2e' pnpm e2e:company-server --resolver=off
+KUN_E2E_DATABASE_URL='<一次性数据库连接>' pnpm e2e:company-server --resolver=off
+KUN_E2E_DATABASE_URL='<同一一次性数据库连接>' pnpm e2e:company-identity --expect-resolver=off
 ```
 
-在另一终端运行：
+停止唯一服务后，分别把两个参数改为 `on` 再运行。启动器关闭 Cloudflare 与搜索通知副作用，验收检查实际服务的数据库标记及解析行为，不只看当前终端变量；该会社脚本不写入或删除对象存储。失败保留隔离结果，不回退默认库重跑。
 
-```bash
-KUN_E2E_DATABASE_URL='postgresql://<user>:<password>@127.0.0.1:5432/touchgal_e2e' pnpm e2e:company-identity --expect-resolver=off
-```
+## 其他端到端脚本
 
-停止唯一的 3100 server，按相同步骤重启为 `--resolver=on` 并运行 `--expect-resolver=on`。测试会读取 sentinel，证明 HTTP server 和短生命周期 resolver worker 都连接显式 `_e2e` 库，并通过预览语义证明 server 实际 flag。create 场景绕过上传入口后直接调用真实 resolver 事务；整套 company identity E2E 不发出任何 S3 写入或删除请求。
+[编辑上传守卫](../../tests/e2e/edit-upload-guards.e2e.ts)、[投稿流转](../../tests/e2e/patch-submission-lifecycle.e2e.ts)、[投稿界面](../../tests/e2e/submission-ui.e2e.ts)和[资料设置](../../tests/e2e/user-profile-settings.e2e.ts)会真实创建、修改或删除记录。先按脚本头部准备测试身份、服务地址与受控设施，确认正在运行的 3100 服务实际使用一次性测试库；资料设置还要求非默认端口的独立 Redis，并核对费用明细与清理本次账号。服务缺失、身份不明或数据库不符时停止，不能用默认配置兜底。
 
-`submission-ui.e2e.ts` 覆盖名称错误清除、自动/显式保存、服务端预览、上传失败跨刷新保留和进度重试；`patch-submission-lifecycle.e2e.ts` 从建草稿走到通知链接、审核详情，并覆盖审核页打开期间作者撤回、撤回通知、过期审核刷新、重新提交与正式发布；`edit-upload-guards.e2e.ts` 覆盖 create/rewrite 上传守卫；`company-identity.e2e.ts` 覆盖 flag-off/flag-on 的创建、重写、投稿预览/批准、歧义和真实计数触发器。列表页是服务端渲染的，脚本点击交互控件前必须等待客户端 hydration；模拟上传失败使用确定性的 HTTP 错误响应，不要用延迟 `route.abort()` 制造请求生命周期竞态。
+工作台[整链验收](../../tests/e2e/workspace-maintenance.e2e.ts)与[迁移验收](../../tests/e2e/workspace-maintenance-migration.e2e.ts)还要求非默认本机数据库和 Redis、受控检测服务与对象存储替身，不加载真实环境配置。迁移检查包含上线后真实维护记录保护，不能只验空库。
 
-`user-profile-settings.e2e.ts` 覆盖用户名与签名预填、未修改或校验失败时禁用保存、失败重试、刷新持久化、移动端，以及并发改名只扣费一次。它要求本机 `touchgal_e2e`、独立的 Redis 实例和非 6379 的 `REDIS_PORT`，用匿名资料读取确认 3100 server 的数据库身份后，再建立测试会话。脚本创建并清理自己的测试账号；`KUN_E2E_BROWSER_PATH` 指定浏览器，`KUN_E2E_ARTIFACT_DIR` 指定报告和截图目录。
-
-`resource-card-mobile.e2e.ts` 是只读布局检查，默认打正在跑的 3000 站点（`KUN_E2E_BASE_URL`，路径 `KUN_E2E_RESOURCE_CARD_PATH`，默认 `/ui479c1f?tab=resources`）。它拦截 access/restore，不写 grant、不消耗额度、不依赖 CSRF，并在 360px 揭示长链接／提取码／解压码后断言 `#resource-*` 不横向撑破、子节点不画出视口。不要把它接到 3100 / `touchgal_e2e` 写入套件里。
+[资源卡手机检查](../../tests/e2e/resource-card-mobile.e2e.ts)是单独的只读布局检查，默认读取正在运行的 3000 站点并拦截下载获取和恢复，不写授权或消耗额度。按[直接运行 TypeScript 的版本前提](#准备会社身份一次性验收)使用 Node.js 22.18 或更高的 22.x，先用 `KUN_E2E_BASE_URL` 和 `KUN_E2E_RESOURCE_CARD_PATH` 指向本次允许读取的页面，再执行：
 
 ```bash
 node tests/e2e/resource-card-mobile.e2e.ts
 ```
 
-## 工作台与维护整链验收
+这些脚本未形成统一浏览器测试流水线。自动化缺少的真实存储、平台命中或交互结果，作为未验证事项报告，不用组件通过或历史截图替代。
 
-工作台与维护的整链脚本为 `tests/e2e/workspace-maintenance.e2e.ts` 和
-`tests/e2e/workspace-maintenance-migration.e2e.ts`。前者在独立 3100 服务、非默认端口
-PostgreSQL／Redis、本机受控 checker 和对象存储替身下验证真实读写、并发、资格、冻结、
-通知、健康时钟、删除／移动、素材消费及浏览器；后者验证只读检查、首次安装、非空
-回填、锁超时回滚、幂等和上线后记录保护。两者不加载真实 `.env`，只接受显式一次性
-`_e2e` 数据库。参数和生命周期见 [工作台模块](../modules/workspace.md#迁移与验证)。
-真实迁移与生产构建结果需要绑定实际源码版本，mock 通过不能替代整链验收。
+## 源码入口
 
-## 已知缺口
-
-- 端到端脚本尚未接入统一 Playwright config/runner 与 CI，需要人工准备隔离数据库、Redis session 和浏览器。
-- 多数 API route handler 没有 HTTP 层测试。
-- 真实 PostgreSQL/Redis/S3 集成测试缺少统一 harness。
-- `pnpm lint` 依赖 Next lint 命令；Next 15 项目如果命令不可用，需要迁移到 ESLint CLI 后再纳入强制验证。
+- [测试配置](../../vitest.config.ts)、[单元测试](../../tests/unit/)与[端到端脚本](../../tests/e2e/)
+- [安全数据库准备器](../../scripts/e2eDatabasePreparation.ts)、[会社隔离启动器](../../scripts/e2eCompanyIdentityServer.ts)与[文档检查器](../../scripts/checkDocs.ts)

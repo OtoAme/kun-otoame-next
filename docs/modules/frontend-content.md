@@ -1,334 +1,79 @@
-# Frontend, State, Theme, Content
+# 前端、编辑与内容展示
 
-本模块覆盖组件目录、状态管理、主题系统和 MDX 内容。
+前端负责让用户理解当前内容、费用、权限和操作结果。服务器仍决定真实授权与保存状态；前端隐藏按钮、完成动画或成功提示不能替代服务器检查。页面分工见[页面边界](app-router.md)，业务金额和时限见[业务规则](api-services.md)。
 
-## 组件分层
+## 两套界面如何共存
 
-| 路径                                       | 说明                                                                  |
-| ------------------------------------------ | --------------------------------------------------------------------- |
-| `components/kun/*`                         | 前台共享 UI、导航、主题、编辑器、图片查看器、cropper、auth captcha。  |
-| `components/layout/*`                      | 前台布局壳和按路由裁剪的布局 chrome。                                 |
-| `components/home/*`                        | 首页 hero、轮播、统计、卡片。                                         |
-| `components/shoutbox/*`                    | 前台小喇叭消息流、发布、关联条、横幅和举报。                          |
-| `components/patch/*`                       | 游戏详情页 header、introduction、resource、comment、rating、gallery。 |
-| `components/edit/*`                        | 创建/重写游戏表单，VNDB/Bangumi/Steam/DLSite 外部数据输入。           |
-| `components/admin/*`                       | 旧后台列表、编辑、审核、日志、邮件和设置。                            |
-| `components/dashboard/*`                   | 新控制台业务组件；`ui/*` 为 shadcn 基础组件。                         |
-| `components/user/*`                        | 用户主页、关注、收藏、评论、评分、资源。                              |
-| `components/ranking/*`                     | OtomeGame 排行榜。                                                    |
-| `components/moemoepoint/*`                 | 萌萌点明细与规则说明页。                                              |
-| `components/settings/*`                    | 用户设置。                                                            |
-| `components/message/*`                     | 消息列表和聊天会话。                                                  |
-| `components/tag/*`, `components/company/*` | 标签和公司页面。                                                      |
-| `components/doc/*`                         | 文档页导航、目录和内容布局。                                          |
+前台、旧后台和管理员预览使用 HeroUI v2；工作台与新后台使用 shadcn，分别加载根布局、组件与样式。新后台不导入旧后台界面或前台主题脚本。两套界面共享深浅色选择，前台品牌主题的颜色规则由[主题说明](../theme-color-system.md)维护。
 
-## Client/Server 边界
+开发时先复用项目组件与对应界面库，保留标签、错误、键盘、焦点、禁用、加载和弹窗关闭行为。工作台身份来自服务器会话，不能用浏览器保存的旧用户资料推断权限。后台操作沿用现有管理接口，不能另设绕过同一授权的写入渠道。
 
-前台与旧后台的 `app/(site)` 使用 HeroUI v2；新控制台 `app/(dashboard)` 使用 shadcn，保持独立根布局、Provider 与 CSS 导入链。控制台不能导入旧后台或 HeroUI 组件；管理员预览位于前台根布局，允许复用原前台视图。`components.json` 的组件与样式别名只指向 dashboard。
+## 提交、冲突与请求失败
 
-- `app/*/page.tsx` 默认是 Server Component。
-- 需要 hooks、事件、browser API、store 的组件使用 `'use client'`。
-- API 调用在 client 组件中通常通过 `utils/kunFetch.ts`；状态变更请求必须使用它或自行保留同样的 CSRF header 行为。后端若用非 2xx 返回 JSON 字符串业务错误（例如私聊限流 `429`），`kunFetch` 会把该字符串返回给调用方，让现有 `typeof response === 'string'` toast 分支继续工作。私聊图片上传要额外保留非 2xx 状态码，让上传 toast 能同时给出 HTTP 状态码和服务端原因，尤其是 `413` 体积超限。
-- 页面级 server action 放在对应 `app/<route>/actions.ts`。
-- 控制台业务通过既有 HTTP API 调用（管理操作在 `/api/admin/*`，账本读取在 `/api/user/[id]/moemoepoint/ledger`）；投稿详情、只读来源、字符串业务错误和 409 冲突共用既有请求工具契约。
+用户名与签名设置预填已保存资料，仅在去掉首尾空格后有合法修改时允许保存。资料异步刷新时，尚未编辑的字段跟随最新资料，已经输入的草稿保持不变。其他表单和请求的开发要求是：业务错误显示具体安全原因，释放加载状态并保留可重试内容，过期响应不覆盖新筛选、新目标和新保存结果。
 
-待审事项只选条目来源时可查看旧列表的七种状态。默认待审队列保留全部待审记录搜索；历史状态复用既有投稿列表 API、107 字符搜索和每页 50 条分页，侧栏计数仍为待审量。历史状态或搜索变化后按当前查询重读，旧响应不得覆盖新筛选；非待审详情沿用真实状态门禁。条目取项与完整详情加载共用同一静态骨架，保持两阶段占位尺寸一致。
+删除、审核、资源处置、对话隐藏等交互的开发要求是先确认再发送写请求，取消不写入，关闭后恢复触发位置的焦点。提交中的确认界面按具体流程锁定，避免重复提交或用户误以为已经取消；验收需检查本次受影响入口。管理员发放结果未知时固定原请求，只重试原内容或先查账；不能换金额后沿用原请求。
 
-手机待审事项的标题栏与列表、详情共用自然滚动容器：列表固定到顶的来源筛选与搜索区域，详情只固定返回列表行。上滚回顶逐步露出顶栏，返回区域下拉可平滑回顶，并尊重减少动态效果偏好。手机隐藏快捷键帮助按钮，桌面保留独立分栏滚动。普通内嵌预览按前台内容容器的实际高度收缩，以既有窗口高度为上限；长内容保持内部滚动。测量与观察器随预览文档切换清理，放大对话框和独立打开继续可用。
-
-用户管理组件位于 `components/dashboard/user`。查询条件保存在 URL，列表搜索保留 500 毫秒防抖；更新与删除后的刷新使用当前查询。列表显示总萌萌点（包括负数），点击数量进入对应账本；发放成功后重读当前列表余额。编辑资料保留失败草稿，关闭时清除密码；关闭两步验证使用同一弹窗中的直接操作。发放点数遇到结果未知时冻结原请求，重试保持目标、金额、理由及 `requestId`；本人余额只通过 `setMoemoepointBalance` 同步三项值。账本自定义日期显式查询，未提交草稿不显示旧范围记录，翻页使用已提交日期。
+资源编辑保留打开时的完整链接和地址版本作为比较记录，保存冲突保留草稿与该记录，不自动合并或覆盖。管理员失效收件箱的补链进入既有受权编辑页，不通过下载获取来取得管理资料。具体本人编辑与维护见[工作台](workspace.md)。
 
-统计首页位于 `/dashboard`，参照官方 shadcn `dashboard-01` 的概览卡片和响应式布局，在现有外壳中组合组件。保留旧全量/增长统计并补现存评分、投稿、创作者和独立待审创作者申请数；完整统计只对超级管理员请求和展示。四类待办与本人今日处理复用 `DashboardShell` 的 counts 和轮询，不再发一组重复计数请求；创作者申请不加入四来源合计。加载与失败不显示为 0，切窗口、切角色或卸载后旧响应不得覆盖当前数据。
+## 下载与反馈的展示
 
-## 问题处理
+资源卡片先展示安全概况，用户主动获取后才在当前界面内存显示真实地址、提取码和解压码，不能写入全局状态、持久存储或网址。刷新恢复只填回已经打开、当前仍有效的镜像，未点过的镜像继续隐藏；资源授权不代表所有镜像已经揭示。
 
-资源已删除时，两侧详情保留「资源已删除」及对话，停用目标跳转和必须操作现存资源的按钮（D37）。原发布者能否回复、直接结案或提请只取服务端 `capabilities`；两侧结案表单通过 `caseClosingNoteError` 对删除目标要求非空说明，显示必填提示，普通现存目标沿用原说明规则；调用时传入结案方，「不在受理范围」在 `/workspace/issues`（`publisher`）须附三篇指南之一，在后台（`staff`）只须写明理由（D39）。管理员采纳提请使用已有提请说明，业务失败保留草稿和错误。已删除用户目标选择「已处理」时不提供用户管理跳转，需确认账号已删除并填写说明；现存账号仍先在用户管理完成实际处置。
+每条链接分别呈现可用状态、机器观察和反馈人数。健康圆点旁保留文字，详细观察放在可访问的提示中。机器无法判断时不提示检测成功，也不删除既有健康结论。失效链接可以折叠，但仍可展开、获取和在两步问题入口中选择；不按健康重新排列整份资源。
 
-用户页 `/workspace/issues` 位于 `(dashboard)` 路由组，组件在 `components/dashboard/issue/`，使用 shadcn；顶栏左上角是网站图标 `/favicon.webp`（与站点顶栏同一张，`alt=""`）和站点名，整体链接回首页。页面提供「我提交的」「待我处理」「我关注的」三个页签与「站务反馈」表单；详情位于 `/workspace/issues/[id]`，含附图、作者头像、按报告者／其他报告者／处理方署名的对话、撤回、「解决了／没解决」、带理由的重开与复核、转交后的提请结案或直接结案。署名由 `caseMessageSide` 判定：带 `authorSide` 的回复属于处理方，`staff` 标「网站管理员」、`original-publisher` 标「原发布者」、`publisher` 标「处理方」；不带的属于报告者，当前开启者标「报告者」，其他作者（含 D33 接替后原开启者的回复）标「其他报告者」，查看者本人写的仍标「报告者」，不按「不是开启者就是处理方」推断。服务端给出 `canResolve`、事项归站方且本人不是网站管理员时，就是可按 D36 直接结案的原发布者：显示与结自己事项相同的结案表单和确认框，确认框多一句「报告者可以重开一次，重开后由网站管理员处理。」，仍标「已交给网站管理员」并保留「去修改资源」与快捷回复；「提请结案」只在 `canPropose` 时显示；网站管理员在 `/workspace/issues` 仍只看到「在后台处理」入口。撤回确认框写明还有其他报告者时改由下一位报告者跟进、已写的说明保留、撤回后退出报告者／订阅者关系，独立处理方权限仍保留；由他人接替时，成功提示「已撤回你的报告，问题改由其他报告者跟进」并回到 `/workspace/issues` 列表。无权查看或问题不存在时，详情只给「无法查看这个问题」和「返回问题处理」，其他加载失败才给「重新加载」。列表标出有新回复和已交给网站管理员的事项。用户可见文案写「网站管理员」，文档术语「站方」不变。
+下载地址与密码应可复制、换行且适应窄屏；链接所在行的空白不承担跳转。下载、编辑、检测、核实和举报依服务器给出的当前能力呈现，当前地址或读取结果改变后丢弃旧凭据和迟到回调。管理员只读预览跳过下载获取、恢复和点赞写入。
 
-站点页内入口留在 HeroUI v2：资源卡片「报告问题」先选本条资源或其中一条链接（含折叠的 broken 链接），再选现象，现象表在 `constants/issueTriage.ts`；单链接失效进入 `LinkReportPanel` 投票，本条资源的疑似违规进入私有 `content_violation × resource` 事项；「发在了错误的条目下」提交 `resource_wrong_patch`，无论资源作者是谁，弹窗与结果都写明由网站管理员处理。「解压失败或游戏无法运行」（`resource_runtime`）、「求资源或催更」（`resource_request`）与「其他」（`resource_other`）提交事项，处理方与「资源与描述不符」相同（D40）；提交去向可带 `guide`（引导语加链接），说明块显示在处理方提示和输入框上方，与表单同时出现。只有「下载慢」是指南现象，显示通用说明与链接，没有提交按钮。条目页「游戏反馈」有五项：条目资料有误（和其他条目重复也选这一项，写明重复的条目链接）、求资源或催更与其他提交事项；资源发错条目、资源链接失效只给指引（分别指向资源卡片的「发在了错误的条目下」与单条链接旁的「报告失效」）和「去资源链接」按钮，按钮关闭弹窗，再经 `Actions.tsx` 传入的 `onOpenResources`（即 `handleClickDownloadNav`）切到「资源链接」页签并滚到资源区，这两个指引项不建事项，也不拉资源列表。条目页的求资源或催更以条目为目标提交 `resource_request`，交网站管理员、不承诺首次响应时限，输入框上方显示 `REQUEST_RESOURCE_GUIDE_NOTE` 与 `REQUEST_RESOURCE_GUIDE_LINKS`；资源卡片同名现象的 `guide` 引用同一对常量，目前指向内容贡献指南。评论、评价、小喇叭与用户资料页的举报共用 `components/case/CaseViolationReportModal.tsx`。提交事项的入口都可附最多 3 张图、写明处理方与预计首次响应，提交后切换为带「查看这条问题」的结果；资源卡片「报告问题」与条目页「游戏反馈」对访客可见，游戏反馈在打开时、资源卡片在提交时引导登录；举报入口跟随所在内容的可见性，内容对访客隐藏或页面要求登录时，访客也看不到举报入口（上游规则，本模块不改）。资源卡片徽标按类型分别显示报告人数与处理方。站点用户菜单的「问题处理」显示待办数。两侧共用的展示与校验镜像放在不引 UI 库的 `components/case/caseDisplay.ts`，图片草稿由 `useCaseImageUploads` 管理。剩余时间（发布者转交、报告者自动结案与重开窗口的倒计时）用 `formatCaseRemaining` 逐级向上取整（如「约 7 天」），与 48 小时提醒口径一致；已等待时长用 `formatCaseDuration` 向下取整。
+资源问题先选择整份资源或具体链接，再选择现象。下载慢提供指南，单链接失效走链接报告；资源发错条目交管理员，其他问题按[反馈分工](api-services.md#反馈与处理)处理。游戏反馈中的资源失效和发错条目只引导到资源区，不创建事项；求资源或催更按选中的游戏或资源确定处理方，不承诺游戏级反馈的首次响应期限。
 
-后台事项复用 `components/dashboard/case` 的 shadcn 详情组件，既可在统一收件箱操作，也可直接打开 `/dashboard/case/[id]`；事项中心另有只读视图「发布者处理中」，可按发布者筛选，导航计数仍只算站方队列。后台标题、顶栏与导航统一称「事项中心」。事项中心的搜索框前有「搜索范围」（全部、编号、类型、游戏、资源、报告者、对话内容，默认全部），写进网址参数 `searchField`（全部时省略），占位提示随范围变化；范围只作用于已提交的搜索词，没有搜索词时只改范围不重新请求。列表在类型筛选旁有「状态筛选」，选项是当前视图涉及的状态分组（`CASE_STATUS_FILTERS`：等待处理方即 `open` 加 `waiting_owner`、等待报告者、已解决、已驳回），工作台与只含一组的视图不显示；它写进网址参数 `caseStatus`，请求时以该组中属于本视图的状态作为 `statuses`，代替视图自己的状态参数并保留 `ownerType`，网址里不属于当前视图的分组被忽略；换类型或搜索时保留，换视图时清除，导航计数不随它变化。表头是一组按钮（`role="group"`，名称「列表排序」），当前列显示箭头，可访问名称写明列与当前顺序（「按时间排序，当前升序」），其他列只写「按状态排序」这类名称。点当前列切换升降序，点其他列从升序开始，都回到第 1 页；`sort`、`order` 写进网址，默认的 `time`、`asc` 不写也不发送。人名一列在「发布者处理中」是发布者（`owner`），其他视图是提交人（`reporter`），切换视图时排序随这一列换；工作台固定按时间升序。表头在加载时保持挂载，刚点击的按钮不丢焦点；列表容器窄于 52rem 时表头隐藏，卡片仍按网址里的顺序。列表行的时间显示 `statusChangedAt`，与「等待 N 天」及时间排序同一时刻。窄卡片的状态、旧结论、重开次数与时间右边缘对齐；宽表中的状态说明仍左对齐。竖向导航的分组标题后写处理方（`CASE_VIEW_GROUP_OWNERS`）：「概览 · 站方」「未结 · 站方」「已结案 · 站方」「全部 · 站方」「只读 · 发布者」，标题经 `aria-labelledby` 同时是该组列表的名称；横向导航条只保留分组名。导航下方的说明 `CASE_VIEW_OVERLAP_HINT` 另写明归站方的事项：违规举报、条目资料有误、资源发错条目、站务反馈与条目页「其他」、条目页「求资源或催更」、官方资源的问题，以及发布者 7 天未处理或报告者申请复核后转来的资源问题。列表与详情的分栏宽度由 `components/dashboard/ui/resizable.tsx` 的 `useResizableLayout` 保存：钩子挂载前读空存储，与服务端渲染一致，挂载后经返回的 `groupRef` 应用已保存布局，调用方必须把 `groupRef` 传给 `ResizablePanelGroup`，给各 `Panel` 设置稳定的 `id`，并把同顺序的 `panelIds` 传给钩子，确保重进页面或刷新后恢复分栏比例。详情标出报告者申请复核，并在顶部显示原发布者最近的提请与「采纳」。按钮依据服务端 `capabilities` 展示，权限仍由 API 保证；审核动作先确认再提交，失败保留输入。对话正文按纯文本显示，仅把三篇既有指南路径渲染为链接；关注者视图不补查正文或身份，不展示系统消息的原始 payload。
+## 问题处理与后台队列
 
-统一收件箱只收等待处理方的站方事项：结案，或回复交给报告者后，该行移出队列并刷新计数；取消勾选「回复后等待报告者补充」时事项留在原位。该勾选框对站方事项默认勾选（D28）；对仍归发布者的事项默认不勾，不勾时提示「事项仍等发布者处理，发布者的 7 天时限照常计时。」（D32）。收件箱内的详情只在事项离开队列时通知收件箱，其余更新（含业务失败）只原地重读详情，不走收件箱的冲突刷新，确认框、错误与未提交的输入都保留；事项若已被他人处理，详情显示新状态并保留失败原因，已结事项不再显示回复与裁决区，收件箱行与计数在下次刷新列表时更新。管理员回复可附最多 3 张图，写明报告者与发布者的可见范围；结案、处置及提请说明只写文字。详情和处置确认框显示被举报内容与作者，属性区显示资源状态、用户管理深链与同条目的其他未结事项（最多 20 条）。未结事项的旧结论在属性区标「上次结论」，在事项中心列表行标「上次：<结论>」；复核事项与重开过的事项在结案类确认框中写明结案后不能再重开或复核。管理员回复原发布者的提请后收起横幅；快捷回复按事项类型筛选。隐藏／取消隐藏单条对话均先确认，普通用户读取到占位且无图片，管理员详情仍显示原文。移动资源可按游戏名搜索或填写 ID；搜索失败显示错误而不是空结果，换关键词即清空旧候选，过期响应被忽略。
+用户问题页展示本人提交、待处理和关注的事项；后台事项中心处理站方问题，并有发布者处理中只读视图。可见对话与署名由服务器提供，不因头像或用户不是开启者就推断其身份。目标被删后保留历史对话，停用失效目标链接和依赖现存目标的动作，人工结案需说明。
 
-两处对话的作者头像用 `components/dashboard/ui/avatar.tsx`（shadcn 官方 Avatar，基于控制台已有的 `radix-ui` 包）：`/workspace/issues` 时间轴为 32px，后台对话在作者名前加 24px。图片取接口已返回的 `author.avatar`（用户存的图床完整地址，没上传时为空串），只在响应带作者的地方显示，不为头像另查身份；没有头像、图片未加载完成或看不到作者身份时显示名字首字，并按 `caseMessageSide` 保留一侧的配色：处理方主色，已注销账号虚线圈，其余沿用官方回退的灰底。后台对话把开启者 ID 传给 `CaseConversation` 来区分报告者与处理方。头像与首字都 `aria-hidden`、图片 `alt=""`，名字已在旁边以文字给出；系统事件不画头像。
+筛选、搜索与排序保存在网址，切换视图或搜索按规则回到首屏。加载或失败不能冒充零条。收件箱只在事项离开队列时移除该行；普通回复或业务失败在原详情中刷新，保留错误和未提交输入。手机列表与详情保持主要操作可达，桌面分栏可恢复已保存宽度。
 
-## 小喇叭
-
-前台小喇叭位于首页、`/shoutbox`、游戏页「关于本作的小喇叭」关联条和登录后的用户记录页，使用 HeroUI v2 的 Card、Avatar、ScrollShadow、Button、Textarea、Modal、Alert 等既有组件。首页为最多 15 条的单列手动滚动列表，每条头像独立成列，右侧依次为「置顶」「重要」标签与加粗用户名，用户名后加中文冒号，官方消息用底色区分。正文字号手机为 14px、`sm` 及以上为 16px，统一使用 24px 行高，可换行到标签下方但始终避开头像；桌面正文独立于右侧操作和时间列，手机首行保留头像、标签、发布者及操作时间，正文固定从第二行开始并跨文字与操作列。手机窄屏压缩标签内边距，过长用户名省略并以 title 提供全名。操作区按页面预留一个或两个 32px 槽位，按钮隐藏时不收缩，右侧 64px 左对齐时间列与操作区相隔 2px；28px 头像、发布者及操作时间在首行居中对齐。自己的消息隐藏举报入口；其他消息仅在服务端返回 `reportable = true` 时向普通用户与游客显示举报入口，超级管理员作者的普通与官方消息均不可举报，隐藏时仍保留操作槽。普通消息在未使用编辑机会的 5 分钟内显示编辑图标；管理员查看他人的消息时使用同尺寸入口跳转 `/dashboard/shoutbox?shoutbox=<id>`，后台精准读取目标并保留返回列表入口。关联游戏使用手柄图标与游戏名组成的内联胶囊，宽度上限为消息列宽与 12rem 的较小值，放不下时整体换行，胶囊内过长名称省略，正文按宽度自动换行，手动换行统一替换为空格（输入、保存和历史展示共用规则）；标题区提供发布按钮，费用标签仅在能与标题同排时显示；ScrollShadow 使用 `scrollbar-gutter: stable both-edges` 保持两侧留白对称。只有首页响应 `hasMore = true` 时才在滚动列表最后渲染「显示更多」，滚到末尾后可跳转独立 `/shoutbox` 页；全站和游戏分页使用同样的紧凑消息行，每页 20 条并可查阅全部公开历史，保留作者编辑、自删、确认与通知锚点。个人主页的小喇叭页也复用紧凑消息行，保持每页 6 条，并保留记录状态、已编辑信息和作者操作；自删后记录仍显示为「作者已删除」。首页 Card 背景复用游戏卡片的 HeroUI `bg-content1`，随浅色与深色主题切换；整个板块以 300px 为高度上限，不超过上方 Hero 既有的 300px 最小高度；消息列表占剩余空间并滚动。首次加载采用同一总高度约束和单一 HeroUI v2 默认 Spinner，完整列表沿用相同加载样式，加载完成后短内容按实际高度显示。生效中的官方置顶占首页及全站第一页的一个名额；游戏关联条仍显示 3 条。管理员在点击「发布小喇叭」打开的发布界面查看官方公告说明，并进入 `/dashboard/shoutbox?tab=official` 免费发布官方消息，选择重要级可展示全站横幅。重要级官方消息在站点与 Dashboard 使用各自设计系统的横幅渲染器，两者复用 `useShoutboxBanner` 的取数和按消息 ID 关闭状态；新消息不得继承旧消息的关闭状态。
-
-公开小喇叭的浏览器查询代码集中在 `components/shoutbox/query/`，由首页、游戏关联条、全站／游戏分页和前后台横幅共用。两套根布局分别持有稳定的 QueryClient；SSR 实例按请求独立，服务端使用无限 `gcTime` 避免清理计时器留住请求缓存，浏览器无消费者缓存保留 5 分钟。查询键包含展示范围、页码、用户 ID、实际分级与排序去重的屏蔽标签。账号或偏好变化会取消并清理旧作用域，分页占位只能复用同一身份、偏好和游戏范围的数据；缓存不持久化。
-
-Query observer 固定禁用自动请求，取数统一经过可见性、就绪状态、当前作用域和有效消费者检查；有效 `validUntil` 内复用结果，同 key 请求合并。隐藏页面不发起新的自动 GET，恢复时按期限和冷却合并刷新。单次 GET 超时 10 秒，字符串响应按错误处理；失败从该次错误时刻退避 60 秒，游戏作用域 300 秒，重新挂载或切换可见性不能绕过。首次读取显示 HeroUI Spinner；成功空结果才显示暂无内容。刷新失败保留普通旧消息并允许重试，时间边界的展示投影按当前时刻隐藏不确定置顶及到期横幅，不修改缓存接收时间或错误状态；游戏公开历史继续保留。
-
-`/shoutbox` 首屏携带服务器实际用户及可见性上下文，首次 hydration 使用对应初始数据；根 Provider 就绪后切换到客户端实际 API 上下文。匹配且新鲜时不补 GET；匿名分级差异只做一次纠正请求，不把服务器结果写入不匹配的 key。已有查询的错误或失效状态不得被旧 SSR 数据覆盖。发布、编辑、自删、举报、官方写入及管理员处置成功后，公共 helper 先取消写前查询结果，再标记缓存失效；只刷新当前可见页面中已就绪的有效消费者。个人记录和后台管理列表保留原有取数方式。
-
-举报按钮对本人消息隐藏；访客点击只显示登录引导，登录用户在 HeroUI Modal 内填写原因，失败时保留草稿。控制台 `/dashboard/shoutbox` 使用 shadcn Tabs 管理官方消息、待复核、公开中与已终止四个 URL 页签，并显示待处理举报证据。官方消息的「移除」覆盖待生效、生效中和已结束的公告，确认后退出公开消息流、置顶和横幅，后台保留「已移除」记录；「提前结束」仍保留公开历史，确认文案明确两者的展示范围。隐藏、删除、恢复、举报结案以及官方提前结束或移除都必须先打开确认界面再写请求；取消和 Escape，以及普通 Dialog 的 X 或遮罩关闭都不得写入，关闭后焦点回到触发按钮。AlertDialog 不提供 X，点击遮罩保持弹窗。控制台不导入 HeroUI，前台不复制 shadcn 组件。
-
-## 资源详情与下载
-
-用户工作台位于 `app/(dashboard)/workspace`，复用 shadcn 基础组件并使用独立用户外壳，
-身份取服务端会话。资源编辑从本人精确接口读取，不创建下载授权；受保护槽位只提交
-ID／版本引用。编辑基点、上传、迟到响应、维护限制及页面统一健康投影的规则见
-[workspace.md](workspace.md)。资源卡片按原分组和平台／语言顺序展示，健康变化只影响
-内部链接折叠。旧 `/issue` 地址仅保留兼容跳转。
-
-- 每链接独立展示健康状态、当前输入的机器检测摘要和用户报告人数，三项不能互相替代。镜像标题行左侧用圆点加始终可见的检测文字（正常 / 疑似失效 / 有争议 / 已失效），与文件大小同一字号字重、中间用「·」连接；机器检测、报告人数和处理状态放在圆点的 Popover 里。disputed 保持可见，broken 可折叠（文案含「已折叠」）但仍能展开、获取、选择和报告；原始 URL／码及检测签名不属于公开健康事实。检测 unknown／失败不撤掉已有结论，失败无 checkedAt；过期观察带 stale。
-- `LinkHealthStatus`、`LinkHealthActions` 与事项内 `LinkHealthCaseActions` 消费同一服务端投影和 capabilities，不按角色或按钮文案另推权限。动作携带当前版本／轮次／健康时间基点；报告绑定目标和版本，轮次与权重由服务端重读。成功后的本地投影仅用于发起动作的读取快照。新快照即使版本／轮次相同，也不能被旧回调覆盖。
-- 登录用户对 LLC 支持的五家网盘分享链接可通过 `canCheck` 使用「检测链接」，包括他人资源，无需先获取下载链接。官方资源盘、对象存储、其他第三方地址和不合法分享地址不显示检测入口，发布者和管理员也遵循该范围。前端统一消费服务端能力，不从旧检测结果推断支持情况；游客没有检测能力，补链、核实、确认失效和管理员裁决各自沿用原权限。
-- 手动检测的确认框列出百度、夸克、UC、和彩云和 123 云盘；资源卡片与事项详情共用 `linkCheckFeedback`，按接口 `result` 显示本次可访问、删除／取消／过期／屏蔽、未支持、访问验证、超时、限流、服务／响应／校验失败或过期结果。unknown 不弹成功提示；机器可访问仍须保留 suspect、disputed、broken 的既有健康含义。并发新观察与本次结果分开，目标／版本不匹配的响应不落地，换读取快照或卸载后的迟到反馈丢弃；提交中阻止重复请求。
-- 获取凭据绑定完整目标、version 和当前读取快照；同版本仅换码的新快照也立即淘汰旧凭据。恢复请求按资源／版本／读取快照去重，完成后释放；新快照重新读取，迟到旧响应不落入组件状态，不能让旧恢复或两步报告回调覆盖新事实。
-- 两步入口不创建旧 `resource_link_failure`。链接原因包括已删除／失效、访问条件变化、打不开／超时；弱原因须确认尝试换网络或加速器，下载慢只给指南。报告资格与权重由 API 重查，访客只走登录引导。
-- 管理员待审事项详情及 `/preview/resource/[id]` 可在服务端校验 `role >= 3` 后读取完整链接，响应使用 `private, no-store`，凭据只保留在组件内存。前台公开列表与普通用户的 access/restore 流程仍按下列脱敏规则执行。
-- `ResourceDownload` 与 `ResourceDownloadCard` 接收 `preview` 参数。预览保留展开和文字展示，跳过 restore/access/download 请求；点赞显示静态计数，完整链接由管理员授权读取直接传入。
-
-- 游戏详情资源下载卡片只在首屏展示存储类型、大小、下载次数和可公开校验用 hash，不直接渲染真实链接、提取码或解压码；用户点击“获取下载链接”后再调用 `/api/patch/resource/download/access` 在本地组件状态中展示完整信息。资源编辑入口需要先用 `accessResourceLinksForEdit` 水合完整链接，再打开编辑表单，不能把敏感链接重新放回资源列表数据或全局缓存。
-- `ResourceDownloadCard` 自己维护 `accessedLink`、`accessing` 和错误文案状态：未获取时显示“获取下载链接”按钮，获取中禁用按钮并显示 loading，业务字符串错误用 toast 和 `role="alert"` 行内提示展示，请求异常显示“获取下载链接失败，请稍后重试”。
-- 资源授权从首次获取起固定 24 小时。授权期内可点开该资源条目的全部镜像，但按钮和敏感字段仍按镜像区分：点过的镜像使用“查看已获取链接”，未点过的镜像继续使用“获取下载链接”。`obtained` 表示资源授权有效，不能替代镜像级 `revealed`。
-- 刷新后，`ResourceDownload` 按资源条目收集所有 `revealed` 镜像 ID，只发起一次批量 restore 请求并自动展开该资源。restore 只水合点过、事件版本与当前版本一致且授权仍有效的镜像；未点过的镜像继续隐藏，刷新也不能创建 grant/event 或延长 24 小时授权。
-- 获取或恢复成功后，真实链接只保存在 `ResourceDownloadCard` 的组件内存状态中。不要把 access/restore 返回值写入 patch/resource store、持久化客户端状态、列表缓存或 URL 参数。
-- 游客日/周剩余额度只在新的游戏资源 `resource_granted` 响应后显示；`link_revealed`、`reused` 和 restore 都不能刷新或重复展示产品额度反馈。`DownloadCard` 不再在每条镜像下重复显示授权时长说明；24 小时用户说明集中保留在下载公告，镜像展示与刷新恢复规则以本节前述约定为准。
-- 资源卡片的三个点操作菜单只对资源作者本人或管理员（`role >= 3`）渲染；游客和其他没有编辑权限的用户不显示操作入口。前端显隐只改善体验，资源更新/删除 API 仍必须在服务端校验资源归属和角色。「遇到问题」在内卡片类型芯片行右上角、⋯ 左侧。单条镜像的「报告失效」只在获取或恢复凭据之后出现，固定在该镜像标题行右侧。
-- 每条镜像都有存储标签，Chip 为 primary，图标用 20px 白底圆角瓷片。五个网盘按检测同一套域名规则识别（百度 / 夸克 / UC / 和彩云 / 123）。主机名恰好是 `pan.otoame.top` 的 https 地址标为 OtoAme 资源盘，图标用 Cloudreve v3 的标志。`storage` 为 `s3` 且域名不是上述网盘时标为对象存储。其余标为「其他」。公开列表只下发 `diskKind`，不把地址带出来；揭示后按拿到的地址重判。镜像条目采用建议原型排版：官方/社区外壳、内层资源、镜像和揭示后的凭据都用 HeroUI v2 `Card`（内层 `shadow="none"`；Card 与 CardBody 都 `overflow-visible`，以免裁切高亮环和下拉/气泡，并加 `min-w-0 max-w-full` 让长凭据能在 flex 里收缩）。镜像标题是按资源链接原顺序从 1 起的半粗「链接 #N」，旁边是网盘芯片、健康圆点和 `text-xs` 的「状态 · 文件大小」。同一行右侧是纯图标的「检测链接」「补链」和获取后的「报告失效」（`variant="light"` `size="sm"` `isIconOnly`，名称在 Tooltip 与 `aria-label`，报告失效在最右）。实心「获取下载链接」、凭据再套一层 `bg-content1` 卡片；失效链接收进虚线折叠按钮。健康点的 Popover 触发器是 HeroUI `Button` `size="sm"` `isIconOnly`，视觉盒压到 24px，避免把文字行撑到默认 32px，不要压到 1em；气泡内容 `max-w` 限制在视口内。类型芯片在自身容器内换行，「遇到问题」与 ⋯ 钉在右上角、不随芯片换行，二者均为 `size="sm"`，「遇到问题」为纯图标。报告流程里的指南/弱证据确认块也用 `Card`，不要手写 `rounded-*` 盒子。核实 / 确认失效 / 判定放在虚线「处理」区，仅在 capabilities 有对应动作时出现。发布者、点赞和下载保持生产环境的 `flex justify-between` 与 `flex gap-2`，这一行不放「遇到问题」。资源标题与说明仍用现有 `h3` / `flex-col` / `mt-2` / `kun-prose` 间距。内卡片仍是 `p-3` / `space-y-2`，类型芯片 `KunPatchAttribute` `md`。
-- 游戏详情页的添加资源入口对游客保持可见，但游客点击后只显示登录/注册引导，不挂载资源填写表单；登录提示说明“普通用户的可用萌萌点达到 20 后可以发布资源”，登录用户才直接打开表单。
-- 发布与编辑资源共用 `ResourceDetailsForm`：桌面双列布局的第二行左侧为“平台”、右侧为“语言”；移动端单列布局先显示“平台”，再显示“语言”。
-- 资源详情表单保留“类型”标签；游戏资源分区把“中文支持”作为独立的多选上拉框，只有选择游戏类型时才显示红色必填 `*`，保留原有选项标题、说明文字和多选勾选样式。主类型下拉按“游戏类型 / 其他类型”分组，借用 HeroUI 的 `SelectSection` / `SelectItem` 默认分组标题和选项间距，不添加图标或快捷键。类型下拉通过 `popoverProps.placement = 'top'`、`shouldFlip = false` 保持从上方打开，并开启边缘渐隐；游戏类型、工具补丁和中文支持的最大高度分别为 `300px`、`300px` 和 `256px`，刚好容纳各自的选项说明。工具补丁类型右侧显示“翻译补丁包括：民汉补丁、AI 翻译补丁、机翻补丁”。
-- 资源类型校验由前端表单和 `validations/patch.ts` 共享规则共同保证：只要选择 PC、主机或手机游戏，就必须同时选择官中、民汉、机翻或生肉；仅选择资料集或工具时，中文支持下拉框禁用且已有中文支持值会被清除，API 拒绝该组合。游戏类型与资料集/工具混选时，中文支持下拉框保持可用并按游戏类型规则校验。错误提示为“请选择中文支持情况：官中、民汉、机翻、生肉”或“资料集或工具不允许选择中文支持类型”。
-- 发布和编辑按钮必须通过 React Hook Form 的 `handleSubmit` 触发该 resolver，让类型错误直接显示在表单字段下方；API schema 仍需再次校验，不能只依赖前端。
-- 长链接、提取码、解压码和 hash 都要按可复制、可换行、移动端不撑破容器的方式渲染。揭示后的下载 URL 收成内容宽度（`w-fit max-w-full`，外包 `min-w-0 max-w-full`，链接与内层文字带 `break-all` / `overflow-wrap: anywhere`），只让链接文字和外部图标可点，同一行空白不跳转。提取码／解压码 Snippet 的 `pre` 用 `!whitespace-pre-wrap break-all` 覆盖 HeroUI 主题的 `whitespace-nowrap`。对象存储资源的 hash 可在未获取真实链接前展示，用于文件完整性校验。
-- 资源操作菜单点击“编辑”时，`ResourceTabs` 经 `accessResourceLinksForEdit` 水合完整链接并捕获完整 `baseLinks` 后再打开表单。每次编辑会话只捕获一次原始基点，同目标后台刷新不覆盖草稿或替换基点；换目标重新捕获，缺基点或获取失败不打开表单。409 保留草稿，不能临时读取新基点重试覆盖。
-- `/dashboard/inbox` 的 broken-link 详情用 shadcn，补链／移除跳 `/admin/resource/link/<resourceId>?linkId=<linkId>`。该旧后台页由 `role >= 3` 保护，精确 GET `/api/admin/resource?page=1&limit=1&resourceId=<resourceId>` 读取含隐藏资源、全部凭据和完整旧基点的管理员 DTO，复用 HeroUI 编辑表单，不能为编辑创建下载 grant。最后一条链接不可移除；取消零写入，保存或取消回 `/dashboard/inbox?kinds=broken-link&kind=broken-link&id=<linkId>`，保留可解析的选中项。站点／旧后台继续 HeroUI v2，dashboard 继续 shadcn。
-
-## 萌萌点
-
-- 新功能沿用 HeroUI v2 设计系统：余额摘要和规则分区用 Card，日期预设用 Tabs，自定义日期用 DateRangePicker，明细用 Table/Chip/Spinner，翻页复用 `KunPagination`。不要用原生按钮、输入框或手写表格替代这些组件。
-- 前端统一展示“总萌萌点”“可用萌萌点”“待结算萌萌点”；动作名称使用“暂扣”“返还”“确认扣除”。顶栏主值展示可用余额，并在存在待结算余额时补充说明；规则页按“萌萌点获取途径”“萌萌点扣除与回退”“余额门槛”“暂扣与结算”说明相关规则。
-- **余额可以为负**（奖励被收回时真实回退）。余额卡负值用 danger 语义色，并在总额为负时给出说明；不要用 `Math.max(0, ...)` 把负值伪装成 0。
-- `userStore` 同时保存 `moemoepoint`、`moemoepointReserved` 和 `moemoepointAvailable`。登录、注册、2FA 和 session 都返回完整三态；签到、改名、发布/删除资源、创建游戏和付费新私聊等会改变当前用户余额的响应，应立即调用 `setMoemoepointBalance`，避免顶栏等待刷新。persist merge 必须兼容旧 localStorage 中只有 `moemoepoint` 的数据。
-- 顶部主导航和移动端侧栏不放“萌萌点”入口；本人个人主页在“编辑信息”右侧提供“萌萌点明细”，头像下拉继续展示可用余额入口。具有后台权限的 `role >= 3` 用户在桌面端“帮助文档”右侧和移动端对应位置看到“管理后台”，个人主页的同名按钮独占下一行并与“申请成为创作者”保持相同的全宽样式。
-- 明细日期以 Asia/Shanghai 显示，默认 30 天；切换 7/30 天立即请求。切到“自定义日期”时**不要继续展示上一个范围的数据**，应清空并提示“请选择日期范围后点击查询”，最多 90 天。翻页或日期请求并发时只接收最新响应，保留错误、loading 和空状态。
-- 明细 `kind` 来自数据库 String 列，渲染时必须有兜底：生产有 CHECK 约束但开发库走 `prisma db push` 没有，一个意外值会让整页白屏。
-- 窄屏（`sm` 以下）用卡片列表替代 4 列表格，否则「变动」和「变更后余额」各占 3 行会横向溢出。
-- 本人访问自己的明细时，页面返回的权威余额会同步回 `userStore`；管理员在后台查看他人明细时不能覆盖管理员自己的顶栏余额。
-- 管理员发放弹窗每次打开生成新的 requestId；请求抛异常（结果不明）时冻结请求快照并锁定输入，只允许「重试原请求」（原样重发同一 requestId 与参数）或关闭弹窗后核对账单；业务字符串错误保留表单不关弹窗；成功响应 `applied: false` 提示「此前已生效, 未重复发放」。请求飞行中锁定 backdrop/Esc/关闭钮/取消键。
-
-## 消息展示
-
-- `components/message/MessageCard.tsx` 将通知正文作为纯文本渲染，并保留换行，用于系统通知展示多行变更摘要。
-- 私聊会话详情页使用 `components/message/MessageLayoutChrome.tsx` 做路由级布局控制。只有 `/message/chat/[conversationId]` 会隐藏消息页标题、说明文字和全站面包屑，消息列表页继续保留原有 header、面包屑和消息导航。该页外层通过 `--message-chat-top-reserve` 预留顶部空间，并让聊天卡片高度扣除这段预留；视觉高度微调优先调整这个 CSS 变量，再考虑基础预留值。`MessageNav` 在会话详情页大屏继续作为左侧栏显示，小屏通过 `max-lg:hidden` 隐藏，避免在聊天窗口上方占用高度；消息列表页不使用这条隐藏规则。
-- 私聊会话详情页的全站根布局由 `components/layout/RootRouteChrome.tsx` 按路由裁剪。该路由不渲染全站 footer 和 back-to-top，并负责锁定/恢复 document 滚动；离开私聊详情页时必须恢复全站滚动，并在下一帧/短延迟再次确认 `overflow-y: auto`，避免其他页面被残留的 `overflow: hidden` 影响。移动端从 HeroUI Navbar 菜单等已带滚动锁的入口跳进私聊详情时，根布局只能释放自己仍然持有的锁，不能把已经释放的外部 `overflow: hidden` 再写回。移动端聊天卡片高度通过 `--message-chat-visual-viewport-height` 读取 `visualViewport.height`，并通过 `--message-chat-visual-viewport-offset-top` 跟随 Chrome 等浏览器在输入法展开时产生的 visual viewport 偏移；详情页 viewport 使用 `interactiveWidget: 'resizes-content'` 让支持的 Chrome 优先缩 layout viewport，不支持时由 visualViewport 变量兜底。输入法展开时只折叠/平移聊天区域并把 document scroll 拉回 0，不要在这里临时给 `body` 写 `position: fixed`，否则会和 Chrome 的输入聚焦滚动叠加。仍然只让 `ChatContainer` 内部消息列表滚动，不要为了取消整页滚动而移除或重写 `ChatContainer` 原本的卡片和内部 `overflow-y-auto` 滚动容器。
-- 私聊消息气泡宽度以 `ChatContainer` 内部消息滚动区的 `@container` 为口径，不能再退回 viewport 宽度。移动端/base 使用 `max-w-[70cqw]`，`md` 及以上使用 `md:max-w-[60cqw]`；带文字或引用的图片气泡保留 `md:w-[min(60cqw,32rem)]`，单图图片仍可 `w-fit` 收缩，但同样受这组最大宽度限制。私聊回复预览只显示一行内容，使用气泡当前可用宽度做 `text-overflow: ellipsis`，不要按固定字符数截断或恢复为多行 clamp。文档里引用 Tailwind 任意值 class 时必须写出完整有效的 token 名，不要在 class 字符串里放省略号占位——Tailwind 会扫描这类文档式源文本。
-- 私聊 Sticker Pack 封面始终使用静态 WebP poster。聊天选择面板、回复预览和管理网格中的非封面动态缩略图复用 `StickerThumbnail`：接近可视区域时以 `preload="auto"` 首次挂载静音循环 WebM，首帧就绪后移除 poster；首次挂载后始终保留同一个视频节点，但只有实际可见的缩略图持续解码，滚动离开时暂停、返回时从原进度恢复，避免看过的后台视频不断累积并拖慢当前播放。可见视频遇到浏览器 `pause`、`waiting`、`stalled` 或异常结束时主动续播。命中 `prefers-reduced-motion` 时仍只保留 poster，避免透明视频与静态帧叠加。
-- 资源可用的私聊 Sticker 消息按 Telegram 风格直接显示贴纸，不绘制普通消息气泡的背景、描边、阴影或内边距；时间和发送方已读状态继续使用贴纸右下角的半透明浮层，右键、键盘菜单、滑动回复和回复跳转交互仍挂在透明容器上。Sticker 记录或资源不可用时保留普通文本气泡显示降级文案，避免透明交互区域无法解释失败状态。
-- 私聊 Sticker 选择面板不要使用 `100vw` 作为移动端边界。Sticker 入口使用 HeroUI `Textarea` 的 `endContent` 嵌在输入区最右侧：触发器绝对定位到 `inputWrapper` 右下角，不参与 Textarea 高度计算，并给输入文字保留右侧空间；发送按钮仍位于输入框外。`ChatContainer` 在消息滚动区上层提供受限 Portal 宿主：移动端 Picker 固定在消息可视区域底部，保持全宽和 `50%` 高度并在内部滚动，不覆盖标题和输入栏，也不会越出聊天卡片；宽屏 Picker 在同一宿主底部显示，右边缘按 Sticker 触发器相对消息区的实际位置动态对齐，宽度使用私聊消息窗口的 `60%`。Picker 通过 Framer Motion `AnimatePresence` 保留退出节点：打开时从底部轻微上移、缩放并淡入，关闭时快速淡出；退出期间禁用指针事件，命中 `prefers-reduced-motion` 时不播放过渡。所有宽度下的 Sticker 网格统一使用 5 列；Portal 宿主同时是 inline-size container，宽屏网格用 container query 单位计算 4 行方形 Sticker 的最大高度，并继续受消息区可用高度约束。Portal 后的外部点击判断必须同时包含触发按钮和 Picker 节点。
-
-## 状态管理
-
-Zustand stores 在 `store/*`：
-
-- `userStore.ts`：当前用户状态；萌萌点同时保存总额、待结算和可用余额，并通过 `setMoemoepointBalance` 原子更新三者。persist merge 必须兼容旧 localStorage 中只有 `moemoepoint` 的数据。
-- `settingStore.ts`：站点设置和 UI 设置。
-- `editStore.ts`：创建游戏状态。
-- `rewriteStore.ts`：重写游戏状态，详情页会写入当前 patch 数据。
-- `milkdownStore.ts`：编辑器状态。
-- `searchStore.ts`：搜索历史/条件。
-- `messageStore.ts`：消息相关状态。
-- `breadcrumb.ts`：面包屑状态。
-- `_cookie.ts`：cookie 辅助。
-
-Store 改动要检查使用该 store 的页面和组件，不要只改类型。
-
-用户资料设置：
-
-- `components/settings/user/Username.tsx` 和 `Bio.tsx` 预填当前资料；用户资料异步加载时，尚未编辑的字段跟随最新资料，已编辑的草稿保持原输入。
-- 保存按钮仅在去除首尾空格后的内容与当前资料不同、校验通过且未提交时启用。提交期间禁用输入和重复保存；用户名保留扣费确认弹窗，请求成功后关闭，失败时保持可重试。
-- 只有服务端成功响应才更新用户资料，并保留规范化后的新值；保存失败时提示错误并保留草稿。更新以 store 的最新用户对象为基础，保留请求期间刷新的其他资料。
-
-消息红点：
-
-- 顶栏和消息导航都以 `messageStore` 作为通知/私聊红点的单一状态源。
-- `components/message/MessageRealtimeSync.tsx` 在全站 Provider 中同步登录用户的未读状态。它只读取 `/api/message/unread`，不会标记任何消息已读；系统通知、评论回复、@、关注等新通知在任意页面只通过顶栏铃铛小红点提示，不弹 toast；可见标签页约 15 秒同步一次，隐藏标签页降频，重新可见时立即同步。可见性恢复不能和已有未读同步请求重叠；当前请求完成后再安排下一次轮询。后台未读同步遇到 `notification-read` 限频等字符串业务错误时只保留当前红点状态，不弹重复 toast，也不能把字符串当状态对象写入 store。顶栏 `/api/user/session` 刷新会同步用户资料和未读状态；如果服务端因未读子查询限流返回 `unread: null`，前端只更新用户资料，不覆盖当前红点状态。
-- 顶栏铃铛只导航到通知中心，不提前调用 `/api/message/read`。进入通知页时，消息导航在首屏列表已经渲染后乐观清除通知红点，并用 `/api/message/read` 返回的 `MessageUnreadStatus` 回写 store；标记已读请求抛出异常或返回字符串业务错误时必须提示可重试/用户可见错误，并重新读取 `/api/message/unread` 恢复真实红点状态。如果标已读和恢复读取都失败或都返回限频字符串，要回滚到乐观清除前的红点快照。不能用消息导航自己的本地状态覆盖全局状态，旧未读请求晚返回时也不能覆盖已读结果。
-- 私聊全局红点来自服务端未读聚合，当前用户已隐藏的私聊不应参与聚合；隐藏会话只有在重新打开或收到新发送消息恢复可见后才重新影响红点。
-- 通知列表客户端首次 hydrate 时先复用服务端首屏数据，并立即用无整页 loading 的后台请求刷新当前页，避免标签页切回后还停在旧列表；旧内容在后台请求返回前保持可见，不用整页加载态遮住用户刚看到的消息。通知列表分页请求可能因用户快速翻页而并发；旧页响应晚返回时不能覆盖最新页的消息和总数。分页遇到 `notification-read` 限频等字符串业务错误时要 toast 服务端重试文案，并保留当前列表内容。清理已读消息属于破坏性操作，必须先展示确认弹窗，再在确认按钮上发起删除请求，保留 loading 和失败 toast；删除接口返回 `notification-write` 限频等字符串错误时保持弹窗和列表，不触发额外刷新。
-- 消息导航只在非通知页拉取 `/api/message/unread`，并在路由切换时通过 effect cleanup 忽略过期返回，避免旧未读请求把已读后的红点重新点亮。
-- 私聊会话卡片禁用 Next Link 预取，避免个性化聊天详情使用旧 RSC payload。私聊详情页服务端首屏必须严格校验 `conversationId`，并在初始消息 DB 读取前走 `message-read` 限频；非法 ID 或限频命中都通过现有错误组件展示用户可见字符串。私聊详情页打开后立即用 `afterId` 补拉一次当前会话的新消息，并同步调用会话已读接口；首次已读同步抛出异常时必须提示可重试错误，并通过 effect cleanup 忽略过期返回。可见窗口约每 2 秒继续增量获取，隐藏窗口降频并在恢复可见时立即补拉；可见性恢复触发的立即补拉不能和已有实时刷新重叠，避免同一个 cursor 重复请求和重复已读同步。实时游标只记录服务端已同步到的最高消息 ID，本地发送成功的消息不能推进游标，避免双方同时发送时漏掉对方略早的消息。消息按 ID 去重并按时间排序。实时新消息只在用户已经接近底部时自动跟随到底部；如果用户正在上翻阅读历史，后台同步不能抢走滚动位置。当前会话收到对方新消息后，要调用会话已读接口并用返回的 `MessageUnreadStatus` 写回全局红点；该已读请求抛出异常时提示可重试错误，但不能中断本轮实时状态刷新。
-- 私聊详情页历史消息上翻使用 `beforeId` 和当前最早消息 ID 加载更早记录。会话消息 API 的首屏、历史和增量响应都应按时间从旧到新返回；组件仍可排序合并作为防御，但不能把服务端响应倒序当成契约。已删除消息的响应应是 tombstone，占位渲染不能依赖服务端继续返回旧正文、图片 metadata 或回复预览；本地删除成功后也要立刻把当前 state 中的正文、图片和回复预览清空成同样的 tombstone，避免等下一轮轮询前继续持有旧 payload。如果输入框正在回复的目标消息被删除或从当前消息集合消失，必须同步清掉回复草稿，避免继续展示一个发送时会被服务端拒绝的引用。组件从服务端首屏 `hasMoreBefore` 初始化顶部哨兵；加载完成后根据响应的 `hasMoreBefore` 决定是否继续观察；顶部哨兵连续触发时不能为同一个游标启动重叠历史请求；加载失败时必须释放 loading 并提示用户，避免顶部 spinner 卡死且无法重试。不要恢复为 page/skip 翻页，否则大对话越往前加载越慢。
-- 私聊会话列表首屏 hydrate 时先复用服务端首屏数据，并立即用无整页 loading 的后台请求刷新当前页，避免切回私聊标签页后列表预览和未读 chip 停在旧快照；后台请求返回前仍保留已渲染列表。服务端首屏列表和后续 API 列表刷新都走 `message-read` 限频；限频命中时首屏用错误组件展示重试字符串，客户端手动刷新显示 toast，静默轮询不弹噪音提示。刷新成功后必须同步服务端返回的 `total`，让分页控件随新建、隐藏或恢复会话后的总数变化更新；翻页和后台刷新可能并发，旧请求晚返回时不能覆盖更新后的当前页，静默后台刷新也不能抢占正在进行的翻页加载。会话列表摘要必须以 `user_conversation.last_message_id` 对应的消息为来源，确保预览、最新时间和未读计数来自同一个会话状态；不能只按消息 `created` 排序猜最后一条。图片-only 最新消息在列表中展示为 `[图片]`，不能显示为空消息；已删除的最后一条消息展示删除占位，不能继续显示被删除的原文。会话列表只能在当前页发现未读时点亮全局私聊红点，不能因为当前页没有未读就清除全局私聊红点；清除必须来自 `/api/message/unread` 或会话已读接口的全局状态。
-- 私聊“移除”是当前用户隐藏会话列表记录，不删除双方历史消息。详情页确认弹窗要明确说明只影响自己；移除请求抛出异常时必须显示可重试 toast 并释放危险操作 loading。用户资料页再次发起已有私聊时必须调用创建/打开接口，让服务端恢复隐藏会话后再跳转；检查或创建/打开私聊请求抛出异常时也必须显示可重试 toast 并释放发起按钮 loading。
-- 私聊输入框普通 Enter 发送，`Shift+Enter` 换行；输入法组合输入期间的 Enter 只交给 IME 确认候选词，不能触发发送。发送请求使用同步 ref 锁，避免按键连发或按钮/键盘并发造成重复消息。
-- 私聊输入框带回复草稿和附件折叠菜单。加号菜单目前只放“图片”，支持文件选择和剪贴板粘贴，最多一次发送 9 张；即使用户在下一次 React 渲染前连续选择或粘贴图片，草稿也只能保留前 9 张。发送前用本地缩略图预览并可打开灯箱，预览区必须提供可访问的单张移除按钮；附件加号菜单必须显示在待发送图片预览和移除按钮上层。发送时先逐张上传图片再发送 `type: 1` 消息；文本说明可为空。图片上传接口可能返回用户可见字符串错误，包括限频、小时额度系统繁忙、萌萌点不足、对象存储失败、metadata 登记失败或 metadata 过期，前端必须沿用 toast 分支展示，不要吞掉余额不足提示；请求抛出异常时要从安全的错误 message 或状态中提取具体原因，显示可重试 toast 并释放发送态。多图上传如果部分失败，无论失败来自服务端字符串还是某个上传请求抛错，前端都必须按图片索引保留已成功上传的 metadata，下一次发送只补传失败项；失败后继续追加图片或移除单张图片时也不能丢掉未变图片的 metadata，避免重复上传和制造更多未发送的私聊图片对象。图片发送成功后必须清空隐藏文件输入的 value，保证用户可以马上再次选择同一张图片。回复草稿显示原发送者、选中文本/原消息摘要，以及被右键图片的小缩略图。消息气泡右键菜单支持“回复”和“回复选中文本”，并且必须可通过聚焦气泡后按 Enter、Space、菜单键或 Shift+F10 打开同一菜单；菜单项要保留可见焦点。移动端左滑消息气泡直接进入与右键“回复”相同的回复草稿路径，并用水平阈值区分纵向滚动。图片菜单复制图片链接；右键图片时只高亮当前图片并让回复引用这张图片。图片-only 且无文本说明的自己消息不显示编辑入口，文本编辑弹窗打开后应聚焦文本框；单条消息删除必须先展示确认弹窗，确认后才发起删除请求；编辑或删除请求抛出异常时必须显示可重试 toast 并释放提交态，不能让保存按钮永久 loading。自己的消息使用 Telegram 风格轻量对钩，不显示“已读/未读”文字；所有有正文消息，包括短单行文本、长文本、回复预览正文和图片说明文字，都使用 Telegram 尾部元信息模式：正文保持正常左对齐行内流，尾部追加不可见内联占位为时间/编辑/对钩留空间，元信息贴在同一段落右下角/末行右侧；占位只镜像真实元信息宽度，不能贡献行高、padding 或额外垂直高度；不能用 `text-align-last: justify` 拉伸尾部文字，不能用固定/手写换行、两列 grid、`justify-between`、float 或右侧列占位。图片-only 消息把同一组合放在右下角半透明遮罩中。图片消息需要渲染真实图片预览、可选文本说明和灯箱，多图按紧凑拼图展示。已发送消息里的回复预览可点击短暂滚动到被引用消息并高亮目标内容；聊天窗口向上滚动离开底部时显示浮动回底部按钮，向下滚动展示下方新内容时隐藏，如果刚通过回复预览跳转，按钮第一次点击应回到跳转前位置并高亮原回复消息，之后再作为普通回底部按钮使用；普通回底部点击同样使用短滚动动画，按钮应在点击时立即原地渐隐，外层退出和按钮自身按压反馈都不能造成先向下位移再消失的观感。
-
-编辑页外部数据输入：
-
-- VNDB、Bangumi、Steam、DLSite 输入会异步写入同一个创建/重写 store。
-- 多个外部来源可能连续点击或并发返回；写入 store 时必须基于当前 state 合并，只覆盖该来源负责的字段。
-- 不要用请求发起时捕获的旧 `data` 对象整体覆盖 store，否则后返回的 Bangumi/Steam 会丢掉先返回的 VNDB ID、公司、标签或别名。
-- VNDB 获取只写入 ID、发售日、别名和 developer，不写入 VNDB 标签。
-- Bangumi 获取会保留标签、developer、summary 和标题预览；summary 和标题只通过用户点击按钮填入简介或游戏名称，不自动覆盖已有内容。标题填入时中文名优先，没有中文名则使用原名。
-- Steam 查重是软提示：命中已有 Steam App ID 时展示警告和已有条目链接，但仍然继续 `/api/edit/steam` 拉取并允许提交。Bangumi ID 查重仍然是阻塞式的。
-- 公司由 API 层的共享 resolver 处理；resolver 开启时 VNDB、Bangumi、Steam、DLSite 四个来源全部保留，前端不得自行做来源互斥。关闭开关时的 VNDB/Bangumi 互斥只用于上线回退兼容，不是产品规则。
-- 创建 / 重写接口成功后可能附带提交后处理 warning。前端仍按成功结果保存余额、继续 gallery 上传或结束重写，同时以警告 toast 提示“主体已保存、会社或外部数据需检查”；不得把 warning 当成失败而让用户重复提交。
-- 创建游戏页的“清除信息”用于从 A 游戏草稿切换到 B 游戏草稿，必须同时 reset `editStore`、清理封面和图库 localforage 草稿，并让封面/图库组件重新读取空状态。
-
-编辑页 gallery：
-
-- 创建页 `components/edit/create/GalleryInput.tsx` 和重写页 `components/edit/rewrite/RewriteGalleryInput.tsx` 都支持 JPG/PNG/WebP/AVIF 选择、拖拽排序、批量删除和 NSFW 标记。
-- 创建页和重写页 gallery 都通过 `components/edit/utils/galleryUploadBatch.ts` 逐张上传并保留失败状态。创建页如果游戏主体已创建但截图上传失败，不能清空草稿或跳转详情页；localforage 保留整组图片和已创建 patch 目标，成功项标记为 `uploaded`，失败项标记为 `failed` 并显示错误，重试时只上传失败项。重写页把成功上传的新图并入已有图片，把失败的新图留在 `rewriteStore.newImages`，卡片显示失败原因，下一次提交只重传失败项。`galleryUploadBatch` 必须跳过已经是 `uploaded` 的队列项：上传队列的生命周期比单次请求长，重复提交同一项会在 `patch_game_image` 留下重复行。
-- `rewriteStore` 的 `newImages`、`newBanner`、`newBannerOriginal`、`galleryOrder` 只属于一次编辑会话，不能跨会话存活。详情页播种编辑目标必须走 `seedTarget`，它**无条件**清空这四项：无论换游戏还是重新编辑同一个游戏，进入编辑页都是全新会话，否则上传失败的截图会随着每次重进不断堆积成垃圾。因此「重传失败截图」只在不离开编辑页的前提下成立——`setData` 用于表单内字段编辑并保留这四项，它对 `data.id` 变化的清空只是防止某个播种路径漏调 `seedTarget` 的兜底网。提交成功后 `RewritePatch` 调用 `clearUploadState()`。少了这些会把上一个游戏的封面和截图写进下一个游戏：`RewriteBanner` 在 `newBanner` 非空时优先显示它而不是 `data.bannerUrl`，`app/api/edit/update.ts` 又对 `galleryMetadata.order` 里缺失的 id 一律写 `display_order: 0`。
-- 封面有三个变体：`banner.avif`（详情页 hero）、`banner-mini.avif`（列表卡片，由客户端 `.replace(/\.avif$/, '-mini.avif')` 派生）、`banner-full.avif`（详情页灯箱第一张，`patch/header/BannerImage.tsx`）。`uploadPatchBanner` 只在收到第三个 `originalImage` 参数时才写 `banner-full.avif`，所以重写页必须和创建页一样接 `KunImageCropper` 的 `onOriginalImageComplete` 并把 `bannerOriginal` 一起提交，否则改完封面后灯箱永远是旧图，而 `purgePatchBannerCache` 清掉边缘缓存只会让 CF 回源重新缓存同一个旧对象。
-- 封面与头像使用默认 `KUN_CF_CACHE_ZONE_ID` / `KUN_CF_CACHE_PURGE_API_TOKEN`。SaaS 接入填写承载图床自定义主机名的 provider Zone；网站可通过 `KUN_CF_CACHE_SITE_ZONE_ID` 独立配置。清理失败日志会标明 `default` / `site`、主机名、状态码与脱敏 API 错误。排查旧封面时对比三个变体的 `cf-cache-status` / `age` / `last-modified`，同时核对源站对象是否已更新。
-- 已知限制：banner 对象上传时不带 `Cache-Control`（`lib/s3.ts` 的 `uploadBufferToS3` 支持该参数但封面路径没用），所以 purge 生效后访客浏览器仍可能按启发式 TTL 短暂持有旧图。头像用 `?v=${Date.now().toString(36)}` 规避过这一点（`app/api/user/setting/avatar/service.ts`），封面暂不采用：`banner` 一旦带 query，所有 `.replace(/\.avif$/, '-mini.avif')` 派生（行尾锚定）都会失效，改动前需要先把变体派生集中到统一 helper。默认 Zone 或 Token 缺失时图床清理返回 `{ status: 0, success: false }`，排查时先确认这组配置。
-- Gallery 卡片保持原 NSFW 视觉：NSFW 使用红色边框和右上角红色角标。上传失败不要抢占边框语义，使用 `bg-danger/20` 半透明红色遮罩和底部错误条表达，遮罩必须 `pointer-events-none`。
-- 从浏览器网页直接拖拽图片到 Windows / 桌面浏览器时，`DataTransfer.files` 可能为空，浏览器只给 `text/uri-list`、`text/plain` 或 `text/html` 里的 `<img src>`，Network 面板也可能显示类型为 Other。gallery drop 必须走 `utils/galleryDrop.ts` 的 `getGalleryFilesFromEvent`，先使用本地 File，若没有 File 再把远程图片 URL 交给 `/api/edit/gallery/remote` 导入为 File。
-- “添加水印”只影响静态图片。动态 WebP / AVIF 会保留原始动图并跳过水印，前端需要保留这条提示，避免管理员误以为动图也会被打水印。
-- 创建页 gallery 草稿存在 localforage，主体已创建但 gallery 未全部上传完成时还会保存已创建 patch 目标；清除创建草稿时必须同步清理 gallery draft、已创建 patch 目标和水印开关。重写页新增图片存在 `rewriteStore.newImages`，提交成功后由上传接口返回最终 `url` 和 `thumbnailUrl`。
-- 详情页和重写页已有 gallery 图片使用 `thumbnailUrl ?? url` 作为列表预览，灯箱始终使用原图 `url`。rewrite 提交已有图片时只传 id、NSFW 和排序，不能把 `thumbnailUrl` 当作原图 URL 写回数据库。
-- NSFW 遮罩下仍会加载 `thumbnailUrl ?? url`；如果缩略图是 animated WebP 或 animated AVIF，可以在遮罩下播放。没有生成缩略图的 animated AVIF 会回退加载原图，不生成占位图。
-- gallery 原图在对应缩略图完成加载后，由 `GalleryItem` 使用浏览器 `Image` 以 `decoding="async"` 和 `fetchPriority="low"` 启动后台预载；原图 URL 与缩略图 URL 相同时不重复请求。灯箱仍通过 `yet-another-react-lightbox` 的 `carousel.preload` 预载相邻 slide，点击前已启动的原图请求由浏览器缓存复用。
-- gallery 展示使用普通 `<img>` 和 `KunImageViewer`，动态 WebP / AVIF 依赖浏览器原生播放，不在前端拆帧或转码。`KunImageViewer` 可以接收 `previewSrc`，通过 `yet-another-react-lightbox` 的 custom slide 先显示缩略图，原图加载完成后淡入切换；灯箱主图、相邻预载和下载都使用原图 `url`。详情页 gallery 保留前后各两张相邻 lightbox slide 来维持滑动动画并预载相邻原图。
-
-## 主题与样式
-
-本节的 `--kun-*`、HeroUI 桥接和 `data-kun-theme` 属于前台根布局。控制台样式位于 `styles/dashboard.css`：用 `source(none)` 及 `@source` 显式纳入 dashboard 页面、组件和 hooks；前台 `styles/tailwind.css` 对这三处使用 `@source not`。控制台只共享 `next-themes` 的深浅色状态，不加载前台站点主题脚本；两套产物隔离仍需按模块 01 的 E01-01 实验核对。
-
-核心文件：
-
-- `docs/theme-color-system.md`
-- `styles/index.css`
-- `styles/tailwind.css`
-- `styles/themes.css`
-- `styles/theme-tokens/otoame.css`
-- `styles/theme-tokens/touchgal.css`
-- `constants/theme.ts`
-- `utils/semanticColor.ts`
-- `components/kun/theme/SiteThemeScript.tsx`
-- `components/kun/theme/SiteThemeRouteSync.tsx`
-- `hooks/useKunSiteTheme.ts`
-- `tests/unit/theme.test.ts`
-
-主题持久化规则：
-
-- 实际 CSS 主题只看 `html[data-kun-theme]`，主题控件状态来自 `useKunSiteTheme`。
-- `localStorage` 是浏览器端权威来源，`kun-site-theme` cookie 只做服务端首屏或 localStorage 不可用时的兜底；脚本和 hook 都不能让 stale cookie 覆盖 localStorage。
-- `SiteThemeScript` 处理硬刷新首屏；`SiteThemeRouteSync` 处理客户端导航后的同步，并在静态页面把根主题恢复成默认值时，从 `localStorage` / `kun-site-theme` cookie 修复 `html[data-kun-theme]`。
-- 首页等公开页面保持 `force-static`，不能为了读取主题 cookie 改成动态 SSR；Next.js `force-static` 下 `cookies()` 会返回空值。
-
-修改主题 token 或 semantic color 后至少运行：
-
-```bash
-pnpm test tests/unit/theme.test.ts
-pnpm typecheck
-```
-
-## MDX 内容
-
-入口：
-
-- `posts/*`
-- `lib/mdx/getPosts.ts`
-- `lib/mdx/directoryTree.ts`
-- `lib/mdx/CustomMDX.tsx`
-- `components/doc/*`
-
-`getAllPosts` 会递归读取 `posts` 下的 `.mdx`，使用 gray-matter 读取 frontmatter，并生成：
-
-- title
-- banner
-- date
-- description
-- textCount
-- slug/path
-
-`postbuild.ts` 会把 `posts` 复制进 `.next/standalone/posts`。新增运行时内容目录时，必须同步 postbuild 和 release packaging。
-
-全站 Markdown / MDX 渲染约定为“一个回车即换行”：详情简介、评论、资源备注、文档 MDX 和编辑器预览都应把单个换行渲染为 hard break。
-
-## 编辑器
-
-主要路径：
-
-- `components/kun/milkdown/*`
-- `components/kun/milkdown/plugins/*`
-- `components/kun/editor/MarkdownEditor.tsx`
-
-编辑器相关改动通常影响创建、重写、评论和 Markdown 预览。要检查：
-
-- 上传插件。
-- link/video/emoji/mention 插件。
-- Markdown sanitize 和 render。
-- mobile layout。
-
-## 前端开发规则
-
-- 新业务组件放在对应 domain 目录，不要把业务逻辑塞进 `components/kun`。
-- 共享组件保持通用，不依赖具体 API 响应。
-- 列表翻页默认使用 `components/kun/Pagination.tsx`。页码变化时由共享分页触发 `utils/scrollToTop.ts` 的快速回顶部动画，并尊重 `prefers-reduced-motion`；不要在页面里复制 `window.scrollTo({ behavior: 'smooth' })`，确实不应移动页面时传 `disableScrollToTop`。
-- 新图标优先用 `lucide-react` 或现有图标。
-- 服务端渲染可见的时间用 `utils/fixedTimezoneDate.ts` 的 `formatChinaDateTime`（固定 Asia/Shanghai），不要用环境时区的 `toLocaleString` 或 `utils/time.ts::formatDate`——SSR 与浏览器时区不同时会水合不一致。
-- 用户文案保持 OtoAme 命名，避免误回退到 TouchGal/GalGame。
-- NSFW 相关 UI 必须同时检查遮罩、标题、列表过滤和详情隐藏。
-
-## 验证
-
-UI-only 改动：
-
-```bash
-pnpm typecheck
-```
-
-涉及 stores、主题、搜索、资源、编辑器：
-
-```bash
-pnpm test
-pnpm typecheck
-```
-
-## 投稿页面
-
-入口：
-
-- `app/(site)/user/[id]/submission/page.tsx`（一个「发布条目」标签, 本人与访客两种视角）
-- `app/(site)/submission/[id]/page.tsx`（编辑与预览）
-- `app/(site)/admin/submission/page.tsx`（审核队列）
-- `app/(site)/admin/submission/[id]/page.tsx`（审核详情与四个审核动作）
-- `app/(dashboard)/dashboard/inbox/page.tsx`（新待审事项与选中项审核详情）
-- `app/(site)/preview/submission/[id]/page.tsx`（管理员前台只读预览）
-- `components/submission/**`、`store/patchSubmissionStore.ts`、`hooks/usePatchSubmissionAutosave.ts`
-
-规则：
-
-- **校验分两级。** 草稿在每次输入时保存, 所以自动保存走宽松 schema（`patchSubmissionDraftPayloadSchema`）；完整性只在提交时校验一次。若让自动保存要求完整表单, 用户填完最后一个字段之前保存会一直失败。
-- **hydrate 在 effect 里, 所以首帧必须用服务端数据兜底。** `SubmissionEditor` 在 `submissionId` 与 props 不一致时直接渲染 props 里的 payload, 否则首帧会用 store 的空初始值, 在已保存内容上闪出空表单——这个缺陷是浏览器测试重载后发现标题为空才暴露的。
-- **`patchSubmissionStore` 故意不持久化。** 草稿的真源在数据库、按 id 加载；再存一份本地副本只会在跨设备编辑后与服务端不一致。
-- **自动保存严格串行。** debounce 后的请求进入单一 promise 链，每笔请求真正开始时才读取上一笔写回的 `revision`；并发请求各拿旧 revision 会制造虚假冲突。真实冲突不重试：它意味着另一台设备先保存了，重试会覆盖对方内容。
-- **`flush()` 返回结构化结果。** 返回 `{ ok: true }` 或 `{ ok: false, reason: 'conflict' | 'error', message }`；无脏内容直接成功。显式保存、提交和打开**可编辑草稿**预览都必须依赖这个返回值，失败时展示 message 并停止后续动作，不能再旁读 `saveState` 猜结果。`pending` 投稿已经冻结为服务端版本，作者仍可打开「预览（审核中）」自查，但这条只读路径不再 flush，发现问题后可撤回修改。
-- **投稿字段顺序固定**：名称 → VNDB → VNDB Relation → Bangumi → Steam → 封面 → 双栏正文编辑器 → 画廊 → 别名 → 官网 → 发售日 → 标签 → 内容分级。名称错误只在提交校验失败后显示，继续输入立即清除；内容分级由投稿人选择，默认 SFW。
-- **作者表单只有 `draft` 与 `changes_requested` 可编辑。** `pending`、`rejected` 等其他状态仍可查看已保存内容，但名称、外部 ID、封面、正文、画廊、别名、官网、发售日、标签与内容分级都必须只读；VNDB、Release、Bangumi、Steam 的获取与回填按钮也必须禁用。只读画廊仍允许放大查看。
-- **裁剪好但没上传的封面，会在保存草稿和提交审核前拦一次。** cropped 与 original 两个 File 只活在 `SubmissionBannerInput` 的 state 里，草稿保存写的是服务端 payload，所以直接放过去会让裁剪结果在下次刷新时无声消失，作者一直到提交才收到「请先上传封面图片」。`SubmissionBannerInput` 用 `SubmissionBannerHandle`（`hasUnsavedBanner` / `upload`）把这个状态交给 `SubmissionEditor`，两个动作在发请求前弹一次确认：上传封面后继续、跳过封面继续、或取消——替换旧封面本来就可以放弃，所以跳过是合法选择。上传失败保持弹窗打开供重试，上传进行中锁死全部关闭路径。这个状态不进 store：那等于给封面开第二个真相源。
-- **共享 VNDB ID 必须显式确认。** VNDB ID 可以被同一游戏的不同版本共用，所以它不是硬唯一字段；当抓取结果命中已发布条目时，投稿表单通过受控的 `isDuplicate` 复用直接发布页的确认框。未确认不能提交，确认结果随 payload 保存；审核详情同时展示命中的正式条目和投稿者是否确认，最终是否属于重复收录仍由审核员判断。
-- `KunDualEditorProvider` 是 `value` + `onChange` 受控组件，不导入 create/rewrite/submission store。三个页面各自在薄封装或调用方中绑定自己的状态，避免通用编辑器累积 store 分支。
-- 投稿画廊是**暂存 + 显式上传**：拖入或选择只写本地 outbox，必须点「上传 N 张截图」才发请求；上传进行中仍可继续拖入，新文件留到下一批。水印开关默认开启并按投稿 ID 持久化，点击上传时冻结一次当前值写入本批全部目标项（pending 与 failed），中断恢复后重传沿用冻结值，上传期间禁用开关；动态 WebP/AVIF 仍保留原图且不加水印。编辑态还提供 HeroUI 批量 SFW / NSFW 控件，一次性改写选中卡片的分级，并沿用 create/rewrite 的 NSFW 危险色边框与右上角角标，不盖 reveal mask；只读的作者预览和审核详情才使用真实 `NSFWMask`，遮罩揭开前不能从放大按钮绕过。
-- 投稿 gallery 待上传项用独立 localforage store 持久化 Blob、文件元数据、稳定 `clientAssetId`、顺序、水印与状态。页面刷新时把遗留 `uploading` 恢复成可重试失败态，并重新创建临时预览 URL；成功后立即删除本地记录并 `revokeObjectURL`。上传遮罩使用 Spinner，HeroUI Progress 只显示完成文件数 / 总数，不声称字节百分比。
-- 只要 localforage 草稿尚未读完、仍有待上传/失败项或上传请求在途，就禁用提交审核。服务端上传响应返回 ready gallery DTO，客户端用稳定 ID 把占位卡替换成云端卡；若超时后服务端其实已完成，同一 ID 重试会返回既有 ready 行并清理本地项。
-- **审核详情的重复面板语义随投稿状态**：仅 `pending` 渲染警告卡（未确认用 danger Chip）；其余所有状态整卡中性色、Chip 一律 default（「投稿者当时未确认」不得用 danger）、标题与文案改为历史复查口吻。「已发布为」链接独立于重复面板显示在页头（没有其他重复条目也显示）；`publishedPatch` 为 null（正式条目已删除）时不渲染链接并正常降级。审核确认弹窗在请求飞行中锁定全部关闭路径（backdrop/Esc/关闭钮/取消/确认），通过提示用行上冻结的 `heldAmount` 与 `PATCH_SUBMISSION_PUBLISH_REWARD` 报出具体数字，不按审核人当前角色重算，押金为 0 时只提奖励。
-- **审核队列的 status/page/query 只存在于 URL**：`components/admin/submission/queueParams.ts` 的解析与构造成对，非法参数回退默认 pending 视图（重复键取首值，query 截断 107 字符、page 限 1..9999，与 API Schema 对齐）；切换状态或搜索重置回第一页，翻页保留另两个参数；列表缩短后超出范围的页码由服务端重定向回最后一个有内容的页；输入框用同步 effect 跟随 URL 的 query，前进/后退不留旧值；行内时间标签、计数 Chip 与空态文案随状态（pending 提交时间、draft 更新时间、其余优先审核时间）；搜索区是真正的 form，Enter 与按钮同路径提交。
-- **作者预览与审核详情共用正式条目外观。** `PatchSubmissionPreviewView` 组合正式详情页的正文 renderer、Gallery/灯箱、官网和 Info 元数据块；标签与会社在正式行创建前只显示只读 chip，不渲染评分、下载、编辑器或讨论/资源 tab。封面框固定 16:9，点击后优先在灯箱显示保存的原图，并在标题旁显示 SFW/NSFW 分级。灯箱通过 `onOpenChange` 告知外层预览 Modal，在灯箱打开期间禁止 outside press 与 Escape 同时关闭两层。
-- **会社 resolver 的预览与批准只能一起切换。** 服务端开关关闭时两类预览保持旧会社
-  名称；开关启用时，作者预览只显示解析后的 canonical 名称，并在阻断型歧义时给中性
-  提示「会社信息需管理员确认」，不得泄漏候选命中的会社 ID 或维护细节。审核详情额外
-  显示候选到既有/待新建会社的映射、失效快照、阻断型歧义和非阻断 external-ID/name
-  冲突；阻断型歧义存在时禁用「通过」，文案明确出口是会社身份维护，而不是要求投稿人
-  修改。后端批准仍会重新解析并作最终栅栏，前端禁用不是正确性边界。
-- **审核动作由详情承载。** 旧审核队列负责检索与进入详情；新控制台在 `/dashboard/inbox` 选中项详情中提供通过、要求修改、驳回、违规四个动作，资源申请提供通过与拒绝；所有审核动作均先二次确认，鼠标与快捷键一致，取消/Esc 不发送写请求。新旧投稿详情复用 `/api/admin/patch-submission` 审核服务，前台预览共用 `publishPreview.ts` 投影和 `PatchSubmissionPreviewView`。超级管理员自审必须显式打开 override，普通管理员不能自审。旧详情收到“投稿已被撤回或处理”时关闭确认弹窗并 `router.refresh()`；新控制台按相同冲突字符串刷新该项，历史视图同时重读当前筛选列表；其他业务错误保留当前上下文。
-- **投稿画廊排序随草稿流程自动同步。** ready 行与待上传项在同一个 dnd-kit 网格里排序，拖拽用独立的可聚焦、键盘可达手柄。顺序跨 localforage 与数据库两个存储、无法原子提交，所以拖动先把完整的 namespaced 序列（`server:<id>` / `local:<clientAssetId>`）写进 `submission:<id>:order` draft，刷新后按它恢复。上传截图、保存草稿、打开可编辑预览和提交审核都会先经同一个顺序 flush；同步失败就停止当前动作、保留用户排好的顺序与 draft，供下次重试。flush 进入时先排空写入队列再读 draft，否则刚拖完立刻保存会读到上一版序列，把作者已经替换掉的顺序冻结上去。并发调用共享同一次同步；请求期间若又产生了新顺序，同一次 flush 会继续同步最新 draft 后才返回成功。ready 行的序号允许不连续（待传卡可占中间位置），只要求唯一。
-- **拖拽手势本身有三个硬性要求。** ① 拖动结束时先把新序列同步渲染出来，再去等 localforage 写入：dnd-kit 在同一帧清掉全部 drag transform，等存储往返会让卡片先弹回原位、几帧后再跳进新位置，落位动画也会瞄准卡片正在离开的槽位；写入失败才回滚到拖动前的序列并提示。② 网格用 `DragOverlay` + `defaultDropAnimationSideEffects` 渲染一份跟随指针的只读副本（`aria-hidden` + `pointer-events-none`，真正的可聚焦控件只留在原卡片上），与 create/rewrite 画廊一致。③ `DndContext` 挂 `utils/dndModifiers.ts` 的本地 `restrictToParentElement`，把拖动夹在网格矩形内——外层 HeroUI Card 会裁掉 overflow，不夹取时拖出网格的部分直接被切掉，而网格外本来也没有可落下的位置。
-- **移动端能不能拖，取决于手柄上的 `touch-none`。** Pointer Events 下无法在事件监听器里阻止浏览器的原生触摸行为，`touch-action: none` 是唯一可靠手段；不设置时手指一移动浏览器就开始滚动并派发 `pointercancel`，拖拽永远激活不了。按 dnd-kit 的建议只让手柄退出（列表其余部分仍可滚动），并且手柄在 `sm` 以下放大到 44px 触摸目标。不要再加 `TouchSensor`：`PointerSensor` 已经覆盖 touch，两者并存会重复触发。
-- **画廊两份草稿（items/order）的所有写入绑定 per-submission 的 DraftContext**（context 同时持有 `submissionId`、items/order、云端 gallery 快照、order generation、顺序同步/上传所有权与独立队列；队列由 `utils/serialTaskQueue.ts` 工厂生成，每次切换投稿新建，失败不阻断后续任务）。每个操作在事件发生时绑定一次 context，上传批次在启动时捕获并贯穿全部单文件回调；任务只从该 context 计算并按其投稿 ID 写存储，写成功后**无条件推进 context**（卸载或切换后也推进，防止后完成的上传把前一张的旧状态写回）。当前 context 可从同投稿的 Zustand 数据吸收更新，失活后只读自己的云端快照；generation、同步锁和上传锁也不跨投稿共享。React/Zustand、选择集、loading 与 toast 只有在 context 身份和 store 投稿 ID 都仍匹配时才同步，因此滞留任务不会读取或改写新投稿的数据和界面。拖入追加是队列任务：20 张上限与完整序列都在任务内按最新 context 重算，被拒绝的追加零写入并释放预览；拖拽排序保持事件时刻冻结的完整序列（那就是用户的手势）。同时写两个 key 的任务按崩溃可恢复方向排序：key 晋升（`local:` → `server:`）先于删除本地项，清空 order draft 永远在最后——draft 存在即待同步标记。上传成功是一个队列单元：先晋升、再删项、最后 `revokeObjectURL`；持久化失败时保留本地卡并报可重试错误，同 `clientAssetId` 重试幂等返回既有 ready 行。
-- **挂载恢复必须以 ready 行为准做对账**：云端已有同 `clientAssetId` 的 ready 行时丢弃本地重复项、把 order draft 的 local key 晋升为 server key，一张截图只渲染一张卡；failed 服务端行**不**参与对账（本地 Blob 是重试凭据）。恢复是单一流程：items 与 order 都读取成功才置 loaded（解锁提交），恢复落定前禁用全部画廊写操作并显示「正在读取本地截图」，失败保持锁定并提供重试；watermark 读取不参与 loaded，失败降级默认开启并 toast 提示，但画廊操作要等它落定再开放。
-- **投稿画廊卡片的选择、放大、删除各自是可聚焦控件且有可访问名称。** 不要照搬编辑页那种「整卡承担点击 + `pointer-events-none` 的 checkbox」写法：那让纯键盘用户既选不中也放不大, 而投稿面向普通用户。
-- 复用的编辑输入（`VNDBInput`、`VNDBRelationInput`、`BangumiInput`、`SteamInput`、`ReleaseDateInput`、`BatchTag`、`SortableAliasChips`）都是 prop 驱动的泛型组件, 接投稿 payload 无需改动管理员侧代码。
-- **个人页只有一个「发布条目」标签。** 访客（包括匿名用户）只看到该作者已发布的正式条目，并复用公开游戏卡片、NSFW 可见性与稳定的 `created desc, id desc` 分页；本人在上方管理仍在流转或已关闭的投稿，在下方看到同一批正式卡片。`published` 投稿行不再重复出现在管理列表，`deleted` 行完全排除。
-- 普通用户在建草稿前看到押金、名额与容量；余额不足时给签到与规则入口。`role >= 4` 与 `/edit/create` 使用同一直接发布权限，个人页只显示「直接创建条目」，不查询或展示投稿额度与押金；若管理员是提交后晋升，既有未结算投稿仍保留在列表供完成或删除。
-- 投稿管理列表是封面卡片网格，优先显示 mini banner 并有站点图回退。删除活动草稿必须先确认，并显示该行冻结的 `heldAmount`（不能使用当前角色额度）；终态记录提供「从列表隐藏」而非物理删除。
+## 投稿的编辑与预览
+
+草稿与要求修改可以编辑，其他状态只读，包括外部资料抓取和回填控件。自动保存按顺序执行，真正的跨设备冲突停止后续保存；显式保存、提交或可编辑预览都等待保存成功。待审预览直接读取已冻结版本，发现错误需先撤回。
+
+尚未上传的裁剪封面在保存或提交前提示上传、跳过或取消；上传失败保持当前上下文。截图选择和拖入只进入浏览器暂存，点击上传后才传到服务器。上传期间可以继续加入下一批；失败与刷新中断保留重试所需文件，服务端确认成功才移除本地项，不能以字节百分比描述文件数进度。
+
+截图排序与本地暂存共同恢复，保存、上传、预览和提交前需要同步顺序；失败停止后续动作并保留排序。读取本地素材未完成、仍有失败或待传内容时不开放提交。切换投稿后，在途任务仍归原投稿，不改写新目标的界面。选择、放大、删除和拖动手柄要能用键盘操作，手机只在拖动手柄上接管手势，其他区域仍可滚动。
+
+作者预览与审核使用正式条目外观，只显示已保存内容。会社解析歧义对作者给中性提示，管理详情提供受权诊断；客户端不能补查受限候选或原始身份。审核动作都在详情中确认，快捷键与鼠标一致。共享 VNDB 作品编号仍需作者确认、审核员判断；具体押金、名额、重复规则归[投稿规则](api-services.md#内容发布与投稿)。
+
+## 正式条目编辑与截图
+
+外部资料来自多个异步来源，合并时只更新该来源负责的内容，不能用旧快照覆盖其他来源。Bangumi 标题和简介由用户主动填入，不自动覆盖已有文字；VNDB 不导入标签。Steam 重复只提示，硬重复拒绝，会社来源随受控解析配置一起切换。
+
+创建主体成功而截图部分失败时保留已创建目标和本地图片，重试只补失败项。重写页的失败新图仅在当前编辑会话中保留，重新进入编辑应建立新会话，避免把上个目标素材带入下一条游戏。封面列表小图、详情图和灯箱原图要共同更新；清缓存不能替代实际上传原图。
+
+静态截图可按选择加水印，动画原图保留且不加水印。列表优先缩略图，灯箱与下载使用原图；未生成缩略图时允许退回原图。缩略图加载后可能开始低优先级预载原图，灯箱另预载相邻图片，不能承诺列表绝不请求原图。成人内容遮罩与放大入口同时遵守分级限制。
+
+## 通知、私聊与贴纸
+
+通知以纯文本显示并保留换行，点击铃铛只导航，列表出现后才确认已读。通知与私聊红点分别更新；请求失败、限频和过期响应不能错误清除或重新点亮红点。隐藏页面减少自动请求，恢复时合并同步，不重入已有刷新。
+
+私聊新增消息与历史上翻分别读取，正在阅读历史时不强制滚到最底。删除消息后立即清除正文、图片和回复预览；被回复目标删除也清除回复草稿。输入法确认候选时不发送，普通回车发送，组合换行键保留换行。单次最多 9 张图片，部分上传成功后重试只补失败项；失败后增加或删除图片不能丢掉未变图片的已上传登记。
+
+回复可经鼠标菜单、键盘菜单或手机滑动进入，图片回复标明所选图片；引用预览可定位原消息并提供返回位置。移除私聊的确认说明只影响本人列表。贴纸目录、动态媒体与失效降级归[私聊贴纸说明](private-chat-stickers.md)。
+
+## 小喇叭、账目与内容渲染
+
+小喇叭各公开入口共享读取逻辑，但按账号、分级和屏蔽偏好隔离结果；切换身份不能沿用另一身份的占位内容。失败保留仍可展示的旧消息，并显示重试；临近官方时间边界时不继续展示不确定的置顶或到期横幅。官方移除与提前结束的确认说明分别表达其公开历史结果。
+
+账目同时显示总额、待结算和可用额，负余额如实显示并说明奖励回退；管理员看他人明细不覆盖自己的顶栏余额。自定义日期尚未查询时不继续展示旧范围记录。金额规则归[账务说明](api-services.md#萌萌点账务与资料修改)。
+
+网站文章、游戏简介、评论、资源备注与编辑预览按单次换行展示换行，并通过相应内容清理避免不受信内容成为可执行页面。线上文章源与仓库维护文档分开，构建需携带文章和运行资源。修改编辑器应同时检查图片、链接、视频、提及和预览。
+
+## 前端验收要求
+
+移动端和可访问性是变更要求，不能当成全站已完成测试的结论。相关页面至少检查约 360 像素手机与桌面，布局经过平板断点时也检查该区间；覆盖长文字、长链接、媒体、虚拟键盘、菜单、弹窗、焦点、错误与减少动态效果。只跑类型检查和组件测试不能证明真实浏览器布局正确，具体命令归[测试指南](../project/testing.md)。
+
+## 源码入口
+
+- [前台组件](../../components/kun/)、[控制台组件](../../components/dashboard/)与[控制台样式](../../styles/dashboard.css)
+- [下载与健康展示](../../components/patch/resource/)、[问题展示](../../components/dashboard/case/)与[用户问题页](../../components/dashboard/issue/)
+- [投稿编辑](../../components/submission/)、[投稿自动保存](../../hooks/usePatchSubmissionAutosave.ts)与[正式条目编辑](../../components/edit/)
+- [通知与聊天](../../components/message/)、[小喇叭查询](../../components/shoutbox/query/)与[内容读取](../../lib/mdx/)
+- [安全请求工具](../../utils/kunFetch.ts)、[页面状态](../../store/)与[共享分页](../../components/kun/Pagination.tsx)

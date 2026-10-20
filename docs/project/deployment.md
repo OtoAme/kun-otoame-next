@@ -1,69 +1,59 @@
-# OtoAme Deployment Guide
+# 应用部署与恢复操作指南
 
-本文档记录当前仓库的部署路径、构建产物和发布检查点。
+本指南用于把经过验证的应用版本发布到服务器，并在版本启动失败时恢复兼容的上一版。数据库迁移、备份和数据维护集中在[运维指南](../modules/operations.md)，不能把应用回滚当作数据库恢复。当前仓库配置不证明目标站点已经采用同样的部署方式。
 
-## 部署模型
+## 发布前准备
 
-项目使用 Next.js standalone output、不可变 release 槽与 PM2：
+服务器需要 Node.js 22.15 或更高的 22.x、pnpm、Git、PostgreSQL、Redis 和 PM2。应用绑定本机 3000 端口，由反向代理提供 HTTPS。准备经过审核的源码版本、与之匹配的依赖及发布产物，确认目标数据库和外部服务身份；私有配置只由操作者在受控环境管理。
 
-- [next.config.ts](../../next.config.ts)：`output: 'standalone'`。
-- [scripts/postbuild.ts](../../scripts/postbuild.ts)：把 runtime assets 复制进 `.next/standalone`。
-- [scripts/deploySlots.ts](../../scripts/deploySlots.ts)：把已验证 runtime 保存到 `.deploy/releases/<commit>-<tag>`，以 `.deploy/current` / `.deploy/previous` 原子切换。
-- [ecosystem.config.cjs](../../ecosystem.config.cjs)：优先从 `.deploy/current` 启动 `server.mjs` 或 `server.js`，兼容首次迁移前的 `.next/standalone`，固定 3 个实例。
+发布前应已有有效的类型检查与测试结果；构建、打包或运行资产变化时还需要相应构建验证。命令见[测试指南](testing.md)。发布流水线只构建产物，不执行测试或独立类型检查，构建跳过检查的开关不能代替它们。
 
-standalone 运行时需要这些额外资源：
+运行时需具备公开资源、静态文件、服务器页面产物、构建标识、验证码图片、线上文章、重定向配置以及目标架构的数据库客户端和图片处理工具。[构建后复制](../../scripts/postbuild.ts)与[发布打包](../../.github/workflows/release.yml)必须一起维护；开发环境能运行不代表发布包包含这些文件。
 
-- `public`
-- `.next/static`
-- `.next/server` 和 `.next/BUILD_ID`（release artifact 会显式复制）
-- `server/image`
-- `posts`
-- `config/redirect.json`
-- Prisma Client 和 schema
+## 运行配置
 
-Next standalone output 不会自动复制 `public` 和 `.next/static`，所以本仓库用 `scripts/postbuild.ts` 和 release packaging 显式补齐。`.next/standalone` 在受管部署后只是指向 `.deploy/current` 的兼容链接；`.deploy` 位于 `.next` 外，Next 清理构建目录不会删除当前和上一版可回滚 runtime。
+以[示例配置](../../.env.example)和[格式校验](../../validations/dotenv-check.ts)为依据，由操作者填写项目根目录配置。以下是操作需要的项目配置名称，不复制真实值。必需格式通过不等于服务已连通；选用可选能力时还需填写其使用点要求的配置。
 
-## 服务器前置条件
+| 配置 | 填写与核对 |
+| --- | --- |
+| `KUN_DATABASE_URL` | 对应本次目标 PostgreSQL，已有数据的库先走迁移和备份。 |
+| `REDIS_HOST`、`REDIS_PORT`、`REDIS_PASSWORD` | 目标 Redis 连接，隔离测试不能沿用真实服务。 |
+| `KUN_VISUAL_NOVEL_SITE_URL` | 规范站点地址，影响搜索展示与站点地图。 |
+| `NEXT_PUBLIC_KUN_PATCH_ADDRESS_DEV`、`NEXT_PUBLIC_KUN_PATCH_ADDRESS_PROD` | 本地和生产访问地址，请求来源保护依赖它们；域名变化时同步。 |
+| `JWT_ISS`、`JWT_AUD`、`JWT_SECRET` | 登录会话设置与秘密，不能复制示例秘密用于实际站点。 |
+| `NODE_ENV` | 生产为 `production`，开发按开发指南填写。PM2 配置把监听主机固定为本机回环。 |
+| `KUN_VISUAL_NOVEL_EMAIL_*` | 发信人、服务器、端口、账号和密码，注册验证码与邮件功能需要实际服务。 |
+| `KUN_VISUAL_NOVEL_S3_STORAGE_*` | 存储凭据、桶、服务端点和区域。 |
+| `NEXT_PUBLIC_KUN_VISUAL_NOVEL_S3_STORAGE_URL`、`KUN_VISUAL_NOVEL_IMAGE_BED_HOST`、`KUN_VISUAL_NOVEL_IMAGE_BED_URL` | 资源公开地址与图床，核对完整地址和图片许可主机。 |
+| `KUN_CF_CACHE_ZONE_ID`、`KUN_CF_CACHE_PURGE_API_TOKEN` | 默认和图床缓存清理权限，网站未指定独立区域时也使用。 |
+| `KUN_CF_CACHE_SITE_ZONE_ID`、`KUN_CF_CACHE_SITE_PURGE_API_TOKEN` | 可选网站独立区域；令牌为空时复用已获该区域清理权限的默认令牌。配置步骤见运维指南。 |
+| `KUN_VISUAL_NOVEL_INDEX_NOW_KEY` | 搜索通知所需密钥，公开目录中需有对应名称与内容的验证文件。 |
+| `KUN_VISUAL_NOVEL_TEST_SITE_LABEL` | 测试站禁止索引标记，正式站点删除或注释。 |
+| `BANGUMI_ACCESS_TOKEN` | 外部标签和会社读取需要的访问凭据，不配置时相关调用可能失败。 |
+| `KUN_NEXTMOE_API_KEY` | 可选服务端凭据，会社规划的跨来源证据使用，不进入公开构建配置。 |
+| `GITHUB_REPO`、`GITHUB_TOKEN` | 发布仓库及私有发布所需令牌，仅服务器下载使用。 |
+| `KUN_DEPLOY_SMOKE_URL` | 可选就绪探针，默认 `http://127.0.0.1:3000/`，必须为本机 HTTP 回环地址。 |
+| `KUN_DEPLOY_READINESS_TIMEOUT_MS` | 可选就绪等待，默认 30000 毫秒，允许 5000–120000 毫秒。 |
+| `KUN_GALLERY_FFMPEG_PATH` | 可选目标机 FFmpeg 绝对路径，运行用户需有执行权限，优先于内置候选。 |
+| `KUN_COMPANY_IDENTITY_RESOLVER_ENABLED` | 仅服务端运行时开关；只有完成结构、回填、清理、约束与验收后才可启用，见运维指南。 |
+| `KUN_STATIC_TAG_PREGEN_LIMIT`、`KUN_STATIC_COMPANY_PREGEN_LIMIT` | 构建预生成标签与会社详情的数量，默认各 50，设为 0 关闭预生成。 |
 
-部署机器需要：
+带公开前缀的变量会进入浏览器构建，不能放秘密。发布工作流使用的三个公开地址配置要与目标站点匹配，秘密配置只在服务端保留。修改运行时配置后重新读取进程配置，不只依赖旧进程环境。
 
-- Node.js 22.15+
-- pnpm
-- Git
-- PostgreSQL
-- Redis
-- PM2
-- 可选但通常需要：Nginx、1Panel 或其他反向代理
-- 可选：系统 `ffmpeg` 且支持 `libaom-av1`，作为 bundled `ffmpeg-static` 失效时的 animated AVIF gallery 缩略图兜底；两者都不可用时上传仍会保留原图并把 `thumbnailUrl` 回退为 `null`。
+## 首次空库安装
 
-应用监听 `127.0.0.1:3000`，反向代理负责对外提供 HTTPS 域名。PM2 进程名固定为 `kun-touchgal-next`。
+仅适用于已核对为全新的空库，且已取得与目标版本一致的代码。已有持久库不能执行本节初始化。
 
-## 首次上线顺序
-
-1. clone 仓库并进入目录：
-
-   ```bash
-   git clone https://github.com/OtoAme/kun-otoame-next.git
-   cd kun-otoame-next
-   ```
-
-2. 复制并编辑环境变量：
-
-   ```bash
-   cp .env.example .env
-   ```
-
-3. 创建 PostgreSQL 数据库，并让 `KUN_DATABASE_URL` 指向该库。
-4. 启动 Redis，并填写 `REDIS_HOST`、`REDIS_PORT`、`REDIS_PASSWORD`。
-5. 填写生产域名、S3/image bed、邮件、Cloudflare、IndexNow 等生产配置。只有自备 FFmpeg 时才填写 `KUN_GALLERY_FFMPEG_PATH`。
-6. 确认生产 `.env` 删除或注释 `KUN_VISUAL_NOVEL_TEST_SITE_LABEL`。
-7. 初次安装：
+1. 安装并填写上述配置，确认 PostgreSQL、Redis 与反向代理准备就绪。
+2. 执行初始化：
 
    ```bash
    pnpm deploy:install
    ```
 
-8. 构建并启动：
+   它安装依赖、同步开发初始化结构并建立临时上传目录，不启动应用；现有脚本会给上传目录宽泛写权限，应由服务器文件访问边界保护该目录。
+3. 按[运维指南](../modules/operations.md)核对依赖的数据库约束、触发器和迁移检查。直接同步数据模型不会安装所有手写约束，初始化命令成功不能代替生产结构校验。
+4. 在项目目录构建并启动：
 
    ```bash
    pnpm typecheck
@@ -71,641 +61,122 @@ Next standalone output 不会自动复制 `public` 和 `.next/static`，所以�
    pnpm start
    ```
 
-9. 配置反向代理到 `http://127.0.0.1:3000`。
-10. 注册第一个用户，并把 UID 1 的 `role` 设置为 `4`。
+5. 反代到 `http://127.0.0.1:3000`，保留访问主机、原地址和协议的代理信息，配置真实 DNS 与 HTTPS。按运行检查验证。首次站点安装需要超级管理员时，确认已获该账号初始化授权，注册受控首个账号，在目标项目运行 `pnpm prisma studio`，核对账号后把用户的 `role` 设为 `4` 并刷新登录。该步骤只适用于已核对的首次空站初始化，不用于修改已有站点的任意账号。
 
-`pnpm deploy:install` 只安装依赖、同步数据库并创建 `uploads`，不会启动 PM2。
+若结构检查、构建或启动失败，先停止后续步骤，保留输出并核对本节前提，不对已有库重置。需要变更反代配置时由服务器运维使用实际平台设置，不复制一段与目标未知的配置。
 
-animated AVIF gallery 缩略图通过 FFmpeg adapter 尝试生成。默认部署只使用项目依赖 `ffmpeg-static` 和系统 `ffmpeg`，避免安装阶段额外下载大型二进制；没有可用 animated AVIF encoder 时，上传仍保留原图并把 `thumbnailUrl` 回退为 `null`。
+## 发布已经审核的版本
 
-生产环境必须满足：
+### 使用 GitHub 发布产物
 
-- `ffmpeg-static` 保持在 `dependencies` 中。
-- `package.json` 的 `pnpm.onlyBuiltDependencies` 包含 `ffmpeg-static`，否则 pnpm 会阻止 install script，binary 可能不会下载。
-- [next.config.ts](../../next.config.ts) 保持 `serverExternalPackages: ['ffmpeg-static']`，让 Route Handler 用原生 Node require 解析二进制路径。
-- 使用 `pnpm deploy:pull` 时，目标服务器必须先跑过 `pnpm install` 或 `pnpm deploy:install`，保证根目录 `node_modules/ffmpeg-static` 是目标机器架构。`deployPull.ts` 会把目标机的 `ffmpeg-static` 注入 release standalone，避免 GitHub artifact 里的二进制架构和生产服务器不一致。
-- 使用 `pnpm deploy:build` 时，依赖在服务器本机安装，通常会自动下载匹配目标 Linux x64/arm64 的 bundled binary。
-- 如果手工移动 `.next/standalone`，不能只复制 standalone 目录；要同时确保 standalone 运行时能解析到 `node_modules/ffmpeg-static` 和其中的 `ffmpeg` 可执行文件，或安装系统 `ffmpeg` 作为兜底。
+工作流监听主分支与手动触发，使用一次性数据库和 Redis 构建，生成带版本标签与精确提交标识的清单。它不替代发布前测试。服务器工作区必须干净，依赖已安装，数据库迁移已按[运维指南](../modules/operations.md)完成；下载后会在目标机器生成并注入匹配架构的数据库客户端与 FFmpeg。
 
-运行时按下面顺序查找 FFmpeg：
-
-1. `KUN_GALLERY_FFMPEG_PATH` 指向的可执行文件。
-2. `.next/standalone/.ffmpeg/ffmpeg`。
-3. 项目根目录 `node_modules/.ffmpeg/ffmpeg`。
-4. `ffmpeg-static`。
-5. 系统 `ffmpeg`。
-
-`KUN_GALLERY_FFMPEG_PATH` 是 `.env` 中的可选最高优先级覆盖项，适合指向生产服务器上自备的 FFmpeg，例如 `/opt/ffmpeg/bin/ffmpeg`。该路径必须是实际运行 PM2/Node 服务的机器上的可执行文件，运行用户需要有 execute 权限；修改后重启 PM2 才会生效。使用 `pnpm gallery:ffmpeg:install` 安装的 `node_modules/.ffmpeg/ffmpeg` 会被自动发现，通常不需要同时设置这个变量。
-
-如果 Linux 服务器必须输出 animated AVIF，而默认 `ffmpeg-static` 只能降级为静图首帧，可以显式安装 BtbN 静态构建：
-
-```bash
-pnpm gallery:ffmpeg:install
-pnpm build
-pm2 restart kun-touchgal-next
-```
-
-脚本支持 Linux x64 和 arm64，会把二进制放到 `node_modules/.ffmpeg/ffmpeg`。`postbuild.ts` 会复制到 standalone 的 `.ffmpeg/ffmpeg`，`deploy:pull` 路径则可以依赖目标服务器根目录 `node_modules/.ffmpeg/ffmpeg` 或 `KUN_GALLERY_FFMPEG_PATH`。
-
-如果 bundled binary 不可用，运行时会回退到系统 `ffmpeg`。部署后先确认 Node 能解析 bundled binary：
-
-```bash
-node -e "console.log(require('ffmpeg-static'))"
-```
-
-再用内置测试动图验证缩略图生成：
-
-```bash
-pnpm exec esno scripts/verifyGalleryAnimatedAvifThumbnail.ts ./public/images/animated-sample.avif ./public/images/tmp/animated-sample-thumb.avif
-```
-
-验证脚本会列出每个候选 FFmpeg 对输入样本和输出缩略图解析到的帧数。部分 Linux FFmpeg 会把 AVIF 的默认 stream 解析为 1 帧 still item，但后续 video stream 才是真正动画；脚本会继续探测并显示类似 `0:2: 61 frame(s)` 的 stream 结果，避免把静态首帧误判为 animated AVIF 缩略图。验证成功会输出 `Wrote animated AVIF thumbnail: ... bytes, ... frames to ...`。验证失败不会影响普通上传，但 animated AVIF 会没有动态缩略图。
-
-线上上传后用 PM2 日志确认：
-
-```bash
-pm2 logs kun-touchgal-next
-```
-
-成功时应出现 `Animated AVIF thumbnail generated: ... bytes`；失败时看 `Animated AVIF thumbnail generation failed for all commands:` 的详细原因。常见原因是 install script 没运行、standalone 缺少 `ffmpeg-static`、目标机器架构不匹配、系统 `ffmpeg` 不存在或不支持 `libaom-av1`。
-
-可选安装系统 fallback：
-
-```bash
-# Ubuntu / Debian
-sudo apt-get update
-sudo apt-get install -y ffmpeg
-ffmpeg -hide_banner -encoders | grep -i libaom-av1
-```
-
-系统 `ffmpeg` 只是兜底；轻量部署优先依赖 `ffmpeg-static`，强 animated AVIF 输出再启用 BtbN 或自备 encoder。
-
-## 发布路径一：GitHub Release artifact
-
-触发：
-
-- push 到 `main`
-- 手动 `workflow_dispatch`
-
-同一 `release-main` concurrency group 不取消正在运行的构建，避免并发 push 互相覆盖 release 状态；需要 R1/R3/R4 三个中间 Release 时仍应等待上一轮完成后再推下一节点。
-
-CI 文件：[.github/workflows/release.yml](../../.github/workflows/release.yml)。
-
-流程：
-
-1. 启动 PostgreSQL 15 和 Redis 服务。
-2. 安装依赖。
-3. 写入构建用 `.env`。
-4. `pnpm prisma:push`。
-5. `pnpm build`，并设置 `KUN_DEPLOY_BUILD_SKIP_CHECKS=true`。
-6. 打包 `.next/standalone`、`.next/static`、`.next/server`、`.next/BUILD_ID`、`public`、`server/image`、`posts`、`config/redirect.json`、`prisma`。
-7. 生成不会在并发 workflow 中碰撞的 tag：秒级 CalVer + GitHub run number + 短 commit SHA。
-8. 在 artifact 写入 `release-manifest.json`，严格绑定 manifest version、tag 与本次精确 commit SHA。
-9. 上传 `release.tar.gz` 到 GitHub Release。
-
-release 打包阶段还会删除包内 `package.json` 的 `"type": "module"`，并把 `server.js` 改名为 `server.mjs`。这是为了避免 standalone 中的 CommonJS 依赖受根包 ESM 设置影响。`ecosystem.config.cjs` 和 `deployPull.ts` 会优先启动 `server.mjs`，没有时回退到 `server.js`。
-
-服务器更新最新 Release：
+常规更新最新发布：
 
 ```bash
 pnpm deploy:pull
 ```
 
-`deploy:pull` 在整个操作锁内要求工作区干净，先执行 `git pull --ff-only`，再调用核心部署脚本。若 source 无法 fast-forward，命令在下载和切换 runtime 前终止。
+命令在部署互斥锁内先要求源码可快进更新，再选择最新产物。不能快进、工作区有修改或产物不匹配时终止，不覆盖本地修改。
 
-部署经过审核的固定 Release：
+维护窗口应固定已审核版本。先让服务器源码以正常快进方式到达该标签的精确提交，再执行下列命令，尖括号替换为真实审核标签：
 
 ```bash
-KUN_DEPLOY_RELEASE_TAG='<已审核 tag>' pnpm deploy:pull:pinned
+KUN_DEPLOY_RELEASE_TAG='<已审核发布标签>' pnpm deploy:pull:pinned
 ```
 
-pinned 模式只 fetch 目标 tag 到临时 ref，不执行 `git pull`、merge 或 checkout。执行前应让服务器工作区以正常 fast-forward 方式到达该 tag 的精确 commit；脚本会再次要求 `HEAD = tag commit = manifest commit`。
+固定模式只获取标签，不拉取分支、不合并或切换源码；当前源码、实际标签和产物清单必须指向同一提交。变量只对本次命令生效，不写入长期配置。缺清单的历史产物不能交给现有部署工具，只能依据已审核的人工快照恢复方案处理。
 
-[scripts/deployPull.ts](../../scripts/deployPull.ts) 会：
+候选先核对结构与运行资源，再生成数据库客户端；失败前不替换当前运行版本。已验证版本保存于独立发布目录，当前与上一版通过原子链接切换；构建目录中的兼容链接不承担备份职责。不要手工删除旧版本目录。
 
-- 验证 `.env`、工作区、Release tag 与 artifact 的 `release-manifest.json`。
-- 对 latest 与 pinned 都先 fetch 实际 tag，再核对 `HEAD`、tag peeled commit 和 manifest commit；任一不一致即失败。
-- 下载候选到临时目录，先运行资源链接兼容迁移，再以显式 `--schema=<候选>/prisma/schema` 执行只读 Prisma guard。候选 guard 通过前不替换根 schema、生成客户端或切换 runtime。
-- 校验候选 `prisma/schema` 与工作区（已核对为同一 commit）的 schema 逐字节一致，然后用服务器自身的 Prisma 工具链在项目根目录执行 `prisma generate`，再把生成的 `.prisma`、真实的 `@prisma/client` 包及其声明依赖（当前是 `@prisma/client-runtime-utils`）复制进候选 `node_modules`，并确认候选 `node_modules/.prisma/client` 存在。不能对候选 schema 直接执行 `prisma generate --schema=<候选>`：Prisma 会从 schema 目录向上同时解析 `prisma` CLI 与 `@prisma/client` 并要求二者位于同一 `node_modules`，而候选位于项目根目录之下，CLI 总会解析到根目录，生成会以 “Could not resolve @prisma/client” 失败。
-- 注入目标机架构的 `ffmpeg-static` 和可选 `.ffmpeg/ffmpeg`，然后在候选根目录执行 `node -e "require('@prisma/client')"` 预检模块解析。
-- 验证 runtime 完整性（固定目录与文件、release 内符号链接，以及从 release 内的 `next` 包解析 `react`/`react-dom`；pnpm 布局下它们在 `node_modules/.pnpm` 中与 `next` 相邻，顶层没有 `react-dom`）、生成 sitemap，再把候选安装为 `.deploy/releases/<commit>-<tag>`。
-- 写 activation journal，把 `.deploy/previous` 指向旧 current、`.deploy/current` 指向候选，并让 `.next/standalone` 保持兼容链接。
-- 重启 PM2 后确认恰好 3 个实例均从候选 cwd/script online，再请求 loopback readiness URL；只有 2xx/3xx 才完成 journal。
-- 候选启动或 readiness 失败时自动恢复旧 current，并再次验证旧版本；两边都失败时保留聚合错误供人工处理。
+### 在服务器构建
 
-适用场景：
-
-- 服务器不想执行完整 Next build。
-- GitHub Release 已经成功生成 `release.tar.gz`。
-- 生产服务器有 `node_modules`，可在目标架构重新生成 Prisma Client。
-- release 包内会带 `prisma` schema 与 manifest，但 Prisma Client 仍在目标服务器按候选 schema 重新生成并注入 standalone。
-- R1 / R3 等没有 manifest 的历史 artifact 不能交给当前 `deploy:pull` 或 `deploy:pull:pinned`；它们只作为已有人工快照，在明确的旧流程边界内恢复。
-
-## 发布路径二：服务器本地构建
-
-命令：
+服务器有足够构建资源且不依赖发布下载时使用：
 
 ```bash
 pnpm deploy:build
 ```
 
-[scripts/deployBuild.ts](../../scripts/deployBuild.ts) 会：
+它在同一互斥锁内快进源码、安装锁定依赖、执行生产结构检查、构建候选并通过同样的激活流程。准备条件和结构迁移要求与下载发布相同。资源不足时保留当前有效版本并排查服务器容量，可选择已审核发布产物，不能随意减少实例数规避现有就绪契约。
 
-- 取得与 Release 部署共用的 `.deploy/operation.lock`，校验工作区并 fast-forward pull。
-- 安装锁文件依赖、运行 `pnpm prisma:deploy-safe`，再以 `KUN_DEPLOY_BUILD_SKIP_CHECKS=true` 本机构建。
-- 给候选补齐 Prisma Client、schema 与 runtime assets，写入绑定当前 commit 的本地 manifest。
-- 把候选安装进 `.deploy/releases`，经同一 activation journal、PM2 3 实例与 loopback HTTP readiness 后切换；失败时恢复旧 current。
+### 确认切换成功
 
-适用场景：
-
-- 服务器资源足够。
-- 不依赖 GitHub Release。
-- 需要在服务器环境直接构建。
-
-这个脚本内部也会执行 fast-forward pull。服务器上有未提交本地修改时会 fail-closed；先人工处理工作区，不要让部署脚本覆盖预期外状态。
-
-## 初次部署
+激活会记录切换日志，重启后要求恰好三个应用实例在线且指向候选目录，再由本机 HTTP 探针确认成功响应或跳转。候选不就绪时工具恢复并验证旧版本；旧版也失败则保留聚合错误，需人工处理，不能仅凭命令结束判断服务可用。
 
 ```bash
-pnpm deploy:install
+pm2 status
+pm2 logs kun-touchgal-next --lines 200 --nostream
 ```
 
-[scripts/deployInstall.ts](../../scripts/deployInstall.ts) 会：
+同时从目标站点检查首页、登录、游戏详情、资源、图片、本人工作台和受权后台，查看站点地图与相关缓存错误。上传链路只在本次授权覆盖真实写入时验证；没有授权或环境证据时如实记录未验证。
 
-- `pnpm install`
-- `pnpm prisma:push`
-- 创建 `uploads`
-- `chmod 777 uploads`
+## 离线回退应用
 
-初次部署后还需要：
-
-- 配置反向代理。
-- 配置 DNS。
-- 注册第一个用户。
-- 把 UID 1 用户 role 设置为 `4`。
-- 确认 PM2 进程和日志。
-
-## 反向代理要点
-
-Nginx 或面板反代应指向：
-
-```text
-http://127.0.0.1:3000
-```
-
-需要保留常见代理头：
-
-```nginx
-proxy_set_header Host $host;
-proxy_set_header X-Real-IP $remote_addr;
-proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-proxy_set_header X-Forwarded-Proto $scheme;
-```
-
-匿名高频读取接口可以按响应头做共享缓存：
-
-- `/api/tag/otomegame`
-- `/api/company/otomegame`
-
-这两个接口的匿名响应会输出 `Cache-Control: public, s-maxage=30, stale-while-revalidate=300`。带登录 token、NSFW 设置、屏蔽标签设置等 cookie 的请求会输出 `private, no-store`，反向代理或 CDN 不能缓存这类个性化响应。
-
-站点公开域名要与 `.env` 中这些值一致：
-
-- `KUN_VISUAL_NOVEL_SITE_URL`
-- `NEXT_PUBLIC_KUN_PATCH_ADDRESS_PROD`
-- `NEXT_PUBLIC_KUN_VISUAL_NOVEL_S3_STORAGE_URL`
-- `KUN_VISUAL_NOVEL_IMAGE_BED_URL`
-
-## 环境变量
-
-生产 `.env` 必需满足 [validations/dotenv-check.ts](../../validations/dotenv-check.ts)。
-
-特别注意：
-
-- `NODE_ENV=production`。
-- `HOSTNAME=127.0.0.1`，由反向代理对外服务。
-- `KUN_VISUAL_NOVEL_TEST_SITE_LABEL` 在生产应删除或注释，否则会 noindex。
-- `NEXT_PUBLIC_*` 会进入前端 bundle，不能放私密值。
-- GitHub artifact 部署需要 `GITHUB_REPO`，私有仓库需要 `GITHUB_TOKEN`。
-- `KUN_DEPLOY_SMOKE_URL` 可覆盖激活后的 HTTP 探针，必须是 loopback `http:` URL；默认 `http://127.0.0.1:3000/`。
-- `KUN_DEPLOY_READINESS_TIMEOUT_MS` 可把 PM2 + HTTP readiness 总超时设为 5000–120000 毫秒，默认 30000。
-- CSRF origin/referer 校验依赖 `NEXT_PUBLIC_KUN_PATCH_ADDRESS_DEV` 和 `NEXT_PUBLIC_KUN_PATCH_ADDRESS_PROD`，生产域名变更时必须同步。
-
-Cloudflare 清理在服务端运行时读取以下配置，修改后需重启应用；新增网站变量均可选，不需要加入 GitHub Actions 构建配置：
-
-| 配置 | 用途 |
-| --- | --- |
-| `KUN_CF_CACHE_ZONE_ID` / `KUN_CF_CACHE_PURGE_API_TOKEN` | 默认 Zone 与 Token，处理图床及其他非网站主机名；网站未配独立 Zone 时也使用。 |
-| `KUN_CF_CACHE_SITE_ZONE_ID` | 可选的网站 Zone，只匹配 `kunMoyuMoe.domain.main` 的主机名。 |
-| `KUN_CF_CACHE_SITE_PURGE_API_TOKEN` | 可选的网站 Token；留空复用默认 Token。单 Token 可授权两个 Zone 的 `Zone → Cache Purge → Purge`。 |
-
-SaaS 接入填写承载该自定义主机名、配置回退源的 provider Zone ID。网站和图床的回退源在两个 Zone 时，分别填写这两组配置；默认缓存键下，清理 URL 仍使用访客访问的自定义主机名。若额外配置了 URL 重写或自定义缓存键，需按 [Cloudflare 缓存键文档](https://developers.cloudflare.com/cache/how-to/cache-keys/) 核对实际缓存键。
-
-网站 Cache Rules 使用[三条完整规则](performance-optimization.md#cloudflare-cache-rules-推荐配置)：前两条同时匹配 `GET` 和 `PURGE`，最后的 bypass 规则只按方法绕过这两者以外的请求，个性化条件仍独立执行。`PURGE` 用于单 URL 清理时的规则匹配，应用调用 Cloudflare 清理 API 仍为带 Token 认证的 `POST`。
-
-上线后分别选取网站与图床已命中缓存的 URL，触发对应业务清理，再检查 `cf-cache-status`、`age` 和内容是否更新。完整 URL 清理与前缀清理均应在缓存 TTL 内观察到 `MISS` 或 `EXPIRED`，随后重新缓存为 `HIT`，`age` 从零附近计数；API 前缀还需检查多个 query 变体。API 返回成功只表示清理请求被接受，不能代替实际命中验证。失败日志和排查步骤见 [运维文档](../modules/operations.md#cloudflare-缓存清理与排查)。
-
-GitHub Actions 只需要构建期公开变量：
-
-- `NEXT_PUBLIC_KUN_PATCH_ADDRESS_DEV`
-- `NEXT_PUBLIC_KUN_PATCH_ADDRESS_PROD`
-- `NEXT_PUBLIC_KUN_VISUAL_NOVEL_S3_STORAGE_URL`
-
-当前 CI 分支配置：
-
-- `.github/workflows/release.yml` 监听 `main` 和手动触发，是仓库唯一的 workflow。
-
-CI 只负责构建发布产物，不运行 lint、类型检查或测试；发布前验证由本地按 `docs/modules/quality.md` 的分层约定执行。同步上游时若带回 `lint-check.yml`（上游主分支是 `master`，该 workflow 在本仓库永不触发，且 `next lint` 在 Next 15 已是弃用路径），保持删除。
-
-## 发布前检查
-
-本地或 CI 至少要有一次：
-
-```bash
-pnpm typecheck
-pnpm test
-```
-
-涉及这些区域时建议再跑 `pnpm build`：
-
-- `next.config.ts`
-- `scripts/postbuild.ts`
-- `.github/workflows/release.yml`
-- `ecosystem.config.cjs`
-- `prisma/schema/*`
-- `posts`
-- `server/image`
-- runtime asset 路径
-
-注意：部署构建中 `KUN_DEPLOY_BUILD_SKIP_CHECKS=true` 只跳过 Next 内置 lint/type validation，不代表类型已经安全。发布前仍需单独运行 `pnpm typecheck`。
-
-workflow 改动还应检查：
-
-- release workflow 是否仍监听当前主分支。
-- 若引入检查类 workflow，覆盖 PR 和主分支，运行 `pnpm typecheck` + `pnpm test` 而不是已弃用的 `next lint`。
-- GitHub Environment `buildPublicEnv` 是否包含所有构建期 `NEXT_PUBLIC_*`。
-- release packaging 和 `scripts/postbuild.ts` 的 runtime asset 列表是否同步。
-
-## 数据库变更
-
-缺少 `public.patch_resource_access` 的生产环境必须先运行
-`migration/production-resource-access-bootstrap-preflight-2026-07-12.sql` 和对应
-bootstrap sync，再运行现有 resource-access grant preflight/sync。进入资源访问
-维护窗口前先完成加固后的 Steam ID preflight/sync/postflight；随后停止全部 PM2
-实例、dump、bootstrap、固定实际 max ID/cutover、运行两次 grant sync、postflight
-和 Prisma Guard。任一步中止都不得重启旧 Release。
-
-本次部署必须冻结并固定已审核的 Release tag：
-
-```bash
-KUN_DEPLOY_RELEASE_TAG='vYYYY.MM.DD.HHMMSS.<run>.<sha>' pnpm deploy:pull:pinned
-```
-
-该变量为当前命令的临时环境变量，不写入长期 `.env`。tag 不匹配、Release 不存在、
-缺少 `release.tar.gz` / manifest，或 HEAD、tag commit、manifest commit 任一不一致时，
-部署必须在安装候选 release 和启动 PM2 前失败。
-
-数据库命令按环境分工：
-
-- 本地开发、`pnpm deploy:install` 首次安装和 disposable CI 初始化继续使用 `pnpm prisma:push`，它会实际同步 schema。
-- `pnpm deploy:pull` 和 `pnpm deploy:build` 生产部署使用 `pnpm prisma:deploy-safe`。执行部署前，review 通过的 preflight/sync SQL 必须已经在目标数据库运行完成。
-- 整个 `pnpm prisma:deploy-safe` 不是纯只读命令：它先运行既有的 `migration:resource-links`，该兼容迁移可能执行 schema/data 写入；随后运行只读 schema guard/diff；最后运行 `prisma generate`。它不运行 `prisma db push`，也不会应用 `migrate diff` 生成的 SQL。只读 guard 只接受空 diff，或 Prisma 7.8 对 `public.patch_released_idx` 的精确 operator-class 假漂移，并且后者必须通过 PostgreSQL catalog 验证。
-- 任何其他 drift 都会在 build 或 standalone 替换前终止部署。不能扩大例外去忽略其他 Prisma diff 输出。
-- 不要执行假漂移提出的 `DROP INDEX "patch_released_idx"` / `CREATE INDEX "patch_released_idx" ... text_pattern_ops` SQL；下一次 introspection 后它仍会出现，而且 DROP/CREATE 索引可能阻塞生产写入。
-
-生产 schema 变更应准备：
-
-- preflight SQL：确认字段、索引、数据形态。
-- sync SQL 或 dry-run 脚本：同步真实 schema 变更，大数据变更先 dry-run。
-- 回滚或补偿说明。
-
-参考：
-
-- `migration/production-schema-preflight-2026-05-03.sql`
-- `migration/production-schema-sync-2026-05-03.sql`
-- 萌萌点账务：先备份并执行只读 `migration/production-moemoepoint-ledger-preflight-2026-08-17.sql`，确认后执行对应 sync；sync 会在单事务中添加待结算列、明细/暂扣表和索引，并为既有用户建立幂等初始余额明细。随后运行 `pnpm prisma:deploy-safe`，通过后才能启动依赖新 schema 的版本。旧版本仍会直接改总额而不写明细，不能在有写流量时把应用单独回滚到旧版本。
-- 私聊 Sticker 目录：先执行 `migration/production-private-chat-stickers-preflight-2026-08-14.sql`，审核后执行对应 sync；再执行 `migration/production-sticker-admin-preflight-2026-08-14.sql`，审核重复 hash、封面引用和外键定义后执行对应 sync。已经执行过旧版 Sticker sync 的数据库，在备份后追加执行 `migration/production-stickers-prisma-alignment-2026-08-15.sql`，再运行 `pnpm prisma:deploy-safe`。该纠正脚本不处理 `patch_released_idx`，也不能用来替代生产 guard。
-- `migration/reclassify-resource-types.ts`
-- `scripts/rebuildPatchResourceAttributes.ts`
-
-严重警告：如果手工在有数据的数据库运行 `pnpm prisma:push` 时出现类似下面的提示，必须取消：
-
-```text
-We found changes that cannot be executed:
-To apply this change we need to reset the database, do you want to continue?
-```
-
-生产环境不要按 `y`，也不要回车确认。先备份数据库并写明确迁移/补偿方案。
-
-### 会社身份与关系计数上线
-
-会社身份分两次 schema 发布，计数触发器位于两者之间：
-
-1. Phase A 依次执行 `production-company-identity-bootstrap-preflight-2026-08-30.sql`、sync、postflight。它增加可空 `normalized_name`、投稿可信候选快照和身份表，只建普通查询索引；postflight 后运行 `pnpm prisma:deploy-safe`，再部署依赖新结构且 resolver=false 的版本。
-2. 运行 identity backfill，完成后 dry-run 必须为零变更。历史 alias 只写为 `legacy`，不能冒充 authoritative 外部证据。
-3. 部署不再手工修改 tag/company count 的版本，再执行 `production-tag-company-count-{preflight,sync,postflight}-2026-08-30.sql`。sync 在一个事务内安装两张关系表各 INSERT/DELETE/UPDATE 的六个 statement-level transition-table 触发器，取得 `SHARE` 锁后全量修正计数。此后应用和维护脚本都不得增减或重算 `patch_tag.count` / `patch_company.count`。
-4. Phase B 停写窗口中，按 `docs/modules/operations.md` 重新生成并审核生产 frozen cleanup plan，执行 dry/apply/cache，再运行 `production-company-identity-constraint-{preflight,sync,postflight}-2026-08-30.sql`。它安装 `normalized_name` 和 `(source, external_id)` 两个最终唯一约束。
-5. 通过 R4 候选 schema guard 部署 resolver=false，随后打开同一个 server-only flag 并重启；创建、重写、投稿预览/批准烟雾测试通过后才恢复会社关系写入。
-
-Phase B 应用失败先关闭 resolver 并执行 `pnpm deploy:rollback`，验证 previous release 能否兼容 Phase B。只有 previous 兼容层也失败时才在持续停写下执行 `production-company-identity-constraint-rollback-2026-08-30.sql` 和 `production-company-identity-constraint-rollback-postflight-2026-08-30.sql`；这组 SQL 保留所有业务数据，只恢复 Phase A 索引与 nullable 形态。计数触发器的数据库回滚使用独立 `production-tag-company-count-rollback-2026-08-30.sql`，并且必须先恢复匹配的手工计数应用版本再开放关系写入。
-
-### 用户工作台与维护上线
-
-用户工作台与维护机制上线前，先完成既有 2026-10-09 链接健康结构和 2026-10-17 CHECK
-增量，再执行 2026-10-19 维护 preflight、sync、postflight。必须停止旧写入并备份，
-通过 `pnpm prisma:deploy-safe` 后切换同版本实例；旧应用会绕过反馈冻结，不能在有写流量
-时单独回退或混跑。迁移不补发历史通知、不改健康事项时钟，重跑保留真实维护事件。
-完整文件与验收入口见 [工作台模块](../modules/workspace.md#迁移与验证)。
-
-## 回滚思路
-
-应用回滚和数据库回滚必须分开计划。当前受管部署保留不可变 `.deploy/current` 与 `.deploy/previous`，应用层离线回滚直接运行：
+前提是上一版发布目录完整，且该版仍兼容当前数据库与运行配置。账务、维护冻结和会社约束等变更可能需要持续停写，先按[数据库恢复边界](../modules/operations.md#失败与数据库恢复)判断。
 
 ```bash
 pnpm deploy:rollback
 ```
 
-命令与 deploy pull/build 共用操作锁。若 activation journal 表示上一次切换中断，它先恢复 journal 记录的旧 current；否则把 current 切到 previous。目标 runtime 会在删除 PM2 前完成静态校验，切换后还必须通过 3 个 PM2 实例与 loopback HTTP readiness。previous 不可用时会恢复并验证原 current；成功回滚后 current/previous 都固定到已验证的旧 release，避免下一次误把失败版本重新切回来。
+命令取得同一操作锁，优先恢复中断切换记录，否则切到上一版，重新验证三个实例与本机访问。目标不可用时恢复并验证原当前版本；回退成功后保留已验证旧版作为有效恢复目标，避免再切回失败版本。
 
-`deploy:rollback` 不访问 GitHub、不执行 Git 命令、不运行 Prisma guard，也不改数据库。它只适用于上一版应用仍兼容当前 schema 的情况。需要回退 schema/data 时，继续保持相关写入停止，先备份并执行 review 通过的专用 rollback 与 rollback postflight；生产禁止用 `prisma db push` 推回旧结构。
+这个命令不改 Git、不访问发布平台、不执行数据库结构检查或恢复，也不修改数据库。需要恢复结构或数据时，保持相关写入停止，使用经审核的专用恢复方案。不要把强制重置源码或数据库当作默认回滚。
 
-公司身份 Phase B 的专用退路是 `production-company-identity-constraint-rollback-2026-08-30.sql` 与 `production-company-identity-constraint-rollback-postflight-2026-08-30.sql`：只移除最终全局唯一约束、恢复 Phase A 普通索引并放宽 `normalized_name` 可空，不删除公司、identity、external ID 或投稿快照数据。R4 无法启动时先关闭 resolver 并回滚到 previous 的 R3 兼容 artifact；只有兼容层也失败时才执行这组数据库 rollback。
+## 启用链接检测
 
-旧 R1/R3 artifact 没有当前 manifest。它们不能通过新 deploy pull 重新下载和激活，只能使用上线前保存并验证过的人工 snapshot；这个历史边界不应被包装成常规回滚。禁止把 `git reset --hard` 当默认回滚步骤。
+前提是[链接健康与维护依赖迁移](../modules/operations.md#链接健康与维护结构)已完成，且网站与独立检测服务版本经过核对。网站适配五家网盘，不代表本仓库附带的固定补丁服务已启用同样范围；固定服务的构建、许可证与限制见[检测服务指南](../../deployment/link-checker/README.md)。
 
-若必须恢复不在 previous 槽中的其它目标版本，先审核该目标版本与当前数据库的兼容性；需要改 schema/data 时先运行 review 通过的专用 preflight，再执行对应 rollback/sync SQL。不要假设旧版本自带当前安全脚本，应在隔离目录安装目标版本依赖，以它的 schema 显式运行 `pnpm prisma generate` 并注入目标 runtime，完成静态检查和同一 PM2/HTTP readiness 后才允许切换。
+在网站服务器填写以下运行时配置：
 
-## 运行后检查
+| 配置 | 要求 |
+| --- | --- |
+| `KUN_LINK_CHECKER_ENDPOINT` | 可信服务根地址；同机可用 `http://127.0.0.1:6734`，跨机用受限 HTTPS，不能带用户信息、查询或片段。网站固定请求 `/v1/check`。 |
+| `KUN_LINK_CHECKER_API_KEY` | 独立服务为本站分配的原始密钥，不加认证前缀，不用网站登录凭据、用户 cookie 或提取码。 |
+| `KUN_LINK_HEALTH_TRACKING_STARTED_AT` | 可选真实追踪启用时间，使用含时区的标准时间；不知道时留空，不填写构建时间冒充。 |
+
+跨机代理只向网站后端开放检测入口，保留认证，关闭缓存、不跳转，不记录请求体、分享地址、认证或 cookie。核对提供者确实已启用，保持分享详情验证，并同步两台机器时钟。仅当实际远端版本支持相应语义时，配置 `LLC_QUARK_VERIFY_DETAIL=true` 与 `LLC_QUARK_BLOCKED_AS_DEAD=true`；本仓库固定补丁对屏蔽仍返回无法判断，不能用该开关改变它的策略。
+
+重新读取网站运行配置：
 
 ```bash
-pm2 status
-pm2 logs kun-touchgal-next
+pm2 restart ecosystem.config.cjs --only kun-touchgal-next --update-env
 ```
 
-还应检查：
+无需为这些运行时变量单独构建。在受权样本上，用登录账号打开可见且受支持的资源，点击检测，观察本次安全结论和时间；无需下载或具备发布者权限。空配置或失败只返回无法判断。失败时检查服务连通、认证、代理、提供者与时钟，不以真实分享进行未经授权的整站扫描。
 
-- 首页和游戏详情页是否能打开。
-- 登录、资源列表、图片域名是否正常。
-- Redis 和 PostgreSQL 是否连通。
-- `public/sitemap.xml` 是否更新。
-- Cloudflare cache purge 相关功能是否报错。
+## 检查动态截图缩略图
 
-还应在浏览器检查：
+目标机需要真实可用的视频处理工具。默认优先使用自备绝对路径，其次发布目录内和项目本地的可选工具，再使用依赖携带工具与系统工具。依赖的安装脚本需被允许执行，下载发布会注入目标机器架构的工具，不能只搬构建机器的二进制。
 
-- 首页 `/`
-- 注册/登录 `/register`、`/login`
-- 游戏详情页 `/<unique_id>`
-- 管理后台 `/admin`
-- 资源列表 `/resource`
-- 萌萌点中心 `/moemoepoint` 与规则页 `/moemoepoint/rules`
+有明确需求的 Linux x64 或 arm64 服务器可以安装可选增强工具：
 
-如果上传功能启用，做一次小文件上传和删除验证，确认 S3、Redis upload metadata、Cloudflare purge 都可用。
+```bash
+pnpm gallery:ffmpeg:install
+```
 
-## 常见故障
+随后通过本地样本验证，下面命令只读写本地文件，不接触数据库或对象存储：
 
-| 症状                                                                    | 优先检查                                                                                                                                                                                           |
-| ----------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| PM2 报 cwd deleted 或找不到 server                                      | 检查 `.deploy/current` 是否指向 `.deploy/releases` 内完整 runtime；`.next/standalone` 只应是兼容链接。                                                                                             |
-| 激活时报 `symbolic link escapes the release`，首个新 release 被自动回滚 | 早期收编把 pnpm 相对链接改写成指向 `.next/standalone` 的绝对路径。当前脚本会在下一次部署的收编阶段把 `.deploy/releases/legacy-initial` 内这类链接改回 release 内相对链接；不要手工删除该 release。 |
-| 图片加载失败                                                            | `KUN_VISUAL_NOVEL_IMAGE_BED_HOST`、`KUN_VISUAL_NOVEL_IMAGE_BED_URL`、Next image `remotePatterns`。                                                                                                 |
-| Prisma Client 架构不匹配                                                | 在目标服务器重新 `pnpm prisma generate`，确认 standalone 内 `.prisma` 和 `@prisma` 已更新。                                                                                                        |
-| sitemap 缺失                                                            | 跑 `pnpm build:sitemap`，确认 `scripts/postbuild.ts` 或 `deployPull` 复制到 standalone public。                                                                                                    |
-| build 成功但运行缺资源                                                  | 检查 `postbuild.ts` 的 assert 路径和 release packaging 的复制列表。                                                                                                                                |
-| 生产站被 noindex                                                        | 删除 `.env` 中 `KUN_VISUAL_NOVEL_TEST_SITE_LABEL`。                                                                                                                                                |
-| `deploy:pull` 找不到 release                                            | 确认 latest/指定 tag 有 `release.tar.gz` 与 manifest，`GITHUB_REPO` 正确，私有仓库配置 `GITHUB_TOKEN`。                                                                                            |
-| 部署提示 tag / commit 不一致                                            | 停止切换；让工作区 HEAD 精确到目标 tag commit，确认 artifact manifest 来自同一 workflow 后重试。                                                                                                   |
-| 部署锁或 activation journal 存在                                        | 不要手工删正在使用的锁；确认 owner 进程。中断 journal 交给下一次 deploy/rollback 自动恢复。                                                                                                        |
-| `deploy:build` 过程内存不足                                             | 增加 swap，或降低 `ecosystem.config.cjs` 的 `instances`。README 中按服务器核数调整实例数，但内存也会线性增长。                                                                                     |
+```bash
+pnpm exec esno scripts/verifyGalleryAnimatedAvifThumbnail.ts ./public/images/animated-sample.avif ./public/images/tmp/animated-sample-thumb.avif
+```
 
-## 投稿域上线顺序
+确认输出真实多帧缩略图及帧数，不能把首帧静图当作动画。需要重新打包工具时走正常发布，配置改变则重读进程环境。失败排查权限、安装脚本、架构和编码支持；原图仍可保留，缩略图可退为首帧或缺省，不承诺每次都生成动画。
 
-1. 先跑 `migration/production-vndb-relation-id-unique-preflight-2026-08-24.sql`。**出现任何 `ci_duplicate_group` 行就停下人工处理**：两条游戏共用一个 Release ID 是内容决策，不能自动合并。
-2. 无冲突后跑对应 sync。它会把 `vndb_relation_id` 归一为小写、加大小写无关唯一性所需的 CHECK，并 `CREATE UNIQUE INDEX CONCURRENTLY`（因此必须在显式事务之外执行）。
-3. 再跑 `production-patch-submission-preflight-2026-08-24.sql` 与对应 sync，建 `patch_submission` / `patch_submission_gallery` 与状态 CHECK。preflight 在首次上线缺表时会把行检查标为 `skipped_missing_table`，也能分别识别只存在一张表的中断状态；preflight 只读，sync 可重跑。
-4. 跑 `production-patch-submission-orphan-cleanup-preflight-2026-08-25.sql`，审核结果后再跑对应 sync，创建 durable orphan cleanup outbox；随后执行 `pnpm prisma:deploy-safe`。应用代码依赖该表，必须先完成 schema rollout。
-5. 确认 `KUN_VISUAL_NOVEL_IMAGE_BED_URL` 与 `NEXT_PUBLIC_KUN_VISUAL_NOVEL_S3_STORAGE_URL` 的公开 hostname 均由默认 `KUN_CF_CACHE_ZONE_ID` 及其 Token 覆盖；只有主机名与 `kunMoyuMoe.domain.main` 完全相同的 URL 才会使用已配置的网站 Zone。SaaS 使用对应 provider Zone，清理仍提交所有去重后的公开 URL。任一 Zone 未确认成功都保留清理记录供重试。
-6. 后端上线后再开放入口（用户主页的投稿标签与后台审核入口）。
-7. 生产不跑 `prisma db push`。
+## 常见发布故障
 
-### Docker PostgreSQL 可复制执行清单
+| 现象 | 下一步 |
+| --- | --- |
+| 源码、标签或清单不一致 | 停止切换，核对同一版本，不能混用一个版本迁移和另一个版本产物。 |
+| 结构差异阻断 | 按运维指南补齐审核迁移，不扩大检查例外或执行工具建议的假差异重建。 |
+| 找不到运行目录或入口 | 检查当前链接和发布目录完整性，不手工删除旧版；兼容入口支持两种既有服务器文件。 |
+| 发布目录链接越界 | 当前收编流程会修复早期绝对链接；保留旧目录并核对工具输出，不手工删掉恢复来源。 |
+| 数据库客户端无法加载 | 核对目标机生成及候选注入是否完成，不手工复制一个缺依赖的客户端包。 |
+| 部署锁或中断记录残留 | 核对持锁进程，不删除正在使用的锁；中断记录交给后续部署或回退流程恢复。 |
+| 网站被禁止索引 | 核对测试站标记，修改后按正常配置重读流程处理。 |
+| 图片或站点地图缺失 | 核对图床、运行资产复制与地图生成；必要时运行 `pnpm build:sitemap` 后按发布流程纳入产物。 |
 
-以下清单用于 PostgreSQL 容器内提供 `psql` / `pg_dump` / `pg_restore`、应用由
-PM2 管理、服务器使用 GitHub Release artifact 的场景。命令应在生产服务器的项目
-目录中**逐条执行并检查上一条结果**，不要整段一次粘贴。尖括号内容必须先替换。
+## 源码入口
 
-1. 开启 shell 失败保护，并进入生产项目目录：
-
-   ```bash
-   set -eu
-   ```
-
-   ```bash
-   cd /srv/kun-otoame-next
-   ```
-
-2. 设置本次上线参数。备份文件保存在宿主机，不在 PostgreSQL 容器内：
-
-   ```bash
-   export OTOAME_PG_CONTAINER='<PostgreSQL 容器名>'
-   ```
-
-   ```bash
-   export OTOAME_PG_USER='<数据库用户，例如 postgres>'
-   ```
-
-   ```bash
-   export OTOAME_PG_DATABASE='<生产数据库名>'
-   ```
-
-   ```bash
-   export OTOAME_RELEASE_TAG='<已审核的 Release tag，例如 v2026.08.28.120000.123.1a2b3c4d>'
-   ```
-
-   ```bash
-   export OTOAME_SITE_URL='https://<生产域名>'
-   ```
-
-   ```bash
-   export OTOAME_ROLLOUT_ID='<本次上线编号，例如 20260828-1200>'
-   ```
-
-   ```bash
-   export OTOAME_BACKUP_DIR='/srv/backup/otoame'
-   ```
-
-   ```bash
-   export OTOAME_BACKUP_FILE="$OTOAME_BACKUP_DIR/otoame-before-submission-$OTOAME_ROLLOUT_ID.dump"
-   ```
-
-3. 确认目标容器、当前代码和 Release。`git status --short` 有任何输出都先停下处理：
-
-   ```bash
-   docker ps --format 'table {{.Names}}\t{{.Image}}\t{{.Status}}'
-   ```
-
-   ```bash
-   docker inspect --format '{{.State.Status}}' "$OTOAME_PG_CONTAINER"
-   ```
-
-   ```bash
-   git status --short
-   ```
-
-   ```bash
-   git pull --ff-only
-   ```
-
-   ```bash
-   git fetch --tags --force origin
-   ```
-
-   ```bash
-   test "$(git rev-parse HEAD)" = "$(git rev-list -n 1 "$OTOAME_RELEASE_TAG")"
-   ```
-
-   这里提前 fast-forward 是为了取得与已审核 Release 相同版本的迁移 SQL；后面的
-   `deploy:pull:pinned` 不会执行 pull 或 checkout。上面的 commit 比对失败时不得把
-   当前分支的 SQL 与另一个 tag 的 artifact 混用。
-
-4. 安装锁文件对应依赖并验证容器内数据库连接。若容器本地连接仍要求密码，使用
-   生产环境既有的 `.pgpass` / Docker secret，不要把密码写进命令或 shell 历史：
-
-   ```bash
-   pnpm install --frozen-lockfile
-   ```
-
-   ```bash
-   docker exec "$OTOAME_PG_CONTAINER" psql -X -v ON_ERROR_STOP=1 -U "$OTOAME_PG_USER" -d "$OTOAME_PG_DATABASE" -c 'SELECT current_database(), current_user, version();'
-   ```
-
-   ```bash
-   mkdir -p "$OTOAME_BACKUP_DIR"
-   ```
-
-5. 应用仍在线时运行三份只读 preflight：
-
-   ```bash
-   docker exec -i "$OTOAME_PG_CONTAINER" psql -X -v ON_ERROR_STOP=1 -U "$OTOAME_PG_USER" -d "$OTOAME_PG_DATABASE" < migration/production-vndb-relation-id-unique-preflight-2026-08-24.sql
-   ```
-
-   ```bash
-   docker exec -i "$OTOAME_PG_CONTAINER" psql -X -v ON_ERROR_STOP=1 -U "$OTOAME_PG_USER" -d "$OTOAME_PG_DATABASE" < migration/production-patch-submission-preflight-2026-08-24.sql
-   ```
-
-   ```bash
-   docker exec -i "$OTOAME_PG_CONTAINER" psql -X -v ON_ERROR_STOP=1 -U "$OTOAME_PG_USER" -d "$OTOAME_PG_DATABASE" < migration/production-patch-submission-orphan-cleanup-preflight-2026-08-25.sql
-   ```
-
-   首次上线时，投稿主表、画廊表和 orphan cleanup 表显示 `missing` 是预期结果；
-   投稿行检查显示 `skipped_missing_table` 也是预期结果。以下任一情况必须停止：
-   - 出现 `ci_duplicate_group` 行，或 `ci_duplicate_groups` 不为 `0`。
-   - 已存在字段显示 `type_mismatch` / `nullability_mismatch`。
-   - 已存在约束或索引的定义与 sync 预期不一致。
-   - `patch_status_values` 中出现 `0` 以外的状态。
-
-6. 进入维护窗口并在宿主机创建一致性备份：
-
-   ```bash
-   pm2 stop kun-touchgal-next
-   ```
-
-   ```bash
-   pm2 status
-   ```
-
-   ```bash
-   test ! -e "$OTOAME_BACKUP_FILE"
-   ```
-
-   ```bash
-   docker exec "$OTOAME_PG_CONTAINER" pg_dump -U "$OTOAME_PG_USER" -d "$OTOAME_PG_DATABASE" --format=custom --compress=6 --no-owner --no-privileges > "$OTOAME_BACKUP_FILE"
-   ```
-
-   ```bash
-   test -s "$OTOAME_BACKUP_FILE"
-   ```
-
-   ```bash
-   docker exec -i "$OTOAME_PG_CONTAINER" pg_restore --list < "$OTOAME_BACKUP_FILE" > /dev/null
-   ```
-
-7. 按依赖顺序执行三份 sync。不要给 VNDB sync 外包一层显式事务，因为它使用
-   `CREATE UNIQUE INDEX CONCURRENTLY`：
-
-   ```bash
-   docker exec -i "$OTOAME_PG_CONTAINER" psql -X -v ON_ERROR_STOP=1 -U "$OTOAME_PG_USER" -d "$OTOAME_PG_DATABASE" < migration/production-vndb-relation-id-unique-sync-2026-08-24.sql
-   ```
-
-   ```bash
-   docker exec -i "$OTOAME_PG_CONTAINER" psql -X -v ON_ERROR_STOP=1 -U "$OTOAME_PG_USER" -d "$OTOAME_PG_DATABASE" < migration/production-patch-submission-sync-2026-08-24.sql
-   ```
-
-   ```bash
-   docker exec -i "$OTOAME_PG_CONTAINER" psql -X -v ON_ERROR_STOP=1 -U "$OTOAME_PG_USER" -d "$OTOAME_PG_DATABASE" < migration/production-patch-submission-orphan-cleanup-sync-2026-08-25.sql
-   ```
-
-8. 原样重跑三份 preflight 作为 postflight。此时 required table / column /
-   index / constraint 应全部正常，两个 `updated_default` 应为 `ok`，五类非法行计数
-   应为 `0`，orphan cleanup 表应为 `present`：
-
-   ```bash
-   docker exec -i "$OTOAME_PG_CONTAINER" psql -X -v ON_ERROR_STOP=1 -U "$OTOAME_PG_USER" -d "$OTOAME_PG_DATABASE" < migration/production-vndb-relation-id-unique-preflight-2026-08-24.sql
-   ```
-
-   ```bash
-   docker exec -i "$OTOAME_PG_CONTAINER" psql -X -v ON_ERROR_STOP=1 -U "$OTOAME_PG_USER" -d "$OTOAME_PG_DATABASE" < migration/production-patch-submission-preflight-2026-08-24.sql
-   ```
-
-   ```bash
-   docker exec -i "$OTOAME_PG_CONTAINER" psql -X -v ON_ERROR_STOP=1 -U "$OTOAME_PG_USER" -d "$OTOAME_PG_DATABASE" < migration/production-patch-submission-orphan-cleanup-preflight-2026-08-25.sql
-   ```
-
-9. 运行生产 Prisma guard。它不会用 `db push` 应用 Prisma diff；出现除已记录的
-   `patch_released_idx` 精确假漂移以外的任何 drift 都必须停止：
-
-   ```bash
-   pnpm prisma:deploy-safe
-   ```
-
-10. 用固定 tag 部署 artifact。`deploy:pull:pinned` 会 fetch 指定 tag，校验
-    HEAD/tag/manifest，并以候选 schema 再次运行 guard；只有 readiness 通过后才完成
-    `.deploy/current` 切换：
-
-    ```bash
-    KUN_DEPLOY_RELEASE_TAG="$OTOAME_RELEASE_TAG" pnpm deploy:pull:pinned
-    ```
-
-11. 检查进程、数据库对象和 HTTP：
-
-    ```bash
-    pm2 status
-    ```
-
-    ```bash
-    pm2 logs kun-touchgal-next --lines 200 --nostream
-    ```
-
-    ```bash
-    docker exec "$OTOAME_PG_CONTAINER" psql -X -v ON_ERROR_STOP=1 -U "$OTOAME_PG_USER" -d "$OTOAME_PG_DATABASE" -c "SELECT to_regclass('public.patch_submission'), to_regclass('public.patch_submission_gallery'), to_regclass('public.patch_submission_orphan_cleanup');"
-    ```
-
-    ```bash
-    curl -fsS "$OTOAME_SITE_URL/" > /dev/null
-    ```
-
-    ```bash
-    curl -fsS "$OTOAME_SITE_URL/login" > /dev/null
-    ```
-
-    ```bash
-    pnpm maintenance:submission-assets:dry
-    ```
-
-    最后用投稿人和审核员账号各走一次最短链路：创建草稿、上传小图、提交、打开
-    审核详情并处理；同时检查 PM2、S3 和 Cloudflare purge 日志。确认无误后再开放
-    站内投稿入口。
-
-从 `pm2 stop` 开始，任一命令失败都应保持应用停止，保存终端输出和备份路径，先
-判断失败发生在 sync 前、sync 中还是 artifact 切换中。不要用 `prisma db push`、
-`--force-reset` 或未经审核的 `pg_restore --clean` 尝试“对齐”；数据库恢复属于单独
-的破坏性操作，必须基于本次 dump 和已确认的恢复方案执行。
+- [发布下载与候选校验](../../scripts/deployPull.ts)、[固定模式入口](../../scripts/deployPullLauncher.ts)与[服务器构建](../../scripts/deployBuild.ts)
+- [发布槽位](../../scripts/deploySlots.ts)、[激活与恢复](../../scripts/deployActivation.ts)、[就绪检查](../../scripts/deployPm2.ts)与[应用回退](../../scripts/deployRollback.ts)
+- [生产结构检查入口](../../scripts/checkPrismaProductionSchema.ts)、[精确差异策略](../../scripts/prismaProductionSchemaGuard.ts)与[进程配置](../../ecosystem.config.cjs)
