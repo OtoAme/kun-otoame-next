@@ -20,10 +20,16 @@ import {
   CardTitle
 } from '~/components/dashboard/ui/card'
 import { Input } from '~/components/dashboard/ui/input'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue
+} from '~/components/dashboard/ui/select'
 import { Textarea } from '~/components/dashboard/ui/textarea'
 import {
   getAllowedPlatformsBySectionAndTypes,
-  getResourceTypeOptionsBySection,
   normalizeTypesBySection,
   RESOURCE_SECTION_MAP,
   storageTypes,
@@ -33,6 +39,16 @@ import {
   SUPPORTED_RESOURCE_SECTION
 } from '~/constants/resource'
 import { WORKSPACE_ERRORS } from '~/constants/workspace'
+import {
+  applyStorageSwitch,
+  applyTypeChange,
+  getChineseSupportOptions,
+  getDefaultLinkStorage,
+  getDisabledStorageKeys,
+  getResourceTypeGroups,
+  isChineseSupportType,
+  splitTypesByChineseSupport
+} from '~/utils/resourceFormRules'
 import { canManageResourceLink } from '~/components/patch/resource/resourcePermissions'
 import { useWorkspaceUser } from './WorkspaceShell'
 import type { LinkVersionBase } from '~/types/api/linkHealth'
@@ -47,6 +63,7 @@ import type {
 import type { ResourceSection } from '~/constants/resource'
 import { kunFetchDelete, kunFetchGet, kunFetchPut } from '~/utils/kunFetch'
 import { WorkspaceMaintenanceCard } from './WorkspaceMaintenance'
+import { WorkspaceMultiSelect } from './WorkspaceMultiSelect'
 import { WorkspaceResourceUpload } from './WorkspaceResourceUpload'
 
 type EditableDraft = {
@@ -82,6 +99,11 @@ export type WorkspaceEditorSession = {
   language: string[]
   platform: string[]
   links: LinkDraft[]
+  /**
+   * Bumps only when an explicit successful read installs a new session.
+   * Upload slots key on it so the same link id cannot reuse an old attempt.
+   */
+  epoch: number
 }
 
 const fieldClass = 'min-w-0 max-w-full break-all [overflow-wrap:anywhere]'
@@ -101,7 +123,8 @@ export function sessionFromDetail(
     type: [...detail.type],
     language: [...detail.language],
     platform: [...detail.platform],
-    links: detail.links.map((link) => linkDraft(link))
+    links: detail.links.map((link) => linkDraft(link)),
+    epoch: 0
   }
 }
 
@@ -167,10 +190,21 @@ export function linkInput(link: LinkDraft): WorkspaceResourceLinkInput {
   return editable
 }
 
-function toggleValue(values: string[], value: string) {
-  return values.includes(value)
-    ? values.filter((item) => item !== value)
-    : [...values, value]
+/**
+ * Dirty means the normalized edit payload differs from the base captured when
+ * the session opened, or an upload id is still waiting to be submitted.
+ */
+export function isSessionDirty(
+  session: WorkspaceEditorSession,
+  base: WorkspaceEditorSession
+): boolean {
+  if (session.links.some((link) => !link.protected && Boolean(link.uploadId))) {
+    return true
+  }
+  return (
+    JSON.stringify(buildWorkspaceResourceUpdate(session)) !==
+    JSON.stringify(buildWorkspaceResourceUpdate(base))
+  )
 }
 
 export function WorkspaceResourceEditor({
@@ -191,7 +225,12 @@ export function WorkspaceResourceEditor({
   const [saving, setSaving] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [reloadConfirmOpen, setReloadConfirmOpen] = useState(false)
+  const [uploadingKeys, setUploadingKeys] = useState<ReadonlySet<string>>(
+    new Set()
+  )
   const capturedFor = useRef<number | null>(null)
+  const baseSession = useRef<WorkspaceEditorSession | null>(null)
   const requestRef = useRef(0)
   const consumedUploadIds = useRef(new Set<string>())
   const focusedTarget = useRef<string | null>(null)
@@ -211,6 +250,7 @@ export function WorkspaceResourceEditor({
         return
       }
       if (response.id !== requestedId) return
+      const nextSession = sessionFromDetail(response)
       setDetail(response)
       setSession((current) => {
         if (request !== requestRef.current) return current
@@ -222,8 +262,15 @@ export function WorkspaceResourceEditor({
         ) {
           return current
         }
+        const installed = {
+          ...nextSession,
+          epoch: replaceSession
+            ? (current?.epoch ?? 0) + 1
+            : (current?.epoch ?? 0)
+        }
         capturedFor.current = response.id
-        return sessionFromDetail(response)
+        baseSession.current = installed
+        return installed
       })
       setError('')
     } catch {
@@ -236,10 +283,12 @@ export function WorkspaceResourceEditor({
 
   useEffect(() => {
     capturedFor.current = null
+    baseSession.current = null
     consumedUploadIds.current = new Set()
     setSession(null)
     setDetail(null)
     setError('')
+    setUploadingKeys(new Set())
     void load(true)
     // resourceId is the session boundary; load closes over it.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -261,9 +310,16 @@ export function WorkspaceResourceEditor({
 
   const canEdit = Boolean(detail?.capabilities.canEdit && session)
   const canDelete = Boolean(detail?.capabilities.canDelete)
+  const uploading = uploadingKeys.size > 0
+  const dirty = Boolean(
+    session &&
+      baseSession.current &&
+      capturedFor.current === session.resourceId &&
+      isSessionDirty(session, baseSession.current)
+  )
 
   const save = async () => {
-    if (!session || !canEdit || saving) return
+    if (!session || !canEdit || saving || uploading) return
     const request = ++requestRef.current
     const submittedResourceId = resourceId
     const submitted = withoutConsumedUploads(session, consumedUploadIds.current)
@@ -302,11 +358,13 @@ export function WorkspaceResourceEditor({
       setSession((current) => {
         if (request !== requestRef.current || !current) return current
         if (current.resourceId !== refreshed.id) return current
-        return hydrateCommittedSave(
+        const next = hydrateCommittedSave(
           withoutConsumedUploads(current, consumedUploadIds.current),
           submitted,
           refreshed
         )
+        baseSession.current = next
+        return next
       })
       capturedFor.current = refreshed.id
     } catch {
@@ -318,7 +376,7 @@ export function WorkspaceResourceEditor({
   }
 
   const removeResource = async () => {
-    if (!canDelete) return
+    if (!canDelete || uploading) return
     setDeleting(true)
     try {
       const response = await kunFetchDelete<
@@ -337,6 +395,15 @@ export function WorkspaceResourceEditor({
     }
   }
 
+  const requestReload = () => {
+    if (saving || uploading) return
+    if (dirty) {
+      setReloadConfirmOpen(true)
+      return
+    }
+    void load(true)
+  }
+
   if (loading && !session) return <p className="text-sm">正在加载资源…</p>
   if (!session || !detail) {
     return (
@@ -351,11 +418,38 @@ export function WorkspaceResourceEditor({
       ? session.section
       : 'galgame'
   ) as ResourceSection
-  const typeOptions = getResourceTypeOptionsBySection(section)
-  const platformOptions = getAllowedPlatformsBySectionAndTypes(
-    section,
+  const typeGroups = getResourceTypeGroups(section)
+  const chineseSupportOptions = getChineseSupportOptions(section)
+  const { chineseSupport: selectedChineseSupport } = splitTypesByChineseSupport(
     session.type
   )
+  const platformOptions = platformOptionsFor(section, session.type)
+  const typeState = applyTypeChange(section, session.type, session.platform)
+  const chineseSupportSelectable =
+    section === 'galgame' && typeState.chineseSupportSelectable
+
+  const patchEditableLink = (
+    key: string,
+    epoch: number,
+    patch: (link: EditableDraft) => EditableDraft
+  ) =>
+    setSession((current) => {
+      if (!current || current.epoch !== epoch) return current
+      return {
+        ...current,
+        links: current.links.map((item) =>
+          item.key === key && !item.protected ? patch(item) : item
+        )
+      }
+    })
+
+  const setUploadingFor = (key: string, active: boolean) =>
+    setUploadingKeys((current) => {
+      const next = new Set(current)
+      if (active) next.add(key)
+      else next.delete(key)
+      return next
+    })
 
   return (
     <div className="min-w-0 max-w-full space-y-4">
@@ -400,46 +494,102 @@ export function WorkspaceResourceEditor({
               }
             />
           </label>
-          <label className="grid gap-1 text-sm">
-            分区
-            <select
-              aria-label="资源分区"
-              className="h-9 rounded-md border bg-background px-2"
+          <div className="grid gap-1 text-sm">
+            <span id="workspace-resource-section">分区</span>
+            <Select
+              value={section}
               disabled={!canEdit}
-              value={session.section}
-              onChange={(event) => {
-                const nextSection = event.target.value as ResourceSection
+              onValueChange={(value) => {
+                const nextSection = value as ResourceSection
                 const type = normalizeTypesBySection(nextSection, session.type)
-                const allowed = new Set(
-                  getAllowedPlatformsBySectionAndTypes(nextSection, type)
+                const applied = applyTypeChange(
+                  nextSection,
+                  type,
+                  session.platform
                 )
                 setSession({
                   ...session,
                   section: nextSection,
-                  type,
-                  platform: session.platform.filter((item) => allowed.has(item))
+                  type: applied.types,
+                  platform: applied.platforms
                 })
               }}
             >
-              {SUPPORTED_RESOURCE_SECTION.map((value) => (
-                <option key={value} value={value}>
-                  {RESOURCE_SECTION_MAP[value]}
-                </option>
-              ))}
-            </select>
-          </label>
-          <ChoiceGroup
+              <SelectTrigger aria-label="资源分区" className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {SUPPORTED_RESOURCE_SECTION.map((value) => (
+                  <SelectItem key={value} value={value}>
+                    {RESOURCE_SECTION_MAP[value]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <WorkspaceMultiSelect
             label="类型"
+            triggerLabel="资源类型"
+            required
             disabled={!canEdit}
-            options={typeOptions.map((item) => ({
-              value: item.value,
-              label: item.label
-            }))}
-            selected={session.type}
-            onChange={(type) => setSession({ ...session, type })}
+            groups={section === 'galgame' ? typeGroups : undefined}
+            options={
+              section === 'galgame'
+                ? undefined
+                : typeGroups.flatMap((group) => group.options)
+            }
+            selected={session.type.filter(
+              (type) => !isChineseSupportType(type)
+            )}
+            onChange={(values) => {
+              const applied = applyTypeChange(
+                section,
+                [...values, ...selectedChineseSupport],
+                session.platform
+              )
+              setSession({
+                ...session,
+                type: applied.types,
+                platform: applied.platforms
+              })
+            }}
           />
-          <ChoiceGroup
+          {section === 'galgame' ? (
+            <WorkspaceMultiSelect
+              label="中文支持"
+              triggerLabel="中文支持"
+              required={typeState.chineseSupportRequired}
+              disabled={!canEdit || !chineseSupportSelectable}
+              options={chineseSupportOptions}
+              selected={chineseSupportSelectable ? selectedChineseSupport : []}
+              onChange={(values) => {
+                const applied = applyTypeChange(
+                  section,
+                  [
+                    ...session.type.filter(
+                      (type) => !isChineseSupportType(type)
+                    ),
+                    ...values
+                  ],
+                  session.platform
+                )
+                setSession({
+                  ...session,
+                  type: applied.types,
+                  platform: applied.platforms
+                })
+              }}
+            />
+          ) : null}
+          {section === 'patch' ? (
+            <p className="text-sm text-muted-foreground">
+              提示：翻译补丁包括民汉补丁、AI 翻译补丁、机翻补丁
+            </p>
+          ) : null}
+          <WorkspaceMultiSelect
             label="语言"
+            triggerLabel="资源语言"
+            required
             disabled={!canEdit}
             options={SUPPORTED_LANGUAGE.map((value) => ({
               value,
@@ -448,8 +598,10 @@ export function WorkspaceResourceEditor({
             selected={session.language}
             onChange={(language) => setSession({ ...session, language })}
           />
-          <ChoiceGroup
+          <WorkspaceMultiSelect
             label="平台"
+            triggerLabel="资源平台"
+            required
             disabled={!canEdit}
             options={platformOptions.map((value) => ({
               value,
@@ -495,14 +647,14 @@ export function WorkspaceResourceEditor({
                   disabled={!canEdit}
                   role={role}
                   section={section}
-                  canUpload={detail.capabilities.canUpload}
-                  onChange={(next) =>
-                    setSession({
-                      ...session,
-                      links: session.links.map((item) =>
-                        item.key === link.key ? next : item
-                      )
-                    })
+                  canEdit={canEdit}
+                  sessionEpoch={session.epoch}
+                  uploadActive={uploadingKeys.has(link.key)}
+                  onUploadingChange={(active) =>
+                    setUploadingFor(link.key, active)
+                  }
+                  onPatch={(patch) =>
+                    patchEditableLink(link.key, session.epoch, patch)
                   }
                 />
               )}
@@ -513,41 +665,39 @@ export function WorkspaceResourceEditor({
                       <WorkspaceMaintenanceCard
                         key={`${item.linkId}:${item.linkVersion}:${item.maintenanceRevision}`}
                         item={item}
+                        embedded
                         onChanged={() => void load(false)}
                       />
                     ))
                 : null}
-              {canEdit ? (
+              {canEdit &&
+              !link.protected &&
+              session.links.length > 1 &&
+              canManageResourceLink({
+                storage: link.storage,
+                resourceUserId: uid,
+                userId: uid,
+                userRole: role
+              }) ? (
                 <Button
                   type="button"
                   variant="outline"
                   size="sm"
                   onClick={() => {
-                    if (link.protected) return
-                    if (
-                      !canManageResourceLink({
-                        storage: link.storage,
-                        resourceUserId: uid,
-                        userId: uid,
-                        userRole: role
-                      })
-                    ) {
-                      setError('资源盘链接不能由普通作者删除')
-                      return
-                    }
-                    if (session.links.length <= 1) {
-                      setDeleteOpen(true)
-                      return
-                    }
-                    setSession({
-                      ...session,
-                      links: session.links.filter(
-                        (item) => item.key !== link.key
-                      )
-                    })
+                    setUploadingFor(link.key, false)
+                    setSession((current) =>
+                      current
+                        ? {
+                            ...current,
+                            links: current.links.filter(
+                              (item) => item.key !== link.key
+                            )
+                          }
+                        : current
+                    )
                   }}
                 >
-                  {session.links.length <= 1 ? '删除整个资源' : '移除这条链接'}
+                  移除这条链接
                 </Button>
               ) : null}
             </CardContent>
@@ -562,6 +712,7 @@ export function WorkspaceResourceEditor({
           <WorkspaceMaintenanceCard
             key={`${item.linkId}:${item.linkVersion}:${item.maintenanceRevision}`}
             item={item}
+            embedded
             onChanged={() => void load(false)}
           />
         ))}
@@ -572,6 +723,7 @@ export function WorkspaceResourceEditor({
               <Button
                 type="button"
                 variant="outline"
+                disabled={saving}
                 onClick={() =>
                   setSession({
                     ...session,
@@ -580,7 +732,7 @@ export function WorkspaceResourceEditor({
                       {
                         key: `new-${session.links.length}-${Date.now()}`,
                         protected: false,
-                        storage: role > 3 ? 'touchgal' : 'user',
+                        storage: getDefaultLinkStorage(section, role),
                         content: '',
                         code: '',
                         password: '',
@@ -595,7 +747,7 @@ export function WorkspaceResourceEditor({
               </Button>
               <Button
                 type="button"
-                disabled={saving}
+                disabled={saving || uploading}
                 onClick={() => void save()}
               >
                 {saving ? '正在保存…' : '保存'}
@@ -603,9 +755,10 @@ export function WorkspaceResourceEditor({
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => void load(false)}
+                disabled={saving || uploading}
+                onClick={requestReload}
               >
-                重新读取
+                载入最新版本
               </Button>
             </>
           ) : null}
@@ -613,6 +766,7 @@ export function WorkspaceResourceEditor({
             <Button
               type="button"
               variant="destructive"
+              disabled={deleting || uploading}
               onClick={() => setDeleteOpen(true)}
             >
               删除资源
@@ -620,6 +774,29 @@ export function WorkspaceResourceEditor({
           ) : null}
         </div>
       ) : null}
+      <AlertDialog open={reloadConfirmOpen} onOpenChange={setReloadConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>载入最新版本</AlertDialogTitle>
+            <AlertDialogDescription>
+              当前有尚未保存的修改。载入最新版本会丢弃这些修改，是否继续？
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>取消</AlertDialogCancel>
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={() => {
+                setReloadConfirmOpen(false)
+                void load(true)
+              }}
+            >
+              确认
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -633,7 +810,7 @@ export function WorkspaceResourceEditor({
             <Button
               type="button"
               variant="destructive"
-              disabled={deleting || !canDelete}
+              disabled={deleting || !canDelete || uploading}
               onClick={() => void removeResource()}
             >
               {deleting ? '正在删除…' : '确认删除'}
@@ -643,6 +820,10 @@ export function WorkspaceResourceEditor({
       </AlertDialog>
     </div>
   )
+}
+
+function platformOptionsFor(section: ResourceSection, types: string[]) {
+  return getAllowedPlatformsBySectionAndTypes(section, types)
 }
 
 function withoutConsumedUploads(
@@ -754,7 +935,8 @@ export function hydrateCommittedSave(
     platform: arraysEqual(current.platform, submitted.platform)
       ? canonical.platform
       : current.platform,
-    links
+    links,
+    epoch: current.epoch
   }
 }
 
@@ -762,84 +944,58 @@ function storageLabel(storage: string) {
   return storageTypes.find((item) => item.value === storage)?.label ?? storage
 }
 
-function ChoiceGroup({
-  label,
-  options,
-  selected,
-  disabled,
-  onChange
-}: {
-  label: string
-  options: { value: string; label: string }[]
-  selected: string[]
-  disabled: boolean
-  onChange: (values: string[]) => void
-}) {
-  return (
-    <fieldset className="min-w-0 space-y-1" disabled={disabled}>
-      <legend className="text-sm">{label}</legend>
-      <div className="flex flex-wrap gap-2">
-        {options.map((option) => (
-          <label key={option.value} className="flex items-center gap-1 text-sm">
-            <input
-              type="checkbox"
-              checked={selected.includes(option.value)}
-              onChange={() => onChange(toggleValue(selected, option.value))}
-            />
-            {option.label}
-          </label>
-        ))}
-      </div>
-    </fieldset>
-  )
-}
-
 function EditableLinkFields({
   link,
   disabled,
   role,
   section,
-  canUpload,
-  onChange
+  canEdit,
+  sessionEpoch,
+  uploadActive,
+  onUploadingChange,
+  onPatch
 }: {
   link: EditableDraft
   disabled: boolean
   role: number
   section: string
-  canUpload: boolean
-  onChange: (link: EditableDraft) => void
+  canEdit: boolean
+  sessionEpoch: number
+  uploadActive: boolean
+  onUploadingChange: (active: boolean) => void
+  onPatch: (patch: (link: EditableDraft) => EditableDraft) => void
 }) {
-  const disabledStorage = new Set(
-    role > 3
-      ? []
-      : role > 1 && section === 'patch'
-        ? ['touchgal']
-        : ['s3', 'touchgal']
-  )
+  const disabledStorage = new Set(getDisabledStorageKeys(section, role))
+  // Draft section decides the upload gate. Saved canUpload must not stick.
+  const canUploadDraftSection =
+    canEdit && role >= 2 && (section !== 'galgame' || role >= 3)
   return (
     <div className="grid min-w-0 gap-2">
-      <label className="grid gap-1 text-sm">
-        存储
-        <select
-          aria-label="链接存储"
-          className="h-9 max-w-full rounded-md border bg-background px-2"
-          disabled={disabled}
+      <div className="grid gap-1 text-sm">
+        <span id={`workspace-link-storage-${link.key}`}>存储</span>
+        <Select
           value={link.storage}
-          onChange={(event) =>
-            onChange({ ...link, storage: event.target.value })
+          disabled={disabled}
+          onValueChange={(value) =>
+            onPatch((current) => applyStorageSwitch(current, value))
           }
         >
-          {storageTypes.map((item) => (
-            <option
-              key={item.value}
-              value={item.value}
-              disabled={disabledStorage.has(item.value)}
-            >
-              {item.label}
-            </option>
-          ))}
-        </select>
-      </label>
+          <SelectTrigger aria-label="存储类型" className="w-full">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {storageTypes.map((item) => (
+              <SelectItem
+                key={item.value}
+                value={item.value}
+                disabled={disabledStorage.has(item.value)}
+              >
+                {item.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
       <label className="grid gap-1 text-sm">
         地址
         <Input
@@ -849,7 +1005,7 @@ function EditableLinkFields({
           readOnly={link.storage === 's3'}
           value={link.content}
           onChange={(event) =>
-            onChange({ ...link, content: event.target.value })
+            onPatch((current) => ({ ...current, content: event.target.value }))
           }
         />
       </label>
@@ -860,7 +1016,9 @@ function EditableLinkFields({
           className={fieldClass}
           disabled={disabled}
           value={link.code}
-          onChange={(event) => onChange({ ...link, code: event.target.value })}
+          onChange={(event) =>
+            onPatch((current) => ({ ...current, code: event.target.value }))
+          }
         />
       </label>
       <label className="grid gap-1 text-sm">
@@ -871,7 +1029,10 @@ function EditableLinkFields({
           disabled={disabled}
           value={link.password}
           onChange={(event) =>
-            onChange({ ...link, password: event.target.value })
+            onPatch((current) => ({
+              ...current,
+              password: event.target.value
+            }))
           }
         />
       </label>
@@ -884,31 +1045,39 @@ function EditableLinkFields({
           readOnly={link.storage === 's3'}
           value={link.size}
           placeholder="例如 1.2GB"
-          onChange={(event) => onChange({ ...link, size: event.target.value })}
+          onChange={(event) =>
+            onPatch((current) => ({ ...current, size: event.target.value }))
+          }
         />
       </label>
-      <label className="grid gap-1 text-sm">
-        校验
-        <Input
-          aria-label="校验值"
-          className={fieldClass}
-          disabled={disabled}
-          readOnly={link.storage === 's3'}
-          value={link.hash}
-          onChange={(event) => onChange({ ...link, hash: event.target.value })}
-        />
-      </label>
-      {canUpload && link.storage === 's3' ? (
+      {link.storage === 's3' ? (
+        <label className="grid gap-1 text-sm">
+          校验
+          <Input
+            aria-label="校验值"
+            className={fieldClass}
+            disabled={disabled}
+            readOnly
+            value={link.hash}
+            onChange={(event) =>
+              onPatch((current) => ({ ...current, hash: event.target.value }))
+            }
+          />
+        </label>
+      ) : null}
+      {canUploadDraftSection && link.storage === 's3' ? (
         <WorkspaceResourceUpload
-          disabled={disabled}
+          key={`${sessionEpoch}:${link.key}`}
+          disabled={disabled || uploadActive}
+          onUploadingChange={onUploadingChange}
           onUploaded={(result) =>
-            onChange({
-              ...link,
-              storage: 's3',
+            onPatch((current) => ({
+              ...current,
+              storage: result.storage,
               uploadId: result.uploadId,
               hash: result.hash,
               size: result.size
-            })
+            }))
           }
         />
       ) : null}

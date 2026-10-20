@@ -5,11 +5,9 @@ import { Controller, useWatch } from 'react-hook-form'
 import { Input, Textarea } from '@heroui/input'
 import { Select, SelectItem, SelectSection } from '@heroui/select'
 import {
-  CHINESE_SUPPORT_RESOURCE_TYPES,
-  GAME_RESOURCE_TYPES,
   canSelectChineseSupportType,
-  getResourceTypeOptionsBySection,
   getAllowedPlatformsBySectionAndTypes,
+  getResourceTypeOptionsBySection,
   hasChineseSupportType,
   requiresChineseSupportType,
   SUPPORTED_LANGUAGE,
@@ -17,6 +15,11 @@ import {
   SUPPORTED_PLATFORM_MAP,
   type ResourceSection
 } from '~/constants/resource'
+import {
+  getChineseSupportOptions,
+  getResourceTypeGroups,
+  isChineseSupportType
+} from '~/utils/resourceFormRules'
 import { resourceFieldClassNames } from './formClassNames'
 import { ControlType, ErrorType } from '../share'
 
@@ -26,13 +29,6 @@ interface ResourceDetailsFormProps {
   errors: ErrorType
   section: ResourceSection
 }
-
-const isChineseSupportType = (
-  type: string
-): type is (typeof CHINESE_SUPPORT_RESOURCE_TYPES)[number] =>
-  CHINESE_SUPPORT_RESOURCE_TYPES.includes(
-    type as (typeof CHINESE_SUPPORT_RESOURCE_TYPES)[number]
-  )
 
 const RESOURCE_TYPE_LISTBOX_MAX_HEIGHT = {
   galgame: 300,
@@ -77,40 +73,8 @@ export const ResourceDetailsForm = ({
     section,
     selectedTypes
   )
-  const getResourceTypeOptions = (typeValues: readonly string[]) =>
-    typeValues.flatMap((typeValue) => {
-      const option = resourceTypes.find((type) => type.value === typeValue)
-      return option ? [option] : []
-    })
-
-  const resourceTypeGroups = [
-    {
-      key: 'game-types',
-      title: '游戏类型',
-      types: GAME_RESOURCE_TYPES
-    },
-    {
-      key: 'other-types',
-      title: '其他类型',
-      types: resourceTypes
-        .map((type) => type.value)
-        .filter(
-          (type) =>
-            !GAME_RESOURCE_TYPES.includes(
-              type as (typeof GAME_RESOURCE_TYPES)[number]
-            ) && !isChineseSupportType(type)
-        )
-    }
-  ]
-  const resourceTypeGroupOptions = resourceTypeGroups
-    .map((group) => ({
-      ...group,
-      options: getResourceTypeOptions(group.types)
-    }))
-    .filter((group) => group.options.length > 0)
-  const chineseSupportOptions = getResourceTypeOptions(
-    CHINESE_SUPPORT_RESOURCE_TYPES
-  )
+  const resourceTypeGroupOptions = getResourceTypeGroups(section)
+  const chineseSupportOptions = getChineseSupportOptions(section)
 
   const updateResourceTypes = (
     nextTypes: string[],

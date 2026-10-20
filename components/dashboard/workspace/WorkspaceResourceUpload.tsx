@@ -1,7 +1,7 @@
 'use client'
 
 import axios from 'axios'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import toast from 'react-hot-toast'
 import { KunCaptchaCanvas } from '~/components/kun/auth/CaptchaCanvas'
 import type { KunCaptchaImage } from '~/components/kun/auth/captcha'
@@ -20,6 +20,8 @@ import { useWorkspaceUser } from './WorkspaceShell'
 
 interface Props {
   disabled?: boolean
+  /** Reports upload activity to the parent editor so it can guard save/delete. */
+  onUploadingChange?: (active: boolean) => void
   onUploaded: (result: {
     storage: string
     uploadId: string
@@ -31,20 +33,42 @@ interface Props {
 /**
  * Same upload route, size gate, role gate and captcha as the site publisher.
  * The dialog is shadcn so the workspace does not pull in HeroUI.
+ * Late responses after unmount or target change are ignored.
  */
-export function WorkspaceResourceUpload({ disabled, onUploaded }: Props) {
+export function WorkspaceResourceUpload({
+  disabled,
+  onUploadingChange,
+  onUploaded
+}: Props) {
   const role = useWorkspaceUser().role
   const [file, setFile] = useState<File | null>(null)
   const [progress, setProgress] = useState(0)
   const [uploading, setUploading] = useState(false)
   const [captchaOpen, setCaptchaOpen] = useState(false)
+  const aliveRef = useRef(true)
+  const uploadingRef = useRef(false)
+  const fileInputRef = useRef<HTMLInputElement | null>(null)
+
+  useEffect(() => {
+    aliveRef.current = true
+    return () => {
+      aliveRef.current = false
+      uploadingRef.current = false
+      onUploadingChange?.(false)
+    }
+    // Upload activity reporting is bound to this slot's lifetime.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const upload = async (captcha: string, selected = file) => {
+    if (!aliveRef.current) return
     if (!selected) {
       toast.error('未找到资源文件，请重试')
       return
     }
+    uploadingRef.current = true
     setUploading(true)
+    onUploadingChange?.(true)
     const formData = new FormData()
     formData.append('file', selected)
     formData.append('captcha', captcha)
@@ -55,6 +79,7 @@ export function WorkspaceResourceUpload({ disabled, onUploaded }: Props) {
         {
           headers: { 'X-Requested-With': 'kun-fetch' },
           onUploadProgress: (event) => {
+            if (!aliveRef.current) return
             setProgress(
               Math.round(
                 (event.loaded * 100) / (event.total || selected.size || 1)
@@ -63,6 +88,7 @@ export function WorkspaceResourceUpload({ disabled, onUploaded }: Props) {
           }
         }
       )
+      if (!aliveRef.current) return
       if (typeof response.data === 'string') {
         toast.error(response.data || '上传失败，请重试')
         return
@@ -77,10 +103,20 @@ export function WorkspaceResourceUpload({ disabled, onUploaded }: Props) {
       setProgress(0)
       toast.success('文件已上传')
     } catch {
+      if (!aliveRef.current) return
       toast.error('上传失败，请稍后重试')
     } finally {
-      setUploading(false)
+      uploadingRef.current = false
+      if (aliveRef.current) {
+        setUploading(false)
+        onUploadingChange?.(false)
+      }
     }
+  }
+
+  const closeCaptcha = () => {
+    setCaptchaOpen(false)
+    if (!uploadingRef.current) onUploadingChange?.(false)
   }
 
   const chooseFile = async (next: File | null) => {
@@ -96,26 +132,37 @@ export function WorkspaceResourceUpload({ disabled, onUploaded }: Props) {
     }
     setFile(next)
     setProgress(0)
-    if (role < 3) setCaptchaOpen(true)
-    else await upload('', next)
+    if (role < 3) {
+      setCaptchaOpen(true)
+      onUploadingChange?.(true)
+    } else await upload('', next)
   }
 
   return (
     <div className="min-w-0 space-y-2">
-      <label className="flex min-w-0 flex-wrap items-center gap-2 text-sm">
-        <span>上传到对象存储</span>
-        <input
-          aria-label="上传资源文件"
-          type="file"
-          disabled={disabled || uploading}
-          className="max-w-full text-sm"
-          onChange={(event) => {
-            const next = event.target.files?.[0] ?? null
-            event.target.value = ''
-            void chooseFile(next)
-          }}
-        />
-      </label>
+      <input
+        aria-label="上传资源文件"
+        type="file"
+        disabled={disabled || uploading}
+        className="hidden"
+        ref={(node) => {
+          fileInputRef.current = node
+        }}
+        onChange={(event) => {
+          const next = event.target.files?.[0] ?? null
+          event.target.value = ''
+          void chooseFile(next)
+        }}
+      />
+      <Button
+        type="button"
+        size="sm"
+        variant="outline"
+        disabled={disabled || uploading}
+        onClick={() => fileInputRef.current?.click()}
+      >
+        上传到对象存储
+      </Button>
       {uploading ? (
         <p className="text-sm text-muted-foreground">正在上传 {progress}%</p>
       ) : null}
@@ -126,8 +173,10 @@ export function WorkspaceResourceUpload({ disabled, onUploaded }: Props) {
           size="sm"
           variant="outline"
           onClick={() => {
-            if (role < 3) setCaptchaOpen(true)
-            else void upload('', file)
+            if (role < 3) {
+              setCaptchaOpen(true)
+              onUploadingChange?.(true)
+            } else void upload('', file)
           }}
         >
           重试上传
@@ -135,8 +184,17 @@ export function WorkspaceResourceUpload({ disabled, onUploaded }: Props) {
       ) : null}
       <CaptchaDialog
         open={captchaOpen}
-        onOpenChange={setCaptchaOpen}
+        onOpenChange={(open) => {
+          if (open) {
+            setCaptchaOpen(true)
+            onUploadingChange?.(true)
+            return
+          }
+          closeCaptcha()
+        }}
+        isCurrent={() => aliveRef.current}
         onSuccess={async (code) => {
+          if (!aliveRef.current) return
           setCaptchaOpen(false)
           await upload(code)
         }}
@@ -148,10 +206,12 @@ export function WorkspaceResourceUpload({ disabled, onUploaded }: Props) {
 function CaptchaDialog({
   open,
   onOpenChange,
+  isCurrent,
   onSuccess
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
+  isCurrent: () => boolean
   onSuccess: (code: string) => Promise<void>
 }) {
   const [images, setImages] = useState<KunCaptchaImage[]>([])
@@ -160,6 +220,12 @@ function CaptchaDialog({
   const [loading, setLoading] = useState(false)
   const [verifying, setVerifying] = useState(false)
   const [errorCount, setErrorCount] = useState(0)
+  const attemptRef = useRef(0)
+
+  const handleOpenChange = (next: boolean) => {
+    if (!next) attemptRef.current += 1
+    onOpenChange(next)
+  }
 
   useEffect(() => {
     if (!open) return
@@ -184,12 +250,14 @@ function CaptchaDialog({
 
   const verify = async () => {
     if (verifying) return
+    const attempt = attemptRef.current
     setVerifying(true)
     try {
       const response = await kunFetchPost<{ code: string } | string>(
         '/auth/captcha',
         { sessionId, selectedIds: Array.from(selected) }
       )
+      if (attempt !== attemptRef.current || !isCurrent()) return
       if (typeof response === 'string') {
         toast.error(
           kunCaptchaErrorMessageMap[Math.min(errorCount + 1, 6)] ?? response
@@ -199,12 +267,12 @@ function CaptchaDialog({
       }
       await onSuccess(response.code)
     } finally {
-      setVerifying(false)
+      if (isCurrent()) setVerifying(false)
     }
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>人机验证</DialogTitle>
@@ -235,7 +303,7 @@ function CaptchaDialog({
           <Button
             type="button"
             variant="outline"
-            onClick={() => onOpenChange(false)}
+            onClick={() => handleOpenChange(false)}
           >
             取消
           </Button>

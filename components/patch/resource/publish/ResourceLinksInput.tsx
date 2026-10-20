@@ -12,6 +12,11 @@ import { Plus, Trash2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { SUPPORTED_RESOURCE_LINK_MAP, storageTypes } from '~/constants/resource'
 import {
+  applyStorageSwitch,
+  getDefaultLinkStorage,
+  getDisabledStorageKeys
+} from '~/utils/resourceFormRules'
+import {
   CLOUDREVE_PAN_DOMAIN,
   fetchCloudreveShareSize,
   formatSize
@@ -31,29 +36,6 @@ interface ResourceLinksInputProps {
   setUploadingResource: Dispatch<SetStateAction<boolean>>
   /** 补链入口：把这条链接的地址栏滚动定位并高亮。 */
   focusLinkId?: number
-}
-
-const getDefaultLinkStorage = (section: string, role: number) => {
-  if (section === 'galgame') {
-    return role > 3 ? 'touchgal' : 'user'
-  }
-  if (role > 3) {
-    return 'touchgal'
-  }
-  if (role > 1) {
-    return 's3'
-  }
-  return 'user'
-}
-
-const getDisabledStorageKeys = (section: string, role: number) => {
-  if (role > 3) {
-    return []
-  }
-  if (role > 1 && section === 'patch') {
-    return ['touchgal']
-  }
-  return ['s3', 'touchgal']
 }
 
 export const createEmptyResourceLink = (section: string, role: number) => ({
@@ -199,21 +181,29 @@ export const ResourceLinksInput = ({
                     onSelectionChange={(key) => {
                       const value = Array.from(key).join('')
                       field.onChange(value)
-                      if (value !== 's3') {
-                        setValue(`links.${index}.hash`, '', {
-                          shouldValidate: true
-                        })
-                        setValue(`links.${index}.uploadId`, undefined, {
-                          shouldValidate: true
-                        })
-                        setValue(`links.${index}.content`, '', {
-                          shouldValidate: true
-                        })
-                      } else {
-                        setValue(`links.${index}.content`, '', {
-                          shouldValidate: true
-                        })
-                      }
+                      const switched = applyStorageSwitch(
+                        {
+                          storage: field.value,
+                          content: links[index]?.content ?? '',
+                          hash: links[index]?.hash ?? '',
+                          size: links[index]?.size ?? '',
+                          code: links[index]?.code ?? '',
+                          password: links[index]?.password ?? '',
+                          ...(links[index]?.uploadId
+                            ? { uploadId: links[index].uploadId as string }
+                            : {})
+                        },
+                        value
+                      )
+                      setValue(`links.${index}.hash`, switched.hash, {
+                        shouldValidate: true
+                      })
+                      setValue(`links.${index}.uploadId`, switched.uploadId, {
+                        shouldValidate: true
+                      })
+                      setValue(`links.${index}.content`, switched.content, {
+                        shouldValidate: true
+                      })
                     }}
                     disabledKeys={getDisabledStorageKeys(section, userRole)}
                     isInvalid={!!errors.links?.[index]?.storage}

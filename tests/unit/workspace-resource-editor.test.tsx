@@ -34,8 +34,9 @@ const workspaceUser = vi.hoisted(() => ({
 }))
 
 vi.mock('~/store/userStore', () => ({
-  useUserStore: (selector: (state: { user: typeof userState.user }) => unknown) =>
-    selector({ user: userState.user })
+  useUserStore: (
+    selector: (state: { user: typeof userState.user }) => unknown
+  ) => selector({ user: userState.user })
 }))
 vi.mock('~/utils/kunFetch', () => ({
   kunFetchGet: mocks.kunFetchGet,
@@ -64,7 +65,9 @@ vi.mock('~/components/dashboard/ui/dialog', () => ({
   DialogHeader: ({ children }: { children?: React.ReactNode }) => (
     <div>{children}</div>
   ),
-  DialogTitle: ({ children }: { children?: React.ReactNode }) => <h2>{children}</h2>,
+  DialogTitle: ({ children }: { children?: React.ReactNode }) => (
+    <h2>{children}</h2>
+  ),
   DialogFooter: ({ children }: { children?: React.ReactNode }) => (
     <div>{children}</div>
   )
@@ -81,6 +84,148 @@ vi.mock('next/link', () => ({
     href: string
   }) => <a href={href}>{children}</a>
 }))
+vi.mock('~/components/dashboard/ui/select', async () => {
+  const ReactModule = await import('react')
+  type Option = { value: string; label?: React.ReactNode; disabled?: boolean }
+  const Ctx = ReactModule.createContext<{
+    value: string
+    disabled?: boolean
+    options: Option[]
+    onValueChange?: (value: string) => void
+  }>({ value: '', options: [] })
+  const collect = (node: React.ReactNode, out: Option[]) => {
+    ReactModule.Children.forEach(node, (child) => {
+      if (!ReactModule.isValidElement(child)) return
+      const props = child.props as {
+        value?: string
+        disabled?: boolean
+        children?: React.ReactNode
+      }
+      if (typeof props.value === 'string') {
+        out.push({
+          value: props.value,
+          label: props.children,
+          disabled: props.disabled
+        })
+        return
+      }
+      collect(props.children, out)
+    })
+  }
+  return {
+    Select: ({
+      value,
+      disabled,
+      onValueChange,
+      children
+    }: {
+      value?: string
+      disabled?: boolean
+      onValueChange?: (value: string) => void
+      children?: React.ReactNode
+    }) => {
+      const options: Option[] = []
+      collect(children, options)
+      return (
+        <Ctx.Provider
+          value={{ value: value ?? '', disabled, options, onValueChange }}
+        >
+          <div>{children}</div>
+        </Ctx.Provider>
+      )
+    },
+    SelectTrigger: ({
+      'aria-label': ariaLabel,
+      'aria-labelledby': ariaLabelledby,
+      className
+    }: {
+      children?: React.ReactNode
+      'aria-label'?: string
+      'aria-labelledby'?: string
+      className?: string
+    }) => {
+      const ctx = ReactModule.useContext(Ctx)
+      return (
+        <select
+          aria-label={ariaLabel}
+          aria-labelledby={ariaLabelledby}
+          className={className}
+          disabled={ctx.disabled}
+          value={ctx.value}
+          onChange={(event) => ctx.onValueChange?.(event.target.value)}
+        >
+          {ctx.options.map((option) => (
+            <option
+              key={option.value}
+              value={option.value}
+              disabled={option.disabled}
+            >
+              {option.value}
+            </option>
+          ))}
+        </select>
+      )
+    },
+    SelectValue: () => null,
+    SelectContent: ({ children }: { children?: React.ReactNode }) => (
+      <div data-testid="select-content">{children}</div>
+    ),
+    SelectItem: ({
+      children,
+      value
+    }: {
+      children?: React.ReactNode
+      value: string
+      disabled?: boolean
+    }) => <span data-value={value}>{children}</span>
+  }
+})
+vi.mock('~/components/dashboard/ui/dropdown-menu', async () => {
+  const ReactModule = await import('react')
+  return {
+    DropdownMenu: ({ children }: { children?: React.ReactNode }) => (
+      <div>{children}</div>
+    ),
+    DropdownMenuTrigger: ({
+      children
+    }: {
+      children?: React.ReactNode
+      asChild?: boolean
+    }) => <>{children}</>,
+    DropdownMenuContent: ({ children }: { children?: React.ReactNode }) => (
+      <div role="menu">{children}</div>
+    ),
+    DropdownMenuGroup: ({ children }: { children?: React.ReactNode }) => (
+      <div>{children}</div>
+    ),
+    DropdownMenuLabel: ({ children }: { children?: React.ReactNode }) => (
+      <div>{children}</div>
+    ),
+    DropdownMenuSeparator: () => null,
+    DropdownMenuItem: ({ children }: { children?: React.ReactNode }) => (
+      <div>{children}</div>
+    ),
+    DropdownMenuCheckboxItem: ({
+      children,
+      checked,
+      onCheckedChange
+    }: {
+      children?: React.ReactNode
+      checked?: boolean
+      onSelect?: (event: Event) => void
+      onCheckedChange?: (checked: boolean) => void
+    }) => (
+      <label>
+        <input
+          type="checkbox"
+          checked={!!checked}
+          onChange={() => onCheckedChange?.(!checked)}
+        />
+        {children}
+      </label>
+    )
+  }
+})
 vi.mock('~/components/dashboard/ui/alert-dialog', async () => {
   const ReactModule = await import('react')
   const Ctx = ReactModule.createContext<(open: boolean) => void>(() => {})
@@ -122,7 +267,11 @@ vi.mock('~/components/dashboard/ui/alert-dialog', async () => {
     }) => {
       const onOpenChange = ReactModule.useContext(Ctx)
       return (
-        <button type="button" disabled={disabled} onClick={() => onOpenChange(false)}>
+        <button
+          type="button"
+          disabled={disabled}
+          onClick={() => onOpenChange(false)}
+        >
           {children}
         </button>
       )
@@ -146,6 +295,7 @@ const detail = (
   patchId: 3,
   patchUniqueId: 'game',
   patchName: '游戏甲',
+  patchBanner: '',
   name: '资源甲',
   section: 'galgame',
   status: 0,
@@ -257,7 +407,9 @@ describe('workspace resource editor', () => {
     dom = new JSDOM('<!doctype html><div id="root"></div>', {
       url: 'http://localhost/workspace/resources/9'
     })
-    dom.window.HTMLElement.prototype.scrollIntoView = function (this: HTMLElement) {
+    dom.window.HTMLElement.prototype.scrollIntoView = function (
+      this: HTMLElement
+    ) {
       scrolled.push(this)
     }
     vi.stubGlobal('window', dom.window)
@@ -362,10 +514,32 @@ describe('workspace resource editor', () => {
         }
       ]
     })
+    const readsBefore = mocks.kunFetchGet.mock.calls.filter(
+      (call) => call[0] === '/workspace/resources/9'
+    ).length
+    // 草稿未提交时点「载入最新版本」只弹确认，不发 GET
     await act(async () => {
-      button(container, '重新读取')!.click()
+      button(container, '载入最新版本')!.click()
     })
     await settle()
+    const reloadDialog = dom!.window.document.querySelector(
+      '[role="alertdialog"]'
+    )!
+    expect(reloadDialog.textContent).toContain('尚未保存的修改')
+    expect(
+      mocks.kunFetchGet.mock.calls.filter(
+        (call) => call[0] === '/workspace/resources/9'
+      )
+    ).toHaveLength(readsBefore)
+    await act(async () => {
+      button(reloadDialog, '取消')!.click()
+    })
+    await settle()
+    expect(
+      mocks.kunFetchGet.mock.calls.filter(
+        (call) => call[0] === '/workspace/resources/9'
+      )
+    ).toHaveLength(readsBefore)
     expect(address.value).toContain('https://draft.example/')
     expect(password.value).toBe('draft-secret')
 
@@ -421,6 +595,7 @@ describe('workspace resource editor', () => {
     expect(address.value).toBe('https://canonical.example/saved')
     expect(password.value).toBe('saved-secret')
 
+    // 保存成功后基线已跟服务端一致，草稿不脏：重新读取直接发请求，不弹确认
     current = detail({
       baseLinks: [
         { id: 1, version: 9 },
@@ -442,11 +617,11 @@ describe('workspace resource editor', () => {
       ]
     })
     await act(async () => {
-      button(container, '重新读取')!.click()
+      button(container, '载入最新版本')!.click()
     })
     await settle()
-    expect(address.value).toBe('https://canonical.example/saved')
-    expect(password.value).toBe('saved-secret')
+    expect(address.value).toBe('https://server.example/wiped')
+    expect(password.value).toBe('wiped')
 
     current = detail({
       baseLinks: [
@@ -468,6 +643,14 @@ describe('workspace resource editor', () => {
         }
       ]
     })
+    // 草稿不脏：直接发请求并用返回内容重建会话
+    await act(async () => {
+      button(container, '载入最新版本')!.click()
+    })
+    await settle()
+    expect(address.value).toBe('https://canonical.example/saved')
+    expect(password.value).toBe('saved-secret')
+    // 基线回到服务端版本后，保存提交的是 canonical 状态
     await act(async () => {
       button(container, '保存')!.click()
     })
@@ -503,7 +686,7 @@ describe('workspace resource editor', () => {
     })
     const container = await mount()
     await act(async () => {
-      button(container, '删除整个资源')!.click()
+      button(container, '删除资源')!.click()
     })
     const dialog = dom!.window.document.querySelector('[role="alertdialog"]')!
     expect(dialog.textContent).toContain('萌萌点')
@@ -512,14 +695,19 @@ describe('workspace resource editor', () => {
       button(dialog, '取消')!.click()
     })
     expect(mocks.kunFetchDelete).not.toHaveBeenCalled()
-    expect(dom!.window.document.querySelector('[role="alertdialog"]')).toBeNull()
     expect(
-      (container.querySelector('input[aria-label="解压码"]') as HTMLInputElement)
-        .value
+      dom!.window.document.querySelector('[role="alertdialog"]')
+    ).toBeNull()
+    expect(
+      (
+        container.querySelector(
+          'input[aria-label="解压码"]'
+        ) as HTMLInputElement
+      ).value
     ).toBe('only-secret')
 
     await act(async () => {
-      button(container, '删除整个资源')!.click()
+      button(container, '删除资源')!.click()
     })
     await act(async () => {
       button(dom!.window.document, '确认删除')!.click()
@@ -549,7 +737,9 @@ describe('workspace resource editor', () => {
       })
       workspaceUser.role = 2
       const container = await mount()
-      expect(container.textContent).toContain('待审核或封禁的资源只读，不显示凭据')
+      expect(container.textContent).toContain(
+        '待审核或封禁的资源只读，不显示凭据'
+      )
       for (const linkId of [2, 3]) {
         const slot = container.querySelector(`#workspace-link-${linkId}`)!
         expect(slot.textContent).toContain('这条链接只读，不显示凭据。')
@@ -560,8 +750,11 @@ describe('workspace resource editor', () => {
       expect(container.querySelector('input[aria-label="链接地址"]')).toBeNull()
       expect(container.querySelector('input[aria-label="解压码"]')).toBeNull()
       expect(
-        (container.querySelector('input[aria-label="资源名称"]') as HTMLInputElement)
-          .disabled
+        (
+          container.querySelector(
+            'input[aria-label="资源名称"]'
+          ) as HTMLInputElement
+        ).disabled
       ).toBe(true)
       expect(button(container, '保存')).toBeUndefined()
       expect(button(container, '添加链接')).toBeUndefined()
@@ -577,7 +770,9 @@ describe('workspace resource editor', () => {
       await act(async () => {
         button(dialog, '取消')!.click()
       })
-      expect(dom!.window.document.querySelector('[role="alertdialog"]')).toBeNull()
+      expect(
+        dom!.window.document.querySelector('[role="alertdialog"]')
+      ).toBeNull()
       expect(mocks.kunFetchDelete).not.toHaveBeenCalled()
       expect(mocks.kunFetchPut).not.toHaveBeenCalled()
       expect(mocks.kunFetchPost).not.toHaveBeenCalled()
@@ -652,16 +847,29 @@ describe('workspace resource editor', () => {
       ]
     })
     const container = await mount()
-    const removeButtons = [...container.querySelectorAll('button')].filter((item) =>
-      item.textContent?.includes('移除这条链接')
-    )
-    await act(async () => {
-      removeButtons[0]!.click()
-    })
-    expect(container.textContent).toContain('资源盘链接不能由普通作者删除')
-    expect(container.querySelectorAll('input[aria-label="链接地址"]')).toHaveLength(2)
+    // 普通作者看不到资源盘槽位的移除按钮，也没有无效报错路径
+    const disk = container.querySelector('#workspace-link-2') as HTMLElement
+    const userSlot = container.querySelector('#workspace-link-3') as HTMLElement
     expect(
-      (container.querySelector('input[aria-label="解压码"]') as HTMLInputElement).value
+      [...disk.querySelectorAll('button')].some((item) =>
+        item.textContent?.includes('移除这条链接')
+      )
+    ).toBe(false)
+    expect(
+      [...userSlot.querySelectorAll('button')].some((item) =>
+        item.textContent?.includes('移除这条链接')
+      )
+    ).toBe(true)
+    expect(container.textContent).not.toContain('资源盘链接不能由普通作者删除')
+    expect(
+      container.querySelectorAll('input[aria-label="链接地址"]')
+    ).toHaveLength(2)
+    expect(
+      (
+        container.querySelector(
+          'input[aria-label="解压码"]'
+        ) as HTMLInputElement
+      ).value
     ).toBe('disk-secret')
   })
 
@@ -757,8 +965,11 @@ describe('workspace resource editor', () => {
     await settle()
     expect(password.value).toBe('during-save')
     expect(
-      (container.querySelector('input[aria-label="链接地址"]') as HTMLInputElement)
-        .value
+      (
+        container.querySelector(
+          'input[aria-label="链接地址"]'
+        ) as HTMLInputElement
+      ).value
     ).toBe('https://canonical.example/file')
     expect(size.readOnly).toBe(true)
 
@@ -813,15 +1024,21 @@ describe('workspace resource editor', () => {
     })
     await settle()
     expect(
-      (container.querySelector('input[aria-label="资源名称"]') as HTMLInputElement)
-        .value
+      (
+        container.querySelector(
+          'input[aria-label="资源名称"]'
+        ) as HTMLInputElement
+      ).value
     ).toBe('资源乙')
     late[0]?.('资源甲读取失败')
     await settle()
     expect(container.textContent).not.toContain('资源甲读取失败')
     expect(
-      (container.querySelector('input[aria-label="资源名称"]') as HTMLInputElement)
-        .value
+      (
+        container.querySelector(
+          'input[aria-label="资源名称"]'
+        ) as HTMLInputElement
+      ).value
     ).toBe('资源乙')
   })
 
@@ -862,11 +1079,15 @@ describe('workspace resource editor', () => {
     const field = (linkId: number, label: string) =>
       container.querySelector(
         `#workspace-link-${linkId} input[aria-label="${label}"]`
-      ) as HTMLInputElement
+      ) as HTMLInputElement | null
+    // S3 地址/大小/校验只读
     for (const label of ['链接地址', '资源大小', '校验值']) {
-      expect(field(2, label).readOnly).toBe(true)
-      expect(field(3, label).readOnly).toBe(false)
+      expect(field(2, label)?.readOnly).toBe(true)
     }
+    // 外链不提供编辑校验
+    expect(field(3, '校验值')).toBeNull()
+    expect(field(3, '链接地址')?.readOnly).toBe(false)
+    expect(field(3, '资源大小')?.readOnly).toBe(false)
     const managed = container.querySelector('#workspace-link-1')!
     expect(managed.textContent).toContain('由网站管理，不能在这里修改')
     expect(managed.textContent).not.toContain('编号')
@@ -927,7 +1148,12 @@ describe('workspace resource editor', () => {
       )
     ).toHaveLength(readsBefore)
 
-    const note = link.querySelector(
+    // 取消后输入仍在会话里，重新打开弹窗时说明还在
+    await act(async () => {
+      button(link, '回应')!.click()
+    })
+    const reopened = dom!.window.document.querySelector('[role="alertdialog"]')!
+    const note = reopened.querySelector(
       'textarea[aria-label="维护说明"]'
     ) as HTMLTextAreaElement
     const proto = Object.getOwnPropertyDescriptor(
@@ -937,9 +1163,6 @@ describe('workspace resource editor', () => {
     await act(async () => {
       proto?.set?.call(note, '已经换了地址')
       note.dispatchEvent(new dom!.window.Event('input', { bubbles: true }))
-    })
-    await act(async () => {
-      button(link, '回应')!.click()
     })
     current = detail({
       name: '服务端名称',
@@ -962,7 +1185,9 @@ describe('workspace resource editor', () => {
           size: '9GB'
         }
       ],
-      maintenance: [maintenanceItem({ state: 'handled', capabilities: { actions: [] } })]
+      maintenance: [
+        maintenanceItem({ state: 'handled', capabilities: { actions: [] } })
+      ]
     })
     mocks.kunFetchPost.mockResolvedValue({ item: current.maintenance[0] })
     const confirm = dom!.window.document.querySelector('[role="alertdialog"]')!
@@ -985,8 +1210,11 @@ describe('workspace resource editor', () => {
     expect(name.value).toBe('草稿名称')
     expect(password.value).toBe('kept-secret')
     expect(
-      (container.querySelector('input[aria-label="链接地址"]') as HTMLInputElement)
-        .value
+      (
+        container.querySelector(
+          'input[aria-label="链接地址"]'
+        ) as HTMLInputElement
+      ).value
     ).toBe('https://origin.example/a')
     expect(link.textContent).not.toContain('回应')
 
@@ -1004,6 +1232,285 @@ describe('workspace resource editor', () => {
       { id: 2, version: 4 }
     ])
     expect(name.value).toBe('草稿名称')
+  })
+
+  const chooseSelect = async (
+    rootNode: ParentNode,
+    label: string,
+    value: string
+  ) => {
+    const select = rootNode.querySelector(
+      `select[aria-label="${label}"]`
+    ) as HTMLSelectElement
+    const proto = Object.getOwnPropertyDescriptor(
+      dom!.window.HTMLSelectElement.prototype,
+      'value'
+    )
+    await act(async () => {
+      proto?.set?.call(select, value)
+      select.dispatchEvent(new dom!.window.Event('change', { bubbles: true }))
+    })
+  }
+
+  const chooseUpload = async (rootNode: ParentNode, name = 'game.zip') => {
+    const file = new File(['abc'], name, { type: 'application/zip' })
+    const input = rootNode.querySelector(
+      'input[aria-label="上传资源文件"]'
+    ) as HTMLInputElement
+    Object.defineProperty(input, 'files', {
+      configurable: true,
+      value: [file]
+    })
+    await act(async () => {
+      input.dispatchEvent(new dom!.window.Event('change', { bubbles: true }))
+    })
+    return file
+  }
+
+  it('uploads from the draft section and keeps role 3 galgame uploads', async () => {
+    workspaceUser.role = 2
+    current = detail({
+      capabilities: { canEdit: true, canDelete: true, canUpload: false }
+    })
+    const container = await mount()
+    expect(container.textContent).not.toContain('上传到对象存储')
+    await chooseSelect(container, '资源分区', 'patch')
+    await chooseSelect(container, '存储类型', 's3')
+    expect(button(container, '上传到对象存储')).toBeTruthy()
+    await chooseSelect(container, '资源分区', 'galgame')
+    expect(container.textContent).not.toContain('上传到对象存储')
+    expect(
+      (
+        container.querySelector(
+          'select[aria-label="存储类型"]'
+        ) as HTMLSelectElement
+      ).value
+    ).toBe('s3')
+
+    workspaceUser.role = 3
+    current = detail({
+      capabilities: { canEdit: true, canDelete: true, canUpload: false },
+      links: [
+        { id: 1, version: 1, storage: 'touchgal', protected: true },
+        {
+          id: 2,
+          version: 4,
+          storage: 's3',
+          protected: false,
+          content: 'https://origin.example/a',
+          code: '',
+          password: 'pw',
+          hash: 'hash',
+          size: '1GB'
+        }
+      ]
+    })
+    const role3 = await mount()
+    expect(button(role3, '上传到对象存储')).toBeTruthy()
+    const s3Option = [
+      ...role3.querySelectorAll('select[aria-label="存储类型"] option')
+    ].find((option) => (option as HTMLOptionElement).value === 's3') as
+      | HTMLOptionElement
+      | undefined
+    expect(s3Option?.disabled).toBe(true)
+  })
+
+  it('merges a finished upload without restoring fields edited while it ran', async () => {
+    workspaceUser.role = 3
+    current = detail({
+      links: [
+        { id: 1, version: 1, storage: 'touchgal', protected: true },
+        {
+          id: 2,
+          version: 4,
+          storage: 's3',
+          protected: false,
+          content: 'https://origin.example/a',
+          code: 'old-code',
+          password: 'old-pw',
+          hash: 'hash',
+          size: '1GB'
+        }
+      ]
+    })
+    let resolveUpload: ((value: unknown) => void) | undefined
+    mocks.axiosPost.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveUpload = resolve
+        })
+    )
+    const container = await mount()
+    await chooseUpload(container)
+    const name = container.querySelector(
+      'input[aria-label="资源名称"]'
+    ) as HTMLInputElement
+    const code = container.querySelector(
+      'input[aria-label="提取码"]'
+    ) as HTMLInputElement
+    const password = container.querySelector(
+      'input[aria-label="解压码"]'
+    ) as HTMLInputElement
+    await act(async () => {
+      setValue(name, '上传期间的名称')
+      setValue(code, 'new-code')
+      setValue(password, 'new-pw')
+    })
+    resolveUpload?.({
+      data: {
+        filetype: 's3',
+        uploadId: 'up-9',
+        fileHash: 'abc',
+        fileSize: '4MB'
+      }
+    })
+    await settle()
+    expect(name.value).toBe('上传期间的名称')
+    expect(code.value).toBe('new-code')
+    expect(password.value).toBe('new-pw')
+    expect(
+      (
+        container.querySelector(
+          'input[aria-label="校验值"]'
+        ) as HTMLInputElement
+      ).value
+    ).toBe('abc')
+    expect(
+      (
+        container.querySelector(
+          'input[aria-label="资源大小"]'
+        ) as HTMLInputElement
+      ).value
+    ).toBe('4MB')
+  })
+
+  it('drops a failed upload after a successful reload and keeps it when reload fails', async () => {
+    workspaceUser.role = 3
+    current = detail({
+      links: [
+        { id: 1, version: 1, storage: 'touchgal', protected: true },
+        {
+          id: 2,
+          version: 4,
+          storage: 's3',
+          protected: false,
+          content: 'https://origin.example/a',
+          code: '',
+          password: 'pw',
+          hash: 'hash',
+          size: '1GB'
+        }
+      ]
+    })
+    mocks.axiosPost.mockResolvedValueOnce({ data: '可用萌萌点不足' })
+    const container = await mount()
+    await chooseUpload(container, 'stuck.zip')
+    await settle()
+    expect(container.textContent).toContain('stuck.zip')
+    expect(button(container, '重试上传')).toBeTruthy()
+
+    mocks.kunFetchGet.mockImplementation(async (url: string) => {
+      if (url === '/auth/captcha') {
+        return { images: [], sessionId: 'captcha-session' }
+      }
+      return '读取失败'
+    })
+    await act(async () => {
+      button(container, '载入最新版本')!.click()
+    })
+    await settle()
+    expect(container.textContent).toContain('读取失败')
+    expect(container.textContent).toContain('stuck.zip')
+
+    mocks.kunFetchGet.mockImplementation(async (url: string) => {
+      if (url === '/auth/captcha') {
+        return { images: [], sessionId: 'captcha-session' }
+      }
+      return current
+    })
+    await act(async () => {
+      button(container, '载入最新版本')!.click()
+    })
+    await settle()
+    expect(container.textContent).not.toContain('stuck.zip')
+    expect(button(container, '重试上传')).toBeUndefined()
+    expect(
+      (
+        container.querySelector(
+          'input[aria-label="解压码"]'
+        ) as HTMLInputElement
+      ).value
+    ).toBe('pw')
+  })
+
+  it('blocks reload while captcha is open', async () => {
+    workspaceUser.role = 2
+    current = detail({
+      section: 'patch',
+      links: [
+        { id: 1, version: 1, storage: 'touchgal', protected: true },
+        {
+          id: 2,
+          version: 4,
+          storage: 's3',
+          protected: false,
+          content: '',
+          code: '',
+          password: '',
+          hash: '',
+          size: ''
+        }
+      ]
+    })
+    mocks.kunFetchGet.mockImplementation(async (url: string) => {
+      if (url === '/auth/captcha') {
+        return { images: [], sessionId: 'captcha-session' }
+      }
+      return current
+    })
+    const container = await mount()
+    const reads = mocks.kunFetchGet.mock.calls.length
+    await chooseUpload(container)
+    const reload = button(container, '载入最新版本') as HTMLButtonElement
+    expect(reload.disabled).toBe(true)
+    expect(dom!.window.document.body.textContent).toContain('人机验证')
+    await act(async () => {
+      reload.click()
+    })
+    expect(mocks.kunFetchGet.mock.calls.length).toBe(reads + 1)
+  })
+
+  it('shows required markers and the full type description', async () => {
+    const container = await mount()
+    for (const label of ['资源类型', '资源语言', '资源平台', '中文支持']) {
+      const control = container.querySelector(`[aria-label="${label}"]`)
+      expect(control?.getAttribute('aria-label')).toBe(label)
+      expect(control?.getAttribute('aria-required')).toBe('true')
+    }
+    const description = [...container.querySelectorAll('span')].find(
+      (item) => item.textContent === '在 Windows, macOS 等电脑设备上运行的游戏'
+    )
+    expect(description).toBeTruthy()
+    expect(description?.className ?? '').not.toContain('truncate')
+    expect(description?.getAttribute('title')).toContain('Windows')
+    expect(container.textContent).toContain('日本語')
+
+    const toggle = async (name: string) => {
+      const label = [...container.querySelectorAll('label')].find((item) =>
+        item.textContent?.includes(name)
+      )
+      await act(async () => {
+        label?.querySelector('input')?.click()
+      })
+    }
+    await toggle('资料集')
+    await toggle('PC游戏')
+    const chinese = container.querySelector(
+      '[aria-label="中文支持"]'
+    ) as HTMLButtonElement
+    expect(chinese.disabled).toBe(true)
+    expect(chinese.getAttribute('aria-required')).toBeNull()
+    expect(container.textContent).toContain('日本語')
   })
 })
 
@@ -1061,7 +1568,10 @@ describe('workspace resource upload', () => {
   }
 
   it('sends nothing when captcha is cancelled and keeps the file', async () => {
-    mocks.kunFetchGet.mockResolvedValue({ images: [], sessionId: 'captcha-session' })
+    mocks.kunFetchGet.mockResolvedValue({
+      images: [],
+      sessionId: 'captcha-session'
+    })
     const { container } = await mountUpload()
     await choose(container)
     expect(container.textContent).toContain('game.zip')

@@ -2,7 +2,10 @@ import React, { act } from 'react'
 import type { Root } from 'react-dom/client'
 import { JSDOM } from 'jsdom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { LinkMaintenanceItem, LinkMaintenanceListResponse } from '~/types/api/linkMaintenance'
+import type {
+  LinkMaintenanceItem,
+  LinkMaintenanceListResponse
+} from '~/types/api/linkMaintenance'
 
 globalThis.React = React
 
@@ -65,11 +68,104 @@ vi.mock('~/components/dashboard/ui/alert-dialog', async () => {
     }) => {
       const onOpenChange = ReactModule.useContext(Ctx)
       return (
-        <button type="button" disabled={disabled} onClick={() => onOpenChange(false)}>
+        <button
+          type="button"
+          disabled={disabled}
+          onClick={() => onOpenChange(false)}
+        >
           {children}
         </button>
       )
     }
+  }
+})
+
+vi.mock('~/components/dashboard/ui/select', async () => {
+  const ReactModule = await import('react')
+  type Option = { value: string; label?: React.ReactNode; disabled?: boolean }
+  const Ctx = ReactModule.createContext<{
+    value: string
+    disabled?: boolean
+    options: Option[]
+    onValueChange?: (value: string) => void
+  }>({ value: '', options: [] })
+  const collect = (node: React.ReactNode, out: Option[]) => {
+    ReactModule.Children.forEach(node, (child) => {
+      if (!ReactModule.isValidElement(child)) return
+      const props = child.props as {
+        value?: string
+        disabled?: boolean
+        children?: React.ReactNode
+      }
+      if (typeof props.value === 'string') {
+        out.push({
+          value: props.value,
+          label: props.children,
+          disabled: props.disabled
+        })
+        return
+      }
+      collect(props.children, out)
+    })
+  }
+  return {
+    Select: ({
+      value,
+      disabled,
+      onValueChange,
+      children
+    }: {
+      value?: string
+      disabled?: boolean
+      onValueChange?: (value: string) => void
+      children?: React.ReactNode
+    }) => {
+      const options: Option[] = []
+      collect(children, options)
+      return (
+        <Ctx.Provider
+          value={{ value: value ?? '', disabled, options, onValueChange }}
+        >
+          <div>{children}</div>
+        </Ctx.Provider>
+      )
+    },
+    SelectTrigger: ({
+      'aria-label': ariaLabel,
+      className
+    }: {
+      children?: React.ReactNode
+      'aria-label'?: string
+      className?: string
+    }) => {
+      const ctx = ReactModule.useContext(Ctx)
+      return (
+        <select
+          aria-label={ariaLabel}
+          className={className}
+          disabled={ctx.disabled}
+          value={ctx.value}
+          onChange={(event) => ctx.onValueChange?.(event.target.value)}
+        >
+          {ctx.options.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+      )
+    },
+    SelectValue: () => null,
+    SelectContent: ({ children }: { children?: React.ReactNode }) => (
+      <>{children}</>
+    ),
+    SelectItem: ({
+      children,
+      value
+    }: {
+      children?: React.ReactNode
+      value: string
+    }) => <span data-value={value}>{children}</span>
   }
 })
 
@@ -163,7 +259,9 @@ describe('maintenance request bodies', () => {
       action: 'snooze',
       days: 3
     })
-    expect(Object.keys(maintenanceBody({ ...pending, action: 'resume' }))).toEqual([
+    expect(
+      Object.keys(maintenanceBody({ ...pending, action: 'resume' }))
+    ).toEqual([
       'patchId',
       'resourceId',
       'linkId',
@@ -230,16 +328,32 @@ describe('workspace maintenance', () => {
   it('writes nothing when a confirmed action is cancelled', async () => {
     const container = await mount()
     expect(container.textContent).toContain('待处理 3')
-    expect(container.querySelector('a[href="/workspace/resources/9?linkId=22"]')).not.toBeNull()
-    expect(container.querySelector('a[href="/workspace/issues/44"]')?.textContent).toContain(
-      '关联事项'
-    )
+    expect(
+      container.querySelector('a[href="/workspace/resources/9?linkId=22"]')
+    ).not.toBeNull()
+    expect(
+      container.querySelector('a[href="/workspace/issues/44"]')?.textContent
+    ).toContain('关联事项')
     const gets = mocks.kunFetchGet.mock.calls.length
     await act(async () => {
       button(container, '暂缓')!.click()
     })
     const dialog = dom!.window.document.querySelector('[role="alertdialog"]')!
-    expect(dialog.textContent).toContain('到期后会重新检查这条链接')
+    expect(container.querySelector('[aria-label="维护分区"]')).not.toBeNull()
+    const days = dialog.querySelector(
+      '[aria-label="暂缓天数"]'
+    ) as HTMLSelectElement
+    expect(days).not.toBeNull()
+    expect([...days.options].map((option) => option.value)).toEqual(['1', '3'])
+    const proto = Object.getOwnPropertyDescriptor(
+      dom!.window.HTMLSelectElement.prototype,
+      'value'
+    )
+    await act(async () => {
+      proto?.set?.call(days, '3')
+      days.dispatchEvent(new dom!.window.Event('change', { bubbles: true }))
+    })
+    expect(dialog.textContent).toContain('到期后这条维护会回到待处理')
     expect(dialog.textContent).toContain('暂停期间不会发出处理结果')
     expect(dialog.textContent).not.toContain('不会自动重新报告')
     expect(dialog.textContent).not.toContain('取消不会发送请求')
@@ -248,24 +362,60 @@ describe('workspace maintenance', () => {
     await act(async () => {
       button(dialog, '取消')!.click()
     })
-    expect(dom!.window.document.querySelector('[role="alertdialog"]')).toBeNull()
+    expect(
+      dom!.window.document.querySelector('[role="alertdialog"]')
+    ).toBeNull()
     expect(mocks.kunFetchPost).not.toHaveBeenCalled()
     expect(mocks.kunFetchGet).toHaveBeenCalledTimes(gets)
   })
 
+  it('submits the selected snooze length as 1 or 3 days', async () => {
+    mocks.kunFetchPost.mockResolvedValue({ ok: true })
+    const container = await mount()
+    await act(async () => {
+      button(container, '暂缓')!.click()
+    })
+    const dialog = dom!.window.document.querySelector('[role="alertdialog"]')!
+    const days = dialog.querySelector(
+      '[aria-label="暂缓天数"]'
+    ) as HTMLSelectElement
+    const proto = Object.getOwnPropertyDescriptor(
+      dom!.window.HTMLSelectElement.prototype,
+      'value'
+    )
+    await act(async () => {
+      proto?.set?.call(days, '3')
+      days.dispatchEvent(new dom!.window.Event('change', { bubbles: true }))
+    })
+    await act(async () => {
+      button(dialog, '确认')!.click()
+    })
+    await act(async () => {})
+    expect(mocks.kunFetchPost).toHaveBeenCalledWith(
+      '/workspace/maintenance',
+      expect.objectContaining({ action: 'snooze', days: 3 })
+    )
+    const body = mocks.kunFetchPost.mock.calls.at(-1)?.[1] as { note?: string }
+    expect(body.note).toBeUndefined()
+  })
+
   it('keeps the note when the action returns 409', async () => {
     const container = await mount()
-    const note = container.querySelector(
-      'textarea[aria-label="维护说明"]'
-    ) as HTMLTextAreaElement
-    await act(async () => {
-      setText(note, '已经换了新地址')
-    })
+    // The note input only exists inside the respond/verify/stop dialog
+    expect(
+      container.querySelector('textarea[aria-label="维护说明"]')
+    ).toBeNull()
     await act(async () => {
       button(container, '回应')!.click()
     })
     mocks.kunFetchPost.mockResolvedValue('该链接的维护状态已变化，请刷新后重试')
     const dialog = dom!.window.document.querySelector('[role="alertdialog"]')!
+    const note = dialog.querySelector(
+      'textarea[aria-label="维护说明"]'
+    ) as HTMLTextAreaElement
+    await act(async () => {
+      setText(note, '已经换了新地址')
+    })
     await act(async () => {
       button(dialog, '确认')!.click()
     })
@@ -283,22 +433,35 @@ describe('workspace maintenance', () => {
       })
     )
     expect(note.value).toBe('已经换了新地址')
-    const openDialog = dom!.window.document.querySelector('[role="alertdialog"]')!
-    const alerts = [...container.querySelectorAll('[role="alert"]')]
+    const openDialog = dom!.window.document.querySelector(
+      '[role="alertdialog"]'
+    )!
+    const alerts = [...dom!.window.document.querySelectorAll('[role="alert"]')]
     expect(alerts).toHaveLength(1)
     expect(openDialog.contains(alerts[0]!)).toBe(true)
-    expect(alerts[0]?.textContent).toContain('该链接的维护状态已变化，请刷新后重试')
+    expect(alerts[0]?.textContent).toContain(
+      '该链接的维护状态已变化，请刷新后重试'
+    )
     const posts = mocks.kunFetchPost.mock.calls.length
     const gets = mocks.kunFetchGet.mock.calls.length
     await act(async () => {
       button(openDialog, '取消')!.click()
     })
-    expect(dom!.window.document.querySelector('[role="alertdialog"]')).toBeNull()
-    expect(note.value).toBe('已经换了新地址')
+    expect(
+      dom!.window.document.querySelector('[role="alertdialog"]')
+    ).toBeNull()
+    // 取消保留输入：重新打开弹窗时说明仍在
     await act(async () => {
-      setText(note, '已经换了新地址，再补一句')
+      button(container, '回应')!.click()
     })
-    expect(note.value).toBe('已经换了新地址，再补一句')
+    const reopened = dom!.window.document.querySelector('[role="alertdialog"]')!
+    expect(
+      (
+        reopened.querySelector(
+          'textarea[aria-label="维护说明"]'
+        ) as HTMLTextAreaElement
+      ).value
+    ).toBe('已经换了新地址')
     expect(mocks.kunFetchPost).toHaveBeenCalledTimes(posts)
     expect(mocks.kunFetchGet).toHaveBeenCalledTimes(gets)
   })
@@ -365,7 +528,9 @@ describe('workspace maintenance', () => {
       ])
     )
     const container = await mount()
-    expect(container.textContent).toContain('暂缓已到期，正在重新检查这条链接')
+    expect(container.textContent).toContain(
+      '暂缓已到期，回到待处理，请重新读取。'
+    )
     const gets = mocks.kunFetchGet.mock.calls.length
     const reread = [...container.querySelectorAll('ul button')].find((item) =>
       item.textContent?.includes('重新读取')

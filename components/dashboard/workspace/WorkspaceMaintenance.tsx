@@ -20,6 +20,13 @@ import {
   CardTitle
 } from '~/components/dashboard/ui/card'
 import { Input } from '~/components/dashboard/ui/input'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue
+} from '~/components/dashboard/ui/select'
 import { Textarea } from '~/components/dashboard/ui/textarea'
 import {
   LINK_MAINTENANCE_NOTE_MAX,
@@ -78,7 +85,7 @@ const ACTION_CONFIRM: Record<LinkMaintenanceAction, string> = {
   verify:
     '确认这条链接现在可以打开。同一版本 30 天内只能核实一次，这一轮会结束。',
   snooze:
-    '暂停 1 天或 3 天。暂停期间不会发出处理结果。到期后会重新检查这条链接。',
+    '暂停 1 天或 3 天。暂停期间不会发出处理结果。到期后这条维护会回到待处理，重新读取即可查看最新状态。',
   stop: '不再维护这个地址。当前版本会被冻结。',
   resume: '解除冻结。已有的处理记录保留。'
 }
@@ -172,7 +179,10 @@ export function WorkspaceMaintenance() {
       <div className="space-y-1">
         <h2 className="text-xl font-semibold">链接维护</h2>
         <p className="text-sm text-muted-foreground">
-          待处理 {data?.actionableCount ?? 0}。暂缓到期后会重新检查这条链接。
+          {typeof data?.actionableCount === 'number'
+            ? `待处理 ${data.actionableCount}。`
+            : ''}
+          暂缓到期后回到待处理，重新读取即可查看最新状态。
         </p>
       </div>
       <div className="flex flex-wrap gap-2">
@@ -206,24 +216,27 @@ export function WorkspaceMaintenance() {
           className="min-w-0 w-full sm:w-64"
           placeholder="游戏或资源"
         />
-        <label className="flex items-center gap-2 text-sm">
-          分区
-          <select
-            aria-label="维护分区"
-            className="h-9 rounded-md border bg-background px-2"
+        <div className="flex items-center gap-2 text-sm">
+          <span>分区</span>
+          <Select
             value={section}
-            onChange={(event) => {
-              setSection(event.target.value as WorkspaceSection)
+            onValueChange={(value) => {
+              setSection(value as WorkspaceSection)
               setPage(1)
             }}
           >
-            {WORKSPACE_SECTIONS.map((value) => (
-              <option key={value} value={value}>
-                {value === 'all' ? '全部分区' : RESOURCE_SECTION_MAP[value]}
-              </option>
-            ))}
-          </select>
-        </label>
+            <SelectTrigger aria-label="维护分区" className="w-32">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {WORKSPACE_SECTIONS.map((value) => (
+                <SelectItem key={value} value={value}>
+                  {value === 'all' ? '全部分区' : RESOURCE_SECTION_MAP[value]}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
         <Button type="submit" size="sm" variant="outline">
           搜索
         </Button>
@@ -288,10 +301,13 @@ export function WorkspaceMaintenance() {
 
 export function WorkspaceMaintenanceCard({
   item,
-  onChanged
+  onChanged,
+  embedded = false
 }: {
   item: LinkMaintenanceItem
   onChanged: () => void
+  /** Inside the resource editor: only this link's maintenance, no title/self link. */
+  embedded?: boolean
 }) {
   const [note, setNote] = useState('')
   const [days, setDays] = useState<1 | 3>(1)
@@ -337,9 +353,11 @@ export function WorkspaceMaintenanceCard({
   return (
     <Card>
       <CardHeader className="gap-2">
-        <CardTitle className="break-all text-base">
-          {item.patch.name} · {item.resource.name}
-        </CardTitle>
+        {!embedded ? (
+          <CardTitle className="break-all text-base">
+            {item.patch.name} · {item.resource.name}
+          </CardTitle>
+        ) : null}
         <div className="flex flex-wrap gap-2 text-sm text-muted-foreground">
           <Badge variant="secondary">{STATE_LABEL[item.state]}</Badge>
           <span>{LINK_HEALTH_LABELS[item.health.health]}</span>
@@ -349,7 +367,7 @@ export function WorkspaceMaintenanceCard({
           {item.snoozedUntil ? (
             <span className="break-all">暂缓至 {item.snoozedUntil}</span>
           ) : null}
-          {expired ? <span>暂缓已到期，正在重新检查这条链接。</span> : null}
+          {expired ? <span>暂缓已到期，回到待处理，请重新读取。</span> : null}
         </div>
       </CardHeader>
       <CardContent className="space-y-3">
@@ -357,11 +375,13 @@ export function WorkspaceMaintenanceCard({
           <p className="break-all text-sm">{item.response.note}</p>
         ) : null}
         <div className="flex flex-wrap gap-2">
-          <Button asChild size="sm" variant="outline">
-            <Link href={workspaceResourceHref(item.resourceId, item.linkId)}>
-              打开资源
-            </Link>
-          </Button>
+          {!embedded ? (
+            <Button asChild size="sm" variant="outline">
+              <Link href={workspaceResourceHref(item.resourceId, item.linkId)}>
+                打开资源
+              </Link>
+            </Button>
+          ) : null}
           {item.caseId ? (
             <Button asChild size="sm" variant="outline">
               <Link href={workspaceIssueHref(item.caseId)}>关联事项</Link>
@@ -379,45 +399,21 @@ export function WorkspaceMaintenanceCard({
           ) : null}
         </div>
         {item.capabilities.actions.length > 0 ? (
-          <div className="space-y-2">
-            <Textarea
-              aria-label="维护说明"
-              value={note}
-              maxLength={LINK_MAINTENANCE_NOTE_MAX}
-              onChange={(event) => setNote(event.target.value)}
-              placeholder="回应、核实或停止维护时需要说明"
-              className="min-w-0 break-all"
-            />
-            <label className="flex items-center gap-2 text-sm">
-              暂缓
-              <select
-                aria-label="暂缓天数"
-                className="h-9 rounded-md border bg-background px-2"
-                value={days}
-                onChange={(event) =>
-                  setDays(Number(event.target.value) as 1 | 3)
-                }
+          <div className="flex flex-wrap gap-2">
+            {item.capabilities.actions.map((action) => (
+              <Button
+                key={action}
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  setMessage('')
+                  setPending({ item, action, note, days })
+                }}
               >
-                {LINK_MAINTENANCE_SNOOZE_DAYS.map((value) => (
-                  <option key={value} value={value}>
-                    {value} 天
-                  </option>
-                ))}
-              </select>
-            </label>
-            <div className="flex flex-wrap gap-2">
-              {item.capabilities.actions.map((action) => (
-                <Button
-                  key={action}
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  onClick={() => setPending({ item, action, note, days })}
-                >
-                  {ACTION_LABEL[action]}
-                </Button>
-              ))}
-            </div>
+                {ACTION_LABEL[action]}
+              </Button>
+            ))}
           </div>
         ) : null}
         {message && pending === null ? (
@@ -429,7 +425,13 @@ export function WorkspaceMaintenanceCard({
       <AlertDialog
         open={pending !== null}
         onOpenChange={(open) => {
-          if (!open && !submitting) setPending(null)
+          if (!open && !submitting) {
+            if (pending) {
+              setNote(pending.note)
+              setDays(pending.days)
+            }
+            setPending(null)
+          }
         }}
       >
         <AlertDialogContent>
@@ -441,6 +443,46 @@ export function WorkspaceMaintenanceCard({
               {pending ? ACTION_CONFIRM[pending.action] : ''}
             </AlertDialogDescription>
           </AlertDialogHeader>
+          {pending &&
+          (pending.action === 'respond' ||
+            pending.action === 'verify' ||
+            pending.action === 'stop') ? (
+            <Textarea
+              aria-label="维护说明"
+              value={pending.note}
+              maxLength={LINK_MAINTENANCE_NOTE_MAX}
+              onChange={(event) =>
+                setPending({ ...pending, note: event.target.value })
+              }
+              placeholder="回应、核实或停止维护时需要说明"
+              className="min-w-0 break-all"
+            />
+          ) : null}
+          {pending?.action === 'snooze' ? (
+            <div className="grid gap-1 text-sm">
+              <span>暂缓</span>
+              <Select
+                value={String(pending.days)}
+                onValueChange={(value) =>
+                  setPending({
+                    ...pending,
+                    days: Number(value) === 3 ? 3 : 1
+                  })
+                }
+              >
+                <SelectTrigger aria-label="暂缓天数" className="w-32">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {LINK_MAINTENANCE_SNOOZE_DAYS.map((value) => (
+                    <SelectItem key={value} value={String(value)}>
+                      {value} 天
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          ) : null}
           {message && pending ? (
             <p role="alert" className="break-all text-sm text-destructive">
               {message}

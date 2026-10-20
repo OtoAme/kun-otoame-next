@@ -1,7 +1,13 @@
 'use client'
 
 import { Button } from '@heroui/button'
-import { BadgeCheck, Pencil, ReceiptText, Shield } from 'lucide-react'
+import {
+  BadgeCheck,
+  LayoutDashboard,
+  Pencil,
+  ReceiptText,
+  Shield
+} from 'lucide-react'
 import { useRouter } from '@bprogress/next'
 import type { UserInfo } from '~/types/api/user'
 import { canAccessAdmin } from '~/constants/user'
@@ -51,6 +57,15 @@ export const SelfButton = ({ user }: Props) => {
           管理后台
         </Button>
       )}
+
+      <Button
+        startContent={<LayoutDashboard className="size-4" />}
+        color="primary"
+        fullWidth
+        onPress={() => router.push('/workspace')}
+      >
+        用户工作台
+      </Button>
 
       {user.role < 2 && (
         <Button
