@@ -29,9 +29,12 @@ const resourceSelect = {
   user_id: true,
   name: true,
   section: true,
+  type: true,
+  language: true,
+  platform: true,
   status: true,
   created: true,
-  patch: { select: { name: true, unique_id: true } },
+  patch: { select: { name: true, unique_id: true, banner: true } },
   links: { select: { storage: true } }
 } satisfies Prisma.patch_resourceSelect
 type SummaryRow = Prisma.patch_resourceGetPayload<{
@@ -45,8 +48,12 @@ const summary = (
   patchId: row.patch_id,
   patchUniqueId: row.patch.unique_id,
   patchName: row.patch.name,
+  patchBanner: row.patch.banner,
   name: row.name,
   section: row.section,
+  type: row.type,
+  language: row.language,
+  platform: row.platform,
   status: row.status,
   created: row.created.toISOString(),
   linkCount: row.links.length,
@@ -111,7 +118,7 @@ export const getWorkspaceResource = async (
   const row = await prisma.patch_resource.findFirst({
     where: { id, user_id: user.id },
     include: {
-      patch: { select: { name: true, unique_id: true } },
+      patch: { select: { name: true, unique_id: true, banner: true } },
       links: {
         select: linkHealthSelect(now),
         orderBy: [{ sort_order: 'asc' }, { id: 'asc' }]
@@ -133,9 +140,6 @@ export const getWorkspaceResource = async (
   return {
     ...base,
     note: row.note,
-    type: row.type,
-    language: row.language,
-    platform: row.platform,
     baseLinks: row.links.map((link) => ({
       id: link.id,
       version: link.version
