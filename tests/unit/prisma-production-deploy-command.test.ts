@@ -282,51 +282,74 @@ describe('production Prisma deployment command', () => {
     expect(release).not.toContain('prisma:deploy-safe')
   })
 
-  it('keeps the README server-build instructions behind the reviewed production guard', async () => {
-    const readme = await readProjectFile('README.md')
-    const serverBuild = extractMarkdownSection(readme, '### 服务器本地构建')
+  it('routes server builds from the README to the production deployment guide', async () => {
+    const [readme, deployment] = await Promise.all([
+      readProjectFile('README.md'),
+      readProjectFile('docs/project/deployment.md')
+    ])
+    const serverBuild = extractMarkdownSection(deployment, '### 在服务器构建')
 
-    expect(serverBuild).toContain('review')
-    expect(serverBuild).toContain('preflight/sync SQL')
-    expect(serverBuild).toContain('pnpm prisma:deploy-safe')
-    expect(serverBuild).toContain('migration:resource-links')
-    expect(serverBuild).toContain('只读 schema guard/diff')
+    expect(readme).toContain('](docs/project/deployment.md)')
+    expect(deployment).toContain('](../modules/operations.md')
+    expect(serverBuild).toContain('pnpm deploy:build')
+    expect(serverBuild).toContain('生产结构检查')
     expect(serverBuild).not.toContain('pnpm prisma:push')
   })
 
-  it('does not describe deploy:build as entering a database reset prompt', async () => {
-    const readme = await readProjectFile('README.md')
-    const warning = extractMarkdownSection(readme, '## 严重警告')
+  it('documents compatibility writes and rejects persistent-database initialization', async () => {
+    const operations = await readProjectFile('docs/modules/operations.md')
+    const guard = extractMarkdownSection(operations, '## 生产结构检查')
 
-    expect(warning).toContain('手工')
-    expect(warning).toContain('写 schema')
-    expect(warning).toContain('fail-closed')
-    expect(warning).toContain('pnpm prisma:deploy-safe')
-    expect(warning).not.toContain('运行 `pnpm deploy:build` 或者')
+    expect(guard).toContain('pnpm prisma:deploy-safe')
+    expect(guard).toContain('资源链接兼容迁移')
+    expect(guard).toContain('只读比较结构')
+    expect(guard).toContain('生成客户端')
+    expect(guard).toContain('已有持久库不能改用开发初始化')
+    expect(guard).not.toContain('pnpm prisma:push')
   })
 
-  it('separates local initialization from production schema checks in the maintenance table', async () => {
-    const readme = await readProjectFile('README.md')
-    const maintenance = extractMarkdownSection(readme, '## 日常维护命令')
+  it('separates disposable local initialization from production schema checks', async () => {
+    const [development, operations] = await Promise.all([
+      readProjectFile('docs/project/development.md'),
+      readProjectFile('docs/modules/operations.md')
+    ])
+    const initialization = extractMarkdownSection(
+      development,
+      '## 在空开发库启动'
+    )
+    const guard = extractMarkdownSection(operations, '## 生产结构检查')
 
-    expect(maintenance).toMatch(
-      /\*\*本地[^|]*首次初始化[^|]*\*\*\s*\|\s*`pnpm prisma:push`/
-    )
-    expect(maintenance).toMatch(
-      /\*\*生产 schema 校验\*\*\s*\|\s*`pnpm prisma:deploy-safe`/
-    )
+    expect(initialization).toContain('可丢弃空库')
+    expect(initialization).toContain('pnpm prisma:push')
+    expect(guard).toContain('pnpm prisma:deploy-safe')
+    expect(guard).not.toContain('pnpm prisma:push')
   })
 
   it('keeps rollback guidance off production db push and old-version safe-script assumptions', async () => {
-    const deployment = await readProjectFile('docs/project/deployment.md')
-    const rollback = extractMarkdownSection(deployment, '## 回滚思路')
+    const [deployment, operations] = await Promise.all([
+      readProjectFile('docs/project/deployment.md'),
+      readProjectFile('docs/modules/operations.md')
+    ])
+    const rollback = extractMarkdownSection(deployment, '## 离线回退应用')
+    const databaseRecovery = extractMarkdownSection(
+      operations,
+      '## 失败与数据库恢复'
+    )
 
-    expect(rollback).toContain('review')
-    expect(rollback).toContain('preflight')
-    expect(rollback).toContain('rollback/sync SQL')
-    expect(rollback).toContain('目标版本')
-    expect(rollback).toContain('pnpm prisma generate')
+    expect(rollback).toContain('pnpm deploy:rollback')
+    expect(rollback).toContain('兼容当前数据库')
+    expect(rollback).toContain('不修改数据库')
+    expect(rollback).toContain('](../modules/operations.md#失败与数据库恢复)')
     expect(rollback).not.toContain('pnpm prisma:push')
     expect(rollback).not.toContain('pnpm prisma:deploy-safe')
+    expect(databaseRecovery).toContain('备份')
+    expect(databaseRecovery).toContain('持续停写')
+    expect(databaseRecovery).toContain(
+      'production-company-identity-constraint-rollback-2026-08-30.sql'
+    )
+    expect(databaseRecovery).toContain(
+      'production-company-identity-constraint-rollback-postflight-2026-08-30.sql'
+    )
+    expect(databaseRecovery).not.toContain('pnpm prisma:push')
   })
 })

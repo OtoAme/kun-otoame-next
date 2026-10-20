@@ -15,6 +15,7 @@ import { unified } from 'unified'
 export const MAINTAINED_FILES = [
   'README.md',
   'AGENTS.md',
+  'docs/README.md',
   'docs/theme-color-system.md'
 ]
 
@@ -649,7 +650,7 @@ export const formatReport = (report: CheckReport): string => {
   lines.push(
     report.mode === 'explicit'
       ? `检查文件：${report.changed.join('、')}`
-      : '检查范围：README.md、AGENTS.md、docs/project/**、docs/modules/**、docs/theme-color-system.md、skills/**/*.md、deployment/**/*.md'
+      : '检查范围：README.md、AGENTS.md、docs/README.md、docs/project/**、docs/modules/**、docs/theme-color-system.md、skills/**/*.md、deployment/**/*.md'
   )
 
   if (report.deleted.length > 0) {
@@ -750,7 +751,7 @@ export const parseArguments = (argv: string[]): CliArguments => {
 const USAGE = `用法: pnpm docs:check [选项] [文件...]
 
 默认检查相对 HEAD 新增、修改或删除的维护文档：
-  README.md、AGENTS.md、docs/project/**、docs/modules/**、
+  README.md、AGENTS.md、docs/README.md、docs/project/**、docs/modules/**、
   docs/theme-color-system.md、skills/**/*.md、deployment/**/*.md
 
 选项:

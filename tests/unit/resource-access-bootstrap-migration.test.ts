@@ -132,41 +132,44 @@ describe('resource access bootstrap production migration', () => {
   })
 
   it('documents the manual bootstrap, fixed release tag, and recovery gate', async () => {
-    // 瘦身后的领域 skill（data-cache/testing）只保留不变量并回链文档，
-    // bootstrap 契约的权威位置是模块/项目文档和仍内联流程的运维类 skill。
-    const requiredBootstrapSources = [
-      'README.md',
-      'docs/project/deployment.md',
-      'docs/modules/operations.md',
-      'docs/modules/data-cache-upload.md',
-      'docs/project/testing.md',
-      'docs/project/review.md',
-      'skills/otoame-operations/SKILL.md',
-      'skills/otoame-deployment/SKILL.md',
-      'skills/otoame-review/SKILL.md'
-    ]
-
-    for (const path of requiredBootstrapSources) {
-      const source = await readProjectFile(path)
-      expect(source, path).toContain(
-        'production-resource-access-bootstrap-preflight-2026-07-12.sql'
-      )
-    }
-
-    for (const path of [
-      'README.md',
-      'docs/project/deployment.md',
-      'docs/modules/operations.md',
-      'skills/otoame-deployment/SKILL.md'
+    const [operations, deployment] = await Promise.all([
+      readProjectFile('docs/modules/operations.md'),
+      readProjectFile('docs/project/deployment.md')
+    ])
+    const preflight =
+      'production-resource-access-bootstrap-preflight-2026-07-12.sql'
+    const sync = 'production-resource-access-bootstrap-sync-2026-07-12.sql'
+    expect(operations).toContain(preflight)
+    expect(operations).toContain(sync)
+    expect(operations.indexOf(preflight)).toBeLessThan(operations.indexOf(sync))
+    for (const step of [
+      'pm2 stop kun-touchgal-next',
+      'pg_dump',
+      'pg_restore --list',
+      'legacy_max_id',
+      'legacy_cutover_at',
+      '通过结构检查后只启动审核固定版本',
+      '旧版重新写过旧格式后，下次必须重新排空并建立新快照'
     ]) {
-      const source = await readProjectFile(path)
-      expect(source, path).toContain('KUN_DEPLOY_RELEASE_TAG')
+      expect(operations, step).toContain(step)
     }
+    expect(deployment).toContain('KUN_DEPLOY_RELEASE_TAG')
+    expect(deployment).toContain('pnpm deploy:pull:pinned')
 
-    const deployment = await readProjectFile('docs/project/deployment.md')
-    expect(deployment).toContain('不得重启旧 Release')
-    expect(deployment).not.toContain(
-      'pnpm prisma:push 代替 resource access bootstrap'
-    )
+    // 操作步骤只在主指南维护，其他入口必须能沿链接找到它。
+    for (const [path, target] of [
+      ['README.md', 'docs/README.md'],
+      ['docs/README.md', 'modules/operations.md'],
+      ['docs/project/deployment.md', '../modules/operations.md'],
+      ['docs/modules/data-cache-upload.md', 'operations.md'],
+      ['docs/project/testing.md', '../modules/index.md'],
+      ['docs/modules/index.md', 'operations.md'],
+      ['docs/project/review.md', '../modules/operations.md'],
+      ['skills/otoame-operations/SKILL.md', '../../docs/modules/operations.md'],
+      ['skills/otoame-deployment/SKILL.md', '../../docs/modules/operations.md'],
+      ['skills/otoame-review/SKILL.md', '../../docs/project/review.md']
+    ]) {
+      expect(await readProjectFile(path), path).toContain(`](${target}`)
+    }
   })
 })

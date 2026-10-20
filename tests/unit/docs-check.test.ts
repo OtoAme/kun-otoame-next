@@ -336,6 +336,18 @@ describe('docs:check placeholders and headings', () => {
 })
 
 describe('docs:check inbound links for new pages', () => {
+  it('recognizes the documentation index as an entry to a new guide', () => {
+    const root = createRepo()
+    write(root, 'README.md', '# Project\n\n[Documentation](docs/README.md)\n')
+    write(root, 'docs/README.md', '# Documentation\n\n[Guide](modules/guide.md)\n')
+    write(root, 'docs/modules/guide.md', '# Guide\n')
+
+    const report = runDocsCheck({ root })
+
+    expect(report.issues).toEqual([])
+    expect(report.changed).toContain('docs/README.md')
+  })
+
   it('rejects a new docs page that has no inbound link', () => {
     const root = createRepo()
 

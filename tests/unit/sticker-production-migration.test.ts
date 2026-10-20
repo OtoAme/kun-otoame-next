@@ -83,11 +83,12 @@ describe('production Sticker migration contract', () => {
       readProjectFile('docs/modules/private-chat-stickers.md')
     ])
 
-    for (const source of [deployment, operations, stickerDocs]) {
-      expect(source).toContain(
-        'production-stickers-prisma-alignment-2026-08-15.sql'
-      )
-      expect(source).toContain('pnpm prisma:deploy-safe')
-    }
+    expect(operations).toContain(
+      'production-stickers-prisma-alignment-2026-08-15.sql'
+    )
+    expect(operations).toContain('审核迁移执行后运行')
+    expect(operations).toContain('pnpm prisma:deploy-safe')
+    expect(deployment).toContain('](../modules/operations.md')
+    expect(stickerDocs).toContain('](operations.md#按能力选择迁移)')
   })
 })
