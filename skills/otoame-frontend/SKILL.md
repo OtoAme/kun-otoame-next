@@ -18,7 +18,11 @@ Read the development entry before frontend work. Select the interface system by 
 
 ## Critical Invariants
 
-Site, legacy admin and previews use HeroUI v2; dashboard and workspace use shadcn with isolated styles. Reuse established components and official semantics. Keep labels, keyboard access, focus, loading, errors, reduced motion and responsive layouts functional.
+Site, legacy admin and previews use HeroUI v2; dashboard and workspace use shadcn with isolated styles.
+
+For every frontend task, inspect project components, then check official UI options through Context7 before implementation. Reuse, add or compose suitable components; local absence never justifies rebuilding. Native/system controls or handwritten HTML/CSS replacements require evidence that reuse and composition cannot meet requirements.
+
+Keep labels, keyboard access, focus, loading, errors, reduced motion and responsive layouts functional.
 
 Treat mobile and accessibility as baseline requirements, not previously proven facts. Check affected narrow and desktop views plus relevant breakpoints and overlays.
 
