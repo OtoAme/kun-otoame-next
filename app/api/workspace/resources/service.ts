@@ -22,6 +22,10 @@ import type {
   WorkspaceResourceUpdateInput,
   WorkspaceResourceDeleteResponse
 } from '~/types/api/workspace'
+import {
+  recognizeResourceDiskKind,
+  type ResourceDiskKind
+} from '~/utils/resourceDiskKind'
 
 const resourceSelect = {
   id: true,
@@ -35,8 +39,22 @@ const resourceSelect = {
   status: true,
   created: true,
   patch: { select: { name: true, unique_id: true, banner: true } },
-  links: { select: { storage: true } }
+  links: {
+    select: { storage: true, content: true },
+    orderBy: [{ sort_order: 'asc' as const }, { id: 'asc' as const }]
+  }
 } satisfies Prisma.patch_resourceSelect
+
+const uniqueDiskKinds = (
+  links: { storage: string; content: string | null }[]
+): ResourceDiskKind[] => {
+  const kinds: ResourceDiskKind[] = []
+  for (const link of links) {
+    const kind = recognizeResourceDiskKind(link.content, link.storage)
+    if (!kinds.includes(kind)) kinds.push(kind)
+  }
+  return kinds
+}
 type SummaryRow = Prisma.patch_resourceGetPayload<{
   select: typeof resourceSelect
 }>
@@ -57,6 +75,7 @@ const summary = (
   status: row.status,
   created: row.created.toISOString(),
   linkCount: row.links.length,
+  linkDiskKinds: uniqueDiskKinds(row.links),
   actionableCount: 0,
   capabilities: {
     canEdit: user.role >= 3 || row.status === 0,

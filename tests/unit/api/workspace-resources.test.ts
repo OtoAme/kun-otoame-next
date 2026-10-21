@@ -118,9 +118,13 @@ describe('workspace resource privacy', () => {
       type: true,
       language: true,
       platform: true,
-      patch: { select: { banner: true } },
-      links: { select: { storage: true } }
+      patch: { select: { banner: true } }
     })
+    expect(read.select.links).toEqual({
+      select: { storage: true, content: true },
+      orderBy: [{ sort_order: 'asc' }, { id: 'asc' }]
+    })
+    expect(result.items[0]?.linkDiskKinds).toEqual(['other'])
     for (const field of [
       'note',
       'links',
@@ -141,6 +145,37 @@ describe('workspace resource privacy', () => {
     ]) {
       expect(JSON.stringify(result)).not.toContain(secret)
     }
+  })
+  it('classifies list link kinds without returning addresses', async () => {
+    const source = row()
+    source.links = [
+      {
+        ...link(8, 'user'),
+        content: 'https://pan.baidu.com/s/1SYN'
+      },
+      {
+        ...link(11, 'user'),
+        content: 'https://pan.quark.cn/s/SYN'
+      },
+      {
+        ...link(12, 'user'),
+        content: 'https://pan.baidu.com/s/1AGAIN'
+      },
+      {
+        ...link(9, 's3'),
+        content: 'https://storage.example.test/object.zip'
+      }
+    ]
+    db.patch_resource.findMany.mockResolvedValue([source])
+    const result = await getWorkspaceResources(
+      { page: 1, limit: 20, status: 'all', section: 'all' },
+      user
+    )
+    expect(result.items[0]?.linkDiskKinds).toEqual(['baidu', 'quark', 'object'])
+    const encoded = JSON.stringify(result)
+    expect(encoded).not.toContain('pan.baidu.com')
+    expect(encoded).not.toContain('pan.quark.cn')
+    expect(encoded).not.toContain('storage.example.test')
   })
   it('uses the same metadata projection in resource details and lists', async () => {
     const list = await getWorkspaceResources(

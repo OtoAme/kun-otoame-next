@@ -104,6 +104,7 @@ const list = (): WorkspaceResourcesResponse => ({
       status: 0,
       created: '2026-10-01T00:00:00.000Z',
       linkCount: 2,
+      linkDiskKinds: ['baidu', 'quark'],
       actionableCount: 1,
       capabilities: { canEdit: true, canDelete: true, canUpload: false }
     },
@@ -121,6 +122,7 @@ const list = (): WorkspaceResourcesResponse => ({
       status: 2,
       created: '2026-10-01T00:00:00.000Z',
       linkCount: 1,
+      linkDiskKinds: ['object'],
       actionableCount: 0,
       capabilities: { canEdit: false, canDelete: false, canUpload: false }
     }
@@ -223,11 +225,19 @@ describe('workspace resources', () => {
     expect(card.textContent).toContain('游戏资源')
     expect(card.textContent).toContain('2 条链接')
     expect(card.textContent).toContain('1 条待处理')
+    expect(card.textContent).toContain('百度网盘')
+    expect(card.textContent).toContain('夸克网盘')
+    expect(card.querySelector('[aria-label="链接类型"]')).not.toBeNull()
+    const cardRoot = card.querySelector('[data-slot="card"]')
+    expect(cardRoot?.className).toContain('py-3')
+    expect(cardRoot?.className).not.toContain('py-6')
     // The cover uses the mini.avif convention and does not navigate
     const banner = card.querySelector('img') as HTMLImageElement
     expect(banner.getAttribute('src')).toBe(
       'https://img.example/game-mini.avif'
     )
+    expect(banner.className).toContain('sm:object-contain')
+    expect(banner.className).toContain('sm:aspect-video')
     expect(banner.closest('a')).toBeNull()
     // Empty banner falls back to the site placeholder
     const secondCard = container
@@ -236,6 +246,7 @@ describe('workspace resources', () => {
     expect(
       (secondCard.querySelector('img') as HTMLImageElement).getAttribute('src')
     ).toBe('/otoame.avif')
+    expect(secondCard.textContent).toContain('对象存储')
   })
 
   it('uses tabs for resources and maintenance with resources as the default', async () => {

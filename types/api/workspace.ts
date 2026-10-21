@@ -5,6 +5,7 @@ import type {
   WORKSPACE_SECTIONS
 } from '~/constants/workspace'
 import type { LinkVersionBase } from './linkHealth'
+import type { ResourceDiskKind } from '~/utils/resourceDiskKind'
 import type { LinkMaintenanceItem } from './linkMaintenance'
 import type { MoemoepointBalance } from './moemoepoint'
 import type {
@@ -85,6 +86,8 @@ export interface WorkspaceResourceSummary {
   status: number
   created: string
   linkCount: number
+  /** Netdisk or storage kind of each link, in link order, without duplicates. */
+  linkDiskKinds: ResourceDiskKind[]
   actionableCount: number
   capabilities: { canEdit: boolean; canDelete: boolean; canUpload: boolean }
 }
