@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
+import { Trash2 } from 'lucide-react'
+import toast from 'react-hot-toast'
 import {
   AlertDialog,
   AlertDialogCancel,
@@ -15,6 +17,7 @@ import {
 import { Button } from '~/components/dashboard/ui/button'
 import {
   Card,
+  CardAction,
   CardContent,
   CardHeader,
   CardTitle
@@ -225,7 +228,9 @@ export function WorkspaceResourceEditor({
   const [saving, setSaving] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [removeLinkKey, setRemoveLinkKey] = useState<string | null>(null)
   const [reloadConfirmOpen, setReloadConfirmOpen] = useState(false)
+  const [reloading, setReloading] = useState(false)
   const [uploadingKeys, setUploadingKeys] = useState<ReadonlySet<string>>(
     new Set()
   )
@@ -238,7 +243,9 @@ export function WorkspaceResourceEditor({
   const load = async (replaceSession: boolean) => {
     const request = ++requestRef.current
     const requestedId = resourceId
+    const markReload = replaceSession && capturedFor.current === requestedId
     setLoading(true)
+    if (markReload) setReloading(true)
     setError('')
     try {
       const response = await kunFetchGet<WorkspaceResourceDetail | string>(
@@ -277,7 +284,10 @@ export function WorkspaceResourceEditor({
       if (request !== requestRef.current) return
       setError('网络错误，资源加载失败，请重试')
     } finally {
-      if (request === requestRef.current) setLoading(false)
+      if (request === requestRef.current) {
+        setLoading(false)
+        setReloading(false)
+      }
     }
   }
 
@@ -324,6 +334,7 @@ export function WorkspaceResourceEditor({
     const submittedResourceId = resourceId
     const submitted = withoutConsumedUploads(session, consumedUploadIds.current)
     setSaving(true)
+    setReloading(false)
     setError('')
     const payload = buildWorkspaceResourceUpdate(submitted)
     try {
@@ -332,7 +343,9 @@ export function WorkspaceResourceEditor({
       >(`/workspace/resources/${submittedResourceId}`, payload)
       if (request !== requestRef.current) return
       if (typeof response === 'string') {
-        setError(response || WORKSPACE_ERRORS.conflict.message)
+        const message = response || WORKSPACE_ERRORS.conflict.message
+        setError(message)
+        toast.error(message)
         return
       }
       for (const link of submitted.links) {
@@ -350,7 +363,9 @@ export function WorkspaceResourceEditor({
       )
       if (request !== requestRef.current) return
       if (typeof refreshed === 'string') {
-        setError(refreshed || '保存已提交，重新读取失败，请重试')
+        const message = refreshed || '保存已提交，重新读取失败，请重试'
+        setError(message)
+        toast.error(message)
         return
       }
       if (refreshed.id !== submittedResourceId) return
@@ -369,9 +384,18 @@ export function WorkspaceResourceEditor({
         capturedFor.current = refreshed.id
         return next
       })
+      if (response.linkChecks?.some((check) => check.outcome !== 'observed')) {
+        toast(
+          '保存成功；部分链接的自动检测未完成或结果已过期，状态将稍后更新。'
+        )
+      } else {
+        toast.success('已保存')
+      }
     } catch {
       if (request !== requestRef.current) return
-      setError('网络错误，保存失败，请重试')
+      const message = '网络错误，保存失败，请重试'
+      setError(message)
+      toast.error(message)
     } finally {
       if (request === requestRef.current) setSaving(false)
     }
@@ -398,12 +422,39 @@ export function WorkspaceResourceEditor({
   }
 
   const requestReload = () => {
-    if (saving || uploading) return
+    if (saving || uploading || reloading) return
     if (dirty) {
       setReloadConfirmOpen(true)
       return
     }
     void load(true)
+  }
+
+  const confirmRemoveLink = () => {
+    const key = removeLinkKey
+    setRemoveLinkKey(null)
+    if (!key) return
+    setUploadingFor(key, false)
+    setSession((current) => {
+      if (!current || current.links.length <= 1) return current
+      const target = current.links.find((item) => item.key === key)
+      if (
+        !target ||
+        target.protected ||
+        !canManageResourceLink({
+          storage: target.storage,
+          resourceUserId: uid,
+          userId: uid,
+          userRole: role
+        })
+      ) {
+        return current
+      }
+      return {
+        ...current,
+        links: current.links.filter((item) => item.key !== key)
+      }
+    })
   }
 
   if (loading && !session) return <p className="text-sm">正在加载资源…</p>
@@ -627,84 +678,80 @@ export function WorkspaceResourceEditor({
         </CardContent>
       </Card>
       <div className="grid min-w-0 gap-3">
-        {session.links.map((link, index) => (
-          <Card
-            key={link.key}
-            id={link.id ? `workspace-link-${link.id}` : undefined}
-            className="min-w-0 max-w-full"
-          >
-            <CardHeader>
-              <CardTitle className="text-base">链接 #{index + 1}</CardTitle>
-            </CardHeader>
-            <CardContent className="grid min-w-0 gap-2">
-              {link.protected ? (
-                <p className="text-sm text-muted-foreground">
-                  {link.storage === 'touchgal'
-                    ? `${storageLabel(link.storage)}由网站管理，不能在这里修改。`
-                    : '这条链接只读，不显示凭据。'}
-                </p>
-              ) : (
-                <EditableLinkFields
-                  link={link}
-                  disabled={!canEdit}
-                  role={role}
-                  section={section}
-                  canEdit={canEdit}
-                  sessionEpoch={session.epoch}
-                  uploadActive={uploadingKeys.has(link.key)}
-                  onUploadingChange={(active) =>
-                    setUploadingFor(link.key, active)
-                  }
-                  onPatch={(patch) =>
-                    patchEditableLink(link.key, session.epoch, patch)
-                  }
-                />
-              )}
-              {link.id
-                ? detail.maintenance
-                    .filter((item) => item.linkId === link.id)
-                    .map((item) => (
-                      <WorkspaceMaintenanceCard
-                        key={`${item.linkId}:${item.linkVersion}:${item.maintenanceRevision}`}
-                        item={item}
-                        embedded
-                        onChanged={() => void load(false)}
-                      />
-                    ))
-                : null}
-              {canEdit &&
-              !link.protected &&
-              session.links.length > 1 &&
-              canManageResourceLink({
-                storage: link.storage,
-                resourceUserId: uid,
-                userId: uid,
-                userRole: role
-              }) ? (
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    setUploadingFor(link.key, false)
-                    setSession((current) =>
-                      current
-                        ? {
-                            ...current,
-                            links: current.links.filter(
-                              (item) => item.key !== link.key
-                            )
-                          }
-                        : current
-                    )
-                  }}
-                >
-                  移除这条链接
-                </Button>
-              ) : null}
-            </CardContent>
-          </Card>
-        ))}
+        {session.links.map((link, index) => {
+          const removable =
+            canEdit &&
+            !link.protected &&
+            session.links.length > 1 &&
+            canManageResourceLink({
+              storage: link.storage,
+              resourceUserId: uid,
+              userId: uid,
+              userRole: role
+            })
+          return (
+            <Card
+              key={link.key}
+              id={link.id ? `workspace-link-${link.id}` : undefined}
+              className="min-w-0 max-w-full"
+            >
+              <CardHeader>
+                <CardTitle className="text-base">链接 #{index + 1}</CardTitle>
+                {removable ? (
+                  <CardAction>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-sm"
+                      className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                      aria-label="移除这条链接"
+                      onClick={() => setRemoveLinkKey(link.key)}
+                    >
+                      <Trash2 aria-hidden />
+                    </Button>
+                  </CardAction>
+                ) : null}
+              </CardHeader>
+              <CardContent className="grid min-w-0 gap-2">
+                {link.protected ? (
+                  <p className="text-sm text-muted-foreground">
+                    {link.storage === 'touchgal'
+                      ? `${storageLabel(link.storage)}由网站管理，不能在这里修改。`
+                      : '这条链接只读，不显示凭据。'}
+                  </p>
+                ) : (
+                  <EditableLinkFields
+                    link={link}
+                    disabled={!canEdit}
+                    role={role}
+                    section={section}
+                    canEdit={canEdit}
+                    sessionEpoch={session.epoch}
+                    uploadActive={uploadingKeys.has(link.key)}
+                    onUploadingChange={(active) =>
+                      setUploadingFor(link.key, active)
+                    }
+                    onPatch={(patch) =>
+                      patchEditableLink(link.key, session.epoch, patch)
+                    }
+                  />
+                )}
+                {link.id
+                  ? detail.maintenance
+                      .filter((item) => item.linkId === link.id)
+                      .map((item) => (
+                        <WorkspaceMaintenanceCard
+                          key={`${item.linkId}:${item.linkVersion}:${item.maintenanceRevision}`}
+                          item={item}
+                          embedded
+                          onChanged={() => void load(false)}
+                        />
+                      ))
+                  : null}
+              </CardContent>
+            </Card>
+          )
+        })}
       </div>
       {detail.maintenance
         .filter(
@@ -757,10 +804,11 @@ export function WorkspaceResourceEditor({
               <Button
                 type="button"
                 variant="outline"
-                disabled={saving || uploading}
+                disabled={saving || uploading || reloading}
+                aria-busy={reloading || undefined}
                 onClick={requestReload}
               >
-                载入最新版本
+                {reloading ? '正在载入…' : '载入最新版本'}
               </Button>
             </>
           ) : null}
@@ -795,6 +843,31 @@ export function WorkspaceResourceEditor({
               }}
             >
               确认
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      <AlertDialog
+        open={removeLinkKey !== null}
+        onOpenChange={(open) => {
+          if (!open) setRemoveLinkKey(null)
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>移除这条链接</AlertDialogTitle>
+            <AlertDialogDescription>
+              确认后会从当前编辑中移除这条链接。已有链接要等保存后才真正删除。取消则保持原样。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>取消</AlertDialogCancel>
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={confirmRemoveLink}
+            >
+              确认移除
             </Button>
           </AlertDialogFooter>
         </AlertDialogContent>

@@ -280,6 +280,11 @@ vi.mock('~/components/dashboard/ui/alert-dialog', async () => {
 })
 
 import {
+  getAllowedPlatformsBySectionAndTypes,
+  SUPPORTED_PLATFORM_MAP,
+  type ResourceSection
+} from '~/constants/resource'
+import {
   WorkspaceResourceEditor,
   buildWorkspaceResourceUpdate,
   linkInput,
@@ -301,6 +306,7 @@ const detail = (
   status: 0,
   created: '2026-10-01T00:00:00.000Z',
   linkCount: 2,
+  linkDiskKinds: [],
   actionableCount: 0,
   capabilities: { canEdit: true, canDelete: true, canUpload: true },
   note: '备注',
@@ -433,8 +439,10 @@ describe('workspace resource editor', () => {
   }
 
   const button = (rootNode: ParentNode, text: string) =>
-    [...rootNode.querySelectorAll('button')].find((item) =>
-      item.textContent?.includes(text)
+    [...rootNode.querySelectorAll('button')].find(
+      (item) =>
+        item.textContent?.includes(text) ||
+        item.getAttribute('aria-label')?.includes(text)
     )
 
   const setValue = (input: HTMLInputElement, value: string) => {
@@ -560,6 +568,10 @@ describe('workspace resource editor', () => {
     expect(address.value).toContain('https://draft.example/')
     expect(password.value).toBe('draft-secret')
     expect(container.textContent).toContain(WORKSPACE_ERRORS.conflict.message)
+    expect(mocks.toast.error).toHaveBeenCalledWith(
+      WORKSPACE_ERRORS.conflict.message
+    )
+    expect(mocks.toast.success).not.toHaveBeenCalled()
 
     current = detail({
       baseLinks: [
@@ -594,6 +606,7 @@ describe('workspace resource editor', () => {
     await settle()
     expect(address.value).toBe('https://canonical.example/saved')
     expect(password.value).toBe('saved-secret')
+    expect(mocks.toast.success).toHaveBeenCalledWith('已保存')
 
     // 保存成功后基线已跟服务端一致，草稿不脏：重新读取直接发请求，不弹确认
     current = detail({
@@ -650,11 +663,29 @@ describe('workspace resource editor', () => {
     await settle()
     expect(address.value).toBe('https://canonical.example/saved')
     expect(password.value).toBe('saved-secret')
-    // 基线回到服务端版本后，保存提交的是 canonical 状态
+    // 基线回到服务端版本后，保存提交的是 canonical 状态。
+    // 自动检测未完成时只额外说明，不把已提交的保存说成失败。
+    mocks.toast.mockClear()
+    mocks.toast.success.mockClear()
+    mocks.toast.error.mockClear()
+    mocks.kunFetchPut.mockResolvedValue({
+      links: [
+        { id: 1, version: 2 },
+        { id: 2, version: 5 }
+      ],
+      linkChecks: [
+        { linkId: 2, linkVersion: 5, outcome: 'superseded', check: null }
+      ]
+    })
     await act(async () => {
       button(container, '保存')!.click()
     })
     await settle()
+    expect(mocks.toast).toHaveBeenCalledWith(
+      '保存成功；部分链接的自动检测未完成或结果已过期，状态将稍后更新。'
+    )
+    expect(mocks.toast.success).not.toHaveBeenCalled()
+    expect(mocks.toast.error).not.toHaveBeenCalled()
     const savedBody = mocks.kunFetchPut.mock.calls.at(-1)?.[1]
     expect(savedBody.baseLinks).toEqual([
       { id: 1, version: 2 },
@@ -850,16 +881,14 @@ describe('workspace resource editor', () => {
     // 普通作者看不到资源盘槽位的移除按钮，也没有无效报错路径
     const disk = container.querySelector('#workspace-link-2') as HTMLElement
     const userSlot = container.querySelector('#workspace-link-3') as HTMLElement
-    expect(
-      [...disk.querySelectorAll('button')].some((item) =>
-        item.textContent?.includes('移除这条链接')
-      )
-    ).toBe(false)
-    expect(
-      [...userSlot.querySelectorAll('button')].some((item) =>
-        item.textContent?.includes('移除这条链接')
-      )
-    ).toBe(true)
+    expect(button(disk, '移除这条链接')).toBeUndefined()
+    const remove = button(userSlot, '移除这条链接')
+    expect(remove?.getAttribute('aria-label')).toBe('移除这条链接')
+    expect(remove?.closest('[data-slot="card-header"]')).toBe(
+      userSlot.querySelector('[data-slot="card-header"]')
+    )
+    expect(remove?.className).toContain('text-destructive')
+    expect(remove?.textContent?.trim()).toBe('')
     expect(container.textContent).not.toContain('资源盘链接不能由普通作者删除')
     expect(
       container.querySelectorAll('input[aria-label="链接地址"]')
@@ -871,6 +900,41 @@ describe('workspace resource editor', () => {
         ) as HTMLInputElement
       ).value
     ).toBe('disk-secret')
+
+    await act(async () => {
+      remove!.click()
+    })
+    const prompt = dom!.window.document.querySelector('[role="alertdialog"]')!
+    expect(prompt.textContent).toContain('移除这条链接')
+    expect(prompt.textContent).toContain('保存后才真正删除')
+    expect(
+      container.querySelectorAll('input[aria-label="链接地址"]')
+    ).toHaveLength(2)
+    await act(async () => {
+      button(prompt, '取消')!.click()
+    })
+    expect(
+      dom!.window.document.querySelector('[role="alertdialog"]')
+    ).toBeNull()
+    expect(container.querySelector('#workspace-link-3')).not.toBeNull()
+    expect(mocks.kunFetchPut).not.toHaveBeenCalled()
+    expect(mocks.kunFetchDelete).not.toHaveBeenCalled()
+
+    await act(async () => {
+      button(container, '移除这条链接')!.click()
+    })
+    const again = dom!.window.document.querySelector('[role="alertdialog"]')!
+    await act(async () => {
+      button(again, '确认移除')!.click()
+    })
+    expect(container.querySelector('#workspace-link-3')).toBeNull()
+    expect(container.querySelector('#workspace-link-2')).not.toBeNull()
+    expect(button(container, '移除这条链接')).toBeUndefined()
+    expect(
+      container.querySelectorAll('input[aria-label="链接地址"]')
+    ).toHaveLength(1)
+    expect(mocks.kunFetchPut).not.toHaveBeenCalled()
+    expect(mocks.kunFetchDelete).not.toHaveBeenCalled()
   })
 
   it('keeps an edit made during save, clears a consumed upload, and drops a late read', async () => {
@@ -1339,6 +1403,8 @@ describe('workspace resource editor', () => {
       { id: 2, version: 4 }
     ])
     expect(name.value).toBe('草稿名称')
+    expect(container.textContent).toContain('保存被测试拦住')
+    expect(mocks.toast.error).toHaveBeenCalledWith('保存被测试拦住')
   })
 
   const chooseSelect = async (
@@ -1550,6 +1616,39 @@ describe('workspace resource editor', () => {
     ).toBe('pw')
   })
 
+  it('shows a busy reload button until the latest version arrives', async () => {
+    const container = await mount()
+    let release: (value: typeof current) => void = () => {}
+    mocks.kunFetchGet.mockImplementation(
+      (url: string) =>
+        new Promise((resolve) => {
+          if (url === '/auth/captcha') {
+            resolve({ images: [], sessionId: 'captcha-session' })
+            return
+          }
+          release = resolve
+        })
+    )
+    const reload = button(container, '载入最新版本') as HTMLButtonElement
+    expect(reload.className).toContain('cursor-pointer')
+    expect(button(container, '保存')?.className).toContain('cursor-pointer')
+    await act(async () => {
+      reload.click()
+    })
+    const busy = button(container, '正在载入…') as HTMLButtonElement
+    expect(busy.disabled).toBe(true)
+    expect(busy.getAttribute('aria-busy')).toBe('true')
+    expect(button(container, '载入最新版本')).toBeUndefined()
+    await act(async () => {
+      release(current)
+    })
+    await settle()
+    const done = button(container, '载入最新版本') as HTMLButtonElement
+    expect(done.textContent).toBe('载入最新版本')
+    expect(done.disabled).toBe(false)
+    expect(done.getAttribute('aria-busy')).toBeNull()
+  })
+
   it('blocks reload while captcha is open', async () => {
     workspaceUser.role = 2
     current = detail({
@@ -1635,6 +1734,69 @@ describe('workspace resource editor', () => {
     const typeTrigger = container.querySelector('[aria-label="资源类型"]')
     expect(describedNote(typeTrigger)?.textContent?.trim()).toBe('必填')
     expect(container.textContent).toContain('日本語')
+  })
+
+  it('offers the same type and platform choices as the public form', async () => {
+    const container = await mount()
+    const menuLabels = (name: string) => {
+      const trigger = container.querySelector(`[aria-label="${name}"]`)
+      const menu = trigger?.parentElement?.querySelector('[role="menu"]')
+      return [...(menu?.querySelectorAll('label') ?? [])].map(
+        (item) => item.querySelector('span > span')?.textContent?.trim() ?? ''
+      )
+    }
+    const allowedLabels = (section: ResourceSection, types: string[]) =>
+      getAllowedPlatformsBySectionAndTypes(section, types).map(
+        (value) => SUPPORTED_PLATFORM_MAP[value] ?? value
+      )
+    const toggle = async (name: string) => {
+      const label = [...container.querySelectorAll('label')].find((item) =>
+        item.textContent?.includes(name)
+      )
+      await act(async () => {
+        label?.querySelector('input')?.click()
+      })
+    }
+
+    expect(menuLabels('资源语言')).toEqual([
+      '简体中文',
+      '繁體中文',
+      '日本語',
+      'English',
+      '其它'
+    ])
+    expect(menuLabels('资源类型')).toEqual([
+      'PC游戏',
+      '主机游戏',
+      '手机游戏',
+      '资料集',
+      '工具'
+    ])
+    expect(menuLabels('中文支持')).toEqual(['官中', '民汉', '机翻', '生肉'])
+    expect(menuLabels('资源平台')).toEqual(allowedLabels('galgame', ['pc']))
+    expect(menuLabels('资源平台')).not.toContain('Android')
+    expect(menuLabels('资源平台')).not.toContain('PSP')
+
+    await toggle('资料集')
+    await toggle('PC游戏')
+    expect(menuLabels('资源平台')).toEqual(
+      allowedLabels('galgame', ['material'])
+    )
+    expect(
+      (container.querySelector('[aria-label="中文支持"]') as HTMLButtonElement)
+        .disabled
+    ).toBe(true)
+
+    await chooseSelect(container, '资源分区', 'patch')
+    expect(menuLabels('资源类型')).toEqual([
+      '工具',
+      '翻译补丁',
+      '其他补丁',
+      '攻略',
+      '存档'
+    ])
+    expect(menuLabels('资源平台')).toEqual(allowedLabels('patch', []))
+    expect(container.textContent).toContain('民汉补丁')
   })
 })
 

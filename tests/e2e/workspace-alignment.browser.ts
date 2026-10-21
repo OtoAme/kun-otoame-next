@@ -79,7 +79,7 @@ const accessiblePrefix = (value: string) =>
 const dialog = (page: Page) => page.getByRole('alertdialog')
 const confirm = (page: Page) =>
   dialog(page).getByRole('button', {
-    name: /^(确认|确认删除|载入最新版本|确认载入)$/
+    name: /^(确认|确认删除|确认移除|载入最新版本|确认载入)$/
   })
 const nameInput = (page: Page) =>
   page.getByRole('textbox', { name: '资源名称', exact: true })
@@ -920,6 +920,7 @@ export async function runWorkspaceAlignment(h: Harness) {
               .getByRole('button', { name: /移除这条链接/ })
               .last()
               .click()
+            await confirm(page).click()
           }
           if (actor.role === 2) {
             await select(
