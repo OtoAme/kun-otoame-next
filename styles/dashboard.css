@@ -109,4 +109,8 @@
       -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Helvetica, Arial,
       'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
   }
+  button:not(:disabled),
+  [role='button']:not(:disabled) {
+    cursor: pointer;
+  }
 }
