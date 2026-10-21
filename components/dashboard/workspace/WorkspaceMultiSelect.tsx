@@ -1,6 +1,6 @@
 'use client'
 
-import { useId } from 'react'
+import { useId, useRef, useState, type PointerEvent } from 'react'
 import { ChevronDown } from 'lucide-react'
 import { Button } from '~/components/dashboard/ui/button'
 import {
@@ -13,6 +13,11 @@ import {
   DropdownMenuTrigger
 } from '~/components/dashboard/ui/dropdown-menu'
 import { cn } from '~/lib/dashboard/utils'
+
+const TOUCH_SCROLL_TOLERANCE_PX = 10
+
+const isTouchLike = (pointerType: string) =>
+  pointerType === 'touch' || pointerType === 'pen'
 
 export interface WorkspaceMultiSelectOption {
   value: string
@@ -57,6 +62,9 @@ export function WorkspaceMultiSelect({
   required?: boolean
 }) {
   const requiredId = useId()
+  const [open, setOpen] = useState(false)
+  const touchOrigin = useRef<{ x: number; y: number } | null>(null)
+  const touchMoved = useRef(false)
   const flat = groups
     ? groups.flatMap((group) => group.options)
     : (options ?? [])
@@ -97,6 +105,30 @@ export function WorkspaceMultiSelect({
       </DropdownMenuCheckboxItem>
     ))
 
+  const rememberTouch = (event: PointerEvent<HTMLButtonElement>) => {
+    touchOrigin.current = { x: event.clientX, y: event.clientY }
+    touchMoved.current = false
+  }
+
+  const noteTouchMove = (event: PointerEvent<HTMLButtonElement>) => {
+    const origin = touchOrigin.current
+    if (!origin) return
+    if (
+      Math.abs(event.clientX - origin.x) > TOUCH_SCROLL_TOLERANCE_PX ||
+      Math.abs(event.clientY - origin.y) > TOUCH_SCROLL_TOLERANCE_PX
+    ) {
+      touchMoved.current = true
+    }
+  }
+
+  const finishTouch = (event: PointerEvent<HTMLButtonElement>) => {
+    if (!isTouchLike(event.pointerType) || !touchOrigin.current) return
+    const moved = touchMoved.current
+    touchOrigin.current = null
+    touchMoved.current = false
+    if (!moved && !disabled) setOpen((current) => !current)
+  }
+
   return (
     <div className="grid min-w-0 gap-1 text-sm">
       <span>
@@ -108,7 +140,7 @@ export function WorkspaceMultiSelect({
           </span>
         ) : null}
       </span>
-      <DropdownMenu>
+      <DropdownMenu open={open} onOpenChange={setOpen}>
         <DropdownMenuTrigger asChild>
           <Button
             type="button"
@@ -117,9 +149,29 @@ export function WorkspaceMultiSelect({
             aria-label={triggerLabel ?? label}
             aria-describedby={required ? requiredId : undefined}
             className={cn(
-              'h-auto min-h-9 w-full justify-between gap-2 font-normal',
+              'h-auto min-h-9 w-full justify-between gap-2 font-normal touch-pan-y',
               !selected.length && 'text-muted-foreground'
             )}
+            onPointerDown={(event) => {
+              if (!isTouchLike(event.pointerType)) return
+              // DropdownMenu toggles on pointerdown for every pointer. Select
+              // waits for a click on touch, so a scroll does not open it.
+              event.preventDefault()
+              const target = event.currentTarget
+              if (
+                typeof target.hasPointerCapture === 'function' &&
+                target.hasPointerCapture(event.pointerId)
+              ) {
+                target.releasePointerCapture(event.pointerId)
+              }
+              rememberTouch(event)
+            }}
+            onPointerMove={noteTouchMove}
+            onPointerUp={finishTouch}
+            onPointerCancel={() => {
+              touchOrigin.current = null
+              touchMoved.current = false
+            }}
           >
             <span className="min-w-0 flex-1 truncate text-left">{summary}</span>
             <ChevronDown className="size-4 shrink-0" aria-hidden />
