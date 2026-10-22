@@ -9,6 +9,7 @@ import {
   invalidatePatchListCaches
 } from '~/app/api/patch/cache'
 import { prisma as globalPrisma } from '~/prisma/index'
+import { logResourceFailure } from '~/app/api/workspace/diagnostics'
 import {
   buildPatchResourceAttributes,
   createVisiblePatchResourceWhere,
@@ -99,9 +100,7 @@ export const deletePatchResourceLink = async (
 
   const s3Key = extractS3Key(content)
   if (!s3Key) {
-    console.error('[Upload] Refused to delete S3 object with invalid URL', {
-      content
-    })
+    logResourceFailure('delete_link.invalid_location')
     return
   }
 
@@ -137,20 +136,13 @@ export const finalizeUploadedResources = async (
   )
 
   for (const [index, result] of results.entries()) {
-    const resource = resources[index]
     if (result.status === 'rejected') {
-      console.error(
-        '[CRITICAL] Upload finalize failed - manual cleanup may be needed',
-        { ...context, ...resource, error: result.reason }
-      )
+      logResourceFailure('upload.finalize_failed', context, index)
       continue
     }
 
     if (!result.value.ok) {
-      console.error(
-        '[CRITICAL] Upload finalize failed - manual cleanup may be needed',
-        { ...context, ...resource, error: result.value.code }
-      )
+      logResourceFailure('upload.finalize_failed', context, index)
     }
   }
 }
@@ -165,11 +157,7 @@ export const cleanupUploadedResourceDirs = async (
 
   for (const [index, result] of results.entries()) {
     if (result.status === 'rejected') {
-      console.error('[Upload] Local cleanup failed, cron will handle', {
-        ...context,
-        ...resources[index],
-        error: result.reason
-      })
+      logResourceFailure('upload.cleanup_failed', context, index)
     }
   }
 }

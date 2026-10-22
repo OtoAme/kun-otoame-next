@@ -105,6 +105,108 @@ describe('workspace multi-select touch', () => {
     expect(button.getAttribute('aria-expanded')).toBe('true')
   })
 
+  it('passes id, invalid state, and description through the menu button', async () => {
+    const { createRoot } = await import('react-dom/client')
+    const container = dom!.window.document.getElementById('root')!
+    root = createRoot(container)
+    await act(async () => {
+      root!.render(
+        <WorkspaceMultiSelect
+          id="workspace-resource-type"
+          label="类型"
+          triggerLabel="资源类型"
+          required
+          aria-invalid
+          aria-describedby="type-error"
+          options={[{ value: 'pc', label: '电脑' }]}
+          selected={['pc']}
+          onChange={() => {}}
+        />
+      )
+    })
+    const button = container.querySelector(
+      '#workspace-resource-type'
+    ) as HTMLButtonElement
+    expect(button.getAttribute('aria-label')).toBe('资源类型')
+    expect(button.getAttribute('aria-invalid')).toBe('true')
+    expect(button.hasAttribute('aria-required')).toBe(false)
+    const describedBy = button.getAttribute('aria-describedby') ?? ''
+    const [requiredId, errorId] = describedBy.split(' ')
+    expect(errorId).toBe('type-error')
+    expect(container.querySelector(`#${requiredId}`)?.textContent).toContain(
+      '必填'
+    )
+    button.focus()
+    expect(dom!.window.document.activeElement).toBe(button)
+  })
+
+  it('clears only a saved value that is missing from the menu', async () => {
+    const onChange = vi.fn()
+    const { createRoot } = await import('react-dom/client')
+    const container = dom!.window.document.getElementById('root')!
+    root = createRoot(container)
+    await act(async () => {
+      root!.render(
+        <WorkspaceMultiSelect
+          label="平台"
+          triggerLabel="资源平台"
+          options={[
+            { value: 'windows', label: 'Windows' },
+            { value: 'android', label: 'Android' }
+          ]}
+          selected={['windows', 'legacy-platform']}
+          onChange={onChange}
+        />
+      )
+    })
+    expect(container.textContent).toContain('Windows')
+    expect(container.textContent).not.toContain('legacy-platform')
+    const clear = [...container.querySelectorAll('button')].find((item) =>
+      item.textContent?.includes('移除不再支持的选项')
+    ) as HTMLButtonElement
+    expect(clear.disabled).toBe(false)
+    await act(async () => {
+      clear.click()
+    })
+    expect(onChange).toHaveBeenCalledTimes(1)
+    expect(onChange).toHaveBeenCalledWith(['windows'])
+  })
+
+  it('does not clear unsupported values while the control is disabled', async () => {
+    const onChange = vi.fn()
+    const { createRoot } = await import('react-dom/client')
+    const container = dom!.window.document.getElementById('root')!
+    root = createRoot(container)
+    await act(async () => {
+      root!.render(
+        <WorkspaceMultiSelect
+          label="平台"
+          triggerLabel="资源平台"
+          disabled
+          options={[
+            { value: 'windows', label: 'Windows' },
+            { value: 'android', label: 'Android' }
+          ]}
+          selected={['windows', 'legacy-platform']}
+          onChange={onChange}
+        />
+      )
+    })
+    const clear = [...container.querySelectorAll('button')].find((item) =>
+      item.textContent?.includes('移除不再支持的选项')
+    ) as HTMLButtonElement
+    expect(clear.disabled).toBe(true)
+    await act(async () => {
+      clear.click()
+    })
+    expect(onChange).not.toHaveBeenCalled()
+    expect(
+      [...container.querySelectorAll('button')].filter((item) =>
+        item.textContent?.includes('移除不再支持的选项')
+      )
+    ).toHaveLength(1)
+  })
+
   it('opens on a mouse press', async () => {
     const container = await mount()
     const button = trigger(container)

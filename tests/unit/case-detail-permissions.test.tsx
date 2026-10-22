@@ -141,6 +141,7 @@ vi.mock('~/components/dashboard/ui/select', async () => {
 })
 
 import { IssueCaseDetail } from '~/components/dashboard/issue/IssueCaseDetail'
+import { WorkspaceUserProvider } from '~/components/dashboard/workspace/WorkspaceUserContext'
 
 globalThis.React = React
 
@@ -1176,5 +1177,187 @@ describe('issue case detail permissions', () => {
     const text = container.textContent ?? ''
     expect(text).not.toContain('处理结果')
     expect(text).not.toContain('无法复现')
+  })
+
+  const workspacePublisher = { id: 995, name: 'act-pub', role: 2 }
+
+  const mountWorkspace = (user: { id: number; name: string; role: number }) =>
+    mount(
+      <WorkspaceUserProvider user={user}>
+        <IssueCaseDetail caseId={9} />
+      </WorkspaceUserProvider>
+    )
+
+  const closeSection = (container: HTMLElement) =>
+    container.querySelector('section[aria-label="结案"]')
+
+  const dashboardEntry = (container: HTMLElement) =>
+    container.querySelector('a[href="/dashboard/case/9"]')
+
+  const publisherCapabilities = (canResolve: boolean) =>
+    capabilities({
+      canReply: true,
+      canResolve,
+      allowedResolutions: canResolve
+        ? ['repaired', 'unreproducible', 'out_of_scope']
+        : []
+    })
+
+  it('shows resolve for the workspace user when the legacy store is empty', async () => {
+    mocks.user = { uid: 0, name: '', role: 1 }
+    mocks.kunFetchGet.mockResolvedValue(
+      detailResponse(
+        makeDetail({
+          owner: { id: 995, name: 'act-pub', avatar: '' },
+          capabilities: publisherCapabilities(true)
+        })
+      )
+    )
+    const container = await mountWorkspace(workspacePublisher)
+    await flush()
+
+    expect(closeSection(container)).not.toBeNull()
+    expect(
+      container.querySelector('select[aria-label="处理结论"]')
+    ).not.toBeNull()
+    expect(dashboardEntry(container)).toBeNull()
+    expect(mocks.user).toEqual({ uid: 0, name: '', role: 1 })
+  })
+
+  it('shows resolve for the workspace user when the legacy store is another user', async () => {
+    mocks.user = { uid: 2, name: '发布者甲', role: 1 }
+    mocks.kunFetchGet.mockResolvedValue(
+      detailResponse(
+        makeDetail({
+          owner: { id: 995, name: 'act-pub', avatar: '' },
+          capabilities: publisherCapabilities(true)
+        })
+      )
+    )
+    const container = await mountWorkspace(workspacePublisher)
+    await flush()
+
+    expect(closeSection(container)).not.toBeNull()
+    expect(dashboardEntry(container)).toBeNull()
+    expect(mocks.user).toEqual({ uid: 2, name: '发布者甲', role: 1 })
+  })
+
+  it('ignores a stale administrator store and still shows the allowed resolve', async () => {
+    mocks.user = { uid: 9, name: '管理员', role: 3 }
+    mocks.kunFetchGet.mockResolvedValue(
+      detailResponse(
+        makeDetail({
+          owner: { id: 995, name: 'act-pub', avatar: '' },
+          capabilities: publisherCapabilities(true)
+        })
+      )
+    )
+    const container = await mountWorkspace(workspacePublisher)
+    await flush()
+
+    expect(closeSection(container)).not.toBeNull()
+    expect(dashboardEntry(container)).toBeNull()
+    expect(mocks.user).toEqual({ uid: 9, name: '管理员', role: 3 })
+  })
+
+  it('uses the workspace role when a handed-off publisher may resolve', async () => {
+    mocks.user = { uid: 9, name: '管理员', role: 3 }
+    mocks.kunFetchGet.mockResolvedValue(
+      detailResponse(
+        makeDetail({
+          ownerType: 'staff',
+          owner: { id: 1, name: '站方', avatar: '' },
+          escalatedAt: '2026-09-14T00:00:00.000Z',
+          capabilities: publisherCapabilities(true)
+        })
+      )
+    )
+    const container = await mountWorkspace(workspacePublisher)
+    await flush()
+
+    expect(closeSection(container)).not.toBeNull()
+    expect(dashboardEntry(container)).toBeNull()
+  })
+
+  it('does not open resolve for a different workspace user', async () => {
+    mocks.user = { uid: 995, name: 'act-pub', role: 1 }
+    mocks.kunFetchGet.mockResolvedValue(
+      detailResponse(
+        makeDetail({
+          owner: { id: 995, name: 'act-pub', avatar: '' },
+          capabilities: publisherCapabilities(true)
+        })
+      )
+    )
+    const container = await mountWorkspace({ id: 100, name: '另一位', role: 2 })
+    await flush()
+
+    expect(closeSection(container)).toBeNull()
+    expect(dashboardEntry(container)).toBeNull()
+    expect(mocks.user.uid).toBe(995)
+  })
+
+  it('does not add resolve when the API denies it for the workspace user', async () => {
+    mocks.user = { uid: 0, name: '', role: 1 }
+    mocks.kunFetchGet.mockResolvedValue(
+      detailResponse(
+        makeDetail({
+          owner: { id: 995, name: 'act-pub', avatar: '' },
+          capabilities: publisherCapabilities(false)
+        })
+      )
+    )
+    const container = await mountWorkspace(workspacePublisher)
+    await flush()
+
+    expect(closeSection(container)).toBeNull()
+    expect(dashboardEntry(container)).toBeNull()
+  })
+
+  it('marks the workspace viewer in the dialogue and not the legacy store user', async () => {
+    mocks.user = { uid: 2, name: '发布者甲', role: 1 }
+    mocks.kunFetchGet.mockResolvedValue(
+      detailResponse(
+        makeDetail({
+          owner: { id: 995, name: 'act-pub', avatar: '' },
+          messages: [
+            {
+              id: 11,
+              kind: 'reply',
+              event: null,
+              body: '当前用户的回复',
+              author: { id: 995, name: 'act-pub', avatar: '' },
+              payload: null,
+              created: '2026-09-13T02:00:00.000Z'
+            },
+            {
+              id: 12,
+              kind: 'reply',
+              event: null,
+              body: '旧身份的回复',
+              author: { id: 2, name: '发布者甲', avatar: '' },
+              payload: null,
+              created: '2026-09-13T03:00:00.000Z'
+            }
+          ],
+          capabilities: publisherCapabilities(true)
+        })
+      )
+    )
+    const container = await mountWorkspace(workspacePublisher)
+    await flush()
+
+    const notes = [
+      ...container.querySelectorAll('ol[aria-label="沟通记录"] > li')
+    ]
+    const own = notes.find((note) =>
+      note.textContent?.includes('当前用户的回复')
+    )
+    const stale = notes.find((note) =>
+      note.textContent?.includes('旧身份的回复')
+    )
+    expect(own?.textContent).toContain('（我）')
+    expect(stale?.textContent).not.toContain('（我）')
+    expect(mocks.user).toEqual({ uid: 2, name: '发布者甲', role: 1 })
   })
 })

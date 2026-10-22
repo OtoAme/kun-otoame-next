@@ -176,4 +176,73 @@ describe('workspace resource upload isolation', () => {
     expect(uploaded).not.toHaveBeenCalled()
     expect(container.textContent).not.toContain('文件已上传')
   })
+
+  it('keeps an upload failure beside the control', async () => {
+    workspaceUser.role = 3
+    mocks.axiosPost.mockResolvedValueOnce({ data: '可用萌萌点不足' })
+    const { container } = await mount()
+    await choose(container)
+    const alert = container.querySelector('[role="alert"]') as HTMLElement
+    expect(alert.textContent).toContain('可用萌萌点不足')
+    expect(mocks.toast.error).toHaveBeenCalledWith('可用萌萌点不足')
+    const uploadButton = [...container.querySelectorAll('button')].find(
+      (item) => item.textContent?.includes('上传到对象存储')
+    )!
+    expect(uploadButton.getAttribute('aria-describedby')).toBe(alert.id)
+    expect(uploadButton.getAttribute('aria-invalid')).toBe('true')
+    mocks.axiosPost.mockResolvedValueOnce({
+      data: {
+        filetype: 's3',
+        uploadId: 'up-next',
+        fileHash: 'abc',
+        fileSize: '1MB'
+      }
+    })
+    await choose(container, 'next.zip')
+    expect(container.querySelector('[role="alert"]')).toBeNull()
+    expect(mocks.toast.success).toHaveBeenCalledWith('文件已上传')
+  })
+
+  it('distinguishes a rate limit from a network failure', async () => {
+    workspaceUser.role = 3
+    mocks.axiosPost.mockRejectedValueOnce(
+      Object.assign(new Error('Request failed'), {
+        response: { status: 429, data: '' }
+      })
+    )
+    const { container } = await mount()
+    await choose(container)
+    expect(container.textContent).toContain('操作过于频繁，请稍后重试')
+    expect(container.textContent).not.toMatch(/request id/i)
+    mocks.toast.error.mockClear()
+    mocks.axiosPost.mockRejectedValueOnce(new Error('Network Error'))
+    await choose(container, 'again.zip')
+    expect(container.textContent).toContain('上传失败，请稍后重试')
+    expect(mocks.toast.error).toHaveBeenCalledWith('上传失败，请稍后重试')
+  })
+
+  it('keeps a captcha failure inside the dialog', async () => {
+    mocks.kunFetchPost.mockResolvedValue('bad')
+    const { container } = await mount()
+    await choose(container)
+    const dialog = dom!.window.document.querySelector('[role="dialog"]')!
+    const tile = dialog.querySelector('canvas')?.parentElement as HTMLElement
+    await act(async () => {
+      tile.click()
+    })
+    await act(async () => {
+      ;[...dialog.querySelectorAll('button')]
+        .find((item) => item.textContent?.includes('确定'))!
+        .click()
+    })
+    await act(async () => {})
+    const alert = dialog.querySelector('[role="alert"]')
+    expect(alert?.textContent).toContain('白毛推')
+    expect(mocks.axiosPost).not.toHaveBeenCalled()
+    expect(container.textContent).toContain('game.zip')
+    const confirm = [...dialog.querySelectorAll('button')].find((item) =>
+      item.textContent?.includes('确定')
+    )!
+    expect(confirm.getAttribute('aria-describedby')).toBe(alert?.id)
+  })
 })

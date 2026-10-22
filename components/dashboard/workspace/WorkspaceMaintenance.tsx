@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import Link from 'next/link'
 import {
   AlertDialog,
@@ -57,6 +57,65 @@ import {
   workspaceResourceHref
 } from '~/utils/workspaceRoutes'
 import { kunFetchGet, kunFetchPost } from '~/utils/kunFetch'
+import { workspaceActionError } from './WorkspaceShell'
+
+const MAINTENANCE_UNCONFIRMED =
+  '没有确认这次维护是否已经写入。请重新读取核对。不要为了确认而再次提交。'
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+}
+
+function sameInteger(value: unknown, expected: number) {
+  return (
+    typeof value === 'number' && Number.isInteger(value) && value === expected
+  )
+}
+
+function isNonNegativeInteger(value: unknown): value is number {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 0
+}
+
+/** A 200 closes the dialog only when it is this pending target's result. */
+function isDefiniteMaintenanceAction(
+  response: unknown,
+  pending: LinkMaintenanceItem
+) {
+  if (!isPlainObject(response)) return false
+  const item = response.item
+  const link = response.link
+  if (!isPlainObject(item) || !isPlainObject(link)) return false
+  if (
+    !sameInteger(item.patchId, pending.patchId) ||
+    !sameInteger(item.resourceId, pending.resourceId) ||
+    !sameInteger(item.linkId, pending.linkId) ||
+    !sameInteger(item.linkVersion, pending.linkVersion) ||
+    !sameInteger(link.patchId, pending.patchId) ||
+    !sameInteger(link.resourceId, pending.resourceId) ||
+    !sameInteger(link.linkId, pending.linkId)
+  ) {
+    return false
+  }
+  const revision = item.maintenanceRevision
+  if (
+    !isNonNegativeInteger(revision) ||
+    revision < pending.maintenanceRevision
+  ) {
+    return false
+  }
+  return (
+    typeof response.changed === 'boolean' &&
+    isNonNegativeInteger(response.notifiedCount)
+  )
+}
+
+function maintenanceIntent(pending: {
+  action: string
+  note: string
+  days?: number
+}) {
+  return `${pending.action}\n${pending.note}\n${pending.days ?? ''}`
+}
 
 const VIEW_LABEL: Record<WorkspaceMaintenanceView, string> = {
   feedback: '用户反馈',
@@ -131,9 +190,11 @@ export function WorkspaceMaintenance() {
         return
       }
       setData(response)
-    } catch {
+    } catch (error) {
       if (generation !== generationRef.current) return
-      setError('网络错误，维护清单加载失败，请重试')
+      setError(
+        workspaceActionError(error, '网络错误，维护清单加载失败，请重试')
+      )
     } finally {
       if (generation === generationRef.current) setLoading(false)
     }
@@ -267,7 +328,7 @@ export function WorkspaceMaintenance() {
           </li>
         ))}
       </ul>
-      {data && data.items.length === 0 ? (
+      {!error && data && data.items.length === 0 ? (
         <p className="text-sm text-muted-foreground">这个清单里没有链接。</p>
       ) : null}
       {pages > 1 ? (
@@ -314,6 +375,13 @@ export function WorkspaceMaintenanceCard({
   const [pending, setPending] = useState<PendingAction | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [message, setMessage] = useState('')
+  const [lockedIntent, setLockedIntent] = useState('')
+  const noteRef = useRef<HTMLTextAreaElement | null>(null)
+  const noteErrorId = useId()
+  const emptyNote = message === '请填写说明'
+  useEffect(() => {
+    if (emptyNote) noteRef.current?.focus()
+  }, [emptyNote])
   const expired =
     item.state === 'snoozed' &&
     Boolean(item.snoozedUntil) &&
@@ -325,6 +393,8 @@ export function WorkspaceMaintenanceCard({
 
   const confirm = async () => {
     if (!pending || submitting) return
+    const intent = maintenanceIntent(pending)
+    if (lockedIntent === intent) return
     if (needsNote && !pending.note.trim()) {
       setMessage('请填写说明')
       return
@@ -340,11 +410,17 @@ export function WorkspaceMaintenanceCard({
         setMessage(response || '操作失败，请稍后重试')
         return
       }
+      if (!isDefiniteMaintenanceAction(response, pending.item)) {
+        setLockedIntent(intent)
+        setMessage(MAINTENANCE_UNCONFIRMED)
+        return
+      }
+      setLockedIntent('')
       setPending(null)
       setNote('')
       onChanged()
-    } catch {
-      setMessage('网络错误，操作失败，请重试')
+    } catch (error) {
+      setMessage(workspaceActionError(error, '网络错误，操作失败，请重试'))
     } finally {
       setSubmitting(false)
     }
@@ -407,7 +483,9 @@ export function WorkspaceMaintenanceCard({
                 size="sm"
                 variant="outline"
                 onClick={() => {
-                  setMessage('')
+                  setMessage((current) =>
+                    current === MAINTENANCE_UNCONFIRMED ? current : ''
+                  )
                   setPending({ item, action, note, days })
                 }}
               >
@@ -448,12 +526,18 @@ export function WorkspaceMaintenanceCard({
             pending.action === 'verify' ||
             pending.action === 'stop') ? (
             <Textarea
+              ref={noteRef}
+              id="workspace-maintenance-note"
               aria-label="维护说明"
+              aria-invalid={emptyNote || undefined}
+              aria-describedby={message && pending ? noteErrorId : undefined}
               value={pending.note}
               maxLength={LINK_MAINTENANCE_NOTE_MAX}
-              onChange={(event) =>
-                setPending({ ...pending, note: event.target.value })
-              }
+              onChange={(event) => {
+                const note = event.target.value
+                setPending({ ...pending, note })
+                if (message === '请填写说明') setMessage('')
+              }}
               placeholder="回应、核实或停止维护时需要说明"
               className="min-w-0 break-all"
             />
@@ -484,7 +568,11 @@ export function WorkspaceMaintenanceCard({
             </div>
           ) : null}
           {message && pending ? (
-            <p role="alert" className="break-all text-sm text-destructive">
+            <p
+              id={noteErrorId}
+              role="alert"
+              className="break-all text-sm text-destructive"
+            >
               {message}
             </p>
           ) : null}
@@ -492,7 +580,10 @@ export function WorkspaceMaintenanceCard({
             <AlertDialogCancel disabled={submitting}>取消</AlertDialogCancel>
             <Button
               type="button"
-              disabled={submitting}
+              disabled={
+                submitting ||
+                Boolean(pending && lockedIntent === maintenanceIntent(pending))
+              }
               onClick={() => void confirm()}
             >
               {submitting ? '正在提交…' : '确认'}

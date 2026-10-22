@@ -216,6 +216,24 @@ const item = (
   ...overrides
 })
 
+const actionResponse = (
+  source: LinkMaintenanceItem,
+  revision = source.maintenanceRevision
+) => {
+  const next = { ...source, maintenanceRevision: revision }
+  return {
+    item: next,
+    link: {
+      ...next.health,
+      patchId: next.patchId,
+      resourceId: next.resourceId,
+      linkId: next.linkId
+    },
+    changed: true,
+    notifiedCount: 0
+  }
+}
+
 const list = (items: LinkMaintenanceItem[]): LinkMaintenanceListResponse => ({
   items,
   total: items.length,
@@ -370,7 +388,9 @@ describe('workspace maintenance', () => {
   })
 
   it('submits the selected snooze length as 1 or 3 days', async () => {
-    mocks.kunFetchPost.mockResolvedValue({ ok: true })
+    mocks.kunFetchPost.mockResolvedValue(
+      actionResponse(item(), item().maintenanceRevision + 1)
+    )
     const container = await mount()
     await act(async () => {
       button(container, '暂缓')!.click()
@@ -397,6 +417,84 @@ describe('workspace maintenance', () => {
     )
     const body = mocks.kunFetchPost.mock.calls.at(-1)?.[1] as { note?: string }
     expect(body.note).toBeUndefined()
+    expect(
+      dom!.window.document.querySelector('[role="alertdialog"]')
+    ).toBeNull()
+  })
+
+  it('keeps the note when a 200 body is not a maintenance result', async () => {
+    mocks.kunFetchPost.mockResolvedValue({})
+    const container = await mount()
+    await act(async () => {
+      button(container, '回应')!.click()
+    })
+    const dialog = dom!.window.document.querySelector('[role="alertdialog"]')!
+    const note = dialog.querySelector(
+      'textarea[aria-label="维护说明"]'
+    ) as HTMLTextAreaElement
+    await act(async () => {
+      setText(note, '已经换了新地址')
+    })
+    const gets = mocks.kunFetchGet.mock.calls.length
+    await act(async () => {
+      button(dialog, '确认')!.click()
+    })
+    await act(async () => {})
+    expect(mocks.kunFetchPost).toHaveBeenCalledTimes(1)
+    expect(dialog.textContent).toContain('没有确认这次维护是否已经写入')
+    expect(note.value).toBe('已经换了新地址')
+    expect(mocks.kunFetchGet.mock.calls.length).toBe(gets)
+    await act(async () => {
+      button(dialog, '确认')!.click()
+    })
+    await act(async () => {})
+    expect(mocks.kunFetchPost).toHaveBeenCalledTimes(1)
+    expect(note.value).toBe('已经换了新地址')
+  })
+
+  it('keeps the note when the item is empty, an array, or another target', async () => {
+    const wrong = item({ linkId: 99, linkVersion: 8 })
+    const bodies = [
+      { item: {} },
+      { item: [] },
+      actionResponse(wrong, wrong.maintenanceRevision + 1)
+    ]
+    for (const body of bodies) {
+      act(() => {
+        root?.unmount()
+      })
+      root = undefined
+      mocks.kunFetchPost.mockReset()
+      mocks.kunFetchPost.mockResolvedValue(body)
+      const container = await mount()
+      await act(async () => {
+        button(container, '回应')!.click()
+      })
+      const dialog = dom!.window.document.querySelector('[role="alertdialog"]')!
+      const note = dialog.querySelector(
+        'textarea[aria-label="维护说明"]'
+      ) as HTMLTextAreaElement
+      await act(async () => {
+        setText(note, '已经换了新地址')
+      })
+      const gets = mocks.kunFetchGet.mock.calls.length
+      await act(async () => {
+        button(dialog, '确认')!.click()
+      })
+      await act(async () => {})
+      expect(mocks.kunFetchPost).toHaveBeenCalledTimes(1)
+      expect(dialog.textContent).toContain('没有确认这次维护是否已经写入')
+      expect(note.value).toBe('已经换了新地址')
+      expect(mocks.kunFetchGet.mock.calls.length).toBe(gets)
+      await act(async () => {
+        button(dialog, '确认')!.click()
+      })
+      await act(async () => {})
+      expect(mocks.kunFetchPost).toHaveBeenCalledTimes(1)
+      expect(
+        dom!.window.document.querySelector('[role="alertdialog"]')
+      ).not.toBeNull()
+    }
   })
 
   it('keeps the note when the action returns 409', async () => {
@@ -464,6 +562,68 @@ describe('workspace maintenance', () => {
     ).toBe('已经换了新地址')
     expect(mocks.kunFetchPost).toHaveBeenCalledTimes(posts)
     expect(mocks.kunFetchGet).toHaveBeenCalledTimes(gets)
+  })
+
+  it('points an empty note at the field and does not send it', async () => {
+    const container = await mount()
+    await act(async () => {
+      button(container, '回应')!.click()
+    })
+    const dialog = dom!.window.document.querySelector('[role="alertdialog"]')!
+    const note = dialog.querySelector(
+      'textarea[aria-label="维护说明"]'
+    ) as HTMLTextAreaElement
+    await act(async () => {
+      setText(note, '   ')
+    })
+    await act(async () => {
+      button(dialog, '确认')!.click()
+    })
+    await act(async () => {})
+    expect(mocks.kunFetchPost).not.toHaveBeenCalled()
+    expect(note.value).toBe('   ')
+    expect(note.getAttribute('aria-invalid')).toBe('true')
+    const alert = dialog.querySelector('[role="alert"]')!
+    expect(alert.textContent).toContain('请填写说明')
+    expect(note.getAttribute('aria-describedby')).toBe(alert.id)
+    expect(dom!.window.document.activeElement).toBe(note)
+  })
+
+  it('keeps the note when the action is rate limited', async () => {
+    const container = await mount()
+    await act(async () => {
+      button(container, '回应')!.click()
+    })
+    mocks.kunFetchPost.mockRejectedValueOnce(
+      new Error('Kun Fetch error! Status: 429')
+    )
+    const dialog = dom!.window.document.querySelector('[role="alertdialog"]')!
+    const note = dialog.querySelector(
+      'textarea[aria-label="维护说明"]'
+    ) as HTMLTextAreaElement
+    await act(async () => {
+      setText(note, '已经换了新地址')
+    })
+    await act(async () => {
+      button(dialog, '确认')!.click()
+    })
+    await act(async () => {})
+    expect(note.value).toBe('已经换了新地址')
+    expect(dialog.textContent).toContain('操作过于频繁，请稍后重试')
+    expect(
+      dom!.window.document.querySelector('[role="alertdialog"]')
+    ).not.toBeNull()
+  })
+
+  it('does not call an empty failed list a successful empty list', async () => {
+    mocks.kunFetchGet.mockRejectedValueOnce(
+      new Error('Kun Fetch error! Status: 503')
+    )
+    const container = await mount()
+    expect(container.textContent).toContain(
+      '服务器暂时无法完成操作，请稍后重试'
+    )
+    expect(container.textContent).not.toContain('这个清单里没有链接')
   })
 
   it('shows Chinese labels for maintenance state and storage', async () => {

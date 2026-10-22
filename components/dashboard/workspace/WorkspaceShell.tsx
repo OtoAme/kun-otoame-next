@@ -2,7 +2,7 @@
 
 import Image from 'next/image'
 import Link from 'next/link'
-import { createContext, useContext, useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { usePathname } from 'next/navigation'
 import { ChevronDown, House, Menu, UserRound } from 'lucide-react'
 import { Button } from '~/components/dashboard/ui/button'
@@ -25,29 +25,29 @@ import {
 import { kunMoyuMoe } from '~/config/moyu-moe'
 import { cn } from '~/lib/dashboard/utils'
 import type { WorkspaceUser } from '~/types/api/workspace'
+import { WorkspaceUserProvider, useWorkspaceUser } from './WorkspaceUserContext'
 
-const WorkspaceUserContext = createContext<WorkspaceUser | null>(null)
+export { WorkspaceUserProvider, useWorkspaceUser }
 
-export function WorkspaceUserProvider({
-  user,
-  children
-}: {
-  user: WorkspaceUser
-  children: React.ReactNode
-}) {
-  return (
-    <WorkspaceUserContext.Provider value={user}>
-      {children}
-    </WorkspaceUserContext.Provider>
-  )
-}
-
-export function useWorkspaceUser(): WorkspaceUser {
-  const user = useContext(WorkspaceUserContext)
-  if (!user) {
-    throw new Error('useWorkspaceUser must be used within WorkspaceShell')
-  }
-  return user
+/**
+ * Turn a thrown kunFetch failure into user text.
+ * A response-less failure stays on `fallback` and never invents a request id.
+ * A status response prefers the server's own message.
+ */
+export function workspaceActionError(error: unknown, fallback: string): string {
+  const raw = error instanceof Error ? error.message : ''
+  const match = /Status:\s*(\d+)(?:;\s*Message:\s*([\s\S]*))?/.exec(raw)
+  if (!match) return fallback
+  const status = Number(match[1])
+  const server = match[2]?.replace(/\s+/g, ' ').trim() ?? ''
+  if (server) return server
+  if (status === 401) return '登录已失效，请重新登录后再试'
+  if (status === 403) return '没有权限完成这个操作'
+  if (status === 404) return '内容不存在或已不可用'
+  if (status === 409) return '内容已变化，请载入最新内容后再试'
+  if (status === 429) return '操作过于频繁，请稍后重试'
+  if (status >= 500) return '服务器暂时无法完成操作，请稍后重试'
+  return fallback
 }
 
 const NAV = [

@@ -13,7 +13,14 @@ import type { LinkMaintenanceActionInput } from '~/types/api/linkMaintenance'
 const target = linkTargetSchema
   .extend({ maintenanceRevision: linkEvidenceRoundSchema })
   .strict()
-const note = z.string().trim().min(1).max(LINK_MAINTENANCE_NOTE_MAX)
+const note = z
+  .string()
+  .trim()
+  .min(1)
+  .max(LINK_MAINTENANCE_NOTE_MAX)
+  .refine((value) => !value.includes('\u0000'), {
+    message: '不能包含空字符，请删除后重试'
+  })
 export const linkMaintenanceActionSchema = z.discriminatedUnion('action', [
   target.extend({ action: z.literal('respond'), note }),
   target.extend({

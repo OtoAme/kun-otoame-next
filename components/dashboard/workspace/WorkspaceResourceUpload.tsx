@@ -1,7 +1,7 @@
 'use client'
 
 import axios from 'axios'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import toast from 'react-hot-toast'
 import { KunCaptchaCanvas } from '~/components/kun/auth/CaptchaCanvas'
 import type { KunCaptchaImage } from '~/components/kun/auth/captcha'
@@ -16,10 +16,39 @@ import {
 import { kunCaptchaErrorMessageMap } from '~/constants/captcha'
 import type { KunUploadFileResponse } from '~/types/api/upload'
 import { kunFetchGet, kunFetchPost } from '~/utils/kunFetch'
-import { useWorkspaceUser } from './WorkspaceShell'
+import { useWorkspaceUser, workspaceActionError } from './WorkspaceShell'
+
+function thrownUploadMessage(error: unknown, fallback: string): string {
+  const response = (
+    error as { response?: { status?: number; data?: unknown } } | null
+  )?.response
+  if (!response?.status) return workspaceActionError(error, fallback)
+  const data = response.data
+  const objectMessage =
+    data && typeof data === 'object' && 'message' in data
+      ? data.message
+      : undefined
+  const server =
+    typeof data === 'string'
+      ? data.replace(/\s+/g, ' ').trim()
+      : typeof objectMessage === 'string'
+        ? objectMessage.replace(/\s+/g, ' ').trim()
+        : ''
+  return workspaceActionError(
+    new Error(
+      server
+        ? `Status: ${response.status}; Message: ${server}`
+        : `Status: ${response.status}`
+    ),
+    fallback
+  )
+}
 
 interface Props {
+  id?: string
   disabled?: boolean
+  invalid?: boolean
+  describedBy?: string
   /** Reports upload activity to the parent editor so it can guard save/delete. */
   onUploadingChange?: (active: boolean) => void
   onUploaded: (result: {
@@ -36,7 +65,10 @@ interface Props {
  * Late responses after unmount or target change are ignored.
  */
 export function WorkspaceResourceUpload({
+  id,
   disabled,
+  invalid,
+  describedBy,
   onUploadingChange,
   onUploaded
 }: Props) {
@@ -45,6 +77,9 @@ export function WorkspaceResourceUpload({
   const [progress, setProgress] = useState(0)
   const [uploading, setUploading] = useState(false)
   const [captchaOpen, setCaptchaOpen] = useState(false)
+  const [failure, setFailure] = useState('')
+  const failureId = useId()
+  const failureRef = useRef<HTMLParagraphElement | null>(null)
   const aliveRef = useRef(true)
   const uploadingRef = useRef(false)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
@@ -60,12 +95,23 @@ export function WorkspaceResourceUpload({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  useEffect(() => {
+    if (failure) failureRef.current?.focus()
+  }, [failure])
+
+  const reportFailure = (message: string) => {
+    if (!aliveRef.current) return
+    setFailure(message)
+    toast.error(message)
+  }
+
   const upload = async (captcha: string, selected = file) => {
     if (!aliveRef.current) return
     if (!selected) {
-      toast.error('未找到资源文件，请重试')
+      reportFailure('未找到资源文件，请重试')
       return
     }
+    setFailure('')
     uploadingRef.current = true
     setUploading(true)
     onUploadingChange?.(true)
@@ -90,7 +136,7 @@ export function WorkspaceResourceUpload({
       )
       if (!aliveRef.current) return
       if (typeof response.data === 'string') {
-        toast.error(response.data || '上传失败，请重试')
+        reportFailure(response.data || '上传失败，请重试')
         return
       }
       onUploaded({
@@ -101,10 +147,11 @@ export function WorkspaceResourceUpload({
       })
       setFile(null)
       setProgress(0)
+      setFailure('')
       toast.success('文件已上传')
-    } catch {
+    } catch (error) {
       if (!aliveRef.current) return
-      toast.error('上传失败，请稍后重试')
+      reportFailure(thrownUploadMessage(error, '上传失败，请稍后重试'))
     } finally {
       uploadingRef.current = false
       if (aliveRef.current) {
@@ -121,13 +168,16 @@ export function WorkspaceResourceUpload({
 
   const chooseFile = async (next: File | null) => {
     if (!next) return
+    setFailure('')
     const sizeMb = next.size / (1024 * 1024)
     if (sizeMb > 100) {
-      toast.error(`文件大小超出限制: ${sizeMb.toFixed(3)} MB，最大允许 100 MB`)
+      reportFailure(
+        `文件大小超出限制: ${sizeMb.toFixed(3)} MB，最大允许 100 MB`
+      )
       return
     }
     if (role < 2) {
-      toast.error('只有创作者和管理员可以上传文件到对象存储')
+      reportFailure('只有创作者和管理员可以上传文件到对象存储')
       return
     }
     setFile(next)
@@ -155,14 +205,32 @@ export function WorkspaceResourceUpload({
         }}
       />
       <Button
+        id={id}
         type="button"
         size="sm"
         variant="outline"
         disabled={disabled || uploading}
+        aria-invalid={failure || invalid ? true : undefined}
+        aria-describedby={
+          [failure ? failureId : '', describedBy ?? '']
+            .filter(Boolean)
+            .join(' ') || undefined
+        }
         onClick={() => fileInputRef.current?.click()}
       >
         上传到对象存储
       </Button>
+      {failure ? (
+        <p
+          id={failureId}
+          ref={failureRef}
+          role="alert"
+          tabIndex={-1}
+          className="break-all text-sm text-destructive"
+        >
+          {failure}
+        </p>
+      ) : null}
       {uploading ? (
         <p className="text-sm text-muted-foreground">正在上传 {progress}%</p>
       ) : null}
@@ -220,6 +288,8 @@ function CaptchaDialog({
   const [loading, setLoading] = useState(false)
   const [verifying, setVerifying] = useState(false)
   const [errorCount, setErrorCount] = useState(0)
+  const [captchaError, setCaptchaError] = useState('')
+  const captchaErrorId = useId()
   const attemptRef = useRef(0)
 
   const handleOpenChange = (next: boolean) => {
@@ -228,17 +298,28 @@ function CaptchaDialog({
   }
 
   useEffect(() => {
-    if (!open) return
+    if (!open) {
+      setCaptchaError('')
+      return
+    }
     let cancelled = false
     setLoading(true)
     setSelected(new Set())
-    void kunFetchGet<{ images: KunCaptchaImage[]; sessionId: string }>(
+    void kunFetchGet<{ images: KunCaptchaImage[]; sessionId: string } | string>(
       '/auth/captcha'
     )
       .then((response) => {
-        if (cancelled || typeof response === 'string') return
+        if (cancelled) return
+        if (typeof response === 'string') {
+          setCaptchaError(response || '验证加载失败，请重试')
+          return
+        }
         setImages(response.images)
         setSessionId(response.sessionId)
+      })
+      .catch((error: unknown) => {
+        if (cancelled) return
+        setCaptchaError(workspaceActionError(error, '验证加载失败，请重试'))
       })
       .finally(() => {
         if (!cancelled) setLoading(false)
@@ -252,6 +333,7 @@ function CaptchaDialog({
     if (verifying) return
     const attempt = attemptRef.current
     setVerifying(true)
+    setCaptchaError('')
     try {
       const response = await kunFetchPost<{ code: string } | string>(
         '/auth/captcha',
@@ -259,13 +341,19 @@ function CaptchaDialog({
       )
       if (attempt !== attemptRef.current || !isCurrent()) return
       if (typeof response === 'string') {
-        toast.error(
+        const message =
           kunCaptchaErrorMessageMap[Math.min(errorCount + 1, 6)] ?? response
-        )
+        setCaptchaError(message)
+        toast.error(message)
         setErrorCount((current) => current + 1)
         return
       }
       await onSuccess(response.code)
+    } catch (error) {
+      if (attempt !== attemptRef.current || !isCurrent()) return
+      const message = workspaceActionError(error, '验证失败，请重试')
+      setCaptchaError(message)
+      toast.error(message)
     } finally {
       if (isCurrent()) setVerifying(false)
     }
@@ -278,6 +366,15 @@ function CaptchaDialog({
           <DialogTitle>人机验证</DialogTitle>
         </DialogHeader>
         <p className="text-sm">请选择下面所有的白毛男孩子</p>
+        {captchaError ? (
+          <p
+            id={captchaErrorId}
+            role="alert"
+            className="break-all text-sm text-destructive"
+          >
+            {captchaError}
+          </p>
+        ) : null}
         {loading ? (
           <p className="text-sm">正在加载验证…</p>
         ) : (
@@ -310,6 +407,8 @@ function CaptchaDialog({
           <Button
             type="button"
             disabled={selected.size === 0 || verifying}
+            aria-invalid={captchaError ? true : undefined}
+            aria-describedby={captchaError ? captchaErrorId : undefined}
             onClick={() => void verify()}
           >
             确定

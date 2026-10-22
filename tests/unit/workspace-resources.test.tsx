@@ -368,6 +368,25 @@ describe('workspace resources', () => {
     expect(container.textContent).not.toContain('没有符合条件的资源')
   })
 
+  it('shows a missing-resource failure instead of an empty list', async () => {
+    mocks.kunFetchGet.mockImplementation((url: string) => {
+      if (url === '/workspace/maintenance') {
+        return Promise.resolve({
+          items: [],
+          total: 0,
+          page: 1,
+          limit: 20,
+          actionableCount: 0
+        })
+      }
+      return Promise.reject(new Error('Kun Fetch error! Status: 404'))
+    })
+    const container = await mount()
+    expect(container.textContent).toContain('内容不存在或已不可用')
+    expect(container.textContent).not.toContain('没有符合条件的资源')
+    expect(container.textContent).not.toContain('正在加载资源')
+  })
+
   it('shows a new banner after the previous image failed on the same card', async () => {
     dom = new JSDOM('<!doctype html><div id="root"></div>', {
       url: 'http://localhost/workspace/resources'

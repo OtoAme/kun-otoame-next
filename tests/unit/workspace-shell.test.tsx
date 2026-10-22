@@ -178,4 +178,93 @@ describe('workspace shell', () => {
     ).toBe('问题处理')
     expect(menuButton.getAttribute('aria-label')).toBe('关闭导航')
   })
+
+  it('names status failures and does not invent a request id', async () => {
+    await mount()
+    const { workspaceActionError } = await import(
+      '~/components/dashboard/workspace/WorkspaceShell'
+    )
+    const fallback = '网络错误，保存失败，请重试'
+    expect(workspaceActionError(new Error('failed to fetch'), fallback)).toBe(
+      fallback
+    )
+    expect(
+      workspaceActionError(new Error('failed to fetch'), fallback)
+    ).not.toMatch(/request id/i)
+    expect(
+      workspaceActionError(new Error('Kun Fetch error! Status: 401'), fallback)
+    ).toBe('登录已失效，请重新登录后再试')
+    expect(
+      workspaceActionError(new Error('Kun Fetch error! Status: 403'), fallback)
+    ).toBe('没有权限完成这个操作')
+    expect(
+      workspaceActionError(new Error('Kun Fetch error! Status: 404'), fallback)
+    ).toBe('内容不存在或已不可用')
+    expect(
+      workspaceActionError(new Error('Kun Fetch error! Status: 409'), fallback)
+    ).toBe('内容已变化，请载入最新内容后再试')
+    expect(
+      workspaceActionError(new Error('Kun Fetch error! Status: 429'), fallback)
+    ).toBe('操作过于频繁，请稍后重试')
+    expect(
+      workspaceActionError(new Error('Kun Fetch error! Status: 503'), fallback)
+    ).toBe('服务器暂时无法完成操作，请稍后重试')
+    expect(
+      workspaceActionError(
+        new Error(
+          'Kun Fetch error! Status: 503; Message: 暂时无法完成操作，请稍后重试 req-9'
+        ),
+        fallback
+      )
+    ).toBe('暂时无法完成操作，请稍后重试 req-9')
+    expect(
+      workspaceActionError(
+        new Error('Kun Fetch error! Status: 409; Message: 别人改过了'),
+        fallback
+      )
+    ).toBe('别人改过了')
+  })
+
+  it('re-exports the server user and keeps the strict hook', async () => {
+    const container = await mount()
+    const shell = await import(
+      '~/components/dashboard/workspace/WorkspaceShell'
+    )
+    const context = await import(
+      '~/components/dashboard/workspace/WorkspaceUserContext'
+    )
+
+    function Outside() {
+      let message = 'no-throw'
+      try {
+        shell.useWorkspaceUser()
+      } catch (error) {
+        message = error instanceof Error ? error.message : 'unknown'
+      }
+      const optional = context.useOptionalWorkspaceUser()
+      return <p>{`${message}|${optional ? 'present' : 'absent'}`}</p>
+    }
+
+    function Inside() {
+      const required = shell.useWorkspaceUser()
+      const optional = context.useOptionalWorkspaceUser()
+      return <p>{`${required.id}:${optional?.id}:${optional?.role}`}</p>
+    }
+
+    await act(async () => {
+      root!.render(<Outside />)
+    })
+    expect(container.textContent).toContain(
+      'useWorkspaceUser must be used within WorkspaceShell|absent'
+    )
+
+    await act(async () => {
+      root!.render(
+        <shell.WorkspaceUserProvider user={{ id: 4, name: '作者', role: 1 }}>
+          <Inside />
+        </shell.WorkspaceUserProvider>
+      )
+    })
+    expect(container.textContent).toContain('4:4:1')
+  })
 })

@@ -5,8 +5,70 @@ import {
   maintenanceRestriction
 } from '~/app/api/patch/resource/maintenance/policy'
 import { linkMaintenanceActionSchema } from '~/validations/linkMaintenance'
+import { workspaceValidationFeedback } from '~/validations/workspaceFeedback'
 const now = new Date('2026-10-19T00:00:00Z')
 describe('version-scoped maintenance policy', () => {
+  const actionInput = (
+    action: 'respond' | 'stop' | 'verify',
+    note: string
+  ) => ({
+    patchId: 1,
+    resourceId: 2,
+    linkId: 3,
+    linkVersion: 1,
+    maintenanceRevision: 0,
+    action,
+    note,
+    ...(action === 'verify'
+      ? {
+          basis: {
+            patchId: 1,
+            resourceId: 2,
+            linkId: 3,
+            linkVersion: 1,
+            evidenceRound: 0,
+            health: 'broken',
+            healthChangedAt: now.toISOString()
+          }
+        }
+      : {})
+  })
+  it.each(['respond', 'stop', 'verify'] as const)(
+    'rejects PostgreSQL-unpersistable NUL in %s notes with safe field feedback',
+    (action) => {
+      const note = '合成说明\u0000不可持久化'
+      const parsed = linkMaintenanceActionSchema.safeParse(
+        actionInput(action, note)
+      )
+      expect(parsed.success).toBe(false)
+      if (!parsed.success) {
+        const feedback = workspaceValidationFeedback(parsed.error)
+        expect(feedback.fields.map(({ path }) => path)).toContain('note')
+        expect(feedback.message).toContain('不能包含空字符')
+        expect(feedback.message).not.toContain(note)
+      }
+    }
+  )
+  it.each(['respond', 'stop', 'verify'] as const)(
+    'preserves substantive Unicode, newlines, trimming and length boundaries for %s notes',
+    (action) => {
+      for (const note of ['', ' \n\t ', '界'.repeat(1008)])
+        expect(
+          linkMaintenanceActionSchema.safeParse(actionInput(action, note))
+            .success
+        ).toBe(false)
+      for (const note of [
+        '界'.repeat(1007),
+        ' \n日本語😀\n第二行\t ',
+        '字面\\u0000文本不含空字符'
+      ]) {
+        const parsed = linkMaintenanceActionSchema.parse(
+          actionInput(action, note)
+        )
+        expect('note' in parsed && parsed.note).toBe(note.trim())
+      }
+    }
+  )
   it('expires snooze at the exact server boundary without changing its control or round', () => {
     const fact = {
       revision: 7,

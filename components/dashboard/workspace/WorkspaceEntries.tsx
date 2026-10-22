@@ -58,7 +58,7 @@ import {
   kunFetchPatch
 } from '~/utils/kunFetch'
 import { clearPatchSubmissionDraftStorage } from '~/utils/patchSubmissionUploadDraft'
-import { useWorkspaceUser } from './WorkspaceShell'
+import { useWorkspaceUser, workspaceActionError } from './WorkspaceShell'
 import { WorkspaceBanner } from './WorkspaceBanner'
 
 const STATUS_LABEL: Record<PatchSubmissionStatus, string> = {
@@ -148,9 +148,9 @@ export function WorkspaceEntries() {
           )
         }
       })
-    } catch {
+    } catch (error) {
       if (generation !== generationRef.current) return
-      setError('网络错误，列表加载失败，请重试')
+      setError(workspaceActionError(error, '网络错误，列表加载失败，请重试'))
     } finally {
       if (generation === generationRef.current) setLoading(false)
     }
@@ -176,8 +176,8 @@ export function WorkspaceEntries() {
         return
       }
       router.push(`/submission/${response.submissionId}`)
-    } catch {
-      setError('新建投稿失败，请检查网络后重试')
+    } catch (error) {
+      setError(workspaceActionError(error, '新建投稿失败，请检查网络后重试'))
     } finally {
       setCreating(false)
     }
@@ -194,8 +194,8 @@ export function WorkspaceEntries() {
         return
       }
       await load()
-    } catch {
-      setError('撤回失败，请稍后重试')
+    } catch (error) {
+      setError(workspaceActionError(error, '撤回失败，请稍后重试'))
     } finally {
       setWithdrawingId(null)
     }
@@ -242,8 +242,8 @@ export function WorkspaceEntries() {
       // Refresh quota/balance in the background; a failure here must not bring
       // the deleted card back because deletedIdsRef filters it out.
       void load()
-    } catch {
-      setDeleteError('删除失败，请检查网络后重试')
+    } catch (error) {
+      setDeleteError(workspaceActionError(error, '删除失败，请检查网络后重试'))
     } finally {
       setDeleting(false)
     }
@@ -261,8 +261,8 @@ export function WorkspaceEntries() {
       }
       // Hiding is list-only: no deposit moves and the browser draft stays.
       setHiddenIds((current) => new Set(current).add(id))
-    } catch {
-      setError('隐藏失败，请稍后重试')
+    } catch (error) {
+      setError(workspaceActionError(error, '隐藏失败，请稍后重试'))
     }
   }
 
@@ -391,7 +391,7 @@ export function WorkspaceEntries() {
             </li>
           ))}
       </ul>
-      {data && data.items.length === 0 ? (
+      {!error && data && data.items.length === 0 ? (
         <p className="text-sm text-muted-foreground">没有符合条件的条目。</p>
       ) : null}
       <Pager

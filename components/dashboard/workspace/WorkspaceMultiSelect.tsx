@@ -44,7 +44,10 @@ export function WorkspaceMultiSelect({
   disabled,
   onChange,
   placeholder = '请选择',
-  required = false
+  required = false,
+  id,
+  'aria-invalid': ariaInvalid,
+  'aria-describedby': ariaDescribedBy
 }: {
   label: string
   /** Accessible name of the trigger button; defaults to `label`. */
@@ -60,14 +63,24 @@ export function WorkspaceMultiSelect({
    * The trigger stays a menu button, so it does not use aria-required.
    */
   required?: boolean
+  id?: string
+  'aria-invalid'?: boolean
+  /** Extra description id. The required marker id is kept in front of it. */
+  'aria-describedby'?: string
 }) {
   const requiredId = useId()
+  const describedBy =
+    [required ? requiredId : '', ariaDescribedBy ?? '']
+      .filter(Boolean)
+      .join(' ') || undefined
   const [open, setOpen] = useState(false)
   const touchOrigin = useRef<{ x: number; y: number } | null>(null)
   const touchMoved = useRef(false)
   const flat = groups
     ? groups.flatMap((group) => group.options)
     : (options ?? [])
+  const known = new Set(flat.map((option) => option.value))
+  const hasUnsupported = selected.some((value) => !known.has(value))
   const summary = selected.length
     ? flat
         .filter((option) => selected.includes(option.value))
@@ -81,6 +94,11 @@ export function WorkspaceMultiSelect({
         ? selected.filter((item) => item !== value)
         : [...selected, value]
     )
+  }
+
+  const clearUnsupported = () => {
+    if (disabled) return
+    onChange(selected.filter((value) => known.has(value)))
   }
 
   const renderOptions = (items: WorkspaceMultiSelectOption[]) =>
@@ -144,10 +162,12 @@ export function WorkspaceMultiSelect({
         <DropdownMenuTrigger asChild>
           <Button
             type="button"
+            id={id}
             variant="outline"
             disabled={disabled}
             aria-label={triggerLabel ?? label}
-            aria-describedby={required ? requiredId : undefined}
+            aria-invalid={ariaInvalid || undefined}
+            aria-describedby={describedBy}
             className={cn(
               'h-auto min-h-9 w-full justify-between gap-2 font-normal touch-pan-y',
               !selected.length && 'text-muted-foreground'
@@ -192,6 +212,18 @@ export function WorkspaceMultiSelect({
             : renderOptions(flat)}
         </DropdownMenuContent>
       </DropdownMenu>
+      {hasUnsupported ? (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="w-fit"
+          disabled={disabled}
+          onClick={clearUnsupported}
+        >
+          移除不再支持的选项
+        </Button>
+      ) : null}
     </div>
   )
 }

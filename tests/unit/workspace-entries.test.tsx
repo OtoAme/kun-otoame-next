@@ -500,6 +500,20 @@ describe('workspace entries', () => {
     expect(container.textContent).toContain('可用萌萌点 60')
     expect(container.textContent).toContain('进行中 0 / 3')
     expect(container.textContent).toContain('网络错误，列表加载失败，请重试')
+    expect(container.textContent).not.toContain('没有符合条件的条目')
+  })
+
+  it('shows a login failure when creating a draft is rejected', async () => {
+    const container = await mount()
+    mocks.kunFetchPost.mockRejectedValueOnce(
+      new Error('Kun Fetch error! Status: 401')
+    )
+    await act(async () => {
+      button(container, '新建投稿')!.click()
+    })
+    await act(async () => {})
+    expect(container.textContent).toContain('登录已失效，请重新登录后再试')
+    expect(mocks.push).not.toHaveBeenCalled()
   })
 
   it('hides a rejected submission locally without touching balance or draft storage', async () => {

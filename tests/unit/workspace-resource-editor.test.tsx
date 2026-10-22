@@ -137,19 +137,31 @@ vi.mock('~/components/dashboard/ui/select', async () => {
     SelectTrigger: ({
       'aria-label': ariaLabel,
       'aria-labelledby': ariaLabelledby,
-      className
+      'aria-invalid': ariaInvalid,
+      'aria-describedby': ariaDescribedBy,
+      className,
+      id,
+      tabIndex
     }: {
       children?: React.ReactNode
       'aria-label'?: string
       'aria-labelledby'?: string
+      'aria-invalid'?: boolean
+      'aria-describedby'?: string
       className?: string
+      id?: string
+      tabIndex?: number
     }) => {
       const ctx = ReactModule.useContext(Ctx)
       return (
         <select
+          id={id}
           aria-label={ariaLabel}
           aria-labelledby={ariaLabelledby}
+          aria-invalid={ariaInvalid || undefined}
+          aria-describedby={ariaDescribedBy}
           className={className}
+          tabIndex={tabIndex}
           disabled={ctx.disabled}
           value={ctx.value}
           onChange={(event) => ctx.onValueChange?.(event.target.value)}
@@ -310,7 +322,7 @@ const detail = (
   actionableCount: 0,
   capabilities: { canEdit: true, canDelete: true, canUpload: true },
   note: '备注',
-  type: ['pc'],
+  type: ['pc', 'official-zh'],
   language: ['zh-Hans'],
   platform: ['windows'],
   baseLinks: [
@@ -594,6 +606,7 @@ describe('workspace resource editor', () => {
       ]
     })
     mocks.kunFetchPut.mockResolvedValue({
+      id: 9,
       links: [
         { id: 1, version: 2 },
         { id: 2, version: 5 }
@@ -669,6 +682,7 @@ describe('workspace resource editor', () => {
     mocks.toast.success.mockClear()
     mocks.toast.error.mockClear()
     mocks.kunFetchPut.mockResolvedValue({
+      id: 9,
       links: [
         { id: 1, version: 2 },
         { id: 2, version: 5 }
@@ -740,6 +754,7 @@ describe('workspace resource editor', () => {
     await act(async () => {
       button(container, '删除资源')!.click()
     })
+    mocks.kunFetchDelete.mockResolvedValueOnce({ deleted: true })
     await act(async () => {
       button(dom!.window.document, '确认删除')!.click()
     })
@@ -968,7 +983,7 @@ describe('workspace resource editor', () => {
     mocks.axiosPost.mockResolvedValue({
       data: {
         filetype: 's3',
-        uploadId: 'up-1',
+        uploadId: '11111111-1111-4111-8111-111111111111',
         fileHash: 'abc',
         fileSize: '9MB'
       }
@@ -989,6 +1004,7 @@ describe('workspace resource editor', () => {
       return Promise.resolve(current)
     })
     mocks.kunFetchPut.mockResolvedValue({
+      id: 9,
       links: [
         { id: 1, version: 2 },
         { id: 2, version: 6 }
@@ -1123,6 +1139,7 @@ describe('workspace resource editor', () => {
       return Promise.resolve(current)
     })
     mocks.kunFetchPut.mockResolvedValue({
+      id: 9,
       links: [
         { id: 1, version: 2 },
         { id: 2, version: 5 }
@@ -1360,7 +1377,18 @@ describe('workspace resource editor', () => {
         maintenanceItem({ state: 'handled', capabilities: { actions: [] } })
       ]
     })
-    mocks.kunFetchPost.mockResolvedValue({ item: current.maintenance[0] })
+    const handled = current.maintenance[0]!
+    mocks.kunFetchPost.mockResolvedValue({
+      item: handled,
+      link: {
+        ...handled.health,
+        patchId: handled.patchId,
+        resourceId: handled.resourceId,
+        linkId: handled.linkId
+      },
+      changed: true,
+      notifiedCount: 0
+    })
     const confirm = dom!.window.document.querySelector('[role="alertdialog"]')!
     await act(async () => {
       button(confirm, '确认')!.click()
@@ -1797,6 +1825,795 @@ describe('workspace resource editor', () => {
     ])
     expect(menuLabels('资源平台')).toEqual(allowedLabels('patch', []))
     expect(container.textContent).toContain('民汉补丁')
+  })
+
+  it('keeps the draft when save commits but the refresh fails', async () => {
+    const container = await mount()
+    const password = container.querySelector(
+      'input[aria-label="解压码"]'
+    ) as HTMLInputElement
+    await act(async () => {
+      setValue(password, 'kept-secret')
+    })
+    const readsBefore = mocks.kunFetchGet.mock.calls.filter(
+      (call) => call[0] === '/workspace/resources/9'
+    ).length
+    mocks.kunFetchPut.mockResolvedValue({ id: 9, links: [], linkChecks: [] })
+    mocks.kunFetchGet.mockResolvedValueOnce('读取失败')
+    await act(async () => {
+      button(container, '保存')!.click()
+    })
+    await settle()
+    expect(password.value).toBe('kept-secret')
+    expect(container.textContent).toContain('保存已经成功')
+    expect(container.textContent).toContain('读取失败')
+    expect(container.textContent).toContain('载入最新版本')
+    expect(mocks.toast.success).toHaveBeenCalledWith('已保存')
+    expect(mocks.toast.error).not.toHaveBeenCalled()
+    const save = button(container, '保存') as HTMLButtonElement
+    expect(save.disabled).toBe(true)
+    const puts = mocks.kunFetchPut.mock.calls.length
+    await act(async () => {
+      save.click()
+    })
+    await settle()
+    expect(mocks.kunFetchPut).toHaveBeenCalledTimes(puts)
+    expect(
+      mocks.kunFetchGet.mock.calls.filter(
+        (call) => call[0] === '/workspace/resources/9'
+      )
+    ).toHaveLength(readsBefore + 1)
+
+    await act(async () => {
+      button(container, '载入最新版本')!.click()
+    })
+    const dialog = dom!.window.document.querySelector('[role="alertdialog"]')!
+    expect(dialog.textContent).toContain('保存已经成功')
+    expect(dialog.textContent).toContain('不会再次写入')
+    expect(dialog.textContent).not.toContain('尚未保存的修改')
+    await act(async () => {
+      button(dialog, '取消')!.click()
+    })
+    expect(
+      mocks.kunFetchGet.mock.calls.filter(
+        (call) => call[0] === '/workspace/resources/9'
+      )
+    ).toHaveLength(readsBefore + 1)
+    expect(password.value).toBe('kept-secret')
+    expect(mocks.kunFetchPut).toHaveBeenCalledTimes(puts)
+
+    await act(async () => {
+      button(container, '载入最新版本')!.click()
+    })
+    const again = dom!.window.document.querySelector('[role="alertdialog"]')!
+    await act(async () => {
+      button(again, '确认')!.click()
+    })
+    await settle()
+    expect(password.value).toBe('pw')
+    expect(container.textContent).not.toContain('保存已经成功')
+    expect(
+      mocks.kunFetchGet.mock.calls.filter(
+        (call) => call[0] === '/workspace/resources/9'
+      ).length
+    ).toBeGreaterThan(readsBefore + 1)
+  })
+
+  it('keeps an edit made while the committed save is still reading', async () => {
+    const container = await mount()
+    const password = container.querySelector(
+      'input[aria-label="解压码"]'
+    ) as HTMLInputElement
+    await act(async () => {
+      setValue(password, 'before-save')
+    })
+    let releaseRefresh: ((value: unknown) => void) | undefined
+    mocks.kunFetchPut.mockResolvedValue({ id: 9, links: [], linkChecks: [] })
+    mocks.kunFetchGet.mockImplementation((url: string) => {
+      if (url === '/auth/captcha') {
+        return Promise.resolve({ images: [], sessionId: 'captcha-session' })
+      }
+      return new Promise((resolve) => {
+        releaseRefresh = resolve
+      })
+    })
+    await act(async () => {
+      button(container, '保存')!.click()
+    })
+    await act(async () => {
+      setValue(password, 'in-flight-secret')
+    })
+    releaseRefresh?.('读取失败')
+    await settle()
+    expect(password.value).toBe('in-flight-secret')
+    expect(container.textContent).toContain('保存已经成功')
+    expect(mocks.toast.success).toHaveBeenCalledWith('已保存')
+    expect(mocks.toast.error).not.toHaveBeenCalled()
+    const save = button(container, '保存') as HTMLButtonElement
+    expect(save.disabled).toBe(false)
+    mocks.kunFetchGet.mockImplementation(async (url: string) => {
+      if (url === '/auth/captcha') {
+        return { images: [], sessionId: 'captcha-session' }
+      }
+      return current
+    })
+    await act(async () => {
+      save.click()
+    })
+    await settle()
+    const body = mocks.kunFetchPut.mock.calls.at(-1)?.[1] as {
+      links: Array<{ password?: string }>
+    }
+    expect(body.links[1]?.password).toBe('in-flight-secret')
+    expect(mocks.kunFetchPut).toHaveBeenCalledTimes(2)
+  })
+
+  it.each([
+    ['Kun Fetch error! Status: 401', '登录已失效，请重新登录后再试'],
+    ['Kun Fetch error! Status: 429', '操作过于频繁，请稍后重试'],
+    ['offline', '网络错误，保存失败，请重试']
+  ])(
+    'keeps the draft when save fails before commit (%s)',
+    async (raw, expected) => {
+      const container = await mount()
+      const password = container.querySelector(
+        'input[aria-label="解压码"]'
+      ) as HTMLInputElement
+      await act(async () => {
+        setValue(password, 'still-here')
+      })
+      const reads = mocks.kunFetchGet.mock.calls.filter(
+        (call) => call[0] === '/workspace/resources/9'
+      ).length
+      mocks.kunFetchPut.mockRejectedValueOnce(new Error(raw))
+      await act(async () => {
+        button(container, '保存')!.click()
+      })
+      await settle()
+      expect(password.value).toBe('still-here')
+      expect(container.textContent).toContain(expected)
+      expect(mocks.toast.error).toHaveBeenCalledWith(expected)
+      expect(mocks.toast.success).not.toHaveBeenCalled()
+      expect(
+        mocks.kunFetchGet.mock.calls.filter(
+          (call) => call[0] === '/workspace/resources/9'
+        )
+      ).toHaveLength(reads)
+      expect(container.textContent).not.toContain('保存已经成功')
+    }
+  )
+
+  it('says the save succeeded when the following read throws', async () => {
+    const container = await mount()
+    mocks.kunFetchPut.mockResolvedValue({ id: 9, links: [], linkChecks: [] })
+    mocks.kunFetchGet.mockRejectedValueOnce(
+      new Error('Kun Fetch error! Status: 500')
+    )
+    await act(async () => {
+      button(container, '保存')!.click()
+    })
+    await settle()
+    expect(container.textContent).toContain('保存已经成功')
+    expect(container.textContent).toContain(
+      '服务器暂时无法完成操作，请稍后重试'
+    )
+    expect(mocks.toast.success).toHaveBeenCalledWith('已保存')
+    expect(mocks.toast.error).not.toHaveBeenCalled()
+  })
+
+  it('keeps the delete dialog open when deletion fails', async () => {
+    const container = await mount()
+    mocks.kunFetchDelete.mockRejectedValueOnce(
+      new Error('Kun Fetch error! Status: 403; Message: 不能删除这份资源')
+    )
+    await act(async () => {
+      button(container, '删除资源')!.click()
+    })
+    const dialog = dom!.window.document.querySelector('[role="alertdialog"]')!
+    await act(async () => {
+      button(dialog, '确认删除')!.click()
+    })
+    await settle()
+    const stillOpen = dom!.window.document.querySelector(
+      '[role="alertdialog"]'
+    )!
+    expect(stillOpen.textContent).toContain('不能删除这份资源')
+    expect(mocks.push).not.toHaveBeenCalled()
+    expect(mocks.kunFetchDelete).toHaveBeenCalledTimes(1)
+    await act(async () => {
+      button(stillOpen, '取消')!.click()
+    })
+    expect(
+      dom!.window.document.querySelector('[role="alertdialog"]')
+    ).toBeNull()
+    expect(mocks.kunFetchDelete).toHaveBeenCalledTimes(1)
+    expect(container.textContent).toContain('资源甲')
+    expect(
+      [...container.querySelectorAll('[role="alert"]')].some((node) =>
+        node.textContent?.includes('不能删除这份资源')
+      )
+    ).toBe(true)
+
+    mocks.kunFetchDelete.mockResolvedValueOnce('资源不存在或不可访问')
+    await act(async () => {
+      button(container, '删除资源')!.click()
+    })
+    const second = dom!.window.document.querySelector('[role="alertdialog"]')!
+    await act(async () => {
+      button(second, '确认删除')!.click()
+    })
+    await settle()
+    expect(second.textContent).toContain('资源不存在或不可访问')
+    expect(mocks.push).not.toHaveBeenCalled()
+
+    mocks.kunFetchDelete.mockRejectedValueOnce(new Error('offline'))
+    await act(async () => {
+      button(second, '确认删除')!.click()
+    })
+    await settle()
+    expect(second.textContent).toContain('网络错误，删除失败，请重试')
+    expect(mocks.kunFetchDelete).toHaveBeenCalledTimes(3)
+    expect(mocks.push).not.toHaveBeenCalled()
+  })
+
+  it('keeps an invalid size, focuses it, and does not write', async () => {
+    const container = await mount()
+    const size = container.querySelector(
+      'input[aria-label="资源大小"]'
+    ) as HTMLInputElement
+    const password = container.querySelector(
+      'input[aria-label="解压码"]'
+    ) as HTMLInputElement
+    await act(async () => {
+      setValue(size, '1TB')
+    })
+    await act(async () => {
+      button(container, '保存')!.click()
+    })
+    await settle()
+    expect(mocks.kunFetchPut).not.toHaveBeenCalled()
+    expect(size.value).toBe('1TB')
+    expect(password.value).toBe('pw')
+    expect(size.getAttribute('aria-invalid')).toBe('true')
+    const hint = [...container.querySelectorAll('[role="alert"]')].find(
+      (node) => node.id === size.getAttribute('aria-describedby')
+    )
+    expect(hint?.textContent).toContain('大小')
+    expect(hint?.textContent).toMatch(/MB/)
+    expect(hint?.textContent).not.toContain('1TB')
+    expect(dom!.window.document.activeElement).toBe(size)
+    await act(async () => {
+      button(container, '保存')!.click()
+    })
+    await settle()
+    expect(mocks.kunFetchPut).not.toHaveBeenCalled()
+    expect(size.value).toBe('1TB')
+  })
+
+  it('explains a hidden hash without adding an editor or writing', async () => {
+    const hidden = 'h'.repeat(108)
+    current = detail({
+      links: [
+        { id: 1, version: 1, storage: 'touchgal', protected: true },
+        {
+          id: 2,
+          version: 4,
+          storage: 'user',
+          protected: false,
+          content: 'https://origin.example/a',
+          code: 'code',
+          password: 'pw',
+          hash: hidden,
+          size: '1GB'
+        }
+      ]
+    })
+    const container = await mount()
+    expect(container.querySelector('input[aria-label="校验值"]')).toBeNull()
+    await act(async () => {
+      button(container, '保存')!.click()
+    })
+    await settle()
+    expect(mocks.kunFetchPut).not.toHaveBeenCalled()
+    expect(container.querySelector('input[aria-label="校验值"]')).toBeNull()
+    const card = container.querySelector('#workspace-link-card-1')
+    expect(card?.textContent).toContain('校验值')
+    expect(card?.textContent).toContain('最多 107 个字符')
+    expect(card?.textContent).toContain('这条校验值不能在这里修改')
+    expect(card?.textContent).not.toContain(hidden)
+    expect(dom!.window.document.activeElement).toBe(card)
+    expect(
+      (
+        container.querySelector(
+          'input[aria-label="解压码"]'
+        ) as HTMLInputElement
+      ).value
+    ).toBe('pw')
+  })
+
+  it('keeps a new invalid link instead of dropping the draft', async () => {
+    const container = await mount()
+    await act(async () => {
+      button(container, '添加链接')!.click()
+    })
+    await act(async () => {
+      button(container, '保存')!.click()
+    })
+    await settle()
+    expect(mocks.kunFetchPut).not.toHaveBeenCalled()
+    expect(container.textContent).toContain('链接 #3')
+    expect(
+      container.querySelectorAll('input[aria-label="链接地址"]')
+    ).toHaveLength(2)
+    expect(
+      (
+        container.querySelector(
+          'input[aria-label="解压码"]'
+        ) as HTMLInputElement
+      ).value
+    ).toBe('pw')
+  })
+
+  it('does not write again after a committed upload whose reread failed', async () => {
+    current = detail({
+      links: [
+        { id: 1, version: 1, storage: 'touchgal', protected: true },
+        {
+          id: 2,
+          version: 4,
+          storage: 's3',
+          protected: false,
+          content: 'https://origin.example/a',
+          code: '',
+          password: 'pw',
+          hash: 'hash',
+          size: '1GB'
+        }
+      ]
+    })
+    workspaceUser.role = 3
+    const container = await mount()
+    const input = container.querySelector(
+      'input[aria-label="上传资源文件"]'
+    ) as HTMLInputElement
+    const file = new File(['abc'], 'game.zip', { type: 'application/zip' })
+    Object.defineProperty(input, 'files', { configurable: true, value: [file] })
+    mocks.axiosPost.mockResolvedValue({
+      data: {
+        filetype: 's3',
+        uploadId: '11111111-1111-4111-8111-111111111111',
+        fileHash: 'abc',
+        fileSize: '9MB'
+      }
+    })
+    await act(async () => {
+      input.dispatchEvent(new dom!.window.Event('change', { bubbles: true }))
+    })
+    await settle()
+    mocks.kunFetchPut.mockResolvedValue({ id: 9, links: [], linkChecks: [] })
+    mocks.kunFetchGet.mockResolvedValueOnce('读取失败')
+    await act(async () => {
+      button(container, '保存')!.click()
+    })
+    await settle()
+    expect(mocks.toast.success).toHaveBeenCalledWith('已保存')
+    expect(container.textContent).toContain('保存已经成功')
+    const save = button(container, '保存') as HTMLButtonElement
+    expect(save.disabled).toBe(true)
+    const puts = mocks.kunFetchPut.mock.calls.length
+    await act(async () => {
+      save.click()
+    })
+    await settle()
+    expect(mocks.kunFetchPut).toHaveBeenCalledTimes(puts)
+    expect(mocks.kunFetchPut.mock.calls[0]?.[1].links[1].uploadId).toBe(
+      '11111111-1111-4111-8111-111111111111'
+    )
+  })
+
+  it.each([
+    ['empty object', {}],
+    ['empty body', undefined],
+    ['wrong resource', { id: 8, links: [], linkChecks: [] }]
+  ] as const)(
+    'does not call a %s 200 saved or write it again',
+    async (_label, body) => {
+      const container = await mount()
+      const password = container.querySelector(
+        'input[aria-label="解压码"]'
+      ) as HTMLInputElement
+      await act(async () => {
+        setValue(password, 'kept-secret')
+      })
+      const reads = mocks.kunFetchGet.mock.calls.filter(
+        (call) => call[0] === '/workspace/resources/9'
+      ).length
+      mocks.kunFetchPut.mockResolvedValue(body)
+      await act(async () => {
+        button(container, '保存')!.click()
+      })
+      await settle()
+      expect(password.value).toBe('kept-secret')
+      expect(container.textContent).toContain('没有确认这次保存是否已经写入')
+      expect(container.textContent).not.toContain('保存已经成功')
+      expect(mocks.toast.success).not.toHaveBeenCalled()
+      expect(mocks.toast.error).not.toHaveBeenCalled()
+      expect(mocks.toast).toHaveBeenCalledWith(
+        '没有确认这次保存是否已经写入。请使用「载入最新版本」核对。不要为了确认而再次保存。'
+      )
+      expect(
+        mocks.kunFetchGet.mock.calls.filter(
+          (call) => call[0] === '/workspace/resources/9'
+        )
+      ).toHaveLength(reads)
+      const save = button(container, '保存') as HTMLButtonElement
+      expect(save.disabled).toBe(true)
+      await act(async () => {
+        save.click()
+      })
+      await settle()
+      expect(mocks.kunFetchPut).toHaveBeenCalledTimes(1)
+
+      await act(async () => {
+        button(container, '载入最新版本')!.click()
+      })
+      const dialog = dom!.window.document.querySelector('[role="alertdialog"]')!
+      expect(dialog.textContent).toContain('没有确认这次保存是否已经写入')
+      expect(dialog.textContent).toContain('不会再次写入')
+      expect(dialog.textContent).not.toContain('保存已经成功')
+      await act(async () => {
+        button(dialog, '取消')!.click()
+      })
+      expect(password.value).toBe('kept-secret')
+      expect(mocks.kunFetchPut).toHaveBeenCalledTimes(1)
+      expect(
+        mocks.kunFetchGet.mock.calls.filter(
+          (call) => call[0] === '/workspace/resources/9'
+        )
+      ).toHaveLength(reads)
+    }
+  )
+
+  it('keeps an edit made while an unconfirmed save is in flight', async () => {
+    const container = await mount()
+    const password = container.querySelector(
+      'input[aria-label="解压码"]'
+    ) as HTMLInputElement
+    await act(async () => {
+      setValue(password, 'before-save')
+    })
+    let release: ((value: unknown) => void) | undefined
+    mocks.kunFetchPut.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          release = resolve
+        })
+    )
+    await act(async () => {
+      button(container, '保存')!.click()
+    })
+    await act(async () => {
+      setValue(password, 'during-save')
+    })
+    release?.({})
+    await settle()
+    expect(password.value).toBe('during-save')
+    expect(mocks.toast.success).not.toHaveBeenCalled()
+    expect(container.textContent).toContain('没有确认这次保存是否已经写入')
+    const save = button(container, '保存') as HTMLButtonElement
+    expect(save.disabled).toBe(false)
+    mocks.kunFetchPut.mockResolvedValue({ id: 9, links: [], linkChecks: [] })
+    mocks.kunFetchGet.mockResolvedValueOnce('读取失败')
+    await act(async () => {
+      save.click()
+    })
+    await settle()
+    const body = mocks.kunFetchPut.mock.calls.at(-1)?.[1] as {
+      links: Array<{ password?: string }>
+    }
+    expect(body.links[1]?.password).toBe('during-save')
+    expect(mocks.toast.success).toHaveBeenCalledWith('已保存')
+  })
+
+  it('does not leave the resource after an ambiguous delete', async () => {
+    const container = await mount()
+    mocks.kunFetchDelete.mockResolvedValueOnce({})
+    await act(async () => {
+      button(container, '删除资源')!.click()
+    })
+    const dialog = dom!.window.document.querySelector('[role="alertdialog"]')!
+    await act(async () => {
+      button(dialog, '确认删除')!.click()
+    })
+    await settle()
+    expect(mocks.push).not.toHaveBeenCalled()
+    expect(mocks.kunFetchDelete).toHaveBeenCalledTimes(1)
+    expect(container.textContent).toContain('资源甲')
+    const stillOpen = dom!.window.document.querySelector(
+      '[role="alertdialog"]'
+    )!
+    expect(stillOpen.textContent).toContain('没有确认这次删除是否已经完成')
+    expect(stillOpen.textContent).toContain('不要为了确认而再次删除')
+    await act(async () => {
+      button(stillOpen, '确认删除')!.click()
+    })
+    await settle()
+    expect(mocks.kunFetchDelete).toHaveBeenCalledTimes(1)
+    expect(mocks.push).not.toHaveBeenCalled()
+    await act(async () => {
+      button(stillOpen, '取消')!.click()
+    })
+    expect(
+      [...container.querySelectorAll('[role="alert"]')].some((node) =>
+        node.textContent?.includes('没有确认这次删除是否已经完成')
+      )
+    ).toBe(true)
+    expect(container.textContent).toContain('资源甲')
+  })
+
+  it('keeps the required hint in front of a type error', async () => {
+    const container = await mount()
+    const chineseLabel = [...container.querySelectorAll('label')].find((item) =>
+      item.textContent?.includes('官中')
+    )
+    await act(async () => {
+      chineseLabel?.querySelector('input')?.click()
+    })
+    await act(async () => {
+      button(container, '保存')!.click()
+    })
+    await settle()
+    expect(mocks.kunFetchPut).not.toHaveBeenCalled()
+    const control = container.querySelector(
+      '[aria-label="中文支持"]'
+    ) as HTMLButtonElement
+    const typeControl = container.querySelector(
+      '[aria-label="资源类型"]'
+    ) as HTMLButtonElement
+    expect(control.getAttribute('aria-invalid')).toBe('true')
+    expect(control.getAttribute('aria-required')).toBeNull()
+    expect(typeControl.getAttribute('aria-invalid')).not.toBe('true')
+    const ids = control.getAttribute('aria-describedby')!.split(' ')
+    expect(ids.length).toBeGreaterThan(1)
+    const described = ids.map((id) =>
+      [...container.querySelectorAll('[id]')].find((node) => node.id === id)
+    )
+    expect(described[0]?.textContent).toContain('必填')
+    expect(described[1]?.textContent).toContain('中文支持')
+    expect(dom!.window.document.activeElement).toBe(control)
+  })
+
+  it('keeps unsupported saved values until they are explicitly cleared', async () => {
+    current = detail({
+      type: ['pc', 'legacy-type', 'official-zh'],
+      language: ['zh-Hans', 'legacy-lang'],
+      platform: ['windows', 'legacy-platform']
+    })
+    const container = await mount()
+    const clearBeside = (triggerLabel: string) => {
+      const trigger = container.querySelector(`[aria-label="${triggerLabel}"]`)
+      const grid = trigger?.parentElement?.parentElement
+      return [...(grid?.querySelectorAll('button') ?? [])].find((item) =>
+        item.textContent?.includes('移除不再支持的选项')
+      ) as HTMLButtonElement | undefined
+    }
+    for (const label of ['资源类型', '资源语言', '资源平台']) {
+      const clear = clearBeside(label)
+      expect(clear).toBeTruthy()
+      expect(clear?.disabled).toBe(false)
+    }
+    expect(container.textContent).not.toContain('legacy-type')
+    expect(container.textContent).not.toContain('legacy-lang')
+    expect(container.textContent).not.toContain('legacy-platform')
+    expect(mocks.kunFetchPut).not.toHaveBeenCalled()
+    await act(async () => {
+      clearBeside('资源平台')!.click()
+    })
+    await act(async () => {
+      clearBeside('资源语言')!.click()
+    })
+    await act(async () => {
+      clearBeside('资源类型')!.click()
+    })
+    mocks.kunFetchPut.mockResolvedValue({ id: 9, links: [], linkChecks: [] })
+    current = detail()
+    await act(async () => {
+      button(container, '保存')!.click()
+    })
+    await settle()
+    const body = mocks.kunFetchPut.mock.calls.at(-1)?.[1] as {
+      type: string[]
+      language: string[]
+      platform: string[]
+    }
+    expect(body.type).toEqual(['pc', 'official-zh'])
+    expect(body.language).toEqual(['zh-Hans'])
+    expect(body.platform).toEqual(['windows'])
+  })
+
+  it('leaves unsupported values in place when the editor is read only', async () => {
+    current = detail({
+      capabilities: { canEdit: false, canDelete: false, canUpload: false },
+      type: ['pc', 'legacy-type', 'official-zh'],
+      language: ['zh-Hans', 'legacy-lang'],
+      platform: ['windows', 'legacy-platform']
+    })
+    const container = await mount()
+    const clears = [...container.querySelectorAll('button')].filter((item) =>
+      item.textContent?.includes('移除不再支持的选项')
+    ) as HTMLButtonElement[]
+    expect(clears).toHaveLength(3)
+    await act(async () => {
+      for (const clear of clears) {
+        expect(clear.disabled).toBe(true)
+        clear.click()
+      }
+    })
+    expect(
+      [...container.querySelectorAll('button')].filter((item) =>
+        item.textContent?.includes('移除不再支持的选项')
+      )
+    ).toHaveLength(3)
+    expect(mocks.kunFetchPut).not.toHaveBeenCalled()
+  })
+
+  const pasteText = (input: HTMLInputElement, text: string) => {
+    // jsdom has no DataTransfer. The event still carries clipboard text the way a paste does.
+    const event = new dom!.window.Event('paste', {
+      bubbles: true,
+      cancelable: true
+    })
+    Object.defineProperty(event, 'clipboardData', {
+      value: {
+        getData: (type: string) =>
+          type === 'text' || type === 'text/plain' ? text : ''
+      }
+    })
+    input.dispatchEvent(event)
+  }
+
+  it('recognizes a pasted multiline share and replaces the existing code without rewriting on load', async () => {
+    const share = [
+      '迅雷云盘分享',
+      'https://pan.xunlei.com/s/synthetic-share',
+      '提取码：NEWCODE'
+    ].join('\n')
+    current = detail({
+      links: [
+        { id: 1, version: 1, storage: 'touchgal', protected: true },
+        {
+          id: 2,
+          version: 4,
+          storage: 'user',
+          protected: false,
+          content: share,
+          code: 'OLDCODE',
+          password: 'pw',
+          hash: 'hash',
+          size: '1GB'
+        }
+      ]
+    })
+    const container = await mount()
+    const address = container.querySelector(
+      'input[aria-label="链接地址"]'
+    ) as HTMLInputElement
+    const code = container.querySelector(
+      'input[aria-label="提取码"]'
+    ) as HTMLInputElement
+    // A single-line input cannot keep the newlines, but load must not parse them away.
+    expect(address.value).toContain('https://pan.xunlei.com/s/synthetic-share')
+    expect(address.value).toContain('提取码：NEWCODE')
+    expect(address.value).not.toBe('https://pan.xunlei.com/s/synthetic-share')
+    expect(code.value).toBe('OLDCODE')
+    expect(mocks.toast.success).not.toHaveBeenCalled()
+    expect(
+      container.querySelector('#workspace-link-1 input[aria-label="链接地址"]')
+    ).toBeNull()
+
+    await act(async () => {
+      pasteText(address, share)
+    })
+    expect(address.value).toBe('https://pan.xunlei.com/s/synthetic-share')
+    expect(code.value).toBe('NEWCODE')
+    expect(mocks.toast.success).toHaveBeenCalledWith('已自动识别并填入提取码')
+
+    await act(async () => {
+      pasteText(address, '备用地址\nhttps://pan.xunlei.com/s/synthetic-plain\n')
+    })
+    expect(address.value).toBe('https://pan.xunlei.com/s/synthetic-plain')
+    expect(code.value).toBe('NEWCODE')
+
+    await act(async () => {
+      pasteText(address, 'https://pan.xunlei.com/s/synthetic-query?pwd=QUERY')
+    })
+    expect(address.value).toBe(
+      'https://pan.xunlei.com/s/synthetic-query?pwd=QUERY'
+    )
+    expect(code.value).toBe('QUERY')
+  })
+
+  it('leaves an object-storage address unchanged when paste is dispatched', async () => {
+    current = detail({
+      links: [
+        {
+          id: 2,
+          version: 4,
+          storage: 's3',
+          protected: false,
+          content: 'https://origin.example/file',
+          code: 'KEEP',
+          password: '',
+          hash: 'hash',
+          size: '1GB'
+        }
+      ],
+      baseLinks: [{ id: 2, version: 4 }]
+    })
+    const container = await mount()
+    const address = container.querySelector(
+      'input[aria-label="链接地址"]'
+    ) as HTMLInputElement
+    expect(address.readOnly).toBe(true)
+    expect(address.disabled).toBe(false)
+    await act(async () => {
+      pasteText(
+        address,
+        'https://pan.xunlei.com/s/synthetic-s3\n提取码：NOWRITE'
+      )
+    })
+    expect(address.value).toBe('https://origin.example/file')
+    expect(
+      (
+        container.querySelector(
+          'input[aria-label="提取码"]'
+        ) as HTMLInputElement
+      ).value
+    ).toBe('KEEP')
+    expect(mocks.toast.success).not.toHaveBeenCalled()
+  })
+
+  it('leaves a disabled address and its existing code unchanged when paste is dispatched', async () => {
+    current = detail({
+      capabilities: { canEdit: false, canDelete: false, canUpload: false },
+      links: [
+        { id: 1, version: 1, storage: 'touchgal', protected: true },
+        {
+          id: 2,
+          version: 4,
+          storage: 'user',
+          protected: false,
+          content: 'https://user.example/keep',
+          code: 'OLDCODE',
+          password: 'pw',
+          hash: 'hash',
+          size: '1GB'
+        }
+      ]
+    })
+    const container = await mount()
+    const address = container.querySelector(
+      'input[aria-label="链接地址"]'
+    ) as HTMLInputElement
+    expect(address.disabled).toBe(true)
+    expect(
+      container.querySelector('#workspace-link-1 input[aria-label="链接地址"]')
+    ).toBeNull()
+    await act(async () => {
+      pasteText(
+        address,
+        'https://pan.xunlei.com/s/synthetic-disabled\n提取码：NOWRITE'
+      )
+    })
+    expect(address.value).toBe('https://user.example/keep')
+    expect(
+      (
+        container.querySelector(
+          'input[aria-label="提取码"]'
+        ) as HTMLInputElement
+      ).value
+    ).toBe('OLDCODE')
+    expect(mocks.toast.success).not.toHaveBeenCalled()
   })
 })
 

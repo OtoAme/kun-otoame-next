@@ -30,6 +30,7 @@ import type {
 import { kunFetchGet } from '~/utils/kunFetch'
 import { WorkspaceMaintenance } from './WorkspaceMaintenance'
 import { WorkspaceResourceCard } from './WorkspaceResourceCard'
+import { workspaceActionError } from './WorkspaceShell'
 
 const STATUS_LABEL: Record<WorkspaceResourceStatus, string> = {
   all: '全部状态',
@@ -101,9 +102,9 @@ function WorkspaceResourceList() {
         return
       }
       setData(response)
-    } catch {
+    } catch (error) {
       if (generation !== generationRef.current) return
-      setError('网络错误，列表加载失败，请重试')
+      setError(workspaceActionError(error, '网络错误，列表加载失败，请重试'))
     } finally {
       if (generation === generationRef.current) setLoading(false)
     }

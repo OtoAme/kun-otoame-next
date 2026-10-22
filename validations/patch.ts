@@ -69,6 +69,9 @@ export const getPatchCommentSchema = z.object({
   commentId: z.coerce.number().min(1).max(9999999).optional()
 })
 
+const resourceTextHasNoNul = (value: string) => !value.includes('\u0000')
+const resourceNulFeedback = { message: '不能包含空字符，请删除后重试' }
+
 export const patchResourceLinkSchema = z
   .object({
     id: z.coerce.number().min(1).max(9999999).optional(),
@@ -78,18 +81,25 @@ export const patchResourceLinkSchema = z
         message: '非法的资源链接类型'
       }),
     uploadId: z.string().uuid().optional(),
-    hash: z.string().max(107),
+    hash: z.string().max(107).refine(resourceTextHasNoNul, resourceNulFeedback),
     content: z
       .string()
-      .max(1007, { message: '您的资源链接内容最多 1007 个字符' }),
+      .max(1007, { message: '您的资源链接内容最多 1007 个字符' })
+      .refine(resourceTextHasNoNul, resourceNulFeedback),
     size: z
       .string()
-      .regex(ResourceSizeRegex, { message: '请选择资源的大小, MB 或 GB' }),
+      .max(107, { message: '资源大小最多 107 个字符' })
+      .regex(ResourceSizeRegex, { message: '请选择资源的大小, MB 或 GB' })
+      .refine(resourceTextHasNoNul, resourceNulFeedback),
     code: z
       .string()
       .trim()
-      .max(1007, { message: '资源提取码长度最多 1007 位' }),
-    password: z.string().max(1007, { message: '资源解压码长度最多 1007 位' })
+      .max(1007, { message: '资源提取码长度最多 1007 位' })
+      .refine(resourceTextHasNoNul, resourceNulFeedback),
+    password: z
+      .string()
+      .max(1007, { message: '资源解压码长度最多 1007 位' })
+      .refine(resourceTextHasNoNul, resourceNulFeedback)
   })
   .superRefine((link, ctx) => {
     if (link.storage === 's3') {
@@ -110,12 +120,18 @@ export const patchResourceSchemaBase = z.object({
   section: z.enum(SUPPORTED_RESOURCE_SECTION, {
     message: '资源链接类型仅能为 OtomeGame 或补丁'
   }),
-  name: z.string().max(300, { message: '资源名称最多 300 个字符' }),
+  name: z
+    .string()
+    .max(300, { message: '资源名称最多 300 个字符' })
+    .refine(resourceTextHasNoNul, resourceNulFeedback),
   links: z
     .array(patchResourceLinkSchema)
     .min(1, { message: '请至少添加一个资源链接' })
     .max(10, { message: '单个资源最多添加 10 条链接' }),
-  note: z.string().max(10007, { message: '资源备注最多 10007 字' }),
+  note: z
+    .string()
+    .max(10007, { message: '资源备注最多 10007 字' })
+    .refine(resourceTextHasNoNul, resourceNulFeedback),
   type: z
     .array(z.string())
     .min(1, { message: '请选择至少一个资源类型' })

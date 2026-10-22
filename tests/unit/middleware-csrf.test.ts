@@ -32,6 +32,7 @@ describe('middleware CSRF responses', () => {
 
   afterEach(() => {
     vi.unstubAllEnvs()
+    vi.restoreAllMocks()
   })
 
   it.each(rejectedHeaders)(
@@ -91,5 +92,54 @@ describe('middleware CSRF responses', () => {
 
     expect(await middleware(request)).toBe(authResponse)
     expect(authMiddleware).toHaveBeenCalledExactlyOnceWith(request)
+  })
+
+  it('correlates only actual workspace CSRF rejection with an Edge-safe generated ID and safe log', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const response = await middleware(
+      new NextRequest(
+        'http://127.0.0.1:33109/api/workspace/resources/7?query=QUERY_CANARY',
+        {
+          method: 'PUT',
+          body: 'BODY_CANARY',
+          headers: {
+            Origin: 'https://invalid.example.test',
+            Cookie: 'COOKIE_CANARY',
+            Authorization: 'AUTH_CANARY',
+            'X-Request-Id': 'INBOUND_CANARY'
+          }
+        }
+      )
+    )
+    expect(response.status).toBe(403)
+    expect(await response.json()).toBe('非法请求来源')
+    expect(response.headers.get('cache-control')).toBe('private, no-store')
+    const id = response.headers.get('x-request-id')
+    expect(id).toMatch(/^[0-9a-f-]{36}$/)
+    expect(id).not.toBe('INBOUND_CANARY')
+    expect(warn).toHaveBeenCalledWith(
+      '[Workspace]',
+      expect.objectContaining({
+        requestId: id,
+        operation: 'workspace.csrf',
+        status: 403,
+        result: 'denied'
+      })
+    )
+    expect(JSON.stringify(warn.mock.calls)).not.toContain('CANARY')
+    expect(authMiddleware).not.toHaveBeenCalled()
+  })
+
+  it('does not instrument a different API whose name only starts with workspace', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const response = await middleware(
+      new NextRequest(
+        'http://127.0.0.1:33109/api/workspace-other/PRIVATE_CANARY',
+        { method: 'POST', body: '{}' }
+      )
+    )
+    expect(response.status).toBe(403)
+    expect(response.headers.get('x-request-id')).toBeNull()
+    expect(warn).not.toHaveBeenCalled()
   })
 })

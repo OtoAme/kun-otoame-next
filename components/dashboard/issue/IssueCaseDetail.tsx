@@ -47,6 +47,7 @@ import {
 } from '~/components/dashboard/ui/select'
 import { kunFetchGet, kunFetchPost } from '~/utils/kunFetch'
 import { formatChinaDateTime } from '~/utils/fixedTimezoneDate'
+import { useOptionalWorkspaceUser } from '~/components/dashboard/workspace/WorkspaceUserContext'
 import { useUserStore } from '~/store/userStore'
 import {
   CASE_CONTENT_MAX_LENGTH,
@@ -248,7 +249,11 @@ function CaseTimeline({
 
 export function IssueCaseDetail({ caseId, onChanged }: IssueCaseDetailProps) {
   const router = useRouter()
-  const { user } = useUserStore((state) => state)
+  const { user: storeUser } = useUserStore((state) => state)
+  // 工作台 provider 在场时以服务端身份为准；旧 store 不能覆盖它。工作台外仍读 store。
+  const workspaceUser = useOptionalWorkspaceUser()
+  const viewerId = workspaceUser ? workspaceUser.id : storeUser.uid
+  const viewerRole = workspaceUser ? workspaceUser.role : storeUser.role
   const [detail, setDetail] = useState<CaseDetail | null>(null)
   const [loadError, setLoadError] = useState('')
   const [loading, setLoading] = useState(true)
@@ -654,15 +659,15 @@ export function IssueCaseDetail({ caseId, onChanged }: IssueCaseDetailProps) {
   // UI1：/case/[id]/resolve 只给发布者用。管理员在用户侧查看时不显示该表单，
   // 改给「在后台处理」入口，站方裁决由后台组件执行。
   const viewerIsOwnerPublisher =
-    detail.ownerType === 'publisher' && detail.owner?.id === user.uid
+    detail.ownerType === 'publisher' && detail.owner?.id === viewerId
   // D36：超时转交且报告者没有重开过时，原发布者可以直接结案。用户侧在站方事项上
   // 拿到 canResolve 的只有网站管理员和这位原发布者，网站管理员仍走后台入口。
   const viewerClosesHandedOff =
-    capabilities.canResolve && detail.ownerType === 'staff' && user.role < 3
+    capabilities.canResolve && detail.ownerType === 'staff' && viewerRole < 3
   const showPublisherResolve =
     capabilities.canResolve && (viewerIsOwnerPublisher || viewerClosesHandedOff)
   const showStaffDashboardEntry =
-    user.role >= 3 &&
+    viewerRole >= 3 &&
     !viewerIsOwnerPublisher &&
     CASE_UNRESOLVED_STATUSES.includes(
       detail.status as (typeof CASE_UNRESOLVED_STATUSES)[number]
@@ -924,7 +929,7 @@ export function IssueCaseDetail({ caseId, onChanged }: IssueCaseDetailProps) {
             // reporter 键仅在有权识别报告者的视角下才下发（服务端按
             // includeReporter 整键省略），所以它在不在就是判据。
             identifiesReporter={'reporter' in detail}
-            viewerId={user.uid}
+            viewerId={viewerId}
           />
         ) : (
           <p className="py-4 text-center text-sm text-muted-foreground">

@@ -22,9 +22,24 @@ export const middleware = async (request: NextRequest) => {
   if (request.nextUrl.pathname.startsWith('/api')) {
     const csrfError = verifyKunCsrf(request)
     if (csrfError) {
+      const workspace =
+        request.nextUrl.pathname === '/api/workspace' ||
+        request.nextUrl.pathname.startsWith('/api/workspace/')
+      const requestId = workspace ? crypto.randomUUID() : undefined
+      if (requestId)
+        console.warn('[Workspace]', {
+          requestId,
+          operation: 'workspace.csrf',
+          route: '/api/workspace/[csrf]',
+          status: 403,
+          result: 'denied'
+        })
       return NextResponse.json(csrfError, {
         status: 403,
-        headers: { 'Cache-Control': 'private, no-store' }
+        headers: {
+          'Cache-Control': 'private, no-store',
+          ...(requestId ? { 'X-Request-Id': requestId } : {})
+        }
       })
     }
     return NextResponse.next()
