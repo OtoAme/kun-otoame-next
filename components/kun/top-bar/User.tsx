@@ -38,27 +38,43 @@ export const KunTopBarUser = () => {
     if (!isMounted) {
       return
     }
-    if (!user.uid) {
-      return
-    }
+
+    let active = true
+    const uidAtStart = user.uid
 
     const getUserSession = async () => {
-      const res = await kunFetchGet<KunResponse<UserSession>>('/user/session')
+      let res: KunResponse<UserSession>
+      try {
+        res = await kunFetchGet<KunResponse<UserSession>>('/user/session')
+      } catch {
+        return
+      }
+      if (!active || useUserStore.getState().user.uid !== uidAtStart) {
+        return
+      }
+
       if (typeof res === 'string') {
+        if (!uidAtStart) {
+          return
+        }
         toast.error(res)
         kunFetchPost('/user/status/logout').catch(() => {})
         logout()
         setUnreadMessageStatus(emptyUnreadStatus)
         router.push('/login')
-      } else {
-        setUser(res.user)
-        if (res.unread) {
-          setUnreadMessageStatus(res.unread)
-        }
+        return
+      }
+
+      setUser(res.user)
+      if (res.unread) {
+        setUnreadMessageStatus(res.unread)
       }
     }
 
     getUserSession()
+    return () => {
+      active = false
+    }
   }, [isMounted, user.uid, logout, router, setUnreadMessageStatus, setUser])
 
   const hasUnread = hasUnreadNotification || hasUnreadConversation
