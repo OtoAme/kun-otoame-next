@@ -1,4 +1,4 @@
-import sharp from 'sharp'
+import sharp, { type WebpOptions } from 'sharp'
 
 import { checkBufferSize } from '~/app/api/utils/checkBufferSize'
 import { createAnimatedAvifThumbnail } from '~/app/api/edit/galleryAnimatedAvifThumbnail'
@@ -215,7 +215,7 @@ const processAnimatedWebpGalleryThumbnail = async (
   )
   const thumbnailHeight = Math.min(GALLERY_THUMBNAIL_MAX_HEIGHT, maxFrameHeight)
 
-  const webpOptions: sharp.WebpOptions = {
+  const webpOptions: WebpOptions = {
     quality: WEBP_THUMBNAIL_QUALITY,
     effort: WEBP_THUMBNAIL_EFFORT,
     minSize: true

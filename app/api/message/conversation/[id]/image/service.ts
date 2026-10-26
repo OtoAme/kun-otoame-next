@@ -1,5 +1,5 @@
 import { randomUUID } from 'crypto'
-import sharp from 'sharp'
+import sharp, { type Metadata } from 'sharp'
 import { checkBufferSize } from '~/app/api/utils/checkBufferSize'
 import { prisma } from '~/prisma/index'
 import { deleteFileFromS3, uploadImageToS3 } from '~/lib/s3'
@@ -247,7 +247,7 @@ export const uploadConversationImage = async (
     return '图片压缩后仍超过 1.5 MB'
   }
 
-  let metadata: sharp.Metadata
+  let metadata: Metadata
   try {
     metadata = await sharp(processed).metadata()
   } catch (error) {
