@@ -203,7 +203,6 @@ describe('dashboard shell', () => {
     await render(4)
     for (const href of [
       '/dashboard/user',
-      '/admin/feedback',
       '/admin/setting',
       '/edit/create'
     ]) {

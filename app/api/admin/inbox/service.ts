@@ -326,7 +326,7 @@ const feedbackItem = (row: FeedbackRow, now: Date): InboxItem => ({
   subtitle: row.sender?.name ?? '',
   actor: row.sender,
   ...waiting(row.created, now),
-  targetHref: '/admin/feedback',
+  targetHref: `/dashboard/archive/feedback?id=${row.id}`,
   badges: ['反馈', '只读'],
   readOnly: true,
   payload: {
@@ -453,8 +453,7 @@ const reportItem = async (
     subtitle: `${row.patch.name} · ${row.reported_user.name}`,
     actor: row.sender,
     ...waiting(row.created, now),
-    targetHref:
-      targetType === 'rating' ? '/admin/rating-report' : '/admin/report',
+    targetHref: `/dashboard/archive/report?targetType=${targetType}&id=${row.id}`,
     badges: [targetType === 'rating' ? '评价举报' : '评论举报', '只读'],
     readOnly: true,
     payload

@@ -129,23 +129,14 @@ export const DASHBOARD_NAV_GROUPS: DashboardNavGroup[] = [
       {
         id: 'archive-feedback',
         label: '旧反馈',
-        href: '/admin/feedback',
-        minRole: 4,
-        legacy: true
+        href: '/dashboard/archive/feedback',
+        minRole: 3
       },
       {
         id: 'archive-report',
-        label: '旧评论举报',
-        href: '/admin/report',
-        minRole: 4,
-        legacy: true
-      },
-      {
-        id: 'archive-rating-report',
-        label: '旧评价举报',
-        href: '/admin/rating-report',
-        minRole: 4,
-        legacy: true
+        label: '旧举报',
+        href: '/dashboard/archive/report',
+        minRole: 3
       }
     ]
   },
