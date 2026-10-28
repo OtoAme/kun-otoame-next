@@ -101,9 +101,8 @@ export const DASHBOARD_NAV_GROUPS: DashboardNavGroup[] = [
       {
         id: 'sticker',
         label: '贴纸',
-        href: '/admin/stickers',
-        minRole: 3,
-        legacy: true
+        href: '/dashboard/sticker',
+        minRole: 3
       },
       {
         id: 'link-health',

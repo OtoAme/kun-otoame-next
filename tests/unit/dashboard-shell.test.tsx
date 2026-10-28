@@ -185,7 +185,7 @@ describe('dashboard shell', () => {
     )
   }
 
-  it('hides pages the current role cannot open and loads legacy pages in full', async () => {
+  it('hides pages the current role cannot open and links only console pages', async () => {
     await render(3)
     expect(container.querySelector('a[href="/dashboard/user"]')).toBeNull()
     expect(container.querySelector('a[href="/admin/feedback"]')).toBeNull()
@@ -193,9 +193,8 @@ describe('dashboard shell', () => {
     expect(
       container.querySelector('a[href="/dashboard/rating"]')
     ).not.toBeNull()
-    // Pages not yet in the console still open the legacy admin page.
-    expect(container.querySelector('a[href="/admin/stickers"]')).not.toBeNull()
-    expect(container.querySelector('a[href="/admin"]')).toBeNull()
+    // Every management page now lives in the console.
+    expect(container.querySelector('a[href^="/admin"]')).toBeNull()
     expect(container.textContent).not.toContain('旧版页面')
   })
 
