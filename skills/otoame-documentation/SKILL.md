@@ -9,9 +9,9 @@ Use this skill for maintained project prose. User release notes use the changelo
 
 ## Required References
 
-- [文档标准](../../docs/project/documentation.md)
+- [文档标准](../../docs/guides/documentation.md)
 - [按任务导航](../../docs/README.md)
-- [文档检查操作](../../docs/project/testing.md)
+- [文档检查操作](../../docs/guides/testing.md)
 
 ## Critical Invariants
 

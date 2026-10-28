@@ -9,12 +9,12 @@ Read the development entry first. Linked guides own detailed persistence guarant
 
 ## Required References
 
-- [数据、缓存与上传一致性](../../docs/modules/data-cache-upload.md)
-- [权限与业务规则](../../docs/modules/api-services.md)
-- [本人工作台与链接维护](../../docs/modules/workspace.md)
-- [数据库维护与迁移](../../docs/modules/operations.md)
-- [生产部署与恢复](../../docs/project/deployment.md)
-- [测试与验证](../../docs/project/testing.md)
+- [数据、缓存与上传一致性](../../docs/concepts/data-consistency.md)
+- [权限与业务规则](../../docs/reference/permissions.md)
+- [本人工作台与链接维护](../../docs/reference/workspace.md)
+- [数据库维护与迁移](../../docs/guides/operations.md)
+- [生产部署与恢复](../../docs/guides/deployment.md)
+- [测试与验证](../../docs/guides/testing.md)
 
 ## Critical Invariants
 

@@ -26,7 +26,7 @@ OtoAme 是以乙女游戏为核心的视觉小说社区，免费提供游戏资�
 | 站方 | 管理后台集中处理待审投稿、资源申请和问题反馈，并提供用户管理、统计与运维工具。 |
 | 外观 | Classic 与 Pink 两套配色，均支持浅色和深色模式。 |
 
-各项功能的权限、费用、额度和时限以[权限与业务规则](docs/modules/api-services.md)为准。仓库包含实现，不代表某项功能已在线上启用。
+各项功能的权限、费用、额度和时限以[权限与业务规则](docs/reference/permissions.md)为准。仓库包含实现，不代表某项功能已在线上启用。
 
 ## 技术栈
 
@@ -34,12 +34,12 @@ Next.js 15（App Router）与 React 19，TypeScript；PostgreSQL 经 Prisma 7 �
 
 ## 开始使用
 
-| 你要做的事 | 从这里开始 |
+| 目标 | 文档 |
 | --- | --- |
-| 了解系统由哪些部分组成 | [架构与职责](docs/project/overview.md) |
-| 在本地运行一个开发站点 | [本地开发指南](docs/project/development.md) |
-| 发布到服务器或回退版本 | [部署与应用恢复](docs/project/deployment.md) |
-| 执行数据库迁移与日常维护 | [运维操作指南](docs/modules/operations.md) |
+| 了解系统由哪些部分组成 | [架构与职责](docs/concepts/architecture.md) |
+| 在本地运行一个开发站点 | [本地开发指南](docs/guides/development.md) |
+| 发布到服务器或回退版本 | [部署与应用恢复](docs/guides/deployment.md) |
+| 执行数据库迁移与日常维护 | [运维操作指南](docs/guides/operations.md) |
 | 查看全部维护文档 | [维护文档导航](docs/README.md) |
 
 本地开发需要 Node.js、pnpm、PostgreSQL 与 Redis，并且只能使用可丢弃的开发数据库。初始化命令会同步数据库结构，不能指向已有数据的库。
@@ -51,7 +51,7 @@ Next.js 15（App Router）与 React 19，TypeScript；PostgreSQL 经 Prisma 7 �
 **贡献代码**：
 
 1. 先阅读[项目协作指引](AGENTS.md)，再按[技能分工](skills/README.md)阅读相关领域的说明。
-2. 在隔离环境完成修改，按[测试指南](docs/project/testing.md)运行与改动相称的检查。
+2. 在隔离环境完成修改，按[测试指南](docs/guides/testing.md)运行与改动相称的检查。
 3. 行为变化时同步更新对应的维护文档，提交信息采用[约定式提交](https://www.conventionalcommits.org/zh-hans/v1.0.0/)。
 4. 向本仓库提交 Pull Request，说明改动内容、验证结果和未验证的风险。
 

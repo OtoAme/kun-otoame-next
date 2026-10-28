@@ -9,11 +9,11 @@ Read the development entry first. Review changed behavior and necessary dependen
 
 ## Required References
 
-- [审阅指南](../../docs/project/review.md)
-- [模块路线](../../docs/modules/index.md)
-- [质量与证据](../../docs/modules/quality.md)
-- [验证操作](../../docs/project/testing.md)
-- [文档标准](../../docs/project/documentation.md)
+- [审阅指南](../../docs/guides/review.md)
+- [参考索引](../../docs/reference/README.md)
+- [质量与证据](../../docs/concepts/quality.md)
+- [验证操作](../../docs/guides/testing.md)
+- [文档标准](../../docs/guides/documentation.md)
 
 ## Critical Invariants
 

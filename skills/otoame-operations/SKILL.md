@@ -9,10 +9,10 @@ Read the development entry first. Operational guides own the complete command, b
 
 ## Required References
 
-- [运维操作](../../docs/modules/operations.md)
-- [应用发布与恢复](../../docs/project/deployment.md)
-- [工作台维护](../../docs/modules/workspace.md)
-- [审阅风险](../../docs/project/review.md)
+- [运维操作](../../docs/guides/operations.md)
+- [应用发布与恢复](../../docs/guides/deployment.md)
+- [工作台维护](../../docs/reference/workspace.md)
+- [审阅风险](../../docs/guides/review.md)
 
 ## Critical Invariants
 

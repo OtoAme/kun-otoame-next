@@ -9,10 +9,10 @@ Read the development entry first. Choose evidence according to the changed behav
 
 ## Required References
 
-- [测试操作与隔离](../../docs/project/testing.md)
-- [开发环境](../../docs/project/development.md)
-- [质量边界](../../docs/modules/quality.md)
-- [工作台与维护](../../docs/modules/workspace.md)
+- [测试操作与隔离](../../docs/guides/testing.md)
+- [开发环境](../../docs/guides/development.md)
+- [质量边界](../../docs/concepts/quality.md)
+- [工作台与维护](../../docs/reference/workspace.md)
 
 ## Critical Invariants
 

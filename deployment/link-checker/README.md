@@ -1,6 +1,6 @@
 # 固定版本链接检测服务操作指南
 
-本目录保存独立检测服务的固定源码清单、有限补丁、合成回归和服务配置草案，不包含整份上游源码，也没有安装生产服务。网站如何接入见[部署指南](../../docs/project/deployment.md#启用链接检测)，业务判断见[链接检测规则](../../docs/modules/api-services.md#链接反馈健康与维护)。
+本目录保存独立检测服务的固定源码清单、有限补丁、合成回归和服务配置草案，不包含整份上游源码，也没有安装生产服务。网站如何接入见[部署指南](../../docs/guides/deployment.md#启用链接检测)，业务判断见[链接检测规则](../../docs/reference/permissions.md#链接反馈健康与维护)。
 
 固定服务基于 [kungal 链接检测项目的指定提交](https://github.com/kungal/kungal-link-live-checker/tree/c74022f4dbbb7c8c39be7da15701763efa2ffffd)。[固定清单](pin.json)绑定上游归档与补丁摘要，[上游许可证](UPSTREAM-LICENSE)保留 AGPL 归属；分发服务产物时一并提供精确补丁源码、清单和许可证。网站适配的远端服务与此固定产物是独立版本，不能互相代替验收。
 

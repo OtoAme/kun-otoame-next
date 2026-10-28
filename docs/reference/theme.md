@@ -2,7 +2,7 @@
 
 用户可以分别选择站点配色和浅色或深色模式。前台、旧后台和管理员预览使用这套主题；工作台与新后台有独立的 shadcn 样式，只共享深浅色选择。调整某个前台颜色，不能据此推断控制台也会变化。
 
-本文解释当前主题职责与维护要求，界面验收见[前端说明](modules/frontend-content.md)，修改与验证步骤见[开发指南](project/development.md)和[测试指南](project/testing.md)。
+本文解释当前主题职责与维护要求，界面验收见[前端说明](frontend.md)，修改与验证步骤见[开发指南](../guides/development.md)和[测试指南](../guides/testing.md)。
 
 ## 主题由哪几层组成
 
@@ -32,13 +32,13 @@ Pink 的主操作和强调使用粉色系列，正常、平台和可公开内容
 
 ## 修改时的验收条件
 
-新增主题应覆盖深浅色的品牌色与焦点，注册用户选项并引入主题文件；需要重新映射正常、警告或危险色时，同时维护对应界面桥接。业务和组件外观只覆盖确需变化的部分。具体步骤集中在[本地开发操作指南](project/development.md)。
+新增主题应覆盖深浅色的品牌色与焦点，注册用户选项并引入主题文件；需要重新映射正常、警告或危险色时，同时维护对应界面桥接。业务和组件外观只覆盖确需变化的部分。具体步骤集中在[本地开发操作指南](../guides/development.md)。
 
 验收时检查按钮、链接、焦点、标签、评分、个人页、首页卡片与轮播、私聊、只读预览及控制台隔离。文字、图标和焦点需要足够可见，错误和健康状态同时提供文字，不能只靠颜色区别。这些是设计与验收要求，当前文档不声称所有页面已完成对比度或浏览器验证。
 
 ## 源码入口
 
-- [主题注册与选项](../constants/theme.ts)、[公共桥接与聊天颜色](../styles/themes.css)、[默认主题](../styles/theme-tokens/touchgal.css)和[Pink 主题](../styles/theme-tokens/otoame.css)
-- [业务颜色映射](../utils/semanticColor.ts)、[资源属性标签](../components/kun/PatchAttribute.tsx)与[详情头部标签](../components/patch/header/Tags.tsx)
-- [首次主题应用](../components/kun/theme/SiteThemeScript.tsx)、[导航后同步](../components/kun/theme/SiteThemeRouteSync.tsx)与[主题选择](../hooks/useKunSiteTheme.ts)
-- [前台样式范围](../styles/tailwind.css)、[控制台独立样式](../styles/dashboard.css)与[主题契约验证](../tests/unit/theme.test.ts)
+- [主题注册与选项](../../constants/theme.ts)、[公共桥接与聊天颜色](../../styles/themes.css)、[默认主题](../../styles/theme-tokens/touchgal.css)和[Pink 主题](../../styles/theme-tokens/otoame.css)
+- [业务颜色映射](../../utils/semanticColor.ts)、[资源属性标签](../../components/kun/PatchAttribute.tsx)与[详情头部标签](../../components/patch/header/Tags.tsx)
+- [首次主题应用](../../components/kun/theme/SiteThemeScript.tsx)、[导航后同步](../../components/kun/theme/SiteThemeRouteSync.tsx)与[主题选择](../../hooks/useKunSiteTheme.ts)
+- [前台样式范围](../../styles/tailwind.css)、[控制台独立样式](../../styles/dashboard.css)与[主题契约验证](../../tests/unit/theme.test.ts)

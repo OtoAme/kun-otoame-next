@@ -1,6 +1,6 @@
 # 萌萌点暂扣投稿设计（Phase 2）
 
-> **已被取代（2026-08-25）。** 实现以 [用户投稿条目与云端草稿实施计划](../plans/2026-08-23-user-submission-stake.md) 为准, 当前行为见 [投稿域](../../modules/api-services.md#投稿域-patch_submission)。
+> **已被取代（2026-08-25）。** 实现以 [用户投稿条目与云端草稿实施计划](../plans/2026-08-23-user-submission-stake.md) 为准, 当前行为见 [投稿域](../../reference/permissions.md#投稿域-patch_submission)。
 >
 > 本文的两条核心设计**没有被采用**：
 >

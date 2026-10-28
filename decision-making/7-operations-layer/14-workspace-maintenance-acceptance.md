@@ -2,7 +2,7 @@
 
 2026-10-19，契约版本 1。用户工作台、本人内容管理、链接维护和兼容入口已整合至根工作区；
 真实接口、迁移与浏览器验收完成。实现及边界见[契约](13-workspace-maintenance-contract.md)
-和[工作台模块](../../docs/modules/workspace.md)。本记录不代表生产部署完成。
+和[工作台模块](../../docs/reference/workspace.md)。本记录不代表生产部署完成。
 
 ## 源码与交付
 

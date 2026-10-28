@@ -1,6 +1,6 @@
 # OtoAme 协作指引
 
-开始修改前，先完整阅读[开发技能](skills/otoame-development/SKILL.md)，再根据[技能分工](skills/README.md)选择领域技能，完整阅读其必读文档。先理解文档和规则，再探索源码与修改文件；文档任务还需阅读[文档技能](skills/otoame-documentation/SKILL.md)与[文档标准](docs/project/documentation.md)。全部维护主题从[总导航](docs/README.md)进入。
+开始修改前，先完整阅读[开发技能](skills/otoame-development/SKILL.md)，再根据[技能分工](skills/README.md)选择领域技能，完整阅读其必读文档。先理解文档和规则，再探索源码与修改文件；文档任务还需阅读[文档技能](skills/otoame-documentation/SKILL.md)与[文档标准](docs/guides/documentation.md)。全部维护主题从[总导航](docs/README.md)进入。
 
 项目技能只在仓库根目录的 skills 维护。Codex、Claude Code 和 Grok 的技能目录均通过链接共用这一来源，不建立工具专用副本，也不修改这些链接来完成普通任务。
 
@@ -8,4 +8,4 @@
 
 探索非配置源码优先使用 fast-context；明确限定当前工作区，排除真实环境配置及其变体、凭据、私钥、数据库备份、依赖与构建目录，不沿链接读取工作区之外的内容。已知短文件可直接读取。不得引用、记录或传输意外出现的秘密或真实私有用户数据。外部库、平台或工具的具体用法先通过 Context7 查官方资料，先解析库标识，再询问具体问题；普通业务核对不做无关外部调研。
 
-只改完成任务必需的文件。每次行为修改都复核受影响的文档与技能；代码和文档同步分别提交，提交采用约定式提交。完成前核对范围、事实与链接，报告实际验证和未验证风险。隐私与授权的完整边界见[开发指南](docs/project/development.md)。
+只改完成任务必需的文件。每次行为修改都复核受影响的文档与技能；代码和文档同步分别提交，提交采用约定式提交。完成前核对范围、事实与链接，报告实际验证和未验证风险。隐私与授权的完整边界见[开发指南](docs/guides/development.md)。

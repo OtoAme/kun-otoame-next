@@ -9,12 +9,12 @@ Read the development entry before frontend work. Select the interface system by 
 
 ## Required References
 
-- [页面边界](../../docs/modules/app-router.md)
-- [前端与内容](../../docs/modules/frontend-content.md)
-- [用户工作台](../../docs/modules/workspace.md)
-- [主题系统](../../docs/theme-color-system.md)
-- [私聊贴纸](../../docs/modules/private-chat-stickers.md)
-- [测试与浏览器验收](../../docs/project/testing.md)
+- [页面边界](../../docs/reference/pages.md)
+- [前端与内容](../../docs/reference/frontend.md)
+- [用户工作台](../../docs/reference/workspace.md)
+- [主题系统](../../docs/reference/theme.md)
+- [私聊贴纸](../../docs/reference/stickers.md)
+- [测试与浏览器验收](../../docs/guides/testing.md)
 
 ## Critical Invariants
 

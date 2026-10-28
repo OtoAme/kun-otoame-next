@@ -9,11 +9,11 @@ Use this entry skill before domain work. Project skills have one source under th
 
 ## Required References
 
-- [项目架构](../../docs/project/overview.md)
-- [开发与授权边界](../../docs/project/development.md)
-- [模块路线](../../docs/modules/index.md)
-- [质量与交付](../../docs/modules/quality.md)
-- [验证操作](../../docs/project/testing.md)
+- [项目架构](../../docs/concepts/architecture.md)
+- [开发与授权边界](../../docs/guides/development.md)
+- [参考索引](../../docs/reference/README.md)
+- [质量与交付](../../docs/concepts/quality.md)
+- [验证操作](../../docs/guides/testing.md)
 
 ## Critical Invariants
 

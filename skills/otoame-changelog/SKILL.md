@@ -9,8 +9,8 @@ Use this skill for concise Chinese release notes. Read the development entry fir
 
 ## Required References
 
-- [文档与事实标准](../../docs/project/documentation.md)
-- [验证与交付边界](../../docs/modules/quality.md)
+- [文档与事实标准](../../docs/guides/documentation.md)
+- [验证与交付边界](../../docs/concepts/quality.md)
 - [项目介绍](../../README.md)
 
 ## Writing Rules

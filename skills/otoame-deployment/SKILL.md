@@ -9,10 +9,10 @@ Read the development entry before deployment work. The guides own executable pro
 
 ## Required References
 
-- [应用部署与恢复](../../docs/project/deployment.md)
-- [数据库及维护操作](../../docs/modules/operations.md)
-- [运行架构](../../docs/project/overview.md)
-- [验证要求](../../docs/project/testing.md)
+- [应用部署与恢复](../../docs/guides/deployment.md)
+- [数据库及维护操作](../../docs/guides/operations.md)
+- [运行架构](../../docs/concepts/architecture.md)
+- [验证要求](../../docs/guides/testing.md)
 
 ## Critical Invariants
 

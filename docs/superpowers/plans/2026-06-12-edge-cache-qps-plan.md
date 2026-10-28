@@ -8,7 +8,7 @@
 
 **技术栈：** Next.js App Router、React Server Components、Redis 缓存 helper、Prisma、1Panel Docker OpenResty、Cloudflare Cache Rules 与 Purge Cache API、Vitest、ApacheBench/k6。
 
-Cloudflare 上线时使用[性能优化指南中的完整规则与顺序](../../project/performance-optimization.md#cloudflare-cache-rules-推荐配置)。缓存规则同时匹配 `GET` / `PURGE`，方法绕过条件排除两者，以支持完整 URL 清理。
+Cloudflare 上线时使用[性能优化指南中的完整规则与顺序](../../concepts/performance.md#cloudflare-cache-rules-推荐配置)。缓存规则同时匹配 `GET` / `PURGE`，方法绕过条件排除两者，以支持完整 URL 清理。
 
 ---
 

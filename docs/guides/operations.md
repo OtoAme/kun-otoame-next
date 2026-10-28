@@ -1,6 +1,6 @@
 # 数据库与日常运维操作指南
 
-本指南集中维护数据库迁移、备份恢复、清理回填、后台任务与边缘缓存验收。应用下载、构建、进程切换与运行配置归[部署指南](../project/deployment.md)。只执行本次已经授权且目标明确的操作，读取和预览也要保护私有数据；命令存在不等于获准在生产执行。
+本指南集中维护数据库迁移、备份恢复、清理回填、后台任务与边缘缓存验收。应用下载、构建、进程切换与运行配置归[部署指南](deployment.md)。只执行本次已经授权且目标明确的操作，读取和预览也要保护私有数据；命令存在不等于获准在生产执行。
 
 ## 开始一次维护
 
@@ -63,7 +63,7 @@ pnpm prisma:deploy-safe
 
 整条命令不是只读：先运行可能写结构或数据的资源链接兼容迁移，再只读比较结构，最后生成客户端。它不直接同步生产结构，也不应用差异建议。已有持久库不能改用开发初始化或接受数据库重置。
 
-检查只接受空差异，或经过 PostgreSQL 实际定义核验的 Prisma 7.8 发行日期索引精确识别差异，目标为 `public.patch_released_idx`。不能扩大例外，也不要执行其建议的删除与重建 SQL；它会反复显示，重建可能阻塞生产写入。其他差异通过审核迁移解决，再按[固定发布流程](../project/deployment.md#发布已经审核的版本)切换。
+检查只接受空差异，或经过 PostgreSQL 实际定义核验的 Prisma 7.8 发行日期索引精确识别差异，目标为 `public.patch_released_idx`。不能扩大例外，也不要执行其建议的删除与重建 SQL；它会反复显示，重建可能阻塞生产写入。其他差异通过审核迁移解决，再按[固定发布流程](deployment.md#发布已经审核的版本)切换。
 
 ## 按能力选择迁移
 
@@ -166,7 +166,7 @@ pnpm maintenance:companies:dirty:cache --plan=<审计目录>/plan.json
 | 截图缩略图 | `pnpm maintenance:gallery-thumbnails:dry`；确认后 `pnpm maintenance:gallery-thumbnails:apply -- --limit=50 --batch=20 --concurrency=1 --delay=1000` | 预览不下载原图、不写存储或数据库，执行只补真实缩略图，不改原图；失败看跳过与错误，再缩范围复查。 |
 | 未发送私聊图片 | `pnpm maintenance:conversation-images:dry`；确认后 `pnpm maintenance:conversation-images:apply -- --limit=100 --batch=50 --concurrency=1 --delay=1000` | 默认仅删超过 2 小时、路径符合且不被未删除消息或回复引用的对象；预览默认最多 200，执行前重查引用。失败保留错误，不能把候选当已删。 |
 | 投稿素材积压 | `pnpm maintenance:submission-assets:dry`；确认后 `pnpm maintenance:submission-assets:apply` | 预览不写待办、不删文件、不清边缘。执行依次处理终态投稿积压、持久待办和新无主文件，默认宽限 24 小时、不限数量。调整时参数与值用空格分隔，例如 `pnpm maintenance:submission-assets:apply -- --limit 50 --grace-hours 48`；写成等号形式或非正整数会被忽略，执行变为默认宽限且不限数量。 |
-| 内置贴纸 | `pnpm stickers:sync -- --manifest=<本地清单>`；确认后同命令加 `--apply` | 校验后上传与更新目录，不删历史贴纸，但会按清单重新启用其中的贴纸；格式与步骤见[贴纸维护](private-chat-stickers.md#导入和同步操作)。 |
+| 内置贴纸 | `pnpm stickers:sync -- --manifest=<本地清单>`；确认后同命令加 `--apply` | 校验后上传与更新目录，不删历史贴纸，但会按清单重新启用其中的贴纸；格式与步骤见[贴纸维护](../reference/stickers.md#导入和同步操作)。 |
 
 截图可用 `--patch-id`、`--start-id`、`--limit`、`--max-original-mb` 缩范围，不确定编码成本时加 `--skip-animated-avif`。私聊图片可用 `--conversation-id` 和更长 `--older-than-hours` 缩范围。保持生产低并发，视频工具安装和验证见部署指南。
 
@@ -197,7 +197,7 @@ pnpm maintenance:companies:dirty:cache --plan=<审计目录>/plan.json
 
 停写后任一步失败，保持必要写入停止，记录发生在同步前、中还是应用切换中，保留备份和输出并重新核对实际状态。可重入只适用于文件已支持的中断点，不等于任意失败自动恢复。
 
-应用回退只处理运行版本，见[部署恢复](../project/deployment.md#离线回退应用)。旧版必须兼容账务、维护冻结、事项和新约束。新事项不能转写旧队列或删表；暂停新事项创建时，依赖关注记录的小喇叭自动隐藏也需由管理员人工处理。
+应用回退只处理运行版本，见[部署恢复](deployment.md#离线回退应用)。旧版必须兼容账务、维护冻结、事项和新约束。新事项不能转写旧队列或删表；暂停新事项创建时，依赖关注记录的小喇叭自动隐藏也需由管理员人工处理。
 
 会社解析失败先关闭开关、验证兼容上一版。只有上一版也不能兼容最终结构，才在持续停写下执行[约束回退](../../migration/production-company-identity-constraint-rollback-2026-08-30.sql)及[回退复检](../../migration/production-company-identity-constraint-rollback-postflight-2026-08-30.sql)，恢复基础可空形态但保留业务数据。计数回退需停关系写入，执行[计数回退](../../migration/production-tag-company-count-rollback-2026-08-30.sql)，部署匹配手工计数版本、检查计数后再开放。[合并建议专用回退](../../migration/production-company-merge-subset-rollback-2026-09-22.sql)也需审阅演练，不与会社数据合并恢复混用。
 
@@ -205,7 +205,7 @@ pnpm maintenance:companies:dirty:cache --plan=<审计目录>/plan.json
 
 ## Cloudflare 共享缓存配置与验收
 
-前提是目标版本已实现公开写入失效、实时统计禁止缓存及私有响应隔离，反代不额外覆盖源站缓存头。先核对区域和令牌权限，SaaS 使用承载自定义主机名的提供方区域，不能从访问域名猜。网站与图床分区时按[运行配置](../project/deployment.md#运行配置)分别填写；显式网站区域缺令牌不会退回默认区域。
+前提是目标版本已实现公开写入失效、实时统计禁止缓存及私有响应隔离，反代不额外覆盖源站缓存头。先核对区域和令牌权限，SaaS 使用承载自定义主机名的提供方区域，不能从访问域名猜。网站与图床分区时按[运行配置](deployment.md#运行配置)分别填写；显式网站区域缺令牌不会退回默认区域。
 
 按下列顺序建立三条规则，不全站缓存。规则叠加时，同一设置冲突以后命中为准，见[官方顺序说明](https://developers.cloudflare.com/cache/how-to/cache-rules/order/)。下面把 `<网站主机>` 替换为精确主机，不带协议。
 
@@ -288,7 +288,7 @@ curl -fsS -D - -o /dev/null "$OTOAME_CACHE_URL"
 
 先确定测试边缘命中、源站未命中还是个性化请求，绑定源码、数据量、实例、工具和范围。对独立测试环境逐级增加负载，观察延迟分位、错误率、CPU、内存、数据库连接和缓存命中。客户端握手或带宽先饱和时换测量环境，不能据此推断源站上限。生产压力测试需单独授权，本页不保留历史吞吐量作为当前承诺。
 
-索引调整先核对数据库与源码定义，再取得真实查询的执行计划、扫描量和成本，检查统计与长期使用。未使用不等于可删除，索引可能承担去重约束。变更用审核迁移并在验证环境演练，不粘贴临时建索引或全库重建。用途见[索引说明](../project/database-indexes.md)。
+索引调整先核对数据库与源码定义，再取得真实查询的执行计划、扫描量和成本，检查统计与长期使用。未使用不等于可删除，索引可能承担去重约束。变更用审核迁移并在验证环境演练，不粘贴临时建索引或全库重建。用途见[索引说明](../reference/database-indexes.md)。
 
 ## 源码入口
 

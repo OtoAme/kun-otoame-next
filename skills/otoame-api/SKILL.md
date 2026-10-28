@@ -9,10 +9,10 @@ Use for business services after reading the development entry. Linked guides own
 
 ## Required References
 
-- [权限与业务规则](../../docs/modules/api-services.md)
-- [数据、缓存与上传一致性](../../docs/modules/data-cache-upload.md)
-- [本人工作台与链接维护](../../docs/modules/workspace.md)
-- [测试与验证](../../docs/project/testing.md)
+- [权限与业务规则](../../docs/reference/permissions.md)
+- [数据、缓存与上传一致性](../../docs/concepts/data-consistency.md)
+- [本人工作台与链接维护](../../docs/reference/workspace.md)
+- [测试与验证](../../docs/guides/testing.md)
 
 ## Critical Invariants
 
