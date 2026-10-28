@@ -29,8 +29,8 @@
 
 前提是操作者为管理员，已完成[贴纸结构迁移](operations.md#按能力选择迁移)，对象存储和图床正确配置，素材经过授权，动态素材处理工具可用。此处操作会写入目录和存储，不能在只有静态审阅授权的任务执行。
 
-1. 在旧后台贴纸管理创建或选择内置包。新建包默认禁用；填写名称和描述，创建标识使用小写下划线格式，创建后不能改标识。
-2. 导入单文件、多文件或 ZIP，查看逐文件结果；失败保留原因供纠正。数据库保存失败会尝试清理本次已上传对象，不能只看上传进度认定目录已更新。
+1. 在控制台的贴纸页创建或选择内置包。新建包默认禁用；填写名称和描述，创建标识使用小写下划线格式，创建后不能改标识。
+2. 导入单文件、多文件或 ZIP。页面在上传前按服务器的单文件与总量上限预检，超限文件不会发出；服务器失败时保留已选文件和原因供纠正后重试。数据库保存失败会尝试清理本次已上传对象，不能只看上传进度认定目录已更新。
 3. 选择同一包内的有效贴纸作为封面。启用至少需要一张有效贴纸，显式封面也必须有效且属于本包；首张有效导入会成为默认封面。
 4. 保存设置并启用，使用受控私聊验证选择、发送、历史与预览。切换包前处理未保存修改，不把关闭页面当作已保存。
 
@@ -59,5 +59,5 @@ pnpm stickers:sync -- --manifest=<同一清单绝对路径> --apply
 ## 源码入口
 
 - [可发送目录](../../app/api/message/stickers/)、[聊天贴纸媒体](../../components/message/chat/ChatSticker.tsx)与[消息容器](../../components/message/chat/ChatMessage.tsx)
-- [动态缩略图](../../components/sticker/StickerThumbnail.tsx)、[贴纸管理界面](../../components/admin/stickers/)与[管理接口](../../app/api/admin/stickers/)
+- [动态缩略图](../../components/sticker/StickerThumbnail.tsx)、[控制台贴纸管理](../../components/dashboard/sticker/)、[旧后台贴纸管理](../../components/admin/stickers/)与[管理接口](../../app/api/admin/stickers/)
 - [格式和安全限制](../../lib/stickerAssets.ts)、[资源同步](../../scripts/syncStickers.ts)及[目录数据](../../prisma/schema/sticker.prisma)
