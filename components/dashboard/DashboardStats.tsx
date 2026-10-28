@@ -595,12 +595,12 @@ export function DashboardStats({ reviewerRole }: DashboardStatsProps) {
       id="dashboard-status-heading"
       title="站点状态"
       action={
-        <a
+        <Link
           href="/dashboard/setting"
           className="text-xs text-muted-foreground underline underline-offset-4"
         >
           设置
-        </a>
+        </Link>
       }
     >
       <BlockBody
@@ -644,12 +644,12 @@ export function DashboardStats({ reviewerRole }: DashboardStatsProps) {
       id="dashboard-log-heading"
       title="最近管理操作"
       action={
-        <a
+        <Link
           href="/dashboard/log"
           className="text-xs text-muted-foreground underline underline-offset-4"
         >
           全部日志
-        </a>
+        </Link>
       }
     >
       <BlockBody

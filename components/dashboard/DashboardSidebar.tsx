@@ -294,10 +294,12 @@ export function DashboardSidebar({ currentUser }: DashboardSidebarProps) {
                 tooltip="发布游戏"
                 className={NAV_BUTTON_CLASS}
               >
-                <a href="/edit/create">
+                {/* Site pages use the other root layout; no prefetch keeps
+                    the navigation a full load like the user menu's links. */}
+                <Link href="/edit/create" prefetch={false}>
                   <PenLine />
                   <span>发布游戏</span>
-                </a>
+                </Link>
               </SidebarMenuButton>
             </SidebarMenuItem>
           )}
@@ -307,10 +309,10 @@ export function DashboardSidebar({ currentUser }: DashboardSidebarProps) {
               tooltip="返回前台"
               className={NAV_BUTTON_CLASS}
             >
-              <a href="/">
+              <Link href="/" prefetch={false}>
                 <Home />
                 <span>返回前台</span>
-              </a>
+              </Link>
             </SidebarMenuButton>
           </SidebarMenuItem>
           <SidebarMenuItem>
