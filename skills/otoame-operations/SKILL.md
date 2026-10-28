@@ -16,7 +16,7 @@ Read the development entry first. Operational guides own the complete command, b
 
 ## Critical Invariants
 
-Confirm target identity and authorization before writes. Production changes require reviewed prechecks, verified backups, ordered synchronization and postchecks. Never replace migrations with persistent-database initialization or widen permitted schema drift.
+Confirm target identity before writes. Production changes require reviewed prechecks, verified backups, ordered synchronization and postchecks. Never replace migrations with persistent-database initialization or widen permitted schema drift.
 
 Preserve writer compatibility, link-health clocks, maintenance freezes and historical participation. Scheduled tasks use appropriate distributed locks; failed acquisition skips work. Submission asset scheduling audits only and must not delete objects or disconnect shared infrastructure.
 
@@ -26,4 +26,4 @@ Company cleanup consumes the exact reviewed frozen plan and matching state; no i
 
 Preserve manifest-bound release activation and target readiness. Shared caching is limited to controlled anonymous responses with personalized and framework-data bypasses. Verify actual edge behavior rather than trusting purge acceptance.
 
-Report static and runtime checks separately; source availability grants no production action.
+Report static and runtime checks separately.

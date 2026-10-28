@@ -17,10 +17,8 @@ Use this entry skill before domain work. Project skills have one source under th
 
 ## Critical Invariants
 
-User instructions define scope and override generic skill procedures. Continue authorized, reversible local work; obtain authorization for destructive, external, costly or expanded actions. Reading source grants no database, storage, email, commit, push or deployment permission.
+Authorization, privacy and sensitive-file boundaries are defined once in the [collaboration guide](../../AGENTS.md); read required references to the depth that guide sets for the task's risk.
 
-Exclude real environment files and variants, credentials, private keys, database dumps and private user data from inspection and transfer. Prefer focused workspace search; consult current official library documentation through Context7 when needed.
-
-Keep server authorization, business transactions, accounting, upload compensation and cache invalidation intact. Preserve compatibility identifiers. Use Conventional Commits when commits are authorized; review documentation and skills after code changes and commit their synchronization separately.
+Keep server authorization, business transactions, accounting, upload compensation and cache invalidation intact. Preserve compatibility identifiers. Use Conventional Commits; review documentation and skills after code changes and commit their synchronization separately.
 
 Choose proportionate checks from the testing guide. Report actual results and unverified risks without claiming runtime success from static review.

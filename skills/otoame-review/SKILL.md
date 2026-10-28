@@ -25,4 +25,4 @@ For documentation, verify each new explanation and task step, preserve critical 
 
 Report blocking findings first with a concrete trigger, consequence, source and minimum correction. Separate optional improvements and remaining questions. Recheck accepted fixes and their effects, expanding only for newly evidenced serious risks.
 
-When no findings remain, say so and name unperformed checks. Review authority does not grant production writes, source transfers, publication or deployment.
+When no findings remain, say so and name unperformed checks.

@@ -24,4 +24,4 @@ Package runtime assets through both build and release paths. Generate and valida
 
 Keep private configuration server-side, synchronize public build addresses, and preserve request-origin checks. Build skip options never replace type and test evidence; the release workflow does not run those checks.
 
-Choose proportionate verification and report target-host or service checks that remain unperformed. Do not deploy, publish or mutate infrastructure without existing task authorization.
+Choose proportionate verification and report target-host or service checks that remain unperformed.

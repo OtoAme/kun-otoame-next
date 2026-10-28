@@ -23,4 +23,4 @@ Lead with shipped capabilities and corrected behavior. Combine supporting work i
 
 Omit internal helpers, hashes, paths, test-only work, speculative benefits, draft markers and abandoned approaches. Keep technical implementation out of user prose; do not hide it in a reference section. Remove uncertain claims rather than announcing them as released.
 
-A changelog draft does not authorize publishing or sending messages. Follow the user's destination and existing authorization, and report any unverified release boundary.
+Report any unverified release boundary.

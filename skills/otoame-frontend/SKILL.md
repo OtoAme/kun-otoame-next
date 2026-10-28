@@ -20,7 +20,7 @@ Read the development entry before frontend work. Select the interface system by 
 
 Site, legacy admin and previews use HeroUI v2; dashboard and workspace use shadcn with isolated styles.
 
-For every frontend task, inspect project components, then check official UI options through Context7 before implementation. Reuse, add or compose suitable components; local absence never justifies rebuilding. Native/system controls or handwritten HTML/CSS replacements require evidence that reuse and composition cannot meet requirements.
+Before building UI, inspect project components and the official options of the page's UI library. Reuse, add or compose suitable components; local absence never justifies rebuilding. Use native/system controls or handwritten HTML/CSS replacements only when reuse and composition cannot meet the requirement.
 
 Keep labels, keyboard access, focus, loading, errors, reduced motion and responsive layouts functional.
 
