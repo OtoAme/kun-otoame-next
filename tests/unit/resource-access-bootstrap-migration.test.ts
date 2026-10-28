@@ -133,8 +133,8 @@ describe('resource access bootstrap production migration', () => {
 
   it('documents the manual bootstrap, fixed release tag, and recovery gate', async () => {
     const [operations, deployment] = await Promise.all([
-      readProjectFile('docs/modules/operations.md'),
-      readProjectFile('docs/project/deployment.md')
+      readProjectFile('docs/guides/operations.md'),
+      readProjectFile('docs/guides/deployment.md')
     ])
     const preflight =
       'production-resource-access-bootstrap-preflight-2026-07-12.sql'
@@ -159,15 +159,15 @@ describe('resource access bootstrap production migration', () => {
     // 操作步骤只在主指南维护，其他入口必须能沿链接找到它。
     for (const [path, target] of [
       ['README.md', 'docs/README.md'],
-      ['docs/README.md', 'modules/operations.md'],
-      ['docs/project/deployment.md', '../modules/operations.md'],
-      ['docs/modules/data-cache-upload.md', 'operations.md'],
-      ['docs/project/testing.md', '../modules/index.md'],
-      ['docs/modules/index.md', 'operations.md'],
-      ['docs/project/review.md', '../modules/operations.md'],
-      ['skills/otoame-operations/SKILL.md', '../../docs/modules/operations.md'],
-      ['skills/otoame-deployment/SKILL.md', '../../docs/modules/operations.md'],
-      ['skills/otoame-review/SKILL.md', '../../docs/project/review.md']
+      ['docs/README.md', 'guides/operations.md'],
+      ['docs/guides/deployment.md', 'operations.md'],
+      ['docs/concepts/data-consistency.md', '../guides/operations.md'],
+      ['docs/guides/testing.md', '../reference/README.md'],
+      ['docs/reference/README.md', '../guides/operations.md'],
+      ['docs/guides/review.md', 'operations.md'],
+      ['skills/otoame-operations/SKILL.md', '../../docs/guides/operations.md'],
+      ['skills/otoame-deployment/SKILL.md', '../../docs/guides/operations.md'],
+      ['skills/otoame-review/SKILL.md', '../../docs/guides/review.md']
     ]) {
       expect(await readProjectFile(path), path).toContain(`](${target}`)
     }

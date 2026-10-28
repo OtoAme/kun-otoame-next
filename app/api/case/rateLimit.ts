@@ -2,7 +2,7 @@ import { getPrefixedRedisKey, redis, runRedisCommand } from '~/lib/redis'
 
 /**
  * Case image uploads create object storage cost, so the upload tier fails
- * closed on a Redis outage (docs/modules/data-cache-upload.md). The intake
+ * closed on a Redis outage (docs/concepts/data-consistency.md). The intake
  * tier only protects multipart parsing and stays fail-open. Every reply
  * notifies the other side, so a non-administrator's replies are capped per
  * case (D29); a Redis outage must not block a reply, so that tier fails open.

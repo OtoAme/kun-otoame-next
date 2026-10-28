@@ -98,9 +98,10 @@ describe('docs:check default scope', () => {
   it('recognizes the maintained document paths and skips historical plans', () => {
     expect(isMaintainedDoc('README.md')).toBe(true)
     expect(isMaintainedDoc('AGENTS.md')).toBe(true)
-    expect(isMaintainedDoc('docs/project/overview.md')).toBe(true)
-    expect(isMaintainedDoc('docs/modules/quality.md')).toBe(true)
-    expect(isMaintainedDoc('docs/theme-color-system.md')).toBe(true)
+    expect(isMaintainedDoc('docs/README.md')).toBe(true)
+    expect(isMaintainedDoc('docs/concepts/architecture.md')).toBe(true)
+    expect(isMaintainedDoc('docs/reference/theme.md')).toBe(true)
+    expect(isMaintainedDoc('docs/guides/operations.md')).toBe(true)
     expect(isMaintainedDoc('skills/otoame-api/SKILL.md')).toBe(true)
     expect(isMaintainedDoc('deployment/link-checker/README.md')).toBe(true)
     expect(isMaintainedDoc('decision-making/9.company-ingestion-track.md')).toBe(

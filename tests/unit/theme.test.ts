@@ -301,7 +301,7 @@ describe('private chat theme color tokens', () => {
     'utf8'
   )
   const themeColorSystemDoc = readFileSync(
-    resolve(process.cwd(), 'docs/theme-color-system.md'),
+    resolve(process.cwd(), 'docs/reference/theme.md'),
     'utf8'
   )
 

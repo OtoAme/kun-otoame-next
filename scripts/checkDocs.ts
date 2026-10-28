@@ -12,19 +12,12 @@ import { unified } from 'unified'
  * 只读取仓库文件与本地 git 元数据，不访问网络、数据库或应用服务。
  */
 
-export const MAINTAINED_FILES = [
-  'README.md',
-  'AGENTS.md',
-  'docs/README.md',
-  'docs/theme-color-system.md'
-]
+export const MAINTAINED_FILES = ['README.md', 'AGENTS.md']
 
-export const MAINTAINED_DIRECTORIES = [
-  'docs/project/',
-  'docs/modules/',
-  'skills/',
-  'deployment/'
-]
+export const MAINTAINED_DIRECTORIES = ['docs/', 'skills/', 'deployment/']
+
+// 历史计划与设计稿只保存讨论背景，不按维护文档要求检查。
+export const EXCLUDED_DIRECTORIES = ['docs/superpowers/']
 
 export type MarkdownNode = {
   type: string
@@ -88,6 +81,9 @@ export const isMaintainedDoc = (relPath: string): boolean => {
   const rel = relPath.split('\\').join('/')
   if (!rel.endsWith('.md')) return false
   if (MAINTAINED_FILES.includes(rel)) return true
+  if (EXCLUDED_DIRECTORIES.some((directory) => rel.startsWith(directory))) {
+    return false
+  }
   return MAINTAINED_DIRECTORIES.some(
     (directory) => rel.startsWith(directory) && rel.length > directory.length
   )
@@ -596,8 +592,7 @@ export const runDocsCheck = (options: CheckOptions): CheckReport => {
 
   for (const rel of addedSet) {
     if (!isMaintainedDoc(rel)) continue
-    const needsEntry =
-      rel.startsWith('docs/project/') || rel.startsWith('docs/modules/')
+    const needsEntry = rel.startsWith('docs/') && rel !== 'docs/README.md'
     if (!needsEntry) continue
     const target = path.join(root, rel)
     const referrers = (inbound.get(target) ?? []).filter(
@@ -650,7 +645,7 @@ export const formatReport = (report: CheckReport): string => {
   lines.push(
     report.mode === 'explicit'
       ? `检查文件：${report.changed.join('、')}`
-      : '检查范围：README.md、AGENTS.md、docs/README.md、docs/project/**、docs/modules/**、docs/theme-color-system.md、skills/**/*.md、deployment/**/*.md'
+      : '检查范围：README.md、AGENTS.md、docs/**（不含 docs/superpowers/**）、skills/**/*.md、deployment/**/*.md'
   )
 
   if (report.deleted.length > 0) {
@@ -751,8 +746,8 @@ export const parseArguments = (argv: string[]): CliArguments => {
 const USAGE = `用法: pnpm docs:check [选项] [文件...]
 
 默认检查相对 HEAD 新增、修改或删除的维护文档：
-  README.md、AGENTS.md、docs/README.md、docs/project/**、docs/modules/**、
-  docs/theme-color-system.md、skills/**/*.md、deployment/**/*.md
+  README.md、AGENTS.md、docs/**（不含 docs/superpowers/**）、
+  skills/**/*.md、deployment/**/*.md
 
 选项:
   --base <git-ref>  用 <git-ref>..HEAD 的改动定位要检查的文档；

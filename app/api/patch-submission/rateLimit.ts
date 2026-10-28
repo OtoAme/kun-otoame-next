@@ -5,7 +5,7 @@ import { getPrefixedRedisKey, redis, runRedisCommand } from '~/lib/redis'
  *
  * The project's existing rule is that action limits fail open on a Redis outage,
  * while limits guarding unmeterable object storage cost fail closed
- * (docs/modules/data-cache-upload.md). Submissions split that further:
+ * (docs/concepts/data-consistency.md). Submissions split that further:
  *
  * - fail-closed: creating a draft, submitting, uploading assets — these move
  *   money or create storage cost.

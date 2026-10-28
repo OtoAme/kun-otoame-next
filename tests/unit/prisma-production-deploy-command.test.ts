@@ -285,19 +285,19 @@ describe('production Prisma deployment command', () => {
   it('routes server builds from the README to the production deployment guide', async () => {
     const [readme, deployment] = await Promise.all([
       readProjectFile('README.md'),
-      readProjectFile('docs/project/deployment.md')
+      readProjectFile('docs/guides/deployment.md')
     ])
     const serverBuild = extractMarkdownSection(deployment, '### 在服务器构建')
 
-    expect(readme).toContain('](docs/project/deployment.md)')
-    expect(deployment).toContain('](../modules/operations.md')
+    expect(readme).toContain('](docs/guides/deployment.md)')
+    expect(deployment).toContain('](operations.md')
     expect(serverBuild).toContain('pnpm deploy:build')
     expect(serverBuild).toContain('生产结构检查')
     expect(serverBuild).not.toContain('pnpm prisma:push')
   })
 
   it('documents compatibility writes and rejects persistent-database initialization', async () => {
-    const operations = await readProjectFile('docs/modules/operations.md')
+    const operations = await readProjectFile('docs/guides/operations.md')
     const guard = extractMarkdownSection(operations, '## 生产结构检查')
 
     expect(guard).toContain('pnpm prisma:deploy-safe')
@@ -310,8 +310,8 @@ describe('production Prisma deployment command', () => {
 
   it('separates disposable local initialization from production schema checks', async () => {
     const [development, operations] = await Promise.all([
-      readProjectFile('docs/project/development.md'),
-      readProjectFile('docs/modules/operations.md')
+      readProjectFile('docs/guides/development.md'),
+      readProjectFile('docs/guides/operations.md')
     ])
     const initialization = extractMarkdownSection(
       development,
@@ -327,8 +327,8 @@ describe('production Prisma deployment command', () => {
 
   it('keeps rollback guidance off production db push and old-version safe-script assumptions', async () => {
     const [deployment, operations] = await Promise.all([
-      readProjectFile('docs/project/deployment.md'),
-      readProjectFile('docs/modules/operations.md')
+      readProjectFile('docs/guides/deployment.md'),
+      readProjectFile('docs/guides/operations.md')
     ])
     const rollback = extractMarkdownSection(deployment, '## 离线回退应用')
     const databaseRecovery = extractMarkdownSection(
@@ -339,7 +339,7 @@ describe('production Prisma deployment command', () => {
     expect(rollback).toContain('pnpm deploy:rollback')
     expect(rollback).toContain('兼容当前数据库')
     expect(rollback).toContain('不修改数据库')
-    expect(rollback).toContain('](../modules/operations.md#失败与数据库恢复)')
+    expect(rollback).toContain('](operations.md#失败与数据库恢复)')
     expect(rollback).not.toContain('pnpm prisma:push')
     expect(rollback).not.toContain('pnpm prisma:deploy-safe')
     expect(databaseRecovery).toContain('备份')
