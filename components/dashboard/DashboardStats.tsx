@@ -3,182 +3,156 @@
 import Link from 'next/link'
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
 import {
-  ClipboardCheck,
+  BadgeCheck,
   ClipboardList,
+  FileText,
   Flag,
+  Globe,
+  Merge,
   MessageSquare,
-  PackagePlus,
-  Sigma,
+  Package,
+  RefreshCw,
   Unlink,
-  Upload,
   UserPlus,
   type LucideIcon
 } from 'lucide-react'
 
 import { useDashboard } from '~/components/dashboard/DashboardShell'
+import { DashboardPanel } from '~/components/dashboard/page/DashboardPage'
 import {
   OVERVIEW_DEFAULT_DAYS,
   OVERVIEW_MAX_DAYS,
   OVERVIEW_MIN_DAYS,
-  useDashboardStats
+  useDashboardStats,
+  type StatsBlock
 } from '~/hooks/dashboard/useDashboardStats'
+import {
+  LOG_MIN_ROLE,
+  useOverviewPanels
+} from '~/hooks/dashboard/useOverviewPanels'
+import { useElementWidth } from '~/hooks/dashboard/useElementWidth'
+import { ADMIN_LOG_TYPE_MAP } from '~/constants/admin'
 import { LINK_HEALTH_INBOX_KIND_LABELS } from '~/constants/dashboard'
 import { cn } from '~/lib/dashboard/utils'
-import { LINK_HEALTH_INBOX_KINDS } from '~/types/api/inbox'
-import type {
-  LinkHealthInboxCounts,
-  LinkHealthInboxKind
-} from '~/types/api/inbox'
+import { formatChinaDateTime } from '~/utils/fixedTimezoneDate'
 import {
-  Card,
-  CardAction,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle
-} from '~/components/dashboard/ui/card'
+  LINK_HEALTH_INBOX_KINDS,
+  type InboxItem,
+  type LinkHealthInboxKind
+} from '~/types/api/inbox'
 import { Button } from '~/components/dashboard/ui/button'
 import { Input } from '~/components/dashboard/ui/input'
 import { Skeleton } from '~/components/dashboard/ui/skeleton'
+import { Badge } from '~/components/dashboard/ui/badge'
 
 export interface DashboardStatsProps {
   reviewerRole: number
 }
 
-const inboxGridClass =
-  'grid grid-cols-2 gap-3 @lg/main:grid-cols-3 @3xl/main:grid-cols-4 @6xl/main:grid-cols-6'
-const statsGridClass =
-  'grid grid-cols-2 gap-3 @lg/main:grid-cols-3 @3xl/main:grid-cols-4 @6xl/main:grid-cols-5'
-
-const compactCardClass = '@container/card min-w-0 gap-1.5 py-3 shadow-xs'
-const compactCardHeaderClass = 'px-3.5'
-const compactCardFooterClass =
-  'px-3.5 text-xs break-words text-muted-foreground'
-
-const INBOX_KIND_ICONS: Record<LinkHealthInboxKind, LucideIcon> = {
-  submission: Upload,
-  'resource-apply': PackagePlus,
-  feedback: MessageSquare,
-  report: Flag,
-  case: ClipboardList,
-  'broken-link': Unlink
-}
-
-const INBOX_KIND_BAR_CLASS: Record<LinkHealthInboxKind, string> = {
-  submission: 'bg-sky-500',
-  'resource-apply': 'bg-emerald-500',
-  feedback: 'bg-amber-500',
-  report: 'bg-rose-500',
-  case: 'bg-violet-500',
-  'broken-link': 'bg-slate-500'
-}
-
 const numberFormatter = new Intl.NumberFormat('zh-CN')
+const fmt = (value: number) => numberFormatter.format(value)
 
-function SectionHeader(props: {
+type QueueKey = LinkHealthInboxKind | 'creator' | 'company-merge'
+
+interface QueueTone {
+  icon: LucideIcon
+  tile: string
+  bar: string
+}
+
+// Literal class names so Tailwind keeps them; tile = tinted icon background.
+const QUEUE_TONES: Record<QueueKey, QueueTone> = {
+  submission: {
+    icon: FileText,
+    tile: 'bg-sky-500/12 text-sky-600 dark:text-sky-400',
+    bar: 'bg-sky-500'
+  },
+  'resource-apply': {
+    icon: Package,
+    tile: 'bg-emerald-500/12 text-emerald-600 dark:text-emerald-400',
+    bar: 'bg-emerald-500'
+  },
+  feedback: {
+    icon: MessageSquare,
+    tile: 'bg-amber-500/12 text-amber-600 dark:text-amber-400',
+    bar: 'bg-amber-500'
+  },
+  report: {
+    icon: Flag,
+    tile: 'bg-rose-500/12 text-rose-600 dark:text-rose-400',
+    bar: 'bg-rose-500'
+  },
+  case: {
+    icon: ClipboardList,
+    tile: 'bg-violet-500/12 text-violet-600 dark:text-violet-400',
+    bar: 'bg-violet-500'
+  },
+  'broken-link': {
+    icon: Unlink,
+    tile: 'bg-slate-500/12 text-slate-600 dark:text-slate-400',
+    bar: 'bg-slate-500'
+  },
+  creator: {
+    icon: BadgeCheck,
+    tile: 'bg-orange-500/12 text-orange-600 dark:text-orange-400',
+    bar: 'bg-orange-500'
+  },
+  'company-merge': {
+    icon: Merge,
+    tile: 'bg-teal-500/12 text-teal-600 dark:text-teal-400',
+    bar: 'bg-teal-500'
+  }
+}
+
+function formatWaiting(seconds: number): string {
+  if (seconds < 60) return '不足 1 分钟'
+  const minutes = Math.floor(seconds / 60)
+  if (minutes < 60) return `${minutes} 分钟`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `${hours} 小时`
+  const days = Math.floor(hours / 24)
+  return hours % 24 ? `${days} 天 ${hours % 24} 小时` : `${days} 天`
+}
+
+const waitingTone = (seconds: number) =>
+  seconds >= 72 * 3600
+    ? 'font-semibold text-destructive'
+    : seconds >= 24 * 3600
+      ? 'text-amber-600 dark:text-amber-400'
+      : 'text-muted-foreground'
+
+function Panel(props: {
   id: string
   title: string
-  note?: string
+  description?: string
   action?: ReactNode
+  children: ReactNode
 }) {
   return (
-    <div className="flex flex-wrap items-end justify-between gap-3">
-      <div className="min-w-0">
-        <h2 id={props.id} className="text-lg font-semibold break-words">
-          {props.title}
-        </h2>
-        {props.note ? (
-          <p className="mt-1 text-sm break-words text-muted-foreground">
-            {props.note}
-          </p>
-        ) : null}
-      </div>
-      {props.action}
-    </div>
+    <DashboardPanel>
+      <section aria-labelledby={props.id}>
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 px-4 pt-3.5">
+          <h2 id={props.id} className="text-sm font-semibold">
+            {props.title}
+          </h2>
+          {props.description && (
+            <span className="text-xs text-muted-foreground">
+              {props.description}
+            </span>
+          )}
+          {props.action && (
+            <div className="ml-auto flex items-center gap-2">
+              {props.action}
+            </div>
+          )}
+        </div>
+        <div className="px-4 pt-2.5 pb-4">{props.children}</div>
+      </section>
+    </DashboardPanel>
   )
 }
 
-function StatValue({ value }: { value: number }) {
-  return (
-    <CardTitle className="text-xl font-semibold tabular-nums @[250px]/card:text-2xl">
-      {numberFormatter.format(value)}
-    </CardTitle>
-  )
-}
-
-function StatCard(props: {
-  label: string
-  value: number
-  caption?: string
-  icon?: LucideIcon
-}) {
-  const Icon = props.icon
-  return (
-    <Card className={compactCardClass}>
-      <CardHeader className={compactCardHeaderClass}>
-        <CardDescription className="text-xs break-words">
-          {props.label}
-        </CardDescription>
-        {Icon ? (
-          <CardAction>
-            <Icon className="size-4 text-muted-foreground" aria-hidden="true" />
-          </CardAction>
-        ) : null}
-        <StatValue value={props.value} />
-      </CardHeader>
-      {props.caption ? (
-        <CardFooter className={compactCardFooterClass}>
-          {props.caption}
-        </CardFooter>
-      ) : null}
-    </Card>
-  )
-}
-
-function StatCardSkeleton() {
-  return (
-    <Card className={compactCardClass} aria-hidden="true">
-      <CardHeader className={compactCardHeaderClass}>
-        <Skeleton className="h-3.5 w-16" />
-        <Skeleton className="h-6 w-20" />
-      </CardHeader>
-    </Card>
-  )
-}
-
-function RetryButton(props: { retrying: boolean; onRetry: () => void }) {
-  return (
-    <Button
-      type="button"
-      variant="outline"
-      size="sm"
-      disabled={props.retrying}
-      onClick={props.onRetry}
-    >
-      重试
-    </Button>
-  )
-}
-
-function BlockError(props: {
-  message: string
-  retrying: boolean
-  onRetry: () => void
-}) {
-  return (
-    <Card className="min-w-0 py-4 shadow-xs">
-      <CardContent className="flex flex-wrap items-center gap-3">
-        <p role="alert" className="text-sm break-words text-destructive">
-          {props.message}
-        </p>
-        <RetryButton retrying={props.retrying} onRetry={props.onRetry} />
-      </CardContent>
-    </Card>
-  )
-}
-
-function InlineError(props: {
+function PanelError(props: {
   message: string
   retrying: boolean
   onRetry: () => void
@@ -188,87 +162,221 @@ function InlineError(props: {
       <p role="alert" className="text-sm break-words text-destructive">
         {props.message}
       </p>
-      <RetryButton retrying={props.retrying} onRetry={props.onRetry} />
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        disabled={props.retrying}
+        onClick={props.onRetry}
+      >
+        重试
+      </Button>
     </div>
   )
 }
 
-function PendingDistribution({ counts }: { counts: LinkHealthInboxCounts }) {
-  const total = LINK_HEALTH_INBOX_KINDS.reduce(
-    (sum, kind) => sum + counts.pending[kind],
-    0
-  )
-  return (
-    <Card
-      className="min-w-0 gap-2.5 py-3 shadow-xs"
-      aria-labelledby="dashboard-pending-distribution-heading"
-    >
-      <CardHeader className={compactCardHeaderClass}>
-        <CardTitle
-          id="dashboard-pending-distribution-heading"
-          className="text-sm font-medium"
-        >
-          当前待审分布
-        </CardTitle>
-        <CardDescription className="text-xs break-words">
-          各来源待审量占比，随计数一起刷新。
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-2.5 px-3.5">
-        {total === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            当前没有待审事项，各来源均为零。
-          </p>
-        ) : (
-          <>
-            <div
-              className="flex h-2.5 w-full overflow-hidden rounded-full bg-muted"
-              aria-hidden="true"
-            >
-              {LINK_HEALTH_INBOX_KINDS.map((kind) => {
-                const value = counts.pending[kind]
-                if (value <= 0) {
-                  return null
-                }
-                return (
-                  <div
-                    key={kind}
-                    className={INBOX_KIND_BAR_CLASS[kind]}
-                    style={{ width: `${(value / total) * 100}%` }}
-                  />
-                )
-              })}
-            </div>
-            <ul className="grid grid-cols-2 gap-x-3 gap-y-1.5 @lg/main:grid-cols-4">
-              {LINK_HEALTH_INBOX_KINDS.map((kind) => {
-                const value = counts.pending[kind]
-                const percent = Math.round((value / total) * 100)
-                return (
-                  <li
-                    key={kind}
-                    className="flex min-w-0 items-center gap-1.5 text-xs"
-                  >
-                    <span
-                      className={cn(
-                        'size-2 shrink-0 rounded-full',
-                        INBOX_KIND_BAR_CLASS[kind]
-                      )}
-                      aria-hidden="true"
-                    />
-                    <span className="min-w-0 break-words text-muted-foreground">
-                      {LINK_HEALTH_INBOX_KIND_LABELS[kind]}
-                    </span>
-                    <span className="ml-auto shrink-0 tabular-nums">
-                      {numberFormatter.format(value)} · {percent}%
-                    </span>
-                  </li>
-                )
-              })}
-            </ul>
-          </>
+/** Renders a block's data, a skeleton before first load, or its error. */
+function BlockBody<T>(props: {
+  block: StatsBlock<T>
+  onRetry: () => void
+  skeleton: ReactNode
+  children: (data: T) => ReactNode
+}) {
+  const { block } = props
+  if (block.data !== null) {
+    return (
+      <>
+        {block.error && (
+          <div className="mb-3">
+            <PanelError
+              message={block.error}
+              retrying={block.loading}
+              onRetry={props.onRetry}
+            />
+          </div>
         )}
-      </CardContent>
-    </Card>
+        {props.children(block.data)}
+      </>
+    )
+  }
+  if (block.error) {
+    return (
+      <PanelError
+        message={block.error}
+        retrying={block.loading}
+        onRetry={props.onRetry}
+      />
+    )
+  }
+  return <>{props.skeleton}</>
+}
+
+interface QueueRow {
+  key: QueueKey
+  label: string
+  note?: string
+  href: string
+  value: number | null
+  error?: string
+}
+
+function QueueList({ rows }: { rows: QueueRow[] }) {
+  const max = Math.max(1, ...rows.map((row) => row.value ?? 0))
+  return (
+    <ul className="-mx-2 flex flex-col">
+      {rows.map((row) => {
+        const tone = QUEUE_TONES[row.key]
+        const Icon = tone.icon
+        const empty = row.value === 0
+        return (
+          <li key={row.key}>
+            <Link
+              href={row.href}
+              prefetch={false}
+              className={cn(
+                'grid grid-cols-[2.5rem_minmax(0,1fr)_auto] items-center gap-x-3 rounded-lg px-2 py-2 transition-colors hover:bg-accent focus-visible:bg-accent focus-visible:outline-none',
+                empty && 'opacity-60'
+              )}
+            >
+              <span
+                className={cn(
+                  'row-span-2 flex size-10 items-center justify-center rounded-lg',
+                  tone.tile
+                )}
+                aria-hidden="true"
+              >
+                <Icon className="size-[22px]" />
+              </span>
+              <span className="min-w-0 text-sm font-medium">
+                {row.label}
+                {row.note && (
+                  <span className="block text-xs font-normal text-muted-foreground">
+                    {row.note}
+                  </span>
+                )}
+              </span>
+              <span className="text-right text-lg font-semibold tabular-nums">
+                {row.value !== null ? (
+                  fmt(row.value)
+                ) : row.error ? (
+                  <span className="text-xs font-normal text-destructive">
+                    读取失败
+                  </span>
+                ) : (
+                  <Skeleton className="ml-auto h-5 w-8" />
+                )}
+              </span>
+              <span
+                className="col-span-2 col-start-2 mt-1.5 h-1 overflow-hidden rounded-full bg-muted"
+                aria-hidden="true"
+              >
+                <span
+                  className={cn('block h-full', tone.bar)}
+                  style={{ width: `${((row.value ?? 0) / max) * 100}%` }}
+                />
+              </span>
+            </Link>
+          </li>
+        )
+      })}
+    </ul>
+  )
+}
+
+function OldestList({ items }: { items: InboxItem[] }) {
+  if (items.length === 0) {
+    return (
+      <p className="text-sm text-muted-foreground">
+        收件箱已清空，没有等待处理的事项。
+      </p>
+    )
+  }
+  return (
+    <ul className="-mx-2 flex flex-col">
+      {items.map((item) => {
+        const tone = QUEUE_TONES[item.kind]
+        const Icon = tone.icon
+        return (
+          <li key={item.key}>
+            <Link
+              href={`/dashboard/inbox?kind=${item.kind}&id=${item.id}`}
+              prefetch={false}
+              className="grid grid-cols-[1.75rem_minmax(0,1fr)_auto] items-center gap-x-2.5 rounded-lg px-2 py-2 transition-colors hover:bg-accent focus-visible:bg-accent focus-visible:outline-none"
+            >
+              <span
+                className={cn(
+                  'row-span-2 flex size-7 items-center justify-center rounded-md',
+                  tone.tile
+                )}
+                aria-hidden="true"
+              >
+                <Icon className="size-4" />
+              </span>
+              <span className="truncate text-sm font-medium">{item.title}</span>
+              <span
+                className={cn(
+                  'row-span-2 text-right text-xs whitespace-nowrap tabular-nums',
+                  waitingTone(item.waitingSeconds)
+                )}
+              >
+                已等 {formatWaiting(item.waitingSeconds)}
+              </span>
+              <span className="truncate text-xs text-muted-foreground">
+                {LINK_HEALTH_INBOX_KIND_LABELS[item.kind]}
+                {item.actor ? ` · ${item.actor.name}` : ''}
+              </span>
+            </Link>
+          </li>
+        )
+      })}
+    </ul>
+  )
+}
+
+function Metric(props: { label: string; value: number; caption?: string }) {
+  return (
+    <div className="min-w-0">
+      <dt className="text-xs text-muted-foreground">{props.label}</dt>
+      <dd className="text-xl font-semibold tabular-nums">{fmt(props.value)}</dd>
+      {props.caption && (
+        <dd className="text-xs text-muted-foreground">{props.caption}</dd>
+      )}
+    </div>
+  )
+}
+
+const metricSkeleton = (count: number) => (
+  <div className="grid grid-cols-2 gap-x-4 gap-y-3.5" aria-hidden="true">
+    {Array.from({ length: count }).map((_, index) => (
+      <div key={index} className="flex flex-col gap-1.5">
+        <Skeleton className="h-3 w-14" />
+        <Skeleton className="h-6 w-20" />
+      </div>
+    ))}
+  </div>
+)
+
+const listSkeleton = (count: number) => (
+  <div className="flex flex-col gap-3" aria-hidden="true">
+    {Array.from({ length: count }).map((_, index) => (
+      <Skeleton key={index} className="h-9 w-full" />
+    ))}
+  </div>
+)
+
+function SummaryCell(props: {
+  label: string
+  value: ReactNode
+  caption: string
+}) {
+  return (
+    <div className="min-w-0 bg-card px-5 py-3.5">
+      <p className="text-xs text-muted-foreground">{props.label}</p>
+      <p className="mt-0.5 text-3xl leading-tight font-semibold tabular-nums">
+        {props.value}
+      </p>
+      <p className="text-xs text-muted-foreground">{props.caption}</p>
+    </div>
   )
 }
 
@@ -276,21 +384,20 @@ export function DashboardStats({ reviewerRole }: DashboardStatsProps) {
   const { counts, countsLoading, countsError, refreshCounts } = useDashboard()
   const { canViewStats, summary, overview, days, loadSummary, loadOverview } =
     useDashboardStats(reviewerRole)
-
+  const panels = useOverviewPanels(reviewerRole)
+  const canViewLogs = reviewerRole >= LOG_MIN_ROLE
   const [daysInput, setDaysInput] = useState(String(OVERVIEW_DEFAULT_DAYS))
   const [daysError, setDaysError] = useState('')
+  const [layoutRef, width] = useElementWidth<HTMLDivElement>()
 
-  // Reflect the actually applied window (a role downgrade resets it).
   useEffect(() => {
     setDaysInput(String(days))
   }, [days])
 
   const handleDaysSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    const trimmed = daysInput.trim()
-    const parsed = /^\d+$/.test(trimmed)
-      ? Number.parseInt(trimmed, 10)
-      : Number.NaN
+    const raw = daysInput.trim()
+    const parsed = /^\d+$/.test(raw) ? Number(raw) : Number.NaN
     if (
       !Number.isInteger(parsed) ||
       parsed < OVERVIEW_MIN_DAYS ||
@@ -305,302 +412,399 @@ export function DashboardStats({ reviewerRole }: DashboardStatsProps) {
     void loadOverview(parsed)
   }
 
-  const pendingTotal = counts
+  const refreshAll = () => {
+    void refreshCounts()
+    panels.refreshAll()
+    if (canViewStats) {
+      void loadSummary()
+      void loadOverview(days)
+    }
+  }
+
+  const inboxTotal = counts
     ? LINK_HEALTH_INBOX_KINDS.reduce(
-        (total, kind) => total + counts.pending[kind],
+        (sum, kind) => sum + counts.pending[kind],
         0
       )
-    : 0
+    : null
+
+  const queueRows: QueueRow[] = [
+    ...LINK_HEALTH_INBOX_KINDS.map(
+      (kind): QueueRow => ({
+        key: kind,
+        label: LINK_HEALTH_INBOX_KIND_LABELS[kind],
+        href: `/dashboard/inbox?kinds=${kind}`,
+        value: counts ? counts.pending[kind] : null,
+        error: counts ? undefined : countsError
+      })
+    ),
+    // Creator applications are a separate queue, never part of the inbox total.
+    ...(canViewStats
+      ? [
+          {
+            key: 'creator' as const,
+            label: '创作者申请',
+            note: '独立页面',
+            href: '/admin/creator',
+            value: summary.data?.pendingCreatorApplyCount ?? null,
+            error: summary.data ? undefined : summary.error
+          }
+        ]
+      : []),
+    {
+      key: 'company-merge',
+      label: '会社合并建议',
+      note: '独立页面',
+      href: '/dashboard/company-merges',
+      value: panels.mergeCount.data,
+      error: panels.mergeCount.error
+    }
+  ]
+
+  const queuePanel = (
+    <Panel
+      key="queue"
+      id="dashboard-queue-heading"
+      title="待办队列"
+      description="点一行进入"
+    >
+      {countsError && (
+        <div className="mb-3">
+          <PanelError
+            message={countsError}
+            retrying={countsLoading}
+            onRetry={() => void refreshCounts()}
+          />
+        </div>
+      )}
+      <QueueList rows={queueRows} />
+    </Panel>
+  )
+
+  const oldestPanel = (
+    <Panel
+      key="oldest"
+      id="dashboard-oldest-heading"
+      title="最早的待审"
+      description="收件箱内按等待时长"
+      action={
+        <Link
+          href="/dashboard/inbox"
+          className="text-xs text-muted-foreground underline underline-offset-4"
+        >
+          全部
+        </Link>
+      }
+    >
+      <BlockBody
+        block={panels.oldest}
+        onRetry={() => void panels.loadOldest()}
+        skeleton={listSkeleton(5)}
+      >
+        {(items) => <OldestList items={items} />}
+      </BlockBody>
+    </Panel>
+  )
+
+  const scalePanel = canViewStats && (
+    <Panel
+      key="scale"
+      id="dashboard-sum-heading"
+      title="站点规模"
+      description="现存记录数，资源包含各状态"
+    >
+      <BlockBody
+        block={summary}
+        onRetry={() => void loadSummary()}
+        skeleton={metricSkeleton(8)}
+      >
+        {(data) => (
+          <dl className="grid grid-cols-2 gap-x-4 gap-y-3.5">
+            <Metric label="用户" value={data.userCount} />
+            <Metric label="条目" value={data.galgameCount} />
+            <Metric label="游戏资源" value={data.galgameResourceCount} />
+            <Metric label="补丁资源" value={data.galgamePatchResourceCount} />
+            <Metric label="评论" value={data.galgameCommentCount} />
+            <Metric label="评分" value={data.ratingCount} />
+            <Metric label="投稿" value={data.submissionCount} />
+            <Metric
+              label="创作者"
+              value={data.creatorCount}
+              caption="不含管理员"
+            />
+          </dl>
+        )}
+      </BlockBody>
+    </Panel>
+  )
+
+  const growthPanel = canViewStats && (
+    <Panel
+      key="growth"
+      id="dashboard-overview-heading"
+      title="近期增长"
+      description={`最近 ${days} 天滚动窗口`}
+      action={
+        <form onSubmit={handleDaysSubmit} className="flex items-center gap-1.5">
+          <Input
+            aria-label="统计天数"
+            inputMode="numeric"
+            placeholder={`${OVERVIEW_MIN_DAYS}-${OVERVIEW_MAX_DAYS}`}
+            className="h-8 w-16"
+            value={daysInput}
+            onChange={(event) => setDaysInput(event.target.value)}
+          />
+          <Button
+            type="submit"
+            size="sm"
+            variant="outline"
+            disabled={overview.loading}
+          >
+            天
+          </Button>
+        </form>
+      }
+    >
+      {daysError && (
+        <p role="alert" className="mb-3 text-sm text-destructive">
+          {daysError}
+        </p>
+      )}
+      <BlockBody
+        block={overview}
+        onRetry={() => void loadOverview(days)}
+        skeleton={metricSkeleton(5)}
+      >
+        {(data) => (
+          <>
+            <dl className="grid grid-cols-2 gap-x-4 gap-y-3.5">
+              <Metric label="新注册用户" value={data.newUser} />
+              <Metric label="最近登录" value={data.newActiveUser} />
+              <Metric label="新增条目" value={data.newGalgame} />
+              <Metric label="新增资源" value={data.newGalgameResource} />
+              <Metric label="新增评论" value={data.newComment} />
+            </dl>
+            <p className="mt-3 text-xs text-muted-foreground">
+              最近登录按最后一次登录时间统计，不是每日活跃人数。
+            </p>
+          </>
+        )}
+      </BlockBody>
+    </Panel>
+  )
+
+  const statusPanel = canViewStats && (
+    <Panel
+      key="status"
+      id="dashboard-status-heading"
+      title="站点状态"
+      action={
+        <a
+          href="/admin/setting"
+          className="text-xs text-muted-foreground underline underline-offset-4"
+        >
+          设置
+        </a>
+      }
+    >
+      <BlockBody
+        block={panels.settings}
+        onRetry={() => void panels.loadSettings()}
+        skeleton={listSkeleton(2)}
+      >
+        {(data) => (
+          <ul className="flex flex-col divide-y text-sm">
+            <li className="flex items-center gap-2.5 py-2 first:pt-0">
+              <UserPlus className="size-4 text-muted-foreground" />
+              注册
+              <Badge
+                variant="outline"
+                className={cn(
+                  'ml-auto',
+                  data.disableRegister
+                    ? 'border-amber-600/40 text-amber-700 dark:text-amber-400'
+                    : 'border-green-600/40 text-green-700 dark:text-green-400'
+                )}
+              >
+                {data.disableRegister ? '已关闭' : '开放'}
+              </Badge>
+            </li>
+            <li className="flex items-center gap-2.5 py-2 last:pb-0">
+              <Globe className="size-4 text-muted-foreground" />
+              域名重定向
+              <Badge variant="outline" className="ml-auto">
+                {data.redirect.enableRedirect ? '已开启' : '未开启'}
+              </Badge>
+            </li>
+          </ul>
+        )}
+      </BlockBody>
+    </Panel>
+  )
+
+  const logPanel = canViewLogs && (
+    <Panel
+      key="log"
+      id="dashboard-log-heading"
+      title="最近管理操作"
+      action={
+        <a
+          href="/admin/log"
+          className="text-xs text-muted-foreground underline underline-offset-4"
+        >
+          全部日志
+        </a>
+      }
+    >
+      <BlockBody
+        block={panels.logs}
+        onRetry={() => void panels.loadLogs()}
+        skeleton={listSkeleton(6)}
+      >
+        {(logs) =>
+          logs.length === 0 ? (
+            <p className="text-sm text-muted-foreground">还没有管理操作。</p>
+          ) : (
+            <ul className="flex flex-col divide-y">
+              {logs.map((log) => (
+                <li key={log.id} className="py-2 first:pt-0 last:pb-0">
+                  <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-sm">
+                    <span className="font-medium">{log.user.name}</span>
+                    <Badge variant="secondary">
+                      {ADMIN_LOG_TYPE_MAP[log.type] ?? log.type}
+                    </Badge>
+                    <time className="ml-auto text-xs text-muted-foreground tabular-nums">
+                      {formatChinaDateTime(log.created)}
+                    </time>
+                  </div>
+                  <p className="mt-0.5 line-clamp-2 text-xs break-words text-muted-foreground">
+                    {log.content}
+                  </p>
+                </li>
+              ))}
+            </ul>
+          )
+        }
+      </BlockBody>
+    </Panel>
+  )
+
+  // Columns are added as the content area widens (requirement 3.2); each
+  // column stacks its own panels so short panels do not leave gaps.
+  const present = (...nodes: Array<ReactNode | false>) =>
+    nodes.filter((node): node is ReactNode => Boolean(node))
+  const columns: ReactNode[][] = !canViewStats
+    ? width >= 1024
+      ? [[queuePanel], [oldestPanel], present(logPanel)]
+      : width >= 768
+        ? [[queuePanel], present(oldestPanel, logPanel)]
+        : [present(queuePanel, oldestPanel, logPanel)]
+    : width >= 1440
+      ? [
+          [queuePanel],
+          present(oldestPanel, statusPanel),
+          present(scalePanel, growthPanel),
+          present(logPanel)
+        ]
+      : width >= 1024
+        ? [
+            present(queuePanel, statusPanel),
+            present(oldestPanel, growthPanel),
+            present(scalePanel, logPanel)
+          ]
+        : width >= 768
+          ? [
+              present(queuePanel, scalePanel, statusPanel),
+              present(oldestPanel, growthPanel, logPanel)
+            ]
+          : [
+              present(
+                queuePanel,
+                oldestPanel,
+                scalePanel,
+                growthPanel,
+                statusPanel,
+                logPanel
+              )
+            ]
+  const visibleColumns = columns.filter((column) => column.length > 0)
 
   return (
-    <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto @container/main">
-      <div className="flex w-full min-w-0 flex-col gap-8 p-4 md:p-6">
-        <section
-          aria-labelledby="dashboard-inbox-heading"
-          className="flex min-w-0 flex-col gap-4"
-        >
-          <SectionHeader
-            id="dashboard-inbox-heading"
-            title="待审事项"
-            note="按类别查看和处理待审事项。"
-          />
-          {countsLoading && !counts ? (
-            <div className={inboxGridClass}>
-              {Array.from({ length: canViewStats ? 7 : 6 }).map((_, index) => (
-                <StatCardSkeleton key={index} />
-              ))}
-            </div>
-          ) : counts ? (
-            <>
-              {countsError ? (
-                <InlineError
-                  message={countsError}
-                  retrying={countsLoading}
-                  onRetry={() => void refreshCounts()}
-                />
-              ) : null}
-              <div className={inboxGridClass}>
-                {LINK_HEALTH_INBOX_KINDS.map((kind) => {
-                  const KindIcon = INBOX_KIND_ICONS[kind]
-                  return (
-                    <Link
-                      key={kind}
-                      href={`/dashboard/inbox?kinds=${kind}`}
-                      className="min-w-0"
-                    >
-                      <Card
-                        className={cn(
-                          compactCardClass,
-                          'h-full transition-colors hover:bg-accent/50'
-                        )}
-                      >
-                        <CardHeader className={compactCardHeaderClass}>
-                          <CardDescription className="text-xs break-words">
-                            {LINK_HEALTH_INBOX_KIND_LABELS[kind]}
-                          </CardDescription>
-                          <CardAction>
-                            <KindIcon
-                              className="size-4 text-muted-foreground"
-                              aria-hidden="true"
-                            />
-                          </CardAction>
-                          <StatValue value={counts.pending[kind]} />
-                        </CardHeader>
-                      </Card>
-                    </Link>
-                  )
-                })}
-                <StatCard
-                  label="合计"
-                  value={pendingTotal}
-                  caption="仅统计以上来源"
-                  icon={Sigma}
-                />
-                <StatCard
-                  label="我今日已处理"
-                  value={counts.todayProcessed}
-                  caption="我在上海自然日内已完成的审核动作"
-                  icon={ClipboardCheck}
-                />
-                {canViewStats ? (
-                  <Link
-                    href="/admin/creator"
-                    prefetch={false}
-                    className="min-w-0"
-                  >
-                    <Card
-                      className={cn(
-                        compactCardClass,
-                        'h-full transition-colors hover:bg-accent/50'
-                      )}
-                    >
-                      <CardHeader className={compactCardHeaderClass}>
-                        <CardDescription className="text-xs break-words">
-                          待审创作者申请
-                        </CardDescription>
-                        <CardAction>
-                          <UserPlus
-                            className="size-4 text-muted-foreground"
-                            aria-hidden="true"
-                          />
-                        </CardAction>
-                        {summary.data ? (
-                          <StatValue
-                            value={summary.data.pendingCreatorApplyCount}
-                          />
-                        ) : summary.error ? (
-                          <CardTitle className="text-sm font-normal text-destructive">
-                            加载失败
-                          </CardTitle>
-                        ) : (
-                          <Skeleton className="h-6 w-20" />
-                        )}
-                      </CardHeader>
-                      <CardFooter className={compactCardFooterClass}>
-                        独立项目，不计入合计
-                      </CardFooter>
-                    </Card>
-                  </Link>
-                ) : null}
-              </div>
-              <PendingDistribution counts={counts} />
-            </>
-          ) : (
-            <BlockError
-              message={countsError || '获取待办计数失败'}
-              retrying={countsLoading}
-              onRetry={() => void refreshCounts()}
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto">
+      <div
+        ref={layoutRef}
+        className="flex w-full min-w-0 flex-col gap-4 px-4 py-4 md:px-6 md:py-5"
+      >
+        <div className="flex flex-wrap items-center gap-2">
+          <h2 className="text-lg font-semibold md:text-xl">总览</h2>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="ml-auto"
+            onClick={refreshAll}
+          >
+            <RefreshCw />
+            刷新全部
+          </Button>
+        </div>
+
+        {/* Hairline grid: the 1px gaps show the border colour, so dividers stay
+            correct when the cells wrap to two rows on narrow screens. */}
+        <DashboardPanel className="overflow-hidden">
+          <div
+            className="grid gap-px bg-border"
+            style={{
+              gridTemplateColumns: `repeat(${
+                width > 0 && width < 640 ? 2 : canViewStats ? 4 : 2
+              }, minmax(0, 1fr))`
+            }}
+          >
+            <SummaryCell
+              label="待审事项"
+              value={inboxTotal !== null ? fmt(inboxTotal) : '–'}
+              caption={
+                canViewStats
+                  ? '收件箱六类合计；创作者申请、会社合并另列'
+                  : '收件箱六类合计；会社合并另列'
+              }
             />
-          )}
-        </section>
-
-        {canViewStats ? (
-          <>
-            <section
-              aria-labelledby="dashboard-sum-heading"
-              className="flex min-w-0 flex-col gap-4"
-            >
-              <SectionHeader
-                id="dashboard-sum-heading"
-                title="总量统计"
-                note="数据库现存记录总量，资源包含所有状态。"
-                action={
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    disabled={summary.loading}
-                    onClick={() => void loadSummary()}
-                  >
-                    刷新
-                  </Button>
-                }
-              />
-              {!summary.data && !summary.error ? (
-                <div className={statsGridClass}>
-                  {Array.from({ length: 9 }).map((_, index) => (
-                    <StatCardSkeleton key={index} />
-                  ))}
-                </div>
-              ) : summary.data ? (
-                <>
-                  {summary.error ? (
-                    <InlineError
-                      message={summary.error}
-                      retrying={summary.loading}
-                      onRetry={() => void loadSummary()}
-                    />
-                  ) : null}
-                  <div className={statsGridClass}>
-                    <StatCard label="用户总数" value={summary.data.userCount} />
-                    <StatCard
-                      label="条目总数"
-                      value={summary.data.galgameCount}
-                    />
-                    <StatCard
-                      label="游戏资源总数"
-                      value={summary.data.galgameResourceCount}
-                    />
-                    <StatCard
-                      label="补丁资源总数"
-                      value={summary.data.galgamePatchResourceCount}
-                    />
-                    <StatCard
-                      label="评论总数"
-                      value={summary.data.galgameCommentCount}
-                    />
-                    <StatCard
-                      label="评分总数"
-                      value={summary.data.ratingCount}
-                    />
-                    <StatCard
-                      label="投稿总数"
-                      value={summary.data.submissionCount}
-                    />
-                    <StatCard
-                      label="创作者数"
-                      value={summary.data.creatorCount}
-                      caption="当前创作者，不含管理员"
-                    />
-                    <StatCard
-                      label="待审创作者申请数"
-                      value={summary.data.pendingCreatorApplyCount}
-                    />
-                  </div>
-                </>
-              ) : (
-                <BlockError
-                  message={summary.error || '获取总量统计失败'}
-                  retrying={summary.loading}
-                  onRetry={() => void loadSummary()}
+            <SummaryCell
+              label="我今日已处理"
+              value={counts ? fmt(counts.todayProcessed) : '–'}
+              caption="上海时间自然日"
+            />
+            {canViewStats && (
+              <>
+                <SummaryCell
+                  label={`新注册 · 近 ${days} 天`}
+                  value={overview.data ? fmt(overview.data.newUser) : '–'}
+                  caption="滚动窗口"
                 />
-              )}
-            </section>
-
-            <section
-              aria-labelledby="dashboard-overview-heading"
-              className="flex min-w-0 flex-col gap-4"
-            >
-              <SectionHeader
-                id="dashboard-overview-heading"
-                title="近期统计"
-                note={`最近 ${days} 天滚动窗口（非自然日）。`}
-                action={
-                  <form
-                    onSubmit={handleDaysSubmit}
-                    className="flex flex-wrap items-center gap-2"
-                  >
-                    <Input
-                      aria-label="统计天数"
-                      inputMode="numeric"
-                      placeholder={`${OVERVIEW_MIN_DAYS}-${OVERVIEW_MAX_DAYS}`}
-                      className="w-24"
-                      value={daysInput}
-                      onChange={(event) => setDaysInput(event.target.value)}
-                    />
-                    <Button type="submit" size="sm" disabled={overview.loading}>
-                      查询
-                    </Button>
-                  </form>
-                }
-              />
-              {daysError ? (
-                <p
-                  role="alert"
-                  className="text-sm break-words text-destructive"
-                >
-                  {daysError}
-                </p>
-              ) : null}
-              {!overview.data && !overview.error ? (
-                <div className={statsGridClass}>
-                  {Array.from({ length: 5 }).map((_, index) => (
-                    <StatCardSkeleton key={index} />
-                  ))}
-                </div>
-              ) : overview.data ? (
-                <>
-                  {overview.error ? (
-                    <InlineError
-                      message={overview.error}
-                      retrying={overview.loading}
-                      onRetry={() => void loadOverview(days)}
-                    />
-                  ) : null}
-                  <div className={statsGridClass}>
-                    <StatCard
-                      label="新注册用户"
-                      value={overview.data.newUser}
-                    />
-                    <StatCard
-                      label="最近登录人数"
-                      value={overview.data.newActiveUser}
-                      caption="最近一次登录落在窗口内，非每日活跃事件"
-                    />
-                    <StatCard
-                      label="新增条目"
-                      value={overview.data.newGalgame}
-                    />
-                    <StatCard
-                      label="新增资源"
-                      value={overview.data.newGalgameResource}
-                    />
-                    <StatCard
-                      label="新增评论"
-                      value={overview.data.newComment}
-                    />
-                  </div>
-                </>
-              ) : (
-                <BlockError
-                  message={overview.error || '获取近期统计失败'}
-                  retrying={overview.loading}
-                  onRetry={() => void loadOverview(days)}
+                <SummaryCell
+                  label={`新增资源 · 近 ${days} 天`}
+                  value={
+                    overview.data ? fmt(overview.data.newGalgameResource) : '–'
+                  }
+                  caption="含各状态"
                 />
-              )}
-            </section>
-          </>
-        ) : null}
+              </>
+            )}
+          </div>
+        </DashboardPanel>
+
+        <div
+          className="grid items-start gap-4"
+          style={{
+            gridTemplateColumns: `repeat(${visibleColumns.length}, minmax(0, 1fr))`
+          }}
+        >
+          {visibleColumns.map((column, index) => (
+            <div key={index} className="flex min-w-0 flex-col gap-4">
+              {column}
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   )

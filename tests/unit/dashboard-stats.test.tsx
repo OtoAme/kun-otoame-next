@@ -4,7 +4,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { DashboardStatsSumData, OverviewData } from '~/types/api/admin'
-import type { InboxCounts } from '~/types/api/inbox'
+import type { InboxCounts, InboxItem } from '~/types/api/inbox'
 
 const mocks = vi.hoisted(() => {
   const refreshCounts = vi.fn()
@@ -99,7 +99,55 @@ const zeroCounts: InboxCounts = {
   todayProcessed: 0
 }
 
-describe('dashboard stats', () => {
+const oldestItem = {
+  key: 'resource-apply:31',
+  kind: 'resource-apply',
+  id: 31,
+  title: '夏空カナタ 中文补丁',
+  subtitle: '',
+  actor: { id: 5, name: 'kuro' },
+  waitingFrom: '2026-10-25T00:00:00.000Z',
+  waitingSeconds: 52 * 3600,
+  targetHref: '',
+  badges: [],
+  readOnly: false,
+  payload: {}
+} as unknown as InboxItem
+
+// Every overview read the page may issue, keyed by URL.
+const okResponses: Record<string, unknown> = {
+  '/admin/stats/sum': sumData,
+  '/admin/stats': overviewData,
+  '/admin/inbox': { items: [oldestItem], totals: {}, truncated: {} },
+  '/admin/company-merges': { items: [{ id: 1 }, { id: 2 }] },
+  '/admin/log': {
+    logs: [
+      {
+        id: 9,
+        type: 'resource_apply_approve',
+        user: { id: 2, name: '七海', avatar: '' },
+        content: '资源申请通过：夏空カナタ',
+        created: '2026-10-28T02:00:00.000Z'
+      }
+    ],
+    total: 1
+  },
+  '/admin/setting/register': { disableRegister: false },
+  '/admin/setting/redirect': {
+    enableRedirect: false,
+    excludedDomains: [],
+    delaySeconds: 5
+  }
+}
+const SUPER_ONLY = [
+  '/admin/stats/sum',
+  '/admin/stats',
+  '/admin/log',
+  '/admin/setting/register',
+  '/admin/setting/redirect'
+]
+
+describe('dashboard overview', () => {
   let dom: JSDOM
   let root: Root
   let container: HTMLDivElement
@@ -109,11 +157,11 @@ describe('dashboard stats', () => {
     mocks.context.counts = counts
     mocks.context.countsLoading = false
     mocks.context.countsError = ''
-    mocks.get.mockImplementation((url: string) => {
-      if (url === '/admin/stats/sum') return Promise.resolve(sumData)
-      if (url === '/admin/stats') return Promise.resolve(overviewData)
-      return Promise.reject(new Error(`unexpected ${url}`))
-    })
+    mocks.get.mockImplementation((url: string) =>
+      url in okResponses
+        ? Promise.resolve(okResponses[url])
+        : Promise.reject(new Error(`unexpected ${url}`))
+    )
     dom = new JSDOM('<!doctype html><div id="root"></div>', {
       url: 'http://localhost/dashboard'
     })
@@ -134,20 +182,28 @@ describe('dashboard stats', () => {
   const render = async (role: number) => {
     await act(async () => root.render(<DashboardStats reviewerRole={role} />))
   }
-  const cardValue = (label: string): string | null => {
-    const target = [
-      ...container.querySelectorAll('[data-slot="card-description"]')
-    ].find((el) => el.textContent === label)
-    return (
-      target
-        ?.closest('[data-slot="card"]')
-        ?.querySelector('[data-slot="card-title"]')?.textContent ?? null
+  const requested = () => mocks.get.mock.calls.map(([url]) => url as string)
+  /** Value shown for a metric label inside the scale or growth panel. */
+  const metric = (label: string): string | null => {
+    const term = [...container.querySelectorAll('dt')].find(
+      (el) => el.textContent === label
     )
+    return term?.nextElementSibling?.textContent ?? null
   }
-  const section = (id: string) =>
+  const queueValue = (href: string): string | null => {
+    const row = container.querySelector(`a[href="${href}"]`)
+    return row?.children[2]?.textContent ?? null
+  }
+  const summaryValue = (label: string): string | null => {
+    const cell = [...container.querySelectorAll('p')].find(
+      (el) => el.textContent === label
+    )
+    return cell?.nextElementSibling?.textContent ?? null
+  }
+  const panel = (id: string) =>
     container.querySelector(`section[aria-labelledby="${id}"]`) as HTMLElement
   const retryIn = (id: string) =>
-    [...section(id).querySelectorAll('button')].find(
+    [...panel(id).querySelectorAll('button')].find(
       (button) => button.textContent === '重试'
     )!
   const submitDays = async (value: string) => {
@@ -167,124 +223,73 @@ describe('dashboard stats', () => {
     })
   }
 
-  it('role 3 never requests stats and shows only inbox todos', async () => {
+  it('role 3 never requests private reads and sees only queues', async () => {
     await render(3)
-    expect(mocks.get).not.toHaveBeenCalled()
-    expect(cardValue('待审条目')).toBe('5')
-    expect(cardValue('待审资源')).toBe('2')
-    expect(cardValue('旧反馈')).toBe('3')
-    expect(cardValue('旧举报')).toBe('1')
-    expect(cardValue('事项')).toBe('4')
-    expect(cardValue('合计')).toBe('15')
-    expect(cardValue('我今日已处理')).toBe('4')
-    for (const kind of [
-      'submission',
-      'resource-apply',
-      'feedback',
-      'report',
-      'case'
-    ]) {
-      expect(
-        container.querySelector(`a[href="/dashboard/inbox?kinds=${kind}"]`)
-      ).not.toBeNull()
-    }
+    for (const url of SUPER_ONLY) expect(requested()).not.toContain(url)
+    expect(queueValue('/dashboard/inbox?kinds=submission')).toBe('5')
+    expect(queueValue('/dashboard/inbox?kinds=resource-apply')).toBe('2')
+    expect(queueValue('/dashboard/inbox?kinds=feedback')).toBe('3')
+    expect(queueValue('/dashboard/inbox?kinds=report')).toBe('1')
+    expect(queueValue('/dashboard/inbox?kinds=case')).toBe('4')
+    expect(queueValue('/dashboard/company-merges')).toBe('2')
+    expect(summaryValue('待审事项')).toBe('15')
+    expect(summaryValue('我今日已处理')).toBe('4')
     expect(container.querySelector('a[href="/admin/creator"]')).toBeNull()
-    expect(container.textContent).not.toContain('总量统计')
-    expect(container.textContent).not.toContain('近期统计')
-    expect(container.textContent).not.toContain('待审创作者申请')
-  })
-
-  it('shows the current five-source distribution without including creator applications', async () => {
-    mocks.context.counts = {
-      pending: {
-        submission: 3,
-        'resource-apply': 1,
-        feedback: 0,
-        report: 0,
-        case: 2,
-        'broken-link': 0
-      },
-      todayProcessed: 4
+    for (const id of [
+      'dashboard-sum-heading',
+      'dashboard-overview-heading',
+      'dashboard-status-heading',
+      'dashboard-log-heading'
+    ]) {
+      expect(panel(id)).toBeNull()
     }
-    await render(4)
-    const distribution = container.querySelector(
-      '[aria-labelledby="dashboard-pending-distribution-heading"]'
-    )
-    expect(distribution).not.toBeNull()
-    const rows = [...distribution!.querySelectorAll('li')].map(
-      (row) => row.textContent
-    )
-    // broken-link 激活后来源行到 6 条，新增行以 0 计且不计创作者申请
-    expect(rows).toHaveLength(6)
-    expect(rows[0]).toContain('3 · 50%')
-    expect(rows[1]).toContain('1 · 17%')
-    expect(rows[2]).toContain('0 · 0%')
-    expect(rows[3]).toContain('0 · 0%')
-    expect(rows[4]).toContain('2 · 33%')
-    expect(rows[5]).toContain('0 · 0%')
-    expect(distribution?.textContent).not.toContain('创作者')
   })
 
-  it('shows an honest empty distribution when all pending counts are zero', async () => {
-    mocks.context.counts = {
-      pending: {
-        submission: 0,
-        'resource-apply': 0,
-        feedback: 0,
-        report: 0,
-        case: 0,
-        'broken-link': 0
-      },
-      todayProcessed: 4
+  it('role 4 loads every panel', async () => {
+    await render(4)
+    for (const url of SUPER_ONLY) expect(requested()).toContain(url)
+    expect(metric('用户')).toBe('120')
+    expect(metric('评分')).toBe('56')
+    expect(metric('投稿')).toBe('34')
+    expect(metric('新注册用户')).toBe('7')
+    expect(metric('最近登录')).toBe('15')
+    expect(metric('新增评论')).toBe('21')
+    expect(panel('dashboard-status-heading').textContent).toContain('开放')
+    expect(panel('dashboard-log-heading').textContent).toContain('资源申请通过')
+  })
+
+  it('keeps creator applications and merge suggestions out of the inbox total', async () => {
+    await render(4)
+    expect(queueValue('/admin/creator')).toBe('9')
+    expect(queueValue('/dashboard/company-merges')).toBe('2')
+    expect(summaryValue('待审事项')).toBe('15')
+  })
+
+  it('lists the oldest inbox items with a deep link to each', async () => {
+    await render(3)
+    expect(mocks.get).toHaveBeenCalledWith('/admin/inbox', { limitPerKind: 6 })
+    const link = [...container.querySelectorAll('a')].find(
+      (el) =>
+        el.getAttribute('href') === '/dashboard/inbox?kind=resource-apply&id=31'
+    )
+    expect(link?.textContent).toContain('夏空カナタ 中文补丁')
+    expect(link?.textContent).toContain('已等 2 天 4 小时')
+  })
+
+  it('says the inbox is empty instead of showing a blank list', async () => {
+    okResponses['/admin/inbox'] = { items: [], totals: {}, truncated: {} }
+    try {
+      await render(3)
+      expect(panel('dashboard-oldest-heading').textContent).toContain(
+        '收件箱已清空'
+      )
+    } finally {
+      okResponses['/admin/inbox'] = {
+        items: [oldestItem],
+        totals: {},
+        truncated: {}
+      }
     }
-    await render(3)
-    expect(container.textContent).toContain('当前没有待审事项')
-    expect(container.textContent).not.toContain('NaN')
-    expect(container.textContent).not.toContain('Infinity')
-  })
-
-  it('does not render a zero distribution before counts load or when the read fails', async () => {
-    mocks.context.counts = null
-    mocks.context.countsLoading = true
-    await render(3)
-    expect(container.textContent).not.toContain('当前待审分布')
-    expect(container.textContent).not.toContain('当前没有待审事项')
-    mocks.context.countsLoading = false
-    mocks.context.countsError = '读取失败'
-    await render(3)
-    expect(container.textContent).toContain('读取失败')
-    expect(container.textContent).not.toContain('当前待审分布')
-    expect(container.textContent).not.toContain('当前没有待审事项')
-  })
-
-  it('role 4 loads every summary and overview metric', async () => {
-    await render(4)
-    expect(mocks.get).toHaveBeenCalledWith('/admin/stats/sum')
-    expect(mocks.get).toHaveBeenCalledWith('/admin/stats', { days: 1 })
-    expect(mocks.get).toHaveBeenCalledTimes(2)
-    expect(cardValue('用户总数')).toBe('120')
-    expect(cardValue('条目总数')).toBe('45')
-    expect(cardValue('游戏资源总数')).toBe('67')
-    expect(cardValue('补丁资源总数')).toBe('23')
-    expect(cardValue('评论总数')).toBe('890')
-    expect(cardValue('评分总数')).toBe('56')
-    expect(cardValue('投稿总数')).toBe('34')
-    expect(cardValue('创作者数')).toBe('12')
-    expect(cardValue('待审创作者申请数')).toBe('9')
-    expect(cardValue('新注册用户')).toBe('7')
-    expect(cardValue('最近登录人数')).toBe('15')
-    expect(cardValue('新增条目')).toBe('3')
-    expect(cardValue('新增资源')).toBe('5')
-    expect(cardValue('新增评论')).toBe('21')
-  })
-
-  it('keeps pending creator applies out of the five-source total', async () => {
-    await render(4)
-    expect(cardValue('合计')).toBe('15')
-    expect(cardValue('待审创作者申请')).toBe('9')
-    expect(
-      container.querySelector('a[href="/admin/creator"]')?.textContent
-    ).toContain('待审创作者申请')
   })
 
   it('shows skeletons instead of fake zeros while loading', async () => {
@@ -292,109 +297,104 @@ describe('dashboard stats', () => {
     mocks.context.countsLoading = true
     mocks.get.mockReturnValue(new Promise(() => {}))
     await render(4)
-    expect(
-      container.querySelectorAll('[data-slot="skeleton"]').length
-    ).toBeGreaterThan(0)
-    const titles = [
-      ...container.querySelectorAll('[data-slot="card-title"]')
-    ].map((el) => el.textContent)
-    expect(titles).not.toContain('0')
-    expect(cardValue('合计')).toBeNull()
-    expect(cardValue('用户总数')).toBeNull()
+    expect(metric('用户')).toBeNull()
+    expect(metric('新注册用户')).toBeNull()
+    expect(summaryValue('待审事项')).toBe('–')
+    expect(queueValue('/dashboard/inbox?kinds=submission')).toBe('')
+    expect(container.querySelector('[data-slot="skeleton"]')).not.toBeNull()
   })
 
   it('renders a real zero only after zero-valued data loads', async () => {
     mocks.context.counts = zeroCounts
     mocks.get.mockImplementation((url: string) =>
-      Promise.resolve(url === '/admin/stats/sum' ? zeroSum : zeroOverview)
+      Promise.resolve(
+        url === '/admin/stats/sum'
+          ? zeroSum
+          : url === '/admin/stats'
+            ? zeroOverview
+            : okResponses[url]
+      )
     )
     await render(4)
-    expect(cardValue('合计')).toBe('0')
-    expect(cardValue('我今日已处理')).toBe('0')
-    expect(cardValue('待审条目')).toBe('0')
-    expect(cardValue('用户总数')).toBe('0')
-    expect(cardValue('评分总数')).toBe('0')
-    expect(cardValue('新注册用户')).toBe('0')
-    expect(cardValue('待审创作者申请')).toBe('0')
+    expect(metric('用户')).toBe('0')
+    expect(metric('新注册用户')).toBe('0')
+    expect(queueValue('/dashboard/inbox?kinds=submission')).toBe('0')
+    expect(summaryValue('待审事项')).toBe('0')
   })
 
-  it('fails and retries each stats block independently', async () => {
-    let sumFails = true
-    let overviewFails = true
-    mocks.get.mockImplementation((url: string) => {
-      if (url === '/admin/stats/sum') {
-        return sumFails
-          ? Promise.resolve('总量接口维护中')
-          : Promise.resolve(sumData)
-      }
-      return overviewFails
-        ? Promise.resolve('近期接口维护中')
-        : Promise.resolve(overviewData)
-    })
+  it('fails and retries each panel independently', async () => {
+    mocks.get.mockImplementation((url: string) =>
+      url === '/admin/stats/sum'
+        ? Promise.resolve('总量统计暂不可用')
+        : Promise.resolve(okResponses[url])
+    )
     await render(4)
-    expect(container.textContent).toContain('总量接口维护中')
-    expect(container.textContent).toContain('近期接口维护中')
-    expect(cardValue('用户总数')).toBeNull()
-    expect(cardValue('新注册用户')).toBeNull()
-    overviewFails = false
-    await act(async () => retryIn('dashboard-overview-heading').click())
-    expect(cardValue('新注册用户')).toBe('7')
-    expect(cardValue('用户总数')).toBeNull()
-    expect(container.textContent).toContain('总量接口维护中')
-    sumFails = false
+    expect(panel('dashboard-sum-heading').textContent).toContain(
+      '总量统计暂不可用'
+    )
+    expect(metric('新注册用户')).toBe('7')
+    expect(queueValue('/admin/creator')).toBe('读取失败')
+    mocks.get.mockImplementation((url: string) =>
+      Promise.resolve(okResponses[url])
+    )
+    const before = requested().length
     await act(async () => retryIn('dashboard-sum-heading').click())
-    expect(cardValue('用户总数')).toBe('120')
-    expect(cardValue('新注册用户')).toBe('7')
+    expect(requested().slice(before)).toEqual(['/admin/stats/sum'])
+    expect(metric('用户')).toBe('120')
   })
 
   it('shows a Chinese error on rejection and never auto retries', async () => {
     mocks.get.mockImplementation((url: string) =>
-      url === '/admin/stats/sum'
-        ? Promise.reject(new Error('down'))
-        : Promise.resolve(overviewData)
+      url === '/admin/stats'
+        ? Promise.reject(new Error('offline'))
+        : Promise.resolve(okResponses[url])
     )
     await render(4)
-    expect(container.textContent).toContain(
-      '获取总量统计失败，请检查网络后重试'
+    expect(panel('dashboard-overview-heading').textContent).toContain(
+      '获取近期统计失败，请检查网络后重试'
     )
-    expect(cardValue('新注册用户')).toBe('7')
-    const calls = mocks.get.mock.calls.length
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 20))
-    })
-    expect(mocks.get.mock.calls.length).toBe(calls)
+    expect(requested().filter((url) => url === '/admin/stats')).toHaveLength(1)
   })
 
   it('treats an empty string response as an error, not zero', async () => {
     mocks.get.mockImplementation((url: string) =>
-      Promise.resolve(url === '/admin/stats/sum' ? '' : overviewData)
+      url === '/admin/log'
+        ? Promise.resolve('')
+        : Promise.resolve(okResponses[url])
     )
     await render(4)
-    expect(
-      section('dashboard-sum-heading').querySelector('[role="alert"]')
-        ?.textContent
-    ).toBe('获取总量统计失败')
-    expect(cardValue('用户总数')).toBeNull()
+    expect(panel('dashboard-log-heading').textContent).toContain(
+      '获取管理日志失败'
+    )
   })
 
   it('surfaces inbox count errors with manual retry via shell context', async () => {
     mocks.context.counts = null
-    mocks.context.countsLoading = false
-    mocks.context.countsError = '获取待办计数失败'
+    mocks.context.countsError = '计数暂不可用'
     await render(3)
-    expect(container.textContent).toContain('获取待办计数失败')
-    await act(async () => retryIn('dashboard-inbox-heading').click())
-    expect(mocks.refreshCounts).toHaveBeenCalledTimes(1)
+    expect(queueValue('/dashboard/inbox?kinds=submission')).toBe('读取失败')
+    await act(async () => retryIn('dashboard-queue-heading').click())
+    expect(mocks.refreshCounts).toHaveBeenCalledOnce()
   })
 
   it('keeps loaded inbox counts visible next to a refresh error', async () => {
-    mocks.context.counts = counts
-    mocks.context.countsError = '刷新待办计数失败'
+    mocks.context.countsError = '刷新失败'
     await render(3)
-    expect(cardValue('合计')).toBe('15')
-    expect(container.textContent).toContain('刷新待办计数失败')
-    await act(async () => retryIn('dashboard-inbox-heading').click())
-    expect(mocks.refreshCounts).toHaveBeenCalledTimes(1)
+    expect(panel('dashboard-queue-heading').textContent).toContain('刷新失败')
+    expect(queueValue('/dashboard/inbox?kinds=submission')).toBe('5')
+  })
+
+  it('refreshes every panel from one button', async () => {
+    await render(4)
+    const before = requested().length
+    const button = [...container.querySelectorAll('button')].find(
+      (el) => el.textContent === '刷新全部'
+    )!
+    await act(async () => button.click())
+    expect(mocks.refreshCounts).toHaveBeenCalledOnce()
+    expect(new Set(requested().slice(before))).toEqual(
+      new Set([...Object.keys(okResponses)])
+    )
   })
 
   it.each<[string, number, boolean]>([
@@ -428,87 +428,93 @@ describe('dashboard stats', () => {
   it('clears old values on a new window and never lets stale responses win', async () => {
     const pending: Array<(value: OverviewData | string) => void> = []
     mocks.get.mockImplementation((url: string) => {
-      if (url === '/admin/stats/sum') return Promise.resolve(sumData)
+      if (url !== '/admin/stats') return Promise.resolve(okResponses[url])
       return new Promise<OverviewData | string>((resolve) =>
         pending.push(resolve)
       )
     })
     await render(4)
     await submitDays('30')
-    expect(cardValue('新注册用户')).toBeNull()
+    expect(metric('新注册用户')).toBeNull()
     await submitDays('7')
     expect(pending).toHaveLength(3)
     await act(async () => pending[2]({ ...overviewData, newUser: 70 }))
-    expect(cardValue('新注册用户')).toBe('70')
+    expect(metric('新注册用户')).toBe('70')
     await act(async () => pending[1]({ ...overviewData, newUser: 30 }))
-    expect(cardValue('新注册用户')).toBe('70')
+    expect(metric('新注册用户')).toBe('70')
     await act(async () => pending[0](overviewData))
-    expect(cardValue('新注册用户')).toBe('70')
+    expect(metric('新注册用户')).toBe('70')
   })
 
-  it('masks private stats on downgrade and ignores late responses', async () => {
+  it('masks private panels on downgrade and ignores late responses', async () => {
     let resolveSum!: (value: DashboardStatsSumData | string) => void
+    let resolveLog!: (value: unknown) => void
     mocks.get.mockImplementation((url: string) => {
       if (url === '/admin/stats/sum') {
-        return new Promise<DashboardStatsSumData | string>((resolve) => {
+        return new Promise((resolve) => {
           resolveSum = resolve
         })
       }
-      return Promise.resolve(overviewData)
+      if (url === '/admin/log') {
+        return new Promise((resolve) => {
+          resolveLog = resolve
+        })
+      }
+      return Promise.resolve(okResponses[url])
     })
     await render(4)
-    expect(cardValue('新注册用户')).toBe('7')
+    expect(metric('新注册用户')).toBe('7')
     await act(async () => root.render(<DashboardStats reviewerRole={3} />))
-    expect(container.textContent).not.toContain('总量统计')
+    expect(panel('dashboard-sum-heading')).toBeNull()
+    expect(panel('dashboard-log-heading')).toBeNull()
     expect(container.querySelector('a[href="/admin/creator"]')).toBeNull()
-    expect(cardValue('新注册用户')).toBeNull()
-    await act(async () => resolveSum(sumData))
-    expect(cardValue('用户总数')).toBeNull()
-    expect(container.textContent).not.toContain('总量统计')
+    expect(metric('新注册用户')).toBeNull()
+    await act(async () => {
+      resolveSum(sumData)
+      resolveLog(okResponses['/admin/log'])
+    })
+    expect(metric('用户')).toBeNull()
+    expect(container.textContent).not.toContain('资源申请通过')
   })
 
-  it('requests private stats only after an upgrade to role 4', async () => {
+  it('requests private reads only after an upgrade to role 4', async () => {
     await render(3)
-    expect(mocks.get).not.toHaveBeenCalled()
+    for (const url of SUPER_ONLY) expect(requested()).not.toContain(url)
     await act(async () => root.render(<DashboardStats reviewerRole={4} />))
     expect(mocks.get).toHaveBeenCalledWith('/admin/stats/sum')
     expect(mocks.get).toHaveBeenCalledWith('/admin/stats', { days: 1 })
-    expect(cardValue('用户总数')).toBe('120')
+    expect(metric('用户')).toBe('120')
   })
 
   it('first render before any request shows skeletons, never failures', () => {
     const html = renderToStaticMarkup(<DashboardStats reviewerRole={4} />)
-    expect(html).toContain('总量统计')
-    expect(html).toContain('近期统计')
+    expect(html).toContain('站点规模')
+    expect(html).toContain('近期增长')
     expect(html).toContain('data-slot="skeleton"')
-    expect(html).not.toContain('获取总量统计失败')
-    expect(html).not.toContain('获取近期统计失败')
-    expect(html).not.toContain('加载失败')
+    expect(html).not.toContain('失败')
     expect(mocks.get).not.toHaveBeenCalled()
   })
 
-  it('role 3 first render has no stats sections at all', () => {
+  it('role 3 first render has no private panels at all', () => {
     const html = renderToStaticMarkup(<DashboardStats reviewerRole={3} />)
-    expect(html).toContain('待审事项')
-    expect(html).not.toContain('总量统计')
-    expect(html).not.toContain('近期统计')
-    expect(html).not.toContain('待审创作者申请')
+    expect(html).toContain('待办队列')
+    expect(html).not.toContain('站点规模')
+    expect(html).not.toContain('近期增长')
+    expect(html).not.toContain('最近管理操作')
+    expect(html).not.toContain('创作者申请')
     expect(mocks.get).not.toHaveBeenCalled()
   })
 
-  it('pairs current terminology labels with their values', async () => {
+  it('labels resource metrics with current terminology', async () => {
     await render(4)
-    expect(cardValue('条目总数')).toBe('45')
-    expect(cardValue('游戏资源总数')).toBe('67')
-    expect(cardValue('补丁资源总数')).toBe('23')
-    expect(cardValue('新增条目')).toBe('3')
-    expect(cardValue('新增资源')).toBe('5')
-    const creator = [
-      ...container.querySelectorAll('[data-slot="card-description"]')
-    ]
-      .find((el) => el.textContent === '创作者数')
-      ?.closest('[data-slot="card"]')
-    expect(creator?.textContent).toContain('当前创作者，不含管理员')
-    expect(creator?.textContent).not.toContain('role=2')
+    expect(metric('条目')).toBe('45')
+    expect(metric('游戏资源')).toBe('67')
+    expect(metric('补丁资源')).toBe('23')
+    expect(metric('新增条目')).toBe('3')
+    expect(metric('新增资源')).toBe('5')
+    const creator = [...container.querySelectorAll('dt')].find(
+      (el) => el.textContent === '创作者'
+    )
+    expect(creator?.parentElement?.textContent).toContain('不含管理员')
   })
 })
