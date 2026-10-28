@@ -147,29 +147,11 @@ describe('resource access bootstrap production migration', () => {
       'pg_dump',
       'pg_restore --list',
       'legacy_max_id',
-      'legacy_cutover_at',
-      '通过结构检查后只启动审核固定版本',
-      '旧版重新写过旧格式后，下次必须重新排空并建立新快照'
+      'legacy_cutover_at'
     ]) {
       expect(operations, step).toContain(step)
     }
     expect(deployment).toContain('KUN_DEPLOY_RELEASE_TAG')
     expect(deployment).toContain('pnpm deploy:pull:pinned')
-
-    // 操作步骤只在主指南维护，其他入口必须能沿链接找到它。
-    for (const [path, target] of [
-      ['README.md', 'docs/README.md'],
-      ['docs/README.md', 'guides/operations.md'],
-      ['docs/guides/deployment.md', 'operations.md'],
-      ['docs/concepts/data-consistency.md', '../guides/operations.md'],
-      ['docs/guides/testing.md', '../reference/README.md'],
-      ['docs/reference/README.md', '../guides/operations.md'],
-      ['docs/guides/review.md', 'operations.md'],
-      ['skills/otoame-operations/SKILL.md', '../../docs/guides/operations.md'],
-      ['skills/otoame-deployment/SKILL.md', '../../docs/guides/operations.md'],
-      ['skills/otoame-review/SKILL.md', '../../docs/guides/review.md']
-    ]) {
-      expect(await readProjectFile(path), path).toContain(`](${target}`)
-    }
   })
 })

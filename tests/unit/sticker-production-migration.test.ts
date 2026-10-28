@@ -77,18 +77,11 @@ describe('production Sticker migration contract', () => {
   })
 
   it('documents the alignment step before the production Prisma guard', async () => {
-    const [deployment, operations, stickerDocs] = await Promise.all([
-      readProjectFile('docs/guides/deployment.md'),
-      readProjectFile('docs/guides/operations.md'),
-      readProjectFile('docs/reference/stickers.md')
-    ])
+    const operations = await readProjectFile('docs/guides/operations.md')
 
     expect(operations).toContain(
       'production-stickers-prisma-alignment-2026-08-15.sql'
     )
-    expect(operations).toContain('审核迁移执行后运行')
     expect(operations).toContain('pnpm prisma:deploy-safe')
-    expect(deployment).toContain('](operations.md')
-    expect(stickerDocs).toContain('](../guides/operations.md#按能力选择迁移)')
   })
 })

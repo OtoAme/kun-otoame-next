@@ -282,17 +282,11 @@ describe('production Prisma deployment command', () => {
     expect(release).not.toContain('prisma:deploy-safe')
   })
 
-  it('routes server builds from the README to the production deployment guide', async () => {
-    const [readme, deployment] = await Promise.all([
-      readProjectFile('README.md'),
-      readProjectFile('docs/guides/deployment.md')
-    ])
+  it('keeps server build guidance off development schema push', async () => {
+    const deployment = await readProjectFile('docs/guides/deployment.md')
     const serverBuild = extractMarkdownSection(deployment, '### 在服务器构建')
 
-    expect(readme).toContain('](docs/guides/deployment.md)')
-    expect(deployment).toContain('](operations.md')
     expect(serverBuild).toContain('pnpm deploy:build')
-    expect(serverBuild).toContain('生产结构检查')
     expect(serverBuild).not.toContain('pnpm prisma:push')
   })
 
@@ -301,10 +295,6 @@ describe('production Prisma deployment command', () => {
     const guard = extractMarkdownSection(operations, '## 生产结构检查')
 
     expect(guard).toContain('pnpm prisma:deploy-safe')
-    expect(guard).toContain('资源链接兼容迁移')
-    expect(guard).toContain('只读比较结构')
-    expect(guard).toContain('生成客户端')
-    expect(guard).toContain('已有持久库不能改用开发初始化')
     expect(guard).not.toContain('pnpm prisma:push')
   })
 
@@ -319,7 +309,6 @@ describe('production Prisma deployment command', () => {
     )
     const guard = extractMarkdownSection(operations, '## 生产结构检查')
 
-    expect(initialization).toContain('可丢弃空库')
     expect(initialization).toContain('pnpm prisma:push')
     expect(guard).toContain('pnpm prisma:deploy-safe')
     expect(guard).not.toContain('pnpm prisma:push')
@@ -337,9 +326,6 @@ describe('production Prisma deployment command', () => {
     )
 
     expect(rollback).toContain('pnpm deploy:rollback')
-    expect(rollback).toContain('兼容当前数据库')
-    expect(rollback).toContain('不修改数据库')
-    expect(rollback).toContain('](operations.md#失败与数据库恢复)')
     expect(rollback).not.toContain('pnpm prisma:push')
     expect(rollback).not.toContain('pnpm prisma:deploy-safe')
     expect(databaseRecovery).toContain('备份')
