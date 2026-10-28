@@ -66,3 +66,9 @@ prisma/generated
 
 # grok
 .grok-delegate/
+
+# pi
+.pi/
+
+# obsidian
+docs/.obsidian
