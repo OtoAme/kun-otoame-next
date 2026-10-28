@@ -2,7 +2,11 @@
 
 import type { ReactNode } from 'react'
 
-import type { FilterContext } from '~/components/dashboard/page/SearchableListPage'
+import {
+  UserPicker,
+  type FilterChip,
+  type FilterContext
+} from '~/components/dashboard/page/SearchableListPage'
 import { Checkbox } from '~/components/dashboard/ui/checkbox'
 import { Input } from '~/components/dashboard/ui/input'
 import { Label } from '~/components/dashboard/ui/label'
@@ -73,6 +77,8 @@ const listOf = (allowed: readonly string[]) => (raw: string) => {
 
 const date = (raw: string) => (isValidMoemoepointDate(raw) ? raw : null)
 
+const userId = (raw: string) => (/^[1-9]\d{0,6}$/.test(raw) ? raw : null)
+
 const DAY_MS = 24 * 60 * 60 * 1000
 const daysAgo = (days: number) =>
   formatShanghaiCalendarDate(new Date(Date.now() - days * DAY_MS))
@@ -93,8 +99,12 @@ export const RESOURCE_LIST_CONFIG: SearchableListConfig = {
     from: date,
     to: date,
     rating: oneOf(RATING_LABELS),
-    sort: oneOf(SORT_LABELS)
+    sort: oneOf(SORT_LABELS),
+    // Publisher is a filter, so it combines with a keyword search.
+    userId,
+    userName: (raw) => raw.slice(0, 17) || null
   },
+  displayOnly: ['userName'],
   // Management lists show every content rating unless one is chosen.
   defaultParams: { rating: 'all', searchField: 'all' }
 }
@@ -261,6 +271,32 @@ export function ResourceFilterPanel({ filters, setFilters }: FilterContext) {
           onChange={setList('status')}
         />
       </Field>
+      <div className="flex flex-col gap-1.5">
+        <Label
+          htmlFor="resource-filter-user"
+          className="text-xs text-muted-foreground"
+        >
+          发布者
+        </Label>
+        <UserPicker
+          id="resource-filter-user"
+          className="w-full"
+          selected={
+            filters.userId
+              ? {
+                  id: Number(filters.userId),
+                  name: filters.userName || `#${filters.userId}`
+                }
+              : null
+          }
+          onSelect={(user) =>
+            setFilters({
+              userId: user ? String(user.id) : '',
+              userName: user?.name ?? ''
+            })
+          }
+        />
+      </div>
       <SingleSelect
         id="resource-filter-publisher"
         label="发布者身份"
@@ -385,41 +421,35 @@ export function ResourceFilterPanel({ filters, setFilters }: FilterContext) {
 }
 
 /** Search scope and sort live next to the search box. */
-export function ResourceToolbar({
-  searchType,
-  filters,
-  setFilters
-}: FilterContext) {
+export function ResourceToolbar({ filters, setFilters }: FilterContext) {
   return (
     <>
-      {searchType === 'content' && (
-        <Select
-          value={filters.searchField ?? 'all'}
-          onValueChange={(searchField) =>
-            setFilters({
-              searchField: searchField === 'all' ? '' : searchField
-            })
-          }
-        >
-          <SelectTrigger className="w-[150px]" aria-label="关键词搜索范围">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {Object.entries(SEARCH_FIELD_LABELS).map(([key, text]) => (
-              <SelectItem key={key} value={key}>
-                {text}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      )}
+      <Select
+        value={filters.searchField ?? 'all'}
+        onValueChange={(searchField) =>
+          setFilters({
+            searchField: searchField === 'all' ? '' : searchField
+          })
+        }
+      >
+        <SelectTrigger className="w-[150px] shrink-0" aria-label="搜索范围">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {Object.entries(SEARCH_FIELD_LABELS).map(([key, text]) => (
+            <SelectItem key={key} value={key}>
+              {text}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
       <Select
         value={filters.sort ?? 'created_desc'}
         onValueChange={(sort) =>
           setFilters({ sort: sort === 'created_desc' ? '' : sort })
         }
       >
-        <SelectTrigger className="w-[170px]" aria-label="排序">
+        <SelectTrigger className="w-[170px] shrink-0" aria-label="排序">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
@@ -442,7 +472,7 @@ const listLabel = (value: string, labels: Options) =>
 
 /** Search scope and sort are shown in the toolbar, not as chips. */
 export function resourceFilterChips(filters: ListFilters) {
-  const chips: { key: string; label: string }[] = []
+  const chips: FilterChip[] = []
   const add = (key: string, label: string) => chips.push({ key, label })
   if (filters.section) add('section', RESOURCE_SECTION_MAP[filters.section])
   if (filters.status)
@@ -450,6 +480,12 @@ export function resourceFilterChips(filters: ListFilters) {
       'status',
       `状态：${listLabel(filters.status, RESOURCE_STATUS_MAP as Options)}`
     )
+  if (filters.userId)
+    chips.push({
+      key: 'userId',
+      label: `发布者：${filters.userName || `#${filters.userId}`}`,
+      keys: ['userId', 'userName']
+    })
   if (filters.publisher)
     add('publisher', `${PUBLISHER_LABELS[filters.publisher]}发布`)
   if (filters.type)

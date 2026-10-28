@@ -376,9 +376,10 @@ export function DashboardResources() {
     <SearchableListPage<ResourceRow>
       config={RESOURCE_LIST_CONFIG}
       title="下载资源"
-      description="按名称、备注、游戏或链接查找资源，按分区、状态、发布者、类型等筛选。管理列表默认显示全部内容分级。删除会写入管理日志。"
+      description="按名称、备注、游戏、链接或资源 ID 查找资源；发布者、分区、状态、类型等在筛选里设置，可与关键词同时使用。管理列表默认显示全部内容分级。删除会写入管理日志。"
       noun="资源"
       contentLabel="关键词"
+      searchByUser={false}
       columns={COLUMNS}
       toolbar={ResourceToolbar}
       filterPanel={ResourceFilterPanel}

@@ -71,13 +71,17 @@ export function UserAvatar({ user }: { user: KunUser }) {
   )
 }
 
-/** Author picker for user searches, backed by the mention search. */
-function UserPicker({
+/** Searches users by name (the mention search) and picks one. */
+export function UserPicker({
+  id,
   selected,
-  onSelect
+  onSelect,
+  className = 'w-full sm:w-64'
 }: {
+  id?: string
   selected: { id: number; name: string } | null
   onSelect: (user: { id: number; name: string } | null) => void
+  className?: string
 }) {
   const [text, setText] = useState('')
   const [options, setOptions] = useState<KunUser[]>([])
@@ -112,13 +116,19 @@ function UserPicker({
 
   if (selected) {
     return (
-      <div className="flex h-9 items-center gap-2 rounded-md border px-3 text-sm">
-        <span className="text-muted-foreground">用户</span>
-        <span className="font-medium">{selected.name}</span>
+      <div
+        className={cn(
+          'flex h-9 min-w-0 items-center gap-2 rounded-md border px-3 text-sm',
+          className
+        )}
+      >
+        <span className="min-w-0 truncate font-medium">{selected.name}</span>
+        <span className="text-xs text-muted-foreground">#{selected.id}</span>
         <Button
           variant="ghost"
           size="icon-xs"
           aria-label="清除用户"
+          className="ml-auto"
           onClick={() => onSelect(null)}
         >
           <X />
@@ -128,8 +138,9 @@ function UserPicker({
   }
 
   return (
-    <div className="relative w-full sm:w-64">
+    <div className={cn('relative', className)}>
       <Input
+        id={id}
         value={text}
         onChange={(event) => setText(event.target.value)}
         placeholder="输入用户名查找"
@@ -216,7 +227,14 @@ export interface SearchableListPageProps<Row extends { id: number }> {
    */
   filterPanel?: (ctx: FilterContext) => ReactNode
   /** Removable summary of the active filters, shown under the toolbar. */
-  filterChips?: (filters: ListFilters) => { key: string; label: string }[]
+  filterChips?: (filters: ListFilters) => FilterChip[]
+}
+
+export interface FilterChip {
+  key: string
+  label: string
+  /** Filters cleared together when the chip is removed; defaults to `key`. */
+  keys?: string[]
 }
 
 export interface FilterContext {
@@ -471,7 +489,13 @@ export function SearchableListPage<Row extends { id: number }>({
                 type="button"
                 aria-label={`移除筛选：${chip.label}`}
                 className="rounded-sm p-0.5 hover:bg-background/60 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-                onClick={() => setFilters({ [chip.key]: '' })}
+                onClick={() =>
+                  setFilters(
+                    Object.fromEntries(
+                      (chip.keys ?? [chip.key]).map((key) => [key, ''])
+                    )
+                  )
+                }
               >
                 <X className="size-3" />
               </button>
