@@ -45,10 +45,10 @@ export OTOAME_SQL_FILE='<审核的 migration 文件路径>'
 docker exec -i "$OTOAME_PG_CONTAINER" psql -X -v ON_ERROR_STOP=1 -U "$OTOAME_PG_USER" -d "$OTOAME_PG_DATABASE" < "$OTOAME_SQL_FILE"
 ```
 
-工具直接在主机时使用：
+工具直接在主机时，使用不含 Prisma 专用 `schema` 查询参数的 PostgreSQL 连接地址；应用配置中的数据库地址带有这一参数，psql 会拒绝，不能直接传入。下面的 `OTOAME_PSQL_URL` 由操作者在受控环境中提供：
 
 ```bash
-psql -X -v ON_ERROR_STOP=1 -d "$KUN_DATABASE_URL" -f "$OTOAME_SQL_FILE"
+psql -X -v ON_ERROR_STOP=1 -d "$OTOAME_PSQL_URL" -f "$OTOAME_SQL_FILE"
 ```
 
 不要给并发建索引文件外包单事务。任何一步失败先停止后续执行并保持必要停写，保留输出与备份，按本页失败处理核对中断状态。
@@ -97,7 +97,7 @@ export OTOAME_ACCESS_CUTOVER_AT='<实际含时区切换时刻>'
 docker exec -i "$OTOAME_PG_CONTAINER" psql -X -v ON_ERROR_STOP=1 -U "$OTOAME_PG_USER" -d "$OTOAME_PG_DATABASE" -v legacy_max_id="$OTOAME_ACCESS_MAX_ID" -v legacy_cutover_at="$OTOAME_ACCESS_CUTOVER_AT" < migration/production-resource-access-grant-sync-2026-07-10.sql
 ```
 
-以完全相同的值再运行[授权同步](../../migration/production-resource-access-grant-sync-2026-07-10.sql)，再将上述命令输入文件换成授权预检，带相同参数复检，确认分类、授权与索引完整。同步在显式事务外执行；中断按现有检查核对，不猜测已完成。
+同步完成后，将上述命令的输入文件换成[授权预检](../../migration/production-resource-access-grant-preflight-2026-07-10.sql)，带相同参数复检，确认分类、授权与索引完整。同步可以按相同的值安全重跑，复检不符时按检查输出处理，不改用其他参数。同步在显式事务外执行；中断按现有检查核对，不猜测已完成。
 
 通过结构检查后只启动审核固定版本。旧有效授权最多可能延续 72 小时，新授权固定 24 小时。旧版重新写过旧格式后，下次必须重新排空并建立新快照，不能沿用旧参数。
 
@@ -160,13 +160,13 @@ pnpm maintenance:companies:dirty:cache --plan=<审计目录>/plan.json
 | 任务 | 预览与执行 | 完成与失败处理 |
 | --- | --- | --- |
 | 资源派生分类 | `pnpm maintenance:resource-attributes:dry`；确认后 `pnpm maintenance:resource-attributes:apply` | 只按已发布资源重算并刷新缓存，待审与封禁不参与。 |
-| 资源类型重分类 | `pnpm migration:resource-type:dry`；确认后 `pnpm migration:resource-type:apply` | 同步游戏派生分类；资源计数触发器由 `pnpm migration:patch-counters` 在审核窗口安装与回填。 |
+| 资源类型重分类 | `pnpm migration:resource-type:dry`；确认后 `pnpm migration:resource-type:apply` | 同步游戏派生分类；资源计数触发器由 `pnpm migration:patch-counters` 在审核窗口安装与回填。若有资源会被改为空类型，执行会被阻断；先审核预览中的这些资源，不要直接添加放行参数。 |
 | 标签别名重复 | `pnpm maintenance:tags:auto-alias:dry`；确认后 `pnpm maintenance:tags:auto-alias:apply` | 迁移关系、别名及屏蔽偏好，数据库维护计数；多主歧义保留并人工裁决。 |
 | 人工标签合并 | `pnpm maintenance:tags:export --out=<审计目录>/tags.json` 后使用 `pnpm maintenance:tags:merge:dry -- --plan=<审核计划>`；确认后 `pnpm maintenance:tags:merge:apply -- --plan=<同一计划>` | 核对真实盘点，空本地库不能证明生产影响；脏标签清理另有 `pnpm maintenance:dirty-tags:dry` 和对应 `apply`，先审核候选。 |
 | 截图缩略图 | `pnpm maintenance:gallery-thumbnails:dry`；确认后 `pnpm maintenance:gallery-thumbnails:apply -- --limit=50 --batch=20 --concurrency=1 --delay=1000` | 预览不下载原图、不写存储或数据库，执行只补真实缩略图，不改原图；失败看跳过与错误，再缩范围复查。 |
 | 未发送私聊图片 | `pnpm maintenance:conversation-images:dry`；确认后 `pnpm maintenance:conversation-images:apply -- --limit=100 --batch=50 --concurrency=1 --delay=1000` | 默认仅删超过 2 小时、路径符合且不被未删除消息或回复引用的对象；预览默认最多 200，执行前重查引用。失败保留错误，不能把候选当已删。 |
-| 投稿素材积压 | `pnpm maintenance:submission-assets:dry`；确认后 `pnpm maintenance:submission-assets:apply` | 预览不写待办、不删文件、不清边缘。执行依次处理终态投稿积压、持久待办和新无主文件，默认宽限 24 小时，可用 `--grace-hours` 与 `--limit` 调整。 |
-| 内置贴纸 | `pnpm stickers:sync -- --manifest=<本地清单>`；确认后同命令加 `--apply` | 校验后上传与更新目录，不删历史贴纸；格式与步骤见[贴纸维护](private-chat-stickers.md#导入和同步操作)。 |
+| 投稿素材积压 | `pnpm maintenance:submission-assets:dry`；确认后 `pnpm maintenance:submission-assets:apply` | 预览不写待办、不删文件、不清边缘。执行依次处理终态投稿积压、持久待办和新无主文件，默认宽限 24 小时、不限数量。调整时参数与值用空格分隔，例如 `pnpm maintenance:submission-assets:apply -- --limit 50 --grace-hours 48`；写成等号形式或非正整数会被忽略，执行变为默认宽限且不限数量。 |
+| 内置贴纸 | `pnpm stickers:sync -- --manifest=<本地清单>`；确认后同命令加 `--apply` | 校验后上传与更新目录，不删历史贴纸，但会按清单重新启用其中的贴纸；格式与步骤见[贴纸维护](private-chat-stickers.md#导入和同步操作)。 |
 
 截图可用 `--patch-id`、`--start-id`、`--limit`、`--max-original-mb` 缩范围，不确定编码成本时加 `--skip-animated-avif`。私聊图片可用 `--conversation-id` 和更长 `--older-than-hours` 缩范围。保持生产低并发，视频工具安装和验证见部署指南。
 

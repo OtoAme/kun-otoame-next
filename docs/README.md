@@ -20,6 +20,7 @@
 | 构建与验证固定版本的独立链接检测服务 | [检测服务操作指南](../deployment/link-checker/README.md) |
 | 选择测试并准备隔离验收 | [测试操作指南](project/testing.md) |
 | 审阅变更与发布风险 | [审阅指南](project/review.md) |
+| 查看实现与预期不符、尚未修正的问题 | [已知代码问题](project/known-issues.md) |
 | 判断测试、文档同步是否足够 | [质量与交付边界](modules/quality.md) |
 | 判断缓存、并发或索引方案的适用范围 | [性能策略](project/performance-optimization.md)、[索引职责](project/database-indexes.md) |
 | 编写或更新维护文档 | [文档标准](project/documentation.md) |

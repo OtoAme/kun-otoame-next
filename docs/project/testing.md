@@ -4,7 +4,7 @@
 
 ## 选择相称的检查
 
-前提是依赖已安装、使用项目要求的 Node.js 版本，并且清楚命令是否接触真实服务。单元测试用 Vitest 的本地替身隔离数据库、Redis、存储和外部平台，不能连接真实服务。
+前提是依赖已安装、使用项目要求的 Node.js 版本，并且清楚命令是否接触真实服务。单元测试用 Vitest 的本地替身隔离数据库、Redis、存储和外部平台，不能连接真实服务。`pnpm test` 同时收集集成测试目录；其中会社合并并发测试只在设置 `KUN_COMPANY_MERGE_TEST_DATABASE_URL` 时运行并连接该 PostgreSQL，未设置时跳过，设置时只能指向一次性数据库。
 
 | 改动 | 应验证的结果 |
 | --- | --- |
@@ -65,7 +65,7 @@ pnpm test:docs-contracts
 
 本节准备器和会社验收命令通过 Node.js 直接运行 TypeScript，按[开发指南](development.md#在空开发库启动)使用 Node.js 24.22.1，且保持默认类型剥除启用；它让 Node.js 忽略类型标注后执行脚本，不代替类型检查。其他直接以 Node.js 运行的端到端脚本，包括后文手机布局检查，也采用这一测试前提。类型剥除的行为见 [Node.js 官方 TypeScript 说明](https://nodejs.org/docs/latest-v24.x/api/typescript.html#type-stripping)。
 
-前提是已准备可丢弃 PostgreSQL、隔离 Redis、浏览器，以及项目源码副本；数据库连接必须显式给出、与应用默认库不同，名称严格以 `_e2e` 结尾。安全启动器固定本机 3100 端口，当前工作区不得已有开发服务器。以下尖括号均为操作者在隔离环境填写的值，备份路径必须是绝对且尚不存在的文件。
+前提是已准备可丢弃 PostgreSQL、隔离 Redis、浏览器，以及项目源码副本；项目根目录需有运行配置文件，准备器与验收命令会读取它，用于核对一次性数据库与应用默认库不同，文件缺失时命令直接失败；数据库连接必须显式给出、与应用默认库不同，名称严格以 `_e2e` 结尾。安全启动器固定本机 3100 端口，当前工作区不得已有开发服务器。以下尖括号均为操作者在隔离环境填写的值，备份路径必须是绝对且尚不存在的文件。
 
 ```bash
 KUN_E2E_DATABASE_URL='<一次性数据库连接>' pnpm e2e:db:prepare --reset --backup=<新绝对备份路径>
@@ -86,7 +86,7 @@ KUN_E2E_DATABASE_URL='<同一一次性数据库连接>' pnpm e2e:company-identit
 
 [编辑上传守卫](../../tests/e2e/edit-upload-guards.e2e.ts)、[投稿流转](../../tests/e2e/patch-submission-lifecycle.e2e.ts)、[投稿界面](../../tests/e2e/submission-ui.e2e.ts)和[资料设置](../../tests/e2e/user-profile-settings.e2e.ts)会真实创建、修改或删除记录。先按脚本头部准备测试身份、服务地址与受控设施，确认正在运行的 3100 服务实际使用一次性测试库；资料设置还要求非默认端口的独立 Redis，并核对费用明细与清理本次账号。服务缺失、身份不明或数据库不符时停止，不能用默认配置兜底。
 
-工作台[整链验收](../../tests/e2e/workspace-maintenance.e2e.ts)与[迁移验收](../../tests/e2e/workspace-maintenance-migration.e2e.ts)还要求非默认本机数据库和 Redis、受控检测服务与对象存储替身，不加载真实环境配置。迁移检查包含上线后真实维护记录保护，不能只验空库。
+工作台[整链验收](../../tests/e2e/workspace-maintenance.e2e.ts)要求非默认本机数据库和 Redis、受控检测服务与对象存储替身，不加载真实环境配置。[迁移验收](../../tests/e2e/workspace-maintenance-migration.e2e.ts)只需一个尚未执行维护迁移的一次性 PostgreSQL：地址为 `127.0.0.1`、端口不是 5432、库名以 `_e2e` 结尾，并用 `KUN_E2E_ARTIFACT_DIR` 指定结果目录。迁移检查包含上线后真实维护记录保护，不能只验空库。
 
 工作台整链验收还需显式提供 `KUN_E2E_SOURCE_SHA`，填写本次整合源码的完整提交号，并核对隔离副本与该提交一致；结果记录中的提交号不能代替这项核对。它调用[工作台浏览器扩展](../../tests/e2e/workspace-alignment.browser.ts)，检查资源分类与编辑、投稿操作、个人入口，以及四个视口的深浅色布局。正常操作通过真实接口执行，网络失败与迟到响应使用受控拦截；脚本和截图存在不代表本次验收已经通过，须检查各组实际结果。
 
@@ -100,5 +100,5 @@ node tests/e2e/resource-card-mobile.e2e.ts
 
 ## 源码入口
 
-- [测试配置](../../vitest.config.ts)、[单元测试](../../tests/unit/)与[端到端脚本](../../tests/e2e/)
+- [测试配置](../../vitest.config.ts)、[单元测试](../../tests/unit/)、[集成测试](../../tests/integration/)与[端到端脚本](../../tests/e2e/)
 - [安全数据库准备器](../../scripts/e2eDatabasePreparation.ts)、[会社隔离启动器](../../scripts/e2eCompanyIdentityServer.ts)与[文档检查器](../../scripts/checkDocs.ts)
