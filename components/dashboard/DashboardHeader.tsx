@@ -6,7 +6,11 @@ import { RefreshCw } from 'lucide-react'
 import { Button } from '~/components/dashboard/ui/button'
 import { Separator } from '~/components/dashboard/ui/separator'
 import { SidebarTrigger } from '~/components/dashboard/ui/sidebar'
-import { LINK_HEALTH_INBOX_KIND_LABELS } from '~/constants/dashboard'
+import {
+  DASHBOARD_NAV_GROUPS,
+  isDashboardNavActive,
+  LINK_HEALTH_INBOX_KIND_LABELS
+} from '~/constants/dashboard'
 import {
   LINK_HEALTH_INBOX_KINDS,
   type LinkHealthInboxKind
@@ -39,24 +43,17 @@ export function DashboardHeader() {
   const pathname = usePathname()
   const searchParams = useSearchParams()
   const selectedKinds = parseSelectedKinds(searchParams.get('kinds'))
-  // Migrated pages get fixed titles; the dashboard inbox root keeps the
-  // source-filter title logic (neutral unless exactly one valid kind).
-  const title =
-    pathname === '/dashboard'
-      ? '统计总览'
-      : pathname === '/dashboard/user'
-        ? '用户管理'
-        : pathname.startsWith('/dashboard/shoutbox')
-          ? '小喇叭管理'
-          : USER_LEDGER_PATH.test(pathname)
-            ? '用户萌萌点明细'
-            : // The case center carries no `kinds` param, so it has to be
-              // matched before the source-filter branch falls through.
-              pathname.startsWith('/dashboard/case')
-              ? '事项中心'
-              : selectedKinds.length === 1
-                ? LINK_HEALTH_INBOX_KIND_LABELS[selectedKinds[0]]
-                : '待审事项'
+  // The inbox root keeps the source-filter title (neutral unless exactly one
+  // valid kind); the ledger is a sub-page of user management; every other
+  // page takes its sidebar label.
+  const navItem = DASHBOARD_NAV_GROUPS.flatMap((group) => group.items).find(
+    (item) => !item.legacy && isDashboardNavActive(item, pathname)
+  )
+  const title = USER_LEDGER_PATH.test(pathname)
+    ? '用户萌萌点明细'
+    : pathname === '/dashboard/inbox' && selectedKinds.length === 1
+      ? LINK_HEALTH_INBOX_KIND_LABELS[selectedKinds[0]]
+      : (navItem?.label ?? '待审事项')
 
   // The header is plain normal-flow content. On mobile it scrolls away with
   // the shared page flow (the SidebarInset scroll container); from md up the

@@ -5,20 +5,31 @@ import Link from 'next/link'
 import { usePathname, useSearchParams } from 'next/navigation'
 import toast from 'react-hot-toast'
 import {
-  BarChart3,
+  Archive,
+  BadgeCheck,
   ChevronsUpDown,
   ClipboardList,
   FileText,
   Flag,
+  Gamepad2,
+  HardDriveDownload,
   History,
   Home,
   Inbox,
   LayoutDashboard,
   LogOut,
+  Mail,
   Megaphone,
   Merge,
+  MessageCircle,
   MessageSquare,
+  OctagonAlert,
   Package,
+  PenLine,
+  ScrollText,
+  Settings,
+  Star,
+  Sticker,
   Unlink,
   UserRound,
   Users,
@@ -37,6 +48,10 @@ import {
   SidebarMenuBadge,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarMenuSub,
+  SidebarMenuSubButton,
+  SidebarMenuSubItem,
+  SidebarRail,
   useSidebar
 } from '~/components/dashboard/ui/sidebar'
 import {
@@ -48,8 +63,10 @@ import {
   DropdownMenuTrigger
 } from '~/components/dashboard/ui/dropdown-menu'
 import {
-  DASHBOARD_LEGACY_LINKS,
-  LINK_HEALTH_INBOX_KIND_LABELS
+  getVisibleDashboardNav,
+  isDashboardNavActive,
+  LINK_HEALTH_INBOX_KIND_LABELS,
+  type DashboardNavItem
 } from '~/constants/dashboard'
 import {
   LINK_HEALTH_INBOX_KINDS,
@@ -60,9 +77,35 @@ import { kunFetchPost } from '~/utils/kunFetch'
 import { useUserStore } from '~/store/userStore'
 import { useMessageStore } from '~/store/messageStore'
 import { useSettingStore } from '~/store/settingStore'
-import { cn } from '~/lib/dashboard/utils'
 
 import { useDashboard, type DashboardCurrentUser } from './DashboardShell'
+
+// Navigation icons are drawn one step larger than the shadcn default so the
+// groups can be scanned by shape (redesign requirement 3.4).
+const NAV_BUTTON_CLASS = '[&>svg]:size-5'
+
+const NAV_ICONS: Record<string, LucideIcon> = {
+  overview: LayoutDashboard,
+  inbox: Inbox,
+  case: ClipboardList,
+  creator: BadgeCheck,
+  game: Gamepad2,
+  resource: HardDriveDownload,
+  comment: MessageCircle,
+  rating: Star,
+  sticker: Sticker,
+  'link-health': Unlink,
+  'company-merges': Merge,
+  submission: History,
+  'archive-feedback': Archive,
+  'archive-report': Flag,
+  'archive-rating-report': OctagonAlert,
+  shoutbox: Megaphone,
+  user: Users,
+  log: ScrollText,
+  setting: Settings,
+  email: Mail
+}
 
 const KIND_ICONS: Record<LinkHealthInboxKind, LucideIcon> = {
   submission: FileText,
@@ -71,12 +114,6 @@ const KIND_ICONS: Record<LinkHealthInboxKind, LucideIcon> = {
   report: Flag,
   case: ClipboardList,
   'broken-link': Unlink
-}
-
-// The inbox only queues cases waiting on the handler (D23); the case center
-// holds every other view of them, so this one source row links there.
-const KIND_HREFS: Partial<Record<LinkHealthInboxKind, string>> = {
-  case: '/dashboard/case'
 }
 
 const getTotalPending = (counts: LinkHealthInboxCounts) =>
@@ -108,33 +145,115 @@ export function DashboardSidebar({ currentUser }: DashboardSidebarProps) {
   const pathname = usePathname()
   const searchParams = useSearchParams()
   const kindsParam = searchParams.get('kinds')
-  const isStatsActive = pathname === '/dashboard'
   const isInboxRoot = pathname === '/dashboard/inbox'
   const selectedKinds = parseSelectedKinds(kindsParam)
-  // All-inbox is active when there is no filter at all, or when the
-  // canonical URL explicitly selects all four kinds. A partial multi-source
-  // selection marks neither All nor any single source row.
+  // The inbox parent row is active when there is no filter at all, or when
+  // the canonical URL explicitly selects every kind. A partial multi-source
+  // selection marks neither the parent nor any single source row.
   const isAllActive =
     isInboxRoot &&
     (!kindsParam || selectedKinds.length === LINK_HEALTH_INBOX_KINDS.length)
-  const isUserSectionActive =
-    pathname === '/dashboard/user' || pathname.startsWith('/dashboard/user/')
-  const isShoutboxActive = pathname.startsWith('/dashboard/shoutbox')
-  const isCaseCenterActive = pathname.startsWith('/dashboard/case')
-  const isCompanyMergesActive = pathname.startsWith('/dashboard/company-merges')
-  const isLinkHealthActive = pathname.startsWith('/dashboard/link-health')
-  const userSectionNeedsSuperAdmin = currentUser.role < 4
   const closeMobileSidebar = () => setOpenMobile(false)
+  const groups = getVisibleDashboardNav(currentUser.role)
+
+  const renderLink = (item: DashboardNavItem) => {
+    const Icon = NAV_ICONS[item.id]
+    const content = (
+      <>
+        <Icon />
+        <span>{item.label}</span>
+      </>
+    )
+    // Legacy pages live under the other root layout, so they get a plain
+    // anchor and a full page load instead of client navigation.
+    return item.legacy ? (
+      <a href={item.href}>{content}</a>
+    ) : (
+      <Link href={item.href}>{content}</Link>
+    )
+  }
+
+  const renderItem = (item: DashboardNavItem) => {
+    const isInbox = item.id === 'inbox'
+    const isActive = isInbox
+      ? isAllActive
+      : isDashboardNavActive(item, pathname)
+    return (
+      <SidebarMenuItem key={item.id}>
+        <SidebarMenuButton
+          asChild
+          isActive={isActive}
+          tooltip={item.label}
+          className={NAV_BUTTON_CLASS}
+          onClick={closeMobileSidebar}
+        >
+          {renderLink(item)}
+        </SidebarMenuButton>
+        {isInbox && counts && (
+          <SidebarMenuBadge>{getTotalPending(counts)}</SidebarMenuBadge>
+        )}
+        {/* Per-source rows only while on the inbox, so the rest of the
+            navigation fits without scrolling. */}
+        {isInbox && isInboxRoot && (
+          <SidebarMenuSub>
+            {LINK_HEALTH_INBOX_KINDS.map((kind) => {
+              const Icon = KIND_ICONS[kind]
+              const isKindActive =
+                isInboxRoot &&
+                selectedKinds.length === 1 &&
+                selectedKinds[0] === kind
+              return (
+                <SidebarMenuSubItem key={kind}>
+                  <SidebarMenuSubButton
+                    asChild
+                    isActive={isKindActive}
+                    onClick={closeMobileSidebar}
+                  >
+                    <Link href={`/dashboard/inbox?kinds=${kind}`}>
+                      <Icon />
+                      <span>{LINK_HEALTH_INBOX_KIND_LABELS[kind]}</span>
+                      {counts && (
+                        <span className="ml-auto text-xs text-muted-foreground tabular-nums">
+                          {counts.pending[kind]}
+                        </span>
+                      )}
+                    </Link>
+                  </SidebarMenuSubButton>
+                </SidebarMenuSubItem>
+              )
+            })}
+          </SidebarMenuSub>
+        )}
+        {isInbox && countsError && (
+          <p className="px-2 pt-1 text-xs text-destructive group-data-[collapsible=icon]:hidden">
+            {countsError}
+          </p>
+        )}
+      </SidebarMenuItem>
+    )
+  }
 
   return (
-    <Sidebar>
+    <Sidebar collapsible="icon">
       <SidebarHeader>
         <SidebarMenu>
           <SidebarMenuItem>
-            <SidebarMenuButton asChild onClick={closeMobileSidebar}>
+            <SidebarMenuButton
+              asChild
+              size="lg"
+              tooltip="OtoAme 站方控制台"
+              onClick={closeMobileSidebar}
+            >
               <Link href="/dashboard">
-                <LayoutDashboard />
-                <span className="font-medium">管理面板</span>
+                <span className="flex aspect-square size-8 items-center justify-center rounded-lg bg-sidebar-primary text-sm font-bold text-sidebar-primary-foreground">
+                  O
+                </span>
+                <span className="grid flex-1 text-left leading-tight">
+                  <span className="truncate font-semibold">OtoAme</span>
+                  <span className="truncate text-xs text-muted-foreground">
+                    站方控制台
+                  </span>
+                </span>
               </Link>
             </SidebarMenuButton>
           </SidebarMenuItem>
@@ -142,210 +261,53 @@ export function DashboardSidebar({ currentUser }: DashboardSidebarProps) {
       </SidebarHeader>
 
       <SidebarContent>
-        <SidebarGroup>
-          <SidebarMenu>
-            <SidebarMenuItem>
-              <SidebarMenuButton
-                asChild
-                isActive={isStatsActive}
-                onClick={closeMobileSidebar}
-              >
-                <Link href="/dashboard">
-                  <BarChart3 />
-                  <span>统计总览</span>
-                </Link>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-          </SidebarMenu>
-        </SidebarGroup>
-
-        <SidebarGroup>
-          <SidebarGroupLabel>待审事项</SidebarGroupLabel>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  asChild
-                  isActive={isAllActive}
-                  onClick={closeMobileSidebar}
-                >
-                  <Link href="/dashboard/inbox">
-                    <Inbox />
-                    <span>全部待审事项</span>
-                  </Link>
-                </SidebarMenuButton>
-                {counts && (
-                  <SidebarMenuBadge>{getTotalPending(counts)}</SidebarMenuBadge>
-                )}
-              </SidebarMenuItem>
-              {LINK_HEALTH_INBOX_KINDS.map((kind) => {
-                const Icon = KIND_ICONS[kind]
-                const isActive =
-                  kind === 'case'
-                    ? isCaseCenterActive
-                    : isInboxRoot &&
-                      selectedKinds.length === 1 &&
-                      selectedKinds[0] === kind
-                return (
-                  <SidebarMenuItem key={kind}>
-                    <SidebarMenuButton
-                      asChild
-                      isActive={isActive}
-                      onClick={closeMobileSidebar}
-                    >
-                      <Link
-                        href={
-                          KIND_HREFS[kind] ?? `/dashboard/inbox?kinds=${kind}`
-                        }
-                      >
-                        <Icon />
-                        <span>{LINK_HEALTH_INBOX_KIND_LABELS[kind]}</span>
-                      </Link>
-                    </SidebarMenuButton>
-                    {counts && (
-                      <SidebarMenuBadge>
-                        {counts.pending[kind]}
-                      </SidebarMenuBadge>
-                    )}
-                  </SidebarMenuItem>
-                )
-              })}
-            </SidebarMenu>
-            {countsError && (
-              <p className="px-2 pt-1 text-xs text-destructive">
-                {countsError}
-              </p>
+        {groups.map((group) => (
+          <SidebarGroup key={group.label ?? 'top'}>
+            {group.label && (
+              <SidebarGroupLabel>{group.label}</SidebarGroupLabel>
             )}
-          </SidebarGroupContent>
-        </SidebarGroup>
-
-        <SidebarGroup>
-          <SidebarGroupLabel>管理</SidebarGroupLabel>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  asChild
-                  isActive={isLinkHealthActive}
-                  onClick={closeMobileSidebar}
-                >
-                  <Link href="/dashboard/link-health" title="已失效链接">
-                    <Unlink />
-                    <span className="shrink-0 whitespace-nowrap">
-                      已失效链接
-                    </span>
-                  </Link>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  asChild
-                  isActive={isShoutboxActive}
-                  onClick={closeMobileSidebar}
-                >
-                  <Link href="/dashboard/shoutbox" title="小喇叭">
-                    <Megaphone />
-                    <span className="shrink-0 whitespace-nowrap">小喇叭</span>
-                  </Link>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  asChild
-                  isActive={isCompanyMergesActive}
-                  onClick={closeMobileSidebar}
-                >
-                  <Link href="/dashboard/company-merges" title="会社合并">
-                    <Merge />
-                    <span className="shrink-0 whitespace-nowrap">会社合并</span>
-                  </Link>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  asChild
-                  isActive={isUserSectionActive}
-                  onClick={closeMobileSidebar}
-                >
-                  <Link
-                    href="/dashboard/user"
-                    title={
-                      userSectionNeedsSuperAdmin
-                        ? '用户管理（仅超级管理员）'
-                        : '用户管理'
-                    }
-                  >
-                    <Users />
-                    <span className="shrink-0 whitespace-nowrap">用户管理</span>
-                    {userSectionNeedsSuperAdmin && (
-                      <span
-                        title="仅超级管理员"
-                        className="ml-auto min-w-0 flex-1 truncate text-right text-xs text-muted-foreground"
-                      >
-                        仅超级管理员
-                      </span>
-                    )}
-                  </Link>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
-
-        <SidebarGroup>
-          <SidebarGroupLabel>旧版页面</SidebarGroupLabel>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              {DASHBOARD_LEGACY_LINKS.map((link) => {
-                const needsSuperAdmin = currentUser.role < link.minRole
-                return (
-                  <SidebarMenuItem key={link.href}>
-                    <SidebarMenuButton asChild onClick={closeMobileSidebar}>
-                      <a
-                        href={link.href}
-                        title={
-                          needsSuperAdmin
-                            ? `${link.label}（处理需超级管理员）`
-                            : link.label
-                        }
-                      >
-                        <History />
-                        <span className="shrink-0 whitespace-nowrap">
-                          {link.label}
-                        </span>
-                        <span
-                          className={cn(
-                            'shrink-0 whitespace-nowrap rounded border px-1 text-[10px] leading-4 text-muted-foreground',
-                            !needsSuperAdmin && 'ml-auto'
-                          )}
-                        >
-                          旧
-                        </span>
-                        {needsSuperAdmin && (
-                          <span
-                            title="处理需超级管理员"
-                            className="ml-auto min-w-0 flex-1 truncate text-right text-xs text-muted-foreground"
-                          >
-                            处理需超级管理员
-                          </span>
-                        )}
-                      </a>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                )
-              })}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
+            <SidebarGroupContent>
+              <SidebarMenu>{group.items.map(renderItem)}</SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        ))}
       </SidebarContent>
 
       <SidebarFooter>
         <SidebarMenu>
+          {/* The game editor itself requires a super administrator. */}
+          {currentUser.role >= 4 && (
+            <SidebarMenuItem>
+              <SidebarMenuButton
+                asChild
+                tooltip="发布游戏"
+                className={NAV_BUTTON_CLASS}
+              >
+                <a href="/edit/create">
+                  <PenLine />
+                  <span>发布游戏</span>
+                </a>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          )}
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              asChild
+              tooltip="返回前台"
+              className={NAV_BUTTON_CLASS}
+            >
+              <a href="/">
+                <Home />
+                <span>返回前台</span>
+              </a>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
           <SidebarMenuItem>
             <DashboardUserMenu currentUser={currentUser} />
           </SidebarMenuItem>
         </SidebarMenu>
       </SidebarFooter>
+      <SidebarRail />
     </Sidebar>
   )
 }
@@ -386,7 +348,11 @@ function DashboardUserMenu({ currentUser }: DashboardSidebarProps) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <SidebarMenuButton aria-label="用户菜单">
+        <SidebarMenuButton
+          aria-label="用户菜单"
+          tooltip={currentUser.name}
+          className={NAV_BUTTON_CLASS}
+        >
           <UserRound />
           <span>{currentUser.name}</span>
           <ChevronsUpDown className="ml-auto" />
