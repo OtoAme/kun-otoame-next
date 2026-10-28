@@ -85,9 +85,8 @@ export const DASHBOARD_NAV_GROUPS: DashboardNavGroup[] = [
       {
         id: 'resource',
         label: '下载资源',
-        href: '/admin/resource',
-        minRole: 4,
-        legacy: true
+        href: '/dashboard/resource',
+        minRole: 3
       },
       {
         id: 'comment',
