@@ -15,11 +15,16 @@ vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: mocks.push })
 }))
 
-import { useComments } from '~/hooks/dashboard/useComments'
+import { useSearchableList } from '~/hooks/dashboard/useSearchableList'
 
-let state: ReturnType<typeof useComments>
+type Row = { id: number }
+let state: ReturnType<typeof useSearchableList<Row>>
 function Probe() {
-  state = useComments()
+  state = useSearchableList<Row>({
+    endpoint: '/admin/comment',
+    field: 'comments',
+    fallbackError: '获取评论列表失败'
+  })
   return null
 }
 
@@ -34,7 +39,7 @@ const comment = (id: number) => ({
   created: '2026-10-28T00:00:00.000Z'
 })
 
-describe('useComments', () => {
+describe('useSearchableList', () => {
   let dom: JSDOM
   let root: Root
 
@@ -80,7 +85,7 @@ describe('useComments', () => {
       searchType: 'user',
       userId: 5
     })
-    expect(state.comments.map((row) => row.id)).toEqual([1, 2])
+    expect(state.rows.map((row) => row.id)).toEqual([1, 2])
   })
 
   it('does not refetch the list when only the selection changes', async () => {
@@ -118,11 +123,18 @@ describe('useComments', () => {
     )
   })
 
+  it('reads rows from the configured response field', async () => {
+    mocks.get.mockResolvedValue({ ratings: [comment(3)], total: 1 })
+    await mount('')
+    expect(state.rows).toEqual([])
+    expect(state.error).toBe('获取评论列表失败')
+  })
+
   it('shows a server message as the error and keeps no stale rows', async () => {
     mocks.get.mockResolvedValue('本页面仅管理员可访问')
     await mount('')
     expect(state.error).toBe('本页面仅管理员可访问')
-    expect(state.comments).toEqual([])
+    expect(state.rows).toEqual([])
     expect(state.loading).toBe(false)
   })
 })

@@ -98,9 +98,8 @@ export const DASHBOARD_NAV_GROUPS: DashboardNavGroup[] = [
       {
         id: 'rating',
         label: '评价',
-        href: '/admin/rating',
-        minRole: 3,
-        legacy: true
+        href: '/dashboard/rating',
+        minRole: 3
       },
       {
         id: 'sticker',

@@ -190,7 +190,11 @@ describe('dashboard shell', () => {
     expect(container.querySelector('a[href="/dashboard/user"]')).toBeNull()
     expect(container.querySelector('a[href="/admin/feedback"]')).toBeNull()
     expect(container.querySelector('a[href="/edit/create"]')).toBeNull()
-    expect(container.querySelector('a[href="/admin/rating"]')).not.toBeNull()
+    expect(
+      container.querySelector('a[href="/dashboard/rating"]')
+    ).not.toBeNull()
+    // Pages not yet in the console still open the legacy admin page.
+    expect(container.querySelector('a[href="/admin/stickers"]')).not.toBeNull()
     expect(container.querySelector('a[href="/admin"]')).toBeNull()
     expect(container.textContent).not.toContain('旧版页面')
   })

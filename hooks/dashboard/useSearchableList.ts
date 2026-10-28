@@ -1,10 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { kunFetchGet } from '~/utils/kunFetch'
-import type { AdminComment } from '~/types/api/admin'
 
-export const COMMENT_PAGE_SIZE_OPTIONS = [30, 50, 100, 500] as const
-export type CommentSearchType = 'content' | 'user'
+export const LIST_PAGE_SIZE_OPTIONS = [30, 50, 100, 500] as const
+export type ListSearchType = 'content' | 'user'
 
 const DEFAULT_PAGE = 1
 const DEFAULT_LIMIT = 30
@@ -12,25 +11,32 @@ const MAX_PAGE = 9999999
 const MAX_LIMIT = 500
 const MAX_ID = 9999999
 const MAX_SEARCH_LENGTH = 300
-const FALLBACK_ERROR = '获取评论列表失败，请稍后重试'
 const NETWORK_ERROR = '网络错误，请稍后重试'
 
-export interface CommentsQuery {
+export interface ListQuery {
   page: number
   limit: number
-  searchType: CommentSearchType
+  searchType: ListSearchType
   /** Content keyword; empty for user searches. */
   search: string
   /** Selected author for user searches. */
   userId: number | null
   userName: string
-  /** Comment shown in the detail pane; kept in the URL so it survives reload. */
+  /** Row shown in the detail pane; kept in the URL so it survives reload. */
   selected: number | null
   /** Identity of the list request, excluding the selection. */
   key: string
 }
 
-type QueryTarget = Omit<CommentsQuery, 'key'>
+type QueryTarget = Omit<ListQuery, 'key'>
+
+export interface SearchableListConfig {
+  /** Admin endpoint that takes page, limit, searchType, search and userId. */
+  endpoint: string
+  /** Response field holding the rows, e.g. `comments` or `ratings`. */
+  field: string
+  fallbackError: string
+}
 
 const parseBoundedInt = (
   raw: string | null,
@@ -53,13 +59,21 @@ const buildKey = (target: Omit<QueryTarget, 'selected'>) =>
     target.userId ?? ''
   ].join('|')
 
-export const useComments = () => {
+/**
+ * URL-backed state for console lists searched by content or by author
+ * (comments, ratings). Each list change drops the selection; a selection
+ * change never refetches the list; responses for a stale query are dropped.
+ */
+export function useSearchableList<Row extends { id: number }>(
+  config: SearchableListConfig
+) {
+  const { endpoint, field, fallbackError } = config
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
 
-  const query = useMemo<CommentsQuery>(() => {
-    const searchType: CommentSearchType =
+  const query = useMemo<ListQuery>(() => {
+    const searchType: ListSearchType =
       searchParams.get('searchType') === 'user' ? 'user' : 'content'
     const userId =
       searchType === 'user'
@@ -90,7 +104,7 @@ export const useComments = () => {
 
   const [data, setData] = useState<{
     key: string
-    comments: AdminComment[]
+    rows: Row[]
     total: number
   } | null>(null)
   const [error, setError] = useState<{ key: string; message: string } | null>(
@@ -117,10 +131,7 @@ export const useComments = () => {
     if (query.userId !== null) params.userId = query.userId
     Promise.resolve()
       .then(() =>
-        kunFetchGet<{ comments: AdminComment[]; total: number } | string>(
-          '/admin/comment',
-          params
-        )
+        kunFetchGet<Record<string, unknown> | string>(endpoint, params)
       )
       .then((res) => {
         if (!active || seq !== requestSeq.current) return
@@ -128,20 +139,17 @@ export const useComments = () => {
           setData(null)
           setError({
             key: query.key,
-            message: res.trim() === '' ? FALLBACK_ERROR : res
+            message: res.trim() === '' ? fallbackError : res
           })
           return
         }
-        if (
-          res &&
-          Array.isArray(res.comments) &&
-          typeof res.total === 'number'
-        ) {
-          setData({ key: query.key, comments: res.comments, total: res.total })
+        const rows = res?.[field]
+        if (Array.isArray(rows) && typeof res.total === 'number') {
+          setData({ key: query.key, rows: rows as Row[], total: res.total })
           return
         }
         setData(null)
-        setError({ key: query.key, message: FALLBACK_ERROR })
+        setError({ key: query.key, message: fallbackError })
       })
       .catch(() => {
         if (!active || seq !== requestSeq.current) return
@@ -157,7 +165,7 @@ export const useComments = () => {
     }
     // The selection is not part of the list request.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [query.key, refreshNonce])
+  }, [query.key, refreshNonce, endpoint, field, fallbackError])
 
   const pushQuery = useCallback(
     (next: QueryTarget) => {
@@ -179,7 +187,7 @@ export const useComments = () => {
   )
 
   // Every list change drops the selection unless it says otherwise, so the
-  // detail never shows a comment that left the visible rows.
+  // detail never shows a row that left the visible list.
   const update = useCallback(
     (patch: Partial<QueryTarget>) =>
       pushQuery({ ...query, selected: null, ...patch }),
@@ -192,7 +200,7 @@ export const useComments = () => {
 
   return {
     query,
-    comments: currentData?.comments ?? [],
+    rows: currentData?.rows ?? [],
     total: currentData?.total ?? 0,
     loading: currentData === null && currentError === null,
     refreshing: currentData !== null && loadingKey === query.key,
@@ -206,7 +214,7 @@ export const useComments = () => {
     setLimit: (limit: number) => {
       if (limit !== query.limit) update({ page: DEFAULT_PAGE, limit })
     },
-    setSearchType: (searchType: CommentSearchType) => {
+    setSearchType: (searchType: ListSearchType) => {
       if (searchType !== query.searchType) {
         update({
           page: DEFAULT_PAGE,
