@@ -34,13 +34,14 @@ import { CASE_WAITING_HANDLER_STATUSES } from '~/constants/case'
 /**
  * Admin log types that count toward「今日已处理」: one row per completed
  * review or case closure (module 01 plan 4.3; module 03 M03-8 adds
- * `case_close`).
+ * `case_close`; creator reviews per module 09 plan 5.4).
  */
 const PROCESSED_LOG_TYPES = [
   'submission_review',
   'resource_apply_approve',
   'resource_apply_decline',
-  'case_close'
+  'case_close',
+  'creator_review'
 ]
 
 const userSelect = { id: true, name: true, avatar: true } as const

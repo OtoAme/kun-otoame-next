@@ -193,6 +193,11 @@ export const adminUpdateUserSchema = z.object({
   bio: z.string().trim().max(107, { message: '个人简介不能超过 107 个字符' })
 })
 
+export const adminCreatorPaginationSchema = adminPaginationSchema.extend({
+  /** Open applications (unread or read) by default; history views opt in. */
+  status: z.enum(['pending', 'approved', 'declined', 'all']).default('pending')
+})
+
 export const approveCreatorSchema = z.object({
   messageId: z.coerce.number().min(1).max(9999999),
   uid: z.coerce.number().min(1).max(9999999)

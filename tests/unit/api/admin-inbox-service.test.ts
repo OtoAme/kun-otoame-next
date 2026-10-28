@@ -541,7 +541,9 @@ describe('admin inbox counts', () => {
             'resource_apply_approve',
             'resource_apply_decline',
             // Module 03 M03-8: every staff case closure (review item 24).
-            'case_close'
+            'case_close',
+            // Module 09 plan 5.4: creator application reviews.
+            'creator_review'
           ]
         }
       }
