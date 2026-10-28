@@ -7,8 +7,15 @@ export const getGalgame = async (
   input: z.infer<typeof adminGalgamePaginationSchema>,
   nsfwEnable: Record<string, string | undefined>
 ) => {
-  const { page, limit, search } = input
+  const { page, limit, search, rating } = input
   const offset = (page - 1) * limit
+  // An explicit rating replaces the viewer's display setting.
+  const ratingWhere =
+    rating === undefined
+      ? nsfwEnable
+      : rating === 'all'
+        ? {}
+        : { content_limit: rating }
 
   const where = search
     ? {
@@ -16,9 +23,9 @@ export const getGalgame = async (
           contains: search,
           mode: 'insensitive' as const
         },
-        ...nsfwEnable
+        ...ratingWhere
       }
-    : nsfwEnable
+    : ratingWhere
 
   const [data, total] = await Promise.all([
     prisma.patch.findMany({

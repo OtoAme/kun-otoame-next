@@ -9,8 +9,17 @@ import { ExternalLink, ImageOff, Loader2, Trash2 } from 'lucide-react'
 import {
   SearchableListPage,
   UserAvatar,
+  type FilterContext,
   type ListColumn
 } from '~/components/dashboard/page/SearchableListPage'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue
+} from '~/components/dashboard/ui/select'
+import type { SearchableListConfig } from '~/hooks/dashboard/useSearchableList'
 import {
   AlertDialog,
   AlertDialogCancel,
@@ -27,10 +36,41 @@ import { kunFetchDelete } from '~/utils/kunFetch'
 import { formatChinaDateTime } from '~/utils/fixedTimezoneDate'
 import type { AdminGalgame } from '~/types/api/admin'
 
-const LIST_CONFIG = {
+const RATING_LABELS: Record<string, string> = {
+  sfw: '仅全年龄',
+  nsfw: '仅成人'
+}
+
+const LIST_CONFIG: SearchableListConfig = {
   endpoint: '/admin/otomegame',
   field: 'galgames',
-  fallbackError: '获取游戏条目失败，请稍后重试'
+  fallbackError: '获取游戏条目失败，请稍后重试',
+  filters: { rating: (raw) => (raw in RATING_LABELS ? raw : null) },
+  // Management lists show every content rating unless one is chosen.
+  defaultParams: { rating: 'all' }
+}
+
+function RatingSelect({ filters, setFilters }: FilterContext) {
+  return (
+    <Select
+      value={filters.rating ?? 'all'}
+      onValueChange={(rating) =>
+        setFilters({ rating: rating === 'all' ? '' : rating })
+      }
+    >
+      <SelectTrigger className="w-[130px]" aria-label="内容分级">
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value="all">全部分级</SelectItem>
+        {Object.entries(RATING_LABELS).map(([key, text]) => (
+          <SelectItem key={key} value={key}>
+            {text}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  )
 }
 
 // Deleting an entry removes all of its resources; the API keeps it at super
@@ -257,10 +297,11 @@ export function DashboardGames({ viewerRole }: { viewerRole: number }) {
     <SearchableListPage<AdminGalgame>
       config={LIST_CONFIG}
       title="游戏条目"
-      description="按名称查找游戏条目，列表按当前账号的内容显示设置过滤。删除条目需超级管理员。"
+      description="按名称查找游戏条目，默认显示全部内容分级。删除条目需超级管理员。"
       noun="条目"
       contentLabel="游戏名称"
       searchByUser={false}
+      toolbar={RatingSelect}
       columns={COLUMNS}
       card={(row) => ({
         text: row.name,

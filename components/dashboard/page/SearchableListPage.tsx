@@ -10,7 +10,7 @@ import {
   type KeyboardEvent,
   type ReactNode
 } from 'react'
-import { X } from 'lucide-react'
+import { SlidersHorizontal, X } from 'lucide-react'
 
 import {
   DashboardMasterDetail,
@@ -23,7 +23,13 @@ import {
   AvatarFallback,
   AvatarImage
 } from '~/components/dashboard/ui/avatar'
+import { Badge } from '~/components/dashboard/ui/badge'
 import { Button } from '~/components/dashboard/ui/button'
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger
+} from '~/components/dashboard/ui/popover'
 import { Checkbox } from '~/components/dashboard/ui/checkbox'
 import { Input } from '~/components/dashboard/ui/input'
 import {
@@ -45,6 +51,7 @@ import {
 import {
   LIST_PAGE_SIZE_OPTIONS,
   useSearchableList,
+  type ListFilters,
   type ListSearchType,
   type SearchableListConfig
 } from '~/hooks/dashboard/useSearchableList'
@@ -201,6 +208,23 @@ export interface SearchableListPageProps<Row extends { id: number }> {
   }) => ReactNode
   /** False for lists whose API only searches by text. */
   searchByUser?: boolean
+  /** Extra controls placed after the search box. */
+  toolbar?: (ctx: FilterContext) => ReactNode
+  /**
+   * Page filters. Shown as a left rail when the page is at least 1440px
+   * wide, otherwise behind a 筛选 button.
+   */
+  filterPanel?: (ctx: FilterContext) => ReactNode
+  /** Removable summary of the active filters, shown under the toolbar. */
+  filterChips?: (filters: ListFilters) => { key: string; label: string }[]
+}
+
+export interface FilterContext {
+  /** Whether the list is currently searched by keyword or by author. */
+  searchType: ListSearchType
+  filters: ListFilters
+  setFilters: (patch: Record<string, string>) => void
+  clearFilters: () => void
 }
 
 export function SearchableListPage<Row extends { id: number }>({
@@ -213,7 +237,10 @@ export function SearchableListPage<Row extends { id: number }>({
   card,
   detail,
   batchDelete,
-  searchByUser = true
+  searchByUser = true,
+  toolbar,
+  filterPanel,
+  filterChips
 }: SearchableListPageProps<Row>) {
   const {
     query,
@@ -229,8 +256,21 @@ export function SearchableListPage<Row extends { id: number }>({
     commitSearch,
     selectUser,
     select,
-    notifyDeleted
+    notifyDeleted,
+    setFilters,
+    clearFilters
   } = useSearchableList<Row>(config)
+  const filterContext: FilterContext = {
+    searchType: query.searchType,
+    filters: query.filters,
+    setFilters,
+    clearFilters
+  }
+  // Same width the master-detail layout measures, so the rail and the
+  // 筛选 button switch at the same point.
+  const [pageRef, pageWidth] = useElementWidth<HTMLDivElement>()
+  const showRail = Boolean(filterPanel) && pageWidth >= 1440
+  const chips = filterChips?.(query.filters) ?? []
 
   const [searchInput, setSearchInput] = useState(query.search)
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -392,6 +432,28 @@ export function SearchableListPage<Row extends { id: number }>({
             onSelect={selectUser}
           />
         )}
+        {toolbar?.(filterContext)}
+        {filterPanel && !showRail && (
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button variant="outline" size="sm">
+                <SlidersHorizontal />
+                筛选
+                {chips.length > 0 && (
+                  <span className="rounded-full bg-primary px-1.5 text-xs text-primary-foreground tabular-nums">
+                    {chips.length}
+                  </span>
+                )}
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent
+              align="start"
+              className="max-h-[70svh] w-80 overflow-y-auto"
+            >
+              {filterPanel(filterContext)}
+            </PopoverContent>
+          </Popover>
+        )}
         <span className="flex-1" />
         {checked.size > 0 && (
           <span className="text-sm text-muted-foreground tabular-nums">
@@ -400,6 +462,31 @@ export function SearchableListPage<Row extends { id: number }>({
         )}
         {batchDelete?.({ ids: [...checked], onDeleted: handleDeleted })}
       </div>
+      {chips.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1.5 px-3 pb-3">
+          {chips.map((chip) => (
+            <Badge key={chip.key} variant="secondary" className="gap-1 pr-1">
+              {chip.label}
+              <button
+                type="button"
+                aria-label={`移除筛选：${chip.label}`}
+                className="rounded-sm p-0.5 hover:bg-background/60 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                onClick={() => setFilters({ [chip.key]: '' })}
+              >
+                <X className="size-3" />
+              </button>
+            </Badge>
+          ))}
+          <Button
+            variant="ghost"
+            size="xs"
+            onClick={clearFilters}
+            className="text-muted-foreground"
+          >
+            清除全部
+          </Button>
+        </div>
+      )}
 
       {error !== null ? (
         <div className="flex flex-col items-center gap-3 border-t px-4 py-10">
@@ -503,8 +590,8 @@ export function SearchableListPage<Row extends { id: number }>({
                     colSpan={columnCount}
                     className="h-32 text-center whitespace-normal text-muted-foreground"
                   >
-                    {query.search || query.userId !== null
-                      ? `没有匹配的${noun}，换个关键词或用户再试。`
+                    {query.search || query.userId !== null || chips.length > 0
+                      ? `没有匹配的${noun}，换个条件再试。`
                       : `还没有${noun}。`}
                   </TableCell>
                 </TableRow>
@@ -600,24 +687,27 @@ export function SearchableListPage<Row extends { id: number }>({
         </Button>
       }
     >
-      <DashboardMasterDetail
-        list={list}
-        detail={
-          selected
-            ? detail(selected, {
-                onUpdated: handleUpdated,
-                onDeleted: handleDeleted
-              })
-            : null
-        }
-        detailTitle={selected ? `${noun} #${selected.id}` : '详情'}
-        emptyDetail={
-          <p className="text-sm text-muted-foreground">
-            选择一条{noun}查看全文与操作。
-          </p>
-        }
-        onCloseDetail={() => select(null)}
-      />
+      <div ref={pageRef} className="min-w-0">
+        <DashboardMasterDetail
+          rail={showRail ? filterPanel!(filterContext) : undefined}
+          list={list}
+          detail={
+            selected
+              ? detail(selected, {
+                  onUpdated: handleUpdated,
+                  onDeleted: handleDeleted
+                })
+              : null
+          }
+          detailTitle={selected ? `${noun} #${selected.id}` : '详情'}
+          emptyDetail={
+            <p className="text-sm text-muted-foreground">
+              选择一条{noun}查看全文与操作。
+            </p>
+          }
+          onCloseDetail={() => select(null)}
+        />
+      </div>
     </DashboardPage>
   )
 }

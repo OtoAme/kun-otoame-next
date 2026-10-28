@@ -138,3 +138,92 @@ describe('useSearchableList', () => {
     expect(state.loading).toBe(false)
   })
 })
+
+describe('useSearchableList page filters', () => {
+  let dom: JSDOM
+  let root: Root
+  let filtered: ReturnType<typeof useSearchableList<{ id: number }>>
+
+  function FilteredProbe() {
+    filtered = useSearchableList<{ id: number }>({
+      endpoint: '/admin/resource',
+      field: 'resources',
+      fallbackError: '获取资源列表失败',
+      filters: {
+        section: (raw) => (raw === 'galgame' || raw === 'patch' ? raw : null),
+        status: (raw) =>
+          ['0', '1', '2'].filter((v) => raw.split(',').includes(v)).join(',') ||
+          null,
+        rating: (raw) => (raw === 'sfw' || raw === 'nsfw' ? raw : null)
+      },
+      defaultParams: { rating: 'all' }
+    })
+    return null
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    dom = new JSDOM('<!doctype html><div id="root"></div>')
+    vi.stubGlobal('window', dom.window)
+    vi.stubGlobal('document', dom.window.document)
+    vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
+    root = createRoot(dom.window.document.getElementById('root')!)
+    mocks.get.mockResolvedValue({ resources: [], total: 0 })
+  })
+  afterEach(async () => {
+    await act(async () => root.unmount())
+    dom.window.close()
+    vi.unstubAllGlobals()
+  })
+
+  const mount = async (query: string) => {
+    mocks.params = new URLSearchParams(query)
+    await act(async () => root.render(<FilteredProbe />))
+  }
+
+  it('sends valid filters, drops invalid ones and keeps the default rating', async () => {
+    await mount('section=patch&status=2,9,1&rating=r18&unknown=1')
+    expect(filtered.query.filters).toEqual({ section: 'patch', status: '1,2' })
+    expect(mocks.get).toHaveBeenCalledWith('/admin/resource', {
+      page: 1,
+      limit: 30,
+      searchType: 'content',
+      rating: 'all',
+      section: 'patch',
+      status: '1,2'
+    })
+  })
+
+  it('lets a chosen filter replace its default parameter', async () => {
+    await mount('rating=nsfw')
+    expect(mocks.get).toHaveBeenCalledWith(
+      '/admin/resource',
+      expect.objectContaining({ rating: 'nsfw' })
+    )
+  })
+
+  it('refetches when a filter changes and returns to page 1', async () => {
+    await mount('page=3&section=patch&id=5')
+    act(() => filtered.setFilters({ section: 'galgame', status: '0' }))
+    expect(mocks.push).toHaveBeenLastCalledWith(
+      '/dashboard/comment?page=1&limit=30&searchType=content&section=galgame&status=0',
+      { scroll: false }
+    )
+    act(() => filtered.setFilters({ section: '' }))
+    expect(mocks.push).toHaveBeenLastCalledWith(
+      '/dashboard/comment?page=1&limit=30&searchType=content',
+      { scroll: false }
+    )
+  })
+
+  it('treats a filter change as a new list request', async () => {
+    await mount('section=patch')
+    const first = filtered.query.key
+    await act(async () => {
+      mocks.params = new URLSearchParams('section=galgame')
+      root.render(<FilteredProbe />)
+    })
+    expect(filtered.query.key).not.toBe(first)
+    expect(mocks.get).toHaveBeenCalledTimes(2)
+  })
+})

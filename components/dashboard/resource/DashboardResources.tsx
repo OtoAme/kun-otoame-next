@@ -37,16 +37,16 @@ import { kunFetchDelete } from '~/utils/kunFetch'
 import { formatChinaDateTime } from '~/utils/fixedTimezoneDate'
 import { recognizeResourceDiskKind } from '~/utils/resourceDiskKind'
 import type { AdminResource } from '~/types/api/admin'
+import {
+  RESOURCE_LIST_CONFIG,
+  ResourceFilterPanel,
+  ResourceToolbar,
+  resourceFilterChips
+} from './resourceFilters'
 import type { PatchResourceHealthEditData } from '~/types/api/patch'
 
 // The list route returns health-projected links in place of the plain ones.
 type ResourceRow = Omit<AdminResource, 'links'> & PatchResourceHealthEditData
-
-const LIST_CONFIG = {
-  endpoint: '/admin/resource',
-  field: 'resources',
-  fallbackError: '获取资源列表失败，请稍后重试'
-}
 
 const STATUS_CLASS: Record<number, string> = {
   0: 'border-green-600/40 text-green-700 dark:text-green-400',
@@ -221,6 +221,16 @@ const COLUMNS: ListColumn<ResourceRow>[] = [
     )
   },
   {
+    key: 'type',
+    header: '类型',
+    minWidth: 980,
+    cell: (row) => (
+      <span className="block max-w-40 truncate text-muted-foreground">
+        {label(SUPPORTED_TYPE_MAP, row.type)}
+      </span>
+    )
+  },
+  {
     key: 'links',
     header: '链接',
     minWidth: 800,
@@ -364,12 +374,15 @@ function ResourceDetail({
 export function DashboardResources() {
   return (
     <SearchableListPage<ResourceRow>
-      config={LIST_CONFIG}
+      config={RESOURCE_LIST_CONFIG}
       title="下载资源"
-      description="按下载链接（或 BLAKE3 Hash）或发布者查找资源，列表按当前账号的内容显示设置过滤。删除会写入管理日志。"
+      description="按名称、备注、游戏或链接查找资源，按分区、状态、发布者、类型等筛选。管理列表默认显示全部内容分级。删除会写入管理日志。"
       noun="资源"
-      contentLabel="资源链接"
+      contentLabel="关键词"
       columns={COLUMNS}
+      toolbar={ResourceToolbar}
+      filterPanel={ResourceFilterPanel}
+      filterChips={resourceFilterChips}
       card={(row) => ({
         text: row.name || '未命名资源',
         meta: `${RESOURCE_STATUS_MAP[row.status] ?? row.status} · ${row.patchName} · ${row.user.name}`

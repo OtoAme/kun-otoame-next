@@ -24,6 +24,8 @@ export interface ListQuery {
   userName: string
   /** Row shown in the detail pane; kept in the URL so it survives reload. */
   selected: number | null
+  /** Valid page-specific filters, keyed by URL parameter. */
+  filters: ListFilters
   /** Identity of the list request, excluding the selection. */
   key: string
 }
@@ -36,7 +38,19 @@ export interface SearchableListConfig {
   /** Response field holding the rows, e.g. `comments` or `ratings`. */
   field: string
   fallbackError: string
+  /**
+   * Page-specific filters kept in the URL and sent with the list request.
+   * Each returns the canonical value for a raw URL value, or null to drop it,
+   * so a hand-edited URL never reaches the API with an invalid filter.
+   */
+  filters?: Record<string, (raw: string) => string | null>
+  /** Request parameters always sent unless a filter of the same name is set. */
+  defaultParams?: Record<string, string>
+  /** URL filters kept for display only and not sent to the API. */
+  displayOnly?: readonly string[]
 }
+
+export type ListFilters = Record<string, string>
 
 const parseBoundedInt = (
   raw: string | null,
@@ -56,7 +70,10 @@ const buildKey = (target: Omit<QueryTarget, 'selected'>) =>
     target.limit,
     target.searchType,
     target.search,
-    target.userId ?? ''
+    target.userId ?? '',
+    ...Object.keys(target.filters)
+      .sort()
+      .map((key) => `${key}=${target.filters[key]}`)
   ].join('|')
 
 /**
@@ -68,6 +85,12 @@ export function useSearchableList<Row extends { id: number }>(
   config: SearchableListConfig
 ) {
   const { endpoint, field, fallbackError } = config
+  const filterSpec = config.filters
+  // Stable for a page; the spec is defined at module level by each page.
+  const filterKeys = useMemo(
+    () => Object.keys(filterSpec ?? {}).sort(),
+    [filterSpec]
+  )
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
@@ -93,14 +116,23 @@ export function useSearchableList<Row extends { id: number }>(
           : '',
       userId,
       userName:
-        userId === null ? '' : (searchParams.get('userName') ?? '').slice(0, 17)
+        userId === null
+          ? ''
+          : (searchParams.get('userName') ?? '').slice(0, 17),
+      filters: Object.fromEntries(
+        filterKeys.flatMap((key) => {
+          const raw = searchParams.get(key)
+          const value = raw === null ? null : filterSpec![key](raw)
+          return value === null ? [] : [[key, value]]
+        })
+      )
     }
     return {
       ...target,
       selected: parseBoundedInt(searchParams.get('id'), null, MAX_ID),
       key: buildKey(target)
     }
-  }, [searchParams])
+  }, [searchParams, filterKeys, filterSpec])
 
   const [data, setData] = useState<{
     key: string
@@ -129,6 +161,10 @@ export function useSearchableList<Row extends { id: number }>(
     }
     if (query.search) params.search = query.search
     if (query.userId !== null) params.userId = query.userId
+    Object.assign(params, config.defaultParams)
+    for (const [key, value] of Object.entries(query.filters)) {
+      if (!config.displayOnly?.includes(key)) params[key] = value
+    }
     Promise.resolve()
       .then(() =>
         kunFetchGet<Record<string, unknown> | string>(endpoint, params)
@@ -179,6 +215,9 @@ export function useSearchableList<Row extends { id: number }>(
       if (next.searchType === 'user' && next.userId !== null) {
         params.set('userId', String(next.userId))
         if (next.userName) params.set('userName', next.userName)
+      }
+      for (const [key, value] of Object.entries(next.filters)) {
+        params.set(key, value)
       }
       if (next.selected !== null) params.set('id', String(next.selected))
       router.push(`${pathname}?${params.toString()}`, { scroll: false })
@@ -235,6 +274,20 @@ export function useSearchableList<Row extends { id: number }>(
         userId: user?.id ?? null,
         userName: user?.name ?? ''
       }),
+    /** Sets or clears (empty string) filters and returns to page 1. */
+    setFilters: (patch: Record<string, string>) => {
+      const filters = { ...query.filters }
+      for (const [key, value] of Object.entries(patch)) {
+        if (value) filters[key] = value
+        else delete filters[key]
+      }
+      update({ page: DEFAULT_PAGE, filters })
+    },
+    clearFilters: () => {
+      if (Object.keys(query.filters).length > 0) {
+        update({ page: DEFAULT_PAGE, filters: {} })
+      }
+    },
     select: (id: number | null) => {
       if (id !== query.selected) pushQuery({ ...query, selected: id })
     },
