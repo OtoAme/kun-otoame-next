@@ -184,9 +184,9 @@ export function LinkHealthAdminView({
   const totalPages = list ? Math.max(1, Math.ceil(list.total / list.limit)) : 1
 
   return (
-    <div className="space-y-4">
+    <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-4 md:px-6 md:py-5">
       <div className="space-y-1">
-        <h1 className="text-2xl font-semibold tracking-tight">已失效链接</h1>
+        <h2 className="text-lg font-semibold md:text-xl">已失效链接</h2>
         <p className="text-sm text-muted-foreground">
           只读视图：当前在库链接的健康快照，自本批次上线起算，不展示链接地址与提取码、解压码。
         </p>
