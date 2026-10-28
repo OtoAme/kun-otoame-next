@@ -303,6 +303,8 @@ flowchart TD
 | `/admin/user`、`/admin/user/[id]/moemoepoint`                                          | 01 已实现 `/dashboard/user` 与对应明细页并通过本地主要流程验收；现有权限与旧地址保留，发布稳定后退役，09 最终核对 |
 | `/admin/setting`、`/admin/email`                                                       | 09 承接，邮件能力保持既有用途                                                                                     |
 
+2026-10-28 承接记录：上表全部旧路径的界面迁移改由[管理控制台前端重构](../10.dashboard-redesign.md)统一承接，含 09 第 5.3 节的权限调整与创作者申请的必要修复；逐页目标与调整后门槛见该文第 4 节，发布与旧地址退役顺序见该文第 6.2 节。旧反馈、举报的归档数据处置（M09-4）及运营指标（M09-1、M09-2）仍归 09。各行的验收证据在实施后补记。
+
 ### 4.11 模块 10：前移至阶段 2 接入与部署
 
 M10-1：使用站长提供的 [kungal/kungal-link-live-checker](https://github.com/kungal/kungal-link-live-checker)，固定版本，验证样本、鉴权、新鲜度与出站边界，并在隔离环境部署服务；与 04 开发并行。
