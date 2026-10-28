@@ -143,7 +143,6 @@ const okResponses: Record<string, unknown> = {
 const SUPER_ONLY = [
   '/admin/stats/sum',
   '/admin/stats',
-  '/admin/log',
   '/admin/setting/register',
   '/admin/setting/redirect'
 ]
@@ -240,11 +239,13 @@ describe('dashboard overview', () => {
     for (const id of [
       'dashboard-sum-heading',
       'dashboard-overview-heading',
-      'dashboard-status-heading',
-      'dashboard-log-heading'
+      'dashboard-status-heading'
     ]) {
       expect(panel(id)).toBeNull()
     }
+    // Administrators read the management log (module 09 plan 5.3).
+    expect(requested()).toContain('/admin/log')
+    expect(panel('dashboard-log-heading')).not.toBeNull()
   })
 
   it('role 4 loads every panel', async () => {
@@ -462,7 +463,7 @@ describe('dashboard overview', () => {
           resolveSum = resolve
         })
       }
-      if (url === '/admin/log') {
+      if (url === '/admin/setting/register') {
         return new Promise((resolve) => {
           resolveLog = resolve
         })
@@ -473,14 +474,14 @@ describe('dashboard overview', () => {
     expect(metric('新注册用户')).toBe('7')
     await act(async () => root.render(<DashboardStats reviewerRole={3} />))
     expect(panel('dashboard-sum-heading')).toBeNull()
-    expect(panel('dashboard-log-heading')).toBeNull()
+    expect(panel('dashboard-status-heading')).toBeNull()
     expect(metric('新注册用户')).toBeNull()
     await act(async () => {
       resolveSum(sumData)
-      resolveLog(okResponses['/admin/log'])
+      resolveLog(okResponses['/admin/setting/register'])
     })
     expect(metric('用户')).toBeNull()
-    expect(container.textContent).not.toContain('资源申请通过')
+    expect(panel('dashboard-status-heading')).toBeNull()
   })
 
   it('requests private reads only after an upgrade to role 4', async () => {
@@ -506,7 +507,7 @@ describe('dashboard overview', () => {
     expect(html).toContain('待办队列')
     expect(html).not.toContain('站点规模')
     expect(html).not.toContain('近期增长')
-    expect(html).not.toContain('最近管理操作')
+    expect(html).not.toContain('站点状态')
     expect(mocks.get).not.toHaveBeenCalled()
   })
 

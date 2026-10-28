@@ -203,7 +203,8 @@ describe('dashboard shell', () => {
     await render(4)
     for (const href of [
       '/dashboard/user',
-      '/admin/setting',
+      '/dashboard/setting',
+      '/dashboard/email',
       '/edit/create'
     ]) {
       expect(container.querySelector(`a[href="${href}"]`)).not.toBeNull()

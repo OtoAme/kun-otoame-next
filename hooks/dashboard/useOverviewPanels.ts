@@ -12,7 +12,7 @@ import type { StatsBlock } from './useDashboardStats'
 export const OVERVIEW_OLDEST_LIMIT = 6
 export const OVERVIEW_LOG_LIMIT = 8
 const SETTINGS_MIN_ROLE = 4
-export const LOG_MIN_ROLE = 4
+export const LOG_MIN_ROLE = 3
 
 export interface OverviewSiteSettings {
   disableRegister: boolean
@@ -146,8 +146,6 @@ export function useOverviewPanels(reviewerRole: number) {
     fetchCreatorCount,
     '获取创作者申请数失败'
   )
-  // Log reads still require a super administrator until the log page moves
-  // into the console with its lowered permission.
   const [logs, loadLogs] = usePanel(
     reviewerRole >= LOG_MIN_ROLE,
     fetchLogs,

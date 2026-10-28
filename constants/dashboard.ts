@@ -158,23 +158,20 @@ export const DASHBOARD_NAV_GROUPS: DashboardNavGroup[] = [
       {
         id: 'log',
         label: '管理日志',
-        href: '/admin/log',
-        minRole: 4,
-        legacy: true
+        href: '/dashboard/log',
+        minRole: 3
       },
       {
         id: 'setting',
         label: '站点设置',
-        href: '/admin/setting',
-        minRole: 4,
-        legacy: true
+        href: '/dashboard/setting',
+        minRole: 4
       },
       {
         id: 'email',
         label: '邮件群发',
-        href: '/admin/email',
-        minRole: 4,
-        legacy: true
+        href: '/dashboard/email',
+        minRole: 4
       }
     ]
   }

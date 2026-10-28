@@ -596,7 +596,7 @@ export function DashboardStats({ reviewerRole }: DashboardStatsProps) {
       title="站点状态"
       action={
         <a
-          href="/admin/setting"
+          href="/dashboard/setting"
           className="text-xs text-muted-foreground underline underline-offset-4"
         >
           设置
@@ -645,7 +645,7 @@ export function DashboardStats({ reviewerRole }: DashboardStatsProps) {
       title="最近管理操作"
       action={
         <a
-          href="/admin/log"
+          href="/dashboard/log"
           className="text-xs text-muted-foreground underline underline-offset-4"
         >
           全部日志
