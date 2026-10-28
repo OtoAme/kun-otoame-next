@@ -219,6 +219,8 @@ export interface SearchableListPageProps<Row extends { id: number }> {
   }) => ReactNode
   /** False for lists whose API only searches by text. */
   searchByUser?: boolean
+  /** For lists the API cannot search at all; filters still apply. */
+  hideSearch?: boolean
   /** Extra controls placed after the search box. */
   toolbar?: (ctx: FilterContext) => ReactNode
   /**
@@ -256,6 +258,7 @@ export function SearchableListPage<Row extends { id: number }>({
   detail,
   batchDelete,
   searchByUser = true,
+  hideSearch = false,
   toolbar,
   filterPanel,
   filterChips
@@ -410,7 +413,7 @@ export function SearchableListPage<Row extends { id: number }>({
   const list = (
     <DashboardPanel ref={listRef}>
       <div className="flex flex-wrap items-center gap-2 p-3">
-        {searchByUser && (
+        {searchByUser && !hideSearch && (
           <Select
             value={query.searchType}
             onValueChange={(value) => setSearchType(value as ListSearchType)}
@@ -427,7 +430,7 @@ export function SearchableListPage<Row extends { id: number }>({
             </SelectContent>
           </Select>
         )}
-        {!searchByUser || query.searchType === 'content' ? (
+        {hideSearch ? null : !searchByUser || query.searchType === 'content' ? (
           <form onSubmit={handleSearchSubmit} className="w-full sm:w-64">
             <Input
               value={searchInput}

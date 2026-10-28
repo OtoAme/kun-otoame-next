@@ -439,18 +439,14 @@ export function DashboardStats({ reviewerRole }: DashboardStatsProps) {
       })
     ),
     // Creator applications are a separate queue, never part of the inbox total.
-    ...(canViewStats
-      ? [
-          {
-            key: 'creator' as const,
-            label: '创作者申请',
-            note: '独立页面',
-            href: '/admin/creator',
-            value: summary.data?.pendingCreatorApplyCount ?? null,
-            error: summary.data ? undefined : summary.error
-          }
-        ]
-      : []),
+    {
+      key: 'creator',
+      label: '创作者申请',
+      note: '独立页面',
+      href: '/dashboard/creator',
+      value: panels.creatorCount.data,
+      error: panels.creatorCount.error
+    },
     {
       key: 'company-merge',
       label: '会社合并建议',

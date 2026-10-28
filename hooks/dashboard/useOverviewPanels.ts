@@ -106,6 +106,14 @@ const fetchMergeCount: Fetcher<number> = async () => {
   return typeof result === 'string' ? result : result.items.length
 }
 
+const fetchCreatorCount: Fetcher<number> = async () => {
+  const result = await kunFetchGet<{ total: number } | string>(
+    '/admin/creator',
+    { page: 1, limit: 1, status: 'pending' }
+  )
+  return typeof result === 'string' ? result : result.total
+}
+
 const fetchLogs: Fetcher<AdminLog[]> = async () => {
   const result = await kunFetchGet<
     { logs: AdminLog[]; total: number } | string
@@ -133,6 +141,11 @@ export function useOverviewPanels(reviewerRole: number) {
     fetchMergeCount,
     '获取会社合并建议数失败'
   )
+  const [creatorCount, loadCreatorCount] = usePanel(
+    true,
+    fetchCreatorCount,
+    '获取创作者申请数失败'
+  )
   // Log reads still require a super administrator until the log page moves
   // into the console with its lowered permission.
   const [logs, loadLogs] = usePanel(
@@ -149,17 +162,20 @@ export function useOverviewPanels(reviewerRole: number) {
   const refreshAll = useCallback(() => {
     void loadOldest()
     void loadMergeCount()
+    void loadCreatorCount()
     void loadLogs()
     void loadSettings()
-  }, [loadOldest, loadMergeCount, loadLogs, loadSettings])
+  }, [loadOldest, loadMergeCount, loadCreatorCount, loadLogs, loadSettings])
 
   return {
     oldest,
     mergeCount,
+    creatorCount,
     logs,
     settings,
     loadOldest,
     loadMergeCount,
+    loadCreatorCount,
     loadLogs,
     loadSettings,
     refreshAll

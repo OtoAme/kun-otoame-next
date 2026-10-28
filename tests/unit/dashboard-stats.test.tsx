@@ -120,6 +120,7 @@ const okResponses: Record<string, unknown> = {
   '/admin/stats': overviewData,
   '/admin/inbox': { items: [oldestItem], totals: {}, truncated: {} },
   '/admin/company-merges': { items: [{ id: 1 }, { id: 2 }] },
+  '/admin/creator': { creators: [], total: 9 },
   '/admin/log': {
     logs: [
       {
@@ -234,7 +235,8 @@ describe('dashboard overview', () => {
     expect(queueValue('/dashboard/company-merges')).toBe('2')
     expect(summaryValue('待审事项')).toBe('15')
     expect(summaryValue('我今日已处理')).toBe('4')
-    expect(container.querySelector('a[href="/admin/creator"]')).toBeNull()
+    // Creator applications are reviewed by administrators, so role 3 sees them.
+    expect(queueValue('/dashboard/creator')).toBe('9')
     for (const id of [
       'dashboard-sum-heading',
       'dashboard-overview-heading',
@@ -260,7 +262,12 @@ describe('dashboard overview', () => {
 
   it('keeps creator applications and merge suggestions out of the inbox total', async () => {
     await render(4)
-    expect(queueValue('/admin/creator')).toBe('9')
+    expect(queueValue('/dashboard/creator')).toBe('9')
+    expect(mocks.get).toHaveBeenCalledWith('/admin/creator', {
+      page: 1,
+      limit: 1,
+      status: 'pending'
+    })
     expect(queueValue('/dashboard/company-merges')).toBe('2')
     expect(summaryValue('待审事项')).toBe('15')
   })
@@ -333,7 +340,7 @@ describe('dashboard overview', () => {
       '总量统计暂不可用'
     )
     expect(metric('新注册用户')).toBe('7')
-    expect(queueValue('/admin/creator')).toBe('读取失败')
+    expect(queueValue('/dashboard/creator')).toBe('9')
     mocks.get.mockImplementation((url: string) =>
       Promise.resolve(okResponses[url])
     )
@@ -467,7 +474,6 @@ describe('dashboard overview', () => {
     await act(async () => root.render(<DashboardStats reviewerRole={3} />))
     expect(panel('dashboard-sum-heading')).toBeNull()
     expect(panel('dashboard-log-heading')).toBeNull()
-    expect(container.querySelector('a[href="/admin/creator"]')).toBeNull()
     expect(metric('新注册用户')).toBeNull()
     await act(async () => {
       resolveSum(sumData)
@@ -501,7 +507,6 @@ describe('dashboard overview', () => {
     expect(html).not.toContain('站点规模')
     expect(html).not.toContain('近期增长')
     expect(html).not.toContain('最近管理操作')
-    expect(html).not.toContain('创作者申请')
     expect(mocks.get).not.toHaveBeenCalled()
   })
 

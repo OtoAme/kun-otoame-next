@@ -66,9 +66,8 @@ export const DASHBOARD_NAV_GROUPS: DashboardNavGroup[] = [
       {
         id: 'creator',
         label: '创作者申请',
-        href: '/admin/creator',
-        minRole: 4,
-        legacy: true
+        href: '/dashboard/creator',
+        minRole: 3
       }
     ]
   },
