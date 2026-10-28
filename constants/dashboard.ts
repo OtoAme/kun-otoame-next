@@ -78,9 +78,8 @@ export const DASHBOARD_NAV_GROUPS: DashboardNavGroup[] = [
       {
         id: 'game',
         label: '游戏条目',
-        href: '/admin/otomegame',
-        minRole: 4,
-        legacy: true
+        href: '/dashboard/game',
+        minRole: 3
       },
       {
         id: 'resource',

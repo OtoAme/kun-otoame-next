@@ -194,10 +194,13 @@ export interface SearchableListPageProps<Row extends { id: number }> {
     row: Row,
     actions: { onUpdated: () => void; onDeleted: (count: number) => void }
   ) => ReactNode
-  batchDelete: (props: {
+  /** Omitted when the list has no batch action; rows then have no checkbox. */
+  batchDelete?: (props: {
     ids: number[]
     onDeleted: (count: number) => void
   }) => ReactNode
+  /** False for lists whose API only searches by text. */
+  searchByUser?: boolean
 }
 
 export function SearchableListPage<Row extends { id: number }>({
@@ -209,7 +212,8 @@ export function SearchableListPage<Row extends { id: number }>({
   columns,
   card,
   detail,
-  batchDelete
+  batchDelete,
+  searchByUser = true
 }: SearchableListPageProps<Row>) {
   const {
     query,
@@ -338,7 +342,8 @@ export function SearchableListPage<Row extends { id: number }>({
     (column) => !column.minWidth || listWidth >= column.minWidth
   )
   const asCards = listWidth > 0 && listWidth < 480
-  const columnCount = visibleColumns.length + 1
+  const selectable = Boolean(batchDelete)
+  const columnCount = visibleColumns.length + Number(selectable)
   const searchLabels: Record<ListSearchType, string> = {
     content: contentLabel,
     user: '用户'
@@ -347,22 +352,24 @@ export function SearchableListPage<Row extends { id: number }>({
   const list = (
     <DashboardPanel ref={listRef}>
       <div className="flex flex-wrap items-center gap-2 p-3">
-        <Select
-          value={query.searchType}
-          onValueChange={(value) => setSearchType(value as ListSearchType)}
-        >
-          <SelectTrigger className="w-[120px]" aria-label="搜索范围">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {(Object.keys(searchLabels) as ListSearchType[]).map((type) => (
-              <SelectItem key={type} value={type}>
-                {searchLabels[type]}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        {query.searchType === 'content' ? (
+        {searchByUser && (
+          <Select
+            value={query.searchType}
+            onValueChange={(value) => setSearchType(value as ListSearchType)}
+          >
+            <SelectTrigger className="w-[120px]" aria-label="搜索范围">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {(Object.keys(searchLabels) as ListSearchType[]).map((type) => (
+                <SelectItem key={type} value={type}>
+                  {searchLabels[type]}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
+        {!searchByUser || query.searchType === 'content' ? (
           <form onSubmit={handleSearchSubmit} className="w-full sm:w-64">
             <Input
               value={searchInput}
@@ -391,7 +398,7 @@ export function SearchableListPage<Row extends { id: number }>({
             已选 {checked.size} 条
           </span>
         )}
-        {batchDelete({ ids: [...checked], onDeleted: handleDeleted })}
+        {batchDelete?.({ ids: [...checked], onDeleted: handleDeleted })}
       </div>
 
       {error !== null ? (
@@ -423,12 +430,16 @@ export function SearchableListPage<Row extends { id: number }>({
                   key={row.id}
                   className="flex gap-3 border-b p-3 last:border-b-0"
                 >
-                  <Checkbox
-                    aria-label={`选择${noun} ${row.id}`}
-                    checked={checked.has(row.id)}
-                    onCheckedChange={(value) => toggle(row.id, value === true)}
-                    className="mt-1"
-                  />
+                  {selectable && (
+                    <Checkbox
+                      aria-label={`选择${noun} ${row.id}`}
+                      checked={checked.has(row.id)}
+                      onCheckedChange={(value) =>
+                        toggle(row.id, value === true)
+                      }
+                      className="mt-1"
+                    />
+                  )}
                   <button
                     type="button"
                     className="min-w-0 flex-1 text-left"
@@ -451,20 +462,22 @@ export function SearchableListPage<Row extends { id: number }>({
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead className="w-10 pl-4">
-                  <Checkbox
-                    aria-label="全选当前页"
-                    checked={allChecked}
-                    disabled={rows.length === 0}
-                    onCheckedChange={(value) =>
-                      setChecked(
-                        value === true
-                          ? new Set(rows.map((row) => row.id))
-                          : new Set()
-                      )
-                    }
-                  />
-                </TableHead>
+                {selectable && (
+                  <TableHead className="w-10 pl-4">
+                    <Checkbox
+                      aria-label="全选当前页"
+                      checked={allChecked}
+                      disabled={rows.length === 0}
+                      onCheckedChange={(value) =>
+                        setChecked(
+                          value === true
+                            ? new Set(rows.map((row) => row.id))
+                            : new Set()
+                        )
+                      }
+                    />
+                  </TableHead>
+                )}
                 {visibleColumns.map((column) => (
                   <TableHead
                     key={column.key}
@@ -512,18 +525,20 @@ export function SearchableListPage<Row extends { id: number }>({
                     onKeyDown={(event) => handleRowKey(event, index)}
                     className="cursor-pointer focus-visible:bg-muted/50 focus-visible:outline-none data-[state=selected]:shadow-[inset_3px_0_0_var(--primary)]"
                   >
-                    <TableCell
-                      className="pl-4"
-                      onClick={(event) => event.stopPropagation()}
-                    >
-                      <Checkbox
-                        aria-label={`选择${noun} ${row.id}`}
-                        checked={checked.has(row.id)}
-                        onCheckedChange={(value) =>
-                          toggle(row.id, value === true)
-                        }
-                      />
-                    </TableCell>
+                    {selectable && (
+                      <TableCell
+                        className="pl-4"
+                        onClick={(event) => event.stopPropagation()}
+                      >
+                        <Checkbox
+                          aria-label={`选择${noun} ${row.id}`}
+                          checked={checked.has(row.id)}
+                          onCheckedChange={(value) =>
+                            toggle(row.id, value === true)
+                          }
+                        />
+                      </TableCell>
+                    )}
                     {visibleColumns.map((column) => (
                       <TableCell
                         key={column.key}
