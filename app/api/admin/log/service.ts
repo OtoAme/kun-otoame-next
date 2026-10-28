@@ -1,17 +1,28 @@
 import { z } from 'zod'
 import { prisma } from '~/prisma/index'
-import { adminPaginationSchema } from '~/validations/admin'
+import { adminLogPaginationSchema } from '~/validations/admin'
 import type { AdminLog } from '~/types/api/admin'
 
-export const getLog = async (input: z.infer<typeof adminPaginationSchema>) => {
+export const getLog = async (
+  input: z.infer<typeof adminLogPaginationSchema>
+) => {
   const { page, limit } = input
   const offset = (page - 1) * limit
+  const search = input.search?.trim()
+  const where = {
+    ...(input.type ? { type: input.type } : {}),
+    ...(input.userId ? { user_id: input.userId } : {}),
+    ...(search
+      ? { content: { contains: search, mode: 'insensitive' as const } }
+      : {})
+  }
 
   const [data, total] = await Promise.all([
     prisma.admin_log.findMany({
+      where,
       take: limit,
       skip: offset,
-      orderBy: { created: 'desc' },
+      orderBy: [{ created: 'desc' }, { id: 'desc' }],
       include: {
         user: {
           select: {
@@ -22,7 +33,7 @@ export const getLog = async (input: z.infer<typeof adminPaginationSchema>) => {
         }
       }
     }),
-    prisma.admin_log.count()
+    prisma.admin_log.count({ where })
   ])
 
   const logs: AdminLog[] = data.map((log) => ({

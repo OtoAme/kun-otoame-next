@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { kunParseGetQuery } from '~/app/api/utils/parseQuery'
 import { verifyHeaderCookie } from '~/middleware/_verifyHeaderCookie'
-import { adminPaginationSchema } from '~/validations/admin'
+import { adminLogPaginationSchema } from '~/validations/admin'
 import { getLog } from './service'
 
 export async function GET(req: NextRequest) {
-  const input = kunParseGetQuery(req, adminPaginationSchema)
+  const input = kunParseGetQuery(req, adminLogPaginationSchema)
   if (typeof input === 'string') {
     return NextResponse.json(input)
   }
@@ -13,8 +13,9 @@ export async function GET(req: NextRequest) {
   if (!payload) {
     return NextResponse.json('用户未登录')
   }
-  if (payload.role < 4) {
-    return NextResponse.json('本页面仅超级管理员可访问')
+  // Module 09 plan 5.3: administrators read the management log.
+  if (payload.role < 3) {
+    return NextResponse.json('本页面仅管理员可访问')
   }
 
   const res = await getLog(input)

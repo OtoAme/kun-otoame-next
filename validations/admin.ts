@@ -193,6 +193,15 @@ export const adminUpdateUserSchema = z.object({
   bio: z.string().trim().max(107, { message: '个人简介不能超过 107 个字符' })
 })
 
+export const adminLogPaginationSchema = adminPaginationSchema.extend({
+  /** One admin_log type, e.g. creator_review; unknown types match nothing. */
+  type: z
+    .string()
+    .regex(/^[a-z_]{1,64}$/, { message: '日志类型格式不正确' })
+    .optional(),
+  userId: z.coerce.number().int().min(1).max(9999999).optional()
+})
+
 export const adminCreatorPaginationSchema = adminPaginationSchema.extend({
   /** Open applications (unread or read) by default; history views opt in. */
   status: z.enum(['pending', 'approved', 'declined', 'all']).default('pending')
