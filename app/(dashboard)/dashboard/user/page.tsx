@@ -1,3 +1,4 @@
+import { DashboardPageHeader } from '~/components/dashboard/page/DashboardPage'
 import type { Metadata } from 'next'
 import { DashboardUsers } from '~/components/dashboard/user/DashboardUsers'
 import { requireDashboardUser } from '~/lib/dashboard/auth'
@@ -14,5 +15,12 @@ export default async function DashboardUsersPage() {
     )
   }
 
-  return <DashboardUsers currentUserId={currentUser.id} />
+  return (
+    <DashboardPageHeader
+      title="用户管理"
+      description="按用户名、邮箱或编号查找用户，编辑资料与身份、发放萌萌点或删除账号。删除不可撤销。"
+    >
+      <DashboardUsers currentUserId={currentUser.id} />
+    </DashboardPageHeader>
+  )
 }

@@ -56,6 +56,35 @@ export function DashboardPage({
   )
 }
 
+/**
+ * Header-only frame for pages that manage their own scrolling and padding
+ * (the pages built before the shared skeleton). It adds the same title and
+ * description block and leaves the page body untouched.
+ */
+export function DashboardPageHeader({
+  title,
+  description,
+  children
+}: {
+  title: string
+  description?: ReactNode
+  children: ReactNode
+}) {
+  return (
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+      <div className="shrink-0 px-4 pt-4 md:px-6 md:pt-5">
+        <h2 className="text-lg font-semibold md:text-xl">{title}</h2>
+        {description && (
+          <p className="mt-1 text-sm text-muted-foreground">{description}</p>
+        )}
+      </div>
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col md:px-2">
+        {children}
+      </div>
+    </div>
+  )
+}
+
 export function DashboardPanel({
   className,
   children,
