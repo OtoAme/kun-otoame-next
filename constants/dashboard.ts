@@ -92,9 +92,8 @@ export const DASHBOARD_NAV_GROUPS: DashboardNavGroup[] = [
       {
         id: 'comment',
         label: '评论',
-        href: '/admin/comment',
-        minRole: 4,
-        legacy: true
+        href: '/dashboard/comment',
+        minRole: 3
       },
       {
         id: 'rating',
