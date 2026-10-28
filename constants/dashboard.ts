@@ -117,12 +117,14 @@ export const DASHBOARD_NAV_GROUPS: DashboardNavGroup[] = [
         href: '/dashboard/company-merges',
         minRole: 3
       },
+      // Submission history lives in the inbox: filter to submissions and
+      // pick a status other than pending.
       {
         id: 'submission',
         label: '投稿历史',
-        href: '/admin/submission',
+        href: '/dashboard/inbox?kinds=submission&submissionStatus=published',
         minRole: 3,
-        legacy: true
+        match: 'exact'
       },
       {
         id: 'archive-feedback',

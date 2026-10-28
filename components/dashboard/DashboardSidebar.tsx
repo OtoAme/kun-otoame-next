@@ -150,8 +150,18 @@ export function DashboardSidebar({ currentUser }: DashboardSidebarProps) {
   // The inbox parent row is active when there is no filter at all, or when
   // the canonical URL explicitly selects every kind. A partial multi-source
   // selection marks neither the parent nor any single source row.
+  const submissionStatus = searchParams.get('submissionStatus')
+  // Submission history is the inbox filtered to submissions in any status
+  // other than pending; it has its own sidebar entry.
+  const isSubmissionHistory =
+    isInboxRoot &&
+    selectedKinds.length === 1 &&
+    selectedKinds[0] === 'submission' &&
+    submissionStatus !== null &&
+    submissionStatus !== 'pending'
   const isAllActive =
     isInboxRoot &&
+    !isSubmissionHistory &&
     (!kindsParam || selectedKinds.length === LINK_HEALTH_INBOX_KINDS.length)
   const closeMobileSidebar = () => setOpenMobile(false)
   const groups = getVisibleDashboardNav(currentUser.role)
@@ -177,7 +187,9 @@ export function DashboardSidebar({ currentUser }: DashboardSidebarProps) {
     const isInbox = item.id === 'inbox'
     const isActive = isInbox
       ? isAllActive
-      : isDashboardNavActive(item, pathname)
+      : item.id === 'submission'
+        ? isSubmissionHistory
+        : isDashboardNavActive(item, pathname)
     return (
       <SidebarMenuItem key={item.id}>
         <SidebarMenuButton
@@ -200,6 +212,7 @@ export function DashboardSidebar({ currentUser }: DashboardSidebarProps) {
               const Icon = KIND_ICONS[kind]
               const isKindActive =
                 isInboxRoot &&
+                !isSubmissionHistory &&
                 selectedKinds.length === 1 &&
                 selectedKinds[0] === kind
               return (

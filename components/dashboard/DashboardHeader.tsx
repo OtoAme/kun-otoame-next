@@ -49,11 +49,20 @@ export function DashboardHeader() {
   const navItem = DASHBOARD_NAV_GROUPS.flatMap((group) => group.items).find(
     (item) => !item.legacy && isDashboardNavActive(item, pathname)
   )
+  const submissionStatus = searchParams.get('submissionStatus')
+  const isSubmissionHistory =
+    pathname === '/dashboard/inbox' &&
+    selectedKinds.length === 1 &&
+    selectedKinds[0] === 'submission' &&
+    submissionStatus !== null &&
+    submissionStatus !== 'pending'
   const title = USER_LEDGER_PATH.test(pathname)
     ? '用户萌萌点明细'
-    : pathname === '/dashboard/inbox' && selectedKinds.length === 1
-      ? LINK_HEALTH_INBOX_KIND_LABELS[selectedKinds[0]]
-      : (navItem?.label ?? '待审事项')
+    : isSubmissionHistory
+      ? '投稿历史'
+      : pathname === '/dashboard/inbox' && selectedKinds.length === 1
+        ? LINK_HEALTH_INBOX_KIND_LABELS[selectedKinds[0]]
+        : (navItem?.label ?? '待审事项')
 
   // The header is plain normal-flow content. On mobile it scrolls away with
   // the shared page flow (the SidebarInset scroll container); from md up the

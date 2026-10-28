@@ -368,6 +368,24 @@ describe('dashboard shell', () => {
     expect(button.disabled).toBe(false)
   })
 
+  it('marks submission history instead of the inbox in history mode', async () => {
+    mocks.pathname = '/dashboard/inbox'
+    mocks.params = 'kinds=submission&submissionStatus=rejected'
+    await render()
+    const history = [...container.querySelectorAll('a')].find(
+      (link) =>
+        link.getAttribute('href') ===
+        '/dashboard/inbox?kinds=submission&submissionStatus=published'
+    )
+    expect(history?.getAttribute('data-active')).toBe('true')
+    expect(
+      container
+        .querySelector('a[href="/dashboard/inbox"]')
+        ?.getAttribute('data-active')
+    ).toBe('false')
+    expect(container.querySelector('h1')?.textContent).toBe('投稿历史')
+  })
+
   it('marks the overview entry only on the dashboard home', async () => {
     await render()
     const overview = [...container.querySelectorAll('a')].find(
