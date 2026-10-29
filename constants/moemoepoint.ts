@@ -1,4 +1,10 @@
 import { PATCH_SUBMISSION_DEPOSIT } from './patchSubmission'
+import {
+  HELP_ANSWER_REWARD,
+  HELP_DAILY_POST_LIMIT,
+  HELP_DAILY_REWARD_LIMIT,
+  HELP_POST_FEE
+} from './help'
 
 export const MOEMOEPOINT_REASON = {
   accountCreated: {
@@ -67,6 +73,8 @@ export const MOEMOEPOINT_REASON = {
     code: 'shoutbox.restore_refund',
     text: '小喇叭误判恢复'
   },
+  helpPostFee: { code: 'help.post_fee', text: '发布求助' },
+  helpAnswerReward: { code: 'help.answer_reward', text: '求助回答被采纳' },
   adminGrant: { code: 'admin.grant', text: '管理员发放' }
 } as const
 
@@ -83,6 +91,7 @@ export const MOEMOEPOINT_REASON = {
  * - 私聊与图片: app/api/message/conversation/**
  * - 发资源与上传门槛: app/api/patch/resource/route.ts, app/api/upload/resource/route.ts
  * - 投稿押金与奖励: app/api/patch-submission/**, constants/patchSubmission.ts
+ * - 求助发帖费与采纳奖励: app/api/help/service.ts, constants/help.ts
  */
 export const MOEMOEPOINT_EARN_RULES = [
   { label: '每日签到', amount: '+2 ~ +7', detail: '每天一次, 数值随机' },
@@ -97,6 +106,11 @@ export const MOEMOEPOINT_EARN_RULES = [
     label: '内容被点赞',
     amount: '+1',
     detail: '评论、评价、资源被他人点赞, 对方取消点赞时收回'
+  },
+  {
+    label: '求助回答被采纳',
+    amount: `+${HELP_ANSWER_REWARD}`,
+    detail: `每条求助只奖励第一次被采纳的回答一次; 提问者与回答者都需注册满 7 天, 每人每天最多 ${HELP_DAILY_REWARD_LIMIT} 次`
   },
   {
     label: '小喇叭误判恢复',
@@ -122,6 +136,11 @@ export const MOEMOEPOINT_SPEND_RULES = [
     label: '发布小喇叭',
     amount: '-50',
     detail: '发布一条不可回复的小喇叭需要 50 点; 自删与违规删除不退款'
+  },
+  {
+    label: '发布求助',
+    amount: `-${HELP_POST_FEE}`,
+    detail: `每条求助 ${HELP_POST_FEE} 点, 不退; 每人每天最多发 ${HELP_DAILY_POST_LIMIT} 条`
   },
   {
     label: '他人取消对你内容的点赞',
