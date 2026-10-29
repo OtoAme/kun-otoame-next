@@ -1,6 +1,13 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState
+} from 'react'
 import { Button } from '@heroui/button'
 import { Tooltip } from '@heroui/tooltip'
 import {
@@ -16,6 +23,7 @@ import {
   ListOrdered,
   Minus,
   Eye,
+  ImageUp,
   PenLine
 } from 'lucide-react'
 import { cn } from '~/utils/cn'
@@ -27,6 +35,13 @@ interface Props {
   placeholder?: string
   minHeight?: number
   className?: string
+  /**
+   * Optional image upload. When given, the toolbar shows an upload button and
+   * each uploaded file is inserted as a markdown image at the cursor; the
+   * handler returns the image URL or an error message.
+   */
+  onUploadImage?: (file: File) => Promise<{ url: string } | string>
+  uploadAccept?: string
 }
 
 interface ToolbarAction {
@@ -64,7 +79,7 @@ const TOOLBAR_ACTIONS: ToolbarAction[] = [
   {
     icon: Heading,
     label: 'Heading',
-    title: '标题',
+    title: '插入小标题',
     prefix: '## ',
     suffix: ''
   },
@@ -79,7 +94,7 @@ const TOOLBAR_ACTIONS: ToolbarAction[] = [
   {
     icon: Image,
     label: 'Image',
-    title: '图片',
+    title: '外链图片',
     prefix: '![',
     suffix: '](url)',
     placeholder: '图片描述'
@@ -129,9 +144,47 @@ export const KunMarkdownEditor = ({
   onChange,
   placeholder = '输入 Markdown 内容...',
   minHeight = 200,
-  className
+  className,
+  onUploadImage,
+  uploadAccept = 'image/jpeg,image/png,image/webp,image/avif'
 }: Props) => {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const [uploading, setUploading] = useState(false)
+  const [uploadError, setUploadError] = useState('')
+  const valueRef = useRef(value)
+  valueRef.current = value
+
+  const handleFiles = useCallback(
+    async (files: FileList | null) => {
+      if (!onUploadImage || !files?.length) return
+      setUploading(true)
+      setUploadError('')
+      for (const file of Array.from(files)) {
+        const result = await onUploadImage(file).catch(
+          () => '网络错误，图片上传失败，请重试'
+        )
+        if (typeof result === 'string') {
+          setUploadError(result || '图片上传失败，请重试')
+          break
+        }
+        const textarea = textareaRef.current
+        const current = valueRef.current
+        const at = textarea ? textarea.selectionEnd : current.length
+        const snippet = `${at > 0 && current[at - 1] !== '\n' ? '\n' : ''}![图片](${result.url})\n`
+        const next = current.slice(0, at) + snippet + current.slice(at)
+        valueRef.current = next
+        onChange(next)
+        requestAnimationFrame(() => {
+          textarea?.focus()
+          textarea?.setSelectionRange(at + snippet.length, at + snippet.length)
+        })
+      }
+      setUploading(false)
+      if (fileInputRef.current) fileInputRef.current.value = ''
+    },
+    [onUploadImage, onChange]
+  )
   const [activeTab, setActiveTab] = useState<'write' | 'preview'>('write')
   const [contentHeight, setContentHeight] = useState(minHeight)
   const previewHtml = useMemo(() => markdownToPreviewHtml(value), [value])
@@ -253,25 +306,55 @@ export const KunMarkdownEditor = ({
       {/* Toolbar */}
       <div className="border-default-200 bg-default-50 flex items-center gap-0.5 border-b px-2 py-1.5">
         {TOOLBAR_ACTIONS.map((action) => (
-          <Tooltip
-            key={action.label}
-            content={action.title}
-            showArrow
-            closeDelay={0}
-            size="sm"
-          >
-            <Button
-              variant="light"
-              size="sm"
-              isIconOnly
-              className="text-default-500 hover:text-default-700 hover:bg-default-200 h-8 w-8 min-w-0 rounded-lg transition-colors"
-              onPress={() => insertFormatting(action)}
-            >
-              <action.icon className="size-4" />
-            </Button>
-          </Tooltip>
+          <Fragment key={action.label}>
+            <Tooltip content={action.title} showArrow closeDelay={0} size="sm">
+              <Button
+                variant="light"
+                size="sm"
+                isIconOnly
+                aria-label={action.title}
+                className="text-default-500 hover:text-default-700 hover:bg-default-200 h-8 w-8 min-w-0 rounded-lg transition-colors"
+                onPress={() => insertFormatting(action)}
+              >
+                <action.icon className="size-4" />
+              </Button>
+            </Tooltip>
+            {action.label === 'Image' && onUploadImage && (
+              <>
+                <Tooltip content="上传图片" showArrow closeDelay={0} size="sm">
+                  <Button
+                    variant="light"
+                    size="sm"
+                    isIconOnly
+                    aria-label="上传图片"
+                    isLoading={uploading}
+                    className="text-default-500 hover:text-default-700 hover:bg-default-200 h-8 w-8 min-w-0 rounded-lg transition-colors"
+                    onPress={() => fileInputRef.current?.click()}
+                  >
+                    <ImageUp className="size-4" />
+                  </Button>
+                </Tooltip>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept={uploadAccept}
+                  multiple
+                  hidden
+                  onChange={(event) => handleFiles(event.target.files)}
+                />
+              </>
+            )}
+          </Fragment>
         ))}
       </div>
+      {uploadError && (
+        <p
+          role="alert"
+          className="text-danger border-default-200 border-b px-3 py-1 text-xs"
+        >
+          {uploadError}
+        </p>
+      )}
 
       {/* Tab switcher */}
       <div className="border-default-200 flex items-center border-b px-3">
