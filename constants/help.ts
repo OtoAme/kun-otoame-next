@@ -86,6 +86,9 @@ export const HELP_GAME_NAME_MAX_LENGTH = 200
 export const HELP_PAGE_SIZE = 20
 export const HELP_SIMILAR_LIMIT = 5
 
+/** The user-facing notice that explains how the help board works. */
+export const HELP_NOTICE_HREF = '/doc/notice/help-zone'
+
 export const HELP_RESOURCE_SHARE_HINT =
   '分享游戏或补丁资源，建议先在条目资源区「添加资源」（普通用户需至少 20 可用萌萌点，可能需要审核），通过后把资源卡片的分享链接贴到这里。'
 export const HELP_NO_RESPONSE_DUTY =

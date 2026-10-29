@@ -14,6 +14,7 @@ import { generateUUID } from '~/utils/random'
 import { KunMarkdownEditor } from '~/components/kun/editor/MarkdownEditor'
 import {
   HELP_CATEGORIES,
+  HELP_NOTICE_HREF,
   HELP_CATEGORY_HINTS,
   HELP_CATEGORY_LABELS,
   HELP_CONTENT_MIN_LENGTH,
@@ -94,7 +95,11 @@ export const HelpPostForm = ({
   const [similar, setSimilar] = useState<HelpSimilarItem[]>([])
   const [formState, setFormState] = useState<HelpPostFormState | null>(null)
   const [submitting, setSubmitting] = useState(false)
+  // Set once a save succeeds: the form stays locked while the page navigates
+  // away, so a second press cannot start another publish or edit.
+  const [done, setDone] = useState(false)
   const [checkingIn, setCheckingIn] = useState(false)
+  const [uploading, setUploading] = useState(false)
   const requestIdRef = useRef(newRequestId())
   const lockRef = useRef(false)
 
@@ -181,7 +186,7 @@ export const HelpPostForm = ({
   }
 
   const handleSubmit = async () => {
-    if (invalid || lockRef.current) return
+    if (invalid || done || uploading || lockRef.current) return
     lockRef.current = true
     setSubmitting(true)
     const link = {
@@ -206,6 +211,7 @@ export const HelpPostForm = ({
           toast.error(res)
           return
         }
+        setDone(true)
         toast.success('求助已保存')
         router.push(`/help/${initial.postId}`)
         router.refresh()
@@ -227,10 +233,13 @@ export const HelpPostForm = ({
         requestIdRef.current = newRequestId()
         return
       }
+      setDone(true)
       setMoemoepointBalance(res.moemoepointBalance)
       toast.success('求助已发布')
       router.push(`/help/${res.postId}`)
     } catch {
+      // The request may have reached the server, so keep the request id: a
+      // retry then returns the post already created instead of charging again.
       toast.error('网络错误，请稍后重试')
     } finally {
       lockRef.current = false
@@ -244,7 +253,17 @@ export const HelpPostForm = ({
         <h1 className="text-xl font-medium">
           {editing ? '编辑求助' : '发布求助'}
         </h1>
-        <p className="text-sm text-default-500">{HELP_NO_RESPONSE_DUTY}</p>
+        <p className="text-sm text-default-500">
+          {HELP_NO_RESPONSE_DUTY}发布前请先阅读
+          <Link
+            href={HELP_NOTICE_HREF}
+            target="_blank"
+            className="text-primary hover:underline"
+          >
+            《求助区使用说明》
+          </Link>
+          。
+        </p>
       </CardHeader>
       <CardBody className="gap-5">
         <Select
@@ -354,6 +373,7 @@ export const HelpPostForm = ({
             onChange={setContent}
             minHeight={220}
             onUploadImage={uploadHelpImage}
+            onUploadingChange={setUploading}
           />
         </div>
 
@@ -407,17 +427,32 @@ export const HelpPostForm = ({
         )}
 
         <div className="flex justify-end gap-2">
-          <Button variant="flat" onPress={() => router.back()}>
+          <Button
+            variant="flat"
+            isDisabled={submitting || done}
+            onPress={() => router.back()}
+          >
             取消
           </Button>
           <Button
             color="primary"
-            startContent={<Send className="size-4" />}
-            isDisabled={invalid || insufficient || limitReached || submitting}
-            isLoading={submitting}
+            startContent={done ? undefined : <Send className="size-4" />}
+            isDisabled={
+              invalid ||
+              insufficient ||
+              limitReached ||
+              submitting ||
+              done ||
+              uploading
+            }
+            isLoading={submitting || done}
             onPress={handleSubmit}
           >
-            {editing ? '保存' : `发布（${HELP_POST_FEE} 萌萌点）`}
+            {done
+              ? '正在打开求助…'
+              : editing
+                ? '保存'
+                : `发布（${HELP_POST_FEE} 萌萌点）`}
           </Button>
         </div>
       </CardBody>

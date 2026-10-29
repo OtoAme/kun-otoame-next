@@ -60,6 +60,18 @@ export const HelpReplyThread = ({
   const [editingId, setEditingId] = useState<number | null>(null)
   const [editText, setEditText] = useState('')
   const requestIdRef = useRef(newRequestId())
+  // Synchronous guard: two presses inside one render both see the old state.
+  const lockRef = useRef(false)
+  const lock = () => {
+    if (lockRef.current) return false
+    lockRef.current = true
+    setBusy(true)
+    return true
+  }
+  const unlock = () => {
+    lockRef.current = false
+    setBusy(false)
+  }
 
   const openComposer = (target: HelpUser | null) => {
     if (!onRequireLogin()) return
@@ -78,8 +90,7 @@ export const HelpReplyThread = ({
 
   const submit = async () => {
     const content = text.trim()
-    if (!content || busy) return
-    setBusy(true)
+    if (!content || !lock()) return
     try {
       const res = await kunFetchPost<{ replyId: number } | string>(
         '/help/reply',
@@ -101,16 +112,16 @@ export const HelpReplyThread = ({
       requestIdRef.current = newRequestId()
       await onChanged()
     } catch {
+      // Keep the request id so a retry returns the reply if it was saved.
       toast.error('网络错误，请稍后重试')
     } finally {
-      setBusy(false)
+      unlock()
     }
   }
 
   const saveEdit = async (replyId: number) => {
     const content = editText.trim()
-    if (!content || busy) return
-    setBusy(true)
+    if (!content || !lock()) return
     try {
       const res = await kunFetchPut<{ replyId: number } | string>(
         '/help/reply',
@@ -122,14 +133,16 @@ export const HelpReplyThread = ({
       }
       setEditingId(null)
       await onChanged()
+    } catch {
+      toast.error('网络错误，请稍后重试')
     } finally {
-      setBusy(false)
+      unlock()
     }
   }
 
   const remove = async (replyId: number) => {
-    if (busy || !window.confirm('确定删除这条回复吗？')) return
-    setBusy(true)
+    if (lockRef.current || !window.confirm('确定删除这条回复吗？')) return
+    if (!lock()) return
     try {
       const res = await kunFetchDelete<{ replyId: number } | string>(
         '/help/reply',
@@ -140,8 +153,10 @@ export const HelpReplyThread = ({
         return
       }
       await onChanged()
+    } catch {
+      toast.error('网络错误，请稍后重试')
     } finally {
-      setBusy(false)
+      unlock()
     }
   }
 

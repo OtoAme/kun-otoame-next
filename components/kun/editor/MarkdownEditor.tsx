@@ -45,6 +45,8 @@ interface Props {
    */
   onUploadImage?: (file: File) => Promise<{ url: string } | string>
   uploadAccept?: string
+  /** Lets the form hold its submit button until uploads finish. */
+  onUploadingChange?: (uploading: boolean) => void
 }
 
 interface ToolbarAction {
@@ -149,10 +151,19 @@ export const KunMarkdownEditor = ({
   minHeight = 200,
   className,
   onUploadImage,
-  uploadAccept = 'image/jpeg,image/png,image/webp,image/avif'
+  uploadAccept = 'image/jpeg,image/png,image/webp,image/avif',
+  onUploadingChange
 }: Props) => {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const [uploading, setUploading] = useState(false)
+  const uploadingRef = useRef(false)
+  const onUploadingChangeRef = useRef(onUploadingChange)
+  onUploadingChangeRef.current = onUploadingChange
+  const markUploading = (next: boolean) => {
+    uploadingRef.current = next
+    setUploading(next)
+    onUploadingChangeRef.current?.(next)
+  }
   const [uploadError, setUploadError] = useState('')
   const valueRef = useRef(value)
   valueRef.current = value
@@ -160,7 +171,11 @@ export const KunMarkdownEditor = ({
   const handleFiles = useCallback(
     async (files: File[]) => {
       if (!onUploadImage || !files.length) return
-      setUploading(true)
+      if (uploadingRef.current) {
+        setUploadError('上一批图片还在上传，请稍候再添加')
+        return
+      }
+      markUploading(true)
       setUploadError('')
       for (const file of files) {
         const result = await onUploadImage(file).catch(
@@ -182,8 +197,10 @@ export const KunMarkdownEditor = ({
           textarea?.setSelectionRange(at + snippet.length, at + snippet.length)
         })
       }
-      setUploading(false)
+      markUploading(false)
     },
+    // markUploading only touches refs and state setters.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [onUploadImage, onChange]
   )
   const dropAccept = useMemo(
@@ -198,7 +215,10 @@ export const KunMarkdownEditor = ({
     [uploadAccept]
   )
   // The text area stays clickable for typing, so the dropzone only opens the
-  // file picker from the upload button and the drop area.
+  // file picker from the upload button and the drop area. It stays enabled
+  // while uploading: a disabled dropzone drops its handlers, and the browser
+  // would then open a dropped image in place of the page and lose the draft.
+  // handleFiles refuses the extra batch instead.
   const {
     getRootProps,
     getInputProps,
@@ -211,8 +231,14 @@ export const KunMarkdownEditor = ({
     multiple: true,
     noClick: true,
     noKeyboard: true,
-    disabled: !onUploadImage || uploading
+    disabled: !onUploadImage
   })
+  useEffect(
+    () => () => {
+      if (uploadingRef.current) onUploadingChangeRef.current?.(false)
+    },
+    []
+  )
   const [activeTab, setActiveTab] = useState<'write' | 'preview'>('write')
   const [contentHeight, setContentHeight] = useState(minHeight)
   const previewHtml = useMemo(() => markdownToPreviewHtml(value), [value])

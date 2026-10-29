@@ -7,7 +7,13 @@ import { Card, CardBody } from '@heroui/card'
 import { Chip } from '@heroui/chip'
 import { Select, SelectItem } from '@heroui/select'
 import { Tab, Tabs } from '@heroui/tabs'
-import { Bell, MessageCircleQuestion, MessageSquare, Plus } from 'lucide-react'
+import {
+  Bell,
+  BookOpen,
+  MessageCircleQuestion,
+  MessageSquare,
+  Plus
+} from 'lucide-react'
 import { KunHeader } from '~/components/kun/Header'
 import { KunLoading } from '~/components/kun/Loading'
 import { KunNull } from '~/components/kun/Null'
@@ -16,6 +22,7 @@ import {
   HELP_CATEGORIES,
   HELP_CATEGORY_LABELS,
   HELP_NO_RESPONSE_DUTY,
+  HELP_NOTICE_HREF,
   HELP_PAGE_SIZE,
   HELP_SCOPE_LABELS,
   HELP_SCOPES,
@@ -134,6 +141,19 @@ export const HelpListContainer = ({
           >
             发布求助
           </Button>
+        }
+        endContent={
+          <p className="flex items-center gap-1 text-sm text-default-500">
+            <BookOpen className="size-4" aria-hidden />
+            第一次来？先看看
+            <Link
+              href={HELP_NOTICE_HREF}
+              className="text-primary hover:underline"
+            >
+              《求助区使用说明》
+            </Link>
+            ，了解怎么提问、费用与采纳奖励。
+          </p>
         }
       />
 

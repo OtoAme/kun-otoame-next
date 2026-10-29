@@ -12,6 +12,7 @@ import {
   HELP_CATEGORIES,
   HELP_CATEGORY_LABELS,
   HELP_DAILY_POST_LIMIT,
+  HELP_NOTICE_HREF,
   HELP_POST_FEE,
   HELP_STATUS_LABELS,
   type HelpCategory,
@@ -152,6 +153,13 @@ export const HelpSidebar = ({
             </li>
             <li>由社区自愿回答，不保证回应</li>
           </ul>
+          <Link
+            href={HELP_NOTICE_HREF}
+            className="inline-flex items-center text-xs text-primary hover:underline"
+          >
+            阅读求助区使用说明
+            <ChevronRight className="size-3.5" aria-hidden />
+          </Link>
         </CardBody>
       </Card>
 

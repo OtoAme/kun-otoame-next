@@ -85,6 +85,13 @@ export const HelpPostView = ({ initial }: Props) => {
   const [answer, setAnswer] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [busy, setBusy] = useState(false)
+  // Synchronous guards: two presses inside one render both see the old state.
+  const answerLockRef = useRef(false)
+  const busyLockRef = useRef(false)
+  const [leaving, setLeaving] = useState(false)
+  const leavingRef = useRef(false)
+  const [answerUploading, setAnswerUploading] = useState(false)
+  const [editUploading, setEditUploading] = useState(false)
   const [editingId, setEditingId] = useState<number | null>(null)
   const [editText, setEditText] = useState('')
   const [confirm, setConfirm] = useState<Confirm | null>(null)
@@ -114,6 +121,17 @@ export const HelpPostView = ({ initial }: Props) => {
     setPost(fresh)
   }
 
+  const lockBusy = () => {
+    if (busyLockRef.current || leavingRef.current) return false
+    busyLockRef.current = true
+    setBusy(true)
+    return true
+  }
+  const unlockBusy = () => {
+    busyLockRef.current = false
+    setBusy(false)
+  }
+
   const requireLogin = () => {
     if (loggedIn) return true
     toast('请先登录')
@@ -123,7 +141,8 @@ export const HelpPostView = ({ initial }: Props) => {
 
   const handleAnswer = async () => {
     const content = answer.trim()
-    if (!content || submitting) return
+    if (!content || answerLockRef.current) return
+    answerLockRef.current = true
     setSubmitting(true)
     try {
       const res = await kunFetchPost<{ answerId: number } | string>(
@@ -140,16 +159,18 @@ export const HelpPostView = ({ initial }: Props) => {
       requestIdRef.current = newRequestId()
       await reload()
     } catch {
+      // Keep the request id: the answer may already exist, and a retry with
+      // the same id returns it instead of posting a duplicate.
       toast.error('网络错误，请稍后重试')
     } finally {
+      answerLockRef.current = false
       setSubmitting(false)
     }
   }
 
   const handleSaveEdit = async (answerId: number) => {
     const content = editText.trim()
-    if (!content || busy) return
-    setBusy(true)
+    if (!content || !lockBusy()) return
     try {
       const res = await kunFetchPut<{ answerId: number } | string>(
         '/help/answer',
@@ -161,14 +182,15 @@ export const HelpPostView = ({ initial }: Props) => {
       }
       setEditingId(null)
       await reload()
+    } catch {
+      toast.error('网络错误，请稍后重试')
     } finally {
-      setBusy(false)
+      unlockBusy()
     }
   }
 
   const toggleUseful = async (item: HelpAnswer) => {
-    if (!requireLogin() || busy) return
-    setBusy(true)
+    if (!requireLogin() || !lockBusy()) return
     try {
       const res = await kunFetchPost<
         { usefulCount: number; isUseful: boolean } | string
@@ -183,14 +205,15 @@ export const HelpPostView = ({ initial }: Props) => {
           entry.id === item.id ? { ...entry, ...res } : entry
         )
       }))
+    } catch {
+      toast.error('网络错误，请稍后重试')
     } finally {
-      setBusy(false)
+      unlockBusy()
     }
   }
 
   const toggleFollow = async () => {
-    if (!requireLogin() || busy) return
-    setBusy(true)
+    if (!requireLogin() || !lockBusy()) return
     try {
       const res = await kunFetchPost<
         { followCount: number; isFollowing: boolean } | string
@@ -200,8 +223,10 @@ export const HelpPostView = ({ initial }: Props) => {
         return
       }
       setPost((current) => ({ ...current, ...res }))
+    } catch {
+      toast.error('网络错误，请稍后重试')
     } finally {
-      setBusy(false)
+      unlockBusy()
     }
   }
 
@@ -211,8 +236,7 @@ export const HelpPostView = ({ initial }: Props) => {
   }
 
   const runConfirm = async () => {
-    if (!confirm || busy) return
-    setBusy(true)
+    if (!confirm || !lockBusy()) return
     try {
       if (confirm.type === 'delete-post') {
         const res = await kunFetchDelete<{ postId: number } | string>(
@@ -223,6 +247,9 @@ export const HelpPostView = ({ initial }: Props) => {
           toast.error(res)
           return
         }
+        // Stay locked while leaving: the post is gone, nothing here applies.
+        leavingRef.current = true
+        setLeaving(true)
         toast.success('求助已删除')
         confirmModal.onClose()
         router.push('/help')
@@ -257,8 +284,10 @@ export const HelpPostView = ({ initial }: Props) => {
       }
       confirmModal.onClose()
       await reload()
+    } catch {
+      toast.error('网络错误，请稍后重试')
     } finally {
-      setBusy(false)
+      unlockBusy()
     }
   }
 
@@ -476,6 +505,7 @@ export const HelpPostView = ({ initial }: Props) => {
                           onChange={setEditText}
                           minHeight={160}
                           onUploadImage={uploadHelpImage}
+                          onUploadingChange={setEditUploading}
                         />
                         <div className="flex justify-end gap-2">
                           <Button
@@ -489,7 +519,7 @@ export const HelpPostView = ({ initial }: Props) => {
                             size="sm"
                             color="primary"
                             isLoading={busy}
-                            isDisabled={!editText.trim()}
+                            isDisabled={!editText.trim() || editUploading}
                             onPress={() => handleSaveEdit(item.id)}
                           >
                             保存
@@ -646,6 +676,7 @@ export const HelpPostView = ({ initial }: Props) => {
               onChange={setAnswer}
               minHeight={180}
               onUploadImage={uploadHelpImage}
+              onUploadingChange={setAnswerUploading}
             />
             <div className="flex items-center justify-between gap-2">
               <p className="text-xs text-default-400">
@@ -654,7 +685,7 @@ export const HelpPostView = ({ initial }: Props) => {
               <Button
                 color="primary"
                 startContent={<Send className="size-4" />}
-                isDisabled={!answer.trim() || submitting}
+                isDisabled={!answer.trim() || submitting || answerUploading}
                 isLoading={submitting}
                 onPress={handleAnswer}
               >
@@ -695,7 +726,7 @@ export const HelpPostView = ({ initial }: Props) => {
                   ? 'danger'
                   : 'primary'
               }
-              isLoading={busy}
+              isLoading={busy || leaving}
               onPress={runConfirm}
             >
               确认

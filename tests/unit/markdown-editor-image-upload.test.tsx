@@ -37,9 +37,11 @@ let root: Root
 let latestValue = ''
 
 const Harness = ({
-  onUploadImage
+  onUploadImage,
+  onUploadingChange
 }: {
   onUploadImage?: (file: File) => Promise<{ url: string } | string>
+  onUploadingChange?: (uploading: boolean) => void
 }) => {
   const [value, setValue] = useState('')
   latestValue = value
@@ -48,6 +50,7 @@ const Harness = ({
       value={value}
       onChange={setValue}
       onUploadImage={onUploadImage}
+      onUploadingChange={onUploadingChange}
     />
   )
 }
@@ -170,6 +173,48 @@ describe('KunMarkdownEditor image upload', () => {
     expect(container.querySelector('[role="alert"]')?.textContent).toContain(
       '只能上传 JPG、PNG、WebP、AVIF 图片'
     )
+  })
+
+  it('reports upload state and refuses a second batch while uploading', async () => {
+    let finish: (value: { url: string }) => void = () => undefined
+    const upload = vi.fn(
+      () =>
+        new Promise<{ url: string }>((resolve) => {
+          finish = resolve
+        })
+    )
+    const states: boolean[] = []
+    await act(async () => {
+      root.render(
+        <Harness
+          onUploadImage={upload}
+          onUploadingChange={(value) => states.push(value)}
+        />
+      )
+    })
+
+    const editor = container.querySelector('.kun-editor')!
+    const first = new dom.window.File(['x'], 'one.png', { type: 'image/png' })
+    await dropFiles(editor, [first])
+    expect(states).toEqual([true])
+    expect(container.textContent).toContain('图片上传中')
+
+    // A drop during the upload is still captured by the editor, so the
+    // browser does not navigate to the image, but it is not uploaded.
+    const second = new dom.window.File(['y'], 'two.png', { type: 'image/png' })
+    await dropFiles(editor, [second])
+    expect(upload).toHaveBeenCalledTimes(1)
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+      '上一批图片还在上传'
+    )
+
+    await act(async () => {
+      finish({ url: 'https://img.example.com/one.png' })
+    })
+    await flush()
+    expect(states).toEqual([true, false])
+    expect(latestValue).toContain('![图片](https://img.example.com/one.png)')
+    expect(latestValue).not.toContain('two.png')
   })
 
   it('shows no upload area or file input without an upload handler', async () => {
