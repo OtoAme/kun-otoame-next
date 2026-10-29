@@ -95,7 +95,7 @@ export function ReviewLayout({
     return (
       <div
         ref={ref}
-        className="grid h-full min-h-0 grid-cols-[minmax(280px,340px)_minmax(0,1fr)] gap-4"
+        className="grid h-full min-h-0 grid-cols-[minmax(340px,360px)_minmax(0,1fr)] gap-4"
       >
         <div className="flex min-h-0 min-w-0 flex-col gap-3">
           <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto pr-1">

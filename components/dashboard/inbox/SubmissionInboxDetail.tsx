@@ -651,10 +651,11 @@ export function SubmissionInboxDetail({
         </p>
       ) : null}
 
-      {/* Fixed two-by-two grid: a narrow form column never leaves a single
-          button on its own row. */}
-      <div className="grid grid-cols-2 gap-2">
+      {/* One left-aligned row of small buttons; the summary column is wide
+          enough to keep all four on it. */}
+      <div className="flex flex-nowrap items-center gap-1.5">
         <Button
+          size="sm"
           data-inbox-action="positive"
           disabled={approveDisabled}
           onClick={(event) => openConfirm('approve', event.currentTarget)}
@@ -662,6 +663,7 @@ export function SubmissionInboxDetail({
           通过并发布
         </Button>
         <Button
+          size="sm"
           variant="outline"
           disabled={baseActionDisabled}
           onClick={(event) =>
@@ -671,6 +673,7 @@ export function SubmissionInboxDetail({
           要求修改
         </Button>
         <Button
+          size="sm"
           variant="outline"
           disabled={baseActionDisabled}
           onClick={(event) => openConfirm('reject', event.currentTarget)}
@@ -678,6 +681,7 @@ export function SubmissionInboxDetail({
           驳回
         </Button>
         <Button
+          size="sm"
           variant="destructive"
           data-inbox-action="destructive"
           disabled={baseActionDisabled}
