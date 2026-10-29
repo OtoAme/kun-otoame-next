@@ -1,0 +1,34 @@
+import { z } from 'zod'
+import { NextRequest, NextResponse } from 'next/server'
+import { kunParseGetQuery } from '~/app/api/utils/parseQuery'
+import { verifyHeaderCookie } from '~/middleware/_verifyHeaderCookie'
+import { getStatsTrend } from './service'
+
+const daysSchema = z.object({
+  days: z.coerce
+    .number({ message: '天数必须为数字' })
+    .int({ message: '天数必须为整数' })
+    .min(1)
+    .max(60, { message: '最多展示 60 天的数据' })
+})
+
+const privateJson = (body: unknown) =>
+  NextResponse.json(body, {
+    headers: { 'Cache-Control': 'private, no-store' }
+  })
+
+export const GET = async (req: NextRequest) => {
+  const input = kunParseGetQuery(req, daysSchema)
+  if (typeof input === 'string') {
+    return privateJson(input)
+  }
+  const payload = await verifyHeaderCookie(req)
+  if (!payload) {
+    return privateJson('用户未登录')
+  }
+  if (payload.role < 4) {
+    return privateJson('本页面仅超级管理员可访问')
+  }
+
+  return privateJson(await getStatsTrend(input.days))
+}

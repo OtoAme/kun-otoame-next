@@ -212,7 +212,7 @@ const COLUMNS: ListColumn<ResourceRow>[] = [
   {
     key: 'publisher',
     header: '发布者',
-    minWidth: 640,
+    minWidth: 480,
     cell: (row) => (
       <span className="flex items-center gap-2">
         <UserAvatar user={row.user} />

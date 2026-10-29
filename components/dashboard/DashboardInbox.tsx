@@ -251,14 +251,14 @@ function UnifiedInbox({ reviewerId, reviewerRole }: DashboardInboxProps) {
       <StatePanel>
         <InboxIcon className="size-8 text-muted-foreground" aria-hidden />
         <p className="text-sm text-muted-foreground">
-          从左侧列表选择一条待办事项查看详情
+          从左侧列表选择一条查看详情
         </p>
       </StatePanel>
     )
   } else if (selectionStatus === 'invalid') {
     detailBody = (
       <StatePanel>
-        <p className="text-sm">事项链接无效</p>
+        <p className="text-sm">链接无效</p>
         <Button
           type="button"
           variant="outline"
@@ -287,7 +287,7 @@ function UnifiedInbox({ reviewerId, reviewerRole }: DashboardInboxProps) {
     if (data.state === 'missing') {
       detailBody = (
         <StatePanel>
-          <p className="text-sm">该事项已不存在</p>
+          <p className="text-sm">该内容已不存在</p>
           <p className="text-xs text-muted-foreground">
             它可能已被其他审核员处理或删除。
           </p>
@@ -319,7 +319,7 @@ function UnifiedInbox({ reviewerId, reviewerRole }: DashboardInboxProps) {
     ) {
       detailBody = (
         <StatePanel>
-          <p className="text-sm">该事项已被处理</p>
+          <p className="text-sm">该内容已被处理</p>
           <div className="flex items-center gap-2">
             <Button
               type="button"

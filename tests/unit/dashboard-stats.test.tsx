@@ -3,7 +3,11 @@ import { JSDOM } from 'jsdom'
 import { createRoot, type Root } from 'react-dom/client'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { DashboardStatsSumData, OverviewData } from '~/types/api/admin'
+import type {
+  DashboardStatsSumData,
+  OverviewData,
+  StatsTrendData
+} from '~/types/api/admin'
 import type { InboxCounts, InboxItem } from '~/types/api/inbox'
 
 const mocks = vi.hoisted(() => {
@@ -34,6 +38,41 @@ vi.mock('~/components/dashboard/ui/input', () => ({
       onInput={(event) =>
         onChange?.(event as React.ChangeEvent<HTMLInputElement>)
       }
+    />
+  )
+}))
+
+// recharts needs layout APIs jsdom lacks; the chart has its own coverage.
+vi.mock('~/components/dashboard/DashboardTrend', () => ({
+  DashboardTrend: ({ data }: { data: { points: unknown[] } }) => (
+    <p data-testid="trend">{data.points.length} 天</p>
+  )
+}))
+// A plain range input stands in for the Radix slider.
+vi.mock('~/components/dashboard/ui/slider', () => ({
+  Slider: ({
+    value,
+    onValueChange,
+    min,
+    max,
+    'aria-label': label
+  }: {
+    value: number[]
+    onValueChange: (value: number[]) => void
+    min: number
+    max: number
+    'aria-label': string
+  }) => (
+    <input
+      type="range"
+      aria-label={label}
+      min={min}
+      max={max}
+      value={value[0]}
+      onInput={(event) =>
+        onValueChange([Number((event.target as HTMLInputElement).value)])
+      }
+      readOnly
     />
   )
 }))
@@ -114,10 +153,23 @@ const oldestItem = {
   payload: {}
 } as unknown as InboxItem
 
+const trendData: StatsTrendData = {
+  days: 7,
+  points: Array.from({ length: 7 }, (_, index) => ({
+    date: `2026-10-${String(23 + index).padStart(2, '0')}`,
+    newUser: index,
+    newGalgame: 0,
+    newGalgameResource: 1,
+    newComment: 2
+  }))
+}
+
 // Every overview read the page may issue, keyed by URL.
 const okResponses: Record<string, unknown> = {
   '/admin/stats/sum': sumData,
   '/admin/stats': overviewData,
+  '/admin/stats/trend': trendData,
+  '/admin/shoutbox': { shoutboxes: [], page: 1, totalPages: 3 },
   '/admin/inbox': { items: [oldestItem], totals: {}, truncated: {} },
   '/admin/company-merges': { items: [{ id: 1 }, { id: 2 }] },
   '/admin/creator': { creators: [], total: 9 },
@@ -143,6 +195,7 @@ const okResponses: Record<string, unknown> = {
 const SUPER_ONLY = [
   '/admin/stats/sum',
   '/admin/stats',
+  '/admin/stats/trend',
   '/admin/setting/register',
   '/admin/setting/redirect'
 ]
@@ -206,20 +259,17 @@ describe('dashboard overview', () => {
     [...panel(id).querySelectorAll('button')].find(
       (button) => button.textContent === '重试'
     )!
-  const submitDays = async (value: string) => {
+  /** Moves the slider and lets the settle delay pass. */
+  const slideDays = async (value: number) => {
     const field = container.querySelector(
       'input[aria-label="统计天数"]'
     ) as HTMLInputElement
     await act(async () => {
-      field.value = value
+      field.value = String(value)
       field.dispatchEvent(new dom.window.Event('input', { bubbles: true }))
     })
     await act(async () => {
-      field
-        .closest('form')!
-        .dispatchEvent(
-          new dom.window.Event('submit', { bubbles: true, cancelable: true })
-        )
+      vi.advanceTimersByTime(300)
     })
   }
 
@@ -228,17 +278,22 @@ describe('dashboard overview', () => {
     for (const url of SUPER_ONLY) expect(requested()).not.toContain(url)
     expect(queueValue('/dashboard/inbox?kinds=submission')).toBe('5')
     expect(queueValue('/dashboard/inbox?kinds=resource-apply')).toBe('2')
-    expect(queueValue('/dashboard/inbox?kinds=feedback')).toBe('3')
-    expect(queueValue('/dashboard/inbox?kinds=report')).toBe('1')
-    expect(queueValue('/dashboard/inbox?kinds=case')).toBe('4')
+    expect(queueValue('/dashboard/case?view=pending')).toBe('4')
+    expect(queueValue('/dashboard/case?view=broken-link')).toBe('0')
+    expect(queueValue('/dashboard/shoutbox?tab=pending_review')).toBe('3')
     expect(queueValue('/dashboard/company-merges')).toBe('2')
-    expect(summaryValue('待审事项')).toBe('15')
+    // Legacy feedback and reports are no longer listed or counted.
+    expect(container.querySelector('a[href*="kinds=feedback"]')).toBeNull()
+    expect(container.querySelector('a[href*="kinds=report"]')).toBeNull()
+    expect(summaryValue('内容审核')).toBe('7')
+    expect(summaryValue('问题处理')).toBe('4')
     expect(summaryValue('我今日已处理')).toBe('4')
     // Creator applications are reviewed by administrators, so role 3 sees them.
     expect(queueValue('/dashboard/creator')).toBe('9')
     for (const id of [
       'dashboard-sum-heading',
       'dashboard-overview-heading',
+      'dashboard-trend-heading',
       'dashboard-status-heading'
     ]) {
       expect(panel(id)).toBeNull()
@@ -259,9 +314,11 @@ describe('dashboard overview', () => {
     expect(metric('新增评论')).toBe('21')
     expect(panel('dashboard-status-heading').textContent).toContain('开放')
     expect(panel('dashboard-log-heading').textContent).toContain('资源申请通过')
+    expect(mocks.get).toHaveBeenCalledWith('/admin/stats/trend', { days: 7 })
+    expect(panel('dashboard-trend-heading').textContent).toContain('7 天')
   })
 
-  it('keeps creator applications and merge suggestions out of the inbox total', async () => {
+  it('reads the side queues with one-row requests and keeps them out of the totals', async () => {
     await render(4)
     expect(queueValue('/dashboard/creator')).toBe('9')
     expect(mocks.get).toHaveBeenCalledWith('/admin/creator', {
@@ -269,13 +326,22 @@ describe('dashboard overview', () => {
       limit: 1,
       status: 'pending'
     })
+    // One row per page: the page count is the number awaiting review.
+    expect(mocks.get).toHaveBeenCalledWith('/admin/shoutbox', {
+      tab: 'pending_review',
+      page: 1,
+      limit: 1
+    })
     expect(queueValue('/dashboard/company-merges')).toBe('2')
-    expect(summaryValue('待审事项')).toBe('15')
+    expect(summaryValue('内容审核')).toBe('7')
   })
 
   it('lists the oldest inbox items with a deep link to each', async () => {
     await render(3)
-    expect(mocks.get).toHaveBeenCalledWith('/admin/inbox', { limitPerKind: 6 })
+    expect(mocks.get).toHaveBeenCalledWith('/admin/inbox', {
+      kinds: 'submission,resource-apply',
+      limitPerKind: 6
+    })
     const link = [...container.querySelectorAll('a')].find(
       (el) =>
         el.getAttribute('href') === '/dashboard/inbox?kind=resource-apply&id=31'
@@ -307,7 +373,7 @@ describe('dashboard overview', () => {
     await render(4)
     expect(metric('用户')).toBeNull()
     expect(metric('新注册用户')).toBeNull()
-    expect(summaryValue('待审事项')).toBe('–')
+    expect(summaryValue('内容审核')).toBe('–')
     expect(queueValue('/dashboard/inbox?kinds=submission')).toBe('')
     expect(container.querySelector('[data-slot="skeleton"]')).not.toBeNull()
   })
@@ -327,7 +393,7 @@ describe('dashboard overview', () => {
     expect(metric('用户')).toBe('0')
     expect(metric('新注册用户')).toBe('0')
     expect(queueValue('/dashboard/inbox?kinds=submission')).toBe('0')
-    expect(summaryValue('待审事项')).toBe('0')
+    expect(summaryValue('内容审核')).toBe('0')
   })
 
   it('fails and retries each panel independently', async () => {
@@ -405,53 +471,76 @@ describe('dashboard overview', () => {
     )
   })
 
-  it.each<[string, number, boolean]>([
-    ['1', 1, true],
-    ['30', 30, true],
-    ['60', 60, true],
-    ['0', 0, false],
-    ['61', 0, false],
-    ['-3', 0, false],
-    ['1.5', 0, false],
-    ['abc', 0, false],
-    ['', 0, false]
-  ])(
-    'accepts only integer windows within 1..60 (%s)',
-    async (input, expected, valid) => {
-      await render(4)
-      mocks.get.mockClear()
-      await submitDays(input)
-      if (valid) {
-        expect(mocks.get).toHaveBeenCalledTimes(1)
-        expect(mocks.get).toHaveBeenCalledWith('/admin/stats', {
-          days: expected
-        })
-      } else {
-        expect(mocks.get).not.toHaveBeenCalled()
-        expect(container.textContent).toContain('请输入 1 到 60 之间的整数天数')
+  it.each([1, 30, 60])(
+    'reloads the window and its trend once the slider settles on %i',
+    async (days) => {
+      vi.useFakeTimers()
+      try {
+        await render(4)
+        mocks.get.mockClear()
+        await slideDays(days)
+        expect(mocks.get).toHaveBeenCalledWith('/admin/stats', { days })
+        expect(mocks.get).toHaveBeenCalledWith('/admin/stats/trend', { days })
+        expect(panel('dashboard-trend-heading').textContent).toContain(
+          `最近 ${days} 天`
+        )
+      } finally {
+        vi.useRealTimers()
       }
     }
   )
 
+  it('waits for the slider to settle before requesting', async () => {
+    vi.useFakeTimers()
+    try {
+      await render(4)
+      mocks.get.mockClear()
+      const field = container.querySelector(
+        'input[aria-label="统计天数"]'
+      ) as HTMLInputElement
+      for (const value of [10, 20, 30]) {
+        await act(async () => {
+          field.value = String(value)
+          field.dispatchEvent(new dom.window.Event('input', { bubbles: true }))
+          vi.advanceTimersByTime(100)
+        })
+      }
+      expect(mocks.get).not.toHaveBeenCalled()
+      await act(async () => {
+        vi.advanceTimersByTime(300)
+      })
+      expect(
+        mocks.get.mock.calls.filter(([url]) => url === '/admin/stats')
+      ).toEqual([['/admin/stats', { days: 30 }]])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('clears old values on a new window and never lets stale responses win', async () => {
-    const pending: Array<(value: OverviewData | string) => void> = []
-    mocks.get.mockImplementation((url: string) => {
-      if (url !== '/admin/stats') return Promise.resolve(okResponses[url])
-      return new Promise<OverviewData | string>((resolve) =>
-        pending.push(resolve)
-      )
-    })
-    await render(4)
-    await submitDays('30')
-    expect(metric('新注册用户')).toBeNull()
-    await submitDays('7')
-    expect(pending).toHaveLength(3)
-    await act(async () => pending[2]({ ...overviewData, newUser: 70 }))
-    expect(metric('新注册用户')).toBe('70')
-    await act(async () => pending[1]({ ...overviewData, newUser: 30 }))
-    expect(metric('新注册用户')).toBe('70')
-    await act(async () => pending[0](overviewData))
-    expect(metric('新注册用户')).toBe('70')
+    vi.useFakeTimers()
+    try {
+      const pending: Array<(value: OverviewData | string) => void> = []
+      mocks.get.mockImplementation((url: string) => {
+        if (url !== '/admin/stats') return Promise.resolve(okResponses[url])
+        return new Promise<OverviewData | string>((resolve) =>
+          pending.push(resolve)
+        )
+      })
+      await render(4)
+      await slideDays(30)
+      expect(metric('新注册用户')).toBeNull()
+      await slideDays(14)
+      expect(pending).toHaveLength(3)
+      await act(async () => pending[2]({ ...overviewData, newUser: 70 }))
+      expect(metric('新注册用户')).toBe('70')
+      await act(async () => pending[1]({ ...overviewData, newUser: 30 }))
+      expect(metric('新注册用户')).toBe('70')
+      await act(async () => pending[0](overviewData))
+      expect(metric('新注册用户')).toBe('70')
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('masks private panels on downgrade and ignores late responses', async () => {
@@ -489,7 +578,7 @@ describe('dashboard overview', () => {
     for (const url of SUPER_ONLY) expect(requested()).not.toContain(url)
     await act(async () => root.render(<DashboardStats reviewerRole={4} />))
     expect(mocks.get).toHaveBeenCalledWith('/admin/stats/sum')
-    expect(mocks.get).toHaveBeenCalledWith('/admin/stats', { days: 1 })
+    expect(mocks.get).toHaveBeenCalledWith('/admin/stats', { days: 7 })
     expect(metric('用户')).toBe('120')
   })
 
@@ -497,6 +586,7 @@ describe('dashboard overview', () => {
     const html = renderToStaticMarkup(<DashboardStats reviewerRole={4} />)
     expect(html).toContain('站点规模')
     expect(html).toContain('近期增长')
+    expect(html).toContain('近期趋势')
     expect(html).toContain('data-slot="skeleton"')
     expect(html).not.toContain('失败')
     expect(mocks.get).not.toHaveBeenCalled()
@@ -507,6 +597,7 @@ describe('dashboard overview', () => {
     expect(html).toContain('待办队列')
     expect(html).not.toContain('站点规模')
     expect(html).not.toContain('近期增长')
+    expect(html).not.toContain('近期趋势')
     expect(html).not.toContain('站点状态')
     expect(mocks.get).not.toHaveBeenCalled()
   })

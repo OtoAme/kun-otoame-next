@@ -5,7 +5,11 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { kunFetchGet } from '~/utils/kunFetch'
 import type { AdminLog, AdminRedirectConfig } from '~/types/api/admin'
 import type { CompanyMergeSuggestionListResponse } from '~/types/api/companyMerges'
-import type { InboxItem, InboxListResponse } from '~/types/api/inbox'
+import {
+  CONTENT_REVIEW_KINDS,
+  type InboxItem,
+  type InboxListResponse
+} from '~/types/api/inbox'
 
 import type { StatsBlock } from './useDashboardStats'
 
@@ -92,6 +96,7 @@ const fetchOldest: Fetcher<InboxItem[]> = async () => {
   // Each source is already oldest-first, so the global oldest few are always
   // inside every source's first few.
   const result = await kunFetchGet<InboxListResponse | string>('/admin/inbox', {
+    kinds: CONTENT_REVIEW_KINDS.join(','),
     limitPerKind: OVERVIEW_OLDEST_LIMIT
   })
   if (typeof result === 'string') return result
@@ -104,6 +109,16 @@ const fetchMergeCount: Fetcher<number> = async () => {
     { status: 'pending' }
   )
   return typeof result === 'string' ? result : result.items.length
+}
+
+// With one row per page the page count is the number of shoutboxes waiting
+// for review (status 2 or with an open report).
+const fetchShoutboxReviewCount: Fetcher<number> = async () => {
+  const result = await kunFetchGet<{ totalPages: number } | string>(
+    '/admin/shoutbox',
+    { tab: 'pending_review', page: 1, limit: 1 }
+  )
+  return typeof result === 'string' ? result : result.totalPages
 }
 
 const fetchCreatorCount: Fetcher<number> = async () => {
@@ -146,6 +161,11 @@ export function useOverviewPanels(reviewerRole: number) {
     fetchCreatorCount,
     '获取创作者申请数失败'
   )
+  const [shoutboxCount, loadShoutboxCount] = usePanel(
+    true,
+    fetchShoutboxReviewCount,
+    '获取小喇叭待复核数失败'
+  )
   const [logs, loadLogs] = usePanel(
     reviewerRole >= LOG_MIN_ROLE,
     fetchLogs,
@@ -161,19 +181,29 @@ export function useOverviewPanels(reviewerRole: number) {
     void loadOldest()
     void loadMergeCount()
     void loadCreatorCount()
+    void loadShoutboxCount()
     void loadLogs()
     void loadSettings()
-  }, [loadOldest, loadMergeCount, loadCreatorCount, loadLogs, loadSettings])
+  }, [
+    loadOldest,
+    loadMergeCount,
+    loadCreatorCount,
+    loadShoutboxCount,
+    loadLogs,
+    loadSettings
+  ])
 
   return {
     oldest,
     mergeCount,
     creatorCount,
+    shoutboxCount,
     logs,
     settings,
     loadOldest,
     loadMergeCount,
     loadCreatorCount,
+    loadShoutboxCount,
     loadLogs,
     loadSettings,
     refreshAll

@@ -210,13 +210,19 @@ describe('dashboard shell', () => {
     }
   })
 
-  it('keeps the active source link pointed at that source', async () => {
-    mocks.pathname = '/dashboard/inbox'
-    mocks.params = 'kinds=submission'
+  it('shows the content review and issue counts beside their entries', async () => {
     await render()
-    expect(
-      container.querySelector('a[href="/dashboard/inbox?kinds=submission"]')
-    ).not.toBeNull()
+    const entry = (href: string) =>
+      container.querySelector(`a[href="${href}"]`)!.parentElement!.textContent
+    // 内容审核 = 待审条目 5 + 待审资源 2；旧反馈与旧举报不再计入
+    expect(entry('/dashboard/inbox')).toBe('内容审核7')
+    // 问题处理 = 事项 4 + 资源盘链接失效 0
+    expect(entry('/dashboard/case')).toBe('问题处理4')
+    // No per-source rows, no history entry, no archive pages.
+    expect(container.querySelector('a[href^="/dashboard/inbox?"]')).toBeNull()
+    expect(container.querySelector('a[href^="/dashboard/archive"]')).toBeNull()
+    expect(container.textContent).not.toContain('旧反馈')
+    expect(container.textContent).not.toContain('投稿历史')
   })
 
   it.each([
@@ -233,14 +239,10 @@ describe('dashboard shell', () => {
         .querySelector('a[href="/dashboard/user"]')
         ?.getAttribute('data-active')
     ).toBe('true')
-    // Source rows only render on the inbox itself.
-    expect(
-      container.querySelector('a[href="/dashboard/inbox?kinds=submission"]')
-    ).toBeNull()
   })
 
   it.each([
-    ['/dashboard/case/12', '事项中心'],
+    ['/dashboard/case/12', '问题处理'],
     ['/dashboard/shoutbox', '小喇叭'],
     ['/dashboard/link-health', '已失效链接'],
     ['/dashboard/company-merges', '会社合并']
@@ -251,20 +253,20 @@ describe('dashboard shell', () => {
   })
 
   it.each([
-    [
-      'kinds=submission,resource-apply,feedback,report,case,broken-link',
-      'true'
-    ],
-    ['kinds=submission,resource-apply,feedback,report,case', 'false'],
-    ['kinds=submission,report', 'false'],
-    ['kinds=submission,resource-apply,feedback,report', 'false']
-  ])('marks the all-sources entry correctly for %s', async (params, active) => {
+    ['', '内容审核'],
+    ['kinds=submission', '待审条目'],
+    ['kinds=resource-apply', '待审资源'],
+    ['kinds=submission&submissionStatus=rejected', '待审条目']
+  ])('titles the review page for %s', async (params, title) => {
     mocks.pathname = '/dashboard/inbox'
     mocks.params = params
     await render()
-    const all = container.querySelector('a[href="/dashboard/inbox"]')
-    expect(all?.getAttribute('data-active')).toBe(active)
-    expect(container.querySelector('h1')?.textContent).toBe('待审事项')
+    expect(
+      container
+        .querySelector('a[href="/dashboard/inbox"]')
+        ?.getAttribute('data-active')
+    ).toBe('true')
+    expect(container.querySelector('h1')?.textContent).toBe(title)
   })
 
   it('does not overlap timer polling while the previous request is pending', async () => {
@@ -365,24 +367,6 @@ describe('dashboard shell', () => {
     expect(mocks.logout).not.toHaveBeenCalled()
     expect(mocks.toastError).toHaveBeenCalledWith('退出失败')
     expect(button.disabled).toBe(false)
-  })
-
-  it('marks submission history instead of the inbox in history mode', async () => {
-    mocks.pathname = '/dashboard/inbox'
-    mocks.params = 'kinds=submission&submissionStatus=rejected'
-    await render()
-    const history = [...container.querySelectorAll('a')].find(
-      (link) =>
-        link.getAttribute('href') ===
-        '/dashboard/inbox?kinds=submission&submissionStatus=published'
-    )
-    expect(history?.getAttribute('data-active')).toBe('true')
-    expect(
-      container
-        .querySelector('a[href="/dashboard/inbox"]')
-        ?.getAttribute('data-active')
-    ).toBe('false')
-    expect(container.querySelector('h1')?.textContent).toBe('投稿历史')
   })
 
   it('marks the overview entry only on the dashboard home', async () => {

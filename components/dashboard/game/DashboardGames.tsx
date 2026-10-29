@@ -216,7 +216,7 @@ const COLUMNS: ListColumn<AdminGalgame>[] = [
   {
     key: 'publisher',
     header: '发布者',
-    minWidth: 640,
+    minWidth: 440,
     cell: (row) => (
       <span className="flex items-center gap-2">
         <UserAvatar user={row.user} />

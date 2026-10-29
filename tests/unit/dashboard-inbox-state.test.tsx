@@ -26,7 +26,10 @@ vi.mock('next/navigation', () => ({
 
 import { useInbox, type UseInboxReturn } from '~/hooks/dashboard/useInbox'
 
-type Response = LinkHealthInboxListResponse | LinkHealthInboxItemResponse | string
+type Response =
+  | LinkHealthInboxListResponse
+  | LinkHealthInboxItemResponse
+  | string
 type Request = {
   path: string
   query: Record<string, unknown>
@@ -69,7 +72,7 @@ const queue = (
     'resource-apply': 0,
     feedback: 0,
     report: 0,
-case: 0,
+    case: 0,
     'broken-link': 0
   },
   truncated: {
@@ -77,7 +80,7 @@ case: 0,
     'resource-apply': false,
     feedback: false,
     report: false,
-case: false,
+    case: false,
     'broken-link': false
   }
 })
@@ -169,10 +172,12 @@ describe('dashboard inbox request and selection state', () => {
   })
 
   it('sends the selected sources and full-backlog search to the API and trusts its matching rows', async () => {
-    await navigate('kinds=submission,report&search=%20Moon%20&order=kind')
+    await navigate(
+      'kinds=submission,resource-apply&search=%20Moon%20&order=kind'
+    )
     expect(listRequests()).toHaveLength(1)
     expect(listRequests()[0].query).toEqual({
-      kinds: 'submission,report',
+      kinds: 'submission,resource-apply',
       search: 'Moon',
       order: 'kind',
       limitPerKind: 50
@@ -187,18 +192,18 @@ describe('dashboard inbox request and selection state', () => {
   })
 
   it('submits search through URL state and requests the new server search without changing selected sources', async () => {
-    await navigate('kinds=feedback,report')
+    await navigate('kinds=resource-apply')
     await respond(listRequests()[0], queue([]))
     await act(async () => {
       current.submitSearch('  页面打不开  ')
     })
     const href = mocks.router.push.mock.calls.at(-1)![0] as string
     const params = new URL(href, 'https://example.com').searchParams
-    expect(params.get('kinds')).toBe('feedback,report')
+    expect(params.get('kinds')).toBe('resource-apply')
     expect(params.get('search')).toBe('页面打不开')
     await navigate(params.toString())
     expect(listRequests().at(-1)!.query).toMatchObject({
-      kinds: 'feedback,report',
+      kinds: 'resource-apply',
       search: '页面打不开'
     })
     expect(mocks.refreshCounts).not.toHaveBeenCalled()
@@ -354,7 +359,7 @@ describe('dashboard inbox request and selection state', () => {
     await respond(itemRequests()[0], pending(submission(1)))
     const completeA = current.onProcessed
     await navigate(
-      'kinds=submission,report&search=新搜索&order=kind&kind=submission&id=1'
+      'kinds=submission,resource-apply&search=新搜索&order=kind&kind=submission&id=1'
     )
     await respond(listRequests()[1], queue([submission(1), submission(3)]))
     await act(async () => {
@@ -363,13 +368,13 @@ describe('dashboard inbox request and selection state', () => {
     const href = mocks.router.replace.mock.calls.at(-1)![0] as string
     const params = new URL(href, 'https://example.com').searchParams
     expect(params.get('search')).toBe('新搜索')
-    expect(params.get('kinds')).toBe('submission,report')
+    expect(params.get('kinds')).toBe('submission,resource-apply')
     expect(params.get('order')).toBe('kind')
     expect(params.get('id')).toBe('3')
     expect(current.items.map((item) => item.key)).toEqual(['submission:3'])
     expect(listRequests().at(-1)!.query).toMatchObject({
       search: '新搜索',
-      kinds: 'submission,report',
+      kinds: 'submission,resource-apply',
       order: 'kind'
     })
   })
@@ -414,7 +419,7 @@ describe('dashboard inbox request and selection state', () => {
 
   it.each([
     ['search', 'kinds=submission&search=新的关键词'],
-    ['sources', 'kinds=feedback']
+    ['sources', 'kinds=resource-apply']
   ])(
     'does not expose the previous queue as the new %s result while loading',
     async (_name, nextQuery) => {
@@ -431,7 +436,7 @@ describe('dashboard inbox request and selection state', () => {
 
   it.each([
     ['search', 'kinds=submission&search=新的关键词'],
-    ['sources', 'kinds=feedback']
+    ['sources', 'kinds=resource-apply']
   ])(
     'does not advertise the old queue and counts when the new %s query fails',
     async (_name, nextQuery) => {

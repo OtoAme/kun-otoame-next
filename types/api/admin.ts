@@ -32,6 +32,20 @@ export interface OverviewData {
   newComment: number
 }
 
+export interface StatsTrendPoint {
+  /** Shanghai calendar date, YYYY-MM-DD. */
+  date: string
+  newUser: number
+  newGalgame: number
+  newGalgameResource: number
+  newComment: number
+}
+
+export interface StatsTrendData {
+  days: number
+  points: StatsTrendPoint[]
+}
+
 export interface AdminUser {
   id: number
   name: string

@@ -417,10 +417,10 @@ describe('admin inbox deep links', () => {
   })
 
   it.each([
-    ['comment', '/dashboard/archive/report?targetType=comment&id=5'],
-    ['rating', '/dashboard/archive/report?targetType=rating&id=5']
+    ['comment', '/admin/report'],
+    ['rating', '/admin/rating-report']
   ])(
-    'links %s reports to the matching console archive view',
+    'links %s reports to the matching legacy admin page',
     async (targetType, targetHref) => {
       mocks.prisma.patch_report.findUnique.mockResolvedValue(
         report(5, targetType)

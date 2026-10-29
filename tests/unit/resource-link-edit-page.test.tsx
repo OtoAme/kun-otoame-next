@@ -234,21 +234,13 @@ describe('legacy authorized link editor route (broken-link inbox)', () => {
     expect(body.baseLinks).toEqual([{ id: 21, version: 2 }])
     expect(body.links[0].id).toBe(21)
     expect(body.links[0].content).toBe('https://pan.example.com/share')
-    // 成功后回到收件箱原位（真实待办/计数由读面刷新）
-    const pushed = mocks.router.push.mock.calls[0][0] as string
-    const params = new URLSearchParams(pushed.split('?')[1])
-    expect(pushed).toContain('kinds=broken-link')
-    expect(params.get('kind')).toBe('broken-link')
-    expect(params.get('id')).toBe('21')
-    // 真实 hook 行为断言：返回 URL 被 parseSelection 接受并选中该待办
-    const { parseSelection } = await import('~/hooks/dashboard/useInbox')
-    expect(parseSelection(params.get('kind'), params.get('id'))).toEqual({
-      status: 'ok',
-      selection: { kind: 'broken-link', id: 21 }
-    })
+    // 成功后回到问题处理页的资源盘链接失效列表（列表与计数由读面刷新）
+    expect(mocks.router.push).toHaveBeenCalledWith(
+      '/dashboard/case?view=broken-link'
+    )
   })
 
-  it('cancels without any write and returns to the inbox', async () => {
+  it('cancels without any write and returns to the broken-link list', async () => {
     mocks.kunFetchGet.mockResolvedValue({
       resources: [adminResource()],
       total: 1
@@ -261,7 +253,7 @@ describe('legacy authorized link editor route (broken-link inbox)', () => {
     await act(async () => {})
     expect(mocks.kunFetchPut).not.toHaveBeenCalled()
     expect(mocks.router.push).toHaveBeenCalledWith(
-      '/dashboard/inbox?kinds=broken-link&kind=broken-link&id=21'
+      '/dashboard/case?view=broken-link'
     )
   })
 

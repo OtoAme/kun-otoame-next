@@ -11,7 +11,7 @@ import {
   PATCH_SUBMISSION_LIST_PAGE_MAX,
   PATCH_SUBMISSION_LIST_QUERY_MAX_LENGTH
 } from '~/constants/patchSubmission'
-import { LINK_HEALTH_INBOX_KINDS } from '~/types/api/inbox'
+import { CONTENT_REVIEW_KINDS } from '~/types/api/inbox'
 import type {
   LinkHealthInboxItem,
   LinkHealthInboxItemResponse,
@@ -125,7 +125,7 @@ export interface UseInboxReturn {
   onStateChanged: (key: string, options?: { silent?: boolean }) => Promise<void>
 }
 
-const KIND_SET: ReadonlySet<string> = new Set(LINK_HEALTH_INBOX_KINDS)
+const KIND_SET: ReadonlySet<string> = new Set(CONTENT_REVIEW_KINDS)
 const EMPTY_ITEMS: LinkHealthInboxItem[] = []
 const ID_PATTERN = /^[1-9]\d*$/
 
@@ -137,14 +137,14 @@ function parseId(raw: string): number | null {
 }
 
 function parseKinds(raw: string | null): LinkHealthInboxKind[] {
-  if (!raw) return [...LINK_HEALTH_INBOX_KINDS]
+  if (!raw) return [...CONTENT_REVIEW_KINDS]
   const valid = raw
     .split(',')
     .map((s) => s.trim())
     .filter((s): s is LinkHealthInboxKind => KIND_SET.has(s))
   const unique = Array.from(new Set(valid))
-  if (unique.length === 0) return [...LINK_HEALTH_INBOX_KINDS]
-  return LINK_HEALTH_INBOX_KINDS.filter((k) => unique.includes(k))
+  if (unique.length === 0) return [...CONTENT_REVIEW_KINDS]
+  return CONTENT_REVIEW_KINDS.filter((k) => unique.includes(k))
 }
 
 function parseSearch(raw: string | null): string {
@@ -622,7 +622,7 @@ export function useInbox({ refreshCounts }: UseInboxOptions): UseInboxReturn {
       if (next.length === 0) return // at least one source must stay selected
       // Any source change leaves history mode: the queue always comes back to pending.
       navigate({
-        kinds: LINK_HEALTH_INBOX_KINDS.filter((k) => next.includes(k)),
+        kinds: CONTENT_REVIEW_KINDS.filter((k) => next.includes(k)),
         submissionStatus: 'pending',
         submissionPage: 1
       })

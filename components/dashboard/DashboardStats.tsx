@@ -1,13 +1,14 @@
 'use client'
 
 import Link from 'next/link'
-import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import {
   BadgeCheck,
   ClipboardList,
   FileText,
   Flag,
   Globe,
+  Megaphone,
   Merge,
   MessageSquare,
   Package,
@@ -18,6 +19,7 @@ import {
 } from 'lucide-react'
 
 import { useDashboard } from '~/components/dashboard/DashboardShell'
+import { DashboardTrend } from '~/components/dashboard/DashboardTrend'
 import { DashboardPanel } from '~/components/dashboard/page/DashboardPage'
 import {
   OVERVIEW_DEFAULT_DAYS,
@@ -36,12 +38,12 @@ import { LINK_HEALTH_INBOX_KIND_LABELS } from '~/constants/dashboard'
 import { cn } from '~/lib/dashboard/utils'
 import { formatChinaDateTime } from '~/utils/fixedTimezoneDate'
 import {
-  LINK_HEALTH_INBOX_KINDS,
+  CONTENT_REVIEW_KINDS,
   type InboxItem,
   type LinkHealthInboxKind
 } from '~/types/api/inbox'
 import { Button } from '~/components/dashboard/ui/button'
-import { Input } from '~/components/dashboard/ui/input'
+import { Slider } from '~/components/dashboard/ui/slider'
 import { Skeleton } from '~/components/dashboard/ui/skeleton'
 import { Badge } from '~/components/dashboard/ui/badge'
 
@@ -52,7 +54,7 @@ export interface DashboardStatsProps {
 const numberFormatter = new Intl.NumberFormat('zh-CN')
 const fmt = (value: number) => numberFormatter.format(value)
 
-type QueueKey = LinkHealthInboxKind | 'creator' | 'company-merge'
+type QueueKey = LinkHealthInboxKind | 'creator' | 'company-merge' | 'shoutbox'
 
 interface QueueTone {
   icon: LucideIcon
@@ -101,6 +103,11 @@ const QUEUE_TONES: Record<QueueKey, QueueTone> = {
     icon: Merge,
     tile: 'bg-teal-500/12 text-teal-600 dark:text-teal-400',
     bar: 'bg-teal-500'
+  },
+  shoutbox: {
+    icon: Megaphone,
+    tile: 'bg-pink-500/12 text-pink-600 dark:text-pink-400',
+    bar: 'bg-pink-500'
   }
 }
 
@@ -382,35 +389,30 @@ function SummaryCell(props: {
 
 export function DashboardStats({ reviewerRole }: DashboardStatsProps) {
   const { counts, countsLoading, countsError, refreshCounts } = useDashboard()
-  const { canViewStats, summary, overview, days, loadSummary, loadOverview } =
-    useDashboardStats(reviewerRole)
+  const {
+    canViewStats,
+    summary,
+    overview,
+    trend,
+    days,
+    loadSummary,
+    loadOverview
+  } = useDashboardStats(reviewerRole)
   const panels = useOverviewPanels(reviewerRole)
   const canViewLogs = reviewerRole >= LOG_MIN_ROLE
-  const [daysInput, setDaysInput] = useState(String(OVERVIEW_DEFAULT_DAYS))
-  const [daysError, setDaysError] = useState('')
+  // The slider moves this value; the window reloads once the thumb settles.
+  const [draftDays, setDraftDays] = useState(OVERVIEW_DEFAULT_DAYS)
   const [layoutRef, width] = useElementWidth<HTMLDivElement>()
 
   useEffect(() => {
-    setDaysInput(String(days))
+    setDraftDays(days)
   }, [days])
 
-  const handleDaysSubmit = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    const raw = daysInput.trim()
-    const parsed = /^\d+$/.test(raw) ? Number(raw) : Number.NaN
-    if (
-      !Number.isInteger(parsed) ||
-      parsed < OVERVIEW_MIN_DAYS ||
-      parsed > OVERVIEW_MAX_DAYS
-    ) {
-      setDaysError(
-        `请输入 ${OVERVIEW_MIN_DAYS} 到 ${OVERVIEW_MAX_DAYS} 之间的整数天数`
-      )
-      return
-    }
-    setDaysError('')
-    void loadOverview(parsed)
-  }
+  useEffect(() => {
+    if (draftDays === days) return
+    const timer = window.setTimeout(() => void loadOverview(draftDays), 300)
+    return () => window.clearTimeout(timer)
+  }, [draftDays, days, loadOverview])
 
   const refreshAll = () => {
     void refreshCounts()
@@ -421,28 +423,63 @@ export function DashboardStats({ reviewerRole }: DashboardStatsProps) {
     }
   }
 
-  const inboxTotal = counts
-    ? LINK_HEALTH_INBOX_KINDS.reduce(
-        (sum, kind) => sum + counts.pending[kind],
-        0
-      )
+  const reviewTotal = counts
+    ? CONTENT_REVIEW_KINDS.reduce((sum, kind) => sum + counts.pending[kind], 0)
+    : null
+  const issueTotal = counts
+    ? counts.pending.case + counts.pending['broken-link']
     : null
 
+  const countRow = (
+    key: QueueKey,
+    label: string,
+    href: string,
+    value: number | null
+  ): QueueRow => ({
+    key,
+    label,
+    href,
+    value,
+    error: counts ? undefined : countsError
+  })
+
+  // Grouped like the sidebar: content review, issue handling, then the
+  // queues that live on their own pages.
   const queueRows: QueueRow[] = [
-    ...LINK_HEALTH_INBOX_KINDS.map(
-      (kind): QueueRow => ({
-        key: kind,
-        label: LINK_HEALTH_INBOX_KIND_LABELS[kind],
-        href: `/dashboard/inbox?kinds=${kind}`,
-        value: counts ? counts.pending[kind] : null,
-        error: counts ? undefined : countsError
-      })
+    countRow(
+      'submission',
+      '待审条目',
+      '/dashboard/inbox?kinds=submission',
+      counts ? counts.pending.submission : null
     ),
-    // Creator applications are a separate queue, never part of the inbox total.
+    countRow(
+      'resource-apply',
+      '待审资源',
+      '/dashboard/inbox?kinds=resource-apply',
+      counts ? counts.pending['resource-apply'] : null
+    ),
+    countRow(
+      'case',
+      '待处理问题',
+      '/dashboard/case?view=pending',
+      counts ? counts.pending.case : null
+    ),
+    countRow(
+      'broken-link',
+      '资源盘链接失效',
+      '/dashboard/case?view=broken-link',
+      counts ? counts.pending['broken-link'] : null
+    ),
+    {
+      key: 'shoutbox',
+      label: '小喇叭待复核',
+      href: '/dashboard/shoutbox?tab=pending_review',
+      value: panels.shoutboxCount.data,
+      error: panels.shoutboxCount.error
+    },
     {
       key: 'creator',
       label: '创作者申请',
-      note: '独立页面',
       href: '/dashboard/creator',
       value: panels.creatorCount.data,
       error: panels.creatorCount.error
@@ -450,7 +487,6 @@ export function DashboardStats({ reviewerRole }: DashboardStatsProps) {
     {
       key: 'company-merge',
       label: '会社合并建议',
-      note: '独立页面',
       href: '/dashboard/company-merges',
       value: panels.mergeCount.data,
       error: panels.mergeCount.error
@@ -482,7 +518,7 @@ export function DashboardStats({ reviewerRole }: DashboardStatsProps) {
       key="oldest"
       id="dashboard-oldest-heading"
       title="最早的待审"
-      description="收件箱内按等待时长"
+      description="待审条目与待审资源，按等待时长"
       action={
         <Link
           href="/dashboard/inbox"
@@ -534,38 +570,49 @@ export function DashboardStats({ reviewerRole }: DashboardStatsProps) {
     </Panel>
   )
 
+  const daysControl = (
+    <div className="flex w-64 max-w-full items-center gap-3 sm:w-72">
+      <span className="shrink-0 text-xs text-muted-foreground">统计天数</span>
+      <Slider
+        aria-label="统计天数"
+        min={OVERVIEW_MIN_DAYS}
+        max={OVERVIEW_MAX_DAYS}
+        step={1}
+        value={[draftDays]}
+        onValueChange={([value]) => setDraftDays(value)}
+        className="min-w-0 flex-1"
+      />
+      <span className="w-10 shrink-0 text-right text-sm font-medium tabular-nums">
+        {draftDays} 天
+      </span>
+    </div>
+  )
+
+  const trendPanel = canViewStats && (
+    <Panel
+      key="trend"
+      id="dashboard-trend-heading"
+      title="近期趋势"
+      description={`最近 ${days} 天，按上海时间逐日统计`}
+      action={daysControl}
+    >
+      <BlockBody
+        block={trend}
+        onRetry={() => void loadOverview(days)}
+        skeleton={<Skeleton className="h-64 w-full" />}
+      >
+        {(data) => <DashboardTrend data={data} />}
+      </BlockBody>
+    </Panel>
+  )
+
   const growthPanel = canViewStats && (
     <Panel
       key="growth"
       id="dashboard-overview-heading"
       title="近期增长"
       description={`最近 ${days} 天滚动窗口`}
-      action={
-        <form onSubmit={handleDaysSubmit} className="flex items-center gap-1.5">
-          <Input
-            aria-label="统计天数"
-            inputMode="numeric"
-            placeholder={`${OVERVIEW_MIN_DAYS}-${OVERVIEW_MAX_DAYS}`}
-            className="h-8 w-16"
-            value={daysInput}
-            onChange={(event) => setDaysInput(event.target.value)}
-          />
-          <Button
-            type="submit"
-            size="sm"
-            variant="outline"
-            disabled={overview.loading}
-          >
-            天
-          </Button>
-        </form>
-      }
     >
-      {daysError && (
-        <p role="alert" className="mb-3 text-sm text-destructive">
-          {daysError}
-        </p>
-      )}
       <BlockBody
         block={overview}
         onRetry={() => void loadOverview(days)}
@@ -581,7 +628,7 @@ export function DashboardStats({ reviewerRole }: DashboardStatsProps) {
               <Metric label="新增评论" value={data.newComment} />
             </dl>
             <p className="mt-3 text-xs text-muted-foreground">
-              最近登录按最后一次登录时间统计，不是每日活跃人数。
+              最近登录按最后一次登录时间统计，不是每日活跃人数，因此不画逐日趋势。
             </p>
           </>
         )}
@@ -751,19 +798,28 @@ export function DashboardStats({ reviewerRole }: DashboardStatsProps) {
           <div
             className="grid gap-px bg-border"
             style={{
+              // Phones: a 2x2 grid for the four super-administrator cells, one
+              // column for the three administrator cells.
               gridTemplateColumns: `repeat(${
-                width > 0 && width < 640 ? 2 : canViewStats ? 4 : 2
+                width > 0 && width < 640
+                  ? canViewStats
+                    ? 2
+                    : 1
+                  : canViewStats
+                    ? 4
+                    : 3
               }, minmax(0, 1fr))`
             }}
           >
             <SummaryCell
-              label="待审事项"
-              value={inboxTotal !== null ? fmt(inboxTotal) : '–'}
-              caption={
-                canViewStats
-                  ? '收件箱六类合计；创作者申请、会社合并另列'
-                  : '收件箱六类合计；会社合并另列'
-              }
+              label="内容审核"
+              value={reviewTotal !== null ? fmt(reviewTotal) : '–'}
+              caption="待审条目与待审资源"
+            />
+            <SummaryCell
+              label="问题处理"
+              value={issueTotal !== null ? fmt(issueTotal) : '–'}
+              caption="待处理问题与资源盘链接失效"
             />
             <SummaryCell
               label="我今日已处理"
@@ -771,23 +827,16 @@ export function DashboardStats({ reviewerRole }: DashboardStatsProps) {
               caption="上海时间自然日"
             />
             {canViewStats && (
-              <>
-                <SummaryCell
-                  label={`新注册 · 近 ${days} 天`}
-                  value={overview.data ? fmt(overview.data.newUser) : '–'}
-                  caption="滚动窗口"
-                />
-                <SummaryCell
-                  label={`新增资源 · 近 ${days} 天`}
-                  value={
-                    overview.data ? fmt(overview.data.newGalgameResource) : '–'
-                  }
-                  caption="含各状态"
-                />
-              </>
+              <SummaryCell
+                label={`新注册 · 近 ${days} 天`}
+                value={overview.data ? fmt(overview.data.newUser) : '–'}
+                caption="滚动窗口"
+              />
             )}
           </div>
         </DashboardPanel>
+
+        {trendPanel}
 
         <div
           className="grid items-start gap-4"

@@ -34,16 +34,14 @@ type LoadState =
   | { status: 'error'; message: string }
   | { status: 'ready'; resource: PatchResource }
 
-const inboxHref = (linkId: number | null) =>
-  `/dashboard/inbox${
-    linkId !== null ? `?kinds=broken-link&kind=broken-link&id=${linkId}` : ''
-  }`
+// Broken resource-disk links are listed on the issue page.
+const BROKEN_LINK_LIST_HREF = '/dashboard/case?view=broken-link'
 
 /**
  * 失效链接待办的唯一受权编辑路径（role>=3，含隐藏资源）：用既有的
  * `GET /admin/resource` 精确读取一条 DTO（自带 baseLinks 与全部凭据），
  * 打开既有 HeroUI 资源编辑（整表单、稳定基点）。绝不为编辑走下载获取通道，
- * 不新增写端点，不出现整条资源 DELETE。保存或取消都回到收件箱原位。
+ * 不新增写端点，不出现整条资源 DELETE。保存或取消都回到问题处理页的资源盘链接失效列表。
  */
 export const ResourceLinkEditClient = () => {
   const router = useRouter()
@@ -126,7 +124,7 @@ export const ResourceLinkEditClient = () => {
   }, [load])
 
   const disclosure = useDisclosure({ defaultOpen: true })
-  const back = () => router.push(inboxHref(focusLinkId))
+  const back = () => router.push(BROKEN_LINK_LIST_HREF)
   const handleSaved = (_resource: PatchResourceStableUpdateResponse) => back()
   const handleClose = () => {
     disclosure.onClose()

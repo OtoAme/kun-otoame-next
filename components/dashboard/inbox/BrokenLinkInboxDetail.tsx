@@ -40,7 +40,7 @@ export function BrokenLinkInboxDetail({ item }: BrokenLinkInboxDetailProps) {
     <Card>
       <CardHeader className="flex-row items-center gap-2 space-y-0 pb-3">
         <Unlink className="size-4 text-muted-foreground" aria-hidden />
-        <h3 className="text-sm font-medium">失效链接待办</h3>
+        <h3 className="text-sm font-medium">资源盘链接失效</h3>
         <Badge variant="destructive">已失效</Badge>
       </CardHeader>
       <CardContent className="space-y-4 text-sm">

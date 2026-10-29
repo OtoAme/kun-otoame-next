@@ -61,8 +61,8 @@ export const DASHBOARD_NAV_GROUPS: DashboardNavGroup[] = [
   {
     label: '待处理',
     items: [
-      { id: 'inbox', label: '待审事项', href: '/dashboard/inbox', minRole: 3 },
-      { id: 'case', label: '事项中心', href: '/dashboard/case', minRole: 3 },
+      { id: 'inbox', label: '内容审核', href: '/dashboard/inbox', minRole: 3 },
+      { id: 'case', label: '问题处理', href: '/dashboard/case', minRole: 3 },
       {
         id: 'creator',
         label: '创作者申请',
@@ -114,27 +114,6 @@ export const DASHBOARD_NAV_GROUPS: DashboardNavGroup[] = [
         id: 'company-merges',
         label: '会社合并',
         href: '/dashboard/company-merges',
-        minRole: 3
-      },
-      // Submission history lives in the inbox: filter to submissions and
-      // pick a status other than pending.
-      {
-        id: 'submission',
-        label: '投稿历史',
-        href: '/dashboard/inbox?kinds=submission&submissionStatus=published',
-        minRole: 3,
-        match: 'exact'
-      },
-      {
-        id: 'archive-feedback',
-        label: '旧反馈',
-        href: '/dashboard/archive/feedback',
-        minRole: 3
-      },
-      {
-        id: 'archive-report',
-        label: '旧举报',
-        href: '/dashboard/archive/report',
         minRole: 3
       }
     ]

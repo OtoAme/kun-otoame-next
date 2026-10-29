@@ -2,18 +2,14 @@
 
 import { useRef, useState } from 'react'
 import Link from 'next/link'
-import { usePathname, useSearchParams } from 'next/navigation'
+import { usePathname } from 'next/navigation'
 import toast from 'react-hot-toast'
 import {
-  Archive,
   BadgeCheck,
   ChevronsUpDown,
   ClipboardList,
-  FileText,
-  Flag,
   Gamepad2,
   HardDriveDownload,
-  History,
   Home,
   Inbox,
   LayoutDashboard,
@@ -22,8 +18,6 @@ import {
   Megaphone,
   Merge,
   MessageCircle,
-  MessageSquare,
-  Package,
   PenLine,
   ScrollText,
   Settings,
@@ -47,9 +41,6 @@ import {
   SidebarMenuBadge,
   SidebarMenuButton,
   SidebarMenuItem,
-  SidebarMenuSub,
-  SidebarMenuSubButton,
-  SidebarMenuSubItem,
   SidebarRail,
   useSidebar
 } from '~/components/dashboard/ui/sidebar'
@@ -64,13 +55,11 @@ import {
 import {
   getVisibleDashboardNav,
   isDashboardNavActive,
-  LINK_HEALTH_INBOX_KIND_LABELS,
   type DashboardNavItem
 } from '~/constants/dashboard'
 import {
-  LINK_HEALTH_INBOX_KINDS,
-  type LinkHealthInboxCounts,
-  type LinkHealthInboxKind
+  CONTENT_REVIEW_KINDS,
+  type LinkHealthInboxCounts
 } from '~/types/api/inbox'
 import { kunFetchPost } from '~/utils/kunFetch'
 import { useUserStore } from '~/store/userStore'
@@ -95,9 +84,6 @@ const NAV_ICONS: Record<string, LucideIcon> = {
   sticker: Sticker,
   'link-health': Unlink,
   'company-merges': Merge,
-  submission: History,
-  'archive-feedback': Archive,
-  'archive-report': Flag,
   shoutbox: Megaphone,
   user: Users,
   log: ScrollText,
@@ -105,32 +91,13 @@ const NAV_ICONS: Record<string, LucideIcon> = {
   email: Mail
 }
 
-const KIND_ICONS: Record<LinkHealthInboxKind, LucideIcon> = {
-  submission: FileText,
-  'resource-apply': Package,
-  feedback: MessageSquare,
-  report: Flag,
-  case: ClipboardList,
-  'broken-link': Unlink
-}
-
-const getTotalPending = (counts: LinkHealthInboxCounts) =>
-  LINK_HEALTH_INBOX_KINDS.reduce((sum, kind) => sum + counts.pending[kind], 0)
-
-// Normalizes the canonical comma-separated kinds param into the deduped set
-// of valid selected kinds (any order, unknown segments ignored).
-const parseSelectedKinds = (raw: string | null): LinkHealthInboxKind[] => {
-  if (!raw) {
-    return []
-  }
-  const selected = new Set<LinkHealthInboxKind>()
-  for (const part of raw.split(',')) {
-    const kind = part.trim()
-    if ((LINK_HEALTH_INBOX_KINDS as readonly string[]).includes(kind)) {
-      selected.add(kind as LinkHealthInboxKind)
-    }
-  }
-  return Array.from(selected)
+// Pending counts shown beside an entry, from the shell's inbox counts.
+const NAV_BADGES: Partial<
+  Record<string, (counts: LinkHealthInboxCounts) => number>
+> = {
+  inbox: (counts) =>
+    CONTENT_REVIEW_KINDS.reduce((sum, kind) => sum + counts.pending[kind], 0),
+  case: (counts) => counts.pending.case + counts.pending['broken-link']
 }
 
 interface DashboardSidebarProps {
@@ -141,26 +108,6 @@ export function DashboardSidebar({ currentUser }: DashboardSidebarProps) {
   const { counts, countsError } = useDashboard()
   const { setOpenMobile } = useSidebar()
   const pathname = usePathname()
-  const searchParams = useSearchParams()
-  const kindsParam = searchParams.get('kinds')
-  const isInboxRoot = pathname === '/dashboard/inbox'
-  const selectedKinds = parseSelectedKinds(kindsParam)
-  // The inbox parent row is active when there is no filter at all, or when
-  // the canonical URL explicitly selects every kind. A partial multi-source
-  // selection marks neither the parent nor any single source row.
-  const submissionStatus = searchParams.get('submissionStatus')
-  // Submission history is the inbox filtered to submissions in any status
-  // other than pending; it has its own sidebar entry.
-  const isSubmissionHistory =
-    isInboxRoot &&
-    selectedKinds.length === 1 &&
-    selectedKinds[0] === 'submission' &&
-    submissionStatus !== null &&
-    submissionStatus !== 'pending'
-  const isAllActive =
-    isInboxRoot &&
-    !isSubmissionHistory &&
-    (!kindsParam || selectedKinds.length === LINK_HEALTH_INBOX_KINDS.length)
   const closeMobileSidebar = () => setOpenMobile(false)
   const groups = getVisibleDashboardNav(currentUser.role)
 
@@ -182,60 +129,22 @@ export function DashboardSidebar({ currentUser }: DashboardSidebarProps) {
   }
 
   const renderItem = (item: DashboardNavItem) => {
-    const isInbox = item.id === 'inbox'
-    const isActive = isInbox
-      ? isAllActive
-      : item.id === 'submission'
-        ? isSubmissionHistory
-        : isDashboardNavActive(item, pathname)
+    const badge = NAV_BADGES[item.id]
     return (
       <SidebarMenuItem key={item.id}>
         <SidebarMenuButton
           asChild
-          isActive={isActive}
+          isActive={isDashboardNavActive(item, pathname)}
           tooltip={item.label}
           className={NAV_BUTTON_CLASS}
           onClick={closeMobileSidebar}
         >
           {renderLink(item)}
         </SidebarMenuButton>
-        {isInbox && counts && (
-          <SidebarMenuBadge>{getTotalPending(counts)}</SidebarMenuBadge>
+        {badge && counts && (
+          <SidebarMenuBadge>{badge(counts)}</SidebarMenuBadge>
         )}
-        {/* Per-source rows only while on the inbox, so the rest of the
-            navigation fits without scrolling. */}
-        {isInbox && isInboxRoot && (
-          <SidebarMenuSub>
-            {LINK_HEALTH_INBOX_KINDS.map((kind) => {
-              const Icon = KIND_ICONS[kind]
-              const isKindActive =
-                isInboxRoot &&
-                !isSubmissionHistory &&
-                selectedKinds.length === 1 &&
-                selectedKinds[0] === kind
-              return (
-                <SidebarMenuSubItem key={kind}>
-                  <SidebarMenuSubButton
-                    asChild
-                    isActive={isKindActive}
-                    onClick={closeMobileSidebar}
-                  >
-                    <Link href={`/dashboard/inbox?kinds=${kind}`}>
-                      <Icon />
-                      <span>{LINK_HEALTH_INBOX_KIND_LABELS[kind]}</span>
-                      {counts && (
-                        <span className="ml-auto text-xs text-muted-foreground tabular-nums">
-                          {counts.pending[kind]}
-                        </span>
-                      )}
-                    </Link>
-                  </SidebarMenuSubButton>
-                </SidebarMenuSubItem>
-              )
-            })}
-          </SidebarMenuSub>
-        )}
-        {isInbox && countsError && (
+        {item.id === 'inbox' && countsError && (
           <p className="px-2 pt-1 text-xs text-destructive group-data-[collapsible=icon]:hidden">
             {countsError}
           </p>

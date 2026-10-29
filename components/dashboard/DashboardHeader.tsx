@@ -11,30 +11,10 @@ import {
   isDashboardNavActive,
   LINK_HEALTH_INBOX_KIND_LABELS
 } from '~/constants/dashboard'
-import {
-  LINK_HEALTH_INBOX_KINDS,
-  type LinkHealthInboxKind
-} from '~/types/api/inbox'
 import { cn } from '~/lib/dashboard/utils'
 
 import { useDashboard } from './DashboardShell'
 import { ThemeToggle } from './ThemeToggle'
-
-// Normalizes the canonical comma-separated kinds param into the deduped set
-// of valid selected kinds (any order, unknown segments ignored).
-const parseSelectedKinds = (raw: string | null): LinkHealthInboxKind[] => {
-  if (!raw) {
-    return []
-  }
-  const selected = new Set<LinkHealthInboxKind>()
-  for (const part of raw.split(',')) {
-    const kind = part.trim()
-    if ((LINK_HEALTH_INBOX_KINDS as readonly string[]).includes(kind)) {
-      selected.add(kind as LinkHealthInboxKind)
-    }
-  }
-  return Array.from(selected)
-}
 
 const USER_LEDGER_PATH = /^\/dashboard\/user\/\d+\/moemoepoint$/
 
@@ -42,27 +22,19 @@ export function DashboardHeader() {
   const { counts, countsLoading, countsError, refreshCounts } = useDashboard()
   const pathname = usePathname()
   const searchParams = useSearchParams()
-  const selectedKinds = parseSelectedKinds(searchParams.get('kinds'))
-  // The inbox root keeps the source-filter title (neutral unless exactly one
-  // valid kind); the ledger is a sub-page of user management; every other
-  // page takes its sidebar label.
+  const kinds = searchParams.get('kinds')
+  // The ledger is a sub-page of user management; the review page names a
+  // single source when only one is selected; every other page takes its
+  // sidebar label.
   const navItem = DASHBOARD_NAV_GROUPS.flatMap((group) => group.items).find(
     (item) => !item.legacy && isDashboardNavActive(item, pathname)
   )
-  const submissionStatus = searchParams.get('submissionStatus')
-  const isSubmissionHistory =
-    pathname === '/dashboard/inbox' &&
-    selectedKinds.length === 1 &&
-    selectedKinds[0] === 'submission' &&
-    submissionStatus !== null &&
-    submissionStatus !== 'pending'
   const title = USER_LEDGER_PATH.test(pathname)
     ? '用户萌萌点明细'
-    : isSubmissionHistory
-      ? '投稿历史'
-      : pathname === '/dashboard/inbox' && selectedKinds.length === 1
-        ? LINK_HEALTH_INBOX_KIND_LABELS[selectedKinds[0]]
-        : (navItem?.label ?? '待审事项')
+    : pathname === '/dashboard/inbox' &&
+        (kinds === 'submission' || kinds === 'resource-apply')
+      ? LINK_HEALTH_INBOX_KIND_LABELS[kinds]
+      : (navItem?.label ?? '内容审核')
 
   // The header is plain normal-flow content. On mobile it scrolls away with
   // the shared page flow (the SidebarInset scroll container); from md up the
