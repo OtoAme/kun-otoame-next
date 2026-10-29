@@ -13,6 +13,10 @@ export const isUserPath = (pathname: string): boolean => {
   return /^\/user\/\d+/.test(pathname)
 }
 
+/** /help/create, /help/<id> and /help/<id>/edit sit under 求助区. */
+export const isHelpChildPath = (pathname: string): boolean =>
+  /^\/help\/(create|\d+(\/edit)?)$/.test(pathname)
+
 export const isDocPath = (pathname: string): boolean => {
   return /^\/doc\/.*/.test(pathname)
 }

@@ -186,6 +186,7 @@ describe('top bar and self-profile navigation', () => {
       '/otomegame',
       '/tag',
       '/company',
+      '/help',
       '/doc'
     ])
     expect(hrefs(container, '[data-mobile-menu] .kun-mobile-nav-link')).toEqual(
@@ -193,6 +194,7 @@ describe('top bar and self-profile navigation', () => {
         '/otomegame',
         '/tag',
         '/company',
+        '/help',
         '/doc',
         '/comment',
         '/resource',
@@ -210,6 +212,7 @@ describe('top bar and self-profile navigation', () => {
       '/otomegame',
       '/tag',
       '/company',
+      '/help',
       '/doc',
       '/dashboard'
     ])
@@ -218,6 +221,7 @@ describe('top bar and self-profile navigation', () => {
         '/otomegame',
         '/tag',
         '/company',
+        '/help',
         '/doc',
         '/dashboard',
         '/comment',

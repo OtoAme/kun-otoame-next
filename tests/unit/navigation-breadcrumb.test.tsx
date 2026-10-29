@@ -86,3 +86,45 @@ describe('KunNavigationBreadcrumb submission routes', () => {
     expect(markup).toContain('主页')
   })
 })
+
+describe('KunNavigationBreadcrumb help routes', () => {
+  const crumbs = (markup: string) =>
+    [...markup.matchAll(/<(?:a|span)[^>]*>([^<]+)<\/(?:a|span)>/g)].map(
+      (match) => match[1]
+    )
+
+  it('nests 发布求助 under 求助区', async () => {
+    expect(crumbs(await renderBreadcrumb('/help/create'))).toEqual([
+      '主页',
+      '求助区',
+      '发布求助'
+    ])
+  })
+
+  it('shows the post title on a detail page, with a numbered fallback', async () => {
+    expect(crumbs(await renderBreadcrumb('/help/11', { id: '11' }))).toEqual([
+      '主页',
+      '求助区',
+      '求助 #11'
+    ])
+
+    // The page registers its title under the real path; server rendering
+    // reads the store's initial snapshot, so check the builder directly.
+    const { createBreadcrumbItem, getBreadcrumbTitleKey } = await import(
+      '~/constants/routes/routes'
+    )
+    expect(getBreadcrumbTitleKey('/help/11/edit', { id: '11' })).toBe(
+      '/help/11'
+    )
+    const labels = (path: string) =>
+      createBreadcrumbItem(path, { id: '11' }, '有没有人一起组队？').map(
+        (item) => item.label
+      )
+    expect(labels('/help/11')).toEqual(['求助区', '有没有人一起组队？'])
+    expect(labels('/help/11/edit')).toEqual([
+      '求助区',
+      '有没有人一起组队？',
+      '编辑求助'
+    ])
+  })
+})

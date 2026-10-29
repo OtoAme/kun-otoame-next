@@ -5,7 +5,8 @@ import {
   isDocPath,
   isCompanyPath,
   isMessageNoticePath,
-  isMessageChatConversationPath
+  isMessageChatConversationPath,
+  isHelpChildPath
 } from './matcher'
 import { keyLabelMap } from './constants'
 import { kunMoyuMoe } from '~/config/moyu-moe'
@@ -52,6 +53,12 @@ export const getBreadcrumbTitleKey = (
   if (isCompanyPath(pathname)) {
     const id = getParamValue(params, 'id')
     return id ? `/company/${id}` : pathname
+  }
+
+  if (isHelpChildPath(pathname)) {
+    const id = getParamValue(params, 'id')
+    // Detail and edit pages share the post title registered on /help/[id].
+    return id ? `/help/${id}` : pathname
   }
 
   if (isMessageChatConversationPath(pathname)) {
@@ -248,6 +255,23 @@ export const createBreadcrumbItem = (
         label: getTitleOrDefault(companyName, defaultItem.label)
       }
     ]
+  }
+  if (isHelpChildPath(pathname)) {
+    const helpRoute: KunBreadcrumbItem = {
+      key: '/help',
+      label: '求助区',
+      href: '/help'
+    }
+    const id = getParamValue(params, 'id')
+    if (!id) return [helpRoute, defaultItem]
+    const postItem: KunBreadcrumbItem = {
+      key: `/help/${id}`,
+      label: getTitleOrDefault(normalizedPageTitle, `求助 #${id}`),
+      href: `/help/${id}`
+    }
+    return pathname.endsWith('/edit')
+      ? [helpRoute, postItem, defaultItem]
+      : [helpRoute, postItem]
   }
   if (isMessageNoticePath(pathname)) {
     const noticeRoute: KunBreadcrumbItem = {

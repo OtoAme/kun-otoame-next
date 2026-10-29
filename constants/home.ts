@@ -1,4 +1,4 @@
-import { Tags, MessageSquare, FileText } from 'lucide-react'
+import { MessageCircleQuestion, MessageSquare, FileText } from 'lucide-react'
 import { kunMoyuMoe } from '~/config/moyu-moe'
 import type { LucideProps } from 'lucide-react'
 import type { ForwardRefExoticComponent, RefAttributes } from 'react'
@@ -15,9 +15,9 @@ interface HomeNavItem {
 
 export const homeNavigationItems: HomeNavItem[] = [
   {
-    icon: Tags,
-    label: '标签',
-    href: '/tag',
+    icon: MessageCircleQuestion,
+    label: '求助区',
+    href: '/help',
     color: 'primary',
     isExternal: false
   },
