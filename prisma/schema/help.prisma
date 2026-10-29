@@ -1,0 +1,115 @@
+// Help board (module 07). A post always has a category; the game link is
+// optional and may be a free-text name when the site has no entry yet. Rows
+// are soft-deleted so reports and accounting stay traceable.
+model help_post {
+  id                 Int       @id @default(autoincrement())
+  user_id            Int?
+  user               user?     @relation("help_post_author", fields: [user_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  request_id         String    @db.VarChar(64)
+  category           String    @db.VarChar(16)
+  patch_id           Int?
+  patch              patch?    @relation(fields: [patch_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  game_name          String    @default("") @db.VarChar(200)
+  // Reference pages for a game the site has no entry for (VNDB, Bangumi,
+  // Steam, official site...). Only kept while game_name is used.
+  game_links         String[]  @default([])
+  resource_id        Int?
+  resource           patch_resource? @relation(fields: [resource_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  title              String    @db.VarChar(100)
+  content            String    @db.VarChar(10007)
+  status             String    @default("open") @db.VarChar(8)
+  accepted_answer_id Int?
+  rewarded_answer_id Int?
+  hidden_at          DateTime?
+  deleted_at         DateTime?
+  created            DateTime  @default(now())
+  updated            DateTime  @updatedAt
+
+  answers            help_answer[]
+  follows            help_follow[]
+
+  @@unique([user_id, request_id])
+  @@index([deleted_at, hidden_at, created(sort: Desc), id(sort: Desc)])
+  @@index([category, created(sort: Desc)])
+  @@index([patch_id, created(sort: Desc)])
+  @@index([user_id, created(sort: Desc)])
+}
+
+model help_answer {
+  id         Int       @id @default(autoincrement())
+  post_id    Int
+  post       help_post @relation(fields: [post_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  user_id    Int?
+  user       user?     @relation("help_answer_author", fields: [user_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  request_id String    @db.VarChar(64)
+  content    String    @db.VarChar(10007)
+  hidden_at  DateTime?
+  deleted_at DateTime?
+  created    DateTime  @default(now())
+  updated    DateTime  @updatedAt
+
+  votes      help_answer_vote[]
+  replies    help_reply[]
+
+  @@unique([user_id, request_id])
+  @@index([post_id, created, id])
+  @@index([user_id, created(sort: Desc)])
+}
+
+model help_answer_vote {
+  id        Int         @id @default(autoincrement())
+  answer_id Int
+  answer    help_answer @relation(fields: [answer_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  user_id   Int
+  user      user        @relation("help_answer_voter", fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  created   DateTime    @default(now())
+
+  @@unique([answer_id, user_id])
+  @@index([user_id])
+}
+
+// 「关注」: following a post and counting toward its visible total.
+model help_follow {
+  id      Int       @id @default(autoincrement())
+  post_id Int
+  post    help_post @relation(fields: [post_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  user_id Int
+  user    user      @relation("help_follower", fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  created DateTime  @default(now())
+
+  @@unique([post_id, user_id])
+  @@index([user_id])
+}
+
+// Shanghai natural-day counters for posting and answer rewards.
+model help_daily_quota {
+  user_id      Int
+  user         user   @relation("help_daily_quota_user", fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  day          String @db.VarChar(10)
+  post_count   Int    @default(0)
+  reward_count Int    @default(0)
+
+  @@id([user_id, day])
+}
+
+// One level of replies under an answer (楼中楼). Replies cannot be accepted
+// and carry no 「有用」; `reply_to_user_id` names whom the reply answers.
+model help_reply {
+  id               Int         @id @default(autoincrement())
+  answer_id        Int
+  answer           help_answer @relation(fields: [answer_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  user_id          Int?
+  user             user?       @relation("help_reply_author", fields: [user_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  reply_to_user_id Int?
+  reply_to_user    user?       @relation("help_reply_target", fields: [reply_to_user_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  request_id       String      @db.VarChar(64)
+  content          String      @db.VarChar(1000)
+  hidden_at        DateTime?
+  deleted_at       DateTime?
+  created          DateTime    @default(now())
+  updated          DateTime    @updatedAt
+
+  @@unique([user_id, request_id])
+  @@index([answer_id, created, id])
+  @@index([user_id, created(sort: Desc)])
+}

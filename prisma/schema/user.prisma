@@ -48,6 +48,14 @@ model user {
 
   shoutbox shoutbox[] @relation("shoutbox_author")
 
+  help_posts        help_post[]        @relation("help_post_author")
+  help_answers      help_answer[]      @relation("help_answer_author")
+  help_answer_votes help_answer_vote[] @relation("help_answer_voter")
+  help_follows      help_follow[]      @relation("help_follower")
+  help_daily_quotas help_daily_quota[] @relation("help_daily_quota_user")
+  help_replies      help_reply[]       @relation("help_reply_author")
+  help_replied_to   help_reply[]       @relation("help_reply_target")
+
   ops_case_reported       ops_case[]            @relation("ops_case_reporter")
   ops_case_owned          ops_case[]            @relation("ops_case_owner")
   ops_case_message_author ops_case_message[]    @relation("ops_case_message_author")
