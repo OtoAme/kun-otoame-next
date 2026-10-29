@@ -61,7 +61,7 @@ export function IssueImageField({ uploads, disabled }: IssueImageFieldProps) {
   const onPaste = imagePasteHandler(uploads, disabled)
 
   return (
-    <div className="space-y-2">
+    <div className="w-full space-y-2">
       {uploads.images.length ? (
         <ul className="flex flex-wrap gap-3" aria-label="已添加的图片">
           {uploads.images.map((image, index) => (
@@ -121,7 +121,7 @@ export function IssueImageField({ uploads, disabled }: IssueImageFieldProps) {
         onDrop={onDrop}
         onPaste={onPaste}
         className={cn(
-          'flex items-center gap-2 rounded-md border border-dashed px-3 py-2.5 text-sm text-muted-foreground transition-colors outline-none',
+          'flex w-full items-center gap-2 rounded-md border border-dashed px-3 py-2.5 text-sm text-muted-foreground transition-colors outline-none',
           'focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50',
           blocked
             ? 'cursor-not-allowed opacity-60'

@@ -728,9 +728,11 @@ export function DashboardCaseDetail({
                 onPaste={imagePasteHandler(replyUploads, working)}
                 placeholder="回复内容（纯文字，可以附图，截图可直接粘贴）"
               />
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <IssueImageField uploads={replyUploads} disabled={working} />
-                <div className="flex flex-col items-end gap-2">
+              {/* Full width like the text box above; the hand-over choice
+                  and the send button take their own row below it. */}
+              <IssueImageField uploads={replyUploads} disabled={working} />
+              <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
+                <div className="flex min-w-0 flex-col gap-1">
                   {canHandOver ? (
                     <div className="flex items-center gap-2">
                       <Checkbox
@@ -756,25 +758,23 @@ export function DashboardCaseDetail({
                         : '事项仍留在待处理，不交给报告者。'}
                     </p>
                   ) : null}
-                  <div className="flex items-center gap-3">
-                    {actionError && pendingAction === null ? (
-                      <p role="alert" className="text-sm text-destructive">
-                        {actionError}
-                      </p>
-                    ) : null}
-                    <Button
-                      type="button"
-                      size="sm"
-                      disabled={
-                        !replyContent.trim() ||
-                        working ||
-                        replyUploads.uploading
-                      }
-                      onClick={() => void handleReply()}
-                    >
-                      发送回复
-                    </Button>
-                  </div>
+                </div>
+                <div className="ml-auto flex items-center gap-3">
+                  {actionError && pendingAction === null ? (
+                    <p role="alert" className="text-sm text-destructive">
+                      {actionError}
+                    </p>
+                  ) : null}
+                  <Button
+                    type="button"
+                    size="sm"
+                    disabled={
+                      !replyContent.trim() || working || replyUploads.uploading
+                    }
+                    onClick={() => void handleReply()}
+                  >
+                    发送回复
+                  </Button>
                 </div>
               </div>
             </section>
