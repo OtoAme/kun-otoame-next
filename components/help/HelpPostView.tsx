@@ -31,6 +31,7 @@ import {
   CaseViolationReportModal,
   type CaseViolationTarget
 } from '~/components/case/CaseViolationReportModal'
+import { generateUUID } from '~/utils/random'
 import { KunMarkdownEditor } from '~/components/kun/editor/MarkdownEditor'
 import {
   HELP_ANSWER_REWARD,
@@ -73,7 +74,7 @@ type Confirm =
   | { type: 'delete-answer'; answerId: number }
   | { type: 'accept'; answerId: number | null }
 
-const newRequestId = () => crypto.randomUUID()
+const newRequestId = () => generateUUID()
 
 export const HelpPostView = ({ initial }: Props) => {
   const router = useRouter()

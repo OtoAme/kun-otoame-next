@@ -10,6 +10,7 @@ import { Select, SelectItem } from '@heroui/select'
 import { Tab, Tabs } from '@heroui/tabs'
 import { CalendarCheck, CircleCheck, Send } from 'lucide-react'
 import toast from 'react-hot-toast'
+import { generateUUID } from '~/utils/random'
 import { KunMarkdownEditor } from '~/components/kun/editor/MarkdownEditor'
 import {
   HELP_CATEGORIES,
@@ -60,7 +61,7 @@ interface Props {
   presetResourceId?: number | null
 }
 
-const newRequestId = () => crypto.randomUUID()
+const newRequestId = () => generateUUID()
 
 export const HelpPostForm = ({
   initial,

@@ -6,6 +6,7 @@ import { Chip } from '@heroui/chip'
 import { Textarea } from '@heroui/input'
 import { Flag, Pencil, Trash2, X } from 'lucide-react'
 import toast from 'react-hot-toast'
+import { generateUUID } from '~/utils/random'
 import type { CaseViolationTarget } from '~/components/case/CaseViolationReportModal'
 import { HELP_REPLY_MAX_LENGTH } from '~/constants/help'
 import { kunFetchDelete, kunFetchPost, kunFetchPut } from '~/utils/kunFetch'
@@ -34,7 +35,7 @@ interface Props {
   ) => void
 }
 
-const newRequestId = () => crypto.randomUUID()
+const newRequestId = () => generateUUID()
 
 /**
  * One level of replies under an answer (楼中楼). Replies are plain text; a
