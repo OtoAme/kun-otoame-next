@@ -212,14 +212,23 @@ describe('dashboard shell', () => {
 
   it('shows the content review and issue counts beside their entries', async () => {
     await render()
-    const entry = (href: string) =>
-      container.querySelector(`a[href="${href}"]`)!.parentElement!.textContent
+    const row = (href: string) =>
+      [...container.querySelectorAll('a')].find(
+        (link) => link.getAttribute('href') === href
+      )!
     // 内容审核 = 待审条目 5 + 待审资源 2；旧反馈与旧举报不再计入
-    expect(entry('/dashboard/inbox')).toBe('内容审核7')
+    expect(row('/dashboard/inbox').parentElement!.textContent).toContain(
+      '内容审核7'
+    )
+    // The two review sources are always listed under it with their counts.
+    expect(row('/dashboard/inbox?kinds=submission').textContent).toBe(
+      '待审条目5'
+    )
+    expect(row('/dashboard/inbox?kinds=resource-apply').textContent).toBe(
+      '待审资源2'
+    )
     // 问题处理 = 事项 4 + 资源盘链接失效 0
-    expect(entry('/dashboard/case')).toBe('问题处理4')
-    // No per-source rows, no history entry, no archive pages.
-    expect(container.querySelector('a[href^="/dashboard/inbox?"]')).toBeNull()
+    expect(row('/dashboard/case').parentElement!.textContent).toBe('问题处理4')
     expect(container.querySelector('a[href^="/dashboard/archive"]')).toBeNull()
     expect(container.textContent).not.toContain('旧反馈')
     expect(container.textContent).not.toContain('投稿历史')
@@ -253,22 +262,29 @@ describe('dashboard shell', () => {
   })
 
   it.each([
-    ['', '内容审核'],
-    ['kinds=submission', '待审条目'],
-    ['kinds=resource-apply', '待审资源'],
-    ['kinds=submission&submissionStatus=rejected', '待审条目']
-  ])('titles the review page for %s', async (params, title) => {
+    ['', '内容审核', '/dashboard/inbox'],
+    ['kinds=submission,resource-apply', '内容审核', '/dashboard/inbox'],
+    ['kinds=submission', '待审条目', '/dashboard/inbox?kinds=submission'],
+    [
+      'kinds=resource-apply',
+      '待审资源',
+      '/dashboard/inbox?kinds=resource-apply'
+    ],
+    [
+      'kinds=submission&submissionStatus=rejected',
+      '待审条目',
+      '/dashboard/inbox?kinds=submission'
+    ]
+  ])('marks one review entry for %s', async (params, title, activeHref) => {
     mocks.pathname = '/dashboard/inbox'
     mocks.params = params
     await render()
-    expect(
-      container
-        .querySelector('a[href="/dashboard/inbox"]')
-        ?.getAttribute('data-active')
-    ).toBe('true')
+    const active = [...container.querySelectorAll('a[data-active="true"]')].map(
+      (link) => link.getAttribute('href')
+    )
+    expect(active).toEqual([activeHref])
     expect(container.querySelector('h1')?.textContent).toBe(title)
   })
-
   it('does not overlap timer polling while the previous request is pending', async () => {
     let resolve!: (value: InboxCounts) => void
     mocks.get.mockReturnValue(

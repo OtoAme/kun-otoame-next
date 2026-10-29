@@ -3,18 +3,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { kunFetchGet } from '~/utils/kunFetch'
-import type {
-  DashboardStatsSumData,
-  OverviewData,
-  StatsTrendData
-} from '~/types/api/admin'
+import type { DashboardStatsSumData, StatsTrendData } from '~/types/api/admin'
 
 // A week gives the trend chart a shape on first load.
 export const OVERVIEW_DEFAULT_DAYS = 7
 export const OVERVIEW_MIN_DAYS = 1
 export const OVERVIEW_MAX_DAYS = 60
 
-// Full stats (sum + overview) are private to reviewers with role >= 4.
+// Full stats (sum + trend) are private to reviewers with role >= 4.
 export const DASHBOARD_STATS_MIN_ROLE = 4
 
 export interface StatsBlock<T> {
@@ -40,8 +36,7 @@ export function isValidOverviewDays(value: number): boolean {
 export interface DashboardStatsState {
   canViewStats: boolean
   summary: StatsBlock<DashboardStatsSumData>
-  overview: StatsBlock<OverviewData>
-  /** Daily series for the same window as `overview`. */
+  /** Daily series and login total for the selected window. */
   trend: StatsBlock<StatsTrendData>
   days: number
   loadSummary: () => Promise<void>
@@ -56,9 +51,6 @@ export function useDashboardStats(reviewerRole: number): DashboardStatsState {
     () =>
       canViewStats ? { data: null, loading: true, error: '' } : emptyBlock()
   )
-  const [overview, setOverview] = useState<StatsBlock<OverviewData>>(() =>
-    canViewStats ? { data: null, loading: true, error: '' } : emptyBlock()
-  )
   const [trend, setTrend] = useState<StatsBlock<StatsTrendData>>(() =>
     canViewStats ? { data: null, loading: true, error: '' } : emptyBlock()
   )
@@ -70,7 +62,6 @@ export function useDashboardStats(reviewerRole: number): DashboardStatsState {
   const canViewStatsRef = useRef(canViewStats)
   const daysRef = useRef(OVERVIEW_DEFAULT_DAYS)
   const summaryGenerationRef = useRef(0)
-  const overviewGenerationRef = useRef(0)
   const trendGenerationRef = useRef(0)
 
   useEffect(() => {
@@ -83,7 +74,6 @@ export function useDashboardStats(reviewerRole: number): DashboardStatsState {
       mountedRef.current = false
       // Invalidate completions from this effect cycle (unmount / replay).
       summaryGenerationRef.current += 1
-      overviewGenerationRef.current += 1
       trendGenerationRef.current += 1
     }
   }, [])
@@ -171,6 +161,7 @@ export function useDashboardStats(reviewerRole: number): DashboardStatsState {
     []
   )
 
+  /** Switches the window (or refreshes it) and reloads its trend. */
   const loadOverview = useCallback(
     async (targetDays: number): Promise<void> => {
       if (!isValidOverviewDays(targetDays)) {
@@ -179,53 +170,12 @@ export function useDashboardStats(reviewerRole: number): DashboardStatsState {
       if (!mountedRef.current || !canViewStatsRef.current) {
         return
       }
+      // A new window must never show values from the previous window;
+      // a same-window refresh may keep its values while reloading.
       const samePeriod = targetDays === daysRef.current
-      void loadTrend(targetDays, samePeriod)
-      const generation = ++overviewGenerationRef.current
       daysRef.current = targetDays
       setDays(targetDays)
-      setOverview((previous) => ({
-        // A new window must never show values from the previous window;
-        // a same-window refresh may keep its values while reloading.
-        data: samePeriod ? previous.data : null,
-        loading: true,
-        error: ''
-      }))
-      try {
-        const result = await kunFetchGet<OverviewData | string>(
-          '/admin/stats',
-          { days: targetDays }
-        )
-        if (
-          !mountedRef.current ||
-          !canViewStatsRef.current ||
-          generation !== overviewGenerationRef.current
-        ) {
-          return
-        }
-        if (typeof result === 'string') {
-          setOverview((previous) => ({
-            ...previous,
-            loading: false,
-            error: result || '获取近期统计失败'
-          }))
-        } else {
-          setOverview({ data: result, loading: false, error: '' })
-        }
-      } catch {
-        if (
-          !mountedRef.current ||
-          !canViewStatsRef.current ||
-          generation !== overviewGenerationRef.current
-        ) {
-          return
-        }
-        setOverview((previous) => ({
-          ...previous,
-          loading: false,
-          error: '获取近期统计失败，请检查网络后重试'
-        }))
-      }
+      await loadTrend(targetDays, samePeriod)
     },
     [loadTrend]
   )
@@ -236,12 +186,10 @@ export function useDashboardStats(reviewerRole: number): DashboardStatsState {
   useEffect(() => {
     if (!canViewStats) {
       summaryGenerationRef.current += 1
-      overviewGenerationRef.current += 1
       trendGenerationRef.current += 1
       daysRef.current = OVERVIEW_DEFAULT_DAYS
       setDays(OVERVIEW_DEFAULT_DAYS)
       setSummary(emptyBlock())
-      setOverview(emptyBlock())
       setTrend(emptyBlock())
       return
     }
@@ -252,7 +200,6 @@ export function useDashboardStats(reviewerRole: number): DashboardStatsState {
   return {
     canViewStats,
     summary,
-    overview,
     trend,
     days,
     loadSummary,

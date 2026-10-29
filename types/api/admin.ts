@@ -32,17 +32,26 @@ export interface OverviewData {
   newComment: number
 }
 
-export interface StatsTrendPoint {
+export type StatsTrendMetric =
+  | 'newUser'
+  | 'newGalgame'
+  | 'newGalgameResource'
+  | 'newComment'
+  | 'newRating'
+  | 'newSubmission'
+  | 'newCase'
+  | 'resourceAccess'
+  | 'checkIn'
+
+export type StatsTrendPoint = {
   /** Shanghai calendar date, YYYY-MM-DD. */
   date: string
-  newUser: number
-  newGalgame: number
-  newGalgameResource: number
-  newComment: number
-}
+} & Record<StatsTrendMetric, number>
 
 export interface StatsTrendData {
   days: number
+  /** Users whose last login falls in the window; no per-day history. */
+  recentLogin: number
   points: StatsTrendPoint[]
 }
 

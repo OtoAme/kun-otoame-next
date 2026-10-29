@@ -2,12 +2,13 @@
 
 import { useRef, useState } from 'react'
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
+import { usePathname, useSearchParams } from 'next/navigation'
 import toast from 'react-hot-toast'
 import {
   BadgeCheck,
   ChevronsUpDown,
   ClipboardList,
+  FileText,
   Gamepad2,
   HardDriveDownload,
   Home,
@@ -18,6 +19,7 @@ import {
   Megaphone,
   Merge,
   MessageCircle,
+  Package,
   PenLine,
   ScrollText,
   Settings,
@@ -41,6 +43,9 @@ import {
   SidebarMenuBadge,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarMenuSub,
+  SidebarMenuSubButton,
+  SidebarMenuSubItem,
   SidebarRail,
   useSidebar
 } from '~/components/dashboard/ui/sidebar'
@@ -59,6 +64,7 @@ import {
 } from '~/constants/dashboard'
 import {
   CONTENT_REVIEW_KINDS,
+  type ContentReviewKind,
   type LinkHealthInboxCounts
 } from '~/types/api/inbox'
 import { kunFetchPost } from '~/utils/kunFetch'
@@ -100,6 +106,16 @@ const NAV_BADGES: Partial<
   case: (counts) => counts.pending.case + counts.pending['broken-link']
 }
 
+// Content review always lists its two sources under it.
+const REVIEW_SOURCES: {
+  kind: ContentReviewKind
+  label: string
+  icon: LucideIcon
+}[] = [
+  { kind: 'submission', label: '待审条目', icon: FileText },
+  { kind: 'resource-apply', label: '待审资源', icon: Package }
+]
+
 interface DashboardSidebarProps {
   currentUser: DashboardCurrentUser
 }
@@ -108,6 +124,14 @@ export function DashboardSidebar({ currentUser }: DashboardSidebarProps) {
   const { counts, countsError } = useDashboard()
   const { setOpenMobile } = useSidebar()
   const pathname = usePathname()
+  const searchParams = useSearchParams()
+  const onReviewPage = pathname === '/dashboard/inbox'
+  // A single selected source marks that sub-entry; any other selection
+  // (none, both) marks the parent.
+  const reviewKinds = searchParams.get('kinds')
+  const activeSource = REVIEW_SOURCES.find(
+    (source) => onReviewPage && reviewKinds === source.kind
+  )?.kind
   const closeMobileSidebar = () => setOpenMobile(false)
   const groups = getVisibleDashboardNav(currentUser.role)
 
@@ -134,7 +158,11 @@ export function DashboardSidebar({ currentUser }: DashboardSidebarProps) {
       <SidebarMenuItem key={item.id}>
         <SidebarMenuButton
           asChild
-          isActive={isDashboardNavActive(item, pathname)}
+          isActive={
+            item.id === 'inbox'
+              ? onReviewPage && !activeSource
+              : isDashboardNavActive(item, pathname)
+          }
           tooltip={item.label}
           className={NAV_BUTTON_CLASS}
           onClick={closeMobileSidebar}
@@ -143,6 +171,29 @@ export function DashboardSidebar({ currentUser }: DashboardSidebarProps) {
         </SidebarMenuButton>
         {badge && counts && (
           <SidebarMenuBadge>{badge(counts)}</SidebarMenuBadge>
+        )}
+        {item.id === 'inbox' && (
+          <SidebarMenuSub>
+            {REVIEW_SOURCES.map((source) => (
+              <SidebarMenuSubItem key={source.kind}>
+                <SidebarMenuSubButton
+                  asChild
+                  isActive={activeSource === source.kind}
+                  onClick={closeMobileSidebar}
+                >
+                  <Link href={`/dashboard/inbox?kinds=${source.kind}`}>
+                    <source.icon />
+                    <span>{source.label}</span>
+                    {counts && (
+                      <span className="ml-auto text-xs text-muted-foreground tabular-nums">
+                        {counts.pending[source.kind]}
+                      </span>
+                    )}
+                  </Link>
+                </SidebarMenuSubButton>
+              </SidebarMenuSubItem>
+            ))}
+          </SidebarMenuSub>
         )}
         {item.id === 'inbox' && countsError && (
           <p className="px-2 pt-1 text-xs text-destructive group-data-[collapsible=icon]:hidden">

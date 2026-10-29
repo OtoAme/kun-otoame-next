@@ -95,7 +95,7 @@ describe('BrokenLinkInboxDetail (broken-link inbox)', () => {
     return container
   }
 
-  it('renders the redacted payload and routes both actions to the authorized editor', async () => {
+  it('renders the redacted payload and one edit action to the authorized editor', async () => {
     const container = await mount(
       <BrokenLinkInboxDetail item={item(true)} onProcessed={vi.fn()} />
     )
@@ -104,15 +104,15 @@ describe('BrokenLinkInboxDetail (broken-link inbox)', () => {
     expect(text).toContain('资源X')
     expect(text).toContain('pan.touchgal.example.com')
     expect(text).toContain('已失效 2 天')
-    expect(text).toContain('改到新地址后保存即为补链')
+    expect(text).toContain('改到新地址，或删除这条链接')
 
-    // 去补链与去移除都指向唯一受权编辑路径（资源 id+链接 id 定位）
+    // 补链与移除在同一个受权编辑路径里完成（资源 id+链接 id 定位）
     const editLinks = [
       ...container.querySelectorAll(
         'a[href="/admin/resource/link/7?linkId=21"]'
       )
     ]
-    expect(editLinks.length).toBe(2)
+    expect(editLinks.map((link) => link.textContent)).toEqual(['编辑链接'])
     // 查看链接定位到前台资源页的这条资源（含 & 的 href 不作为 CSS 选择器）
     const viewLink = [...container.querySelectorAll('a')].find((anchor) =>
       anchor.textContent?.includes('查看资源')
@@ -123,17 +123,17 @@ describe('BrokenLinkInboxDetail (broken-link inbox)', () => {
     expect(container.querySelector('button[disabled]')).toBeNull()
   })
 
-  it('never offers removal for the last remaining link', async () => {
+  it('says the last remaining link can only be changed, not removed', async () => {
     const container = await mount(
       <BrokenLinkInboxDetail item={item(false)} onProcessed={vi.fn()} />
     )
     const text = container.textContent ?? ''
-    expect(text).toContain('最后一条链接不能移除')
+    expect(text).toContain('最后一条链接，只能改地址，不能删除')
     const links = [
       ...container.querySelectorAll(
         'a[href="/admin/resource/link/7?linkId=21"]'
       )
     ]
-    expect(links.length).toBe(1) // 只有去补链
+    expect(links.length).toBe(1)
   })
 })

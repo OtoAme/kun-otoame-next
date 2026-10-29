@@ -261,7 +261,7 @@ describe('dashboard case center', () => {
     return calls.length ? String(calls[calls.length - 1][0]) : ''
   }
 
-  /** Secondary-nav entries render twice (column + strip); either one works. */
+  /** Secondary-nav entries live in the single strip above the list. */
   const navButton = (container: HTMLElement, view: string) =>
     container.querySelector<HTMLButtonElement>(
       `button[data-case-view="${view}"]`
@@ -531,18 +531,17 @@ describe('dashboard case center', () => {
     expect(rowGrid.className).toContain('@[52rem]:grid-cols-[minmax(0,1fr)_')
   })
 
-  it('drops the vertical nav column whenever a detail is open', async () => {
+  it('keeps one navigation strip whether or not a detail is open', async () => {
     mocks.searchParams = new URLSearchParams('view=pending')
     mocks.kunFetchGet.mockResolvedValue(listResponse([makeRow({ id: 22 })]))
     const container = await mount()
     await flush()
 
-    // 无详情：竖列 + 横条带各一套，按 lg 互补隐藏
-    expect(
+    const strips = () =>
       [...container.querySelectorAll('[data-case-nav]')].map((element) =>
         element.getAttribute('data-case-nav')
       )
-    ).toEqual(['vertical', 'horizontal'])
+    expect(strips()).toEqual(['strip'])
 
     mocks.searchParams = new URLSearchParams('view=pending&id=22')
     await act(async () => {
@@ -550,15 +549,11 @@ describe('dashboard case center', () => {
     })
     await flush()
 
-    // 详情打开：只剩横条带。让断点在此处插入 224px 固定列，会使会话列
-    // 在 1 像素视口变化内从 531px 掉到 384px。
-    const navs = [...container.querySelectorAll('[data-case-nav]')]
+    // A side column would change the list and detail widths on open.
+    expect(strips()).toEqual(['strip'])
     expect(
-      navs.map((element) => element.getAttribute('data-case-nav'))
-    ).toEqual(['horizontal'])
-    expect(navs[0].className).not.toContain('lg:hidden')
-    // 条带仍然给出全部入口
-    expect(navs[0].querySelectorAll('[data-case-view]')).toHaveLength(6)
+      container.querySelectorAll('[data-case-nav] [data-case-view]')
+    ).toHaveLength(6)
   })
 
   it('falls back to page 1 when the URL page exceeds the API limit', async () => {

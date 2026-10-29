@@ -5,8 +5,8 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type {
   DashboardStatsSumData,
-  OverviewData,
-  StatsTrendData
+  StatsTrendData,
+  StatsTrendPoint
 } from '~/types/api/admin'
 import type { InboxCounts, InboxItem } from '~/types/api/inbox'
 
@@ -43,10 +43,35 @@ vi.mock('~/components/dashboard/ui/input', () => ({
 }))
 
 // recharts needs layout APIs jsdom lacks; the chart has its own coverage.
+// The stub lists the window totals the real tiles show.
 vi.mock('~/components/dashboard/DashboardTrend', () => ({
-  DashboardTrend: ({ data }: { data: { points: unknown[] } }) => (
-    <p data-testid="trend">{data.points.length} 天</p>
-  )
+  DashboardTrend: ({
+    data
+  }: {
+    data: {
+      recentLogin: number
+      points: Record<string, number | string>[]
+    }
+  }) => {
+    const total = (key: string) =>
+      data.points.reduce((sum, point) => sum + Number(point[key]), 0)
+    return (
+      <dl data-testid="trend">
+        <dt>最近登录</dt>
+        <dd>{data.recentLogin}</dd>
+        <dt>新注册用户</dt>
+        <dd>{total('newUser')}</dd>
+        <dt>新增条目</dt>
+        <dd>{total('newGalgame')}</dd>
+        <dt>新增资源</dt>
+        <dd>{total('newGalgameResource')}</dd>
+        <dt>新增评论</dt>
+        <dd>{total('newComment')}</dd>
+        <dt>天数</dt>
+        <dd>{data.points.length}</dd>
+      </dl>
+    )
+  }
 }))
 // A plain range input stands in for the Radix slider.
 vi.mock('~/components/dashboard/ui/slider', () => ({
@@ -101,20 +126,6 @@ const zeroSum: DashboardStatsSumData = {
   creatorCount: 0,
   pendingCreatorApplyCount: 0
 }
-const overviewData: OverviewData = {
-  newUser: 7,
-  newActiveUser: 15,
-  newGalgame: 3,
-  newGalgameResource: 5,
-  newComment: 21
-}
-const zeroOverview: OverviewData = {
-  newUser: 0,
-  newActiveUser: 0,
-  newGalgame: 0,
-  newGalgameResource: 0,
-  newComment: 0
-}
 const counts: InboxCounts = {
   pending: {
     submission: 5,
@@ -153,21 +164,43 @@ const oldestItem = {
   payload: {}
 } as unknown as InboxItem
 
-const trendData: StatsTrendData = {
-  days: 7,
-  points: Array.from({ length: 7 }, (_, index) => ({
-    date: `2026-10-${String(23 + index).padStart(2, '0')}`,
-    newUser: index,
+const trendPoint = (date: string, values: Partial<StatsTrendPoint> = {}) =>
+  ({
+    date,
+    newUser: 0,
     newGalgame: 0,
-    newGalgameResource: 1,
-    newComment: 2
-  }))
-}
+    newGalgameResource: 0,
+    newComment: 0,
+    newRating: 0,
+    newSubmission: 0,
+    newCase: 0,
+    resourceAccess: 0,
+    checkIn: 0,
+    ...values
+  }) as StatsTrendPoint
+const trendFor = (
+  totals: Partial<StatsTrendPoint>,
+  recentLogin: number,
+  days = 7
+): StatsTrendData => ({
+  days,
+  recentLogin,
+  points: Array.from({ length: days }, (_, index) =>
+    trendPoint(
+      `2026-10-${String(23 + index).padStart(2, '0')}`,
+      index === days - 1 ? totals : {}
+    )
+  )
+})
+const trendData = trendFor(
+  { newUser: 7, newGalgame: 3, newGalgameResource: 5, newComment: 21 },
+  15
+)
+const zeroTrend = trendFor({}, 0)
 
 // Every overview read the page may issue, keyed by URL.
 const okResponses: Record<string, unknown> = {
   '/admin/stats/sum': sumData,
-  '/admin/stats': overviewData,
   '/admin/stats/trend': trendData,
   '/admin/shoutbox': { shoutboxes: [], page: 1, totalPages: 3 },
   '/admin/inbox': { items: [oldestItem], totals: {}, truncated: {} },
@@ -194,7 +227,6 @@ const okResponses: Record<string, unknown> = {
 }
 const SUPER_ONLY = [
   '/admin/stats/sum',
-  '/admin/stats',
   '/admin/stats/trend',
   '/admin/setting/register',
   '/admin/setting/redirect'
@@ -292,7 +324,6 @@ describe('dashboard overview', () => {
     expect(queueValue('/dashboard/creator')).toBe('9')
     for (const id of [
       'dashboard-sum-heading',
-      'dashboard-overview-heading',
       'dashboard-trend-heading',
       'dashboard-status-heading'
     ]) {
@@ -384,8 +415,8 @@ describe('dashboard overview', () => {
       Promise.resolve(
         url === '/admin/stats/sum'
           ? zeroSum
-          : url === '/admin/stats'
-            ? zeroOverview
+          : url === '/admin/stats/trend'
+            ? zeroTrend
             : okResponses[url]
       )
     )
@@ -419,15 +450,17 @@ describe('dashboard overview', () => {
 
   it('shows a Chinese error on rejection and never auto retries', async () => {
     mocks.get.mockImplementation((url: string) =>
-      url === '/admin/stats'
+      url === '/admin/stats/trend'
         ? Promise.reject(new Error('offline'))
         : Promise.resolve(okResponses[url])
     )
     await render(4)
-    expect(panel('dashboard-overview-heading').textContent).toContain(
-      '获取近期统计失败，请检查网络后重试'
+    expect(panel('dashboard-trend-heading').textContent).toContain(
+      '获取趋势数据失败，请检查网络后重试'
     )
-    expect(requested().filter((url) => url === '/admin/stats')).toHaveLength(1)
+    expect(
+      requested().filter((url) => url === '/admin/stats/trend')
+    ).toHaveLength(1)
   })
 
   it('treats an empty string response as an error, not zero', async () => {
@@ -479,8 +512,9 @@ describe('dashboard overview', () => {
         await render(4)
         mocks.get.mockClear()
         await slideDays(days)
-        expect(mocks.get).toHaveBeenCalledWith('/admin/stats', { days })
         expect(mocks.get).toHaveBeenCalledWith('/admin/stats/trend', { days })
+        // The trend card replaces the old window totals endpoint.
+        expect(requested()).not.toContain('/admin/stats')
         expect(panel('dashboard-trend-heading').textContent).toContain(
           `最近 ${days} 天`
         )
@@ -510,8 +544,8 @@ describe('dashboard overview', () => {
         vi.advanceTimersByTime(300)
       })
       expect(
-        mocks.get.mock.calls.filter(([url]) => url === '/admin/stats')
-      ).toEqual([['/admin/stats', { days: 30 }]])
+        mocks.get.mock.calls.filter(([url]) => url === '/admin/stats/trend')
+      ).toEqual([['/admin/stats/trend', { days: 30 }]])
     } finally {
       vi.useRealTimers()
     }
@@ -520,10 +554,12 @@ describe('dashboard overview', () => {
   it('clears old values on a new window and never lets stale responses win', async () => {
     vi.useFakeTimers()
     try {
-      const pending: Array<(value: OverviewData | string) => void> = []
+      const pending: Array<(value: StatsTrendData | string) => void> = []
       mocks.get.mockImplementation((url: string) => {
-        if (url !== '/admin/stats') return Promise.resolve(okResponses[url])
-        return new Promise<OverviewData | string>((resolve) =>
+        if (url !== '/admin/stats/trend') {
+          return Promise.resolve(okResponses[url])
+        }
+        return new Promise<StatsTrendData | string>((resolve) =>
           pending.push(resolve)
         )
       })
@@ -532,11 +568,11 @@ describe('dashboard overview', () => {
       expect(metric('新注册用户')).toBeNull()
       await slideDays(14)
       expect(pending).toHaveLength(3)
-      await act(async () => pending[2]({ ...overviewData, newUser: 70 }))
+      await act(async () => pending[2](trendFor({ newUser: 70 }, 1, 14)))
       expect(metric('新注册用户')).toBe('70')
-      await act(async () => pending[1]({ ...overviewData, newUser: 30 }))
+      await act(async () => pending[1](trendFor({ newUser: 30 }, 1, 30)))
       expect(metric('新注册用户')).toBe('70')
-      await act(async () => pending[0](overviewData))
+      await act(async () => pending[0](trendData))
       expect(metric('新注册用户')).toBe('70')
     } finally {
       vi.useRealTimers()
@@ -578,15 +614,16 @@ describe('dashboard overview', () => {
     for (const url of SUPER_ONLY) expect(requested()).not.toContain(url)
     await act(async () => root.render(<DashboardStats reviewerRole={4} />))
     expect(mocks.get).toHaveBeenCalledWith('/admin/stats/sum')
-    expect(mocks.get).toHaveBeenCalledWith('/admin/stats', { days: 7 })
+    expect(mocks.get).toHaveBeenCalledWith('/admin/stats/trend', { days: 7 })
     expect(metric('用户')).toBe('120')
   })
 
   it('first render before any request shows skeletons, never failures', () => {
     const html = renderToStaticMarkup(<DashboardStats reviewerRole={4} />)
     expect(html).toContain('站点规模')
-    expect(html).toContain('近期增长')
     expect(html).toContain('近期趋势')
+    // The window totals live in the trend card; no separate growth panel.
+    expect(html).not.toContain('近期增长')
     expect(html).toContain('data-slot="skeleton"')
     expect(html).not.toContain('失败')
     expect(mocks.get).not.toHaveBeenCalled()
@@ -596,7 +633,6 @@ describe('dashboard overview', () => {
     const html = renderToStaticMarkup(<DashboardStats reviewerRole={3} />)
     expect(html).toContain('待办队列')
     expect(html).not.toContain('站点规模')
-    expect(html).not.toContain('近期增长')
     expect(html).not.toContain('近期趋势')
     expect(html).not.toContain('站点状态')
     expect(mocks.get).not.toHaveBeenCalled()

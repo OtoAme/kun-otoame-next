@@ -412,8 +412,6 @@ export function CaseCenter({ initialCaseId }: CaseCenterProps) {
     scrollRef.current?.scrollTo({ top: 0 })
   }, [isMobile, view.value, selectionStatus, selectedId])
 
-  const detailOpen = selectionStatus !== 'none'
-
   return (
     <div
       ref={scrollRef}
@@ -421,25 +419,6 @@ export function CaseCenter({ initialCaseId }: CaseCenterProps) {
       className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto md:overflow-hidden"
     >
       <div className="flex min-h-0 min-w-0 flex-1 md:overflow-hidden">
-        {/*
-          The rail is the reference mock's left navigation, and a detail view
-          never shows it. Letting a breakpoint insert a fixed 14rem column
-          there took 224px out of the three-column detail in a single step —
-          the conversation fell from 531px to 384px across one pixel of
-          viewport. The strip has no such step, and it is already the mode
-          every size below that breakpoint used.
-        */}
-        {detailOpen ? null : (
-          <CaseCenterNav
-            current={view}
-            statusCounts={navCounts}
-            brokenLinkCount={counts ? counts.pending['broken-link'] : null}
-            orientation="vertical"
-            onSelect={handleSelectView}
-            className="hidden lg:block"
-          />
-        )}
-
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-b px-3 py-2">
             <h2 className="shrink-0 text-sm font-medium whitespace-nowrap">
@@ -500,13 +479,13 @@ export function CaseCenter({ initialCaseId }: CaseCenterProps) {
             </Button>
           </div>
 
+          {/* One strip at every width: a side column would change the
+              list and detail widths whenever a detail opens. */}
           <CaseCenterNav
             current={view}
             statusCounts={navCounts}
             brokenLinkCount={counts ? counts.pending['broken-link'] : null}
-            orientation="horizontal"
             onSelect={handleSelectView}
-            className={cn(!detailOpen && 'lg:hidden')}
           />
 
           {isBrokenLinks ? (

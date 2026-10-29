@@ -21,15 +21,13 @@ const COUNTS: CaseStatusCounts = {
   merged: 0
 }
 
-/** The column is the orientation that shows group titles. */
-const renderColumn = (brokenLinkCount: number | null = 2) =>
+const renderStrip = (brokenLinkCount: number | null = 2) =>
   new JSDOM(
     renderToStaticMarkup(
       <CaseCenterNav
         current={DEFAULT_CASE_VIEW}
         statusCounts={COUNTS}
         brokenLinkCount={brokenLinkCount}
-        orientation="vertical"
         onSelect={vi.fn()}
       />
     )
@@ -37,23 +35,23 @@ const renderColumn = (brokenLinkCount: number | null = 2) =>
 
 describe('issue page navigation', () => {
   it('groups the staff to-dos apart from the read-only lists', () => {
-    const doc = renderColumn()
-    const groups = [...doc.querySelectorAll('ul[aria-labelledby]')].map(
-      (list) => [
-        doc.getElementById(list.getAttribute('aria-labelledby')!)?.textContent,
-        [...list.querySelectorAll('[data-case-view]')].map((entry) =>
-          entry.getAttribute('data-case-view')
-        )
-      ]
-    )
+    const doc = renderStrip()
+    const groups = [...doc.querySelectorAll('ul[aria-label]')].map((list) => [
+      list.getAttribute('aria-label'),
+      [...list.querySelectorAll('[data-case-view]')].map((entry) =>
+        entry.getAttribute('data-case-view')
+      )
+    ])
     expect(groups).toEqual([
       ['待办', ['pending', 'waiting_reporter', 'broken-link']],
       ['查看', ['publisher', 'closed', 'all']]
     ])
+    // One strip at every width, never a side column.
+    expect(doc.querySelectorAll('[data-case-nav]')).toHaveLength(1)
   })
 
   it('counts each entry from its own statuses and the shell link count', () => {
-    const doc = renderColumn()
+    const doc = renderStrip()
     const text = (view: string) =>
       doc.querySelector(`[data-case-view="${view}"]`)?.textContent
     // 待处理 = open + waiting_owner；已结案 = resolved + rejected
@@ -66,24 +64,9 @@ describe('issue page navigation', () => {
     expect(text('publisher')).toBe('发布者处理中')
   })
 
-  it('says which cases the staff handles', () => {
-    const doc = renderColumn()
-    const nav = doc.querySelector('nav[aria-label="问题处理导航"]')!
-    const hint = doc.getElementById(
-      nav.getAttribute('aria-describedby')!
-    )!.textContent
-    for (const part of [
-      '违规举报',
-      '条目资料有误',
-      '资源发错条目',
-      '站务反馈',
-      '求资源或催更',
-      '官方资源的问题',
-      '发布者 7 天未处理',
-      '报告者申请复核'
-    ]) {
-      expect(hint).toContain(part)
-    }
+  it('keeps the staff scope behind a help button', () => {
+    const doc = renderStrip()
+    expect(doc.querySelector('[aria-label="站方处理哪些问题"]')).not.toBeNull()
   })
 
   it('maps views from older links onto the current ones', () => {

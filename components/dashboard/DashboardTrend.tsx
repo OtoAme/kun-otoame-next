@@ -12,9 +12,9 @@ import {
 } from 'recharts'
 
 import { cn } from '~/lib/dashboard/utils'
-import type { StatsTrendData, StatsTrendPoint } from '~/types/api/admin'
+import type { StatsTrendData, StatsTrendMetric } from '~/types/api/admin'
 
-type MetricKey = Exclude<keyof StatsTrendPoint, 'date'>
+type MetricKey = StatsTrendMetric
 
 // Literal classes keep Tailwind's output; `stroke` feeds the SVG directly.
 const METRICS: {
@@ -24,6 +24,13 @@ const METRICS: {
   dot: string
 }[] = [
   { key: 'newUser', label: '新注册用户', stroke: '#0ea5e9', dot: 'bg-sky-500' },
+  { key: 'checkIn', label: '签到', stroke: '#06b6d4', dot: 'bg-cyan-500' },
+  {
+    key: 'resourceAccess',
+    label: '资源获取',
+    stroke: '#6366f1',
+    dot: 'bg-indigo-500'
+  },
   {
     key: 'newGalgame',
     label: '新增条目',
@@ -37,11 +44,24 @@ const METRICS: {
     dot: 'bg-emerald-500'
   },
   {
+    key: 'newSubmission',
+    label: '新投稿',
+    stroke: '#14b8a6',
+    dot: 'bg-teal-500'
+  },
+  {
     key: 'newComment',
     label: '新增评论',
     stroke: '#f59e0b',
     dot: 'bg-amber-500'
-  }
+  },
+  {
+    key: 'newRating',
+    label: '新增评价',
+    stroke: '#f97316',
+    dot: 'bg-orange-500'
+  },
+  { key: 'newCase', label: '新问题', stroke: '#f43f5e', dot: 'bg-rose-500' }
 ]
 
 const shortDate = (date: string) =>
@@ -49,7 +69,8 @@ const shortDate = (date: string) =>
 
 /**
  * Metric tabs over one daily area chart, after Cloudflare's analytics cards:
- * each tab shows the window total and selects the series drawn below.
+ * each tab shows the window total and selects the series drawn below. The
+ * first tile is the window's login count, which has no daily series.
  */
 export function DashboardTrend({ data }: { data: StatsTrendData }) {
   const [active, setActive] = useState<MetricKey>('newUser')
@@ -64,38 +85,46 @@ export function DashboardTrend({ data }: { data: StatsTrendData }) {
 
   return (
     <div className="flex flex-col gap-3">
-      <div
-        role="tablist"
-        aria-label="趋势指标"
-        className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border bg-border sm:grid-cols-4"
-      >
-        {METRICS.map((item) => {
-          const selected = item.key === active
-          return (
-            <button
-              key={item.key}
-              type="button"
-              role="tab"
-              aria-selected={selected}
-              onClick={() => setActive(item.key)}
-              className={cn(
-                'flex flex-col items-start gap-0.5 bg-card px-3 py-2 text-left transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none focus-visible:ring-inset',
-                selected && 'bg-accent'
-              )}
-            >
-              <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                <span
-                  aria-hidden
-                  className={cn('size-2 rounded-full', item.dot)}
-                />
-                {item.label}
-              </span>
-              <span className="text-lg font-semibold tabular-nums">
-                {totals[item.key].toLocaleString('zh-CN')}
-              </span>
-            </button>
-          )
-        })}
+      <div className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border bg-border sm:grid-cols-5">
+        {/* Logins have no per-day history: a figure, not a tab. */}
+        <div className="flex flex-col items-start gap-0.5 bg-card px-3 py-2">
+          <span className="text-xs text-muted-foreground">最近登录</span>
+          <span className="text-lg font-semibold tabular-nums">
+            {data.recentLogin.toLocaleString('zh-CN')}
+          </span>
+          <span className="text-[11px] leading-4 text-muted-foreground">
+            按最后登录时间，无逐日记录
+          </span>
+        </div>
+        <div role="tablist" aria-label="趋势指标" className="contents">
+          {METRICS.map((item) => {
+            const selected = item.key === active
+            return (
+              <button
+                key={item.key}
+                type="button"
+                role="tab"
+                aria-selected={selected}
+                onClick={() => setActive(item.key)}
+                className={cn(
+                  'flex flex-col items-start gap-0.5 bg-card px-3 py-2 text-left transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none focus-visible:ring-inset',
+                  selected && 'bg-accent'
+                )}
+              >
+                <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <span
+                    aria-hidden
+                    className={cn('size-2 rounded-full', item.dot)}
+                  />
+                  {item.label}
+                </span>
+                <span className="text-lg font-semibold tabular-nums">
+                  {totals[item.key].toLocaleString('zh-CN')}
+                </span>
+              </button>
+            )
+          })}
+        </div>
       </div>
       <div
         className="h-48 w-full"

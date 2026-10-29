@@ -1,7 +1,8 @@
 'use client'
 
+import { useState } from 'react'
 import Link from 'next/link'
-import { ExternalLink, ThumbsUp } from 'lucide-react'
+import { ExternalLink, Eye, EyeOff, ThumbsUp } from 'lucide-react'
 
 import {
   SearchableListPage,
@@ -46,14 +47,29 @@ function Recommend({ value }: { value: string }) {
   )
 }
 
+const hasSpoiler = (rating: AdminRating) =>
+  Boolean(rating.shortSummary) && rating.spoilerLevel !== 'none'
+
+/** List text for a summary: a spoiler stays hidden until the detail opens. */
+function SummaryText({ rating }: { rating: AdminRating }) {
+  if (hasSpoiler(rating)) {
+    return (
+      <span className="flex items-center gap-1.5 text-amber-700 dark:text-amber-400">
+        <EyeOff className="size-3.5 shrink-0" aria-hidden />
+        {KUN_GALGAME_RATING_SPOILER_MAP[rating.spoilerLevel] ?? '本评分有剧透'}
+        ，打开详情查看
+      </span>
+    )
+  }
+  return <span className="line-clamp-2 break-words">{rating.shortSummary}</span>
+}
+
 const COLUMNS: ListColumn<AdminRating>[] = [
   {
     key: 'summary',
     header: '短评',
     grow: true,
-    cell: (row) => (
-      <span className="line-clamp-2 break-words">{row.shortSummary}</span>
-    )
+    cell: (row) => <SummaryText rating={row} />
   },
   {
     key: 'overall',
@@ -117,6 +133,9 @@ function RatingDetail({
   onUpdated: () => void
   onDeleted: (count: number) => void
 }) {
+  // Same rule as the game page: a spoiler summary is shown only on request.
+  const [revealed, setRevealed] = useState(false)
+  const spoiler = hasSpoiler(rating)
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center gap-2">
@@ -126,9 +145,26 @@ function RatingDetail({
         <span className="text-sm text-muted-foreground">/ 10</span>
         <Recommend value={rating.recommend} />
       </div>
-      <p className="max-w-[40em] text-sm leading-7 break-words whitespace-pre-wrap">
-        {rating.shortSummary}
-      </p>
+      {spoiler ? (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="self-start border-amber-600/40 text-amber-700 dark:text-amber-400"
+          aria-expanded={revealed}
+          onClick={() => setRevealed((value) => !value)}
+        >
+          {revealed ? <Eye /> : <EyeOff />}
+          {KUN_GALGAME_RATING_SPOILER_MAP[rating.spoilerLevel] ??
+            '本评分有剧透'}
+          {revealed ? ' · 点击隐藏' : ' · 点击显示'}
+        </Button>
+      ) : null}
+      {!spoiler || revealed ? (
+        <p className="max-w-[40em] text-sm leading-7 break-words whitespace-pre-wrap">
+          {rating.shortSummary}
+        </p>
+      ) : null}
       <dl className="grid grid-cols-[5rem_minmax(0,1fr)] gap-x-3 gap-y-2 text-sm">
         <dt className="text-muted-foreground">作者</dt>
         <dd className="flex min-w-0 items-center gap-2">
@@ -196,10 +232,13 @@ export function DashboardRatings() {
       contentLabel="短评内容"
       columns={COLUMNS}
       card={(row) => ({
-        text: row.shortSummary,
+        text: <SummaryText rating={row} />,
         meta: `${row.overall} 分 · ${row.user.name} · ${row.patchName}`
       })}
-      detail={(row, actions) => <RatingDetail rating={row} {...actions} />}
+      detail={(row, actions) => (
+        // Keyed so a revealed spoiler is hidden again on the next rating.
+        <RatingDetail key={row.id} rating={row} {...actions} />
+      )}
       batchDelete={({ ids, onDeleted }) => (
         <RecordDeleteDialog
           kind={RATING_RECORD}

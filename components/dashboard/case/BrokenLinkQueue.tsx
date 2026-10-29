@@ -151,11 +151,7 @@ export function BrokenLinkQueue({
         }}
       />
     </div>
-  ) : (
-    <p className="flex items-center justify-center p-6 text-sm text-muted-foreground">
-      从左侧选择一条查看详情
-    </p>
-  )
+  ) : null
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
@@ -166,17 +162,21 @@ export function BrokenLinkQueue({
           {' · '}只含资源盘（站方存储）的链接，其他网盘失效由发布者处理
         </span>
       </div>
+      {/* Like the case queues: the list takes the full width until a row is
+          opened; then list and detail sit side by side (stacked on phones). */}
       {isMobile ? (
         selected ? (
           detail
         ) : (
           list
         )
-      ) : (
+      ) : selected ? (
         <div className="grid min-h-0 flex-1 grid-cols-[minmax(280px,34%)_minmax(0,1fr)] divide-x">
           {list}
           {detail}
         </div>
+      ) : (
+        list
       )}
     </div>
   )

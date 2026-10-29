@@ -389,15 +389,8 @@ function SummaryCell(props: {
 
 export function DashboardStats({ reviewerRole }: DashboardStatsProps) {
   const { counts, countsLoading, countsError, refreshCounts } = useDashboard()
-  const {
-    canViewStats,
-    summary,
-    overview,
-    trend,
-    days,
-    loadSummary,
-    loadOverview
-  } = useDashboardStats(reviewerRole)
+  const { canViewStats, summary, trend, days, loadSummary, loadOverview } =
+    useDashboardStats(reviewerRole)
   const panels = useOverviewPanels(reviewerRole)
   const canViewLogs = reviewerRole >= LOG_MIN_ROLE
   // The slider moves this value; the window reloads once the thumb settles.
@@ -606,36 +599,6 @@ export function DashboardStats({ reviewerRole }: DashboardStatsProps) {
     </Panel>
   )
 
-  const growthPanel = canViewStats && (
-    <Panel
-      key="growth"
-      id="dashboard-overview-heading"
-      title="近期增长"
-      description={`最近 ${days} 天滚动窗口`}
-    >
-      <BlockBody
-        block={overview}
-        onRetry={() => void loadOverview(days)}
-        skeleton={metricSkeleton(5)}
-      >
-        {(data) => (
-          <>
-            <dl className="grid grid-cols-2 gap-x-4 gap-y-3.5">
-              <Metric label="新注册用户" value={data.newUser} />
-              <Metric label="最近登录" value={data.newActiveUser} />
-              <Metric label="新增条目" value={data.newGalgame} />
-              <Metric label="新增资源" value={data.newGalgameResource} />
-              <Metric label="新增评论" value={data.newComment} />
-            </dl>
-            <p className="mt-3 text-xs text-muted-foreground">
-              最近登录按最后一次登录时间统计，不是每日活跃人数，因此不画逐日趋势。
-            </p>
-          </>
-        )}
-      </BlockBody>
-    </Panel>
-  )
-
   const statusPanel = canViewStats && (
     <Panel
       key="status"
@@ -746,26 +709,25 @@ export function DashboardStats({ reviewerRole }: DashboardStatsProps) {
       ? [
           [queuePanel],
           present(oldestPanel, statusPanel),
-          present(scalePanel, growthPanel),
+          present(scalePanel),
           present(logPanel)
         ]
       : width >= 1024
         ? [
             present(queuePanel, statusPanel),
-            present(oldestPanel, growthPanel),
+            present(oldestPanel),
             present(scalePanel, logPanel)
           ]
         : width >= 768
           ? [
               present(queuePanel, scalePanel, statusPanel),
-              present(oldestPanel, growthPanel, logPanel)
+              present(oldestPanel, logPanel)
             ]
           : [
               present(
                 queuePanel,
                 oldestPanel,
                 scalePanel,
-                growthPanel,
                 statusPanel,
                 logPanel
               )
@@ -829,8 +791,17 @@ export function DashboardStats({ reviewerRole }: DashboardStatsProps) {
             {canViewStats && (
               <SummaryCell
                 label={`新注册 · 近 ${days} 天`}
-                value={overview.data ? fmt(overview.data.newUser) : '–'}
-                caption="滚动窗口"
+                value={
+                  trend.data
+                    ? fmt(
+                        trend.data.points.reduce(
+                          (sum, point) => sum + point.newUser,
+                          0
+                        )
+                      )
+                    : '–'
+                }
+                caption="上海时间自然日"
               />
             )}
           </div>
