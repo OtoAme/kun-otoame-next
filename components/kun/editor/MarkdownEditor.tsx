@@ -10,6 +10,7 @@ import {
 } from 'react'
 import { Button } from '@heroui/button'
 import { Tooltip } from '@heroui/tooltip'
+import { useDropzone } from 'react-dropzone'
 import {
   Bold,
   Italic,
@@ -24,7 +25,8 @@ import {
   Minus,
   Eye,
   ImageUp,
-  PenLine
+  PenLine,
+  Upload
 } from 'lucide-react'
 import { cn } from '~/utils/cn'
 import { markdownToPreviewHtml } from '~/utils/markdownPreview'
@@ -36,9 +38,10 @@ interface Props {
   minHeight?: number
   className?: string
   /**
-   * Optional image upload. When given, the toolbar shows an upload button and
-   * each uploaded file is inserted as a markdown image at the cursor; the
-   * handler returns the image URL or an error message.
+   * Optional image upload. When given, the toolbar shows an upload button, a
+   * drop area sits under the text, and images dropped anywhere on the editor
+   * are accepted too. Each uploaded file is inserted as a markdown image at the
+   * cursor; the handler returns the image URL or an error message.
    */
   onUploadImage?: (file: File) => Promise<{ url: string } | string>
   uploadAccept?: string
@@ -149,18 +152,17 @@ export const KunMarkdownEditor = ({
   uploadAccept = 'image/jpeg,image/png,image/webp,image/avif'
 }: Props) => {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
-  const fileInputRef = useRef<HTMLInputElement>(null)
   const [uploading, setUploading] = useState(false)
   const [uploadError, setUploadError] = useState('')
   const valueRef = useRef(value)
   valueRef.current = value
 
   const handleFiles = useCallback(
-    async (files: FileList | null) => {
-      if (!onUploadImage || !files?.length) return
+    async (files: File[]) => {
+      if (!onUploadImage || !files.length) return
       setUploading(true)
       setUploadError('')
-      for (const file of Array.from(files)) {
+      for (const file of files) {
         const result = await onUploadImage(file).catch(
           () => '网络错误，图片上传失败，请重试'
         )
@@ -181,10 +183,36 @@ export const KunMarkdownEditor = ({
         })
       }
       setUploading(false)
-      if (fileInputRef.current) fileInputRef.current.value = ''
     },
     [onUploadImage, onChange]
   )
+  const dropAccept = useMemo(
+    () =>
+      Object.fromEntries(
+        uploadAccept
+          .split(',')
+          .map((type) => type.trim())
+          .filter(Boolean)
+          .map((type) => [type, [] as string[]])
+      ),
+    [uploadAccept]
+  )
+  // The text area stays clickable for typing, so the dropzone only opens the
+  // file picker from the upload button and the drop area.
+  const {
+    getRootProps,
+    getInputProps,
+    isDragActive,
+    open: openFilePicker
+  } = useDropzone({
+    onDrop: (accepted) => void handleFiles(accepted),
+    onDropRejected: () => setUploadError('只能上传 JPG、PNG、WebP、AVIF 图片'),
+    accept: dropAccept,
+    multiple: true,
+    noClick: true,
+    noKeyboard: true,
+    disabled: !onUploadImage || uploading
+  })
   const [activeTab, setActiveTab] = useState<'write' | 'preview'>('write')
   const [contentHeight, setContentHeight] = useState(minHeight)
   const previewHtml = useMemo(() => markdownToPreviewHtml(value), [value])
@@ -297,12 +325,15 @@ export const KunMarkdownEditor = ({
 
   return (
     <div
+      {...(onUploadImage ? getRootProps() : {})}
       className={cn(
         'kun-editor border-default-200 overflow-hidden rounded-xl border bg-content1 transition-colors',
         'focus-within:border-primary-300 focus-within:ring-2 focus-within:ring-primary-200/50',
+        isDragActive && 'border-primary ring-2 ring-primary-200/50',
         className
       )}
     >
+      {onUploadImage && <input {...getInputProps()} aria-label="选择图片" />}
       {/* Toolbar */}
       <div className="border-default-200 bg-default-50 flex items-center gap-0.5 border-b px-2 py-1.5">
         {TOOLBAR_ACTIONS.map((action) => (
@@ -329,19 +360,11 @@ export const KunMarkdownEditor = ({
                     aria-label="上传图片"
                     isLoading={uploading}
                     className="text-default-500 hover:text-default-700 hover:bg-default-200 h-8 w-8 min-w-0 rounded-lg transition-colors"
-                    onPress={() => fileInputRef.current?.click()}
+                    onPress={openFilePicker}
                   >
                     <ImageUp className="size-4" />
                   </Button>
                 </Tooltip>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept={uploadAccept}
-                  multiple
-                  hidden
-                  onChange={(event) => handleFiles(event.target.files)}
-                />
               </>
             )}
           </Fragment>
@@ -406,6 +429,26 @@ export const KunMarkdownEditor = ({
           />
         )}
       </div>
+
+      {onUploadImage && activeTab === 'write' && (
+        <button
+          type="button"
+          onClick={openFilePicker}
+          disabled={uploading}
+          className={cn(
+            'border-default-200 text-default-500 hover:text-primary flex w-full items-center justify-center gap-2 border-t border-dashed px-3 py-3 text-xs transition-colors',
+            isDragActive && 'bg-primary/10 text-primary',
+            uploading && 'cursor-wait opacity-70'
+          )}
+        >
+          <Upload className="size-4" aria-hidden />
+          {uploading
+            ? '图片上传中…'
+            : isDragActive
+              ? '松开即可上传'
+              : '拖动图片到这里，或点击选择图片'}
+        </button>
+      )}
 
       {/* Footer */}
       <div className="border-default-200 bg-default-50 flex items-center justify-between border-t px-3 py-1.5">
