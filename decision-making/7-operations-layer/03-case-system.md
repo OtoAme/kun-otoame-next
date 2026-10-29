@@ -485,11 +485,11 @@ D9 要求的事实清单见 4.4，属本模块保留的字段与系统消息，�
 | 类型       | `link_suspect`、`link_disputed`                                                                                                                          | 仅健康服务在调用者事务中创建／升级，公共创建拒绝                       | 04                                                          |
 | 类型       | `takedown_request`、`mirror_version_check`                                                                                                               | 已登记，不可创建                                                       | 06                                                          |
 | 组合       | `content_violation × resource`                                                                                                                           | 已接入私有站方举报，复用隐藏／恢复与现有结论守卫                       | 05 开放                                                     |
-| 组合       | `content_violation × help`                                                                                                                               | 已登记，不可创建                                                       | 07 开放，处置动作随 07                                      |
+| 组合       | `content_violation × help`、`content_violation × help_answer`、`content_violation × help_reply`                                                                                            | 已登记，不可创建；规则见本节「求助举报」                               | 07 开放，处置动作随 07                                      |
 | 目标类型   | `resource`、`patch`、`comment`、`rating`、`shoutbox`、`user`、`site`                                                                                     | 启用                                                                   | 03                                                          |
-| 目标类型   | `link`、`help`                                                                                                                                           | 已登记                                                                 | 04、07                                                      |
+| 目标类型   | `link`、`help`（求助帖）、`help_answer`（求助回答）、`help_reply`（求助回复）                                                                                                    | 已登记                                                                 | 04、07                                                      |
 | 状态       | `merged`                                                                                                                                                 | 已登记，本模块不写入                                                   | 06，合并语义见 5.5                                          |
-| 开启来源   | `publisher_convert`、`help_escalation`                                                                                                                   | 已登记                                                                 | 07                                                          |
+| 开启来源   | `publisher_convert`、`help_escalation`                                                                                                                   | 已登记，07 基础版不使用                                                | 07 的求助与事项互转属上线后迭代项，启用前再登记读取身份     |
 | 结论       | `relinked`（已补链）、`verified_available`（核实可用）                                                                                                   | 由 `resource_link_failure` 使用                                        | 04 的链接类事项沿用同名同码；其余链接类结论由 04 在本表登记 |
 | 结论       | `confirmed_broken`、`timeout_broken`、`auto_broken`、`staff_broken`、`staff_available`、`auto_available`、`machine_broken`、`link_removed`               | 链接健康服务结案；对应确认／超时／自动／站方／机器判定与「链接已移除」 | 04／10，共用 `LINK_CASE_RESOLUTIONS`                        |
 | 结论       | `declined`（不采纳）                                                                                                                                     | 由 `patch_info`、`other`（D25）与 `resource_request`（D40）使用        | 03                                                          |
@@ -508,13 +508,29 @@ D9 要求的事实清单见 4.4，属本模块保留的字段与系统消息，�
 | 「问题处理」页「站务反馈」                              | `other × site`（D21）                                                                                                                                                                                                                                      | 07 上线后，求助区「账号与站务」类别里需要站方改数据的请求引导到这里                                                                                                     |
 | 评论、评价、小喇叭、用户「举报」                        | 03                                                                                                                                                                                                                                                         | 不变                                                                                                                                                                    |
 | 资源违规举报                                            | `content_violation × resource` 的现有公共 case 接口已接入                                                                                                                                                                                                  | 05 开放 `content_violation × resource`                                                                                                                                  |
-| 求助与回答的举报、求助互转                              | 无入口                                                                                                                                                                                                                                                     | 07                                                                                                                                                                      |
+| 求助、回答与回复的举报                                  | 无入口                                                                                                                                                                                                                                                     | 07 上线：帖子与回答旁的「举报」，规则见本节「求助举报」                                                                                                                 |
+| 求助互转                                                | 无入口                                                                                                                                                                                                                                                     | 07 基础版不做；作为上线后迭代项再定                                                                                                                                     |
 
 超时分工：`resource_mismatch`、`resource_link_failure` 与 D40 的 `resource_runtime`、`resource_request`、`resource_other`（只限归属发布者的事项）由本模块 `caseTimeoutTask` 的扫描一至三负责；`link_suspect` 普通疑似按已定固定七天处理、回复不延期且归属统一；`link_disputed` 由 04/10 按冲突来源处理；`mirror_version_check` 的 7 天由 06 定义；其余站方归属类型不自动结案（D5）。本模块任务不代扫他模块类型。
 
 2026-10-08 后续合同补充：10 复用 `link_disputed × link` 承接“用户有效报告达阈值、机器有效结果仍可用”的冲突，归站方人工复核；以事件载荷标明机器冲突来源，具体键名为 `payload.link_health`，按 W00 的 `linkCaseContextSchema` 解码，不新建事项状态。04 的七天及普通争议自动处理必须跳过该来源。可靠机器失效经 04 健康事务收尾对应链接事项，不能关闭资源级事项；结论与审计载荷在首次实现前登记并与 04/10 共用。机器快照与反馈人数是资源卡片的公开脱敏摘要，不开放事项正文、身份或图片。
 
 读取矩阵：新类型开放前必须在 5.3 登记各身份的可见范围；未登记前一律按私有事项处理。
+
+求助举报（2026-10-28 登记，07 开放时实施）：
+
+- 目标：`help` 指一条求助帖，`help_answer` 指一条回答，`help_reply` 指回答下的一条回复，`target_id` 为对应行的 ID；`patch_id` 取所属帖子当前关联的条目，未关联时为空。三者都归站方、不公开、无日限额、无超时，不进入 `caseTimeoutTask`。
+- 提交：登录用户可举报；不能举报自己的帖子或回答，已删除的目标不接受新举报。去重键同其他违规举报，不带开启者：同一目标同时只有一条未结事项，后来的举报人按 5.2 第 4 步成为订阅者并留下后来者说明，同一人只算一次。
+- 举报轮次：一条事项就是一轮。事项结案时清空去重键，之后的举报开新事项，旧事项的举报人不计入新一轮；同一人在新一轮里重新举报可以计数。07 不另存轮次字段。
+- 自动暂时隐藏：与小喇叭相同（D3），在创建或后来者登记的同一事务内计数。只计订阅者中提交时注册已满 7 天的账号（按订阅时间与账号注册时间比较，不新增列），达到 3 人时调用 07 的隐藏原语、写本事项的 `hidden_at`，不结案、不通知举报人，只通知被举报作者。已隐藏后继续收到的举报只作补充，不重复隐藏。
+- 结论与动作：经「内容处置」行与 `closeCaseInternal` 结案，执行者为 `staff`，同事务调用 07 的隐藏或恢复原语并写管理日志。三种结论：
+  - 「违规隐藏」`violation_hidden`：目标保持隐藏，未隐藏的先隐藏。
+  - 「不成立」`not_established`：本事项 `hidden_at` 非空且 `restored_at` 为空时恢复目标并写 `restored_at`，未隐藏时只写理由。
+  - 「已处理」`handled`：目标未被隐藏，或已被作者删除时使用，不改变目标。
+
+  隐藏中的目标不能用「已处理」结案，必须给出前两种结论之一。结案后的纠错恢复沿用「恢复资源」行的守卫思路：只恢复本事项造成且尚未恢复的隐藏。
+
+- 读取：沿用 5.3 私有违规举报的矩阵，举报人只见本人的说明、站方回复与允许的系统消息；被举报作者拒绝且不因被举报获得事项读取权。网站管理员详情另带目标快照：帖子标题与正文、回答正文，转为纯文本截取前 1000 字，连同作者，读取时取自目标行、不另存。
 
 给 09 的事实：4.4 的清单，另有 `actor_type = reporter`（D18）、`withdrawn` 的 `successor_id`（D33）、`confirmed`（D19）、`escalation_trigger`（D16）、`close_proposed`（D20）与 `report` 对话（D15）。D36 的结案是 `owner_type = staff` 而结案事件 `actor_type = publisher` 的组合，即已转交给站方、最后由原发布者自己收尾，09 统计「由发布者消化的比例」时须据转交事件单列。09 定口径时须写明这些取值计入哪一层，本模块不做展示。
 
