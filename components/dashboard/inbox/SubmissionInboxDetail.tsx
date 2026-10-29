@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
-import { AlertTriangle, Loader2 } from 'lucide-react'
+import { AlertTriangle } from 'lucide-react'
 
 import {
   AlertDialog,
@@ -607,7 +607,7 @@ export function SubmissionInboxDetail({
           htmlFor="submission-review-reason"
           className="text-sm font-medium"
         >
-          审核意见（要求修改 / 驳回 / 违规处理时必填）
+          审核意见
         </label>
         <Textarea
           id="submission-review-reason"
@@ -623,11 +623,21 @@ export function SubmissionInboxDetail({
               : 'submission-review-reason-hint'
           }
         />
+        {/* One fixed-height line: its text changes, its height never does,
+            so typing a reason never moves the buttons below. */}
         <p
           id="submission-review-reason-hint"
-          className="text-xs text-muted-foreground"
+          aria-live="polite"
+          className="flex min-h-4 items-start gap-2 text-xs leading-4 text-muted-foreground"
         >
-          {reason.length}/{PATCH_SUBMISSION_REASON_MAX_LENGTH}
+          <span className="min-w-0 flex-1">
+            {reasonWritten && pending
+              ? '已填写意见，需先清空才能通过'
+              : '要求修改、驳回、违规处理时必填'}
+          </span>
+          <span className="shrink-0 tabular-nums">
+            {reason.length}/{PATCH_SUBMISSION_REASON_MAX_LENGTH}
+          </span>
         </p>
       </div>
 
@@ -641,7 +651,9 @@ export function SubmissionInboxDetail({
         </p>
       ) : null}
 
-      <div className="flex flex-wrap items-center gap-2">
+      {/* Fixed two-by-two grid: a narrow form column never leaves a single
+          button on its own row. */}
+      <div className="grid grid-cols-2 gap-2">
         <Button
           data-inbox-action="positive"
           disabled={approveDisabled}
@@ -673,13 +685,9 @@ export function SubmissionInboxDetail({
         >
           违规处理
         </Button>
-        {working ? (
-          <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-            <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
-            正在提交…
-          </span>
-        ) : null}
       </div>
+      {/* While a review is submitting, the open confirm dialog shows 处理中…
+          on its button; nothing here appears or disappears. */}
 
       <ul className="list-disc space-y-1 pl-5 text-xs text-muted-foreground">
         <li>
@@ -703,11 +711,6 @@ export function SubmissionInboxDetail({
       {hasBlockingAmbiguities ? (
         <p className="text-xs text-destructive">
           存在阻塞性会社歧义，已禁用“通过并发布”。
-        </p>
-      ) : null}
-      {reasonWritten && pending ? (
-        <p className="text-xs text-muted-foreground">
-          已填写审核意见，“通过并发布”不可用；如需通过，请先清空意见。
         </p>
       ) : null}
 

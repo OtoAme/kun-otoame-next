@@ -335,7 +335,7 @@ describe('dashboard submission review detail', () => {
     expect(button('通过并发布').disabled).toBe(false)
     await fillReason('请补齐会社信息')
     expect(button('通过并发布').disabled).toBe(true)
-    expect(text()).toContain('请先清空意见')
+    expect(text()).toContain('需先清空才能通过')
     // Reason-based actions stay available.
     expect(button('要求修改').disabled).toBe(false)
     await fillReason('   ')
