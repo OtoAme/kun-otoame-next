@@ -18,6 +18,8 @@ import {
 import { cn } from '~/lib/dashboard/utils'
 import type { CaseMessage } from '~/types/api/case'
 
+import { KunImageViewer } from '~/components/kun/image-viewer/ImageViewer'
+
 import { CaseMessageText } from './CaseMessageText'
 
 interface CaseConversationProps {
@@ -162,18 +164,50 @@ export function CaseConversation({
                 <CaseMessageText text={message.body} />
               </p>
               {message.images?.length ? (
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {message.images.map((url, index) => (
-                    <a key={url} href={url} target="_blank" rel="noreferrer">
-                      <img
-                        src={url}
-                        alt={`附图 ${index + 1}`}
-                        loading="lazy"
-                        className="size-20 rounded-md border object-cover"
-                      />
-                    </a>
-                  ))}
-                </div>
+                // The site's shared lightbox: zoom, swipe between this
+                // message's images, download. The link stays as a fallback
+                // for opening in a new tab.
+                <KunImageViewer
+                  images={message.images.map((url, index) => ({
+                    src: url,
+                    alt: `附图 ${index + 1}`
+                  }))}
+                >
+                  {(open) => (
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {message.images!.map((url, index) => (
+                        <a
+                          key={url}
+                          href={url}
+                          target="_blank"
+                          rel="noreferrer"
+                          aria-label={`放大查看附图 ${index + 1}`}
+                          onClick={(event) => {
+                            // Modified clicks keep the browser's own behavior.
+                            if (
+                              event.metaKey ||
+                              event.ctrlKey ||
+                              event.shiftKey ||
+                              event.button !== 0
+                            ) {
+                              return
+                            }
+                            event.preventDefault()
+                            open(index)
+                          }}
+                          className="cursor-zoom-in"
+                        >
+                          <img
+                            src={url}
+                            alt={`附图 ${index + 1}`}
+                            loading="lazy"
+                            className="size-20 rounded-md border object-cover"
+                          />
+                        </a>
+                      ))}
+                    </div>
+                  )}
+                </KunImageViewer>
               ) : null}
             </div>
           </li>

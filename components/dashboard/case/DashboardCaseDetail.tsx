@@ -26,7 +26,10 @@ import {
   SelectValue
 } from '~/components/dashboard/ui/select'
 import { InboxDetailSkeleton } from '~/components/dashboard/inbox/InboxDetailSkeleton'
-import { IssueImageField } from '~/components/dashboard/issue/IssueImageField'
+import {
+  IssueImageField,
+  imagePasteHandler
+} from '~/components/dashboard/issue/IssueImageField'
 import { kunFetchGet, kunFetchPost } from '~/utils/kunFetch'
 import {
   CASE_CONTENT_MAX_LENGTH,
@@ -722,7 +725,8 @@ export function DashboardCaseDetail({
                 maxLength={CASE_CONTENT_MAX_LENGTH}
                 rows={3}
                 disabled={working}
-                placeholder="回复内容（纯文字，可以附图）"
+                onPaste={imagePasteHandler(replyUploads, working)}
+                placeholder="回复内容（纯文字，可以附图，截图可直接粘贴）"
               />
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <IssueImageField uploads={replyUploads} disabled={working} />

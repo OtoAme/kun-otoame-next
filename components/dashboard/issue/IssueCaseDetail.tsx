@@ -92,7 +92,7 @@ import { CaseMessageText } from '~/components/dashboard/case/CaseMessageText'
 import { LinkHealthCaseActions } from '~/components/dashboard/case/LinkHealthCaseActions'
 import { readCaseLinkHealth } from '~/components/case/linkHealthActionFlow'
 
-import { IssueImageField } from './IssueImageField'
+import { IssueImageField, imagePasteHandler } from './IssueImageField'
 
 const STATUS_BADGE_VARIANTS: Record<
   CaseStatus,
@@ -1144,8 +1144,9 @@ export function IssueCaseDetail({ caseId, onChanged }: IssueCaseDetailProps) {
               maxLength={CASE_CONTENT_MAX_LENGTH}
               rows={3}
               disabled={working}
+              onPaste={imagePasteHandler(replyUploads, working)}
               className="bg-background"
-              placeholder="补充说明或回复（纯文字，可以附图）"
+              placeholder="补充说明或回复（纯文字，可以附图，截图可直接粘贴）"
             />
             <div className="flex flex-wrap items-start justify-between gap-3">
               <IssueImageField uploads={replyUploads} disabled={working} />

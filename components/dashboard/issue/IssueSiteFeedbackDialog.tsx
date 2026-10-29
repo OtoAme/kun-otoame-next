@@ -24,7 +24,7 @@ import {
 import { useCaseImageUploads } from '~/components/case/useCaseImageUploads'
 import type { CaseCreateResponse } from '~/types/api/case'
 
-import { IssueImageField } from './IssueImageField'
+import { IssueImageField, imagePasteHandler } from './IssueImageField'
 
 interface IssueSiteFeedbackDialogProps {
   /** Runs after a successful submission so the list can refresh. */
@@ -131,6 +131,7 @@ export function IssueSiteFeedbackDialog({
               maxLength={CASE_CONTENT_MAX_LENGTH}
               rows={5}
               disabled={submitting}
+              onPaste={imagePasteHandler(uploads, submitting)}
               placeholder={`需要网站管理员做什么，涉及的用户名、游戏或链接（至少 ${CASE_DESCRIPTION_MIN_LENGTH} 个字符，纯文字）`}
             />
             <IssueImageField uploads={uploads} disabled={submitting} />
