@@ -1097,8 +1097,36 @@ case: 0,
       )
       expect(text()).toContain('待办列表')
       expect(text()).toContain('等待 1 分钟')
-      expect(text()).toContain('待审条目')
+      // Only submissions are selected, so the kind label is redundant.
+      expect(text()).not.toContain('待审条目')
       expect(buttonByText('下一页')).toBeUndefined()
+    })
+
+    it('labels each row with its kind when several sources are shown', async () => {
+      await renderPane(
+        stubInbox({
+          historyMode: false,
+          kinds: ['submission', 'resource-apply'],
+          items: [submission(1)],
+          totals: {
+            submission: 1,
+            'resource-apply': 0,
+            feedback: 0,
+            report: 0,
+            case: 0,
+            'broken-link': 0
+          },
+          truncated: {
+            submission: false,
+            'resource-apply': false,
+            feedback: false,
+            report: false,
+            case: false,
+            'broken-link': false
+          }
+        })
+      )
+      expect(text()).toContain('待审条目')
     })
   })
 })

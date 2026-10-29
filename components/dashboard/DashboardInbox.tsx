@@ -427,15 +427,17 @@ function UnifiedInbox({ reviewerId, reviewerRole }: DashboardInboxProps) {
           className="min-h-0 min-w-0 flex-1"
         >
           <ResizablePanel
-            defaultSize="35%"
-            minSize="260px"
+            // Review details put a summary, the preview and a pinned form in
+            // the right pane, so the list starts narrower; it stays resizable.
+            defaultSize="28%"
+            minSize="280px"
             className="min-h-0 min-w-0"
           >
             <InboxListPane inbox={inbox} />
           </ResizablePanel>
           <ResizableHandle withHandle />
           <ResizablePanel
-            defaultSize="65%"
+            defaultSize="72%"
             minSize="300px"
             className="min-h-0 min-w-0"
           >

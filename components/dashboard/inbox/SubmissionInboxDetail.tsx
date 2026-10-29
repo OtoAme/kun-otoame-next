@@ -234,8 +234,15 @@ export function SubmissionInboxDetail({
     reviewerRole < 3 ||
     selfRefused ||
     (canOverride && !overrideSelfReview)
+  // A written reason means the reviewer intends to request changes, reject or
+  // flag; approving would discard it unseen, so approval waits until it is
+  // cleared.
+  const reasonWritten = reason.trim().length > 0
   const approveDisabled =
-    baseActionDisabled || detail.preview === null || hasBlockingAmbiguities
+    baseActionDisabled ||
+    detail.preview === null ||
+    hasBlockingAmbiguities ||
+    reasonWritten
 
   // 所有审核动作（含外层快捷键点击的标记按钮）统一先开确认；
   // 已有确认打开时不叠加、不嵌套，外层快捷键因此不再生效。
@@ -409,7 +416,7 @@ export function SubmissionInboxDetail({
           {detail.author.name}
         </span>
         <span className="block text-xs text-muted-foreground">
-          #{detail.author.id} · 投稿时为{roleLabel(detail.roleAtCreation)}
+          #{detail.author.id} · {roleLabel(detail.author.role)}
         </span>
       </span>
     </a>
@@ -424,8 +431,7 @@ export function SubmissionInboxDetail({
       label: '押金',
       value: (
         <>
-          <span className="tabular-nums">{detail.heldAmount}</span>{' '}
-          萌萌点（冻结中）
+          <span className="tabular-nums">{detail.heldAmount}</span> 萌萌点
         </>
       )
     },
@@ -697,6 +703,11 @@ export function SubmissionInboxDetail({
       {hasBlockingAmbiguities ? (
         <p className="text-xs text-destructive">
           存在阻塞性会社歧义，已禁用“通过并发布”。
+        </p>
+      ) : null}
+      {reasonWritten && pending ? (
+        <p className="text-xs text-muted-foreground">
+          已填写审核意见，“通过并发布”不可用；如需通过，请先清空意见。
         </p>
       ) : null}
 

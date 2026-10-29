@@ -1,3 +1,4 @@
+import { SUPPORTED_TYPE_MAP } from '~/constants/resource'
 import {
   getLinkDisputeSources,
   linkHealthSelect,
@@ -238,7 +239,8 @@ const submissionItem = (row: SubmissionRow, now: Date): InboxItem => ({
   actor: row.user,
   ...waiting(row.submitted_at ?? row.created, now),
   targetHref: `/admin/submission/${row.id}`,
-  badges: ['投稿'],
+  // The kind label already says this is a submission.
+  badges: [],
   readOnly: false,
   payload: {
     id: row.id,
@@ -267,7 +269,8 @@ const resourceItem = (
   actor: { id: row.user.id, name: row.user.name, avatar: row.user.avatar },
   ...waiting(row.created, now),
   targetHref: `/${row.patch.unique_id}`,
-  badges: ['资源申请', ...row.type],
+  // Resource types use their front-end names; the kind label covers the rest.
+  badges: row.type.map((type) => SUPPORTED_TYPE_MAP[type] ?? type),
   readOnly: false,
   payload: {
     id: row.id,
