@@ -214,13 +214,15 @@ describe('resource and legacy inbox details', () => {
     })
   }
 
-  it('shows the existing role/resource labels, authorized links and actual preview route', async () => {
+  it('shows the uploader summary and leaves resource details to the front-end preview', async () => {
     await render()
     expect(container.textContent).toContain('创作者')
     expect(container.textContent).toContain('游戏资源')
-    expect(container.textContent).toContain('Windows')
-    expect(container.textContent).toContain('abcd')
-    expect(container.textContent).toContain('only-fixture')
+    expect(container.textContent).toContain('已发布 5 份资源')
+    // Attributes, links and access codes render once, inside the preview.
+    expect(container.textContent).not.toContain('Windows')
+    expect(container.textContent).not.toContain('abcd')
+    expect(container.textContent).not.toContain('only-fixture')
     expect(container.querySelector('a[href="/game0001"]')).not.toBeNull()
     expect(container.querySelector('a[href^="/patch/"]')).toBeNull()
     expect(container.querySelector('iframe')?.getAttribute('src')).toBe(

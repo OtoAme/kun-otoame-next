@@ -15,7 +15,6 @@ import {
 import { Badge } from '~/components/dashboard/ui/badge'
 import { Button } from '~/components/dashboard/ui/button'
 import { Checkbox } from '~/components/dashboard/ui/checkbox'
-import { Separator } from '~/components/dashboard/ui/separator'
 import { Textarea } from '~/components/dashboard/ui/textarea'
 import {
   PATCH_SUBMISSION_PUBLISH_REWARD,
@@ -32,6 +31,7 @@ import { formatChinaDateTime } from '~/utils/fixedTimezoneDate'
 import { CompanyDiagnostics } from './CompanyDiagnostics'
 import { InboxDetailSkeleton } from './InboxDetailSkeleton'
 import { PreviewFrame } from './PreviewFrame'
+import { ReviewLayout } from './ReviewLayout'
 
 type SubmissionInboxItem = Extract<InboxItem, { kind: 'submission' }>
 type ReviewAction = 'approve' | 'request-changes' | 'reject' | 'violate'
@@ -42,6 +42,8 @@ interface SubmissionInboxDetailProps {
   reviewerRole: number
   onProcessed: (key: string) => void
   onStateChanged: (key: string) => void
+  /** Phone layout puts everything in page flow. */
+  isPhone?: boolean
 }
 
 const STATUS_META: Record<
@@ -72,29 +74,13 @@ function roleLabel(role: number): string {
   return typeof label === 'string' ? label : `未知角色（${role}）`
 }
 
-function MetaField({
-  label,
-  className,
-  children
-}: {
-  label: string
-  className?: string
-  children: ReactNode
-}) {
-  return (
-    <div className={cn('space-y-0.5', className)}>
-      <dt className="text-xs text-muted-foreground">{label}</dt>
-      <dd className="break-words text-sm">{children}</dd>
-    </div>
-  )
-}
-
 export function SubmissionInboxDetail({
   item,
   reviewerId,
   reviewerRole,
   onProcessed,
-  onStateChanged
+  onStateChanged,
+  isPhone = false
 }: SubmissionInboxDetailProps) {
   // 详情与错误都按 key+updated 关联保存，渲染时再校验，
   // 保证旧选择/旧版本的数据永远不会显示在新选择下。
@@ -391,368 +377,404 @@ export function SubmissionInboxDetail({
     }
   }
 
-  return (
-    <div className="space-y-4">
-      <div className="flex items-start justify-between gap-3">
-        <h3 className="break-all text-base font-semibold">{detail.name}</h3>
-        <Badge variant={statusMeta.variant} className="shrink-0">
-          {statusMeta.label}
-        </Badge>
+  const title = (
+    <div className="flex items-start justify-between gap-2">
+      <h3 className="min-w-0 break-all text-base font-semibold leading-snug">
+        {detail.name}
+      </h3>
+      <Badge variant={statusMeta.variant} className="shrink-0">
+        {statusMeta.label}
+      </Badge>
+    </div>
+  )
+
+  const account = (
+    <a
+      href={`/user/${detail.author.id}`}
+      className="flex min-w-0 items-center gap-2 rounded-md border px-2 py-1.5 hover:bg-accent"
+    >
+      {detail.author.avatar ? (
+        <img
+          src={detail.author.avatar}
+          alt=""
+          className="size-7 shrink-0 rounded-full object-cover"
+        />
+      ) : (
+        <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-muted text-xs text-muted-foreground">
+          {(detail.author.name[0] ?? '?').toUpperCase()}
+        </span>
+      )}
+      <span className="min-w-0">
+        <span className="block truncate text-sm font-medium">
+          {detail.author.name}
+        </span>
+        <span className="block text-xs text-muted-foreground">
+          #{detail.author.id} · 投稿时为{roleLabel(detail.roleAtCreation)}
+        </span>
+      </span>
+    </a>
+  )
+
+  const facts = [
+    {
+      label: '提交',
+      value: detail.submittedAt ? formatChinaDateTime(detail.submittedAt) : '—'
+    },
+    {
+      label: '押金',
+      value: (
+        <>
+          <span className="tabular-nums">{detail.heldAmount}</span>{' '}
+          萌萌点（冻结中）
+        </>
+      )
+    },
+    ...(detail.externalSource
+      ? [
+          {
+            label: '数据',
+            value: `${detail.externalSource}${
+              detail.externalFetchedAt
+                ? ` · ${formatChinaDateTime(detail.externalFetchedAt)} 抓取`
+                : ''
+            }`
+          }
+        ]
+      : []),
+    ...(detail.reviewedBy
+      ? [
+          {
+            label: '审核',
+            value: (
+              <>
+                <a
+                  href={`/user/${detail.reviewedBy.id}`}
+                  className="underline-offset-4 hover:underline"
+                >
+                  {detail.reviewedBy.name}
+                </a>
+                {detail.reviewedAt
+                  ? ` · ${formatChinaDateTime(detail.reviewedAt)}`
+                  : ''}
+              </>
+            )
+          }
+        ]
+      : []),
+    ...(detail.reviewReason
+      ? [
+          {
+            label: '意见',
+            value: (
+              <span className="whitespace-pre-wrap">{detail.reviewReason}</span>
+            )
+          }
+        ]
+      : []),
+    ...(detail.publishedPatch
+      ? [
+          {
+            label: '条目',
+            value: (
+              <a
+                href={`/${detail.publishedPatch.uniqueId}`}
+                className="underline-offset-4 hover:underline"
+              >
+                {detail.publishedPatch.name}
+              </a>
+            )
+          }
+        ]
+      : [])
+  ]
+
+  const warnings =
+    hasDuplicateInfo || companyDiagnostics ? (
+      <div className="flex flex-col gap-3">
+        {hasDuplicateInfo ? (
+          <>
+            <section
+              aria-label="VNDB 重复警告"
+              className={cn(
+                'space-y-2 rounded-md border p-3 text-sm',
+                detail.vndbDuplicates.length > 0
+                  ? 'border-amber-500/50 bg-amber-500/10'
+                  : 'border-border'
+              )}
+            >
+              <h4 className="flex items-center gap-2 font-medium">
+                <AlertTriangle className="h-4 w-4" aria-hidden />
+                VNDB ID 重复警告
+              </h4>
+              {detail.vndbDuplicates.length > 0 ? (
+                <>
+                  <p>
+                    以下已发布条目使用了相同的 VNDB ID（同一 ID
+                    可能属于不同版本，是否通过由审核人判断）：
+                  </p>
+                  <ul className="ml-5 list-disc space-y-1">
+                    {detail.vndbDuplicates.map((dup) => (
+                      <li key={dup.uniqueId}>
+                        <a
+                          href={`/${dup.uniqueId}`}
+                          className="underline underline-offset-4"
+                        >
+                          {dup.name}
+                        </a>
+                      </li>
+                    ))}
+                  </ul>
+                  {detail.duplicatesTruncated ? (
+                    <p className="text-xs text-muted-foreground">
+                      仅列出前10条
+                    </p>
+                  ) : null}
+                </>
+              ) : null}
+              {detail.duplicateConfirmed ? (
+                <p>投稿人已确认知晓上述重复并仍然提交。</p>
+              ) : detail.vndbDuplicates.length > 0 ? (
+                <p>{pending ? '投稿者未确认' : '投稿者当时未确认'}</p>
+              ) : null}
+            </section>
+          </>
+        ) : null}
+
+        {companyDiagnostics ? (
+          <>
+            <section className="space-y-3" aria-label="会社诊断">
+              <h4 className="text-sm font-semibold">会社诊断</h4>
+              <CompanyDiagnostics diagnostics={companyDiagnostics} />
+            </section>
+          </>
+        ) : null}
+      </div>
+    ) : null
+
+  const preview = detail.preview ? (
+    <PreviewFrame
+      fill
+      src={`/preview/submission/${item.id}`}
+      title="投稿前台预览"
+    />
+  ) : (
+    <p className="rounded-md border p-4 text-sm text-muted-foreground">
+      前台预览不可用，已禁用“通过并发布”；其余审核操作仍按状态与权限正常执行。
+    </p>
+  )
+
+  const form = (
+    <section className="flex flex-col gap-2.5" aria-label="审核操作">
+      {!pending ? (
+        <p className="text-sm text-muted-foreground">
+          该投稿当前状态为「{statusMeta.label}」，审核操作不可用，仅可查看。
+        </p>
+      ) : null}
+      {reviewerRole < 3 ? (
+        <p role="alert" className="text-sm text-destructive">
+          当前账号没有审核权限，仅可查看。
+        </p>
+      ) : null}
+      {selfRefused ? (
+        <p role="alert" className="text-sm text-destructive">
+          不能审核自己的投稿，请交由其他审核人处理。
+        </p>
+      ) : null}
+      {canOverride ? (
+        <div className="flex items-center gap-2">
+          <Checkbox
+            id="submission-override-self-review"
+            checked={overrideSelfReview}
+            onCheckedChange={(checked) =>
+              setOverrideSelfReview(checked === true)
+            }
+            disabled={working}
+          />
+          <label htmlFor="submission-override-self-review" className="text-sm">
+            超级管理员自审（将记录日志）
+          </label>
+        </div>
+      ) : null}
+
+      <div className="space-y-1.5">
+        <label
+          htmlFor="submission-review-reason"
+          className="text-sm font-medium"
+        >
+          审核意见（要求修改 / 驳回 / 违规处理时必填）
+        </label>
+        <Textarea
+          id="submission-review-reason"
+          value={reason}
+          onChange={(event) => setReason(event.target.value)}
+          maxLength={PATCH_SUBMISSION_REASON_MAX_LENGTH}
+          rows={3}
+          disabled={working || !pending}
+          placeholder="填写给投稿人的审核意见"
+          aria-describedby={
+            actionError !== null && pendingAction === null
+              ? 'submission-review-reason-hint submission-action-error'
+              : 'submission-review-reason-hint'
+          }
+        />
+        <p
+          id="submission-review-reason-hint"
+          className="text-xs text-muted-foreground"
+        >
+          {reason.length}/{PATCH_SUBMISSION_REASON_MAX_LENGTH}
+        </p>
       </div>
 
-      <dl className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <MetaField label="作者">
-          <a
-            href={`/user/${detail.author.id}`}
-            className="inline-flex items-center gap-2 underline-offset-4 hover:underline"
-          >
-            {detail.author.avatar ? (
-              <img
-                src={detail.author.avatar}
-                alt=""
-                className="h-6 w-6 rounded-full object-cover"
-              />
-            ) : null}
-            <span>{detail.author.name}</span>
-          </a>
-        </MetaField>
-        <MetaField label="投稿时角色">
-          {roleLabel(detail.roleAtCreation)}
-        </MetaField>
-        <MetaField label="冻结押金">{detail.heldAmount}</MetaField>
-        <MetaField label="数据版本">{detail.payloadVersion}</MetaField>
-        <MetaField label="创建时间">
-          {formatChinaDateTime(detail.created)}
-        </MetaField>
-        <MetaField label="提交时间">
-          {detail.submittedAt ? formatChinaDateTime(detail.submittedAt) : '—'}
-        </MetaField>
-        {detail.externalSource ? (
-          <MetaField label="外部来源">{detail.externalSource}</MetaField>
-        ) : null}
-        {detail.externalFetchedAt ? (
-          <MetaField label="抓取时间">
-            {formatChinaDateTime(detail.externalFetchedAt)}
-          </MetaField>
-        ) : null}
-        {detail.reviewedBy ? (
-          <MetaField label="审核人">
-            <a
-              href={`/user/${detail.reviewedBy.id}`}
-              className="underline-offset-4 hover:underline"
-            >
-              {detail.reviewedBy.name}
-            </a>
-          </MetaField>
-        ) : null}
-        {detail.reviewedAt ? (
-          <MetaField label="审核时间">
-            {formatChinaDateTime(detail.reviewedAt)}
-          </MetaField>
-        ) : null}
-        {detail.reviewReason ? (
-          <MetaField label="审核意见" className="sm:col-span-2">
-            <span className="whitespace-pre-wrap">{detail.reviewReason}</span>
-          </MetaField>
-        ) : null}
-        {detail.publishedPatch ? (
-          <MetaField label="已发布条目">
-            <a
-              href={`/${detail.publishedPatch.uniqueId}`}
-              className="underline-offset-4 hover:underline"
-            >
-              {detail.publishedPatch.name}
-            </a>
-          </MetaField>
-        ) : null}
-      </dl>
-
-      {hasDuplicateInfo ? (
-        <>
-          <Separator />
-          <section
-            aria-label="VNDB 重复警告"
-            className={cn(
-              'space-y-2 rounded-md border p-3 text-sm',
-              detail.vndbDuplicates.length > 0
-                ? 'border-amber-500/50 bg-amber-500/10'
-                : 'border-border'
-            )}
-          >
-            <h4 className="flex items-center gap-2 font-medium">
-              <AlertTriangle className="h-4 w-4" aria-hidden />
-              VNDB ID 重复警告
-            </h4>
-            {detail.vndbDuplicates.length > 0 ? (
-              <>
-                <p>
-                  以下已发布条目使用了相同的 VNDB ID（同一 ID
-                  可能属于不同版本，是否通过由审核人判断）：
-                </p>
-                <ul className="ml-5 list-disc space-y-1">
-                  {detail.vndbDuplicates.map((dup) => (
-                    <li key={dup.uniqueId}>
-                      <a
-                        href={`/${dup.uniqueId}`}
-                        className="underline underline-offset-4"
-                      >
-                        {dup.name}
-                      </a>
-                    </li>
-                  ))}
-                </ul>
-                {detail.duplicatesTruncated ? (
-                  <p className="text-xs text-muted-foreground">仅列出前10条</p>
-                ) : null}
-              </>
-            ) : null}
-            {detail.duplicateConfirmed ? (
-              <p>投稿人已确认知晓上述重复并仍然提交。</p>
-            ) : detail.vndbDuplicates.length > 0 ? (
-              <p>{pending ? '投稿者未确认' : '投稿者当时未确认'}</p>
-            ) : null}
-          </section>
-        </>
-      ) : null}
-
-      {companyDiagnostics ? (
-        <>
-          <Separator />
-          <section className="space-y-3" aria-label="会社诊断">
-            <h4 className="text-sm font-semibold">会社诊断</h4>
-            <CompanyDiagnostics diagnostics={companyDiagnostics} />
-          </section>
-        </>
-      ) : null}
-
-      <Separator />
-
-      <section className="space-y-2" aria-label="前台预览">
-        <h4 className="text-sm font-semibold">前台预览</h4>
-        {detail.preview ? (
-          <PreviewFrame
-            src={`/preview/submission/${item.id}`}
-            title="投稿前台预览"
-            className="w-full"
-          />
-        ) : (
-          <p className="text-sm text-muted-foreground">
-            前台预览不可用，已禁用“通过并发布”；其余审核操作仍按状态与权限正常执行。
-          </p>
-        )}
-      </section>
-
-      <Separator />
-
-      <section className="space-y-3" aria-label="审核操作">
-        <h4 className="text-sm font-semibold">审核操作</h4>
-
-        {!pending ? (
-          <p className="text-sm text-muted-foreground">
-            该投稿当前状态为「{statusMeta.label}」，审核操作不可用，仅可查看。
-          </p>
-        ) : null}
-        {reviewerRole < 3 ? (
-          <p role="alert" className="text-sm text-destructive">
-            当前账号没有审核权限，仅可查看。
-          </p>
-        ) : null}
-        {selfRefused ? (
-          <p role="alert" className="text-sm text-destructive">
-            不能审核自己的投稿，请交由其他审核人处理。
-          </p>
-        ) : null}
-        {canOverride ? (
-          <div className="flex items-center gap-2">
-            <Checkbox
-              id="submission-override-self-review"
-              checked={overrideSelfReview}
-              onCheckedChange={(checked) =>
-                setOverrideSelfReview(checked === true)
-              }
-              disabled={working}
-            />
-            <label
-              htmlFor="submission-override-self-review"
-              className="text-sm"
-            >
-              超级管理员自审（将记录日志）
-            </label>
-          </div>
-        ) : null}
-
-        <div className="space-y-1.5">
-          <label
-            htmlFor="submission-review-reason"
-            className="text-sm font-medium"
-          >
-            审核意见（要求修改 / 驳回 / 违规处理时必填）
-          </label>
-          <Textarea
-            id="submission-review-reason"
-            value={reason}
-            onChange={(event) => setReason(event.target.value)}
-            maxLength={PATCH_SUBMISSION_REASON_MAX_LENGTH}
-            rows={4}
-            disabled={working || !pending}
-            placeholder="填写给投稿人的审核意见"
-            aria-describedby={
-              actionError !== null && pendingAction === null
-                ? 'submission-review-reason-hint submission-action-error'
-                : 'submission-review-reason-hint'
-            }
-          />
-          <p
-            id="submission-review-reason-hint"
-            className="text-xs text-muted-foreground"
-          >
-            {reason.length}/{PATCH_SUBMISSION_REASON_MAX_LENGTH}
-          </p>
-        </div>
-
-        {actionError !== null && pendingAction === null ? (
-          <p
-            role="alert"
-            id="submission-action-error"
-            className="text-sm text-destructive"
-          >
-            {actionError}
-          </p>
-        ) : null}
-
-        <div className="flex flex-wrap items-center gap-2">
-          <Button
-            data-inbox-action="positive"
-            disabled={approveDisabled}
-            onClick={(event) => openConfirm('approve', event.currentTarget)}
-          >
-            通过并发布
-          </Button>
-          <Button
-            variant="outline"
-            disabled={baseActionDisabled}
-            onClick={(event) =>
-              openConfirm('request-changes', event.currentTarget)
-            }
-          >
-            要求修改
-          </Button>
-          <Button
-            variant="outline"
-            disabled={baseActionDisabled}
-            onClick={(event) => openConfirm('reject', event.currentTarget)}
-          >
-            驳回
-          </Button>
-          <Button
-            variant="destructive"
-            data-inbox-action="destructive"
-            disabled={baseActionDisabled}
-            onClick={(event) => openConfirm('violate', event.currentTarget)}
-          >
-            违规处理
-          </Button>
-          {working ? (
-            <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-              <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
-              正在提交…
-            </span>
-          ) : null}
-        </div>
-
-        <ul className="list-disc space-y-1 pl-5 text-xs text-muted-foreground">
-          <li>
-            通过并发布：立即发布，返还冻结押金 {detail.heldAmount}，并发放{' '}
-            {PATCH_SUBMISSION_PUBLISH_REWARD} 奖励。
-          </li>
-          <li>
-            要求修改：押金 {detail.heldAmount}{' '}
-            继续冻结，等待投稿人修改后重新提交。
-          </li>
-          <li>驳回：返还押金 {detail.heldAmount}。</li>
-          <li>
-            违规处理：没收押金 {detail.heldAmount}
-            ，清空本次投稿内容并清理其上传文件。
-          </li>
-        </ul>
-
-        {detail.preview === null ? (
-          <p className="text-xs text-destructive">前台预览不可用，无法通过。</p>
-        ) : null}
-        {hasBlockingAmbiguities ? (
-          <p className="text-xs text-destructive">
-            存在阻塞性会社歧义，已禁用“通过并发布”。
-          </p>
-        ) : null}
-
-        <AlertDialog
-          open={pendingAction !== null}
-          onOpenChange={(open) => {
-            // 取消 / Esc 关闭且零写入；确认写请求在飞期间禁止关闭。
-            if (!open && !working) setPendingAction(null)
-          }}
+      {actionError !== null && pendingAction === null ? (
+        <p
+          role="alert"
+          id="submission-action-error"
+          className="text-sm text-destructive"
         >
-          <AlertDialogContent
-            className="max-h-[85dvh] overflow-y-auto"
-            onCloseAutoFocus={handleCloseAutoFocus}
-          >
-            <AlertDialogHeader>
-              <AlertDialogTitle>
-                确认{ACTION_LABEL[displayAction]}
-              </AlertDialogTitle>
-              <AlertDialogDescription>
-                {displayAction === 'approve'
-                  ? `将立即发布该投稿，返还冻结押金 ${detail.heldAmount}，并发放 ${PATCH_SUBMISSION_PUBLISH_REWARD} 奖励；发布后不可在本页面撤销。`
-                  : displayAction === 'request-changes'
-                    ? `押金 ${detail.heldAmount} 继续冻结，等待投稿人修改后重新提交。`
-                    : displayAction === 'reject'
-                      ? `将驳回该投稿并返还押金 ${detail.heldAmount}；驳回后不可在本页面撤销。`
-                      : `将没收本次投稿冻结的押金 ${detail.heldAmount}，清空本次投稿内容并清理其上传文件，此操作不可撤销。`}
-              </AlertDialogDescription>
-            </AlertDialogHeader>
+          {actionError}
+        </p>
+      ) : null}
+
+      <div className="flex flex-wrap items-center gap-2">
+        <Button
+          data-inbox-action="positive"
+          disabled={approveDisabled}
+          onClick={(event) => openConfirm('approve', event.currentTarget)}
+        >
+          通过并发布
+        </Button>
+        <Button
+          variant="outline"
+          disabled={baseActionDisabled}
+          onClick={(event) =>
+            openConfirm('request-changes', event.currentTarget)
+          }
+        >
+          要求修改
+        </Button>
+        <Button
+          variant="outline"
+          disabled={baseActionDisabled}
+          onClick={(event) => openConfirm('reject', event.currentTarget)}
+        >
+          驳回
+        </Button>
+        <Button
+          variant="destructive"
+          data-inbox-action="destructive"
+          disabled={baseActionDisabled}
+          onClick={(event) => openConfirm('violate', event.currentTarget)}
+        >
+          违规处理
+        </Button>
+        {working ? (
+          <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+            <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
+            正在提交…
+          </span>
+        ) : null}
+      </div>
+
+      <ul className="list-disc space-y-1 pl-5 text-xs text-muted-foreground">
+        <li>
+          通过并发布：立即发布，返还冻结押金 {detail.heldAmount}，并发放{' '}
+          {PATCH_SUBMISSION_PUBLISH_REWARD} 奖励。
+        </li>
+        <li>
+          要求修改：押金 {detail.heldAmount}{' '}
+          继续冻结，等待投稿人修改后重新提交。
+        </li>
+        <li>驳回：返还押金 {detail.heldAmount}。</li>
+        <li>
+          违规处理：没收押金 {detail.heldAmount}
+          ，清空本次投稿内容并清理其上传文件。
+        </li>
+      </ul>
+
+      {detail.preview === null ? (
+        <p className="text-xs text-destructive">前台预览不可用，无法通过。</p>
+      ) : null}
+      {hasBlockingAmbiguities ? (
+        <p className="text-xs text-destructive">
+          存在阻塞性会社歧义，已禁用“通过并发布”。
+        </p>
+      ) : null}
+
+      <AlertDialog
+        open={pendingAction !== null}
+        onOpenChange={(open) => {
+          // 取消 / Esc 关闭且零写入；确认写请求在飞期间禁止关闭。
+          if (!open && !working) setPendingAction(null)
+        }}
+      >
+        <AlertDialogContent
+          className="max-h-[85dvh] overflow-y-auto"
+          onCloseAutoFocus={handleCloseAutoFocus}
+        >
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              确认{ACTION_LABEL[displayAction]}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {displayAction === 'approve'
+                ? `将立即发布该投稿，返还冻结押金 ${detail.heldAmount}，并发放 ${PATCH_SUBMISSION_PUBLISH_REWARD} 奖励；发布后不可在本页面撤销。`
+                : displayAction === 'request-changes'
+                  ? `押金 ${detail.heldAmount} 继续冻结，等待投稿人修改后重新提交。`
+                  : displayAction === 'reject'
+                    ? `将驳回该投稿并返还押金 ${detail.heldAmount}；驳回后不可在本页面撤销。`
+                    : `将没收本次投稿冻结的押金 ${detail.heldAmount}，清空本次投稿内容并清理其上传文件，此操作不可撤销。`}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="space-y-1 text-sm">
+            <p className="text-muted-foreground">审核对象</p>
+            <p className="break-words">
+              {detail.name}（投稿 #{detail.id}）
+            </p>
+          </div>
+          {displayAction !== 'approve' ? (
             <div className="space-y-1 text-sm">
-              <p className="text-muted-foreground">审核对象</p>
-              <p className="break-words">
-                {detail.name}（投稿 #{detail.id}）
+              <p className="text-muted-foreground">
+                {displayAction === 'violate' ? '违规原因' : '审核意见'}
               </p>
+              <p className="whitespace-pre-wrap break-words">{reason.trim()}</p>
             </div>
-            {displayAction !== 'approve' ? (
-              <div className="space-y-1 text-sm">
-                <p className="text-muted-foreground">
-                  {displayAction === 'violate' ? '违规原因' : '审核意见'}
-                </p>
-                <p className="whitespace-pre-wrap break-words">
-                  {reason.trim()}
-                </p>
-              </div>
-            ) : null}
-            {actionError !== null ? (
-              <p
-                role="alert"
-                id="review-action-dialog-error"
-                className="text-sm text-destructive"
-              >
-                {actionError}
-              </p>
-            ) : null}
-            <AlertDialogFooter>
-              <AlertDialogCancel disabled={working}>取消</AlertDialogCancel>
-              <Button
-                variant={
-                  displayAction === 'violate' ? 'destructive' : 'default'
-                }
-                disabled={baseActionDisabled}
-                onClick={() => {
-                  // 唯一写入口：仅确认按钮调用原有写函数（内部仍含 ref 锁与捕获上下文）。
-                  if (pendingAction !== null) void runAction(pendingAction)
-                }}
-              >
-                {working ? '处理中…' : `确认${ACTION_LABEL[displayAction]}`}
-              </Button>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
-      </section>
-    </div>
+          ) : null}
+          {actionError !== null ? (
+            <p
+              role="alert"
+              id="review-action-dialog-error"
+              className="text-sm text-destructive"
+            >
+              {actionError}
+            </p>
+          ) : null}
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={working}>取消</AlertDialogCancel>
+            <Button
+              variant={displayAction === 'violate' ? 'destructive' : 'default'}
+              disabled={baseActionDisabled}
+              onClick={() => {
+                // 唯一写入口：仅确认按钮调用原有写函数（内部仍含 ref 锁与捕获上下文）。
+                if (pendingAction !== null) void runAction(pendingAction)
+              }}
+            >
+              {working ? '处理中…' : `确认${ACTION_LABEL[displayAction]}`}
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </section>
+  )
+
+  return (
+    <ReviewLayout
+      title={title}
+      account={account}
+      facts={facts}
+      warnings={warnings}
+      form={form}
+      preview={preview}
+      isPhone={isPhone}
+    />
   )
 }

@@ -21,6 +21,7 @@ import { useInbox } from '~/hooks/dashboard/useInbox'
 
 import { useDashboard } from './DashboardShell'
 import { InboxDetail } from './inbox/InboxDetail'
+import { cn } from '~/lib/dashboard/utils'
 import { InboxDetailSkeleton } from './inbox/InboxDetailSkeleton'
 import { InboxListPane } from './inbox/InboxListPane'
 import { InboxToolbar } from './inbox/InboxToolbar'
@@ -242,6 +243,9 @@ function UnifiedInbox({ reviewerId, reviewerRole }: DashboardInboxProps) {
   const freshItem = item && item.key === selectedKey ? item : null
 
   let detailBody: ReactNode
+  // Submission and resource reviews lay out their own preview and pinned form
+  // inside a bounded body instead of scrolling the whole detail pane.
+  let boundedDetail = false
   if (selectionStatus === 'none') {
     detailBody = (
       <StatePanel>
@@ -339,6 +343,8 @@ function UnifiedInbox({ reviewerId, reviewerRole }: DashboardInboxProps) {
         </StatePanel>
       )
     } else if (data.item !== null) {
+      boundedDetail =
+        data.item.kind === 'submission' || data.item.kind === 'resource-apply'
       detailBody = (
         <InboxDetail
           key={data.item.key}
@@ -347,6 +353,7 @@ function UnifiedInbox({ reviewerId, reviewerRole }: DashboardInboxProps) {
           reviewerRole={reviewerRole}
           onProcessed={onProcessed}
           onStateChanged={onStateChanged}
+          isPhone={isMobile}
         />
       )
     }
@@ -384,7 +391,10 @@ function UnifiedInbox({ reviewerId, reviewerRole }: DashboardInboxProps) {
       <div
         ref={detailRef}
         tabIndex={-1}
-        className="min-h-0 flex-1 overflow-y-auto p-4 outline-none max-md:flex-none max-md:overflow-visible"
+        className={cn(
+          'min-h-0 flex-1 p-4 outline-none max-md:flex-none max-md:overflow-visible',
+          boundedDetail ? 'overflow-hidden' : 'overflow-y-auto'
+        )}
       >
         {detailBody}
       </div>
