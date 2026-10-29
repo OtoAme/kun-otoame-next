@@ -193,6 +193,8 @@ describe('resource and legacy inbox details', () => {
       root.render(
         <ResourceInboxDetail
           item={item}
+          reviewerId={34}
+          reviewerRole={3}
           onProcessed={processed}
           onStateChanged={changed}
         />

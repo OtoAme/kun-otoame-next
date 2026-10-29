@@ -33,7 +33,8 @@ export function ReviewLayout({
   warnings,
   form,
   preview,
-  isPhone
+  isPhone,
+  previewAutoHeight = false
 }: {
   title: ReactNode
   account: ReactNode
@@ -43,6 +44,8 @@ export function ReviewLayout({
   form: ReactNode
   preview: ReactNode
   isPhone: boolean
+  /** Phone only: let the preview slot size to its content (e.g. an editor). */
+  previewAutoHeight?: boolean
 }) {
   const [ref, width] = useElementWidth<HTMLDivElement>()
   const sideBySide = !isPhone && width >= SIDE_BY_SIDE_MIN_WIDTH
@@ -85,7 +88,9 @@ export function ReviewLayout({
         {account}
         {factList(false)}
         {warnings}
-        <div className="h-[70dvh]">{preview}</div>
+        <div className={previewAutoHeight ? undefined : 'h-[70dvh]'}>
+          {preview}
+        </div>
         <div className="border-t pt-3">{form}</div>
       </div>
     )

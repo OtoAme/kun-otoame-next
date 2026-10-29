@@ -2,7 +2,6 @@
 
 import { useEffect, useId, useRef, useState } from 'react'
 import type { MouseEvent as ReactMouseEvent } from 'react'
-import Link from 'next/link'
 import toast from 'react-hot-toast'
 
 import type { InboxItem } from '~/types/api/inbox'
@@ -24,14 +23,18 @@ import {
 } from '~/components/dashboard/ui/alert-dialog'
 
 import { PreviewFrame } from './PreviewFrame'
+import { ResourceEditForm } from './ResourceEditForm'
+import { resourceChanges } from './resourceChanges'
 import { ReviewLayout } from './ReviewLayout'
 
 type ResourceInboxItem = Extract<InboxItem, { kind: 'resource-apply' }>
 
 interface ResourceInboxDetailProps {
   item: ResourceInboxItem
+  reviewerId: number
+  reviewerRole: number
   onProcessed: (key: string) => void
-  onStateChanged: (key: string) => void
+  onStateChanged: (key: string, options?: { silent?: boolean }) => void
   /** Phone layout puts everything in page flow. */
   isPhone?: boolean
 }
@@ -46,6 +49,8 @@ const mapLabel = (labelMap: Record<string, string>, value: string) =>
 
 export function ResourceInboxDetail({
   item,
+  reviewerId,
+  reviewerRole,
   onProcessed,
   onStateChanged,
   isPhone = false
@@ -67,6 +72,13 @@ export function ResourceInboxDetail({
   )
   const [reason, setReason] = useState('')
   const [actionError, setActionError] = useState('')
+  const [editing, setEditing] = useState(false)
+  // Bumped after each save so the preview frame reloads the edited resource.
+  const [previewVersion, setPreviewVersion] = useState(0)
+  // The resource as first opened here. The pane stays mounted across the
+  // silent refresh after a save, so this is the pre-edit baseline for the
+  // change list; it is not stored anywhere else.
+  const [original] = useState(() => item.payload)
 
   // Synchronous duplicate-submit guard (state updates land too late).
   const inFlightRef = useRef(false)
@@ -202,7 +214,10 @@ export function ResourceInboxDetail({
     }
   }
 
-  const previewSrc = `/preview/resource/${item.id}`
+  const previewSrc = `/preview/resource/${item.id}${
+    previewVersion ? `?v=${previewVersion}` : ''
+  }`
+  const changes = resourceChanges(original, resource)
   // item.targetHref is the public game page (/{uniqueId}) supplied by the inbox API.
   const gameHref = item.targetHref
   const gameName = resource.patchName || resource.uniqueId
@@ -266,38 +281,88 @@ export function ResourceInboxDetail({
     },
     {
       label: '链接',
-      value: `${resource.links.length} 条，地址与提取码见预览`
+      value: editing
+        ? `${resource.links.length} 条`
+        : `${resource.links.length} 条，地址与提取码见预览`
     }
   ]
 
+  const changeList =
+    changes.length > 0 ? (
+      <section
+        aria-label="本次修改"
+        className="rounded-md border border-amber-500/40 bg-amber-500/5 p-2.5 text-sm"
+      >
+        <h4 className="mb-1.5 text-xs font-medium text-muted-foreground">
+          本次修改（刷新页面后不再显示，可在管理日志查看）
+        </h4>
+        <ul className="flex flex-col gap-1">
+          {changes.map((change, index) => (
+            <li key={`${change.label}-${index}`} className="break-all">
+              <span className="text-muted-foreground">{change.label}：</span>
+              <span className="line-through decoration-muted-foreground/60">
+                {change.before}
+              </span>
+              {' → '}
+              <span>{change.after}</span>
+            </li>
+          ))}
+        </ul>
+      </section>
+    ) : null
+
   const form = (
-    <section className="flex flex-col gap-2.5" aria-label="审核操作">
-      <div className="flex flex-wrap items-center gap-2">
+    <section className="flex flex-col gap-2" aria-label="审核操作">
+      <div className="flex flex-nowrap items-center gap-1.5">
         <Button
+          size="sm"
           data-inbox-action="positive"
           onClick={openApproveConfirm}
-          disabled={pending}
+          disabled={pending || editing}
         >
           通过
         </Button>
         <Button
+          size="sm"
           variant="destructive"
           data-inbox-action="destructive"
           onClick={openDeclineConfirm}
-          disabled={pending}
+          disabled={pending || editing}
         >
           拒绝
         </Button>
-        <Button variant="outline" asChild>
-          <Link href="/admin/resource-apply" prefetch={false}>
-            编辑后通过
-          </Link>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => setEditing(true)}
+          disabled={pending || editing}
+        >
+          编辑
         </Button>
       </div>
       <p className="text-xs text-muted-foreground">
-        通过后资源直接发布；拒绝会永久删除该资源、全部下载链接及已上传的文件，不可恢复。两个动作都需要确认。「编辑后通过」在旧后台处理，需要超级管理员。
+        {editing
+          ? '正在编辑，保存或取消后再审核。'
+          : '编辑保存后资源仍待审核，确认无误再点通过。'}
       </p>
     </section>
+  )
+
+  const preview = editing ? (
+    <ResourceEditForm
+      resource={resource}
+      reviewerId={reviewerId}
+      reviewerRole={reviewerRole}
+      isPhone={isPhone}
+      onCancel={() => setEditing(false)}
+      onSaved={() => {
+        setEditing(false)
+        setPreviewVersion((version) => version + 1)
+        onStateChanged(item.key, { silent: true })
+      }}
+    />
+  ) : (
+    <PreviewFrame fill src={previewSrc} title="资源前台预览" />
   )
 
   return (
@@ -306,9 +371,11 @@ export function ResourceInboxDetail({
         title={title}
         account={account}
         facts={facts}
+        warnings={changeList}
         form={form}
-        preview={<PreviewFrame fill src={previewSrc} title="资源前台预览" />}
+        preview={preview}
         isPhone={isPhone}
+        previewAutoHeight={editing}
       />
       <AlertDialog
         open={confirmAction !== null}

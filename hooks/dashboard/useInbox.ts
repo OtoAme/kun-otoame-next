@@ -117,8 +117,12 @@ export interface UseInboxReturn {
   refreshAll: () => Promise<void>
   /** Called by InboxDetail only after API success for the exact captured key. */
   onProcessed: (key: string) => void
-  /** Refreshes a conflicted item; history also reloads its current filtered list. */
-  onStateChanged: (key: string) => Promise<void>
+  /**
+   * Refreshes a conflicted item; history also reloads its current filtered list.
+   * `silent` keeps the current detail mounted (no skeleton) and reports a
+   * failed read as a toast, for refreshes after an in-place edit.
+   */
+  onStateChanged: (key: string, options?: { silent?: boolean }) => Promise<void>
 }
 
 const KIND_SET: ReadonlySet<string> = new Set(LINK_HEALTH_INBOX_KINDS)
@@ -731,9 +735,10 @@ export function useInbox({ refreshCounts }: UseInboxOptions): UseInboxReturn {
   )
 
   const onStateChanged = React.useCallback(
-    async (key: string) => {
+    async (key: string, options?: { silent?: boolean }) => {
       if (!mountedRef.current) return
       const sel = parseKey(key)
+      const silent = options?.silent === true
       if (!sel) return
       const isVisible = selectedKeyRef.current === key
       // Register this refresh as the newest for THIS key only.
@@ -754,11 +759,15 @@ export function useInbox({ refreshCounts }: UseInboxOptions): UseInboxReturn {
       // still resolve stale 'pending') and take over its loading/error lifecycle so a spinner
       // orphaned by the invalidated fetch is always terminated here.
       const gen = isVisible ? ++itemGenRef.current : itemGenRef.current
-      if (isVisible) {
+      if (isVisible && !silent) {
         setItemLoading(true)
         setItemErrorState(null)
       }
       const finishVisibleError = (message: string) => {
+        if (silent) {
+          toast.error(message)
+          return
+        }
         if (gen === itemGenRef.current && selectedKeyRef.current === key) {
           setItemErrorState({ key, message })
           setItemLoading(false)
