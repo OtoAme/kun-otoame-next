@@ -53,7 +53,7 @@ const SHORTCUTS: Array<{ keys: string; description: string }> = [
   {
     keys: 'D',
     description:
-      '触发当前详情的危险操作：资源申请「拒绝并删除」、投稿「违规处理」，均会先进入一次确认'
+      '触发当前详情的危险操作：资源申请「拒绝」、投稿「违规处理」，均会先进入一次确认'
   },
   { keys: '/', description: '聚焦搜索框' },
   { keys: '?', description: '打开本帮助' }

@@ -230,17 +230,8 @@ const COLUMNS: ListColumn<AdminCreator>[] = [
       )
   },
   {
-    key: 'content',
-    header: '申请说明',
-    grow: true,
-    cell: (row) => (
-      <span className="line-clamp-2 break-words">{row.content}</span>
-    )
-  },
-  {
     key: 'resources',
     header: '已发布资源',
-    minWidth: 620,
     align: 'right',
     cell: (row) => row.patchResourceCount
   },
@@ -290,9 +281,6 @@ function CreatorDetail({
           </span>
         </div>
       )}
-      <p className="max-w-[40em] text-sm leading-7 break-words whitespace-pre-wrap">
-        {creator.content}
-      </p>
       <p className="text-xs text-muted-foreground tabular-nums">
         申请于 {formatChinaDateTime(creator.created)}
       </p>
@@ -330,8 +318,8 @@ export function DashboardCreators() {
       columns={COLUMNS}
       toolbar={StatusSelect}
       card={(row) => ({
-        text: row.content,
-        meta: `${row.sender?.name ?? '已注销'} · ${isOpen(row.status) ? '待处理' : APPLICANT_STATUS_MAP[row.status]}`
+        text: row.sender?.name ?? '已注销',
+        meta: `已发布 ${row.patchResourceCount} 份资源 · ${isOpen(row.status) ? '待处理' : APPLICANT_STATUS_MAP[row.status]}`
       })}
       detail={(row, actions) => (
         <CreatorDetail creator={row} onDone={() => actions.onDeleted(0)} />

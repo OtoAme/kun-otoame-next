@@ -182,7 +182,7 @@ export function ResourceInboxDetail({
     // change: the parent hook is still mounted and must remove the processed
     // item. A parent callback error must never surface as a failed action.
     if (result.ok) {
-      toast.success(action === 'approve' ? '资源已通过' : '资源已拒绝并删除')
+      toast.success(action === 'approve' ? '资源已通过' : '资源已拒绝')
       if (canTouchLocal) {
         // The processed item is about to be removed by the parent; let the
         // inbox selection logic own focus instead of the stale trigger.
@@ -286,7 +286,7 @@ export function ResourceInboxDetail({
           onClick={openDeclineConfirm}
           disabled={pending}
         >
-          拒绝并删除
+          拒绝
         </Button>
         <Button variant="outline" asChild>
           <Link href="/admin/resource-apply" prefetch={false}>
@@ -346,12 +346,12 @@ export function ResourceInboxDetail({
             <AlertDialogTitle>
               {displayAction === 'approve'
                 ? '确认通过该资源？'
-                : '确认拒绝并删除该资源？'}
+                : '确认拒绝该资源？'}
             </AlertDialogTitle>
             <AlertDialogDescription>
               {displayAction === 'approve'
                 ? `将通过资源「${resource.name || '未命名资源'}」（所属游戏 ${gameName}，共 ${resource.links.length} 条下载链接）。通过后资源将直接发布，操作立即生效。`
-                : `将拒绝并永久删除资源「${resource.name || '未命名资源'}」、其全部 ${resource.links.length} 条下载链接及该资源已上传的文件，删除后不可恢复。`}
+                : `上传者会收到带原因的通知。被拒绝的资源「${resource.name || '未命名资源'}」、其全部 ${resource.links.length} 条下载链接及已上传的文件会被删除，不可恢复。`}
             </AlertDialogDescription>
           </AlertDialogHeader>
           {displayAction === 'decline' ? (

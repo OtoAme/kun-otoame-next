@@ -270,7 +270,7 @@ describe('resource and legacy inbox details', () => {
 
   it('cancelling a confirmation closes it with zero writes', async () => {
     await render()
-    await click('拒绝并删除')
+    await click('拒绝')
     expect(container.querySelector('[role="alertdialog"]')).not.toBeNull()
     await typeReason('内容不可用')
     await click('取消')
@@ -281,7 +281,7 @@ describe('resource and legacy inbox details', () => {
 
   it('closes a stale confirmation without writing when the item changes quickly', async () => {
     await render()
-    await click('拒绝并删除')
+    await click('拒绝')
     expect(container.querySelector('[role="alertdialog"]')).not.toBeNull()
     await render(resource(2))
     expect(container.querySelector('[role="alertdialog"]')).toBeNull()
@@ -356,7 +356,7 @@ describe('resource and legacy inbox details', () => {
       })
     )
     await render()
-    await click('拒绝并删除')
+    await click('拒绝')
     await typeReason('内容不可用')
     const confirm = [...container.querySelectorAll('button')].find(
       (b) => b.textContent === '确认删除'
@@ -384,7 +384,7 @@ describe('resource and legacy inbox details', () => {
   it('requires one confirmation and a reason before declining, and retains the reason on failure', async () => {
     mocks.put.mockResolvedValueOnce('暂时无法处理')
     await render()
-    await click('拒绝并删除')
+    await click('拒绝')
     expect(container.querySelector('[role="alertdialog"]')).not.toBeNull()
     expect(mocks.put).not.toHaveBeenCalled()
     await click('确认删除')
@@ -438,7 +438,7 @@ describe('resource and legacy inbox details', () => {
     expect(closed?.getAttribute('data-state')).toBe('closed')
     expect(closed?.textContent).toContain('确认通过该资源？')
     expect(closed?.textContent).toContain('将通过资源')
-    expect(closed?.textContent).not.toContain('确认拒绝并删除')
+    expect(closed?.textContent).not.toContain('确认拒绝该资源')
     const confirm = [...closed!.querySelectorAll('button')].find(
       (b) => b.textContent === '确认通过'
     )!
@@ -452,13 +452,13 @@ describe('resource and legacy inbox details', () => {
   it('keeps decline content and the reason block in the retained closed DOM', async () => {
     mocks.retainClosed.value = true
     await render()
-    await click('拒绝并删除')
+    await click('拒绝')
     await typeReason('内容不可用')
     await click('取消')
     const closed = container.querySelector('[role="alertdialog"]')
     expect(closed).not.toBeNull()
     expect(closed?.getAttribute('data-state')).toBe('closed')
-    expect(closed?.textContent).toContain('确认拒绝并删除该资源？')
+    expect(closed?.textContent).toContain('确认拒绝该资源？')
     expect(closed?.textContent).toContain('拒绝原因')
     expect(closed?.textContent).not.toContain('确认通过该资源？')
     expect(closed?.querySelector('textarea')?.value).toBe('内容不可用')
@@ -482,10 +482,10 @@ describe('resource and legacy inbox details', () => {
         .querySelector('[role="alertdialog"]')
         ?.getAttribute('data-state')
     ).toBe('closed')
-    await click('拒绝并删除')
+    await click('拒绝')
     const reopened = container.querySelector('[role="alertdialog"]')
     expect(reopened?.getAttribute('data-state')).toBe('open')
-    expect(reopened?.textContent).toContain('确认拒绝并删除该资源？')
+    expect(reopened?.textContent).toContain('确认拒绝该资源？')
     expect(reopened?.textContent).not.toContain('确认通过该资源？')
     await typeReason('内容不可用')
     await click('确认删除')
