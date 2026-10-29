@@ -172,12 +172,15 @@ export function DashboardSidebar({ currentUser }: DashboardSidebarProps) {
         {badge && counts && (
           <SidebarMenuBadge>{badge(counts)}</SidebarMenuBadge>
         )}
+        {/* Indented on the left only, so the counts line up with the
+            parent badge's column. */}
         {item.id === 'inbox' && (
-          <SidebarMenuSub>
+          <SidebarMenuSub className="mr-0 pr-0">
             {REVIEW_SOURCES.map((source) => (
               <SidebarMenuSubItem key={source.kind}>
                 <SidebarMenuSubButton
                   asChild
+                  className="pr-1"
                   isActive={activeSource === source.kind}
                   onClick={closeMobileSidebar}
                 >
@@ -185,7 +188,7 @@ export function DashboardSidebar({ currentUser }: DashboardSidebarProps) {
                     <source.icon />
                     <span>{source.label}</span>
                     {counts && (
-                      <span className="ml-auto text-xs text-muted-foreground tabular-nums">
+                      <span className="ml-auto flex h-5 min-w-5 items-center justify-center px-1 text-xs text-muted-foreground tabular-nums">
                         {counts.pending[source.kind]}
                       </span>
                     )}
