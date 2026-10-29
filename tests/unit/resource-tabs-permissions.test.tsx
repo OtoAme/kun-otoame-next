@@ -27,6 +27,9 @@ vi.mock('~/components/patch/resource/ResourceDownload', () => ({
   ResourceDownload: () => <div data-testid="resource-download" />
 }))
 
+vi.mock('~/components/patch/resource/ResourceShareButton', () => ({
+  ResourceShareButton: () => <div data-testid="resource-share-button" />
+}))
 vi.mock('~/components/case/ReportResourceButton', () => ({
   ReportResourceButton: () => <div data-testid="report-resource-button" />
 }))

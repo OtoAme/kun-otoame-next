@@ -22,6 +22,7 @@ import { ResourceInfo } from './ResourceInfo'
 import { ResourceDownload } from './ResourceDownload'
 import { ResourceCaseBadge } from '~/components/case/ResourceCaseBadge'
 import { ReportResourceButton } from '~/components/case/ReportResourceButton'
+import { ResourceShareButton } from './ResourceShareButton'
 import { useResourceLinkHealthUpdates } from './useResourceLinkHealthUpdates'
 import {
   RESOURCE_SECTION_MAP,
@@ -86,6 +87,7 @@ const ResourceCard = ({
         <div className="flex items-start justify-between gap-x-3 gap-y-1">
           <ResourceInfo resource={resource} />
           <div className="ms-auto flex shrink-0 items-center gap-1">
+            <ResourceShareButton resource={resource} />
             <ReportResourceButton
               resource={resource}
               patchId={patchId}
