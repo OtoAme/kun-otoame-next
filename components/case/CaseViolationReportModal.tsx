@@ -28,6 +28,7 @@ export type CaseViolationTarget =
       targetId: number
       expectedPatchId?: number
     }
+  | { targetType: 'help' | 'help_answer' | 'help_reply'; targetId: number }
 
 interface Props {
   isOpen: boolean

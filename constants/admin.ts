@@ -27,6 +27,8 @@ export const ADMIN_LOG_TYPE_MAP: Record<string, string> = {
   shoutbox_case_moderate: '事项处置小喇叭',
   case_close: '事项结案',
   case_content_delete: '事项删除内容',
+  case_content_hide: '事项隐藏求助内容',
+  case_content_restore: '事项恢复求助内容',
   case_resource_hide: '事项隐藏资源',
   case_resource_restore: '事项恢复资源',
   case_resource_move: '事项移动资源',

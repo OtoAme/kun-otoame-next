@@ -505,6 +505,27 @@ export function DashboardCaseDetail({
         destructive: true
       }
     }
+    if (action === 'hide') {
+      return {
+        label: '判定违规并隐藏',
+        description:
+          '将保持或执行隐藏并以「违规隐藏」结案，举报人与作者会收到通知。',
+        destructive: true
+      }
+    }
+    if (
+      action === 'restore' &&
+      (detail.targetType === 'help' ||
+        detail.targetType === 'help_answer' ||
+        detail.targetType === 'help_reply')
+    ) {
+      return {
+        label: '恢复显示',
+        description:
+          '将恢复本问题造成的隐藏并以「不成立」结案，举报人会收到通知。',
+        destructive: false
+      }
+    }
     if (action === 'takedown') {
       return {
         label: '下架小喇叭',

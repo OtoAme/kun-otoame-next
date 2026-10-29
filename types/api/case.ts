@@ -65,6 +65,8 @@ export interface CaseTargetSummary {
   patch: CasePatchSummary | null
   resource: CaseResourceSummary | null
   label?: string
+  /** The post a help or help-answer target belongs to. */
+  helpPostId?: number
   content?: CaseTargetContent
 }
 
@@ -315,7 +317,7 @@ export interface CaseResourceActionResponse extends CaseActionResponse {
 }
 
 export interface CaseContentActionResponse extends CaseActionResponse {
-  action: 'delete' | 'takedown' | 'restore'
+  action: CaseContentAction
   targetMissing?: boolean
 }
 

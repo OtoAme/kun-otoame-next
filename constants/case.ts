@@ -63,9 +63,12 @@ export const CASE_TARGET_TYPES = [
   'user',
   // Site-wide requests have no target row; target_id is always 0.
   'site',
-  // Link targets are internal to module 04; help remains reserved for 07.
+  // Link targets are internal to module 04.
   'link',
-  'help'
+  // Module 07: a help post, one answer on it, and one reply under an answer.
+  'help',
+  'help_answer',
+  'help_reply'
 ] as const
 export type CaseTargetType = (typeof CASE_TARGET_TYPES)[number]
 
@@ -157,7 +160,12 @@ export type CaseAdminAction = (typeof CASE_ADMIN_ACTIONS)[number]
 export const CASE_RESOURCE_ACTIONS = ['hide', 'restore', 'move'] as const
 export type CaseResourceAction = (typeof CASE_RESOURCE_ACTIONS)[number]
 
-export const CASE_CONTENT_ACTIONS = ['delete', 'takedown', 'restore'] as const
+export const CASE_CONTENT_ACTIONS = [
+  'delete',
+  'takedown',
+  'restore',
+  'hide'
+] as const
 export type CaseContentAction = (typeof CASE_CONTENT_ACTIONS)[number]
 
 export const CASE_RESOLUTIONS = [
@@ -432,7 +440,9 @@ export const CASE_TARGET_TYPE_LABELS: Record<CaseTargetType, string> = {
   user: '用户',
   site: '站务',
   link: '链接',
-  help: '求助'
+  help: '求助',
+  help_answer: '求助回答',
+  help_reply: '求助回复'
 }
 
 export const CASE_STATUS_LABELS: Record<CaseStatus, string> = {
@@ -468,7 +478,16 @@ export const CASE_KIND_TARGETS = {
   resource_request: ['resource', 'patch'],
   resource_other: ['resource'],
   resource_wrong_patch: ['resource'],
-  content_violation: ['comment', 'rating', 'shoutbox', 'user', 'resource'],
+  content_violation: [
+    'comment',
+    'rating',
+    'shoutbox',
+    'user',
+    'resource',
+    'help',
+    'help_answer',
+    'help_reply'
+  ],
   other: ['patch', 'site'],
   patch_info: ['patch']
 } as const satisfies Record<
@@ -500,12 +519,6 @@ export const isCaseOpenerScoped = (kind: string, targetType: string) =>
  * own entry point without changing the persisted vocabulary.
  */
 export const FROZEN_CASE_KIND_TARGETS = [
-  {
-    kind: 'content_violation',
-    targetType: 'help',
-    ownerType: 'staff',
-    timeout: 'module-07'
-  },
   {
     kind: 'link_suspect',
     targetType: 'link',

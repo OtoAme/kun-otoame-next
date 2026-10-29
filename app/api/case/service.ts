@@ -837,6 +837,90 @@ const deriveTarget = async (
     }
   }
 
+  if (isHelpTarget(targetType)) {
+    const target =
+      targetType === 'help_reply'
+        ? await tx.help_reply
+            .findUnique({
+              where: { id: targetId },
+              select: {
+                id: true,
+                user_id: true,
+                deleted_at: true,
+                answer: {
+                  select: {
+                    deleted_at: true,
+                    post: {
+                      select: {
+                        deleted_at: true,
+                        patch: {
+                          select: { id: true, unique_id: true, name: true }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            })
+            .then((reply) =>
+              reply
+                ? {
+                    id: reply.id,
+                    user_id: reply.user_id,
+                    deleted_at: reply.deleted_at ?? reply.answer.deleted_at,
+                    post: reply.answer.post
+                  }
+                : null
+            )
+        : targetType === 'help'
+          ? await tx.help_post.findUnique({
+              where: { id: targetId },
+              select: {
+                id: true,
+                user_id: true,
+                deleted_at: true,
+                patch: { select: { id: true, unique_id: true, name: true } }
+              }
+            })
+          : await tx.help_answer.findUnique({
+              where: { id: targetId },
+              select: {
+                id: true,
+                user_id: true,
+                deleted_at: true,
+                post: {
+                  select: {
+                    deleted_at: true,
+                    patch: {
+                      select: { id: true, unique_id: true, name: true }
+                    }
+                  }
+                }
+              }
+            })
+    const label = HELP_TARGET_LABELS[targetType]
+    if (!target || target.deleted_at) return `${label}不存在或已删除`
+    if ('post' in target && target.post.deleted_at) return '求助不存在或已删除'
+    if (reporterId !== undefined && target.user_id === reporterId) {
+      return `不能举报自己的${label}`
+    }
+    const patch = 'post' in target ? target.post.patch : target.patch
+    return {
+      targetType,
+      targetId,
+      patchId: patch?.id ?? null,
+      ownerType: 'staff',
+      ownerId: null,
+      public: false,
+      target: targetSummary({
+        targetType,
+        targetId,
+        patch: patchSummary(patch ?? null),
+        resource: null
+      })
+    }
+  }
+
   if (targetType === 'user') {
     if (reporterId !== undefined && reporterId === targetId) {
       return '不能举报自己'
@@ -885,6 +969,20 @@ const deriveTarget = async (
   return '当前模块尚未开放该目标'
 }
 
+/** Module 07 targets: a help post, an answer on it, or a reply under one. */
+const isHelpTarget = (
+  targetType: string
+): targetType is 'help' | 'help_answer' | 'help_reply' =>
+  targetType === 'help' ||
+  targetType === 'help_answer' ||
+  targetType === 'help_reply'
+
+const HELP_TARGET_LABELS = {
+  help: '求助',
+  help_answer: '回答',
+  help_reply: '回复'
+} as const
+
 const getCaseById = (db: CaseDb, id: number) =>
   db.ops_case.findUnique({ where: { id }, select: caseSelect })
 
@@ -929,6 +1027,11 @@ type TargetRows = {
   } | null
   shoutbox?: {
     status: number
+  } | null
+  /** Help post or answer moderation state; `hidden` drives the actions. */
+  help?: {
+    postId: number
+    hidden: boolean
   } | null
   /** Reported content; loaded for single-case reads only. */
   content?: CaseTargetContent | null
@@ -1063,6 +1166,83 @@ const loadTarget = async (
     })
     targetExists = Boolean(user)
     if (user) content = { text: '', author: user }
+  } else if (row.target_type === 'help') {
+    const post = await db.help_post.findUnique({
+      where: { id: row.target_id },
+      select: {
+        id: true,
+        title: true,
+        content: true,
+        hidden_at: true,
+        deleted_at: true,
+        user: { select: authorSelect }
+      }
+    })
+    const alive = Boolean(post && !post.deleted_at)
+    return {
+      targetExists: alive,
+      patch,
+      help:
+        post && alive
+          ? { postId: post.id, hidden: post.hidden_at !== null }
+          : null,
+      content:
+        post && alive
+          ? {
+              text: contentText(`${post.title}\n${post.content}`, true),
+              author: post.user
+            }
+          : null
+    }
+  } else if (row.target_type === 'help_answer') {
+    const answer = await db.help_answer.findUnique({
+      where: { id: row.target_id },
+      select: {
+        id: true,
+        post_id: true,
+        content: true,
+        hidden_at: true,
+        deleted_at: true,
+        user: { select: authorSelect }
+      }
+    })
+    const alive = Boolean(answer && !answer.deleted_at)
+    return {
+      targetExists: alive,
+      patch,
+      help:
+        answer && alive
+          ? { postId: answer.post_id, hidden: answer.hidden_at !== null }
+          : null,
+      content:
+        answer && alive
+          ? { text: contentText(answer.content, true), author: answer.user }
+          : null
+    }
+  } else if (row.target_type === 'help_reply') {
+    const reply = await db.help_reply.findUnique({
+      where: { id: row.target_id },
+      select: {
+        content: true,
+        hidden_at: true,
+        deleted_at: true,
+        user: { select: authorSelect },
+        answer: { select: { post_id: true } }
+      }
+    })
+    const alive = Boolean(reply && !reply.deleted_at)
+    return {
+      targetExists: alive,
+      patch,
+      help:
+        reply && alive
+          ? { postId: reply.answer.post_id, hidden: reply.hidden_at !== null }
+          : null,
+      content:
+        reply && alive
+          ? { text: contentText(reply.content), author: reply.user }
+          : null
+    }
   }
   return { targetExists, patch, content }
 }
@@ -1106,6 +1286,46 @@ const loadTargets = async (db: CaseDb, rows: readonly CaseRow[]) => {
   const userIds = rows
     .filter((row) => row.target_type === 'user')
     .map((row) => row.target_id)
+  const helpPostIds = rows
+    .filter((row) => row.target_type === 'help')
+    .map((row) => row.target_id)
+  const helpAnswerIds = rows
+    .filter((row) => row.target_type === 'help_answer')
+    .map((row) => row.target_id)
+
+  const helpReplyIds = rows
+    .filter((row) => row.target_type === 'help_reply')
+    .map((row) => row.target_id)
+
+  const [helpPosts, helpAnswers, helpReplies] = await Promise.all([
+    queryManyIfNeeded(helpPostIds, () =>
+      db.help_post.findMany({
+        where: { id: { in: helpPostIds }, deleted_at: null },
+        select: { id: true, hidden_at: true }
+      })
+    ),
+    queryManyIfNeeded(helpAnswerIds, () =>
+      db.help_answer.findMany({
+        where: { id: { in: helpAnswerIds }, deleted_at: null },
+        select: { id: true, post_id: true, hidden_at: true }
+      })
+    ),
+    queryManyIfNeeded(helpReplyIds, () =>
+      db.help_reply.findMany({
+        where: { id: { in: helpReplyIds }, deleted_at: null },
+        select: {
+          id: true,
+          hidden_at: true,
+          answer: { select: { post_id: true } }
+        }
+      })
+    )
+  ])
+  const helpReplyById = new Map(helpReplies.map((reply) => [reply.id, reply]))
+  const helpPostById = new Map(helpPosts.map((post) => [post.id, post]))
+  const helpAnswerById = new Map(
+    helpAnswers.map((answer) => [answer.id, answer])
+  )
 
   const [resources, patches, comments, ratings, shoutboxes, users, links] =
     await Promise.all([
@@ -1247,6 +1467,37 @@ const loadTargets = async (db: CaseDb, rows: readonly CaseRow[]) => {
       targetByCaseId.set(row.id, { targetExists: true })
       continue
     }
+    if (row.target_type === 'help') {
+      const post = helpPostById.get(row.target_id)
+      targetByCaseId.set(row.id, {
+        targetExists: post !== undefined,
+        patch,
+        help: post ? { postId: post.id, hidden: post.hidden_at !== null } : null
+      })
+      continue
+    }
+    if (row.target_type === 'help_answer') {
+      const answer = helpAnswerById.get(row.target_id)
+      targetByCaseId.set(row.id, {
+        targetExists: answer !== undefined,
+        patch,
+        help: answer
+          ? { postId: answer.post_id, hidden: answer.hidden_at !== null }
+          : null
+      })
+      continue
+    }
+    if (row.target_type === 'help_reply') {
+      const reply = helpReplyById.get(row.target_id)
+      targetByCaseId.set(row.id, {
+        targetExists: reply !== undefined,
+        patch,
+        help: reply
+          ? { postId: reply.answer.post_id, hidden: reply.hidden_at !== null }
+          : null
+      })
+      continue
+    }
     targetByCaseId.set(row.id, { targetExists: false, patch })
   }
   return targetByCaseId
@@ -1322,6 +1573,22 @@ const toTargetSummary = (
       deleted: false,
       label: SITE_TARGET_LABEL
     })
+  }
+  if (isHelpTarget(targetType)) {
+    return {
+      ...targetSummary({
+        targetType,
+        targetId: row.target_id,
+        patch: patchSummary(target.patch ?? null),
+        resource: null,
+        // Same codes as a shoutbox: 0 visible, 2 temporarily hidden.
+        status: target.help ? (target.help.hidden ? 2 : 0) : undefined,
+        deleted: target.targetExists === false,
+        label: `${CASE_TARGET_TYPE_LABELS[targetType]} #${row.target_id}`
+      }),
+      ...(target.help ? { helpPostId: target.help.postId } : {}),
+      ...content
+    }
   }
   return {
     ...targetSummary({
@@ -1707,7 +1974,11 @@ const capabilitiesFor = (
         : row.kind === 'content_violation'
           ? row.target_type === 'user' && viewerRole >= 4
             ? ['not_established', 'handled']
-            : ['not_established']
+            : isHelpTarget(row.target_type)
+              ? target?.help?.hidden
+                ? []
+                : ['not_established', 'handled']
+              : ['not_established']
           : [...CASE_HANDLER_RESOLUTIONS_BY_KIND[row.kind]]
   const allowedResolutions: CaseResolution[] =
     admin && canCloseAsStaffUnresponsive(row, new Date())
@@ -1732,7 +2003,13 @@ const capabilitiesFor = (
                 : []
           : row.target_type === 'shoutbox'
             ? ['takedown']
-            : ['delete']
+            : isHelpTarget(row.target_type)
+              ? target?.help
+                ? target.help.hidden
+                  ? ['hide', 'restore']
+                  : ['hide']
+                : []
+              : ['delete']
   return {
     canReply: unresolved && (admin || owner || reporter || originalPublisher),
     canResolve:
@@ -2357,6 +2634,26 @@ const applyShoutboxThreshold = async (
   caseId: number,
   now: Date
 ) => {
+  if (isHelpTarget(targetType)) {
+    const { applyHelpReportThreshold } = await import(
+      '~/app/api/help/moderation'
+    )
+    const hidden = await applyHelpReportThreshold(
+      tx,
+      targetType,
+      targetId,
+      caseId,
+      now
+    )
+    if (hidden) {
+      // The temporary hide belongs to this case: a later 不成立 may undo it.
+      await tx.ops_case.updateMany({
+        where: { id: caseId, hidden_at: null },
+        data: { hidden_at: now }
+      })
+    }
+    return hidden
+  }
   if (targetType !== 'shoutbox') return false
   const count = await tx.ops_case_subscriber.count({
     where: { case_id: caseId }
@@ -4358,13 +4655,27 @@ export const handleCaseAsAdmin = async (
         return '隐藏中的小喇叭必须删除或恢复'
       }
     }
+    if (
+      row.kind === 'content_violation' &&
+      isHelpTarget(row.target_type) &&
+      (resolution === 'not_established' || resolution === 'handled')
+    ) {
+      const { isHelpTargetHidden } = await import('~/app/api/help/moderation')
+      const hidden = await isHelpTargetHidden(
+        tx,
+        row.target_type,
+        row.target_id
+      )
+      if (hidden) return '隐藏中的求助内容必须判定违规或恢复显示'
+    }
     if (['moved', 'violation_hidden', 'handled'].includes(resolution)) {
       const plainHandled =
         resolution === 'handled' &&
         (row.kind === 'resource_request' ||
           row.kind === 'other' ||
           row.kind === 'patch_info' ||
-          (row.kind === 'content_violation' && row.target_type === 'user'))
+          (row.kind === 'content_violation' &&
+            (row.target_type === 'user' || isHelpTarget(row.target_type))))
       if (!plainHandled) return '该结论必须通过对应的处置动作完成'
     }
     if (
@@ -4814,6 +5125,48 @@ export const handleCaseContent = async (
             }
           })
         }
+      } else if (isHelpTarget(row.target_type)) {
+        const { hideHelpTargetForCase, restoreHelpTargetForCase } =
+          await import('~/app/api/help/moderation')
+        const label = CASE_TARGET_TYPE_LABELS[row.target_type]
+        if (input.action === 'hide') {
+          await hideHelpTargetForCase(tx, row.target_type, row.target_id, now)
+          await tx.ops_case.updateMany({
+            where: { id: row.id, hidden_at: null },
+            data: { hidden_at: now }
+          })
+          await tx.admin_log.create({
+            data: {
+              type: 'case_content_hide',
+              user_id: adminId,
+              content: `管理员通过问题 #${row.id} 判定${label} #${row.target_id} 违规隐藏`
+            }
+          })
+        } else if (input.action === 'restore') {
+          // Only a hide caused by this case may be undone through it.
+          if (row.hidden_at === null || row.restored_at !== null) {
+            return '该隐藏不是本问题造成的，不能通过本问题恢复'
+          }
+          const restored = await restoreHelpTargetForCase(
+            tx,
+            row.target_type,
+            row.target_id
+          )
+          if (!restored) return '当前内容不在隐藏状态'
+          await tx.ops_case.updateMany({
+            where: { id: row.id, restored_at: null },
+            data: { restored_at: now }
+          })
+          await tx.admin_log.create({
+            data: {
+              type: 'case_content_restore',
+              user_id: adminId,
+              content: `管理员通过问题 #${row.id} 恢复${label} #${row.target_id}`
+            }
+          })
+        } else {
+          return '求助内容请使用 hide 或 restore'
+        }
       } else if (row.target_type === 'shoutbox') {
         const { removeShoutboxForCase, restoreShoutboxForCase } = await import(
           '~/app/api/shoutbox/service'
@@ -4841,7 +5194,11 @@ export const handleCaseContent = async (
         return '小喇叭请使用 takedown 或 restore'
       }
       const resolution: CaseResolution =
-        input.action === 'restore' ? 'not_established' : 'handled'
+        input.action === 'restore'
+          ? 'not_established'
+          : input.action === 'hide'
+            ? 'violation_hidden'
+            : 'handled'
       const closed = await closeCaseInternal(tx, {
         caseId: row.id,
         expectedStatuses: unresolvedStatuses as CaseStatus[],

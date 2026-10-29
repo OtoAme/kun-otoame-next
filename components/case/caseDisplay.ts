@@ -75,6 +75,18 @@ export const caseTargetHref = (
   if (options.forAdmin && item.targetType === 'shoutbox') {
     return `/dashboard/shoutbox?shoutbox=${item.targetId}`
   }
+  if (
+    item.targetType === 'help' ||
+    item.targetType === 'help_answer' ||
+    item.targetType === 'help_reply'
+  ) {
+    const postId = item.target.helpPostId
+    if (!postId) return null
+    if (item.targetType === 'help') return `/help/${postId}`
+    return item.targetType === 'help_reply'
+      ? `/help/${postId}#reply-${item.targetId}`
+      : `/help/${postId}#answer-${item.targetId}`
+  }
   const resource = item.target.resource
   if (item.targetType === 'resource' && resource?.patch) {
     return `/${resource.patch.uniqueId}?tab=resources&resourceSection=${resource.section}&resourceId=${resource.id}`
