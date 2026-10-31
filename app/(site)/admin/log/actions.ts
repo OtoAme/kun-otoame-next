@@ -21,6 +21,6 @@ export const kunGetActions = async (
     return '本页面仅管理员可访问'
   }
 
-  const response = await getLog(input)
+  const response = await getLog(input, payload.role)
   return response
 }

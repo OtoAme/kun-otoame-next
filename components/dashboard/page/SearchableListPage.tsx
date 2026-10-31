@@ -224,6 +224,13 @@ export interface SearchableListPageProps<Row extends { id: number }> {
   /** Extra controls placed after the search box. */
   toolbar?: (ctx: FilterContext) => ReactNode
   /**
+   * Checks a search term before it is sent. A returned message is shown
+   * under the box and the search is not run; the server checks again.
+   */
+  validateSearch?: (term: string) => string | null
+  /** Overrides the search box placeholder. */
+  searchPlaceholder?: string
+  /**
    * Page filters. Shown as a left rail when the page is at least 1440px
    * wide, otherwise behind a 筛选 button.
    */
@@ -260,6 +267,8 @@ export function SearchableListPage<Row extends { id: number }>({
   searchByUser = true,
   hideSearch = false,
   toolbar,
+  validateSearch,
+  searchPlaceholder,
   filterPanel,
   filterChips
 }: SearchableListPageProps<Row>) {
@@ -294,6 +303,7 @@ export function SearchableListPage<Row extends { id: number }>({
   const chips = filterChips?.(query.filters) ?? []
 
   const [searchInput, setSearchInput] = useState(query.search)
+  const searchHint = validateSearch?.(searchInput.trim()) ?? null
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [checked, setChecked] = useState<Set<number>>(new Set())
   const [listRef, listWidth] = useElementWidth<HTMLElement>()
@@ -324,6 +334,8 @@ export function SearchableListPage<Row extends { id: number }>({
     const value = event.target.value
     setSearchInput(value)
     if (debounceTimer.current !== null) clearTimeout(debounceTimer.current)
+    // A term the list refuses stays in the box with its hint, unsent.
+    if (validateSearch?.(value.trim())) return
     debounceTimer.current = setTimeout(() => {
       debounceTimer.current = null
       commitSearch(value)
@@ -336,6 +348,7 @@ export function SearchableListPage<Row extends { id: number }>({
       clearTimeout(debounceTimer.current)
       debounceTimer.current = null
     }
+    if (validateSearch?.(searchInput.trim())) return
     commitSearch(searchInput)
   }
 
@@ -435,10 +448,22 @@ export function SearchableListPage<Row extends { id: number }>({
             <Input
               value={searchInput}
               onChange={handleSearchChange}
-              placeholder={`搜索${contentLabel}，回车立即搜索`}
+              placeholder={
+                searchPlaceholder ?? `搜索${contentLabel}，回车立即搜索`
+              }
               aria-label={`搜索${contentLabel}`}
+              aria-invalid={searchHint ? true : undefined}
+              aria-describedby={searchHint ? 'list-search-hint' : undefined}
               maxLength={300}
             />
+            {searchHint ? (
+              <p
+                id="list-search-hint"
+                className="mt-1 text-xs text-muted-foreground"
+              >
+                {searchHint}
+              </p>
+            ) : null}
           </form>
         ) : (
           <UserPicker

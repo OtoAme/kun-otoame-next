@@ -23,6 +23,11 @@ import type {
   SearchableListConfig
 } from '~/hooks/dashboard/useSearchableList'
 import { formatChinaDateTime } from '~/utils/fixedTimezoneDate'
+import {
+  LOG_EMAIL_SEARCH_DENIED,
+  LOG_FULL_CONTENT_MIN_ROLE,
+  searchesIntoEmail
+} from '~/utils/maskEmail'
 import type { AdminLog } from '~/types/api/admin'
 
 const ALL = '__all'
@@ -147,9 +152,19 @@ const COLUMNS: ListColumn<AdminLog>[] = [
   }
 ]
 
-export function DashboardLogs() {
+export function DashboardLogs({ viewerRole }: { viewerRole: number }) {
+  // Below role 4 the server masks emails; say so before the request fails.
+  const masked = viewerRole < LOG_FULL_CONTENT_MIN_ROLE
   return (
     <SearchableListPage<AdminLog>
+      validateSearch={
+        masked
+          ? (term) => (searchesIntoEmail(term) ? LOG_EMAIL_SEARCH_DENIED : null)
+          : undefined
+      }
+      searchPlaceholder={
+        masked ? '搜索日志内容（邮箱已隐藏，不能按邮箱搜索）' : undefined
+      }
       config={LIST_CONFIG}
       title="管理日志"
       description="全部管理员的操作记录，按时间倒序。可按内容关键词、操作类型和操作人筛选。"
