@@ -97,7 +97,10 @@ export interface AdminResource extends PatchResource {
   baseLinks?: import('./linkHealth').LinkVersionBase[]
 }
 
-export type AdminComment = PatchComment
+export interface AdminComment extends PatchComment {
+  /** True when the list text was cut short; editing loads the full text. */
+  truncated?: boolean
+}
 
 export interface AdminRating {
   id: number

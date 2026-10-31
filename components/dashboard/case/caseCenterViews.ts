@@ -128,7 +128,7 @@ export const CASE_CENTER_VIEWS: CaseCenterView[] = [
 
 /** Which cases the staff queue holds, shown under the navigation. */
 export const CASE_VIEW_SCOPE_HINT =
-  '站方处理：违规举报、条目资料有误、资源发错条目、站务反馈、求资源或催更、官方资源的问题，以及发布者 7 天未处理或报告者申请复核后转来的资源问题。'
+  '站方处理：违规举报、条目资料有误、资源发错条目、站务反馈、求资源或催更、官方资源的问题，以及发布者 7 天未处理或报告者申请复核后转来的资源问题。资源盘链接失效只含资源盘（站方存储）的链接，其他网盘的失效由发布者处理。'
 
 export const DEFAULT_CASE_VIEW = CASE_CENTER_VIEWS[0]
 export const BROKEN_LINK_CASE_VIEW = CASE_CENTER_VIEWS[2]

@@ -227,7 +227,6 @@ export function DashboardRatings() {
     <SearchableListPage<AdminRating>
       config={LIST_CONFIG}
       title="评价"
-      description="按短评内容或用户查找评价。编辑与删除会写入管理日志。"
       noun="评价"
       contentLabel="短评内容"
       columns={COLUMNS}

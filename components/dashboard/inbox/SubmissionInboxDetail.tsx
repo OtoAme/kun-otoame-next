@@ -565,7 +565,7 @@ export function SubmissionInboxDetail({
     />
   ) : (
     <p className="rounded-md border p-4 text-sm text-muted-foreground">
-      前台预览不可用，已禁用“通过并发布”；其余审核操作仍按状态与权限正常执行。
+      前台预览不可用，已禁用“通过并发布”。
     </p>
   )
 

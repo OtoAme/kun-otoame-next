@@ -8,10 +8,7 @@ export const metadata: Metadata = {
 
 export default function DashboardShoutboxPage() {
   return (
-    <DashboardPageHeader
-      title="小喇叭"
-      description="发布官方消息（重要级会作为全站横幅），复核待处理的小喇叭，查看公开中和已终止的记录。"
-    >
+    <DashboardPageHeader title="小喇叭">
       <DashboardShoutbox />
     </DashboardPageHeader>
   )

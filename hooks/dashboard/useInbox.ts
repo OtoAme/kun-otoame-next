@@ -788,8 +788,8 @@ export function useInbox({ refreshCounts }: UseInboxOptions): UseInboxReturn {
         const newest = stateReqRef.current.get(key) === token
         if (newest) stateReqRef.current.delete(key)
         if (!newest) return
-        if (isVisible) finishVisibleError('网络错误，刷新事项失败，请重试')
-        else toast.error('网络错误，刷新事项失败')
+        if (isVisible) finishVisibleError('网络错误，刷新详情失败，请重试')
+        else toast.error('网络错误，刷新详情失败')
         return
       }
       if (!mountedRef.current) return
@@ -797,8 +797,8 @@ export function useInbox({ refreshCounts }: UseInboxOptions): UseInboxReturn {
       if (isNewest) stateReqRef.current.delete(key)
       if (typeof res === 'string') {
         if (!isNewest) return
-        if (isVisible) finishVisibleError(res || '刷新事项失败')
-        else toast.error(res || '刷新事项失败')
+        if (isVisible) finishVisibleError(res || '刷新详情失败')
+        else toast.error(res || '刷新详情失败')
         return
       }
       // Superseded for this key — by a newer state refresh OR by a newer direct fetchItem of

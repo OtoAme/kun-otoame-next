@@ -159,7 +159,6 @@ export function BrokenLinkQueue({
         <span className="text-xs text-muted-foreground">
           {items ? `共 ${items.length} 条` : '读取中…'}
           {loading && items ? '，更新中…' : ''}
-          {' · '}只含资源盘（站方存储）的链接，其他网盘失效由发布者处理
         </span>
       </div>
       {/* Like the case queues: the list takes the full width until a row is

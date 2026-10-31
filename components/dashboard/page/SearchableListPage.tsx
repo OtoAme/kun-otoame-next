@@ -201,7 +201,7 @@ export interface ListColumn<Row> {
 export interface SearchableListPageProps<Row extends { id: number }> {
   config: SearchableListConfig
   title: string
-  description: string
+  description?: string
   /** Noun used in counts and labels, e.g. 评论. */
   noun: string
   contentLabel: string
@@ -228,8 +228,11 @@ export interface SearchableListPageProps<Row extends { id: number }> {
    * under the box and the search is not run; the server checks again.
    */
   validateSearch?: (term: string) => string | null
-  /** Overrides the search box placeholder. */
-  searchPlaceholder?: string
+  /**
+   * Overrides the search box placeholder; a function reads the current
+   * filters, for lists whose search scope is one of them.
+   */
+  searchPlaceholder?: string | ((filters: ListFilters) => string)
   /**
    * Page filters. Shown as a left rail when the page is at least 1440px
    * wide, otherwise behind a 筛选 button.
@@ -449,7 +452,9 @@ export function SearchableListPage<Row extends { id: number }>({
               value={searchInput}
               onChange={handleSearchChange}
               placeholder={
-                searchPlaceholder ?? `搜索${contentLabel}，回车立即搜索`
+                typeof searchPlaceholder === 'function'
+                  ? searchPlaceholder(query.filters)
+                  : (searchPlaceholder ?? `搜索${contentLabel}，回车立即搜索`)
               }
               aria-label={`搜索${contentLabel}`}
               aria-invalid={searchHint ? true : undefined}

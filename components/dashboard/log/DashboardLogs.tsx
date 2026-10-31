@@ -167,7 +167,6 @@ export function DashboardLogs({ viewerRole }: { viewerRole: number }) {
       }
       config={LIST_CONFIG}
       title="管理日志"
-      description="全部管理员的操作记录，按时间倒序。可按内容关键词、操作类型和操作人筛选。"
       noun="日志"
       contentLabel="日志内容"
       searchByUser={false}

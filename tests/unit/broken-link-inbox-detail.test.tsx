@@ -104,7 +104,8 @@ describe('BrokenLinkInboxDetail (broken-link inbox)', () => {
     expect(text).toContain('资源X')
     expect(text).toContain('pan.touchgal.example.com')
     expect(text).toContain('已失效 2 天')
-    expect(text).toContain('改到新地址，或删除这条链接')
+    // The edit button says what to do; only the last-link limit is spelled out.
+    expect(text).not.toContain('最后一条链接')
 
     // 补链与移除在同一个受权编辑路径里完成（资源 id+链接 id 定位）
     const editLinks = [

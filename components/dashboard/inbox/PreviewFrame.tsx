@@ -7,7 +7,6 @@ import { Button } from '~/components/dashboard/ui/button'
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogTrigger
@@ -54,12 +53,13 @@ export function PreviewFrame({
               放大预览
             </Button>
           </DialogTrigger>
-          <DialogContent className="flex h-[calc(100dvh-2rem)] flex-col p-4 sm:max-w-[calc(100%-2rem)] sm:p-6">
+          {/* The title says what is shown; Radix needs the explicit opt-out. */}
+          <DialogContent
+            aria-describedby={undefined}
+            className="flex h-[calc(100dvh-2rem)] flex-col p-4 sm:max-w-[calc(100%-2rem)] sm:p-6"
+          >
             <DialogHeader className="pr-6">
               <DialogTitle>{title}</DialogTitle>
-              <DialogDescription>
-                此预览仅供查看，不会执行审核操作。
-              </DialogDescription>
             </DialogHeader>
             <iframe
               src={src}

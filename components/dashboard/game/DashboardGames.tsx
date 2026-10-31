@@ -4,7 +4,7 @@ import { useRef, useState } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
 import toast from 'react-hot-toast'
-import { ExternalLink, ImageOff, Loader2, Trash2 } from 'lucide-react'
+import { ImageOff, Loader2, Pencil, Trash2 } from 'lucide-react'
 
 import {
   SearchableListPage,
@@ -275,14 +275,11 @@ function GameDetail({
         <dt className="text-muted-foreground">页面地址</dt>
         <dd className="font-mono text-xs break-all">/{game.uniqueId}</dd>
       </dl>
-      <p className="text-xs text-muted-foreground">
-        修改条目信息请到游戏页，点页头的编辑按钮进入重写页面。
-      </p>
       <div className="flex flex-wrap gap-2">
         <Button variant="outline" size="sm" asChild>
           <a href={`/${game.uniqueId}`} target="_blank" rel="noreferrer">
-            <ExternalLink />
-            打开游戏页
+            <Pencil />
+            到游戏页编辑
           </a>
         </Button>
         {canDelete && <GameDeleteDialog game={game} onDeleted={onDeleted} />}
@@ -297,7 +294,6 @@ export function DashboardGames({ viewerRole }: { viewerRole: number }) {
     <SearchableListPage<AdminGalgame>
       config={LIST_CONFIG}
       title="游戏条目"
-      description="按名称查找游戏条目，默认显示全部内容分级。删除条目需超级管理员。"
       noun="条目"
       contentLabel="游戏名称"
       searchByUser={false}

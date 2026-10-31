@@ -310,7 +310,6 @@ export function DashboardCreators() {
     <SearchableListPage<AdminCreator>
       config={LIST_CONFIG}
       title="创作者申请"
-      description="通过后申请人成为创作者，发布资源不再需要审核；拒绝时需填写原因，申请人会收到通知。两种处理都写入管理日志，并计入今日已处理。"
       noun="申请"
       contentLabel="申请"
       searchByUser={false}

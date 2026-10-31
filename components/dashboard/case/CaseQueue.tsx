@@ -279,7 +279,6 @@ export function CaseQueue({
         <span className="text-xs text-muted-foreground">
           {list === null ? `已显示 ${rows.length} 条` : `共 ${list.total} 条`}
           {loading && rows.length > 0 ? '，更新中…' : ''}
-          {publisherView ? '（仍归发布者，不进收件箱）' : ''}
         </span>
       </div>
 

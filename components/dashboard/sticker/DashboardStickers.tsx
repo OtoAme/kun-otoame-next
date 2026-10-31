@@ -793,7 +793,6 @@ export function DashboardStickers() {
   return (
     <DashboardPage
       title="贴纸"
-      description="管理私聊贴纸包。不再发送的素材请禁用，历史消息仍能显示；永久删除只用于误导入，须先禁用 Pack，并会清理对象存储里的文件。"
       actions={
         <>
           <Button

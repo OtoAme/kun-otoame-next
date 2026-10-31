@@ -209,7 +209,7 @@ export function ResourceEditForm({
   const save = async () => {
     if (saving || uploading) return
     if (!resource.baseLinks) {
-      setError('链接版本信息缺失，请刷新事项后再编辑')
+      setError('链接版本信息缺失，请刷新后再编辑')
       return
     }
     const body = requestBody(resource, draft)
@@ -234,7 +234,7 @@ export function ResourceEditForm({
         return
       }
       if (!isDefiniteSave(response, resource.id)) {
-        setError('没有确认这次保存是否已经写入，请刷新事项核对后再操作')
+        setError('没有确认这次保存是否已经写入，请刷新核对后再操作')
         return
       }
       toast.success('修改已保存，资源仍待审核')

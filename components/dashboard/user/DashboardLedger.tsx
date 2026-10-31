@@ -405,7 +405,7 @@ export const DashboardLedger = ({
                     </p>
                   ) : (
                     <p className="text-sm text-muted-foreground">
-                      自定义范围最长 90 天，起止日期均包含在内。
+                      自定义范围最长 90 天。
                     </p>
                   )}
                 </div>

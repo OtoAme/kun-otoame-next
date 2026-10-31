@@ -116,9 +116,11 @@ function CommentDetail({
         <dt className="text-muted-foreground">评论 ID</dt>
         <dd className="tabular-nums">#{comment.id}</dd>
       </dl>
-      <p className="text-xs text-muted-foreground">
-        列表只显示评论的前 233 个字；编辑时读取全文。
-      </p>
+      {comment.truncated && (
+        <p className="text-xs text-muted-foreground">
+          这里只显示评论的前 233 个字；编辑时读取全文。
+        </p>
+      )}
       <div className="flex flex-wrap gap-2">
         <RecordEditDialog
           kind={COMMENT_RECORD}
@@ -147,7 +149,6 @@ export function DashboardComments() {
     <SearchableListPage<AdminComment>
       config={LIST_CONFIG}
       title="评论"
-      description="按内容或用户查找评论。编辑与删除会写入管理日志，删除时其下的回复一并删除。"
       noun="评论"
       contentLabel="评论内容"
       columns={COLUMNS}

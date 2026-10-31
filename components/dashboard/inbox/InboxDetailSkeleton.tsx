@@ -8,7 +8,7 @@ interface InboxDetailSkeletonProps {
 // Both fetch stages share geometry and leave padding to the detail container.
 // Static blocks keep a remount from restarting the loading animation.
 export function InboxDetailSkeleton({
-  label = '正在加载事项详情'
+  label = '正在加载详情'
 }: InboxDetailSkeletonProps) {
   return (
     <div

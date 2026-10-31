@@ -131,7 +131,6 @@ const waitingTone = (seconds: number) =>
 function Panel(props: {
   id: string
   title: string
-  description?: string
   action?: ReactNode
   children: ReactNode
 }) {
@@ -142,11 +141,6 @@ function Panel(props: {
           <h2 id={props.id} className="text-sm font-semibold">
             {props.title}
           </h2>
-          {props.description && (
-            <span className="text-xs text-muted-foreground">
-              {props.description}
-            </span>
-          )}
           {props.action && (
             <div className="ml-auto flex items-center gap-2">
               {props.action}
@@ -293,9 +287,7 @@ function QueueList({ rows }: { rows: QueueRow[] }) {
 function OldestList({ items }: { items: InboxItem[] }) {
   if (items.length === 0) {
     return (
-      <p className="text-sm text-muted-foreground">
-        收件箱已清空，没有等待处理的事项。
-      </p>
+      <p className="text-sm text-muted-foreground">没有待审条目或待审资源。</p>
     )
   }
   return (
@@ -340,14 +332,11 @@ function OldestList({ items }: { items: InboxItem[] }) {
   )
 }
 
-function Metric(props: { label: string; value: number; caption?: string }) {
+function Metric(props: { label: string; value: number }) {
   return (
     <div className="min-w-0">
       <dt className="text-xs text-muted-foreground">{props.label}</dt>
       <dd className="text-xl font-semibold tabular-nums">{fmt(props.value)}</dd>
-      {props.caption && (
-        <dd className="text-xs text-muted-foreground">{props.caption}</dd>
-      )}
     </div>
   )
 }
@@ -505,12 +494,7 @@ export function DashboardStats({ reviewerRole }: DashboardStatsProps) {
   ]
 
   const queuePanel = (
-    <Panel
-      key="queue"
-      id="dashboard-queue-heading"
-      title="待办队列"
-      description="点一行进入"
-    >
+    <Panel key="queue" id="dashboard-queue-heading" title="待办队列">
       {countsError && (
         <div className="mb-3">
           <PanelError
@@ -529,7 +513,6 @@ export function DashboardStats({ reviewerRole }: DashboardStatsProps) {
       key="oldest"
       id="dashboard-oldest-heading"
       title="最早的待审"
-      description="待审条目与待审资源，按等待时长"
       action={
         <Link
           href="/dashboard/inbox"
@@ -550,12 +533,7 @@ export function DashboardStats({ reviewerRole }: DashboardStatsProps) {
   )
 
   const scalePanel = canViewStats && (
-    <Panel
-      key="scale"
-      id="dashboard-sum-heading"
-      title="站点规模"
-      description="现存记录数，资源包含各状态"
-    >
+    <Panel key="scale" id="dashboard-sum-heading" title="站点规模">
       <BlockBody
         block={summary}
         onRetry={() => void loadSummary()}
@@ -570,11 +548,7 @@ export function DashboardStats({ reviewerRole }: DashboardStatsProps) {
             <Metric label="评论" value={data.galgameCommentCount} />
             <Metric label="评分" value={data.ratingCount} />
             <Metric label="投稿" value={data.submissionCount} />
-            <Metric
-              label="创作者"
-              value={data.creatorCount}
-              caption="不含管理员"
-            />
+            <Metric label="创作者" value={data.creatorCount} />
           </dl>
         )}
       </BlockBody>
@@ -604,7 +578,6 @@ export function DashboardStats({ reviewerRole }: DashboardStatsProps) {
       key="trend"
       id="dashboard-trend-heading"
       title="近期趋势"
-      description={`最近 ${days} 天，按上海时间逐日统计`}
       action={daysControl}
     >
       <BlockBody

@@ -245,12 +245,9 @@ export function InboxToolbar({
               </div>
             ))}
           </dl>
-          <div className="space-y-1 text-sm text-muted-foreground">
-            <p>「旧反馈」「旧举报」为只读来源，请前往旧后台处理。</p>
-            <p>
-              驳回资源申请、按违规处理投稿等操作不可撤销，执行前会先要求确认。
-            </p>
-          </div>
+          <p className="text-sm text-muted-foreground">
+            拒绝资源、对投稿做违规处理等操作不可撤销，执行前会先要求确认。
+          </p>
           <DialogFooter>
             <DialogClose asChild>
               <Button type="button" variant="secondary">

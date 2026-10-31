@@ -603,7 +603,7 @@ describe('dashboard inbox presentation', () => {
     await select(submission(1), { item: null, itemLoading: true })
     expect(
       dom.window.document.querySelector(
-        '[role="status"][aria-label="正在加载事项详情"]'
+        '[role="status"][aria-label="正在加载详情"]'
       )
     ).not.toBeNull()
     expect(dom.window.document.querySelector('[data-inbox-action]')).toBeNull()
@@ -677,7 +677,7 @@ describe('dashboard inbox presentation', () => {
     await select(submission(1), { itemLoading: true })
     expect(
       dom.window.document.querySelector(
-        '[role="status"][aria-label="正在加载事项详情"]'
+        '[role="status"][aria-label="正在加载详情"]'
       )
     ).not.toBeNull()
     expect(dom.window.document.querySelector('[data-inbox-action]')).toBeNull()

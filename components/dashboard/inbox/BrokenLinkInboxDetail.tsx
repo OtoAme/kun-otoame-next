@@ -65,12 +65,11 @@ export function BrokenLinkInboxDetail({ item }: BrokenLinkInboxDetailProps) {
           )}
         </dl>
 
-        <p className="text-muted-foreground">
-          在资源编辑里把这条链接改到新地址，或删除这条链接，保存后即处理完成。
-          {actions.remove
-            ? ''
-            : '这是资源的最后一条链接，只能改地址，不能删除。'}
-        </p>
+        {actions.remove ? null : (
+          <p className="text-muted-foreground">
+            这是资源的最后一条链接，只能改地址，不能删除。
+          </p>
+        )}
 
         <div className="flex flex-wrap gap-2">
           <Button type="button" size="sm" asChild>

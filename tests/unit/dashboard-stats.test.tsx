@@ -437,7 +437,7 @@ describe('dashboard overview', () => {
     try {
       await render(3)
       expect(panel('dashboard-oldest-heading').textContent).toContain(
-        '收件箱已清空'
+        '没有待审条目或待审资源'
       )
     } finally {
       okResponses['/admin/inbox'] = {
@@ -566,8 +566,10 @@ describe('dashboard overview', () => {
         expect(mocks.get).toHaveBeenCalledWith('/admin/stats/trend', { days })
         // The trend card replaces the old window totals endpoint.
         expect(requested()).not.toContain('/admin/stats')
+        // The slider's readout names the window now that the panel has no
+        // caption repeating it.
         expect(panel('dashboard-trend-heading').textContent).toContain(
-          `最近 ${days} 天`
+          `${days} 天`
         )
       } finally {
         vi.useRealTimers()
@@ -696,9 +698,6 @@ describe('dashboard overview', () => {
     expect(metric('补丁资源')).toBe('23')
     expect(metric('新增条目')).toBe('3')
     expect(metric('新增资源')).toBe('5')
-    const creator = [...container.querySelectorAll('dt')].find(
-      (el) => el.textContent === '创作者'
-    )
-    expect(creator?.parentElement?.textContent).toContain('不含管理员')
+    expect(metric('创作者')).toBe('12')
   })
 })

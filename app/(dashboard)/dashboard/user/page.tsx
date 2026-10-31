@@ -16,10 +16,7 @@ export default async function DashboardUsersPage() {
   }
 
   return (
-    <DashboardPageHeader
-      title="用户管理"
-      description="按用户名、邮箱或编号查找用户，编辑资料与身份、发放萌萌点或删除账号。删除不可撤销。"
-    >
+    <DashboardPageHeader title="用户管理">
       <DashboardUsers currentUserId={currentUser.id} />
     </DashboardPageHeader>
   )

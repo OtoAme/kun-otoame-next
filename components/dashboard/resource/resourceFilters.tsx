@@ -420,6 +420,19 @@ export function ResourceFilterPanel({ filters, setFilters }: FilterContext) {
   )
 }
 
+/** What the search box matches under each scope. */
+const SEARCH_PLACEHOLDERS: Options = {
+  all: '资源名称、备注、游戏名或资源 ID',
+  text: '资源名称或备注',
+  game: '游戏名称',
+  link: '下载链接或 Hash',
+  id: '资源 ID'
+}
+
+/** Placeholder for the resource search box under the chosen scope. */
+export const resourceSearchPlaceholder = (filters: ListFilters) =>
+  SEARCH_PLACEHOLDERS[filters.searchField || 'all'] ?? SEARCH_PLACEHOLDERS.all
+
 /** Search scope and sort live next to the search box. */
 export function ResourceToolbar({ filters, setFilters }: FilterContext) {
   return (

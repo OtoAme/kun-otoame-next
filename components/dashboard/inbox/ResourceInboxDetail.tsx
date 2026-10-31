@@ -340,11 +340,6 @@ export function ResourceInboxDetail({
           编辑
         </Button>
       </div>
-      <p className="text-xs text-muted-foreground">
-        {editing
-          ? '正在编辑，保存或取消后再审核。'
-          : '编辑保存后资源仍待审核，确认无误再点通过。'}
-      </p>
     </section>
   )
 

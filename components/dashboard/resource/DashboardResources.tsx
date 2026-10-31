@@ -41,7 +41,8 @@ import {
   RESOURCE_LIST_CONFIG,
   ResourceFilterPanel,
   ResourceToolbar,
-  resourceFilterChips
+  resourceFilterChips,
+  resourceSearchPlaceholder
 } from './resourceFilters'
 import type { PatchResourceHealthEditData } from '~/types/api/patch'
 
@@ -351,9 +352,6 @@ function ResourceDetail({
           ))}
         </ul>
       </div>
-      <p className="text-xs text-muted-foreground">
-        编辑请到游戏页：页面会定位到这份资源，再点它的编辑按钮。链接改动按版本校验，不会覆盖他人同时的修改。
-      </p>
       <div className="flex flex-wrap gap-2">
         <Button variant="outline" size="sm" asChild>
           <a href={frontHref(resource)} target="_blank" rel="noreferrer">
@@ -376,9 +374,9 @@ export function DashboardResources() {
     <SearchableListPage<ResourceRow>
       config={RESOURCE_LIST_CONFIG}
       title="下载资源"
-      description="按名称、备注、游戏、链接或资源 ID 查找资源；发布者、分区、状态、类型等在筛选里设置，可与关键词同时使用。管理列表默认显示全部内容分级。删除会写入管理日志。"
       noun="资源"
       contentLabel="关键词"
+      searchPlaceholder={resourceSearchPlaceholder}
       searchByUser={false}
       columns={COLUMNS}
       toolbar={ResourceToolbar}

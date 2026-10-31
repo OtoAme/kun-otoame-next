@@ -185,12 +185,7 @@ export function LinkHealthAdminView({
 
   return (
     <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-4 md:px-6 md:py-5">
-      <div className="space-y-1">
-        <h2 className="text-lg font-semibold md:text-xl">已失效链接</h2>
-        <p className="text-sm text-muted-foreground">
-          只读视图：当前在库链接的健康快照，自本批次上线起算，不展示链接地址与提取码、解压码。
-        </p>
-      </div>
+      <h2 className="text-lg font-semibold md:text-xl">已失效链接</h2>
 
       <FiltersBar view={view} />
 
@@ -217,8 +212,7 @@ export function LinkHealthAdminView({
             <p className="text-xs text-muted-foreground">
               {list.trackingStartedAt
                 ? `统计自 ${formatChinaDateTime(list.trackingStartedAt)} 起`
-                : '自本批次上线起算'}
-              ；分母为该主机当前未删除的全部链接，是当前健康快照，不是历史存活曲线。
+                : '统计自失效检测上线起'}
             </p>
           </CardContent>
         </Card>

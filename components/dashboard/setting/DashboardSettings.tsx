@@ -351,7 +351,7 @@ export function DashboardSettings() {
   return (
     <DashboardPage
       title="站点设置"
-      description="影响全站访客的开关。注册开关切换前需确认；重定向设置改完后点保存才生效。"
+      description="重定向设置改完后点保存才生效。"
     >
       <div className="flex max-w-3xl flex-col gap-4">
         <RegisterSetting />

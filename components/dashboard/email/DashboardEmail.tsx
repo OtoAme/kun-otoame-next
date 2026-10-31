@@ -110,10 +110,7 @@ export function DashboardEmail() {
   }
 
   return (
-    <DashboardPage
-      title="邮件群发"
-      description="向全部开启邮件通知的用户发送邮件。发送前需输入确认词；发送后会写入管理日志。"
-    >
+    <DashboardPage title="邮件群发" description="发给全部开启邮件通知的用户。">
       <div className="grid min-w-0 items-start gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
         <DashboardPanel className="flex flex-col gap-4 p-5">
           <div className="flex flex-col gap-1.5">
