@@ -140,9 +140,7 @@ export const ReopenSuggestionDialog = ({
           <AlertDialogTitle>重新打开这条合并建议</AlertDialogTitle>
           <AlertDialogDescription>
             建议 #{suggestion.id} 将回到待处理，并重新占用这一组会社
-            id。折叠键「
-            {suggestion.foldedKey}
-            」只是展示，不决定会不会跳过。若已有待处理的同一组会社，重新打开会失败，这一行仍保持已驳回。不会新建一行，也不会改动会社数据。
+            id。若已有待处理的同一组会社，重新打开会失败，这条建议仍保持已驳回。会社数据不会被改动。
           </AlertDialogDescription>
         </AlertDialogHeader>
 

@@ -1,3 +1,4 @@
+import { DashboardPageHeader } from '~/components/dashboard/page/DashboardPage'
 import { DashboardShoutbox } from '~/components/dashboard/shoutbox/DashboardShoutbox'
 import type { Metadata } from 'next'
 
@@ -6,5 +7,9 @@ export const metadata: Metadata = {
 }
 
 export default function DashboardShoutboxPage() {
-  return <DashboardShoutbox />
+  return (
+    <DashboardPageHeader title="小喇叭">
+      <DashboardShoutbox />
+    </DashboardPageHeader>
+  )
 }

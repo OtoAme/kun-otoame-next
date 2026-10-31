@@ -1,3 +1,4 @@
+import { SUPPORTED_TYPE_MAP } from '~/constants/resource'
 import {
   getLinkDisputeSources,
   linkHealthSelect,
@@ -34,13 +35,14 @@ import { CASE_WAITING_HANDLER_STATUSES } from '~/constants/case'
 /**
  * Admin log types that count toward「今日已处理」: one row per completed
  * review or case closure (module 01 plan 4.3; module 03 M03-8 adds
- * `case_close`).
+ * `case_close`; creator reviews per module 09 plan 5.4).
  */
 const PROCESSED_LOG_TYPES = [
   'submission_review',
   'resource_apply_approve',
   'resource_apply_decline',
-  'case_close'
+  'case_close',
+  'creator_review'
 ]
 
 const userSelect = { id: true, name: true, avatar: true } as const
@@ -237,7 +239,8 @@ const submissionItem = (row: SubmissionRow, now: Date): InboxItem => ({
   actor: row.user,
   ...waiting(row.submitted_at ?? row.created, now),
   targetHref: `/admin/submission/${row.id}`,
-  badges: ['投稿'],
+  // The kind label already says this is a submission.
+  badges: [],
   readOnly: false,
   payload: {
     id: row.id,
@@ -266,7 +269,8 @@ const resourceItem = (
   actor: { id: row.user.id, name: row.user.name, avatar: row.user.avatar },
   ...waiting(row.created, now),
   targetHref: `/${row.patch.unique_id}`,
-  badges: ['资源申请', ...row.type],
+  // Resource types use their front-end names; the kind label covers the rest.
+  badges: row.type.map((type) => SUPPORTED_TYPE_MAP[type] ?? type),
   readOnly: false,
   payload: {
     id: row.id,

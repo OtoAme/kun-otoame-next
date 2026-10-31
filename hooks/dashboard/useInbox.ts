@@ -11,7 +11,7 @@ import {
   PATCH_SUBMISSION_LIST_PAGE_MAX,
   PATCH_SUBMISSION_LIST_QUERY_MAX_LENGTH
 } from '~/constants/patchSubmission'
-import { LINK_HEALTH_INBOX_KINDS } from '~/types/api/inbox'
+import { CONTENT_REVIEW_KINDS } from '~/types/api/inbox'
 import type {
   LinkHealthInboxItem,
   LinkHealthInboxItemResponse,
@@ -117,11 +117,15 @@ export interface UseInboxReturn {
   refreshAll: () => Promise<void>
   /** Called by InboxDetail only after API success for the exact captured key. */
   onProcessed: (key: string) => void
-  /** Refreshes a conflicted item; history also reloads its current filtered list. */
-  onStateChanged: (key: string) => Promise<void>
+  /**
+   * Refreshes a conflicted item; history also reloads its current filtered list.
+   * `silent` keeps the current detail mounted (no skeleton) and reports a
+   * failed read as a toast, for refreshes after an in-place edit.
+   */
+  onStateChanged: (key: string, options?: { silent?: boolean }) => Promise<void>
 }
 
-const KIND_SET: ReadonlySet<string> = new Set(LINK_HEALTH_INBOX_KINDS)
+const KIND_SET: ReadonlySet<string> = new Set(CONTENT_REVIEW_KINDS)
 const EMPTY_ITEMS: LinkHealthInboxItem[] = []
 const ID_PATTERN = /^[1-9]\d*$/
 
@@ -133,14 +137,14 @@ function parseId(raw: string): number | null {
 }
 
 function parseKinds(raw: string | null): LinkHealthInboxKind[] {
-  if (!raw) return [...LINK_HEALTH_INBOX_KINDS]
+  if (!raw) return [...CONTENT_REVIEW_KINDS]
   const valid = raw
     .split(',')
     .map((s) => s.trim())
     .filter((s): s is LinkHealthInboxKind => KIND_SET.has(s))
   const unique = Array.from(new Set(valid))
-  if (unique.length === 0) return [...LINK_HEALTH_INBOX_KINDS]
-  return LINK_HEALTH_INBOX_KINDS.filter((k) => unique.includes(k))
+  if (unique.length === 0) return [...CONTENT_REVIEW_KINDS]
+  return CONTENT_REVIEW_KINDS.filter((k) => unique.includes(k))
 }
 
 function parseSearch(raw: string | null): string {
@@ -618,7 +622,7 @@ export function useInbox({ refreshCounts }: UseInboxOptions): UseInboxReturn {
       if (next.length === 0) return // at least one source must stay selected
       // Any source change leaves history mode: the queue always comes back to pending.
       navigate({
-        kinds: LINK_HEALTH_INBOX_KINDS.filter((k) => next.includes(k)),
+        kinds: CONTENT_REVIEW_KINDS.filter((k) => next.includes(k)),
         submissionStatus: 'pending',
         submissionPage: 1
       })
@@ -731,9 +735,10 @@ export function useInbox({ refreshCounts }: UseInboxOptions): UseInboxReturn {
   )
 
   const onStateChanged = React.useCallback(
-    async (key: string) => {
+    async (key: string, options?: { silent?: boolean }) => {
       if (!mountedRef.current) return
       const sel = parseKey(key)
+      const silent = options?.silent === true
       if (!sel) return
       const isVisible = selectedKeyRef.current === key
       // Register this refresh as the newest for THIS key only.
@@ -754,11 +759,15 @@ export function useInbox({ refreshCounts }: UseInboxOptions): UseInboxReturn {
       // still resolve stale 'pending') and take over its loading/error lifecycle so a spinner
       // orphaned by the invalidated fetch is always terminated here.
       const gen = isVisible ? ++itemGenRef.current : itemGenRef.current
-      if (isVisible) {
+      if (isVisible && !silent) {
         setItemLoading(true)
         setItemErrorState(null)
       }
       const finishVisibleError = (message: string) => {
+        if (silent) {
+          toast.error(message)
+          return
+        }
         if (gen === itemGenRef.current && selectedKeyRef.current === key) {
           setItemErrorState({ key, message })
           setItemLoading(false)
@@ -779,8 +788,8 @@ export function useInbox({ refreshCounts }: UseInboxOptions): UseInboxReturn {
         const newest = stateReqRef.current.get(key) === token
         if (newest) stateReqRef.current.delete(key)
         if (!newest) return
-        if (isVisible) finishVisibleError('网络错误，刷新事项失败，请重试')
-        else toast.error('网络错误，刷新事项失败')
+        if (isVisible) finishVisibleError('网络错误，刷新详情失败，请重试')
+        else toast.error('网络错误，刷新详情失败')
         return
       }
       if (!mountedRef.current) return
@@ -788,8 +797,8 @@ export function useInbox({ refreshCounts }: UseInboxOptions): UseInboxReturn {
       if (isNewest) stateReqRef.current.delete(key)
       if (typeof res === 'string') {
         if (!isNewest) return
-        if (isVisible) finishVisibleError(res || '刷新事项失败')
-        else toast.error(res || '刷新事项失败')
+        if (isVisible) finishVisibleError(res || '刷新详情失败')
+        else toast.error(res || '刷新详情失败')
         return
       }
       // Superseded for this key — by a newer state refresh OR by a newer direct fetchItem of

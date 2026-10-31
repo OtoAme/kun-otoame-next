@@ -25,14 +25,14 @@ const brokenDurationText = (seconds: number | null): string => {
 
 /**
  * 资源盘（touchgal）失效链接的站方待办。载荷只有脱敏上下文，不含地址与
- * 提取码/解压码。两个动作都不在这里直接写入：补链与移除都进入既有受权
- * 资源编辑路径（携带完整 baseLinks 的整表单保存），最后一条链接不可移除
+ * 提取码/解压码。这里不直接写入：补链与移除都在同一个既有受权资源编辑
+ * 路径里完成（携带完整 baseLinks 的整表单保存），最后一条链接只能改地址
  * （actions.remove === false）。绝不分发整条资源的 DELETE。
  */
 export function BrokenLinkInboxDetail({ item }: BrokenLinkInboxDetailProps) {
   const { link, actions } = item.payload
-  // 两个动作都走后端下发的唯一受权编辑路径（旧后台整表单、完整基点、定位到
-  // 该链接）；查看链接在前台资源页，同样定位到这条资源；无整条资源 DELETE。
+  // 编辑走后端下发的唯一受权编辑路径（旧后台整表单、完整基点、定位到该链接）；
+  // 查看链接在前台资源页，同样定位到这条资源；无整条资源 DELETE。
   const editorHref = item.targetHref
   const resourceHref = `/${link.patch.uniqueId}?tab=resources&resourceSection=${link.resource.section}&resourceId=${link.resourceId}`
 
@@ -40,7 +40,7 @@ export function BrokenLinkInboxDetail({ item }: BrokenLinkInboxDetailProps) {
     <Card>
       <CardHeader className="flex-row items-center gap-2 space-y-0 pb-3">
         <Unlink className="size-4 text-muted-foreground" aria-hidden />
-        <h3 className="text-sm font-medium">失效链接待办</h3>
+        <h3 className="text-sm font-medium">资源盘链接失效</h3>
         <Badge variant="destructive">已失效</Badge>
       </CardHeader>
       <CardContent className="space-y-4 text-sm">
@@ -65,27 +65,19 @@ export function BrokenLinkInboxDetail({ item }: BrokenLinkInboxDetailProps) {
           )}
         </dl>
 
-        <p className="text-muted-foreground">
-          处理这条待办需要进入资源的编辑：把链接改到新地址后保存即为补链；
-          在编辑里删除该链接再保存即为移除（至少保留一条链接）。
-        </p>
+        {actions.remove ? null : (
+          <p className="text-muted-foreground">
+            这是资源的最后一条链接，只能改地址，不能删除。
+          </p>
+        )}
 
         <div className="flex flex-wrap gap-2">
           <Button type="button" size="sm" asChild>
             <Link href={editorHref}>
               <ExternalLink className="size-4" aria-hidden />
-              去补链
+              编辑链接
             </Link>
           </Button>
-          {actions.remove ? (
-            <Button type="button" variant="destructive" size="sm" asChild>
-              <Link href={editorHref}>去移除</Link>
-            </Button>
-          ) : (
-            <Button type="button" variant="outline" size="sm" disabled>
-              最后一条链接不能移除
-            </Button>
-          )}
           <Button type="button" variant="ghost" size="sm" asChild>
             <Link href={resourceHref}>查看资源</Link>
           </Button>

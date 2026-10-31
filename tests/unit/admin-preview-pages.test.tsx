@@ -40,7 +40,13 @@ describe('administrator frontend previews', () => {
     const payload = { id: 7, links: [{ content: 'https://example.com/pending' }] }
     mocks.item.mockResolvedValue({ state: 'pending', item: { kind: 'resource-apply', payload } })
     const result = await ResourcePage({ params: Promise.resolve({ id: '7' }) })
-    expect(result.props).toEqual({ resource: payload, preview: true })
+    // Wrapped in the game page's card; the attribute chips and the read-only
+    // download block both receive exactly the authorized payload.
+    const children = [result.props.children.props.children].flat()
+    expect(children.map((child) => child.props)).toEqual([
+      { resource: payload },
+      { resource: payload, preview: true }
+    ])
   })
   it.each(['processed', 'missing'])('does not preview a %s resource', async (state) => {
     mocks.item.mockResolvedValue({ state, item: state === 'missing' ? null : { kind: 'resource-apply', payload: {} } })

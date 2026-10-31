@@ -47,7 +47,11 @@ interface HistoryResponse {
   total: number
 }
 
-type Response = LinkHealthInboxListResponse | LinkHealthInboxItemResponse | HistoryResponse | string
+type Response =
+  | LinkHealthInboxListResponse
+  | LinkHealthInboxItemResponse
+  | HistoryResponse
+  | string
 
 type Request = {
   path: string
@@ -91,7 +95,7 @@ const queue = (
     'resource-apply': 0,
     feedback: 0,
     report: 0,
-case: 0,
+    case: 0,
     'broken-link': 0
   },
   truncated: {
@@ -99,12 +103,14 @@ case: 0,
     'resource-apply': false,
     feedback: false,
     report: false,
-case: false,
+    case: false,
     'broken-link': false
   }
 })
 
-const processedItem = (item: LinkHealthInboxItem): LinkHealthInboxItemResponse => ({
+const processedItem = (
+  item: LinkHealthInboxItem
+): LinkHealthInboxItemResponse => ({
   state: 'processed',
   item
 })
@@ -369,7 +375,7 @@ describe('dashboard inbox submission history mode', () => {
       'resource-apply': 0,
       feedback: 0,
       report: 0,
-case: 0,
+      case: 0,
       'broken-link': 0
     })
     expect(current.truncated).toEqual({
@@ -377,7 +383,7 @@ case: 0,
       'resource-apply': false,
       feedback: false,
       report: false,
-case: false,
+      case: false,
       'broken-link': false
     })
     expect(current.listLoading).toBe(false)
@@ -439,21 +445,21 @@ case: false,
 
   it('ignores history params whenever another source is selected and drops them on the next navigation', async () => {
     await navigate(
-      'kinds=submission,report&submissionStatus=published&submissionPage=3'
+      'kinds=submission,resource-apply&submissionStatus=published&submissionPage=3'
     )
     expect(current.submissionOnly).toBe(false)
     expect(current.historyMode).toBe(false)
     expect(historyRequests()).toHaveLength(0)
     expect(listRequests()).toHaveLength(1)
     expect(listRequests()[0].query).toMatchObject({
-      kinds: 'submission,report'
+      kinds: 'submission,resource-apply'
     })
     await respond(listRequests()[0], queue([submission(1)]))
     await act(async () => {
       current.selectItem(current.items[0])
     })
     const params = lastPushParams()
-    expect(params.get('kinds')).toBe('submission,report')
+    expect(params.get('kinds')).toBe('submission,resource-apply')
     expect(params.get('submissionStatus')).toBeNull()
     expect(params.get('submissionPage')).toBeNull()
   })
@@ -468,16 +474,16 @@ case: false,
     )
     expect(current.historyMode).toBe(true)
     await act(async () => {
-      current.toggleKind('report', true)
+      current.toggleKind('resource-apply', true)
     })
     const params = lastPushParams()
-    expect(params.get('kinds')).toBe('submission,report')
+    expect(params.get('kinds')).toBe('submission,resource-apply')
     expect(params.get('submissionStatus')).toBeNull()
     expect(params.get('submissionPage')).toBeNull()
     await navigate(params.toString())
     expect(current.historyMode).toBe(false)
     expect(listRequests().at(-1)!.query).toMatchObject({
-      kinds: 'submission,report'
+      kinds: 'submission,resource-apply'
     })
     expect(historyRequests()).toHaveLength(1)
   })
@@ -891,7 +897,10 @@ case: false,
         container.querySelector('button[aria-label="条目状态"]')
       ).not.toBeNull()
       await renderToolbar(
-        stubInbox({ submissionOnly: false, kinds: ['submission', 'report'] })
+        stubInbox({
+          submissionOnly: false,
+          kinds: ['submission', 'resource-apply']
+        })
       )
       expect(
         container.querySelector('button[aria-label="条目状态"]')
@@ -901,7 +910,7 @@ case: false,
     it('keeps the pending placeholder and order select outside history mode', async () => {
       await renderToolbar(stubInbox({ historyMode: false }))
       const input = container.querySelector('#inbox-search')!
-      expect(input.getAttribute('placeholder')).toBe('搜索待办事项')
+      expect(input.getAttribute('placeholder')).toBe('搜索名称或发布者')
       expect(
         container.querySelector('button[aria-label="排序方式"]')
       ).not.toBeNull()
@@ -975,7 +984,7 @@ case: false,
             'resource-apply': 0,
             feedback: 0,
             report: 0,
-case: 0,
+            case: 0,
             'broken-link': 0
           },
           truncated: {
@@ -1005,7 +1014,7 @@ case: 0,
             'resource-apply': 0,
             feedback: 0,
             report: 0,
-case: 0,
+            case: 0,
             'broken-link': 0
           },
           truncated: {
@@ -1041,7 +1050,7 @@ case: 0,
           'resource-apply': 0,
           feedback: 0,
           report: 0,
-case: 0,
+          case: 0,
           'broken-link': 0
         },
         truncated: {
@@ -1049,7 +1058,7 @@ case: 0,
           'resource-apply': false,
           feedback: false,
           report: false,
-case: false,
+          case: false,
           'broken-link': false
         },
         setSubmissionPage
@@ -1082,7 +1091,7 @@ case: false,
             'resource-apply': 0,
             feedback: 0,
             report: 0,
-case: 0,
+            case: 0,
             'broken-link': 0
           },
           truncated: {
@@ -1097,8 +1106,36 @@ case: 0,
       )
       expect(text()).toContain('待办列表')
       expect(text()).toContain('等待 1 分钟')
-      expect(text()).toContain('待审条目')
+      // Only submissions are selected, so the kind label is redundant.
+      expect(text()).not.toContain('待审条目')
       expect(buttonByText('下一页')).toBeUndefined()
+    })
+
+    it('labels each row with its kind when several sources are shown', async () => {
+      await renderPane(
+        stubInbox({
+          historyMode: false,
+          kinds: ['submission', 'resource-apply'],
+          items: [submission(1)],
+          totals: {
+            submission: 1,
+            'resource-apply': 0,
+            feedback: 0,
+            report: 0,
+            case: 0,
+            'broken-link': 0
+          },
+          truncated: {
+            submission: false,
+            'resource-apply': false,
+            feedback: false,
+            report: false,
+            case: false,
+            'broken-link': false
+          }
+        })
+      )
+      expect(text()).toContain('待审条目')
     })
   })
 })

@@ -37,7 +37,8 @@ export interface AdminPatchSubmissionDetail {
   reviewedBy: { id: number; name: string } | null
   submittedAt: string | null
   created: string
-  author: { id: number; name: string; avatar: string }
+  /** `role` is the author's current role, not the one at submission time. */
+  author: { id: number; name: string; avatar: string; role: number }
   preview: PatchSubmissionPublishPreview | null
   /**
    * Published entries already using this submission's VNDB ID, never including
@@ -172,7 +173,7 @@ export const getAdminPatchSubmission = async (
       submitted_at: true,
       created: true,
       patch_id: true,
-      user: { select: { id: true, name: true, avatar: true } },
+      user: { select: { id: true, name: true, avatar: true, role: true } },
       reviewed_by: { select: { id: true, name: true } },
       patch: { select: { unique_id: true, name: true } },
       gallery: {

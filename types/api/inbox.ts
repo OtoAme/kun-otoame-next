@@ -73,6 +73,15 @@ export interface InboxCounts {
 
 /** W04-health activates this vocabulary with all inbox readers and UI. */
 export const LINK_HEALTH_INBOX_KINDS = INBOX_KINDS
+
+/**
+ * Sources the console's content review page lists. Staff cases and broken
+ * resource-disk links belong to the issue page; legacy feedback and reports
+ * are no longer listed anywhere. The inbox API itself still serves every
+ * kind, so older deep links keep resolving.
+ */
+export const CONTENT_REVIEW_KINDS = ['submission', 'resource-apply'] as const
+export type ContentReviewKind = (typeof CONTENT_REVIEW_KINDS)[number]
 export type LinkHealthInboxKind = (typeof LINK_HEALTH_INBOX_KINDS)[number]
 
 /** Only touchgal + broken + no unresolved link case is pending here. */

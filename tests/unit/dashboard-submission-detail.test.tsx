@@ -178,7 +178,7 @@ const detail = (
   reviewedBy: null,
   submittedAt: '2026-09-01T00:00:00.000Z',
   created: '2026-09-01T00:00:00.000Z',
-  author: { id: 7, name: '投稿人', avatar: '' },
+  author: { id: 7, name: '投稿人', avatar: '', role: 1 },
   preview: {
     name: '月光投稿',
     introduction: '正文',
@@ -329,6 +329,19 @@ describe('dashboard submission review detail', () => {
   }
   const dialog = () => dom.window.document.querySelector('[role="alertdialog"]')
   const text = () => dom.window.document.body.textContent ?? ''
+
+  it('blocks approval while a review reason is written and re-enables it once cleared', async () => {
+    await mount()
+    expect(button('通过并发布').disabled).toBe(false)
+    await fillReason('请补齐会社信息')
+    expect(button('通过并发布').disabled).toBe(true)
+    expect(text()).toContain('需先清空才能通过')
+    // Reason-based actions stay available.
+    expect(button('要求修改').disabled).toBe(false)
+    await fillReason('   ')
+    expect(button('通过并发布').disabled).toBe(false)
+    expect(writes).toHaveLength(0)
+  })
 
   it('approves only after a confirmation dialog that shows the target and uses the selected submission ID', async () => {
     await mount()

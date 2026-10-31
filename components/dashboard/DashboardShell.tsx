@@ -167,7 +167,10 @@ export function DashboardShell({ currentUser, children }: DashboardShellProps) {
         >
           <DashboardShoutboxBanner />
           <DashboardHeader />
-          <div className="flex min-h-0 min-w-0 flex-1 flex-col">{children}</div>
+          {/* Content is capped at 1920px and centered on ultrawide screens. */}
+          <div className="mx-auto flex min-h-0 w-full max-w-[1920px] min-w-0 flex-1 flex-col">
+            {children}
+          </div>
         </SidebarInset>
       </SidebarProvider>
     </DashboardContext.Provider>

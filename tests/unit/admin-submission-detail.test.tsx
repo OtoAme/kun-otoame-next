@@ -133,7 +133,7 @@ const submission: AdminPatchSubmissionDetail = {
   reviewedBy: null,
   submittedAt: '2026-08-27T00:00:00.000Z',
   created: '2026-08-27T00:00:00.000Z',
-  author: { id: 2, name: 'Author', avatar: '' },
+  author: { id: 2, name: 'Author', avatar: '', role: 1 },
   preview: null,
   vndbDuplicates: [],
   duplicatesTruncated: false,

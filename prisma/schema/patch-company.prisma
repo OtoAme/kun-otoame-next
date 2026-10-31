@@ -60,6 +60,8 @@ model patch_company_name_identity {
   @@index([company_id])
   @@index([confirmed_by_user_id])
   @@index([normalized_value])
+  // Legacy aliases are matched by their stored text, not the normalized form.
+  @@index([kind, origin, value])
 }
 
 model patch_company_relation {

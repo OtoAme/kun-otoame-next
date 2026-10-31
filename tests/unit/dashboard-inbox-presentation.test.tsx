@@ -587,7 +587,7 @@ describe('dashboard inbox presentation', () => {
 
   it.each([
     ['none', '从左侧列表选择'],
-    ['invalid', '事项链接无效']
+    ['invalid', '链接无效']
   ] as const)(
     'shows the %s selection state without review actions',
     async (selectionStatus, message) => {
@@ -603,7 +603,7 @@ describe('dashboard inbox presentation', () => {
     await select(submission(1), { item: null, itemLoading: true })
     expect(
       dom.window.document.querySelector(
-        '[role="status"][aria-label="正在加载事项详情"]'
+        '[role="status"][aria-label="正在加载详情"]'
       )
     ).not.toBeNull()
     expect(dom.window.document.querySelector('[data-inbox-action]')).toBeNull()
@@ -618,7 +618,7 @@ describe('dashboard inbox presentation', () => {
       item: { key: selected.key, data: { state: 'processed', item: selected } }
     })
     expect(bodyText()).toContain(`${selected.title}的完整详情`)
-    expect(bodyText()).not.toContain('该事项已被处理')
+    expect(bodyText()).not.toContain('该内容已被处理')
   })
 
   it.each(['missing', 'processed'] as const)(
@@ -635,7 +635,7 @@ describe('dashboard inbox presentation', () => {
         }
       })
       expect(bodyText()).toContain(
-        status === 'missing' ? '该事项已不存在' : '该事项已被处理'
+        status === 'missing' ? '该内容已不存在' : '该内容已被处理'
       )
       expect(
         dom.window.document.querySelector('[data-inbox-action]')
@@ -677,7 +677,7 @@ describe('dashboard inbox presentation', () => {
     await select(submission(1), { itemLoading: true })
     expect(
       dom.window.document.querySelector(
-        '[role="status"][aria-label="正在加载事项详情"]'
+        '[role="status"][aria-label="正在加载详情"]'
       )
     ).not.toBeNull()
     expect(dom.window.document.querySelector('[data-inbox-action]')).toBeNull()
@@ -863,7 +863,7 @@ describe('dashboard inbox presentation', () => {
       selection: null
     })
     expect(scroller.scrollTo).toHaveBeenCalledWith({ top: 0 })
-    expect(bodyText()).toContain('事项链接无效')
+    expect(bodyText()).toContain('链接无效')
   })
 
   it('returns from mobile detail to the candidate list without clearing the active search', async () => {
@@ -888,66 +888,5 @@ describe('dashboard inbox presentation', () => {
       )?.value
     ).toBe('作者搜索')
     expect(dom.window.document.querySelector('[data-inbox-action]')).toBeNull()
-  })
-  it('renders the activated broken-link source end to end: filter, route and detail', async () => {
-    const brokenItem: LinkHealthInboxItem = {
-      key: 'broken-link:21',
-      kind: 'broken-link',
-      id: 21,
-      title: '资源X 的站内资源盘链接已失效',
-      subtitle: '条目A',
-      actor: null,
-      waitingFrom: '2026-10-08T00:00:00.000Z',
-      waitingSeconds: 172800,
-      targetHref: '/admin/resource/link/7?linkId=21',
-      badges: ['已失效'],
-      readOnly: false,
-      payload: {
-        link: {
-          patchId: 3,
-          resourceId: 7,
-          linkId: 21,
-          version: 2,
-          evidenceRound: 1,
-          health: 'broken',
-          healthChangedAt: '2026-10-08T00:00:00.000Z',
-          verifiedAt: null,
-          lastRelinkAt: null,
-          ownerType: 'staff',
-          disputeSource: null,
-          recentReportCount: 4,
-          latestCheck: null,
-          capabilities: {
-            ownerActions: [],
-            resolveActions: [],
-            canCheck: false,
-            canEdit: true
-          },
-          patch: { uniqueId: 'abc12345', name: '条目A' },
-          resource: { name: '资源X', section: 'galgame' },
-          storage: 'touchgal',
-          size: '2 GB',
-          hostname: 'pan.touchgal.example.com',
-          brokenForSeconds: 172800,
-          caseId: null
-        },
-        actions: { relink: true, remove: true }
-      }
-    } as never
-    await select(brokenItem, { items: [brokenItem], kinds: ['broken-link'] })
-
-    // 来源筛选里的新 kind 与其标签出现（激活后不再被过滤掉）
-    expect(bodyText()).toContain('失效链接待办')
-    expect(
-      dom.window.document.querySelector('input[aria-label="失效链接待办"]')
-    ).not.toBeNull()
-    // 详情路由到脱敏的 broken-link 面板，动作只跳既有受权编辑路径
-    expect(bodyText()).toContain('pan.touchgal.example.com')
-    expect(bodyText()).toContain('已失效 2 天')
-    expect(
-      [...dom.window.document.querySelectorAll('a')]
-        .find((anchor) => anchor.textContent?.includes('去补链'))
-        ?.getAttribute('href')
-    ).toBe('/admin/resource/link/7?linkId=21')
   })
 })

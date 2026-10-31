@@ -85,6 +85,8 @@ pnpm prisma:deploy-safe
 | 问题处理基础 | [预检](../../migration/production-case-preflight-2026-09-13.sql)、[同步](../../migration/production-case-sync-2026-09-13.sql)、[复检](../../migration/production-case-postflight-2026-09-13.sql)，再装下一行扩展。 |
 | 求助区 | [预检](../../migration/production-help-preflight-2026-10-29.sql)、[同步](../../migration/production-help-sync-2026-10-29.sql)、[复检](../../migration/production-help-postflight-2026-10-29.sql)，只新建六张求助表，依赖问题处理基础；先于求助区代码运行。 |
 | 问题附图与提醒 | [预检](../../migration/production-case-feedback-preflight-2026-09-26.sql)、[同步](../../migration/production-case-feedback-sync-2026-09-26.sql)、[复检](../../migration/production-case-feedback-postflight-2026-09-26.sql)，扩展后不重跑只认基础列数的检查，旧反馈与举报不回填。 |
+| 控制台查询索引 | [预检](../../migration/production-dashboard-indexes-preflight-2026-10-31.sql)、[同步](../../migration/production-dashboard-indexes-sync-2026-10-31.sql)，在显式事务外执行；只建索引，不改数据，不需要停写。同步可重复运行：已存在且有效的跳过，中断留下的无效索引删掉重建，同名但定义不同时停止。完成后重跑预检，四项都应为 `already_ok`。 |
+| 每日登录记录 | [预检](../../migration/production-user-daily-active-preflight-2026-10-31.sql)、[同步](../../migration/production-user-daily-active-sync-2026-10-31.sql)，只新增空表 `user_daily_active`，不改已有数据。同步在单个事务内执行，外键会短暂锁住用户表，等不到锁 5 秒后停止，重跑即可；已有同名表但列不一致时停止。完成后重跑预检，状态应为 `present` 且主键、外键与预期一致。先迁移再发布对应版本：旧版本不写这张表，新版本在表缺失时只记录错误、不影响登录，缺表期间已访问的用户当天不会补记。 |
 
 ### 资源访问授权
 
@@ -188,7 +190,7 @@ pnpm maintenance:companies:dirty:cache --plan=<审计目录>/plan.json
 
 ## 定时任务怎样观察
 
-应用注册每日重置、临时上传清理、浏览量入库、投稿素材巡检、问题超时和链接健康六类任务。临时上传每小时清理超过一天的残留，浏览量每两分钟入库。投稿素材每天上海时间凌晨 4 点只巡检，使用本进程防重入和 8 小时多实例锁，不删除或建立清理待办。
+应用注册每日重置、临时上传清理、浏览量入库、投稿素材巡检、问题超时、链接健康和每日登录清理七类任务。临时上传每小时清理超过一天的残留，浏览量每两分钟入库。投稿素材每天上海时间凌晨 4 点只巡检，使用本进程防重入和 8 小时多实例锁，不删除或建立清理待办。每日登录记录每月 1 日和 15 日上海时间凌晨 4 点 30 分删除 90 天以前的行，每批 5000 行，使用多实例锁；两次清理之间表内最多约 105 天，仍覆盖总览最长的 60 天窗口。
 
 问题超时每小时第 17 分钟处理相关发布者问题的转交、结案与到期前提醒，站方问题和链接健康不混入。健康每小时第 27 分钟处理普通疑似 7 天、核实后普通争议 30 天到期，持久机器冲突与损坏依据跳过。按编号推进，每批 200、最多 10 轮，跳过也推进；游标保存失败只在本进程回退，不承诺跨实例进度。任务锁获取失败跳过整轮，不能套普通技术限频故障放行规则。
 

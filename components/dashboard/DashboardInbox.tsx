@@ -21,6 +21,7 @@ import { useInbox } from '~/hooks/dashboard/useInbox'
 
 import { useDashboard } from './DashboardShell'
 import { InboxDetail } from './inbox/InboxDetail'
+import { cn } from '~/lib/dashboard/utils'
 import { InboxDetailSkeleton } from './inbox/InboxDetailSkeleton'
 import { InboxListPane } from './inbox/InboxListPane'
 import { InboxToolbar } from './inbox/InboxToolbar'
@@ -242,19 +243,22 @@ function UnifiedInbox({ reviewerId, reviewerRole }: DashboardInboxProps) {
   const freshItem = item && item.key === selectedKey ? item : null
 
   let detailBody: ReactNode
+  // Submission and resource reviews lay out their own preview and pinned form
+  // inside a bounded body instead of scrolling the whole detail pane.
+  let boundedDetail = false
   if (selectionStatus === 'none') {
     detailBody = (
       <StatePanel>
         <InboxIcon className="size-8 text-muted-foreground" aria-hidden />
         <p className="text-sm text-muted-foreground">
-          从左侧列表选择一条待办事项查看详情
+          从左侧列表选择一条查看详情
         </p>
       </StatePanel>
     )
   } else if (selectionStatus === 'invalid') {
     detailBody = (
       <StatePanel>
-        <p className="text-sm">事项链接无效</p>
+        <p className="text-sm">链接无效</p>
         <Button
           type="button"
           variant="outline"
@@ -283,7 +287,7 @@ function UnifiedInbox({ reviewerId, reviewerRole }: DashboardInboxProps) {
     if (data.state === 'missing') {
       detailBody = (
         <StatePanel>
-          <p className="text-sm">该事项已不存在</p>
+          <p className="text-sm">该内容已不存在</p>
           <p className="text-xs text-muted-foreground">
             它可能已被其他审核员处理或删除。
           </p>
@@ -315,7 +319,7 @@ function UnifiedInbox({ reviewerId, reviewerRole }: DashboardInboxProps) {
     ) {
       detailBody = (
         <StatePanel>
-          <p className="text-sm">该事项已被处理</p>
+          <p className="text-sm">该内容已被处理</p>
           <div className="flex items-center gap-2">
             <Button
               type="button"
@@ -339,6 +343,8 @@ function UnifiedInbox({ reviewerId, reviewerRole }: DashboardInboxProps) {
         </StatePanel>
       )
     } else if (data.item !== null) {
+      boundedDetail =
+        data.item.kind === 'submission' || data.item.kind === 'resource-apply'
       detailBody = (
         <InboxDetail
           key={data.item.key}
@@ -347,6 +353,7 @@ function UnifiedInbox({ reviewerId, reviewerRole }: DashboardInboxProps) {
           reviewerRole={reviewerRole}
           onProcessed={onProcessed}
           onStateChanged={onStateChanged}
+          isPhone={isMobile}
         />
       )
     }
@@ -384,7 +391,10 @@ function UnifiedInbox({ reviewerId, reviewerRole }: DashboardInboxProps) {
       <div
         ref={detailRef}
         tabIndex={-1}
-        className="min-h-0 flex-1 overflow-y-auto p-4 outline-none max-md:flex-none max-md:overflow-visible"
+        className={cn(
+          'min-h-0 flex-1 p-4 outline-none max-md:flex-none max-md:overflow-visible',
+          boundedDetail ? 'overflow-hidden' : 'overflow-y-auto'
+        )}
       >
         {detailBody}
       </div>
@@ -417,15 +427,17 @@ function UnifiedInbox({ reviewerId, reviewerRole }: DashboardInboxProps) {
           className="min-h-0 min-w-0 flex-1"
         >
           <ResizablePanel
-            defaultSize="35%"
-            minSize="260px"
+            // Review details put a summary, the preview and a pinned form in
+            // the right pane, so the list starts narrower; it stays resizable.
+            defaultSize="28%"
+            minSize="280px"
             className="min-h-0 min-w-0"
           >
             <InboxListPane inbox={inbox} />
           </ResizablePanel>
           <ResizableHandle withHandle />
           <ResizablePanel
-            defaultSize="65%"
+            defaultSize="72%"
             minSize="300px"
             className="min-h-0 min-w-0"
           >

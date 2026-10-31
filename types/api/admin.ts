@@ -32,6 +32,30 @@ export interface OverviewData {
   newComment: number
 }
 
+export type StatsTrendMetric =
+  | 'dailyLogin'
+  | 'newUser'
+  | 'newGalgame'
+  | 'newGalgameResource'
+  | 'newComment'
+  | 'newRating'
+  | 'newSubmission'
+  | 'newCase'
+  | 'resourceAccess'
+  | 'checkIn'
+
+export type StatsTrendPoint = {
+  /** Shanghai calendar date, YYYY-MM-DD. */
+  date: string
+} & Record<StatsTrendMetric, number>
+
+export interface StatsTrendData {
+  days: number
+  /** Distinct users whose last login falls in the window. */
+  recentLogin: number
+  points: StatsTrendPoint[]
+}
+
 export interface AdminUser {
   id: number
   name: string
@@ -73,7 +97,10 @@ export interface AdminResource extends PatchResource {
   baseLinks?: import('./linkHealth').LinkVersionBase[]
 }
 
-export type AdminComment = PatchComment
+export interface AdminComment extends PatchComment {
+  /** True when the list text was cut short; editing loads the full text. */
+  truncated?: boolean
+}
 
 export interface AdminRating {
   id: number

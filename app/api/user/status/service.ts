@@ -1,4 +1,5 @@
 import { prisma } from '~/prisma/index'
+import { recordDailyActive } from '~/app/api/user/active/service'
 import { getRedirectConfig } from '~/app/api/admin/setting/redirect/getRedirectConfig'
 import type { UserState } from '~/store/userStore'
 
@@ -14,6 +15,7 @@ export const getStatus = async (uid: number | undefined) => {
     where: { id: uid },
     data: { last_login_time: { set: Date.now().toString() } }
   })
+  await recordDailyActive(user.id)
 
   const redirectConfig = await getRedirectConfig()
   const responseData: UserState = {

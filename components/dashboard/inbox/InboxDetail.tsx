@@ -11,7 +11,8 @@ export interface InboxDetailProps {
   reviewerId: number
   reviewerRole: number
   onProcessed: (key: string) => void
-  onStateChanged: (key: string) => void
+  onStateChanged: (key: string, options?: { silent?: boolean }) => void
+  isPhone?: boolean
 }
 
 export function InboxDetail({
@@ -19,7 +20,8 @@ export function InboxDetail({
   reviewerId,
   reviewerRole,
   onProcessed,
-  onStateChanged
+  onStateChanged,
+  isPhone = false
 }: InboxDetailProps) {
   switch (item.kind) {
     case 'submission':
@@ -30,14 +32,18 @@ export function InboxDetail({
           reviewerRole={reviewerRole}
           onProcessed={onProcessed}
           onStateChanged={onStateChanged}
+          isPhone={isPhone}
         />
       )
     case 'resource-apply':
       return (
         <ResourceInboxDetail
           item={item}
+          reviewerId={reviewerId}
+          reviewerRole={reviewerRole}
           onProcessed={onProcessed}
           onStateChanged={onStateChanged}
+          isPhone={isPhone}
         />
       )
     case 'feedback':

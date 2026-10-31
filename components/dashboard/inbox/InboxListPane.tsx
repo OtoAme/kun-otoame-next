@@ -104,9 +104,7 @@ export function InboxListPane({ inbox }: { inbox: UseInboxReturn }) {
       ? '没有找到匹配的条目'
       : `「${statusLabel}」状态暂无条目`
   } else {
-    emptyText = search.trim()
-      ? '没有找到匹配的待办事项'
-      : '当前没有待处理的事项'
+    emptyText = search.trim() ? '没有找到匹配的待审内容' : '当前没有待审内容'
   }
 
   // On mobile this pane does not scroll or clip itself: its height is
@@ -151,7 +149,7 @@ export function InboxListPane({ inbox }: { inbox: UseInboxReturn }) {
         aria-busy={listLoading}
       >
         {listLoading && items.length === 0 ? (
-          <div role="status" aria-label="正在加载待办事项">
+          <div role="status" aria-label="正在加载待审列表">
             <ul className="space-y-2 p-3">
               {Array.from({ length: 6 }).map((_, index) => (
                 <li key={index}>
@@ -183,7 +181,7 @@ export function InboxListPane({ inbox }: { inbox: UseInboxReturn }) {
           </div>
         ) : (
           <ul
-            aria-label={historyMode ? '条目列表' : '待办事项列表'}
+            aria-label={historyMode ? '条目列表' : '待审列表'}
             className="divide-y"
           >
             {items.map((item) => {
@@ -238,9 +236,13 @@ export function InboxListPane({ inbox }: { inbox: UseInboxReturn }) {
                           <span className="shrink-0">
                             {formatWaiting(item.waitingSeconds)}
                           </span>
-                          <Badge variant="secondary">
-                            {LINK_HEALTH_INBOX_KIND_LABELS[item.kind]}
-                          </Badge>
+                          {/* With a single source selected every row has the
+                              same kind, so the label adds nothing. */}
+                          {kinds.length > 1 ? (
+                            <Badge variant="secondary">
+                              {LINK_HEALTH_INBOX_KIND_LABELS[item.kind]}
+                            </Badge>
+                          ) : null}
                           {item.badges.map((badge, index) => (
                             <Badge
                               key={`${item.key}-badge-${index}`}

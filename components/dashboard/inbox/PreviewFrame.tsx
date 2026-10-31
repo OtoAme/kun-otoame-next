@@ -7,7 +7,6 @@ import { Button } from '~/components/dashboard/ui/button'
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogTrigger
@@ -18,17 +17,29 @@ interface PreviewFrameProps {
   src: string
   title: string
   className?: string
+  /**
+   * Fill the parent's height instead of sizing to the content. Review panes
+   * use it so the preview is the only scroll area beside the review form.
+   */
+  fill?: boolean
 }
 
 /**
  * Same-origin readonly admin preview frame. Never points at download/restore
  * endpoints; the preview route itself is admin-only and readonly.
  */
-export function PreviewFrame({ src, title, className }: PreviewFrameProps) {
+export function PreviewFrame({
+  src,
+  title,
+  className,
+  fill = false
+}: PreviewFrameProps) {
   const [enlargeOpen, setEnlargeOpen] = useState(false)
 
   return (
-    <div className="space-y-2">
+    <div
+      className={cn(fill ? 'flex h-full min-h-0 flex-col gap-2' : 'space-y-2')}
+    >
       <div className="flex flex-wrap items-center justify-end gap-2">
         <Dialog open={enlargeOpen} onOpenChange={setEnlargeOpen}>
           <DialogTrigger asChild>
@@ -42,12 +53,13 @@ export function PreviewFrame({ src, title, className }: PreviewFrameProps) {
               放大预览
             </Button>
           </DialogTrigger>
-          <DialogContent className="flex h-[calc(100dvh-2rem)] flex-col p-4 sm:max-w-[calc(100%-2rem)] sm:p-6">
+          {/* The title says what is shown; Radix needs the explicit opt-out. */}
+          <DialogContent
+            aria-describedby={undefined}
+            className="flex h-[calc(100dvh-2rem)] flex-col p-4 sm:max-w-[calc(100%-2rem)] sm:p-6"
+          >
             <DialogHeader className="pr-6">
               <DialogTitle>{title}</DialogTitle>
-              <DialogDescription>
-                此预览仅供查看，不会执行审核操作。
-              </DialogDescription>
             </DialogHeader>
             <iframe
               src={src}
@@ -66,14 +78,26 @@ export function PreviewFrame({ src, title, className }: PreviewFrameProps) {
           <ExternalLink className="size-3.5" aria-hidden />
         </a>
       </div>
-      {/* key isolates each src: the frame DOM and the measured height state
-          are rebuilt per document, never carried into another src. */}
-      <InlinePreviewFrame
-        key={src}
-        src={src}
-        title={title}
-        className={className}
-      />
+      {fill ? (
+        <iframe
+          key={src}
+          src={src}
+          title={title}
+          className={cn(
+            'min-h-0 w-full flex-1 rounded-md border bg-background',
+            className
+          )}
+        />
+      ) : (
+        // key isolates each src: the frame DOM and the measured height state
+        // are rebuilt per document, never carried into another src.
+        <InlinePreviewFrame
+          key={src}
+          src={src}
+          title={title}
+          className={className}
+        />
+      )}
     </div>
   )
 }

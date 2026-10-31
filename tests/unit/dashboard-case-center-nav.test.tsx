@@ -4,67 +4,76 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
 
 import { CaseCenterNav } from '~/components/dashboard/case/CaseCenterNav'
-import { DEFAULT_CASE_VIEW } from '~/components/dashboard/case/caseCenterViews'
+import {
+  DEFAULT_CASE_VIEW,
+  findCaseView
+} from '~/components/dashboard/case/caseCenterViews'
+import type { CaseStatusCounts } from '~/types/api/case'
 
 globalThis.React = React
 
-/** The column is the orientation that shows group titles. */
-const renderColumn = () =>
+const COUNTS: CaseStatusCounts = {
+  open: 3,
+  waiting_owner: 1,
+  waiting_reporter: 2,
+  resolved: 4,
+  rejected: 1,
+  merged: 0
+}
+
+const renderStrip = (brokenLinkCount: number | null = 2) =>
   new JSDOM(
     renderToStaticMarkup(
       <CaseCenterNav
         current={DEFAULT_CASE_VIEW}
-        statusCounts={null}
-        orientation="vertical"
+        statusCounts={COUNTS}
+        brokenLinkCount={brokenLinkCount}
         onSelect={vi.fn()}
       />
     )
   ).window.document
 
-describe('case center navigation owners', () => {
-  it('names who handles each group inside the title that labels its list', () => {
-    const doc = renderColumn()
-
-    // 处理方写在分组标题里，标题又是该组列表的名称，读屏进入列表就一并读到
-    const groups = [...doc.querySelectorAll('ul[aria-labelledby]')].map(
-      (list) => [
-        doc.getElementById(list.getAttribute('aria-labelledby')!)?.textContent,
-        [...list.querySelectorAll('[data-case-view]')].map((entry) =>
-          entry.getAttribute('data-case-view')
-        )
-      ]
-    )
-    expect(groups).toEqual([
-      ['概览 · 站方', ['overview']],
-      ['未结 · 站方', ['unresolved', 'pending', 'waiting_reporter']],
-      ['已结案 · 站方', ['resolved', 'rejected']],
-      ['全部 · 站方', ['all']],
-      ['只读 · 发布者', ['publisher']]
+describe('issue page navigation', () => {
+  it('groups the staff to-dos apart from the read-only lists', () => {
+    const doc = renderStrip()
+    const groups = [...doc.querySelectorAll('ul[aria-label]')].map((list) => [
+      list.getAttribute('aria-label'),
+      [...list.querySelectorAll('[data-case-view]')].map((entry) =>
+        entry.getAttribute('data-case-view')
+      )
     ])
+    expect(groups).toEqual([
+      ['待办', ['pending', 'waiting_reporter', 'broken-link']],
+      ['查看', ['publisher', 'closed', 'all']]
+    ])
+    // One strip at every width, never a side column.
+    expect(doc.querySelectorAll('[data-case-nav]')).toHaveLength(1)
   })
 
-  it('spells out under the navigation which cases the staff handles', () => {
-    const doc = renderColumn()
-    const nav = doc.querySelector('nav[aria-label="事项中心导航"]')!
-    const hint = doc.getElementById(
-      nav.getAttribute('aria-describedby')!
-    )!.textContent
+  it('counts each entry from its own statuses and the shell link count', () => {
+    const doc = renderStrip()
+    const text = (view: string) =>
+      doc.querySelector(`[data-case-view="${view}"]`)?.textContent
+    // 待处理 = open + waiting_owner；已结案 = resolved + rejected
+    expect(text('pending')).toBe('待处理4')
+    expect(text('waiting_reporter')).toBe('等待报告者2')
+    expect(text('broken-link')).toBe('资源盘链接失效2')
+    expect(text('closed')).toBe('已结案5')
+    expect(text('all')).toBe('全部11')
+    // Publisher-owned counts are not in hand, so that entry has no number.
+    expect(text('publisher')).toBe('发布者处理中')
+  })
 
-    // 原有的子集说明保留
-    expect(hint).toContain('待处理与等待报告者是未结事项的两个子集')
-    // 一开始就归站方的几类，以及发布者超时、报告者申请复核后转来的资源问题
-    for (const part of [
-      '违规举报',
-      '条目资料有误',
-      '资源发错条目',
-      '站务反馈与条目页「其他」',
-      '条目页「求资源或催更」',
-      '官方资源的问题',
-      '发布者 7 天未处理',
-      '报告者申请复核'
-    ]) {
-      expect(hint).toContain(part)
-    }
-    expect(hint).toContain('发布者处理中不在站方队列里')
+  it('keeps the staff scope behind a help button', () => {
+    const doc = renderStrip()
+    expect(doc.querySelector('[aria-label="站方处理哪些问题"]')).not.toBeNull()
+  })
+
+  it('maps views from older links onto the current ones', () => {
+    expect(findCaseView('overview').value).toBe('pending')
+    expect(findCaseView('unresolved').value).toBe('pending')
+    expect(findCaseView('resolved').value).toBe('closed')
+    expect(findCaseView('rejected').value).toBe('closed')
+    expect(findCaseView('nonsense').value).toBe('pending')
   })
 })

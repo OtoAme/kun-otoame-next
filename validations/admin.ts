@@ -1,5 +1,11 @@
 import { z } from 'zod'
 import { kunPasswordRegex } from '~/utils/validate'
+import {
+  SUPPORTED_LANGUAGE,
+  SUPPORTED_PLATFORM,
+  SUPPORTED_TYPE
+} from '~/constants/resource'
+import { isValidMoemoepointDate } from '~/utils/moemoepointDateRange'
 
 export const adminReportTargetTypeSchema = z.enum([
   'comment',
@@ -16,11 +22,65 @@ export const adminPaginationSchema = z.object({
     .optional()
 })
 
-export const adminResourcePaginationSchema = adminPaginationSchema.extend({
-  resourceId: z.coerce.number().int().positive().max(2147483647).optional(),
-  limit: z.coerce.number().min(1).max(500),
-  userId: z.coerce.number().min(1).max(9999999).optional()
-})
+// Comma-separated multi-value query parameter restricted to known values.
+const csvEnum = <T extends readonly [string, ...string[]]>(values: T) =>
+  z
+    .string()
+    .transform((value) =>
+      [...new Set(value.split(',').map((item) => item.trim()))].filter(Boolean)
+    )
+    .pipe(z.array(z.enum(values)).min(1).max(values.length))
+
+const shanghaiDate = z
+  .string()
+  .refine(isValidMoemoepointDate, { message: '日期格式应为 YYYY-MM-DD' })
+
+export const ADMIN_RESOURCE_SEARCH_FIELDS = [
+  'all',
+  'text',
+  'game',
+  'link',
+  'id'
+] as const
+export const ADMIN_RESOURCE_SORTS = [
+  'created_desc',
+  'created_asc',
+  'download_desc',
+  'download_asc'
+] as const
+
+export const adminResourcePaginationSchema = adminPaginationSchema
+  .extend({
+    resourceId: z.coerce.number().int().positive().max(2147483647).optional(),
+    limit: z.coerce.number().min(1).max(500),
+    userId: z.coerce.number().min(1).max(9999999).optional(),
+    /**
+     * Without it the search keeps its original meaning (link or BLAKE3 hash),
+     * so callers that predate the console filters behave as before.
+     */
+    searchField: z.enum(ADMIN_RESOURCE_SEARCH_FIELDS).optional(),
+    section: z.enum(['galgame', 'patch']).optional(),
+    status: csvEnum(['0', '1', '2'])
+      .transform((values) => values.map(Number))
+      .optional(),
+    publisher: z.enum(['official', 'user']).optional(),
+    type: csvEnum(SUPPORTED_TYPE as [string, ...string[]]).optional(),
+    language: csvEnum(SUPPORTED_LANGUAGE as [string, ...string[]]).optional(),
+    platform: csvEnum(SUPPORTED_PLATFORM as [string, ...string[]]).optional(),
+    health: z.enum(['broken', 'attention', 'healthy']).optional(),
+    from: shanghaiDate.optional(),
+    to: shanghaiDate.optional(),
+    /**
+     * Content rating for the management list. When present it replaces the
+     * viewer's own display setting, so the list is not narrowed by it.
+     */
+    rating: z.enum(['all', 'sfw', 'nsfw']).optional(),
+    sort: z.enum(ADMIN_RESOURCE_SORTS).optional()
+  })
+  .refine((input) => !input.from || !input.to || input.from <= input.to, {
+    message: '开始日期不能晚于结束日期',
+    path: ['to']
+  })
 
 export const adminUserSearchTypeSchema = z.enum(['name', 'email', 'id'])
 
@@ -30,7 +90,9 @@ export const adminUserPaginationSchema = adminPaginationSchema.extend({
 })
 
 export const adminGalgamePaginationSchema = adminPaginationSchema.extend({
-  limit: z.coerce.number().min(1).max(500)
+  limit: z.coerce.number().min(1).max(500),
+  /** Same meaning as on the resource list; replaces the display setting. */
+  rating: z.enum(['all', 'sfw', 'nsfw']).optional()
 })
 
 export const adminCommentSearchTypeSchema = z.enum(['content', 'user'])
@@ -129,6 +191,20 @@ export const adminUpdateUserSchema = z.object({
       .optional()
   ),
   bio: z.string().trim().max(107, { message: '个人简介不能超过 107 个字符' })
+})
+
+export const adminLogPaginationSchema = adminPaginationSchema.extend({
+  /** One admin_log type, e.g. creator_review; unknown types match nothing. */
+  type: z
+    .string()
+    .regex(/^[a-z_]{1,64}$/, { message: '日志类型格式不正确' })
+    .optional(),
+  userId: z.coerce.number().int().min(1).max(9999999).optional()
+})
+
+export const adminCreatorPaginationSchema = adminPaginationSchema.extend({
+  /** Open applications (unread or read) by default; history views opt in. */
+  status: z.enum(['pending', 'approved', 'declined', 'all']).default('pending')
 })
 
 export const approveCreatorSchema = z.object({

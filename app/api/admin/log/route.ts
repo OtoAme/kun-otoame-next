@@ -1,22 +1,30 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { kunParseGetQuery } from '~/app/api/utils/parseQuery'
+import { PERSONALIZED_API_CACHE_CONTROL } from '~/app/api/utils/cacheHeaders'
 import { verifyHeaderCookie } from '~/middleware/_verifyHeaderCookie'
-import { adminPaginationSchema } from '~/validations/admin'
+import { adminLogPaginationSchema } from '~/validations/admin'
 import { getLog } from './service'
 
+// The body depends on the viewer's role (masked below role 4), so no shared
+// cache may keep it.
+const privateJson = (body: unknown) =>
+  NextResponse.json(body, {
+    headers: { 'Cache-Control': PERSONALIZED_API_CACHE_CONTROL }
+  })
+
 export async function GET(req: NextRequest) {
-  const input = kunParseGetQuery(req, adminPaginationSchema)
+  const input = kunParseGetQuery(req, adminLogPaginationSchema)
   if (typeof input === 'string') {
-    return NextResponse.json(input)
+    return privateJson(input)
   }
   const payload = await verifyHeaderCookie(req)
   if (!payload) {
-    return NextResponse.json('用户未登录')
+    return privateJson('用户未登录')
   }
-  if (payload.role < 4) {
-    return NextResponse.json('本页面仅超级管理员可访问')
+  // Module 09 plan 5.3: administrators read the management log.
+  if (payload.role < 3) {
+    return privateJson('本页面仅管理员可访问')
   }
 
-  const res = await getLog(input)
-  return NextResponse.json(res)
+  return privateJson(await getLog(input, payload.role))
 }

@@ -19,7 +19,8 @@ const mocks = vi.hoisted(() => ({
       'resource-apply': 0,
       feedback: 0,
       report: 0,
-      case: 7
+      case: 7,
+      'broken-link': 2
     },
     todayProcessed: 3
   }
@@ -38,6 +39,9 @@ vi.mock('~/components/dashboard/DashboardShell', () => ({
     countsLoading: false,
     refreshCounts: mocks.refreshCounts
   })
+}))
+vi.mock('~/components/dashboard/case/BrokenLinkQueue', () => ({
+  BrokenLinkQueue: () => <section aria-label="资源盘失效链接列表" />
 }))
 vi.mock('~/components/dashboard/case/DashboardCaseDetail', () => ({
   DashboardCaseDetail: ({
@@ -257,7 +261,7 @@ describe('dashboard case center', () => {
     return calls.length ? String(calls[calls.length - 1][0]) : ''
   }
 
-  /** Secondary-nav entries render twice (column + strip); either one works. */
+  /** Secondary-nav entries live in the single strip above the list. */
   const navButton = (container: HTMLElement, view: string) =>
     container.querySelector<HTMLButtonElement>(
       `button[data-case-view="${view}"]`
@@ -286,37 +290,23 @@ describe('dashboard case center', () => {
     })
   }
 
-  it('opens on the overview, which reports on the default queue only', async () => {
+  it('opens on the staff to-do queue', async () => {
     mocks.kunFetchGet.mockResolvedValue(
       listResponse([makeRow()], 1, SAMPLE_COUNTS)
     )
     const container = await mount()
     await flush()
 
-    // 概览复用默认队列的响应，不另开聚合接口；只取队首几条
+    // open alone would drop the cases a reporter has just answered
     expect(mocks.kunFetchGet).toHaveBeenCalledWith('/admin/case', {
+      statuses: 'open,waiting_owner',
       page: 1,
-      limit: 6
+      limit: 20
     })
-    const statValue = (key: string) =>
-      container.querySelector(
-        `[data-case-stat="${key}"] [data-case-stat-value]`
-      )?.textContent
-    // 四张卡必须是四个口径：未结 8 = 5+1+2，待处理 6 = 5+1
-    expect(statValue('unresolved')).toBe('8')
-    expect(statValue('pending')).toBe('6')
-    expect(statValue('oldest')).toBe('3 天')
-    expect(statValue('today')).toBe('3')
-    // 未结与待处理不能是同一个数字换个标签
-    expect(statValue('unresolved')).not.toBe(statValue('pending'))
-    const text = container.textContent ?? ''
-    expect(text).toContain('未结事项')
-    expect(text).toContain('待处理')
-    expect(text).toContain('今日已处理')
-    expect(text).toContain('最久等待的事项')
-    expect(text).toContain('等待 3 天')
-    // 概览没有详情面板
-    expect(container.querySelector('[aria-label="事项详情"]')).toBeNull()
+    expect(navButton(container, 'pending').getAttribute('aria-current')).toBe(
+      'page'
+    )
+    expect(container.textContent).toContain('#11')
   })
 
   it('counts each navigation entry from the same keys it filters by', async () => {
@@ -326,24 +316,19 @@ describe('dashboard case center', () => {
     const container = await mount()
     await flush()
 
-    // 未结 8 = open 5 + waiting_owner 1 + waiting_reporter 2
-    expect(navButton(container, 'unresolved').textContent).toBe('未结事项8')
-    // 待处理 6 = open 5 + waiting_owner 1，是未结的子集
+    // 待处理 6 = open 5 + waiting_owner 1
     expect(navButton(container, 'pending').textContent).toBe('待处理6')
     expect(navButton(container, 'waiting_reporter').textContent).toBe(
       '等待报告者2'
     )
-    expect(navButton(container, 'resolved').textContent).toBe('已解决9')
-    expect(navButton(container, 'rejected').textContent).toBe('已驳回3')
-    // 全部 20 = 六键之和（merged 为 0）
-    expect(navButton(container, 'all').textContent).toBe('全部事项20')
-    // merged 不单独做入口，但被「全部事项」包含
+    // Broken disk links come from the shell counts, not the case list.
+    expect(navButton(container, 'broken-link').textContent).toBe(
+      '资源盘链接失效2'
+    )
+    // 已结案 12 = resolved 9 + rejected 3；全部 20 = 六键之和
+    expect(navButton(container, 'closed').textContent).toBe('已结案12')
+    expect(navButton(container, 'all').textContent).toBe('全部20')
     expect(container.querySelector('[data-case-view="merged"]')).toBeNull()
-    expect(
-      container.querySelector('[data-case-view="overview"]')
-    ).not.toBeNull()
-    // 重叠关系写在导航里，而不是留给人推断
-    expect(container.textContent).toContain('子集')
   })
 
   it('never labels two navigation entries the same', async () => {
@@ -354,31 +339,29 @@ describe('dashboard case center', () => {
     // open 与 waiting_owner 在 CASE_STATUS_LABELS 里同为「等待处理方」，
     // 必须合成一个「待处理」入口而不是两个同名入口。导航渲染两套
     // （竖列 + 横条，互补隐藏），只数其中一套。
-    const nav = container.querySelector('nav[aria-label="事项中心导航"]')!
+    const nav = container.querySelector('nav[aria-label="问题处理导航"]')!
     const labels = [...nav.querySelectorAll('[data-case-view]')].map(
       (element) => element.textContent?.replace(/\d+$/, '')
     )
-    expect(labels.length).toBe(8)
+    expect(labels.length).toBe(6)
     expect(new Set(labels).size).toBe(labels.length)
   })
 
-  it('asks for open and waiting_owner together on the pending queue', async () => {
+  it('lists broken resource-disk links instead of cases on that view', async () => {
     mocks.kunFetchGet.mockResolvedValue(listResponse([makeRow()]))
     const container = await mount()
     await flush()
 
     await act(async () => {
-      navButton(container, 'pending').click()
+      navButton(container, 'broken-link').click()
     })
-    expect(lastPushedHref()).toBe('/dashboard/case?view=pending')
+    expect(lastPushedHref()).toBe('/dashboard/case?view=broken-link')
     await applyNavigation(lastPushedHref())
     await flush()
-    // status=open 会漏掉「报告者已补充、球在站方」的那批
-    expect(mocks.kunFetchGet).toHaveBeenLastCalledWith('/admin/case', {
-      statuses: 'open,waiting_owner',
-      page: 1,
-      limit: 20
-    })
+    expect(
+      container.querySelector('[aria-label="资源盘失效链接列表"]')
+    ).not.toBeNull()
+    expect(container.querySelector('[data-case-queue-list]')).toBeNull()
   })
 
   it('routes the other queues through the URL with a single status parameter', async () => {
@@ -399,16 +382,22 @@ describe('dashboard case center', () => {
     })
 
     await act(async () => {
-      navButton(container, 'unresolved').click()
+      navButton(container, 'closed').click()
     })
-    expect(lastPushedHref()).toBe('/dashboard/case?view=unresolved')
+    expect(lastPushedHref()).toBe('/dashboard/case?view=closed')
     await applyNavigation(lastPushedHref())
     await flush()
-    // 未结事项不传任何状态参数：服务端默认窗口同时是收件箱队列的定义
     expect(mocks.kunFetchGet).toHaveBeenLastCalledWith('/admin/case', {
+      statuses: 'resolved,rejected',
       page: 1,
       limit: 20
     })
+
+    // The default view is not written into the URL.
+    await act(async () => {
+      navButton(container, 'pending').click()
+    })
+    expect(lastPushedHref()).toBe('/dashboard/case')
   })
 
   it('lists publisher-owned cases apart from the staff queue (D22)', async () => {
@@ -417,7 +406,7 @@ describe('dashboard case center', () => {
     )
     const container = await mount()
     await flush()
-    expect(navButton(container, 'unresolved').textContent).toBe('未结事项8')
+    expect(navButton(container, 'pending').textContent).toBe('待处理6')
 
     await act(async () => {
       navButton(container, 'publisher').click()
@@ -450,7 +439,7 @@ describe('dashboard case center', () => {
     expect(text).toContain('发布者甲')
     expect(text).toContain('重开 1 次')
     expect(navButton(container, 'publisher').textContent).toBe('发布者处理中')
-    expect(navButton(container, 'unresolved').textContent).toBe('未结事项8')
+    expect(navButton(container, 'pending').textContent).toBe('待处理6')
 
     // 可按发布者筛选
     const ownerInput =
@@ -495,7 +484,7 @@ describe('dashboard case center', () => {
   })
 
   it('renders queue rows with the aligned column fields', async () => {
-    mocks.searchParams = new URLSearchParams('view=unresolved')
+    mocks.searchParams = new URLSearchParams('view=pending')
     mocks.kunFetchGet.mockResolvedValue(
       listResponse([makeRow()], 1, SAMPLE_COUNTS)
     )
@@ -503,6 +492,7 @@ describe('dashboard case center', () => {
     await flush()
 
     expect(mocks.kunFetchGet).toHaveBeenCalledWith('/admin/case', {
+      statuses: 'open,waiting_owner',
       page: 1,
       limit: 20
     })
@@ -521,7 +511,7 @@ describe('dashboard case center', () => {
   })
 
   it('drives the queue layout off the container width, not the viewport', async () => {
-    mocks.searchParams = new URLSearchParams('view=unresolved')
+    mocks.searchParams = new URLSearchParams('view=pending')
     mocks.kunFetchGet.mockResolvedValue(listResponse([makeRow()]))
     const container = await mount()
     await flush()
@@ -541,62 +531,46 @@ describe('dashboard case center', () => {
     expect(rowGrid.className).toContain('@[52rem]:grid-cols-[minmax(0,1fr)_')
   })
 
-  it('keeps the overview list as cards regardless of its width', async () => {
-    mocks.kunFetchGet.mockResolvedValue(listResponse([makeRow()]))
-    const container = await mount()
-    await flush()
-
-    // 概览的「最久等待」列表没有表头，不该在宽容器下变成无头表格
-    expect(container.querySelector('[data-case-table-head]')).toBeNull()
-    const rowGrid = container.querySelector('[data-case-row-id="11"] > span')!
-    expect(rowGrid.className).toContain('grid-cols-[minmax(0,1fr)_auto]')
-    expect(rowGrid.className).not.toContain('@[52rem]:')
-  })
-
-  it('drops the vertical nav column whenever a detail is open', async () => {
-    mocks.searchParams = new URLSearchParams('view=unresolved')
+  it('keeps one navigation strip whether or not a detail is open', async () => {
+    mocks.searchParams = new URLSearchParams('view=pending')
     mocks.kunFetchGet.mockResolvedValue(listResponse([makeRow({ id: 22 })]))
     const container = await mount()
     await flush()
 
-    // 无详情：竖列 + 横条带各一套，按 lg 互补隐藏
-    expect(
+    const strips = () =>
       [...container.querySelectorAll('[data-case-nav]')].map((element) =>
         element.getAttribute('data-case-nav')
       )
-    ).toEqual(['vertical', 'horizontal'])
+    expect(strips()).toEqual(['strip'])
 
-    mocks.searchParams = new URLSearchParams('view=unresolved&id=22')
+    mocks.searchParams = new URLSearchParams('view=pending&id=22')
     await act(async () => {
       root!.render(<CaseCenter />)
     })
     await flush()
 
-    // 详情打开：只剩横条带。让断点在此处插入 224px 固定列，会使会话列
-    // 在 1 像素视口变化内从 531px 掉到 384px。
-    const navs = [...container.querySelectorAll('[data-case-nav]')]
+    // A side column would change the list and detail widths on open.
+    expect(strips()).toEqual(['strip'])
     expect(
-      navs.map((element) => element.getAttribute('data-case-nav'))
-    ).toEqual(['horizontal'])
-    expect(navs[0].className).not.toContain('lg:hidden')
-    // 条带仍然给出全部七个入口
-    expect(navs[0].querySelectorAll('[data-case-view]')).toHaveLength(8)
+      container.querySelectorAll('[data-case-nav] [data-case-view]')
+    ).toHaveLength(6)
   })
 
   it('falls back to page 1 when the URL page exceeds the API limit', async () => {
-    mocks.searchParams = new URLSearchParams('view=unresolved&page=2147483648')
+    mocks.searchParams = new URLSearchParams('view=pending&page=2147483648')
     mocks.kunFetchGet.mockResolvedValue(listResponse([]))
     await mount()
     await flush()
 
     expect(mocks.kunFetchGet).toHaveBeenCalledWith('/admin/case', {
+      statuses: 'open,waiting_owner',
       page: 1,
       limit: 20
     })
   })
 
   it('filters by kind through the URL and refetches', async () => {
-    mocks.searchParams = new URLSearchParams('view=unresolved')
+    mocks.searchParams = new URLSearchParams('view=pending')
     mocks.kunFetchGet.mockResolvedValue(listResponse([makeRow()]))
     const container = await mount()
     await flush()
@@ -606,6 +580,7 @@ describe('dashboard case center', () => {
     await applyNavigation(lastPushedHref())
     await flush()
     expect(mocks.kunFetchGet).toHaveBeenLastCalledWith('/admin/case', {
+      statuses: 'open,waiting_owner',
       kind: 'content_violation',
       page: 1,
       limit: 20
@@ -613,7 +588,7 @@ describe('dashboard case center', () => {
   })
 
   it('submits search explicitly and keeps it out of the request until submitted', async () => {
-    mocks.searchParams = new URLSearchParams('view=unresolved')
+    mocks.searchParams = new URLSearchParams('view=pending')
     mocks.kunFetchGet.mockResolvedValue(listResponse([makeRow()]))
     const container = await mount()
     await flush()
@@ -637,6 +612,7 @@ describe('dashboard case center', () => {
     await applyNavigation(lastPushedHref())
     await flush()
     expect(mocks.kunFetchGet).toHaveBeenLastCalledWith('/admin/case', {
+      statuses: 'open,waiting_owner',
       search: '资源X',
       page: 1,
       limit: 20
@@ -644,7 +620,7 @@ describe('dashboard case center', () => {
   })
 
   it('narrows a submitted search to the chosen field through the URL (M03-9)', async () => {
-    mocks.searchParams = new URLSearchParams('view=unresolved&search=%238')
+    mocks.searchParams = new URLSearchParams('view=pending&search=%238')
     mocks.kunFetchGet.mockResolvedValue(listResponse([makeRow()]))
     const container = await mount()
     await flush()
@@ -654,6 +630,7 @@ describe('dashboard case center', () => {
     await applyNavigation(lastPushedHref())
     await flush()
     expect(mocks.kunFetchGet).toHaveBeenLastCalledWith('/admin/case', {
+      statuses: 'open,waiting_owner',
       search: '#8',
       searchField: 'id',
       page: 1,
@@ -666,7 +643,7 @@ describe('dashboard case center', () => {
   })
 
   it('does not refetch when only the field changes without a search', async () => {
-    mocks.searchParams = new URLSearchParams('view=unresolved')
+    mocks.searchParams = new URLSearchParams('view=pending')
     mocks.kunFetchGet.mockResolvedValue(listResponse([makeRow()]))
     const container = await mount()
     await flush()
@@ -677,30 +654,8 @@ describe('dashboard case center', () => {
     expect(mocks.kunFetchGet).toHaveBeenCalledTimes(1)
   })
 
-  it('runs a search typed on the overview against the default queue', async () => {
-    mocks.kunFetchGet.mockResolvedValue(listResponse([makeRow()]))
-    const container = await mount()
-    await flush()
-
-    const input = container.querySelector<HTMLInputElement>(
-      'input[type="search"]'
-    )!
-    await act(async () => {
-      Object.getOwnPropertyDescriptor(
-        dom!.window.HTMLInputElement.prototype,
-        'value'
-      )!.set!.call(input, '资源X')
-      input.dispatchEvent(new dom!.window.Event('input', { bubbles: true }))
-    })
-    await act(async () => {
-      findButton(container, '搜索').click()
-    })
-    expect(lastPushedHref()).toContain('view=unresolved')
-    expect(lastPushedHref()).toContain('search=')
-  })
-
   it('opens a row detail and advances to the neighbor after processing', async () => {
-    mocks.searchParams = new URLSearchParams('view=unresolved')
+    mocks.searchParams = new URLSearchParams('view=pending')
     const rows = [makeRow({ id: 11 }), makeRow({ id: 22 }), makeRow({ id: 33 })]
     mocks.kunFetchGet.mockResolvedValue(listResponse(rows, 3))
     const container = await mount()
@@ -710,7 +665,7 @@ describe('dashboard case center', () => {
     await act(async () => {
       ;(row as HTMLElement).click()
     })
-    expect(lastPushedHref()).toBe('/dashboard/case?view=unresolved&id=22')
+    expect(lastPushedHref()).toBe('/dashboard/case?id=22')
     await applyNavigation(lastPushedHref())
     await flush()
     expect(container.textContent).toContain('事项 22 的详情')
@@ -736,8 +691,9 @@ describe('dashboard case center', () => {
     const container = await mount(42)
     await flush()
 
-    // 深链没有 view 参数，落到默认队列，因为概览没有详情面板
+    // A deep link names a case of any status, so it lands on 全部.
     expect(mocks.kunFetchGet).toHaveBeenCalledWith('/admin/case', {
+      allStatuses: 'true',
       page: 1,
       limit: 20
     })
@@ -745,7 +701,7 @@ describe('dashboard case center', () => {
   })
 
   it('shows a retryable error and an empty state', async () => {
-    mocks.searchParams = new URLSearchParams('view=unresolved')
+    mocks.searchParams = new URLSearchParams('view=pending')
     mocks.kunFetchGet.mockResolvedValue('加载事项列表失败')
     const container = await mount()
     await flush()
@@ -758,11 +714,11 @@ describe('dashboard case center', () => {
       findButton(container, '重试').click()
     })
     await flush()
-    expect(container.textContent).toContain('站方队列当前没有未结事项')
+    expect(container.textContent).toContain('没有等待站方处理的问题')
   })
 
   it('shows the invalid-selection panel for a malformed deep link', async () => {
-    mocks.searchParams = new URLSearchParams('view=unresolved&id=abc')
+    mocks.searchParams = new URLSearchParams('view=pending&id=abc')
     mocks.kunFetchGet.mockResolvedValue(listResponse([makeRow()]))
     const container = await mount()
     await flush()
@@ -776,8 +732,10 @@ describe('dashboard case center', () => {
 
   /** Values offered by the status filter, or null when it is not shown. */
   const statusOptions = (container: HTMLElement) => {
-    const select = [...container.querySelectorAll('select')].find((element) =>
-      element.querySelector('option[value="waiting_reporter"]')
+    const select = [...container.querySelectorAll('select')].find(
+      (element) =>
+        element.querySelector('option[value="resolved"]') ||
+        element.querySelector('option[value="waiting_reporter"]')
     )
     return select
       ? [...select.querySelectorAll('option')].map((option) => option.value)
@@ -814,32 +772,20 @@ describe('dashboard case center', () => {
       limit: 20
     })
     // 导航徽标仍是整个视图的计数
-    expect(navButton(container, 'all').textContent).toBe('全部事项20')
+    expect(navButton(container, 'all').textContent).toBe('全部20')
   })
 
   it('offers only the status groups the current view spans', async () => {
     mocks.kunFetchGet.mockResolvedValue(listResponse([makeRow()]))
     const container = await mount()
     await flush()
-    // 概览没有列表筛选
+    // 只剩一个分组的视图本身就是这个筛选
+    expect(statusOptions(container)).toBeNull()
+    await applyNavigation('/dashboard/case?view=waiting_reporter')
     expect(statusOptions(container)).toBeNull()
 
-    await applyNavigation('/dashboard/case?view=unresolved')
-    expect(statusOptions(container)).toEqual([
-      'all',
-      'pending',
-      'waiting_reporter'
-    ])
-    // 只剩一个分组的视图本身就是这个筛选
-    for (const view of [
-      'pending',
-      'waiting_reporter',
-      'resolved',
-      'rejected'
-    ]) {
-      await applyNavigation(`/dashboard/case?view=${view}`)
-      expect(statusOptions(container), view).toBeNull()
-    }
+    await applyNavigation('/dashboard/case?view=closed')
+    expect(statusOptions(container)).toEqual(['all', 'resolved', 'rejected'])
 
     // 发布者处理中只有前两组，状态筛选保留 ownerType
     await applyNavigation('/dashboard/case?view=publisher')
@@ -862,9 +808,10 @@ describe('dashboard case center', () => {
     })
 
     // 手改网址带上视图之外的分组时忽略它
-    await applyNavigation('/dashboard/case?view=unresolved&caseStatus=rejected')
+    await applyNavigation('/dashboard/case?view=closed&caseStatus=pending')
     await flush()
     expect(mocks.kunFetchGet).toHaveBeenLastCalledWith('/admin/case', {
+      statuses: 'resolved,rejected',
       page: 1,
       limit: 20
     })
@@ -906,10 +853,10 @@ describe('dashboard case center', () => {
     expect(lastPushedHref()).toContain('search=')
 
     await act(async () => {
-      navButton(container, 'unresolved').click()
+      navButton(container, 'waiting_reporter').click()
     })
     expect(lastPushedHref()).toBe(
-      '/dashboard/case?view=unresolved&caseKind=content_violation'
+      '/dashboard/case?view=waiting_reporter&caseKind=content_violation'
     )
   })
 
@@ -920,7 +867,7 @@ describe('dashboard case center', () => {
     )!
 
   it('sorts by a column head, flipping the current one like Explorer', async () => {
-    mocks.searchParams = new URLSearchParams('view=unresolved&page=2')
+    mocks.searchParams = new URLSearchParams('view=pending&page=2')
     mocks.kunFetchGet.mockResolvedValue(listResponse([makeRow()], 21))
     const container = await mount()
     await flush()
@@ -946,10 +893,11 @@ describe('dashboard case center', () => {
     await act(async () => {
       sortButton(container, 'time').click()
     })
-    expect(lastPushedHref()).toBe('/dashboard/case?view=unresolved&order=desc')
+    expect(lastPushedHref()).toBe('/dashboard/case?order=desc')
     await applyNavigation(lastPushedHref())
     await flush()
     expect(mocks.kunFetchGet).toHaveBeenLastCalledWith('/admin/case', {
+      statuses: 'open,waiting_owner',
       order: 'desc',
       page: 1,
       limit: 20
@@ -962,10 +910,11 @@ describe('dashboard case center', () => {
     await act(async () => {
       sortButton(container, 'kind').click()
     })
-    expect(lastPushedHref()).toBe('/dashboard/case?view=unresolved&sort=kind')
+    expect(lastPushedHref()).toBe('/dashboard/case?sort=kind')
     await applyNavigation(lastPushedHref())
     await flush()
     expect(mocks.kunFetchGet).toHaveBeenLastCalledWith('/admin/case', {
+      statuses: 'open,waiting_owner',
       sort: 'kind',
       page: 1,
       limit: 20
@@ -973,15 +922,13 @@ describe('dashboard case center', () => {
     await act(async () => {
       sortButton(container, 'kind').click()
     })
-    expect(lastPushedHref()).toBe(
-      '/dashboard/case?view=unresolved&sort=kind&order=desc'
-    )
+    expect(lastPushedHref()).toBe('/dashboard/case?sort=kind&order=desc')
     await applyNavigation(lastPushedHref())
     await flush()
     await act(async () => {
       sortButton(container, 'status').click()
     })
-    expect(lastPushedHref()).toBe('/dashboard/case?view=unresolved&sort=status')
+    expect(lastPushedHref()).toBe('/dashboard/case?sort=status')
   })
 
   it('reads the sort from the URL and sorts the publisher view by its publisher', async () => {

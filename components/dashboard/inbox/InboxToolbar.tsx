@@ -33,7 +33,7 @@ import {
   type UseInboxReturn
 } from '~/hooks/dashboard/useInbox'
 import { cn } from '~/lib/dashboard/utils'
-import { LINK_HEALTH_INBOX_KINDS, type InboxOrder } from '~/types/api/inbox'
+import { CONTENT_REVIEW_KINDS, type InboxOrder } from '~/types/api/inbox'
 import type { PatchSubmissionStatus } from '~/types/api/patchSubmission'
 
 export interface InboxToolbarProps {
@@ -44,8 +44,8 @@ export interface InboxToolbarProps {
 }
 
 const SHORTCUTS: Array<{ keys: string; description: string }> = [
-  { keys: '↑ / ↓', description: '在列表中选择事项' },
-  { keys: 'Enter', description: '打开选中事项并聚焦右侧详情' },
+  { keys: '↑ / ↓', description: '在列表中选择' },
+  { keys: 'Enter', description: '打开选中项并聚焦右侧详情' },
   {
     keys: 'A',
     description: '触发当前详情中的「通过」操作，会先进入一次确认'
@@ -53,7 +53,7 @@ const SHORTCUTS: Array<{ keys: string; description: string }> = [
   {
     keys: 'D',
     description:
-      '触发当前详情的危险操作：资源申请「拒绝并删除」、投稿「违规处理」，均会先进入一次确认'
+      '触发当前详情的危险操作：待审资源「拒绝」、待审条目「违规处理」，均会先进入一次确认'
   },
   { keys: '/', description: '聚焦搜索框' },
   { keys: '?', description: '打开本帮助' }
@@ -109,7 +109,7 @@ export function InboxToolbar({
         className="flex min-w-[10rem] flex-1 items-center gap-2"
       >
         <label htmlFor="inbox-search" className="sr-only">
-          {historyMode ? '搜索标题、投稿人或外部ID' : '搜索待办事项'}
+          {historyMode ? '搜索标题、投稿人或外部ID' : '搜索名称或发布者'}
         </label>
         <Input
           id="inbox-search"
@@ -124,7 +124,7 @@ export function InboxToolbar({
               : INBOX_SEARCH_MAX
           }
           placeholder={
-            historyMode ? '搜索标题、投稿人或外部ID' : '搜索待办事项'
+            historyMode ? '搜索标题、投稿人或外部ID' : '搜索名称或发布者'
           }
           className="h-8 min-w-0 flex-1"
         />
@@ -136,7 +136,7 @@ export function InboxToolbar({
 
       <fieldset className="flex flex-wrap items-center gap-x-3 gap-y-1">
         <legend className="sr-only">来源筛选</legend>
-        {LINK_HEALTH_INBOX_KINDS.map((kind) => {
+        {CONTENT_REVIEW_KINDS.map((kind) => {
           const checked = kinds.includes(kind)
           const isLastChecked = checked && kinds.length === 1
           return (
@@ -245,12 +245,9 @@ export function InboxToolbar({
               </div>
             ))}
           </dl>
-          <div className="space-y-1 text-sm text-muted-foreground">
-            <p>「旧反馈」「旧举报」为只读来源，请前往旧后台处理。</p>
-            <p>
-              驳回资源申请、按违规处理投稿等操作不可撤销，执行前会先要求确认。
-            </p>
-          </div>
+          <p className="text-sm text-muted-foreground">
+            拒绝资源、对投稿做违规处理等操作不可撤销，执行前会先要求确认。
+          </p>
           <DialogFooter>
             <DialogClose asChild>
               <Button type="button" variant="secondary">

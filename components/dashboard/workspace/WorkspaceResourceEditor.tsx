@@ -73,7 +73,7 @@ import { WorkspaceMaintenanceCard } from './WorkspaceMaintenance'
 import { WorkspaceMultiSelect } from './WorkspaceMultiSelect'
 import { WorkspaceResourceUpload } from './WorkspaceResourceUpload'
 
-type EditableDraft = {
+export type EditableDraft = {
   key: string
   protected: false
   id?: number
@@ -124,9 +124,9 @@ const SAVE_UNCONFIRMED =
 const DELETE_UNCONFIRMED =
   '没有确认这次删除是否已经完成。请使用「载入最新版本」核对。不要为了确认而再次删除。'
 
-type FieldError = { path: string; message: string }
+export type FieldError = { path: string; message: string }
 
-const fieldErrorDomId = (path: string) => {
+export const fieldErrorDomId = (path: string) => {
   const safe = path.replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-|-$/g, '')
   return `workspace-field-${safe || 'form'}`
 }
@@ -156,7 +156,7 @@ function isDefiniteResourceDelete(
   return (response as { deleted?: unknown }).deleted === true
 }
 
-function fieldMessage(errors: FieldError[], path: string) {
+export function fieldMessage(errors: FieldError[], path: string) {
   return errors.find((item) => item.path === path)?.message
 }
 
@@ -1505,7 +1505,7 @@ function storageLabel(storage: string) {
   return storageTypes.find((item) => item.value === storage)?.label ?? storage
 }
 
-function FieldHint({ id, message }: { id: string; message?: string }) {
+export function FieldHint({ id, message }: { id: string; message?: string }) {
   if (!message) return null
   return (
     <p id={id} role="alert" className="break-all text-sm text-destructive">
@@ -1556,7 +1556,7 @@ function linkField(errors: FieldError[], index: number, field: string) {
   }
 }
 
-function EditableLinkFields({
+export function EditableLinkFields({
   link,
   index,
   errors,

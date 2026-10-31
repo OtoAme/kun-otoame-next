@@ -420,7 +420,7 @@ describe('admin inbox deep links', () => {
     ['comment', '/admin/report'],
     ['rating', '/admin/rating-report']
   ])(
-    'links %s reports to the matching legacy processing page',
+    'links %s reports to the matching legacy admin page',
     async (targetType, targetHref) => {
       mocks.prisma.patch_report.findUnique.mockResolvedValue(
         report(5, targetType)
@@ -541,7 +541,9 @@ describe('admin inbox counts', () => {
             'resource_apply_approve',
             'resource_apply_decline',
             // Module 03 M03-8: every staff case closure (review item 24).
-            'case_close'
+            'case_close',
+            // Module 09 plan 5.4: creator application reviews.
+            'creator_review'
           ]
         }
       }

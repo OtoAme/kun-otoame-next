@@ -174,7 +174,7 @@ describe('dashboard read-only link-health view (M04-5)', () => {
     expect(text).toContain('4/100')
     expect(text).toContain('1/10')
     expect(text).toContain('统计自')
-    expect(text).toContain('当前健康快照')
+    expect(text).not.toContain('本批次')
     expect(text).toContain('条目A')
     expect(text).toContain('资源X')
     expect(text).toContain('3 天')
@@ -226,7 +226,9 @@ describe('dashboard read-only link-health view (M04-5)', () => {
 
     await act(async () => {
       container
-        .querySelector<HTMLInputElement>('input[aria-label="只看无法解析主机"]')!
+        .querySelector<HTMLInputElement>(
+          'input[aria-label="只看无法解析主机"]'
+        )!
         .click()
     })
     await act(async () => {

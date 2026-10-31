@@ -224,8 +224,7 @@ export function CaseDetailProperties({ detail }: { detail: CaseDetail }) {
       {detail.relatedOpenCaseIds?.length ? (
         <PanelSection title="同一条目的其他未结事项">
           <p className="text-xs text-muted-foreground">
-            以下列出 {detail.relatedOpenCaseIds.length} 条同类未结事项（最多 20
-            条），改完条目后可逐条打开结案：
+            改完条目后可逐条打开结案
           </p>
           <ul className="flex flex-wrap gap-x-3 gap-y-1 text-sm">
             {detail.relatedOpenCaseIds.map((id) => (

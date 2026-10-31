@@ -4,6 +4,9 @@ import { adminCommentPaginationSchema } from '~/validations/admin'
 import { markdownToText } from '~/utils/markdownToText'
 import type { AdminComment } from '~/types/api/admin'
 
+// List rows carry a plain-text excerpt; the full text loads on edit.
+const LIST_TEXT_LENGTH = 233
+
 export const getComment = async (
   input: z.infer<typeof adminCommentPaginationSchema>
 ) => {
@@ -58,16 +61,20 @@ export const getComment = async (
     prisma.patch_comment.count({ where })
   ])
 
-  const comments: AdminComment[] = data.map((comment) => ({
-    id: comment.id,
-    uniqueId: comment.patch.unique_id,
-    user: comment.user,
-    content: markdownToText(comment.content).slice(0, 233),
-    patchName: comment.patch.name,
-    patchId: comment.patch_id,
-    like: comment._count.like_by,
-    created: comment.created
-  }))
+  const comments: AdminComment[] = data.map((comment) => {
+    const text = markdownToText(comment.content)
+    return {
+      id: comment.id,
+      uniqueId: comment.patch.unique_id,
+      user: comment.user,
+      content: text.slice(0, LIST_TEXT_LENGTH),
+      truncated: text.length > LIST_TEXT_LENGTH,
+      patchName: comment.patch.name,
+      patchId: comment.patch_id,
+      like: comment._count.like_by,
+      created: comment.created
+    }
+  })
 
   return { comments, total }
 }

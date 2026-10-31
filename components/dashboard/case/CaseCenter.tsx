@@ -10,7 +10,7 @@ import {
 } from 'react'
 import type { FormEvent } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { ChevronRight, RefreshCw, Search } from 'lucide-react'
+import { RefreshCw, Search } from 'lucide-react'
 
 import { Button } from '~/components/dashboard/ui/button'
 import { Input } from '~/components/dashboard/ui/input'
@@ -38,13 +38,13 @@ import { cn } from '~/lib/dashboard/utils'
 import type { AdminCaseListItem, CaseStatusCounts } from '~/types/api/case'
 
 import { useDashboard } from '../DashboardShell'
+import { BrokenLinkQueue } from './BrokenLinkQueue'
 import { CaseCenterNav } from './CaseCenterNav'
-import { CaseOverview } from './CaseOverview'
 import { ALL_CASE_KINDS, CaseQueue } from './CaseQueue'
 import {
   DEFAULT_CASE_VIEW,
-  UNRESOLVED_CASE_VIEW,
   findCaseView,
+  isBrokenLinkView,
   isPublisherCaseView,
   type CaseCenterView,
   type CaseListParams
@@ -54,8 +54,6 @@ import { useCaseList } from './useCaseList'
 /** Case center base path; `/dashboard/case/[id]` normalizes back to it. */
 const BASE_PATH = '/dashboard/case'
 const QUEUE_PAGE_SIZE = 20
-/** The overview only needs the head of the oldest-first default queue. */
-const OVERVIEW_PAGE_SIZE = 6
 const SEARCH_MAX = 300
 const PG_INT_MAX = 2147483647
 
@@ -159,27 +157,26 @@ export interface CaseCenterProps {
 }
 
 /**
- * 事项中心. A self-contained operations console for staff-owned cases: its
- * own secondary navigation, overview and queues, living inside the dashboard
+ * 问题处理. The staff side of the case system plus the broken resource-disk
+ * links: its own secondary navigation and queues, living inside the dashboard
  * shell so authentication, the global sidebar and the header are not
- * duplicated. The unified inbox queues the cases waiting on the handler and
- * renders the same detail component for them (D23); every other view of the
- * staff queue lives here.
+ * duplicated. The 待办 views hold everything waiting on the staff; content
+ * review (submissions, resources) has its own page.
  */
 export function CaseCenter({ initialCaseId }: CaseCenterProps) {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const { counts, countsLoading, refreshCounts } = useDashboard()
+  const { counts, refreshCounts } = useDashboard()
   const isMobile = useIsMobile()
 
   const rawView = searchParams.get('view')
-  // A `/dashboard/case/[id]` deep link carries no view, but the overview has
-  // no detail pane, so it opens on the default queue instead.
+  // A `/dashboard/case/[id]` deep link names a case of any status, so it
+  // opens on the view that lists every case.
   const view =
     rawView !== null
       ? findCaseView(rawView)
       : initialCaseId !== undefined
-        ? UNRESOLVED_CASE_VIEW
+        ? findCaseView('all')
         : DEFAULT_CASE_VIEW
   const caseKind = parseCaseKind(searchParams.get('caseKind'))
   const statusFilters = statusFiltersFor(view)
@@ -202,7 +199,9 @@ export function CaseCenter({ initialCaseId }: CaseCenterProps) {
   const selectionStatus = selection.status
   const selectedId = selection.status === 'ok' ? selection.id : null
 
-  const isOverview = view.countKeys === null
+  // The broken-link view lists links, not cases; the case list stays on the
+  // default queue meanwhile so the navigation badges keep their counts.
+  const isBrokenLinks = isBrokenLinkView(view)
   // A status filter stands in for the view's own status parameter; the owner
   // scope stays. Memoized because the list refetches whenever `params` does.
   const viewParams = useMemo<CaseListParams>(() => {
@@ -216,18 +215,16 @@ export function CaseCenter({ initialCaseId }: CaseCenterProps) {
     }
   }, [view, caseStatus])
   const listQuery = {
-    // The overview reports on the staff queue, so it reuses that filter.
-    params: isOverview ? UNRESOLVED_CASE_VIEW.params : viewParams,
-    kind: isOverview ? '' : caseKind,
-    search: isOverview ? '' : search,
+    params: isBrokenLinks ? DEFAULT_CASE_VIEW.params : viewParams,
+    kind: isBrokenLinks ? '' : caseKind,
+    search: isBrokenLinks ? '' : search,
     // The field only shapes a submitted search; alone it changes no result.
-    searchField: !isOverview && search ? searchField : 'all',
-    // The overview lists the head of the waiting order.
-    sort: isOverview ? 'time' : sort,
-    order: isOverview ? 'asc' : order,
+    searchField: !isBrokenLinks && search ? searchField : 'all',
+    sort: isBrokenLinks ? 'time' : sort,
+    order: isBrokenLinks ? 'asc' : order,
     ownerId,
-    page: isOverview ? 1 : page,
-    limit: isOverview ? OVERVIEW_PAGE_SIZE : QUEUE_PAGE_SIZE
+    page: isBrokenLinks ? 1 : page,
+    limit: QUEUE_PAGE_SIZE
   }
   const { list, rows, rowsRef, statusCounts, loading, error, refetch } =
     useCaseList(listQuery)
@@ -345,15 +342,10 @@ export function CaseCenter({ initialCaseId }: CaseCenterProps) {
   const handleSearchSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     const value = searchText.trim().slice(0, SEARCH_MAX)
-    // Search has no meaning on the overview: run it against the default queue.
+    // Links are not searchable here: run it against every case.
     navigate(
-      isOverview
-        ? {
-            view: UNRESOLVED_CASE_VIEW,
-            search: value,
-            page: 1,
-            selection: null
-          }
+      isBrokenLinks
+        ? { view: findCaseView('all'), search: value, page: 1, selection: null }
         : { search: value, page: 1 }
     )
   }
@@ -361,11 +353,7 @@ export function CaseCenter({ initialCaseId }: CaseCenterProps) {
     navigate({ page: Math.max(1, nextPage) })
   }
   const handleSelect = (row: AdminCaseListItem) => {
-    navigate(
-      isOverview
-        ? { view: UNRESOLVED_CASE_VIEW, selection: row.id }
-        : { selection: row.id }
-    )
+    navigate({ selection: row.id })
   }
   const clearSelection = useCallback(
     () => navigate({ selection: null }),
@@ -375,14 +363,14 @@ export function CaseCenter({ initialCaseId }: CaseCenterProps) {
   // Hand-edited or shrunk tail page: resolve to the real last page once the
   // standing query reports its total. Never leaves page 1 for an empty filter.
   useEffect(() => {
-    if (!list || isOverview) return
+    if (!list || isBrokenLinks) return
     if (page > 1 && rows.length === 0 && list.total > 0) {
       navigate(
         { page: Math.max(1, Math.ceil(list.total / QUEUE_PAGE_SIZE)) },
         'replace'
       )
     }
-  }, [list, isOverview, page, rows.length, navigate])
+  }, [list, isBrokenLinks, page, rows.length, navigate])
 
   // Terminal actions: advance to the neighbor row like the unified inbox,
   // then refresh the list and the shell's pending counts exactly once.
@@ -424,55 +412,18 @@ export function CaseCenter({ initialCaseId }: CaseCenterProps) {
     scrollRef.current?.scrollTo({ top: 0 })
   }, [isMobile, view.value, selectionStatus, selectedId])
 
-  const detailOpen = selectionStatus !== 'none'
-
   return (
     <div
       ref={scrollRef}
-      aria-label="事项中心"
+      aria-label="问题处理"
       className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto md:overflow-hidden"
     >
       <div className="flex min-h-0 min-w-0 flex-1 md:overflow-hidden">
-        {/*
-          The rail is the reference mock's left navigation, and a detail view
-          never shows it. Letting a breakpoint insert a fixed 14rem column
-          there took 224px out of the three-column detail in a single step —
-          the conversation fell from 531px to 384px across one pixel of
-          viewport. The strip has no such step, and it is already the mode
-          every size below that breakpoint used.
-        */}
-        {detailOpen ? null : (
-          <CaseCenterNav
-            current={view}
-            statusCounts={navCounts}
-            orientation="vertical"
-            onSelect={handleSelectView}
-            className="hidden lg:block"
-          />
-        )}
-
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-b px-3 py-2">
-            <nav aria-label="面包屑" className="flex items-center gap-1">
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                disabled={isOverview}
-                onClick={() => handleSelectView(DEFAULT_CASE_VIEW)}
-              >
-                事项中心
-              </Button>
-              {isOverview ? null : (
-                <>
-                  <ChevronRight
-                    className="size-3.5 text-muted-foreground"
-                    aria-hidden
-                  />
-                  <span className="text-sm font-medium">{view.label}</span>
-                </>
-              )}
-            </nav>
+            <h2 className="shrink-0 text-sm font-medium whitespace-nowrap">
+              {view.label}
+            </h2>
 
             <form
               role="search"
@@ -528,29 +479,20 @@ export function CaseCenter({ initialCaseId }: CaseCenterProps) {
             </Button>
           </div>
 
+          {/* One strip at every width: a side column would change the
+              list and detail widths whenever a detail opens. */}
           <CaseCenterNav
             current={view}
             statusCounts={navCounts}
-            orientation="horizontal"
+            brokenLinkCount={counts ? counts.pending['broken-link'] : null}
             onSelect={handleSelectView}
-            className={cn(!detailOpen && 'lg:hidden')}
           />
 
-          {isOverview ? (
-            <div className="min-h-0 min-w-0 flex-1 md:overflow-y-auto">
-              <CaseOverview
-                counts={counts}
-                countsLoading={countsLoading}
-                statusCounts={statusCounts}
-                rows={rows}
-                list={list}
-                loading={loading}
-                error={error}
-                onRetry={refetch}
-                onSelectCase={handleSelect}
-                onOpenQueue={() => handleSelectView(UNRESOLVED_CASE_VIEW)}
-              />
-            </div>
+          {isBrokenLinks ? (
+            <BrokenLinkQueue
+              isMobile={isMobile}
+              onCountChange={() => void refreshCounts()}
+            />
           ) : (
             <CaseQueue
               view={view}

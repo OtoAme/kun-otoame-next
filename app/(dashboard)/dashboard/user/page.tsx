@@ -1,3 +1,4 @@
+import { DashboardPageHeader } from '~/components/dashboard/page/DashboardPage'
 import type { Metadata } from 'next'
 import { DashboardUsers } from '~/components/dashboard/user/DashboardUsers'
 import { requireDashboardUser } from '~/lib/dashboard/auth'
@@ -14,5 +15,9 @@ export default async function DashboardUsersPage() {
     )
   }
 
-  return <DashboardUsers currentUserId={currentUser.id} />
+  return (
+    <DashboardPageHeader title="用户管理">
+      <DashboardUsers currentUserId={currentUser.id} />
+    </DashboardPageHeader>
+  )
 }

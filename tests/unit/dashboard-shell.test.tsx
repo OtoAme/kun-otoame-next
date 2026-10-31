@@ -53,10 +53,12 @@ vi.mock('~/components/dashboard/ui/sidebar', () => {
     asChild,
     children,
     isActive: _active,
+    tooltip: _tooltip,
     ...props
   }: React.ComponentProps<'button'> & {
     asChild?: boolean
     isActive?: boolean
+    tooltip?: unknown
   }) =>
     asChild ? (
       React.cloneElement(
@@ -78,6 +80,10 @@ vi.mock('~/components/dashboard/ui/sidebar', () => {
     SidebarMenuBadge: Box,
     SidebarMenuButton: MenuButton,
     SidebarMenuItem: Box,
+    SidebarMenuSub: Box,
+    SidebarMenuSubItem: Box,
+    SidebarMenuSubButton: MenuButton,
+    SidebarRail: () => null,
     SidebarInset: Box,
     SidebarProvider: Box,
     SidebarTrigger: () => <button aria-label="打开侧栏" />,
@@ -179,75 +185,106 @@ describe('dashboard shell', () => {
     )
   }
 
-  it('keeps old processing pages reachable for admins with role hints', async () => {
-    await render()
-    const link = container.querySelector('a[href="/admin/feedback"]')
-    expect(link).not.toBeNull()
-    expect(link?.textContent).toContain('超级管理员')
-    expect(container.querySelector('a[href="/admin/rating"]')).not.toBeNull()
-    expect(container.querySelector('a[href="/admin"]')).toBeNull()
+  it('hides pages the current role cannot open and links only console pages', async () => {
+    await render(3)
+    expect(container.querySelector('a[href="/dashboard/user"]')).toBeNull()
+    expect(container.querySelector('a[href="/admin/feedback"]')).toBeNull()
+    expect(container.querySelector('a[href="/edit/create"]')).toBeNull()
+    expect(
+      container.querySelector('a[href="/dashboard/rating"]')
+    ).not.toBeNull()
+    // Every management page now lives in the console.
+    expect(container.querySelector('a[href^="/admin"]')).toBeNull()
+    expect(container.textContent).not.toContain('旧版页面')
   })
 
-  it('keeps the active source link pointed at that source', async () => {
-    mocks.pathname = '/dashboard/inbox'
-    mocks.params = 'kinds=submission'
+  it('shows super administrator pages to role 4', async () => {
+    await render(4)
+    for (const href of [
+      '/dashboard/user',
+      '/dashboard/setting',
+      '/dashboard/email',
+      '/edit/create'
+    ]) {
+      expect(container.querySelector(`a[href="${href}"]`)).not.toBeNull()
+    }
+  })
+
+  it('shows the content review and issue counts beside their entries', async () => {
     await render()
-    expect(
-      container.querySelector('a[href="/dashboard/inbox?kinds=submission"]')
-    ).not.toBeNull()
+    const row = (href: string) =>
+      [...container.querySelectorAll('a')].find(
+        (link) => link.getAttribute('href') === href
+      )!
+    // 内容审核 = 待审条目 5 + 待审资源 2；旧反馈与旧举报不再计入
+    expect(row('/dashboard/inbox').parentElement!.textContent).toContain(
+      '内容审核7'
+    )
+    // The two review sources are always listed under it with their counts.
+    expect(row('/dashboard/inbox?kinds=submission').textContent).toBe(
+      '待审条目5'
+    )
+    expect(row('/dashboard/inbox?kinds=resource-apply').textContent).toBe(
+      '待审资源2'
+    )
+    // 问题处理 = 事项 4 + 资源盘链接失效 0
+    expect(row('/dashboard/case').parentElement!.textContent).toBe('问题处理4')
+    expect(container.querySelector('a[href^="/dashboard/archive"]')).toBeNull()
+    expect(container.textContent).not.toContain('旧反馈')
+    expect(container.textContent).not.toContain('投稿历史')
   })
 
   it.each([
     ['/dashboard/user', '用户管理'],
     ['/dashboard/user/7/moemoepoint', '用户萌萌点明细'],
     ['/dashboard/user/00000007/moemoepoint', '用户萌萌点明细']
-  ])(
-    'labels the migrated page %s and retains the old user entry',
-    async (pathname, title) => {
-      mocks.pathname = pathname
-      mocks.params = 'kinds=submission'
-      await render(4)
-      expect(container.querySelector('h1')?.textContent).toBe(title)
-      expect(
-        container
-          .querySelector('a[href="/dashboard/user"]')
-          ?.getAttribute('data-active')
-      ).toBe('true')
-      expect(container.querySelector('a[href="/admin/user"]')).not.toBeNull()
-      expect(
-        container
-          .querySelector('a[href="/dashboard/inbox?kinds=submission"]')
-          ?.getAttribute('data-active')
-      ).toBe('false')
-    }
-  )
-
-  it('states that even user-list access requires super administrator permission', async () => {
-    await render(3)
+  ])('labels the migrated page %s', async (pathname, title) => {
+    mocks.pathname = pathname
+    mocks.params = 'kinds=submission'
+    await render(4)
+    expect(container.querySelector('h1')?.textContent).toBe(title)
     expect(
-      container.querySelector('a[href="/dashboard/user"]')?.textContent
-    ).toContain('仅超级管理员')
+      container
+        .querySelector('a[href="/dashboard/user"]')
+        ?.getAttribute('data-active')
+    ).toBe('true')
   })
 
   it.each([
+    ['/dashboard/case/12', '问题处理'],
+    ['/dashboard/shoutbox', '小喇叭'],
+    ['/dashboard/link-health', '已失效链接'],
+    ['/dashboard/company-merges', '会社合并']
+  ])('titles %s from its sidebar entry', async (pathname, title) => {
+    mocks.pathname = pathname
+    await render()
+    expect(container.querySelector('h1')?.textContent).toBe(title)
+  })
+
+  it.each([
+    ['', '内容审核', '/dashboard/inbox'],
+    ['kinds=submission,resource-apply', '内容审核', '/dashboard/inbox'],
+    ['kinds=submission', '待审条目', '/dashboard/inbox?kinds=submission'],
     [
-      'kinds=submission,resource-apply,feedback,report,case,broken-link',
-      'true'
+      'kinds=resource-apply',
+      '待审资源',
+      '/dashboard/inbox?kinds=resource-apply'
     ],
-    ['kinds=submission,resource-apply,feedback,report,case', 'false'],
-    ['kinds=submission,report', 'false'],
-    ['kinds=submission,resource-apply,feedback,report', 'false']
-  ])('marks the all-sources entry correctly for %s', async (params, active) => {
+    [
+      'kinds=submission&submissionStatus=rejected',
+      '待审条目',
+      '/dashboard/inbox?kinds=submission'
+    ]
+  ])('marks one review entry for %s', async (params, title, activeHref) => {
     mocks.pathname = '/dashboard/inbox'
     mocks.params = params
     await render()
-    const all = [...container.querySelectorAll('a')].find(
-      (link) => link.textContent === '全部待审事项'
+    const active = [...container.querySelectorAll('a[data-active="true"]')].map(
+      (link) => link.getAttribute('href')
     )
-    expect(all?.getAttribute('data-active')).toBe(active)
-    expect(container.querySelector('h1')?.textContent).toBe('待审事项')
+    expect(active).toEqual([activeHref])
+    expect(container.querySelector('h1')?.textContent).toBe(title)
   })
-
   it('does not overlap timer polling while the previous request is pending', async () => {
     let resolve!: (value: InboxCounts) => void
     mocks.get.mockReturnValue(
@@ -348,18 +385,15 @@ describe('dashboard shell', () => {
     expect(button.disabled).toBe(false)
   })
 
-  it('marks the stats overview entry only on the dashboard home', async () => {
+  it('marks the overview entry only on the dashboard home', async () => {
     await render()
-    const stats = [...container.querySelectorAll('a')].find(
-      (link) => link.textContent === '统计总览'
+    const overview = [...container.querySelectorAll('a')].find(
+      (link) => link.textContent === '总览'
     )
-    expect(stats?.getAttribute('href')).toBe('/dashboard')
-    expect(stats?.getAttribute('data-active')).toBe('true')
-    expect(container.querySelector('h1')?.textContent).toBe('统计总览')
-    const all = [...container.querySelectorAll('a')].find(
-      (link) => link.textContent === '全部待审事项'
-    )
-    expect(all?.getAttribute('href')).toBe('/dashboard/inbox')
+    expect(overview?.getAttribute('href')).toBe('/dashboard')
+    expect(overview?.getAttribute('data-active')).toBe('true')
+    expect(container.querySelector('h1')?.textContent).toBe('总览')
+    const all = container.querySelector('a[href="/dashboard/inbox"]')
     expect(all?.getAttribute('data-active')).toBe('false')
   })
 })

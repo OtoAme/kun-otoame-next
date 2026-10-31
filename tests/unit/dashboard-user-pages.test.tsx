@@ -34,7 +34,10 @@ describe('dashboard user migration page permissions', () => {
 
   it('passes the authenticated operator to the role 4 list', async () => {
     mocks.auth.mockResolvedValue({ id: 44, name: '超级管理员', role: 4 })
-    expect((await UsersPage()).props).toEqual({ currentUserId: 44 })
+    const page = await UsersPage()
+    // The list sits inside the shared page header frame.
+    expect(page.props.title).toBe('用户管理')
+    expect(page.props.children.props).toEqual({ currentUserId: 44 })
   })
 
   it('allows role 3 to open another user ledger independently of the list gate', async () => {
