@@ -371,19 +371,30 @@ const listSkeleton = (count: number) => (
   </div>
 )
 
+/** One summary figure; with `href` the whole cell opens that page. */
 function SummaryCell(props: {
   label: string
   value: ReactNode
-  caption: string
+  href?: string
 }) {
-  return (
-    <div className="min-w-0 bg-card px-5 py-3.5">
+  const body = (
+    <>
       <p className="text-xs text-muted-foreground">{props.label}</p>
       <p className="mt-0.5 text-3xl leading-tight font-semibold tabular-nums">
         {props.value}
       </p>
-      <p className="text-xs text-muted-foreground">{props.caption}</p>
-    </div>
+    </>
+  )
+  return props.href ? (
+    <Link
+      href={props.href}
+      prefetch={false}
+      className="block min-w-0 bg-card px-5 py-3.5 transition-colors hover:bg-accent focus-visible:bg-accent focus-visible:outline-none"
+    >
+      {body}
+    </Link>
+  ) : (
+    <div className="min-w-0 bg-card px-5 py-3.5">{body}</div>
   )
 }
 
@@ -396,6 +407,13 @@ export function DashboardStats({ reviewerRole }: DashboardStatsProps) {
   // The slider moves this value; the window reloads once the thumb settles.
   const [draftDays, setDraftDays] = useState(OVERVIEW_DEFAULT_DAYS)
   const [layoutRef, width] = useElementWidth<HTMLDivElement>()
+  // Set once the first trend chart has been shown. A new window remounts the
+  // chart after its skeleton, and that redraw takes the quick speed instead
+  // of the slower entry reveal.
+  const [trendShown, setTrendShown] = useState(false)
+  useEffect(() => {
+    if (trend.data) setTrendShown(true)
+  }, [trend.data])
 
   useEffect(() => {
     setDraftDays(days)
@@ -594,7 +612,7 @@ export function DashboardStats({ reviewerRole }: DashboardStatsProps) {
         onRetry={() => void loadOverview(days)}
         skeleton={<Skeleton className="h-64 w-full" />}
       >
-        {(data) => <DashboardTrend data={data} />}
+        {(data) => <DashboardTrend data={data} firstEntry={!trendShown} />}
       </BlockBody>
     </Panel>
   )
@@ -776,17 +794,16 @@ export function DashboardStats({ reviewerRole }: DashboardStatsProps) {
             <SummaryCell
               label="内容审核"
               value={reviewTotal !== null ? fmt(reviewTotal) : '–'}
-              caption="待审条目与待审资源"
+              href="/dashboard/inbox"
             />
             <SummaryCell
               label="问题处理"
               value={issueTotal !== null ? fmt(issueTotal) : '–'}
-              caption="待处理问题与资源盘链接失效"
+              href="/dashboard/case"
             />
             <SummaryCell
               label="我今日已处理"
               value={counts ? fmt(counts.todayProcessed) : '–'}
-              caption="上海时间自然日"
             />
             {canViewStats && (
               <SummaryCell
@@ -801,7 +818,6 @@ export function DashboardStats({ reviewerRole }: DashboardStatsProps) {
                       )
                     : '–'
                 }
-                caption="上海时间自然日"
               />
             )}
           </div>

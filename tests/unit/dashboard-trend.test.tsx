@@ -80,14 +80,27 @@ describe('dashboard trend chart animation', () => {
   const lastArea = () => mocks.areas.at(-1)!
   const stops = () => [...container.querySelectorAll('stop')]
 
-  it('animates the area and fades the fill between metrics', async () => {
+  const tabNamed = (label: string) =>
+    [...container.querySelectorAll('[role=tab]')].find((el) =>
+      el.textContent?.includes(label)
+    ) as HTMLButtonElement
+  const REVEAL = {
+    animationDuration: 1100,
+    animationEasing: 'cubic-bezier(0.65, 0, 0.35, 1)'
+  }
+  const MORPH = {
+    animationDuration: 450,
+    animationEasing: 'cubic-bezier(0.22, 1, 0.36, 1)'
+  }
+
+  it('reveals the first chart slowly and morphs metric switches quickly', async () => {
     await act(async () => root.render(<DashboardTrend data={data} />))
     expect(lastArea()).toMatchObject({
       dataKey: 'newUser',
       isAnimationActive: true,
-      animationDuration: 450,
-      animationEasing: 'cubic-bezier(0.22, 1, 0.36, 1)'
+      ...REVEAL
     })
+    // The fill colour fades at the switching speed from the start.
     expect(stops().map((stop) => stop.style.transition)).toEqual([
       'stop-color 450ms cubic-bezier(0.22, 1, 0.36, 1)',
       'stop-color 450ms cubic-bezier(0.22, 1, 0.36, 1)'
@@ -96,20 +109,36 @@ describe('dashboard trend chart animation', () => {
     // Switching keeps one Area and one gradient, so Recharts morphs the
     // line and the stops fade instead of a new gradient replacing the old.
     const gradientBefore = container.querySelector('linearGradient')!.id
-    const tab = [...container.querySelectorAll('[role=tab]')].find((el) =>
-      el.textContent?.includes('签到')
-    ) as HTMLButtonElement
-    await act(async () => tab.click())
-    expect(lastArea().dataKey).toBe('checkIn')
+    await act(async () => tabNamed('签到').click())
+    expect(lastArea()).toMatchObject({ dataKey: 'checkIn', ...MORPH })
     expect(container.querySelector('linearGradient')!.id).toBe(gradientBefore)
     expect(lastArea().fill).toBe(`url(#${gradientBefore})`)
   })
 
+  it('keeps the reveal through re-renders and drops it for new points', async () => {
+    await act(async () => root.render(<DashboardTrend data={data} />))
+    // A parent re-render with the same points must not cut the reveal short.
+    await act(async () => root.render(<DashboardTrend data={data} />))
+    expect(lastArea()).toMatchObject(REVEAL)
+    // A same-window refresh brings new points, which morph quickly.
+    await act(async () =>
+      root.render(
+        <DashboardTrend data={{ ...data, points: [...data.points] }} />
+      )
+    )
+    expect(lastArea()).toMatchObject(MORPH)
+  })
+
+  it('draws at the switching speed once the overview has shown a chart', async () => {
+    await act(async () =>
+      root.render(<DashboardTrend data={data} firstEntry={false} />)
+    )
+    expect(lastArea()).toMatchObject({ isAnimationActive: true, ...MORPH })
+  })
+
   it('draws daily logins and shows distinct users as the figure', async () => {
     await act(async () => root.render(<DashboardTrend data={data} />))
-    const tab = [...container.querySelectorAll('[role=tab]')].find((el) =>
-      el.textContent?.includes('最近登录')
-    ) as HTMLButtonElement
+    const tab = tabNamed('最近登录')
     // Distinct users over the window, not the sum of the days (2 + 3).
     expect(tab.textContent).toContain('最近登录1')
     await act(async () => tab.click())

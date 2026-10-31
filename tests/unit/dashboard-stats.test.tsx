@@ -46,17 +46,21 @@ vi.mock('~/components/dashboard/ui/input', () => ({
 // The stub lists the window totals the real tiles show.
 vi.mock('~/components/dashboard/DashboardTrend', () => ({
   DashboardTrend: ({
-    data
+    data,
+    firstEntry
   }: {
     data: {
       recentLogin: number
       points: Record<string, number | string>[]
     }
+    firstEntry?: boolean
   }) => {
+    // Like the real chart, keep the value it was mounted with.
+    const [entry] = React.useState(firstEntry)
     const total = (key: string) =>
       data.points.reduce((sum, point) => sum + Number(point[key]), 0)
     return (
-      <dl data-testid="trend">
+      <dl data-testid="trend" data-first-entry={String(entry)}>
         <dt>最近登录</dt>
         <dd>{data.recentLogin}</dd>
         <dt>新注册用户</dt>
@@ -286,6 +290,12 @@ describe('dashboard overview', () => {
     )
     return cell?.nextElementSibling?.textContent ?? null
   }
+  /** The summary cell holding this label, a link when it opens a page. */
+  const summaryCell = (label: string) =>
+    [...container.querySelectorAll('p')].find((el) => el.textContent === label)
+      ?.parentElement ?? null
+  const trendChart = () =>
+    container.querySelector('[data-testid="trend"]') as HTMLElement | null
   const panel = (id: string) =>
     container.querySelector(`section[aria-labelledby="${id}"]`) as HTMLElement
   const retryIn = (id: string) =>
@@ -348,6 +358,46 @@ describe('dashboard overview', () => {
     expect(panel('dashboard-log-heading').textContent).toContain('资源申请通过')
     expect(mocks.get).toHaveBeenCalledWith('/admin/stats/trend', { days: 7 })
     expect(panel('dashboard-trend-heading').textContent).toContain('7 天')
+  })
+
+  it('opens the review and issue pages from their summary figures', async () => {
+    await render(4)
+    expect(summaryCell('内容审核')?.getAttribute('href')).toBe(
+      '/dashboard/inbox'
+    )
+    expect(summaryCell('问题处理')?.getAttribute('href')).toBe(
+      '/dashboard/case'
+    )
+    for (const label of ['我今日已处理', '新注册 · 近 7 天']) {
+      expect(summaryCell(label)?.tagName).toBe('DIV')
+    }
+    // Each figure is its label and value only, with no caption under it.
+    for (const label of ['内容审核', '问题处理', '我今日已处理']) {
+      expect(summaryCell(label)?.querySelectorAll('p')).toHaveLength(2)
+    }
+  })
+
+  it('gives only the first trend chart of a visit the slower reveal', async () => {
+    vi.useFakeTimers()
+    try {
+      await render(4)
+      expect(trendChart()?.dataset.firstEntry).toBe('true')
+      let resolveTrend!: (value: StatsTrendData) => void
+      mocks.get.mockImplementation((url: string) =>
+        url === '/admin/stats/trend'
+          ? new Promise((resolve) => {
+              resolveTrend = resolve
+            })
+          : Promise.resolve(okResponses[url])
+      )
+      await slideDays(30)
+      // A new window shows the skeleton first, so its chart mounts afresh.
+      expect(trendChart()).toBeNull()
+      await act(async () => resolveTrend(trendFor({ newUser: 30 }, 1, 30)))
+      expect(trendChart()?.dataset.firstEntry).toBe('false')
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('reads the side queues with one-row requests and keeps them out of the totals', async () => {

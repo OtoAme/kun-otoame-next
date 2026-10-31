@@ -78,6 +78,11 @@ const METRICS: {
 const ANIMATION_MS = 450
 const ANIMATION_CURVE = '0.22, 1, 0.36, 1'
 const ANIMATION_EASING = `cubic-bezier(${ANIMATION_CURVE})` as 'ease-out'
+// The first draw reveals the whole curve left to right; at the switch speed it
+// is over before the eye follows it, so it gets more time and a gentler
+// "ease-in-out" curve that sweeps evenly instead of jumping to the end.
+const REVEAL_MS = 1100
+const REVEAL_EASING = 'cubic-bezier(0.65, 0, 0.35, 1)' as 'ease-out'
 
 const shortDate = (date: string) =>
   `${Number(date.slice(5, 7))}/${Number(date.slice(8))}`
@@ -88,13 +93,38 @@ const shortDate = (date: string) =>
  * login tab's figure is the window's distinct users (one person active on
  * several days counts once); its curve is the per-day count.
  *
- * The area is revealed left to right on first draw. Switching metrics or
- * windows keeps the same Area, so Recharts morphs the line from the old
- * points to the new ones instead of redrawing. Reduced motion turns it off.
+ * The area is revealed left to right when it is drawn. Switching metrics or
+ * refreshing the window keeps the same Area, so Recharts morphs the line from
+ * the old points to the new ones instead of redrawing. A new window remounts
+ * the chart (the skeleton shows while it loads), so it is revealed again.
+ * Reduced motion turns all of it off.
  */
-export function DashboardTrend({ data }: { data: StatsTrendData }) {
+export function DashboardTrend({
+  data,
+  firstEntry = true
+}: {
+  data: StatsTrendData
+  /**
+   * Whether this is the first chart of the visit, read when the chart
+   * mounts. Only that one gets the slower reveal; a chart remounted for a new
+   * window draws at the quick switching speed.
+   */
+  firstEntry?: boolean
+}) {
   const [active, setActive] = useState<MetricKey>('newUser')
   const reducedMotion = useReducedMotion()
+  // The slower reveal belongs to the points drawn first; new points or a
+  // metric change take the quick speed. Recharts restarts its animation
+  // several times while the chart's layout settles on mount, and every
+  // restart calls onAnimationEnd, so that callback cannot end the reveal.
+  const [revealPoints, setRevealPoints] = useState(
+    firstEntry ? data.points : null
+  )
+  const revealing = revealPoints === data.points
+  const selectMetric = (key: MetricKey) => {
+    setRevealPoints(null)
+    setActive(key)
+  }
   const metric = METRICS.find((item) => item.key === active) ?? METRICS[0]
   const totals = Object.fromEntries(
     METRICS.map((item) => [
@@ -124,7 +154,7 @@ export function DashboardTrend({ data }: { data: StatsTrendData }) {
                 type="button"
                 role="tab"
                 aria-selected={selected}
-                onClick={() => setActive(item.key)}
+                onClick={() => selectMetric(item.key)}
                 className={cn(
                   'flex flex-col items-start gap-0.5 bg-card px-3 py-2 text-left transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none focus-visible:ring-inset',
                   selected && 'bg-accent'
@@ -221,8 +251,8 @@ export function DashboardTrend({ data }: { data: StatsTrendData }) {
               strokeWidth={2}
               fill={`url(#${gradientId})`}
               isAnimationActive={!reducedMotion}
-              animationDuration={ANIMATION_MS}
-              animationEasing={ANIMATION_EASING}
+              animationDuration={revealing ? REVEAL_MS : ANIMATION_MS}
+              animationEasing={revealing ? REVEAL_EASING : ANIMATION_EASING}
             />
           </AreaChart>
         </ResponsiveContainer>
