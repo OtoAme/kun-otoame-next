@@ -9,4 +9,9 @@ model admin_log {
 
   created DateTime @default(now())
   updated DateTime @updatedAt
+
+  // Today's processed count, polled per administrator every minute.
+  @@index([user_id, created])
+  // The log page and the overview's recent operations, newest first.
+  @@index([created(sort: Desc), id(sort: Desc)])
 }

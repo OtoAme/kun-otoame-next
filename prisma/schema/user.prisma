@@ -82,6 +82,8 @@ model user {
   // 删掉就得再写一份回滚迁移; 而且投稿贡献榜落地后会重新用上。
   // moemoepoint-migration.test.ts 锁定了它, 不要顺手删。
   @@index([status, moemoepoint(sort: Desc), id])
+  // New registrations per day on the overview trend.
+  @@index([created])
 }
 
 model user_follow_relation {
