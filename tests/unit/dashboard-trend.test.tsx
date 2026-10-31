@@ -29,6 +29,7 @@ const data: StatsTrendData = {
   recentLogin: 1,
   points: ['2026-10-30', '2026-10-31'].map((date, index) => ({
     date,
+    dailyLogin: index + 2,
     newUser: index + 1,
     newGalgame: 0,
     newGalgameResource: 0,
@@ -102,6 +103,17 @@ describe('dashboard trend chart animation', () => {
     expect(lastArea().dataKey).toBe('checkIn')
     expect(container.querySelector('linearGradient')!.id).toBe(gradientBefore)
     expect(lastArea().fill).toBe(`url(#${gradientBefore})`)
+  })
+
+  it('draws daily logins and shows distinct users as the figure', async () => {
+    await act(async () => root.render(<DashboardTrend data={data} />))
+    const tab = [...container.querySelectorAll('[role=tab]')].find((el) =>
+      el.textContent?.includes('最近登录')
+    ) as HTMLButtonElement
+    // Distinct users over the window, not the sum of the days (2 + 3).
+    expect(tab.textContent).toContain('最近登录1')
+    await act(async () => tab.click())
+    expect(lastArea().dataKey).toBe('dailyLogin')
   })
 
   it('draws without motion when the system asks to reduce it', async () => {

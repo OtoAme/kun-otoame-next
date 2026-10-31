@@ -24,6 +24,12 @@ const METRICS: {
   stroke: string
   dot: string
 }[] = [
+  {
+    key: 'dailyLogin',
+    label: '最近登录',
+    stroke: '#64748b',
+    dot: 'bg-slate-500'
+  },
   { key: 'newUser', label: '新注册用户', stroke: '#0ea5e9', dot: 'bg-sky-500' },
   { key: 'checkIn', label: '签到', stroke: '#06b6d4', dot: 'bg-cyan-500' },
   {
@@ -79,7 +85,8 @@ const shortDate = (date: string) =>
 /**
  * Metric tabs over one daily area chart, after Cloudflare's analytics cards:
  * each tab shows the window total and selects the series drawn below. The
- * first tile is the window's login count, which has no daily series.
+ * login tab's figure is the window's distinct users (one person active on
+ * several days counts once); its curve is the per-day count.
  *
  * The area is revealed left to right on first draw. Switching metrics or
  * windows keeps the same Area, so Recharts morphs the line from the old
@@ -92,7 +99,9 @@ export function DashboardTrend({ data }: { data: StatsTrendData }) {
   const totals = Object.fromEntries(
     METRICS.map((item) => [
       item.key,
-      data.points.reduce((sum, point) => sum + point[item.key], 0)
+      item.key === 'dailyLogin'
+        ? data.recentLogin
+        : data.points.reduce((sum, point) => sum + point[item.key], 0)
     ])
   ) as Record<MetricKey, number>
   // One gradient whose stops change colour, so the fill fades between
@@ -106,16 +115,6 @@ export function DashboardTrend({ data }: { data: StatsTrendData }) {
   return (
     <div className="flex flex-col gap-3">
       <div className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border bg-border sm:grid-cols-5">
-        {/* Logins have no per-day history: a figure, not a tab. */}
-        <div className="flex flex-col items-start gap-0.5 bg-card px-3 py-2">
-          <span className="text-xs text-muted-foreground">最近登录</span>
-          <span className="text-lg font-semibold tabular-nums">
-            {data.recentLogin.toLocaleString('zh-CN')}
-          </span>
-          <span className="text-[11px] leading-4 text-muted-foreground">
-            按最后登录时间，无逐日记录
-          </span>
-        </div>
         <div role="tablist" aria-label="趋势指标" className="contents">
           {METRICS.map((item) => {
             const selected = item.key === active
@@ -149,7 +148,11 @@ export function DashboardTrend({ data }: { data: StatsTrendData }) {
       <div
         className="h-48 w-full"
         role="img"
-        aria-label={`${metric.label}逐日趋势，共 ${data.points.length} 天，合计 ${totals[metric.key]}`}
+        aria-label={
+          metric.key === 'dailyLogin'
+            ? `每日登录人数趋势，共 ${data.points.length} 天，窗口内 ${totals.dailyLogin} 人`
+            : `${metric.label}逐日趋势，共 ${data.points.length} 天，合计 ${totals[metric.key]}`
+        }
       >
         <ResponsiveContainer width="100%" height="100%">
           <AreaChart
@@ -197,7 +200,10 @@ export function DashboardTrend({ data }: { data: StatsTrendData }) {
                 stroke: 'var(--muted-foreground)',
                 strokeDasharray: '3 3'
               }}
-              formatter={(value) => [value, metric.label]}
+              formatter={(value) => [
+                value,
+                metric.key === 'dailyLogin' ? '当日登录' : metric.label
+              ]}
               labelFormatter={(label) => String(label)}
               contentStyle={{
                 backgroundColor: 'var(--popover)',

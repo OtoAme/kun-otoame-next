@@ -33,6 +33,7 @@ export interface OverviewData {
 }
 
 export type StatsTrendMetric =
+  | 'dailyLogin'
   | 'newUser'
   | 'newGalgame'
   | 'newGalgameResource'
@@ -50,7 +51,7 @@ export type StatsTrendPoint = {
 
 export interface StatsTrendData {
   days: number
-  /** Users whose last login falls in the window; no per-day history. */
+  /** Distinct users whose last login falls in the window. */
   recentLogin: number
   points: StatsTrendPoint[]
 }

@@ -167,6 +167,7 @@ const oldestItem = {
 const trendPoint = (date: string, values: Partial<StatsTrendPoint> = {}) =>
   ({
     date,
+    dailyLogin: 0,
     newUser: 0,
     newGalgame: 0,
     newGalgameResource: 0,

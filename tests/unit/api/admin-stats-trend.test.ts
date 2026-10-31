@@ -44,11 +44,36 @@ describe('admin stats trend', () => {
     // First day 10-23 00:00 Shanghai = 10-22 16:00 UTC.
     const since = new Date('2026-10-22T16:00:00Z')
     for (const call of mocks.prisma.$queryRaw.mock.calls) {
-      expect((call[0] as { values: unknown[] }).values).toContainEqual(since)
+      const values = (call[0] as { values: unknown[] }).values
+      // The per-day login record is keyed by calendar date, not an instant.
+      if (sqlOf(call).includes('user_daily_active')) {
+        expect(values).toContain('2026-10-23')
+      } else {
+        expect(values).toContainEqual(since)
+      }
     }
     expect(mocks.prisma.user.count).toHaveBeenCalledWith({
       where: { last_login_time: { gte: since.getTime().toString() } }
     })
+  })
+
+  it('reads daily logins from the per-day record by calendar date', async () => {
+    mocks.prisma.$queryRaw.mockImplementation((sql: { values: unknown[] }) =>
+      Promise.resolve(
+        sqlOf([sql]).includes('user_daily_active')
+          ? [{ day: '2026-10-29', count: BigInt(4) }]
+          : []
+      )
+    )
+    const result = await getStatsTrend(3, new Date('2026-10-28T17:00:00Z'))
+    const logins = mocks.prisma.$queryRaw.mock.calls.find((call) =>
+      sqlOf(call).includes('user_daily_active')
+    )!
+    // The day column is already a Shanghai date: compared as a date, no
+    // time-zone conversion.
+    expect(sqlOf(logins)).not.toContain('AT TIME ZONE')
+    expect((logins[0] as { values: unknown[] }).values).toContain('2026-10-27')
+    expect(result.points.map((point) => point.dailyLogin)).toEqual([0, 0, 4])
   })
 
   it('counts check-ins from the reward ledger only', async () => {
