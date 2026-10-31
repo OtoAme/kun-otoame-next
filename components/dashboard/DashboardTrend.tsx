@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useId, useState } from 'react'
 import {
   Area,
   AreaChart,
@@ -11,6 +11,7 @@ import {
   YAxis
 } from 'recharts'
 
+import { useReducedMotion } from '~/hooks/dashboard/use-reduced-motion'
 import { cn } from '~/lib/dashboard/utils'
 import type { StatsTrendData, StatsTrendMetric } from '~/types/api/admin'
 
@@ -64,6 +65,14 @@ const METRICS: {
   { key: 'newCase', label: '新问题', stroke: '#f43f5e', dot: 'bg-rose-500' }
 ]
 
+// Fast start, long gentle settle (an "ease-out quint"). Recharts' own
+// 'ease-out' is (0.42, 0, 0.58, 1), close to symmetric, which reads as slow
+// and linear. Its runtime accepts any cubic-bezier; the types only list the
+// presets, hence the cast.
+const ANIMATION_MS = 450
+const ANIMATION_CURVE = '0.22, 1, 0.36, 1'
+const ANIMATION_EASING = `cubic-bezier(${ANIMATION_CURVE})` as 'ease-out'
+
 const shortDate = (date: string) =>
   `${Number(date.slice(5, 7))}/${Number(date.slice(8))}`
 
@@ -71,9 +80,14 @@ const shortDate = (date: string) =>
  * Metric tabs over one daily area chart, after Cloudflare's analytics cards:
  * each tab shows the window total and selects the series drawn below. The
  * first tile is the window's login count, which has no daily series.
+ *
+ * The area is revealed left to right on first draw. Switching metrics or
+ * windows keeps the same Area, so Recharts morphs the line from the old
+ * points to the new ones instead of redrawing. Reduced motion turns it off.
  */
 export function DashboardTrend({ data }: { data: StatsTrendData }) {
   const [active, setActive] = useState<MetricKey>('newUser')
+  const reducedMotion = useReducedMotion()
   const metric = METRICS.find((item) => item.key === active) ?? METRICS[0]
   const totals = Object.fromEntries(
     METRICS.map((item) => [
@@ -81,7 +95,13 @@ export function DashboardTrend({ data }: { data: StatsTrendData }) {
       data.points.reduce((sum, point) => sum + point[item.key], 0)
     ])
   ) as Record<MetricKey, number>
-  const gradientId = `dashboard-trend-${metric.key}`
+  // One gradient whose stops change colour, so the fill fades between
+  // metrics. The line itself is remounted per animation and takes its new
+  // colour at once; only its shape morphs.
+  const gradientId = useId()
+  const colorTransition = reducedMotion
+    ? undefined
+    : `stop-color ${ANIMATION_MS}ms cubic-bezier(${ANIMATION_CURVE})`
 
   return (
     <div className="flex flex-col gap-3">
@@ -142,8 +162,14 @@ export function DashboardTrend({ data }: { data: StatsTrendData }) {
                   offset="0%"
                   stopColor={metric.stroke}
                   stopOpacity={0.35}
+                  style={{ transition: colorTransition }}
                 />
-                <stop offset="100%" stopColor={metric.stroke} stopOpacity={0} />
+                <stop
+                  offset="100%"
+                  stopColor={metric.stroke}
+                  stopOpacity={0}
+                  style={{ transition: colorTransition }}
+                />
               </linearGradient>
             </defs>
             <CartesianGrid
@@ -188,7 +214,9 @@ export function DashboardTrend({ data }: { data: StatsTrendData }) {
               stroke={metric.stroke}
               strokeWidth={2}
               fill={`url(#${gradientId})`}
-              isAnimationActive={false}
+              isAnimationActive={!reducedMotion}
+              animationDuration={ANIMATION_MS}
+              animationEasing={ANIMATION_EASING}
             />
           </AreaChart>
         </ResponsiveContainer>
