@@ -47,20 +47,30 @@ vi.mock('~/components/dashboard/ui/input', () => ({
 vi.mock('~/components/dashboard/DashboardTrend', () => ({
   DashboardTrend: ({
     data,
-    firstEntry
+    firstEntry,
+    metric,
+    onMetricChange
   }: {
     data: {
       recentLogin: number
       points: Record<string, number | string>[]
     }
     firstEntry?: boolean
+    metric?: string
+    onMetricChange?: (metric: string) => void
   }) => {
     // Like the real chart, keep the value it was mounted with.
     const [entry] = React.useState(firstEntry)
     const total = (key: string) =>
       data.points.reduce((sum, point) => sum + Number(point[key]), 0)
     return (
-      <dl data-testid="trend" data-first-entry={String(entry)}>
+      // eslint-disable-next-line jsx-a11y/no-static-element-interactions
+      <dl
+        data-testid="trend"
+        data-first-entry={String(entry)}
+        data-metric={metric ?? ''}
+        onClick={() => onMetricChange?.('resourceAccess')}
+      >
         <dt>最近登录</dt>
         <dd>{data.recentLogin}</dd>
         <dt>新注册用户</dt>
@@ -395,6 +405,33 @@ describe('dashboard overview', () => {
       expect(trendChart()).toBeNull()
       await act(async () => resolveTrend(trendFor({ newUser: 30 }, 1, 30)))
       expect(trendChart()?.dataset.firstEntry).toBe('false')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('keeps the chart on the selected metric while the window changes', async () => {
+    vi.useFakeTimers()
+    try {
+      await render(4)
+      expect(trendChart()?.dataset.metric).toBe('dailyLogin')
+      // The user picks another metric (clicking the stub fires the
+      // component's onMetricChange), then drags the days slider.
+      await act(async () => trendChart()!.click())
+      let resolveTrend!: (value: StatsTrendData) => void
+      mocks.get.mockImplementation((url: string) =>
+        url === '/admin/stats/trend'
+          ? new Promise((resolve) => {
+              resolveTrend = resolve
+            })
+          : Promise.resolve(okResponses[url])
+      )
+      await slideDays(14)
+      // The window reload shows the skeleton until the new data lands.
+      expect(trendChart()).toBeNull()
+      await act(async () => resolveTrend(trendFor({ newUser: 14 }, 1, 14)))
+      // The new window must not bounce the chart back to the default tab.
+      expect(trendChart()?.dataset.metric).toBe('resourceAccess')
     } finally {
       vi.useRealTimers()
     }

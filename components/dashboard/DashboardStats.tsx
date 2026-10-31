@@ -42,6 +42,7 @@ import {
   type InboxItem,
   type LinkHealthInboxKind
 } from '~/types/api/inbox'
+import type { StatsTrendMetric } from '~/types/api/admin'
 import { Button } from '~/components/dashboard/ui/button'
 import { Slider } from '~/components/dashboard/ui/slider'
 import { Skeleton } from '~/components/dashboard/ui/skeleton'
@@ -403,6 +404,9 @@ export function DashboardStats({ reviewerRole }: DashboardStatsProps) {
   useEffect(() => {
     if (trend.data) setTrendShown(true)
   }, [trend.data])
+  // The chart remounts for every new window, so the selected metric lives
+  // here; remounting must not bounce the chart back to the default tab.
+  const [trendMetric, setTrendMetric] = useState<StatsTrendMetric>('dailyLogin')
 
   useEffect(() => {
     setDraftDays(days)
@@ -585,7 +589,14 @@ export function DashboardStats({ reviewerRole }: DashboardStatsProps) {
         onRetry={() => void loadOverview(days)}
         skeleton={<Skeleton className="h-64 w-full" />}
       >
-        {(data) => <DashboardTrend data={data} firstEntry={!trendShown} />}
+        {(data) => (
+          <DashboardTrend
+            data={data}
+            firstEntry={!trendShown}
+            metric={trendMetric}
+            onMetricChange={setTrendMetric}
+          />
+        )}
       </BlockBody>
     </Panel>
   )

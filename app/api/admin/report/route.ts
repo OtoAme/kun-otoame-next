@@ -13,10 +13,11 @@ export const GET = async (req: NextRequest) => {
   if (!payload) {
     return NextResponse.json('用户未登录')
   }
-  // Archive reads are open to administrators (module 09 plan 5.3);
-  // handling stays super-administrator-only on the handle route.
-  if (payload.role < 3) {
-    return NextResponse.json('本页面仅管理员可访问')
+  // Only the legacy pages read the archive (module 10 plan 6.4 dropped the
+  // console archive pages), so reads stay super-administrator-only like the
+  // handle route.
+  if (payload.role < 4) {
+    return NextResponse.json('本页面仅超级管理员可访问')
   }
 
   const response = await getReport(input)

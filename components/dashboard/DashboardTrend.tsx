@@ -1,6 +1,6 @@
 'use client'
 
-import { useId, useState } from 'react'
+import { useEffect, useId, useState } from 'react'
 import {
   Area,
   AreaChart,
@@ -98,10 +98,15 @@ const shortDate = (date: string) =>
  * the old points to the new ones instead of redrawing. A new window remounts
  * the chart (the skeleton shows while it loads), so it is revealed again.
  * Reduced motion turns all of it off.
+ *
+ * The overview owns the selected metric so a new window does not bounce the
+ * chart back to the default tab while it remounts.
  */
 export function DashboardTrend({
   data,
-  firstEntry = true
+  firstEntry = true,
+  metric: metricProp,
+  onMetricChange
 }: {
   data: StatsTrendData
   /**
@@ -110,8 +115,19 @@ export function DashboardTrend({
    * window draws at the quick switching speed.
    */
   firstEntry?: boolean
+  /**
+   * The metric to select. While the parent passes one it owns the selection;
+   * a new value takes effect after the user's own clicks, matching a
+   * controlled input. The first tab is the default.
+   */
+  metric?: MetricKey
+  /** Called when the user picks a tab. */
+  onMetricChange?: (metric: MetricKey) => void
 }) {
-  const [active, setActive] = useState<MetricKey>('newUser')
+  const [active, setActive] = useState<MetricKey>(metricProp ?? 'dailyLogin')
+  useEffect(() => {
+    if (metricProp) setActive(metricProp)
+  }, [metricProp])
   const reducedMotion = useReducedMotion()
   // The slower reveal belongs to the points drawn first; new points or a
   // metric change take the quick speed. Recharts restarts its animation
@@ -124,6 +140,7 @@ export function DashboardTrend({
   const selectMetric = (key: MetricKey) => {
     setRevealPoints(null)
     setActive(key)
+    onMetricChange?.(key)
   }
   const metric = METRICS.find((item) => item.key === active) ?? METRICS[0]
   const totals = Object.fromEntries(

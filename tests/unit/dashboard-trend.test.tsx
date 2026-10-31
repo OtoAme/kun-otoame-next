@@ -96,10 +96,12 @@ describe('dashboard trend chart animation', () => {
   it('reveals the first chart slowly and morphs metric switches quickly', async () => {
     await act(async () => root.render(<DashboardTrend data={data} />))
     expect(lastArea()).toMatchObject({
-      dataKey: 'newUser',
+      dataKey: 'dailyLogin',
       isAnimationActive: true,
       ...REVEAL
     })
+    // The mounted chart opens on the first tab.
+    expect(tabNamed('最近登录').getAttribute('aria-selected')).toBe('true')
     // The fill colour fades at the switching speed from the start.
     expect(stops().map((stop) => stop.style.transition)).toEqual([
       'stop-color 450ms cubic-bezier(0.22, 1, 0.36, 1)',
@@ -134,6 +136,34 @@ describe('dashboard trend chart animation', () => {
       root.render(<DashboardTrend data={data} firstEntry={false} />)
     )
     expect(lastArea()).toMatchObject({ isAnimationActive: true, ...MORPH })
+  })
+
+  it('keeps the metric the overview hands it across a window change', async () => {
+    await act(async () =>
+      root.render(<DashboardTrend data={data} metric="checkIn" />)
+    )
+    // A metric the parent names wins over the default tab from the start.
+    expect(tabNamed('签到').getAttribute('aria-selected')).toBe('true')
+    expect(lastArea().dataKey).toBe('checkIn')
+    await act(async () =>
+      root.render(
+        <DashboardTrend
+          data={{ ...data, points: [...data.points] }}
+          metric="checkIn"
+        />
+      )
+    )
+    expect(tabNamed('签到').getAttribute('aria-selected')).toBe('true')
+    expect(lastArea().dataKey).toBe('checkIn')
+    // The user can still move to another tab.
+    await act(async () => tabNamed('新问题').click())
+    expect(lastArea().dataKey).toBe('newCase')
+    // A later switch of the parent's metric moves the chart again.
+    await act(async () =>
+      root.render(<DashboardTrend data={data} metric="newRating" />)
+    )
+    expect(tabNamed('新增评价').getAttribute('aria-selected')).toBe('true')
+    expect(lastArea().dataKey).toBe('newRating')
   })
 
   it('draws daily logins and shows distinct users as the figure', async () => {
