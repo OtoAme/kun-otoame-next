@@ -205,8 +205,8 @@ importers:
         specifier: ^0.4.6
         version: 0.4.6(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
       node-cron:
-        specifier: ^4.2.1
-        version: 4.2.1
+        specifier: 4.3.0
+        version: 4.3.0
       nodemailer:
         specifier: ^8.0.1
         version: 8.0.2
@@ -7593,9 +7593,9 @@ packages:
   node-addon-api@7.1.1:
     resolution: {integrity: sha512-5m3bsyrjFWE1xf7nz7YXdN4udnVtXK6/Yfgn5qnahL6bCkf2yKt4k3nuTKAtT4r3IG8JNR2ncsIMdZuAzJjHQQ==}
 
-  node-cron@4.2.1:
-    resolution: {integrity: sha512-lgimEHPE/QDgFlywTd8yTR61ptugX3Qer29efeyWw2rv259HtGBNn1vZVmp8lB9uo9wC0t/AT4iGqXxia+CJFg==}
-    engines: {node: '>=6.0.0'}
+  node-cron@4.3.0:
+    resolution: {integrity: sha512-NeTIPjUfndOkKQnWCBJIfx44BZX7GiXe7KJq7Y2bwc96v/4+CMwuzwOLkAk+4nu6eSNcatoLFCDXcn4QNph/Rw==}
+    engines: {node: '>=20'}
 
   node-emoji@2.2.0:
     resolution: {integrity: sha512-Z3lTE9pLaJF47NyMhd4ww1yFTAP8YhYI8SleJiHzM46Fgpm5cnNzSl9XfzFNqbaz+VlJrIj3fXQ4DeN1Rjm6cw==}
@@ -18825,7 +18825,7 @@ snapshots:
   node-addon-api@7.1.1:
     optional: true
 
-  node-cron@4.2.1: {}
+  node-cron@4.3.0: {}
 
   node-emoji@2.2.0:
     dependencies:
