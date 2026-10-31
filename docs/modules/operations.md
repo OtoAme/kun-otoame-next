@@ -84,6 +84,7 @@ pnpm prisma:deploy-safe
 | 小喇叭 | [预检](../../migration/production-shoutbox-preflight-2026-09-11.sql)、[同步](../../migration/production-shoutbox-sync-2026-09-11.sql)、[复检](../../migration/production-shoutbox-postflight-2026-09-11.sql)，检查扣费、三人隐藏、官方例外、退款一次及生效边界后开放。 |
 | 问题处理基础 | [预检](../../migration/production-case-preflight-2026-09-13.sql)、[同步](../../migration/production-case-sync-2026-09-13.sql)、[复检](../../migration/production-case-postflight-2026-09-13.sql)，再装下一行扩展。 |
 | 问题附图与提醒 | [预检](../../migration/production-case-feedback-preflight-2026-09-26.sql)、[同步](../../migration/production-case-feedback-sync-2026-09-26.sql)、[复检](../../migration/production-case-feedback-postflight-2026-09-26.sql)，扩展后不重跑只认基础列数的检查，旧反馈与举报不回填。 |
+| 控制台查询索引 | [预检](../../migration/production-dashboard-indexes-preflight-2026-10-31.sql)、[同步](../../migration/production-dashboard-indexes-sync-2026-10-31.sql)，在显式事务外执行；只建索引，不改数据，不需要停写。同步可重复运行：已存在且有效的跳过，中断留下的无效索引删掉重建，同名但定义不同时停止。完成后重跑预检，四项都应为 `already_ok`。 |
 
 ### 资源访问授权
 
