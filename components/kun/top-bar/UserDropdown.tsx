@@ -31,13 +31,12 @@ import { useUserStore } from '~/store/userStore'
 import { useSettingStore } from '~/store/settingStore'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from '@bprogress/next'
-import { kunFetchGet, kunFetchPost } from '~/utils/kunFetch'
+import { kunFetchPost } from '~/utils/kunFetch'
 import toast from 'react-hot-toast'
 import { showKunSooner } from '~/components/kun/Sooner'
 import { kunErrorHandler } from '~/utils/kunErrorHandler'
 import { NSFWSwitcher } from './NSFWSwitcher'
 import { useMessageStore } from '~/store/messageStore'
-import type { CasePendingCountResponse } from '~/types/api/case'
 import type { MoemoepointBalance } from '~/types/api/moemoepoint'
 
 const NESTED_DROPDOWN_EXIT_MS = 50
@@ -245,31 +244,6 @@ export const UserDropdown = () => {
     }
   }, [clearDeferredParentClose])
 
-  // 「问题处理」的待办数只在打开菜单时刷新，不给每次页面加载加请求（D22）
-  const [caseCounts, setCaseCounts] = useState<CasePendingCountResponse>()
-  useEffect(() => {
-    if (!isDropdownOpen) {
-      return
-    }
-    let cancelled = false
-    kunFetchGet<CasePendingCountResponse | string>('/case/pending-count')
-      .then((res) => {
-        if (!cancelled && typeof res !== 'string') {
-          setCaseCounts(res)
-        }
-      })
-      .catch(() => {})
-    return () => {
-      cancelled = true
-    }
-  }, [isDropdownOpen])
-  const caseCountText = [
-    caseCounts?.owned ? `待我处理 ${caseCounts.owned}` : '',
-    caseCounts?.waitingReporter ? `待我补充 ${caseCounts.waitingReporter}` : ''
-  ]
-    .filter(Boolean)
-    .join(' · ')
-
   const handleLogOut = async () => {
     setLoading(true)
     await kunFetchPost<KunResponse<{}>>('/user/status/logout')
@@ -348,7 +322,7 @@ export const UserDropdown = () => {
             textValue="可用萌萌点"
             key="moemoepoint"
             href="/moemoepoint"
-            startContent={<Lollipop className="size-4" />}
+            startContent={<Lollipop className="size-4 shrink-0" />}
             endContent={user.moemoepointAvailable}
             description={
               user.moemoepointReserved > 0
@@ -368,8 +342,7 @@ export const UserDropdown = () => {
           <DropdownItem
             key="workspace"
             href="/workspace/resources"
-            startContent={<Flag className="size-4" />}
-            description={caseCountText || undefined}
+            startContent={<Flag className="size-4 shrink-0" />}
           >
             用户工作台
           </DropdownItem>

@@ -3850,7 +3850,7 @@ export const appendCaseMessage = async (
   }
 }
 
-/** Numbers behind the「问题处理」entry of the site user menu (D22). */
+/** Pending case numbers of one user, served by GET /api/case/pending-count. */
 export const getPendingCaseCounts = async (
   uid: number,
   options: { db?: PrismaClient } = {}

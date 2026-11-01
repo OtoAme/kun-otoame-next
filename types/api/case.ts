@@ -361,7 +361,7 @@ export type CaseCreateInput = {
   imageKeys?: string[]
 }
 
-/** GET /api/case/pending-count, used by the site user menu (D22). */
+/** GET /api/case/pending-count: the signed-in user's pending case numbers. */
 export interface CasePendingCountResponse {
   /** Actionable maintenance + owned cases, with represented publisher link cases counted once. */
   owned: number
