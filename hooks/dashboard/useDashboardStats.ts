@@ -36,8 +36,12 @@ export function isValidOverviewDays(value: number): boolean {
 export interface DashboardStatsState {
   canViewStats: boolean
   summary: StatsBlock<DashboardStatsSumData>
-  /** Daily series and login total for the selected window. */
+  /**
+   * Daily series and login total. While another window loads, `data` is still
+   * the previous window's; its own `days` says which window it covers.
+   */
   trend: StatsBlock<StatsTrendData>
+  /** The window last requested. */
   days: number
   loadSummary: () => Promise<void>
   loadOverview: (days: number) => Promise<void>
@@ -60,7 +64,6 @@ export function useDashboardStats(reviewerRole: number): DashboardStatsState {
   // Live mirrors readable from in-flight async completions: a downgrade
   // that lands while a request is pending must still mask the response.
   const canViewStatsRef = useRef(canViewStats)
-  const daysRef = useRef(OVERVIEW_DEFAULT_DAYS)
   const summaryGenerationRef = useRef(0)
   const trendGenerationRef = useRef(0)
 
@@ -122,44 +125,40 @@ export function useDashboardStats(reviewerRole: number): DashboardStatsState {
     }
   }, [])
 
-  const loadTrend = useCallback(
-    async (targetDays: number, samePeriod: boolean): Promise<void> => {
-      const generation = ++trendGenerationRef.current
-      setTrend((previous) => ({
-        data: samePeriod ? previous.data : null,
-        loading: true,
-        error: ''
-      }))
-      const stale = () =>
-        !mountedRef.current ||
-        !canViewStatsRef.current ||
-        generation !== trendGenerationRef.current
-      try {
-        const result = await kunFetchGet<StatsTrendData | string>(
-          '/admin/stats/trend',
-          { days: targetDays }
-        )
-        if (stale()) return
-        if (typeof result === 'string') {
-          setTrend((previous) => ({
-            ...previous,
-            loading: false,
-            error: result || '获取趋势数据失败'
-          }))
-        } else {
-          setTrend({ data: result, loading: false, error: '' })
-        }
-      } catch {
-        if (stale()) return
+  const loadTrend = useCallback(async (targetDays: number): Promise<void> => {
+    const generation = ++trendGenerationRef.current
+    // Loaded data stays on screen until this window lands, so the chart is
+    // not torn down and rebuilt for every window. The data carries its own
+    // `days`, so nothing shown is attributed to the wrong window.
+    setTrend((previous) => ({ ...previous, loading: true, error: '' }))
+    const stale = () =>
+      !mountedRef.current ||
+      !canViewStatsRef.current ||
+      generation !== trendGenerationRef.current
+    try {
+      const result = await kunFetchGet<StatsTrendData | string>(
+        '/admin/stats/trend',
+        { days: targetDays }
+      )
+      if (stale()) return
+      if (typeof result === 'string') {
         setTrend((previous) => ({
           ...previous,
           loading: false,
-          error: '获取趋势数据失败，请检查网络后重试'
+          error: result || '获取趋势数据失败'
         }))
+      } else {
+        setTrend({ data: result, loading: false, error: '' })
       }
-    },
-    []
-  )
+    } catch {
+      if (stale()) return
+      setTrend((previous) => ({
+        ...previous,
+        loading: false,
+        error: '获取趋势数据失败，请检查网络后重试'
+      }))
+    }
+  }, [])
 
   /** Switches the window (or refreshes it) and reloads its trend. */
   const loadOverview = useCallback(
@@ -170,12 +169,8 @@ export function useDashboardStats(reviewerRole: number): DashboardStatsState {
       if (!mountedRef.current || !canViewStatsRef.current) {
         return
       }
-      // A new window must never show values from the previous window;
-      // a same-window refresh may keep its values while reloading.
-      const samePeriod = targetDays === daysRef.current
-      daysRef.current = targetDays
       setDays(targetDays)
-      await loadTrend(targetDays, samePeriod)
+      await loadTrend(targetDays)
     },
     [loadTrend]
   )
@@ -187,7 +182,6 @@ export function useDashboardStats(reviewerRole: number): DashboardStatsState {
     if (!canViewStats) {
       summaryGenerationRef.current += 1
       trendGenerationRef.current += 1
-      daysRef.current = OVERVIEW_DEFAULT_DAYS
       setDays(OVERVIEW_DEFAULT_DAYS)
       setSummary(emptyBlock())
       setTrend(emptyBlock())

@@ -131,39 +131,38 @@ describe('dashboard trend chart animation', () => {
     expect(lastArea()).toMatchObject(MORPH)
   })
 
-  it('draws at the switching speed once the overview has shown a chart', async () => {
-    await act(async () =>
-      root.render(<DashboardTrend data={data} firstEntry={false} />)
-    )
-    expect(lastArea()).toMatchObject({ isAnimationActive: true, ...MORPH })
-  })
+  it('morphs to another window in place and keeps the selected tab', async () => {
+    await act(async () => root.render(<DashboardTrend data={data} />))
+    await act(async () => tabNamed('签到').click())
+    const gradientBefore = container.querySelector('linearGradient')!.id
+    const tabsBefore = container.querySelector('[role=tablist]')
 
-  it('keeps the metric the overview hands it across a window change', async () => {
-    await act(async () =>
-      root.render(<DashboardTrend data={data} metric="checkIn" />)
-    )
-    // A metric the parent names wins over the default tab from the start.
+    // A longer window arrives as new data for the same chart.
+    const longer: StatsTrendData = {
+      days: 3,
+      recentLogin: 4,
+      points: [
+        ...data.points,
+        { ...data.points[1], date: '2026-11-01', checkIn: 9 }
+      ]
+    }
+    await act(async () => root.render(<DashboardTrend data={longer} />))
+
+    // Same tab, same Area and gradient, quick morph rather than a new reveal.
     expect(tabNamed('签到').getAttribute('aria-selected')).toBe('true')
-    expect(lastArea().dataKey).toBe('checkIn')
-    await act(async () =>
-      root.render(
-        <DashboardTrend
-          data={{ ...data, points: [...data.points] }}
-          metric="checkIn"
-        />
-      )
-    )
-    expect(tabNamed('签到').getAttribute('aria-selected')).toBe('true')
-    expect(lastArea().dataKey).toBe('checkIn')
-    // The user can still move to another tab.
+    expect(lastArea()).toMatchObject({ dataKey: 'checkIn', ...MORPH })
+    expect(container.querySelector('linearGradient')!.id).toBe(gradientBefore)
+    expect(container.querySelector('[role=tablist]')).toBe(tabsBefore)
+    // The tab figures follow the new window (3 + 3 + 9 check-ins).
+    expect(tabNamed('签到').textContent).toContain('签到15')
+    expect(tabNamed('最近登录').textContent).toContain('最近登录4')
+    expect(
+      container.querySelector('[role=img]')?.getAttribute('aria-label')
+    ).toContain('共 3 天')
+
+    // The user can still move to another tab afterwards.
     await act(async () => tabNamed('新问题').click())
     expect(lastArea().dataKey).toBe('newCase')
-    // A later switch of the parent's metric moves the chart again.
-    await act(async () =>
-      root.render(<DashboardTrend data={data} metric="newRating" />)
-    )
-    expect(tabNamed('新增评价').getAttribute('aria-selected')).toBe('true')
-    expect(lastArea().dataKey).toBe('newRating')
   })
 
   it('draws daily logins and shows distinct users as the figure', async () => {

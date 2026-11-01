@@ -43,33 +43,27 @@ vi.mock('~/components/dashboard/ui/input', () => ({
 }))
 
 // recharts needs layout APIs jsdom lacks; the chart has its own coverage.
-// The stub lists the window totals the real tiles show.
+// The stub lists the window totals the real tiles show. Its click count lives
+// in its own state, like the real chart's selected tab, so it survives only
+// while the overview keeps the same chart mounted.
 vi.mock('~/components/dashboard/DashboardTrend', () => ({
   DashboardTrend: ({
-    data,
-    firstEntry,
-    metric,
-    onMetricChange
+    data
   }: {
     data: {
       recentLogin: number
       points: Record<string, number | string>[]
     }
-    firstEntry?: boolean
-    metric?: string
-    onMetricChange?: (metric: string) => void
   }) => {
-    // Like the real chart, keep the value it was mounted with.
-    const [entry] = React.useState(firstEntry)
+    const [picks, setPicks] = React.useState(0)
     const total = (key: string) =>
       data.points.reduce((sum, point) => sum + Number(point[key]), 0)
     return (
       // eslint-disable-next-line jsx-a11y/no-static-element-interactions
       <dl
         data-testid="trend"
-        data-first-entry={String(entry)}
-        data-metric={metric ?? ''}
-        onClick={() => onMetricChange?.('resourceAccess')}
+        data-picks={String(picks)}
+        onClick={() => setPicks((count) => count + 1)}
       >
         <dt>最近登录</dt>
         <dd>{data.recentLogin}</dd>
@@ -387,11 +381,14 @@ describe('dashboard overview', () => {
     }
   })
 
-  it('gives only the first trend chart of a visit the slower reveal', async () => {
+  it('keeps the same chart on screen while another window loads', async () => {
     vi.useFakeTimers()
     try {
       await render(4)
-      expect(trendChart()?.dataset.firstEntry).toBe('true')
+      const chart = trendChart()!
+      // Stands in for picking a tab: state inside the chart.
+      await act(async () => chart.click())
+      expect(chart.dataset.picks).toBe('1')
       let resolveTrend!: (value: StatsTrendData) => void
       mocks.get.mockImplementation((url: string) =>
         url === '/admin/stats/trend'
@@ -401,37 +398,59 @@ describe('dashboard overview', () => {
           : Promise.resolve(okResponses[url])
       )
       await slideDays(30)
-      // A new window shows the skeleton first, so its chart mounts afresh.
-      expect(trendChart()).toBeNull()
+      // No skeleton and no remount: the previous window stays until the new
+      // one lands, so nothing around the slider moves.
+      expect(trendChart()).toBe(chart)
+      expect(
+        panel('dashboard-trend-heading').querySelector('[data-slot="skeleton"]')
+      ).toBeNull()
+      expect(metric('天数')).toBe('7')
+      expect(metric('新注册用户')).toBe('7')
+      // The figure keeps naming the window it was counted over.
+      expect(summaryValue('新注册 · 近 7 天')).toBe('7')
       await act(async () => resolveTrend(trendFor({ newUser: 30 }, 1, 30)))
-      expect(trendChart()?.dataset.firstEntry).toBe('false')
+      expect(trendChart()).toBe(chart)
+      expect(chart.dataset.picks).toBe('1')
+      expect(metric('天数')).toBe('30')
+      expect(metric('新注册用户')).toBe('30')
+      expect(summaryValue('新注册 · 近 30 天')).toBe('30')
+      expect(summaryValue('新注册 · 近 7 天')).toBeNull()
     } finally {
       vi.useRealTimers()
     }
   })
 
-  it('keeps the chart on the selected metric while the window changes', async () => {
+  it('keeps the previous window next to the error when the next one fails', async () => {
     vi.useFakeTimers()
     try {
       await render(4)
-      expect(trendChart()?.dataset.metric).toBe('dailyLogin')
-      // The user picks another metric (clicking the stub fires the
-      // component's onMetricChange), then drags the days slider.
-      await act(async () => trendChart()!.click())
-      let resolveTrend!: (value: StatsTrendData) => void
       mocks.get.mockImplementation((url: string) =>
         url === '/admin/stats/trend'
-          ? new Promise((resolve) => {
-              resolveTrend = resolve
-            })
+          ? Promise.reject(new Error('offline'))
           : Promise.resolve(okResponses[url])
       )
-      await slideDays(14)
-      // The window reload shows the skeleton until the new data lands.
-      expect(trendChart()).toBeNull()
-      await act(async () => resolveTrend(trendFor({ newUser: 14 }, 1, 14)))
-      // The new window must not bounce the chart back to the default tab.
-      expect(trendChart()?.dataset.metric).toBe('resourceAccess')
+      await slideDays(30)
+      expect(panel('dashboard-trend-heading').textContent).toContain(
+        '获取趋势数据失败，请检查网络后重试'
+      )
+      expect(metric('天数')).toBe('7')
+      // Retrying asks for the window the slider is on, not the one on screen.
+      mocks.get.mockClear()
+      mocks.get.mockImplementation((url: string) =>
+        Promise.resolve(
+          url === '/admin/stats/trend'
+            ? trendFor({ newUser: 30 }, 1, 30)
+            : okResponses[url]
+        )
+      )
+      await act(async () => retryIn('dashboard-trend-heading').click())
+      expect(mocks.get).toHaveBeenCalledWith('/admin/stats/trend', {
+        days: 30
+      })
+      expect(metric('天数')).toBe('30')
+      expect(panel('dashboard-trend-heading').textContent).not.toContain(
+        '获取趋势数据失败'
+      )
     } finally {
       vi.useRealTimers()
     }
@@ -641,7 +660,7 @@ describe('dashboard overview', () => {
     }
   })
 
-  it('clears old values on a new window and never lets stale responses win', async () => {
+  it('never lets a stale window response overwrite a newer one', async () => {
     vi.useFakeTimers()
     try {
       const pending: Array<(value: StatsTrendData | string) => void> = []
@@ -654,8 +673,9 @@ describe('dashboard overview', () => {
         )
       })
       await render(4)
-      await slideDays(30)
+      // Nothing has loaded yet, so no figure shows, not even a zero.
       expect(metric('新注册用户')).toBeNull()
+      await slideDays(30)
       await slideDays(14)
       expect(pending).toHaveLength(3)
       await act(async () => pending[2](trendFor({ newUser: 70 }, 1, 14)))

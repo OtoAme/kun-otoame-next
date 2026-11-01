@@ -42,7 +42,6 @@ import {
   type InboxItem,
   type LinkHealthInboxKind
 } from '~/types/api/inbox'
-import type { StatsTrendMetric } from '~/types/api/admin'
 import { Button } from '~/components/dashboard/ui/button'
 import { Slider } from '~/components/dashboard/ui/slider'
 import { Skeleton } from '~/components/dashboard/ui/skeleton'
@@ -397,16 +396,6 @@ export function DashboardStats({ reviewerRole }: DashboardStatsProps) {
   // The slider moves this value; the window reloads once the thumb settles.
   const [draftDays, setDraftDays] = useState(OVERVIEW_DEFAULT_DAYS)
   const [layoutRef, width] = useElementWidth<HTMLDivElement>()
-  // Set once the first trend chart has been shown. A new window remounts the
-  // chart after its skeleton, and that redraw takes the quick speed instead
-  // of the slower entry reveal.
-  const [trendShown, setTrendShown] = useState(false)
-  useEffect(() => {
-    if (trend.data) setTrendShown(true)
-  }, [trend.data])
-  // The chart remounts for every new window, so the selected metric lives
-  // here; remounting must not bounce the chart back to the default tab.
-  const [trendMetric, setTrendMetric] = useState<StatsTrendMetric>('dailyLogin')
 
   useEffect(() => {
     setDraftDays(days)
@@ -589,14 +578,7 @@ export function DashboardStats({ reviewerRole }: DashboardStatsProps) {
         onRetry={() => void loadOverview(days)}
         skeleton={<Skeleton className="h-64 w-full" />}
       >
-        {(data) => (
-          <DashboardTrend
-            data={data}
-            firstEntry={!trendShown}
-            metric={trendMetric}
-            onMetricChange={setTrendMetric}
-          />
-        )}
+        {(data) => <DashboardTrend data={data} />}
       </BlockBody>
     </Panel>
   )
@@ -791,7 +773,9 @@ export function DashboardStats({ reviewerRole }: DashboardStatsProps) {
             />
             {canViewStats && (
               <SummaryCell
-                label={`新注册 · 近 ${days} 天`}
+                // The window the figure was counted over, not the one the
+                // slider has moved to while the next one loads.
+                label={`新注册 · 近 ${trend.data?.days ?? days} 天`}
                 value={
                   trend.data
                     ? fmt(
