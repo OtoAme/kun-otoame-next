@@ -89,12 +89,14 @@ export const KunRootRouteChrome = ({
         body.style.touchAction = ''
       }
 
+      // Only the root element gets the explicit scroll value. Once the root
+      // has a non-visible overflow, an overflow on body no longer passes to
+      // the viewport; body would become the sticky top bar's scroll
+      // container, and because body itself never scrolls, the bar would move
+      // off screen with the page.
       if (confirmMobileScroll && !isConversationDetailRef.current) {
         if (!html.style.overflow) {
           html.style.overflowY = 'auto'
-        }
-        if (!body.style.overflow) {
-          body.style.overflowY = 'auto'
         }
       }
     }

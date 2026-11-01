@@ -12,12 +12,9 @@ type Pin = 'top' | 'fixed' | 'bottom'
  * Two-column forum layout from the lg breakpoint; below it the sidebar
  * follows the main column so the list stays first on phones.
  *
- * The site layout keeps `overflow-y: auto` on body (RootRouteChrome restores
- * page scrolling that way after private chat), which disables CSS
- * `position: sticky` site-wide. The sidebar therefore switches between three
- * static positions, in flow, `position: fixed` at the sticky top, and pinned
- * to the column end, so it behaves like sticky without moving on every
- * scroll frame.
+ * The sidebar switches between three static positions, in flow,
+ * `position: fixed` at the sticky top, and pinned to the column end, so it
+ * behaves like sticky without moving on every scroll frame.
  */
 export const HelpLayout = ({
   sidebar,

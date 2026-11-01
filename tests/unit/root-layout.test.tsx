@@ -203,7 +203,48 @@ describe('RootLayout content band', () => {
     expect(dom.window.document.documentElement.style.overflow).toBe('')
     expect(dom.window.document.body.style.overflow).toBe('')
     expect(dom.window.document.documentElement.style.overflowY).toBe('auto')
-    expect(dom.window.document.body.style.overflowY).toBe('auto')
+    expect(dom.window.document.body.style.overflowY).toBe('')
+  })
+
+  it('keeps body overflow unset on regular pages so the sticky top bar pins to the viewport', async () => {
+    dom = new JSDOM('<!doctype html><div id="root"></div>', {
+      url: 'http://localhost'
+    })
+    Object.defineProperty(dom.window, 'requestAnimationFrame', {
+      configurable: true,
+      value: (callback: FrameRequestCallback) => {
+        callback(0)
+        return 1
+      }
+    })
+    Object.defineProperty(dom.window, 'cancelAnimationFrame', {
+      configurable: true,
+      value: vi.fn()
+    })
+    vi.stubGlobal('window', dom.window)
+    vi.stubGlobal('document', dom.window.document)
+    vi.stubGlobal('React', React)
+    vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
+    navigationMock.pathname = '/otomegame'
+
+    const { KunRootRouteChrome } = await import(
+      '~/components/layout/RootRouteChrome'
+    )
+    const container = dom.window.document.getElementById('root')
+    expect(container).not.toBeNull()
+
+    root = createRoot(container!)
+    await act(async () => {
+      root!.render(
+        <KunRootRouteChrome>
+          <main data-testid="page-content">content</main>
+        </KunRootRouteChrome>
+      )
+    })
+
+    expect(dom.window.document.documentElement.style.overflowY).toBe('auto')
+    expect(dom.window.document.body.style.overflowY).toBe('')
+    expect(dom.window.document.body.style.overflow).toBe('')
   })
 
   it('does not restore a released external scroll lock after leaving conversation detail pages', async () => {
@@ -263,6 +304,6 @@ describe('RootLayout content band', () => {
     expect(html.style.overflow).toBe('')
     expect(body.style.overflow).toBe('')
     expect(html.style.overflowY).toBe('auto')
-    expect(body.style.overflowY).toBe('auto')
+    expect(body.style.overflowY).toBe('')
   })
 })
