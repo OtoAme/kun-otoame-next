@@ -7,7 +7,7 @@ export const applyForCreator = async (uid: number) => {
     include: {
       _count: {
         select: {
-          patch_resource: true
+          patch_resource: { where: { status: 0 } }
         }
       }
     }
@@ -17,7 +17,7 @@ export const applyForCreator = async (uid: number) => {
   }
 
   if (user._count.patch_resource < 3) {
-    return '您暂时不可以申请成为创作者, 您可以继续发布游戏 / 补丁资源'
+    return '您需要至少 3 个审核通过的游戏 / 补丁资源才能申请成为创作者'
   }
 
   if (user.role > 1) {
@@ -59,7 +59,7 @@ export const applyForCreator = async (uid: number) => {
 
 export const getApplyStatus = async (uid: number) => {
   const count = await prisma.patch_resource.count({
-    where: { user_id: uid }
+    where: { user_id: uid, status: 0 }
   })
   const user = await prisma.user.findUnique({
     where: { id: uid }
