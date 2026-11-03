@@ -1,4 +1,5 @@
 import sharp, { type WebpOptions } from 'sharp'
+import { setImmediate } from 'node:timers/promises'
 
 import { checkBufferSize } from '~/app/api/utils/checkBufferSize'
 import { createAnimatedAvifThumbnail } from '~/app/api/edit/galleryAnimatedAvifThumbnail'
@@ -157,7 +158,9 @@ export const getGalleryUploadPlan = (
 const processStaticGalleryImage = async (
   image: Buffer,
   watermark: boolean
-): Promise<Buffer | string> => {
+): Promise<
+  Pick<ProcessedGalleryImage, 'buffer' | 'thumbnailBuffer'> | string
+> => {
   let pipeline = sharp(image).resize(1920, 1080, {
     fit: 'inside',
     withoutEnlargement: true
@@ -173,19 +176,35 @@ const processStaticGalleryImage = async (
     ])
   }
 
-  const buffer = await pipeline.avif({ quality: 60, effort: 3 }).toBuffer()
+  // Both outputs use the processed pixels. Decoding our AVIF output again
+  // would make even PNG/JPEG uploads depend on the runtime HEIF loader policy.
+  const { data, info } = await pipeline
+    .raw()
+    .toBuffer({ resolveWithObject: true })
+  const raw = {
+    width: info.width,
+    height: info.height,
+    channels: info.channels
+  }
+  const buffer = await sharp(data, { raw })
+    .avif({ quality: 60, effort: 3 })
+    .toBuffer()
 
   if (!checkBufferSize(buffer, GALLERY_STATIC_MAX_SIZE_MB)) {
     return '图片体积过大'
   }
 
-  return buffer
+  const thumbnailBuffer = await processStaticGalleryThumbnail(data, raw)
+  if (typeof thumbnailBuffer === 'string') return thumbnailBuffer
+
+  return { buffer, thumbnailBuffer }
 }
 
 const processStaticGalleryThumbnail = async (
-  image: Buffer
+  image: Buffer,
+  raw?: { width: number; height: number; channels: 1 | 2 | 3 | 4 }
 ): Promise<Buffer | string> => {
-  const buffer = await sharp(image)
+  const buffer = await sharp(image, raw ? { raw } : undefined)
     .resize(GALLERY_THUMBNAIL_MAX_WIDTH, GALLERY_THUMBNAIL_MAX_HEIGHT, {
       fit: 'inside',
       withoutEnlargement: true
@@ -308,7 +327,7 @@ export const preparePatchGalleryThumbnail = async (
   }
 }
 
-export const preparePatchGalleryImage = async (
+const processPatchGalleryImage = async (
   image: ArrayBuffer,
   watermark: boolean
 ): Promise<ProcessedGalleryImage | string> => {
@@ -393,25 +412,55 @@ export const preparePatchGalleryImage = async (
     return result
   }
 
-  const buffer = await processStaticGalleryImage(input, watermark)
-  if (typeof buffer === 'string') {
-    return buffer
-  }
-
-  const thumbnailBuffer = await processStaticGalleryThumbnail(buffer)
-  if (typeof thumbnailBuffer === 'string') {
-    return thumbnailBuffer
+  const processed = await processStaticGalleryImage(input, watermark)
+  if (typeof processed === 'string') {
+    return processed
   }
 
   return {
-    buffer,
+    ...processed,
     extension: plan.extension,
     contentType: plan.contentType,
-    thumbnailBuffer,
     thumbnailExtension: 'avif',
     thumbnailContentType: 'image/avif',
     skipWatermark: plan.skipWatermark
   }
+}
+
+const isGalleryDecodeError = (error: unknown): error is Error =>
+  error instanceof Error &&
+  /unsupported image format|corrupt header|operation is blocked|not in a known format/i.test(
+    error.message
+  )
+
+export const preparePatchGalleryImage = async (
+  image: ArrayBuffer,
+  watermark: boolean
+): Promise<ProcessedGalleryImage | string> => {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      return await processPatchGalleryImage(image, watermark)
+    } catch (error) {
+      if (!isGalleryDecodeError(error)) throw error
+      if (attempt === 0) {
+        // Next's first image optimization temporarily blocks shared libvips
+        // loaders. Let that initialization finish before decoding again.
+        // Preparation writes no objects, so retrying cannot duplicate uploads.
+        await setImmediate()
+        continue
+      }
+
+      console.error('Gallery image decoding failed after retry', {
+        error,
+        inputBytes: image.byteLength,
+        sharpVersion: sharp.versions?.sharp,
+        heifVersion: sharp.versions?.heif
+      })
+      return '图片解码失败, 请确认图片未损坏, 或转换为 JPG、PNG、WebP 后重试'
+    }
+  }
+
+  throw new Error('Gallery image preparation attempts exhausted')
 }
 
 export const uploadPatchGalleryImage = async (

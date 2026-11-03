@@ -360,7 +360,17 @@ export const uploadPatchSubmissionGalleryImage = async (
     }
   }
 
-  const prepared = await preparePatchGalleryImage(input.image, input.watermark)
+  let prepared: Awaited<ReturnType<typeof preparePatchGalleryImage>>
+  try {
+    prepared = await preparePatchGalleryImage(input.image, input.watermark)
+  } catch (error) {
+    await markGalleryFailed(reserved.row.id)
+    console.error('Failed to process a submission gallery image', {
+      galleryId: reserved.row.id,
+      error
+    })
+    throw new PatchSubmissionError('截图处理失败, 请重试或更换图片')
+  }
   if (typeof prepared === 'string') {
     await markGalleryFailed(reserved.row.id)
     throw new PatchSubmissionError(prepared)

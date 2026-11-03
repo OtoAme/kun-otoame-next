@@ -99,6 +99,9 @@ beforeEach(() => {
   tx.patch_submission_gallery.update.mockResolvedValue({ id: 9 })
   tx.patch_submission_gallery.create.mockResolvedValue({ id: 9 })
   tx.patch_submission_gallery.updateMany.mockResolvedValue({ count: 1 })
+  prismaMocks.patch_submission_gallery.updateMany.mockResolvedValue({
+    count: 1
+  })
   tx.patch_submission_gallery.deleteMany.mockResolvedValue({ count: 1 })
   tx.patch_submission_gallery.delete.mockResolvedValue({})
   tx.patch_submission.updateMany.mockResolvedValue({ count: 1 })
@@ -180,6 +183,54 @@ describe('gallery upload finalize fence', () => {
       imageUrl: expect.stringContaining('/gallery/9.avif')
     })
     expect(enqueueSubmissionOrphanCleanupJobsMock).not.toHaveBeenCalled()
+  })
+
+  it('releases the uploading reservation after processing throws so the same image can retry', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const input = {
+      submissionId: 1,
+      userId: 2,
+      clientAssetId: 'client-9',
+      image: new ArrayBuffer(8),
+      isNSFW: false,
+      watermark: true,
+      displayOrder: 0
+    }
+    const row = {
+      id: 9,
+      upload_status: 'uploading',
+      file_fingerprint: null,
+      status_changed_at: new Date()
+    }
+    prismaMocks.patch_submission_gallery.updateMany.mockImplementation(
+      async ({ data }) => {
+        Object.assign(row, data)
+        return { count: 1 }
+      }
+    )
+    preparePatchGalleryImageMock.mockRejectedValueOnce(
+      new Error('AVIF encoding failed')
+    )
+
+    try {
+      await expect(uploadPatchSubmissionGalleryImage(input)).rejects.toThrow(
+        '截图处理失败, 请重试或更换图片'
+      )
+      expect(row.upload_status).toBe('failed')
+      expect(row).toMatchObject({ declared_bytes: 0 })
+      expect(uploadImageToS3Mock).not.toHaveBeenCalled()
+
+      tx.patch_submission_gallery.findUnique.mockResolvedValue(row)
+      const result = await uploadPatchSubmissionGalleryImage(input)
+
+      expect(result.gallery).toMatchObject({
+        clientAssetId: 'client-9',
+        uploadStatus: 'ready'
+      })
+      expect(tx.patch_submission_gallery.create).toHaveBeenCalledTimes(1)
+    } finally {
+      consoleError.mockRestore()
+    }
   })
 
   it('returns the ready gallery DTO when a refresh retry reuses its stable client id', async () => {

@@ -33,7 +33,17 @@ const createSharpPipeline = (metadata: Record<string, unknown>) => {
     composite: vi.fn().mockReturnThis(),
     avif: vi.fn().mockReturnThis(),
     webp: vi.fn().mockReturnThis(),
-    toBuffer: vi.fn().mockResolvedValue(Buffer.from('processed-image'))
+    raw: vi.fn().mockReturnThis(),
+    toBuffer: vi
+      .fn()
+      .mockImplementation(async (options?: { resolveWithObject?: boolean }) =>
+        options?.resolveWithObject
+          ? {
+              data: Buffer.from('processed-pixels'),
+              info: { width: 640, height: 360, channels: 3 }
+            }
+          : Buffer.from('processed-image')
+      )
   }
 
   sharpMock.mockReturnValue(pipeline)
@@ -298,10 +308,12 @@ describe('gallery upload plan', () => {
   it('transforms static images to AVIF and applies requested watermarking', async () => {
     const metadataPipeline = createSharpPipeline({ format: 'png', pages: 1 })
     const originalPipeline = createSharpPipeline({ format: 'png', pages: 1 })
-    const thumbnailPipeline = createSharpPipeline({ format: 'avif', pages: 1 })
+    const encodedPipeline = createSharpPipeline({})
+    const thumbnailPipeline = createSharpPipeline({})
     sharpMock
       .mockReturnValueOnce(metadataPipeline)
       .mockReturnValueOnce(originalPipeline)
+      .mockReturnValueOnce(encodedPipeline)
       .mockReturnValueOnce(thumbnailPipeline)
 
     const result = await preparePatchGalleryImage(
@@ -327,7 +339,7 @@ describe('gallery upload plan', () => {
       withoutEnlargement: true
     })
     expect(originalPipeline.composite).toHaveBeenCalledOnce()
-    expect(originalPipeline.avif).toHaveBeenCalledWith({
+    expect(encodedPipeline.avif).toHaveBeenCalledWith({
       quality: 60,
       effort: 3
     })
@@ -335,6 +347,72 @@ describe('gallery upload plan', () => {
       quality: 50,
       effort: 2
     })
+  })
+
+  it('retries a transient decoder failure before writing any objects', async () => {
+    const pipeline = createSharpPipeline({ format: 'png', pages: 1 })
+    pipeline.metadata.mockRejectedValueOnce(
+      new Error('Input buffer contains unsupported image format')
+    )
+
+    const result = await uploadPatchGalleryImage(
+      toExactArrayBuffer(Buffer.from('static-png')),
+      1,
+      9,
+      true
+    )
+
+    expect(result).toMatchObject({
+      originalKey: 'patch/1/gallery/9.avif',
+      thumbnailKey: 'patch/1/gallery/thumbnail/thumb-9.avif'
+    })
+    expect(pipeline.metadata).toHaveBeenCalledTimes(2)
+    expect(uploadImageToS3Mock).toHaveBeenCalledTimes(2)
+  })
+
+  it('retries preparation when a decoder is temporarily blocked', async () => {
+    const pipeline = createSharpPipeline({ format: 'png', pages: 1 })
+    pipeline.metadata.mockRejectedValueOnce(
+      new Error(
+        'Input buffer has corrupt header: pngload_buffer: operation is blocked'
+      )
+    )
+
+    const result = await uploadPatchGalleryImage(
+      toExactArrayBuffer(Buffer.from('static-png')),
+      1,
+      9,
+      false
+    )
+
+    expect(result).toMatchObject({ extension: 'avif' })
+    expect(pipeline.metadata).toHaveBeenCalledTimes(2)
+    expect(uploadImageToS3Mock).toHaveBeenCalledTimes(2)
+  })
+
+  it('returns a readable error after a repeated decode failure without uploading', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      const pipeline = createSharpPipeline({})
+      pipeline.metadata.mockRejectedValue(
+        new Error('Input buffer contains unsupported image format')
+      )
+
+      const result = await uploadPatchGalleryImage(
+        toExactArrayBuffer(Buffer.from('invalid-image')),
+        1,
+        9,
+        false
+      )
+
+      expect(result).toBe(
+        '图片解码失败, 请确认图片未损坏, 或转换为 JPG、PNG、WebP 后重试'
+      )
+      expect(pipeline.metadata).toHaveBeenCalledTimes(2)
+      expect(uploadImageToS3Mock).not.toHaveBeenCalled()
+    } finally {
+      consoleError.mockRestore()
+    }
   })
 
   it('generates static thumbnails without reprocessing or watermarking originals', async () => {
@@ -530,10 +608,12 @@ describe('gallery upload plan', () => {
   it('deletes a static original when static thumbnail upload fails', async () => {
     const metadataPipeline = createSharpPipeline({ format: 'png', pages: 1 })
     const originalPipeline = createSharpPipeline({ format: 'png', pages: 1 })
-    const thumbnailPipeline = createSharpPipeline({ format: 'avif', pages: 1 })
+    const encodedPipeline = createSharpPipeline({})
+    const thumbnailPipeline = createSharpPipeline({})
     sharpMock
       .mockReturnValueOnce(metadataPipeline)
       .mockReturnValueOnce(originalPipeline)
+      .mockReturnValueOnce(encodedPipeline)
       .mockReturnValueOnce(thumbnailPipeline)
     uploadImageToS3Mock
       .mockResolvedValueOnce(undefined)
