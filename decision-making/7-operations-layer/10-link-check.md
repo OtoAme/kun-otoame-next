@@ -49,7 +49,7 @@ W00 在 schema/SQL 派发前冻结以下最小数据合同；最终文件／字�
 
 本站后端向固定受控 checker 地址发送 `POST /v1/check`，使用 `Authorization: Bearer` 服务鉴权。上游返回 `alive/dead/unknown`、reason、可省略的 providerCode、checkedAt、cached；固定版本已通过真实 loopback HTTP 验证。当前返回不含 provider HTTP 状态或响应结构质量，因此第 13 节的服务侧修复与样本资格是接入前置，本站不能只靠这六项判断可靠性。客户端仅提交链接／资源／条目 ID 和正整数版本，不可指定 URL、verdict 或服务地址。
 
-用户报告沿 04 route；管理者手动检测拟用 `POST /api/patch/resource/link-check`，在服务端检查 owner／管理员权限；补链检测在保存事务提交后执行。站方资源盘归属沿 04，06 后再接 official 标记。新增响应保持 `private, no-store`，CSRF 不增加豁免。
+用户报告沿 04 route；管理者手动检测拟用 `POST /api/patch/resource/link-check`，在服务端检查 owner／管理员权限；补链检测在保存事务提交后执行。站方资源盘归属沿 04，06 也按 `storage = 'touchgal'` 判定，不新增 official 标记。新增响应保持 `private, no-store`，CSRF 不增加豁免。
 
 ### 5.2 顺序
 
