@@ -258,12 +258,15 @@ export const adoptLegacyDeploySlot = (paths: DeploySlotPaths) => {
   return validRelease
 }
 
+export const isImmutableDeployReleaseId = (releaseId: string) =>
+  /^[0-9a-f]{40}-[A-Za-z0-9][A-Za-z0-9._+-]{0,127}$/.test(releaseId)
+
 export const installCandidateRelease = (
   paths: DeploySlotPaths,
   candidatePath: string,
   releaseId: string
 ) => {
-  if (!/^[0-9a-f]{40}-[A-Za-z0-9][A-Za-z0-9._+-]{0,127}$/.test(releaseId)) {
+  if (!isImmutableDeployReleaseId(releaseId)) {
     throw new Error(`Invalid immutable release ID: ${releaseId}`)
   }
   assertDirectory(candidatePath, 'Candidate deployment release')

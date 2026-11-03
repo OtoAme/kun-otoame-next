@@ -26,6 +26,8 @@
     "deploy:build": "esno scripts/deployBuild.ts",
     "deploy:pull": "esno scripts/deployPullLauncher.ts",
     "deploy:pull:pinned": "esno scripts/deployPullLauncher.ts --pinned",
+    "deploy:cleanup": "esno scripts/deployCleanup.ts",
+    "deploy:cleanup:apply": "esno scripts/deployCleanup.ts --apply",
     "deploy:rollback": "esno scripts/deployRollback.ts",
     "migration:resource-type:dry": "esno migration/reclassify-resource-types.ts",
     "migration:resource-type:apply": "esno migration/reclassify-resource-types.ts --apply",

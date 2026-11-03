@@ -1,13 +1,16 @@
 import {
+  existsSync,
   mkdirSync,
   mkdtempSync,
   realpathSync,
   rmSync,
+  symlinkSync,
   writeFileSync
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { acquireDeployLock } from '~/scripts/deployLock'
 import {
   activateReleaseWithReadiness,
   recoverOrRollbackWithReadiness,
@@ -21,6 +24,7 @@ import {
 } from '~/scripts/deploySlots'
 
 const roots: string[] = []
+const locks: Array<() => void> = []
 const candidateId =
   '0123456789abcdef0123456789abcdef01234567-v2026.08.31.120000.1.01234567'
 
@@ -42,6 +46,7 @@ const createDeployment = () => {
   const root = mkdtempSync(join(tmpdir(), 'otoame-deploy-activation-'))
   roots.push(root)
   const paths = getDeploySlotPaths(root)
+  locks.push(acquireDeployLock(paths.deployRoot))
   createRelease(paths.legacyStandalone, 'legacy')
   mkdirSync(join(root, 'prisma/schema'), { recursive: true })
   writeFileSync(join(root, 'prisma/schema/schema.prisma'), 'legacy')
@@ -59,12 +64,78 @@ const createDeployment = () => {
 }
 
 afterEach(() => {
+  vi.restoreAllMocks()
+  for (const releaseLock of locks.splice(0).reverse()) releaseLock()
   for (const root of roots.splice(0)) {
     rmSync(root, { recursive: true, force: true })
   }
 })
 
 describe('deployment activation readiness recovery', () => {
+  it('cleans historical releases only after readiness and retains the rollback target', async () => {
+    const deployment = createDeployment()
+    const obsolete = join(
+      deployment.paths.releasesRoot,
+      `${'b'.repeat(40)}-old`
+    )
+    createRelease(obsolete, 'obsolete')
+    await activateReleaseWithReadiness({
+      ...deployment,
+      verifyReadiness: async () => {
+        expect(existsSync(obsolete)).toBe(true)
+      }
+    })
+    expect(existsSync(obsolete)).toBe(false)
+    expect(existsSync(deployment.legacyRelease)).toBe(true)
+    expect(existsSync(deployment.candidateRelease)).toBe(true)
+  })
+
+  it('preserves historical releases when candidate readiness fails', async () => {
+    const deployment = createDeployment()
+    const obsolete = join(
+      deployment.paths.releasesRoot,
+      `${'b'.repeat(40)}-old`
+    )
+    createRelease(obsolete, 'obsolete')
+    const verifyReadiness = vi
+      .fn<(path: string) => Promise<void>>()
+      .mockRejectedValueOnce(new Error('candidate failed'))
+      .mockResolvedValueOnce(undefined)
+    await expect(
+      activateReleaseWithReadiness({
+        ...deployment,
+        verifyReadiness
+      })
+    ).rejects.toThrow('previous release was restored and verified')
+    expect(existsSync(obsolete)).toBe(true)
+    expect(existsSync(deployment.candidateRelease)).toBe(true)
+  })
+
+  it('reports cleanup failure without rolling back a healthy deployment', async () => {
+    const deployment = createDeployment()
+    const warning = vi
+      .spyOn(console, 'warn')
+      .mockImplementation(() => undefined)
+    const unknownPointer = join(
+      deployment.paths.releasesRoot,
+      'operator-directory'
+    )
+    mkdirSync(unknownPointer)
+    // A retained pointer with an unmanaged name must stop cleanup.
+    await activateReleaseWithReadiness({
+      ...deployment,
+      verifyReadiness: async () => {
+        rmSync(deployment.paths.previous)
+        symlinkSync(unknownPointer, deployment.paths.previous, 'dir')
+      }
+    })
+    expect(warning).toHaveBeenCalledOnce()
+    expect(getCurrentDeployRelease(deployment.paths)).toBe(
+      realpathSync(deployment.candidateRelease)
+    )
+    expect(existsSync(deployment.paths.journal)).toBe(false)
+  })
+
   it('keeps the candidate only after its readiness succeeds', async () => {
     const deployment = createDeployment()
     const verifyReadiness = vi.fn(async () => undefined)

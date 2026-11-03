@@ -1,3 +1,4 @@
+import { cleanupDeployReleases } from './deployReleaseCleanup'
 import {
   beginCandidateActivation,
   completeCandidateActivation,
@@ -39,6 +40,16 @@ export const activateReleaseWithReadiness = async ({
     throw new Error(
       'Candidate deployment failed readiness; the previous release was restored and verified.',
       { cause: candidateError }
+    )
+  }
+
+  // Cleanup cannot turn an already verified activation into a failed deployment.
+  try {
+    cleanupDeployReleases(paths)
+  } catch (error) {
+    console.warn(
+      'Deployment is healthy, but historical release cleanup failed; retry with pnpm deploy:cleanup after inspection.',
+      error
     )
   }
 }
