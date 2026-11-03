@@ -18,7 +18,7 @@ Read the development entry before deployment work. The guides own executable pro
 
 Production requires reviewed migrations, verified backups and compatible application rollout. Never initialize an existing persistent database, accept a reset, widen schema-check exceptions or execute false-drift reconstruction. The production safety command includes a compatibility migration and is not wholly read-only.
 
-Bind source, fetched release and artifact manifest to the same commit. Preserve immutable current and previous releases, operation locking, interrupted-activation recovery, three-instance readiness and loopback HTTP verification. Application rollback does not restore the database.
+Bind source, fetched release and artifact manifest to the same commit. Preserve immutable current and previous releases, operation locking, interrupted-activation recovery, three-instance readiness and loopback HTTP verification. Prune unreferenced managed releases only after verified activation under the deployment lock; retain current and previous releases, and refuse cleanup while an activation journal exists. Application rollback does not restore the database.
 
 Package runtime assets through both build and release paths. Generate and validate database clients and platform-specific media tools on the target architecture; keep their required runtime dependencies intact.
 
