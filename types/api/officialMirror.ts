@@ -15,6 +15,54 @@ export type MergeTab = (typeof MERGE_TABS)[number]
 export const PAIR_CLASSES = ['high', 'manual'] as const
 export type PairClass = (typeof PAIR_CLASSES)[number]
 
+/**
+ * List order. `handled_desc` orders the dismissed and merged tabs by the
+ * latest record; `waiting_longest` orders pending rows by the earliest
+ * pair wait start and history rows by the earliest record.
+ */
+export const MERGE_SORTS = [
+  'download_desc',
+  'waiting_longest',
+  'game_name',
+  'handled_desc'
+] as const
+export type MergeSort = (typeof MERGE_SORTS)[number]
+
+/** Facts compared between a user card and one staff card. Ordering only. */
+export const MERGE_SIGNALS = [
+  'type',
+  'language',
+  'platform',
+  'size',
+  'name',
+  'later',
+  'unique'
+] as const
+export type MergeSignal = (typeof MERGE_SIGNALS)[number]
+
+/**
+ * Recommendation outcome for one user card.
+ * - `recommended`: one mergeable option qualifies.
+ * - `close`: the leader does not lead the runner-up by two hits.
+ * - `insufficient`: the leader matches fewer than two of type, language, platform.
+ * - `none`: no option can be merged.
+ */
+export const MERGE_RECOMMEND_STATES = [
+  'recommended',
+  'close',
+  'insufficient',
+  'none'
+] as const
+export type MergeRecommendState = (typeof MERGE_RECOMMEND_STATES)[number]
+
+/** Leader must beat the runner-up by this many hits when there are several options. */
+export const MERGE_RECOMMEND_LEAD = 2
+/** Of type, language and platform, the leader must match at least this many. */
+export const MERGE_RECOMMEND_MIN_ATTRIBUTES = 2
+/** Relative size tolerance for the size signal. */
+export const MERGE_SIZE_TOLERANCE = 0.03
+export const MERGE_DISMISS_CARD_MAX = 50
+
 export const RESOURCE_NOTE_MAX = 10007
 export const IGNORE_REASON_MAX = 500
 export const MERGE_BATCH_MAX = 50
@@ -33,6 +81,7 @@ export const OFFICIAL_MIRROR_BLOCK_CODES = [
   'already_merged_other',
   'survivor_chain',
   'not_candidate',
+  'section_mismatch',
   'basis_stale',
   'not_high_confidence',
   'content_unconfirmed'
@@ -128,12 +177,27 @@ export type MergeCandidateSummary = {
   blocks: OfficialMirrorBlock[]
 }
 
+export type MergeRecommendation = {
+  staffResourceId: number
+  staffName: string
+}
+
 export type MergeListItem = {
   userResource: MergeCardSummary
   pairClass: PairClass
   candidateCount: number
   candidates: MergeCandidateSummary[]
   blocks: OfficialMirrorBlock[]
+  /** Staff cards (role >= 3) in the same game, both sections. */
+  officialCount: number
+  /** The user card already carries a `touchgal` link. */
+  hasStaffBackup: boolean
+  /** Pending tab only; null elsewhere. */
+  recommendState: MergeRecommendState | null
+  recommendation: MergeRecommendation | null
+  /** Latest record on the dismissed and merged tabs; null on pending. */
+  handledAt: string | null
+  handledBy: OfficialMirrorPublisher | null
 }
 
 export type MergeListResponse = {
@@ -149,6 +213,67 @@ export type MergeFieldComparison = {
   field: string
   user: string
   staff: string
+}
+
+/**
+ * One compared fact. Values are raw: attribute codes for type, language and
+ * platform; size strings for size; the card name for name; ISO created time
+ * for later; the live candidate count of each side for unique.
+ */
+export type MergeSignalCheck = {
+  signal: MergeSignal
+  hit: boolean
+  user: string[]
+  staff: string[]
+}
+
+export type MergeOption = {
+  staff: MergeCardSummary & { hasStaffBackup: boolean }
+  sameSection: boolean
+  signals: MergeSignalCheck[]
+  hits: number
+  recommended: boolean
+  highConfidence: boolean
+  /** Same section, no block, no record, user card eligible. */
+  mergeable: boolean
+  /** A pending pair that can be dismissed now (no record, both cards candidates). */
+  dismissable: boolean
+  blocks: OfficialMirrorBlock[]
+  /** Dismissed pairs can be reopened. */
+  record: 'dismissed' | null
+}
+
+export type MergeHistoryEntry = {
+  staffResourceId: number
+  /** Fallback text when the staff card is gone. */
+  staffName: string
+  status: 'dismissed' | 'merged'
+  handledAt: string
+  handledBy: OfficialMirrorPublisher | null
+  movedLinkIds: number[]
+}
+
+/**
+ * Every staff card of the user card's game, ordered: recommended, other
+ * mergeable by hits, then the rest. Basis still comes from preview.
+ */
+export type MergeOptionsResponse = {
+  user: MergeCardSummary & {
+    hasStaffBackup: boolean
+    /** Meets the user-side candidate rule and has not survived a merge. */
+    eligible: boolean
+  }
+  recommendState: MergeRecommendState
+  options: MergeOption[]
+  /** Dismissed and merged records of this user card. */
+  history: MergeHistoryEntry[]
+}
+
+export type MergeDismissCardResult = {
+  changed: boolean
+  dismissed: number[]
+  unchanged: number[]
+  skipped: { staffResourceId: number; reason: string }[]
 }
 
 export type MergePreview = {
@@ -168,6 +293,8 @@ export type MergePreview = {
     links: OfficialMirrorLinkView[]
   }
   fieldComparison: MergeFieldComparison[]
+  /** Likes on the staff card; they are dropped by the merge. */
+  staffLikeCount: number
   exitedPairs: {
     staffResourceId: number
     staffName: string

@@ -22,6 +22,11 @@ interface PreviewFrameProps {
    * use it so the preview is the only scroll area beside the review form.
    */
   fill?: boolean
+  /**
+   * Let the browser defer loading the inline frame until it nears the
+   * viewport, for lists that show many previews at once.
+   */
+  lazy?: boolean
 }
 
 /**
@@ -32,7 +37,8 @@ export function PreviewFrame({
   src,
   title,
   className,
-  fill = false
+  fill = false,
+  lazy = false
 }: PreviewFrameProps) {
   const [enlargeOpen, setEnlargeOpen] = useState(false)
 
@@ -83,6 +89,7 @@ export function PreviewFrame({
           key={src}
           src={src}
           title={title}
+          loading={lazy ? 'lazy' : undefined}
           className={cn(
             'min-h-0 w-full flex-1 rounded-md border bg-background',
             className
@@ -96,6 +103,7 @@ export function PreviewFrame({
           src={src}
           title={title}
           className={className}
+          lazy={lazy}
         />
       )}
     </div>
@@ -106,6 +114,7 @@ interface InlinePreviewFrameProps {
   src: string
   title: string
   className?: string
+  lazy?: boolean
 }
 
 // The window cap lives only in CSS: --preview-cap feeds height and
@@ -117,7 +126,8 @@ interface InlinePreviewFrameProps {
 function InlinePreviewFrame({
   src,
   title,
-  className
+  className,
+  lazy = false
 }: InlinePreviewFrameProps) {
   const iframeRef = useRef<HTMLIFrameElement>(null)
   const [contentHeight, setContentHeight] = useState<number | null>(null)
@@ -221,6 +231,7 @@ function InlinePreviewFrame({
       ref={iframeRef}
       src={src}
       title={title}
+      loading={lazy ? 'lazy' : undefined}
       style={contentHeight != null ? { height: contentHeight } : undefined}
       className={cn(
         'w-full rounded-md border bg-background',

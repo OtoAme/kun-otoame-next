@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import Link from 'next/link'
 import {
   SearchableListPage,
   type FilterChip,
@@ -340,10 +341,8 @@ function BackupDetail({
   }
 
   const basisReady = detail ? isBackupBasis(detail.basis) : false
-  const candidateTerm = row.name.trim() || row.patchName.trim()
-  const candidateHref = candidateTerm
-    ? `/dashboard/resource-merges?search=${encodeURIComponent(candidateTerm)}`
-    : '/dashboard/resource-merges'
+  // The merge workbench opens a user card by id, on any list page.
+  const candidateHref = `/dashboard/resource-merges?id=${row.resourceId}`
   const consequence =
     confirm === 'ignore'
       ? '忽略后，这张卡片保持不备份。发布者之后更换链接也不会回到未备份，直到撤销忽略。'
@@ -366,12 +365,12 @@ function BackupDetail({
           {showTime(row.latestExternalChangeAt)}
         </p>
         {row.tab === 'unbacked' ? (
-          <a
+          <Link
             href={candidateHref}
             className="text-sm underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
           >
             核对合并候选
-          </a>
+          </Link>
         ) : null}
       </div>
       {loading ? (

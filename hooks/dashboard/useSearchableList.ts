@@ -143,6 +143,8 @@ export function useSearchableList<Row extends { id: number }>(
     key: string
     rows: Row[]
     total: number
+    /** The whole response object, for pages that read extra fields. */
+    response: Record<string, unknown>
   } | null>(null)
   const [error, setError] = useState<{ key: string; message: string } | null>(
     null
@@ -192,7 +194,7 @@ export function useSearchableList<Row extends { id: number }>(
                 return row ? [row as Row] : []
               })
             : (rawRows as Row[])
-          setData({ key: query.key, rows, total: res.total })
+          setData({ key: query.key, rows, total: res.total, response: res })
           return
         }
         setData(null)
@@ -215,7 +217,7 @@ export function useSearchableList<Row extends { id: number }>(
   }, [query.key, refreshNonce, endpoint, field, fallbackError, acceptRow])
 
   const pushQuery = useCallback(
-    (next: QueryTarget) => {
+    (next: QueryTarget, mode: 'push' | 'replace' = 'push') => {
       const params = new URLSearchParams()
       params.set('page', String(next.page))
       params.set('limit', String(next.limit))
@@ -231,7 +233,9 @@ export function useSearchableList<Row extends { id: number }>(
         params.set(key, value)
       }
       if (next.selected !== null) params.set('id', String(next.selected))
-      router.push(`${pathname}?${params.toString()}`, { scroll: false })
+      const href = `${pathname}?${params.toString()}`
+      if (mode === 'replace') router.replace(href, { scroll: false })
+      else router.push(href, { scroll: false })
     },
     [pathname, router]
   )
@@ -252,6 +256,11 @@ export function useSearchableList<Row extends { id: number }>(
     query,
     rows: currentData?.rows ?? [],
     total: currentData?.total ?? 0,
+    /**
+     * The response object of the current query (for example its `counts`),
+     * or null while that query has no successful response.
+     */
+    response: currentData?.response ?? null,
     loading: currentData === null && currentError === null,
     refreshing: currentData !== null && loadingKey === query.key,
     error: currentError,
@@ -299,8 +308,13 @@ export function useSearchableList<Row extends { id: number }>(
         update({ page: DEFAULT_PAGE, filters: {} })
       }
     },
-    select: (id: number | null) => {
-      if (id !== query.selected) pushQuery({ ...query, selected: id })
+    /**
+     * Opens a row, or closes the detail with null. `replace` swaps the
+     * history entry, for moves the page makes on its own (open the next
+     * row after a row was handled).
+     */
+    select: (id: number | null, mode: 'push' | 'replace' = 'push') => {
+      if (id !== query.selected) pushQuery({ ...query, selected: id }, mode)
     },
     /** After deleting rows, step back a page if the current one empties. */
     notifyDeleted: (count: number) => {

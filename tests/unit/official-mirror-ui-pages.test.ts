@@ -1,12 +1,22 @@
 import { describe, expect, it } from 'vitest'
 import { getVisibleDashboardNav } from '~/constants/dashboard'
 import {
-  batchReportLines,
+  acceptBatchListItems,
+  batchLineStatusText,
   batchRequestPairs,
-  confirmPairContent
+  batchResultLines,
+  confirmPairContent,
+  itemsAfterBatch,
+  type BatchListItem
 } from '~/components/dashboard/official-mirror/mergeConfirmation'
 import { cacheRefreshBody } from '~/components/dashboard/official-mirror/cacheRefresh'
-import { shouldApplyPreview } from '~/components/dashboard/official-mirror/contract'
+import {
+  acceptDismissCardResult,
+  acceptMergeOptions,
+  acceptMergePreview,
+  mergeListCounts,
+  shouldApplyPreview
+} from '~/components/dashboard/official-mirror/contract'
 import {
   decideResolvedRedirect,
   parseResolvedResource
@@ -35,7 +45,9 @@ describe('official mirror pages', () => {
     )
     const ids = content?.items.map((item) => item.id) ?? []
     expect(ids.indexOf('backup')).toBeGreaterThan(ids.indexOf('company-merges'))
-    expect(ids.indexOf('resource-merges')).toBeGreaterThan(ids.indexOf('backup'))
+    expect(ids.indexOf('resource-merges')).toBeGreaterThan(
+      ids.indexOf('backup')
+    )
   })
 
   it('keeps official and community groups on the author role', () => {
@@ -130,7 +142,9 @@ describe('official mirror pages', () => {
     expect(pair?.contentConfirmed).toBe(true)
     expect(batchRequestPairs([])).toBeNull()
     expect(batchRequestPairs(manual ? [manual] : [])).toBeNull()
-    expect(batchRequestPairs([...(manual ? [manual] : []), ...(pair ? [pair] : [])])).toEqual([
+    expect(
+      batchRequestPairs([...(manual ? [manual] : []), ...(pair ? [pair] : [])])
+    ).toEqual([
       {
         userResourceId: 3,
         staffResourceId: 4,
@@ -146,7 +160,24 @@ describe('official mirror pages', () => {
     ).toBe(false)
   })
 
-  it('reports outcomes and remaining without treating a skip as a stop', () => {
+  const listItem = (u: number, s: number, extra: Partial<BatchListItem> = {}) =>
+    ({
+      userResourceId: u,
+      staffResourceId: s,
+      basis: 'ab'.repeat(32),
+      contentConfirmed: true,
+      pairClass: 'high',
+      patchUniqueId: 'abcd1234',
+      authorId: 7,
+      staffAuthorId: 8,
+      userName: `用户${u}`,
+      staffName: `站方${s}`,
+      patchName: '游戏',
+      section: 'galgame',
+      ...extra
+    }) as BatchListItem
+
+  it('reports outcomes by name and keeps only pairs that did not start', () => {
     const result: MergeBatchResult = {
       outcomes: [
         {
@@ -171,15 +202,112 @@ describe('official mirror pages', () => {
             noteAppended: false,
             cacheRefreshed: true
           }
+        },
+        {
+          userResourceId: 7,
+          staffResourceId: 8,
+          status: 'failed',
+          reason: '数据库繁忙'
         }
       ],
       remaining: [{ userResourceId: 5, staffResourceId: 6 }]
     }
-    expect(batchReportLines(result)).toEqual([
-      '#1 / #2 未合并：内容未确认',
-      '#3 / #4 已合并，保留 #3',
-      '#5 / #6 未开始'
+    const sent = [
+      listItem(1, 2),
+      listItem(3, 4),
+      listItem(7, 8),
+      listItem(5, 6),
+      listItem(9, 10)
+    ]
+    const lines = batchResultLines(sent, result)
+    expect(
+      lines.map((line) => [
+        line.userName,
+        line.staffName,
+        batchLineStatusText(line)
+      ])
+    ).toEqual([
+      ['用户1', '站方2', '已跳过：内容未确认'],
+      ['用户3', '站方4', '已合并'],
+      ['用户7', '站方8', '失败：数据库繁忙'],
+      ['用户5', '站方6', '未开始'],
+      ['用户9', '站方10', '没有返回结果']
     ])
+    expect(lines[1]?.authorIds).toEqual([7, 8])
+    const added = listItem(11, 12)
+    expect(
+      itemsAfterBatch([...sent, added], lines).map(
+        (item) => item.userResourceId
+      )
+    ).toEqual([5, 9, 11])
+  })
+
+  it('reads back only complete confirmed high pairs from storage', () => {
+    const good = listItem(1, 2)
+    expect(
+      acceptBatchListItems([
+        good,
+        { ...good, staffResourceId: 3 },
+        listItem(4, 5, { pairClass: 'manual' }),
+        { ...listItem(6, 7), contentConfirmed: false },
+        listItem(8, 9, { basis: 'short' }),
+        listItem(10, 11, { section: 'other' as never }),
+        'junk'
+      ]).map((item) => [item.userResourceId, item.staffResourceId])
+    ).toEqual([[1, 2]])
+    expect(acceptBatchListItems('nope')).toEqual([])
+    expect(
+      acceptBatchListItems(
+        Array.from({ length: 60 }, (_, index) =>
+          listItem(index + 1, 100 + index)
+        )
+      )
+    ).toHaveLength(50)
+  })
+
+  it('accepts only the options, preview and counts of the requested target', () => {
+    expect(
+      mergeListCounts({ counts: { pending: 2, dismissed: 1, merged: 0 } })
+    ).toEqual({
+      pending: 2,
+      dismissed: 1,
+      merged: 0
+    })
+    expect(mergeListCounts({ counts: { pending: 2 } })).toBeNull()
+    expect(mergeListCounts(null)).toBeNull()
+    const options = {
+      user: { id: 5 },
+      recommendState: 'none',
+      options: [{ staff: { id: 6 }, signals: [], blocks: [] }],
+      history: []
+    }
+    expect(acceptMergeOptions(options, 5)).not.toBeNull()
+    expect(acceptMergeOptions(options, 4)).toBeNull()
+    expect(acceptMergeOptions({ ...options, options: [{}] }, 5)).toBeNull()
+    const preview = {
+      user: { id: 5 },
+      staff: { id: 6 },
+      basis: 'ab'.repeat(32),
+      canMerge: true,
+      blocks: [],
+      exitedPairs: [],
+      survivorPreview: { links: [] }
+    }
+    expect(
+      acceptMergePreview(preview, { userResourceId: 5, staffResourceId: 6 })
+    ).not.toBeNull()
+    expect(
+      acceptMergePreview(preview, { userResourceId: 5, staffResourceId: 7 })
+    ).toBeNull()
+    expect(
+      acceptDismissCardResult({
+        changed: true,
+        dismissed: [1],
+        unchanged: [],
+        skipped: []
+      })
+    ).not.toBeNull()
+    expect(acceptDismissCardResult({ changed: true })).toBeNull()
   })
 
   it('drops an invalid backup date and a missing auxiliary click', () => {

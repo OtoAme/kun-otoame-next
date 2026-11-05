@@ -4,6 +4,8 @@ import {
   BACKUP_TABS,
   IGNORE_REASON_MAX,
   MERGE_BATCH_MAX,
+  MERGE_DISMISS_CARD_MAX,
+  MERGE_SORTS,
   MERGE_TABS,
   OFFICIAL_MIRROR_PAGE_LIMIT,
   OFFICIAL_MIRROR_SECTIONS,
@@ -60,12 +62,27 @@ export const mergeListSchema = z.object({
   section,
   search,
   page,
-  limit
+  limit,
+  /** Omitted: pending uses download_desc, history tabs use handled_desc. */
+  sort: z.enum(MERGE_SORTS).optional()
 })
 
 export const mergePairSchema = z.object({
   userResourceId: resourceId,
   staffResourceId: resourceId
+})
+
+export const mergeOptionsSchema = z.object({
+  userResourceId: resourceId
+})
+
+export const mergeDismissCardSchema = z.object({
+  userResourceId: resourceId,
+  staffResourceIds: z
+    .array(resourceId)
+    .min(1)
+    .max(MERGE_DISMISS_CARD_MAX)
+    .refine((ids) => new Set(ids).size === ids.length, '站方卡片重复')
 })
 
 export const mergePreviewSchema = mergePairSchema

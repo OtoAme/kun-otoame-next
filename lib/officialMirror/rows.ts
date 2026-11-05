@@ -1,4 +1,4 @@
-import type { MirrorCard, MirrorLink } from './decide'
+import type { MergeRecordFact, MirrorCard, MirrorLink } from './decide'
 
 export const asNumber = (value: unknown) => {
   if (typeof value === 'number' && Number.isFinite(value)) return value
@@ -93,6 +93,35 @@ export const rowCard = (
     created,
     updated,
     links: links.filter((link) => link.resourceId === id)
+  }
+}
+
+/** Merge record columns: ids, patch_id, section, status, detail, handled_at, handled_by_user_id. */
+export const rowMergeRecord = (
+  row: Record<string, unknown>
+): MergeRecordFact | null => {
+  const userResourceId = asNumber(row.user_resource_id)
+  const staffResourceId = asNumber(row.staff_resource_id)
+  const patchId = asNumber(row.patch_id)
+  const status =
+    row.status === 'merged' || row.status === 'dismissed' ? row.status : null
+  if (
+    userResourceId === null ||
+    staffResourceId === null ||
+    patchId === null ||
+    !status
+  ) {
+    return null
+  }
+  return {
+    userResourceId,
+    staffResourceId,
+    patchId,
+    section: asText(row.section),
+    status,
+    detail: row.detail,
+    handledAt: asDate(row.handled_at),
+    handledByUserId: asNumber(row.handled_by_user_id)
   }
 }
 

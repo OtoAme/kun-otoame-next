@@ -1,6 +1,12 @@
 import { createHash } from 'crypto'
 import {
+  MERGE_RECOMMEND_LEAD,
+  MERGE_RECOMMEND_MIN_ATTRIBUTES,
+  MERGE_SIZE_TOLERANCE,
   RESOURCE_NOTE_MAX,
+  type MergeRecommendState,
+  type MergeSignal,
+  type MergeSignalCheck,
   type OfficialMirrorBlock,
   type OfficialMirrorBlockCode,
   type OfficialMirrorSection,
@@ -20,6 +26,7 @@ export const BLOCK_MESSAGE: Record<OfficialMirrorBlockCode, string> = {
   already_merged_other: '已与其他卡片合并',
   survivor_chain: '不能再次合并已留下的卡片',
   not_candidate: '不是可合并的候选',
+  section_mismatch: '与用户资源不在同一分区，不能合并',
   basis_stale: '预览已变化，请重新核对',
   not_high_confidence: '不是高置信对',
   content_unconfirmed: '尚未确认两张卡片是同一份内容'
@@ -75,6 +82,8 @@ export type MergeRecordFact = {
   patchId: number
   section: string
   detail: unknown
+  handledAt: Date | null
+  handledByUserId: number | null
 }
 
 export const asSection = (value: string): OfficialMirrorSection | null =>
@@ -475,7 +484,8 @@ export const MERGE_DETAIL_KEYS = [
   'sourceAuthorId',
   'likeCount',
   'userResourceId',
-  'staffResourceId'
+  'staffResourceId',
+  'recommended'
 ] as const
 
 export type MergeDetail = {
@@ -487,6 +497,11 @@ export type MergeDetail = {
   likeCount: number
   userResourceId: number
   staffResourceId: number
+  /**
+   * Statistics only: the pair was the recommendation when it was merged.
+   * Records written before this key existed omit it.
+   */
+  recommended?: boolean
 }
 
 export const toMergeDetail = (input: MergeDetail): MergeDetail => ({
@@ -497,7 +512,10 @@ export const toMergeDetail = (input: MergeDetail): MergeDetail => ({
   sourceAuthorId: input.sourceAuthorId,
   likeCount: input.likeCount,
   userResourceId: input.userResourceId,
-  staffResourceId: input.staffResourceId
+  staffResourceId: input.staffResourceId,
+  ...(typeof input.recommended === 'boolean'
+    ? { recommended: input.recommended }
+    : {})
 })
 
 export const pairWaitSince = (user: MirrorCard, staff: MirrorCard) =>
@@ -509,3 +527,353 @@ export const OPEN_CASE_STATUSES = [
   'waiting_reporter',
   'waiting_owner'
 ] as const
+
+/* Merge option ranking. Ordering and recommendation only; never acceptance. */
+
+const SIZE_PATTERN = /^(\d+(?:\.\d+)?) ?([kmgt])b$/i
+const SIZE_TO_MB: Record<string, number> = {
+  k: 1 / 1024,
+  m: 1,
+  g: 1024,
+  t: 1024 * 1024
+}
+
+/** `<number><optional space><k|m|g|t>b`, case-insensitive, in MB. Zero is unparseable. */
+export const parseSizeMb = (value: string) => {
+  const match = SIZE_PATTERN.exec(value.trim())
+  if (!match) return null
+  const mb = Number(match[1]) * SIZE_TO_MB[match[2].toLowerCase()]
+  return Number.isFinite(mb) && mb > 0 ? mb : null
+}
+
+/** Relative difference against the larger value; the epsilon absorbs float noise. */
+export const sizesClose = (left: number, right: number) =>
+  Math.abs(left - right) <=
+  MERGE_SIZE_TOLERANCE * Math.max(left, right) * (1 + 1e-9)
+
+const NAME_NOISE = /[\s\p{P}$+<=>^`|~]/gu
+
+/** NFKC, lower case, no whitespace, no ASCII or CJK punctuation. */
+export const normalizeMergeName = (value: string) =>
+  value.normalize('NFKC').toLowerCase().replace(NAME_NOISE, '')
+
+const sameValues = (left: string[], right: string[]) => {
+  const leftSet = new Set(left)
+  const rightSet = new Set(right)
+  if (leftSet.size !== rightSet.size) return false
+  return [...leftSet].every((value) => rightSet.has(value))
+}
+
+export type CandidateCounts = {
+  users: Map<number, number>
+  staff: Map<number, number>
+}
+
+/** Live pair counts per side, the same counts `buildCandidates` uses for high. */
+export const candidateCounts = (pairs: CandidatePair[]): CandidateCounts => {
+  const users = new Map<number, number>()
+  const staff = new Map<number, number>()
+  for (const pair of pairs) {
+    users.set(pair.user.id, (users.get(pair.user.id) ?? 0) + 1)
+    staff.set(pair.staff.id, (staff.get(pair.staff.id) ?? 0) + 1)
+  }
+  return { users, staff }
+}
+
+const sizeStrings = (links: MirrorLink[]) =>
+  links.map((link) => link.size).filter((size) => size.trim().length > 0)
+
+const sizeHit = (user: MirrorCard, staff: MirrorCard) => {
+  const userSizes = externalLinks(user).flatMap((link) => {
+    const mb = parseSizeMb(link.size)
+    return mb === null ? [] : [mb]
+  })
+  const staffSizes = staff.links.flatMap((link) => {
+    const mb = parseSizeMb(link.size)
+    return mb === null ? [] : [mb]
+  })
+  return userSizes.some((left) =>
+    staffSizes.some((right) => sizesClose(left, right))
+  )
+}
+
+const nameHit = (user: MirrorCard, staff: MirrorCard) => {
+  const left = normalizeMergeName(user.name)
+  const right = normalizeMergeName(staff.name)
+  return (
+    left.length > 0 &&
+    right.length > 0 &&
+    (left.includes(right) || right.includes(left))
+  )
+}
+
+/** Signals in `MERGE_SIGNALS` order. */
+export const mergeSignals = (
+  user: MirrorCard,
+  staff: MirrorCard,
+  counts: CandidateCounts
+): MergeSignalCheck[] => {
+  const userCount = counts.users.get(user.id) ?? 0
+  const staffCount = counts.staff.get(staff.id) ?? 0
+  const check = (
+    signal: MergeSignal,
+    hit: boolean,
+    userValues: string[],
+    staffValues: string[]
+  ): MergeSignalCheck => ({
+    signal,
+    hit,
+    user: userValues,
+    staff: staffValues
+  })
+  return [
+    check(
+      'type',
+      sameValues(user.type, staff.type),
+      [...user.type],
+      [...staff.type]
+    ),
+    check(
+      'language',
+      sameValues(user.language, staff.language),
+      [...user.language],
+      [...staff.language]
+    ),
+    check(
+      'platform',
+      sameValues(user.platform, staff.platform),
+      [...user.platform],
+      [...staff.platform]
+    ),
+    check(
+      'size',
+      sizeHit(user, staff),
+      sizeStrings(externalLinks(user)),
+      sizeStrings(staff.links)
+    ),
+    check('name', nameHit(user, staff), [user.name], [staff.name]),
+    check(
+      'later',
+      staff.created > user.created,
+      [user.created.toISOString()],
+      [staff.created.toISOString()]
+    ),
+    check(
+      'unique',
+      userCount === 1 && staffCount === 1,
+      [String(userCount)],
+      [String(staffCount)]
+    )
+  ]
+}
+
+const ATTRIBUTE_SIGNALS: readonly MergeSignal[] = [
+  'type',
+  'language',
+  'platform'
+]
+
+export const signalHits = (signals: MergeSignalCheck[]) =>
+  signals.filter((item) => item.hit).length
+
+export const attributeHits = (signals: MergeSignalCheck[]) =>
+  signals.filter((item) => item.hit && ATTRIBUTE_SIGNALS.includes(item.signal))
+    .length
+
+export type MergeRankEntry = {
+  staffId: number
+  sameSection: boolean
+  /** Same section, no block, no record, user card eligible. */
+  mergeable: boolean
+  signals: MergeSignalCheck[]
+}
+
+export type MergeRanking<T> = {
+  state: MergeRecommendState
+  recommendedStaffId: number | null
+  /** Recommended, other mergeable, other same-section, other section. */
+  ordered: T[]
+}
+
+/**
+ * Recommendation over mergeable options. The leader is the highest hits;
+ * a tie prefers more attribute hits, then the lower staff id. A tie at the
+ * top is never recommended.
+ */
+export const rankMergeOptions = <T extends MergeRankEntry>(
+  entries: T[]
+): MergeRanking<T> => {
+  const hits = new Map(
+    entries.map((entry) => [entry, signalHits(entry.signals)])
+  )
+  const hitsOf = (entry: T) => hits.get(entry) ?? 0
+  const contenders = entries
+    .filter((entry) => entry.mergeable && entry.sameSection)
+    .sort(
+      (left, right) =>
+        hitsOf(right) - hitsOf(left) ||
+        attributeHits(right.signals) - attributeHits(left.signals) ||
+        left.staffId - right.staffId
+    )
+  let state: MergeRecommendState = 'none'
+  let recommended: T | null = null
+  const leader = contenders[0]
+  if (leader) {
+    const enough =
+      attributeHits(leader.signals) >= MERGE_RECOMMEND_MIN_ATTRIBUTES
+    const runnerUp = contenders[1]
+    if (!runnerUp) {
+      state = enough ? 'recommended' : 'insufficient'
+    } else {
+      const lead = hitsOf(leader) - hitsOf(runnerUp)
+      if (enough && lead > 0 && lead >= MERGE_RECOMMEND_LEAD) {
+        state = 'recommended'
+      } else {
+        state = enough ? 'close' : 'insufficient'
+      }
+    }
+    if (state === 'recommended') recommended = leader
+  }
+  const groupOf = (entry: T) => {
+    if (entry.mergeable && entry.sameSection) return 0
+    return entry.sameSection ? 1 : 2
+  }
+  const rest = entries
+    .filter((entry) => entry !== recommended)
+    .sort(
+      (left, right) =>
+        groupOf(left) - groupOf(right) ||
+        hitsOf(right) - hitsOf(left) ||
+        left.staffId - right.staffId
+    )
+  return {
+    state,
+    recommendedStaffId: recommended ? recommended.staffId : null,
+    ordered: recommended ? [recommended, ...rest] : rest
+  }
+}
+
+/** Candidate and record facts shared by the list, options and merge statistics. */
+export type MergeFacts = {
+  records: MergeRecordFact[]
+  candidates: CandidatePair[]
+  counts: CandidateCounts
+  recordByPair: Map<string, MergeRecordFact>
+  pairClassByPair: Map<string, PairClass>
+  /** User card ids that already survived a merge. */
+  survivors: Set<number>
+}
+
+const pairKey = (userResourceId: number, staffResourceId: number) =>
+  `${userResourceId}:${staffResourceId}`
+
+export const mergeFacts = (
+  cards: MirrorCard[],
+  records: MergeRecordFact[]
+): MergeFacts => {
+  const candidates = buildCandidates(cards, records)
+  return {
+    records,
+    candidates,
+    counts: candidateCounts(candidates),
+    recordByPair: new Map(
+      records.map((record) => [
+        pairKey(record.userResourceId, record.staffResourceId),
+        record
+      ])
+    ),
+    pairClassByPair: new Map(
+      candidates.map((pair) => [
+        pairKey(pair.user.id, pair.staff.id),
+        pair.pairClass
+      ])
+    ),
+    survivors: survivorIds(records)
+  }
+}
+
+/** Blocks for one pair from shared facts; same inputs as preview and merge. */
+export const factPairBlocks = (
+  facts: MergeFacts,
+  user: MirrorCard,
+  staff: MirrorCard,
+  openCaseIds: number[]
+) =>
+  pairBlocks({
+    user,
+    staff,
+    openCaseIds,
+    record: facts.recordByPair.get(pairKey(user.id, staff.id)) ?? null,
+    userMergedElsewhere: facts.records.some(
+      (item) =>
+        item.status === 'merged' &&
+        item.userResourceId === user.id &&
+        item.staffResourceId !== staff.id
+    ),
+    staffIsSurvivor: facts.survivors.has(staff.id),
+    userIsSurvivor: facts.survivors.has(user.id)
+  })
+
+/** User-side candidate rule and not already a survivor. */
+export const isEligibleUserCard = (facts: MergeFacts, user: MirrorCard) =>
+  isUserCandidateCard(user) && !facts.survivors.has(user.id)
+
+export type MergeOptionFact = MergeRankEntry & {
+  staff: MirrorCard
+  hits: number
+  highConfidence: boolean
+  /** A dismiss request would write a record now. */
+  dismissable: boolean
+  blocks: OfficialMirrorBlock[]
+  record: MergeRecordFact | null
+}
+
+/**
+ * Every staff card offered to one user card, ranked. Other-section cards are
+ * listed with `section_mismatch` and never mergeable.
+ */
+export const assessMergeOptions = (input: {
+  user: MirrorCard
+  staffCards: MirrorCard[]
+  facts: MergeFacts
+  openCaseIds: (staffId: number) => number[]
+}) => {
+  const { user, facts } = input
+  const eligible = isEligibleUserCard(facts, user)
+  const options = input.staffCards
+    .filter(
+      (staff) =>
+        staff.id !== user.id &&
+        staff.patchId === user.patchId &&
+        isStaffCandidateCard(staff)
+    )
+    .map((staff): MergeOptionFact => {
+      const sameSection = staff.section === user.section
+      const record = facts.recordByPair.get(pairKey(user.id, staff.id)) ?? null
+      const blocks = sameSection
+        ? factPairBlocks(facts, user, staff, input.openCaseIds(staff.id))
+        : [block('section_mismatch')]
+      const signals = mergeSignals(user, staff, facts.counts)
+      return {
+        staffId: staff.id,
+        staff,
+        sameSection,
+        signals,
+        hits: signalHits(signals),
+        highConfidence:
+          facts.pairClassByPair.get(pairKey(user.id, staff.id)) === 'high',
+        mergeable: sameSection && eligible && !record && blocks.length === 0,
+        dismissable:
+          sameSection && eligible && !record && !facts.survivors.has(staff.id),
+        blocks,
+        record
+      }
+    })
+  const ranking = rankMergeOptions(options)
+  return {
+    eligible,
+    state: ranking.state,
+    recommendedStaffId: ranking.recommendedStaffId,
+    options: ranking.ordered
+  }
+}

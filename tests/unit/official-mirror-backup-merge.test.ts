@@ -94,7 +94,9 @@ vi.mock('~/app/api/moemoepoint/service', () => ({
   earnMoemoepoint: async () => ({ balance: 1 }),
   getCurrentBalance: async () => 1
 }))
-vi.mock('~/app/api/utils/message', () => ({ createMessage: async () => undefined }))
+vi.mock('~/app/api/utils/message', () => ({
+  createMessage: async () => undefined
+}))
 
 import { createHelpPost } from '~/app/api/help/service'
 import {
@@ -111,14 +113,21 @@ import {
   type MirrorLink,
   type OpenCaseFact
 } from '~/lib/officialMirror/decide'
-import { dismissRebackup, ignoreBackup } from '~/lib/officialMirror/backupService'
 import {
+  dismissRebackup,
+  ignoreBackup
+} from '~/lib/officialMirror/backupService'
+import {
+  dismissMergeCard,
   dismissResourceMerge,
+  getMergeOptions,
   listResourceMerges,
   mergeStaffBatch,
   mergeStaffIntoUser,
+  parseMergeDetail,
   previewResourceMerge
 } from '~/lib/officialMirror/mergeService'
+import { rowCard, rowLink } from '~/lib/officialMirror/rows'
 import {
   lookupMergedSurvivorId,
   resolveMergedResource
@@ -178,6 +187,8 @@ const record = (overrides: Partial<MergeRecordFact> = {}): MergeRecordFact => ({
   patchId: 10,
   section: 'galgame',
   detail: null,
+  handledAt: null,
+  handledByUserId: null,
   ...overrides
 })
 
@@ -200,8 +211,17 @@ describe('official mirror queue and merge decisions', () => {
     const changed = at('2026-04-01T00:00:00.000Z')
     const ignored = card({
       links: [
-        link({ id: 1, storage: 'touchgal', attachedAt: at('2026-01-01T00:00:00.000Z') }),
-        link({ id: 2, storage: 'user', attachedAt: at('2026-01-15T00:00:00.000Z'), contentChangedAt: changed })
+        link({
+          id: 1,
+          storage: 'touchgal',
+          attachedAt: at('2026-01-01T00:00:00.000Z')
+        }),
+        link({
+          id: 2,
+          storage: 'user',
+          attachedAt: at('2026-01-15T00:00:00.000Z'),
+          contentChangedAt: changed
+        })
       ]
     })
     const withIgnore = {
@@ -213,24 +233,49 @@ describe('official mirror queue and merge decisions', () => {
     expect(queueTab(withIgnore)).toBe('ignored')
     expect(queueWaitSince(withIgnore, 'ignored')).toBeNull()
     expect(queueTab(pending)).toBe('rebackup')
-    expect(queueWaitSince(pending, 'rebackup')?.toISOString()).toBe(changed.toISOString())
+    expect(queueWaitSince(pending, 'rebackup')?.toISOString()).toBe(
+      changed.toISOString()
+    )
   })
 
   it('classifies unbacked, backed, handover, staff and non-user storage outside the three tabs', () => {
-    const external = link({ storage: 'user', attachedAt: at('2026-01-03T00:00:00.000Z') })
-    const backup = link({ id: 2, storage: 'touchgal', attachedAt: at('2026-01-04T00:00:00.000Z') })
+    const external = link({
+      storage: 'user',
+      attachedAt: at('2026-01-03T00:00:00.000Z')
+    })
+    const backup = link({
+      id: 2,
+      storage: 'touchgal',
+      attachedAt: at('2026-01-04T00:00:00.000Z')
+    })
     const plain = { ignoredAt: null, rebackupDismissedAt: null }
-    expect(queueTab({ ...card({ links: [external] }), ...plain })).toBe('unbacked')
+    expect(queueTab({ ...card({ links: [external] }), ...plain })).toBe(
+      'unbacked'
+    )
     expect(
-      queueWaitSince({ ...card({ links: [external] }), ...plain }, 'unbacked')?.toISOString()
+      queueWaitSince(
+        { ...card({ links: [external] }), ...plain },
+        'unbacked'
+      )?.toISOString()
     ).toBe('2026-01-03T00:00:00.000Z')
-    expect(queueTab({ ...card({ links: [external, backup] }), ...plain })).toBeNull()
-    expect(queueTab({ ...card({ links: [link({ storage: 's3' })] }), ...plain })).toBeNull()
     expect(
-      queueTab({ ...card({ publisherLeftAt: at('2026-01-05T00:00:00.000Z') }), ...plain })
+      queueTab({ ...card({ links: [external, backup] }), ...plain })
     ).toBeNull()
-    expect(queueTab({ ...card({ role: 3, links: [external] }), ...plain })).toBeNull()
-    expect(queueTab({ ...card({ status: 1, links: [external] }), ...plain })).toBeNull()
+    expect(
+      queueTab({ ...card({ links: [link({ storage: 's3' })] }), ...plain })
+    ).toBeNull()
+    expect(
+      queueTab({
+        ...card({ publisherLeftAt: at('2026-01-05T00:00:00.000Z') }),
+        ...plain
+      })
+    ).toBeNull()
+    expect(
+      queueTab({ ...card({ role: 3, links: [external] }), ...plain })
+    ).toBeNull()
+    expect(
+      queueTab({ ...card({ status: 1, links: [external] }), ...plain })
+    ).toBeNull()
   })
 
   it('does not treat a reviewed external change as a new rebackup, and does not move the watermark idea backward', () => {
@@ -238,7 +283,12 @@ describe('official mirror queue and merge decisions', () => {
     const reviewed = at('2026-02-01T00:00:00.000Z')
     const links = [
       link({ id: 1, storage: 'touchgal', attachedAt: backupAt }),
-      link({ id: 2, storage: 'user', attachedAt: backupAt, contentChangedAt: reviewed })
+      link({
+        id: 2,
+        storage: 'user',
+        attachedAt: backupAt,
+        contentChangedAt: reviewed
+      })
     ]
     const covered = {
       ...card({ links }),
@@ -264,21 +314,41 @@ describe('official mirror queue and merge decisions', () => {
       blocked: false
     })
     expect(mergeNotes('', '字'.repeat(10001)).blocked).toBe(true)
-    expect(mergeNotes('已有站方备份说明', '站方备份说明')).toMatchObject({ appended: false })
+    expect(mergeNotes('已有站方备份说明', '站方备份说明')).toMatchObject({
+      appended: false
+    })
     expect(mergeNotes('', '   ').appended).toBe(false)
     expect(mergeNotes('正文', '补充').note).toBe('正文\n\n站方备份说明：补充')
   })
 
   it('puts link secrets and open cases in the merge digest only', () => {
-    const user = card({ id: 1, links: [link({ password: 'secret', code: 'code', fileHash: 'hash' })] })
+    const user = card({
+      id: 1,
+      links: [link({ password: 'secret', code: 'code', fileHash: 'hash' })]
+    })
     const staff = card({
       id: 2,
       role: 3,
       userId: 9,
-      links: [link({ id: 3, resourceId: 2, storage: 'touchgal', password: 'staff-secret' })]
+      links: [
+        link({
+          id: 3,
+          resourceId: 2,
+          storage: 'touchgal',
+          password: 'staff-secret'
+        })
+      ]
     })
-    const first = mergeBasis({ user, staff, openCases: [openCase(2), openCase(1)] })
-    const reordered = mergeBasis({ user, staff, openCases: [openCase(1), openCase(2)] })
+    const first = mergeBasis({
+      user,
+      staff,
+      openCases: [openCase(2), openCase(1)]
+    })
+    const reordered = mergeBasis({
+      user,
+      staff,
+      openCases: [openCase(1), openCase(2)]
+    })
     const changedPassword = mergeBasis({
       user,
       staff: {
@@ -289,7 +359,14 @@ describe('official mirror queue and merge decisions', () => {
     })
     expect(first).toBe(reordered)
     expect(changedPassword).not.toBe(first)
-    expect(backupBasis(staff)).toBe(backupBasis({ ...staff, links: [{ ...staff.links[0], password: 'other', code: 'x', fileHash: 'y' }] }))
+    expect(backupBasis(staff)).toBe(
+      backupBasis({
+        ...staff,
+        links: [
+          { ...staff.links[0], password: 'other', code: 'x', fileHash: 'y' }
+        ]
+      })
+    )
     expect(backupBasis(user)).not.toContain('secret')
     expect(mergeBasis({ user, staff, openCases: [] })).toBe(
       mergeBasis({ user: { ...user, download: 99 }, staff, openCases: [] })
@@ -317,16 +394,19 @@ describe('official mirror queue and merge decisions', () => {
       [record({ staffResourceId: 2 })]
     )
     expect(afterDismiss).toEqual([
-      expect.objectContaining({ staff: expect.objectContaining({ id: 3 }), pairClass: 'high' })
+      expect.objectContaining({
+        staff: expect.objectContaining({ id: 3 }),
+        pairClass: 'high'
+      })
     ])
     expect(
-      buildCandidates([user, olderStaff], [record({ status: 'merged', staffResourceId: 2 })])
+      buildCandidates(
+        [user, olderStaff],
+        [record({ status: 'merged', staffResourceId: 2 })]
+      )
     ).toEqual([])
     expect(
-      buildCandidates(
-        [user, card({ id: 4, role: 3, section: 'patch' })],
-        []
-      )
+      buildCandidates([user, card({ id: 4, role: 3, section: 'patch' })], [])
     ).toEqual([])
     expect(buildCandidates([card({ role: 3 }), olderStaff], [])).toEqual([])
   })
@@ -338,7 +418,9 @@ describe('official mirror queue and merge decisions', () => {
       { actorKey: 'actor', resourceId: 1, expires: userExpires },
       { actorKey: 'actor', resourceId: 2, expires: userExpires }
     ])
-    expect(equal).toEqual([{ actorKey: 'actor', kind: 'keep-max', expires: userExpires }])
+    expect(equal).toEqual([
+      { actorKey: 'actor', kind: 'keep-max', expires: userExpires }
+    ])
     expect(equal[0].expires).toBe(userExpires)
     expect(
       planGrants(1, 2, [
@@ -347,7 +429,9 @@ describe('official mirror queue and merge decisions', () => {
       ])
     ).toEqual([{ actorKey: 'actor', kind: 'keep-max', expires: staffExpires }])
     expect(
-      planGrants(1, 2, [{ actorKey: 'actor', resourceId: 2, expires: staffExpires }])
+      planGrants(1, 2, [
+        { actorKey: 'actor', resourceId: 2, expires: staffExpires }
+      ])
     ).toEqual([{ actorKey: 'actor', kind: 'move', expires: staffExpires }])
   })
 
@@ -363,10 +447,19 @@ describe('official mirror queue and merge decisions', () => {
 
 describe('official mirror contract validation', () => {
   it('requires a hex basis string and a per-pair confirmation', () => {
-    const pair = { userResourceId: 1, staffResourceId: 2, basis, contentConfirmed: true }
+    const pair = {
+      userResourceId: 1,
+      staffResourceId: 2,
+      basis,
+      contentConfirmed: true
+    }
     expect(mergeExecuteSchema.safeParse(pair).success).toBe(true)
-    expect(mergeExecuteSchema.safeParse({ ...pair, contentConfirmed: false }).success).toBe(false)
-    expect(mergeExecuteSchema.safeParse({ ...pair, basis: [basis] }).success).toBe(false)
+    expect(
+      mergeExecuteSchema.safeParse({ ...pair, contentConfirmed: false }).success
+    ).toBe(false)
+    expect(
+      mergeExecuteSchema.safeParse({ ...pair, basis: [basis] }).success
+    ).toBe(false)
     expect(
       mergeBatchSchema.safeParse({
         pairs: Array.from({ length: 51 }, () => pair)
@@ -404,7 +497,8 @@ describe('official mirror backup and merge services', () => {
 
   it('writes ignore time as timestamp(3) without time zone', async () => {
     harness.setResponder((sql) => {
-      if (sql.includes('SELECT id FROM patch_resource WHERE')) return [{ id: 5 }]
+      if (sql.includes('SELECT id FROM patch_resource WHERE'))
+        return [{ id: 5 }]
       if (sql.includes('publisher_name')) return [cardRow]
       if (sql.includes('FROM patch_resource_link')) {
         return [
@@ -430,9 +524,11 @@ describe('official mirror backup and merge services', () => {
     expect(typeof result).not.toBe('string')
     expect(insert?.sql).toContain('::timestamp(3) without time zone')
     expect(insert?.sql.toLowerCase()).not.toContain('timestamptz')
-    expect(insert?.values.some((value) => typeof value === 'string' && value.includes('-'))).toBe(
-      true
-    )
+    expect(
+      insert?.values.some(
+        (value) => typeof value === 'string' && value.includes('-')
+      )
+    ).toBe(true)
     expect(harness.logs).toHaveLength(1)
   })
 
@@ -467,7 +563,8 @@ describe('official mirror backup and merge services', () => {
       links
     })
     harness.setResponder((sql) => {
-      if (sql.includes('SELECT id FROM patch_resource WHERE')) return [{ id: 5 }]
+      if (sql.includes('SELECT id FROM patch_resource WHERE'))
+        return [{ id: 5 }]
       if (sql.includes('publisher_name')) return [cardRow]
       if (sql.includes('FROM patch_resource_link')) {
         return [
@@ -512,7 +609,9 @@ describe('official mirror backup and merge services', () => {
     expect(second).toMatchObject({ changed: false })
     expect(harness.logs).toHaveLength(1)
     expect(
-      harness.queries.filter((query) => query.sql.includes('INSERT INTO patch_resource_backup_state'))
+      harness.queries.filter((query) =>
+        query.sql.includes('INSERT INTO patch_resource_backup_state')
+      )
     ).toHaveLength(1)
     const stale = await dismissRebackup({ resourceId: 5, basis }, 7)
     expect(stale).toBe('预览已变化，请重新核对')
@@ -542,7 +641,9 @@ describe('official mirror backup and merge services', () => {
         ]
       }
       if (sql.includes('unique_id')) {
-        return [{ id: 1, section: 'galgame', patch_id: 10, unique_id: 'abcd1234' }]
+        return [
+          { id: 1, section: 'galgame', patch_id: 10, unique_id: 'abcd1234' }
+        ]
       }
       return []
     })
@@ -556,8 +657,14 @@ describe('official mirror backup and merge services', () => {
       staffResourceId: 2,
       patchUniqueId: 'abcd1234'
     })
-    expect(harness.queries.some((query) => query.sql.includes('om:lock-links'))).toBe(false)
-    expect(harness.queries.some((query) => query.sql.includes('INSERT INTO patch_resource_merge_record'))).toBe(false)
+    expect(
+      harness.queries.some((query) => query.sql.includes('om:lock-links'))
+    ).toBe(false)
+    expect(
+      harness.queries.some((query) =>
+        query.sql.includes('INSERT INTO patch_resource_merge_record')
+      )
+    ).toBe(false)
 
     harness.reset()
     harness.setResponder(() => [])
@@ -586,8 +693,13 @@ describe('official mirror backup and merge services', () => {
       },
       7
     )
-    expect(result.outcomes.map((item) => item.status)).toEqual(['skipped', 'failed'])
-    expect(result.remaining).toEqual([{ userResourceId: 5, staffResourceId: 6 }])
+    expect(result.outcomes.map((item) => item.status)).toEqual([
+      'skipped',
+      'failed'
+    ])
+    expect(result.remaining).toEqual([
+      { userResourceId: 5, staffResourceId: 6 }
+    ])
     if (result.outcomes[0].status === 'skipped') {
       expect(result.outcomes[0].reason).toBe('站方卡片未公开')
     }
@@ -685,9 +797,9 @@ describe('official mirror list, dismiss, and batch regressions', () => {
     expect(byUser.items[0]?.pairClass).toBe('manual')
     expect(byStaff.items[0]?.candidateCount).toBe(2)
     expect(byStaff.items[0]?.pairClass).toBe('manual')
-    expect(byStaff.items[0]?.candidates.map((item) => item.staffResourceId).sort()).toEqual([
-      2, 3
-    ])
+    expect(
+      byStaff.items[0]?.candidates.map((item) => item.staffResourceId).sort()
+    ).toEqual([2, 3])
   })
 
   it('keeps a merged row after the only staff card is gone, the author is promoted, and the path changed', async () => {
@@ -720,7 +832,11 @@ describe('official mirror list, dismiss, and batch regressions', () => {
       }
       return []
     })
-    const listed = await listResourceMerges({ ...listInput, tab: 'merged', search: '' })
+    const listed = await listResourceMerges({
+      ...listInput,
+      tab: 'merged',
+      search: ''
+    })
     expect(listed.counts.merged).toBe(1)
     expect(listed.items[0]?.userResource).toMatchObject({
       id: 5,
@@ -757,37 +873,47 @@ describe('official mirror list, dismiss, and batch regressions', () => {
       return []
     })
     const listed = await listResourceMerges(listInput)
-    expect(listed.items[0]?.blocks.map((block) => block.code)).toContain('staff_case_open')
+    expect(listed.items[0]?.blocks.map((block) => block.code)).toContain(
+      'staff_case_open'
+    )
   })
 
   it('rechecks the current candidate inside dismiss and stays idempotent', async () => {
     const baseCard = sqlCard({ id: 1, role: 1 })
     const staffCard = sqlCard({ id: 2, role: 3, user_id: 8 })
     harness.setResponder((sql) => {
-      if (sql.includes('publisher_name')) return [{ ...baseCard, publisher_left_at: at('2026-04-01T00:00:00.000Z') }, staffCard]
+      if (sql.includes('publisher_name'))
+        return [
+          { ...baseCard, publisher_left_at: at('2026-04-01T00:00:00.000Z') },
+          staffCard
+        ]
       if (sql.includes('FROM patch_resource_link')) {
         return [sqlLink({ resource_id: 1, storage: 'user' })]
       }
       return []
     })
-    expect(await dismissResourceMerge({ userResourceId: 1, staffResourceId: 2 }, 7)).toBe(
-      '用户卡片已交接'
-    )
+    expect(
+      await dismissResourceMerge({ userResourceId: 1, staffResourceId: 2 }, 7)
+    ).toBe('用户卡片已交接')
 
     harness.setResponder((sql) => {
-      if (sql.includes('publisher_name')) return [{ ...baseCard, status: 1 }, staffCard]
+      if (sql.includes('publisher_name'))
+        return [{ ...baseCard, status: 1 }, staffCard]
       if (sql.includes('FROM patch_resource_link')) {
         return [sqlLink({ resource_id: 1, storage: 'user' })]
       }
       return []
     })
-    expect(await dismissResourceMerge({ userResourceId: 1, staffResourceId: 2 }, 7)).toBe(
-      '用户卡片未公开'
-    )
+    expect(
+      await dismissResourceMerge({ userResourceId: 1, staffResourceId: 2 }, 7)
+    ).toBe('用户卡片未公开')
 
     harness.setResponder((sql) => {
       if (sql.includes('om:lock-merge-record')) return []
-      if (sql.includes('patch_resource_merge_record') && !sql.includes('INSERT')) {
+      if (
+        sql.includes('patch_resource_merge_record') &&
+        !sql.includes('INSERT')
+      ) {
         return [
           {
             user_resource_id: 2,
@@ -805,13 +931,16 @@ describe('official mirror list, dismiss, and batch regressions', () => {
       }
       return []
     })
-    expect(await dismissResourceMerge({ userResourceId: 1, staffResourceId: 2 }, 7)).toBe(
-      '不能再次合并已留下的卡片'
-    )
+    expect(
+      await dismissResourceMerge({ userResourceId: 1, staffResourceId: 2 }, 7)
+    ).toBe('不能再次合并已留下的卡片')
 
     harness.reset()
     harness.setResponder((sql) => {
-      if (sql.includes('om:lock-merge-record') || sql.includes('patch_resource_merge_record')) {
+      if (
+        sql.includes('om:lock-merge-record') ||
+        sql.includes('patch_resource_merge_record')
+      ) {
         return [
           {
             user_resource_id: 1,
@@ -826,12 +955,16 @@ describe('official mirror list, dismiss, and batch regressions', () => {
       if (sql.includes('publisher_name')) return [baseCard, staffCard]
       return []
     })
-    expect(await dismissResourceMerge({ userResourceId: 1, staffResourceId: 2 }, 7)).toEqual({
+    expect(
+      await dismissResourceMerge({ userResourceId: 1, staffResourceId: 2 }, 7)
+    ).toEqual({
       changed: false
     })
     expect(harness.logs).toHaveLength(0)
     expect(
-      harness.queries.some((query) => query.sql.includes('INSERT INTO patch_resource_merge_record'))
+      harness.queries.some((query) =>
+        query.sql.includes('INSERT INTO patch_resource_merge_record')
+      )
     ).toBe(false)
   })
 
@@ -892,8 +1025,11 @@ describe('official mirror list, dismiss, and batch regressions', () => {
       openCases: []
     })
     harness.setResponder((sql, values) => {
-      const ids = values.filter((value): value is number => typeof value === 'number')
-      if (sql.includes('INSERT INTO patch_resource_merge_record')) return [{ id: 80 }]
+      const ids = values.filter(
+        (value): value is number => typeof value === 'number'
+      )
+      if (sql.includes('INSERT INTO patch_resource_merge_record'))
+        return [{ id: 80 }]
       if (sql.includes('r.patch_id =')) return [userRow, staffRow, survivorRow]
       if (sql.includes('publisher_name')) return [userRow, staffRow]
       if (sql.includes('FROM patch_resource_link')) return [userLink, staffLink]
@@ -944,7 +1080,12 @@ describe('official mirror list, dismiss, and batch regressions', () => {
       if (sql.includes('FROM patch_resource_link')) {
         return [
           sqlLink({ id: 1, resource_id: 1, storage: 'user', sort_order: 4 }),
-          sqlLink({ id: 3, resource_id: 2, storage: 'touchgal', sort_order: 5 }),
+          sqlLink({
+            id: 3,
+            resource_id: 2,
+            storage: 'touchgal',
+            sort_order: 5
+          }),
           sqlLink({
             id: 10,
             resource_id: 2,
@@ -956,10 +1097,17 @@ describe('official mirror list, dismiss, and batch regressions', () => {
       }
       return []
     })
-    const preview = await previewResourceMerge({ userResourceId: 1, staffResourceId: 2 })
+    const preview = await previewResourceMerge({
+      userResourceId: 1,
+      staffResourceId: 2
+    })
     expect(preview).toMatchObject({
       survivorPreview: {
-        links: [{ id: 1, sortOrder: 4 }, { id: 10, sortOrder: 5 }, { id: 3, sortOrder: 6 }]
+        links: [
+          { id: 1, sortOrder: 4 },
+          { id: 10, sortOrder: 5 },
+          { id: 3, sortOrder: 6 }
+        ]
       }
     })
   })
@@ -974,17 +1122,22 @@ describe('official mirror list, dismiss, and batch regressions', () => {
       ]
     })
     expect(movedLinkSorts(user, staff).map((move) => move.id)).toEqual([10, 3])
-    expect(movedLinkSorts(user, staff).map((move) => move.sortOrder)).toEqual([5, 6])
+    expect(movedLinkSorts(user, staff).map((move) => move.sortOrder)).toEqual([
+      5, 6
+    ])
   })
 
   it('reports one pair constraint failure and still merges the later pair', async () => {
-    const secret = 'postgres://official_mirror_d:super-secret@127.0.0.1/official_mirror_d_e2e'
+    const secret =
+      'postgres://official_mirror_d:super-secret@127.0.0.1/official_mirror_d_e2e'
     const errors: unknown[][] = []
     const spy = vi.spyOn(console, 'error').mockImplementation((...args) => {
       errors.push(args)
     })
     harness.setResponder((sql, values) => {
-      const ids = values.filter((value): value is number => typeof value === 'number')
+      const ids = values.filter(
+        (value): value is number => typeof value === 'number'
+      )
       if (sql.includes('om:lock-merge-record') && ids.includes(1)) {
         return [
           {
@@ -1007,7 +1160,9 @@ describe('official mirror list, dismiss, and batch regressions', () => {
         ]
       }
       if (sql.includes('unique_id')) {
-        return [{ id: 1, section: 'galgame', patch_id: 10, unique_id: 'abcd1234' }]
+        return [
+          { id: 1, section: 'galgame', patch_id: 10, unique_id: 'abcd1234' }
+        ]
       }
       if (sql.includes('om:lock-resources') && ids.includes(3)) {
         throw Object.assign(new Error(`duplicate ${secret}`), { code: 'P2002' })
@@ -1025,7 +1180,11 @@ describe('official mirror list, dismiss, and batch regressions', () => {
       7
     )
     spy.mockRestore()
-    expect(result.outcomes.map((item) => item.status)).toEqual(['merged', 'failed', 'skipped'])
+    expect(result.outcomes.map((item) => item.status)).toEqual([
+      'merged',
+      'failed',
+      'skipped'
+    ])
     expect(result.remaining).toEqual([])
     if (result.outcomes[1]?.status === 'failed') {
       expect(result.outcomes[1].reason).toBe('合并约束冲突')
@@ -1040,7 +1199,9 @@ describe('official mirror list, dismiss, and batch regressions', () => {
   it('does not call the later pair after the database connection drops', async () => {
     let third = false
     harness.setResponder((sql, values) => {
-      const ids = values.filter((value): value is number => typeof value === 'number')
+      const ids = values.filter(
+        (value): value is number => typeof value === 'number'
+      )
       if (sql.includes('om:lock-resources') && ids.includes(1)) return []
       if (sql.includes('om:lock-resources') && ids.includes(3)) {
         throw new Error("Can't reach database server")
@@ -1058,15 +1219,22 @@ describe('official mirror list, dismiss, and batch regressions', () => {
       },
       7
     )
-    expect(result.outcomes.map((item) => item.status)).toEqual(['skipped', 'failed'])
-    expect(result.remaining).toEqual([{ userResourceId: 5, staffResourceId: 6 }])
+    expect(result.outcomes.map((item) => item.status)).toEqual([
+      'skipped',
+      'failed'
+    ])
+    expect(result.remaining).toEqual([
+      { userResourceId: 5, staffResourceId: 6 }
+    ])
     expect(third).toBe(false)
   })
 })
 
 describe('official mirror resolve and help retarget', () => {
   it('accepts only a positive survivor id and reuses the caller visibility policy', async () => {
-    expect(await lookupMergedSurvivorId({ $queryRaw: async () => [{ id: 9 }] }, 2)).toBeNull()
+    expect(
+      await lookupMergedSurvivorId({ $queryRaw: async () => [{ id: 9 }] }, 2)
+    ).toBeNull()
     expect(
       await lookupMergedSurvivorId(
         { $queryRaw: async () => [{ user_resource_id: '9' }] },
@@ -1169,10 +1337,785 @@ describe('official mirror resolve and help retarget', () => {
       $queryRaw: async () => {
         throw new Error('relation patch_resource_merge_record does not exist')
       },
-      $transaction: async (fn: (tx: unknown) => Promise<unknown>) => fn(missingTable)
+      $transaction: async (fn: (tx: unknown) => Promise<unknown>) =>
+        fn(missingTable)
     }
-    await expect(createHelpPost(input, 1, { db: missingTable as never })).rejects.toThrow(
-      'patch_resource_merge_record'
+    await expect(
+      createHelpPost(input, 1, { db: missingTable as never })
+    ).rejects.toThrow('patch_resource_merge_record')
+  })
+})
+
+describe('official mirror merge workbench services', () => {
+  type Row = Record<string, unknown> & { id: number }
+  type LinkRow = Row & { resource_id: number }
+  const cardRow = (overrides: Record<string, unknown> = {}): Row => ({
+    id: 1,
+    name: '本体',
+    section: 'galgame',
+    patch_id: 10,
+    download: 1,
+    user_id: 2,
+    status: 0,
+    note: '',
+    type: ['pc'],
+    language: ['ja-jp'],
+    platform: ['windows'],
+    publisher_left_at: null,
+    created: at('2026-01-01T00:00:00.000Z'),
+    updated: at('2026-01-02T00:00:00.000Z'),
+    publisher_name: '发布者',
+    role: 1,
+    patch_name: '原游戏',
+    patch_unique_id: 'abcd1234',
+    patch_status: 0,
+    ...overrides
+  })
+  const staffRow = (overrides: Record<string, unknown> = {}): Row =>
+    cardRow({
+      user_id: 8,
+      role: 3,
+      publisher_name: '站方',
+      created: at('2026-03-01T00:00:00.000Z'),
+      ...overrides
+    })
+  const linkRow = (overrides: Record<string, unknown> = {}): LinkRow => ({
+    id: 11,
+    resource_id: 1,
+    storage: 'user',
+    content: 'https://example.test/a',
+    size: '',
+    code: '',
+    password: '',
+    hash: '',
+    version: 1,
+    sort_order: 0,
+    attached_at: at('2026-01-01T00:00:00.000Z'),
+    content_changed_at: null,
+    ...overrides
+  })
+  const recordRow = (overrides: Record<string, unknown> = {}) => ({
+    user_resource_id: 1,
+    staff_resource_id: 2,
+    patch_id: 10,
+    section: 'galgame',
+    status: 'dismissed',
+    detail: { contentConfirmed: false },
+    handled_at: at('2026-04-01T00:00:00.000Z'),
+    handled_by_user_id: 7,
+    ...overrides
+  })
+  const idsIn = (values: unknown[]) =>
+    values.filter((value): value is number => typeof value === 'number')
+  const listInput = {
+    tab: 'pending' as const,
+    search: '',
+    page: 1,
+    limit: 20
+  }
+
+  beforeEach(() => {
+    harness.reset()
+  })
+
+  describe('options and list share one recommendation', () => {
+    const rows = [
+      cardRow({ id: 1 }),
+      staffRow({ id: 2, name: '本体 站方版' }),
+      staffRow({ id: 3, name: '本体' }),
+      staffRow({ id: 4, section: 'patch', name: '补丁' }),
+      staffRow({ id: 5, name: '追加内容' })
+    ]
+    const links = [
+      linkRow({ id: 11, resource_id: 1, size: '1 GB' }),
+      linkRow({ id: 21, resource_id: 2, storage: 'touchgal', size: '1010 MB' }),
+      linkRow({ id: 31, resource_id: 3, storage: 'touchgal' }),
+      linkRow({ id: 41, resource_id: 4, storage: 'touchgal' }),
+      linkRow({ id: 51, resource_id: 5, storage: 'touchgal', size: '300 MB' })
+    ]
+    const records = [
+      recordRow({ staff_resource_id: 3 }),
+      recordRow({
+        staff_resource_id: 6,
+        handled_at: at('2026-04-03T00:00:00.000Z'),
+        handled_by_user_id: 8
+      })
+    ]
+    const respond = (sql: string, values: unknown[]) => {
+      const ids = idsIn(values)
+      if (sql.includes('om:patch-cards')) return rows
+      if (sql.includes('om:live-cards')) {
+        return rows.filter((row) => row.section === 'galgame')
+      }
+      if (sql.includes('om:record-cards')) return []
+      if (sql.includes('publisher_name')) {
+        return rows.filter((row) => ids.includes(row.id))
+      }
+      if (sql.includes('FROM patch_resource_link')) {
+        return links.filter((row) => ids.includes(row.resource_id))
+      }
+      if (sql.includes('om:open-cases'))
+        return [{ case_id: 41, resource_id: 5 }]
+      if (sql.includes('om:open-staff')) return [{ resource_id: 5 }]
+      if (sql.includes('om:official-count')) return [{ patch_id: 10, total: 4 }]
+      if (sql.includes('om:handlers')) {
+        return [{ id: 7, name: '站方甲' }].filter((row) => ids.includes(row.id))
+      }
+      if (sql.includes('patch_resource_merge_record')) return records
+      return []
+    }
+
+    it('lists every staff card of the game in order with blocks, flags and history', async () => {
+      harness.setResponder(respond)
+      const result = await getMergeOptions({ userResourceId: 1 })
+      if (typeof result === 'string') throw new Error(result)
+      expect(result.user).toMatchObject({
+        id: 1,
+        eligible: true,
+        hasStaffBackup: false
+      })
+      expect(result.recommendState).toBe('recommended')
+      expect(result.options.map((option) => option.staff.id)).toEqual([
+        2, 3, 5, 4
+      ])
+      const [recommended, dismissed, blocked, otherSection] = result.options
+      expect(recommended).toMatchObject({
+        recommended: true,
+        mergeable: true,
+        dismissable: true,
+        highConfidence: false,
+        sameSection: true,
+        record: null,
+        blocks: [],
+        hits: 6
+      })
+      expect(recommended?.staff.hasStaffBackup).toBe(true)
+      expect(
+        recommended?.signals.find((item) => item.signal === 'unique')
+      ).toMatchObject({
+        hit: false,
+        user: ['2'],
+        staff: ['1']
+      })
+      expect(
+        recommended?.signals.find((item) => item.signal === 'size')
+      ).toMatchObject({
+        hit: true,
+        user: ['1 GB'],
+        staff: ['1010 MB']
+      })
+      expect(dismissed).toMatchObject({
+        record: 'dismissed',
+        mergeable: false,
+        dismissable: false
+      })
+      expect(dismissed?.blocks.map((item) => item.code)).toContain(
+        'pair_dismissed'
+      )
+      expect(blocked).toMatchObject({
+        mergeable: false,
+        dismissable: true,
+        record: null
+      })
+      expect(blocked?.blocks.map((item) => item.code)).toEqual([
+        'staff_case_open'
+      ])
+      expect(otherSection).toMatchObject({
+        sameSection: false,
+        mergeable: false,
+        dismissable: false,
+        blocks: [
+          {
+            code: 'section_mismatch',
+            message: '与用户资源不在同一分区，不能合并'
+          }
+        ]
+      })
+      expect(result.history).toEqual([
+        {
+          staffResourceId: 6,
+          staffName: '已删除的站方卡片 6',
+          status: 'dismissed',
+          handledAt: '2026-04-03T00:00:00.000Z',
+          handledBy: null,
+          movedLinkIds: []
+        },
+        {
+          staffResourceId: 3,
+          staffName: '本体',
+          status: 'dismissed',
+          handledAt: '2026-04-01T00:00:00.000Z',
+          handledBy: { id: 7, name: '站方甲' },
+          movedLinkIds: []
+        }
+      ])
+      const openQuery = harness.queries.find((query) =>
+        query.sql.includes('om:open-cases')
+      )
+      expect([...new Set(idsIn(openQuery?.values ?? []))].sort()).toEqual([
+        2, 3, 5
+      ])
+      const json = JSON.stringify(result)
+      expect(json).not.toMatch(/https?:/)
+    })
+
+    it('gives the list row the same recommendation and counts staff in both sections', async () => {
+      harness.setResponder(respond)
+      const options = await getMergeOptions({ userResourceId: 1 })
+      if (typeof options === 'string') throw new Error(options)
+      const listed = await listResourceMerges(listInput)
+      const row = listed.items.find((item) => item.userResource.id === 1)
+      expect(row).toMatchObject({
+        recommendState: options.recommendState,
+        recommendation: { staffResourceId: 2, staffName: '本体 站方版' },
+        officialCount: options.options.length,
+        hasStaffBackup: false,
+        handledAt: null,
+        handledBy: null
+      })
+      expect(
+        row?.candidates.map((item) => item.staffResourceId).sort()
+      ).toEqual([2, 5])
+      expect(
+        row?.candidates
+          .find((item) => item.staffResourceId === 5)
+          ?.blocks.map((item) => item.code)
+      ).toEqual(['staff_case_open'])
+    })
+  })
+
+  it('shows a survivor as ineligible with its merged history', async () => {
+    const rows = [cardRow({ id: 1 }), staffRow({ id: 2 })]
+    harness.setResponder((sql, values) => {
+      const ids = idsIn(values)
+      if (sql.includes('om:patch-cards')) return rows
+      if (sql.includes('publisher_name'))
+        return rows.filter((row) => ids.includes(row.id))
+      if (sql.includes('FROM patch_resource_link')) {
+        return [
+          linkRow({ id: 11, resource_id: 1 }),
+          linkRow({ id: 12, resource_id: 1, storage: 'touchgal' }),
+          linkRow({ id: 21, resource_id: 2, storage: 'touchgal' })
+        ].filter((row) => ids.includes(row.resource_id))
+      }
+      if (sql.includes('om:handlers')) return [{ id: 7, name: '站方甲' }]
+      if (sql.includes('patch_resource_merge_record')) {
+        return [
+          recordRow({
+            staff_resource_id: 9,
+            status: 'merged',
+            handled_at: at('2026-03-05T00:00:00.000Z'),
+            detail: {
+              movedLinkIds: [12],
+              noteAppended: false,
+              contentConfirmed: true,
+              basis,
+              sourceAuthorId: 8,
+              likeCount: 0,
+              userResourceId: 1,
+              staffResourceId: 9
+            }
+          })
+        ]
+      }
+      return []
+    })
+    const result = await getMergeOptions({ userResourceId: 1 })
+    if (typeof result === 'string') throw new Error(result)
+    expect(result.user).toMatchObject({ eligible: false, hasStaffBackup: true })
+    expect(result.recommendState).toBe('none')
+    expect(result.options[0]).toMatchObject({
+      mergeable: false,
+      dismissable: false,
+      recommended: false
+    })
+    expect(result.options[0]?.blocks.map((item) => item.code)).toContain(
+      'already_merged_other'
     )
+    expect(result.history).toEqual([
+      {
+        staffResourceId: 9,
+        staffName: '已合并的站方卡片 9',
+        status: 'merged',
+        handledAt: '2026-03-05T00:00:00.000Z',
+        handledBy: { id: 7, name: '站方甲' },
+        movedLinkIds: [12]
+      }
+    ])
+  })
+
+  it('returns an error string for a missing user card', async () => {
+    harness.setResponder(() => [])
+    expect(await getMergeOptions({ userResourceId: 404 })).toBe(
+      '未找到对应的资源'
+    )
+  })
+
+  describe('dismissMergeCard', () => {
+    const rows = [
+      cardRow({ id: 1 }),
+      staffRow({ id: 2 }),
+      staffRow({ id: 3 }),
+      staffRow({ id: 4, section: 'patch' }),
+      staffRow({ id: 6 }),
+      cardRow({ id: 7, user_id: 3 })
+    ]
+    const links = [
+      linkRow({ id: 11, resource_id: 1 }),
+      linkRow({ id: 21, resource_id: 2, storage: 'touchgal' }),
+      linkRow({ id: 31, resource_id: 3, storage: 'touchgal' }),
+      linkRow({ id: 71, resource_id: 7 })
+    ]
+    const responder =
+      (
+        options: {
+          cards?: typeof rows
+          related?: Record<string, unknown>[]
+          locked?: Record<string, unknown>[]
+        } = {}
+      ) =>
+      (sql: string, values: unknown[]) => {
+        const ids = idsIn(values)
+        const cards = options.cards ?? rows
+        if (sql.includes('om:lock-resources')) {
+          return cards
+            .filter((row) => ids.includes(row.id))
+            .map((row) => ({ id: row.id }))
+        }
+        if (sql.includes('om:lock-merge-records')) {
+          return options.locked ?? [recordRow({ staff_resource_id: 3 })]
+        }
+        if (sql.includes('INSERT INTO patch_resource_merge_record')) return 1
+        if (sql.includes('publisher_name'))
+          return cards.filter((row) => ids.includes(row.id))
+        if (sql.includes('FROM patch_resource_link')) {
+          return links.filter((row) => ids.includes(row.resource_id))
+        }
+        if (sql.includes('patch_resource_merge_record')) {
+          return (
+            options.related ?? [
+              recordRow({ staff_resource_id: 3 }),
+              recordRow({
+                user_resource_id: 6,
+                staff_resource_id: 50,
+                status: 'merged',
+                detail: {}
+              })
+            ]
+          )
+        }
+        return []
+      }
+
+    it('dismisses the live pairs in one pass and reports the rest per pair', async () => {
+      harness.setResponder(responder())
+      const result = await dismissMergeCard(
+        { userResourceId: 1, staffResourceIds: [7, 5, 4, 3, 2, 6] },
+        9
+      )
+      expect(result).toEqual({
+        changed: true,
+        dismissed: [2],
+        unchanged: [3],
+        skipped: [
+          { staffResourceId: 4, reason: '与用户资源不在同一分区，不能合并' },
+          { staffResourceId: 5, reason: '未找到对应的资源' },
+          { staffResourceId: 6, reason: '不能再次合并已留下的卡片' },
+          { staffResourceId: 7, reason: '不是可合并的候选' }
+        ]
+      })
+      const lockIndex = (marker: string) =>
+        harness.queries.findIndex((query) => query.sql.includes(marker))
+      const resourceLock = harness.queries[lockIndex('om:lock-resources')]
+      expect(idsIn(resourceLock?.values ?? [])).toEqual([1, 2, 3, 4, 5, 6, 7])
+      expect(lockIndex('om:lock-resources')).toBeLessThan(
+        lockIndex('om:lock-merge-records')
+      )
+      expect(lockIndex('om:lock-merge-records')).toBeLessThan(
+        lockIndex('om:lock-links')
+      )
+      const inserts = harness.queries.filter((query) =>
+        query.sql.includes('INSERT INTO patch_resource_merge_record')
+      )
+      expect(inserts).toHaveLength(1)
+      expect(inserts[0]?.values).toEqual(
+        expect.arrayContaining([1, 2, 10, 'galgame', 9])
+      )
+      expect(inserts[0]?.sql).toContain("'dismissed'")
+      expect(harness.logs).toEqual([
+        {
+          type: 'resource_merge_dismiss',
+          user_id: 9,
+          content: '管理员 站方 驳回了资源 1 与站方资源 2 的合并。'
+        }
+      ])
+    })
+
+    it('writes nothing when every listed pair is already dismissed', async () => {
+      harness.setResponder(responder())
+      expect(
+        await dismissMergeCard({ userResourceId: 1, staffResourceIds: [3] }, 9)
+      ).toEqual({ changed: false, dismissed: [], unchanged: [3], skipped: [] })
+      expect(harness.logs).toHaveLength(0)
+      expect(
+        harness.queries.some((query) =>
+          query.sql.includes('INSERT INTO patch_resource_merge_record')
+        )
+      ).toBe(false)
+    })
+
+    it('rejects the whole request on a user-side failure', async () => {
+      const cases: [Parameters<typeof responder>[0], string][] = [
+        [
+          {
+            cards: rows.map((row) =>
+              row.id === 1
+                ? { ...row, publisher_left_at: at('2026-04-01T00:00:00.000Z') }
+                : row
+            )
+          },
+          '用户卡片已交接'
+        ],
+        [
+          {
+            cards: rows.map((row) =>
+              row.id === 1 ? { ...row, status: 1 } : row
+            )
+          },
+          '用户卡片未公开'
+        ],
+        [{ cards: rows.filter((row) => row.id !== 1) }, '未找到对应的资源'],
+        [
+          {
+            cards: rows.map((row) => (row.id === 1 ? { ...row, role: 3 } : row))
+          },
+          '不是可合并的候选'
+        ],
+        [
+          {
+            related: [
+              recordRow({ staff_resource_id: 99, status: 'merged', detail: {} })
+            ]
+          },
+          '已与其他卡片合并'
+        ]
+      ]
+      for (const [options, message] of cases) {
+        harness.reset()
+        harness.setResponder(responder(options))
+        expect(
+          await dismissMergeCard(
+            { userResourceId: 1, staffResourceIds: [2, 3] },
+            9
+          )
+        ).toBe(message)
+        expect(harness.logs).toHaveLength(0)
+        expect(
+          harness.queries.some((query) =>
+            query.sql.includes('INSERT INTO patch_resource_merge_record')
+          )
+        ).toBe(false)
+      }
+    })
+  })
+
+  describe('list sort and history fields', () => {
+    const pendingRows = [
+      cardRow({ id: 1, patch_id: 10, patch_name: 'B游戏', download: 5 }),
+      staffRow({
+        id: 2,
+        patch_id: 10,
+        patch_name: 'B游戏',
+        created: at('2026-03-03T00:00:00.000Z')
+      }),
+      cardRow({ id: 3, patch_id: 20, patch_name: 'A游戏', download: 5 }),
+      staffRow({
+        id: 4,
+        patch_id: 20,
+        patch_name: 'A游戏',
+        created: at('2026-03-01T00:00:00.000Z')
+      }),
+      cardRow({ id: 5, patch_id: 30, patch_name: 'C游戏', download: 9 }),
+      staffRow({
+        id: 6,
+        patch_id: 30,
+        patch_name: 'C游戏',
+        created: at('2026-03-02T00:00:00.000Z')
+      })
+    ]
+    const pendingLinks = [
+      linkRow({ id: 11, resource_id: 1 }),
+      linkRow({ id: 12, resource_id: 1, storage: 'touchgal' }),
+      linkRow({ id: 21, resource_id: 2, storage: 'touchgal' }),
+      linkRow({ id: 31, resource_id: 3 }),
+      linkRow({ id: 41, resource_id: 4, storage: 'touchgal' }),
+      linkRow({ id: 51, resource_id: 5 }),
+      linkRow({ id: 61, resource_id: 6, storage: 'touchgal' })
+    ]
+
+    it('orders pending rows by each sort with the user id as the final order', async () => {
+      harness.setResponder((sql, values) => {
+        const ids = idsIn(values)
+        if (sql.includes('om:live-cards')) return pendingRows
+        if (sql.includes('FROM patch_resource_link')) {
+          return pendingLinks.filter((row) => ids.includes(row.resource_id))
+        }
+        if (sql.includes('om:official-count')) {
+          return [
+            { patch_id: 10, total: 2 },
+            { patch_id: 20, total: 1 },
+            { patch_id: 30, total: 1 }
+          ]
+        }
+        return []
+      })
+      const order = async (
+        sort?:
+          | 'download_desc'
+          | 'waiting_longest'
+          | 'game_name'
+          | 'handled_desc'
+      ) =>
+        (await listResourceMerges({ ...listInput, sort })).items.map(
+          (item) => item.userResource.id
+        )
+      expect(await order()).toEqual([5, 1, 3])
+      expect(await order('download_desc')).toEqual([5, 1, 3])
+      expect(await order('waiting_longest')).toEqual([3, 5, 1])
+      expect(await order('game_name')).toEqual([3, 1, 5])
+      expect(await order('handled_desc')).toEqual([5, 1, 3])
+      const listed = await listResourceMerges(listInput)
+      const first = listed.items.find((item) => item.userResource.id === 1)
+      expect(first).toMatchObject({
+        officialCount: 2,
+        hasStaffBackup: true,
+        recommendState: 'recommended',
+        recommendation: { staffResourceId: 2 },
+        pairClass: 'high',
+        handledAt: null,
+        handledBy: null
+      })
+      expect(listed.oldestPending).toMatchObject({
+        resourceId: 3,
+        since: '2026-03-01T00:00:00.000Z'
+      })
+    })
+
+    it('orders history rows by the latest or earliest record and names the latest handler', async () => {
+      const userRows = [
+        cardRow({ id: 1, patch_name: 'B游戏' }),
+        cardRow({ id: 3, patch_id: 20, patch_name: 'A游戏' })
+      ]
+      harness.setResponder((sql, values) => {
+        const ids = idsIn(values)
+        if (sql.includes('om:merge-history')) {
+          return [
+            recordRow({ user_resource_id: 1, staff_resource_id: 2 }),
+            recordRow({
+              user_resource_id: 1,
+              staff_resource_id: 8,
+              handled_at: at('2026-04-05T00:00:00.000Z'),
+              handled_by_user_id: 9
+            }),
+            recordRow({
+              user_resource_id: 3,
+              staff_resource_id: 4,
+              patch_id: 20,
+              handled_at: at('2026-03-20T00:00:00.000Z')
+            })
+          ]
+        }
+        if (sql.includes('om:record-cards'))
+          return userRows.filter((row) => ids.includes(row.id))
+        if (sql.includes('om:handlers')) {
+          return [
+            { id: 7, name: '站方甲' },
+            { id: 9, name: '站方乙' }
+          ].filter((row) => ids.includes(row.id))
+        }
+        if (sql.includes('FROM patch_resource_link')) {
+          return [
+            linkRow({ id: 11, resource_id: 1 }),
+            linkRow({ id: 31, resource_id: 3 })
+          ].filter((row) => ids.includes(row.resource_id))
+        }
+        return []
+      })
+      const history = { ...listInput, tab: 'dismissed' as const }
+      const latest = await listResourceMerges(history)
+      expect(latest.items.map((item) => item.userResource.id)).toEqual([1, 3])
+      expect(latest.items[0]).toMatchObject({
+        handledAt: '2026-04-05T00:00:00.000Z',
+        handledBy: { id: 9, name: '站方乙' },
+        recommendState: null,
+        recommendation: null,
+        candidateCount: 2
+      })
+      expect(
+        latest.items[0]?.candidates.find((item) => item.staffResourceId === 8)
+          ?.staffName
+      ).toBe('已删除的站方卡片 8')
+      expect(latest.items[1]).toMatchObject({
+        handledAt: '2026-03-20T00:00:00.000Z',
+        handledBy: { id: 7, name: '站方甲' }
+      })
+      const earliest = await listResourceMerges({
+        ...history,
+        sort: 'waiting_longest'
+      })
+      expect(earliest.items.map((item) => item.userResource.id)).toEqual([3, 1])
+      expect(latest.counts).toEqual({ pending: 0, dismissed: 2, merged: 0 })
+    })
+  })
+
+  it('reports likes on the staff card in the preview', async () => {
+    const spy = vi
+      .spyOn(harness.tx.user_patch_resource_like_relation, 'count')
+      .mockResolvedValue(3)
+    harness.setResponder((sql, values) => {
+      const ids = idsIn(values)
+      const rows = [cardRow({ id: 1 }), staffRow({ id: 2 })]
+      if (sql.includes('FROM ops_case')) return []
+      if (sql.includes('publisher_name')) {
+        return sql.includes('r.patch_id =')
+          ? rows
+          : rows.filter((row) => ids.includes(row.id))
+      }
+      if (sql.includes('FROM patch_resource_link')) {
+        return [
+          linkRow({ id: 11, resource_id: 1 }),
+          linkRow({ id: 21, resource_id: 2, storage: 'touchgal' })
+        ]
+      }
+      return []
+    })
+    const preview = await previewResourceMerge({
+      userResourceId: 1,
+      staffResourceId: 2
+    })
+    expect(preview).toMatchObject({ staffLikeCount: 3, classification: 'high' })
+    expect(spy).toHaveBeenCalledWith({ where: { resource_id: 2 } })
+    spy.mockRestore()
+  })
+
+  describe('merge detail recommendation', () => {
+    const user = cardRow({ id: 1 })
+    const staff = staffRow({ id: 2 })
+    const rival = staffRow({ id: 3 })
+    const links = [
+      linkRow({ id: 11, resource_id: 1 }),
+      linkRow({ id: 21, resource_id: 2, storage: 'touchgal' }),
+      linkRow({ id: 31, resource_id: 3, storage: 'touchgal' })
+    ]
+    const asCard = (row: Record<string, unknown>) => {
+      const value = rowCard(row, [])
+      if (!value) throw new Error('bad row')
+      return {
+        ...value,
+        links: links.flatMap((item) => {
+          const parsed = rowLink(item)
+          return parsed && parsed.resourceId === value.id ? [parsed] : []
+        })
+      }
+    }
+    const digest = mergeBasis({
+      user: asCard(user),
+      staff: asCard(staff),
+      openCases: []
+    })
+    const run = async (game: Record<string, unknown>[]) => {
+      harness.reset()
+      harness.setResponder((sql, values) => {
+        const ids = idsIn(values)
+        if (sql.includes('INSERT INTO patch_resource_merge_record'))
+          return [{ id: 80 }]
+        if (sql.includes('om:lock-resources')) return [{ id: 1 }, { id: 2 }]
+        if (sql.includes('r.patch_id =')) return game
+        if (sql.includes('publisher_name')) return [user, staff]
+        if (sql.includes('FROM patch_resource_link')) {
+          return links.filter((row) => ids.includes(row.resource_id))
+        }
+        return []
+      })
+      const result = await mergeStaffIntoUser(
+        {
+          userResourceId: 1,
+          staffResourceId: 2,
+          basis: digest,
+          contentConfirmed: true
+        },
+        7
+      )
+      expect(result).toMatchObject({ alreadyMerged: false, movedLinkIds: [21] })
+      const insert = harness.queries.find((query) =>
+        query.sql.includes('INSERT INTO patch_resource_merge_record')
+      )
+      const json = insert?.values.find(
+        (value): value is string =>
+          typeof value === 'string' && value.startsWith('{')
+      )
+      return JSON.parse(json ?? '{}') as Record<string, unknown>
+    }
+
+    it('records whether the merged pair was the recommendation without changing acceptance', async () => {
+      const alone = await run([user, staff])
+      expect(alone.recommended).toBe(true)
+      expect(Object.keys(alone).sort()).toEqual([
+        'basis',
+        'contentConfirmed',
+        'likeCount',
+        'movedLinkIds',
+        'noteAppended',
+        'recommended',
+        'sourceAuthorId',
+        'staffResourceId',
+        'userResourceId'
+      ])
+      const close = await run([user, staff, rival])
+      expect(close.recommended).toBe(false)
+    })
+
+    it('still parses and replays details written before the key existed', async () => {
+      const old = {
+        movedLinkIds: [4],
+        noteAppended: false,
+        contentConfirmed: true,
+        basis,
+        sourceAuthorId: 8,
+        likeCount: 3,
+        userResourceId: 1,
+        staffResourceId: 2
+      }
+      expect(parseMergeDetail(old)).toEqual(old)
+      expect(
+        parseMergeDetail(JSON.stringify({ ...old, recommended: true }))
+      ).toEqual({
+        ...old,
+        recommended: true
+      })
+      expect(parseMergeDetail({ ...old, recommended: 'yes' })).toEqual(old)
+      harness.setResponder((sql) => {
+        if (sql.includes('om:lock-merge-record')) {
+          return [
+            recordRow({
+              status: 'merged',
+              detail: { ...old, recommended: false }
+            })
+          ]
+        }
+        if (sql.includes('unique_id')) {
+          return [
+            { id: 1, section: 'galgame', patch_id: 10, unique_id: 'abcd1234' }
+          ]
+        }
+        return []
+      })
+      expect(
+        await mergeStaffIntoUser(
+          { userResourceId: 1, staffResourceId: 2, ...confirmed },
+          7
+        )
+      ).toMatchObject({ alreadyMerged: true, movedLinkIds: [4] })
+    })
   })
 })
