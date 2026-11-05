@@ -8,6 +8,24 @@ declare module 'pg' {
     rowCount: number | null
   }
 
+  export interface ClientConfig {
+    connectionString?: string
+    connectionTimeoutMillis?: number
+    query_timeout?: number
+    application_name?: string
+    options?: string
+  }
+
+  export class Client {
+    constructor(config?: ClientConfig)
+    connect(): Promise<void>
+    query<R extends QueryResultRow = QueryResultRow>(
+      text: string,
+      values?: unknown[]
+    ): Promise<QueryResult<R>>
+    end(): Promise<void>
+  }
+
   export interface PoolConfig {
     connectionString?: string
     max?: number
@@ -34,6 +52,7 @@ declare module 'pg' {
   }
 
   const pg: {
+    Client: typeof Client
     Pool: typeof Pool
   }
 
