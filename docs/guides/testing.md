@@ -114,31 +114,6 @@ python3 scripts/officialMirrorAcceptance.py clean-source --run-dir "$OM06_RUN_DI
 
 [入口保护检查](../../scripts/officialMirrorAcceptanceChecks.py)可用 `python3 scripts/officialMirrorAcceptanceChecks.py` 单独运行；要求 3100 和 36741 空闲，使用自建受控进程与 CLI 替身，不连接真实 Docker 或数据库。它验证身份拒绝和停止语义，不能替代业务整链验收。真实提供方与手机软键盘需另行核实，受控服务和浏览器高度模拟不证明它们已经通过。
 
-### 指定备份的隔离数据库补验
-
-[备份补验入口](../../scripts/officialMirrorDumpAcceptance.py)仅用于已明确获准使用的本地备份。它与上面的合成业务环境分开：在无网络、无主机端口和宿主目录挂载的独占 PostgreSQL 容器中流式恢复输入，核查结构与聚合，再在独立副本演练迁移、限定校正、回滚和备份恢复。压缩文件内部可能是 SQL 文本或 PostgreSQL 自定义归档，入口按内容标识选择容器内恢复工具，不按扩展名直接执行宿主命令。
-
-准备前确认已有本机 PostgreSQL 18 镜像与项目依赖。入口只接受经过核实的本地 Unix 套接字，读取备份前固定 Docker 端点和服务身份；每个阶段都会复核，套接字或服务身份变化时拒绝继续。原始备份不纳入 Git，具体文件名、路径、摘要和运行标识只留本地受限证据；本地忽略规则放在 Git 的 `info/exclude`，不要为某份私有输入把身份信息加入版本化的忽略文件。下列命令只使用占位符：
-
-```bash
-python3 scripts/officialMirrorDumpAcceptance.py prepare --dump '<获准使用的工作区根目录压缩备份>'
-OM06_DUMP_RUN_DIR='<prepare 输出的本次运行目录>'
-python3 scripts/officialMirrorDumpAcceptance.py inventory --run-dir "$OM06_DUMP_RUN_DIR"
-python3 scripts/officialMirrorDumpAcceptance.py migrate --run-dir "$OM06_DUMP_RUN_DIR"
-python3 scripts/officialMirrorDumpAcceptance.py mechanisms --run-dir "$OM06_DUMP_RUN_DIR"
-python3 scripts/officialMirrorDumpAcceptance.py supplement --run-dir "$OM06_DUMP_RUN_DIR"
-python3 scripts/officialMirrorDumpAcceptance.py review --run-dir "$OM06_DUMP_RUN_DIR"
-python3 scripts/officialMirrorDumpAcceptance.py verify --run-dir "$OM06_DUMP_RUN_DIR"
-```
-
-保留环境若缺少端点绑定记录，可运行 `python3 scripts/officialMirrorDumpAcceptance.py bind-local --run-dir "$OM06_DUMP_RUN_DIR"`。它核对当前本地服务、完整容器身份、隔离配置及全部数据库的默认只读设置后才写入绑定，不重做恢复；已有绑定不匹配时仍拒绝继续，当前核对也不能补证此前未记录的端点。
-
-每步成功后再继续；原始结构复检失败及故意制造的参数、锁等待和判定冲突应按相应预期判断，不把非零退出统一当作通过。迁移中的确认或拒绝只是测试假设，不证明历史时间组来源，也不授权生产回填、资源合并或类型清理。备份恢复检查只覆盖列明的结构和聚合，不读取私有字段逐值比较。
-
-入口不展示用户资料、会话、正文或下载凭据；恢复诊断可能含私有行，只保留经过限制的错误类别和数字位置。结果目录与文件限制访问，原始恢复库和测试副本在完成后设置默认只读。它不启动 Redis、应用或浏览器，数据库补验通过不能写成该快照已经通过应用启动或页面验收。
-
-复核结束且不再需要保留环境时，使用 `python3 scripts/officialMirrorDumpAcceptance.py stop --run-dir "$OM06_DUMP_RUN_DIR"`。停止只作用于身份匹配的本次容器，临时内存中的数据库会丢失；原始输入和受限备份保留，可重新准备环境。不要改用停止不明服务、读取原始报错或修改身份记录的方式处理失败。[隔离保护检查](../../scripts/officialMirrorDumpAcceptanceChecks.py)可用 `python3 scripts/officialMirrorDumpAcceptanceChecks.py` 离线运行，不连接数据库，也不替代恢复与迁移的实际证据。
-
 ## 其他端到端脚本
 
 [编辑上传守卫](../../tests/e2e/edit-upload-guards.e2e.ts)、[投稿流转](../../tests/e2e/patch-submission-lifecycle.e2e.ts)、[投稿界面](../../tests/e2e/submission-ui.e2e.ts)和[资料设置](../../tests/e2e/user-profile-settings.e2e.ts)会真实创建、修改或删除记录。先按脚本头部准备测试身份、服务地址与受控设施，确认正在运行的 3100 服务实际使用一次性测试库；资料设置还要求非默认端口的独立 Redis，并核对费用明细与清理本次账号。服务缺失、身份不明或数据库不符时停止，不能用默认配置兜底。
