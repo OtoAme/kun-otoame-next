@@ -59,6 +59,8 @@ Prisma 是数据库访问层，数据库连接池随服务进程保留。开发�
 
 刷新链路包含 Redis、页面重新生成和对应边缘缓存；匿名完整响应缓存也需清理。Redis 刷新失败可能阻止同次调用继续完成后续刷新，不能把调用刷新入口等同于所有层已经成功。已提交的保存不因后续刷新失败撤销，部分读者仍可能暂时看到旧结果。各层寿命与多实例限制见[性能策略](performance.md)。
 
+站方备份操作、用户交接和资源合并已提交而缓存刷新失败时，结果仍保留，不把缓存失败改报为业务失败，也不自动重跑原业务。管理员可在操作结果处选择「仅刷新缓存」，只重放对应条目和作者的刷新。资源合并的单对结果条与批量逐对结果分别绑定原配对，旧结果不覆盖另一配对；关闭结果界面后不再提供这项点击重试。刷新接口返回成功仍不等于各目标环境的边缘内容已经实测更新。
+
 小喇叭共享的是原始公开数据，返回前按访问者的游戏可见偏好过滤。缓存寿命不跨过已知的官方消息展示边界；公开变更先推进独立版本，再尝试清理缓存。已经开始的读取可以返回旧快照，低于自动隐藏阈值的新增举报不改变公开数据。缓存版本读取失败时，仅在本进程合并相同查询，不保证跨实例合并；数据库读取失败与成功空结果分别返回，不能用空列表掩盖故障。
 
 边缘清理按公开地址的实际主机分组选用配置，所有目标组都确认成功才视为完成。素材清理和会社维护据此保留未完成凭据。详细配置与实测步骤见[运维指南](../guides/operations.md)，应用接受清理请求不证明边缘内容已经更新。
@@ -77,7 +79,7 @@ Prisma 是数据库访问层，数据库连接池随服务进程保留。开发�
 
 维护删除操作应先确认文件不再被其他内容使用。游戏资源删除只接受以本站资源存储地址或图床地址为精确前缀的文件，拒绝外站及相似主机名；私聊图片另检查其专用文件范围，不能把通用删除规则用于所有文件。
 
-交接移除站内对象链接时，在删除链接的同一事务里写入 `patch_resource_file_cleanup`，提交后才删除对象。复查读取链接的编号和内容，再用与入队相同的定位规则判断：直接对象键、已配置的公开地址、前后空白、主机名大小写、查询串、片段，以及一次 `decodeURIComponent` 都算同一对象；未配置的外部域名不算。仍有活动引用就取消。只有删除成功或对象已经不存在才完成待办；失败留下失败类别，由重放命令继续。`referenced_after_delete` 只表示删除之后又看到引用，不证明删除前没有人使用。删除进行中新提交的链接仍可能先被删掉再留下这个失败。合并删除被并卡片时不清理对象存储。这套迁移和重放都还没有在生产执行。
+交接移除站内对象链接时，在删除链接的同一事务里写入 `patch_resource_file_cleanup`，提交后才删除对象。复查读取链接的编号和内容，再用与入队相同的定位规则判断：直接对象键、已配置的公开地址、前后空白、主机名大小写、查询串、片段，以及一次 `decodeURIComponent` 都算同一对象；未配置的外部域名不算。仍有活动引用就取消。只有删除成功或对象已经不存在才完成待办；失败留下失败类别，由重放命令继续。`referenced_after_delete` 只表示删除之后又看到引用，不证明删除前没有人使用。删除进行中新提交的链接仍可能先被删掉再留下这个失败。合并删除被并卡片时不清理对象存储。迁移与生产重放是否已执行须按目标环境记录核实，不能从源码推断。
 
 ## 图片、投稿素材与清理
 
@@ -115,4 +117,4 @@ Prisma 是数据库访问层，数据库连接池随服务进程保留。开发�
 - [下载授权与额度](../../app/api/patch/resource/download/access/)、[只读恢复](../../app/api/patch/resource/download/access/restore/service.ts)与[公开资源概况](../../app/api/patch/resource/get.ts)
 - [截图处理与缩略图](../../app/api/edit/galleryUpload.ts)、[网页截图导入](../../app/api/edit/galleryRemoteImport.ts)、[投稿素材清理](../../app/api/patch-submission/assetCleanup.ts)与[持久清理待办](../../app/api/patch-submission/orphanCleanup.ts)
 - [私聊图片处理](../../app/api/message/conversation/[id]/image/service.ts)、[私聊消息与删除](../../app/api/message/conversation/[id]/service.ts)及[事项图片](../../app/api/case/imageUpload.ts)
-- [链接维护一致性](../../app/api/patch/resource/maintenance/service.ts)、[账户账务](../../app/api/moemoepoint/service.ts)与[标签和会社计数迁移](../../migration/production-tag-company-count-sync-2026-08-30.sql)
+- [链接维护一致性](../../app/api/patch/resource/maintenance/service.ts)、[站方备份与合并缓存刷新](../../lib/officialMirror/cache.ts)、[账户账务](../../app/api/moemoepoint/service.ts)与[标签和会社计数迁移](../../migration/production-tag-company-count-sync-2026-08-30.sql)

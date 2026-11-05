@@ -82,6 +82,38 @@ KUN_E2E_DATABASE_URL='<同一一次性数据库连接>' pnpm e2e:company-identit
 
 停止唯一服务后，分别把两个参数改为 `on` 再运行。启动器关闭 Cloudflare 与搜索通知副作用，验收检查实际服务的数据库标记及解析行为，不只看当前终端变量；该会社脚本不写入或删除对象存储。失败保留隔离结果，不回退默认库重跑。
 
+## 站方备份与资源合并验收
+
+[模块验收入口](../../scripts/officialMirrorAcceptance.py)使用独占的一次性 PostgreSQL、Redis、生产构建和本机受控服务，执行真实数据库、HTTP 与浏览器检查。前提是已安装项目依赖、Docker、本机 Chrome，以及 PostgreSQL 16 和 Redis 7 镜像；本机 3100、36741、55432、55435、55436、55443、56380 端口须空闲。入口从当前提交创建应用副本，只叠加指定测试文件，不加载真实环境配置；未提交的业务修改不在该副本内，须先确定待测提交。它不使用现存 dump，也不能替代上线前真实数据核查。
+
+先创建新运行目录，再把输出的 `RUN_DIRECTORY` 填入下列变量；不要复用别人的运行目录或以默认数据库代替失败目标。每步成功后再执行下一步，失败日志保留在该目录：
+
+```bash
+python3 scripts/officialMirrorAcceptance.py prepare
+OM06_RUN_DIR='coverage/<本次 prepare 输出的目录名>'
+python3 scripts/officialMirrorAcceptance.py integration --run-dir "$OM06_RUN_DIR"
+python3 scripts/officialMirrorAcceptance.py build --run-dir "$OM06_RUN_DIR"
+python3 scripts/officialMirrorAcceptance.py start --run-dir "$OM06_RUN_DIR"
+python3 scripts/officialMirrorAcceptance.py browser --run-dir "$OM06_RUN_DIR"
+python3 scripts/officialMirrorAcceptance.py contrast --run-dir "$OM06_RUN_DIR"
+python3 scripts/officialMirrorAcceptance.py http --run-dir "$OM06_RUN_DIR"
+python3 scripts/officialMirrorAcceptance.py stop-app --run-dir "$OM06_RUN_DIR"
+python3 scripts/officialMirrorAcceptance.py start --run-dir "$OM06_RUN_DIR"
+python3 scripts/officialMirrorAcceptance.py recover --run-dir "$OM06_RUN_DIR"
+python3 scripts/officialMirrorAcceptance.py typecheck --run-dir "$OM06_RUN_DIR"
+python3 scripts/officialMirrorAcceptance.py verify-source --run-dir "$OM06_RUN_DIR"
+python3 scripts/officialMirrorAcceptance.py stop --run-dir "$OM06_RUN_DIR"
+python3 scripts/officialMirrorAcceptance.py clean-source --run-dir "$OM06_RUN_DIR"
+```
+
+`http` 留下受控失败的清理待办，停止并重启应用后由 `recover` 验证持久恢复；不能省去重启再声称已验证进程恢复。`verify-source` 核对应用副本与待测提交并记录构建标识；测试结果、命令退出码、日志和截图须一并核对。集成子集可用 `--suite a-migration|a-reference|c-grant|d-merge|b-reopen` 选择，不把未运行的组记为通过。
+
+运行的写入阶段会复核本次容器的固定 ID、标签和回环端口；浏览器、HTTP 与恢复还核对进程启动身份、工作目录、监听归属和服务标记。旧运行目录不能接续占据相同端口的新容器，身份不符时应保留记录并排查，不能改状态文件绕过。
+
+运行结束或中断后，只清理本次入口创建的进程和容器。`stop` 只发送正常终止信号，并在有界等待内确认进程组退出后清空身份；无法确认时非零退出、保留记录，不升级信号或停止未知进程。确认停止后再执行 `clean-source`，移除源码与构建副本，保留证据；未清理副本可能使根目录测试再次发现副本中的用例，不得把重复执行算作新增覆盖。
+
+[入口保护检查](../../scripts/officialMirrorAcceptanceChecks.py)可用 `python3 scripts/officialMirrorAcceptanceChecks.py` 单独运行；要求 3100 和 36741 空闲，使用自建受控进程与 CLI 替身，不连接真实 Docker 或数据库。它验证身份拒绝和停止语义，不能替代业务整链验收。真实提供方与手机软键盘需另行核实，受控服务和浏览器高度模拟不证明它们已经通过。
+
 ## 其他端到端脚本
 
 [编辑上传守卫](../../tests/e2e/edit-upload-guards.e2e.ts)、[投稿流转](../../tests/e2e/patch-submission-lifecycle.e2e.ts)、[投稿界面](../../tests/e2e/submission-ui.e2e.ts)和[资料设置](../../tests/e2e/user-profile-settings.e2e.ts)会真实创建、修改或删除记录。先按脚本头部准备测试身份、服务地址与受控设施，确认正在运行的 3100 服务实际使用一次性测试库；资料设置还要求非默认端口的独立 Redis，并核对费用明细与清理本次账号。服务缺失、身份不明或数据库不符时停止，不能用默认配置兜底。
