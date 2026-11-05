@@ -89,19 +89,6 @@ pnpm prisma:deploy-safe
 | 每日登录记录 | [预检](../../migration/production-user-daily-active-preflight-2026-10-31.sql)、[同步](../../migration/production-user-daily-active-sync-2026-10-31.sql)，只新增空表 `user_daily_active`，不改已有数据。同步在单个事务内执行，外键会短暂锁住用户表，等不到锁 5 秒后停止，重跑即可；已有同名表但列不一致时停止。完成后重跑预检，状态应为 `present` 且主键、外键与预期一致。先迁移再发布对应版本：旧版本不写这张表，新版本在表缺失时只记录错误、不影响登录，缺表期间已访问的用户当天不会补记。 |
 | 站方备份与资源合并 | [预检](../../migration/production-official-mirror-preflight-2026-11-04.sql)、[同步](../../migration/production-official-mirror-sync-2026-11-04.sql)、[复检](../../migration/production-official-mirror-postflight-2026-11-04.sql)，同步必须带人工判定的时间分组参数；[限定校正](../../migration/production-official-mirror-attached-at-correct-2026-11-04.sql)仅在回填判定错误时按记录清单使用。执行前提见下节。 |
 
-### 站方备份数据只读核查
-
-[只读数据核查脚本](../../scripts/officialMirrorDataAudit.ts)聚合候选、阻塞、遗留事项类型、链接时间组和迁移结构；它不执行迁移、恢复、合并或对象清理。直接运行使用项目[测试指南中的 Node.js 版本前提](testing.md#准备会社身份一次性验收)。对已获授权的现存本地 dump，先显式指定容器和数据库检查身份，再使用返回的目标指纹启动核查：
-
-```bash
-node scripts/officialMirrorDataAudit.ts --inspect-target --container='<本地容器名>' --database=otoame_prod_dump
-node scripts/officialMirrorDataAudit.ts --run --container='<同一本地容器名>' --database=otoame_prod_dump --confirm-target='<上一步返回的指纹>' --source-kind=existing-dump --source-as-of=unverified --out='.deploy/module06-data-audit/<新的报告名>.json'
-```
-
-容器模式固定实际容器 ID，并验证会话库名；查询在只读事务中执行，失败只记录安全错误标识，结束回滚。报告只能写入受限的忽略目录且不能覆盖旧文件，不保存私有逐条内容。指纹改变时重新核实目标，不能把合成测试库当作实际数据来源。
-
-`unverified` 表示无法独立证明快照采集时间，容器启动时间、业务更新时间和大批相同创建时间均不能替代来源记录。缺少事项表时，事项数量和阻塞结论是未知，不是零；结构复检或必需查询失败会非零退出，即使部分聚合成功也不算完整核查通过。输出的候选数量不等于合并许可，时间组也不能自动生成迁移认可；来源审核、逐对内容确认及下节迁移前提仍须分别完成。
-
 ### 站方备份与资源合并结构
 
 适用于需要加入交接时间、链接加入时间、辅助点击数、备份忽略与重备水位、合并记录及交接文件清理待办的持久库。这组同步要求资源、链接基础表已经存在；完整模块还依赖[资源访问授权](#资源访问授权)、问题处理基础及[链接健康与维护结构](#链接健康与维护结构)。执行前在一次性数据库完整演练预检、带参数同步、复检和中断恢复，先按本页开头停写并验证备份；生产操作由获授权者在服务器执行。仓库存在这组文件不证明目标环境已安装；执行前须核对目标环境的迁移与复检记录，只运行尚缺且审核通过的步骤。
