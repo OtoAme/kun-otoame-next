@@ -24,6 +24,8 @@ import {
 } from '../maintenance/service'
 import { deletePatchResourceCache } from '../_helper'
 import {
+  HANDOVER_MESSAGES,
+  readPublisherLeftAt,
   runResourceMutation,
   resourcePostCommit,
   ResourceMutationError
@@ -85,6 +87,7 @@ export type HealthTargetRow = Omit<
   'maintenance_controls'
 > & {
   maintenance_controls?: CurrentHealthTargetRow['maintenance_controls']
+  publisherLeftAt?: Date | null
 }
 export const healthBasis = (row: HealthTargetRow): LinkHealthBasis => ({
   patchId: row.resource.patch_id,
@@ -123,7 +126,10 @@ export const loadHealthTarget = async (
     throw new LinkHealthError('version_conflict')
   if (!LINK_HEALTH_STATES.includes(row.health as LinkHealth))
     throw new LinkHealthError('state_conflict')
-  return row
+  return {
+    ...row,
+    publisherLeftAt: await readPublisherLeftAt(tx, row.resource_id)
+  }
 }
 export const assertHealthBasis = (
   row: HealthTargetRow,
@@ -166,6 +172,13 @@ export const requireLinkManagement = (
   actor: HealthActor
 ) => {
   if (!actor.uid) throw new LinkHealthError('login_required')
+  if (
+    row.publisherLeftAt &&
+    actor.role < P.staffMinRole &&
+    row.resource.user_id === actor.uid
+  ) {
+    throw new ResourceMutationError(HANDOVER_MESSAGES.editClosed, 403)
+  }
   const allowed =
     row.storage === P.staffStorage
       ? actor.role >= P.staffMinRole

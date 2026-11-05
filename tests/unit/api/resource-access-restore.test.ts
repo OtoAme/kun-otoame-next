@@ -115,6 +115,7 @@ vi.mock('~/app/api/utils/getPatchVisibilityWhere', () => ({
 
 const VISITOR_TOKEN = '123e4567-e89b-42d3-a456-426614174000'
 const GRANT_EXPIRES = new Date('2026-07-11T00:00:00.000Z')
+const EVENT_EXPIRES = new Date('2026-07-10T18:00:00.000Z')
 const NOW = new Date('2026-07-10T12:00:00.000Z')
 const visibilityWhere = {
   content_limit: 'sfw',
@@ -159,7 +160,19 @@ const sensitiveLink22 = {
   hash: 'hash-22'
 }
 
+const revealedLink = <T extends object>(link: T) => ({
+  ...link,
+  revealedExpiresAt: EVENT_EXPIRES.toISOString()
+})
+
+const revealEvent = <T extends object>(link: T) => ({
+  link_version: 1,
+  expires: EVENT_EXPIRES,
+  link
+})
+
 const RESTORE_LINK_SELECT = {
+  expires: true,
   link_version: true,
   link: {
     select: {
@@ -219,7 +232,7 @@ const expectedAccessQuery = (
     patch_id: 7,
     resource_id: 11,
     link_id: { in: linkIds },
-    expires: { gte: GRANT_EXPIRES },
+    expires: { gt: NOW },
     link: { resource_id: 11 },
     resource: {
       status: 0,
@@ -250,7 +263,7 @@ describe('resource access restore service', () => {
       '~/app/api/patch/resource/download/access/restore/service'
     )
     prismaMocks.patch_resource_access.findMany.mockResolvedValueOnce([
-      { link_version: 1, link: sensitiveLink21 }
+      revealEvent(sensitiveLink21)
     ])
 
     const result = await restorePatchResourceLinks(
@@ -261,7 +274,7 @@ describe('resource access restore service', () => {
     )
 
     expect(result).toEqual({
-      links: [sensitiveLink21],
+      links: [revealedLink(sensitiveLink21)],
       obtainedExpiresAt: GRANT_EXPIRES.toISOString()
     })
     expect(
@@ -289,7 +302,7 @@ describe('resource access restore service', () => {
       '~/app/api/patch/resource/download/access/restore/service'
     )
     prismaMocks.patch_resource_access.findMany.mockResolvedValueOnce([
-      { link_version: 1, link: sensitiveLink22 }
+      revealEvent(sensitiveLink22)
     ])
 
     const result = await restorePatchResourceLinks(
@@ -299,7 +312,7 @@ describe('resource access restore service', () => {
       NOW
     )
 
-    expect(result.links).toEqual([sensitiveLink22])
+    expect(result.links).toEqual([revealedLink(sensitiveLink22)])
     expect(
       prismaMocks.patch_resource_access_grant.findUnique
     ).toHaveBeenCalledWith({
@@ -322,9 +335,9 @@ describe('resource access restore service', () => {
       '~/app/api/patch/resource/download/access/restore/service'
     )
     prismaMocks.patch_resource_access.findMany.mockResolvedValueOnce([
-      { link_version: 1, link: sensitiveLink21 },
-      { link_version: 1, link: sensitiveLink21 },
-      { link_version: 1, link: sensitiveLink22 }
+      revealEvent(sensitiveLink21),
+      revealEvent(sensitiveLink21),
+      revealEvent(sensitiveLink22)
     ])
 
     const result = await restorePatchResourceLinks(
@@ -334,7 +347,10 @@ describe('resource access restore service', () => {
       NOW
     )
 
-    expect(result.links).toEqual([sensitiveLink22, sensitiveLink21])
+    expect(result.links).toEqual([
+      revealedLink(sensitiveLink22),
+      revealedLink(sensitiveLink21)
+    ])
     expectNoRestoreWrites()
   })
 
@@ -343,7 +359,7 @@ describe('resource access restore service', () => {
       '~/app/api/patch/resource/download/access/restore/service'
     )
     prismaMocks.patch_resource_access.findMany.mockResolvedValueOnce([
-      { link_version: 1, link: sensitiveLink21 }
+      revealEvent(sensitiveLink21)
     ])
 
     const result = await restorePatchResourceLinks(
@@ -353,13 +369,13 @@ describe('resource access restore service', () => {
       NOW
     )
 
-    expect(result.links).toEqual([sensitiveLink21])
+    expect(result.links).toEqual([revealedLink(sensitiveLink21)])
     expect(result.links).not.toContainEqual(sensitiveLink22)
     expect(prismaMocks.patch_resource_access.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
           link_id: { in: [21, 22] },
-          expires: { gte: GRANT_EXPIRES }
+          expires: { gt: NOW }
         })
       })
     )

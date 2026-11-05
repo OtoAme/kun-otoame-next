@@ -148,7 +148,11 @@ export const CASE_CLOSING_EVENTS = [
   'moved'
 ] as const satisfies readonly CaseMessageEvent[]
 
-export const CASE_ESCALATION_TRIGGERS = ['timeout', 'review_request'] as const
+export const CASE_ESCALATION_TRIGGERS = [
+  'timeout',
+  'review_request',
+  'publisher_left'
+] as const
 export type CaseEscalationTrigger = (typeof CASE_ESCALATION_TRIGGERS)[number]
 
 export const CASE_TABS = ['reported', 'owned', 'subscribed'] as const

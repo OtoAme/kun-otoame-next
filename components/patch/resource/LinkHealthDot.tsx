@@ -20,8 +20,7 @@ export const LinkHealthDot = ({ link }: Props) => {
     <Popover
       placement="bottom-start"
       classNames={{
-        content:
-          'max-w-[min(20rem,calc(100vw-1.5rem))] items-start text-left'
+        content: 'max-w-[min(20rem,calc(100vw-1.5rem))] items-start text-left'
       }}
     >
       <PopoverTrigger>

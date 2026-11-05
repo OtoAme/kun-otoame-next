@@ -48,6 +48,11 @@ export interface SearchableListConfig {
   defaultParams?: Record<string, string>
   /** URL filters kept for display only and not sent to the API. */
   displayOnly?: readonly string[]
+  /**
+   * Narrows each raw JSON row. Null drops that row.
+   * Without it, the response array is used as Row[].
+   */
+  acceptRow?: (raw: unknown) => { id: number } | null
 }
 
 export type ListFilters = Record<string, string>
@@ -84,7 +89,7 @@ const buildKey = (target: Omit<QueryTarget, 'selected'>) =>
 export function useSearchableList<Row extends { id: number }>(
   config: SearchableListConfig
 ) {
-  const { endpoint, field, fallbackError } = config
+  const { endpoint, field, fallbackError, acceptRow } = config
   const filterSpec = config.filters
   // Stable for a page; the spec is defined at module level by each page.
   const filterKeys = useMemo(
@@ -179,9 +184,15 @@ export function useSearchableList<Row extends { id: number }>(
           })
           return
         }
-        const rows = res?.[field]
-        if (Array.isArray(rows) && typeof res.total === 'number') {
-          setData({ key: query.key, rows: rows as Row[], total: res.total })
+        const rawRows = res?.[field]
+        if (Array.isArray(rawRows) && typeof res.total === 'number') {
+          const rows = acceptRow
+            ? rawRows.flatMap((item) => {
+                const row = acceptRow(item)
+                return row ? [row as Row] : []
+              })
+            : (rawRows as Row[])
+          setData({ key: query.key, rows, total: res.total })
           return
         }
         setData(null)
@@ -201,7 +212,7 @@ export function useSearchableList<Row extends { id: number }>(
     }
     // The selection is not part of the list request.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [query.key, refreshNonce, endpoint, field, fallbackError])
+  }, [query.key, refreshNonce, endpoint, field, fallbackError, acceptRow])
 
   const pushQuery = useCallback(
     (next: QueryTarget) => {

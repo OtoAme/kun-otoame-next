@@ -4,6 +4,7 @@ import { updatePatchResource as updatePatchResourceByRole } from '~/app/api/patc
 import { sanitizeResourceForAuditLog } from '~/app/api/patch/resource/_helper'
 import { patchResourceStableUpdateSchema } from '~/validations/patch'
 import { createMessage } from '~/app/api/utils/message'
+import { readPublisherLeftAt } from '~/app/api/patch/resource/mutation'
 import {
   RESOURCE_SECTION_MAP,
   SUPPORTED_LANGUAGE_MAP,
@@ -402,7 +403,8 @@ export const updatePatchResource = async (
       }
       const resourceTypeName =
         updatedResource.section === 'galgame' ? '游戏资源' : '补丁资源'
-      if (resource.user_id !== uid) {
+      const publisherLeftAt = await readPublisherLeftAt(tx, resource.id)
+      if (resource.user_id !== uid && !publisherLeftAt) {
         const changeSummary = buildResourceChangeSummary(
           before,
           updatedResource

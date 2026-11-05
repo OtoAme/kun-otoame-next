@@ -46,6 +46,18 @@ import type { LinkHealthSummary, LinkHealthView } from '~/types/api/linkHealth'
 
 const displayBlack3Hash = (hash: string) => hash.replace(/^b3:/i, '')
 
+export const isOpenAccessDeadline = (
+  value: string | undefined,
+  now = Date.now()
+) => {
+  if (!value) return false
+  const time = Date.parse(value)
+  return Number.isFinite(time) && time > now
+}
+
+const deadlineAllows = (value: string | undefined, now: number) =>
+  value === undefined || isOpenAccessDeadline(value, now)
+
 const wrapLongTextClass =
   'min-w-0 max-w-full break-all [overflow-wrap:anywhere]'
 // HeroUI Snippet `pre` is whitespace-nowrap; important wrap beats the theme slot.
@@ -68,6 +80,11 @@ interface Props {
   linkIndex?: number
   restoredLink?: PatchResourceAccessLink
   restoredObtainedExpiresAt?: string
+  restoredRevealedExpiresAt?: string
+  /** Resource grant expiry, kept separate from this link's reveal deadline. */
+  onResourceAuthorized?: (obtainedExpiresAt: string) => void
+  /** Drops this link's restored credentials after its own deadline. */
+  onCredentialsCleared?: (linkId: number) => void
   preview?: boolean
   /** 补链：打开既有资源编辑并把表单定位到这条链接的地址栏。 */
   onRelink?: (link: PatchResourceLink) => void
@@ -83,6 +100,9 @@ export const ResourceDownloadCard = ({
   linkIndex = 1,
   restoredLink,
   restoredObtainedExpiresAt,
+  restoredRevealedExpiresAt,
+  onResourceAuthorized,
+  onCredentialsCleared,
   preview = false,
   onRelink,
   healthUpdate = null,
@@ -91,11 +111,13 @@ export const ResourceDownloadCard = ({
   const [manualAccess, setManualAccess] = useState<{
     link: PatchResourceHealthAccessLink
     obtainedExpiresAt: string
+    revealedExpiresAt?: string
     resourceId: number
     linkId: number
     version: number
     snapshotId: number
   } | null>(null)
+  const [clock, setClock] = useState(() => Date.now())
   const [quota, setQuota] = useState<ResourceAccessQuota | null>(null)
   const [accessing, setAccessing] = useState(false)
   const [errorMessage, setErrorMessage] = useState('')
@@ -109,6 +131,8 @@ export const ResourceDownloadCard = ({
   // 目标/版本/读取快照代际：过一次代际的迟到响应不得写回状态
   const mountedRef = useRef(true)
   const generationRef = useRef(0)
+  const onCredentialsClearedRef = useRef(onCredentialsCleared)
+  onCredentialsClearedRef.current = onCredentialsCleared
 
   const serverHealth = readLinkHealth(link)
   const linkVersion = serverHealth?.version ?? null
@@ -121,7 +145,7 @@ export const ResourceDownloadCard = ({
     }
   }, [])
 
-  // 换目标、换版本或换读取快照：丢掉上一代的凭据与本地覆盖，回到服务端事实
+  // 换资源、换目标、换版本或换读取快照：丢掉上一代的凭据与本地覆盖
   useEffect(() => {
     generationRef.current += 1
     setManualAccess(null)
@@ -129,7 +153,7 @@ export const ResourceDownloadCard = ({
     setQuota(null)
     setErrorMessage('')
     setAccessing(false)
-  }, [link.id, linkVersion, snapshotId])
+  }, [resource.id, link.id, linkVersion, snapshotId])
 
   // 服务端快照追上或超过本地覆盖：弃用覆盖（同快照内按版本/轮次有序）
   useEffect(() => {
@@ -243,14 +267,49 @@ export const ResourceDownloadCard = ({
     versionMatches(linkVersion, manualAccess.version)
       ? manualAccess
       : null
-  const accessedLink = preview
-    ? previewLink
-    : (matchedManual?.link ?? restoredAccessedLink)
   const obtainedExpiresAt =
     matchedManual?.obtainedExpiresAt ||
     (restoredAccessedLink ? (restoredObtainedExpiresAt ?? '') : '') ||
     link.obtainedExpiresAt ||
     ''
+  const revealDeadline = matchedManual
+    ? matchedManual.revealedExpiresAt
+    : restoredAccessedLink
+      ? restoredRevealedExpiresAt
+      : link.revealedExpiresAt
+  const deadlineClosed =
+    revealDeadline !== undefined && !isOpenAccessDeadline(revealDeadline, clock)
+  const accessedLink = preview
+    ? previewLink
+    : deadlineClosed
+      ? null
+      : (matchedManual?.link ?? restoredAccessedLink)
+  const credentialsOpen = Boolean(accessedLink)
+
+  const dropCredentials = (linkId: number) => {
+    setManualAccess(null)
+    setErrorMessage('')
+    setClock(Date.now())
+    onCredentialsClearedRef.current?.(linkId)
+  }
+
+  useEffect(() => {
+    if (!revealDeadline || !isOpenAccessDeadline(revealDeadline, Date.now())) {
+      if (revealDeadline && !isOpenAccessDeadline(revealDeadline, Date.now())) {
+        setManualAccess(null)
+        setErrorMessage('')
+        onCredentialsClearedRef.current?.(link.id)
+      }
+      return
+    }
+    const delay = Date.parse(revealDeadline) - Date.now()
+    const timer = window.setTimeout(
+      () => dropCredentials(link.id),
+      Math.max(0, delay) + 1
+    )
+    return () => window.clearTimeout(timer)
+  }, [revealDeadline, link.id])
+
   const handleClickDownload = async () => {
     if (preview) return
     await kunFetchPut<KunResponse<{}>>('/patch/resource/download', {
@@ -294,15 +353,25 @@ export const ResourceDownloadCard = ({
         toast.error(message)
         return
       }
+      if (
+        resource.id !== requestResourceId ||
+        (typeof response.link.revealedExpiresAt === 'string' &&
+          !isOpenAccessDeadline(response.link.revealedExpiresAt))
+      ) {
+        dropCredentials(requestLinkId)
+        return
+      }
 
       setManualAccess({
         link: response.link,
         obtainedExpiresAt: response.access.obtainedExpiresAt,
+        revealedExpiresAt: response.link.revealedExpiresAt,
         resourceId: requestResourceId,
         linkId: requestLinkId,
         version: response.link.version,
         snapshotId: requestSnapshotId
       })
+      onResourceAuthorized?.(response.access.obtainedExpiresAt)
       setQuota(
         response.access.kind === 'resource_granted' && response.quota
           ? response.quota
@@ -338,7 +407,9 @@ export const ResourceDownloadCard = ({
     ) : null
 
   const accessButtonText =
-    link.revealed === true ? '查看已获取链接' : '获取下载链接'
+    link.revealed === true && deadlineAllows(link.revealedExpiresAt, clock)
+      ? '查看已获取链接'
+      : '获取下载链接'
 
   const healthMutationProps = health
     ? {
@@ -359,85 +430,86 @@ export const ResourceDownloadCard = ({
   const showReport = Boolean(!preview && health && accessedLink)
   const linkLabel = `链接 #${linkIndex}`
 
-  const credentials = accessedLink ? (
-    <Card
-      shadow="none"
-      radius="lg"
-      className="min-w-0 max-w-full overflow-visible border border-default-200 bg-content1"
-    >
-      <CardBody className="min-w-0 max-w-full gap-2 overflow-visible p-3">
-        <div className="min-w-0 max-w-full">
-          <KunExternalLink
-            className={`inline-flex ${wrapLongTextClass} w-fit`}
-            onPress={handleClickDownload}
-            underline="always"
-            link={accessedLink.content}
-          >
-            <span className={wrapLongTextClass}>{accessedLink.content}</span>
-          </KunExternalLink>
-        </div>
-
-        {(accessedLink.code || accessedLink.password) && (
-          <div className="flex min-w-0 max-w-full flex-wrap gap-2">
-            {accessedLink.code && (
-              <Snippet
-                tooltipProps={{
-                  content: '点击复制提取码'
-                }}
-                size="sm"
-                symbol="提取码"
-                color="primary"
-                className="min-w-0 max-w-full py-0"
-                classNames={credentialSnippetClassNames}
-              >
-                {accessedLink.code}
-              </Snippet>
-            )}
-
-            {accessedLink.password && (
-              <Snippet
-                tooltipProps={{
-                  content: '点击复制解压码'
-                }}
-                size="sm"
-                symbol="解压码"
-                color="primary"
-                className="min-w-0 max-w-full py-0"
-                classNames={credentialSnippetClassNames}
-              >
-                {accessedLink.password}
-              </Snippet>
-            )}
+  const credentials =
+    credentialsOpen && accessedLink ? (
+      <Card
+        shadow="none"
+        radius="lg"
+        className="min-w-0 max-w-full overflow-visible border border-default-200 bg-content1"
+      >
+        <CardBody className="min-w-0 max-w-full gap-2 overflow-visible p-3">
+          <div className="min-w-0 max-w-full">
+            <KunExternalLink
+              className={`inline-flex ${wrapLongTextClass} w-fit`}
+              onPress={handleClickDownload}
+              underline="always"
+              link={accessedLink.content}
+            >
+              <span className={wrapLongTextClass}>{accessedLink.content}</span>
+            </KunExternalLink>
           </div>
+
+          {(accessedLink.code || accessedLink.password) && (
+            <div className="flex min-w-0 max-w-full flex-wrap gap-2">
+              {accessedLink.code && (
+                <Snippet
+                  tooltipProps={{
+                    content: '点击复制提取码'
+                  }}
+                  size="sm"
+                  symbol="提取码"
+                  color="primary"
+                  className="min-w-0 max-w-full py-0"
+                  classNames={credentialSnippetClassNames}
+                >
+                  {accessedLink.code}
+                </Snippet>
+              )}
+
+              {accessedLink.password && (
+                <Snippet
+                  tooltipProps={{
+                    content: '点击复制解压码'
+                  }}
+                  size="sm"
+                  symbol="解压码"
+                  color="primary"
+                  className="min-w-0 max-w-full py-0"
+                  classNames={credentialSnippetClassNames}
+                >
+                  {accessedLink.password}
+                </Snippet>
+              )}
+            </div>
+          )}
+
+          {renderHash(accessedLink.hash ?? '')}
+        </CardBody>
+      </Card>
+    ) : preview ? (
+      <p className="text-sm text-default-500">该链接暂无可预览的地址</p>
+    ) : (
+      <>
+        <Button
+          color="primary"
+          className="w-fit"
+          isLoading={accessing}
+          isDisabled={accessing}
+          startContent={!accessing ? <LinkIcon className="size-4" /> : null}
+          onPress={handleAccessLink}
+        >
+          {accessButtonText}
+        </Button>
+
+        {errorMessage && (
+          <p role="alert" className="text-sm text-danger">
+            {errorMessage}
+          </p>
         )}
 
-        {renderHash(accessedLink.hash ?? '')}
-      </CardBody>
-    </Card>
-  ) : preview ? (
-    <p className="text-sm text-default-500">该链接暂无可预览的地址</p>
-  ) : (
-    <>
-      <Button
-        color="primary"
-        className="w-fit"
-        isLoading={accessing}
-        isDisabled={accessing}
-        startContent={!accessing ? <LinkIcon className="size-4" /> : null}
-        onPress={handleAccessLink}
-      >
-        {accessButtonText}
-      </Button>
-
-      {errorMessage && (
-        <p role="alert" className="text-sm text-danger">
-          {errorMessage}
-        </p>
-      )}
-
-      {renderHash(link.hash)}
-    </>
-  )
+        {renderHash(link.hash)}
+      </>
+    )
 
   const healthActionProps =
     !preview && healthMutationProps

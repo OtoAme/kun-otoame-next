@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 const db = vi.hoisted(() => ({
+  $queryRaw: vi.fn(),
   patch_resource: { findMany: vi.fn(), count: vi.fn() },
+  patch_resource_link: { findMany: vi.fn() },
   patch_resource_access_grant: { findMany: vi.fn() },
   patch_resource_access: { findMany: vi.fn() }
 }))
@@ -58,8 +60,10 @@ const resource = (id = 2, health = 'ok') => ({
 })
 beforeEach(() => {
   vi.clearAllMocks()
+  db.$queryRaw.mockResolvedValue([])
   db.patch_resource.findMany.mockResolvedValue([resource()])
   db.patch_resource.count.mockResolvedValue(1)
+  db.patch_resource_link.findMany.mockResolvedValue([])
   db.patch_resource_access_grant.findMany.mockResolvedValue([
     { resource_id: 2, expires: new Date('2099-01-01T00:00:00Z') }
   ])
@@ -140,8 +144,17 @@ describe('current-version resource health reads', () => {
       resource(8)
     ])
     db.patch_resource_access.findMany.mockResolvedValue([
-      { link_id: 3, link_version: 1 },
-      { link_id: null, link_version: 2 }
+      {
+        resource_id: 2,
+        link_id: 3,
+        link_version: 1,
+        expires: new Date('2099-01-01T00:00:00Z')
+      },
+      {
+        link_id: null,
+        link_version: 2,
+        expires: new Date('2099-01-01T00:00:00Z')
+      }
     ])
     const result = await getPatchResource({ patchId: 1 }, { uid: 7, role: 1 })
     expect(result.map((row) => row.id)).toEqual([2, 8])
@@ -161,7 +174,12 @@ describe('current-version resource health reads', () => {
         expect(item).not.toHaveProperty('check')
       }
     db.patch_resource_access.findMany.mockResolvedValue([
-      { link_id: 3, link_version: 2 }
+      {
+        resource_id: 2,
+        link_id: 3,
+        link_version: 2,
+        expires: new Date('2099-01-01T00:00:00Z')
+      }
     ])
     expect(
       (await getPatchResource({ patchId: 1 }, { uid: 7, role: 1 }))[0].links[0]

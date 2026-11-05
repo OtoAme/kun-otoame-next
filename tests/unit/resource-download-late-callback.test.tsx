@@ -51,6 +51,11 @@ vi.mock('~/components/case/ReportResourceButton', () => ({
 }))
 // 卡片桩：忠实呈现父级下发的 healthUpdate（true = 有更新，null = 回到服务端）
 vi.mock('~/components/patch/resource/DownloadCard', () => ({
+  isOpenAccessDeadline: (value?: string, now = Date.now()) => {
+    if (!value) return false
+    const time = Date.parse(value)
+    return Number.isFinite(time) && time > now
+  },
   ResourceDownloadCard: ({
     link,
     healthUpdate = null
@@ -96,7 +101,8 @@ const link21: PatchResourceHealthLink = {
     resolveActions: [],
     canCheck: false,
     canEdit: false
-  }
+  },
+  backedUpAt: null
 }
 
 const resource: PatchResource = {

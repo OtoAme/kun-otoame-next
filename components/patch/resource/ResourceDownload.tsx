@@ -8,7 +8,7 @@ import { ChevronDown, ChevronUp, Download } from 'lucide-react'
 import { formatTimeDifference } from '~/utils/time'
 import { kunFetchPost } from '~/utils/kunFetch'
 import { ResourceLikeButton } from './ResourceLike'
-import { ResourceDownloadCard } from './DownloadCard'
+import { isOpenAccessDeadline, ResourceDownloadCard } from './DownloadCard'
 import { ReportResourceButton } from '~/components/case/ReportResourceButton'
 import { markdownToHtml } from './kun/markdownToHtml'
 import {
@@ -141,6 +141,12 @@ export const ResourceDownload = ({
     expiresAt: '',
     error: ''
   })
+  const [sessionGrantExpiresAt, setSessionGrantExpiresAt] = useState('')
+  const [grantClock, setGrantClock] = useState(() => Date.now())
+  useEffect(() => {
+    setSessionGrantExpiresAt('')
+    setGrantClock(Date.now())
+  }, [resource.id])
   const currentRestoreState =
     restoreState.key === restoreKey ? restoreState : null
 
@@ -225,7 +231,12 @@ export const ResourceDownload = ({
           key: restoreKey,
           links: new Map(
             response.links
-              .filter((link) => requestedIds.has(link.id))
+              .filter(
+                (link) =>
+                  requestedIds.has(link.id) &&
+                  (link.revealedExpiresAt === undefined ||
+                    isOpenAccessDeadline(link.revealedExpiresAt))
+              )
               .map((link) => [link.id, link])
           ),
           expiresAt: response.obtainedExpiresAt ?? '',
@@ -267,6 +278,58 @@ export const ResourceDownload = ({
     return map
   }, [resource.links])
 
+  const clearRestoredLink = (linkId: number) => {
+    setRestoreState((current) => {
+      if (current.key !== restoreKey || !current.links.has(linkId)) {
+        return current
+      }
+      const links = new Map(current.links)
+      links.delete(linkId)
+      return { ...current, links }
+    })
+  }
+
+  // Folding unmounts the cards and their timers. Drop expired credential
+  // objects here so a collapsed card cannot keep content, code or password.
+  useEffect(() => {
+    if (restoreState.key !== restoreKey || restoreState.links.size === 0) {
+      return
+    }
+    const deadlines = [...restoreState.links.values()].flatMap((link) =>
+      typeof link.revealedExpiresAt === 'string' ? [link.revealedExpiresAt] : []
+    )
+    if (deadlines.length === 0) return
+    const now = Date.now()
+    const earliest = Math.min(
+      ...deadlines.map((value) => {
+        const time = Date.parse(value)
+        return Number.isFinite(time) ? time : now
+      })
+    )
+    const timer = window.setTimeout(
+      () => {
+        const firedAt = Date.now()
+        setRestoreState((current) => {
+          if (current.key !== restoreKey) return current
+          let changed = false
+          const links = new Map(current.links)
+          for (const [id, link] of links) {
+            if (
+              typeof link.revealedExpiresAt === 'string' &&
+              !isOpenAccessDeadline(link.revealedExpiresAt, firedAt)
+            ) {
+              links.delete(id)
+              changed = true
+            }
+          }
+          return changed ? { ...current, links } : current
+        })
+      },
+      Math.max(0, earliest - now) + 1
+    )
+    return () => window.clearTimeout(timer)
+  }, [restoreKey, restoreState])
+
   const renderLinkCard = (link: PatchResourceLink) => {
     const restoredLink = currentRestoreState?.links.get(link.id)
     return (
@@ -283,12 +346,33 @@ export const ResourceDownload = ({
         {...(restoredLink
           ? {
               restoredLink,
-              restoredObtainedExpiresAt: currentRestoreState?.expiresAt ?? ''
+              restoredObtainedExpiresAt: currentRestoreState?.expiresAt ?? '',
+              restoredRevealedExpiresAt: restoredLink.revealedExpiresAt
             }
           : {})}
+        onResourceAuthorized={setSessionGrantExpiresAt}
+        onCredentialsCleared={clearRestoredLink}
       />
     )
   }
+
+  const grantExpiresAt =
+    sessionGrantExpiresAt ||
+    resource.links.find((link) => link.obtainedExpiresAt)?.obtainedExpiresAt ||
+    currentRestoreState?.expiresAt ||
+    ''
+  useEffect(() => {
+    if (!isOpenAccessDeadline(grantExpiresAt)) return
+    const delay = Date.parse(grantExpiresAt) - Date.now()
+    const timer = window.setTimeout(
+      () => setGrantClock(Date.now()),
+      Math.max(0, delay) + 1
+    )
+    return () => window.clearTimeout(timer)
+  }, [grantExpiresAt])
+  const grantLabel = isOpenAccessDeadline(grantExpiresAt, grantClock)
+    ? `资源授权至 ${grantExpiresAt}`
+    : ''
 
   return (
     <div className="min-w-0 space-y-2">
@@ -391,6 +475,10 @@ export const ResourceDownload = ({
 
       {showLinks[resource.id] && (
         <div className="grid min-w-0 gap-2.5">
+          {grantLabel ? (
+            <p className="text-sm text-default-500">{grantLabel}</p>
+          ) : null}
+
           {currentRestoreState?.error && (
             <p role="alert" className="text-sm text-danger">
               {currentRestoreState.error}

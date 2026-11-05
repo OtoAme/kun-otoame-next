@@ -335,8 +335,9 @@ describe.each(['resource', 'case'] as const)(
               size: '1 GB',
               hash: '',
               sortOrder: 0,
-              download: 0
-            } as PatchResourceHealthLink
+              download: 0,
+              backedUpAt: null
+            } satisfies PatchResourceHealthLink
           }
           group="maintain"
           onChanged={onChanged}

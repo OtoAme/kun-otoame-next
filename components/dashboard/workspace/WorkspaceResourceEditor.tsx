@@ -69,6 +69,13 @@ import type { ResourceSection } from '~/constants/resource'
 import { workspaceResourceUpdateSchema } from '~/validations/workspace'
 import { workspaceValidationFeedback } from '~/validations/workspaceFeedback'
 import { kunFetchDelete, kunFetchGet, kunFetchPut } from '~/utils/kunFetch'
+import {
+  ACTION_STALE_NOTICE,
+  HANDOVER_CONFIRMATION,
+  HANDOVER_SUCCESS,
+  interpretWorkspaceAuthorResponse,
+  workspaceAuthorRequest
+} from '~/components/patch/resource/authorResourceAction'
 import { WorkspaceMaintenanceCard } from './WorkspaceMaintenance'
 import { WorkspaceMultiSelect } from './WorkspaceMultiSelect'
 import { WorkspaceResourceUpload } from './WorkspaceResourceUpload'
@@ -147,13 +154,6 @@ function isDefiniteResourceSave(
     Array.isArray(body.links) &&
     Array.isArray(body.linkChecks)
   )
-}
-
-function isDefiniteResourceDelete(
-  response: unknown
-): response is { deleted: true } {
-  if (!response || typeof response !== 'object') return false
-  return (response as { deleted?: unknown }).deleted === true
 }
 
 export function fieldMessage(errors: FieldError[], path: string) {
@@ -369,6 +369,9 @@ export function WorkspaceResourceEditor({
   const [saving, setSaving] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [handoverOpen, setHandoverOpen] = useState(false)
+  const [handoverPending, setHandoverPending] = useState(false)
+  const [handoverError, setHandoverError] = useState('')
   const [removeLinkKey, setRemoveLinkKey] = useState<string | null>(null)
   const [reloadConfirmOpen, setReloadConfirmOpen] = useState(false)
   const [reloading, setReloading] = useState(false)
@@ -540,6 +543,7 @@ export function WorkspaceResourceEditor({
 
   const canEdit = Boolean(detail?.capabilities.canEdit && session)
   const canDelete = Boolean(detail?.capabilities.canDelete)
+  const canHandover = Boolean(detail?.capabilities.canHandover)
   const uploading = uploadingKeys.size > 0
   const dirty = Boolean(
     session &&
@@ -698,16 +702,15 @@ export function WorkspaceResourceEditor({
     }
     setDeleting(true)
     try {
-      const response = await kunFetchDelete<
-        { deleted: true; moemoepointBalance?: { available: number } } | string
-      >(`/workspace/resources/${resourceId}`)
+      const request = workspaceAuthorRequest(resourceId, 'delete')
+      const response = await kunFetchDelete<unknown>(request.url, request.query)
       if (typeof response === 'string') {
         const message = response || '删除失败，请稍后重试'
         setDeleteError(message)
         setError(message)
         return
       }
-      if (!isDefiniteResourceDelete(response)) {
+      if (!interpretWorkspaceAuthorResponse('delete', response).ok) {
         deleteUnconfirmedRef.current = true
         setDeleteUnconfirmed(true)
         setDeleteError(DELETE_UNCONFIRMED)
@@ -724,6 +727,51 @@ export function WorkspaceResourceEditor({
       setError(message)
     } finally {
       setDeleting(false)
+    }
+  }
+
+  const handoverResource = async () => {
+    if (!canHandover || uploading || deleting || handoverPending) return
+    setHandoverPending(true)
+    setHandoverError('')
+    try {
+      const fresh = await kunFetchGet<WorkspaceResourceDetail | string>(
+        `/workspace/resources/${resourceId}`
+      )
+      if (
+        typeof fresh === 'string' ||
+        fresh.id !== resourceId ||
+        !fresh.capabilities.canHandover
+      ) {
+        if (typeof fresh !== 'string' && fresh.id === resourceId) {
+          setDetail(fresh)
+        }
+        setHandoverError(
+          typeof fresh === 'string' && fresh ? fresh : ACTION_STALE_NOTICE
+        )
+        return
+      }
+      setDetail(fresh)
+      const request = workspaceAuthorRequest(resourceId, 'handover')
+      const response = await kunFetchDelete<unknown>(request.url, request.query)
+      const result = interpretWorkspaceAuthorResponse('handover', response)
+      if (!result.ok) {
+        setHandoverError(result.message || ACTION_STALE_NOTICE)
+        return
+      }
+      setHandoverOpen(false)
+      router.push(`/workspace/resources?handedOver=1`)
+      toast.success(
+        <span>
+          {HANDOVER_SUCCESS} <a href={`/user/${uid}/resource`}>查看发布记录</a>
+        </span>
+      )
+    } catch (error) {
+      setHandoverError(
+        workspaceActionError(error, '网络错误，交接失败，请重试')
+      )
+    } finally {
+      setHandoverPending(false)
     }
   }
 
@@ -829,7 +877,7 @@ export function WorkspaceResourceEditor({
           </p>
         </div>
         <Button asChild variant="outline" size="sm">
-          <Link href="/workspace/resources">返回我的资源</Link>
+          <Link href="/workspace/resources">返回我维护的资源</Link>
         </Button>
       </div>
       {!canEdit ? (
@@ -1222,7 +1270,7 @@ export function WorkspaceResourceEditor({
             onChanged={() => void load(false)}
           />
         ))}
-      {canEdit || canDelete ? (
+      {canEdit || canDelete || canHandover ? (
         <div className="flex flex-wrap gap-2">
           {canEdit ? (
             <>
@@ -1270,11 +1318,24 @@ export function WorkspaceResourceEditor({
               </Button>
             </>
           ) : null}
+          {canHandover ? (
+            <Button
+              type="button"
+              variant="outline"
+              disabled={handoverPending || deleting || uploading}
+              onClick={() => {
+                setHandoverError('')
+                setHandoverOpen(true)
+              }}
+            >
+              交由站方维护
+            </Button>
+          ) : null}
           {canDelete ? (
             <Button
               type="button"
               variant="destructive"
-              disabled={deleting || uploading}
+              disabled={deleting || uploading || handoverPending}
               onClick={() => {
                 setDeleteError(deleteUnconfirmed ? DELETE_UNCONFIRMED : '')
                 setDeleteOpen(true)
@@ -1333,6 +1394,40 @@ export function WorkspaceResourceEditor({
               onClick={confirmRemoveLink}
             >
               确认移除
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      <AlertDialog
+        open={handoverOpen}
+        onOpenChange={(open) => {
+          if (open || handoverPending) return
+          setHandoverOpen(false)
+          setHandoverError('')
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>交由站方维护</AlertDialogTitle>
+            <AlertDialogDescription>
+              {HANDOVER_CONFIRMATION}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          {handoverError ? (
+            <p role="alert" className="break-words text-sm text-destructive">
+              {handoverError}
+            </p>
+          ) : null}
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={handoverPending}>
+              取消
+            </AlertDialogCancel>
+            <Button
+              type="button"
+              disabled={handoverPending || !canHandover || uploading}
+              onClick={() => void handoverResource()}
+            >
+              {handoverPending ? '正在提交…' : '交由站方维护'}
             </Button>
           </AlertDialogFooter>
         </AlertDialogContent>

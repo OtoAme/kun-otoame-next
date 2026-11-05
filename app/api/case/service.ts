@@ -13,6 +13,10 @@ import {
   representedPublisherLinkCaseIds
 } from '~/app/api/patch/resource/maintenance/read'
 import { lockLinkMaintenance } from '~/app/api/patch/resource/maintenance/service'
+import {
+  HANDOVER_MESSAGES,
+  ResourceMutationError
+} from '~/app/api/patch/resource/mutation'
 import { updatePatchAttributes } from '~/app/api/patch/resource/_helper'
 import {
   invalidatePatchContentCache,
@@ -668,6 +672,7 @@ const deriveTarget = async (
         patch_id: true,
         status: true,
         user_id: true,
+        publisher_left_at: true,
         user: { select: { role: true } },
         patch: { select: { id: true, unique_id: true, name: true } }
       }
@@ -688,7 +693,8 @@ const deriveTarget = async (
     const publisherKind = (CASE_PUBLISHER_KINDS as readonly string[]).includes(
       kind
     )
-    const publisherOwned = publisherKind && resource.user.role <= 2
+    const publisherOwned =
+      publisherKind && resource.user.role <= 2 && !resource.publisher_left_at
     const ownerType: CaseOwnerType = publisherOwned ? 'publisher' : 'staff'
     const ownerId = publisherOwned ? resource.user_id : null
     return {
@@ -1809,6 +1815,22 @@ const isCaseEscalationTrigger = (
   typeof value === 'string' &&
   (CASE_ESCALATION_TRIGGERS as readonly string[]).includes(value)
 
+/** Drops publisher identity once the card's publisher has handed it over. */
+const resourceNotHandedOver = Prisma.sql`NOT EXISTS (
+  SELECT 1 FROM patch_resource AS handed_resource
+  WHERE handed_resource.publisher_left_at IS NOT NULL
+    AND (
+      (c.target_type = 'resource' AND handed_resource.id = c.target_id)
+      OR (
+        c.target_type = 'link' AND EXISTS (
+          SELECT 1 FROM patch_resource_link AS handed_link
+          WHERE handed_link.id = c.target_id
+            AND handed_link.resource_id = handed_resource.id
+        )
+      )
+    )
+)`
+
 /**
  * Resolve the identity from the latest handoff event, then verify that exact
  * event's account still exists. Selection happens in SQL before payload
@@ -1845,6 +1867,7 @@ const loadLatestHandoffFacts = async (
       LIMIT 1
     ) AS latest
     WHERE c.id IN (${Prisma.join(eligibleIds)})
+      AND ${resourceNotHandedOver}
   `)
   if (!Array.isArray(latest) || !latest.length) {
     return new Map<number, HandoffFact>()
@@ -3515,9 +3538,9 @@ const loadOwnedCaseWindow = async (
         c.status_changed_at,
         handoff_user.id AS publisher_id,
         CASE
-          WHEN latest.payload->>'escalation_trigger' IN (
-            'timeout', 'review_request'
-          ) THEN latest.payload->>'escalation_trigger'
+          WHEN latest.payload->>'escalation_trigger' IN (${Prisma.join([
+            ...CASE_ESCALATION_TRIGGERS
+          ])}) THEN latest.payload->>'escalation_trigger'
           ELSE NULL
         END AS escalation_trigger
       FROM ops_case AS c
@@ -3544,6 +3567,7 @@ const loadOwnedCaseWindow = async (
         END
       WHERE ((c.owner_type = 'publisher' AND c.owner_id = ${uid})
          OR handoff_user.id = ${uid})
+         AND ${resourceNotHandedOver}
          ${represented.length ? Prisma.sql`AND c.id NOT IN (${Prisma.join(represented)})` : Prisma.empty}
     ),
     filtered AS MATERIALIZED (
@@ -4068,6 +4092,71 @@ const writeReporterReason = (
     }
   })
 
+/** Moves unresolved publisher-owned resource cases to staff. Link cases are already closed. */
+export const transferPublisherCasesOnHandover = async (
+  tx: CaseTx,
+  resourceId: number,
+  now: Date
+) => {
+  const rows = await tx.$queryRaw<
+    {
+      id: number
+      status: string
+      revision: number
+      status_changed_at: Date | string
+    }[]
+  >(Prisma.sql`
+    SELECT id, status, revision, status_changed_at
+    FROM ops_case
+    WHERE target_type = 'resource'
+      AND target_id = ${resourceId}
+      AND owner_type = 'publisher'
+      AND status IN (${Prisma.join([...CASE_UNRESOLVED_STATUSES])})
+    ORDER BY id ASC
+    FOR UPDATE
+  `)
+  for (const row of rows) {
+    const waitingReporter = row.status === 'waiting_reporter'
+    const toStatus = waitingReporter ? row.status : 'open'
+    const changed = await tx.ops_case.updateMany({
+      where: {
+        id: row.id,
+        status: row.status,
+        revision: row.revision,
+        owner_type: 'publisher'
+      },
+      data: {
+        owner_type: 'staff',
+        owner_id: null,
+        ...(waitingReporter
+          ? {}
+          : { status: 'open' as const, status_changed_at: now }),
+        queue_entered_at: now,
+        escalated_at: now,
+        revision: { increment: 1 },
+        updated: now
+      }
+    })
+    if (changed.count !== 1) {
+      throw new ResourceMutationError(HANDOVER_MESSAGES.caseConflict, 409)
+    }
+    await appendCaseSystemMessage(
+      tx,
+      row.id,
+      'escalated',
+      {
+        escalation_trigger: 'publisher_left',
+        from_status: row.status,
+        to_status: toStatus,
+        from_state_entered_at: new Date(row.status_changed_at).toISOString(),
+        queue_entered_at: now.toISOString()
+      },
+      '发布者已交由站方维护，问题改由网站管理员处理。',
+      now
+    )
+  }
+}
+
 export const reopenCase = async (
   caseId: number,
   uid: number,
@@ -4084,6 +4173,17 @@ export const reopenCase = async (
   try {
     result = await runCaseTransaction(db, async (tx) => {
       if (!(await lockCaseActor(tx, uid))) return '账号不存在或已注销'
+      // Peek without a case lock, then lock the resource before the case.
+      // Handover and merge already take resources before cases. Locking the
+      // resource after the case, or locking a target that moved while this
+      // case lock is held, would reverse that order.
+      const peeked = await tx.ops_case.findUnique({
+        where: { id: caseId },
+        select: { target_type: true, target_id: true }
+      })
+      if (peeked?.target_type === 'resource') {
+        await lockResource(tx, peeked.target_id)
+      }
       const row = await getCaseLock(tx, caseId)
       if (!row) return '问题不存在'
       if (row.target_type === 'link') return '链接事项请通过链接健康操作处理'
@@ -4096,6 +4196,13 @@ export const reopenCase = async (
         row.closed_at.getTime() < now.getTime() - CASE_REOPEN_WINDOW_MS
       ) {
         return '该问题已超过 7 天，不能重开'
+      }
+      if (
+        row.target_type === 'resource' &&
+        (peeked?.target_type !== 'resource' ||
+          peeked.target_id !== row.target_id)
+      ) {
+        return '该问题刚刚被他人处理，请刷新后重试'
       }
       const dedupKey = buildCaseDedupKey(
         row.target_type as CaseTargetType,
@@ -4116,6 +4223,18 @@ export const reopenCase = async (
         closed_at: iso(row.closed_at),
         first_owner_response_at: iso(row.first_owner_response_at)
       }
+      // The resource row lock is already held, so this sees handover's left
+      // timestamp if that transaction committed before we acquired the lock.
+      const handedOver =
+        row.target_type === 'resource' &&
+        Boolean(
+          (
+            await tx.patch_resource.findUnique({
+              where: { id: row.target_id },
+              select: { publisher_left_at: true }
+            })
+          )?.publisher_left_at
+        )
       const updated = await tx.ops_case.updateMany({
         where: {
           id: row.id,
@@ -4131,7 +4250,10 @@ export const reopenCase = async (
           first_owner_response_at: null,
           reopened_count: { increment: 1 },
           revision: { increment: 1 },
-          updated: now
+          updated: now,
+          ...(handedOver
+            ? { owner_type: 'staff' as const, owner_id: null }
+            : {})
         }
       })
       if (updated.count === 0) return '该问题刚刚被他人处理，请刷新后重试'
@@ -4149,7 +4271,12 @@ export const reopenCase = async (
         '问题已重新提交，处理方会继续跟进。'
       )
       await writeReporterReason(tx, row.id, uid, content, now)
-      await notifyReopen(tx, row, content, uid)
+      await notifyReopen(
+        tx,
+        handedOver ? { ...row, owner_type: 'staff', owner_id: null } : row,
+        content,
+        uid
+      )
       return { changed: true }
     })
   } catch (error) {

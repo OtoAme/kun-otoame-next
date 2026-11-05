@@ -37,5 +37,7 @@ export const canCheckResourceLink = (input: {
   const scheme = input.content.trim().match(/^([a-z][a-z\d+.-]*):/i)?.[1]
   if (scheme && !/^https?$/i.test(scheme)) return false
   const { url } = parseResourceLink(input.content)
-  return /^https?:\/\/[^/\\]/i.test(url) && recognizeLinkCheckProvider(url) !== null
+  return (
+    /^https?:\/\/[^/\\]/i.test(url) && recognizeLinkCheckProvider(url) !== null
+  )
 }

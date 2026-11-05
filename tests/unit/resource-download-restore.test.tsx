@@ -72,6 +72,11 @@ vi.mock('~/components/case/ReportResourceButton', () => ({
 }))
 
 vi.mock('~/components/patch/resource/DownloadCard', () => ({
+  isOpenAccessDeadline: (value?: string, now = Date.now()) => {
+    if (!value) return false
+    const time = Date.parse(value)
+    return Number.isFinite(time) && time > now
+  },
   ResourceDownloadCard: ({
     link,
     restoredLink,
@@ -214,7 +219,10 @@ describe('ResourceDownload revealed mirror restore', () => {
     })
   }
 
-  const renderResourceDownload = async (initialResource: PatchResource, preview = false) => {
+  const renderResourceDownload = async (
+    initialResource: PatchResource,
+    preview = false
+  ) => {
     dom = new JSDOM('<!doctype html><div id="root"></div>', {
       url: 'http://localhost'
     })
@@ -266,9 +274,13 @@ describe('ResourceDownload revealed mirror restore', () => {
   })
 
   it('keeps administrator preview read-only even for revealed mirrors', async () => {
-    const { container } = await renderResourceDownload(withLinks([
-      { ...link21, ...sensitiveLink21, revealed: true }
-    ], { status: 2, likeCount: 7 }), true)
+    const { container } = await renderResourceDownload(
+      withLinks([{ ...link21, ...sensitiveLink21, revealed: true }], {
+        status: 2,
+        likeCount: 7
+      }),
+      true
+    )
     await flushEffects()
     expect(fetchMock.kunFetchPost).not.toHaveBeenCalled()
     expect(container.textContent).toContain('7')
@@ -730,7 +742,9 @@ describe('ResourceDownload revealed mirror restore', () => {
     expect(fetchMock.kunFetchPost).toHaveBeenCalledTimes(1)
 
     // 同 id 补链到 v3：恢复身份变化，必发新请求
-    await rerender(withLinks([{ ...healthV2, version: 3 } as PatchResourceLink]))
+    await rerender(
+      withLinks([{ ...healthV2, version: 3 } as PatchResourceLink])
+    )
     await flushEffects()
     expect(fetchMock.kunFetchPost).toHaveBeenCalledTimes(2)
     expect(fetchMock.kunFetchPost).toHaveBeenLastCalledWith(
@@ -767,7 +781,9 @@ describe('ResourceDownload revealed mirror restore', () => {
       obtainedExpiresAt: '2026-07-11T00:00:00.000Z'
     })
     await flushEffects()
-    expect(container.textContent).not.toContain('https://stale.example.com/old-copy')
+    expect(container.textContent).not.toContain(
+      'https://stale.example.com/old-copy'
+    )
     expect(container.textContent).toContain(sensitiveLink21.content)
   })
 

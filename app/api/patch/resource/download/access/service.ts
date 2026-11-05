@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { prisma } from '~/prisma/index'
 import { accessPatchResourceLinkSchema } from '~/validations/patch'
+import { refreshGrantedDownloadCaches } from '../cacheRefresh'
 import {
   resolveResourceAccessGrant,
   ResourceAccessGrantBusyError
@@ -107,7 +108,6 @@ export const accessPatchResourceLink = async (
     throw new Error('Invalid resource section')
   }
 
-  const now = new Date()
   let result: Awaited<ReturnType<typeof resolveResourceAccessGrant>>
   try {
     result = await resolveResourceAccessGrant({
@@ -117,7 +117,8 @@ export const accessPatchResourceLink = async (
       linkId: link.id,
       storage: link.storage,
       section,
-      now,
+      now: new Date(),
+      clock: () => new Date(),
       visibilityWhere
     })
   } catch (error) {
@@ -163,8 +164,24 @@ export const accessPatchResourceLink = async (
       ? result.quota
       : undefined
 
+  if (
+    (result.kind === 'resource_granted' || result.kind === 'link_revealed') &&
+    result.accounting
+  ) {
+    await refreshGrantedDownloadCaches(result.accounting)
+  }
+
+  const revealedExpiresAt = (
+    result.revealedExpiresAt instanceof Date
+      ? result.revealedExpiresAt
+      : result.expires
+  ).toISOString()
+
   return {
-    link: result.link,
+    link: {
+      ...result.link,
+      revealedExpiresAt
+    },
     access: {
       kind: result.kind,
       actorType: actor.actorType,

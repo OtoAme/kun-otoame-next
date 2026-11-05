@@ -105,8 +105,9 @@ const list = (): WorkspaceResourcesResponse => ({
       created: '2026-10-01T00:00:00.000Z',
       linkCount: 2,
       linkDiskKinds: ['baidu', 'quark'],
+      hasStaffBackup: false,
       actionableCount: 1,
-      capabilities: { canEdit: true, canDelete: true, canUpload: false }
+      capabilities: { canEdit: true, canDelete: true, canUpload: false, canHandover: false }
     },
     {
       id: 10,
@@ -123,8 +124,9 @@ const list = (): WorkspaceResourcesResponse => ({
       created: '2026-10-01T00:00:00.000Z',
       linkCount: 1,
       linkDiskKinds: ['object'],
+      hasStaffBackup: true,
       actionableCount: 0,
-      capabilities: { canEdit: false, canDelete: false, canUpload: false }
+      capabilities: { canEdit: false, canDelete: false, canUpload: false, canHandover: false }
     }
   ],
   total: 2,

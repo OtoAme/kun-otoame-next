@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import Link from 'next/link'
 import { Button } from '~/components/dashboard/ui/button'
 import { Input } from '~/components/dashboard/ui/input'
 import {
@@ -28,9 +29,13 @@ import type {
   WorkspaceSection
 } from '~/types/api/workspace'
 import { kunFetchGet } from '~/utils/kunFetch'
+import { HANDOVER_SUCCESS } from '~/components/patch/resource/authorResourceAction'
 import { WorkspaceMaintenance } from './WorkspaceMaintenance'
 import { WorkspaceResourceCard } from './WorkspaceResourceCard'
-import { workspaceActionError } from './WorkspaceShell'
+import {
+  useOptionalWorkspaceUser,
+  workspaceActionError
+} from './WorkspaceShell'
 
 const STATUS_LABEL: Record<WorkspaceResourceStatus, string> = {
   all: '全部状态',
@@ -40,13 +45,35 @@ const STATUS_LABEL: Record<WorkspaceResourceStatus, string> = {
 }
 
 export function WorkspaceResources() {
+  const user = useOptionalWorkspaceUser()
+  const [handedOver, setHandedOver] = useState(false)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    setHandedOver(params.get('handedOver') === '1')
+  }, [])
   return (
     <Tabs defaultValue="resources" className="min-w-0 gap-4">
       <div className="space-y-1">
-        <h1 className="text-2xl font-semibold tracking-tight">我的资源</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">我维护的资源</h1>
         <p className="text-sm text-muted-foreground">
-          正常资源可以编辑。待审核和封禁的资源只读，不提供凭据。新资源仍在游戏页面发布。
+          正常资源可以编辑。待审核和封禁的资源只读，不提供凭据。新资源仍在游戏页面发布。已交由站方维护的资源不在这个列表里，仍可在个人主页查看发布记录。
         </p>
+        {handedOver ? (
+          <p className="text-sm" role="status">
+            {HANDOVER_SUCCESS}
+            {user ? (
+              <>
+                {' '}
+                <Link
+                  href={`/user/${user.id}/resource`}
+                  className="underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+                >
+                  查看发布记录
+                </Link>
+              </>
+            ) : null}
+          </p>
+        ) : null}
       </div>
       <TabsList>
         <TabsTrigger value="resources">资源列表</TabsTrigger>

@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const db = vi.hoisted(() => {
   const tx = {
+    $queryRaw: vi.fn(),
+    $executeRaw: vi.fn(),
     patch_resource_link: { findFirst: vi.fn() },
     patch_resource_access_grant: {
       findUnique: vi.fn(),
@@ -32,6 +34,13 @@ const db = vi.hoisted(() => {
 })
 vi.mock('~/prisma/index', () => ({ prisma: db }))
 vi.mock('node:timers/promises', () => ({ setTimeout: vi.fn() }))
+vi.mock('~/app/api/patch/cache', () => ({
+  invalidatePatchContentCache: vi.fn(),
+  invalidatePatchListCaches: vi.fn()
+}))
+vi.mock('~/app/api/patch/views/buffer', () => ({
+  setRealtimePatchDownloadStats: vi.fn()
+}))
 import { resolveResourceAccessGrant } from '~/app/api/patch/resource/download/access/grant'
 import { accessPatchResourceLink } from '~/app/api/patch/resource/download/access/service'
 import { restorePatchResourceLinks } from '~/app/api/patch/resource/download/access/restore/service'
@@ -69,6 +78,10 @@ const input = {
 beforeEach(() => {
   vi.resetAllMocks()
   db.$transaction.mockImplementation((callback) => callback(db.tx))
+  db.tx.$queryRaw.mockResolvedValue([
+    { id: 2, unique_id: 'abcdefgh', download: 4 }
+  ])
+  db.tx.$executeRaw.mockResolvedValue(1)
   db.tx.patch_resource_link.findFirst.mockResolvedValue(target)
   db.tx.patch_resource_access_grant.findUnique.mockResolvedValue({ expires })
   db.tx.patch_resource_access.findFirst.mockResolvedValue(null)
@@ -140,7 +153,9 @@ describe('resource address-version acquisition', () => {
   })
 
   it('reuses only current-version evidence and returns 404 if the target disappears before the transaction', async () => {
-    db.tx.patch_resource_access.findFirst.mockResolvedValue({ id: 9 })
+    db.tx.patch_resource_access.findFirst.mockResolvedValue({
+      expires: new Date('2026-10-09T06:00:00Z')
+    })
     expect(await resolveResourceAccessGrant(input)).toMatchObject({
       kind: 'reused',
       link: { version: 2 }
@@ -166,7 +181,11 @@ describe('resource address-version acquisition', () => {
       { link_version: null, link },
       { link_version: 1, link },
       { link_version: 2, link: null },
-      { link_version: 2, link }
+      {
+        link_version: 2,
+        expires: new Date('2026-10-09T06:00:00Z'),
+        link
+      }
     ])
     expect(
       await restorePatchResourceLinks(
@@ -175,7 +194,15 @@ describe('resource address-version acquisition', () => {
         actor,
         now
       )
-    ).toEqual({ links: [link], obtainedExpiresAt: expires.toISOString() })
+    ).toEqual({
+      links: [
+        {
+          ...link,
+          revealedExpiresAt: '2026-10-09T06:00:00.000Z'
+        }
+      ],
+      obtainedExpiresAt: expires.toISOString()
+    })
     expect(db.$transaction).not.toHaveBeenCalled()
     expect(db.patch_resource_access.create).not.toHaveBeenCalled()
     expect(db.patch_resource_access.update).not.toHaveBeenCalled()

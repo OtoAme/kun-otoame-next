@@ -38,7 +38,7 @@ describe('issue header', () => {
     expect(home.querySelector('svg')).toBeNull()
     const nav = doc.querySelector('nav[aria-label="用户工作台"]')!
     expect(nav.querySelector('a[href="/workspace/resources"]')?.textContent).toBe(
-      '我的资源'
+      '我维护的资源'
     )
     expect(nav.querySelector('a[href="/workspace/entries"]')?.textContent).toBe(
       '我的条目'

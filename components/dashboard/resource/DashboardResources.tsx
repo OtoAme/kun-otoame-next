@@ -24,6 +24,11 @@ import {
 import { Badge } from '~/components/dashboard/ui/badge'
 import { Button } from '~/components/dashboard/ui/button'
 import { LINK_HEALTH_LABELS } from '~/components/patch/resource/linkHealthDisplay'
+import {
+  formatBackupDate,
+  readAuxiliaryClick,
+  readPublicMirrorFacts
+} from '~/components/patch/resource/publicMirrorFacts'
 import { RESOURCE_STATUS_MAP } from '~/constants/admin'
 import {
   RESOURCE_SECTION_MAP,
@@ -248,7 +253,7 @@ const COLUMNS: ListColumn<ResourceRow>[] = [
   },
   {
     key: 'download',
-    header: '下载',
+    header: '获取次数',
     minWidth: 900,
     align: 'right',
     cell: (row) => row.download
@@ -271,6 +276,10 @@ function ResourceDetail({
   resource: ResourceRow
   onDeleted: (count: number) => void
 }) {
+  const facts = readPublicMirrorFacts(resource)
+  const leftAt = facts.publisherLeftAt
+    ? formatBackupDate(facts.publisherLeftAt)
+    : null
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center gap-2">
@@ -301,8 +310,23 @@ function ResourceDetail({
         <dd>{label(SUPPORTED_LANGUAGE_MAP, resource.language)}</dd>
         <dt className="text-muted-foreground">平台</dt>
         <dd>{label(SUPPORTED_PLATFORM_MAP, resource.platform)}</dd>
-        <dt className="text-muted-foreground">下载次数</dt>
+        <dt className="text-muted-foreground">获取次数</dt>
         <dd className="tabular-nums">{resource.download}</dd>
+        {facts.staffMaintained ? (
+          <>
+            <dt className="text-muted-foreground">维护</dt>
+            <dd>{leftAt ? `站方维护 · ${leftAt}` : '站方维护'}</dd>
+          </>
+        ) : null}
+        {facts.hasStaffBackup ? (
+          <>
+            <dt className="text-muted-foreground">备份</dt>
+            <dd>
+              站方已备份
+              {facts.backupDates[0] ? ` · ${facts.backupDates[0]}` : ''}
+            </dd>
+          </>
+        ) : null}
         <dt className="text-muted-foreground">发布时间</dt>
         <dd className="tabular-nums">
           {formatChinaDateTime(resource.created)}
@@ -323,33 +347,50 @@ function ResourceDetail({
           下载链接（{resource.links.length}）
         </h5>
         <ul className="flex flex-col gap-2">
-          {resource.links.map((link) => (
-            <li key={link.id} className="rounded-lg border p-3 text-sm">
-              <div className="flex flex-wrap items-center gap-2">
-                <WorkspaceDiskKindBadge
-                  kind={recognizeResourceDiskKind(link.content, link.storage)}
-                />
-                <span className="text-xs text-muted-foreground">
-                  {SUPPORTED_RESOURCE_LINK_MAP[link.storage] ?? link.storage}
-                  {link.size ? ` · ${link.size}` : ''}
-                </span>
-                <Badge
-                  variant="outline"
-                  className={cn('ml-auto', HEALTH_CLASS[link.health])}
-                >
-                  {LINK_HEALTH_LABELS[link.health] ?? link.health}
-                </Badge>
-              </div>
-              <p className="mt-2 font-mono text-xs break-all">{link.content}</p>
-              {(link.code || link.password) && (
-                <p className="mt-1 text-xs text-muted-foreground">
-                  {link.code && `提取码 ${link.code}`}
-                  {link.code && link.password && ' · '}
-                  {link.password && `解压码 ${link.password}`}
+          {resource.links.map((link) => {
+            const auxiliaryClick = readAuxiliaryClick(link)
+            const backupDate =
+              link.storage === 'touchgal' && link.backedUpAt
+                ? formatBackupDate(link.backedUpAt)
+                : null
+            return (
+              <li key={link.id} className="rounded-lg border p-3 text-sm">
+                <div className="flex flex-wrap items-center gap-2">
+                  <WorkspaceDiskKindBadge
+                    kind={recognizeResourceDiskKind(link.content, link.storage)}
+                  />
+                  {link.storage === 'touchgal' ? (
+                    <Badge variant="outline">
+                      站方备份{backupDate ? ` ${backupDate}` : ''}
+                    </Badge>
+                  ) : null}
+                  <span className="text-xs text-muted-foreground">
+                    {SUPPORTED_RESOURCE_LINK_MAP[link.storage] ?? link.storage}
+                    {link.size ? ` · ${link.size}` : ''}
+                    {auxiliaryClick !== null
+                      ? ` · 辅助点击 ${auxiliaryClick}`
+                      : ''}
+                  </span>
+                  <Badge
+                    variant="outline"
+                    className={cn('ml-auto', HEALTH_CLASS[link.health])}
+                  >
+                    {LINK_HEALTH_LABELS[link.health] ?? link.health}
+                  </Badge>
+                </div>
+                <p className="mt-2 font-mono text-xs break-all">
+                  {link.content}
                 </p>
-              )}
-            </li>
-          ))}
+                {(link.code || link.password) && (
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {link.code && `提取码 ${link.code}`}
+                    {link.code && link.password && ' · '}
+                    {link.password && `解压码 ${link.password}`}
+                  </p>
+                )}
+              </li>
+            )
+          })}
         </ul>
       </div>
       <div className="flex flex-wrap gap-2">

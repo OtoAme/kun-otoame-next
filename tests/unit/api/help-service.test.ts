@@ -15,6 +15,14 @@ const state = vi.hoisted(() => ({
   replies: new Map<number, Record<string, any>>(),
   ledger: new Map<string, { userId: number; amount: number }>(),
   messages: [] as Array<Record<string, unknown>>,
+  resources: new Map<number, Record<string, any>>(),
+  merges: new Map<number, number>(),
+  trace: [] as string[],
+  /** Lookups that return no mapping before `merges` is visible. */
+  mergeBlanks: 0,
+  /** Post whose owner or deletion changes once the resource lock is taken. */
+  revokePostId: 0,
+  deletePostId: 0,
   nextId: 100
 }))
 
@@ -47,11 +55,29 @@ vi.mock('~/prisma/index', () => {
           typeof strings === 'object' && 'sql' in strings
             ? (strings as any).sql
             : sql
+        const id = values[0] ?? (strings as any).values?.[0]
         if (/FROM help_post/.test(text)) {
-          const id = values[0] ?? (strings as any).values?.[0]
+          state.trace.push(`post:${id}`)
           return state.posts.has(id) ? [{ id }] : []
         }
-        const id = values[0] ?? (strings as any).values?.[0]
+        if (/patch_resource_merge_record/.test(text)) {
+          if (state.mergeBlanks > 0) {
+            state.mergeBlanks -= 1
+            return []
+          }
+          const survivor = state.merges.get(id)
+          return survivor ? [{ user_resource_id: survivor }] : []
+        }
+        if (/om:lock-help-resource/.test(text)) {
+          state.trace.push(`lock:${id}`)
+          const revoked = state.posts.get(state.revokePostId)
+          if (revoked) revoked.user_id = OTHER
+          state.revokePostId = 0
+          const removed = state.posts.get(state.deletePostId)
+          if (removed) removed.deleted_at = new Date('2026-10-02T00:00:00.000Z')
+          state.deletePostId = 0
+          return state.resources.has(id) ? [{ id }] : []
+        }
         const user = state.users.get(id)
         return user ? [{ id, register_time: user.register_time }] : []
       }
@@ -192,7 +218,11 @@ vi.mock('~/prisma/index', () => {
       })
     },
     patch: { findUnique: vi.fn(async () => ({ id: 7, status: 0 })) },
-    patch_resource: { findUnique: vi.fn(async () => null) },
+    patch_resource: {
+      findUnique: vi.fn(
+        async ({ where }: any) => state.resources.get(where.id) ?? null
+      )
+    },
     user: {
       findUnique: vi.fn(async ({ where }: any) => {
         const user = state.users.get(where.id)
@@ -235,9 +265,10 @@ vi.mock('~/app/api/moemoepoint/service', () => {
     getCurrentBalance: vi.fn(async (_tx: unknown, userId: number) =>
       balance(userId)
     ),
-    spendMoemoepoint: vi.fn(async (_tx: unknown, input: any) =>
-      apply(input, -input.amount)
-    ),
+    spendMoemoepoint: vi.fn(async (_tx: unknown, input: any) => {
+      state.trace.push('spend')
+      return apply(input, -input.amount)
+    }),
     earnMoemoepoint: vi.fn(async (_tx: unknown, input: any) =>
       apply(input, input.amount)
     )
@@ -253,6 +284,7 @@ vi.mock('~/app/api/utils/message', () => ({
 import {
   acceptHelpAnswer,
   createHelpPost,
+  updateHelpPost,
   deleteHelpAnswer,
   createHelpAnswer,
   createHelpReply,
@@ -325,6 +357,12 @@ beforeEach(() => {
   state.follows.length = 0
   state.replies.clear()
   state.messages.length = 0
+  state.resources.clear()
+  state.merges.clear()
+  state.trace.length = 0
+  state.mergeBlanks = 0
+  state.revokePostId = 0
+  state.deletePostId = 0
   state.nextId = 100
   state.users.clear()
   state.users.set(ASKER, { register_time: daysAgo(30), balance: 100 })
@@ -684,5 +722,237 @@ describe('follower notices for new answers', () => {
     await createHelpAnswer(answerInput(postId, 1), OTHER, { now })
 
     expect(noticesFor(OTHER)).toHaveLength(0)
+  })
+})
+
+describe('resource owner notices after handover', () => {
+  const resourcePost = (n: number, resourceId: number) => ({
+    ...postInput(n),
+    patchId: 7,
+    resourceId,
+    title: '这个补丁打不上'
+  })
+  const seedResource = (
+    id: number,
+    overrides: Record<string, unknown> = {}
+  ) => {
+    state.resources.set(id, {
+      id,
+      patch_id: 7,
+      status: 0,
+      user_id: OTHER,
+      name: '汉化补丁',
+      publisher_left_at: null,
+      ...overrides
+    })
+  }
+  const feedback = () =>
+    state.messages.filter((message) => message.type === 'feedback')
+  const handedOverAt = new Date('2026-10-01T00:00:00.000Z')
+
+  it('notifies the publisher while the card is still theirs', async () => {
+    seedResource(50)
+
+    const result = await createHelpPost(resourcePost(1, 50), ASKER, { now })
+
+    expect(result).toMatchObject({ postId: expect.any(Number) })
+    expect(feedback()).toEqual([
+      expect.objectContaining({
+        type: 'feedback',
+        sender_id: ASKER,
+        recipient_id: OTHER,
+        content: '有用户就您的资源「汉化补丁」发布了求助：这个补丁打不上',
+        link: `/help/${(result as { postId: number }).postId}`
+      })
+    ])
+    expect([...state.posts.values()][0].resource_id).toBe(50)
+    expect(state.users.get(ASKER)!.balance).toBe(100 - HELP_POST_FEE)
+    expect(state.quota.get(`${ASKER}:${helpDayKey(now)}`)?.post_count).toBe(1)
+    expect(state.trace).toEqual(['lock:50', 'spend'])
+  })
+
+  it('does not notify the asker about their own card', async () => {
+    seedResource(50, { user_id: ASKER })
+
+    const result = await createHelpPost(resourcePost(2, 50), ASKER, { now })
+
+    expect(typeof result).toBe('object')
+    expect(feedback()).toHaveLength(0)
+    expect([...state.posts.values()][0].resource_id).toBe(50)
+    expect(state.users.get(ASKER)!.balance).toBe(100 - HELP_POST_FEE)
+    expect(state.quota.get(`${ASKER}:${helpDayKey(now)}`)?.post_count).toBe(1)
+    expect(state.trace).toEqual(['lock:50', 'spend'])
+  })
+
+  it('does not notify the original publisher after handover', async () => {
+    seedResource(50, { publisher_left_at: handedOverAt })
+
+    const result = await createHelpPost(resourcePost(3, 50), ASKER, { now })
+
+    expect(typeof result).toBe('object')
+    expect(feedback()).toHaveLength(0)
+    expect([...state.posts.values()][0].resource_id).toBe(50)
+    expect(state.users.get(ASKER)!.balance).toBe(100 - HELP_POST_FEE)
+    expect(state.quota.get(`${ASKER}:${helpDayKey(now)}`)?.post_count).toBe(1)
+  })
+
+  it('does not notify when an old staff id resolves to a handed-over survivor', async () => {
+    seedResource(9, { publisher_left_at: handedOverAt })
+    state.merges.set(8, 9)
+
+    const result = await createHelpPost(resourcePost(4, 8), ASKER, { now })
+
+    expect(typeof result).toBe('object')
+    expect(feedback()).toHaveLength(0)
+    expect([...state.posts.values()][0].resource_id).toBe(9)
+    expect(state.users.get(ASKER)!.balance).toBe(100 - HELP_POST_FEE)
+    expect(state.quota.get(`${ASKER}:${helpDayKey(now)}`)?.post_count).toBe(1)
+    expect(state.trace.filter((event) => event.startsWith('lock:'))).toEqual([
+      'lock:9'
+    ])
+    expect(state.trace.indexOf('spend')).toBeGreaterThan(
+      state.trace.indexOf('lock:9')
+    )
+  })
+
+  it('resolves again inside the transaction when the requested card is already gone', async () => {
+    seedResource(9, { publisher_left_at: handedOverAt })
+    state.merges.set(8, 9)
+    state.mergeBlanks = 1
+
+    const result = await createHelpPost(resourcePost(5, 8), ASKER, { now })
+
+    expect(typeof result).toBe('object')
+    expect(feedback()).toHaveLength(0)
+    expect([...state.posts.values()][0].resource_id).toBe(9)
+    expect(state.trace.filter((event) => event.startsWith('lock:'))).toEqual([
+      'lock:8',
+      'lock:9'
+    ])
+    expect(state.users.get(ASKER)!.balance).toBe(100 - HELP_POST_FEE)
+    expect(state.quota.get(`${ASKER}:${helpDayKey(now)}`)?.post_count).toBe(1)
+  })
+})
+
+describe('help post edits lock the card before the post', () => {
+  const edit = (postId: number, resourceId: number | null) => ({
+    postId,
+    category: 'runtime' as const,
+    title: '改后的标题',
+    content: '改后的正文仍然足够长',
+    gameName: '',
+    gameLinks: [] as string[],
+    patchId: resourceId === null ? null : 7,
+    resourceId
+  })
+
+  it('stores the survivor and locks that card before the post', async () => {
+    const postId = seedPost({ title: '旧标题', content: '旧正文' })
+    state.resources.set(9, {
+      id: 9,
+      patch_id: 7,
+      status: 0,
+      user_id: OTHER,
+      name: '汉化补丁',
+      publisher_left_at: null
+    })
+    state.merges.set(8, 9)
+
+    const result = await updateHelpPost(edit(postId, 8), ASKER, { now })
+
+    expect(result).toEqual({ postId })
+    expect(state.posts.get(postId)).toMatchObject({
+      title: '改后的标题',
+      resource_id: 9
+    })
+    expect(state.trace).toEqual(['lock:9', `post:${postId}`])
+  })
+
+  it('locks the survivor alone when the requested card is already gone', async () => {
+    const postId = seedPost()
+    state.resources.set(9, {
+      id: 9,
+      patch_id: 7,
+      status: 0,
+      user_id: OTHER,
+      name: '汉化补丁',
+      publisher_left_at: new Date('2026-10-01T00:00:00.000Z')
+    })
+    state.merges.set(8, 9)
+    state.mergeBlanks = 1
+
+    const result = await updateHelpPost(edit(postId, 8), ASKER, { now })
+
+    expect(result).toEqual({ postId })
+    expect(state.posts.get(postId)!.resource_id).toBe(9)
+    expect(state.trace).toEqual(['lock:8', 'lock:9', `post:${postId}`])
+  })
+
+  it('does not write when ownership changes after the unlocked read', async () => {
+    const postId = seedPost({ title: '旧标题' })
+    state.resources.set(50, {
+      id: 50,
+      patch_id: 7,
+      status: 0,
+      user_id: OTHER,
+      name: '汉化补丁',
+      publisher_left_at: null
+    })
+    state.revokePostId = postId
+
+    const result = await updateHelpPost(edit(postId, 50), ASKER, { now })
+
+    expect(result).toBe('只能编辑自己的求助')
+    expect(state.posts.get(postId)!.title).toBe('旧标题')
+    expect(state.posts.get(postId)!.user_id).toBe(OTHER)
+    expect(state.trace.indexOf('lock:50')).toBe(0)
+    expect(state.trace.indexOf(`post:${postId}`)).toBeGreaterThan(0)
+  })
+
+  it('does not write when the post is deleted after the unlocked read', async () => {
+    const postId = seedPost({ title: '旧标题', content: '旧正文' })
+    state.resources.set(50, {
+      id: 50,
+      patch_id: 7,
+      status: 0,
+      user_id: OTHER,
+      name: '汉化补丁',
+      publisher_left_at: null
+    })
+    state.deletePostId = postId
+
+    const result = await updateHelpPost(edit(postId, 50), ASKER, { now })
+
+    expect(result).toBe('求助不存在')
+    expect(state.posts.get(postId)!.title).toBe('旧标题')
+    expect(state.posts.get(postId)!.deleted_at).toBeTruthy()
+  })
+
+  it('rejects another author before locking the card or the post', async () => {
+    const postId = seedPost({ user_id: OTHER, title: '别人的求助' })
+    state.resources.set(50, {
+      id: 50,
+      patch_id: 7,
+      status: 0,
+      user_id: ASKER,
+      name: '汉化补丁',
+      publisher_left_at: null
+    })
+
+    const result = await updateHelpPost(edit(postId, 50), ASKER, { now })
+
+    expect(result).toBe('只能编辑自己的求助')
+    expect(state.posts.get(postId)!.title).toBe('别人的求助')
+    expect(state.trace).toEqual([])
+  })
+
+  it('locks only the post when the edit names no resource', async () => {
+    const postId = seedPost({ title: '旧标题' })
+
+    const result = await updateHelpPost(edit(postId, null), ASKER, { now })
+
+    expect(result).toEqual({ postId })
+    expect(state.posts.get(postId)!.title).toBe('改后的标题')
+    expect(state.trace).toEqual([`post:${postId}`])
   })
 })

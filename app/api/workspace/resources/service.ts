@@ -1,7 +1,11 @@
 import type { Prisma } from '@prisma/client'
 import { prisma } from '~/prisma/index'
 import { WORKSPACE_ERRORS } from '~/constants/workspace'
-import { ResourceMutationError } from '~/app/api/patch/resource/mutation'
+import {
+  handoverStatus,
+  listHandedOverResourceIds,
+  ResourceMutationError
+} from '~/app/api/patch/resource/mutation'
 import {
   linkHealthSelect,
   projectLinkHealth,
@@ -61,38 +65,51 @@ type SummaryRow = Prisma.patch_resourceGetPayload<{
 const summary = (
   row: SummaryRow,
   user: WorkspaceUser
-): WorkspaceResourceSummary => ({
-  id: row.id,
-  patchId: row.patch_id,
-  patchUniqueId: row.patch.unique_id,
-  patchName: row.patch.name,
-  patchBanner: row.patch.banner,
-  name: row.name,
-  section: row.section,
-  type: row.type,
-  language: row.language,
-  platform: row.platform,
-  status: row.status,
-  created: row.created.toISOString(),
-  linkCount: row.links.length,
-  linkDiskKinds: uniqueDiskKinds(row.links),
-  actionableCount: 0,
-  capabilities: {
-    canEdit: user.role >= 3 || row.status === 0,
-    canDelete:
-      user.role >= 3 || row.links.every((link) => link.storage !== 'touchgal'),
-    canUpload:
-      (user.role >= 3 || row.status === 0) &&
-      user.role >= 2 &&
-      (row.section !== 'galgame' || user.role >= 3)
+): WorkspaceResourceSummary => {
+  const hasStaffBackup = row.links.some((link) => link.storage === 'touchgal')
+  const maintained = user.role >= 3 || row.status === 0
+  return {
+    id: row.id,
+    patchId: row.patch_id,
+    patchUniqueId: row.patch.unique_id,
+    patchName: row.patch.name,
+    patchBanner: row.patch.banner,
+    name: row.name,
+    section: row.section,
+    type: row.type,
+    language: row.language,
+    platform: row.platform,
+    status: row.status,
+    created: row.created.toISOString(),
+    linkCount: row.links.length,
+    linkDiskKinds: uniqueDiskKinds(row.links),
+    hasStaffBackup,
+    actionableCount: 0,
+    capabilities: {
+      canEdit: maintained,
+      canDelete: user.role >= 3 || !hasStaffBackup,
+      canUpload:
+        maintained &&
+        user.role >= 2 &&
+        (row.section !== 'galgame' || user.role >= 3),
+      canHandover: user.role < 3 && hasStaffBackup
+    }
   }
-})
+}
+const withoutHandedOver = async (
+  userId: number,
+  where: Prisma.patch_resourceWhereInput
+) => {
+  const handedOver = await listHandedOverResourceIds(prisma, userId)
+  if (!handedOver.length) return where
+  return { AND: [where, { id: { notIn: handedOver } }] }
+}
 export const getWorkspaceResources = async (
   input: WorkspaceResourcesQuery,
   user: WorkspaceUser
 ): Promise<WorkspaceResourcesResponse> => {
   const status = { normal: 0, banned: 1, pending: 2 }
-  const where: Prisma.patch_resourceWhereInput = {
+  const where = await withoutHandedOver(user.id, {
     user_id: user.id,
     ...(input.status !== 'all' ? { status: status[input.status] } : {}),
     ...(input.section !== 'all' ? { section: input.section } : {}),
@@ -104,7 +121,7 @@ export const getWorkspaceResources = async (
           ]
         }
       : {})
-  }
+  })
   const [rows, total] = await Promise.all([
     prisma.patch_resource.findMany({
       where,
@@ -133,6 +150,9 @@ export const getWorkspaceResource = async (
   id: number,
   user: WorkspaceUser
 ): Promise<WorkspaceResourceDetail> => {
+  const handedOver = await listHandedOverResourceIds(prisma, user.id)
+  if (handedOver.includes(id))
+    throw new ResourceMutationError(WORKSPACE_ERRORS.not_found.message, 404)
   const now = new Date()
   const row = await prisma.patch_resource.findFirst({
     where: { id, user_id: user.id },
@@ -221,25 +241,56 @@ export const getWorkspaceResource = async (
         : []
   }
 }
-export const updateWorkspaceResource = (
+const raiseHandover = (message: string) => {
+  const status = handoverStatus(message)
+  if (status) throw new ResourceMutationError(message, status)
+  return message
+}
+export const updateWorkspaceResource = async (
   id: number,
   input: WorkspaceResourceUpdateInput,
   user: WorkspaceUser
-) => updateWorkspacePatchResource(id, input, user.id, user.role)
+) => {
+  const result = await updateWorkspacePatchResource(
+    id,
+    input,
+    user.id,
+    user.role
+  )
+  return typeof result === 'string' ? raiseHandover(result) : result
+}
 
 export const deleteWorkspaceResource = async (
   id: number,
-  user: WorkspaceUser
+  user: WorkspaceUser,
+  action?: 'handover' | 'delete'
 ): Promise<WorkspaceResourceDeleteResponse | string> => {
-  const row = await prisma.patch_resource.findFirst({
-    where: { id, user_id: user.id },
-    select: { id: true }
-  })
-  if (!row)
-    throw new ResourceMutationError(WORKSPACE_ERRORS.not_found.message, 404)
-  const result = await deleteResource({ resourceId: id }, user.id, user.role, {
-    expectedOwnerId: user.id
-  })
-  if (typeof result === 'string') return result
-  return { deleted: true, moemoepointBalance: result.moemoepointBalance }
+  const handedOver = await listHandedOverResourceIds(prisma, user.id)
+  if (!handedOver.includes(id)) {
+    const row = await prisma.patch_resource.findFirst({
+      where: { id, user_id: user.id },
+      select: { id: true }
+    })
+    if (!row)
+      throw new ResourceMutationError(WORKSPACE_ERRORS.not_found.message, 404)
+  }
+  const result = await deleteResource(
+    { resourceId: id, action },
+    user.id,
+    user.role,
+    { expectedOwnerId: user.id }
+  )
+  if (typeof result === 'string') return raiseHandover(result)
+  if (result.action === 'handed_over') {
+    return {
+      deleted: false,
+      handedOver: true,
+      moemoepointBalance: result.moemoepointBalance
+    }
+  }
+  return {
+    deleted: true,
+    handedOver: false,
+    moemoepointBalance: result.moemoepointBalance
+  }
 }

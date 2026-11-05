@@ -29,7 +29,11 @@ export const KunCardStats = ({
         </div>
       </Tooltip>
 
-      <Tooltip isDisabled={disableTooltip} content="下载数" placement="bottom">
+      <Tooltip
+        isDisabled={disableTooltip}
+        content="获取次数"
+        placement="bottom"
+      >
         <div className="flex items-center gap-1">
           <Download className="size-4" />
           <span>{formatNumber(patch.download)}</span>

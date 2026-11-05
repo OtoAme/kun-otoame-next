@@ -265,6 +265,7 @@ export const representedPublisherLinkCaseIds = async (
       ORDER BY created DESC,id DESC LIMIT 1) ctx ON true
     WHERE c.owner_type='publisher' AND c.owner_id=${uid} AND c.kind='link_suspect' AND c.target_type='link'
       AND c.target_id=l.id AND r.user_id=${uid} AND m.resource_id=r.id AND m.patch_id=r.patch_id AND l.storage<>'touchgal'
+      AND r.publisher_left_at IS NULL
       AND r.status=0 AND p.status=0
       AND c.status IN ('open','waiting_owner')
   `)

@@ -88,8 +88,16 @@ export interface WorkspaceResourceSummary {
   linkCount: number
   /** Netdisk or storage kind of each link, in link order, without duplicates. */
   linkDiskKinds: ResourceDiskKind[]
+  /** True when any link is stored as touchgal. Disk kinds do not decide this. */
+  hasStaffBackup: boolean
   actionableCount: number
-  capabilities: { canEdit: boolean; canDelete: boolean; canUpload: boolean }
+  capabilities: {
+    canEdit: boolean
+    canDelete: boolean
+    canUpload: boolean
+    /** Author, below role 3, with a staff backup, and still maintaining the card. */
+    canHandover: boolean
+  }
 }
 
 export interface WorkspaceResourcesResponse extends WorkspacePagination {
@@ -123,6 +131,8 @@ export type WorkspaceResourceUpdateInput = Pick<
 > & { links: WorkspaceResourceLinkInput[] }
 
 export interface WorkspaceResourceDeleteResponse {
-  deleted: true
+  deleted: boolean
+  /** True only for handover. A deleted card is never handedOver. */
+  handedOver: boolean
   moemoepointBalance?: MoemoepointBalance
 }

@@ -9,14 +9,17 @@ import {
 import { verifyHeaderCookie } from '~/middleware/_verifyHeaderCookie'
 import {
   patchResourceCreateSchema,
+  patchResourceDeleteQuerySchema,
   patchResourceStableUpdateSchema
 } from '~/validations/patch'
+import { HANDOVER_HTTP_ERRORS } from './mutation'
 import { getPatchResource } from './get'
 import { createPatchResource } from './create'
 import { updatePatchResource } from './update'
 import { deleteResource } from './delete'
 import { prisma } from '~/prisma/index'
 import { acquireKvLock, releaseKvLock } from '~/lib/redis'
+import { getPatchVisibilityWhere } from '~/app/api/utils/getPatchVisibilityWhere'
 import { getResourceAccessVisitorToken } from './download/access/actor'
 import { toMoemoepointBalance } from '~/utils/moemoepoint'
 import { LINK_HEALTH_ERRORS } from '~/constants/linkHealth'
@@ -24,7 +27,7 @@ import { LINK_HEALTH_ERRORS } from '~/constants/linkHealth'
 const stableResourceJson = (value: unknown, status?: number) => {
   const matched =
     typeof value === 'string'
-      ? Object.values(LINK_HEALTH_ERRORS).find(
+      ? [...Object.values(LINK_HEALTH_ERRORS), ...HANDOVER_HTTP_ERRORS].find(
           (error) => error.message === value
         )
       : undefined
@@ -36,13 +39,6 @@ const stableResourceJson = (value: unknown, status?: number) => {
 
 const patchIdSchema = z.object({
   patchId: z.coerce.number().min(1).max(9999999)
-})
-
-const resourceIdSchema = z.object({
-  resourceId: z.coerce
-    .number({ message: '资源 ID 必须为数字' })
-    .min(1)
-    .max(9999999)
 })
 
 const validateResourceLinkStorage = (
@@ -73,11 +69,16 @@ export const GET = async (req: NextRequest) => {
   }
   const payload = await verifyHeaderCookie(req)
 
-  const response = await getPatchResource(input, {
-    uid: payload?.uid ?? 0,
-    role: payload?.role ?? 0,
-    visitorToken: getResourceAccessVisitorToken(req)
-  })
+  const visibilityWhere = await getPatchVisibilityWhere(req)
+  const response = await getPatchResource(
+    input,
+    {
+      uid: payload?.uid ?? 0,
+      role: payload?.role ?? 0,
+      visitorToken: getResourceAccessVisitorToken(req)
+    },
+    visibilityWhere
+  )
   return NextResponse.json(response, {
     headers: {
       'Cache-Control': 'private, no-store'
@@ -158,9 +159,12 @@ export const PUT = async (req: NextRequest) => {
 }
 
 export const DELETE = async (req: NextRequest) => {
-  const input = kunParseDeleteQuery(req, resourceIdSchema)
+  const input = kunParseDeleteQuery(req, patchResourceDeleteQuerySchema)
   if (typeof input === 'string') {
-    return NextResponse.json(input)
+    return NextResponse.json(input, {
+      status: 400,
+      headers: { 'Cache-Control': 'private, no-store' }
+    })
   }
   const payload = await verifyHeaderCookie(req)
   if (!payload) {
@@ -168,5 +172,5 @@ export const DELETE = async (req: NextRequest) => {
   }
 
   const response = await deleteResource(input, payload.uid, payload.role)
-  return NextResponse.json(response)
+  return stableResourceJson(response)
 }

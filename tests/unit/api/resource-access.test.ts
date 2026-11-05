@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { NextRequest } from 'next/server'
 
 const prismaMocks = vi.hoisted(() => ({
+  $queryRaw: vi.fn(),
   patch_resource: {
     findMany: vi.fn()
   },
@@ -93,6 +94,7 @@ vi.mock('~/app/api/utils/getPatchVisibilityWhere', () => ({
 
 const VISITOR_TOKEN = '123e4567-e89b-42d3-a456-426614174000'
 const EXPIRES = new Date('2026-07-12T00:00:00.000Z')
+const LIVE_GRANT = new Date('2099-01-01T00:00:00.000Z')
 const QUOTA = {
   scope: 'visitor' as const,
   resourceKind: 'galgame' as const,
@@ -192,6 +194,8 @@ const expectSafeBusyResponse = async (response: Response) => {
 
 describe('resource download access grant API', () => {
   beforeEach(() => {
+    prismaMocks.$queryRaw.mockReset()
+    prismaMocks.$queryRaw.mockResolvedValue([])
     prismaMocks.patch_resource.findMany.mockReset()
     prismaMocks.patch_resource_link.findFirst.mockReset()
     prismaMocks.patch_resource_access.findMany.mockReset()
@@ -263,10 +267,15 @@ describe('resource download access grant API', () => {
       resourceRow([previewLink(21, 1), previewLink(22, 2)])
     ])
     prismaMocks.patch_resource_access_grant.findMany.mockResolvedValueOnce([
-      { resource_id: 11, expires: EXPIRES }
+      { resource_id: 11, expires: LIVE_GRANT }
     ])
     prismaMocks.patch_resource_access.findMany.mockResolvedValueOnce([
-      { link_id: 21, link_version: 1 }
+      {
+        resource_id: 11,
+        link_id: 21,
+        link_version: 1,
+        expires: LIVE_GRANT
+      }
     ])
 
     const resources = await getPatchResource({ patchId: 7 }, { uid: 1007 })
@@ -288,20 +297,26 @@ describe('resource download access grant API', () => {
         link_id: { in: [21, 22] },
         expires: { gt: expect.any(Date) }
       },
-      select: { link_id: true, link_version: true }
+      select: {
+        resource_id: true,
+        link_id: true,
+        link_version: true,
+        expires: true
+      }
     })
     expect(resources[0].links).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           id: 21,
           obtained: true,
-          obtainedExpiresAt: EXPIRES.toISOString(),
-          revealed: true
+          obtainedExpiresAt: LIVE_GRANT.toISOString(),
+          revealed: true,
+          revealedExpiresAt: LIVE_GRANT.toISOString()
         }),
         expect.objectContaining({
           id: 22,
           obtained: true,
-          obtainedExpiresAt: EXPIRES.toISOString(),
+          obtainedExpiresAt: LIVE_GRANT.toISOString(),
           revealed: false
         })
       ])
@@ -317,10 +332,15 @@ describe('resource download access grant API', () => {
     const { GET } = await import('~/app/api/patch/resource/route')
     prismaMocks.patch_resource.findMany.mockResolvedValueOnce([resourceRow()])
     prismaMocks.patch_resource_access_grant.findMany.mockResolvedValueOnce([
-      { resource_id: 11, expires: EXPIRES }
+      { resource_id: 11, expires: LIVE_GRANT }
     ])
     prismaMocks.patch_resource_access.findMany.mockResolvedValueOnce([
-      { link_id: 21, link_version: 1 }
+      {
+        resource_id: 11,
+        link_id: 21,
+        link_version: 1,
+        expires: LIVE_GRANT
+      }
     ])
 
     const response = await GET(
@@ -348,7 +368,12 @@ describe('resource download access grant API', () => {
         link_id: { in: [21] },
         expires: { gt: expect.any(Date) }
       },
-      select: { link_id: true, link_version: true }
+      select: {
+        resource_id: true,
+        link_id: true,
+        link_version: true,
+        expires: true
+      }
     })
     await expect(response.json()).resolves.toMatchObject([
       {
@@ -356,8 +381,9 @@ describe('resource download access grant API', () => {
           {
             id: 21,
             obtained: true,
-            obtainedExpiresAt: EXPIRES.toISOString(),
-            revealed: true
+            obtainedExpiresAt: LIVE_GRANT.toISOString(),
+            revealed: true,
+            revealedExpiresAt: LIVE_GRANT.toISOString()
           }
         ]
       }
@@ -406,7 +432,8 @@ describe('resource download access grant API', () => {
         content: 'https://pan.example.com/share',
         code: 'abcd',
         password: 'pass',
-        hash: ''
+        hash: '',
+        revealedExpiresAt: EXPIRES.toISOString()
       },
       access: {
         kind: 'resource_granted',
@@ -424,8 +451,12 @@ describe('resource download access grant API', () => {
       storage: 'user',
       section: 'galgame',
       now: expect.any(Date),
+      clock: expect.any(Function),
       visibilityWhere: { content_limit: 'sfw' }
     })
+    const clock = grantMocks.resolveResourceAccessGrant.mock.calls[0][0]
+      .clock as () => Date
+    expect(clock()).not.toBe(clock())
     expect(prismaMocks.patch_resource_link.findFirst).toHaveBeenCalledWith({
       where: {
         id: 21,

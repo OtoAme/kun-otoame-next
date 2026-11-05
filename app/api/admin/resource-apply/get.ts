@@ -10,6 +10,31 @@ import { prisma } from '~/prisma/index'
 import { adminPaginationSchema } from '~/validations/admin'
 import type { AdminResource } from '~/types/api/admin'
 
+const asDate = (value: Date | string | null | undefined) => {
+  if (!value) return null
+  const date = value instanceof Date ? value : new Date(value)
+  return Number.isNaN(date.getTime()) ? null : date
+}
+
+const laterDate = (left: Date | null, right: Date | null) => {
+  if (left && right) return left > right ? left : right
+  return left ?? right
+}
+
+/** Touchgal backup time is the later of attach and content change. Other storages stay null. */
+const touchgalBackedUpAt = (link: {
+  storage: string
+  attached_at: Date | null
+  content_changed_at: Date | null
+}) => {
+  if (link.storage !== 'touchgal') return null
+  const time = laterDate(
+    asDate(link.attached_at),
+    asDate(link.content_changed_at)
+  )
+  return time ? time.toISOString() : null
+}
+
 export const getPatchResourceApply = async (
   input: z.infer<typeof adminPaginationSchema>,
   nsfwEnable: Record<string, string | undefined>,
@@ -65,7 +90,10 @@ export const getPatchResourceApply = async (
           }
         },
         links: {
-          select: linkHealthSelect(now),
+          select: {
+            ...linkHealthSelect(now),
+            attached_at: true
+          },
           orderBy: { sort_order: 'asc' }
         }
       }
@@ -114,7 +142,8 @@ export const getPatchResourceApply = async (
         hash: link.hash,
         content: link.content,
         sortOrder: link.sort_order,
-        download: link.download
+        download: link.download,
+        backedUpAt: touchgalBackedUpAt(link)
       })),
       download: resource.download,
       likeCount: 0,

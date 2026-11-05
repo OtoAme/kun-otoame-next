@@ -1,4 +1,4 @@
-import { Prisma } from '@prisma/client'
+import { Prisma, type PrismaClient } from '@prisma/client'
 import { setTimeout as wait } from 'node:timers/promises'
 import { prisma } from '~/prisma/index'
 import { LINK_HEALTH_ERRORS } from '~/constants/linkHealth'
@@ -96,5 +96,144 @@ export const resourcePostCommit = async (
     await work()
   } catch {
     console.error('[Resource] Postcommit operation failed', { operation })
+  }
+}
+
+export const HANDOVER_MESSAGES = {
+  forbidden: '您没有权限交由站方维护',
+  editClosed: '您已将这份资源交由站方维护，不能再编辑',
+  deleteClosed: '您已将这份资源交由站方维护，不能再删除',
+  backupChanged: '站方备份已变化，请重新确认是否交由站方维护',
+  backupMissing: '这份资源还没有站方备份，请重新确认是否删除',
+  invalidLocator: '资源文件位置无法清理，交接已取消',
+  cleanupUnavailable: '资源文件清理暂不可用，请稍后再试',
+  caseConflict: '事项刚刚发生变化，请刷新后重试'
+} as const
+
+export const HANDOVER_HTTP_ERRORS = [
+  { status: 403, message: HANDOVER_MESSAGES.forbidden },
+  { status: 403, message: HANDOVER_MESSAGES.editClosed },
+  { status: 403, message: HANDOVER_MESSAGES.deleteClosed },
+  { status: 409, message: HANDOVER_MESSAGES.backupChanged },
+  { status: 409, message: HANDOVER_MESSAGES.backupMissing },
+  { status: 409, message: HANDOVER_MESSAGES.invalidLocator },
+  { status: 409, message: HANDOVER_MESSAGES.caseConflict },
+  { status: 503, message: HANDOVER_MESSAGES.cleanupUnavailable }
+] as const
+
+export const handoverStatus = (message: string) =>
+  HANDOVER_HTTP_ERRORS.find((error) => error.message === message)?.status
+
+type HandoverColumnClient = PrismaClient | Prisma.TransactionClient
+
+/** Generated column. A missing row is treated as not handed over. */
+export const readPublisherLeftAt = async (
+  db: HandoverColumnClient,
+  resourceId: number
+): Promise<Date | null> => {
+  const row = await db.patch_resource.findUnique({
+    where: { id: resourceId },
+    select: { publisher_left_at: true }
+  })
+  return row?.publisher_left_at ?? null
+}
+
+export const readPublisherLeftMap = async (
+  db: HandoverColumnClient,
+  resourceIds: readonly number[]
+) => {
+  if (!resourceIds.length) return new Map<number, Date | null>()
+  const rows = await db.patch_resource.findMany({
+    where: { id: { in: [...resourceIds] } },
+    select: { id: true, publisher_left_at: true }
+  })
+  return new Map(rows.map((row) => [row.id, row.publisher_left_at] as const))
+}
+
+export const listHandedOverResourceIds = async (
+  db: HandoverColumnClient,
+  userId?: number
+) => {
+  const rows = await db.patch_resource.findMany({
+    where: {
+      publisher_left_at: { not: null },
+      ...(userId === undefined ? {} : { user_id: userId })
+    },
+    select: { id: true },
+    orderBy: { id: 'asc' }
+  })
+  return rows.map((row) => row.id)
+}
+
+/**
+ * One-row conditional write. False means the card was already handed over.
+ * updateMany does not apply @updatedAt, so updated is set in the same write.
+ */
+export const markPublisherLeft = async (
+  db: HandoverColumnClient,
+  resourceId: number,
+  now: Date
+) => {
+  const changed = await db.patch_resource.updateMany({
+    where: { id: resourceId, publisher_left_at: null },
+    data: { publisher_left_at: now, updated: now }
+  })
+  return changed.count === 1
+}
+
+export type LinkChangeFact = {
+  id: number
+  resourceId: number
+  storage: string
+  attachedAt: Date | null
+  contentChangedAt: Date | null
+  changedAt: Date | null
+}
+
+export const linkChangedAt = (
+  attachedAt: Date | null,
+  contentChangedAt: Date | null
+) => {
+  const times = [attachedAt, contentChangedAt].filter(
+    (value): value is Date => value !== null
+  )
+  if (!times.length) return null
+  return new Date(Math.max(...times.map((value) => value.getTime())))
+}
+
+export const readLinkChangeFacts = async (
+  db: HandoverColumnClient,
+  resourceIds: readonly number[]
+): Promise<LinkChangeFact[]> => {
+  if (!resourceIds.length) return []
+  const rows = await db.patch_resource_link.findMany({
+    where: { resource_id: { in: [...resourceIds] } },
+    select: {
+      id: true,
+      resource_id: true,
+      storage: true,
+      attached_at: true,
+      content_changed_at: true
+    },
+    orderBy: { id: 'asc' }
+  })
+  return rows.map((row) => ({
+    id: row.id,
+    resourceId: row.resource_id,
+    storage: row.storage,
+    attachedAt: row.attached_at,
+    contentChangedAt: row.content_changed_at,
+    changedAt: linkChangedAt(row.attached_at, row.content_changed_at)
+  }))
+}
+
+export const assertPublisherStillMaintains = (
+  leftAt: Date | null,
+  resourceUserId: number,
+  uid: number,
+  role: number
+) => {
+  if (leftAt && role < 3 && resourceUserId === uid) {
+    throw new ResourceMutationError(HANDOVER_MESSAGES.editClosed, 403)
   }
 }

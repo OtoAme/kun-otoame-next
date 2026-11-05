@@ -11,6 +11,7 @@ const prismaMocks = vi.hoisted(() => ({
   admin_log: {
     create: vi.fn()
   },
+  $queryRaw: vi.fn(async () => [{ publisher_left_at: null }]),
   $transaction: vi.fn((fn: (tx: any) => Promise<unknown>) => fn(prismaMocks))
 }))
 

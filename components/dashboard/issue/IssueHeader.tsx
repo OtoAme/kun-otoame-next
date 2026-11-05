@@ -57,7 +57,7 @@ export function IssueHeader({ user }: { user: IssueHeaderUser | null }) {
             href="/workspace/resources"
             className="rounded-md px-2 py-1 text-sm font-medium text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
           >
-            我的资源
+            我维护的资源
           </Link>
           <Link
             href="/workspace/entries"

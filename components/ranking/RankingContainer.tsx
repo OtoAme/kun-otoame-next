@@ -26,7 +26,7 @@ const sortOptions: { key: RankingSortField; label: string }[] = [
   { key: 'favorite', label: '收藏数' },
   { key: 'resource', label: '资源数' },
   { key: 'comment', label: '评论数' },
-  { key: 'download', label: '下载数' },
+  { key: 'download', label: '获取次数' },
   { key: 'view', label: '浏览数' }
 ]
 

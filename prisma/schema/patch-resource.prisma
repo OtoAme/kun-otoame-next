@@ -9,8 +9,12 @@ model patch_resource {
   download Int      @default(0)
   // 0 - normal, 1 - banned, 2 - pending approval
   status   Int      @default(0)
+  // Null while the original publisher still maintains the card. Set only by an
+  // explicit handover. user_id stays the original publisher.
+  publisher_left_at DateTime?
 
   like_by      user_patch_resource_like_relation[]
+  backup_state patch_resource_backup_state?
   links        patch_resource_link[]
   access       patch_resource_access[]
   grants       patch_resource_access_grant[]       @relation("patch_resource_access_grant")
@@ -41,14 +45,19 @@ model patch_resource_link {
   content            String    @default("")
   sort_order         Int       @default(0)
   download           Int       @default(0)
+  // Console-only auxiliary clicks. Public obtain counts stay on download.
+  click              Int       @default(0)
   health             String    @default("ok") @db.VarChar(20)
   version            Int       @default(1)
   evidence_round     Int       @default(0)
   health_changed_at  DateTime?
   verified_at        DateTime?
   content_changed_at DateTime?
+  // When this link joined its card. Address replacement does not move it.
+  attached_at        DateTime  @default(now())
 
   resource_id Int
+  attached_at_fill patch_resource_link_attached_at_fill?
   resource    patch_resource               @relation(fields: [resource_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   access      patch_resource_access[]
   reports     patch_resource_link_report[]

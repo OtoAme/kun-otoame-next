@@ -129,6 +129,7 @@ export function ResourceEditForm({
   reviewerRole,
   onSaved,
   onCancel,
+  successMessage = '修改已保存，资源仍待审核',
   isPhone = false
 }: {
   isPhone?: boolean
@@ -137,6 +138,7 @@ export function ResourceEditForm({
   reviewerRole: number
   onSaved: () => void
   onCancel: () => void
+  successMessage?: string
 }) {
   const [draft, setDraft] = useState<Draft>(() => draftFromResource(resource))
   const [initial] = useState(() =>
@@ -237,7 +239,7 @@ export function ResourceEditForm({
         setError('没有确认这次保存是否已经写入，请刷新核对后再操作')
         return
       }
-      toast.success('修改已保存，资源仍待审核')
+      toast.success(successMessage)
       onSaved()
     } catch {
       setError('网络错误，保存失败，请重试')

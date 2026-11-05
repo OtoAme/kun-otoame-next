@@ -10,6 +10,12 @@ import { prisma } from '~/prisma/index'
 import { adminResourcePaginationSchema } from '~/validations/admin'
 import type { AdminResource } from '~/types/api/admin'
 import type { Prisma } from '@prisma/client'
+import type { AdminResourceLinkTimes } from '~/types/api/admin'
+import {
+  listHandedOverResourceIds,
+  readLinkChangeFacts,
+  readPublisherLeftMap
+} from '~/app/api/patch/resource/mutation'
 
 type AdminResourceQuery = z.infer<typeof adminResourcePaginationSchema>
 
@@ -106,6 +112,10 @@ export const buildAdminResourceWhere = (
   if (input.language) and.push({ language: { hasSome: input.language } })
   if (input.platform) and.push({ platform: { hasSome: input.platform } })
   if (input.health) and.push(HEALTH_WHERE[input.health])
+  if (input.hasStaffBackup === 'true')
+    and.push({ links: { some: { storage: 'touchgal' } } })
+  if (input.hasStaffBackup === 'false')
+    and.push({ links: { none: { storage: 'touchgal' } } })
   if (input.from) and.push({ created: { gte: shanghaiDayStart(input.from) } })
   if (input.to) and.push({ created: { lt: shanghaiDayEnd(input.to) } })
   // An explicit rating replaces the viewer's display setting.
@@ -123,7 +133,17 @@ export const getPatchResource = async (
   const { page, limit } = input
   const offset = (page - 1) * limit
   const now = new Date()
-  const where = buildAdminResourceWhere(input, nsfwEnable)
+  let where = buildAdminResourceWhere(input, nsfwEnable)
+  if (input.staffMaintained === 'true' || input.staffMaintained === 'false') {
+    const handedOver = await listHandedOverResourceIds(prisma)
+    if (input.staffMaintained === 'true') {
+      where = {
+        AND: [where, { id: { in: handedOver.length ? handedOver : [-1] } }]
+      }
+    } else if (handedOver.length) {
+      where = { AND: [where, { id: { notIn: handedOver } }] }
+    }
+  }
   const orderBy = ADMIN_RESOURCE_ORDER[input.sort ?? 'created_desc']
 
   const [data, total] = await Promise.all([
@@ -156,6 +176,22 @@ export const getPatchResource = async (
     prisma.patch_resource.count({ where })
   ])
 
+  const [leftAt, linkFacts] =
+    data.length === 0
+      ? [new Map<number, Date | null>(), []]
+      : await Promise.all([
+          readPublisherLeftMap(
+            prisma,
+            data.map((resource) => resource.id)
+          ),
+          readLinkChangeFacts(
+            prisma,
+            data.map((resource) => resource.id)
+          )
+        ])
+  const factByLink = new Map(linkFacts.map((fact) => [fact.id, fact]))
+  const iso = (value: Date | null | undefined) =>
+    value ? value.toISOString() : null
   const disputeSources = await getLinkDisputeSources(
     data.flatMap((resource) =>
       resource.links.map((link) => ({
@@ -197,7 +233,16 @@ export const getPatchResource = async (
         hash: link.hash,
         content: link.content,
         sortOrder: link.sort_order,
-        download: link.download
+        download: link.download,
+        ...({
+          attachedAt: iso(factByLink.get(link.id)?.attachedAt),
+          contentChangedAt: iso(factByLink.get(link.id)?.contentChangedAt),
+          changedAt: iso(factByLink.get(link.id)?.changedAt)
+        } satisfies AdminResourceLinkTimes),
+        backedUpAt:
+          link.storage === 'touchgal'
+            ? iso(factByLink.get(link.id)?.changedAt)
+            : null
       })),
       download: resource.download,
       likeCount: 0,
@@ -205,6 +250,7 @@ export const getPatchResource = async (
       status: resource.status,
       userId: resource.user_id,
       patchId: resource.patch_id,
+      publisherLeftAt: iso(leftAt.get(resource.id)),
       created: String(resource.created),
       user: {
         id: resource.user.id,

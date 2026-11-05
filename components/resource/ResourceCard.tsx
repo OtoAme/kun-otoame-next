@@ -58,8 +58,8 @@ export const ResourceCard = ({ resource }: Props) => {
               <Heart size={16} />
               {resource.likeCount}
             </div>
-            <div className="flex items-center gap-1">
-              <Download size={16} />
+            <div className="flex items-center gap-1" aria-label="获取次数">
+              <Download size={16} aria-hidden />
               {resource.download}
             </div>
           </div>

@@ -320,7 +320,8 @@ const detail = (
   linkCount: 2,
   linkDiskKinds: [],
   actionableCount: 0,
-  capabilities: { canEdit: true, canDelete: true, canUpload: true },
+  hasStaffBackup: false,
+  capabilities: { canEdit: true, canDelete: true, canUpload: true, canHandover: false },
   note: '备注',
   type: ['pc', 'official-zh'],
   language: ['zh-Hans'],
@@ -759,7 +760,9 @@ describe('workspace resource editor', () => {
       button(dom!.window.document, '确认删除')!.click()
     })
     await settle()
-    expect(mocks.kunFetchDelete).toHaveBeenCalledWith('/workspace/resources/9')
+    expect(mocks.kunFetchDelete).toHaveBeenCalledWith('/workspace/resources/9', {
+      action: 'delete'
+    })
     expect(mocks.push).toHaveBeenCalledWith('/workspace/resources')
   })
 
@@ -771,7 +774,7 @@ describe('workspace resource editor', () => {
     async (_label, status) => {
       current = detail({
         status,
-        capabilities: { canEdit: false, canDelete: true, canUpload: false },
+        capabilities: { canEdit: false, canDelete: true, canUpload: false, canHandover: false },
         links: [
           { id: 2, version: 4, storage: 'user', protected: true },
           { id: 3, version: 1, storage: 's3', protected: true }
@@ -827,7 +830,7 @@ describe('workspace resource editor', () => {
 
   it('hides whole-resource delete when the server denies it for a resource disk', async () => {
     current = detail({
-      capabilities: { canEdit: true, canDelete: false, canUpload: false },
+      capabilities: { canEdit: true, canDelete: false, canUpload: false, canHandover: false },
       links: [
         { id: 1, version: 1, storage: 'touchgal', protected: true },
         {
@@ -1471,7 +1474,7 @@ describe('workspace resource editor', () => {
   it('uploads from the draft section and keeps role 3 galgame uploads', async () => {
     workspaceUser.role = 2
     current = detail({
-      capabilities: { canEdit: true, canDelete: true, canUpload: false }
+      capabilities: { canEdit: true, canDelete: true, canUpload: false, canHandover: false }
     })
     const container = await mount()
     expect(container.textContent).not.toContain('上传到对象存储')
@@ -1490,7 +1493,7 @@ describe('workspace resource editor', () => {
 
     workspaceUser.role = 3
     current = detail({
-      capabilities: { canEdit: true, canDelete: true, canUpload: false },
+      capabilities: { canEdit: true, canDelete: true, canUpload: false, canHandover: false },
       links: [
         { id: 1, version: 1, storage: 'touchgal', protected: true },
         {
@@ -2433,7 +2436,7 @@ describe('workspace resource editor', () => {
 
   it('leaves unsupported values in place when the editor is read only', async () => {
     current = detail({
-      capabilities: { canEdit: false, canDelete: false, canUpload: false },
+      capabilities: { canEdit: false, canDelete: false, canUpload: false, canHandover: false },
       type: ['pc', 'legacy-type', 'official-zh'],
       language: ['zh-Hans', 'legacy-lang'],
       platform: ['windows', 'legacy-platform']
@@ -2575,7 +2578,7 @@ describe('workspace resource editor', () => {
 
   it('leaves a disabled address and its existing code unchanged when paste is dispatched', async () => {
     current = detail({
-      capabilities: { canEdit: false, canDelete: false, canUpload: false },
+      capabilities: { canEdit: false, canDelete: false, canUpload: false, canHandover: false },
       links: [
         { id: 1, version: 1, storage: 'touchgal', protected: true },
         {

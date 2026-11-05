@@ -5,11 +5,13 @@ import Link from 'next/link'
 import { usePathname, useSearchParams } from 'next/navigation'
 import toast from 'react-hot-toast'
 import {
+  Archive,
   BadgeCheck,
   ChevronsUpDown,
   ClipboardList,
   FileText,
   Gamepad2,
+  GitMerge,
   HardDriveDownload,
   Home,
   Inbox,
@@ -90,6 +92,8 @@ const NAV_ICONS: Record<string, LucideIcon> = {
   sticker: Sticker,
   'link-health': Unlink,
   'company-merges': Merge,
+  backup: Archive,
+  'resource-merges': GitMerge,
   shoutbox: Megaphone,
   user: Users,
   log: ScrollText,

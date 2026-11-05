@@ -38,7 +38,7 @@ export const restorePatchResourceLinks = async (
       patch_id: input.patchId,
       resource_id: input.resourceId,
       link_id: { in: input.linkIds },
-      expires: { gte: grant.expires },
+      expires: { gt: now },
       link: { resource_id: input.resourceId },
       resource: {
         status: 0,
@@ -47,6 +47,7 @@ export const restorePatchResourceLinks = async (
       }
     },
     select: {
+      expires: true,
       link_version: true,
       link: {
         select: {
@@ -63,13 +64,43 @@ export const restorePatchResourceLinks = async (
     }
   })
 
-  const linkById = new Map(
-    access.flatMap(({ link, link_version }) =>
-      link && link_version !== null && link_version === link.version
-        ? [[link.id, link] as const]
-        : []
-    )
-  )
+  const linkById = new Map<
+    number,
+    {
+      id: number
+      version: number
+      storage: string
+      size: string
+      content: string
+      code: string
+      password: string
+      hash: string
+      revealedExpiresAt: string
+    }
+  >()
+  for (const row of access) {
+    const link = row.link
+    if (
+      !link ||
+      row.link_version === null ||
+      row.link_version !== link.version ||
+      !(row.expires instanceof Date) ||
+      row.expires <= now
+    ) {
+      continue
+    }
+    const current = linkById.get(link.id)
+    if (
+      current &&
+      Date.parse(current.revealedExpiresAt) >= row.expires.getTime()
+    ) {
+      continue
+    }
+    linkById.set(link.id, {
+      ...link,
+      revealedExpiresAt: row.expires.toISOString()
+    })
+  }
   return {
     links: input.linkIds.flatMap((id) => {
       const link = linkById.get(id)

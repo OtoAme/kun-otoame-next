@@ -37,6 +37,13 @@ import Link from 'next/link'
 import { kunMoyuMoe } from '~/config/moyu-moe'
 import toast from 'react-hot-toast'
 import { canManageResource } from './resourcePermissions'
+import {
+  authorResourceLocked,
+  confirmedExitAction,
+  type AuthorResourceAction
+} from './authorResourceAction'
+import { readPublicMirrorFacts } from './publicMirrorFacts'
+import { partitionByPublisherRole } from './resourceGrouping'
 
 type ResourceSection = (typeof SUPPORTED_RESOURCE_SECTION)[number]
 
@@ -47,8 +54,7 @@ interface Props {
   resources: PatchResource[]
   setEditResource: (resources: PatchResource) => void
   onOpenEdit: () => void
-  onOpenDelete: () => void
-  setDeleteResourceId: (resourceId: number) => void
+  onOpenDelete: (resourceId: number, action: AuthorResourceAction) => void
   selectedSection: ResourceSection
   setSelectedSection: (section: ResourceSection) => void
 }
@@ -60,7 +66,9 @@ const ResourceCard = ({
   canManage,
   editLoading,
   onEdit,
-  onDelete
+  onDelete,
+  userId,
+  userRole
 }: {
   resource: PatchResource
   patchId: number
@@ -68,8 +76,20 @@ const ResourceCard = ({
   canManage: boolean
   editLoading: boolean
   onEdit: (resource: PatchResource, focusLinkId?: number) => void
-  onDelete: () => void
+  onDelete: (action: AuthorResourceAction) => void
+  userId: number
+  userRole: number
 }) => {
+  const facts = readPublicMirrorFacts(resource)
+  const viewer = {
+    userId,
+    userRole,
+    resourceUserId: resource.userId,
+    hasStaffBackup: facts.hasStaffBackup,
+    staffMaintained: facts.staffMaintained
+  }
+  const locked = authorResourceLocked(viewer)
+  const exitAction = confirmedExitAction(viewer)
   const { healthUpdateFor, onReported } = useResourceLinkHealthUpdates(resource)
 
   return (
@@ -95,7 +115,7 @@ const ResourceCard = ({
               onReported={onReported}
               compact
             />
-            {canManage && (
+            {canManage && !locked && exitAction ? (
               <Dropdown>
                 <DropdownTrigger>
                   <Button
@@ -118,17 +138,23 @@ const ResourceCard = ({
                     编辑
                   </DropdownItem>
                   <DropdownItem
-                    key="delete"
-                    className="text-danger"
-                    color="danger"
-                    startContent={<Trash2 className="size-4" />}
-                    onPress={onDelete}
+                    key={exitAction}
+                    className={
+                      exitAction === 'delete' ? 'text-danger' : undefined
+                    }
+                    color={exitAction === 'delete' ? 'danger' : 'default'}
+                    startContent={
+                      exitAction === 'delete' ? (
+                        <Trash2 className="size-4" />
+                      ) : undefined
+                    }
+                    onPress={() => onDelete(exitAction)}
                   >
-                    删除
+                    {exitAction === 'handover' ? '交由站方维护' : '删除'}
                   </DropdownItem>
                 </DropdownMenu>
               </Dropdown>
-            )}
+            ) : null}
           </div>
         </div>
         {resource.caseSummaries?.length ? (
@@ -143,7 +169,11 @@ const ResourceCard = ({
           hideReportButton
           healthUpdateFor={healthUpdateFor}
           onHealthResult={onReported}
-          onEdit={(target, focusLinkId) => onEdit(target, focusLinkId)}
+          onEdit={
+            locked
+              ? undefined
+              : (target, focusLinkId) => onEdit(target, focusLinkId)
+          }
         />
       </CardBody>
     </Card>
@@ -157,7 +187,6 @@ export const ResourceTabs = ({
   setEditResource,
   onOpenEdit,
   onOpenDelete,
-  setDeleteResourceId,
   selectedSection,
   setSelectedSection
 }: Props) => {
@@ -279,13 +308,12 @@ export const ResourceTabs = ({
         userRole: user.role
       })}
       editLoading={editLoadingResourceId === resource.id}
+      userId={user.uid}
+      userRole={user.role}
       onEdit={(target, focusLinkId) =>
         void handleOpenEditResource(target, focusLinkId)
       }
-      onDelete={() => {
-        setDeleteResourceId(resource.id)
-        onOpenDelete()
-      }}
+      onDelete={(action) => onOpenDelete(resource.id, action)}
     />
   )
 
@@ -299,8 +327,8 @@ export const ResourceTabs = ({
       {SUPPORTED_RESOURCE_SECTION.map((section) => {
         const sectionResources = categorizedResources[section]
         const sectionCount = sectionResources.length
-        const official = sectionResources.filter((r) => r.user?.role > 2)
-        const community = sectionResources.filter((r) => !(r.user?.role > 2))
+        const { official, community } =
+          partitionByPublisherRole(sectionResources)
 
         return (
           <Tab

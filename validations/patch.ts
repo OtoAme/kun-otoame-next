@@ -339,6 +339,15 @@ export const patchResourceStableUpdateSchema =
     z.object({ resourceId: linkHealthIdSchema })
   )
 
+/** Omitted action keeps the legacy delete. Unknown values fail closed. */
+export const patchResourceDeleteQuerySchema = z.object({
+  resourceId: z.coerce
+    .number({ message: '资源 ID 必须为数字' })
+    .min(1)
+    .max(9999999),
+  action: z.enum(['handover', 'delete']).optional()
+})
+
 export const declinePullRequestSchema = z.object({
   prId: z.coerce.number({ message: 'ID 必须为数字' }).min(1).max(9999999),
   note: z
