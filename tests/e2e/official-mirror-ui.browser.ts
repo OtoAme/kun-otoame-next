@@ -491,7 +491,7 @@ const openAs = async (
 
 const shot = async (page: Page, name: string) => {
   const path = join(ARTIFACT_DIR, name)
-  await page.screenshot({ path, fullPage: true })
+  await page.screenshot({ path, fullPage: true, animations: 'disabled' })
   console.log(`SHOT ${path}`)
 }
 
@@ -1184,7 +1184,9 @@ const writePassMobile = async (
   }
 }
 
-void main().catch((error: unknown) => {
+export { seed, session, openAs, shot, assertLongLinkFits, revealList, assertDialogFocus, openResourceMenu }
+
+if (process.argv[1]?.endsWith('official-mirror-ui.browser.ts')) void main().catch((error: unknown) => {
   const message = error instanceof Error ? error.stack || error.message : String(error)
   console.error(redact(message))
   process.exitCode = 1

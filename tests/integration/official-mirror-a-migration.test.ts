@@ -240,6 +240,31 @@ describe.skipIf(!databaseUrl)('official mirror migration on disposable Postgres'
     await pool.end()
   })
 
+  it('rolls back on a real migration lock timeout and safely reenters after release', async () => {
+    await insertResource(1, 7, '2020-01-01 00:00:00.000')
+    await insertLinks(1, '2024-04-04 04:04:04.004', 1, 1, 8)
+    const blocker = await pool.connect()
+    try {
+      await blocker.query('BEGIN')
+      await blocker.query('LOCK TABLE public.patch_resource IN ACCESS EXCLUSIVE MODE')
+      const result = runFile('production-official-mirror-sync-2026-11-04.sql', decisions('none'))
+      expect(result.status).not.toBe(0)
+      expect(result.stderr).toContain('lock timeout')
+    } finally {
+      await blocker.query('ROLLBACK')
+      blocker.release()
+    }
+    const columns = await query<{ column_name: string }>(`SELECT column_name FROM information_schema.columns
+      WHERE table_schema='public' AND table_name='patch_resource_link' AND column_name='attached_at'`)
+    expect(columns.rows).toHaveLength(0)
+    expect((await query(`SELECT to_regclass('public.patch_resource_backup_state') AS name`)).rows[0].name).toBeNull()
+    expectSql('production-official-mirror-sync-2026-11-04.sql', decisions('none'))
+    const filled = (await query(`SELECT attached_at FROM public.patch_resource_link`)).rows[0].attached_at
+    expect(filled).toBeInstanceOf(Date)
+    expectSql('production-official-mirror-sync-2026-11-04.sql', decisions('none'))
+    expect((await query(`SELECT attached_at FROM public.patch_resource_link`)).rows[0].attached_at).toEqual(filled)
+  }, 15000)
+
   it('rolls back when a group larger than 50 has no stamp decision', async () => {
     await insertResource(1, 7, '2020-01-01 00:00:00.000')
     await insertLinks(1, '2024-04-04 04:04:04.004', 51, 1, 8)

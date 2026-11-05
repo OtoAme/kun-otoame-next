@@ -4,9 +4,13 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 /**
  * Real PostgreSQL proof for module 06 merges. Runs only when
  * KUN_OFFICIAL_MIRROR_D_TEST_DATABASE_URL is exactly the disposable database
- * official_mirror_d_e2e on 127.0.0.1:55433. Cache stand-ins stay in process.
+ * official_mirror_d_e2e on 127.0.0.1:55433 (or explicitly 55443). Cache stand-ins stay in process.
  */
 const databaseUrl = process.env.KUN_OFFICIAL_MIRROR_D_TEST_DATABASE_URL?.trim()
+const expectedPort = process.env.KUN_OFFICIAL_MIRROR_D_TEST_PORT ?? '55433'
+if (!['55433', '55443'].includes(expectedPort)) {
+  throw new Error('official mirror D test port must be 55433 or 55443')
+}
 
 vi.mock('~/lib/redis', () => {
   const idle = () => async () => undefined
@@ -60,8 +64,8 @@ const assertDisposableUrl = (value: string) => {
   if (parsed.protocol !== 'postgresql:' && parsed.protocol !== 'postgres:') {
     throw new Error('official mirror D test database must use postgresql')
   }
-  if (parsed.hostname !== '127.0.0.1' || parsed.port !== '55433') {
-    throw new Error('official mirror D test database must be 127.0.0.1:55433')
+  if (parsed.hostname !== '127.0.0.1' || parsed.port !== expectedPort) {
+    throw new Error(`official mirror D test database must be 127.0.0.1:${expectedPort}`)
   }
   if (
     parsed.username !== 'official_mirror_d' ||
