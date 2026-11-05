@@ -170,6 +170,7 @@ pnpm maintenance:companies:dirty:cache --plan=<审计目录>/plan.json
 | 未发送私聊图片 | `pnpm maintenance:conversation-images:dry`；确认后 `pnpm maintenance:conversation-images:apply -- --limit=100 --batch=50 --concurrency=1 --delay=1000` | 默认仅删超过 2 小时、路径符合且不被未删除消息或回复引用的对象；预览默认最多 200，执行前重查引用。失败保留错误，不能把候选当已删。 |
 | 投稿素材积压 | `pnpm maintenance:submission-assets:dry`；确认后 `pnpm maintenance:submission-assets:apply` | 预览不写待办、不删文件、不清边缘。执行依次处理终态投稿积压、持久待办和新无主文件，默认宽限 24 小时、不限数量。调整时参数与值用空格分隔，例如 `pnpm maintenance:submission-assets:apply -- --limit 50 --grace-hours 48`；写成等号形式或非正整数会被忽略，执行变为默认宽限且不限数量。 |
 | 内置贴纸 | `pnpm stickers:sync -- --manifest=<本地清单>`；确认后同命令加 `--apply` | 校验后上传与更新目录，不删历史贴纸，但会按清单重新启用其中的贴纸；格式与步骤见[贴纸维护](../reference/stickers.md#导入和同步操作)。 |
+| 交接对象清理重放 | `pnpm replay:resource-file-cleanup -- --confirm-database=<库名>` | 只重放已经写入的资源对象清理待办。连接串只来自 `KUN_DATABASE_URL`，命令行不接受连接串；`--confirm-database` 必须与库名完全一致。可选 `--limit` 与 `--ids`。失败保留在待办里，不能把命令输出当成已经删除。尚未对生产库执行。 |
 
 截图可用 `--patch-id`、`--start-id`、`--limit`、`--max-original-mb` 缩范围，不确定编码成本时加 `--skip-animated-avif`。私聊图片可用 `--conversation-id` 和更长 `--older-than-hours` 缩范围。保持生产低并发，视频工具安装和验证见部署指南。
 
