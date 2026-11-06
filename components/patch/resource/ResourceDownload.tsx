@@ -6,7 +6,6 @@ import { Button } from '@heroui/react'
 import { KunUser } from '~/components/kun/floating-card/KunUser'
 import { ChevronDown, ChevronUp, Download } from 'lucide-react'
 import { formatTimeDifference } from '~/utils/time'
-import { formatChinaDateTime } from '~/utils/fixedTimezoneDate'
 import { kunFetchPost } from '~/utils/kunFetch'
 import { ResourceLikeButton } from './ResourceLike'
 import { isOpenAccessDeadline, ResourceDownloadCard } from './DownloadCard'
@@ -142,12 +141,6 @@ export const ResourceDownload = ({
     expiresAt: '',
     error: ''
   })
-  const [sessionGrantExpiresAt, setSessionGrantExpiresAt] = useState('')
-  const [grantClock, setGrantClock] = useState(() => Date.now())
-  useEffect(() => {
-    setSessionGrantExpiresAt('')
-    setGrantClock(Date.now())
-  }, [resource.id])
   const currentRestoreState =
     restoreState.key === restoreKey ? restoreState : null
 
@@ -351,29 +344,10 @@ export const ResourceDownload = ({
               restoredRevealedExpiresAt: restoredLink.revealedExpiresAt
             }
           : {})}
-        onResourceAuthorized={setSessionGrantExpiresAt}
         onCredentialsCleared={clearRestoredLink}
       />
     )
   }
-
-  const grantExpiresAt =
-    sessionGrantExpiresAt ||
-    resource.links.find((link) => link.obtainedExpiresAt)?.obtainedExpiresAt ||
-    currentRestoreState?.expiresAt ||
-    ''
-  useEffect(() => {
-    if (!isOpenAccessDeadline(grantExpiresAt)) return
-    const delay = Date.parse(grantExpiresAt) - Date.now()
-    const timer = window.setTimeout(
-      () => setGrantClock(Date.now()),
-      Math.max(0, delay) + 1
-    )
-    return () => window.clearTimeout(timer)
-  }, [grantExpiresAt])
-  const grantLabel = isOpenAccessDeadline(grantExpiresAt, grantClock)
-    ? `本次获取有效至 ${formatChinaDateTime(grantExpiresAt)}（北京时间）`
-    : ''
 
   return (
     <div className="min-w-0 space-y-2">
@@ -476,10 +450,6 @@ export const ResourceDownload = ({
 
       {showLinks[resource.id] && (
         <div className="grid min-w-0 gap-2.5">
-          {grantLabel ? (
-            <p className="text-sm text-default-500">{grantLabel}</p>
-          ) : null}
-
           {currentRestoreState?.error && (
             <p role="alert" className="text-sm text-danger">
               {currentRestoreState.error}

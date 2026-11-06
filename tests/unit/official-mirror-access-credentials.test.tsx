@@ -371,7 +371,7 @@ describe('official mirror per-link credential expiry', () => {
     expect(cleared).toHaveBeenCalledWith(21)
   })
 
-  it('clears restored credentials on expiry while the longer resource grant label remains', async () => {
+  it('hides the grant deadline and still clears restored credentials on expiry', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
     vi.setSystemTime(new Date('2026-11-04T00:00:00.000Z'))
     const revealedLink: PatchResourceLink = {
@@ -391,7 +391,7 @@ describe('official mirror per-link credential expiry', () => {
       <ResourceDownload resource={{ ...resource, links: [revealedLink] }} />
     )
     expect(container.textContent).toContain(secret)
-    expect(container.textContent).toContain('本次获取有效至')
+    expect(container.textContent).not.toContain('本次获取有效至')
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(2001)
@@ -400,7 +400,7 @@ describe('official mirror per-link credential expiry', () => {
     expect(container.textContent).not.toContain(secret)
     expect(container.textContent).not.toContain('abcd')
     expect(container.textContent).not.toContain('secret-pass')
-    expect(container.textContent).toContain('本次获取有效至')
+    expect(container.textContent).not.toContain('本次获取有效至')
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(60000)

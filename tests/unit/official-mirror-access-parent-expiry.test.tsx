@@ -190,7 +190,7 @@ describe('official mirror parent credential expiry', () => {
     cardMock.shown = []
   })
 
-  it('drops the earlier restored link while folded and keeps the later link and grant', async () => {
+  it('drops the earlier restored link while folded and keeps the later link without a grant label', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
     vi.setSystemTime(new Date('2026-11-04T00:00:00.000Z'))
     const early = 'https://pan.example.test/early'
@@ -231,9 +231,7 @@ describe('official mirror parent credential expiry', () => {
     expect(container.textContent).not.toContain('pass-21')
     expect(container.textContent).toContain(later)
     expect(container.textContent).toContain('pass-22')
-    expect(container.textContent).toContain(
-      '本次获取有效至 2026/11/04 08:02（北京时间）'
-    )
+    expect(container.textContent).not.toContain('本次获取有效至')
     expect(container.textContent).not.toContain('2026-11-04T00:02:00.000Z')
     expect(
       cardMock.shown.find((item) => item.id === 21)?.content
