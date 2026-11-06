@@ -2057,6 +2057,27 @@ describe('official mirror merge workbench services', () => {
       return JSON.parse(json ?? '{}') as Record<string, unknown>
     }
 
+    it('preserves the original link snapshot in merge history', async () => {
+      const history = vi.spyOn(harness.tx.patch_resource_link_history, 'create')
+      try {
+        await run([user, staff])
+        expect(history).toHaveBeenCalledExactlyOnceWith({
+          data: {
+            resource_id: 1,
+            link_id: links[1].id,
+            from_version: links[1].version,
+            old_content: links[1].content,
+            old_storage: links[1].storage,
+            old_size: links[1].size,
+            reason: 'merge',
+            operator_user_id: 7
+          }
+        })
+      } finally {
+        history.mockRestore()
+      }
+    })
+
     it('records whether the merged pair was the recommendation without changing acceptance', async () => {
       const alone = await run([user, staff])
       expect(alone.recommended).toBe(true)

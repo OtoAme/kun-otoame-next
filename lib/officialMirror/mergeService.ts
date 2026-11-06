@@ -581,12 +581,15 @@ const writeMerge = async (
       data: { resource_id: input.user.id, sort_order: move.sortOrder }
     })
   }
-  for (const move of moves) {
+  for (const link of input.staff.links) {
     await tx.patch_resource_link_history.create({
       data: {
         resource_id: input.user.id,
-        link_id: move.id,
-        from_version: move.version,
+        link_id: link.id,
+        from_version: link.version,
+        old_content: link.content,
+        old_storage: link.storage,
+        old_size: link.size,
         reason: 'merge',
         operator_user_id: input.actorId
       }
