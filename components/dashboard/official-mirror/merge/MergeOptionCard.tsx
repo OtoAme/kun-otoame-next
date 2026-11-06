@@ -89,9 +89,13 @@ export function MergeOptionCard({
             {option.signals.map((check) => (
               <li
                 key={check.signal}
+                data-signal={check.signal}
+                data-hit={check.hit ? 'true' : 'false'}
                 className={cn(
-                  'min-w-0 break-words',
-                  !check.hit && 'text-muted-foreground'
+                  'min-w-0 font-medium break-words',
+                  check.hit
+                    ? 'text-green-700 dark:text-green-400'
+                    : 'text-destructive'
                 )}
               >
                 {signalText(check)}

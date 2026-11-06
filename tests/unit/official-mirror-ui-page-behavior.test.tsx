@@ -861,6 +861,28 @@ describe('official mirror page behavior', () => {
     expect(strip31).toContain('高置信 · 可批量合并')
     expect(strip31).toContain('✓ 类型')
     expect(strip31).toContain('✗ 语言：简体中文 / 日本語')
+    const typeSignal = dom.window.document.querySelector(
+      '[data-merge-option="31"] [data-signal="type"]'
+    )
+    const languageSignal = dom.window.document.querySelector(
+      '[data-merge-option="31"] [data-signal="language"]'
+    )
+    expect(typeSignal?.getAttribute('data-hit')).toBe('true')
+    expect(languageSignal?.getAttribute('data-hit')).toBe('false')
+    expect(typeSignal?.className).toMatch(/text-green-700/)
+    expect(languageSignal?.className).toMatch(/text-destructive/)
+    expect(languageSignal?.className).not.toMatch(/text-muted-foreground/)
+    const userPane = dom.window.document.querySelector(
+      '[data-merge-pane="user"]'
+    )
+    const staffPane = dom.window.document.querySelector(
+      '[data-merge-pane="staff"]'
+    )
+    expect(userPane).not.toBeNull()
+    expect(staffPane).not.toBeNull()
+    expect(userPane?.className).toMatch(/@\[56rem\]:overflow-y-auto/)
+    expect(staffPane?.className).toMatch(/@\[56rem\]:overflow-y-auto/)
+    expect(userPane?.className).toMatch(/@\[56rem\]:border-r/)
     const strip41 =
       dom.window.document.querySelector('[data-merge-option="41"]')
         ?.textContent ?? ''
