@@ -1,5 +1,5 @@
 import { notFound } from 'next/navigation'
-import { Card, CardBody } from '@heroui/react'
+import { Card, CardBody } from '@heroui/card'
 import { requireDashboardUser } from '~/lib/dashboard/auth'
 import {
   loadPreviewResourceCard,

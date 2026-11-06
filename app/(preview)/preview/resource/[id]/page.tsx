@@ -2,7 +2,7 @@ import { notFound } from 'next/navigation'
 import { requireDashboardUser } from '~/lib/dashboard/auth'
 import { getAdminInboxItem } from '~/app/api/admin/inbox/service'
 import { adminInboxIdSchema } from '~/validations/inbox'
-import { Card, CardBody } from '@heroui/react'
+import { Card, CardBody } from '@heroui/card'
 import { ResourceDownload } from '~/components/patch/resource/ResourceDownload'
 import { ResourceInfo } from '~/components/patch/resource/ResourceInfo'
 

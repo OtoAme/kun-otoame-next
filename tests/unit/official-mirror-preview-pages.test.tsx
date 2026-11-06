@@ -3,6 +3,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 globalThis.React = React
 
+// Server entries must use HeroUI's individual client boundaries. Loading the
+// barrel in a regular Vitest React environment would hide the RSC failure.
+vi.mock('@heroui/react', () => {
+  throw new TypeError('createContext only works in Client Components')
+})
+
 const db = vi.hoisted(() => ({
   $queryRaw: vi.fn(),
   patch_resource: { findMany: vi.fn() }
