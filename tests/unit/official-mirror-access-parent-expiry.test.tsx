@@ -218,7 +218,7 @@ describe('official mirror parent credential expiry', () => {
 
     await toggleLinks(container)
     expect(container.textContent).not.toContain(early)
-    expect(container.textContent).not.toContain('资源授权至')
+    expect(container.textContent).not.toContain('本次获取有效至')
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(2001)
@@ -231,7 +231,10 @@ describe('official mirror parent credential expiry', () => {
     expect(container.textContent).not.toContain('pass-21')
     expect(container.textContent).toContain(later)
     expect(container.textContent).toContain('pass-22')
-    expect(container.textContent).toContain('资源授权至')
+    expect(container.textContent).toContain(
+      '本次获取有效至 2026/11/04 08:02（北京时间）'
+    )
+    expect(container.textContent).not.toContain('2026-11-04T00:02:00.000Z')
     expect(
       cardMock.shown.find((item) => item.id === 21)?.content
     ).toBeUndefined()

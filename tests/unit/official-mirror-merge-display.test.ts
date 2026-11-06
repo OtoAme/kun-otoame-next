@@ -58,6 +58,10 @@ const preview = (extra: Partial<MergePreview> = {}): MergePreview => ({
   basis: 'ab'.repeat(32),
   user: summary(21, '用户卡片'),
   staff: summary(31, '站方卡片'),
+  linkSummary: {
+    user: [{ id: 1, storage: 'touchgal', size: '3GB' }],
+    staff: [{ id: 2, storage: 'touchgal', size: '3GB' }]
+  },
   survivorPreview: {
     name: '用户卡片',
     type: ['pc'],

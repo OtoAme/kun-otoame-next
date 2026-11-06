@@ -8,6 +8,7 @@ import {
   useState
 } from 'react'
 import { ArrowLeft } from 'lucide-react'
+import toast from 'react-hot-toast'
 import { Button } from '~/components/dashboard/ui/button'
 import {
   ResizableHandle,
@@ -111,7 +112,13 @@ export function MergeWorkbenchPage() {
   const [settled, setSettled] = useState<SettledMerge | null>(null)
 
   const batch = useMergeBatchList({
-    onFinished: () => {
+    onFinished: (lines) => {
+      const mergedCount = lines.filter(
+        (line) => line.status === 'merged'
+      ).length
+      if (mergedCount > 0) {
+        toast.success(`合并成功 ${mergedCount} 对，详细结果请查看批量清单`)
+      }
       refresh()
       setReloadNonce((nonce) => nonce + 1)
     }
@@ -131,6 +138,9 @@ export function MergeWorkbenchPage() {
 
   const handleMerged = useCallback(
     (outcome: SingleMergeOutcome) => {
+      toast.success(
+        `合并成功：官方资源 #${outcome.staffResourceId} 已并入社区资源 #${outcome.userResourceId}`
+      )
       setSettled({ ...outcome, pending: false, error: '' })
       batch.removeUser(outcome.userResourceId)
       refresh()

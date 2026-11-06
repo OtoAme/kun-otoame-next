@@ -6,6 +6,7 @@ import { Button } from '@heroui/react'
 import { KunUser } from '~/components/kun/floating-card/KunUser'
 import { ChevronDown, ChevronUp, Download } from 'lucide-react'
 import { formatTimeDifference } from '~/utils/time'
+import { formatChinaDateTime } from '~/utils/fixedTimezoneDate'
 import { kunFetchPost } from '~/utils/kunFetch'
 import { ResourceLikeButton } from './ResourceLike'
 import { isOpenAccessDeadline, ResourceDownloadCard } from './DownloadCard'
@@ -371,7 +372,7 @@ export const ResourceDownload = ({
     return () => window.clearTimeout(timer)
   }, [grantExpiresAt])
   const grantLabel = isOpenAccessDeadline(grantExpiresAt, grantClock)
-    ? `资源授权至 ${grantExpiresAt}`
+    ? `本次获取有效至 ${formatChinaDateTime(grantExpiresAt)}（北京时间）`
     : ''
 
   return (

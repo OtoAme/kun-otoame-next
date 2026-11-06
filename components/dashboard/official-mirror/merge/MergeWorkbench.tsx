@@ -46,13 +46,13 @@ import {
   dismissCardConsequence,
   dismissConsequence,
   groupOptions,
-  mergeConsequence,
   reopenConsequence,
   sectionLabel,
   showTime,
   survivorSrc,
   userCardSrc
 } from './mergeDisplay'
+import { MergeConfirmDialog } from './MergeConfirmDialog'
 import type { MergeBatchList } from './useMergeBatchList'
 
 export type SingleMergeOutcome = {
@@ -80,7 +80,6 @@ type PreviewState = {
 
 const UNKNOWN_WRITE = '没有确认这次操作是否已经写入，请刷新核对后再操作'
 const NETWORK_ERROR = '网络错误，请稍后重试'
-const CONFIRM_LABEL = '已核实两张卡片为同一份内容'
 
 function OptionGroup({
   title,
@@ -263,6 +262,7 @@ export function MergeWorkbench({
   }, [currentId, current?.mergeable])
 
   const [dialog, setDialog] = useState<DialogState | null>(null)
+  const dialogTrigger = useRef<HTMLButtonElement | null>(null)
   const [pending, setPending] = useState(false)
   const [dialogError, setDialogError] = useState('')
   const [notice, setNotice] = useState('')
@@ -519,24 +519,7 @@ export function MergeWorkbench({
   }
 
   const dialogProps = (() => {
-    if (!dialog) return null
-    if (dialog.kind === 'merge' || dialog.kind === 'add') {
-      const snapshot = dialog.preview
-      const isMerge = dialog.kind === 'merge'
-      const copy = mergeConsequence(snapshot)
-      return {
-        title: isMerge ? '合并此配对' : '加入批量合并清单',
-        consequence: copy.consequence,
-        lines: copy.lines,
-        confirmLabel: isMerge ? '合并' : '加入清单',
-        requireConfirmation: CONFIRM_LABEL,
-        tone: isMerge ? 'destructive' : 'default',
-        onConfirm: () => {
-          if (isMerge) void runMerge(snapshot)
-          else addToList(snapshot)
-        }
-      } as const
-    }
+    if (!dialog || dialog.kind === 'merge' || dialog.kind === 'add') return null
     if (dialog.kind === 'dismiss') {
       return {
         title: '驳回此配对',
@@ -567,8 +550,12 @@ export function MergeWorkbench({
     } as const
   })()
 
-  const openMergeDialog = (kind: 'merge' | 'add') => {
+  const openMergeDialog = (
+    kind: 'merge' | 'add',
+    trigger: HTMLButtonElement
+  ) => {
     if (!previewData || !(kind === 'merge' ? canMerge : canAdd)) return
+    dialogTrigger.current = trigger
     setDialogError('')
     setNotice('')
     setDialog({ kind, preview: previewData })
@@ -842,7 +829,9 @@ export function MergeWorkbench({
                 <Button
                   type="button"
                   disabled={!canMerge}
-                  onClick={() => openMergeDialog('merge')}
+                  onClick={(event) =>
+                    openMergeDialog('merge', event.currentTarget)
+                  }
                 >
                   合并此配对
                 </Button>
@@ -851,7 +840,9 @@ export function MergeWorkbench({
                     type="button"
                     variant="outline"
                     disabled={!canAdd}
-                    onClick={() => openMergeDialog('add')}
+                    onClick={(event) =>
+                      openMergeDialog('add', event.currentTarget)
+                    }
                   >
                     {inList ? '已在清单中' : '加入批量合并清单'}
                   </Button>
@@ -896,18 +887,29 @@ export function MergeWorkbench({
         )}
       </div>
 
+      {dialog && (dialog.kind === 'merge' || dialog.kind === 'add') ? (
+        <MergeConfirmDialog
+          open
+          preview={dialog.preview}
+          mode={dialog.kind}
+          returnFocusRef={dialogTrigger}
+          pending={pending}
+          error={dialogError}
+          onOpenChange={(open) => {
+            if (!open) closeDialog()
+          }}
+          onConfirm={() => {
+            if (dialog.kind === 'merge') void runMerge(dialog.preview)
+            else addToList(dialog.preview)
+          }}
+        />
+      ) : null}
       {dialogProps ? (
         <ConfirmActionDialog
           open
           title={dialogProps.title}
           consequence={dialogProps.consequence}
-          lines={'lines' in dialogProps ? dialogProps.lines : undefined}
           confirmLabel={dialogProps.confirmLabel}
-          requireConfirmation={
-            'requireConfirmation' in dialogProps
-              ? dialogProps.requireConfirmation
-              : undefined
-          }
           tone={dialogProps.tone}
           pending={pending}
           error={dialogError}

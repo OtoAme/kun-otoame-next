@@ -1102,6 +1102,13 @@ describe('official mirror list, dismiss, and batch regressions', () => {
       staffResourceId: 2
     })
     expect(preview).toMatchObject({
+      linkSummary: {
+        user: [{ id: 1, storage: 'user', size: '1' }],
+        staff: [
+          { id: 10, storage: 'touchgal', size: '1' },
+          { id: 3, storage: 'touchgal', size: '1' }
+        ]
+      },
       survivorPreview: {
         links: [
           { id: 1, sortOrder: 4 },
@@ -1110,6 +1117,13 @@ describe('official mirror list, dismiss, and batch regressions', () => {
         ]
       }
     })
+    if (typeof preview === 'string') throw new Error(preview)
+    for (const link of [
+      ...preview.linkSummary.user,
+      ...preview.linkSummary.staff
+    ]) {
+      expect(Object.keys(link).sort()).toEqual(['id', 'size', 'storage'])
+    }
   })
 
   it('moves staff links by sort order rather than lock id order', () => {
@@ -2056,6 +2070,19 @@ describe('official mirror merge workbench services', () => {
       )
       return JSON.parse(json ?? '{}') as Record<string, unknown>
     }
+
+    it('moves the original staff link without rewriting its backup timestamps', async () => {
+      const update = vi.spyOn(harness.tx.patch_resource_link, 'update')
+      try {
+        await run([user, staff])
+        expect(update).toHaveBeenCalledExactlyOnceWith({
+          where: { id: links[1].id },
+          data: { resource_id: 1, sort_order: expect.any(Number) }
+        })
+      } finally {
+        update.mockRestore()
+      }
+    })
 
     it('preserves the original link snapshot in merge history', async () => {
       const history = vi.spyOn(harness.tx.patch_resource_link_history, 'create')

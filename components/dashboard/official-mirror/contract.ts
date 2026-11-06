@@ -129,8 +129,49 @@ export const acceptMergePreview = (
     typeof body.canMerge !== 'boolean' ||
     !Array.isArray(body.blocks) ||
     !Array.isArray(body.exitedPairs) ||
+    !Array.isArray(body.fieldComparison) ||
+    !body.fieldComparison.every(
+      (field) =>
+        isRecord(field) &&
+        typeof field.field === 'string' &&
+        typeof field.user === 'string' &&
+        typeof field.staff === 'string'
+    ) ||
+    !isRecord(body.linkSummary) ||
+    !Array.isArray(body.linkSummary.user) ||
+    !Array.isArray(body.linkSummary.staff) ||
     !isRecord(body.survivorPreview) ||
     !Array.isArray(body.survivorPreview.links)
+  ) {
+    return null
+  }
+  const originalLinks: unknown[] = [
+    ...body.linkSummary.user,
+    ...body.linkSummary.staff
+  ]
+  if (
+    !originalLinks.every(
+      (link) =>
+        isRecord(link) &&
+        positiveId(link.id) &&
+        typeof link.storage === 'string' &&
+        typeof link.size === 'string'
+    )
+  ) {
+    return null
+  }
+  const ids = new Set(originalLinks.map((link) => (link as { id: number }).id))
+  const mergedIds = new Set(
+    body.survivorPreview.links.map((link: unknown) =>
+      isRecord(link) && positiveId(link.id) ? link.id : null
+    )
+  )
+  if (
+    ids.size !== originalLinks.length ||
+    mergedIds.has(null) ||
+    mergedIds.size !== body.survivorPreview.links.length ||
+    ids.size !== mergedIds.size ||
+    [...ids].some((id) => !mergedIds.has(id))
   ) {
     return null
   }

@@ -38,7 +38,12 @@ const nav = vi.hoisted(() => {
 
 const mocks = vi.hoisted(() => ({
   get: vi.fn(),
-  post: vi.fn()
+  post: vi.fn(),
+  success: vi.fn()
+}))
+
+vi.mock('react-hot-toast', () => ({
+  default: { success: mocks.success }
 }))
 
 vi.mock('next/navigation', async () => {
@@ -261,6 +266,10 @@ const previewOf = (
   basis: BASIS,
   user: card(userId, `用户卡片${userId}`, 7),
   staff: card(staffId, `站方卡片${staffId}`, 8),
+  linkSummary: {
+    user: [{ id: 4, storage: 'touchgal', size: '' }],
+    staff: [{ id: 9, storage: 'touchgal', size: '12MB' }]
+  },
   survivorPreview: {
     name: `用户卡片${userId}`,
     type: ['pc'],
@@ -469,7 +478,13 @@ describe('official mirror page behavior', () => {
     dom.window.document.querySelector('[role="alertdialog"]')
   const dialogButton = (name: string) => {
     const found = [...(dialogEl()?.querySelectorAll('button') ?? [])].find(
-      (item) => item.textContent?.trim() === name
+      (item) => {
+        const label = item.textContent?.trim()
+        return (
+          label === name ||
+          (name === '合并' && label?.startsWith('确认合并到 #'))
+        )
+      }
     )
     if (!found)
       throw new Error(`对话框里没有 ${name}。当前：${dialogEl()?.textContent}`)
@@ -555,12 +570,22 @@ describe('official mirror page behavior', () => {
       expect.arrayContaining(['min-h-0', 'flex-1'])
     )
     const listScroll = dom.window.document.querySelector('[data-list-scroll]')
+    const pageNav = dom.window.document.querySelector('[data-page-nav]')
     const nextPage = dom.window.document.querySelector('[aria-label="下一页"]')
+    const prevPage = dom.window.document.querySelector('[aria-label="上一页"]')
+    const pageInput = dom.window.document.querySelector('[aria-label="页码"]')
     expect(listScroll).not.toBeNull()
     expect(tokens(listScroll)).toEqual(
       expect.arrayContaining(['flex-1', 'overflow-y-auto'])
     )
+    expect(pageNav).not.toBeNull()
     expect(nextPage).not.toBeNull()
+    expect(prevPage).not.toBeNull()
+    expect(pageInput).not.toBeNull()
+    expect(pageNav?.contains(nextPage)).toBe(true)
+    expect(pageNav?.contains(prevPage)).toBe(true)
+    expect(pageNav?.contains(pageInput)).toBe(true)
+    expect(listScroll?.contains(pageNav)).toBe(false)
     expect(listScroll?.contains(nextPage)).toBe(false)
     expect(
       [...dom.window.document.querySelectorAll('h2')].filter(
@@ -967,11 +992,18 @@ describe('official mirror page behavior', () => {
       { userResourceId: 21, staffResourceId: 31 }
     )
     await click(buttonNamed('合并此配对', true))
+    expect(dialogEl()?.textContent).toContain('将官方资源 #31 并入社区资源 #21')
+    expect(dialogButton('合并').textContent).toBe('确认合并到 #21')
+    expect(
+      dialogEl()?.querySelector('[aria-label="社区资源 #21"]')?.textContent
+    ).toContain('用户卡片21')
+    expect(
+      dialogEl()?.querySelector('[aria-label="官方资源 #31"]')?.textContent
+    ).toContain('站方卡片31')
+    expect(dialogEl()?.textContent).not.toContain('官方资源 #41 站方卡片41')
+    await click(dialogButton('其他受影响的配对（1）'))
     expect(dialogEl()?.textContent).toContain(
-      '#31 站方卡片31 并入 #21 用户卡片21，#31 随后删除。#21 保留名称、属性和发布者，仍在社区资源分组。'
-    )
-    expect(dialogEl()?.textContent).toContain(
-      '#41 与 #21 的配对退出，#41 保留。'
+      '官方资源 #41 站方卡片41 · 卡片保留'
     )
     expect(dialogEl()?.textContent).toContain('已核实两张卡片为同一份内容')
     expect(dialogButton('合并').disabled).toBe(true)
@@ -980,6 +1012,9 @@ describe('official mirror page behavior', () => {
     await click(dialogButton('取消'))
     expect(dialogEl()).toBeNull()
     expect(posts).toEqual([])
+    expect(dom.window.document.activeElement).toBe(
+      buttonNamed('合并此配对', true)
+    )
 
     await click(buttonNamed('合并此配对', true))
     expect(dialogButton('合并').disabled).toBe(true)
@@ -996,10 +1031,17 @@ describe('official mirror page behavior', () => {
       basis: BASIS,
       contentConfirmed: true
     })
+    expect(mocks.success).not.toHaveBeenCalled()
     await resolvePost(
       postNamed('/admin/resource-merges/merge')[0],
       mergedResult(21, 31, false)
     )
+    expect(mocks.success).toHaveBeenCalledExactlyOnceWith(
+      '合并成功：官方资源 #31 已并入社区资源 #21'
+    )
+    expect(
+      dom.window.document.querySelector('[role="status"]')?.textContent
+    ).toContain('合并成功。')
     expect(text()).toContain(
       '#31 站方卡片31 已并入 #21 用户卡片21。页面缓存没有刷新。'
     )
@@ -1035,7 +1077,47 @@ describe('official mirror page behavior', () => {
       cacheRefreshed: true
     })
     expect(text()).toContain('已并入 #21 用户卡片21。页面缓存已刷新。')
+    expect(mocks.success).toHaveBeenCalledTimes(1)
   })
+
+  it.each([
+    {
+      name: 'business rejection',
+      response: '核对基点已变化',
+      message: '核对基点已变化'
+    },
+    {
+      name: 'mismatched response',
+      response: mergedResult(24, 34, true),
+      message: '没有确认这次操作是否已经写入'
+    },
+    { name: 'network failure', response: null, message: '网络错误，请稍后重试' }
+  ])(
+    'does not announce merge success for $name',
+    async ({ response, message }) => {
+      await mountMerges()
+      await resolveUrl(
+        '/admin/resource-merges/preview',
+        previewOf(21, 31, 'high'),
+        { userResourceId: 21, staffResourceId: 31 }
+      )
+      await click(buttonNamed('合并此配对', true))
+      await tickDialogCheckbox()
+      if (response === null)
+        mocks.post.mockRejectedValueOnce(new Error('offline'))
+      await confirmDialog('合并')
+      if (response !== null) {
+        await resolvePost(
+          postNamed('/admin/resource-merges/merge')[0],
+          response
+        )
+      }
+      expect(dialogEl()?.textContent).toContain(message)
+      expect(mocks.success).not.toHaveBeenCalled()
+      expect(text()).not.toContain('合并成功。')
+      expect(nav.getSnapshot().get('id')).toBe('21')
+    }
+  )
 
   it('dismisses one pair and stays while the card still has pending pairs', async () => {
     await mountMerges()
@@ -1334,6 +1416,9 @@ describe('official mirror page behavior', () => {
       ],
       remaining: [{ userResourceId: 25, staffResourceId: 35 }]
     })
+    expect(mocks.success).toHaveBeenCalledExactlyOnceWith(
+      '合并成功 1 对，详细结果请查看批量清单'
+    )
     const results =
       dom.window.document.querySelector('[aria-label="上次结果"]')
         ?.textContent ?? ''
@@ -1434,6 +1519,7 @@ describe('official mirror page behavior', () => {
         ?.textContent ?? ''
     expect(results).toContain('用户卡片24 ← 站方卡片34')
     expect(results).toContain('已跳过：核对基点已变化')
+    expect(mocks.success).not.toHaveBeenCalled()
     expect(text()).toContain('0 对 · 仅限高置信配对 · 每批最多 50 对')
   })
 

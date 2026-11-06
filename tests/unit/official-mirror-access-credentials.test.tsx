@@ -391,7 +391,7 @@ describe('official mirror per-link credential expiry', () => {
       <ResourceDownload resource={{ ...resource, links: [revealedLink] }} />
     )
     expect(container.textContent).toContain(secret)
-    expect(container.textContent).toContain('资源授权至')
+    expect(container.textContent).toContain('本次获取有效至')
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(2001)
@@ -400,11 +400,11 @@ describe('official mirror per-link credential expiry', () => {
     expect(container.textContent).not.toContain(secret)
     expect(container.textContent).not.toContain('abcd')
     expect(container.textContent).not.toContain('secret-pass')
-    expect(container.textContent).toContain('资源授权至')
+    expect(container.textContent).toContain('本次获取有效至')
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(60000)
     })
-    expect(container.textContent).not.toContain('资源授权至')
+    expect(container.textContent).not.toContain('本次获取有效至')
   })
 })

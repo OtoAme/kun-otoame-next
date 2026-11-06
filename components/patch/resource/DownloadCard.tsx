@@ -34,6 +34,7 @@ import { LinkHealthActions } from './LinkHealthActions'
 import { NetdiskChip } from './NetdiskChip'
 import { resolveDisplayedDiskKind } from '~/utils/resourceDiskKind'
 import { CaseLoginPrompt } from '~/components/case/CaseLoginPrompt'
+import { formatBackupDate } from './publicMirrorFacts'
 import type {
   PatchResource,
   PatchResourceAccessLink,
@@ -429,6 +430,7 @@ export const ResourceDownloadCard = ({
     : link.size
   const showReport = Boolean(!preview && health && accessedLink)
   const linkLabel = `链接 #${linkIndex}`
+  const backupDate = formatBackupDate(link.backedUpAt ?? '')
 
   const credentials =
     credentialsOpen && accessedLink ? (
@@ -562,6 +564,22 @@ export const ResourceDownloadCard = ({
             )}
           </div>
         </div>
+
+        {link.storage === 'touchgal' ? (
+          <p className="text-xs text-default-500">
+            {backupDate ? (
+              <>
+                备份于{' '}
+                <time dateTime={link.backedUpAt ?? undefined}>
+                  {backupDate}
+                </time>
+                （北京时间）
+              </>
+            ) : (
+              '备份时间未记录'
+            )}
+          </p>
+        ) : null}
 
         {credentials}
 

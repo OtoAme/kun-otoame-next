@@ -1,6 +1,6 @@
 'use client'
 
-import { X } from 'lucide-react'
+import { CircleCheck, X } from 'lucide-react'
 import { Button } from '~/components/dashboard/ui/button'
 import type { CacheRefreshRequest } from '../cacheRefresh'
 
@@ -27,7 +27,14 @@ export function SingleMergeBar({
 }) {
   return (
     <div className="flex shrink-0 flex-wrap items-center gap-2 border-b bg-muted/40 px-4 py-2 text-sm">
+      <CircleCheck
+        className="size-4 shrink-0 text-green-700 dark:text-green-400"
+        aria-hidden="true"
+      />
       <p role="status" className="min-w-0 flex-1 break-words">
+        <strong className="text-green-700 dark:text-green-400">
+          合并成功。
+        </strong>{' '}
         {`#${result.staffResourceId} ${result.staffName} 已并入 #${result.userResourceId} ${result.userName}。`}
         {result.cacheRefreshed ? '页面缓存已刷新。' : '页面缓存没有刷新。'}
       </p>

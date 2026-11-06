@@ -966,6 +966,13 @@ export const mergeStaffBatch = async (
 const fieldText = (value: unknown) =>
   Array.isArray(value) ? [...value].sort().join('、') : String(value ?? '')
 
+const linkSummaryOf = (card: MirrorCard) =>
+  [...card.links]
+    .sort(
+      (left, right) => left.sortOrder - right.sortOrder || left.id - right.id
+    )
+    .map(({ id, storage, size }) => ({ id, storage, size }))
+
 const comparison = (
   user: MirrorCard,
   staff: MirrorCard
@@ -1081,6 +1088,10 @@ export const previewResourceMerge = async (
     basis: mergeBasis({ user: userCard, staff: staffCard, openCases: cases }),
     user: summaryOf(userCard),
     staff: summaryOf(staffCard),
+    linkSummary: {
+      user: linkSummaryOf(userCard),
+      staff: linkSummaryOf(staffCard)
+    },
     survivorPreview: {
       name: userCard.name,
       type: userCard.type,

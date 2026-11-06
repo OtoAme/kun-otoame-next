@@ -36,9 +36,11 @@ import type { SearchableListConfig } from '~/hooks/dashboard/useSearchableList'
 import { kunFetchGet, kunFetchPost } from '~/utils/kunFetch'
 import { formatBackupDate } from '~/components/patch/resource/publicMirrorFacts'
 import type { AdminResource } from '~/types/api/admin'
-import type {
-  BackupMutationResult,
-  OfficialMirrorCacheRefresh
+import {
+  BACKUP_SORTS,
+  type BackupMutationResult,
+  type BackupSort,
+  type OfficialMirrorCacheRefresh
 } from '~/types/api/officialMirror'
 import { cacheRefreshBody } from './cacheRefresh'
 import {
@@ -60,6 +62,13 @@ const TAB_LABEL: Record<BackupTab, string> = {
   ignored: '已忽略'
 }
 
+const SORT_LABEL: Record<BackupSort, string> = {
+  download_desc: '获取次数从高到低',
+  download_asc: '获取次数从低到高',
+  created_desc: '发布时间从新到旧',
+  created_asc: '发布时间从旧到新'
+}
+
 const oneOf =
   (allowed: readonly string[]) =>
   (raw: string): string | null =>
@@ -73,7 +82,7 @@ const BACKUP_LIST_CONFIG: SearchableListConfig = {
   filters: {
     tab: oneOf(BACKUP_TABS),
     section: oneOf(['galgame', 'patch']),
-    sort: oneOf(['download_desc', 'download_asc'])
+    sort: oneOf(BACKUP_SORTS)
   },
   defaultParams: { tab: 'unbacked', sort: 'download_desc' }
 }
@@ -593,8 +602,11 @@ function BackupFilters({ filters, setFilters }: FilterContext) {
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="download_desc">获取次数从高到低</SelectItem>
-            <SelectItem value="download_asc">获取次数从低到高</SelectItem>
+            {BACKUP_SORTS.map((sort) => (
+              <SelectItem key={sort} value={sort}>
+                {SORT_LABEL[sort]}
+              </SelectItem>
+            ))}
           </SelectContent>
         </Select>
       </div>
@@ -610,8 +622,9 @@ const chips = (filters: FilterContext['filters']): FilterChip[] => {
       label: RESOURCE_SECTION_MAP[filters.section] ?? filters.section
     })
   }
-  if (filters.sort === 'download_asc') {
-    items.push({ key: 'sort', label: '获取次数从低到高' })
+  const sort = BACKUP_SORTS.find((value) => value === filters.sort)
+  if (sort && sort !== 'download_desc') {
+    items.push({ key: 'sort', label: SORT_LABEL[sort] })
   }
   return items
 }

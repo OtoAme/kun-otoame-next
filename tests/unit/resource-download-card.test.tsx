@@ -332,6 +332,46 @@ describe('ResourceDownloadCard access flow', () => {
     vi.mocked(toast.error).mockClear()
   })
 
+  it('shows the original per-link backup time rather than the resource or another link time', async () => {
+    const { container } = await renderCard({
+      resource: { ...resource, backedUpAt: '2026-11-06T00:00:00.000Z' },
+      link: {
+        ...previewLink,
+        storage: 'touchgal',
+        backedUpAt: '2026-05-29T02:07:00.000Z'
+      }
+    })
+    expect(container.textContent).toContain(
+      '备份于 2026/05/29 10:07（北京时间）'
+    )
+    expect(container.querySelector('time')?.dateTime).toBe(
+      '2026-05-29T02:07:00.000Z'
+    )
+    expect(container.textContent).not.toContain('2026/11/06')
+    expect(fetchMock.kunFetchPost).not.toHaveBeenCalled()
+  })
+
+  it.each([null, undefined, 'not-a-date'])(
+    'does not invent a backup date when it is %s',
+    async (backedUpAt) => {
+      const { container } = await renderCard({
+        resource: { ...resource, backedUpAt: '2026-11-06T00:00:00.000Z' },
+        link: { ...previewLink, storage: 'touchgal', backedUpAt }
+      })
+      expect(container.textContent).toContain('备份时间未记录')
+      expect(container.querySelector('time')).toBeNull()
+      expect(container.textContent).not.toContain('备份于')
+    }
+  )
+
+  it('does not label an external link as a staff backup', async () => {
+    const { container } = await renderCard({
+      link: { ...previewLink, backedUpAt: '2026-05-29T02:07:00.000Z' }
+    })
+    expect(container.textContent).not.toContain('备份于')
+    expect(container.textContent).not.toContain('备份时间未记录')
+  })
+
   it('shows authorized preview links without revealing or counting downloads', async () => {
     const { container } = await renderCard({
       preview: true,

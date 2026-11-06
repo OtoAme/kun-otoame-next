@@ -218,9 +218,16 @@ export const listBackupQueue = async (
   }
   const visible = entries.filter((entry) => entry.tab === input.tab)
   visible.sort((left, right) => {
-    const download = left.card.download - right.card.download
-    const directed = input.sort === 'download_asc' ? download : -download
-    return directed || left.card.id - right.card.id
+    const byCreated =
+      input.sort === 'created_desc' || input.sort === 'created_asc'
+    const difference = byCreated
+      ? left.card.created.getTime() - right.card.created.getTime()
+      : left.card.download - right.card.download
+    const ascending =
+      input.sort === 'download_asc' || input.sort === 'created_asc'
+    return (
+      (ascending ? difference : -difference) || left.card.id - right.card.id
+    )
   })
   const start = (input.page - 1) * input.limit
   return {

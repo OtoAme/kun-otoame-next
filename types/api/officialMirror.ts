@@ -6,7 +6,12 @@ export type OfficialMirrorSection = (typeof OFFICIAL_MIRROR_SECTIONS)[number]
 export const BACKUP_TABS = ['unbacked', 'rebackup', 'ignored'] as const
 export type BackupTab = (typeof BACKUP_TABS)[number]
 
-export const BACKUP_SORTS = ['download_desc', 'download_asc'] as const
+export const BACKUP_SORTS = [
+  'download_desc',
+  'download_asc',
+  'created_desc',
+  'created_asc'
+] as const
 export type BackupSort = (typeof BACKUP_SORTS)[number]
 
 export const MERGE_TABS = ['pending', 'dismissed', 'merged'] as const
@@ -283,6 +288,11 @@ export type MergePreview = {
   basis: string
   user: MergeCardSummary
   staff: MergeCardSummary
+  /** Original links on each card, without download addresses or credentials. */
+  linkSummary: {
+    user: Pick<OfficialMirrorLinkView, 'id' | 'storage' | 'size'>[]
+    staff: Pick<OfficialMirrorLinkView, 'id' | 'storage' | 'size'>[]
+  }
   survivorPreview: {
     name: string
     type: string[]

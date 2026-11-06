@@ -291,6 +291,8 @@ describe('official mirror pages', () => {
       canMerge: true,
       blocks: [],
       exitedPairs: [],
+      fieldComparison: [],
+      linkSummary: { user: [], staff: [] },
       survivorPreview: { links: [] }
     }
     expect(
@@ -308,6 +310,41 @@ describe('official mirror pages', () => {
       })
     ).not.toBeNull()
     expect(acceptDismissCardResult({ changed: true })).toBeNull()
+  })
+
+  it('requires complete and unambiguous original link summaries before accepting a merge preview', () => {
+    const pair = { userResourceId: 5, staffResourceId: 6 }
+    const userLink = { id: 11, storage: 'user', size: '1 GB' }
+    const staffLink = { id: 12, storage: 'touchgal', size: '2 GB' }
+    const preview = {
+      user: { id: 5 },
+      staff: { id: 6 },
+      basis: 'ab'.repeat(32),
+      canMerge: true,
+      blocks: [],
+      exitedPairs: [],
+      fieldComparison: [{ field: '链接数', user: '1', staff: '1' }],
+      linkSummary: { user: [userLink], staff: [staffLink] },
+      survivorPreview: { links: [userLink, staffLink] }
+    }
+    expect(acceptMergePreview(preview, pair)).not.toBeNull()
+    for (const change of [
+      { linkSummary: undefined },
+      { linkSummary: { user: [userLink] } },
+      { linkSummary: { user: [userLink], staff: [userLink] } },
+      { linkSummary: { user: [], staff: [staffLink] } },
+      {
+        linkSummary: {
+          user: [{ ...userLink, size: 1 }],
+          staff: [staffLink]
+        }
+      },
+      { survivorPreview: { links: [userLink, userLink] } },
+      { survivorPreview: { links: [userLink, { ...staffLink, id: 13 }] } },
+      { fieldComparison: [{ field: '链接数', user: 1, staff: '1' }] }
+    ]) {
+      expect(acceptMergePreview({ ...preview, ...change }, pair)).toBeNull()
+    }
   })
 
   it('drops an invalid backup date and a missing auxiliary click', () => {
