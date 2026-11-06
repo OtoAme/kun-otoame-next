@@ -12,6 +12,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle
 } from '~/components/dashboard/ui/alert-dialog'
+import { DashboardPagination } from '~/components/dashboard/page/DashboardPagination'
 import { Badge } from '~/components/dashboard/ui/badge'
 import { Button } from '~/components/dashboard/ui/button'
 import {
@@ -638,28 +639,11 @@ function Pager({
   const pages = Math.max(1, Math.ceil(total / limit))
   if (pages <= 1) return null
   return (
-    <div className="flex flex-wrap items-center gap-2">
-      <Button
-        type="button"
-        size="sm"
-        variant="outline"
-        disabled={page <= 1}
-        onClick={() => onPage(page - 1)}
-      >
-        上一页
-      </Button>
-      <span className="text-sm text-muted-foreground">
-        {page} / {pages}
-      </span>
-      <Button
-        type="button"
-        size="sm"
-        variant="outline"
-        disabled={page >= pages}
-        onClick={() => onPage(page + 1)}
-      >
-        下一页
-      </Button>
-    </div>
+    <DashboardPagination
+      page={page}
+      totalPages={pages}
+      onPageChange={onPage}
+      className="border-0 bg-transparent px-0 py-0"
+    />
   )
 }

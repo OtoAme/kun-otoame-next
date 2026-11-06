@@ -1,5 +1,6 @@
 'use client'
 
+import { DashboardPagination } from '~/components/dashboard/page/DashboardPagination'
 import { Badge } from '~/components/dashboard/ui/badge'
 import { Button } from '~/components/dashboard/ui/button'
 import { Skeleton } from '~/components/dashboard/ui/skeleton'
@@ -142,37 +143,21 @@ export function MergeQueueList({
           </ul>
         )}
       </div>
-      <div className="flex shrink-0 flex-wrap items-center gap-2 border-t px-3 py-2 text-xs text-muted-foreground">
-        <span className="tabular-nums">
-          {total === null ? '—' : `共 ${total} 张`}
-          {total !== null && total > limit
-            ? ` · 第 ${page} / ${totalPages} 页`
-            : ''}
-        </span>
-        <span className="flex-1" />
-        {total !== null && total > limit ? (
-          <>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              disabled={loading || page <= 1}
-              onClick={() => onPageChange(page - 1)}
-            >
-              上一页
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              disabled={loading || page >= totalPages}
-              onClick={() => onPageChange(page + 1)}
-            >
-              下一页
-            </Button>
-          </>
-        ) : null}
-      </div>
+      {total === null ? (
+        <div className="flex shrink-0 items-center border-t px-3 py-2 text-xs text-muted-foreground">
+          —
+        </div>
+      ) : (
+        <DashboardPagination
+          page={page}
+          totalPages={totalPages}
+          total={total}
+          unit="张"
+          disabled={loading}
+          onPageChange={onPageChange}
+          className="text-xs"
+        />
+      )}
     </div>
   )
 }

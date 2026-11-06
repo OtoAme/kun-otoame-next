@@ -1,6 +1,7 @@
 'use client'
 
 import { RefreshCw } from 'lucide-react'
+import { DashboardPagination } from '~/components/dashboard/page/DashboardPagination'
 import { Button } from '~/components/dashboard/ui/button'
 import { Skeleton } from '~/components/dashboard/ui/skeleton'
 import { Tabs, TabsList, TabsTrigger } from '~/components/dashboard/ui/tabs'
@@ -144,31 +145,13 @@ export const DashboardShoutbox = () => {
         <div className="mt-3 space-y-2">{listContent}</div>
 
         {totalPages > 1 && (
-          <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
-            <p className="text-sm text-muted-foreground">
-              第 {page} / {totalPages} 页
-            </p>
-            <div className="flex items-center gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => setPage(page - 1)}
-                disabled={loading || page <= 1}
-              >
-                上一页
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => setPage(page + 1)}
-                disabled={loading || page >= totalPages}
-              >
-                下一页
-              </Button>
-            </div>
-          </div>
+          <DashboardPagination
+            page={page}
+            totalPages={totalPages}
+            disabled={loading}
+            onPageChange={setPage}
+            className="mt-3 border-0 bg-transparent px-0 py-0"
+          />
         )}
       </Tabs>
     </div>

@@ -10,6 +10,7 @@ import {
   type LucideIcon
 } from 'lucide-react'
 
+import { DashboardPagination } from '~/components/dashboard/page/DashboardPagination'
 import { Badge } from '~/components/dashboard/ui/badge'
 import { Button } from '~/components/dashboard/ui/button'
 import { Skeleton } from '~/components/dashboard/ui/skeleton'
@@ -263,29 +264,12 @@ export function InboxListPane({ inbox }: { inbox: UseInboxReturn }) {
       </div>
 
       {historyMode ? (
-        <div className="flex items-center justify-between gap-2 border-t px-3 py-2">
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            disabled={submissionPage <= 1}
-            onClick={() => setSubmissionPage(submissionPage - 1)}
-          >
-            上一页
-          </Button>
-          <span className="text-xs text-muted-foreground">
-            第 {submissionPage} / {historyLastPage} 页
-          </span>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            disabled={submissionPage >= historyLastPage}
-            onClick={() => setSubmissionPage(submissionPage + 1)}
-          >
-            下一页
-          </Button>
-        </div>
+        <DashboardPagination
+          page={submissionPage}
+          totalPages={historyLastPage}
+          onPageChange={setSubmissionPage}
+          className="text-xs"
+        />
       ) : null}
     </div>
   )

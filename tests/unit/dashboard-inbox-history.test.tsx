@@ -887,8 +887,10 @@ describe('dashboard inbox submission history mode', () => {
     }
     const text = () => container.textContent ?? ''
     const buttonByText = (label: string) =>
-      Array.from(container.querySelectorAll('button')).find((button) =>
-        button.textContent?.includes(label)
+      Array.from(container.querySelectorAll('button')).find(
+        (button) =>
+          button.textContent?.includes(label) ||
+          button.getAttribute('aria-label') === label
       )
 
     it('shows the status filter only when the submission source stands alone', async () => {

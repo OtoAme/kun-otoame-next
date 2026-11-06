@@ -176,7 +176,9 @@ const followPush = async (presentation = false) =>
   navigate(pushedQuery().toString(), presentation)
 const button = (text: string) =>
   Array.from(container.querySelectorAll('button')).find(
-    (item) => item.textContent?.trim() === text
+    (item) =>
+      item.textContent?.trim() === text ||
+      item.getAttribute('aria-label') === text
   )!
 const click = async (text: string) => {
   expect(button(text), `button ${text}`).toBeDefined()

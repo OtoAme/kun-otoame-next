@@ -1,7 +1,7 @@
 'use client'
 
 import { type ReactNode, type Ref } from 'react'
-import { ArrowLeft, ChevronLeft, ChevronRight, X } from 'lucide-react'
+import { ArrowLeft, X } from 'lucide-react'
 
 import { Button } from '~/components/dashboard/ui/button'
 import {
@@ -13,6 +13,8 @@ import {
 } from '~/components/dashboard/ui/sheet'
 import { useElementWidth } from '~/hooks/dashboard/useElementWidth'
 import { cn } from '~/lib/dashboard/utils'
+
+export { DashboardPagination } from '~/components/dashboard/page/DashboardPagination'
 
 /**
  * Shared page skeleton for console list pages (redesign requirement 3.5).
@@ -230,53 +232,6 @@ export function DashboardMasterDetail({
           </Sheet>
         )
       )}
-    </div>
-  )
-}
-
-export function DashboardPagination({
-  page,
-  totalPages,
-  total,
-  unit,
-  disabled,
-  onPageChange,
-  children
-}: {
-  page: number
-  totalPages: number
-  total: number
-  unit: string
-  disabled?: boolean
-  onPageChange: (page: number) => void
-  /** Extra controls such as a page-size select. */
-  children?: ReactNode
-}) {
-  return (
-    <div className="flex shrink-0 flex-wrap items-center gap-2 border-t bg-card px-3 py-2.5 text-sm text-muted-foreground">
-      <span className="tabular-nums">
-        共 {total} {unit} · 第 {page} / {totalPages} 页
-      </span>
-      <span className="flex-1" />
-      {children}
-      <Button
-        variant="outline"
-        size="icon-sm"
-        aria-label="上一页"
-        disabled={disabled || page <= 1}
-        onClick={() => onPageChange(page - 1)}
-      >
-        <ChevronLeft />
-      </Button>
-      <Button
-        variant="outline"
-        size="icon-sm"
-        aria-label="下一页"
-        disabled={disabled || page >= totalPages}
-        onClick={() => onPageChange(page + 1)}
-      >
-        <ChevronRight />
-      </Button>
     </div>
   )
 }

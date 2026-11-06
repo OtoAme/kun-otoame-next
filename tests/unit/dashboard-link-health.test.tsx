@@ -156,8 +156,10 @@ describe('dashboard read-only link-health view (M04-5)', () => {
   }
 
   const findButton = (container: HTMLElement, text: string) =>
-    [...container.querySelectorAll('button')].find((button) =>
-      button.textContent?.includes(text)
+    [...container.querySelectorAll('button')].find(
+      (button) =>
+        button.textContent?.includes(text) ||
+        button.getAttribute('aria-label') === text
     )
 
   it('loads the broken-link snapshot and renders hosts ratio with the tracking start', async () => {

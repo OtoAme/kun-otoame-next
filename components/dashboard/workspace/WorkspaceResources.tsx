@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
+import { DashboardPagination } from '~/components/dashboard/page/DashboardPagination'
 import { Button } from '~/components/dashboard/ui/button'
 import { Input } from '~/components/dashboard/ui/input'
 import {
@@ -236,29 +237,12 @@ function WorkspaceResourceList() {
         </ul>
       ) : null}
       {pages > 1 ? (
-        <div className="flex flex-wrap items-center gap-2">
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            disabled={page <= 1}
-            onClick={() => setPage((current) => current - 1)}
-          >
-            上一页
-          </Button>
-          <span className="text-sm text-muted-foreground">
-            {page} / {pages}
-          </span>
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            disabled={page >= pages}
-            onClick={() => setPage((current) => current + 1)}
-          >
-            下一页
-          </Button>
-        </div>
+        <DashboardPagination
+          page={page}
+          totalPages={pages}
+          onPageChange={setPage}
+          className="border-0 bg-transparent px-0 py-0"
+        />
       ) : null}
     </div>
   )

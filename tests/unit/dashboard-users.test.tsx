@@ -713,9 +713,11 @@ describe('dashboard user list controls and wiring', () => {
     )
     expect(
       [...document.querySelectorAll('button')]
-        .filter((button) =>
-          ['刷新', '上一页', '下一页'].includes(button.textContent ?? '')
-        )
+        .filter((button) => {
+          const label =
+            button.getAttribute('aria-label') ?? button.textContent ?? ''
+          return ['刷新', '上一页', '下一页'].includes(label)
+        })
         .every((button) => button.disabled)
     ).toBe(true)
   })

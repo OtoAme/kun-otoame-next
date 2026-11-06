@@ -10,6 +10,7 @@ import {
 } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
+import { DashboardPagination } from '~/components/dashboard/page/DashboardPagination'
 import { Badge } from '~/components/dashboard/ui/badge'
 import { Button } from '~/components/dashboard/ui/button'
 import { Input } from '~/components/dashboard/ui/input'
@@ -412,33 +413,15 @@ export const DashboardUsers = ({
         </Table>
       </div>
 
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-sm text-muted-foreground">
-          共 {total} 条 · 第 {blocked ? 1 : query.page} / {totalPages} 页
-        </p>
-        <div className="flex items-center gap-2">
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => setPage(query.page - 1)}
-            disabled={loading || blocked || query.page <= 1}
-            className="cursor-pointer disabled:cursor-default"
-          >
-            上一页
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => setPage(query.page + 1)}
-            disabled={loading || blocked || query.page >= totalPages}
-            className="cursor-pointer disabled:cursor-default"
-          >
-            下一页
-          </Button>
-        </div>
-      </div>
+      <DashboardPagination
+        page={blocked ? 1 : query.page}
+        totalPages={totalPages}
+        total={total}
+        unit="条"
+        disabled={loading || blocked}
+        onPageChange={setPage}
+        className="border-0 bg-transparent px-0 py-0"
+      />
     </div>
   )
 }

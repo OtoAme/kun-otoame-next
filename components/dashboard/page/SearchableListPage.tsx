@@ -15,9 +15,9 @@ import { SlidersHorizontal, X } from 'lucide-react'
 import {
   DashboardMasterDetail,
   DashboardPage,
-  DashboardPagination,
   DashboardPanel
 } from '~/components/dashboard/page/DashboardPage'
+import { DashboardPagination } from '~/components/dashboard/page/DashboardPagination'
 import {
   Avatar,
   AvatarFallback,

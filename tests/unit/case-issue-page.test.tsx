@@ -232,7 +232,9 @@ describe('issue workspace', () => {
     expect(text).toContain('2 人报告')
     expect(text).toContain('资源X（条目A）')
     expect(text).toContain('正文预览内容')
-    expect(container.querySelector('a[href="/workspace/issues?id=1"]')).not.toBeNull()
+    expect(
+      container.querySelector('a[href="/workspace/issues?id=1"]')
+    ).not.toBeNull()
     expect(
       mocks.kunFetchGet.mock.calls.some(
         (call) => call[0] === '/patch/resource/link/health'
@@ -275,9 +277,12 @@ describe('issue workspace', () => {
     await act(async () => {
       findTab(container, '待我处理')!.click()
     })
-    expect(mocks.router.push).toHaveBeenLastCalledWith('/workspace/issues?tab=owned', {
-      scroll: false
-    })
+    expect(mocks.router.push).toHaveBeenLastCalledWith(
+      '/workspace/issues?tab=owned',
+      {
+        scroll: false
+      }
+    )
 
     // 「等待处理方」页签把 open 与 waiting_owner 一次筛出
     await act(async () => {
@@ -328,7 +333,9 @@ describe('issue workspace', () => {
     })
 
     const nextPage = [...container.querySelectorAll('button')].find(
-      (button) => button.textContent === '下一页'
+      (button) =>
+        button.textContent === '下一页' ||
+        button.getAttribute('aria-label') === '下一页'
     )!
     await act(async () => {
       nextPage.click()
