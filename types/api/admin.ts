@@ -92,6 +92,12 @@ export interface AdminGalgame {
   created: Date | string
 }
 
+export interface AdminResourceLinkTimes {
+  attachedAt: string | null
+  contentChangedAt: string | null
+  changedAt: string | null
+}
+
 export interface AdminResource extends PatchResource {
   patchName: string
   baseLinks?: import('./linkHealth').LinkVersionBase[]

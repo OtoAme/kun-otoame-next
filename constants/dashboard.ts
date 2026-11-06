@@ -115,6 +115,18 @@ export const DASHBOARD_NAV_GROUPS: DashboardNavGroup[] = [
         label: '会社合并',
         href: '/dashboard/company-merges',
         minRole: 3
+      },
+      {
+        id: 'backup',
+        label: '站方备份',
+        href: '/dashboard/backup',
+        minRole: 3
+      },
+      {
+        id: 'resource-merges',
+        label: '资源合并',
+        href: '/dashboard/resource-merges',
+        minRole: 3
       }
     ]
   },

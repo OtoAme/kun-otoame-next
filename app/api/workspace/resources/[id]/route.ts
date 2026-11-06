@@ -1,8 +1,11 @@
 import type { NextRequest } from 'next/server'
-import { workspaceResourceUpdateSchema } from '~/validations/workspace'
+import {
+  workspaceResourceDeleteQuerySchema,
+  workspaceResourceUpdateSchema
+} from '~/validations/workspace'
 import { ResourceMutationError } from '~/app/api/patch/resource/mutation'
 import { WORKSPACE_ERRORS } from '~/constants/workspace'
-import { workspaceRequest, workspaceBody } from '../../http'
+import { workspaceRequest, workspaceBody, workspaceQuery } from '../../http'
 import {
   getWorkspaceResource,
   updateWorkspaceResource,
@@ -41,6 +44,11 @@ export const PUT = (req: NextRequest, context: Context) =>
 export const DELETE = (req: NextRequest, context: Context) =>
   workspaceRequest(
     req,
-    async (user) => deleteWorkspaceResource(await resourceId(context), user),
+    async (user) =>
+      deleteWorkspaceResource(
+        await resourceId(context),
+        user,
+        workspaceQuery(req, workspaceResourceDeleteQuerySchema).action
+      ),
     true
   )

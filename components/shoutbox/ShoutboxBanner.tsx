@@ -1,19 +1,15 @@
 'use client'
 
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
 import { Alert } from '@heroui/alert'
 import { Megaphone } from 'lucide-react'
-import { isAdminPreviewPath } from '~/constants/routes/matcher'
 import { useShoutboxBanner } from '~/hooks/useShoutboxBanner'
 
 /**
  * Site-wide important official message banner for the foreground root layout.
- * Never rendered on the admin preview pages so review comparisons stay clean.
  */
 export const ShoutboxBanner = () => {
-  const pathname = usePathname()
-  const { banner, dismiss } = useShoutboxBanner(!isAdminPreviewPath(pathname))
+  const { banner, dismiss } = useShoutboxBanner(true)
 
   if (!banner) {
     return null

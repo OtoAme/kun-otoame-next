@@ -55,6 +55,7 @@
     "maintenance:submission-assets:apply": "esno scripts/cleanupSubmissionAssets.ts --apply",
     "maintenance:gallery-thumbnails:dry": "esno scripts/galleryThumbnailBackfill.ts",
     "maintenance:gallery-thumbnails:apply": "esno scripts/galleryThumbnailBackfill.ts --apply",
+    "replay:resource-file-cleanup": "esno scripts/replayResourceFileCleanup.ts",
     "e2e:db:prepare": "node --env-file=.env scripts/e2eDatabasePreparation.ts",
     "e2e:company-server": "esno scripts/e2eCompanyIdentityServer.ts",
     "e2e:company-identity": "node --env-file=.env tests/e2e/company-identity.e2e.ts",

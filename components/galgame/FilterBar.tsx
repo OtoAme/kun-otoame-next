@@ -56,7 +56,7 @@ const sortFieldLabelMap: Record<string, string> = {
   created: '游戏创建时间',
   rating: '评分',
   view: '浏览量',
-  download: '下载量',
+  download: '获取次数',
   favorite: '收藏量'
 }
 
@@ -164,7 +164,7 @@ export const FilterBar = ({
                   浏览量
                 </DropdownItem>
                 <DropdownItem key="download" className="text-default-700">
-                  下载量
+                  获取次数
                 </DropdownItem>
                 <DropdownItem key="favorite" className="text-default-700">
                   收藏量

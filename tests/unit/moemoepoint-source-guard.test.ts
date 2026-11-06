@@ -140,7 +140,9 @@ describe('moemoepoint source guard', () => {
         readFile('components/user/Profile.tsx', 'utf8'),
         readFile('components/kun/top-bar/UserDropdown.tsx', 'utf8'),
         readFile('components/patch/rating/RatingCard.tsx', 'utf8'),
-        readFile('components/patch/resource/Resource.tsx', 'utf8'),
+        // The delete confirmation copy moved out of Resource.tsx with the
+        // hand-over action (module 06).
+        readFile('components/patch/resource/authorResourceAction.ts', 'utf8'),
         readFile('components/patch/resource/ResourceCreateAction.tsx', 'utf8'),
         readFile('components/settings/user/Username.tsx', 'utf8'),
         readFile('components/user/StartChatButton.tsx', 'utf8')

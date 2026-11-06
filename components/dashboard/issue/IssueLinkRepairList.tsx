@@ -15,6 +15,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle
 } from '~/components/dashboard/ui/alert-dialog'
+import { DashboardPagination } from '~/components/dashboard/page/DashboardPagination'
 import { Badge } from '~/components/dashboard/ui/badge'
 import { Button } from '~/components/dashboard/ui/button'
 import { Card, CardContent, CardHeader } from '~/components/dashboard/ui/card'
@@ -207,29 +208,13 @@ export function IssueLinkRepairList({
         )}
 
         {totalPages > 1 && (
-          <div className="flex items-center justify-between pt-1 text-sm">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              disabled={page <= 1 || loading}
-              onClick={() => setPage(page - 1)}
-            >
-              上一页
-            </Button>
-            <span className="text-muted-foreground tabular-nums">
-              {page} / {totalPages}
-            </span>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              disabled={page >= totalPages || loading}
-              onClick={() => setPage(page + 1)}
-            >
-              下一页
-            </Button>
-          </div>
+          <DashboardPagination
+            page={page}
+            totalPages={totalPages}
+            disabled={loading}
+            onPageChange={setPage}
+            className="border-0 bg-transparent px-0 pb-0 pt-1"
+          />
         )}
       </CardContent>
 

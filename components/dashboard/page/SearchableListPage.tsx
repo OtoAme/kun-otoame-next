@@ -15,9 +15,9 @@ import { SlidersHorizontal, X } from 'lucide-react'
 import {
   DashboardMasterDetail,
   DashboardPage,
-  DashboardPagination,
   DashboardPanel
 } from '~/components/dashboard/page/DashboardPage'
+import { DashboardPagination } from '~/components/dashboard/page/DashboardPagination'
 import {
   Avatar,
   AvatarFallback,
@@ -427,8 +427,11 @@ export function SearchableListPage<Row extends { id: number }>({
   }
 
   const list = (
-    <DashboardPanel ref={listRef}>
-      <div className="flex flex-wrap items-center gap-2 p-3">
+    <DashboardPanel
+      ref={listRef}
+      className="flex h-full min-h-0 flex-col overflow-hidden"
+    >
+      <div className="flex shrink-0 flex-wrap items-center gap-2 p-3">
         {searchByUser && !hideSearch && (
           <Select
             value={query.searchType}
@@ -514,7 +517,7 @@ export function SearchableListPage<Row extends { id: number }>({
         {batchDelete?.({ ids: [...checked], onDeleted: handleDeleted })}
       </div>
       {chips.length > 0 && (
-        <div className="flex flex-wrap items-center gap-1.5 px-3 pb-3">
+        <div className="flex shrink-0 flex-wrap items-center gap-1.5 px-3 pb-3">
           {chips.map((chip) => (
             <Badge key={chip.key} variant="secondary" className="gap-1 pr-1">
               {chip.label}
@@ -546,7 +549,7 @@ export function SearchableListPage<Row extends { id: number }>({
       )}
 
       {error !== null ? (
-        <div className="flex flex-col items-center gap-3 border-t px-4 py-10">
+        <div className="flex min-h-0 flex-1 flex-col items-center gap-3 overflow-y-auto border-t px-4 py-10">
           <p role="alert" className="text-sm text-destructive">
             {error}
           </p>
@@ -555,7 +558,10 @@ export function SearchableListPage<Row extends { id: number }>({
           </Button>
         </div>
       ) : asCards ? (
-        <ul className="border-t">
+        <ul
+          data-list-scroll
+          className="min-h-0 flex-1 overflow-y-auto border-t"
+        >
           {loading ? (
             Array.from({ length: 4 }).map((_, index) => (
               <li key={index} className="border-b p-3 last:border-b-0">
@@ -602,7 +608,10 @@ export function SearchableListPage<Row extends { id: number }>({
           )}
         </ul>
       ) : (
-        <div className="border-t">
+        <div
+          data-list-scroll
+          className="min-h-0 flex-1 overflow-y-auto border-t"
+        >
           <Table>
             <TableHeader>
               <TableRow>
@@ -731,6 +740,7 @@ export function SearchableListPage<Row extends { id: number }>({
 
   return (
     <DashboardPage
+      fill
       title={title}
       description={description}
       actions={
@@ -744,7 +754,7 @@ export function SearchableListPage<Row extends { id: number }>({
         </Button>
       }
     >
-      <div ref={pageRef} className="min-w-0">
+      <div ref={pageRef} className="flex min-h-0 min-w-0 flex-1 flex-col">
         <DashboardMasterDetail
           rail={showRail ? filterPanel!(filterContext) : undefined}
           list={list}

@@ -45,6 +45,10 @@ export const workspaceEntriesQuerySchema = z
     path: ['status']
   }) satisfies z.ZodType<WorkspaceEntriesQuery, z.ZodTypeDef, unknown>
 
+export const workspaceResourceDeleteQuerySchema = z.object({
+  action: z.enum(['handover', 'delete']).optional()
+})
+
 export const workspaceResourcesQuerySchema = z
   .object({
     ...pagination,

@@ -1,6 +1,7 @@
 import { Prisma } from '@prisma/client'
 import { LINK_MAINTENANCE_ERRORS as E } from '~/constants/linkMaintenance'
 import {
+  HANDOVER_MESSAGES,
   ResourceMutationError,
   resourcePostCommit,
   runResourceMutation
@@ -66,7 +67,7 @@ const ensureControl = async (tx: Tx, row: HealthTargetRow) =>
       link_version: row.version,
       resource_id: row.resource_id,
       patch_id: row.resource.patch_id,
-      owner_id: row.resource.user_id
+      owner_id: row.publisherLeftAt ? null : row.resource.user_id
     },
     update: {},
     include: maintenanceInclude
@@ -115,7 +116,11 @@ export const recordLinkMaintenanceReport = async (
     })
   }
   if (!event) fail('state_conflict')
-  const accountIds = [actor.uid, ...(opens ? [row.resource.user_id] : [])]
+  const notifyPublisher = opens && !row.publisherLeftAt
+  const accountIds = [
+    actor.uid,
+    ...(notifyPublisher ? [row.resource.user_id] : [])
+  ]
   const accounts = await lockCaseUsers(tx, accountIds)
   if (weight > 0 && accounts.has(actor.uid))
     await tx.patch_resource_link_maintenance_participant.createMany({
@@ -124,7 +129,7 @@ export const recordLinkMaintenanceReport = async (
     })
   let notified = false
   if (
-    opens &&
+    notifyPublisher &&
     actor.uid !== row.resource.user_id &&
     accounts.has(row.resource.user_id)
   ) {
@@ -285,6 +290,13 @@ export const mutateLinkMaintenance = async (
   )
   const result = await runResourceMutation(async (tx) => {
     const row = await loadHealthTarget(input, visibility, now, tx, true)
+    if (
+      row.publisherLeftAt &&
+      actor.role < 3 &&
+      row.resource.user_id === actor.uid
+    ) {
+      throw new ResourceMutationError(HANDOVER_MESSAGES.editClosed, 403)
+    }
     if (
       row.resource.user_id !== actor.uid ||
       !canManageResourceLink({

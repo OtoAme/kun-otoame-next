@@ -105,7 +105,7 @@ const navigateEditor = async (page: Page, item: Seed) => {
   await page.evaluate((value) => {
     document.documentElement.dataset.alignmentDocument = value
   }, marker)
-  await page.getByRole('link', { name: '返回我的资源', exact: true }).click()
+  await page.getByRole('link', { name: '返回我维护的资源', exact: true }).click()
   await page.getByRole('textbox', { name: '搜索资源或游戏' }).fill(item.name)
   await button(page, '搜索').click()
   await resourceCard(page, item.id)

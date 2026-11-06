@@ -38,9 +38,16 @@ export const UserResourceCard = ({ resource }: Props) => {
               <h2 className="text-lg font-semibold transition-colors line-clamp-2 hover:text-primary-500">
                 {resource.patchName}
               </h2>
-              <Chip variant="flat">
-                {formatTimeDifference(resource.created)}
-              </Chip>
+              <div className="flex flex-wrap items-center gap-2">
+                {resource.staffMaintained ? (
+                  <Chip size="sm" variant="flat">
+                    站方维护
+                  </Chip>
+                ) : null}
+                <Chip variant="flat">
+                  {formatTimeDifference(resource.created)}
+                </Chip>
+              </div>
             </div>
 
             <KunPatchAttribute

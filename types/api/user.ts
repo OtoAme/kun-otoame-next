@@ -43,6 +43,8 @@ export interface UserResource {
   language: string[]
   platform: string[]
   created: string
+  /** True after the publisher handed this card to site maintenance. */
+  staffMaintained: boolean
 }
 
 export interface UserContribute {

@@ -8,6 +8,7 @@ const db = vi.hoisted(() => ({
   patch_resource_link: {
     count: vi.fn(),
     create: vi.fn(),
+    findMany: vi.fn(async () => []),
     updateMany: vi.fn(),
     deleteMany: vi.fn()
   },
@@ -130,9 +131,16 @@ beforeEach(() => {
     Object.assign(resource, data)
     return resource
   })
+  db.patch_resource_link.findMany.mockResolvedValue([])
   db.$queryRaw.mockImplementation(async (query) => {
     const sql = query.sql ?? ''
-    locks.push(sql.includes('FROM patch_resource_link') ? 'links' : 'resource')
+    locks.push(
+      sql.includes('publisher_left_at')
+        ? 'left'
+        : sql.includes('FROM patch_resource_link')
+          ? 'links'
+          : 'resource'
+    )
     return [{ id: 10 }]
   })
   db.patch_resource_link.create.mockImplementation(async ({ data }) => {
@@ -293,7 +301,10 @@ describe('stable resource edits', () => {
     const old = structuredClone(resource.links)
     const result = await updatePatchResource(request(), 3, 2)
     expect(resource.links).toEqual(old)
-    expect(locks.slice(0, 2)).toEqual(['resource', 'links'])
+    expect(locks.filter((lock) => lock !== 'left').slice(0, 2)).toEqual([
+      'resource',
+      'links'
+    ])
     expect(db.patch_resource_link.updateMany).not.toHaveBeenCalled()
     expect(db.patch_resource_link.create).not.toHaveBeenCalled()
     expect(db.patch_resource_link.deleteMany).not.toHaveBeenCalled()

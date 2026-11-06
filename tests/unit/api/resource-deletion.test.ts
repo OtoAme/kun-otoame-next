@@ -30,6 +30,9 @@ const side = vi.hoisted(() => ({
 }))
 vi.mock('~/prisma/index', () => ({ prisma: db }))
 vi.mock('~/app/api/case/linkHealth', () => ({ closeLinkCases: side.close }))
+vi.mock('~/app/api/case/service', () => ({
+  transferPublisherCasesOnHandover: vi.fn()
+}))
 vi.mock('~/app/api/moemoepoint/service', () => ({
   reverseMoemoepoint: side.reverse
 }))

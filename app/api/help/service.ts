@@ -28,6 +28,7 @@ import { createMessage } from '~/app/api/utils/message'
 import { markdownToHtml } from '~/app/api/utils/render/markdownToHtml'
 import { markdownToText } from '~/utils/markdownToText'
 import { kunMoyuMoe } from '~/config/moyu-moe'
+import { lookupMergedSurvivorId } from '~/lib/officialMirror/resolve'
 import type {
   helpAcceptSchema,
   helpAnswerCreateSchema,
@@ -203,6 +204,61 @@ const toPatch = (
 ): HelpPatchLink | null =>
   patch ? { id: patch.id, uniqueId: patch.unique_id, name: patch.name } : null
 
+type HelpLinkFields = {
+  patch_id: number | null
+  game_name: string
+  game_links: string[]
+  resource_id: number | null
+}
+
+type HelpResourceNotice = {
+  userId: number
+  name: string
+  publisherLeftAt: Date | null
+}
+
+type ResolvedHelpLink = {
+  fields: HelpLinkFields
+  notice: HelpResourceNotice | null
+}
+
+/**
+ * Lock one resource card and nothing else. Handover and ordinary delete take
+ * this row before they touch "user"; the post fee updates the asker later in
+ * the same transaction, so the card lock has to come first. A merge locks
+ * both cards before its record and deletes the staff card in that same
+ * transaction, so this path does not lock the merge record or a second card.
+ */
+const lockHelpResource = async (db: Tx | Db, resourceId: number) => {
+  const rows = await db.$queryRaw<Array<{ id: number }>>(Prisma.sql`
+    /* om:lock-help-resource */
+    SELECT id FROM patch_resource WHERE id = ${resourceId} FOR UPDATE
+  `)
+  return rows.length > 0
+}
+
+const lookupHelpSurvivor = (db: Tx | Db, resourceId: number) =>
+  lookupMergedSurvivorId(
+    { $queryRaw: (query) => db.$queryRaw(query) },
+    resourceId
+  )
+
+/**
+ * The hop is read inside this transaction, then only the chosen card is
+ * locked. A committed merge deletes the old staff card and writes the
+ * mapping in that same transaction, so a lock that finds no row reads the
+ * hop once more and locks the survivor alone. It does not lock a second
+ * card while it still holds the first. The notice columns are read while
+ * that lock is held and are not read again after the asker's balance update.
+ */
+const lockLinkedResource = async (db: Tx | Db, requestedId: number) => {
+  const linkedId = (await lookupHelpSurvivor(db, requestedId)) ?? requestedId
+  if (await lockHelpResource(db, linkedId)) return linkedId
+  const survivorId = await lookupHelpSurvivor(db, requestedId)
+  if (survivorId === null || survivorId === linkedId) return null
+  return (await lockHelpResource(db, survivorId)) ? survivorId : null
+}
+
 /** Validates the optional game and resource link against current rows. */
 const resolveLink = async (
   db: Tx | Db,
@@ -212,7 +268,7 @@ const resolveLink = async (
     gameLinks?: string[]
     resourceId?: number | null
   }
-) => {
+): Promise<ResolvedHelpLink | string> => {
   const patchId = input.patchId ?? null
   const resourceId = input.resourceId ?? null
   if (patchId !== null) {
@@ -222,21 +278,41 @@ const resolveLink = async (
     })
     if (!patch || patch.status !== 0) return '关联的游戏不存在或不可用'
   }
+  let linkedId = resourceId
+  let notice: HelpResourceNotice | null = null
   if (resourceId !== null) {
+    linkedId = await lockLinkedResource(db, resourceId)
+    if (linkedId === null) return '关联的资源不存在或不属于该游戏'
     const resource = await db.patch_resource.findUnique({
-      where: { id: resourceId },
-      select: { patch_id: true, status: true }
+      where: { id: linkedId },
+      select: {
+        patch_id: true,
+        status: true,
+        user_id: true,
+        name: true,
+        publisher_left_at: true
+      }
     })
     if (!resource || resource.status !== 0 || resource.patch_id !== patchId) {
       return '关联的资源不存在或不属于该游戏'
     }
+    notice = {
+      userId: resource.user_id,
+      name: resource.name,
+      publisherLeftAt: resource.publisher_left_at
+    }
   }
   return {
-    patch_id: patchId,
-    game_name: patchId === null ? input.gameName.trim() : '',
-    game_links:
-      patchId === null && input.gameName.trim() ? (input.gameLinks ?? []) : [],
-    resource_id: resourceId
+    fields: {
+      patch_id: patchId,
+      game_name: patchId === null ? input.gameName.trim() : '',
+      game_links:
+        patchId === null && input.gameName.trim()
+          ? (input.gameLinks ?? [])
+          : [],
+      resource_id: linkedId
+    },
+    notice
   }
 }
 
@@ -301,7 +377,7 @@ export const createHelpPost = async (
           category: input.category,
           title: input.title,
           content: input.content,
-          ...link,
+          ...link.fields,
           created: now,
           updated: now
         },
@@ -328,23 +404,18 @@ export const createHelpPost = async (
       if (!allowed) {
         rollback(`每人每天最多发布 ${HELP_DAILY_POST_LIMIT} 条求助，请明天再试`)
       }
-      if (link.resource_id !== null) {
-        const resource = await tx.patch_resource.findUnique({
-          where: { id: link.resource_id },
-          select: { user_id: true, name: true }
-        })
-        if (resource && resource.user_id !== uid) {
-          await createMessage(
-            {
-              type: 'feedback',
-              content: `有用户就您的资源「${clip(resource.name)}」发布了求助：${clip(post.title)}`,
-              sender_id: uid,
-              recipient_id: resource.user_id,
-              link: postLink(post.id)
-            },
-            tx
-          )
-        }
+      const notice = link.notice
+      if (notice && notice.publisherLeftAt === null && notice.userId !== uid) {
+        await createMessage(
+          {
+            type: 'feedback',
+            content: `有用户就您的资源「${clip(notice.name)}」发布了求助：${clip(post.title)}`,
+            sender_id: uid,
+            recipient_id: notice.userId,
+            link: postLink(post.id)
+          },
+          tx
+        )
       }
       return { postId: post.id, moemoepointBalance: change.balance }
     })
@@ -357,6 +428,12 @@ export const createHelpPost = async (
   }
 }
 
+/**
+ * Lock a linked card before the post. A merge holds those cards first and
+ * only then rewrites help_post, so the post lock cannot come first. The
+ * unlocked read rejects an obvious mismatch and is not the write's authority:
+ * ownership and deletion are read again after both locks.
+ */
 export const updateHelpPost = async (
   input: z.infer<typeof helpPostUpdateSchema>,
   uid: number,
@@ -366,7 +443,15 @@ export const updateHelpPost = async (
   const now = options.now ?? new Date()
   const tooMany = imageCountError(input.content)
   if (tooMany) return tooMany
+  const preview = await db.help_post.findUnique({
+    where: { id: input.postId },
+    select: { user_id: true, deleted_at: true }
+  })
+  if (!preview || preview.deleted_at) return '求助不存在'
+  if (preview.user_id !== uid) return '只能编辑自己的求助'
   return runHelpTransaction(db, async (tx) => {
+    const link = await resolveLink(tx, input)
+    if (typeof link === 'string') return rollback(link)
     if (!(await lockPost(tx, input.postId))) return rollback('求助不存在')
     const post = await tx.help_post.findUnique({
       where: { id: input.postId },
@@ -374,15 +459,13 @@ export const updateHelpPost = async (
     })
     if (!post || post.deleted_at) return rollback('求助不存在')
     if (post.user_id !== uid) return rollback('只能编辑自己的求助')
-    const link = await resolveLink(tx, input)
-    if (typeof link === 'string') return rollback(link)
     await tx.help_post.update({
       where: { id: input.postId },
       data: {
         category: input.category,
         title: input.title,
         content: input.content,
-        ...link,
+        ...link.fields,
         updated: now
       }
     })

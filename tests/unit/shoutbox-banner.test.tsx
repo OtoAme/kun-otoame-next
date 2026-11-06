@@ -324,26 +324,6 @@ describe('ShoutboxBanner', () => {
     expect(container.textContent).not.toContain('重要公告 7')
   })
 
-  it('never fetches or renders on the admin preview pages', async () => {
-    mocks.pathname = '/preview/submission/12'
-    await renderBanner()
-    expect(mocks.kunFetchGet).not.toHaveBeenCalled()
-    expect(container.textContent).toBe('')
-
-    mocks.pathname = '/preview/resource/3'
-    await act(async () => {
-      root!.render(
-        <ShoutboxQueryProvider>
-          <ShoutboxBanner />
-        </ShoutboxQueryProvider>
-      )
-      await Promise.resolve()
-    })
-    await flushNotify()
-    expect(mocks.kunFetchGet).not.toHaveBeenCalled()
-    expect(container.textContent).toBe('')
-  })
-
   it('retains a slow response past cache freshness but clears it at the true boundary', async () => {
     mocks.kunFetchGet
       .mockResolvedValueOnce({
@@ -373,7 +353,7 @@ describe('ShoutboxBanner', () => {
     expect(container.textContent).not.toContain('重要公告')
   })
 
-  it('coalesces visibility refreshes and ignores the result when the banner becomes disabled', async () => {
+  it('coalesces visibility refreshes and ignores the result after unmount', async () => {
     let resolveFirst!: (value: ShoutboxBannerResponse) => void
     const payload: ShoutboxBannerResponse = {
       banner: makeBanner(7, Date.now() + 60_000),
@@ -395,13 +375,8 @@ describe('ShoutboxBanner', () => {
       await Promise.resolve()
     })
     await flushNotify()
-    mocks.pathname = '/preview/submission/12'
     await act(async () => {
-      root!.render(
-        <ShoutboxQueryProvider>
-          <ShoutboxBanner />
-        </ShoutboxQueryProvider>
-      )
+      root!.render(<ShoutboxQueryProvider>{null}</ShoutboxQueryProvider>)
       await Promise.resolve()
     })
     await act(async () => {

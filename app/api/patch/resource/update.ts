@@ -25,7 +25,10 @@ import {
   projectLinkHealth
 } from './linkHealthProjection'
 import {
+  assertPublisherStillMaintains,
   lockResourceForMutation,
+  readLinkChangeFacts,
+  readPublisherLeftAt,
   resourceMutationInclude,
   resourcePostCommit,
   ResourceMutationError,
@@ -282,6 +285,12 @@ const savePatchResource = async (
   const uploadsByIndex = new Map<number, UploadedPatchResource>()
   let committed = false
   try {
+    assertPublisherStillMaintains(
+      await readPublisherLeftAt(prisma, resourceId),
+      initial.user_id,
+      uid,
+      userRole
+    )
     for (const [index, link] of input.links.entries()) {
       if (link.storage !== 's3' || !link.uploadId) continue
       const uploaded = await uploadPatchResource(patchId, link.uploadId, uid)
@@ -298,6 +307,12 @@ const savePatchResource = async (
       if (lockedInput.patchId !== patchId) throw conflict()
       const input = lockedInput
       validateBaseAndPermissions(before, input, uid, userRole)
+      assertPublisherStillMaintains(
+        await readPublisherLeftAt(tx, resourceId),
+        before.user_id,
+        uid,
+        userRole
+      )
       const orders = linkSortOrders(before, input)
       const actorType =
         userRole >= 3 ? ('staff' as const) : ('publisher' as const)
@@ -441,6 +456,17 @@ const savePatchResource = async (
         fresh.links.map((link) => ({ ...link, resourceId, patchId })),
         tx
       )
+      const changeFacts = await readLinkChangeFacts(tx, [resourceId])
+      const factByLink = new Map(changeFacts.map((fact) => [fact.id, fact]))
+      const backupAt = changeFacts.reduce<Date | null>(
+        (latest, fact) =>
+          fact.storage === 'touchgal' &&
+          fact.changedAt &&
+          (!latest || fact.changedAt > latest)
+            ? fact.changedAt
+            : latest,
+        null
+      )
       const response: PatchResourceStableUpdateResponse = {
         id: fresh.id,
         name: fresh.name,
@@ -466,7 +492,11 @@ const savePatchResource = async (
             size: link.size,
             hash: link.hash,
             sortOrder: link.sort_order,
-            download: link.download
+            download: link.download,
+            backedUpAt:
+              link.storage === 'touchgal'
+                ? (factByLink.get(link.id)?.changedAt?.toISOString() ?? null)
+                : null
           })),
         download: fresh.download,
         likeCount: 0,
@@ -474,6 +504,10 @@ const savePatchResource = async (
         status: fresh.status,
         userId: fresh.user_id,
         patchId: fresh.patch_id,
+        publisherLeftAt:
+          (await readPublisherLeftAt(tx, resourceId))?.toISOString() ?? null,
+        hasStaffBackup: fresh.links.some((link) => link.storage === 'touchgal'),
+        backedUpAt: backupAt?.toISOString() ?? null,
         created: fresh.created.toISOString(),
         user: {
           id: fresh.user.id,

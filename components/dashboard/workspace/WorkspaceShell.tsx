@@ -25,9 +25,13 @@ import {
 import { kunMoyuMoe } from '~/config/moyu-moe'
 import { cn } from '~/lib/dashboard/utils'
 import type { WorkspaceUser } from '~/types/api/workspace'
-import { WorkspaceUserProvider, useWorkspaceUser } from './WorkspaceUserContext'
+import {
+  WorkspaceUserProvider,
+  useOptionalWorkspaceUser,
+  useWorkspaceUser
+} from './WorkspaceUserContext'
 
-export { WorkspaceUserProvider, useWorkspaceUser }
+export { WorkspaceUserProvider, useOptionalWorkspaceUser, useWorkspaceUser }
 
 /**
  * Turn a thrown kunFetch failure into user text.
@@ -52,7 +56,7 @@ export function workspaceActionError(error: unknown, fallback: string): string {
 
 const NAV = [
   { href: '/workspace/entries', label: '我的条目' },
-  { href: '/workspace/resources', label: '我的资源' },
+  { href: '/workspace/resources', label: '我维护的资源' },
   { href: '/workspace/issues', label: '问题处理' }
 ] as const
 

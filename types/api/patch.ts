@@ -104,7 +104,11 @@ export interface PatchResourceLink {
   download: number
   obtained?: boolean
   obtainedExpiresAt?: string
+  /** Latest unexpired current-version reveal for this viewer. */
+  revealedExpiresAt?: string
   revealed?: boolean
+  /** Touchgal link-change time. Null for every other storage. */
+  backedUpAt?: string | null
   /** 公开列表下发的存储种类，不含地址。 */
   diskKind?: ResourceDiskKind
   code?: string
@@ -120,6 +124,7 @@ export interface PatchResourceAccessLink {
   code: string
   password: string
   hash: string
+  revealedExpiresAt?: string
 }
 
 export type ResourceAccessQuotaWindow = 'daily' | 'weekly'
@@ -154,8 +159,10 @@ export interface PatchResourceAccessRestoreResponse {
 
 /** Required 04/05/10 projection, adopted with the stable-slot reader/writer. */
 export interface PatchResourceHealthLink
-  extends Omit<PatchResourceLink, 'content' | 'code' | 'password'>,
-    LinkHealthSummary {}
+  extends Omit<PatchResourceLink, 'content' | 'code' | 'password' | 'backedUpAt'>,
+    LinkHealthSummary {
+  backedUpAt: string | null
+}
 
 export interface PatchResourceHealthAccessLink extends PatchResourceAccessLink {
   /** Version of the very same snapshot that supplies content/code/password. */
@@ -209,14 +216,27 @@ export interface PatchResource {
     patchCount: number
     role: number
   }
+  /** ISO time the publisher handed maintenance to the site. Null while they still maintain it. */
+  publisherLeftAt?: string | null
+  /** True when the card has a touchgal backup link. */
+  hasStaffBackup?: boolean
+  /** Latest touchgal link-change time, or null when the card has no staff backup. */
+  backedUpAt?: string | null
 }
 
 export interface PatchResourceCreateResponse extends PatchResource {
   moemoepointBalance: MoemoepointBalance
 }
 
-export interface PatchResourceHealth extends Omit<PatchResource, 'links'> {
+export interface PatchResourceHealth
+  extends Omit<
+    PatchResource,
+    'links' | 'publisherLeftAt' | 'hasStaffBackup' | 'backedUpAt'
+  > {
   links: PatchResourceHealthLink[]
+  publisherLeftAt: string | null
+  hasStaffBackup: boolean
+  backedUpAt: string | null
 }
 
 /** Saving is committed before these checks; failed checks never undo it. */

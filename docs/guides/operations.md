@@ -87,6 +87,40 @@ pnpm prisma:deploy-safe
 | 问题附图与提醒 | [预检](../../migration/production-case-feedback-preflight-2026-09-26.sql)、[同步](../../migration/production-case-feedback-sync-2026-09-26.sql)、[复检](../../migration/production-case-feedback-postflight-2026-09-26.sql)，扩展后不重跑只认基础列数的检查，旧反馈与举报不回填。 |
 | 控制台查询索引 | [预检](../../migration/production-dashboard-indexes-preflight-2026-10-31.sql)、[同步](../../migration/production-dashboard-indexes-sync-2026-10-31.sql)，在显式事务外执行；只建索引，不改数据，不需要停写。同步可重复运行：已存在且有效的跳过，中断留下的无效索引删掉重建，同名但定义不同时停止。完成后重跑预检，四项都应为 `already_ok`。 |
 | 每日登录记录 | [预检](../../migration/production-user-daily-active-preflight-2026-10-31.sql)、[同步](../../migration/production-user-daily-active-sync-2026-10-31.sql)，只新增空表 `user_daily_active`，不改已有数据。同步在单个事务内执行，外键会短暂锁住用户表，等不到锁 5 秒后停止，重跑即可；已有同名表但列不一致时停止。完成后重跑预检，状态应为 `present` 且主键、外键与预期一致。先迁移再发布对应版本：旧版本不写这张表，新版本在表缺失时只记录错误、不影响登录，缺表期间已访问的用户当天不会补记。 |
+| 站方备份与资源合并 | [预检](../../migration/production-official-mirror-preflight-2026-11-04.sql)、[同步](../../migration/production-official-mirror-sync-2026-11-04.sql)、[复检](../../migration/production-official-mirror-postflight-2026-11-04.sql)，同步必须带人工判定的时间分组参数；[限定校正](../../migration/production-official-mirror-attached-at-correct-2026-11-04.sql)仅在回填判定错误时按记录清单使用。执行前提见下节。 |
+
+### 站方备份与资源合并结构
+
+适用于需要加入交接时间、链接加入时间、辅助点击数、备份忽略与重备水位、合并记录及交接文件清理待办的持久库。这组同步要求资源、链接基础表已经存在；完整模块还依赖[资源访问授权](#资源访问授权)、问题处理基础及[链接健康与维护结构](#链接健康与维护结构)。执行前在一次性数据库完整演练预检、带参数同步、复检和中断恢复，先按本页开头停写并验证备份；生产操作由获授权者在服务器执行。仓库存在这组文件不证明目标环境已安装；执行前须核对目标环境的迁移与复检记录，只运行尚缺且审核通过的步骤。
+
+1. 在只读阶段运行[官方镜像预检](../../migration/production-official-mirror-preflight-2026-11-04.sql)，核对现有结构与待建对象。预检列出每个不同链接创建时刻的数量；超过 50 条只是一组待人工判定的候选，不能据此认定为历史链接拆分迁移。
+2. 对照实际迁移来源审核全部时间组，包括不超过 50 条的小组。把确属统一盖章的时刻填入 `stamp_confirmed`，其余超过 50 条的候选填入 `stamp_rejected`；同一时刻不得同时出现在两组，两组无值时写 `none`。已经审核过小组时，将 `small_stamp_review` 填为 `acknowledged`。格式为 `YYYY-MM-DD HH24:MI:SS.MS` 的不含时区时间，多个值用英文逗号分隔。
+3. 使用本文统一执行方式运行[同步](../../migration/production-official-mirror-sync-2026-11-04.sql)，同时传入这三个 `psql -v` 参数；参数省略或判定不完整会拒绝执行，不能用无参数命令代替：
+
+   ```bash
+   export OTOAME_STAMP_CONFIRMED='<人工确认的迁移时刻，或 none>'
+   export OTOAME_STAMP_REJECTED='<人工排除的大组时刻，或 none>'
+   export OTOAME_SQL_FILE='migration/production-official-mirror-sync-2026-11-04.sql'
+   docker exec -i "$OTOAME_PG_CONTAINER" psql -X -v ON_ERROR_STOP=1 -U "$OTOAME_PG_USER" -d "$OTOAME_PG_DATABASE" -v stamp_confirmed="$OTOAME_STAMP_CONFIRMED" -v stamp_rejected="$OTOAME_STAMP_REJECTED" -v small_stamp_review=acknowledged < "$OTOAME_SQL_FILE"
+   ```
+
+   这些值只能来自本次只读盘点与来源审核，不能把历史样本数量或某个固定时刻直接复制为生产判定。敏感执行输出保存在受限目录，不将私有清单写进仓库。
+4. 同步在单事务内建立结构，只回填当时仍为空的链接加入时间，保存回填清单，再设默认值与非空。确认组取所在卡片创建时间，其余取链接和卡片创建时间的较晚者；已有值不会被同步覆盖。锁等待上限 5 秒、语句上限 120 秒，失败整笔回滚。相同判定可以重跑；判定改变会被拒绝，不能通过清空全部时间或覆盖上线后新增事实来强行重跑。
+5. 执行[只读复检](../../migration/production-official-mirror-postflight-2026-11-04.sql)，确认非空、默认值、新表、索引、外键及无部分唯一索引，记录实际确认的回填数量与各业务表数量；历史数量不是验收常数。再按[生产结构检查](#生产结构检查)确认目标结构，之后才发布依赖这些结构的版本。
+6. 若同步提交后才发现判定错误，保持停写，先核对回填清单。只有当前值仍是该次同步写入值的行，才可用[限定校正](../../migration/production-official-mirror-attached-at-correct-2026-11-04.sql)。校正仍使用 `stamp_confirmed`、`stamp_rejected`、`small_stamp_review` 三个参数名，但前两个参数必须填写按第 2 步重新人工审核后的正确判定，不得沿用已确认错误的原值；第三个参数仍为 `acknowledged`。执行校正文件，不要用同步文件重跑来改变判定；校正跳过后来发生变化的行，不清空时间，也不处理清单之外的链接。最小执行方式：
+
+   ```bash
+   export OTOAME_STAMP_CONFIRMED='<重新审核后确认的迁移时刻，或 none>'
+   export OTOAME_STAMP_REJECTED='<重新审核后排除的大组时刻，或 none>'
+   export OTOAME_SQL_FILE='migration/production-official-mirror-attached-at-correct-2026-11-04.sql'
+   docker exec -i "$OTOAME_PG_CONTAINER" psql -X -v ON_ERROR_STOP=1 -U "$OTOAME_PG_USER" -d "$OTOAME_PG_DATABASE" -v stamp_confirmed="$OTOAME_STAMP_CONFIRMED" -v stamp_rejected="$OTOAME_STAMP_REJECTED" -v small_stamp_review=acknowledged < "$OTOAME_SQL_FILE"
+   ```
+
+   记录实际校正行数和因后续变化而跳过的行数，再执行只读复检。
+
+尚未发生交接或合并时，新增结构可以随兼容旧应用保留。首次交接或合并后，旧应用不理解维护交接与旧资源编号映射，不能直接回退；保持停写并前向修复。确需恢复数据时另制定备份恢复方案，核对窗口内新增写入和对象存储。已经清理的对象不由数据库备份恢复，没有独立对象备份就不能承诺完整回退。
+
+交接产生的站内对象清理待办不由迁移自动执行。需要重放时使用下文「交接对象清理重放」，并核对目标库与文件引用；资源合并删除被并卡片本身不清理对象存储。
 
 ### 资源访问授权
 
@@ -170,6 +204,7 @@ pnpm maintenance:companies:dirty:cache --plan=<审计目录>/plan.json
 | 未发送私聊图片 | `pnpm maintenance:conversation-images:dry`；确认后 `pnpm maintenance:conversation-images:apply -- --limit=100 --batch=50 --concurrency=1 --delay=1000` | 默认仅删超过 2 小时、路径符合且不被未删除消息或回复引用的对象；预览默认最多 200，执行前重查引用。失败保留错误，不能把候选当已删。 |
 | 投稿素材积压 | `pnpm maintenance:submission-assets:dry`；确认后 `pnpm maintenance:submission-assets:apply` | 预览不写待办、不删文件、不清边缘。执行依次处理终态投稿积压、持久待办和新无主文件，默认宽限 24 小时、不限数量。调整时参数与值用空格分隔，例如 `pnpm maintenance:submission-assets:apply -- --limit 50 --grace-hours 48`；写成等号形式或非正整数会被忽略，执行变为默认宽限且不限数量。 |
 | 内置贴纸 | `pnpm stickers:sync -- --manifest=<本地清单>`；确认后同命令加 `--apply` | 校验后上传与更新目录，不删历史贴纸，但会按清单重新启用其中的贴纸；格式与步骤见[贴纸维护](../reference/stickers.md#导入和同步操作)。 |
+| 交接对象清理重放 | `pnpm replay:resource-file-cleanup -- --confirm-database=<库名>` | 只重放已经写入的资源对象清理待办。连接串只来自 `KUN_DATABASE_URL`，命令行不接受连接串；`--confirm-database` 必须与库名完全一致。可选 `--limit` 与 `--ids`。失败保留在待办里，不能把命令输出当成已经删除；实际重放与删除结果须按目标环境的命令回执、未完成待办和对象存储记录核实。 |
 
 截图可用 `--patch-id`、`--start-id`、`--limit`、`--max-original-mb` 缩范围，不确定编码成本时加 `--skip-animated-avif`。私聊图片可用 `--conversation-id` 和更长 `--older-than-hours` 缩范围。保持生产低并发，视频工具安装和验证见部署指南。
 

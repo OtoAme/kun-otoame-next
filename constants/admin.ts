@@ -36,7 +36,14 @@ export const ADMIN_LOG_TYPE_MAP: Record<string, string> = {
   case_message_hide: '隐藏事项对话',
   case_message_unhide: '取消隐藏事项对话',
   update: '更新',
-  grant: '发放'
+  grant: '发放',
+  resource_handover: '资源交由站方维护',
+  resource_merge: '资源合并',
+  resource_merge_dismiss: '驳回资源合并',
+  resource_merge_reopen: '重开资源合并',
+  backup_ignore: '忽略站方备份',
+  backup_unignore: '撤销忽略站方备份',
+  backup_dismiss: '无需重新备份'
 }
 
 export const ALLOWED_VIDEO_MIME_TYPES = ['video/mp4', 'video/wmv', 'video/webm']

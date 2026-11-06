@@ -75,7 +75,13 @@ export const adminResourcePaginationSchema = adminPaginationSchema
      * viewer's own display setting, so the list is not narrowed by it.
      */
     rating: z.enum(['all', 'sfw', 'nsfw']).optional(),
-    sort: z.enum(ADMIN_RESOURCE_SORTS).optional()
+    sort: z.enum(ADMIN_RESOURCE_SORTS).optional(),
+    /**
+     * String flags. Absent means no filter. Do not coerce arbitrary text
+     * into a boolean: only these two spellings are accepted.
+     */
+    hasStaffBackup: z.enum(['true', 'false']).optional(),
+    staffMaintained: z.enum(['true', 'false']).optional()
   })
   .refine((input) => !input.from || !input.to || input.from <= input.to, {
     message: '开始日期不能晚于结束日期',

@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 const db = vi.hoisted(() => ({
+  $queryRaw: vi.fn(),
   patch_resource: { findFirst: vi.fn(), findMany: vi.fn(), count: vi.fn() },
   patch_resource_access_grant: {
     findUnique: vi.fn(),
@@ -62,6 +63,15 @@ const link = (id: number, storage: string) => ({
   sort_order: id,
   download: 0
 })
+const handedOverLookup = (where: { publisher_left_at?: unknown } | undefined) =>
+  Boolean(where && Object.prototype.hasOwnProperty.call(where, 'publisher_left_at'))
+const listRead = () => {
+  const call = db.patch_resource.findMany.mock.calls.find(
+    (entry) => !handedOverLookup(entry[0]?.where)
+  )
+  if (!call) throw new Error('missing workspace list query')
+  return call[0]
+}
 const row = () => ({
   id: 3,
   patch_id: 4,
@@ -83,8 +93,12 @@ const row = () => ({
 })
 beforeEach(() => {
   vi.resetAllMocks()
+  db.$queryRaw.mockResolvedValue([])
   db.patch_resource.findFirst.mockResolvedValue(row())
-  db.patch_resource.findMany.mockResolvedValue([row()])
+  db.patch_resource.findMany.mockImplementation(async (args) => {
+    if (handedOverLookup(args?.where)) return []
+    return [row()]
+  })
   db.patch_resource.count.mockResolvedValue(1)
 })
 afterEach(() => {
@@ -102,7 +116,10 @@ describe('workspace resource privacy', () => {
       ...row(),
       participants: [{ user_id: 8, note: 'private-participant' }]
     }
-    db.patch_resource.findMany.mockResolvedValue([source])
+    db.patch_resource.findMany.mockImplementation(async (args) => {
+      if (handedOverLookup(args?.where)) return []
+      return [source]
+    })
     const result = await getWorkspaceResources(
       { page: 1, limit: 20, status: 'all', section: 'all' },
       user
@@ -113,7 +130,7 @@ describe('workspace resource privacy', () => {
       language: ['ja'],
       platform: ['windows']
     })
-    const read = db.patch_resource.findMany.mock.calls[0][0]
+    const read = listRead()
     expect(read.select).toMatchObject({
       type: true,
       language: true,
@@ -166,7 +183,10 @@ describe('workspace resource privacy', () => {
         content: 'https://storage.example.test/object.zip'
       }
     ]
-    db.patch_resource.findMany.mockResolvedValue([source])
+    db.patch_resource.findMany.mockImplementation(async (args) => {
+      if (handedOverLookup(args?.where)) return []
+      return [source]
+    })
     const result = await getWorkspaceResources(
       { page: 1, limit: 20, status: 'all', section: 'all' },
       user
@@ -193,7 +213,7 @@ describe('workspace resource privacy', () => {
     expect(detail).toMatchObject(metadata)
     expect(
       db.patch_resource.findFirst.mock.calls[0][0].include.patch.select
-    ).toEqual(db.patch_resource.findMany.mock.calls[0][0].select.patch.select)
+    ).toEqual(listRead().select.patch.select)
   })
   it.each([2, 4])(
     'restricts both lists and detail reads to the current account for role %s',
@@ -201,9 +221,10 @@ describe('workspace resource privacy', () => {
       const own = row()
       const other = { ...row(), id: 4, user_id: 8, name: 'other resource' }
       const records = [other, own]
-      db.patch_resource.findMany.mockImplementation(async ({ where }) =>
-        records.filter((record) => record.user_id === where.user_id)
-      )
+      db.patch_resource.findMany.mockImplementation(async ({ where }) => {
+        if (handedOverLookup(where)) return []
+        return records.filter((record) => record.user_id === where.user_id)
+      })
       db.patch_resource.count.mockImplementation(
         async ({ where }) =>
           records.filter((record) => record.user_id === where.user_id).length
@@ -222,7 +243,7 @@ describe('workspace resource privacy', () => {
       )
       expect(result.items.map((item) => item.id)).toEqual([own.id])
       expect(result.total).toBe(1)
-      expect(db.patch_resource.findMany.mock.calls[0][0].where).toEqual({
+      expect(listRead().where).toEqual({
         user_id: user.id
       })
       expect(db.patch_resource.count.mock.calls[0][0].where).toEqual({
@@ -248,7 +269,7 @@ describe('workspace resource privacy', () => {
       },
       user
     )
-    const read = db.patch_resource.findMany.mock.calls[0][0]
+    const read = listRead()
     expect(read).toMatchObject({
       where: { user_id: 7, status: 2, section: 'galgame' },
       skip: 20,

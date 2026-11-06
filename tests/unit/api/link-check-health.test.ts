@@ -4,6 +4,7 @@ import type { Prisma } from '@prisma/client'
 const mocks = vi.hoisted(() => ({
   prisma: {
     $transaction: vi.fn(),
+    patch_resource: { findUnique: vi.fn() },
     patch_resource_link: { findFirst: vi.fn() },
     patch_resource_link_maintenance: { findUnique: vi.fn() },
     patch_resource_link_report: { findUnique: vi.fn() },
@@ -122,12 +123,17 @@ const savedResource = (): PatchResourceStableUpdateResponse => ({
   user: { id: 4, name: 'Publisher', avatar: '', patchCount: 0, role: 2 },
   links: [{
     ...projectLinkHealth(row, 4, { uid: 4, role: 2 }, null, now),
-    id: row.id, storage: row.storage, size: '', hash: '', sortOrder: 0, download: 0
+    id: row.id, storage: row.storage, size: '', hash: '', sortOrder: 0, download: 0,
+    backedUpAt: null
   }],
+  publisherLeftAt: null,
+  hasStaffBackup: false,
+  backedUpAt: null,
   linkChecks: []
 })
 beforeEach(() => {
   vi.clearAllMocks()
+  mocks.prisma.patch_resource.findUnique.mockResolvedValue({ publisher_left_at: null })
   mocks.prisma.patch_resource_link_maintenance.findUnique.mockReset().mockResolvedValue(null)
   mocks.prisma.patch_resource_link_report.findUnique.mockResolvedValue(null)
   mocks.prisma.patch_resource_access.findFirst.mockResolvedValue({ id: 1 })
@@ -137,6 +143,9 @@ beforeEach(() => {
   mode = 'manual'
   tx = {
     $queryRaw: vi.fn().mockResolvedValue([]),
+    patch_resource: {
+      findUnique: vi.fn().mockResolvedValue({ publisher_left_at: null })
+    },
     patch_resource_link: {
       findFirst: vi.fn().mockImplementation(async () =>
         row.resource.status === 0 && row.resource.patch.status === 0

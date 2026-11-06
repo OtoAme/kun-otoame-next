@@ -199,7 +199,6 @@ describe('ResourceTabs resource operation visibility', () => {
           setEditResource={vi.fn()}
           onOpenEdit={vi.fn()}
           onOpenDelete={vi.fn()}
-          setDeleteResourceId={vi.fn()}
           selectedSection="galgame"
           setSelectedSection={vi.fn()}
         />

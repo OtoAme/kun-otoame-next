@@ -5,14 +5,13 @@ import Link from 'next/link'
 import {
   AlertTriangle,
   CalendarSearch,
-  ChevronLeft,
-  ChevronRight,
   ExternalLink,
   Inbox,
   RefreshCw,
   Search
 } from 'lucide-react'
 
+import { DashboardPagination } from '~/components/dashboard/page/DashboardPagination'
 import { Badge } from '~/components/dashboard/ui/badge'
 import { Button } from '~/components/dashboard/ui/button'
 import {
@@ -557,59 +556,38 @@ export const DashboardLedger = ({
             </CardContent>
 
             {pagination && (
-              <div className="flex flex-wrap items-center justify-between gap-3 border-t px-4 py-3 sm:px-6">
-                <span className="text-sm text-muted-foreground">
-                  共 {pagination.total} 条记录 · 第 {pagination.page} /{' '}
-                  {Math.max(pagination.totalPages, 1)} 页
-                </span>
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-sm text-muted-foreground">
-                    每页条数
-                  </span>
-                  <Select
-                    value={String(query.limit)}
-                    onValueChange={(value) => changeLimit(Number(value))}
-                    disabled={paginationDisabled}
-                  >
-                    <SelectTrigger className="h-8 w-24" aria-label="每页条数">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {LEDGER_LIMIT_OPTIONS.map((option) => (
-                        <SelectItem key={option} value={String(option)}>
-                          {option}
-                        </SelectItem>
-                      ))}
-                      {!LEDGER_LIMIT_OPTIONS.includes(query.limit) && (
-                        <SelectItem value={String(query.limit)}>
-                          {query.limit}
-                        </SelectItem>
-                      )}
-                    </SelectContent>
-                  </Select>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={paginationDisabled || pagination.page <= 1}
-                    onClick={() => goToPage(pagination.page - 1)}
-                  >
-                    <ChevronLeft className="size-4" />
-                    上一页
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={
-                      paginationDisabled ||
-                      pagination.page >= pagination.totalPages
-                    }
-                    onClick={() => goToPage(pagination.page + 1)}
-                  >
-                    下一页
-                    <ChevronRight className="size-4" />
-                  </Button>
-                </div>
-              </div>
+              <DashboardPagination
+                page={pagination.page}
+                totalPages={Math.max(pagination.totalPages, 1)}
+                total={pagination.total}
+                unit="条记录"
+                disabled={paginationDisabled}
+                onPageChange={goToPage}
+                className="px-4 py-3 sm:px-6"
+              >
+                <span>每页条数</span>
+                <Select
+                  value={String(query.limit)}
+                  onValueChange={(value) => changeLimit(Number(value))}
+                  disabled={paginationDisabled}
+                >
+                  <SelectTrigger className="h-8 w-24" aria-label="每页条数">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {LEDGER_LIMIT_OPTIONS.map((option) => (
+                      <SelectItem key={option} value={String(option)}>
+                        {option}
+                      </SelectItem>
+                    ))}
+                    {!LEDGER_LIMIT_OPTIONS.includes(query.limit) && (
+                      <SelectItem value={String(query.limit)}>
+                        {query.limit}
+                      </SelectItem>
+                    )}
+                  </SelectContent>
+                </Select>
+              </DashboardPagination>
             )}
           </Card>
         </div>

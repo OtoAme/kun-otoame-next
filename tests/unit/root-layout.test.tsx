@@ -137,21 +137,6 @@ describe('RootLayout content band', () => {
     expect(markup).toContain('max-lg:overflow-hidden')
   })
 
-  it.each(['/preview/submission/12', '/preview/resource/34'])(
-    'keeps the site renderer but omits footer controls for %s',
-    async (pathname) => {
-      navigationMock.pathname = pathname
-      const { default: RootLayout } = await import('~/app/(site)/layout')
-      const markup = renderToStaticMarkup(await RootLayout({
-        children: <main data-testid="preview-content">预览正文</main>
-      }))
-      expect(markup).toContain('data-testid="providers"')
-      expect(markup).toContain('data-testid="preview-content"')
-      expect(markup).not.toContain('data-testid="footer"')
-      expect(markup).not.toContain('data-testid="back-to-top"')
-    }
-  )
-
   it('restores document scrolling after leaving conversation detail pages', async () => {
     dom = new JSDOM('<!doctype html><div id="root"></div>', {
       url: 'http://localhost'

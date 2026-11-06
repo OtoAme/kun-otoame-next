@@ -266,6 +266,7 @@ const healthLink = (
     canCheck: false,
     canEdit: false
   },
+  backedUpAt: null,
   ...overrides
 })
 

@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import type { Prisma } from '@prisma/client'
 import { prisma } from '~/prisma/index'
+import { readPublisherLeftMap } from '~/app/api/patch/resource/mutation'
 import { getUserInfoSchema } from '~/validations/user'
 import type { UserResource } from '~/types/api/user'
 
@@ -37,6 +38,10 @@ export const getUserPatchResource = async (
     })
   ])
 
+  const leftAt = await readPublisherLeftMap(
+    prisma,
+    data.map((res) => res.id)
+  )
   const resources: UserResource[] = data.map((res) => {
     const primaryLink = res.links[0]
     return {
@@ -50,7 +55,8 @@ export const getUserPatchResource = async (
       type: res.type,
       language: res.language,
       platform: res.platform,
-      created: String(res.created)
+      created: String(res.created),
+      staffMaintained: Boolean(leftAt.get(res.id))
     }
   })
 

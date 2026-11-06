@@ -62,10 +62,11 @@ const RATING_LABELS: Options = {
 const SORT_LABELS: Options = {
   created_desc: '发布时间（新到旧）',
   created_asc: '发布时间（旧到新）',
-  download_desc: '下载次数（多到少）',
-  download_asc: '下载次数（少到多）'
+  download_desc: '获取次数（多到少）',
+  download_asc: '获取次数（少到多）'
 }
 const STATUS_VALUES = ['0', '1', '2']
+const YES_NO: Options = { true: '是', false: '否' }
 
 const oneOf = (labels: Options) => (raw: string) => (raw in labels ? raw : null)
 
@@ -92,6 +93,8 @@ export const RESOURCE_LIST_CONFIG: SearchableListConfig = {
     section: oneOf(RESOURCE_SECTION_MAP),
     status: listOf(STATUS_VALUES),
     publisher: oneOf(PUBLISHER_LABELS),
+    hasStaffBackup: oneOf(YES_NO),
+    staffMaintained: oneOf(YES_NO),
     type: listOf(SUPPORTED_TYPE),
     language: listOf(SUPPORTED_LANGUAGE),
     platform: listOf(SUPPORTED_PLATFORM),
@@ -305,6 +308,22 @@ export function ResourceFilterPanel({ filters, setFilters }: FilterContext) {
         allLabel="全部"
         onChange={(publisher) => setFilters({ publisher })}
       />
+      <SingleSelect
+        id="resource-filter-staff-backup"
+        label="站方备份"
+        value={filters.hasStaffBackup}
+        options={YES_NO}
+        allLabel="全部"
+        onChange={(hasStaffBackup) => setFilters({ hasStaffBackup })}
+      />
+      <SingleSelect
+        id="resource-filter-staff-maintained"
+        label="站方维护"
+        value={filters.staffMaintained}
+        options={YES_NO}
+        allLabel="全部"
+        onChange={(staffMaintained) => setFilters({ staffMaintained })}
+      />
       {sections.map(({ section, groups }) => (
         <Field
           key={section}
@@ -501,6 +520,10 @@ export function resourceFilterChips(filters: ListFilters) {
     })
   if (filters.publisher)
     add('publisher', `${PUBLISHER_LABELS[filters.publisher]}发布`)
+  if (filters.hasStaffBackup === 'true') add('hasStaffBackup', '有站方备份')
+  if (filters.hasStaffBackup === 'false') add('hasStaffBackup', '无站方备份')
+  if (filters.staffMaintained === 'true') add('staffMaintained', '站方维护')
+  if (filters.staffMaintained === 'false') add('staffMaintained', '发布者维护')
   if (filters.type)
     add('type', `类型：${listLabel(filters.type, SUPPORTED_TYPE_MAP)}`)
   if (filters.language)

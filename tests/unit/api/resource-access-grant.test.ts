@@ -5,6 +5,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const prismaMocks = vi.hoisted(() => {
   const tx = {
+    $queryRaw: vi.fn(),
+    $executeRaw: vi.fn(),
     patch_resource_link: { findFirst: vi.fn() },
     patch_resource_access_grant: {
       findUnique: vi.fn(),
@@ -123,6 +125,12 @@ beforeEach(() => {
   redisMocks.eval.mockReset()
   timerMocks.wait.mockReset().mockResolvedValue(undefined)
   prismaMocks.$transaction.mockReset()
+  prismaMocks.tx.$queryRaw.mockReset()
+  prismaMocks.tx.$queryRaw.mockResolvedValue([
+    { id: baseInput.resourceId, unique_id: 'patch-7', download: 8 }
+  ])
+  prismaMocks.tx.$executeRaw.mockReset()
+  prismaMocks.tx.$executeRaw.mockResolvedValue(1)
   prismaMocks.tx.patch_resource_link.findFirst.mockReset()
   prismaMocks.tx.patch_resource_link.findFirst.mockImplementation(
     async ({ where }) => ({
@@ -391,9 +399,10 @@ describe('resource access grant service', () => {
           resource_id: 11,
           link_id: 22,
           link_version: 1,
-          expires: { gte: expires }
+          expires: { gt: new Date('2026-07-10T00:00:00.000Z') }
         },
-        select: { id: true }
+        orderBy: { expires: 'desc' },
+        select: { expires: true }
       }
     )
     expect(prismaMocks.tx.patch_resource_access.create).toHaveBeenCalledWith({
@@ -415,44 +424,60 @@ describe('resource access grant service', () => {
       resource_id: 11,
       expires
     })
-    prismaMocks.tx.patch_resource_access.findFirst.mockResolvedValue({ id: 31 })
+    prismaMocks.tx.patch_resource_access.findFirst.mockResolvedValue({
+      id: 31,
+      expires: new Date('2026-07-10T12:00:00.000Z')
+    })
 
     const result = await resolveResourceAccessGrant({
       ...baseInput,
       now: new Date('2026-07-10T00:00:00.000Z')
     })
 
-    expect(result).toMatchObject({ kind: 'reused', expires })
+    expect(result).toMatchObject({
+      kind: 'reused',
+      expires,
+      revealedExpiresAt: new Date('2026-07-10T12:00:00.000Z')
+    })
     expect(prismaMocks.tx.patch_resource_access.create).not.toHaveBeenCalled()
     expect(prismaMocks.tx.patch_resource_access.count).not.toHaveBeenCalled()
   })
 
-  it('repairs a legacy reveal whose expiry does not cover the current grant', async () => {
+  it('reuses a shorter live reveal without rewriting it or counting again', async () => {
     const expires = new Date('2026-07-11T00:00:00.000Z')
+    const revealedExpiresAt = new Date('2026-07-10T06:00:00.000Z')
     prismaMocks.tx.patch_resource_access_grant.findUnique.mockResolvedValue({
       actor_key: `visitor:${visitorToken}`,
       resource_id: 11,
       expires
     })
-    prismaMocks.tx.patch_resource_access.findFirst.mockResolvedValue(null)
+    prismaMocks.tx.patch_resource_access.findFirst.mockResolvedValue({
+      expires: revealedExpiresAt
+    })
 
     const result = await resolveResourceAccessGrant({
       ...baseInput,
       now: new Date('2026-07-10T00:00:00.000Z')
     })
 
-    expect(result).toMatchObject({ kind: 'link_revealed', expires })
+    expect(result).toMatchObject({
+      kind: 'reused',
+      expires,
+      revealedExpiresAt
+    })
     expect(prismaMocks.tx.patch_resource_access.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: expect.objectContaining({ expires: { gte: expires } })
+        where: expect.objectContaining({
+          link_version: 1,
+          expires: { gt: new Date('2026-07-10T00:00:00.000Z') }
+        })
       })
     )
-    expect(prismaMocks.tx.patch_resource_access.create).toHaveBeenCalledWith({
-      data: expect.objectContaining({
-        access_kind: 'link_reveal',
-        expires
-      })
-    })
+    expect(prismaMocks.tx.patch_resource_access.create).not.toHaveBeenCalled()
+    expect(prismaMocks.tx.$executeRaw).not.toHaveBeenCalled()
+    expect(
+      prismaMocks.tx.patch_resource_access_grant.update
+    ).not.toHaveBeenCalled()
   })
 
   it('blocks a sixth visitor resource grant on the same Shanghai day', async () => {
@@ -603,7 +628,10 @@ describe('resource access grant service', () => {
     })
     prismaMocks.tx.patch_resource_access.findFirst
       .mockResolvedValueOnce(null)
-      .mockResolvedValueOnce({ id: 31 })
+      .mockResolvedValueOnce({
+        id: 31,
+        expires: new Date('2026-07-10T12:00:00.000Z')
+      })
     rejectFirstTransactionAfterCallback('P2034')
 
     const result = await resolveResourceAccessGrant({
@@ -618,6 +646,43 @@ describe('resource access grant service', () => {
     expect(
       prismaMocks.tx.patch_resource_access.findFirst
     ).toHaveBeenCalledTimes(2)
+  })
+
+  it.each(['40001', '40P01'])(
+    'retries a raw SQL %s conflict wrapped as P2010',
+    async (sqlState) => {
+      let attempt = 0
+      prismaMocks.$transaction.mockImplementation(
+        async (callback: TransactionCallback) => {
+          const result = await callback(prismaMocks.tx)
+          attempt += 1
+          if (attempt === 1) {
+            throw new Prisma.PrismaClientKnownRequestError('raw conflict', {
+              code: 'P2010',
+              clientVersion: Prisma.prismaVersion.client,
+              meta: { code: sqlState }
+            })
+          }
+          return result
+        }
+      )
+
+      const result = await resolveResourceAccessGrant(baseInput)
+
+      expect(result).toMatchObject({ kind: 'resource_granted' })
+      expect(attempt).toBe(2)
+    }
+  )
+
+  it('does not retry an ordinary raw SQL failure', async () => {
+    const ordinary = new Prisma.PrismaClientKnownRequestError('raw failure', {
+      code: 'P2010',
+      clientVersion: Prisma.prismaVersion.client,
+      meta: { code: '23502' }
+    })
+    prismaMocks.$transaction.mockRejectedValue(ordinary)
+
+    await expect(resolveResourceAccessGrant(baseInput)).rejects.toBe(ordinary)
   })
 
   it('allows active concurrent reveals of different mirrors without extending expiry', async () => {
@@ -673,7 +738,8 @@ describe('resource access grant service', () => {
       createKnownRequestError('P2002')
     )
     prismaMocks.tx.patch_resource_access.findFirst.mockResolvedValueOnce({
-      id: 31
+      id: 31,
+      expires: new Date('2026-07-10T18:00:00.000Z')
     })
 
     const result = await resolveResourceAccessGrant(baseInput)

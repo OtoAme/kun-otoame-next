@@ -2,6 +2,7 @@
 
 import { ArrowDown, ArrowUp } from 'lucide-react'
 
+import { DashboardPagination } from '~/components/dashboard/page/DashboardPagination'
 import { Badge } from '~/components/dashboard/ui/badge'
 import { Button } from '~/components/dashboard/ui/button'
 import { Skeleton } from '~/components/dashboard/ui/skeleton'
@@ -391,29 +392,14 @@ export function CaseQueueList({
       </div>
 
       {total !== null && total > limit ? (
-        <div className="flex items-center justify-between gap-2 border-t px-3 py-2">
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            disabled={page <= 1}
-            onClick={() => onPageChange(page - 1)}
-          >
-            上一页
-          </Button>
-          <span className="text-xs text-muted-foreground">
-            第 {page} / {totalPages} 页
-          </span>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            disabled={page >= totalPages}
-            onClick={() => onPageChange(page + 1)}
-          >
-            下一页
-          </Button>
-        </div>
+        <DashboardPagination
+          page={page}
+          totalPages={totalPages}
+          total={total}
+          unit="条"
+          onPageChange={onPageChange}
+          className="text-xs"
+        />
       ) : null}
     </div>
   )

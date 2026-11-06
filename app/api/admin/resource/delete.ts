@@ -1,6 +1,7 @@
 import { closeLinkCases } from '~/app/api/case/linkHealth'
 import {
   lockResourceForMutation,
+  readPublisherLeftAt,
   resourcePostCommit,
   ResourceMutationError,
   runResourceMutation
@@ -34,6 +35,9 @@ export const deleteResource = async (
       const patchResource = await lockResourceForMutation(tx, input.resourceId)
       if (!patchResource)
         throw new ResourceMutationError('未找到对应的资源', 404)
+      const handedOver = Boolean(
+        await readPublisherLeftAt(tx, patchResource.id)
+      )
       await closeLinkCases(tx, {
         resourceIds: [patchResource.id],
         resolution: 'link_removed',
@@ -67,7 +71,7 @@ export const deleteResource = async (
         data: {
           type: 'delete',
           user_id: uid,
-          content: `管理员 ${admin.name} 删除了一个${resourceTypeName}\n\nOtomeGame 名:\n${patchResource.patch.name}\n\n${resourceTypeName}信息:\n${JSON.stringify(safeResource)}`
+          content: `管理员 ${admin.name} 删除了一个${resourceTypeName}\n\nOtomeGame 名:\n${patchResource.patch.name}\n\n${resourceTypeName}信息:\n${JSON.stringify(safeResource)}${handedOver ? '\n\n已交接，保留原发布奖励' : ''}`
         }
       })
       return {

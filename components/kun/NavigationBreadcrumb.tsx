@@ -7,10 +7,7 @@ import {
   createBreadcrumbItem,
   getBreadcrumbTitleKey
 } from '~/constants/routes/routes'
-import {
-  isAdminPreviewPath,
-  isMessageChatConversationPath
-} from '~/constants/routes/matcher'
+import { isMessageChatConversationPath } from '~/constants/routes/matcher'
 import { initialBreadcrumbItems, useBreadcrumbStore } from '~/store/breadcrumb'
 
 export const KunNavigationBreadcrumb = () => {
@@ -33,7 +30,6 @@ export const KunNavigationBreadcrumb = () => {
 
   if (
     hideBreadcrumbRoutes.includes(pathname) ||
-    isAdminPreviewPath(pathname) ||
     isMessageChatConversationPath(pathname)
   ) {
     return null

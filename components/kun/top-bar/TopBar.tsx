@@ -15,7 +15,6 @@ import { getKunMobileNavItems, getKunNavItems } from '~/constants/top-bar'
 import { KunMobileMenu } from './KunMobileMenu'
 import { useUserStore } from '~/store/userStore'
 import { useMounted } from '~/hooks/useMounted'
-import { isAdminPreviewPath } from '~/constants/routes/matcher'
 
 export const KunTopBar = () => {
   const pathname = usePathname()
@@ -29,8 +28,6 @@ export const KunTopBar = () => {
   useEffect(() => {
     setIsMenuOpen(false)
   }, [pathname])
-
-  if (isAdminPreviewPath(pathname)) return null
 
   return (
     <Navbar

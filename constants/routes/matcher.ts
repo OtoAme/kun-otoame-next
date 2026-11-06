@@ -1,5 +1,8 @@
+/** Admin preview URLs served by the dedicated preview root layout. */
 export const isAdminPreviewPath = (pathname: string): boolean =>
-  /^\/preview\/(submission|resource)\/[^/]+\/?$/.test(pathname)
+  /^\/preview\/(?:(?:submission|resource|resource-card)\/[^/]+|resource-merge)\/?$/.test(
+    pathname
+  )
 
 export const isPatchPath = (pathname: string): boolean => {
   return /^\/[A-Za-z0-9]{8}$/.test(pathname)
