@@ -5,11 +5,11 @@ import {
   IGNORE_REASON_MAX,
   MERGE_BATCH_MAX,
   MERGE_DISMISS_CARD_MAX,
+  MERGE_PAIR_FILTERS,
   MERGE_SORTS,
   MERGE_TABS,
   OFFICIAL_MIRROR_PAGE_LIMIT,
-  OFFICIAL_MIRROR_SECTIONS,
-  PAIR_CLASSES
+  OFFICIAL_MIRROR_SECTIONS
 } from '~/types/api/officialMirror'
 
 const resourceId = z.coerce
@@ -58,7 +58,7 @@ export const backupDismissSchema = z.object({
 
 export const mergeListSchema = z.object({
   tab: z.enum(MERGE_TABS),
-  pairClass: z.enum(PAIR_CLASSES).optional(),
+  pairClass: z.enum(MERGE_PAIR_FILTERS).optional(),
   section,
   search,
   page,

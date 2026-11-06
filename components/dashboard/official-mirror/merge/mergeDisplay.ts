@@ -27,6 +27,11 @@ export const PAIR_CLASS_LABEL = {
   manual: '需人工核对'
 } as const
 
+export const MERGE_PAIR_FILTER_LABEL = {
+  ...PAIR_CLASS_LABEL,
+  recommended: '推荐'
+} as const
+
 export const SORT_LABEL: Record<MergeSort, string> = {
   download_desc: '获取次数从高到低',
   waiting_longest: '等待最久',

@@ -22,9 +22,9 @@ import { cn } from '~/lib/dashboard/utils'
 import { RESOURCE_SECTION_MAP } from '~/constants/resource'
 import type { ListFilters } from '~/hooks/dashboard/useSearchableList'
 import type { MergeSort, MergeTab } from '~/types/api/officialMirror'
-import { MERGE_TABS, PAIR_CLASSES } from '~/types/api/officialMirror'
+import { MERGE_TABS, MERGE_PAIR_FILTERS } from '~/types/api/officialMirror'
 import {
-  PAIR_CLASS_LABEL,
+  MERGE_PAIR_FILTER_LABEL,
   sortLabel,
   sortsForTab,
   TAB_LABEL
@@ -193,9 +193,9 @@ export function MergeHeader({
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="all">全部配对</SelectItem>
-                      {PAIR_CLASSES.map((item) => (
+                      {MERGE_PAIR_FILTERS.map((item) => (
                         <SelectItem key={item} value={item}>
-                          {PAIR_CLASS_LABEL[item]}
+                          {MERGE_PAIR_FILTER_LABEL[item]}
                         </SelectItem>
                       ))}
                     </SelectContent>

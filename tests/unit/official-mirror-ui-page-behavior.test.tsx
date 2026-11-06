@@ -831,6 +831,64 @@ describe('official mirror page behavior', () => {
       item.getAttribute('src')
     )
 
+  it('restores and selects the recommended filter, then clears it when changing tabs', async () => {
+    await mountMerges(
+      'id=25&pairClass=recommended&page=2',
+      [mergeRow(25, { pairClass: 'manual', recommend: 35 })],
+      highOptions(25)
+    )
+    expect(mocks.get).toHaveBeenCalledWith(
+      '/admin/resource-merges',
+      expect.objectContaining({ pairClass: 'recommended', page: 2 })
+    )
+    await click(buttonNamed('筛选'))
+    const select = dom.window.document.querySelector('#merge-filter-class')!
+    expect(select.textContent).toContain('推荐')
+    await act(async () => {
+      select.dispatchEvent(
+        new dom.window.KeyboardEvent('keydown', {
+          key: 'ArrowDown',
+          bubbles: true,
+          cancelable: true
+        })
+      )
+    })
+    await settle()
+    const options = [...dom.window.document.querySelectorAll('[role="option"]')]
+    expect(options.some((option) => option.textContent === '推荐')).toBe(true)
+    const high = options.find((option) => option.textContent === '高置信')!
+    await click(high)
+    expect(mocks.get).toHaveBeenCalledWith(
+      '/admin/resource-merges',
+      expect.objectContaining({ pairClass: 'high', page: 1 })
+    )
+    await act(async () => {
+      dom.window.document.querySelector('#merge-filter-class')!.dispatchEvent(
+        new dom.window.KeyboardEvent('keydown', {
+          key: 'ArrowDown',
+          bubbles: true,
+          cancelable: true
+        })
+      )
+    })
+    await settle()
+    const recommended = [
+      ...dom.window.document.querySelectorAll('[role="option"]')
+    ].find((option) => option.textContent === '推荐')!
+    await click(recommended)
+    expect(mocks.get).toHaveBeenCalledWith(
+      '/admin/resource-merges',
+      expect.objectContaining({ pairClass: 'recommended', page: 1 })
+    )
+    const dismissed = [
+      ...dom.window.document.querySelectorAll('[role="tab"]')
+    ].find((tab) => tab.textContent?.startsWith('已驳回'))!
+    await click(dismissed)
+    expect(nav.getSnapshot().get('pairClass')).toBeNull()
+    expect(nav.getSnapshot().get('page')).toBe('1')
+    expect(posts).toEqual([])
+  })
+
   it('opens the card by id, shows tab counts, previews and the match strips', async () => {
     await mountMerges()
     const listCall = mocks.get.mock.calls.find(

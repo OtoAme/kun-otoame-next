@@ -30,7 +30,7 @@ import {
   MERGE_SORTS,
   MERGE_TABS,
   OFFICIAL_MIRROR_SECTIONS,
-  PAIR_CLASSES
+  MERGE_PAIR_FILTERS
 } from '~/types/api/officialMirror'
 import {
   acceptMergeListRow,
@@ -56,7 +56,7 @@ export const MERGE_LIST_CONFIG: SearchableListConfig = {
   acceptRow: acceptMergeListRow,
   filters: {
     tab: oneOf(MERGE_TABS),
-    pairClass: oneOf(PAIR_CLASSES),
+    pairClass: oneOf(MERGE_PAIR_FILTERS),
     section: oneOf(OFFICIAL_MIRROR_SECTIONS),
     sort: oneOf(MERGE_SORTS)
   },

@@ -20,6 +20,9 @@ export type MergeTab = (typeof MERGE_TABS)[number]
 export const PAIR_CLASSES = ['high', 'manual'] as const
 export type PairClass = (typeof PAIR_CLASSES)[number]
 
+/** List filters include the displayed recommendation without changing pair confidence. */
+export const MERGE_PAIR_FILTERS = ['high', 'recommended', 'manual'] as const
+
 /**
  * List order. `handled_desc` orders the dismissed and merged tabs by the
  * latest record; `waiting_longest` orders pending rows by the earliest

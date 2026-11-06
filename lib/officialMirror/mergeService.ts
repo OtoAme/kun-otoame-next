@@ -1474,7 +1474,13 @@ export const listResourceMerges = async (
         : merged
   const filtered = sortListRows(
     input.pairClass
-      ? selected.filter((row) => row.item.pairClass === input.pairClass)
+      ? selected.filter(({ item }) =>
+          input.pairClass === 'recommended'
+            ? item.pairClass !== 'high' &&
+              item.recommendState === 'recommended' &&
+              item.recommendation !== null
+            : item.pairClass === input.pairClass
+        )
       : selected,
     input.tab,
     input.sort ?? defaultMergeSort(input.tab)

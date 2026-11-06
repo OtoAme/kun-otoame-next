@@ -135,7 +135,8 @@ import {
 import { sqlTimestamp, timestampWithoutZone } from '~/lib/officialMirror/time'
 import {
   mergeBatchSchema,
-  mergeExecuteSchema
+  mergeExecuteSchema,
+  mergeListSchema
 } from '~/validations/officialMirror'
 
 const at = (value: string) => new Date(value)
@@ -1831,6 +1832,63 @@ describe('official mirror merge workbench services', () => {
         ).toBe(false)
       }
     })
+  })
+
+  it('filters recommended rows before pagination without including high-confidence or blocked rows', async () => {
+    const rows = [
+      cardRow({ id: 1, patch_id: 10, download: 5 }),
+      staffRow({ id: 2, patch_id: 10, language: ['en-us'] }),
+      cardRow({ id: 3, patch_id: 20, download: 9 }),
+      staffRow({ id: 4, patch_id: 20, language: ['en-us'] }),
+      cardRow({ id: 5, patch_id: 30, download: 20 }),
+      staffRow({ id: 6, patch_id: 30 }),
+      cardRow({ id: 7, patch_id: 40, download: 30 }),
+      staffRow({
+        id: 8,
+        patch_id: 40,
+        language: ['en-us'],
+        platform: ['linux']
+      }),
+      cardRow({ id: 9, patch_id: 50, download: 40 }),
+      staffRow({ id: 10, patch_id: 50 })
+    ]
+    const links = rows.map((row) =>
+      linkRow({
+        id: row.id * 10,
+        resource_id: row.id,
+        storage: Number(row.role) >= 3 ? 'touchgal' : 'user'
+      })
+    )
+    harness.setResponder((sql, values) => {
+      if (sql.includes('om:live-cards')) return rows
+      if (sql.includes('FROM patch_resource_link')) {
+        return links.filter((row) => idsIn(values).includes(row.resource_id))
+      }
+      if (sql.includes('om:open-staff')) return [{ resource_id: 10 }]
+      return []
+    })
+
+    const input = mergeListSchema.parse({
+      ...listInput,
+      pairClass: 'recommended',
+      limit: 1
+    })
+    const first = await listResourceMerges(input)
+    const second = await listResourceMerges({ ...input, page: 2 })
+    expect(first.total).toBe(2)
+    expect(first.counts.pending).toBe(5)
+    expect(first.items.map((row) => row.userResource.id)).toEqual([3])
+    expect(second.items.map((row) => row.userResource.id)).toEqual([1])
+    expect(first.items[0]).toMatchObject({
+      pairClass: 'manual',
+      recommendState: 'recommended',
+      recommendation: { staffResourceId: 4 }
+    })
+    const high = await listResourceMerges({ ...input, pairClass: 'high' })
+    expect(high.items.map((row) => row.userResource.id)).toEqual([9])
+    const searched = await listResourceMerges({ ...input, search: 'no-match' })
+    expect(searched.total).toBe(0)
+    expect(searched.items).toEqual([])
   })
 
   describe('list sort and history fields', () => {
