@@ -18,7 +18,7 @@ Read the development entry before frontend work. Select the interface system by 
 
 ## Critical Invariants
 
-Site, legacy admin and previews use HeroUI v2; dashboard and workspace use shadcn with isolated styles.
+Site, legacy admin and previews use HeroUI v2; dashboard and workspace use shadcn with isolated styles. Admin previews use a dedicated root layout that loads site styles without site chrome.
 
 Before building UI, inspect project components and the official options of the page's UI library. Reuse, add or compose suitable components; local absence never justifies rebuilding. Use native/system controls or handwritten HTML/CSS replacements only when reuse and composition cannot meet the requirement.
 
