@@ -549,6 +549,21 @@ describe('official mirror page behavior', () => {
 
   it('keeps three backup tabs, cancels without a write, and retries cache without saving again', async () => {
     await mountBackup()
+    const tokens = (el: Element | null) => el?.className.split(/\s+/) ?? []
+    const pageRoot = dom.window.document.querySelector('#root > div')
+    expect(tokens(pageRoot)).toEqual(
+      expect.arrayContaining(['min-h-0', 'flex-1'])
+    )
+    const scroller = [...dom.window.document.querySelectorAll('div')].find(
+      (el) =>
+        tokens(el).includes('overflow-y-auto') && tokens(el).includes('flex-1')
+    )
+    expect(scroller).toBeTruthy()
+    expect(
+      [...dom.window.document.querySelectorAll('h2')].filter(
+        (heading) => heading.textContent === '站方备份'
+      )
+    ).toHaveLength(1)
     expect(text()).toContain('未备份')
     expect(text()).toContain('待重新备份')
     expect(text()).toContain('已忽略')

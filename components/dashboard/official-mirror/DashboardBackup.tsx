@@ -706,12 +706,14 @@ export function DashboardBackup({
   }
 
   return (
-    <div className="flex min-w-0 flex-col gap-3">
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       {result ? (
-        <BackupSubmittedResult
-          result={result}
-          onRetry={() => void retryCache()}
-        />
+        <div className="shrink-0 px-4 pt-4 md:px-6 md:pt-5">
+          <BackupSubmittedResult
+            result={result}
+            onRetry={() => void retryCache()}
+          />
+        </div>
       ) : null}
       <SearchableListPage<BackupListRow>
         config={BACKUP_LIST_CONFIG}
