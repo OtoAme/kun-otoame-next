@@ -872,6 +872,10 @@ describe('official mirror page behavior', () => {
     expect(typeSignal?.className).toMatch(/text-green-700/)
     expect(languageSignal?.className).toMatch(/text-destructive/)
     expect(languageSignal?.className).not.toMatch(/text-muted-foreground/)
+    const tokens = (el: Element | null) => el?.className.split(/\s+/) ?? []
+    const panes = dom.window.document.querySelector(
+      '[data-merge-workbench-panes]'
+    )
     const userPane = dom.window.document.querySelector(
       '[data-merge-pane="user"]'
     )
@@ -880,6 +884,13 @@ describe('official mirror page behavior', () => {
     )
     expect(userPane).not.toBeNull()
     expect(staffPane).not.toBeNull()
+    expect(tokens(panes)).not.toContain('h-full')
+    expect(panes?.className).toMatch(/@\[56rem\]:h-full/)
+    expect(panes?.className).toMatch(/@\[56rem\]:grid-cols-2/)
+    expect(tokens(userPane)).not.toContain('min-h-0')
+    expect(tokens(staffPane)).not.toContain('min-h-0')
+    expect(userPane?.className).toMatch(/@\[56rem\]:min-h-0/)
+    expect(staffPane?.className).toMatch(/@\[56rem\]:min-h-0/)
     expect(userPane?.className).toMatch(/@\[56rem\]:overflow-y-auto/)
     expect(staffPane?.className).toMatch(/@\[56rem\]:overflow-y-auto/)
     expect(userPane?.className).toMatch(/@\[56rem\]:border-r/)

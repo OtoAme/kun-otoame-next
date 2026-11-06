@@ -662,14 +662,14 @@ export function MergeWorkbench({
         </p>
       ) : null}
 
-      <div className="@container min-h-0 flex-1 overflow-hidden max-md:flex-none max-md:overflow-visible">
+      <div className="@container min-h-0 flex-1 overflow-y-auto max-md:flex-none max-md:overflow-visible">
         <div
           data-merge-workbench-panes
-          className="grid h-full min-h-0 min-w-0 overflow-y-auto max-md:h-auto max-md:overflow-visible @[56rem]:grid-cols-2 @[56rem]:overflow-hidden"
+          className="grid min-w-0 @[56rem]:h-full @[56rem]:min-h-0 @[56rem]:grid-cols-2 @[56rem]:overflow-hidden"
         >
           <div
             data-merge-pane="user"
-            className="flex min-h-0 min-w-0 flex-col gap-3 p-4 @[56rem]:overflow-y-auto @[56rem]:overscroll-contain @[56rem]:border-r"
+            className="flex min-w-0 flex-col gap-3 p-4 @[56rem]:min-h-0 @[56rem]:overflow-y-auto @[56rem]:overscroll-contain @[56rem]:border-r"
           >
             <Tabs
               value={shownSurface}
@@ -717,7 +717,7 @@ export function MergeWorkbench({
 
           <div
             data-merge-pane="staff"
-            className="flex min-h-0 min-w-0 flex-col gap-3 p-4 @[56rem]:overflow-y-auto @[56rem]:overscroll-contain"
+            className="flex min-w-0 flex-col gap-3 p-4 @[56rem]:min-h-0 @[56rem]:overflow-y-auto @[56rem]:overscroll-contain"
           >
             <h4 className="text-sm font-semibold">
               本游戏的官方资源（{list.length}）
