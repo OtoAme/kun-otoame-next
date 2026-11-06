@@ -24,7 +24,7 @@ export const viewport: Viewport = {
 }
 
 export const metadata: Metadata = {
-  title: { default: '管理员预览' },
+  title: '管理员预览',
   robots: { index: false, follow: false }
 }
 
