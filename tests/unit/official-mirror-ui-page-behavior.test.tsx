@@ -554,11 +554,14 @@ describe('official mirror page behavior', () => {
     expect(tokens(pageRoot)).toEqual(
       expect.arrayContaining(['min-h-0', 'flex-1'])
     )
-    const scroller = [...dom.window.document.querySelectorAll('div')].find(
-      (el) =>
-        tokens(el).includes('overflow-y-auto') && tokens(el).includes('flex-1')
+    const listScroll = dom.window.document.querySelector('[data-list-scroll]')
+    const nextPage = dom.window.document.querySelector('[aria-label="下一页"]')
+    expect(listScroll).not.toBeNull()
+    expect(tokens(listScroll)).toEqual(
+      expect.arrayContaining(['flex-1', 'overflow-y-auto'])
     )
-    expect(scroller).toBeTruthy()
+    expect(nextPage).not.toBeNull()
+    expect(listScroll?.contains(nextPage)).toBe(false)
     expect(
       [...dom.window.document.querySelectorAll('h2')].filter(
         (heading) => heading.textContent === '站方备份'

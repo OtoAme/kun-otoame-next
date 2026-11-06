@@ -27,17 +27,38 @@ export function DashboardPage({
   title,
   description,
   actions,
-  children
+  children,
+  fill = false
 }: {
   title: string
   description?: ReactNode
   actions?: ReactNode
   children: ReactNode
+  /**
+   * Fill the shell height and let children scroll. Searchable lists pin
+   * pagination in the card; other pages keep the whole page scrolling.
+   */
+  fill?: boolean
 }) {
   return (
-    <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto">
-      <div className="flex min-w-0 flex-col gap-4 px-4 py-4 md:px-6 md:py-5">
-        <div className="flex flex-wrap items-end gap-x-3 gap-y-2">
+    <div
+      className={cn(
+        'flex min-h-0 min-w-0 flex-1 flex-col',
+        fill ? 'overflow-hidden' : 'overflow-y-auto'
+      )}
+    >
+      <div
+        className={cn(
+          'flex min-w-0 flex-col gap-4 px-4 py-4 md:px-6 md:py-5',
+          fill && 'min-h-0 flex-1'
+        )}
+      >
+        <div
+          className={cn(
+            'flex flex-wrap items-end gap-x-3 gap-y-2',
+            fill && 'shrink-0'
+          )}
+        >
           <div className="min-w-0 flex-1">
             <h2 className="text-lg font-semibold md:text-xl">{title}</h2>
             {description && (
@@ -134,8 +155,11 @@ export function DashboardMasterDetail({
 
   if (isNarrow && hasDetail) {
     return (
-      <DashboardPanel ref={ref}>
-        <div className="flex items-center gap-2 border-b px-3 py-2">
+      <DashboardPanel
+        ref={ref}
+        className="flex h-full min-h-0 flex-col overflow-hidden"
+      >
+        <div className="flex shrink-0 items-center gap-2 border-b px-3 py-2">
           <Button variant="ghost" size="sm" onClick={onCloseDetail}>
             <ArrowLeft />
             返回列表
@@ -144,7 +168,7 @@ export function DashboardMasterDetail({
             {detailTitle}
           </h3>
         </div>
-        <div className="p-4">{detail}</div>
+        <div className="min-h-0 flex-1 overflow-y-auto p-4">{detail}</div>
       </DashboardPanel>
     )
   }
@@ -153,17 +177,21 @@ export function DashboardMasterDetail({
     <div
       ref={ref}
       className={cn(
-        'grid min-w-0 items-start gap-4',
+        'grid min-h-0 min-w-0 flex-1 items-stretch gap-4',
         showRail
           ? 'grid-cols-[220px_minmax(0,1.45fr)_minmax(360px,1fr)]'
           : isSplit && 'grid-cols-[minmax(0,1.3fr)_minmax(320px,1fr)]'
       )}
     >
-      {showRail && <DashboardPanel className="p-4">{rail}</DashboardPanel>}
+      {showRail && (
+        <DashboardPanel className="min-h-0 overflow-y-auto p-4">
+          {rail}
+        </DashboardPanel>
+      )}
       {list}
       {isSplit ? (
-        <DashboardPanel className="sticky top-0">
-          <div className="flex min-h-12 items-center gap-2 border-b px-4 py-2">
+        <DashboardPanel className="flex min-h-0 flex-col overflow-hidden">
+          <div className="flex min-h-12 shrink-0 items-center gap-2 border-b px-4 py-2">
             <h3 className="min-w-0 flex-1 truncate text-sm font-semibold">
               {hasDetail ? detailTitle : '详情'}
             </h3>
@@ -178,7 +206,9 @@ export function DashboardMasterDetail({
               </Button>
             )}
           </div>
-          <div className="p-4">{hasDetail ? detail : emptyDetail}</div>
+          <div className="min-h-0 flex-1 overflow-y-auto p-4">
+            {hasDetail ? detail : emptyDetail}
+          </div>
         </DashboardPanel>
       ) : (
         !isNarrow && (
@@ -223,7 +253,7 @@ export function DashboardPagination({
   children?: ReactNode
 }) {
   return (
-    <div className="flex flex-wrap items-center gap-2 border-t px-3 py-2.5 text-sm text-muted-foreground">
+    <div className="flex shrink-0 flex-wrap items-center gap-2 border-t bg-card px-3 py-2.5 text-sm text-muted-foreground">
       <span className="tabular-nums">
         共 {total} {unit} · 第 {page} / {totalPages} 页
       </span>
