@@ -20,7 +20,7 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 export const formatBackupDate = (value: string): string | null => {
   const time = Date.parse(value)
   if (Number.isNaN(time)) return null
-  return formatChinaDateTime(time)
+  return `${formatChinaDateTime(time).replaceAll('/', '-')} UTC+08:00`
 }
 
 /** 公开卡片上的备份与维护事实。分组不读这些字段。 */

@@ -573,7 +573,6 @@ export const ResourceDownloadCard = ({
                 <time dateTime={link.backedUpAt ?? undefined}>
                   {backupDate}
                 </time>
-                （北京时间）
               </>
             ) : (
               '备份时间未记录'

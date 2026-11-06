@@ -342,12 +342,12 @@ describe('ResourceDownloadCard access flow', () => {
       }
     })
     expect(container.textContent).toContain(
-      '备份于 2026/05/29 10:07（北京时间）'
+      '备份于 2026-05-29 10:07 UTC+08:00'
     )
     expect(container.querySelector('time')?.dateTime).toBe(
       '2026-05-29T02:07:00.000Z'
     )
-    expect(container.textContent).not.toContain('2026/11/06')
+    expect(container.textContent).not.toContain('2026-11-06')
     expect(fetchMock.kunFetchPost).not.toHaveBeenCalled()
   })
 
