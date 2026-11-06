@@ -1,5 +1,4 @@
 import React from 'react'
-import { renderToStaticMarkup } from 'react-dom/server'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 globalThis.React = React
@@ -10,8 +9,7 @@ const db = vi.hoisted(() => ({
 }))
 const mocks = vi.hoisted(() => ({
   auth: vi.fn(),
-  previewResourceMerge: vi.fn(),
-  pathname: '/'
+  previewResourceMerge: vi.fn()
 }))
 
 vi.mock('~/prisma/index', () => ({ prisma: db }))
@@ -25,8 +23,7 @@ vi.mock('~/lib/officialMirror/mergeService', () => ({
 vi.mock('next/navigation', () => ({
   notFound: () => {
     throw new Error('not-found')
-  },
-  usePathname: () => mocks.pathname
+  }
 }))
 vi.mock('~/components/patch/resource/ResourceDownload', () => ({
   ResourceDownload: () => null
@@ -34,23 +31,16 @@ vi.mock('~/components/patch/resource/ResourceDownload', () => ({
 vi.mock('~/components/patch/resource/ResourceInfo', () => ({
   ResourceInfo: () => null
 }))
-vi.mock('~/components/kun/Footer', () => ({
-  KunFooter: () => <footer data-testid="footer" />
-}))
-vi.mock('~/components/kun/BackToTop', () => ({
-  KunBackToTop: () => <button data-testid="back-to-top" />
-}))
 
 import ResourceCardPage, {
   dynamic as cardDynamic,
   metadata as cardMetadata
-} from '~/app/(site)/preview/resource-card/[id]/page'
+} from '~/app/(preview)/preview/resource-card/[id]/page'
 import ResourceMergePage, {
   dynamic as mergeDynamic,
   metadata as mergeMetadata
-} from '~/app/(site)/preview/resource-merge/page'
+} from '~/app/(preview)/preview/resource-merge/page'
 import { isAdminPreviewPath } from '~/constants/routes/matcher'
-import { KunRootRouteChrome } from '~/components/layout/RootRouteChrome'
 
 type CardElement = Awaited<ReturnType<typeof ResourceCardPage>>
 
@@ -290,7 +280,7 @@ describe('resource card and merge preview pages', () => {
   })
 })
 
-describe('preview shell for the new pages', () => {
+describe('admin preview URLs', () => {
   it.each([
     ['/preview/resource-card/12', true],
     ['/preview/resource-card/12/', true],
@@ -305,21 +295,4 @@ describe('preview shell for the new pages', () => {
   ])('treats %s as an admin preview: %s', (pathname, expected) => {
     expect(isAdminPreviewPath(pathname)).toBe(expected)
   })
-
-  it.each(['/preview/resource-card/12', '/preview/resource-merge'])(
-    'wraps %s in the measured marker without footer controls',
-    (pathname) => {
-      mocks.pathname = pathname
-      const markup = renderToStaticMarkup(
-        <KunRootRouteChrome>
-          <main data-testid="preview-content">预览正文</main>
-        </KunRootRouteChrome>
-      )
-      expect(markup).toMatch(
-        /<div data-admin-preview-content="[^"]*" class="flow-root[^"]*"><main data-testid="preview-content">/
-      )
-      expect(markup).not.toContain('data-testid="footer"')
-      expect(markup).not.toContain('data-testid="back-to-top"')
-    }
-  )
 })

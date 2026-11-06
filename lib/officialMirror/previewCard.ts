@@ -17,7 +17,7 @@ import type { MergePreview } from '~/types/api/officialMirror'
 
 /**
  * Server-only readers for the admin preview pages under
- * `app/(site)/preview/resource-card` and `app/(site)/preview/resource-merge`.
+ * `app/(preview)/preview/resource-card` and `app/(preview)/preview/resource-merge`.
  * The module reads the database and must never be imported by client code.
  *
  * A preview card is the public projection of `getPatchResource`

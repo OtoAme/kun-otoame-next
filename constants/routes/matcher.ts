@@ -1,4 +1,4 @@
-/** Admin preview pages: no site chrome, content wrapped in the size marker. */
+/** Admin preview URLs served by the dedicated preview root layout. */
 export const isAdminPreviewPath = (pathname: string): boolean =>
   /^\/preview\/(?:(?:submission|resource|resource-card)\/[^/]+|resource-merge)\/?$/.test(
     pathname
