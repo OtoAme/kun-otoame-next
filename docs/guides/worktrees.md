@@ -31,7 +31,7 @@ cp .env.worktree.example .env.worktree.local
 
 在 `Settings → Repository → Hooks` 为本项目选择 `Command source & orca.yaml → orca.yaml only`，并保留 setup 默认执行。已有本地 setup 脚本时尤其需要检查命令来源，否则可能继续执行原来的安装命令。首次验证成功后再启动功能 agent。
 
-[.worktreeinclude](../../.worktreeinclude) 只复制 `.env.worktree.local`；不要将 `.env`、`.worktree`、`node_modules` 或 `.next` 加入复制或共享路径。各 worktree 独立安装依赖并生成 Prisma 客户端，pnpm 自行复用包存储。配置和状态目录使用普通文件与目录，管理器拒绝通过符号链接读写它们。
+[.worktreeinclude](../../.worktreeinclude) 复制 `.env.worktree.local`，并在本机存在时复制 `.local/production-operations.md`。这些本地文件继续由 Git 忽略，复制规则只提交路径。不要将 `.env`、`.worktree`、`node_modules` 或 `.next` 加入复制或共享路径。各 worktree 独立安装依赖并生成 Prisma 客户端，pnpm 自行复用包存储。配置和状态目录使用普通文件与目录，管理器拒绝通过符号链接读写它们。
 
 在项目对应的 Orca 终端，以本地 `main` 创建独立任务：
 
@@ -106,7 +106,7 @@ pnpm worktree:destroy
 | --- | --- |
 | 缺少 `orca.yaml`、`scripts/worktree.mjs` 或 `worktree:setup` 命令 | 核对 worktree 的基准版本。妥善保存已有改动后，按正常分支合并流程引入包含 setup 的提交；可以快进到本地 `main` 时运行 `git merge --ff-only main`，再手动执行 `pnpm worktree:setup`。更新文件不会自动补跑创建时的 hook。 |
 | 缺少镜像或 Docker 无法连接 | 按本页准备镜像并核对 Docker 服务与权限，保留状态后重试。 |
-| 当前目录已有未受管的 `.env` | 保存并移走原配置，核对复制规则只包含 `.env.worktree.local`，再执行 setup。 |
+| 当前目录已有未受管的 `.env` | 保存并移走原配置，核对 `.env` 未加入复制或共享路径，再执行 setup。 |
 | 受管 `.env` 被手动修改 | 保存修改，将需要复用的服务设置移入本 worktree 的 `.env.worktree.local`，移走 `.env` 后重跑；管理器不会直接覆盖。 |
 | 同名容器、卷、数据库或账号归属不符 | 停止，核对本次资源记录；不要删除陌生资源或修改身份标记绕过。 |
 | 销毁中断或 archive hook 失败 | 保留 worktree 及 `.worktree/`，核对错误并修复前提后重新销毁或带 `--run-hooks` 删除；不要继续 setup 或跳过清理失败。 |
