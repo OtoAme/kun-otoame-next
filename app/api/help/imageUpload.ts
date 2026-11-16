@@ -3,6 +3,7 @@ import sharp from 'sharp'
 import { checkBufferSize } from '~/app/api/utils/checkBufferSize'
 import { checkCaseRateLimit } from '~/app/api/case/rateLimit'
 import { uploadImageToS3 } from '~/lib/s3'
+import { getImageBedUrl } from '~/lib/s3Url'
 import { GALLERY_IMAGE_MAX_SIZE_MB } from '~/constants/galgame'
 import { HELP_IMAGE_ALLOWED_TYPES } from '~/constants/help'
 
@@ -16,8 +17,7 @@ const MAX_HELP_IMAGE_BYTES = GALLERY_IMAGE_MAX_SIZE_MB * 1024 * 1024
 const MAX_HELP_AVIF_SIZE_MB = 1.5
 export const HELP_IMAGE_SIZE_LIMIT_MESSAGE = `图片大小不能超过 ${GALLERY_IMAGE_MAX_SIZE_MB} MB`
 
-export const helpImageUrl = (key: string) =>
-  `${process.env.KUN_VISUAL_NOVEL_IMAGE_BED_URL}/${key}`
+export const helpImageUrl = getImageBedUrl
 
 export const uploadHelpImage = async (
   file: File,

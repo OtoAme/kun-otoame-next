@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   locateResourceObjectKey,
   processResourceFileCleanup,
@@ -6,6 +6,8 @@ import {
   ResourceFileCleanupError,
   type ResourceFileCleanupClient
 } from '~/lib/resourceFileCleanup'
+
+afterEach(() => vi.unstubAllEnvs())
 
 const hash = 'ab'.repeat(32)
 const objectKey = `patch/12/resource/${hash}/file.zip`
@@ -181,6 +183,25 @@ describe('resource object key location', () => {
 })
 
 describe('queueResourceFileCleanup', () => {
+  it('uses the current environment root to queue relative keys and rejects other worktrees', async () => {
+    vi.stubEnv('KUN_VISUAL_NOVEL_S3_STORAGE_PREFIX', 'worktrees/wt-a')
+    vi.stubEnv('NEXT_PUBLIC_KUN_VISUAL_NOVEL_S3_STORAGE_URL', publicBase)
+    vi.stubEnv('KUN_VISUAL_NOVEL_IMAGE_BED_URL', '')
+    const own = createClient()
+    await queueResourceFileCleanup(asCleanup(own.client), {
+      resourceId: 12,
+      links: [{ storage: 's3', content: `${publicBase}/worktrees/wt-a/${objectKey}` }]
+    })
+    expect(own.rows[0].object_key).toBe(objectKey)
+
+    const other = createClient()
+    await expect(queueResourceFileCleanup(asCleanup(other.client), {
+      resourceId: 12,
+      links: [{ storage: 's3', content: `${publicBase}/worktrees/wt-ab/${objectKey}` }]
+    })).rejects.toThrow('invalid_locator')
+    expect(other.rows).toEqual([])
+  })
+
   it('registers one pending credential per object and ignores non-s3 links', async () => {
     const { client, rows } = createClient()
     const first = await queueResourceFileCleanup(asCleanup(client), {

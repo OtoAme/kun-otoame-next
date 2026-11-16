@@ -1,6 +1,7 @@
 import crypto from 'crypto'
 import { z } from 'zod'
 import { prisma } from '~/prisma/index'
+import { getImageBedUrl } from '~/lib/s3Url'
 import { uploadPatchBanner } from './_upload'
 import { patchCreateSchema } from '~/validations/edit'
 import { kunMoyuMoe } from '~/config/moyu-moe'
@@ -129,7 +130,7 @@ export const createGalgame = async (
         if (typeof uploadResult === 'string') {
           return uploadResult
         }
-        const imageLink = `${process.env.KUN_VISUAL_NOVEL_IMAGE_BED_URL}/patch/${newId}/banner/banner.avif`
+        const imageLink = getImageBedUrl(`patch/${newId}/banner/banner.avif`)
 
         await prisma.patch.update({
           where: { id: newId },

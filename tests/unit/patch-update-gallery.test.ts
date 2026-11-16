@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const prismaMocks = vi.hoisted(() => {
   const tx = {
@@ -115,8 +115,12 @@ const createUpdateInput = () => ({
 })
 
 describe('patch update gallery metadata', () => {
+  afterEach(() => vi.unstubAllEnvs())
+
   beforeEach(() => {
     vi.resetAllMocks()
+    vi.stubEnv('KUN_VISUAL_NOVEL_IMAGE_BED_URL', 'https://img.example')
+    vi.stubEnv('KUN_VISUAL_NOVEL_S3_STORAGE_PREFIX', '')
     process.env.NEXT_PUBLIC_KUN_VISUAL_NOVEL_S3_STORAGE_URL =
       'https://img.example'
     prismaMocks.patch.findUnique.mockResolvedValue({
@@ -282,6 +286,22 @@ describe('patch update gallery metadata', () => {
         'patch-submission/1-secret/banner/banner-full.avif'
       ],
       'banner_replace'
+    )
+  })
+
+  it('persists the rewritten banner URL with an automatically added environment prefix', async () => {
+    vi.stubEnv('KUN_VISUAL_NOVEL_S3_STORAGE_PREFIX', 'worktrees/wt-a')
+    await updateGalgame({
+      ...createUpdateInput(),
+      banner: new File([Buffer.from('banner')], 'banner.png')
+    }, 1)
+
+    expect(prismaMocks._tx.patch.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          banner: 'https://img.example/worktrees/wt-a/patch/123/banner/banner.avif'
+        })
+      })
     )
   })
 

@@ -2,6 +2,9 @@ import { createReadStream } from 'fs'
 import { S3Client } from '@aws-sdk/client-s3'
 import { readFile, rm } from 'fs/promises'
 import { DeleteObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3'
+import { getS3StorageKey } from './s3Key'
+
+export { getS3PublicUrl } from './s3Url'
 
 export const s3 = new S3Client({
   endpoint: process.env.KUN_VISUAL_NOVEL_S3_STORAGE_ENDPOINT!,
@@ -26,7 +29,7 @@ export const uploadVideoToS3 = async (
 
   const uploadCommand = new PutObjectCommand({
     Bucket: process.env.KUN_VISUAL_NOVEL_S3_STORAGE_BUCKET_NAME!,
-    Key: bucketName,
+    Key: getS3StorageKey(bucketName),
     Body: fileStream,
     ContentType: mimeType
   })
@@ -49,7 +52,7 @@ export const uploadBufferToS3 = async (
 ) => {
   const uploadCommand = new PutObjectCommand({
     Bucket: process.env.KUN_VISUAL_NOVEL_S3_STORAGE_BUCKET_NAME!,
-    Key: key,
+    Key: getS3StorageKey(key),
     Body: fileBuffer,
     ContentType: contentType,
     ...(cacheControl ? { CacheControl: cacheControl } : {})
@@ -61,7 +64,7 @@ export const uploadFileToS3 = async (key: string, filePath: string) => {
   const fileBuffer = await readFile(filePath)
   const uploadCommand = new PutObjectCommand({
     Bucket: process.env.KUN_VISUAL_NOVEL_S3_STORAGE_BUCKET_NAME!,
-    Key: key,
+    Key: getS3StorageKey(key),
     Body: fileBuffer,
     ContentType: 'application/octet-stream'
   })
@@ -75,20 +78,7 @@ export const cleanupLocalUpload = async (localDir: string) => {
 export const deleteFileFromS3 = async (key: string) => {
   const deleteCommand = new DeleteObjectCommand({
     Bucket: process.env.KUN_VISUAL_NOVEL_S3_STORAGE_BUCKET_NAME!,
-    Key: key
+    Key: getS3StorageKey(key)
   })
   await s3.send(deleteCommand)
-}
-
-export const getS3PublicUrl = (key: string | null | undefined) => {
-  if (!key) {
-    return null
-  }
-
-  const baseUrl = process.env.NEXT_PUBLIC_KUN_VISUAL_NOVEL_S3_STORAGE_URL
-  if (!baseUrl) {
-    return null
-  }
-
-  return `${baseUrl.replace(/\/+$/, '')}/${key}`
 }

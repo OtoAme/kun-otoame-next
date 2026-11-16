@@ -3,6 +3,7 @@ import sharp, { type Metadata } from 'sharp'
 import { checkBufferSize } from '~/app/api/utils/checkBufferSize'
 import { prisma } from '~/prisma/index'
 import { deleteFileFromS3, uploadImageToS3 } from '~/lib/s3'
+import { getImageBedUrl } from '~/lib/s3Url'
 import type { PrivateMessageImage } from '~/types/api/conversation'
 import { registerConversationImageUpload } from '../../imageUploadMetadata'
 import {
@@ -287,7 +288,7 @@ export const uploadConversationImage = async (
   }
 
   const image = {
-    url: `${process.env.KUN_VISUAL_NOVEL_IMAGE_BED_URL}/${key}`,
+    url: getImageBedUrl(key),
     width: metadata.width ?? 1,
     height: metadata.height ?? 1,
     size: processed.length,

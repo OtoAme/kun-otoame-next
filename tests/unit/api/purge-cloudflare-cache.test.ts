@@ -49,6 +49,23 @@ describe('Cloudflare cache purge helper', () => {
     )
   })
 
+  it('purges banner and avatar URLs within the current storage prefix', async () => {
+    vi.stubEnv('KUN_VISUAL_NOVEL_S3_STORAGE_PREFIX', 'worktrees/wt-a')
+    await purgePatchBannerCache(123)
+    await purgeUserAvatarCache(7)
+
+    const files = fetchMock.mock.calls.flatMap(([, options]) =>
+      JSON.parse(options.body).files
+    )
+    expect(files).toEqual([
+      'https://img.otoame.top/worktrees/wt-a/patch/123/banner/banner.avif',
+      'https://img.otoame.top/worktrees/wt-a/patch/123/banner/banner-mini.avif',
+      'https://img.otoame.top/worktrees/wt-a/patch/123/banner/banner-full.avif',
+      'https://img.otoame.top/worktrees/wt-a/user/avatar/user_7/avatar.avif',
+      'https://img.otoame.top/worktrees/wt-a/user/avatar/user_7/avatar-mini.avif'
+    ])
+  })
+
   it('purges API prefixes without schemes, query strings or fragments', async () => {
     await purgePublicApiCache([
       '/api/tag/otomegame',

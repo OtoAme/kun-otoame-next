@@ -2,6 +2,7 @@ import { randomUUID } from 'crypto'
 import sharp from 'sharp'
 import { checkBufferSize } from '~/app/api/utils/checkBufferSize'
 import { deleteFileFromS3, uploadImageToS3 } from '~/lib/s3'
+import { getImageBedUrl } from '~/lib/s3Url'
 import { CASE_IMAGE_ALLOWED_TYPES } from '~/constants/case'
 import { GALLERY_IMAGE_MAX_SIZE_MB } from '~/constants/galgame'
 import type { CaseImageUploadResponse } from '~/types/api/case'
@@ -28,8 +29,7 @@ const CONSUME_SCRIPT = `
   return 0
 `
 
-export const caseImageUrl = (key: string) =>
-  `${process.env.KUN_VISUAL_NOVEL_IMAGE_BED_URL}/${key}`
+export const caseImageUrl = getImageBedUrl
 
 const registrationKey = (uid: number, key: string) =>
   `case:image-upload:${uid}:${key}`

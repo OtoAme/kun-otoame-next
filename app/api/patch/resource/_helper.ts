@@ -1,4 +1,5 @@
 import { cleanupLocalUpload, deleteFileFromS3, uploadFileToS3 } from '~/lib/s3'
+import { getS3PublicBaseUrl, getS3PublicBases } from '~/lib/s3Url'
 import {
   consumeUpload,
   finalizeUpload,
@@ -26,16 +27,14 @@ export type UploadedPatchResource = {
   size: string
 }
 
-const getS3PublicUrlPrefix = () =>
-  `${process.env.NEXT_PUBLIC_KUN_VISUAL_NOVEL_S3_STORAGE_URL?.replace(/\/+$/, '')}/`
+const getS3PublicUrlPrefix = () => {
+  const base = getS3PublicBaseUrl()
+  if (!base) throw new Error('Missing NEXT_PUBLIC_KUN_VISUAL_NOVEL_S3_STORAGE_URL')
+  return `${base}/`
+}
 
 export const extractS3Key = (content: string) => {
-  const bases = [
-    process.env.NEXT_PUBLIC_KUN_VISUAL_NOVEL_S3_STORAGE_URL,
-    process.env.KUN_VISUAL_NOVEL_IMAGE_BED_URL
-  ]
-    .map((base) => base?.trim().replace(/\/+$/, ''))
-    .filter((base): base is string => Boolean(base))
+  const bases = getS3PublicBases()
 
   for (const base of new Set(bases)) {
     const prefix = `${base}/`
@@ -52,6 +51,7 @@ export const uploadPatchResource = async (
   uploadId: string,
   userId: number
 ): Promise<UploadedPatchResource | string> => {
+  const publicUrlPrefix = getS3PublicUrlPrefix()
   const consumed = await consumeUpload(uploadId, userId)
   if (!consumed.ok) {
     if (consumed.code === 'ALREADY_CONSUMING') {
@@ -71,7 +71,7 @@ export const uploadPatchResource = async (
     await releaseUploadConsumeLock(uploadId, consumed.token)
     throw error
   }
-  const downloadLink = `${getS3PublicUrlPrefix()}${s3Key}`
+  const downloadLink = `${publicUrlPrefix}${s3Key}`
 
   return {
     uploadId,

@@ -2,6 +2,7 @@ import 'dotenv/config'
 import { ListObjectsV2Command } from '@aws-sdk/client-s3'
 import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { getS3LogicalKey, getS3StorageKey } from '~/lib/s3Key'
 
 const DEFAULT_BATCH_SIZE = 50
 const DEFAULT_DRY_LIMIT = 200
@@ -146,7 +147,7 @@ export const createConversationImageCleanupDependencies = async (): Promise<
       const result = await s3.send(
         new ListObjectsV2Command({
           Bucket: process.env.KUN_VISUAL_NOVEL_S3_STORAGE_BUCKET_NAME!,
-          Prefix: prefix,
+          Prefix: getS3StorageKey(prefix),
           ContinuationToken: continuationToken,
           MaxKeys: maxKeys
         })
@@ -154,17 +155,18 @@ export const createConversationImageCleanupDependencies = async (): Promise<
 
       return {
         objects:
-          result.Contents?.flatMap((object) =>
-            object.Key
+          result.Contents?.flatMap((object) => {
+            const key = object.Key ? getS3LogicalKey(object.Key) : null
+            return key
               ? [
                   {
-                    key: object.Key,
+                    key,
                     lastModified: object.LastModified ?? null,
                     size: object.Size
                   }
                 ]
               : []
-          ) ?? [],
+          }) ?? [],
         nextContinuationToken: result.NextContinuationToken
       }
     },

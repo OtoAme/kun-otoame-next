@@ -7,6 +7,7 @@ import { z } from 'zod'
 import { verifyHeaderCookie } from '~/middleware/_verifyHeaderCookie'
 import { invalidatePatchContentCache } from '~/app/api/patch/cache'
 import { deleteFileFromS3 } from '~/lib/s3'
+import { getImageBedUrl } from '~/lib/s3Url'
 import { uploadPatchGalleryImage } from '../galleryUpload'
 import { GALLERY_IMAGE_MAX_SIZE_MB } from '~/constants/galgame'
 import {
@@ -106,9 +107,9 @@ export const POST = async (req: NextRequest) => {
 
     const galleryKey = uploadRes.originalKey
     const thumbnailKey = uploadRes.thumbnailKey
-    const imageUrl = `${process.env.KUN_VISUAL_NOVEL_IMAGE_BED_URL}/${galleryKey}`
+    const imageUrl = getImageBedUrl(galleryKey)
     const thumbnailUrl = thumbnailKey
-      ? `${process.env.KUN_VISUAL_NOVEL_IMAGE_BED_URL}/${thumbnailKey}`
+      ? getImageBedUrl(thumbnailKey)
       : null
 
     try {

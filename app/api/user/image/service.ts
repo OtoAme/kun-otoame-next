@@ -1,5 +1,6 @@
 import { prisma } from '~/prisma/index'
 import { uploadIntroductionImage } from './_upload'
+import { getImageBedUrl } from '~/lib/s3Url'
 
 export const uploadImage = async (uid: number, image: ArrayBuffer) => {
   const user = await prisma.user.findUnique({
@@ -24,6 +25,6 @@ export const uploadImage = async (uid: number, image: ArrayBuffer) => {
     data: { daily_image_count: { increment: 1 } }
   })
 
-  const imageLink = `${process.env.KUN_VISUAL_NOVEL_IMAGE_BED_URL}/user/image/${uid}/${newFileName}.avif`
+  const imageLink = getImageBedUrl(`user/image/${uid}/${newFileName}.avif`)
   return { imageLink }
 }

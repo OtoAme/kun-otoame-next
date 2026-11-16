@@ -10,6 +10,7 @@ import {
 import type { PrivateMessage } from '~/types/api/conversation'
 import type { PrivateMessageImage } from '~/types/api/conversation'
 import { deleteFileFromS3 } from '~/lib/s3'
+import { getS3PublicBases } from '~/lib/s3Url'
 import {
   consumeConversationImageUploads,
   restoreConversationImageUploads
@@ -154,12 +155,7 @@ const getMessageImages = (
 }
 
 const getS3UrlPrefixes = () =>
-  [
-    process.env.KUN_VISUAL_NOVEL_IMAGE_BED_URL,
-    process.env.NEXT_PUBLIC_KUN_VISUAL_NOVEL_S3_STORAGE_URL
-  ]
-    .filter((value): value is string => Boolean(value))
-    .map((value) => `${value.replace(/\/+$/, '')}/`)
+  getS3PublicBases().map((base) => `${base}/`)
 
 const extractConversationImageS3Key = (url: string) => {
   const prefix = getS3UrlPrefixes().find((item) => url.startsWith(item))

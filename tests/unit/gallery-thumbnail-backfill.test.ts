@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
   buildGalleryThumbnailBackfillOptions,
@@ -10,6 +10,8 @@ import {
   type GalleryThumbnailBackfillDependencies,
   type GalleryThumbnailBackfillImage
 } from '~/scripts/galleryThumbnailBackfill'
+
+afterEach(() => vi.unstubAllEnvs())
 
 const createImage = (
   overrides: Partial<GalleryThumbnailBackfillImage> = {}
@@ -112,10 +114,43 @@ describe('gallery thumbnail backfill URL handling', () => {
     expect(getGalleryBackfillS3Key('https://outside.example/a.avif')).toBeNull()
   })
 
+  it.each(['', 'cdn'])('uses the longest nested public base with prefix %j', (prefix) => {
+    vi.stubEnv('KUN_VISUAL_NOVEL_IMAGE_BED_URL', 'https://img.example')
+    vi.stubEnv('NEXT_PUBLIC_KUN_VISUAL_NOVEL_S3_STORAGE_URL', 'https://img.example/cdn')
+    vi.stubEnv('KUN_VISUAL_NOVEL_S3_STORAGE_PREFIX', prefix)
+    const root = prefix ? 'https://img.example/cdn/cdn' : 'https://img.example/cdn'
+    expect(getGalleryBackfillS3Key(`${root}/patch/123/gallery/456.avif`))
+      .toBe('patch/123/gallery/456.avif')
+  })
+
   it('builds the canonical thumb-prefixed thumbnail key', () => {
     expect(getGalleryBackfillThumbnailKey(createImage(), 'webp')).toBe(
       'patch/123/gallery/thumbnail/thumb-456.webp'
     )
+  })
+
+  it('extracts relative keys from a worktree base without accepting a neighboring prefix', () => {
+    vi.stubEnv('KUN_VISUAL_NOVEL_S3_STORAGE_PREFIX', 'worktrees/wt-a')
+    process.env.KUN_VISUAL_NOVEL_IMAGE_BED_URL =
+      'https://img.example'
+    process.env.NEXT_PUBLIC_KUN_VISUAL_NOVEL_S3_STORAGE_URL =
+      'https://s3.example/'
+
+    expect(
+      getGalleryBackfillS3Key(
+        'https://img.example/worktrees/wt-a/patch/123/gallery/456.avif'
+      )
+    ).toBe('patch/123/gallery/456.avif')
+    expect(
+      getGalleryBackfillS3Key(
+        'https://s3.example/worktrees/wt-a/patch/123/gallery/456.avif'
+      )
+    ).toBe('patch/123/gallery/456.avif')
+    expect(
+      getGalleryBackfillS3Key(
+        'https://img.example/worktrees/wt-ab/patch/123/gallery/456.avif'
+      )
+    ).toBeNull()
   })
 })
 
@@ -188,6 +223,28 @@ describe('gallery thumbnail backfill apply behavior', () => {
     expect(result.status).toBe('failed')
     expect(deps.deleteThumbnail).toHaveBeenCalledWith(
       'patch/123/gallery/thumbnail/thumb-456.avif'
+    )
+  })
+
+  it('keeps database and storage keys relative while persisting a fully prefixed thumbnail URL', async () => {
+    vi.stubEnv('KUN_VISUAL_NOVEL_S3_STORAGE_PREFIX', 'worktrees/wt-a')
+    const deps = createDependencies()
+    const result = await processGalleryThumbnailBackfillImage(
+      createImage({ url: 'https://img.example/worktrees/wt-a/patch/123/gallery/456.avif' }),
+      buildGalleryThumbnailBackfillOptions(['--apply']),
+      deps
+    )
+
+    expect(result.status).toBe('updated')
+    expect(deps.downloadOriginal).toHaveBeenCalledWith('patch/123/gallery/456.avif')
+    expect(deps.uploadThumbnail).toHaveBeenCalledWith(
+      'patch/123/gallery/thumbnail/thumb-456.avif',
+      Buffer.from('thumbnail'),
+      'image/avif'
+    )
+    expect(deps.updateThumbnailUrl).toHaveBeenCalledWith(
+      456,
+      'https://img.example/worktrees/wt-a/patch/123/gallery/thumbnail/thumb-456.avif'
     )
   })
 

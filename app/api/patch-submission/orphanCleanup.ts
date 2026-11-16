@@ -1,6 +1,7 @@
 import { Prisma } from '@prisma/client'
 import { prisma } from '~/prisma/index'
 import { deleteFileFromS3 } from '~/lib/s3'
+import { getS3PublicBases } from '~/lib/s3Url'
 import { purgeCloudflareCache } from '~/app/api/utils/purgeCloudflareCache'
 import { PATCH_SUBMISSION_ACTIVE_STATUSES } from '~/constants/patchSubmission'
 
@@ -15,16 +16,7 @@ export type SubmissionOrphanCleanupSource =
 
 type CleanupClient = Prisma.TransactionClient | typeof prisma
 
-const publicAssetBases = () => [
-  ...new Set(
-    [
-      process.env.KUN_VISUAL_NOVEL_IMAGE_BED_URL,
-      process.env.NEXT_PUBLIC_KUN_VISUAL_NOVEL_S3_STORAGE_URL
-    ]
-      .map((base) => base?.trim().replace(/\/+$/, ''))
-      .filter((base): base is string => Boolean(base))
-  )
-]
+const publicAssetBases = getS3PublicBases
 
 const isPublicHttpUrl = (value: string) => {
   try {

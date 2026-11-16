@@ -710,5 +710,8 @@ export const uploadPatchSubmissionBanner = async (input: BannerUploadInput) => {
     )
   }
 
-  return { bannerKey: uploaded.bannerKey }
+  return {
+    bannerKey: uploaded.bannerKey,
+    bannerUrl: getS3PublicUrl(uploaded.bannerKey)
+  }
 }

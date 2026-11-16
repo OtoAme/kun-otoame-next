@@ -2,6 +2,7 @@ import 'dotenv/config'
 import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { ListObjectsV2Command } from '@aws-sdk/client-s3'
+import { getS3LogicalKey, getS3StorageKey } from '~/lib/s3Key'
 import type { SubmissionTakedownOutcome } from '~/app/api/patch-submission/assetCleanup'
 import type { SubmissionOrphanCleanupResult } from '~/app/api/patch-submission/orphanCleanup'
 
@@ -260,14 +261,15 @@ export const createSubmissionAssetCleanupDependencies = async (): Promise<
         const response = await s3.send(
           new ListObjectsV2Command({
             Bucket: process.env.KUN_VISUAL_NOVEL_S3_STORAGE_BUCKET_NAME!,
-            Prefix: SUBMISSION_ASSET_PREFIX,
+            Prefix: getS3StorageKey(SUBMISSION_ASSET_PREFIX),
             ContinuationToken: token,
             MaxKeys: DEFAULT_BATCH_SIZE
           })
         )
         for (const object of response.Contents ?? []) {
-          if (object.Key) {
-            keys.push({ key: object.Key, lastModified: object.LastModified })
+          const key = object.Key ? getS3LogicalKey(object.Key) : null
+          if (key) {
+            keys.push({ key, lastModified: object.LastModified })
           }
         }
         token = response.NextContinuationToken

@@ -1,4 +1,5 @@
 import type { Prisma } from '@prisma/client'
+import { getS3PublicBases } from './s3Url'
 
 /**
  * Durable cleanup credential for resource objects removed with a handover.
@@ -192,10 +193,7 @@ export const locateResourceObjectKey = (
 }
 
 const publicBasesFrom = (bases: readonly string[] | undefined) => {
-  const source = bases ?? [
-    process.env.NEXT_PUBLIC_KUN_VISUAL_NOVEL_S3_STORAGE_URL,
-    process.env.KUN_VISUAL_NOVEL_IMAGE_BED_URL
-  ]
+  const source = bases ?? getS3PublicBases()
   return [
     ...new Set(
       source

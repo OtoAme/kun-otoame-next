@@ -1,6 +1,7 @@
 import { prisma } from '~/prisma/index'
 import { purgeUserAvatarCache } from '~/app/api/utils/purgeCache'
 import { uploadUserAvatar } from '../_upload'
+import { getImageBedUrl } from '~/lib/s3Url'
 
 export const updateUserAvatar = async (uid: number, avatar: ArrayBuffer) => {
   const user = await prisma.user.findUnique({
@@ -19,7 +20,9 @@ export const updateUserAvatar = async (uid: number, avatar: ArrayBuffer) => {
   }
 
   const avatarVersion = Date.now().toString(36)
-  const imageLink = `${process.env.KUN_VISUAL_NOVEL_IMAGE_BED_URL}/user/avatar/user_${uid}/avatar-mini.avif?v=${avatarVersion}`
+  const imageLink = getImageBedUrl(
+    `user/avatar/user_${uid}/avatar-mini.avif?v=${avatarVersion}`
+  )
 
   await prisma.user.update({
     where: { id: uid },

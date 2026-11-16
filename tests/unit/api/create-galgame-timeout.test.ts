@@ -88,6 +88,8 @@ const createInput = {
 describe('createGalgame timeout', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    vi.stubEnv('KUN_VISUAL_NOVEL_IMAGE_BED_URL', 'https://img.example')
+    vi.stubEnv('KUN_VISUAL_NOVEL_S3_STORAGE_PREFIX', '')
     prismaMocks.patch.findFirst.mockResolvedValue(null)
     prismaMocks.$transaction.mockImplementation(
       (fn: (tx: typeof prismaMocks._tx) => Promise<unknown>) =>
@@ -114,6 +116,7 @@ describe('createGalgame timeout', () => {
 
   afterEach(() => {
     vi.restoreAllMocks()
+    vi.unstubAllEnvs()
   })
 
   it('allows slow banner processing by using the create publish timeout', async () => {
@@ -123,6 +126,18 @@ describe('createGalgame timeout', () => {
       expect.any(Function),
       { timeout: 120000 }
     )
+  })
+
+  it('persists the created banner URL with an automatically added environment prefix', async () => {
+    vi.stubEnv('KUN_VISUAL_NOVEL_S3_STORAGE_PREFIX', 'worktrees/wt-a')
+    await createGalgame(createInput, 1)
+
+    expect(prismaMocks._tx.patch.update).toHaveBeenCalledWith({
+      where: { id: 649 },
+      data: {
+        banner: 'https://img.example/worktrees/wt-a/patch/649/banner/banner.avif'
+      }
+    })
   })
 
   it('stores a Steam official URL when creating with Steam ID and blank official URL', async () => {

@@ -404,11 +404,16 @@ describe('submission asset removals', () => {
     tx.$queryRaw.mockReset()
     tx.$queryRaw.mockResolvedValue([editableRow])
 
-    await uploadPatchSubmissionBanner({
+    const result = await uploadPatchSubmissionBanner({
       submissionId: 1,
       userId: 2,
       banner: new ArrayBuffer(8),
       bannerOriginal: new ArrayBuffer(8)
+    })
+
+    expect(result).toEqual({
+      bannerKey: 'patch-submission/1-new/banner/banner.avif',
+      bannerUrl: 'https://cdn.example.test/patch-submission/1-new/banner/banner.avif'
     })
 
     expect(tx.patch_submission.updateMany).toHaveBeenCalledWith(

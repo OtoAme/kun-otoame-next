@@ -4,6 +4,7 @@ import { fileURLToPath } from 'url'
 import { dirname } from 'path'
 import * as fs from 'fs'
 import * as path from 'path'
+import { normalizeS3StoragePrefix } from '../lib/s3Key'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -42,6 +43,17 @@ export const envSchema = z.object({
   KUN_VISUAL_NOVEL_S3_STORAGE_BUCKET_NAME: z.string(),
   KUN_VISUAL_NOVEL_S3_STORAGE_ENDPOINT: z.string(),
   KUN_VISUAL_NOVEL_S3_STORAGE_REGION: z.string(),
+  KUN_VISUAL_NOVEL_S3_STORAGE_PREFIX: z
+    .string()
+    .optional()
+    .refine((value) => {
+      try {
+        normalizeS3StoragePrefix(value)
+        return true
+      } catch {
+        return false
+      }
+    }, 'Use slash-separated letters, digits, dots, underscores or hyphens; dot segments are not allowed.'),
   NEXT_PUBLIC_KUN_VISUAL_NOVEL_S3_STORAGE_URL: z.string(),
 
   KUN_VISUAL_NOVEL_IMAGE_BED_HOST: z.string(),

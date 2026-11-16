@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const prismaMocks = vi.hoisted(() => ({
   patch_submission_orphan_cleanup: {
@@ -38,6 +38,8 @@ const job = (overrides: Record<string, unknown> = {}) => ({
   ...overrides
 })
 
+afterEach(() => vi.unstubAllEnvs())
+
 beforeEach(() => {
   vi.clearAllMocks()
   process.env.KUN_VISUAL_NOVEL_IMAGE_BED_URL = 'https://img.example.test/'
@@ -58,6 +60,25 @@ beforeEach(() => {
 })
 
 describe('submission orphan cleanup enqueue', () => {
+  it('builds prefixed purge URLs from roots while keeping the persisted object key relative', async () => {
+    vi.stubEnv('KUN_VISUAL_NOVEL_S3_STORAGE_PREFIX', 'worktrees/wt-a')
+    const key = 'patch-submission/1-secret/gallery/1.avif'
+    await enqueueSubmissionOrphanCleanupJobs(prismaMocks as never, [key], 'gallery_delete')
+
+    expect(prismaMocks.patch_submission_orphan_cleanup.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { object_key: key },
+        create: expect.objectContaining({
+          object_key: key,
+          purge_urls: [
+            `https://img.example.test/worktrees/wt-a/${key}`,
+            `https://cdn.example.test/worktrees/wt-a/${key}`
+          ]
+        })
+      })
+    )
+  })
+
   it('builds and deduplicates complete public URLs for every configured base', () => {
     expect(buildSubmissionAssetPublicUrls(['patch-submission/a.avif'])).toEqual([
       'https://img.example.test/patch-submission/a.avif',
@@ -187,6 +208,37 @@ describe('serving reference projection', () => {
 })
 
 describe('submission orphan cleanup processing', () => {
+  it.each(['', 'cdn'])('protects published assets beneath nested public roots with prefix %j', async (prefix) => {
+    vi.stubEnv('KUN_VISUAL_NOVEL_IMAGE_BED_URL', 'https://img.example')
+    vi.stubEnv('NEXT_PUBLIC_KUN_VISUAL_NOVEL_S3_STORAGE_URL', 'https://img.example/cdn')
+    vi.stubEnv('KUN_VISUAL_NOVEL_S3_STORAGE_PREFIX', prefix)
+    const root = prefix ? 'https://img.example/cdn/cdn' : 'https://img.example/cdn'
+    const banner = 'patch-submission/live/banner/banner.avif'
+    const image = 'patch-submission/live/gallery/9.avif'
+    const thumbnail = 'patch-submission/live/gallery/thumb-9.avif'
+    prismaMocks.patch.findMany.mockResolvedValue([{ banner: `${root}/${banner}` }])
+    prismaMocks.patch_game_image.findMany.mockResolvedValue([
+      { url: `${root}/${image}`, thumbnail_url: `${root}/${thumbnail}` }
+    ])
+
+    const referenced = await loadServingSubmissionAssetKeys()
+    expect(referenced).toEqual(new Set([
+      banner,
+      'patch-submission/live/banner/banner-mini.avif',
+      'patch-submission/live/banner/banner-full.avif',
+      image,
+      thumbnail
+    ]))
+
+    prismaMocks.patch_submission_orphan_cleanup.findMany.mockResolvedValue([
+      job({ object_key: banner, purge_urls: [`${root}/${banner}`] })
+    ])
+    const result = await processSubmissionOrphanCleanupJobs({ limit: 10 })
+    expect(result).toMatchObject({ scanned: 1, cancelled: 1, done: 0 })
+    expect(deleteFileFromS3Mock).not.toHaveBeenCalled()
+    expect(purgeCloudflareCacheMock).not.toHaveBeenCalled()
+  })
+
   it('cancels a job whose object became serving again', async () => {
     prismaMocks.patch_submission_orphan_cleanup.findMany.mockResolvedValue([
       job()

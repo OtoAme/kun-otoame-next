@@ -636,7 +636,10 @@ describe('draft submission unsaved cover guard', () => {
     editorMocks.payloadFlush.mockResolvedValue({ ok: true })
     editorMocks.orderFlush.mockResolvedValue({ ok: true })
     fetchMocks.post.mockResolvedValue({})
-    fetchMocks.formData.mockResolvedValue({ bannerKey: 'banner/42.avif' })
+    fetchMocks.formData.mockResolvedValue({
+      bannerKey: 'banner/42.avif',
+      bannerUrl: 'https://cdn.example/worktrees/wt-a/banner/42.avif'
+    })
     usePatchSubmissionStore.getState().reset()
     dom = new JSDOM('<!doctype html><div id="root"></div>', {
       url: 'http://localhost/submission/42'
@@ -689,6 +692,9 @@ describe('draft submission unsaved cover guard', () => {
     expect(formData.get('submissionId')).toBe('42')
     expect(formData.get('banner')).toBeInstanceOf(Blob)
     expect(formData.get('bannerOriginal')).toBeInstanceOf(Blob)
+    expect(usePatchSubmissionStore.getState().bannerUrl).toBe(
+      'https://cdn.example/worktrees/wt-a/banner/42.avif'
+    )
     expect(editorMocks.payloadFlush).toHaveBeenCalledOnce()
     expect(dialog()).toBeNull()
   })

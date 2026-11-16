@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { prisma } from '~/prisma/index'
 import { deleteFileFromS3 } from '~/lib/s3'
+import { getImageBedUrl } from '~/lib/s3Url'
 import { extractS3Key } from '~/app/api/patch/resource/_helper'
 import { patchUpdateSchema } from '~/validations/edit'
 import { uploadPatchBanner } from './_upload'
@@ -155,7 +156,7 @@ export const updateGalgame = async (
       uniqueId: patch.unique_id
     })
 
-    const imageLink = `${process.env.KUN_VISUAL_NOVEL_IMAGE_BED_URL}/patch/${id}/banner/banner.avif`
+    const imageLink = getImageBedUrl(`patch/${id}/banner/banner.avif`)
     const previousBannerKey = extractS3Key(patch.banner)
     const submissionBannerKeys =
       previousBannerKey && isSubmissionAssetKey(previousBannerKey)

@@ -2,6 +2,12 @@ import 'dotenv/config'
 import { GetObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3'
 import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { getS3StorageKey } from '~/lib/s3Key'
+import {
+  getImageBedBaseUrl,
+  getS3PublicBaseUrl,
+  getS3PublicBases
+} from '~/lib/s3Url'
 
 import {
   preparePatchGalleryThumbnail,
@@ -180,19 +186,10 @@ export const buildGalleryThumbnailBackfillOptions = (
 }
 
 const getPublicImageBaseUrl = () =>
-  process.env.KUN_VISUAL_NOVEL_IMAGE_BED_URL ??
-  process.env.NEXT_PUBLIC_KUN_VISUAL_NOVEL_S3_STORAGE_URL
-
-const normalizeUrlPrefix = (value: string | undefined) => {
-  if (!value) return null
-  return value.endsWith('/') ? value : `${value}/`
-}
+  getImageBedBaseUrl() ?? getS3PublicBaseUrl()
 
 export const getGalleryBackfillS3Key = (url: string) => {
-  const prefixes = [
-    normalizeUrlPrefix(process.env.KUN_VISUAL_NOVEL_IMAGE_BED_URL),
-    normalizeUrlPrefix(process.env.NEXT_PUBLIC_KUN_VISUAL_NOVEL_S3_STORAGE_URL)
-  ].filter((prefix): prefix is string => Boolean(prefix))
+  const prefixes = getS3PublicBases().map((base) => `${base}/`)
 
   for (const prefix of prefixes) {
     if (url.startsWith(prefix)) {
@@ -271,7 +268,7 @@ export const downloadGalleryOriginalFromS3 = async (key: string) => {
   const result = await s3.send(
     new GetObjectCommand({
       Bucket: process.env.KUN_VISUAL_NOVEL_S3_STORAGE_BUCKET_NAME!,
-      Key: key
+      Key: getS3StorageKey(key)
     })
   )
 
@@ -286,7 +283,7 @@ export const downloadGalleryOriginalFromS3WithinLimit = async (
   const head = await s3.send(
     new HeadObjectCommand({
       Bucket: process.env.KUN_VISUAL_NOVEL_S3_STORAGE_BUCKET_NAME!,
-      Key: key
+      Key: getS3StorageKey(key)
     })
   )
   if (head.ContentLength && head.ContentLength > maxBytes) {
@@ -298,7 +295,7 @@ export const downloadGalleryOriginalFromS3WithinLimit = async (
   const result = await s3.send(
     new GetObjectCommand({
       Bucket: process.env.KUN_VISUAL_NOVEL_S3_STORAGE_BUCKET_NAME!,
-      Key: key
+      Key: getS3StorageKey(key)
     })
   )
 

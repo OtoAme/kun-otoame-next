@@ -74,7 +74,9 @@ export const SubmissionBannerInput = forwardRef<SubmissionBannerHandle, Props>(
       formData.set('bannerOriginal', original)
 
       try {
-        const response = await kunFetchFormData<string | { bannerKey: string }>(
+        const response = await kunFetchFormData<
+          string | { bannerKey: string; bannerUrl: string | null }
+        >(
           '/patch-submission/asset',
           formData
         )
@@ -82,9 +84,7 @@ export const SubmissionBannerInput = forwardRef<SubmissionBannerHandle, Props>(
           toast.error(response)
           return false
         }
-        setBannerUrl(
-          `${process.env.NEXT_PUBLIC_KUN_VISUAL_NOVEL_S3_STORAGE_URL}/${response.bannerKey}`
-        )
+        setBannerUrl(response.bannerUrl)
         setCropped(null)
         setOriginal(null)
         toast.success('封面已保存')

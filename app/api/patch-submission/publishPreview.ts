@@ -2,6 +2,7 @@ import { uniqueTrimmed } from '~/app/api/edit/companyEnsureHelper'
 import { markdownToHtmlExtend } from '~/app/api/utils/render/markdownToHtmlExtend'
 import { applySteamOfficialUrlFallback } from '~/utils/externalIds'
 import { prisma } from '~/prisma/index'
+import { getImageBedBaseUrl } from '~/lib/s3Url'
 import {
   planCompanyResolution,
   selectCanonicalCompanyName
@@ -114,7 +115,7 @@ export const projectPatchSubmissionPayload = (
 
 export const buildPatchSubmissionPublishedAssetUrl = (key: string | null) => {
   if (!key) return null
-  const base = process.env.KUN_VISUAL_NOVEL_IMAGE_BED_URL?.replace(/\/+$/, '')
+  const base = getImageBedBaseUrl()
   return base ? `${base}/${key}` : null
 }
 

@@ -1,6 +1,7 @@
 import { prisma } from '~/prisma/index'
 import { uploadPatchBanner } from '~/app/api/edit/_upload'
 import { purgePatchBannerCache } from '~/app/api/utils/purgeCache'
+import { getImageBedUrl } from '~/lib/s3Url'
 
 export const updatePatchBanner = async (
   image: ArrayBuffer,
@@ -21,7 +22,7 @@ export const updatePatchBanner = async (
 
   await purgePatchBannerCache(patchId)
 
-  const imageLink = `${process.env.KUN_VISUAL_NOVEL_IMAGE_BED_URL}/patch/${patchId}/banner/banner.avif`
+  const imageLink = getImageBedUrl(`patch/${patchId}/banner/banner.avif`)
   await prisma.patch.update({
     where: { id: patchId },
     data: { banner: imageLink }
