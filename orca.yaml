@@ -1,0 +1,3 @@
+scripts:
+  setup: node scripts/worktree.mjs setup
+setupAgentStartupPolicy: wait-for-setup

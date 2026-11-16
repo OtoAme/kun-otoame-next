@@ -51,6 +51,7 @@ beforeEach(() => {
   mocks.clients.length = 0
   delete globalRecord()[RUNTIME_KEY]
   vi.stubEnv('KUN_DATABASE_URL', 'postgresql://mock.local/test')
+  vi.stubEnv('KUN_DATABASE_POOL_MAX', undefined)
 })
 
 afterEach(() => {
@@ -59,6 +60,13 @@ afterEach(() => {
 })
 
 describe('Prisma adapter runtime lifecycle', () => {
+  it('uses the configured worktree connection limit', async () => {
+    vi.stubEnv('KUN_DATABASE_POOL_MAX', '5')
+    const runtime = await import('~/prisma/index')
+    expect(mocks.pools[0]?.options).toMatchObject({ max: 5 })
+    await runtime.disconnectPrismaAdapter()
+  })
+
   it('reuses one pool and client across development module reloads', async () => {
     vi.stubEnv('NODE_ENV', 'development')
 

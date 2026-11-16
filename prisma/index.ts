@@ -2,6 +2,7 @@ import 'dotenv/config'
 import pg from 'pg'
 import { PrismaPg } from '@prisma/adapter-pg'
 import { PrismaClient } from '@prisma/client'
+import { getDatabasePoolMax } from '../config/database'
 
 const STATEMENT_CACHE_MAX = 1000
 
@@ -15,7 +16,7 @@ const createPrismaRuntime = (): PrismaRuntime => {
 
   const pool = new pg.Pool({
     connectionString,
-    max: 30,
+    max: getDatabasePoolMax(),
     idleTimeoutMillis: 30000,
     connectionTimeoutMillis: 5000
   })

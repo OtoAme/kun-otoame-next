@@ -64,6 +64,9 @@ scripts/create-test-user.ts
 # prisma generated
 prisma/generated
 
+# managed worktree state and credentials
+/.worktree/
+
 # grok
 .grok-delegate/
 

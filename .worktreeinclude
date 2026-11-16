@@ -1,0 +1,2 @@
+# Each worktree receives its own copy of the shared development settings.
+.env.worktree.local

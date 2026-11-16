@@ -1,5 +1,5 @@
 import 'dotenv/config'
-import { prisma } from '~/prisma/index'
+import { prisma, disconnectPrismaAdapter } from '~/prisma/index'
 import { PUBLISHED_PATCH_RESOURCE_STATUS } from '~/utils/patchResourceAttributes'
 
 const BACKFILL_SQL = `
@@ -128,7 +128,7 @@ const main = async () => {
     console.error(e)
     process.exitCode = 1
   } finally {
-    await prisma.$disconnect()
+    await disconnectPrismaAdapter()
   }
 }
 
