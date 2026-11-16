@@ -17,6 +17,7 @@
 | 配置 | 填写与核对 |
 | --- | --- |
 | `KUN_DATABASE_URL` | 对应本次目标 PostgreSQL，已有数据的库先走迁移和备份。 |
+| `KUN_DATABASE_POOL_MAX` | 可选每进程连接池上限，允许 1 至 1000 的整数，默认 30；受管 worktree 使用 5。总连接需求随进程数增加。 |
 | `REDIS_HOST`、`REDIS_PORT`、`REDIS_PASSWORD` | 目标 Redis 连接，隔离测试不能沿用真实服务。 |
 | `KUN_VISUAL_NOVEL_SITE_URL` | 必须是合法地址，但当前不被读取。规范站点地址、站点地图与搜索通知使用[站点配置](../../config/moyu-moe.ts)中的固定域名，域名变化需修改该文件。 |
 | `NEXT_PUBLIC_KUN_PATCH_ADDRESS_DEV`、`NEXT_PUBLIC_KUN_PATCH_ADDRESS_PROD` | 本地和生产访问地址，请求来源保护依赖它们；域名变化时同步。 |

@@ -13,10 +13,13 @@ Read the development entry first. Operational guides own the complete command, b
 - [应用发布与恢复](../../docs/guides/deployment.md)
 - [工作台维护](../../docs/reference/workspace.md)
 - [审阅风险](../../docs/guides/review.md)
+- [并行 worktree 开发](../../docs/guides/worktrees.md)
 
 ## Critical Invariants
 
 Confirm target identity before writes. Production changes require reviewed prechecks, verified backups, ordered synchronization and postchecks. Never replace migrations with persistent-database initialization or widen permitted schema drift.
+
+Managed worktrees use a dedicated shared PostgreSQL container, independent databases and roles, and individual Redis containers. Preserve container IDs, ownership markers and generated configuration; repeat setup must not reset ready databases or adopt unknown resources. Follow the worktree guide for initialization and shutdown.
 
 Preserve writer compatibility, link-health clocks, maintenance freezes and historical participation. Scheduled tasks use appropriate distributed locks; failed acquisition skips work. Submission asset scheduling audits only and must not delete objects or disconnect shared infrastructure.
 

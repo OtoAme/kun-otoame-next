@@ -46,6 +46,7 @@
 ## 操作指南
 
 - [本地开发](guides/development.md)：在空库启动、建立测试管理员、修改站点内容与主题。
+- [并行 worktree 开发](guides/worktrees.md)：接入 Orca setup，隔离数据库、Redis、端口和配置，启动与停止各任务环境。
 - [测试与隔离验收](guides/testing.md)：选择相称的检查，准备一次性数据库与端到端验收。
 - [部署与应用恢复](guides/deployment.md)：运行配置、发布已审核版本、确认切换与回退。
 - [数据库与日常运维](guides/operations.md)：迁移、备份恢复、清理回填、定时任务与边缘缓存验收。
