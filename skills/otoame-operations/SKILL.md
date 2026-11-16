@@ -21,6 +21,8 @@ Confirm target identity before writes. Production changes require reviewed prech
 
 Managed worktrees use a dedicated shared PostgreSQL container, independent databases and roles, and individual Redis containers. Preserve container IDs, ownership markers and generated configuration; repeat setup must not reset ready databases or adopt unknown resources. Follow the worktree guide for initialization and shutdown.
 
+Worktree archive hooks destroy only verified resources owned by the target worktree and preserve shared PostgreSQL. Keep incomplete cleanup state, gate removal on failure, and use `--run-hooks` for Orca CLI removal; never bypass a failed cleanup or remove its identity records.
+
 Preserve writer compatibility, link-health clocks, maintenance freezes and historical participation. Scheduled tasks use appropriate distributed locks; failed acquisition skips work. Submission asset scheduling audits only and must not delete objects or disconnect shared infrastructure.
 
 Use dry previews before cleanup. Protect live references, persist submission cleanup obligations before deletion, and settle only after storage and edge confirmation. Keep production batches conservative.
