@@ -4,11 +4,14 @@ import { pathToFileURL } from 'node:url'
 import { parseEnv } from 'node:util'
 import { spawn } from 'node:child_process'
 import { createServer, createConnection } from 'node:net'
+import { destroyManagedWorktree } from './worktree/destroy.mjs'
 import {
   VERSION,
   PG_IMAGE,
   REDIS_IMAGE,
   MANAGER_ROLE,
+  WORKTREE_LOGIN_PASSWORD,
+  isWorktreeLoginPassword,
   createIdentity,
   assertState,
   containerPort,
@@ -110,15 +113,12 @@ export class WorktreeManager {
 
   async credentials() {
     const value = await readJson(this.secretsPath)
-    for (const key of [
-      'databasePassword',
-      'redisPassword',
-      'jwtSecret',
-      'loginPassword'
-    ]) {
+    for (const key of ['databasePassword', 'redisPassword', 'jwtSecret']) {
       if (!/^[a-f0-9]{64}$/.test(value[key] ?? ''))
         throw new Error('worktree 凭据缺失或损坏，拒绝重置已有账号。')
     }
+    if (!isWorktreeLoginPassword(value.loginPassword))
+      throw new Error('worktree 登录凭据缺失或损坏，拒绝重置已有账号。')
     return value
   }
 
@@ -146,6 +146,8 @@ export class WorktreeManager {
         const registry = await readJson(registryPath, true)
         if (state) {
           assertState(state, this.identity)
+          if (state.destroying || state.destroyed)
+            throw new Error('当前 worktree 正在销毁或已销毁，拒绝重新初始化。')
           if (
             registry?.[state.id]?.root !== state.root ||
             registry[state.id].port !== state.appPort
@@ -209,7 +211,7 @@ export class WorktreeManager {
           databasePassword: secret(),
           redisPassword: secret(),
           jwtSecret: secret(),
-          loginPassword: secret()
+          loginPassword: WORKTREE_LOGIN_PASSWORD
         })
         await writeJson(this.statePath, state)
         return state
@@ -528,6 +530,8 @@ export class WorktreeManager {
   }
 
   async environment(state) {
+    if (state.destroying || state.destroyed)
+      throw new Error('当前 worktree 正在销毁或已销毁，拒绝启动。')
     const text = await readText(join(state.root, '.env'))
     if (digest(text) !== state.envHash || !state.ready)
       throw new Error('开发配置已变化或尚未就绪，请先完成 setup。')
@@ -558,6 +562,9 @@ export const serveDevelopment = async (manager) => {
   if ((await readText(join(state.root, '.next', 'dev', 'lock'), true)) !== null)
     throw new Error('当前工作区已有 Next 开发锁。')
   return withLock(join(manager.local, 'dev.lock'), async () => {
+    // Re-read after taking the lifetime lock: destroy may have started while
+    // the launcher was checking the environment above.
+    await manager.environment(await manager.load())
     const token = secret()
     let child
     let stopRequested = false
@@ -643,9 +650,7 @@ export const serveDevelopment = async (manager) => {
   })
 }
 
-export const stopDevelopment = async (manager) => {
-  const state = await manager.load()
-  await manager.docker.verify(state.redis)
+const stopApplication = async (manager, state) => {
   const runtime = await readJson(runtimePath(manager), true)
   if (runtime) {
     if (runtime.id !== state.id || !/^[a-f0-9]{64}$/.test(runtime.token ?? ''))
@@ -671,12 +676,21 @@ export const stopDevelopment = async (manager) => {
       socket.on('error', () =>
         reject(new Error('无法确认开发进程，请在原终端停止服务后重试。'))
       )
+      socket.on('close', () =>
+        reject(new Error('开发进程未确认停止请求，请在原终端核对。'))
+      )
     })
     for (let i = 0; i < 40 && !(await manager.probe(state.appPort)); i++)
       await pause(250)
   }
   if (!(await manager.probe(state.appPort)))
     throw new Error('应用端口仍被占用，拒绝停止未知进程或继续清理。')
+}
+
+export const stopDevelopment = async (manager) => {
+  const state = await manager.load()
+  await manager.docker.verify(state.redis)
+  await stopApplication(manager, state)
   await manager.docker.command(
     ['stop', state.redis.id],
     undefined,
@@ -687,12 +701,17 @@ export const stopDevelopment = async (manager) => {
   )
 }
 
+export const destroyWorktree = (manager) =>
+  destroyManagedWorktree(manager, stopApplication)
+
 const main = async () => {
   if (
-    !['setup', 'dev', 'status', 'stop'].includes(process.argv[2]) ||
+    !['setup', 'dev', 'status', 'stop', 'destroy'].includes(process.argv[2]) ||
     process.argv.length !== 3
   ) {
-    throw new Error('用法：node scripts/worktree.mjs setup|dev|status|stop')
+    throw new Error(
+      '用法：node scripts/worktree.mjs setup|dev|status|stop|destroy'
+    )
   }
   if (process.platform === 'win32')
     throw new Error('本地管理器支持 macOS/Linux；Windows 请在 WSL 中运行。')
@@ -709,6 +728,9 @@ const main = async () => {
       break
     case 'stop':
       await stopDevelopment(manager)
+      break
+    case 'destroy':
+      await destroyWorktree(manager)
       break
   }
 }

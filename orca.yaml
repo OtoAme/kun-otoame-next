@@ -1,3 +1,4 @@
 scripts:
   setup: node scripts/worktree.mjs setup
+  archive: node "$ORCA_ROOT_PATH/scripts/worktree.mjs" destroy
 setupAgentStartupPolicy: wait-for-setup

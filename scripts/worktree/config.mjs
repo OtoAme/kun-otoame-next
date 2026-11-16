@@ -6,6 +6,11 @@ export const LABEL = 'com.otoame.worktree'
 export const PG_IMAGE = 'postgres:16'
 export const REDIS_IMAGE = 'redis:7'
 export const MANAGER_ROLE = 'otoame_manager'
+export const WORKTREE_LOGIN_PASSWORD = 'test1234'
+
+export const isWorktreeLoginPassword = (value) =>
+  typeof value === 'string' &&
+  (value === WORKTREE_LOGIN_PASSWORD || /^[a-f0-9]{64}$/.test(value))
 
 const SHARED_KEYS = [
   'JWT_ISS',

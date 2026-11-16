@@ -20,10 +20,15 @@ import {
   assertContainer,
   containerPort,
   databaseMarker,
+  isWorktreeLoginPassword,
   roleSql,
   databaseSql
 } from '~/scripts/worktree/config.mjs'
-import { WorktreeManager, context } from '~/scripts/worktree.mjs'
+import {
+  WorktreeManager,
+  context,
+  destroyWorktree
+} from '~/scripts/worktree.mjs'
 import {
   readJson,
   writeJson,
@@ -76,6 +81,8 @@ class FakeServices {
   seedCount = 0
   pushCount = 0
   counterFailure = false
+  removeVolumeFailure = false
+  dropRoleFailure = false
   statements: string[] = []
   calls: Array<{ command: string; args: string[]; options: any }> = []
 
@@ -111,6 +118,11 @@ class FakeServices {
       this.volumes.set(args.at(-1)!, labels)
       return ok(args.at(-1)!)
     }
+    if (args[0] === 'volume' && args[1] === 'rm') {
+      if (this.removeVolumeFailure) return missing('synthetic volume failure')
+      this.volumes.delete(args.at(-1)!)
+      return ok()
+    }
     if (args[0] === 'container' && args[1] === 'inspect') {
       const value = this.containers.get(args.at(-1)!)
       return value ? ok(JSON.stringify(value)) : missing('No such container')
@@ -145,6 +157,15 @@ class FakeServices {
       item.running = true
       return ok()
     }
+    if (args[0] === 'stop' || args[0] === 'rm') {
+      const entry = [...this.containers].find(
+        ([, value]) => value.id === args[1]
+      )
+      if (!entry) return missing('No such container')
+      if (args[0] === 'stop') entry[1].running = false
+      else this.containers.delete(entry[0])
+      return ok()
+    }
     if (args.includes('psql')) {
       const sql: string = options.input
       this.statements.push(sql)
@@ -162,6 +183,11 @@ class FakeServices {
           role: sql.match(/OWNER (\w+)/)![1],
           marker: sql.match(/COMMENT ON DATABASE \S+ IS '([^']+)'/)![1]
         }
+      if (sql.startsWith('DROP DATABASE')) this.owner = null
+      if (sql.startsWith('DROP ROLE')) {
+        if (this.dropRoleFailure) return missing('synthetic role failure')
+        this.role = null
+      }
       if (sql.includes("SET phase='schema'")) this.databasePhase = 'schema'
       if (sql.includes("json_build_object('id'")) {
         const marker = this.owner!.marker.split(':')
@@ -180,6 +206,18 @@ class FakeServices {
 }
 
 describe('worktree configuration', () => {
+  it('accepts the fixed development password and existing random credentials', () => {
+    expect(isWorktreeLoginPassword('test1234')).toBe(true)
+    expect(isWorktreeLoginPassword('a'.repeat(64))).toBe(true)
+    for (const value of [
+      '',
+      undefined,
+      null,
+      'arbitrary-password',
+      'test1234 '
+    ])
+      expect(isWorktreeLoginPassword(value)).toBe(false)
+  })
   it('rejects remote Docker endpoints before any container operation', async () => {
     vi.stubEnv('DOCKER_HOST', 'ssh://remote.example.invalid')
     const runner = vi.fn()
@@ -308,6 +346,179 @@ describe('worktree configuration', () => {
   })
 })
 
+describe('managed worktree destruction', () => {
+  const prepared = async () => {
+    const { identity } = await fixture()
+    const services = new FakeServices()
+    const manager = new WorktreeManager(identity, {
+      run: services.run,
+      portAvailable: async () => true,
+      log: vi.fn()
+    })
+    const state = await manager.setup()
+    return { manager, services, state }
+  }
+
+  it('removes only its Redis, database, role and allocation while keeping shared PostgreSQL', async () => {
+    const { manager, services, state } = await prepared()
+    await destroyWorktree(manager)
+    expect(services.containers.has(state.redis.name)).toBe(false)
+    expect(services.volumes.has(state.redis.volume)).toBe(false)
+    expect(services.containers.has(state.postgresName)).toBe(true)
+    expect(services.volumes.has(`${state.postgresName}-data`)).toBe(true)
+    expect(services.owner).toBeNull()
+    expect(services.role).toBeNull()
+    expect(
+      await readJson(join(manager.shared, 'ports.json'))
+    ).not.toHaveProperty(state.id)
+    expect(await readJson(manager.statePath)).toMatchObject({
+      destroyed: true,
+      ready: false
+    })
+    await expect(manager.setup()).rejects.toThrow('销毁')
+    const calls = services.calls.length
+    await destroyWorktree(manager)
+    expect(services.calls).toHaveLength(calls)
+  })
+
+  it.each(['container', 'volume', 'database', 'role'])(
+    'rejects foreign %s ownership before deleting any resources',
+    async (kind) => {
+      const { manager, services, state } = await prepared()
+      if (kind === 'container')
+        services.containers.get(state.redis.name).id = 'f'.repeat(64)
+      if (kind === 'volume') services.volumes.set(state.redis.volume, {})
+      if (kind === 'database') services.owner!.marker = 'foreign'
+      if (kind === 'role') services.role!.marker = 'foreign'
+      const start = services.calls.length
+      await expect(destroyWorktree(manager)).rejects.toThrow()
+      expect(
+        services.calls
+          .slice(start)
+          .some(({ args }) => args.includes('rm') || args[2] === 'stop')
+      ).toBe(false)
+      expect(services.statements.some((sql) => sql.startsWith('DROP '))).toBe(
+        false
+      )
+      expect(await readJson(join(manager.shared, 'ports.json'))).toHaveProperty(
+        state.id
+      )
+    }
+  )
+
+  it('resumes after Redis removal succeeds but volume removal fails', async () => {
+    const { manager, services, state } = await prepared()
+    services.removeVolumeFailure = true
+    await expect(destroyWorktree(manager)).rejects.toThrow('退出码')
+    expect(services.containers.has(state.redis.name)).toBe(false)
+    expect(await readJson(join(manager.shared, 'ports.json'))).toHaveProperty(
+      state.id
+    )
+    services.removeVolumeFailure = false
+    await destroyWorktree(manager)
+    expect(services.owner).toBeNull()
+    expect(services.volumes.has(state.redis.volume)).toBe(false)
+  })
+
+  it('resumes after the database was removed but role deletion failed', async () => {
+    const { manager, services, state } = await prepared()
+    services.dropRoleFailure = true
+    await expect(destroyWorktree(manager)).rejects.toThrow('退出码')
+    expect(services.owner).toBeNull()
+    expect(services.role).not.toBeNull()
+    expect(await readJson(join(manager.shared, 'ports.json'))).toHaveProperty(
+      state.id
+    )
+    services.dropRoleFailure = false
+    await destroyWorktree(manager)
+    expect(services.role).toBeNull()
+  })
+
+  it('preserves neighboring allocations and releases a completed allocation on retry', async () => {
+    const { manager, state } = await prepared()
+    const registryPath = join(manager.shared, 'ports.json')
+    const ownEntry = { root: state.root, port: state.appPort }
+    const neighbor = { root: '/synthetic/neighbor', port: 3400 }
+    await writeJson(registryPath, {
+      [state.id]: ownEntry,
+      abcdef012345: neighbor
+    })
+    await destroyWorktree(manager)
+    expect(await readJson(registryPath)).toEqual({ abcdef012345: neighbor })
+    await writeJson(registryPath, {
+      [state.id]: ownEntry,
+      abcdef012345: neighbor
+    })
+    await destroyWorktree(manager)
+    expect(await readJson(registryPath)).toEqual({ abcdef012345: neighbor })
+  })
+
+  it('can clean an allocation whose setup never created infrastructure', async () => {
+    const { identity } = await fixture()
+    const services = new FakeServices()
+    const manager = new WorktreeManager(identity, {
+      run: services.run,
+      portAvailable: async () => true,
+      log: vi.fn()
+    })
+    const state = await manager.allocate()
+    await destroyWorktree(manager)
+    expect(services.containers.size).toBe(0)
+    expect(
+      await readJson(join(manager.shared, 'ports.json'))
+    ).not.toHaveProperty(state.id)
+  })
+
+  it('refuses an unknown listener and retains all resources for diagnosis', async () => {
+    const { manager, services, state } = await prepared()
+    manager.probe = async () => false
+    await expect(destroyWorktree(manager)).rejects.toThrow('应用端口仍被占用')
+    expect(services.containers.get(state.redis.name).running).toBe(true)
+    expect(services.owner).not.toBeNull()
+    await expect(manager.environment(await manager.load())).rejects.toThrow(
+      '销毁'
+    )
+  })
+
+  it('requires a matching allocation before attempting any deletion', async () => {
+    const { manager, services, state } = await prepared()
+    await writeJson(join(manager.shared, 'ports.json'), {
+      [state.id]: { root: '/foreign', port: state.appPort }
+    })
+    const calls = services.calls.length
+    await expect(destroyWorktree(manager)).rejects.toThrow('端口登记')
+    expect(services.calls).toHaveLength(calls)
+  })
+
+  it('skips an unmanaged worktree without using Docker', async () => {
+    const { identity } = await fixture()
+    const runner = vi.fn()
+    const manager = new WorktreeManager(identity, { run: runner, log: vi.fn() })
+    await destroyWorktree(manager)
+    expect(runner).not.toHaveBeenCalled()
+  })
+
+  it('refuses lost local identity and leaves the shared allocation intact', async () => {
+    const { manager, services, state } = await prepared()
+    await rm(manager.statePath)
+    const calls = services.calls.length
+    await expect(destroyWorktree(manager)).rejects.toThrow('身份记录')
+    expect(services.calls).toHaveLength(calls)
+    expect(await readJson(join(manager.shared, 'ports.json'))).toHaveProperty(
+      state.id
+    )
+  })
+
+  it('does not destroy while setup owns the lifecycle lock', async () => {
+    const { manager, services } = await prepared()
+    const calls = services.calls.length
+    await withLock(join(manager.local, 'setup.lock'), async () => {
+      await expect(destroyWorktree(manager)).rejects.toThrow('操作锁')
+    })
+    expect(services.calls).toHaveLength(calls)
+  })
+})
+
 describe('managed worktree setup', () => {
   it('reuses database, credentials and ports without resetting or reseeding on a second setup', async () => {
     const { identity } = await fixture()
@@ -319,6 +530,10 @@ describe('managed worktree setup', () => {
     })
     const first = await manager.setup()
     const credentials = await readFile(manager.secretsPath, 'utf8')
+    expect(JSON.parse(credentials).loginPassword).toBe('test1234')
+    expect(JSON.parse(credentials).databasePassword).toMatch(/^[a-f0-9]{64}$/)
+    expect(JSON.parse(credentials).redisPassword).toMatch(/^[a-f0-9]{64}$/)
+    expect(JSON.parse(credentials).jwtSecret).toMatch(/^[a-f0-9]{64}$/)
     const env = await readFile(join(identity.root, '.env'), 'utf8')
     const second = await manager.setup()
     expect(second).toMatchObject({
@@ -346,6 +561,33 @@ describe('managed worktree setup', () => {
       postgresRunning: true,
       redisRunning: true
     })
+  })
+
+  it('preserves existing random login credentials when setup is repeated', async () => {
+    const { identity } = await fixture()
+    const services = new FakeServices()
+    const manager = new WorktreeManager(identity, {
+      run: services.run,
+      portAvailable: async () => true,
+      log: vi.fn()
+    })
+    await manager.allocate()
+    const legacy = {
+      ...(await manager.credentials()),
+      loginPassword: 'a'.repeat(64)
+    }
+    await writeJson(manager.secretsPath, legacy)
+    await manager.setup()
+    expect(
+      services.calls.find(({ args }) =>
+        args.includes('scripts/worktreeSeed.ts')
+      )?.options.env.OTOAME_WORKTREE_PASSWORD
+    ).toBe(legacy.loginPassword)
+    await manager.setup()
+    expect((await manager.credentials()).loginPassword).toBe(
+      legacy.loginPassword
+    )
+    expect(services.seedCount).toBe(1)
   })
 
   it('preserves an existing unmanaged .env without starting containers', async () => {

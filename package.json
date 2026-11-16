@@ -13,6 +13,7 @@
     "worktree:dev": "node scripts/worktree.mjs dev",
     "worktree:status": "node scripts/worktree.mjs status",
     "worktree:stop": "node scripts/worktree.mjs stop",
+    "worktree:destroy": "node scripts/worktree.mjs destroy",
     "build": "next build",
     "build:sitemap": "esno scripts/generateKunSitemap.ts",
     "postbuild": "esno scripts/postbuild.ts",

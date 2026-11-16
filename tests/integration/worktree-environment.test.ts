@@ -12,6 +12,7 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { parseEnv } from 'node:util'
+import { verifyPassword } from '~/app/api/utils/algorithm'
 import {
   createIdentity,
   assertContainer,
@@ -20,7 +21,8 @@ import {
 import {
   WorktreeManager,
   serveDevelopment,
-  stopDevelopment
+  stopDevelopment,
+  destroyWorktree
 } from '~/scripts/worktree.mjs'
 import { run, readJson, pause } from '~/scripts/worktree/runtime.mjs'
 
@@ -120,6 +122,18 @@ acceptance(
         )
       ).toBe('3')
       const credentials = await managers[0].credentials()
+      expect(credentials.loginPassword).toBe('test1234')
+      const passwords = (
+        await managers[0].docker.psql(
+          pg,
+          a.database,
+          a.role,
+          'SELECT password FROM public."user" ORDER BY id;'
+        )
+      ).split('\n')
+      expect(passwords).toHaveLength(3)
+      for (const password of passwords)
+        expect(await verifyPassword('test1234', password)).toBe(true)
       const denied = await managers[0].docker.run(
         'docker',
         [
@@ -155,6 +169,16 @@ acceptance(
       const hash = digest(await readFile(managers[0].secretsPath, 'utf8'))
       await managers[0].setup()
       expect(digest(await readFile(managers[0].secretsPath, 'utf8'))).toBe(hash)
+      expect(
+        (
+          await managers[0].docker.psql(
+            pg,
+            a.database,
+            a.role,
+            'SELECT password FROM public."user" ORDER BY id;'
+          )
+        ).split('\n')
+      ).toEqual(passwords)
       expect(
         await managers[0].docker.psql(
           pg,
@@ -200,6 +224,73 @@ acceptance(
         postgresRunning: true
       })
       expect(await managers[0].probe(a.appPort)).toBe(true)
+
+      // Destruction also stops a live owned launcher; the neighboring worktree
+      // must remain usable after its database and Redis have been removed.
+      await managers[0].setup()
+      stopManager = managers[0]
+      dev = serveDevelopment(managers[0])
+      for (
+        let attempt = 0;
+        attempt < 80 && (await managers[0].probe(a.appPort));
+        attempt++
+      )
+        await pause(100)
+      expect(await (await fetch(`http://127.0.0.1:${a.appPort}`)).text()).toBe(
+        a.id
+      )
+      await destroyWorktree(managers[0])
+      expect(await dev).toBe(0)
+      dev = undefined
+      stopManager = undefined
+      expect(await managers[0].docker.inspect(a.redis.name)).toBeNull()
+      expect(
+        await managers[0].docker.inspectVolume(a.redis.volume, a.redis.labels)
+      ).toBe(false)
+      expect(
+        await managers[0].docker.psql(
+          pg,
+          'postgres',
+          'otoame_manager',
+          `SELECT count(*) FROM pg_database WHERE datname='${a.database}';`
+        )
+      ).toBe('0')
+      expect(
+        await managers[0].docker.psql(
+          pg,
+          'postgres',
+          'otoame_manager',
+          `SELECT count(*) FROM pg_roles WHERE rolname='${a.role}';`
+        )
+      ).toBe('0')
+      expect(await managers[1].status()).toMatchObject({
+        ready: true,
+        redisRunning: true,
+        postgresRunning: true
+      })
+      expect(
+        await managers[1].docker.psql(
+          pg,
+          b.database,
+          b.role,
+          'SELECT count(*) FROM public."user";'
+        )
+      ).toBe('3')
+      expect(
+        await readJson(join(managers[0].shared, 'ports.json'))
+      ).not.toHaveProperty(a.id)
+      expect(
+        await readJson(join(managers[0].shared, 'ports.json'))
+      ).toHaveProperty(b.id)
+      await destroyWorktree(managers[0])
+      await expect(managers[0].setup()).rejects.toThrow('销毁')
+
+      await managers[1].docker.command(['stop', pg.id])
+      await destroyWorktree(managers[1])
+      expect((await managers[1].docker.verify(pg)).running).toBe(true)
+      expect(await managers[1].docker.inspectVolume(pg.volume, pg.labels)).toBe(
+        true
+      )
     } finally {
       if (dev && stopManager) {
         try {
@@ -220,28 +311,26 @@ acceptance(
       }
       for (const resource of resources) {
         try {
-          await managers[0].docker.verify(resource)
-          await managers[0].docker.command(
-            ['rm', '-f', resource.id],
-            undefined,
-            '清理验收容器'
+          const info = await managers[0].docker.inspect(resource.name)
+          if (info) {
+            assertContainer(info, resource.labels, resource.id)
+            await managers[0].docker.command(
+              ['rm', '-f', resource.id],
+              undefined,
+              '清理验收容器'
+            )
+          }
+          if (
+            await managers[0].docker.inspectVolume(
+              resource.volume,
+              resource.labels
+            )
           )
-          const labels = await managers[0].docker.command([
-            'volume',
-            'inspect',
-            '--format',
-            '{{json .Labels}}',
-            resource.volume
-          ])
-          assertContainer(
-            { id: 'volume', labels: JSON.parse(labels) },
-            resource.labels
-          )
-          await managers[0].docker.command(
-            ['volume', 'rm', resource.volume],
-            undefined,
-            '清理验收数据卷'
-          )
+            await managers[0].docker.command(
+              ['volume', 'rm', resource.volume],
+              undefined,
+              '清理验收数据卷'
+            )
         } catch {
           cleanupSucceeded = false
         }

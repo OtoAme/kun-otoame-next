@@ -4,6 +4,7 @@ import { prisma, disconnectPrismaAdapter } from '../prisma/index'
 import { hashPassword } from '../app/api/utils/algorithm'
 import { createMoemoepointOpeningEntry } from '../app/api/moemoepoint/service'
 import { MOEMOEPOINT_REASON } from '../constants/moemoepoint'
+import { isWorktreeLoginPassword } from './worktree/config.mjs'
 
 export const seedWorktreeDatabase = async () => {
   const id = process.env.OTOAME_WORKTREE_ID ?? ''
@@ -12,7 +13,7 @@ export const seedWorktreeDatabase = async () => {
   if (
     !/^[a-f0-9]{12}$/.test(id) ||
     !/^[a-f0-9]{64}$/.test(nonce) ||
-    !/^[a-f0-9]{64}$/.test(password)
+    !isWorktreeLoginPassword(password)
   ) {
     throw new Error('缺少受管 worktree 身份或开发账号凭据。')
   }

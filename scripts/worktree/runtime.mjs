@@ -218,6 +218,31 @@ export class Docker {
     return info
   }
 
+  async inspectVolume(name, expected) {
+    const result = await this.run('docker', [
+      'volume',
+      'inspect',
+      '--format',
+      '{{json .Labels}}',
+      name
+    ])
+    if (result.code !== 0) {
+      if (/No such volume/i.test(result.stderr)) return false
+      throw new Error('无法读取 Docker 数据卷。')
+    }
+    let labels
+    try {
+      labels = JSON.parse(result.stdout)
+    } catch {
+      throw new Error('Docker 数据卷元数据无效。')
+    }
+    if (
+      Object.entries(expected).some(([key, value]) => labels?.[key] !== value)
+    )
+      throw new Error('同名数据卷来源不明，拒绝操作。')
+    return true
+  }
+
   async volume(name, labels) {
     const result = await this.run('docker', [
       'volume',
