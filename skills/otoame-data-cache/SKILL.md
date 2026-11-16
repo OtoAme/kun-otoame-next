@@ -24,6 +24,7 @@ Read the development entry first. Linked guides own detailed persistence guarant
 - Use shared accounting and database-maintained relation counts. Preserve negative balance reversals, deposit settlement and company ambiguity protections.
 - Refresh every affected content, list and edge cache. Preserve personalized response isolation and time-bound public visibility; cache failures do not undo committed writes.
 - Consume only registered uploads. Compensate failed saves without deleting referenced objects; persist submission cleanup obligations before deleting files, retaining them until storage and edge cleanup both succeed.
+- Apply optional S3 environment prefixes at the storage boundary, including maintenance reads and scans; convert listed keys back to relative business keys before reference checks. Keep empty-prefix behavior compatible. Compose public URLs centrally, match scoped bases longest first, and use them for URL extraction and cache purges. Validate the resource upload's public root before consuming its registration or writing storage; return complete URLs to clients.
 - Production changes require verified backups, reviewed migrations, prerequisite checks and compatible application rollout. Never accept a database reset or widen schema-check exceptions to conceal drift.
 
 ## Verification

@@ -25,7 +25,8 @@
 | `HOSTNAME`、`PORT` | 应用监听地址与端口。生产填 `HOSTNAME=127.0.0.1`；缺省时监听所有网卡的 3000 端口。部署工具启动进程时传入的监听参数不生效，以本项为准；登录环境已导出同名变量时，配置文件中的值不会覆盖它。 |
 | `KUN_VISUAL_NOVEL_EMAIL_*` | 发信人、服务器、端口、账号和密码，注册验证码与邮件功能需要实际服务。 |
 | `KUN_VISUAL_NOVEL_S3_STORAGE_*` | 存储凭据、桶、服务端点和区域。 |
-| `NEXT_PUBLIC_KUN_VISUAL_NOVEL_S3_STORAGE_URL`、`KUN_VISUAL_NOVEL_IMAGE_BED_HOST`、`KUN_VISUAL_NOVEL_IMAGE_BED_URL` | 资源公开地址与图床，核对完整地址和图片许可主机。 |
+| `KUN_VISUAL_NOVEL_S3_STORAGE_PREFIX` | 可选桶内路径前缀；未设置或留空保持现有对象路径。应用自动将该前缀加入两个公开根地址，见下节。 |
+| `NEXT_PUBLIC_KUN_VISUAL_NOVEL_S3_STORAGE_URL`、`KUN_VISUAL_NOVEL_IMAGE_BED_HOST`、`KUN_VISUAL_NOVEL_IMAGE_BED_URL` | 资源与图床的公开根地址，以及图片许可主机；两个根地址不含环境前缀，主机只填域名。 |
 | `KUN_CF_CACHE_ZONE_ID`、`KUN_CF_CACHE_PURGE_API_TOKEN` | 默认和图床缓存清理权限，网站未指定独立区域时也使用。 |
 | `KUN_CF_CACHE_SITE_ZONE_ID`、`KUN_CF_CACHE_SITE_PURGE_API_TOKEN` | 可选网站独立区域；令牌为空时复用已获该区域清理权限的默认令牌。配置步骤见运维指南。 |
 | `KUN_VISUAL_NOVEL_INDEX_NOW_KEY` | 搜索通知所需密钥，公开目录中需有对应名称与内容的验证文件。 |
@@ -41,6 +42,27 @@
 | `KUN_STATIC_TAG_PREGEN_LIMIT`、`KUN_STATIC_COMPANY_PREGEN_LIMIT` | 构建预生成标签与会社详情的数量，默认各 50，设为 0 关闭预生成。 |
 
 带公开前缀的变量会进入浏览器构建，不能放秘密。发布工作流使用的三个公开地址配置要与目标站点匹配，秘密配置只在服务端保留。图床主机也在构建时写入图片许可范围，运行时修改不生效；当前发布工作流把它填为占位主机，下载部署的产物需按[已知代码问题](../reference/known-issues.md)处理。修改运行时配置后重新读取进程配置，不只依赖旧进程环境。
+
+### S3 路径前缀
+
+多个独立开发环境可以共用开发桶，并为各环境分配固定的路径前缀。上传、读取、删除、素材清理扫描和截图缩略图回填都会使用该前缀；业务记录和清理待办中的对象键仍保存不含环境前缀的相对路径，公开地址字段和历史缓存清理目标则保存完整 URL。扫描结果会去除环境前缀后再与数据库引用比较。
+
+例如，为一个 worktree 配置以下值，业务路径 `patch/123/banner/banner.avif` 会对应桶内的 `worktrees/wt-a/patch/123/banner/banner.avif`：
+
+```dotenv
+KUN_VISUAL_NOVEL_S3_STORAGE_PREFIX="worktrees/wt-a"
+NEXT_PUBLIC_KUN_VISUAL_NOVEL_S3_STORAGE_URL="https://img-dev.example.com"
+KUN_VISUAL_NOVEL_IMAGE_BED_URL="https://img-dev.example.com"
+KUN_VISUAL_NOVEL_IMAGE_BED_HOST="img-dev.example.com"
+```
+
+前缀使用 `/` 分隔的英文字母、数字、点、下划线或连字符，不能包含单独的 `.`、`..` 段或空路径段。首尾空白和首尾斜线会被移除；非空配置仅含斜线时拒绝运行。两个公开根地址可以包含存储服务自身的固定路径，应用在其后自动追加环境前缀，再追加业务路径。例如上述封面的公开地址为 `https://img-dev.example.com/worktrees/wt-a/patch/123/banner/banner.avif`。配置中始终填写不含环境前缀的根地址；若已手动加上环境前缀，先将根地址中的这部分去掉，保留独立的前缀配置，已有文件和最终公开地址无需改变。
+
+上传结果、投稿预览和发布、头像、截图、消息图片及资源下载都由服务器组合公开地址。投稿封面组件直接使用上传接口返回的完整地址，浏览器无需读取环境前缀。URL 反向解析、文件引用检查和边缘缓存清理使用同一环境地址范围，嵌套公开根地址优先匹配更长的地址。资源文件上传会在占用上传登记和写入存储前检查公开根地址是否缺失或为空白。图片许可主机只填写域名，配置应在构建和启动前确定。
+
+生产环境可省略前缀或留空，原对象路径和公开地址保持不变。前缀与该环境的数据库一起保留；改变前缀不会搬迁已有对象，也不会改写数据库中的完整地址。路径分组不限制凭据权限，需要防止跨环境访问时，由存储提供商将凭据权限限制到各自前缀。
+
+已有数据的环境首次启用或改变前缀，不能仅修改配置：旧的完整 URL 可能仍能显示，但新的 URL 解析、删除和扫描范围不再覆盖旧位置，可能留下无法清理的对象或使依赖地址识别的操作失败；投稿、贴纸等从相对键生成的地址会直接指向新前缀，未搬迁的文件可能无法显示。前述「已有文件和最终公开地址无需改变」仅适用于从根地址中拆出同一个实际前缀。切换已有数据的存储位置需要另行处理对象及其引用的迁移，本功能不提供自动迁移。
 
 ## 首次空库安装
 
