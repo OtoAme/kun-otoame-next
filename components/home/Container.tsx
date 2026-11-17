@@ -8,14 +8,14 @@ interface Props {
   resources: HomeResource[]
 }
 
-export const HomeContainer = (_props: Props) => {
+export const HomeContainer = (props: Props) => {
   return (
     <div className="mx-auto space-y-8 max-w-7xl">
       <HomeHero />
 
       <ShoutboxHomeSection />
 
-      <HomePersonalizedContent />
+      <HomePersonalizedContent publicData={props} />
     </div>
   )
 }

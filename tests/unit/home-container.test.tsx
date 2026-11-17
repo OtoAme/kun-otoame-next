@@ -92,7 +92,7 @@ describe('HomeContainer personalized results', () => {
   let root: Root | undefined
   let dom: JSDOM | undefined
   const renderHome = async (
-    status: 'guest' | 'checking' = 'guest',
+    status: 'guest' | 'checking' | 'authenticated' = 'authenticated',
     strict = false
   ) => {
     dom = new JSDOM('<!doctype html><div id="root"></div>', {
@@ -105,13 +105,40 @@ describe('HomeContainer personalized results', () => {
     const { useUserStore } = await import('~/store/userStore')
     useUserStore.setState({
       sessionStatus: status,
-      sessionContext: null,
+      user: { ...useUserStore.getState().user, uid: 7 },
+      sessionContext: 'first-context',
       sessionGeneration: 0
+    })
+    const { usePreferenceStore } = await import('~/store/preferenceStore')
+    usePreferenceStore.setState({
+      generation: 0,
+      status: 'ready',
+      applied: {
+        uid: 7,
+        context: 'first-context',
+        version: 0,
+        nsfwSelected: false,
+        blockedTagIds: [],
+        items: {
+          nsfw: { value: 'sfw', version: 0 },
+          'email-notice': { value: false, version: 0 }
+        }
+      }
     })
     const { HomeContainer } = await import('~/components/home/Container')
     const container = document.getElementById('root')!
     root = createRoot(container)
-    const element = <HomeContainer galgames={makeGalgames(24)} resources={[]} />
+    const element = (
+      <HomeContainer
+        galgames={makeGalgames(24)}
+        resources={[
+          {
+            id: 9,
+            name: 'public static resource'
+          } as import('~/types/api/home').HomeResource
+        ]}
+      />
+    )
     await act(async () => {
       root!.render(
         strict ? <React.StrictMode>{element}</React.StrictMode> : element
@@ -138,6 +165,17 @@ describe('HomeContainer personalized results', () => {
     ).toHaveLength(0)
     expect(fetchMock.kunFetchGet).not.toHaveBeenCalled()
   })
+  it('uses both nonempty static public sections for a confirmed guest without a redundant home request', async () => {
+    fetchMock.kunFetchGet.mockResolvedValue({ stats: {} })
+    const { container } = await renderHome('guest')
+    expect(
+      container.querySelectorAll('[data-testid="galgame-card"]')
+    ).toHaveLength(24)
+    expect(container.textContent).toContain('public static resource')
+    expect(
+      fetchMock.kunFetchGet.mock.calls.filter(([url]) => url === '/home')
+    ).toHaveLength(0)
+  })
   it('loads both sections together after confirmation and refreshes card stats in one batch', async () => {
     fetchMock.kunFetchGet.mockImplementation((url: string) =>
       Promise.resolve(
@@ -155,6 +193,8 @@ describe('HomeContainer personalized results', () => {
     ).toHaveLength(1)
     expect(container.textContent).toContain('abc12345:15:4')
     expect(container.textContent).toContain('filtered resource')
+    expect(container.textContent).not.toContain('public static resource')
+    expect(container.textContent).not.toContain('game0000')
     expect(fetchMock.kunFetchGet).toHaveBeenCalledWith('/patch/stats', {
       uniqueIds: 'abc12345'
     })
@@ -241,7 +281,7 @@ describe('HomeContainer personalized results', () => {
           : { stats: {} }
       )
     )
-    const { container } = await renderHome('guest', true)
+    const { container } = await renderHome('authenticated', true)
     expect(container.textContent).toContain('abc12345:10:2')
   })
 })

@@ -11,7 +11,11 @@ import { kunFetchGet } from '~/utils/kunFetch'
 import type { HomeResource } from '~/types/api/home'
 
 type HomeData = { galgames: GalgameCard[]; resources: HomeResource[] }
-export const HomePersonalizedContent = () => {
+export const HomePersonalizedContent = ({
+  publicData
+}: {
+  publicData: HomeData
+}) => {
   const session = useUserStore()
   const preferences = useAccountPreferences()
   const ready =
@@ -28,7 +32,7 @@ export const HomePersonalizedContent = () => {
   const [failed, setFailed] = useState<string | null>(null)
   const [retry, setRetry] = useState(0)
   useEffect(() => {
-    if (!key) return
+    if (!key || session.sessionStatus !== 'authenticated') return
     let ignore = false
     const controller = new AbortController()
     setFailed(null)
@@ -46,8 +50,13 @@ export const HomePersonalizedContent = () => {
       ignore = true
       controller.abort()
     }
-  }, [key, retry])
-  const data = result?.key === key ? result.data : null
+  }, [key, retry, session.sessionStatus])
+  const data =
+    session.sessionStatus === 'guest'
+      ? publicData
+      : result?.key === key
+        ? result.data
+        : null
   if (!ready || (!data && failed !== key))
     return (
       <div role="status" className="space-y-6">
