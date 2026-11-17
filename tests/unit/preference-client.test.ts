@@ -159,9 +159,9 @@ describe('account preference client drafts and applied snapshots', () => {
     const state = await setup()
     transport.mockResolvedValueOnce(
       Response.json({
-        ...snapshot(),
+        ...snapshot(4),
         items: {
-          ...snapshot().items,
+          ...snapshot(4).items,
           'blocked-tag:19': { value: false, version: 4 }
         }
       })
@@ -182,6 +182,170 @@ describe('account preference client drafts and applied snapshots', () => {
     expect(state.usePreferenceStore.getState()).toMatchObject({
       status: 'ready',
       applied: { version: 3, items: { nsfw: { value: 'all' } } }
+    })
+  })
+  it.each(['checking', 'unavailable'] as const)(
+    'releases save ownership when a response arrives during %s and permits an explicit retry',
+    async (status) => {
+      const state = await setup()
+      state.editPreference('nsfw', 'all')
+      let complete!: (response: Response) => void
+      transport.mockImplementationOnce(
+        () =>
+          new Promise<Response>((resolve) => {
+            complete = resolve
+          })
+      )
+      const saving = state.savePreferenceDrafts()
+      state.useUserStore.setState({ sessionStatus: status })
+      complete(Response.json(snapshot(1, 'all')))
+      expect(await saving).toBe(false)
+      expect(state.usePreferenceStore.getState()).toMatchObject({
+        saving: false,
+        applied: { version: 0 },
+        drafts: { nsfw: { value: 'all' } }
+      })
+      state.useUserStore.setState({ sessionStatus: 'authenticated' })
+      transport.mockResolvedValueOnce(Response.json(snapshot(1, 'all')))
+      expect(await state.savePreferenceDrafts()).toBe(true)
+    }
+  )
+  it.each(['checking', 'unavailable'] as const)(
+    'releases failed save ownership during %s without discarding the draft',
+    async (status) => {
+      const state = await setup()
+      state.editPreference('nsfw', 'all')
+      let fail!: (error: Error) => void
+      transport.mockImplementationOnce(
+        () =>
+          new Promise<Response>((_, reject) => {
+            fail = reject
+          })
+      )
+      const saving = state.savePreferenceDrafts()
+      state.useUserStore.setState({ sessionStatus: status })
+      fail(new TypeError('synthetic offline'))
+      expect(await saving).toBe(false)
+      expect(state.usePreferenceStore.getState()).toMatchObject({
+        saving: false,
+        drafts: { nsfw: { value: 'all' } }
+      })
+      state.useUserStore.setState({ sessionStatus: 'authenticated' })
+      transport.mockResolvedValueOnce(Response.json(snapshot(1, 'all')))
+      expect(await state.savePreferenceDrafts()).toBe(true)
+    }
+  )
+  it('rejects an invalid snapshot before changing any applied values or drafts', async () => {
+    const state = await setup()
+    state.editPreference('nsfw', 'all')
+    transport.mockResolvedValueOnce(
+      Response.json({
+        ...snapshot(5, 'all'),
+        items: { 'email-notice': { value: true, version: 5 } }
+      })
+    )
+    await state.refreshPreferences()
+    expect(state.usePreferenceStore.getState()).toMatchObject({
+      status: 'error',
+      applied: { version: 0, items: { nsfw: { value: 'sfw' } } },
+      drafts: { nsfw: { value: 'all', version: 0 } }
+    })
+  })
+  it('does not let an older failed read override a newer successful read', async () => {
+    const state = await setup()
+    let fail!: (error: Error) => void
+    transport.mockImplementationOnce(
+      () =>
+        new Promise<Response>((_, reject) => {
+          fail = reject
+        })
+    )
+    const earlier = state.refreshPreferences([19])
+    transport.mockResolvedValueOnce(Response.json(snapshot(2, 'all')))
+    await state.refreshPreferences([20])
+    fail(new TypeError('synthetic earlier failure'))
+    await earlier
+    expect(state.usePreferenceStore.getState()).toMatchObject({
+      status: 'ready',
+      error: null,
+      applied: { version: 2 }
+    })
+  })
+  it.each([
+    {
+      label: 'negative account version',
+      value: { ...snapshot(), version: -1 }
+    },
+    {
+      label: 'boolean content mode',
+      value: {
+        ...snapshot(),
+        items: { ...snapshot().items, nsfw: { value: true, version: 0 } }
+      }
+    },
+    {
+      label: 'invalid email value',
+      value: {
+        ...snapshot(),
+        items: {
+          ...snapshot().items,
+          'email-notice': { value: 'all', version: 0 }
+        }
+      }
+    },
+    {
+      label: 'item version above snapshot',
+      value: {
+        ...snapshot(),
+        items: { ...snapshot().items, nsfw: { value: 'sfw', version: 3 } }
+      }
+    },
+    {
+      label: 'missing blocked item',
+      value: { ...snapshot(), blockedTagIds: [19] }
+    },
+    {
+      label: 'inconsistent blocked value',
+      value: {
+        ...snapshot(),
+        items: {
+          ...snapshot().items,
+          'blocked-tag:19': { value: true, version: 0 }
+        }
+      }
+    },
+    {
+      label: 'unselected adult mode',
+      value: { ...snapshot(1, 'all'), nsfwSelected: false }
+    }
+  ])('preserves the old snapshot for $label', async ({ value }) => {
+    const state = await setup()
+    transport.mockResolvedValueOnce(Response.json(value))
+    await state.refreshPreferences()
+    expect(state.usePreferenceStore.getState()).toMatchObject({
+      status: 'error',
+      applied: { version: 0, items: { nsfw: { value: 'sfw' } } }
+    })
+  })
+  it('keeps the draft and settles a malformed conflict response as a retryable failure', async () => {
+    const state = await setup()
+    state.editPreference('nsfw', 'all')
+    transport.mockResolvedValueOnce(
+      Response.json(
+        {
+          code: 'PREFERENCE_CONFLICT',
+          message: 'synthetic',
+          conflicts: 'nsfw',
+          snapshot: snapshot(2, 'nsfw')
+        },
+        { status: 409 }
+      )
+    )
+    expect(await state.savePreferenceDrafts()).toBe(false)
+    expect(state.usePreferenceStore.getState()).toMatchObject({
+      saving: false,
+      applied: { version: 0 },
+      drafts: { nsfw: { value: 'all' } }
     })
   })
 })

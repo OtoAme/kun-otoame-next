@@ -1,10 +1,13 @@
 import Cookies from 'js-cookie'
+import {
+  preferenceSnapshotSchema,
+  preferenceConflictSchema
+} from '~/validations/preferences'
 import { useUserStore } from '~/store/userStore'
 import { resetPreferences, usePreferenceStore } from '~/store/preferenceStore'
 import { useSettingStore } from '~/store/settingStore'
 import { KunFetchError, kunFetchGet, kunFetchPatch } from './kunFetch'
 import type {
-  PreferenceConflict,
   PreferenceSnapshot,
   PreferenceValue
 } from '~/types/api/preferences'
@@ -19,14 +22,20 @@ const identity = () => {
       }
     : null
 }
-const matches = (expected: NonNullable<ReturnType<typeof identity>>) => {
-  const current = identity()
+const owns = (expected: NonNullable<ReturnType<typeof identity>>) => {
+  const current = useUserStore.getState()
   return (
-    current?.uid === expected.uid &&
-    current.context === expected.context &&
-    current.generation === expected.generation
+    current.user.uid === expected.uid &&
+    current.sessionContext === expected.context &&
+    current.sessionGeneration === expected.generation
   )
 }
+const matches = (expected: NonNullable<ReturnType<typeof identity>>) =>
+  useUserStore.getState().sessionStatus === 'authenticated' && owns(expected)
+let readSequence = 0
+let successfulReadSequence = 0
+let saveSequence = 0
+
 const legacyCookie = 'kun-patch-setting-store|state|data|kunNsfwEnable'
 const clearLegacy = () => {
   Cookies.remove(legacyCookie, { path: '/' })
@@ -38,6 +47,7 @@ const accept = (
   snapshot: PreferenceSnapshot,
   expected: NonNullable<ReturnType<typeof identity>>
 ) => {
+  snapshot = preferenceSnapshotSchema.parse(snapshot)
   if (
     !matches(expected) ||
     snapshot.uid !== expected.uid ||
@@ -100,15 +110,31 @@ export const refreshPreferences = (tagIds: number[] = []) => {
   if (legacy === 'sfw' || legacy === 'nsfw' || legacy === 'all')
     usePreferenceStore.setState({ legacyNsfw: legacy })
   usePreferenceStore.setState({ status: 'loading', error: null })
+  const sequence = ++readSequence
   const promise = kunFetchGet<PreferenceSnapshot>(
     '/user/preferences' +
       (keys.length ? '?' + keys.map((id) => `tagId=${id}`).join('&') : '')
   )
     .then((snapshot) => {
-      accept(snapshot, expected)
+      if (accept(snapshot, expected)) {
+        successfulReadSequence = Math.max(successfulReadSequence, sequence)
+        usePreferenceStore.setState({ error: null })
+      } else if (
+        owns(expected) &&
+        sequence === readSequence &&
+        (!matches(expected) ||
+          snapshot.uid !== expected.uid ||
+          snapshot.context !== expected.context)
+      ) {
+        const current = usePreferenceStore.getState()
+        usePreferenceStore.setState({
+          status: current.applied ? 'ready' : 'error',
+          error: '会话待确认，请重新读取设置'
+        })
+      }
     })
     .catch(() => {
-      if (matches(expected))
+      if (owns(expected) && sequence >= successfulReadSequence)
         usePreferenceStore.setState({
           status: 'error',
           error: '设置读取失败，请重试'
@@ -196,6 +222,7 @@ export const savePreferenceDrafts = async () => {
     })
     return false
   }
+  const sequence = ++saveSequence
   usePreferenceStore.setState({ saving: true, error: null })
   try {
     const snapshot = await kunFetchPatch<PreferenceSnapshot>(
@@ -210,7 +237,13 @@ export const savePreferenceDrafts = async () => {
         }))
       }
     )
-    if (!accept(snapshot, expected)) return false
+    if (!accept(snapshot, expected)) {
+      if (owns(expected))
+        usePreferenceStore.setState({
+          error: '会话待确认，保存结果尚未应用；确认后请重新读取或手动保存'
+        })
+      return false
+    }
     const latest = { ...usePreferenceStore.getState().drafts }
     for (const draft of drafts)
       if (latest[draft.key] === state.drafts[draft.key])
@@ -232,7 +265,13 @@ export const savePreferenceDrafts = async () => {
     } catch {}
     return true
   } catch (error) {
-    if (!matches(expected)) return false
+    if (!owns(expected)) return false
+    if (!matches(expected)) {
+      usePreferenceStore.setState({
+        error: '会话待确认，草稿已保留；确认后请手动保存'
+      })
+      return false
+    }
     if (
       error instanceof KunFetchError &&
       error.status === 409 &&
@@ -241,7 +280,14 @@ export const savePreferenceDrafts = async () => {
       'code' in error.body &&
       error.body.code === 'PREFERENCE_CONFLICT'
     ) {
-      const conflict = error.body as PreferenceConflict
+      const parsed = preferenceConflictSchema.safeParse(error.body)
+      if (!parsed.success) {
+        usePreferenceStore.setState({
+          error: '服务器设置结果不完整，请重新读取；草稿已保留'
+        })
+        return false
+      }
+      const conflict = parsed.data
       if (accept(conflict.snapshot, expected))
         usePreferenceStore.setState({
           conflicts: conflict.conflicts,
@@ -257,6 +303,7 @@ export const savePreferenceDrafts = async () => {
     }
     return false
   } finally {
-    if (matches(expected)) usePreferenceStore.setState({ saving: false })
+    if (owns(expected) && sequence === saveSequence)
+      usePreferenceStore.setState({ saving: false })
   }
 }
