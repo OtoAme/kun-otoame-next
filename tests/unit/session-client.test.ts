@@ -80,6 +80,83 @@ describe('session client identity and cleanup', () => {
     expect(state.useSettingStore.getState().data.kunNsfwEnable).toBe('all')
   })
 
+  it('seeds a restored new session using its accepted generation', async () => {
+    const state = await setup()
+    const sync = await import('~/utils/messageSync')
+    transport.mockResolvedValueOnce(
+      Response.json({
+        user: state.user,
+        context: 'new-context',
+        unread: { hasUnreadNotification: false, hasUnreadConversation: true }
+      })
+    )
+    await state.refreshUserSession()
+    const current = state.useUserStore.getState()
+    const scheduler = sync.createMessageSyncScheduler({
+      request: vi.fn(),
+      onSuccess: vi.fn()
+    })
+    const unbind = sync.bindUnreadSync(
+      {
+        context: current.sessionContext!,
+        generation: current.sessionGeneration
+      },
+      scheduler
+    )
+    expect(current.sessionGeneration).toBe(2)
+    expect(scheduler.getSnapshot().lastSuccessAt).not.toBeNull()
+    expect(state.useMessageStore.getState().hasUnreadConversation).toBe(true)
+    unbind()
+    scheduler.dispose()
+  })
+
+  it.each([false, true])(
+    'does not overwrite a newer summary after a delayed session read (recheck=%s)',
+    async (recheck) => {
+      const state = await setup()
+      const sync = await import('~/utils/messageSync')
+      const scheduler = sync.createMessageSyncScheduler({
+        request: vi.fn(),
+        onSuccess: (unread) =>
+          state.useMessageStore.getState().setUnreadMessageStatus({
+            hasUnreadNotification: unread.hasUnreadMessages,
+            hasUnreadConversation: unread.hasUnreadChat
+          })
+      })
+      const unbind = sync.bindUnreadSync(
+        { context: 'verified-context', generation: 1 },
+        scheduler
+      )
+      let resolve!: (response: Response) => void
+      if (recheck)
+        transport.mockResolvedValueOnce(
+          Response.json({ code: 'SESSION_INVALID' }, { status: 401 })
+        )
+      transport.mockImplementationOnce(
+        () =>
+          new Promise<Response>((complete) => {
+            resolve = complete
+          })
+      )
+      const refreshing = state.refreshUserSession()
+      while (!resolve) await Promise.resolve()
+      scheduler.seed({ hasUnreadMessages: true, hasUnreadChat: true })
+      const succeededAt = scheduler.getSnapshot().lastSuccessAt
+      resolve(
+        Response.json({
+          user: state.user,
+          context: 'verified-context',
+          unread: { hasUnreadNotification: false, hasUnreadConversation: false }
+        })
+      )
+      await refreshing
+      expect(state.useMessageStore.getState().hasUnreadNotification).toBe(true)
+      expect(scheduler.getSnapshot().lastSuccessAt).toBe(succeededAt)
+      unbind()
+      scheduler.dispose()
+    }
+  )
+
   it('preserves confirmed account and local preferences on infrastructure failure', async () => {
     const state = await setup()
     const cookies = document.cookie

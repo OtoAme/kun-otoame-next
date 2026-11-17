@@ -3,7 +3,27 @@ import { useUserStore } from '~/store/userStore'
 import { useSettingStore } from '~/store/settingStore'
 import { useMessageStore } from '~/store/messageStore'
 import { withSessionMutation } from '~/utils/sessionMutation'
+import { beginUnreadRead, seedSessionUnread } from '~/utils/messageSync'
 import type { UserSession } from '~/types/api/session'
+
+const acceptSessionSummary = (session: UserSession, readVersion: number) => {
+  useUserStore.getState().acceptSession(session.user, session.context)
+  const current = useUserStore.getState()
+  if (
+    current.sessionStatus === 'authenticated' &&
+    current.sessionContext === session.context &&
+    seedSessionUnread(
+      {
+        context: current.sessionContext,
+        generation: current.sessionGeneration
+      },
+      session.unread,
+      readVersion
+    )
+  ) {
+    useMessageStore.getState().setUnreadMessageStatus(session.unread!)
+  }
+}
 
 let pending: {
   generation: number
@@ -21,6 +41,7 @@ export const refreshUserSession = () => {
   const promise = (async () => {
     const timeout = setTimeout(() => controller.abort(), 15_000)
     try {
+      const readVersion = beginUnreadRead()
       const response = await fetch('/api/user/session', {
         credentials: 'include',
         cache: 'no-store',
@@ -32,6 +53,7 @@ export const refreshUserSession = () => {
       if (response.status === 401 && body?.code === 'SESSION_INVALID') {
         await withSessionMutation(async (request) => {
           if (useUserStore.getState().sessionGeneration !== generation) return
+          const freshReadVersion = beginUnreadRead()
           const fresh = await fetch('/api/user/session', {
             credentials: 'include',
             cache: 'no-store',
@@ -41,9 +63,7 @@ export const refreshUserSession = () => {
           const latest = await fresh.json()
           if (useUserStore.getState().sessionGeneration !== generation) return
           if (fresh.ok && latest?.context && latest?.user?.uid) {
-            useUserStore.getState().acceptSession(latest.user, latest.context)
-            if (latest.unread !== null)
-              useMessageStore.getState().setUnreadMessageStatus(latest.unread)
+            acceptSessionSummary(latest as UserSession, freshReadVersion)
             return
           }
           if (fresh.status !== 401 || latest?.code !== 'SESSION_INVALID') {
@@ -84,9 +104,7 @@ export const refreshUserSession = () => {
         return
       }
       const session = body as UserSession
-      useUserStore.getState().acceptSession(session.user, session.context)
-      if (session.unread !== null)
-        useMessageStore.getState().setUnreadMessageStatus(session.unread)
+      acceptSessionSummary(session, readVersion)
     } catch {
       if (useUserStore.getState().sessionGeneration === generation) {
         useUserStore.getState().setSessionStatus('unavailable')

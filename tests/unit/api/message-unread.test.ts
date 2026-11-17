@@ -27,6 +27,12 @@ const verifyHeaderCookieMock = vi.hoisted(() => vi.fn())
 vi.mock('~/middleware/_verifyHeaderCookie', () => ({
   verifyHeaderCookie: verifyHeaderCookieMock
 }))
+vi.mock('~/app/api/utils/sessionIdentity', () => ({
+  getRequestIdentity: async (request: Request) => {
+    const payload = await verifyHeaderCookieMock(request)
+    return payload ? { status: 'authenticated', payload } : { status: 'guest' }
+  }
+}))
 
 const rateLimitMock = vi.hoisted(() => ({
   checkConversationActionRateLimit: vi.fn()
