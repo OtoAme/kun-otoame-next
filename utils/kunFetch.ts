@@ -1,4 +1,5 @@
-type FetchOptions = {
+export type FetchOptions = {
+  signal?: AbortSignal
   headers?: Record<string, string>
   query?: Record<string, string | number>
   body?: Record<string, unknown>
@@ -45,12 +46,47 @@ const getKunFetchErrorBodyMessage = (body: unknown) => {
   return ''
 }
 
-const createKunFetchStatusError = (status: number, body: unknown) => {
+export type KunFetchErrorKind = 'http' | 'network' | 'timeout' | 'aborted'
+
+export class KunFetchError extends Error {
+  readonly name = 'KunFetchError'
+  constructor(
+    message: string,
+    readonly kind: KunFetchErrorKind,
+    readonly status: number | null = null,
+    readonly retryAfterMs: number | null = null,
+    readonly code: string | null = null
+  ) {
+    super(message)
+  }
+}
+
+export const parseRetryAfter = (value: string | null, now = Date.now()) => {
+  if (!value?.trim()) return null
+  if (/^\d+(?:\.\d+)?$/.test(value.trim())) {
+    const delay = Number(value) * 1000
+    return Number.isFinite(delay) ? delay : null
+  }
+  const date = Date.parse(value)
+  return Number.isFinite(date) ? Math.max(0, date - now) : null
+}
+
+const createKunFetchStatusError = (response: Response, body: unknown) => {
+  const status = response.status
   const bodyMessage = getKunFetchErrorBodyMessage(body)
-  return new Error(
+  return new KunFetchError(
     bodyMessage
       ? `Kun Fetch error! Status: ${status}; Message: ${bodyMessage}`
-      : `Kun Fetch error! Status: ${status}`
+      : `Kun Fetch error! Status: ${status}`,
+    'http',
+    status,
+    parseRetryAfter(response.headers.get('Retry-After')),
+    body &&
+    typeof body === 'object' &&
+    'code' in body &&
+    typeof body.code === 'string'
+      ? body.code
+      : null
   )
 }
 
@@ -73,7 +109,8 @@ const kunFetchRequest = async <T>(
       formData,
       timeout,
       keepalive,
-      preserveErrorStatus
+      preserveErrorStatus,
+      signal
     } = options || {}
 
     const queryString = query
@@ -110,39 +147,75 @@ const kunFetchRequest = async <T>(
       fetchOptions.body = JSON.stringify(body)
     }
 
-    let timeoutId: NodeJS.Timeout | number | undefined
-
-    if (timeout) {
-      const controller = new AbortController()
-      timeoutId = setTimeout(() => controller.abort(), timeout)
-      fetchOptions.signal = controller.signal
+    const controller = new AbortController()
+    let timeoutId: ReturnType<typeof setTimeout> | undefined
+    const abortState: { kind: 'timeout' | 'aborted' } = { kind: 'aborted' }
+    const onCallerAbort = () => controller.abort()
+    let onAbort: () => void = () => {}
+    const aborted = new Promise<never>((_resolve, reject) => {
+      onAbort = () =>
+        reject(
+          new KunFetchError(
+            abortState.kind === 'timeout'
+              ? 'Kun Fetch request timed out'
+              : 'Kun Fetch request cancelled',
+            abortState.kind
+          )
+        )
+      controller.signal.addEventListener('abort', onAbort, { once: true })
+    })
+    signal?.addEventListener('abort', onCallerAbort, { once: true })
+    if (signal?.aborted) controller.abort()
+    if (timeout && timeout > 0) {
+      timeoutId = setTimeout(() => {
+        abortState.kind = 'timeout'
+        controller.abort()
+      }, timeout)
     }
+    fetchOptions.signal = controller.signal
 
     try {
-      const response = await fetch(fullUrl, fetchOptions)
-      const res = await parseKunFetchResponseBody(response)
-
-      if (!response.ok) {
-        if (preserveErrorStatus) {
-          throw createKunFetchStatusError(response.status, res)
-        }
-
-        if (typeof res === 'string') {
+      return await Promise.race([
+        aborted,
+        (async () => {
+          if (controller.signal.aborted) return await aborted
+          const response = await fetch(fullUrl, fetchOptions)
+          const res = await parseKunFetchResponseBody(response)
+          if (!response.ok) {
+            if (!preserveErrorStatus && typeof res === 'string') return res as T
+            throw createKunFetchStatusError(response, res)
+          }
           return res as T
-        }
-
-        throw createKunFetchStatusError(response.status, res)
+        })()
+      ])
+    } catch (error) {
+      if (controller.signal.aborted) {
+        throw new KunFetchError(
+          abortState.kind === 'timeout'
+            ? 'Kun Fetch request timed out'
+            : 'Kun Fetch request cancelled',
+          abortState.kind
+        )
       }
-
-      return res as T
+      if (preserveErrorStatus && !(error instanceof KunFetchError)) {
+        throw new KunFetchError('Kun Fetch network request failed', 'network')
+      }
+      throw error
     } finally {
-      if (timeoutId) {
-        clearTimeout(timeoutId)
-      }
+      if (timeoutId !== undefined) clearTimeout(timeoutId)
+      signal?.removeEventListener('abort', onCallerAbort)
+      controller.signal.removeEventListener('abort', onAbort)
     }
   } catch (error) {
-    if (!isKunFetchAbortError(error)) {
-      console.error(`Kun Fetch error: ${error}`)
+    if (
+      !isKunFetchAbortError(error) &&
+      !(error instanceof KunFetchError && error.kind === 'aborted')
+    ) {
+      console.error(
+        error instanceof KunFetchError
+          ? `Kun Fetch error: ${error.kind}; status: ${error.status}`
+          : 'Kun Fetch request failed'
+      )
     }
     throw error
   }
@@ -151,7 +224,7 @@ const kunFetchRequest = async <T>(
 export const kunFetchGet = async <T>(
   url: string,
   query?: Record<string, string | number>,
-  options?: Pick<FetchOptions, 'timeout'>
+  options?: Pick<FetchOptions, 'timeout' | 'signal' | 'preserveErrorStatus'>
 ): Promise<T> => {
   return kunFetchRequest<T>(url, 'GET', { query, ...options })
 }
@@ -166,7 +239,10 @@ export const kunFetchPost = async <T>(
 export const kunFetchPut = async <T>(
   url: string,
   body?: Record<string, unknown>,
-  options?: Pick<FetchOptions, 'keepalive'>
+  options?: Pick<
+    FetchOptions,
+    'keepalive' | 'timeout' | 'signal' | 'preserveErrorStatus'
+  >
 ): Promise<T> => {
   return kunFetchRequest<T>(url, 'PUT', { body, ...options })
 }
