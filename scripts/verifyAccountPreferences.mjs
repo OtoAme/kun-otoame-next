@@ -14,6 +14,7 @@ await mkdir(runDirectory, { recursive: true })
 const steps = []
 let containerId
 let admin
+let redisContainerId
 let sequence = 0
 const run = (command, args, options = {}, expected = 0) => {
   const result = spawnSync(command, args, {
@@ -59,26 +60,9 @@ const sql = (database, text, expected = 0) =>
   )
 const filename = (kind) =>
   `production-account-preferences-${kind}-2026-11-17.sql`
+const migrationSources = {}
 const migrate = (database, kind, expected = 0) =>
-  run(
-    'docker',
-    [
-      'exec',
-      containerId,
-      'psql',
-      '-X',
-      '-v',
-      'ON_ERROR_STOP=1',
-      '-U',
-      'postgres',
-      '-d',
-      database,
-      '-f',
-      `/tmp/${filename(kind)}`
-    ],
-    {},
-    expected
-  )
+  sql(database, migrationSources[kind], expected)
 const base = `CREATE TABLE public."user" (id serial PRIMARY KEY, blocked_tag_ids integer[] NOT NULL DEFAULT '{}', enable_email_notice boolean NOT NULL DEFAULT true);`
 let succeeded = false
 try {
@@ -131,16 +115,48 @@ try {
   admin = new pg.Client({ connectionString: connection('postgres') })
   await admin.connect()
   for (const kind of ['preflight', 'sync', 'postflight']) {
-    run('docker', [
-      'cp',
+    migrationSources[kind] = await readFile(
       path.resolve('migration', filename(kind)),
-      `${containerId}:/tmp/${filename(kind)}`
-    ])
+      'utf8'
+    )
     await copyFile(
       path.resolve('migration', filename(kind)),
       path.join(runDirectory, filename(kind))
     )
   }
+  redisContainerId = run('docker', [
+    'run',
+    '--detach',
+    '--rm',
+    '--pull=never',
+    '--name',
+    `otoame-preferences-redis-${nonce}`,
+    '--label',
+    `com.otoame.preferences.acceptance=${nonce}`,
+    '--publish',
+    '127.0.0.1::6379',
+    'redis:7',
+    'redis-server',
+    '--save',
+    '',
+    '--appendonly',
+    'no'
+  ])
+  const redisPort = run('docker', [
+    'inspect',
+    '--format',
+    '{{(index (index .NetworkSettings.Ports "6379/tcp") 0).HostPort}}',
+    redisContainerId
+  ])
+  assert(/^\d+$/.test(redisPort) && redisPort !== '6379')
+  run('docker', [
+    'exec',
+    redisContainerId,
+    'redis-cli',
+    'SET',
+    'acceptance_identity',
+    nonce
+  ])
   for (const scenario of [
     'empty',
     'existing',
@@ -229,6 +245,9 @@ try {
   const environment = {
     ...process.env,
     KUN_DATABASE_URL: connection(serviceDatabase),
+    REDIS_HOST: '127.0.0.1',
+    REDIS_PORT: redisPort,
+    REDIS_PASSWORD: '',
     KUN_ACCOUNT_PREFERENCES_TEST_DATABASE_URL: connection(serviceDatabase),
     KUN_ACCOUNT_PREFERENCES_TEST_NONCE: nonce
   }
@@ -247,6 +266,18 @@ try {
   process.exitCode = 1
 } finally {
   await admin?.end()
+  if (redisContainerId) {
+    assert.equal(
+      run('docker', [
+        'inspect',
+        '--format',
+        '{{index .Config.Labels "com.otoame.preferences.acceptance"}}',
+        redisContainerId
+      ]),
+      nonce
+    )
+    run('docker', ['stop', '--time', '10', redisContainerId])
+  }
   if (containerId) {
     const marker = run('docker', [
       'inspect',

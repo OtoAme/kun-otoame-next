@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { delKv, getKv } from '~/lib/redis'
+import { compareAndConsumeKv } from '~/lib/redis'
 import { prisma } from '~/prisma/index'
 import { setControlledEmailNotice } from '~/lib/accountPreferences/service'
 import { NextRequest, NextResponse } from 'next/server'
@@ -11,8 +11,11 @@ const CACHE_KEY = 'auth:mail:notice'
 const disableEmailNotice = async (
   input: z.infer<typeof disableEmailNoticeSchema>
 ) => {
-  const cacheEmailUUID = await getKv(`${CACHE_KEY}:${input.email}`)
-  if (cacheEmailUUID !== input.validateEmailCode) {
+  const consumed = await compareAndConsumeKv(
+    `${CACHE_KEY}:${input.email}`,
+    input.validateEmailCode
+  )
+  if (!consumed) {
     return '非法的邮箱验证码, 请您登陆后在用户设置页面取消邮件订阅'
   }
 
@@ -23,10 +26,13 @@ const disableEmailNotice = async (
     return '未找到用户'
   }
 
-  await prisma.$transaction((transaction) =>
-    setControlledEmailNotice(transaction, user.id, false)
-  )
-  await delKv(`${CACHE_KEY}:${input.email}`)
+  try {
+    await prisma.$transaction((transaction) =>
+      setControlledEmailNotice(transaction, user.id, false)
+    )
+  } catch {
+    return '退订保存失败，此链接已使用；请登录后在用户设置中重新操作'
+  }
   return {}
 }
 

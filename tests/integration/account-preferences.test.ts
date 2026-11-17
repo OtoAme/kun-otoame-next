@@ -20,6 +20,7 @@ describe.skipIf(!databaseUrl)(
   () => {
     let database: PrismaClient
     let pool: Pool
+    let redisLibrary: typeof import('~/lib/redis')
     let sequence = 0
     const account = () =>
       database.user.create({
@@ -57,8 +58,17 @@ describe.skipIf(!databaseUrl)(
       )
       expect(identity.rows).toEqual([{ name: target.pathname.slice(1), nonce }])
       database = new PrismaClient({ adapter: new PrismaPg(pool) })
+      if (
+        process.env.REDIS_HOST !== '127.0.0.1' ||
+        !process.env.REDIS_PORT ||
+        process.env.REDIS_PORT === '6379'
+      )
+        throw new Error('Disposable Redis required')
+      redisLibrary = await import('~/lib/redis')
+      expect(await redisLibrary.redis.get('acceptance_identity')).toBe(nonce)
     })
     afterAll(async () => {
+      redisLibrary?.redis.disconnect()
       await database?.$disconnect()
       await pool?.end()
     })
@@ -299,6 +309,48 @@ describe.skipIf(!databaseUrl)(
           where: { user_id: owner.id }
         })
       ).toBe(0)
+    })
+
+    it('grants only one atomic unsubscribe execution and rejects late consumed requests after explicit enable', async () => {
+      const user = await account()
+      const key = `acceptance:unsubscribe:${nonce}`
+      const token = `synthetic-${nonce}`
+      await redisLibrary.setKv(key, token, 60)
+      const grants = await Promise.all(
+        Array.from({ length: 8 }, () =>
+          redisLibrary.compareAndConsumeKv(key, token)
+        )
+      )
+      expect(grants.filter(Boolean)).toHaveLength(1)
+      await database.$transaction((transaction) =>
+        setControlledEmailNotice(transaction, user.id, false)
+      )
+      await saveAccountPreferences(database, user.id, context, [
+        { key: 'email-notice', value: true, version: 0 }
+      ])
+      expect(await redisLibrary.compareAndConsumeKv(key, token)).toBe(false)
+      expect(
+        (await readPreferenceSnapshot(database, user.id, context)).items[
+          'email-notice'
+        ].value
+      ).toBe(true)
+      await redisLibrary.setKv(key, token, 60)
+      expect(await redisLibrary.compareAndConsumeKv(key, 'incorrect')).toBe(
+        false
+      )
+      expect(await redisLibrary.compareAndConsumeKv(key, token)).toBe(true)
+      await expect(
+        database.$transaction(async (transaction) => {
+          await setControlledEmailNotice(transaction, user.id, false)
+          throw new Error('synthetic storage rollback')
+        })
+      ).rejects.toThrow('synthetic storage rollback')
+      expect(await redisLibrary.compareAndConsumeKv(key, token)).toBe(false)
+      expect(
+        (await readPreferenceSnapshot(database, user.id, context)).items[
+          'email-notice'
+        ].value
+      ).toBe(true)
     })
 
     it('uses the same version service for controlled email unsubscribe', async () => {
