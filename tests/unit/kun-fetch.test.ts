@@ -139,6 +139,8 @@ describe('kunFetchGet', () => {
       preserveErrorStatus: true
     }).catch((error) => error)
     expect(result).toBeInstanceOf(KunFetchError)
+    if (!(result instanceof KunFetchError))
+      throw new Error('Expected request error')
     expect(result).toMatchObject({
       status: 409,
       code: 'PREFERENCE_CONFLICT',
