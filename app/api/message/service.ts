@@ -1,3 +1,4 @@
+import { readAccountPreferenceVersion } from '~/lib/accountPreferences/version'
 import { z } from 'zod'
 import { prisma } from '~/prisma/index'
 import { createMessage } from '~/app/api/utils/message'
@@ -5,7 +6,7 @@ import { createMessageSchema, getMessageSchema } from '~/validations/message'
 import type { Message } from '~/types/api/message'
 
 export const getUnreadStatus = async (uid: number) => {
-  const [unreadMessage, unreadChat] = await Promise.all([
+  const [unreadMessage, unreadChat, preferenceVersion] = await Promise.all([
     prisma.user_message.findFirst({
       where: { recipient_id: uid, status: 0 },
       select: { id: true }
@@ -26,12 +27,14 @@ export const getUnreadStatus = async (uid: number) => {
         ]
       },
       select: { id: true }
-    })
+    }),
+    readAccountPreferenceVersion(uid)
   ])
 
   return {
     hasUnreadMessages: !!unreadMessage,
-    hasUnreadChat: !!unreadChat
+    hasUnreadChat: !!unreadChat,
+    preferenceVersion
   }
 }
 

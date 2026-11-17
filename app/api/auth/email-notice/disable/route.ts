@@ -19,14 +19,13 @@ const disableEmailNotice = async (
     return '非法的邮箱验证码, 请您登陆后在用户设置页面取消邮件订阅'
   }
 
-  const user = await prisma.user.findUnique({
-    where: { email: input.email }
-  })
-  if (!user) {
-    return '未找到用户'
-  }
-
   try {
+    const user = await prisma.user.findUnique({
+      where: { email: input.email }
+    })
+    if (!user) {
+      return '未找到用户'
+    }
     await prisma.$transaction((transaction) =>
       setControlledEmailNotice(transaction, user.id, false)
     )

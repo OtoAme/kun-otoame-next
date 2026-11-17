@@ -1,3 +1,4 @@
+import { observePreferenceVersion } from '~/utils/preferenceClient'
 import toast from 'react-hot-toast'
 import { useUserStore } from '~/store/userStore'
 import { useSettingStore } from '~/store/settingStore'
@@ -22,6 +23,7 @@ const acceptSessionSummary = (session: UserSession, readVersion: number) => {
     )
   ) {
     useMessageStore.getState().setUnreadMessageStatus(session.unread!)
+    observePreferenceVersion(session.unread?.preferenceVersion)
   }
 }
 

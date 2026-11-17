@@ -21,4 +21,5 @@ export interface CreateMessageType {
 export interface MessageUnreadStatus {
   hasUnreadNotification: boolean
   hasUnreadConversation: boolean
+  preferenceVersion?: number | null
 }

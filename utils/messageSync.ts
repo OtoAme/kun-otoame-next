@@ -11,6 +11,7 @@ export interface MessageSyncIdentity {
 export interface UnreadSummary {
   hasUnreadMessages: boolean
   hasUnreadChat: boolean
+  preferenceVersion?: number | null
 }
 
 export const isUnreadSummary = (value: unknown): value is UnreadSummary =>
@@ -280,7 +281,15 @@ export const seedSessionUnread = (
     identity,
     unread: {
       hasUnreadMessages: unread.hasUnreadNotification,
-      hasUnreadChat: unread.hasUnreadConversation
+      hasUnreadChat: unread.hasUnreadConversation,
+      ...('preferenceVersion' in unread
+        ? {
+            preferenceVersion:
+              typeof unread.preferenceVersion === 'number'
+                ? unread.preferenceVersion
+                : null
+          }
+        : {})
     },
     succeededAt: Date.now(),
     readVersion,

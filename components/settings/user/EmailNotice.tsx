@@ -1,28 +1,17 @@
 'use client'
 
 import { Card, CardBody, CardFooter, CardHeader } from '@heroui/card'
-import { useUserStore } from '~/store/userStore'
-import { kunFetchPost } from '~/utils/kunFetch'
-import toast from 'react-hot-toast'
+import { useAccountPreferences } from '~/hooks/useAccountPreferences'
+import { editPreference } from '~/utils/preferenceClient'
+import { PreferenceActions } from './PreferenceActions'
 import { Switch } from '@heroui/react'
 
 export const EmailNotice = () => {
-  const { user, setUser } = useUserStore((state) => state)
-
-  const handleToggleEmailNotice = async (value: boolean) => {
-    if (!user.uid) {
-      toast.error('请先登录以使用此功能')
-      return
-    }
-
-    const res = await kunFetchPost<KunResponse<{}>>(
-      `/user/setting/email-notice`
-    )
-    if (typeof res !== 'string') {
-      setUser({ ...user, enableEmailNotice: value })
-      toast.success(value ? '开启邮件通知成功' : '关闭邮件通知成功')
-    }
-  }
+  const state = useAccountPreferences()
+  const selected = Boolean(
+    state.drafts['email-notice']?.value ??
+      state.snapshot?.items['email-notice'].value
+  )
 
   return (
     <Card className="w-full text-sm">
@@ -38,10 +27,12 @@ export const EmailNotice = () => {
           <Switch
             size="lg"
             color="primary"
-            isSelected={user.enableEmailNotice}
-            onValueChange={handleToggleEmailNotice}
+            isSelected={selected}
+            isDisabled={!state.canEdit}
+            onValueChange={(value) => editPreference('email-notice', value)}
           />
         </div>
+        <PreferenceActions />
       </CardBody>
 
       <CardFooter className="flex-wrap">

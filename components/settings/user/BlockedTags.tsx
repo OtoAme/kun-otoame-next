@@ -1,295 +1,154 @@
 'use client'
-
-import { useEffect, useRef, useState } from 'react'
-import { createPortal } from 'react-dom'
-import { useDebounce } from 'use-debounce'
+import { useEffect, useState } from 'react'
 import { Card, CardBody, CardHeader } from '@heroui/card'
 import { Chip } from '@heroui/chip'
 import { Input } from '@heroui/input'
-import { Listbox, ListboxItem } from '@heroui/listbox'
-import { Search } from 'lucide-react'
-import toast from 'react-hot-toast'
-import { kunFetchDelete, kunFetchGet, kunFetchPost } from '~/utils/kunFetch'
+import { Button } from '@heroui/button'
+import { useDebounce } from 'use-debounce'
+import { useAccountPreferences } from '~/hooks/useAccountPreferences'
 import { useUserStore } from '~/store/userStore'
+import { editPreference, refreshPreferences } from '~/utils/preferenceClient'
+import { kunFetchGet, kunFetchPost } from '~/utils/kunFetch'
+import { PreferenceActions } from './PreferenceActions'
 import type { Tag } from '~/types/api/tag'
 
-interface UpdateBlockedTagResponse {
-  blockedTagIds: number[]
-}
-
-interface DropdownRect {
-  top: number
-  left: number
-  width: number
-}
-
 export const BlockedTags = () => {
-  const { user, setUser } = useUserStore((state) => state)
-  const [blockedTags, setBlockedTags] = useState<Tag[]>([])
-  const [loading, setLoading] = useState(false)
-  const [updatingId, setUpdatingId] = useState(0)
-
-  const [searchQuery, setSearchQuery] = useState('')
-  const [debouncedQuery] = useDebounce(searchQuery, 300)
-  const [searchResults, setSearchResults] = useState<Tag[]>([])
-  const [searching, setSearching] = useState(false)
-  const [dropdownOpen, setDropdownOpen] = useState(false)
-  const [dropdownRect, setDropdownRect] = useState<DropdownRect | null>(null)
-
-  const inputWrapperRef = useRef<HTMLDivElement>(null)
-
-  const syncBlockedTags = async () => {
-    if (!user.uid) {
+  const state = useAccountPreferences()
+  const [query, setQuery] = useState('')
+  const [debounced] = useDebounce(query, 300)
+  const [tags, setTags] = useState<Record<number, Tag>>({})
+  const [results, setResults] = useState<Tag[]>([])
+  const [error, setError] = useState<string | null>(null)
+  const uid = state.snapshot?.uid
+  const context = state.snapshot?.context
+  const version = state.snapshot?.version
+  useEffect(() => {
+    setResults([])
+    setQuery('')
+    setTags({})
+  }, [uid, context])
+  useEffect(() => {
+    if (!uid || !context) return
+    let ignore = false
+    kunFetchGet<KunResponse<Tag[]>>('/user/setting/blocked-tag')
+      .then((response) => {
+        if (ignore) return
+        if (typeof response === 'string') setError(response)
+        else
+          setTags((current) => ({
+            ...current,
+            ...Object.fromEntries(response.map((tag) => [tag.id, tag]))
+          }))
+      })
+      .catch(() => {
+        if (!ignore) setError('标签读取失败，请重试')
+      })
+    return () => {
+      ignore = true
+    }
+  }, [uid, context, version])
+  useEffect(() => {
+    if (!uid || !debounced.trim()) {
+      setResults([])
       return
     }
-    setLoading(true)
-    try {
-      const response = await kunFetchGet<KunResponse<Tag[]>>(
-        '/user/setting/blocked-tag'
-      )
-      if (typeof response === 'string') {
-        toast.error(response)
-      } else {
-        setBlockedTags(response)
-      }
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  useEffect(() => {
-    syncBlockedTags()
-  }, [user.uid])
-
-  const updateDropdownRect = () => {
-    if (!inputWrapperRef.current) return
-    const rect = inputWrapperRef.current.getBoundingClientRect()
-    setDropdownRect({
-      top: rect.bottom + window.scrollY,
-      left: rect.left + window.scrollX,
-      width: rect.width
+    let ignore = false
+    kunFetchPost<KunResponse<Tag[]>>('/tag/search', {
+      query: debounced.trim().split(/\s+/).slice(0, 10)
     })
-  }
-
-  useEffect(() => {
-    if (!debouncedQuery.trim()) {
-      setSearchResults([])
-      setDropdownOpen(false)
-      return
-    }
-    const query = debouncedQuery
-      .trim()
-      .split(/\s+/)
-      .filter(Boolean)
-      .slice(0, 10)
-    setSearching(true)
-    updateDropdownRect()
-    setDropdownOpen(true)
-    kunFetchPost<KunResponse<Tag[]>>('/tag/search', { query })
-      .then((res) => {
-        if (typeof res === 'string') {
-          toast.error(res)
-        } else {
-          setSearchResults(res)
+      .then((response) => {
+        if (ignore) return
+        if (typeof response === 'string') setError(response)
+        else {
+          setResults(response)
+          setTags((current) => ({
+            ...current,
+            ...Object.fromEntries(response.map((tag) => [tag.id, tag]))
+          }))
         }
       })
-      .finally(() => setSearching(false))
-  }, [debouncedQuery])
-
-  useEffect(() => {
-    if (!dropdownOpen) return
-
-    const handleScroll = () => updateDropdownRect()
-    const handleResize = () => updateDropdownRect()
-    window.addEventListener('scroll', handleScroll, true)
-    window.addEventListener('resize', handleResize)
+      .catch(() => {
+        if (!ignore) setError('标签搜索失败，请重试')
+      })
     return () => {
-      window.removeEventListener('scroll', handleScroll, true)
-      window.removeEventListener('resize', handleResize)
+      ignore = true
     }
-  }, [dropdownOpen])
-
-  useEffect(() => {
-    if (!dropdownOpen) return
-    const handleClickOutside = (e: MouseEvent) => {
-      if (
-        inputWrapperRef.current &&
-        !inputWrapperRef.current.contains(e.target as Node)
-      ) {
-        setDropdownOpen(false)
-      }
+  }, [uid, context, debounced])
+  const blocked = new Set(state.snapshot?.blockedTagIds ?? [])
+  for (const draft of Object.values(state.drafts))
+    if (draft.key.startsWith('blocked-tag:')) {
+      if (draft.value) blocked.add(Number(draft.key.slice(12)))
+      else blocked.delete(Number(draft.key.slice(12)))
     }
-    document.addEventListener('mousedown', handleClickOutside)
-    return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [dropdownOpen])
-
-  const handleBlockTag = async (tag: Tag) => {
-    if (!user.uid || updatingId) return
-
-    setUpdatingId(tag.id)
-    try {
-      const response = await kunFetchPost<
-        KunResponse<UpdateBlockedTagResponse>
-      >('/user/setting/blocked-tag', { tagId: tag.id })
-      if (typeof response === 'string') {
-        toast.error(response)
-        return
-      }
-
-      setUser({ ...user, blockedTagIds: response.blockedTagIds })
-      setBlockedTags((prev) => [...prev, tag])
-      setSearchQuery('')
-      setSearchResults([])
-      setDropdownOpen(false)
-      toast.success(`已屏蔽标签「${tag.name}」`)
-    } finally {
-      setUpdatingId(0)
+  const choose = async (tagId: number, enabled: boolean) => {
+    const session = useUserStore.getState()
+    const expected = {
+      context: session.sessionContext,
+      generation: session.sessionGeneration
     }
+    await refreshPreferences([tagId])
+    const current = useUserStore.getState()
+    if (
+      current.sessionContext !== expected.context ||
+      current.sessionGeneration !== expected.generation
+    )
+      return
+    editPreference(`blocked-tag:${tagId}`, enabled)
   }
-
-  const handleUnblockTag = async (tag: Tag) => {
-    if (!user.uid || updatingId) return
-
-    setUpdatingId(tag.id)
-    try {
-      const response = await kunFetchDelete<
-        KunResponse<UpdateBlockedTagResponse>
-      >('/user/setting/blocked-tag', { tagId: tag.id })
-      if (typeof response === 'string') {
-        toast.error(response)
-        return
-      }
-
-      setUser({ ...user, blockedTagIds: response.blockedTagIds })
-      setBlockedTags((prev) => prev.filter((item) => item.id !== tag.id))
-      toast.success(`已取消屏蔽标签「${tag.name}」`)
-    } finally {
-      setUpdatingId(0)
-    }
-  }
-
-  const filteredResults = searchResults.filter(
-    (tag) => !user.blockedTagIds.includes(tag.id)
-  )
-
-  const dropdown =
-    dropdownOpen && dropdownRect
-      ? createPortal(
-          <div
-            style={{
-              position: 'absolute',
-              top: dropdownRect.top + 4,
-              left: dropdownRect.left,
-              width: dropdownRect.width,
-              zIndex: 9999
-            }}
-            className="rounded-medium border border-default-200 bg-content1 shadow-medium dark:border-default-100"
-          >
-            {searching ? (
-              <p className="px-3 py-2 text-xs text-default-400">正在搜索...</p>
-            ) : filteredResults.length ? (
-              <Listbox
-                aria-label="标签搜索结果"
-                classNames={{
-                  list: 'max-h-60 overflow-y-auto scrollbar-hide'
-                }}
-                onAction={(key) => {
-                  const tag = filteredResults.find((t) => String(t.id) === key)
-                  if (tag) handleBlockTag(tag)
-                }}
-              >
-                {filteredResults.map((tag) => (
-                  <ListboxItem
-                    key={String(tag.id)}
-                    textValue={tag.name}
-                    isDisabled={!!updatingId}
-                    endContent={
-                      <span className="text-xs text-default-400">
-                        {tag.count} 个游戏
-                      </span>
-                    }
-                  >
-                    {tag.name}
-                  </ListboxItem>
-                ))}
-              </Listbox>
-            ) : (
-              <p className="px-3 py-2 text-xs text-default-400">
-                未找到可添加的相关标签
-              </p>
-            )}
-          </div>,
-          document.body
-        )
-      : null
-
   return (
     <Card className="w-full text-sm">
       <CardHeader>
         <h2 className="text-xl font-medium">标签屏蔽</h2>
       </CardHeader>
-
-      <CardBody className="space-y-4 py-0 pb-4">
-        <p>屏蔽某个标签后，带有该标签的游戏将不会出现在公开列表中。</p>
-
-        <div className="space-y-2">
-          <p className="text-default-500">已屏蔽标签</p>
-          <div ref={inputWrapperRef}>
+      <CardBody className="space-y-4">
+        <p>屏蔽标签后，带有该标签的游戏将从公开浏览结果中隐藏。</p>
+        {!state.snapshot ? (
+          <p role="status">正在确认账号偏好…</p>
+        ) : (
+          <>
             <Input
-              value={searchQuery}
-              onValueChange={(v) => {
-                setSearchQuery(v)
-                if (v.trim()) {
-                  updateDropdownRect()
-                  setDropdownOpen(true)
-                } else {
-                  setDropdownOpen(false)
-                }
-              }}
-              onFocus={() => {
-                if (searchQuery.trim() && filteredResults.length) {
-                  updateDropdownRect()
-                  setDropdownOpen(true)
-                }
-              }}
+              aria-label="搜索屏蔽标签"
               placeholder="搜索标签名称"
-              startContent={<Search className="size-4 text-default-400" />}
-              isClearable
-              onClear={() => {
-                setSearchQuery('')
-                setSearchResults([])
-                setDropdownOpen(false)
-              }}
+              value={query}
+              onValueChange={setQuery}
+              isDisabled={!state.canEdit}
             />
-          </div>
-          {dropdown}
-        </div>
-
-        <div className="space-y-2">
-          {loading ? (
-            <p className="text-default-500">正在加载已屏蔽标签...</p>
-          ) : blockedTags.length ? (
             <div className="flex flex-wrap gap-2">
-              {blockedTags.map((tag) => (
+              {results
+                .filter((tag) => !blocked.has(tag.id))
+                .map((tag) => (
+                  <Button
+                    key={tag.id}
+                    size="sm"
+                    isDisabled={!state.canEdit}
+                    onPress={() => {
+                      void choose(tag.id, true)
+                    }}
+                  >
+                    {tag.name}
+                  </Button>
+                ))}
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {[...blocked].map((id) => (
                 <Chip
-                  key={tag.id}
+                  key={id}
                   color="danger"
                   variant="flat"
-                  isDisabled={!!updatingId}
-                  onClose={() => handleUnblockTag(tag)}
+                  isDisabled={!state.canEdit}
+                  onClose={() => {
+                    void choose(id, false)
+                  }}
                 >
-                  {tag.name}
+                  {tags[id]?.name ?? `标签 ${id}`}
                 </Chip>
               ))}
             </div>
-          ) : (
-            <p className="text-default-500">您暂时没有屏蔽任何标签</p>
-          )}
-        </div>
-
-        <p className="text-default-400">
-          点按搜索结果中的标签可将其加入屏蔽名单，点按已屏蔽标签可取消屏蔽。
-        </p>
+            {!blocked.size && <p>您暂时没有屏蔽任何标签</p>}
+          </>
+        )}
+        {error && <p role="status">{error}</p>}
+        <PreferenceActions />
       </CardBody>
     </Card>
   )

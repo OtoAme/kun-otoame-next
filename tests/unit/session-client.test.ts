@@ -52,6 +52,15 @@ const setup = async () => {
 }
 
 describe('session client identity and cleanup', () => {
+  it('does not let unrelated user updates overwrite applied browsing preferences', async () => {
+    const state = await setup()
+    state.useSettingStore
+      .getState()
+      .setData({ kunNsfwEnable: 'sfw', kunBlockedTagIds: [19] })
+    state.useUserStore.getState().setUser({ ...state.user, bio: 'updated' })
+    expect(state.useSettingStore.getState().data.kunBlockedTagIds).toEqual([19])
+  })
+
   it('reuses an in-flight refresh and retains old summary when unread is null', async () => {
     const state = await setup()
     let resolve!: (response: Response) => void
@@ -285,7 +294,9 @@ describe('session client identity and cleanup', () => {
 
   it('clears cookies at their root path and keeps guest defaults absent after later writes', async () => {
     const state = await setup()
-    expect(document.cookie).toContain('kunNsfwEnable=all')
+    expect(document.cookie).not.toContain('kun-patch-setting-store')
+    document.cookie =
+      'kun-patch-setting-store|state|data|kunNsfwEnable=all; Path=/'
     state.useUserStore.getState().logout()
     expect(document.cookie).not.toContain('kun-patch-setting-store')
     state.useUserStore

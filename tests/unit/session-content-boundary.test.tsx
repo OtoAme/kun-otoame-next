@@ -32,12 +32,27 @@ afterEach(async () => {
 describe('personalized content lifecycle', () => {
   it('preserves a draft on same-session refresh and infrastructure failure, then resets it after logout', async () => {
     const { useUserStore } = await import('~/store/userStore')
+    const { usePreferenceStore } = await import('~/store/preferenceStore')
     const { SessionContentBoundary } = await import(
       '~/components/kun/SessionContentBoundary'
     )
     useUserStore.setState({
       sessionStatus: 'authenticated',
-      sessionGeneration: 1
+      sessionGeneration: 1,
+      sessionContext: 'test-context',
+      user: { ...useUserStore.getState().user, uid: 7 }
+    })
+    usePreferenceStore.setState({
+      generation: 1,
+      status: 'ready',
+      applied: {
+        uid: 7,
+        context: 'test-context',
+        version: 0,
+        nsfwSelected: false,
+        blockedTagIds: [],
+        items: { nsfw: { value: 'sfw', version: 0 } }
+      }
     })
     await act(async () =>
       root.render(

@@ -4,6 +4,10 @@ import { JSDOM } from 'jsdom'
 import { createRoot, type Root } from 'react-dom/client'
 import toast from 'react-hot-toast'
 
+vi.mock('~/components/kun/PreferenceSync', () => ({
+  PreferenceSync: () => null
+}))
+
 globalThis.React = React
 
 const routerMock = vi.hoisted(() => ({

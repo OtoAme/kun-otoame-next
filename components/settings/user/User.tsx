@@ -4,6 +4,7 @@ import { Username } from './Username'
 import { Bio } from './Bio'
 import { Email } from './Email'
 import { Password } from './Password'
+import { BrowsingPreference } from './BrowsingPreference'
 import { EmailNotice } from './EmailNotice'
 import { AllowPrivateMessage } from './AllowPrivateMessage'
 import { TwoFactorAuth } from './TwoFactorAuth'
@@ -21,6 +22,7 @@ export const UserSettings = () => {
         <Bio />
         <Email />
         <Password />
+        <BrowsingPreference />
         <EmailNotice />
         <AllowPrivateMessage />
         <BlockedTags />

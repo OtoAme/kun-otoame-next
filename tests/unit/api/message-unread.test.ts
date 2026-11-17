@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const prismaMock = vi.hoisted(() => ({
+  user: { findUnique: vi.fn() },
   user_message: {
     count: vi.fn(),
     create: vi.fn(),
@@ -52,6 +53,7 @@ vi.mock('~/lib/redis', () => {
 describe('message unread status', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    prismaMock.user.findUnique.mockResolvedValue({ preference_version: 3 })
     verifyHeaderCookieMock.mockResolvedValue({ uid: 1007 })
     rateLimitMock.checkConversationActionRateLimit.mockResolvedValue({
       allowed: true
@@ -66,6 +68,7 @@ describe('message unread status', () => {
     const result = await getUnreadStatus(1007)
 
     expect(result).toEqual({
+      preferenceVersion: 3,
       hasUnreadMessages: true,
       hasUnreadChat: false
     })
@@ -102,6 +105,7 @@ describe('message unread status', () => {
     const result = await getUnreadMessageStatus(1007)
 
     expect(result).toEqual({
+      preferenceVersion: 3,
       hasUnreadNotification: false,
       hasUnreadConversation: true
     })
@@ -252,6 +256,7 @@ describe('message unread status', () => {
 
     expect(response.headers.get('cache-control')).toBe('private, no-store')
     expect(await response.json()).toEqual({
+      preferenceVersion: 3,
       hasUnreadMessages: false,
       hasUnreadChat: false
     })
@@ -438,6 +443,7 @@ describe('message unread status', () => {
 
     expect(response.headers.get('cache-control')).toBe('private, no-store')
     expect(await response.json()).toEqual({
+      preferenceVersion: 3,
       hasUnreadNotification: false,
       hasUnreadConversation: true
     })
@@ -527,6 +533,7 @@ describe('message unread status', () => {
 
     expect(response.headers.get('cache-control')).toBe('private, no-store')
     expect(await response.json()).toEqual({
+      preferenceVersion: 3,
       hasUnreadNotification: true,
       hasUnreadConversation: false
     })
@@ -542,10 +549,9 @@ describe('message unread status', () => {
     )
 
     const response = await PUT(
-      new Request(
-        'https://www.otoame.top/api/message/conversation/5abc/read',
-        { method: 'PUT' }
-      ) as never,
+      new Request('https://www.otoame.top/api/message/conversation/5abc/read', {
+        method: 'PUT'
+      }) as never,
       { params: Promise.resolve({ id: '5abc' }) }
     )
 

@@ -1,10 +1,11 @@
 import { z } from 'zod'
+import type { Prisma } from '@prisma/client'
 import { prisma } from '~/prisma/index'
 import { getUserInfoSchema } from '~/validations/user'
 
 export const getUserFavorite = async (
   input: z.infer<typeof getUserInfoSchema>,
-  nsfwEnable: Record<string, string | undefined>
+  nsfwEnable: Prisma.patchWhereInput
 ) => {
   const { uid, page, limit } = input
   const offset = (page - 1) * limit
