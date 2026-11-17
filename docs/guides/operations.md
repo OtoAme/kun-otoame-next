@@ -93,12 +93,27 @@ pnpm prisma:deploy-safe
 
 内容显示、逐项版本和账号整体版本依赖[账号偏好预检](../../migration/production-account-preferences-preflight-2026-11-17.sql)、[同步](../../migration/production-account-preferences-sync-2026-11-17.sql)和[复检](../../migration/production-account-preferences-postflight-2026-11-17.sql)。必须在发布读取这些结构的应用前完成。同步保留存量屏蔽标签和邮件选择，内容显示保持尚未明确选择；不回填旧浏览器 Cookie，不安装通知订阅结构，也不提前启用订阅开关。
 
-在当前 shell 关闭命令跟踪并加载服务器既有的受限环境脚本。脚本应提供支持文件及参数透传的 `psql_run`，由其加载连接信息；不要展示或展开连接变量。以下路径全部使用操作者核对的值：
+开始前，必须已预先安装并核验独立交付的部署恢复工具：所有会启动恢复产物的入口均检查兼容性，维护状态跨进程和版本保持，且已完成账号偏好实际写入后的恢复组合演练。未满足这些前提时停止，不执行迁移或开放新业务写入。
+
+在当前 shell 关闭命令跟踪并加载服务器既有的受限环境脚本。脚本应提供支持文件及参数透传的 `psql_run`，由其加载连接信息；不要展示或展开连接变量。先确认源码工作区干净，再通过正常快进到达审核标签的精确提交。以下路径和标签全部使用操作者核对的值：
 
 ```bash
 set +x
 source '<服务器受限环境脚本>'
-git pull
+git status --porcelain
+```
+
+状态输出必须为空，否则停止。然后在同一 shell 获取审核标签并快进：
+
+```bash
+git fetch origin tag '<已审核发布标签>'
+git merge --ff-only 'refs/tags/<已审核发布标签>'
+git rev-parse HEAD 'refs/tags/<已审核发布标签>^{commit}'
+```
+
+两个提交标识必须一致；不能快进、分支已包含其他未审核内容或提交不一致时停止，准备正确的发布来源。核对本次迁移文件来自该精确提交，发布产物清单的标签与提交也对应同一审核版本，再在同一 shell 执行只读预检：
+
+```bash
 psql_run migration/production-account-preferences-preflight-2026-11-17.sql
 ```
 
@@ -107,8 +122,10 @@ psql_run migration/production-account-preferences-preflight-2026-11-17.sql
 ```bash
 psql_run migration/production-account-preferences-sync-2026-11-17.sql
 psql_run migration/production-account-preferences-postflight-2026-11-17.sql
-pnpm deploy:pull
+KUN_DEPLOY_RELEASE_TAG='<已审核发布标签>' pnpm deploy:pull:pinned
 ```
+
+发布使用预检前核对的同一审核标签，保留工具内置检查；迁移后不再拉取变化中的分支或选择最新产物，固定入口的前提见[固定版本发布说明](deployment.md#使用-github-发布产物)。
 
 同步在一个事务内执行，锁等待最多 5 秒、语句最多 120 秒；全部约束复检通过后才提交。同步正常提交事务后，复检应返回 `account-preferences postflight OK` 且退出码为零才继续发布；用户数、已明确选择内容显示的账号数和项版本记录数描述目标数据，不应与测试样本数量比较。表、列、主外键、默认值及检查约束均须符合预期，非法数据会使检查失败。脚本均可单文件通过标准输入执行，不依赖同目录包含文件。首次、已有结构或重复执行都不重置已有值和版本；中断或锁超时整体回滚，排除阻塞并确认停写后，从预检重新执行，不能用重跑开发环境 setup 代替迁移。
 
