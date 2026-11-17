@@ -332,6 +332,52 @@ describe('ResourceDownloadCard access flow', () => {
     vi.mocked(toast.error).mockClear()
   })
 
+  it.each([3, 4])(
+    'hides backup dates and missing placeholders for publisher role %s',
+    async (role) => {
+      const { container } = await renderCard({
+        resource: { ...resource, user: { ...resource.user, role } },
+        link: {
+          ...previewLink,
+          storage: 'touchgal',
+          backedUpAt: '2026-05-29T02:07:00.000Z'
+        }
+      })
+      expect(container.textContent).not.toContain('备份于')
+      expect(container.querySelector('time')).toBeNull()
+      await act(async () => root!.unmount())
+      dom!.window.close()
+      const missing = await renderCard({
+        resource: { ...resource, user: { ...resource.user, role } },
+        link: { ...previewLink, storage: 'touchgal', backedUpAt: null },
+        preview: true
+      })
+      expect(missing.container.textContent).not.toContain('备份时间未记录')
+    }
+  )
+
+  it.each([1, 2])(
+    'keeps community backup dates after handover in admin preview for publisher role %s',
+    async (role) => {
+      const { container } = await renderCard({
+        resource: {
+          ...resource,
+          publisherLeftAt: '2026-11-01T00:00:00.000Z',
+          user: { ...resource.user, role }
+        },
+        link: {
+          ...previewLink,
+          storage: 'touchgal',
+          backedUpAt: '2026-05-29T02:07:00.000Z'
+        },
+        preview: true
+      })
+      expect(container.textContent).toContain(
+        '备份于 2026-05-29 10:07 UTC+08:00'
+      )
+    }
+  )
+
   it('shows the original per-link backup time rather than the resource or another link time', async () => {
     const { container } = await renderCard({
       resource: { ...resource, backedUpAt: '2026-11-06T00:00:00.000Z' },
@@ -341,9 +387,7 @@ describe('ResourceDownloadCard access flow', () => {
         backedUpAt: '2026-05-29T02:07:00.000Z'
       }
     })
-    expect(container.textContent).toContain(
-      '备份于 2026-05-29 10:07 UTC+08:00'
-    )
+    expect(container.textContent).toContain('备份于 2026-05-29 10:07 UTC+08:00')
     expect(container.querySelector('time')?.dateTime).toBe(
       '2026-05-29T02:07:00.000Z'
     )
@@ -486,7 +530,11 @@ describe('ResourceDownloadCard access flow', () => {
 
     await act(async () => {
       root!.render(
-        <ResourceDownloadCard resource={resource} link={obtainedLink} linkIndex={1} />
+        <ResourceDownloadCard
+          resource={resource}
+          link={obtainedLink}
+          linkIndex={1}
+        />
       )
     })
 
@@ -751,7 +799,11 @@ describe('ResourceDownloadCard access flow', () => {
     )
     await act(async () => {
       root!.render(
-        <ResourceDownloadCard resource={resource} link={revealedLink} linkIndex={1} />
+        <ResourceDownloadCard
+          resource={resource}
+          link={revealedLink}
+          linkIndex={1}
+        />
       )
     })
 
@@ -806,7 +858,11 @@ describe('ResourceDownloadCard access flow', () => {
     })
     await act(async () => {
       root!.render(
-        <ResourceDownloadCard resource={resource} link={revealedLink} linkIndex={1} />
+        <ResourceDownloadCard
+          resource={resource}
+          link={revealedLink}
+          linkIndex={1}
+        />
       )
     })
 

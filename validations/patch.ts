@@ -436,11 +436,7 @@ export const togglePatchFavoriteSchema = z.object({
     .max(9999999)
 })
 
-export const patchRatingCreateSchema = z.object({
-  patchId: z.coerce
-    .number({ message: 'patch rating ID 格式不正确' })
-    .min(1)
-    .max(9999999),
+export const patchRatingContentSchema = z.object({
   recommend: z
     .string({ message: '推荐程度不正确' })
     .refine((v) => KUN_GALGAME_RATING_RECOMMEND_CONST.includes(v as any), {
@@ -466,11 +462,18 @@ export const patchRatingCreateSchema = z.object({
     })
 })
 
-export const patchRatingUpdateSchema = patchRatingCreateSchema.merge(
-  z.object({
-    ratingId: z.coerce
-      .number({ message: 'patch rating ID 格式不正确' })
-      .min(1)
-      .max(9999999)
-  })
-)
+export const patchRatingCreateSchema = patchRatingContentSchema.extend({
+  patchId: z.coerce
+    .number({ message: '游戏编号必须为数字' })
+    .int({ message: '游戏编号必须为整数' })
+    .min(1, { message: '游戏编号必须为正整数' })
+    .max(9999999, { message: '游戏编号超出有效范围' })
+})
+
+export const patchRatingUpdateSchema = patchRatingContentSchema.extend({
+  ratingId: z.coerce
+    .number({ message: '评价编号必须为数字' })
+    .int({ message: '评价编号必须为整数' })
+    .min(1, { message: '评价编号必须为正整数' })
+    .max(9999999, { message: '评价编号超出有效范围' })
+})
