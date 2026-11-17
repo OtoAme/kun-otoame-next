@@ -1,3 +1,4 @@
+import { prepareAccountPreferenceDeletion } from '~/lib/accountPreferences/service'
 import { z } from 'zod'
 import { prisma } from '~/prisma/index'
 import { deleteResource } from '../resource/delete'
@@ -50,6 +51,7 @@ export const deleteUser = async (
         }
       }
 
+      await prepareAccountPreferenceDeletion(prisma, input.uid)
       await prisma.user.delete({
         where: { id: input.uid }
       })

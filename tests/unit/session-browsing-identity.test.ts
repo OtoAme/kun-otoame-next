@@ -40,6 +40,7 @@ const payload = {
 beforeEach(() => {
   vi.clearAllMocks()
   mocks.verify.mockResolvedValue({ status: 'guest' })
+  mocks.findUser.mockResolvedValue({ nsfw_mode: 'all', blocked_tag_ids: [7] })
   mocks.cookies.mockResolvedValue({
     get: (name: string) => ({
       value: name.includes('Nsfw')
@@ -52,6 +53,18 @@ beforeEach(() => {
 })
 
 describe('verified browsing identity', () => {
+  it('uses account values instead of stale preference cookies', async () => {
+    mocks.verify.mockResolvedValue({ status: 'authenticated', payload })
+    mocks.findUser.mockResolvedValue({
+      nsfw_mode: 'sfw',
+      blocked_tag_ids: [19]
+    })
+    expect(await getPatchVisibilityWhere(request('valid') as never)).toEqual({
+      content_limit: 'sfw',
+      NOT: { tag: { some: { tag_id: { in: [19] } } } }
+    })
+  })
+
   it.each(['', 'expired', 'revoked', 'malformed'])(
     'ignores residual preferences for guest %s',
     async (token) => {
@@ -92,6 +105,7 @@ describe('verified browsing identity', () => {
     'safely defaults invalid mode %s for a valid account',
     async (mode) => {
       mocks.verify.mockResolvedValue({ status: 'authenticated', payload })
+      mocks.findUser.mockResolvedValue({ nsfw_mode: mode, blocked_tag_ids: [] })
       expect(
         await getPatchVisibilityWhere(request('valid', mode) as never)
       ).toHaveProperty('content_limit', 'sfw')

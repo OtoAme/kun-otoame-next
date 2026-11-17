@@ -13,6 +13,9 @@ model user {
   moemoepoint_reserved Int @default(0)
   bio           String   @default("") @db.VarChar(107)
 
+  nsfw_mode              String? @db.VarChar(4)
+  preference_version     Int @default(0)
+  preference_versions    account_preference_version[]
   enable_email_notice    Boolean @default(true)
   allow_private_message  Boolean @default(true)
   blocked_tag_ids        Int[]   @default([])
@@ -164,4 +167,13 @@ model user_daily_active {
   user    user     @relation("user_daily_active", fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@id([day, user_id])
+}
+
+model account_preference_version {
+  user_id Int
+  setting_key String @db.VarChar(100)
+  version Int @default(1)
+  user user @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([user_id, setting_key])
 }

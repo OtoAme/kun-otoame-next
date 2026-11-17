@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { delKv, getKv } from '~/lib/redis'
 import { prisma } from '~/prisma/index'
+import { setControlledEmailNotice } from '~/lib/accountPreferences/service'
 import { NextRequest, NextResponse } from 'next/server'
 import { kunParsePostBody } from '~/app/api/utils/parseQuery'
 import { disableEmailNoticeSchema } from '~/validations/auth'
@@ -14,7 +15,6 @@ const disableEmailNotice = async (
   if (cacheEmailUUID !== input.validateEmailCode) {
     return '非法的邮箱验证码, 请您登陆后在用户设置页面取消邮件订阅'
   }
-  await delKv(`${CACHE_KEY}:${input.email}`)
 
   const user = await prisma.user.findUnique({
     where: { email: input.email }
@@ -23,10 +23,10 @@ const disableEmailNotice = async (
     return '未找到用户'
   }
 
-  await prisma.user.update({
-    where: { id: user.id },
-    data: { enable_email_notice: false }
-  })
+  await prisma.$transaction((transaction) =>
+    setControlledEmailNotice(transaction, user.id, false)
+  )
+  await delKv(`${CACHE_KEY}:${input.email}`)
   return {}
 }
 
@@ -37,5 +37,7 @@ export const POST = async (req: NextRequest) => {
   }
 
   const res = await disableEmailNotice(input)
-  return NextResponse.json(res)
+  return NextResponse.json(res, {
+    headers: { 'Cache-Control': 'private, no-store' }
+  })
 }
