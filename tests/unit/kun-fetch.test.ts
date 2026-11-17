@@ -123,6 +123,33 @@ describe('kunFetchGet', () => {
     })
   })
 
+  it('retains a structured conflict body without exposing it through enumerable errors or logs', async () => {
+    const body = {
+      code: 'PREFERENCE_CONFLICT',
+      conflicts: ['theme'],
+      snapshot: { version: 9 }
+    }
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(Response.json(body, { status: 409 }))
+    )
+    const errorLog = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const { kunFetchGet, KunFetchError } = await import('~/utils/kunFetch')
+    const result = await kunFetchGet('/test/conflict', undefined, {
+      preserveErrorStatus: true
+    }).catch((error) => error)
+    expect(result).toBeInstanceOf(KunFetchError)
+    expect(result).toMatchObject({
+      status: 409,
+      code: 'PREFERENCE_CONFLICT',
+      body
+    })
+    expect(Object.keys(result)).not.toContain('body')
+    expect(JSON.stringify(result)).not.toContain('snapshot')
+    expect(JSON.stringify(errorLog.mock.calls)).not.toContain('snapshot')
+    expect(new KunFetchError('legacy', 'http', 409).body).toBeUndefined()
+  })
+
   it('bounds a request even when fetch does not settle on abort', async () => {
     vi.stubGlobal(
       'fetch',

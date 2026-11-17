@@ -50,14 +50,17 @@ export type KunFetchErrorKind = 'http' | 'network' | 'timeout' | 'aborted'
 
 export class KunFetchError extends Error {
   readonly name = 'KunFetchError'
+  declare readonly body: unknown
   constructor(
     message: string,
     readonly kind: KunFetchErrorKind,
     readonly status: number | null = null,
     readonly retryAfterMs: number | null = null,
-    readonly code: string | null = null
+    readonly code: string | null = null,
+    body: unknown = undefined
   ) {
     super(message)
+    Object.defineProperty(this, 'body', { value: body, enumerable: false })
   }
 }
 
@@ -86,7 +89,8 @@ const createKunFetchStatusError = (response: Response, body: unknown) => {
     'code' in body &&
     typeof body.code === 'string'
       ? body.code
-      : null
+      : null,
+    body
   )
 }
 
