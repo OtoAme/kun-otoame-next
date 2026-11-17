@@ -102,7 +102,9 @@ vi.mock('framer-motion', () => ({
 vi.mock('react-hot-toast', () => ({
   default: {
     error: vi.fn(),
-    success: vi.fn()
+    success: vi.fn(),
+    loading: vi.fn(),
+    dismiss: vi.fn()
   }
 }))
 
@@ -193,9 +195,16 @@ describe('KunTopBarUser message bell', () => {
     vi.stubGlobal('document', dom.window.document)
     vi.stubGlobal('localStorage', dom.window.localStorage)
     vi.stubGlobal('React', React)
+    vi.stubGlobal('navigator', {
+      locks: {
+        request: async (_name: string, action: () => unknown) => action()
+      }
+    })
     vi.stubGlobal(
       'fetch',
-      vi.fn(async () => {
+      vi.fn(async (_path: string, options?: RequestInit) => {
+        if (options?.method === 'DELETE')
+          return Response.json({ cleared: true })
         const body = await fetchMock.kunFetchGet('/user/session')
         if (typeof body === 'string')
           return Response.json(
@@ -431,7 +440,7 @@ describe('KunTopBarUser message bell', () => {
     )
     await settleEffects()
 
-    expect(fetchMock.kunFetchGet).toHaveBeenCalledTimes(1)
+    expect(fetchMock.kunFetchGet).toHaveBeenCalledTimes(2)
     expect(fetchMock.kunFetchGet).toHaveBeenCalledWith('/user/session')
     expect(fetchMock.kunFetchPost).not.toHaveBeenCalled()
     expect(routerMock.push).not.toHaveBeenCalled()
@@ -448,7 +457,7 @@ describe('KunTopBarUser message bell', () => {
     expect(container.querySelector('a[href="/login"]')).not.toBeNull()
     expect(container.querySelector('[data-testid="user-dropdown"]')).toBeNull()
     await settleEffects()
-    expect(fetchMock.kunFetchGet).toHaveBeenCalledTimes(1)
+    expect(fetchMock.kunFetchGet).toHaveBeenCalledTimes(2)
   })
 
   it('does not log out or retry when session recovery fails on the network', async () => {
@@ -497,10 +506,10 @@ describe('KunTopBarUser message bell', () => {
       hasUnreadNotification: false,
       hasUnreadConversation: false
     })
-    expect(fetchMock.kunFetchGet.mock.calls.length).toBe(1)
+    expect(fetchMock.kunFetchGet.mock.calls.length).toBe(2)
     await settleEffects()
     expect(toast.error).toHaveBeenCalledTimes(1)
-    expect(fetchMock.kunFetchGet.mock.calls.length).toBe(1)
+    expect(fetchMock.kunFetchGet.mock.calls.length).toBe(2)
   })
 
   it('ignores a late empty-cache response after an account switch', async () => {

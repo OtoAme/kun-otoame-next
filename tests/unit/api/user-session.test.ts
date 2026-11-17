@@ -77,7 +77,7 @@ describe('/api/user/session', () => {
     })
   })
 
-  it('returns explicit invalid identity and clears browser cookies', async () => {
+  it('returns explicit invalid identity without mutating browser cookies', async () => {
     authMocks.verifyHeaderCookie.mockResolvedValueOnce(null)
     const { GET } = await import('~/app/api/user/session/route')
     const response = await GET(
@@ -85,6 +85,30 @@ describe('/api/user/session', () => {
     )
     expect(response.status).toBe(401)
     expect((await response.json()).code).toBe('SESSION_INVALID')
+    expect(response.headers.has('Set-Cookie')).toBe(false)
+  })
+
+  it('does not delete a session that became authenticated before cleanup', async () => {
+    const { DELETE } = await import('~/app/api/user/session/route')
+    const response = await DELETE(
+      new Request('https://www.otoame.top/api/user/session', {
+        method: 'DELETE'
+      }) as never
+    )
+    expect(response.status).toBe(409)
+    expect(response.headers.has('Set-Cookie')).toBe(false)
+  })
+
+  it('only deletes cookies after cleanup independently confirms invalid identity', async () => {
+    authMocks.verifyHeaderCookie.mockResolvedValueOnce(null)
+    const { DELETE } = await import('~/app/api/user/session/route')
+    const response = await DELETE(
+      new Request('https://www.otoame.top/api/user/session', {
+        method: 'DELETE'
+      }) as never
+    )
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({ cleared: true })
     expect(response.headers.get('Set-Cookie')).toContain('Max-Age=0')
   })
 

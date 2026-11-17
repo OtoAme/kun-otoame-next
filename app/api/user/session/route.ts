@@ -46,14 +46,12 @@ export const GET = async (req: NextRequest) => {
     )
   }
   if (!payload) {
-    return clearSessionCookies(
-      NextResponse.json(
-        { code: 'SESSION_INVALID', message: '用户登录失效' },
-        {
-          status: 401,
-          headers: { 'Cache-Control': PERSONALIZED_API_CACHE_CONTROL }
-        }
-      )
+    return NextResponse.json(
+      { code: 'SESSION_INVALID', message: '用户登录失效' },
+      {
+        status: 401,
+        headers: { 'Cache-Control': PERSONALIZED_API_CACHE_CONTROL }
+      }
     )
   }
 
@@ -76,14 +74,12 @@ export const GET = async (req: NextRequest) => {
 
   const user = userResult.value
   if (typeof user === 'string') {
-    return clearSessionCookies(
-      NextResponse.json(
-        { code: 'SESSION_INVALID', message: user },
-        {
-          status: 401,
-          headers: { 'Cache-Control': PERSONALIZED_API_CACHE_CONTROL }
-        }
-      )
+    return NextResponse.json(
+      { code: 'SESSION_INVALID', message: user },
+      {
+        status: 401,
+        headers: { 'Cache-Control': PERSONALIZED_API_CACHE_CONTROL }
+      }
     )
   }
 
@@ -95,4 +91,30 @@ export const GET = async (req: NextRequest) => {
     context: getSessionContext(payload)
   }
   return jsonNoStore(response)
+}
+
+export const DELETE = async (req: NextRequest) => {
+  let payload
+  try {
+    payload = await verifyHeaderCookie(req)
+  } catch (error) {
+    if (!(error instanceof SessionUnavailableError)) throw error
+    return NextResponse.json(
+      { code: 'SESSION_UNAVAILABLE', message: error.message },
+      {
+        status: 503,
+        headers: { 'Cache-Control': PERSONALIZED_API_CACHE_CONTROL }
+      }
+    )
+  }
+  if (payload) {
+    return NextResponse.json(
+      { code: 'SESSION_CHANGED', cleared: false },
+      {
+        status: 409,
+        headers: { 'Cache-Control': PERSONALIZED_API_CACHE_CONTROL }
+      }
+    )
+  }
+  return clearSessionCookies(NextResponse.json({ cleared: true }))
 }

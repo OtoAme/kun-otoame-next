@@ -3,7 +3,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const mocks = vi.hoisted(() => ({ identity: vi.fn(), revoke: vi.fn() }))
 vi.mock('~/app/api/utils/jwt', () => ({ deleteKunSession: mocks.revoke }))
 vi.mock('~/app/api/utils/sessionIdentity', () => ({
-  getRequestIdentity: mocks.identity
+  getRequestIdentity: mocks.identity,
+  getSessionContext: () => 'current-context'
 }))
 import { POST } from '~/app/api/user/status/logout/route'
 
@@ -21,7 +22,10 @@ describe('logout cookie and revocation truth', () => {
         payload: { uid: 7, jti: 'session' }
       })
       const response = await POST(
-        new Request('https://example.test/api/user/status/logout') as never
+        new Request('https://example.test/api/user/status/logout', {
+          method: 'POST',
+          body: JSON.stringify({ context: 'current-context' })
+        }) as never
       )
       expect(response.status).toBe(status === 'unavailable' ? 503 : 200)
       const body = await response.json()
@@ -44,6 +48,42 @@ describe('logout cookie and revocation truth', () => {
     }
   )
 
+  it('rejects an old logout intent for a different current session without deleting cookies', async () => {
+    mocks.identity.mockResolvedValue({
+      status: 'authenticated',
+      payload: { uid: 7, jti: 'new-session' }
+    })
+    const response = await POST(
+      new Request('https://example.test/api/user/status/logout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ context: 'old-context' })
+      }) as never
+    )
+    expect(response.status).toBe(409)
+    expect(response.headers.has('Set-Cookie')).toBe(false)
+    expect(mocks.revoke).not.toHaveBeenCalled()
+  })
+
+  it.each([undefined, null, 7, {}, ''])(
+    'rejects missing or invalid context %j for an authenticated session',
+    async (context) => {
+      mocks.identity.mockResolvedValue({
+        status: 'authenticated',
+        payload: { uid: 7, jti: 'new-session' }
+      })
+      const response = await POST(
+        new Request('https://example.test/api/user/status/logout', {
+          method: 'POST',
+          body: JSON.stringify({ context })
+        }) as never
+      )
+      expect(response.status).toBe(409)
+      expect(response.headers.has('Set-Cookie')).toBe(false)
+      expect(mocks.revoke).not.toHaveBeenCalled()
+    }
+  )
+
   it('reports failed revocation without claiming success', async () => {
     mocks.identity.mockResolvedValue({
       status: 'authenticated',
@@ -51,7 +91,10 @@ describe('logout cookie and revocation truth', () => {
     })
     mocks.revoke.mockRejectedValueOnce(new Error('offline'))
     const response = await POST(
-      new Request('https://example.test/api/user/status/logout') as never
+      new Request('https://example.test/api/user/status/logout', {
+        method: 'POST',
+        body: JSON.stringify({ context: 'current-context' })
+      }) as never
     )
     expect(response.status).toBe(503)
     expect((await response.json()).revoked).toBe(false)

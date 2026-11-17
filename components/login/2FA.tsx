@@ -5,7 +5,8 @@ import { useRouter } from '@bprogress/next'
 import { Button, Input, Link } from '@heroui/react'
 import toast from 'react-hot-toast'
 import { useUserStore } from '~/store/userStore'
-import { kunFetchGet, kunFetchPost } from '~/utils/kunFetch'
+import { kunFetchGet } from '~/utils/kunFetch'
+import { withSessionMutation } from '~/utils/sessionMutation'
 import { UserState } from '~/store/userStore'
 import { KunTextDivider } from '~/components/kun/TextDivider'
 import type { KunGalgameStatelessPayload } from '~/app/api/utils/jwt'
@@ -37,17 +38,24 @@ export const TwoFactor = () => {
     }
 
     startTransition(async () => {
-      const response = await kunFetchPost<UserState>('/auth/verify-2fa', {
-        token,
-        isBackupCode: isUsingBackupCode
-      })
-
-      if (typeof response === 'string') {
-        toast.error(response)
-      } else {
-        setLoginUser(response)
-        toast.success('验证成功，欢迎回来！')
-        router.push('/')
+      try {
+        await withSessionMutation(async (request) => {
+          const { body: response } = await request<UserState | string>(
+            '/api/auth/verify-2fa',
+            { body: { token, isBackupCode: isUsingBackupCode } }
+          )
+          if (typeof response === 'string') {
+            toast.error(response)
+          } else {
+            setLoginUser(response)
+            toast.success('验证成功，欢迎回来！')
+            router.push('/')
+          }
+        })
+      } catch (error) {
+        toast.error(
+          error instanceof Error ? error.message : '验证结果未确认，请重试'
+        )
       }
     })
   }

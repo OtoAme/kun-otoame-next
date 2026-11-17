@@ -248,8 +248,12 @@ export const UserDropdown = () => {
       else toast.error(result.message)
       router.push('/login')
       router.refresh()
-    } catch {
-      toast.error('退出登录失败，请检查网络后重试')
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : '退出结果未确认，请检查登录状态后重试'
+      )
     } finally {
       setLoading(false)
     }

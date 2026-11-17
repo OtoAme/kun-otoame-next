@@ -1,7 +1,9 @@
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
 import { JSDOM } from 'jsdom'
 
-vi.mock('react-hot-toast', () => ({ default: { error: vi.fn() } }))
+vi.mock('react-hot-toast', () => ({
+  default: { error: vi.fn(), loading: vi.fn(), dismiss: vi.fn() }
+}))
 let dom: JSDOM
 const transport = vi.fn()
 
@@ -13,6 +15,9 @@ beforeEach(() => {
   vi.stubGlobal('document', dom.window.document)
   vi.stubGlobal('localStorage', dom.window.localStorage)
   vi.stubGlobal('fetch', transport)
+  vi.stubGlobal('navigator', {
+    locks: { request: async (_name: string, action: () => unknown) => action() }
+  })
 })
 afterEach(() => {
   dom.window.close()
@@ -139,9 +144,11 @@ describe('session client identity and cleanup', () => {
       sessionStatus: 'checking',
       sessionGeneration: 0
     })
-    transport.mockImplementation(() =>
+    transport.mockImplementation((_path: string, options?: RequestInit) =>
       Promise.resolve(
-        Response.json({ code: 'SESSION_INVALID' }, { status: 401 })
+        options?.method === 'DELETE'
+          ? Response.json({ cleared: true })
+          : Response.json({ code: 'SESSION_INVALID' }, { status: 401 })
       )
     )
     await state.refreshUserSession()
@@ -151,6 +158,52 @@ describe('session client identity and cleanup', () => {
     })
     await state.refreshUserSession()
     expect(state.useUserStore.getState().sessionGeneration).toBe(1)
+  })
+
+  it('rechecks identity under the mutation lock before attempting cleanup', async () => {
+    const state = await setup()
+    transport.mockResolvedValueOnce(
+      Response.json({ code: 'SESSION_INVALID' }, { status: 401 })
+    )
+    transport.mockResolvedValueOnce(
+      Response.json({
+        user: { ...state.user, uid: 8 },
+        context: 'new-context',
+        unread: null
+      })
+    )
+    await state.refreshUserSession()
+    expect(transport).toHaveBeenCalledTimes(2)
+    expect(transport.mock.calls.every(([, options]) => !options.method)).toBe(
+      true
+    )
+    expect(state.useUserStore.getState()).toMatchObject({
+      user: { uid: 8 },
+      sessionStatus: 'authenticated',
+      sessionContext: 'new-context'
+    })
+  })
+
+  it('keeps identity unconfirmed if cleanup independently detects a changed session', async () => {
+    const state = await setup()
+    transport.mockResolvedValueOnce(
+      Response.json({ code: 'SESSION_INVALID' }, { status: 401 })
+    )
+    transport.mockResolvedValueOnce(
+      Response.json({ code: 'SESSION_INVALID' }, { status: 401 })
+    )
+    transport.mockResolvedValueOnce(
+      Response.json(
+        { code: 'SESSION_CHANGED', cleared: false },
+        { status: 409 }
+      )
+    )
+    await state.refreshUserSession()
+    expect(state.useUserStore.getState()).toMatchObject({
+      user: { uid: 7 },
+      sessionStatus: 'unavailable'
+    })
+    expect(transport.mock.calls[2][1].signal).toBeUndefined()
   })
 
   it('clears cookies at their root path and keeps guest defaults absent after later writes', async () => {
@@ -189,10 +242,56 @@ describe('session client identity and cleanup', () => {
     expect(document.cookie).not.toContain('kun-patch-setting-store')
   })
 
+  it('ignores a late logout conflict after a new session generation', async () => {
+    const state = await setup()
+    let complete!: (response: Response) => void
+    transport.mockImplementationOnce(
+      () =>
+        new Promise<Response>((resolve) => {
+          complete = resolve
+        })
+    )
+    const logout = state.requestUserLogout()
+    state.useUserStore
+      .getState()
+      .setLoginUser({ ...state.user, name: 'new-session' })
+    const current = state.useUserStore.getState()
+    complete(
+      Response.json(
+        { code: 'SESSION_CHANGED', revoked: false },
+        { status: 409 }
+      )
+    )
+    expect(await logout).toBeNull()
+    expect(state.useUserStore.getState()).toMatchObject({
+      sessionStatus: current.sessionStatus,
+      sessionGeneration: current.sessionGeneration,
+      user: { name: 'new-session' }
+    })
+  })
+
+  it('does not clear a restored account when a null-context logout conflicts', async () => {
+    const state = await setup()
+    state.useUserStore.setState({ sessionContext: null })
+    transport.mockResolvedValueOnce(
+      Response.json(
+        { code: 'SESSION_CHANGED', revoked: false },
+        { status: 409 }
+      )
+    )
+    await expect(state.requestUserLogout()).rejects.toThrow('登录状态已变化')
+    expect(state.useUserStore.getState()).toMatchObject({
+      user: { uid: 7 },
+      sessionStatus: 'unavailable'
+    })
+  })
+
   it('does not claim logout completion when the request never reached the server', async () => {
     const state = await setup()
     transport.mockRejectedValueOnce(new Error('network offline'))
-    await expect(state.requestUserLogout()).rejects.toThrow('network offline')
+    await expect(state.requestUserLogout()).rejects.toThrow(
+      '会话请求结果未确认'
+    )
     expect(state.useUserStore.getState().user.uid).toBe(7)
   })
 })

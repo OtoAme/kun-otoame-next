@@ -391,9 +391,7 @@ describe('dashboard shell', () => {
     )!
     await act(async () => button.click())
     expect(mocks.logout).not.toHaveBeenCalled()
-    expect(mocks.toastError).toHaveBeenCalledWith(
-      '退出登录失败，请检查网络后重试'
-    )
+    expect(mocks.toastError).toHaveBeenCalledWith('退出失败')
     expect(button.disabled).toBe(false)
   })
 

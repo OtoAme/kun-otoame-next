@@ -306,8 +306,12 @@ function DashboardUserMenu({ currentUser }: DashboardSidebarProps) {
       if (!result) return
       if (!result.revoked) toast.error(result.message)
       window.location.assign('/')
-    } catch {
-      toast.error('退出登录失败，请检查网络后重试')
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : '退出结果未确认，请检查登录状态后重试'
+      )
       loggingOutRef.current = false
       setLoggingOut(false)
     }
