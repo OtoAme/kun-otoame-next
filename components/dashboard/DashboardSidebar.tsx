@@ -69,10 +69,8 @@ import {
   type ContentReviewKind,
   type LinkHealthInboxCounts
 } from '~/types/api/inbox'
-import { kunFetchPost } from '~/utils/kunFetch'
+import { requestUserLogout } from '~/utils/sessionClient'
 import { useUserStore } from '~/store/userStore'
-import { useMessageStore } from '~/store/messageStore'
-import { useSettingStore } from '~/store/settingStore'
 
 import { useDashboard, type DashboardCurrentUser } from './DashboardShell'
 
@@ -304,19 +302,9 @@ function DashboardUserMenu({ currentUser }: DashboardSidebarProps) {
     loggingOutRef.current = true
     setLoggingOut(true)
     try {
-      const result = await kunFetchPost<string | null>(
-        '/user/status/logout',
-        {}
-      )
-      if (typeof result === 'string') {
-        toast.error(result || '退出登录失败，请稍后重试')
-        loggingOutRef.current = false
-        setLoggingOut(false)
-        return
-      }
-      useUserStore.getState().logout()
-      useMessageStore.getState().resetUnreadMessageStatus()
-      useSettingStore.getState().resetData()
+      const result = await requestUserLogout()
+      if (!result) return
+      if (!result.revoked) toast.error(result.message)
       window.location.assign('/')
     } catch {
       toast.error('退出登录失败，请检查网络后重试')

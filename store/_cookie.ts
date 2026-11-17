@@ -104,6 +104,15 @@ export const cookieStorage: StateStorage = {
     cookieStorage.removeItem(storeKey)
 
     eachRecursive(jsonValue, (key: string, value: any) => {
+      if (
+        storeKey === 'kun-patch-setting-store' &&
+        ((key.endsWith('|kunNsfwEnable') && value === 'sfw') ||
+          (key.endsWith('|kunBlockedTagIds') &&
+            Array.isArray(value) &&
+            value.length === 0) ||
+          key === '|version')
+      )
+        return
       const _value = Array.isArray(value) ? JSON.stringify(value) : value
       Cookies.set(`${storeKey}${key}`, _value, {
         expires,
@@ -115,7 +124,7 @@ export const cookieStorage: StateStorage = {
     const keyCookies: Record<string, string> = getAllCookiesStartWith(key)
 
     Object.keys(keyCookies).forEach((k) => {
-      Cookies.remove(k)
+      Cookies.remove(k, { path: '/' })
     })
   }
 }

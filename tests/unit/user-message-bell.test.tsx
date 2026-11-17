@@ -7,7 +7,8 @@ import toast from 'react-hot-toast'
 globalThis.React = React
 
 const routerMock = vi.hoisted(() => ({
-  push: vi.fn()
+  push: vi.fn(),
+  refresh: vi.fn()
 }))
 
 const fetchMock = vi.hoisted(() => ({
@@ -192,12 +193,32 @@ describe('KunTopBarUser message bell', () => {
     vi.stubGlobal('document', dom.window.document)
     vi.stubGlobal('localStorage', dom.window.localStorage)
     vi.stubGlobal('React', React)
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        const body = await fetchMock.kunFetchGet('/user/session')
+        if (typeof body === 'string')
+          return Response.json(
+            { code: 'SESSION_INVALID', message: body },
+            { status: 401 }
+          )
+        return Response.json({
+          ...body,
+          context: body?.context ?? `session-${body?.user?.uid}`
+        })
+      })
+    )
     vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
 
     const { useUserStore } = await import('~/store/userStore')
     const { useMessageStore } = await import('~/store/messageStore')
     const initialUser = options?.user ?? user
-    useUserStore.setState({ user: initialUser })
+    useUserStore.setState({
+      user: initialUser,
+      sessionStatus: 'checking',
+      sessionContext: null,
+      sessionGeneration: 0
+    })
     useMessageStore.setState(
       {
         ...useMessageStore.getState(),
@@ -214,12 +235,18 @@ describe('KunTopBarUser message bell', () => {
     }
 
     const { KunTopBarUser } = await import('~/components/kun/top-bar/User')
+    const { SessionSync } = await import('~/components/kun/SessionSync')
     const container = dom.window.document.getElementById('root')
     expect(container).not.toBeNull()
 
     root = createRoot(container!)
     await act(async () => {
-      root!.render(<KunTopBarUser />)
+      root!.render(
+        <>
+          <SessionSync />
+          <KunTopBarUser />
+        </>
+      )
     })
 
     await act(async () => {
@@ -352,7 +379,7 @@ describe('KunTopBarUser message bell', () => {
     await settleEffects()
 
     expect(fetchMock.kunFetchGet).toHaveBeenCalledWith('/user/session')
-    expect(fetchMock.kunFetchGet.mock.calls.length).toBe(2)
+    expect(fetchMock.kunFetchGet.mock.calls.length).toBe(1)
     expect(useUserStore.getState().user).toMatchObject({
       uid: serverUser.uid,
       name: serverUser.name,
@@ -367,7 +394,7 @@ describe('KunTopBarUser message bell', () => {
     expect(routerMock.push).not.toHaveBeenCalled()
     expect(toast.error).not.toHaveBeenCalled()
     await settleEffects()
-    expect(fetchMock.kunFetchGet.mock.calls.length).toBe(2)
+    expect(fetchMock.kunFetchGet.mock.calls.length).toBe(1)
   })
 
   it('keeps unread state when an empty cache recovers a session without unread', async () => {
@@ -415,7 +442,7 @@ describe('KunTopBarUser message bell', () => {
       role: 1
     })
     expect(useMessageStore.getState()).toMatchObject({
-      hasUnreadNotification: true,
+      hasUnreadNotification: false,
       hasUnreadConversation: false
     })
     expect(container.querySelector('a[href="/login"]')).not.toBeNull()
@@ -441,7 +468,8 @@ describe('KunTopBarUser message bell', () => {
     expect(routerMock.push).not.toHaveBeenCalled()
     expect(toast.error).not.toHaveBeenCalled()
     expect(useUserStore.getState().user.uid).toBe(0)
-    expect(container.querySelector('a[href="/login"]')).not.toBeNull()
+    expect(container.textContent).toContain('会话验证失败，重试')
+    expect(useUserStore.getState().sessionStatus).toBe('unavailable')
     await settleEffects()
     expect(fetchMock.kunFetchGet).toHaveBeenCalledTimes(1)
   })
@@ -461,19 +489,18 @@ describe('KunTopBarUser message bell', () => {
 
     expect(toast.error).toHaveBeenCalledTimes(1)
     expect(toast.error).toHaveBeenCalledWith('用户登陆失效')
-    expect(fetchMock.kunFetchPost).toHaveBeenCalledTimes(1)
-    expect(fetchMock.kunFetchPost).toHaveBeenCalledWith('/user/status/logout')
-    expect(routerMock.push).toHaveBeenCalledTimes(1)
-    expect(routerMock.push).toHaveBeenCalledWith('/login')
+    expect(fetchMock.kunFetchPost).not.toHaveBeenCalled()
+    expect(fetchMock.kunFetchPost).not.toHaveBeenCalled()
+    expect(routerMock.push).not.toHaveBeenCalled()
     expect(useUserStore.getState().user.uid).toBe(0)
     expect(useMessageStore.getState()).toMatchObject({
       hasUnreadNotification: false,
       hasUnreadConversation: false
     })
-    expect(fetchMock.kunFetchGet.mock.calls.length).toBe(2)
+    expect(fetchMock.kunFetchGet.mock.calls.length).toBe(1)
     await settleEffects()
     expect(toast.error).toHaveBeenCalledTimes(1)
-    expect(fetchMock.kunFetchGet.mock.calls.length).toBe(2)
+    expect(fetchMock.kunFetchGet.mock.calls.length).toBe(1)
   })
 
   it('ignores a late empty-cache response after an account switch', async () => {
@@ -598,8 +625,8 @@ describe('KunTopBarUser message bell', () => {
 
     expect(useUserStore.getState().user).toMatchObject({ uid: 0, name: '' })
     expect(useMessageStore.getState()).toMatchObject({
-      hasUnreadNotification: true,
-      hasUnreadConversation: true
+      hasUnreadNotification: false,
+      hasUnreadConversation: false
     })
     expect(toast.error).not.toHaveBeenCalled()
     expect(routerMock.push).not.toHaveBeenCalled()

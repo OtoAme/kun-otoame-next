@@ -28,15 +28,14 @@ import {
   UserRound
 } from 'lucide-react'
 import { useUserStore } from '~/store/userStore'
-import { useSettingStore } from '~/store/settingStore'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from '@bprogress/next'
 import { kunFetchPost } from '~/utils/kunFetch'
+import { requestUserLogout } from '~/utils/sessionClient'
 import toast from 'react-hot-toast'
 import { showKunSooner } from '~/components/kun/Sooner'
 import { kunErrorHandler } from '~/utils/kunErrorHandler'
 import { NSFWSwitcher } from './NSFWSwitcher'
-import { useMessageStore } from '~/store/messageStore'
 import type { MoemoepointBalance } from '~/types/api/moemoepoint'
 
 const NESTED_DROPDOWN_EXIT_MS = 50
@@ -50,12 +49,8 @@ interface OutsidePointerContext {
 
 export const UserDropdown = () => {
   const router = useRouter()
-  const { user, setUser, setMoemoepointBalance, logout } = useUserStore(
+  const { user, setUser, setMoemoepointBalance } = useUserStore(
     (state) => state
-  )
-  const resetSettings = useSettingStore((state) => state.resetData)
-  const resetUnreadMessageStatus = useMessageStore(
-    (state) => state.resetUnreadMessageStatus
   )
   const [loading, setLoading] = useState(false)
   const [isDropdownOpen, setIsDropdownOpen] = useState(false)
@@ -246,13 +241,18 @@ export const UserDropdown = () => {
 
   const handleLogOut = async () => {
     setLoading(true)
-    await kunFetchPost<KunResponse<{}>>('/user/status/logout')
-    setLoading(false)
-    logout()
-    resetUnreadMessageStatus()
-    resetSettings()
-    router.push('/login')
-    toast.success('您已经成功登出!')
+    try {
+      const result = await requestUserLogout()
+      if (!result) return
+      if (result.revoked) toast.success(result.message)
+      else toast.error(result.message)
+      router.push('/login')
+      router.refresh()
+    } catch {
+      toast.error('退出登录失败，请检查网络后重试')
+    } finally {
+      setLoading(false)
+    }
   }
 
   const [checking, setChecking] = useState(false)

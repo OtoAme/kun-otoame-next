@@ -27,7 +27,7 @@ import type { UserState } from '~/store/userStore'
 type RegisterFormData = z.infer<typeof registerSchema>
 
 export const RegisterForm = () => {
-  const { setUser } = useUserStore((state) => state)
+  const { setLoginUser } = useUserStore((state) => state)
   const router = useRouter()
   const [isAgree, setIsAgree] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -67,7 +67,7 @@ export const RegisterForm = () => {
     setLoading(false)
 
     kunErrorHandler(res, (value) => {
-      setUser(value)
+      setLoginUser(value)
       reset()
       setEmailLocal('')
       setEmailDomain(KUN_EMAIL_DOMAIN_WHITELIST[0])

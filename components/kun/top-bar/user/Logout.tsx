@@ -11,25 +11,30 @@ import {
   useDisclosure
 } from '@heroui/modal'
 import { LogOut } from 'lucide-react'
-import { useUserStore } from '~/store/userStore'
 import { useState } from 'react'
 import { useRouter } from '@bprogress/next'
-import { kunFetchPost } from '~/utils/kunFetch'
+import { requestUserLogout } from '~/utils/sessionClient'
 import toast from 'react-hot-toast'
 
 export const UserDropdown = () => {
   const router = useRouter()
-  const { logout } = useUserStore((state) => state)
   const [loading, setLoading] = useState(false)
   const { isOpen, onOpen, onOpenChange } = useDisclosure()
 
   const handleLogOut = async () => {
     setLoading(true)
-    await kunFetchPost<KunResponse<{}>>('/user/status/logout')
-    setLoading(false)
-    logout()
-    router.push('/login')
-    toast.success('您已经成功登出!')
+    try {
+      const result = await requestUserLogout()
+      if (!result) return
+      if (result.revoked) toast.success(result.message)
+      else toast.error(result.message)
+      router.push('/login')
+      router.refresh()
+    } catch {
+      toast.error('退出登录失败，请检查网络后重试')
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (

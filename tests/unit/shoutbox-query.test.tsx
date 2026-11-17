@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 const mocks = vi.hoisted(() => ({
   kunFetchGet: vi.fn(),
   uid: 0,
+  sessionStatus: 'authenticated',
   nsfw: 'sfw',
   blockedTagIds: [] as number[]
 }))
@@ -18,6 +19,9 @@ vi.mock('~/utils/kunFetch', () => ({
 // re-reads them on the next render.
 vi.mock('~/store/userStore', () => {
   const store = {
+    get sessionStatus() {
+      return mocks.sessionStatus
+    },
     get user() {
       return { uid: mocks.uid, role: 1 }
     }
@@ -175,6 +179,7 @@ describe('shoutbox public query layer', () => {
   beforeEach(() => {
     vi.useFakeTimers()
     mocks.kunFetchGet.mockReset()
+    mocks.sessionStatus = 'authenticated'
     mocks.uid = 0
     mocks.nsfw = 'sfw'
     mocks.blockedTagIds = []
@@ -191,6 +196,37 @@ describe('shoutbox public query layer', () => {
     vi.useRealTimers()
     vi.unstubAllGlobals()
     vi.resetModules()
+  })
+
+  it('waits for confirmed identity before requesting personalized public content', async () => {
+    mocks.uid = 7
+    mocks.nsfw = 'all'
+    mocks.sessionStatus = 'checking'
+    mocks.kunFetchGet.mockResolvedValue(makeList())
+    await renderTree(
+      <>
+        <ListProbe />
+        <WriteProbe />
+      </>
+    )
+    expect(mocks.kunFetchGet).not.toHaveBeenCalled()
+    expect(capturedContext!.getCurrent().clientReady).toBe(false)
+    mocks.sessionStatus = 'unavailable'
+    await renderTree(
+      <>
+        <ListProbe />
+        <WriteProbe />
+      </>
+    )
+    expect(mocks.kunFetchGet).not.toHaveBeenCalled()
+    mocks.sessionStatus = 'authenticated'
+    await renderTree(
+      <>
+        <ListProbe />
+        <WriteProbe />
+      </>
+    )
+    expect(mocks.kunFetchGet).toHaveBeenCalledTimes(1)
   })
 
   it('serves a remount 45s into a 60s payload without a new GET', async () => {

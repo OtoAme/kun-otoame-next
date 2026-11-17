@@ -14,7 +14,7 @@ export const TwoFactor = () => {
   const [token, setToken] = useState('')
   const [isUsingBackupCode, setIsUsingBackupCode] = useState(false)
   const router = useRouter()
-  const { setUser } = useUserStore()
+  const { setLoginUser } = useUserStore()
   const [isPending, startTransition] = useTransition()
 
   useEffect(() => {
@@ -45,7 +45,7 @@ export const TwoFactor = () => {
       if (typeof response === 'string') {
         toast.error(response)
       } else {
-        setUser(response)
+        setLoginUser(response)
         toast.success('验证成功，欢迎回来！')
         router.push('/')
       }

@@ -14,6 +14,16 @@ const mocks = vi.hoisted(() => ({
   params: '',
   pathname: '/dashboard'
 }))
+vi.mock('~/utils/sessionClient', () => ({
+  requestUserLogout: async () => {
+    const result = await mocks.post('/user/status/logout', {})
+    if (typeof result === 'string') throw new Error(result)
+    mocks.logout()
+    mocks.resetSettings()
+    mocks.resetUnread()
+    return { revoked: true, message: 'ok' }
+  }
+}))
 vi.mock('~/utils/kunFetch', () => ({
   kunFetchGet: mocks.get,
   kunFetchPost: mocks.post
@@ -381,7 +391,9 @@ describe('dashboard shell', () => {
     )!
     await act(async () => button.click())
     expect(mocks.logout).not.toHaveBeenCalled()
-    expect(mocks.toastError).toHaveBeenCalledWith('退出失败')
+    expect(mocks.toastError).toHaveBeenCalledWith(
+      '退出登录失败，请检查网络后重试'
+    )
     expect(button.disabled).toBe(false)
   })
 

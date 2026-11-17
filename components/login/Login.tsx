@@ -20,7 +20,7 @@ type LoginFormData = z.infer<typeof loginSchema>
 export const LoginForm = () => {
   const { isOpen, onOpen, onClose } = useDisclosure()
   const [isPending, startTransition] = useTransition()
-  const { setUser } = useUserStore((state) => state)
+  const { setLoginUser } = useUserStore((state) => state)
   const router = useRouter()
 
   const { control, watch, reset } = useForm<LoginFormData>({
@@ -46,7 +46,7 @@ export const LoginForm = () => {
           router.push('/login/2fa')
         } else {
           const state = value as UserState
-          setUser(state)
+          setLoginUser(state)
           reset()
           toast.success('登录成功!')
           router.push(`/user/${state.uid}/comment`, { scroll: false })
