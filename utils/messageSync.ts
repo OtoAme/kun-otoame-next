@@ -1,5 +1,8 @@
 import { KunFetchError } from './kunFetch'
 
+let unreadReadVersion = 0
+export const beginUnreadRead = () => ++unreadReadVersion
+
 export interface MessageSyncIdentity {
   context: string
   generation: number
@@ -45,6 +48,7 @@ export const createMessageSyncScheduler = <Result = UnreadSummary>(
   let enabled = false
   let disposed = false
   let revision = 0
+  let latestReadVersion = 0
   let timer: ReturnType<typeof setTimeout> | undefined
   let pending: { controller: AbortController; revision: number } | null = null
   let lastRequestAt = -Infinity
@@ -90,6 +94,7 @@ export const createMessageSyncScheduler = <Result = UnreadSummary>(
     }
     const current = { controller: new AbortController(), revision }
     pending = current
+    latestReadVersion = beginUnreadRead()
     lastRequestAt = Date.now()
     snapshot = { ...snapshot, status: 'syncing' }
     notify()
@@ -160,6 +165,7 @@ export const createMessageSyncScheduler = <Result = UnreadSummary>(
       }
       nextPollAt = 0
       lastRequestAt = -Infinity
+      latestReadVersion = 0
       notify()
       schedule()
     },
@@ -184,13 +190,21 @@ export const createMessageSyncScheduler = <Result = UnreadSummary>(
           : Date.now()
       )
     },
-    seed(value: unknown, succeededAt = Date.now()) {
+    seed(
+      value: unknown,
+      succeededAt = Date.now(),
+      readVersion = beginUnreadRead()
+    ) {
       if (
         !identity ||
         disposed ||
+        readVersion <= latestReadVersion ||
+        (snapshot.lastSuccessAt !== null &&
+          succeededAt < snapshot.lastSuccessAt) ||
         !(options.validate ?? isUnreadSummary)(value)
       )
         return false
+      latestReadVersion = readVersion
       cancelPending()
       snapshot = {
         ...snapshot,
@@ -204,6 +218,13 @@ export const createMessageSyncScheduler = <Result = UnreadSummary>(
       notify()
       schedule()
       return true
+    },
+    confirmIdentity() {
+      if (snapshot.status !== 'invalid' || disposed) return
+      snapshot = { ...snapshot, status: 'paused' }
+      nextPollAt = Math.max(Date.now(), lastRequestAt + 5_000)
+      notify()
+      schedule()
     },
     invalidatePending() {
       clearTimer()
@@ -227,6 +248,8 @@ let sessionSeed: {
   identity: MessageSyncIdentity
   unread: UnreadSummary
   succeededAt: number
+  readVersion: number
+  consumed: boolean
 } | null = null
 
 const sameIdentity = (left: MessageSyncIdentity, right: MessageSyncIdentity) =>
@@ -234,7 +257,8 @@ const sameIdentity = (left: MessageSyncIdentity, right: MessageSyncIdentity) =>
 
 export const seedSessionUnread = (
   identity: MessageSyncIdentity,
-  unread: unknown
+  unread: unknown,
+  readVersion = beginUnreadRead()
 ) => {
   if (
     !identity.context ||
@@ -246,17 +270,30 @@ export const seedSessionUnread = (
     typeof unread.hasUnreadConversation !== 'boolean'
   )
     return false
-  sessionSeed = {
+  if (
+    sessionSeed &&
+    sameIdentity(sessionSeed.identity, identity) &&
+    sessionSeed.readVersion >= readVersion
+  )
+    return false
+  const seed = {
     identity,
     unread: {
       hasUnreadMessages: unread.hasUnreadNotification,
       hasUnreadChat: unread.hasUnreadConversation
     },
-    succeededAt: Date.now()
+    succeededAt: Date.now(),
+    readVersion,
+    consumed: false
   }
   if (unreadBinding && sameIdentity(unreadBinding.identity, identity)) {
-    unreadBinding.scheduler.seed(sessionSeed.unread, sessionSeed.succeededAt)
+    if (
+      !unreadBinding.scheduler.seed(seed.unread, seed.succeededAt, readVersion)
+    )
+      return false
+    seed.consumed = true
   }
+  sessionSeed = seed
   return true
 }
 
@@ -267,13 +304,24 @@ export const bindUnreadSync = (
   const binding = { identity, scheduler }
   unreadBinding = binding
   scheduler.setIdentity(identity)
-  if (sessionSeed && sameIdentity(identity, sessionSeed.identity)) {
-    scheduler.seed(sessionSeed.unread, sessionSeed.succeededAt)
+  if (
+    sessionSeed &&
+    !sessionSeed.consumed &&
+    sameIdentity(identity, sessionSeed.identity)
+  ) {
+    scheduler.seed(
+      sessionSeed.unread,
+      sessionSeed.succeededAt,
+      sessionSeed.readVersion
+    )
+    sessionSeed.consumed = true
   }
   return () => {
     if (unreadBinding === binding) unreadBinding = null
   }
 }
 
+export const getUnreadSyncSnapshot = () =>
+  unreadBinding?.scheduler.getSnapshot() ?? null
 export const refreshUnreadSummary = (reason: 'resume' | 'manual' = 'manual') =>
   unreadBinding?.scheduler.refresh(reason)

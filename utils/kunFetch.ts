@@ -147,6 +147,7 @@ const kunFetchRequest = async <T>(
       fetchOptions.body = JSON.stringify(body)
     }
 
+    let receivedResponse: Response | undefined
     const controller = new AbortController()
     let timeoutId: ReturnType<typeof setTimeout> | undefined
     const abortState: { kind: 'timeout' | 'aborted' } = { kind: 'aborted' }
@@ -159,7 +160,11 @@ const kunFetchRequest = async <T>(
             abortState.kind === 'timeout'
               ? 'Kun Fetch request timed out'
               : 'Kun Fetch request cancelled',
-            abortState.kind
+            abortState.kind,
+            receivedResponse?.status ?? null,
+            receivedResponse
+              ? parseRetryAfter(receivedResponse.headers.get('Retry-After'))
+              : null
           )
         )
       controller.signal.addEventListener('abort', onAbort, { once: true })
@@ -180,6 +185,7 @@ const kunFetchRequest = async <T>(
         (async () => {
           if (controller.signal.aborted) return await aborted
           const response = await fetch(fullUrl, fetchOptions)
+          receivedResponse = response
           const res = await parseKunFetchResponseBody(response)
           if (!response.ok) {
             if (!preserveErrorStatus && typeof res === 'string') return res as T
@@ -194,8 +200,22 @@ const kunFetchRequest = async <T>(
           abortState.kind === 'timeout'
             ? 'Kun Fetch request timed out'
             : 'Kun Fetch request cancelled',
-          abortState.kind
+          abortState.kind,
+          receivedResponse?.status ?? null,
+          receivedResponse
+            ? parseRetryAfter(receivedResponse.headers.get('Retry-After'))
+            : null
         )
+      }
+      if (preserveErrorStatus && isKunFetchAbortError(error)) {
+        throw new KunFetchError('Kun Fetch request cancelled', 'aborted')
+      }
+      if (
+        receivedResponse &&
+        !receivedResponse.ok &&
+        !(error instanceof KunFetchError)
+      ) {
+        throw createKunFetchStatusError(receivedResponse, undefined)
       }
       if (preserveErrorStatus && !(error instanceof KunFetchError)) {
         throw new KunFetchError('Kun Fetch network request failed', 'network')

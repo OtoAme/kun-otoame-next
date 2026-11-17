@@ -176,4 +176,29 @@ describe('kunFetchGet', () => {
       retryAfterMs: null
     })
   })
+  it('retains a rate-limit deadline even when its response body times out', async () => {
+    const body = new ReadableStream({ start() {} })
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValue(
+          new Response(body, { status: 429, headers: { 'Retry-After': '180' } })
+        )
+    )
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const { kunFetchGet } = await import('~/utils/kunFetch')
+    const request = expect(
+      kunFetchGet('/message/unread', undefined, {
+        timeout: 15_000,
+        preserveErrorStatus: true
+      })
+    ).rejects.toMatchObject({
+      kind: 'timeout',
+      status: 429,
+      retryAfterMs: 180_000
+    })
+    await vi.advanceTimersByTimeAsync(15_000)
+    await request
+  })
 })

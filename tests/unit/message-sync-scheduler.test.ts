@@ -1,5 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
+  beginUnreadRead,
+  bindUnreadSync,
+  seedSessionUnread,
   createMessageSyncScheduler,
   isUnreadSummary
 } from '~/utils/messageSync'
@@ -271,4 +274,64 @@ describe('message sync scheduler', () => {
       sync.dispose()
     }
   )
+  it('rejects old timestamps and a session read started before a newer summary', async () => {
+    const { sync, accept } = setup()
+    const oldRead = beginUnreadRead()
+    sync.setEnabled(true)
+    await flush()
+    expect(sync.seed(unread, 1, oldRead)).toBe(false)
+    await vi.advanceTimersByTimeAsync(10)
+    expect(sync.seed(unread, -1)).toBe(false)
+    expect(accept).toHaveBeenCalledTimes(1)
+    sync.dispose()
+  })
+
+  it('does not replay a consumed seed on rebinding the same scheduler', async () => {
+    const { sync, accept } = setup()
+    const seedIdentity = { context: 'seed-rebinding', generation: 42 }
+    seedSessionUnread(seedIdentity, {
+      hasUnreadNotification: true,
+      hasUnreadConversation: true
+    })
+    const unbind = bindUnreadSync(seedIdentity, sync)
+    sync.setEnabled(true)
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(accept).toHaveBeenCalledTimes(2)
+    const successAt = sync.getSnapshot().lastSuccessAt
+    unbind()
+    bindUnreadSync(seedIdentity, sync)()
+    expect(accept).toHaveBeenCalledTimes(2)
+    expect(sync.getSnapshot().lastSuccessAt).toBe(successAt)
+    sync.dispose()
+  })
+
+  it('discards a late session response instead of aborting a newer in-flight summary', async () => {
+    let resolve!: (value: typeof unread) => void
+    const seedIdentity = { context: 'late-session', generation: 43 }
+    const oldSessionRead = beginUnreadRead()
+    const { sync, accept } = setup(
+      vi.fn(
+        () =>
+          new Promise<typeof unread>((done) => {
+            resolve = done
+          })
+      )
+    )
+    const unbind = bindUnreadSync(seedIdentity, sync)
+    sync.setEnabled(true)
+    await flush()
+    expect(
+      seedSessionUnread(
+        seedIdentity,
+        { hasUnreadNotification: false, hasUnreadConversation: false },
+        oldSessionRead
+      )
+    ).toBe(false)
+    resolve(unread)
+    await flush()
+    expect(accept).toHaveBeenCalledTimes(1)
+    expect(accept).toHaveBeenLastCalledWith(unread)
+    unbind()
+    sync.dispose()
+  })
 })
