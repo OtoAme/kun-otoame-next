@@ -89,6 +89,31 @@ pnpm prisma:deploy-safe
 | 每日登录记录 | [预检](../../migration/production-user-daily-active-preflight-2026-10-31.sql)、[同步](../../migration/production-user-daily-active-sync-2026-10-31.sql)，只新增空表 `user_daily_active`，不改已有数据。同步在单个事务内执行，外键会短暂锁住用户表，等不到锁 5 秒后停止，重跑即可；已有同名表但列不一致时停止。完成后重跑预检，状态应为 `present` 且主键、外键与预期一致。先迁移再发布对应版本：旧版本不写这张表，新版本在表缺失时只记录错误、不影响登录，缺表期间已访问的用户当天不会补记。 |
 | 站方备份与资源合并 | [预检](../../migration/production-official-mirror-preflight-2026-11-04.sql)、[同步](../../migration/production-official-mirror-sync-2026-11-04.sql)、[复检](../../migration/production-official-mirror-postflight-2026-11-04.sql)，同步必须带人工判定的时间分组参数；[限定校正](../../migration/production-official-mirror-attached-at-correct-2026-11-04.sql)仅在回填判定错误时按记录清单使用。执行前提见下节。 |
 
+### 账号偏好结构
+
+内容显示、逐项版本和账号整体版本依赖[账号偏好预检](../../migration/production-account-preferences-preflight-2026-11-17.sql)、[同步](../../migration/production-account-preferences-sync-2026-11-17.sql)和[复检](../../migration/production-account-preferences-postflight-2026-11-17.sql)。必须在发布读取这些结构的应用前完成。同步保留存量屏蔽标签和邮件选择，内容显示保持尚未明确选择；不回填旧浏览器 Cookie，不安装通知订阅结构，也不提前启用订阅开关。
+
+在当前 shell 关闭命令跟踪并加载服务器既有的受限环境脚本。脚本应提供支持文件及参数透传的 `psql_run`，由其加载连接信息；不要展示或展开连接变量。以下路径全部使用操作者核对的值：
+
+```bash
+set +x
+source '<服务器受限环境脚本>'
+git pull
+psql_run migration/production-account-preferences-preflight-2026-11-17.sql
+```
+
+预检成功表示现存对象与允许的缺失结构兼容，提示中的用户数和设置项数只描述目标数据，不应与测试样本数量比较。非零退出、非法值、同名对象不兼容或未验证约束均停止。之后按本页停写规则冻结全部业务写入，确认后台和其他实例停止，并确认站点备份完成，再在同一 shell 执行：
+
+```bash
+psql_run migration/production-account-preferences-sync-2026-11-17.sql
+psql_run migration/production-account-preferences-postflight-2026-11-17.sql
+pnpm deploy:pull
+```
+
+同步在一个事务内执行，锁等待最多 5 秒、语句最多 120 秒；全部约束复检通过后才提交。复检正常结束且退出码为零才继续发布；表、列、主外键、默认值及检查约束均须符合预期，数据非法数量应为零。脚本均可单文件通过标准输入执行，不依赖同目录包含文件。首次、已有结构或重复执行都不重置已有值和版本；中断或锁超时整体回滚，排除阻塞并确认停写后，从预检重新执行，不能用重跑开发环境 setup 代替迁移。
+
+发布前将 `account-preferences-v1` 纳入部署兼容语义，并为实际恢复产物取得当前数据库结构和语义的验收凭据。候选产生账号偏好写入后就绪失败或进程中断时，只允许恢复具备对应兼容证据的产物；没有兼容目标时维持停写、关闭入口并保留恢复记录。不得启动仍会按旧 Cookie 或无版本写入覆盖偏好的旧版，也不得删除版本表或清零版本来回退。发布后用受控账号检查偏好保存与重登恢复、冲突、首页两块 SFW 和标签过滤，确认正常后按部署流程开放写入。
+
 ### 站方备份与资源合并结构
 
 适用于需要加入交接时间、链接加入时间、辅助点击数、备份忽略与重备水位、合并记录及交接文件清理待办的持久库。这组同步要求资源、链接基础表已经存在；完整模块还依赖[资源访问授权](#资源访问授权)、问题处理基础及[链接健康与维护结构](#链接健康与维护结构)。执行前在一次性数据库完整演练预检、带参数同步、复检和中断恢复，先按本页开头停写并验证备份；生产操作由获授权者在服务器执行。仓库存在这组文件不证明目标环境已安装；执行前须核对目标环境的迁移与复检记录，只运行尚缺且审核通过的步骤。
