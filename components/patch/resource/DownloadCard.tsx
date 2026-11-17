@@ -565,7 +565,7 @@ export const ResourceDownloadCard = ({
           </div>
         </div>
 
-        {link.storage === 'touchgal' ? (
+        {link.storage === 'touchgal' && resource.user.role <= 2 ? (
           <p className="text-xs text-default-500">
             {backupDate ? (
               <>
