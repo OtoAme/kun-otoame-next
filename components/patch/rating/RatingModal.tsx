@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   Modal,
   ModalBody,
@@ -52,6 +52,7 @@ export const RatingModal = ({
   initial
 }: Props) => {
   const [loading, setLoading] = useState(false)
+  const submitting = useRef(false)
 
   const [recommend, setRecommend] = useState<string>(
     initial?.recommend ?? 'neutral'
@@ -84,48 +85,41 @@ export const RatingModal = ({
   }, [initial, isOpen])
 
   const handleSubmit = async () => {
+    if (submitting.current) return
     if (!overall || overall < 1 || overall > 10) {
       toast.error('评分范围只能为 1-10')
       return
     }
+    submitting.current = true
     setLoading(true)
 
-    if (!initial) {
-      const res = await kunFetchPost<KunResponse<KunPatchRating>>(
-        '/patch/rating',
-        {
-          patchId,
-          recommend: recommend as 'no',
-          overall,
-          playStatus: playStatus as 'not_started',
-          shortSummary,
-          spoilerLevel: spoilerLevel as 'none'
-        } satisfies KunPatchRatingInput
-      )
-      setLoading(false)
+    try {
+      const content = {
+        recommend,
+        overall,
+        playStatus,
+        shortSummary,
+        spoilerLevel
+      }
+      const res = initial
+        ? await kunFetchPut<KunResponse<KunPatchRating>>('/patch/rating', {
+            ...content,
+            ratingId: initial.id
+          } satisfies KunPatchRatingUpdateInput)
+        : await kunFetchPost<KunResponse<KunPatchRating>>('/patch/rating', {
+            ...content,
+            patchId
+          } satisfies KunPatchRatingInput)
       kunErrorHandler(res, (rating) => {
-        toast.success('发布评价成功')
+        toast.success(initial ? '更新评价成功' : '发布评价成功')
         onSuccess?.(rating)
         onClose()
       })
-    } else {
-      const res = await kunFetchPut<KunResponse<KunPatchRating>>(
-        '/patch/rating',
-        {
-          ratingId: initial.id,
-          recommend: recommend as 'no',
-          overall,
-          playStatus: playStatus as 'not_started',
-          shortSummary,
-          spoilerLevel: spoilerLevel as 'none'
-        } satisfies KunPatchRatingUpdateInput
-      )
+    } catch {
+      toast.error('保存评价失败，请检查网络后重试')
+    } finally {
+      submitting.current = false
       setLoading(false)
-      kunErrorHandler(res, (value) => {
-        toast.success('更新评价成功')
-        onSuccess?.(value)
-        onClose()
-      })
     }
   }
 

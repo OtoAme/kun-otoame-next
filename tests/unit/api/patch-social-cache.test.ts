@@ -214,7 +214,6 @@ describe('patch social cache invalidation', () => {
     await updatePatchRating(
       {
         ratingId: 5,
-        patchId: 7,
         recommend: 'yes',
         overall: 9,
         playStatus: 'played',
@@ -229,6 +228,87 @@ describe('patch social cache invalidation', () => {
       'abc12345'
     )
     expect(cacheMocks.invalidatePatchListCaches).toHaveBeenCalled()
+    expect(recomputePatchRatingStatMock).toHaveBeenCalledWith(7)
+  })
+
+  it('does not update a missing rating or another user rating', async () => {
+    const input = {
+      ratingId: 5,
+      recommend: 'yes',
+      overall: 9,
+      playStatus: 'in_progress',
+      shortSummary: 'draft',
+      spoilerLevel: 'none'
+    }
+    prismaMock.patch_rating.findUnique.mockResolvedValueOnce(null)
+    expect(await updatePatchRating(input, 2, 1)).toBe('评价不存在')
+    prismaMock.patch_rating.findUnique.mockResolvedValueOnce({
+      id: 5,
+      patch_id: 7,
+      user_id: 3
+    })
+    expect(await updatePatchRating(input, 2, 1)).toBe('您没有权限更新该评价')
+    expect(prismaMock.patch_rating.update).not.toHaveBeenCalled()
+    expect(recomputePatchRatingStatMock).not.toHaveBeenCalled()
+    expect(cacheMocks.invalidatePatchContentCache).not.toHaveBeenCalled()
+  })
+
+  it('allows administrators to edit content while retaining the original author and game', async () => {
+    prismaMock.patch_rating.findUnique.mockResolvedValue({
+      id: 5,
+      patch_id: 7,
+      user_id: 2
+    })
+    prismaMock.patch_rating.update.mockResolvedValue({
+      id: 5,
+      patch_id: 7,
+      user_id: 2,
+      recommend: 'yes',
+      overall: 9,
+      play_status: 'in_progress',
+      short_summary: 'admin edit',
+      spoiler_level: 'portion',
+      created: new Date(),
+      updated: new Date(),
+      patch: { unique_id: 'abc12345' },
+      user: { id: 2, name: 'Alice', avatar: '' },
+      _count: { like: 0 },
+      like: []
+    })
+    const result = await updatePatchRating(
+      {
+        ratingId: 5,
+        recommend: 'yes',
+        overall: 9,
+        playStatus: 'in_progress',
+        shortSummary: 'admin edit',
+        spoilerLevel: 'portion'
+      },
+      9,
+      3
+    )
+    expect(result).toMatchObject({
+      patchId: 7,
+      userId: 2,
+      shortSummary: 'admin edit',
+      spoilerLevel: 'portion'
+    })
+    expect(prismaMock.patch_rating.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 5, user_id: 2 },
+        data: {
+          recommend: 'yes',
+          overall: 9,
+          play_status: 'in_progress',
+          short_summary: 'admin edit',
+          spoiler_level: 'portion'
+        }
+      })
+    )
+    expect(recomputePatchRatingStatMock).toHaveBeenCalledWith(7)
+    expect(cacheMocks.invalidatePatchContentCache).toHaveBeenCalledWith(
+      'abc12345'
+    )
   })
 
   it('invalidates patch caches after deleting a rating', async () => {

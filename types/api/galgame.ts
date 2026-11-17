@@ -1,3 +1,9 @@
+import type { z } from 'zod'
+import type {
+  patchRatingCreateSchema,
+  patchRatingUpdateSchema
+} from '~/validations/patch'
+
 export interface KunPatchRating {
   id: number
   uniqueId: string
@@ -15,23 +21,9 @@ export interface KunPatchRating {
   user: KunUser
 }
 
-export interface KunPatchRatingInput {
-  patchId: number
-  recommend: string
-  overall: number
-  playStatus: string
-  shortSummary: string
-  spoilerLevel: string
-}
+export type KunPatchRatingInput = z.infer<typeof patchRatingCreateSchema>
 
-export interface KunPatchRatingUpdateInput {
-  ratingId: number
-  recommend: string
-  overall: number
-  playStatus: string
-  shortSummary: string
-  spoilerLevel: string
-}
+export type KunPatchRatingUpdateInput = z.infer<typeof patchRatingUpdateSchema>
 
 export interface KunPatchRatingResponse {
   ratings: KunPatchRating[]
