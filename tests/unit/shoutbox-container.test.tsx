@@ -71,6 +71,7 @@ vi.mock('~/store/userStore', () => {
     delaySeconds: 5
   })
   const store = {
+    sessionStatus: 'authenticated',
     get user() {
       return fullUser()
     },

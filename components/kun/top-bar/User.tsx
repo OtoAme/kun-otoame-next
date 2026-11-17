@@ -1,15 +1,12 @@
 'use client'
 
-import toast from 'react-hot-toast'
-import { useEffect } from 'react'
 import { NavbarContent, NavbarItem } from '@heroui/navbar'
 import Link from 'next/link'
 import { Button } from '@heroui/button'
 import { Skeleton } from '@heroui/skeleton'
 import { useUserStore } from '~/store/userStore'
 import { useMessageStore } from '~/store/messageStore'
-import { useRouter } from '@bprogress/next'
-import { kunFetchGet, kunFetchPost } from '~/utils/kunFetch'
+import { refreshUserSession } from '~/utils/sessionClient'
 import { ThemeSwitcher } from './ThemeSwitcher'
 import { useMounted } from '~/hooks/useMounted'
 import { UserDropdown } from './UserDropdown'
@@ -17,65 +14,13 @@ import { KunSearch } from './Search'
 import { UserMessageBell } from './UserMessageBell'
 import { Tooltip } from '@heroui/tooltip'
 import { RandomGalgameButton } from '~/components/home/carousel/RandomGalgameButton'
-import type { UserSession } from '~/types/api/session'
-
-const emptyUnreadStatus: UserSession['unread'] = {
-  hasUnreadNotification: false,
-  hasUnreadConversation: false
-}
 
 export const KunTopBarUser = () => {
-  const router = useRouter()
-  const { user, setUser, logout } = useUserStore((state) => state)
-  const {
-    hasUnreadNotification,
-    hasUnreadConversation,
-    setUnreadMessageStatus
-  } = useMessageStore((state) => state)
+  const { user, sessionStatus } = useUserStore((state) => state)
+  const { hasUnreadNotification, hasUnreadConversation } = useMessageStore(
+    (state) => state
+  )
   const isMounted = useMounted()
-
-  useEffect(() => {
-    if (!isMounted) {
-      return
-    }
-
-    let active = true
-    const uidAtStart = user.uid
-
-    const getUserSession = async () => {
-      let res: KunResponse<UserSession>
-      try {
-        res = await kunFetchGet<KunResponse<UserSession>>('/user/session')
-      } catch {
-        return
-      }
-      if (!active || useUserStore.getState().user.uid !== uidAtStart) {
-        return
-      }
-
-      if (typeof res === 'string') {
-        if (!uidAtStart) {
-          return
-        }
-        toast.error(res)
-        kunFetchPost('/user/status/logout').catch(() => {})
-        logout()
-        setUnreadMessageStatus(emptyUnreadStatus)
-        router.push('/login')
-        return
-      }
-
-      setUser(res.user)
-      if (res.unread) {
-        setUnreadMessageStatus(res.unread)
-      }
-    }
-
-    getUserSession()
-    return () => {
-      active = false
-    }
-  }, [isMounted, user.uid, logout, router, setUnreadMessageStatus, setUser])
 
   const hasUnread = hasUnreadNotification || hasUnreadConversation
 
@@ -92,28 +37,41 @@ export const KunTopBarUser = () => {
         </>
       )}
 
-      {isMounted && !user.name && (
-        <NavbarContent justify="end">
-          <NavbarItem className="hidden lg:flex">
-            <Link href="/login">登录</Link>
-          </NavbarItem>
-          <NavbarItem>
-            <Button
-              as={Link}
-              color="primary"
-              href="/register"
-              variant="flat"
-              className="hidden lg:flex"
-            >
-              注册
-            </Button>
-          </NavbarItem>
-          <NavbarItem className="flex lg:hidden">
-            <Button as={Link} color="primary" href="/login" variant="flat">
-              登录
-            </Button>
-          </NavbarItem>
-        </NavbarContent>
+      {isMounted &&
+        (sessionStatus === 'guest' || sessionStatus === 'unavailable') && (
+          <NavbarContent justify="end">
+            <NavbarItem className="hidden lg:flex">
+              <Link href="/login">登录</Link>
+            </NavbarItem>
+            <NavbarItem>
+              <Button
+                as={Link}
+                color="primary"
+                href="/register"
+                variant="flat"
+                className="hidden lg:flex"
+              >
+                注册
+              </Button>
+            </NavbarItem>
+            <NavbarItem className="flex lg:hidden">
+              <Button as={Link} color="primary" href="/login" variant="flat">
+                登录
+              </Button>
+            </NavbarItem>
+          </NavbarContent>
+        )}
+
+      {isMounted && sessionStatus === 'unavailable' && (
+        <Button
+          size="sm"
+          variant="light"
+          onPress={() => {
+            void refreshUserSession()
+          }}
+        >
+          会话验证失败，重试
+        </Button>
       )}
 
       <KunSearch />
@@ -124,7 +82,7 @@ export const KunTopBarUser = () => {
 
       <ThemeSwitcher />
 
-      {isMounted && user.name && (
+      {isMounted && sessionStatus === 'authenticated' && user.name && (
         <>
           <UserMessageBell hasUnreadMessages={hasUnread} />
 

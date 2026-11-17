@@ -5,7 +5,7 @@ import { z } from 'zod'
 import { Controller, useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { Button, Input, Link, useDisclosure } from '@heroui/react'
-import { kunFetchPost } from '~/utils/kunFetch'
+import { withSessionMutation } from '~/utils/sessionMutation'
 import { loginSchema } from '~/validations/auth'
 import { useUserStore } from '~/store/userStore'
 import { kunErrorHandler } from '~/utils/kunErrorHandler'
@@ -20,7 +20,7 @@ type LoginFormData = z.infer<typeof loginSchema>
 export const LoginForm = () => {
   const { isOpen, onOpen, onClose } = useDisclosure()
   const [isPending, startTransition] = useTransition()
-  const { setUser } = useUserStore((state) => state)
+  const { setLoginUser } = useUserStore((state) => state)
   const router = useRouter()
 
   const { control, watch, reset } = useForm<LoginFormData>({
@@ -34,24 +34,28 @@ export const LoginForm = () => {
   const handleCaptchaSuccess = async (code: string) => {
     startTransition(async () => {
       onClose()
-      const res = await kunFetchPost<
-        KunResponse<(UserState | KunUser) & { require2FA: boolean }>
-      >('/auth/login', {
-        ...watch(),
-        captcha: code
-      })
-
-      kunErrorHandler(res, (value) => {
-        if (value.require2FA) {
-          router.push('/login/2fa')
-        } else {
-          const state = value as UserState
-          setUser(state)
-          reset()
-          toast.success('登录成功!')
-          router.push(`/user/${state.uid}/comment`, { scroll: false })
-        }
-      })
+      try {
+        await withSessionMutation(async (request) => {
+          const { body: res } = await request<
+            KunResponse<(UserState | KunUser) & { require2FA: boolean }>
+          >('/api/auth/login', { body: { ...watch(), captcha: code } })
+          kunErrorHandler(res, (value) => {
+            if (value.require2FA) {
+              router.push('/login/2fa')
+            } else {
+              const state = value as UserState
+              setLoginUser(state)
+              reset()
+              toast.success('登录成功!')
+              router.push(`/user/${state.uid}/comment`, { scroll: false })
+            }
+          })
+        })
+      } catch (error) {
+        toast.error(
+          error instanceof Error ? error.message : '登录结果未确认，请重试'
+        )
+      }
     })
   }
 

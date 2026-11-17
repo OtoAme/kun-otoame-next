@@ -14,7 +14,7 @@ export const GET = async (req: NextRequest) => {
   if (!payload) {
     return NextResponse.json('用户登陆失效')
   }
-  const nsfwEnable = getNSFWHeader(req)
+  const nsfwEnable = await getNSFWHeader(req)
 
   const response = await getUserFavorite(input, nsfwEnable)
   return NextResponse.json(response)

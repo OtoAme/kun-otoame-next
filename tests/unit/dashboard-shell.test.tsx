@@ -14,6 +14,16 @@ const mocks = vi.hoisted(() => ({
   params: '',
   pathname: '/dashboard'
 }))
+vi.mock('~/utils/sessionClient', () => ({
+  requestUserLogout: async () => {
+    const result = await mocks.post('/user/status/logout', {})
+    if (typeof result === 'string') throw new Error(result)
+    mocks.logout()
+    mocks.resetSettings()
+    mocks.resetUnread()
+    return { revoked: true, message: 'ok' }
+  }
+}))
 vi.mock('~/utils/kunFetch', () => ({
   kunFetchGet: mocks.get,
   kunFetchPost: mocks.post

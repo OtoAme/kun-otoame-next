@@ -31,6 +31,11 @@ export const withAnonymousApiCache = <T extends Response>(
   response: T,
   req: Pick<Request, 'headers'>
 ) => {
-  response.headers.set('Cache-Control', getAnonymousApiCacheControl(req))
+  response.headers.set(
+    'Cache-Control',
+    response.headers.has('Set-Cookie')
+      ? PERSONALIZED_API_CACHE_CONTROL
+      : getAnonymousApiCacheControl(req)
+  )
   return response
 }
