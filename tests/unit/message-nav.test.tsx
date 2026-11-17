@@ -9,6 +9,9 @@ const navigationMock = vi.hoisted(() => ({
   pathname: '/message/notice'
 }))
 
+const syncMock = vi.hoisted(() => ({ refreshUnreadSummary: vi.fn() }))
+vi.mock('~/utils/messageSync', () => syncMock)
+
 const fetchMock = vi.hoisted(() => ({
   kunFetchGet: vi.fn(),
   kunFetchPut: vi.fn()
@@ -18,7 +21,8 @@ vi.mock('next/navigation', () => ({
   usePathname: () => navigationMock.pathname
 }))
 
-vi.mock('~/utils/kunFetch', () => ({
+vi.mock('~/utils/kunFetch', async (original) => ({
+  ...(await original<typeof import('~/utils/kunFetch')>()),
   kunFetchGet: fetchMock.kunFetchGet,
   kunFetchPut: fetchMock.kunFetchPut
 }))
@@ -112,6 +116,13 @@ describe('MessageNav unread badges', () => {
     vi.stubGlobal('React', React)
     vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
 
+    const { useUserStore } = await import('~/store/userStore')
+    useUserStore.setState({
+      user: { ...useUserStore.getState().user, uid: 7 },
+      sessionStatus: 'authenticated',
+      sessionContext: 'ctx-a',
+      sessionGeneration: 1
+    })
     const { useMessageStore } = await import('~/store/messageStore')
     useMessageStore.setState(
       {
@@ -137,7 +148,7 @@ describe('MessageNav unread badges', () => {
       })
     }
 
-    return { container: container!, rerenderAt, useMessageStore }
+    return { container: container!, rerenderAt, useMessageStore, useUserStore }
   }
 
   afterEach(async () => {
@@ -152,277 +163,87 @@ describe('MessageNav unread badges', () => {
     vi.resetModules()
     fetchMock.kunFetchGet.mockReset()
     fetchMock.kunFetchPut.mockReset()
+    syncMock.refreshUnreadSummary.mockReset()
   })
 
-  it('marks notifications as read without issuing a stale unread request on notification pages', async () => {
-    fetchMock.kunFetchGet.mockResolvedValue({
-      hasUnreadMessages: false,
-      hasUnreadChat: false
-    })
-    fetchMock.kunFetchPut.mockResolvedValue({
-      hasUnreadNotification: false,
-      hasUnreadConversation: false
-    })
-
-    const { container, rerenderAt, useMessageStore } = await renderMessageNav()
-
-    await act(async () => {
-      await Promise.resolve()
-    })
-
+  it('uses the shared summary on every navigation without another GET', async () => {
+    navigationMock.pathname = '/message/chat'
+    const { rerenderAt } = await renderMessageNav()
+    await rerenderAt('/message/notice')
     expect(fetchMock.kunFetchGet).not.toHaveBeenCalled()
-    expect(fetchMock.kunFetchPut).toHaveBeenCalledWith('/message/read')
-    expect(useMessageStore.getState().hasUnreadNotification).toBe(false)
-
-    await rerenderAt('/message/chat')
-
-    expect(fetchMock.kunFetchGet).toHaveBeenCalledWith('/message/unread')
-    expect(container.querySelector('.bg-danger')).toBeNull()
-  })
-
-  it('applies caller classes to the root navigation card', async () => {
-    navigationMock.pathname = '/message/chat/12'
-    fetchMock.kunFetchGet.mockResolvedValue({
-      hasUnreadMessages: false,
-      hasUnreadChat: false
-    })
-
-    const { container } = await renderMessageNav(
-      {
-        hasUnreadNotification: false,
-        hasUnreadConversation: false
-      },
-      'max-lg:hidden'
-    )
-
-    const navCard = container.firstElementChild
-    expect(navCard?.className).toContain('w-full')
-    expect(navCard?.className).toContain('lg:w-1/4')
-    expect(navCard?.className).toContain('max-lg:hidden')
-  })
-
-  it('syncs unread conversations from the global unread status after notifications are read', async () => {
-    fetchMock.kunFetchGet.mockResolvedValue({
-      hasUnreadMessages: false,
-      hasUnreadChat: true
-    })
-    fetchMock.kunFetchPut.mockResolvedValue({
-      hasUnreadNotification: false,
-      hasUnreadConversation: true
-    })
-
-    const { container, rerenderAt, useMessageStore } = await renderMessageNav()
-
-    await act(async () => {
-      await Promise.resolve()
-    })
-
-    expect(useMessageStore.getState().hasUnreadNotification).toBe(false)
-    expect(useMessageStore.getState().hasUnreadConversation).toBe(true)
-
-    await rerenderAt('/message/chat')
-
-    await act(async () => {
-      await Promise.resolve()
-    })
-
-    expect(useMessageStore.getState().hasUnreadNotification).toBe(false)
-    expect(useMessageStore.getState().hasUnreadConversation).toBe(true)
-    expect(container.querySelector('.bg-danger')).toBeNull()
-
-    await rerenderAt('/message/notice')
-
-    expect(container.querySelector('.bg-danger')).not.toBeNull()
-  })
-
-  it('ignores an unread request that resolves after navigating into notification messages', async () => {
-    navigationMock.pathname = '/message/chat'
-    const unreadRequest = createDeferred<{
-      hasUnreadMessages: boolean
-      hasUnreadChat: boolean
-    }>()
-    fetchMock.kunFetchGet.mockReturnValueOnce(unreadRequest.promise)
-    fetchMock.kunFetchGet.mockResolvedValue({
-      hasUnreadMessages: false,
-      hasUnreadChat: false
-    })
-    fetchMock.kunFetchPut.mockResolvedValue({
-      hasUnreadNotification: false,
-      hasUnreadConversation: false
-    })
-
-    const { container, rerenderAt, useMessageStore } = await renderMessageNav()
-
-    await rerenderAt('/message/notice')
-
-    await act(async () => {
-      await Promise.resolve()
-    })
-
-    expect(useMessageStore.getState().hasUnreadNotification).toBe(false)
-
-    await act(async () => {
-      unreadRequest.resolve({
-        hasUnreadMessages: true,
-        hasUnreadChat: false
+    expect(fetchMock.kunFetchPut).toHaveBeenCalledWith(
+      '/message/read',
+      undefined,
+      expect.objectContaining({
+        timeout: 15_000,
+        preserveErrorStatus: true,
+        signal: expect.anything()
       })
-      await unreadRequest.promise
-    })
-
-    await rerenderAt('/message/chat')
-
-    await act(async () => {
-      await Promise.resolve()
-    })
-
-    expect(container.querySelector('.bg-danger')).toBeNull()
+    )
   })
-
-  it('does not let a stale unread response overwrite the notification read result', async () => {
-    navigationMock.pathname = '/message/chat'
-    const unreadRequest = createDeferred<{
-      hasUnreadMessages: boolean
-      hasUnreadChat: boolean
-    }>()
-    fetchMock.kunFetchGet.mockReturnValueOnce(unreadRequest.promise)
+  it('cancels the notification confirmation when leaving its identity', async () => {
+    const pending = createDeferred<unknown>()
+    fetchMock.kunFetchPut.mockReturnValueOnce(pending.promise)
+    const { rerenderAt } = await renderMessageNav()
+    const signal = fetchMock.kunFetchPut.mock.calls[0][2].signal as AbortSignal
+    await rerenderAt('/message/chat')
+    expect(signal.aborted).toBe(true)
+    await act(async () => {
+      pending.resolve({})
+    })
+  })
+  it('applies caller classes to the navigation card', async () => {
+    const { container } = await renderMessageNav(undefined, 'custom-navigation')
+    expect(container.firstElementChild?.className).toContain(
+      'custom-navigation'
+    )
+  })
+  it('keeps notification and conversation states independent after a successful read', async () => {
     fetchMock.kunFetchPut.mockResolvedValueOnce({
       hasUnreadNotification: false,
-      hasUnreadConversation: false
+      hasUnreadConversation: true
     })
-
-    const { rerenderAt, useMessageStore } = await renderMessageNav({
-      hasUnreadNotification: true,
-      hasUnreadConversation: false
-    })
-
-    await rerenderAt('/message/notice')
-
-    await act(async () => {
-      await Promise.resolve()
-    })
-
+    const { useMessageStore } = await renderMessageNav()
     expect(useMessageStore.getState()).toMatchObject({
       hasUnreadNotification: false,
-      hasUnreadConversation: false
+      hasUnreadConversation: true
     })
-
-    await act(async () => {
-      unreadRequest.resolve({
-        hasUnreadMessages: true,
-        hasUnreadChat: true
+  })
+  it.each(['network', 'business'])(
+    'restores notification state and requests shared recovery after %s failure',
+    async (failure) => {
+      if (failure === 'network')
+        fetchMock.kunFetchPut.mockRejectedValueOnce(new Error('offline'))
+      else fetchMock.kunFetchPut.mockResolvedValueOnce('safe business failure')
+      const { useMessageStore } = await renderMessageNav({
+        hasUnreadNotification: true,
+        hasUnreadConversation: true
       })
-      await unreadRequest.promise
-    })
-
-    expect(useMessageStore.getState()).toMatchObject({
-      hasUnreadNotification: false,
-      hasUnreadConversation: false
-    })
-  })
-
-  it('shows a retryable error and restores unread state when marking notifications read throws', async () => {
-    const toast = (await import('react-hot-toast')).default
-    vi.mocked(toast.error).mockClear()
-    fetchMock.kunFetchPut.mockRejectedValueOnce(new Error('network down'))
-    fetchMock.kunFetchGet.mockResolvedValueOnce({
-      hasUnreadMessages: true,
-      hasUnreadChat: true
-    })
-
-    const { rerenderAt, useMessageStore } = await renderMessageNav({
-      hasUnreadNotification: true,
-      hasUnreadConversation: false
-    })
-
+      expect(useMessageStore.getState()).toMatchObject({
+        hasUnreadNotification: true,
+        hasUnreadConversation: true
+      })
+      expect(syncMock.refreshUnreadSummary).toHaveBeenCalledWith('manual')
+      expect(fetchMock.kunFetchGet).not.toHaveBeenCalled()
+    }
+  )
+  it('ignores a late notification result after a same-account session change', async () => {
+    const pending = createDeferred<unknown>()
+    fetchMock.kunFetchPut.mockReturnValueOnce(pending.promise)
+    const { useUserStore, useMessageStore } = await renderMessageNav()
     await act(async () => {
-      await Promise.resolve()
-      await Promise.resolve()
+      useUserStore.setState({ sessionContext: 'ctx-b', sessionGeneration: 2 })
+      useMessageStore.getState().setUnreadMessageStatus({
+        hasUnreadNotification: true,
+        hasUnreadConversation: true
+      })
     })
-
-    expect(fetchMock.kunFetchPut).toHaveBeenCalledWith('/message/read')
-    expect(toast.error).toHaveBeenCalledWith('标记消息已读失败，请稍后重试')
-    expect(fetchMock.kunFetchGet).toHaveBeenCalledWith('/message/unread')
-    expect(useMessageStore.getState()).toMatchObject({
-      hasUnreadNotification: true,
-      hasUnreadConversation: true
-    })
-
-    await rerenderAt('/message/chat')
-
-    expect(useMessageStore.getState()).toMatchObject({
-      hasUnreadNotification: true,
-      hasUnreadConversation: true
-    })
-  })
-
-  it('restores unread state when marking notifications read returns a business error', async () => {
-    const toast = (await import('react-hot-toast')).default
-    vi.mocked(toast.error).mockClear()
-    fetchMock.kunFetchPut.mockResolvedValueOnce('用户未登录')
-    fetchMock.kunFetchGet.mockResolvedValueOnce({
-      hasUnreadMessages: true,
-      hasUnreadChat: true
-    })
-
-    const { rerenderAt, useMessageStore } = await renderMessageNav({
-      hasUnreadNotification: true,
-      hasUnreadConversation: false
-    })
-
     await act(async () => {
-      await Promise.resolve()
-      await Promise.resolve()
+      pending.resolve({
+        hasUnreadNotification: false,
+        hasUnreadConversation: false
+      })
     })
-
-    expect(fetchMock.kunFetchPut).toHaveBeenCalledWith('/message/read')
-    expect(toast.error).toHaveBeenCalledWith('用户未登录')
-    expect(fetchMock.kunFetchGet).toHaveBeenCalledWith('/message/unread')
-    expect(useMessageStore.getState()).toMatchObject({
-      hasUnreadNotification: true,
-      hasUnreadConversation: true
-    })
-
-    await rerenderAt('/message/chat')
-
-    expect(useMessageStore.getState()).toMatchObject({
-      hasUnreadNotification: true,
-      hasUnreadConversation: true
-    })
-  })
-
-  it('restores the previous unread state when both notification read and recovery are rate limited', async () => {
-    const toast = (await import('react-hot-toast')).default
-    vi.mocked(toast.error).mockClear()
-    fetchMock.kunFetchPut.mockResolvedValueOnce(
-      '通知操作过于频繁, 请 30 秒后重试'
-    )
-    fetchMock.kunFetchGet.mockResolvedValueOnce(
-      '通知读取过于频繁, 请 30 秒后重试'
-    )
-
-    const { rerenderAt, useMessageStore } = await renderMessageNav({
-      hasUnreadNotification: true,
-      hasUnreadConversation: true
-    })
-
-    await act(async () => {
-      await Promise.resolve()
-      await Promise.resolve()
-    })
-
-    expect(fetchMock.kunFetchPut).toHaveBeenCalledWith('/message/read')
-    expect(toast.error).toHaveBeenCalledWith('通知操作过于频繁, 请 30 秒后重试')
-    expect(fetchMock.kunFetchGet).toHaveBeenCalledWith('/message/unread')
-    expect(useMessageStore.getState()).toMatchObject({
-      hasUnreadNotification: true,
-      hasUnreadConversation: true
-    })
-
-    await rerenderAt('/message/chat')
-
-    expect(useMessageStore.getState()).toMatchObject({
-      hasUnreadNotification: true,
-      hasUnreadConversation: true
-    })
+    expect(useMessageStore.getState().hasUnreadConversation).toBe(true)
   })
 })

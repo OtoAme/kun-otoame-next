@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect } from 'react'
-import { kunFetchGet, kunFetchPut } from '~/utils/kunFetch'
+import { kunFetchPut } from '~/utils/kunFetch'
 import { Button } from '@heroui/react'
 import { AtSign, Bell, Globe, MessageSquare, UserPlus } from 'lucide-react'
 import { Card, CardBody } from '@heroui/card'
@@ -10,6 +10,8 @@ import Link from 'next/link'
 import toast from 'react-hot-toast'
 import { useMessageStore } from '~/store/messageStore'
 import { cn } from '~/utils/cn'
+import { useUserStore } from '~/store/userStore'
+import { refreshUnreadSummary } from '~/utils/messageSync'
 import type { MessageUnreadStatus } from '~/types/api/message'
 
 const notificationSubTypes = [
@@ -52,103 +54,79 @@ export const MessageNav = ({ className }: { className?: string }) => {
     (state) => state.setUnreadMessageStatus
   )
 
-  const fetchUnreadStatus = async () => {
-    const res = await kunFetchGet<{
-      hasUnreadMessages: boolean
-      hasUnreadChat: boolean
-    }>('/message/unread')
-    if (res && typeof res !== 'string') {
-      return {
-        hasUnreadNotification: res.hasUnreadMessages,
-        hasUnreadConversation: res.hasUnreadChat
-      }
-    }
-
-    return null
-  }
+  const { sessionStatus, sessionContext, sessionGeneration } = useUserStore()
 
   useEffect(() => {
-    if (isNotificationSection) {
+    if (
+      !isNotificationSection ||
+      sessionStatus !== 'authenticated' ||
+      !sessionContext
+    )
       return
-    }
-
     let ignore = false
-    const fetchUnread = async () => {
-      try {
-        const unreadStatus = await fetchUnreadStatus()
-        if (!ignore && unreadStatus) {
-          setUnreadMessageStatus(unreadStatus)
-        }
-      } catch {
-        // 获取未读状态失败时保留上次未读状态，不做额外处理
-      }
+    const controller = new AbortController()
+    const context = sessionContext
+    const generation = sessionGeneration
+    const isCurrent = () => {
+      const state = useUserStore.getState()
+      return (
+        !ignore &&
+        state.sessionStatus === 'authenticated' &&
+        state.sessionContext === context &&
+        state.sessionGeneration === generation
+      )
     }
-    fetchUnread()
-    return () => {
-      ignore = true
+    const previousUnread = useMessageStore.getState().hasUnreadNotification
+    const restoreUnreadStatus = () => {
+      if (!isCurrent()) return
+      setHasUnreadNotification(
+        previousUnread || useMessageStore.getState().hasUnreadNotification
+      )
+      refreshUnreadSummary('manual')
     }
-  }, [isNotificationSection, setUnreadMessageStatus])
-
-  useEffect(() => {
-    if (!isNotificationSection) {
-      return
-    }
-    let ignore = false
-    const previousUnreadStatus = {
-      hasUnreadNotification: useMessageStore.getState().hasUnreadNotification,
-      hasUnreadConversation: useMessageStore.getState().hasUnreadConversation
-    }
-    const restorePreviousUnreadStatus = () => {
-      if (!ignore) {
-        setUnreadMessageStatus(previousUnreadStatus)
-      }
-    }
-
     setHasUnreadNotification(false)
-    const readAllMessage = async () => {
-      const res =
-        await kunFetchPut<KunResponse<MessageUnreadStatus>>('/message/read')
-      if (ignore) {
-        return false
-      }
-      if (typeof res === 'string') {
-        toast.error(res)
-        return false
-      } else {
-        setUnreadMessageStatus(res)
-        return true
-      }
-    }
-    const restoreUnreadStatus = async () => {
-      try {
-        const unreadStatus = await fetchUnreadStatus()
-        if (!ignore && unreadStatus) {
-          setUnreadMessageStatus(unreadStatus)
-        } else {
-          restorePreviousUnreadStatus()
-        }
-      } catch {
-        restorePreviousUnreadStatus()
-      }
-    }
     const markNotificationsRead = async () => {
       try {
-        const readSuccessfully = await readAllMessage()
-        if (!readSuccessfully) {
-          await restoreUnreadStatus()
+        const response = await kunFetchPut<KunResponse<MessageUnreadStatus>>(
+          '/message/read',
+          undefined,
+          {
+            timeout: 15_000,
+            signal: controller.signal,
+            preserveErrorStatus: true
+          }
+        )
+        if (!isCurrent()) return
+        if (
+          !response ||
+          typeof response === 'string' ||
+          typeof response.hasUnreadNotification !== 'boolean' ||
+          typeof response.hasUnreadConversation !== 'boolean'
+        ) {
+          if (typeof response === 'string') toast.error(response)
+          restoreUnreadStatus()
+          return
         }
+        setUnreadMessageStatus(response)
       } catch {
-        if (!ignore) {
-          toast.error('标记消息已读失败，请稍后重试')
-          await restoreUnreadStatus()
-        }
+        if (!isCurrent()) return
+        toast.error('标记消息已读失败，请稍后重试')
+        restoreUnreadStatus()
       }
     }
-    markNotificationsRead()
+    void markNotificationsRead()
     return () => {
       ignore = true
+      controller.abort()
     }
-  }, [isNotificationSection, setHasUnreadNotification, setUnreadMessageStatus])
+  }, [
+    isNotificationSection,
+    sessionStatus,
+    sessionContext,
+    sessionGeneration,
+    setHasUnreadNotification,
+    setUnreadMessageStatus
+  ])
 
   const showMessageDot = hasUnreadNotification && !isNotificationSection
   const showChatDot = hasUnreadConversation && !isChatSection
