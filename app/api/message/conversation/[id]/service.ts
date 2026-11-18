@@ -15,7 +15,12 @@ import {
   consumeConversationImageUploads,
   restoreConversationImageUploads
 } from '../imageUploadMetadata'
-import { createConversationRateLimitResponse } from '../response'
+import {
+  conversationError,
+  createConversationRateLimitResponse,
+  isConversationError
+} from '../response'
+import { lockConversation } from '../transaction'
 import {
   getStickerForSending,
   mapSticker,
@@ -38,6 +43,11 @@ type PrivateMessageRecord = {
   image_group?: unknown
   sticker_id?: string | null
   sticker?: StickerRecord | null
+  reply_to_message?: {
+    is_deleted: boolean
+    content: string
+    edited_at: Date | null
+  } | null
   reply_to_message_id?: number | null
   reply_preview_content?: string | null
   reply_preview_sender_name?: string | null
@@ -50,6 +60,9 @@ type PrivateMessageRecord = {
 }
 
 const privateMessageInclude = {
+  reply_to_message: {
+    select: { is_deleted: true, content: true, edited_at: true }
+  },
   sender: {
     select: { id: true, name: true, avatar: true }
   },
@@ -154,8 +167,7 @@ const getMessageImages = (
     : []
 }
 
-const getS3UrlPrefixes = () =>
-  getS3PublicBases().map((base) => `${base}/`)
+const getS3UrlPrefixes = () => getS3PublicBases().map((base) => `${base}/`)
 
 const extractConversationImageS3Key = (url: string) => {
   const prefix = getS3UrlPrefixes().find((item) => url.startsWith(item))
@@ -294,10 +306,15 @@ const mapPrivateMessage = (msg: PrivateMessageRecord): PrivateMessage => {
     stickerId: msg.sticker_id ?? null,
     sticker,
     replyTo:
-      msg.reply_to_message_id && msg.reply_preview_sender_name
+      msg.reply_to_message_id &&
+      msg.reply_preview_sender_name &&
+      !(msg.reply_to_message === null || msg.reply_to_message?.is_deleted)
         ? {
             messageId: msg.reply_to_message_id,
-            content: replyContent,
+            content:
+              msg.reply_to_message?.edited_at && !msg.reply_selected_text
+                ? msg.reply_to_message.content.slice(0, 500)
+                : replyContent,
             senderName: msg.reply_preview_sender_name,
             selectedText: msg.reply_selected_text ?? null,
             image: replyImage,
@@ -419,78 +436,67 @@ export const getConversationMessages = async (
 ) => {
   const conversation = await verifyConversationAccess(conversationId, uid)
   if (!conversation) {
-    return '会话不存在或无权访问'
+    return conversationError(
+      403,
+      'CONVERSATION_UNAVAILABLE',
+      '会话不存在或无权访问'
+    )
   }
 
-  const { page, limit, beforeId, afterId } = input
+  const { page, limit, beforeId, afterId, reviewIds = [] } = input
+  if (
+    reviewIds.length > 100 ||
+    reviewIds.some((id) => !Number.isSafeInteger(id) || id <= 0)
+  ) {
+    return conversationError(400, 'INVALID_REVIEW_IDS', '复核消息编号无效')
+  }
   const offset = (page - 1) * limit
   const otherUser =
     conversation.user_a_id === uid ? conversation.user_b : conversation.user_a
-
-  if (afterId) {
-    const data = await prisma.user_private_message.findMany({
-      where: { conversation_id: conversationId, id: { gt: afterId } },
-      include: {
-        ...privateMessageInclude
-      },
-      orderBy: { created: 'asc' },
-      take: limit
-    })
-
-    const messages = [...data]
-      .sort(
-        (a, b) => new Date(a.created).getTime() - new Date(b.created).getTime()
-      )
-      .map(mapPrivateMessage)
-    return {
-      messages,
-      total: messages.length,
-      hasMoreBefore: false,
-      otherUser
-    }
+  const isForward = afterId !== undefined
+  const data = await prisma.user_private_message.findMany({
+    where: {
+      conversation_id: conversationId,
+      ...(isForward
+        ? { id: { gt: afterId } }
+        : beforeId !== undefined
+          ? { id: { lt: beforeId } }
+          : {})
+    },
+    include: privateMessageInclude,
+    orderBy: { id: isForward ? 'asc' : 'desc' },
+    ...(!isForward && beforeId === undefined ? { skip: offset } : {}),
+    take: limit + 1
+  })
+  const messages = data
+    .slice(0, limit)
+    .sort((left, right) => left.id - right.id)
+    .map(mapPrivateMessage)
+  const reviews = reviewIds.length
+    ? await prisma.user_private_message.findMany({
+        where: { id: { in: [...new Set(reviewIds)] } },
+        include: privateMessageInclude
+      })
+    : []
+  if (reviews.some((message) => message.conversation_id !== conversationId)) {
+    return conversationError(400, 'INVALID_REVIEW_IDS', '复核消息不属于此会话')
   }
-
-  if (beforeId) {
-    const data = await prisma.user_private_message.findMany({
-      where: { conversation_id: conversationId, id: { lt: beforeId } },
-      include: {
-        ...privateMessageInclude
-      },
-      orderBy: { id: 'desc' },
-      take: limit + 1
-    })
-
-    const hasMoreBefore = data.length > limit
-    const messages = data.slice(0, limit).reverse().map(mapPrivateMessage)
-    return {
-      messages,
-      total: messages.length,
-      hasMoreBefore,
-      otherUser
-    }
-  }
-
-  const [data, total] = await Promise.all([
-    prisma.user_private_message.findMany({
-      where: { conversation_id: conversationId },
-      include: {
-        ...privateMessageInclude
-      },
-      orderBy: { created: 'desc' },
-      skip: offset,
-      take: limit
-    }),
-    prisma.user_private_message.count({
-      where: { conversation_id: conversationId }
-    })
-  ])
-
-  const messages = data.slice().reverse().map(mapPrivateMessage)
-
+  const foundIds = new Set(reviews.map((message) => message.id))
+  const total =
+    !isForward && beforeId === undefined
+      ? await prisma.user_private_message.count({
+          where: { conversation_id: conversationId }
+        })
+      : messages.length
   return {
     messages,
+    reviewMessages: reviews.map(mapPrivateMessage),
+    unavailableIds: reviewIds.filter((id) => !foundIds.has(id)),
     total,
-    hasMoreBefore: offset + data.length < total,
+    oldestId: messages[0]?.id ?? null,
+    latestId: messages.at(-1)?.id ?? null,
+    hasMoreBefore: !isForward && data.length > limit,
+    hasMoreAfter: isForward && data.length > limit,
     otherUser
   }
 }
@@ -502,7 +508,11 @@ export const sendMessage = async (
 ) => {
   const conversation = await verifyConversationAccess(conversationId, uid)
   if (!conversation) {
-    return '会话不存在或无权访问'
+    return conversationError(
+      403,
+      'CONVERSATION_UNAVAILABLE',
+      '会话不存在或无权访问'
+    )
   }
 
   const {
@@ -574,6 +584,13 @@ export const sendMessage = async (
   const message = await (async () => {
     try {
       return await prisma.$transaction(async (tx) => {
+        const lockedConversation = await lockConversation(
+          tx,
+          conversationId,
+          uid
+        )
+        if (!lockedConversation)
+          throw new Error('Conversation no longer available')
         const created = await tx.user_private_message.create({
           data: {
             conversation_id: conversationId,
@@ -644,6 +661,7 @@ export const sendMessage = async (
     image_group: message.image_group,
     sticker_id: message.sticker_id,
     sticker: message.sticker,
+    reply_to_message: message.reply_to_message,
     reply_to_message_id: message.reply_to_message_id,
     reply_preview_content: message.reply_preview_content,
     reply_preview_sender_name: message.reply_preview_sender_name,
@@ -662,57 +680,44 @@ export const updateMessage = async (
   uid: number
 ) => {
   const conversation = await verifyConversationAccess(conversationId, uid)
-  if (!conversation) {
-    return '会话不存在或无权访问'
-  }
-
+  if (!conversation)
+    return conversationError(
+      403,
+      'CONVERSATION_UNAVAILABLE',
+      '会话不存在或无权访问'
+    )
   const { checkConversationActionRateLimit } = await import('../rateLimit')
   const rateLimit = await checkConversationActionRateLimit('message-write', uid)
-  if (!rateLimit.allowed) {
+  if (!rateLimit.allowed)
     return createConversationRateLimitResponse(
       rateLimit.message,
       rateLimit.retryAfterMs
     )
-  }
-
-  const { messageId, content } = input
-
-  const message = await prisma.user_private_message.findFirst({
-    where: {
-      id: messageId,
-      conversation_id: conversationId
+  return prisma.$transaction(async (transaction) => {
+    if (!(await lockConversation(transaction, conversationId, uid))) {
+      return conversationError(
+        403,
+        'CONVERSATION_UNAVAILABLE',
+        '会话不存在或无权访问'
+      )
+    }
+    const message = await transaction.user_private_message.findFirst({
+      where: { id: input.messageId, conversation_id: conversationId }
+    })
+    if (!message) return '消息不存在'
+    if (message.sender_id !== uid) return '只能编辑自己的消息'
+    if (message.is_deleted) return '无法编辑已删除的消息'
+    if (message.type === 2) return '贴纸消息不能编辑'
+    const updated = await transaction.user_private_message.update({
+      where: { id: input.messageId },
+      data: { content: input.content, edited_at: new Date() }
+    })
+    return {
+      id: updated.id,
+      content: updated.content,
+      editedAt: updated.edited_at
     }
   })
-
-  if (!message) {
-    return '消息不存在'
-  }
-
-  if (message.sender_id !== uid) {
-    return '只能编辑自己的消息'
-  }
-
-  if (message.is_deleted) {
-    return '无法编辑已删除的消息'
-  }
-
-  if (message.type === 2) {
-    return '贴纸消息不能编辑'
-  }
-
-  const updated = await prisma.user_private_message.update({
-    where: { id: messageId },
-    data: {
-      content,
-      edited_at: new Date()
-    }
-  })
-
-  return {
-    id: updated.id,
-    content: updated.content,
-    editedAt: updated.edited_at
-  }
 }
 
 export const deleteMessage = async (
@@ -721,99 +726,90 @@ export const deleteMessage = async (
   uid: number
 ) => {
   const conversation = await verifyConversationAccess(conversationId, uid)
-  if (!conversation) {
-    return '会话不存在或无权访问'
-  }
-
+  if (!conversation)
+    return conversationError(
+      403,
+      'CONVERSATION_UNAVAILABLE',
+      '会话不存在或无权访问'
+    )
   const { checkConversationActionRateLimit } = await import('../rateLimit')
   const rateLimit = await checkConversationActionRateLimit('message-write', uid)
-  if (!rateLimit.allowed) {
+  if (!rateLimit.allowed)
     return createConversationRateLimitResponse(
       rateLimit.message,
       rateLimit.retryAfterMs
     )
-  }
-
-  const { messageId } = input
-
-  const message = await prisma.user_private_message.findFirst({
-    where: {
-      id: messageId,
-      conversation_id: conversationId
+  const result = await prisma.$transaction(async (transaction) => {
+    if (!(await lockConversation(transaction, conversationId, uid))) {
+      return conversationError(
+        403,
+        'CONVERSATION_UNAVAILABLE',
+        '会话不存在或无权访问'
+      )
     }
-  })
-
-  if (!message) {
-    return '消息不存在'
-  }
-
-  if (message.sender_id !== uid) {
-    return '只能删除自己的消息'
-  }
-
-  if (message.is_deleted) {
-    return {}
-  }
-
-  await prisma.user_private_message.update({
-    where: { id: messageId },
-    data: { is_deleted: true }
-  })
-
-  try {
-    await deleteUnreferencedConversationImages(message)
-  } catch (error) {
-    console.error('[Conversation] Failed to cleanup private message images', {
-      conversationId,
-      messageId,
-      error
+    const message = await transaction.user_private_message.findFirst({
+      where: { id: input.messageId, conversation_id: conversationId }
     })
+    if (!message) return '消息不存在'
+    if (message.sender_id !== uid) return '只能删除自己的消息'
+    if (message.is_deleted) return { message: null }
+    await transaction.user_private_message.update({
+      where: { id: input.messageId },
+      data: { is_deleted: true }
+    })
+    return { message }
+  })
+  if (typeof result === 'string' || isConversationError(result)) return result
+  if (result.message && typeof result.message === 'object') {
+    try {
+      await deleteUnreferencedConversationImages(result.message)
+    } catch {
+      console.error('[Conversation] Image cleanup failed', {
+        conversationId,
+        messageId: input.messageId
+      })
+    }
   }
-
   return {}
 }
 
 export const markConversationAsRead = async (
   conversationId: number,
   uid: number
-) => {
-  const conversation = await prisma.user_conversation.findUnique({
-    where: { id: conversationId }
+) =>
+  prisma.$transaction(async (transaction) => {
+    const conversation = await lockConversation(
+      transaction,
+      conversationId,
+      uid
+    )
+    if (!conversation)
+      return conversationError(
+        403,
+        'CONVERSATION_UNAVAILABLE',
+        '会话不存在或无权访问'
+      )
+    const isUserA = conversation.user_a_id === uid
+    const senderId = isUserA ? conversation.user_b_id : conversation.user_a_id
+    const latest = await transaction.user_private_message.findFirst({
+      where: { conversation_id: conversationId, sender_id: senderId },
+      orderBy: { id: 'desc' },
+      select: { id: true }
+    })
+    await transaction.user_private_message.updateMany({
+      where: {
+        conversation_id: conversationId,
+        sender_id: senderId,
+        status: 0
+      },
+      data: { status: 1 }
+    })
+    await transaction.user_conversation.update({
+      where: { id: conversationId },
+      data: isUserA ? { user_a_unread_count: 0 } : { user_b_unread_count: 0 }
+    })
+    return { readThroughId: latest?.id ?? 0 }
   })
-
-  if (!conversation) {
-    return '会话不存在'
-  }
-
-  if (conversation.user_a_id !== uid && conversation.user_b_id !== uid) {
-    return '无权访问此会话'
-  }
-
-  const isUserA = conversation.user_a_id === uid
-  const unreadCount = isUserA
-    ? conversation.user_a_unread_count
-    : conversation.user_b_unread_count
-
-  if (unreadCount === 0) {
-    return {}
-  }
-
-  await prisma.user_private_message.updateMany({
-    where: {
-      conversation_id: conversationId,
-      sender_id: isUserA ? conversation.user_b_id : conversation.user_a_id,
-      status: 0
-    },
-    data: { status: 1 }
-  })
-
-  await prisma.user_conversation.update({
-    where: { id: conversationId },
-    data: isUserA ? { user_a_unread_count: 0 } : { user_b_unread_count: 0 }
-  })
-
-  return {}
-}
 
 export const deleteConversation = async (
   conversationId: number,
@@ -821,48 +817,46 @@ export const deleteConversation = async (
   options?: { skipRateLimit?: boolean }
 ) => {
   const conversation = await verifyConversationAccess(conversationId, uid)
-  if (!conversation) {
-    return '会话不存在或无权访问'
-  }
-
-  const isUserA = conversation.user_a_id === uid
+  if (!conversation)
+    return conversationError(
+      403,
+      'CONVERSATION_UNAVAILABLE',
+      '会话不存在或无权访问'
+    )
   if (!options?.skipRateLimit) {
     const { checkConversationActionRateLimit } = await import('../rateLimit')
     const rateLimit = await checkConversationActionRateLimit(
       'conversation-manage',
       uid
     )
-    if (!rateLimit.allowed) {
+    if (!rateLimit.allowed)
       return createConversationRateLimitResponse(
         rateLimit.message,
         rateLimit.retryAfterMs
       )
-    }
   }
-
-  const alreadyHidden = isUserA
-    ? conversation.user_a_hidden
-    : conversation.user_b_hidden
-  const unreadCount = isUserA
-    ? conversation.user_a_unread_count
-    : conversation.user_b_unread_count
-
-  if (alreadyHidden && unreadCount === 0) {
+  return prisma.$transaction(async (transaction) => {
+    const locked = await lockConversation(transaction, conversationId, uid)
+    if (!locked)
+      return conversationError(
+        403,
+        'CONVERSATION_UNAVAILABLE',
+        '会话不存在或无权访问'
+      )
+    const hidden =
+      locked.user_a_id === uid ? locked.user_a_hidden : locked.user_b_hidden
+    const unread =
+      locked.user_a_id === uid
+        ? locked.user_a_unread_count
+        : locked.user_b_unread_count
+    if (hidden && unread === 0) return {}
+    await transaction.user_conversation.update({
+      where: { id: conversationId },
+      data:
+        locked.user_a_id === uid
+          ? { user_a_hidden: true, user_a_unread_count: 0 }
+          : { user_b_hidden: true, user_b_unread_count: 0 }
+    })
     return {}
-  }
-
-  await prisma.user_conversation.update({
-    where: { id: conversationId },
-    data: isUserA
-      ? {
-          user_a_hidden: true,
-          user_a_unread_count: 0
-        }
-      : {
-          user_b_hidden: true,
-          user_b_unread_count: 0
-        }
   })
-
-  return {}
 }

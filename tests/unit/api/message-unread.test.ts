@@ -14,7 +14,10 @@ const prismaMock = vi.hoisted(() => ({
     findUnique: vi.fn(),
     update: vi.fn()
   },
+  $transaction: vi.fn(),
+  $queryRaw: vi.fn(),
   user_private_message: {
+    findFirst: vi.fn(),
     updateMany: vi.fn()
   }
 }))
@@ -26,6 +29,12 @@ vi.mock('~/prisma/index', () => ({
 const verifyHeaderCookieMock = vi.hoisted(() => vi.fn())
 vi.mock('~/middleware/_verifyHeaderCookie', () => ({
   verifyHeaderCookie: verifyHeaderCookieMock
+}))
+vi.mock('~/app/api/utils/sessionIdentity', () => ({
+  getRequestIdentity: async (request: Request) => {
+    const payload = await verifyHeaderCookieMock(request)
+    return payload ? { status: 'authenticated', payload } : { status: 'guest' }
+  }
 }))
 
 const rateLimitMock = vi.hoisted(() => ({
@@ -46,6 +55,13 @@ vi.mock('~/lib/redis', () => {
 describe('message unread status', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    prismaMock.$transaction.mockImplementation(async (callback) =>
+      callback(prismaMock)
+    )
+    prismaMock.$queryRaw.mockImplementation(async () => [
+      await prismaMock.user_conversation.findUnique()
+    ])
+    prismaMock.user_private_message.findFirst.mockResolvedValue({ id: 50 })
     verifyHeaderCookieMock.mockResolvedValue({ uid: 1007 })
     rateLimitMock.checkConversationActionRateLimit.mockResolvedValue({
       allowed: true
@@ -522,7 +538,8 @@ describe('message unread status', () => {
     expect(response.headers.get('cache-control')).toBe('private, no-store')
     expect(await response.json()).toEqual({
       hasUnreadNotification: true,
-      hasUnreadConversation: false
+      hasUnreadConversation: false,
+      readThroughId: 50
     })
     expect(rateLimitMock.checkConversationActionRateLimit).toHaveBeenCalledWith(
       'message-read',
@@ -536,10 +553,9 @@ describe('message unread status', () => {
     )
 
     const response = await PUT(
-      new Request(
-        'https://www.otoame.top/api/message/conversation/5abc/read',
-        { method: 'PUT' }
-      ) as never,
+      new Request('https://www.otoame.top/api/message/conversation/5abc/read', {
+        method: 'PUT'
+      }) as never,
       { params: Promise.resolve({ id: '5abc' }) }
     )
 
@@ -581,7 +597,7 @@ describe('message unread status', () => {
     expect(prismaMock.user_message.findFirst).not.toHaveBeenCalled()
   })
 
-  it('does not write when a conversation is already read for the current user', async () => {
+  it('repairs message state even when the current user counter is zero', async () => {
     prismaMock.user_conversation.findUnique.mockResolvedValueOnce({
       id: 5,
       user_a_id: 1007,
@@ -595,8 +611,8 @@ describe('message unread status', () => {
     )
     const result = await markConversationAsRead(5, 1007)
 
-    expect(result).toEqual({})
-    expect(prismaMock.user_private_message.updateMany).not.toHaveBeenCalled()
-    expect(prismaMock.user_conversation.update).not.toHaveBeenCalled()
+    expect(result).toEqual({ readThroughId: 50 })
+    expect(prismaMock.user_private_message.updateMany).toHaveBeenCalled()
+    expect(prismaMock.user_conversation.update).toHaveBeenCalled()
   })
 })

@@ -3,13 +3,13 @@
 import { cache } from 'react'
 import { cookies } from 'next/headers'
 import { parseBlockedTagIds } from '~/utils/blockedTag'
-import { verifyKunToken } from '~/app/api/utils/jwt'
+import { getPageIdentity } from './getSessionIdentity'
 import { prisma } from '~/prisma'
 
 export const getBlockedTagIds = cache(async () => {
   const cookieStore = await cookies()
-  const token = cookieStore.get('kun-galgame-patch-moe-token')?.value
-  if (!token) {
+  const payload = await getPageIdentity()
+  if (!payload) {
     return []
   }
 
@@ -18,11 +18,6 @@ export const getBlockedTagIds = cache(async () => {
   )?.value
   if (cachedBlockedTagIds !== undefined) {
     return parseBlockedTagIds(cachedBlockedTagIds)
-  }
-
-  const payload = await verifyKunToken(token)
-  if (!payload) {
-    return []
   }
 
   const user = await prisma.user.findUnique({

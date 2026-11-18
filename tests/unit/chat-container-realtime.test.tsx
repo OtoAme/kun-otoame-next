@@ -1,4 +1,4 @@
-import React, { act } from 'react'
+import React, { act as reactAct } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { JSDOM } from 'jsdom'
 import { createRoot, type Root } from 'react-dom/client'
@@ -9,6 +9,16 @@ import type {
 import type { ChatReplyHighlight } from '~/components/message/chat/ChatMessage'
 
 globalThis.React = React
+
+const act = async (callback: () => void | Promise<void>) => {
+  await reactAct(callback)
+  await reactAct(async () => {
+    await vi.advanceTimersByTimeAsync(1)
+  })
+}
+
+const navigation = vi.hoisted(() => ({ refresh: vi.fn() }))
+vi.mock('@bprogress/next', () => ({ useRouter: () => navigation }))
 
 const fetchMock = vi.hoisted(() => ({
   kunFetchGet: vi.fn(),
@@ -51,8 +61,22 @@ const chatMessageMock = vi.hoisted(() => ({
   >()
 }))
 
-vi.mock('~/utils/kunFetch', () => ({
-  kunFetchGet: fetchMock.kunFetchGet,
+vi.mock('~/utils/kunFetch', async (original) => ({
+  ...(await original<typeof import('~/utils/kunFetch')>()),
+  kunFetchGet: async (...args: unknown[]) => {
+    const response = await fetchMock.kunFetchGet(...args)
+    if (!response || typeof response !== 'object') return response
+    const ids = response.messages.map((item: PrivateMessage) => item.id)
+    return {
+      reviewMessages: [],
+      unavailableIds: [],
+      hasMoreBefore: false,
+      hasMoreAfter: false,
+      oldestId: ids[0] ?? null,
+      latestId: ids.at(-1) ?? null,
+      ...response
+    }
+  },
   kunFetchPut: fetchMock.kunFetchPut
 }))
 
@@ -310,6 +334,7 @@ describe('ChatContainer realtime sync', () => {
       hasMoreBefore?: boolean
       initialMessages?: PrivateMessage[]
       className?: string
+      mount?: boolean
     } = {}
   ) => {
     dom = new JSDOM('<!doctype html><div id="root"></div>', {
@@ -344,7 +369,12 @@ describe('ChatContainer realtime sync', () => {
 
     const { useUserStore } = await import('~/store/userStore')
     const { useMessageStore } = await import('~/store/messageStore')
-    useUserStore.setState({ user: currentUser })
+    useUserStore.setState({
+      user: currentUser,
+      sessionStatus: 'authenticated',
+      sessionContext: 'synthetic-ui',
+      sessionGeneration: 1
+    })
     useMessageStore.setState(
       {
         ...useMessageStore.getState(),
@@ -370,10 +400,13 @@ describe('ChatContainer realtime sync', () => {
     expect(container).not.toBeNull()
 
     root = createRoot(container!)
+    if (options.mount === false)
+      return { container: container!, useMessageStore }
     await act(async () => {
       root!.render(
         <ChatContainer
           conversationId={5}
+          initialSessionContext="synthetic-ui"
           initialMessages={initialMessages}
           total={options.total ?? 2}
           hasMoreBefore={options.hasMoreBefore}
@@ -418,7 +451,12 @@ describe('ChatContainer realtime sync', () => {
     vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
 
     const { useUserStore } = await import('~/store/userStore')
-    useUserStore.setState({ user: currentUser })
+    useUserStore.setState({
+      user: currentUser,
+      sessionStatus: 'authenticated',
+      sessionContext: 'synthetic-ui',
+      sessionGeneration: 1
+    })
 
     const { ChatContainer } = await import(
       '~/components/message/chat/ChatContainer'
@@ -431,6 +469,7 @@ describe('ChatContainer realtime sync', () => {
       root!.render(
         <ChatContainer
           conversationId={5}
+          initialSessionContext="synthetic-ui"
           initialMessages={[]}
           total={0}
           hasMoreBefore={false}
@@ -478,6 +517,7 @@ describe('ChatContainer realtime sync', () => {
 
   beforeEach(() => {
     vi.useFakeTimers()
+    vi.spyOn(Math, 'random').mockReturnValue(0.5)
     fetchMock.kunFetchGet.mockResolvedValue({
       messages: [],
       total: 2,
@@ -486,7 +526,8 @@ describe('ChatContainer realtime sync', () => {
     })
     fetchMock.kunFetchPut.mockResolvedValue({
       hasUnreadNotification: false,
-      hasUnreadConversation: false
+      hasUnreadConversation: false,
+      readThroughId: 0
     })
   })
 
@@ -497,6 +538,7 @@ describe('ChatContainer realtime sync', () => {
     root = undefined
     dom?.window.close()
     dom = undefined
+    vi.restoreAllMocks()
     vi.useRealTimers()
     vi.unstubAllGlobals()
     vi.resetModules()
@@ -513,6 +555,225 @@ describe('ChatContainer realtime sync', () => {
     chatMessageMock.onMessageUpdatedById.clear()
     chatMessageMock.onReplyById.clear()
   })
+
+  it.each(['success', 'failure'] as const)(
+    'confirms initial history only after a %s server page actually displays',
+    async (outcome) => {
+      const { container } = await renderChat('visible', { mount: false })
+      const { ChatContainer } = await import(
+        '~/components/message/chat/ChatContainer'
+      )
+      const { SessionContentBoundary } = await import(
+        '~/components/kun/SessionContentBoundary'
+      )
+      let complete!: (successful: boolean) => void
+      const snapshot = new Promise<boolean>((resolve) => {
+        complete = resolve
+      })
+      const ServerPage = () =>
+        React.use(snapshot) ? (
+          <ChatContainer
+            conversationId={5}
+            initialSessionContext="synthetic-ui"
+            initialMessages={[message(1, 'displayed initial body', otherUser)]}
+            total={1}
+            otherUser={otherUser}
+          />
+        ) : (
+          <div>Initial server page failed</div>
+        )
+      await act(async () => {
+        root!.render(
+          <SessionContentBoundary>
+            <React.Suspense fallback={<div>Loading initial page</div>}>
+              <ServerPage />
+            </React.Suspense>
+          </SessionContentBoundary>
+        )
+      })
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(10_000)
+      })
+      expect(fetchMock.kunFetchGet).not.toHaveBeenCalled()
+      expect(fetchMock.kunFetchPut).not.toHaveBeenCalled()
+      await act(async () => {
+        complete(outcome === 'success')
+      })
+      expect(container.textContent).toContain(
+        outcome === 'success'
+          ? 'displayed initial body'
+          : 'Initial server page failed'
+      )
+      expect(fetchMock.kunFetchPut).toHaveBeenCalledTimes(
+        outcome === 'success' ? 1 : 0
+      )
+    }
+  )
+
+  it('preserves displayed history and cursor through same-identity verification and recovery', async () => {
+    const { container } = await renderChat('visible', { mount: false })
+    const { ChatContainer } = await import(
+      '~/components/message/chat/ChatContainer'
+    )
+    const { SessionContentBoundary } = await import(
+      '~/components/kun/SessionContentBoundary'
+    )
+    const { useUserStore } = await import('~/store/userStore')
+    fetchMock.kunFetchGet.mockResolvedValueOnce({
+      messages: [message(9, 'new message', otherUser)],
+      total: 3,
+      hasMoreBefore: false,
+      otherUser
+    })
+    fetchMock.kunFetchPut.mockResolvedValue({
+      hasUnreadNotification: false,
+      hasUnreadConversation: false,
+      readThroughId: 9
+    })
+    await act(async () => {
+      root!.render(
+        <SessionContentBoundary>
+          <ChatContainer
+            conversationId={5}
+            initialSessionContext="synthetic-ui"
+            initialMessages={[message(1, 'retained history', otherUser)]}
+            total={1}
+            otherUser={otherUser}
+          />
+        </SessionContentBoundary>
+      )
+    })
+    const original = container.querySelector('[data-message-id="1"]')
+    fetchMock.kunFetchGet.mockClear()
+    fetchMock.kunFetchPut.mockClear()
+    for (const status of ['checking', 'unavailable'] as const) {
+      await act(async () => {
+        useUserStore.setState({ sessionStatus: status })
+      })
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(10_000)
+      })
+      expect(container.querySelector('[data-message-id="1"]')).toBe(original)
+      expect(container.querySelector('[hidden]')).not.toBeNull()
+      expect(fetchMock.kunFetchGet).not.toHaveBeenCalled()
+      expect(fetchMock.kunFetchPut).not.toHaveBeenCalled()
+    }
+    await act(async () => {
+      useUserStore.setState({ sessionStatus: 'authenticated' })
+    })
+    expect(container.querySelector('[data-message-id="1"]')).toBe(original)
+    expect(fetchMock.kunFetchGet.mock.calls.at(-1)?.[1]).toMatchObject({
+      afterId: 9
+    })
+    expect(fetchMock.kunFetchPut).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['success', 'member-b'],
+    ['failure', 'member-b'],
+    ['success', 'synthetic-ui'],
+    ['failure', 'synthetic-ui']
+  ] as const)(
+    'keeps private content inert during a %s RSC refresh for context %s',
+    async (outcome, nextContext) => {
+      const { container } = await renderChat()
+      const { ChatContainer } = await import(
+        '~/components/message/chat/ChatContainer'
+      )
+      const { SessionContentBoundary } = await import(
+        '~/components/kun/SessionContentBoundary'
+      )
+      const { useUserStore } = await import('~/store/userStore')
+      const initial = {
+        conversationId: 5,
+        initialSessionContext: 'synthetic-ui',
+        initialMessages: [message(1, 'old account body', otherUser)],
+        total: 1,
+        otherUser
+      }
+      type Snapshot = typeof initial | { error: string }
+      let update!: React.Dispatch<React.SetStateAction<Promise<Snapshot>>>
+      let complete!: (snapshot: Snapshot) => void
+      const deferred = new Promise<Snapshot>((resolve) => {
+        complete = resolve
+      })
+      const initialSnapshot: Promise<Snapshot> = Promise.resolve(initial)
+      const ServerPage = ({ snapshot }: { snapshot: Promise<Snapshot> }) => {
+        const props = React.use(snapshot)
+        return 'error' in props ? (
+          <div>{props.error}</div>
+        ) : (
+          <ChatContainer {...props} />
+        )
+      }
+      const App = () => {
+        const [snapshot, setSnapshot] = React.useState(initialSnapshot)
+        update = setSnapshot
+        return (
+          <SessionContentBoundary>
+            <React.Suspense fallback={<div>Loading RSC</div>}>
+              <ServerPage snapshot={snapshot} />
+            </React.Suspense>
+          </SessionContentBoundary>
+        )
+      }
+      navigation.refresh.mockImplementation(() => update(deferred))
+      await act(async () => {
+        root!.render(<App />)
+      })
+      fetchMock.kunFetchGet.mockClear()
+      fetchMock.kunFetchPut.mockClear()
+      await act(async () => {
+        useUserStore.setState({
+          sessionContext: nextContext,
+          sessionGeneration: 2,
+          user: { ...currentUser, uid: otherUser.id }
+        })
+      })
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(10_000)
+      })
+      expect(container.querySelector('[hidden]')).not.toBeNull()
+      expect(fetchMock.kunFetchPut).not.toHaveBeenCalled()
+      expect(fetchMock.kunFetchGet).not.toHaveBeenCalled()
+      await act(async () => {
+        complete(
+          outcome === 'failure'
+            ? { error: 'RSC failed' }
+            : {
+                ...initial,
+                initialSessionContext: nextContext,
+                initialMessages: [message(3, 'new account body', otherUser)]
+              }
+        )
+      })
+      if (outcome === 'failure') {
+        expect(container.textContent).toContain('RSC failed')
+        expect(fetchMock.kunFetchPut).not.toHaveBeenCalled()
+      } else {
+        if (nextContext === initial.initialSessionContext) {
+          expect(container.textContent).toContain('old account body')
+        } else {
+          expect(container.textContent).toContain('new account body')
+          expect(container.textContent).not.toContain('old account body')
+        }
+        expect(fetchMock.kunFetchPut).toHaveBeenCalledTimes(1)
+        fetchMock.kunFetchGet.mockClear()
+        fetchMock.kunFetchPut.mockClear()
+        if (nextContext !== initial.initialSessionContext) {
+          await act(async () => {
+            update(Promise.resolve(initial))
+          })
+        }
+        if (nextContext !== initial.initialSessionContext) {
+          expect(container.textContent).not.toContain('old account body')
+        }
+        expect(fetchMock.kunFetchGet).not.toHaveBeenCalled()
+        expect(fetchMock.kunFetchPut).not.toHaveBeenCalled()
+      }
+      navigation.refresh.mockReset()
+    }
+  )
 
   it('loads older history with beforeId instead of page skip', async () => {
     await renderChat('visible', { total: 3, hasMoreBefore: true })
@@ -537,7 +798,8 @@ describe('ChatContainer realtime sync', () => {
 
     expect(fetchMock.kunFetchGet).toHaveBeenCalledWith(
       '/message/conversation/5',
-      { page: 1, limit: 30, beforeId: 1 }
+      expect.objectContaining({ page: 1, limit: 50, beforeId: 1 }),
+      expect.objectContaining({ preserveErrorStatus: true, timeout: 15000 })
     )
   })
 
@@ -724,7 +986,8 @@ describe('ChatContainer realtime sync', () => {
     expect(fetchMock.kunFetchGet).toHaveBeenCalledTimes(1)
     expect(fetchMock.kunFetchGet).toHaveBeenCalledWith(
       '/message/conversation/5',
-      { page: 1, limit: 30, beforeId: 1 }
+      expect.objectContaining({ page: 1, limit: 50, beforeId: 1 }),
+      expect.objectContaining({ preserveErrorStatus: true, timeout: 15000 })
     )
 
     await act(async () => {
@@ -851,7 +1114,7 @@ describe('ChatContainer realtime sync', () => {
     ).toBe('')
 
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(499)
+      await vi.advanceTimersByTimeAsync(497)
     })
 
     expect(
@@ -914,7 +1177,8 @@ describe('ChatContainer realtime sync', () => {
 
     expect(fetchMock.kunFetchGet).toHaveBeenCalledWith(
       '/message/conversation/5',
-      { page: 1, limit: 50, afterId: 2 }
+      expect.objectContaining({ page: 1, limit: 50, afterId: 2 }),
+      expect.objectContaining({ preserveErrorStatus: true, timeout: 15000 })
     )
   })
 
@@ -931,7 +1195,8 @@ describe('ChatContainer realtime sync', () => {
 
     expect(fetchMock.kunFetchGet).toHaveBeenCalledWith(
       '/message/conversation/5',
-      { page: 1, limit: 50 }
+      expect.objectContaining({ page: 1, limit: 50, afterId: 0 }),
+      expect.objectContaining({ preserveErrorStatus: true, timeout: 15000 })
     )
   })
 
@@ -991,7 +1256,8 @@ describe('ChatContainer realtime sync', () => {
 
     expect(fetchMock.kunFetchGet).toHaveBeenCalledWith(
       '/message/conversation/5',
-      { page: 1, limit: 50, afterId: 2 }
+      expect.objectContaining({ page: 1, limit: 50, afterId: 2 }),
+      expect.objectContaining({ preserveErrorStatus: true, timeout: 15000 })
     )
   })
 
@@ -1006,9 +1272,11 @@ describe('ChatContainer realtime sync', () => {
     })
 
     expect(fetchMock.kunFetchPut).toHaveBeenCalledWith(
-      '/message/conversation/5/read'
+      '/message/conversation/5/read',
+      undefined,
+      expect.objectContaining({ preserveErrorStatus: true })
     )
-    expect(toast.error).toHaveBeenCalledWith('同步私聊已读状态失败，请稍后重试')
+    expect(container.textContent).toContain('消息同步暂时不可用，将自动重试')
     expect(container.textContent).toContain('hello')
   })
 
@@ -1020,11 +1288,6 @@ describe('ChatContainer realtime sync', () => {
     fetchMock.kunFetchGet.mockClear()
     fetchMock.kunFetchGet.mockResolvedValueOnce({
       messages: [
-        message(2, 'hi duplicate', {
-          id: currentUser.uid,
-          name: currentUser.name,
-          avatar: currentUser.avatar
-        }),
         message(3, 'fresh message', otherUser, '2026-06-29T10:03:00.000Z')
       ],
       total: 3,
@@ -1038,7 +1301,9 @@ describe('ChatContainer realtime sync', () => {
     expect(container.querySelectorAll('[data-message-id="2"]')).toHaveLength(1)
     expect(container.textContent).toContain('fresh message')
     expect(fetchMock.kunFetchPut).toHaveBeenCalledWith(
-      '/message/conversation/5/read'
+      '/message/conversation/5/read',
+      undefined,
+      expect.objectContaining({ preserveErrorStatus: true })
     )
     expect(useMessageStore.getState().hasUnreadConversation).toBe(false)
   })
@@ -1076,10 +1341,11 @@ describe('ChatContainer realtime sync', () => {
     })
 
     expect(container.textContent).toContain('fresh message')
-    expect(toast.error).toHaveBeenCalledWith('同步私聊已读状态失败，请稍后重试')
+    expect(container.textContent).toContain('消息同步暂时不可用，将自动重试')
     expect(fetchMock.kunFetchGet).toHaveBeenCalledWith(
       '/message/conversation/5',
-      { page: 1, limit: 50, beforeId: 4 }
+      expect.objectContaining({ page: 1, limit: 50, afterId: 2 }),
+      expect.objectContaining({ preserveErrorStatus: true, timeout: 15000 })
     )
   })
 
@@ -1554,30 +1820,19 @@ describe('ChatContainer realtime sync', () => {
       await Promise.resolve()
     })
     fetchMock.kunFetchGet.mockClear()
-    fetchMock.kunFetchGet
-      .mockResolvedValueOnce({
-        messages: [],
-        total: 0,
-        hasMoreBefore: false,
-        otherUser
-      })
-      .mockResolvedValueOnce({
-        messages: [
-          message(
-            2,
-            'hi',
-            {
-              id: currentUser.uid,
-              name: currentUser.name,
-              avatar: currentUser.avatar
-            },
-            '2026-06-29T10:02:00.000Z'
-          )
-        ].map((msg) => ({ ...msg, status: 1 })),
-        total: 1,
-        hasMoreBefore: false,
-        otherUser
-      })
+    fetchMock.kunFetchGet.mockResolvedValueOnce({
+      messages: [],
+      reviewMessages: [
+        message(2, 'hi', {
+          id: currentUser.uid,
+          name: currentUser.name,
+          avatar: currentUser.avatar
+        })
+      ].map((item) => ({ ...item, status: 1 })),
+      total: 2,
+      hasMoreBefore: false,
+      otherUser
+    })
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(2_000)
@@ -1585,7 +1840,8 @@ describe('ChatContainer realtime sync', () => {
 
     expect(fetchMock.kunFetchGet).toHaveBeenCalledWith(
       '/message/conversation/5',
-      { page: 1, limit: 50, beforeId: 3 }
+      expect.objectContaining({ page: 1, limit: 50, afterId: 2 }),
+      expect.objectContaining({ preserveErrorStatus: true, timeout: 15000 })
     )
     expect(
       container
@@ -1653,7 +1909,8 @@ describe('ChatContainer realtime sync', () => {
 
     expect(fetchMock.kunFetchGet).toHaveBeenCalledWith(
       '/message/conversation/5',
-      { page: 1, limit: 50, afterId: 2 }
+      expect.objectContaining({ page: 1, limit: 50, afterId: 2 }),
+      expect.objectContaining({ preserveErrorStatus: true, timeout: 15000 })
     )
     expect(container.textContent).toContain('other slightly earlier message')
   })
@@ -1765,9 +2022,14 @@ describe('ChatContainer realtime sync', () => {
       await vi.advanceTimersByTimeAsync(13_000)
     })
 
+    expect(fetchMock.kunFetchGet).not.toHaveBeenCalled()
+    await act(async () => {
+      document.dispatchEvent(new dom!.window.Event('visibilitychange'))
+    })
     expect(fetchMock.kunFetchGet).toHaveBeenCalledWith(
       '/message/conversation/5',
-      { page: 1, limit: 50, afterId: 2 }
+      expect.objectContaining({ page: 1, limit: 50, afterId: 2 }),
+      expect.objectContaining({ preserveErrorStatus: true, timeout: 15000 })
     )
   })
 
@@ -1791,7 +2053,8 @@ describe('ChatContainer realtime sync', () => {
 
     expect(fetchMock.kunFetchGet).toHaveBeenCalledWith(
       '/message/conversation/5',
-      { page: 1, limit: 50, afterId: 2 }
+      expect.objectContaining({ page: 1, limit: 50, afterId: 2 }),
+      expect.objectContaining({ preserveErrorStatus: true, timeout: 15000 })
     )
   })
 })

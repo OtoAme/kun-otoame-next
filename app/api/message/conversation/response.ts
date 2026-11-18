@@ -26,3 +26,29 @@ export const isConversationRateLimitResponse = (
 
 export const getConversationRetryAfterSeconds = (retryAfterMs: number) =>
   String(Math.max(1, Math.ceil(retryAfterMs / 1000)))
+
+export type ConversationErrorResponse = {
+  kind: 'conversation-error'
+  status: 400 | 403 | 404
+  code: string
+  message: string
+}
+
+export const conversationError = (
+  status: ConversationErrorResponse['status'],
+  code: string,
+  message: string
+): ConversationErrorResponse => ({
+  kind: 'conversation-error',
+  status,
+  code,
+  message
+})
+
+export const isConversationError = (
+  value: unknown
+): value is ConversationErrorResponse =>
+  !!value &&
+  typeof value === 'object' &&
+  'kind' in value &&
+  value.kind === 'conversation-error'

@@ -2,26 +2,16 @@
 
 import { cache } from 'react'
 import { cookies } from 'next/headers'
+import { getPageIdentity } from './getSessionIdentity'
+import { getContentLimitWhere } from '~/utils/contentPreference'
 
 export const getNSFWHeader = cache(async () => {
+  const payload = await getPageIdentity()
+  if (!payload) {
+    return { content_limit: 'sfw' }
+  }
   const cookieStore = await cookies()
-
-  const authToken = cookieStore.get('kun-galgame-patch-moe-token')?.value
-  if (!authToken) {
-    return { content_limit: 'sfw' }
-  }
-
-  const token = cookieStore.get(
-    'kun-patch-setting-store|state|data|kunNsfwEnable'
-  )?.value
-
-  if (!token) {
-    return { content_limit: 'sfw' }
-  }
-
-  if (token === 'all') {
-    return {}
-  } else {
-    return { content_limit: token }
-  }
+  return getContentLimitWhere(
+    cookieStore.get('kun-patch-setting-store|state|data|kunNsfwEnable')?.value
+  )
 })

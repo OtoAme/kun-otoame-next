@@ -22,6 +22,9 @@ vi.mock('~/app/api/admin/resource/update', () => ({
   updatePatchResource: vi.fn()
 }))
 vi.mock('~/app/api/admin/resource/delete', () => ({ deleteResource: vi.fn() }))
+vi.mock('~/app/api/utils/getNSFWHeader', () => ({
+  getNSFWHeader: vi.fn(async () => ({}))
+}))
 vi.mock('~/utils/actions/getNSFWHeader', () => ({
   getNSFWHeader: vi.fn(async () => ({}))
 }))

@@ -28,7 +28,7 @@ export default async function Kun({ params }: Props) {
 
   const response = await kunGetConversationMessagesAction(id, {
     page: 1,
-    limit: 30
+    limit: 50
   })
 
   if (typeof response === 'string') {
@@ -37,7 +37,9 @@ export default async function Kun({ params }: Props) {
 
   return (
     <ChatContainer
+      key={id}
       conversationId={id}
+      initialSessionContext={response.initialSessionContext}
       initialMessages={response.messages}
       total={response.total}
       hasMoreBefore={response.hasMoreBefore}

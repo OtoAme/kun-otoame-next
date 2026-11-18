@@ -1,101 +1,103 @@
 'use client'
 
-import { useCallback, useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { usePathname } from 'next/navigation'
+import { useMessageSyncActivity } from '~/hooks/useMessageSyncActivity'
 import { useMessageStore } from '~/store/messageStore'
 import { useUserStore } from '~/store/userStore'
 import { kunFetchGet } from '~/utils/kunFetch'
-
-const VISIBLE_POLL_INTERVAL_MS = 15_000
-const HIDDEN_POLL_INTERVAL_MS = 60_000
-const UNREAD_STATUS_TIMEOUT_MS = 10_000
-
-interface UnreadApiStatus {
-  hasUnreadMessages: boolean
-  hasUnreadChat: boolean
-}
-
-const isDocumentVisible = () =>
-  typeof document === 'undefined' || document.visibilityState !== 'hidden'
+import { refreshUserSession } from '~/utils/sessionClient'
+import {
+  bindUnreadSync,
+  createMessageSyncScheduler,
+  isUnreadSummary,
+  type UnreadSummary
+} from '~/utils/messageSync'
 
 export const MessageRealtimeSync = () => {
-  const uid = useUserStore((state) => state.user.uid)
-  const setUnreadMessageStatus = useMessageStore(
-    (state) => state.setUnreadMessageStatus
+  const [syncFailed, setSyncFailed] = useState(false)
+  const pathname = usePathname()
+  const activity = useMessageSyncActivity(
+    /^\/message\/chat\/[^/]+/.test(pathname)
   )
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-
-  const clearPollTimer = useCallback(() => {
-    if (!timerRef.current) {
-      return
-    }
-
-    clearTimeout(timerRef.current)
-    timerRef.current = null
-  }, [])
+  const { sessionStatus, sessionContext, sessionGeneration } = useUserStore()
+  const schedulerRef = useRef<ReturnType<
+    typeof createMessageSyncScheduler
+  > | null>(null)
+  const activityRef = useRef(activity)
+  activityRef.current = activity
 
   useEffect(() => {
-    if (!uid) {
-      clearPollTimer()
-      return
+    if (!sessionContext) return
+    const context = sessionContext
+    const generation = sessionGeneration
+    const isCurrent = () => {
+      const state = useUserStore.getState()
+      return (
+        state.sessionStatus === 'authenticated' &&
+        state.sessionContext === context &&
+        state.sessionGeneration === generation
+      )
     }
-
-    let ignore = false
-    let unreadSyncInFlight = false
-
-    const syncUnreadStatus = async () => {
-      if (unreadSyncInFlight) {
-        return
-      }
-
-      unreadSyncInFlight = true
-      try {
-        const res = await kunFetchGet<KunResponse<UnreadApiStatus>>(
-          '/message/unread',
-          undefined,
-          { timeout: UNREAD_STATUS_TIMEOUT_MS }
-        )
-        if (ignore || typeof res === 'string') {
-          return
-        }
-
-        setUnreadMessageStatus({
-          hasUnreadNotification: res.hasUnreadMessages,
-          hasUnreadConversation: res.hasUnreadChat
+    const scheduler = createMessageSyncScheduler({
+      request: (signal) =>
+        kunFetchGet<UnreadSummary>('/message/unread', undefined, {
+          timeout: 15_000,
+          signal,
+          preserveErrorStatus: true
+        }),
+      validate: isUnreadSummary,
+      reuseRecentSuccessOnResume: true,
+      onSuccess: (unread) => {
+        if (!isCurrent()) return
+        useMessageStore.getState().setUnreadMessageStatus({
+          hasUnreadNotification: unread.hasUnreadMessages,
+          hasUnreadConversation: unread.hasUnreadChat
         })
-      } catch {
-        // 轮询失败时保持现有未读状态，由 finally 继续调度下一次轮询
-      } finally {
-        unreadSyncInFlight = false
-        if (!ignore) {
-          clearPollTimer()
-          timerRef.current = setTimeout(
-            syncUnreadStatus,
-            isDocumentVisible()
-              ? VISIBLE_POLL_INTERVAL_MS
-              : HIDDEN_POLL_INTERVAL_MS
-          )
-        }
+      },
+      onChange: (snapshot) => {
+        if (isCurrent()) setSyncFailed(snapshot.status === 'error')
+      },
+      onInvalid: () => {
+        if (isCurrent()) void refreshUserSession()
       }
-    }
-
-    const syncWhenVisible = () => {
-      if (!isDocumentVisible()) {
-        return
-      }
-
-      clearPollTimer()
-      void syncUnreadStatus()
-    }
-
-    void syncUnreadStatus()
-    document.addEventListener('visibilitychange', syncWhenVisible)
-
+    })
+    schedulerRef.current = scheduler
+    const unbind = bindUnreadSync({ context, generation }, scheduler)
+    scheduler.setEnabled(
+      activityRef.current.enabled &&
+        useUserStore.getState().sessionStatus === 'authenticated'
+    )
+    const unsubscribe = useUserStore.subscribe((state) => {
+      const current =
+        state.sessionContext === context &&
+        state.sessionGeneration === generation &&
+        state.sessionStatus === 'authenticated'
+      if (current) scheduler.confirmIdentity()
+      scheduler.setEnabled(current && activityRef.current.enabled)
+    })
     return () => {
-      ignore = true
-      clearPollTimer()
-      document.removeEventListener('visibilitychange', syncWhenVisible)
+      unsubscribe()
+      unbind()
+      scheduler.dispose()
+      if (schedulerRef.current === scheduler) schedulerRef.current = null
     }
-  }, [clearPollTimer, setUnreadMessageStatus, uid])
+  }, [sessionContext, sessionGeneration])
 
-  return null
+  useEffect(() => {
+    const scheduler = schedulerRef.current
+    scheduler?.setEnabled(activity.enabled && sessionStatus === 'authenticated')
+    if (
+      activity.enabled &&
+      sessionStatus === 'authenticated' &&
+      activity.resumeVersion > 0
+    )
+      scheduler?.refresh('resume')
+  }, [activity.enabled, activity.resumeVersion, sessionStatus])
+
+  return syncFailed && sessionStatus === 'authenticated' ? (
+    <span role="status" className="sr-only">
+      消息同步暂时不可用，将自动重试
+    </span>
+  ) : null
 }

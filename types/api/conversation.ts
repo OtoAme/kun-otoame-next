@@ -79,5 +79,16 @@ export interface ConversationMessagesResponse {
   messages: PrivateMessage[]
   total: number
   hasMoreBefore: boolean
+  hasMoreAfter: boolean
+  oldestId: number | null
+  latestId: number | null
+  reviewMessages: PrivateMessage[]
+  unavailableIds: number[]
   otherUser: KunUser
+}
+
+export interface ConversationReadResponse {
+  hasUnreadNotification: boolean
+  hasUnreadConversation: boolean
+  readThroughId: number
 }

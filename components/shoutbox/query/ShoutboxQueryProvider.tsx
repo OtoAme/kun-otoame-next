@@ -23,8 +23,7 @@ import type { ShoutboxRequestContext } from '~/types/api/shoutbox'
 
 interface ShoutboxQueryContextValue {
   client: QueryClient
-  /** False during SSR and the first client render; flips true once after the
-   *  first client effect and never resets on client-side navigation. */
+  /** Requests require hydration and a confirmed authenticated or guest identity. */
   clientReady: boolean
   /** The context the API would apply right now (auth + preference cookies). */
   scope: ShoutboxRequestContext
@@ -67,12 +66,16 @@ export const ShoutboxQueryProvider = ({
   children: ReactNode
 }) => {
   const [client] = useState(() => new QueryClient())
-  const [clientReady, setClientReady] = useState(false)
+  const [hydrated, setHydrated] = useState(false)
   useEffect(() => {
-    setClientReady(true)
+    setHydrated(true)
   }, [])
 
-  const uid = useUserStore((state) => state.user.uid)
+  const sessionStatus = useUserStore((state) => state.sessionStatus)
+  const clientReady =
+    hydrated && (sessionStatus === 'authenticated' || sessionStatus === 'guest')
+  const cachedUid = useUserStore((state) => state.user.uid)
+  const uid = sessionStatus === 'authenticated' ? cachedUid : 0
   const nsfw = useSettingStore((state) => state.data.kunNsfwEnable)
   const blockedTagIds = useSettingStore((state) => state.data.kunBlockedTagIds)
 
@@ -80,8 +83,8 @@ export const ShoutboxQueryProvider = ({
     () =>
       normalizeShoutboxContext({
         uid,
-        nsfw,
-        blockedTags: blockedTagIds
+        nsfw: uid ? nsfw : 'sfw',
+        blockedTags: uid ? blockedTagIds : []
       }),
     [uid, nsfw, blockedTagIds]
   )
