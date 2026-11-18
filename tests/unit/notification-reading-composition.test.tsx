@@ -81,6 +81,7 @@ it('restarts a partially occluded card for a fresh continuous interval without r
     callback(0)
     return 1
   })
+  vi.stubGlobal('cancelAnimationFrame', vi.fn())
   vi.stubGlobal('React', React)
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
   dom.window.scrollTo = vi.fn()

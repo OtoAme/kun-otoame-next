@@ -13,6 +13,7 @@ import {
 } from '@heroui/react'
 import { KunLoading } from '~/components/kun/Loading'
 import { KunPagination } from '~/components/kun/Pagination'
+import { useSessionContentReady } from '~/components/kun/SessionContentBoundary'
 import { MessageCard } from './MessageCard'
 import { KunFetchError, kunFetchDelete, kunFetchGet } from '~/utils/kunFetch'
 import { refreshUserSession } from '~/utils/sessionClient'
@@ -49,6 +50,9 @@ interface Props {
 }
 
 export const MessageContainer = (_props: Props) => {
+  const contentReady = useSessionContentReady()
+  const contentReadyRef = useRef(contentReady)
+  contentReadyRef.current = contentReady
   const session = useUserStore()
   const summary = useMessageStore((state) => state.notifications)
   const hasUnread = useMessageStore((state) => state.hasUnreadNotification)
@@ -246,20 +250,8 @@ export const MessageContainer = (_props: Props) => {
     viewRef.current = cache
     setView(cache)
     if (!cache.pages.length) void fetchPage(cache, 0)
-    else {
-      setLoading(false)
-      requestAnimationFrame(() =>
-        window.scrollTo(0, cache.pages[cache.index].scrollY)
-      )
-    }
-    const savePosition = () => {
-      if (cache.pages[cache.index])
-        cache.pages[cache.index].scrollY = window.scrollY
-    }
-    window.addEventListener('scroll', savePosition, { passive: true })
+    else setLoading(false)
     return () => {
-      savePosition()
-      window.removeEventListener('scroll', savePosition)
       request.current++
       controller.current?.abort()
       if (flushTimer.current) clearTimeout(flushTimer.current)
@@ -267,6 +259,31 @@ export const MessageContainer = (_props: Props) => {
       flushTimer.current = null
     }
   }, [identity, key, fetchPage])
+
+  useEffect(() => {
+    if (!contentReady || !identity || !view || !current || loading) return
+    const displayedView = view
+    const displayedPage = current
+    const location = window.location.pathname + window.location.search
+    const active = () =>
+      contentReadyRef.current &&
+      isCurrentNotificationIdentity(identity) &&
+      viewRef.current === displayedView &&
+      displayedView.pages[displayedView.index] === displayedPage &&
+      window.location.pathname + window.location.search === location
+    const savePosition = () => {
+      if (active()) displayedPage.scrollY = window.scrollY
+    }
+    const frame = requestAnimationFrame(() => {
+      if (!active()) return
+      window.scrollTo(0, displayedPage.scrollY)
+      window.addEventListener('scroll', savePosition, { passive: true })
+    })
+    return () => {
+      cancelAnimationFrame(frame)
+      window.removeEventListener('scroll', savePosition)
+    }
+  }, [contentReady, identity, view, current, loading])
 
   const seen = useCallback(
     (message: Message, eligible?: () => boolean) => {
@@ -393,7 +410,6 @@ export const MessageContainer = (_props: Props) => {
       setLoading(false)
       view.index = index
       render((value) => value + 1)
-      requestAnimationFrame(() => window.scrollTo(0, view.pages[index].scrollY))
     } else
       void fetchPage(
         view,

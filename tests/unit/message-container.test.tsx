@@ -20,6 +20,7 @@ const mocks = vi.hoisted(() => ({
   params: 'state=unread',
   seed: vi.fn(),
   scroll: vi.fn(),
+  contentReady: true,
   eligible: true
 }))
 vi.mock('next/navigation', () => ({
@@ -33,6 +34,9 @@ vi.mock('~/utils/kunFetch', async (original) => ({
   kunFetchDelete: mocks.remove
 }))
 vi.mock('~/utils/sessionClient', () => ({ refreshUserSession: mocks.refresh }))
+vi.mock('~/components/kun/SessionContentBoundary', () => ({
+  useSessionContentReady: () => mocks.contentReady
+}))
 vi.mock('~/utils/messageSync', () => ({
   beginUnreadRead: () => 1,
   seedSessionUnread: mocks.seed
@@ -147,6 +151,7 @@ describe('notification list browsing and concrete reading', () => {
     mocks.params = 'state=unread'
     mocks.pathname = '/message/notice'
     mocks.eligible = true
+    mocks.contentReady = true
     mocks.get.mockReset().mockResolvedValue(page(90))
     mocks.remove.mockReset()
     mocks.confirm
@@ -170,6 +175,7 @@ describe('notification list browsing and concrete reading', () => {
       callback(0)
       return 1
     })
+    vi.stubGlobal('cancelAnimationFrame', vi.fn())
     ;({ useUserStore } = await import('~/store/userStore'))
     ;({ useMessageStore } = await import('~/store/messageStore'))
     useUserStore.setState({ sessionStatus: 'guest', sessionContext: null })
@@ -309,6 +315,50 @@ describe('notification list browsing and concrete reading', () => {
       expect(mocks.get).toHaveBeenCalledTimes(3)
     }
   )
+
+  it('preserves the last displayed scroll when navigation collapses the page before unmount', async () => {
+    await render()
+    Object.defineProperty(dom.window, 'scrollY', {
+      value: 780,
+      configurable: true
+    })
+    dom.window.dispatchEvent(new dom.window.Event('scroll'))
+    Object.defineProperty(dom.window, 'scrollY', {
+      value: 0,
+      configurable: true
+    })
+    dom.window.history.pushState({}, '', '/help/1')
+    dom.window.dispatchEvent(new dom.window.Event('scroll'))
+    await act(async () => root!.render(null))
+    dom.window.history.pushState({}, '', '/message/notice')
+    mocks.scroll.mockClear()
+    await render()
+    expect(mocks.scroll).toHaveBeenLastCalledWith(0, 780)
+    expect(mocks.get).toHaveBeenCalledTimes(1)
+  })
+
+  it('waits for displayed session content before restoring and saving a cached position', async () => {
+    await render()
+    Object.defineProperty(dom.window, 'scrollY', {
+      value: 780,
+      configurable: true
+    })
+    dom.window.dispatchEvent(new dom.window.Event('scroll'))
+    await act(async () => root!.render(null))
+    mocks.contentReady = false
+    Object.defineProperty(dom.window, 'scrollY', {
+      value: 0,
+      configurable: true
+    })
+    mocks.scroll.mockClear()
+    await render()
+    expect(mocks.scroll).not.toHaveBeenCalled()
+    dom.window.dispatchEvent(new dom.window.Event('scroll'))
+    mocks.contentReady = true
+    await render()
+    expect(mocks.scroll).toHaveBeenLastCalledWith(0, 780)
+    expect(mocks.get).toHaveBeenCalledTimes(1)
+  })
 
   it.each(['hidden', 'blur', 'next', 'reload'])(
     'drops queued confirmations when %s happens before dispatch',
