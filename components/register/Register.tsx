@@ -13,7 +13,7 @@ import {
   DropdownItem
 } from '@heroui/dropdown'
 import { ChevronDown } from 'lucide-react'
-import { kunFetchPost } from '~/utils/kunFetch'
+import { withSessionMutation } from '~/utils/sessionMutation'
 import { registerSchema } from '~/validations/auth'
 import { useUserStore } from '~/store/userStore'
 import { kunErrorHandler } from '~/utils/kunErrorHandler'
@@ -27,7 +27,7 @@ import type { UserState } from '~/store/userStore'
 type RegisterFormData = z.infer<typeof registerSchema>
 
 export const RegisterForm = () => {
-  const { setUser } = useUserStore((state) => state)
+  const { setLoginUser } = useUserStore((state) => state)
   const router = useRouter()
   const [isAgree, setIsAgree] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -57,23 +57,28 @@ export const RegisterForm = () => {
 
     setLoading(true)
     const { name, code, password } = watch()
-    const res = await kunFetchPost<KunResponse<UserState>>('/auth/register', {
-      name,
-      email: fullEmail,
-      code,
-      password
-    })
-
-    setLoading(false)
-
-    kunErrorHandler(res, (value) => {
-      setUser(value)
-      reset()
-      setEmailLocal('')
-      setEmailDomain(KUN_EMAIL_DOMAIN_WHITELIST[0])
-      toast.success('注册成功!')
-      router.push(`/user/${value.uid}/comment`, { scroll: false })
-    })
+    try {
+      await withSessionMutation(async (request) => {
+        const { body: res } = await request<KunResponse<UserState>>(
+          '/api/auth/register',
+          { body: { name, email: fullEmail, code, password } }
+        )
+        kunErrorHandler(res, (value) => {
+          setLoginUser(value)
+          reset()
+          setEmailLocal('')
+          setEmailDomain(KUN_EMAIL_DOMAIN_WHITELIST[0])
+          toast.success('注册成功!')
+          router.push(`/user/${value.uid}/comment`, { scroll: false })
+        })
+      })
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : '注册结果未确认，请重试'
+      )
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (

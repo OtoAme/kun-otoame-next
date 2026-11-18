@@ -2,6 +2,12 @@
 
 OtoAme 的页面分为公开网站、用户工作台和管理后台。页面负责呈现内容和操作入口；能否读取或修改数据，由服务器按当前身份和业务条件检查。全局协作关系见[项目架构](../concepts/architecture.md)，具体权限见[权限与业务规则](permissions.md)。
 
+## 浏览器会话确认
+
+持久化的用户资料只用于恢复显示缓存，顶栏身份与个人内容需等待服务器确认。确认中或暂不可用时，顶栏不显示已登录身份，个人内容暂时隐藏；同一会话重新检查保留尚未提交的页面输入，故障时提供重试。登录入口和静态公开内容仍可访问。认证操作排队时提示等待前一操作，已经开始但尚未取得响应时提示结果确认中；中断或失败显示具体结果，不自动重复登录或退出。
+
+退出、账号切换或同一账号建立新会话后，浏览器清理旧账号偏好与未读状态、刷新当前内容，并隔离旧请求的迟到结果。其他标签页收到身份变化后重新确认服务器会话；前进后退、页面恢复及重新可见时也会检查。游戏详情在服务器返回页面内容和元数据前核对可见性，受限正文不会作为隐藏的客户端属性下发。
+
 ## 公开网站
 
 首页、游戏列表、标签和会社页面帮助读者发现内容。首页提供默认不含成人内容的最新 24 条游戏和 4 份资源的静态首屏数据，浏览器随后补充实时浏览量与下载量；只有首屏游戏数据为空时，才额外读取首页数据进行补充。静态页面不应混入某一用户的登录状态或屏蔽偏好。
@@ -50,11 +56,11 @@ OtoAme 的页面分为公开网站、用户工作台和管理后台。页面负�
 
 ## 源码入口
 
-- [前台布局与导航](../../app/(site)/layout.tsx)、[工作台与后台共用的界面根布局](../../app/(dashboard)/layout.tsx)与[管理员预览根布局](../../app/(preview)/layout.tsx)
+- [前台布局与导航](<../../app/(site)/layout.tsx>)、[工作台与后台共用的界面根布局](<../../app/(dashboard)/layout.tsx>)与[管理员预览根布局](<../../app/(preview)/layout.tsx>)
 - [页面登录拦截](../../middleware/auth.ts)、[工作台身份检查](../../lib/workspace/auth.ts)、[后台身份检查](../../lib/dashboard/auth.ts)与[搜索抓取限制](../../app/robots.ts)
-- [首页与静态数据入口](../../app/(site)/page.tsx)、[首页数据读取](../../app/api/home/service.ts)与[游戏详情入口](../../app/(site)/[id]/page.tsx)
-- [标签详情入口](../../app/(site)/tag/[id]/page.tsx)与[会社详情入口](../../app/(site)/company/[id]/page.tsx)
-- [本人工作台页面](../../app/(dashboard)/workspace/)与[旧问题地址兼容](../../utils/workspaceRoutes.ts)
-- [管理后台页面](../../app/(dashboard)/dashboard/)、[侧栏分组与页面权限](../../constants/dashboard.ts)、[控制台分页](../../components/dashboard/page/DashboardPagination.tsx)与[管理员预览](../../app/(preview)/preview/)
-- [求助区页面](../../app/(site)/help/)
-- [个人萌萌点中心](../../app/(site)/moemoepoint/)与[消息页面](../../app/(site)/message/)
+- [首页与静态数据入口](<../../app/(site)/page.tsx>)、[首页数据读取](../../app/api/home/service.ts)与[游戏详情入口](<../../app/(site)/[id]/page.tsx>)
+- [标签详情入口](<../../app/(site)/tag/[id]/page.tsx>)与[会社详情入口](<../../app/(site)/company/[id]/page.tsx>)
+- [本人工作台页面](<../../app/(dashboard)/workspace/>)与[旧问题地址兼容](../../utils/workspaceRoutes.ts)
+- [管理后台页面](<../../app/(dashboard)/dashboard/>)、[侧栏分组与页面权限](../../constants/dashboard.ts)、[控制台分页](../../components/dashboard/page/DashboardPagination.tsx)与[管理员预览](<../../app/(preview)/preview/>)
+- [求助区页面](<../../app/(site)/help/>)
+- [个人萌萌点中心](<../../app/(site)/moemoepoint/>)与[消息页面](<../../app/(site)/message/>)

@@ -6,7 +6,7 @@ import {
   ALL_SUPPORTED_PLATFORM,
   ALL_SUPPORTED_TYPE
 } from '~/constants/resource'
-import { getNSFWHeader } from '~/app/api/utils/getNSFWHeader'
+import { getPatchVisibilityWhere } from '~/app/api/utils/getPatchVisibilityWhere'
 import { getGalgame } from './service'
 
 export const GET = async (req: NextRequest) => {
@@ -22,7 +22,7 @@ export const GET = async (req: NextRequest) => {
     return NextResponse.json('请选择我们支持的 OtomeGame 排序类型')
   }
 
-  const nsfwEnable = getNSFWHeader(req)
+  const nsfwEnable = await getPatchVisibilityWhere(req)
 
   const response = await getGalgame(input, nsfwEnable)
   return NextResponse.json(response)

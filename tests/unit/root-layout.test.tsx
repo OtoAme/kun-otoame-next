@@ -11,6 +11,12 @@ const navigationMock = vi.hoisted(() => ({
   pathname: '/'
 }))
 
+vi.mock('~/components/kun/SessionContentBoundary', () => ({
+  SessionContentBoundary: ({ children }: { children: React.ReactNode }) => (
+    <>{children}</>
+  )
+}))
+
 vi.mock('next/headers', () => ({
   cookies: vi.fn(async () => ({
     get: vi.fn(() => undefined)

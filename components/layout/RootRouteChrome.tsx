@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from 'react'
 import { usePathname } from 'next/navigation'
+import { SessionContentBoundary } from '~/components/kun/SessionContentBoundary'
 import { KunBackToTop } from '~/components/kun/BackToTop'
 import { KunFooter } from '~/components/kun/Footer'
 import { isMessageChatConversationPath } from '~/constants/routes/matcher'
@@ -159,7 +160,23 @@ export const KunRootRouteChrome = ({
             'max-lg:min-h-0 max-lg:grow max-lg:overflow-hidden'
         )}
       >
-        {children}
+        <SessionContentBoundary
+          personalized={
+            !(
+              pathname === '/' ||
+              pathname === '/login' ||
+              pathname === '/register' ||
+              pathname.startsWith('/login/') ||
+              pathname.startsWith('/auth/') ||
+              pathname === '/doc' ||
+              pathname.startsWith('/doc/') ||
+              pathname === '/friend-link' ||
+              pathname === '/moemoepoint/rules'
+            )
+          }
+        >
+          {children}
+        </SessionContentBoundary>
       </div>
       {!isConversationDetail && <KunBackToTop />}
       {!isConversationDetail && <KunFooter />}

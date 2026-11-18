@@ -31,7 +31,7 @@ vi.mock('next/link', () => ({
 // The query provider subscribes to these stores through plain selector calls;
 // fixed values keep the public query scope deterministic.
 vi.mock('~/store/userStore', () => {
-  const store = { user: { uid: 0, role: 1 } }
+  const store = { sessionStatus: 'guest', user: { uid: 0, role: 1 } }
   const useUserStore = (selector: (state: typeof store) => unknown) =>
     selector(store)
   useUserStore.getState = () => store

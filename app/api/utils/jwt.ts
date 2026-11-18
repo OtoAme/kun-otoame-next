@@ -143,27 +143,73 @@ export const generateKunStatelessToken = (
   return token
 }
 
-export const verifyKunToken = async (refreshToken: string) => {
+export type KunIdentityResult =
+  | { status: 'authenticated'; payload: KunGalgamePayload }
+  | { status: 'guest' }
+  | { status: 'unavailable' }
+
+export class SessionUnavailableError extends Error {
+  constructor() {
+    super('会话验证暂时不可用，请稍后重试')
+    this.name = 'SessionUnavailableError'
+  }
+}
+
+export const verifyKunTokenResult = async (
+  refreshToken: string
+): Promise<KunIdentityResult> => {
+  if (!refreshToken) {
+    return { status: 'guest' }
+  }
+
+  if (!process.env.JWT_SECRET || !process.env.JWT_ISS || !process.env.JWT_AUD) {
+    return { status: 'unavailable' }
+  }
+
+  let payload: KunGalgamePayload
   try {
-    const payload = jwt.verify(refreshToken, process.env.JWT_SECRET!, {
+    payload = jwt.verify(refreshToken, process.env.JWT_SECRET!, {
       issuer: process.env.JWT_ISS!,
       audience: process.env.JWT_AUD!
     }) as KunGalgamePayload
+  } catch (error) {
+    if (
+      error instanceof jwt.JsonWebTokenError ||
+      error instanceof jwt.TokenExpiredError ||
+      error instanceof jwt.NotBeforeError
+    ) {
+      return { status: 'guest' }
+    }
+    return { status: 'unavailable' }
+  }
+
+  if (
+    !Number.isSafeInteger(payload.uid) ||
+    payload.uid <= 0 ||
+    typeof payload.jti !== 'string' ||
+    !payload.jti
+  ) {
+    return { status: 'guest' }
+  }
+
+  try {
     const session = parseSession(
       await getKv(getSessionKey(payload.uid, payload.jti))
     )
 
     if (session) {
+      if (session.uid !== payload.uid || session.jti !== payload.jti) {
+        return { status: 'guest' }
+      }
       return {
-        ...payload,
-        name: session.name,
-        role: session.role
+        status: 'authenticated',
+        payload: { ...payload, name: session.name, role: session.role }
       }
     }
 
     const legacyToken = await getKv(`access:token:${payload.uid}`)
     if (!legacyToken || legacyToken !== refreshToken) {
-      return null
+      return { status: 'guest' }
     }
 
     await saveSession({
@@ -175,10 +221,15 @@ export const verifyKunToken = async (refreshToken: string) => {
     })
     await delKv(`access:token:${payload.uid}`)
 
-    return payload
-  } catch (error) {
-    return null
+    return { status: 'authenticated', payload }
+  } catch {
+    return { status: 'unavailable' }
   }
+}
+
+export const verifyKunToken = async (refreshToken: string) => {
+  const result = await verifyKunTokenResult(refreshToken)
+  return result.status === 'authenticated' ? result.payload : null
 }
 
 export const deleteKunToken = async (uid: number) => {
