@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { useSessionContentReady } from '~/components/kun/SessionContentBoundary'
 import { useUserStore } from '~/store/userStore'
 import { useMessageStore } from '~/store/messageStore'
 import { kunFetchGet, kunFetchPut, KunFetchError } from '~/utils/kunFetch'
@@ -29,6 +30,7 @@ type HistoryRequest = {
 }
 interface Options {
   conversationId: number
+  initialSessionContext: string
   initialCursor: number
   getReviewIds: () => number[]
   onBatch: (
@@ -69,6 +71,9 @@ const isMessagePage = (
 export const usePrivateChatSync = (options: Options) => {
   const optionsRef = useRef(options)
   optionsRef.current = options
+  const contentReady = useSessionContentReady()
+  const contentReadyRef = useRef(contentReady)
+  contentReadyRef.current = contentReady
   const activity = useMessageSyncActivity(true)
   const activityRef = useRef(activity)
   activityRef.current = activity
@@ -88,7 +93,8 @@ export const usePrivateChatSync = (options: Options) => {
   const readNeededRef = useRef(true)
 
   const recordActivity = useCallback(() => {
-    if (document.visibilityState === 'hidden') return
+    if (!contentReadyRef.current || document.visibilityState === 'hidden')
+      return
     const wasSlow = Date.now() - quietSinceRef.current >= 60_000
     quietSinceRef.current = Date.now()
     if (wasSlow) syncRef.current?.refresh('manual')
@@ -106,6 +112,7 @@ export const usePrivateChatSync = (options: Options) => {
       !syncRef.current ||
       historyRef.current ||
       !activityRef.current.enabled ||
+      !contentReadyRef.current ||
       useUserStore.getState().sessionStatus !== 'authenticated'
     )
       return Promise.resolve(null)
@@ -116,7 +123,8 @@ export const usePrivateChatSync = (options: Options) => {
   }, [])
 
   useEffect(() => {
-    if (!sessionContext) return
+    if (!sessionContext || sessionContext !== options.initialSessionContext)
+      return
     let disposed = false
     setSyncFailed(false)
     setReadFailed(false)
@@ -140,11 +148,13 @@ export const usePrivateChatSync = (options: Options) => {
         state.sessionStatus === 'authenticated' &&
         state.sessionContext === context &&
         state.sessionGeneration === generation &&
-        optionsRef.current.conversationId === conversationId
+        optionsRef.current.conversationId === conversationId &&
+        optionsRef.current.initialSessionContext === context
       )
     }
     const foreground = () =>
       currentIdentity() &&
+      contentReadyRef.current &&
       activityRef.current.enabled &&
       document.visibilityState !== 'hidden' &&
       navigator.onLine !== false
@@ -323,10 +333,19 @@ export const usePrivateChatSync = (options: Options) => {
       if (syncRef.current === scheduler) syncRef.current = null
       if (readSyncRef.current === readScheduler) readSyncRef.current = null
     }
-  }, [options.conversationId, sessionContext, sessionGeneration])
+  }, [
+    options.conversationId,
+    options.initialSessionContext,
+    sessionContext,
+    sessionGeneration
+  ])
 
   useEffect(() => {
-    const enabled = activity.enabled && sessionStatus === 'authenticated'
+    const enabled =
+      contentReady &&
+      activity.enabled &&
+      sessionStatus === 'authenticated' &&
+      sessionContext === options.initialSessionContext
     syncRef.current?.setEnabled(enabled)
     readSyncRef.current?.setEnabled(enabled && readNeededRef.current)
     if (!enabled && historyRef.current) {
@@ -338,7 +357,14 @@ export const usePrivateChatSync = (options: Options) => {
       syncRef.current?.refresh('resume')
       readSyncRef.current?.refresh('resume')
     }
-  }, [activity.enabled, activity.resumeVersion, sessionStatus])
+  }, [
+    activity.enabled,
+    activity.resumeVersion,
+    contentReady,
+    sessionStatus,
+    sessionContext,
+    options.initialSessionContext
+  ])
 
   useEffect(() => {
     const events = ['pointerdown', 'keydown', 'scroll', 'touchstart'] as const

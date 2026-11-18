@@ -17,6 +17,9 @@ const act = async (callback: () => void | Promise<void>) => {
   })
 }
 
+const navigation = vi.hoisted(() => ({ refresh: vi.fn() }))
+vi.mock('@bprogress/next', () => ({ useRouter: () => navigation }))
+
 const fetchMock = vi.hoisted(() => ({
   kunFetchGet: vi.fn(),
   kunFetchPut: vi.fn()
@@ -331,6 +334,7 @@ describe('ChatContainer realtime sync', () => {
       hasMoreBefore?: boolean
       initialMessages?: PrivateMessage[]
       className?: string
+      mount?: boolean
     } = {}
   ) => {
     dom = new JSDOM('<!doctype html><div id="root"></div>', {
@@ -396,10 +400,13 @@ describe('ChatContainer realtime sync', () => {
     expect(container).not.toBeNull()
 
     root = createRoot(container!)
+    if (options.mount === false)
+      return { container: container!, useMessageStore }
     await act(async () => {
       root!.render(
         <ChatContainer
           conversationId={5}
+          initialSessionContext="synthetic-ui"
           initialMessages={initialMessages}
           total={options.total ?? 2}
           hasMoreBefore={options.hasMoreBefore}
@@ -462,6 +469,7 @@ describe('ChatContainer realtime sync', () => {
       root!.render(
         <ChatContainer
           conversationId={5}
+          initialSessionContext="synthetic-ui"
           initialMessages={[]}
           total={0}
           hasMoreBefore={false}
@@ -547,6 +555,225 @@ describe('ChatContainer realtime sync', () => {
     chatMessageMock.onMessageUpdatedById.clear()
     chatMessageMock.onReplyById.clear()
   })
+
+  it.each(['success', 'failure'] as const)(
+    'confirms initial history only after a %s server page actually displays',
+    async (outcome) => {
+      const { container } = await renderChat('visible', { mount: false })
+      const { ChatContainer } = await import(
+        '~/components/message/chat/ChatContainer'
+      )
+      const { SessionContentBoundary } = await import(
+        '~/components/kun/SessionContentBoundary'
+      )
+      let complete!: (successful: boolean) => void
+      const snapshot = new Promise<boolean>((resolve) => {
+        complete = resolve
+      })
+      const ServerPage = () =>
+        React.use(snapshot) ? (
+          <ChatContainer
+            conversationId={5}
+            initialSessionContext="synthetic-ui"
+            initialMessages={[message(1, 'displayed initial body', otherUser)]}
+            total={1}
+            otherUser={otherUser}
+          />
+        ) : (
+          <div>Initial server page failed</div>
+        )
+      await act(async () => {
+        root!.render(
+          <SessionContentBoundary>
+            <React.Suspense fallback={<div>Loading initial page</div>}>
+              <ServerPage />
+            </React.Suspense>
+          </SessionContentBoundary>
+        )
+      })
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(10_000)
+      })
+      expect(fetchMock.kunFetchGet).not.toHaveBeenCalled()
+      expect(fetchMock.kunFetchPut).not.toHaveBeenCalled()
+      await act(async () => {
+        complete(outcome === 'success')
+      })
+      expect(container.textContent).toContain(
+        outcome === 'success'
+          ? 'displayed initial body'
+          : 'Initial server page failed'
+      )
+      expect(fetchMock.kunFetchPut).toHaveBeenCalledTimes(
+        outcome === 'success' ? 1 : 0
+      )
+    }
+  )
+
+  it('preserves displayed history and cursor through same-identity verification and recovery', async () => {
+    const { container } = await renderChat('visible', { mount: false })
+    const { ChatContainer } = await import(
+      '~/components/message/chat/ChatContainer'
+    )
+    const { SessionContentBoundary } = await import(
+      '~/components/kun/SessionContentBoundary'
+    )
+    const { useUserStore } = await import('~/store/userStore')
+    fetchMock.kunFetchGet.mockResolvedValueOnce({
+      messages: [message(9, 'new message', otherUser)],
+      total: 3,
+      hasMoreBefore: false,
+      otherUser
+    })
+    fetchMock.kunFetchPut.mockResolvedValue({
+      hasUnreadNotification: false,
+      hasUnreadConversation: false,
+      readThroughId: 9
+    })
+    await act(async () => {
+      root!.render(
+        <SessionContentBoundary>
+          <ChatContainer
+            conversationId={5}
+            initialSessionContext="synthetic-ui"
+            initialMessages={[message(1, 'retained history', otherUser)]}
+            total={1}
+            otherUser={otherUser}
+          />
+        </SessionContentBoundary>
+      )
+    })
+    const original = container.querySelector('[data-message-id="1"]')
+    fetchMock.kunFetchGet.mockClear()
+    fetchMock.kunFetchPut.mockClear()
+    for (const status of ['checking', 'unavailable'] as const) {
+      await act(async () => {
+        useUserStore.setState({ sessionStatus: status })
+      })
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(10_000)
+      })
+      expect(container.querySelector('[data-message-id="1"]')).toBe(original)
+      expect(container.querySelector('[hidden]')).not.toBeNull()
+      expect(fetchMock.kunFetchGet).not.toHaveBeenCalled()
+      expect(fetchMock.kunFetchPut).not.toHaveBeenCalled()
+    }
+    await act(async () => {
+      useUserStore.setState({ sessionStatus: 'authenticated' })
+    })
+    expect(container.querySelector('[data-message-id="1"]')).toBe(original)
+    expect(fetchMock.kunFetchGet.mock.calls.at(-1)?.[1]).toMatchObject({
+      afterId: 9
+    })
+    expect(fetchMock.kunFetchPut).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['success', 'member-b'],
+    ['failure', 'member-b'],
+    ['success', 'synthetic-ui'],
+    ['failure', 'synthetic-ui']
+  ] as const)(
+    'keeps private content inert during a %s RSC refresh for context %s',
+    async (outcome, nextContext) => {
+      const { container } = await renderChat()
+      const { ChatContainer } = await import(
+        '~/components/message/chat/ChatContainer'
+      )
+      const { SessionContentBoundary } = await import(
+        '~/components/kun/SessionContentBoundary'
+      )
+      const { useUserStore } = await import('~/store/userStore')
+      const initial = {
+        conversationId: 5,
+        initialSessionContext: 'synthetic-ui',
+        initialMessages: [message(1, 'old account body', otherUser)],
+        total: 1,
+        otherUser
+      }
+      type Snapshot = typeof initial | { error: string }
+      let update!: React.Dispatch<React.SetStateAction<Promise<Snapshot>>>
+      let complete!: (snapshot: Snapshot) => void
+      const deferred = new Promise<Snapshot>((resolve) => {
+        complete = resolve
+      })
+      const initialSnapshot: Promise<Snapshot> = Promise.resolve(initial)
+      const ServerPage = ({ snapshot }: { snapshot: Promise<Snapshot> }) => {
+        const props = React.use(snapshot)
+        return 'error' in props ? (
+          <div>{props.error}</div>
+        ) : (
+          <ChatContainer {...props} />
+        )
+      }
+      const App = () => {
+        const [snapshot, setSnapshot] = React.useState(initialSnapshot)
+        update = setSnapshot
+        return (
+          <SessionContentBoundary>
+            <React.Suspense fallback={<div>Loading RSC</div>}>
+              <ServerPage snapshot={snapshot} />
+            </React.Suspense>
+          </SessionContentBoundary>
+        )
+      }
+      navigation.refresh.mockImplementation(() => update(deferred))
+      await act(async () => {
+        root!.render(<App />)
+      })
+      fetchMock.kunFetchGet.mockClear()
+      fetchMock.kunFetchPut.mockClear()
+      await act(async () => {
+        useUserStore.setState({
+          sessionContext: nextContext,
+          sessionGeneration: 2,
+          user: { ...currentUser, uid: otherUser.id }
+        })
+      })
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(10_000)
+      })
+      expect(container.querySelector('[hidden]')).not.toBeNull()
+      expect(fetchMock.kunFetchPut).not.toHaveBeenCalled()
+      expect(fetchMock.kunFetchGet).not.toHaveBeenCalled()
+      await act(async () => {
+        complete(
+          outcome === 'failure'
+            ? { error: 'RSC failed' }
+            : {
+                ...initial,
+                initialSessionContext: nextContext,
+                initialMessages: [message(3, 'new account body', otherUser)]
+              }
+        )
+      })
+      if (outcome === 'failure') {
+        expect(container.textContent).toContain('RSC failed')
+        expect(fetchMock.kunFetchPut).not.toHaveBeenCalled()
+      } else {
+        if (nextContext === initial.initialSessionContext) {
+          expect(container.textContent).toContain('old account body')
+        } else {
+          expect(container.textContent).toContain('new account body')
+          expect(container.textContent).not.toContain('old account body')
+        }
+        expect(fetchMock.kunFetchPut).toHaveBeenCalledTimes(1)
+        fetchMock.kunFetchGet.mockClear()
+        fetchMock.kunFetchPut.mockClear()
+        if (nextContext !== initial.initialSessionContext) {
+          await act(async () => {
+            update(Promise.resolve(initial))
+          })
+        }
+        if (nextContext !== initial.initialSessionContext) {
+          expect(container.textContent).not.toContain('old account body')
+        }
+        expect(fetchMock.kunFetchGet).not.toHaveBeenCalled()
+        expect(fetchMock.kunFetchPut).not.toHaveBeenCalled()
+      }
+      navigation.refresh.mockReset()
+    }
+  )
 
   it('loads older history with beforeId instead of page skip', async () => {
     await renderChat('visible', { total: 3, hasMoreBefore: true })

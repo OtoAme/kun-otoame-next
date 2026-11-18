@@ -68,6 +68,7 @@ describe('private chat authorized sync lifecycle', () => {
     beginRequest = usePrivateChatRequest(conversationId)
     api = usePrivateChatSync({
       conversationId,
+      initialSessionContext: 'synthetic-chat',
       initialCursor: 0,
       getReviewIds: () => reviewIds,
       onBatch: accepted

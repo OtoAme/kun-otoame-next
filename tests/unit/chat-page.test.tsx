@@ -73,6 +73,7 @@ describe('/message/chat/[conversationId] page', () => {
 
   it('rejects malformed conversation IDs before loading initial messages', async () => {
     mocks.kunGetConversationMessagesAction.mockResolvedValue({
+      initialSessionContext: 'synthetic-page-context',
       messages: [],
       total: 0,
       hasMoreBefore: false,
@@ -92,6 +93,7 @@ describe('/message/chat/[conversationId] page', () => {
 
   it('renders a conversation without registering a breadcrumb title', async () => {
     mocks.kunGetConversationMessagesAction.mockResolvedValue({
+      initialSessionContext: 'synthetic-page-context',
       messages: [],
       total: 0,
       hasMoreBefore: false,
@@ -103,7 +105,11 @@ describe('/message/chat/[conversationId] page', () => {
     )
     const element = (await Page({
       params: Promise.resolve({ conversationId: '5' })
-    })) as React.ReactElement<{ conversationId: number; className?: string }>
+    })) as React.ReactElement<{
+      conversationId: number
+      initialSessionContext: string
+      className?: string
+    }>
 
     expect(mocks.kunGetConversationMessagesAction).toHaveBeenCalledWith(5, {
       page: 1,
@@ -111,6 +117,7 @@ describe('/message/chat/[conversationId] page', () => {
     })
     expect(mocks.KunBreadcrumbTitle).not.toHaveBeenCalled()
     expect(element.props.conversationId).toBe(5)
+    expect(element.props.initialSessionContext).toBe('synthetic-page-context')
     expect(element.props.className).toBe(
       'h-[calc(100dvh_-_192px_-_var(--message-chat-top-reserve))] max-lg:h-[calc(var(--message-chat-visual-viewport-height,100dvh)_-_96px_-_var(--message-chat-top-reserve))] max-lg:max-h-[calc(var(--message-chat-visual-viewport-height,100dvh)_-_96px_-_var(--message-chat-top-reserve))] max-lg:min-h-0 max-lg:translate-y-[var(--message-chat-visual-viewport-offset-top,0px)] max-lg:transition-[height,max-height,transform] max-lg:duration-150 max-lg:ease-out motion-reduce:transition-none'
     )

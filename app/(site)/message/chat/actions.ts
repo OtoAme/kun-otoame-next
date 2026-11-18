@@ -7,6 +7,7 @@ import {
   getConversationsSchema,
   getConversationMessagesSchema
 } from '~/validations/conversation'
+import { getSessionContext } from '~/app/api/utils/sessionIdentity'
 import { verifyHeaderCookie } from '~/utils/actions/verifyHeaderCookie'
 import { getConversations } from '~/app/api/message/conversation/service'
 import { getConversationMessages } from '~/app/api/message/conversation/[id]/service'
@@ -68,5 +69,7 @@ export const kunGetConversationMessagesAction = async (
     input,
     payload.uid
   )
-  return isConversationError(response) ? response.message : response
+  return isConversationError(response)
+    ? response.message
+    : { ...response, initialSessionContext: getSessionContext(payload) }
 }

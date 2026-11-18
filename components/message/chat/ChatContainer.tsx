@@ -34,6 +34,7 @@ interface ChatConversationImage extends KunImageViewerImage {
 
 interface Props {
   conversationId: number
+  initialSessionContext: string
   initialMessages: PrivateMessage[]
   total: number
   hasMoreBefore?: boolean
@@ -106,6 +107,7 @@ const getReplyHighlight = (
 
 const ChatConversation = ({
   conversationId,
+  initialSessionContext,
   initialMessages,
   total,
   hasMoreBefore,
@@ -496,6 +498,7 @@ const ChatConversation = ({
     loadHistory
   } = usePrivateChatSync({
     conversationId,
+    initialSessionContext,
     initialCursor: getLatestMessageId(initialMessages),
     getReviewIds,
     onBatch: applyBatch
@@ -920,6 +923,7 @@ const ChatConversation = ({
 export const ChatContainer = (props: Props) => {
   const context = useUserStore((state) => state.sessionContext)
   const generation = useUserStore((state) => state.sessionGeneration)
+  if (!context || context !== props.initialSessionContext) return null
   return (
     <ChatConversation
       key={`${props.conversationId}:${context}:${generation}`}

@@ -39,6 +39,7 @@ export default async function Kun({ params }: Props) {
     <ChatContainer
       key={id}
       conversationId={id}
+      initialSessionContext={response.initialSessionContext}
       initialMessages={response.messages}
       total={response.total}
       hasMoreBefore={response.hasMoreBefore}
