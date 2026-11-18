@@ -63,6 +63,7 @@ export const followUser = async (uid: number, currentUserUid: number) => {
     })
 
     await createDedupMessage({
+      event_type: 'follow',
       type: 'follow',
       content: '关注了您!',
       sender_id: currentUserUid,

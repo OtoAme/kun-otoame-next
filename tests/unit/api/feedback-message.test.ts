@@ -77,16 +77,24 @@ describe('feedback messages', () => {
       sender_id: 100
     })
 
-    await handleFeedback({
-      messageId: 50,
-      content: '已处理'
-    })
+    await handleFeedback(
+      {
+        messageId: 50,
+        content: '已处理'
+      },
+      7
+    )
 
-    expect(createMessageMock).toHaveBeenCalledWith({
-      type: 'system',
-      content: expect.stringContaining('您的反馈已处理'),
-      recipient_id: 100,
-      link: '/'
-    })
+    expect(createMessageMock).toHaveBeenCalledWith(
+      {
+        event_type: 'feedback-result',
+        actor_id: 7,
+        type: 'system',
+        content: expect.stringContaining('您的反馈已处理'),
+        recipient_id: 100,
+        link: '/'
+      },
+      prismaMock
+    )
   })
 })

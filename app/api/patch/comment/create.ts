@@ -43,6 +43,7 @@ export const createPatchComment = async (
 
     if (parentComment!.user_id !== uid) {
       await createDedupMessage({
+        event_type: 'comment-reply',
         type: 'comment',
         content: `回复了您的评论：${parentComment!.content.slice(0, 107)}`,
         sender_id: uid,

@@ -16,7 +16,7 @@ import {
   readLinkCaseContext
 } from '~/app/api/case/linkHealth'
 import { lockCaseUsers } from '~/app/api/case/service'
-import { createMessage } from '~/app/api/utils/message'
+import { createNotificationBatch } from '~/app/api/utils/message'
 import {
   assertLinkMaintenanceFeedbackOpen,
   recordLinkMaintenanceReport,
@@ -295,17 +295,18 @@ const notifyUncasedTransition = async (
     })
   ).map((user) => user.id)
   const accounts = await lockCaseUsers(tx, recipients)
-  for (const id of recipients)
-    if (id !== actorId && accounts.has(id))
-      await createMessage(
-        {
-          type: 'system',
-          recipient_id: id,
-          content: '资源链接的健康状态已更新，请查看对应资源。',
-          link: `/${row.resource.patch.unique_id}`
-        },
-        tx
-      )
+  await createNotificationBatch(
+    recipients
+      .filter((id) => id !== actorId && accounts.has(id))
+      .map((id) => ({
+        event_type: 'maintenance-result',
+        type: 'system',
+        recipient_id: id,
+        content: '资源链接的健康状态已更新，请查看对应资源。',
+        link: `/${row.resource.patch.unique_id}`
+      })),
+    tx
+  )
 }
 const applyTransition = async (
   tx: Prisma.TransactionClient,

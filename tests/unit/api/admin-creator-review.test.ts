@@ -22,6 +22,12 @@ const mocks = vi.hoisted(() => {
 })
 
 vi.mock('~/prisma/index', () => ({ prisma: mocks.prisma }))
+vi.mock('~/app/api/utils/message', () => ({
+  createMessage: async (
+    { actor_id, ...data }: Record<string, unknown>,
+    tx: any
+  ) => tx.user_message.create({ data })
+}))
 vi.mock('~/app/api/utils/jwt', () => ({
   updateKunSessions: mocks.updateKunSessions
 }))

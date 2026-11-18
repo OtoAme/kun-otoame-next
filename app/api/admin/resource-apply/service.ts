@@ -71,6 +71,8 @@ export const approvePatchResource = async (
 
     await createMessage(
       {
+        event_type: 'resource-result',
+        actor_id: adminUid,
         type: 'system',
         content: `你上传的${resourceTypeName}「${resource.name || resource.patch.name}」已通过审核，感谢你的分享！`,
         recipient_id: resource.user_id,
@@ -153,6 +155,8 @@ export const declinePatchResource = async (
         current.section === 'galgame' ? '游戏资源' : '补丁资源'
       await createMessage(
         {
+          event_type: 'resource-result',
+          actor_id: adminUid,
           type: 'system',
           content: `你上传的${resourceTypeName}「${current.name || current.patch.name}」未通过审核，原因：${reason}`,
           recipient_id: current.user_id,

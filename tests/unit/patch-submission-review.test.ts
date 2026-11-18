@@ -21,6 +21,12 @@ const prismaMocks = vi.hoisted(() => {
 })
 
 vi.mock('~/prisma/index', () => ({ prisma: prismaMocks }))
+vi.mock('~/app/api/utils/message', () => ({
+  createMessage: async (
+    { actor_id, ...data }: Record<string, unknown>,
+    tx: any
+  ) => tx.user_message.create({ data })
+}))
 
 const publishSubmissionCoreMock = vi.hoisted(() => vi.fn())
 const runPublishSideEffectsMock = vi.hoisted(() => vi.fn())

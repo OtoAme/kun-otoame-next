@@ -12,7 +12,16 @@ vi.mock('~/prisma/index', () => ({ prisma: prismaMocks }))
 
 const createMessageMock = vi.hoisted(() => vi.fn())
 vi.mock('~/app/api/utils/message', () => ({
-  createMessage: createMessageMock
+  createMessage: createMessageMock,
+  createNotificationBatch: async (
+    data: Record<string, unknown>[],
+    tx: unknown
+  ) =>
+    Promise.all(
+      data.map((item) =>
+        tx === undefined ? createMessageMock(item) : createMessageMock(item, tx)
+      )
+    )
 }))
 
 import {
@@ -84,8 +93,8 @@ describe('patch submission reviewer notification', () => {
       })
     )
     expect(consoleError).toHaveBeenCalledWith(
-      'Failed to notify some patch submission reviewers',
-      expect.objectContaining({ failed: 1, total: 2 })
+      'Failed to notify patch submission reviewers',
+      expect.objectContaining({ submissionId: 1, error: expect.any(Error) })
     )
   })
 
@@ -172,8 +181,8 @@ describe('patch submission withdrawal notification', () => {
 
     expect(createMessageMock).toHaveBeenCalledTimes(2)
     expect(consoleError).toHaveBeenCalledWith(
-      'Failed to notify some patch submission withdrawal reviewers',
-      expect.objectContaining({ failed: 1, total: 2 })
+      'Failed to notify patch submission withdrawal reviewers',
+      expect.objectContaining({ submissionId: 1, error: expect.any(Error) })
     )
   })
 })

@@ -25,6 +25,12 @@ const deps = vi.hoisted(() => ({
   cache: vi.fn()
 }))
 vi.mock('~/prisma/index', () => ({ prisma: db }))
+vi.mock('~/app/api/utils/message', () => ({
+  createMessage: async (data: unknown, tx: any) =>
+    tx.user_message.create({ data }),
+  createNotificationBatch: (data: unknown[], tx: any) =>
+    Promise.all(data.map((item) => tx.user_message.create({ data: item })))
+}))
 vi.mock('~/app/api/case/service', () => ({
   lockCaseUsers: async (_tx: unknown, ids: number[]) => new Set(ids)
 }))

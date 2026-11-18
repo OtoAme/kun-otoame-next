@@ -126,6 +126,7 @@ describe('grantMoemoepoint', () => {
     expect(createMessageMock).toHaveBeenCalledWith(
       {
         type: 'system',
+        event_type: 'points',
         content: '管理员为您发放了 50 萌萌点。',
         sender_id: 2,
         recipient_id: 1,
@@ -168,6 +169,7 @@ describe('grantMoemoepoint', () => {
     expect(createMessageMock).toHaveBeenCalledWith(
       {
         type: 'system',
+        event_type: 'points',
         content: '管理员为您发放了 50 萌萌点。\n理由: 活动奖励',
         sender_id: 2,
         recipient_id: 1,

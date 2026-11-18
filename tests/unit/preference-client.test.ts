@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { JSDOM } from 'jsdom'
 import type { PreferenceSnapshot } from '~/types/api/preferences'
+import { NOTIFICATION_SUBSCRIPTIONS } from '~/constants/notification'
 let dom: JSDOM
 const transport = vi.fn()
 const context = 'a'.repeat(64)
@@ -14,6 +15,12 @@ const snapshot = (
   nsfwSelected: version > 0,
   blockedTagIds: [],
   items: {
+    ...Object.fromEntries(
+      NOTIFICATION_SUBSCRIPTIONS.map((key) => [
+        key,
+        { value: true, version: 0 }
+      ])
+    ),
     nsfw: { value: mode, version },
     'email-notice': { value: false, version: 0 }
   }

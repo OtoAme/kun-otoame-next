@@ -5,7 +5,7 @@ import {
   PATCH_SUBMISSION_GALLERY_MAX_COUNT,
   PATCH_SUBMISSION_REVIEW_MIN_ROLE
 } from '~/constants/patchSubmission'
-import { createMessage } from '~/app/api/utils/message'
+import { createNotificationBatch } from '~/app/api/utils/message'
 import { PatchSubmissionError } from './quota'
 import { decodePatchSubmissionPayload } from './payloadCodec'
 import type { PatchSubmissionPayload } from '~/types/api/patchSubmission'
@@ -40,25 +40,16 @@ const notifyPatchSubmissionReviewers = async (
       input.event === 'submitted'
         ? `用户 ${input.authorName} 提交了游戏条目《${input.submissionName}》，请前往审核。`
         : `用户 ${input.authorName} 撤回了游戏条目《${input.submissionName}》，该投稿已返回草稿。`
-    const results = await Promise.allSettled(
-      reviewers.map((reviewer) =>
-        createMessage({
-          type: 'system',
-          content,
-          sender_id: input.authorId,
-          recipient_id: reviewer.id,
-          link: `/admin/submission/${input.submissionId}`
-        })
-      )
+    await createNotificationBatch(
+      reviewers.map((reviewer) => ({
+        event_type: 'submission-pending',
+        type: 'system',
+        content,
+        sender_id: input.authorId,
+        recipient_id: reviewer.id,
+        link: `/admin/submission/${input.submissionId}`
+      }))
     )
-    const failed = results.filter((result) => result.status === 'rejected')
-    if (failed.length) {
-      console.error(`Failed to notify some ${logSubject}`, {
-        submissionId: input.submissionId,
-        failed: failed.length,
-        total: reviewers.length
-      })
-    }
   } catch (error) {
     console.error(`Failed to notify ${logSubject}`, {
       submissionId: input.submissionId,

@@ -1,6 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const prismaMock = vi.hoisted(() => ({
+  $transaction: vi.fn(),
+  $queryRaw: vi.fn(),
+  $executeRaw: vi.fn(),
   user: { findUnique: vi.fn() },
   user_message: {
     count: vi.fn(),
@@ -50,10 +53,52 @@ vi.mock('~/lib/redis', () => {
   }
 })
 
+const summaryMock = vi.hoisted(() => vi.fn())
+vi.mock('~/app/api/message/notificationQuery', async () => ({
+  notificationCategorySql: (await import('@prisma/client')).Prisma.empty,
+  readNotificationSummary: summaryMock
+}))
+vi.mock('~/app/api/utils/message', async (original) => ({
+  ...(await original<typeof import('~/app/api/utils/message')>()),
+  createMessage: (data: unknown) => prismaMock.user_message.create({ data })
+}))
+const notificationSummary = (unread = 0) => ({
+  unread,
+  sequence: '90',
+  categories: Object.fromEntries(
+    ['interaction', 'help', 'review', 'maintenance', 'account'].map(
+      (category) => [
+        category,
+        {
+          unread: category === 'account' ? unread : 0,
+          sequence: category === 'account' ? '90' : '0'
+        }
+      ]
+    )
+  )
+})
+
 describe('message unread status', () => {
   beforeEach(() => {
-    vi.clearAllMocks()
-    prismaMock.user.findUnique.mockResolvedValue({ preference_version: 3 })
+    vi.resetAllMocks()
+    summaryMock.mockResolvedValue(notificationSummary())
+    prismaMock.$transaction.mockImplementation(async (action) =>
+      action(prismaMock)
+    )
+    prismaMock.$queryRaw.mockImplementation(async (query) => {
+      const sql = query.sql ?? query.join('')
+      if (sql.includes('max(id)')) return [{ maximum: 11 }]
+      if (sql.includes('count(*)')) return [{ amount: 1 }]
+      return [{ id: sql.includes('user_message') ? 11 : 1007 }]
+    })
+    prismaMock.$executeRaw.mockResolvedValue(2)
+    prismaMock.user_message.findMany.mockResolvedValue([])
+    prismaMock.user_message.updateMany.mockResolvedValue({ count: 1 })
+    prismaMock.user_conversation.findFirst.mockResolvedValue(null)
+    prismaMock.user.findUnique.mockResolvedValue({
+      id: 1007,
+      preference_version: 3
+    })
     verifyHeaderCookieMock.mockResolvedValue({ uid: 1007 })
     rateLimitMock.checkConversationActionRateLimit.mockResolvedValue({
       allowed: true
@@ -61,21 +106,18 @@ describe('message unread status', () => {
   })
 
   it('returns the message-nav unread shape from notification and conversation state', async () => {
-    prismaMock.user_message.findFirst.mockResolvedValueOnce({ id: 1 })
+    summaryMock.mockResolvedValueOnce(notificationSummary(1))
     prismaMock.user_conversation.findFirst.mockResolvedValueOnce(null)
 
     const { getUnreadStatus } = await import('~/app/api/message/service')
     const result = await getUnreadStatus(1007)
 
-    expect(result).toEqual({
+    expect(result).toMatchObject({
       preferenceVersion: 3,
       hasUnreadMessages: true,
       hasUnreadChat: false
     })
-    expect(prismaMock.user_message.findFirst).toHaveBeenCalledWith({
-      where: { recipient_id: 1007, status: 0 },
-      select: { id: true }
-    })
+    expect(summaryMock).toHaveBeenCalledWith(prismaMock, 1007)
     expect(prismaMock.user_conversation.findFirst).toHaveBeenCalledWith({
       where: {
         OR: [
@@ -104,7 +146,7 @@ describe('message unread status', () => {
     )
     const result = await getUnreadMessageStatus(1007)
 
-    expect(result).toEqual({
+    expect(result).toMatchObject({
       preferenceVersion: 3,
       hasUnreadNotification: false,
       hasUnreadConversation: true
@@ -128,120 +170,67 @@ describe('message unread status', () => {
     })
   })
 
-  it('marks only unread notification messages as read without changing conversation counters', async () => {
-    prismaMock.user_message.findFirst.mockResolvedValueOnce({ id: 1 })
-
+  it('rejects unscoped confirmation without changing either message channel', async () => {
     const { readMessage } = await import('~/app/api/message/service')
-
-    await readMessage(1007)
-
-    expect(prismaMock.user_message.findFirst).toHaveBeenCalledWith({
-      where: { recipient_id: 1007, status: 0 },
-      select: { id: true }
+    expect(await readMessage(1007)).toMatchObject({
+      code: 'NOTIFICATION_SCOPE_REQUIRED'
     })
-    expect(prismaMock.user_message.updateMany).toHaveBeenCalledWith({
-      where: { recipient_id: 1007, status: 0 },
-      data: { status: { set: 1 } }
-    })
-    expect(prismaMock.user_conversation.findFirst).not.toHaveBeenCalled()
-  })
-
-  it('does not write notification rows when there are no unread notifications', async () => {
-    prismaMock.user_message.findFirst.mockResolvedValueOnce(null)
-
-    const { readMessage } = await import('~/app/api/message/service')
-
-    await readMessage(1007)
-
-    expect(prismaMock.user_message.findFirst).toHaveBeenCalledWith({
-      where: { recipient_id: 1007, status: 0 },
-      select: { id: true }
-    })
+    expect(prismaMock.$transaction).not.toHaveBeenCalled()
     expect(prismaMock.user_message.updateMany).not.toHaveBeenCalled()
+    expect(prismaMock.user_private_message.updateMany).not.toHaveBeenCalled()
   })
 
-  it('clears all read notification messages when no concrete type is selected', async () => {
-    prismaMock.user_message.findFirst.mockResolvedValueOnce({ id: 2 })
+  it('does not write when the requested concrete message is unavailable', async () => {
+    const { readMessage } = await import('~/app/api/message/service')
+    expect(
+      await readMessage(1007, { items: [{ id: 11, version: '1' }] })
+    ).toMatchObject({ results: [{ id: 11, outcome: 'missing' }] })
+    expect(prismaMock.user_message.updateMany).not.toHaveBeenCalled()
+    expect(prismaMock.user_private_message.updateMany).not.toHaveBeenCalled()
+  })
 
+  it('locks and deletes only the current recipients read rows', async () => {
     const { clearReadMessage } = await import('~/app/api/message/service')
-
-    await clearReadMessage(1007, '')
-
-    expect(prismaMock.user_message.findFirst).toHaveBeenCalledWith({
-      where: {
-        recipient_id: 1007,
-        status: 1
-      },
-      select: { id: true }
-    })
-    expect(prismaMock.user_message.deleteMany).toHaveBeenCalledWith({
-      where: {
-        recipient_id: 1007,
-        status: 1
-      }
-    })
+    expect(await clearReadMessage(1007, '')).toMatchObject({ deleted: 2 })
+    const deletion = prismaMock.$executeRaw.mock.calls[0][0]
+    expect(deletion.sql).toContain('DELETE FROM user_message WHERE')
+    expect(deletion.sql).toContain('status =')
+    expect(deletion.sql).toContain('id = ANY(')
+    expect(deletion.values).toEqual([1007, 1, [11]])
+    expect(prismaMock.user_private_message.updateMany).not.toHaveBeenCalled()
   })
 
-  it('clears only the selected notification type when a concrete type is selected', async () => {
-    prismaMock.user_message.findFirst.mockResolvedValueOnce({ id: 3 })
-
+  it('keeps concrete type and category in both cleanup lock and deletion predicates', async () => {
     const { clearReadMessage } = await import('~/app/api/message/service')
-
-    await clearReadMessage(1007, 'system')
-
-    expect(prismaMock.user_message.findFirst).toHaveBeenCalledWith({
-      where: {
-        recipient_id: 1007,
-        type: 'system',
-        status: 1
-      },
-      select: { id: true }
-    })
-    expect(prismaMock.user_message.deleteMany).toHaveBeenCalledWith({
-      where: {
-        recipient_id: 1007,
-        type: 'system',
-        status: 1
-      }
-    })
+    await clearReadMessage(1007, 'system', 'account')
+    const locked = prismaMock.$queryRaw.mock.calls[1][0]
+    const deleted = prismaMock.$executeRaw.mock.calls[0][0]
+    expect(locked.sql).toContain('ORDER BY id FOR UPDATE')
+    expect(locked.values).toEqual([1007, 'system', 'account', 1])
+    expect(deleted.values).toEqual([1007, 'system', 'account', 1, [11]])
   })
 
-  it('does not delete notification rows when no read notifications match', async () => {
-    prismaMock.user_message.findFirst.mockResolvedValueOnce(null)
-
+  it('does not delete anything if the locked cleanup collection is empty', async () => {
+    prismaMock.$queryRaw
+      .mockResolvedValueOnce([{ id: 1007 }])
+      .mockResolvedValueOnce([])
     const { clearReadMessage } = await import('~/app/api/message/service')
-
-    await clearReadMessage(1007, 'system')
-
-    expect(prismaMock.user_message.findFirst).toHaveBeenCalledWith({
-      where: {
-        recipient_id: 1007,
-        type: 'system',
-        status: 1
-      },
-      select: { id: true }
-    })
-    expect(prismaMock.user_message.deleteMany).not.toHaveBeenCalled()
+    expect(await clearReadMessage(1007, 'system')).toMatchObject({ deleted: 0 })
+    expect(prismaMock.$executeRaw).not.toHaveBeenCalled()
   })
 
-  it('clears all read notifications from the route when type is omitted', async () => {
-    prismaMock.user_message.findFirst.mockResolvedValueOnce({ id: 4 })
-    prismaMock.user_message.deleteMany.mockResolvedValueOnce({ count: 2 })
-
+  it('returns cleanup results and a fresh summary with private cache headers', async () => {
     const { DELETE } = await import('~/app/api/message/read/route')
     const response = await DELETE(
-      new Request('https://www.otoame.top/api/message/read', {
+      new Request('https://example.test/api/message/read', {
         method: 'DELETE'
       }) as never
     )
-
+    expect(response.status).toBe(200)
     expect(response.headers.get('cache-control')).toBe('private, no-store')
-    expect(await response.json()).toEqual({})
-    expect(prismaMock.user_message.deleteMany).toHaveBeenCalledWith({
-      where: {
-        recipient_id: 1007,
-        status: 1
-      }
+    expect(await response.json()).toMatchObject({
+      deleted: 2,
+      summary: { notifications: notificationSummary() }
     })
   })
 
@@ -255,7 +244,7 @@ describe('message unread status', () => {
     )
 
     expect(response.headers.get('cache-control')).toBe('private, no-store')
-    expect(await response.json()).toEqual({
+    expect(await response.json()).toMatchObject({
       preferenceVersion: 3,
       hasUnreadMessages: false,
       hasUnreadChat: false
@@ -296,6 +285,8 @@ describe('message unread status', () => {
         content: '系统通知',
         status: 0,
         link: '/message-target',
+        content_version: 1n,
+        event_type: null,
         created: new Date('2026-07-01T00:00:00.000Z'),
         sender: null
       }
@@ -370,9 +361,7 @@ describe('message unread status', () => {
 
     expect(response.headers.get('cache-control')).toBe('private, no-store')
     await expect(response.json()).resolves.toMatchObject({
-      id: 12,
-      type: 'system',
-      recipient_id: 8
+      id: 12
     })
   })
 
@@ -429,23 +418,32 @@ describe('message unread status', () => {
     expect(prismaMock.user_message.create).not.toHaveBeenCalled()
   })
 
-  it('returns read status with private no-store cache headers', async () => {
-    prismaMock.user_message.updateMany.mockResolvedValueOnce({ count: 1 })
-    prismaMock.user_message.findFirst.mockResolvedValueOnce(null)
+  it('returns concrete confirmation results and independent conversation state', async () => {
+    prismaMock.user_message.findMany.mockResolvedValueOnce([
+      { id: 11, content_version: 1n, status: 0, updated: new Date(0) }
+    ])
     prismaMock.user_conversation.findFirst.mockResolvedValueOnce({ id: 2 })
-
     const { PUT } = await import('~/app/api/message/read/route')
     const response = await PUT(
-      new Request('https://www.otoame.top/api/message/read', {
-        method: 'PUT'
+      new Request('https://example.test/api/message/read', {
+        method: 'PUT',
+        body: JSON.stringify({ items: [{ id: 11, version: '1' }] }),
+        headers: { 'Content-Type': 'application/json' }
       }) as never
     )
-
+    expect(response.status).toBe(200)
     expect(response.headers.get('cache-control')).toBe('private, no-store')
-    expect(await response.json()).toEqual({
-      preferenceVersion: 3,
-      hasUnreadNotification: false,
-      hasUnreadConversation: true
+    expect(await response.json()).toMatchObject({
+      results: [{ id: 11, outcome: 'read' }],
+      summary: {
+        preferenceVersion: 3,
+        hasUnreadNotification: false,
+        hasUnreadConversation: true
+      }
+    })
+    expect(prismaMock.user_message.updateMany).toHaveBeenCalledExactlyOnceWith({
+      where: { id: 11, recipient_id: 1007, status: 0, content_version: 1n },
+      data: { status: 1, updated: new Date(0) }
     })
   })
 
@@ -459,7 +457,9 @@ describe('message unread status', () => {
     const { PUT } = await import('~/app/api/message/read/route')
     const response = await PUT(
       new Request('https://www.otoame.top/api/message/read', {
-        method: 'PUT'
+        method: 'PUT',
+        body: JSON.stringify({ items: [{ id: 11, version: '1' }] }),
+        headers: { 'Content-Type': 'application/json' }
       }) as never
     )
 
@@ -516,7 +516,7 @@ describe('message unread status', () => {
       count: 1
     })
     prismaMock.user_conversation.update.mockResolvedValueOnce({ id: 5 })
-    prismaMock.user_message.findFirst.mockResolvedValueOnce({ id: 1 })
+    summaryMock.mockResolvedValueOnce(notificationSummary(1))
     prismaMock.user_conversation.findFirst.mockResolvedValueOnce(null)
 
     const { PUT } = await import(
@@ -532,7 +532,7 @@ describe('message unread status', () => {
     )
 
     expect(response.headers.get('cache-control')).toBe('private, no-store')
-    expect(await response.json()).toEqual({
+    expect(await response.json()).toMatchObject({
       preferenceVersion: 3,
       hasUnreadNotification: true,
       hasUnreadConversation: false

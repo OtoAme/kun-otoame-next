@@ -1,5 +1,5 @@
 import { prisma } from '~/prisma/index'
-import { createMessage } from '~/app/api/utils/message'
+import { createMessage, createNotificationBatch } from '~/app/api/utils/message'
 
 export const applyForCreator = async (uid: number) => {
   const user = await prisma.user.findUnique({
@@ -32,6 +32,7 @@ export const applyForCreator = async (uid: number) => {
   }
 
   await createMessage({
+    event_type: 'creator-application',
     type: 'apply',
     content: '申请成为创作者',
     sender_id: uid,
@@ -42,16 +43,15 @@ export const applyForCreator = async (uid: number) => {
     where: { role: { gte: 3 } },
     select: { id: true }
   })
-  await Promise.all(
-    admins.map((admin) =>
-      createMessage({
-        type: 'apply',
-        content: `用户 ${user.name} 申请成为创作者，请前往审核。`,
-        sender_id: uid,
-        recipient_id: admin.id,
-        link: '/admin/creator'
-      })
-    )
+  await createNotificationBatch(
+    admins.map((admin) => ({
+      event_type: 'creator-application',
+      type: 'apply',
+      content: `用户 ${user.name} 申请成为创作者，请前往审核。`,
+      sender_id: uid,
+      recipient_id: admin.id,
+      link: '/admin/creator'
+    }))
   )
 
   return {}

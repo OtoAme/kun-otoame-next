@@ -34,7 +34,12 @@ vi.mock('~/app/api/patch/cache', () => ({
   invalidatePatchContentCache: vi.fn(),
   invalidatePatchListCaches: vi.fn()
 }))
-vi.mock('~/app/api/utils/message', () => ({ createMessage: vi.fn() }))
+vi.mock('~/app/api/utils/message', () => ({
+  createMessage: vi.fn(),
+  createNotificationBatch: vi.fn(async (data, tx) =>
+    tx.user_message.createMany({ data })
+  )
+}))
 vi.mock('~/app/api/case/rateLimit', () => ({
   checkCaseRateLimit: vi.fn().mockResolvedValue(null)
 }))
@@ -330,7 +335,7 @@ describe('case service contracts', () => {
       2, 3, 4, 9
     ])
     expect(data.find((message) => message.recipient_id === 2)).toMatchObject({
-      sender_id: null,
+      sender_id: undefined,
       link: '/workspace/issues/42'
     })
     for (const recipientId of [3, 4, 9]) {

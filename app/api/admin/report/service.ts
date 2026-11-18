@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import type { Prisma } from '@prisma/client'
 import { prisma } from '~/prisma/index'
+import { createNotificationBatch } from '~/app/api/utils/message'
 import {
   invalidatePatchContentCache,
   invalidatePatchListCaches
@@ -466,17 +467,20 @@ export const handleReport = async (
       )
     ]
     if (recipientIds.length) {
-      await prisma.user_message.createMany({
-        data: recipientIds.map((recipientId) => ({
+      await createNotificationBatch(
+        recipientIds.map((recipientId) => ({
+          event_type: 'report-result',
           type: 'report',
           content: buildReportNotice(
             { ...serializedReport, handlerReply: handleResult },
             input.action
           ),
           recipient_id: recipientId,
+          actor_id: handlerId,
           link: `/${patch.unique_id}`
-        }))
-      })
+        })),
+        prisma
+      )
     }
   })
 

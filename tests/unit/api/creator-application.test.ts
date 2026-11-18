@@ -11,7 +11,9 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('~/prisma/index', () => ({ prisma: mocks.prisma }))
 vi.mock('~/app/api/utils/message', () => ({
-  createMessage: mocks.createMessage
+  createMessage: mocks.createMessage,
+  createNotificationBatch: async (data: Record<string, unknown>[], tx: unknown) =>
+Promise.all(data.map((item) => tx === undefined ? mocks.createMessage(item) : mocks.createMessage(item, tx)))
 }))
 
 import { applyForCreator, getApplyStatus } from '~/app/api/apply/service'
@@ -98,6 +100,7 @@ describe('applyForCreator', () => {
     expect(mocks.createMessage).toHaveBeenCalledTimes(2)
     expect(mocks.createMessage).toHaveBeenCalledWith({
       type: 'apply',
+      event_type: 'creator-application',
       content: '申请成为创作者',
       sender_id: uid,
       link: `/user/${uid}/resource`

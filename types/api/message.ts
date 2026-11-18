@@ -15,6 +15,16 @@ export interface NotificationReadItem {
   version: string
 }
 
+export interface NotificationReadResult {
+  id: number
+  outcome: 'read' | 'already_read' | 'changed' | 'missing'
+}
+
+export interface NotificationReadResponse {
+  results: NotificationReadResult[]
+  summary: MessageUnreadStatus
+}
+
 export interface NotificationList {
   messages: Message[]
   total: number
@@ -42,6 +52,7 @@ export interface CreateMessageType {
   content: string
   link: string
   sender_id?: number
+  actor_id?: number
   recipient_id?: number
   event_type?: NotificationEvent
 }

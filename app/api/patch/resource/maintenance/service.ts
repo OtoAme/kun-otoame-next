@@ -7,7 +7,7 @@ import {
   runResourceMutation
 } from '../mutation'
 import { deletePatchResourceCache } from '../_helper'
-import { createMessage } from '~/app/api/utils/message'
+import { createMessage, createNotificationBatch } from '~/app/api/utils/message'
 import { workspaceResourceHref } from '~/utils/workspaceRoutes'
 import { canManageResourceLink } from '~/components/patch/resource/resourcePermissions'
 import type { HealthActor, HealthTargetRow } from '../link/service'
@@ -135,6 +135,7 @@ export const recordLinkMaintenanceReport = async (
   ) {
     await createMessage(
       {
+        event_type: 'maintenance-required',
         type: 'system',
         recipient_id: row.resource.user_id,
         content: '您发布的资源链接收到失效反馈，请在工作台回应。',
@@ -210,16 +211,16 @@ const notifyResults = async (
   if (!recipients.length) return []
   const accounts = await lockCaseUsers(tx, recipients)
   const existing = recipients.filter((id) => accounts.has(id))
-  for (const recipient_id of existing)
-    await createMessage(
-      {
-        type: 'system',
-        recipient_id,
-        content: `您反馈的资源链接已有维护结果：${{ explained: '发布者已回应', verified: '已核实可用', relinked: '已补链', stopped: '已停止维护', removed: '链接已移除' }[outcome]}${note ? `。${note}` : ''}`,
-        link: `/${uniqueId}?tab=resources#resource-${resourceId}`
-      },
-      tx
-    )
+  await createNotificationBatch(
+    existing.map((recipient_id) => ({
+      event_type: 'maintenance-result',
+      type: 'system',
+      recipient_id,
+      content: `您反馈的资源链接已有维护结果：${{ explained: '发布者已回应', verified: '已核实可用', relinked: '已补链', stopped: '已停止维护', removed: '链接已移除' }[outcome]}${note ? `。${note}` : ''}`,
+      link: `/${uniqueId}?tab=resources#resource-${resourceId}`
+    })),
+    tx
+  )
   return existing
 }
 

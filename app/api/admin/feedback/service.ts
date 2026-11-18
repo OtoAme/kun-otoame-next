@@ -49,7 +49,8 @@ export const getFeedback = async (
 }
 
 export const handleFeedback = async (
-  input: z.infer<typeof adminHandleFeedbackSchema>
+  input: z.infer<typeof adminHandleFeedbackSchema>,
+  actorId: number
 ) => {
   const message = await prisma.user_message.findUnique({
     where: { id: input.messageId }
@@ -72,12 +73,17 @@ export const handleFeedback = async (
       data: { status: { set: 1 } }
     })
 
-    await createMessage({
-      type: 'system',
-      content: feedbackContent,
-      recipient_id: message?.sender_id ?? undefined,
-      link: '/'
-    })
+    await createMessage(
+      {
+        event_type: 'feedback-result',
+        actor_id: actorId,
+        type: 'system',
+        content: feedbackContent,
+        recipient_id: message?.sender_id ?? undefined,
+        link: '/'
+      },
+      prisma
+    )
 
     return {}
   })

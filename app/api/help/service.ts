@@ -24,7 +24,11 @@ import {
   spendMoemoepoint
 } from '~/app/api/moemoepoint/service'
 import { getShanghaiQuotaWindows } from '~/app/api/patch/resource/download/access/timeWindow'
-import { createMessage } from '~/app/api/utils/message'
+import {
+  aggregateNotificationBatch,
+  createMessage,
+  createNotificationBatch
+} from '~/app/api/utils/message'
 import { markdownToHtml } from '~/app/api/utils/render/markdownToHtml'
 import { markdownToText } from '~/utils/markdownToText'
 import { kunMoyuMoe } from '~/config/moyu-moe'
@@ -408,6 +412,7 @@ export const createHelpPost = async (
       if (notice && notice.publisherLeftAt === null && notice.userId !== uid) {
         await createMessage(
           {
+            event_type: 'help-resource',
             type: 'feedback',
             content: `有用户就您的资源「${clip(notice.name)}」发布了求助：${clip(post.title)}`,
             sender_id: uid,
@@ -513,8 +518,6 @@ export const deleteHelpPost = async (
   })
 }
 
-const FOLLOW_ANSWER_NOTICE = /^您关注的求助「.*」有 (\d+) 条新回答$/
-
 /**
  * Followers hear about new answers once per unread notice: while a
  * follower's notice for this post is still unread its count goes up, and a
@@ -539,27 +542,18 @@ const notifyFollowersOfAnswer = async (
   })
   if (!followers.length) return
   const link = postLink(input.postId)
-  for (const { user_id } of followers) {
-    const unread = await tx.user_message.findFirst({
-      where: { recipient_id: user_id, status: 0, type: 'system', link },
-      orderBy: { id: 'desc' },
-      select: { id: true, content: true }
-    })
-    const count = unread?.content.match(FOLLOW_ANSWER_NOTICE)?.[1]
-    const content = (n: number) =>
-      `您关注的求助「${clip(input.title)}」有 ${n} 条新回答`
-    if (unread && count) {
-      await tx.user_message.update({
-        where: { id: unread.id },
-        data: { content: content(Number(count) + 1), created: new Date() }
-      })
-    } else {
-      await createMessage(
-        { type: 'system', content: content(1), recipient_id: user_id, link },
-        tx
-      )
-    }
-  }
+  await aggregateNotificationBatch(
+    followers.map(({ user_id }) => ({
+      event_type: 'help-follow-answer',
+      type: 'system',
+      content: '',
+      recipient_id: user_id,
+      link
+    })),
+    (_message, count) =>
+      `您关注的求助「${clip(input.title)}」有 ${count} 条新回答`,
+    tx
+  )
 }
 
 export const createHelpAnswer = async (
@@ -614,6 +608,7 @@ export const createHelpAnswer = async (
       if (post.user_id !== null && post.user_id !== uid) {
         await createMessage(
           {
+            event_type: 'help-answer',
             type: 'comment',
             content: `回答了您的求助「${clip(post.title)}」`,
             sender_id: uid,
@@ -801,6 +796,7 @@ export const acceptHelpAnswer = async (
     if (answer.user_id !== null) {
       await createMessage(
         {
+          event_type: 'help-accepted',
           type: 'system',
           content: rewarded
             ? `您在求助「${clip(post.title)}」中的回答被采纳，获得 ${HELP_ANSWER_REWARD} 萌萌点`
@@ -820,17 +816,16 @@ export const acceptHelpAnswer = async (
         },
         select: { user_id: true }
       })
-      for (const follower of followers) {
-        await createMessage(
-          {
-            type: 'system',
-            content: `您关注的求助「${clip(post.title)}」已解决`,
-            recipient_id: follower.user_id,
-            link: answerLink(post.id, answer.id)
-          },
-          tx
-        )
-      }
+      await createNotificationBatch(
+        followers.map((follower) => ({
+          event_type: 'help-follow-resolved',
+          type: 'system',
+          content: `您关注的求助「${clip(post.title)}」已解决`,
+          recipient_id: follower.user_id,
+          link: answerLink(post.id, answer.id)
+        })),
+        tx
+      )
     }
     return { status: 'solved', acceptedAnswerId: answer.id, rewarded }
   })
@@ -1040,18 +1035,17 @@ export const createHelpReply = async (
       if (row.user_id !== null && row.user_id !== uid)
         recipients.add(row.user_id)
       if (replyTo !== null) recipients.add(replyTo)
-      for (const recipient of recipients) {
-        await createMessage(
-          {
-            type: 'comment',
-            content: `在求助「${clip(row.post.title)}」中回复了您：${clip(input.content, 60)}`,
-            sender_id: uid,
-            recipient_id: recipient,
-            link: replyLink(row.post.id, reply.id)
-          },
-          tx
-        )
-      }
+      await createNotificationBatch(
+        [...recipients].map((recipient) => ({
+          event_type: 'help-reply',
+          type: 'comment',
+          content: `在求助「${clip(row.post.title)}」中回复了您：${clip(input.content, 60)}`,
+          sender_id: uid,
+          recipient_id: recipient,
+          link: replyLink(row.post.id, reply.id)
+        })),
+        tx
+      )
       return { replyId: reply.id }
     })
   } catch (error) {

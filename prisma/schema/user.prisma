@@ -16,6 +16,8 @@ model user {
   nsfw_mode              String? @db.VarChar(4)
   preference_version     Int @default(0)
   preference_versions    account_preference_version[]
+  notification_subscriptions notification_subscription[]
+  notification_sequences notification_content_sequence[]
   enable_email_notice    Boolean @default(true)
   allow_private_message  Boolean @default(true)
   blocked_tag_ids        Int[]   @default([])
@@ -117,6 +119,10 @@ model user_message {
   content String @db.VarChar(10007)
   status  Int    @default(0)
   link    String @default("") @db.VarChar(1007)
+  event_type String? @db.VarChar(100)
+  content_version BigInt @default(1)
+  aggregate_count Int @default(1)
+  dedup_key String? @unique @db.VarChar(64)
 
   sender_id    Int?
   sender       user? @relation("user_send_message", fields: [sender_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
@@ -127,6 +133,8 @@ model user_message {
   updated DateTime @updatedAt
 
   @@index([recipient_id, status, type, id])
+  @@index([recipient_id, id])
+  @@index([recipient_id, status, id])
 }
 
 model user_patch_favorite_folder {
@@ -176,4 +184,22 @@ model account_preference_version {
   user user @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@id([user_id, setting_key])
+}
+
+model notification_subscription {
+  user_id Int
+  event_type String @db.VarChar(100)
+  enabled Boolean @default(true)
+  user user @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([user_id, event_type])
+}
+
+model notification_content_sequence {
+  user_id Int
+  category String @db.VarChar(30)
+  sequence BigInt @default(0)
+  user user @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([user_id, category])
 }

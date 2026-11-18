@@ -64,6 +64,7 @@ export const toggleRatingLike = async (
 
       await createDedupMessage(
         {
+          event_type: 'like',
           type: 'like',
           content: `有人点赞了您的 OtomeGame 评价 -> ${rating.short_summary.slice(0, 107)}`,
           sender_id: uid,
