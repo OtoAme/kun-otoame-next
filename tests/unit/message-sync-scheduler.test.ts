@@ -10,7 +10,10 @@ import { KunFetchError } from '~/utils/kunFetch'
 
 const identity = { context: 'session-a', generation: 1 }
 const unread = { hasUnreadMessages: true, hasUnreadChat: true }
-const setup = (request = vi.fn().mockResolvedValue(unread)) => {
+const setup = (
+  request = vi.fn().mockResolvedValue(unread),
+  reuseRecentSuccessOnResume = false
+) => {
   const accept = vi.fn()
   const invalid = vi.fn()
   const sync = createMessageSyncScheduler({
@@ -18,6 +21,7 @@ const setup = (request = vi.fn().mockResolvedValue(unread)) => {
     onSuccess: accept,
     onInvalid: invalid,
     validate: isUnreadSummary,
+    reuseRecentSuccessOnResume,
     random: () => 0.5
   })
   sync.setIdentity(identity)
@@ -31,6 +35,53 @@ describe('message sync scheduler', () => {
     vi.setSystemTime(0)
   })
   afterEach(() => vi.useRealTimers())
+  it('keeps a recent unread success until its next poll, with a strict five-second boundary', async () => {
+    const { sync, read } = setup(undefined, true)
+    sync.seed(unread)
+    sync.setEnabled(true)
+    await vi.advanceTimersByTimeAsync(4_999)
+    sync.refresh('resume')
+    await flush()
+    expect(read).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(1)
+    sync.refresh('resume')
+    await flush()
+    expect(read).toHaveBeenCalledTimes(1)
+    sync.refresh('manual')
+    await flush()
+    expect(read).toHaveBeenCalledTimes(2)
+    sync.dispose()
+  })
+
+  it('does not reuse rejected seeds or a previous identity for unread resume', async () => {
+    const { sync, read } = setup(undefined, true)
+    const oldRead = beginUnreadRead()
+    sync.seed(unread)
+    sync.setIdentity({ context: 'session-b', generation: 2 })
+    expect(sync.seed(null)).toBe(false)
+    expect(sync.seed({ hasUnreadMessages: false })).toBe(false)
+    sync.setEnabled(true)
+    sync.refresh('resume')
+    await flush()
+    expect(read).toHaveBeenCalledTimes(1)
+    await vi.advanceTimersByTimeAsync(5_000)
+    expect(sync.seed(unread, Date.now(), oldRead)).toBe(false)
+    sync.refresh('resume')
+    await flush()
+    expect(read).toHaveBeenCalledTimes(2)
+    sync.dispose()
+  })
+
+  it('keeps generic resume unchanged unless recent success reuse is enabled', async () => {
+    const { sync, read } = setup()
+    sync.seed(unread)
+    sync.setEnabled(true)
+    sync.refresh('resume')
+    await flush()
+    expect(read).toHaveBeenCalledTimes(1)
+    sync.dispose()
+  })
+
   it('makes at most twelve reads in ten active minutes including initialization', async () => {
     const { sync, read } = setup()
     sync.setEnabled(true)
@@ -216,18 +267,24 @@ describe('message sync scheduler', () => {
     sync.dispose()
   })
 
-  it('keeps an existing retry deadline when a valid session summary arrives', async () => {
-    const { sync, read } = setup(
-      vi.fn().mockRejectedValue(new KunFetchError('rate', 'http', 429, 180_000))
-    )
-    sync.setEnabled(true)
-    await flush()
-    sync.seed(unread)
-    sync.refresh('resume')
-    await vi.advanceTimersByTimeAsync(179_999)
-    expect(read).toHaveBeenCalledTimes(1)
-    sync.dispose()
-  })
+  it.each([false, true])(
+    'keeps an existing retry deadline after a seed (reuse=%s)',
+    async (reuse) => {
+      const { sync, read } = setup(
+        vi
+          .fn()
+          .mockRejectedValue(new KunFetchError('rate', 'http', 429, 180_000)),
+        reuse
+      )
+      sync.setEnabled(true)
+      await flush()
+      sync.seed(unread)
+      sync.refresh('resume')
+      await vi.advanceTimersByTimeAsync(179_999)
+      expect(read).toHaveBeenCalledTimes(1)
+      sync.dispose()
+    }
+  )
 
   it.each([
     { context: 'session-a', generation: 2 },

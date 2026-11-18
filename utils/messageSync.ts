@@ -35,6 +35,7 @@ interface SchedulerOptions<Result> {
   onInvalid?: () => void
   onChange?: (snapshot: MessageSyncSnapshot) => void
   validate?: (value: unknown) => boolean
+  reuseRecentSuccessOnResume?: boolean
   intervalMs?: number
   nextIntervalMs?: (result: Result) => number
   random?: () => number
@@ -191,6 +192,14 @@ export const createMessageSyncScheduler = <Result = UnreadSummary>(
     },
     refresh(reason: 'resume' | 'manual' = 'manual') {
       if (pending || !active()) return
+      if (
+        reason === 'resume' &&
+        options.reuseRecentSuccessOnResume &&
+        snapshot.lastSuccessAt !== null &&
+        Date.now() >= snapshot.lastSuccessAt &&
+        Date.now() - snapshot.lastSuccessAt < 5_000
+      )
+        return
       schedule(
         reason === 'resume'
           ? Math.max(Date.now(), lastRequestAt + 5_000)
