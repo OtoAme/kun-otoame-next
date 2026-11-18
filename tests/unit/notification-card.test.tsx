@@ -9,7 +9,11 @@ const mocks = vi.hoisted(() => ({
   stop: vi.fn(),
   remember: vi.fn(),
   seen: vi.fn(),
-  visible: vi.fn()
+  visible: vi.fn(),
+  contentReady: true
+}))
+vi.mock('~/components/kun/SessionContentBoundary', () => ({
+  useSessionContentReady: () => mocks.contentReady
 }))
 vi.mock('~/utils/notificationVisibility', () => ({
   observeNotificationReading: mocks.observe,
@@ -66,6 +70,7 @@ beforeEach(async () => {
   vi.clearAllMocks()
   mocks.observe.mockReturnValue(mocks.stop)
   mocks.visible.mockReturnValue(true)
+  mocks.contentReady = true
   dom = new JSDOM('<div id="root"></div>', {
     url: 'https://example.test/message/notice'
   })
@@ -96,6 +101,25 @@ const render = async (msg = message, confirmationError?: string) => {
 }
 
 describe('notification card reading controls', () => {
+  it('requires a fresh reading interval after the surrounding content becomes ready', async () => {
+    mocks.contentReady = false
+    await render()
+    expect(mocks.observe).not.toHaveBeenCalled()
+    mocks.contentReady = true
+    await render()
+    expect(mocks.observe).toHaveBeenCalledTimes(1)
+    mocks.observe.mock.calls[0][1]()
+    const eligible = mocks.seen.mock.calls[0][1]
+    expect(eligible()).toBe(true)
+    mocks.contentReady = false
+    await render()
+    expect(mocks.stop).toHaveBeenCalledTimes(1)
+    expect(eligible()).toBe(false)
+    mocks.contentReady = true
+    await render()
+    expect(mocks.observe).toHaveBeenCalledTimes(2)
+  })
+
   it('begins reading only after the complete long body is expanded and stops on collapse', async () => {
     const long = { ...message, content: '长通知正文'.repeat(100) }
     await render(long)

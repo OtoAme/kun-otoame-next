@@ -3,6 +3,7 @@
 import { Suspense, useEffect, useRef } from 'react'
 import { usePathname, useSearchParams } from 'next/navigation'
 import { useUserStore } from '~/store/userStore'
+import { useSessionContentReady } from '~/components/kun/SessionContentBoundary'
 import {
   isNotificationBodyVisible,
   observeNotificationReading
@@ -20,6 +21,7 @@ interface Props {
 }
 
 const TargetReady = ({ path, enabled = true }: Props) => {
+  const contentReady = useSessionContentReady()
   const marker = useRef<HTMLSpanElement>(null)
   const pathname = usePathname()
   const parameters = useSearchParams()
@@ -28,6 +30,7 @@ const TargetReady = ({ path, enabled = true }: Props) => {
   useEffect(() => {
     if (
       !enabled ||
+      !contentReady ||
       (path && window.location.pathname !== path) ||
       !token ||
       session.sessionStatus !== 'authenticated' ||
@@ -138,6 +141,7 @@ const TargetReady = ({ path, enabled = true }: Props) => {
     parameters,
     path,
     enabled,
+    contentReady,
     session.sessionStatus,
     session.user.uid,
     session.sessionContext,

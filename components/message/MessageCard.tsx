@@ -20,6 +20,7 @@ import {
 } from 'lucide-react'
 import { MESSAGE_TYPE_MAP } from '~/constants/message'
 import { KunAvatar } from '~/components/kun/floating-card/KunAvatar'
+import { useSessionContentReady } from '~/components/kun/SessionContentBoundary'
 import {
   NOTIFICATION_CATEGORY_LABELS,
   NOTIFICATION_EVENTS,
@@ -86,6 +87,7 @@ export const MessageCard = ({
   justRead,
   confirmationError
 }: Props) => {
+  const contentReady = useSessionContentReady()
   const href = getCardRoute(msg)
   const token = useMemo(() => crypto.randomUUID(), [msg.id, msg.contentVersion])
   const entryHref =
@@ -109,6 +111,7 @@ export const MessageCard = ({
   useEffect(() => {
     if (
       !body.current ||
+      !contentReady ||
       !identity ||
       !onSeen ||
       !canRead ||
@@ -127,7 +130,7 @@ export const MessageCard = ({
       active = false
       stop()
     }
-  }, [msg, identity, onSeen, canRead, confirmationError])
+  }, [msg, identity, onSeen, canRead, confirmationError, contentReady])
 
   return (
     <Card

@@ -4,6 +4,7 @@ import { JSDOM } from 'jsdom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
+  contentReady: true,
   confirm: vi.fn(),
   resolve: vi.fn(),
   current: true,
@@ -13,6 +14,9 @@ const mocks = vi.hoisted(() => ({
     read: () => void
     stop: ReturnType<typeof vi.fn>
   }[]
+}))
+vi.mock('~/components/kun/SessionContentBoundary', () => ({
+  useSessionContentReady: () => mocks.contentReady
 }))
 vi.mock('next/navigation', () => ({
   usePathname: () => window.location.pathname,
@@ -49,6 +53,7 @@ const entry = {
 beforeEach(async () => {
   vi.clearAllMocks()
   mocks.current = true
+  mocks.contentReady = true
   mocks.visible = true
   mocks.observers = []
   mocks.resolve.mockReset().mockResolvedValue(entry)
@@ -97,6 +102,36 @@ const render = async (success = true, path = '/help/4') => {
 }
 
 describe('notification target successful presentation', () => {
+  it('waits for the surrounding content and discards a lookup completed while it becomes pending', async () => {
+    mocks.contentReady = false
+    await render()
+    expect(mocks.observers).toHaveLength(0)
+    let resolve!: (value: unknown) => void
+    mocks.resolve.mockReturnValueOnce(
+      new Promise((complete) => {
+        resolve = complete
+      })
+    )
+    mocks.contentReady = true
+    await render()
+    expect(mocks.observers).toHaveLength(1)
+    await act(async () => mocks.observers[0].read())
+    mocks.contentReady = false
+    await render()
+    expect(mocks.observers[0].stop).toHaveBeenCalledTimes(1)
+    await act(async () => resolve(entry))
+    expect(mocks.confirm).not.toHaveBeenCalled()
+    mocks.contentReady = true
+    await render()
+    expect(mocks.observers).toHaveLength(2)
+    await act(async () => mocks.observers[1].read())
+    expect(mocks.confirm).toHaveBeenCalledExactlyOnceWith(
+      identity,
+      [entry.item],
+      entry.target
+    )
+  })
+
   it('confirms only its concrete entry after the successful target satisfies actual reading', async () => {
     await render()
     expect(mocks.observers).toHaveLength(1)
