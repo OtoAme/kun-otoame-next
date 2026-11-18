@@ -1,5 +1,6 @@
 'use client'
 
+import { NotificationTargetReady } from '~/components/message/NotificationTargetReady'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { ExternalLink, Loader2 } from 'lucide-react'
@@ -612,6 +613,7 @@ export function DashboardCaseDetail({
 
   return (
     <div className="@container space-y-4">
+      <NotificationTargetReady path={`/dashboard/case/${detail.id}`} />
       <header className="space-y-1.5">
         <div className="flex flex-wrap items-center gap-2">
           <span className="shrink-0 text-sm tabular-nums text-muted-foreground">

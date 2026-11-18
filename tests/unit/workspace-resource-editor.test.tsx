@@ -33,6 +33,7 @@ const workspaceUser = vi.hoisted(() => ({
   role: 2
 }))
 
+vi.mock('~/components/message/NotificationTargetReady', () => ({ NotificationTargetReady: () => null }))
 vi.mock('~/store/userStore', () => ({
   useUserStore: (
     selector: (state: { user: typeof userState.user }) => unknown

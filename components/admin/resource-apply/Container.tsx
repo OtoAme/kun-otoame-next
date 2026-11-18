@@ -1,5 +1,6 @@
 'use client'
 
+import { NotificationTargetReady } from '~/components/message/NotificationTargetReady'
 import { Chip, Input } from '@heroui/react'
 import { Search } from 'lucide-react'
 import { useEffect, useState } from 'react'
@@ -72,6 +73,7 @@ export const ResourceApply = ({ initialResources, initialTotal }: Props) => {
 
   return (
     <div className="space-y-6">
+      <NotificationTargetReady path="/admin/resource-apply" />
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">资源发布申请</h1>
         <Chip color="primary" variant="flat">

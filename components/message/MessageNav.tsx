@@ -1,18 +1,12 @@
 'use client'
 
-import { useEffect } from 'react'
-import { kunFetchPut } from '~/utils/kunFetch'
 import { Button } from '@heroui/react'
 import { AtSign, Bell, Globe, MessageSquare, UserPlus } from 'lucide-react'
 import { Card, CardBody } from '@heroui/card'
 import { usePathname } from 'next/navigation'
 import Link from 'next/link'
-import toast from 'react-hot-toast'
 import { useMessageStore } from '~/store/messageStore'
 import { cn } from '~/utils/cn'
-import { useUserStore } from '~/store/userStore'
-import { refreshUnreadSummary } from '~/utils/messageSync'
-import type { MessageUnreadStatus } from '~/types/api/message'
 
 const notificationSubTypes = [
   { type: 'notice', label: '全部消息', icon: Bell, href: '/message/notice' },
@@ -47,88 +41,8 @@ export const MessageNav = ({ className }: { className?: string }) => {
   const hasUnreadConversation = useMessageStore(
     (state) => state.hasUnreadConversation
   )
-  const setHasUnreadNotification = useMessageStore(
-    (state) => state.setHasUnreadNotification
-  )
-  const setUnreadMessageStatus = useMessageStore(
-    (state) => state.setUnreadMessageStatus
-  )
 
-  const { sessionStatus, sessionContext, sessionGeneration } = useUserStore()
-
-  useEffect(() => {
-    if (
-      !isNotificationSection ||
-      sessionStatus !== 'authenticated' ||
-      !sessionContext
-    )
-      return
-    let ignore = false
-    const controller = new AbortController()
-    const context = sessionContext
-    const generation = sessionGeneration
-    const isCurrent = () => {
-      const state = useUserStore.getState()
-      return (
-        !ignore &&
-        state.sessionStatus === 'authenticated' &&
-        state.sessionContext === context &&
-        state.sessionGeneration === generation
-      )
-    }
-    const previousUnread = useMessageStore.getState().hasUnreadNotification
-    const restoreUnreadStatus = () => {
-      if (!isCurrent()) return
-      setHasUnreadNotification(
-        previousUnread || useMessageStore.getState().hasUnreadNotification
-      )
-      refreshUnreadSummary('manual')
-    }
-    setHasUnreadNotification(false)
-    const markNotificationsRead = async () => {
-      try {
-        const response = await kunFetchPut<KunResponse<MessageUnreadStatus>>(
-          '/message/read',
-          undefined,
-          {
-            timeout: 15_000,
-            signal: controller.signal,
-            preserveErrorStatus: true
-          }
-        )
-        if (!isCurrent()) return
-        if (
-          !response ||
-          typeof response === 'string' ||
-          typeof response.hasUnreadNotification !== 'boolean' ||
-          typeof response.hasUnreadConversation !== 'boolean'
-        ) {
-          if (typeof response === 'string') toast.error(response)
-          restoreUnreadStatus()
-          return
-        }
-        setUnreadMessageStatus(response)
-      } catch {
-        if (!isCurrent()) return
-        toast.error('标记消息已读失败，请稍后重试')
-        restoreUnreadStatus()
-      }
-    }
-    void markNotificationsRead()
-    return () => {
-      ignore = true
-      controller.abort()
-    }
-  }, [
-    isNotificationSection,
-    sessionStatus,
-    sessionContext,
-    sessionGeneration,
-    setHasUnreadNotification,
-    setUnreadMessageStatus
-  ])
-
-  const showMessageDot = hasUnreadNotification && !isNotificationSection
+  const showMessageDot = hasUnreadNotification
   const showChatDot = hasUnreadConversation && !isChatSection
 
   return (
@@ -141,7 +55,11 @@ export const MessageNav = ({ className }: { className?: string }) => {
             className="justify-start w-full"
             variant={isNotificationSection ? 'solid' : 'light'}
             startContent={<Bell className="size-4 shrink-0" />}
-            href="/message/notice"
+            href={
+              hasUnreadNotification
+                ? '/message/notice?state=unread'
+                : '/message/notice'
+            }
           >
             <span className="relative">
               消息

@@ -1,5 +1,6 @@
 'use client'
 
+import { NotificationTargetReady } from '~/components/message/NotificationTargetReady'
 import { useState } from 'react'
 import {
   Avatar,
@@ -155,6 +156,7 @@ export const AdminSubmissionDetail = ({
 
   return (
     <div className="mx-auto w-full max-w-6xl space-y-4 py-4">
+      <NotificationTargetReady path={`/admin/submission/${submission.id}`} />
       <div className="flex flex-wrap items-center gap-3">
         <Button as={Link} href="/admin/submission" size="sm" variant="flat">
           返回审核队列

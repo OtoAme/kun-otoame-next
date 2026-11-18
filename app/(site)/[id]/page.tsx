@@ -1,3 +1,4 @@
+import { NotificationTargetReady } from '~/components/message/NotificationTargetReady'
 import { PatchHeaderContainer } from '~/components/patch/header/Container'
 import { ErrorComponent } from '~/components/error/ErrorComponent'
 import { KunBreadcrumbTitle } from '~/components/kun/BreadcrumbTitle'
@@ -63,6 +64,7 @@ export default async function Kun({ params }: Props) {
 
   return (
     <div className="container py-6 mx-auto space-y-6">
+      {!isNsfwBlocked && <NotificationTargetReady />}
       <KunBreadcrumbTitle
         routeKey={`/${pageData.patch.uniqueId}`}
         title={isNsfwBlocked ? '' : getPatchPageTitle(pageData.patch)}

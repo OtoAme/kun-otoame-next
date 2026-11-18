@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
   user: { uid: 2, name: '发布者甲', role: 1 }
 }))
 
+vi.mock('~/components/message/NotificationTargetReady', () => ({ NotificationTargetReady: () => null }))
 vi.mock('react-hot-toast', () => ({ default: mocks.toast }))
 vi.mock('~/utils/kunFetch', () => ({
   kunFetchGet: mocks.kunFetchGet,

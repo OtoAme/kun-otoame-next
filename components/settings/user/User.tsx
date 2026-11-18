@@ -10,6 +10,7 @@ import { AllowPrivateMessage } from './AllowPrivateMessage'
 import { TwoFactorAuth } from './TwoFactorAuth'
 import { Reset } from './Reset'
 import { BlockedTags } from './BlockedTags'
+import { NotificationPreferences } from './NotificationPreferences'
 
 export const UserSettings = () => {
   return (
@@ -23,6 +24,7 @@ export const UserSettings = () => {
         <Email />
         <Password />
         <BrowsingPreference />
+        <NotificationPreferences />
         <EmailNotice />
         <AllowPrivateMessage />
         <BlockedTags />

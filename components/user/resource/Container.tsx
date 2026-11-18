@@ -1,5 +1,6 @@
 'use client'
 
+import { NotificationTargetReady } from '~/components/message/NotificationTargetReady'
 import { useEffect, useState } from 'react'
 import { kunFetchGet } from '~/utils/kunFetch'
 import { KunPagination } from '~/components/kun/Pagination'
@@ -45,6 +46,7 @@ export const UserResource = ({ resources, total, uid }: Props) => {
 
   return (
     <div className="space-y-4">
+      <NotificationTargetReady enabled={!loading} path={`/user/${uid}/resource`} />
       {loading ? (
         <KunLoading hint="正在获取资源数据..." />
       ) : (

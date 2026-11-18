@@ -9,6 +9,7 @@ const fetchMock = vi.hoisted(() => ({
   kunFetchGet: vi.fn()
 }))
 
+vi.mock('~/components/message/NotificationTargetReady', () => ({ NotificationTargetReady: () => null }))
 vi.mock('~/utils/kunFetch', () => ({
   kunFetchGet: fetchMock.kunFetchGet
 }))
