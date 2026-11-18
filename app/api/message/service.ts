@@ -17,7 +17,7 @@ import {
   readNotificationSummary
 } from './notificationQuery'
 import type { Message, NotificationList } from '~/types/api/message'
-import { NotificationServiceError } from './error'
+import { NotificationServiceError } from './errors'
 
 const unreadConversation = (uid: number) =>
   prisma.user_conversation.findFirst({

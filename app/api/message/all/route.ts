@@ -4,7 +4,7 @@ import { PERSONALIZED_API_CACHE_CONTROL } from '~/app/api/utils/cacheHeaders'
 import { getMessageSchema } from '~/validations/message'
 import { verifyHeaderCookie } from '~/middleware/_verifyHeaderCookie'
 import { getMessage } from '../service'
-import { NotificationServiceError } from '../error'
+import { NotificationServiceError } from '../errors'
 import { checkConversationActionRateLimit } from '../conversation/rateLimit'
 import {
   createConversationRateLimitResponse,

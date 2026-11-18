@@ -4,7 +4,7 @@ import { PERSONALIZED_API_CACHE_CONTROL } from '~/app/api/utils/cacheHeaders'
 import { createMessageSchema } from '~/validations/message'
 import { verifyHeaderCookie } from '~/middleware/_verifyHeaderCookie'
 import { create } from './service'
-import { NotificationServiceError } from './error'
+import { NotificationServiceError } from './errors'
 
 const jsonNoStore = (body: unknown, status = 200) =>
   NextResponse.json(body, {

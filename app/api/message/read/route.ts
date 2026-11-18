@@ -5,7 +5,7 @@ import { clearReadMessageSchema } from '~/validations/message'
 import { readNotificationSchema } from '~/validations/notification'
 import { verifyHeaderCookie } from '~/middleware/_verifyHeaderCookie'
 import { clearReadMessage, readMessage } from '../service'
-import { NotificationServiceError } from '../error'
+import { NotificationServiceError } from '../errors'
 import { checkConversationActionRateLimit } from '../conversation/rateLimit'
 import {
   createConversationRateLimitResponse,
