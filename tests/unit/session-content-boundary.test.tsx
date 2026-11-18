@@ -15,6 +15,7 @@ let dom: JSDOM
 let root: Root
 beforeEach(() => {
   vi.resetModules()
+  navigation.refresh.mockReset()
   dom = new JSDOM('<div id="root"></div>', { url: 'https://example.test' })
   vi.stubGlobal('window', dom.window)
   vi.stubGlobal('document', dom.window.document)
@@ -30,11 +31,21 @@ afterEach(async () => {
 })
 
 describe('personalized content lifecycle', () => {
-  it('preserves a draft on same-session refresh and infrastructure failure, then resets it after logout', async () => {
-    const { useUserStore } = await import('~/store/userStore')
-    const { SessionContentBoundary } = await import(
+  it('defaults to ready outside a personalized boundary', async () => {
+    const { useSessionContentReady } = await import(
       '~/components/kun/SessionContentBoundary'
     )
+    const ReadyProbe = () => <output>{String(useSessionContentReady())}</output>
+    await act(async () => root.render(<ReadyProbe />))
+    expect(document.querySelector('output')?.textContent).toBe('true')
+  })
+
+  it('preserves a draft on same-session refresh and infrastructure failure, then resets it after logout', async () => {
+    const { useUserStore } = await import('~/store/userStore')
+    const { SessionContentBoundary, useSessionContentReady } = await import(
+      '~/components/kun/SessionContentBoundary'
+    )
+    const ReadyProbe = () => <output>{String(useSessionContentReady())}</output>
     useUserStore.setState({
       sessionStatus: 'authenticated',
       sessionGeneration: 1
@@ -43,6 +54,7 @@ describe('personalized content lifecycle', () => {
       root.render(
         <SessionContentBoundary>
           <textarea defaultValue="unsaved draft" />
+          <ReadyProbe />
         </SessionContentBoundary>
       )
     )
@@ -55,6 +67,9 @@ describe('personalized content lifecycle', () => {
       await act(async () => useUserStore.getState().setSessionStatus(status))
       expect(document.querySelector('textarea')).toBe(draft)
       expect(draft.value).toBe('unsaved draft')
+      expect(document.querySelector('output')?.textContent).toBe(
+        String(status === 'authenticated')
+      )
       expect(draft.parentElement?.hidden).toBe(status !== 'authenticated')
     }
     await act(async () => useUserStore.getState().logout())
