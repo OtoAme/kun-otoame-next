@@ -1,28 +1,17 @@
 'use client'
 
 import { Card, CardBody, CardFooter, CardHeader } from '@heroui/card'
-import { useUserStore } from '~/store/userStore'
-import { kunFetchPost } from '~/utils/kunFetch'
-import toast from 'react-hot-toast'
+import { useAccountPreferences } from '~/hooks/useAccountPreferences'
+import { editPreference } from '~/utils/preferenceClient'
+import { PreferenceActions } from './PreferenceActions'
 import { Switch } from '@heroui/react'
 
 export const EmailNotice = () => {
-  const { user, setUser } = useUserStore((state) => state)
-
-  const handleToggleEmailNotice = async (value: boolean) => {
-    if (!user.uid) {
-      toast.error('请先登录以使用此功能')
-      return
-    }
-
-    const res = await kunFetchPost<KunResponse<{}>>(
-      `/user/setting/email-notice`
-    )
-    if (typeof res !== 'string') {
-      setUser({ ...user, enableEmailNotice: value })
-      toast.success(value ? '开启邮件通知成功' : '关闭邮件通知成功')
-    }
-  }
+  const state = useAccountPreferences()
+  const selected = Boolean(
+    state.drafts['email-notice']?.value ??
+      state.snapshot?.items['email-notice'].value
+  )
 
   return (
     <Card className="w-full text-sm">
@@ -31,22 +20,24 @@ export const EmailNotice = () => {
       </CardHeader>
       <CardBody className="py-0 space-y-4">
         <div>
-          <p>当网站有通知时, 会通过邮件的形式提醒您</p>
+          <p>接收管理员发送的网站邮件。站内通知订阅在下方单独设置。</p>
         </div>
         <div className="flex items-center justify-between">
           <p>是否开启邮件通知</p>
           <Switch
             size="lg"
             color="primary"
-            isSelected={user.enableEmailNotice}
-            onValueChange={handleToggleEmailNotice}
+            isSelected={selected}
+            isDisabled={!state.canEdit}
+            onValueChange={(value) => editPreference('email-notice', value)}
           />
         </div>
+        <PreferenceActions />
       </CardBody>
 
       <CardFooter className="flex-wrap">
         <p className="text-default-500">
-          您可以开启或关闭邮件通知, 关闭后您将不会收到关于网站的任何邮件
+          关闭后不接收管理员群发邮件。验证码、密码找回及邮箱变更等账号邮件仍会按操作发送。
         </p>
       </CardFooter>
     </Card>

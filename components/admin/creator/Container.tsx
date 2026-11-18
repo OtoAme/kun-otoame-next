@@ -1,5 +1,6 @@
 'use client'
 
+import { NotificationTargetReady } from '~/components/message/NotificationTargetReady'
 import {
   Table,
   TableBody,
@@ -29,6 +30,7 @@ export const Creator = ({ initialCreators, total }: Props) => {
 
   return (
     <div className="space-y-6">
+      <NotificationTargetReady path="/admin/creator" />
       <h1 className="mb-6 text-2xl font-bold">创作者管理</h1>
       <Table aria-label="创作者管理">
         <TableHeader columns={columns}>

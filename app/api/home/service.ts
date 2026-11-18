@@ -21,7 +21,11 @@ type HomeData = {
 
 const hasHomeGalgames = (payload: HomeData) => payload.galgames.length > 0
 
-export const getHomeData = async (nsfwEnable: Prisma.patchWhereInput) => {
+export const getHomeData = async (visibilityWhere: Prisma.patchWhereInput) => {
+  const nsfwEnable: Prisma.patchWhereInput = {
+    ...visibilityWhere,
+    content_limit: 'sfw'
+  }
   const cacheKey = `home_data:${HOME_PAYLOAD_CACHE_VERSION}:g${HOME_GALGAME_LIMIT}:r${HOME_RESOURCE_LIMIT}:${createHash(
     'md5'
   )

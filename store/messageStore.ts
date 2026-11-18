@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import type { MessageUnreadStatus } from '~/types/api/message'
+import { notificationSummarySchema } from '~/validations/notification'
 
 interface MessageStore extends MessageUnreadStatus {
   setUnreadMessageStatus: (status: MessageUnreadStatus) => void
@@ -10,12 +11,20 @@ interface MessageStore extends MessageUnreadStatus {
 
 const initialUnreadMessageStatus: MessageUnreadStatus = {
   hasUnreadNotification: false,
-  hasUnreadConversation: false
+  hasUnreadConversation: false,
+  notifications: null
 }
 
 export const useMessageStore = create<MessageStore>()((set) => ({
   ...initialUnreadMessageStatus,
-  setUnreadMessageStatus: (status) => set(status),
+  setUnreadMessageStatus: (status) =>
+    set((current) => ({
+      ...status,
+      notifications: notificationSummarySchema.safeParse(status.notifications)
+        .success
+        ? status.notifications
+        : current.notifications
+    })),
   setHasUnreadNotification: (hasUnreadNotification) =>
     set({ hasUnreadNotification }),
   setHasUnreadConversation: (hasUnreadConversation) =>

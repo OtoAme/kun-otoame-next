@@ -3,7 +3,7 @@ import type { PrismaClient } from '@prisma/client'
 import { convert as htmlToText } from 'html-to-text'
 import { prisma } from '~/prisma'
 import { getShanghaiQuotaWindows } from '~/app/api/patch/resource/download/access/timeWindow'
-import { createMessage } from '~/app/api/utils/message'
+import { createNotificationBatch } from '~/app/api/utils/message'
 import {
   workspaceIssueHref,
   parseWorkspaceIssueNotification
@@ -2214,7 +2214,8 @@ const notifyCaseUsers = async (
   recipientIds: number[],
   content: string,
   senderId?: number | null,
-  link = caseLink(caseId)
+  link = caseLink(caseId),
+  eventType: 'case-update' | 'case-reminder' = 'case-update'
 ) => {
   const ids = [
     ...new Set(
@@ -2237,15 +2238,17 @@ const notifyCaseUsers = async (
   }
   const existingRecipientIds = ids.filter((id) => lockedUserIds.has(id))
   if (!existingRecipientIds.length) return
-  await tx.user_message.createMany({
-    data: existingRecipientIds.map((recipientId) => ({
+  await createNotificationBatch(
+    existingRecipientIds.map((recipientId) => ({
+      event_type: eventType,
       type: 'system',
       content,
-      sender_id: senderId ?? null,
+      sender_id: senderId ?? undefined,
       recipient_id: recipientId,
       link
-    }))
-  })
+    })),
+    tx
+  )
 }
 
 /** Single-line, bounded excerpt of a user-written text for notification bodies. */
@@ -2433,7 +2436,10 @@ const notifyCaseParticipants = async (
   const data = [...recipients]
     .filter(([recipientId]) => existingAccountIds.has(recipientId))
     .map(([recipient_id, value]) => ({
-      type: 'system',
+      event_type: value.followerOnly
+        ? ('case-follow' as const)
+        : ('case-update' as const),
+      type: 'system' as const,
       content:
         value.followerOnly && options.followerContent
           ? options.followerContent
@@ -2441,14 +2447,12 @@ const notifyCaseParticipants = async (
       sender_id:
         value.senderId !== null && existingAccountIds.has(value.senderId)
           ? value.senderId
-          : null,
+          : undefined,
       recipient_id,
       link: value.link
     }))
   if (!data.length) return
-  await tx.user_message.createMany({
-    data
-  })
+  await createNotificationBatch(data, tx)
 }
 
 const lockResource = async (tx: CaseTx, resourceId: number) => {
@@ -3385,19 +3389,7 @@ export const getCase = async (
   options: { db?: PrismaClient } = {}
 ) => {
   const db = options.db ?? prisma
-  const result = await fetchCaseForViewer(db, caseId, viewerId, viewerRole)
-  // Opening the case reads its notices, which clears the list's「有新回复」(D22).
-  if (typeof result !== 'string') {
-    await db.user_message.updateMany({
-      where: {
-        recipient_id: viewerId,
-        status: 0,
-        link: { in: [caseLink(caseId), `/issue/${caseId}`] }
-      },
-      data: { status: 1 }
-    })
-  }
-  return result
+  return fetchCaseForViewer(db, caseId, viewerId, viewerRole)
 }
 
 export const createCase = async (
@@ -5257,7 +5249,13 @@ export const handleCaseContent = async (
           await import('~/app/api/help/moderation')
         const label = CASE_TARGET_TYPE_LABELS[row.target_type]
         if (input.action === 'hide') {
-          await hideHelpTargetForCase(tx, row.target_type, row.target_id, now)
+          await hideHelpTargetForCase(
+            tx,
+            row.target_type,
+            row.target_id,
+            now,
+            adminId
+          )
           await tx.ops_case.updateMany({
             where: { id: row.id, hidden_at: null },
             data: { hidden_at: now }
@@ -5277,7 +5275,8 @@ export const handleCaseContent = async (
           const restored = await restoreHelpTargetForCase(
             tx,
             row.target_type,
-            row.target_id
+            row.target_id,
+            adminId
           )
           if (!restored) return '当前内容不在隐藏状态'
           await tx.ops_case.updateMany({
@@ -5952,14 +5951,20 @@ export const remindCase = async (
         tx,
         row.id,
         [row.owner_id],
-        `${subject}还有 2 天将提交给网站管理员处理，请尽快回复或结案。`
+        `${subject}还有 2 天将提交给网站管理员处理，请尽快回复或结案。`,
+        undefined,
+        caseLink(row.id),
+        'case-reminder'
       )
     } else if (waitingReporter && row.reporter_id !== null) {
       await notifyCaseUsers(
         tx,
         row.id,
         [row.reporter_id],
-        `${subject}的处理方在等你补充，还有 2 天将自动结案。`
+        `${subject}的处理方在等你补充，还有 2 天将自动结案。`,
+        undefined,
+        caseLink(row.id),
+        'case-reminder'
       )
     }
     return { changed: true }

@@ -1,3 +1,7 @@
+import {
+  lockPreferenceTags,
+  maintainBlockedTagPreferences
+} from '~/lib/accountPreferences/service'
 import 'dotenv/config'
 import { readFile } from 'fs/promises'
 import { prisma } from '~/prisma/index'
@@ -156,46 +160,6 @@ const validatePlan = async (
   return { errors, warnings }
 }
 
-const getBlockedTagUserUpdates = async (
-  sourceTagIds: number[],
-  targetTagId?: number
-) => {
-  if (!sourceTagIds.length) {
-    return []
-  }
-
-  const sourceTagIdSet = new Set(sourceTagIds)
-  const users = await prisma.user.findMany({
-    where: {
-      OR: sourceTagIds.map((tagId) => ({
-        blocked_tag_ids: { has: tagId }
-      }))
-    },
-    select: {
-      id: true,
-      blocked_tag_ids: true
-    }
-  })
-
-  return users.map((user) => {
-    const nextBlockedTagIds = user.blocked_tag_ids.filter(
-      (tagId) => !sourceTagIdSet.has(tagId)
-    )
-
-    if (
-      targetTagId &&
-      user.blocked_tag_ids.some((tagId) => sourceTagIdSet.has(tagId))
-    ) {
-      nextBlockedTagIds.push(targetTagId)
-    }
-
-    return {
-      id: user.id,
-      blockedTagIds: [...new Set(nextBlockedTagIds)]
-    }
-  })
-}
-
 const logMergePreview = (
   targetTag: MergePreviewTag,
   sourceTags: MergePreviewTag[],
@@ -320,12 +284,13 @@ const mergeTags = async (
   })
   const affectedUniqueIds = collectAffectedUniqueIds(sourceRelations)
 
-  const userUpdates = await getBlockedTagUserUpdates(
-    existingSourceTagIds,
-    plan.targetTagId
-  )
-
   await prisma.$transaction(async (tx) => {
+    await lockPreferenceTags(tx, [...existingSourceTagIds, plan.targetTagId])
+    await maintainBlockedTagPreferences(
+      tx,
+      existingSourceTagIds,
+      plan.targetTagId
+    )
     if (sourceRelations.length) {
       await tx.patch_tag_relation.createMany({
         data: sourceRelations.map((relation) => ({
@@ -350,13 +315,6 @@ const mergeTags = async (
         alias: preview.nextAliases
       }
     })
-
-    for (const userUpdate of userUpdates) {
-      await tx.user.update({
-        where: { id: userUpdate.id },
-        data: { blocked_tag_ids: userUpdate.blockedTagIds }
-      })
-    }
   })
 
   return affectedUniqueIds
@@ -436,9 +394,10 @@ const deleteTags = async (
     }
   })
   const affectedUniqueIds = collectAffectedUniqueIds(tagRelations)
-  const userUpdates = await getBlockedTagUserUpdates(existingTagIds)
 
   await prisma.$transaction(async (tx) => {
+    await lockPreferenceTags(tx, existingTagIds)
+    await maintainBlockedTagPreferences(tx, existingTagIds)
     await tx.patch_tag_relation.deleteMany({
       where: { tag_id: { in: existingTagIds } }
     })
@@ -446,13 +405,6 @@ const deleteTags = async (
     await tx.patch_tag.deleteMany({
       where: { id: { in: existingTagIds } }
     })
-
-    for (const userUpdate of userUpdates) {
-      await tx.user.update({
-        where: { id: userUpdate.id },
-        data: { blocked_tag_ids: userUpdate.blockedTagIds }
-      })
-    }
   })
 
   return affectedUniqueIds

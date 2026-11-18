@@ -7,7 +7,7 @@ import { verifyHeaderCookie } from '~/utils/actions/verifyHeaderCookie'
 import { getMessage } from '~/app/api/message/service'
 
 export const kunGetActions = async (
-  params: z.infer<typeof getMessageSchema>
+  params: z.input<typeof getMessageSchema>
 ) => {
   const input = safeParseSchema(getMessageSchema, params)
   if (typeof input === 'string') {

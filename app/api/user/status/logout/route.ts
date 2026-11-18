@@ -1,17 +1,49 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { cookies } from 'next/headers'
-import { verifyHeaderCookie } from '~/middleware/_verifyHeaderCookie'
 import { deleteKunSession } from '~/app/api/utils/jwt'
+import { PERSONALIZED_API_CACHE_CONTROL } from '~/app/api/utils/cacheHeaders'
+import {
+  getRequestIdentity,
+  getSessionContext
+} from '~/app/api/utils/sessionIdentity'
+import { clearSessionCookies } from '~/app/api/utils/sessionCookies'
 
 export async function POST(req: NextRequest) {
-  const payload = await verifyHeaderCookie(req)
-  if (!payload) {
-    return NextResponse.json('用户未登录')
+  const identity = await getRequestIdentity(req)
+  const input = await req.json().catch(() => null)
+  if (
+    identity.status === 'authenticated' &&
+    (typeof input?.context !== 'string' ||
+      input.context !== getSessionContext(identity.payload))
+  ) {
+    return NextResponse.json(
+      {
+        code: 'SESSION_CHANGED',
+        revoked: false,
+        message: '登录状态已变化，请重新确认当前账号后重试退出'
+      },
+      {
+        status: 409,
+        headers: { 'Cache-Control': PERSONALIZED_API_CACHE_CONTROL }
+      }
+    )
   }
-
-  await deleteKunSession(payload.uid, payload.jti)
-  const cookie = await cookies()
-  cookie.delete('kun-galgame-patch-moe-token')
-
-  return NextResponse.json({ message: '退出登录成功' })
+  let revoked = identity.status !== 'unavailable'
+  if (identity.status === 'authenticated') {
+    try {
+      await deleteKunSession(identity.payload.uid, identity.payload.jti)
+    } catch {
+      revoked = false
+    }
+  }
+  return clearSessionCookies(
+    NextResponse.json(
+      {
+        revoked,
+        message: revoked
+          ? '退出登录成功'
+          : '已清理本机登录，服务端会话撤销暂未确认'
+      },
+      { status: revoked ? 200 : 503 }
+    )
+  )
 }

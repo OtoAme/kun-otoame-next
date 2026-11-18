@@ -100,12 +100,15 @@ const notifyAuthor = async (
   targetType: HelpModerationTarget,
   postId: number,
   id: number,
-  action: 'hide' | 'restore'
+  action: 'hide' | 'restore',
+  actorId?: number
 ) => {
   if (authorId === null) return
   const subject = SUBJECTS[targetType]
   await createMessage(
     {
+      event_type: 'moderation',
+      actor_id: actorId,
       type: 'report',
       content:
         action === 'hide'
@@ -123,7 +126,8 @@ export const hideHelpTargetForCase = async (
   tx: Tx,
   targetType: HelpModerationTarget,
   targetId: number,
-  now: Date
+  now: Date,
+  actorId?: number
 ) => {
   const row = await loadTargetRow(tx, targetType, targetId)
   if (!row) return false
@@ -144,7 +148,15 @@ export const hideHelpTargetForCase = async (
       data: { accepted_answer_id: null, status: 'open' }
     })
   }
-  await notifyAuthor(tx, row.user_id, targetType, row.postId, targetId, 'hide')
+  await notifyAuthor(
+    tx,
+    row.user_id,
+    targetType,
+    row.postId,
+    targetId,
+    'hide',
+    actorId
+  )
   return true
 }
 
@@ -152,7 +164,8 @@ export const hideHelpTargetForCase = async (
 export const restoreHelpTargetForCase = async (
   tx: Tx,
   targetType: HelpModerationTarget,
-  targetId: number
+  targetId: number,
+  actorId?: number
 ) => {
   const row = await loadTargetRow(tx, targetType, targetId)
   if (!row) return false
@@ -171,7 +184,8 @@ export const restoreHelpTargetForCase = async (
     targetType,
     row.postId,
     targetId,
-    'restore'
+    'restore',
+    actorId
   )
   return true
 }

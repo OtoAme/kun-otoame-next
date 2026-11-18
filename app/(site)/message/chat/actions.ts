@@ -1,11 +1,13 @@
 'use server'
 
 import { z } from 'zod'
+import { isConversationError } from '~/app/api/message/conversation/response'
 import { safeParseSchema } from '~/utils/actions/safeParseSchema'
 import {
   getConversationsSchema,
   getConversationMessagesSchema
 } from '~/validations/conversation'
+import { getSessionContext } from '~/app/api/utils/sessionIdentity'
 import { verifyHeaderCookie } from '~/utils/actions/verifyHeaderCookie'
 import { getConversations } from '~/app/api/message/conversation/service'
 import { getConversationMessages } from '~/app/api/message/conversation/[id]/service'
@@ -33,7 +35,7 @@ export const kunGetConversationsAction = async (
   }
 
   const response = await getConversations(input, payload.uid)
-  return response
+  return isConversationError(response) ? response.message : response
 }
 
 export const kunGetConversationMessagesAction = async (
@@ -67,5 +69,7 @@ export const kunGetConversationMessagesAction = async (
     input,
     payload.uid
   )
-  return response
+  return isConversationError(response)
+    ? response.message
+    : { ...response, initialSessionContext: getSessionContext(payload) }
 }

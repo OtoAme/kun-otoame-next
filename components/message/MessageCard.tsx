@@ -1,4 +1,8 @@
+'use client'
+
+import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
+import { Button } from '@heroui/button'
 import { Card, CardBody } from '@heroui/card'
 import { Avatar } from '@heroui/avatar'
 import { Chip } from '@heroui/chip'
@@ -16,10 +20,29 @@ import {
 } from 'lucide-react'
 import { MESSAGE_TYPE_MAP } from '~/constants/message'
 import { KunAvatar } from '~/components/kun/floating-card/KunAvatar'
+import { useSessionContentReady } from '~/components/kun/SessionContentBoundary'
+import {
+  NOTIFICATION_CATEGORY_LABELS,
+  NOTIFICATION_EVENTS,
+  notificationCategory
+} from '~/constants/notification'
+import {
+  isNotificationBodyVisible,
+  observeNotificationReading
+} from '~/utils/notificationVisibility'
+import {
+  rememberNotificationEntry,
+  notificationEntryHref,
+  type NotificationIdentity
+} from '~/utils/notificationReading'
 import type { Message } from '~/types/api/message'
 
 interface Props {
   msg: Message
+  identity?: NotificationIdentity
+  onSeen?: (message: Message, eligible?: () => boolean) => void
+  justRead?: boolean
+  confirmationError?: string
 }
 
 const getNotificationIcon = (type: string) => {
@@ -57,17 +80,64 @@ const getCardRoute = (msg: Message) => {
   return `/user/${msg.sender.id}/comment`
 }
 
-export const MessageCard = ({ msg }: Props) => {
+export const MessageCard = ({
+  msg,
+  identity,
+  onSeen,
+  justRead,
+  confirmationError
+}: Props) => {
+  const contentReady = useSessionContentReady()
   const href = getCardRoute(msg)
+  const token = useMemo(() => crypto.randomUUID(), [msg.id, msg.contentVersion])
+  const entryHref =
+    identity && msg.status === 0 && msg.contentVersion && msg.link
+      ? notificationEntryHref(href, token)
+      : href
+  const remember = () => {
+    if (identity && msg.status === 0 && msg.contentVersion && msg.link)
+      rememberNotificationEntry(token, {
+        identity,
+        item: { id: msg.id, version: msg.contentVersion },
+        target: msg.link
+      })
+  }
+  const body = useRef<HTMLParagraphElement>(null)
+  const long = msg.content.length > 350 || msg.content.split('\n').length > 8
+  const [expanded, setExpanded] = useState(false)
+  const canRead = !long || expanded
+  const category = msg.category ?? notificationCategory(msg.eventType, msg.type)
+
+  useEffect(() => {
+    if (
+      !body.current ||
+      !contentReady ||
+      !identity ||
+      !onSeen ||
+      !canRead ||
+      msg.status !== 0 ||
+      !msg.contentVersion ||
+      confirmationError
+    )
+      return
+    let active = true
+    const eligible = () =>
+      active && Boolean(body.current && isNotificationBodyVisible(body.current))
+    const stop = observeNotificationReading(body.current, () =>
+      onSeen(msg, eligible)
+    )
+    return () => {
+      active = false
+      stop()
+    }
+  }, [msg, identity, onSeen, canRead, confirmationError, contentReady])
 
   return (
     <Card
-      isPressable
-      as={Link}
-      href={href}
+      data-notification-id={msg.id}
       className="w-full border border-default-100 dark:border-default-200"
     >
-      <CardBody className="flex flex-row items-center gap-4">
+      <CardBody className="flex flex-row items-start gap-3 sm:gap-4">
         {msg.sender ? (
           <KunAvatar
             uid={msg.sender.id}
@@ -80,35 +150,76 @@ export const MessageCard = ({ msg }: Props) => {
           <Avatar src="/favicon.webp" name="系统消息" />
         )}
 
-        <div className="flex-1 space-y-2">
-          <div className="flex items-center gap-2">
+        <div className="min-w-0 flex-1 space-y-2">
+          <div className="flex flex-wrap items-center gap-2">
             {getNotificationIcon(msg.type)}
 
             <span className="font-semibold">
               {msg.sender ? msg.sender.name : '系统'}
             </span>
 
-            <span>{MESSAGE_TYPE_MAP[msg.type]}</span>
+            <span>
+              {msg.eventType
+                ? NOTIFICATION_EVENTS[msg.eventType]?.label
+                : MESSAGE_TYPE_MAP[msg.type]}
+            </span>
+            <span className="text-xs text-default-500">
+              {NOTIFICATION_CATEGORY_LABELS[category]}
+            </span>
+            {!msg.eventType && msg.type === 'system' && (
+              <span className="text-xs text-default-500">
+                历史系统通知 · 事件未细分
+              </span>
+            )}
           </div>
           <p
+            ref={body}
             data-testid="message-content"
-            className="whitespace-pre-wrap break-words text-default-600"
+            className={`whitespace-pre-wrap break-words text-default-600 ${long && !expanded ? 'line-clamp-5' : ''}`}
           >
             {msg.content}
           </p>
+          {long && (
+            <Button
+              size="sm"
+              variant="light"
+              aria-expanded={expanded}
+              onPress={() => setExpanded((value) => !value)}
+            >
+              {expanded ? '收起正文' : '展开完整正文'}
+            </Button>
+          )}
           <span className="text-sm text-default-400">
             {formatTimeDifference(msg.created)}
           </span>
+          {msg.updated &&
+            new Date(msg.updated).getTime() >
+              new Date(msg.created).getTime() + 1000 && (
+              <p className="text-xs text-default-500">
+                最近更新：{formatTimeDifference(msg.updated)}
+              </p>
+            )}
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <Link
+              href={entryHref}
+              prefetch={false}
+              className="text-primary underline underline-offset-4"
+              onClick={remember}
+              onAuxClick={remember}
+              onContextMenu={remember}
+            >
+              查看详情
+            </Link>
+            <Chip color={msg.status === 0 ? 'danger' : 'default'} size="sm">
+              {msg.status === 0 ? '未读' : justRead ? '刚刚已读' : '已阅读'}
+            </Chip>
+          </div>
+          {confirmationError && (
+            <p role="status" className="text-sm text-warning-600">
+              {confirmationError}
+            </p>
+          )}
         </div>
-        {msg.status === 0 ? (
-          <Chip color="danger" size="sm">
-            新消息
-          </Chip>
-        ) : (
-          <Chip color="default" size="sm">
-            已阅读
-          </Chip>
-        )}
       </CardBody>
     </Card>
   )

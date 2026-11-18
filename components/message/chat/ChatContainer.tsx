@@ -11,9 +11,9 @@ import { ChatInput } from './ChatInput'
 import { DeleteConversationButton } from './DeleteConversationButton'
 import { KunAvatar } from '~/components/kun/floating-card/KunAvatar'
 import { KunControlledImageViewer } from '~/components/kun/image-viewer/ImageViewer'
-import { kunFetchGet, kunFetchPut } from '~/utils/kunFetch'
+import { usePrivateChatSync } from '~/hooks/usePrivateChatSync'
+import { chatReviewTargets, mergeChatMessages } from '~/utils/privateChatSync'
 import { useUserStore } from '~/store/userStore'
-import { useMessageStore } from '~/store/messageStore'
 import { cn } from '~/utils/cn'
 import toast from 'react-hot-toast'
 import type {
@@ -21,7 +21,6 @@ import type {
   PrivateMessage,
   PrivateMessageReplyPreview
 } from '~/types/api/conversation'
-import type { MessageUnreadStatus } from '~/types/api/message'
 import type { KunImageViewerImage } from '~/components/kun/image-viewer/slides'
 
 type MessageUpdateData =
@@ -35,6 +34,7 @@ interface ChatConversationImage extends KunImageViewerImage {
 
 interface Props {
   conversationId: number
+  initialSessionContext: string
   initialMessages: PrivateMessage[]
   total: number
   hasMoreBefore?: boolean
@@ -42,14 +42,10 @@ interface Props {
   className?: string
 }
 
-const sortMessagesByTime = (msgs: PrivateMessage[]) => {
-  return [...msgs].sort(
-    (a, b) => new Date(a.created).getTime() - new Date(b.created).getTime()
-  )
+const sortMessagesById = (msgs: PrivateMessage[]) => {
+  return [...msgs].sort((left, right) => left.id - right.id)
 }
 
-const CHAT_VISIBLE_POLL_INTERVAL_MS = 2_000
-const CHAT_HIDDEN_POLL_INTERVAL_MS = 15_000
 const CHAT_REPLY_SCROLL_DURATION_MS = 420
 const CHAT_REPLY_HIGHLIGHT_DELAY_MS = 500
 const CHAT_REPLY_HIGHLIGHT_VISIBLE_MS = 1_200
@@ -70,30 +66,11 @@ const shouldReduceScrollMotion = () =>
 const getLatestMessageId = (msgs: PrivateMessage[]) =>
   msgs.reduce((latest, msg) => Math.max(latest, msg.id), 0)
 
-const getNextMessageId = (msgs: PrivateMessage[]) =>
-  getLatestMessageId(msgs) + 1
-
 const getOldestMessageId = (msgs: PrivateMessage[]) =>
   msgs.reduce(
     (oldest, msg) => Math.min(oldest, msg.id),
     Number.POSITIVE_INFINITY
   )
-
-const mergeMessagesById = (
-  currentMessages: PrivateMessage[],
-  newMessages: PrivateMessage[]
-) => {
-  const messageMap = new Map<number, PrivateMessage>()
-
-  for (const msg of currentMessages) {
-    messageMap.set(msg.id, msg)
-  }
-  for (const msg of newMessages) {
-    messageMap.set(msg.id, msg)
-  }
-
-  return sortMessagesByTime([...messageMap.values()])
-}
 
 const getMessageImages = (message: PrivateMessage) =>
   message.images && message.images.length > 0
@@ -128,8 +105,9 @@ const getReplyHighlight = (
   }
 }
 
-export const ChatContainer = ({
+const ChatConversation = ({
   conversationId,
+  initialSessionContext,
   initialMessages,
   total,
   hasMoreBefore,
@@ -137,7 +115,7 @@ export const ChatContainer = ({
   className
 }: Props) => {
   const [messages, setMessages] = useState<PrivateMessage[]>(
-    sortMessagesByTime(initialMessages)
+    sortMessagesById(initialMessages)
   )
   const [loading, setLoading] = useState(false)
   const [hasMore, setHasMore] = useState(
@@ -157,20 +135,25 @@ export const ChatContainer = ({
   const [replyJumpReturnPoint, setReplyJumpReturnPointState] = useState<
     number | null
   >(null)
-  const [imageViewerIndex, setImageViewerIndex] = useState(-1)
+  const [activeImage, setActiveImage] = useState<string | null>(null)
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const stickerPickerPortalRef = useRef<HTMLDivElement>(null)
   const loadMoreRef = useRef<HTMLDivElement>(null)
   const user = useUserStore((state) => state.user)
-  const setUnreadMessageStatus = useMessageStore(
-    (state) => state.setUnreadMessageStatus
+  const deletedIdsRef = useRef(
+    new Set(
+      initialMessages
+        .filter((message) => message.isDeleted)
+        .map((message) => message.id)
+    )
   )
+  const reviewCacheRef = useRef(new Map<number, PrivateMessage>())
+  const replyDraftRef = useRef(replyDraft)
+  replyDraftRef.current = replyDraft
+  const activeImageMessageIdRef = useRef<number | null>(null)
+  const requestedReviewRef = useRef<() => void>(() => {})
   const isInitialMount = useRef(true)
   const messagesRef = useRef(messages)
-  const realtimeCursorRef = useRef(getLatestMessageId(initialMessages))
-  const realtimePollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
-    null
-  )
   const historyLoadInFlightRef = useRef(false)
   const replyHighlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
     null
@@ -196,9 +179,9 @@ export const ChatContainer = ({
     }
 
     const replyTarget = messages.find((msg) => msg.id === replyDraft.message.id)
-    if (!replyTarget || replyTarget.isDeleted) {
-      setReplyDraft(null)
-    }
+    if (!replyTarget || replyTarget.isDeleted) setReplyDraft(null)
+    else if (replyTarget !== replyDraft.message)
+      setReplyDraft({ ...replyDraft, message: replyTarget })
   }, [messages, replyDraft])
 
   const conversationImages = useMemo<ChatConversationImage[]>(
@@ -220,14 +203,23 @@ export const ChatContainer = ({
     [messages]
   )
 
-  useEffect(() => {
-    if (
-      imageViewerIndex >= conversationImages.length ||
-      conversationImages.length === 0
-    ) {
-      setImageViewerIndex(-1)
-    }
-  }, [conversationImages.length, imageViewerIndex])
+  const imageViewerIndex = conversationImages.findIndex(
+    (image) =>
+      `${image.messageId}:${image.imageIndex}:${image.src}` === activeImage
+  )
+  activeImageMessageIdRef.current =
+    conversationImages[imageViewerIndex]?.messageId ?? null
+
+  const viewImage = useCallback(
+    (index: number) => {
+      const image = conversationImages[index]
+      setActiveImage(
+        image ? `${image.messageId}:${image.imageIndex}:${image.src}` : null
+      )
+      requestedReviewRef.current()
+    },
+    [conversationImages]
+  )
 
   const isNearLiveEdge = useCallback(() => {
     const container = scrollContainerRef.current
@@ -300,6 +292,7 @@ export const ChatContainer = ({
 
   const handleScroll = useCallback(() => {
     updateScrollButtonVisibility('user-scroll')
+    requestedReviewRef.current()
   }, [updateScrollButtonVisibility])
 
   const hideScrollButton = useCallback(() => {
@@ -411,55 +404,122 @@ export const ChatContainer = ({
     ]
   )
 
+  const mergeIncoming = useCallback(
+    (
+      incoming: PrivateMessage[],
+      reviews: PrivateMessage[] = [],
+      unavailable: number[] = []
+    ) => {
+      const merged = mergeChatMessages(
+        messagesRef.current,
+        incoming,
+        reviews,
+        unavailable,
+        deletedIdsRef.current,
+        reviewCacheRef.current
+      )
+      messagesRef.current = merged
+      setMessages(merged)
+      return merged
+    },
+    []
+  )
+
+  const getReviewIds = useCallback(() => {
+    const container = scrollContainerRef.current
+    const bounds = container?.getBoundingClientRect()
+    const visible = messagesRef.current.filter((message) => {
+      const element = document.getElementById(`chat-message-${message.id}`)
+      if (!container?.clientHeight || !bounds) return true
+      if (!element) return false
+      const rectangle = element.getBoundingClientRect()
+      return rectangle.bottom > bounds.top && rectangle.top < bounds.bottom
+    })
+    return chatReviewTargets(
+      [
+        activeImageMessageIdRef.current ?? 0,
+        replyDraftRef.current?.message.id ?? 0
+      ],
+      visible
+    )
+  }, [])
+
+  const applyBatch = useCallback(
+    (response: ConversationMessagesResponse, direction: 'new' | 'history') => {
+      const container = scrollContainerRef.current
+      const previousTop = container?.scrollTop ?? 0
+      const previousHeight = container?.scrollHeight ?? 0
+      const bounds = container?.getBoundingClientRect()
+      const anchor = messagesRef.current
+        .map((message) => document.getElementById(`chat-message-${message.id}`))
+        .find(
+          (element) =>
+            element &&
+            bounds &&
+            element.getBoundingClientRect().bottom > bounds.top
+        )
+      const anchorOffset =
+        anchor && bounds
+          ? anchor.getBoundingClientRect().top - bounds.top
+          : null
+      const follow =
+        direction === 'new' && response.messages.length > 0 && isNearLiveEdge()
+      const previousCount = messagesRef.current.length
+      const merged = mergeIncoming(
+        response.messages,
+        response.reviewMessages,
+        response.unavailableIds
+      )
+      setTotalCount((count) =>
+        Math.max(count, count + merged.length - previousCount)
+      )
+      if (direction === 'history') setHasMore(response.hasMoreBefore)
+      requestAnimationFrame(() => {
+        if (!container || scrollContainerRef.current !== container) return
+        if (follow) scrollToBottom()
+        else if (anchor?.isConnected && anchorOffset !== null) {
+          container.scrollTop +=
+            anchor.getBoundingClientRect().top -
+            container.getBoundingClientRect().top -
+            anchorOffset
+        } else if (direction === 'history')
+          container.scrollTop =
+            previousTop + container.scrollHeight - previousHeight
+        else container.scrollTop = previousTop
+      })
+    },
+    [isNearLiveEdge, mergeIncoming, scrollToBottom]
+  )
+
+  const {
+    failed: syncFailed,
+    recordActivity,
+    requestReview,
+    loadHistory
+  } = usePrivateChatSync({
+    conversationId,
+    initialSessionContext,
+    initialCursor: getLatestMessageId(initialMessages),
+    getReviewIds,
+    onBatch: applyBatch
+  })
+  requestedReviewRef.current = requestReview
+  useEffect(() => {
+    requestReview()
+  }, [replyDraft?.message.id, activeImage, requestReview])
+
   const loadMoreMessages = useCallback(async () => {
     if (historyLoadInFlightRef.current || loading || !hasMore) return
-
     const oldestMessageId = getOldestMessageId(messagesRef.current)
-    if (!Number.isFinite(oldestMessageId)) {
-      setHasMore(false)
-      return
-    }
-
+    if (!Number.isFinite(oldestMessageId)) return
     historyLoadInFlightRef.current = true
     setLoading(true)
-
-    try {
-      const response = await kunFetchGet<
-        KunResponse<ConversationMessagesResponse>
-      >(`/message/conversation/${conversationId}`, {
-        page: 1,
-        limit: 30,
-        beforeId: oldestMessageId
-      })
-
-      if (typeof response === 'string') {
-        toast.error(response)
-      } else {
-        const scrollContainer = scrollContainerRef.current
-        const previousScrollHeight = scrollContainer?.scrollHeight || 0
-
-        setMessages((prev) => {
-          const mergedMessages = mergeMessagesById(prev, response.messages)
-          messagesRef.current = mergedMessages
-          return mergedMessages
-        })
-        setTotalCount(response.total)
-        setHasMore(response.hasMoreBefore)
-
-        requestAnimationFrame(() => {
-          if (scrollContainer) {
-            const newScrollHeight = scrollContainer.scrollHeight
-            scrollContainer.scrollTop = newScrollHeight - previousScrollHeight
-          }
-        })
-      }
-    } catch {
+    const response = await loadHistory(oldestMessageId)
+    if (!response && document.visibilityState !== 'hidden')
       toast.error('获取历史消息失败，请稍后重试')
-    } finally {
-      historyLoadInFlightRef.current = false
-      setLoading(false)
-    }
-  }, [loading, hasMore, conversationId])
+    historyLoadInFlightRef.current = false
+    setLoading(false)
+  }, [hasMore, loading, loadHistory])
 
   const handleMessageSent = useCallback(
     (newMessage: PrivateMessage) => {
@@ -482,46 +542,32 @@ export const ChatContainer = ({
           avatar: user.avatar
         }
       }
-      setMessages((prev) => sortMessagesByTime([...prev, message]))
+      mergeIncoming([message])
+      recordActivity()
       setTotalCount((prev) => prev + 1)
       requestAnimationFrame(() => {
         scrollToBottom()
       })
     },
-    [user, scrollToBottom]
+    [user, scrollToBottom, mergeIncoming, recordActivity]
   )
 
   const handleMessageUpdated = useCallback(
     (messageId: number, data: MessageUpdateData) => {
-      if (data.action === 'delete') {
-        setMessages((prev) =>
-          prev.map((msg) =>
-            msg.id === messageId
-              ? {
-                  ...msg,
-                  type: 0,
-                  content: '',
-                  isDeleted: true,
-                  image: null,
-                  images: [],
-                  stickerId: null,
-                  sticker: null,
-                  replyTo: null
-                }
-              : msg
-          )
+      recordActivity()
+      if (data.action === 'delete') mergeIncoming([], [], [messageId])
+      else {
+        const current = messagesRef.current.find(
+          (message) => message.id === messageId
         )
-      } else {
-        setMessages((prev) =>
-          prev.map((msg) =>
-            msg.id === messageId
-              ? { ...msg, content: data.content, editedAt: data.editedAt }
-              : msg
+        if (current)
+          mergeIncoming(
+            [],
+            [{ ...current, content: data.content, editedAt: data.editedAt }]
           )
-        )
       }
     },
-    []
+    [mergeIncoming, recordActivity]
   )
 
   const handleOpenImage = useCallback(
@@ -532,10 +578,10 @@ export const ChatContainer = ({
       )
 
       if (targetIndex >= 0) {
-        setImageViewerIndex(targetIndex)
+        viewImage(targetIndex)
       }
     },
-    [conversationImages]
+    [conversationImages, viewImage]
   )
 
   const scrollToMessageInFixedTime = useCallback(
@@ -589,6 +635,7 @@ export const ChatContainer = ({
 
   const handleJumpToReply = useCallback(
     (replyTo: PrivateMessageReplyPreview, sourceMessageId: number) => {
+      requestedReviewRef.current()
       const highlight = getReplyHighlight(replyTo)
 
       const target = document.getElementById(
@@ -650,196 +697,6 @@ export const ChatContainer = ({
   useEffect(() => {
     document.title = `与${otherUser.name}的私聊 - OtoAme`
   }, [otherUser.name])
-
-  useEffect(() => {
-    let ignore = false
-
-    const markAsRead = async () => {
-      try {
-        const response = await kunFetchPut<KunResponse<MessageUnreadStatus>>(
-          `/message/conversation/${conversationId}/read`
-        )
-
-        if (ignore) {
-          return
-        }
-
-        if (typeof response === 'string') {
-          toast.error(response)
-          return
-        }
-
-        setUnreadMessageStatus(response)
-      } catch {
-        if (!ignore) {
-          toast.error('同步私聊已读状态失败，请稍后重试')
-        }
-      }
-    }
-
-    void markAsRead()
-
-    return () => {
-      ignore = true
-    }
-  }, [conversationId, setUnreadMessageStatus])
-
-  useEffect(() => {
-    let ignore = false
-    let realtimePollInFlight = false
-
-    const clearRealtimePollTimer = () => {
-      if (!realtimePollTimerRef.current) {
-        return
-      }
-
-      clearTimeout(realtimePollTimerRef.current)
-      realtimePollTimerRef.current = null
-    }
-
-    const scheduleRealtimePoll = (interval: number) => {
-      clearRealtimePollTimer()
-      realtimePollTimerRef.current = setTimeout(pollNewMessages, interval)
-    }
-
-    const getRealtimePollInterval = () =>
-      document.visibilityState === 'hidden'
-        ? CHAT_HIDDEN_POLL_INTERVAL_MS
-        : CHAT_VISIBLE_POLL_INTERVAL_MS
-
-    const pollNewMessages = async () => {
-      if (realtimePollInFlight) {
-        return
-      }
-
-      if (document.visibilityState === 'hidden') {
-        if (!ignore) {
-          scheduleRealtimePoll(CHAT_HIDDEN_POLL_INTERVAL_MS)
-        }
-        return
-      }
-
-      realtimePollInFlight = true
-      const latestMessageId = realtimeCursorRef.current
-      const query: Record<string, number> = { page: 1, limit: 50 }
-      if (latestMessageId > 0) {
-        query.afterId = latestMessageId
-      }
-
-      try {
-        const response = await kunFetchGet<
-          KunResponse<ConversationMessagesResponse>
-        >(`/message/conversation/${conversationId}`, query)
-
-        if (ignore || typeof response === 'string') {
-          return
-        }
-
-        const newMessages = response.messages
-        if (newMessages.length) {
-          const shouldScrollToLiveEdge = isNearLiveEdge()
-          realtimeCursorRef.current = Math.max(
-            realtimeCursorRef.current,
-            getLatestMessageId(newMessages)
-          )
-          const hasOtherUserMessage = newMessages.some(
-            (msg) => msg.sender.id !== user.uid
-          )
-
-          const currentMessages = messagesRef.current
-          const mergedMessages = mergeMessagesById(currentMessages, newMessages)
-          const addedMessageCount = Math.max(
-            mergedMessages.length - currentMessages.length,
-            0
-          )
-
-          if (addedMessageCount > 0) {
-            messagesRef.current = mergedMessages
-            setMessages(mergedMessages)
-            setTotalCount((currentTotal) => currentTotal + addedMessageCount)
-          }
-
-          if (hasOtherUserMessage) {
-            try {
-              const readResponse = await kunFetchPut<
-                KunResponse<MessageUnreadStatus>
-              >(`/message/conversation/${conversationId}/read`)
-
-              if (ignore) {
-                return
-              }
-
-              if (typeof readResponse === 'string') {
-                toast.error(readResponse)
-              } else {
-                setUnreadMessageStatus(readResponse)
-              }
-            } catch {
-              if (!ignore) {
-                toast.error('同步私聊已读状态失败，请稍后重试')
-              }
-            }
-          }
-
-          if (shouldScrollToLiveEdge) {
-            requestAnimationFrame(() => {
-              scrollToBottom()
-            })
-          }
-        }
-
-        const currentLatestMessageId = getNextMessageId(messagesRef.current)
-        if (currentLatestMessageId > 1) {
-          const statusResponse = await kunFetchGet<
-            KunResponse<ConversationMessagesResponse>
-          >(`/message/conversation/${conversationId}`, {
-            page: 1,
-            limit: 50,
-            beforeId: currentLatestMessageId
-          })
-
-          if (!ignore && typeof statusResponse !== 'string') {
-            const mergedMessages = mergeMessagesById(
-              messagesRef.current,
-              statusResponse.messages
-            )
-            messagesRef.current = mergedMessages
-            setMessages(mergedMessages)
-          }
-        }
-      } catch {
-        // 轮询失败时保留现有消息与已读状态，由 finally 继续调度下一次轮询
-      } finally {
-        realtimePollInFlight = false
-        if (!ignore) {
-          scheduleRealtimePoll(getRealtimePollInterval())
-        }
-      }
-    }
-
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        clearRealtimePollTimer()
-        void pollNewMessages()
-      }
-    }
-
-    document.addEventListener('visibilitychange', handleVisibilityChange)
-    clearRealtimePollTimer()
-    void pollNewMessages()
-
-    return () => {
-      ignore = true
-      document.removeEventListener('visibilitychange', handleVisibilityChange)
-      clearRealtimePollTimer()
-    }
-  }, [
-    conversationId,
-    isNearLiveEdge,
-    scrollToBottom,
-    setUnreadMessageStatus,
-    user.uid
-  ])
 
   useEffect(() => {
     if (isInitialMount.current) {
@@ -942,6 +799,11 @@ export const ChatContainer = ({
             <span className="font-semibold">{otherUser.name}</span>
           </div>
 
+          {syncFailed && (
+            <span role="status" className="text-xs text-warning">
+              消息同步暂时不可用，将自动重试
+            </span>
+          )}
           <DeleteConversationButton
             conversationId={conversationId}
             otherUserName={otherUser.name}
@@ -972,9 +834,10 @@ export const ChatContainer = ({
                       message={msg}
                       isOwn={msg.sender.id === user.uid}
                       conversationId={conversationId}
-                      onReply={(message, selectedText, imageIndex) =>
+                      onReply={(message, selectedText, imageIndex) => {
                         setReplyDraft({ message, selectedText, imageIndex })
-                      }
+                        requestReview()
+                      }}
                       onOpenImage={handleOpenImage}
                       onReplyPreviewClick={handleJumpToReply}
                       replyHighlight={
@@ -1050,9 +913,21 @@ export const ChatContainer = ({
         images={conversationImages}
         index={imageViewerIndex}
         preload={2}
-        onClose={() => setImageViewerIndex(-1)}
-        onView={setImageViewerIndex}
+        onClose={() => setActiveImage(null)}
+        onView={viewImage}
       />
     </>
+  )
+}
+
+export const ChatContainer = (props: Props) => {
+  const context = useUserStore((state) => state.sessionContext)
+  const generation = useUserStore((state) => state.sessionGeneration)
+  if (!context || context !== props.initialSessionContext) return null
+  return (
+    <ChatConversation
+      key={`${props.conversationId}:${context}:${generation}`}
+      {...props}
+    />
   )
 }

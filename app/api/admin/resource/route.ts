@@ -42,7 +42,7 @@ export const GET = async (req: NextRequest) => {
   if (typeof input === 'string') {
     return privateJson(input)
   }
-  const nsfwEnable = getNSFWHeader(req)
+  const nsfwEnable = await getNSFWHeader(req)
   const payload = await verifyHeaderCookie(req)
   if (!payload) {
     return privateJson('用户未登录')

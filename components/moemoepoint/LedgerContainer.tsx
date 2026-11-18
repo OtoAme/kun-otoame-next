@@ -1,5 +1,6 @@
 'use client'
 
+import { NotificationTargetReady } from '~/components/message/NotificationTargetReady'
 import { useEffect, useRef, useState, type Key } from 'react'
 import NextLink from 'next/link'
 import { parseDate, today, type CalendarDate } from '@internationalized/date'
@@ -308,6 +309,7 @@ export const MoemoepointLedgerContainer = ({
 
   return (
     <div className="container mx-auto my-4 space-y-6">
+      <NotificationTargetReady enabled={!loading && !error} />
       <KunHeader
         name={title}
         endContent={

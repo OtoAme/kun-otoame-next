@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   user: { uid: 5, name: '报告者乙', role: 1 }
 }))
 
+vi.mock('~/components/message/NotificationTargetReady', () => ({ NotificationTargetReady: () => null }))
 vi.mock('~/utils/kunFetch', () => ({
   kunFetchGet: mocks.kunFetchGet,
   kunFetchPost: vi.fn(),

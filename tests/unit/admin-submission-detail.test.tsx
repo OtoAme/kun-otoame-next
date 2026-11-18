@@ -9,6 +9,7 @@ globalThis.React = React
 const stateChangedMessage = '投稿已被撤回或处理, 请刷新后重试'
 
 const routerMock = vi.hoisted(() => ({ refresh: vi.fn() }))
+vi.mock('~/components/message/NotificationTargetReady', () => ({ NotificationTargetReady: () => null }))
 vi.mock('@bprogress/next', () => ({ useRouter: () => routerMock }))
 
 const fetchMock = vi.hoisted(() => vi.fn())

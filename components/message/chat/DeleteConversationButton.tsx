@@ -13,6 +13,7 @@ import {
 } from '@heroui/modal'
 import { Trash2 } from 'lucide-react'
 import toast from 'react-hot-toast'
+import { usePrivateChatRequest } from '~/hooks/usePrivateChatRequest'
 import { kunFetchDelete } from '~/utils/kunFetch'
 
 interface Props {
@@ -28,13 +29,19 @@ export const DeleteConversationButton = ({
   const { isOpen, onOpen, onClose, onOpenChange } = useDisclosure()
   const [isDeleting, setIsDeleting] = useState(false)
 
+  const beginRequest = usePrivateChatRequest(conversationId)
+
   const handleDeleteConversation = async () => {
+    const request = beginRequest()
+    if (!request) return
     setIsDeleting(true)
     try {
       const response = await kunFetchDelete<KunResponse<{}>>(
         `/message/conversation/${conversationId}`,
-        { action: 'conversation' }
+        { action: 'conversation' },
+        request.options
       )
+      if (!request.isCurrent()) return
 
       if (typeof response === 'string') {
         toast.error(response)
@@ -44,10 +51,10 @@ export const DeleteConversationButton = ({
       toast.success('私聊已从列表移除')
       onClose()
       router.push('/message/chat')
-    } catch {
-      toast.error('移除私聊失败，请稍后重试')
+    } catch (error) {
+      request.fail(error, '移除私聊失败，请稍后重试')
     } finally {
-      setIsDeleting(false)
+      if (request.isCurrent()) setIsDeleting(false)
     }
   }
 

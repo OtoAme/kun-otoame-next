@@ -17,6 +17,6 @@ export const POST = async (req: NextRequest) => {
     return NextResponse.json('本页面仅超级管理员可访问')
   }
 
-  const response = await handleFeedback(input)
+  const response = await handleFeedback(input, payload.uid)
   return NextResponse.json(response)
 }

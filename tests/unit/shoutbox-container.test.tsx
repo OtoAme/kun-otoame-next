@@ -23,6 +23,7 @@ const mocks = vi.hoisted(() => ({
   }
 }))
 
+vi.mock('~/components/message/NotificationTargetReady', () => ({ NotificationTargetReady: () => null }))
 vi.mock('~/utils/kunFetch', () => ({
   kunFetchGet: mocks.kunFetchGet,
   kunFetchPost: mocks.kunFetchPost,
@@ -71,6 +72,7 @@ vi.mock('~/store/userStore', () => {
     delaySeconds: 5
   })
   const store = {
+    sessionStatus: 'authenticated',
     get user() {
       return fullUser()
     },

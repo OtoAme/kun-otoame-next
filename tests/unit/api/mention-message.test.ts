@@ -12,6 +12,10 @@ const prismaMock = vi.hoisted(() => ({
 vi.mock('~/prisma/index', () => ({
   prisma: prismaMock
 }))
+vi.mock('~/app/api/utils/message', () => ({
+  createNotificationBatch: (data: unknown[]) =>
+    prismaMock.user_message.createMany({ data })
+}))
 
 describe('mention message anti-abuse', () => {
   beforeEach(() => {
@@ -46,9 +50,9 @@ describe('mention message anti-abuse', () => {
     })
     expect(prismaMock.user_message.createMany).toHaveBeenCalledTimes(1)
     const data = prismaMock.user_message.createMany.mock.calls[0][0].data
-    expect(data.map((item: { recipient_id: number }) => item.recipient_id)).toEqual([
-      2, 3
-    ])
+    expect(
+      data.map((item: { recipient_id: number }) => item.recipient_id)
+    ).toEqual([2, 3])
   })
 
   it('caps mention notifications per comment', async () => {
@@ -67,13 +71,15 @@ describe('mention message anti-abuse', () => {
     await createMentionMessage('abcd1234', '测试作品', 55, 1, 'Alice', mentions)
 
     expect(prismaMock.user.findMany).toHaveBeenCalledWith({
-      where: { id: { in: Array.from({ length: 20 }, (_, index) => index + 2) } },
+      where: {
+        id: { in: Array.from({ length: 20 }, (_, index) => index + 2) }
+      },
       select: { id: true }
     })
     expect(prismaMock.user_message.createMany).toHaveBeenCalledTimes(1)
-    expect(prismaMock.user_message.createMany.mock.calls[0][0].data).toHaveLength(
-      20
-    )
+    expect(
+      prismaMock.user_message.createMany.mock.calls[0][0].data
+    ).toHaveLength(20)
   })
 
   it('does not create mention notifications when no valid recipients remain', async () => {

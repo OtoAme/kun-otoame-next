@@ -12,6 +12,12 @@ const db = vi.hoisted(() => ({
 }))
 vi.mock('~/prisma/index', () => ({ prisma: db }))
 vi.mock('~/prisma', () => ({ prisma: db }))
+vi.mock('~/app/api/utils/message', () => ({
+  createMessage: vi.fn(),
+  createNotificationBatch: vi.fn(async (data, tx) =>
+    tx.user_message.createMany({ data })
+  )
+}))
 vi.mock('~/lib/redis', () => ({
   delKv: vi.fn(),
   delKvPattern: vi.fn(),
@@ -128,11 +134,15 @@ describe('official mirror handover cases', () => {
         '发布者已交由站方维护，问题改由网站管理员处理。'
       )
     }
-    expect(db.ops_case_message.create.mock.calls[0][0].data.payload).toMatchObject({
+    expect(
+      db.ops_case_message.create.mock.calls[0][0].data.payload
+    ).toMatchObject({
       from_status: 'waiting_reporter',
       to_status: 'waiting_reporter'
     })
-    expect(db.ops_case_message.create.mock.calls[1][0].data.payload).toMatchObject({
+    expect(
+      db.ops_case_message.create.mock.calls[1][0].data.payload
+    ).toMatchObject({
       from_status: 'open',
       to_status: 'open'
     })
@@ -210,7 +220,9 @@ describe('official mirror handover cases', () => {
       owner_id: null
     })
     expect(written.data.reopened_count).toEqual({ increment: 1 })
-    const sql = db.$queryRaw.mock.calls.map((call) => String(call[0]?.sql ?? ''))
+    const sql = db.$queryRaw.mock.calls.map((call) =>
+      String(call[0]?.sql ?? '')
+    )
     const resourceLockAt = sql.findIndex(
       (text) => text.includes('patch_resource') && text.includes('FOR UPDATE')
     )
@@ -223,10 +235,7 @@ describe('official mirror handover cases', () => {
     const bodies = db.ops_case_message.create.mock.calls.map(
       (call) => call[0].data.body
     )
-    expect(bodies).toEqual([
-      '问题已重新提交，处理方会继续跟进。',
-      '请继续处理'
-    ])
+    expect(bodies).toEqual(['问题已重新提交，处理方会继续跟进。', '请继续处理'])
     expect(db.user_message.createMany).toHaveBeenCalled()
     expect(Object.hasOwn(db, 'ops_case_subscriber')).toBe(false)
   })

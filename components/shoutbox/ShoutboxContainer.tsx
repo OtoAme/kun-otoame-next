@@ -1,5 +1,6 @@
 'use client'
 
+import { NotificationTargetReady } from '~/components/message/NotificationTargetReady'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
@@ -298,6 +299,7 @@ export const ShoutboxContainer = ({
         />
       ) : (
         <div className="divide-y divide-default-100">
+          <NotificationTargetReady path="/shoutbox" />
           {data?.pinned && (
             <ShoutboxCard
               item={data.pinned}

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { verifyHeaderCookie } from '~/middleware/_verifyHeaderCookie'
+import { getRequestIdentity } from '~/app/api/utils/sessionIdentity'
 import { PERSONALIZED_API_CACHE_CONTROL } from '~/app/api/utils/cacheHeaders'
 import { getUnreadStatus } from '../service'
 import { checkConversationActionRateLimit } from '../conversation/rateLimit'
@@ -35,24 +35,49 @@ const jsonNotificationResponse = (body: unknown) => {
 }
 
 export const GET = async (req: NextRequest) => {
-  const payload = await verifyHeaderCookie(req)
-  if (!payload) {
-    return jsonNoStore('用户未登录')
-  }
-
-  const rateLimit = await checkConversationActionRateLimit(
-    'notification-read',
-    payload.uid
-  )
-  if (!rateLimit.allowed) {
-    return jsonNotificationResponse(
-      createConversationRateLimitResponse(
-        rateLimit.message,
-        rateLimit.retryAfterMs
-      )
+  let identity
+  try {
+    identity = await getRequestIdentity(req)
+  } catch {
+    return jsonNoStore(
+      { code: 'SESSION_UNAVAILABLE', message: '会话暂时不可用' },
+      { status: 503 }
     )
   }
+  if (identity.status === 'unavailable') {
+    return jsonNoStore(
+      { code: 'SESSION_UNAVAILABLE', message: '会话暂时不可用' },
+      { status: 503 }
+    )
+  }
+  if (identity.status === 'guest') {
+    return jsonNoStore(
+      { code: 'SESSION_INVALID', message: '用户登录失效' },
+      { status: 401 }
+    )
+  }
+  const payload = identity.payload
 
-  const response = await getUnreadStatus(payload.uid)
-  return jsonNoStore(response)
+  try {
+    const rateLimit = await checkConversationActionRateLimit(
+      'notification-read',
+      payload.uid
+    )
+    if (!rateLimit.allowed) {
+      return jsonNotificationResponse(
+        createConversationRateLimitResponse(
+          rateLimit.message,
+          rateLimit.retryAfterMs
+        )
+      )
+    }
+
+    const response = await getUnreadStatus(payload.uid)
+    return jsonNoStore(response)
+  } catch {
+    return jsonNoStore(
+      { code: 'MESSAGE_SYNC_UNAVAILABLE', message: '消息同步暂时不可用' },
+      { status: 503 }
+    )
+  }
 }

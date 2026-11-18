@@ -131,6 +131,8 @@ export const approveCreator = async (
 
     await createMessage(
       {
+        event_type: 'creator-result',
+        actor_id: adminUid,
         type: 'apply',
         content: '恭喜! 您的创作者申请已经通过!',
         recipient_id: uid,
@@ -202,6 +204,8 @@ export const declineCreator = async (
     // Declining never touches the applicant's role.
     await createMessage(
       {
+        event_type: 'creator-result',
+        actor_id: adminUid,
         type: 'apply',
         content: `您的创作者申请被拒绝, 理由: ${reason}`,
         recipient_id: creator.id,

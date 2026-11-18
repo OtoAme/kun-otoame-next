@@ -84,10 +84,87 @@ pnpm prisma:deploy-safe
 | 小喇叭 | [预检](../../migration/production-shoutbox-preflight-2026-09-11.sql)、[同步](../../migration/production-shoutbox-sync-2026-09-11.sql)、[复检](../../migration/production-shoutbox-postflight-2026-09-11.sql)，检查扣费、三人隐藏、官方例外、退款一次及生效边界后开放。 |
 | 问题处理基础 | [预检](../../migration/production-case-preflight-2026-09-13.sql)、[同步](../../migration/production-case-sync-2026-09-13.sql)、[复检](../../migration/production-case-postflight-2026-09-13.sql)，再装下一行扩展。 |
 | 求助区 | [预检](../../migration/production-help-preflight-2026-10-29.sql)、[同步](../../migration/production-help-sync-2026-10-29.sql)、[复检](../../migration/production-help-postflight-2026-10-29.sql)，只新建六张求助表，依赖问题处理基础；先于求助区代码运行。 |
+| 通知中心与订阅 | [预检](../../migration/production-notifications-preflight-2026-11-18.sql)、[同步](../../migration/production-notifications-sync-2026-11-18.sql)、[复检](../../migration/production-notifications-postflight-2026-11-18.sql)，前置账号偏好结构；执行顺序和恢复边界见[通知迁移](#通知中心与订阅结构)。 |
 | 问题附图与提醒 | [预检](../../migration/production-case-feedback-preflight-2026-09-26.sql)、[同步](../../migration/production-case-feedback-sync-2026-09-26.sql)、[复检](../../migration/production-case-feedback-postflight-2026-09-26.sql)，扩展后不重跑只认基础列数的检查，旧反馈与举报不回填。 |
 | 控制台查询索引 | [预检](../../migration/production-dashboard-indexes-preflight-2026-10-31.sql)、[同步](../../migration/production-dashboard-indexes-sync-2026-10-31.sql)，在显式事务外执行；只建索引，不改数据，不需要停写。同步可重复运行：已存在且有效的跳过，中断留下的无效索引删掉重建，同名但定义不同时停止。完成后重跑预检，四项都应为 `already_ok`。 |
 | 每日登录记录 | [预检](../../migration/production-user-daily-active-preflight-2026-10-31.sql)、[同步](../../migration/production-user-daily-active-sync-2026-10-31.sql)，只新增空表 `user_daily_active`，不改已有数据。同步在单个事务内执行，外键会短暂锁住用户表，等不到锁 5 秒后停止，重跑即可；已有同名表但列不一致时停止。完成后重跑预检，状态应为 `present` 且主键、外键与预期一致。先迁移再发布对应版本：旧版本不写这张表，新版本在表缺失时只记录错误、不影响登录，缺表期间已访问的用户当天不会补记。 |
 | 站方备份与资源合并 | [预检](../../migration/production-official-mirror-preflight-2026-11-04.sql)、[同步](../../migration/production-official-mirror-sync-2026-11-04.sql)、[复检](../../migration/production-official-mirror-postflight-2026-11-04.sql)，同步必须带人工判定的时间分组参数；[限定校正](../../migration/production-official-mirror-attached-at-correct-2026-11-04.sql)仅在回填判定错误时按记录清单使用。执行前提见下节。 |
+
+### 账号偏好结构
+
+内容显示、逐项版本和账号整体版本依赖[账号偏好预检](../../migration/production-account-preferences-preflight-2026-11-17.sql)、[同步](../../migration/production-account-preferences-sync-2026-11-17.sql)和[复检](../../migration/production-account-preferences-postflight-2026-11-17.sql)。必须在发布读取这些结构的应用前完成。同步保留存量屏蔽标签和邮件选择，内容显示保持尚未明确选择；不回填旧浏览器 Cookie，不安装通知订阅结构，也不提前启用订阅开关。
+
+开始前，必须已预先安装并核验独立交付的部署恢复工具：所有会启动恢复产物的入口均检查兼容性，维护状态跨进程和版本保持，且已完成账号偏好实际写入后的恢复组合演练。未满足这些前提时停止，不执行迁移或开放新业务写入。
+
+在当前 shell 关闭命令跟踪并加载服务器既有的受限环境脚本。脚本应提供支持文件及参数透传的 `psql_run`，由其加载连接信息；不要展示或展开连接变量。先确认源码工作区干净，再通过正常快进到达审核标签的精确提交。以下路径和标签全部使用操作者核对的值：
+
+```bash
+set +x
+source '<服务器受限环境脚本>'
+git status --porcelain
+```
+
+状态输出必须为空，否则停止。然后在同一 shell 获取审核标签并快进：
+
+```bash
+git fetch origin tag '<已审核发布标签>'
+git merge --ff-only 'refs/tags/<已审核发布标签>'
+git rev-parse HEAD 'refs/tags/<已审核发布标签>^{commit}'
+```
+
+两个提交标识必须一致；不能快进、分支已包含其他未审核内容或提交不一致时停止，准备正确的发布来源。核对本次迁移文件来自该精确提交，发布产物清单的标签与提交也对应同一审核版本，再在同一 shell 执行只读预检：
+
+```bash
+psql_run migration/production-account-preferences-preflight-2026-11-17.sql
+```
+
+预检正常返回 `account-preferences preflight OK`，表示现存对象与允许的缺失结构兼容；`installed` 为假表示尚未安装版本表，为真仍须完成同步和复检。非零退出、非法值、同名对象不兼容或未验证约束均停止。之后按本页停写规则冻结全部业务写入，确认后台和其他实例停止，并确认站点备份完成，再在同一 shell 执行：
+
+```bash
+psql_run migration/production-account-preferences-sync-2026-11-17.sql
+psql_run migration/production-account-preferences-postflight-2026-11-17.sql
+KUN_DEPLOY_RELEASE_TAG='<已审核发布标签>' pnpm deploy:pull:pinned
+```
+
+发布使用预检前核对的同一审核标签，保留工具内置检查；迁移后不再拉取变化中的分支或选择最新产物，固定入口的前提见[固定版本发布说明](deployment.md#使用-github-发布产物)。
+
+同步在一个事务内执行，锁等待最多 5 秒、语句最多 120 秒；全部约束复检通过后才提交。同步正常提交事务后，复检应返回 `account-preferences postflight OK` 且退出码为零才继续发布；用户数、已明确选择内容显示的账号数和项版本记录数描述目标数据，不应与测试样本数量比较。表、列、主外键、默认值及检查约束均须符合预期，非法数据会使检查失败。脚本均可单文件通过标准输入执行，不依赖同目录包含文件。首次、已有结构或重复执行都不重置已有值和版本；中断或锁超时整体回滚，排除阻塞并确认停写后，从预检重新执行，不能用重跑开发环境 setup 代替迁移。
+
+发布前将 `account-preferences-v1` 纳入部署兼容语义，并为实际恢复产物取得当前数据库结构和语义的验收凭据。候选产生账号偏好写入后就绪失败或进程中断时，只允许恢复具备对应兼容证据的产物；没有兼容目标时维持停写、关闭入口并保留恢复记录。不得启动仍会按旧 Cookie 或无版本写入覆盖偏好的旧版，也不得删除版本表或清零版本来回退。发布后用受控账号检查偏好保存与重登恢复、冲突、首页两块 SFW 和标签过滤，确认正常后按部署流程开放写入。
+
+### 通知中心与订阅结构
+
+本组增量文件依赖已经复检通过的[账号偏好结构](#账号偏好结构)和既有通知表。开发环境 setup 或 Prisma 初始化不能代替迁移。先在一次性 PostgreSQL 演练空通知库、含历史通知的非空库、重复执行、中断与锁超时回滚，并核对通知、聚合、订阅保存和账号删除的真实竞争。
+
+预先安装并核验独立的部署恢复工具，在一次性库完成实际通知创建和按版本确认后的失败与恢复资格验收；所有恢复入口均须执行结构、语义、精确提交和产物兼容检查。将 `notifications-v1` 与已启用语义共同纳入保护，没有经验证的兼容目标时持续关闭写入。保护工具未安装、演练未通过或账号偏好结构不符时停止。
+
+在同一受控 shell 关闭命令追踪、加载服务器提供的受限环境脚本，确认源码干净并正常快进到审核标签的精确提交。与[账号偏好操作](#账号偏好结构)相同，标签、迁移、服务器源码和发布产物清单必须一致；无法快进或出现未审核修改时停止。以下占位符均由操作者核实，不展示脚本或连接配置：
+
+```bash
+set +x
+source '<服务器受限环境脚本>'
+git status --porcelain
+git fetch origin tag '<已审核发布标签>'
+git merge --ff-only 'refs/tags/<已审核发布标签>'
+git rev-parse HEAD 'refs/tags/<已审核发布标签>^{commit}'
+psql_run migration/production-notifications-preflight-2026-11-18.sql
+```
+
+状态输出须为空、两个提交相同。预检返回 `notifications preflight OK`，安装状态为 `not-installed`、`partial` 或 `complete`；数量统计预期结构对象，首次为 0、完整为 24，不是通知条数。部分安装须核实中断来源及每个现存定义；同名定义冲突、前置缺失、非法数据或非零退出均停止。
+
+随后关闭全部相关旧写入，包括应用实例、后台生成通知以及旧详情读取可能触发的已读写入。确认备份完成并可供恢复，再在同一 shell 逐条执行：
+
+```bash
+psql_run migration/production-notifications-sync-2026-11-18.sql
+psql_run migration/production-notifications-postflight-2026-11-18.sql
+KUN_DEPLOY_RELEASE_TAG='<已审核发布标签>' pnpm deploy:pull:pinned
+```
+
+同步正常提交后返回 `notifications sync OK`，复检返回 `notifications postflight OK`；两者都必须退出 0、状态 `complete`、对象数 24，才继续固定标签发布。三个 SQL 均可独立通过标准输入执行，不依赖包含文件。同步单事务，锁等待 5 秒、语句超时 60 秒；中断或超时整体回滚。保持停写、排除阻塞后从预检重来，不删对象或强推结构。重复同步保留已有选择、版本及序号。
+
+历史通知的编号、正文、链接和状态保持，事件未细分、初始内容版本与聚合次数均为 1，不补发通知；新订阅和内容序号表初始为空，序号在实际新写入时推进，清理不重置。恢复不得删除这些结构、清零版本或启动忽略订阅及按范围全部已读的旧版。
+
+核对三个实例、本机 HTTP、兼容恢复目标，再用受控账号验证订阅、五类和阅读状态、具体版本确认、数量不变的新动态提示、三页前后翻阅及历史详情链接，确认私聊未读保持独立后开放写入。候选已经生成或确认通知后就绪失败、进程中断或缺兼容凭据时维持关闭；按[数据库恢复要求](#失败与数据库恢复)选择前向修复或已经验收的兼容恢复。
 
 ### 站方备份与资源合并结构
 

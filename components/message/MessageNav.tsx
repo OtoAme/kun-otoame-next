@@ -1,16 +1,12 @@
 'use client'
 
-import { useEffect } from 'react'
-import { kunFetchGet, kunFetchPut } from '~/utils/kunFetch'
 import { Button } from '@heroui/react'
 import { AtSign, Bell, Globe, MessageSquare, UserPlus } from 'lucide-react'
 import { Card, CardBody } from '@heroui/card'
 import { usePathname } from 'next/navigation'
 import Link from 'next/link'
-import toast from 'react-hot-toast'
 import { useMessageStore } from '~/store/messageStore'
 import { cn } from '~/utils/cn'
-import type { MessageUnreadStatus } from '~/types/api/message'
 
 const notificationSubTypes = [
   { type: 'notice', label: '全部消息', icon: Bell, href: '/message/notice' },
@@ -45,112 +41,8 @@ export const MessageNav = ({ className }: { className?: string }) => {
   const hasUnreadConversation = useMessageStore(
     (state) => state.hasUnreadConversation
   )
-  const setHasUnreadNotification = useMessageStore(
-    (state) => state.setHasUnreadNotification
-  )
-  const setUnreadMessageStatus = useMessageStore(
-    (state) => state.setUnreadMessageStatus
-  )
 
-  const fetchUnreadStatus = async () => {
-    const res = await kunFetchGet<{
-      hasUnreadMessages: boolean
-      hasUnreadChat: boolean
-    }>('/message/unread')
-    if (res && typeof res !== 'string') {
-      return {
-        hasUnreadNotification: res.hasUnreadMessages,
-        hasUnreadConversation: res.hasUnreadChat
-      }
-    }
-
-    return null
-  }
-
-  useEffect(() => {
-    if (isNotificationSection) {
-      return
-    }
-
-    let ignore = false
-    const fetchUnread = async () => {
-      try {
-        const unreadStatus = await fetchUnreadStatus()
-        if (!ignore && unreadStatus) {
-          setUnreadMessageStatus(unreadStatus)
-        }
-      } catch {
-        // 获取未读状态失败时保留上次未读状态，不做额外处理
-      }
-    }
-    fetchUnread()
-    return () => {
-      ignore = true
-    }
-  }, [isNotificationSection, setUnreadMessageStatus])
-
-  useEffect(() => {
-    if (!isNotificationSection) {
-      return
-    }
-    let ignore = false
-    const previousUnreadStatus = {
-      hasUnreadNotification: useMessageStore.getState().hasUnreadNotification,
-      hasUnreadConversation: useMessageStore.getState().hasUnreadConversation
-    }
-    const restorePreviousUnreadStatus = () => {
-      if (!ignore) {
-        setUnreadMessageStatus(previousUnreadStatus)
-      }
-    }
-
-    setHasUnreadNotification(false)
-    const readAllMessage = async () => {
-      const res =
-        await kunFetchPut<KunResponse<MessageUnreadStatus>>('/message/read')
-      if (ignore) {
-        return false
-      }
-      if (typeof res === 'string') {
-        toast.error(res)
-        return false
-      } else {
-        setUnreadMessageStatus(res)
-        return true
-      }
-    }
-    const restoreUnreadStatus = async () => {
-      try {
-        const unreadStatus = await fetchUnreadStatus()
-        if (!ignore && unreadStatus) {
-          setUnreadMessageStatus(unreadStatus)
-        } else {
-          restorePreviousUnreadStatus()
-        }
-      } catch {
-        restorePreviousUnreadStatus()
-      }
-    }
-    const markNotificationsRead = async () => {
-      try {
-        const readSuccessfully = await readAllMessage()
-        if (!readSuccessfully) {
-          await restoreUnreadStatus()
-        }
-      } catch {
-        if (!ignore) {
-          toast.error('标记消息已读失败，请稍后重试')
-          await restoreUnreadStatus()
-        }
-      }
-    }
-    markNotificationsRead()
-    return () => {
-      ignore = true
-    }
-  }, [isNotificationSection, setHasUnreadNotification, setUnreadMessageStatus])
-
-  const showMessageDot = hasUnreadNotification && !isNotificationSection
+  const showMessageDot = hasUnreadNotification
   const showChatDot = hasUnreadConversation && !isChatSection
 
   return (
@@ -163,7 +55,11 @@ export const MessageNav = ({ className }: { className?: string }) => {
             className="justify-start w-full"
             variant={isNotificationSection ? 'solid' : 'light'}
             startContent={<Bell className="size-4 shrink-0" />}
-            href="/message/notice"
+            href={
+              hasUnreadNotification
+                ? '/message/notice?state=unread'
+                : '/message/notice'
+            }
           >
             <span className="relative">
               消息

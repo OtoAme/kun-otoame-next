@@ -1,5 +1,6 @@
 'use client'
 
+import { NotificationTargetReady } from '~/components/message/NotificationTargetReady'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
@@ -743,6 +744,7 @@ export function IssueCaseDetail({ caseId, onChanged }: IssueCaseDetailProps) {
 
   return (
     <Card className="gap-0 overflow-hidden py-0">
+      <NotificationTargetReady path={`/workspace/issues/${detail.id}`} />
       <div className="space-y-4 p-4">
         <header className="space-y-2">
           <div className="flex flex-wrap items-start justify-between gap-2">

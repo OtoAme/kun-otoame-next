@@ -27,7 +27,11 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('~/prisma/index', () => ({ prisma: mocks.prisma }))
 vi.mock('~/app/api/utils/message', () => ({
-  createMessage: mocks.createMessage
+  createMessage: mocks.createMessage,
+  createNotificationBatch: async (
+    data: Record<string, unknown>[],
+    tx: unknown
+  ) => Promise.all(data.map((item) => mocks.createMessage(item, tx)))
 }))
 vi.mock('~/app/api/shoutbox/cache', () => ({
   invalidateShoutboxCaches: mocks.invalidateShoutboxCaches,
@@ -123,9 +127,7 @@ describe('shoutbox report and moderation contracts', () => {
   it.each([false, true])(
     'rejects a report for a role-4 author (%s official) before any report side effect',
     async (official) => {
-      mocks.prisma.$queryRaw.mockResolvedValueOnce([
-        message({ official })
-      ])
+      mocks.prisma.$queryRaw.mockResolvedValueOnce([message({ official })])
       mocks.prisma.user.findUnique.mockResolvedValueOnce({ role: 4 })
 
       const result = await createShoutboxReport(reportInput, 8, {
@@ -266,6 +268,7 @@ describe('shoutbox report and moderation contracts', () => {
         [
           {
             type: 'system',
+            event_type: 'case-update',
             content: '用户举报了小喇叭 #12，请前往后台处理。',
             sender_id: 8,
             recipient_id: 30,
@@ -276,6 +279,7 @@ describe('shoutbox report and moderation contracts', () => {
         [
           {
             type: 'system',
+            event_type: 'case-update',
             content: '用户举报了小喇叭 #12，请前往后台处理。',
             sender_id: 8,
             recipient_id: 31,
@@ -286,6 +290,7 @@ describe('shoutbox report and moderation contracts', () => {
         [
           {
             type: 'system',
+            event_type: 'case-update',
             content: '用户举报了小喇叭 #12，请前往后台处理。',
             sender_id: 8,
             recipient_id: 32,

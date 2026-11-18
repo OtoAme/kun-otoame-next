@@ -177,7 +177,7 @@ export const MessageLayoutChrome = ({
       {!isConversationDetail && (
         <KunHeader
           name="消息"
-          description="这是消息页面, 第一次访问对应的页面会自动已读所有消息"
+          description="查看通知与私聊。通知正文在前台持续可见后，才会确认已读。"
         />
       )}
       <div

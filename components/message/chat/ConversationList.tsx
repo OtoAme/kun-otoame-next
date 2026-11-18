@@ -1,159 +1,159 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useMounted } from '~/hooks/useMounted'
+import { useMessageSyncActivity } from '~/hooks/useMessageSyncActivity'
 import { KunLoading } from '~/components/kun/Loading'
 import { KunNull } from '~/components/kun/Null'
 import { KunPagination } from '~/components/kun/Pagination'
 import { ConversationCard } from './ConversationCard'
 import { kunFetchGet } from '~/utils/kunFetch'
-import toast from 'react-hot-toast'
+import { refreshUserSession } from '~/utils/sessionClient'
+import { createMessageSyncScheduler } from '~/utils/messageSync'
 import { useMessageStore } from '~/store/messageStore'
+import { useUserStore } from '~/store/userStore'
 import type { Conversation } from '~/types/api/conversation'
 
 interface Props {
   initialConversations: Conversation[]
   total: number
 }
-
-const CONVERSATION_LIST_POLL_INTERVAL_MS = 15_000
+interface ConversationPage {
+  conversations: Conversation[]
+  total: number
+}
+const isConversationPage = (value: unknown): value is ConversationPage =>
+  !!value &&
+  typeof value === 'object' &&
+  'conversations' in value &&
+  Array.isArray(value.conversations) &&
+  value.conversations.every(
+    (conversation: unknown) =>
+      !!conversation &&
+      typeof conversation === 'object' &&
+      'id' in conversation &&
+      typeof conversation.id === 'number' &&
+      'unreadCount' in conversation &&
+      typeof conversation.unreadCount === 'number'
+  ) &&
+  'total' in value &&
+  typeof value.total === 'number' &&
+  Number.isFinite(value.total) &&
+  value.total >= 0
 
 export const ConversationList = ({ initialConversations, total }: Props) => {
-  const [conversations, setConversations] =
-    useState<Conversation[]>(initialConversations)
+  const [conversations, setConversations] = useState(initialConversations)
   const [loading, setLoading] = useState(false)
+  const [syncFailed, setSyncFailed] = useState(false)
   const [page, setPage] = useState(1)
   const [totalCount, setTotalCount] = useState(total)
+  const pageRef = useRef(page)
+  pageRef.current = page
+  const previousPageRef = useRef(page)
   const isMounted = useMounted()
-  const setHasUnreadConversation = useMessageStore(
-    (state) => state.setHasUnreadConversation
-  )
-  const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const requestIdRef = useRef(0)
-  const loadingRef = useRef(false)
-  const hasUsedInitialPageRef = useRef(false)
+  const activity = useMessageSyncActivity()
+  const { sessionStatus, sessionContext, sessionGeneration } = useUserStore()
+  const schedulerRef = useRef<ReturnType<
+    typeof createMessageSyncScheduler<ConversationPage>
+  > | null>(null)
+  const activityRef = useRef(activity)
+  activityRef.current = activity
 
-  const syncConversationUnreadStatus = useCallback(
-    (items: Conversation[]) => {
-      if (items.some((conv) => conv.unreadCount > 0)) {
-        setHasUnreadConversation(true)
-      }
-    },
-    [setHasUnreadConversation]
-  )
-
-  const fetchConversations = useCallback(
-    async (options: { showLoading: boolean; silent: boolean }) => {
-      if (!options.showLoading && loadingRef.current) {
-        return
-      }
-
-      const requestId = requestIdRef.current + 1
-      requestIdRef.current = requestId
-
-      if (options.showLoading) {
-        loadingRef.current = true
-        setLoading(true)
-      }
-
-      try {
-        const response = await kunFetchGet<
-          KunResponse<{
-            conversations: Conversation[]
-            total: number
-          }>
-        >('/message/conversation', {
-          page,
-          limit: 30
-        })
-
-        if (requestId !== requestIdRef.current) {
-          return
-        }
-
-        if (typeof response === 'string') {
-          if (!options.silent) {
-            toast.error(response)
+  useEffect(() => {
+    if (!isMounted || !sessionContext) return
+    const context = sessionContext
+    const generation = sessionGeneration
+    const isCurrent = () => {
+      const state = useUserStore.getState()
+      return (
+        state.sessionStatus === 'authenticated' &&
+        state.sessionContext === context &&
+        state.sessionGeneration === generation
+      )
+    }
+    const scheduler = createMessageSyncScheduler<ConversationPage>({
+      intervalMs: 30_000,
+      random: () => 0.5,
+      validate: isConversationPage,
+      request: (signal) =>
+        kunFetchGet<ConversationPage>(
+          '/message/conversation',
+          { page: pageRef.current, limit: 30 },
+          {
+            timeout: 15_000,
+            signal,
+            preserveErrorStatus: true
           }
-        } else {
-          setConversations(response.conversations)
-          setTotalCount(response.total)
-          syncConversationUnreadStatus(response.conversations)
+        ),
+      onSuccess: (response) => {
+        if (!isCurrent()) return
+        setConversations(response.conversations)
+        setTotalCount(response.total)
+        if (
+          response.conversations.some(
+            (conversation) => conversation.unreadCount > 0
+          )
+        ) {
+          useMessageStore.getState().setHasUnreadConversation(true)
         }
-      } catch {
-        if (requestId === requestIdRef.current && !options.silent) {
-          toast.error('获取会话列表失败, 请稍后重试')
-        }
-      } finally {
-        if (requestId === requestIdRef.current && options.showLoading) {
-          loadingRef.current = false
-          setLoading(false)
-        }
+      },
+      onInvalid: () => {
+        if (isCurrent()) void refreshUserSession()
+      },
+      onChange: (snapshot) => {
+        if (!isCurrent()) return
+        if (snapshot.status !== 'syncing') setLoading(false)
+        setSyncFailed(snapshot.status === 'error')
       }
-    },
-    [page, syncConversationUnreadStatus]
-  )
-
-  const clearPollTimer = useCallback(() => {
-    if (!pollTimerRef.current) {
-      return
-    }
-
-    clearTimeout(pollTimerRef.current)
-    pollTimerRef.current = null
-  }, [])
-
-  useEffect(() => {
-    if (!isMounted) {
-      return
-    }
-    if (!hasUsedInitialPageRef.current) {
-      hasUsedInitialPageRef.current = true
-      void fetchConversations({ showLoading: false, silent: false })
-      return
-    }
-    void fetchConversations({ showLoading: true, silent: false })
-  }, [fetchConversations, isMounted])
-
-  useEffect(() => {
-    syncConversationUnreadStatus(initialConversations)
-  }, [initialConversations, syncConversationUnreadStatus])
-
-  useEffect(() => {
-    if (!isMounted) {
-      return
-    }
-
-    let ignore = false
-
-    const pollConversations = async () => {
-      if (document.visibilityState !== 'hidden') {
-        await fetchConversations({ showLoading: false, silent: true })
-      }
-
-      if (!ignore) {
-        clearPollTimer()
-        pollTimerRef.current = setTimeout(
-          pollConversations,
-          CONVERSATION_LIST_POLL_INTERVAL_MS
-        )
-      }
-    }
-
-    clearPollTimer()
-    pollTimerRef.current = setTimeout(
-      pollConversations,
-      CONVERSATION_LIST_POLL_INTERVAL_MS
+    })
+    schedulerRef.current = scheduler
+    scheduler.setIdentity({ context, generation })
+    scheduler.setEnabled(
+      activityRef.current.enabled &&
+        useUserStore.getState().sessionStatus === 'authenticated'
     )
-
+    const unsubscribe = useUserStore.subscribe((state) => {
+      const current =
+        state.sessionContext === context &&
+        state.sessionGeneration === generation &&
+        state.sessionStatus === 'authenticated'
+      if (current) scheduler.confirmIdentity()
+      scheduler.setEnabled(current && activityRef.current.enabled)
+    })
     return () => {
-      ignore = true
-      clearPollTimer()
+      unsubscribe()
+      scheduler.dispose()
+      if (schedulerRef.current === scheduler) schedulerRef.current = null
     }
-  }, [clearPollTimer, fetchConversations, isMounted])
+  }, [isMounted, sessionContext, sessionGeneration])
+
+  useEffect(() => {
+    const scheduler = schedulerRef.current
+    if (!scheduler || page === previousPageRef.current) return
+    previousPageRef.current = page
+    scheduler.invalidatePending()
+    setLoading(true)
+    scheduler.refresh('manual')
+  }, [page])
+
+  useEffect(() => {
+    const scheduler = schedulerRef.current
+    scheduler?.setEnabled(activity.enabled && sessionStatus === 'authenticated')
+    if (
+      activity.enabled &&
+      sessionStatus === 'authenticated' &&
+      activity.resumeVersion > 0
+    )
+      scheduler?.refresh('resume')
+  }, [activity.enabled, activity.resumeVersion, sessionStatus])
 
   return (
     <div className="space-y-4">
+      {syncFailed && (
+        <p role="status" className="text-sm text-default-500">
+          会话同步暂时不可用，将自动重试
+        </p>
+      )}
       {loading ? (
         <KunLoading hint="正在获取会话列表..." />
       ) : conversations.length === 0 ? (

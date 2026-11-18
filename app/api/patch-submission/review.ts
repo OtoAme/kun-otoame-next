@@ -295,6 +295,8 @@ export const approvePatchSubmission = async (
 
           await createMessage(
             {
+              event_type: 'submission-result',
+              actor_id: reviewer.uid,
               type: 'system',
               content: `您的投稿《${submission.name}》已通过审核, 押金已返还并奖励 ${PATCH_SUBMISSION_PUBLISH_REWARD} 萌萌点`,
               recipient_id: submission.user_id,
@@ -396,6 +398,8 @@ export const rejectPatchSubmission = async (
 
       await createMessage(
         {
+          event_type: 'submission-result',
+          actor_id: reviewer.uid,
           type: 'system',
           content: `您的投稿《${submission.name}》未被收录, 押金已全额返还。原因: ${reason}`,
           recipient_id: submission.user_id,
@@ -448,6 +452,8 @@ export const requestPatchSubmissionChanges = async (
 
       await createMessage(
         {
+          event_type: 'submission-result',
+          actor_id: reviewer.uid,
           type: 'system',
           content: `您的投稿《${submission.name}》需要修改后重新提交。原因: ${reason}`,
           recipient_id: submission.user_id,
@@ -513,6 +519,8 @@ export const violatePatchSubmission = async (
 
       await createMessage(
         {
+          event_type: 'submission-result',
+          actor_id: reviewer.uid,
           type: 'system',
           content: `您的投稿《${submission.name}》因违规被关闭, 暂扣的 ${submission.held_amount} 萌萌点不再返还。原因: ${reason}`,
           recipient_id: submission.user_id,

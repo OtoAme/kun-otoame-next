@@ -1,5 +1,6 @@
 'use client'
 
+import { NotificationTargetReady } from '~/components/message/NotificationTargetReady'
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
@@ -867,6 +868,7 @@ export function WorkspaceResourceEditor({
 
   return (
     <div className="min-w-0 max-w-full space-y-4">
+      <NotificationTargetReady path={`/workspace/resources/${resourceId}`} />
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="min-w-0">
           <h1 className="break-all text-2xl font-semibold">
