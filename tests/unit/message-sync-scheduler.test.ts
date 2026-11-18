@@ -335,3 +335,59 @@ describe('message sync scheduler', () => {
     sync.dispose()
   })
 })
+
+describe('dynamic message synchronization intervals', () => {
+  beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(0) })
+  afterEach(() => vi.useRealTimers())
+
+  it('computes the next interval after accepting the successful batch', async () => {
+    let interval = 15_000
+    const request = vi.fn().mockResolvedValue({ more: true })
+    const nextIntervalMs = vi.fn(() => interval)
+    const scheduler = createMessageSyncScheduler({
+      request,
+      onSuccess: () => { interval = 100 },
+      nextIntervalMs,
+      random: () => 0.5
+    })
+    scheduler.setIdentity(identity)
+    scheduler.setEnabled(true)
+    await flush()
+    expect(nextIntervalMs).toHaveBeenCalledWith({ more: true })
+    await vi.advanceTimersByTimeAsync(100)
+    expect(request).toHaveBeenCalledTimes(2)
+    scheduler.dispose()
+  })
+
+  it('keeps Retry-After and pauses ahead of a successful continuation', async () => {
+    const request = vi.fn().mockResolvedValueOnce(unread)
+      .mockRejectedValueOnce(new KunFetchError('rate', 'http', 429, 90_000))
+      .mockResolvedValue(unread)
+    const scheduler = createMessageSyncScheduler({
+      request, onSuccess: vi.fn(), nextIntervalMs: () => 100, random: () => 0.5
+    })
+    scheduler.setIdentity(identity)
+    scheduler.setEnabled(true)
+    await vi.advanceTimersByTimeAsync(100)
+    scheduler.setEnabled(false)
+    await vi.advanceTimersByTimeAsync(100_000)
+    expect(request).toHaveBeenCalledTimes(2)
+    scheduler.setEnabled(true)
+    scheduler.refresh('resume')
+    await flush()
+    expect(request).toHaveBeenCalledTimes(3)
+    scheduler.dispose()
+  })
+
+  it.each([0, -1, NaN, Infinity])('bounds invalid continuation interval %s', async (interval) => {
+    const request = vi.fn().mockResolvedValue(unread)
+    const scheduler = createMessageSyncScheduler({
+      request, onSuccess: vi.fn(), nextIntervalMs: () => interval, random: () => 0.5
+    })
+    scheduler.setIdentity(identity)
+    scheduler.setEnabled(true)
+    await vi.advanceTimersByTimeAsync(99)
+    expect(request).toHaveBeenCalledTimes(1)
+    scheduler.dispose()
+  })
+})

@@ -36,6 +36,7 @@ interface SchedulerOptions<Result> {
   onChange?: (snapshot: MessageSyncSnapshot) => void
   validate?: (value: unknown) => boolean
   intervalMs?: number
+  nextIntervalMs?: (result: Result) => number
   random?: () => number
 }
 
@@ -111,8 +112,12 @@ export const createMessageSyncScheduler = <Result = UnreadSummary>(
         failures: 0,
         errorKind: null
       }
-      nextPollAt = Date.now() + jitter(interval)
       options.onSuccess(result)
+      const requestedInterval = options.nextIntervalMs?.(result) ?? interval
+      const nextInterval = Number.isFinite(requestedInterval)
+        ? Math.min(300_000, Math.max(100, requestedInterval))
+        : interval
+      nextPollAt = Date.now() + jitter(nextInterval)
     } catch (error) {
       if (current.revision !== revision || disposed) return
       if (error instanceof KunFetchError && error.kind === 'aborted') {
