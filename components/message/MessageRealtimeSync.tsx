@@ -54,7 +54,8 @@ export const MessageRealtimeSync = () => {
         observePreferenceVersion(unread.preferenceVersion)
         useMessageStore.getState().setUnreadMessageStatus({
           hasUnreadNotification: unread.hasUnreadMessages,
-          hasUnreadConversation: unread.hasUnreadChat
+          hasUnreadConversation: unread.hasUnreadChat,
+          notifications: unread.notifications
         })
       },
       onChange: (snapshot) => {

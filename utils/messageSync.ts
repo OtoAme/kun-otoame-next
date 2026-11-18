@@ -1,4 +1,6 @@
 import { KunFetchError } from './kunFetch'
+import type { NotificationSummary } from '~/types/api/message'
+import { notificationSummarySchema } from '~/validations/notification'
 
 let unreadReadVersion = 0
 export const beginUnreadRead = () => ++unreadReadVersion
@@ -12,6 +14,7 @@ export interface UnreadSummary {
   hasUnreadMessages: boolean
   hasUnreadChat: boolean
   preferenceVersion?: number | null
+  notifications?: NotificationSummary | null
 }
 
 export const isUnreadSummary = (value: unknown): value is UnreadSummary =>
@@ -116,8 +119,10 @@ export const createMessageSyncScheduler = <Result = UnreadSummary>(
       }
       options.onSuccess(result)
       const requestedInterval = options.nextIntervalMs?.(result)
-      const nextInterval = requestedInterval !== undefined && Number.isFinite(requestedInterval)
-        ? requestedInterval : interval
+      const nextInterval =
+        requestedInterval !== undefined && Number.isFinite(requestedInterval)
+          ? requestedInterval
+          : interval
       const nextDelay = options.nextIntervalMs
         ? Math.min(300_000, Math.max(100, jitter(nextInterval)))
         : jitter(interval)
@@ -298,6 +303,10 @@ export const seedSessionUnread = (
     unread: {
       hasUnreadMessages: unread.hasUnreadNotification,
       hasUnreadChat: unread.hasUnreadConversation,
+      ...('notifications' in unread &&
+      notificationSummarySchema.safeParse(unread.notifications).success
+        ? { notifications: unread.notifications as NotificationSummary }
+        : {}),
       ...('preferenceVersion' in unread
         ? {
             preferenceVersion:
