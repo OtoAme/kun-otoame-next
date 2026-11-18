@@ -327,6 +327,26 @@ describe('ChatContainer realtime sync', () => {
   let root: Root | undefined
   let dom: JSDOM | undefined
 
+  const applyPreferences = async (
+    uid = currentUser.uid,
+    context = 'synthetic-ui',
+    generation = 1
+  ) => {
+    const { usePreferenceStore } = await import('~/store/preferenceStore')
+    usePreferenceStore.setState({
+      generation,
+      status: 'ready',
+      applied: {
+        uid,
+        context,
+        version: 0,
+        nsfwSelected: false,
+        blockedTagIds: [],
+        items: { nsfw: { value: 'sfw', version: 0 } }
+      }
+    })
+  }
+
   const renderChat = async (
     visibilityState = 'visible',
     options: {
@@ -375,6 +395,7 @@ describe('ChatContainer realtime sync', () => {
       sessionContext: 'synthetic-ui',
       sessionGeneration: 1
     })
+    await applyPreferences()
     useMessageStore.setState(
       {
         ...useMessageStore.getState(),
@@ -737,6 +758,7 @@ describe('ChatContainer realtime sync', () => {
       expect(fetchMock.kunFetchPut).not.toHaveBeenCalled()
       expect(fetchMock.kunFetchGet).not.toHaveBeenCalled()
       await act(async () => {
+        await applyPreferences(otherUser.id, nextContext, 2)
         complete(
           outcome === 'failure'
             ? { error: 'RSC failed' }
