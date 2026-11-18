@@ -102,6 +102,54 @@ describe('MessageRealtimeSync', () => {
     await tick(1)
     expect(fetchMock.kunFetchGet).toHaveBeenCalledTimes(1)
   })
+  it.each([true, false])(
+    'reuses only a valid restored session summary (summary=%s)',
+    async (withSummary) => {
+      const { useUserStore } = await renderSync()
+      Object.defineProperty(document, 'visibilityState', {
+        configurable: true,
+        value: 'hidden'
+      })
+      await act(() => {
+        document.dispatchEvent(new dom.window.Event('visibilitychange'))
+      })
+      await tick(180_000)
+      const before = fetchMock.kunFetchGet.mock.calls.length
+      const { refreshUserSession } = await import('~/utils/sessionClient')
+      vi.stubGlobal(
+        'fetch',
+        vi.fn().mockResolvedValue(
+          Response.json({
+            user: useUserStore.getState().user,
+            context: 'ctx-a',
+            unread: withSummary
+              ? { hasUnreadNotification: true, hasUnreadConversation: true }
+              : null
+          })
+        )
+      )
+      await act(async () => {
+        const recovery = refreshUserSession()
+        Object.defineProperty(document, 'visibilityState', {
+          configurable: true,
+          value: 'visible'
+        })
+        document.dispatchEvent(new dom.window.Event('visibilitychange'))
+        window.dispatchEvent(new dom.window.Event('focus'))
+        await recovery
+      })
+      await tick(5_000)
+      expect(fetchMock.kunFetchGet).toHaveBeenCalledTimes(
+        before + Number(!withSummary)
+      )
+      if (withSummary) {
+        await tick(54_999)
+        expect(fetchMock.kunFetchGet).toHaveBeenCalledTimes(before)
+        await tick(1)
+        expect(fetchMock.kunFetchGet).toHaveBeenCalledTimes(before + 1)
+      }
+    }
+  )
   it('pauses hidden and offline and merges a recovery event storm', async () => {
     await renderSync()
     Object.defineProperty(document, 'visibilityState', {
