@@ -1,3 +1,4 @@
+import { lockConversation } from './transaction'
 import { z } from 'zod'
 import { prisma } from '~/prisma/index'
 import {
@@ -280,9 +281,14 @@ export const getOrCreateConversation = async (
       : conversation.user_b_hidden
 
     if (isHidden) {
-      await prisma.user_conversation.update({
-        where: { id: conversation.id },
-        data: isUserA ? { user_a_hidden: false } : { user_b_hidden: false }
+      const conversationId = conversation.id
+      await prisma.$transaction(async (transaction) => {
+        const locked = await lockConversation(transaction, conversationId, uid)
+        if (!locked) throw new Error('Conversation no longer available')
+        await transaction.user_conversation.update({
+          where: { id: conversationId },
+          data: isUserA ? { user_a_hidden: false } : { user_b_hidden: false }
+        })
       })
     }
   } else {

@@ -107,7 +107,7 @@ describe('/message/chat/[conversationId] page', () => {
 
     expect(mocks.kunGetConversationMessagesAction).toHaveBeenCalledWith(5, {
       page: 1,
-      limit: 30
+      limit: 50
     })
     expect(mocks.KunBreadcrumbTitle).not.toHaveBeenCalled()
     expect(element.props.conversationId).toBe(5)

@@ -191,7 +191,8 @@ vi.mock('~/utils/time', () => ({
   formatTimeDifference: () => '刚刚'
 }))
 
-vi.mock('~/utils/kunFetch', () => ({
+vi.mock('~/utils/kunFetch', async (original) => ({
+  ...(await original<typeof import('~/utils/kunFetch')>()),
   kunFetchPut: vi.fn(),
   kunFetchDelete: vi.fn()
 }))
@@ -268,6 +269,12 @@ describe('ChatMessage menu and rendering', () => {
     const container = dom.window.document.getElementById('root')
     expect(container).not.toBeNull()
 
+    const { useUserStore } = await import('~/store/userStore')
+    useUserStore.setState({
+      sessionStatus: 'authenticated',
+      sessionContext: 'synthetic-write',
+      sessionGeneration: 1
+    })
     root = createRoot(container!)
     await act(async () => {
       root!.render(
@@ -959,9 +966,13 @@ describe('ChatMessage menu and rendering', () => {
       await Promise.resolve()
     })
 
-    expect(kunFetchDelete).toHaveBeenCalledWith('/message/conversation/5', {
-      messageId: 3
-    })
+    expect(kunFetchDelete).toHaveBeenCalledWith(
+      '/message/conversation/5',
+      {
+        messageId: 3
+      },
+      expect.objectContaining({ timeout: 15000, preserveErrorStatus: true })
+    )
   })
 
   it('renders image messages with alt text', async () => {

@@ -1,6 +1,7 @@
 'use server'
 
 import { z } from 'zod'
+import { isConversationError } from '~/app/api/message/conversation/response'
 import { safeParseSchema } from '~/utils/actions/safeParseSchema'
 import {
   getConversationsSchema,
@@ -33,7 +34,7 @@ export const kunGetConversationsAction = async (
   }
 
   const response = await getConversations(input, payload.uid)
-  return response
+  return isConversationError(response) ? response.message : response
 }
 
 export const kunGetConversationMessagesAction = async (
@@ -67,5 +68,5 @@ export const kunGetConversationMessagesAction = async (
     input,
     payload.uid
   )
-  return response
+  return isConversationError(response) ? response.message : response
 }

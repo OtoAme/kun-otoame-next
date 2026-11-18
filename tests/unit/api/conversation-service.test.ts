@@ -27,6 +27,7 @@ const prismaMock = vi.hoisted(() => ({
     findUnique: vi.fn()
   },
   _tx: {
+    $queryRaw: vi.fn(),
     user: {
       update: vi.fn(),
       updateMany: vi.fn()
@@ -62,6 +63,23 @@ const s3Mock = vi.hoisted(() => ({
     key ? `https://cdn.example/${key}` : null
   )
 }))
+
+beforeEach(() => {
+  prismaMock._tx.$queryRaw.mockImplementation(async () => {
+    const previous = prismaMock.user_conversation.findUnique.mock.results.at(-1)
+    return [previous ? await previous.value : null]
+  })
+  Object.assign(prismaMock._tx.user_private_message, {
+    findFirst: prismaMock.user_private_message.findFirst,
+    update: prismaMock.user_private_message.update
+  })
+  prismaMock._tx.user_conversation.update.mockImplementation((input) =>
+    prismaMock.user_conversation.update(input)
+  )
+  prismaMock.$transaction.mockImplementation(async (callback) =>
+    callback(prismaMock._tx)
+  )
+})
 
 vi.mock('~/prisma/index', () => ({
   prisma: prismaMock
@@ -203,6 +221,46 @@ describe('conversation message sending', () => {
       })
     )
     expect(result).toMatchObject({ id: 9, replyTo: { messageId: 3 } })
+  })
+
+  it('scrubs a reply whose target was deleted between preview lookup and the locked send', async () => {
+    prismaMock.user_private_message.findFirst.mockResolvedValue({
+      id: 3,
+      conversation_id: 5,
+      sender_id: 8,
+      content: 'old target',
+      type: 0,
+      is_deleted: false,
+      sender: { name: 'Mio' }
+    })
+    prismaMock._tx.user_private_message.create.mockResolvedValue({
+      id: 9,
+      type: 0,
+      content: 'reply',
+      status: 0,
+      is_deleted: false,
+      edited_at: null,
+      reply_to_message_id: 3,
+      reply_preview_content: 'old target',
+      reply_preview_sender_name: 'Mio',
+      reply_selected_text: null,
+      reply_to_message: {
+        is_deleted: true,
+        content: 'old target',
+        edited_at: null
+      },
+      created: new Date('2026-06-30T10:00:00.000Z'),
+      sender: { id: 1007, name: 'Saya', avatar: '/saya.webp' }
+    })
+    const { sendMessage } = await import(
+      '~/app/api/message/conversation/[id]/service'
+    )
+    const result = await sendMessage(
+      5,
+      { type: 0, content: 'reply', replyToMessageId: 3 },
+      1007
+    )
+    expect(result).toMatchObject({ id: 9, replyTo: null })
   })
 
   it('sends an independently typed sticker message without text placeholders', async () => {
@@ -1091,7 +1149,7 @@ describe('conversation message deletion cleanup', () => {
       data: { is_deleted: true }
     })
     expect(consoleError).toHaveBeenCalledWith(
-      '[Conversation] Failed to cleanup private message images',
+      '[Conversation] Image cleanup failed',
       expect.objectContaining({ messageId: 12 })
     )
     consoleError.mockRestore()

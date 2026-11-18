@@ -1,4 +1,4 @@
-import React, { act } from 'react'
+import React, { act as reactAct } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { JSDOM } from 'jsdom'
 import { createRoot, type Root } from 'react-dom/client'
@@ -9,6 +9,13 @@ import type {
 import type { ChatReplyHighlight } from '~/components/message/chat/ChatMessage'
 
 globalThis.React = React
+
+const act = async (callback: () => void | Promise<void>) => {
+  await reactAct(callback)
+  await reactAct(async () => {
+    await vi.advanceTimersByTimeAsync(1)
+  })
+}
 
 const fetchMock = vi.hoisted(() => ({
   kunFetchGet: vi.fn(),
@@ -51,8 +58,22 @@ const chatMessageMock = vi.hoisted(() => ({
   >()
 }))
 
-vi.mock('~/utils/kunFetch', () => ({
-  kunFetchGet: fetchMock.kunFetchGet,
+vi.mock('~/utils/kunFetch', async (original) => ({
+  ...(await original<typeof import('~/utils/kunFetch')>()),
+  kunFetchGet: async (...args: unknown[]) => {
+    const response = await fetchMock.kunFetchGet(...args)
+    if (!response || typeof response !== 'object') return response
+    const ids = response.messages.map((item: PrivateMessage) => item.id)
+    return {
+      reviewMessages: [],
+      unavailableIds: [],
+      hasMoreBefore: false,
+      hasMoreAfter: false,
+      oldestId: ids[0] ?? null,
+      latestId: ids.at(-1) ?? null,
+      ...response
+    }
+  },
   kunFetchPut: fetchMock.kunFetchPut
 }))
 
@@ -344,7 +365,12 @@ describe('ChatContainer realtime sync', () => {
 
     const { useUserStore } = await import('~/store/userStore')
     const { useMessageStore } = await import('~/store/messageStore')
-    useUserStore.setState({ user: currentUser })
+    useUserStore.setState({
+      user: currentUser,
+      sessionStatus: 'authenticated',
+      sessionContext: 'synthetic-ui',
+      sessionGeneration: 1
+    })
     useMessageStore.setState(
       {
         ...useMessageStore.getState(),
@@ -418,7 +444,12 @@ describe('ChatContainer realtime sync', () => {
     vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
 
     const { useUserStore } = await import('~/store/userStore')
-    useUserStore.setState({ user: currentUser })
+    useUserStore.setState({
+      user: currentUser,
+      sessionStatus: 'authenticated',
+      sessionContext: 'synthetic-ui',
+      sessionGeneration: 1
+    })
 
     const { ChatContainer } = await import(
       '~/components/message/chat/ChatContainer'
@@ -478,6 +509,7 @@ describe('ChatContainer realtime sync', () => {
 
   beforeEach(() => {
     vi.useFakeTimers()
+    vi.spyOn(Math, 'random').mockReturnValue(0.5)
     fetchMock.kunFetchGet.mockResolvedValue({
       messages: [],
       total: 2,
@@ -486,7 +518,8 @@ describe('ChatContainer realtime sync', () => {
     })
     fetchMock.kunFetchPut.mockResolvedValue({
       hasUnreadNotification: false,
-      hasUnreadConversation: false
+      hasUnreadConversation: false,
+      readThroughId: 0
     })
   })
 
@@ -497,6 +530,7 @@ describe('ChatContainer realtime sync', () => {
     root = undefined
     dom?.window.close()
     dom = undefined
+    vi.restoreAllMocks()
     vi.useRealTimers()
     vi.unstubAllGlobals()
     vi.resetModules()
@@ -537,7 +571,8 @@ describe('ChatContainer realtime sync', () => {
 
     expect(fetchMock.kunFetchGet).toHaveBeenCalledWith(
       '/message/conversation/5',
-      { page: 1, limit: 30, beforeId: 1 }
+      expect.objectContaining({ page: 1, limit: 50, beforeId: 1 }),
+      expect.objectContaining({ preserveErrorStatus: true, timeout: 15000 })
     )
   })
 
@@ -724,7 +759,8 @@ describe('ChatContainer realtime sync', () => {
     expect(fetchMock.kunFetchGet).toHaveBeenCalledTimes(1)
     expect(fetchMock.kunFetchGet).toHaveBeenCalledWith(
       '/message/conversation/5',
-      { page: 1, limit: 30, beforeId: 1 }
+      expect.objectContaining({ page: 1, limit: 50, beforeId: 1 }),
+      expect.objectContaining({ preserveErrorStatus: true, timeout: 15000 })
     )
 
     await act(async () => {
@@ -851,7 +887,7 @@ describe('ChatContainer realtime sync', () => {
     ).toBe('')
 
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(499)
+      await vi.advanceTimersByTimeAsync(497)
     })
 
     expect(
@@ -914,7 +950,8 @@ describe('ChatContainer realtime sync', () => {
 
     expect(fetchMock.kunFetchGet).toHaveBeenCalledWith(
       '/message/conversation/5',
-      { page: 1, limit: 50, afterId: 2 }
+      expect.objectContaining({ page: 1, limit: 50, afterId: 2 }),
+      expect.objectContaining({ preserveErrorStatus: true, timeout: 15000 })
     )
   })
 
@@ -931,7 +968,8 @@ describe('ChatContainer realtime sync', () => {
 
     expect(fetchMock.kunFetchGet).toHaveBeenCalledWith(
       '/message/conversation/5',
-      { page: 1, limit: 50 }
+      expect.objectContaining({ page: 1, limit: 50, afterId: 0 }),
+      expect.objectContaining({ preserveErrorStatus: true, timeout: 15000 })
     )
   })
 
@@ -991,7 +1029,8 @@ describe('ChatContainer realtime sync', () => {
 
     expect(fetchMock.kunFetchGet).toHaveBeenCalledWith(
       '/message/conversation/5',
-      { page: 1, limit: 50, afterId: 2 }
+      expect.objectContaining({ page: 1, limit: 50, afterId: 2 }),
+      expect.objectContaining({ preserveErrorStatus: true, timeout: 15000 })
     )
   })
 
@@ -1006,9 +1045,11 @@ describe('ChatContainer realtime sync', () => {
     })
 
     expect(fetchMock.kunFetchPut).toHaveBeenCalledWith(
-      '/message/conversation/5/read'
+      '/message/conversation/5/read',
+      undefined,
+      expect.objectContaining({ preserveErrorStatus: true })
     )
-    expect(toast.error).toHaveBeenCalledWith('同步私聊已读状态失败，请稍后重试')
+    expect(container.textContent).toContain('消息同步暂时不可用，将自动重试')
     expect(container.textContent).toContain('hello')
   })
 
@@ -1020,11 +1061,6 @@ describe('ChatContainer realtime sync', () => {
     fetchMock.kunFetchGet.mockClear()
     fetchMock.kunFetchGet.mockResolvedValueOnce({
       messages: [
-        message(2, 'hi duplicate', {
-          id: currentUser.uid,
-          name: currentUser.name,
-          avatar: currentUser.avatar
-        }),
         message(3, 'fresh message', otherUser, '2026-06-29T10:03:00.000Z')
       ],
       total: 3,
@@ -1038,7 +1074,9 @@ describe('ChatContainer realtime sync', () => {
     expect(container.querySelectorAll('[data-message-id="2"]')).toHaveLength(1)
     expect(container.textContent).toContain('fresh message')
     expect(fetchMock.kunFetchPut).toHaveBeenCalledWith(
-      '/message/conversation/5/read'
+      '/message/conversation/5/read',
+      undefined,
+      expect.objectContaining({ preserveErrorStatus: true })
     )
     expect(useMessageStore.getState().hasUnreadConversation).toBe(false)
   })
@@ -1076,10 +1114,11 @@ describe('ChatContainer realtime sync', () => {
     })
 
     expect(container.textContent).toContain('fresh message')
-    expect(toast.error).toHaveBeenCalledWith('同步私聊已读状态失败，请稍后重试')
+    expect(container.textContent).toContain('消息同步暂时不可用，将自动重试')
     expect(fetchMock.kunFetchGet).toHaveBeenCalledWith(
       '/message/conversation/5',
-      { page: 1, limit: 50, beforeId: 4 }
+      expect.objectContaining({ page: 1, limit: 50, afterId: 2 }),
+      expect.objectContaining({ preserveErrorStatus: true, timeout: 15000 })
     )
   })
 
@@ -1554,30 +1593,19 @@ describe('ChatContainer realtime sync', () => {
       await Promise.resolve()
     })
     fetchMock.kunFetchGet.mockClear()
-    fetchMock.kunFetchGet
-      .mockResolvedValueOnce({
-        messages: [],
-        total: 0,
-        hasMoreBefore: false,
-        otherUser
-      })
-      .mockResolvedValueOnce({
-        messages: [
-          message(
-            2,
-            'hi',
-            {
-              id: currentUser.uid,
-              name: currentUser.name,
-              avatar: currentUser.avatar
-            },
-            '2026-06-29T10:02:00.000Z'
-          )
-        ].map((msg) => ({ ...msg, status: 1 })),
-        total: 1,
-        hasMoreBefore: false,
-        otherUser
-      })
+    fetchMock.kunFetchGet.mockResolvedValueOnce({
+      messages: [],
+      reviewMessages: [
+        message(2, 'hi', {
+          id: currentUser.uid,
+          name: currentUser.name,
+          avatar: currentUser.avatar
+        })
+      ].map((item) => ({ ...item, status: 1 })),
+      total: 2,
+      hasMoreBefore: false,
+      otherUser
+    })
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(2_000)
@@ -1585,7 +1613,8 @@ describe('ChatContainer realtime sync', () => {
 
     expect(fetchMock.kunFetchGet).toHaveBeenCalledWith(
       '/message/conversation/5',
-      { page: 1, limit: 50, beforeId: 3 }
+      expect.objectContaining({ page: 1, limit: 50, afterId: 2 }),
+      expect.objectContaining({ preserveErrorStatus: true, timeout: 15000 })
     )
     expect(
       container
@@ -1653,7 +1682,8 @@ describe('ChatContainer realtime sync', () => {
 
     expect(fetchMock.kunFetchGet).toHaveBeenCalledWith(
       '/message/conversation/5',
-      { page: 1, limit: 50, afterId: 2 }
+      expect.objectContaining({ page: 1, limit: 50, afterId: 2 }),
+      expect.objectContaining({ preserveErrorStatus: true, timeout: 15000 })
     )
     expect(container.textContent).toContain('other slightly earlier message')
   })
@@ -1765,9 +1795,14 @@ describe('ChatContainer realtime sync', () => {
       await vi.advanceTimersByTimeAsync(13_000)
     })
 
+    expect(fetchMock.kunFetchGet).not.toHaveBeenCalled()
+    await act(async () => {
+      document.dispatchEvent(new dom!.window.Event('visibilitychange'))
+    })
     expect(fetchMock.kunFetchGet).toHaveBeenCalledWith(
       '/message/conversation/5',
-      { page: 1, limit: 50, afterId: 2 }
+      expect.objectContaining({ page: 1, limit: 50, afterId: 2 }),
+      expect.objectContaining({ preserveErrorStatus: true, timeout: 15000 })
     )
   })
 
@@ -1791,7 +1826,8 @@ describe('ChatContainer realtime sync', () => {
 
     expect(fetchMock.kunFetchGet).toHaveBeenCalledWith(
       '/message/conversation/5',
-      { page: 1, limit: 50, afterId: 2 }
+      expect.objectContaining({ page: 1, limit: 50, afterId: 2 }),
+      expect.objectContaining({ preserveErrorStatus: true, timeout: 15000 })
     )
   })
 })

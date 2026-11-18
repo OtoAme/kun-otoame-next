@@ -1,5 +1,6 @@
 'use client'
 
+import { usePrivateChatRequest } from '~/hooks/usePrivateChatRequest'
 import { useEffect, useRef, useState, type RefObject } from 'react'
 import { Button } from '@heroui/react'
 import { Textarea } from '@heroui/input'
@@ -221,18 +222,24 @@ export const ChatInput = ({
     textarea.setSelectionRange(end, end)
   }, [replyImageIndex, replySelectedText, replyTarget])
 
+  const beginRequest = usePrivateChatRequest(conversationId)
+
   const isUploadedImage = (
     image: PrivateMessageImage | null | undefined
   ): image is PrivateMessageImage => Boolean(image)
 
   const loadStickerPacks = async () => {
+    const request = beginRequest()
+    if (!request) return
     setIsStickerLoading(true)
     setStickerError(null)
     try {
-      const response =
-        await kunFetchGet<KunResponse<StickerPacksResponse>>(
-          '/message/stickers'
-        )
+      const response = await kunFetchGet<KunResponse<StickerPacksResponse>>(
+        '/message/stickers',
+        undefined,
+        request.options
+      )
+      if (!request.isCurrent()) return
       if (typeof response === 'string') {
         setStickerError(response)
         return
@@ -242,10 +249,11 @@ export const ChatInput = ({
       setActiveStickerPackId(
         (current) => current ?? response.packs[0]?.id ?? null
       )
-    } catch {
-      setStickerError('获取贴纸失败，请稍后重试')
+    } catch (error) {
+      request.fail(error, '获取贴纸失败，请稍后重试')
+      if (request.isCurrent()) setStickerError('获取贴纸失败，请稍后重试')
     } finally {
-      setIsStickerLoading(false)
+      if (request.isCurrent()) setIsStickerLoading(false)
     }
   }
 
@@ -263,6 +271,8 @@ export const ChatInput = ({
       return
     }
 
+    const request = beginRequest()
+    if (!request) return
     isSendingRef.current = true
     setSending(true)
     try {
@@ -274,8 +284,10 @@ export const ChatInput = ({
           replyToMessageId: replyTarget?.id,
           replySelectedText: replySelectedText ?? undefined,
           replyImageIndex: replyImageIndex ?? undefined
-        }
+        },
+        request.options
       )
+      if (!request.isCurrent()) return
 
       if (typeof response === 'string') {
         toast.error(response)
@@ -284,11 +296,11 @@ export const ChatInput = ({
         onCancelReply?.()
         onMessageSent(response)
       }
-    } catch {
-      toast.error('贴纸发送失败，请稍后重试')
+    } catch (error) {
+      request.fail(error, '贴纸发送失败，请稍后重试')
     } finally {
       isSendingRef.current = false
-      setSending(false)
+      if (request.isCurrent()) setSending(false)
     }
   }
 
@@ -311,6 +323,8 @@ export const ChatInput = ({
       return
     }
 
+    const request = beginRequest()
+    if (!request) return
     isSendingRef.current = true
     setSending(true)
     try {
@@ -333,13 +347,25 @@ export const ChatInput = ({
               >(
                 `/message/conversation/${conversationId}/image`,
                 formData,
-                undefined,
+                request.options.timeout,
                 { preserveErrorStatus: true }
               )
               return { index, result }
             })
           )
 
+          if (!request.isCurrent()) return
+          const unauthorized = uploadResults.find(
+            (result) =>
+              result.status === 'rejected' &&
+              result.reason instanceof Error &&
+              'status' in result.reason &&
+              result.reason.status === 401
+          )
+          if (unauthorized?.status === 'rejected') {
+            request.fail(unauthorized.reason, IMAGE_UPLOAD_FAILED_MESSAGE)
+            return
+          }
           let failedUpload: string | null = null
           for (const uploadResult of uploadResults) {
             if (uploadResult.status === 'rejected') {
@@ -382,8 +408,10 @@ export const ChatInput = ({
           replyToMessageId: replyTarget?.id,
           replySelectedText: replySelectedText ?? undefined,
           replyImageIndex: replyImageIndex ?? undefined
-        }
+        },
+        request.options
       )
+      if (!request.isCurrent()) return
 
       if (typeof response === 'string') {
         toast.error(response)
@@ -397,11 +425,11 @@ export const ChatInput = ({
         onCancelReply?.()
         onMessageSent(response)
       }
-    } catch {
-      toast.error('消息发送失败，请稍后重试')
+    } catch (error) {
+      request.fail(error, '消息发送失败，请稍后重试')
     } finally {
       isSendingRef.current = false
-      setSending(false)
+      if (request.isCurrent()) setSending(false)
     }
   }
 
