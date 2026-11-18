@@ -36,7 +36,9 @@ interface SchedulerOptions<Result> {
   onInvalid?: () => void
   onChange?: (snapshot: MessageSyncSnapshot) => void
   validate?: (value: unknown) => boolean
+  reuseRecentSuccessOnResume?: boolean
   intervalMs?: number
+  nextIntervalMs?: (result: Result) => number
   random?: () => number
 }
 
@@ -112,8 +114,14 @@ export const createMessageSyncScheduler = <Result = UnreadSummary>(
         failures: 0,
         errorKind: null
       }
-      nextPollAt = Date.now() + jitter(interval)
       options.onSuccess(result)
+      const requestedInterval = options.nextIntervalMs?.(result)
+      const nextInterval = requestedInterval !== undefined && Number.isFinite(requestedInterval)
+        ? requestedInterval : interval
+      const nextDelay = options.nextIntervalMs
+        ? Math.min(300_000, Math.max(100, jitter(nextInterval)))
+        : jitter(interval)
+      nextPollAt = Date.now() + nextDelay
     } catch (error) {
       if (current.revision !== revision || disposed) return
       if (error instanceof KunFetchError && error.kind === 'aborted') {
@@ -185,6 +193,14 @@ export const createMessageSyncScheduler = <Result = UnreadSummary>(
     },
     refresh(reason: 'resume' | 'manual' = 'manual') {
       if (pending || !active()) return
+      if (
+        reason === 'resume' &&
+        options.reuseRecentSuccessOnResume &&
+        snapshot.lastSuccessAt !== null &&
+        Date.now() >= snapshot.lastSuccessAt &&
+        Date.now() - snapshot.lastSuccessAt < 5_000
+      )
+        return
       schedule(
         reason === 'resume'
           ? Math.max(Date.now(), lastRequestAt + 5_000)

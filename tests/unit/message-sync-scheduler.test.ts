@@ -10,7 +10,10 @@ import { KunFetchError } from '~/utils/kunFetch'
 
 const identity = { context: 'session-a', generation: 1 }
 const unread = { hasUnreadMessages: true, hasUnreadChat: true }
-const setup = (request = vi.fn().mockResolvedValue(unread)) => {
+const setup = (
+  request = vi.fn().mockResolvedValue(unread),
+  reuseRecentSuccessOnResume = false
+) => {
   const accept = vi.fn()
   const invalid = vi.fn()
   const sync = createMessageSyncScheduler({
@@ -18,6 +21,7 @@ const setup = (request = vi.fn().mockResolvedValue(unread)) => {
     onSuccess: accept,
     onInvalid: invalid,
     validate: isUnreadSummary,
+    reuseRecentSuccessOnResume,
     random: () => 0.5
   })
   sync.setIdentity(identity)
@@ -31,6 +35,53 @@ describe('message sync scheduler', () => {
     vi.setSystemTime(0)
   })
   afterEach(() => vi.useRealTimers())
+  it('keeps a recent unread success until its next poll, with a strict five-second boundary', async () => {
+    const { sync, read } = setup(undefined, true)
+    sync.seed(unread)
+    sync.setEnabled(true)
+    await vi.advanceTimersByTimeAsync(4_999)
+    sync.refresh('resume')
+    await flush()
+    expect(read).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(1)
+    sync.refresh('resume')
+    await flush()
+    expect(read).toHaveBeenCalledTimes(1)
+    sync.refresh('manual')
+    await flush()
+    expect(read).toHaveBeenCalledTimes(2)
+    sync.dispose()
+  })
+
+  it('does not reuse rejected seeds or a previous identity for unread resume', async () => {
+    const { sync, read } = setup(undefined, true)
+    const oldRead = beginUnreadRead()
+    sync.seed(unread)
+    sync.setIdentity({ context: 'session-b', generation: 2 })
+    expect(sync.seed(null)).toBe(false)
+    expect(sync.seed({ hasUnreadMessages: false })).toBe(false)
+    sync.setEnabled(true)
+    sync.refresh('resume')
+    await flush()
+    expect(read).toHaveBeenCalledTimes(1)
+    await vi.advanceTimersByTimeAsync(5_000)
+    expect(sync.seed(unread, Date.now(), oldRead)).toBe(false)
+    sync.refresh('resume')
+    await flush()
+    expect(read).toHaveBeenCalledTimes(2)
+    sync.dispose()
+  })
+
+  it('keeps generic resume unchanged unless recent success reuse is enabled', async () => {
+    const { sync, read } = setup()
+    sync.seed(unread)
+    sync.setEnabled(true)
+    sync.refresh('resume')
+    await flush()
+    expect(read).toHaveBeenCalledTimes(1)
+    sync.dispose()
+  })
+
   it('makes at most twelve reads in ten active minutes including initialization', async () => {
     const { sync, read } = setup()
     sync.setEnabled(true)
@@ -216,18 +267,24 @@ describe('message sync scheduler', () => {
     sync.dispose()
   })
 
-  it('keeps an existing retry deadline when a valid session summary arrives', async () => {
-    const { sync, read } = setup(
-      vi.fn().mockRejectedValue(new KunFetchError('rate', 'http', 429, 180_000))
-    )
-    sync.setEnabled(true)
-    await flush()
-    sync.seed(unread)
-    sync.refresh('resume')
-    await vi.advanceTimersByTimeAsync(179_999)
-    expect(read).toHaveBeenCalledTimes(1)
-    sync.dispose()
-  })
+  it.each([false, true])(
+    'keeps an existing retry deadline after a seed (reuse=%s)',
+    async (reuse) => {
+      const { sync, read } = setup(
+        vi
+          .fn()
+          .mockRejectedValue(new KunFetchError('rate', 'http', 429, 180_000)),
+        reuse
+      )
+      sync.setEnabled(true)
+      await flush()
+      sync.seed(unread)
+      sync.refresh('resume')
+      await vi.advanceTimersByTimeAsync(179_999)
+      expect(read).toHaveBeenCalledTimes(1)
+      sync.dispose()
+    }
+  )
 
   it.each([
     { context: 'session-a', generation: 2 },
@@ -333,5 +390,98 @@ describe('message sync scheduler', () => {
     expect(accept).toHaveBeenLastCalledWith(unread)
     unbind()
     sync.dispose()
+  })
+})
+
+describe('dynamic message synchronization intervals', () => {
+  beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(0) })
+  afterEach(() => vi.useRealTimers())
+
+  it('computes the next interval after accepting the successful batch', async () => {
+    let interval = 15_000
+    const request = vi.fn().mockResolvedValue({ more: true })
+    const nextIntervalMs = vi.fn(() => interval)
+    const scheduler = createMessageSyncScheduler({
+      request,
+      onSuccess: () => { interval = 100 },
+      nextIntervalMs,
+      random: () => 0.5
+    })
+    scheduler.setIdentity(identity)
+    scheduler.setEnabled(true)
+    await flush()
+    expect(nextIntervalMs).toHaveBeenCalledWith({ more: true })
+    await vi.advanceTimersByTimeAsync(100)
+    expect(request).toHaveBeenCalledTimes(2)
+    scheduler.dispose()
+  })
+
+  it('keeps Retry-After and pauses ahead of a successful continuation', async () => {
+    const request = vi.fn().mockResolvedValueOnce(unread)
+      .mockRejectedValueOnce(new KunFetchError('rate', 'http', 429, 90_000))
+      .mockResolvedValue(unread)
+    const scheduler = createMessageSyncScheduler({
+      request, onSuccess: vi.fn(), nextIntervalMs: () => 100, random: () => 0.5
+    })
+    scheduler.setIdentity(identity)
+    scheduler.setEnabled(true)
+    await vi.advanceTimersByTimeAsync(100)
+    scheduler.setEnabled(false)
+    await vi.advanceTimersByTimeAsync(100_000)
+    expect(request).toHaveBeenCalledTimes(2)
+    scheduler.setEnabled(true)
+    scheduler.refresh('resume')
+    await flush()
+    expect(request).toHaveBeenCalledTimes(3)
+    scheduler.dispose()
+  })
+
+  it.each([0, -1, NaN, Infinity])('bounds invalid continuation interval %s', async (interval) => {
+    const request = vi.fn().mockResolvedValue(unread)
+    const scheduler = createMessageSyncScheduler({
+      request, onSuccess: vi.fn(), nextIntervalMs: () => interval, random: () => 0.5
+    })
+    scheduler.setIdentity(identity)
+    scheduler.setEnabled(true)
+    await vi.advanceTimersByTimeAsync(99)
+    expect(request).toHaveBeenCalledTimes(1)
+    scheduler.dispose()
+  })
+})
+
+
+describe('dynamic interval boundaries', () => {
+  beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(0) })
+  afterEach(() => vi.useRealTimers())
+
+  it.each([[100, 0, 100], [300_000, 1, 300_000]])(
+    'keeps the final jittered delay within bounds for %s',
+    async (interval, random, expected) => {
+      const request = vi.fn().mockResolvedValue(unread)
+      const scheduler = createMessageSyncScheduler({
+        request, onSuccess: vi.fn(), nextIntervalMs: () => interval, random: () => random
+      })
+      scheduler.setIdentity(identity)
+      scheduler.setEnabled(true)
+      await vi.advanceTimersByTimeAsync(expected - 1)
+      expect(request).toHaveBeenCalledTimes(1)
+      await vi.advanceTimersByTimeAsync(1)
+      expect(request).toHaveBeenCalledTimes(2)
+      scheduler.dispose()
+    }
+  )
+
+  it('preserves a fixed interval outside the optional dynamic bounds', async () => {
+    const request = vi.fn().mockResolvedValue(unread)
+    const scheduler = createMessageSyncScheduler({
+      request, onSuccess: vi.fn(), intervalMs: 400_000, random: () => 0.5
+    })
+    scheduler.setIdentity(identity)
+    scheduler.setEnabled(true)
+    await vi.advanceTimersByTimeAsync(399_999)
+    expect(request).toHaveBeenCalledTimes(1)
+    await vi.advanceTimersByTimeAsync(1)
+    expect(request).toHaveBeenCalledTimes(2)
+    scheduler.dispose()
   })
 })

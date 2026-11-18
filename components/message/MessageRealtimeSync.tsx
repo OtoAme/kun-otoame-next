@@ -48,6 +48,7 @@ export const MessageRealtimeSync = () => {
           preserveErrorStatus: true
         }),
       validate: isUnreadSummary,
+      reuseRecentSuccessOnResume: true,
       onSuccess: (unread) => {
         if (!isCurrent()) return
         observePreferenceVersion(unread.preferenceVersion)
