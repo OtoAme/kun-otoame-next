@@ -28,16 +28,35 @@ const privateMessageImageSchema = z.object({
   name: z.string().trim().min(1).max(255)
 })
 
+const messageNumberSchema = z.coerce.number().int().min(1).max(2_147_483_647)
+
+const reviewMessageNumbersSchema = z.preprocess(
+  (value) => {
+    if (typeof value !== 'string') return value
+    if (value.length > 2_200) return null
+    return value === '' ? [] : value.split(',')
+  },
+  z
+    .array(messageNumberSchema)
+    .max(200)
+    .transform((values) => [...new Set(values)])
+    .refine((values) => values.length <= 100, '一次最多复核 100 条消息')
+)
+
 export const getConversationMessagesSchema = z
   .object({
-    page: z.coerce.number().min(1).max(9999999),
-    limit: z.coerce.number().min(1).max(50),
-    beforeId: z.coerce.number().min(1).max(9999999).optional(),
-    afterId: z.coerce.number().min(1).max(9999999).optional()
+    page: z.coerce.number().int().min(1).max(9999999),
+    limit: z.coerce.number().int().min(1).max(50),
+    beforeId: messageNumberSchema.optional(),
+    afterId: z.coerce.number().int().min(0).max(2_147_483_647).optional(),
+    reviewIds: reviewMessageNumbersSchema.optional()
   })
-  .refine((input) => !(input.beforeId && input.afterId), {
-    message: 'beforeId 和 afterId 不能同时使用'
-  })
+  .refine(
+    (input) => !(input.beforeId !== undefined && input.afterId !== undefined),
+    {
+      message: 'beforeId 和 afterId 不能同时使用'
+    }
+  )
 
 export const sendPrivateMessageSchema = z
   .object({

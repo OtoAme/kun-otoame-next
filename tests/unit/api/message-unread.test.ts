@@ -19,6 +19,7 @@ const prismaMock = vi.hoisted(() => ({
     update: vi.fn()
   },
   user_private_message: {
+    findFirst: vi.fn(),
     updateMany: vi.fn()
   }
 }))
@@ -87,6 +88,8 @@ describe('message unread status', () => {
     )
     prismaMock.$queryRaw.mockImplementation(async (query) => {
       const sql = query.sql ?? query.join('')
+      if (sql.includes('FROM user_conversation'))
+        return [await prismaMock.user_conversation.findUnique()]
       if (sql.includes('max(id)')) return [{ maximum: 11 }]
       if (sql.includes('count(*)')) return [{ amount: 1 }]
       return [{ id: sql.includes('user_message') ? 11 : 1007 }]
@@ -99,6 +102,7 @@ describe('message unread status', () => {
       id: 1007,
       preference_version: 3
     })
+    prismaMock.user_private_message.findFirst.mockResolvedValue({ id: 50 })
     verifyHeaderCookieMock.mockResolvedValue({ uid: 1007 })
     rateLimitMock.checkConversationActionRateLimit.mockResolvedValue({
       allowed: true
@@ -535,7 +539,8 @@ describe('message unread status', () => {
     expect(await response.json()).toMatchObject({
       preferenceVersion: 3,
       hasUnreadNotification: true,
-      hasUnreadConversation: false
+      hasUnreadConversation: false,
+      readThroughId: 50
     })
     expect(rateLimitMock.checkConversationActionRateLimit).toHaveBeenCalledWith(
       'message-read',
@@ -593,7 +598,7 @@ describe('message unread status', () => {
     expect(prismaMock.user_message.findFirst).not.toHaveBeenCalled()
   })
 
-  it('does not write when a conversation is already read for the current user', async () => {
+  it('repairs message state even when the current user counter is zero', async () => {
     prismaMock.user_conversation.findUnique.mockResolvedValueOnce({
       id: 5,
       user_a_id: 1007,
@@ -607,8 +612,8 @@ describe('message unread status', () => {
     )
     const result = await markConversationAsRead(5, 1007)
 
-    expect(result).toEqual({})
-    expect(prismaMock.user_private_message.updateMany).not.toHaveBeenCalled()
-    expect(prismaMock.user_conversation.update).not.toHaveBeenCalled()
+    expect(result).toEqual({ readThroughId: 50 })
+    expect(prismaMock.user_private_message.updateMany).toHaveBeenCalled()
+    expect(prismaMock.user_conversation.update).toHaveBeenCalled()
   })
 })

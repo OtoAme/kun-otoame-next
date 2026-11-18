@@ -1,5 +1,6 @@
 'use client'
 
+import { usePrivateChatRequest } from '~/hooks/usePrivateChatRequest'
 import { useEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { cn } from '~/utils/cn'
@@ -324,20 +325,29 @@ export const ChatMessage = ({
     await copyToClipboard(image.url, '图片链接已复制')
   }
 
+  const beginRequest = usePrivateChatRequest(conversationId)
+
   const handleEdit = async () => {
     if (!editContent.trim()) {
       toast.error('消息内容不能为空')
       return
     }
 
+    const request = beginRequest()
+    if (!request) return
     setIsSubmitting(true)
     try {
       const response = await kunFetchPut<
         KunResponse<{ id: number; content: string; editedAt: string }>
-      >(`/message/conversation/${conversationId}`, {
-        messageId: message.id,
-        content: editContent.trim()
-      })
+      >(
+        `/message/conversation/${conversationId}`,
+        {
+          messageId: message.id,
+          content: editContent.trim()
+        },
+        request.options
+      )
+      if (!request.isCurrent()) return
 
       if (typeof response === 'string') {
         toast.error(response)
@@ -350,20 +360,24 @@ export const ChatMessage = ({
           editedAt: response.editedAt
         })
       }
-    } catch {
-      toast.error('消息编辑失败，请稍后重试')
+    } catch (error) {
+      request.fail(error, '消息编辑失败，请稍后重试')
     } finally {
-      setIsSubmitting(false)
+      if (request.isCurrent()) setIsSubmitting(false)
     }
   }
 
   const handleDelete = async () => {
+    const request = beginRequest()
+    if (!request) return
     setIsSubmitting(true)
     try {
       const response = await kunFetchDelete<KunResponse<{}>>(
         `/message/conversation/${conversationId}`,
-        { messageId: message.id }
+        { messageId: message.id },
+        request.options
       )
+      if (!request.isCurrent()) return
 
       if (typeof response === 'string') {
         toast.error(response)
@@ -372,10 +386,10 @@ export const ChatMessage = ({
         onCloseDeleteConfirm()
         onMessageUpdated({ action: 'delete' })
       }
-    } catch {
-      toast.error('消息删除失败，请稍后重试')
+    } catch (error) {
+      request.fail(error, '消息删除失败，请稍后重试')
     } finally {
-      setIsSubmitting(false)
+      if (request.isCurrent()) setIsSubmitting(false)
     }
   }
 

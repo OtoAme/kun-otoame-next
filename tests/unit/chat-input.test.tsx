@@ -62,7 +62,8 @@ vi.mock('framer-motion', () => ({
   }
 }))
 
-vi.mock('~/utils/kunFetch', () => ({
+vi.mock('~/utils/kunFetch', async (original) => ({
+  ...(await original<typeof import('~/utils/kunFetch')>()),
   kunFetchFormData: fetchMock.kunFetchFormData,
   kunFetchGet: fetchMock.kunFetchGet,
   kunFetchPost: fetchMock.kunFetchPost
@@ -261,6 +262,12 @@ describe('ChatInput keyboard handling', () => {
     const container = dom.window.document.getElementById('root')
     expect(container).not.toBeNull()
 
+    const { useUserStore } = await import('~/store/userStore')
+    useUserStore.setState({
+      sessionStatus: 'authenticated',
+      sessionContext: 'synthetic-write',
+      sessionGeneration: 1
+    })
     root = createRoot(container!)
     const renderWithProps = async (
       nextProps: Partial<{
@@ -363,6 +370,29 @@ describe('ChatInput keyboard handling', () => {
     dom = undefined
     vi.unstubAllGlobals()
     vi.resetModules()
+  })
+
+  it('discards a completed send after the session generation changes', async () => {
+    const { textarea } = await renderChatInput()
+    let complete!: (message: PrivateMessage) => void
+    fetchMock.kunFetchPost.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          complete = resolve
+        })
+    )
+    await typeContent(textarea, 'draft before switch')
+    await keyDownEnter(textarea)
+    const { useUserStore } = await import('~/store/userStore')
+    await act(async () => {
+      useUserStore.setState({ sessionGeneration: 2 })
+    })
+    await act(async () => {
+      complete(sentMessage(99, 'late result'))
+      await Promise.resolve()
+    })
+    expect(onMessageSent).not.toHaveBeenCalled()
+    expect(textarea.value).toBe('draft before switch')
   })
 
   it('uses a compact input placeholder on mobile viewports', async () => {
@@ -604,7 +634,11 @@ describe('ChatInput keyboard handling', () => {
       await Promise.resolve()
     })
 
-    expect(fetchMock.kunFetchGet).toHaveBeenCalledWith('/message/stickers')
+    expect(fetchMock.kunFetchGet).toHaveBeenCalledWith(
+      '/message/stickers',
+      undefined,
+      expect.objectContaining({ timeout: 15000, preserveErrorStatus: true })
+    )
     const stickerOption = stickerPickerPortal.querySelector<HTMLButtonElement>(
       '[data-testid="sticker-option-moe-wave"]'
     )
@@ -640,7 +674,8 @@ describe('ChatInput keyboard handling', () => {
       expect.objectContaining({
         type: 2,
         stickerId: 'moe-wave'
-      })
+      }),
+      expect.objectContaining({ timeout: 15000, preserveErrorStatus: true })
     )
     expect(
       fetchMock.kunFetchPost.mock.calls.at(-1)?.[1]?.content
@@ -767,7 +802,8 @@ describe('ChatInput keyboard handling', () => {
         content: 'reply',
         replyToMessageId: 3,
         replySelectedText: 'orig'
-      })
+      }),
+      expect.objectContaining({ timeout: 15000, preserveErrorStatus: true })
     )
   })
 
@@ -862,7 +898,8 @@ describe('ChatInput keyboard handling', () => {
         content: 'reply',
         replyToMessageId: 3,
         replyImageIndex: 1
-      })
+      }),
+      expect.objectContaining({ timeout: 15000, preserveErrorStatus: true })
     )
   })
 
@@ -935,7 +972,7 @@ describe('ChatInput keyboard handling', () => {
     expect(fetchMock.kunFetchFormData).toHaveBeenCalledWith(
       '/message/conversation/5/image',
       expect.any(FormData),
-      undefined,
+      15000,
       { preserveErrorStatus: true }
     )
     expect(fetchMock.kunFetchPost).toHaveBeenCalledWith(
@@ -950,7 +987,8 @@ describe('ChatInput keyboard handling', () => {
             url: 'https://img.example/conversation/5/chat.avif'
           })
         ]
-      })
+      }),
+      expect.objectContaining({ timeout: 15000, preserveErrorStatus: true })
     )
   })
 
@@ -1155,7 +1193,8 @@ describe('ChatInput keyboard handling', () => {
             url: 'https://img.example/conversation/5/b.avif'
           })
         ]
-      })
+      }),
+      expect.objectContaining({ timeout: 15000, preserveErrorStatus: true })
     )
   })
 
@@ -1273,7 +1312,8 @@ describe('ChatInput keyboard handling', () => {
             url: 'https://img.example/conversation/5/c.avif'
           })
         ]
-      })
+      }),
+      expect.objectContaining({ timeout: 15000, preserveErrorStatus: true })
     )
   })
 
@@ -1355,7 +1395,8 @@ describe('ChatInput keyboard handling', () => {
             url: 'https://img.example/conversation/5/b.avif'
           })
         ]
-      })
+      }),
+      expect.objectContaining({ timeout: 15000, preserveErrorStatus: true })
     )
   })
 
@@ -1420,7 +1461,7 @@ describe('ChatInput keyboard handling', () => {
     expect(fetchMock.kunFetchFormData).toHaveBeenCalledWith(
       '/message/conversation/5/image',
       expect.any(FormData),
-      undefined,
+      15000,
       { preserveErrorStatus: true }
     )
     expect(toast.error).toHaveBeenCalledWith(
@@ -1510,7 +1551,8 @@ describe('ChatInput keyboard handling', () => {
             url: 'https://img.example/conversation/5/b.avif'
           })
         ]
-      })
+      }),
+      expect.objectContaining({ timeout: 15000, preserveErrorStatus: true })
     )
   })
 
@@ -1613,7 +1655,8 @@ describe('ChatInput keyboard handling', () => {
             url: 'https://img.example/conversation/5/c.avif'
           })
         ]
-      })
+      }),
+      expect.objectContaining({ timeout: 15000, preserveErrorStatus: true })
     )
   })
 })

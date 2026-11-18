@@ -7,7 +7,7 @@ import {
   updatePrivateMessageSchema,
   deletePrivateMessageSchema
 } from '~/validations/conversation'
-import { verifyHeaderCookie } from '~/middleware/_verifyHeaderCookie'
+import { getRequestIdentity } from '~/app/api/utils/sessionIdentity'
 import {
   deleteConversation,
   deleteMessage,
@@ -18,7 +18,8 @@ import {
 import {
   createConversationRateLimitResponse,
   getConversationRetryAfterSeconds,
-  isConversationRateLimitResponse
+  isConversationRateLimitResponse,
+  isConversationError
 } from '../response'
 import { parseConversationRouteId } from '../routeParams'
 
@@ -44,7 +45,9 @@ const jsonConversationResponse = (body: unknown) => {
     })
   }
 
-  return jsonNoStore(body)
+  if (isConversationError(body))
+    return jsonNoStore(body, { status: body.status })
+  return jsonNoStore(body, { status: typeof body === 'string' ? 400 : 200 })
 }
 
 export const GET = async (
@@ -54,18 +57,34 @@ export const GET = async (
   const { id } = await params
   const conversationId = parseConversationRouteId(id)
   if (conversationId === null) {
-    return jsonNoStore('无效的会话 ID')
+    return jsonNoStore('无效的会话 ID', { status: 400 })
   }
 
   const input = kunParseGetQuery(req, getConversationMessagesSchema)
   if (typeof input === 'string') {
-    return jsonNoStore(input)
+    return jsonNoStore(input, { status: 400 })
   }
 
-  const payload = await verifyHeaderCookie(req)
-  if (!payload) {
-    return jsonNoStore('用户未登录')
+  let identity
+  try {
+    identity = await getRequestIdentity(req)
+  } catch {
+    return jsonNoStore(
+      { code: 'SESSION_UNAVAILABLE', message: '会话暂时不可用' },
+      { status: 503 }
+    )
   }
+  if (identity.status === 'unavailable')
+    return jsonNoStore(
+      { code: 'SESSION_UNAVAILABLE', message: '会话暂时不可用' },
+      { status: 503 }
+    )
+  if (identity.status === 'guest')
+    return jsonNoStore(
+      { code: 'SESSION_INVALID', message: '用户登录失效' },
+      { status: 401 }
+    )
+  const payload = identity.payload
 
   const { checkConversationActionRateLimit } = await import('../rateLimit')
   const rateLimit = await checkConversationActionRateLimit(
@@ -85,7 +104,7 @@ export const GET = async (
     input,
     payload.uid
   )
-  return jsonNoStore(response)
+  return jsonConversationResponse(response)
 }
 
 export const POST = async (
@@ -95,18 +114,34 @@ export const POST = async (
   const { id } = await params
   const conversationId = parseConversationRouteId(id)
   if (conversationId === null) {
-    return jsonNoStore('无效的会话 ID')
+    return jsonNoStore('无效的会话 ID', { status: 400 })
   }
 
   const input = await kunParsePostBody(req, sendPrivateMessageSchema)
   if (typeof input === 'string') {
-    return jsonNoStore(input)
+    return jsonNoStore(input, { status: 400 })
   }
 
-  const payload = await verifyHeaderCookie(req)
-  if (!payload) {
-    return jsonNoStore('用户未登录')
+  let identity
+  try {
+    identity = await getRequestIdentity(req)
+  } catch {
+    return jsonNoStore(
+      { code: 'SESSION_UNAVAILABLE', message: '会话暂时不可用' },
+      { status: 503 }
+    )
   }
+  if (identity.status === 'unavailable')
+    return jsonNoStore(
+      { code: 'SESSION_UNAVAILABLE', message: '会话暂时不可用' },
+      { status: 503 }
+    )
+  if (identity.status === 'guest')
+    return jsonNoStore(
+      { code: 'SESSION_INVALID', message: '用户登录失效' },
+      { status: 401 }
+    )
+  const payload = identity.payload
 
   const response = await sendMessage(conversationId, input, payload.uid)
   return jsonConversationResponse(response)
@@ -119,18 +154,34 @@ export const PUT = async (
   const { id } = await params
   const conversationId = parseConversationRouteId(id)
   if (conversationId === null) {
-    return jsonNoStore('无效的会话 ID')
+    return jsonNoStore('无效的会话 ID', { status: 400 })
   }
 
   const input = await kunParsePostBody(req, updatePrivateMessageSchema)
   if (typeof input === 'string') {
-    return jsonNoStore(input)
+    return jsonNoStore(input, { status: 400 })
   }
 
-  const payload = await verifyHeaderCookie(req)
-  if (!payload) {
-    return jsonNoStore('用户未登录')
+  let identity
+  try {
+    identity = await getRequestIdentity(req)
+  } catch {
+    return jsonNoStore(
+      { code: 'SESSION_UNAVAILABLE', message: '会话暂时不可用' },
+      { status: 503 }
+    )
   }
+  if (identity.status === 'unavailable')
+    return jsonNoStore(
+      { code: 'SESSION_UNAVAILABLE', message: '会话暂时不可用' },
+      { status: 503 }
+    )
+  if (identity.status === 'guest')
+    return jsonNoStore(
+      { code: 'SESSION_INVALID', message: '用户登录失效' },
+      { status: 401 }
+    )
+  const payload = identity.payload
 
   const response = await updateMessage(conversationId, input, payload.uid)
   return jsonConversationResponse(response)
@@ -143,20 +194,36 @@ export const DELETE = async (
   const { id } = await params
   const conversationId = parseConversationRouteId(id)
   if (conversationId === null) {
-    return jsonNoStore('无效的会话 ID')
+    return jsonNoStore('无效的会话 ID', { status: 400 })
   }
 
-  const payload = await verifyHeaderCookie(req)
-  if (!payload) {
-    return jsonNoStore('用户未登录')
+  let identity
+  try {
+    identity = await getRequestIdentity(req)
+  } catch {
+    return jsonNoStore(
+      { code: 'SESSION_UNAVAILABLE', message: '会话暂时不可用' },
+      { status: 503 }
+    )
   }
+  if (identity.status === 'unavailable')
+    return jsonNoStore(
+      { code: 'SESSION_UNAVAILABLE', message: '会话暂时不可用' },
+      { status: 503 }
+    )
+  if (identity.status === 'guest')
+    return jsonNoStore(
+      { code: 'SESSION_INVALID', message: '用户登录失效' },
+      { status: 401 }
+    )
+  const payload = identity.payload
 
   const { searchParams } = new URL(req.url)
 
   if (searchParams.has('messageId')) {
     const input = kunParseGetQuery(req, deletePrivateMessageSchema)
     if (typeof input === 'string') {
-      return jsonNoStore(input)
+      return jsonNoStore(input, { status: 400 })
     }
 
     const response = await deleteMessage(conversationId, input, payload.uid)
@@ -164,7 +231,7 @@ export const DELETE = async (
   }
 
   if (searchParams.get('action') !== 'conversation') {
-    return jsonNoStore('无效的删除操作类型')
+    return jsonNoStore('无效的删除操作类型', { status: 400 })
   }
 
   const { checkConversationActionRateLimit } = await import('../rateLimit')

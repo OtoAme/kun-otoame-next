@@ -19,6 +19,7 @@ const prismaMock = vi.hoisted(() => ({
     update: vi.fn()
   },
   _tx: {
+    $queryRaw: vi.fn(),
     user_private_message: {
       create: vi.fn()
     },
@@ -29,6 +30,23 @@ const prismaMock = vi.hoisted(() => ({
   $transaction: vi.fn(),
   $queryRaw: vi.fn()
 }))
+
+beforeEach(() => {
+  prismaMock._tx.$queryRaw.mockImplementation(async () => {
+    const previous = prismaMock.user_conversation.findUnique.mock.results.at(-1)
+    return [previous ? await previous.value : null]
+  })
+  Object.assign(prismaMock._tx.user_private_message, {
+    findFirst: prismaMock.user_private_message.findFirst,
+    update: prismaMock.user_private_message.update
+  })
+  prismaMock._tx.user_conversation.update.mockImplementation((input) =>
+    prismaMock.user_conversation.update(input)
+  )
+  prismaMock.$transaction.mockImplementation(async (callback) =>
+    callback(prismaMock._tx)
+  )
+})
 
 vi.mock('~/prisma/index', () => ({
   prisma: prismaMock
@@ -112,10 +130,11 @@ describe('conversation message fetching', () => {
           select: { id: true, name: true, avatar: true }
         },
         sticker: expect.any(Object),
-        reply_sticker: expect.any(Object)
+        reply_sticker: expect.any(Object),
+        reply_to_message: expect.any(Object)
       },
-      orderBy: { created: 'asc' },
-      take: 50
+      orderBy: { id: 'asc' },
+      take: 51
     })
     expect(prismaMock.user_private_message.count).not.toHaveBeenCalled()
     expect(result).toMatchObject({
@@ -143,11 +162,12 @@ describe('conversation message fetching', () => {
           select: { id: true, name: true, avatar: true }
         },
         sticker: expect.any(Object),
-        reply_sticker: expect.any(Object)
+        reply_sticker: expect.any(Object),
+        reply_to_message: expect.any(Object)
       },
-      orderBy: { created: 'desc' },
+      orderBy: { id: 'desc' },
       skip: 30,
-      take: 30
+      take: 31
     })
     expect(prismaMock.user_private_message.count).toHaveBeenCalledWith({
       where: { conversation_id: 5 }
@@ -672,9 +692,7 @@ describe('conversation message fetching', () => {
       retryAfterMs: 9_000
     })
 
-    const { DELETE } = await import(
-      '~/app/api/message/conversation/[id]/route'
-    )
+    const { DELETE } = await import('~/app/api/message/conversation/[id]/route')
     const response = await DELETE(
       new Request(
         'https://www.otoame.top/api/message/conversation/5?messageId=12',
@@ -705,9 +723,7 @@ describe('conversation message fetching', () => {
       retryAfterMs: 15_000
     })
 
-    const { DELETE } = await import(
-      '~/app/api/message/conversation/[id]/route'
-    )
+    const { DELETE } = await import('~/app/api/message/conversation/[id]/route')
     const response = await DELETE(
       new Request(
         'https://www.otoame.top/api/message/conversation/5?action=conversation',
@@ -731,9 +747,7 @@ describe('conversation message fetching', () => {
   })
 
   it('removes a conversation with a single management rate-limit check', async () => {
-    const { DELETE } = await import(
-      '~/app/api/message/conversation/[id]/route'
-    )
+    const { DELETE } = await import('~/app/api/message/conversation/[id]/route')
     const response = await DELETE(
       new Request(
         'https://www.otoame.top/api/message/conversation/5?action=conversation',
@@ -744,9 +758,9 @@ describe('conversation message fetching', () => {
 
     expect(response.status).toBe(200)
     await expect(response.json()).resolves.toEqual({})
-    expect(rateLimitMock.checkConversationActionRateLimit).toHaveBeenCalledTimes(
-      1
-    )
+    expect(
+      rateLimitMock.checkConversationActionRateLimit
+    ).toHaveBeenCalledTimes(1)
     expect(rateLimitMock.checkConversationActionRateLimit).toHaveBeenCalledWith(
       'conversation-manage',
       1007

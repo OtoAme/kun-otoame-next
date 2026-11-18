@@ -13,7 +13,8 @@ const routerMock = vi.hoisted(() => ({
   push: vi.fn()
 }))
 
-vi.mock('~/utils/kunFetch', () => ({
+vi.mock('~/utils/kunFetch', async (original) => ({
+  ...(await original<typeof import('~/utils/kunFetch')>()),
   kunFetchDelete: fetchMock.kunFetchDelete
 }))
 
@@ -103,6 +104,12 @@ describe('DeleteConversationButton', () => {
     const container = dom.window.document.getElementById('root')
     expect(container).not.toBeNull()
 
+    const { useUserStore } = await import('~/store/userStore')
+    useUserStore.setState({
+      sessionStatus: 'authenticated',
+      sessionContext: 'synthetic-write',
+      sessionGeneration: 1
+    })
     root = createRoot(container!)
     await act(async () => {
       root!.render(
@@ -156,7 +163,8 @@ describe('DeleteConversationButton', () => {
 
     expect(fetchMock.kunFetchDelete).toHaveBeenCalledWith(
       '/message/conversation/5',
-      { action: 'conversation' }
+      { action: 'conversation' },
+      expect.objectContaining({ timeout: 15000, preserveErrorStatus: true })
     )
     expect(routerMock.push).not.toHaveBeenCalled()
     expect(toast.error).toHaveBeenCalledWith('移除私聊失败，请稍后重试')

@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
@@ -5,6 +6,11 @@ const mocks = vi.hoisted(() => ({
   getConversations: vi.fn(),
   getConversationMessages: vi.fn(),
   checkConversationActionRateLimit: vi.fn()
+}))
+
+vi.mock('~/app/api/utils/jwt', () => ({
+  verifyKunTokenResult: vi.fn(),
+  SessionUnavailableError: class extends Error {}
 }))
 
 vi.mock('~/utils/actions/verifyHeaderCookie', () => ({
@@ -26,7 +32,10 @@ vi.mock('~/app/api/message/conversation/rateLimit', () => ({
 describe('chat server actions', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mocks.verifyHeaderCookie.mockResolvedValue({ uid: 1007 })
+    mocks.verifyHeaderCookie.mockResolvedValue({
+      uid: 1007,
+      jti: 'synthetic-action-session'
+    })
     mocks.checkConversationActionRateLimit.mockResolvedValue({ allowed: true })
     mocks.getConversations.mockResolvedValue({
       conversations: [],
@@ -38,6 +47,28 @@ describe('chat server actions', () => {
       hasMoreBefore: false,
       otherUser: { id: 8, name: 'Mio', avatar: '/mio.webp' }
     })
+  })
+
+  it('binds initial private messages to the same authenticated payload context', async () => {
+    const { kunGetConversationMessagesAction } = await import(
+      '~/app/(site)/message/chat/actions'
+    )
+    const result = await kunGetConversationMessagesAction(5, {
+      page: 1,
+      limit: 50
+    })
+    expect(result).toMatchObject({
+      messages: [],
+      initialSessionContext: createHash('sha256')
+        .update('1007:synthetic-action-session')
+        .digest('hex')
+    })
+    expect(mocks.verifyHeaderCookie).toHaveBeenCalledTimes(1)
+    expect(mocks.getConversationMessages).toHaveBeenCalledWith(
+      5,
+      { page: 1, limit: 50 },
+      1007
+    )
   })
 
   it('rejects malformed conversation IDs before auth or DB reads', async () => {
