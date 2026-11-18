@@ -14,20 +14,25 @@ const mocks = vi.hoisted(() => ({
   get: vi.fn(),
   remove: vi.fn(),
   confirm: vi.fn(),
+  refresh: vi.fn(),
   replace: vi.fn(),
+  pathname: '/message/notice',
   params: 'state=unread',
   seed: vi.fn(),
-  scroll: vi.fn()
+  scroll: vi.fn(),
+  eligible: true
 }))
 vi.mock('next/navigation', () => ({
-  usePathname: () => '/message/notice',
+  usePathname: () => mocks.pathname,
   useSearchParams: () => new URLSearchParams(mocks.params),
   useRouter: () => ({ replace: mocks.replace })
 }))
-vi.mock('~/utils/kunFetch', () => ({
+vi.mock('~/utils/kunFetch', async (original) => ({
+  ...(await original<typeof import('~/utils/kunFetch')>()),
   kunFetchGet: mocks.get,
   kunFetchDelete: mocks.remove
 }))
+vi.mock('~/utils/sessionClient', () => ({ refreshUserSession: mocks.refresh }))
 vi.mock('~/utils/messageSync', () => ({
   beginUnreadRead: () => 1,
   seedSessionUnread: mocks.seed
@@ -43,13 +48,15 @@ vi.mock('~/components/message/MessageCard', () => ({
     justRead
   }: {
     msg: Message
-    onSeen: (msg: Message) => void
+    onSeen: (msg: Message, eligible?: () => boolean) => void
     justRead: boolean
   }) => (
     <article data-id={msg.id}>
       <p>{msg.content}</p>
       <span>{justRead ? '刚刚已读' : ''}</span>
-      <button onClick={() => onSeen(msg)}>看见 {msg.id}</button>
+      <button onClick={() => onSeen(msg, () => mocks.eligible)}>
+        看见 {msg.id}
+      </button>
     </article>
   )
 }))
@@ -138,6 +145,8 @@ describe('notification list browsing and concrete reading', () => {
   beforeEach(async () => {
     vi.clearAllMocks()
     mocks.params = 'state=unread'
+    mocks.pathname = '/message/notice'
+    mocks.eligible = true
     mocks.get.mockReset().mockResolvedValue(page(90))
     mocks.remove.mockReset()
     mocks.confirm
@@ -149,6 +158,10 @@ describe('notification list browsing and concrete reading', () => {
       url: 'https://example.test/message/notice'
     })
     dom.window.scrollTo = mocks.scroll
+    vi.spyOn(dom.window.document, 'hasFocus').mockReturnValue(true)
+    vi.spyOn(dom.window.document, 'visibilityState', 'get').mockReturnValue(
+      'visible'
+    )
     vi.stubGlobal('window', dom.window)
     vi.stubGlobal('document', dom.window.document)
     vi.stubGlobal('React', React)
@@ -212,6 +225,165 @@ describe('notification list browsing and concrete reading', () => {
     expect(container.textContent).not.toContain('未经当前身份确认的旧正文')
     expect(mocks.confirm).not.toHaveBeenCalled()
   })
+
+  it.each(['follow', 'mention', 'system'])(
+    'normalizes the legacy %s entry and switches across all five categories without a hidden type',
+    async (entry) => {
+      mocks.pathname = '/message/' + entry
+      mocks.params = ''
+      const LegacyPage = (
+        await import('../../app/(site)/message/' + entry + '/page')
+      ).default
+      await act(async () => root!.render(<LegacyPage />))
+      const initialCategory = entry === 'system' ? 'account' : 'interaction'
+      expect(mocks.get.mock.calls.at(-1)?.[1]).toEqual({
+        state: 'unread',
+        category: initialCategory,
+        page: 1,
+        limit: 30
+      })
+      const { NOTIFICATION_CATEGORY_LABELS } = await import(
+        '~/constants/notification'
+      )
+      for (const category of NOTIFICATION_CATEGORIES) {
+        const label = NOTIFICATION_CATEGORY_LABELS[category]
+        const button = [...container.querySelectorAll('button')].find(
+          (candidate) => candidate.textContent?.startsWith(label + ' ·')
+        )!
+        await act(async () => button.click())
+        const href = mocks.replace.mock.calls.at(-1)?.[0]
+        expect(href).toBe('/message/notice?state=unread&category=' + category)
+        const next = new URL(href, 'https://example.test')
+        mocks.pathname = next.pathname
+        mocks.params = next.search.slice(1)
+        await act(async () => root!.render(<LegacyPage />))
+        expect(mocks.get).toHaveBeenCalledWith(
+          '/message/all',
+          { state: 'unread', category, page: 1, limit: 30 },
+          expect.any(Object)
+        )
+        expect(
+          [...container.querySelectorAll('button')]
+            .find((candidate) =>
+              candidate.textContent?.startsWith(label + ' ·')
+            )
+            ?.getAttribute('aria-pressed')
+        ).toBe('true')
+      }
+      await click('全部分类 · 90')
+      expect(mocks.replace.mock.calls.at(-1)?.[0]).toBe(
+        '/message/notice?state=unread'
+      )
+    }
+  )
+
+  it.each(['checking', 'unavailable'] as const)(
+    'restores the third unread page and scroll without fetching after same-identity %s recovery',
+    async (status) => {
+      mocks.get
+        .mockResolvedValueOnce(page(90))
+        .mockResolvedValueOnce(page(60))
+        .mockResolvedValueOnce(page(30))
+      await render()
+      await click('下一页')
+      await click('下一页')
+      Object.defineProperty(dom.window, 'scrollY', {
+        value: 780,
+        configurable: true
+      })
+      dom.window.dispatchEvent(new dom.window.Event('scroll'))
+      await act(async () => useUserStore.getState().setSessionStatus(status))
+      expect(container.querySelectorAll('article')).toHaveLength(0)
+      Object.defineProperty(dom.window, 'scrollY', {
+        value: 0,
+        configurable: true
+      })
+      await act(async () =>
+        useUserStore.getState().setSessionStatus('authenticated')
+      )
+      expect(container.textContent).toContain('第 3 页')
+      expect(container.querySelector('article')?.getAttribute('data-id')).toBe(
+        '30'
+      )
+      expect(mocks.scroll).toHaveBeenLastCalledWith(0, 780)
+      expect(mocks.get).toHaveBeenCalledTimes(3)
+    }
+  )
+
+  it.each(['hidden', 'blur', 'next', 'reload'])(
+    'drops queued confirmations when %s happens before dispatch',
+    async (change) => {
+      await render()
+      await click('看见 90')
+      if (change === 'hidden') {
+        vi.spyOn(dom.window.document, 'visibilityState', 'get').mockReturnValue(
+          'hidden'
+        )
+        await act(async () =>
+          dom.window.document.dispatchEvent(
+            new dom.window.Event('visibilitychange')
+          )
+        )
+        vi.spyOn(dom.window.document, 'visibilityState', 'get').mockReturnValue(
+          'visible'
+        )
+      } else if (change === 'blur') {
+        await act(async () => {
+          dom.window.dispatchEvent(new dom.window.Event('blur'))
+          dom.window.dispatchEvent(new dom.window.Event('focus'))
+        })
+      } else if (change === 'next') await click('下一页')
+      else await click('重新加载')
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 120))
+      })
+      expect(mocks.confirm).not.toHaveBeenCalled()
+    }
+  )
+
+  it('drops a queued card that becomes occluded before the request starts', async () => {
+    await render()
+    await click('看见 90')
+    mocks.eligible = false
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 120))
+    })
+    expect(mocks.confirm).not.toHaveBeenCalled()
+  })
+
+  it('allows an issued request to finish without adding old errors to a reloaded page', async () => {
+    const pending = deferred<{ id: number; outcome: string }[]>()
+    mocks.confirm.mockReturnValueOnce(pending.promise)
+    await render()
+    await click('看见 90')
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 120))
+    })
+    expect(mocks.confirm).toHaveBeenCalledTimes(1)
+    await click('重新加载')
+    await act(async () => pending.resolve([{ id: 90, outcome: 'changed' }]))
+    expect(container.textContent).not.toContain('已有新动态')
+    expect(container.textContent).not.toContain('刚刚已读')
+  })
+
+  it.each(['list', 'clear'])(
+    'recovers an explicit 401 from %s through the unified session refresh',
+    async (operation) => {
+      const { KunFetchError } = await import('~/utils/kunFetch')
+      const failure = new KunFetchError('synthetic auth failure', 'http', 401)
+      if (operation === 'list') mocks.get.mockRejectedValueOnce(failure)
+      else {
+        mocks.params = 'state=read'
+        mocks.remove.mockRejectedValueOnce(failure)
+      }
+      await render()
+      if (operation === 'clear') {
+        await click('清理当前分类已读')
+        await click('确认清理')
+      }
+      expect(mocks.refresh).toHaveBeenCalledTimes(1)
+    }
+  )
 
   it('chooses the unread entry after authentication resolves and retains that view as counts drop', async () => {
     mocks.params = ''

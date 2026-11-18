@@ -14,7 +14,8 @@ import {
 import { KunLoading } from '~/components/kun/Loading'
 import { KunPagination } from '~/components/kun/Pagination'
 import { MessageCard } from './MessageCard'
-import { kunFetchDelete, kunFetchGet } from '~/utils/kunFetch'
+import { KunFetchError, kunFetchDelete, kunFetchGet } from '~/utils/kunFetch'
+import { refreshUserSession } from '~/utils/sessionClient'
 import { useUserStore } from '~/store/userStore'
 import { useMessageStore } from '~/store/messageStore'
 import {
@@ -40,16 +41,14 @@ import type {
   MessageUnreadStatus,
   NotificationList
 } from '~/types/api/message'
-import type { MESSAGE_TYPE } from '~/constants/message'
 
 type ReadingState = 'unread' | 'all' | 'read'
 interface Props {
   initialMessages?: Message[]
   total?: number
-  type?: (typeof MESSAGE_TYPE)[number]
 }
 
-export const MessageContainer = ({ type }: Props) => {
+export const MessageContainer = (_props: Props) => {
   const session = useUserStore()
   const summary = useMessageStore((state) => state.notifications)
   const hasUnread = useMessageStore((state) => state.hasUnreadNotification)
@@ -57,7 +56,14 @@ export const MessageContainer = ({ type }: Props) => {
   const params = useSearchParams()
   const router = useRouter()
   const entryState = useRef<{ owner: string; state: ReadingState } | null>(null)
-  const requestedCategory = params.get('category')
+  const requestedCategory =
+    params.get('category') ??
+    ({
+      '/message/follow': 'interaction',
+      '/message/mention': 'interaction',
+      '/message/system': 'account'
+    }[pathname] ||
+      null)
   const category = NOTIFICATION_CATEGORIES.includes(
     requestedCategory as NotificationCategory
   )
@@ -91,10 +97,11 @@ export const MessageContainer = ({ type }: Props) => {
       : entryState.current?.owner === owner
         ? entryState.current.state
         : 'all'
-  const key = [pathname, type ?? '', category ?? '', state].join(':')
+  const key = [category ?? '', state].join(':')
   const [view, setView] = useState<NotificationView | null>(null)
   const viewRef = useRef<NotificationView | null>(null)
   const [, render] = useState(0)
+  const [readingEpoch, restartReading] = useState(0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [readErrors, setReadErrors] = useState<Record<number, string>>({})
@@ -105,11 +112,41 @@ export const MessageContainer = ({ type }: Props) => {
   const queued = useRef(
     new Map<
       number,
-      { message: Message; page: NotificationViewPage; view: NotificationView }
+      {
+        message: Message
+        page: NotificationViewPage
+        view: NotificationView
+        eligible?: () => boolean
+      }
     >()
   )
   const flushTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const { isOpen, onOpen, onClose, onOpenChange } = useDisclosure()
+  const cancelQueued = useCallback(() => {
+    if (flushTimer.current) clearTimeout(flushTimer.current)
+    flushTimer.current = null
+    if (queued.current.size) restartReading((value) => value + 1)
+    queued.current.clear()
+  }, [])
+  useEffect(() => {
+    window.addEventListener('blur', cancelQueued)
+    window.addEventListener('pagehide', cancelQueued)
+    document.addEventListener('visibilitychange', cancelQueued)
+    return () => {
+      window.removeEventListener('blur', cancelQueued)
+      window.removeEventListener('pagehide', cancelQueued)
+      document.removeEventListener('visibilitychange', cancelQueued)
+    }
+  }, [cancelQueued])
+  useEffect(() => {
+    if (!identity || pathname === '/message/notice') return
+    const next = new URLSearchParams(params.toString())
+    next.delete('type')
+    next.set('state', state)
+    if (category) next.set('category', category)
+    else next.delete('category')
+    router.replace('/message/notice?' + next.toString(), { scroll: false })
+  }, [identity, pathname, params, router, category, state])
   const current =
     view?.owner === owner && view.key === key && view === viewRef.current
       ? view.pages[view.index]
@@ -138,7 +175,6 @@ export const MessageContainer = ({ type }: Props) => {
         const response = await kunFetchGet<KunResponse<NotificationList>>(
           '/message/all',
           {
-            ...(type ? { type } : {}),
             ...(category ? { category } : {}),
             state,
             page: index + 1,
@@ -171,7 +207,13 @@ export const MessageContainer = ({ type }: Props) => {
         cache.index = index
         setView(cache)
         render((value) => value + 1)
-      } catch {
+      } catch (error) {
+        if (
+          error instanceof KunFetchError &&
+          error.status === 401 &&
+          isCurrentNotificationIdentity(identity)
+        )
+          void refreshUserSession()
         if (
           token === request.current &&
           isCurrentNotificationIdentity(identity) &&
@@ -186,7 +228,7 @@ export const MessageContainer = ({ type }: Props) => {
           setLoading(false)
       }
     },
-    [identity, type, category, state]
+    [identity, category, state]
   )
 
   useEffect(() => {
@@ -227,7 +269,7 @@ export const MessageContainer = ({ type }: Props) => {
   }, [identity, key, fetchPage])
 
   const seen = useCallback(
-    (message: Message) => {
+    (message: Message, eligible?: () => boolean) => {
       const cache = viewRef.current
       const page = cache?.pages[cache.index]
       if (
@@ -235,16 +277,35 @@ export const MessageContainer = ({ type }: Props) => {
         !isCurrentNotificationIdentity(identity) ||
         !cache ||
         !page ||
+        document.visibilityState !== 'visible' ||
+        !document.hasFocus() ||
         message.status !== 0 ||
         !message.contentVersion
       )
         return
-      queued.current.set(message.id, { message, page, view: cache })
+      queued.current.set(message.id, { message, page, view: cache, eligible })
       if (flushTimer.current) return
+      const token = request.current
       flushTimer.current = setTimeout(() => {
         flushTimer.current = null
-        const entries = [...queued.current.values()]
+        const entries = [...queued.current.values()].filter(
+          ({ eligible }) => !eligible || eligible()
+        )
         queued.current.clear()
+        const activePage = () =>
+          token === request.current &&
+          viewRef.current === cache &&
+          cache.pages[cache.index] === page
+        if (
+          !activePage() ||
+          !entries.length ||
+          !isCurrentNotificationIdentity(identity) ||
+          document.visibilityState !== 'visible' ||
+          !document.hasFocus()
+        ) {
+          restartReading((value) => value + 1)
+          return
+        }
         void confirmNotificationItems(
           identity,
           entries.map(({ message }) => ({
@@ -278,16 +339,13 @@ export const MessageContainer = ({ type }: Props) => {
                     ? '这条通知已有新动态，请重新加载后阅读'
                     : '这条通知已不可用，请重新加载'
             }
-            if (viewRef.current === cache) {
+            if (activePage()) {
               setReadErrors((previous) => ({ ...previous, ...errors }))
               render((value) => value + 1)
             }
           })
           .catch(() => {
-            if (
-              isCurrentNotificationIdentity(identity) &&
-              viewRef.current === cache
-            )
+            if (isCurrentNotificationIdentity(identity) && activePage())
               setReadErrors((previous) => ({
                 ...previous,
                 ...Object.fromEntries(
@@ -300,27 +358,31 @@ export const MessageContainer = ({ type }: Props) => {
           })
       }, 100)
     },
-    [identity]
+    [identity, readingEpoch]
   )
 
   const reload = () => {
     if (!view || !identity) return
+    cancelQueued()
     view.pages = []
     view.index = 0
     setReadErrors({})
     void fetchPage(view, 0)
   }
   const filter = (changes: { category?: string; state?: ReadingState }) => {
+    cancelQueued()
     const next = new URLSearchParams(params.toString())
+    next.delete('type')
     next.set('state', changes.state ?? state)
     if (changes.category !== undefined) {
       if (changes.category) next.set('category', changes.category)
       else next.delete('category')
-    }
-    router.replace(pathname + '?' + next.toString(), { scroll: false })
+    } else if (category) next.set('category', category)
+    router.replace('/message/notice?' + next.toString(), { scroll: false })
   }
   const turn = (index: number) => {
     if (!view || !current) return
+    cancelQueued()
     current.scrollY = window.scrollY
     if (view.pages[index]) {
       request.current++
@@ -347,7 +409,6 @@ export const MessageContainer = ({ type }: Props) => {
       >(
         '/message/read',
         {
-          ...(type ? { type } : {}),
           ...(category ? { category } : {})
         },
         { timeout: 15_000, preserveErrorStatus: true }
@@ -359,7 +420,13 @@ export const MessageContainer = ({ type }: Props) => {
       seedSessionUnread(identity, response.summary, readVersion)
       onClose()
       reload()
-    } catch {
+    } catch (error) {
+      if (
+        error instanceof KunFetchError &&
+        error.status === 401 &&
+        isCurrentNotificationIdentity(identity)
+      )
+        void refreshUserSession()
       if (isCurrentNotificationIdentity(identity))
         setError('清理已读通知失败，请稍后重试')
     } finally {
@@ -372,7 +439,9 @@ export const MessageContainer = ({ type }: Props) => {
       <p role="status">
         {session.sessionStatus === 'checking'
           ? '正在确认登录状态…'
-          : '请登录后查看通知'}
+          : session.sessionStatus === 'unavailable'
+            ? '登录状态暂不可用，恢复后继续查看通知'
+            : '请登录后查看通知'}
       </p>
     )
   return (

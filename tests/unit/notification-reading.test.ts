@@ -1,8 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { JSDOM } from 'jsdom'
 
-const mocks = vi.hoisted(() => ({ put: vi.fn(), seed: vi.fn() }))
-vi.mock('~/utils/kunFetch', () => ({ kunFetchPut: mocks.put }))
+const mocks = vi.hoisted(() => ({
+  put: vi.fn(),
+  seed: vi.fn(),
+  refresh: vi.fn()
+}))
+vi.mock('~/utils/kunFetch', async (original) => ({
+  ...(await original<typeof import('~/utils/kunFetch')>()),
+  kunFetchPut: mocks.put
+}))
+vi.mock('~/utils/sessionClient', () => ({ refreshUserSession: mocks.refresh }))
 vi.mock('~/utils/messageSync', () => ({
   beginUnreadRead: () => 5,
   seedSessionUnread: mocks.seed
@@ -60,6 +68,17 @@ afterEach(() => {
 })
 
 describe('notification reading identity and detail handoff', () => {
+  it('recovers an explicit confirmation 401 through unified session refresh and propagates failure', async () => {
+    const { KunFetchError } = await import('~/utils/kunFetch')
+    mocks.put.mockRejectedValueOnce(
+      new KunFetchError('synthetic auth failure', 'http', 401)
+    )
+    await expect(
+      reading.confirmNotificationItems(identity, [item])
+    ).rejects.toMatchObject({ status: 401 })
+    expect(mocks.refresh).toHaveBeenCalledTimes(1)
+    expect(mocks.seed).not.toHaveBeenCalled()
+  })
   it('deduplicates a list and detail confirmation before and after success without removing cached cards', async () => {
     const view = cache.notificationView(identity, 'unread')
     view.pages.push({

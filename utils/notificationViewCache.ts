@@ -36,7 +36,9 @@ subscribeNotificationRead((identity, item) => {
 
 useUserStore.subscribe((state) => {
   const next =
-    state.sessionStatus === 'authenticated' && state.sessionContext
+    state.sessionStatus !== 'guest' &&
+    state.user.uid > 0 &&
+    state.sessionContext
       ? notificationIdentityKey({
           uid: state.user.uid,
           context: state.sessionContext,

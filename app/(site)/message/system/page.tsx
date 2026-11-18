@@ -6,5 +6,5 @@ export const revalidate = 0
 export const metadata: Metadata = kunMetadata
 
 export default function Kun() {
-  return <MessageContainer type="system" />
+  return <MessageContainer />
 }

@@ -25,7 +25,10 @@ import {
   NOTIFICATION_EVENTS,
   notificationCategory
 } from '~/constants/notification'
-import { observeNotificationReading } from '~/utils/notificationVisibility'
+import {
+  isNotificationBodyVisible,
+  observeNotificationReading
+} from '~/utils/notificationVisibility'
 import {
   rememberNotificationEntry,
   notificationEntryHref,
@@ -36,7 +39,7 @@ import type { Message } from '~/types/api/message'
 interface Props {
   msg: Message
   identity?: NotificationIdentity
-  onSeen?: (message: Message) => void
+  onSeen?: (message: Message, eligible?: () => boolean) => void
   justRead?: boolean
   confirmationError?: string
 }
@@ -114,7 +117,16 @@ export const MessageCard = ({
       confirmationError
     )
       return
-    return observeNotificationReading(body.current, () => onSeen(msg))
+    let active = true
+    const eligible = () =>
+      active && Boolean(body.current && isNotificationBodyVisible(body.current))
+    const stop = observeNotificationReading(body.current, () =>
+      onSeen(msg, eligible)
+    )
+    return () => {
+      active = false
+      stop()
+    }
   }, [msg, identity, onSeen, canRead, confirmationError])
 
   return (

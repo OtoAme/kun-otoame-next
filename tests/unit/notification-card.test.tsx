@@ -8,10 +8,12 @@ const mocks = vi.hoisted(() => ({
   observe: vi.fn(),
   stop: vi.fn(),
   remember: vi.fn(),
-  seen: vi.fn()
+  seen: vi.fn(),
+  visible: vi.fn()
 }))
 vi.mock('~/utils/notificationVisibility', () => ({
-  observeNotificationReading: mocks.observe
+  observeNotificationReading: mocks.observe,
+  isNotificationBodyVisible: mocks.visible
 }))
 vi.mock('~/utils/notificationReading', () => ({
   notificationEntryHref: (target: string, token: string) =>
@@ -63,6 +65,7 @@ const message: Message = {
 beforeEach(async () => {
   vi.clearAllMocks()
   mocks.observe.mockReturnValue(mocks.stop)
+  mocks.visible.mockReturnValue(true)
   dom = new JSDOM('<div id="root"></div>', {
     url: 'https://example.test/message/notice'
   })
@@ -105,9 +108,18 @@ describe('notification card reading controls', () => {
       container.querySelector('[data-testid="message-content"]')
     )
     mocks.observe.mock.calls[0][1]()
-    expect(mocks.seen).toHaveBeenCalledExactlyOnceWith(long)
+    expect(mocks.seen).toHaveBeenCalledExactlyOnceWith(
+      long,
+      expect.any(Function)
+    )
+    const eligible = mocks.seen.mock.calls[0][1]
+    expect(eligible()).toBe(true)
+    mocks.visible.mockReturnValue(false)
+    expect(eligible()).toBe(false)
+    mocks.visible.mockReturnValue(true)
     await act(async () => button.click())
     expect(mocks.stop).toHaveBeenCalledTimes(1)
+    expect(eligible()).toBe(false)
   })
 
   it('does not retry already-read cards or failed confirmations without an explicit reload', async () => {

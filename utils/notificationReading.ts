@@ -1,6 +1,7 @@
 import { useUserStore } from '~/store/userStore'
 import { beginUnreadRead, seedSessionUnread } from '~/utils/messageSync'
-import { kunFetchPut } from '~/utils/kunFetch'
+import { KunFetchError, kunFetchPut } from '~/utils/kunFetch'
+import { refreshUserSession } from '~/utils/sessionClient'
 import { isNotificationVersion } from '~/constants/notification'
 import {
   parseWorkspaceIssueNotification,
@@ -74,20 +75,30 @@ export const confirmNotificationItems = async (
         ...(target === undefined ? {} : { target })
       },
       { timeout: 15_000, preserveErrorStatus: true }
-    ).then((response) => {
-      if (
-        !response ||
-        typeof response === 'string' ||
-        !Array.isArray(response.results) ||
-        !response.summary
-      )
-        throw new Error(
-          typeof response === 'string' ? response : '阅读确认暂不可用，请重试'
+    )
+      .catch((error: unknown) => {
+        if (
+          error instanceof KunFetchError &&
+          error.status === 401 &&
+          isCurrentNotificationIdentity(identity)
         )
-      if (isCurrentNotificationIdentity(identity))
-        seedSessionUnread(identity, response.summary, readVersion)
-      return response
-    })
+          void refreshUserSession()
+        throw error
+      })
+      .then((response) => {
+        if (
+          !response ||
+          typeof response === 'string' ||
+          !Array.isArray(response.results) ||
+          !response.summary
+        )
+          throw new Error(
+            typeof response === 'string' ? response : '阅读确认暂不可用，请重试'
+          )
+        if (isCurrentNotificationIdentity(identity))
+          seedSessionUnread(identity, response.summary, readVersion)
+        return response
+      })
     for (const item of batch) {
       const key = `${prefix}:${item.id}:${item.version}`
       const result = request.then((response) => {
@@ -266,7 +277,7 @@ export const resolveNotificationEntry = async (
 
 useUserStore.subscribe((state, previous) => {
   if (
-    state.sessionStatus !== previous.sessionStatus ||
+    state.sessionStatus === 'guest' ||
     state.user.uid !== previous.user.uid ||
     state.sessionContext !== previous.sessionContext ||
     state.sessionGeneration !== previous.sessionGeneration
