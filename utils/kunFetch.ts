@@ -255,9 +255,10 @@ export const kunFetchGet = async <T>(
 
 export const kunFetchPost = async <T>(
   url: string,
-  body?: Record<string, unknown>
+  body?: Record<string, unknown>,
+  options?: Pick<FetchOptions, 'timeout' | 'signal' | 'preserveErrorStatus'>
 ): Promise<T> => {
-  return kunFetchRequest<T>(url, 'POST', { body })
+  return kunFetchRequest<T>(url, 'POST', { body, ...options })
 }
 
 export const kunFetchPut = async <T>(
@@ -280,9 +281,10 @@ export const kunFetchPatch = async <T>(
 
 export const kunFetchDelete = async <T>(
   url: string,
-  query?: Record<string, string | number>
+  query?: Record<string, string | number>,
+  options?: Pick<FetchOptions, 'timeout' | 'signal' | 'preserveErrorStatus'>
 ): Promise<T> => {
-  return kunFetchRequest<T>(url, 'DELETE', { query })
+  return kunFetchRequest<T>(url, 'DELETE', { query, ...options })
 }
 
 export const kunFetchDeleteBody = async <T>(

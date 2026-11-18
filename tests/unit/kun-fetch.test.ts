@@ -230,4 +230,36 @@ describe('kunFetchGet', () => {
     await vi.advanceTimersByTimeAsync(15_000)
     await request
   })
+  it.each(['kunFetchPost', 'kunFetchDelete'] as const)('%s preserves opt-in status and default string compatibility', async (method) => {
+    const fetch = vi.fn().mockImplementation(() => Promise.resolve(Response.json('synthetic denied', { status: 401 })))
+    vi.stubGlobal('fetch', fetch)
+    const tools = await import('~/utils/kunFetch')
+    await expect(tools[method]('/message/conversation/5', { value: 1 })).resolves.toBe('synthetic denied')
+    await expect(tools[method]('/message/conversation/5', { value: 1 }, { preserveErrorStatus: true })).rejects.toMatchObject({ kind: 'http', status: 401, body: 'synthetic denied' })
+  })
+
+  it.each(['kunFetchPost', 'kunFetchDelete'] as const)('%s times out response body reads and respects caller cancellation', async (method) => {
+    vi.stubGlobal('fetch', vi.fn().mockImplementation(() => Promise.resolve(new Response(new ReadableStream({ start() {} })))))
+    const tools = await import('~/utils/kunFetch')
+    const timeout = expect(tools[method]('/message/conversation/5', { value: 1 }, { timeout: 100, preserveErrorStatus: true })).rejects.toMatchObject({ kind: 'timeout', status: 200 })
+    await vi.advanceTimersByTimeAsync(100)
+    await timeout
+    const controller = new AbortController()
+    const cancelled = expect(tools[method]('/message/conversation/5', { value: 1 }, { timeout: 100, signal: controller.signal, preserveErrorStatus: true })).rejects.toMatchObject({ kind: 'aborted' })
+    controller.abort()
+    await cancelled
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it('bounds private chat FormData uploads and preserves explicit authentication failures', async () => {
+    const fetch = vi.fn().mockResolvedValueOnce(Response.json('synthetic expired', { status: 401 }))
+      .mockResolvedValueOnce(new Response(new ReadableStream({ start() {} })))
+    vi.stubGlobal('fetch', fetch)
+    const { kunFetchFormData } = await import('~/utils/kunFetch')
+    await expect(kunFetchFormData('/message/conversation/5/image', new FormData(), 100, { preserveErrorStatus: true })).rejects.toMatchObject({ status: 401 })
+    const timeout = expect(kunFetchFormData('/message/conversation/5/image', new FormData(), 100, { preserveErrorStatus: true })).rejects.toMatchObject({ kind: 'timeout' })
+    await vi.advanceTimersByTimeAsync(100)
+    await timeout
+  })
+
 })
