@@ -6,6 +6,8 @@ import {
   requireAvailableIdentity
 } from '~/app/api/utils/sessionIdentity'
 import { preferenceSaveSchema } from '~/validations/preferences'
+import { NOTIFICATION_PREFERENCE_SCHEMA } from '~/constants/notification'
+import type { PreferenceSnapshot } from '~/types/api/preferences'
 import {
   PreferenceError,
   readPreferenceSnapshot,
@@ -28,6 +30,29 @@ export const preferenceRoute = async (
     if (!payload)
       return respond({ code: 'SESSION_INVALID', message: '请先登录' }, 401)
     const context = getSessionContext(payload)
+    const schemas = req.nextUrl.searchParams.getAll('schema')
+    const notifications =
+      schemas.length === 1 && schemas[0] === NOTIFICATION_PREFERENCE_SCHEMA
+    const refreshRequired = () =>
+      respond(
+        {
+          code: 'PREFERENCE_SCHEMA_REQUIRED',
+          message: '设置页面版本已变化，请刷新后重新确认草稿'
+        },
+        409
+      )
+    if (schemas.length && !notifications) return refreshRequired()
+    const project = (snapshot: PreferenceSnapshot): PreferenceSnapshot =>
+      notifications
+        ? snapshot
+        : {
+            ...snapshot,
+            items: Object.fromEntries(
+              Object.entries(snapshot.items).filter(
+                ([key]) => !key.startsWith('notification:')
+              )
+            )
+          }
     if (!save) {
       const tagIds = req.nextUrl.searchParams.getAll('tagId')
       if (
@@ -40,17 +65,28 @@ export const preferenceRoute = async (
         )
       }
       return respond(
-        await readPreferenceSnapshot(
-          prisma,
-          payload.uid,
-          context,
-          tagIds.map((tagId) => `blocked-tag:${tagId}`)
+        project(
+          await readPreferenceSnapshot(
+            prisma,
+            payload.uid,
+            context,
+            tagIds.map((tagId) => `blocked-tag:${tagId}`)
+          )
         )
       )
     }
-    const input = preferenceSaveSchema.safeParse(
-      await req.json().catch(() => null)
+    const body = await req.json().catch(() => null)
+    if (
+      !notifications &&
+      Array.isArray(body?.changes) &&
+      body.changes.some(
+        (change: { key?: unknown } | null) =>
+          typeof change?.key === 'string' &&
+          change.key.startsWith('notification:')
+      )
     )
+      return refreshRequired()
+    const input = preferenceSaveSchema.safeParse(body)
     if (
       !input.success ||
       (allowedPrefix &&
@@ -78,7 +114,9 @@ export const preferenceRoute = async (
       context,
       input.data.changes
     )
-    return respond(result, 'code' in result ? 409 : 200)
+    return 'code' in result
+      ? respond({ ...result, snapshot: project(result.snapshot) }, 409)
+      : respond(project(result))
   } catch (error) {
     if (error instanceof PreferenceError)
       return respond({ code: error.code, message: error.message }, error.status)

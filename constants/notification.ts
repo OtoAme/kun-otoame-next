@@ -7,6 +7,7 @@ export const NOTIFICATION_CATEGORIES = [
 ] as const
 
 export type NotificationCategory = (typeof NOTIFICATION_CATEGORIES)[number]
+export const NOTIFICATION_PREFERENCE_SCHEMA = 'notifications-v1'
 
 export const NOTIFICATION_CATEGORY_LABELS: Record<
   NotificationCategory,

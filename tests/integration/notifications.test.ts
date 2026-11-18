@@ -33,6 +33,7 @@ import {
 } from '~/lib/accountPreferences/service'
 import { acceptHelpAnswer, createHelpAnswer } from '~/app/api/help/service'
 import { HELP_ANSWER_REWARD } from '~/constants/help'
+import { handleFeedback } from '~/app/api/admin/feedback/service'
 
 const databaseUrl = process.env.KUN_NOTIFICATIONS_TEST_DATABASE_URL
 const nonce = process.env.KUN_NOTIFICATIONS_TEST_NONCE
@@ -229,6 +230,109 @@ describe.skipIf(!databaseUrl)(
       expect(encoded).toContain('user_message_recipient_id_status_id_idx')
     })
 
+    it('claims only unaddressed legacy feedback once under real concurrent handling', async () => {
+      const author = await account()
+      const administrator = await account()
+      const record = await database.user_message.create({
+        data: {
+          type: 'feedback',
+          sender_id: author.id,
+          content: '合成反馈正文',
+          link: '/legacy-feedback'
+        }
+      })
+      const bothRead = deferred<void>()
+      let readers = 0
+      const racing = database.$extends({
+        query: {
+          user_message: {
+            async findUnique({ args, query }) {
+              const result = await query(args)
+              if (args.where.id === record.id && result?.status === 0) {
+                if (++readers === 2) bothRead.resolve()
+                await bothRead.promise
+              }
+              return result
+            }
+          }
+        }
+      })
+      shared.database = racing as unknown as PrismaClient
+      let results: unknown[]
+      try {
+        results = await Promise.all([
+          handleFeedback(
+            { messageId: record.id, content: '第一次合成处理' },
+            administrator.id
+          ),
+          handleFeedback(
+            { messageId: record.id, content: '第二次合成处理' },
+            administrator.id
+          )
+        ])
+      } finally {
+        shared.database = database
+      }
+      expect(readers).toBe(2)
+      expect(
+        results.filter((result) => typeof result === 'object')
+      ).toHaveLength(1)
+      expect(
+        results.filter((result) => result === '该反馈已被处理')
+      ).toHaveLength(1)
+      expect(
+        await database.user_message.count({
+          where: { recipient_id: author.id, event_type: 'feedback-result' }
+        })
+      ).toBe(1)
+      const foreignRecords = await createNotificationBatch(
+        [
+          notice(author.id, { content: '普通站务通知' }),
+          notice(author.id, {
+            type: 'feedback',
+            event_type: 'help-resource',
+            content: '有收件人的普通通知'
+          })
+        ],
+        database
+      )
+      const before = await summary(author.id)
+      for (const result of foreignRecords)
+        expect(
+          await handleFeedback(
+            { messageId: result.message!.id, content: '不得确认' },
+            administrator.id
+          )
+        ).toBe('未找到该反馈')
+      expect(
+        await handleFeedback(
+          { messageId: 2147483647, content: '不存在' },
+          administrator.id
+        )
+      ).toBe('未找到该反馈')
+      expect(await summary(author.id)).toEqual(before)
+      expect(
+        await database.user_message.count({
+          where: {
+            id: { in: foreignRecords.map((result) => result.message!.id) },
+            status: 0
+          }
+        })
+      ).toBe(2)
+      expect(
+        await database.user_message.findUniqueOrThrow({
+          where: { id: record.id }
+        })
+      ).toMatchObject({ status: 1, recipient_id: null, type: 'feedback' })
+      evidence.feedbackClaims = {
+        simultaneousReads: readers,
+        processed: 1,
+        resultNotices: 1,
+        foreignNotificationsUnchanged: 2,
+        sequenceUnchangedOnRejection: before.sequence
+      }
+    })
+
     it('uses the existing global and item versions for subscription conflicts and independent saves', async () => {
       const user = await account()
       const initial = await readPreferenceSnapshot(
@@ -240,6 +344,7 @@ describe.skipIf(!databaseUrl)(
         value: true,
         version: 0
       })
+
       const first = await saveAccountPreferences(
         database,
         user.id,
@@ -314,12 +419,10 @@ describe.skipIf(!databaseUrl)(
         categories: { account: { unread: 90, sequence: '90' } }
       })
       await readMessage(user.id, {
-        items: first.messages
-          .slice(0, 6)
-          .map((message) => ({
-            id: message.id,
-            version: message.contentVersion!
-          }))
+        items: first.messages.slice(0, 6).map((message) => ({
+          id: message.id,
+          version: message.contentVersion!
+        }))
       })
       expect(await summary(user.id)).toMatchObject({
         unread: 84,
