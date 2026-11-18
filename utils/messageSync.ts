@@ -113,11 +113,13 @@ export const createMessageSyncScheduler = <Result = UnreadSummary>(
         errorKind: null
       }
       options.onSuccess(result)
-      const requestedInterval = options.nextIntervalMs?.(result) ?? interval
-      const nextInterval = Number.isFinite(requestedInterval)
-        ? Math.min(300_000, Math.max(100, requestedInterval))
-        : interval
-      nextPollAt = Date.now() + jitter(nextInterval)
+      const requestedInterval = options.nextIntervalMs?.(result)
+      const nextInterval = requestedInterval !== undefined && Number.isFinite(requestedInterval)
+        ? requestedInterval : interval
+      const nextDelay = options.nextIntervalMs
+        ? Math.min(300_000, Math.max(100, jitter(nextInterval)))
+        : jitter(interval)
+      nextPollAt = Date.now() + nextDelay
     } catch (error) {
       if (current.revision !== revision || disposed) return
       if (error instanceof KunFetchError && error.kind === 'aborted') {

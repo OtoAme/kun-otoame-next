@@ -391,3 +391,40 @@ describe('dynamic message synchronization intervals', () => {
     scheduler.dispose()
   })
 })
+
+
+describe('dynamic interval boundaries', () => {
+  beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(0) })
+  afterEach(() => vi.useRealTimers())
+
+  it.each([[100, 0, 100], [300_000, 1, 300_000]])(
+    'keeps the final jittered delay within bounds for %s',
+    async (interval, random, expected) => {
+      const request = vi.fn().mockResolvedValue(unread)
+      const scheduler = createMessageSyncScheduler({
+        request, onSuccess: vi.fn(), nextIntervalMs: () => interval, random: () => random
+      })
+      scheduler.setIdentity(identity)
+      scheduler.setEnabled(true)
+      await vi.advanceTimersByTimeAsync(expected - 1)
+      expect(request).toHaveBeenCalledTimes(1)
+      await vi.advanceTimersByTimeAsync(1)
+      expect(request).toHaveBeenCalledTimes(2)
+      scheduler.dispose()
+    }
+  )
+
+  it('preserves a fixed interval outside the optional dynamic bounds', async () => {
+    const request = vi.fn().mockResolvedValue(unread)
+    const scheduler = createMessageSyncScheduler({
+      request, onSuccess: vi.fn(), intervalMs: 400_000, random: () => 0.5
+    })
+    scheduler.setIdentity(identity)
+    scheduler.setEnabled(true)
+    await vi.advanceTimersByTimeAsync(399_999)
+    expect(request).toHaveBeenCalledTimes(1)
+    await vi.advanceTimersByTimeAsync(1)
+    expect(request).toHaveBeenCalledTimes(2)
+    scheduler.dispose()
+  })
+})
