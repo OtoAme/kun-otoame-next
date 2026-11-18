@@ -288,7 +288,8 @@ export const MessageContainer = (_props: Props) => {
       const token = request.current
       flushTimer.current = setTimeout(() => {
         flushTimer.current = null
-        const entries = [...queued.current.values()].filter(
+        const candidates = [...queued.current.values()]
+        const entries = candidates.filter(
           ({ eligible }) => !eligible || eligible()
         )
         queued.current.clear()
@@ -298,7 +299,6 @@ export const MessageContainer = (_props: Props) => {
           cache.pages[cache.index] === page
         if (
           !activePage() ||
-          !entries.length ||
           !isCurrentNotificationIdentity(identity) ||
           document.visibilityState !== 'visible' ||
           !document.hasFocus()
@@ -306,6 +306,9 @@ export const MessageContainer = (_props: Props) => {
           restartReading((value) => value + 1)
           return
         }
+        if (entries.length !== candidates.length)
+          restartReading((value) => value + 1)
+        if (!entries.length) return
         void confirmNotificationItems(
           identity,
           entries.map(({ message }) => ({
