@@ -10,7 +10,7 @@ export const getPatchVisibilityWhere = async (
   const blockedTagIds = await getBlockedTagIds(req)
 
   return {
-    ...getNSFWHeader(req),
+    ...(await getNSFWHeader(req)),
     ...buildBlockedTagWhere(blockedTagIds)
   }
 }

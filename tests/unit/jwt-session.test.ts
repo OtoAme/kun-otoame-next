@@ -87,7 +87,8 @@ import {
   deleteOtherKunSessions,
   generateKunToken,
   updateKunSessions,
-  verifyKunToken
+  verifyKunToken,
+  verifyKunTokenResult
 } from '~/app/api/utils/jwt'
 
 const prefixed = (key: string) => `kun:touchgal:${key}`
@@ -106,6 +107,21 @@ describe('JWT Redis sessions', () => {
     process.env.JWT_SECRET = 'unit-test-secret'
     process.env.JWT_ISS = 'unit-test-issuer'
     process.env.JWT_AUD = 'unit-test-audience'
+  })
+
+  it('distinguishes unavailable session storage from invalid credentials', async () => {
+    const token = await generateKunToken(20, 'isolated', 1, '30d')
+    redisState.redis.get.mockRejectedValueOnce(new Error('offline'))
+    await expect(verifyKunTokenResult(token)).resolves.toEqual({
+      status: 'unavailable'
+    })
+    await expect(verifyKunTokenResult('malformed')).resolves.toEqual({
+      status: 'guest'
+    })
+    await expect(verifyKunTokenResult(token)).resolves.toMatchObject({
+      status: 'authenticated',
+      payload: { uid: 20 }
+    })
   })
 
   it('keeps multiple devices valid for the same user', async () => {

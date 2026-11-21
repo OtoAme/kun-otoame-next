@@ -25,7 +25,7 @@ export const GET = async (req: NextRequest) => {
     return privateJson('权限不足')
   }
 
-  const nsfwEnable = getNSFWHeader(req)
+  const nsfwEnable = await getNSFWHeader(req)
 
   const res = await getPatchResourceApply(input, nsfwEnable, {
     uid: payload.uid,

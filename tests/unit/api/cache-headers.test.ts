@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   getAnonymousApiCacheControl,
+  withAnonymousApiCache,
   isPersonalizedApiRequest
 } from '~/app/api/utils/cacheHeaders'
 
@@ -12,6 +13,17 @@ const requestWithCookie = (cookie: string) =>
   }) as Request
 
 describe('API cache headers', () => {
+  it('never shared-caches cookie cleanup responses', () => {
+    const response = new Response('safe', {
+      headers: { 'Set-Cookie': 'old=; Path=/; Max-Age=0' }
+    })
+    expect(
+      withAnonymousApiCache(response, requestWithCookie('')).headers.get(
+        'Cache-Control'
+      )
+    ).toBe('private, no-store')
+  })
+
   it('marks requests without personalization cookies as public-cacheable', () => {
     const req = requestWithCookie('')
 

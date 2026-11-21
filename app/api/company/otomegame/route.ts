@@ -29,7 +29,7 @@ export const GET = async (req: NextRequest) => {
   return getCachedAnonymousJsonResponse(req, 'company_otomegame', async () => {
     const blockedTagIds = await getBlockedTagIds(req)
     const visibilityWhere = {
-      ...getNSFWHeader(req),
+      ...(await getNSFWHeader(req)),
       ...buildBlockedTagWhere(blockedTagIds)
     }
 

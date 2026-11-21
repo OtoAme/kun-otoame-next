@@ -10,7 +10,8 @@ const fetchMock = vi.hoisted(() => ({
   kunFetchGet: vi.fn()
 }))
 
-vi.mock('~/utils/kunFetch', () => ({
+vi.mock('~/utils/kunFetch', async (original) => ({
+  ...(await original<typeof import('~/utils/kunFetch')>()),
   kunFetchGet: fetchMock.kunFetchGet
 }))
 
@@ -146,9 +147,17 @@ describe('ConversationList realtime refresh', () => {
 
     vi.stubGlobal('window', dom.window)
     vi.stubGlobal('document', dom.window.document)
+    vi.stubGlobal('navigator', dom.window.navigator)
     vi.stubGlobal('React', React)
     vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
 
+    const { useUserStore } = await import('~/store/userStore')
+    useUserStore.setState({
+      user: { ...useUserStore.getState().user, uid: 7 },
+      sessionStatus: 'authenticated',
+      sessionContext: 'ctx-a',
+      sessionGeneration: 1
+    })
     const { useMessageStore } = await import('~/store/messageStore')
     useMessageStore.setState(
       {
@@ -175,7 +184,8 @@ describe('ConversationList realtime refresh', () => {
       )
     })
 
-    return { container: container!, useMessageStore }
+    await act(() => vi.advanceTimersByTimeAsync(0))
+    return { container: container!, useMessageStore, useUserStore }
   }
 
   beforeEach(() => {
@@ -213,7 +223,12 @@ describe('ConversationList realtime refresh', () => {
       {
         page: 1,
         limit: 30
-      }
+      },
+      expect.objectContaining({
+        timeout: 15_000,
+        preserveErrorStatus: true,
+        signal: expect.anything()
+      })
     )
     expect(container.textContent).toContain('hello')
     expect(container.textContent).not.toContain('正在获取会话列表...')
@@ -236,7 +251,12 @@ describe('ConversationList realtime refresh', () => {
       {
         page: 1,
         limit: 30
-      }
+      },
+      expect.objectContaining({
+        timeout: 15_000,
+        preserveErrorStatus: true,
+        signal: expect.anything()
+      })
     )
     expect(container.textContent).toContain('fresh preview')
     expect(container.textContent).not.toContain('hello')
@@ -251,7 +271,7 @@ describe('ConversationList realtime refresh', () => {
     })
 
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(15_000)
+      await vi.advanceTimersByTimeAsync(30_000)
     })
 
     expect(fetchMock.kunFetchGet).toHaveBeenCalledWith(
@@ -259,7 +279,12 @@ describe('ConversationList realtime refresh', () => {
       {
         page: 1,
         limit: 30
-      }
+      },
+      expect.objectContaining({
+        timeout: 15_000,
+        preserveErrorStatus: true,
+        signal: expect.anything()
+      })
     )
     expect(container.textContent).toContain('fresh')
     expect(
@@ -277,7 +302,7 @@ describe('ConversationList realtime refresh', () => {
     })
 
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(15_000)
+      await vi.advanceTimersByTimeAsync(30_000)
     })
 
     expect(useMessageStore.getState().hasUnreadConversation).toBe(true)
@@ -293,7 +318,7 @@ describe('ConversationList realtime refresh', () => {
     })
 
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(15_000)
+      await vi.advanceTimersByTimeAsync(30_000)
     })
 
     expect(
@@ -339,6 +364,7 @@ describe('ConversationList realtime refresh', () => {
       await Promise.resolve()
     })
 
+    await act(() => vi.advanceTimersByTimeAsync(0))
     expect(container.textContent).toContain('page two')
 
     await act(async () => {
@@ -390,7 +416,7 @@ describe('ConversationList realtime refresh', () => {
     expect(container.textContent).toContain('正在获取会话列表...')
 
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(15_000)
+      await vi.advanceTimersByTimeAsync(30_000)
     })
 
     expect(fetchMock.kunFetchGet).toHaveBeenCalledTimes(1)
@@ -426,5 +452,50 @@ describe('ConversationList realtime refresh', () => {
     expect(card?.className).toContain(
       'border-[var(--kun-chat-list-card-border)]'
     )
+  })
+  it('does not bypass a rate limit on focus, session checks, or pagination', async () => {
+    const { KunFetchError } = await import('~/utils/kunFetch')
+    fetchMock.kunFetchGet.mockRejectedValueOnce(
+      new KunFetchError('rate', 'http', 429, 120_000)
+    )
+    const { container, useUserStore } = await renderList(false, { total: 61 })
+    await act(() => {
+      useUserStore.setState({ sessionStatus: 'checking' })
+      window.dispatchEvent(new dom!.window.Event('focus'))
+    })
+    await act(() => {
+      useUserStore.setState({ sessionStatus: 'authenticated' })
+    })
+    await act(() => {
+      container
+        .querySelector<HTMLButtonElement>('[data-testid="next-page"]')
+        ?.click()
+    })
+    await act(() => vi.advanceTimersByTimeAsync(119_999))
+    expect(fetchMock.kunFetchGet).toHaveBeenCalledTimes(1)
+    await act(() => vi.advanceTimersByTimeAsync(1))
+    expect(fetchMock.kunFetchGet).toHaveBeenCalledTimes(2)
+  })
+
+  it('discards results and late errors after a same-account new session', async () => {
+    let resolve!: (value: unknown) => void
+    fetchMock.kunFetchGet.mockImplementationOnce(
+      () =>
+        new Promise((done) => {
+          resolve = done
+        })
+    )
+    const { container, useUserStore } = await renderList()
+    await act(() => {
+      useUserStore.setState({ sessionContext: 'ctx-b', sessionGeneration: 2 })
+    })
+    await act(() => vi.advanceTimersByTimeAsync(0))
+    await act(() =>
+      resolve({
+        conversations: [conversation(5, 'old session preview')],
+        total: 1
+      })
+    )
+    expect(container.textContent).not.toContain('old session preview')
   })
 })
