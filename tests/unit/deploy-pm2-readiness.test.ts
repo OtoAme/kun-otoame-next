@@ -126,10 +126,11 @@ describe('PM2 deployment readiness', () => {
 
   it('rejects a release whose next cannot resolve react-dom', () => {
     const runtime = createRuntime()
-    rmSync(join(runtime, 'node_modules/react-dom'), {
-      recursive: true,
-      force: true
-    })
+    // Block ancestor node_modules from satisfying this unresolvable peer.
+    writeFileSync(
+      join(runtime, 'node_modules/react-dom/package.json'),
+      JSON.stringify({ exports: {} })
+    )
 
     expect(() => validateStandaloneRuntime(runtime)).toThrow(
       'cannot resolve react-dom/package.json from node_modules/next'
@@ -190,6 +191,135 @@ describe('PM2 deployment readiness', () => {
     expect(harness.dependencies.smoke).toHaveBeenCalledOnce()
     expect(harness.calls.filter((args) => args[0] === 'start')).toHaveLength(1)
   })
+
+  it('allows three online instances to become HTTP-ready after thirty seconds with the default budget', async () => {
+    const runtime = createRuntime()
+    const harness = createPm2Harness(runtime, { healthyAtMs: 35_000 })
+    await restartAndVerifyProduction({
+      standaloneDir: runtime,
+      env: { NODE_ENV: 'production' },
+      dependencies: harness.dependencies
+    })
+
+    expect(harness.dependencies.now()).toBe(35_000)
+    expect(harness.smokeAttempts.length).toBeGreaterThan(1)
+    expect(
+      harness.smokeAttempts.every(
+        (attempt) =>
+          attempt.url.href === 'http://127.0.0.1:3000/' &&
+          attempt.timeoutMs > 0 &&
+          attempt.timeoutMs <= 5_000
+      )
+    ).toBe(true)
+    expect(
+      harness.processes.filter((entry) => entry.pm2_env.status === 'online')
+    ).toHaveLength(3)
+    expect(harness.calls.some((args) => args[0] === 'stop')).toBe(false)
+  })
+
+  it('honors an explicit shorter readiness budget and stops a slow candidate', async () => {
+    const runtime = createRuntime()
+    const harness = createPm2Harness(runtime, { healthyAtMs: 35_000 })
+    await expect(
+      restartAndVerifyProduction({
+        standaloneDir: runtime,
+        env: {
+          NODE_ENV: 'production',
+          KUN_DEPLOY_READINESS_TIMEOUT_MS: '5000'
+        },
+        dependencies: harness.dependencies
+      })
+    ).rejects.toMatchObject({
+      stopConfirmed: true,
+      message: expect.stringContaining('5000 ms')
+    })
+
+    expect(harness.dependencies.now()).toBe(5_000)
+    expect(
+      harness.processes.every(
+        (entry) => entry.pm2_env.status === 'stopped' && entry.pid === 0
+      )
+    ).toBe(true)
+    expect(harness.calls.filter((args) => args[0] === 'stop')).toHaveLength(3)
+    expect(harness.calls.filter((args) => args[0] === 'start')).toHaveLength(1)
+  })
+
+  it('stops an HTTP-unhealthy candidate at the default 120-second boundary', async () => {
+    const runtime = createRuntime()
+    const harness = createPm2Harness(runtime, { healthyAtMs: Infinity })
+    await expect(
+      restartAndVerifyProduction({
+        standaloneDir: runtime,
+        env: { NODE_ENV: 'production' },
+        dependencies: harness.dependencies
+      })
+    ).rejects.toMatchObject({
+      stopConfirmed: true,
+      message: expect.stringContaining('120000 ms')
+    })
+
+    expect(harness.dependencies.now()).toBe(120_000)
+    expect(
+      harness.smokeAttempts.every(
+        (attempt) =>
+          attempt.startedAt < 120_000 &&
+          attempt.timeoutMs <= 5_000 &&
+          attempt.startedAt + attempt.timeoutMs <= 120_000
+      )
+    ).toBe(true)
+    expect(harness.smokeAttempts.at(-1)?.timeoutMs).toBe(4_500)
+    expect(
+      harness.processes.every(
+        (entry) => entry.pm2_env.status === 'stopped' && entry.pid === 0
+      )
+    ).toBe(true)
+    expect(harness.calls.filter((args) => args[0] === 'stop')).toHaveLength(3)
+    expect(harness.calls.filter((args) => args[0] === 'start')).toHaveLength(1)
+  })
+
+  it('does not start an HTTP probe when PM2 inspection consumes the remaining budget', async () => {
+    const runtime = createRuntime()
+    const harness = createPm2Harness(runtime, {
+      readinessListDelayMs: 5_000
+    })
+    await expect(
+      restartAndVerifyProduction({
+        standaloneDir: runtime,
+        env: {
+          NODE_ENV: 'production',
+          KUN_DEPLOY_READINESS_TIMEOUT_MS: '5000'
+        },
+        dependencies: harness.dependencies
+      })
+    ).rejects.toMatchObject({
+      stopConfirmed: true,
+      message: expect.stringContaining('5000 ms')
+    })
+
+    expect(harness.dependencies.smoke).not.toHaveBeenCalled()
+    expect(harness.dependencies.now()).toBe(5_000)
+    expect(harness.calls.filter((args) => args[0] === 'stop')).toHaveLength(3)
+    expect(harness.calls.filter((args) => args[0] === 'start')).toHaveLength(1)
+  })
+
+  it.each(['4999', '120001', 'Infinity', '5000.5', 'invalid'])(
+    'rejects invalid readiness budget %s before touching PM2',
+    async (timeout) => {
+      const runtime = createRuntime()
+      const harness = createPm2Harness(runtime)
+      await expect(
+        restartAndVerifyProduction({
+          standaloneDir: runtime,
+          env: {
+            NODE_ENV: 'production',
+            KUN_DEPLOY_READINESS_TIMEOUT_MS: timeout
+          },
+          dependencies: harness.dependencies
+        })
+      ).rejects.toThrow('integer from 5000 to 120000')
+      expect(harness.calls).toHaveLength(0)
+    }
+  )
 
   it.each(['partial-start', 'http-failure', 'signal'] as const)(
     'stops only the failed candidate after %s and never starts another release',
@@ -349,18 +479,35 @@ const createPm2Harness = (
   runtime: string,
   options: {
     mode?: 'partial-start' | 'http-failure' | 'signal'
+    healthyAtMs?: number
+    readinessListDelayMs?: number
     stopFails?: boolean
     stopNoEffect?: boolean
   } = {}
 ) => {
   const processes = makeProcesses(runtime, 0)
   const calls: string[][] = []
+  const smokeAttempts: Array<{
+    url: URL
+    timeoutMs: number
+    startedAt: number
+  }> = []
   let now = 0
+  let readinessListDelayed = false
   const dependencies = {
     run: vi.fn((_command: string, args: string[]) => {
       calls.push(args)
-      if (args[0] === 'jlist')
+      if (args[0] === 'jlist') {
+        if (
+          !readinessListDelayed &&
+          options.readinessListDelayMs &&
+          processes.some((entry) => entry.pm2_env.status === 'online')
+        ) {
+          now += options.readinessListDelayMs
+          readinessListDelayed = true
+        }
         return { ...successResult, stdout: JSON.stringify(processes) }
+      }
       if (args[0] === 'start') {
         processes.push(
           ...makeProcesses(runtime, options.mode === 'partial-start' ? 1 : 3)
@@ -387,7 +534,13 @@ const createPm2Harness = (
       }
       return successResult
     }),
-    smoke: vi.fn(async () => {
+    smoke: vi.fn(async (url: URL, timeoutMs: number) => {
+      smokeAttempts.push({ url, timeoutMs, startedAt: now })
+      if (options.healthyAtMs !== undefined && now < options.healthyAtMs) {
+        now += Math.min(timeoutMs, options.healthyAtMs - now)
+        if (now < options.healthyAtMs)
+          throw new Error('HTTP smoke request timed out.')
+      }
       if (options.mode === 'signal') process.emit('SIGINT')
       return options.mode === 'http-failure' ? 503 : 200
     }),
@@ -398,5 +551,5 @@ const createPm2Harness = (
       processes.some((entry) => entry.pid === pid),
     now: () => now
   }
-  return { processes, calls, dependencies }
+  return { processes, calls, smokeAttempts, dependencies }
 }

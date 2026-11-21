@@ -197,7 +197,7 @@ const defaultDependencies: ReadinessDependencies = {
 }
 
 const parseTimeout = (value: string | undefined) => {
-  if (!value) return 30_000
+  if (!value) return 120_000
   const parsed = Number(value)
   if (!Number.isSafeInteger(parsed) || parsed < 5_000 || parsed > 120_000) {
     throw new Error(
@@ -446,10 +446,15 @@ export const restartAndVerifyProduction = async ({
         list.status === 0 &&
         pm2IsOnline(list.stdout, standaloneDir, scriptName)
       ) {
+        const remainingMs = deadline - dependencies.now()
+        if (remainingMs <= 0) {
+          lastFailure = 'Readiness budget exhausted during PM2 inspection.'
+          break
+        }
         try {
           const status = await dependencies.smoke(
             smokeUrl,
-            Math.min(5_000, Math.max(1, deadline - dependencies.now()))
+            Math.min(5_000, remainingMs)
           )
           if (interrupted)
             throw new Error('Deployment startup interrupted by signal.')
@@ -464,11 +469,13 @@ export const restartAndVerifyProduction = async ({
       } else {
         lastFailure = 'PM2 process has not reached online state.'
       }
-      await dependencies.sleep(
-        Math.min(500, Math.max(1, deadline - dependencies.now()))
-      )
+      const remainingMs = deadline - dependencies.now()
+      if (remainingMs <= 0) break
+      await dependencies.sleep(Math.min(500, remainingMs))
     }
-    throw new Error(`Deployment readiness timed out: ${lastFailure}`)
+    throw new Error(
+      `Deployment readiness timed out after ${timeoutMs} ms: ${lastFailure}`
+    )
   } catch (error) {
     try {
       await stopFailedRelease(standaloneDir, dependencies)
