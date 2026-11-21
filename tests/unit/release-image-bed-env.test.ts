@@ -147,11 +147,14 @@ describe('release image bed build configuration', () => {
     }
   )
 
-  it('passes the sole image bed input through the workflow environment', () => {
+  it('passes the sole image bed secret through the workflow environment', () => {
     expect(preparationStep).toContain(
-      'KUN_VISUAL_NOVEL_IMAGE_BED_URL: ${{ vars.KUN_VISUAL_NOVEL_IMAGE_BED_URL }}'
+      'KUN_VISUAL_NOVEL_IMAGE_BED_URL: ${{ secrets.KUN_VISUAL_NOVEL_IMAGE_BED_URL }}'
     )
     expect(preparationCommand).not.toContain('${{ vars.')
+    expect(preparationStep.split('        run: |\n')[1]).not.toContain(
+      'secrets.KUN_VISUAL_NOVEL_IMAGE_BED_URL'
+    )
     expect(preparationCommand).not.toContain('KUN_VISUAL_NOVEL_IMAGE_BED_HOST=')
     expect(preparationStep).not.toContain('continue-on-error')
   })

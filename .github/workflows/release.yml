@@ -60,7 +60,7 @@ jobs:
 
       - name: Create .env file
         env:
-          KUN_VISUAL_NOVEL_IMAGE_BED_URL: ${{ vars.KUN_VISUAL_NOVEL_IMAGE_BED_URL }}
+          KUN_VISUAL_NOVEL_IMAGE_BED_URL: ${{ secrets.KUN_VISUAL_NOVEL_IMAGE_BED_URL }}
         run: |
           node scripts/prepareReleaseImageBed.ts
           cat <<EOF >> .env
