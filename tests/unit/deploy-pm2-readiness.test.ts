@@ -57,18 +57,6 @@ afterEach(() => {
 })
 
 const successResult = { status: 0, stdout: '', stderr: '' }
-const onlineProcesses = (runtime: string) =>
-  JSON.stringify(
-    Array.from({ length: 3 }, () => ({
-      name: 'kun-touchgal-next',
-      pm2_env: {
-        status: 'online',
-        pm_cwd: runtime,
-        pm_exec_path: join(runtime, 'server.mjs')
-      }
-    }))
-  )
-
 describe('PM2 deployment readiness', () => {
   it('accepts package links that remain inside the standalone release', () => {
     const runtime = createRuntime()
@@ -189,139 +177,148 @@ describe('PM2 deployment readiness', () => {
     expect(run).not.toHaveBeenCalled()
   })
 
-  it('only tolerates the explicit PM2 process-not-found deletion result', async () => {
+  it('waits for exactly three owned online instances and loopback HTTP', async () => {
     const runtime = createRuntime()
-    const run = vi.fn(() => ({
-      status: 1,
-      stdout: '',
-      stderr: '[PM2][ERROR] permission denied'
-    }))
-
-    await expect(
-      restartAndVerifyProduction({
-        standaloneDir: runtime,
-        dependencies: {
-          run,
-          smoke: vi.fn(),
-          sleep: vi.fn(),
-          now: () => 0
-        }
-      })
-    ).rejects.toThrow('permission denied')
-    expect(run).toHaveBeenCalledTimes(1)
-  })
-
-  it('waits for PM2 online and a successful loopback HTTP smoke', async () => {
-    const runtime = createRuntime()
-    const run = vi.fn((_command: string, args: string[]) => {
-      if (args[0] === 'delete') {
-        return {
-          status: 1,
-          stdout: '',
-          stderr:
-            '[PM2][ERROR] Process or Namespace kun-touchgal-next not found'
-        }
-      }
-      if (args[0] === 'jlist') {
-        return {
-          status: 0,
-          stdout: onlineProcesses(runtime),
-          stderr: ''
-        }
-      }
-      return successResult
-    })
-    const smoke = vi.fn(async () => 200)
-
+    const harness = createPm2Harness(runtime)
     await restartAndVerifyProduction({
       standaloneDir: runtime,
-      dependencies: {
-        run,
-        smoke,
-        sleep: vi.fn(async () => undefined),
-        now: () => 0
-      }
+      dependencies: harness.dependencies
     })
-
-    expect(run.mock.calls.map(([, args]) => args[0])).toEqual([
-      'delete',
-      'start',
-      'jlist'
-    ])
-    expect(smoke).toHaveBeenCalledOnce()
+    expect(
+      harness.processes.filter((entry) => entry.pm2_env.status === 'online')
+    ).toHaveLength(3)
+    expect(harness.dependencies.smoke).toHaveBeenCalledOnce()
+    expect(harness.calls.filter((args) => args[0] === 'start')).toHaveLength(1)
   })
 
-  it('does not accept online PM2 workers from a different release', async () => {
-    const runtime = createRuntime()
-    let now = 0
-    const wrongRuntime = createRuntime()
-    const run = vi.fn((_command: string, args: string[]) =>
-      args[0] === 'jlist'
-        ? {
-            status: 0,
-            stdout: onlineProcesses(wrongRuntime),
-            stderr: ''
-          }
-        : successResult
-    )
-    const smoke = vi.fn(async () => 200)
+  it.each(['partial-start', 'http-failure', 'signal'] as const)(
+    'stops only the failed candidate after %s and never starts another release',
+    async (mode) => {
+      const runtime = createRuntime()
+      const harness = createPm2Harness(runtime, { mode })
+      await expect(
+        restartAndVerifyProduction({
+          standaloneDir: runtime,
+          env: {
+            NODE_ENV: 'production',
+            KUN_DEPLOY_READINESS_TIMEOUT_MS: '5000'
+          },
+          dependencies: harness.dependencies
+        })
+      ).rejects.toMatchObject({ stopConfirmed: true })
+      expect(
+        harness.processes.every(
+          (entry) => entry.pm2_env.status === 'stopped' && entry.pid === 0
+        )
+      ).toBe(true)
+      expect(harness.calls.filter((args) => args[0] === 'start')).toHaveLength(
+        1
+      )
+      expect(harness.calls.filter((args) => args[0] === 'stop')).toHaveLength(
+        mode === 'partial-start' ? 1 : 3
+      )
+      expect(
+        harness.calls
+          .filter((args) => args[0] === 'stop')
+          .every((args) => /^\d+$/.test(args[1]))
+      ).toBe(true)
+    }
+  )
 
+  it('preserves the startup and stop errors and never claims confirmed shutdown on stop failure', async () => {
+    const runtime = createRuntime()
+    const harness = createPm2Harness(runtime, {
+      mode: 'partial-start',
+      stopFails: true
+    })
     await expect(
       restartAndVerifyProduction({
         standaloneDir: runtime,
-        env: {
-          NODE_ENV: 'production',
-          KUN_DEPLOY_READINESS_TIMEOUT_MS: '5000'
-        },
-        dependencies: {
-          run,
-          smoke,
-          sleep: vi.fn(async (milliseconds: number) => {
-            now += milliseconds
-          }),
-          now: () => now
-        }
+        dependencies: harness.dependencies
       })
-    ).rejects.toThrow('readiness timed out')
-    expect(smoke).not.toHaveBeenCalled()
+    ).rejects.toMatchObject({
+      stopConfirmed: false,
+      errors: [
+        expect.objectContaining({
+          message: expect.stringContaining('partial startup failure')
+        }),
+        expect.objectContaining({
+          message: expect.stringContaining('未能确认停止')
+        })
+      ]
+    })
+    expect(harness.processes[0].pm2_env.status).toBe('online')
+    expect(harness.calls.filter((args) => args[0] === 'start')).toHaveLength(1)
   })
 
-  it('fails within the configured deadline when smoke never succeeds', async () => {
+  it('does not infer stop confirmation from a successful stop command when instances remain online', async () => {
     const runtime = createRuntime()
-    let now = 0
-    const run = vi.fn((_command: string, args: string[]) =>
-      args[0] === 'jlist'
-        ? {
-            status: 0,
-            stdout: onlineProcesses(runtime),
-            stderr: ''
-          }
-        : successResult
-    )
-
+    const harness = createPm2Harness(runtime, {
+      mode: 'partial-start',
+      stopNoEffect: true
+    })
     await expect(
       restartAndVerifyProduction({
         standaloneDir: runtime,
-        env: {
-          NODE_ENV: 'production',
-          KUN_DEPLOY_READINESS_TIMEOUT_MS: '5000'
-        },
-        dependencies: {
-          run,
-          smoke: vi.fn(async () => 503),
-          sleep: vi.fn(async (milliseconds: number) => {
-            now += milliseconds
-          }),
-          now: () => now
-        }
+        dependencies: harness.dependencies
       })
-    ).rejects.toThrow('readiness timed out')
-    expect(now).toBe(5000)
+    ).rejects.toMatchObject({
+      stopConfirmed: false,
+      message: expect.stringContaining('未能确认停止')
+    })
+    expect(harness.processes[0].pm2_env.status).toBe('online')
   })
 
-  it('rejects non-loopback smoke URLs before deleting PM2', async () => {
+  it('does not confirm shutdown when PM2 reports stopped but a recorded PID is still alive', async () => {
     const runtime = createRuntime()
-    const run = vi.fn(() => successResult)
+    const harness = createPm2Harness(runtime, { mode: 'partial-start' })
+    harness.dependencies.isProcessRunning = () => true
+    await expect(
+      restartAndVerifyProduction({
+        standaloneDir: runtime,
+        dependencies: harness.dependencies
+      })
+    ).rejects.toMatchObject({ stopConfirmed: false })
+    expect(harness.processes[0].pm2_env.status).toBe('stopped')
+  })
+
+  it('refuses unknown same-name PM2 processes without deleting or starting anything', async () => {
+    const runtime = createRuntime()
+    const harness = createPm2Harness(runtime)
+    harness.processes.push(...makeProcesses(createRuntime(), 1))
+    await expect(
+      restartAndVerifyProduction({
+        standaloneDir: runtime,
+        dependencies: harness.dependencies
+      })
+    ).rejects.toThrow('Unknown PM2 application identity')
+    expect(harness.calls.every((args) => args[0] === 'jlist')).toBe(true)
+  })
+
+  it('does not touch other PM2 applications', async () => {
+    const runtime = createRuntime()
+    const harness = createPm2Harness(runtime, { mode: 'partial-start' })
+    harness.processes.push({
+      ...makeProcesses(createRuntime(), 1)[0],
+      name: 'unrelated-app',
+      pid: 9999,
+      pm_id: 42
+    })
+    await expect(
+      restartAndVerifyProduction({
+        standaloneDir: runtime,
+        dependencies: harness.dependencies
+      })
+    ).rejects.toMatchObject({ stopConfirmed: true })
+    expect(
+      harness.processes.find((entry) => entry.pm_id === 42)?.pm2_env.status
+    ).toBe('online')
+    expect(harness.calls.some((args) => args[1] === '42')).toBe(false)
+  })
+
+  it('rejects non-loopback probes before any process operation', async () => {
+    const runtime = createRuntime()
+    const harness = createPm2Harness(runtime)
     await expect(
       restartAndVerifyProduction({
         standaloneDir: runtime,
@@ -329,14 +326,77 @@ describe('PM2 deployment readiness', () => {
           NODE_ENV: 'production',
           KUN_DEPLOY_SMOKE_URL: 'https://example.com/'
         },
-        dependencies: {
-          run,
-          smoke: vi.fn(),
-          sleep: vi.fn(),
-          now: () => 0
-        }
+        dependencies: harness.dependencies
       })
     ).rejects.toThrow('loopback')
-    expect(run).not.toHaveBeenCalled()
+    expect(harness.calls).toHaveLength(0)
   })
 })
+
+const makeProcesses = (runtime: string, count: number) =>
+  Array.from({ length: count }, (_, index) => ({
+    pm_id: index,
+    pid: 100 + index,
+    name: 'kun-touchgal-next',
+    pm2_env: {
+      status: 'online',
+      pm_cwd: runtime,
+      pm_exec_path: join(runtime, 'server.mjs')
+    }
+  }))
+
+const createPm2Harness = (
+  runtime: string,
+  options: {
+    mode?: 'partial-start' | 'http-failure' | 'signal'
+    stopFails?: boolean
+    stopNoEffect?: boolean
+  } = {}
+) => {
+  const processes = makeProcesses(runtime, 0)
+  const calls: string[][] = []
+  let now = 0
+  const dependencies = {
+    run: vi.fn((_command: string, args: string[]) => {
+      calls.push(args)
+      if (args[0] === 'jlist')
+        return { ...successResult, stdout: JSON.stringify(processes) }
+      if (args[0] === 'start') {
+        processes.push(
+          ...makeProcesses(runtime, options.mode === 'partial-start' ? 1 : 3)
+        )
+        return options.mode === 'partial-start'
+          ? { status: 1, stdout: '', stderr: 'partial startup failure' }
+          : successResult
+      }
+      if (args[0] === 'delete') {
+        const position = processes.findIndex(
+          (entry) => entry.pm_id === Number(args[1])
+        )
+        if (position >= 0) processes.splice(position, 1)
+      }
+      if (args[0] === 'stop') {
+        if (options.stopNoEffect) return successResult
+        if (options.stopFails)
+          return { status: 1, stdout: '', stderr: 'stop denied' }
+        const entry = processes.find(
+          (entry) => entry.pm_id === Number(args[1])
+        )!
+        entry.pm2_env.status = 'stopped'
+        entry.pid = 0
+      }
+      return successResult
+    }),
+    smoke: vi.fn(async () => {
+      if (options.mode === 'signal') process.emit('SIGINT')
+      return options.mode === 'http-failure' ? 503 : 200
+    }),
+    sleep: vi.fn(async (milliseconds: number) => {
+      now += milliseconds
+    }),
+    isProcessRunning: (pid: number) =>
+      processes.some((entry) => entry.pid === pid),
+    now: () => now
+  }
+  return { processes, calls, dependencies }
+}

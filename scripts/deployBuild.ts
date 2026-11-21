@@ -1,4 +1,5 @@
 import { config } from 'dotenv'
+import { formatRecoveryState } from './deployRecoveryInfo'
 import {
   cpSync,
   existsSync,
@@ -34,8 +35,10 @@ import {
 import {
   adoptLegacyDeploySlot,
   getDeploySlotPaths,
+  getCurrentDeployRelease,
+  getPreviousDeployRelease,
   installCandidateRelease,
-  recoverInterruptedActivation
+  assertNoPendingActivation
 } from './deploySlots'
 import {
   copyPrismaClientRuntimePackage,
@@ -131,6 +134,7 @@ const loadProductionEnvironment = () => {
 
 const runLockedBuild = async () => {
   const slots = getDeploySlotPaths(projectRoot)
+  assertNoPendingActivation(slots)
   assertCleanDeployWorktree(projectRoot)
   adoptLegacyDeploySlot(slots)
 
@@ -172,7 +176,14 @@ const runLockedBuild = async () => {
       candidateRelease,
       preflightRelease: validateStandaloneRuntime,
       verifyReadiness: (releasePath) =>
-        restartAndVerifyProduction({ standaloneDir: releasePath })
+        restartAndVerifyProduction({
+          standaloneDir: releasePath,
+          allowedReleaseDirs: [
+            getCurrentDeployRelease(slots),
+            getPreviousDeployRelease(slots),
+            releasePath
+          ]
+        })
     })
     activated = true
     console.log(
@@ -209,10 +220,7 @@ const main = async () => {
 
   const releaseLock = acquireDeployLock(slots.deployRoot)
   try {
-    const interruptedRelease = recoverInterruptedActivation(slots)
-    if (interruptedRelease) {
-      await restartAndVerifyProduction({ standaloneDir: interruptedRelease })
-    }
+    assertNoPendingActivation(slots)
     assertCleanDeployWorktree(projectRoot)
     validateStandaloneRuntime(adoptLegacyDeploySlot(slots))
     runDeployCommand('git', ['pull', '--ff-only'], { cwd: projectRoot })
@@ -234,5 +242,6 @@ const main = async () => {
 
 main().catch((error) => {
   console.error('Local build deployment failed:', error)
+  console.error(formatRecoveryState(getDeploySlotPaths(projectRoot)))
   process.exitCode = 1
 })

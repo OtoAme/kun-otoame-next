@@ -78,6 +78,9 @@ export const assertInheritedDeployLock = (
 
 export const acquireDeployLock = (deployRoot: string) => {
   mkdirSync(deployRoot, { recursive: true })
+  if (!lstatSync(deployRoot).isDirectory()) {
+    throw new Error('Deployment lock root must be a real directory.')
+  }
   const lockPath = join(deployRoot, 'operation.lock')
 
   const create = () => {

@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import {
   cpSync,
   existsSync,
@@ -12,7 +13,7 @@ import {
   symlinkSync,
   writeFileSync
 } from 'node:fs'
-import { dirname, join, relative, resolve, sep } from 'node:path'
+import { basename, dirname, join, relative, resolve, sep } from 'node:path'
 import { resolvePrismaClientRuntimePaths } from './prismaClientRuntimePaths'
 
 export type DeploySlotPaths = {
@@ -28,10 +29,11 @@ export type DeploySlotPaths = {
   rootNodeModules: string
 }
 
-type ActivationJournal = {
-  version: 1
+export type ActivationJournal = {
+  version: 1 | 2
   oldCurrent: string
   candidate: string
+  failure?: { message: string; stopConfirmed: boolean }
 }
 
 const pathEntryExists = (path: string) => {
@@ -73,11 +75,25 @@ const isWithin = (parent: string, child: string) => {
   return nested === '' || (!nested.startsWith(`..${sep}`) && nested !== '..')
 }
 
-const assertReleasePath = (paths: DeploySlotPaths, releasePath: string) => {
+export const assertReleasePath = (
+  paths: DeploySlotPaths,
+  releasePath: string
+) => {
+  for (const root of [paths.deployRoot, paths.releasesRoot]) {
+    if (!lstatSync(root).isDirectory() || realpathSync(root) !== root) {
+      throw new Error(`Deployment root must be a real directory: ${root}`)
+    }
+  }
   assertDirectory(releasePath, 'Deployment release')
   const releasesRoot = realpathSync(paths.releasesRoot)
   const resolved = realpathSync(releasePath)
-  if (!isWithin(releasesRoot, resolved) || resolved === releasesRoot) {
+  if (
+    !isWithin(releasesRoot, resolved) ||
+    dirname(resolved) !== releasesRoot ||
+    resolved !== resolve(releasePath) ||
+    (basename(resolved) !== 'legacy-initial' &&
+      !isImmutableDeployReleaseId(basename(resolved)))
+  ) {
     throw new Error(
       `Deployment pointer escapes the immutable release root: ${releasePath}`
     )
@@ -145,23 +161,49 @@ const writeJournal = (paths: DeploySlotPaths, journal: ActivationJournal) => {
   renameSync(temporary, paths.journal)
 }
 
-const readJournal = (paths: DeploySlotPaths): ActivationJournal | null => {
-  if (!existsSync(paths.journal)) return null
+export const readActivationJournal = (
+  paths: DeploySlotPaths
+): ActivationJournal | null => {
+  if (!pathEntryExists(paths.journal)) return null
   if (!lstatSync(paths.journal).isFile()) {
-    throw new Error('Deployment activation journal is not a regular file.')
+    throw new Error(
+      'Deployment activation journal is not a regular file; inspect it without deleting it.'
+    )
   }
-  const value = JSON.parse(readFileSync(paths.journal, 'utf8')) as unknown
+  const value = JSON.parse(
+    readFileSync(paths.journal, 'utf8')
+  ) as ActivationJournal
   if (
+    !value ||
     typeof value !== 'object' ||
-    value === null ||
-    Object.keys(value).sort().join(',') !== 'candidate,oldCurrent,version' ||
-    (value as ActivationJournal).version !== 1 ||
-    typeof (value as ActivationJournal).oldCurrent !== 'string' ||
-    typeof (value as ActivationJournal).candidate !== 'string'
+    ![1, 2].includes(value.version) ||
+    typeof value.oldCurrent !== 'string' ||
+    typeof value.candidate !== 'string' ||
+    Object.keys(value).some(
+      (key) => !['version', 'oldCurrent', 'candidate', 'failure'].includes(key)
+    ) ||
+    (value.version === 1 && value.failure !== undefined) ||
+    (value.failure !== undefined &&
+      (!value.failure ||
+        typeof value.failure !== 'object' ||
+        typeof value.failure.message !== 'string' ||
+        typeof value.failure.stopConfirmed !== 'boolean' ||
+        Object.keys(value.failure).sort().join(',') !==
+          'message,stopConfirmed'))
   ) {
-    throw new Error('Deployment activation journal is invalid.')
+    throw new Error(
+      'Deployment activation journal is invalid; inspect it without deleting it.'
+    )
   }
-  return value as ActivationJournal
+  return value
+}
+
+export const assertNoPendingActivation = (paths: DeploySlotPaths) => {
+  if (pathEntryExists(paths.journal)) {
+    throw new Error(
+      'Unresolved deployment activation. No automatic startup or recovery was attempted. Run pnpm deploy:rollback --list, then pnpm deploy:rollback to explicitly choose and confirm a managed release. Database was not restored; verify target compatibility before recovery.'
+    )
+  }
 }
 
 const journalReleasePath = (paths: DeploySlotPaths, relativePath: string) =>
@@ -283,66 +325,85 @@ export const installCandidateRelease = (
 
 export const beginCandidateActivation = (
   paths: DeploySlotPaths,
-  candidateRelease: string
+  candidateRelease: string,
+  explicitRecovery = false
 ) => {
-  const oldCurrent = adoptLegacyDeploySlot(paths)
+  if (!explicitRecovery) assertNoPendingActivation(paths)
+  const pending = readActivationJournal(paths)
+  const oldCurrent = pending
+    ? journalReleasePath(paths, pending.oldCurrent)
+    : adoptLegacyDeploySlot(paths)
   const candidate = assertReleasePath(paths, candidateRelease)
-  if (readJournal(paths)) {
-    throw new Error(
-      'An interrupted deployment must be recovered before activation.'
+  if (pending) {
+    journalReleasePath(paths, pending.candidate)
+    const history = join(paths.deployRoot, 'activation-history')
+    mkdirSync(history, { recursive: true, mode: 0o700 })
+    if (
+      !lstatSync(history).isDirectory() ||
+      realpathSync(history) !== history
+    ) {
+      throw new Error('Activation history must be a real directory.')
+    }
+    writeFileSync(
+      join(history, `${Date.now()}-${process.pid}-${randomUUID()}.json`),
+      `${JSON.stringify(pending)}\n`,
+      { flag: 'wx', mode: 0o600 }
     )
   }
-
   writeJournal(paths, {
-    version: 1,
+    version: 2,
     oldCurrent: relative(paths.deployRoot, oldCurrent),
     candidate: relative(paths.deployRoot, candidate)
   })
-  try {
-    atomicSymlink(paths.previous, oldCurrent)
-    atomicSymlink(paths.current, candidate)
-  } catch (error) {
-    recoverInterruptedActivation(paths)
-    throw error
-  }
-
+  ensureStandaloneCompatibilityLink(paths)
   return { oldCurrent, candidate }
 }
 
-export const completeCandidateActivation = (paths: DeploySlotPaths) => {
-  if (!readJournal(paths)) {
+const activationErrorMessages = (error: unknown): string => {
+  const message = error instanceof Error ? error.message : String(error)
+  return error instanceof AggregateError
+    ? [message, ...error.errors.map(activationErrorMessages)].join('\n')
+    : message
+}
+
+export const recordActivationFailure = (
+  paths: DeploySlotPaths,
+  error: unknown,
+  stopConfirmed: boolean
+) => {
+  const journal = readActivationJournal(paths)
+  if (!journal)
+    throw new Error('Cannot record failure without an activation journal.')
+  writeJournal(paths, {
+    ...journal,
+    version: 2,
+    failure: {
+      message: activationErrorMessages(error).slice(0, 16_384),
+      stopConfirmed
+    }
+  })
+}
+
+export const completeCandidateActivation = (
+  paths: DeploySlotPaths,
+  expected?: { candidate: string; oldCurrent: string }
+) => {
+  const journal = readActivationJournal(paths)
+  if (!journal)
     throw new Error('Cannot complete deployment without an activation journal.')
-  }
-  rmSync(paths.journal)
-}
-
-export const pinPreviousToCurrent = (paths: DeploySlotPaths) => {
-  const current = readReleasePointer(paths, paths.current)
-  atomicSymlink(paths.previous, current)
-  return current
-}
-
-export const recoverInterruptedActivation = (paths: DeploySlotPaths) => {
-  const journal = readJournal(paths)
-  if (!journal) return null
+  const candidate = journalReleasePath(paths, journal.candidate)
   const oldCurrent = journalReleasePath(paths, journal.oldCurrent)
-  journalReleasePath(paths, journal.candidate)
-
-  atomicSymlink(paths.current, oldCurrent)
+  if (
+    expected &&
+    (candidate !== expected.candidate || oldCurrent !== expected.oldCurrent)
+  ) {
+    throw new Error(
+      'Activation journal changed before completion; refusing to commit a different release.'
+    )
+  }
   atomicSymlink(paths.previous, oldCurrent)
+  atomicSymlink(paths.current, candidate)
   rmSync(paths.journal)
-  return oldCurrent
-}
-
-export const rollbackDeploySlots = (paths: DeploySlotPaths) => {
-  const recovered = recoverInterruptedActivation(paths)
-  if (recovered) return recovered
-
-  adoptLegacyDeploySlot(paths)
-  const previous = readReleasePointer(paths, paths.previous)
-  atomicSymlink(paths.current, previous)
-  atomicSymlink(paths.previous, previous)
-  return previous
 }
 
 export const getCurrentDeployRelease = (paths: DeploySlotPaths) =>

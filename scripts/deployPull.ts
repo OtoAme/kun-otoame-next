@@ -1,4 +1,5 @@
 import { config } from 'dotenv'
+import { formatRecoveryState } from './deployRecoveryInfo'
 import {
   cpSync,
   createWriteStream,
@@ -40,8 +41,10 @@ import {
 import {
   adoptLegacyDeploySlot,
   getDeploySlotPaths,
+  getCurrentDeployRelease,
+  getPreviousDeployRelease,
   installCandidateRelease,
-  recoverInterruptedActivation
+  assertNoPendingActivation
 } from './deploySlots'
 import {
   assertGeneratedPrismaClient,
@@ -304,10 +307,7 @@ const main = async () => {
     ? () => undefined
     : acquireDeployLock(slots.deployRoot)
   try {
-    const interruptedRelease = recoverInterruptedActivation(slots)
-    if (interruptedRelease) {
-      await restartAndVerifyProduction({ standaloneDir: interruptedRelease })
-    }
+    assertNoPendingActivation(slots)
     adoptLegacyDeploySlot(slots)
 
     assertCleanDeployWorktree(projectRoot)
@@ -445,7 +445,14 @@ const main = async () => {
         candidateRelease,
         preflightRelease: validateStandaloneRuntime,
         verifyReadiness: (releasePath) =>
-          restartAndVerifyProduction({ standaloneDir: releasePath })
+          restartAndVerifyProduction({
+            standaloneDir: releasePath,
+            allowedReleaseDirs: [
+              getCurrentDeployRelease(slots),
+              getPreviousDeployRelease(slots),
+              releasePath
+            ]
+          })
       })
       deploymentSucceeded = true
 
@@ -473,5 +480,6 @@ const main = async () => {
 
 main().catch((error) => {
   console.error('Deployment failed:', error)
+  console.error(formatRecoveryState(getDeploySlotPaths(projectRoot)))
   process.exitCode = 1
 })

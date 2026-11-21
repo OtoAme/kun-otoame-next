@@ -19,8 +19,8 @@ import {
   getCurrentDeployRelease,
   getDeploySlotPaths,
   installCandidateRelease,
-  recoverInterruptedActivation,
-  rollbackDeploySlots
+  assertNoPendingActivation,
+  readActivationJournal
 } from '~/scripts/deploySlots'
 
 const roots: string[] = []
@@ -83,8 +83,12 @@ describe('crash-safe immutable deployment slots', () => {
     const installed = installCandidateRelease(paths, candidate, candidateId)
 
     const activation = beginCandidateActivation(paths, installed)
-    expect(realpathSync(paths.current)).toBe(realpathSync(installed))
-    expect(realpathSync(paths.standaloneLink)).toBe(realpathSync(installed))
+    expect(realpathSync(paths.current)).toBe(
+      realpathSync(join(paths.releasesRoot, legacyId))
+    )
+    expect(realpathSync(paths.standaloneLink)).toBe(
+      realpathSync(join(paths.releasesRoot, legacyId))
+    )
     expect(realpathSync(paths.previous)).toBe(
       realpathSync(join(paths.releasesRoot, legacyId))
     )
@@ -100,42 +104,40 @@ describe('crash-safe immutable deployment slots', () => {
     expect(existsSync(join(paths.releasesRoot, candidateId))).toBe(true)
   })
 
-  it('recovers an interrupted activation to the known-good release', () => {
+  it('retains an interrupted activation without changing pointers or forgetting the candidate', () => {
     const { root, paths } = createProject()
     const candidate = join(root, 'candidate')
     createRelease(candidate, 'candidate')
     const installed = installCandidateRelease(paths, candidate, candidateId)
     beginCandidateActivation(paths, installed)
-
-    const recovered = recoverInterruptedActivation(paths)
-    expect(recovered).toBe(realpathSync(join(paths.releasesRoot, legacyId)))
-    expect(getCurrentDeployRelease(paths)).toBe(recovered)
-    expect(realpathSync(paths.standaloneLink)).toBe(recovered)
-    expect(realpathSync(paths.previous)).toBe(recovered)
-    expect(
-      readFileSync(join(paths.rootPrisma, 'schema/schema.prisma'), 'utf8')
-    ).toBe('source-head')
-    expect(
-      readFileSync(join(paths.rootNodeModules, '.prisma/marker'), 'utf8')
-    ).toBe('source-client')
-    expect(existsSync(join(paths.releasesRoot, candidateId))).toBe(true)
+    const journal = readFileSync(paths.journal, 'utf8')
+    expect(() => assertNoPendingActivation(paths)).toThrow('Unresolved')
+    expect(() => beginCandidateActivation(paths, installed)).toThrow(
+      'Unresolved'
+    )
+    expect(readFileSync(paths.journal, 'utf8')).toBe(journal)
+    expect(getCurrentDeployRelease(paths)).toBe(
+      realpathSync(join(paths.releasesRoot, legacyId))
+    )
+    expect(existsSync(installed)).toBe(true)
   })
 
-  it('performs idempotent offline rollback without pointing back to the rejected release', () => {
-    const { root, paths } = createProject()
-    const candidate = join(root, 'candidate')
-    createRelease(candidate, 'candidate')
-    const installed = installCandidateRelease(paths, candidate, candidateId)
-    beginCandidateActivation(paths, installed)
-    completeCandidateActivation(paths)
-
-    const first = rollbackDeploySlots(paths)
-    const second = rollbackDeploySlots(paths)
-    expect(first).toBe(realpathSync(join(paths.releasesRoot, legacyId)))
-    expect(second).toBe(first)
-    expect(getCurrentDeployRelease(paths)).toBe(first)
-    expect(realpathSync(paths.previous)).toBe(first)
-    expect(existsSync(join(paths.releasesRoot, candidateId))).toBe(true)
+  it('recognizes version 1 journals and refuses unknown or damaged records without deleting them', () => {
+    const { paths } = createProject()
+    adoptLegacyDeploySlot(paths)
+    const journal = {
+      version: 1,
+      oldCurrent: 'releases/legacy-initial',
+      candidate: 'releases/legacy-initial'
+    }
+    writeFileSync(paths.journal, JSON.stringify(journal))
+    expect(readActivationJournal(paths)).toEqual(journal)
+    for (const value of ['{', JSON.stringify({ ...journal, version: 9 })]) {
+      writeFileSync(paths.journal, value)
+      expect(() => readActivationJournal(paths)).toThrow()
+      expect(() => assertNoPendingActivation(paths)).toThrow('Unresolved')
+      expect(readFileSync(paths.journal, 'utf8')).toBe(value)
+    }
   })
 
   it('adopts a pnpm-linked legacy standalone and atomically replaces its public path with current', () => {

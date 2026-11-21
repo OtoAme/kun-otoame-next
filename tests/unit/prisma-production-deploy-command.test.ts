@@ -248,11 +248,11 @@ describe('production Prisma deployment command', () => {
   })
 
   it('keeps rollback local, offline, and free of database commands', async () => {
-    const rollback = await readProjectFile('scripts/deployRollback.ts')
+    const rollback = await readProjectFile('scripts/deployRecovery.ts')
 
-    expect(rollback).toContain('recoverOrRollbackWithReadiness({')
+    expect(rollback).toContain('explicitRecovery: true')
     expect(rollback).toContain('restartAndVerifyProduction({')
-    expect(rollback).toContain('acquireDeployLock(slots.deployRoot)')
+    expect(rollback).toContain('acquireDeployLock(paths.deployRoot)')
     expect(rollback).not.toMatch(/\bgit\b/)
     expect(rollback).not.toMatch(/https|GITHUB|prisma|migration:/i)
   })

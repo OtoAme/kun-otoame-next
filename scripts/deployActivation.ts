@@ -1,12 +1,9 @@
+import { DeploymentStartError, stopFailedRelease } from './deployPm2'
 import { cleanupDeployReleases } from './deployReleaseCleanup'
 import {
   beginCandidateActivation,
   completeCandidateActivation,
-  getCurrentDeployRelease,
-  getPreviousDeployRelease,
-  pinPreviousToCurrent,
-  recoverInterruptedActivation,
-  rollbackDeploySlots,
+  recordActivationFailure,
   type DeploySlotPaths
 } from './deploySlots'
 
@@ -14,36 +11,56 @@ export const activateReleaseWithReadiness = async ({
   paths,
   candidateRelease,
   preflightRelease = () => undefined,
-  verifyReadiness
+  verifyReadiness,
+  explicitRecovery = false,
+  stopRelease = stopFailedRelease
 }: {
   paths: DeploySlotPaths
   candidateRelease: string
   preflightRelease?: (releasePath: string) => void
   verifyReadiness: (releasePath: string) => Promise<void>
+  explicitRecovery?: boolean
+  stopRelease?: (releasePath: string) => Promise<void>
 }) => {
-  const { oldCurrent } = beginCandidateActivation(paths, candidateRelease)
+  preflightRelease(candidateRelease)
+  const activation = beginCandidateActivation(
+    paths,
+    candidateRelease,
+    explicitRecovery
+  )
+  let ready = false
   try {
-    preflightRelease(oldCurrent)
-    preflightRelease(candidateRelease)
     await verifyReadiness(candidateRelease)
-    completeCandidateActivation(paths)
-  } catch (candidateError) {
+    ready = true
+    completeCandidateActivation(paths, activation)
+  } catch (originalError) {
+    let error = originalError
+    if (ready) {
+      try {
+        await stopRelease(candidateRelease)
+        error = new DeploymentStartError(originalError)
+      } catch (stopError) {
+        error = new DeploymentStartError(originalError, stopError)
+      }
+    }
     try {
-      const restoredRelease = rollbackDeploySlots(paths)
-      await verifyReadiness(restoredRelease)
-    } catch (restoreError) {
+      recordActivationFailure(
+        paths,
+        error,
+        error instanceof Error &&
+          'stopConfirmed' in error &&
+          error.stopConfirmed === true
+      )
+    } catch (recordError) {
       throw new AggregateError(
-        [candidateError, restoreError],
-        'Candidate deployment and automatic previous-release recovery both failed.'
+        [error, recordError],
+        'Activation failed and failure recording failed; retain the unresolved journal and inspect manually.'
       )
     }
-    throw new Error(
-      'Candidate deployment failed readiness; the previous release was restored and verified.',
-      { cause: candidateError }
-    )
+    throw error
   }
 
-  // Cleanup cannot turn an already verified activation into a failed deployment.
+  if (explicitRecovery) return
   try {
     cleanupDeployReleases(paths)
   } catch (error) {
@@ -52,63 +69,4 @@ export const activateReleaseWithReadiness = async ({
       error
     )
   }
-}
-
-export const rollbackReleaseWithReadiness = async ({
-  paths,
-  preflightRelease = () => undefined,
-  verifyReadiness
-}: {
-  paths: DeploySlotPaths
-  preflightRelease?: (releasePath: string) => void
-  verifyReadiness: (releasePath: string) => Promise<void>
-}) => {
-  const originalCurrent = getCurrentDeployRelease(paths)
-  const rollbackTarget = getPreviousDeployRelease(paths)
-  preflightRelease(originalCurrent)
-  preflightRelease(rollbackTarget)
-  beginCandidateActivation(paths, rollbackTarget)
-  try {
-    await verifyReadiness(rollbackTarget)
-    pinPreviousToCurrent(paths)
-    completeCandidateActivation(paths)
-  } catch (rollbackError) {
-    try {
-      const originalCurrent = rollbackDeploySlots(paths)
-      await verifyReadiness(originalCurrent)
-    } catch (restoreError) {
-      throw new AggregateError(
-        [rollbackError, restoreError],
-        'Previous-release rollback and original-release recovery both failed.'
-      )
-    }
-    throw new Error(
-      'Previous release failed readiness; the original release was restored and verified.',
-      { cause: rollbackError }
-    )
-  }
-}
-
-export const recoverOrRollbackWithReadiness = async ({
-  paths,
-  preflightRelease = () => undefined,
-  verifyReadiness
-}: {
-  paths: DeploySlotPaths
-  preflightRelease?: (releasePath: string) => void
-  verifyReadiness: (releasePath: string) => Promise<void>
-}) => {
-  const recovered = recoverInterruptedActivation(paths)
-  if (recovered) {
-    preflightRelease(recovered)
-    await verifyReadiness(recovered)
-    return 'recovered-interrupted' as const
-  }
-
-  await rollbackReleaseWithReadiness({
-    paths,
-    preflightRelease,
-    verifyReadiness
-  })
-  return 'rolled-back' as const
 }

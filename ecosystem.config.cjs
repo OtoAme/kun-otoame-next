@@ -2,6 +2,19 @@ const path = require('path')
 const fs = require('fs')
 const dotenv = require('dotenv')
 
+let unresolvedActivation = false
+try {
+  fs.lstatSync(path.join(__dirname, '.deploy', 'activation-journal.json'))
+  unresolvedActivation = true
+} catch (error) {
+  if (error.code !== 'ENOENT') throw error
+}
+if (unresolvedActivation) {
+  throw new Error(
+    'Unresolved deployment activation; use pnpm deploy:rollback --list and pnpm deploy:rollback to choose and confirm a release. Verify database compatibility first.'
+  )
+}
+
 const managedCurrentDir = path.join(__dirname, '.deploy', 'current')
 const standaloneDir = fs.existsSync(managedCurrentDir)
   ? managedCurrentDir
