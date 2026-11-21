@@ -131,7 +131,7 @@ describe('automatic deployment rejects unresolved activation before any external
             await new Promise((resolve) => setImmediate(resolve))
             expect(errors.mock.calls.flat().map(String).join('\n')).toContain(
               entry === 'deployPullLauncher'
-                ? 'Deployment state'
+                ? '部署恢复状态'
                 : 'Unresolved deployment activation'
             )
             expect(command).not.toHaveBeenCalled()

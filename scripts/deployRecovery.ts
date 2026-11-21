@@ -3,9 +3,12 @@ import { activateReleaseWithReadiness } from './deployActivation'
 import { acquireDeployLock } from './deployLock'
 import { restartAndVerifyProduction } from './deployPm2'
 import {
+  formatRecoveryIdentity,
+  formatRecoveryNextSteps,
   formatRecoveryState,
+  getRecoveryReleaseStatus,
   inspectRecoveryRelease,
-  listRecoveryReleases,
+  listRecoveryChoices,
   recoverySelectionSnapshot
 } from './deployRecoveryInfo'
 import {
@@ -34,6 +37,16 @@ export const parseRecoveryArguments = (args: string[]) => {
   )
 }
 
+const numberedChoice = (
+  choices: ReturnType<typeof listRecoveryChoices>,
+  input: string
+) => {
+  const number = Number(input)
+  return /^[1-9]\d*$/.test(input) && Number.isSafeInteger(number)
+    ? choices[number - 1]
+    : undefined
+}
+
 export const runDeployRecovery = async ({
   projectRoot,
   args,
@@ -59,37 +72,71 @@ export const runDeployRecovery = async ({
     )
   const unlock = acquireDeployLock(paths.deployRoot)
   try {
-    log(formatRecoveryState(paths))
+    log(formatRecoveryState(paths, { includeCommands: false }))
+    let choices: ReturnType<typeof listRecoveryChoices> = []
     if (mode.mode === 'list' || mode.mode === 'interactive') {
-      for (const release of listRecoveryReleases(paths)) {
-        log(
-          `${release.releaseId}; tag=${release.tag}; commit=${release.commitSha}; path=${release.releasePath}; ${release.error ? `REJECTED: ${release.error}` : 'runtime/manifest checked; database compatibility requires operator verification'}`
-        )
-      }
+      choices = listRecoveryChoices(paths)
+      log(
+        [
+          '\n可选版本（请明确选择，不会自动启动任何版本）：',
+          ...choices.flatMap((release, index) => [
+            '',
+            `${index + 1}. ${release.status}`,
+            `   ${formatRecoveryIdentity(release)}`,
+            ...(release.error ? ['   校验未通过，请先预览详情'] : [])
+          ]),
+          '',
+          '说明：通过校验的版本已核对运行资源与清单，数据库兼容性需人工确认。'
+        ].join('\n')
+      )
     }
-    if (mode.mode === 'list') return 'listed'
+    if (mode.mode === 'list') {
+      log(`\n${formatRecoveryNextSteps()}`)
+      return 'listed'
+    }
     if (mode.mode === 'interactive' && !isTTY)
       throw new Error(
         'Interactive recovery requires a TTY. Use --list/--preview or explicitly bind --release and --confirm to the same release ID.'
       )
-    const releaseId =
-      mode.mode === 'interactive'
-        ? (await ask('Choose managed release ID (empty cancels): '))?.trim()
-        : mode.releaseId
-    if (!releaseId) return 'cancelled'
+    let releaseId: string
+    if (mode.mode === 'interactive') {
+      const input = (await ask('请输入版本编号（回车取消）：'))?.trim()
+      if (!input) return 'cancelled'
+      const choice = numberedChoice(choices, input)
+      if (!choice) {
+        log('编号无效，已取消；没有启动任何版本。')
+        return 'cancelled'
+      }
+      releaseId = choice.releaseId
+    } else if (mode.mode === 'preview' && /^\d+$/.test(mode.releaseId)) {
+      const choice = numberedChoice(listRecoveryChoices(paths), mode.releaseId)
+      if (!choice) throw new Error('版本编号无效，没有启动任何版本。')
+      releaseId = choice.releaseId
+    } else {
+      releaseId = mode.releaseId
+    }
     const selected = recoverySelectionSnapshot(paths, releaseId)
     log(
-      `Selected ${selected.release.releaseId}; tag=${selected.release.tag}; commit=${selected.release.commitSha}; path=${selected.release.releasePath}`
+      [
+        '\n已选择版本：',
+        `  ${formatRecoveryIdentity(selected.release)}`,
+        `  状态：${getRecoveryReleaseStatus(paths, selected.release.releasePath)}`,
+        `  发布 ID：${selected.release.releaseId}`,
+        `  目录：${selected.release.releasePath}`
+      ].join('\n')
     )
     log(
-      'This starts only the selected release. Database is not restored; verify its compatibility before confirming.'
+      '确认后只启动此版本；数据库不会恢复，请先核对兼容性。'
     )
-    if (mode.mode === 'preview') return 'previewed'
+    if (mode.mode === 'preview') {
+      log(`\n${formatRecoveryNextSteps()}`)
+      return 'previewed'
+    }
     if (
       mode.mode === 'interactive' &&
       (await ask(
-        `Type the full release ID ${releaseId} to confirm (empty cancels): `
-      )) !== releaseId
+        '确认启动上述版本？输入 y 继续，回车取消：'
+      ))?.trim().toLowerCase() !== 'y'
     )
       return 'cancelled'
     const rechecked = recoverySelectionSnapshot(paths, releaseId)
@@ -120,7 +167,7 @@ export const runDeployRecovery = async ({
         })
     })
     log(
-      'Explicit recovery passed three-instance and HTTP readiness. Database was not restored.'
+      '恢复成功：所选版本已通过三个实例与 HTTP 就绪检查；数据库未恢复。'
     )
     return 'recovered'
   } finally {

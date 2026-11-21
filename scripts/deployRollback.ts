@@ -41,11 +41,11 @@ runDeployRecovery({
   .then((result) => {
     if (result === 'cancelled')
       console.log(
-        'Recovery cancelled; no deployment state or process was changed.'
+        '已取消恢复；部署状态与进程未改变。'
       )
   })
   .catch((error) => {
-    console.error('Deployment recovery failed:', error)
+    console.error('恢复失败（完整诊断）：', error)
     console.error(formatRecoveryState(getDeploySlotPaths(projectRoot)))
     process.exitCode = 1
   })

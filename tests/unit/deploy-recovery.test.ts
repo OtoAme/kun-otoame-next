@@ -78,7 +78,7 @@ const createDeployment = () => {
   const activate = vi.fn(async () => undefined)
   const prepare = vi.fn()
   const log = vi.fn()
-  const ask = vi.fn(async () => null as string | null)
+  const ask = vi.fn(async (_prompt: string) => null as string | null)
   return {
     projectRoot,
     paths,
@@ -121,21 +121,140 @@ describe('explicit managed release recovery', () => {
       const before = snapshot(deployment.projectRoot)
       await runDeployRecovery({ ...deployment, args, isTTY: false })
       expect(snapshot(deployment.projectRoot)).toBe(before)
-      expect(deployment.log.mock.calls.flat().join('\n')).toContain(
-        `tag=target; commit=${'b'.repeat(40)}`
-      )
+      const output = deployment.log.mock.calls.flat().join('\n')
+      expect(output).toContain('标签：target')
+      expect(output).toContain('提交：bbbbbbbb')
+      if (args[0] === '--preview') {
+        expect(output).toContain(targetId)
+        expect(output).toContain(join(deployment.paths.releasesRoot, targetId))
+      } else {
+        expect(output).not.toContain(targetId)
+        expect(output).not.toContain(deployment.paths.releasesRoot)
+      }
       expect(deployment.prepare).not.toHaveBeenCalled()
       expect(deployment.activate).not.toHaveBeenCalled()
     }
   )
 
-  it.each([null, '', 'invalid'])(
+  it('shows a plain Chinese numbered menu with failure, successful and earlier release roles', async () => {
+    const deployment = createDeployment()
+    rmSync(deployment.paths.previous)
+    symlinkSync('releases/legacy-initial', deployment.paths.previous, 'dir')
+    writeFileSync(
+      deployment.paths.journal,
+      JSON.stringify({
+        version: 2,
+        oldCurrent: `releases/${currentId}`,
+        candidate: `releases/${targetId}`,
+        failure: {
+          message: 'Synthetic repeated diagnostic\nSynthetic repeated diagnostic',
+          stopConfirmed: true
+        }
+      })
+    )
+    const before = snapshot(deployment.projectRoot)
+    await runDeployRecovery({ ...deployment, args: ['--list'], isTTY: false })
+    const output = deployment.log.mock.calls.flat().join('\n')
+
+    expect(output).toContain('1. 本次失败版本（可重试）')
+    expect(output).toContain('2. 最近成功版本（指针不等于在线）')
+    expect(output).toContain('3. 更早版本')
+    expect(output).toContain('标签：target | 提交：bbbbbbbb')
+    expect(output).toContain('候选进程：已确认停止')
+    expect(output).toContain('.deploy/activation-journal.json')
+    expect(output).not.toContain('Synthetic repeated diagnostic')
+    expect(output).not.toContain(targetId)
+    expect(output).not.toContain(deployment.paths.releasesRoot)
+    expect(output).not.toContain('\u001b[')
+    expect(output.match(/下一步：/g)).toHaveLength(1)
+    expect(snapshot(deployment.projectRoot)).toBe(before)
+    expect(deployment.activate).not.toHaveBeenCalled()
+  })
+
+  it('previews a numbered choice without loading configuration or starting a release', async () => {
+    const deployment = createDeployment()
+    const before = snapshot(deployment.projectRoot)
+    await expect(
+      runDeployRecovery({ ...deployment, args: ['--preview', '1'], isTTY: false })
+    ).resolves.toBe('previewed')
+    const output = deployment.log.mock.calls.flat().join('\n')
+    expect(output).toContain(targetId)
+    expect(output).toContain(join(deployment.paths.releasesRoot, targetId))
+    expect(snapshot(deployment.projectRoot)).toBe(before)
+    expect(deployment.prepare).not.toHaveBeenCalled()
+    expect(deployment.activate).not.toHaveBeenCalled()
+  })
+
+  it('uses the original journal release for the last successful role when current points to an unverified candidate', async () => {
+    const deployment = createDeployment()
+    rmSync(deployment.paths.current)
+    symlinkSync(join('releases', targetId), deployment.paths.current, 'dir')
+    const before = snapshot(deployment.projectRoot)
+    await runDeployRecovery({ ...deployment, args: ['--list'] })
+    const output = deployment.log.mock.calls.flat().join('\n')
+    expect(output).toContain(
+      '1. 本次未决版本（可重试）\n   标签：target | 提交：bbbbbbbb'
+    )
+    expect(output).toContain(
+      '2. 最近成功版本（指针不等于在线）\n   标签：current | 提交：aaaaaaaa'
+    )
+    expect(snapshot(deployment.projectRoot)).toBe(before)
+    expect(deployment.activate).not.toHaveBeenCalled()
+  })
+
+  it('binds a numbered selection to its full release ID and confirms with y under the lock', async () => {
+    const deployment = createDeployment()
+    deployment.ask
+      .mockImplementationOnce(async (prompt) => {
+        expect(prompt).toContain('编号')
+        return '1'
+      })
+      .mockImplementationOnce(async (prompt) => {
+        expect(prompt).toContain('y')
+        expect(() => acquireDeployLock(deployment.paths.deployRoot)).toThrow(
+          'Another deployment'
+        )
+        const output = deployment.log.mock.calls.flat().join('\n')
+        expect(output).toContain('标签：target | 提交：bbbbbbbb')
+        expect(output).toContain('本次未决版本（可重试）')
+        expect(output).toContain(targetId)
+        return 'y'
+      })
+    await expect(runDeployRecovery(deployment)).resolves.toBe('recovered')
+    expect(deployment.activate).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({
+        candidateRelease: join(deployment.paths.releasesRoot, targetId),
+        explicitRecovery: true
+      })
+    )
+    expect(deployment.prepare).toHaveBeenCalledOnce()
+    expect(existsSync(join(deployment.paths.deployRoot, 'operation.lock'))).toBe(
+      false
+    )
+  })
+
+  it.each(['0', '-1', '4', '1.5', '1abc', targetId])(
+    'cancels an invalid menu choice %s without preparing or starting a release',
+    async (choice) => {
+      const deployment = createDeployment()
+      const before = snapshot(deployment.projectRoot)
+      deployment.ask.mockResolvedValueOnce(choice)
+      await expect(runDeployRecovery(deployment)).resolves.toBe('cancelled')
+      expect(deployment.ask).toHaveBeenCalledOnce()
+      expect(deployment.log.mock.calls.flat().join('\n')).toContain('编号无效')
+      expect(snapshot(deployment.projectRoot)).toBe(before)
+      expect(deployment.prepare).not.toHaveBeenCalled()
+      expect(deployment.activate).not.toHaveBeenCalled()
+    }
+  )
+
+  it.each([null, '', 'invalid', 'yes', targetId])(
     'cancels on confirmation %s without persistent state changes',
     async (answer) => {
       const deployment = createDeployment()
       const before = snapshot(deployment.projectRoot)
       deployment.ask
-        .mockResolvedValueOnce(targetId)
+        .mockResolvedValueOnce('1')
         .mockResolvedValueOnce(answer)
       await expect(runDeployRecovery(deployment)).resolves.toBe('cancelled')
       expect(snapshot(deployment.projectRoot)).toBe(before)
@@ -143,9 +262,30 @@ describe('explicit managed release recovery', () => {
     }
   )
 
-  it('cancels selection on EOF without startup', async () => {
+  it.each([null, '', '   '])(
+    'cancels an empty or interrupted selection %s without startup',
+    async (answer) => {
+      const deployment = createDeployment()
+      const before = snapshot(deployment.projectRoot)
+      deployment.ask.mockResolvedValueOnce(answer)
+      await expect(runDeployRecovery(deployment)).resolves.toBe('cancelled')
+      expect(deployment.ask).toHaveBeenCalledOnce()
+      expect(snapshot(deployment.projectRoot)).toBe(before)
+      expect(deployment.prepare).not.toHaveBeenCalled()
+      expect(deployment.activate).not.toHaveBeenCalled()
+    }
+  )
+
+  it('keeps non-TTY execution bound to a full release ID rather than a menu number', async () => {
     const deployment = createDeployment()
-    await expect(runDeployRecovery(deployment)).resolves.toBe('cancelled')
+    await expect(
+      runDeployRecovery({
+        ...deployment,
+        isTTY: false,
+        args: ['--release', '1', '--confirm', '1']
+      })
+    ).rejects.toThrow('managed release ID')
+    expect(deployment.prepare).not.toHaveBeenCalled()
     expect(deployment.activate).not.toHaveBeenCalled()
   })
 
@@ -213,7 +353,7 @@ describe('explicit managed release recovery', () => {
       const deployment = createDeployment()
       const target = join(deployment.paths.releasesRoot, targetId)
       deployment.ask
-        .mockResolvedValueOnce(targetId)
+        .mockResolvedValueOnce('1')
         .mockImplementationOnce(async () => {
           expect(() => acquireDeployLock(deployment.paths.deployRoot)).toThrow(
             'Another deployment'
@@ -241,7 +381,7 @@ describe('explicit managed release recovery', () => {
               'dir'
             )
           }
-          return targetId
+          return 'y'
         })
       await expect(runDeployRecovery(deployment)).rejects.toThrow(
         'changed during confirmation'
@@ -256,11 +396,11 @@ describe('explicit managed release recovery', () => {
   it('labels legacy provenance as unknown and permits only an explicitly confirmed selection', async () => {
     const deployment = createDeployment()
     deployment.ask
-      .mockResolvedValueOnce('legacy-initial')
-      .mockResolvedValueOnce('legacy-initial')
+      .mockResolvedValueOnce('3')
+      .mockResolvedValueOnce('y')
     await runDeployRecovery(deployment)
     expect(deployment.log.mock.calls.flat().join('\n')).toContain(
-      'unknown (legacy source; operator verification required)'
+      '未知（历史运行目录；需人工核对来源）'
     )
     expect(deployment.activate).toHaveBeenCalledExactlyOnceWith(
       expect.objectContaining({

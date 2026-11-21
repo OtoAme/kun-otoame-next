@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import { realpathSync } from 'node:fs'
 import { lstatSync, readdirSync, readFileSync, readlinkSync } from 'node:fs'
-import { basename, join } from 'node:path'
+import { basename, join, resolve } from 'node:path'
 import { validateStandaloneRuntime } from './deployPm2'
 import { readReleaseManifest } from './deployReleaseSafety'
 import {
@@ -29,7 +29,7 @@ const readRecoveryReleaseIdentity = (
     paths,
     join(paths.releasesRoot, releaseId)
   )
-  let tag = 'unknown (legacy source; operator verification required)'
+  let tag = '未知（历史运行目录；需人工核对来源）'
   let commitSha = 'unknown'
   if (releaseId !== 'legacy-initial') {
     const manifest = readReleaseManifest(
@@ -74,7 +74,7 @@ export const listRecoveryReleases = (paths: DeploySlotPaths) => {
           {
             releaseId,
             releasePath: join(paths.releasesRoot, releaseId),
-            tag: 'unavailable',
+            tag: '无法读取',
             commitSha: 'unknown',
             error: error instanceof Error ? error.message : 'Invalid runtime'
           }
@@ -83,61 +83,151 @@ export const listRecoveryReleases = (paths: DeploySlotPaths) => {
     })
 }
 
-export const formatRecoveryState = (paths: DeploySlotPaths) => {
-  const lines = ['Deployment state (pointers alone do not prove readiness):']
+const readRecoveryRoles = (paths: DeploySlotPaths) => {
+  const roles: {
+    candidate?: string
+    candidateFailed?: boolean
+    successful?: string
+    previous?: string
+  } = {}
+  try {
+    const journal = readActivationJournal(paths)
+    if (journal) {
+      roles.candidate = assertReleasePath(
+        paths,
+        resolve(paths.deployRoot, journal.candidate)
+      )
+      roles.successful = assertReleasePath(
+        paths,
+        resolve(paths.deployRoot, journal.oldCurrent)
+      )
+      roles.candidateFailed = journal.failure !== undefined
+    } else {
+      roles.successful = getCurrentDeployRelease(paths)
+    }
+  } catch {
+    // Invalid deployment state remains visible; activation validates it again.
+  }
+  try {
+    roles.previous = getPreviousDeployRelease(paths)
+  } catch {
+    // A missing pointer must not hide otherwise inspectable release entries.
+  }
+  return roles
+}
+
+const describeRecoveryRole = (
+  roles: ReturnType<typeof readRecoveryRoles>,
+  releasePath: string
+) => {
+  const labels: string[] = []
+  if (releasePath === roles.candidate)
+    labels.push(
+      roles.candidateFailed
+        ? '本次失败版本（可重试）'
+        : '本次未决版本（可重试）'
+    )
+  if (releasePath === roles.successful)
+    labels.push('最近成功版本（指针不等于在线）')
+  return {
+    status: labels.length
+      ? labels.join('；')
+      : releasePath === roles.previous
+        ? '更早版本'
+        : '其他保留版本',
+    rank:
+      releasePath === roles.candidate
+        ? 0
+        : releasePath === roles.successful
+          ? 1
+          : releasePath === roles.previous
+            ? 2
+            : 3
+  }
+}
+
+export const getRecoveryReleaseStatus = (
+  paths: DeploySlotPaths,
+  releasePath: string
+) => describeRecoveryRole(readRecoveryRoles(paths), releasePath).status
+
+export const listRecoveryChoices = (paths: DeploySlotPaths) => {
+  const roles = readRecoveryRoles(paths)
+  return listRecoveryReleases(paths)
+    .map((release) => ({
+      ...release,
+      ...describeRecoveryRole(roles, release.releasePath)
+    }))
+    .sort(
+      (left, right) =>
+        left.rank - right.rank || left.releaseId.localeCompare(right.releaseId)
+    )
+}
+
+export const formatRecoveryIdentity = ({
+  tag,
+  commitSha
+}: {
+  tag: string
+  commitSha: string
+}) =>
+  `标签：${tag} | 提交：${commitSha === 'unknown' ? '未知' : commitSha.slice(0, 8)}`
+
+export const formatRecoveryNextSteps = () =>
+  [
+    '下一步：',
+    '  查看版本：pnpm deploy:rollback --list',
+    '  交互恢复：pnpm deploy:rollback',
+    '  详细预览：pnpm deploy:rollback --preview <编号或发布ID>',
+    '  非交互恢复：pnpm deploy:rollback --release <发布ID> --confirm <同一发布ID>'
+  ].join('\n')
+
+export const formatRecoveryState = (
+  paths: DeploySlotPaths,
+  { includeCommands = true } = {}
+) => {
+  const lines = ['部署恢复状态（版本指针不等于在线）：']
   for (const [label, read] of [
-    ['current', getCurrentDeployRelease],
-    ['previous', getPreviousDeployRelease]
+    ['当前指针', getCurrentDeployRelease],
+    ['上一版指针', getPreviousDeployRelease]
   ] as const) {
     try {
       const releasePath = read(paths)
       const release = readRecoveryReleaseIdentity(paths, basename(releasePath))
-      lines.push(
-        `${label}: ${release.releaseId}; tag=${release.tag}; commit=${release.commitSha}; path=${releasePath}`
-      )
-    } catch (error) {
-      lines.push(
-        `${label}: unavailable (${error instanceof Error ? error.message : 'invalid pointer'})`
-      )
+      lines.push(`${label}：${formatRecoveryIdentity(release)}`)
+    } catch {
+      lines.push(`${label}：无法核对，请先检查部署布局`)
     }
   }
   try {
     const journal = readActivationJournal(paths)
     if (journal) {
       lines.push(
-        `activation: ${journal.failure ? 'failed' : 'interrupted/unresolved'}; candidate=${journal.candidate}; original=${journal.oldCurrent}; stopped=${journal.failure?.stopConfirmed === true ? 'confirmed' : '未能确认停止'}`
+        `本次激活：${journal.failure ? '失败' : '中断或未决'}`,
+        `候选进程：${journal.failure?.stopConfirmed === true ? '已确认停止' : '未能确认停止'}`
       )
       try {
         const release = readRecoveryReleaseIdentity(
           paths,
           basename(journal.candidate)
         )
-        lines.push(
-          `candidate: ${release.releaseId}; tag=${release.tag}; commit=${release.commitSha}; path=${release.releasePath}; NOT verified active`
-        )
-      } catch (error) {
-        lines.push(
-          `candidate: unavailable (${error instanceof Error ? error.message : 'invalid release'})`
-        )
+        lines.push(`本次候选：${formatRecoveryIdentity(release)}`)
+      } catch {
+        lines.push('本次候选：无法核对，请先检查发布目录')
       }
-      if (journal.failure) lines.push(`failure: ${journal.failure.message}`)
+      lines.push('激活与失败记录：.deploy/activation-journal.json')
     } else {
-      lines.push('activation: no unresolved journal')
+      lines.push('本次激活：没有未决记录')
     }
   } catch {
     lines.push(
-      'activation: unreadable/invalid journal; retain it and inspect manually before recovery'
+      '本次激活：记录无法读取或已损坏；请保留 .deploy/activation-journal.json 并人工检查'
     )
   }
   lines.push(
-    'Database was not restored. The operator must verify schema and data compatibility for the selected release; age or presence does not establish compatibility.'
+    '恢复只启动所选应用版本，数据库不会恢复；确认前须核对所选版本与数据库的兼容性。'
   )
-  lines.push('Inspect: pnpm deploy:rollback --list')
-  lines.push('Preview: pnpm deploy:rollback --preview <release-id>')
-  lines.push('Choose and confirm: pnpm deploy:rollback')
-  lines.push(
-    'Explicit non-TTY recovery: pnpm deploy:rollback --release <release-id> --confirm <same-release-id>'
-  )
+  if (includeCommands) lines.push('', formatRecoveryNextSteps())
   return lines.join('\n')
 }
 
