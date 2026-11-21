@@ -259,7 +259,7 @@ KUN_ENABLE_CRON=true pm2 restart kun-touchgal-next --update-env
 
 停写后任一步失败，保持必要写入停止，记录发生在同步前、中还是应用切换中，保留备份和输出并重新核对实际状态。可重入只适用于文件已支持的中断点，不等于任意失败自动恢复。
 
-应用回退只处理运行版本，见[部署恢复](deployment.md#离线回退应用)。旧版必须兼容账务、维护冻结、事项和新约束。新事项不能转写旧队列或删表；暂停新事项创建时，依赖关注记录的小喇叭自动隐藏也需由管理员人工处理。
+应用部署失败后保持停机，不自动启动旧版；备份、SQL 与数据库恢复由操作者负责。应用恢复须明确选版并核实兼容，只处理运行版本，见[部署恢复](deployment.md#离线回退应用)。旧版必须兼容账务、维护冻结、事项和新约束。新事项不能转写旧队列或删表；暂停新事项创建时，依赖关注记录的小喇叭自动隐藏也需由管理员人工处理。
 
 会社解析失败先关闭开关、验证兼容上一版。只有上一版也不能兼容最终结构，才在持续停写下执行[约束回退](../../migration/production-company-identity-constraint-rollback-2026-08-30.sql)及[回退复检](../../migration/production-company-identity-constraint-rollback-postflight-2026-08-30.sql)，恢复基础可空形态但保留业务数据。计数回退需停关系写入，执行[计数回退](../../migration/production-tag-company-count-rollback-2026-08-30.sql)，部署匹配手工计数版本、检查计数后再开放。[合并建议专用回退](../../migration/production-company-merge-subset-rollback-2026-09-22.sql)也需审阅演练，不与会社数据合并恢复混用。
 
