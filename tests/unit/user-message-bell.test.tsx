@@ -281,6 +281,24 @@ describe('KunTopBarUser message bell', () => {
     vi.mocked(toast.error).mockClear()
   })
 
+  it('keeps the confirmed session when returning to a visible tab', async () => {
+    const { useUserStore } = await renderTopBarUser()
+    expect(useUserStore.getState().sessionStatus).toBe('authenticated')
+    fetchMock.kunFetchGet.mockClear()
+
+    for (const visibilityState of ['hidden', 'visible']) {
+      Object.defineProperty(document, 'visibilityState', {
+        configurable: true,
+        value: visibilityState
+      })
+      await act(async () => {
+        document.dispatchEvent(new dom!.window.Event('visibilitychange'))
+      })
+    }
+
+    expect(fetchMock.kunFetchGet).not.toHaveBeenCalled()
+  })
+
   it('opens the notification center without marking notifications read first', async () => {
     const { container, useMessageStore } = await renderTopBarUser()
 

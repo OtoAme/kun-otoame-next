@@ -19,16 +19,11 @@ export const SessionSync = () => {
         if (state.sessionStatus === 'checking') void refreshUserSession()
       }
     })
-    const onVisible = () => {
-      if (document.visibilityState === 'visible') onRestore()
-    }
-    document.addEventListener('visibilitychange', onVisible)
     window.addEventListener('storage', onStorage)
     window.addEventListener('pageshow', onRestore)
     window.addEventListener('popstate', onRestore)
     return () => {
       unsubscribe()
-      document.removeEventListener('visibilitychange', onVisible)
       window.removeEventListener('storage', onStorage)
       window.removeEventListener('pageshow', onRestore)
       window.removeEventListener('popstate', onRestore)
