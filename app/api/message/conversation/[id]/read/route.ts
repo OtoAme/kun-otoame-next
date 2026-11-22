@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { verifyHeaderCookie } from '~/middleware/_verifyHeaderCookie'
+import { getRequestIdentity } from '~/app/api/utils/sessionIdentity'
 import { PERSONALIZED_API_CACHE_CONTROL } from '~/app/api/utils/cacheHeaders'
 import { getUnreadMessageStatus } from '~/app/api/message/unread/service'
 import { markConversationAsRead } from '../service'
 import {
   getConversationRetryAfterSeconds,
-  isConversationRateLimitResponse
+  isConversationRateLimitResponse,
+  isConversationError
 } from '../../response'
 import { parseConversationRouteId } from '../../routeParams'
 
@@ -31,7 +32,9 @@ const jsonConversationReadResponse = (body: unknown) => {
     })
   }
 
-  return jsonNoStore(body)
+  if (isConversationError(body))
+    return jsonNoStore(body, { status: body.status })
+  return jsonNoStore(body, { status: typeof body === 'string' ? 400 : 200 })
 }
 
 export const PUT = async (
@@ -41,13 +44,29 @@ export const PUT = async (
   const { id } = await params
   const conversationId = parseConversationRouteId(id)
   if (conversationId === null) {
-    return jsonNoStore('无效的会话 ID')
+    return jsonNoStore('无效的会话 ID', { status: 400 })
   }
 
-  const payload = await verifyHeaderCookie(req)
-  if (!payload) {
-    return jsonNoStore('用户未登录')
+  let identity
+  try {
+    identity = await getRequestIdentity(req)
+  } catch {
+    return jsonNoStore(
+      { code: 'SESSION_UNAVAILABLE', message: '会话暂时不可用' },
+      { status: 503 }
+    )
   }
+  if (identity.status === 'unavailable')
+    return jsonNoStore(
+      { code: 'SESSION_UNAVAILABLE', message: '会话暂时不可用' },
+      { status: 503 }
+    )
+  if (identity.status === 'guest')
+    return jsonNoStore(
+      { code: 'SESSION_INVALID', message: '用户登录失效' },
+      { status: 401 }
+    )
+  const payload = identity.payload
 
   const { checkConversationActionRateLimit } = await import('../../rateLimit')
   const rateLimit = await checkConversationActionRateLimit(
@@ -63,10 +82,10 @@ export const PUT = async (
   }
 
   const readResponse = await markConversationAsRead(conversationId, payload.uid)
-  if (typeof readResponse === 'string') {
-    return jsonNoStore(readResponse)
+  if (typeof readResponse === 'string' || isConversationError(readResponse)) {
+    return jsonConversationReadResponse(readResponse)
   }
 
   const response = await getUnreadMessageStatus(payload.uid)
-  return jsonNoStore(response)
+  return jsonNoStore({ ...response, readThroughId: readResponse.readThroughId })
 }
