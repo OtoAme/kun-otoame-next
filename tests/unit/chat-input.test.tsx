@@ -973,7 +973,10 @@ describe('ChatInput keyboard handling', () => {
       '/message/conversation/5/image',
       expect.any(FormData),
       15000,
-      { preserveErrorStatus: true }
+      {
+        preserveErrorStatus: true,
+        headers: { 'X-Kun-Chat-Session': 'synthetic-write' }
+      }
     )
     expect(fetchMock.kunFetchPost).toHaveBeenCalledWith(
       '/message/conversation/5',
@@ -1462,7 +1465,10 @@ describe('ChatInput keyboard handling', () => {
       '/message/conversation/5/image',
       expect.any(FormData),
       15000,
-      { preserveErrorStatus: true }
+      {
+        preserveErrorStatus: true,
+        headers: { 'X-Kun-Chat-Session': 'synthetic-write' }
+      }
     )
     expect(toast.error).toHaveBeenCalledWith(
       '图片上传失败（错误码 413）：图片大小不能超过 8 MB'

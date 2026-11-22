@@ -775,6 +775,42 @@ describe('ChatContainer realtime sync', () => {
     }
   )
 
+  it('retains an opened conversation across logout and only resumes for its verified owner', async () => {
+    const { container } = await renderChat()
+    const { useUserStore } = await import('~/store/userStore')
+    const editor = container.querySelector('[data-testid="chat-input"]')
+    expect(editor).not.toBeNull()
+    await act(async () => useUserStore.getState().logout())
+    expect(container.querySelector('[data-testid="chat-input"]')).toBe(editor)
+    expect(container.textContent).toContain('已退出登录')
+    fetchMock.kunFetchGet.mockClear()
+    fetchMock.kunFetchPut.mockClear()
+    await act(async () =>
+      useUserStore
+        .getState()
+        .acceptSession({ ...currentUser, uid: otherUser.id }, 'session-b')
+    )
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_000)
+    })
+    expect(container.textContent).toContain('账号已切换')
+    expect(fetchMock.kunFetchGet).not.toHaveBeenCalled()
+    expect(fetchMock.kunFetchPut).not.toHaveBeenCalled()
+    await act(async () =>
+      useUserStore.getState().acceptSession(currentUser, 'session-a-new')
+    )
+    expect(fetchMock.kunFetchGet).toHaveBeenCalledWith(
+      '/message/conversation/5',
+      { page: 1, limit: 1 },
+      expect.objectContaining({
+        headers: { 'X-Kun-Chat-Session': 'session-a-new' }
+      })
+    )
+    expect(container.querySelector('[data-testid="chat-input"]')).toBe(editor)
+    expect(container.textContent).not.toContain('账号已切换')
+    expect(fetchMock.kunFetchPut).toHaveBeenCalled()
+  })
+
   it('loads older history with beforeId instead of page skip', async () => {
     await renderChat('visible', { total: 3, hasMoreBefore: true })
     await act(async () => {

@@ -11,6 +11,11 @@ import { ChatInput } from './ChatInput'
 import { DeleteConversationButton } from './DeleteConversationButton'
 import { KunAvatar } from '~/components/kun/floating-card/KunAvatar'
 import { KunControlledImageViewer } from '~/components/kun/image-viewer/ImageViewer'
+import { ChatWriteSession } from '~/hooks/usePrivateChatRequest'
+import { kunFetchGet, KunFetchError } from '~/utils/kunFetch'
+import { refreshUserSession } from '~/utils/sessionClient'
+import type { UserState } from '~/store/userStore'
+import type { ReactNode } from 'react'
 import { usePrivateChatSync } from '~/hooks/usePrivateChatSync'
 import { chatReviewTargets, mergeChatMessages } from '~/utils/privateChatSync'
 import { useUserStore } from '~/store/userStore'
@@ -112,8 +117,10 @@ const ChatConversation = ({
   total,
   hasMoreBefore,
   otherUser,
-  className
-}: Props) => {
+  className,
+  owner,
+  notice
+}: Props & { owner: UserState; notice: ReactNode }) => {
   const [messages, setMessages] = useState<PrivateMessage[]>(
     sortMessagesById(initialMessages)
   )
@@ -139,7 +146,7 @@ const ChatConversation = ({
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const stickerPickerPortalRef = useRef<HTMLDivElement>(null)
   const loadMoreRef = useRef<HTMLDivElement>(null)
-  const user = useUserStore((state) => state.user)
+  const user = owner
   const deletedIdsRef = useRef(
     new Set(
       initialMessages
@@ -499,7 +506,7 @@ const ChatConversation = ({
   } = usePrivateChatSync({
     conversationId,
     initialSessionContext,
-    initialCursor: getLatestMessageId(initialMessages),
+    initialCursor: getLatestMessageId(messagesRef.current),
     getReviewIds,
     onBatch: applyBatch
   })
@@ -509,7 +516,13 @@ const ChatConversation = ({
   }, [replyDraft?.message.id, activeImage, requestReview])
 
   const loadMoreMessages = useCallback(async () => {
-    if (historyLoadInFlightRef.current || loading || !hasMore) return
+    if (
+      !initialSessionContext ||
+      historyLoadInFlightRef.current ||
+      loading ||
+      !hasMore
+    )
+      return
     const oldestMessageId = getOldestMessageId(messagesRef.current)
     if (!Number.isFinite(oldestMessageId)) return
     historyLoadInFlightRef.current = true
@@ -519,7 +532,7 @@ const ChatConversation = ({
       toast.error('获取历史消息失败，请稍后重试')
     historyLoadInFlightRef.current = false
     setLoading(false)
-  }, [hasMore, loading, loadHistory])
+  }, [hasMore, loading, loadHistory, initialSessionContext])
 
   const handleMessageSent = useCallback(
     (newMessage: PrivateMessage) => {
@@ -804,10 +817,12 @@ const ChatConversation = ({
               消息同步暂时不可用，将自动重试
             </span>
           )}
-          <DeleteConversationButton
-            conversationId={conversationId}
-            otherUserName={otherUser.name}
-          />
+          {initialSessionContext && (
+            <DeleteConversationButton
+              conversationId={conversationId}
+              otherUserName={otherUser.name}
+            />
+          )}
         </CardHeader>
 
         <CardBody className="relative flex flex-col p-0">
@@ -895,6 +910,7 @@ const ChatConversation = ({
             )}
 
             <div className="relative z-30 rounded-2xl border border-[var(--kun-chat-panel-border)] bg-[var(--kun-chat-panel-bg)] p-3 shadow-[var(--kun-chat-panel-shadow)] backdrop-blur-md">
+              {notice}
               <ChatInput
                 conversationId={conversationId}
                 replyTarget={replyDraft?.message}
@@ -920,14 +936,162 @@ const ChatConversation = ({
   )
 }
 
-export const ChatContainer = (props: Props) => {
-  const context = useUserStore((state) => state.sessionContext)
-  const generation = useUserStore((state) => state.sessionGeneration)
-  if (!context || context !== props.initialSessionContext) return null
+// Pin the already displayed conversation to its original owner. Restoring a
+// different authenticated session also requires a fresh membership check.
+const ChatSession = (props: Props) => {
+  const { user, sessionStatus, sessionContext, sessionGeneration } =
+    useUserStore()
+  const [access, setAccess] = useState<{
+    owner: UserState
+    context: string
+    generation: number
+  } | null>(null)
+  const [failure, setFailure] = useState('')
+  const [attempt, setAttempt] = useState(0)
+  const sameSession =
+    access !== null &&
+    user.uid === access.owner.uid &&
+    sessionContext === access.context &&
+    sessionGeneration === access.generation
+  const active = sessionStatus === 'authenticated' && sameSession
+
+  useEffect(() => {
+    if (sessionStatus !== 'authenticated' || !sessionContext || !user.uid)
+      return
+    if (!access) {
+      if (sessionContext === props.initialSessionContext)
+        setAccess({
+          owner: user,
+          context: sessionContext,
+          generation: sessionGeneration
+        })
+      return
+    }
+    if (user.uid !== access.owner.uid || active) return
+    const controller = new AbortController()
+    const isCurrent = () => {
+      const current = useUserStore.getState()
+      return (
+        !controller.signal.aborted &&
+        current.sessionStatus === 'authenticated' &&
+        current.sessionContext === sessionContext &&
+        current.sessionGeneration === sessionGeneration
+      )
+    }
+    setFailure('')
+    void kunFetchGet<ConversationMessagesResponse>(
+      `/message/conversation/${props.conversationId}`,
+      { page: 1, limit: 1 },
+      {
+        headers: { 'X-Kun-Chat-Session': sessionContext },
+        signal: controller.signal,
+        timeout: 15_000,
+        preserveErrorStatus: true
+      }
+    )
+      .then((page) => {
+        if (!isCurrent()) return
+        if (
+          !Array.isArray(page?.messages) ||
+          page.otherUser?.id !== props.otherUser.id
+        ) {
+          setFailure('无法确认对话成员资格')
+          return
+        }
+        setAccess({
+          owner: access.owner,
+          context: sessionContext,
+          generation: sessionGeneration
+        })
+      })
+      .catch((error) => {
+        if (!isCurrent()) return
+        if (error instanceof KunFetchError && error.status === 401) {
+          void refreshUserSession()
+        } else {
+          setFailure(
+            error instanceof KunFetchError && error.status === 403
+              ? '当前账号已无权访问此对话'
+              : '暂时无法确认对话，请重试'
+          )
+        }
+      })
+    return () => controller.abort()
+  }, [
+    access,
+    active,
+    attempt,
+    props.conversationId,
+    props.initialSessionContext,
+    props.otherUser.id,
+    sessionContext,
+    sessionGeneration,
+    sessionStatus,
+    user.uid
+  ])
+
+  const guest = sessionStatus === 'guest'
+  const switched =
+    sessionStatus === 'authenticated' &&
+    access !== null &&
+    user.uid !== access.owner.uid
+  const unavailable = sessionStatus === 'unavailable'
+  const notice = active ? null : (
+    <div role="status" className="mb-2 text-sm text-default-600">
+      {guest
+        ? '已退出登录，当前对话已暂停。'
+        : switched
+          ? '账号已切换，当前对话已暂停。'
+          : unavailable
+            ? '暂时无法确认登录状态。'
+            : failure || '正在确认对话…'}
+      {guest && (
+        <Link
+          href="/login"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-primary"
+        >
+          登录
+        </Link>
+      )}
+      {(unavailable || (!switched && !guest && failure)) && (
+        <Button
+          size="sm"
+          variant="light"
+          onPress={() =>
+            unavailable ? void refreshUserSession() : setAttempt((n) => n + 1)
+          }
+        >
+          重试
+        </Button>
+      )}
+    </div>
+  )
+  if (!access) {
+    if (
+      sessionStatus === 'authenticated' &&
+      sessionContext !== props.initialSessionContext
+    )
+      return <Link href="/message/chat">账号已变化，返回私聊列表</Link>
+    return notice
+  }
+  const allowed = active ? access.context : null
   return (
-    <ChatConversation
-      key={`${props.conversationId}:${context}:${generation}`}
-      {...props}
-    />
+    <ChatWriteSession.Provider value={allowed}>
+      <ChatConversation
+        {...props}
+        initialSessionContext={sameSession ? access.context : ''}
+        owner={access.owner}
+        notice={notice}
+      />
+    </ChatWriteSession.Provider>
   )
 }
+
+export const ChatContainer = (props: Props) => (
+  <ChatSession
+    key={`${props.conversationId}:${props.initialSessionContext}`}
+    {...props}
+  />
+)

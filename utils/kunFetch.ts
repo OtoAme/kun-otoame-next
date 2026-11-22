@@ -248,7 +248,10 @@ const kunFetchRequest = async <T>(
 export const kunFetchGet = async <T>(
   url: string,
   query?: Record<string, string | number>,
-  options?: Pick<FetchOptions, 'timeout' | 'signal' | 'preserveErrorStatus'>
+  options?: Pick<
+    FetchOptions,
+    'timeout' | 'signal' | 'preserveErrorStatus' | 'headers'
+  >
 ): Promise<T> => {
   return kunFetchRequest<T>(url, 'GET', { query, ...options })
 }
@@ -256,7 +259,10 @@ export const kunFetchGet = async <T>(
 export const kunFetchPost = async <T>(
   url: string,
   body?: Record<string, unknown>,
-  options?: Pick<FetchOptions, 'timeout' | 'signal' | 'preserveErrorStatus'>
+  options?: Pick<
+    FetchOptions,
+    'timeout' | 'signal' | 'preserveErrorStatus' | 'headers'
+  >
 ): Promise<T> => {
   return kunFetchRequest<T>(url, 'POST', { body, ...options })
 }
@@ -266,7 +272,7 @@ export const kunFetchPut = async <T>(
   body?: Record<string, unknown>,
   options?: Pick<
     FetchOptions,
-    'keepalive' | 'timeout' | 'signal' | 'preserveErrorStatus'
+    'keepalive' | 'timeout' | 'signal' | 'preserveErrorStatus' | 'headers'
   >
 ): Promise<T> => {
   return kunFetchRequest<T>(url, 'PUT', { body, ...options })
@@ -282,7 +288,10 @@ export const kunFetchPatch = async <T>(
 export const kunFetchDelete = async <T>(
   url: string,
   query?: Record<string, string | number>,
-  options?: Pick<FetchOptions, 'timeout' | 'signal' | 'preserveErrorStatus'>
+  options?: Pick<
+    FetchOptions,
+    'timeout' | 'signal' | 'preserveErrorStatus' | 'headers'
+  >
 ): Promise<T> => {
   return kunFetchRequest<T>(url, 'DELETE', { query, ...options })
 }
@@ -298,7 +307,7 @@ export const kunFetchFormData = async <T>(
   url: string,
   formData?: FormData,
   timeout?: number,
-  options?: Pick<FetchOptions, 'preserveErrorStatus'>
+  options?: Pick<FetchOptions, 'preserveErrorStatus' | 'headers'>
 ): Promise<T> => {
   if (!formData) {
     throw new Error('formData is required for kunFetchFormData')

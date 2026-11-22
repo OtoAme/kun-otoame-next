@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   limit: vi.fn()
 }))
 vi.mock('~/app/api/utils/sessionIdentity', () => ({
+  getSessionContext: () => 'current-chat-session',
   getRequestIdentity: mocks.identity
 }))
 vi.mock('~/app/api/message/conversation/[id]/service', () => ({
@@ -52,6 +53,35 @@ const routes = async () => [
 ]
 
 describe('private chat HTTP status and side-effect boundaries', () => {
+  it('rejects a stale displayed session before reading, sending or marking messages read', async () => {
+    const { POST } = await import('~/app/api/message/conversation/[id]/route')
+    const targets = [
+      ...(await routes()),
+      { path: '/api/message/conversation/5', method: 'POST', handler: POST }
+    ]
+    for (const route of targets) {
+      const result = await route.handler(
+        new NextRequest('http://localhost' + route.path, {
+          method: route.method,
+          headers: {
+            'X-Kun-Chat-Session': 'previous-chat-session',
+            'Content-Type': 'application/json'
+          },
+          body:
+            route.method === 'POST'
+              ? JSON.stringify({ type: 0, content: 'draft' })
+              : undefined
+        }),
+        { params: Promise.resolve({ id: '5' }) }
+      )
+      expect(result.status).toBe(401)
+      expect(await result.json()).toMatchObject({ code: 'SESSION_CHANGED' })
+    }
+    expect(mocks.limit).not.toHaveBeenCalled()
+    expect(mocks.read).not.toHaveBeenCalled()
+    expect(mocks.list).not.toHaveBeenCalled()
+  })
+
   it.each(['guest', 'unavailable', 'throw'])(
     'uses explicit failure status for %s without deleting cookies or reading data',
     async (identity) => {

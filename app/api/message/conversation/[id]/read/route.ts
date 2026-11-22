@@ -1,3 +1,4 @@
+import { checkChatSession } from '../../session'
 import { NextRequest, NextResponse } from 'next/server'
 import { getRequestIdentity } from '~/app/api/utils/sessionIdentity'
 import { PERSONALIZED_API_CACHE_CONTROL } from '~/app/api/utils/cacheHeaders'
@@ -67,6 +68,8 @@ export const PUT = async (
       { status: 401 }
     )
   const payload = identity.payload
+  const mismatch = checkChatSession(req, payload)
+  if (mismatch) return mismatch
 
   const { checkConversationActionRateLimit } = await import('../../rateLimit')
   const rateLimit = await checkConversationActionRateLimit(

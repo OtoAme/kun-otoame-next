@@ -363,7 +363,7 @@ export const ChatMessage = ({
     } catch (error) {
       request.fail(error, '消息编辑失败，请稍后重试')
     } finally {
-      if (request.isCurrent()) setIsSubmitting(false)
+      setIsSubmitting(false)
     }
   }
 
@@ -389,7 +389,7 @@ export const ChatMessage = ({
     } catch (error) {
       request.fail(error, '消息删除失败，请稍后重试')
     } finally {
-      if (request.isCurrent()) setIsSubmitting(false)
+      setIsSubmitting(false)
     }
   }
 

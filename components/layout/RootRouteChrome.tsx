@@ -160,23 +160,27 @@ export const KunRootRouteChrome = ({
             'max-lg:min-h-0 max-lg:grow max-lg:overflow-hidden'
         )}
       >
-        <SessionContentBoundary
-          personalized={
-            !(
-              pathname === '/' ||
-              pathname === '/login' ||
-              pathname === '/register' ||
-              pathname.startsWith('/login/') ||
-              pathname.startsWith('/auth/') ||
-              pathname === '/doc' ||
-              pathname.startsWith('/doc/') ||
-              pathname === '/friend-link' ||
-              pathname === '/moemoepoint/rules'
-            )
-          }
-        >
-          {children}
-        </SessionContentBoundary>
+        {isConversationDetail ? (
+          children
+        ) : (
+          <SessionContentBoundary
+            personalized={
+              !(
+                pathname === '/' ||
+                pathname === '/login' ||
+                pathname === '/register' ||
+                pathname.startsWith('/login/') ||
+                pathname.startsWith('/auth/') ||
+                pathname === '/doc' ||
+                pathname.startsWith('/doc/') ||
+                pathname === '/friend-link' ||
+                pathname === '/moemoepoint/rules'
+              )
+            }
+          >
+            {children}
+          </SessionContentBoundary>
+        )}
       </div>
       {!isConversationDetail && <KunBackToTop />}
       {!isConversationDetail && <KunFooter />}

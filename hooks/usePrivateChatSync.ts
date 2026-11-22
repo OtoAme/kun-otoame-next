@@ -171,6 +171,7 @@ export const usePrivateChatSync = (options: Options) => {
           {
             timeout: 15_000,
             signal,
+            headers: { 'X-Kun-Chat-Session': context },
             preserveErrorStatus: true
           }
         )
@@ -239,6 +240,7 @@ export const usePrivateChatSync = (options: Options) => {
             {
               timeout: 15_000,
               signal,
+              headers: { 'X-Kun-Chat-Session': context },
               preserveErrorStatus: true
             }
           )

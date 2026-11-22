@@ -1,3 +1,4 @@
+import { checkChatSession } from '../../session'
 import { NextRequest, NextResponse } from 'next/server'
 import { verifyHeaderCookie } from '~/middleware/_verifyHeaderCookie'
 import { verifyKunCsrf } from '~/middleware/_csrf'
@@ -86,8 +87,10 @@ export const POST = async (
 
   const payload = await verifyHeaderCookie(req)
   if (!payload) {
-    return jsonNoStore('用户未登录')
+    return jsonNoStore('用户未登录', { status: 401 })
   }
+  const mismatch = checkChatSession(req, payload)
+  if (mismatch) return mismatch
 
   const { id } = await params
   const conversationId = parseConversationRouteId(id)

@@ -54,7 +54,7 @@ export const DeleteConversationButton = ({
     } catch (error) {
       request.fail(error, '移除私聊失败，请稍后重试')
     } finally {
-      if (request.isCurrent()) setIsDeleting(false)
+      setIsDeleting(false)
     }
   }
 

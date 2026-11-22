@@ -1,7 +1,10 @@
 'use client'
 
-import { usePrivateChatRequest } from '~/hooks/usePrivateChatRequest'
-import { useEffect, useRef, useState, type RefObject } from 'react'
+import {
+  ChatWriteSession,
+  usePrivateChatRequest
+} from '~/hooks/usePrivateChatRequest'
+import { useContext, useEffect, useRef, useState, type RefObject } from 'react'
 import { Button } from '@heroui/react'
 import { Textarea } from '@heroui/input'
 import { AnimatePresence } from 'framer-motion'
@@ -222,6 +225,8 @@ export const ChatInput = ({
     textarea.setSelectionRange(end, end)
   }, [replyImageIndex, replySelectedText, replyTarget])
 
+  const writeSession = useContext(ChatWriteSession)
+  const paused = writeSession === null
   const beginRequest = usePrivateChatRequest(conversationId)
 
   const isUploadedImage = (
@@ -253,7 +258,7 @@ export const ChatInput = ({
       request.fail(error, '获取贴纸失败，请稍后重试')
       if (request.isCurrent()) setStickerError('获取贴纸失败，请稍后重试')
     } finally {
-      if (request.isCurrent()) setIsStickerLoading(false)
+      setIsStickerLoading(false)
     }
   }
 
@@ -300,7 +305,7 @@ export const ChatInput = ({
       request.fail(error, '贴纸发送失败，请稍后重试')
     } finally {
       isSendingRef.current = false
-      if (request.isCurrent()) setSending(false)
+      setSending(false)
     }
   }
 
@@ -348,7 +353,7 @@ export const ChatInput = ({
                 `/message/conversation/${conversationId}/image`,
                 formData,
                 request.options.timeout,
-                { preserveErrorStatus: true }
+                { preserveErrorStatus: true, headers: request.options.headers }
               )
               return { index, result }
             })
@@ -429,7 +434,7 @@ export const ChatInput = ({
       request.fail(error, '消息发送失败，请稍后重试')
     } finally {
       isSendingRef.current = false
-      if (request.isCurrent()) setSending(false)
+      setSending(false)
     }
   }
 
@@ -688,6 +693,7 @@ export const ChatInput = ({
                 isIconOnly
                 size="sm"
                 variant={isStickerPickerOpen ? 'flat' : 'light'}
+                isDisabled={paused}
                 aria-label="选择贴纸"
                 aria-expanded={isStickerPickerOpen}
                 aria-haspopup="dialog"
@@ -697,7 +703,7 @@ export const ChatInput = ({
                 <Smile className="size-4" />
               </Button>
               <AnimatePresence>
-                {isStickerPickerOpen && (
+                {!paused && isStickerPickerOpen && (
                   <StickerPicker
                     key="private-chat-sticker-picker"
                     ref={stickerPickerPopupRef}
@@ -725,7 +731,7 @@ export const ChatInput = ({
           color="primary"
           isIconOnly
           isLoading={sending}
-          isDisabled={!canSend}
+          isDisabled={paused || !canSend}
           aria-label="发送消息"
           onPress={handleSend}
         >
