@@ -10,7 +10,6 @@ import {
 } from 'react'
 import Link from 'next/link'
 import { useRouter } from '@bprogress/next'
-import { useMounted } from '~/hooks/useMounted'
 import { useUserStore } from '~/store/userStore'
 import { refreshUserSession } from '~/utils/sessionClient'
 import type { ReactNode } from 'react'
@@ -32,23 +31,21 @@ export const SessionContentBoundary = ({
   const [displayedGeneration, setDisplayedGeneration] = useState(generation)
   const [refreshing, startTransition] = useTransition()
   const router = useRouter()
-  const mounted = useMounted()
   useEffect(() => {
     if (displayedGeneration === generation) return
     startTransition(() => {
       setDisplayedGeneration(generation)
-      router.refresh()
+      if (personalized) router.refresh()
     })
-  }, [displayedGeneration, generation, router])
+  }, [displayedGeneration, generation, personalized, router])
   const pending =
     personalized &&
-    mounted &&
     (status === 'checking' ||
       status === 'unavailable' ||
       refreshing ||
       displayedGeneration !== generation)
   return (
-    <Fragment key={generation}>
+    <Fragment key={personalized ? generation : 'public'}>
       <SessionContentReadyContext.Provider value={!pending}>
         <div
           hidden={pending}

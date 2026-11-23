@@ -1,11 +1,11 @@
 import React, { act } from 'react'
 import { JSDOM } from 'jsdom'
-import { createRoot, type Root } from 'react-dom/client'
+import { createRoot, hydrateRoot, type Root } from 'react-dom/client'
+import { renderToString } from 'react-dom/server'
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
 
 const navigation = vi.hoisted(() => ({ refresh: vi.fn() }))
 vi.mock('@bprogress/next', () => ({ useRouter: () => navigation }))
-vi.mock('~/hooks/useMounted', () => ({ useMounted: () => true }))
 vi.mock('~/utils/sessionClient', () => ({ refreshUserSession: vi.fn() }))
 vi.mock('next/link', () => ({
   default: (props: React.ComponentProps<'a'>) => <a {...props} />
@@ -31,6 +31,112 @@ afterEach(async () => {
 })
 
 describe('personalized content lifecycle', () => {
+  it('keeps the initial session placeholder consistent from server rendering through hydration', async () => {
+    const { useUserStore } = await import('~/store/userStore')
+    const { SessionContentBoundary } = await import(
+      '~/components/kun/SessionContentBoundary'
+    )
+    const page = (
+      <SessionContentBoundary>
+        <textarea defaultValue="server content" />
+      </SessionContentBoundary>
+    )
+    const container = document.getElementById('root')!
+    await act(async () => root.unmount())
+    container.innerHTML = renderToString(page)
+    const content = document.querySelector('textarea')!
+    const recoverableError = vi.fn()
+
+    expect(content.parentElement?.hidden).toBe(true)
+    expect(document.querySelector('[role="status"]')?.textContent).toBe(
+      '正在确认会话…'
+    )
+
+    await act(async () => {
+      root = hydrateRoot(container, page, {
+        onRecoverableError: recoverableError
+      })
+    })
+    expect(document.querySelector('textarea')).toBe(content)
+    expect(content.parentElement?.hidden).toBe(true)
+
+    await act(async () => {
+      useUserStore
+        .getState()
+        .acceptSession(
+          { ...useUserStore.getState().user, uid: 7, name: 'synthetic' },
+          'confirmed-session'
+        )
+    })
+    expect(document.querySelector('textarea')).toBe(content)
+    expect(content.parentElement?.hidden).toBe(false)
+    expect(document.querySelector('[role="status"]')).toBeNull()
+    expect(navigation.refresh).not.toHaveBeenCalled()
+    expect(recoverableError).not.toHaveBeenCalled()
+  })
+
+  it('preserves public page input when the initial visitor is confirmed as a guest', async () => {
+    const { useUserStore } = await import('~/store/userStore')
+    const { SessionContentBoundary } = await import(
+      '~/components/kun/SessionContentBoundary'
+    )
+    await act(async () =>
+      root.render(
+        <SessionContentBoundary personalized={false}>
+          <input aria-label="Username" defaultValue="" />
+        </SessionContentBoundary>
+      )
+    )
+    const input = document.querySelector('input')!
+    input.value = 'unfinished sign-in'
+
+    await act(async () => useUserStore.getState().logout())
+
+    expect(document.querySelector('input')).toBe(input)
+    expect(input.value).toBe('unfinished sign-in')
+    expect(input.parentElement?.hidden).toBe(false)
+    expect(navigation.refresh).not.toHaveBeenCalled()
+  })
+
+  it('preserves public content across account changes and refreshes later personalized content on logout', async () => {
+    const { useUserStore } = await import('~/store/userStore')
+    const { SessionContentBoundary } = await import(
+      '~/components/kun/SessionContentBoundary'
+    )
+    await act(async () =>
+      root.render(
+        <SessionContentBoundary personalized={false}>
+          <textarea defaultValue="public draft" />
+        </SessionContentBoundary>
+      )
+    )
+    const publicDraft = document.querySelector('textarea')!
+    for (const uid of [7, 8]) {
+      await act(async () => {
+        useUserStore
+          .getState()
+          .acceptSession(
+            { ...useUserStore.getState().user, uid, name: 'synthetic' },
+            `session-${uid}`
+          )
+      })
+      expect(document.querySelector('textarea')).toBe(publicDraft)
+    }
+    expect(navigation.refresh).not.toHaveBeenCalled()
+
+    await act(async () =>
+      root.render(
+        <SessionContentBoundary>
+          <textarea defaultValue="personal draft" />
+        </SessionContentBoundary>
+      )
+    )
+    const personalDraft = document.querySelector('textarea')!
+    await act(async () => useUserStore.getState().logout())
+    expect(personalDraft.isConnected).toBe(false)
+    expect(navigation.refresh).toHaveBeenCalledOnce()
+  })
+
   it('defaults to ready outside a personalized boundary', async () => {
     const { useSessionContentReady } = await import(
       '~/components/kun/SessionContentBoundary'
