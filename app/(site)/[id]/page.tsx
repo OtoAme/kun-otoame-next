@@ -1,11 +1,13 @@
 import { PatchHeaderContainer } from '~/components/patch/header/Container'
 import { ErrorComponent } from '~/components/error/ErrorComponent'
 import { KunBreadcrumbTitle } from '~/components/kun/BreadcrumbTitle'
+import { KunNull } from '~/components/kun/Null'
 import { generateKunMetadataTemplate } from './metadata'
 import { kunGetPatchPageDataActions } from './actions'
 import { verifyHeaderCookie } from '~/utils/actions/verifyHeaderCookie'
 import { getNSFWHeader } from '~/utils/actions/getNSFWHeader'
 import { getPatchPageTitle } from '~/utils/patch/getPatchPageTitle'
+import { generateNullMetadata } from '~/utils/noIndex'
 import { notFound } from 'next/navigation'
 import type { Metadata } from 'next'
 
@@ -35,6 +37,9 @@ export const generateMetadata = async ({
   if (typeof pageData === 'string') {
     return {}
   }
+  if ('blockedBy' in pageData) {
+    return generateNullMetadata('')
+  }
 
   return generateKunMetadataTemplate(
     pageData.patch,
@@ -57,6 +62,19 @@ export default async function Kun({ params }: Props) {
   const nsfwAllowed = isNsfwAllowed(nsfwHeader)
   if (typeof pageData === 'string') {
     return <ErrorComponent error={pageData} />
+  }
+  if ('blockedBy' in pageData) {
+    const message = !payload?.uid
+      ? '请登录后查看'
+      : nsfwAllowed
+        ? '请在右上角菜单开启 SFW 内容显示后查看'
+        : '请在右上角菜单开启 NSFW 内容显示后查看'
+
+    return (
+      <div className="container py-6 mx-auto">
+        <KunNull message={message} />
+      </div>
+    )
   }
 
   const isNsfwBlocked = pageData.patch.contentLimit === 'nsfw' && !nsfwAllowed

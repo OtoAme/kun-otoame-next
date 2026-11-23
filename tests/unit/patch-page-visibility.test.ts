@@ -29,6 +29,49 @@ beforeEach(() => {
 })
 
 describe('patch page server content visibility', () => {
+  it.each(['sfw', 'nsfw'])(
+    'returns a content preference notice when %s mode alone blocks the patch',
+    async (mode) => {
+      mocks.visibility.mockResolvedValue({ content_limit: mode })
+      mocks.findPatch
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({ id: 7 })
+
+      expect(
+        await kunGetPatchPageDataActions({ uniqueId: 'AbCd1234' })
+      ).toEqual({
+        blockedBy: 'content-preference'
+      })
+      expect(mocks.content).not.toHaveBeenCalled()
+    }
+  )
+
+  it('keeps blocked tags enforced when identifying a content preference mismatch', async () => {
+    const tagFilter = { NOT: { tag: { some: { tag_id: { in: [3] } } } } }
+    mocks.visibility.mockResolvedValue({ content_limit: 'sfw', ...tagFilter })
+    mocks.findPatch.mockResolvedValue(null)
+
+    expect(await kunGetPatchPageDataActions({ uniqueId: 'AbCd1234' })).toEqual(
+      expect.any(String)
+    )
+    expect(mocks.findPatch).toHaveBeenLastCalledWith({
+      where: { unique_id: 'AbCd1234', ...tagFilter },
+      select: { id: true }
+    })
+    expect(mocks.content).not.toHaveBeenCalled()
+  })
+
+  it('does not suggest changing content mode when all content is already enabled', async () => {
+    mocks.visibility.mockResolvedValue({})
+    mocks.findPatch.mockResolvedValue(null)
+
+    expect(await kunGetPatchPageDataActions({ uniqueId: 'AbCd1234' })).toEqual(
+      expect.any(String)
+    )
+    expect(mocks.findPatch).toHaveBeenCalledOnce()
+    expect(mocks.content).not.toHaveBeenCalled()
+  })
+
   it('does not serialize restricted content into client props or metadata', async () => {
     mocks.findPatch.mockResolvedValue(null)
     expect(await kunGetPatchPageDataActions({ uniqueId: 'AbCd1234' })).toEqual(
