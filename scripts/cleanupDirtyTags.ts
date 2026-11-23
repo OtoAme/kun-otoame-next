@@ -1,3 +1,7 @@
+import {
+  lockPreferenceTags,
+  maintainBlockedTagPreferences
+} from '~/lib/accountPreferences/service'
 import 'dotenv/config'
 import { prisma } from '~/prisma/index'
 import { lowQualityTags } from '~/lib/bgmDirtyTag'
@@ -8,41 +12,6 @@ const shouldApply = process.argv.includes('--apply')
 const dirtyTagNames = Array.from(
   new Set([...lowQualityTags, ...lowQualitySteamTags].map((tag) => tag.trim()))
 ).filter(Boolean)
-
-const removeBlockedTagIds = async (tagIds: number[]) => {
-  if (!tagIds.length) {
-    return
-  }
-
-  const tagIdSet = new Set(tagIds)
-  const users = await prisma.user.findMany({
-    where: {
-      OR: tagIds.map((tagId) => ({
-        blocked_tag_ids: { has: tagId }
-      }))
-    },
-    select: {
-      id: true,
-      blocked_tag_ids: true
-    }
-  })
-  if (!users.length) {
-    return
-  }
-
-  await prisma.$transaction(
-    users.map((user) =>
-      prisma.user.update({
-        where: { id: user.id },
-        data: {
-          blocked_tag_ids: user.blocked_tag_ids.filter(
-            (tagId) => !tagIdSet.has(tagId)
-          )
-        }
-      })
-    )
-  )
-}
 
 const run = async () => {
   const tags = await prisma.patch_tag.findMany({
@@ -109,6 +78,8 @@ const run = async () => {
   }
 
   await prisma.$transaction(async (prisma) => {
+    await lockPreferenceTags(prisma, tagIds)
+    await maintainBlockedTagPreferences(prisma, tagIds)
     await prisma.patch_tag_relation.deleteMany({
       where: { tag_id: { in: tagIds } }
     })
@@ -117,8 +88,6 @@ const run = async () => {
       where: { id: { in: tagIds } }
     })
   })
-
-  await removeBlockedTagIds(tagIds)
 
   try {
     const {

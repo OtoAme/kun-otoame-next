@@ -7,6 +7,7 @@ import { useDisclosure } from '@heroui/modal'
 import { Link } from '@heroui/link'
 import { Pencil } from 'lucide-react'
 import { useMounted } from '~/hooks/useMounted'
+import { useBrowsingScope } from '~/hooks/useBrowsingScope'
 import { KunHeader } from '~/components/kun/Header'
 import { KunUser } from '~/components/kun/floating-card/KunUser'
 import { KunLoading } from '~/components/kun/Loading'
@@ -97,37 +98,6 @@ const getUrlFilterState = () => {
   }
 }
 
-const getCookieValue = (name: string) => {
-  if (typeof document === 'undefined') {
-    return undefined
-  }
-
-  const cookie = document.cookie
-    .split(';')
-    .map((value) => value.trim())
-    .find((value) => value.startsWith(`${name}=`))
-
-  if (!cookie) {
-    return undefined
-  }
-
-  return decodeURIComponent(cookie.split('=').slice(1).join('='))
-}
-
-const shouldFetchPersonalizedInitialList = () => {
-  const nsfwPreference = getCookieValue(
-    'kun-patch-setting-store|state|data|kunNsfwEnable'
-  )
-
-  return (
-    getCookieValue('kun-galgame-patch-moe-token') !== undefined ||
-    getCookieValue('kun-patch-setting-store|state|data|kunBlockedTagIds') !==
-      undefined ||
-    nsfwPreference === 'nsfw' ||
-    nsfwPreference === 'all'
-  )
-}
-
 export const CompanyDetailContainer: FC<Props> = ({
   initialCompany,
   initialGalgames,
@@ -137,6 +107,10 @@ export const CompanyDetailContainer: FC<Props> = ({
   const { isOpen, onOpen, onClose } = useDisclosure()
 
   const isMounted = useMounted()
+  const scope = useBrowsingScope()
+  const scopeRef = useRef(scope.key)
+  scopeRef.current = scope.key
+  const [resultScope, setResultScope] = useState(scope.key)
   const shouldResolveInitialVisibility = initialVisibility === 'pending'
   const user = useUserStore((state) => state.user)
   const router = useRouter()
@@ -171,13 +145,10 @@ export const CompanyDetailContainer: FC<Props> = ({
   )
 
   const [company, setCompany] = useState(initialCompany)
-  const [patches, setPatches] = useState<GalgameCard[]>(
-    shouldResolveInitialVisibility ? [] : initialGalgames
-  )
-  const [totalPatches, setTotalPatches] = useState(
-    shouldResolveInitialVisibility ? 0 : initialTotal
-  )
-  const [loading, setLoading] = useState(shouldResolveInitialVisibility)
+  const [patches, setPatches] = useState<GalgameCard[]>(initialGalgames)
+  const [totalPatches, setTotalPatches] = useState(initialTotal)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState(false)
 
   const updateFilter = <T,>(setter: (value: T) => void, value: T) => {
     setPage(1)
@@ -246,8 +217,11 @@ export const CompanyDetailContainer: FC<Props> = ({
   }
 
   const fetchPatches = async () => {
+    if (!scope.ready || !scope.key) return
+    const requestScope = scope.key
     const requestId = ++fetchRequestId.current
     setLoading(true)
+    setError(false)
 
     try {
       const response = await kunFetchGet<{
@@ -267,29 +241,41 @@ export const CompanyDetailContainer: FC<Props> = ({
         minRatingCount: sortField === 'rating' ? minRatingCount : 0
       })
 
-      if (requestId !== fetchRequestId.current) {
+      if (
+        requestId !== fetchRequestId.current ||
+        requestScope !== scopeRef.current
+      ) {
         return
       }
 
       if (typeof response === 'string') {
+        setError(true)
         kunErrorHandler(response, () => {})
         setPatches([])
         setTotalPatches(0)
         return
       }
 
+      setResultScope(requestScope)
       setPatches(response.galgames)
       setTotalPatches(response.total)
     } catch (error) {
-      if (requestId !== fetchRequestId.current) {
+      if (
+        requestId !== fetchRequestId.current ||
+        requestScope !== scopeRef.current
+      ) {
         return
       }
 
       errorReporter(error)
+      setError(true)
       setPatches([])
       setTotalPatches(0)
     } finally {
-      if (requestId === fetchRequestId.current) {
+      if (
+        requestId === fetchRequestId.current &&
+        requestScope === scopeRef.current
+      ) {
         setLoading(false)
       }
     }
@@ -309,7 +295,7 @@ export const CompanyDetailContainer: FC<Props> = ({
   }, [isMounted])
 
   useEffect(() => {
-    if (!isMounted || !isUrlReady) {
+    if (!isMounted || !isUrlReady || !scope.ready) {
       return
     }
 
@@ -336,13 +322,15 @@ export const CompanyDetailContainer: FC<Props> = ({
       hasUsedInitialPatches.current = true
 
       if (
-        shouldResolveInitialVisibility &&
-        shouldFetchPersonalizedInitialList()
+        shouldResolveInitialVisibility
+          ? !scope.isPublic
+          : resultScope !== scope.key
       ) {
         fetchPatches()
         return
       }
 
+      setResultScope(scope.key)
       setPatches(initialGalgames)
       setTotalPatches(initialTotal)
       setLoading(false)
@@ -354,6 +342,8 @@ export const CompanyDetailContainer: FC<Props> = ({
   }, [
     isMounted,
     isUrlReady,
+    scope.key,
+    scope.ready,
     page,
     sortField,
     sortOrder,
@@ -365,6 +355,14 @@ export const CompanyDetailContainer: FC<Props> = ({
     sortField === 'rating' ? minRatingCount : null,
     shouldResolveInitialVisibility
   ])
+
+  useEffect(
+    () => () => {
+      fetchRequestId.current += 1
+    },
+    []
+  )
+  const waiting = loading || scope.key === null || resultScope !== scope.key
 
   return (
     <div className="w-full my-4 space-y-6">
@@ -495,7 +493,19 @@ export const CompanyDetailContainer: FC<Props> = ({
         />
       </div>
 
-      {loading ? (
+      {error ? (
+        <div role="alert">
+          游戏列表读取失败，请重试。
+          <Button
+            onPress={() => {
+              void fetchPatches()
+            }}
+            isDisabled={!scope.ready}
+          >
+            重试
+          </Button>
+        </div>
+      ) : waiting ? (
         <KunLoading hint="正在获取 OtomeGame 中..." />
       ) : (
         <div>

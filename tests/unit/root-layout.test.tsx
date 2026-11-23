@@ -7,6 +7,13 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 globalThis.React = React
 
+vi.mock('~/utils/actions/getSessionRenderState', () => ({
+  getSessionRenderState: vi.fn(async () => ({
+    identity: 'guest',
+    browsingKey: '["sfw",[]]'
+  }))
+}))
+
 const navigationMock = vi.hoisted(() => ({
   pathname: '/'
 }))

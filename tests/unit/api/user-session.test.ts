@@ -81,7 +81,39 @@ describe('/api/user/session', () => {
     authMocks.verifyHeaderCookie.mockResolvedValueOnce(null)
     const { GET } = await import('~/app/api/user/session/route')
     const response = await GET(
+      new Request('https://www.otoame.top/api/user/session', {
+        headers: { cookie: 'kun-galgame-patch-moe-token=expired' }
+      }) as never
+    )
+    expect(response.status).toBe(401)
+    expect((await response.json()).code).toBe('SESSION_INVALID')
+    expect(response.headers.has('Set-Cookie')).toBe(false)
+  })
+
+  it('confirms a clean anonymous request without cookie cleanup', async () => {
+    authMocks.verifyHeaderCookie.mockResolvedValueOnce(null)
+    const { GET } = await import('~/app/api/user/session/route')
+    const response = await GET(
       new Request('https://www.otoame.top/api/user/session') as never
+    )
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({ status: 'guest' })
+    expect(response.headers.get('Cache-Control')).toBe('private, no-store')
+    expect(response.headers.has('Set-Cookie')).toBe(false)
+    expect(statusMocks.getStatus).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    'kun-galgame-patch-moe-token=',
+    'kun-patch-setting-store|state|data|kunNsfwEnable=all',
+    'kun-patch-setting-store|state|data|kunBlockedTagIds=%5B7%5D'
+  ])('requires coordinated cleanup for residual cookies %s', async (cookie) => {
+    authMocks.verifyHeaderCookie.mockResolvedValueOnce(null)
+    const { GET } = await import('~/app/api/user/session/route')
+    const response = await GET(
+      new Request('https://www.otoame.top/api/user/session', {
+        headers: { cookie }
+      }) as never
     )
     expect(response.status).toBe(401)
     expect((await response.json()).code).toBe('SESSION_INVALID')

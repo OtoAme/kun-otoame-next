@@ -56,6 +56,21 @@ export const getKvs = async (keys: string[]) => {
   return runRedisCommand(() => redis.mget(...keyStrings))
 }
 
+export const compareAndConsumeKv = async (key: string, expected: string) =>
+  Number(
+    await runRedisCommand(() =>
+      redis.eval(
+        `if redis.call("get", KEYS[1]) == ARGV[1] then
+      return redis.call("del", KEYS[1])
+    end
+    return 0`,
+        1,
+        getPrefixedRedisKey(key),
+        expected
+      )
+    )
+  ) === 1
+
 export const delKv = async (key: string) => {
   const keyString = getPrefixedRedisKey(key)
   await runRedisCommand(() => redis.del(keyString))

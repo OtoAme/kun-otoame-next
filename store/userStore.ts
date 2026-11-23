@@ -46,6 +46,7 @@ export interface UserStore {
   sessionGeneration: number
   setSessionStatus: (status: SessionStatus) => void
   acceptSession: (user: UserState, context: string) => void
+  confirmGuest: () => void
   invalidateSession: () => void
   user: UserState
   setUser: (user: UserState) => void
@@ -75,11 +76,6 @@ const initialUserStore: UserState = {
   delaySeconds: 5
 }
 
-const syncBlockedTagCache = (blockedTagIds: number[]) => {
-  const { data, setData } = useSettingStore.getState()
-  setData({ ...data, kunBlockedTagIds: blockedTagIds })
-}
-
 export const useUserStore = create<UserStore>()(
   persist(
     (set, get) => ({
@@ -88,6 +84,20 @@ export const useUserStore = create<UserStore>()(
       sessionContext: null,
       sessionGeneration: 0,
       setSessionStatus: (sessionStatus) => set({ sessionStatus }),
+      confirmGuest: () => {
+        const previous = get()
+        if (previous.user.uid || previous.sessionContext) {
+          previous.logout()
+          return
+        }
+        useSettingStore.getState().resetData(true)
+        useMessageStore.getState().resetUnreadMessageStatus()
+        set({
+          user: initialUserStore,
+          sessionStatus: 'guest',
+          sessionContext: null
+        })
+      },
       invalidateSession: () => {
         useSettingStore.getState().resetData()
         useMessageStore.getState().resetUnreadMessageStatus()
@@ -109,7 +119,6 @@ export const useUserStore = create<UserStore>()(
           useSettingStore.getState().resetData()
           useMessageStore.getState().resetUnreadMessageStatus()
         }
-        syncBlockedTagCache(user.blockedTagIds)
         set({
           user,
           sessionContext: context,
@@ -126,7 +135,6 @@ export const useUserStore = create<UserStore>()(
           sessionStatus: 'checking',
           sessionGeneration: state.sessionGeneration + 1
         }))
-        syncBlockedTagCache(user.blockedTagIds)
         broadcastSessionChange()
       },
       setUser: (user: UserState) => {
@@ -136,7 +144,6 @@ export const useUserStore = create<UserStore>()(
           useSettingStore.getState().resetData()
           useMessageStore.getState().resetUnreadMessageStatus()
         }
-        syncBlockedTagCache(user.blockedTagIds)
         set({
           user,
           ...(changed
@@ -161,7 +168,7 @@ export const useUserStore = create<UserStore>()(
       },
       logout: () => {
         const previous = get()
-        useSettingStore.getState().resetData()
+        useSettingStore.getState().resetData(true)
         useMessageStore.getState().resetUnreadMessageStatus()
         set({
           user: initialUserStore,

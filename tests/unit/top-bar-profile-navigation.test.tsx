@@ -11,6 +11,7 @@ const routerMock = vi.hoisted(() => ({
 }))
 
 const userStoreState = vi.hoisted(() => ({
+  sessionStatus: 'authenticated',
   user: {
     uid: 7,
     role: 1
@@ -173,6 +174,7 @@ describe('top bar and self-profile navigation', () => {
     dom?.window.close()
     dom = undefined
     routerMock.push.mockReset()
+    userStoreState.sessionStatus = 'authenticated'
     vi.unstubAllGlobals()
     vi.resetModules()
   })
@@ -230,6 +232,22 @@ describe('top bar and self-profile navigation', () => {
       ]
     )
   })
+
+  it.each(['checking', 'guest', 'unavailable'])(
+    'keeps cached admin navigation hidden while the session is %s',
+    async (status) => {
+      userStoreState.user = { uid: 7, role: 4 }
+      userStoreState.sessionStatus = status
+      const { KunTopBar } = await import('~/components/kun/top-bar/TopBar')
+      const container = await render(<KunTopBar />)
+      expect(hrefs(container, '[data-desktop-nav="true"] a')).not.toContain(
+        '/dashboard'
+      )
+      expect(
+        hrefs(container, '[data-mobile-menu] .kun-mobile-nav-link')
+      ).not.toContain('/dashboard')
+    }
+  )
 
   it('places moemoepoint beside edit and creator application on its own row', async () => {
     const { SelfButton } = await import('~/components/user/SelfButton')

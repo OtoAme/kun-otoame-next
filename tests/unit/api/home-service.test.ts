@@ -34,6 +34,23 @@ vi.mock('~/app/api/patch/views/realtime', () => ({
 import { getHomeData } from '~/app/api/home/service'
 
 describe('getHomeData', () => {
+  it('keeps both home sections SFW while retaining blocked tag conditions', async () => {
+    mocks.prisma.patch.findMany.mockResolvedValue([])
+    mocks.prisma.patch_resource.findMany.mockResolvedValue([])
+    const tags = { tag: { none: { tag_id: { in: [19] } } } }
+    await getHomeData({ content_limit: 'nsfw', ...tags })
+    expect(mocks.prisma.patch.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { content_limit: 'sfw', ...tags } })
+    )
+    expect(mocks.prisma.patch_resource.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          patch: { content_limit: 'sfw', ...tags }
+        })
+      })
+    )
+  })
+
   beforeEach(() => {
     vi.clearAllMocks()
     mocks.prisma.patch.findMany.mockResolvedValue([])

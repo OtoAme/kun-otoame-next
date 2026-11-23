@@ -6,6 +6,7 @@ import { useMessageSyncActivity } from '~/hooks/useMessageSyncActivity'
 import { useMessageStore } from '~/store/messageStore'
 import { useUserStore } from '~/store/userStore'
 import { kunFetchGet } from '~/utils/kunFetch'
+import { observePreferenceVersion } from '~/utils/preferenceClient'
 import { refreshUserSession } from '~/utils/sessionClient'
 import {
   bindUnreadSync,
@@ -50,6 +51,7 @@ export const MessageRealtimeSync = () => {
       reuseRecentSuccessOnResume: true,
       onSuccess: (unread) => {
         if (!isCurrent()) return
+        observePreferenceVersion(unread.preferenceVersion)
         useMessageStore.getState().setUnreadMessageStatus({
           hasUnreadNotification: unread.hasUnreadMessages,
           hasUnreadConversation: unread.hasUnreadChat

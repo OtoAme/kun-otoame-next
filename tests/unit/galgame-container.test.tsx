@@ -77,7 +77,12 @@ describe('Galgame CardContainer', () => {
     props: React.ComponentProps<
       (typeof import('~/components/galgame/Container'))['CardContainer']
     >,
-    options: { cookie?: string; strictMode?: boolean } = {}
+    options: {
+      cookie?: string
+      mode?: 'sfw' | 'nsfw' | 'all'
+      blockedTagIds?: number[]
+      strictMode?: boolean
+    } = {}
   ) => {
     dom = new JSDOM('<!doctype html><div id="root"></div>', {
       url: 'http://localhost'
@@ -90,6 +95,30 @@ describe('Galgame CardContainer', () => {
     vi.stubGlobal('document', dom.window.document)
     vi.stubGlobal('React', React)
     vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
+
+    const { useUserStore } = await import('~/store/userStore')
+    const { usePreferenceStore } = await import('~/store/preferenceStore')
+    const authenticated = !!options.mode || !!options.blockedTagIds
+    useUserStore.setState({
+      user: { ...useUserStore.getState().user, uid: authenticated ? 7 : 0 },
+      sessionStatus: authenticated ? 'authenticated' : 'guest',
+      sessionContext: authenticated ? 'confirmed-context' : null,
+      sessionGeneration: 0
+    })
+    usePreferenceStore.setState({
+      generation: 0,
+      status: 'ready',
+      applied: authenticated
+        ? {
+            uid: 7,
+            context: 'confirmed-context',
+            version: 0,
+            nsfwSelected: true,
+            blockedTagIds: options.blockedTagIds ?? [],
+            items: { nsfw: { value: options.mode ?? 'sfw', version: 0 } }
+          }
+        : null
+    })
 
     const { CardContainer } = await import('~/components/galgame/Container')
     const container = dom.window.document.getElementById('root')
@@ -120,6 +149,7 @@ describe('Galgame CardContainer', () => {
     dom = undefined
     fetchMock.kunFetchGet.mockReset()
     vi.unstubAllGlobals()
+    vi.resetModules()
   })
 
   it('uses the SFW server list without refetching until filters change', async () => {
@@ -175,7 +205,7 @@ describe('Galgame CardContainer', () => {
         initialVisibility: 'pending'
       },
       {
-        cookie: 'kun-patch-setting-store|state|data|kunNsfwEnable=nsfw'
+        mode: 'nsfw'
       }
     )
 
@@ -226,7 +256,7 @@ describe('Galgame CardContainer', () => {
     expect(fetchMock.kunFetchGet).not.toHaveBeenCalled()
   })
 
-  it('hides the SFW server list for all-mode cookie values', async () => {
+  it('hides the SFW server list for server-confirmed all-mode preferences', async () => {
     fetchMock.kunFetchGet.mockResolvedValue({
       galgames: [makeGalgame(2, '客户端混合列表')],
       total: 1
@@ -239,7 +269,7 @@ describe('Galgame CardContainer', () => {
         initialVisibility: 'pending'
       },
       {
-        cookie: 'kun-patch-setting-store|state|data|kunNsfwEnable=all'
+        mode: 'all'
       }
     )
 
@@ -249,5 +279,74 @@ describe('Galgame CardContainer', () => {
     await act(async () => {})
 
     expect(container.textContent).toContain('客户端混合列表')
+  })
+
+  it('applies confirmed blocked tags even in SFW mode', async () => {
+    fetchMock.kunFetchGet.mockResolvedValue({ galgames: [], total: 0 })
+    const container = await renderContainer(
+      {
+        initialGalgames: [makeGalgame(1, 'blocked static game')],
+        initialTotal: 1,
+        initialVisibility: 'pending'
+      },
+      { mode: 'sfw', blockedTagIds: [7] }
+    )
+    expect(fetchMock.kunFetchGet).toHaveBeenCalledTimes(1)
+    expect(container.textContent).not.toContain('blocked static game')
+  })
+
+  it('ignores a residual NSFW cookie for a confirmed guest', async () => {
+    const container = await renderContainer(
+      {
+        initialGalgames: [makeGalgame(1, 'public SFW game')],
+        initialTotal: 1,
+        initialVisibility: 'pending'
+      },
+      { cookie: 'kun-patch-setting-store|state|data|kunNsfwEnable=all' }
+    )
+    expect(container.textContent).toContain('public SFW game')
+    expect(fetchMock.kunFetchGet).not.toHaveBeenCalled()
+  })
+
+  it('ignores results requested under a previous browsing preference', async () => {
+    let complete!: (value: unknown) => void
+    fetchMock.kunFetchGet.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          complete = resolve
+        })
+    )
+    const container = await renderContainer(
+      {
+        initialGalgames: [],
+        initialTotal: 0,
+        initialVisibility: 'pending'
+      },
+      { mode: 'all' }
+    )
+    fetchMock.kunFetchGet.mockResolvedValue({
+      galgames: [makeGalgame(2, 'current SFW result')],
+      total: 1
+    })
+    const { usePreferenceStore } = await import('~/store/preferenceStore')
+    await act(async () => {
+      const applied = usePreferenceStore.getState().applied!
+      usePreferenceStore.setState({
+        applied: {
+          ...applied,
+          version: 1,
+          items: { ...applied.items, nsfw: { value: 'sfw', version: 1 } }
+        }
+      })
+    })
+    expect(container.textContent).toContain('current SFW result')
+    await act(async () =>
+      complete({
+        galgames: [makeGalgame(3, 'outdated adult result')],
+        total: 1
+      })
+    )
+    expect(container.textContent).toContain('current SFW result')
+    expect(container.textContent).not.toContain('outdated adult result')
   })
 })

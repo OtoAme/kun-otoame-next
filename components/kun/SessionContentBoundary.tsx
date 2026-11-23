@@ -5,11 +5,16 @@ import {
   Fragment,
   useContext,
   useEffect,
+  useRef,
   useState,
   useTransition
 } from 'react'
 import Link from 'next/link'
 import { useRouter } from '@bprogress/next'
+import { useAccountPreferences } from '~/hooks/useAccountPreferences'
+import { useSessionRenderState } from './SessionRenderProvider'
+import { getBrowsingKey } from '~/utils/browsingScope'
+import { refreshPreferences } from '~/utils/preferenceClient'
 import { useUserStore } from '~/store/userStore'
 import { refreshUserSession } from '~/utils/sessionClient'
 import type { ReactNode } from 'react'
@@ -21,32 +26,102 @@ export const useSessionContentReady = () =>
 
 export const SessionContentBoundary = ({
   children,
-  personalized = true
+  personalized = true,
+  usesBrowsingPreferences = true
 }: {
   children: ReactNode
   personalized?: boolean
+  usesBrowsingPreferences?: boolean
 }) => {
   const generation = useUserStore((state) => state.sessionGeneration)
   const status = useUserStore((state) => state.sessionStatus)
+  const context = useUserStore((state) => state.sessionContext)
+  const preferences = useAccountPreferences()
+  const initialState = useSessionRenderState()
+  const identity =
+    status === 'guest' ? 'guest' : status === 'authenticated' ? context : null
+  const browsingKey =
+    status === 'guest'
+      ? getBrowsingKey('sfw', [])
+      : preferences.snapshot
+        ? getBrowsingKey(
+            String(preferences.snapshot.items.nsfw.value),
+            preferences.snapshot.blockedTagIds
+          )
+        : null
+  const [displayed, setDisplayed] = useState(
+    () =>
+      initialState ??
+      (identity && (browsingKey !== null || !usesBrowsingPreferences)
+        ? { identity, browsingKey }
+        : null)
+  )
   const [displayedGeneration, setDisplayedGeneration] = useState(generation)
+  const confirmed = useRef(
+    identity !== null && (browsingKey !== null || !usesBrowsingPreferences)
+  )
+  const [contentVersion, setContentVersion] = useState(0)
   const [refreshing, startTransition] = useTransition()
   const router = useRouter()
   useEffect(() => {
-    if (displayedGeneration === generation) return
+    if (!identity || (usesBrowsingPreferences && browsingKey === null)) return
+    if (
+      displayed?.identity === identity &&
+      (!usesBrowsingPreferences || displayed.browsingKey === browsingKey) &&
+      (!confirmed.current || displayedGeneration === generation)
+    ) {
+      confirmed.current = true
+      if (displayedGeneration !== generation) setDisplayedGeneration(generation)
+      if (displayed.browsingKey !== browsingKey)
+        setDisplayed({ identity, browsingKey })
+      return
+    }
+    const identityChanged =
+      displayed?.identity !== identity ||
+      (confirmed.current && displayedGeneration !== generation)
+    confirmed.current = true
+    // Reset old account state before the transition so an existing Suspense
+    // boundary keeps content unready until the refreshed server page resolves.
+    if (personalized && identityChanged)
+      setContentVersion((version) => version + 1)
     startTransition(() => {
       setDisplayedGeneration(generation)
+      setDisplayed({ identity, browsingKey })
       if (personalized) router.refresh()
     })
-  }, [displayedGeneration, generation, personalized, router])
+  }, [
+    displayed,
+    displayedGeneration,
+    generation,
+    identity,
+    browsingKey,
+    personalized,
+    usesBrowsingPreferences,
+    router
+  ])
+  const changed =
+    identity !== null &&
+    (displayed?.identity !== identity ||
+      (usesBrowsingPreferences &&
+        browsingKey !== null &&
+        displayed.browsingKey !== browsingKey))
+  const invalidated =
+    generation !== displayedGeneration &&
+    (confirmed.current || identity === null)
   const pending =
-    personalized &&
-    (status === 'checking' ||
-      status === 'unavailable' ||
-      refreshing ||
-      displayedGeneration !== generation)
+    personalized && (!displayed || invalidated || changed || refreshing)
+  const ready =
+    !pending &&
+    (!personalized ||
+      (identity !== null && (!usesBrowsingPreferences || browsingKey !== null)))
+  const preferenceFailed =
+    usesBrowsingPreferences &&
+    status === 'authenticated' &&
+    !preferences.snapshot &&
+    preferences.status === 'error'
   return (
-    <Fragment key={personalized ? generation : 'public'}>
-      <SessionContentReadyContext.Provider value={!pending}>
+    <Fragment key={personalized ? contentVersion : 'public'}>
+      <SessionContentReadyContext.Provider value={ready}>
         <div
           hidden={pending}
           inert={pending}
@@ -54,7 +129,8 @@ export const SessionContentBoundary = ({
         >
           {children}
         </div>
-        {pending && (
+        {(pending ||
+          (personalized && (status === 'unavailable' || preferenceFailed))) && (
           <div role="status" className="p-6 text-center">
             {status === 'unavailable' ? (
               <>
@@ -67,6 +143,19 @@ export const SessionContentBoundary = ({
                   }}
                 >
                   点击重试
+                </Link>
+              </>
+            ) : status === 'authenticated' && preferences.status === 'error' ? (
+              <>
+                浏览偏好读取失败，
+                <Link
+                  href="#"
+                  onClick={(event) => {
+                    event.preventDefault()
+                    void refreshPreferences()
+                  }}
+                >
+                  重新读取设置
                 </Link>
               </>
             ) : (

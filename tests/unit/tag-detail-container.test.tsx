@@ -9,6 +9,7 @@ globalThis.React = React
 const fetchMock = vi.hoisted(() => ({
   kunFetchGet: vi.fn(),
   kunFetchDelete: vi.fn(),
+  kunFetchPatch: vi.fn(),
   kunFetchPost: vi.fn()
 }))
 
@@ -18,6 +19,8 @@ const routerMock = vi.hoisted(() => ({
 
 vi.mock('~/utils/kunFetch', () => ({
   kunFetchDelete: fetchMock.kunFetchDelete,
+  kunFetchPatch: fetchMock.kunFetchPatch,
+  KunFetchError: class extends Error {},
   kunFetchGet: fetchMock.kunFetchGet,
   kunFetchPost: fetchMock.kunFetchPost
 }))
@@ -27,7 +30,9 @@ vi.mock('@bprogress/next', () => ({
 }))
 
 vi.mock('@heroui/chip', () => ({
-  Chip: ({ children }: { children?: React.ReactNode }) => <span>{children}</span>
+  Chip: ({ children }: { children?: React.ReactNode }) => (
+    <span>{children}</span>
+  )
 }))
 
 vi.mock('@heroui/button', () => ({
@@ -35,6 +40,7 @@ vi.mock('@heroui/button', () => ({
     children,
     isLoading: _isLoading,
     onPress,
+    isDisabled,
     startContent: _startContent,
     ...props
   }: {
@@ -42,7 +48,12 @@ vi.mock('@heroui/button', () => ({
     onPress?: () => void
     [key: string]: unknown
   }) => (
-    <button type="button" onClick={onPress} {...props}>
+    <button
+      type="button"
+      onClick={onPress}
+      disabled={Boolean(isDisabled)}
+      {...props}
+    >
       {children}
     </button>
   )
@@ -128,19 +139,6 @@ vi.mock('~/components/tag/detail/DeleteTagModal', () => ({
   DeleteTagModal: () => <button type="button">删除标签</button>
 }))
 
-vi.mock('~/store/userStore', () => ({
-  useUserStore: (
-    selector: (state: {
-      user: { uid: number; role: number; blockedTagIds: number[] }
-      setUser: (user: unknown) => void
-    }) => unknown
-  ) =>
-    selector({
-      user: { uid: 9, role: 1, blockedTagIds: [] },
-      setUser: vi.fn()
-    })
-}))
-
 const makeTag = (): TagDetail => ({
   id: 15,
   name: 'Tag',
@@ -189,6 +187,26 @@ describe('TagDetailContainer', () => {
     vi.stubGlobal('React', React)
     vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
 
+    const { useUserStore } = await import('~/store/userStore')
+    const { usePreferenceStore } = await import('~/store/preferenceStore')
+    useUserStore.setState({
+      user: { ...useUserStore.getState().user, uid: 9 },
+      sessionStatus: 'authenticated',
+      sessionContext: 'a'.repeat(64),
+      sessionGeneration: 0
+    })
+    usePreferenceStore.setState({
+      generation: 0,
+      status: 'ready',
+      applied: {
+        uid: 9,
+        context: 'a'.repeat(64),
+        version: 0,
+        nsfwSelected: true,
+        blockedTagIds: [],
+        items: { nsfw: { value: 'sfw', version: 0 } }
+      }
+    })
     const { TagDetailContainer } = await import(
       '~/components/tag/detail/Container'
     )
@@ -218,9 +236,11 @@ describe('TagDetailContainer', () => {
     dom = undefined
     fetchMock.kunFetchGet.mockReset()
     fetchMock.kunFetchDelete.mockReset()
+    fetchMock.kunFetchPatch.mockReset()
     fetchMock.kunFetchPost.mockReset()
     routerMock.push.mockReset()
     vi.unstubAllGlobals()
+    vi.resetModules()
   })
 
   it('fetches tag games on first mount even when filters are at defaults', async () => {
@@ -249,5 +269,53 @@ describe('TagDetailContainer', () => {
     await act(async () => {})
 
     expect(container.textContent).toContain('标签首屏列表')
+  })
+
+  it('uses versioned tag saving and preserves an unrelated display draft', async () => {
+    const snapshot = {
+      uid: 9,
+      context: 'a'.repeat(64),
+      version: 0,
+      nsfwSelected: true,
+      blockedTagIds: [] as number[],
+      items: {
+        nsfw: { value: 'sfw', version: 0 },
+        'email-notice': { value: false, version: 0 },
+        'blocked-tag:15': { value: false, version: 0 }
+      }
+    }
+    fetchMock.kunFetchGet.mockImplementation((path: string) =>
+      Promise.resolve(
+        path.startsWith('/user/preferences')
+          ? snapshot
+          : { galgames: [], total: 0 }
+      )
+    )
+    fetchMock.kunFetchPatch.mockResolvedValue({
+      ...snapshot,
+      version: 1,
+      blockedTagIds: [15],
+      items: {
+        ...snapshot.items,
+        'blocked-tag:15': { value: true, version: 1 }
+      }
+    })
+    const container = await renderContainer()
+    const { editPreference } = await import('~/utils/preferenceClient')
+    const { usePreferenceStore } = await import('~/store/preferenceStore')
+    await act(async () => editPreference('nsfw', 'all'))
+    const button = Array.from(container.querySelectorAll('button')).find(
+      (element) => element.textContent?.includes('屏蔽该标签')
+    )!
+    await act(async () => button.click())
+    expect(fetchMock.kunFetchPatch).toHaveBeenCalledWith('/user/preferences', {
+      uid: 9,
+      context: 'a'.repeat(64),
+      changes: [{ key: 'blocked-tag:15', value: true, version: 0 }]
+    })
+    expect(container.textContent).toContain('取消屏蔽')
+    expect(usePreferenceStore.getState().drafts.nsfw.value).toBe('all')
+    expect(fetchMock.kunFetchPost).not.toHaveBeenCalled()
+    expect(fetchMock.kunFetchDelete).not.toHaveBeenCalled()
   })
 })

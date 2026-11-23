@@ -31,15 +31,85 @@ afterEach(async () => {
 })
 
 describe('personalized content lifecycle', () => {
-  it('keeps the initial session placeholder consistent from server rendering through hydration', async () => {
+  it('preserves a verified anonymous server page through its first client confirmation', async () => {
     const { useUserStore } = await import('~/store/userStore')
+    const { SessionRenderProvider } = await import(
+      '~/components/kun/SessionRenderProvider'
+    )
     const { SessionContentBoundary } = await import(
       '~/components/kun/SessionContentBoundary'
     )
     const page = (
-      <SessionContentBoundary>
-        <textarea defaultValue="server content" />
-      </SessionContentBoundary>
+      <SessionRenderProvider
+        initialState={{ identity: 'guest', browsingKey: '["sfw",[]]' }}
+      >
+        <SessionContentBoundary>
+          <textarea defaultValue="server draft" />
+        </SessionContentBoundary>
+      </SessionRenderProvider>
+    )
+    const container = document.getElementById('root')!
+    await act(async () => root.unmount())
+    container.innerHTML = renderToString(page)
+    const draft = document.querySelector('textarea')!
+    expect(draft.parentElement?.hidden).toBe(false)
+    await act(async () => {
+      root = hydrateRoot(container, page)
+    })
+    await act(async () => useUserStore.getState().confirmGuest())
+    expect(document.querySelector('textarea')).toBe(draft)
+    expect(draft.parentElement?.hidden).toBe(false)
+    expect(navigation.refresh).not.toHaveBeenCalled()
+  })
+
+  it('refreshes previously authenticated server content when initial client verification finds a guest', async () => {
+    const { useUserStore } = await import('~/store/userStore')
+    const { SessionRenderProvider } = await import(
+      '~/components/kun/SessionRenderProvider'
+    )
+    const { SessionContentBoundary } = await import(
+      '~/components/kun/SessionContentBoundary'
+    )
+    await act(async () =>
+      root.render(
+        <SessionRenderProvider
+          initialState={{
+            identity: 'server-session',
+            browsingKey: '["sfw",[]]'
+          }}
+        >
+          <SessionContentBoundary>
+            <textarea defaultValue="account draft" />
+          </SessionContentBoundary>
+        </SessionRenderProvider>
+      )
+    )
+    const draft = document.querySelector('textarea')!
+    await act(async () => useUserStore.getState().confirmGuest())
+    expect(draft.isConnected).toBe(false)
+    expect(navigation.refresh).toHaveBeenCalledOnce()
+  })
+
+  it('preserves authenticated server content through hydration and delayed preference recovery', async () => {
+    const { useUserStore } = await import('~/store/userStore')
+    const { usePreferenceStore } = await import('~/store/preferenceStore')
+    const { SessionRenderProvider } = await import(
+      '~/components/kun/SessionRenderProvider'
+    )
+    const { SessionContentBoundary } = await import(
+      '~/components/kun/SessionContentBoundary'
+    )
+    const page = (
+      <SessionRenderProvider
+        initialState={{
+          identity: 'confirmed-session',
+          browsingKey: '["sfw",[]]'
+        }}
+      >
+        <SessionContentBoundary>
+          <textarea defaultValue="server content" />
+        </SessionContentBoundary>
+      </SessionRenderProvider>
     )
     const container = document.getElementById('root')!
     await act(async () => root.unmount())
@@ -47,10 +117,7 @@ describe('personalized content lifecycle', () => {
     const content = document.querySelector('textarea')!
     const recoverableError = vi.fn()
 
-    expect(content.parentElement?.hidden).toBe(true)
-    expect(document.querySelector('[role="status"]')?.textContent).toBe(
-      '正在确认会话…'
-    )
+    expect(content.parentElement?.hidden).toBe(false)
 
     await act(async () => {
       root = hydrateRoot(container, page, {
@@ -58,7 +125,7 @@ describe('personalized content lifecycle', () => {
       })
     })
     expect(document.querySelector('textarea')).toBe(content)
-    expect(content.parentElement?.hidden).toBe(true)
+    expect(content.parentElement?.hidden).toBe(false)
 
     await act(async () => {
       useUserStore
@@ -68,6 +135,21 @@ describe('personalized content lifecycle', () => {
           'confirmed-session'
         )
     })
+    expect(content.parentElement?.hidden).toBe(false)
+    await act(async () =>
+      usePreferenceStore.setState({
+        generation: 0,
+        status: 'ready',
+        applied: {
+          uid: 7,
+          context: 'confirmed-session',
+          version: 0,
+          nsfwSelected: false,
+          blockedTagIds: [],
+          items: { nsfw: { value: 'sfw', version: 0 } }
+        }
+      })
+    )
     expect(document.querySelector('textarea')).toBe(content)
     expect(content.parentElement?.hidden).toBe(false)
     expect(document.querySelector('[role="status"]')).toBeNull()
@@ -146,15 +228,73 @@ describe('personalized content lifecycle', () => {
     expect(document.querySelector('output')?.textContent).toBe('true')
   })
 
+  it('keeps account settings ready without browsing preferences and avoids refreshing them on preference changes', async () => {
+    const { useUserStore } = await import('~/store/userStore')
+    const { usePreferenceStore } = await import('~/store/preferenceStore')
+    const { SessionContentBoundary, useSessionContentReady } = await import(
+      '~/components/kun/SessionContentBoundary'
+    )
+    const Ready = () => <output>{String(useSessionContentReady())}</output>
+    useUserStore.setState({
+      sessionStatus: 'authenticated',
+      sessionContext: 'settings-session',
+      user: { ...useUserStore.getState().user, uid: 7 }
+    })
+    await act(async () =>
+      root.render(
+        <SessionContentBoundary usesBrowsingPreferences={false}>
+          <textarea defaultValue="settings draft" />
+          <Ready />
+        </SessionContentBoundary>
+      )
+    )
+    const draft = document.querySelector('textarea')!
+    expect(document.querySelector('output')?.textContent).toBe('true')
+    for (const mode of ['sfw', 'all'] as const) {
+      await act(async () =>
+        usePreferenceStore.setState({
+          generation: 0,
+          status: 'ready',
+          applied: {
+            uid: 7,
+            context: 'settings-session',
+            version: 1,
+            nsfwSelected: true,
+            blockedTagIds: [],
+            items: { nsfw: { value: mode, version: 1 } }
+          }
+        })
+      )
+      expect(document.querySelector('textarea')).toBe(draft)
+      expect(draft.parentElement?.hidden).toBe(false)
+    }
+    expect(navigation.refresh).not.toHaveBeenCalled()
+  })
+
   it('preserves a draft on same-session refresh and infrastructure failure, then resets it after logout', async () => {
     const { useUserStore } = await import('~/store/userStore')
+    const { usePreferenceStore } = await import('~/store/preferenceStore')
     const { SessionContentBoundary, useSessionContentReady } = await import(
       '~/components/kun/SessionContentBoundary'
     )
     const ReadyProbe = () => <output>{String(useSessionContentReady())}</output>
     useUserStore.setState({
       sessionStatus: 'authenticated',
-      sessionGeneration: 1
+      sessionGeneration: 1,
+      sessionContext: 'test-context',
+      user: { ...useUserStore.getState().user, uid: 7 }
+    })
+    usePreferenceStore.setState({
+      generation: 1,
+      status: 'ready',
+      applied: {
+        uid: 7,
+        context: 'test-context',
+        version: 0,
+        nsfwSelected: false,
+        blockedTagIds: [],
+        items: { nsfw: { value: 'sfw', version: 0 } }
+      }
     })
     await act(async () =>
       root.render(
@@ -176,7 +316,7 @@ describe('personalized content lifecycle', () => {
       expect(document.querySelector('output')?.textContent).toBe(
         String(status === 'authenticated')
       )
-      expect(draft.parentElement?.hidden).toBe(status !== 'authenticated')
+      expect(draft.parentElement?.hidden).toBe(false)
     }
     await act(async () => useUserStore.getState().logout())
     expect(draft.isConnected).toBe(false)

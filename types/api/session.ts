@@ -6,3 +6,8 @@ export interface UserSession {
   user: UserState
   unread: MessageUnreadStatus | null
 }
+
+export interface SessionRenderState {
+  identity: string
+  browsingKey: string | null
+}

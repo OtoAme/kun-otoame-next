@@ -52,6 +52,76 @@ const setup = async () => {
 }
 
 describe('session client identity and cleanup', () => {
+  it('coalesces recent restore events without suppressing explicit identity verification', async () => {
+    const state = await setup()
+    transport.mockImplementation(() =>
+      Promise.resolve(
+        Response.json({
+          user: state.user,
+          context: 'verified-context',
+          unread: null
+        })
+      )
+    )
+    await state.refreshUserSession()
+    await Promise.all([
+      state.refreshUserSession({ reason: 'restore' }),
+      state.refreshUserSession({ reason: 'restore' })
+    ])
+    expect(transport).toHaveBeenCalledTimes(1)
+    await state.refreshUserSession()
+    expect(transport).toHaveBeenCalledTimes(2)
+    state.useUserStore.getState().invalidateSession()
+    await state.refreshUserSession({ reason: 'restore' })
+    expect(transport).toHaveBeenCalledTimes(3)
+    expect(state.useUserStore.getState().sessionStatus).toBe('authenticated')
+  })
+  it('confirms a clean guest without restarting the content lifecycle', async () => {
+    const { useUserStore } = await import('~/store/userStore')
+    const { refreshUserSession } = await import('~/utils/sessionClient')
+    transport.mockResolvedValue(Response.json({ status: 'guest' }))
+    await refreshUserSession()
+    expect(useUserStore.getState()).toMatchObject({
+      sessionStatus: 'guest',
+      sessionGeneration: 0,
+      sessionContext: null,
+      user: { uid: 0 }
+    })
+    expect(transport).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps a confirmed identity usable while its same-session check is in flight', async () => {
+    const state = await setup()
+    let resolve!: (response: Response) => void
+    transport.mockImplementationOnce(
+      () =>
+        new Promise<Response>((complete) => {
+          resolve = complete
+        })
+    )
+    const pending = state.refreshUserSession()
+    const during = state.useUserStore.getState().sessionStatus
+    resolve(
+      Response.json({
+        user: state.user,
+        context: 'verified-context',
+        unread: null
+      })
+    )
+    await pending
+    expect(during).toBe('authenticated')
+    expect(state.useUserStore.getState().sessionGeneration).toBe(1)
+  })
+
+  it('does not let unrelated user updates overwrite applied browsing preferences', async () => {
+    const state = await setup()
+    state.useSettingStore
+      .getState()
+      .setData({ kunNsfwEnable: 'sfw', kunBlockedTagIds: [19] })
+    state.useUserStore.getState().setUser({ ...state.user, bio: 'updated' })
+    expect(state.useSettingStore.getState().data.kunBlockedTagIds).toEqual([19])
+  })
+
   it('reuses an in-flight refresh and retains old summary when unread is null', async () => {
     const state = await setup()
     let resolve!: (response: Response) => void
@@ -285,7 +355,9 @@ describe('session client identity and cleanup', () => {
 
   it('clears cookies at their root path and keeps guest defaults absent after later writes', async () => {
     const state = await setup()
-    expect(document.cookie).toContain('kunNsfwEnable=all')
+    expect(document.cookie).not.toContain('kun-patch-setting-store')
+    document.cookie =
+      'kun-patch-setting-store|state|data|kunNsfwEnable=all; Path=/'
     state.useUserStore.getState().logout()
     expect(document.cookie).not.toContain('kun-patch-setting-store')
     state.useUserStore

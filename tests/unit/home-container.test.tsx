@@ -30,11 +30,19 @@ vi.mock('@heroui/button', () => ({
     color: _color,
     endContent: _endContent,
     variant: _variant,
+    onPress,
+    isDisabled,
     ...props
   }: {
     children?: React.ReactNode
+    onPress?: () => void
+    isDisabled?: boolean
     [key: string]: unknown
-  }) => <button {...props}>{children}</button>
+  }) => (
+    <button {...props} onClick={onPress} disabled={isDisabled}>
+      {children}
+    </button>
+  )
 }))
 
 vi.mock('~/components/home/hero/HomeHero', () => ({
@@ -88,171 +96,241 @@ const makeGalgames = (count: number): GalgameCard[] =>
     uniqueId: `game${String(index).padStart(4, '0')}`
   }))
 
-describe('HomeContainer', () => {
+describe('HomeContainer personalized results', () => {
   let root: Root | undefined
   let dom: JSDOM | undefined
-
-  const renderHome = async (galgames = [makeGalgame()]) => {
+  const renderHome = async (
+    status: 'guest' | 'checking' | 'authenticated' = 'authenticated',
+    strict = false
+  ) => {
     dom = new JSDOM('<!doctype html><div id="root"></div>', {
       url: 'http://localhost'
     })
-
     vi.stubGlobal('window', dom.window)
     vi.stubGlobal('document', dom.window.document)
     vi.stubGlobal('React', React)
     vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
-
-    const { HomeContainer } = await import('~/components/home/Container')
-    const container = dom.window.document.getElementById('root')
-    expect(container).not.toBeNull()
-
-    root = createRoot(container!)
-    await act(async () => {
-      root!.render(<HomeContainer galgames={galgames} resources={[]} />)
+    const { useUserStore } = await import('~/store/userStore')
+    useUserStore.setState({
+      sessionStatus: status,
+      user: { ...useUserStore.getState().user, uid: 7 },
+      sessionContext: 'first-context',
+      sessionGeneration: 0
     })
-
-    return container!
+    const { usePreferenceStore } = await import('~/store/preferenceStore')
+    usePreferenceStore.setState({
+      generation: 0,
+      status: 'ready',
+      applied: {
+        uid: 7,
+        context: 'first-context',
+        version: 0,
+        nsfwSelected: false,
+        blockedTagIds: [],
+        items: {
+          nsfw: { value: 'sfw', version: 0 },
+          'email-notice': { value: false, version: 0 }
+        }
+      }
+    })
+    const { HomeContainer } = await import('~/components/home/Container')
+    const container = document.getElementById('root')!
+    root = createRoot(container)
+    const element = (
+      <HomeContainer
+        galgames={makeGalgames(24)}
+        resources={[
+          {
+            id: 9,
+            name: 'public static resource'
+          } as import('~/types/api/home').HomeResource
+        ]}
+      />
+    )
+    await act(async () => {
+      root!.render(
+        strict ? <React.StrictMode>{element}</React.StrictMode> : element
+      )
+    })
+    return { container, useUserStore }
   }
-
   afterEach(async () => {
     await act(async () => {
       root?.unmount()
     })
     root = undefined
     dom?.window.close()
-    dom = undefined
     vi.unstubAllGlobals()
     vi.resetModules()
     fetchMock.kunFetchGet.mockReset()
   })
-
-  it('refreshes realtime card stats after mounting the static home payload', async () => {
-    fetchMock.kunFetchGet.mockResolvedValue({
-      stats: {
-        abc12345: {
-          view: 15,
-          download: 4
-        }
-      }
-    })
-
-    const container = await renderHome()
-
-    expect(fetchMock.kunFetchGet).toHaveBeenCalledWith('/patch/stats', {
-      uniqueIds: 'abc12345'
-    })
-    expect(container.textContent).toContain('abc12345:15:4')
+  it('shows neutral loading while identity is checking even when static games are nonempty', async () => {
+    const { container } = await renderHome('checking')
+    expect(container.textContent).toContain('最新游戏：正在确认浏览偏好')
+    expect(container.textContent).toContain('最新补丁：正在确认浏览偏好')
+    expect(
+      container.querySelectorAll('[data-testid="galgame-card"]')
+    ).toHaveLength(0)
+    expect(fetchMock.kunFetchGet).not.toHaveBeenCalled()
   })
-
-  it('keeps static values when realtime stats are older', async () => {
-    fetchMock.kunFetchGet.mockResolvedValue({
-      stats: {
-        abc12345: {
-          view: 1,
-          download: 1
-        }
-      }
-    })
-
-    const container = await renderHome()
-
-    expect(container.textContent).toContain('abc12345:10:2')
-  })
-
-  it('fetches the home payload only when the static game section is empty', async () => {
-    fetchMock.kunFetchGet.mockImplementation((url: string) => {
-      if (url === '/home') {
-        return Promise.resolve({
-          galgames: [makeGalgame()],
-          resources: []
-        })
-      }
-
-      return Promise.resolve({ stats: {} })
-    })
-
-    const container = await renderHome([])
-
-    expect(fetchMock.kunFetchGet).toHaveBeenCalledWith('/home')
-    expect(fetchMock.kunFetchGet).toHaveBeenCalledWith('/patch/stats', {
-      uniqueIds: 'abc12345'
-    })
-    expect(container.textContent).toContain('abc12345:10:2')
-  })
-
-  it('does not refetch the home payload when static games are present', async () => {
+  it('uses both nonempty static public sections for a confirmed guest without a redundant home request', async () => {
     fetchMock.kunFetchGet.mockResolvedValue({ stats: {} })
-
-    await renderHome()
-
-    expect(fetchMock.kunFetchGet).not.toHaveBeenCalledWith('/home')
-  })
-
-  it('renders all 24 static games with a single batch stats request', async () => {
-    fetchMock.kunFetchGet.mockResolvedValue({ stats: {} })
-
-    const galgames = makeGalgames(24)
-    const container = await renderHome(galgames)
-
+    const { container } = await renderHome('guest')
     expect(
       container.querySelectorAll('[data-testid="galgame-card"]')
     ).toHaveLength(24)
-    expect(fetchMock.kunFetchGet).not.toHaveBeenCalledWith('/home')
-
-    const statsCalls = fetchMock.kunFetchGet.mock.calls.filter(
-      ([url]) => url === '/patch/stats'
-    )
-    expect(statsCalls).toHaveLength(1)
-    expect(statsCalls[0][1]).toEqual({
-      uniqueIds: galgames.map((galgame) => galgame.uniqueId).join(',')
-    })
+    expect(container.textContent).toContain('public static resource')
+    expect(
+      fetchMock.kunFetchGet.mock.calls.filter(([url]) => url === '/home')
+    ).toHaveLength(0)
   })
-
-  it('does not lose the empty-home fallback result under StrictMode remount', async () => {
-    let resolveHome:
-      | ((value: { galgames: GalgameCard[]; resources: [] }) => void)
-      | undefined
-
-    fetchMock.kunFetchGet.mockImplementation((url: string) => {
-      if (url === '/home') {
-        return new Promise((resolve) => {
-          resolveHome = resolve
-        })
-      }
-
-      return Promise.resolve({ stats: {} })
-    })
-
-    dom = new JSDOM('<!doctype html><div id="root"></div>', {
-      url: 'http://localhost'
-    })
-
-    vi.stubGlobal('window', dom.window)
-    vi.stubGlobal('document', dom.window.document)
-    vi.stubGlobal('React', React)
-    vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
-
-    const { HomeContainer } = await import('~/components/home/Container')
-    const container = dom.window.document.getElementById('root')
-    expect(container).not.toBeNull()
-
-    root = createRoot(container!)
-    await act(async () => {
-      root!.render(
-        <React.StrictMode>
-          <HomeContainer galgames={[]} resources={[]} />
-        </React.StrictMode>
+  it('loads both sections together after confirmation and refreshes card stats in one batch', async () => {
+    fetchMock.kunFetchGet.mockImplementation((url: string) =>
+      Promise.resolve(
+        url === '/home'
+          ? {
+              galgames: [makeGalgame()],
+              resources: [{ id: 1, name: 'filtered resource' }]
+            }
+          : { stats: { abc12345: { view: 15, download: 4 } } }
       )
-    })
-
-    await act(async () => {
-      resolveHome?.({ galgames: [makeGalgame()], resources: [] })
-    })
-
-    expect(fetchMock.kunFetchGet).toHaveBeenCalledWith('/home')
+    )
+    const { container } = await renderHome()
     expect(
       fetchMock.kunFetchGet.mock.calls.filter(([url]) => url === '/home')
     ).toHaveLength(1)
-    expect(container!.textContent).toContain('abc12345:10:2')
+    expect(container.textContent).toContain('abc12345:15:4')
+    expect(container.textContent).toContain('filtered resource')
+    expect(container.textContent).not.toContain('public static resource')
+    expect(container.textContent).not.toContain('game0000')
+    expect(fetchMock.kunFetchGet).toHaveBeenCalledWith('/patch/stats', {
+      uniqueIds: 'abc12345'
+    })
+  })
+  it('keeps newer card values when incremental stats are older', async () => {
+    fetchMock.kunFetchGet.mockImplementation((url: string) =>
+      Promise.resolve(
+        url === '/home'
+          ? { galgames: [makeGalgame()], resources: [] }
+          : { stats: { abc12345: { view: 1, download: 1 } } }
+      )
+    )
+    const { container } = await renderHome()
+    expect(container.textContent).toContain('abc12345:10:2')
+  })
+  it('preserves loaded sections during verification and unrelated preference changes', async () => {
+    fetchMock.kunFetchGet.mockImplementation((url: string) =>
+      Promise.resolve(
+        url === '/home'
+          ? { galgames: [makeGalgame()], resources: [] }
+          : { stats: {} }
+      )
+    )
+    const { container, useUserStore } = await renderHome()
+    const { usePreferenceStore } = await import('~/store/preferenceStore')
+    const card = container.querySelector('[data-testid="galgame-card"]')
+    for (const status of [
+      'checking',
+      'unavailable',
+      'authenticated'
+    ] as const) {
+      await act(async () => useUserStore.getState().setSessionStatus(status))
+      expect(container.querySelector('[data-testid="galgame-card"]')).toBe(card)
+    }
+    const requests = fetchMock.kunFetchGet.mock.calls.filter(
+      ([url]) => url === '/home'
+    ).length
+    await act(async () => {
+      const snapshot = usePreferenceStore.getState().applied!
+      usePreferenceStore.setState({
+        applied: {
+          ...snapshot,
+          version: 2,
+          items: {
+            ...snapshot.items,
+            nsfw: { value: 'all', version: 1 },
+            'email-notice': { value: true, version: 1 }
+          }
+        }
+      })
+    })
+    expect(container.querySelector('[data-testid="galgame-card"]')).toBe(card)
+    expect(
+      fetchMock.kunFetchGet.mock.calls.filter(([url]) => url === '/home')
+    ).toHaveLength(requests)
+  })
+  it('keeps empty personalized results empty without restoring static cards', async () => {
+    fetchMock.kunFetchGet.mockResolvedValue({ galgames: [], resources: [] })
+    const { container } = await renderHome()
+    expect(
+      container.querySelectorAll('[data-testid="galgame-card"]')
+    ).toHaveLength(0)
+    expect(container.textContent).toContain('当前条件下没有最新游戏')
+    expect(container.textContent).toContain('当前条件下没有最新补丁')
+  })
+  it('reports failure without restoring static data', async () => {
+    fetchMock.kunFetchGet.mockRejectedValue(new Error('synthetic unavailable'))
+    const { container } = await renderHome()
+    expect(container.textContent).toContain('首页内容读取失败')
+    expect(
+      container.querySelectorAll('[data-testid="galgame-card"]')
+    ).toHaveLength(0)
+  })
+  it('drops both old sections after switching account and ignores their delayed response', async () => {
+    let completeOld!: (value: unknown) => void
+    fetchMock.kunFetchGet.mockImplementation((url: string) =>
+      url === '/home'
+        ? new Promise((resolve) => {
+            completeOld = resolve
+          })
+        : Promise.resolve({ stats: {} })
+    )
+    const { container, useUserStore } = await renderHome()
+    const { usePreferenceStore } = await import('~/store/preferenceStore')
+    fetchMock.kunFetchGet.mockImplementation((url: string) =>
+      Promise.resolve(
+        url === '/home' ? { galgames: [], resources: [] } : { stats: {} }
+      )
+    )
+    await act(async () => {
+      useUserStore.setState({
+        user: { ...useUserStore.getState().user, uid: 8 },
+        sessionStatus: 'authenticated',
+        sessionContext: 'new-context',
+        sessionGeneration: 1
+      })
+      usePreferenceStore.setState({
+        generation: 1,
+        status: 'ready',
+        applied: {
+          uid: 8,
+          context: 'new-context',
+          version: 4,
+          nsfwSelected: true,
+          blockedTagIds: [19],
+          items: { nsfw: { value: 'all', version: 2 } }
+        }
+      })
+    })
+    await act(async () => {
+      completeOld({
+        galgames: [makeGalgame()],
+        resources: [{ id: 1, name: 'old account resource' }]
+      })
+    })
+    expect(container.textContent).not.toContain('abc12345')
+    expect(container.textContent).not.toContain('old account resource')
+    expect(container.textContent).toContain('当前条件下没有最新游戏')
+  })
+  it('settles filtered results under StrictMode effect cleanup', async () => {
+    fetchMock.kunFetchGet.mockImplementation((url: string) =>
+      Promise.resolve(
+        url === '/home'
+          ? { galgames: [makeGalgame()], resources: [] }
+          : { stats: {} }
+      )
+    )
+    const { container } = await renderHome('authenticated', true)
+    expect(container.textContent).toContain('abc12345:10:2')
   })
 })

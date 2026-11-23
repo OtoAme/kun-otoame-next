@@ -5,6 +5,8 @@ import { kunFetchGet } from '~/utils/kunFetch'
 import { GalgameCard } from './Card'
 import { FilterBar } from './FilterBar'
 import { useMounted } from '~/hooks/useMounted'
+import { useBrowsingScope } from '~/hooks/useBrowsingScope'
+import { Button } from '@heroui/button'
 import { KunHeader } from '../kun/Header'
 import { KunPagination } from '../kun/Pagination'
 import type { SortField, SortOrder } from './_sort'
@@ -17,36 +19,23 @@ interface Props {
   initialVisibility?: 'pending' | 'show'
 }
 
-const getClientNsfwPreference = () => {
-  if (typeof document === 'undefined') {
-    return 'sfw'
-  }
-
-  const cookie = document.cookie
-    .split(';')
-    .map((value) => value.trim())
-    .find((value) =>
-      value.startsWith('kun-patch-setting-store|state|data|kunNsfwEnable=')
-    )
-
-  return decodeURIComponent(cookie?.split('=').slice(1).join('=') || 'sfw')
-}
-
 export const CardContainer = ({
   initialGalgames,
   initialTotal,
   initialVisibility = 'show'
 }: Props) => {
   const isMounted = useMounted()
+  const scope = useBrowsingScope()
+  const scopeRef = useRef(scope.key)
+  scopeRef.current = scope.key
+  const requestIdRef = useRef(0)
+  const [resultScope, setResultScope] = useState(scope.key)
+  const [error, setError] = useState(false)
   const shouldResolveInitialVisibility = initialVisibility === 'pending'
 
-  const [galgames, setGalgames] = useState<GalgameCard[]>(
-    shouldResolveInitialVisibility ? [] : initialGalgames
-  )
-  const [total, setTotal] = useState(
-    shouldResolveInitialVisibility ? 0 : initialTotal
-  )
-  const [loading, setLoading] = useState(shouldResolveInitialVisibility)
+  const [galgames, setGalgames] = useState<GalgameCard[]>(initialGalgames)
+  const [total, setTotal] = useState(initialTotal)
+  const [loading, setLoading] = useState(false)
   const hasResolvedInitialVisibilityRef = useRef(false)
   const [selectedType, setSelectedType] = useState<string>('all')
   const [selectedLanguage, setSelectedLanguage] = useState<string>('all')
@@ -61,57 +50,89 @@ export const CardContainer = ({
   )
 
   const fetchPatches = async () => {
+    if (!scope.ready || !scope.key) return
+    const requestId = ++requestIdRef.current
+    const requestScope = scope.key
     setLoading(true)
+    setError(false)
+    try {
+      const { galgames, total } = await kunFetchGet<{
+        galgames: GalgameCard[]
+        total: number
+      }>('/otomegame', {
+        selectedType,
+        selectedLanguage,
+        selectedPlatform,
+        sortField,
+        sortOrder,
+        page,
+        limit: 24,
+        yearString: JSON.stringify(selectedYears),
+        monthString: JSON.stringify(selectedMonths),
+        minRatingCount: sortField === 'rating' ? minRatingCount : 0
+      })
 
-    const { galgames, total } = await kunFetchGet<{
-      galgames: GalgameCard[]
-      total: number
-    }>('/otomegame', {
-      selectedType,
-      selectedLanguage,
-      selectedPlatform,
-      sortField,
-      sortOrder,
-      page,
-      limit: 24,
-      yearString: JSON.stringify(selectedYears),
-      monthString: JSON.stringify(selectedMonths),
-      minRatingCount: sortField === 'rating' ? minRatingCount : 0
-    })
-
-    setGalgames(galgames)
-    setTotal(total)
-    setLoading(false)
+      if (
+        requestId !== requestIdRef.current ||
+        requestScope !== scopeRef.current
+      )
+        return
+      setResultScope(requestScope)
+      setGalgames(galgames)
+      setTotal(total)
+    } catch {
+      if (
+        requestId === requestIdRef.current &&
+        requestScope === scopeRef.current
+      )
+        setError(true)
+    } finally {
+      if (
+        requestId === requestIdRef.current &&
+        requestScope === scopeRef.current
+      )
+        setLoading(false)
+    }
   }
 
   useEffect(() => {
-    if (!isMounted) {
+    if (!isMounted || !scope.ready) {
       return
     }
 
     if (!hasResolvedInitialVisibilityRef.current) {
       hasResolvedInitialVisibilityRef.current = true
 
-      if (shouldResolveInitialVisibility) {
-        const nsfwPreference = getClientNsfwPreference()
-
-        if (nsfwPreference === 'sfw') {
-          setGalgames(initialGalgames)
-          setTotal(initialTotal)
-          setLoading(false)
-          return
-        }
-
-        fetchPatches()
+      const defaultFilters =
+        page === 1 &&
+        selectedType === 'all' &&
+        selectedLanguage === 'all' &&
+        selectedPlatform === 'all' &&
+        sortField === 'resource_update_time' &&
+        sortOrder === 'desc' &&
+        selectedYears.length === 1 &&
+        selectedYears[0] === 'all' &&
+        selectedMonths.length === 1 &&
+        selectedMonths[0] === 'all'
+      if (
+        defaultFilters &&
+        (shouldResolveInitialVisibility
+          ? scope.isPublic
+          : resultScope === scope.key)
+      ) {
+        setResultScope(scope.key)
+        setGalgames(initialGalgames)
+        setTotal(initialTotal)
+        setLoading(false)
         return
       }
-
-      return
     }
 
     fetchPatches()
   }, [
     isMounted,
+    scope.key,
+    scope.ready,
     shouldResolveInitialVisibility,
     sortField,
     sortOrder,
@@ -123,6 +144,14 @@ export const CardContainer = ({
     selectedMonths,
     sortField === 'rating' ? minRatingCount : null
   ])
+
+  useEffect(
+    () => () => {
+      requestIdRef.current += 1
+    },
+    []
+  )
+  const waiting = loading || scope.key === null || resultScope !== scope.key
 
   return (
     <div className="container mx-auto my-4 space-y-6">
@@ -150,7 +179,19 @@ export const CardContainer = ({
         setMinRatingCount={setMinRatingCount}
       />
 
-      {loading ? (
+      {error ? (
+        <div role="alert">
+          游戏列表读取失败，请重试。
+          <Button
+            onPress={() => {
+              void fetchPatches()
+            }}
+            isDisabled={!scope.ready}
+          >
+            重试
+          </Button>
+        </div>
+      ) : waiting ? (
         <KunLoading hint="正在获取 OtomeGame 中..." className="min-h-64" />
       ) : (
         <div className="grid grid-cols-2 gap-2 mx-auto mb-8 sm:gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
@@ -160,7 +201,7 @@ export const CardContainer = ({
         </div>
       )}
 
-      {!loading && total > 24 && (
+      {!waiting && !error && total > 24 && (
         <div className="flex justify-center">
           <KunPagination
             total={Math.ceil(total / 24)}

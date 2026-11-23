@@ -26,7 +26,7 @@ export const KunTopBarUser = () => {
 
   return (
     <NavbarContent as="div" className="items-center" justify="end">
-      {!isMounted && (
+      {(!isMounted || sessionStatus === 'checking') && (
         <>
           <Skeleton className="hidden rounded-lg lg:flex">
             <div className="w-32 h-10 rounded-lg bg-default-300" />

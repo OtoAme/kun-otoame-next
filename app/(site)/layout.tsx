@@ -15,6 +15,7 @@ import {
   isKunEnabledSiteTheme
 } from '~/constants/theme'
 import { kunMoyuMoe } from '~/config/moyu-moe'
+import { getSessionRenderState } from '~/utils/actions/getSessionRenderState'
 import type { Metadata, Viewport } from 'next'
 import '~/styles/index.css'
 import './actions'
@@ -31,6 +32,7 @@ export default async function RootLayout({
   const rawSiteTheme = cookieStore.get(KUN_SITE_THEME_STORAGE_KEY)?.value
   const hasServerTheme = isKunEnabledSiteTheme(rawSiteTheme)
   const siteTheme = hasServerTheme ? rawSiteTheme : DEFAULT_KUN_SITE_THEME
+  const initialSession = await getSessionRenderState()
 
   preconnect(kunMoyuMoe.domain.imageBed)
   prefetchDNS(kunMoyuMoe.domain.imageBed)
@@ -70,7 +72,7 @@ export default async function RootLayout({
             gtag('config', 'G-LZ22SY3YL0');
           `}
         </Script>
-        <Providers>
+        <Providers initialSession={initialSession}>
           <div className="kun-layout-shell relative min-h-screen bg-radial">
             <div
               className="kun-theme-background pointer-events-none"

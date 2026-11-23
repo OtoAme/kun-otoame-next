@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from 'next'
 import { DashboardProviders } from './providers'
+import { getSessionRenderState } from '~/utils/actions/getSessionRenderState'
 import '~/styles/dashboard.css'
 
 export const metadata: Metadata = {
@@ -12,15 +13,18 @@ export const viewport: Viewport = {
   initialScale: 1
 }
 
-export default function DashboardRoot({
+export default async function DashboardRoot({
   children
 }: {
   children: React.ReactNode
 }) {
+  const initialSession = await getSessionRenderState()
   return (
     <html lang="zh-Hans" suppressHydrationWarning>
       <body>
-        <DashboardProviders>{children}</DashboardProviders>
+        <DashboardProviders initialSession={initialSession}>
+          {children}
+        </DashboardProviders>
       </body>
     </html>
   )

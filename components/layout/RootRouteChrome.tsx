@@ -164,9 +164,20 @@ export const KunRootRouteChrome = ({
           children
         ) : (
           <SessionContentBoundary
+            usesBrowsingPreferences={
+              !(
+                pathname.startsWith('/settings') ||
+                pathname.startsWith('/message') ||
+                pathname.startsWith('/moemoepoint')
+              )
+            }
             personalized={
               !(
                 pathname === '/' ||
+                pathname === '/otomegame' ||
+                pathname === '/search' ||
+                /^\/company\/\d+$/.test(pathname) ||
+                /^\/tag\/\d+$/.test(pathname) ||
                 pathname === '/login' ||
                 pathname === '/register' ||
                 pathname.startsWith('/login/') ||

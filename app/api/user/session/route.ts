@@ -7,6 +7,7 @@ import { checkConversationActionRateLimit } from '~/app/api/message/conversation
 import { SessionUnavailableError } from '~/app/api/utils/jwt'
 import { getSessionContext } from '~/app/api/utils/sessionIdentity'
 import { clearSessionCookies } from '~/app/api/utils/sessionCookies'
+import { parseCookies } from '~/utils/cookies'
 import type { UserSession } from '~/types/api/session'
 import type { MessageUnreadStatus } from '~/types/api/message'
 
@@ -46,6 +47,13 @@ export const GET = async (req: NextRequest) => {
     )
   }
   if (!payload) {
+    const cookies = parseCookies(req.headers.get('cookie') ?? '')
+    const needsCleanup = Object.keys(cookies).some(
+      (key) =>
+        key === 'kun-galgame-patch-moe-token' ||
+        key.startsWith('kun-patch-setting-store')
+    )
+    if (!needsCleanup) return jsonNoStore({ status: 'guest' })
     return NextResponse.json(
       { code: 'SESSION_INVALID', message: '用户登录失效' },
       {

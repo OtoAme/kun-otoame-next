@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const prismaMock = vi.hoisted(() => ({
+  user: { findUnique: vi.fn() },
   user_message: {
     count: vi.fn(),
     create: vi.fn(),
@@ -62,6 +63,7 @@ describe('message unread status', () => {
       await prismaMock.user_conversation.findUnique()
     ])
     prismaMock.user_private_message.findFirst.mockResolvedValue({ id: 50 })
+    prismaMock.user.findUnique.mockResolvedValue({ preference_version: 3 })
     verifyHeaderCookieMock.mockResolvedValue({ uid: 1007 })
     rateLimitMock.checkConversationActionRateLimit.mockResolvedValue({
       allowed: true
@@ -76,6 +78,7 @@ describe('message unread status', () => {
     const result = await getUnreadStatus(1007)
 
     expect(result).toEqual({
+      preferenceVersion: 3,
       hasUnreadMessages: true,
       hasUnreadChat: false
     })
@@ -112,6 +115,7 @@ describe('message unread status', () => {
     const result = await getUnreadMessageStatus(1007)
 
     expect(result).toEqual({
+      preferenceVersion: 3,
       hasUnreadNotification: false,
       hasUnreadConversation: true
     })
@@ -262,6 +266,7 @@ describe('message unread status', () => {
 
     expect(response.headers.get('cache-control')).toBe('private, no-store')
     expect(await response.json()).toEqual({
+      preferenceVersion: 3,
       hasUnreadMessages: false,
       hasUnreadChat: false
     })
@@ -448,6 +453,7 @@ describe('message unread status', () => {
 
     expect(response.headers.get('cache-control')).toBe('private, no-store')
     expect(await response.json()).toEqual({
+      preferenceVersion: 3,
       hasUnreadNotification: false,
       hasUnreadConversation: true
     })
@@ -537,6 +543,7 @@ describe('message unread status', () => {
 
     expect(response.headers.get('cache-control')).toBe('private, no-store')
     expect(await response.json()).toEqual({
+      preferenceVersion: 3,
       hasUnreadNotification: true,
       hasUnreadConversation: false,
       readThroughId: 50

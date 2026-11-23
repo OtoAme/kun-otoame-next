@@ -2,7 +2,15 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { useDebounce } from 'use-debounce'
-import { kunFetchDelete, kunFetchGet, kunFetchPost } from '~/utils/kunFetch'
+import { kunFetchGet } from '~/utils/kunFetch'
+import { useAccountPreferences } from '~/hooks/useAccountPreferences'
+import { useBrowsingScope } from '~/hooks/useBrowsingScope'
+import { usePreferenceStore } from '~/store/preferenceStore'
+import {
+  editPreference,
+  refreshPreferences,
+  savePreferenceDrafts
+} from '~/utils/preferenceClient'
 import { Chip } from '@heroui/chip'
 import { Button } from '@heroui/button'
 import { useDisclosure } from '@heroui/modal'
@@ -33,10 +41,6 @@ import {
 } from '~/utils/galgameFilter'
 import { errorReporter, kunErrorHandler } from '~/utils/kunErrorHandler'
 import toast from 'react-hot-toast'
-
-interface UpdateBlockedTagResponse {
-  blockedTagIds: number[]
-}
 
 interface Props {
   initialTag: TagDetail
@@ -105,7 +109,14 @@ export const TagDetailContainer = ({
 }: Props) => {
   const isMounted = useMounted()
   const router = useRouter()
-  const { user, setUser } = useUserStore((state) => state)
+  const { user, sessionContext, sessionGeneration } = useUserStore(
+    (state) => state
+  )
+  const preferences = useAccountPreferences()
+  const scope = useBrowsingScope()
+  const scopeRef = useRef(scope.key)
+  scopeRef.current = scope.key
+  const [resultScope, setResultScope] = useState(scope.key)
   const fetchRequestId = useRef(0)
   const isSyncingFromUrl = useRef(false)
   const [isUrlReady, setIsUrlReady] = useState(false)
@@ -138,9 +149,11 @@ export const TagDetailContainer = ({
   const [patches, setPatches] = useState<GalgameCard[]>(initialGalgames)
   const [totalCount, setTotalCount] = useState(initialTotal)
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState(false)
   const [updatingBlockedTag, setUpdatingBlockedTag] = useState(false)
   const { isOpen, onOpen, onClose } = useDisclosure()
-  const isBlocked = user.blockedTagIds.includes(tag.id)
+  const isBlocked =
+    preferences.snapshot?.blockedTagIds.includes(tag.id) ?? false
   const withPageReset = <T,>(setter: (value: T) => void) => {
     return (value: T) => {
       setPage(1)
@@ -210,8 +223,11 @@ export const TagDetailContainer = ({
   }
 
   const fetchPatches = async () => {
+    if (!scope.ready || !scope.key) return
+    const requestScope = scope.key
     const requestId = ++fetchRequestId.current
     setLoading(true)
+    setError(false)
 
     try {
       const response = await kunFetchGet<{
@@ -231,29 +247,41 @@ export const TagDetailContainer = ({
         minRatingCount: sortField === 'rating' ? debouncedMinRatingCount : 0
       })
 
-      if (requestId !== fetchRequestId.current) {
+      if (
+        requestId !== fetchRequestId.current ||
+        requestScope !== scopeRef.current
+      ) {
         return
       }
 
       if (typeof response === 'string') {
+        setError(true)
         kunErrorHandler(response, () => {})
         setPatches([])
         setTotalCount(0)
         return
       }
 
+      setResultScope(requestScope)
       setPatches(response.galgames)
       setTotalCount(response.total)
     } catch (error) {
-      if (requestId !== fetchRequestId.current) {
+      if (
+        requestId !== fetchRequestId.current ||
+        requestScope !== scopeRef.current
+      ) {
         return
       }
 
       setPatches([])
       setTotalCount(0)
       errorReporter(error)
+      setError(true)
     } finally {
-      if (requestId === fetchRequestId.current) {
+      if (
+        requestId === fetchRequestId.current &&
+        requestScope === scopeRef.current
+      ) {
         setLoading(false)
       }
     }
@@ -273,7 +301,7 @@ export const TagDetailContainer = ({
   }, [isMounted])
 
   useEffect(() => {
-    if (!isMounted || !isUrlReady) {
+    if (!isMounted || !isUrlReady || !scope.ready) {
       return
     }
 
@@ -285,6 +313,7 @@ export const TagDetailContainer = ({
 
     if (isBlocked) {
       fetchRequestId.current += 1
+      setResultScope(scope.key)
       setPatches([])
       setTotalCount(0)
       setLoading(false)
@@ -300,6 +329,8 @@ export const TagDetailContainer = ({
   }, [
     isMounted,
     isUrlReady,
+    scope.key,
+    scope.ready,
     user.uid,
     isBlocked,
     tag.id,
@@ -315,28 +346,32 @@ export const TagDetailContainer = ({
   ])
 
   const handleToggleBlockedTag = async () => {
-    if (!user.uid || updatingBlockedTag) {
+    if (!user.uid || !preferences.canEdit || updatingBlockedTag) {
       return
     }
 
     setUpdatingBlockedTag(true)
     try {
-      const response = isBlocked
-        ? await kunFetchDelete<KunResponse<UpdateBlockedTagResponse>>(
-            '/user/setting/blocked-tag',
-            { tagId: tag.id }
-          )
-        : await kunFetchPost<KunResponse<UpdateBlockedTagResponse>>(
-            '/user/setting/blocked-tag',
-            { tagId: tag.id }
-          )
-
-      if (typeof response === 'string') {
-        toast.error(response)
+      const key = `blocked-tag:${tag.id}`
+      await refreshPreferences([tag.id])
+      const current = useUserStore.getState()
+      if (
+        current.user.uid !== user.uid ||
+        current.sessionContext !== sessionContext ||
+        current.sessionGeneration !== sessionGeneration
+      ) {
+        toast.error('登录账号或会话已变化，请重新确认')
         return
       }
-
-      setUser({ ...user, blockedTagIds: response.blockedTagIds })
+      if (!usePreferenceStore.getState().applied?.items[key]) {
+        toast.error('设置读取失败，请重试')
+        return
+      }
+      editPreference(key, !isBlocked)
+      if (!(await savePreferenceDrafts([key]))) {
+        toast.error(usePreferenceStore.getState().error || '保存失败，请重试')
+        return
+      }
 
       if (isBlocked) {
         toast.success(`已取消屏蔽标签「${tag.name}」`)
@@ -350,6 +385,14 @@ export const TagDetailContainer = ({
       setUpdatingBlockedTag(false)
     }
   }
+
+  useEffect(
+    () => () => {
+      fetchRequestId.current += 1
+    },
+    []
+  )
+  const waiting = loading || scope.key === null || resultScope !== scope.key
 
   if (!isMounted) {
     return <KunLoading hint="正在获取标签详情中..." />
@@ -387,6 +430,7 @@ export const TagDetailContainer = ({
                 variant="flat"
                 color={isBlocked ? 'default' : 'danger'}
                 isLoading={updatingBlockedTag}
+                isDisabled={!preferences.canEdit}
                 onPress={handleToggleBlockedTag}
                 startContent={<CircleOff />}
               >
@@ -452,7 +496,19 @@ export const TagDetailContainer = ({
         </div>
       )}
 
-      {loading ? (
+      {error ? (
+        <div role="alert">
+          游戏列表读取失败，请重试。
+          <Button
+            onPress={() => {
+              void fetchPatches()
+            }}
+            isDisabled={!scope.ready}
+          >
+            重试
+          </Button>
+        </div>
+      ) : waiting ? (
         <KunLoading hint="正在获取 OtomeGame 中..." />
       ) : (
         <div>

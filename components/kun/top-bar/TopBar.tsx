@@ -20,8 +20,10 @@ export const KunTopBar = () => {
   const pathname = usePathname()
   const [isMenuOpen, setIsMenuOpen] = useState(false)
   const user = useUserStore((state) => state.user)
+  const sessionStatus = useUserStore((state) => state.sessionStatus)
   const isMounted = useMounted()
-  const navigationRole = isMounted && user.uid ? user.role : 1
+  const navigationRole =
+    isMounted && sessionStatus === 'authenticated' && user.uid ? user.role : 1
   const navItems = getKunNavItems(navigationRole)
   const mobileNavItems = getKunMobileNavItems(navigationRole)
 

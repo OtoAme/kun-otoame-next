@@ -16,12 +16,17 @@ import { useDebounce } from 'use-debounce'
 import { SearchInput } from './Input'
 import { FilterBar } from '~/components/galgame/FilterBar'
 import { useSettingStore } from '~/store/settingStore'
+import { useBrowsingScope } from '~/hooks/useBrowsingScope'
 import type { SearchSuggestionType } from '~/types/api/search'
 import type { SortField, SortOrder } from '~/components/galgame/_sort'
 
 const MAX_HISTORY_ITEMS = 10
 
 export const SearchPage = () => {
+  const scope = useBrowsingScope()
+  const scopeRef = useRef(scope.key)
+  scopeRef.current = scope.key
+  const [resultScope, setResultScope] = useState(scope.key)
   const inputRef = useRef<HTMLInputElement | null>(null)
   const latestSearchRequestIdRef = useRef(0)
   const [query, setQuery] = useState('')
@@ -83,11 +88,12 @@ export const SearchPage = () => {
   }
 
   const handleSearch = async (currentPage = page) => {
-    if (!selectedSuggestions.length) {
+    if (!selectedSuggestions.length || !scope.ready || !scope.key) {
       return
     }
 
     const requestId = latestSearchRequestIdRef.current + 1
+    const requestScope = scope.key
     latestSearchRequestIdRef.current = requestId
 
     setLoading(true)
@@ -121,7 +127,10 @@ export const SearchPage = () => {
         minRatingCount: sortField === 'rating' ? debouncedMinRatingCount : 0
       })
 
-      if (requestId !== latestSearchRequestIdRef.current) {
+      if (
+        requestId !== latestSearchRequestIdRef.current ||
+        requestScope !== scopeRef.current
+      ) {
         return
       }
 
@@ -133,12 +142,16 @@ export const SearchPage = () => {
         return
       }
 
+      setResultScope(requestScope)
       setPatches(Array.isArray(response.galgames) ? response.galgames : [])
       setTotal(typeof response.total === 'number' ? response.total : 0)
       setHasSearched(true)
       addToHistory(selectedSuggestions)
     } catch (error) {
-      if (requestId !== latestSearchRequestIdRef.current) {
+      if (
+        requestId !== latestSearchRequestIdRef.current ||
+        requestScope !== scopeRef.current
+      ) {
         return
       }
 
@@ -147,7 +160,10 @@ export const SearchPage = () => {
       setHasSearched(true)
       errorReporter(error)
     } finally {
-      if (requestId === latestSearchRequestIdRef.current) {
+      if (
+        requestId === latestSearchRequestIdRef.current &&
+        requestScope === scopeRef.current
+      ) {
         setLoading(false)
       }
     }
@@ -171,6 +187,8 @@ export const SearchPage = () => {
       setLoading(false)
     }
   }, [
+    scope.key,
+    scope.ready,
     page,
     selectedType,
     selectedLanguage,
@@ -252,7 +270,7 @@ export const SearchPage = () => {
         setMinRatingCount={setMinRatingCount}
       />
 
-      {loading ? (
+      {loading || (hasSearched && resultScope !== scope.key) ? (
         <KunLoading hint="正在搜索中..." />
       ) : (
         <div>

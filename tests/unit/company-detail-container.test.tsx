@@ -39,7 +39,9 @@ vi.mock('@heroui/react', () => ({
       {children}
     </button>
   ),
-  Chip: ({ children }: { children?: React.ReactNode }) => <span>{children}</span>
+  Chip: ({ children }: { children?: React.ReactNode }) => (
+    <span>{children}</span>
+  )
 }))
 
 vi.mock('@heroui/modal', () => ({
@@ -51,13 +53,9 @@ vi.mock('@heroui/modal', () => ({
 }))
 
 vi.mock('@heroui/link', () => ({
-  Link: ({
-    children,
-    href
-  }: {
-    children?: React.ReactNode
-    href: string
-  }) => <a href={href}>{children}</a>
+  Link: ({ children, href }: { children?: React.ReactNode; href: string }) => (
+    <a href={href}>{children}</a>
+  )
 }))
 
 vi.mock('lucide-react', () => ({
@@ -132,11 +130,6 @@ vi.mock('~/components/company/detail/DeleteCompanyModal', () => ({
   DeleteCompanyModal: () => <button type="button">删除会社</button>
 }))
 
-vi.mock('~/store/userStore', () => ({
-  useUserStore: (selector: (state: { user: { role: number } }) => unknown) =>
-    selector({ user: { role: 1 } })
-}))
-
 const makeCompany = (): CompanyDetail => ({
   id: 4,
   name: 'Company',
@@ -182,7 +175,12 @@ describe('CompanyDetailContainer', () => {
     props: React.ComponentProps<
       (typeof import('~/components/company/detail/Container'))['CompanyDetailContainer']
     >,
-    options: { cookie?: string; strictMode?: boolean } = {}
+    options: {
+      cookie?: string
+      mode?: 'sfw' | 'nsfw' | 'all'
+      blockedTagIds?: number[]
+      strictMode?: boolean
+    } = {}
   ) => {
     dom = new JSDOM('<!doctype html><div id="root"></div>', {
       url: 'http://localhost/company/4'
@@ -195,6 +193,30 @@ describe('CompanyDetailContainer', () => {
     vi.stubGlobal('document', dom.window.document)
     vi.stubGlobal('React', React)
     vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
+
+    const { useUserStore } = await import('~/store/userStore')
+    const { usePreferenceStore } = await import('~/store/preferenceStore')
+    const authenticated = !!options.mode || !!options.blockedTagIds
+    useUserStore.setState({
+      user: { ...useUserStore.getState().user, uid: authenticated ? 7 : 0 },
+      sessionStatus: authenticated ? 'authenticated' : 'guest',
+      sessionContext: authenticated ? 'confirmed-context' : null,
+      sessionGeneration: 0
+    })
+    usePreferenceStore.setState({
+      generation: 0,
+      status: 'ready',
+      applied: authenticated
+        ? {
+            uid: 7,
+            context: 'confirmed-context',
+            version: 0,
+            nsfwSelected: true,
+            blockedTagIds: options.blockedTagIds ?? [],
+            items: { nsfw: { value: options.mode ?? 'sfw', version: 0 } }
+          }
+        : null
+    })
 
     const { CompanyDetailContainer } = await import(
       '~/components/company/detail/Container'
@@ -229,6 +251,7 @@ describe('CompanyDetailContainer', () => {
     routerMock.push.mockReset()
     routerMock.refresh.mockReset()
     vi.unstubAllGlobals()
+    vi.resetModules()
   })
 
   it('uses the static SFW company list for anonymous default filters', async () => {
@@ -287,7 +310,7 @@ describe('CompanyDetailContainer', () => {
         initialVisibility: 'pending'
       },
       {
-        cookie: 'kun-patch-setting-store|state|data|kunNsfwEnable=all'
+        mode: 'all'
       }
     )
 

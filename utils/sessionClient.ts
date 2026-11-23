@@ -1,3 +1,4 @@
+import { observePreferenceVersion } from '~/utils/preferenceClient'
 import toast from 'react-hot-toast'
 import { useUserStore } from '~/store/userStore'
 import { useSettingStore } from '~/store/settingStore'
@@ -22,6 +23,7 @@ const acceptSessionSummary = (session: UserSession, readVersion: number) => {
     )
   ) {
     useMessageStore.getState().setUnreadMessageStatus(session.unread!)
+    observePreferenceVersion(session.unread?.preferenceVersion)
   }
 }
 
@@ -30,14 +32,24 @@ let pending: {
   promise: Promise<void>
   controller: AbortController
 } | null = null
+let lastConfirmation: { generation: number; at: number } | null = null
 
-export const refreshUserSession = () => {
+export const refreshUserSession = (options?: { reason: 'restore' }) => {
   const previousStatus = useUserStore.getState().sessionStatus
   const generation = useUserStore.getState().sessionGeneration
   if (pending?.generation === generation) return pending.promise
+  if (
+    options?.reason === 'restore' &&
+    (previousStatus === 'authenticated' || previousStatus === 'guest') &&
+    lastConfirmation?.generation === generation &&
+    Date.now() - lastConfirmation.at < 5_000
+  )
+    return Promise.resolve()
   pending?.controller.abort()
   const controller = new AbortController()
-  useUserStore.getState().setSessionStatus('checking')
+  if (previousStatus !== 'authenticated' && previousStatus !== 'guest') {
+    useUserStore.getState().setSessionStatus('checking')
+  }
   const promise = (async () => {
     const timeout = setTimeout(() => controller.abort(), 15_000)
     try {
@@ -50,7 +62,12 @@ export const refreshUserSession = () => {
       })
       const body = await response.json()
       if (useUserStore.getState().sessionGeneration !== generation) return
+      if (response.ok && body?.status === 'guest') {
+        useUserStore.getState().confirmGuest()
+        return
+      }
       if (response.status === 401 && body?.code === 'SESSION_INVALID') {
+        useUserStore.getState().setSessionStatus('checking')
         await withSessionMutation(async (request) => {
           if (useUserStore.getState().sessionGeneration !== generation) return
           const freshReadVersion = beginUnreadRead()
@@ -113,7 +130,16 @@ export const refreshUserSession = () => {
       clearTimeout(timeout)
     }
   })().finally(() => {
-    if (pending?.promise === promise) pending = null
+    if (pending?.promise === promise) {
+      pending = null
+      const state = useUserStore.getState()
+      if (
+        state.sessionGeneration === generation &&
+        (state.sessionStatus === 'authenticated' ||
+          state.sessionStatus === 'guest')
+      )
+        lastConfirmation = { generation, at: Date.now() }
+    }
   })
   pending = { generation, promise, controller }
   return promise

@@ -20,6 +20,28 @@ const act = async (callback: () => void | Promise<void>) => {
 const navigation = vi.hoisted(() => ({ refresh: vi.fn() }))
 vi.mock('@bprogress/next', () => ({ useRouter: () => navigation }))
 
+vi.mock('~/hooks/useAccountPreferences', async () => {
+  const { useUserStore } = await import('~/store/userStore')
+  return {
+    useAccountPreferences: () => {
+      const session = useUserStore()
+      return {
+        status: 'ready',
+        snapshot: session.sessionContext
+          ? {
+              uid: session.user.uid,
+              context: session.sessionContext,
+              version: 0,
+              nsfwSelected: true,
+              blockedTagIds: [],
+              items: { nsfw: { value: 'sfw', version: 0 } }
+            }
+          : null
+      }
+    }
+  }
+})
+
 const fetchMock = vi.hoisted(() => ({
   kunFetchGet: vi.fn(),
   kunFetchPut: vi.fn()
@@ -654,7 +676,7 @@ describe('ChatContainer realtime sync', () => {
         await vi.advanceTimersByTimeAsync(10_000)
       })
       expect(container.querySelector('[data-message-id="1"]')).toBe(original)
-      expect(container.querySelector('[hidden]')).not.toBeNull()
+      expect(original?.closest('[hidden]')).toBeNull()
       expect(fetchMock.kunFetchGet).not.toHaveBeenCalled()
       expect(fetchMock.kunFetchPut).not.toHaveBeenCalled()
     }

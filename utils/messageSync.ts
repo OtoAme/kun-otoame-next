@@ -11,6 +11,7 @@ export interface MessageSyncIdentity {
 export interface UnreadSummary {
   hasUnreadMessages: boolean
   hasUnreadChat: boolean
+  preferenceVersion?: number | null
 }
 
 export const isUnreadSummary = (value: unknown): value is UnreadSummary =>
@@ -115,8 +116,10 @@ export const createMessageSyncScheduler = <Result = UnreadSummary>(
       }
       options.onSuccess(result)
       const requestedInterval = options.nextIntervalMs?.(result)
-      const nextInterval = requestedInterval !== undefined && Number.isFinite(requestedInterval)
-        ? requestedInterval : interval
+      const nextInterval =
+        requestedInterval !== undefined && Number.isFinite(requestedInterval)
+          ? requestedInterval
+          : interval
       const nextDelay = options.nextIntervalMs
         ? Math.min(300_000, Math.max(100, jitter(nextInterval)))
         : jitter(interval)
@@ -296,7 +299,15 @@ export const seedSessionUnread = (
     identity,
     unread: {
       hasUnreadMessages: unread.hasUnreadNotification,
-      hasUnreadChat: unread.hasUnreadConversation
+      hasUnreadChat: unread.hasUnreadConversation,
+      ...('preferenceVersion' in unread
+        ? {
+            preferenceVersion:
+              typeof unread.preferenceVersion === 'number'
+                ? unread.preferenceVersion
+                : null
+          }
+        : {})
     },
     succeededAt: Date.now(),
     readVersion,

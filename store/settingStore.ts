@@ -1,5 +1,4 @@
 import { create } from 'zustand'
-import { persist, createJSONStorage } from 'zustand/middleware'
 import { cookieStorage } from './_cookie'
 
 export interface KunSettingData {
@@ -11,7 +10,7 @@ interface StoreState {
   data: KunSettingData
   getData: () => KunSettingData
   setData: (data: KunSettingData) => void
-  resetData: () => void
+  resetData: (clearLegacy?: boolean) => void
 }
 
 const initialState: KunSettingData = {
@@ -19,17 +18,13 @@ const initialState: KunSettingData = {
   kunBlockedTagIds: []
 }
 
-export const useSettingStore = create<StoreState>()(
-  persist(
-    (set, get) => ({
-      data: initialState,
-      getData: () => get().data,
-      setData: (data: KunSettingData) => set({ data }),
-      resetData: () => set({ data: initialState })
-    }),
-    {
-      name: 'kun-patch-setting-store',
-      storage: createJSONStorage(() => cookieStorage)
-    }
-  )
-)
+export const useSettingStore = create<StoreState>()((set, get) => ({
+  data: initialState,
+  getData: () => get().data,
+  setData: (data) => set({ data }),
+  resetData: (clearLegacy = false) => {
+    if (clearLegacy && typeof document !== 'undefined')
+      cookieStorage.removeItem('kun-patch-setting-store')
+    set({ data: initialState })
+  }
+}))
