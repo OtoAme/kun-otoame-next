@@ -5,14 +5,17 @@ import { getCachedTagById } from './data'
 import { ErrorComponent } from '~/components/error/ErrorComponent'
 import { KunBreadcrumbTitle } from '~/components/kun/BreadcrumbTitle'
 import type { Metadata } from 'next'
-import { prisma } from '~/prisma/index'
-import { STATIC_TAG_PREGEN_LIMIT } from '~/config/staticGeneration'
+import { getPatchByTag } from '~/app/api/tag/service'
+import {
+  getGalgamePageState,
+  type GalgameSearchParams
+} from '~/utils/actions/getGalgamePageState'
 
-export const revalidate = 300
-export const dynamic = 'force-static'
+export const dynamic = 'force-dynamic'
 
 interface Props {
   params: Promise<{ id: string }>
+  searchParams: Promise<GalgameSearchParams>
 }
 
 export const generateMetadata = async ({
@@ -28,39 +31,34 @@ export const generateMetadata = async ({
   return generateKunMetadataTemplate(tag.name)
 }
 
-export async function generateStaticParams() {
-  if (STATIC_TAG_PREGEN_LIMIT === 0) {
-    return []
-  }
-
-  const tags = await prisma.patch_tag.findMany({
-    orderBy: { count: 'desc' },
-    take: STATIC_TAG_PREGEN_LIMIT,
-    select: { id: true }
-  })
-
-  return tags.map((tag) => ({
-    id: String(tag.id)
-  }))
-}
-
-export default async function Kun({ params }: Props) {
+export default async function Kun({ params, searchParams }: Props) {
   const { id } = await params
   const tagId = Number(id)
 
-  const tag = await getCachedTagById(tagId)
+  const state = await getGalgamePageState(await searchParams)
+  if (typeof state === 'string') return <ErrorComponent error={state} />
+  const [tag, response] = await Promise.all([
+    getCachedTagById(tagId),
+    state.scope.identity === 'guest'
+      ? Promise.resolve({ galgames: [], total: 0 })
+      : getPatchByTag({ tagId, ...state.input }, state.visibility)
+  ])
 
   if (typeof tag === 'string') {
     return <ErrorComponent error={tag} />
   }
+  if (typeof response === 'string') return <ErrorComponent error={response} />
 
   return (
     <Suspense>
       <KunBreadcrumbTitle routeKey={`/tag/${tag.id}`} title={tag.name} />
       <TagDetailContainer
+        key={JSON.stringify([tagId, state.scope, state.filters])}
         initialTag={tag}
-        initialGalgames={[]}
-        initialTotal={0}
+        initialGalgames={response.galgames}
+        initialTotal={response.total}
+        initialScope={state.scope}
+        initialFilters={state.filters}
       />
     </Suspense>
   )

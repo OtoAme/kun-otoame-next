@@ -32,6 +32,21 @@ export const SessionContentBoundary = ({
   children: ReactNode
   personalized?: boolean
   usesBrowsingPreferences?: boolean
+}) =>
+  personalized ? (
+    <PersonalizedContent usesBrowsingPreferences={usesBrowsingPreferences}>
+      {children}
+    </PersonalizedContent>
+  ) : (
+    children
+  )
+
+const PersonalizedContent = ({
+  children,
+  usesBrowsingPreferences
+}: {
+  children: ReactNode
+  usesBrowsingPreferences: boolean
 }) => {
   const generation = useUserStore((state) => state.sessionGeneration)
   const status = useUserStore((state) => state.sessionStatus)
@@ -82,12 +97,11 @@ export const SessionContentBoundary = ({
     confirmed.current = true
     // Reset old account state before the transition so an existing Suspense
     // boundary keeps content unready until the refreshed server page resolves.
-    if (personalized && identityChanged)
-      setContentVersion((version) => version + 1)
+    if (identityChanged) setContentVersion((version) => version + 1)
     startTransition(() => {
       setDisplayedGeneration(generation)
       setDisplayed({ identity, browsingKey })
-      if (personalized) router.refresh()
+      router.refresh()
     })
   }, [
     displayed,
@@ -95,7 +109,6 @@ export const SessionContentBoundary = ({
     generation,
     identity,
     browsingKey,
-    personalized,
     usesBrowsingPreferences,
     router
   ])
@@ -108,19 +121,18 @@ export const SessionContentBoundary = ({
   const invalidated =
     generation !== displayedGeneration &&
     (confirmed.current || identity === null)
-  const pending =
-    personalized && (!displayed || invalidated || changed || refreshing)
+  const pending = !displayed || invalidated || changed || refreshing
   const ready =
     !pending &&
-    (!personalized ||
-      (identity !== null && (!usesBrowsingPreferences || browsingKey !== null)))
+    identity !== null &&
+    (!usesBrowsingPreferences || browsingKey !== null)
   const preferenceFailed =
     usesBrowsingPreferences &&
     status === 'authenticated' &&
     !preferences.snapshot &&
     preferences.status === 'error'
   return (
-    <Fragment key={personalized ? contentVersion : 'public'}>
+    <Fragment key={contentVersion}>
       <SessionContentReadyContext.Provider value={ready}>
         <div
           hidden={pending}
@@ -129,8 +141,7 @@ export const SessionContentBoundary = ({
         >
           {children}
         </div>
-        {(pending ||
-          (personalized && (status === 'unavailable' || preferenceFailed))) && (
+        {(pending || status === 'unavailable' || preferenceFailed) && (
           <div role="status" className="p-6 text-center">
             {status === 'unavailable' ? (
               <>

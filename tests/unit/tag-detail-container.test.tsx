@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { JSDOM } from 'jsdom'
 import { createRoot, type Root } from 'react-dom/client'
 import type { TagDetail } from '~/types/api/tag'
+import type { SessionRenderState } from '~/types/api/session'
 
 globalThis.React = React
 
@@ -46,6 +47,9 @@ vi.mock('@heroui/button', () => ({
   }: {
     children?: React.ReactNode
     onPress?: () => void
+    isLoading?: boolean
+    isDisabled?: boolean
+    startContent?: React.ReactNode
     [key: string]: unknown
   }) => (
     <button
@@ -177,7 +181,10 @@ describe('TagDetailContainer', () => {
   let root: Root | undefined
   let dom: JSDOM | undefined
 
-  const renderContainer = async () => {
+  const renderContainer = async (
+    initialGalgames: GalgameCard[] = [],
+    initialScope?: SessionRenderState
+  ) => {
     dom = new JSDOM('<!doctype html><div id="root"></div>', {
       url: 'http://localhost/tag/15'
     })
@@ -218,8 +225,9 @@ describe('TagDetailContainer', () => {
       root!.render(
         <TagDetailContainer
           initialTag={makeTag()}
-          initialGalgames={[]}
-          initialTotal={0}
+          initialGalgames={initialGalgames}
+          initialTotal={initialGalgames.length}
+          initialScope={initialScope}
         />
       )
     })
@@ -269,6 +277,28 @@ describe('TagDetailContainer', () => {
     await act(async () => {})
 
     expect(container.textContent).toContain('标签首屏列表')
+  })
+
+  it('keeps a matching server tag list through confirmation and does not fetch after logout', async () => {
+    fetchMock.kunFetchGet.mockResolvedValue({ galgames: [], total: 0 })
+    const container = await renderContainer(
+      [makeGalgame(1, '服务器标签列表')],
+      {
+        identity: 'a'.repeat(64),
+        browsingKey: '["sfw",[]]'
+      }
+    )
+    const card = container.querySelector('[data-testid="galgame-card"]')
+    const { useUserStore } = await import('~/store/userStore')
+    await act(async () => useUserStore.getState().setSessionStatus('checking'))
+    await act(async () =>
+      useUserStore.getState().setSessionStatus('authenticated')
+    )
+    expect(container.querySelector('[data-testid="galgame-card"]')).toBe(card)
+    expect(container.textContent).toContain('服务器标签列表')
+    await act(async () => useUserStore.getState().logout())
+    expect(container.textContent).toContain('请登录后查看标签详细信息')
+    expect(fetchMock.kunFetchGet).not.toHaveBeenCalled()
   })
 
   it('uses versioned tag saving and preserves an unrelated display draft', async () => {

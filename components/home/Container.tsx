@@ -1,5 +1,5 @@
 import { HomeHero } from './hero/HomeHero'
-import { HomePersonalizedContent } from './HomePersonalizedContent'
+import { HomeContent } from './HomeContent'
 import { ShoutboxHomeSection } from '~/components/shoutbox/ShoutboxHomeSection'
 import type { HomeResource } from '~/types/api/home'
 
@@ -15,7 +15,7 @@ export const HomeContainer = (props: Props) => {
 
       <ShoutboxHomeSection />
 
-      <HomePersonalizedContent publicData={props} />
+      <HomeContent {...props} />
     </div>
   )
 }

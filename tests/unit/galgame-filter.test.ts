@@ -1,57 +1,58 @@
 import { describe, expect, it } from 'vitest'
-import {
-  DEFAULT_GALGAME_FILTER_SELECTION,
-  DEFAULT_GALGAME_FILTER_VALUE,
-  DEFAULT_GALGAME_SORT_FIELD,
-  DEFAULT_GALGAME_SORT_ORDER,
-  DEFAULT_TAG_COMPANY_MIN_RATING_COUNT,
-  isDefaultTagCompanyGalgameFilterState
-} from '~/utils/galgameFilter'
+import { getGalgameListQuery, readGalgameFilters } from '~/utils/galgameFilter'
 
-const defaultState = {
-  page: 1,
-  selectedType: DEFAULT_GALGAME_FILTER_VALUE,
-  selectedLanguage: DEFAULT_GALGAME_FILTER_VALUE,
-  selectedPlatform: DEFAULT_GALGAME_FILTER_VALUE,
-  sortField: DEFAULT_GALGAME_SORT_FIELD,
-  sortOrder: DEFAULT_GALGAME_SORT_ORDER,
-  selectedYears: DEFAULT_GALGAME_FILTER_SELECTION,
-  selectedMonths: DEFAULT_GALGAME_FILTER_SELECTION,
-  minRatingCount: DEFAULT_TAG_COMPANY_MIN_RATING_COUNT
-}
-
-describe('isDefaultTagCompanyGalgameFilterState', () => {
-  it('returns true for the canonical tag/company default filter state', () => {
-    expect(isDefaultTagCompanyGalgameFilterState(defaultState)).toBe(true)
+describe('galgame URL filters', () => {
+  it('uses the correct defaults for games and tag/company lists', () => {
+    expect(readGalgameFilters(new URLSearchParams(), 10).minRatingCount).toBe(
+      10
+    )
+    expect(readGalgameFilters(new URLSearchParams()).minRatingCount).toBe(0)
+    expect(
+      getGalgameListQuery(readGalgameFilters(new URLSearchParams(), 10))
+    ).toMatchObject({
+      page: 1,
+      sortField: 'resource_update_time',
+      minRatingCount: 0
+    })
   })
 
-  it('returns false when pagination or a filter differs from the default state', () => {
-    expect(
-      isDefaultTagCompanyGalgameFilterState({
-        ...defaultState,
-        page: 2
+  it('restores pagination, rating and release filters from the URL', () => {
+    const filters = readGalgameFilters(
+      new URLSearchParams({
+        page: '3',
+        sortField: 'rating',
+        sortOrder: 'asc',
+        minRatingCount: '5',
+        yearString: '["2025"]',
+        monthString: '["02"]'
       })
-    ).toBe(false)
-    expect(
-      isDefaultTagCompanyGalgameFilterState({
-        ...defaultState,
-        selectedLanguage: 'ja'
-      })
-    ).toBe(false)
+    )
+    expect(getGalgameListQuery(filters)).toMatchObject({
+      page: 3,
+      sortField: 'rating',
+      sortOrder: 'asc',
+      minRatingCount: 5,
+      yearString: '["2025"]',
+      monthString: '["02"]'
+    })
   })
 
-  it('returns false when sort or rating threshold differs from the default state', () => {
-    expect(
-      isDefaultTagCompanyGalgameFilterState({
-        ...defaultState,
-        sortField: 'created'
+  it('normalizes invalid sorting, page and release inputs to valid defaults', () => {
+    const filters = readGalgameFilters(
+      new URLSearchParams({
+        page: '-1',
+        sortField: 'invalid',
+        sortOrder: 'invalid',
+        yearString: '{}',
+        monthString: 'broken'
       })
-    ).toBe(false)
-    expect(
-      isDefaultTagCompanyGalgameFilterState({
-        ...defaultState,
-        minRatingCount: 5
-      })
-    ).toBe(false)
+    )
+    expect(getGalgameListQuery(filters)).toMatchObject({
+      page: 1,
+      sortField: 'resource_update_time',
+      sortOrder: 'desc',
+      yearString: '["all"]',
+      monthString: '["all"]'
+    })
   })
 })

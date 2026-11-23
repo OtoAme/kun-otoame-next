@@ -4,28 +4,27 @@ import { Suspense } from 'react'
 import { getGalgame } from '~/app/api/otomegame/service'
 import { ErrorComponent } from '~/components/error/ErrorComponent'
 import type { Metadata } from 'next'
+import {
+  getGalgamePageState,
+  type GalgameSearchParams
+} from '~/utils/actions/getGalgamePageState'
+import { DEFAULT_GALGAME_MIN_RATING_COUNT } from '~/utils/galgameFilter'
 
-export const revalidate = 180
-export const dynamic = 'force-static'
+export const dynamic = 'force-dynamic'
 
 export const metadata: Metadata = kunMetadata
 
-export default async function Kun() {
-  const response = await getGalgame(
-    {
-      selectedType: 'all',
-      selectedLanguage: 'all',
-      selectedPlatform: 'all',
-      sortField: 'resource_update_time',
-      sortOrder: 'desc',
-      page: 1,
-      limit: 24,
-      yearString: JSON.stringify(['all']),
-      monthString: JSON.stringify(['all']),
-      minRatingCount: 0
-    },
-    { content_limit: 'sfw' }
+export default async function Kun({
+  searchParams
+}: {
+  searchParams: Promise<GalgameSearchParams>
+}) {
+  const state = await getGalgamePageState(
+    await searchParams,
+    DEFAULT_GALGAME_MIN_RATING_COUNT
   )
+  if (typeof state === 'string') return <ErrorComponent error={state} />
+  const response = await getGalgame(state.input, state.visibility)
   if (typeof response === 'string') {
     return <ErrorComponent error={response} />
   }
@@ -33,9 +32,11 @@ export default async function Kun() {
   return (
     <Suspense>
       <CardContainer
+        key={JSON.stringify([state.scope, state.filters])}
         initialGalgames={response.galgames}
         initialTotal={response.total}
-        initialVisibility="pending"
+        initialScope={state.scope}
+        initialFilters={state.filters}
       />
     </Suspense>
   )

@@ -25,23 +25,6 @@ export interface TagCompanyGalgameFilterState {
   minRatingCount: number
 }
 
-const isDefaultFilterSelection = (value: string[]) =>
-  value.length === DEFAULT_GALGAME_FILTER_SELECTION.length &&
-  value.every((item, index) => item === DEFAULT_GALGAME_FILTER_SELECTION[index])
-
-export const isDefaultTagCompanyGalgameFilterState = (
-  state: TagCompanyGalgameFilterState
-) =>
-  state.page === 1 &&
-  state.selectedType === DEFAULT_GALGAME_FILTER_VALUE &&
-  state.selectedLanguage === DEFAULT_GALGAME_FILTER_VALUE &&
-  state.selectedPlatform === DEFAULT_GALGAME_FILTER_VALUE &&
-  state.sortField === DEFAULT_GALGAME_SORT_FIELD &&
-  state.sortOrder === DEFAULT_GALGAME_SORT_ORDER &&
-  isDefaultFilterSelection(state.selectedYears) &&
-  isDefaultFilterSelection(state.selectedMonths) &&
-  state.minRatingCount === DEFAULT_TAG_COMPANY_MIN_RATING_COUNT
-
 export const getSearchParamValue = (
   value: string | string[] | null | undefined
 ) => {
@@ -94,4 +77,50 @@ export const parseNonNegativeIntParam = (
   }
 
   return Math.floor(parsed)
+}
+
+export const readGalgameFilters = (
+  params: URLSearchParams,
+  defaultMinRatingCount = DEFAULT_TAG_COMPANY_MIN_RATING_COUNT
+): TagCompanyGalgameFilterState => {
+  const sortField = params.get('sortField')
+  const sortOrder = params.get('sortOrder')
+  return {
+    page: parsePositiveIntParam(params.get('page'), 1),
+    selectedType: params.get('selectedType') || DEFAULT_GALGAME_FILTER_VALUE,
+    selectedLanguage:
+      params.get('selectedLanguage') || DEFAULT_GALGAME_FILTER_VALUE,
+    selectedPlatform:
+      params.get('selectedPlatform') || DEFAULT_GALGAME_FILTER_VALUE,
+    sortField: [
+      'resource_update_time',
+      'created',
+      'view',
+      'download',
+      'favorite',
+      'rating'
+    ].includes(sortField ?? '')
+      ? (sortField as SortField)
+      : DEFAULT_GALGAME_SORT_FIELD,
+    sortOrder: sortOrder === 'asc' ? 'asc' : DEFAULT_GALGAME_SORT_ORDER,
+    selectedYears: parseGalgameFilterArray(params.get('yearString')),
+    selectedMonths: parseGalgameFilterArray(params.get('monthString')),
+    minRatingCount: params.has('minRatingCount')
+      ? parseNonNegativeIntParam(
+          params.get('minRatingCount'),
+          defaultMinRatingCount
+        )
+      : defaultMinRatingCount
+  }
+}
+
+export const getGalgameListQuery = (filters: TagCompanyGalgameFilterState) => {
+  const { selectedYears, selectedMonths, ...query } = filters
+  return {
+    ...query,
+    limit: 24,
+    yearString: JSON.stringify(selectedYears),
+    monthString: JSON.stringify(selectedMonths),
+    minRatingCount: filters.sortField === 'rating' ? filters.minRatingCount : 0
+  }
 }

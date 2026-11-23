@@ -1,13 +1,14 @@
 'use client'
 
-import { useRef, useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useRouter } from '@bprogress/next'
 import { Button, Chip } from '@heroui/react'
 import { useDisclosure } from '@heroui/modal'
 import { Link } from '@heroui/link'
 import { Pencil } from 'lucide-react'
-import { useMounted } from '~/hooks/useMounted'
-import { useBrowsingScope } from '~/hooks/useBrowsingScope'
+import { useGalgameList } from '~/hooks/useGalgameList'
+import { useGalgameFilters } from '~/hooks/useGalgameFilters'
+import type { SessionRenderState } from '~/types/api/session'
 import { KunHeader } from '~/components/kun/Header'
 import { KunUser } from '~/components/kun/floating-card/KunUser'
 import { KunLoading } from '~/components/kun/Loading'
@@ -18,351 +19,53 @@ import { KunPagination } from '~/components/kun/Pagination'
 import { CompanyFormModal } from '../form/CompanyFormModal'
 import { DeleteCompanyModal } from './DeleteCompanyModal'
 import { formatTimeDifference } from '~/utils/time'
-import { kunFetchGet } from '~/utils/kunFetch'
 import { SUPPORTED_LANGUAGE_MAP } from '~/constants/resource'
 import { useUserStore } from '~/store/userStore'
 import { semanticChipProps } from '~/utils/semanticColor'
 import type { CompanyDetail } from '~/types/api/company'
-import type { SortField, SortOrder } from '~/components/galgame/_sort'
 import type { FC } from 'react'
 import {
-  DEFAULT_GALGAME_FILTER_VALUE,
-  DEFAULT_GALGAME_SORT_FIELD,
-  DEFAULT_GALGAME_SORT_ORDER,
   DEFAULT_TAG_COMPANY_MIN_RATING_COUNT,
-  isDefaultTagCompanyGalgameFilterState,
-  parseGalgameFilterArray,
-  parseNonNegativeIntParam,
-  parsePositiveIntParam
+  getGalgameListQuery,
+  type TagCompanyGalgameFilterState
 } from '~/utils/galgameFilter'
-import { errorReporter, kunErrorHandler } from '~/utils/kunErrorHandler'
 
 interface Props {
   initialCompany: CompanyDetail
   initialGalgames: GalgameCard[]
   initialTotal: number
-  initialVisibility?: 'pending' | 'show'
-}
-
-const SORT_FIELDS = new Set<SortField>([
-  'resource_update_time',
-  'created',
-  'view',
-  'download',
-  'favorite',
-  'rating'
-])
-
-const SORT_ORDERS = new Set<SortOrder>(['asc', 'desc'])
-
-const isDefaultFilterArray = (value: string[]) =>
-  value.length === 1 && value[0] === DEFAULT_GALGAME_FILTER_VALUE
-
-const parseSortField = (value: string | null): SortField => {
-  if (value && SORT_FIELDS.has(value as SortField)) {
-    return value as SortField
-  }
-
-  return DEFAULT_GALGAME_SORT_FIELD
-}
-
-const parseSortOrder = (value: string | null): SortOrder => {
-  if (value && SORT_ORDERS.has(value as SortOrder)) {
-    return value as SortOrder
-  }
-
-  return DEFAULT_GALGAME_SORT_ORDER
-}
-
-const getUrlFilterState = () => {
-  const params =
-    typeof window === 'undefined'
-      ? new URLSearchParams()
-      : new URLSearchParams(window.location.search)
-
-  return {
-    page: parsePositiveIntParam(params.get('page'), 1),
-    selectedType: params.get('selectedType') || DEFAULT_GALGAME_FILTER_VALUE,
-    selectedLanguage:
-      params.get('selectedLanguage') || DEFAULT_GALGAME_FILTER_VALUE,
-    selectedPlatform:
-      params.get('selectedPlatform') || DEFAULT_GALGAME_FILTER_VALUE,
-    sortField: parseSortField(params.get('sortField')),
-    sortOrder: parseSortOrder(params.get('sortOrder')),
-    selectedYears: parseGalgameFilterArray(params.get('yearString')),
-    selectedMonths: parseGalgameFilterArray(params.get('monthString')),
-    minRatingCount: parseNonNegativeIntParam(
-      params.get('minRatingCount'),
-      DEFAULT_TAG_COMPANY_MIN_RATING_COUNT
-    )
-  }
+  initialScope?: SessionRenderState | null
+  initialFilters?: TagCompanyGalgameFilterState
 }
 
 export const CompanyDetailContainer: FC<Props> = ({
   initialCompany,
   initialGalgames,
   initialTotal,
-  initialVisibility = 'show'
+  initialScope = null,
+  initialFilters
 }) => {
   const { isOpen, onOpen, onClose } = useDisclosure()
-
-  const isMounted = useMounted()
-  const scope = useBrowsingScope()
-  const scopeRef = useRef(scope.key)
-  scopeRef.current = scope.key
-  const [resultScope, setResultScope] = useState(scope.key)
-  const shouldResolveInitialVisibility = initialVisibility === 'pending'
   const user = useUserStore((state) => state.user)
   const router = useRouter()
-  const fetchRequestId = useRef(0)
-  const isSyncingFromUrl = useRef(false)
-  const hasUsedInitialPatches = useRef(false)
-  const [isUrlReady, setIsUrlReady] = useState(false)
-  const [page, setPage] = useState(1)
-  const [selectedType, setSelectedType] = useState<string>(
-    DEFAULT_GALGAME_FILTER_VALUE
-  )
-  const [selectedLanguage, setSelectedLanguage] = useState<string>(
-    DEFAULT_GALGAME_FILTER_VALUE
-  )
-  const [selectedPlatform, setSelectedPlatform] = useState<string>(
-    DEFAULT_GALGAME_FILTER_VALUE
-  )
-  const [sortField, setSortField] = useState<SortField>(
-    DEFAULT_GALGAME_SORT_FIELD
-  )
-  const [sortOrder, setSortOrder] = useState<SortOrder>(
-    DEFAULT_GALGAME_SORT_ORDER
-  )
-  const [selectedYears, setSelectedYears] = useState<string[]>([
-    DEFAULT_GALGAME_FILTER_VALUE
-  ])
-  const [selectedMonths, setSelectedMonths] = useState<string[]>([
-    DEFAULT_GALGAME_FILTER_VALUE
-  ])
-  const [minRatingCount, setMinRatingCount] = useState(
+  const [company, setCompany] = useState(initialCompany)
+  const { filters, setPage, filterProps } = useGalgameFilters(
+    initialFilters,
     DEFAULT_TAG_COMPANY_MIN_RATING_COUNT
   )
-
-  const [company, setCompany] = useState(initialCompany)
-  const [patches, setPatches] = useState<GalgameCard[]>(initialGalgames)
-  const [totalPatches, setTotalPatches] = useState(initialTotal)
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState(false)
-
-  const updateFilter = <T,>(setter: (value: T) => void, value: T) => {
-    setPage(1)
-    setter(value)
-  }
-
-  const applyUrlFilterState = () => {
-    const nextState = getUrlFilterState()
-
-    isSyncingFromUrl.current = true
-    setPage(nextState.page)
-    setSelectedType(nextState.selectedType)
-    setSelectedLanguage(nextState.selectedLanguage)
-    setSelectedPlatform(nextState.selectedPlatform)
-    setSortField(nextState.sortField)
-    setSortOrder(nextState.sortOrder)
-    setSelectedYears(nextState.selectedYears)
-    setSelectedMonths(nextState.selectedMonths)
-    setMinRatingCount(nextState.minRatingCount)
-    setIsUrlReady(true)
-  }
-
-  const syncUrl = () => {
-    const params = new URLSearchParams()
-
-    if (page !== 1) {
-      params.set('page', String(page))
-    }
-    if (selectedType !== DEFAULT_GALGAME_FILTER_VALUE) {
-      params.set('selectedType', selectedType)
-    }
-    if (selectedLanguage !== DEFAULT_GALGAME_FILTER_VALUE) {
-      params.set('selectedLanguage', selectedLanguage)
-    }
-    if (selectedPlatform !== DEFAULT_GALGAME_FILTER_VALUE) {
-      params.set('selectedPlatform', selectedPlatform)
-    }
-    if (sortField !== DEFAULT_GALGAME_SORT_FIELD) {
-      params.set('sortField', sortField)
-    }
-    if (sortOrder !== DEFAULT_GALGAME_SORT_ORDER) {
-      params.set('sortOrder', sortOrder)
-    }
-    if (!isDefaultFilterArray(selectedYears)) {
-      params.set('yearString', JSON.stringify(selectedYears))
-    }
-    if (!isDefaultFilterArray(selectedMonths)) {
-      params.set('monthString', JSON.stringify(selectedMonths))
-    }
-    if (
-      sortField === 'rating' &&
-      minRatingCount !== DEFAULT_TAG_COMPANY_MIN_RATING_COUNT
-    ) {
-      params.set('minRatingCount', String(minRatingCount))
-    }
-
-    const queryString = params.toString()
-    const currentQueryString =
-      typeof window === 'undefined'
-        ? ''
-        : new URLSearchParams(window.location.search).toString()
-
-    if (queryString !== currentQueryString) {
-      router.push(queryString ? `?${queryString}` : '')
-    }
-  }
-
-  const fetchPatches = async () => {
-    if (!scope.ready || !scope.key) return
-    const requestScope = scope.key
-    const requestId = ++fetchRequestId.current
-    setLoading(true)
-    setError(false)
-
-    try {
-      const response = await kunFetchGet<{
-        galgames: GalgameCard[]
-        total: number
-      }>('/company/otomegame', {
-        companyId: company.id,
-        page,
-        limit: 24,
-        selectedType,
-        selectedLanguage,
-        selectedPlatform,
-        sortField,
-        sortOrder,
-        yearString: JSON.stringify(selectedYears),
-        monthString: JSON.stringify(selectedMonths),
-        minRatingCount: sortField === 'rating' ? minRatingCount : 0
-      })
-
-      if (
-        requestId !== fetchRequestId.current ||
-        requestScope !== scopeRef.current
-      ) {
-        return
-      }
-
-      if (typeof response === 'string') {
-        setError(true)
-        kunErrorHandler(response, () => {})
-        setPatches([])
-        setTotalPatches(0)
-        return
-      }
-
-      setResultScope(requestScope)
-      setPatches(response.galgames)
-      setTotalPatches(response.total)
-    } catch (error) {
-      if (
-        requestId !== fetchRequestId.current ||
-        requestScope !== scopeRef.current
-      ) {
-        return
-      }
-
-      errorReporter(error)
-      setError(true)
-      setPatches([])
-      setTotalPatches(0)
-    } finally {
-      if (
-        requestId === fetchRequestId.current &&
-        requestScope === scopeRef.current
-      ) {
-        setLoading(false)
-      }
-    }
-  }
-
-  useEffect(() => {
-    if (!isMounted) {
-      return
-    }
-
-    applyUrlFilterState()
-    window.addEventListener('popstate', applyUrlFilterState)
-
-    return () => {
-      window.removeEventListener('popstate', applyUrlFilterState)
-    }
-  }, [isMounted])
-
-  useEffect(() => {
-    if (!isMounted || !isUrlReady || !scope.ready) {
-      return
-    }
-
-    if (isSyncingFromUrl.current) {
-      isSyncingFromUrl.current = false
-    } else {
-      syncUrl()
-    }
-
-    if (
-      !hasUsedInitialPatches.current &&
-      isDefaultTagCompanyGalgameFilterState({
-        page,
-        selectedType,
-        selectedLanguage,
-        selectedPlatform,
-        sortField,
-        sortOrder,
-        selectedYears,
-        selectedMonths,
-        minRatingCount
-      })
-    ) {
-      hasUsedInitialPatches.current = true
-
-      if (
-        shouldResolveInitialVisibility
-          ? !scope.isPublic
-          : resultScope !== scope.key
-      ) {
-        fetchPatches()
-        return
-      }
-
-      setResultScope(scope.key)
-      setPatches(initialGalgames)
-      setTotalPatches(initialTotal)
-      setLoading(false)
-      return
-    }
-
-    hasUsedInitialPatches.current = true
-    fetchPatches()
-  }, [
-    isMounted,
-    isUrlReady,
-    scope.key,
-    scope.ready,
-    page,
-    sortField,
-    sortOrder,
-    selectedType,
-    selectedLanguage,
-    selectedPlatform,
-    selectedYears,
-    selectedMonths,
-    sortField === 'rating' ? minRatingCount : null,
-    shouldResolveInitialVisibility
-  ])
-
-  useEffect(
-    () => () => {
-      fetchRequestId.current += 1
-    },
-    []
+  const {
+    galgames: patches,
+    total: totalPatches,
+    loading: waiting,
+    error,
+    ready,
+    retry
+  } = useGalgameList(
+    '/company/otomegame',
+    { ...getGalgameListQuery(filters), companyId: company.id },
+    { galgames: initialGalgames, total: initialTotal },
+    initialScope
   )
-  const waiting = loading || scope.key === null || resultScope !== scope.key
 
   return (
     <div className="w-full my-4 space-y-6">
@@ -468,29 +171,7 @@ export const CompanyDetailContainer: FC<Props> = ({
       )}
 
       <div className="my-6">
-        <FilterBar
-          selectedType={selectedType}
-          setSelectedType={(value) => updateFilter(setSelectedType, value)}
-          sortField={sortField}
-          setSortField={(value) => updateFilter(setSortField, value)}
-          sortOrder={sortOrder}
-          setSortOrder={(value) => updateFilter(setSortOrder, value)}
-          selectedLanguage={selectedLanguage}
-          setSelectedLanguage={(value) =>
-            updateFilter(setSelectedLanguage, value)
-          }
-          selectedPlatform={selectedPlatform}
-          setSelectedPlatform={(value) =>
-            updateFilter(setSelectedPlatform, value)
-          }
-          selectedYears={selectedYears}
-          setSelectedYears={(value) => updateFilter(setSelectedYears, value)}
-          selectedMonths={selectedMonths}
-          setSelectedMonths={(value) => updateFilter(setSelectedMonths, value)}
-          minRatingCount={minRatingCount}
-          setMinRatingCount={(value) => updateFilter(setMinRatingCount, value)}
-          defaultMinRatingCount={DEFAULT_TAG_COMPANY_MIN_RATING_COUNT}
-        />
+        <FilterBar {...filterProps} />
       </div>
 
       {error ? (
@@ -498,9 +179,9 @@ export const CompanyDetailContainer: FC<Props> = ({
           游戏列表读取失败，请重试。
           <Button
             onPress={() => {
-              void fetchPatches()
+              retry()
             }}
-            isDisabled={!scope.ready}
+            isDisabled={!ready}
           >
             重试
           </Button>
@@ -519,9 +200,9 @@ export const CompanyDetailContainer: FC<Props> = ({
             <div className="flex justify-center">
               <KunPagination
                 total={Math.ceil(totalPatches / 24)}
-                page={page}
+                page={filters.page}
                 onPageChange={setPage}
-                isLoading={loading}
+                isLoading={waiting}
               />
             </div>
           )}

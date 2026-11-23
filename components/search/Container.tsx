@@ -17,6 +17,7 @@ import { SearchInput } from './Input'
 import { FilterBar } from '~/components/galgame/FilterBar'
 import { useSettingStore } from '~/store/settingStore'
 import { useBrowsingScope } from '~/hooks/useBrowsingScope'
+import { useUserStore } from '~/store/userStore'
 import type { SearchSuggestionType } from '~/types/api/search'
 import type { SortField, SortOrder } from '~/components/galgame/_sort'
 
@@ -29,6 +30,8 @@ export const SearchPage = () => {
   const [resultScope, setResultScope] = useState(scope.key)
   const inputRef = useRef<HTMLInputElement | null>(null)
   const latestSearchRequestIdRef = useRef(0)
+  const requestedSearchKey = useRef<string | null>(null)
+  const generation = useUserStore((state) => state.sessionGeneration)
   const [query, setQuery] = useState('')
   const [debouncedQuery] = useDebounce(query, 500)
   const [hasSearched, setHasSearched] = useState(false)
@@ -92,6 +95,26 @@ export const SearchPage = () => {
       return
     }
 
+    const searchKey = JSON.stringify([
+      generation,
+      scope.key,
+      selectedSuggestions,
+      currentPage,
+      selectedType,
+      selectedLanguage,
+      selectedPlatform,
+      sortField,
+      sortOrder,
+      selectedYears,
+      selectedMonths,
+      sortField === 'rating' ? debouncedMinRatingCount : 0,
+      searchData.searchInAlias,
+      searchData.searchInIntroduction,
+      searchData.searchInTag
+    ])
+    if (requestedSearchKey.current === searchKey) return
+    requestedSearchKey.current = searchKey
+
     const requestId = latestSearchRequestIdRef.current + 1
     const requestScope = scope.key
     latestSearchRequestIdRef.current = requestId
@@ -135,6 +158,8 @@ export const SearchPage = () => {
       }
 
       if (typeof response === 'string') {
+        requestedSearchKey.current = null
+        setResultScope(requestScope)
         kunErrorHandler(response, () => {})
         setPatches([])
         setTotal(0)
@@ -156,6 +181,8 @@ export const SearchPage = () => {
       }
 
       setPatches([])
+      requestedSearchKey.current = null
+      setResultScope(requestScope)
       setTotal(0)
       setHasSearched(true)
       errorReporter(error)
@@ -179,6 +206,7 @@ export const SearchPage = () => {
     if (selectedSuggestions.length) {
       handleSearch()
     } else {
+      requestedSearchKey.current = null
       latestSearchRequestIdRef.current += 1
       setPatches([])
       setHasSearched(false)
@@ -189,6 +217,7 @@ export const SearchPage = () => {
   }, [
     scope.key,
     scope.ready,
+    generation,
     page,
     selectedType,
     selectedLanguage,

@@ -4,22 +4,16 @@ import { getCachedCompanyById } from './data'
 import { getPatchByCompany } from '~/app/api/company/service'
 import { ErrorComponent } from '~/components/error/ErrorComponent'
 import type { Metadata } from 'next'
-import { prisma } from '~/prisma/index'
-import { STATIC_COMPANY_PREGEN_LIMIT } from '~/config/staticGeneration'
 import {
-  DEFAULT_GALGAME_FILTER_VALUE,
-  DEFAULT_GALGAME_MONTH_STRING,
-  DEFAULT_GALGAME_SORT_FIELD,
-  DEFAULT_GALGAME_SORT_ORDER,
-  DEFAULT_GALGAME_YEAR_STRING,
-  DEFAULT_TAG_COMPANY_MIN_RATING_COUNT
-} from '~/utils/galgameFilter'
+  getGalgamePageState,
+  type GalgameSearchParams
+} from '~/utils/actions/getGalgamePageState'
 
-export const revalidate = 600
-export const dynamic = 'force-static'
+export const dynamic = 'force-dynamic'
 
 interface Props {
   params: Promise<{ id: string }>
+  searchParams: Promise<GalgameSearchParams>
 }
 
 export const generateMetadata = async ({
@@ -33,44 +27,15 @@ export const generateMetadata = async ({
   return generateKunMetadataTemplate(company)
 }
 
-export async function generateStaticParams() {
-  if (STATIC_COMPANY_PREGEN_LIMIT === 0) {
-    return []
-  }
-
-  const companies = await prisma.patch_company.findMany({
-    orderBy: { count: 'desc' },
-    take: STATIC_COMPANY_PREGEN_LIMIT,
-    select: { id: true }
-  })
-
-  return companies.map((company) => ({
-    id: String(company.id)
-  }))
-}
-
-export default async function Kun({ params }: Props) {
+export default async function Kun({ params, searchParams }: Props) {
   const { id } = await params
   const companyId = Number(id)
+  const state = await getGalgamePageState(await searchParams)
+  if (typeof state === 'string') return <ErrorComponent error={state} />
 
   const [company, galgamesResponse] = await Promise.all([
     getCachedCompanyById(companyId),
-    getPatchByCompany(
-      {
-        companyId,
-        page: 1,
-        limit: 24,
-        selectedType: DEFAULT_GALGAME_FILTER_VALUE,
-        selectedLanguage: DEFAULT_GALGAME_FILTER_VALUE,
-        selectedPlatform: DEFAULT_GALGAME_FILTER_VALUE,
-        sortField: DEFAULT_GALGAME_SORT_FIELD,
-        sortOrder: DEFAULT_GALGAME_SORT_ORDER,
-        yearString: DEFAULT_GALGAME_YEAR_STRING,
-        monthString: DEFAULT_GALGAME_MONTH_STRING,
-        minRatingCount: DEFAULT_TAG_COMPANY_MIN_RATING_COUNT
-      },
-      { content_limit: 'sfw' }
-    )
+    getPatchByCompany({ companyId, ...state.input }, state.visibility)
   ])
 
   if (typeof company === 'string') {
@@ -83,10 +48,12 @@ export default async function Kun({ params }: Props) {
 
   return (
     <CompanyDetailContainer
+      key={JSON.stringify([companyId, state.scope, state.filters])}
       initialCompany={company}
       initialGalgames={galgamesResponse.galgames}
       initialTotal={galgamesResponse.total}
-      initialVisibility="pending"
+      initialScope={state.scope}
+      initialFilters={state.filters}
     />
   )
 }

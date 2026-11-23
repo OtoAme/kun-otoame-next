@@ -11,9 +11,15 @@ vi.mock('~/app/api/otomegame/service', () => ({
   getGalgame: mocks.getGalgame
 }))
 
-vi.mock('~/utils/actions/getNSFWHeader', () => ({
-  getNSFWHeader: vi.fn(() => {
-    throw new Error('/otomegame page must not read request cookies')
+vi.mock('~/utils/actions/getPatchVisibilityWhere', () => ({
+  getPatchVisibilityWhere: vi
+    .fn()
+    .mockResolvedValue({ NOT: { tag: { some: { tag_id: { in: [3] } } } } })
+}))
+vi.mock('~/utils/actions/getSessionRenderState', () => ({
+  getSessionRenderState: vi.fn().mockResolvedValue({
+    identity: 'confirmed-context',
+    browsingKey: '["all",[3]]'
   })
 }))
 
@@ -21,7 +27,8 @@ vi.mock('~/components/galgame/Container', () => ({
   CardContainer: (_props: {
     initialGalgames: GalgameCard[]
     initialTotal: number
-    initialVisibility?: 'pending' | 'show'
+    initialScope?: { identity: string; browsingKey: string }
+    initialFilters?: { page: number }
   }) => <div data-testid="galgame-container" />
 }))
 
@@ -30,16 +37,23 @@ vi.mock('~/components/error/ErrorComponent', () => ({
 }))
 
 describe('/otomegame page', () => {
-  it('keeps the page static-cache friendly by not reading request cookies', async () => {
+  it('prepares one list for the current preferences and URL filters', async () => {
     mocks.getGalgame.mockResolvedValue({
       galgames: [],
       total: 0
     })
 
     const { default: Page } = await import('~/app/(site)/otomegame/page')
-    const element = (await Page()) as React.ReactElement<{
+    const element = (await Page({
+      searchParams: Promise.resolve({
+        page: '2',
+        sortField: 'rating',
+        minRatingCount: '5'
+      })
+    })) as React.ReactElement<{
       children: React.ReactElement<{
-        initialVisibility?: 'pending' | 'show'
+        initialScope?: { identity: string; browsingKey: string }
+        initialFilters?: { page: number }
       }>
     }>
 
@@ -48,13 +62,18 @@ describe('/otomegame page', () => {
         selectedType: 'all',
         selectedLanguage: 'all',
         selectedPlatform: 'all',
-        sortField: 'resource_update_time',
+        sortField: 'rating',
         sortOrder: 'desc',
-        page: 1,
+        page: 2,
         limit: 24
       }),
-      { content_limit: 'sfw' }
+      { NOT: { tag: { some: { tag_id: { in: [3] } } } } }
     )
-    expect(element.props.children.props.initialVisibility).toBe('pending')
+    expect(element.props.children.props.initialScope).toEqual({
+      identity: 'confirmed-context',
+      browsingKey: '["all",[3]]'
+    })
+    expect(element.props.children.props.initialFilters?.page).toBe(2)
+    expect(mocks.getGalgame).toHaveBeenCalledTimes(1)
   })
 })

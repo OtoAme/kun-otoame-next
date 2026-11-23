@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { GalgameCard } from '~/components/galgame/Card'
 import { kunFetchGet } from '~/utils/kunFetch'
 
@@ -38,31 +38,37 @@ const mergeRealtimeStats = (
 
 export const HomeGalgameGrid = ({ galgames }: Props) => {
   const [displayGalgames, setDisplayGalgames] = useState(galgames)
-  const requestedKeyRef = useRef('')
-  const uniqueIds = useMemo(
-    () => [...new Set(displayGalgames.map((galgame) => galgame.uniqueId))],
-    [displayGalgames]
-  )
+  const pending = useRef<{
+    key: string
+    promise: Promise<{ stats: Record<string, PatchRealtimeStats> }>
+  } | null>(null)
+  const requestKey = [
+    ...new Set(galgames.map((galgame) => galgame.uniqueId))
+  ].join(',')
 
   useEffect(() => {
     setDisplayGalgames(galgames)
   }, [galgames])
 
   useEffect(() => {
-    if (!uniqueIds.length) {
+    if (!requestKey) {
       return
     }
 
-    const requestKey = uniqueIds.join(',')
-    if (requestedKeyRef.current === requestKey) {
-      return
+    if (pending.current?.key !== requestKey) {
+      pending.current = {
+        key: requestKey,
+        promise: kunFetchGet<{ stats: Record<string, PatchRealtimeStats> }>(
+          '/patch/stats',
+          {
+            uniqueIds: requestKey
+          }
+        )
+      }
     }
-    requestedKeyRef.current = requestKey
 
     let ignore = false
-    kunFetchGet<{ stats: Record<string, PatchRealtimeStats> }>('/patch/stats', {
-      uniqueIds: requestKey
-    })
+    pending.current.promise
       .then(({ stats }) => {
         if (ignore) {
           return
@@ -76,7 +82,7 @@ export const HomeGalgameGrid = ({ galgames }: Props) => {
     return () => {
       ignore = true
     }
-  }, [uniqueIds])
+  }, [requestKey])
 
   return (
     <div className="grid grid-cols-2 gap-2 sm:gap-6 md:grid-cols-3 lg:grid-cols-4">

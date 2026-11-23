@@ -33,6 +33,8 @@ vi.mock('@heroui/react', () => ({
   }: {
     children?: React.ReactNode
     onPress?: () => void
+    isLoading?: boolean
+    startContent?: React.ReactNode
     [key: string]: unknown
   }) => (
     <button type="button" onClick={onPress} {...props}>
@@ -254,6 +256,24 @@ describe('CompanyDetailContainer', () => {
     vi.resetModules()
   })
 
+  it('reuses a server list prepared for the current account without a second load', async () => {
+    fetchMock.kunFetchGet.mockResolvedValue({ galgames: [], total: 0 })
+    const container = await renderContainer(
+      {
+        initialCompany: makeCompany(),
+        initialGalgames: [makeGalgame(1, '服务器账号会社列表')],
+        initialTotal: 1,
+        initialScope: {
+          identity: 'confirmed-context',
+          browsingKey: '["all",[]]'
+        }
+      },
+      { mode: 'all', strictMode: true }
+    )
+    expect(container.textContent).toContain('服务器账号会社列表')
+    expect(fetchMock.kunFetchGet).not.toHaveBeenCalled()
+  })
+
   it('uses the static SFW company list for anonymous default filters', async () => {
     fetchMock.kunFetchGet.mockResolvedValue({
       galgames: [makeGalgame(2, '客户端列表')],
@@ -264,7 +284,7 @@ describe('CompanyDetailContainer', () => {
       initialCompany: makeCompany(),
       initialGalgames: [makeGalgame(1, '服务端全年龄会社列表')],
       initialTotal: 1,
-      initialVisibility: 'pending'
+      initialScope: { identity: 'guest', browsingKey: '["sfw",[]]' }
     })
 
     await act(async () => {})
@@ -285,7 +305,7 @@ describe('CompanyDetailContainer', () => {
         initialCompany: makeCompany(),
         initialGalgames: [makeGalgame(1, '服务端全年龄会社列表')],
         initialTotal: 1,
-        initialVisibility: 'pending'
+        initialScope: { identity: 'guest', browsingKey: '["sfw",[]]' }
       },
       { strictMode: true }
     )
@@ -307,7 +327,7 @@ describe('CompanyDetailContainer', () => {
         initialCompany: makeCompany(),
         initialGalgames: [makeGalgame(1, '服务端全年龄会社列表')],
         initialTotal: 1,
-        initialVisibility: 'pending'
+        initialScope: { identity: 'guest', browsingKey: '["sfw",[]]' }
       },
       {
         mode: 'all'

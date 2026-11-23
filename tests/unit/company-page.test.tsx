@@ -18,8 +18,14 @@ vi.mock('~/app/api/company/service', () => ({
 }))
 
 vi.mock('~/utils/actions/getPatchVisibilityWhere', () => ({
-  getPatchVisibilityWhere: vi.fn(() => {
-    throw new Error('/company/[id] page must not read request cookies')
+  getPatchVisibilityWhere: vi
+    .fn()
+    .mockResolvedValue({ NOT: { tag: { some: { tag_id: { in: [3] } } } } })
+}))
+vi.mock('~/utils/actions/getSessionRenderState', () => ({
+  getSessionRenderState: vi.fn().mockResolvedValue({
+    identity: 'confirmed-context',
+    browsingKey: '["all",[3]]'
   })
 }))
 
@@ -27,7 +33,8 @@ vi.mock('~/components/company/detail/Container', () => ({
   CompanyDetailContainer: (_props: {
     initialGalgames: GalgameCard[]
     initialTotal: number
-    initialVisibility?: 'pending' | 'show'
+    initialScope?: { identity: string; browsingKey: string }
+    initialFilters?: { page: number }
   }) => <div data-testid="company-detail-container" />
 }))
 
@@ -53,7 +60,7 @@ const company: CompanyDetail = {
 }
 
 describe('/company/[id] page', () => {
-  it('keeps the page static-cache friendly by using an SFW initial list', async () => {
+  it('prepares one company list for the current preferences and URL filters', async () => {
     mocks.getCachedCompanyById.mockResolvedValue(company)
     mocks.getPatchByCompany.mockResolvedValue({
       galgames: [],
@@ -62,9 +69,15 @@ describe('/company/[id] page', () => {
 
     const { default: Page } = await import('~/app/(site)/company/[id]/page')
     const element = (await Page({
-      params: Promise.resolve({ id: '4' })
+      params: Promise.resolve({ id: '4' }),
+      searchParams: Promise.resolve({
+        page: '2',
+        sortField: 'rating',
+        minRatingCount: '5'
+      })
     })) as React.ReactElement<{
-      initialVisibility?: 'pending' | 'show'
+      initialScope?: { identity: string; browsingKey: string }
+      initialFilters?: { page: number }
     }>
 
     expect(mocks.getPatchByCompany).toHaveBeenCalledWith(
@@ -73,14 +86,19 @@ describe('/company/[id] page', () => {
         selectedType: 'all',
         selectedLanguage: 'all',
         selectedPlatform: 'all',
-        sortField: 'resource_update_time',
+        sortField: 'rating',
         sortOrder: 'desc',
-        page: 1,
+        page: 2,
         limit: 24,
-        minRatingCount: 0
+        minRatingCount: 5
       }),
-      { content_limit: 'sfw' }
+      { NOT: { tag: { some: { tag_id: { in: [3] } } } } }
     )
-    expect(element.props.initialVisibility).toBe('pending')
+    expect(element.props.initialScope).toEqual({
+      identity: 'confirmed-context',
+      browsingKey: '["all",[3]]'
+    })
+    expect(element.props.initialFilters?.page).toBe(2)
+    expect(mocks.getPatchByCompany).toHaveBeenCalledTimes(1)
   })
 })

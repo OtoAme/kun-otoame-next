@@ -152,6 +152,29 @@ describe('Galgame CardContainer', () => {
     vi.resetModules()
   })
 
+  it('reuses the matching server list for an all-mode account through session rechecks', async () => {
+    fetchMock.kunFetchGet.mockResolvedValue({ galgames: [], total: 0 })
+    const container = await renderContainer(
+      {
+        initialGalgames: [makeGalgame(1, '服务器账号列表')],
+        initialTotal: 1,
+        initialScope: {
+          identity: 'confirmed-context',
+          browsingKey: '["all",[]]'
+        }
+      },
+      { mode: 'all', strictMode: true }
+    )
+    const card = container.querySelector('[data-testid="galgame-card"]')
+    const { useUserStore } = await import('~/store/userStore')
+    for (const status of ['checking', 'authenticated'] as const) {
+      await act(async () => useUserStore.getState().setSessionStatus(status))
+    }
+    expect(container.textContent).toContain('服务器账号列表')
+    expect(container.querySelector('[data-testid="galgame-card"]')).toBe(card)
+    expect(fetchMock.kunFetchGet).not.toHaveBeenCalled()
+  })
+
   it('uses the SFW server list without refetching until filters change', async () => {
     fetchMock.kunFetchGet.mockResolvedValue({
       galgames: [makeGalgame(2, '客户端列表')],
@@ -161,7 +184,7 @@ describe('Galgame CardContainer', () => {
     const container = await renderContainer({
       initialGalgames: [makeGalgame(1, '服务端全年龄列表')],
       initialTotal: 1,
-      initialVisibility: 'pending'
+      initialScope: { identity: 'guest', browsingKey: '["sfw",[]]' }
     })
 
     await act(async () => {})
@@ -202,7 +225,7 @@ describe('Galgame CardContainer', () => {
       {
         initialGalgames: [makeGalgame(1, '服务端全年龄列表')],
         initialTotal: 1,
-        initialVisibility: 'pending'
+        initialScope: { identity: 'guest', browsingKey: '["sfw",[]]' }
       },
       {
         mode: 'nsfw'
@@ -245,7 +268,7 @@ describe('Galgame CardContainer', () => {
       {
         initialGalgames: [makeGalgame(1, '服务端全年龄列表')],
         initialTotal: 1,
-        initialVisibility: 'pending'
+        initialScope: { identity: 'guest', browsingKey: '["sfw",[]]' }
       },
       { strictMode: true }
     )
@@ -266,7 +289,7 @@ describe('Galgame CardContainer', () => {
       {
         initialGalgames: [makeGalgame(1, '服务端全年龄列表')],
         initialTotal: 1,
-        initialVisibility: 'pending'
+        initialScope: { identity: 'guest', browsingKey: '["sfw",[]]' }
       },
       {
         mode: 'all'
@@ -287,7 +310,7 @@ describe('Galgame CardContainer', () => {
       {
         initialGalgames: [makeGalgame(1, 'blocked static game')],
         initialTotal: 1,
-        initialVisibility: 'pending'
+        initialScope: { identity: 'guest', browsingKey: '["sfw",[]]' }
       },
       { mode: 'sfw', blockedTagIds: [7] }
     )
@@ -300,7 +323,7 @@ describe('Galgame CardContainer', () => {
       {
         initialGalgames: [makeGalgame(1, 'public SFW game')],
         initialTotal: 1,
-        initialVisibility: 'pending'
+        initialScope: { identity: 'guest', browsingKey: '["sfw",[]]' }
       },
       { cookie: 'kun-patch-setting-store|state|data|kunNsfwEnable=all' }
     )
@@ -320,7 +343,7 @@ describe('Galgame CardContainer', () => {
       {
         initialGalgames: [],
         initialTotal: 0,
-        initialVisibility: 'pending'
+        initialScope: { identity: 'guest', browsingKey: '["sfw",[]]' }
       },
       { mode: 'all' }
     )
