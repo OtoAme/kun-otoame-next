@@ -1,12 +1,14 @@
 'use client'
+import { useId } from 'react'
 import { Card, CardBody, CardHeader } from '@heroui/card'
 import { Button } from '@heroui/button'
 import { Select, SelectItem } from '@heroui/select'
 import { useAccountPreferences } from '~/hooks/useAccountPreferences'
-import { editPreference } from '~/utils/preferenceClient'
+import { editPreference, selectNsfwPreference } from '~/utils/preferenceClient'
 import { PreferenceActions } from './PreferenceActions'
 import type { NsfwMode } from '~/types/api/preferences'
 export const BrowsingPreference = () => {
+  const selectId = useId()
   const state = useAccountPreferences()
   const selected = String(
     state.drafts.nsfw?.value ?? state.snapshot?.items.nsfw.value ?? 'sfw'
@@ -18,13 +20,14 @@ export const BrowsingPreference = () => {
       </CardHeader>
       <CardBody className="space-y-4">
         <Select
+          id={selectId}
           label="网站内容显示"
           selectedKeys={[selected]}
           disallowEmptySelection
           isDisabled={!state.canEdit}
-          onChange={(event) =>
-            editPreference('nsfw', event.target.value as NsfwMode)
-          }
+          onChange={(event) => {
+            void selectNsfwPreference(event.target.value as NsfwMode)
+          }}
         >
           <SelectItem key="sfw">仅显示 SFW</SelectItem>
           <SelectItem key="nsfw">仅显示 NSFW</SelectItem>
@@ -49,7 +52,11 @@ export const BrowsingPreference = () => {
             </Button>
           </div>
         )}
-        <PreferenceActions />
+        {state.saving && state.snapshot?.nsfwSelected ? (
+          <p role="status">正在保存…</p>
+        ) : (
+          <PreferenceActions settingKeys={['nsfw']} />
+        )}
       </CardBody>
     </Card>
   )

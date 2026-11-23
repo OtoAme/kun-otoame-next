@@ -8,7 +8,7 @@ import {
 } from '@heroui/react'
 import { Button } from '@heroui/button'
 import { useAccountPreferences } from '~/hooks/useAccountPreferences'
-import { editPreference } from '~/utils/preferenceClient'
+import { editPreference, selectNsfwPreference } from '~/utils/preferenceClient'
 import { PreferenceActions } from '~/components/settings/user/PreferenceActions'
 import type { NsfwMode } from '~/types/api/preferences'
 import { Ban, CircleSlash, ShieldCheck } from 'lucide-react'
@@ -41,7 +41,7 @@ export const NSFWSwitcher = ({ isOpen, onOpenChange }: Props) => {
         shouldCloseOnBlur={false}
       >
         <DropdownTrigger isDisabled={!state.canEdit}>
-          <div className="flex justify-between">
+          <div className="flex items-center justify-between">
             <span>网站内容显示</span>
             <span className="text-default-700">{themeIcon}</span>
           </div>
@@ -52,7 +52,7 @@ export const NSFWSwitcher = ({ isOpen, onOpenChange }: Props) => {
           selectedKeys={new Set([selected])}
           selectionMode="single"
           onSelectionChange={(key) => {
-            editPreference('nsfw', (key.anchorKey ?? 'sfw') as NsfwMode)
+            void selectNsfwPreference((key.anchorKey ?? 'sfw') as NsfwMode)
           }}
         >
           {['sfw', 'nsfw', 'all'].map((key) => (
@@ -85,7 +85,9 @@ export const NSFWSwitcher = ({ isOpen, onOpenChange }: Props) => {
           </Button>
         </div>
       )}
-      <PreferenceActions />
+      {!(state.saving && state.snapshot?.nsfwSelected) && (
+        <PreferenceActions settingKeys={['nsfw']} />
+      )}
     </div>
   )
 }

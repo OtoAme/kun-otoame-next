@@ -8,6 +8,7 @@ import { resetPreferences, usePreferenceStore } from '~/store/preferenceStore'
 import { useSettingStore } from '~/store/settingStore'
 import { KunFetchError, kunFetchGet, kunFetchPatch } from './kunFetch'
 import type {
+  NsfwMode,
   PreferenceSnapshot,
   PreferenceValue
 } from '~/types/api/preferences'
@@ -188,10 +189,10 @@ export const editPreference = (key: string, value: PreferenceValue) => {
     state.applied?.context !== expected.context ||
     !state.applied.items[key]
   )
-    return
+    return false
   if (!state.drafts[key] && Object.keys(state.drafts).length >= 100) {
     usePreferenceStore.setState({ error: '请先保存或放弃当前草稿后继续选择' })
-    return
+    return false
   }
   const previous = state.drafts[key]
   const draft = previous ?? {
@@ -204,20 +205,44 @@ export const editPreference = (key: string, value: PreferenceValue) => {
     drafts: { ...state.drafts, [key]: { ...draft, value } },
     error: null
   })
+  return true
 }
-export const discardPreferenceDrafts = () =>
-  usePreferenceStore.setState({ drafts: {}, conflicts: [], error: null })
-export const confirmPreferenceConflicts = () => {
+export const discardPreferenceDrafts = (keys?: string[]) => {
+  const state = usePreferenceStore.getState()
+  usePreferenceStore.setState({
+    drafts: keys
+      ? Object.fromEntries(
+          Object.entries(state.drafts).filter(([key]) => !keys.includes(key))
+        )
+      : {},
+    conflicts: keys ? state.conflicts.filter((key) => !keys.includes(key)) : [],
+    error: null
+  })
+}
+export const confirmPreferenceConflicts = (keys?: string[]) => {
   const state = usePreferenceStore.getState()
   const drafts = { ...state.drafts }
-  for (const key of state.conflicts) {
+  const conflicts = state.conflicts.filter((key) => !keys || keys.includes(key))
+  for (const key of conflicts) {
     if (drafts[key] && state.applied?.items[key])
       drafts[key] = {
         ...drafts[key],
         version: state.applied.items[key].version
       }
   }
-  usePreferenceStore.setState({ drafts, conflicts: [], error: null })
+  usePreferenceStore.setState({
+    drafts,
+    conflicts: state.conflicts.filter((key) => !conflicts.includes(key)),
+    error: null
+  })
+}
+
+export const selectNsfwPreference = async (value: NsfwMode) => {
+  const state = usePreferenceStore.getState()
+  if (state.saving || !editPreference('nsfw', value)) return false
+  if (state.applied?.nsfwSelected && !state.conflicts.includes('nsfw'))
+    return savePreferenceDrafts(['nsfw'])
+  return false
 }
 export const savePreferenceDrafts = async (keys?: string[]) => {
   const state = usePreferenceStore.getState()

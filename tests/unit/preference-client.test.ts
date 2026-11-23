@@ -48,6 +48,60 @@ const setup = async () => {
   return { ...client, useUserStore, usePreferenceStore }
 }
 describe('account preference client drafts and applied snapshots', () => {
+  it('ignores repeated NSFW selections while a save is pending', async () => {
+    const state = await setup()
+    transport.mockResolvedValueOnce(Response.json(snapshot(1)))
+    await state.refreshPreferences()
+    let complete!: (response: Response) => void
+    transport.mockImplementationOnce(
+      () =>
+        new Promise<Response>((resolve) => {
+          complete = resolve
+        })
+    )
+    const saving = state.selectNsfwPreference('all')
+    expect(await state.selectNsfwPreference('nsfw')).toBe(false)
+    expect(transport).toHaveBeenCalledTimes(3)
+    expect(state.usePreferenceStore.getState().drafts.nsfw.value).toBe('all')
+    complete(Response.json(snapshot(2, 'all')))
+    expect(await saving).toBe(true)
+    expect(state.usePreferenceStore.getState().drafts).toEqual({})
+  })
+  it('refuses an immediate selection against a previous session snapshot', async () => {
+    const state = await setup()
+    transport.mockResolvedValueOnce(Response.json(snapshot(1)))
+    await state.refreshPreferences()
+    state.useUserStore.setState({
+      sessionContext: 'b'.repeat(64),
+      sessionGeneration: 2
+    })
+    expect(await state.selectNsfwPreference('all')).toBe(false)
+    expect(transport).toHaveBeenCalledTimes(2)
+    expect(state.usePreferenceStore.getState().drafts).toEqual({})
+  })
+  it('confirms only the requested conflict and retains other conflict versions', async () => {
+    const state = await setup()
+    state.editPreference('nsfw', 'all')
+    state.editPreference('email-notice', true)
+    state.usePreferenceStore.setState({
+      applied: {
+        ...snapshot(2, 'nsfw'),
+        items: {
+          ...snapshot(2, 'nsfw').items,
+          'email-notice': { value: false, version: 2 }
+        }
+      },
+      conflicts: ['nsfw', 'email-notice']
+    })
+    state.confirmPreferenceConflicts(['nsfw'])
+    expect(state.usePreferenceStore.getState()).toMatchObject({
+      drafts: {
+        nsfw: { value: 'all', version: 2 },
+        'email-notice': { value: true, version: 0 }
+      },
+      conflicts: ['email-notice']
+    })
+  })
   it('coalesces restore reads while allowing explicit refreshes and newer version hints', async () => {
     const state = await setup()
     await state.refreshPreferences([], { reason: 'restore' })
