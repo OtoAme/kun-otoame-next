@@ -7,6 +7,7 @@ import { Card, CardBody } from '@heroui/card'
 import { Avatar } from '@heroui/avatar'
 import { Chip } from '@heroui/chip'
 import { formatTimeDifference } from '~/utils/time'
+import { generateUUID } from '~/utils/random'
 import {
   AtSign,
   Bell,
@@ -89,7 +90,7 @@ export const MessageCard = ({
 }: Props) => {
   const contentReady = useSessionContentReady()
   const href = getCardRoute(msg)
-  const token = useMemo(() => crypto.randomUUID(), [msg.id, msg.contentVersion])
+  const token = useMemo(generateUUID, [msg.id, msg.contentVersion])
   const entryHref =
     identity && msg.status === 0 && msg.contentVersion && msg.link
       ? notificationEntryHref(href, token)

@@ -101,6 +101,24 @@ const render = async (msg = message, confirmationError?: string) => {
 }
 
 describe('notification card reading controls', () => {
+  it('renders a stable notification entry on LAN HTTP without crypto.randomUUID', async () => {
+    dom.reconfigure({ url: 'http://192.168.0.199:3000/message/notice' })
+    vi.stubGlobal('crypto', {
+      getRandomValues: globalThis.crypto.getRandomValues.bind(globalThis.crypto)
+    })
+
+    await render()
+    const entry = container.querySelector('a')!.href
+    expect(new URL(entry).searchParams.get('notification-entry')).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
+    )
+    await render({ ...message })
+    expect(container.querySelector('a')!.href).toBe(entry)
+    await render({ ...message, contentVersion: '3' })
+    expect(container.querySelector('a')!.href).not.toBe(entry)
+    expect(mocks.seen).not.toHaveBeenCalled()
+  })
+
   it('requires a fresh reading interval after the surrounding content becomes ready', async () => {
     mocks.contentReady = false
     await render()
