@@ -10,6 +10,10 @@ const counter = z
   .object({ unread: z.number().int().nonnegative().max(2147483647), sequence })
   .strict()
 
+export const readAllNotificationsSchema = z
+  .object({ scope: z.enum(['all', ...NOTIFICATION_CATEGORIES]) })
+  .strict()
+
 export const notificationSummarySchema = z
   .object({
     unread: z.number().int().nonnegative().max(2147483647),

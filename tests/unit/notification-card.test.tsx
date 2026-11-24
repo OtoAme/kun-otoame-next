@@ -17,7 +17,7 @@ vi.mock('~/components/kun/SessionContentBoundary', () => ({
 }))
 vi.mock('~/utils/notificationVisibility', () => ({
   observeNotificationReading: mocks.observe,
-  isNotificationBodyVisible: mocks.visible
+  isNotificationCardVisible: mocks.visible
 }))
 vi.mock('~/utils/notificationReading', () => ({
   notificationEntryHref: (target: string, token: string) =>
@@ -138,17 +138,20 @@ describe('notification card reading controls', () => {
     expect(mocks.observe).toHaveBeenCalledTimes(2)
   })
 
-  it('begins reading only after the complete long body is expanded and stops on collapse', async () => {
+  it('observes a folded long card and confirms immediately when its full body is expanded', async () => {
     const long = { ...message, content: '长通知正文'.repeat(100) }
     await render(long)
-    expect(mocks.observe).not.toHaveBeenCalled()
+    expect(mocks.observe).toHaveBeenCalledTimes(1)
     const button = container.querySelector('button')!
     expect(button.getAttribute('aria-expanded')).toBe('false')
     await act(async () => button.click())
     expect(button.getAttribute('aria-expanded')).toBe('true')
     expect(mocks.observe.mock.calls[0][0]).toBe(
-      container.querySelector('[data-testid="message-content"]')
+      container.querySelector('[data-notification-id]')
     )
+    expect(mocks.observe.mock.calls[0].slice(2)).toEqual([1000, 'card'])
+    expect(mocks.seen).toHaveBeenCalledExactlyOnceWith(long, undefined, true)
+    mocks.seen.mockClear()
     mocks.observe.mock.calls[0][1]()
     expect(mocks.seen).toHaveBeenCalledExactlyOnceWith(
       long,
@@ -160,8 +163,8 @@ describe('notification card reading controls', () => {
     expect(eligible()).toBe(false)
     mocks.visible.mockReturnValue(true)
     await act(async () => button.click())
-    expect(mocks.stop).toHaveBeenCalledTimes(1)
-    expect(eligible()).toBe(false)
+    expect(mocks.stop).not.toHaveBeenCalled()
+    expect(mocks.seen).toHaveBeenCalledTimes(1)
   })
 
   it('does not retry already-read cards or failed confirmations without an explicit reload', async () => {

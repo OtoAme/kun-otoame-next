@@ -18,6 +18,8 @@ import {
   ModalContent,
   ModalFooter,
   ModalHeader,
+  Select,
+  SelectItem,
   useDisclosure
 } from '@heroui/react'
 import { KunLoading } from '~/components/kun/Loading'
@@ -26,13 +28,20 @@ import { KunPagination } from '~/components/kun/Pagination'
 import { useSessionContentReady } from '~/components/kun/SessionContentBoundary'
 import { MessageCard } from './MessageCard'
 import { MessageNav } from './MessageNav'
-import { KunFetchError, kunFetchDelete, kunFetchGet } from '~/utils/kunFetch'
+import {
+  KunFetchError,
+  kunFetchDelete,
+  kunFetchGet,
+  kunFetchPut
+} from '~/utils/kunFetch'
 import { refreshUserSession } from '~/utils/sessionClient'
 import { useUserStore } from '~/store/userStore'
 import { useMessageStore } from '~/store/messageStore'
 import {
   NOTIFICATION_CATEGORIES,
   NOTIFICATION_CATEGORY_LABELS,
+  NOTIFICATION_PAGE_SIZES,
+  NOTIFICATION_DEFAULT_PAGE_SIZE,
   isNotificationSequence,
   type NotificationCategory
 } from '~/constants/notification'
@@ -45,12 +54,14 @@ import {
 } from '~/utils/notificationReading'
 import {
   notificationView,
+  invalidateNotificationViews,
   type NotificationView,
   type NotificationViewPage
 } from '~/utils/notificationViewCache'
 import type {
   Message,
   MessageUnreadStatus,
+  NotificationReadAllResponse,
   NotificationList
 } from '~/types/api/message'
 
@@ -119,7 +130,11 @@ export const MessageContainer = (_props: Props) => {
       : entryState.current?.owner === owner
         ? entryState.current.state
         : 'all'
-  const key = [category ?? '', state].join(':')
+  const pageSize =
+    NOTIFICATION_PAGE_SIZES.find(
+      (size) => size === Number(params.get('limit'))
+    ) ?? NOTIFICATION_DEFAULT_PAGE_SIZE
+  const key = [category ?? '', state, pageSize].join(':')
   const [view, setView] = useState<NotificationView | null>(null)
   const viewRef = useRef<NotificationView | null>(null)
   const [, render] = useState(0)
@@ -128,6 +143,10 @@ export const MessageContainer = (_props: Props) => {
   const [error, setError] = useState<string | null>(null)
   const [readErrors, setReadErrors] = useState<Record<number, string>>({})
   const [clearing, setClearing] = useState(false)
+  const [markingAllOwner, setMarkingAllOwner] = useState<string | null>(null)
+  const markingAll = owner !== null && markingAllOwner === owner
+  const [bulkReadError, setBulkReadError] = useState<string | null>(null)
+  const [viewEpoch, refreshViews] = useState(0)
   const request = useRef(0)
   const pending = useRef<{
     view: NotificationView
@@ -157,11 +176,9 @@ export const MessageContainer = (_props: Props) => {
     queued.current.clear()
   }, [])
   useEffect(() => {
-    window.addEventListener('blur', cancelQueued)
     window.addEventListener('pagehide', cancelQueued)
     document.addEventListener('visibilitychange', cancelQueued)
     return () => {
-      window.removeEventListener('blur', cancelQueued)
       window.removeEventListener('pagehide', cancelQueued)
       document.removeEventListener('visibilitychange', cancelQueued)
     }
@@ -215,7 +232,7 @@ export const MessageContainer = (_props: Props) => {
                 ...(category ? { category } : {}),
                 state,
                 page: index + 1,
-                limit: 30,
+                limit: pageSize,
                 ...(state === 'unread' && first
                   ? { upperId: first.upperId }
                   : {}),
@@ -275,13 +292,14 @@ export const MessageContainer = (_props: Props) => {
           setLoading(false)
       }
     },
-    [identity, category, state]
+    [identity, category, state, pageSize]
   )
 
   useEffect(() => {
     request.current++
     setError(null)
     setReadErrors({})
+    setBulkReadError(null)
     if (!identity) {
       viewRef.current = null
       setView(null)
@@ -299,7 +317,7 @@ export const MessageContainer = (_props: Props) => {
       queued.current.clear()
       flushTimer.current = null
     }
-  }, [identity, key, fetchPage])
+  }, [identity, key, fetchPage, viewEpoch])
 
   useEffect(() => {
     if (!contentReady || !identity || !view || !current || loading) return
@@ -327,24 +345,25 @@ export const MessageContainer = (_props: Props) => {
   }, [contentReady, identity, view, current, loading])
 
   const seen = useCallback(
-    (message: Message, eligible?: () => boolean) => {
+    (message: Message, eligible?: () => boolean, immediate = false) => {
       const cache = viewRef.current
       const page = cache?.pages[cache.index]
       if (
         !identity ||
         !isCurrentNotificationIdentity(identity) ||
+        markingAll ||
         !cache ||
         !page ||
         document.visibilityState !== 'visible' ||
-        !document.hasFocus() ||
         message.status !== 0 ||
         !message.contentVersion
       )
         return
       queued.current.set(message.id, { message, page, view: cache, eligible })
-      if (flushTimer.current) return
+      if (flushTimer.current && !immediate) return
+      if (flushTimer.current) clearTimeout(flushTimer.current)
       const token = request.current
-      flushTimer.current = setTimeout(() => {
+      const flush = () => {
         flushTimer.current = null
         const candidates = [...queued.current.values()]
         const entries = candidates.filter(
@@ -358,8 +377,7 @@ export const MessageContainer = (_props: Props) => {
         if (
           !activePage() ||
           !isCurrentNotificationIdentity(identity) ||
-          document.visibilityState !== 'visible' ||
-          !document.hasFocus()
+          document.visibilityState !== 'visible'
         ) {
           restartReading((value) => value + 1)
           return
@@ -417,9 +435,11 @@ export const MessageContainer = (_props: Props) => {
                 )
               }))
           })
-      }, 100)
+      }
+      if (immediate) flush()
+      else flushTimer.current = setTimeout(flush, 100)
     },
-    [identity, readingEpoch]
+    [identity, readingEpoch, markingAll]
   )
 
   const reload = () => {
@@ -432,7 +452,11 @@ export const MessageContainer = (_props: Props) => {
     setReadErrors({})
     void fetchPage(view, 0)
   }
-  const filter = (changes: { category?: string; state?: ReadingState }) => {
+  const filter = (changes: {
+    category?: string
+    state?: ReadingState
+    pageSize?: number
+  }) => {
     if (!identity) return
     cancelQueued()
     const next = new URLSearchParams(params.toString())
@@ -442,7 +466,14 @@ export const MessageContainer = (_props: Props) => {
       if (changes.category) next.set('category', changes.category)
       else next.delete('category')
     } else if (category) next.set('category', category)
-    const nextKey = [next.get('category') ?? '', next.get('state')].join(':')
+    const nextSize = changes.pageSize ?? pageSize
+    if (nextSize === NOTIFICATION_DEFAULT_PAGE_SIZE) next.delete('limit')
+    else next.set('limit', String(nextSize))
+    const nextKey = [
+      next.get('category') ?? '',
+      next.get('state'),
+      nextSize
+    ].join(':')
     if (nextKey === key) return
     notificationView(identity, nextKey, true)
     window.history.pushState(null, '', '/message/notice?' + next.toString())
@@ -501,6 +532,66 @@ export const MessageContainer = (_props: Props) => {
         setError('清理已读通知失败，请稍后重试')
     } finally {
       if (isCurrentNotificationIdentity(identity)) setClearing(false)
+    }
+  }
+
+  const markAllRead = async () => {
+    if (
+      !identity ||
+      !isCurrentNotificationIdentity(identity) ||
+      markingAll ||
+      !view
+    )
+      return
+    const operationOwner = notificationIdentityKey(identity)
+    const displayedView = view
+    const readVersion = beginUnreadRead()
+    cancelQueued()
+    setMarkingAllOwner(operationOwner)
+    setBulkReadError(null)
+    try {
+      const response = await kunFetchPut<
+        KunResponse<NotificationReadAllResponse>
+      >(
+        '/message/read',
+        { scope: category ?? 'all' },
+        {
+          timeout: 15_000,
+          preserveErrorStatus: true,
+          headers: { 'X-Kun-Notification-Session': identity.context }
+        }
+      )
+      if (!isCurrentNotificationIdentity(identity)) return
+      if (
+        !response ||
+        typeof response === 'string' ||
+        !Number.isSafeInteger(response.read) ||
+        response.read < 0 ||
+        !response.summary
+      )
+        throw new Error('Notification bulk reading failed')
+      seedSessionUnread(identity, response.summary, readVersion)
+      invalidateNotificationViews(identity, category)
+      const activeCategory = viewRef.current?.key.split(':')[0]
+      if (!category || !activeCategory || activeCategory === category)
+        refreshViews((value) => value + 1)
+    } catch (error) {
+      if (
+        error instanceof KunFetchError &&
+        (error.status === 401 ||
+          error.code === 'NOTIFICATION_CONTEXT_CHANGED') &&
+        isCurrentNotificationIdentity(identity)
+      )
+        void refreshUserSession()
+      if (
+        isCurrentNotificationIdentity(identity) &&
+        viewRef.current === displayedView
+      )
+        setBulkReadError('标记已读失败，请再次点击“全部已读”重试')
+    } finally {
+      setMarkingAllOwner((currentOwner) =>
+        currentOwner === operationOwner ? null : currentOwner
+      )
     }
   }
 
@@ -585,7 +676,32 @@ export const MessageContainer = (_props: Props) => {
               {category ? '清理已读' : '清理全部已读'}
             </Button>
           )}
+          {state !== 'read' && (
+            <Button
+              size="sm"
+              variant="flat"
+              color="primary"
+              className="ml-auto"
+              isDisabled={
+                loading ||
+                markingAll ||
+                !current ||
+                (category
+                  ? summary?.categories[category].unread
+                  : summary?.unread) === 0
+              }
+              isLoading={markingAll}
+              onPress={markAllRead}
+            >
+              全部已读
+            </Button>
+          )}
         </div>
+        {bulkReadError && (
+          <p role="alert" className="text-sm text-danger">
+            {bulkReadError}
+          </p>
+        )}
         {newContent && (
           <div role="status">
             <Button color="primary" variant="flat" onPress={reload}>
@@ -640,32 +756,57 @@ export const MessageContainer = (_props: Props) => {
             </div>
           )
         )}
-        {current &&
-          state === 'unread' &&
-          (view!.index > 0 || current.nextCursor) && (
-            <div className="flex items-center justify-center gap-4">
-              <Button
-                isDisabled={loading || !view || view.index === 0}
-                onPress={() => turn(view!.index - 1)}
-              >
-                上一页
-              </Button>
-              <span>第 {(view?.index ?? 0) + 1} 页</span>
-              <Button
-                isDisabled={loading || !current.nextCursor}
-                onPress={() => turn(view!.index + 1)}
-              >
-                下一页
-              </Button>
-            </div>
-          )}
-        {current && state !== 'unread' && current.total > 30 && (
-          <KunPagination
-            page={(view?.index ?? 0) + 1}
-            total={Math.ceil(current.total / 30)}
-            onPageChange={(page) => turn(page - 1)}
-            isLoading={loading}
-          />
+        {current && (current.messages.length > 0 || (view?.index ?? 0) > 0) && (
+          <div className="grid w-full grid-cols-1 items-center gap-3 sm:grid-cols-[8rem_1fr_8rem]">
+            <Select
+              aria-label="每页通知数量"
+              size="sm"
+              className="w-32 justify-self-start"
+              selectedKeys={[String(pageSize)]}
+              disallowEmptySelection
+              isDisabled={loading || markingAll}
+              onSelectionChange={(keys) => {
+                const size = Number(Array.from(keys)[0])
+                if (NOTIFICATION_PAGE_SIZES.some((option) => option === size))
+                  filter({ pageSize: size })
+              }}
+            >
+              {NOTIFICATION_PAGE_SIZES.map((size) => (
+                <SelectItem key={String(size)} textValue={`${size} 条 / 页`}>
+                  {`${size} 条 / 页`}
+                </SelectItem>
+              ))}
+            </Select>
+            {current &&
+              state === 'unread' &&
+              (view!.index > 0 || current.nextCursor) && (
+                <div className="flex items-center justify-center gap-4 sm:col-start-2">
+                  <Button
+                    isDisabled={loading || !view || view.index === 0}
+                    onPress={() => turn(view!.index - 1)}
+                  >
+                    上一页
+                  </Button>
+                  <span>第 {(view?.index ?? 0) + 1} 页</span>
+                  <Button
+                    isDisabled={loading || !current.nextCursor}
+                    onPress={() => turn(view!.index + 1)}
+                  >
+                    下一页
+                  </Button>
+                </div>
+              )}
+            {current && state !== 'unread' && current.total > pageSize && (
+              <div className="flex justify-center sm:col-start-2">
+                <KunPagination
+                  page={(view?.index ?? 0) + 1}
+                  total={Math.ceil(current.total / pageSize)}
+                  onPageChange={(page) => turn(page - 1)}
+                  isLoading={loading}
+                />
+              </div>
+            )}
+          </div>
         )}
         <Modal isOpen={isOpen} onOpenChange={onOpenChange} placement="center">
           <ModalContent>

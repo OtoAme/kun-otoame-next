@@ -25,6 +25,11 @@ export interface NotificationReadResponse {
   summary: MessageUnreadStatus
 }
 
+export interface NotificationReadAllResponse {
+  read: number
+  summary: MessageUnreadStatus
+}
+
 export interface NotificationList {
   messages: Message[]
   total: number

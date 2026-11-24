@@ -2,9 +2,12 @@ import { NextRequest, NextResponse } from 'next/server'
 import { kunParseDeleteQuery } from '~/app/api/utils/parseQuery'
 import { PERSONALIZED_API_CACHE_CONTROL } from '~/app/api/utils/cacheHeaders'
 import { clearReadMessageSchema } from '~/validations/message'
-import { readNotificationSchema } from '~/validations/notification'
+import {
+  readAllNotificationsSchema,
+  readNotificationSchema
+} from '~/validations/notification'
 import { verifyHeaderCookie } from '~/middleware/_verifyHeaderCookie'
-import { clearReadMessage, readMessage } from '../service'
+import { clearReadMessage, readAllMessages, readMessage } from '../service'
 import { NotificationServiceError } from '../errors'
 import { requireNotificationSession } from '../session'
 import { checkConversationActionRateLimit } from '../conversation/rateLimit'
@@ -47,17 +50,19 @@ export const PUT = async (req: NextRequest) => {
     }
     requireNotificationSession(req, payload)
 
-    const input = readNotificationSchema.safeParse(
-      await req.json().catch(() => null)
-    )
+    const input = readNotificationSchema
+      .or(readAllNotificationsSchema)
+      .safeParse(await req.json().catch(() => null))
     if (!input.success)
       return jsonNoStore(
         {
           code: 'NOTIFICATION_SCOPE_REQUIRED',
-          message: '请刷新通知页面，仅确认已经看到的通知'
+          message: '请刷新通知页面后重新操作'
         },
         { status: 409 }
       )
+
+    if ('scope' in input.data) requireNotificationSession(req, payload, true)
 
     const rateLimit = await checkConversationActionRateLimit(
       'notification-write',
@@ -72,7 +77,11 @@ export const PUT = async (req: NextRequest) => {
       )
     }
 
-    return jsonNoStore(await readMessage(payload.uid, input.data))
+    return jsonNoStore(
+      'scope' in input.data
+        ? await readAllMessages(payload.uid, input.data)
+        : await readMessage(payload.uid, input.data)
+    )
   } catch (error) {
     return jsonNoStore(
       {

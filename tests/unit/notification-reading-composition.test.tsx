@@ -50,6 +50,8 @@ vi.mock('@heroui/button', () => ({
   )
 }))
 vi.mock('@heroui/react', () => ({
+  Select: () => null,
+  SelectItem: () => null,
   Button: ({ children, onPress, isDisabled, isLoading }: any) => (
     <button disabled={isDisabled || isLoading} onClick={onPress}>
       {children}

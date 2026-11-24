@@ -7,7 +7,10 @@ import {
   lockNotificationAccounts
 } from '~/app/api/utils/message'
 import { createMessageSchema, getMessageSchema } from '~/validations/message'
-import { readNotificationSchema } from '~/validations/notification'
+import {
+  readAllNotificationsSchema,
+  readNotificationSchema
+} from '~/validations/notification'
 import {
   notificationCategory,
   type NotificationCategory
@@ -78,7 +81,7 @@ export const readMessage = async (
   if (!parsed.success)
     return {
       code: 'NOTIFICATION_SCOPE_REQUIRED' as const,
-      message: '请刷新通知页面，仅确认已经看到的通知'
+      message: '请刷新通知页面后重新操作'
     }
   const results = await prisma.$transaction(async (transaction) => {
     if (!(await lockNotificationAccounts(transaction, [uid])).has(uid))
@@ -129,6 +132,30 @@ export const readMessage = async (
     return results
   })
   return { results, summary: await readWriteSummary(uid) }
+}
+
+export const readAllMessages = async (
+  uid: number,
+  input: z.infer<typeof readAllNotificationsSchema>
+) => {
+  const { scope } = readAllNotificationsSchema.parse(input)
+  const category = scope === 'all' ? undefined : scope
+  const read = await prisma.$transaction(async (transaction) => {
+    if (!(await lockNotificationAccounts(transaction, [uid])).has(uid))
+      throw new NotificationServiceError(
+        401,
+        'NOTIFICATION_ACCOUNT_GONE',
+        '账号已不存在，请重新登录'
+      )
+    const candidates = await transaction.$queryRaw<{ id: number }[]>(
+      Prisma.sql`SELECT id FROM user_message WHERE ${filters(uid, undefined, category, 'unread')} ORDER BY id FOR UPDATE`
+    )
+    if (!candidates.length) return 0
+    return transaction.$executeRaw(
+      Prisma.sql`UPDATE user_message SET status = 1 WHERE ${filters(uid, undefined, category, 'unread')} AND id = ANY(${candidates.map((message) => message.id)}::int[])`
+    )
+  })
+  return { read, summary: await readWriteSummary(uid) }
 }
 
 export const clearReadMessage = async (

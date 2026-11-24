@@ -7,6 +7,8 @@ export const NOTIFICATION_CATEGORIES = [
 ] as const
 
 export type NotificationCategory = (typeof NOTIFICATION_CATEGORIES)[number]
+export const NOTIFICATION_PAGE_SIZES = [10, 20, 30] as const
+export const NOTIFICATION_DEFAULT_PAGE_SIZE = 20
 export const NOTIFICATION_PREFERENCE_SCHEMA = 'notifications-v1'
 
 export const NOTIFICATION_CATEGORY_LABELS: Record<

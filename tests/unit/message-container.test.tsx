@@ -13,6 +13,7 @@ globalThis.React = React
 const mocks = vi.hoisted(() => ({
   get: vi.fn(),
   remove: vi.fn(),
+  put: vi.fn(),
   confirm: vi.fn(),
   refresh: vi.fn(),
   replace: vi.fn(),
@@ -61,6 +62,7 @@ vi.mock('@heroui/card', () => ({
 vi.mock('~/utils/kunFetch', async (original) => ({
   ...(await original<typeof import('~/utils/kunFetch')>()),
   kunFetchGet: mocks.get,
+  kunFetchPut: mocks.put,
   kunFetchDelete: mocks.remove
 }))
 vi.mock('~/utils/sessionClient', () => ({ refreshUserSession: mocks.refresh }))
@@ -83,7 +85,11 @@ vi.mock('~/components/message/MessageCard', () => ({
     justRead
   }: {
     msg: Message
-    onSeen: (msg: Message, eligible?: () => boolean) => void
+    onSeen: (
+      msg: Message,
+      eligible?: () => boolean,
+      immediate?: boolean
+    ) => void
     justRead: boolean
   }) => (
     <article data-id={msg.id}>
@@ -92,10 +98,32 @@ vi.mock('~/components/message/MessageCard', () => ({
       <button onClick={() => onSeen(msg, () => mocks.eligible)}>
         看见 {msg.id}
       </button>
+      <button onClick={() => onSeen(msg, undefined, true)}>
+        展开 {msg.id}
+      </button>
     </article>
   )
 }))
 vi.mock('@heroui/react', () => ({
+  Select: ({
+    children,
+    selectedKeys,
+    onSelectionChange,
+    isDisabled,
+    ...props
+  }: any) => (
+    <select
+      aria-label={props['aria-label']}
+      value={[...selectedKeys][0]}
+      disabled={isDisabled}
+      onChange={(event) => onSelectionChange(new Set([event.target.value]))}
+    >
+      {React.Children.map(children, (item: any) => (
+        <option value={item.key}>{item.props.children}</option>
+      ))}
+    </select>
+  ),
+  SelectItem: () => null,
   Button: ({
     children,
     as: Component = 'button',
@@ -188,12 +216,13 @@ describe('notification list browsing and concrete reading', () => {
 
   beforeEach(async () => {
     vi.clearAllMocks()
-    mocks.params = 'state=unread'
+    mocks.params = 'state=unread&limit=30'
     mocks.pathname = '/message/notice'
     mocks.eligible = true
     mocks.contentReady = true
     mocks.get.mockReset().mockResolvedValue(page(90))
     mocks.remove.mockReset()
+    mocks.put.mockReset()
     mocks.confirm
       .mockReset()
       .mockImplementation(async (_identity, items) =>
@@ -292,6 +321,150 @@ describe('notification list browsing and concrete reading', () => {
     expect(container.querySelectorAll('article')).toHaveLength(30)
   })
 
+  it('defaults to twenty, changes page size from the first page and restores each size through history', async () => {
+    mocks.params = 'state=unread'
+    mocks.get
+      .mockReset()
+      .mockResolvedValueOnce({
+        ...page(90),
+        messages: page(90).messages.slice(0, 20),
+        nextCursor: 71
+      })
+      .mockResolvedValueOnce({
+        ...page(70),
+        messages: page(70).messages.slice(0, 20),
+        nextCursor: 51
+      })
+      .mockResolvedValueOnce({
+        ...page(90),
+        messages: page(90).messages.slice(0, 10),
+        nextCursor: 81
+      })
+    await render()
+    expect(mocks.get.mock.calls[0][1].limit).toBe(20)
+    expect(container.querySelectorAll('article')).toHaveLength(20)
+    await click('下一页')
+    const select = container.querySelector(
+      'select[aria-label="每页通知数量"]'
+    ) as HTMLSelectElement
+    expect([...select.options].map((option) => option.value)).toEqual([
+      '10',
+      '20',
+      '30'
+    ])
+    await act(async () => {
+      select.value = '10'
+      select.dispatchEvent(new dom.window.Event('change', { bubbles: true }))
+    })
+    mocks.params = dom.window.location.search.slice(1)
+    await render()
+    expect(mocks.get.mock.calls[2][1]).toEqual({
+      state: 'unread',
+      page: 1,
+      limit: 10
+    })
+    expect(container.querySelectorAll('article')).toHaveLength(10)
+    mocks.params = 'state=unread'
+    await render()
+    expect(container.querySelectorAll('article')).toHaveLength(20)
+    expect(container.querySelector('article')?.getAttribute('data-id')).toBe(
+      '70'
+    )
+    expect(mocks.get).toHaveBeenCalledTimes(3)
+  })
+
+  it('sends an expansion confirmation immediately and keeps the confirmed card in place', async () => {
+    await render()
+    const first = container.querySelector('article')
+    await click('展开 90')
+    expect(mocks.confirm).toHaveBeenCalledExactlyOnceWith(
+      { uid: 7, context: 'ctx-a', generation: 1 },
+      [{ id: 90, version: '1' }]
+    )
+    expect(container.querySelector('article')).toBe(first)
+    expect(first?.textContent).toContain('刚刚已读')
+    await click('看见 90')
+    expect(mocks.confirm).toHaveBeenCalledTimes(1)
+  })
+
+  it.each(['all', 'help'] as const)(
+    'marks the explicit %s scope read and loads the updated list once',
+    async (scope) => {
+      if (scope === 'help') {
+        mocks.params += '&category=help'
+        const counts = summary()
+        counts.categories.help = { unread: 90, sequence: '90' }
+        counts.categories.account = { unread: 0, sequence: '0' }
+        useMessageStore.setState({ notifications: counts })
+      }
+      const after = {
+        hasUnreadNotification: false,
+        hasUnreadConversation: true,
+        notifications: summary(0)
+      }
+      mocks.put.mockResolvedValue({ read: 90, summary: after })
+      await render()
+      mocks.get.mockResolvedValueOnce({
+        ...page(90),
+        messages: [],
+        total: 0,
+        nextCursor: null
+      })
+      await click('全部已读')
+      expect(mocks.put).toHaveBeenCalledExactlyOnceWith(
+        '/message/read',
+        { scope },
+        expect.objectContaining({
+          headers: { 'X-Kun-Notification-Session': 'ctx-a' }
+        })
+      )
+      expect(mocks.get).toHaveBeenCalledTimes(2)
+      expect(mocks.seed).toHaveBeenCalledWith(
+        expect.objectContaining({ uid: 7 }),
+        after,
+        1
+      )
+      expect(container.textContent).toContain('暂无未读消息')
+    }
+  )
+
+  it('keeps cards and offers another explicit bulk action after a failed request', async () => {
+    mocks.put.mockRejectedValueOnce(new Error('synthetic offline'))
+    await render()
+    const first = container.querySelector('article')
+    await click('全部已读')
+    expect(container.querySelector('article')).toBe(first)
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+      '再次点击'
+    )
+    expect(mocks.get).toHaveBeenCalledTimes(1)
+    expect(mocks.seed).not.toHaveBeenCalled()
+  })
+
+  it('ignores an old account bulk completion after switching identities', async () => {
+    const pending = deferred<any>()
+    mocks.put.mockReturnValueOnce(pending.promise)
+    await render()
+    await click('全部已读')
+    await act(async () =>
+      useUserStore.setState({
+        user: { ...useUserStore.getState().user, uid: 8 },
+        sessionContext: 'ctx-b',
+        sessionGeneration: 2
+      })
+    )
+    const next = container.querySelector('article')
+    await act(async () =>
+      pending.resolve({
+        read: 90,
+        summary: { hasUnreadNotification: false, notifications: summary(0) }
+      })
+    )
+    expect(mocks.seed).not.toHaveBeenCalled()
+    expect(container.querySelector('article')).toBe(next)
+    expect(mocks.get).toHaveBeenCalledTimes(2)
+  })
+
   it.each(['unread', 'all', 'read'] as const)(
     'shows category unread counts in one sidebar alongside the %s list',
     async (state) => {
@@ -335,7 +508,7 @@ describe('notification list browsing and concrete reading', () => {
     expect(history).toHaveBeenCalledWith(
       null,
       '',
-      '/message/notice?state=unread&category=help'
+      '/message/notice?state=unread&limit=30&category=help'
     )
     expect(mocks.replace).not.toHaveBeenCalled()
   })
@@ -343,14 +516,14 @@ describe('notification list browsing and concrete reading', () => {
   it('starts a fresh unread view on an explicit filter change while history restoration reuses the previous view', async () => {
     await render()
     await click('求助动态，未读 0 条')
-    mocks.params = 'state=unread&category=help'
+    mocks.params = 'state=unread&limit=30&category=help'
     await render()
     expect(mocks.get).toHaveBeenCalledTimes(2)
-    mocks.params = 'state=unread'
+    mocks.params = 'state=unread&limit=30'
     await render()
     expect(mocks.get).toHaveBeenCalledTimes(2)
     await click('求助动态，未读 0 条')
-    mocks.params = 'state=unread&category=help'
+    mocks.params = 'state=unread&limit=30&category=help'
     await render()
     expect(mocks.get).toHaveBeenCalledTimes(3)
   })
@@ -381,7 +554,7 @@ describe('notification list browsing and concrete reading', () => {
         state: 'unread',
         category: initialCategory,
         page: 1,
-        limit: 30
+        limit: 20
       })
       const { NOTIFICATION_CATEGORY_LABELS } = await import(
         '~/constants/notification'
@@ -401,7 +574,7 @@ describe('notification list browsing and concrete reading', () => {
         await act(async () => root!.render(<LegacyPage />))
         expect(mocks.get).toHaveBeenCalledWith(
           '/message/all',
-          { state: 'unread', category, page: 1, limit: 30 },
+          { state: 'unread', category, page: 1, limit: 20 },
           expect.any(Object)
         )
         expect(
@@ -496,7 +669,7 @@ describe('notification list browsing and concrete reading', () => {
     expect(mocks.get).toHaveBeenCalledTimes(1)
   })
 
-  it.each(['hidden', 'blur', 'next', 'reload'])(
+  it.each(['hidden', 'next', 'reload'])(
     'drops queued confirmations when %s happens before dispatch',
     async (change) => {
       await render()
@@ -517,11 +690,6 @@ describe('notification list browsing and concrete reading', () => {
         vi.spyOn(dom.window.document, 'visibilityState', 'get').mockReturnValue(
           'visible'
         )
-      } else if (change === 'blur') {
-        await act(async () => {
-          dom.window.dispatchEvent(new dom.window.Event('blur'))
-          dom.window.dispatchEvent(new dom.window.Event('focus'))
-        })
       } else if (change === 'next') await click('下一页')
       else await click('有新通知／有新动态，点击查看')
       await act(async () => {

@@ -4,10 +4,14 @@ import { NotificationServiceError } from './errors'
 
 export const requireNotificationSession = (
   request: Pick<Request, 'headers'>,
-  payload: KunGalgamePayload
+  payload: KunGalgamePayload,
+  required = false
 ) => {
   const context = request.headers.get('X-Kun-Notification-Session')
-  if (context !== null && context !== getSessionContext(payload))
+  if (
+    (required && context === null) ||
+    (context !== null && context !== getSessionContext(payload))
+  )
     throw new NotificationServiceError(
       409,
       'NOTIFICATION_CONTEXT_CHANGED',

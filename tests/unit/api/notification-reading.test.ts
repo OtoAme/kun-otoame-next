@@ -8,6 +8,7 @@ const database = vi.hoisted(() => ({
   },
   user_conversation: { findFirst: vi.fn().mockResolvedValue(null) },
   $transaction: vi.fn(),
+  $executeRaw: vi.fn(),
   $queryRaw: vi.fn()
 }))
 
@@ -90,5 +91,42 @@ describe('notification reading scope', () => {
     const result = await readMessage(1007)
     expect(database.user_message.updateMany).not.toHaveBeenCalled()
     expect(result).toMatchObject({ code: 'NOTIFICATION_SCOPE_REQUIRED' })
+  })
+
+  it('marks every unread row in an explicit category across pages and leaves later insertions outside the captured ids', async () => {
+    database.$queryRaw
+      .mockResolvedValueOnce([{ id: 1007 }])
+      .mockResolvedValueOnce(
+        Array.from({ length: 75 }, (_, index) => ({ id: index + 1 }))
+      )
+    database.$executeRaw.mockResolvedValueOnce(75)
+    const { readAllMessages } = await import('~/app/api/message/service')
+    const result = await readAllMessages(1007, { scope: 'help' })
+    expect(result).toMatchObject({
+      read: 75,
+      summary: { hasUnreadConversation: false }
+    })
+    const selected = database.$queryRaw.mock.calls[1][0]
+    expect(selected.sql).toContain('ORDER BY id FOR UPDATE')
+    expect(selected.values).toContain(1007)
+    expect(selected.values).toContain('help')
+    const update = database.$executeRaw.mock.calls[0][0]
+    expect(update.sql).toContain('SET status = 1')
+    expect(update.sql).not.toContain('updated =')
+    expect(update.values).toContain(1007)
+    expect(update.values.at(-1)).toEqual(
+      Array.from({ length: 75 }, (_, index) => index + 1)
+    )
+  })
+
+  it('handles an empty explicit all scope without changing messages', async () => {
+    database.$queryRaw
+      .mockResolvedValueOnce([{ id: 1007 }])
+      .mockResolvedValueOnce([])
+    const { readAllMessages } = await import('~/app/api/message/service')
+    expect(await readAllMessages(1007, { scope: 'all' })).toMatchObject({
+      read: 0
+    })
+    expect(database.$executeRaw).not.toHaveBeenCalled()
   })
 })

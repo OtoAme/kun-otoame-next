@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   limit: vi.fn(),
   list: vi.fn(),
   read: vi.fn(),
+  readAll: vi.fn(),
   clear: vi.fn(),
   create: vi.fn()
 }))
@@ -22,6 +23,7 @@ vi.mock('~/app/api/message/conversation/rateLimit', () => ({
 vi.mock('~/app/api/message/service', () => ({
   getMessage: mocks.list,
   readMessage: mocks.read,
+  readAllMessages: mocks.readAll,
   clearReadMessage: mocks.clear,
   create: mocks.create
 }))
@@ -134,6 +136,35 @@ describe('notification route failure boundaries', () => {
     expect(response.status).toBe(409)
     expect(mocks.read).not.toHaveBeenCalled()
   })
+
+  it.each(['all', 'help'] as const)(
+    'accepts an explicit %s bulk scope with a matching session',
+    async (scope) => {
+      mocks.readAll.mockResolvedValue({ read: 75, summary: {} })
+      const input = request('PUT', { scope })
+      input.headers.set('X-Kun-Notification-Session', 'b'.repeat(64))
+      const response = await PUT(input)
+      expect(response.status).toBe(200)
+      expect(mocks.readAll).toHaveBeenCalledExactlyOnceWith(7, { scope })
+      expect(mocks.read).not.toHaveBeenCalled()
+    }
+  )
+
+  it.each([
+    { body: { scope: 'all' }, context: undefined },
+    { body: { scope: 'all' }, context: 'a'.repeat(64) },
+    { body: { scope: 'unknown' }, context: 'b'.repeat(64) },
+    { body: { scope: 'all', recipientId: 8 }, context: 'b'.repeat(64) }
+  ])(
+    'rejects an invalid scope or session before bulk writes',
+    async ({ body, context }) => {
+      const input = request('PUT', body)
+      if (context) input.headers.set('X-Kun-Notification-Session', context)
+      expect((await PUT(input)).status).toBe(409)
+      expect(mocks.readAll).not.toHaveBeenCalled()
+      expect(mocks.limit).not.toHaveBeenCalled()
+    }
+  )
 
   it('returns a non-success status for invalid list filters', async () => {
     const response = await GET(

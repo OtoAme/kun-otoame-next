@@ -1,4 +1,5 @@
 import { useUserStore } from '~/store/userStore'
+import type { NotificationCategory } from '~/constants/notification'
 import type { NotificationList } from '~/types/api/message'
 import {
   notificationIdentityKey,
@@ -67,4 +68,16 @@ export const notificationView = (
   const view = { owner: next, key, pages: [], index: 0 }
   views.set(key, view)
   return view
+}
+
+export const invalidateNotificationViews = (
+  identity: NotificationIdentity,
+  category?: NotificationCategory
+) => {
+  if (notificationIdentityKey(identity) !== owner) return
+  for (const key of views.keys()) {
+    const cachedCategory = key.split(':')[0]
+    if (!category || !cachedCategory || cachedCategory === category)
+      views.delete(key)
+  }
 }

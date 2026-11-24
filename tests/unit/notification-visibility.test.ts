@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { JSDOM } from 'jsdom'
 import {
   isNotificationBodyVisible,
+  isNotificationCardVisible,
   observeNotificationReading
 } from '~/utils/notificationVisibility'
 
@@ -49,6 +50,38 @@ afterEach(() => {
 })
 
 describe('notification actual reading visibility', () => {
+  it('reads a partially visible card after one continuous second even while scrolling or without keyboard focus', () => {
+    const read = vi.fn()
+    focused = false
+    bounds = { ...bounds, top: -90, bottom: 10 } as DOMRect
+    expect(isNotificationCardVisible(body)).toBe(true)
+    const stop = observeNotificationReading(body, read, 1000, 'card')
+    vi.advanceTimersByTime(500)
+    window.dispatchEvent(new dom.window.Event('scroll'))
+    vi.advanceTimersByTime(500)
+    expect(read).toHaveBeenCalledTimes(1)
+    stop()
+  })
+
+  it('starts a fresh card interval after leaving the viewport or hiding the page', () => {
+    const read = vi.fn()
+    const stop = observeNotificationReading(body, read, 1000, 'card')
+    vi.advanceTimersByTime(900)
+    bounds = { ...bounds, top: -200, bottom: -100 } as DOMRect
+    window.dispatchEvent(new dom.window.Event('scroll'))
+    bounds = { ...bounds, top: 30, bottom: 130 } as DOMRect
+    window.dispatchEvent(new dom.window.Event('scroll'))
+    vi.advanceTimersByTime(900)
+    visible = 'hidden'
+    document.dispatchEvent(new dom.window.Event('visibilitychange'))
+    vi.advanceTimersByTime(2000)
+    visible = 'visible'
+    document.dispatchEvent(new dom.window.Event('visibilitychange'))
+    vi.advanceTimersByTime(1000)
+    expect(read).toHaveBeenCalledTimes(1)
+    stop()
+  })
+
   it('requires a continuous foreground focused second and stops after confirmation', () => {
     const read = vi.fn()
     const stop = observeNotificationReading(body, read)

@@ -20,7 +20,8 @@ import {
 import {
   clearReadMessage,
   getMessage,
-  readMessage
+  readMessage,
+  readAllMessages
 } from '~/app/api/message/service'
 import {
   notificationCategorySql,
@@ -556,9 +557,13 @@ describe.skipIf(!databaseUrl)(
       expect(await summary(user.id)).toMatchObject({ unread: 1, sequence: '3' })
     })
 
-    it.each([false, true])(
-      'creates a new dynamic when reading wins the aggregate candidate race, cleanup=%s',
-      async (cleanup) => {
+    it.each([
+      { cleanup: false, bulk: false },
+      { cleanup: true, bulk: false },
+      { cleanup: false, bulk: true }
+    ])(
+      'creates a new dynamic when reading wins the aggregate candidate race, cleanup=$cleanup, bulk=$bulk',
+      async ({ cleanup, bulk }) => {
         const user = await account()
         await aggregate(user.id)
         const first = await database.user_message.findFirstOrThrow({
@@ -585,9 +590,11 @@ describe.skipIf(!databaseUrl)(
         const writing = aggregate(user.id, {}, racing)
         await captured.promise
         try {
-          await readMessage(user.id, {
-            items: [{ id: first.id, version: '1' }]
-          })
+          if (bulk) await readAllMessages(user.id, { scope: 'help' })
+          else
+            await readMessage(user.id, {
+              items: [{ id: first.id, version: '1' }]
+            })
           if (cleanup) await clearReadMessage(user.id, '', 'help')
         } finally {
           proceed.resolve()
@@ -610,6 +617,116 @@ describe.skipIf(!databaseUrl)(
         })
       }
     )
+
+    it('marks an entire category across pages without modifying another recipient, private chat, content versions or timestamps', async () => {
+      const owner = await account()
+      const other = await account()
+      await createNotificationBatch(
+        [
+          ...Array.from({ length: 45 }, (_, index) =>
+            notice(owner.id, {
+              event_type: 'help-follow-answer',
+              content: `跨页合成通知 ${index}`
+            })
+          ),
+          notice(owner.id),
+          notice(other.id, { event_type: 'help-follow-answer' })
+        ],
+        database
+      )
+      const conversation = await database.user_conversation.create({
+        data: {
+          user_a_id: owner.id,
+          user_b_id: other.id,
+          user_a_unread_count: 3
+        }
+      })
+      const before = await database.user_message.findMany({
+        where: { recipient_id: owner.id },
+        orderBy: { id: 'asc' }
+      })
+      const beforeSummary = await summary(owner.id)
+      expect(await readAllMessages(owner.id, { scope: 'help' })).toMatchObject({
+        read: 45,
+        summary: { hasUnreadNotification: true, hasUnreadConversation: true }
+      })
+      const after = await database.user_message.findMany({
+        where: { recipient_id: owner.id },
+        orderBy: { id: 'asc' }
+      })
+      expect(after.map(({ status, ...message }) => message)).toEqual(
+        before.map(({ status, ...message }) => message)
+      )
+      expect(after.filter((message) => message.status === 1)).toHaveLength(45)
+      expect(await summary(owner.id)).toMatchObject({
+        unread: 1,
+        sequence: beforeSummary.sequence
+      })
+      expect(await summary(other.id)).toMatchObject({ unread: 1 })
+      expect(
+        await database.user_conversation.findUnique({
+          where: { id: conversation.id }
+        })
+      ).toMatchObject({ user_a_unread_count: 3 })
+      expect(await readAllMessages(owner.id, { scope: 'all' })).toMatchObject({
+        read: 1
+      })
+      expect(await readAllMessages(owner.id, { scope: 'all' })).toMatchObject({
+        read: 0
+      })
+    })
+
+    it('keeps notifications inserted after the bulk selection unread and rolls back a failed bulk transaction', async () => {
+      const owner = await account()
+      await createNotificationBatch(
+        [notice(owner.id), notice(owner.id, { content: '第二条合成通知' })],
+        database
+      )
+      const selected = deferred<void>()
+      const proceed = deferred<void>()
+      const wrapped = instrument(database, {
+        query: async (sql) => {
+          if (sql.includes('FROM user_message') && sql.includes('FOR UPDATE')) {
+            selected.resolve()
+            await proceed.promise
+          }
+        }
+      })
+      shared.database = wrapped.client
+      const reading = readAllMessages(owner.id, { scope: 'all' })
+      try {
+        await selected.promise
+        await createNotificationBatch(
+          [notice(owner.id, { content: '范围确认后的新通知' })],
+          database
+        )
+        proceed.resolve()
+        expect(await reading).toMatchObject({
+          read: 2,
+          summary: { notifications: { unread: 1 } }
+        })
+      } finally {
+        proceed.resolve()
+        shared.database = database
+      }
+      const failing = instrument(database, {
+        finish: async () => {
+          throw new Error('synthetic bulk failure')
+        }
+      })
+      shared.database = failing.client
+      try {
+        await expect(
+          readAllMessages(owner.id, { scope: 'all' })
+        ).rejects.toThrow('synthetic bulk failure')
+      } finally {
+        shared.database = database
+      }
+      expect(await summary(owner.id)).toMatchObject({
+        unread: 1,
+        sequence: '3'
+      })
+    })
 
     it('rolls back content and counters together and counts only a successful deduplicated retry', async () => {
       const user = await account()

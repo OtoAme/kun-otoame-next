@@ -68,6 +68,17 @@ afterEach(() => {
 })
 
 describe('notification reading identity and detail handoff', () => {
+  it('invalidates the affected category and combined views after a bulk action while preserving other categories', () => {
+    const category = cache.notificationView(identity, 'help:unread:20')
+    const combined = cache.notificationView(identity, ':all:30')
+    const unrelated = cache.notificationView(identity, 'account:all:10')
+    cache.invalidateNotificationViews(identity, 'help')
+    expect(cache.notificationView(identity, 'help:unread:20')).not.toBe(
+      category
+    )
+    expect(cache.notificationView(identity, ':all:30')).not.toBe(combined)
+    expect(cache.notificationView(identity, 'account:all:10')).toBe(unrelated)
+  })
   it('recovers an explicit confirmation 401 through unified session refresh and propagates failure', async () => {
     const { KunFetchError } = await import('~/utils/kunFetch')
     mocks.put.mockRejectedValueOnce(

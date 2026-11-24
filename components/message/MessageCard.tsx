@@ -8,6 +8,7 @@ import { Avatar } from '@heroui/avatar'
 import { Chip } from '@heroui/chip'
 import { formatTimeDifference } from '~/utils/time'
 import { generateUUID } from '~/utils/random'
+import { notificationContent } from '~/utils/notificationContent'
 import {
   AtSign,
   Bell,
@@ -28,7 +29,7 @@ import {
   notificationCategory
 } from '~/constants/notification'
 import {
-  isNotificationBodyVisible,
+  isNotificationCardVisible,
   observeNotificationReading
 } from '~/utils/notificationVisibility'
 import {
@@ -41,7 +42,11 @@ import type { Message } from '~/types/api/message'
 interface Props {
   msg: Message
   identity?: NotificationIdentity
-  onSeen?: (message: Message, eligible?: () => boolean) => void
+  onSeen?: (
+    message: Message,
+    eligible?: () => boolean,
+    immediate?: boolean
+  ) => void
   justRead?: boolean
   confirmationError?: string
 }
@@ -103,19 +108,18 @@ export const MessageCard = ({
         target: msg.link
       })
   }
-  const body = useRef<HTMLParagraphElement>(null)
-  const long = msg.content.length > 350 || msg.content.split('\n').length > 8
+  const card = useRef<HTMLDivElement>(null)
+  const content = notificationContent(msg)
+  const long = content.body.length > 350 || content.body.split('\n').length > 8
   const [expanded, setExpanded] = useState(false)
-  const canRead = !long || expanded
   const category = msg.category ?? notificationCategory(msg.eventType, msg.type)
 
   useEffect(() => {
     if (
-      !body.current ||
+      !card.current ||
       !contentReady ||
       !identity ||
       !onSeen ||
-      !canRead ||
       msg.status !== 0 ||
       !msg.contentVersion ||
       confirmationError
@@ -123,18 +127,22 @@ export const MessageCard = ({
       return
     let active = true
     const eligible = () =>
-      active && Boolean(body.current && isNotificationBodyVisible(body.current))
-    const stop = observeNotificationReading(body.current, () =>
-      onSeen(msg, eligible)
+      active && Boolean(card.current && isNotificationCardVisible(card.current))
+    const stop = observeNotificationReading(
+      card.current,
+      () => onSeen(msg, eligible),
+      1000,
+      'card'
     )
     return () => {
       active = false
       stop()
     }
-  }, [msg, identity, onSeen, canRead, confirmationError, contentReady])
+  }, [msg, identity, onSeen, confirmationError, contentReady])
 
   return (
     <Card
+      ref={card}
       data-notification-id={msg.id}
       className="w-full border border-default-100 dark:border-default-200"
     >
@@ -168,19 +176,33 @@ export const MessageCard = ({
               {NOTIFICATION_CATEGORY_LABELS[category]}
             </span>
           </div>
-          <p
-            ref={body}
+          <div
             data-testid="message-content"
-            className={`whitespace-pre-wrap break-words text-default-600 ${long && !expanded ? 'line-clamp-5' : ''}`}
+            className="space-y-2 whitespace-pre-wrap break-words text-default-600"
           >
-            {msg.content}
-          </p>
+            {content.template && <p>{content.template}</p>}
+            <blockquote className="rounded-r-medium border-l-3 border-default-300 bg-default-50 px-4 py-3">
+              <p className={long && !expanded ? 'line-clamp-5' : undefined}>
+                {content.body}
+              </p>
+            </blockquote>
+          </div>
           {long && (
             <Button
               size="sm"
               variant="light"
               aria-expanded={expanded}
-              onPress={() => setExpanded((value) => !value)}
+              onPress={() => {
+                setExpanded(!expanded)
+                if (
+                  !expanded &&
+                  contentReady &&
+                  identity &&
+                  msg.status === 0 &&
+                  msg.contentVersion
+                )
+                  onSeen?.(msg, undefined, true)
+              }}
             >
               {expanded ? '收起正文' : '展开完整正文'}
             </Button>
