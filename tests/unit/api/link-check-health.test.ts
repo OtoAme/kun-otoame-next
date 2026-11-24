@@ -31,7 +31,12 @@ vi.mock('~/app/api/case/rateLimit', () => ({ checkCaseRateLimit: vi.fn() }))
 vi.mock('~/app/api/patch/cache', () => ({
   invalidatePatchContentCache: vi.fn(), invalidatePatchListCaches: vi.fn()
 }))
-vi.mock('~/app/api/utils/message', () => ({ createMessage: vi.fn() }))
+vi.mock('~/app/api/utils/message', () => ({
+  createMessage: vi.fn(),
+  createNotificationBatch: vi.fn(async (data, tx) =>
+    tx.user_message.createMany({ data })
+  )
+}))
 vi.mock('~/app/api/patch/resource/_helper', () => ({
   deletePatchResourceCache: mocks.invalidate
 }))

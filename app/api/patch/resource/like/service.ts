@@ -77,6 +77,7 @@ export const toggleResourceLike = async (
 
       await createDedupMessage(
         {
+          event_type: 'like',
           type: 'like',
           content: `点赞了您在 ${resource.patch.name} 下发布的补丁资源`,
           sender_id: uid,

@@ -322,7 +322,7 @@ describe('KunTopBarUser message bell', () => {
       )
     })
 
-    expect(routerMock.push).toHaveBeenCalledWith('/message/notice')
+    expect(routerMock.push).toHaveBeenCalledWith('/message/notice?state=unread')
     expect(fetchMock.kunFetchPut).not.toHaveBeenCalled()
     expect(useMessageStore.getState().hasUnreadNotification).toBe(true)
     expect(useMessageStore.getState().hasUnreadConversation).toBe(true)

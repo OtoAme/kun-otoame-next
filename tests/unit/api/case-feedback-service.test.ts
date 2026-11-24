@@ -65,7 +65,12 @@ vi.mock('~/app/api/patch/cache', () => ({
   invalidatePatchContentCache: vi.fn(),
   invalidatePatchListCaches: vi.fn()
 }))
-vi.mock('~/app/api/utils/message', () => ({ createMessage: vi.fn() }))
+vi.mock('~/app/api/utils/message', () => ({
+  createMessage: vi.fn(),
+  createNotificationBatch: vi.fn(async (data, tx) =>
+    tx.user_message.createMany({ data })
+  )
+}))
 vi.mock('~/app/api/case/imageUpload', () => ({
   caseImageUrl: (key: string) => `https://img.example/${key}`,
   consumeCaseImageUploads: mocks.consumeCaseImageUploads,
@@ -890,11 +895,7 @@ describe('case feedback rules (M03-6, M03-7)', () => {
         canReopen: false,
         canWithdraw: false
       })
-      // Opening the case reads the viewer's notices for it (D22).
-      expect(mocks.tx.user_message.updateMany).toHaveBeenCalledWith({
-        where: { recipient_id: 5, status: 0, link: { in: ['/workspace/issues/42', '/issue/42'] } },
-        data: { status: 1 }
-      })
+      expect(mocks.tx.user_message.updateMany).not.toHaveBeenCalled()
       // D15: the publisher-side dialogue carries real signatures now.
       const publisherView = await getCase(42, 2, 1, { db: mocks.tx as never })
       if (typeof publisherView === 'string') throw new Error(publisherView)
@@ -1119,8 +1120,8 @@ describe('site administrator review fixes (M03-8)', () => {
       noticeRows().filter(({ recipient_id }) => recipient_id !== 5)
     ).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ recipient_id: 90, sender_id: null }),
-        expect.objectContaining({ recipient_id: 91, sender_id: null })
+        expect.objectContaining({ recipient_id: 90, sender_id: undefined }),
+        expect.objectContaining({ recipient_id: 91, sender_id: undefined })
       ])
     )
     const recipientLock = mocks.tx.$queryRaw.mock.calls
@@ -1375,7 +1376,9 @@ describe('site administrator review fixes (M03-8)', () => {
     await adminReply('请发布者核对一下第 3 分卷')
 
     expect(recipients().sort()).toEqual([2, 5])
-    expect(noticeRows().every((row) => row.link === '/workspace/issues/42')).toBe(true)
+    expect(
+      noticeRows().every((row) => row.link === '/workspace/issues/42')
+    ).toBe(true)
   })
 
   it('keeps the original publisher in the loop after a handoff (item 19)', async () => {
@@ -1406,7 +1409,10 @@ describe('site administrator review fixes (M03-8)', () => {
           recipient_id: 90,
           link: '/dashboard/case/42'
         }),
-        expect.objectContaining({ recipient_id: 2, link: '/workspace/issues/42' })
+        expect.objectContaining({
+          recipient_id: 2,
+          link: '/workspace/issues/42'
+        })
       ])
     )
     expect(recipients()).not.toContain(5)

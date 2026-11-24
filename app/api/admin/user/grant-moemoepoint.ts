@@ -100,6 +100,7 @@ export const grantMoemoepoint = async (
       const reasonText = reason ? `\n理由: ${reason}` : ''
       await createMessage(
         {
+          event_type: 'points',
           type: 'system',
           content: `管理员为您发放了 ${amount} 萌萌点。${reasonText}`,
           sender_id: adminUid,

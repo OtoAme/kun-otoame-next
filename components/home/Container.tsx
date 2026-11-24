@@ -1,3 +1,4 @@
+import { NotificationTargetReady } from '~/components/message/NotificationTargetReady'
 import { HomeHero } from './hero/HomeHero'
 import { HomeContent } from './HomeContent'
 import { ShoutboxHomeSection } from '~/components/shoutbox/ShoutboxHomeSection'
@@ -11,6 +12,7 @@ interface Props {
 export const HomeContainer = (props: Props) => {
   return (
     <div className="mx-auto space-y-8 max-w-7xl">
+      <NotificationTargetReady path="/" />
       <HomeHero />
 
       <ShoutboxHomeSection />

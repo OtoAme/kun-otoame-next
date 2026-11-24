@@ -1,5 +1,6 @@
 'use client'
 
+import { NotificationTargetReady } from '~/components/message/NotificationTargetReady'
 import { useEffect, useRef, useState } from 'react'
 import {
   Button,
@@ -223,6 +224,7 @@ export const SubmissionEditor = ({ submission }: Props) => {
 
   return (
     <div className="mx-auto w-full max-w-5xl space-y-4 py-4">
+      <NotificationTargetReady path={`/submission/${submission.id}`} />
       {currentStatus === 'changes_requested' && submission.reviewReason && (
         <Card className="border border-warning-300 bg-warning-50">
           <CardBody className="text-sm text-warning-700">

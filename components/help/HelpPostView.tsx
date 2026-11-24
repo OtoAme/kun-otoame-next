@@ -1,5 +1,6 @@
 'use client'
 
+import { NotificationTargetReady } from '~/components/message/NotificationTargetReady'
 import { useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
@@ -334,6 +335,7 @@ export const HelpPostView = ({ initial }: Props) => {
   return (
     <HelpLayout sidebar={<HelpSidebar />}>
       <div ref={threadRef} className="space-y-6">
+        <NotificationTargetReady path={`/help/${post.id}`} />
         <HelpImageLightbox rootRef={threadRef}>
           <Card>
             <CardHeader className="flex-col items-start gap-3">

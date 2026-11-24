@@ -2,6 +2,10 @@
 import { Button } from '@heroui/button'
 import { useAccountPreferences } from '~/hooks/useAccountPreferences'
 import {
+  isNotificationEvent,
+  NOTIFICATION_EVENTS
+} from '~/constants/notification'
+import {
   confirmPreferenceConflicts,
   discardPreferenceDrafts,
   refreshPreferences,
@@ -32,7 +36,7 @@ export const PreferenceActions = ({
             {conflicts
               .map(
                 (key) =>
-                  `${key === 'nsfw' ? '内容显示' : key === 'email-notice' ? '邮件通知' : '标签 ' + key.slice(12)}（服务器：${({ sfw: '仅 SFW', nsfw: '仅 NSFW', all: '全部内容', true: '开启', false: '关闭' } as Record<string, string>)[String(state.snapshot!.items[key]?.value)] ?? '已变化'}）`
+                  `${key === 'nsfw' ? '内容显示' : key === 'email-notice' ? '邮件通知' : key.startsWith('notification:') && isNotificationEvent(key.slice(13)) ? NOTIFICATION_EVENTS[key.slice(13) as keyof typeof NOTIFICATION_EVENTS].label : '标签 ' + key.slice(12)}（服务器：${({ sfw: '仅 SFW', nsfw: '仅 NSFW', all: '全部内容', true: '开启', false: '关闭' } as Record<string, string>)[String(state.snapshot!.items[key]?.value)] ?? '已变化'}）`
               )
               .join('、')}
           </p>

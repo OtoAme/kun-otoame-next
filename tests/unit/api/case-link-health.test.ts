@@ -34,7 +34,12 @@ vi.mock('~/app/api/patch/cache', () => ({
   invalidatePatchContentCache: vi.fn(),
   invalidatePatchListCaches: vi.fn()
 }))
-vi.mock('~/app/api/utils/message', () => ({ createMessage: vi.fn() }))
+vi.mock('~/app/api/utils/message', () => ({
+  createMessage: vi.fn(),
+  createNotificationBatch: vi.fn(async (data, tx) =>
+    tx.user_message.createMany({ data })
+  )
+}))
 vi.mock('~/app/api/case/rateLimit', () => ({
   checkCaseRateLimit: vi.fn().mockResolvedValue(null)
 }))
@@ -63,7 +68,7 @@ import {
   remindCase
 } from '~/app/api/case/service'
 import { createCaseSchema } from '~/validations/case'
-import { createMessage } from '~/app/api/utils/message'
+import { createNotificationBatch } from '~/app/api/utils/message'
 import type {
   CloseLinkCasesInput,
   LinkCaseContext
@@ -427,8 +432,8 @@ describe('closeLinkCases caller transaction boundary', () => {
     expect(mocks.tx.patch_resource_link_maintenance_event.updateMany.mock.calls[0][0]).toMatchObject({
       where:{id:70},data:{active_key:null,state:'handled',outcome:'removed'}
     })
-    expect(createMessage).toHaveBeenCalledWith(expect.objectContaining({recipient_id:22,link:'/SYN00001?tab=resources#resource-3'}),mocks.tx)
-    expect(mocks.tx.user_message.createMany).not.toHaveBeenCalled()
+    expect(createNotificationBatch).toHaveBeenCalledWith([expect.objectContaining({ event_type: 'maintenance-result', recipient_id: 22, link: '/SYN00001?tab=resources#resource-3' })], mocks.tx)
+    expect(mocks.tx.user_message.createMany).toHaveBeenCalledOnce()
   })
   it('empty selections perform no queries or side effects', async () => {
     for (const selector of [

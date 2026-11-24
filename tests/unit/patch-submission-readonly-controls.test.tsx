@@ -17,6 +17,7 @@ const editorMocks = vi.hoisted(() => ({
   orderFlush: vi.fn()
 }))
 
+vi.mock('~/components/message/NotificationTargetReady', () => ({ NotificationTargetReady: () => null }))
 vi.mock('~/utils/kunFetch', () => ({
   kunFetchGet: fetchMocks.get,
   kunFetchPost: fetchMocks.post,

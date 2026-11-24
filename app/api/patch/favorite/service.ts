@@ -60,6 +60,7 @@ export const togglePatchFavorite = async (
       if (patch.user_id !== uid) {
         await createDedupMessage(
           {
+            event_type: 'favorite',
             type: 'favorite',
             content: patch.name,
             sender_id: uid,

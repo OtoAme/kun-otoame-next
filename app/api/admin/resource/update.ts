@@ -411,6 +411,7 @@ export const updatePatchResource = async (
         )
         await createMessage(
           {
+            event_type: 'content-adjusted',
             type: 'system',
             content: `管理员修改了你发布的${resourceTypeName}「${updatedResource.name}」。${changeSummary ? `\n\n修改内容:\n${changeSummary}` : ''}`,
             sender_id: uid,

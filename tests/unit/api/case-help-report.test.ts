@@ -86,7 +86,12 @@ vi.mock('~/app/api/patch/cache', () => ({
   invalidatePatchContentCache: vi.fn(),
   invalidatePatchListCaches: vi.fn()
 }))
-vi.mock('~/app/api/utils/message', () => ({ createMessage: vi.fn() }))
+vi.mock('~/app/api/utils/message', () => ({
+  createMessage: vi.fn(),
+  createNotificationBatch: vi.fn(async (data, tx) =>
+    tx.user_message.createMany({ data })
+  )
+}))
 vi.mock('~/app/api/case/imageUpload', () => ({
   caseImageUrl: (key: string) => `https://img.example/${key}`,
   consumeCaseImageUploads: mocks.consumeCaseImageUploads,
@@ -397,7 +402,8 @@ describe('help report cases (03 §12.2 求助举报)', () => {
       mocks.tx,
       'help',
       300,
-      now
+      now,
+      90
     )
     const close = mocks.tx.ops_case.updateMany.mock.calls.find(
       ([args]) => args.data?.resolution

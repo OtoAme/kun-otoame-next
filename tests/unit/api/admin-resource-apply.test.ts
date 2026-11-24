@@ -34,6 +34,12 @@ const helperMocks = vi.hoisted(() => ({
 }))
 
 vi.mock('~/prisma/index', () => ({ prisma: prismaMocks }))
+vi.mock('~/app/api/utils/message', () => ({
+  createMessage: async (
+    { actor_id, ...data }: Record<string, unknown>,
+    tx: any
+  ) => tx.user_message.create({ data })
+}))
 vi.mock('~/app/api/patch/resource/_helper', () => helperMocks)
 
 import {
@@ -116,7 +122,12 @@ describe.each(actions)('$name pending resource', (action) => {
       tx
     )
     expect(tx.user_message.create).toHaveBeenCalledExactlyOnceWith({
-      data: { type: 'system', recipient_id: 5, ...action.message }
+      data: {
+        type: 'system',
+        event_type: 'resource-result',
+        recipient_id: 5,
+        ...action.message
+      }
     })
     expect(tx.admin_log.create).toHaveBeenCalledExactlyOnceWith({
       data: {
@@ -195,7 +206,12 @@ describe('resource review races', () => {
         tx
       )
       expect(tx.user_message.create).toHaveBeenCalledExactlyOnceWith({
-        data: { type: 'system', recipient_id: 5, ...winner.message }
+        data: {
+          type: 'system',
+          event_type: 'resource-result',
+          recipient_id: 5,
+          ...winner.message
+        }
       })
       expect(tx.admin_log.create).toHaveBeenCalledExactlyOnceWith({
         data: expect.objectContaining({ type: winner.logType, user_id: 3 })

@@ -1,449 +1,687 @@
-import React, { act } from 'react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import React, { act, StrictMode } from 'react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { JSDOM } from 'jsdom'
 import { createRoot, type Root } from 'react-dom/client'
-import type { Message } from '~/types/api/message'
+import type {
+  Message,
+  NotificationList,
+  NotificationSummary
+} from '~/types/api/message'
+import { NOTIFICATION_CATEGORIES } from '~/constants/notification'
 
 globalThis.React = React
-
-const fetchMock = vi.hoisted(() => ({
-  kunFetchDelete: vi.fn(),
-  kunFetchGet: vi.fn()
+const mocks = vi.hoisted(() => ({
+  get: vi.fn(),
+  remove: vi.fn(),
+  confirm: vi.fn(),
+  refresh: vi.fn(),
+  replace: vi.fn(),
+  pathname: '/message/notice',
+  params: 'state=unread',
+  seed: vi.fn(),
+  scroll: vi.fn(),
+  contentReady: true,
+  eligible: true
 }))
-
-vi.mock('~/utils/kunFetch', () => ({
-  kunFetchDelete: fetchMock.kunFetchDelete,
-  kunFetchGet: fetchMock.kunFetchGet
+vi.mock('next/navigation', () => ({
+  usePathname: () => mocks.pathname,
+  useSearchParams: () => new URLSearchParams(mocks.params),
+  useRouter: () => ({ replace: mocks.replace })
 }))
-
-vi.mock('~/hooks/useMounted', () => ({
-  useMounted: () => true
+vi.mock('~/utils/kunFetch', async (original) => ({
+  ...(await original<typeof import('~/utils/kunFetch')>()),
+  kunFetchGet: mocks.get,
+  kunFetchDelete: mocks.remove
 }))
-
-vi.mock('next/link', () => ({
-  default: ({
-    children,
-    href,
-    className
+vi.mock('~/utils/sessionClient', () => ({ refreshUserSession: mocks.refresh }))
+vi.mock('~/components/kun/SessionContentBoundary', () => ({
+  useSessionContentReady: () => mocks.contentReady
+}))
+vi.mock('~/utils/messageSync', () => ({
+  beginUnreadRead: () => 1,
+  seedSessionUnread: mocks.seed
+}))
+vi.mock('~/utils/notificationReading', async (original) => ({
+  ...(await original<typeof import('~/utils/notificationReading')>()),
+  confirmNotificationItems: mocks.confirm
+}))
+vi.mock('~/components/message/MessageCard', () => ({
+  MessageCard: ({
+    msg,
+    onSeen,
+    justRead
   }: {
-    children?: React.ReactNode
-    href: string
-    className?: string
+    msg: Message
+    onSeen: (msg: Message, eligible?: () => boolean) => void
+    justRead: boolean
   }) => (
-    <a href={href} className={className}>
-      {children}
-    </a>
+    <article data-id={msg.id}>
+      <p>{msg.content}</p>
+      <span>{justRead ? '刚刚已读' : ''}</span>
+      <button onClick={() => onSeen(msg, () => mocks.eligible)}>
+        看见 {msg.id}
+      </button>
+    </article>
   )
 }))
-
-vi.mock('@heroui/card', () => ({
-  Card: ({
-    children,
-    as: Component = 'div',
-    href,
-    className
-  }: {
-    children?: React.ReactNode
-    as?: React.ElementType
-    href?: string
-    className?: string
-  }) => (
-    <Component href={href} className={className}>
-      {children}
-    </Component>
-  ),
-  CardBody: ({
-    children,
-    className
-  }: {
-    children?: React.ReactNode
-    className?: string
-  }) => <div className={className}>{children}</div>
-}))
-
-vi.mock('@heroui/avatar', () => ({
-  Avatar: ({ name }: { name?: string }) => <span>{name}</span>
-}))
-
-vi.mock('@heroui/chip', () => ({
-  Chip: ({ children }: { children?: React.ReactNode }) => (
-    <span>{children}</span>
-  )
-}))
-
 vi.mock('@heroui/react', () => ({
-  Button: ({
-    children,
-    onPress,
-    isDisabled,
-    isLoading
-  }: {
-    children?: React.ReactNode
-    onPress?: () => void
-    isDisabled?: boolean
-    isLoading?: boolean
-  }) => (
-    <button disabled={isDisabled || isLoading} onClick={onPress}>
+  Button: ({ children, onPress, isDisabled, isLoading, ...props }: any) => (
+    <button
+      aria-pressed={props['aria-pressed']}
+      disabled={isDisabled || isLoading}
+      onClick={onPress}
+    >
       {children}
     </button>
   ),
-  Modal: ({
-    children,
-    isOpen
-  }: {
-    children?: React.ReactNode
-    isOpen?: boolean
-  }) => (isOpen ? <div role="dialog">{children}</div> : null),
-  ModalContent: ({ children }: { children?: React.ReactNode }) => (
-    <div>{children}</div>
-  ),
-  ModalHeader: ({ children }: { children?: React.ReactNode }) => (
-    <h2>{children}</h2>
-  ),
-  ModalBody: ({ children }: { children?: React.ReactNode }) => (
-    <div>{children}</div>
-  ),
-  ModalFooter: ({ children }: { children?: React.ReactNode }) => (
-    <div>{children}</div>
-  ),
+  Modal: ({ children, isOpen }: any) =>
+    isOpen ? <div role="dialog">{children}</div> : null,
+  ModalContent: ({ children }: any) => <div>{children}</div>,
+  ModalHeader: ({ children }: any) => <h2>{children}</h2>,
+  ModalBody: ({ children }: any) => <div>{children}</div>,
+  ModalFooter: ({ children }: any) => <div>{children}</div>,
   useDisclosure: () => {
-    const [isOpen, setIsOpen] = React.useState(false)
-
+    const [isOpen, setOpen] = React.useState(false)
     return {
       isOpen,
-      onOpen: () => setIsOpen(true),
-      onClose: () => setIsOpen(false),
-      onOpenChange: setIsOpen
+      onOpen: () => setOpen(true),
+      onClose: () => setOpen(false),
+      onOpenChange: setOpen
     }
   }
 }))
-
-vi.mock('~/components/kun/floating-card/KunAvatar', () => ({
-  KunAvatar: () => <span>avatar</span>
-}))
-
 vi.mock('~/components/kun/Loading', () => ({
-  KunLoading: ({ hint }: { hint: string }) => <div>{hint}</div>
+  KunLoading: ({ hint }: any) => <p role="status">{hint}</p>
 }))
-
-vi.mock('~/components/kun/Null', () => ({
-  KunNull: ({ message }: { message: string }) => <div>{message}</div>
-}))
-
 vi.mock('~/components/kun/Pagination', () => ({
-  KunPagination: ({
-    total,
-    page,
-    onPageChange,
-    isLoading
-  }: {
-    total: number
-    page: number
-    onPageChange: (page: number) => void
-    isLoading?: boolean
-  }) => (
-    <div
-      data-testid="pagination"
-      data-total={total}
-      data-loading={String(Boolean(isLoading))}
-    >
-      <button data-testid="next-page" onClick={() => onPageChange(page + 1)}>
-        next
-      </button>
-    </div>
+  KunPagination: ({ page, onPageChange }: any) => (
+    <button onClick={() => onPageChange(page + 1)}>页码下一页</button>
   )
 }))
 
-vi.mock('react-hot-toast', () => ({
-  default: {
-    error: vi.fn(),
-    success: vi.fn()
-  }
-}))
-
-const unreadMessage: Message = {
-  id: 1,
-  type: 'system',
-  content: '新的系统消息',
-  status: 0,
-  link: '/message-target',
-  created: '2026-06-30T00:00:00.000Z',
-  sender: null
+const summary = (unread = 90, sequence = '90'): NotificationSummary => ({
+  unread,
+  sequence,
+  categories: Object.fromEntries(
+    NOTIFICATION_CATEGORIES.map((category) => [
+      category,
+      {
+        unread: category === 'account' ? unread : 0,
+        sequence: category === 'account' ? sequence : '0'
+      }
+    ])
+  ) as NotificationSummary['categories']
+})
+const page = (upper: number, sequence = '90'): NotificationList => ({
+  messages: Array.from({ length: 30 }, (_, index) => ({
+    id: upper - index,
+    type: 'system',
+    eventType: 'site-announcement',
+    category: 'account',
+    contentVersion: '1',
+    content: '通知 ' + (upper - index),
+    status: 0,
+    link: '/help/' + (upper - index),
+    created: '2026-11-18T00:00:00.000Z',
+    sender: null
+  })),
+  total: 90,
+  upperId: 90,
+  nextCursor: upper > 30 ? upper - 29 : null,
+  contentSequence: sequence
+})
+const deferred = <Value,>() => {
+  let resolve!: (value: Value) => void
+  const promise = new Promise<Value>((complete) => {
+    resolve = complete
+  })
+  return { promise, resolve }
 }
 
-const messageWithContent = (id: number, content: string): Message => ({
-  ...unreadMessage,
-  id,
-  content,
-  status: 1
-})
-
-describe('MessageContainer initial notification view', () => {
+describe('notification list browsing and concrete reading', () => {
   let root: Root | undefined
-  let dom: JSDOM | undefined
+  let dom: JSDOM
+  let container: HTMLElement
+  let MessageContainer: (typeof import('~/components/message/Container'))['MessageContainer']
+  let useUserStore: (typeof import('~/store/userStore'))['useUserStore']
+  let useMessageStore: (typeof import('~/store/messageStore'))['useMessageStore']
 
-  const renderContainer = async (
-    props: {
-      initialMessages?: Message[]
-      total?: number
-    } = {}
-  ) => {
-    dom = new JSDOM('<!doctype html><div id="root"></div>', {
-      url: 'http://localhost/message/notice'
+  beforeEach(async () => {
+    vi.clearAllMocks()
+    mocks.params = 'state=unread'
+    mocks.pathname = '/message/notice'
+    mocks.eligible = true
+    mocks.contentReady = true
+    mocks.get.mockReset().mockResolvedValue(page(90))
+    mocks.remove.mockReset()
+    mocks.confirm
+      .mockReset()
+      .mockImplementation(async (_identity, items) =>
+        items.map(({ id }: { id: number }) => ({ id, outcome: 'read' }))
+      )
+    dom = new JSDOM('<div id="root"></div>', {
+      url: 'https://example.test/message/notice'
     })
-
+    dom.window.scrollTo = mocks.scroll
+    vi.spyOn(dom.window.document, 'hasFocus').mockReturnValue(true)
+    vi.spyOn(dom.window.document, 'visibilityState', 'get').mockReturnValue(
+      'visible'
+    )
     vi.stubGlobal('window', dom.window)
     vi.stubGlobal('document', dom.window.document)
     vi.stubGlobal('React', React)
     vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
-
-    const { MessageContainer } = await import('~/components/message/Container')
-    const container = dom.window.document.getElementById('root')
-    expect(container).not.toBeNull()
-
-    root = createRoot(container!)
-    await act(async () => {
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+      callback(0)
+      return 1
+    })
+    vi.stubGlobal('cancelAnimationFrame', vi.fn())
+    ;({ useUserStore } = await import('~/store/userStore'))
+    ;({ useMessageStore } = await import('~/store/messageStore'))
+    useUserStore.setState({ sessionStatus: 'guest', sessionContext: null })
+    useUserStore.setState({
+      user: { ...useUserStore.getState().user, uid: 7 },
+      sessionStatus: 'authenticated',
+      sessionContext: 'ctx-a',
+      sessionGeneration: 1
+    })
+    useMessageStore.setState({
+      hasUnreadNotification: true,
+      hasUnreadConversation: false,
+      notifications: summary()
+    })
+    ;({ MessageContainer } = await import('~/components/message/Container'))
+    container = dom.window.document.getElementById('root')!
+    root = createRoot(container)
+  })
+  afterEach(async () => {
+    await act(async () => root?.unmount())
+    root = undefined
+    dom.window.close()
+    vi.unstubAllGlobals()
+  })
+  const render = async () => {
+    await act(async () =>
       root!.render(
         <MessageContainer
-          initialMessages={props.initialMessages ?? [unreadMessage]}
-          total={props.total ?? 1}
+          initialMessages={[
+            { ...page(90).messages[0], content: '未经当前身份确认的旧正文' }
+          ]}
         />
       )
-    })
-
-    return { container: container! }
+    )
+  }
+  const click = async (text: string) => {
+    const button = [...container.querySelectorAll('button')].find(
+      (candidate) => candidate.textContent === text
+    )
+    expect(button, text).toBeDefined()
+    await act(async () => button!.click())
   }
 
-  afterEach(async () => {
-    await act(async () => {
-      root?.unmount()
-    })
-    root = undefined
-    dom?.window.close()
-    dom = undefined
-    vi.unstubAllGlobals()
-    vi.resetModules()
-    fetchMock.kunFetchDelete.mockReset()
-    fetchMock.kunFetchGet.mockReset()
-  })
-
-  it('keeps the initial notification page visible while the background refresh is pending', async () => {
-    fetchMock.kunFetchGet.mockReturnValue(new Promise(() => {}))
-
-    const { container } = await renderContainer()
-
-    await act(async () => {
-      await Promise.resolve()
-    })
-
-    expect(fetchMock.kunFetchGet).toHaveBeenCalledWith('/message/all', {
-      page: 1,
-      limit: 30
-    })
-    expect(container!.textContent).toContain('新消息')
-    expect(container!.textContent).not.toContain('已阅读')
-    expect(container!.textContent).not.toContain('正在获取消息数据...')
-  })
-
-  it('refreshes the first notification page in the background after hydration', async () => {
-    fetchMock.kunFetchGet.mockResolvedValue({
-      messages: [messageWithContent(2, 'fresh notification')],
-      total: 1
-    })
-
-    const { container } = await renderContainer({
-      initialMessages: [messageWithContent(1, 'cached notification')]
-    })
-
-    await act(async () => {
-      await Promise.resolve()
-    })
-
-    expect(fetchMock.kunFetchGet).toHaveBeenCalledWith('/message/all', {
-      page: 1,
-      limit: 30
-    })
-    expect(container.textContent).toContain('fresh notification')
-    expect(container.textContent).not.toContain('cached notification')
-  })
-
-  it('ignores stale page responses so an older notification request cannot overwrite the current page', async () => {
-    let resolvePageTwo:
-      | ((response: { messages: Message[]; total: number }) => void)
-      | undefined
-
-    fetchMock.kunFetchGet.mockImplementation(
-      (_url: string, query?: { page?: number }) => {
-        if (query?.page === 2) {
-          return new Promise((resolve) => {
-            resolvePageTwo = resolve
-          })
-        }
-
-        if (query?.page === 3) {
-          return Promise.resolve({
-            messages: [messageWithContent(3, 'page three notification')],
-            total: 91
-          })
-        }
-
-        return Promise.resolve({
-          messages: [messageWithContent(1, 'fallback notification')],
-          total: 91
-        })
-      }
+  it('loads only thirty of ninety without confirming or trusting old server content', async () => {
+    await render()
+    expect(mocks.get).toHaveBeenCalledExactlyOnceWith(
+      '/message/all',
+      { state: 'unread', page: 1, limit: 30 },
+      expect.objectContaining({ preserveErrorStatus: true })
     )
+    expect(container.querySelectorAll('article')).toHaveLength(30)
+    expect(container.textContent).toContain('全部分类 · 90')
+    expect(container.textContent).not.toContain('未经当前身份确认的旧正文')
+    expect(mocks.confirm).not.toHaveBeenCalled()
+  })
 
-    const { container } = await renderContainer({
-      initialMessages: [messageWithContent(1, 'initial notification')],
-      total: 91
-    })
+  it('shares the first pending list request through StrictMode effect replay', async () => {
+    const pending = deferred<NotificationList>()
+    mocks.get.mockReturnValue(pending.promise)
+    await act(async () =>
+      root!.render(
+        <StrictMode>
+          <MessageContainer />
+        </StrictMode>
+      )
+    )
+    expect(mocks.get).toHaveBeenCalledTimes(1)
+    await act(async () => pending.resolve(page(90)))
+    expect(container.querySelectorAll('article')).toHaveLength(30)
+  })
 
+  it('changes filters through browser history without a server navigation', async () => {
+    await render()
+    const history = vi.spyOn(dom.window.history, 'pushState')
+    await click('求助动态 · 0')
+    expect(history).toHaveBeenCalledWith(
+      null,
+      '',
+      '/message/notice?state=unread&category=help'
+    )
+    expect(mocks.replace).not.toHaveBeenCalled()
+  })
+
+  it('starts a fresh unread view on an explicit filter change while history restoration reuses the previous view', async () => {
+    await render()
+    await click('求助动态 · 0')
+    mocks.params = 'state=unread&category=help'
+    await render()
+    expect(mocks.get).toHaveBeenCalledTimes(2)
+    mocks.params = 'state=unread'
+    await render()
+    expect(mocks.get).toHaveBeenCalledTimes(2)
+    await click('求助动态 · 0')
+    mocks.params = 'state=unread&category=help'
+    await render()
+    expect(mocks.get).toHaveBeenCalledTimes(3)
+  })
+
+  it('keeps the displayed cards through subscription and summary changes', async () => {
+    await render()
+    const card = container.querySelector('article')
+    const { usePreferenceStore } = await import('~/store/preferenceStore')
     await act(async () => {
-      container
-        .querySelector<HTMLButtonElement>('[data-testid="next-page"]')
-        ?.click()
-      await Promise.resolve()
+      usePreferenceStore.setState({ observedVersion: 12 })
+      useMessageStore.setState({ notifications: summary(84, '91') })
     })
+    expect(container.querySelector('article')).toBe(card)
+    expect(mocks.get).toHaveBeenCalledTimes(1)
+  })
 
-    await act(async () => {
-      container
-        .querySelector<HTMLButtonElement>('[data-testid="next-page"]')
-        ?.click()
-      await Promise.resolve()
-    })
-
-    expect(container.textContent).toContain('page three notification')
-
-    await act(async () => {
-      resolvePageTwo?.({
-        messages: [messageWithContent(2, 'stale page two notification')],
-        total: 91
+  it.each(['follow', 'mention', 'system'])(
+    'normalizes the legacy %s entry and switches across all five categories without a hidden type',
+    async (entry) => {
+      mocks.pathname = '/message/' + entry
+      mocks.params = ''
+      const LegacyPage = (
+        await import('../../app/(site)/message/' + entry + '/page')
+      ).default
+      await act(async () => root!.render(<LegacyPage />))
+      const initialCategory = entry === 'system' ? 'account' : 'interaction'
+      expect(mocks.get.mock.calls.at(-1)?.[1]).toEqual({
+        state: 'unread',
+        category: initialCategory,
+        page: 1,
+        limit: 30
       })
-      await Promise.resolve()
-    })
+      const { NOTIFICATION_CATEGORY_LABELS } = await import(
+        '~/constants/notification'
+      )
+      for (const category of NOTIFICATION_CATEGORIES) {
+        const label = NOTIFICATION_CATEGORY_LABELS[category]
+        const button = [...container.querySelectorAll('button')].find(
+          (candidate) => candidate.textContent?.startsWith(label + ' ·')
+        )!
+        await act(async () => button.click())
+        const href = dom.window.location.pathname + dom.window.location.search
+        expect(href).toBe('/message/notice?state=unread&category=' + category)
+        const next = new URL(href, 'https://example.test')
+        mocks.pathname = next.pathname
+        mocks.params = next.search.slice(1)
+        await act(async () => root!.render(<LegacyPage />))
+        expect(mocks.get).toHaveBeenCalledWith(
+          '/message/all',
+          { state: 'unread', category, page: 1, limit: 30 },
+          expect.any(Object)
+        )
+        expect(
+          [...container.querySelectorAll('button')]
+            .find((candidate) =>
+              candidate.textContent?.startsWith(label + ' ·')
+            )
+            ?.getAttribute('aria-pressed')
+        ).toBe('true')
+      }
+      await click('全部分类 · 90')
+      expect(dom.window.location.pathname + dom.window.location.search).toBe(
+        '/message/notice?state=unread'
+      )
+    }
+  )
 
-    expect(container.textContent).toContain('page three notification')
-    expect(container.textContent).not.toContain('stale page two notification')
+  it.each(['checking', 'unavailable'] as const)(
+    'restores the third unread page and scroll without fetching after same-identity %s recovery',
+    async (status) => {
+      mocks.get
+        .mockResolvedValueOnce(page(90))
+        .mockResolvedValueOnce(page(60))
+        .mockResolvedValueOnce(page(30))
+      await render()
+      await click('下一页')
+      await click('下一页')
+      Object.defineProperty(dom.window, 'scrollY', {
+        value: 780,
+        configurable: true
+      })
+      dom.window.dispatchEvent(new dom.window.Event('scroll'))
+      await act(async () => useUserStore.getState().setSessionStatus(status))
+      expect(container.querySelectorAll('article')).toHaveLength(0)
+      Object.defineProperty(dom.window, 'scrollY', {
+        value: 0,
+        configurable: true
+      })
+      await act(async () =>
+        useUserStore.getState().setSessionStatus('authenticated')
+      )
+      expect(container.textContent).toContain('第 3 页')
+      expect(container.querySelector('article')?.getAttribute('data-id')).toBe(
+        '30'
+      )
+      expect(mocks.scroll).toHaveBeenLastCalledWith(0, 780)
+      expect(mocks.get).toHaveBeenCalledTimes(3)
+    }
+  )
+
+  it('preserves the last displayed scroll when navigation collapses the page before unmount', async () => {
+    await render()
+    Object.defineProperty(dom.window, 'scrollY', {
+      value: 780,
+      configurable: true
+    })
+    dom.window.dispatchEvent(new dom.window.Event('scroll'))
+    Object.defineProperty(dom.window, 'scrollY', {
+      value: 0,
+      configurable: true
+    })
+    dom.window.history.pushState({}, '', '/help/1')
+    dom.window.dispatchEvent(new dom.window.Event('scroll'))
+    await act(async () => root!.render(null))
+    dom.window.history.pushState({}, '', '/message/notice')
+    mocks.scroll.mockClear()
+    await render()
+    expect(mocks.scroll).toHaveBeenLastCalledWith(0, 780)
+    expect(mocks.get).toHaveBeenCalledTimes(1)
   })
 
-  it('keeps the current notification page when a page fetch is rate limited', async () => {
-    const toast = (await import('react-hot-toast')).default
-    vi.mocked(toast.error).mockClear()
-    fetchMock.kunFetchGet.mockResolvedValueOnce({
-      messages: [messageWithContent(1, 'initial notification')],
-      total: 91
+  it('waits for displayed session content before restoring and saving a cached position', async () => {
+    await render()
+    Object.defineProperty(dom.window, 'scrollY', {
+      value: 780,
+      configurable: true
     })
-    fetchMock.kunFetchGet.mockResolvedValueOnce(
-      '通知读取过于频繁, 请 30 秒后重试'
-    )
-
-    const { container } = await renderContainer({
-      initialMessages: [messageWithContent(1, 'initial notification')],
-      total: 91
+    dom.window.dispatchEvent(new dom.window.Event('scroll'))
+    await act(async () => root!.render(null))
+    mocks.contentReady = false
+    Object.defineProperty(dom.window, 'scrollY', {
+      value: 0,
+      configurable: true
     })
+    mocks.scroll.mockClear()
+    await render()
+    expect(mocks.scroll).not.toHaveBeenCalled()
+    dom.window.dispatchEvent(new dom.window.Event('scroll'))
+    mocks.contentReady = true
+    await render()
+    expect(mocks.scroll).toHaveBeenLastCalledWith(0, 780)
+    expect(mocks.get).toHaveBeenCalledTimes(1)
+  })
 
+  it.each(['hidden', 'blur', 'next', 'reload'])(
+    'drops queued confirmations when %s happens before dispatch',
+    async (change) => {
+      await render()
+      await click('看见 90')
+      if (change === 'hidden') {
+        vi.spyOn(dom.window.document, 'visibilityState', 'get').mockReturnValue(
+          'hidden'
+        )
+        await act(async () =>
+          dom.window.document.dispatchEvent(
+            new dom.window.Event('visibilitychange')
+          )
+        )
+        vi.spyOn(dom.window.document, 'visibilityState', 'get').mockReturnValue(
+          'visible'
+        )
+      } else if (change === 'blur') {
+        await act(async () => {
+          dom.window.dispatchEvent(new dom.window.Event('blur'))
+          dom.window.dispatchEvent(new dom.window.Event('focus'))
+        })
+      } else if (change === 'next') await click('下一页')
+      else await click('重新加载')
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 120))
+      })
+      expect(mocks.confirm).not.toHaveBeenCalled()
+    }
+  )
+
+  it('drops a queued card that becomes occluded before the request starts', async () => {
+    await render()
+    await click('看见 90')
+    mocks.eligible = false
     await act(async () => {
-      container
-        .querySelector<HTMLButtonElement>('[data-testid="next-page"]')
-        ?.click()
-      await Promise.resolve()
+      await new Promise((resolve) => setTimeout(resolve, 120))
     })
+    expect(mocks.confirm).not.toHaveBeenCalled()
+  })
 
-    expect(fetchMock.kunFetchGet).toHaveBeenCalledWith('/message/all', {
+  it('allows an issued request to finish without adding old errors to a reloaded page', async () => {
+    const pending = deferred<{ id: number; outcome: string }[]>()
+    mocks.confirm.mockReturnValueOnce(pending.promise)
+    await render()
+    await click('看见 90')
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 120))
+    })
+    expect(mocks.confirm).toHaveBeenCalledTimes(1)
+    await click('重新加载')
+    await act(async () => pending.resolve([{ id: 90, outcome: 'changed' }]))
+    expect(container.textContent).not.toContain('已有新动态')
+    expect(container.textContent).not.toContain('刚刚已读')
+  })
+
+  it.each(['list', 'clear'])(
+    'recovers an explicit 401 from %s through the unified session refresh',
+    async (operation) => {
+      const { KunFetchError } = await import('~/utils/kunFetch')
+      const failure = new KunFetchError('synthetic auth failure', 'http', 401)
+      if (operation === 'list') mocks.get.mockRejectedValueOnce(failure)
+      else {
+        mocks.params = 'state=read'
+        mocks.remove.mockRejectedValueOnce(failure)
+      }
+      await render()
+      if (operation === 'clear') {
+        await click('清理当前分类已读')
+        await click('确认清理')
+      }
+      expect(mocks.refresh).toHaveBeenCalledTimes(1)
+    }
+  )
+
+  it('recovers a changed cookie session and keeps the old list request bound to its displayed identity', async () => {
+    const { KunFetchError } = await import('~/utils/kunFetch')
+    mocks.get.mockRejectedValueOnce(
+      new KunFetchError(
+        'session changed',
+        'http',
+        409,
+        null,
+        'NOTIFICATION_CONTEXT_CHANGED'
+      )
+    )
+    await render()
+    expect(mocks.get.mock.calls[0][2].headers).toEqual({
+      'X-Kun-Notification-Session': 'ctx-a'
+    })
+    expect(mocks.refresh).toHaveBeenCalledOnce()
+    expect(container.querySelectorAll('article')).toHaveLength(0)
+  })
+
+  it('chooses the unread entry after authentication resolves and retains that view as counts drop', async () => {
+    mocks.params = ''
+    useUserStore.setState({ sessionStatus: 'checking', sessionContext: null })
+    useMessageStore.setState({
+      hasUnreadNotification: false,
+      notifications: null
+    })
+    await render()
+    expect(mocks.get).not.toHaveBeenCalled()
+    await act(async () => {
+      useUserStore.setState({
+        sessionStatus: 'authenticated',
+        sessionContext: 'ctx-a'
+      })
+      useMessageStore.setState({
+        hasUnreadNotification: true,
+        notifications: summary()
+      })
+    })
+    expect(mocks.get.mock.calls[0][1].state).toBe('unread')
+    await act(async () =>
+      useMessageStore.setState({
+        hasUnreadNotification: false,
+        notifications: summary(0)
+      })
+    )
+    expect(mocks.get).toHaveBeenCalledTimes(1)
+    expect(container.textContent).toContain('第 1 页')
+  })
+
+  it('honors an explicit all view after authentication resolves with unread notifications', async () => {
+    mocks.params = 'state=all'
+    useUserStore.setState({ sessionStatus: 'checking', sessionContext: null })
+    useMessageStore.setState({
+      hasUnreadNotification: false,
+      notifications: null
+    })
+    await render()
+    await act(async () => {
+      useUserStore.setState({
+        sessionStatus: 'authenticated',
+        sessionContext: 'ctx-a'
+      })
+      useMessageStore.setState({
+        hasUnreadNotification: true,
+        notifications: summary()
+      })
+    })
+    expect(mocks.get.mock.calls[0][1].state).toBe('all')
+  })
+
+  it('confirms only six seen versions and leaves the cards in place', async () => {
+    await render()
+    for (let id = 90; id >= 85; id--) await click('看见 ' + id)
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 120))
+    })
+    expect(mocks.confirm).toHaveBeenCalledExactlyOnceWith(
+      { uid: 7, context: 'ctx-a', generation: 1 },
+      Array.from({ length: 6 }, (_, index) => ({
+        id: 90 - index,
+        version: '1'
+      }))
+    )
+    expect(container.querySelectorAll('article')).toHaveLength(30)
+    expect(container.textContent?.match(/刚刚已读/g)).toHaveLength(6)
+    expect(mocks.get).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps a fixed upper bound over three shrinking unread pages and restores cached positions', async () => {
+    mocks.get
+      .mockResolvedValueOnce(page(90))
+      .mockResolvedValueOnce(page(60))
+      .mockResolvedValueOnce(page(30))
+    await render()
+    for (let id = 90; id > 60; id--) await click('看见 ' + id)
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 120))
+    })
+    await click('下一页')
+    await click('下一页')
+    expect(mocks.get.mock.calls.map((call) => call[1])).toEqual([
+      { state: 'unread', page: 1, limit: 30 },
+      { state: 'unread', page: 2, limit: 30, upperId: 90, cursor: 61 },
+      { state: 'unread', page: 3, limit: 30, upperId: 90, cursor: 31 }
+    ])
+    expect(
+      [...container.querySelectorAll('article')].map((element) =>
+        Number(element.getAttribute('data-id'))
+      )
+    ).toEqual(Array.from({ length: 30 }, (_, index) => 30 - index))
+    await click('上一页')
+    await click('上一页')
+    expect(container.textContent).toContain('第 1 页')
+    expect(container.textContent?.match(/刚刚已读/g)).toHaveLength(30)
+    expect(mocks.get).toHaveBeenCalledTimes(3)
+  })
+
+  it('announces a newer content sequence without replacing or rebasing displayed content', async () => {
+    await render()
+    await act(async () =>
+      useMessageStore.setState({ notifications: summary(90, '91') })
+    )
+    expect(container.textContent).toContain('有新通知／有新动态，点击查看')
+    expect(mocks.get).toHaveBeenCalledTimes(1)
+    await act(async () =>
+      useMessageStore.setState({ notifications: summary(84, '90') })
+    )
+    expect(container.textContent).not.toContain('有新通知／有新动态，点击查看')
+    expect(container.querySelectorAll('article')).toHaveLength(30)
+  })
+
+  it('applies explicit filters independently and cancels clearing without a write', async () => {
+    mocks.params = 'state=read&category=help'
+    await render()
+    expect(mocks.get.mock.calls[0][1]).toMatchObject({
+      state: 'read',
+      category: 'help'
+    })
+    await click('互动消息 · 0')
+    expect(dom.window.location.pathname + dom.window.location.search).toBe(
+      '/message/notice?state=read&category=interaction'
+    )
+    await click('清理当前分类已读')
+    expect(container.querySelector('[role="dialog"]')).not.toBeNull()
+    await click('取消')
+    expect(container.querySelector('[role="dialog"]')).toBeNull()
+    expect(mocks.remove).not.toHaveBeenCalled()
+  })
+
+  it('ignores an old identity response while the new identity loads its own content', async () => {
+    const pending = deferred<NotificationList>()
+    mocks.get.mockReturnValueOnce(pending.promise).mockResolvedValueOnce({
+      ...page(60),
+      messages: [{ ...page(60).messages[0], content: '新账号正文' }]
+    })
+    await render()
+    await act(async () =>
+      useUserStore.setState({
+        user: { ...useUserStore.getState().user, uid: 8 },
+        sessionContext: 'ctx-b',
+        sessionGeneration: 2
+      })
+    )
+    await act(async () =>
+      pending.resolve({
+        ...page(90),
+        messages: [{ ...page(90).messages[0], content: '旧账号迟到正文' }]
+      })
+    )
+    expect(container.textContent).toContain('新账号正文')
+    expect(container.textContent).not.toContain('旧账号迟到正文')
+    expect(mocks.confirm).not.toHaveBeenCalled()
+  })
+
+  it('distinguishes a failed page from an empty unread collection and retries the attempted page', async () => {
+    mocks.get
+      .mockResolvedValueOnce(page(90))
+      .mockRejectedValueOnce(new Error('synthetic offline'))
+      .mockResolvedValueOnce(page(60))
+    await render()
+    await click('下一页')
+    expect(container.querySelector('[role="alert"]')).not.toBeNull()
+    expect(container.textContent).not.toContain('没有未读通知')
+    expect(container.querySelectorAll('article')).toHaveLength(30)
+    await click('重试')
+    expect(mocks.get.mock.calls[2][1]).toMatchObject({
       page: 2,
-      limit: 30
+      cursor: 61,
+      upperId: 90
     })
-    expect(toast.error).toHaveBeenCalledWith('通知读取过于频繁, 请 30 秒后重试')
-    expect(container.textContent).toContain('initial notification')
-  })
-
-  it('keeps the list and dialog open when clearing read notifications is rate limited', async () => {
-    const toast = (await import('react-hot-toast')).default
-    vi.mocked(toast.error).mockClear()
-    fetchMock.kunFetchGet.mockResolvedValue({
-      messages: [messageWithContent(1, 'read notification')],
-      total: 1
-    })
-    fetchMock.kunFetchDelete.mockResolvedValueOnce(
-      '通知操作过于频繁, 请 30 秒后重试'
+    expect(container.querySelector('[role="alert"]')).toBeNull()
+    expect(container.querySelector('article')?.getAttribute('data-id')).toBe(
+      '60'
     )
-
-    const { container } = await renderContainer({
-      initialMessages: [messageWithContent(1, 'read notification')],
-      total: 1
-    })
-
-    await act(async () => {
-      await Promise.resolve()
-    })
-    fetchMock.kunFetchGet.mockClear()
-
-    const clearButton = Array.from(
-      container.querySelectorAll<HTMLButtonElement>('button')
-    ).find((button) => button.textContent === '清理已读信息')
-
-    await act(async () => {
-      clearButton?.click()
-      await Promise.resolve()
-    })
-
-    const confirmButton = Array.from(
-      container.querySelectorAll<HTMLButtonElement>('button')
-    ).find((button) => button.textContent === '确认清理')
-
-    await act(async () => {
-      confirmButton?.click()
-      await Promise.resolve()
-    })
-
-    expect(fetchMock.kunFetchDelete).toHaveBeenCalledWith('/message/read', {
-      type: ''
-    })
-    expect(toast.error).toHaveBeenCalledWith('通知操作过于频繁, 请 30 秒后重试')
-    expect(fetchMock.kunFetchGet).not.toHaveBeenCalled()
-    expect(container.textContent).toContain('确认清理已读信息')
-    expect(container.textContent).toContain('read notification')
-  })
-
-  it('asks for confirmation before clearing read notifications', async () => {
-    fetchMock.kunFetchDelete.mockResolvedValue({})
-    fetchMock.kunFetchGet.mockResolvedValue({
-      messages: [messageWithContent(1, 'read notification')],
-      total: 1
-    })
-
-    const { container } = await renderContainer({
-      initialMessages: [messageWithContent(1, 'read notification')],
-      total: 1
-    })
-
-    const clearButton = Array.from(
-      container.querySelectorAll<HTMLButtonElement>('button')
-    ).find((button) => button.textContent === '清理已读信息')
-    expect(clearButton).not.toBeNull()
-
-    await act(async () => {
-      clearButton?.click()
-      await Promise.resolve()
-    })
-
-    expect(fetchMock.kunFetchDelete).not.toHaveBeenCalled()
-    expect(container.textContent).toContain('确认清理已读信息')
-
-    const confirmButton = Array.from(
-      container.querySelectorAll<HTMLButtonElement>('button')
-    ).find((button) => button.textContent === '确认清理')
-    expect(confirmButton).not.toBeNull()
-
-    await act(async () => {
-      confirmButton?.click()
-      await Promise.resolve()
-      await Promise.resolve()
-    })
-
-    expect(fetchMock.kunFetchDelete).toHaveBeenCalledWith('/message/read', {
-      type: ''
-    })
   })
 })

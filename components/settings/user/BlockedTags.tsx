@@ -148,7 +148,11 @@ export const BlockedTags = () => {
           </>
         )}
         {error && <p role="status">{error}</p>}
-        <PreferenceActions />
+        <PreferenceActions
+          settingKeys={Object.keys(state.drafts).filter((key) =>
+            key.startsWith('blocked-tag:')
+          )}
+        />
       </CardBody>
     </Card>
   )

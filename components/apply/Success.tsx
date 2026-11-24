@@ -1,5 +1,6 @@
 'use client'
 
+import { NotificationTargetReady } from '~/components/message/NotificationTargetReady'
 import { useEffect } from 'react'
 import { Button, Card, CardBody } from '@heroui/react'
 import { motion } from 'framer-motion'
@@ -23,6 +24,7 @@ export const ApplySuccess = () => {
     >
       <Card className="mx-auto max-w-96">
         <CardBody className="flex flex-col items-center gap-6 py-8">
+          <NotificationTargetReady path="/apply/success" />
           <motion.div
             initial={{ scale: 0 }}
             animate={{ scale: 1 }}

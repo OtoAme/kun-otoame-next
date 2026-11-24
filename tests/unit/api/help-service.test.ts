@@ -78,6 +78,10 @@ vi.mock('~/prisma/index', () => {
           state.deletePostId = 0
           return state.resources.has(id) ? [{ id }] : []
         }
+        if (Array.isArray(id))
+          return id
+            .filter((uid) => state.users.has(uid))
+            .map((uid) => ({ id: uid }))
         const user = state.users.get(id)
         return user ? [{ id, register_time: user.register_time }] : []
       }
@@ -175,15 +179,55 @@ vi.mock('~/prisma/index', () => {
         return { count: 1 }
       })
     },
+    $executeRaw: vi.fn(async () => 1),
+    notification_subscription: { findMany: vi.fn(async () => []) },
     user_message: {
-      findFirst: vi.fn(async ({ where }: any) => {
-        const hits = state.messages.filter(
-          (m: any) =>
-            m.recipient_id === where.recipient_id &&
-            (m.status ?? 0) === where.status &&
-            m.type === where.type &&
-            m.link === where.link
+      create: vi.fn(async ({ data }: any) => {
+        const row = {
+          id: state.messages.length + 1,
+          status: 0,
+          content_version: 1n,
+          aggregate_count: 1,
+          sender_id: null,
+          recipient_id: null,
+          ...data
+        }
+        state.messages.push(row)
+        return row
+      }),
+      createManyAndReturn: vi.fn(async ({ data }: any) =>
+        data.map((input: any) => {
+          const row = {
+            id: state.messages.length + 1,
+            status: 0,
+            content_version: 1n,
+            aggregate_count: 1,
+            sender_id: null,
+            recipient_id: null,
+            ...input
+          }
+          state.messages.push(row)
+          return row
+        })
+      ),
+      updateMany: vi.fn(async ({ where, data }: any) => {
+        const row: any = state.messages.find((message) =>
+          matches(message, where)
         )
+        if (!row) return { count: 0 }
+        for (const [key, value] of Object.entries(data)) {
+          row[key] =
+            value && typeof value === 'object' && 'increment' in value
+              ? row[key] +
+                (typeof row[key] === 'bigint'
+                  ? BigInt(value.increment as number)
+                  : value.increment)
+              : value
+        }
+        return { count: 1 }
+      }),
+      findFirst: vi.fn(async ({ where }: any) => {
+        const hits = state.messages.filter((message) => matches(message, where))
         return (hits[hits.length - 1] as any) ?? null
       }),
       update: vi.fn(async ({ where, data }: any) => {
@@ -274,12 +318,6 @@ vi.mock('~/app/api/moemoepoint/service', () => {
     )
   }
 })
-
-vi.mock('~/app/api/utils/message', () => ({
-  createMessage: vi.fn(async (data: Record<string, unknown>) => {
-    state.messages.push({ id: state.messages.length + 1, status: 0, ...data })
-  })
-}))
 
 import {
   acceptHelpAnswer,

@@ -24,7 +24,8 @@ import {
   refundMoemoepoint,
   spendMoemoepoint
 } from '~/app/api/moemoepoint/service'
-import { createMessage } from '~/app/api/utils/message'
+import { createMessage, createNotificationBatch } from '~/app/api/utils/message'
+import type { CreateMessageType } from '~/types/api/message'
 import { normalizeShoutboxContent } from '~/utils/shoutboxContent'
 import type {
   ShoutboxBannerResponse,
@@ -1346,27 +1347,22 @@ const notifyShoutboxAdmins = async (
   }
   if (!Array.isArray(admins)) return
 
-  const results = await Promise.allSettled(
-    admins.map((admin) =>
-      Promise.resolve().then(() =>
-        createMessage(
-          {
-            type: 'system',
-            content: `用户举报了小喇叭 #${shoutboxId}，请前往后台处理。`,
-            sender_id: reporterId,
-            recipient_id: admin.id,
-            link: adminShoutboxLink(shoutboxId)
-          },
-          db
-        )
-      )
+  try {
+    await createNotificationBatch(
+      admins.map((admin) => ({
+        event_type: 'case-update',
+        type: 'system',
+        content: `用户举报了小喇叭 #${shoutboxId}，请前往后台处理。`,
+        sender_id: reporterId,
+        recipient_id: admin.id,
+        link: adminShoutboxLink(shoutboxId)
+      })),
+      db
     )
-  )
-  const failed = results.filter((result) => result.status === 'rejected')
-  if (failed.length) {
-    console.error('[Shoutbox] Failed to send some report notices:', {
+  } catch (error) {
+    console.error('[Shoutbox] Failed to send report notices:', {
       shoutboxId,
-      failed: failed.length
+      error
     })
   }
 }
@@ -1482,7 +1478,14 @@ export const createShoutboxReport = async (
       })
       if (hidden.count === 1) {
         const notice = createShoutboxAuthorNotice('hide', row.id)
-        await createMessage({ ...notice, recipient_id: row.user_id }, tx)
+        await createMessage(
+          {
+            event_type: 'moderation',
+            ...notice,
+            recipient_id: row.user_id
+          },
+          tx
+        )
         return { hidden: true }
       }
     }
@@ -1517,6 +1520,7 @@ export const temporarilyHideShoutboxForCase = async (
   if (hidden.count !== 1) return false
   await createMessage(
     {
+      event_type: 'moderation',
       ...createShoutboxAuthorNotice('hide', shoutboxId),
       recipient_id: row.user_id
     },
@@ -1549,7 +1553,9 @@ export const removeShoutboxForCase = async (
   })
   await createMessage(
     {
+      event_type: 'moderation',
       ...createShoutboxAuthorNotice('remove', shoutboxId),
+      actor_id: adminId,
       recipient_id: row.user_id
     },
     tx
@@ -1598,7 +1604,9 @@ export const restoreShoutboxForCase = async (
   })
   await createMessage(
     {
+      event_type: 'moderation',
       ...createShoutboxAuthorNotice('restore', shoutboxId),
+      actor_id: adminId,
       recipient_id: row.user_id
     },
     tx
@@ -1649,33 +1657,33 @@ export const moderateShoutbox = async (
         }
       })
       const reporterIds = new Set<number>()
+      const notices: CreateMessageType[] = []
       for (const report of reports) {
         if (reporterIds.has(report.sender_id)) continue
         reporterIds.add(report.sender_id)
-        await createMessage(
-          {
-            ...createShoutboxReporterNotice(
-              decision === 'accept',
-              report.reason ?? '',
-              reply,
-              row.id
-            ),
-            recipient_id: report.sender_id
-          },
-          tx
-        )
+        notices.push({
+          event_type: 'report-result',
+          ...createShoutboxReporterNotice(
+            decision === 'accept',
+            report.reason ?? '',
+            reply,
+            row.id
+          ),
+          recipient_id: report.sender_id,
+          actor_id: adminId
+        })
       }
       if (!row.official && !reporterIds.has(row.user_id)) {
-        await createMessage(
-          {
-            type: 'report',
-            content: `您的小喇叭举报已完成复核，结论为${decision === 'accept' ? '受理' : '驳回'}。`,
-            recipient_id: row.user_id,
-            link: shoutboxLink(row.id)
-          },
-          tx
-        )
+        notices.push({
+          event_type: 'moderation',
+          type: 'report',
+          content: `您的小喇叭举报已完成复核，结论为${decision === 'accept' ? '受理' : '驳回'}。`,
+          recipient_id: row.user_id,
+          link: shoutboxLink(row.id),
+          actor_id: adminId
+        })
       }
+      await createNotificationBatch(notices, tx)
       await tx.admin_log.create({
         data: {
           type: 'shoutbox_moderate',
@@ -1753,35 +1761,37 @@ export const moderateShoutbox = async (
         }
       })
       const reporterIds = new Set<number>()
+      const notices: CreateMessageType[] = []
       for (const report of reports) {
         if (reporterIds.has(report.sender_id)) continue
         reporterIds.add(report.sender_id)
-        await createMessage(
-          {
-            ...createShoutboxReporterNotice(
-              input.action === 'remove',
-              report.reason ?? '',
-              reply,
-              row.id
-            ),
-            recipient_id: report.sender_id
-          },
-          tx
-        )
+        notices.push({
+          event_type: 'report-result',
+          ...createShoutboxReporterNotice(
+            input.action === 'remove',
+            report.reason ?? '',
+            reply,
+            row.id
+          ),
+          recipient_id: report.sender_id,
+          actor_id: adminId
+        })
       }
       if (!reporterIds.has(row.user_id)) {
-        await createMessage(
-          {
-            ...createShoutboxAuthorNotice(input.action, row.id),
-            recipient_id: row.user_id
-          },
-          tx
-        )
+        notices.push({
+          event_type: 'moderation',
+          ...createShoutboxAuthorNotice(input.action, row.id),
+          recipient_id: row.user_id,
+          actor_id: adminId
+        })
       }
+      await createNotificationBatch(notices, tx)
     } else {
       await createMessage(
         {
+          event_type: 'moderation',
           ...createShoutboxAuthorNotice('hide', row.id),
+          actor_id: adminId,
           recipient_id: row.user_id
         },
         tx

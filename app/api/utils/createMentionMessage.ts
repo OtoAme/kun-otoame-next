@@ -1,6 +1,7 @@
 import { prisma } from '~/prisma/index'
 import { markdownToText } from '~/utils/markdownToText'
 import type { CreateMessageType } from '~/types/api/message'
+import { createNotificationBatch } from './message'
 
 export const MAX_MENTION_NOTIFICATIONS_PER_COMMENT = 20
 
@@ -62,6 +63,7 @@ export const createMentionMessage = async (
   const mentionText = markdownToText(text).slice(0, 50)
   const mentionMessageData: CreateMessageType[] = mentionedUserIds.map(
     (mentionUid) => ({
+      event_type: 'mention',
       type: 'mention',
       content: `${senderUsername} 在「${patchName}」的评论区提到了您\n${mentionText}`,
       sender_id: senderUid,
@@ -70,7 +72,5 @@ export const createMentionMessage = async (
     })
   )
 
-  await prisma.user_message.createMany({
-    data: mentionMessageData
-  })
+  await createNotificationBatch(mentionMessageData)
 }

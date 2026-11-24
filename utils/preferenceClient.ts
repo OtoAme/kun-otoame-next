@@ -12,6 +12,9 @@ import type {
   PreferenceSnapshot,
   PreferenceValue
 } from '~/types/api/preferences'
+import { NOTIFICATION_PREFERENCE_SCHEMA } from '~/constants/notification'
+
+const preferenceEndpoint = `/user/preferences?schema=${NOTIFICATION_PREFERENCE_SCHEMA}`
 
 const identity = () => {
   const state = useUserStore.getState()
@@ -128,8 +131,8 @@ export const refreshPreferences = (
   usePreferenceStore.setState({ status: 'loading', error: null })
   const sequence = ++readSequence
   const promise = kunFetchGet<PreferenceSnapshot>(
-    '/user/preferences' +
-      (keys.length ? '?' + keys.map((id) => `tagId=${id}`).join('&') : '')
+    preferenceEndpoint +
+      (keys.length ? '&' + keys.map((id) => `tagId=${id}`).join('&') : '')
   )
     .then((snapshot) => {
       if (accept(snapshot, expected)) {
@@ -269,7 +272,7 @@ export const savePreferenceDrafts = async (keys?: string[]) => {
   usePreferenceStore.setState({ saving: true, error: null })
   try {
     const snapshot = await kunFetchPatch<PreferenceSnapshot>(
-      '/user/preferences',
+      preferenceEndpoint,
       {
         uid: drafts[0].uid,
         context: drafts[0].context,

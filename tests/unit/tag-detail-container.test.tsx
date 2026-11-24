@@ -1,3 +1,4 @@
+import { NOTIFICATION_SUBSCRIPTIONS } from '~/constants/notification'
 import React, { act } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { JSDOM } from 'jsdom'
@@ -309,6 +310,12 @@ describe('TagDetailContainer', () => {
       nsfwSelected: true,
       blockedTagIds: [] as number[],
       items: {
+        ...Object.fromEntries(
+          NOTIFICATION_SUBSCRIPTIONS.map((key) => [
+            key,
+            { value: true, version: 0 }
+          ])
+        ),
         nsfw: { value: 'sfw', version: 0 },
         'email-notice': { value: false, version: 0 },
         'blocked-tag:15': { value: false, version: 0 }
@@ -326,6 +333,12 @@ describe('TagDetailContainer', () => {
       version: 1,
       blockedTagIds: [15],
       items: {
+        ...Object.fromEntries(
+          NOTIFICATION_SUBSCRIPTIONS.map((key) => [
+            key,
+            { value: true, version: 0 }
+          ])
+        ),
         ...snapshot.items,
         'blocked-tag:15': { value: true, version: 1 }
       }
@@ -338,11 +351,14 @@ describe('TagDetailContainer', () => {
       (element) => element.textContent?.includes('屏蔽该标签')
     )!
     await act(async () => button.click())
-    expect(fetchMock.kunFetchPatch).toHaveBeenCalledWith('/user/preferences', {
-      uid: 9,
-      context: 'a'.repeat(64),
-      changes: [{ key: 'blocked-tag:15', value: true, version: 0 }]
-    })
+    expect(fetchMock.kunFetchPatch).toHaveBeenCalledWith(
+      '/user/preferences?schema=notifications-v1',
+      {
+        uid: 9,
+        context: 'a'.repeat(64),
+        changes: [{ key: 'blocked-tag:15', value: true, version: 0 }]
+      }
+    )
     expect(container.textContent).toContain('取消屏蔽')
     expect(usePreferenceStore.getState().drafts.nsfw.value).toBe('all')
     expect(fetchMock.kunFetchPost).not.toHaveBeenCalled()

@@ -1,8 +1,13 @@
 import { z } from 'zod'
+import {
+  NOTIFICATION_SUBSCRIPTIONS,
+  isNotificationSubscription
+} from '~/constants/notification'
 
 export const preferenceKeySchema = z.union([
   z.literal('nsfw'),
   z.literal('email-notice'),
+  z.string().refine(isNotificationSubscription),
   z.string().regex(/^blocked-tag:[1-9]\d{0,8}$/)
 ])
 export const preferenceSaveSchema = z
@@ -68,6 +73,9 @@ export const preferenceSnapshotSchema = z
       typeof nsfw.value !== 'string' ||
       !email ||
       typeof email.value !== 'boolean' ||
+      NOTIFICATION_SUBSCRIPTIONS.some(
+        (key) => typeof snapshot.items[key]?.value !== 'boolean'
+      ) ||
       blocked.size !== snapshot.blockedTagIds.length ||
       (!snapshot.nsfwSelected && (nsfw.value !== 'sfw' || nsfw.version !== 0))
     ) {

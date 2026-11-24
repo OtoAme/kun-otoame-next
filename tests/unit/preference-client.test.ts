@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { JSDOM } from 'jsdom'
 import type { PreferenceSnapshot } from '~/types/api/preferences'
+import { NOTIFICATION_SUBSCRIPTIONS } from '~/constants/notification'
 let dom: JSDOM
 const transport = vi.fn()
 const context = 'a'.repeat(64)
@@ -14,6 +15,12 @@ const snapshot = (
   nsfwSelected: version > 0,
   blockedTagIds: [],
   items: {
+    ...Object.fromEntries(
+      NOTIFICATION_SUBSCRIPTIONS.map((key) => [
+        key,
+        { value: true, version: 0 }
+      ])
+    ),
     nsfw: { value: mode, version },
     'email-notice': { value: false, version: 0 }
   }
@@ -125,6 +132,7 @@ describe('account preference client drafts and applied snapshots', () => {
       Response.json({
         ...snapshot(1),
         items: {
+          ...snapshot(1).items,
           nsfw: { value: 'sfw', version: 0 },
           'email-notice': { value: true, version: 1 }
         }
@@ -262,7 +270,9 @@ describe('account preference client drafts and applied snapshots', () => {
       })
     )
     await state.refreshPreferences([19])
-    expect(transport.mock.calls[1][0]).toBe('/api/user/preferences?tagId=19')
+    expect(transport.mock.calls[1][0]).toBe(
+      '/api/user/preferences?schema=notifications-v1&tagId=19'
+    )
     state.editPreference('blocked-tag:19', true)
     expect(
       state.usePreferenceStore.getState().drafts['blocked-tag:19']

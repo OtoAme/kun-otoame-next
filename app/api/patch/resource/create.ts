@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { prisma } from '~/prisma/index'
 import { patchResourceCreateSchema } from '~/validations/patch'
-import { createMessage } from '~/app/api/utils/message'
+import { createMessage, createNotificationBatch } from '~/app/api/utils/message'
 import {
   cleanupUploadedResourceDirs,
   compensateUploadedResources,
@@ -211,6 +211,7 @@ export const createPatchResource = async (
           ? `你的${resourceTypeName}「${currentPatch?.name ?? ''}」已提交审核，审核通过后将自动公开显示。`
           : `你的第一个${resourceTypeName}「${currentPatch?.name ?? ''}」已提交审核，审核通过后将自动公开显示。`
       await createMessage({
+        event_type: 'resource-result',
         type: 'system',
         content: approvalMessage,
         recipient_id: uid,
@@ -226,18 +227,17 @@ export const createPatchResource = async (
       const patchLink = currentPatch?.unique_id
         ? `/${currentPatch.unique_id}`
         : '/'
-      await Promise.all(
-        admins.map((admin) =>
-          createMessage({
-            type: 'system',
-            content: needApproval
-              ? `用户发布${resourceTypeName}「${resource.name}」于「${currentPatch?.name ?? ''}」，请前往审核。`
-              : `用户发布了${resourceTypeName}「${resource.name}」于「${currentPatch?.name ?? ''}」，请留意审查。`,
-            sender_id: uid,
-            recipient_id: admin.id,
-            link: needApproval ? '/admin/resource-apply' : patchLink
-          })
-        )
+      await createNotificationBatch(
+        admins.map((admin) => ({
+          event_type: 'resource-pending',
+          type: 'system',
+          content: needApproval
+            ? `用户发布${resourceTypeName}「${resource.name}」于「${currentPatch?.name ?? ''}」，请前往审核。`
+            : `用户发布了${resourceTypeName}「${resource.name}」于「${currentPatch?.name ?? ''}」，请留意审查。`,
+          sender_id: uid,
+          recipient_id: admin.id,
+          link: needApproval ? '/admin/resource-apply' : patchLink
+        }))
       )
     }
 

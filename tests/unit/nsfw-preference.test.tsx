@@ -1,3 +1,4 @@
+import { NOTIFICATION_SUBSCRIPTIONS } from '~/constants/notification'
 import React, { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { JSDOM } from 'jsdom'
@@ -83,6 +84,12 @@ const snapshot = (version: number, mode: NsfwMode): PreferenceSnapshot => ({
   nsfwSelected: version > 0,
   blockedTagIds: [],
   items: {
+    ...Object.fromEntries(
+      NOTIFICATION_SUBSCRIPTIONS.map((key) => [
+        key,
+        { value: true, version: 0 }
+      ])
+    ),
     nsfw: { value: mode, version },
     'email-notice': { value: false, version: 0 }
   }

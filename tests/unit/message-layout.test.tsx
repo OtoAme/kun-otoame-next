@@ -69,7 +69,7 @@ describe('message layout shell', () => {
 
     expect(markup).toContain('data-testid="message-header"')
     expect(markup).toContain('消息')
-    expect(markup).toContain('第一次访问对应的页面会自动已读所有消息')
+    expect(markup).toContain('通知正文在前台持续可见后，才会确认已读')
     expect(markup).toContain('container mx-auto my-4')
     expect(markup).toContain('flex flex-col my-4 gap-6 lg:flex-row')
     expect(markup).toContain('<nav data-testid="message-nav">nav</nav>')

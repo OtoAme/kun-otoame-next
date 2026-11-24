@@ -4,6 +4,10 @@ import type {
   PreferenceSnapshot,
   PreferenceValue
 } from '~/types/api/preferences'
+import {
+  NOTIFICATION_SUBSCRIPTIONS,
+  isNotificationSubscription
+} from '~/constants/notification'
 
 export type PreferenceTransaction = Prisma.TransactionClient
 export type PreferenceDatabase = PrismaClient | PreferenceTransaction
@@ -15,6 +19,7 @@ type PreferenceRow = {
   blocked_tag_ids: number[]
   preference_version: number
   versions: Record<string, number>
+  subscriptions: Record<string, boolean>
 }
 
 export class PreferenceError extends Error {
@@ -41,10 +46,12 @@ export const readPreferenceSnapshot = async (
       u.preference_version, COALESCE((
         SELECT jsonb_object_agg(v.setting_key, v.version)
         FROM account_preference_version v WHERE v.user_id = u.id
-        AND (v.setting_key IN ('nsfw', 'email-notice')
+        AND (v.setting_key IN ('nsfw', 'email-notice') OR v.setting_key LIKE 'notification:%'
           OR v.setting_key = ANY(${keys}::text[])
           OR v.setting_key = ANY(ARRAY(SELECT 'blocked-tag:' || unnest(u.blocked_tag_ids))))
-      ), '{}'::jsonb) AS versions
+      ), '{}'::jsonb) AS versions,
+      COALESCE((SELECT jsonb_object_agg(s.event_type, s.enabled)
+        FROM notification_subscription s WHERE s.user_id = u.id), '{}'::jsonb) AS subscriptions
     FROM public."user" u WHERE u.id = ${uid}
   `
   const user = rows[0]
@@ -61,6 +68,7 @@ export const readPreferenceSnapshot = async (
   const wanted = new Set([
     'nsfw',
     'email-notice',
+    ...NOTIFICATION_SUBSCRIPTIONS,
     ...keys,
     ...user.blocked_tag_ids.map((tagId) => `blocked-tag:${tagId}`)
   ])
@@ -73,9 +81,11 @@ export const readPreferenceSnapshot = async (
           : 'sfw'
         : key === 'email-notice'
           ? user.enable_email_notice
-          : tagId !== null
-            ? user.blocked_tag_ids.includes(tagId)
-            : undefined
+          : isNotificationSubscription(key)
+            ? (user.subscriptions[key.slice(13)] ?? true)
+            : tagId !== null
+              ? user.blocked_tag_ids.includes(tagId)
+              : undefined
     if (value !== undefined)
       snapshot.items[key] = { value, version: user.versions[key] ?? 0 }
   }
@@ -129,7 +139,20 @@ export const writePreferenceChanges = async (
     if (change.key === 'nsfw') data.nsfw_mode = change.value as string
     else if (change.key === 'email-notice')
       data.enable_email_notice = change.value as boolean
-    else {
+    else if (isNotificationSubscription(change.key)) {
+      const eventType = change.key.slice(13)
+      await transaction.notification_subscription.upsert({
+        where: {
+          user_id_event_type: { user_id: snapshot.uid, event_type: eventType }
+        },
+        create: {
+          user_id: snapshot.uid,
+          event_type: eventType,
+          enabled: change.value as boolean
+        },
+        update: { enabled: change.value as boolean }
+      })
+    } else {
       const tagId = tagIdForKey(change.key)
       if (tagId === null)
         throw new PreferenceError(
