@@ -25,7 +25,8 @@ import {
   TooltipTrigger
 } from '~/components/dashboard/ui/tooltip'
 
-const SIDEBAR_COOKIE_NAME = 'dashboard_sidebar_state'
+import { DASHBOARD_SIDEBAR_COOKIE } from '~/utils/cookies'
+
 const SIDEBAR_COOKIE_MAX_AGE = 60 * 60 * 24 * 7
 const SIDEBAR_WIDTH = '16rem'
 const SIDEBAR_WIDTH_MOBILE = '18rem'
@@ -83,7 +84,7 @@ function SidebarProvider({
       }
 
       // This sets the cookie to keep the sidebar state.
-      document.cookie = `${SIDEBAR_COOKIE_NAME}=${openState}; path=/; max-age=${SIDEBAR_COOKIE_MAX_AGE}`
+      document.cookie = `${DASHBOARD_SIDEBAR_COOKIE}=${openState}; path=/; max-age=${SIDEBAR_COOKIE_MAX_AGE}`
     },
     [setOpenProp, open]
   )

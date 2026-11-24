@@ -1,3 +1,4 @@
+import { TEMP_2FA_COOKIE } from '~/utils/cookies'
 import { z } from 'zod'
 import { cookies } from 'next/headers'
 import {
@@ -73,7 +74,7 @@ export const login = async (
     )
     const cookie = await cookies()
     cookie.set(
-      'kun-galgame-patch-moe-2fa-token',
+      TEMP_2FA_COOKIE,
       tempToken,
       kunCookieOptions(10 * 60)
     )

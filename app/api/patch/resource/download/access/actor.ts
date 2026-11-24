@@ -2,11 +2,11 @@ import { createHmac, randomUUID } from 'crypto'
 import { NextResponse } from 'next/server'
 import { kunCookieOptions } from '~/app/api/utils/cookieOptions'
 import { getRemoteIp } from '~/app/api/utils/getRemoteIp'
-import { parseCookies } from '~/utils/cookies'
+import { parseCookies, RESOURCE_ACCESS_VISITOR_COOKIE } from '~/utils/cookies'
 import type { Prisma } from '@prisma/client'
 import type { NextRequest } from 'next/server'
 
-export const RESOURCE_ACCESS_VISITOR_COOKIE = 'kun-resource-access-token'
+export { RESOURCE_ACCESS_VISITOR_COOKIE } from '~/utils/cookies'
 const RESOURCE_ACCESS_VISITOR_COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 180
 
 export type ResourceAccessActor =

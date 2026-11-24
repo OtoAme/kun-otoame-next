@@ -1,3 +1,4 @@
+import { TEMP_2FA_COOKIE } from '~/utils/cookies'
 import { z } from 'zod'
 import { cookies } from 'next/headers'
 import { generateKunToken } from '~/app/api/utils/jwt'
@@ -54,7 +55,7 @@ export const verifyLogin2FA = async (
   }
 
   const cookie = await cookies()
-  cookie.delete('kun-galgame-patch-moe-2fa-token')
+  cookie.delete(TEMP_2FA_COOKIE)
 
   const accessToken = await generateKunToken(
     user.id,

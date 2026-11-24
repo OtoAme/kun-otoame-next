@@ -145,14 +145,22 @@ export const refreshUserSession = (options?: { reason: 'restore' }) => {
   return promise
 }
 
-export const requestUserLogout = async () => {
+export const requestUserLogout = async ({ clearSiteData = false } = {}) => {
   const { sessionGeneration: generation, sessionContext: context } =
     useUserStore.getState()
   return withSessionMutation(async (request) => {
     if (useUserStore.getState().sessionGeneration !== generation) return null
-    const response = await request<{ revoked: boolean; message: string }>(
+    const response = await request<{
+      revoked: boolean
+      message: string
+      siteCookiesCleared?: boolean
+    }>(
       '/api/user/status/logout',
-      context ? { body: { context } } : undefined
+      clearSiteData
+        ? { body: { context, clearSiteData: true } }
+        : context
+          ? { body: { context } }
+          : undefined
     )
     if (
       useUserStore.getState().sessionGeneration !== generation ||
@@ -170,8 +178,14 @@ export const requestUserLogout = async () => {
     ) {
       throw new Error('退出登录失败，请稍后重试')
     }
+    if (clearSiteData && body.siteCookiesCleared !== true)
+      throw new Error('站点 Cookie 清除结果未确认，请刷新页面后重试')
     pending?.controller.abort()
     useUserStore.getState().logout()
+    if (clearSiteData) {
+      window.localStorage.clear()
+      window.sessionStorage.clear()
+    }
     return body
   })
 }

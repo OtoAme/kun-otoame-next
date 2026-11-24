@@ -372,6 +372,47 @@ describe('session client identity and cleanup', () => {
     expect(state.useUserStore.getState().sessionGeneration).toBe(2)
   })
 
+  it('resets browser storage after the server acknowledges clearing site cookies', async () => {
+    const state = await setup()
+    window.localStorage.setItem('kun-site-theme', 'otoame')
+    window.sessionStorage.setItem('test-draft', 'draft')
+    transport.mockImplementationOnce(async (_path, options) => {
+      expect(JSON.parse(options.body)).toEqual({
+        context: 'verified-context',
+        clearSiteData: true
+      })
+      expect(window.localStorage.getItem('kun-site-theme')).toBe('otoame')
+      return Response.json({
+        revoked: true,
+        siteCookiesCleared: true,
+        message: 'cleared'
+      })
+    })
+    await state.requestUserLogout({ clearSiteData: true })
+    expect(transport).toHaveBeenCalledWith(
+      '/api/user/status/logout',
+      expect.anything()
+    )
+    expect(window.localStorage.length).toBe(0)
+    expect(window.sessionStorage.length).toBe(0)
+  })
+
+  it.each([
+    [409, { code: 'SESSION_CHANGED' }],
+    [200, { revoked: true, message: 'ordinary logout' }]
+  ] as const)(
+    'retains local data if the reset is unconfirmed (%s)',
+    async (status, body) => {
+      const state = await setup()
+      window.localStorage.setItem('test-draft', 'draft')
+      transport.mockResolvedValueOnce(Response.json(body, { status }))
+      await expect(
+        state.requestUserLogout({ clearSiteData: true })
+      ).rejects.toThrow()
+      expect(window.localStorage.getItem('test-draft')).toBe('draft')
+    }
+  )
+
   it('expresses failed server revocation while clearing the local account', async () => {
     const state = await setup()
     transport.mockResolvedValueOnce(

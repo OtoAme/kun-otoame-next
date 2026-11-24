@@ -42,9 +42,49 @@ describe('logout cookie and revocation truth', () => {
           maxAge: 0
         })
       }
+      expect(response.cookies.get('kun-site-theme')).toBeUndefined()
+      expect(response.cookies.get('kun-resource-access-token')).toBeUndefined()
       expect(mocks.revoke).toHaveBeenCalledTimes(
         status === 'authenticated' ? 1 : 0
       )
+    }
+  )
+
+  it.each(['authenticated', 'guest', 'unavailable'])(
+    'expires all application cookies on explicit site reset for %s',
+    async (status) => {
+      mocks.identity.mockResolvedValue({
+        status,
+        payload: { uid: 7, jti: 'session' }
+      })
+      const response = await POST(
+        new Request('https://example.test/api/user/status/logout', {
+          method: 'POST',
+          body: JSON.stringify({
+            context: 'current-context',
+            clearSiteData: true
+          })
+        }) as never
+      )
+      expect(await response.json()).toMatchObject({
+        siteCookiesCleared: true,
+        revoked: status !== 'unavailable'
+      })
+      for (const name of [
+        'kun-galgame-patch-moe-token',
+        'kun-galgame-patch-moe-2fa-token',
+        'kun-resource-access-token',
+        'kun-site-theme',
+        'dashboard_sidebar_state',
+        'kun-patch-setting-store|state|data|kunNsfwEnable',
+        'kun-patch-setting-store|state|data|kunBlockedTagIds'
+      ]) {
+        expect(response.cookies.get(name)).toMatchObject({
+          value: '',
+          maxAge: 0,
+          path: '/'
+        })
+      }
     }
   )
 
@@ -57,7 +97,7 @@ describe('logout cookie and revocation truth', () => {
       new Request('https://example.test/api/user/status/logout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ context: 'old-context' })
+        body: JSON.stringify({ context: 'old-context', clearSiteData: true })
       }) as never
     )
     expect(response.status).toBe(409)

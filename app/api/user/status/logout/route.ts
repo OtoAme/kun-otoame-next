@@ -35,15 +35,18 @@ export async function POST(req: NextRequest) {
       revoked = false
     }
   }
+  const clearSiteData = input?.clearSiteData === true
   return clearSessionCookies(
     NextResponse.json(
       {
         revoked,
+        ...(clearSiteData && { siteCookiesCleared: true }),
         message: revoked
           ? '退出登录成功'
           : '已清理本机登录，服务端会话撤销暂未确认'
       },
       { status: revoked ? 200 : 503 }
-    )
+    ),
+    clearSiteData ? 'site' : 'session'
   )
 }

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { kunParsePostBody } from '~/app/api/utils/parseQuery'
-import { parseCookies } from '~/utils/cookies'
+import { parseCookies, TEMP_2FA_COOKIE } from '~/utils/cookies'
 import { verify2FA } from '~/app/api/utils/verify2FA'
 import { verifyLogin2FASchema } from '~/validations/auth'
 import { verifyLogin2FA } from './service'
@@ -11,7 +11,7 @@ export const POST = async (req: NextRequest) => {
     return NextResponse.json(input)
   }
   const tempToken = parseCookies(req.headers.get('cookie') ?? '')[
-    'kun-galgame-patch-moe-2fa-token'
+    TEMP_2FA_COOKIE
   ]
   if (!tempToken) {
     return NextResponse.json('未找到临时令牌')
