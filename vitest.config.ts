@@ -3,12 +3,13 @@ import path from 'path'
 
 export default defineConfig({
   test: {
+    include: ['tests/**/*.{test,spec}.?(c|m)[jt]s?(x)'],
     environment: 'node',
-    globals: true,
+    globals: true
   },
   resolve: {
     alias: {
       '~': path.resolve(__dirname, './')
-    },
-  },
+    }
+  }
 })
