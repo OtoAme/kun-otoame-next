@@ -64,6 +64,8 @@ node scripts/verifyAccountPreferences.mjs
 node scripts/verifyNotifications.mjs
 ```
 
+使用本地 `postgres:18-alpine` 镜像验证 PostgreSQL 18 时，运行 `node scripts/verifyNotifications.mjs --postgres18`。该模式还检查列级非空约束，未完成数据验证的约束须被预检、同步和复检拒绝，验证完成后才接受。
+
 命令只新建带随机身份的回环监听容器、独立数据库与卷，实际连接再次核对数据库、角色及身份标识，不回落默认业务库或已有工作区库。执行前建立新的绝对路径受限备份，核对自定义归档并演练恢复；账号偏好结构先安装，随后安装通知结构。可用 `--migrations-only` 或 `--business-only` 限定范围，默认完整执行。证据与逐步退出码在本区 `.local/notification-center/postgres-<随机标识>/`，结束时停止容器并保留卷与证据。
 
 迁移覆盖空库、非空历史、重复执行、中断、锁超时回滚及不兼容定义，核对历史数据保持和索引执行计划。实际业务覆盖聚合与已读、清理交错，事件重试、事务回滚、并行回答与采纳、订阅保存及账号删除锁序，以及列表与内容序号的一致快照。替身测试分别验证必要通知、关闭订阅、收件关系、能力协商、旧客户端解析、具体条目版本、最大 30 条及旧批量已读安全拒绝。
