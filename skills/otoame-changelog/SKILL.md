@@ -1,26 +1,38 @@
 ---
 name: otoame-changelog
-description: Use when writing OtoAme Chinese user-facing update logs or release notes from a verified change range.
+description: Use when writing OtoAme Chinese user-facing update logs or release notes, including user-experience summaries across a date or commit range.
 ---
 
 # OtoAme Changelog
 
-Use this skill for concise Chinese release notes. Read the development entry first; maintenance documentation uses the documentation skill.
+将已核实的变更整理为可直接发布的 OtoAme 中文更新日志。先读[开发技能](../otoame-development/SKILL.md)；维护文档使用[文档技能](../otoame-documentation/SKILL.md)。
 
-## Required References
+## 必读参考
 
 - [文档与事实标准](../../docs/guides/documentation.md)
 - [验证与交付边界](../../docs/concepts/quality.md)
 - [项目介绍](../../README.md)
 
-## Writing Rules
+## 范围与事实
 
-Inspect the requested range and unclear changes before drafting. Describe the completed user or operator result, grouped by workflow rather than one bullet per commit. Verify release scope; repository implementation alone does not prove production availability.
+- 明确起止日期或提交、边界是否包含当天、目标读者和排除项。日期及排除功能按本次要求确定，不沿用其他任务的条件。
+- 核对完整变更范围，包括合并分支带入的修改，再用当前代码和现行文档确认结果。提交标题只用于定位；共享组件新增能力时，还要检查哪些实际入口启用了它，避免把被排除功能的改动写成全站能力。
+- 用户提供的截图或指定样例优先用于确定文风；需要补充时参考 [@otoame 频道](https://t.me/s/otoame)近期的「#更新日志」。频道文案提供风格和已公告内容的参照，不能单独证明当前实现或部署状态。
 
-Unless the user chooses another format, begin with #更新日志 and use • followed by a space for each bullet. Prefer four to eight short bullets for a substantial range. Use clear verbs for additions, support, fixes and visible improvements, keeping established product names.
+## 选材与合并
 
-Lead with shipped capabilities and corrected behavior. Combine supporting work into its main result. Include migration, compatibility, maintenance or diagnostics only when users or operators must act or existing data changes.
+- 用户体验总结优先写读者、投稿者和资源发布者能感受到的能力、操作便利与错误修复。后台工具、部署、依赖、测试和内部重构，仅在目标读者需要操作、现有数据受影响或用户明确要求时纳入。
+- 按使用流程组织，同一功能的多轮修改合并为当前最终结果；配套修复归入主功能，不逐条复述提交、试错和中间方案。已撤销或最终没有差异的改动不写。
+- 用范围起点和既有公告区分新增与优化，避免把原有能力重新宣布为新增。保留影响理解的条件，如需要登录、仅适用于已有备份、首次确认后生效；不扩大到未经核实的页面或场景。
 
-Omit internal helpers, hashes, paths, test-only work, speculative benefits, draft markers and abandoned approaches. Keep technical implementation out of user prose; do not hide it in a reference section. Remove uncertain claims rather than announcing them as released.
+## 成稿风格
 
-Report any unverified release boundary.
+- 默认以「#更新日志」开头，空一行后逐条使用「• 」；条目之间保留换行，不另加分类标题、宣传开场或总结段。用户指定其他格式时从其要求。
+- 每条围绕一个功能或紧密相关的流程，用一至两句短句说明「改了什么，用户现在能做什么」。主要能力在前，细节优化与修复在后。
+- 使用「新增」「支持」「优化」「修复」等直接动词，沿用界面名称。写具体结果，如「保存失败时保留输入并支持重试」，避免只写「优化体验」或堆叠实现术语。
+- 一般优先整理为四至八条；跨度较大时按独立用户流程增加条目，不为凑数量遗漏重要变化，也不把无关功能塞进长句。
+- 省略提交哈希、源码路径、内部编号、测试数量、工具名和开发过程。性能或稳定性改动写可核实的表现，不臆测提速幅度、耗电改善或全站保证；不另附技术清单绕过此规则。
+
+## 交付边界
+
+默认直接交付日志正文。存在未核验的上线边界时，在正文之外简短说明整理范围与未核验事项，只说明一次。仓库实现不能写成已上线证明；功能本身尚未确认的条目从成稿移除，不留下待核实标记。
