@@ -1,6 +1,7 @@
 'use client'
+import { SettingsCardHeader } from './SettingsHierarchy'
 
-import { Card, CardBody, CardFooter, CardHeader } from '@heroui/card'
+import { Card, CardBody, CardFooter } from '@heroui/card'
 import { Input } from '@heroui/input'
 import { Button } from '@heroui/button'
 import { useUserStore } from '~/store/userStore'
@@ -67,9 +68,7 @@ export const Username = () => {
 
   return (
     <Card className="w-full text-sm">
-      <CardHeader>
-        <h2 className="text-xl font-medium">用户名</h2>
-      </CardHeader>
+      <SettingsCardHeader>用户名</SettingsCardHeader>
       <CardBody className="py-0 space-y-4">
         <div>
           <p>这是您的用户名设置, 您的用户名是唯一的</p>

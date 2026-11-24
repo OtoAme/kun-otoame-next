@@ -1,6 +1,7 @@
 'use client'
+import { SettingsCardHeader } from './SettingsHierarchy'
 
-import { Card, CardBody, CardFooter, CardHeader } from '@heroui/card'
+import { Card, CardBody, CardFooter } from '@heroui/card'
 import { useAccountPreferences } from '~/hooks/useAccountPreferences'
 import { editPreference } from '~/utils/preferenceClient'
 import { PreferenceActions } from './PreferenceActions'
@@ -15,9 +16,7 @@ export const EmailNotice = () => {
 
   return (
     <Card className="w-full text-sm">
-      <CardHeader>
-        <h2 className="text-xl font-medium">邮件通知</h2>
-      </CardHeader>
+      <SettingsCardHeader>邮件通知</SettingsCardHeader>
       <CardBody className="py-0 space-y-4">
         <div>
           <p>接收管理员发送的网站邮件。站内通知通过「站内通知订阅」设置。</p>
@@ -25,7 +24,7 @@ export const EmailNotice = () => {
         <div className="flex items-center justify-between">
           <p>是否开启邮件通知</p>
           <Switch
-            size="lg"
+            size="sm"
             color="primary"
             isSelected={selected}
             isDisabled={!state.canEdit}

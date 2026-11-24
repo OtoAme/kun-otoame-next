@@ -1,6 +1,7 @@
 'use client'
+import { SettingsCardHeader } from './SettingsHierarchy'
 
-import { Card, CardBody, CardFooter, CardHeader } from '@heroui/card'
+import { Card, CardBody, CardFooter } from '@heroui/card'
 import { useUserStore } from '~/store/userStore'
 import { kunFetchPost } from '~/utils/kunFetch'
 import toast from 'react-hot-toast'
@@ -26,9 +27,7 @@ export const AllowPrivateMessage = () => {
 
   return (
     <Card className="w-full text-sm">
-      <CardHeader>
-        <h2 className="text-xl font-medium">私信设置</h2>
-      </CardHeader>
+      <SettingsCardHeader>私信设置</SettingsCardHeader>
       <CardBody className="py-0 space-y-4">
         <div>
           <p>控制其他用户是否可以向您发送私信</p>
@@ -36,7 +35,7 @@ export const AllowPrivateMessage = () => {
         <div className="flex items-center justify-between">
           <p>是否允许接收私信</p>
           <Switch
-            size="lg"
+            size="sm"
             color="primary"
             isSelected={user.allowPrivateMessage}
             onValueChange={handleToggleAllowPrivateMessage}

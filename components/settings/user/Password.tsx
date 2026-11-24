@@ -1,10 +1,11 @@
 'use client'
+import { SettingsCardHeader } from './SettingsHierarchy'
 
 import { useState } from 'react'
 import { z } from 'zod'
 import { Controller, useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { Card, CardBody, CardFooter, CardHeader } from '@heroui/card'
+import { Card, CardBody, CardFooter } from '@heroui/card'
 import { Input } from '@heroui/input'
 import { Button } from '@heroui/button'
 import { Divider } from '@heroui/divider'
@@ -49,11 +50,9 @@ export const Password = () => {
   return (
     <Card className="w-full text-sm">
       <form>
-        <CardHeader>
-          <h2 className="text-xl font-medium">密码</h2>
-        </CardHeader>
-        <CardBody className="py-0 space-y-4">
-          <div>
+        <SettingsCardHeader>密码</SettingsCardHeader>
+        <CardBody className="gap-2 py-0">
+          <div className="mb-2">
             <p>这是您的密码设置, 您需要输入旧密码以更改新密码</p>
           </div>
           <Controller

@@ -1,6 +1,7 @@
 'use client'
+import { SettingsCardHeader, SettingsGroup } from './SettingsHierarchy'
 import { useEffect, useState } from 'react'
-import { Card, CardBody, CardHeader } from '@heroui/card'
+import { Card, CardBody } from '@heroui/card'
 import { Chip } from '@heroui/chip'
 import { Input } from '@heroui/input'
 import { Button } from '@heroui/button'
@@ -80,6 +81,7 @@ export const BlockedTags = () => {
       if (draft.value) blocked.add(Number(draft.key.slice(12)))
       else blocked.delete(Number(draft.key.slice(12)))
     }
+  const availableTags = results.filter((tag) => !blocked.has(tag.id))
   const choose = async (tagId: number, enabled: boolean) => {
     const session = useUserStore.getState()
     const expected = {
@@ -97,54 +99,59 @@ export const BlockedTags = () => {
   }
   return (
     <Card className="w-full text-sm">
-      <CardHeader>
-        <h2 className="text-xl font-medium">标签屏蔽</h2>
-      </CardHeader>
-      <CardBody className="space-y-4">
+      <SettingsCardHeader>标签屏蔽</SettingsCardHeader>
+      <CardBody className="pt-0 space-y-6">
         <p>屏蔽标签后，带有该标签的游戏将从公开浏览结果中隐藏。</p>
         {!state.snapshot ? (
           <p role="status">正在确认账号偏好…</p>
         ) : (
           <>
-            <Input
-              aria-label="搜索屏蔽标签"
-              placeholder="搜索标签名称"
-              value={query}
-              onValueChange={setQuery}
-              isDisabled={!state.canEdit}
-            />
-            <div className="flex flex-wrap gap-2">
-              {results
-                .filter((tag) => !blocked.has(tag.id))
-                .map((tag) => (
-                  <Button
-                    key={tag.id}
-                    size="sm"
-                    isDisabled={!state.canEdit}
-                    onPress={() => {
-                      void choose(tag.id, true)
-                    }}
-                  >
-                    {tag.name}
-                  </Button>
-                ))}
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {[...blocked].map((id) => (
-                <Chip
-                  key={id}
-                  color="danger"
-                  variant="flat"
-                  isDisabled={!state.canEdit}
-                  onClose={() => {
-                    void choose(id, false)
-                  }}
-                >
-                  {tags[id]?.name ?? `标签 ${id}`}
-                </Chip>
-              ))}
-            </div>
-            {!blocked.size && <p>您暂时没有屏蔽任何标签</p>}
+            <SettingsGroup title="添加屏蔽标签">
+              <Input
+                aria-label="搜索屏蔽标签"
+                placeholder="搜索标签名称"
+                value={query}
+                onValueChange={setQuery}
+                isDisabled={!state.canEdit}
+              />
+              {availableTags.length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                  {availableTags.map((tag) => (
+                    <Button
+                      key={tag.id}
+                      size="sm"
+                      isDisabled={!state.canEdit}
+                      onPress={() => {
+                        void choose(tag.id, true)
+                      }}
+                    >
+                      {tag.name}
+                    </Button>
+                  ))}
+                </div>
+              )}
+            </SettingsGroup>
+            <SettingsGroup title="已屏蔽标签">
+              {blocked.size ? (
+                <div className="flex flex-wrap gap-2">
+                  {[...blocked].map((id) => (
+                    <Chip
+                      key={id}
+                      color="danger"
+                      variant="flat"
+                      isDisabled={!state.canEdit}
+                      onClose={() => {
+                        void choose(id, false)
+                      }}
+                    >
+                      {tags[id]?.name ?? `标签 ${id}`}
+                    </Chip>
+                  ))}
+                </div>
+              ) : (
+                <p>您暂时没有屏蔽任何标签</p>
+              )}
+            </SettingsGroup>
           </>
         )}
         {error && <p role="status">{error}</p>}

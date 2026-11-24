@@ -1,6 +1,7 @@
 'use client'
+import { SettingsCardHeader } from './SettingsHierarchy'
 import { useId } from 'react'
-import { Card, CardBody, CardHeader } from '@heroui/card'
+import { Card, CardBody } from '@heroui/card'
 import { Button } from '@heroui/button'
 import { Select, SelectItem } from '@heroui/select'
 import { useAccountPreferences } from '~/hooks/useAccountPreferences'
@@ -15,10 +16,8 @@ export const BrowsingPreference = () => {
   )
   return (
     <Card className="w-full text-sm">
-      <CardHeader>
-        <h2 className="text-xl font-medium">内容显示</h2>
-      </CardHeader>
-      <CardBody className="space-y-4">
+      <SettingsCardHeader>内容显示</SettingsCardHeader>
+      <CardBody className="pt-0 space-y-4">
         <Select
           id={selectId}
           label="网站内容显示"

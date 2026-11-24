@@ -1,4 +1,5 @@
 'use client'
+import { SettingsCardHeader, SettingsGroup } from './SettingsHierarchy'
 
 import { useEffect, useState, useTransition } from 'react'
 import {
@@ -6,7 +7,6 @@ import {
   Card,
   CardBody,
   CardFooter,
-  CardHeader,
   Chip,
   Input,
   Modal,
@@ -197,9 +197,7 @@ export const TwoFactorAuth = () => {
   return (
     <>
       <Card className="w-full text-sm">
-        <CardHeader>
-          <h2 className="text-xl font-medium">两步验证</h2>
-        </CardHeader>
+        <SettingsCardHeader>两步验证</SettingsCardHeader>
         <CardBody className="py-0 space-y-4">
           <div>
             <p>
@@ -212,7 +210,7 @@ export const TwoFactorAuth = () => {
           <div className="flex items-center justify-between">
             <p>是否启用两步验证</p>
             <Switch
-              size="lg"
+              size="sm"
               color="primary"
               isSelected={authStatus.isEnabled2FA}
               isDisabled={isPending}
@@ -239,14 +237,13 @@ export const TwoFactorAuth = () => {
           <ModalHeader>设置两步验证</ModalHeader>
           <ModalBody>
             <div className="space-y-6">
-              <div className="space-y-2">
-                <h3 className="text-lg font-medium">步骤 1: 扫描二维码</h3>
+              <SettingsGroup title="步骤 1: 扫描二维码">
                 <p className="text-sm text-default-500">
                   使用 Google Authenticator、Microsoft Authenticator
                   或其他身份验证器应用扫描下方的二维码
                 </p>
                 {authStatus.qrCodeUrl && (
-                  <div className="flex justify-center my-4">
+                  <div className="flex justify-center">
                     <img
                       src={authStatus.qrCodeUrl}
                       alt="2FA QR Code"
@@ -255,10 +252,9 @@ export const TwoFactorAuth = () => {
                     />
                   </div>
                 )}
-              </div>
+              </SettingsGroup>
 
-              <div className="space-y-2">
-                <h3 className="text-lg font-medium">步骤 2: 输入验证码</h3>
+              <SettingsGroup title="步骤 2: 输入验证码">
                 <p className="text-sm text-default-500">
                   打开身份验证器应用，输入显示的 6 位验证码
                 </p>
@@ -271,10 +267,9 @@ export const TwoFactorAuth = () => {
                   maxLength={6}
                   className="text-lg tracking-widest text-center"
                 />
-              </div>
+              </SettingsGroup>
 
-              <div className="space-y-2">
-                <h3 className="text-lg font-medium">密钥</h3>
+              <SettingsGroup title="密钥">
                 <p className="text-sm text-default-500">
                   如果无法扫描二维码，您可以手动将此密钥输入到身份验证器应用中
                 </p>
@@ -295,7 +290,7 @@ export const TwoFactorAuth = () => {
                     复制
                   </Button>
                 </div>
-              </div>
+              </SettingsGroup>
             </div>
           </ModalBody>
           <ModalFooter>

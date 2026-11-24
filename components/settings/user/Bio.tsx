@@ -1,6 +1,7 @@
 'use client'
+import { SettingsCardHeader } from './SettingsHierarchy'
 
-import { Card, CardBody, CardFooter, CardHeader } from '@heroui/card'
+import { Card, CardBody, CardFooter } from '@heroui/card'
 import { Textarea } from '@heroui/input'
 import { Button } from '@heroui/button'
 import { useUserStore } from '~/store/userStore'
@@ -49,9 +50,7 @@ export const Bio = () => {
 
   return (
     <Card className="w-full text-sm">
-      <CardHeader>
-        <h2 className="text-xl font-medium">签名</h2>
-      </CardHeader>
+      <SettingsCardHeader>签名</SettingsCardHeader>
       <CardBody className="py-0 space-y-4">
         <div>
           <p>这是您的签名设置, 您的签名将会被显示在您的主页上</p>

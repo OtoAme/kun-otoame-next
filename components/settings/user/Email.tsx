@@ -1,10 +1,11 @@
 'use client'
+import { SettingsCardHeader } from './SettingsHierarchy'
 
 import { useState } from 'react'
 import { z } from 'zod'
 import { Controller, useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { Card, CardBody, CardFooter, CardHeader } from '@heroui/card'
+import { Card, CardBody, CardFooter } from '@heroui/card'
 import { Input } from '@heroui/input'
 import { Button } from '@heroui/button'
 import {
@@ -89,11 +90,9 @@ export const Email = () => {
     <>
       <Card className="w-full text-sm">
         <form>
-          <CardHeader>
-            <h2 className="text-xl font-medium">邮箱</h2>
-          </CardHeader>
-          <CardBody className="py-0 space-y-4">
-            <div>
+          <SettingsCardHeader>邮箱</SettingsCardHeader>
+          <CardBody className="gap-2 py-0">
+            <div className="mb-2">
               <p>这是您的邮箱设置, 您的邮箱将会被用于恢复您的密码</p>
               <p>
                 点击发送验证码, 您的新邮箱中将会收到一封包含验证码的邮件,
