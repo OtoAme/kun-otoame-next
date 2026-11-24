@@ -2,6 +2,7 @@ import React, { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { JSDOM } from 'jsdom'
 import { afterEach, expect, it, vi } from 'vitest'
+import { NOTIFICATION_EVENTS } from '~/constants/notification'
 
 const mocks = vi.hoisted(() => ({
   save: vi.fn(),
@@ -31,7 +32,11 @@ vi.mock('@heroui/card', () => ({
   CardHeader: ({ children }: any) => <header>{children}</header>,
   CardFooter: ({ children }: any) => <footer>{children}</footer>
 }))
-vi.mock('@heroui/react', () => ({ Switch: () => null }))
+vi.mock('@heroui/react', () => ({
+  Switch: (props: { 'aria-label'?: string }) => (
+    <input type="checkbox" aria-label={props['aria-label']} />
+  )
+}))
 vi.mock('@heroui/button', () => ({
   Button: ({ children, onPress }: any) => (
     <button onClick={onPress}>{children}</button>
@@ -39,7 +44,7 @@ vi.mock('@heroui/button', () => ({
 }))
 
 afterEach(() => vi.unstubAllGlobals())
-it('keeps subscription saving in its own card and excludes unrelated preference drafts', async () => {
+it('lists only configurable subscriptions and saves them independently of email preferences', async () => {
   const dom = new JSDOM('<div id="root"></div>', {
     url: 'https://example.test/settings/user'
   })
@@ -62,6 +67,17 @@ it('keeps subscription saving in its own card and excludes unrelated preference 
       )
     )
     const sections = document.querySelectorAll('section')
+    const groups = [...sections[0].querySelectorAll('fieldset')]
+    expect(groups.every((group) => group.querySelector('input'))).toBe(true)
+    for (const event of Object.values(NOTIFICATION_EVENTS)) {
+      if (event.optional) {
+        expect(
+          sections[0].querySelector(`input[aria-label="${event.label}"]`)
+        ).not.toBeNull()
+      } else {
+        expect(sections[0].textContent).not.toContain(event.label)
+      }
+    }
     expect(sections[1].querySelector('button')).toBeNull()
     await act(async () => sections[0].querySelector('button')!.click())
     expect(mocks.save).toHaveBeenCalledOnce()
