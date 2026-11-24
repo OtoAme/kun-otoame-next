@@ -84,6 +84,7 @@ pnpm prisma:deploy-safe
 | 小喇叭 | [预检](../../migration/production-shoutbox-preflight-2026-09-11.sql)、[同步](../../migration/production-shoutbox-sync-2026-09-11.sql)、[复检](../../migration/production-shoutbox-postflight-2026-09-11.sql)，检查扣费、三人隐藏、官方例外、退款一次及生效边界后开放。 |
 | 问题处理基础 | [预检](../../migration/production-case-preflight-2026-09-13.sql)、[同步](../../migration/production-case-sync-2026-09-13.sql)、[复检](../../migration/production-case-postflight-2026-09-13.sql)，再装下一行扩展。 |
 | 求助区 | [预检](../../migration/production-help-preflight-2026-10-29.sql)、[同步](../../migration/production-help-sync-2026-10-29.sql)、[复检](../../migration/production-help-postflight-2026-10-29.sql)，只新建六张求助表，依赖问题处理基础；先于求助区代码运行。 |
+| 通知中心与订阅 | [预检](../../migration/production-notifications-preflight-2026-11-18.sql)、[同步](../../migration/production-notifications-sync-2026-11-18.sql)、[复检](../../migration/production-notifications-postflight-2026-11-18.sql)，前置账号偏好结构；执行顺序和恢复边界见[通知迁移](#通知中心与订阅结构)。 |
 | 问题附图与提醒 | [预检](../../migration/production-case-feedback-preflight-2026-09-26.sql)、[同步](../../migration/production-case-feedback-sync-2026-09-26.sql)、[复检](../../migration/production-case-feedback-postflight-2026-09-26.sql)，扩展后不重跑只认基础列数的检查，旧反馈与举报不回填。 |
 | 控制台查询索引 | [预检](../../migration/production-dashboard-indexes-preflight-2026-10-31.sql)、[同步](../../migration/production-dashboard-indexes-sync-2026-10-31.sql)，在显式事务外执行；只建索引，不改数据，不需要停写。同步可重复运行：已存在且有效的跳过，中断留下的无效索引删掉重建，同名但定义不同时停止。完成后重跑预检，四项都应为 `already_ok`。 |
 | 每日登录记录 | [预检](../../migration/production-user-daily-active-preflight-2026-10-31.sql)、[同步](../../migration/production-user-daily-active-sync-2026-10-31.sql)，只新增空表 `user_daily_active`，不改已有数据。同步在单个事务内执行，外键会短暂锁住用户表，等不到锁 5 秒后停止，重跑即可；已有同名表但列不一致时停止。完成后重跑预检，状态应为 `present` 且主键、外键与预期一致。先迁移再发布对应版本：旧版本不写这张表，新版本在表缺失时只记录错误、不影响登录，缺表期间已访问的用户当天不会补记。 |
@@ -117,7 +118,41 @@ psql_run migration/production-account-preferences-postflight-2026-11-17.sql
 pnpm deploy:pull
 ```
 
-上线检查包括偏好保存与重新登录恢复、同项冲突、不同项并行、首页 SFW 和屏蔽标签过滤，以及游客首访和同身份恢复的页面稳定性。发布失败时停止失败候选并保留记录，按[人工选版恢复](deployment.md#离线回退应用)核对目标兼容性。账号偏好已经发生写入后，恢复版本须维护相同的值、版本及编辑会话语义。版本表和已有版本记录继续保留，数据恢复按本页[恢复要求](#失败与数据库恢复)另行处理。
+上线检查包括偏好保存与重新登录恢复、同项冲突、不同项并行、首页 SFW、个性化列表屏蔽标签过滤，以及游客首访和同身份恢复的页面稳定性。发布失败时停止失败候选并保留记录，按[人工选版恢复](deployment.md#离线回退应用)核对目标兼容性。账号偏好已经发生写入后，恢复版本须维护相同的值、版本及编辑会话语义。版本表和已有版本记录继续保留，数据恢复按本页[恢复要求](#失败与数据库恢复)另行处理。
+
+### 通知中心与订阅结构
+
+本组增量文件依赖已经复检通过的[账号偏好结构](#账号偏好结构)和既有通知表。开发环境 setup 或 Prisma 初始化不能代替迁移。先在一次性 PostgreSQL 演练空通知库、含历史通知的非空库、重复执行、中断与锁超时回滚，并核对通知、聚合、订阅保存和账号删除的真实竞争。
+
+在同一 shell 关闭命令追踪并加载目标服务器的受控环境脚本，再更新本批源码，执行只读预检。
+
+```bash
+set +x
+source '<服务器受控运维环境脚本>'
+git pull --ff-only
+psql_run migration/production-notifications-preflight-2026-11-18.sql
+```
+
+预检返回 `notifications preflight OK`，安装状态为 `not-installed`、`partial` 或 `complete`。数量统计预期结构对象，首次为 0、完整为 24。部分安装须核实中断来源及每个现存定义，同名定义冲突、前置缺失、非法数据或非零退出均停止。
+
+随后关闭全部相关旧写入，包括应用实例、后台生成通知以及旧详情读取可能触发的已读写入。确认备份完成并可供恢复，再在同一 shell 逐条执行：
+
+```bash
+psql_run migration/production-notifications-sync-2026-11-18.sql
+psql_run migration/production-notifications-postflight-2026-11-18.sql
+```
+
+同步正常提交后返回 `notifications sync OK`，复检返回 `notifications postflight OK`；两者都必须退出 0、状态 `complete`、对象数 24，才继续发布。三个 SQL 均可独立通过标准输入执行，不依赖包含文件。同步单事务，锁等待 5 秒、语句超时 60 秒；中断或超时整体回滚。保持停写、排除阻塞后从预检重来，不删对象或强推结构。重复同步保留已有选择、版本及序号。
+
+历史通知的编号、正文、链接和状态保持，事件未细分、初始内容版本与聚合次数均为 1，不补发通知；新订阅和内容序号表初始为空，序号在实际新写入时推进，清理不重置。恢复不得删除这些结构、清零版本或启动忽略订阅及按范围全部已读的旧版。
+
+全部检查通过后，通过默认发布入口启动本批应用。
+
+```bash
+pnpm deploy:pull
+```
+
+核对三个实例和本机 HTTP，再用受控账号验证订阅、五类和阅读状态、具体版本确认、数量不变的新动态提示、三页前后翻阅及历史详情链接，同时检查私聊未读、首页 SFW 和列表首屏复用。发布失败时停止失败候选并保留记录，按[人工选版恢复](deployment.md#离线回退应用)核对目标兼容性。候选已经生成或确认通知后，恢复目标须维护相同的订阅和阅读规则。缺少兼容目标时保持必要停写并前向修复，数据恢复另按本页[恢复要求](#失败与数据库恢复)处理。
 
 ### 站方备份与资源合并结构
 
