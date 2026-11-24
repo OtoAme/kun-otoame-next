@@ -6,16 +6,22 @@ import assert from 'node:assert/strict'
 import pg from 'pg'
 
 const arguments_ = process.argv.slice(2)
+const postgres18 = arguments_.includes('--postgres18')
+const postgresImage = postgres18 ? 'postgres:18-alpine' : 'postgres:16'
 if (arguments_.includes('--help')) {
   console.log(
-    'Usage: node scripts/verifyNotifications.mjs [--business-only | --migrations-only]\nCreates and verifies a new disposable PostgreSQL container; stops it and retains its volume and evidence.'
+    'Usage: node scripts/verifyNotifications.mjs [--business-only | --migrations-only] [--postgres18]\nCreates and verifies a new disposable PostgreSQL container; stops it and retains its volume and evidence.'
   )
   process.exit(0)
 }
 if (
-  arguments_.length > 1 ||
+  arguments_.filter((argument) => argument !== '--postgres18').length > 1 ||
+  new Set(arguments_).size !== arguments_.length ||
   arguments_.some(
-    (argument) => !['--business-only', '--migrations-only'].includes(argument)
+    (argument) =>
+      !['--business-only', '--migrations-only', '--postgres18'].includes(
+        argument
+      )
   )
 ) {
   throw new Error(
@@ -84,6 +90,7 @@ for (const kind of ['preflight', 'sync', 'postflight']) {
   await writeFile(path.join(directory, name), sources[kind], { mode: 0o600 })
 }
 const fingerprints = {
+  postgresImage,
   migrations: Object.fromEntries(
     Object.entries(sources).map(([name, source]) => [
       name,
@@ -149,10 +156,10 @@ try {
       '--publish',
       '127.0.0.1::5432',
       '--volume',
-      `${volume}:/var/lib/postgresql/data`,
+      `${volume}:${postgres18 ? '/var/lib/postgresql' : '/var/lib/postgresql/data'}`,
       '-e',
       'POSTGRES_PASSWORD',
-      'postgres:16'
+      postgresImage
     ],
     { env: { ...process.env, POSTGRES_PASSWORD: password } }
   )
@@ -216,7 +223,8 @@ try {
       'invalid-subscription',
       'invalid-sequence',
       'duplicate-subscription',
-      'orphan-sequence'
+      'orphan-sequence',
+      ...(postgres18 ? ['unvalidated-not-null'] : [])
     ]) {
       const database = `notifications_${nonce}_${scenario.replaceAll('-', '_')}`
       await admin.query(`CREATE DATABASE ${database}`)
@@ -320,6 +328,20 @@ try {
       await migrate('sync')
       assert.match(await migrate('postflight'), /complete\|24/)
       await migrate('sync')
+      if (scenario === 'unvalidated-not-null') {
+        await sql(
+          database,
+          'ALTER TABLE notification_subscription ALTER COLUMN enabled DROP NOT NULL; ALTER TABLE notification_subscription ADD CONSTRAINT subscription_enabled_required NOT NULL enabled NOT VALID;'
+        )
+        for (const kind of ['preflight', 'sync', 'postflight'])
+          await migrate(kind, 'nonzero')
+        await sql(
+          database,
+          'ALTER TABLE notification_subscription VALIDATE CONSTRAINT subscription_enabled_required;'
+        )
+        for (const kind of ['preflight', 'sync', 'postflight'])
+          assert.match(await migrate(kind), /complete\|24/)
+      }
       if (scenario === 'historical') {
         const retained = await sql(
           database,

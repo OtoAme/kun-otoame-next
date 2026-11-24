@@ -23,10 +23,30 @@ BEGIN
       RAISE EXCEPTION 'incompatible account-preferences check: %',expected.name;
     END IF;
   END LOOP;
-  IF EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid=to_regclass('public.notification_subscription')
-    AND conname NOT IN ('notification_subscription_pkey','notification_subscription_user_id_fkey','notification_subscription_event_type_check'))
-    OR EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid=to_regclass('public.notification_content_sequence')
-    AND conname NOT IN ('notification_content_sequence_pkey','notification_content_sequence_user_id_fkey','notification_content_sequence_scope_check')) THEN
+  IF EXISTS (
+    SELECT 1 FROM pg_constraint c
+    WHERE (
+      (c.conrelid=to_regclass('public.notification_subscription')
+        AND c.conname NOT IN ('notification_subscription_pkey','notification_subscription_user_id_fkey','notification_subscription_event_type_check'))
+      OR (c.conrelid=to_regclass('public.notification_content_sequence')
+        AND c.conname NOT IN ('notification_content_sequence_pkey','notification_content_sequence_user_id_fkey','notification_content_sequence_scope_check'))
+    ) AND NOT (
+      c.contype='n' AND c.convalidated AND NOT c.condeferrable
+      AND c.conislocal AND c.coninhcount=0 AND c.conparentid=0
+      AND COALESCE((to_jsonb(c)->>'conenforced')::boolean, false)
+      AND EXISTS (
+        SELECT 1 FROM pg_attribute a
+        WHERE a.attrelid=c.conrelid AND NOT a.attisdropped AND a.attnotnull
+          AND c.conkey=ARRAY[a.attnum]
+          AND (
+            (a.attrelid=to_regclass('public.notification_subscription')
+              AND a.attname IN ('user_id','event_type','enabled'))
+            OR (a.attrelid=to_regclass('public.notification_content_sequence')
+              AND a.attname IN ('user_id','category','sequence'))
+          )
+      )
+    )
+  ) THEN
     RAISE EXCEPTION 'unexpected notification constraint';
   END IF;
   IF (SELECT count(*) FROM pg_attribute WHERE attrelid=to_regclass('public.user_message') AND attname IN ('event_type') AND NOT attisdropped) = 1 THEN
@@ -222,10 +242,30 @@ BEGIN
       RAISE EXCEPTION 'incompatible account-preferences check: %',expected.name;
     END IF;
   END LOOP;
-  IF EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid=to_regclass('public.notification_subscription')
-    AND conname NOT IN ('notification_subscription_pkey','notification_subscription_user_id_fkey','notification_subscription_event_type_check'))
-    OR EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid=to_regclass('public.notification_content_sequence')
-    AND conname NOT IN ('notification_content_sequence_pkey','notification_content_sequence_user_id_fkey','notification_content_sequence_scope_check')) THEN
+  IF EXISTS (
+    SELECT 1 FROM pg_constraint c
+    WHERE (
+      (c.conrelid=to_regclass('public.notification_subscription')
+        AND c.conname NOT IN ('notification_subscription_pkey','notification_subscription_user_id_fkey','notification_subscription_event_type_check'))
+      OR (c.conrelid=to_regclass('public.notification_content_sequence')
+        AND c.conname NOT IN ('notification_content_sequence_pkey','notification_content_sequence_user_id_fkey','notification_content_sequence_scope_check'))
+    ) AND NOT (
+      c.contype='n' AND c.convalidated AND NOT c.condeferrable
+      AND c.conislocal AND c.coninhcount=0 AND c.conparentid=0
+      AND COALESCE((to_jsonb(c)->>'conenforced')::boolean, false)
+      AND EXISTS (
+        SELECT 1 FROM pg_attribute a
+        WHERE a.attrelid=c.conrelid AND NOT a.attisdropped AND a.attnotnull
+          AND c.conkey=ARRAY[a.attnum]
+          AND (
+            (a.attrelid=to_regclass('public.notification_subscription')
+              AND a.attname IN ('user_id','event_type','enabled'))
+            OR (a.attrelid=to_regclass('public.notification_content_sequence')
+              AND a.attname IN ('user_id','category','sequence'))
+          )
+      )
+    )
+  ) THEN
     RAISE EXCEPTION 'unexpected notification constraint';
   END IF;
   IF (SELECT count(*) FROM pg_attribute WHERE attrelid=to_regclass('public.user_message') AND attname IN ('event_type') AND NOT attisdropped) = 1 THEN
