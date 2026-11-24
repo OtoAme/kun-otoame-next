@@ -20,7 +20,9 @@ Read the development entry before frontend work. Select the interface system by 
 
 Site, legacy admin and previews use HeroUI v2; dashboard and workspace use shadcn with isolated styles. Admin previews use a dedicated root layout that loads site styles without site chrome.
 
-Before building UI, inspect project components and the official options of the page's UI library. Reuse, add or compose suitable components; local absence never justifies rebuilding. Use native/system controls or handwritten HTML/CSS replacements only when reuse and composition cannot meet the requirement.
+Before writing or changing UI, inspect the target page, shared components and comparable page compositions in the same UI system. Reuse suitable existing components and composition patterns, including layout and control behavior. If none fit, inspect the official options of the page's UI library and add or compose suitable components. Use native/system controls or handwritten HTML/CSS replacements only when reuse and composition cannot meet the requirement.
+
+Preserve the established design by default. Before changing visible design, tell the user what will change, why and which areas are affected, following their explicit requirements. When restoring an earlier design, inspect the relevant Git history for its structure and styles. Follow the [component reuse and design rules](../../docs/reference/frontend.md#组件选择与复用).
 
 Keep labels, keyboard access, focus, loading, errors, reduced motion and responsive layouts functional.
 
