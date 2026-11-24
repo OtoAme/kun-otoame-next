@@ -8,7 +8,13 @@ import Link from 'next/link'
 import { useMessageStore } from '~/store/messageStore'
 import { cn } from '~/utils/cn'
 
-export const MessageNav = ({ className }: { className?: string }) => {
+export const MessageNav = ({
+  className,
+  children
+}: {
+  className?: string
+  children?: React.ReactNode
+}) => {
   const pathname = usePathname()
   const isNotificationSection =
     /^\/message\/(notice|follow|mention|system)$/.test(pathname)
@@ -63,6 +69,12 @@ export const MessageNav = ({ className }: { className?: string }) => {
             </span>
           </Button>
         </div>
+        {children && (
+          <>
+            <div className="border-t border-default-200 my-2" />
+            {children}
+          </>
+        )}
       </CardBody>
     </Card>
   )

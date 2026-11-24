@@ -40,6 +40,7 @@ vi.mock('@heroui/card', () => ({
   CardBody: ({ children }: any) => <div>{children}</div>
 }))
 vi.mock('@heroui/avatar', () => ({ Avatar: () => null }))
+vi.mock('@heroui/tabs', () => ({ Tabs: () => null, Tab: () => null }))
 vi.mock('@heroui/chip', () => ({
   Chip: ({ children }: any) => <span>{children}</span>
 }))

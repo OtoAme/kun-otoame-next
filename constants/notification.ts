@@ -15,9 +15,9 @@ export const NOTIFICATION_CATEGORY_LABELS: Record<
 > = {
   interaction: '互动消息',
   help: '求助动态',
-  review: '投稿与审核',
-  maintenance: '资源维护与问题处理',
-  account: '站务与账户'
+  review: '投稿审核',
+  maintenance: '问题处理',
+  account: '官方消息'
 }
 
 const event = (

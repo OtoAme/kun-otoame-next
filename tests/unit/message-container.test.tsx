@@ -28,6 +28,36 @@ vi.mock('next/navigation', () => ({
   useSearchParams: () => new URLSearchParams(mocks.params),
   useRouter: () => ({ replace: mocks.replace })
 }))
+vi.mock('next/link', () => ({
+  default: ({ children, ...props }: any) => <a {...props}>{children}</a>
+}))
+vi.mock('next/image', () => ({
+  default: ({ priority, ...props }: any) => <img {...props} />
+}))
+vi.mock('@heroui/tabs', () => ({
+  Tab: () => null,
+  Tabs: ({ children, selectedKey, onSelectionChange, ...props }: any) => (
+    <div role="tablist" aria-label={props['aria-label']}>
+      {React.Children.map(children, (tab: any) => (
+        <button
+          role="tab"
+          aria-selected={tab.key === selectedKey}
+          onClick={() => onSelectionChange(tab.key)}
+        >
+          {tab.props.title}
+        </button>
+      ))}
+    </div>
+  )
+}))
+vi.mock('@heroui/card', () => ({
+  Card: ({ children, className }: any) => (
+    <div className={className}>{children}</div>
+  ),
+  CardBody: ({ children, className }: any) => (
+    <div className={className}>{children}</div>
+  )
+}))
 vi.mock('~/utils/kunFetch', async (original) => ({
   ...(await original<typeof import('~/utils/kunFetch')>()),
   kunFetchGet: mocks.get,
@@ -37,6 +67,7 @@ vi.mock('~/utils/sessionClient', () => ({ refreshUserSession: mocks.refresh }))
 vi.mock('~/components/kun/SessionContentBoundary', () => ({
   useSessionContentReady: () => mocks.contentReady
 }))
+vi.mock('~/components/kun/Header', () => ({ KunHeader: () => null }))
 vi.mock('~/utils/messageSync', () => ({
   beginUnreadRead: () => 1,
   seedSessionUnread: mocks.seed
@@ -65,14 +96,23 @@ vi.mock('~/components/message/MessageCard', () => ({
   )
 }))
 vi.mock('@heroui/react', () => ({
-  Button: ({ children, onPress, isDisabled, isLoading, ...props }: any) => (
-    <button
+  Button: ({
+    children,
+    as: Component = 'button',
+    onPress,
+    isDisabled,
+    isLoading,
+    ...props
+  }: any) => (
+    <Component
+      href={props.href}
+      aria-label={props['aria-label']}
       aria-pressed={props['aria-pressed']}
       disabled={isDisabled || isLoading}
       onClick={onPress}
     >
       {children}
-    </button>
+    </Component>
   ),
   Modal: ({ children, isOpen }: any) =>
     isOpen ? <div role="dialog">{children}</div> : null,
@@ -213,7 +253,8 @@ describe('notification list browsing and concrete reading', () => {
   }
   const click = async (text: string) => {
     const button = [...container.querySelectorAll('button')].find(
-      (candidate) => candidate.textContent === text
+      (candidate) =>
+        (candidate.getAttribute('aria-label') ?? candidate.textContent) === text
     )
     expect(button, text).toBeDefined()
     await act(async () => button!.click())
@@ -227,7 +268,11 @@ describe('notification list browsing and concrete reading', () => {
       expect.objectContaining({ preserveErrorStatus: true })
     )
     expect(container.querySelectorAll('article')).toHaveLength(30)
-    expect(container.textContent).toContain('全部分类 · 90')
+    expect(
+      container
+        .querySelector('nav[aria-label="通知分类"] button')
+        ?.getAttribute('aria-label')
+    ).toBe('全部分类，未读 90 条')
     expect(container.textContent).not.toContain('未经当前身份确认的旧正文')
     expect(mocks.confirm).not.toHaveBeenCalled()
   })
@@ -247,10 +292,46 @@ describe('notification list browsing and concrete reading', () => {
     expect(container.querySelectorAll('article')).toHaveLength(30)
   })
 
+  it.each(['unread', 'all', 'read'] as const)(
+    'shows category unread counts in one sidebar alongside the %s list',
+    async (state) => {
+      mocks.params = 'state=' + state
+      const { MessageLayoutChrome } = await import(
+        '~/components/message/MessageLayoutChrome'
+      )
+      await act(async () =>
+        root!.render(
+          <MessageLayoutChrome>
+            <MessageContainer />
+          </MessageLayoutChrome>
+        )
+      )
+      const categories = container.querySelector('nav[aria-label="通知分类"]')!
+      const list = container.querySelector('section[aria-label="通知中心"]')!
+      expect(categories.querySelectorAll('button')).toHaveLength(6)
+      expect(
+        categories.querySelector('button')?.getAttribute('aria-label')
+      ).toBe('全部分类，未读 90 条')
+      expect(categories.querySelector('button')?.textContent).toBe('全部分类90')
+      expect(
+        categories.querySelector('button[aria-label^="求助动态"]')?.textContent
+      ).toBe('求助动态')
+      expect(
+        container.querySelector('[role="tab"][aria-selected="true"]')
+          ?.textContent
+      ).toBe({ unread: '未读', all: '全部', read: '已读' }[state])
+      expect(list.contains(categories)).toBe(false)
+      expect(
+        container.querySelectorAll('a[href="/message/chat"]')
+      ).toHaveLength(1)
+      expect(mocks.get).toHaveBeenCalledTimes(1)
+    }
+  )
+
   it('changes filters through browser history without a server navigation', async () => {
     await render()
     const history = vi.spyOn(dom.window.history, 'pushState')
-    await click('求助动态 · 0')
+    await click('求助动态，未读 0 条')
     expect(history).toHaveBeenCalledWith(
       null,
       '',
@@ -261,14 +342,14 @@ describe('notification list browsing and concrete reading', () => {
 
   it('starts a fresh unread view on an explicit filter change while history restoration reuses the previous view', async () => {
     await render()
-    await click('求助动态 · 0')
+    await click('求助动态，未读 0 条')
     mocks.params = 'state=unread&category=help'
     await render()
     expect(mocks.get).toHaveBeenCalledTimes(2)
     mocks.params = 'state=unread'
     await render()
     expect(mocks.get).toHaveBeenCalledTimes(2)
-    await click('求助动态 · 0')
+    await click('求助动态，未读 0 条')
     mocks.params = 'state=unread&category=help'
     await render()
     expect(mocks.get).toHaveBeenCalledTimes(3)
@@ -308,7 +389,8 @@ describe('notification list browsing and concrete reading', () => {
       for (const category of NOTIFICATION_CATEGORIES) {
         const label = NOTIFICATION_CATEGORY_LABELS[category]
         const button = [...container.querySelectorAll('button')].find(
-          (candidate) => candidate.textContent?.startsWith(label + ' ·')
+          (candidate) =>
+            candidate.getAttribute('aria-label')?.startsWith(label + '，')
         )!
         await act(async () => button.click())
         const href = dom.window.location.pathname + dom.window.location.search
@@ -325,12 +407,12 @@ describe('notification list browsing and concrete reading', () => {
         expect(
           [...container.querySelectorAll('button')]
             .find((candidate) =>
-              candidate.textContent?.startsWith(label + ' ·')
+              candidate.getAttribute('aria-label')?.startsWith(label + '，')
             )
             ?.getAttribute('aria-pressed')
         ).toBe('true')
       }
-      await click('全部分类 · 90')
+      await click('全部分类，未读 90 条')
       expect(dom.window.location.pathname + dom.window.location.search).toBe(
         '/message/notice?state=unread'
       )
@@ -418,6 +500,10 @@ describe('notification list browsing and concrete reading', () => {
     'drops queued confirmations when %s happens before dispatch',
     async (change) => {
       await render()
+      if (change === 'reload')
+        await act(async () =>
+          useMessageStore.setState({ notifications: summary(90, '91') })
+        )
       await click('看见 90')
       if (change === 'hidden') {
         vi.spyOn(dom.window.document, 'visibilityState', 'get').mockReturnValue(
@@ -437,7 +523,7 @@ describe('notification list browsing and concrete reading', () => {
           dom.window.dispatchEvent(new dom.window.Event('focus'))
         })
       } else if (change === 'next') await click('下一页')
-      else await click('重新加载')
+      else await click('有新通知／有新动态，点击查看')
       await act(async () => {
         await new Promise((resolve) => setTimeout(resolve, 120))
       })
@@ -459,12 +545,15 @@ describe('notification list browsing and concrete reading', () => {
     const pending = deferred<{ id: number; outcome: string }[]>()
     mocks.confirm.mockReturnValueOnce(pending.promise)
     await render()
+    await act(async () =>
+      useMessageStore.setState({ notifications: summary(90, '91') })
+    )
     await click('看见 90')
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 120))
     })
     expect(mocks.confirm).toHaveBeenCalledTimes(1)
-    await click('重新加载')
+    await click('有新通知／有新动态，点击查看')
     await act(async () => pending.resolve([{ id: 90, outcome: 'changed' }]))
     expect(container.textContent).not.toContain('已有新动态')
     expect(container.textContent).not.toContain('刚刚已读')
@@ -482,7 +571,7 @@ describe('notification list browsing and concrete reading', () => {
       }
       await render()
       if (operation === 'clear') {
-        await click('清理当前分类已读')
+        await click('清理全部已读')
         await click('确认清理')
       }
       expect(mocks.refresh).toHaveBeenCalledTimes(1)
@@ -536,6 +625,9 @@ describe('notification list browsing and concrete reading', () => {
     )
     expect(mocks.get).toHaveBeenCalledTimes(1)
     expect(container.textContent).toContain('第 1 页')
+    expect(
+      container.querySelector('nav[aria-label="通知分类"]')?.textContent
+    ).not.toMatch(/\d/)
   })
 
   it('honors an explicit all view after authentication resolves with unread notifications', async () => {
@@ -627,16 +719,56 @@ describe('notification list browsing and concrete reading', () => {
       state: 'read',
       category: 'help'
     })
-    await click('互动消息 · 0')
+    await click('互动消息，未读 0 条')
     expect(dom.window.location.pathname + dom.window.location.search).toBe(
       '/message/notice?state=read&category=interaction'
     )
-    await click('清理当前分类已读')
+    await click('清理已读')
     expect(container.querySelector('[role="dialog"]')).not.toBeNull()
     await click('取消')
     expect(container.querySelector('[role="dialog"]')).toBeNull()
     expect(mocks.remove).not.toHaveBeenCalled()
   })
+
+  it.each([
+    { category: '', label: '清理全部已读', scope: '全部分类', query: {} },
+    {
+      category: 'help',
+      label: '清理已读',
+      scope: '求助动态',
+      query: { category: 'help' }
+    }
+  ])(
+    'labels and confirms the $scope clearing scope',
+    async ({ category, label, scope, query }) => {
+      mocks.params = 'state=read' + (category ? '&category=' + category : '')
+      mocks.remove.mockResolvedValueOnce({
+        deleted: 1,
+        summary: {
+          hasUnreadNotification: true,
+          hasUnreadConversation: false,
+          notifications: summary()
+        }
+      })
+      await render()
+      expect(container.textContent).not.toContain('重新加载')
+      await click(label)
+      expect(container.querySelector('[role="dialog"]')?.textContent).toContain(
+        `确认清理${scope}中已读的通知`
+      )
+      expect(mocks.remove).not.toHaveBeenCalled()
+      await click('确认清理')
+      expect(mocks.remove).toHaveBeenCalledExactlyOnceWith(
+        '/message/read',
+        query,
+        expect.objectContaining({
+          headers: { 'X-Kun-Notification-Session': 'ctx-a' }
+        })
+      )
+      expect(container.querySelector('[role="dialog"]')).toBeNull()
+      expect(mocks.get).toHaveBeenCalledTimes(2)
+    }
+  )
 
   it('ignores an old identity response while the new identity loads its own content', async () => {
     const pending = deferred<NotificationList>()
@@ -663,6 +795,49 @@ describe('notification list browsing and concrete reading', () => {
     expect(mocks.confirm).not.toHaveBeenCalled()
   })
 
+  it.each(['unread', 'all', 'read'])(
+    'shows the existing empty illustration without pagination on an empty %s first page',
+    async (state) => {
+      mocks.params = 'state=' + state
+      mocks.get.mockResolvedValueOnce({
+        ...page(90),
+        messages: [],
+        total: 0,
+        nextCursor: null
+      })
+      await render()
+      expect(container.querySelector('img')?.getAttribute('src')).toBe(
+        '/null.webp'
+      )
+      expect(container.querySelector('img')?.getAttribute('alt')).toBe(
+        state === 'unread' ? '暂无未读消息' : '暂无消息'
+      )
+      expect(container.textContent).not.toContain('上一页')
+      expect(container.textContent).not.toContain('下一页')
+      expect(container.textContent).not.toContain('第 1 页')
+      expect(mocks.get).toHaveBeenCalledTimes(1)
+    }
+  )
+
+  it('keeps the previous page reachable when remaining unread notifications disappear before loading the next page', async () => {
+    mocks.get.mockResolvedValueOnce(page(90)).mockResolvedValueOnce({
+      ...page(60),
+      messages: [],
+      total: 30,
+      nextCursor: null
+    })
+    await render()
+    await click('下一页')
+    expect(container.querySelector('img')?.getAttribute('alt')).toBe(
+      '暂无未读消息'
+    )
+    await click('上一页')
+    expect(container.querySelector('article')?.getAttribute('data-id')).toBe(
+      '90'
+    )
+    expect(mocks.get).toHaveBeenCalledTimes(2)
+  })
+
   it('distinguishes a failed page from an empty unread collection and retries the attempted page', async () => {
     mocks.get
       .mockResolvedValueOnce(page(90))
@@ -671,7 +846,7 @@ describe('notification list browsing and concrete reading', () => {
     await render()
     await click('下一页')
     expect(container.querySelector('[role="alert"]')).not.toBeNull()
-    expect(container.textContent).not.toContain('没有未读通知')
+    expect(container.querySelector('img[src="/null.webp"]')).toBeNull()
     expect(container.querySelectorAll('article')).toHaveLength(30)
     await click('重试')
     expect(mocks.get.mock.calls[2][1]).toMatchObject({

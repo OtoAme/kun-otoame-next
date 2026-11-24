@@ -2,6 +2,15 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { usePathname, useSearchParams } from 'next/navigation'
+import { Tab, Tabs } from '@heroui/tabs'
+import {
+  Bell,
+  CircleHelp,
+  FileCheck2,
+  Globe,
+  MessagesSquare,
+  Wrench
+} from 'lucide-react'
 import {
   Button,
   Modal,
@@ -12,9 +21,11 @@ import {
   useDisclosure
 } from '@heroui/react'
 import { KunLoading } from '~/components/kun/Loading'
+import { KunNull } from '~/components/kun/Null'
 import { KunPagination } from '~/components/kun/Pagination'
 import { useSessionContentReady } from '~/components/kun/SessionContentBoundary'
 import { MessageCard } from './MessageCard'
+import { MessageNav } from './MessageNav'
 import { KunFetchError, kunFetchDelete, kunFetchGet } from '~/utils/kunFetch'
 import { refreshUserSession } from '~/utils/sessionClient'
 import { useUserStore } from '~/store/userStore'
@@ -44,6 +55,14 @@ import type {
 } from '~/types/api/message'
 
 type ReadingState = 'unread' | 'all' | 'read'
+const categoryIcons = {
+  '': Bell,
+  interaction: MessagesSquare,
+  help: CircleHelp,
+  review: FileCheck2,
+  maintenance: Wrench,
+  account: Globe
+}
 interface Props {
   initialMessages?: Message[]
   total?: number
@@ -378,8 +397,8 @@ export const MessageContainer = (_props: Props) => {
               } else
                 errors[result.id] =
                   result.outcome === 'changed'
-                    ? '这条通知已有新动态，请重新加载后阅读'
-                    : '这条通知已不可用，请重新加载'
+                    ? '这条通知已有新动态，请刷新页面后阅读'
+                    : '这条通知已不可用，请刷新页面'
             }
             if (activePage()) {
               setReadErrors((previous) => ({ ...previous, ...errors }))
@@ -393,7 +412,7 @@ export const MessageContainer = (_props: Props) => {
                 ...Object.fromEntries(
                   entries.map(({ message }) => [
                     message.id,
-                    '阅读确认失败，请重新加载后重试'
+                    '阅读确认失败，请刷新页面后重试'
                   ])
                 )
               }))
@@ -487,164 +506,188 @@ export const MessageContainer = (_props: Props) => {
 
   if (!identity)
     return (
-      <p role="status">
-        {session.sessionStatus === 'checking'
-          ? '正在确认登录状态…'
-          : session.sessionStatus === 'unavailable'
-            ? '登录状态暂不可用，恢复后继续查看通知'
-            : '请登录后查看通知'}
-      </p>
+      <>
+        <MessageNav />
+        <p role="status" className="w-full lg:w-3/4">
+          {session.sessionStatus === 'checking'
+            ? '正在确认登录状态…'
+            : session.sessionStatus === 'unavailable'
+              ? '登录状态暂不可用，恢复后继续查看通知'
+              : '请登录后查看通知'}
+        </p>
+      </>
     )
   return (
-    <section className="space-y-4" aria-label="通知中心">
-      <div className="flex gap-2 overflow-x-auto pb-2" aria-label="通知分类">
-        {['', ...NOTIFICATION_CATEGORIES].map((item) => (
-          <Button
-            key={item}
-            size="sm"
-            className="shrink-0"
-            variant={(category ?? '') === item ? 'solid' : 'flat'}
-            color={(category ?? '') === item ? 'primary' : 'default'}
-            aria-pressed={(category ?? '') === item}
-            onPress={() => filter({ category: item })}
-          >
-            {item
+    <>
+      <MessageNav>
+        <nav
+          className="flex flex-row gap-2 overflow-x-auto lg:flex-col"
+          aria-label="通知分类"
+        >
+          {(['', ...NOTIFICATION_CATEGORIES] as const).map((item) => {
+            const Icon = categoryIcons[item]
+            const label = item
               ? NOTIFICATION_CATEGORY_LABELS[item as NotificationCategory]
-              : '全部分类'}{' '}
-            ·{' '}
-            {item
-              ? (summary?.categories[item as NotificationCategory].unread ??
-                '—')
-              : (summary?.unread ?? '—')}
-          </Button>
-        ))}
-      </div>
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex gap-2" aria-label="阅读状态">
-          {(['unread', 'all', 'read'] as const).map((item) => (
-            <Button
-              key={item}
-              size="sm"
-              aria-pressed={state === item}
-              variant={state === item ? 'solid' : 'flat'}
-              onPress={() => filter({ state: item })}
-            >
-              {{ unread: '未读', all: '全部', read: '已读' }[item]}
-            </Button>
-          ))}
-        </div>
-        {state === 'read' && (
-          <Button
-            size="sm"
-            variant="light"
-            color="danger"
-            isDisabled={loading || clearing}
-            onPress={onOpen}
-          >
-            清理当前分类已读
-          </Button>
-        )}
-        <Button size="sm" variant="light" isDisabled={loading} onPress={reload}>
-          重新加载
-        </Button>
-      </div>
-      {newContent && (
-        <div role="status">
-          <Button color="primary" variant="flat" onPress={reload}>
-            有新通知／有新动态，点击查看
-          </Button>
-        </div>
-      )}
-      {error && (
-        <div role="alert" className="space-y-2">
-          <p>{error}</p>
-          <Button
-            size="sm"
-            onPress={() => {
-              if (view)
-                void fetchPage(
-                  view,
-                  attemptedPage.current.index,
-                  attemptedPage.current.cursor
-                )
-            }}
-          >
-            重试
-          </Button>
-        </div>
-      )}
-      {loading ? (
-        <KunLoading hint="正在获取通知…" />
-      ) : current?.messages.length ? (
-        <div className="space-y-4">
-          {current.messages.map((message) => (
-            <MessageCard
-              key={message.id + ':' + message.contentVersion}
-              msg={message}
-              identity={identity}
-              onSeen={seen}
-              justRead={current.justRead.includes(message.id)}
-              confirmationError={readErrors[message.id]}
-            />
-          ))}
-        </div>
-      ) : (
-        !error && (
-          <div role="status" className="space-y-3">
-            <p>{state === 'unread' ? '没有未读通知' : '暂无通知'}</p>
-            {state === 'unread' && (
-              <Button variant="flat" onPress={() => filter({ state: 'all' })}>
-                查看全部通知
+              : '全部分类'
+            const unread = item
+              ? summary?.categories[item as NotificationCategory].unread
+              : summary?.unread
+            return (
+              <Button
+                key={item}
+                size="sm"
+                className="justify-start w-full max-lg:w-auto max-lg:shrink-0"
+                variant={(category ?? '') === item ? 'flat' : 'light'}
+                color={(category ?? '') === item ? 'secondary' : 'default'}
+                startContent={<Icon className="size-3.5 shrink-0" />}
+                aria-pressed={(category ?? '') === item}
+                aria-label={`${label}，${unread === undefined ? '未读数待获取' : `未读 ${unread} 条`}`}
+                title={unread ? '未读通知数' : undefined}
+                onPress={() => filter({ category: item })}
+              >
+                <span>{label}</span>
+                {(unread ?? 0) > 0 && (
+                  <span
+                    className="shrink-0 tabular-nums lg:ml-auto"
+                    aria-hidden="true"
+                  >
+                    {unread}
+                  </span>
+                )}
               </Button>
-            )}
-          </div>
-        )
-      )}
-      {current && state === 'unread' && (
-        <div className="flex items-center justify-center gap-4">
-          <Button
-            isDisabled={loading || !view || view.index === 0}
-            onPress={() => turn(view!.index - 1)}
+            )
+          })}
+        </nav>
+      </MessageNav>
+      <section
+        className="w-full min-w-0 space-y-4 lg:w-3/4"
+        aria-label="通知中心"
+      >
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <Tabs
+            aria-label="阅读状态"
+            selectedKey={state}
+            onSelectionChange={(key) => filter({ state: key as ReadingState })}
           >
-            上一页
-          </Button>
-          <span>第 {(view?.index ?? 0) + 1} 页</span>
-          <Button
-            isDisabled={loading || !current.nextCursor}
-            onPress={() => turn(view!.index + 1)}
-          >
-            下一页
-          </Button>
+            <Tab key="unread" title="未读" />
+            <Tab key="all" title="全部" />
+            <Tab key="read" title="已读" />
+          </Tabs>
+          {state === 'read' && (
+            <Button
+              size="sm"
+              variant="flat"
+              color="danger"
+              className="ml-auto"
+              isDisabled={loading || clearing}
+              onPress={onOpen}
+            >
+              {category ? '清理已读' : '清理全部已读'}
+            </Button>
+          )}
         </div>
-      )}
-      {current && state !== 'unread' && current.total > 30 && (
-        <KunPagination
-          page={(view?.index ?? 0) + 1}
-          total={Math.ceil(current.total / 30)}
-          onPageChange={(page) => turn(page - 1)}
-          isLoading={loading}
-        />
-      )}
-      <Modal isOpen={isOpen} onOpenChange={onOpenChange} placement="center">
-        <ModalContent>
-          <ModalHeader>清理已读通知</ModalHeader>
-          <ModalBody>
-            <p>
-              确认清理
-              {category ? NOTIFICATION_CATEGORY_LABELS[category] : '全部分类'}
-              中仍为已读的通知？未读通知会保留。
-            </p>
-          </ModalBody>
-          <ModalFooter>
-            <Button variant="light" isDisabled={clearing} onPress={onClose}>
-              取消
+        {newContent && (
+          <div role="status">
+            <Button color="primary" variant="flat" onPress={reload}>
+              有新通知／有新动态，点击查看
             </Button>
-            <Button color="danger" isLoading={clearing} onPress={clear}>
-              确认清理
+          </div>
+        )}
+        {error && (
+          <div role="alert" className="space-y-2">
+            <p>{error}</p>
+            <Button
+              size="sm"
+              onPress={() => {
+                if (view)
+                  void fetchPage(
+                    view,
+                    attemptedPage.current.index,
+                    attemptedPage.current.cursor
+                  )
+              }}
+            >
+              重试
             </Button>
-          </ModalFooter>
-        </ModalContent>
-      </Modal>
-    </section>
+          </div>
+        )}
+        {loading ? (
+          <KunLoading hint="正在获取通知…" />
+        ) : current?.messages.length ? (
+          <div className="space-y-4">
+            {current.messages.map((message) => (
+              <MessageCard
+                key={message.id + ':' + message.contentVersion}
+                msg={message}
+                identity={identity}
+                onSeen={seen}
+                justRead={current.justRead.includes(message.id)}
+                confirmationError={readErrors[message.id]}
+              />
+            ))}
+          </div>
+        ) : (
+          !error && (
+            <div role="status" className="flex flex-col items-center gap-4">
+              <KunNull
+                message={state === 'unread' ? '暂无未读消息' : '暂无消息'}
+              />
+              {state === 'unread' && (
+                <Button variant="flat" onPress={() => filter({ state: 'all' })}>
+                  查看全部通知
+                </Button>
+              )}
+            </div>
+          )
+        )}
+        {current &&
+          state === 'unread' &&
+          (view!.index > 0 || current.nextCursor) && (
+            <div className="flex items-center justify-center gap-4">
+              <Button
+                isDisabled={loading || !view || view.index === 0}
+                onPress={() => turn(view!.index - 1)}
+              >
+                上一页
+              </Button>
+              <span>第 {(view?.index ?? 0) + 1} 页</span>
+              <Button
+                isDisabled={loading || !current.nextCursor}
+                onPress={() => turn(view!.index + 1)}
+              >
+                下一页
+              </Button>
+            </div>
+          )}
+        {current && state !== 'unread' && current.total > 30 && (
+          <KunPagination
+            page={(view?.index ?? 0) + 1}
+            total={Math.ceil(current.total / 30)}
+            onPageChange={(page) => turn(page - 1)}
+            isLoading={loading}
+          />
+        )}
+        <Modal isOpen={isOpen} onOpenChange={onOpenChange} placement="center">
+          <ModalContent>
+            <ModalHeader>清理已读通知</ModalHeader>
+            <ModalBody>
+              <p>
+                确认清理
+                {category ? NOTIFICATION_CATEGORY_LABELS[category] : '全部分类'}
+                中已读的通知？未读通知会保留。
+              </p>
+            </ModalBody>
+            <ModalFooter>
+              <Button variant="light" isDisabled={clearing} onPress={onClose}>
+                取消
+              </Button>
+              <Button color="danger" isLoading={clearing} onPress={clear}>
+                确认清理
+              </Button>
+            </ModalFooter>
+          </ModalContent>
+        </Modal>
+      </section>
+    </>
   )
 }

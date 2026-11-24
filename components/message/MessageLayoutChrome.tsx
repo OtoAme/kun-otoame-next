@@ -19,6 +19,8 @@ export const MessageLayoutChrome = ({
 }) => {
   const pathname = usePathname()
   const isConversationDetail = isMessageChatConversationPath(pathname)
+  const isNotificationSection =
+    /^\/message\/(notice|follow|mention|system)$/.test(pathname)
   const conversationDetailStyle = isConversationDetail
     ? ({ '--message-chat-top-reserve': '3dvh' } as CSSProperties)
     : undefined
@@ -175,10 +177,7 @@ export const MessageLayoutChrome = ({
       )}
     >
       {!isConversationDetail && (
-        <KunHeader
-          name="消息"
-          description="查看通知与私聊。通知正文在前台持续可见后，才会确认已读。"
-        />
+        <KunHeader name="消息" description="查看通知与私聊。" />
       )}
       <div
         className={cn(
@@ -187,10 +186,16 @@ export const MessageLayoutChrome = ({
             : 'flex flex-col my-4 gap-6 lg:flex-row'
         )}
       >
-        <MessageNav
-          className={isConversationDetail ? 'max-lg:hidden' : undefined}
-        />
-        <div className="w-full lg:w-3/4">{children}</div>
+        {isNotificationSection ? (
+          children
+        ) : (
+          <>
+            <MessageNav
+              className={isConversationDetail ? 'max-lg:hidden' : undefined}
+            />
+            <div className="w-full lg:w-3/4">{children}</div>
+          </>
+        )}
       </div>
     </div>
   )

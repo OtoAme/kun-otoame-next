@@ -167,10 +167,10 @@ describe('notification card reading controls', () => {
   it('does not retry already-read cards or failed confirmations without an explicit reload', async () => {
     await render({ ...message, status: 1 })
     expect(mocks.observe).not.toHaveBeenCalled()
-    await render(message, '阅读确认失败，请重新加载后重试')
+    await render(message, '阅读确认失败，请刷新页面后重试')
     expect(mocks.observe).not.toHaveBeenCalled()
     expect(container.querySelector('[role="status"]')?.textContent).toContain(
-      '重新加载'
+      '刷新页面'
     )
   })
 

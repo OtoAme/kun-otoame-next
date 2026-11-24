@@ -167,11 +167,6 @@ export const MessageCard = ({
             <span className="text-xs text-default-500">
               {NOTIFICATION_CATEGORY_LABELS[category]}
             </span>
-            {!msg.eventType && msg.type === 'system' && (
-              <span className="text-xs text-default-500">
-                历史系统通知 · 事件未细分
-              </span>
-            )}
           </div>
           <p
             ref={body}
@@ -190,27 +185,29 @@ export const MessageCard = ({
               {expanded ? '收起正文' : '展开完整正文'}
             </Button>
           )}
-          <span className="text-sm text-default-400">
-            {formatTimeDifference(msg.created)}
-          </span>
-          {msg.updated &&
-            new Date(msg.updated).getTime() >
-              new Date(msg.created).getTime() + 1000 && (
-              <p className="text-xs text-default-500">
-                最近更新：{formatTimeDifference(msg.updated)}
-              </p>
-            )}
+          <Link
+            href={entryHref}
+            prefetch={false}
+            className="inline-flex text-primary underline underline-offset-4"
+            onClick={remember}
+            onAuxClick={remember}
+            onContextMenu={remember}
+          >
+            查看详情
+          </Link>
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <Link
-              href={entryHref}
-              prefetch={false}
-              className="text-primary underline underline-offset-4"
-              onClick={remember}
-              onAuxClick={remember}
-              onContextMenu={remember}
-            >
-              查看详情
-            </Link>
+            <div className="space-y-1">
+              <span className="text-sm text-default-400">
+                {formatTimeDifference(msg.created)}
+              </span>
+              {msg.updated &&
+                new Date(msg.updated).getTime() >
+                  new Date(msg.created).getTime() + 1000 && (
+                  <p className="text-xs text-default-500">
+                    最近更新：{formatTimeDifference(msg.updated)}
+                  </p>
+                )}
+            </div>
             <Chip color={msg.status === 0 ? 'danger' : 'default'} size="sm">
               {msg.status === 0 ? '未读' : justRead ? '刚刚已读' : '已阅读'}
             </Chip>
