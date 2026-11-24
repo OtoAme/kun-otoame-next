@@ -481,7 +481,7 @@ describe('notification list browsing and concrete reading', () => {
       )
       const categories = container.querySelector('nav[aria-label="通知分类"]')!
       const list = container.querySelector('section[aria-label="通知中心"]')!
-      expect(categories.querySelectorAll('button')).toHaveLength(6)
+      expect(categories.querySelectorAll('button')).toHaveLength(8)
       expect(
         categories.querySelector('button')?.getAttribute('aria-label')
       ).toBe('全部分类，未读 90 条')
@@ -541,7 +541,7 @@ describe('notification list browsing and concrete reading', () => {
   })
 
   it.each(['follow', 'mention', 'system'])(
-    'normalizes the legacy %s entry and switches across all five categories without a hidden type',
+    'normalizes the legacy %s entry and switches across all categories without a hidden type',
     async (entry) => {
       mocks.pathname = '/message/' + entry
       mocks.params = ''
@@ -549,7 +549,11 @@ describe('notification list browsing and concrete reading', () => {
         await import('../../app/(site)/message/' + entry + '/page')
       ).default
       await act(async () => root!.render(<LegacyPage />))
-      const initialCategory = entry === 'system' ? 'account' : 'interaction'
+      const initialCategory = {
+        system: 'account',
+        follow: 'follow',
+        mention: 'mention'
+      }[entry]
       expect(mocks.get.mock.calls.at(-1)?.[1]).toEqual({
         state: 'unread',
         category: initialCategory,
@@ -887,7 +891,7 @@ describe('notification list browsing and concrete reading', () => {
       state: 'read',
       category: 'help'
     })
-    await click('互动消息，未读 0 条')
+    await click('互动提醒，未读 0 条')
     expect(dom.window.location.pathname + dom.window.location.search).toBe(
       '/message/notice?state=read&category=interaction'
     )

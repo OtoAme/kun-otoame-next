@@ -67,15 +67,21 @@ const notificationSummary = (unread = 0) => ({
   unread,
   sequence: '90',
   categories: Object.fromEntries(
-    ['interaction', 'help', 'review', 'maintenance', 'account'].map(
-      (category) => [
-        category,
-        {
-          unread: category === 'account' ? unread : 0,
-          sequence: category === 'account' ? '90' : '0'
-        }
-      ]
-    )
+    [
+      'mention',
+      'interaction',
+      'follow',
+      'help',
+      'review',
+      'maintenance',
+      'account'
+    ].map((category) => [
+      category,
+      {
+        unread: category === 'account' ? unread : 0,
+        sequence: category === 'account' ? '90' : '0'
+      }
+    ])
   )
 })
 

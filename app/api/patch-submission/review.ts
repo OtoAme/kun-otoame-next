@@ -1,3 +1,4 @@
+import { notifyFollowedPublication } from '~/app/api/utils/followedPublication'
 import { Prisma } from '@prisma/client'
 import { prisma } from '~/prisma/index'
 import { createMessage } from '~/app/api/utils/message'
@@ -305,6 +306,7 @@ export const approvePatchSubmission = async (
             tx
           )
 
+          await notifyFollowedPublication(patch.id, undefined, tx)
           await writeAdminLog(
             tx,
             reviewer,

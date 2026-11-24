@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { Button } from '@heroui/button'
 import { Card, CardBody } from '@heroui/card'
@@ -8,6 +8,7 @@ import { Avatar } from '@heroui/avatar'
 import { Chip } from '@heroui/chip'
 import { formatTimeDifference } from '~/utils/time'
 import { generateUUID } from '~/utils/random'
+import { NotificationMarkdown } from './NotificationMarkdown'
 import { notificationContent } from '~/utils/notificationContent'
 import {
   AtSign,
@@ -47,6 +48,7 @@ interface Props {
     eligible?: () => boolean,
     immediate?: boolean
   ) => void
+  showCategory?: boolean
   justRead?: boolean
   confirmationError?: string
 }
@@ -90,10 +92,12 @@ export const MessageCard = ({
   msg,
   identity,
   onSeen,
+  showCategory = true,
   justRead,
   confirmationError
 }: Props) => {
   const contentReady = useSessionContentReady()
+  const headingId = useId()
   const href = getCardRoute(msg)
   const token = useMemo(generateUUID, [msg.id, msg.contentVersion])
   const entryHref =
@@ -110,7 +114,7 @@ export const MessageCard = ({
   }
   const card = useRef<HTMLDivElement>(null)
   const content = notificationContent(msg)
-  const long = content.body.length > 350 || content.body.split('\n').length > 8
+  const long = msg.content.length > 350 || msg.content.split('\n').length > 8
   const [expanded, setExpanded] = useState(false)
   const category = msg.category ?? notificationCategory(msg.eventType, msg.type)
 
@@ -144,23 +148,40 @@ export const MessageCard = ({
     <Card
       ref={card}
       data-notification-id={msg.id}
-      className="w-full border border-default-100 dark:border-default-200"
+      className="relative w-full border border-default-100 transition-shadow hover:shadow-medium dark:border-default-200"
     >
+      <Link
+        href={entryHref}
+        prefetch={false}
+        aria-labelledby={headingId}
+        onClick={remember}
+        onAuxClick={remember}
+        onContextMenu={remember}
+        className="absolute inset-0 z-10 rounded-large outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-focus"
+      />
       <CardBody className="flex flex-row items-start gap-3 sm:gap-4">
         {msg.sender ? (
           <KunAvatar
             uid={msg.sender.id}
             avatarProps={{
               src: msg.sender.avatar,
-              name: msg.sender.name
+              name: msg.sender.name,
+              classNames: { base: 'relative z-20' }
             }}
           />
         ) : (
-          <Avatar src="/favicon.webp" name="系统消息" />
+          <Avatar
+            className="relative z-20"
+            src="/favicon.webp"
+            name="系统消息"
+          />
         )}
 
         <div className="min-w-0 flex-1 space-y-2">
-          <div className="flex flex-wrap items-center gap-2">
+          <div
+            id={headingId}
+            className="flex flex-wrap items-center gap-2 [&>*]:relative [&>*]:z-20"
+          >
             {getNotificationIcon(msg.type)}
 
             <span className="font-semibold">
@@ -172,23 +193,49 @@ export const MessageCard = ({
                 ? NOTIFICATION_EVENTS[msg.eventType]?.label
                 : MESSAGE_TYPE_MAP[msg.type]}
             </span>
-            <span className="text-xs text-default-500">
-              {NOTIFICATION_CATEGORY_LABELS[category]}
-            </span>
+            {showCategory && (
+              <span className="text-xs text-default-500">
+                {NOTIFICATION_CATEGORY_LABELS[category]}
+              </span>
+            )}
           </div>
           <div
             data-testid="message-content"
-            className="space-y-2 whitespace-pre-wrap break-words text-default-600"
+            className={`relative z-20 cursor-text select-text space-y-2 whitespace-pre-wrap break-words text-default-600 ${long && !expanded ? 'line-clamp-5 max-h-[calc(5lh+1.5rem)]' : ''}`}
           >
-            {content.template && <p>{content.template}</p>}
-            <blockquote className="rounded-r-medium border-l-3 border-default-300 bg-default-50 px-4 py-3">
-              <p className={long && !expanded ? 'line-clamp-5' : undefined}>
-                {content.body}
-              </p>
-            </blockquote>
+            {content.map((part, index) =>
+              part.quoted ? (
+                <blockquote
+                  key={index}
+                  className="rounded-r-medium border-l-3 border-default-300 bg-default-50 px-4 py-3"
+                >
+                  {part.markdown ? (
+                    <NotificationMarkdown text={part.text} />
+                  ) : (
+                    part.text
+                  )}
+                </blockquote>
+              ) : (
+                <p key={index}>
+                  {part.inlineExcerpt ? (
+                    <>
+                      {part.inlineExcerpt.before}
+                      <NotificationMarkdown
+                        inlineOnly
+                        text={part.inlineExcerpt.source}
+                      />
+                      {part.inlineExcerpt.after}
+                    </>
+                  ) : (
+                    part.text
+                  )}
+                </p>
+              )
+            )}
           </div>
           {long && (
             <Button
+              className="relative z-20"
               size="sm"
               variant="light"
               aria-expanded={expanded}
@@ -207,18 +254,8 @@ export const MessageCard = ({
               {expanded ? '收起正文' : '展开完整正文'}
             </Button>
           )}
-          <Link
-            href={entryHref}
-            prefetch={false}
-            className="inline-flex text-primary underline underline-offset-4"
-            onClick={remember}
-            onAuxClick={remember}
-            onContextMenu={remember}
-          >
-            查看详情
-          </Link>
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="space-y-1">
+            <div className="relative z-20 space-y-1">
               <span className="text-sm text-default-400">
                 {formatTimeDifference(msg.created)}
               </span>
@@ -230,12 +267,16 @@ export const MessageCard = ({
                   </p>
                 )}
             </div>
-            <Chip color={msg.status === 0 ? 'danger' : 'default'} size="sm">
+            <Chip
+              className="relative z-20"
+              color={msg.status === 0 ? 'danger' : 'default'}
+              size="sm"
+            >
               {msg.status === 0 ? '未读' : justRead ? '刚刚已读' : '已阅读'}
             </Chip>
           </div>
           {confirmationError && (
-            <p role="status" className="text-sm text-warning-600">
+            <p role="status" className="relative z-20 text-sm text-warning-600">
               {confirmationError}
             </p>
           )}

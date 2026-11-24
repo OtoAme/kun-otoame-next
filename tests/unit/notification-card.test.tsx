@@ -87,11 +87,16 @@ afterEach(async () => {
   dom.window.close()
   vi.unstubAllGlobals()
 })
-const render = async (msg = message, confirmationError?: string) => {
+const render = async (
+  msg = message,
+  confirmationError?: string,
+  showCategory = true
+) => {
   await act(async () =>
     root.render(
       <MessageCard
         msg={msg}
+        showCategory={showCategory}
         identity={identity}
         onSeen={mocks.seen}
         confirmationError={confirmationError}
@@ -101,6 +106,101 @@ const render = async (msg = message, confirmationError?: string) => {
 }
 
 describe('notification card reading controls', () => {
+  it('labels the blank-area link with the heading and keeps body clicks and expansion independent', async () => {
+    await render({ ...message, content: '一段很长的通知'.repeat(90) })
+    const link = container.querySelector('a')!
+    const heading = document.getElementById(
+      link.getAttribute('aria-labelledby')!
+    )
+    expect(heading?.textContent).toContain('系统')
+    const body = container.querySelector<HTMLElement>(
+      '[data-testid="message-content"]'
+    )!
+    await act(async () => body.click())
+    expect(mocks.remember).not.toHaveBeenCalled()
+    expect(container.textContent).not.toContain('查看详情')
+    expect(link.contains(container.querySelector('button'))).toBe(false)
+    await act(async () => container.querySelector('button')!.click())
+    expect(mocks.remember).not.toHaveBeenCalled()
+  })
+
+  it('shows historical notices without an identifiable input field as ordinary text', async () => {
+    const content =
+      '【通知验收 1124-01】 旧格式更新请求\n这条合成样本用于检查历史通知的分类、正文、链接和阅读状态。'
+    await render({ ...message, type: 'pr', content })
+    expect(
+      container.querySelector('[data-testid="message-content"]')?.textContent
+    ).toBe(content)
+    expect(container.querySelector('blockquote')).toBeNull()
+  })
+
+  it('quotes the entered reason and reply separately from their generated labels', async () => {
+    const content =
+      '您的反馈已处理!\n\n反馈原因: 第一行\n第二行\n反馈处理回复: 已补充说明'
+    await render({ ...message, eventType: 'feedback-result', content })
+    expect(
+      [...container.querySelectorAll('blockquote')].map(
+        (quote) => quote.textContent
+      )
+    ).toEqual(['第一行\n第二行', '已补充说明'])
+    expect(
+      container.querySelector('[data-testid="message-content"]')?.textContent
+    ).toBe(content)
+  })
+
+  it('renders comment Markdown as formatting and links while keeping code inert', async () => {
+    await render({
+      ...message,
+      type: 'comment',
+      eventType: 'comment-reply',
+      content:
+        '回复了你的评论「这是 *原评论*」\nTA 的回复内容：\n[@admin](/user/2/resource) **成功了**\n\n`const example = 1`\n\n<script>sample</script>\n\n[无效链接](javascript:sample)'
+    })
+    const body = container.querySelector('[data-testid="message-content"]')!
+    expect(body.querySelector('em')?.textContent).toBe('原评论')
+    const reply = body.querySelector('blockquote')!
+    expect(reply.querySelector('a')?.getAttribute('href')).toBe(
+      '/user/2/resource'
+    )
+    expect(reply.querySelector('a')?.textContent).toBe('@admin')
+    expect(reply.querySelector('strong')?.textContent).toBe('成功了')
+    expect(reply.querySelector('code')?.textContent).toBe('const example = 1')
+    expect(reply.querySelectorAll('a')).toHaveLength(1)
+    expect(reply.querySelector('script')).toBeNull()
+    expect(reply.textContent).toContain('无效链接')
+  })
+
+  it('shows the category label only in the combined view', async () => {
+    const mention = {
+      ...message,
+      type: 'mention',
+      eventType: 'mention' as const
+    }
+    await render(mention)
+    expect(container.textContent).toContain('@与回复')
+    await render(mention, undefined, false)
+    expect(container.textContent).not.toContain('@与回复')
+    expect(container.textContent).toContain('提及')
+  })
+
+  it.each([
+    ['字'.repeat(350), false],
+    ['字'.repeat(351), true],
+    [Array(8).fill('行').join('\n'), false],
+    [Array(9).fill('行').join('\n'), true]
+  ] as const)(
+    'only folds content over the length or line threshold',
+    async (content, folded) => {
+      await render({ ...message, content })
+      expect(container.querySelector('[aria-expanded]') !== null).toBe(folded)
+      expect(
+        container
+          .querySelector('[data-testid="message-content"]')
+          ?.classList.contains('line-clamp-5')
+      ).toBe(folded)
+    }
+  )
+
   it('renders a stable notification entry on LAN HTTP without crypto.randomUUID', async () => {
     dom.reconfigure({ url: 'http://192.168.0.199:3000/message/notice' })
     vi.stubGlobal('crypto', {

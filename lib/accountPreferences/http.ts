@@ -31,8 +31,12 @@ export const preferenceRoute = async (
       return respond({ code: 'SESSION_INVALID', message: '请先登录' }, 401)
     const context = getSessionContext(payload)
     const schemas = req.nextUrl.searchParams.getAll('schema')
-    const notifications =
-      schemas.length === 1 && schemas[0] === NOTIFICATION_PREFERENCE_SCHEMA
+    const schema = schemas[0]
+    const supportsKey = (key: string) =>
+      !key.startsWith('notification:') ||
+      schema === NOTIFICATION_PREFERENCE_SCHEMA ||
+      (schema === 'notifications-v1' &&
+        key !== 'notification:follow-publication')
     const refreshRequired = () =>
       respond(
         {
@@ -41,16 +45,20 @@ export const preferenceRoute = async (
         },
         409
       )
-    if (schemas.length && !notifications) return refreshRequired()
+    if (
+      schemas.length > 1 ||
+      (schemas.length &&
+        schema !== 'notifications-v1' &&
+        schema !== NOTIFICATION_PREFERENCE_SCHEMA)
+    )
+      return refreshRequired()
     const project = (snapshot: PreferenceSnapshot): PreferenceSnapshot =>
-      notifications
+      schema === NOTIFICATION_PREFERENCE_SCHEMA
         ? snapshot
         : {
             ...snapshot,
             items: Object.fromEntries(
-              Object.entries(snapshot.items).filter(
-                ([key]) => !key.startsWith('notification:')
-              )
+              Object.entries(snapshot.items).filter(([key]) => supportsKey(key))
             )
           }
     if (!save) {
@@ -77,12 +85,10 @@ export const preferenceRoute = async (
     }
     const body = await req.json().catch(() => null)
     if (
-      !notifications &&
       Array.isArray(body?.changes) &&
       body.changes.some(
         (change: { key?: unknown } | null) =>
-          typeof change?.key === 'string' &&
-          change.key.startsWith('notification:')
+          typeof change?.key === 'string' && !supportsKey(change.key)
       )
     )
       return refreshRequired()

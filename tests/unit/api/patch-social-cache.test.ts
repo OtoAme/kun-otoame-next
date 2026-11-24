@@ -53,6 +53,8 @@ vi.mock('~/app/api/patch/rating/stat', () => ({
   recomputePatchRatingStat: recomputePatchRatingStatMock
 }))
 
+import { createDedupMessage } from '~/app/api/utils/message'
+import { notificationContent } from '~/utils/notificationContent'
 import { createPatchComment } from '~/app/api/patch/comment/create'
 import { deleteComment } from '~/app/api/patch/comment/delete'
 import { updateComment } from '~/app/api/patch/comment/update'
@@ -100,6 +102,41 @@ describe('patch social cache invalidation', () => {
       'abc12345'
     )
     expect(cacheMocks.invalidatePatchListCaches).toHaveBeenCalled()
+  })
+
+  it('delivers the reply text to the author of the original comment', async () => {
+    const reply = '已经试过了。\n第二步需要重新启动。'
+    prismaMock.patch_comment.findUnique.mockResolvedValue({
+      user_id: 7,
+      content: '如何使用？'
+    })
+    prismaMock.patch_comment.create.mockResolvedValue({
+      id: 12,
+      content: reply,
+      parent_id: 11,
+      user_id: 2,
+      patch_id: 3,
+      created: new Date(),
+      updated: new Date(),
+      patch: { name: 'Otome', unique_id: 'abc12345' },
+      user: { name: 'Alice' }
+    })
+    await createPatchComment({ patchId: 3, parentId: 11, content: reply }, 2)
+    const [message] = vi.mocked(createDedupMessage).mock.calls[0]
+    expect(message).toMatchObject({
+      event_type: 'comment-reply',
+      recipient_id: 7,
+      sender_id: 2,
+      link: '/abc12345?tab=comments&commentId=12'
+    })
+    const parts = notificationContent({
+      ...message,
+      eventType: message.event_type
+    })
+    expect(
+      parts.filter((part) => part.quoted).map((part) => part.text)
+    ).toEqual([reply])
+    expect(parts[0].text).toContain('如何使用？')
   })
 
   it('invalidates patch caches after updating a comment', async () => {

@@ -1,5 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+const followerNotice = vi.hoisted(() => vi.fn(async () => {}))
+vi.mock('~/app/api/utils/followedPublication', () => ({
+  notifyFollowedPublication: followerNotice
+}))
 const prismaMocks = vi.hoisted(() => {
   const tx = {
     patch: {
@@ -122,6 +126,7 @@ describe('createGalgame timeout', () => {
   it('allows slow banner processing by using the create publish timeout', async () => {
     await createGalgame(createInput, 1)
 
+    expect(followerNotice).toHaveBeenCalledWith(649)
     expect(prismaMocks.$transaction).toHaveBeenCalledWith(
       expect.any(Function),
       { timeout: 120000 }
@@ -135,7 +140,8 @@ describe('createGalgame timeout', () => {
     expect(prismaMocks._tx.patch.update).toHaveBeenCalledWith({
       where: { id: 649 },
       data: {
-        banner: 'https://img.example/worktrees/wt-a/patch/649/banner/banner.avif'
+        banner:
+          'https://img.example/worktrees/wt-a/patch/649/banner/banner.avif'
       }
     })
   })

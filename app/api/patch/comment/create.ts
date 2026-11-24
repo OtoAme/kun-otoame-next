@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { prisma } from '~/prisma/index'
 import { patchCommentCreateSchema } from '~/validations/patch'
 import { createDedupMessage } from '~/app/api/utils/message'
+import { formatCommentReplyNotification } from '~/utils/notificationContent'
 import { createMentionMessage } from '~/app/api/utils/createMentionMessage'
 import { markdownToHtml } from '~/app/api/utils/render/markdownToHtml'
 import {
@@ -45,7 +46,10 @@ export const createPatchComment = async (
       await createDedupMessage({
         event_type: 'comment-reply',
         type: 'comment',
-        content: `回复了您的评论：${parentComment!.content.slice(0, 107)}`,
+        content: formatCommentReplyNotification(
+          parentComment!.content,
+          data.content
+        ),
         sender_id: uid,
         recipient_id: parentComment!.user_id,
         link: `/${data.patch.unique_id}?tab=comments&commentId=${data.id}`

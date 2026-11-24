@@ -1,6 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { Prisma } from '@prisma/client'
 
+const followerNotice = vi.hoisted(() => vi.fn(async () => {}))
+vi.mock('~/app/api/utils/followedPublication', () => ({
+  notifyFollowedPublication: followerNotice
+}))
 const prismaMocks = vi.hoisted(() => {
   const tx = {
     patch_submission: {
@@ -178,6 +182,7 @@ describe('review permissions', () => {
 describe('approval concurrency', () => {
   it('claims the submission with a status guarded update', async () => {
     await approvePatchSubmission(1, admin, false)
+    expect(followerNotice).toHaveBeenCalledWith(55, undefined, tx)
 
     expect(tx.patch_submission.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({

@@ -1,3 +1,4 @@
+import { notifyFollowedPublication } from '~/app/api/utils/followedPublication'
 import { closeLinkCases } from '~/app/api/case/linkHealth'
 import {
   lockResourceForMutation,
@@ -81,6 +82,7 @@ export const approvePatchResource = async (
       prisma
     )
 
+    await notifyFollowedPublication(resource.patch_id, resourceId, prisma)
     await prisma.admin_log.create({
       data: {
         type: 'resource_apply_approve',

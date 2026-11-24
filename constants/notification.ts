@@ -1,5 +1,7 @@
 export const NOTIFICATION_CATEGORIES = [
+  'mention',
   'interaction',
+  'follow',
   'help',
   'review',
   'maintenance',
@@ -9,13 +11,15 @@ export const NOTIFICATION_CATEGORIES = [
 export type NotificationCategory = (typeof NOTIFICATION_CATEGORIES)[number]
 export const NOTIFICATION_PAGE_SIZES = [10, 20, 30] as const
 export const NOTIFICATION_DEFAULT_PAGE_SIZE = 20
-export const NOTIFICATION_PREFERENCE_SCHEMA = 'notifications-v1'
+export const NOTIFICATION_PREFERENCE_SCHEMA = 'notifications-v2'
 
 export const NOTIFICATION_CATEGORY_LABELS: Record<
   NotificationCategory,
   string
 > = {
-  interaction: '互动消息',
+  mention: '@与回复',
+  interaction: '互动提醒',
+  follow: '关注动态',
   help: '求助动态',
   review: '投稿审核',
   maintenance: '问题处理',
@@ -30,11 +34,12 @@ const event = (
 ) => ({ category, label, type, optional, defaultEnabled: true })
 
 export const NOTIFICATION_EVENTS = {
-  'comment-reply': event('interaction', '评论回复', 'comment', true),
-  mention: event('interaction', '提及', 'mention', true),
+  'comment-reply': event('mention', '评论回复', 'comment', true),
+  mention: event('mention', '提及', 'mention', true),
   like: event('interaction', '点赞', 'like', true),
   favorite: event('interaction', '收藏', 'favorite', true),
   follow: event('interaction', '被关注', 'follow', true),
+  'follow-publication': event('follow', '关注的人发布了新内容', 'follow', true),
   'help-answer': event('help', '本人求助的新回答', 'comment', true),
   'help-reply': event('help', '回答回复', 'comment', true),
   'help-resource': event('help', '与本人资源有关的求助', 'feedback', true),
@@ -82,8 +87,8 @@ export const notificationCategory = (
 ): NotificationCategory => {
   if (eventType && isNotificationEvent(eventType))
     return NOTIFICATION_EVENTS[eventType].category
-  if (['like', 'favorite', 'comment', 'follow', 'mention'].includes(type))
-    return 'interaction'
+  if (type === 'mention' || type === 'comment') return 'mention'
+  if (['like', 'favorite', 'follow'].includes(type)) return 'interaction'
   if (['apply', 'pr'].includes(type)) return 'review'
   if (['feedback', 'report'].includes(type)) return 'maintenance'
   return 'account'

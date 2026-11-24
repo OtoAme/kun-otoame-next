@@ -189,7 +189,7 @@ describe('notification preference capability and released-client compatibility',
   })
 
   it('returns complete subscription values and versions to negotiated reads, saves and conflicts', async () => {
-    const url = '/user/preferences?schema=notifications-v1'
+    const url = '/user/preferences?schema=notifications-v2'
     expect(
       preferenceSnapshotSchema.parse(
         await (await GET(request('GET', url))).json()
@@ -211,6 +211,26 @@ describe('notification preference capability and released-client compatibility',
     const response = await PATCH(request('PATCH', url, input))
     expect(response.status).toBe(409)
     expect(await response.json()).toEqual(conflict)
+  })
+
+  it('preserves the v1 notification settings and requires v2 to write the publication toggle', async () => {
+    const url = '/user/preferences?schema=notifications-v1'
+    const snapshot = await (await GET(request('GET', url))).json()
+    expect(snapshot.items['notification:follow']).toBeDefined()
+    expect(snapshot.items['notification:follow-publication']).toBeUndefined()
+    const changes = [
+      { key: 'notification:follow-publication', value: false, version: 0 }
+    ]
+    const body = { uid: 7, context, changes }
+    expect((await PATCH(request('PATCH', url, body))).status).toBe(409)
+    expect(mocks.save).not.toHaveBeenCalled()
+    expect(
+      (
+        await PATCH(
+          request('PATCH', '/user/preferences?schema=notifications-v2', body)
+        )
+      ).status
+    ).toBe(200)
   })
 
   it.each([

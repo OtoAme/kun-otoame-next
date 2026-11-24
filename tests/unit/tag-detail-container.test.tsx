@@ -352,7 +352,7 @@ describe('TagDetailContainer', () => {
     )!
     await act(async () => button.click())
     expect(fetchMock.kunFetchPatch).toHaveBeenCalledWith(
-      '/user/preferences?schema=notifications-v1',
+      '/user/preferences?schema=notifications-v2',
       {
         uid: 9,
         context: 'a'.repeat(64),

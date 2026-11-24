@@ -5,10 +5,12 @@ import { usePathname, useSearchParams } from 'next/navigation'
 import { Tab, Tabs } from '@heroui/tabs'
 import {
   Bell,
+  Heart,
   CircleHelp,
   FileCheck2,
   Globe,
   MessagesSquare,
+  Rss,
   Wrench
 } from 'lucide-react'
 import {
@@ -68,7 +70,9 @@ import type {
 type ReadingState = 'unread' | 'all' | 'read'
 const categoryIcons = {
   '': Bell,
-  interaction: MessagesSquare,
+  mention: MessagesSquare,
+  interaction: Heart,
+  follow: Rss,
   help: CircleHelp,
   review: FileCheck2,
   maintenance: Wrench,
@@ -92,8 +96,8 @@ export const MessageContainer = (_props: Props) => {
   const requestedCategory =
     params.get('category') ??
     ({
-      '/message/follow': 'interaction',
-      '/message/mention': 'interaction',
+      '/message/follow': 'follow',
+      '/message/mention': 'mention',
       '/message/system': 'account'
     }[pathname] ||
       null)
@@ -197,7 +201,7 @@ export const MessageContainer = (_props: Props) => {
       ? view.pages[view.index]
       : undefined
   const currentSequence = category
-    ? summary?.categories[category].sequence
+    ? summary?.categories[category]?.sequence
     : summary?.sequence
   const newContent =
     current &&
@@ -621,7 +625,7 @@ export const MessageContainer = (_props: Props) => {
               ? NOTIFICATION_CATEGORY_LABELS[item as NotificationCategory]
               : '全部分类'
             const unread = item
-              ? summary?.categories[item as NotificationCategory].unread
+              ? summary?.categories[item as NotificationCategory]?.unread
               : summary?.unread
             return (
               <Button
@@ -735,6 +739,7 @@ export const MessageContainer = (_props: Props) => {
               <MessageCard
                 key={message.id + ':' + message.contentVersion}
                 msg={message}
+                showCategory={!category}
                 identity={identity}
                 onSeen={seen}
                 justRead={current.justRead.includes(message.id)}

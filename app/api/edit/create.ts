@@ -1,3 +1,4 @@
+import { notifyFollowedPublication } from '~/app/api/utils/followedPublication'
 import crypto from 'crypto'
 import { z } from 'zod'
 import { prisma } from '~/prisma/index'
@@ -225,6 +226,11 @@ export const createGalgame = async (
   }
 
   await Promise.all([
+    runEditPostCommitTask(() => notifyFollowedPublication(res.patchId), {
+      action: 'notify followers',
+      patchId: res.patchId,
+      uniqueId: galgameUniqueId
+    }),
     runEditPostCommitTask(invalidatePatchListCaches, {
       action: 'invalidate patch list caches',
       patchId: res.patchId,

@@ -1,3 +1,7 @@
+const followerNotice = vi.hoisted(() => vi.fn(async () => {}))
+vi.mock('~/app/api/utils/followedPublication', () => ({
+  notifyFollowedPublication: followerNotice
+}))
 const closeLinkCasesMock = vi.hoisted(() =>
   vi.fn(async () => ({ closedCaseIds: [] }))
 )
@@ -105,6 +109,7 @@ beforeEach(() => {
 })
 
 const expectNoEffects = () => {
+  expect(followerNotice).not.toHaveBeenCalled()
   expect(helperMocks.updatePatchAttributes).not.toHaveBeenCalled()
   expect(tx.user_message.create).not.toHaveBeenCalled()
   expect(tx.admin_log.create).not.toHaveBeenCalled()
@@ -115,6 +120,9 @@ const expectNoEffects = () => {
 describe.each(actions)('$name pending resource', (action) => {
   it('claims only a pending resource and records one transactional notification and review log', async () => {
     expect(await action.run()).toEqual({})
+    if (action.name === 'approve')
+      expect(followerNotice).toHaveBeenCalledWith(20, 10, tx)
+    else expect(followerNotice).not.toHaveBeenCalled()
 
     expect(action.claim).toHaveBeenCalledExactlyOnceWith(action.claimArgs)
     expect(helperMocks.updatePatchAttributes).toHaveBeenCalledExactlyOnceWith(

@@ -20,7 +20,9 @@ export const notificationSummarySchema = z
     sequence,
     categories: z
       .object({
+        mention: counter,
         interaction: counter,
+        follow: counter,
         help: counter,
         review: counter,
         maintenance: counter,

@@ -13,6 +13,16 @@ vi.mock('~/prisma/index', () => ({
   }
 }))
 
+// Publication tests use ordinary URL links. Keep cache and storage side effects local.
+vi.mock('~/app/api/patch/resource/_helper', () => ({
+  updatePatchAttributes: vi.fn(async () => '7a5bc600'),
+  deletePatchResourceCache: vi.fn(),
+  finalizeUploadedResources: vi.fn(),
+  cleanupUploadedResourceDirs: vi.fn(),
+  compensateUploadedResources: vi.fn(),
+  releaseUploadedResourceLocks: vi.fn()
+}))
+
 import {
   aggregateNotificationBatch,
   createNotificationBatch
@@ -393,6 +403,197 @@ describe.skipIf(!databaseUrl)(
           where: { user_id: user.id }
         })
       ).toBe(0)
+    })
+
+    it('keeps replies and mentions, reactions, and follows in separate reading and cleanup scopes', async () => {
+      const user = await account()
+      await database.user_message.createMany({
+        data: ['mention', 'comment', 'follow', 'favorite'].map((type) => ({
+          type,
+          recipient_id: user.id,
+          content: '历史通知',
+          link: '/old'
+        }))
+      })
+      await createNotificationBatch(
+        [
+          notice(user.id, { type: 'mention', event_type: 'mention' }),
+          notice(user.id, { type: 'comment', event_type: 'comment-reply' }),
+          notice(user.id, { type: 'like', event_type: 'like' }),
+          notice(user.id, { type: 'follow', event_type: 'follow' }),
+          notice(user.id, { type: 'follow', event_type: 'follow-publication' }),
+          notice(user.id, { type: 'comment', event_type: 'help-reply' })
+        ],
+        database
+      )
+      const list = async (
+        category: 'mention' | 'follow' | 'interaction' | 'help'
+      ) =>
+        (
+          await getMessage(
+            { state: 'unread', page: 1, limit: 20, category },
+            user.id
+          )
+        ).messages.map((m) => m.eventType ?? m.type)
+      expect(await list('mention')).toEqual([
+        'comment-reply',
+        'mention',
+        'comment',
+        'mention'
+      ])
+      expect(await list('interaction')).toEqual([
+        'follow',
+        'like',
+        'favorite',
+        'follow'
+      ])
+      expect(await list('follow')).toEqual(['follow-publication'])
+      expect(await list('help')).toEqual(['help-reply'])
+      expect(await summary(user.id)).toMatchObject({
+        unread: 10,
+        categories: {
+          mention: { unread: 4, sequence: '2' },
+          interaction: { unread: 4, sequence: '2' },
+          follow: { unread: 1, sequence: '1' }
+        }
+      })
+      for (const scope of ['interaction', 'follow', 'mention'] as const) {
+        const before = await summary(user.id)
+        expect((await readAllMessages(user.id, { scope })).read).toBe(
+          before.categories[scope].unread
+        )
+        await clearReadMessage(user.id, '', scope)
+        const after = await summary(user.id)
+        expect(after.sequence).toBe(before.sequence)
+        expect(after.categories).toEqual({
+          ...before.categories,
+          [scope]: { ...before.categories[scope], unread: 0 }
+        })
+      }
+      expect(await list('help')).toEqual(['help-reply'])
+    })
+
+    it('delivers public games and visible resources only to eligible followers of their own author', async () => {
+      const { notifyFollowedPublication } = await import(
+        '~/app/api/utils/followedPublication'
+      )
+      const [
+        author,
+        uploader,
+        reader,
+        resourceReader,
+        blocked,
+        adultOnly,
+        disabled,
+        stranger
+      ] = await Promise.all(Array.from({ length: 8 }, () => account()))
+      const tag = await database.patch_tag.create({
+        data: { name: '关注验收', user_id: author.id }
+      })
+      const patch = await database.patch.create({
+        data: {
+          unique_id: '7a5bc600',
+          name: '公开游戏',
+          user_id: author.id,
+          content_limit: 'sfw',
+          tag: { create: { tag_id: tag.id } }
+        }
+      })
+      await database.user.update({
+        where: { id: blocked.id },
+        data: { blocked_tag_ids: [tag.id] }
+      })
+      await database.user.update({
+        where: { id: adultOnly.id },
+        data: { nsfw_mode: 'nsfw' }
+      })
+      await database.user_follow_relation.createMany({
+        data: [
+          ...[reader, blocked, adultOnly, disabled].map((u) => ({
+            follower_id: u.id,
+            following_id: author.id
+          })),
+          { follower_id: resourceReader.id, following_id: uploader.id },
+          { follower_id: author.id, following_id: stranger.id }
+        ]
+      })
+      await database.notification_subscription.create({
+        data: {
+          user_id: disabled.id,
+          event_type: 'follow-publication',
+          enabled: false
+        }
+      })
+      const { createPatchResource } = await import(
+        '~/app/api/patch/resource/create'
+      )
+      const { approvePatchResource } = await import(
+        '~/app/api/admin/resource-apply/service'
+      )
+      const input = {
+        patchId: patch.id,
+        section: 'galgame' as const,
+        name: '公开资料集',
+        type: ['material'],
+        language: ['zh-Hans'],
+        platform: ['other'],
+        note: '',
+        links: [
+          {
+            storage: 'other',
+            size: '1 MB',
+            content: 'https://example.test/material.txt',
+            code: '',
+            hash: '',
+            password: ''
+          }
+        ]
+      }
+      const pending = await createPatchResource(input, uploader.id, 1)
+      if (typeof pending === 'string') throw new Error(pending)
+      expect((await summary(resourceReader.id)).unread).toBe(0)
+      await notifyFollowedPublication(patch.id, undefined, database)
+      await notifyFollowedPublication(patch.id, undefined, database)
+      expect(
+        await approvePatchResource({ resourceId: pending.id }, stranger.id)
+      ).toEqual({})
+      expect(
+        await approvePatchResource({ resourceId: pending.id }, stranger.id)
+      ).toBe('当前资源状态无需审核')
+      await database.user.update({
+        where: { id: uploader.id },
+        data: { role: 2 }
+      })
+      const direct = await createPatchResource(
+        { ...input, name: '第二份资料' },
+        uploader.id,
+        2
+      )
+      if (typeof direct === 'string') throw new Error(direct)
+      const rows = await database.user_message.findMany({
+        where: {
+          sender_id: { in: [author.id, uploader.id] },
+          event_type: 'follow-publication'
+        },
+        orderBy: { id: 'asc' }
+      })
+      expect(rows.map((r) => [r.sender_id, r.recipient_id, r.link])).toEqual([
+        [author.id, reader.id, '/7a5bc600'],
+        [
+          uploader.id,
+          resourceReader.id,
+          `/7a5bc600?tab=resources#resource-${pending.id}`
+        ],
+        [
+          uploader.id,
+          resourceReader.id,
+          `/7a5bc600?tab=resources#resource-${direct.id}`
+        ]
+      ])
+      expect((await summary(reader.id)).categories.follow).toEqual({
+        unread: 1,
+        sequence: '1'
+      })
     })
 
     it('keeps ninety unread after loading thirty and confirms only six then thirty visible versions', async () => {

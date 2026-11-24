@@ -49,7 +49,7 @@ BEGIN
     RAISE EXCEPTION 'unexpected notification constraint';
   END IF;
   IF (SELECT count(*) FROM pg_attribute WHERE attrelid=to_regclass('public.user_message') AND attname IN ('event_type') AND NOT attisdropped) = 1 THEN
-    EXECUTE 'SELECT EXISTS (SELECT 1 FROM public.user_message WHERE NOT (event_type IS NULL OR event_type IN (''comment-reply'', ''mention'', ''like'', ''favorite'', ''follow'', ''help-answer'', ''help-reply'', ''help-resource'', ''help-follow-answer'', ''help-follow-resolved'', ''help-accepted'', ''creator-application'', ''creator-result'', ''submission-pending'', ''submission-result'', ''resource-pending'', ''resource-result'', ''content-adjusted'', ''maintenance-required'', ''maintenance-result'', ''case-update'', ''case-follow'', ''case-reminder'', ''report-result'', ''feedback-result'', ''site-announcement'', ''moderation'', ''points'')))' INTO invalid;
+    EXECUTE 'SELECT EXISTS (SELECT 1 FROM public.user_message WHERE NOT (event_type IS NULL OR event_type IN (''comment-reply'', ''mention'', ''like'', ''favorite'', ''follow'', ''follow-publication'', ''help-answer'', ''help-reply'', ''help-resource'', ''help-follow-answer'', ''help-follow-resolved'', ''help-accepted'', ''creator-application'', ''creator-result'', ''submission-pending'', ''submission-result'', ''resource-pending'', ''resource-result'', ''content-adjusted'', ''maintenance-required'', ''maintenance-result'', ''case-update'', ''case-follow'', ''case-reminder'', ''report-result'', ''feedback-result'', ''site-announcement'', ''moderation'', ''points'')))' INTO invalid;
     IF invalid THEN RAISE EXCEPTION 'invalid notification data for user_message_event_type_check'; END IF;
   END IF;
   IF (SELECT count(*) FROM pg_attribute WHERE attrelid=to_regclass('public.user_message') AND attname IN ('content_version', 'aggregate_count') AND NOT attisdropped) = 2 THEN
@@ -61,11 +61,11 @@ BEGIN
     IF invalid THEN RAISE EXCEPTION 'invalid notification data for user_message_dedup_key_check'; END IF;
   END IF;
   IF (SELECT count(*) FROM pg_attribute WHERE attrelid=to_regclass('public.notification_subscription') AND attname IN ('event_type') AND NOT attisdropped) = 1 THEN
-    EXECUTE 'SELECT EXISTS (SELECT 1 FROM public.notification_subscription WHERE NOT (event_type IN (''comment-reply'', ''mention'', ''like'', ''favorite'', ''follow'', ''help-answer'', ''help-reply'', ''help-resource'', ''help-follow-answer'', ''help-follow-resolved'', ''case-follow'', ''site-announcement'')))' INTO invalid;
+    EXECUTE 'SELECT EXISTS (SELECT 1 FROM public.notification_subscription WHERE NOT (event_type IN (''comment-reply'', ''mention'', ''like'', ''favorite'', ''follow'', ''follow-publication'', ''help-answer'', ''help-reply'', ''help-resource'', ''help-follow-answer'', ''help-follow-resolved'', ''case-follow'', ''site-announcement'')))' INTO invalid;
     IF invalid THEN RAISE EXCEPTION 'invalid notification data for notification_subscription_event_type_check'; END IF;
   END IF;
   IF (SELECT count(*) FROM pg_attribute WHERE attrelid=to_regclass('public.notification_content_sequence') AND attname IN ('sequence', 'category') AND NOT attisdropped) = 2 THEN
-    EXECUTE 'SELECT EXISTS (SELECT 1 FROM public.notification_content_sequence WHERE NOT (sequence >= 0 AND category IN ('''', ''interaction'', ''help'', ''review'', ''maintenance'', ''account'')))' INTO invalid;
+    EXECUTE 'SELECT EXISTS (SELECT 1 FROM public.notification_content_sequence WHERE NOT (sequence >= 0 AND category IN ('''', ''interaction'', ''mention'', ''follow'', ''help'', ''review'', ''maintenance'', ''account'')))' INTO invalid;
     IF invalid THEN RAISE EXCEPTION 'invalid notification data for notification_content_sequence_scope_check'; END IF;
   END IF;
   FOREACH relation_name IN ARRAY ARRAY['notification_subscription','notification_content_sequence'] LOOP
@@ -156,11 +156,11 @@ BEGIN
     END IF;
   END LOOP;
   FOR expected IN SELECT * FROM (VALUES
-    ('user_message', 'user_message_event_type_check', 'event_typeISNULLORevent_type=ANYARRAY[''comment-reply'',''mention'',''like'',''favorite'',''follow'',''help-answer'',''help-reply'',''help-resource'',''help-follow-answer'',''help-follow-resolved'',''help-accepted'',''creator-application'',''creator-result'',''submission-pending'',''submission-result'',''resource-pending'',''resource-result'',''content-adjusted'',''maintenance-required'',''maintenance-result'',''case-update'',''case-follow'',''case-reminder'',''report-result'',''feedback-result'',''site-announcement'',''moderation'',''points'']'),
+    ('user_message', 'user_message_event_type_check', 'event_typeISNULLORevent_type=ANYARRAY[''comment-reply'',''mention'',''like'',''favorite'',''follow'',''follow-publication'',''help-answer'',''help-reply'',''help-resource'',''help-follow-answer'',''help-follow-resolved'',''help-accepted'',''creator-application'',''creator-result'',''submission-pending'',''submission-result'',''resource-pending'',''resource-result'',''content-adjusted'',''maintenance-required'',''maintenance-result'',''case-update'',''case-follow'',''case-reminder'',''report-result'',''feedback-result'',''site-announcement'',''moderation'',''points'']'),
     ('user_message', 'user_message_content_version_check', 'content_version>0ANDaggregate_count>0'),
     ('user_message', 'user_message_dedup_key_check', 'dedup_keyISNULLORdedup_key~''^[a-f0-9]{64}$'''),
-    ('notification_subscription', 'notification_subscription_event_type_check', 'event_type=ANYARRAY[''comment-reply'',''mention'',''like'',''favorite'',''follow'',''help-answer'',''help-reply'',''help-resource'',''help-follow-answer'',''help-follow-resolved'',''case-follow'',''site-announcement'']'),
-    ('notification_content_sequence', 'notification_content_sequence_scope_check', 'sequence>=0ANDcategory=ANYARRAY['''',''interaction'',''help'',''review'',''maintenance'',''account'']')
+    ('notification_subscription', 'notification_subscription_event_type_check', 'event_type=ANYARRAY[''comment-reply'',''mention'',''like'',''favorite'',''follow'',''follow-publication'',''help-answer'',''help-reply'',''help-resource'',''help-follow-answer'',''help-follow-resolved'',''case-follow'',''site-announcement'']'),
+    ('notification_content_sequence', 'notification_content_sequence_scope_check', 'sequence>=0ANDcategory=ANYARRAY['''',''interaction'',''mention'',''follow'',''help'',''review'',''maintenance'',''account'']')
   ) AS checks(relation,name,expression) LOOP
     SELECT contype,convalidated,regexp_replace(regexp_replace(pg_get_expr(conbin,conrelid),
       '::(character varying|text|bigint)(\[\])?', '', 'g'), '[[:space:]()]', '', 'g') AS expression INTO actual

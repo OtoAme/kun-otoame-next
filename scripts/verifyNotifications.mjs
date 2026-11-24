@@ -343,6 +343,36 @@ try {
           assert.match(await migrate(kind), /complete\|24/)
       }
       if (scenario === 'historical') {
+        // Recreate the event and subscription constraints installed before publication notices.
+        await sql(database, `
+          DO $old_events$
+          DECLARE item record; previous text;
+          BEGIN
+            FOR item IN SELECT conrelid::regclass AS rel, conname, pg_get_constraintdef(oid) AS definition
+              FROM pg_constraint WHERE conname IN ('user_message_event_type_check','notification_subscription_event_type_check')
+            LOOP
+              previous := replace(item.definition, ', ''follow-publication''::character varying', '');
+              IF previous = item.definition THEN RAISE EXCEPTION 'publication event missing from installed definition'; END IF;
+              EXECUTE format('ALTER TABLE %s DROP CONSTRAINT %I', item.rel, item.conname);
+              EXECUTE format('ALTER TABLE %s ADD CONSTRAINT %I %s', item.rel, item.conname, previous);
+            END LOOP;
+          END $old_events$;
+        `)
+        // Exercise upgrades from both earlier validated category constraints.
+        for (const previous of [
+          "'','interaction','help','review','maintenance','account'",
+          "'','interaction','mention','help','review','maintenance','account'"
+        ]) {
+          await sql(database, `
+            ALTER TABLE notification_content_sequence DROP CONSTRAINT notification_content_sequence_scope_check;
+            ALTER TABLE notification_content_sequence ADD CONSTRAINT notification_content_sequence_scope_check
+              CHECK (sequence >= 0 AND category IN (${previous}));
+          `)
+          await migrate('preflight')
+          await migrate('postflight', 'nonzero')
+          await migrate('sync')
+          await migrate('postflight')
+        }
         const retained = await sql(
           database,
           `SELECT row_to_json(message)::jsonb - ARRAY['event_type','content_version','aggregate_count','dedup_key'] FROM user_message message ORDER BY id;`

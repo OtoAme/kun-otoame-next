@@ -13,7 +13,8 @@ export const notificationCategorySql = Prisma.sql`CASE
     ),
     ' '
   )}
-  WHEN type IN ('like', 'favorite', 'comment', 'follow', 'mention') THEN 'interaction'
+  WHEN type IN ('mention', 'comment') THEN 'mention'
+  WHEN type IN ('like', 'favorite', 'follow') THEN 'interaction'
   WHEN type IN ('apply', 'pr') THEN 'review'
   WHEN type IN ('feedback', 'report') THEN 'maintenance'
   ELSE 'account' END`

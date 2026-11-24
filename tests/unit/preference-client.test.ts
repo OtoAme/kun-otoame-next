@@ -271,7 +271,7 @@ describe('account preference client drafts and applied snapshots', () => {
     )
     await state.refreshPreferences([19])
     expect(transport.mock.calls[1][0]).toBe(
-      '/api/user/preferences?schema=notifications-v1&tagId=19'
+      '/api/user/preferences?schema=notifications-v2&tagId=19'
     )
     state.editPreference('blocked-tag:19', true)
     expect(

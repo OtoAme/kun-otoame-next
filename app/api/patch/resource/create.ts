@@ -1,3 +1,4 @@
+import { notifyFollowedPublication } from '~/app/api/utils/followedPublication'
 import { z } from 'zod'
 import { prisma } from '~/prisma/index'
 import { patchResourceCreateSchema } from '~/validations/patch'
@@ -182,6 +183,8 @@ export const createPatchResource = async (
           }
         }
 
+        if (!needApproval)
+          await notifyFollowedPublication(patchId, newResource.id, prisma)
         return {
           resource,
           uniqueIdToClear,
