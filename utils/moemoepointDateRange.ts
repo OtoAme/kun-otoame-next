@@ -34,7 +34,7 @@ const formatUtcDate = (time: number) =>
 export const formatShanghaiCalendarDate = (date: Date) =>
   formatUtcDate(date.getTime() + SHANGHAI_OFFSET_MS)
 
-const shiftCalendarDate = (value: string, days: number) => {
+export const shiftCalendarDate = (value: string, days: number) => {
   const parsed = parseDateParts(value)
   if (!parsed) {
     throw new Error('日期格式不正确')

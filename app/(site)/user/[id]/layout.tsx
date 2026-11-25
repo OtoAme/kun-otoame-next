@@ -1,3 +1,7 @@
+import { UserContributions } from '~/components/user/Contributions'
+import { formatShanghaiCalendarDate } from '~/utils/moemoepointDateRange'
+import { getSessionRenderState } from '~/utils/actions/getSessionRenderState'
+import { getBrowsingScopeKey } from '~/utils/browsingScope'
 import { ErrorComponent } from '~/components/error/ErrorComponent'
 import { UserProfile } from '~/components/user/Profile'
 import { UserStats } from '~/components/user/Stats'
@@ -37,6 +41,7 @@ export default async function Kun({ params, children }: Props) {
   }
 
   const payload = await verifyHeaderCookie()
+  const scope = payload?.uid ? await getSessionRenderState() : null
 
   return (
     <div className="w-full py-8 mx-auto">
@@ -48,8 +53,21 @@ export default async function Kun({ params, children }: Props) {
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
           <UserProfile user={user} />
 
-          <div className="space-y-6 lg:col-span-2">
+          <div className="min-w-0 space-y-6 lg:col-span-2">
             <UserStats user={user} />
+            <UserContributions
+              key={JSON.stringify([user.id, getBrowsingScopeKey(scope)])}
+              uid={user.id}
+              firstYear={Number(
+                formatShanghaiCalendarDate(new Date(user.registerTime)).slice(
+                  0,
+                  4
+                )
+              )}
+              currentYear={Number(
+                formatShanghaiCalendarDate(new Date()).slice(0, 4)
+              )}
+            />
             <UserActivity id={user.id} />
             {children}
           </div>

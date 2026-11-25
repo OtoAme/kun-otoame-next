@@ -50,7 +50,9 @@ it('fills seven rows before offering a second page and accepts its request', asy
       galgames: [{ id: 22 }],
       total: 22
     })
-    await act(() => container.querySelector('button')!.click())
+    await act(async () => {
+      container.querySelector('button')!.click()
+    })
     const [, query] = vi.mocked(kunFetchGet).mock.calls[0]
     expect(query).toEqual({ uid: 7, page: 2, limit: 21 })
     expect(getUserPatchSchema.safeParse(query).success).toBe(true)
