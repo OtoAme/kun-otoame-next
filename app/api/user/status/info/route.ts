@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { kunParseGetQuery } from '~/app/api/utils/parseQuery'
+import { getPatchVisibilityWhere } from '~/app/api/utils/getPatchVisibilityWhere'
 import { verifyHeaderCookie } from '~/middleware/_verifyHeaderCookie'
 import { getProfileSchema, getUserProfile } from './service'
 
@@ -13,6 +14,10 @@ export async function GET(req: NextRequest) {
     return NextResponse.json('请先登录', { status: 401 })
   }
 
-  const user = await getUserProfile(input, payload.uid)
+  const user = await getUserProfile(
+    input,
+    payload.uid,
+    await getPatchVisibilityWhere(req)
+  )
   return NextResponse.json(user)
 }

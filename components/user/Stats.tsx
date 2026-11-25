@@ -1,5 +1,5 @@
 import { Card, CardBody } from '@heroui/card'
-import { MessageCircle, MessageSquareMore, Puzzle, Star } from 'lucide-react'
+import { Library, MessageCircle, Puzzle, Star } from 'lucide-react'
 import type { UserInfo } from '~/types/api/user'
 
 export const UserStats = ({ user }: { user: UserInfo }) => {
@@ -9,9 +9,9 @@ export const UserStats = ({ user }: { user: UserInfo }) => {
       value: user._count.patch_resource,
       icon: Puzzle
     },
+    { label: '发布条目', value: user._count.patch, icon: Library },
     { label: '评论', value: user._count.patch_comment, icon: MessageCircle },
-    { label: '消息', value: user._count.send_message, icon: MessageSquareMore },
-    { label: '收藏', value: user._count.patch_favorite, icon: Star }
+    { label: '评价', value: user._count.patch_rating, icon: Star }
   ]
 
   return (

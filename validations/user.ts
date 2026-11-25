@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { PROFILE_ENTRY_PAGE_SIZE } from '~/constants/user'
 import {
   kunPasswordRegex,
   kunValidMailConfirmCodeRegex
@@ -67,6 +68,10 @@ export const getUserInfoSchema = z.object({
   uid: z.coerce.number().min(1).max(9999999),
   page: z.coerce.number().min(1).max(9999999),
   limit: z.coerce.number().min(1).max(20)
+})
+
+export const getUserPatchSchema = getUserInfoSchema.extend({
+  limit: z.coerce.number().int().min(1).max(PROFILE_ENTRY_PAGE_SIZE)
 })
 
 export const searchUserSchema = z.object({

@@ -1,3 +1,5 @@
+import type { Prisma } from '@prisma/client'
+import { getProfileResourceWhere } from '~/app/api/user/profile/resource/where'
 import { z } from 'zod'
 import { prisma } from '~/prisma/index'
 import type { UserInfo } from '~/types/api/user'
@@ -8,15 +10,16 @@ export const getProfileSchema = z.object({
 
 export const getUserProfile = async (
   input: z.infer<typeof getProfileSchema>,
-  currentUserUid: number
+  currentUserUid: number,
+  visibility: Prisma.patchWhereInput
 ) => {
   const data = await prisma.user.findUnique({
     where: { id: input.id },
     include: {
       _count: {
         select: {
-          patch_resource: true,
-          patch: true,
+          patch_resource: { where: getProfileResourceWhere(visibility) },
+          patch: { where: visibility },
           patch_comment: true,
           patch_rating: true,
           send_message: true

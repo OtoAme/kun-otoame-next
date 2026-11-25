@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { kunParseGetQuery } from '~/app/api/utils/parseQuery'
-import { getUserInfoSchema } from '~/validations/user'
+import { getUserPatchSchema } from '~/validations/user'
 import { getPatchVisibilityWhere } from '~/app/api/utils/getPatchVisibilityWhere'
 import { getUserPatch } from './service'
 
 export async function GET(req: NextRequest) {
-  const input = kunParseGetQuery(req, getUserInfoSchema)
+  const input = kunParseGetQuery(req, getUserPatchSchema)
   if (typeof input === 'string') {
     return NextResponse.json(input)
   }

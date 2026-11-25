@@ -1,5 +1,6 @@
 'use server'
 
+import { getPatchVisibilityWhere } from '~/utils/actions/getPatchVisibilityWhere'
 import { verifyHeaderCookie } from '~/utils/actions/verifyHeaderCookie'
 import { safeParseSchema } from '~/utils/actions/safeParseSchema'
 import {
@@ -14,6 +15,10 @@ export const kunGetActions = async (id: number) => {
   }
   const payload = await verifyHeaderCookie()
 
-  const user = await getUserProfile(input, payload?.uid ?? 0)
+  const user = await getUserProfile(
+    input,
+    payload?.uid ?? 0,
+    await getPatchVisibilityWhere()
+  )
   return user
 }

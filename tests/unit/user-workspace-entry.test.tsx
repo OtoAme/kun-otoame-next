@@ -128,6 +128,7 @@ describe('user workspace entry', () => {
     )
     expect(hrefs).toEqual([
       '/user/4/comment',
+      '/user/4/rating',
       '/user/4/favorite',
       '/user/4/resource',
       '/user/4/submission',

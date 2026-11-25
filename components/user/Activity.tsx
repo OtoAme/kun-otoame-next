@@ -15,6 +15,7 @@ export const UserActivity = ({ id }: UserActivityProps) => {
 
   const tabs = [
     { key: 'comment', title: '评论', href: `/user/${id}/comment` },
+    { key: 'rating', title: '评价', href: `/user/${id}/rating` },
     { key: 'favorite', title: '收藏夹', href: `/user/${id}/favorite` },
     { key: 'resource', title: '发布资源', href: `/user/${id}/resource` },
     // Public published entries. Drafts and quota live in the workspace.
@@ -30,6 +31,11 @@ export const UserActivity = ({ id }: UserActivityProps) => {
         <Tabs
           aria-label="用户活动"
           variant="underlined"
+          classNames={{
+            base: 'max-w-full',
+            tabList: 'overflow-x-auto',
+            tab: 'shrink-0 w-auto flex-1'
+          }}
           fullWidth
           selectedKey={lastSegment}
         >

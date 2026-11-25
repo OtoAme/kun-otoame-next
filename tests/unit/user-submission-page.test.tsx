@@ -52,7 +52,7 @@ describe('public profile submission page', () => {
     )
     expect(mocks.getUserPatch).toHaveBeenCalledTimes(1)
     expect(mocks.getUserPatch).toHaveBeenCalledWith(
-      { uid: 4, page: 1, limit: 20 },
+      { uid: 4, page: 1, limit: 21 },
       { status: 0 }
     )
     expect(html).toContain('href="/workspace/entries"')

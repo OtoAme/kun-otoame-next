@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { verifyHeaderCookie } from '~/utils/actions/verifyHeaderCookie'
 import { getPatchVisibilityWhere } from '~/utils/actions/getPatchVisibilityWhere'
 import { getUserPatch } from '~/app/api/user/profile/patch/service'
+import { PROFILE_ENTRY_PAGE_SIZE } from '~/constants/user'
 import { UserPatch } from '~/components/user/patch/Container'
 import type { Metadata } from 'next'
 
@@ -26,7 +27,7 @@ export default async function UserSubmissionPage({
   const payload = await verifyHeaderCookie()
   const visibilityWhere = await getPatchVisibilityWhere()
   const published = await getUserPatch(
-    { uid: profileId, page: 1, limit: 20 },
+    { uid: profileId, page: 1, limit: PROFILE_ENTRY_PAGE_SIZE },
     visibilityWhere
   )
   const isOwner = Boolean(payload && payload.uid === profileId)

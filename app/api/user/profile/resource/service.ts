@@ -1,3 +1,4 @@
+import { getProfileResourceWhere } from './where'
 import { z } from 'zod'
 import type { Prisma } from '@prisma/client'
 import { prisma } from '~/prisma/index'
@@ -12,9 +13,11 @@ export const getUserPatchResource = async (
   const { uid, page, limit } = input
   const offset = (page - 1) * limit
 
+  const where = { user_id: uid, ...getProfileResourceWhere(nsfwEnable) }
+
   const [data, total] = await Promise.all([
     prisma.patch_resource.findMany({
-      where: { user_id: uid, patch: nsfwEnable, status: 0 },
+      where,
       include: {
         patch: {
           select: {
@@ -34,7 +37,7 @@ export const getUserPatchResource = async (
       take: limit
     }),
     prisma.patch_resource.count({
-      where: { user_id: uid, patch: nsfwEnable, status: 0 }
+      where
     })
   ])
 

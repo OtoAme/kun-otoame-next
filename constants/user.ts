@@ -1,3 +1,5 @@
+export const PROFILE_ENTRY_PAGE_SIZE = 21
+
 export const USER_ROLE_MAP: Record<number, string> = {
   1: '用户',
   2: '创作者',

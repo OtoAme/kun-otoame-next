@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import type { Prisma } from '@prisma/client'
 import { prisma } from '~/prisma/index'
-import { getUserInfoSchema } from '~/validations/user'
+import { getUserPatchSchema } from '~/validations/user'
 import {
   GalgameCardSelectField,
   toGalgameCardCount
@@ -14,7 +14,7 @@ import {
  * here too. NSFW visibility is applied by the caller.
  */
 export const getUserPatch = async (
-  input: z.infer<typeof getUserInfoSchema>,
+  input: z.infer<typeof getUserPatchSchema>,
   nsfwEnable: Prisma.patchWhereInput
 ) => {
   const { uid, page, limit } = input
