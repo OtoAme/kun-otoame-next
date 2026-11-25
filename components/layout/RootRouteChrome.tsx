@@ -5,7 +5,10 @@ import { usePathname } from 'next/navigation'
 import { SessionContentBoundary } from '~/components/kun/SessionContentBoundary'
 import { KunBackToTop } from '~/components/kun/BackToTop'
 import { KunFooter } from '~/components/kun/Footer'
-import { isMessageChatConversationPath } from '~/constants/routes/matcher'
+import {
+  isMessageChatConversationPath,
+  isMessageNoticePath
+} from '~/constants/routes/matcher'
 import { cn } from '~/utils/cn'
 
 export const KunRootRouteChrome = ({
@@ -174,6 +177,8 @@ export const KunRootRouteChrome = ({
             personalized={
               !(
                 pathname === '/' ||
+                pathname === '/message/notice' ||
+                isMessageNoticePath(pathname) ||
                 pathname === '/otomegame' ||
                 pathname === '/search' ||
                 /^\/company\/\d+$/.test(pathname) ||

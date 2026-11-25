@@ -22,6 +22,7 @@ beforeEach(() => {
 afterEach(() => {
   dom.window.close()
   vi.unstubAllGlobals()
+  vi.useRealTimers()
 })
 
 const setup = async () => {
@@ -330,6 +331,67 @@ describe('session client identity and cleanup', () => {
       sessionContext: 'new-context'
     })
   })
+
+  it('accepts a guest when another tab already cleaned the invalid session', async () => {
+    const state = await setup()
+    transport.mockResolvedValueOnce(
+      Response.json({ code: 'SESSION_INVALID' }, { status: 401 })
+    )
+    transport.mockResolvedValueOnce(Response.json({ status: 'guest' }))
+    await state.refreshUserSession()
+    expect(state.useUserStore.getState().sessionStatus).toBe('guest')
+    expect(transport).toHaveBeenCalledTimes(2)
+  })
+
+  it.each(['queued', 'sent'])(
+    'allows a fresh check after invalid-session cleanup times out (%s)',
+    async (phase) => {
+      const state = await setup()
+      vi.useFakeTimers()
+      let resume!: () => void
+      const blocked = new Promise<void>((resolve) => {
+        resume = resolve
+      })
+      if (phase === 'queued')
+        vi.stubGlobal('navigator', {
+          locks: {
+            request: async (_name: string, action: () => unknown) => {
+              await blocked
+              return action()
+            }
+          }
+        })
+      const invalid = () =>
+        Response.json({ code: 'SESSION_INVALID' }, { status: 401 })
+      transport.mockResolvedValueOnce(invalid())
+      if (phase === 'sent') {
+        transport.mockResolvedValueOnce(invalid())
+        transport.mockImplementationOnce(async () => {
+          await blocked
+          return Response.json({ cleared: true })
+        })
+      }
+      const first = state.refreshUserSession()
+      await vi.advanceTimersByTimeAsync(15_000)
+      expect(state.useUserStore.getState().sessionStatus).toBe('unavailable')
+      await first
+
+      transport.mockResolvedValueOnce(
+        Response.json({
+          user: state.user,
+          context: 'verified-context',
+          unread: null
+        })
+      )
+      await state.refreshUserSession()
+      resume()
+      await vi.advanceTimersByTimeAsync(0)
+      expect(state.useUserStore.getState().sessionStatus).toBe('authenticated')
+      expect(
+        transport.mock.calls.filter(([, init]) => init.method === 'DELETE')
+      ).toHaveLength(phase === 'sent' ? 1 : 0)
+    }
+  )
 
   it('keeps identity unconfirmed if cleanup independently detects a changed session', async () => {
     const state = await setup()

@@ -119,9 +119,23 @@ const withWorkerMutation = async <T>(
   }
 }
 
-export const withSessionMutation = async <T>(
+const runSessionMutation = async <T>(
   action: (request: SessionMutationRequest) => Promise<T>
 ): Promise<T> => {
+  if (navigator.locks?.request) {
+    return navigator.locks.request('kun-session-cookie-mutation-v1', () =>
+      action(directRequest)
+    )
+  }
+  if (typeof SharedWorker !== 'undefined') return withWorkerMutation(action)
+  throw new Error('浏览器无法协调会话操作，请检查浏览器权限后重试')
+}
+
+export const withSessionMutation = async <T>(
+  action: (request: SessionMutationRequest) => Promise<T>,
+  { notifyWhileWaiting = true } = {}
+): Promise<T> => {
+  if (!notifyWhileWaiting) return runSessionMutation(action)
   let notice: string | undefined
   let acquired = false
   const run = (request: SessionMutationRequest) => {
@@ -140,15 +154,7 @@ export const withSessionMutation = async <T>(
     notice = toast.loading(message())
   }, 15_000)
   try {
-    if (navigator.locks?.request) {
-      return await navigator.locks.request(
-        'kun-session-cookie-mutation-v1',
-        () => run(directRequest)
-      )
-    }
-    if (typeof SharedWorker !== 'undefined')
-      return await withWorkerMutation(run)
-    throw new Error('浏览器无法协调会话操作，请检查浏览器权限后重试')
+    return await runSessionMutation(run)
   } finally {
     clearTimeout(waiting)
     clearTimeout(prolonged)

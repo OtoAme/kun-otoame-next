@@ -52,6 +52,11 @@ useUserStore.subscribe((state) => {
   }
 })
 
+export const getCachedNotificationView = (
+  identity: NotificationIdentity,
+  key: string
+) => (notificationIdentityKey(identity) === owner ? views.get(key) : undefined)
+
 export const notificationView = (
   identity: NotificationIdentity,
   key: string,

@@ -55,6 +55,7 @@ import {
   type NotificationIdentity
 } from '~/utils/notificationReading'
 import {
+  getCachedNotificationView,
   notificationView,
   invalidateNotificationViews,
   type NotificationView,
@@ -84,6 +85,11 @@ interface Props {
 }
 
 export const MessageContainer = (_props: Props) => {
+  const generation = useUserStore((state) => state.sessionGeneration)
+  return <NotificationCenter key={generation} />
+}
+
+const NotificationCenter = () => {
   const contentReady = useSessionContentReady()
   const contentReadyRef = useRef(contentReady)
   contentReadyRef.current = contentReady
@@ -139,11 +145,13 @@ export const MessageContainer = (_props: Props) => {
       (size) => size === Number(params.get('limit'))
     ) ?? NOTIFICATION_DEFAULT_PAGE_SIZE
   const key = [category ?? '', state, pageSize].join(':')
-  const [view, setView] = useState<NotificationView | null>(null)
-  const viewRef = useRef<NotificationView | null>(null)
+  const [view, setView] = useState<NotificationView | null>(
+    () => (identity && getCachedNotificationView(identity, key)) ?? null
+  )
+  const viewRef = useRef(view)
   const [, render] = useState(0)
   const [readingEpoch, restartReading] = useState(0)
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(!view?.pages[view.index])
   const [error, setError] = useState<string | null>(null)
   const [readErrors, setReadErrors] = useState<Record<number, string>>({})
   const [clearing, setClearing] = useState(false)
@@ -603,13 +611,20 @@ export const MessageContainer = (_props: Props) => {
     return (
       <>
         <MessageNav />
-        <p role="status" className="w-full lg:w-3/4">
-          {session.sessionStatus === 'checking'
-            ? '正在确认登录状态…'
-            : session.sessionStatus === 'unavailable'
-              ? '登录状态暂不可用，恢复后继续查看通知'
-              : '请登录后查看通知'}
-        </p>
+        <section aria-label="通知中心" className="w-full lg:w-3/4">
+          {session.sessionStatus === 'guest' ? (
+            <p role="status">请登录后查看通知</p>
+          ) : session.sessionStatus === 'unavailable' ? (
+            <div role="alert" className="space-y-2">
+              <p>暂时无法加载通知，请稍后重试</p>
+              <Button size="sm" onPress={() => void refreshUserSession()}>
+                重试
+              </Button>
+            </div>
+          ) : (
+            <KunLoading hint="正在获取通知…" />
+          )}
+        </section>
       </>
     )
   return (
@@ -731,7 +746,7 @@ export const MessageContainer = (_props: Props) => {
             </Button>
           </div>
         )}
-        {loading ? (
+        {loading || (!current && !error) ? (
           <KunLoading hint="正在获取通知…" />
         ) : current?.messages.length ? (
           <div className="space-y-4">

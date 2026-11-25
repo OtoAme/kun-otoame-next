@@ -47,11 +47,13 @@ export const refreshUserSession = (options?: { reason: 'restore' }) => {
     return Promise.resolve()
   pending?.controller.abort()
   const controller = new AbortController()
+  const isCurrent = () =>
+    !controller.signal.aborted &&
+    useUserStore.getState().sessionGeneration === generation
   if (previousStatus !== 'authenticated' && previousStatus !== 'guest') {
     useUserStore.getState().setSessionStatus('checking')
   }
-  const promise = (async () => {
-    const timeout = setTimeout(() => controller.abort(), 15_000)
+  const check = async () => {
     try {
       const readVersion = beginUnreadRead()
       const response = await fetch('/api/user/session', {
@@ -61,59 +63,66 @@ export const refreshUserSession = (options?: { reason: 'restore' }) => {
         headers: { 'X-Requested-With': 'kun-fetch' }
       })
       const body = await response.json()
-      if (useUserStore.getState().sessionGeneration !== generation) return
+      if (!isCurrent()) return
       if (response.ok && body?.status === 'guest') {
         useUserStore.getState().confirmGuest()
         return
       }
       if (response.status === 401 && body?.code === 'SESSION_INVALID') {
         useUserStore.getState().setSessionStatus('checking')
-        await withSessionMutation(async (request) => {
-          if (useUserStore.getState().sessionGeneration !== generation) return
-          const freshReadVersion = beginUnreadRead()
-          const fresh = await fetch('/api/user/session', {
-            credentials: 'include',
-            cache: 'no-store',
-            signal: controller.signal,
-            headers: { 'X-Requested-With': 'kun-fetch' }
-          })
-          const latest = await fresh.json()
-          if (useUserStore.getState().sessionGeneration !== generation) return
-          if (fresh.ok && latest?.context && latest?.user?.uid) {
-            acceptSessionSummary(latest as UserSession, freshReadVersion)
-            return
-          }
-          if (fresh.status !== 401 || latest?.code !== 'SESSION_INVALID') {
-            useUserStore.getState().setSessionStatus('unavailable')
-            return
-          }
-          const cleanup = await request<{ cleared?: boolean }>(
-            '/api/user/session',
-            {
-              method: 'DELETE'
+        await withSessionMutation(
+          async (request) => {
+            if (!isCurrent()) return
+            const freshReadVersion = beginUnreadRead()
+            const fresh = await fetch('/api/user/session', {
+              credentials: 'include',
+              cache: 'no-store',
+              signal: controller.signal,
+              headers: { 'X-Requested-With': 'kun-fetch' }
+            })
+            const latest = await fresh.json()
+            if (!isCurrent()) return
+            if (fresh.ok && latest?.status === 'guest') {
+              useUserStore.getState().confirmGuest()
+              return
             }
-          )
-          if (useUserStore.getState().sessionGeneration !== generation) return
-          if (!cleanup.ok || cleanup.body?.cleared !== true) {
-            useUserStore.getState().setSessionStatus('unavailable')
-            return
-          }
-          const state = useUserStore.getState()
-          if (
-            state.user.uid ||
-            state.sessionContext ||
-            previousStatus !== 'guest'
-          ) {
-            const hadAccount = Boolean(state.user.uid || state.sessionContext)
-            state.logout()
-            if (hadAccount)
-              toast.error(body.message || '登录状态已失效，请重新登录')
-          } else {
-            useSettingStore.getState().resetData()
-            useMessageStore.getState().resetUnreadMessageStatus()
-            state.setSessionStatus('guest')
-          }
-        })
+            if (fresh.ok && latest?.context && latest?.user?.uid) {
+              acceptSessionSummary(latest as UserSession, freshReadVersion)
+              return
+            }
+            if (fresh.status !== 401 || latest?.code !== 'SESSION_INVALID') {
+              useUserStore.getState().setSessionStatus('unavailable')
+              return
+            }
+            const cleanup = await request<{ cleared?: boolean }>(
+              '/api/user/session',
+              {
+                method: 'DELETE'
+              }
+            )
+            if (!isCurrent()) return
+            if (!cleanup.ok || cleanup.body?.cleared !== true) {
+              useUserStore.getState().setSessionStatus('unavailable')
+              return
+            }
+            const state = useUserStore.getState()
+            if (
+              state.user.uid ||
+              state.sessionContext ||
+              previousStatus !== 'guest'
+            ) {
+              const hadAccount = Boolean(state.user.uid || state.sessionContext)
+              state.logout()
+              if (hadAccount)
+                toast.error(body.message || '登录状态已失效，请重新登录')
+            } else {
+              useSettingStore.getState().resetData()
+              useMessageStore.getState().resetUnreadMessageStatus()
+              state.setSessionStatus('guest')
+            }
+          },
+          { notifyWhileWaiting: false }
+        )
         return
       }
       if (!response.ok || !body?.context || !body?.user?.uid) {
@@ -123,13 +132,22 @@ export const refreshUserSession = (options?: { reason: 'restore' }) => {
       const session = body as UserSession
       acceptSessionSummary(session, readVersion)
     } catch {
-      if (useUserStore.getState().sessionGeneration === generation) {
+      if (isCurrent()) {
         useUserStore.getState().setSessionStatus('unavailable')
       }
-    } finally {
-      clearTimeout(timeout)
     }
-  })().finally(() => {
+  }
+  // End the UI wait even if cookie cleanup is queued or already in flight.
+  // An issued mutation keeps its lock until the HTTP response arrives.
+  const stopped = new Promise<void>((resolve) => {
+    controller.signal.addEventListener('abort', () => resolve(), { once: true })
+  })
+  const timeout = setTimeout(() => {
+    if (isCurrent()) useUserStore.getState().setSessionStatus('unavailable')
+    controller.abort()
+  }, 15_000)
+  const promise = Promise.race([stopped, check()]).finally(() => {
+    clearTimeout(timeout)
     if (pending?.promise === promise) {
       pending = null
       const state = useUserStore.getState()

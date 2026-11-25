@@ -645,7 +645,20 @@ describe('notification list browsing and concrete reading', () => {
     await act(async () => root!.render(null))
     dom.window.history.pushState({}, '', '/message/notice')
     mocks.scroll.mockClear()
-    await render()
+    const commits: number[] = []
+    await act(async () =>
+      root!.render(
+        <React.Profiler
+          id="restored"
+          onRender={() =>
+            commits.push(container.querySelectorAll('article').length)
+          }
+        >
+          <MessageContainer />
+        </React.Profiler>
+      )
+    )
+    expect(commits[0]).toBe(30)
     expect(mocks.scroll).toHaveBeenLastCalledWith(0, 780)
     expect(mocks.get).toHaveBeenCalledTimes(1)
   })
@@ -777,6 +790,9 @@ describe('notification list browsing and concrete reading', () => {
       notifications: null
     })
     await render()
+    expect(container.textContent).toContain('正在获取通知')
+    expect(container.textContent).not.toMatch(/确认登录|请登录|暂无消息/)
+    expect(container.querySelector('a[href="/message/chat"]')).not.toBeNull()
     expect(mocks.get).not.toHaveBeenCalled()
     await act(async () => {
       useUserStore.setState({
@@ -800,6 +816,35 @@ describe('notification list browsing and concrete reading', () => {
     expect(
       container.querySelector('nav[aria-label="通知分类"]')?.textContent
     ).not.toMatch(/\d/)
+  })
+
+  it('offers a session retry and shows the sign-in prompt only after guest confirmation', async () => {
+    useUserStore.setState({ sessionStatus: 'unavailable' })
+    await render()
+    expect(container.textContent).not.toContain('请登录')
+    await click('重试')
+    expect(mocks.refresh).toHaveBeenCalledOnce()
+    await act(async () => useUserStore.getState().confirmGuest())
+    expect(container.textContent).toContain('请登录后查看通知')
+    expect(mocks.get).not.toHaveBeenCalled()
+  })
+
+  it('discards the previous session’s open clear confirmation when switching accounts', async () => {
+    mocks.params = 'state=read'
+    await render()
+    await click('清理全部已读')
+    expect(container.querySelector('[role="dialog"]')).not.toBeNull()
+    await act(async () =>
+      useUserStore.getState().acceptSession(
+        {
+          ...useUserStore.getState().user,
+          uid: 8
+        },
+        'ctx-b'
+      )
+    )
+    expect(container.querySelector('[role="dialog"]')).toBeNull()
+    expect(mocks.remove).not.toHaveBeenCalled()
   })
 
   it('honors an explicit all view after authentication resolves with unread notifications', async () => {
