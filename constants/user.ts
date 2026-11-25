@@ -1,5 +1,12 @@
 export const PROFILE_ENTRY_PAGE_SIZE = 21
 
+export const PROFILE_CONTRIBUTIONS = [
+  { key: 'patch_resource', label: '发布资源' },
+  { key: 'patch', label: '发布条目' },
+  { key: 'patch_comment', label: '评论' },
+  { key: 'patch_rating', label: '评价' }
+] as const
+
 export const USER_ROLE_MAP: Record<number, string> = {
   1: '用户',
   2: '创作者',

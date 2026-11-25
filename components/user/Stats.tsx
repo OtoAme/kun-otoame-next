@@ -1,32 +1,32 @@
 import { Card, CardBody } from '@heroui/card'
 import { Library, MessageCircle, Puzzle, Star } from 'lucide-react'
+import { PROFILE_CONTRIBUTIONS } from '~/constants/user'
 import type { UserInfo } from '~/types/api/user'
 
-export const UserStats = ({ user }: { user: UserInfo }) => {
-  const stats = [
-    {
-      label: '发布资源',
-      value: user._count.patch_resource,
-      icon: Puzzle
-    },
-    { label: '发布条目', value: user._count.patch, icon: Library },
-    { label: '评论', value: user._count.patch_comment, icon: MessageCircle },
-    { label: '评价', value: user._count.patch_rating, icon: Star }
-  ]
+const icons = {
+  patch_resource: Puzzle,
+  patch: Library,
+  patch_comment: MessageCircle,
+  patch_rating: Star
+}
 
+export const UserStats = ({ user }: { user: UserInfo }) => {
   return (
     <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-      {stats.map((stat) => (
-        <Card key={stat.label} className="w-full">
-          <CardBody className="flex flex-row items-center gap-4 p-4">
-            <stat.icon className="kun-user-stat-icon size-8 text-primary" />
-            <div>
-              <p className="text-xl font-bold">{stat.value}</p>
-              <p className="text-small text-default-500">{stat.label}</p>
-            </div>
-          </CardBody>
-        </Card>
-      ))}
+      {PROFILE_CONTRIBUTIONS.map(({ key, label }) => {
+        const Icon = icons[key]
+        return (
+          <Card key={key} className="w-full">
+            <CardBody className="flex flex-row items-center gap-4 p-4">
+              <Icon className="kun-user-stat-icon size-8 text-primary" />
+              <div>
+                <p className="text-xl font-bold">{user._count[key]}</p>
+                <p className="text-small text-default-500">{label}</p>
+              </div>
+            </CardBody>
+          </Card>
+        )
+      })}
     </div>
   )
 }

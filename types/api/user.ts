@@ -1,3 +1,10 @@
+import type { Activity } from 'react-activity-calendar'
+import type { PROFILE_CONTRIBUTIONS } from '~/constants/user'
+
+export interface ProfileContributionDay extends Activity {
+  byType: Partial<Record<(typeof PROFILE_CONTRIBUTIONS)[number]['key'], number>>
+}
+
 export interface UserInfo {
   id: number
   requestUserUid: number

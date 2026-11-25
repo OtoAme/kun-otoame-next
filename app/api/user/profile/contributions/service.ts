@@ -1,5 +1,6 @@
 import type { Prisma } from '@prisma/client'
-import type { Activity } from 'react-activity-calendar'
+import { PROFILE_CONTRIBUTIONS } from '~/constants/user'
+import type { ProfileContributionDay } from '~/types/api/user'
 import { prisma } from '~/prisma/index'
 import {
   formatShanghaiCalendarDate,
@@ -25,7 +26,7 @@ export const getProfileContributions = async (
   uid: number,
   year: number | undefined,
   visibility: Prisma.patchWhereInput
-): Promise<Activity[]> => {
+): Promise<ProfileContributionDay[]> => {
   const { firstDay, lastDay } = contributionRange(year)
   const where = {
     user_id: uid,
@@ -35,7 +36,7 @@ export const getProfileContributions = async (
     }
   }
   const select = { created: true }
-  const sources = await Promise.all([
+  const [resources, entries, comments, ratings] = await Promise.all([
     prisma.patch_resource.findMany({
       where: { ...where, ...getProfileResourceWhere(visibility) },
       select
@@ -46,19 +47,31 @@ export const getProfileContributions = async (
   ])
 
   // The calendar uses the first and last dates to determine its full range.
-  const counts = new Map([
-    [firstDay, 0],
-    [lastDay, 0]
+  const counts = new Map<string, ProfileContributionDay['byType']>([
+    [firstDay, {}],
+    [lastDay, {}]
   ])
-  for (const rows of sources) {
-    for (const { created } of rows) {
-      const day = formatShanghaiCalendarDate(created)
-      counts.set(day, (counts.get(day) ?? 0) + 1)
+  const sources = {
+    patch_resource: resources,
+    patch: entries,
+    patch_comment: comments,
+    patch_rating: ratings
+  }
+  for (const { key } of PROFILE_CONTRIBUTIONS) {
+    for (const { created } of sources[key]) {
+      const date = formatShanghaiCalendarDate(created)
+      const byType = counts.get(date) ?? {}
+      byType[key] = (byType[key] ?? 0) + 1
+      counts.set(date, byType)
     }
   }
-  return Array.from(counts, ([date, count]) => ({
-    date,
-    count,
-    level: [1, 2, 4, 8].filter((threshold) => count >= threshold).length
-  })).sort((a, b) => a.date.localeCompare(b.date))
+  return Array.from(counts, ([date, byType]) => {
+    const count = Object.values(byType).reduce((sum, value) => sum + value, 0)
+    return {
+      date,
+      byType,
+      count,
+      level: [1, 2, 4, 8].filter((threshold) => count >= threshold).length
+    }
+  }).sort((a, b) => a.date.localeCompare(b.date))
 }

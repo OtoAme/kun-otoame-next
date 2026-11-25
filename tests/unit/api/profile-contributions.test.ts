@@ -50,8 +50,8 @@ it('requires login and a valid historical or current year', async () => {
 })
 it('spans an empty calendar year', async () => {
   expect(await (await GET(request())).json()).toEqual([
-    { date: '2024-01-01', count: 0, level: 0 },
-    { date: '2024-12-31', count: 0, level: 0 }
+    { date: '2024-01-01', count: 0, level: 0, byType: {} },
+    { date: '2024-12-31', count: 0, level: 0, byType: {} }
   ])
 })
 it.each([
@@ -68,8 +68,8 @@ it.each([
       new NextRequest('http://localhost/api/user/profile/contributions?uid=7')
     )
     expect(await response.json()).toEqual([
-      { date: first, count: 0, level: 0 },
-      { date: last, count: 0, level: 0 }
+      { date: first, count: 0, level: 0, byType: {} },
+      { date: last, count: 0, level: 0, byType: {} }
     ])
     expect(mocks.entry.mock.calls[0][0].where.created).toEqual({
       gte: new Date(`${first}T00:00:00+08:00`),
@@ -84,16 +84,21 @@ it('counts all four sources on Shanghai dates using the profile list filters', a
     leapDay,
     { created: new Date('2023-12-31T16:00:00Z') }
   ])
-  mocks.resource.mockResolvedValue([leapDay])
+  mocks.resource.mockResolvedValue([leapDay, leapDay])
   mocks.rating.mockResolvedValue([
     leapDay,
     { created: new Date('2024-12-31T15:59:59Z') }
   ])
   const response = await GET(request())
   expect(await response.json()).toEqual([
-    { date: '2024-01-01', count: 1, level: 1 },
-    { date: '2024-02-29', count: 4, level: 3 },
-    { date: '2024-12-31', count: 1, level: 1 }
+    { date: '2024-01-01', count: 1, level: 1, byType: { patch_comment: 1 } },
+    {
+      date: '2024-02-29',
+      count: 5,
+      level: 3,
+      byType: { patch_resource: 2, patch: 1, patch_comment: 1, patch_rating: 1 }
+    },
+    { date: '2024-12-31', count: 1, level: 1, byType: { patch_rating: 1 } }
   ])
   const scope = {
     user_id: 7,
