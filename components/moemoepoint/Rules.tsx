@@ -186,9 +186,7 @@ export const MoemoepointRules = () => {
         <CardBody className="space-y-2 text-sm text-default-500">
           <h2 className="text-lg font-medium text-foreground">关于负余额</h2>
           <p>
-            萌萌点总额可以为负。奖励被收回时会真实回退 —— 例如你的资源被删除,
-            或点赞你内容的人取消了点赞。这样做是为了让明细完整可追溯,
-            而不是把差额悄悄抹平。
+            萌萌点总额可以为负。例如，你删除自己发布的资源时，系统会扣回发布奖励，并在明细里记下这笔扣回。
           </p>
           <p>总额为负时, 你仍然可以通过签到等方式重新累积。</p>
         </CardBody>

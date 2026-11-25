@@ -2,7 +2,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { Prisma } from '@prisma/client'
 
 const prismaMock = vi.hoisted(() => {
+  const reward = { createMany: vi.fn() }
   const tx = {
+    patch_like_reward: reward,
     patch_rating_like: {
       createMany: vi.fn(),
       deleteMany: vi.fn()
@@ -18,6 +20,7 @@ const prismaMock = vi.hoisted(() => {
   }
 
   return {
+    reward,
     patch_comment: {
       findUnique: vi.fn()
     },
@@ -25,16 +28,19 @@ const prismaMock = vi.hoisted(() => {
       findUnique: vi.fn()
     },
     patch_rating_like: {
-      findUnique: vi.fn()
+      findUnique: vi.fn(),
+      deleteMany: tx.patch_rating_like.deleteMany
     },
     patch_resource: {
       findUnique: vi.fn()
     },
     user_patch_comment_like_relation: {
-      findUnique: vi.fn()
+      findUnique: vi.fn(),
+      deleteMany: tx.user_patch_comment_like_relation.deleteMany
     },
     user_patch_resource_like_relation: {
-      findUnique: vi.fn()
+      findUnique: vi.fn(),
+      deleteMany: tx.user_patch_resource_like_relation.deleteMany
     },
     $transaction: vi.fn((fn: (transaction: typeof tx) => unknown) => fn(tx)),
     _tx: tx
@@ -66,7 +72,11 @@ const uniqueViolation = () =>
 
 interface LikeService {
   name: string
-  relation: keyof typeof prismaMock._tx
+  relation:
+    | 'user_patch_comment_like_relation'
+    | 'patch_rating_like'
+    | 'user_patch_resource_like_relation'
+  targetType: 'patch_comment' | 'patch_rating' | 'patch_resource'
   seedTarget: () => void
   seedExistingLike: (row: { id: number } | null) => void
   toggle: () => Promise<boolean | string>
@@ -92,6 +102,7 @@ const services: LikeService[] = [
   {
     name: 'toggleCommentLike',
     relation: 'user_patch_comment_like_relation',
+    targetType: 'patch_comment',
     seedTarget: seedComment,
     seedExistingLike: (row) => {
       prismaMock.user_patch_comment_like_relation.findUnique.mockResolvedValue(
@@ -103,6 +114,7 @@ const services: LikeService[] = [
   {
     name: 'toggleRatingLike',
     relation: 'patch_rating_like',
+    targetType: 'patch_rating',
     seedTarget: () => {
       prismaMock.patch_rating.findUnique.mockResolvedValue({
         id: 10,
@@ -124,6 +136,7 @@ const services: LikeService[] = [
   {
     name: 'toggleResourceLike',
     relation: 'user_patch_resource_like_relation',
+    targetType: 'patch_resource',
     seedTarget: () => {
       prismaMock.patch_resource.findUnique.mockResolvedValue({
         id: 10,
@@ -152,6 +165,7 @@ const resetMocks = () => {
   createDedupMessageMock.mockResolvedValue({})
   moemoepointMock.earnMoemoepoint.mockResolvedValue({})
   moemoepointMock.reverseMoemoepoint.mockResolvedValue({})
+  prismaMock.reward.createMany.mockReset().mockResolvedValue({ count: 1 })
 }
 
 for (const service of services) {
@@ -173,7 +187,23 @@ for (const service of services) {
         expect.objectContaining({ skipDuplicates: true })
       )
       expect(createDedupMessageMock).toHaveBeenCalledTimes(1)
-      expect(moemoepointMock.earnMoemoepoint).toHaveBeenCalledTimes(1)
+      expect(prismaMock.reward.createMany).toHaveBeenCalledExactlyOnceWith({
+        data: {
+          user_id: LIKER_ID,
+          target_type: service.targetType,
+          target_id: 10
+        },
+        skipDuplicates: true
+      })
+      expect(moemoepointMock.earnMoemoepoint).toHaveBeenCalledExactlyOnceWith(
+        prismaMock._tx,
+        expect.objectContaining({
+          userId: 200,
+          amount: 1,
+          referenceType: service.targetType,
+          referenceId: 10
+        })
+      )
       expect(moemoepointMock.reverseMoemoepoint).not.toHaveBeenCalled()
     })
 
@@ -184,22 +214,25 @@ for (const service of services) {
       await expect(service.toggle()).resolves.toBe(true)
 
       expect(createDedupMessageMock).not.toHaveBeenCalled()
+      expect(prismaMock.reward.createMany).not.toHaveBeenCalled()
       expect(moemoepointMock.earnMoemoepoint).not.toHaveBeenCalled()
       expect(moemoepointMock.reverseMoemoepoint).not.toHaveBeenCalled()
     })
 
-    it('reverses the point once when the like row is actually removed', async () => {
+    it('removes the like without changing the earned point', async () => {
       service.seedExistingLike({ id: 30 })
       relation().deleteMany.mockResolvedValue({ count: 1 })
 
       await expect(service.toggle()).resolves.toBe(false)
 
-      expect(moemoepointMock.reverseMoemoepoint).toHaveBeenCalledTimes(1)
+      expect(relation().deleteMany).toHaveBeenCalledTimes(1)
+      expect(moemoepointMock.reverseMoemoepoint).not.toHaveBeenCalled()
       expect(moemoepointMock.earnMoemoepoint).not.toHaveBeenCalled()
+      expect(prismaMock.reward.createMany).not.toHaveBeenCalled()
       expect(createDedupMessageMock).not.toHaveBeenCalled()
     })
 
-    it('skips the reversal when a concurrent request already unliked it', async () => {
+    it('changes no accounting when a concurrent request already unliked it', async () => {
       service.seedExistingLike({ id: 30 })
       relation().deleteMany.mockResolvedValue({ count: 0 })
 
@@ -208,6 +241,18 @@ for (const service of services) {
       expect(moemoepointMock.reverseMoemoepoint).not.toHaveBeenCalled()
       expect(moemoepointMock.earnMoemoepoint).not.toHaveBeenCalled()
       expect(createDedupMessageMock).not.toHaveBeenCalled()
+      expect(prismaMock.reward.createMany).not.toHaveBeenCalled()
+    })
+
+    it('restores a removed like without paying if it was already rewarded', async () => {
+      service.seedExistingLike(null)
+      relation().createMany.mockResolvedValue({ count: 1 })
+      prismaMock.reward.createMany.mockResolvedValue({ count: 0 })
+
+      await expect(service.toggle()).resolves.toBe(true)
+
+      expect(createDedupMessageMock).toHaveBeenCalledTimes(1)
+      expect(moemoepointMock.earnMoemoepoint).not.toHaveBeenCalled()
     })
   })
 }
@@ -230,6 +275,7 @@ describe('like toggles never swallow a side-effect failure', () => {
 
     await expect(toggleComment()).rejects.toBe(error)
     expect(moemoepointMock.earnMoemoepoint).not.toHaveBeenCalled()
+    expect(prismaMock.reward.createMany).not.toHaveBeenCalled()
   })
 
   it('rejects when the ledger write hits its own unique violation', async () => {

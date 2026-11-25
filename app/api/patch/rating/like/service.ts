@@ -1,10 +1,7 @@
 import { z } from 'zod'
 import { prisma } from '~/prisma/index'
 import { createDedupMessage } from '~/app/api/utils/message'
-import {
-  earnMoemoepoint,
-  reverseMoemoepoint
-} from '~/app/api/moemoepoint/service'
+import { rewardLikeOnce } from '~/app/api/patch/like/reward'
 import { MOEMOEPOINT_REASON } from '~/constants/moemoepoint'
 
 export const ratingIdSchema = z.object({
@@ -37,65 +34,41 @@ export const toggleRatingLike = async (
     }
   })
 
-  // count 守卫的原因同 patch/comment/like/service.ts: 同向的并发请求只应产生
-  // 一次通知与一次萌萌点变动, 落空的那次直接返回同一个目标状态。
-  return await prisma.$transaction(async (prisma) => {
-    if (existingLike) {
-      const { count } = await prisma.patch_rating_like.deleteMany({
-        where: {
-          patch_rating_id: ratingId,
-          user_id: uid
-        }
-      })
-      if (!count) {
-        return false
-      }
-    } else {
-      const { count } = await prisma.patch_rating_like.createMany({
-        data: {
-          patch_rating_id: ratingId,
-          user_id: uid
-        },
-        skipDuplicates: true
-      })
-      if (!count) {
-        return true
-      }
+  if (existingLike) {
+    await prisma.patch_rating_like.deleteMany({
+      where: { user_id: uid, patch_rating_id: ratingId }
+    })
+    return false
+  }
 
-      await createDedupMessage(
-        {
-          event_type: 'like',
-          type: 'like',
-          content: `有人点赞了您的 OtomeGame 评价 -> ${rating.short_summary.slice(0, 107)}`,
-          sender_id: uid,
-          recipient_id: rating.user_id,
-          link: `/${rating.patch.unique_id}`
-        },
-        prisma
-      )
-    }
+  return await prisma.$transaction(async (tx) => {
+    const { count } = await tx.patch_rating_like.createMany({
+      data: { user_id: uid, patch_rating_id: ratingId },
+      skipDuplicates: true
+    })
+    if (!count) return true
 
-    const reason = existingLike
-      ? MOEMOEPOINT_REASON.ratingUnliked
-      : MOEMOEPOINT_REASON.ratingLiked
-    // 不传 idempotencyKey, 原因同 patch/comment/like/service.ts:
-    // 自增关系 id 无法在重放间保持稳定, 真正的守卫是
-    // patch_rating_like 的 [patch_rating_id, user_id] 唯一约束 + patch-like 限流。
-    const change = {
+    await createDedupMessage(
+      {
+        event_type: 'like',
+        type: 'like',
+        content: `有人点赞了您的 OtomeGame 评价 -> ${rating.short_summary.slice(0, 107)}`,
+        sender_id: uid,
+        recipient_id: rating.user_id,
+        link: `/${rating.patch.unique_id}`
+      },
+      tx
+    )
+
+    const reason = MOEMOEPOINT_REASON.ratingLiked
+    await rewardLikeOnce(tx, uid, {
       userId: rating.user_id,
-      amount: 1,
       reasonCode: reason.code,
       reason: `${reason.text}：${rating.short_summary.slice(0, 100)}`,
       referenceType: 'patch_rating',
       referenceId: rating.id,
       link: `/${rating.patch.unique_id}`
-    }
-    if (existingLike) {
-      await reverseMoemoepoint(prisma, change)
-    } else {
-      await earnMoemoepoint(prisma, change)
-    }
-
-    return !existingLike
+    })
+    return true
   })
 }

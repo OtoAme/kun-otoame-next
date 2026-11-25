@@ -29,25 +29,13 @@ export const MOEMOEPOINT_REASON = {
     code: 'comment.like_received',
     text: '评论收到点赞'
   },
-  commentUnliked: {
-    code: 'comment.unlike_reversal',
-    text: '评论点赞被取消'
-  },
   ratingLiked: {
     code: 'rating.like_received',
     text: '评价收到点赞'
   },
-  ratingUnliked: {
-    code: 'rating.unlike_reversal',
-    text: '评价点赞被取消'
-  },
   resourceLiked: {
     code: 'resource.like_received',
     text: '资源收到点赞'
-  },
-  resourceUnliked: {
-    code: 'resource.unlike_reversal',
-    text: '资源点赞被取消'
   },
   usernameChanged: {
     code: 'account.username_change',
@@ -105,7 +93,8 @@ export const MOEMOEPOINT_EARN_RULES = [
   {
     label: '内容被点赞',
     amount: '+1',
-    detail: '评论、评价、资源被他人点赞, 对方取消点赞时收回'
+    detail:
+      '同一账号对同一条评论、评价或资源的点赞最多奖励 1 点。取消点赞后，已到账的奖励保留。'
   },
   {
     label: '求助回答被采纳',
@@ -141,11 +130,6 @@ export const MOEMOEPOINT_SPEND_RULES = [
     label: '发布求助',
     amount: `-${HELP_POST_FEE}`,
     detail: `每条求助 ${HELP_POST_FEE} 点, 不退; 每人每天最多发 ${HELP_DAILY_POST_LIMIT} 条`
-  },
-  {
-    label: '他人取消对你内容的点赞',
-    amount: '-1',
-    detail: '评论、评价或资源被取消点赞时, 对应的点赞奖励会收回'
   },
   {
     label: '删除资源（收回奖励）',

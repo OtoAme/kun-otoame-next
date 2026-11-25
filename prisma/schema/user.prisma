@@ -35,6 +35,7 @@ model user {
 
   patch_comment_like    user_patch_comment_like_relation[]
   patch_resource_like   user_patch_resource_like_relation[]
+  patch_like_rewards    patch_like_reward[]
   patch_resource_access patch_resource_access[]             @relation("user_patch_resource_access")
   link_reports          patch_resource_link_report[]        @relation("link_report_author")
   link_maintenance_owned patch_resource_link_maintenance[] @relation("link_maintenance_owner")

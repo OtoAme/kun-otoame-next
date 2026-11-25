@@ -10,8 +10,7 @@ type ConversationRateLimitAction =
   | 'notification-read'
   | 'notification-write'
   | 'conversation-manage'
-  // 点赞类动作。萌萌点账本让每次点赞/取消都写一行永久明细,
-  // 因此这里限制的不只是写放大, 还有账本膨胀和他人明细页被刷。
+  // 点赞类动作共用限额，约束关系写入、互动通知和首次点赞的奖励。
   | 'patch-like'
 
 type ConversationRateLimitPolicy = {

@@ -1,10 +1,7 @@
 import { z } from 'zod'
 import { prisma } from '~/prisma/index'
 import { createDedupMessage } from '~/app/api/utils/message'
-import {
-  earnMoemoepoint,
-  reverseMoemoepoint
-} from '~/app/api/moemoepoint/service'
+import { rewardLikeOnce } from '~/app/api/patch/like/reward'
 import { MOEMOEPOINT_REASON } from '~/constants/moemoepoint'
 
 export const resourceIdSchema = z.object({
@@ -48,67 +45,41 @@ export const toggleResourceLike = async (
       }
     })
 
-  // count 守卫的原因同 patch/comment/like/service.ts: 同向的并发请求只应产生
-  // 一次通知与一次萌萌点变动, 落空的那次直接返回同一个目标状态。
-  return await prisma.$transaction(async (prisma) => {
-    if (existingLike) {
-      const { count } =
-        await prisma.user_patch_resource_like_relation.deleteMany({
-          where: {
-            user_id: uid,
-            resource_id: resourceId
-          }
-        })
-      if (!count) {
-        return false
-      }
-    } else {
-      const { count } =
-        await prisma.user_patch_resource_like_relation.createMany({
-          data: {
-            user_id: uid,
-            resource_id: resourceId
-          },
-          skipDuplicates: true
-        })
-      if (!count) {
-        return true
-      }
+  if (existingLike) {
+    await prisma.user_patch_resource_like_relation.deleteMany({
+      where: { user_id: uid, resource_id: resourceId }
+    })
+    return false
+  }
 
-      await createDedupMessage(
-        {
-          event_type: 'like',
-          type: 'like',
-          content: `点赞了您在 ${resource.patch.name} 下发布的补丁资源`,
-          sender_id: uid,
-          recipient_id: resource.user_id,
-          link: `/${resource.patch.unique_id}`
-        },
-        prisma
-      )
-    }
+  return await prisma.$transaction(async (tx) => {
+    const { count } = await tx.user_patch_resource_like_relation.createMany({
+      data: { user_id: uid, resource_id: resourceId },
+      skipDuplicates: true
+    })
+    if (!count) return true
 
-    const reason = existingLike
-      ? MOEMOEPOINT_REASON.resourceUnliked
-      : MOEMOEPOINT_REASON.resourceLiked
-    // 不传 idempotencyKey, 原因同 patch/comment/like/service.ts:
-    // 自增关系 id 无法在重放间保持稳定, 真正的守卫是
-    // user_patch_resource_like_relation 的 [user_id, resource_id] 唯一约束 + patch-like 限流。
-    const change = {
+    await createDedupMessage(
+      {
+        event_type: 'like',
+        type: 'like',
+        content: `点赞了您在 ${resource.patch.name} 下发布的补丁资源`,
+        sender_id: uid,
+        recipient_id: resource.user_id,
+        link: `/${resource.patch.unique_id}`
+      },
+      tx
+    )
+
+    const reason = MOEMOEPOINT_REASON.resourceLiked
+    await rewardLikeOnce(tx, uid, {
       userId: resource.user_id,
-      amount: 1,
       reasonCode: reason.code,
       reason: `${reason.text}：${resource.name.slice(0, 100)}`,
       referenceType: 'patch_resource',
       referenceId: resource.id,
       link: `/${resource.patch.unique_id}`
-    }
-    if (existingLike) {
-      await reverseMoemoepoint(prisma, change)
-    } else {
-      await earnMoemoepoint(prisma, change)
-    }
-
-    return !existingLike
+    })
+    return true
   })
 }

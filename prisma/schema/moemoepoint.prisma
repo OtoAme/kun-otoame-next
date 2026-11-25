@@ -29,6 +29,15 @@ model user_moemoepoint_ledger {
   @@index([operator_id])
 }
 
+model patch_like_reward {
+  user_id     Int
+  user        user   @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  target_type String @db.VarChar(32)
+  target_id   Int
+
+  @@id([user_id, target_type, target_id])
+}
+
 model user_moemoepoint_reservation {
   id Int @id @default(autoincrement())
 
