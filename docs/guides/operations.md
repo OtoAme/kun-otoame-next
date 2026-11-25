@@ -77,6 +77,7 @@ pnpm prisma:deploy-safe
 | 资源访问缺基础表 | [预检](../../migration/production-resource-access-bootstrap-preflight-2026-07-12.sql)、[同步](../../migration/production-resource-access-bootstrap-sync-2026-07-12.sql)，复检后走下节授权迁移；不加入自动部署。 |
 | 私聊贴纸基础与管理 | 依次运行[基础预检](../../migration/production-private-chat-stickers-preflight-2026-08-14.sql)、[基础同步](../../migration/production-private-chat-stickers-sync-2026-08-14.sql)、[管理预检](../../migration/production-sticker-admin-preflight-2026-08-14.sql)、[管理同步](../../migration/production-sticker-admin-sync-2026-08-14.sql)。旧安装追加[结构对齐](../../migration/production-stickers-prisma-alignment-2026-08-15.sql)，复检重复内容、封面与外键；不处理发行日期索引。 |
 | 萌萌点账目 | [预检](../../migration/production-moemoepoint-ledger-preflight-2026-08-17.sql)、[同步](../../migration/production-moemoepoint-ledger-sync-2026-08-17.sql)，重跑预检确认结构与幂等初始账目；旧版不记账，不能有写流量时单独回退应用。 |
+| 一次性点赞奖励 | [预检](../../migration/production-patch-like-reward-preflight-2026-11-25.sql)、[同步](../../migration/production-patch-like-reward-sync-2026-11-25.sql)，使用同一预检文件复检。执行顺序与恢复边界见[点赞奖励迁移](#点赞奖励迁移)。 |
 | 投稿和素材清理 | 依次运行[发行版本唯一预检](../../migration/production-vndb-relation-id-unique-preflight-2026-08-24.sql)、[同步](../../migration/production-vndb-relation-id-unique-sync-2026-08-24.sql)、[投稿预检](../../migration/production-patch-submission-preflight-2026-08-24.sql)、[同步](../../migration/production-patch-submission-sync-2026-08-24.sql)、[清理预检](../../migration/production-patch-submission-orphan-cleanup-preflight-2026-08-25.sql)、[同步](../../migration/production-patch-submission-orphan-cleanup-sync-2026-08-25.sql)。完成后重跑三份预检，见下文。 |
 | 会社身份基础 | [预检](../../migration/production-company-identity-bootstrap-preflight-2026-08-30.sql)、[同步](../../migration/production-company-identity-bootstrap-sync-2026-08-30.sql)、[复检](../../migration/production-company-identity-bootstrap-postflight-2026-08-30.sql)，先于依赖新结构的代码。 |
 | 标签与会社计数 | [预检](../../migration/production-tag-company-count-preflight-2026-08-30.sql)、[同步](../../migration/production-tag-company-count-sync-2026-08-30.sql)、[复检](../../migration/production-tag-company-count-postflight-2026-08-30.sql)，按下文避免双重计数。 |
@@ -89,6 +90,28 @@ pnpm prisma:deploy-safe
 | 控制台查询索引 | [预检](../../migration/production-dashboard-indexes-preflight-2026-10-31.sql)、[同步](../../migration/production-dashboard-indexes-sync-2026-10-31.sql)，在显式事务外执行；只建索引，不改数据，不需要停写。同步可重复运行：已存在且有效的跳过，中断留下的无效索引删掉重建，同名但定义不同时停止。完成后重跑预检，四项都应为 `already_ok`。 |
 | 每日登录记录 | [预检](../../migration/production-user-daily-active-preflight-2026-10-31.sql)、[同步](../../migration/production-user-daily-active-sync-2026-10-31.sql)，只新增空表 `user_daily_active`，不改已有数据。同步在单个事务内执行，外键会短暂锁住用户表，等不到锁 5 秒后停止，重跑即可；已有同名表但列不一致时停止。完成后重跑预检，状态应为 `present` 且主键、外键与预期一致。先迁移再发布对应版本：旧版本不写这张表，新版本在表缺失时只记录错误、不影响登录，缺表期间已访问的用户当天不会补记。 |
 | 站方备份与资源合并 | [预检](../../migration/production-official-mirror-preflight-2026-11-04.sql)、[同步](../../migration/production-official-mirror-sync-2026-11-04.sql)、[复检](../../migration/production-official-mirror-postflight-2026-11-04.sql)，同步必须带人工判定的时间分组参数；[限定校正](../../migration/production-official-mirror-attached-at-correct-2026-11-04.sql)仅在回填判定错误时按记录清单使用。执行前提见下节。 |
+
+### 点赞奖励迁移
+
+先使用受控运维脚本准备当前 shell 并取得已审核的源码，再执行预检。
+
+```bash
+set +x
+source '<服务器受控运维环境脚本>'
+git pull --ff-only
+psql_run migration/production-patch-like-reward-preflight-2026-11-25.sql
+```
+
+预检应退出 0，并显示 `patch-like-reward preflight OK`。`installed` 表示发奖记录表是否已安装，`pending` 是尚待登记的有效点赞数。预检通过后停止全部旧应用和相关写入者，确认停写并完成备份，再在同一 shell 执行同步和复检。
+
+```bash
+psql_run migration/production-patch-like-reward-sync-2026-11-25.sql
+psql_run migration/production-patch-like-reward-preflight-2026-11-25.sql -v require_complete=true
+```
+
+同步以 `COMMIT` 结束，新增记录数以 PostgreSQL 的 `INSERT` 结果为准。迁移把当前有效的赞登记为已发奖，并保留已有余额和明细。已经按旧规则撤销的点赞以切换时的余额为准。同步可重复执行，锁等待超过 5 秒或语句执行超过 120 秒时整笔回滚。复检须退出 0 并显示 `installed=true, pending=0`，随后用 `pnpm deploy:pull` 发布。失败时保持停写，排除原因后从预检重来。
+
+发布后核对所有实例已就绪，并使用受控账号验证首次点赞加 1 点，撤赞和重新点赞只改变赞数。切换到新规则后，恢复版本必须兼容一次性发奖和撤赞计数。若缺少兼容版本，保持相关功能停写并前向修复。
 
 ### 账号偏好结构
 
